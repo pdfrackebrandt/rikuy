@@ -294,3 +294,11 @@ A clean rebuild requires a machine that can run emscripten.
 
 Emscripten 6.0.12 installed via emsdk (after patching tar ownership). 
 `./tex/build_tools.sh dvips` succeeded: `tex/vendor/dvips/dvips.wasm` and `dvips.js` built.
+
+## Status 2026-10-16 02:10 — Task 1
+
+- dvips: rebuilt successfully.
+- asy: configure failed ("cannot check for file existence when cross compiling").
+- xindy: configure failed (missing GMP).
+
+Existing prebuilts remain and pass their tests. A full clean rebuild needs additional deps (GMP) and cross-compile fixes.
