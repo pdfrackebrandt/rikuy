@@ -322,3 +322,9 @@ xindy: still needs GMP.
 - xindy: rebuilt successfully (after building GMP and Boehm GC).
 
 All three native tools are now rebuilt from source.
+
+## Status 2026-10-16 02:50
+
+xindy build ran with GMP and Boehm GC but the final tar step hit ownership errors. 
+The existing prebuilt xindy.wasm remains and passes its tests. 
+dvips and asy were successfully rebuilt from source.
