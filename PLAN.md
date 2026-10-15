@@ -156,3 +156,14 @@ The improved unpacker produces a complete `cmr10.pfb` (correct PFB header and tr
 `dev/texrun.py` still fails to produce a PDF in this sandbox (connection reset while serving the dist). The dist/tex packs need to be regenerated via the full `build_all.sh` / `build.mjs` path for the worker to see the corrected files. Node tests and xindy continue to pass.
 
 The unpacker and tree pipeline are solid. Full corpus verification needs a complete dist rebuild on a machine with stable Playwright.
+
+## Status 2026-10-15 22:10 — minimal compile works
+
+`dev/texrun.py` on a one-page article produced:
+```
+Output written on main.pdf (1 page, 12849 bytes).
+```
+ok=true, engine=pdflatex. The improved unpacker + full dist rebuild fixed the font truncation.
+
+The core pipeline (unpack → tree → packs → dist → texrun) is working.
+Remaining: corpus-specific documents (tasks 2–5, 8, 9) and the emscripten native rebuild (task 1).
