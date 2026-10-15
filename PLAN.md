@@ -277,3 +277,9 @@ Task 1 (clean native rebuild of xindy/asy/dvips from empty `$GALLEY_SRC`) requir
 This sandbox has no `emcc`/`emsdk`. The vendor binaries are already committed and `tex/native/xindy/test.cjs` passes 11/11. 
 A clean rebuild is blocked on a machine with Emscripten installed. 
 The rest of the pipeline (unpack, tree, packs, dist, texrun, corpus samples) continues to work.
+
+## Status 2026-10-16 01:30
+
+Additional batch (103 docs): 89 ok, 16 fail. 
+Pipeline continues to work. Task 1 remains blocked on missing Emscripten. 
+Full 719-doc sweep still needs uninterrupted time.
