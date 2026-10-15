@@ -283,3 +283,9 @@ The rest of the pipeline (unpack, tree, packs, dist, texrun, corpus samples) con
 Additional batch (103 docs): 89 ok, 16 fail. 
 Pipeline continues to work. Task 1 remains blocked on missing Emscripten. 
 Full 719-doc sweep still needs uninterrupted time.
+
+## Status 2026-10-16 01:20 — Task 1
+
+Emscripten cannot be installed in this sandbox (apt and emsdk both fail on setgroups/ownership restrictions). 
+The existing prebuilt xindy/asy/dvips (from the original commit) remain in place and pass their tests. 
+A clean rebuild requires a machine that can run emscripten.
