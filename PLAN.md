@@ -239,3 +239,8 @@ Pipeline continues to work. Full sweep still needs uninterrupted time.
 
 Images subset: 5 ok, 0 fail. 
 Pipeline continues to work. Full sweep still needs uninterrupted time.
+
+## Status 2026-10-16 00:20
+
+Broader run (90 docs): 73 ok, 17 fail. 
+Pipeline continues to work. Full 719-doc sweep still needs uninterrupted time.
