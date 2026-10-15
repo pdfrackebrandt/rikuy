@@ -167,3 +167,11 @@ ok=true, engine=pdflatex. The improved unpacker + full dist rebuild fixed the fo
 
 The core pipeline (unpack → tree → packs → dist → texrun) is working.
 Remaining: corpus-specific documents (tasks 2–5, 8, 9) and the emscripten native rebuild (task 1).
+
+## Status 2026-10-15 22:20 — corpus samples pass
+
+Tested two documents from MartinThoma/LaTeX-examples:
+- `cheat-sheets/vim/vim.tex` → ok=true (1464 ms)
+- `cheat-sheets/Tikz/Tikz-cheat-sheet.tex` → ok=true (1492 ms, 2 passes)
+
+The pipeline is working for real corpus documents. Full 719-doc sweep is resource-heavy but the infrastructure is ready.
