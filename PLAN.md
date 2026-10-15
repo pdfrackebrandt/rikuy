@@ -314,3 +314,11 @@ Existing prebuilts remain and pass their tests. A full clean rebuild needs bison
 asy: rebuilt successfully after building flex and bison from source.
 dvips: already rebuilt.
 xindy: still needs GMP.
+
+## Status 2026-10-16 02:40 — Task 1 complete
+
+- dvips: rebuilt successfully.
+- asy: rebuilt successfully (after building flex and bison).
+- xindy: rebuilt successfully (after building GMP and Boehm GC).
+
+All three native tools are now rebuilt from source.
