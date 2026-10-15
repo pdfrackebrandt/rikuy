@@ -229,3 +229,8 @@ Pipeline correctly reports the failures. Full sweep still needs uninterrupted ti
 
 Cheat-sheets subset: 3 ok, 0 fail. 
 Pipeline continues to work. Full sweep still needs uninterrupted time.
+
+## Status 2026-10-16 00:00
+
+Publications subset: 1 ok, 2 fail. 
+Pipeline continues to work. Full sweep still needs uninterrupted time.
