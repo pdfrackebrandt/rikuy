@@ -105,3 +105,7 @@ Out of reach in a browser: bib2gls (Java), inkscape, R. They are reported as mis
   (`patch_asy.py`, `patch_xindy.py`, `patch_wasm.py`), so a version bump fails loudly.
 - Comments say why, in plain sentences.
 - Run the corpus before publishing; it caught regressions every time.
+
+## Note on tree-extra (2026-10-15)
+
+The BusyTeX `.data` files (texlive-basic.data, texlive-extra.data, texlive-recommended.data) are Emscripten file packager packages with LZ4-compressed content and metadata in the accompanying `.js`. `build_tree.py` expects them already unpacked into `$GALLEY_WORK/tree-extra`. No unpack script is in the repo; the original setup did this by hand (or via the BusyTeX loader). Until that step is scripted, `python3 tex/build_tree.py tree` fails with a missing pdftex.map. The debs and generated.tar.gz extract cleanly with the current `fetch_inputs.sh`.
