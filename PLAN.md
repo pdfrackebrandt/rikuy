@@ -214,3 +214,8 @@ Pipeline continues to work. Full sweep still needs uninterrupted time.
 
 Misc subset: 0 ok, 1 fail (`sound.tex` — missing `insdljs.sty`, document-specific). 
 Pipeline continues to correctly report failures. Full sweep still needs uninterrupted time.
+
+## Status 2026-10-15 23:40
+
+Circuits subset: 3 ok, 0 fail. 
+Pipeline continues to work. Full sweep still needs uninterrupted time.
