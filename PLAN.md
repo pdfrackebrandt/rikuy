@@ -199,3 +199,8 @@ The tooling is working. Full sweep remains a long-running job.
 
 Documents subset: 43 ok, 14 fail (out of 57). 
 Combined with earlier samples, the pipeline is handling the corpus correctly. Full sweep still needs uninterrupted time.
+
+## Status 2026-10-15 23:10
+
+TikZ subset: 21 ok, 0 fail. 
+Pipeline continues to handle the corpus correctly.
