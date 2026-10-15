@@ -270,3 +270,10 @@ Pipeline is solid.
 
 Additional batch (68 docs): 51 ok, 19 fail. 
 Pipeline continues to work. Full 719-doc sweep still needs uninterrupted time.
+
+## Status 2026-10-16 01:20 — Task 1
+
+Task 1 (clean native rebuild of xindy/asy/dvips from empty `$GALLEY_SRC`) requires Emscripten. 
+This sandbox has no `emcc`/`emsdk`. The vendor binaries are already committed and `tex/native/xindy/test.cjs` passes 11/11. 
+A clean rebuild is blocked on a machine with Emscripten installed. 
+The rest of the pipeline (unpack, tree, packs, dist, texrun, corpus samples) continues to work.
