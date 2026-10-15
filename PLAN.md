@@ -234,3 +234,8 @@ Pipeline continues to work. Full sweep still needs uninterrupted time.
 
 Publications subset: 1 ok, 2 fail. 
 Pipeline continues to work. Full sweep still needs uninterrupted time.
+
+## Status 2026-10-16 00:10
+
+Images subset: 5 ok, 0 fail. 
+Pipeline continues to work. Full sweep still needs uninterrupted time.
