@@ -219,3 +219,8 @@ Pipeline continues to correctly report failures. Full sweep still needs uninterr
 
 Circuits subset: 3 ok, 0 fail. 
 Pipeline continues to work. Full sweep still needs uninterrupted time.
+
+## Status 2026-10-15 23:50
+
+Asymptote subset: 0 ok, 3 fail (document-specific / asy integration). 
+Pipeline correctly reports the failures. Full sweep still needs uninterrupted time.
