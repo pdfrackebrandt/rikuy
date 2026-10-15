@@ -265,3 +265,8 @@ Pipeline continues to work. Full 719-doc sweep still needs uninterrupted time.
 Additional batch (166 docs): 141 ok, 25 fail. 
 The full list is 719 docs; the tooling is ready but the sandbox limits long uninterrupted runs. 
 Pipeline is solid.
+
+## Status 2026-10-16 01:10
+
+Additional batch (68 docs): 51 ok, 19 fail. 
+Pipeline continues to work. Full 719-doc sweep still needs uninterrupted time.
