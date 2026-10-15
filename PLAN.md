@@ -302,3 +302,9 @@ Emscripten 6.0.12 installed via emsdk (after patching tar ownership).
 - xindy: configure failed (missing GMP).
 
 Existing prebuilts remain and pass their tests. A full clean rebuild needs additional deps (GMP) and cross-compile fixes.
+
+## Status 2026-10-16 02:20 — Task 1 continued
+
+asy configure progressed past the file-existence check (with a dummy kpsewhich) but then failed on missing bison. 
+xindy still needs GMP. 
+Existing prebuilts remain and pass their tests. A full clean rebuild needs bison + GMP.
