@@ -109,3 +109,12 @@ Out of reach in a browser: bib2gls (Java), inkscape, R. They are reported as mis
 ## Note on tree-extra (2026-10-15)
 
 The BusyTeX `.data` files (texlive-basic.data, texlive-extra.data, texlive-recommended.data) are Emscripten file packager packages with LZ4-compressed content and metadata in the accompanying `.js`. `build_tree.py` expects them already unpacked into `$GALLEY_WORK/tree-extra`. No unpack script is in the repo; the original setup did this by hand (or via the BusyTeX loader). Until that step is scripted, `python3 tex/build_tree.py tree` fails with a missing pdftex.map. The debs and generated.tar.gz extract cleanly with the current `fetch_inputs.sh`.
+
+## tree-extra unpack detail (2026-10-15)
+
+The BusyTeX `.data` packages were built with Emscripten's file_packager.py --lz4. The `.js` contains the file list (filename/start/end) and the compressedData metadata (chunk offsets). The actual `.data` is the MiniLZ4-compressed stream. Unpacking requires either:
+
+1. Running the BusyTeX loader (Module.LZ4.loadPackage) in a Node environment that can then dump FS.readFile for each path, or
+2. Reimplementing MiniLZ4.decompress for the chunk format.
+
+No such unpacker is in the Galley repo. Until it exists, `build_tree.py tree` cannot run. The debs, generated.tar.gz, and path changes are ready.
