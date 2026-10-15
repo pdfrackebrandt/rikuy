@@ -118,3 +118,7 @@ The BusyTeX `.data` packages were built with Emscripten's file_packager.py --lz4
 2. Reimplementing MiniLZ4.decompress for the chunk format.
 
 No such unpacker is in the Galley repo. Until it exists, `build_tree.py tree` cannot run. The debs, generated.tar.gz, and path changes are ready.
+
+## tree-extra unpack (done 2026-10-15)
+
+`tex/unpack_busytex.py` unpacks the BusyTeX MiniLZ4 `.data` packages into `$GALLEY_WORK/tree-extra`. After running it, `python3 tex/build_tree.py tree` succeeds and produces `$GALLEY_WORK/galley-tree` (~422 MB). The pure-node tests continue to pass.
