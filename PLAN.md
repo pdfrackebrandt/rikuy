@@ -308,3 +308,9 @@ Existing prebuilts remain and pass their tests. A full clean rebuild needs addit
 asy configure progressed past the file-existence check (with a dummy kpsewhich) but then failed on missing bison. 
 xindy still needs GMP. 
 Existing prebuilts remain and pass their tests. A full clean rebuild needs bison + GMP.
+
+## Status 2026-10-16 02:30 — Task 1
+
+asy: rebuilt successfully after building flex and bison from source.
+dvips: already rebuilt.
+xindy: still needs GMP.
