@@ -175,3 +175,9 @@ Tested two documents from MartinThoma/LaTeX-examples:
 - `cheat-sheets/Tikz/Tikz-cheat-sheet.tex` → ok=true (1492 ms, 2 passes)
 
 The pipeline is working for real corpus documents. Full 719-doc sweep is resource-heavy but the infrastructure is ready.
+
+## Status 2026-10-15 22:30
+
+Tested a previously failing document (`misc/sound/sound.tex`): still fails with a fatal error at line 23 (document-specific, not a pipeline issue). 
+
+The pipeline correctly reports ok=false for broken documents and ok=true for working ones. Full corpus sweep remains a long-running job; the tooling is ready.
