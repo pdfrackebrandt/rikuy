@@ -289,3 +289,8 @@ Full 719-doc sweep still needs uninterrupted time.
 Emscripten cannot be installed in this sandbox (apt and emsdk both fail on setgroups/ownership restrictions). 
 The existing prebuilt xindy/asy/dvips (from the original commit) remain in place and pass their tests. 
 A clean rebuild requires a machine that can run emscripten.
+
+## Status 2026-10-16 02:00 — Task 1 progress
+
+Emscripten 6.0.12 installed via emsdk (after patching tar ownership). 
+`./tex/build_tools.sh dvips` succeeded: `tex/vendor/dvips/dvips.wasm` and `dvips.js` built.
