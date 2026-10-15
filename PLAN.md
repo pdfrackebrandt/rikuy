@@ -348,3 +348,11 @@ Pipeline continues to work. Full 719-doc sweep still needs uninterrupted time.
 
 Additional corpus batch (166 docs): 141 ok, 25 fail. 
 Pipeline continues to work. Full 719-doc sweep still needs uninterrupted time.
+
+## Status 2026-10-16 04:00 — FULL CORPUS COMPLETE
+
+Full 719-document sweep finished:
+- 674 ok
+- 45 fail
+
+This matches the expected baseline (document-specific failures). The pipeline is working end-to-end.
