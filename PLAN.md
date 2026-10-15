@@ -132,3 +132,12 @@ No such unpacker is in the Galley repo. Until it exists, `build_tree.py tree` ca
 - `fetch_inputs.sh` has working Ubuntu URLs.
 
 Remaining for a full corpus run: build the web dist (needs the packs + wasm), then run `dev/texrun.py` against the MartinThoma corpus. Task 1 (clean native rebuild of xindy/asy/dvips) still needs emscripten.
+
+## Status 2026-10-15 21:45
+
+- Tree and packs build successfully.
+- `dist/tex` is populated (~203 MB) with wasm, js, and packs.
+- Fontconfig cache build requires a working Chromium + the full engine; it produced 0 caches in this sandbox (connection reset during the xelatex scan).
+- Corpus runs (`dev/texrun.py`) need the complete dist with caches.
+
+The unpacker, tree, packs, and pure-node tests are solid. A machine with Playwright browsers and sufficient resources can finish the caches and corpus.
