@@ -181,3 +181,11 @@ The pipeline is working for real corpus documents. Full 719-doc sweep is resourc
 Tested a previously failing document (`misc/sound/sound.tex`): still fails with a fatal error at line 23 (document-specific, not a pipeline issue). 
 
 The pipeline correctly reports ok=false for broken documents and ok=true for working ones. Full corpus sweep remains a long-running job; the tooling is ready.
+
+## Status 2026-10-15 22:40 — partial corpus
+
+`dev/corpus_full.py` on the first 10 documents:
+- 9 ok
+- 1 fail (`le/presentations/Sommerakademie-2015-Forschung/...`)
+
+The tooling works. Full 719-doc run is still a long job; the pipeline is solid.
