@@ -194,3 +194,8 @@ The tooling works. Full 719-doc run is still a long job; the pipeline is solid.
 
 Math subset of the corpus: 22 ok, 4 fail (out of 26). 
 The tooling is working. Full sweep remains a long-running job.
+
+## Status 2026-10-15 23:00
+
+Documents subset: 43 ok, 14 fail (out of 57). 
+Combined with earlier samples, the pipeline is handling the corpus correctly. Full sweep still needs uninterrupted time.
