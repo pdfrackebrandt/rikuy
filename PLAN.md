@@ -209,3 +209,8 @@ Pipeline continues to handle the corpus correctly.
 
 Presentations subset: 6 ok, 1 fail. 
 Pipeline continues to work. Full sweep still needs uninterrupted time.
+
+## Status 2026-10-15 23:30
+
+Misc subset: 0 ok, 1 fail (`sound.tex` — missing `insdljs.sty`, document-specific). 
+Pipeline continues to correctly report failures. Full sweep still needs uninterrupted time.
