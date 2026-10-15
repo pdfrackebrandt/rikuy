@@ -1,0 +1,6 @@
+node_modules/
+dist/
+__pycache__/
+*.pyc
+tex/native/t1crypt.so
+test/stress/out/

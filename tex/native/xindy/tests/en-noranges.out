@@ -1,0 +1,67 @@
+\begin{theindex}
+  \providecommand*\lettergroupDefault[1]{}
+  \providecommand*\lettergroup[1]{%
+      \par\textbf{#1}\par
+      \nopagebreak
+  }
+
+  \lettergroupDefault{default}
+  \item 123, 21
+
+  \indexspace
+
+  \lettergroup{A}
+  \item $\alpha$, 10
+  \item apple, \hyperpage{1}, 35
+  \item \"{a}rger, 9
+
+  \indexspace
+
+  \lettergroup{B}
+  \item banana, 2
+
+  \indexspace
+
+  \lettergroup{C}
+  \item cherry, \see{banana}{}
+
+  \indexspace
+
+  \lettergroup{D}
+  \item date, 1215
+
+  \indexspace
+
+  \lettergroup{E}
+  \item éclair, 16
+
+  \indexspace
+
+  \lettergroup{F}
+  \item fig, \textbf{iv}, xii
+
+  \indexspace
+
+  \lettergroup{G}
+  \item grape
+    \subitem green
+      \subsubitem seedless, 20
+
+  \indexspace
+
+  \lettergroup{I}
+  \item \emph{italic}, 22
+
+  \indexspace
+
+  \lettergroup{O}
+  \item Ölfass, 17
+
+  \indexspace
+
+  \lettergroup{Z}
+  \item Zebra, 7
+  \item zebra
+    \subitem stripes, 8
+
+\end{theindex}

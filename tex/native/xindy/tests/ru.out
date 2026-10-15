@@ -1,0 +1,32 @@
+\begin{theindex}
+  \providecommand*\lettergroupDefault[1]{}
+  \providecommand*\lettergroup[1]{%
+      \par\textbf{#1}\par
+      \nopagebreak
+  }
+
+  \lettergroup{А}
+  \item арбуз, 2
+
+  \indexspace
+
+  \lettergroup{Е}
+  \item еда, 4
+  \item ёж, 3
+
+  \indexspace
+
+  \lettergroup{Ж}
+  \item Жук, 5
+
+  \indexspace
+
+  \lettergroup{З}
+  \item зебра, 6
+
+  \indexspace
+
+  \lettergroup{Я}
+  \item яблоко, 1
+
+\end{theindex}

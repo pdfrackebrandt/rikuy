@@ -1,0 +1,16 @@
+import katex from '../node_modules/katex/dist/katex.mjs';
+import { minimalRow, makeSame } from '../src/minimal.js';
+const same = makeSame(katex, { '\\R': '\\mathbb{R}', '\\E': '\\mathbb{E}' }, true);
+let bad = 0;
+const eq = (name, got, want) => { const ok = got === want; if (!ok) bad++; console.log((ok ? 'PASS ' : 'FAIL ') + name + (ok ? '' : '\n   got:  ' + got + '\n   want: ' + want)); };
+eq('one token', minimalRow('x_n + 1', 'x_{n}+1', 'x_{n}+2', same), 'x_n + 2');
+eq('inside implicit group', minimalRow('x_n+1', 'x_{n}+1', 'x_{m}+1', same), 'x_m+1');
+eq('needs braces', minimalRow('x_n+1', 'x_{n}+1', 'x_{mn}+1', same), 'x_{mn}+1');
+eq('append keeps spacing', minimalRow('  \\E[\\,y \\mid x\\,] &= \\int_{\\R} y \\, f(y \\mid x)\\, dy', '\\E[\\,y\\mid x\\,]&=\\int_{\\R}y\\,f(y\\mid x)\\,dy', '\\E[\\,y\\mid x\\,]&=\\int_{\\R}y\\,f(y\\mid x)\\,dy+1', same), '  \\E[\\,y \\mid x\\,] &= \\int_{\\R} y \\, f(y \\mid x)\\, dy+1');
+eq('label stays put', minimalRow('a = b \\label{eq:x} + c', 'a=b+c', 'a=b+d', same), 'a = b \\label{eq:x} + d');
+eq('frac shorthand kept', minimalRow('\\frac12 + x^2', '\\frac{1}{2}+x^{2}', '\\frac{1}{2}+x^{3}', same), '\\frac12 + x^3');
+eq('control word guard', minimalRow('\\alpha + b', '\\alpha+b', '\\alpha c+b', same), '\\alpha c + b');
+eq('delete', minimalRow('a + b + c', 'a+b+c', 'a+c', same), 'a + c');
+eq('swap order keeps what it can', minimalRow('\\sum^n_{i=1} a_i', '\\sum_{i=1}^{n}a_{i}', '\\sum_{i=1}^{n}b_{i}', same), '\\sum_{i=1}^{n}b_i');
+eq('total rewrite returns valid', same(minimalRow('a', 'a', '\\frac{x}{y}', same), '\\frac{x}{y}'), true);
+console.log(bad ? bad + ' failed' : 'all passed');

@@ -1,0 +1,50 @@
+\begin{theindex}
+  \providecommand*\lettergroupDefault[1]{}
+  \providecommand*\lettergroup[1]{%
+      \par\textbf{#1}\par
+      \nopagebreak
+  }
+
+  \lettergroup{A}
+  \item Apfel, 2
+
+  \indexspace
+
+  \lettergroup{B}
+  \item Baer, 4
+  \item Bär, 3
+
+  \indexspace
+
+  \lettergroup{M}
+  \item müde, \textit{13}
+  \item Mühe
+    \subitem groß, 14
+    \subitem klein, 15
+
+  \indexspace
+
+  \lettergroup{O}
+  \item ober, 8
+  \item Äpfel, 1
+  \item Öl, 7
+  \item Übel, 9
+
+  \indexspace
+
+  \lettergroup{S}
+  \item Straße, 5
+  \item Strasse, 6
+
+  \indexspace
+
+  \lettergroup{U}
+  \item uber, 10
+
+  \indexspace
+
+  \lettergroup{Z}
+  \item Zahl, 12
+  \item zählen, 11
+
+\end{theindex}

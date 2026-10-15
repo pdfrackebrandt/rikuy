@@ -1,0 +1,12 @@
+# name | command (run in this folder; the expected output is NAME.out, made by Debian's xindy 2.5.1 on CLISP)
+en | texindy -L english -C utf8 -o en.out en.idx
+en-letter | texindy -L english -C utf8 --letter-ordering -o en-letter.out en.idx
+en-noranges | texindy -L english -C utf8 -r -o en-noranges.out en.idx
+de-din | texindy -L german-din -C utf8 -o de-din.out de.idx
+de-duden | texindy -L german-duden -C utf8 -o de-duden.out de.idx
+de-latin1 | texindy -L german-din -C latin1 -o de-latin1.out de.idx
+fr | texindy -L french -C utf8 -o fr.out fr.idx
+es | texindy -L spanish-modern -C utf8 -o es.out fr.idx
+ru | texindy -L russian -C utf8 -o ru.out ru.idx
+general | texindy -o general.out en.idx
+gls | xindy -L english -C utf8 -I xindy -M g -t gls.glg -o gls.out g.glo

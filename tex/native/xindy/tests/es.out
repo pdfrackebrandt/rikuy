@@ -1,0 +1,28 @@
+\begin{theindex}
+  \providecommand*\lettergroupDefault[1]{}
+  \providecommand*\lettergroup[1]{%
+      \par\textbf{#1}\par
+      \nopagebreak
+  }
+
+  \lettergroup{C}
+  \item coeur, 5
+  \item côte, 8
+  \item côté, 10
+  \item cote, 7
+  \item coté, 9
+  \item cœur, 4
+
+  \indexspace
+
+  \lettergroup{E}
+  \item Élan, 3
+  \item eleve, 2
+  \item élève, 1
+
+  \indexspace
+
+  \lettergroup{O}
+  \item ça, 6
+
+\end{theindex}

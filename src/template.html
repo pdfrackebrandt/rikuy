@@ -1,0 +1,109 @@
+<title>Galley</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>/*FONTS*/</style>
+<style>/*KATEX*/</style>
+<style>/*CODEMIRROR*/</style>
+<style>/*APP*/</style>
+<div id="app">
+  <header id="bar">
+    <button id="b-nav" class="btn ghost icon" type="button" aria-pressed="false" title="Outline, problems and changes (Ctrl+Shift+O)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 5.5h13M6.5 10h10M6.5 14.5h10"/></svg><span class="sr">Outline and problems</span><span id="nav-dot" class="nav-dot" hidden></span></button>
+    <div class="brand"><span class="mark">Galley</span><span id="docname" class="docname"></span></div>
+    <div class="tools">
+      <button id="b-open" class="btn ghost" type="button" title="Open .tex, .bib, images or an Overleaf .zip (Ctrl+O)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h5l1.5 1.5H17v8.5H3z"/></svg><span>Open</span></button>
+      <button id="b-save" class="btn ghost" type="button" title="Download the project as .zip (Ctrl+S)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-4-4 4 4 4-4M4 15.5h12"/></svg><span>Save .zip</span></button>
+      <button id="b-pdf" class="btn ghost" type="button" aria-pressed="false" title="Compile with pdfLaTeX and show the PDF (Ctrl+P)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5h7l3.5 3.5v11.5H5zM12 2.5V6h3.5M7.5 10h5M7.5 13h5"/></svg><span>PDF</span></button>
+      <button id="b-copy" class="btn ghost" type="button" title="Copy the .tex source to the clipboard"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="6.5" y="6.5" width="9" height="10" rx="1"/><path d="M4.5 13V4.5a1 1 0 0 1 1-1H12"/></svg><span>Copy source</span></button>
+      <span class="sep"></span>
+      <button id="b-undo" class="btn ghost icon" type="button" title="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5 3.5 8.5 7 12M4 8.5h8a4 4 0 0 1 0 8H9"/></svg><span class="sr">Undo</span></button>
+      <button id="b-redo" class="btn ghost icon" type="button" title="Redo (Ctrl+Shift+Z)" disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m13 5 3.5 3.5L13 12m3-3.5H8a4 4 0 0 0 0 8h3"/></svg><span class="sr">Redo</span></button>
+      <span class="sep"></span>
+      <div class="zoom" role="group" aria-label="Zoom">
+        <button id="b-zout" class="btn ghost icon" type="button" title="Zoom out"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10h10"/></svg><span class="sr">Zoom out</span></button>
+        <button id="zoomv" class="btn ghost zv" type="button" title="Fit width">Fit</button>
+        <button id="b-zin" class="btn ghost icon" type="button" title="Zoom in"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10h10M10 5v10"/></svg><span class="sr">Zoom in</span></button>
+      </div>
+      <span class="sep"></span>
+      <button id="b-ai" class="btn ghost ai-only" type="button" title="Ask Claude to rewrite the selection"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v4M10 13.5v4M2.5 10h4M13.5 10h4M5 5l2.2 2.2M12.8 12.8 15 15M15 5l-2.2 2.2M7.2 12.8 5 15"/></svg><span>Ask Claude</span></button>
+      <button id="b-src" class="btn ghost" type="button" aria-pressed="false" title="Show the source (Ctrl+\)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 6-4 4 4 4m6-8 4 4-4 4"/></svg><span>Source</span></button>
+      <button id="b-help" class="btn ghost icon" type="button" title="How it works"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M8 8a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.2v.5M10 14v.2"/></svg><span class="sr">Help</span></button>
+    </div>
+  </header>
+  <main id="main">
+    <aside id="nav" aria-label="Outline, problems, changes and git">
+      <div class="nav-tabs" role="tablist">
+        <button id="nt-outline" class="nav-tab on" type="button" role="tab" aria-selected="true">Outline</button>
+        <button id="nt-problems" class="nav-tab" type="button" role="tab" aria-selected="false">Problems<span id="nt-count" class="nt-count"></span></button>
+        <button id="nt-changes" class="nav-tab" type="button" role="tab" aria-selected="false" title="Changes and versions">Changes<span id="nt-ccount" class="nt-count"></span></button>
+        <button id="nt-git" class="nav-tab" type="button" role="tab" aria-selected="false" title="Commits, branches, push and pull">Git<span id="nt-gcount" class="nt-count"></span></button>
+        <span class="grow"></span>
+        <button id="nav-close" class="pop-x" type="button" aria-label="Close">&times;</button>
+      </div>
+      <div id="nav-body" class="nav-body" role="tabpanel"></div>
+    </aside>
+    <section id="desk" aria-label="Typeset pages">
+      <div id="sheet" class="sheet">
+        <div id="pages" contenteditable="true" spellcheck="true" role="textbox" aria-multiline="true" aria-label="Document"></div>
+        <div id="mhost" class="mhost" aria-hidden="true"><div id="mflow" class="flow"></div><div id="mfns" class="fns"></div></div>
+      </div>
+      <div id="boot" class="boot">Typesetting&hellip;</div>
+      <div class="dropzone">Drop .tex, .bib, images or a .zip to open</div>
+    </section>
+    <div id="gutter" aria-hidden="true"></div>
+    <aside id="srcpane" aria-label="LaTeX source">
+      <div id="ftabs" class="ftabs"></div>
+      <div id="cmhost"></div>
+    </aside>
+    <aside id="pdfpane" aria-label="PDF from TeX">
+      <div class="pdf-bar">
+        <span id="pdf-status" class="pdf-status" role="status">LaTeX</span>
+        <span class="grow"></span>
+        <select id="pdf-engine" class="pdf-engine" aria-label="TeX engine" title="Which TeX engine compiles this project">
+          <option value="auto">Auto</option><option value="pdflatex">pdfLaTeX</option><option value="xelatex">XeLaTeX</option><option value="lualatex">LuaLaTeX</option><option value="latex">LaTeX (dvips)</option>
+        </select>
+        <label class="pdf-shell" title="Let packages run programs: minted (Pygments), gnuplot, EPS and PostScript (Ghostscript), makeindex. They run inside this page, never on your computer."><input id="pdf-shell" type="checkbox" checked> Shell escape</label>
+        <button id="pdf-re" class="btn ghost sm" type="button" title="Compile again from scratch">Recompile</button>
+        <button id="pdf-dl" class="btn ghost sm" type="button" title="Download the PDF" disabled>Download</button>
+        <button id="pdf-x" class="pop-x" type="button" aria-label="Close the PDF">&times;</button>
+      </div>
+      <div id="pdf-prog" class="pdf-prog" hidden><span></span></div>
+      <button id="pdf-msg" class="pdf-msg" type="button" hidden></button>
+      <div id="pdf-host" class="pdf-host"></div>
+    </aside>
+  </main>
+  <footer id="status">
+    <span id="st-pages"></span><span id="st-words"></span><button id="st-warn" class="linkish" type="button" hidden></button>
+    <span class="grow"></span>
+    <span id="st-save">Kept in this browser</span>
+    <button id="b-sample" class="linkish" type="button">Load the sample</button>
+  </footer>
+  <div id="bubble" class="bubble" hidden>
+    <button type="button" data-act="bf" title="Bold"><b>B</b></button>
+    <button type="button" data-act="em" title="Emphasis"><i>I</i></button>
+    <button type="button" data-act="tt" title="Typewriter" class="mono">tt</button>
+    <button type="button" data-act="src" title="Show in source">&lt;/&gt;</button>
+    <button type="button" data-act="ai" class="ai-only" title="Ask Claude">Ask Claude</button>
+  </div>
+  <aside id="ask" class="ask" hidden aria-label="Ask Claude">
+    <div class="ask-h"><span>Ask Claude</span><button id="ask-close" class="pop-x" type="button" aria-label="Close">&times;</button></div>
+    <div class="ask-lab">Selected LaTeX</div>
+    <pre id="ask-frag" class="ask-frag"></pre>
+    <div class="ask-presets">
+      <button class="btn ghost sm" type="button" data-ask="Tighten this. Cut words that carry no information. Keep the meaning.">Tighten</button>
+      <button class="btn ghost sm" type="button" data-ask="Fix grammar, spelling and LaTeX errors only. Change nothing else.">Fix errors</button>
+      <button class="btn ghost sm" type="button" data-ask="Make this read like a top economics journal: precise, formal, plain.">More formal</button>
+      <button class="btn ghost sm" type="button" data-ask="Rewrite so the argument is easier to follow on first read.">Clearer</button>
+    </div>
+    <div class="ask-in"><input id="ask-instr" type="text" placeholder="Or say what to change"><button id="ask-go" class="btn sm" type="button">Ask</button></div>
+    <label class="ask-lab" for="ask-style">House style</label>
+    <textarea id="ask-style" rows="2"></textarea>
+    <textarea id="ask-out" class="code" rows="8" hidden></textarea>
+    <div id="ask-actions" class="pop-row" hidden><button id="ask-discard" class="btn ghost sm" type="button">Discard</button><span class="grow"></span><button id="ask-accept" class="btn sm" type="button">Replace selection</button></div>
+    <button id="ask-stop" class="btn ghost sm" type="button" hidden>Stop</button>
+  </aside>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <input id="fileinput" type="file" multiple hidden accept=".tex,.bib,.zip,.sty,.cls,.bst,.bbl,.png,.jpg,.jpeg,.gif,.svg,.webp,.pdf,.txt">
+</div>
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js"></script>
+<script>/*APPJS*/</script>

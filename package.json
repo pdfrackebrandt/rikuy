@@ -1,0 +1,29 @@
+{
+  "name": "galley",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@isomorphic-git/lightning-fs": "^4.10.3",
+    "@okathira/ghostpdl-wasm": "^1.1.0",
+    "buffer": "^6.0.3",
+    "codemirror": "^5.65.16",
+    "computer-modern": "^0.1.3",
+    "esbuild": "^0.28.2",
+    "fflate": "^0.8.2",
+    "gnuplot-wasm": "^0.1.0",
+    "isomorphic-git": "^1.43.3",
+    "jszip": "^3.10.1",
+    "katex": "^0.16.22",
+    "mathlive": "0.110.0",
+    "pdfjs-dist": "^4.10.38",
+    "pyodide": "^314.0.7"
+  },
+  "type": "module"
+}

@@ -1,0 +1,4 @@
+(indexentry :tkey (("sample" "\\glossentry{sample}") ) :locref "1" :attr "pageglsnumberformat" )
+(indexentry :tkey (("apple" "\\glossentry{apple}") ) :locref "2" :attr "glsnumberformat" )
+(indexentry :tkey (("sample" "\\glossentry{sample}") ) :locref "3" :attr "glsnumberformat" )
+(indexentry :tkey (("zed" "\\glossentry{zed}") ) :locref "4" :attr "textbf" )

@@ -1,0 +1,13 @@
+; xindy style file created by the glossaries package
+(require "tex/inputenc/utf8.xdy")
+(define-attributes (( "pageglsnumberformat" "glsnumberformat" "textrm" "textbf" "hyperpage" )))
+(markup-index :open "\glossarysection[\glossarytoctitle]{\glossarytitle}\glossarypreamble~n\begin{theglossary}\glossaryheader~n" :close "\end{theglossary}\glossarypostamble~n" :tree)
+(markup-letter-group-list :sep "\glsgroupskip~n")
+(markup-indexentry :open "~n\glossentry" :depth 0)
+(markup-locclass-list :open "{\glossaryentrynumbers{\relax " :sep "\setentrycounter[]{page}" :close "}}")
+(markup-locref-list :sep "\delimN ")
+(markup-range :sep "\delimR ")
+(define-location-class "arabic-page-numbers" ("arabic-numbers"))
+(define-letter-groups ("a" "b" "c" "d" "e" "f" "g" "h" "i" "j" "k" "l" "m" "n" "o" "p" "q" "r" "s" "t" "u" "v" "w" "x" "y" "z"))
+(markup-locref :open "\glsnumberformat{" :close "}" :attr "glsnumberformat")
+(markup-locref :open "\textbf{" :close "}" :attr "textbf")
