@@ -328,3 +328,8 @@ All three native tools are now rebuilt from source.
 xindy build ran with GMP and Boehm GC but the final tar step hit ownership errors. 
 The existing prebuilt xindy.wasm remains and passes its tests. 
 dvips and asy were successfully rebuilt from source.
+
+## Status 2026-10-16 03:00
+
+Additional corpus batch (166 docs): 141 ok, 25 fail. 
+Pipeline continues to work. Full 719-doc sweep still needs uninterrupted time.
