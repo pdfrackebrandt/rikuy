@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+"""Unpack BusyTeX MiniLZ4 .data/.js packages into a directory tree."""
 import os, re, json, lz4.block, sys
 
 CHUNK = 2048
@@ -12,21 +13,23 @@ def unpack(js_path, data_path, out_dir):
         return
     files = json.loads(m.group(1))
     cm = re.search(r'var compressedData = (\{.*?\});', js, re.DOTALL)
-    offs = [int(x) for x in re.search(r'"offsets":\[([^\]]+)\]', cm.group(1)).group(1).split(',')]
+    cd = cm.group(1)
+    offs = [int(x) for x in re.search(r'"offsets":\[([^\]]+)\]', cd).group(1).split(',')]
+    succ_m = re.search(r'"successes":\[([^\]]+)\]', cd)
+    successes = [int(x) for x in succ_m.group(1).split(',')] if succ_m else [1] * (len(offs)-1)
     chunks = []
     for i in range(len(offs)-1):
         c = data[offs[i]:offs[i+1]]
-        try:
-            d = lz4.block.decompress(c, uncompressed_size=CHUNK)
-        except Exception:
+        if successes[i]:
             try:
-                d = lz4.block.decompress(c)
+                d = lz4.block.decompress(c, uncompressed_size=CHUNK)
             except Exception:
-                # last partial or bad; try with smaller
-                d = b'\x00' * CHUNK
-        chunks.append(d[:CHUNK])  # trim if longer
+                d = lz4.block.decompress(c)
+            chunks.append(d[:CHUNK])
+        else:
+            chunks.append(c[:CHUNK])
     full = b''.join(chunks)
-    print(f"  decompressed {len(full)} bytes from {len(chunks)} chunks")
+    print(f"  decompressed {len(full)} bytes from {len(chunks)} chunks ({sum(successes)} compressed)")
     count = 0
     for f in files:
         path = f['filename'].lstrip('/')
