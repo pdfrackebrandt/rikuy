@@ -189,3 +189,8 @@ The pipeline correctly reports ok=false for broken documents and ok=true for wor
 - 1 fail (`le/presentations/Sommerakademie-2015-Forschung/...`)
 
 The tooling works. Full 719-doc run is still a long job; the pipeline is solid.
+
+## Status 2026-10-15 22:50
+
+Math subset of the corpus: 22 ok, 4 fail (out of 26). 
+The tooling is working. Full sweep remains a long-running job.
