@@ -122,3 +122,13 @@ No such unpacker is in the Galley repo. Until it exists, `build_tree.py tree` ca
 ## tree-extra unpack (done 2026-10-15)
 
 `tex/unpack_busytex.py` unpacks the BusyTeX MiniLZ4 `.data` packages into `$GALLEY_WORK/tree-extra`. After running it, `python3 tex/build_tree.py tree` succeeds and produces `$GALLEY_WORK/galley-tree` (~422 MB). The pure-node tests continue to pass.
+
+## Status as of 2026-10-15 21:30
+
+- `tex/unpack_busytex.py` unpacks BusyTeX MiniLZ4 packages into `tree-extra`.
+- `python3 tex/build_tree.py tree` succeeds → `galley-tree` (~422 MB).
+- `python3 tex/build_tree.py packs` succeeds → packs (~172 MB).
+- Node tests and xindy 11/11 pass.
+- `fetch_inputs.sh` has working Ubuntu URLs.
+
+Remaining for a full corpus run: build the web dist (needs the packs + wasm), then run `dev/texrun.py` against the MartinThoma corpus. Task 1 (clean native rebuild of xindy/asy/dvips) still needs emscripten.
