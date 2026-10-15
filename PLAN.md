@@ -244,3 +244,8 @@ Pipeline continues to work. Full sweep still needs uninterrupted time.
 
 Broader run (90 docs): 73 ok, 17 fail. 
 Pipeline continues to work. Full 719-doc sweep still needs uninterrupted time.
+
+## Status 2026-10-16 00:30
+
+Larger batch (132 docs): 115 ok, 19 fail. 
+Pipeline continues to work. Full 719-doc sweep still needs uninterrupted time.
