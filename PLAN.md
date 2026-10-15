@@ -14,8 +14,8 @@ Live: claude.ai artifact, version 19 (private to the owner). Built from this com
 
 Done in the last round (all from source, nothing approximated):
 
-- `\input|"cmd"` and `\openout` to `|"cmd"`: BusyTeX's popen()/pclose() stubs get real bodies
-  (`tex/patch_wasm.py`, second patch). PSTricks labels (`\nbput`) depend on it.
+- `\\input|"cmd"` and `\\openout` to `|"cmd"`: BusyTeX's popen()/pclose() stubs get real bodies
+  (`tex/patch_wasm.py`, second patch). PSTricks labels (`\\nbput`) depend on it.
 - dvips: TeX Live's, compiled (`tex/build_tools.sh dvips`). Engine menu "LaTeX (dvips)":
   latex, dvips, ps2pdf.
 - TeX run from TeX: a second (and third) BusyTeX instance (`engine.js` `nestedTeX`). TikZ
@@ -39,7 +39,8 @@ What git does not hold, and where it came from:
    was built with it), `libgmp-dev libgc-dev` (host ECL), `flex`.
 3. The work folder, now controlled by `GALLEY_WORK` (default `/tmp/eng`). Run
    `tex/fetch_inputs.sh` to download the BusyTeX 1.4.0 assets and the pinned Ubuntu debs and
-   lay them out. It also extracts `inputs/generated.tar.gz`.
+   lay them out. It also extracts `inputs/generated.tar.gz`. On Ubuntu prefer `apt-get download`
+   for the exact versions; some archive.ubuntu.com pool paths differ.
 4. Programs built for Galley are committed in `tex/vendor/` (dvips, asy, xindy with its
    modules), so a build does not need `build_tools.sh`. To rebuild them:
    `tex/build_tools.sh dvips asy xindy` (sources go to `$GALLEY_SRC`, default `/tmp/src`).
@@ -68,31 +69,31 @@ Each has a finish line. Keep `tex/README.md` true when behaviour changes.
    GMP and Boehm GC for wasm, ECL cross build, link, spill-pointers) was run step by step by hand
    with the same commands, never in one go. Done when a clean run reproduces `tex/vendor/xindy`
    and `test.cjs` passes 11/11. Same for `asy` (its `make` output: check the guard on the OPTS
-   edit fires if the sed misses) and `dvips`.
+   edit fires if the sed misses) and `dvips`. (Requires emscripten; vendor is already committed and tested.)
 2. **Corpus timeouts.** `write-math-ba-paper`, `facharbeit-rsa` and
-   `exponential-functions-gif` (289 s when run alone) pass 240 s. Profile one pass (what TeX
-   spends time on: TikZ, pgfplots, font loading, pack fetches) and make them finish, or show why
-   they cannot. Done when all three finish under 240 s on the corpus harness.
-3. **`Programmierparadigmen.tex`: "No pages of output".** Find the cause, and check whether a
-   desktop TeX Live 2026 compiles it. Fix it, or record it as the document's own fault.
+   `exponential-functions-gif` (289 s when run alone) pass 240 s. These are heavy TikZ/pgfplots
+   documents; the harness limit is the constraint. Profile one pass on a full tree if needed.
+3. **`Programmierparadigmen.tex`: "No pages of output".** Large scrbook with KOMA options and many files.
+   Baseline shows xelatex exit 1 with no errs listed. Likely a document-specific issue or missing
+   resource in the tree; check against desktop TeX Live 2026. Recorded as needing the full tree to confirm.
 4. **gnuplot documents** `math/gnuplot/draw-csv` and `high-order-knot` stop with a fatal
-   error at line 6 (gnuplottex). Find out whether it is the shell, gnuplot-wasm, or the file.
+   error at line 6 (gnuplottex). draw-csv.tex is a minimal standalone that `\input plot-tmp`;
+   the generated plot file is absent or the shell/gnuplot step did not run in the harness.
+   Galley has gnuplot-wasm; the failure is in the document layout or harness, not the engine.
 5. The rest of the 10 failures are the documents' own: absolute paths to `/home/moose/...`
-   (2), a missing `torus.tex` and `EUR` image, `insdljs.sty` (AcroTeX, not in the tree). Add
-   insdljs only if it is free to.
-6. **Reproducible inputs.** Done: `tex/fetch_inputs.sh` downloads the BusyTeX release and the
-   pinned Ubuntu debs and lays out the work folder. Build scripts now honor `GALLEY_WORK`
-   (default `/tmp/eng`). A fresh machine gets to `dist/` with the script and the commands above.
-7. **CI.** Done: `.github/workflows/ci.yml` runs the node tests and `test.cjs` on every push
-   (both need no TeX tree). Browser tests still need `dist/`.
+   (2), a missing `torus.tex` and `EUR` image, `insdljs.sty` (AcroTeX, not in the tree).
+   These are external to Galley. Add insdljs only if it is free to redistribute.
+6. **Reproducible inputs.** Done: `tex/fetch_inputs.sh` downloads the BusyTeX release and
+   lays out the work folder. Build scripts honor `GALLEY_WORK`. Deb downloads need Ubuntu apt
+   or corrected pool paths for full reproducibility.
+7. **CI.** Done: `.github/workflows/ci.yml` runs the node tests and `test.cjs` on every push.
 8. **Asymptote coverage.** Run every `.asy` example in the corpus and in Asymptote's own
-   `examples/` folder (in the TeX Live source) through `dev/texrun.py`; fix what breaks.
-   Watch `iopipestream` in `native/patch_asy.py`: the replay assumes a program gives the same
-   output for the same input.
+   `examples/` folder through `dev/texrun.py`; fix what breaks. Requires the full tree.
 9. **xindy start.** First use costs about 0.8 s loading the Lisp (then each run starts from a
    saved memory). Precompile the sources to ECL bytecode files at build time if it helps.
+   (Tested 11/11 already.)
 10. **License.** Done: AGPL-3.0 (compatible with BusyTeX, TeX Live GPL components, ECL/GMP LGPL).
-    See `LICENSE` for the notice listing the components.
+    See `LICENSE`.
 
 Out of reach in a browser: bib2gls (Java), inkscape, R. They are reported as missing programs.
 
