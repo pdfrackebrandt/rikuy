@@ -148,3 +148,11 @@ Minimal `dev/texrun.py` run on a one-page article reached pdfTeX and loaded arti
 `!pdfTeX error: .../cmr10.pfb: unexpected end of file`
 
 This matches the unpacker's handling of partial/corrupt MiniLZ4 chunks (some were padded). The tree is otherwise complete enough for the engine to start. A cleaner unpack (or the original hand-unpacked tree) is needed for full font coverage. Node tests and xindy still pass.
+
+## Status 2026-10-15 22:00
+
+The improved unpacker produces a complete `cmr10.pfb` (correct PFB header and trailer). The tree is valid. Packs rebuild successfully (~141 MB). 
+
+`dev/texrun.py` still fails to produce a PDF in this sandbox (connection reset while serving the dist). The dist/tex packs need to be regenerated via the full `build_all.sh` / `build.mjs` path for the worker to see the corrected files. Node tests and xindy continue to pass.
+
+The unpacker and tree pipeline are solid. Full corpus verification needs a complete dist rebuild on a machine with stable Playwright.
