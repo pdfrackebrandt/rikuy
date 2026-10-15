@@ -19,3 +19,6 @@ published as a private claude.ai artifact; any static host works too.
   Lua caches, the pdfLaTeX format, the corpus usage profile)
 
 Where the work stands and what is left: [PLAN.md](PLAN.md).
+
+To get a working build on a fresh machine: `tex/fetch_inputs.sh` (sets up `$GALLEY_WORK`),
+then the build commands in PLAN.md. CI runs the pure-node tests on push.
