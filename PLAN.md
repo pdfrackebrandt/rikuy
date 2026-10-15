@@ -204,3 +204,8 @@ Combined with earlier samples, the pipeline is handling the corpus correctly. Fu
 
 TikZ subset: 21 ok, 0 fail. 
 Pipeline continues to handle the corpus correctly.
+
+## Status 2026-10-15 23:20
+
+Presentations subset: 6 ok, 1 fail. 
+Pipeline continues to work. Full sweep still needs uninterrupted time.
