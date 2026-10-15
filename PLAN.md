@@ -141,3 +141,10 @@ Remaining for a full corpus run: build the web dist (needs the packs + wasm), th
 - Corpus runs (`dev/texrun.py`) need the complete dist with caches.
 
 The unpacker, tree, packs, and pure-node tests are solid. A machine with Playwright browsers and sufficient resources can finish the caches and corpus.
+
+## Status 2026-10-15 21:50
+
+Minimal `dev/texrun.py` run on a one-page article reached pdfTeX and loaded article.cls, but failed with:
+`!pdfTeX error: .../cmr10.pfb: unexpected end of file`
+
+This matches the unpacker's handling of partial/corrupt MiniLZ4 chunks (some were padded). The tree is otherwise complete enough for the engine to start. A cleaner unpack (or the original hand-unpacked tree) is needed for full font coverage. Node tests and xindy still pass.
