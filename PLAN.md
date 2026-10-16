@@ -395,3 +395,12 @@ Remaining failures are mostly harness crashes or packages outside the Ubuntu 202
 cmap.tex (previously a harness crash) succeeds with a 300s timeout (ok=true, 1.5s).
 Some of the 11 harness crashes are timeout-related rather than true failures.
 A full re-run with a higher timeout would recover more of them.
+
+## Status 2026-10-16 13:00 — 360s timeout
+
+Full sweep with 360s timeout:
+- 688 ok
+- 31 fail
+- Total 719
+
+Recovered one more document from the previous 687. Remaining failures are packages outside the Ubuntu 2023 set or true harness crashes.
