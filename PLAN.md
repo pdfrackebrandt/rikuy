@@ -368,3 +368,12 @@ dvips and asy remain freshly rebuilt.
 Added texlive-fonts-extra, texlive-publishers, texlive-games to the tree.
 Previously failing `chess-chessboard-4x4.tex` now compiles (ok=true).
 dsfont, IEEEtran, chessboard are now in the tree.
+
+## Status 2026-10-16 11:00 — expanded corpus
+
+Full sweep with fonts-extra/publishers/games:
+- 687 ok
+- 32 fail
+- Total 719
+
+Improved from the previous 674/45. Remaining failures are document-specific.
