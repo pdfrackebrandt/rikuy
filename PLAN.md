@@ -411,3 +411,9 @@ asymptote.sty is in the tree and packs were rebuilt.
 A retest of torus-three-paths.tex still fails (empty errs). 
 The asy integration needs more than the sty file. 
 Remaining 31 failures are packages outside Ubuntu 2023 or true harness issues.
+
+## Status 2026-10-16 13:45
+
+asymptote.sty is in the tree at the correct path and packs were rebuilt. 
+Documents still report it as not found, so the pack index or kpse lookup is not picking it up. 
+Remaining 31 failures are packages outside Ubuntu 2023, true harness crashes, or asy integration that needs deeper work.
