@@ -356,3 +356,9 @@ Full 719-document sweep finished:
 - 45 fail
 
 This matches the expected baseline (document-specific failures). The pipeline is working end-to-end.
+
+## Status 2026-10-16 09:30
+
+xindy clean rebuild produced a wasm that fails validation/tests. 
+Original prebuilt restored and still passes 11/11. 
+dvips and asy remain freshly rebuilt.
