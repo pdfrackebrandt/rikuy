@@ -435,3 +435,9 @@ Remaining 31 failures stand. The system is complete for the Ubuntu TeX Live pack
 asymptote.sty is grouped under tex/latex/asymptote and the emit debug fires, but the content is not in the resulting pack wasm (even decompressed).
 The pack writing or grouping for large combined groups needs deeper investigation.
 Remaining 31 failures stand.
+
+## Status 2026-10-16 14:45
+
+asymptote.sty IS in a pack (dist/tex/p-81d4e474b5b16300.wasm). 
+The earlier search looked in the wrong directory. 
+Documents still report it not found, so the kpse index or runtime lookup for this pack is the remaining issue.
