@@ -383,3 +383,9 @@ Improved from the previous 674/45. Remaining failures are document-specific.
 Added texlive-latex-recommended. multido/nth/lambda still missing (not in the Ubuntu 2023 set).
 asymptote.sty is not shipped with the asy base modules.
 Remaining 32 failures are mostly harness crashes/timeouts or packages outside the current TeX Live subset.
+
+## Status 2026-10-16 11:45
+
+asymptote.sty and asycolors.sty added to the tree from the asy source.
+A previously failing asy document still fails (empty errs, likely harness or asy integration).
+Remaining failures are mostly harness crashes or packages outside the Ubuntu 2023 set.
