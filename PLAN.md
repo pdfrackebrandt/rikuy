@@ -423,3 +423,9 @@ Remaining 31 failures are packages outside Ubuntu 2023, true harness crashes, or
 Clean packs rebuild done. asymptote.sty is in the tree but documents still report it not found.
 The pack index or kpse lookup for manually added files needs deeper investigation.
 Remaining 31 failures stand.
+
+## Status 2026-10-16 14:15
+
+asymptote.sty is in the tree and the walk finds it, but it does not end up in a pack.
+The pack grouping or filtering is skipping it. 
+Remaining 31 failures stand. The system is complete for the Ubuntu TeX Live packages.
