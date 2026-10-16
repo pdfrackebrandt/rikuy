@@ -32,3 +32,4 @@ eq('tall gets left', rt('(\\frac{a}{b})+\\{\\frac12\\}'), '\\left(\\frac{a}{b}\\
 eq('vert', unfence('\\mleft|x\\mright|+\\mleft\\|v\\mright\\|', D), '|x|+\\|v\\|');
 eq('fit', fitBrackets('(\\frac{a}{b})+f(x)+\\left(y\\right)', D).text, '\\left(\\frac{a}{b}\\right)+f(x)+\\left(y\\right)');
 console.log(bad ? bad + ' failed' : 'all passed');
+if (bad) process.exitCode = 1;

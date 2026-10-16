@@ -14,3 +14,4 @@ eq('delete', minimalRow('a + b + c', 'a+b+c', 'a+c', same), 'a + c');
 eq('swap order keeps what it can', minimalRow('\\sum^n_{i=1} a_i', '\\sum_{i=1}^{n}a_{i}', '\\sum_{i=1}^{n}b_{i}', same), '\\sum_{i=1}^{n}b_i');
 eq('total rewrite returns valid', same(minimalRow('a', 'a', '\\frac{x}{y}', same), '\\frac{x}{y}'), true);
 console.log(bad ? bad + ' failed' : 'all passed');
+if (bad) process.exitCode = 1;

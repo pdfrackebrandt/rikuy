@@ -26,3 +26,4 @@ let bad=0, checked=0;
 const check=(inl)=>{ for (const x of inl) { if (x.k==='seg' && !x.ph) { for (let i=0;i<x.t.length;i++){ const s=x.map[2*i], e=x.map[2*i+1]; checked++; const raw=files.get(x.f).slice(s,e); const ch=x.t[i]; if (ch===' ' ? !/^\s+$/.test(raw) && raw!=='~' && !raw.startsWith('\\') : (raw!==ch && !raw.startsWith('\\') && !/^(--|---|``|''|`|'|~)$/.test(raw))) { if(bad<10) console.log('BAD map', JSON.stringify(ch), JSON.stringify(raw)); bad++; } } } if (x.kids) check(x.kids); } };
 for (const b of M.blocks) { for (const it of b.items) { if (it.inl) check(it.inl); if (it.lead) check(it.lead); if (it.title) { check(it.title); it.authors.forEach(check);} if (it.parts) it.parts.forEach(p=>{ if (p.inl) check(p.inl); if (p.rows) p.rows.forEach(r=>r.cells.forEach(c=>check(c.inl)));}); } b.fns.forEach(f=>check(f.inl)); }
 console.log('map check', checked, 'bad', bad);
+if (bad) process.exitCode = 1;

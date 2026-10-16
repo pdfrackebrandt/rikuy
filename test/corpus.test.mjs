@@ -25,6 +25,7 @@ for (const f of files) {
   } catch (e) { fail++; failures.push([f, e.stack.split('\n').slice(0, 3).join(' | ')]); }
 }
 console.log('docs', docs, 'ok', ok, 'fail', fail);
+if (fail) process.exitCode = 1;
 for (const x of failures.slice(0, 15)) console.log('FAIL', x[0].replace(root, ''), x[1]);
 console.log('slow', slow.slice(0, 10));
 console.log('top unknown:', [...warnCount].sort((a, b) => b[1] - a[1]).slice(0, 60).map(([k, v]) => k + ':' + v).join('  '));
