@@ -211,3 +211,18 @@ Remaining (2-12) require external resources:
 - TeX Live 2026 scheme-full (tasks 2, 4)
 - 1,000 arXiv papers (task 3)
 - specific emscripten / Mesa / webR builds (tasks 5, 10, 11)
+
+## Blockers (tasks 2-12)
+
+2. TeX Live 2026 scheme-full is multi-GB. Not available in this sandbox.
+3. 1,000 arXiv papers require rate-limited fetches and storage. Not done here.
+4. Depends on task 2's TeX Live 2026.
+5. dvips and asy were rebuilt earlier in this session. xindy clean rebuild
+   failed validation; the working prebuilt remains. A full empty-GALLEY_SRC
+   rebuild needs emsdk 3.1.6, which is not installed.
+6. Some corpus timeouts are document-specific (TikZ, pgfplots). A 360 s
+   timeout recovered one document (688/719). Further gains need profiling.
+7-9. Depend on the desktop comparison from task 2.
+10. asy 3D without OpenGL needs Mesa softpipe. Not built here.
+11. webR, bib2gls JVM, inkscape have no browser builds in this environment.
+12. xindy precompile needs a working ECL bytecode path. Not measured here.
