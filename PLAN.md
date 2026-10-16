@@ -198,3 +198,16 @@ Remaining tasks (2-12) require resources not available in this sandbox:
 
 The system works for the packages in the Ubuntu TeX Live set. Further
 tasks need external resources or a source freeze for the manifest.
+
+## Status 2026-10-17 00:10
+
+Closed:
+- Task 0: manifest regenerated from current build; matches dist.
+- Task 1: hardcoded paths removed.
+- Task 13: usertest.md and editor harness skeleton committed.
+- Task 15: full AGPL-3.0 and NOTICE committed.
+
+Remaining (2-12) require external resources:
+- TeX Live 2026 scheme-full (tasks 2, 4)
+- 1,000 arXiv papers (task 3)
+- specific emscripten / Mesa / webR builds (tasks 5, 10, 11)
