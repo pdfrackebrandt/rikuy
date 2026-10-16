@@ -441,3 +441,8 @@ Remaining 31 failures stand.
 asymptote.sty IS in a pack (dist/tex/p-81d4e474b5b16300.wasm). 
 The earlier search looked in the wrong directory. 
 Documents still report it not found, so the kpse index or runtime lookup for this pack is the remaining issue.
+
+## Status 2026-10-16 15:00
+
+asymptote.sty is in the pack AND in the index (tree.wasm). 
+Documents still report it not found. The runtime kpse lookup or pack loading order is the remaining issue.
