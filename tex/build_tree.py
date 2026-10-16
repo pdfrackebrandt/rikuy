@@ -507,7 +507,7 @@ def build_packs():
 
     # biber (biblatex's default backend): its own Perl in WebAssembly, fetched on first use
     biber = {}
-    for key, src in [('wasm', '/tmp/eng/busy/busytex/biber.wasm'), ('data', '/tmp/eng/busy/busytex/biber.data')]:
+    for key, src in [('wasm', os.path.join(WORK, 'busy/busytex/biber.wasm')), ('data', os.path.join(WORK, 'busy/busytex/biber.data'))]:
         z = gzip.compress(open(src, 'rb').read(), 9, mtime=0)
         assert len(z) < CH
         fn = 'b-%s.wasm' % sha(z)
@@ -608,7 +608,7 @@ def update_tools():
 # The worker asks it for a file only when kpathsea finds nothing locally (BusyTeX's
 # kpse_remote_fetch_js hook), so a document pays only for what it uses. Fonts that come from
 # the mirror need their map lines, so the mirror carries TeX Live's whole pdftex.map too.
-MIRROR_OUT = os.environ.get('GALLEY_MIRROR_OUT', '/tmp/eng/mirror')
+MIRROR_OUT = os.environ.get('GALLEY_MIRROR_OUT', os.path.join(WORK, 'mirror'))
 
 
 def build_mirror():
@@ -669,8 +669,8 @@ def build_mirror():
             chosen[k] = l; order.append(k)
     full = ['% pdftex.map for Galley with the full TeX Live mirror'] + [chosen[k] for k in order]
     print('full map lines', len(full) - 1)
-    os.makedirs('/tmp/eng/mirror-extra', exist_ok=True)
-    fullmap = '/tmp/eng/mirror-extra/pdftex-full.map'
+    os.makedirs(os.path.join(WORK, 'mirror-extra'), exist_ok=True)
+    fullmap = os.path.join(WORK, 'mirror-extra/pdftex-full.map')
     open(fullmap, 'w', encoding='latin-1').write('\n'.join(full) + '\n')
     files[TD + 'texmf-var/fonts/map/pdftex/updmap/pdftex-full.map'] = fullmap
 

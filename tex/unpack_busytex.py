@@ -47,8 +47,8 @@ def unpack(js_path, data_path, out_dir):
 
 
 if __name__ == '__main__':
-    base = sys.argv[1] if len(sys.argv) > 1 else '/tmp/eng/busy/busytex'
-    out = sys.argv[2] if len(sys.argv) > 2 else '/tmp/eng/tree-extra'
+    base = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.environ.get('GALLEY_WORK', '/tmp/eng'), 'busy/busytex')
+    out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.environ.get('GALLEY_WORK', '/tmp/eng'), 'tree-extra')
     os.makedirs(out, exist_ok=True)
     for name in ['texlive-basic', 'texlive-recommended', 'texlive-extra']:
         js, data = os.path.join(base, name + '.js'), os.path.join(base, name + '.data')

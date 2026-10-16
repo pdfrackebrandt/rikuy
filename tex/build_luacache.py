@@ -7,7 +7,7 @@ Usage: build_luacache.py [dist dir]"""
 import os, sys, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'test'))
 os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
-os.environ['GALLEY_DIST'] = sys.argv[1] if len(sys.argv) > 1 else '/tmp/eng/dist2'
+os.environ['GALLEY_DIST'] = sys.argv[1] if len(sys.argv) > 1 else os.environ.get('GALLEY_WORK', '/tmp/eng') + '/dist2'
 import serve
 from playwright.sync_api import sync_playwright
 serve.start(8802)
@@ -20,7 +20,7 @@ DOC = r'''\documentclass{article}
 $x^{y^z} + \int f = \sum_i a_i$ \[ \mathbf{A}\mathbb{R}\mathcal{C} \]
 \end{document}'''
 C = '/texlive/texmf-dist/texmf-var/luatex-cache/generic/fonts/otl'
-OUT = '/tmp/eng/extra' + C
+OUT = os.environ.get('GALLEY_WORK', '/tmp/eng') + '/extra' + C
 with sync_playwright() as pw:
     b = pw.chromium.launch(); pg = b.new_page()
     pg.goto('http://127.0.0.1:8802/tex-smoke.html')
@@ -37,10 +37,10 @@ with sync_playwright() as pw:
     if nfiles:
         pg.evaluate("(names) => exec({args: ['kpsewhich', '--version'], read: names.map((n) => '%s/' + n)})" % NAMES, nfiles)
         pg.wait_for_function('window.execResult || window.err', timeout=600000)
-        os.makedirs('/tmp/eng/extra' + NAMES, exist_ok=True)
+        os.makedirs(os.environ.get('GALLEY_WORK', '/tmp/eng') + '/extra' + NAMES, exist_ok=True)
         for n in nfiles:
             data = bytes(pg.evaluate("(p) => Array.from(execResult.files[p])", NAMES + '/' + n))
-            open('/tmp/eng/extra' + NAMES + '/' + n, 'wb').write(data)
+            open(os.environ.get('GALLEY_WORK', '/tmp/eng') + '/extra' + NAMES + '/' + n, 'wb').write(data)
             print('  saved', n, len(data))
     # 2. the tables for Latin Modern
     pg.evaluate("""([d]) => exec({args: ['luahblatex', '--interaction=nonstopmode', '--nosocket', '--fmt', '/texlive/texmf-dist/texmf-var/web2c/luahbtex/luahblatex.fmt', 'main.tex'],
