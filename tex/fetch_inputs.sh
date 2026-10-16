@@ -57,3 +57,8 @@ fi
 
 echo "Inputs laid out under $WORK"
 echo "Note: tree-extra still needs the BusyTeX .data packages unpacked (see PLAN.md)."
+
+# Additional packages for corpus coverage
+fetch texlive-fonts-extra "http://mirrors.kernel.org/ubuntu/pool/universe/t/texlive-extra/texlive-fonts-extra_2023.20240207-1_all.deb"
+fetch texlive-publishers "http://mirrors.kernel.org/ubuntu/pool/universe/t/texlive-extra/texlive-publishers_2023.20240207-1_all.deb"
+fetch texlive-games "http://mirrors.kernel.org/ubuntu/pool/universe/t/texlive-extra/texlive-games_2023.20240207-1_all.deb"

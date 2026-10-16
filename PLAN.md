@@ -362,3 +362,9 @@ This matches the expected baseline (document-specific failures). The pipeline is
 xindy clean rebuild produced a wasm that fails validation/tests. 
 Original prebuilt restored and still passes 11/11. 
 dvips and asy remain freshly rebuilt.
+
+## Status 2026-10-16 09:50 — more packages
+
+Added texlive-fonts-extra, texlive-publishers, texlive-games to the tree.
+Previously failing `chess-chessboard-4x4.tex` now compiles (ok=true).
+dsfont, IEEEtran, chessboard are now in the tree.
