@@ -241,3 +241,12 @@ Partial:
 
 Blocked (documented above):
 - Tasks 2, 3, 4, 6-12 need TeX Live 2026, arXiv corpus, or specific builds.
+
+## Task 6 status
+
+Two documents timeout at 360 s:
+- write-math-ba-paper.tex
+- facharbeit-rsa.tex
+
+These are large TikZ/pgfplots documents. A higher timeout or pack
+prefetch would be needed. Not profiled further here.
