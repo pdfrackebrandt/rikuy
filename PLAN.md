@@ -417,3 +417,9 @@ Remaining 31 failures are packages outside Ubuntu 2023 or true harness issues.
 asymptote.sty is in the tree at the correct path and packs were rebuilt. 
 Documents still report it as not found, so the pack index or kpse lookup is not picking it up. 
 Remaining 31 failures are packages outside Ubuntu 2023, true harness crashes, or asy integration that needs deeper work.
+
+## Status 2026-10-16 14:00
+
+Clean packs rebuild done. asymptote.sty is in the tree but documents still report it not found.
+The pack index or kpse lookup for manually added files needs deeper investigation.
+Remaining 31 failures stand.
