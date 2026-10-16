@@ -173,3 +173,10 @@ possible; it closes or measures every gap known today.
   bump fails loudly. Comments say why, in plain sentences.
 - Run the corpus before publishing. Publishing to the claude.ai artifact needs Claude
   (`tex/publish_batches.py` plans the uploads, 256 MB limit); anywhere else, serve `dist/`.
+
+## Task 0 status
+
+Clean rebuild from empty GALLEY_WORK completed (fetch, tree, packs, dist).
+Manifest does not match v19 (35 diff lines). The source has changed since
+fe7b316 (path fixes, package additions). A byte-for-byte match requires
+reverting those changes or regenerating the manifest from the current source.
