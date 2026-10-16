@@ -58,7 +58,7 @@ for f in uploads:
 if cur:
     batches.append(cur)
 for i, b in enumerate(batches):
-    json.dump(b, open('/tmp/eng/batch%d.json' % i, 'w'))
+    json.dump(b, open(os.path.join(os.environ.get('GALLEY_WORK', '/tmp/eng'), 'batch%d.json') % i, 'w'))
     print(i, len(b), 'entries', sum(1 for v in b.values() if v is None), 'removals',
           round(sum(os.path.getsize(v) for v in b.values() if v) / 1e6, 1), 'MB')
 print('uploads', len(uploads), 'of', len(order), 'kept', len(order) - len(uploads), 'removed', len(removals))
