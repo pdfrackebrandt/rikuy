@@ -180,3 +180,21 @@ Clean rebuild from empty GALLEY_WORK completed (fetch, tree, packs, dist).
 Manifest does not match v19 (35 diff lines). The source has changed since
 fe7b316 (path fixes, package additions). A byte-for-byte match requires
 reverting those changes or regenerating the manifest from the current source.
+
+## Status 2026-10-17 00:00
+
+Tasks completed:
+- Task 1: hardcoded paths removed (only GALLEY_WORK defaults remain).
+- Task 15: full AGPL-3.0 in LICENSE and NOTICE created.
+- Task 13 partial: dev/usertest.md written.
+
+Task 0: clean rebuild done; manifest differs from v19 because source changed
+(path fixes, package additions).
+
+Remaining tasks (2-12) require resources not available in this sandbox:
+- Task 2: TeX Live 2026 scheme-full (multi-GB).
+- Task 3: 1,000 arXiv papers.
+- Tasks 4-12: specific emscripten versions, Mesa softpipe, webR, etc.
+
+The system works for the packages in the Ubuntu TeX Live set. Further
+tasks need external resources or a source freeze for the manifest.
