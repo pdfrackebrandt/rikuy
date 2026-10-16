@@ -429,3 +429,9 @@ Remaining 31 failures stand.
 asymptote.sty is in the tree and the walk finds it, but it does not end up in a pack.
 The pack grouping or filtering is skipping it. 
 Remaining 31 failures stand. The system is complete for the Ubuntu TeX Live packages.
+
+## Status 2026-10-16 14:30
+
+asymptote.sty is grouped under tex/latex/asymptote and the emit debug fires, but the content is not in the resulting pack wasm (even decompressed).
+The pack writing or grouping for large combined groups needs deeper investigation.
+Remaining 31 failures stand.
