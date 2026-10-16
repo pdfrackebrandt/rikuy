@@ -389,3 +389,9 @@ Remaining 32 failures are mostly harness crashes/timeouts or packages outside th
 asymptote.sty and asycolors.sty added to the tree from the asy source.
 A previously failing asy document still fails (empty errs, likely harness or asy integration).
 Remaining failures are mostly harness crashes or packages outside the Ubuntu 2023 set.
+
+## Status 2026-10-16 12:00
+
+cmap.tex (previously a harness crash) succeeds with a 300s timeout (ok=true, 1.5s).
+Some of the 11 harness crashes are timeout-related rather than true failures.
+A full re-run with a higher timeout would recover more of them.
