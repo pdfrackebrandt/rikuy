@@ -62,3 +62,7 @@ echo "Note: tree-extra still needs the BusyTeX .data packages unpacked (see PLAN
 fetch texlive-fonts-extra "http://mirrors.kernel.org/ubuntu/pool/universe/t/texlive-extra/texlive-fonts-extra_2023.20240207-1_all.deb"
 fetch texlive-publishers "http://mirrors.kernel.org/ubuntu/pool/universe/t/texlive-extra/texlive-publishers_2023.20240207-1_all.deb"
 fetch texlive-games "http://mirrors.kernel.org/ubuntu/pool/universe/t/texlive-extra/texlive-games_2023.20240207-1_all.deb"
+
+# More coverage
+fetch texlive-latex-recommended "http://mirrors.kernel.org/ubuntu/pool/universe/t/texlive-base/texlive-latex-recommended_2023.20240207-1_all.deb"
+fetch texlive-plain-generic "http://mirrors.kernel.org/ubuntu/pool/universe/t/texlive-base/texlive-plain-generic_2023.20240207-1_all.deb"

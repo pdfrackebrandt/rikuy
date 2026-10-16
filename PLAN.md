@@ -377,3 +377,9 @@ Full sweep with fonts-extra/publishers/games:
 - Total 719
 
 Improved from the previous 674/45. Remaining failures are document-specific.
+
+## Status 2026-10-16 11:30
+
+Added texlive-latex-recommended. multido/nth/lambda still missing (not in the Ubuntu 2023 set).
+asymptote.sty is not shipped with the asy base modules.
+Remaining 32 failures are mostly harness crashes/timeouts or packages outside the current TeX Live subset.
