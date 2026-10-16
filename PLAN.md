@@ -404,3 +404,10 @@ Full sweep with 360s timeout:
 - Total 719
 
 Recovered one more document from the previous 687. Remaining failures are packages outside the Ubuntu 2023 set or true harness crashes.
+
+## Status 2026-10-16 13:30
+
+asymptote.sty is in the tree and packs were rebuilt. 
+A retest of torus-three-paths.tex still fails (empty errs). 
+The asy integration needs more than the sty file. 
+Remaining 31 failures are packages outside Ubuntu 2023 or true harness issues.
