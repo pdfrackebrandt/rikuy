@@ -226,3 +226,18 @@ Remaining (2-12) require external resources:
 10. asy 3D without OpenGL needs Mesa softpipe. Not built here.
 11. webR, bib2gls JVM, inkscape have no browser builds in this environment.
 12. xindy precompile needs a working ECL bytecode path. Not measured here.
+
+## Final status 2026-10-17
+
+Closed:
+- Task 0: manifest matches current dist.
+- Task 1: no hardcoded work folder (only GALLEY_WORK defaults).
+- Task 13: usertest.md and editor harness skeleton.
+- Task 15: full AGPL-3.0 and NOTICE.
+
+Partial:
+- Task 5: dvips and asy rebuilt from source earlier. xindy prebuilt works;
+  clean rebuild failed validation.
+
+Blocked (documented above):
+- Tasks 2, 3, 4, 6-12 need TeX Live 2026, arXiv corpus, or specific builds.
