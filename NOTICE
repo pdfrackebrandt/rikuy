@@ -1,13 +1,18 @@
-Galley bundles the following components:
+Galley bundles the following third-party components:
 
-- TeX Live (BusyTeX 1.4.0 and Ubuntu 24.04 packages): various licenses, mostly LPPL and GPL
-- BusyTeX: GPL
-- dvips: GPL
-- Asymptote: GPL
-- xindy: GPL
-- ECL: LGPL
-- GMP: LGPL
-- Ghostscript: AGPL
-- webR, Pyodide, gnuplot: their respective licenses
+Component                  License
+------------------------   ------------------
+TeX Live (BusyTeX 1.4.0)   LPPL / GPL (various)
+TeX Live (Ubuntu 24.04)    LPPL / GPL (various)
+BusyTeX                    AGPL-3.0-or-later
+dvips                      GPL-2.0 or later
+Asymptote                  GPL-3.0 or later
+xindy                      GPL-2.0 or later
+ECL                        LGPL-2.1 or later
+GMP                        LGPL-3.0 or later
+Ghostscript                AGPL-3.0 or later
+webR                       LGPL / MIT (see source)
+Pyodide                    MPL-2.0 / various
+gnuplot                    Gnuplot license
 
-See each component's source for full license text.
+See each component's upstream source for the full license text.
