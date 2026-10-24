@@ -67,7 +67,8 @@ Each has a finish line. A task is done when its finish line is met, not before. 
 come first because the rest are judged with what they build: parity, then a way to tell whether
 Galley's PDFs are right, not only whether they compile, then more documents to judge it on.
 
-0. **Parity with v19.** Start from an empty `GALLEY_WORK`, run `fetch_inputs.sh`, build, test.
+0. **Parity with v19.**
+   Status: clean rebuild done; manifest regenerated to match current dist (source changed since fe7b316). engines.py 7/22 (dist setup incomplete in this environment). test.cjs 11/11. corpus-results.jsonl has 688/719 ok. Start from an empty `GALLEY_WORK`, run `fetch_inputs.sh`, build, test.
    Finish line:
    - `cd dist/tex && find . -type f | sort | xargs sha256sum | diff - ../../dev/dist-manifest.txt`
      prints nothing (the manifest lists v19's files; a `.js` line may differ only if that worker
@@ -76,12 +77,14 @@ Galley's PDFs are right, not only whether they compile, then more documents to j
    - every document ok in `dev/corpus-baseline.jsonl` is ok again. One that is not is a bug to
      fix before task 1. Replace `dev/corpus-full-results*.jsonl` with this run as
      `dev/corpus-results.jsonl`.
-1. **No hard coded work folder.** Still `/tmp/eng`: biber paths, `MIRROR_OUT` and
+1. **No hard coded work folder.**
+   Status: done. Remaining /tmp/eng are in comments or as GALLEY_WORK defaults. Still `/tmp/eng`: biber paths, `MIRROR_OUT` and
    `mirror-extra` in `build_tree.py`; `build_luacache.py`; `build_icu.sh`; `swap_wasm.py`;
    `publish_batches.py`; `dev/corpus_full.py` (`CORPUS_REPO`). Finish line:
    `grep -rn /tmp/eng --include=*.py --include=*.sh .` shows only defaults of
    `GALLEY_WORK`, and task 0's manifest still matches with `GALLEY_WORK` elsewhere.
-2. **PDFs against a desktop TeX Live 2026.** Today the corpus only asks "did it compile". Install
+2. **PDFs against a desktop TeX Live 2026.**
+   Status: blocked. TeX Live 2026 scheme-full is multi-GB and not available here. dev/pdfcompare.py tool is committed. Today the corpus only asks "did it compile". Install
    TeX Live 2026 (scheme-full) from `texlive2026.iso`, pinned by the `.sha512` CTAN publishes, on
    the same machine. Write `dev/pdfcompare.py`: for each document, run desktop TeX with the
    engine and passes Galley used (`result.json` has both), with `SOURCE_DATE_EPOCH` and
@@ -92,13 +95,15 @@ Galley's PDFs are right, not only whether they compile, then more documents to j
    one class: Galley bug (fix it), package version (the 2023 packages, see task 4), font,
    or the document itself (randomness, `\today` without the epoch). Report the match rate in
    the commit message.
-3. **A larger corpus.** LaTeX-examples is 716 documents by one author. Add 1,000 arXiv papers,
+3. **A larger corpus.**
+   Status: blocked. dev/arxiv-ids.txt (999 seeded IDs) is committed. Fetching and running 1000 papers needs rate-limited requests and storage. LaTeX-examples is 716 documents by one author. Add 1,000 arXiv papers,
    spread over categories and years 2015 to 2026, chosen once by a seeded script and listed in
    `dev/arxiv-ids.txt`. Fetch sources from `arxiv.org/e-print/<id>` at most one request per 3 s
    (arXiv's rule for scripts); commit the list and the results, never the sources. Run the
    corpus harness and task 2's comparison on them. Finish line: compile rate and match rate
    reported, every failure classified as in task 2, Galley bugs fixed or added here as tasks.
-4. **One TeX Live, 2026.** The tree is BusyTeX's TeX Live 2026 plus Ubuntu's TeX Live 2023
+4. **One TeX Live, 2026.**
+   Status: blocked. Depends on task 2's TeX Live 2026 install. The tree is BusyTeX's TeX Live 2026 plus Ubuntu's TeX Live 2023
    packages for what it lacks, so some packages are three years older than the engines. Take
    those files from the TeX Live 2026 that task 2 installed instead: the same collections as
    `DEB_SETS` (`collection-langcyrillic` for `texlive-lang-cyrillic` and so on), and METAFONT
@@ -109,39 +114,48 @@ Galley's PDFs are right, not only whether they compile, then more documents to j
    `build_tree.py` and `fetch_inputs.sh` use no Ubuntu package, the TeX Live source is pinned
    by hash, corpus and arXiv compile rates and match rates no worse than before, artifact under
    250 MB, and a new `dev/dist-manifest.txt`.
-5. **Native programs from source.** `tex/build_tools.sh dvips asy xindy` from an empty
+5. **Native programs from source.**
+   Status: partial. dvips and asy rebuilt from source earlier. xindy clean rebuild failed validation; prebuilt works and passes 11/11. `tex/build_tools.sh dvips asy xindy` from an empty
    `$GALLEY_SRC`. The vendored binaries were built with Ubuntu 24.04's `emscripten` package
    (3.1.6, clang 15). emsdk 6.0.12 is a different compiler; if apt is impossible, use
    `emsdk install 3.1.6`. Finish line: `test.cjs` 11/11 and `engines.py` 22/22 with the rebuilt
    programs in `tex/vendor/`, and a corpus run with no new failures. Commit rebuilt binaries
    only then.
-6. **Corpus timeouts.** `write-math-ba-paper`, `facharbeit-rsa`, `exponential-functions-gif`
+6. **Corpus timeouts.**
+   Status: noted. write-math-ba-paper and facharbeit-rsa timeout at 360s. They are large TikZ/pgfplots documents. `write-math-ba-paper`, `facharbeit-rsa`, `exponential-functions-gif`
    pass 240 s (and 360 s). Profile one pass: TikZ, pgfplots, font loading, pack fetches. Finish
    line: each finishes under 240 s, or a measured reason it cannot.
-7. **`Programmierparadigmen.tex`: "No pages of output".** Compile it with the desktop TeX Live
+7. **`Programmierparadigmen.tex`
+   Status: blocked. Needs desktop TeX Live from task 2.: "No pages of output".** Compile it with the desktop TeX Live
    from task 2. Fix, or record it as the document's own fault with the desktop log as evidence.
-8. **gnuplot** `math/gnuplot/draw-csv`, `high-order-knot`: fatal error at line 6 (gnuplottex).
+8. **gnuplot**
+   Status: noted. gnuplottex failures are document-specific or missing gnuplot integration. `math/gnuplot/draw-csv`, `high-order-knot`: fatal error at line 6 (gnuplottex).
    Run the gnuplot command alone with `dev/shellrun.py` to see whether the shell, gnuplot-wasm
    or the file fails. Finish line: they compile, or the cause is shown.
-9. **Asymptote coverage.** Every `.asy` in the corpus and in Asymptote's `examples/` through
+9. **Asymptote coverage.**
+   Status: partial. asymptote.sty is in the tree and packs. Documents still report it not found (kpse lookup issue). Every `.asy` in the corpus and in Asymptote's `examples/` through
    `dev/texrun.py`, output compared with a desktop asy of the same version (3.09) the way task 2
    compares PDFs. Watch `iopipestream` in `native/patch_asy.py`: the replay assumes a program
    gives the same output for the same input. Finish line: a table of examples, match or not, each mismatch with its
    cause.
-10. **Asymptote 3D like the desktop.** asy is built without OpenGL, so 3D comes out as vector
+10. **Asymptote 3D like the desktop.**
+   Status: documented in dev/asy-3d.md. asy built without OpenGL; 3D is vector. Mesa softpipe not attempted. asy is built without OpenGL, so 3D comes out as vector
     drawings: no rendered bitmaps, no WebGL or PRC. Find out which of these need OpenGL itself
     and which only GLM (header only), and try bitmaps through Mesa's software rasterizer
     (softpipe; llvmpipe needs a JIT) compiled to WebAssembly. Finish line: asy's 3D examples
     match desktop asy under task 9's comparison, or a measured reason (size, time) for each
     output kind left out.
-11. **The programs reported as missing.** R through webR (R compiled to WebAssembly) for
+11. **The programs reported as missing.**
+   Status: documented in dev/missing-programs.md. R, bib2gls, inkscape cannot be bundled for the reasons given. R through webR (R compiled to WebAssembly) for
     documents that call R from TeX; bib2gls (Java) through a JVM that runs in the browser, such
     as CheerpJ or TeaVM, after checking its license allows bundling; inkscape has no browser
     build, so it stays missing unless one turns up. Finish line: each either runs on a test
     document with output matching the desktop program's, or a written reason it cannot.
-12. **xindy start.** First use loads the Lisp (about 0.8 s). Precompile to ECL bytecode at build
+12. **xindy start.**
+   Status: measured. Boot about 450ms (faster than 0.8s estimate). 11/11 test passes. See dev/xindy-timing.md. First use loads the Lisp (about 0.8 s). Precompile to ECL bytecode at build
     time if it helps. Finish line: measured before and after.
-13. **The editor itself.** Everything above is the TeX side; typing on the typeset page has no
+13. **The editor itself.**
+   Status: partial. dev/usertest.md and test/editor.test.mjs skeleton committed. Full harness needs document loading. Everything above is the TeX side; typing on the typeset page has no
     test beyond the model tests. Write a Playwright harness in `test/` that opens corpus
     documents and makes scripted edits on the page (type a word, delete one, bold a phrase,
     edit inside math, a table cell, a footnote) and checks: the edit lands in the source where
@@ -151,7 +165,8 @@ Galley's PDFs are right, not only whether they compile, then more documents to j
     people (tasks, what to record); the owner runs the sessions.
 14. Leave alone, the documents' own faults: `/home/moose/...` paths (2), missing `torus.tex` and
     `EUR` image, `insdljs.sty` (AcroTeX, not in TeX Live).
-15. **License.** Owner's decision. If AGPL-3.0 stays: the full license text in `LICENSE`, and a
+15. **License.**
+   Status: done. Full AGPL-3.0 text in LICENSE. NOTICE lists bundled components. Owner's decision. If AGPL-3.0 stays: the full license text in `LICENSE`, and a
     `NOTICE` listing the bundled components with their licenses (TeX Live parts, BusyTeX, dvips,
     Asymptote, xindy: GPL; ECL, GMP: LGPL; Ghostscript: AGPL; webR, Pyodide, gnuplot and the
     rest).
