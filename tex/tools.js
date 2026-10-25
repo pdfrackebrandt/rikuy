@@ -107,13 +107,19 @@ async function emProgram(factoryName, asset, extra) {
   return {
     P, out,
     // argv: the program's whole command line, its name first
-    call(argv) {
+    // stdin: what the program reads on its standard input (a pipe's input, written in full)
+    call(argv, stdin) {
       out.s = ''; out.o = ''; out.e = '';
       spSet(sp0);
+      const FS = P.FS;
       const open = new Set();
-      (P.FS.streams || []).forEach((s, i) => { if (s) open.add(i); });
+      (FS.streams || []).forEach((s, i) => { if (s) open.add(i); });
+      // standard input from a file: closing descriptor 0 makes the file opened next take it
+      const piped = stdin != null && FS.streams;
+      if (piped) { FS.writeFile('/tmp/galley-stdin', stdin); if (FS.streams[0]) FS.close(FS.streams[0]); FS.open('/tmp/galley-stdin', 'r'); }
       let code;
       try { code = enter(argv); } catch (e) { code = e && typeof e.status === 'number' ? e.status : (typeof e === 'number' ? e : 1); if (!(e && e.status != null)) { out.s += String(e) + '\n'; out.e += String(e) + '\n'; } }
+      if (piped) { try { if (FS.streams[0]) FS.close(FS.streams[0]); } catch (e) { /* closed */ } FS.open('/dev/stdin', 'r'); }
       if (P._fflush) { try { P._fflush(0); } catch (e) { /* exited */ } }
       // what it left open when it exited (dvips its .dvi, every run): closed, as the system
       // closes a process's files, or the descriptors (and TeX's files behind them) pile up
@@ -522,12 +528,12 @@ async function makeGs() {
   // epstopdf's default Ghostscript options (TeX Live's epstopdf.pl)
   const EPSTOPDF = ['-sDEVICE=pdfwrite', '-dAutoRotatePages=/None', '-dPDFSETTINGS=/prepress', '-dMaxSubsetPct=100', '-dSubsetFonts=true', '-dEmbedAllFonts=true', '-dCompatibilityLevel=1.5'];
 
-  function gsRun(args, cwd, inputs, outputs) {
+  function gsRun(args, cwd, inputs, outputs, stdin) {
     mkdirsIn(FS2, cwd);
     for (const p of inputs) if (texIsFile(p)) mirrorIn(FS2, p);
     for (const p of outputs) { mkdirsIn(FS2, p.slice(0, p.lastIndexOf('/'))); try { FS2.unlink(p); } catch (e) { /* none */ } }
     FS2.chdir(cwd);
-    const code = G.call(['gs', ...args]);
+    const code = G.call(['gs', ...args], stdin);
     let made = 0;
     for (const p of outputs) { try { texWrite(p, FS2.readFile(p)); made++; } catch (e) { /* not written */ } }
     return { code: code || (outputs.length && !made ? 1 : 0), log: G.out.s };
@@ -620,13 +626,18 @@ async function makeGs() {
         const outputs = [], inputs = [];
         const args = a.map((x, i) => {
           let m;
-          if ((m = /^-sOutputFile=(.*)$/.exec(x)) || (m = /^-o(.+)$/.exec(x))) { const p = h.abs(m[1]); outputs.push(p); return '-sOutputFile=' + p; }
+          // (/dev/null, texpath's, is no file to clear before and copy back after)
+          if ((m = /^-sOutputFile=(.*)$/.exec(x)) || (m = /^-o(.+)$/.exec(x))) { if (m[1] === '/dev/null') return '-sOutputFile=/dev/null'; const p = h.abs(m[1]); outputs.push(p); return '-sOutputFile=' + p; }
           if (x === '-o' && a[i + 1]) return x;
           if (i > 0 && a[i - 1] === '-o') { const p = h.abs(x); outputs.push(p); return p; }
           if (!x.startsWith('-') && texIsFile(h.abs(x))) { const p = h.abs(x); inputs.push(p); return p; }
           return x;
         });
-        r = gsRun(args, cwd, inputs, outputs);
+        // standard input as given: asy's texpath runs it without -dNOPAUSE and answers each
+        // page's prompt with a newline, so without it Ghostscript stopped after the first page and
+        // a call measuring several labels got one label's outlines (fequlogo's two formulas
+        // swapped, curvedlabel3's second line gone, "reading array of length 0")
+        r = gsRun(args, cwd, inputs, outputs, io.stdin);
       }
       if (r.code) io.err(r.log.slice(-1500));
       else if (G.out.o) io.out(G.out.o); // what PostScript printed (xdvipdfmx reads numbers this way)
