@@ -1,0 +1,136 @@
+# PLAN task 3: the arXiv corpus, run where arXiv is reachable (the machine Galley is developed
+# on cannot reach it). Started by hand (Actions, "arXiv corpus", Run workflow); it takes about
+# 20 runner hours in all, which a private repository pays for in Actions minutes.
+#   sources   choose the sample (dev/arxiv_corpus.py, seeded) unless dev/arxiv-ids.txt exists,
+#             download the papers at one request per 3 s, keep them in the Actions cache
+#   galley    build dist/ as PLAN.md's Building section does
+#   shard     8 jobs, each compiling an eighth of the papers with Galley (corpus_full.py) and
+#             with a desktop TeX Live 2026 (pdfcompare.py)
+#   collect   commit the identifiers, the compile results and the comparison to the branch
+#             arxiv-results; the sources are never committed
+name: arXiv corpus
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+env:
+  SHARDS: 8
+  SDE: '1700000000'
+  PLAYWRIGHT_BROWSERS_PATH: /home/runner/pw
+jobs:
+  sources:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sample and fetch
+        run: |
+          [ -f dev/arxiv-ids.txt ] || python3 dev/arxiv_corpus.py sample dev/arxiv-ids.txt
+          python3 dev/arxiv_corpus.py fetch dev/arxiv-ids.txt "$HOME/arxiv"
+      - uses: actions/cache/save@v4
+        with:
+          path: ~/arxiv
+          key: arxiv-src-${{ github.run_id }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arxiv-ids
+          path: dev/arxiv-ids.txt
+  galley:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Build dist/
+        run: |
+          npm ci
+          pip install --break-system-packages lz4
+          sudo mkdir -p /mnt/eng && sudo chown "$USER" /mnt/eng
+          export GALLEY_WORK=/mnt/eng
+          sh tex/fetch_inputs.sh
+          python3 tex/build_tree.py tree && python3 tex/build_tree.py packs && node build.mjs
+          du -sh dist
+      - uses: actions/cache/save@v4
+        with:
+          path: dist
+          key: galley-dist-${{ github.run_id }}
+  shard:
+    needs: [sources, galley]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    env:
+      TL26: /mnt/tl26
+    strategy:
+      fail-fast: false
+      matrix:
+        k: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: arxiv-ids
+          path: dev
+      - uses: actions/cache/restore@v4
+        with:
+          path: ~/arxiv
+          key: arxiv-src-${{ github.run_id }}
+          fail-on-cache-miss: true
+      - uses: actions/cache/restore@v4
+        with:
+          path: dist
+          key: galley-dist-${{ github.run_id }}
+          fail-on-cache-miss: true
+      - name: Chromium, poppler and the desktop TeX Live 2026
+        run: |
+          pip install --break-system-packages playwright numpy
+          python3 -m playwright install --with-deps chromium
+          sudo apt-get install -y poppler-utils
+          # the packages' folder and the TeX Live made of hard links to it share one file system
+          sudo mkdir -p /mnt/eng /mnt/tl26 && sudo chown "$USER" /mnt/eng /mnt/tl26
+          GALLEY_WORK=/mnt/eng UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu sh dev/fetch_tl26.sh
+      - name: Compile with Galley
+        run: |
+          CORPUS_LIST=dev/arxiv-ids.txt CORPUS_REPO="$HOME/arxiv" GALLEY_DIST="$PWD/dist" PDF_DIR="$RUNNER_TEMP/pdf" \
+            SHARD=${{ matrix.k }}/$SHARDS python3 dev/corpus_full.py "arxiv-results-${{ matrix.k }}.jsonl"
+      - name: Compare with the desktop TeX Live
+        run: |
+          CORPUS_LIST=dev/arxiv-ids.txt CORPUS_REPO="$HOME/arxiv" \
+            python3 dev/pdfcompare.py "arxiv-results-${{ matrix.k }}.jsonl" "$RUNNER_TEMP/pdf" "arxiv-pdfcompare-${{ matrix.k }}.jsonl"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: arxiv-shard-${{ matrix.k }}
+          path: arxiv-*-${{ matrix.k }}.jsonl
+  collect:
+    needs: shard
+    if: always()
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: shards
+      - name: Merge and commit to arxiv-results
+        run: |
+          cp shards/arxiv-ids/arxiv-ids.txt dev/arxiv-ids.txt
+          python3 - <<'PY'
+          import glob, json
+          ids = [l.split()[0] for l in open('dev/arxiv-ids.txt') if l.strip() and not l.startswith('#')]
+          order = {i: n for n, i in enumerate(ids)}
+          for kind in ('results', 'pdfcompare'):
+              rows = [json.loads(l) for f in glob.glob('shards/arxiv-shard-*/arxiv-%s-*.jsonl' % kind) for l in open(f)]
+              rows.sort(key=lambda r: order.get(r['doc'].split('/')[1], 1 << 30))
+              with open('dev/arxiv-%s.jsonl' % kind, 'w') as out:
+                  for r in rows:
+                      out.write(json.dumps(r) + '\n')
+              print(kind, len(rows))
+          PY
+          git config user.name "Pedro F. Rackebrandt"
+          git config user.email pedro.fernandezrackebrandt@merton.ox.ac.uk
+          git checkout -b arxiv-results
+          git add dev/arxiv-ids.txt dev/arxiv-results.jsonl dev/arxiv-pdfcompare.jsonl
+          git commit -m "arXiv corpus: identifiers, Galley's results and the comparison with TeX Live 2026 (run ${{ github.run_id }})"
+          git push -f origin arxiv-results

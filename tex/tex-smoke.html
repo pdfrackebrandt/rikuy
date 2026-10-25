@@ -10,7 +10,9 @@ w.onmessage = ({ data }) => {
   if (data.shellResult) window.shellResult = data.shellResult;
   if (data.error) window.err = data;
 };
-w.postMessage({ init: true, base: new URL('tex/', location.href).href, mirror: new URLSearchParams(location.search).get('texlive') || null });
+const Q = new URLSearchParams(location.search);
+w.postMessage({ init: true, base: new URL('tex/', location.href).href, mirror: Q.get('texlive') || null,
+  env: Q.get('sde') ? { SOURCE_DATE_EPOCH: Q.get('sde'), FORCE_SOURCE_DATE: '1' } : null });
 window.compile = (files, main, clean, project, bibSig, engine, extra) => { window.result = null; window.err = null; w.postMessage({ compile: Object.assign({ id: 'x', project: project || ('p' + Math.random()), files, main, clean: !!clean, bibSig: bibSig || '', engine: engine || 'auto' }, extra || {}) }); };
 window.exec = (job) => { window.execResult = null; window.err = null; w.postMessage({ exec: job }); };
 window.shell = (job) => { window.shellResult = null; window.err = null; w.postMessage({ shell: job }); };
