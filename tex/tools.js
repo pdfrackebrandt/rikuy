@@ -424,10 +424,15 @@ function xindyCommand(G, argv, io, h) {
 }
 
 // copy a file from TeX's file system into a program's, at the same path
+// A copy dated 1970: copyBackChanged tells what a program wrote by size and time, and a program
+// that rewrites a file within the millisecond it was copied in, at the same size, left it
+// looking untouched. pgfplots' gnuplot plots all write <job>.pgf-plot.table: a fast gnuplot's
+// second table of the same size never reached TeX, which drew the first curve again.
 function mirrorIn(FS2, path) {
   const data = M.FS.readFile(path);
   mkdirsIn(FS2, path.slice(0, path.lastIndexOf('/')));
   FS2.writeFile(path, data);
+  try { FS2.utime(path, 0, 0); } catch (e) { /* the time only helps tell writes apart */ }
 }
 function mkdirsIn(FS2, d) {
   let cur = '';
