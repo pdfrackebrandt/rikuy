@@ -70,9 +70,8 @@ const classic = (src, name) => {
   return escapeCtl(t);
 };
 fs.writeFileSync(O('tex/gs.js'), classic('node_modules/@okathira/ghostpdl-wasm/dist/gs.js', 'GalleyGs'));
-fs.writeFileSync(O('tex/gnuplot.js'), classic('node_modules/gnuplot-wasm/src/gnuplot.js', 'GalleyGnuplot'));
 // programs built for Galley (tex/build_tools.sh) are classic scripts already
-for (const t of ['dvips', 'asy', 'xindy']) fs.writeFileSync(O('tex/' + t + '.js'), escapeCtl(fs.readFileSync(R('tex/vendor/' + t + '/' + t + '.js'), 'utf8')));
+for (const t of ['dvips', 'asy', 'xindy', 'gnuplot']) fs.writeFileSync(O('tex/' + t + '.js'), escapeCtl(fs.readFileSync(R('tex/vendor/' + t + '/' + t + '.js'), 'utf8')));
 // Pyodide's loader is a classic script already; its runtime comes from build_tree.py
 fs.writeFileSync(O('tex/pyodide.js'), escapeCtl(fs.readFileSync(R('node_modules/pyodide/pyodide.js'), 'utf8')).replace(/\n\/\/# sourceMappingURL=.*$/, '\n'));
 // the artifact host refuses raw control bytes in text files; they only occur inside string

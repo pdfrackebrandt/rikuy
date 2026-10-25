@@ -1,17 +1,17 @@
 #!/bin/sh
 # Programs Galley builds from source with Emscripten (Ubuntu's emscripten 3.1.6 package, which
-# brings clang 15): TeX Live's dvips, Asymptote and xindy. Each lands in vendor/<name>/ as
+# brings clang 15): TeX Live's dvips, Asymptote and xindy, and gnuplot. Each lands in vendor/<name>/ as
 # <name>.js (a classic script defining Galley<Name>) and <name>.wasm; build_tree.py packs the
 # .wasm with the other programs and build.mjs copies the .js next to the engine.
 #
 # Their main() is compiled as real_main and entered through galley_main (native/galley_main.c):
 # this Emscripten does not export a main(int, char **) built by clang 15. tools.js calls it.
 #
-# Usage: build_tools.sh [dvips] [asy] [xindy]      (default: all)
+# Usage: build_tools.sh [dvips] [asy] [xindy] [gnuplot]   (default: all)   env: GALLEY_SRC, GALLEY_VENDOR
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 SRC=${GALLEY_SRC:-/tmp/src}
-VENDOR=$HERE/vendor
+VENDOR=${GALLEY_VENDOR:-$HERE/vendor}   # set GALLEY_VENDOR to build somewhere else and compare
 TL_COMMIT=f6b450440fca5d39f069f1d43153f7a8a75b04a1   # TeX-Live/texlive-source, 2026-10-10
 mkdir -p "$SRC" "$VENDOR"
 export EM_NODE_JS=${EM_NODE_JS:-/usr/bin/node}
@@ -62,26 +62,44 @@ zlib() {
   emar rcs "$SRC/zlib/lib/libz.a" "$SRC"/zlib/*.o
 }
 
+# GLM 1.0.1, the header-only vector library Asymptote's WebGL (HTML) and V3D outputs need; it
+# needs no OpenGL (git: GitHub's archive downloads are refused to the build machine)
+GLM_COMMIT=0af55ccecd98d4e5a8d1fad7de25ba429d60e863
+glm() {
+  [ -f "$SRC/glm/glm/glm.hpp" ] && return
+  rm -rf "$SRC/glm" && git clone -q --depth 1 --branch 1.0.1 https://github.com/g-truc/glm "$SRC/glm"
+  [ "$(git -C "$SRC/glm" rev-parse HEAD)" = "$GLM_COMMIT" ] || { echo "build_tools.sh: glm 1.0.1 is not $GLM_COMMIT" >&2; exit 1; }
+}
+
 # Asymptote 3.09 without OpenGL, threads, readline, FFTW, GSL, curl or its garbage collector
-# (each run gets fresh memory anyway); native/patch_asy.py routes its pipes and System() to
-# the worker, native/rpc/ stands in for Sun RPC's XDR
+# (each run gets fresh memory anyway), with GLM (WebGL and V3D output) and XDR; native/patch_asy.py
+# routes its pipes and System() to the worker, native/rpc/ stands in for Sun RPC's XDR
 asy() {
-  texlive_source; zlib
+  texlive_source; zlib; glm
   B="$SRC/asy/build"
-  if [ ! -f "$B/asy" ]; then
+  # (a build made before GLM was added, or by an older script, is redone)
+  if ! { [ -f "$B/asy" ] && grep -q '^#define HAVE_LIBGLM 1' "$B/config.h" && grep -q '^#define HAVE_LIBTIRPC 1' "$B/config.h"; }; then
     rm -rf "$B" && mkdir -p "$SRC/asy" && cp -r "$SRC/tl/utils/asymptote" "$B"
     cd "$B"
+    # cp gives every file about the same time in no set order; when configure.ac comes out newer
+    # than configure, make reruns autoconf and configure and the Makefile edit below is lost
+    touch -d '2000-01-01' configure.ac
     python3 "$HERE/native/patch_asy.py" .
     emconfigure ./configure --host=wasm32-unknown-emscripten --build=x86_64-pc-linux-gnu --disable-gc --disable-threads --disable-readline \
       --disable-fftw --disable-gsl --disable-gl --disable-curl --disable-lsp --disable-sigsegv --disable-eigen --disable-xdr --disable-offscreen \
-      CXXFLAGS="-O2 -fexceptions" CFLAGS=-O2 CPPFLAGS="-I$SRC/zlib/include" LDFLAGS="-L$SRC/zlib/lib -fexceptions" > conf.log
+      CXXFLAGS="-O2 -fexceptions" CFLAGS=-O2 CPPFLAGS="-I$SRC/zlib/include -I$SRC/glm" LDFLAGS="-L$SRC/zlib/lib -fexceptions" > conf.log
+    grep -q '^#define HAVE_LIBGLM 1' config.h || { echo "build_tools.sh: configure did not find GLM" >&2; exit 1; }
+    # XDR (V3D output, xinput and xoutput files) through native/rpc, not the libtirpc configure
+    # looks for (patch_asy.py)
+    sed -i 's|^/\* #undef HAVE_LIBTIRPC \*/|#define HAVE_LIBTIRPC 1|' config.h
+    grep -q '^#define HAVE_LIBTIRPC 1' config.h || { echo "build_tools.sh: could not turn on XDR in config.h" >&2; exit 1; }
     sed -i "s#^OPTS = \$(DEFS) -I$SRC/zlib/include #OPTS = \$(DEFS) -I$SRC/zlib/include -I$HERE/native #" Makefile
     grep -q "^OPTS = .*-I$HERE/native" Makefile || { echo "build_tools.sh: could not add native/ to OPTS in Makefile" >&2; exit 1; }
     rm -f ./*.d
     emmake make -j2 asy > make.log
   fi
   cd "$B"
-  em++ -DHAVE_CONFIG_H -DFFTWPP_SINGLE_THREAD -I. -I"$SRC/zlib/include" -I"$HERE/native" -Itinyexr -O2 -fexceptions -std=c++17 \
+  em++ -DHAVE_CONFIG_H -DFFTWPP_SINGLE_THREAD -I. -I"$SRC/zlib/include" -I"$SRC/glm" -I"$HERE/native" -Itinyexr -O2 -fexceptions -std=c++17 \
     -Ibackports/optional/include -Iprc/include -ILspCpp/include -Dmain=real_main -c main.cc -o main-galley.o
   em++ -O2 -c "$HERE/native/galley_main_cxx.cc" -o galley_main_cxx.o
   OBJS=$(sed -n 's/.*-o asy \(.*\) -L.*zlib\/lib.*/\1/p' make.log | tail -1 | sed 's/ main.o / main-galley.o /')
@@ -90,6 +108,30 @@ asy() {
   # its base modules go into the TeX tree at TeX Live's place (texmf-dist/asymptote, build_tree.py)
   cp base/*.asy "$VENDOR/asy/base/"
   ls -l "$VENDOR/asy"
+}
+
+# ---- gnuplot -------------------------------------------------------------------------------------
+# gnuplot 6.0.2, the version the desktop TeX Live of PLAN task 2 runs (Ubuntu 26.10's), from
+# Ubuntu's source package; native/patch_gnuplot.py fixes its underflow check for WebAssembly.
+# Terminals: the standalone ones (postscript, epslatex, pict2e, pstricks, svg, ...); no cairo, no
+# Lua (tikz). The PostScript prologues the postscript and epslatex terminals copy into their
+# output are in the TeX tree (extra/texlive/gnuplot-ps, the same files as term/PostScript here).
+GNUPLOT_V=6.0.2+dfsg1
+gnuplot() {
+  galley_main
+  fetch $UBUNTU/universe/g/gnuplot/gnuplot_$GNUPLOT_V.orig.tar.xz c02de00f808fd0911b68050b9ce4a4d9f2901aeca6fda66a2f41bfde650fabc2
+  G="$SRC/gnuplot" && rm -rf "$G" && mkdir -p "$G" && tar xf "$SRC/dl/gnuplot_$GNUPLOT_V.orig.tar.xz" -C "$G" --strip-components=1
+  # Debian's tarball leaves out src/beos, which configure still names
+  mkdir -p "$G/src/beos" && printf 'all install install-strip uninstall check clean distclean mostlyclean maintainer-clean distdir:\n\t@:\n' > "$G/src/beos/Makefile.in"
+  python3 "$HERE/native/patch_gnuplot.py" "$G"
+  (cd "$G" && emconfigure ./configure --host=wasm32-unknown-emscripten --build=x86_64-pc-linux-gnu --prefix=/usr/local --without-x --without-qt \
+      --without-cairo --without-wx --disable-wxwidgets --without-lua --without-gd --without-libcerf --without-caca --without-latex \
+      --without-tektronix --without-linux-vga --with-readline=builtin --disable-plugins CFLAGS=-O2 > conf.log &&
+    cd src && emmake make -j2 CFLAGS="-O2 -Dmain=real_main" gnuplot > make.log)
+  OBJS=$(grep -- '-o gnuplot ' "$G/src/make.log" | tail -1 | grep -o '[A-Za-z0-9_./-]*\.o' | tr '\n' ' ')
+  mkdir -p "$VENDOR/gnuplot"
+  (cd "$G/src" && emcc $LINK -sEXPORT_NAME=GalleyGnuplot $OBJS "$SRC/galley_main.o" -lm -o "$VENDOR/gnuplot/gnuplot.js")
+  ls -l "$VENDOR/gnuplot"
 }
 
 # ---- xindy -----------------------------------------------------------------------------------
@@ -169,6 +211,9 @@ xindy() {
     -sMODULARIZE=1 -sINVOKE_RUN=0 -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=67108864 -sTOTAL_STACK=4194304 -sFORCE_FILESYSTEM=1 -sENVIRONMENT=web,worker,node \
     -sEXPORTED_RUNTIME_METHODS=FS,ENV -sEXPORTED_FUNCTIONS=_galley_main,_xindy_boot,_malloc,_fflush -sEXPORT_NAME=GalleyXindy -o "$VENDOR/xindy/xindy.js"
   node "$SRC/binaryen/node_modules/binaryen/bin/wasm-opt" "$VENDOR/xindy/xindy.wasm" --spill-pointers -O2 -o "$VENDOR/xindy/xindy.wasm"
+  # Loading the kernel as ECL bytecode (.fasc, compiled by this program) instead of source was
+  # measured on 2026-10-19 (PLAN task 12): first boot in a fresh process 293 to 350 ms against
+  # 321 to 418 ms, of which ECL's own start is about 200 ms. Not worth a second link and 130 KB.
   # the modules (TeX Live's texmf-dist/xindy/modules): Debian's xindy-rules, with the language
   # modules make-rules generates (with CLISP) already made; build_tree.py puts them in the tree
   fetch $UBUNTU/universe/x/xindy/xindy-rules_2.5.1.20160104-12build2_all.deb 0c9e20debe3f1a5a601025fb70cdccf32c81b07bc28bd41591dc2dcce3986086
@@ -177,5 +222,5 @@ xindy() {
   ls -l "$VENDOR/xindy"
 }
 
-[ $# -gt 0 ] || set -- dvips asy xindy
+[ $# -gt 0 ] || set -- dvips asy xindy gnuplot
 for t in "$@"; do "$t"; done

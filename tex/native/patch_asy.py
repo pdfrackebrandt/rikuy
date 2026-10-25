@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Asymptote for the browser (build_tools.sh asy): the two places where asy starts programs.
+"""Asymptote for the browser (build_tools.sh asy): GLM without OpenGL (first), the two places
+where asy starts programs, and XDR without libtirpc (at the end).
 
 System() (util.cc) runs a program and waits: latex/pdflatex for the final picture, gs, dvips.
 It becomes a call to the worker's shell (Module.galleySystem), which runs them the way TeX's
@@ -12,7 +13,7 @@ each time output is wanted (Module.galleyPipe), and only the output not read yet
 TeX and Ghostscript give the same output for the same input, so the reader sees what a live
 pipe would have shown.
 
-Usage: patch_asy.py ASYMPTOTE_SOURCE_DIR
+Usage: patch_asy.py ASYMPTOTE_SOURCE_DIR [--native]
 """
 import sys, os
 
@@ -27,6 +28,33 @@ def edit(name, old, new, count=1):
     assert s.count(old) >= 1, (name, old[:60])
     s = s.replace(old, new, count)
     open(p, 'w', encoding='utf-8').write(s)
+
+
+# ---- GLM without OpenGL ---------------------------------------------------------------------------
+# These two apply to any asy built with GLM but without OpenGL, Galley's and the native one PLAN
+# task 9 compares it with (build_asy_native.sh runs this with --native, which stops after them).
+def gl_features():
+    # asy takes GLM for OpenGL: with GLM, 3D pictures default to being rendered (render=-1), which
+    # needs OpenGL, and fail. Without OpenGL they stay vector drawings (render=0), as without GLM.
+    edit('settings.cc', '''#ifdef HAVE_LIBGLM
+const bool havegl=true;''', '''#if defined(HAVE_LIBGLM) && (defined(HAVE_GL) || defined(HAVE_LIBOSMESA))
+const bool havegl=true;''')
+    # shipout3 writes WebGL (html) and V3D through the same code, which needs only GLM, but asy
+    # refuses V3D unless built with OpenGL: its check exempts html alone. A desktop asy has
+    # OpenGL and writes V3D, so this one does too.
+    edit('picture.cc', '''#ifndef HAVE_LIBOSMESA
+#ifndef HAVE_GL
+  if(!webgl)
+    camp::reportError("to support onscreen OpenGL rendering; please install the glut library, then ./configure; make");''', '''#ifndef HAVE_LIBOSMESA
+#ifndef HAVE_GL
+  if(!webgl && !v3d)
+    camp::reportError("to support onscreen OpenGL rendering; please install the glut library, then ./configure; make");''')
+
+
+gl_features()
+if '--native' in sys.argv:
+    print('patched', d, '(GLM without OpenGL only)')
+    sys.exit(0)
 
 
 # ---- System() -------------------------------------------------------------------------------
@@ -325,4 +353,24 @@ edit('picture.cc', '''  nodelist::iterator p=nodes.begin();
 #endif
 
   for(size_t i=0; i < lastnumber; ++i) ++p;''')
+# ---- XDR ----------------------------------------------------------------------------------------
+# XDR (V3D output, xinput/xoutput files) comes from native/rpc instead of libtirpc
+# (build_tools.sh defines HAVE_LIBTIRPC). long is 32 bits in WebAssembly and has no overload of
+# its own in xstream (on Linux it is int64_t); size_t, an unsigned long, goes through the 64 bit
+# integer it is on a desktop, so the files are the same.
+edit('xstream.h', '''  IXSTREAM(uint64_t,u_int64_t);
+''', '''  IXSTREAM(uint64_t,u_int64_t);
+#ifdef __EMSCRIPTEN__
+  ixstream& operator >> (long& x) {int64_t y=0; *this >> y; x=(long) y; return *this;}
+  ixstream& operator >> (unsigned long& x) {uint64_t y=0; *this >> y; x=(unsigned long) y; return *this;}
+#endif
+''')
+edit('xstream.h', '''  OXSTREAM(uint64_t,u_int64_t);
+''', '''  OXSTREAM(uint64_t,u_int64_t);
+#ifdef __EMSCRIPTEN__
+  oxstream& operator << (long x) {return *this << (int64_t) x;}
+  oxstream& operator << (unsigned long x) {return *this << (uint64_t) x;}
+#endif
+''')
+
 print('patched', d)

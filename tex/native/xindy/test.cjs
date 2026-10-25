@@ -26,7 +26,8 @@ function walk(d) {
 (async () => {
   const out = { o: '', e: '', s: '' };
   // the program's script, loaded as the CommonJS it is (this package's .js files are modules)
-  const file = path.join(TEX, 'vendor/xindy/xindy.js');
+  // XINDY_DIR: a build to test instead of the vendored one (build_tools.sh with GALLEY_VENDOR)
+  const file = path.join(process.env.XINDY_DIR || path.join(TEX, 'vendor/xindy'), 'xindy.js');
   const m = { exports: {} };
   new Function('module', 'exports', 'require', '__dirname', '__filename', fs.readFileSync(file, 'utf8'))(m, m.exports, require, path.dirname(file), file);
   const P = await m.exports({
