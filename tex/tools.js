@@ -61,7 +61,7 @@ async function emProgram(factoryName, asset, extra) {
   importScripts(HERE + asset.js);
   const mod = await WebAssembly.compile(await toolAsset(asset.wasm));
   const out = { s: '', o: '', e: '' }; // s: all it printed; o: its standard output alone; e: its standard error
-  let mem = null;
+  let mem = null, ex = null;
   const opts = Object.assign({
     noInitialRun: true,
     // the C library reads its environment while starting, before any run: set it first
@@ -70,6 +70,7 @@ async function emProgram(factoryName, asset, extra) {
       for (const ns of Object.values(imports)) for (const v of Object.values(ns)) if (v instanceof WebAssembly.Memory) mem = v;
       WebAssembly.instantiate(mod, imports).then((inst) => {
         for (const v of Object.values(inst.exports)) if (v instanceof WebAssembly.Memory) mem = v;
+        ex = inst.exports;
         ok(inst);
       });
       return {};
@@ -77,11 +78,20 @@ async function emProgram(factoryName, asset, extra) {
     print: (t) => { out.s += t + '\n'; out.o += t + '\n'; },
     printErr: (t) => { out.s += t + '\n'; out.e += t + '\n'; }
   }, extra || {});
-  delete opts.env; delete opts.init;
+  delete opts.env; delete opts.init; delete opts.stack;
   const P = await self[factoryName](opts);
   // what every run starts from: the memory as it is now, after init (xindy loads its Lisp here)
   if (extra && extra.init) extra.init(P);
   const snap = new Uint8Array(mem.buffer).slice();
+  // and the stack pointer, a WebAssembly global the memory does not hold: callMain leaves argv
+  // on the stack and a program that exits from deep inside leaves the pointer lower still, so
+  // without this it sank run after run into the heap (Ghostscript's 64 KB stack after about 25
+  // of asy's runs: the page hung or crashed). The names: Emscripten 3.1.6's (the programs built
+  // here), newer ones', or the minified ones a prebuilt module's glue assigns (extra.stack).
+  const names = (extra && extra.stack) || (ex.stackSave ? ['stackSave', 'stackRestore'] : ['emscripten_stack_get_current', '_emscripten_stack_restore']);
+  const spGet = ex[names[0]], spSet = ex[names[1]];
+  if (typeof spGet !== 'function' || typeof spSet !== 'function' || spGet.length !== 0 || spSet.length !== 1) throw new Error(factoryName + ': no stack pointer functions ' + names.join(', '));
+  const sp0 = spGet();
   // programs built for Galley (build_tools.sh) start at galley_main (native/galley_main.c),
   // which takes the whole argv, program name included
   const enter = P._galley_main ? (argv) => {
@@ -99,9 +109,15 @@ async function emProgram(factoryName, asset, extra) {
     // argv: the program's whole command line, its name first
     call(argv) {
       out.s = ''; out.o = ''; out.e = '';
+      spSet(sp0);
+      const open = new Set();
+      (P.FS.streams || []).forEach((s, i) => { if (s) open.add(i); });
       let code;
       try { code = enter(argv); } catch (e) { code = e && typeof e.status === 'number' ? e.status : (typeof e === 'number' ? e : 1); if (!(e && e.status != null)) { out.s += String(e) + '\n'; out.e += String(e) + '\n'; } }
       if (P._fflush) { try { P._fflush(0); } catch (e) { /* exited */ } }
+      // what it left open when it exited (dvips its .dvi, every run): closed, as the system
+      // closes a process's files, or the descriptors (and TeX's files behind them) pile up
+      (P.FS.streams || []).forEach((s, i) => { if (s && !open.has(i)) { try { P.FS.close(s); } catch (e) { /* closed */ } } });
       const h = new Uint8Array(mem.buffer);
       h.set(snap);
       if (h.length > snap.length) h.fill(0, snap.length);
@@ -498,7 +514,9 @@ function copyBackChanged(FS2, dir, before) {
 
 // ---- Ghostscript -------------------------------------------------------------------------
 async function makeGs() {
-  const G = await emProgram('GalleyGs', INDEX.tools.gs);
+  // @okathira/ghostpdl-wasm 1.1.0's glue: stackSave is export "ba", stackRestore "$"
+  // (Y=c.ba; X=c.$ where it wires the exports up); checked by arity when it loads
+  const G = await emProgram('GalleyGs', INDEX.tools.gs, { stack: ['ba', '$'] });
   const FS2 = G.P.FS;
   const BASEOPTS = ['-q', '-dNOPAUSE', '-dBATCH', '-dSAFER'];
   // epstopdf's default Ghostscript options (TeX Live's epstopdf.pl)
