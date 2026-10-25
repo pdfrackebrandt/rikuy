@@ -415,10 +415,8 @@ function pipeProgram(argv, input, cwd) {
   const ck = pipeKey(argv, cwd, input);
   const hit = pipeCache.get(ck);
   if (hit !== undefined) { pipeCache.delete(ck); pipeCache.set(ck, hit); return hit; }
-  // an answer is kept only when the program really ran: one that still had to be loaded (the
-  // first texpath of a session asks Ghostscript before it is there) answers nothing, and that
-  // nothing, kept, failed the rerun meant to have it ("reading array of length 0" in 3D labels).
-  // While anything is still to be loaded, the run is repeated after, so nothing is kept.
+  // TeX's answer is kept only when it really ran: while anything is still to be loaded (a TeX
+  // instance) the run is repeated after, and an empty answer kept would fail that rerun too
   if (TEX_PROGRAMS[name]) {
     const q = asyQuestion(input);
     if (asyRehearsal && q) { asyRehearsal.push({ argv, cwd, input, ...q }); return asyGuess(q.q); }
@@ -426,9 +424,10 @@ function pipeProgram(argv, input, cwd) {
     if (!SHELL.state.need.size) pipeKeep(ck, out);
     return out;
   }
-  const out = SHELL.run(argv, cwd, input).out;
-  if (!SHELL.state.need.size) pipeKeep(ck, out);
-  return out;
+  // not kept: what a program other than TeX prints depends on files the key does not hold
+  // (texpath runs Ghostscript on <job>_.ps, one name for every label: kept, the second label got
+  // the first one's outlines, fequlogo's formulas swapped places)
+  return SHELL.run(argv, cwd, input).out;
 }
 
 // Asymptote asks its LaTeX for each label's size, one at a time, and each answer costs a run of
