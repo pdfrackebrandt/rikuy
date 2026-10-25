@@ -275,7 +275,11 @@ async function newTeX(primary) {
       imports.env.shell_escape_dispatch_js = (a, b) => (b < 0 ? pipeHook(a, b) : SHELL.dispatch(cstr(a), b > 1 ? cstr(b) : M.FS.cwd()));
       // kpathsea asks here for a file it did not find in the tree: the full TeX Live mirror
       imports.env.kpse_remote_fetch_js = (namePtr, format) => mirrorFetch(cstr(namePtr), format);
-      WebAssembly.instantiate(engineModule, imports).then((inst) => { Module._galleyMalloc = inst.exports.malloc; ok(inst); });
+      WebAssembly.instantiate(engineModule, imports).then((inst) => {
+        Module._galleyMalloc = inst.exports.malloc;
+        Module._galleyStack = [inst.exports.emscripten_stack_get_current, inst.exports._emscripten_stack_restore];
+        ok(inst);
+      });
       return {};
     },
     print(...a) { out.stdout += a.join(' ') + '\n'; },
@@ -296,6 +300,9 @@ async function newTeX(primary) {
   } finally { M = prev; }
   T._memHeader = Uint8Array.from(T.HEAPU8.subarray(0, MEM_HEADER));
   T.HEAPU8.fill(0, MEM_HEADER);
+  const [spGet, spSet] = Module._galleyStack;
+  if (typeof spGet !== 'function' || typeof spSet !== 'function') throw new Error('the TeX engine exports no stack pointer functions');
+  T._sp0 = spGet(); T._stackRestore = spSet;
   return T;
 }
 // one more instance, for TeX run from the deepest one now (made between passes)
@@ -408,15 +415,19 @@ function pipeProgram(argv, input, cwd) {
   const ck = pipeKey(argv, cwd, input);
   const hit = pipeCache.get(ck);
   if (hit !== undefined) { pipeCache.delete(ck); pipeCache.set(ck, hit); return hit; }
+  // an answer is kept only when the program really ran: one that still had to be loaded (the
+  // first texpath of a session asks Ghostscript before it is there) answers nothing, and that
+  // nothing, kept, failed the rerun meant to have it ("reading array of length 0" in 3D labels).
+  // While anything is still to be loaded, the run is repeated after, so nothing is kept.
   if (TEX_PROGRAMS[name]) {
     const q = asyQuestion(input);
     if (asyRehearsal && q) { asyRehearsal.push({ argv, cwd, input, ...q }); return asyGuess(q.q); }
     const out = texPipe(argv, input, cwd);
-    pipeKeep(ck, out);
+    if (!SHELL.state.need.size) pipeKeep(ck, out);
     return out;
   }
   const out = SHELL.run(argv, cwd, input).out;
-  pipeKeep(ck, out);
+  if (!SHELL.state.need.size) pipeKeep(ck, out);
   return out;
 }
 
@@ -694,6 +705,11 @@ function run(args, beforeRestore) {
   const FS = M.FS;
   M._out.stdout = ''; M._out.stderr = '';
   M._pipes = new Map(); pipeOpening = null;
+  // The stack pointer is a WebAssembly global, outside the memory restored after each run:
+  // callMain puts argv on the stack and never takes it back, and a program that exits from
+  // deep inside leaves it lower still. Run after run it would sink into the heap (a 64 KB
+  // stack, Ghostscript's, did after about 25 of asy's runs). Every run starts where the first did.
+  if (M._sp0 != null) M._stackRestore(M._sp0);
   let code;
   // callMain prepends argv[0] to the array it is given, so it gets a copy
   try { code = M.callMain([...args]); } catch (e) {
