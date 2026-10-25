@@ -69,7 +69,11 @@ const classic = (src, name) => {
   if (!n || !t.includes('self.' + name)) throw new Error('unexpected module shape: ' + src);
   return escapeCtl(t);
 };
-fs.writeFileSync(O('tex/gs.js'), classic('node_modules/@okathira/ghostpdl-wasm/dist/gs.js', 'GalleyGs'));
+const gsJs = classic('node_modules/@okathira/ghostpdl-wasm/dist/gs.js', 'GalleyGs');
+// tools.js resets Ghostscript's stack pointer through the exports this glue calls stackSave (Y,
+// export "ba") and stackRestore (X, export "$"), as its invoke wrappers use them
+if (!gsJs.includes('X=c.$;') || !gsJs.includes('Y=c.ba;') || !/var c=Y\(\);try\{T\.get\(a\)\(b\)\}catch\(d\)\{X\(c\);/.test(gsJs)) throw new Error('ghostpdl-wasm glue changed: check the stack exports in tools.js makeGs');
+fs.writeFileSync(O('tex/gs.js'), gsJs);
 // programs built for Galley (tex/build_tools.sh) are classic scripts already
 for (const t of ['dvips', 'asy', 'xindy', 'gnuplot']) fs.writeFileSync(O('tex/' + t + '.js'), escapeCtl(fs.readFileSync(R('tex/vendor/' + t + '/' + t + '.js'), 'utf8')));
 // Pyodide's loader is a classic script already; its runtime comes from build_tree.py
