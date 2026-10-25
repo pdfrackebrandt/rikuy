@@ -1,18 +1,45 @@
-Galley bundles the following third-party components:
+Galley
+Copyright (C) 2026 Pedro F. Rackebrandt
 
-Component                  License
-------------------------   ------------------
-TeX Live (BusyTeX 1.4.0)   LPPL / GPL (various)
-TeX Live (Ubuntu 24.04)    LPPL / GPL (various)
-BusyTeX                    AGPL-3.0-or-later
-dvips                      GPL-2.0 or later
-Asymptote                  GPL-3.0 or later
-xindy                      GPL-2.0 or later
-ECL                        LGPL-2.1 or later
-GMP                        LGPL-3.0 or later
-Ghostscript                AGPL-3.0 or later
-webR                       LGPL / MIT (see source)
-Pyodide                    MPL-2.0 / various
-gnuplot                    Gnuplot license
+Galley is free software under the GNU Affero General Public License, version 3 or (at your
+option) any later version; the full text is in LICENSE. The AGPL is not only a choice: two of
+the programs Galley ships are AGPL themselves (BusyTeX and Ghostscript), and a web page that
+runs them is network use of them.
 
-See each component's upstream source for the full license text.
+Galley ships these programs and libraries. Each keeps its own license; the source of each is
+at the address given.
+
+Built into the TeX engines and tree
+  BusyTeX (texlyre-busytex 1.4.0), TeX Live 2026 compiled to WebAssembly
+      AGPL-3.0                        github.com/TeXlyre/texlyre-busytex
+  TeX Live 2026 programs inside it: pdfTeX, LuaHBTeX, bibtex8, makeindex, kpathsea and the
+  rest (GPL-2.0-or-later, LGPL-2.1-or-later), XeTeX and xdvipdfmx (MIT/X11, GPL-2.0-or-later),
+  HarfBuzz (MIT), ICU (Unicode License), FreeType (FTL or GPL-2.0), fontconfig (MIT)
+                                      github.com/TeX-Live/texlive-source
+  biber (Artistic-2.0), as BusyTeX packages it
+  The TeX Live tree: TeX Live 2026.20260711 from Ubuntu 26.10's packages, laid over BusyTeX's
+  TeX Live 2026. Each package carries its own license, mostly the LaTeX Project Public
+  License (LPPL-1.3c), GPL, the SIL Open Font License and public domain; see the package's
+  files in the tree and tlpkg/texlive.tlpdb in TeX Live.  www.tug.org/texlive
+
+Built for Galley from source (tex/build_tools.sh, tex/native/)
+  dvips (TeX Live)                    GPL-2.0-or-later
+  Asymptote 3.09                      GPL-3.0-or-later                       github.com/vectorgraphics/asymptote
+  xindy 2.5.1                         GPL-2.0-or-later                       TeX Live source, utils/xindy
+  ECL 24.5.10 (runs xindy)            LGPL-2.1-or-later                      ecl.common-lisp.dev
+  GMP 6.3.0                           LGPL-3.0-or-later or GPL-2.0-or-later  gmplib.org
+  Boehm GC 8.2.8                      MIT-style (bdwgc license)              github.com/ivmai/bdwgc
+  GLM 1.0.1 (headers, in Asymptote)   MIT or the Happy Bunny License         github.com/g-truc/glm
+  gnuplot 6.0.2                       gnuplot license                        www.gnuplot.info
+
+Other programs run in the page
+  Ghostscript (@okathira/ghostpdl-wasm 1.1.0)       AGPL-3.0-or-later   github.com/okathira/ghostpdl-wasm
+  Pyodide 314.0.7 (Python 3.14)                     MPL-2.0             github.com/pyodide/pyodide
+  Pygments 2.19, latexminted 0.7, latexrestricted and latex2pydata (in Pyodide), the wheels
+  TeX Live's minted bundles                         BSD-2-Clause; LPPL-1.3c
+
+The editor page
+  CodeMirror 5 (MIT), KaTeX (MIT), MathLive (MIT), pdf.js (Apache-2.0), JSZip (MIT or
+  GPL-3.0), fflate (MIT), isomorphic-git and lightning-fs (MIT), the Computer Modern web
+  fonts (computer-modern, MIT; the fonts themselves under the SIL Open Font License), and the
+  small npm packages they depend on (MIT, BSD, Apache-2.0); see node_modules/*/package.json.

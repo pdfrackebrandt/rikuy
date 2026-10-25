@@ -28,13 +28,13 @@ which understands the shell syntax packages use and runs (`tools.js`):
 |---|---|
 | kpsewhich, l3sys-query, echo, cat, rm, cp, mv, mkdir, touch, test, which, sh -c | answered in JavaScript |
 | repstopdf, epstopdf, gs, rungs, ps2pdf | Ghostscript 10.06 (@okathira/ghostpdl-wasm) |
-| gnuplot | gnuplot 6.0 (gnuplot-wasm), with its PostScript prologues |
-| latexminted, pygmentize | Python 3.14 (Pyodide) with latexminted 0.6, Pygments 2.20 |
+| gnuplot | gnuplot 6.0.2, built here, with its PostScript prologues |
+| latexminted, pygmentize | Python 3.14 (Pyodide) with the wheels TeX Live's minted bundles (latexminted 0.7, Pygments 2.19) |
 | makeindex, bibtex | TeX Live's own, right after the pass |
 | pdflatex, latex, xelatex, lualatex | a second instance of the engine (TikZ externalize, auto-pst-pdf, standalone) |
 | pdfcrop | Ghostscript's bounding boxes and pdfcrop's own TeX run, in JavaScript |
 | dvips | TeX Live's, built here (`build_tools.sh`) |
-| asy | Asymptote 3.09, built here, its labels measured by the second TeX |
+| asy | Asymptote 3.09, built here (with GLM and XDR), its labels measured by the second TeX |
 | xindy, texindy, tex2xindy | xindy 2.5.1 on ECL 24.5.10, built here, with TeX Live's Perl front ends written in JavaScript |
 
 Pipes work both ways: `\input|"cmd"` reads a program's output and `\openout` to `|"cmd"` feeds one.
@@ -50,8 +50,9 @@ pclose()). `swap_wasm.py` puts a newly patched engine into a built tree.
 
 ### Programs built for Galley (`build_tools.sh`)
 
-dvips, Asymptote and xindy are compiled from TeX Live's source (pinned commit) with Ubuntu's
-Emscripten 3.1.6. Their `main` is entered through `native/galley_main.c`.
+dvips, Asymptote and xindy are compiled from TeX Live's source (pinned commit), gnuplot 6.0.2
+from Ubuntu's source package, all with Ubuntu's Emscripten 3.1.6. Their `main` is entered
+through `native/galley_main.c`.
 
 - Asymptote keeps a LaTeX open to measure each label; a browser cannot keep a second program
   waiting for input, so `native/patch_asy.py` makes each answer a run of TeX on what asy wrote so
@@ -69,22 +70,33 @@ Emscripten 3.1.6. Their `main` is entered through `native/galley_main.c`.
 
 Independently of shell escape the worker does what latexmk does: bibtex or biber, makeindex for
 indexes, glossaries (xindy for a glossary with an .xdy style, called as makeglossaries calls it)
-and nomenclatures, asy for asymptote.sty's figures, and reruns until references settle. When
-imakeidx may not run its program itself it names the command in the log; that command runs.
+and nomenclatures, asy for asymptote.sty's figures, and reruns until references settle: when
+LaTeX asks, and, as latexmk decides from TeX's recorder file, when a pass read a file it then
+wrote with other content (a table of contents whose page numbers moved; LaTeX itself warns only
+about labels). At most five passes. As with latexmk, a first run starts from the `.aux` a one
+page document writes, so such a document takes one pass, not two. When imakeidx may not run its program itself it names the
+command in the log; that command runs.
 
 ## The tree
 
-- `build_tree.py tree` merges the BusyTeX TeX Live 2026 tree with Ubuntu 24.04's TeX Live 2023
-  packages for what it lacks. Files of a name the 2026 tree already has are never added.
-  `pdftex.map` keeps only lines whose fonts are present.
+- `build_tree.py tree` lays TeX Live 2026.20260711 (Ubuntu 26.10's TeX Live packages, the
+  `DEB_SETS` collections) over the tree inside BusyTeX's release (TeX Live 2026 of March), so
+  packages are July's; BusyTeX's files stay where Debian leaves files out (fonts it packages
+  separately, for one) and for the engine's own configuration (`web2c`, `tex/generic/config`).
+  `pdftex.map` keeps only lines whose fonts are present. `GALLEY_TL_FIRST=0` gives the earlier
+  tree: BusyTeX's, with Ubuntu 24.04's TeX Live 2023 only for what it lacks.
+- `build_formats.py` makes the formats (pdfLaTeX, XeLaTeX, LuaLaTeX, every language of
+  `language.dat`) with Galley's own engines from that tree, as fmtutil does on a desktop.
 - `build_pk.py` makes PK fonts with METAFONT for the families that exist only as METAFONT
-  source (Concrete, bbm, blackletter, chess and symbol fonts), as mktexpk would on a desktop.
+  source (Concrete, bbm, blackletter, chess and symbol fonts, bold typewriter), as mktexpk
+  would on a desktop, and the EC and Cyrillic (T1, TS1, T2A) metrics TeX Live leaves to
+  mktextfm, whose glyphs then come from cm-super.
 - `build_tree.py packs` writes `dist/tex/`: packs of whole package folders, the engine, biber, the
   shell's programs, and `tree.wasm`, the index. Type 1 fonts are stored with both of their
   ciphers removed (they compress to half) and put back on read, byte for byte.
 - `build_all.sh` runs the whole sequence.
 
-The artifact on claude.ai holds about 245 MB (its limit is 256 MB).
+The artifact on claude.ai holds about 250 MB (its limit is 256 MB).
 
 ## Full TeX Live for Galley on its own site
 
@@ -99,5 +111,6 @@ works on a self-hosted Galley, not inside the artifact.
 ## Limits
 
 Fonts that come from the mirror are found by file name, not by family name. Programs outside
-TeX Live (inkscape, R, Java's bib2gls) cannot run. Asymptote draws 3D figures as vector graphics:
-it is built without OpenGL, so no rendered bitmaps and no interactive WebGL or PRC output.
+TeX Live (inkscape, R, Java's bib2gls) cannot run (PLAN.md, task 11). Asymptote is built without
+OpenGL: 3D figures in a PDF are vector drawings where a desktop asy renders a bitmap; WebGL
+(`-f html`), V3D and PRC output work.
