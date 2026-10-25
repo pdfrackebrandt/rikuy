@@ -4,7 +4,7 @@
 version holds that this build no longer has (so the version stays under its 256 MB).
 
 Usage: publish_batches.py [live-files.txt]   (one published path per line, from a files listing)
-Writes /tmp/eng/batch<i>.json, each a `files` map for the Artifact tool (path -> source or null).
+Writes $GALLEY_WORK/batch<i>.json, each a `files` map for the Artifact tool (path -> source or null).
 """
 import json, os, sys, gzip
 
