@@ -77,7 +77,9 @@ FONT_PICKS = ['newtx', 'newpx', 'stix2-type1', 'stix', 'fourier', 'mathdesign', 
               # METAFONT families (shipped as PK fonts, build_pk.py) and the metrics their Type 1 versions need
               'gothic', 'bbm', 'bbm-macros', 'skull', 'mathabx', 'bbold', 'ecc', 'dancers', 'esvect', 'wasy', 'wasy-type1',
               # bold typewriter and small caps for bold-extra (listings' keywords in \ttfamily\bfseries)
-              'cm-mf-extra-bold']
+              'cm-mf-extra-bold',
+              # beamer loads it whenever it is installed: math italic in slides set in sans (76 KB)
+              'sansmathaccent']
 DEB_SETS = ['texlive-lang-german', 'texlive-lang-spanish', 'texlive-lang-french', 'texlive-lang-portuguese', 'texlive-lang-italian',
             'texlive-lang-european', 'texlive-science', 'texlive-bibtex-extra', 'texlive-pictures', 'texlive-publishers',
             'texlive-humanities', 'texlive-plain-generic', 'texlive-lang-cyrillic', 'texlive-latex-extra', 'texlive-latex-recommended', 'texlive-games',
