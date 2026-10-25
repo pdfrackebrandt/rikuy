@@ -3,7 +3,7 @@
 //
 //   gs       Ghostscript 10.06 (@okathira/ghostpdl-wasm): EPS and PostScript to PDF, for
 //            epstopdf/repstopdf and for xdvipdfmx (PSTricks and EPS under XeLaTeX)
-//   gnuplot  gnuplot 6.0 (gnuplot-wasm): gnuplottex, pgfplots' "gnuplot" plots
+//   gnuplot  gnuplot 6.0.2 (built here: build_tools.sh): gnuplottex, pgfplots' "gnuplot" plots
 //   python   Python 3.14 (Pyodide) with Pygments and latexminted: minted
 //
 // Each runs on its own file system; a run copies the files it needs in at the same absolute
@@ -454,6 +454,8 @@ function mirrorFolder(FS2, dir, limit) {
     }
   };
   walk(dir);
+  // and a file TeX's side no longer has (deleted by TeX or by another program) is gone here too
+  for (const p of folderState(FS2, dir).keys()) if (!exists(p)) { try { FS2.unlink(p); } catch (e) { /* gone */ } }
 }
 // what changed in a folder of a program's file system since `before` (path -> signature)
 function folderState(FS2, dir) {
@@ -472,10 +474,13 @@ function folderState(FS2, dir) {
   walk(dir);
   return st;
 }
-// copies back what the program wrote; returns how many files TeX will now see differently
+// copies back what the program wrote, and deletes what it deleted (latexminted removes the
+// message file of its last run; a stale one reads as a new error); returns how many files TeX
+// will now see differently
 function copyBackChanged(FS2, dir, before) {
   const after = folderState(FS2, dir);
   let n = 0;
+  for (const p of before.keys()) if (!after.has(p) && exists(p)) { try { M.FS.unlink(p); n++; } catch (e) { /* a folder */ } }
   for (const [p, sig] of after) {
     if (before.get(p) === sig) continue;
     const data = FS2.readFile(p);
@@ -688,7 +693,7 @@ async function makeGnuplot() {
   const FS2 = G.P.FS;
   try { FS2.init(() => null, null, null); } catch (e) { /* already */ }
   // the PostScript prologues the postscript and epslatex terminals copy into their output
-  // (gnuplot 6.0's, from Ubuntu's gnuplot-data, shipped in the TeX tree)
+  // (gnuplot 6.0.2's, shipped in the TeX tree)
   const PS = '/usr/local/share/gnuplot/6.0/PostScript';
   mkdirsIn(FS2, PS);
   try { for (const n of M.FS.readdir('/texlive/gnuplot-ps')) if (n !== '.' && n !== '..') FS2.writeFile(PS + '/' + n, M.FS.readFile('/texlive/gnuplot-ps/' + n)); } catch (e) { /* none */ }
@@ -794,8 +799,9 @@ def galley_fresh_latexminted():
     for _m in [m for m in sys.modules if m.split('.')[0] in ('latexminted', 'latexrestricted', 'latex2pydata')]:
         del sys.modules[_m]
     import argparse, latexminted.cmdline as _lmc
-    # latexminted 0.6.0 (the one TeX Live 2026's minted 3.7 asks for) predates Python 3.14, whose
-    # argparse passes color= to subcommand parsers; its parser class takes no such argument
+    # latexminted 0.6.0 (the one minted 3.7, in BusyTeX's TeX Live, asks for) predates Python
+    # 3.14, whose argparse passes color= to subcommand parsers; its parser class takes no such
+    # argument (0.7.0, with minted 3.8, does; dropping it there only drops colored help)
     for _cls in [c for c in vars(_lmc).values() if isinstance(c, type) and issubclass(c, argparse.ArgumentParser)]:
         _orig = _cls.__init__
         def _init(self, *a, _orig=_orig, **k):

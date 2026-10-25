@@ -823,15 +823,49 @@ const RERUN = /Rerun to get|rerun LaTeX|Label\(s\) may have changed|run LaTeX ag
 // when biber could not help, another TeX pass changes nothing
 const needsRerun = (log) => RERUN.test(log) && !/Please \(re\)run Biber/.test(log);
 
+// latexmk's other reason for a pass: TeX read a file it then wrote with other content, or looked
+// for one it then made. LaTeX itself warns only when labels change, so without this a table of
+// contents or a list of figures keeps the page numbers of the pass before (the corpus's
+// Analysis-I.tex: "Vorwort 3" here, 4 in TeX Live's latexmk). TeX's recorder (-recorder, the
+// .fls) lists what a pass read and wrote, in order; a file written before it was read (the .aux
+// LaTeX checks at \end{document}) was not an input.
+const NOT_REREAD = /\.(log|pdf|xdv|dvi|fls|synctex|synctex\.gz)$/i;
+const TRIVIAL_AUX = '\\relax \n\\gdef \\@abspage@last{1}\n';
+function flsFiles(fls) {
+  const pwd = (fls.match(/^PWD (.*)$/m) || [])[1] || '';
+  const abs = (p) => (p.startsWith('/') ? p : pwd + '/' + p.replace(/^\.\//, ''));
+  const first = new Map();
+  const written = new Set();
+  for (const m of fls.matchAll(/^(INPUT|OUTPUT) (.*)$/gm)) {
+    const p = abs(m[2]);
+    if (!first.has(p)) first.set(p, m[1]);
+    if (m[1] === 'OUTPUT' && !NOT_REREAD.test(p)) written.add(p);
+  }
+  return { abs, first, written };
+}
+// the contents of what the last pass wrote, as the next pass will find them
+function rereadState(fls) {
+  const s = new Map();
+  if (fls) for (const p of flsFiles(fls).written) if (exists(p)) s.set(p, readText(p));
+  return s;
+}
+function rewrote(fls, log, before) {
+  if (!fls) return false;
+  const { abs, first, written } = flsFiles(fls);
+  for (const p of written) if (first.get(p) === 'INPUT' && before.get(p) !== readText(p)) return true;
+  for (const m of log.matchAll(/^No file (.+)\.$/gm)) if (written.has(abs(m[1]))) return true;
+  return false;
+}
+
 // ---- engines -------------------------------------------------------------------------
 // pdfLaTeX writes PDF itself; XeLaTeX writes XDV, which xdvipdfmx turns into PDF; LuaLaTeX
 // (LuaHBTeX, as in TeX Live) writes PDF itself.
 const ENGINES = {
-  pdflatex: { label: 'pdfLaTeX', out: 'pdf', cmd: (b, se) => ['pdflatex', '-synctex=1', se, '--interaction=nonstopmode', '--file-line-error', '--fmt', FMT.pdflatex, b + '.tex'] },
-  xelatex: { label: 'XeLaTeX', out: 'xdv', cmd: (b, se) => ['xelatex', '-synctex=1', se, '--interaction=nonstopmode', '--file-line-error', '-no-pdf', '--fmt', FMT.xelatex, b + '.tex'] },
-  lualatex: { label: 'LuaLaTeX', out: 'pdf', cmd: (b, se) => ['luahblatex', '-synctex=1', se, '--interaction=nonstopmode', '--file-line-error', '--nosocket', '--fmt', FMT.lualatex, b + '.tex'] },
+  pdflatex: { label: 'pdfLaTeX', out: 'pdf', cmd: (b, se) => ['pdflatex', '-synctex=1', '-recorder', se, '--interaction=nonstopmode', '--file-line-error', '--fmt', FMT.pdflatex, b + '.tex'] },
+  xelatex: { label: 'XeLaTeX', out: 'xdv', cmd: (b, se) => ['xelatex', '-synctex=1', '-recorder', se, '--interaction=nonstopmode', '--file-line-error', '-no-pdf', '--fmt', FMT.xelatex, b + '.tex'] },
+  lualatex: { label: 'LuaLaTeX', out: 'pdf', cmd: (b, se) => ['luahblatex', '-synctex=1', '-recorder', se, '--interaction=nonstopmode', '--file-line-error', '--nosocket', '--fmt', FMT.lualatex, b + '.tex'] },
   // LaTeX writing DVI, then dvips and ps2pdf: the classic route, PSTricks' own
-  latex: { label: 'LaTeX (dvips)', out: 'dvi', cmd: (b, se) => ['pdflatex', '-synctex=1', se, '--interaction=nonstopmode', '--file-line-error', '-output-format=dvi', '--fmt', FMT.pdflatex, b + '.tex'] }
+  latex: { label: 'LaTeX (dvips)', out: 'dvi', cmd: (b, se) => ['pdflatex', '-synctex=1', '-recorder', se, '--interaction=nonstopmode', '--file-line-error', '-output-format=dvi', '--fmt', FMT.pdflatex, b + '.tex'] }
 };
 const ENGINE_NAMES = { pdflatex: 'pdflatex', pdftex: 'pdflatex', latex: 'latex', dvips: 'latex', 'latex-dvips': 'latex', xelatex: 'xelatex', xetex: 'xelatex', lualatex: 'lualatex', luatex: 'lualatex', luahblatex: 'lualatex', luahbtex: 'lualatex' };
 
@@ -1001,6 +1035,28 @@ async function indexTools(base, dir, runs) {
 // is drawn again only when its .asy changed.
 const asySigs = new Map(); // project dir -> {file: hash of the .asy it was drawn from}
 const ASY_OUT = /-\d+(_\d+)?\.(asy|pdf|eps|tex|pre)$/;
+// asy with its labels answered ahead: rehearsals until no new label is asked (see
+// asyRehearsal), three at most, then the real run. A program it started that was not loaded yet
+// (dvips for texpath and 3D labels, a second TeX) is loaded and the drawing made again.
+async function asyRun(argv, cwd, stdin) {
+  for (let k = 0; k < 3; k++) {
+    const asked = asyRehearsal = [];
+    try { SHELL.run(argv, cwd, stdin); } finally { asyRehearsal = null; }
+    if (!asked.length) break;
+    asyAnswerAll(asked);
+  }
+  let r = SHELL.run(argv, cwd, stdin);
+  for (let k = 0; k < 2 && r.code && SHELL.state.need.size; k++) {
+    const want = [...SHELL.state.need];
+    SHELL.state.need.clear();
+    for (const t of want) {
+      status('tool-fetch', { tool: TOOL_NAMES[t] || t });
+      await (t === 'tex' ? addTeXInstance() : loadTool(t)).catch(() => {});
+    }
+    r = SHELL.run(argv, cwd, stdin);
+  }
+  return r;
+}
 async function asyFigures(base, dir, runs) {
   let names;
   try { names = M.FS.readdir('.'); } catch (e) { return false; }
@@ -1025,22 +1081,7 @@ async function asyFigures(base, dir, runs) {
   const cwd = M.FS.cwd();
   for (const [n, h] of todo) {
     status('tool', { tool: 'asy' });
-    // rehearsals until no new label is asked (see asyRehearsal); three at most
-    for (let k = 0; k < 3; k++) {
-      let asked = asyRehearsal = [];
-      try { SHELL.run(['asy', n], cwd); } finally { asyRehearsal = null; }
-      if (!asked.length) break;
-      asyAnswerAll(asked);
-    }
-    let r = SHELL.run(['asy', n], cwd);
-    // a program asy started that was not loaded yet (dvips for texpath and 3D labels): load it,
-    // draw again
-    for (let k = 0; k < 2 && r.code && SHELL.state.need.size; k++) {
-      const want = [...SHELL.state.need];
-      SHELL.state.need.clear();
-      for (const t of want) { status('tool-fetch', { tool: TOOL_NAMES[t] || t }); await loadTool(t).catch(() => {}); }
-      r = SHELL.run(['asy', n], cwd);
-    }
+    const r = await asyRun(['asy', n], cwd);
     runs.push({ cmd: 'asy', code: r.code, log: (r.out + r.err).slice(-3000) });
     if (!r.code) seen[n] = h;
   }
@@ -1112,7 +1153,17 @@ async function compile(job) {
   await preloadTools(texFiles, job.files, engine);
   if (E.out === 'dvi') for (const k of ['dvips', 'gs']) if (!TOOLS[k]) { status('tool-fetch', { tool: TOOL_NAMES[k] }); await loadTool(k).catch(() => {}); }
   const runs = [];
-  const texRun = () => { status('pass', { n: runs.filter((x) => x.cmd === 'tex').length + 1, engine }); const r = run(tex); runs.push({ cmd: 'tex', engine, code: r.code, log: readText(base + '.log'), err: (r.stderr || '').slice(-3000) }); return runs[runs.length - 1]; };
+  let reread = rereadState(readText(base + '.fls'));
+  const texRun = () => {
+    status('pass', { n: runs.filter((x) => x.cmd === 'tex').length + 1, engine });
+    const before = reread;
+    const r = run(tex);
+    const log = readText(base + '.log');
+    const fls = readText(base + '.fls');
+    reread = rereadState(fls);
+    runs.push({ cmd: 'tex', engine, code: r.code, log, err: (r.stderr || '').slice(-3000), rewrote: rewrote(fls, log, before) });
+    return runs[runs.length - 1];
+  };
   const texPasses = () => runs.filter((x) => x.cmd === 'tex').length;
   let pendingRerun = false;
   let toolLoads = 0;
@@ -1132,6 +1183,7 @@ async function compile(job) {
       x = texRun();
     }
     if (SHELL.state.rerun) { SHELL.state.rerun = false; pendingRerun = true; }
+    if (x.rewrote) pendingRerun = true;
     if (SHELL.state.deferred.length) {
       const jobs = SHELL.state.deferred; SHELL.state.deferred = [];
       if (runPrograms(jobs, runs)) pendingRerun = true;
@@ -1151,6 +1203,13 @@ async function compile(job) {
   if (lastEngine.get(dir) && lastEngine.get(dir) !== engine) for (const x of ['.aux', '.toc', '.lof', '.lot', '.out', '.nav', '.snm']) if (exists(base + x)) M.FS.unlink(base + x);
   lastEngine.set(dir, engine);
   const bibStale = (job.bibSig || '') !== (bibSigs.get(dir) || '');
+  // A first run starts from the .aux a one page document without references writes, as latexmk
+  // does (its set_trivial_aux_fdb): such a document then needs one pass, not two (a 3D pgfplots
+  // figure: a minute less). Any other document rewrites it and gets its second pass as before.
+  if (!exists(base + '.aux')) {
+    M.FS.writeFile(base + '.aux', TRIVIAL_AUX);
+    reread.set(M.FS.cwd().replace(/\/$/, '') + '/' + base + '.aux', TRIVIAL_AUX);
+  }
   let r = await pass();
   const fatal = (x) => /Emergency stop|Fatal error occurred|==> Fatal error|No pages of output/.test(x.log) && !exists(base + '.' + E.out);
   // bibliography
@@ -1204,7 +1263,9 @@ async function compile(job) {
     }
   }
   if (engine === 'lualatex') saveFontCaches().catch(() => {});
-  const pdf = readBytes(base + '.pdf');
+  // pdfTeX leaves an empty .pdf behind when a run had "No pages of output": that is no PDF
+  const pdfFile = readBytes(base + '.pdf');
+  const pdf = pdfFile && pdfFile.length ? pdfFile : null;
   const synctex = readBytes(base + '.synctex.gz');
   const out = {
     id: job.id,
@@ -1274,6 +1335,9 @@ let booting = null;
 onmessage = async ({ data }) => {
   try {
     if (data.init) {
+      // tests fix the clock (SOURCE_DATE_EPOCH, FORCE_SOURCE_DATE) so a PDF can be compared with a
+      // desktop TeX Live's; the editor never sends env, so \today stays today for its users
+      if (data.env && !booting) Object.assign(ENV, data.env);
       if (data.mirror && !booting) MIRROR_URL = new URL(data.mirror, data.base || self.location.href).href;
       booting = booting || boot(data.base || self.location.href);
       await booting;
@@ -1297,7 +1361,18 @@ onmessage = async ({ data }) => {
       const dir = PROJECT + '/shell-' + (j.id || 'x');
       mkdirp(dir);
       for (const f of j.files || []) { const p = dir + '/' + f.path; mkdirp(p.slice(0, p.lastIndexOf('/'))); M.FS.writeFile(p, f.data); }
-      const r = SHELL.run(j.argv, dir, j.stdin);
+      SHELL.reset();
+      // asy as asymptote.sty's figures run it: a second TeX for its labels, answered ahead
+      if (j.argv[0] === 'asy' && texPool.length < 2) await addTeXInstance().catch(() => {});
+      let r = j.argv[0] === 'asy' ? await asyRun(j.argv, dir, j.stdin) : SHELL.run(j.argv, dir, j.stdin);
+      // what the program found missing (a TeX instance for asy's labels, a program it started):
+      // made or loaded, and the program run again, as a compile's pass does
+      for (let k = 0; k < 2 && SHELL.state.need.size; k++) {
+        const need = [...SHELL.state.need];
+        SHELL.state.need.clear();
+        for (const t of need) await (t === 'tex' ? addTeXInstance() : loadTool(t));
+        r = SHELL.run(j.argv, dir, j.stdin);
+      }
       const files = {};
       for (const n of j.read || []) if (exists(dir + '/' + n)) files[n] = M.FS.readFile(dir + '/' + n);
       post({ shellResult: Object.assign(r, { files }) });
