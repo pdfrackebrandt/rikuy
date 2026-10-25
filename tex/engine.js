@@ -332,6 +332,9 @@ function nestedTeX(argv, io, opts) {
   if (P.xdv) { pdfAfter = !argv.some((a) => /^--?no-pdf$/.test(a)); args.splice(1, 0, '-no-pdf'); }
   if (P.lua) args.splice(1, 0, '--nosocket');
   args.splice(1, 0, '--fmt', FMT[P.fmt]);
+  // kpathsea's search path by TeX Live's name for the program (see ENGINES), never a -dev one:
+  // the format is the release kernel's
+  if (!argv.some((a) => /^--?progname=/.test(a))) args.splice(1, 0, '-progname=' + name.replace(/-dev$/, '').replace(/^luahblatex$/, 'lualatex'));
   // shell escape as asked, else as this compile has it
   if (!argv.some((a) => /^--?(no-)?shell-(escape|restricted)$|^--?(dis|en)able-write18$/.test(a))) args.splice(1, 0, KPSE_VARS.shell_escape === 't' ? '-shell-escape' : '-shell-restricted');
   const jobname = (argv.find((a) => /^--?jobname=/.test(a)) || '').replace(/^--?jobname=/, '').replace(/^"|"$/g, '');
@@ -860,12 +863,17 @@ function rewrote(fls, log, before) {
 // ---- engines -------------------------------------------------------------------------
 // pdfLaTeX writes PDF itself; XeLaTeX writes XDV, which xdvipdfmx turns into PDF; LuaLaTeX
 // (LuaHBTeX, as in TeX Live) writes PDF itself.
+// -progname: kpathsea picks its search path by the program's name (texmf.cnf's TEXINPUTS.xelatex
+// is tex/{xelatex,latex,xetex,generic,}//). Run as an applet of BusyTeX's one binary, the name
+// would be "busytex", whose default path puts tex/generic first: XeLaTeX then read PSTricks'
+// generic pstricks.con instead of tex/xelatex's, wrote ps: specials xdvipdfmx cannot draw, and
+// every PSTricks figure came out blank. The names are TeX Live's own.
 const ENGINES = {
-  pdflatex: { label: 'pdfLaTeX', out: 'pdf', cmd: (b, se) => ['pdflatex', '-synctex=1', '-recorder', se, '--interaction=nonstopmode', '--file-line-error', '--fmt', FMT.pdflatex, b + '.tex'] },
-  xelatex: { label: 'XeLaTeX', out: 'xdv', cmd: (b, se) => ['xelatex', '-synctex=1', '-recorder', se, '--interaction=nonstopmode', '--file-line-error', '-no-pdf', '--fmt', FMT.xelatex, b + '.tex'] },
-  lualatex: { label: 'LuaLaTeX', out: 'pdf', cmd: (b, se) => ['luahblatex', '-synctex=1', '-recorder', se, '--interaction=nonstopmode', '--file-line-error', '--nosocket', '--fmt', FMT.lualatex, b + '.tex'] },
+  pdflatex: { label: 'pdfLaTeX', out: 'pdf', cmd: (b, se) => ['pdflatex', '-progname=pdflatex', '-synctex=1', '-recorder', se, '--interaction=nonstopmode', '--file-line-error', '--fmt', FMT.pdflatex, b + '.tex'] },
+  xelatex: { label: 'XeLaTeX', out: 'xdv', cmd: (b, se) => ['xelatex', '-progname=xelatex', '-synctex=1', '-recorder', se, '--interaction=nonstopmode', '--file-line-error', '-no-pdf', '--fmt', FMT.xelatex, b + '.tex'] },
+  lualatex: { label: 'LuaLaTeX', out: 'pdf', cmd: (b, se) => ['luahblatex', '--progname=lualatex', '-synctex=1', '-recorder', se, '--interaction=nonstopmode', '--file-line-error', '--nosocket', '--fmt', FMT.lualatex, b + '.tex'] },
   // LaTeX writing DVI, then dvips and ps2pdf: the classic route, PSTricks' own
-  latex: { label: 'LaTeX (dvips)', out: 'dvi', cmd: (b, se) => ['pdflatex', '-synctex=1', '-recorder', se, '--interaction=nonstopmode', '--file-line-error', '-output-format=dvi', '--fmt', FMT.pdflatex, b + '.tex'] }
+  latex: { label: 'LaTeX (dvips)', out: 'dvi', cmd: (b, se) => ['pdflatex', '-progname=latex', '-synctex=1', '-recorder', se, '--interaction=nonstopmode', '--file-line-error', '-output-format=dvi', '--fmt', FMT.pdflatex, b + '.tex'] }
 };
 const ENGINE_NAMES = { pdflatex: 'pdflatex', pdftex: 'pdflatex', latex: 'latex', dvips: 'latex', 'latex-dvips': 'latex', xelatex: 'xelatex', xetex: 'xelatex', lualatex: 'lualatex', luatex: 'lualatex', luahblatex: 'lualatex', luahbtex: 'lualatex' };
 
