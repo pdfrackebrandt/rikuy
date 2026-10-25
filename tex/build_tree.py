@@ -37,12 +37,15 @@ EXCLUDE = re.compile('|'.join([
     r'\.(log|html|md|dtx|ins|pl|sh|py|cmd|bat|exe)$',
     r'^texlive/icudt\d+l\.dat$',
     r'^texlive/tex/',
+    # media9's Flash players (1.6 MB): no PDF viewer has run Flash since 2020; media9 itself stays,
+    # for Asymptote's PRC figures (settings.prc) and embedded 3D
+    r'^texlive/texmf-dist/tex/latex/media9/players/',
 ]))
 # Large and rarely used: emoji and icon sets, single-university templates, sample bibliographies.
 DROP = ['uantwerpendocs', 'nwejm', 'openmoji', 'twemojis', 'hwemoji', 'utfsym', 'worldflags', 'rutitlepage', 'customenvs',
         'vscodeicons', 'euromoney', 'ghsystem', 'realhats', 'tablericons', 'powerdot-tuliplab', 'stellenbosch-2', 'stellenbosch',
         'sduthesis', 'beebe', 'beamertheme-npbt', 'fithesis', 'isosigns', 'bootstrapicons', 'texfindpkg', 'pgf-periodictable',
-        'duckuments', 'panneauxroute', 'lucide-icons', 'figchild', 'knitting', 'kosch', 'media9', 'tudscr', 'lwarp',
+        'duckuments', 'panneauxroute', 'lucide-icons', 'figchild', 'knitting', 'kosch', 'tudscr', 'lwarp',
         'tex4ht', 'jeuxcartes', 'uowthesis',
         # map data and card/flag images (PSTricks), Qur'an texts, Greek fonts for pdfLaTeX (72 MB),
         # Gregorian chant (needs the gregorio program), Ethiopic and Devanagari Type 1 fonts
@@ -79,7 +82,9 @@ FONT_PICKS = ['newtx', 'newpx', 'stix2-type1', 'stix', 'fourier', 'mathdesign', 
               # bold typewriter and small caps for bold-extra (listings' keywords in \ttfamily\bfseries)
               'cm-mf-extra-bold',
               # beamer loads it whenever it is installed: math italic in slides set in sans (76 KB)
-              'sansmathaccent']
+              'sansmathaccent',
+              # Euler math with Concrete text (ccfonts, eulervm: Concrete Mathematics' pair), 128 KB
+              'eulervm']
 DEB_SETS = ['texlive-lang-german', 'texlive-lang-spanish', 'texlive-lang-french', 'texlive-lang-portuguese', 'texlive-lang-italian',
             'texlive-lang-european', 'texlive-science', 'texlive-bibtex-extra', 'texlive-pictures', 'texlive-publishers',
             'texlive-humanities', 'texlive-plain-generic', 'texlive-lang-cyrillic', 'texlive-latex-extra', 'texlive-latex-recommended', 'texlive-games',
