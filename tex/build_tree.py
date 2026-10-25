@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Assemble the TeX tree Galley ships, and cut it into packs.
 
-  build_tree.py tree   -> /tmp/eng/galley-tree   (the merged TeX Live tree, for format building and tests)
+  build_tree.py tree   -> $GALLEY_WORK/galley-tree  (the merged TeX Live tree, for format building and tests)
   build_tree.py packs  -> dist/tex/              (tree.json.gz, p-*.bin, w-*.bin)
 
 Sources:
@@ -32,7 +32,7 @@ EXCLUDE = re.compile('|'.join([
     r'^texlive/texmf-dist/fonts/(afm|source|sfd|lig|ofm|ovf|ovp|opl)/',
     r'^texlive/texmf-dist/tex/(context|optex|latex-dev|fontinst|mex|cslatex|csplain|eplain|platex|uplatex|ptex|uptex|jadetex|xmltex|texinfo|amstex|lollipop|mltex|musixtex)/',
     r'^texlive/texmf-dist/texmf-var/web2c/(metafont|tex)/',
-    r'^texlive/texmf-dist/(doc|source|scripts|tlpkg|xdvi|ttf2pk|mft|metafont|metapost|psutils|texconfig|makeindex|chktex|tex4ht|hbf2gf|omega|context)/',
+    r'^texlive/texmf-dist/(doc|source|scripts|tlpkg|xdvi|ttf2pk|mft|metafont|metapost|psutils|texconfig|chktex|tex4ht|hbf2gf|omega|context)/',
     r'^texlive/texmf-dist/fonts/(map/(vtex|fontname)|enc/ttf2pk)/',
     r'\.(log|html|md|dtx|ins|pl|sh|py|cmd|bat|exe)$',
     r'^texlive/icudt\d+l\.dat$',
@@ -48,7 +48,24 @@ DROP = ['uantwerpendocs', 'nwejm', 'openmoji', 'twemojis', 'hwemoji', 'utfsym', 
         # Gregorian chant (needs the gregorio program), Ethiopic and Devanagari Type 1 fonts
         'pst-geo', 'pst-poker', 'pst-flags', 'quran', 'quran-ur', 'quran-bn', 'quran-de', 'quran-id', 'cbfonts', 'gregoriotex', 'ethiop-t1', 'velthuis',
         # LuaTeX hyphenation and ligature data for one language, Persian typesetting, sparkline font
-        'autotype', 'simurgh', 'spark-otf']
+        'autotype', 'simurgh', 'spark-otf',
+        # TeX Live 2026 additions of the same kinds: one school's beamer theme (26 MB of images), thesis
+        # templates, a Qur'an text, card game images
+        'ciad-beamertheme', 'utbmciad-report', 'westlakethesis', 'quran-es', 'quran-en', 'magicthegathering',
+        # French school exercise sets, an Urdu Nastaliq font, a magazine layout, a Chinese index
+        # method, one university's logos
+        'profcollege', 'proflycee', 'awami', 'fancymag', 'tetragonos', 'njuvisual', 'luadraw', 'tkz-grapheur',
+        'hduthesis', 'sysuthesis', 'ecnuthesis', 'rpgicons', 'corasdiagram', 'mathador', 'hustvisual', 'mahjong-tiles',
+        'twoxtwogame', 'nwafupaper', 'nxuthesis', 'dlrg-templates', 'quantumcubemodel', 'aeskwadraat',
+        # LuaTeX's type definitions for editors (no engine reads them), Mongolian fonts, archaeology
+        # bibliography styles, a Dalian thesis class, light spectra, Chinese chess
+        'luatex-type-definitions', 'montex', 'biblatex-archaeology', 'xduts', 'pgf-spectra', 'xq', 'biblatex-gb7714-2015',
+        'pronunciation',
+        # TeX Live 2026's July update made the artifact 1 MB larger. Out: PSTricks polytope
+        # drawings, a multiscript fork of biblatex, the Lua CSL processor and its styles, Lua
+        # school worksheets, a young l3draw drawing package (0.4), product diagrams, Euler
+        # integration models
+        'pst-cox', 'biblatex-ms', 'citation-style-language', 'scholatex', 'hawkdraw', 'pmdraw', 'numodel-bundle']
 DROP_RE = re.compile(r'/(' + '|'.join(re.escape(x) for x in DROP) + r')/')
 KEEP_ANYWAY = re.compile(r'(^texlive/texmf-dist/web2c/|^texlive/texmf-dist/texmf-var/fonts/map/pdftex/|/language\.(dat|def)|/ls-R$|\.(map|enc)$)')
 
@@ -56,14 +73,28 @@ KEEP_ANYWAY = re.compile(r'(^texlive/texmf-dist/web2c/|^texlive/texmf-dist/texmf
 FONT_PICKS = ['newtx', 'newpx', 'stix2-type1', 'stix', 'fourier', 'mathdesign', 'txfontsb', 'mnsymbol', 'mathabx-type1',
               'doublestroke', 'bbold-type1', 'esstix', 'notomath', 'inconsolata', 'bera', 'fontawesome5', 'fontawesome',
               'academicons', 'ccicons', 'cmbright', 'hfbright', 'zlmtt', 'xcharter', 'kpfonts', 'erewhon', 'cochineal',
-              'baskervillef', 'heuristica', 'crimson', 'yfonts', 'yfonts-t1', 'ifsym', 'phaistos', 'cmll', 'trajan', 'aurical',
+              'baskervillef', 'heuristica', 'crimson', 'yfonts', 'yfonts-t1', 'ifsym', 'phaistos', 'cmll', 'trajan',
               # METAFONT families (shipped as PK fonts, build_pk.py) and the metrics their Type 1 versions need
-              'gothic', 'bbm', 'bbm-macros', 'skull', 'mathabx', 'bbold', 'ecc', 'dancers', 'esvect', 'wasy', 'wasy-type1']
+              'gothic', 'bbm', 'bbm-macros', 'skull', 'mathabx', 'bbold', 'ecc', 'dancers', 'esvect', 'wasy', 'wasy-type1',
+              # bold typewriter and small caps for bold-extra (listings' keywords in \ttfamily\bfseries)
+              'cm-mf-extra-bold']
 DEB_SETS = ['texlive-lang-german', 'texlive-lang-spanish', 'texlive-lang-french', 'texlive-lang-portuguese', 'texlive-lang-italian',
             'texlive-lang-european', 'texlive-science', 'texlive-bibtex-extra', 'texlive-pictures', 'texlive-publishers',
             'texlive-humanities', 'texlive-plain-generic', 'texlive-lang-cyrillic', 'texlive-latex-extra', 'texlive-latex-recommended', 'texlive-games',
             'texlive-pstricks', 'texlive-xetex', 'texlive-luatex', 'texlive-metapost', 'texlive-lang-greek', 'texlive-lang-arabic', 'texlive-lang-other',
             'texlive-formats-extra', 'asymptote']
+
+
+# the core of TeX Live that BusyTeX's tree also holds; with TL_FIRST these replace its copies
+CORE_SETS = ['texlive-base', 'texlive-latex-base', 'texlive-fonts-recommended', 'texlive-lang-english', 'texlive-lang-polish',
+             'texlive-lang-czechslovak']
+TL_FIRST = os.environ.get('GALLEY_TL_FIRST', '1') == '1'
+
+
+def protected(rel):
+    """Files of BusyTeX's tree that belong to its engine, never replaced from the packages."""
+    return (not rel.startswith(TD) or rel.startswith((TD + 'web2c/', TD + 'texmf-var/', TD + 'texmf-config/', TD + 'tex/generic/config/'))
+            or rel.endswith('/ls-R'))
 
 
 def walk(root):
@@ -85,8 +116,25 @@ def wanted(rel):
 
 def build_tree():
     files = {}  # rel -> source path
+    # One TeX Live (PLAN task 4): with TL_FIRST, the Ubuntu TeX Live 2026 packages win over
+    # BusyTeX's tree for every macro and font file they share, the kernel included, so the
+    # formats are rebuilt from them (build_formats.py). BusyTeX keeps what is its engine's own:
+    # web2c (paths for its file system), texmf-var (formats, maps), tex/generic/config.
+    debian_names = defaultdict(set)
+    if TL_FIRST:
+        for name in CORE_SETS + DEB_SETS:
+            for sub in ('usr/share/texlive/texmf-dist', 'usr/share/texmf'):
+                root = os.path.join(DEBS, name, sub)
+                for p in walk(root) if os.path.isdir(root) else []:
+                    parts = os.path.relpath(p, root).split('/')
+                    if not protected(TD + '/'.join(parts)) and wanted(TD + '/'.join(parts)):
+                        debian_names[parts[0] + '/' + (parts[1] if parts[0] == 'fonts' and len(parts) > 2 else '')].add(parts[-1])
     for p in walk(BASE):
         rel = os.path.relpath(p, BASE)
+        if rel.startswith(TD) and not protected(rel):
+            parts = rel[len(TD):].split('/')
+            if parts[-1] in debian_names[parts[0] + '/' + (parts[1] if parts[0] == 'fonts' and len(parts) > 2 else '')]:
+                continue  # TeX Live 2026's own copy comes from the packages
         if rel.startswith(('bin/', 'etc/')) or wanted(rel):
             files[rel] = p
     base_names = defaultdict(set)  # top area -> basenames
@@ -114,8 +162,11 @@ def build_tree():
             parts = sub.split('/')
             area = parts[0] + '/' + (parts[1] if parts[0] == 'fonts' and len(parts) > 2 else '')
             engine_only = parts[0] == 'tex' and len(parts) > 2 and parts[1] not in ENGINE_ONLY and tex_dirs[parts[-1]] and tex_dirs[parts[-1]] <= ENGINE_ONLY
-            if parts[-1] in base_names[area] and not engine_only:
-                continue  # never shadow a newer file of the same name
+            # never shadow a newer file of the same name; with TL_FIRST every package is the same
+            # TeX Live, whose files of one name in several folders are meant (XeTeX's pstricks.con
+            # in tex/xelatex beside dvips's in tex/generic: each engine's search path picks its own)
+            if parts[-1] in base_names[area] and not engine_only and not TL_FIRST:
+                continue
             if parts[0] == 'tex' and len(parts) > 2:
                 tex_dirs[parts[-1]].add(parts[1])
             if sub.startswith('tex/generic/config/') or sub.startswith('web2c/') or sub.startswith('texmf-var/'):
@@ -127,7 +178,7 @@ def build_tree():
             if re.match(r'fonts/map/(dvips|pdftex)/.+\.map$', sub):
                 maps_added.append(rel)
 
-    for name in DEB_SETS:
+    for name in (CORE_SETS if TL_FIRST else []) + DEB_SETS:
         for sub in ('usr/share/texlive/texmf-dist', 'usr/share/texmf'):
             root = os.path.join(DEBS, name, sub)
             if os.path.isdir(root):
@@ -543,7 +594,7 @@ def build_packs():
 # ---- programs TeX's shell escape runs (tex/tools.js), each fetched on first use ----------------
 TOOL_WASM = [  # key, the classic script build.mjs writes, the WebAssembly
     ('gs', 'gs.js', 'node_modules/@okathira/ghostpdl-wasm/dist/gs.wasm'),
-    ('gnuplot', 'gnuplot.js', 'node_modules/gnuplot-wasm/src/gnuplot.wasm'),
+    ('gnuplot', 'gnuplot.js', 'tex/vendor/gnuplot/gnuplot.wasm'),
     ('dvips', 'dvips.js', 'tex/vendor/dvips/dvips.wasm'),  # build_tools.sh
     ('asy', 'asy.js', 'tex/vendor/asy/asy.wasm'),
     ('xindy', 'xindy.js', 'tex/vendor/xindy/xindy.wasm'),
@@ -568,7 +619,12 @@ def build_tool_assets():
         else:
             print('tool missing, left out:', wasm_path)
     PY = os.path.join(ROOTDIR, 'node_modules', 'pyodide')
-    WH = os.path.join(ROOTDIR, 'tex', 'vendor', 'wheels')
+    # minted's Python side as the minted.sty in the tree expects it: TeX Live bundles the wheels
+    # latexminted.py loads (scripts/minted) with each minted release; with the tree from TeX
+    # Live's packages (TL_FIRST) they come from the same package as minted.sty, else vendor/wheels
+    WH = os.path.join(DEBS, 'texlive-latex-extra/usr/share/texlive/texmf-dist/scripts/minted')
+    if not (TL_FIRST and os.path.isdir(WH)):
+        WH = os.path.join(ROOTDIR, 'tex', 'vendor', 'wheels')
     tools['python'] = {
         'loader': 'pyodide.js',
         'asm': asset(os.path.join(PY, 'pyodide.asm.mjs')), 'wasm': asset(os.path.join(PY, 'pyodide.asm.wasm')),

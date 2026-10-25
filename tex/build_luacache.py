@@ -2,7 +2,7 @@
 
 luaotfload converts each OpenType font to a Lua table on first use (a second or two each). Shipping
 the tables for Latin Modern means a first LuaLaTeX compile does not pay for that. They are written
-to /tmp/eng/extra (the overlay build_tree.py lays over the tree).
+to $GALLEY_WORK/extra (the overlay build_tree.py lays over the tree).
 Usage: build_luacache.py [dist dir]"""
 import os, sys, json
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'test'))
