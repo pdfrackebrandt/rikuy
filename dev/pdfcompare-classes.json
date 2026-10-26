@@ -1,0 +1,26 @@
+{
+  "le/asymptote/topology-r-spiral-covering-s/topology-r-spiral-covering-s.tex": {
+    "class": "desktop asy 3D blank",
+    "note": "A 3D figure: the desktop asy, with no display to render with, writes a page of height 0 and a blank second page; Galley's asy draws the figure as vectors on one page."
+  },
+  "le/asymptote/torus-three-paths/torus-three-paths.tex": {
+    "class": "desktop asy 3D blank",
+    "note": "A 3D figure: the desktop asy renders nothing without a display; Galley draws the torus and its paths as vectors."
+  },
+  "le/math/asymptote/sphere-sphere/sphere-sphere.tex": {
+    "class": "desktop asy 3D blank",
+    "note": "A 3D figure: the desktop page holds nothing but its page number; Galley draws both spheres as vectors."
+  },
+  "le/presentations/CNN-Intro/CNN-Intro.tex": {
+    "class": "font not in Galley (Fira Sans)",
+    "note": "Metropolis asks for Fira Sans. The desktop's fontconfig lists it but XeTeX cannot load it (T1/FiraSansLight(0) undefined), so the desktop falls back to Computer Modern serif; Galley has no Fira (texlive-fonts-extra is not shipped), says so, and keeps Latin Modern Sans."
+  },
+  "le/documents/bachelor-proposal/bachelor-proposal.tex": {
+    "class": "font build (Linux Libertine)",
+    "note": "Pixels equal. Debian ships its own build of Linux Libertine, whose opening quote has no Unicode mapping, so pdftotext reads nothing for it; Galley's TeX Live copy maps it."
+  },
+  "le/uml/class-diagramm/class-diagram.tex": {
+    "class": "document's own (Makefile step)",
+    "note": "The figure meta.1 comes from running mpost on meta.mp, a step of the document's Makefile that neither latexmk nor Galley takes; both PDFs lack it, latexmk reports the error as a failure."
+  }
+}
