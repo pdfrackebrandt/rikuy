@@ -96,10 +96,9 @@ async function emProgram(factoryName, asset, extra) {
   // which takes the whole argv, program name included
   const enter = P._galley_main ? (argv) => {
     const enc = new TextEncoder();
-    const ptrs = argv.map((x) => { const b = enc.encode(x + '\0'); const q = P._malloc(b.length); P.HEAPU8.set(b, q); return q; });
+    const ptrs = argv.map((x) => { const b = enc.encode(x + '\0'); const q = P._malloc(b.length); if (P.HEAPU8) P.HEAPU8.set(b, q); return q; });
     const av = P._malloc(4 * (ptrs.length + 1));
-    ptrs.forEach((q, i) => { P.HEAP32[(av >> 2) + i] = q; });
-    P.HEAP32[(av >> 2) + ptrs.length] = 0;
+    if (P.HEAP32) { ptrs.forEach((q, i) => { P.HEAP32[(av >> 2) + i] = q; }); P.HEAP32[(av >> 2) + ptrs.length] = 0; }
     const r = P._galley_main(ptrs.length, av);
     if (P._fflush) P._fflush(0);
     return r;
@@ -124,9 +123,11 @@ async function emProgram(factoryName, asset, extra) {
       // what it left open when it exited (dvips its .dvi, every run): closed, as the system
       // closes a process's files, or the descriptors (and TeX's files behind them) pile up
       (P.FS.streams || []).forEach((s, i) => { if (s && !open.has(i)) { try { P.FS.close(s); } catch (e) { /* closed */ } } });
-      const h = new Uint8Array(mem.buffer);
-      h.set(snap);
-      if (h.length > snap.length) h.fill(0, snap.length);
+      if (mem && mem.buffer) {
+        const h = new Uint8Array(mem.buffer);
+        if (snap && h.length >= snap.length) h.set(snap);
+        if (h.length > snap.length) h.fill(0, snap.length);
+      }
       return code == null ? 0 : code;
     }
   };
@@ -197,6 +198,7 @@ function proxyFS(FS, remote) {
 // since, so a program's proxy nodes are forgotten before each run (looked up again as needed).
 const proxyOps = new WeakSet();
 function flushProxyCache(FS) {
+  if (!FS || !FS.nameTable) return;
   const t = FS.nameTable;
   if (!t) return;
   for (let i = 0; i < t.length; i++) {
@@ -211,7 +213,8 @@ function flushProxyCache(FS) {
 // what a program built for Galley sees: the tree and the home folder (the projects) of TeX's
 // file system; its own /tmp stays its own
 function mountTeX(FS) {
-  const remote = MAIN.FS;
+  const remote = (typeof MAIN !== 'undefined' && MAIN) ? MAIN.FS : null;
+  if (!remote || !FS.mount) return; // no TeX tree or FS has no mount
   for (const d of ['/texlive', '/home/web_user']) {
     try { FS.mkdirTree ? FS.mkdirTree(d) : mkdirsIn(FS, d); } catch (e) { /* exists */ }
     try { remote.mkdirTree ? remote.mkdirTree(d) : mkdirsIn(remote, d); } catch (e) { /* exists */ }
@@ -222,13 +225,15 @@ function mountTeX(FS) {
 // a program built for Galley, run in TeX's folder; what it prints goes to the shell
 async function galleyTool(factoryName, asset, envExtra, init) {
   const G = await emProgram(factoryName, asset, { env: Object.assign({}, ENV, { TEXMFCNF: '/texlive/texmf-dist/web2c' }, envExtra || {}), init });
-  mountTeX(G.P.FS);
+  if (G.P.FS) mountTeX(G.P.FS);
   return G;
 }
 function runGalleyTool(G, argv0, argv, io) {
+  if (!G.P.FS) { io.err(argv0 + ': no file system\n'); return 1; }
   flushProxyCache(G.P.FS);
   // kpathsea finds texmf.cnf from where the program is: it has to be a file
-  if (!texIsFile(argv0)) { try { MAIN.FS.mkdirTree(argv0.slice(0, argv0.lastIndexOf('/'))); } catch (e) { /* exists */ } MAIN.FS.writeFile(argv0, ''); }
+  if (!texIsFile(argv0) && typeof MAIN !== 'undefined' && MAIN) { try { MAIN.FS.mkdirTree(argv0.slice(0, argv0.lastIndexOf('/'))); } catch (e) { /* exists */ } MAIN.FS.writeFile(argv0, ''); }
+  try { if (G.P.FS.mkdirTree) G.P.FS.mkdirTree(io.env.cwd); } catch (e) { /* exists */ }
   try { G.P.FS.chdir(io.env.cwd); } catch (e) { io.err(argv0 + ': no folder ' + io.env.cwd + '\n'); return 1; }
   const code = G.call([argv0, ...argv]);
   if (G.out.o) io.out(G.out.o);
