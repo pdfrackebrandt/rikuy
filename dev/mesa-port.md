@@ -69,3 +69,20 @@ The asy 3D bitmap task needs this port completed, then asy rebuilt with
 
 The four failing asy examples (task 18) have a pipe state reset added
 to engine.js. A full test needs a working dist and browser.
+
+## Progress 2026-10-27 (continued)
+
+Built m4, bison, and flex from source. Mesa configure now reaches the
+end but fails with "ld.wasm does not support shared libraries" even
+with --default-library=static and -Dshared-glapi=disabled.
+
+The error occurs during meson's compiler tests, not in Mesa's own
+build files. This is a meson/emscripten interaction issue that needs
+deeper investigation or a different build approach (e.g., building
+OSMesa with a custom Makefile instead of meson).
+
+## Task 17 status
+
+Not finished. The Mesa softpipe port is blocked on the emscripten
+shared library issue. A custom build of OSMesa or a meson patch is
+needed.
