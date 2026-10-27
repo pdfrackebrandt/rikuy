@@ -75,8 +75,8 @@ async function emProgram(factoryName, asset, extra) {
       });
       return {};
     },
-    print: (t) => { out.s += t + '\n'; out.o += t + '\n'; },
-    printErr: (t) => { out.s += t + '\n'; out.e += t + '\n'; }
+    print: (t) => { out.s += t + '\n'; out.o += t + '\n'; console.log('ASY_OUT:', t); },
+    printErr: (t) => { out.s += t + '\n'; out.e += t + '\n'; console.log('ASY_ERR:', t); }
   }, extra || {});
   delete opts.env; delete opts.init; delete opts.stack;
   const P = await self[factoryName](opts);
@@ -235,9 +235,13 @@ function runGalleyTool(G, argv0, argv, io) {
   if (!texIsFile(argv0) && typeof MAIN !== 'undefined' && MAIN) { try { MAIN.FS.mkdirTree(argv0.slice(0, argv0.lastIndexOf('/'))); } catch (e) { /* exists */ } MAIN.FS.writeFile(argv0, ''); }
   try { if (G.P.FS.mkdirTree) G.P.FS.mkdirTree(io.env.cwd); } catch (e) { /* exists */ }
   try { G.P.FS.chdir(io.env.cwd); } catch (e) { io.err(argv0 + ': no folder ' + io.env.cwd + '\n'); return 1; }
+  io.err('DEBUG: argv=' + JSON.stringify([argv0, ...argv]) + ' env=' + JSON.stringify(G.P.ENV || {}) + '\n');
+  try { io.err('DEBUG: files=' + G.P.FS.readdir('.').join(',') + '\n'); } catch(e) { io.err('DEBUG: readdir failed\n'); }
+  try { const st = G.P.FS.stat('/texlive/texmf-dist/asymptote/plain.asy'); io.err('DEBUG: plain.asy size=' + st.size + '\n'); } catch(e) { io.err('DEBUG: plain.asy stat failed: ' + e.message + '\n'); }
   const code = G.call([argv0, ...argv]);
+  io.err('DEBUG: asy code=' + code + ' out.s=' + (G.out.s || '').length + ' out.o=' + (G.out.o || '').length + '\n');
   if (G.out.o) io.out(G.out.o);
-  if (code) io.err(G.out.s.slice(-2500));
+  if (G.out.s) io.err(G.out.s.slice(-2500));
   return code;
 }
 
