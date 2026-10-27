@@ -247,3 +247,17 @@ Claude completed tasks 0-15 of round 1. Remaining open tasks:
 Editor corpus test (test/editor_corpus.py) timed out waiting for window.ready
 in this environment. The harness exists; a full run needs a working dist
 served to the browser.
+
+## Status 2026-10-27 (final)
+
+Task 17 (asy 3D bitmaps): Not finished. Mesa softpipe port started but
+blocked on "ld.wasm does not support shared libraries" even with static
+library default. Built m4, bison, flex from source. Documented in
+dev/mesa-port.md. Needs a custom OSMesa build or meson patch.
+
+Task 18 (four asy examples): Pipe state reset added to tex/engine.js
+(resets TeX instance before every pipe run). Dist rebuilt. Browser test
+timed out on window.ready due to sandbox server issues. The fix is
+committed but not verified against the four examples.
+
+Both tasks need more work outside this sandbox.

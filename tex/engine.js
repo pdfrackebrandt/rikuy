@@ -404,13 +404,13 @@ function pipeKeep(ck, out) {
 let texPipeCount = 0;
 function texPipe(argv, input, cwd) {
   texPipeCount++;
-  // task 18: some asy docs hang on the seventh pipe run; reset state after 5
-  if (texPipeCount > 5 && texPool[1]) {
+  // task 18: reset TeX state before every pipe run to avoid the hang
+  // on the seventh run (state left by asy's own run)
+  if (texPool[1]) {
     const T = texPool[1];
     if (T._sp0 != null) T._stackRestore(T._sp0);
     T.HEAPU8.fill(0);
     T.HEAPU8.set(T._memHeader);
-    texPipeCount = 0;
   }
   const key = argv.join('\0') + '\0' + cwd;
   const list = () => { try { return M.FS.readdir(cwd).filter((n) => n !== '.' && n !== '..'); } catch (e) { return []; } };
