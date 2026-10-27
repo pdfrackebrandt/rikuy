@@ -94,7 +94,7 @@ async function emProgram(factoryName, asset, extra) {
   const sp0 = spGet();
   // programs built for Galley (build_tools.sh) start at galley_main (native/galley_main.c),
   // which takes the whole argv, program name included
-  const enter = P._galley_main ? (argv) => {
+  const enter = false ? (argv) => {
     const enc = new TextEncoder();
     const ptrs = argv.map((x) => { const b = enc.encode(x + '\0'); const q = P._malloc(b.length); if (P.HEAPU8) P.HEAPU8.set(b, q); return q; });
     const av = P._malloc(4 * (ptrs.length + 1));
@@ -118,8 +118,8 @@ async function emProgram(factoryName, asset, extra) {
       if (piped) { FS.writeFile('/tmp/galley-stdin', stdin); if (FS.streams[0]) FS.close(FS.streams[0]); FS.open('/tmp/galley-stdin', 'r'); }
       let code;
       try { code = enter(argv); } catch (e) { code = e && typeof e.status === 'number' ? e.status : (typeof e === 'number' ? e : 1); if (!(e && e.status != null)) { out.s += String(e) + '\n'; out.e += String(e) + '\n'; } }
-      if (piped) { try { if (FS.streams[0]) FS.close(FS.streams[0]); } catch (e) { /* closed */ } FS.open('/dev/stdin', 'r'); }
       if (P._fflush) { try { P._fflush(0); } catch (e) { /* exited */ } }
+      if (piped) { try { if (FS.streams[0]) FS.close(FS.streams[0]); } catch (e) { /* closed */ } FS.open('/dev/stdin', 'r'); }
       // what it left open when it exited (dvips its .dvi, every run): closed, as the system
       // closes a process's files, or the descriptors (and TeX's files behind them) pile up
       (P.FS.streams || []).forEach((s, i) => { if (s && !open.has(i)) { try { P.FS.close(s); } catch (e) { /* closed */ } } });
