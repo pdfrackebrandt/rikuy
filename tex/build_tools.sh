@@ -151,7 +151,7 @@ fetch() { # fetch URL SHA256: into $SRC/dl, checked
 ECL_V=24.5.10.20250914.git294da20
 ecl_source() { # ecl_source DIR: ECL's source; Debian took out the bundled GMP and GC, and with them autoconf's helpers
   fetch $UBUNTU/universe/e/ecl/ecl_$ECL_V+dfsg.orig.tar.xz 6a06bbd5248ba9128b84b7a25833f9db7f6df0ad3795b63574c328192755b6c4
-  rm -rf "$1" && mkdir -p "$1" && tar xf "$SRC/dl/ecl_$ECL_V+dfsg.orig.tar.xz" -C "$1" --strip-components=1
+  rm -rf "$1" && mkdir -p "$1" && tar --no-same-owner -xf "$SRC/dl/ecl_$ECL_V+dfsg.orig.tar.xz" -C "$1" --strip-components=1
   for d in gmp bdwgc; do mkdir -p "$1/src/$d"; cp "$1/src/config.guess" "$1/src/config.sub" "$1/src/$d/"; cp "$1/src/install.sh" "$1/src/$d/install-sh"; done
 }
 ecl_host() {
@@ -163,14 +163,14 @@ wasm_libs() { # GMP and the Boehm GC for WebAssembly, into $SRC/wasm-prefix
   P="$SRC/wasm-prefix"
   if [ ! -f "$P/lib/libgmp.a" ]; then
     fetch $UBUNTU/main/g/gmp/gmp_6.3.0+dfsg.orig.tar.xz bd2966e6d277f79328e894a5a9f3ba3fbf2ed2be81def5f48623e30c23fb1572
-    rm -rf "$SRC/gmp" && mkdir -p "$SRC/gmp" && tar xf "$SRC/dl/gmp_6.3.0+dfsg.orig.tar.xz" -C "$SRC/gmp" --strip-components=1
+    rm -rf "$SRC/gmp" && mkdir -p "$SRC/gmp" && tar --no-same-owner -xf "$SRC/dl/gmp_6.3.0+dfsg.orig.tar.xz" -C "$SRC/gmp" --strip-components=1
     mkdir -p "$SRC/gmp/doc" "$SRC/gmp/build-wasm" # Debian's tarball has no manual; configure still names its Makefile
     printf 'all install install-data install-exec install-strip check installcheck clean distclean mostlyclean maintainer-clean uninstall info dvi pdf html ps tags ctags distdir:\n\t@:\n' > "$SRC/gmp/doc/Makefile.in"
     (cd "$SRC/gmp/build-wasm" && emconfigure ../configure --host=none --build=x86_64-pc-linux-gnu --disable-assembly --disable-shared --enable-static --prefix="$P" CFLAGS=-O2 > conf.log && emmake make -j2 > make.log && emmake make install > inst.log)
   fi
   if [ ! -f "$P/lib/libgc.a" ]; then
     fetch $UBUNTU/main/libg/libgc/libgc_8.2.8.orig.tar.gz 7649020621cb26325e1fb5c8742590d92fb48ce5c259b502faf7d9fb5dabb160
-    rm -rf "$SRC/gc" && mkdir -p "$SRC/gc/build-wasm" && tar xf "$SRC/dl/libgc_8.2.8.orig.tar.gz" -C "$SRC/gc" --strip-components=1
+    rm -rf "$SRC/gc" && mkdir -p "$SRC/gc/build-wasm" && tar --no-same-owner -xf "$SRC/dl/libgc_8.2.8.orig.tar.gz" -C "$SRC/gc" --strip-components=1
     (cd "$SRC/gc/build-wasm" && emconfigure ../configure --host=wasm32-unknown-emscripten --build=x86_64-pc-linux-gnu --disable-threads --disable-shared --enable-static --disable-docs --prefix="$P" CFLAGS=-O2 > conf.log && emmake make -j1 > make.log && emmake make install > inst.log)
   fi
 }
