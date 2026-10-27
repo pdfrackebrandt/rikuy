@@ -45,3 +45,27 @@ asy is built without OpenGL (tex/build_tools.sh line 89).
 3D output is vector drawings. The four failing examples
 (functionshading, layers, spectrum, slidedemo) are documented
 in PLAN.md task 18.
+
+## Progress 2026-10-27
+
+meson configured with:
+- gallium-drivers=swrast
+- osmesa=true
+- glx=disabled, egl=disabled
+- vulkan-drivers=[]
+- platforms=[]
+
+Patched meson.build to recognize emscripten as a known OS.
+
+Blocked on zlib subproject hash mismatch. Mesa's wrap file expects a
+different hash than the downloaded zlib-1.2.13.tar.gz. Fixing this needs
+updating the wrap file or using a system zlib.
+
+## Summary
+
+The Mesa softpipe port is started but blocked on build dependencies.
+The asy 3D bitmap task needs this port completed, then asy rebuilt with
+--enable-offscreen, then size/time measured.
+
+The four failing asy examples (task 18) have a pipe state reset added
+to engine.js. A full test needs a working dist and browser.
