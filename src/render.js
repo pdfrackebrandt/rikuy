@@ -2,6 +2,8 @@
 // registry of segments, atoms and style wrappers with offsets relative
 // to the block start, so unchanged blocks survive edits elsewhere.
 
+import { siInMath } from './siunitx.js';
+
 export const BLOCKS = new Map();
 let blockSeq = 1;
 let itemSeq = 1;
@@ -26,10 +28,12 @@ export class Renderer {
     this.optMacros = [];
   }
 
-  setMacros(mathMacros) {
-    const sig = JSON.stringify(mathMacros);
+  // si: siunitx settings of the document ({ opts, units, lang }) for \SI and friends in formulas
+  setMacros(mathMacros, si) {
+    const sig = JSON.stringify([mathMacros, si ? [si.opts, [...si.units], si.lang] : null]);
     if (sig === this.macroSig) return false;
     this.macroSig = sig;
+    this.si = si || null;
     this.macros = { ...KATEX_DEFAULT_MACROS };
     this.optMacros = [];
     for (const [k, v] of Object.entries(mathMacros)) {
@@ -82,7 +86,8 @@ export class Renderer {
     const K = window.katex;
     if (!K) return { html: '<span class="mloading">' + esc(tex) + '</span>', err: null, loading: true };
     try {
-      const html = K.renderToString(this.expandOpt(tex), { displayMode: display, macros: { ...this.macros }, throwOnError: true, strict: 'ignore', trust: false, output: 'html', globalGroup: false });
+      const t = this.si ? siInMath(tex, this.si.opts, this.si.units, this.si.lang) : tex;
+      const html = K.renderToString(this.expandOpt(t), { displayMode: display, macros: { ...this.macros }, throwOnError: true, strict: 'ignore', trust: false, output: 'html', globalGroup: false });
       r = { html, err: null };
     } catch (e) {
       const msg = String(e.message || e).replace(/^KaTeX parse error: /, '');

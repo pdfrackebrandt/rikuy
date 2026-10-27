@@ -5,7 +5,7 @@ Rewritten 2026-10-25 after round 2, which finished or measured every task of the
 
 ## Where it stands
 
-| check | v19 (published 2026-10-12) | version 22 (published 2026-10-25) |
+| check | v19 (published 2026-10-12) | version 23 (published 2026-10-26) |
 |---|---|---|
 | corpus compiles (LaTeX-examples, 716 documents present) | 705 | 706 |
 | corpus PDFs equal to a desktop TeX Live 2026's | 615 of 704 (87.4 %) | 700 of 705 (99.3 %) |
@@ -13,7 +13,11 @@ Rewritten 2026-10-25 after round 2, which finished or measured every task of the
 | `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) |
 | `tex/native/xindy/test.cjs` (against CLISP's xindy) | 11/11 | 11/11 |
 | TeX Live's 220 Asymptote examples as a native asy 3.09 draws them | not measured | 216 (196 equal PDFs, 12 equal failures, 7 random by design, 1 equal alone); 4 open |
+| edits on the typeset page landing exactly, undone byte for byte (`test/editor_corpus.py`) | not measured | 780 of 780, in the 222 documents with text, a formula, a cell or a footnote; 211 of 211 edited projects compile |
 | artifact size (limit 256 MB) | 250.0 MB | 249.7 MB |
+
+Version 23 changed only the page (task 13): its `dist/tex` is version 22's byte for byte, so the
+TeX rows are version 22's runs.
 
 Equal means: the same number of pages, the same text on each page (`pdftotext -layout`,
 whitespace collapsed), and no page with more than 0.1 % of its pixels differing by more than
@@ -72,6 +76,32 @@ and `dev/pdfcompare-results.jsonl`.
     swapped places, lost lines or failed ("reading array of length 0"). Ghostscript now also
     gets its standard input (texpath answers its page prompts).
   - media9 (for PRC figures; its Flash players stay out) and eulervm were not in the tree.
+  - Found by the editor run (task 13), on the page:
+    - siunitx knew six units, so `\celsius`, `\hertz`, `\bit`, units from `\DeclareSIUnit` and
+      siunitx inside formulas showed as red source. Now the units and prefixes siunitx defines,
+      powers, `\per` in its three modes, digit grouping, the decimal marker, rounding, ranges,
+      lists and `\ang`, with `\sisetup` and the package options (`src/siunitx.js`). Formula
+      errors on the 35 corpus documents that use siunitx: 402 → 97, the rest the documents'
+      computed macros and typos.
+    - The equation field hands back the text it was given until the first keystroke (MathLive
+      0.110), so a formula it could not read (an `array` with `*4{c}` columns, `\tikzmark`)
+      passed the round trip check and was then rewritten from what the field kept: the Jordan
+      matrices lost their entries, and undo did not bring them back. The check now reads the
+      field's own serialization; such a formula opens as source, with a note.
+    - For the same reason the smallest patch compared the source with the field's normalized
+      spelling (`x_n` with `x_{n}`) and rewrote whole rows; it lines them up ignoring braces now.
+    - Plain brackets around a fraction became `\left( \right)` whenever their row was edited,
+      which changes the PDF. They stay as written; brackets typed in the field still get them.
+    - An environment made with `\newenvironment` that opens a `tikzpicture` (the Karnaugh maps)
+      had its body read as text, and a formula edit there landed in `\usepackage{tikz}`. Such
+      environments are source blocks now, drawn in the PDF.
+    - `\tikzstyle`, `\pgfmathdeclarefunction`, `\newglossaryentry`, `\DTLloaddb`, `\psset` and
+      other setup commands in the document body showed their arguments as text; making "sqrt"
+      in a pgfmath formula bold broke the compile. They are hidden now. Commands that set a
+      file, a database or a drawing (`\lstinputlisting`, `\includepdf`, `\DTLdisplaydb`,
+      `\DTLpiechart`, `\pgfplotstabletypeset`, chemfig's `\chemfig` and `\arrow`) are one block,
+      so their file names, keys and code are not typed into; chemformula's `\ch` is set like
+      mhchem's `\ce`.
 - **Programs built here from source** (`tex/build_tools.sh`): dvips, Asymptote 3.09 now with
   GLM and XDR (WebGL, V3D and PRC output; two fixes in `native/patch_asy.py` for GLM without
   OpenGL), xindy, and gnuplot 6.0.2. A clean `GALLEY_SRC` rebuilds all four.
@@ -113,7 +143,7 @@ Tests:
 - the comparison: `DESKTOP_CACHE=desk python3 dev/pdfcompare.py OUT.jsonl pdf CMP.jsonl`, then
   `dev/pdfcompare_report.py CMP.jsonl dev/pdfcompare-classes.json`
 - Asymptote: `dev/build_asy_native.sh` (GLM=1), then `dev/asycompare.py OUT.jsonl FILES...`
-- the editor: `test/editor_corpus.py OUT.jsonl`
+- the editor: `test/editor_corpus.py OUT.jsonl` (about 40 minutes of edits, then 20 of compiles)
 
 ## Tasks of round 1: status
 
@@ -183,10 +213,18 @@ Tests:
 12. **xindy start.** Measured, not adopted: loading xindy's kernel as ECL bytecode starts in
     293 to 350 ms against 321 to 418 ms from source (fresh processes), of which ECL's own start
     is about 200 ms. Not worth a second link and 130 KB (`tex/build_tools.sh` has the numbers).
-13. **The editor itself.** `test/editor_corpus.py` (six edits per document: type, delete, bold,
-    math, table cell, footnote; lands, exact, undo; then the edited project compiles) and
-    `dev/usertest.md` (one hour, five people; the owner runs it). Not yet run over the whole
-    corpus.
+13. **The editor itself.** Done for the scripted part. `test/editor_corpus.py` makes six edits
+    on the typeset page of every corpus document, where the page offers a place for them (type
+    a word, delete one, bold one, extend a formula, type in a table cell, in a footnote), checks
+    that each lands in the source where it was made and as itself, that Ctrl+Z gives the source
+    back byte for byte, then compiles the edited project. On version 23: 222 of the 716 documents
+    offer a place for at least one edit (the others are TikZ and other figures with no running
+    text); of 792 edits tried, 780 land exactly (191 typed, 203 deleted, 202 bold, 111 formulas,
+    56 table cells, 17 footnotes) and 12 formulas open as source by design (9 siunitx commands,
+    3 formulas the equation field cannot hold); all 792 undo byte for byte; the 211 edited
+    projects whose original compiles all compile. Results:
+    `dev/editor-results.jsonl`, `dev/editor-compile.jsonl`. The runs found the six bugs above.
+    The user test (`dev/usertest.md`: one hour, five people) is the owner's to run.
 14. Left alone: the documents' own faults.
 15. **License.** Done: the AGPL-3.0 text in `LICENSE`, the components in `NOTICE`.
 

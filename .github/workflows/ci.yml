@@ -20,6 +20,7 @@ jobs:
           node test/edge.test.mjs
           node test/fences.test.mjs
           node test/minimal.test.mjs
+          node test/siunitx.test.mjs
       - name: Editor model on the LaTeX-examples corpus
         run: |
           git clone -q https://github.com/MartinThoma/LaTeX-examples.git "$RUNNER_TEMP/le"

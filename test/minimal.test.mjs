@@ -13,5 +13,11 @@ eq('control word guard', minimalRow('\\alpha + b', '\\alpha+b', '\\alpha c+b', s
 eq('delete', minimalRow('a + b + c', 'a+b+c', 'a+c', same), 'a + c');
 eq('swap order keeps what it can', minimalRow('\\sum^n_{i=1} a_i', '\\sum_{i=1}^{n}a_{i}', '\\sum_{i=1}^{n}b_{i}', same), '\\sum_{i=1}^{n}b_i');
 eq('total rewrite returns valid', same(minimalRow('a', 'a', '\\frac{x}{y}', same), '\\frac{x}{y}'), true);
+// the field gives back what it was given until the first edit, then writes the row normalized
+eq('verbatim before, normalized after', minimalRow('\\sum_{i=1}^n c_i = 1', '\\sum_{i=1}^n c_i = 1', '\\sum_{i=1}^{n}c_{i}=1+1', same), '\\sum_{i=1}^n c_i = 1+1');
+eq('verbatim, edit inside a script', minimalRow('x_n + y', 'x_n + y', 'x_{n+1}+y', same), 'x_{n+1}+y');
+eq('verbatim, second script', minimalRow('a^2 + b^2', 'a^2 + b^2', 'a^{2}+b^{3}', same), 'a^2 + b^{3}');
+eq('verbatim, frac shorthand', minimalRow('\\frac12 x', '\\frac12 x', '\\frac{1}{2}x+1', same), '\\frac12 x+1');
+eq('verbatim, script then append', minimalRow('x^k', 'x^k', 'x^{k}+1', same), 'x^k+1');
 console.log(bad ? bad + ' failed' : 'all passed');
 if (bad) process.exitCode = 1;

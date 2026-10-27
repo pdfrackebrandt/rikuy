@@ -207,7 +207,7 @@ export function makeDialect({ display, ops = {}, operators = [], fieldMacros = [
       if (opRe) s = s.replace(opRe, (m, n) => all[n]);
       if (display) s = s.replace(SIDE_FIX, (m, n) => '\\' + n + '\\limits');
       if (macroLimits) s = s.replace(macroLimits, (m, n) => '\\' + n); // MathLive drops scripts after a macro with \limits
-      return fenceSource(s, optMacros);
+      return fenceSource(s, optMacros, isTall);
     },
     fromField(s) {
       s = unfence(tidy(s), isTall);
@@ -332,6 +332,13 @@ function patchFenceSpacing(mf) {
 
 // The field's LaTeX, with brackets still waiting for their partner written as one-sided
 // (MathLive would otherwise write the partner the user has not typed).
+// What the field's own model writes. Right after setValue, getValue('latex') hands back the
+// text it was given (MathLive 0.110), which hides what the field could not read.
+export function modelValue(mf) {
+  try { const n = mf.lastOffset; if (n >= 0) return mf.getValue(0, n, 'latex'); } catch (e) { /* older MathLive */ }
+  return mf.getValue('latex');
+}
+
 export function fieldValue(mf) {
   const waiting = [];
   try {

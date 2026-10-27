@@ -50,11 +50,13 @@ function skipOpt(s, j) { // s[j] === '['
 }
 const nextNonSpace = (s, j) => { while (j < s.length && /\s/.test(s[j])) j++; return j; };
 
-// Source row -> field row: matched plain bracket pairs become stretchy pairs.
+// Source row -> field row: matched plain bracket pairs become stretchy pairs. Not those around
+// tall content (isTall): TeX sets them at their natural size, so the field shows them as plain
+// characters, and they come back plain. Brackets typed in the field are sized as Word sizes them.
 const AUTO_TOK = { '\\lbrace': '\\{', '\\rbrace': '\\}', '\\lbrack': '[', '\\rbrack': ']' };
-export function fenceSource(s, optMacros) {
+export function fenceSource(s, optMacros, isTall) {
   const marks = [];
-  const pairs = findPairs(s, optMacros, marks);
+  const pairs = findPairs(s, optMacros, marks).filter(({ o, c }) => !(isTall && isTall(s.slice(o.pos + o.len, c.pos))));
   if (!pairs.length && !marks.length) return s;
   const edits = marks.slice();
   for (const { o, c } of pairs) {

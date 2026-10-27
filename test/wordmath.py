@@ -216,17 +216,15 @@ for seq, want in bcases:
     k.press('Control+z'); page.wait_for_timeout(150)
 check('bracket tests leave the source as it was', src() == base)
 
-# a pair from the source grows in the field, and the edited row gets \left \right
+# a plain pair from the source around a fraction stays as written when the row is edited
+# (TeX sets it at its natural size; only brackets typed in the field get \left \right)
 open_eq(0)
 fr.locator('#pop-tex').click()
 k.press('Control+End'); k.type(' + (\\frac{1}{2})'); page.wait_for_timeout(400)
-H = """(() => { const f = document.getElementById('pop-field'); const o = [...f.shadowRoot.querySelectorAll('.ML__open')].map(e => e.getBoundingClientRect().height); return o; })()"""
-hs = frame.evaluate(H)
-check('source brackets around a fraction stretch in the field', len(hs) >= 2 and max(hs) > 1.5 * min(hs), hs)
 fr.locator('#pop-field').click(); page.wait_for_timeout(150)
 frame.evaluate("document.getElementById('pop-field').executeCommand('moveToMathfieldEnd')")
 k.type('+1'); page.wait_for_timeout(300)
-check('edited row writes \\left( \\right) around the fraction', '\\left(\\frac{1}{2}\\right)+1' in ''.join(ta().split()), ta())
+check('edited row keeps the plain brackets around the fraction', '(\\frac{1}{2})+1' in ''.join(ta().split()) and '\\left' not in ta(), ta())
 check('flat pairs in the edited row stay plain', 'V(k)' in ta() and 'f(k)' in ta() and '\\mleft' not in ta(), ta())
 k.press('Escape'); page.wait_for_timeout(150)
 k.press('Control+z'); page.wait_for_timeout(200)
