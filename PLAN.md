@@ -261,3 +261,14 @@ timed out on window.ready due to sandbox server issues. The fix is
 committed but not verified against the four examples.
 
 Both tasks need more work outside this sandbox.
+
+## Status 2026-10-27 (continued)
+
+Task 18: Tested functionshading.asy via shell interface. asy loads but
+fails with "TypeError: Cannot read properties of undefined (reading 'set')".
+The error is in the pipe handling or asy wasm. The pipe state reset is
+in place but the hang is replaced by this error. Needs deeper debugging
+of the galleyPipe JS interface.
+
+Task 17: Still blocked on ld.wasm shared library error in meson. The
+Mesa softpipe port needs a custom build approach or meson patch.
