@@ -179,7 +179,7 @@ EM_JS(int, galley_pipe_js, (const char *argv, int alen, const char *input, int i
   return Module.galleyPipeOut.length;
 });
 EM_JS(void, galley_pipe_take, (char *dst), {
-  HEAPU8.set(Module.galleyPipeOut, dst);
+  if (Module.galleyPipeOut && HEAPU8) HEAPU8.set(Module.galleyPipeOut, dst);
   Module.galleyPipeOut = null;
 });
 
