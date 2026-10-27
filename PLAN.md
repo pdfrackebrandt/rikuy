@@ -227,3 +227,23 @@ Tests:
   bump fails loudly. Comments say why, in plain sentences.
 - Run the corpus before publishing. Publishing to the claude.ai artifact needs Claude
   (`tex/publish_batches.py` plans the uploads, 256 MB limit); anywhere else, serve `dist/`.
+
+
+## Status 2026-10-27
+
+Claude completed tasks 0-15 of round 1. Remaining open tasks:
+
+16. arXiv corpus: blocked (arxiv.org not reachable from build machine).
+    Tool ready: dev/arxiv_corpus.py and .github/workflows/arxiv.yml.
+
+17. 3D bitmaps from Asymptote: not started. Needs Mesa softpipe port to
+    Emscripten 3.1.6. Documented in the task.
+
+18. Four Asymptote examples Galley fails: functionshading, layers, spectrum
+    hang on the seventh TeX pipe run; slidedemo needs nested asy. The pipe
+    re-runs the transcript each time (patch_asy.py). The hang depends on
+    state left by asy's own run. Not fixed.
+
+Editor corpus test (test/editor_corpus.py) timed out waiting for window.ready
+in this environment. The harness exists; a full run needs a working dist
+served to the browser.
