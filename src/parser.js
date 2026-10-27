@@ -40,6 +40,16 @@ const SIG = {
   resizebox: 'mmm', rotatebox: 'omm', phantom: 'm', hphantom: 'm', vphantom: 'm', intertext: 'm',
   newline: '', linebreak: 'o', pagebreak: 'o', nopagebreak: 'o', centerline: 'm',
   keywords: 'm', JEL: 'm', jel: 'm', sisetup: 'm', num: 'om', SI: 'omm', si: 'om', qty: 'omm', unit: 'om', ce: 'm', pu: 'm',
+  lstinputlisting: 'om', inputminted: 'omm', verbatiminput: 'm', VerbatimInput: 'om', BVerbatimInput: 'om', LVerbatimInput: 'om',
+  includepdf: 'om', includesvg: 'om', includestandalone: 'om',
+  DTLdisplaydb: 'om', DTLdisplaylongdb: 'om', csvautotabular: 'om', csvautobooktabular: 'om', csvautolongtable: 'om',
+  csvautobooklongtable: 'om', pgfplotstabletypeset: 'om', DTLpiechart: 'ommm', DTLbarchart: 'ommm', DTLmultibarchart: 'ommm',
+  usetkzobj: 'm', psset: 'm', chemfig: 'om', chemname: 'om', setatomsep: 'm', setchemfig: 'm', definesubmol: 'mom', ch: 'om',
+  DeclareSIUnit: 'omm',
+  tikzstyle: 'm', tikzset: 'm', pgfplotsset: 'm', pgfkeys: 'm', pgfmathsetmacro: 'mm', pgfmathdeclarefunction: 'mmm',
+  pgfdeclarelayer: 'm', pgfsetlayers: 'm', usepgfplotslibrary: 'm', newglossaryentry: 'mm', newacronym: 'ommm',
+  loadglsentries: 'om', DTLloaddb: 'omm', DTLloadrawdb: 'omm', lstdefinestyle: 'mm', colorlet: 'mm', numrange: 'omm', SIrange: 'ommm', qtyrange: 'ommm', numlist: 'om', SIlist: 'omm', qtylist: 'omm',
+  numproduct: 'om', SIproduct: 'omm', qtyproduct: 'omm', ang: 'om', tablenum: 'om',
   affil: 'om', affiliation: 'm', email: 'm', address: 'm', subtitle: 'm', shorttitle: 'm',
   newpage: '', clearpage: '', cleardoublepage: '', tableofcontents: '', listoffigures: '', listoftables: '',
   maketitle: '', appendix: '', noindent: '', indent: '', centering: '', raggedright: '', raggedleft: '',
@@ -116,6 +126,16 @@ export function scanUserSigs(src, into = {}) {
   }
   const re2 = /\\def\s*\\([A-Za-z]+)((?:#\d)*)\s*\{/g;
   while ((m = re2.exec(src))) into[m[1]] = 'm'.repeat((m[2].match(/#/g) || []).length);
+  // environments whose opening code starts a picture are pictures themselves: kept as source
+  // blocks (drawn in the PDF) like tikzpicture, instead of having their body read as text
+  const W = '(?:\\s|%[^\\n]*(?:\\n|$))*';
+  const re3 = new RegExp('\\\\(?:re|provide)?newenvironment\\*?' + W + '\\{\\s*([A-Za-z@*]+)\\s*\\}' + W + '(?:\\[[^\\]]*\\]' + W + '){0,2}\\{|\\\\(?:New|Renew|Provide)DocumentEnvironment' + W + '\\{\\s*([A-Za-z@*]+)\\s*\\}' + W + '\\{[^{}]*\\}' + W + '\\{', 'g');
+  while ((m = re3.exec(src))) {
+    let d = 0, k = re3.lastIndex - 1;
+    for (; k < src.length; k++) { const c = src[k]; if (c === '\\') { k++; continue; } if (c === '{') d++; else if (c === '}' && --d === 0) break; }
+    const begin = src.slice(re3.lastIndex, k);
+    if (/\\begin\s*\{\s*(tikzpicture|pgfpicture|tikzcd|forest|pspicture|circuitikz)\s*\}|\\tikz\b/.test(begin)) into[' rawenv:' + (m[1] || m[2])] = 'raw';
+  }
   return into;
 }
 
@@ -412,6 +432,11 @@ export function parse(src, opts = {}) {
       if (node.args.every((a) => !a)) { i = save; node.e = ge; }
       else node.e = lastEnd(node);
     }
+    if (name === 'tikzstyle' && node.args[0]) {
+      // \tikzstyle{name}=[keys] (or +=): the keys belong to the command, not to the text
+      const m = /^\s*\+?=\s*\[/.exec(src.slice(i, i + 40));
+      if (m) { i = Math.min(n, matchBracket(i + m[0].length - 1) + 1); node.e = i; }
+    }
     return node;
   }
 
@@ -508,7 +533,7 @@ export function parse(src, opts = {}) {
     i += m[0].length;
     const nameEnd = i;
     let sig = ENV_SIG[name] || '';
-    if (MATH_ENVS.has(name) || RAW_ENVS.has(name)) {
+    if (MATH_ENVS.has(name) || RAW_ENVS.has(name) || userSigs[' rawenv:' + name]) {
       let args = [];
       if (name === 'alignat' || name === 'alignat*') { args = parseArgs('m'); }
       else if (name === 'minted') { args = parseArgs('om'); }

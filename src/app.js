@@ -1,4 +1,5 @@
 // Galley app shell: rebuild pipeline, history, input, popovers, files.
+import { siInMath } from './siunitx.js';
 import { buildModel } from './model.js';
 import { Renderer, BLOCKS, esc } from './render.js';
 import { Layout, geometry } from './layout.js';
@@ -8,7 +9,7 @@ import {
 } from './editor.js';
 import { SAMPLE } from './sample.js';
 import { splitRows } from './parser.js';
-import { installWordTyping, wordShortcuts, makeDialect, classifyMacros, resolveCommand, PACKAGES, WORD_GROUPS, FIELD_MACROS, fieldValue } from './wordmath.js';
+import { installWordTyping, wordShortcuts, makeDialect, classifyMacros, resolveCommand, PACKAGES, WORD_GROUPS, FIELD_MACROS, fieldValue, modelValue } from './wordmath.js';
 import { isTallDef, fitBrackets, tallTest } from './fences.js';
 import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath } from './paste.js';
@@ -192,6 +193,11 @@ function fieldRows(v, multi, D) {
   }
   return rows.map((r) => D.fromField(r));
 }
+// Does the field hold the formula as written? Each row read back must typeset the same.
+function faithful(st, same) {
+  if (!st.ml || st.ml.length !== st.rows.length) return false;
+  return st.rows.every((r, i) => r.clean === st.ml[i] || same(r.clean, st.ml[i]));
+}
 // Rebuild the LaTeX box text, touching only rows that changed.
 function fromField(v, st) {
   const now = fieldRows(v, st.multi, st.D);
@@ -351,12 +357,12 @@ class App {
     catch (e) { console.error(e); this.toast('Could not read the document: ' + e.message); return; }
     this.model = model;
     // chemistry (\ce, \pu): KaTeX's mhchem, fetched the first time a document uses it
-    if (!this.chemReq && window.katex && [...this.files.values()].some((t) => /\\(?:ce|pu)\s*\{/.test(t))) {
+    if (!this.chemReq && window.katex && [...this.files.values()].some((t) => /\\(?:ce|pu|ch)\s*[[{]/.test(t))) {
       this.chemReq = true;
       loadScript(CDN.chem).then(() => { this.renderer.mathCache.clear(); this.forceRender = true; this.rebuild(this.caretNow()); }).catch(() => { /* \ce stays as source */ });
     }
     this.computePx();
-    const macroChanged = this.renderer.setMacros(model.mathMacros);
+    const macroChanged = this.renderer.setMacros(model.mathMacros, { opts: model.siOpts, units: model.siUnits, lang: model.opts.lang });
     const O = model.opts;
     const optSig = JSON.stringify([O.pt, O.lang, O.font, O.citeStyle, O.parskip, O.cleveref, O.spread]);
     if (macroChanged || optSig !== this.optSig || this.forceRender) { this.prefix = 'r' + (++this.renderVer) + '|'; this.optSig = optSig; this.forceRender = false; }
@@ -1399,7 +1405,7 @@ class App {
     // read back how the field writes each one so it can be folded back to its name.
     const canon = {};
     for (const [k, d] of Object.entries(ops)) {
-      try { mf.setValue(d, { silenceNotifications: true }); canon[k] = mf.getValue('latex') || d; } catch (e) { canon[k] = d; }
+      try { mf.setValue(d, { silenceNotifications: true }); canon[k] = modelValue(mf) || d; } catch (e) { canon[k] = d; }
     }
     let fieldMacros = [];
     try { fieldMacros = Object.keys(mf.macros).filter((k) => /^[A-Za-z]+$/.test(k) && !canon[k]); } catch (e) { fieldMacros = Object.keys(plain); }
@@ -1422,11 +1428,24 @@ class App {
     }
     const strMacros = {};
     for (const [k, v] of Object.entries(this.renderer.macros)) if (typeof v === 'string') strMacros[k] = v;
-    const same = window.katex ? makeSame(window.katex, strMacros, !!opts.display) : null;
+    const R = this.renderer;
+    const same = window.katex ? makeSame(window.katex, strMacros, !!opts.display, R.si ? (t) => siInMath(t, R.si.opts, R.si.units, R.si.lang) : null) : null;
     let st = toField(ta.value, opts.display, opts.env(), D);
     st.same = same;
     mf.setValue(st.latex, { silenceNotifications: true });
-    st.ml = fieldRows(mf.getValue('latex'), st.multi, D);
+    st.ml = fieldRows(modelValue(mf), st.multi, D);
+    // A formula the field cannot hold as written (an array with *{n}{c} columns, a command it
+    // does not know) would come back changed after the first keystroke: keep it as source.
+    if (same && opts.initial && ta.value === opts.initial && !faithful(st, same)) {
+      mf.replaceWith(holder);
+      const n = document.createElement('div');
+      n.className = 'pop-note';
+      n.id = 'pop-lossy';
+      n.textContent = 'The equation field cannot show all of this formula, so it is edited as source here.';
+      holder.after(n);
+      this.positionPop();
+      return null;
+    }
     let fromMf = false;
     mf.addEventListener('input', () => {
       const tex = fromField(fieldValue(mf), st);
@@ -1441,7 +1460,7 @@ class App {
       st = toField(ta.value, opts.display, opts.env(), D);
       st.same = same;
       if (mf.getValue('latex') !== st.latex) mf.setValue(st.latex, { silenceNotifications: true });
-      st.ml = fieldRows(mf.getValue('latex'), st.multi, D);
+      st.ml = fieldRows(modelValue(mf), st.multi, D);
     };
     ta.addEventListener('input', sync);
     mf.addEventListener('paste', (e) => {

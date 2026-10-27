@@ -10,9 +10,12 @@ footnote. After each edit:
             \\textbf{...}, the formula extended
   undo      Ctrl+Z gives back the source byte for byte
 Then the edits (except the deletion) are made again without undo and the edited project is
-compiled by the TeX worker: it must compile when the original compiled.
+compiled by the TeX worker: it must compile when the original compiled in the last corpus run
+(dev/corpus-results.jsonl). Projects without an edit are not compiled again.
 
-Usage: editor_corpus.py OUT.jsonl [filter]     env: GALLEY_DIST, CORPUS_REPO, N (first N docs)
+Usage: editor_corpus.py OUT.jsonl [filter]
+env: GALLEY_DIST, CORPUS_REPO, N (first N docs), DOCS (file listing the docs), KINDS (e.g. math),
+     NOCOMPILE (skip the compile check)
 """
 import base64, io, json, os, random, re, sys, time, zipfile
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -80,7 +83,9 @@ def in_math(src, pos):
     para_b = len(src) if para_b < 0 else para_b
     seg = src[para_a:para_b]
     p = pos - para_a
-    dollars = [m.start() for m in re.finditer(r'(?<!\\)\$', seg[:p])]
+    if len(re.findall(r'(?<!\\)\$\$', seg[:p])) % 2 == 1:
+        return True
+    dollars = [m.start() for m in re.finditer(r'(?<!\\)(?<!\$)\$(?!\$)', seg[:p])]
     if len(dollars) % 2 == 1:
         return True
     for o, c in [('\\(', '\\)'), ('\\[', '\\]')]:
@@ -100,7 +105,9 @@ PICK = r'''([kind, seed]) => {
     const ms = [...document.querySelectorAll('#pages .a-math')].filter(vis);
     if (!ms.length) return null;
     const m = ms[rnd(ms.length)]; m.scrollIntoView({ block: 'center' });
-    const b = m.getBoundingClientRect(); return { x: b.left + b.width / 2, y: b.top + b.height / 2, text: m.textContent };
+    // a formula broken over two lines: click its first piece, not the middle of the box around both
+    const b = [...m.getClientRects()].find((q) => q.width > 2) || m.getBoundingClientRect();
+    return { x: b.left + Math.min(b.width / 2, 12), y: b.top + b.height / 2, text: m.textContent };
   }
   if (kind === 'cell') spans = spans.filter(inTab);
   else if (kind === 'fn') spans = spans.filter(inFn);
@@ -150,9 +157,16 @@ def do_edit(page, kind, seed):
     elif kind == 'math':
         page.mouse.click(info['x'], info['y'])
         try:
-            page.wait_for_selector('#pop-field', timeout=4000)
+            page.wait_for_selector('#pop-field, #pop-raw, #pop-lossy', timeout=4000)
         except Exception:
             info['nofield'] = True
+            return info
+        if page.evaluate("!document.getElementById('pop-field')"):
+            # siunitx and other math-like commands open as source, by design, and so does a
+            # formula the equation field cannot hold as written
+            info['source'] = page.evaluate("(document.getElementById('pop-raw') || document.getElementById('pop-tex')).value")
+            info['lossy'] = page.evaluate("!!document.getElementById('pop-lossy')")
+            page.keyboard.press('Escape')
             return info
         page.evaluate("document.getElementById('pop-field').executeCommand('moveToMathfieldEnd')")
         page.keyboard.type('+1')
@@ -167,6 +181,8 @@ def judge(kind, info, before, after):
     files = changed_file(before, after)
     if info.get('nofield'):
         return 'fail', 'math field did not open'
+    if info.get('source') is not None:
+        return 'source', {'source': info['source'][:80], 'lossy': info.get('lossy')}
     if len(files) != 1:
         return 'fail', 'files changed: %s' % files
     f = files[0]
@@ -183,7 +199,7 @@ def judge(kind, info, before, after):
             return 'fail', dict(det, why='not after the word')
         if kind == 'cell' and not in_env(b, i, r'tabular\*?|tabularx|tabulary|longtable|array'):
             return 'fail', dict(det, why='not in the table')
-        if kind == 'fn' and not enclosing(b, i, '\\footnote{'):
+        if kind == 'fn' and not any(enclosing(b, i, o) for o in ('\\footnote{', '\\thanks{', '\\footnotetext{')):
             return 'fail', dict(det, why='not in the footnote')
         return 'ok', det
     if kind == 'del':
@@ -218,16 +234,19 @@ def main():
     out_path = sys.argv[1]
     filt = sys.argv[2] if len(sys.argv) > 2 else ''
     n_max = int(os.environ.get('N', '100000'))
-    base_ok = {json.loads(l)['doc']: json.loads(l).get('ok') for l in open(os.path.join(HERE, '..', 'dev', 'corpus-baseline.jsonl'))}
+    base_ok = {json.loads(l)['doc']: json.loads(l).get('ok') for l in open(os.path.join(HERE, '..', 'dev', 'corpus-results.jsonl'))}
     out = open(out_path, 'w')
     tmp = os.environ.get('TMPDIR', '/tmp')
-    kinds = ['type', 'del', 'bold', 'math', 'cell', 'fn']
+    kinds = os.environ.get('KINDS', 'type,del,bold,math,cell,fn').split(',')
+    only = set(open(os.environ['DOCS']).read().split()) if os.environ.get('DOCS') else None
     edited = {}
     done = 0
     with sync_playwright() as p:
         browser, page, errors = open_page(p, width=1300, height=1000)
         for idx, doc in enumerate(OLD):
             if filt and filt not in doc:
+                continue
+            if only is not None and doc not in only:
                 continue
             if not os.path.exists(os.path.join(REPO, doc[3:])):
                 continue
@@ -240,8 +259,10 @@ def main():
             rec = {'doc': doc, 'kinds': {}, 'details': {}}
             errors.clear()
             try:
+                # documents of one folder open the same files: wait for this open, not the last one
+                page.evaluate('() => { window.__prevFiles = window.galley.files; }')
                 page.set_input_files('#fileinput', zp)
-                page.wait_for_function('(m) => window.galley.files.has(m)', arg=main, timeout=15000)
+                page.wait_for_function('(m) => window.galley.files !== window.__prevFiles && window.galley.files.has(m)', arg=main, timeout=15000)
                 if page.evaluate('window.galley.main') != main:
                     page.evaluate('(m) => { const g = window.galley; g.main = m; g.srcFile = m; g.forceRender = true; g.rebuild(); }', main)
                 page.wait_for_timeout(400)
@@ -302,6 +323,8 @@ def main():
                 print(done, doc, rec['kinds'], flush=True)
         browser.close()
     # compile the edited projects with the TeX worker
+    if os.environ.get('NOCOMPILE'):
+        return
     compile_edited(edited, out_path.replace('.jsonl', '') + '-compile.jsonl', base_ok)
 
 
@@ -315,7 +338,8 @@ def compile_edited(edited, path, base_ok):
         pg.goto('http://127.0.0.1:%d/tex-smoke.html' % port)
         pg.wait_for_function('window.ready', timeout=180000)
         for idx, (doc, main, final) in edited.items():
-            if not base_ok.get(doc):
+            # unedited projects are the corpus run's (dev/corpus-results.jsonl)
+            if not base_ok.get(doc) or not final:
                 continue
             files, _ = project(doc)
             fs = [dict(f, data=final[f['path']]) if 'data' in f and f['path'] in final else f for f in files]

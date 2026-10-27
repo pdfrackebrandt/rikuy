@@ -3,6 +3,7 @@
 // character keeps a pointer to its exact source range.
 import { parse, scanUserSigs, CHARS, ACCENTS, splitRows } from './parser.js';
 import { parseBib, texToPlain, shortAuthors, entryYear, formatEntry } from './bib.js';
+import { siTex, siOptions, siUnitSymbol } from './siunitx.js';
 
 const STY = {
   textbf: 'bf', textit: 'it', emph: 'em', texttt: 'tt', textsc: 'sc', textsf: 'sf', textrm: 'rm', textup: 'up',
@@ -17,6 +18,19 @@ const DECL = {
   mdseries: 'md', tiny: 'z-tiny', scriptsize: 'z-scriptsize', footnotesize: 'z-footnotesize', small: 'z-small',
   normalsize: 'z-normalsize', large: 'z-large', Large: 'z-Large', LARGE: 'z-LARGE', huge: 'z-huge', Huge: 'z-Huge'
 };
+// commands that set a file's contents in the PDF: [label on the page, index of the file argument]
+const FILE_CMDS = {
+  lstinputlisting: ['listing', 1], inputminted: ['listing', 2], verbatiminput: ['listing', 0], VerbatimInput: ['listing', 1],
+  BVerbatimInput: ['listing', 1], LVerbatimInput: ['listing', 1], includepdf: ['PDF', 1], includesvg: ['figure', 1],
+  includestandalone: ['figure', 1],
+  // tables set from a database or a data file
+  DTLdisplaydb: ['table', 1], DTLdisplaylongdb: ['table', 1], csvautotabular: ['table', 1], csvautobooktabular: ['table', 1],
+  csvautolongtable: ['table', 1], csvautobooklongtable: ['table', 1], pgfplotstabletypeset: ['table', 1],
+  DTLpiechart: ['chart', 2], DTLbarchart: ['chart', 2], DTLmultibarchart: ['chart', 2],
+  // chemfig: a molecule drawn from its code (the code is not text)
+  chemfig: ['molecule', -1], chemname: ['molecule', -1], arrow: ['arrow', -1],
+};
+const SI_CMDS = new Set(['num', 'SI', 'si', 'qty', 'unit', 'numrange', 'SIrange', 'qtyrange', 'numlist', 'SIlist', 'qtylist', 'numproduct', 'SIproduct', 'qtyproduct', 'ang', 'tablenum']);
 const INVIS = new Set([
   'label', 'index', 'glossary', 'nocite', 'phantomsection', 'protect', 'relax', 'indent', 'sloppy', 'fussy',
   'frenchspacing', 'makeatletter', 'makeatother', 'raggedright', 'raggedleft', 'addcontentsline', 'setlength',
@@ -27,7 +41,7 @@ const INVIS = new Set([
   'providecommand', 'DeclareRobustCommand', 'def', 'gdef', 'edef', 'xdef', 'let', 'DeclareMathOperator',
   'newenvironment', 'renewenvironment', 'nopagebreak', 'clubpenalty', 'widowpenalty', 'onehalfspacing',
   'doublespacing', 'singlespacing', 'title', 'author', 'date', 'documentclass', 'geometry', 'setkeys',
-  'sisetup', 'centering', 'noindent', 'vfill', 'hrule', 'null', 'leavevmode', 'unskip', 'ignorespaces',
+  'sisetup', 'DeclareSIUnit', 'centering', 'noindent', 'vfill', 'hrule', 'null', 'leavevmode', 'unskip', 'ignorespaces',
   'nolinebreak', 'linebreak_', 'setcitestyle', 'bibpunct', 'DeclareGraphicsExtensions', 'includeonly',
   'pagecolor', 'color', 'normalcolor', 'vphantom', 'strut', 'smallbreak', 'medbreak', 'bigbreak', 'goodbreak',
   'filbreak', 'enlargethispage', 'mskip', 'kern', 'hskip', 'vskip', 'thanks_', 'affil', 'affiliation', 'email',
@@ -42,6 +56,8 @@ const INVIS = new Set([
   'textwidth', 'linewidth', 'columnwidth', 'paperwidth', 'paperheight', 'textheight', 'baselineskip', 'parindent',
   'parskip', 'columnsep', 'columnseprule', 'tableofcontents', 'listoffigures', 'listoftables', 'pause', 'titlepage',
   'columnbreak', 'twocolumn', 'onecolumn', 'fi', 'else', 'ifpdf', 'newcount', 'newif', 'printglossaries', 'printglossary',
+  'usetkzobj', 'psset', 'schemestart', 'schemestop', 'setatomsep', 'setchemfig', 'definesubmol', 'tikzstyle', 'pgfkeys', 'pgfmathsetmacro', 'pgfmathdeclarefunction', 'pgfdeclarelayer', 'pgfsetlayers',
+  'usepgfplotslibrary', 'newglossaryentry', 'loadglsentries', 'makeglossaries', 'DTLloaddb', 'DTLloadrawdb', 'lstdefinestyle', 'colorlet',
   'thispagestyle', 'hline', 'cline', 'rowcolors', 'arrayrulecolor', 'columncolor', 'cellcolor', 'rowcolor', 'toprule', 'midrule', 'bottomrule', 'FloatBarrier', 'balance', 'tightlist'
 ]);
 const CITE_CMDS = new Set(['cite', 'citet', 'citep', 'citealt', 'citealp', 'citeauthor', 'citeyear', 'citeyearpar',
@@ -145,6 +161,8 @@ class Builder {
     this.lastTarget = null;
     this.textMacros = new Map();
     this.mathMacros = {};
+    this.siOpts = {};
+    this.siUnits = new Map();
     this.envDefs = new Map();
     this.meta = { title: null, author: null, date: null };
     this.bibFiles = [];
@@ -267,6 +285,7 @@ class Builder {
         const pk = A(1).split(',').map((x) => x.trim());
         const op = A(0);
         for (const p of pk) {
+          if (p === 'siunitx') Object.assign(this.siOpts, siOptions(op));
           if (p === 'natbib') {
             O.natbib = true;
             if (/numbers/.test(op)) O.forceNumeric = true;
@@ -371,6 +390,11 @@ class Builder {
     } else if (nd.def && nd.def.kind === 'op') {
       const nm = A(0).trim();
       this.mathMacros[nm] = '\\operatorname' + (nd.star ? '*' : '') + '{' + A(1) + '}';
+    } else if (nd.name === 'sisetup') {
+      Object.assign(this.siOpts, siOptions(A(0)));
+    } else if (nd.name === 'DeclareSIUnit') {
+      const nm = A(1).trim().replace(/^\\/, '');
+      if (/^[A-Za-z]+$/.test(nm)) this.siUnits.set(nm, siUnitSymbol(A(2)));
     } else if (nd.name === 'theoremstyle') {
       this.thmStyle = A(0).trim();
     } else if (nd.name === 'newtheorem') {
@@ -1486,19 +1510,18 @@ class Builder {
       out.push(this.atom(ctx, { k: 'rule', s: nd.s, e: nd.e, w: A(0), h: A(1) }));
       return false;
     }
-    if (name === 'num' || name === 'SI' || name === 'si' || name === 'qty' || name === 'unit') {
+    if (SI_CMDS.has(name)) {
       acc.flush();
-      const unitTex = (u) => u.replace(/\\percent/g, '\\%').replace(/\\per\b/g, '/').replace(/\\(kilo|mega|giga|milli|micro|nano)/g, (m, p) => ({ kilo: 'k', mega: 'M', giga: 'G', milli: 'm', micro: '\\mu ', nano: 'n' }[p])).replace(/\\(meter|metre)/g, 'm').replace(/\\second/g, 's').replace(/\\gram/g, 'g').replace(/\\hour/g, 'h');
-      let tex = '';
-      if (name === 'num') tex = A(1);
-      else if (name === 'si' || name === 'unit') tex = '\\mathrm{' + unitTex(A(1)) + '}';
-      else tex = A(1) + '\\,\\mathrm{' + unitTex(A(2)) + '}';
+      const args = { opt: A(0), a: A(1), b: A(2), c: A(3) };
+      const tex = siTex(name, args, this.siOpts, this.siUnits, this.opts.lang);
       out.push(this.atom(ctx, { k: 'math', s: nd.s, e: nd.e, tex, display: false, si: true }));
       return false;
     }
-    if (name === 'ce' || name === 'pu') {
+    if (name === 'ce' || name === 'pu' || name === 'ch') {
+      // chemformula's \ch reads like mhchem's \ce
       acc.flush();
-      out.push(this.atom(ctx, { k: 'math', s: nd.s, e: nd.e, tex: '\\' + name + '{' + A(0) + '}', display: false, chem: true }));
+      const t = name === 'ch' ? '\\ce{' + A(1) + '}' : '\\' + name + '{' + A(0) + '}';
+      out.push(this.atom(ctx, { k: 'math', s: nd.s, e: nd.e, tex: t, display: false, chem: true }));
       return false;
     }
     if (name === 'item') {
@@ -1536,6 +1559,14 @@ class Builder {
       return false;
     }
     if (/^(textbf|emph)$/.test(name)) return false;
+    // a command that reads a file or a database into the PDF: one block, so its name is not edited as text
+    const FC = FILE_CMDS[name];
+    if (FC) {
+      acc.flush();
+      const file = FC[1] >= 0 && nd.args[FC[1]] ? texToPlain(this.argText(ctx, nd.args[FC[1]])).trim() : '';
+      out.push(this.chip(ctx, nd.s, nd.e, FC[0] + (file ? ' ' + file : ''), '\\' + name + ': set in the PDF. Click to edit the command.'));
+      return false;
+    }
     // Unknown command
     acc.flush();
     const lastM = nd.args.filter((a) => a && !a.o).pop();
@@ -1644,6 +1675,8 @@ class Builder {
       headings: this.headings,
       mathMacros: this.mathMacros,
       textMacros: this.textMacros,
+      siOpts: this.siOpts,
+      siUnits: this.siUnits,
       warn: [...new Set(this.warn)],
       words: this.words,
       bibEntries: (this.ensureBib(), this.bibEntries),

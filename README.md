@@ -6,7 +6,9 @@ a Web Worker to make the PDF. Shell escape works: Ghostscript, gnuplot, Python w
 dvips, Asymptote, xindy, makeindex, bibtex, biber and TeX itself run in the page too. On the
 LaTeX-examples corpus 700 of 705 PDFs equal a desktop TeX Live 2026's in pages, text and pixels;
 the other five differ on the desktop's side: 3D Asymptote without a display, a font it lists but
-cannot load, Debian's own build of a font (PLAN.md, task 2).
+cannot load, Debian's own build of a font (PLAN.md, task 2). Scripted edits on the typeset
+pages of the same corpus (780 of them: typing, deleting, bold, formulas, table cells, footnotes)
+land where they were made and undo byte for byte (task 13).
 
 One self-contained page plus `dist/tex/` (about 250 MB of engine, packs and tools). It is
 published as a private claude.ai artifact; any static host works too.
