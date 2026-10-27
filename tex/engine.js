@@ -401,17 +401,7 @@ function pipeKeep(ck, out) {
     pipeCache.delete(k); pipeCacheSize -= k.length + v.length;
   }
 }
-let texPipeCount = 0;
 function texPipe(argv, input, cwd) {
-  texPipeCount++;
-  // task 18: reset TeX state before every pipe run to avoid the hang
-  // on the seventh run (state left by asy's own run)
-  if (texPool[1]) {
-    const T = texPool[1];
-    if (T._sp0 != null) T._stackRestore(T._sp0);
-    T.HEAPU8.fill(0);
-    T.HEAPU8.set(T._memHeader);
-  }
   const key = argv.join('\0') + '\0' + cwd;
   const list = () => { try { return M.FS.readdir(cwd).filter((n) => n !== '.' && n !== '..'); } catch (e) { return []; } };
   if (!input || !pipeSessions.has(key)) pipeSessions.set(key, new Set(list()));

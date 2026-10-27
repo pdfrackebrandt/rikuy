@@ -75,8 +75,8 @@ async function emProgram(factoryName, asset, extra) {
       });
       return {};
     },
-    print: (t) => { out.s += t + '\n'; out.o += t + '\n'; console.log('ASY_OUT:', t); },
-    printErr: (t) => { out.s += t + '\n'; out.e += t + '\n'; console.log('ASY_ERR:', t); }
+    print: (t) => { out.s += t + '\n'; out.o += t + '\n'; },
+    printErr: (t) => { out.s += t + '\n'; out.e += t + '\n'; }
   }, extra || {});
   delete opts.env; delete opts.init; delete opts.stack;
   const P = await self[factoryName](opts);
@@ -94,11 +94,12 @@ async function emProgram(factoryName, asset, extra) {
   const sp0 = spGet();
   // programs built for Galley (build_tools.sh) start at galley_main (native/galley_main.c),
   // which takes the whole argv, program name included
-  const enter = false ? (argv) => {
+  const enter = P._galley_main ? (argv) => {
     const enc = new TextEncoder();
-    const ptrs = argv.map((x) => { const b = enc.encode(x + '\0'); const q = P._malloc(b.length); if (P.HEAPU8) P.HEAPU8.set(b, q); return q; });
+    const ptrs = argv.map((x) => { const b = enc.encode(x + '\0'); const q = P._malloc(b.length); P.HEAPU8.set(b, q); return q; });
     const av = P._malloc(4 * (ptrs.length + 1));
-    if (P.HEAP32) { ptrs.forEach((q, i) => { P.HEAP32[(av >> 2) + i] = q; }); P.HEAP32[(av >> 2) + ptrs.length] = 0; }
+    ptrs.forEach((q, i) => { P.HEAP32[(av >> 2) + i] = q; });
+    P.HEAP32[(av >> 2) + ptrs.length] = 0;
     const r = P._galley_main(ptrs.length, av);
     if (P._fflush) P._fflush(0);
     return r;
@@ -118,16 +119,14 @@ async function emProgram(factoryName, asset, extra) {
       if (piped) { FS.writeFile('/tmp/galley-stdin', stdin); if (FS.streams[0]) FS.close(FS.streams[0]); FS.open('/tmp/galley-stdin', 'r'); }
       let code;
       try { code = enter(argv); } catch (e) { code = e && typeof e.status === 'number' ? e.status : (typeof e === 'number' ? e : 1); if (!(e && e.status != null)) { out.s += String(e) + '\n'; out.e += String(e) + '\n'; } }
-      if (P._fflush) { try { P._fflush(0); } catch (e) { /* exited */ } }
       if (piped) { try { if (FS.streams[0]) FS.close(FS.streams[0]); } catch (e) { /* closed */ } FS.open('/dev/stdin', 'r'); }
+      if (P._fflush) { try { P._fflush(0); } catch (e) { /* exited */ } }
       // what it left open when it exited (dvips its .dvi, every run): closed, as the system
       // closes a process's files, or the descriptors (and TeX's files behind them) pile up
       (P.FS.streams || []).forEach((s, i) => { if (s && !open.has(i)) { try { P.FS.close(s); } catch (e) { /* closed */ } } });
-      if (mem && mem.buffer) {
-        const h = new Uint8Array(mem.buffer);
-        if (snap && h.length >= snap.length) h.set(snap);
-        if (h.length > snap.length) h.fill(0, snap.length);
-      }
+      const h = new Uint8Array(mem.buffer);
+      h.set(snap);
+      if (h.length > snap.length) h.fill(0, snap.length);
       return code == null ? 0 : code;
     }
   };
@@ -198,7 +197,6 @@ function proxyFS(FS, remote) {
 // since, so a program's proxy nodes are forgotten before each run (looked up again as needed).
 const proxyOps = new WeakSet();
 function flushProxyCache(FS) {
-  if (!FS || !FS.nameTable) return;
   const t = FS.nameTable;
   if (!t) return;
   for (let i = 0; i < t.length; i++) {
@@ -213,8 +211,7 @@ function flushProxyCache(FS) {
 // what a program built for Galley sees: the tree and the home folder (the projects) of TeX's
 // file system; its own /tmp stays its own
 function mountTeX(FS) {
-  const remote = (typeof MAIN !== 'undefined' && MAIN) ? MAIN.FS : null;
-  if (!remote || !FS.mount) return; // no TeX tree or FS has no mount
+  const remote = MAIN.FS;
   for (const d of ['/texlive', '/home/web_user']) {
     try { FS.mkdirTree ? FS.mkdirTree(d) : mkdirsIn(FS, d); } catch (e) { /* exists */ }
     try { remote.mkdirTree ? remote.mkdirTree(d) : mkdirsIn(remote, d); } catch (e) { /* exists */ }
@@ -225,23 +222,17 @@ function mountTeX(FS) {
 // a program built for Galley, run in TeX's folder; what it prints goes to the shell
 async function galleyTool(factoryName, asset, envExtra, init) {
   const G = await emProgram(factoryName, asset, { env: Object.assign({}, ENV, { TEXMFCNF: '/texlive/texmf-dist/web2c' }, envExtra || {}), init });
-  if (G.P.FS) mountTeX(G.P.FS);
+  mountTeX(G.P.FS);
   return G;
 }
 function runGalleyTool(G, argv0, argv, io) {
-  if (!G.P.FS) { io.err(argv0 + ': no file system\n'); return 1; }
   flushProxyCache(G.P.FS);
   // kpathsea finds texmf.cnf from where the program is: it has to be a file
-  if (!texIsFile(argv0) && typeof MAIN !== 'undefined' && MAIN) { try { MAIN.FS.mkdirTree(argv0.slice(0, argv0.lastIndexOf('/'))); } catch (e) { /* exists */ } MAIN.FS.writeFile(argv0, ''); }
-  try { if (G.P.FS.mkdirTree) G.P.FS.mkdirTree(io.env.cwd); } catch (e) { /* exists */ }
+  if (!texIsFile(argv0)) { try { MAIN.FS.mkdirTree(argv0.slice(0, argv0.lastIndexOf('/'))); } catch (e) { /* exists */ } MAIN.FS.writeFile(argv0, ''); }
   try { G.P.FS.chdir(io.env.cwd); } catch (e) { io.err(argv0 + ': no folder ' + io.env.cwd + '\n'); return 1; }
-  io.err('DEBUG: argv=' + JSON.stringify([argv0, ...argv]) + ' env=' + JSON.stringify(G.P.ENV || {}) + '\n');
-  try { io.err('DEBUG: files=' + G.P.FS.readdir('.').join(',') + '\n'); } catch(e) { io.err('DEBUG: readdir failed\n'); }
-  try { const st = G.P.FS.stat('/texlive/texmf-dist/asymptote/plain.asy'); io.err('DEBUG: plain.asy size=' + st.size + '\n'); } catch(e) { io.err('DEBUG: plain.asy stat failed: ' + e.message + '\n'); }
   const code = G.call([argv0, ...argv]);
-  io.err('DEBUG: asy code=' + code + ' out.s=' + (G.out.s || '').length + ' out.o=' + (G.out.o || '').length + '\n');
   if (G.out.o) io.out(G.out.o);
-  if (G.out.s) io.err(G.out.s.slice(-2500));
+  if (code) io.err(G.out.s.slice(-2500));
   return code;
 }
 

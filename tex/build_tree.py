@@ -488,8 +488,6 @@ def build_packs():
                 return '/'.join(t[:4])  # fonts/type1/public/cm-super
             if t[0] == 'tex':
                 return '/'.join(t[:3])  # tex/latex/pgf
-            if t[0] == 'asymptote':
-                return 'asymptote'  # group all asy modules together
             return '/'.join(t[:2])
         return s[1]
     groups = defaultdict(list)
@@ -533,8 +531,6 @@ def build_packs():
     LIM = 3_000_000
     cur, cur_size, cur_labels = [], 0, []
     for key in sorted(groups):
-        if 'asy' in key or 'asymptote' in key:
-            print('DEBUG: emitting group', key, 'with', len(groups[key]), 'files')
         g = groups[key]
         gsize = sum(x[1] for x in g)
         if gsize > LIM:
