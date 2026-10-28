@@ -33,6 +33,9 @@ Built for Galley from source (tex/build_tools.sh, tex/native/)
   Mesa 24.0.5 (OSMesa and softpipe,   MIT (the core; its docs/license.rst    mesa3d.org
     in Asymptote)                     lists the other parts' licenses)
   GLEW (in Asymptote's source)        Modified BSD and MIT                   glew.sourceforge.net
+  GSL 2.8 (in Asymptote)              GPL-3.0-or-later                       www.gnu.org/software/gsl
+  FFTW 3.3.11 (in Asymptote)          GPL-2.0-or-later                       www.fftw.org
+  Eigen 3.4.0 (headers, in Asymptote) MPL-2.0                                eigen.tuxfamily.org
   gnuplot 6.0.2                       gnuplot license                        www.gnuplot.info
 
 Other programs run in the page

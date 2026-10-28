@@ -12,6 +12,9 @@ example that ships only an embedded picture, as BezierSurface's label.pdf), the 
 are compared, each with Galley's of the same name.
 Usage: asycompare.py OUT.jsonl FILE_OR_DIR...   env: GALLEY_DIST, ASY_NATIVE (the build folder,
        default $GALLEY_WORK/asy-native/build), FORMAT (default pdf), KEEP (keep mismatching PDFs)
+The desktop's own asy can stand in for the native one: a folder with an `asy` that runs
+/opt/tl26/usr/bin/asy and `base` linked to /opt/tl26/usr/share/asymptote; it renders 3D through
+a window, so run under `xvfb-run -a`.
 """
 import base64, json, os, re, shutil, subprocess, sys, tempfile, time
 HERE = os.path.dirname(os.path.abspath(__file__))
