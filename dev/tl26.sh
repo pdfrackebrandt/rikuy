@@ -5,8 +5,7 @@
 # touching it. Example: dev/tl26.sh latexmk -pdf main.tex
 TL=${TL26:-/opt/tl26}
 P=5.42
-# TL26_PATH_FIRST: a folder whose programs come before TeX Live's (pdfcompare.py's DESKTOP_ASY)
-export PATH="${TL26_PATH_FIRST:+$TL26_PATH_FIRST:}$TL/usr/bin:$PATH"
+export PATH="$TL/usr/bin:$PATH"
 export TEXMFCNF="$TL/etc/texmf/web2c"
 export PERL5LIB="$TL/etc/perl:$TL/usr/local/lib/x86_64-linux-gnu/perl/$P:$TL/usr/local/share/perl/$P:$TL/usr/lib/x86_64-linux-gnu/perl5/$P:$TL/usr/share/perl5:$TL/usr/lib/x86_64-linux-gnu/perl-base:$TL/usr/lib/x86_64-linux-gnu/perl/$P:$TL/usr/share/perl/$P:$TL/usr/share/texlive/tlpkg"
 export FONTCONFIG_FILE="$TL/galley/fonts.conf"
@@ -16,4 +15,8 @@ export GS_OPTIONS="-sGenericResourceDir=$G/Resource/ -sICCProfilesDir=$G/iccprof
 # libpaper 2 reads its table of sizes from $XDG_CONFIG_HOME (the host has none in /etc); a4, as TeX Live
 export XDG_CONFIG_HOME="$TL/home/config" PAPERSIZE=a4
 export TEXMFVAR="$TL/home/texmf-var" TEXMFCONFIG="$TL/home/texmf-config" TEXMFHOME="$TL/home/texmf"
+# asy: Debian's looks for its base modules in /usr/share/asymptote, and renders 3D through GLX
+# with the release's Mesa (llvmpipe), which needs an X display: pdfcompare.py starts Xvfb
+export ASYMPTOTE_SYSDIR="${ASYMPTOTE_SYSDIR:-$TL/usr/share/asymptote}"
+export LIBGL_DRIVERS_PATH="$TL/usr/lib/x86_64-linux-gnu/dri"
 exec "$@"

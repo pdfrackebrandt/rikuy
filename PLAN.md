@@ -8,7 +8,7 @@ Rewritten 2026-10-25 after round 2, which finished or measured every task of the
 | check | v19 (published 2026-10-12) | version 23 (published 2026-10-26) | version 24 (2026-10-28) |
 |---|---|---|---|
 | corpus compiles (LaTeX-examples, 716 documents present) | 705 | 706 | 706 |
-| corpus PDFs equal to a desktop TeX Live 2026's | 615 of 704 (87.4 %) | 700 of 705 (99.3 %) | 700 of 705; with an asy that renders offscreen on the desktop's side, 703 |
+| corpus PDFs equal to a desktop TeX Live 2026's | 615 of 704 (87.4 %) | 700 of 705 (99.3 %) | 703 of 705 (99.7 %) |
 | TeX passes over the whole corpus | not counted | 995 (1,471 without latexmk's first-run `.aux`) | 995 |
 | `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) | 22/22 |
 | `tex/native/xindy/test.cjs` (against CLISP's xindy) | 11/11 | 11/11 | 11/11 |
@@ -19,7 +19,8 @@ Rewritten 2026-10-25 after round 2, which finished or measured every task of the
 Version 23 changed only the page (task 13): its `dist/tex` is version 22's byte for byte, so the
 TeX rows are version 22's runs. Version 24 changed Asymptote (tasks 17 and 18: `asy.wasm`, the
 shaders in the tree, the worker's pipe to TeX); its corpus rows are version 22's runs with the
-three corpus documents that run asy compiled again.
+three corpus documents that run asy compiled again, compared with the desktop reference as
+repaired on 2026-10-28 (task 2).
 
 Equal means: the same number of pages, the same text on each page (`pdftotext -layout`,
 whitespace collapsed), and no page with more than 0.1 % of its pixels differing by more than
@@ -116,7 +117,8 @@ and `dev/pdfcompare-results.jsonl`.
   from the committed `inputs/` in an empty work folder; the downloads there were the ones
   already fetched, which `fetch_inputs.sh` checks by hash).
 - **Desktop reference fixed:** the fonts TeX Live's packages recommend (Debian moves Linux
-  Libertine, Gentium, Noto and others out of the tree), the font databases, and CLISP for xindy.
+  Libertine, Gentium, Noto and others out of the tree), the font databases, and CLISP for xindy;
+  on 2026-10-28 asy's own libraries and an X display for it (task 2).
 
 ## Building
 
@@ -131,7 +133,8 @@ and `dev/pdfcompare-results.jsonl`.
 4. Programs built for Galley are committed in `tex/vendor/`; `tex/build_tools.sh` rebuilds them
    (`GALLEY_VENDOR` to build elsewhere and compare).
 5. The desktop TeX Live 2026 for comparisons: `dev/fetch_tl26.sh` (into `/opt/tl26`, about
-   6 GB), then `dev/tl26.sh <program>`.
+   6 GB), then `dev/tl26.sh <program>`; its asy needs an X display for 3D (`xvfb` on the build
+   machine: `pdfcompare.py` starts one, for `asycompare.py` use `xvfb-run -a`).
 
 Tests:
 - `cd test && python3 engines.py` (and the other `*.py` there; they serve `dist/`)
@@ -145,8 +148,7 @@ Tests:
 - the comparison: `DESKTOP_CACHE=desk python3 dev/pdfcompare.py OUT.jsonl pdf CMP.jsonl`, then
   `dev/pdfcompare_report.py CMP.jsonl dev/pdfcompare-classes.json`
 - Asymptote: `GLM=1 MESA=1 dev/build_asy_native.sh`, then
-  `ASY_NATIVE=<its build folder> dev/asycompare.py OUT.jsonl FILES...`; for the corpus, the same
-  asy on the desktop's side: `DESKTOP_ASY=<its build folder> dev/pdfcompare.py ...`
+  `ASY_NATIVE=<its build folder> dev/asycompare.py OUT.jsonl FILES...`
 - the editor: `test/editor_corpus.py OUT.jsonl` (about 40 minutes of edits, then 20 of compiles)
 
 ## Tasks of round 1: status
@@ -154,17 +156,20 @@ Tests:
 0. **Parity with v19.** Done in round 2's first commit: manifest equal, 22/22, 11/11, every
    document ok in the baseline ok again.
 1. **No hard coded work folder.** Done.
-2. **PDFs against a desktop TeX Live 2026.** Done. 700 of the 705 documents both sides
-   compiled are equal (99.3 %). Every other one has its cause in `dev/pdfcompare-classes.json`,
-   and none is Galley's: three 3D Asymptote figures the desktop asy cannot render without a
-   display (a blank page, or one of height 0; all three equal Galley's with an asy that renders
-   offscreen in its place, task 17), one Metropolis deck
-   whose Fira Sans the desktop's fontconfig lists but XeTeX cannot load (it falls back to
-   Computer Modern serif; Galley has no Fira, says so and keeps Latin Modern Sans), and one
-   document whose pixels are equal but whose opening quote has no Unicode mapping in Debian's
-   own build of Linux Libertine. One document compiles in Galley only: `class-diagram` needs an
-   `mpost` step from its Makefile that neither side runs, and latexmk calls the missing figure
-   a failure.
+2. **PDFs against a desktop TeX Live 2026.** Done. 703 of the 705 documents both sides
+   compiled are equal (99.7 %). The other two have their cause in `dev/pdfcompare-classes.json`,
+   and neither is Galley's: one Metropolis deck whose Fira Sans the desktop's fontconfig lists
+   but XeTeX cannot load (it falls back to Computer Modern serif; Galley has no Fira, says so and
+   keeps Latin Modern Sans), and one document whose pixels are equal but whose opening quote has
+   no Unicode mapping in Debian's own build of Linux Libertine. Until 2026-10-28 the corpus's
+   three Asymptote figures differed too, blank or of height 0 on the desktop, which round 2 put
+   down to the desktop having no display. Wrong: the desktop's asy never started. Its libraries
+   (readline, GLEW, freeglut, libsigsegv, GL) were missing from the reference
+   (`dev/tl26-packages.txt`), and Debian's asy looks for its base modules in
+   `/usr/share/asymptote`. With them and an X display (`pdfcompare.py` starts Xvfb; the
+   desktop's asy renders 3D through a window, with Mesa 26's llvmpipe) all three are equal. One
+   document compiles in Galley only: `class-diagram` needs an `mpost` step from its Makefile
+   that neither side runs, and latexmk calls the missing figure a failure.
 3. **A larger corpus (arXiv).** Blocked: arxiv.org is not reachable from the build machine (its
    proxy refuses it, as it refuses CTAN). Ready to run: `dev/arxiv_corpus.py` (seeded sample of
    1,000 papers, 84 per year 2015 to 2026, a PDF-only paper replaced by the next of its year,
@@ -257,10 +262,10 @@ Tests:
     with the same Mesa (`dev/build_asy_native.sh`, `MESA=1`): 97 of the 220 examples render a
     bitmap there, and 94 of those are equal in Galley (two draw random data, one is
     `SierpinskiSponge`, task 9); runs of three pictures of different sizes, with transparency,
-    are equal too, as are the corpus's three asy figures with that asy on the desktop's side. A clean `GALLEY_SRC` gives
-    `asy.wasm` byte for byte. Cost: `asy.wasm` 3.7 → 13.3 MB (0.9 → 3.0 MB gzipped as shipped),
-    artifact 251.8 MB. Time in Chromium against native: torus 2.1 s (0.7), teapot 16.9 s (6.5),
-    genustwo 49.1 s (16.2); all 220 examples 857 s against 357.
+    are equal too, as are the corpus's three asy figures against the desktop (task 2). A clean
+    `GALLEY_SRC` gives `asy.wasm` byte for byte. Cost: `asy.wasm` 3.7 → 13.3 MB (0.9 → 3.0 MB
+    gzipped as shipped), artifact 251.8 MB. Time in Chromium against native: torus 2.1 s (0.7),
+    teapot 16.9 s (6.5), genustwo 49.1 s (16.2); all 220 examples 857 s against 357.
 18. **The four Asymptote examples Galley failed** (task 9). Done in version 24: all four equal
     the native asy's PDFs. `functionshading`, `layers` and `spectrum` did not hang in TeX's pipe
     but in asy: in the rehearsal (the first run, which only notes labels and where `System`

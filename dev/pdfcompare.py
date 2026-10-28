@@ -28,10 +28,6 @@ SDE = os.environ.get('SDE', '1700000000')
 TL26 = os.environ.get('TL26', '/opt/tl26')
 KEEP = os.environ.get('KEEP')
 DESKTOP_CACHE = os.environ.get('DESKTOP_CACHE')
-# DESKTOP_ASY: a native asy build folder (dev/build_asy_native.sh, with asy and base/) to run in
-# place of the desktop's asy. TeX Live's asy renders 3D pictures with a window, so on a machine
-# without a display it draws them blank; one built with OSMesa (MESA=1) renders them offscreen.
-DESKTOP_ASY = os.environ.get('DESKTOP_ASY')
 PIXEL_TOL = 64
 PAGE_SHARE = 0.001
 ENGINE_FLAG = {'pdflatex': '-pdf', 'xelatex': '-xelatex', 'lualatex': '-lualatex', 'latex': '-pdfps'}
@@ -48,6 +44,24 @@ add_cus_dep('asy', 'tex', 0, 'asy');
 sub asy { return system("asy -o \"$_[0]\" \"$_[0]\""); }
 $max_repeat = 6;
 '''
+
+
+_xvfb = None
+
+
+def display():
+    """An X display for the desktop's asy, which renders 3D pictures in a window: the one set, or
+    an Xvfb started for this run (a desktop without a display draws them blank)."""
+    global _xvfb
+    if os.environ.get('DISPLAY'):
+        return os.environ['DISPLAY']
+    if _xvfb is None:
+        n = 90 + os.getpid() % 100
+        _xvfb = subprocess.Popen(['Xvfb', ':%d' % n, '-screen', '0', '1280x1024x24', '-nolisten', 'tcp'],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(1)
+        _xvfb.display = ':%d' % n
+    return _xvfb.display
 
 
 def desktop(doc, engine, key=None):
@@ -79,13 +93,7 @@ def desktop(doc, engine, key=None):
     cwd = os.path.join(d, sub) if sub else d
     base = os.path.basename(main)
     open(os.path.join(cwd, 'latexmkrc'), 'w').write(LATEXMKRC)
-    env = dict(os.environ, SOURCE_DATE_EPOCH=SDE, FORCE_SOURCE_DATE='1')
-    if DESKTOP_ASY:
-        b = os.path.join(d, '.asy-bin')
-        os.makedirs(b)
-        open(os.path.join(b, 'asy'), 'w').write('#!/bin/sh\nASYMPTOTE_SYSDIR="%s/base" exec "%s/asy" "$@"\n' % (DESKTOP_ASY, DESKTOP_ASY))
-        os.chmod(os.path.join(b, 'asy'), 0o755)
-        env['TL26_PATH_FIRST'] = b
+    env = dict(os.environ, SOURCE_DATE_EPOCH=SDE, FORCE_SOURCE_DATE='1', DISPLAY=display())
     cmd = [os.path.join(HERE, 'tl26.sh'), 'latexmk', ENGINE_FLAG.get(engine, '-pdf'), '-shell-escape', '-interaction=nonstopmode',
            '-f', '-r', 'latexmkrc', base]
     t0 = time.time()
