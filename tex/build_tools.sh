@@ -71,24 +71,62 @@ glm() {
   [ "$(git -C "$SRC/glm" rev-parse HEAD)" = "$GLM_COMMIT" ] || { echo "build_tools.sh: glm 1.0.1 is not $GLM_COMMIT" >&2; exit 1; }
 }
 
-# Asymptote 3.09 without OpenGL, threads, readline, FFTW, GSL, curl or its garbage collector
-# (each run gets fresh memory anyway), with GLM (WebGL and V3D output) and XDR; native/patch_asy.py
-# routes its pipes and System() to the worker, native/rpc/ stands in for Sun RPC's XDR
+# Mesa 24.0.5 (Ubuntu 24.04's source package): OSMesa on softpipe, the software rasterizer that
+# needs no JIT, as static libraries for asy's rendered 3D (native/patch_mesa.py); no threads, no
+# LLVM, no window system. Its build needs meson, ninja and Python's mako.
+MESA_V=24.0.5
+mesa() {
+  zlib
+  M="$SRC/mesa"
+  [ -f "$M/lib/libOSMesa.a" ] && return
+  fetch $UBUNTU/main/m/mesa/mesa_$MESA_V.orig.tar.gz 5fd81faf83923fbd5c860c77f9709f82c8e9bb8b91cb4c972ce8b64ec1006b67
+  rm -rf "$M" && mkdir -p "$M/src" "$M/pc" "$M/lib"
+  tar --no-same-owner -xzf "$SRC/dl/mesa_$MESA_V.orig.tar.gz" -C "$M/src" --strip-components=1
+  python3 "$HERE/native/patch_mesa.py" "$M/src"
+  printf 'prefix=%s\nName: zlib\nDescription: zlib built for WebAssembly (build_tools.sh)\nVersion: 1.3.1\nLibs: -L${prefix}/lib -lz\nCflags: -I${prefix}/include\n' "$SRC/zlib" > "$M/pc/zlib.pc"
+  (cd "$M" && PKG_CONFIG_PATH="$M/pc" PKG_CONFIG_LIBDIR="$M/pc" meson setup build src --cross-file "$HERE/native/mesa-cross.ini" \
+    -Dbuildtype=release -Ddefault_library=static -Dbuild-tests=false -Dosmesa=true -Dgallium-drivers=swrast -Dvulkan-drivers= -Dplatforms= \
+    -Dglx=disabled -Degl=disabled -Dgbm=disabled -Dgles1=disabled -Dgles2=disabled -Dllvm=disabled -Dshared-glapi=disabled \
+    -Dgallium-nine=false -Dgallium-opencl=disabled -Dgallium-rusticl=false -Dgallium-va=disabled -Dgallium-vdpau=disabled -Dgallium-xa=disabled \
+    -Dexpat=disabled -Dlibunwind=disabled -Dshader-cache=disabled -Dvalgrind=disabled -Dxmlconfig=disabled -Dzstd=disabled -Dwrap_mode=nofallback \
+    > setup.log && ninja -C build > build.log)
+  # plain archives (meson makes thin ones, which name their members by path); libOSMesa.a holds
+  # GL as well
+  cp "$M/build/src/gallium/targets/osmesa/libOSMesa.a" "$M/lib/"
+  for a in src/gallium/drivers/softpipe/libsoftpipe.a src/util/blake3/libblake3.a src/util/libmesa_util_sse41.a; do
+    emar rcs "$M/lib/$(basename $a)" $(emar t "$M/build/$a")
+  done
+}
+MESA_LIBS="-lOSMesa -lsoftpipe -lblake3 -lmesa_util_sse41"
+
+# Asymptote 3.09 without threads, readline, FFTW, GSL, curl or its garbage collector (each run
+# gets fresh memory anyway), with GLM (WebGL and V3D output), XDR, and OpenGL through OSMesa for
+# rendered 3D (no GLUT: no window); native/patch_asy.py routes its pipes and System() to the worker
+# and renders in asy's own process (no fork), native/rpc/ stands in for Sun RPC's XDR
 asy() {
-  texlive_source; zlib; glm
+  texlive_source; zlib; glm; mesa
   B="$SRC/asy/build"
-  # (a build made before GLM was added, or by an older script, is redone)
-  if ! { [ -f "$B/asy" ] && grep -q '^#define HAVE_LIBGLM 1' "$B/config.h" && grep -q '^#define HAVE_LIBTIRPC 1' "$B/config.h"; }; then
+  # (a build made before GLM or OSMesa was added, or by an older script, is redone)
+  if ! { [ -f "$B/asy" ] && grep -q '^#define HAVE_LIBGLM 1' "$B/config.h" && grep -q '^#define HAVE_LIBTIRPC 1' "$B/config.h" && grep -q '^#define HAVE_LIBOSMESA 1' "$B/config.h"; }; then
     rm -rf "$B" && mkdir -p "$SRC/asy" && cp -r "$SRC/tl/utils/asymptote" "$B"
     cd "$B"
     # cp gives every file about the same time in no set order; when configure.ac comes out newer
     # than configure, make reruns autoconf and configure and the Makefile edit below is lost
     touch -d '2000-01-01' configure.ac
     python3 "$HERE/native/patch_asy.py" .
+    # configure's link tests for GL and OSMesa cannot pass here (-lGL is Emscripten's WebGL), and
+    # it would take Emscripten's GLUT emulation for a window toolkit: the answers are given
     emconfigure ./configure --host=wasm32-unknown-emscripten --build=x86_64-pc-linux-gnu --disable-gc --disable-threads --disable-readline \
-      --disable-fftw --disable-gsl --disable-gl --disable-curl --disable-lsp --disable-sigsegv --disable-eigen --disable-xdr --disable-offscreen \
-      CXXFLAGS="-O2 -fexceptions" CFLAGS=-O2 CPPFLAGS="-I$SRC/zlib/include -I$SRC/glm" LDFLAGS="-L$SRC/zlib/lib -fexceptions" > conf.log
+      --disable-fftw --disable-gsl --disable-curl --disable-lsp --disable-sigsegv --disable-eigen --disable-xdr --enable-offscreen \
+      ac_cv_lib_glut_glutMainLoop=no ac_cv_lib_GL_glDepthMask=yes ac_cv_lib_OSMesa_OSMesaCreateContext=yes \
+      CXXFLAGS="-O2 -fexceptions" CFLAGS=-O2 CPPFLAGS="-I$SRC/zlib/include -I$SRC/glm -I$SRC/mesa/src/include" \
+      LDFLAGS="-L$SRC/zlib/lib -L$SRC/mesa/lib -lsoftpipe -lblake3 -lmesa_util_sse41 -fexceptions" > conf.log
     grep -q '^#define HAVE_LIBGLM 1' config.h || { echo "build_tools.sh: configure did not find GLM" >&2; exit 1; }
+    grep -q '^#define HAVE_LIBOSMESA 1' config.h || { echo "build_tools.sh: configure did not take OSMesa" >&2; exit 1; }
+    ! grep -q '^#define HAVE_LIBGLUT 1' config.h || { echo "build_tools.sh: configure took a GLUT" >&2; exit 1; }
+    # GL is in libOSMesa.a; Emscripten's own -lGL would bring its WebGL along
+    sed -i 's#^\(LIBS = .*-lOSMesa -lrt -lz\) -lGL #\1 #' Makefile
+    ! grep -q '^LIBS = .*-lGL ' Makefile || { echo "build_tools.sh: could not take -lGL out of LIBS" >&2; exit 1; }
     # XDR (V3D output, xinput and xoutput files) through native/rpc, not the libtirpc configure
     # looks for (patch_asy.py)
     sed -i 's|^/\* #undef HAVE_LIBTIRPC \*/|#define HAVE_LIBTIRPC 1|' config.h
@@ -99,14 +137,16 @@ asy() {
     emmake make -j2 asy > make.log
   fi
   cd "$B"
-  em++ -DHAVE_CONFIG_H -DFFTWPP_SINGLE_THREAD -I. -I"$SRC/zlib/include" -I"$SRC/glm" -I"$HERE/native" -Itinyexr -O2 -fexceptions -std=c++17 \
+  em++ -DHAVE_CONFIG_H -DFFTWPP_SINGLE_THREAD -I. -I"$SRC/zlib/include" -I"$SRC/glm" -I"$SRC/mesa/src/include" -I"$HERE/native" -Itinyexr -Ibackports/glew/include -O2 -fexceptions -std=c++17 \
     -Ibackports/optional/include -Iprc/include -ILspCpp/include -Dmain=real_main -c main.cc -o main-galley.o
   em++ -O2 -c "$HERE/native/galley_main_cxx.cc" -o galley_main_cxx.o
   OBJS=$(sed -n 's/.*-o asy \(.*\) -L.*zlib\/lib.*/\1/p' make.log | tail -1 | sed 's/ main.o / main-galley.o /')
   mkdir -p "$VENDOR/asy/base"
-  em++ -O2 -fexceptions $OBJS galley_main_cxx.o -L"$SRC/zlib/lib" -lz -o "$VENDOR/asy/asy.js" $(echo $LINK | sed 's/-O2//') -sEXPORT_NAME=GalleyAsy -sINITIAL_MEMORY=67108864 -sTOTAL_STACK=5242880
-  # its base modules go into the TeX tree at TeX Live's place (texmf-dist/asymptote, build_tree.py)
+  em++ -O2 -fexceptions $OBJS glew.o galley_main_cxx.o -L"$SRC/zlib/lib" -L"$SRC/mesa/lib" $MESA_LIBS -lz -o "$VENDOR/asy/asy.js" $(echo $LINK | sed 's/-O2//') -sEXPORT_NAME=GalleyAsy -sINITIAL_MEMORY=67108864 -sTOTAL_STACK=5242880
+  # its base modules and the shaders it renders with go into the TeX tree at TeX Live's place
+  # (texmf-dist/asymptote, build_tree.py)
   cp base/*.asy "$VENDOR/asy/base/"
+  mkdir -p "$VENDOR/asy/base/shaders" && cp base/shaders/*.glsl "$VENDOR/asy/base/shaders/"
   ls -l "$VENDOR/asy"
 }
 

@@ -30,6 +30,9 @@ Built for Galley from source (tex/build_tools.sh, tex/native/)
   GMP 6.3.0                           LGPL-3.0-or-later or GPL-2.0-or-later  gmplib.org
   Boehm GC 8.2.8                      MIT-style (bdwgc license)              github.com/ivmai/bdwgc
   GLM 1.0.1 (headers, in Asymptote)   MIT or the Happy Bunny License         github.com/g-truc/glm
+  Mesa 24.0.5 (OSMesa and softpipe,   MIT (the core; its docs/license.rst    mesa3d.org
+    in Asymptote)                     lists the other parts' licenses)
+  GLEW (in Asymptote's source)        Modified BSD and MIT                   glew.sourceforge.net
   gnuplot 6.0.2                       gnuplot license                        www.gnuplot.info
 
 Other programs run in the page

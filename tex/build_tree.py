@@ -242,14 +242,14 @@ def build_tree():
         dst = os.path.join(TREE, os.path.relpath(p, EXTRA))
         os.makedirs(os.path.dirname(dst), exist_ok=True)
         shutil.copyfile(p, dst)
-    # Asymptote's base modules, from the source the asy program was built from (build_tools.sh),
-    # where TeX Live keeps them
+    # Asymptote's base modules and the shaders it renders 3D with (shaders/), from the source the
+    # asy program was built from (build_tools.sh), where TeX Live keeps them
     asybase = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'vendor', 'asy', 'base')
     if os.path.isdir(asybase):
-        dst = os.path.join(TREE, TD, 'asymptote')
-        os.makedirs(dst, exist_ok=True)
-        for n in sorted(os.listdir(asybase)):
-            shutil.copyfile(os.path.join(asybase, n), os.path.join(dst, n))
+        for p in walk(asybase):
+            dst = os.path.join(TREE, TD, 'asymptote', os.path.relpath(p, asybase))
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copyfile(p, dst)
     # xindy's modules, where TeX Live keeps them (build_tools.sh xindy)
     xmods = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'vendor', 'xindy', 'modules')
     if os.path.isdir(xmods):

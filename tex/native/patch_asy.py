@@ -51,9 +51,37 @@ const bool havegl=true;''')
     camp::reportError("to support onscreen OpenGL rendering; please install the glut library, then ./configure; make");''')
 
 
+# ---- OpenGL through OSMesa, without GLUT ----------------------------------------------------------
+# For any asy rendering 3D through OSMesa with no window toolkit: Galley's, and the native one its
+# 3D pictures are compared with (build_asy_native.sh MESA=1, which runs this with --native too).
+def osmesa_without_glut():
+    # two of glrender.cc's GLUT calls are not under HAVE_LIBGLUT, as the rest are; a build without
+    # GLUT does not compile without these guards
+    edit('glrender.cc', '''  spinTimer.reset();
+  glutIdleFunc(f);''', '''  spinTimer.reset();
+#ifdef HAVE_LIBGLUT
+  glutIdleFunc(f);
+#endif''')
+    edit('glrender.cc', '''void destroywindow()
+{
+  glutDestroyWindow(glutGetWindow());''', '''void destroywindow()
+{
+#ifdef HAVE_LIBGLUT
+  glutDestroyWindow(glutGetWindow());
+#endif''')
+    # softpipe, the renderer behind OSMesa here, speaks GLSL 3.30, which has no implicit int to
+    # uint conversion: blend.glsl compares its uint n with 1 and 0, which does not compile there
+    # (it does in GLSL 4)
+    edit('base/shaders/blend.glsl', '''    if(n == 1)
+      outColor=blend(outColor,fragment[listIndex+k]);''', '''    if(n == 1u)
+      outColor=blend(outColor,fragment[listIndex+k]);''')
+    edit('base/shaders/blend.glsl', '    else if(n > 0) {', '    else if(n > 0u) {')
+
+
 gl_features()
+osmesa_without_glut()
 if '--native' in sys.argv:
-    print('patched', d, '(GLM without OpenGL only)')
+    print('patched', d, '(GLM, and OpenGL through OSMesa, only)')
     sys.exit(0)
 
 
@@ -353,6 +381,85 @@ edit('picture.cc', '''  nodelist::iterator p=nodes.begin();
 #endif
 
   for(size_t i=0; i < lastnumber; ++i) ++p;''')
+# ---- a layer that could not be converted --------------------------------------------------------
+# shipout makes each layer's PostScript into a PDF (epstopdf) before it moves on to the next
+# layer. When that fails it never moves on and loops forever: here the rehearsal (see engine.js,
+# asyRun) makes every program asy starts fail, so a picture with layer() under pdflatex
+# (functionshading, layers, spectrum) hung the page. It stops now, as a failed shipout.
+edit('picture.cc', '''            tex->endlayer();
+            layerp=++p;
+            layer++;
+            break;
+          }
+        }
+      }
+    }
+  }
+''', '''            tex->endlayer();
+            layerp=++p;
+            layer++;
+            break;
+          }
+        }
+      }
+    }
+    if(!status) break;
+  }
+''')
+# ---- rendering in asy's own process --------------------------------------------------------------
+# To draw a 3D picture as a bitmap asy forks: the child renders with OSMesa, writes the image and
+# exits (glrender.cc's quit), the parent waits and goes on. WebAssembly has no fork, so the
+# picture is rendered here, quit() returns, and then asy's memory below the heap's top is put back
+# as it was before: what a child changes is gone when it exits, so each picture starts from the
+# parent's state, as natively. Without that a second picture inherited the first one's GL objects
+# and asy's flags for them (glrender keeps one OSMesa context, its shaders and its vertex
+# buffers): with a transparent surface the materials were never copied again, and a run's third
+# picture came out in the first and second pictures' colours. The image is in the file system,
+# which is the worker's, outside that memory. Memory the render grew is free again afterwards.
+edit('picture.cc', '''#include "seconds.h"
+''', '''#include "seconds.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#include <unistd.h>
+// Galley: a fork for rendering, by copying memory (see shipout3)
+EM_JS(void, galley_fork_save, (size_t top), {
+  Module.galleyForkTop = top;
+  Module.galleyForkMem = HEAPU8.slice(0, top);
+});
+EM_JS(void, galley_fork_restore, (), {
+  HEAPU8.set(Module.galleyForkMem, 0);
+  Module.galleyForkMem = null;
+});
+#endif
+''')
+edit('picture.cc', '''#if !defined(_WIN32)
+      int pid=fork();''', '''#if defined(__EMSCRIPTEN__)
+      // Galley: no fork; rendered below, with the memory put back afterwards
+#elif !defined(_WIN32)
+      int pid=fork();''')
+edit('picture.cc', '''  glrender(args,oldpid);
+''', '''#ifdef __EMSCRIPTEN__
+  if(!format3d) {
+    galley_fork_save((size_t) sbrk(0));
+    try {
+      glrender(args,oldpid);
+    } catch(...) {
+      // a child's error ends the child, and its parent goes on
+    }
+    galley_fork_restore();
+    return true;
+  }
+#endif
+  glrender(args,oldpid);
+''')
+edit('glrender.cc', '''void quit()
+{
+#ifdef HAVE_LIBOSMESA''', '''void quit()
+{
+#if defined(HAVE_LIBOSMESA) && defined(__EMSCRIPTEN__)
+  return;
+#endif
+#ifdef HAVE_LIBOSMESA''')
 # ---- XDR ----------------------------------------------------------------------------------------
 # XDR (V3D output, xinput/xoutput files) comes from native/rpc instead of libtirpc
 # (build_tools.sh defines HAVE_LIBTIRPC). long is 32 bits in WebAssembly and has no overload of

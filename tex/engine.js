@@ -385,8 +385,11 @@ const PIPE_END = 'GALLEY-PIPE-END';
 // a program asy keeps open (its LaTeX for label sizes, Ghostscript for texpath): run on all
 // that was written to it so far (see native/patch_asy.py)
 // Each run of the same session starts from the files there were when it opened (asy has already
-// removed the .aux): what a run wrote is removed before the next, so all runs read the same.
-const pipeSessions = new Map(); // command and folder -> names in the folder when it opened
+// removed the .aux): what a run of TeX wrote is removed before the next, so all runs read the
+// same. Only what TeX wrote: asy makes files between the runs (slidedemo's figures, each drawn
+// by asy() and renamed to Pythagoras.pdf ...), and those were removed too, so the slides missed
+// them.
+const pipeSessions = new Map(); // command and folder -> names the session's runs of TeX made
 // The same input gives the same output (asy asks for the same label in many pictures, and each
 // figure starts from the same preamble), so answers are kept for the compile (pipeCache.clear()).
 const pipeCache = new Map();
@@ -404,10 +407,13 @@ function pipeKeep(ck, out) {
 function texPipe(argv, input, cwd) {
   const key = argv.join('\0') + '\0' + cwd;
   const list = () => { try { return M.FS.readdir(cwd).filter((n) => n !== '.' && n !== '..'); } catch (e) { return []; } };
-  if (!input || !pipeSessions.has(key)) pipeSessions.set(key, new Set(list()));
-  else { const was = pipeSessions.get(key); for (const n of list()) if (!was.has(n)) { try { M.FS.unlink(cwd + '/' + n); } catch (e) { /* a folder */ } } }
+  if (!input || !pipeSessions.has(key)) pipeSessions.set(key, new Set());
+  else for (const n of pipeSessions.get(key)) { try { M.FS.unlink(cwd + '/' + n); } catch (e) { /* gone, or a folder */ } }
+  const before = new Set(list());
   let out = '';
   nestedTeX(argv, { env: { cwd }, out: (t) => { out += t; }, err: () => {} }, { stdin: input });
+  const made = pipeSessions.get(key);
+  for (const n of list()) if (!before.has(n)) made.add(n);
   return out;
 }
 function pipeProgram(argv, input, cwd) {
