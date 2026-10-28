@@ -5,22 +5,23 @@ Rewritten 2026-10-25 after round 2, which finished or measured every task of the
 
 ## Where it stands
 
-| check | v19 (published 2026-10-12) | version 23 (published 2026-10-26) | version 24 (2026-10-28) |
+| check | v19 (published 2026-10-12) | version 23 (published 2026-10-26) | version 25 (2026-10-28) |
 |---|---|---|---|
 | corpus compiles (LaTeX-examples, 716 documents present) | 705 | 706 | 706 |
 | corpus PDFs equal to a desktop TeX Live 2026's | 615 of 704 (87.4 %) | 700 of 705 (99.3 %) | 703 of 705 (99.7 %) |
 | TeX passes over the whole corpus | not counted | 995 (1,471 without latexmk's first-run `.aux`) | 995 |
 | `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) | 22/22 |
 | `tex/native/xindy/test.cjs` (against CLISP's xindy) | 11/11 | 11/11 | 11/11 |
-| TeX Live's 220 Asymptote examples as a native asy 3.09 draws them | not measured | 216 (196 equal PDFs, 12 equal failures, 7 random by design, 1 equal alone); 4 open | 219 (199 equal PDFs, 3D ones rendered as bitmaps; 13 equal failures; 7 random by design); 1 numerical |
+| TeX Live's 220 Asymptote examples as a desktop's asy draws them | not measured | against a native asy 3.09: 216 (196 equal PDFs, 12 equal failures, 7 random by design, 1 equal alone); 4 open | against the desktop's asy 3.11: 218 (201 equal PDFs, the 3D ones rendered as bitmaps; 10 equal failures; 7 random by design); 2 open: 1 numerical, `slope` out of memory |
 | edits on the typeset page landing exactly, undone byte for byte (`test/editor_corpus.py`) | not measured | 780 of 780, in the 222 documents with text, a formula, a cell or a footnote; 211 of 211 edited projects compile | as version 23 (page unchanged) |
-| artifact size (limit 256 MB) | 250.0 MB | 249.7 MB | 251.8 MB |
+| artifact size (limit 256 MB) | 250.0 MB | 249.7 MB | 252.3 MB |
 
 Version 23 changed only the page (task 13): its `dist/tex` is version 22's byte for byte, so the
 TeX rows are version 22's runs. Version 24 changed Asymptote (tasks 17 and 18: `asy.wasm`, the
-shaders in the tree, the worker's pipe to TeX); its corpus rows are version 22's runs with the
-three corpus documents that run asy compiled again, compared with the desktop reference as
-repaired on 2026-10-28 (task 2).
+shaders in the tree, the worker's pipe to TeX), version 25 again (task 19: GSL, FFTW and Eigen,
+and the worker letting a program go after a run that leaves it above 1 GiB), and the desktop
+reference was repaired (task 2); version 25's corpus rows are version 22's runs, with the three
+corpus documents that run asy compiled again and compared with the repaired desktop.
 
 Equal means: the same number of pages, the same text on each page (`pdftotext -layout`,
 whitespace collapsed), and no page with more than 0.1 % of its pixels differing by more than
@@ -198,18 +199,20 @@ Tests:
 8. **gnuplot** `draw-csv`, `high-order-knot`: done: the documents' own (a Makefile step;
    gnuplot 6 has no `latex` terminal).
 9. **Asymptote coverage.** Done. `dev/asycompare.py` draws each of the 220 examples in TeX Live's
-   `utils/asymptote/examples` with Galley and with a native asy 3.09 built from the same source
-   with the same features (`dev/build_asy_native.sh`, GLM and OSMesa; labels by the desktop
-   TeX Live). Version 24: 199 PDFs are equal, the 3D ones rendered as bitmaps
-   (`smoothelevation` run alone: in the run it came after `slope`, which had crashed the page;
-   `BezierSurface` compared by the `label.pdf` it writes); 13 examples fail on both sides the
-   same way (no GSL, missing `.obj` data, ConTeXt, `slope.asy` exhausting memory, image based
-   lighting files from the network); 7 draw random data, so the native asy differs from itself
-   between runs; `SierpinskiSponge` differs in 39 pixels at 72 dpi (0.11 %, the limit is 0.1 %)
-   along edges where coplanar faces meet and the depth test comes out the other way: floating
-   point in WebAssembly against x86-64. Results with their causes:
-   `dev/asycompare-results.jsonl`. The first run found three bugs, fixed above: the stack
-   pointer, the pipe cache, Ghostscript's standard input.
+   `utils/asymptote/examples` with Galley and with another asy: the desktop's own (Ubuntu's asy
+   3.11, with its libraries since task 2, under Xvfb), and a native asy 3.09 built from the
+   same source with the same features (`dev/build_asy_native.sh`: GLM, OSMesa, GSL, FFTW,
+   Eigen, no GC); labels by the desktop TeX Live. Version 25 against the desktop's: 201 PDFs
+   equal, the 3D ones rendered as bitmaps (`BezierSurface` and `triads` compared by the PDFs
+   they write under other names); 10 examples fail on both sides the same way (missing `.obj`
+   data, ConTeXt, image based lighting files from the network, ones that write no PDF); 7 draw
+   random data, so the desktop's asy differs from itself between runs; `SierpinskiSponge`
+   differs in 0.11 % of the pixels at 72 dpi (the limit is 0.1 %) along edges where coplanar
+   faces meet and the depth test comes out the other way: floating point in WebAssembly against
+   x86-64; `slope` runs out of memory in Galley only (task 19). Against the native asy: the
+   same, but `slope` fails there too (without the GC). Results with their causes:
+   `dev/asycompare-desktop-results.jsonl`, `dev/asycompare-results.jsonl`. The first run found
+   three bugs, fixed above: the stack pointer, the pipe cache, Ghostscript's standard input.
 10. **Asymptote 3D like the desktop.** WebGL (`-f html`), V3D and PRC output work (GLM, and XDR
     through `native/rpc`); rendered bitmaps since version 24 (task 17).
 11. **The programs reported as missing.** No corpus document calls R, bib2gls or inkscape.
@@ -274,6 +277,25 @@ Tests:
     figures with `asy()` between its TeX runs; the worker removed every new file of the folder
     before the next run of the same pipe session, so the slides lost `Pythagoras.pdf` and the
     others. Only the files TeX's own runs made are removed now (`engine.js`).
+19. **Asymptote as the desktop's.** Done in version 25. Once the desktop reference ran its asy
+    (task 2), Galley's could be held against Ubuntu's asy 3.11, the one a desktop TeX Live user
+    has, and two examples failed in Galley only: `AiryDisk` (the gsl module) and `slope`. asy is
+    now built with GSL 2.8, FFTW 3.3.11 and Eigen 3.4.0, the desktop's versions from Ubuntu
+    26.10's source packages (`build_tools.sh`, and `build_asy_native.sh` likewise): the gsl
+    module, `fft()` and `schur()`. `slope` stays a failure, measured: asy built without its
+    garbage collector frees nothing until a run ends, and `slope` fills WebAssembly's 2 GB. Its
+    Boehm GC was built and tried (static data registered as roots, binaryen's spill-pointers
+    pass for the pointers in WebAssembly locals): 3D rendering two to three times slower, and
+    `slope` still out of memory, with 1.5 GB in use after each collection where the desktop's
+    64 bit asy peaks at 270 MB (likely false pointers: in 32 bits the heap spans most
+    addresses). The worker now lets a program go when a run leaves its memory above 1 GiB and
+    loads it again on the next call (`tools.js`): once, in task 9's run, the page had crashed
+    after `slope`; now `slope` and three figures after it in one page give the three equal,
+    asy loaded again in 6 s. Against the desktop's asy 3.11 now: 218 of 220 as task 9 counts
+    them, `AiryDisk` equal; against the native asy built as Galley's, 219 (`slope` fails there
+    too). A clean `GALLEY_SRC` gives `asy.wasm` byte for byte. Cost: `asy.wasm` 13.3 → 14.8 MB
+    (3.0 → 3.5 MB gzipped), artifact 252.3 MB. All 220 examples take 1,410 s in Chromium against
+    the desktop's 475 s (on a machine slower than task 17's).
 
 ## Rules
 

@@ -38,11 +38,23 @@ async function preloadTools(texFiles, files, engine) {
 }
 
 const toolLoading = {};
+// A program whose memory grew past this in a run is let go after it, and loaded again when next
+// asked for (the shell's "need"): WebAssembly memory never shrinks, so kept it would hold that
+// memory for good, and the page's next large allocation could crash the tab (asy on TeX Live's
+// slope.asy takes all of its 2 GB, PLAN task 19).
+const TOOL_MEM_LIMIT = 1 << 30;
 function loadTool(k) {
   if (TOOLS[k]) return Promise.resolve(TOOLS[k]);
   if (!toolLoading[k]) {
     const make = { gs: makeGs, gnuplot: makeGnuplot, python: makePython, dvips: makeDvips, asy: makeAsy, xindy: makeXindy }[k];
-    toolLoading[k] = make().then((t) => { TOOLS[k] = t; return t; });
+    toolLoading[k] = make().then((t) => {
+      if (t.bytes && t.run) {
+        const run = t.run;
+        t.run = (...a) => { const r = run.apply(t, a); if (t.bytes() > TOOL_MEM_LIMIT && TOOLS[k] === t) { delete TOOLS[k]; delete toolLoading[k]; } return r; };
+      }
+      TOOLS[k] = t;
+      return t;
+    });
     toolLoading[k].catch(() => { delete toolLoading[k]; });
   }
   return toolLoading[k];
@@ -106,6 +118,7 @@ async function emProgram(factoryName, asset, extra) {
   } : (argv) => P.callMain(argv.slice(1));
   return {
     P, out,
+    bytes: () => mem.buffer.byteLength,
     // argv: the program's whole command line, its name first
     // stdin: what the program reads on its standard input (a pipe's input, written in full)
     call(argv, stdin) {
@@ -240,7 +253,8 @@ function runGalleyTool(G, argv0, argv, io) {
 async function makeDvips() {
   const G = await galleyTool('GalleyDvips', INDEX.tools.dvips);
   return {
-    run(argv, io) { return runGalleyTool(G, '/texlive/bin/dvips', argv.slice(1), io); }
+    run(argv, io) { return runGalleyTool(G, '/texlive/bin/dvips', argv.slice(1), io); },
+    bytes: G.bytes
   };
 }
 
@@ -258,7 +272,8 @@ async function makeAsy() {
   };
   G.P.galleyPipe = (argv, input) => pipeProgram(argv, input, G.P.FS.cwd());
   return {
-    run(argv, io) { return runGalleyTool(G, '/texlive/bin/asy', argv.slice(1), io); }
+    run(argv, io) { return runGalleyTool(G, '/texlive/bin/asy', argv.slice(1), io); },
+    bytes: G.bytes
   };
 }
 
@@ -574,6 +589,7 @@ async function makeGs() {
   }
 
   return {
+    bytes: G.bytes,
     // each page's bounding box (Ghostscript's bbox device), for pdfcrop
     bbox(inp, cwd, hires) {
       const r = gsRun([...BASEOPTS, '-sDEVICE=bbox', inp], cwd, [inp], []);
@@ -732,6 +748,7 @@ async function makeGnuplot() {
   mkdirsIn(FS2, PS);
   try { for (const n of M.FS.readdir('/texlive/gnuplot-ps')) if (n !== '.' && n !== '..') FS2.writeFile(PS + '/' + n, M.FS.readFile('/texlive/gnuplot-ps/' + n)); } catch (e) { /* none */ }
   return {
+    bytes: G.bytes,
     run(argv, io, h) {
       const cwd = io.env.cwd;
       // the document's folder, so the script finds its data files

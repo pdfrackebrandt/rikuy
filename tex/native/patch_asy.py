@@ -423,7 +423,6 @@ edit('picture.cc', '''#include "seconds.h"
 #include <unistd.h>
 // Galley: a fork for rendering, by copying memory (see shipout3)
 EM_JS(void, galley_fork_save, (size_t top), {
-  Module.galleyForkTop = top;
   Module.galleyForkMem = HEAPU8.slice(0, top);
 });
 EM_JS(void, galley_fork_restore, (), {

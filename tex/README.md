@@ -34,7 +34,7 @@ which understands the shell syntax packages use and runs (`tools.js`):
 | pdflatex, latex, xelatex, lualatex | a second instance of the engine (TikZ externalize, auto-pst-pdf, standalone) |
 | pdfcrop | Ghostscript's bounding boxes and pdfcrop's own TeX run, in JavaScript |
 | dvips | TeX Live's, built here (`build_tools.sh`) |
-| asy | Asymptote 3.09, built here (with GLM, XDR, and OpenGL through Mesa's OSMesa), its labels measured by the second TeX |
+| asy | Asymptote 3.09, built here (with GLM, XDR, GSL, FFTW, Eigen, and OpenGL through Mesa's OSMesa), its labels measured by the second TeX |
 | xindy, texindy, tex2xindy | xindy 2.5.1 on ECL 24.5.10, built here, with TeX Live's Perl front ends written in JavaScript |
 
 Pipes work both ways: `\input|"cmd"` reads a program's output and `\openout` to `|"cmd"` feeds one.
@@ -118,4 +118,7 @@ works on a self-hosted Galley, not inside the artifact.
 Fonts that come from the mirror are found by file name, not by family name. Programs outside
 TeX Live (inkscape, R, Java's bib2gls) cannot run (PLAN.md, task 11). Asymptote renders 3D in
 software, two to three times slower than natively (a torus 2 s, the teapot 18 s); WebGL
-(`-f html`), V3D and PRC output work too.
+(`-f html`), V3D and PRC output work too. It runs without its garbage collector, so a run frees
+nothing until it ends: a long computation such as TeX Live's `slope.asy` example runs out of
+WebAssembly's 2 GB (the collector, tried, did not keep it under that; `build_tools.sh` has the
+measurement).

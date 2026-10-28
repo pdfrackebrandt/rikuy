@@ -99,15 +99,61 @@ mesa() {
 }
 MESA_LIBS="-lOSMesa -lsoftpipe -lblake3 -lmesa_util_sse41"
 
-# Asymptote 3.09 without threads, readline, FFTW, GSL, curl or its garbage collector (each run
-# gets fresh memory anyway), with GLM (WebGL and V3D output), XDR, and OpenGL through OSMesa for
-# rendered 3D (no GLUT: no window); native/patch_asy.py routes its pipes and System() to the worker
-# and renders in asy's own process (no fork), native/rpc/ stands in for Sun RPC's XDR
+# GSL 2.8, FFTW 3.3.11 and Eigen 3.4.0, the versions the desktop's asy links (Ubuntu 26.10's
+# source packages): asy's gsl module, fft() and schur()/eigenvalues
+GSL_V=2.8+dfsg
+gsl() {
+  texlive_source
+  [ -f "$SRC/gsl/lib/libgsl.a" ] && return
+  fetch $UBUNTU/universe/g/gsl/gsl_$GSL_V.orig.tar.gz 69614b7005133a2d3a75827044164de98670568382e3192888a3185578451a70
+  rm -rf "$SRC/gsl" && mkdir -p "$SRC/gsl/src" && tar --no-same-owner -xzf "$SRC/dl/gsl_$GSL_V.orig.tar.gz" -C "$SRC/gsl/src" --strip-components=1
+  cp "$SRC/tl/build-aux/config.sub" "$SRC/gsl/src/config.sub" # (its own predates Emscripten)
+  # Debian's tarball leaves out parts of the manual, which its Makefile still builds
+  printf 'all install install-data install-exec install-strip check installcheck clean distclean mostlyclean maintainer-clean uninstall info dvi pdf html ps tags ctags distdir:\n\t@:\n' > "$SRC/gsl/src/doc/Makefile.in"
+  (cd "$SRC/gsl/src" && emconfigure ./configure --host=wasm32-unknown-emscripten --build=x86_64-pc-linux-gnu --disable-shared --enable-static \
+    --prefix="$SRC/gsl" CFLAGS=-O2 > conf.log && emmake make -j2 > make.log && emmake make install > inst.log)
+}
+FFTW_V=3.3.11
+fftw() {
+  texlive_source
+  [ -f "$SRC/fftw/lib/libfftw3.a" ] && return
+  fetch $UBUNTU/main/f/fftw3/fftw3_$FFTW_V.orig.tar.gz 5630c24cdeb33b131612f7eb4b1a9934234754f9f388ff8617458d0be6f239a1
+  rm -rf "$SRC/fftw" && mkdir -p "$SRC/fftw/src" && tar --no-same-owner -xzf "$SRC/dl/fftw3_$FFTW_V.orig.tar.gz" -C "$SRC/fftw/src" --strip-components=1
+  cp "$SRC/tl/build-aux/config.sub" "$SRC/fftw/src/config.sub" # (its own predates Emscripten)
+  (cd "$SRC/fftw/src" && emconfigure ./configure --host=wasm32-unknown-emscripten --build=x86_64-pc-linux-gnu --disable-shared --enable-static \
+    --disable-fortran --disable-threads --disable-openmp --disable-doc --prefix="$SRC/fftw" CFLAGS=-O2 > conf.log && emmake make -j2 > make.log && emmake make install > inst.log)
+}
+eigen() {
+  [ -f "$SRC/eigen/Eigen/Dense" ] && return
+  fetch $UBUNTU/universe/e/eigen3/eigen3_3.4.0.orig.tar.bz2 b4c198460eba6f28d34894e3a5710998818515104d6e74e5cc331ce31e46e626
+  rm -rf "$SRC/eigen" && mkdir -p "$SRC/eigen" && tar --no-same-owner -xjf "$SRC/dl/eigen3_3.4.0.orig.tar.bz2" -C "$SRC/eigen" --strip-components=1
+}
+# binaryen 123 (npm) for its spill-pointers pass, which the Boehm GC needs (xindy below)
+binaryen() {
+  [ -x "$SRC/binaryen/node_modules/binaryen/bin/wasm-opt" ] || (mkdir -p "$SRC/binaryen" && cd "$SRC/binaryen" && npm install --silent binaryen@123.0.0 > /dev/null)
+}
+
+# Asymptote 3.09 with what the desktop's has, but threads, readline, curl, sigsegv, the language
+# server and the Boehm GC: GLM (WebGL and V3D output), XDR, OpenGL through OSMesa for rendered 3D
+# (no GLUT: no window), GSL, FFTW and Eigen. native/patch_asy.py routes its pipes and System() to
+# the worker and renders in asy's own process (no fork), native/rpc/ stands in for Sun RPC's XDR.
+# Without the GC asy frees nothing during a run. With it, measured 2026-10-28 (the GC asy bundles,
+# its static data registered as roots, binaryen's spill-pointers pass for the pointers in
+# WebAssembly locals): 3D pictures rendered two to three times slower (the pass slows softpipe
+# too), and slope.asy still ran out of the 2 GB, with 1.5 GB in use after each collection where
+# the desktop's 64 bit asy peaks at 270 MB (likely the conservative collector's false pointers:
+# in 32 bits the heap spans most addresses, so many numbers look like pointers into it).
+asy_built() {
+  [ -f "$B/asy" ] || return 1
+  for d in HAVE_LIBGLM HAVE_LIBTIRPC HAVE_LIBOSMESA HAVE_LIBGSL HAVE_LIBFFTW3 HAVE_EIGEN_DENSE; do grep -q "^#define $d 1" "$B/config.h" || return 1; done
+  ! grep -q '^#define USEGC 1' "$B/config.h"
+}
 asy() {
-  texlive_source; zlib; glm; mesa
+  texlive_source; zlib; glm; mesa; gsl; fftw; eigen
   B="$SRC/asy/build"
-  # (a build made before GLM or OSMesa was added, or by an older script, is redone)
-  if ! { [ -f "$B/asy" ] && grep -q '^#define HAVE_LIBGLM 1' "$B/config.h" && grep -q '^#define HAVE_LIBTIRPC 1' "$B/config.h" && grep -q '^#define HAVE_LIBOSMESA 1' "$B/config.h"; }; then
+  ASYLIBINC="-I$SRC/gsl/include -I$SRC/fftw/include -I$SRC/eigen"
+  # (a build made before GLM, OSMesa or GSL was added, or by an older script, is redone)
+  if ! asy_built; then
     rm -rf "$B" && mkdir -p "$SRC/asy" && cp -r "$SRC/tl/utils/asymptote" "$B"
     cd "$B"
     # cp gives every file about the same time in no set order; when configure.ac comes out newer
@@ -115,14 +161,19 @@ asy() {
     touch -d '2000-01-01' configure.ac
     python3 "$HERE/native/patch_asy.py" .
     # configure's link tests for GL and OSMesa cannot pass here (-lGL is Emscripten's WebGL), and
-    # it would take Emscripten's GLUT emulation for a window toolkit: the answers are given
+    # it would take Emscripten's GLUT emulation for a window toolkit; those for FFTW and GSL
+    # declare the function with another signature, which this Emscripten's binaryen cannot
+    # finish linking: the answers are given. GSL and FFTW give their flags by pkg-config.
+    PKG_CONFIG_LIBDIR="$SRC/gsl/lib/pkgconfig:$SRC/fftw/lib/pkgconfig" \
     emconfigure ./configure --host=wasm32-unknown-emscripten --build=x86_64-pc-linux-gnu --disable-gc --disable-threads --disable-readline \
-      --disable-fftw --disable-gsl --disable-curl --disable-lsp --disable-sigsegv --disable-eigen --disable-xdr --enable-offscreen \
+      --disable-curl --disable-lsp --disable-sigsegv --disable-xdr --enable-offscreen \
       ac_cv_lib_glut_glutMainLoop=no ac_cv_lib_GL_glDepthMask=yes ac_cv_lib_OSMesa_OSMesaCreateContext=yes \
-      CXXFLAGS="-O2 -fexceptions" CFLAGS=-O2 CPPFLAGS="-I$SRC/zlib/include -I$SRC/glm -I$SRC/mesa/src/include" \
-      LDFLAGS="-L$SRC/zlib/lib -L$SRC/mesa/lib -lsoftpipe -lblake3 -lmesa_util_sse41 -fexceptions" > conf.log
-    grep -q '^#define HAVE_LIBGLM 1' config.h || { echo "build_tools.sh: configure did not find GLM" >&2; exit 1; }
-    grep -q '^#define HAVE_LIBOSMESA 1' config.h || { echo "build_tools.sh: configure did not take OSMesa" >&2; exit 1; }
+      ac_cv_lib_fftw3_fftw_execute=yes ac_cv_lib_gsl_gsl_sf_debye_6=yes \
+      CXXFLAGS="-O2 -fexceptions" CFLAGS=-O2 CPPFLAGS="-I$SRC/zlib/include -I$SRC/glm -I$SRC/mesa/src/include $ASYLIBINC" \
+      LDFLAGS="-L$SRC/zlib/lib -L$SRC/mesa/lib -lsoftpipe -lblake3 -lmesa_util_sse41 -L$SRC/gsl/lib -L$SRC/fftw/lib -fexceptions" > conf.log
+    for d in HAVE_LIBGLM HAVE_LIBOSMESA HAVE_LIBGSL HAVE_LIBFFTW3 HAVE_EIGEN_DENSE; do
+      grep -q "^#define $d 1" config.h || { echo "build_tools.sh: configure did not set $d" >&2; exit 1; }
+    done
     ! grep -q '^#define HAVE_LIBGLUT 1' config.h || { echo "build_tools.sh: configure took a GLUT" >&2; exit 1; }
     # GL is in libOSMesa.a; Emscripten's own -lGL would bring its WebGL along
     sed -i 's#^\(LIBS = .*-lOSMesa -lrt -lz\) -lGL #\1 #' Makefile
@@ -137,12 +188,13 @@ asy() {
     emmake make -j2 asy > make.log
   fi
   cd "$B"
-  em++ -DHAVE_CONFIG_H -DFFTWPP_SINGLE_THREAD -I. -I"$SRC/zlib/include" -I"$SRC/glm" -I"$SRC/mesa/src/include" -I"$HERE/native" -Itinyexr -Ibackports/glew/include -O2 -fexceptions -std=c++17 \
+  em++ -DHAVE_CONFIG_H -DFFTWPP_SINGLE_THREAD -I. -I"$SRC/zlib/include" -I"$SRC/glm" -I"$SRC/mesa/src/include" $ASYLIBINC -I"$HERE/native" -Itinyexr -Ibackports/glew/include -O2 -fexceptions -std=c++17 \
     -Ibackports/optional/include -Iprc/include -ILspCpp/include -Dmain=real_main -c main.cc -o main-galley.o
   em++ -O2 -c "$HERE/native/galley_main_cxx.cc" -o galley_main_cxx.o
   OBJS=$(sed -n 's/.*-o asy \(.*\) -L.*zlib\/lib.*/\1/p' make.log | tail -1 | sed 's/ main.o / main-galley.o /')
   mkdir -p "$VENDOR/asy/base"
-  em++ -O2 -fexceptions $OBJS glew.o galley_main_cxx.o -L"$SRC/zlib/lib" -L"$SRC/mesa/lib" $MESA_LIBS -lz -o "$VENDOR/asy/asy.js" $(echo $LINK | sed 's/-O2//') -sEXPORT_NAME=GalleyAsy -sINITIAL_MEMORY=67108864 -sTOTAL_STACK=5242880
+  em++ -O2 -fexceptions $OBJS glew.o galley_main_cxx.o -L"$SRC/zlib/lib" -L"$SRC/mesa/lib" $MESA_LIBS -L"$SRC/gsl/lib" -L"$SRC/fftw/lib" -lgsl -lgslcblas -lfftw3 -lz \
+    -o "$VENDOR/asy/asy.js" $(echo $LINK | sed 's/-O2//') -sEXPORT_NAME=GalleyAsy -sINITIAL_MEMORY=67108864 -sTOTAL_STACK=5242880
   # its base modules and the shaders it renders with go into the TeX tree at TeX Live's place
   # (texmf-dist/asymptote, build_tree.py)
   cp base/*.asy "$VENDOR/asy/base/"
@@ -239,8 +291,7 @@ PY
     ECL_TO_RUN="$SRC/ecl-host/bin/ecl" emmake make -j2 > make.log)
 }
 xindy() {
-  texlive_source; ecl_wasm
-  [ -x "$SRC/binaryen/node_modules/binaryen/bin/wasm-opt" ] || (mkdir -p "$SRC/binaryen" && cd "$SRC/binaryen" && npm install --silent binaryen@123.0.0 > /dev/null)
+  texlive_source; ecl_wasm; binaryen
   X="$SRC/xindy" && rm -rf "$X" && mkdir -p "$X"
   python3 "$HERE/native/xindy/patch_xindy.py" "$SRC/tl/utils/xindy/xindy-src/src" "$X/lisp" /texlive/texmf-dist/xindy/modules
   I="-I$SRC/ecl-wasm/build -I$SRC/wasm-prefix/include"
