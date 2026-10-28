@@ -5,7 +5,8 @@
 # touching it. Example: dev/tl26.sh latexmk -pdf main.tex
 TL=${TL26:-/opt/tl26}
 P=5.42
-export PATH="$TL/usr/bin:$PATH"
+# TL26_PATH_FIRST: a folder whose programs come before TeX Live's (pdfcompare.py's DESKTOP_ASY)
+export PATH="${TL26_PATH_FIRST:+$TL26_PATH_FIRST:}$TL/usr/bin:$PATH"
 export TEXMFCNF="$TL/etc/texmf/web2c"
 export PERL5LIB="$TL/etc/perl:$TL/usr/local/lib/x86_64-linux-gnu/perl/$P:$TL/usr/local/share/perl/$P:$TL/usr/lib/x86_64-linux-gnu/perl5/$P:$TL/usr/share/perl5:$TL/usr/lib/x86_64-linux-gnu/perl-base:$TL/usr/lib/x86_64-linux-gnu/perl/$P:$TL/usr/share/perl/$P:$TL/usr/share/texlive/tlpkg"
 export FONTCONFIG_FILE="$TL/galley/fonts.conf"

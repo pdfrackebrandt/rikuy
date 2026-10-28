@@ -34,7 +34,7 @@ which understands the shell syntax packages use and runs (`tools.js`):
 | pdflatex, latex, xelatex, lualatex | a second instance of the engine (TikZ externalize, auto-pst-pdf, standalone) |
 | pdfcrop | Ghostscript's bounding boxes and pdfcrop's own TeX run, in JavaScript |
 | dvips | TeX Live's, built here (`build_tools.sh`) |
-| asy | Asymptote 3.09, built here (with GLM and XDR), its labels measured by the second TeX |
+| asy | Asymptote 3.09, built here (with GLM, XDR, and OpenGL through Mesa's OSMesa), its labels measured by the second TeX |
 | xindy, texindy, tex2xindy | xindy 2.5.1 on ECL 24.5.10, built here, with TeX Live's Perl front ends written in JavaScript |
 
 Pipes work both ways: `\input|"cmd"` reads a program's output and `\openout` to `|"cmd"` feeds one.
@@ -60,6 +60,11 @@ through `native/galley_main.c`.
   them all, and the real run finds its answers ready: a graph with axes takes 4 s, not 30.
   Ghostscript, which `texpath` and 3D labels read a page at a time, is run the same way, its
   output handed over one line per read as a live pipe would.
+- asy renders 3D pictures in a PDF as a desktop asy does, as a bitmap, through Mesa 24.0.5's
+  OSMesa on softpipe (no JIT, no threads), built by `build_tools.sh mesa` (`native/patch_mesa.py`,
+  `native/mesa-cross.ini`). asy forks a child for each picture; without fork it renders in
+  place and then puts its memory back as the child's exit would, so every picture starts from
+  the same state. Its shaders sit at TeX Live's place, `texmf-dist/asymptote/shaders`.
 - xindy is Common Lisp. TeX Live runs it on CLISP; here ECL is cross compiled (with GMP and the
   Boehm GC from Ubuntu's sources, and binaryen's spill-pointers pass so the GC sees pointers held
   in WebAssembly locals). `native/xindy/` holds the program, the few CLISP-only spots made
@@ -111,6 +116,6 @@ works on a self-hosted Galley, not inside the artifact.
 ## Limits
 
 Fonts that come from the mirror are found by file name, not by family name. Programs outside
-TeX Live (inkscape, R, Java's bib2gls) cannot run (PLAN.md, task 11). Asymptote is built without
-OpenGL: 3D figures in a PDF are vector drawings where a desktop asy renders a bitmap; WebGL
-(`-f html`), V3D and PRC output work.
+TeX Live (inkscape, R, Java's bib2gls) cannot run (PLAN.md, task 11). Asymptote renders 3D in
+software, two to three times slower than natively (a torus 2 s, the teapot 18 s); WebGL
+(`-f html`), V3D and PRC output work too.

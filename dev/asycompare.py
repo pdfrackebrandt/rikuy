@@ -7,7 +7,9 @@ features (dev/build_asy_native.sh), which typesets its labels with the desktop T
 page, pixels at 72 dpi.
 
 Each file runs in a folder with the .asy files beside it and the data files it names, as asy
-would find them in its own folder.
+would find them in its own folder. When the native asy writes no PDF of the file's name (an
+example that ships only an embedded picture, as BezierSurface's label.pdf), the PDFs it did write
+are compared, each with Galley's of the same name.
 Usage: asycompare.py OUT.jsonl FILE_OR_DIR...   env: GALLEY_DIST, ASY_NATIVE (the build folder,
        default $GALLEY_WORK/asy-native/build), FORMAT (default pdf), KEEP (keep mismatching PDFs)
 """
@@ -57,8 +59,10 @@ def native(name, files):
         log, code = 'timeout', -1
     out = os.path.join(d, name[:-4] + '.' + FORMAT)
     data = open(out, 'rb').read() if os.path.exists(out) else None
+    others = {n: open(os.path.join(d, n), 'rb').read() for n in sorted(os.listdir(d))
+              if n.endswith('.' + FORMAT) and n not in files and n != os.path.basename(out)}
     shutil.rmtree(d, ignore_errors=True)
-    return data, code, log, round(time.time() - t0, 1)
+    return data, code, log, round(time.time() - t0, 1), others
 
 
 def main():
@@ -87,15 +91,22 @@ def main():
             name = os.path.basename(path)
             files = inputs(path)
             rec = {'file': path}
+            t, code, log, secs, others = native(name, files)
+            main_out = name[:-4] + '.' + FORMAT
+            read = [main_out] + ([] if t else list(others))
             t0 = time.time()
             try:
                 pg.evaluate("""([files, argv, read, id]) => shell({ id, tools: ['asy'], argv, read,
                     files: files.map(f => ({ path: f[0], data: Uint8Array.from(atob(f[1]), c => c.charCodeAt(0)) })) })""",
-                            [[[n, base64.b64encode(v).decode()] for n, v in files.items()], ['asy', '-f', FORMAT, '-noV', name], [name[:-4] + '.' + FORMAT], 'a%d' % paths.index(path)])
+                            [[[n, base64.b64encode(v).decode()] for n, v in files.items()], ['asy', '-f', FORMAT, '-noV', name], read, 'a%d' % paths.index(path)])
                 pg.wait_for_function('window.shellResult || window.err', timeout=LIMIT * 1000, polling=200)
                 r = pg.evaluate("window.shellResult ? ({code: shellResult.code, err: (shellResult.err || '').slice(-1500), f: Object.fromEntries(Object.entries(shellResult.files).map(([k, v]) => { let s = ''; for (let i = 0; i < v.length; i += 0x8000) s += String.fromCharCode.apply(null, v.subarray(i, i + 0x8000)); return [k, btoa(s)]; }))}) : ({code: -2, err: String(window.err && window.err.error)})")
-                g = base64.b64decode(r['f'][name[:-4] + '.' + FORMAT]) if r.get('f', {}).get(name[:-4] + '.' + FORMAT) else None
-                rec.update(galley_code=r['code'], galley_err=r['err'][-600:] if not g else '')
+                got = {k: base64.b64decode(v) for k, v in (r.get('f') or {}).items()}
+                g = got.get(main_out)
+                if not g and not t and others:  # no PDF of the file's name on the native side: its others
+                    g_others = {k: got.get(k) for k in others}
+                    rec['outputs'] = list(others)
+                rec.update(galley_code=r['code'], galley_err=r['err'][-600:] if not (g or rec.get('outputs')) else '')
             except Exception as e:
                 g = None
                 rec.update(galley_code=-1, galley_err='timeout' if 'Timeout' in str(e) else str(e)[:300])
@@ -105,8 +116,21 @@ def main():
                     pass
                 pg.close(); pg = None
             rec['galley_s'] = round(time.time() - t0, 1)
-            t, code, log, secs = native(name, files)
             rec.update(native_code=code, native_s=secs, native_err=log[-600:] if not t else '')
+            if rec.get('outputs'):  # compared output by output: all must be equal
+                rec['galley_ok'], rec['native_ok'] = all(g_others.values()), True
+                parts = [compare(g_others[k], others[k]) if g_others[k] else {'match': False} for k in others]
+                rec['match'] = all(x['match'] for x in parts)
+                rec['pixel_worst'] = max((x.get('pixel_worst') or 0) for x in parts)
+                if KEEP and not rec['match']:
+                    os.makedirs(KEEP, exist_ok=True)
+                    for k in others:
+                        open(os.path.join(KEEP, name[:-4] + '-' + k[:-4] + '-native.' + FORMAT), 'wb').write(others[k])
+                        if g_others[k]:
+                            open(os.path.join(KEEP, name[:-4] + '-' + k[:-4] + '-galley.' + FORMAT), 'wb').write(g_others[k])
+                out.write(json.dumps(rec) + '\n'); out.flush()
+                print(name, rec.get('match'), rec['outputs'], rec.get('pixel_worst'), flush=True)
+                continue
             rec['galley_ok'], rec['native_ok'] = g is not None, t is not None
             if g and t:
                 if FORMAT == 'pdf':

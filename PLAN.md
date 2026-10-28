@@ -5,19 +5,21 @@ Rewritten 2026-10-25 after round 2, which finished or measured every task of the
 
 ## Where it stands
 
-| check | v19 (published 2026-10-12) | version 23 (published 2026-10-26) |
-|---|---|---|
-| corpus compiles (LaTeX-examples, 716 documents present) | 705 | 706 |
-| corpus PDFs equal to a desktop TeX Live 2026's | 615 of 704 (87.4 %) | 700 of 705 (99.3 %) |
-| TeX passes over the whole corpus | not counted | 995 (1,471 without latexmk's first-run `.aux`) |
-| `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) |
-| `tex/native/xindy/test.cjs` (against CLISP's xindy) | 11/11 | 11/11 |
-| TeX Live's 220 Asymptote examples as a native asy 3.09 draws them | not measured | 216 (196 equal PDFs, 12 equal failures, 7 random by design, 1 equal alone); 4 open |
-| edits on the typeset page landing exactly, undone byte for byte (`test/editor_corpus.py`) | not measured | 780 of 780, in the 222 documents with text, a formula, a cell or a footnote; 211 of 211 edited projects compile |
-| artifact size (limit 256 MB) | 250.0 MB | 249.7 MB |
+| check | v19 (published 2026-10-12) | version 23 (published 2026-10-26) | version 24 (2026-10-28) |
+|---|---|---|---|
+| corpus compiles (LaTeX-examples, 716 documents present) | 705 | 706 | 706 |
+| corpus PDFs equal to a desktop TeX Live 2026's | 615 of 704 (87.4 %) | 700 of 705 (99.3 %) | 700 of 705; with an asy that renders offscreen on the desktop's side, 703 |
+| TeX passes over the whole corpus | not counted | 995 (1,471 without latexmk's first-run `.aux`) | 995 |
+| `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) | 22/22 |
+| `tex/native/xindy/test.cjs` (against CLISP's xindy) | 11/11 | 11/11 | 11/11 |
+| TeX Live's 220 Asymptote examples as a native asy 3.09 draws them | not measured | 216 (196 equal PDFs, 12 equal failures, 7 random by design, 1 equal alone); 4 open | 219 (199 equal PDFs, 3D ones rendered as bitmaps; 13 equal failures; 7 random by design); 1 numerical |
+| edits on the typeset page landing exactly, undone byte for byte (`test/editor_corpus.py`) | not measured | 780 of 780, in the 222 documents with text, a formula, a cell or a footnote; 211 of 211 edited projects compile | as version 23 (page unchanged) |
+| artifact size (limit 256 MB) | 250.0 MB | 249.7 MB | 251.8 MB |
 
 Version 23 changed only the page (task 13): its `dist/tex` is version 22's byte for byte, so the
-TeX rows are version 22's runs.
+TeX rows are version 22's runs. Version 24 changed Asymptote (tasks 17 and 18: `asy.wasm`, the
+shaders in the tree, the worker's pipe to TeX); its corpus rows are version 22's runs with the
+three corpus documents that run asy compiled again.
 
 Equal means: the same number of pages, the same text on each page (`pdftotext -layout`,
 whitespace collapsed), and no page with more than 0.1 % of its pixels differing by more than
@@ -103,8 +105,8 @@ and `dev/pdfcompare-results.jsonl`.
       so their file names, keys and code are not typed into; chemformula's `\ch` is set like
       mhchem's `\ce`.
 - **Programs built here from source** (`tex/build_tools.sh`): dvips, Asymptote 3.09 now with
-  GLM and XDR (WebGL, V3D and PRC output; two fixes in `native/patch_asy.py` for GLM without
-  OpenGL), xindy, and gnuplot 6.0.2. A clean `GALLEY_SRC` rebuilds all four.
+  GLM and XDR (WebGL, V3D and PRC output), and since version 24 OpenGL through Mesa's OSMesa
+  (task 17), xindy, and gnuplot 6.0.2. A clean `GALLEY_SRC` rebuilds all four.
 - **Size:** the niche packages TeX Live 2026 added (one school's beamer theme, thesis classes,
   icon and card sets) go to the mirror only (`DROP` in `tex/build_tree.py`), as do the Aurical
   fonts.
@@ -142,7 +144,9 @@ Tests:
   100 minutes on 2 cores. Run nothing else meanwhile: the harness limit is 240 s.
 - the comparison: `DESKTOP_CACHE=desk python3 dev/pdfcompare.py OUT.jsonl pdf CMP.jsonl`, then
   `dev/pdfcompare_report.py CMP.jsonl dev/pdfcompare-classes.json`
-- Asymptote: `dev/build_asy_native.sh` (GLM=1), then `dev/asycompare.py OUT.jsonl FILES...`
+- Asymptote: `GLM=1 MESA=1 dev/build_asy_native.sh`, then
+  `ASY_NATIVE=<its build folder> dev/asycompare.py OUT.jsonl FILES...`; for the corpus, the same
+  asy on the desktop's side: `DESKTOP_ASY=<its build folder> dev/pdfcompare.py ...`
 - the editor: `test/editor_corpus.py OUT.jsonl` (about 40 minutes of edits, then 20 of compiles)
 
 ## Tasks of round 1: status
@@ -153,7 +157,8 @@ Tests:
 2. **PDFs against a desktop TeX Live 2026.** Done. 700 of the 705 documents both sides
    compiled are equal (99.3 %). Every other one has its cause in `dev/pdfcompare-classes.json`,
    and none is Galley's: three 3D Asymptote figures the desktop asy cannot render without a
-   display (a blank page, or one of height 0; Galley draws them as vectors), one Metropolis deck
+   display (a blank page, or one of height 0; all three equal Galley's with an asy that renders
+   offscreen in its place, task 17), one Metropolis deck
    whose Fira Sans the desktop's fontconfig lists but XeTeX cannot load (it falls back to
    Computer Modern serif; Galley has no Fira, says so and keeps Latin Modern Sans), and one
    document whose pixels are equal but whose opening quote has no Unicode mapping in Debian's
@@ -189,20 +194,19 @@ Tests:
    gnuplot 6 has no `latex` terminal).
 9. **Asymptote coverage.** Done. `dev/asycompare.py` draws each of the 220 examples in TeX Live's
    `utils/asymptote/examples` with Galley and with a native asy 3.09 built from the same source
-   with the same features (`dev/build_asy_native.sh`, GLM; labels by the desktop TeX Live).
-   196 PDFs are equal; 12 examples fail on both sides the same way (no GSL, missing `.obj`
-   data, ConTeXt, `slope.asy` exhausting memory); 7 draw random data, so the native asy differs
-   from itself between runs; `smoothelevation` is equal run alone (in the run it came after
-   `slope` had crashed the page). Four fail in Galley only (task 18). Results with their causes:
-   `dev/asycompare-results.jsonl`. The run found three bugs, fixed above: the stack pointer,
-   the pipe cache, Ghostscript's standard input.
-10. **Asymptote 3D like the desktop.** WebGL (`-f html`), V3D and PRC output now work (GLM,
-    and XDR through `native/rpc`). Rendered bitmaps are left out, measured: Mesa 24.0.5 built
-    with softpipe only (the one rasterizer that needs no JIT) is 14.5 MB stripped, 4.3 MB
-    gzipped natively; asy 3.09's shaders need a one-line fix to compile at softpipe's GLSL 3.30
-    (`n == 1` against an unsigned `n` in `blend.glsl`); rendering then takes 1.2 s (torus) to
-    11.3 s (teapot) natively, two to three times that in WebAssembly. The artifact has 6.3 MB
-    left. Porting Mesa to Emscripten is the open part: task 17.
+   with the same features (`dev/build_asy_native.sh`, GLM and OSMesa; labels by the desktop
+   TeX Live). Version 24: 199 PDFs are equal, the 3D ones rendered as bitmaps
+   (`smoothelevation` run alone: in the run it came after `slope`, which had crashed the page;
+   `BezierSurface` compared by the `label.pdf` it writes); 13 examples fail on both sides the
+   same way (no GSL, missing `.obj` data, ConTeXt, `slope.asy` exhausting memory, image based
+   lighting files from the network); 7 draw random data, so the native asy differs from itself
+   between runs; `SierpinskiSponge` differs in 39 pixels at 72 dpi (0.11 %, the limit is 0.1 %)
+   along edges where coplanar faces meet and the depth test comes out the other way: floating
+   point in WebAssembly against x86-64. Results with their causes:
+   `dev/asycompare-results.jsonl`. The first run found three bugs, fixed above: the stack
+   pointer, the pipe cache, Ghostscript's standard input.
+10. **Asymptote 3D like the desktop.** WebGL (`-f html`), V3D and PRC output work (GLM, and XDR
+    through `native/rpc`); rendered bitmaps since version 24 (task 17).
 11. **The programs reported as missing.** No corpus document calls R, bib2gls or inkscape.
     R: webR 0.6.0 is 48.6 MB (R.wasm alone 18.1 MB) and the artifact has 6.3 MB left; a page on
     claude.ai may not fetch it at run time either (its `connect-src` is `'self'` only). A
@@ -232,21 +236,39 @@ Tests:
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000
     papers, every failure classified as in task 2. Needs arxiv.org (see task 3).
-17. **3D bitmaps from Asymptote.** Port Mesa's softpipe OSMesa to Emscripten 3.1.6 and link it
-    into asy with OpenGL on. Started: `meson` configures with a cross file once OSMesa is made a
-    static library; compiling needs `_GNU_SOURCE`, `dladdr` and `os_sysinfo` stubbed (about 190
-    errors at first count). Then asy's `blend.glsl` fix, asy with `--enable-offscreen`, and the
-    size and time measured in the browser. Finish line: asy's 3D examples rendered as a
-    desktop asy renders them (compared with `dev/asycompare.py` against a native asy built with
-    the same OSMesa), or the measured reason it cannot fit.
-18. **The four Asymptote examples Galley fails** (task 9). `functionshading`, `layers` and
-    `spectrum` set `settings.tex="pdflatex"` (the last two with ocgx2 layers) and hang while
-    asy measures labels: without the rehearsal the seventh TeX pipe run never returns, yet the
-    same seven inputs replayed in a fresh worker (`tex-smoke.html`) all return. So it depends on
-    state that asy's own run leaves, not on the TeX input; `orthocenter`, also pdflatex, works,
-    as do the corpus figures asymptote.sty sends with pdflatex. `slidedemo` calls `asy()` to make
-    its figures, asy started from asy, which one asy instance cannot run (a second instance, as
-    TeX has, would). Finish line: all four equal to the native asy's PDFs.
+## Tasks after round 2: status
+
+17. **3D bitmaps from Asymptote.** Done in version 24. Mesa 24.0.5 (Ubuntu 24.04's source
+    package, pinned by hash) is built with Emscripten 3.1.6 by `build_tools.sh mesa`: meson
+    with `native/mesa-cross.ini`, OSMesa on softpipe, no LLVM, threads or window system, static
+    libraries; `native/patch_mesa.py` lets Mesa take Emscripten for Linux (it is musl with a
+    Linux system call layer), drops thread names and the CPU number, and makes OSMesa static.
+    asy is configured with OpenGL and `--enable-offscreen` but no GLUT (two GLUT calls guarded),
+    and links Mesa's GL instead of Emscripten's WebGL. asy forks a child to render each
+    picture; WebAssembly has no fork, so asy renders in place and then copies back its memory
+    below the heap's top, as it was before the render: the child's exit, in effect. Without
+    that a run's later pictures inherited the first one's GL objects, and a picture with a
+    transparent surface came out in an earlier picture's colours: asy's fragment counting pass
+    copies each buffer's vertices but not its materials, and the drawing pass after it copies
+    nothing; only a buffer's first use, in a fresh process always, forces the copy (a bug of
+    asy's that a forked child never meets). The shaders are in the tree at TeX Live's place
+    (`texmf-dist/asymptote/shaders`); `blend.glsl` compares an unsigned `n` with `1` and `0`,
+    which GLSL 3.30 (softpipe's) rejects, so it gets `1u` and `0u`. Against a native asy built
+    with the same Mesa (`dev/build_asy_native.sh`, `MESA=1`): 97 of the 220 examples render a
+    bitmap there, and 94 of those are equal in Galley (two draw random data, one is
+    `SierpinskiSponge`, task 9); runs of three pictures of different sizes, with transparency,
+    are equal too, as are the corpus's three asy figures with that asy on the desktop's side. A clean `GALLEY_SRC` gives
+    `asy.wasm` byte for byte. Cost: `asy.wasm` 3.7 → 13.3 MB (0.9 → 3.0 MB gzipped as shipped),
+    artifact 251.8 MB. Time in Chromium against native: torus 2.1 s (0.7), teapot 16.9 s (6.5),
+    genustwo 49.1 s (16.2); all 220 examples 857 s against 357.
+18. **The four Asymptote examples Galley failed** (task 9). Done in version 24: all four equal
+    the native asy's PDFs. `functionshading`, `layers` and `spectrum` did not hang in TeX's pipe
+    but in asy: in the rehearsal (the first run, which only notes labels and where `System`
+    fails) converting a layer with epstopdf failed, and `shipout`'s loop over the layers never
+    moved past it. It stops now, as a failed shipout (`patch_asy.py`). `slidedemo` makes its
+    figures with `asy()` between its TeX runs; the worker removed every new file of the folder
+    before the next run of the same pipe session, so the slides lost `Pythagoras.pdf` and the
+    others. Only the files TeX's own runs made are removed now (`engine.js`).
 
 ## Rules
 

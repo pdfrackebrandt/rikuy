@@ -1,15 +1,15 @@
 {
   "le/asymptote/topology-r-spiral-covering-s/topology-r-spiral-covering-s.tex": {
     "class": "desktop asy 3D blank",
-    "note": "A 3D figure: the desktop asy, with no display to render with, writes a page of height 0 and a blank second page; Galley's asy draws the figure as vectors on one page."
+    "note": "A 3D figure: the desktop's asy (TeX Live's, which renders through a window) has no display here and writes a page of height 0 and a blank second page; Galley's asy draws the figure, its curves as vectors, on one page. With an asy built with OSMesa in place of the desktop's (pdfcompare.py's DESKTOP_ASY, PLAN task 17), the desktop's PDF equals Galley's (dev/pdfcompare-asy-osmesa.jsonl)."
   },
   "le/asymptote/torus-three-paths/torus-three-paths.tex": {
     "class": "desktop asy 3D blank",
-    "note": "A 3D figure: the desktop asy renders nothing without a display; Galley draws the torus and its paths as vectors."
+    "note": "A 3D figure: the desktop's asy (TeX Live's, which renders through a window) renders nothing without a display; Galley's renders the torus as a bitmap, as a desktop with a display does. With an asy built with OSMesa in place of the desktop's (pdfcompare.py's DESKTOP_ASY, PLAN task 17), the desktop's PDF equals Galley's (dev/pdfcompare-asy-osmesa.jsonl)."
   },
   "le/math/asymptote/sphere-sphere/sphere-sphere.tex": {
     "class": "desktop asy 3D blank",
-    "note": "A 3D figure: the desktop page holds nothing but its page number; Galley draws both spheres as vectors."
+    "note": "A 3D figure (settings.render=0, vectors): the desktop page holds nothing but its page number, as TeX Live's asy finds no display here; Galley draws both spheres as vectors. With an asy built with OSMesa in place of the desktop's (pdfcompare.py's DESKTOP_ASY, PLAN task 17), the desktop's PDF equals Galley's (dev/pdfcompare-asy-osmesa.jsonl)."
   },
   "le/presentations/CNN-Intro/CNN-Intro.tex": {
     "class": "font not in Galley (Fira Sans)",
