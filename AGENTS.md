@@ -90,6 +90,7 @@ Pick the checks by what you touched, and run them before you call it done:
 - asy runs twice per figure: a rehearsal that only notes the labels it will ask TeX about, then the real run (`tex/README.md`). Anything asy starts fails during the rehearsal on purpose.
 - asy has no fork here: it renders 3D pictures in place and then copies its memory back (`tex/native/patch_asy.py`); keep that when touching its rendering.
 - The desktop's asy renders 3D through a window: run its comparisons under `xvfb-run -a`.
+- The copy published on claude.ai is built with `RIKUY_SHARE=https://claude.ai/artifact/W7htGmmfauM4Z3KpjV9vzK`, because a page in a frame cannot see its own address; run the browser tests on a build without it (`test/share.py` expects links to the page itself).
 - The page runs under a strict Content Security Policy (`connect-src 'self'`, see `test/serve.py`): the worker can fetch only files next to the page.
 - The published artifact may hold 256 MB; `PLAN.md` gives the current size.
 - The build machine has two cores: corpus runs use a 240 s limit per document and must run alone.

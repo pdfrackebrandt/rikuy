@@ -126,7 +126,8 @@ prototype).
   keeps a named version; `base` is its signature (`textSig`). Figures stay out of the link.
   `shareBase()` is the page's own address, or `RIKUY_SHARE` at build time for a copy inside a
   frame. On start (and on `hashchange`, or a pasted link) `openSharedLink()` drops the fragment
-  from the address and opens the document.
+  from the address and opens the document. A page in a frame (the claude.ai artifact) never sees
+  the fragment of the outer address, so there the recipient pastes the link onto the page.
 - **The coauthor** gets the document as a new project (`loadProject`), the version shared as the
   base of the Changes tab, the marks on, the source closed and a bar saying who shared it
   (`guestMode`); `shareCtx` (kept per project in IndexedDB) remembers whom to send it back to.

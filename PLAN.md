@@ -302,8 +302,9 @@ Tests:
 
 20. **Coauthors without accounts, and one click to leave.** Done in version 26 (`src/share.js`,
     `src/collab.js`). Share copies a link with the document deflated into its fragment (the
-    sample's link: 3.8 thousand characters), which opens it in any browser ready to type in; the coauthor's view
-    keeps the source closed and marks their own edits. Comments are `% comment (Name) on
+    sample's link: 3.8 thousand characters), which opens it in any browser ready to type in (on
+    claude.ai, where the page runs in a frame that never sees the link, the recipient pastes it
+    onto the page once); the coauthor's view keeps the source closed and marks their own edits. Comments are `% comment (Name) on
     "words": text` lines under the line they are about, with replies; compiled with TeX Live
     2026 the sample with four of them gives the same text and pixels on all three pages as
     without. Send back returns a link carrying the shared version's signature: the author's

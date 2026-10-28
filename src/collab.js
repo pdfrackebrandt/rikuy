@@ -70,6 +70,10 @@ export const collab = {
 
   linkNote(L) {
     const parts = [];
+    // a page inside a frame (the claude.ai artifact) never sees the address it was opened with
+    let framed = false;
+    try { framed = window.top !== window; } catch (e) { framed = true; }
+    if (framed) parts.push('Here the page cannot read the link it is opened with, so whoever opens it pastes the link onto the page once (they will see Open it). A copy of Rikuy on its own site opens links directly.');
     if (L.figures) parts.push('The ' + plural(L.figures, 'figure stays', 'figures stay') + ' with you: the link carries the text, and the page shows a frame where a figure goes.');
     if (L.url.length > LONG_LINK) parts.push('This link is long (' + Math.round(L.url.length / 1000) + ' thousand characters); if a chat app cuts it, send it by email.');
     return parts.join(' ');

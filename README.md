@@ -20,7 +20,8 @@ the document itself, a file, or a git push.
   (minted), dvips, Asymptote with 3D rendering, and TeX starting TeX (TikZ externalize,
   `standalone`).
 - **Coauthors without accounts.** Share copies a link that opens the document ready to type in;
-  the document travels inside the link, nothing is uploaded. Coauthors who never write LaTeX
+  the document travels inside the link, nothing is uploaded. (In the copy hosted on claude.ai the
+  page cannot read the link it opens with, so the recipient pastes it onto the page once.) Coauthors who never write LaTeX
   type and comment on the page and send a link back; their edits arrive as tracked changes,
   merged with what you wrote meanwhile. Comments are LaTeX comment lines, so Overleaf, Git and
   TeX keep them and print nothing.
