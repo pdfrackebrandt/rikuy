@@ -1,3 +1,5 @@
+// Writing an edited equation row back into the source with the smallest change (minimal.js),
+// keeping the author's spacing, shorthands and labels.
 import katex from '../node_modules/katex/dist/katex.mjs';
 import { minimalRow, makeSame } from '../src/minimal.js';
 const same = makeSame(katex, { '\\R': '\\mathbb{R}', '\\E': '\\mathbb{E}' }, true);

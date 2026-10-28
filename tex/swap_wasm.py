@@ -51,4 +51,4 @@ def main(d, src):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.environ.get('GALLEY_WORK', '/tmp/eng'), 'busytex-patched.wasm'))
+    main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.environ.get('RIKUY_WORK', '/tmp/eng'), 'busytex-patched.wasm'))

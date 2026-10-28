@@ -3,13 +3,12 @@ Shift+Enter rows, wrapping a selection, pasting with delimiters, Copy for Word, 
 comma in German documents, chemistry with \\ce."""
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
-os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
 from browser import open_page, check, results, src, SHOTS
 from playwright.sync_api import sync_playwright
 
 with sync_playwright() as p:
     browser, page, errors = open_page(p, width=1400, height=900)
-    page.evaluate("window.galley.toggleSource(false)")
+    page.evaluate("window.rikuy.toggleSource(false)")
     val = lambda: page.evaluate("document.getElementById('pop-field').getValue('latex')")
     ta = lambda: page.evaluate("document.getElementById('pop-tex').value")
     k = page.keyboard
@@ -83,7 +82,7 @@ with sync_playwright() as p:
     k.press('Shift+Enter'); page.wait_for_timeout(250)
     check('Shift+Enter adds a row', val().count('\\\\') == before + 1, val()[-80:])
     k.press('Escape'); page.wait_for_timeout(300)
-    page.evaluate("window.galley.undo()"); page.wait_for_timeout(300)
+    page.evaluate("window.rikuy.undo()"); page.wait_for_timeout(300)
     print('errors:', errors[:5])
     check('no page errors', not errors, errors[:5])
     browser.close()
@@ -98,12 +97,12 @@ Wasser ist \ce{H2O}. Es gilt $x = 1$ und $f(0,1) + x$.
 """
     init = "window.__seed = " + repr(de).replace("'", '"') if False else None
     browser, page, errors = open_page(p, width=1400, height=900)
-    page.evaluate("""(t) => { const g = window.galley; g.files = new Map([['main.tex', t]]); g.main = 'main.tex'; g.forceRender = true; g.rebuild(); }""", de)
+    page.evaluate("""(t) => { const g = window.rikuy; g.files = new Map([['main.tex', t]]); g.main = 'main.tex'; g.forceRender = true; g.rebuild(); }""", de)
     page.wait_for_timeout(1500)
     chem = page.evaluate("(() => { const a = [...document.querySelectorAll('.it.p [data-a]')]; return a.map(e => e.textContent).join('|'); })()")
     check('\\ce renders as a formula', 'H' in chem and '2' in chem and 'O' in chem and '\\ce' not in chem, chem)
     check('\\ce is not flagged as an error', page.evaluate("document.querySelectorAll('.has-err').length") == 0)
-    page.evaluate("window.galley.toggleSource(false)")
+    page.evaluate("window.rikuy.toggleSource(false)")
     page.locator('.it.p .katex').nth(1).click()
     page.wait_for_selector('#pop-field', timeout=10000); page.wait_for_timeout(300)
     page.evaluate("(() => { const mf = document.getElementById('pop-field'); mf.focus(); mf.executeCommand('moveToMathfieldEnd'); })()")
@@ -116,7 +115,7 @@ Wasser ist \ce{H2O}. Es gilt $x = 1$ und $f(0,1) + x$.
     page.evaluate("(() => { const mf = document.getElementById('pop-field'); mf.focus(); mf.executeCommand('moveToMathfieldEnd'); })()")
     page.keyboard.press('Backspace'); page.keyboard.type('y'); page.wait_for_timeout(400)
     page.keyboard.press('Escape'); page.wait_for_timeout(300)
-    s2 = page.evaluate("window.galley.files.get('main.tex')")
+    s2 = page.evaluate("window.rikuy.files.get('main.tex')")
     check('a list f(0,1) is not turned into a decimal', '$f(0,1) + y$' in s2, s2[s2.find('und'):][:40])
     check('no page errors (German)', not errors, errors[:5])
     browser.close()

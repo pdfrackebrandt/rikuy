@@ -1,23 +1,23 @@
-"""The LaTeX formats, made by Galley's own engines from the tree they will read.
+"""The LaTeX formats, made by Rikuy's own engines from the tree they will read.
 
 A format is LaTeX's kernel and the hyphenation patterns preloaded; it has to come from the same
 engine binary and the same latex.ltx the documents then use. This runs the three ini runs of TeX
 Live's fmtutil.cnf (pdflatex, xelatex, lualatex, with every language of language.dat) in the
 worker, in Chromium, and saves the formats where build_tree.py takes them from:
-$GALLEY_WORK/pdflatex-all.fmt and $GALLEY_WORK/fmt/{xelatex,luahblatex}.fmt.
+$RIKUY_WORK/pdflatex-all.fmt and $RIKUY_WORK/fmt/{xelatex,luahblatex}.fmt.
 Usage: build_formats.py DIST   (a dist/ built from the tree whose kernel the formats are for)
 """
 import os, sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'test'))
-os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
-WORK = os.environ.get('GALLEY_WORK', '/tmp/eng')
-os.environ['GALLEY_DIST'] = sys.argv[1]
+if os.path.isdir('/opt/pw-browsers'): os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
+WORK = os.environ.get('RIKUY_WORK', '/tmp/eng')
+os.environ['RIKUY_DIST'] = sys.argv[1]
 import serve
 from playwright.sync_api import sync_playwright
 
 PORT = int(os.environ.get('PORT', '8803'))
 serve.start(PORT)
-RUNS = [  # fmtutil.cnf's lines for the three formats Galley uses
+RUNS = [  # fmtutil.cnf's lines for the three formats Rikuy uses
     ('pdflatex', ['pdftex', '-ini', '-jobname=pdflatex', '-progname=pdflatex', '-translate-file=cp227.tcx', '*pdflatex.ini'], 'pdflatex-all.fmt'),
     ('xelatex', ['xetex', '-ini', '-jobname=xelatex', '-progname=xelatex', '-etex', 'xelatex.ini'], 'fmt/xelatex.fmt'),
     ('luahblatex', ['luahbtex', '-ini', '-jobname=luahblatex', '-progname=luahblatex', 'lualatex.ini'], 'fmt/luahblatex.fmt'),

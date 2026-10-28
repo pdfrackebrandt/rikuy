@@ -3,9 +3,9 @@ its whole project folder (the way a user opens it), through the real worker in C
 Usage: corpus_full.py OUT.jsonl [filter]"""
 import os, sys, json, time, base64
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'test'))
-os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
+if os.path.isdir('/opt/pw-browsers'): os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
 PORT = int(os.environ.get('PORT', '8794'))
-WORK = os.environ.get('GALLEY_WORK', '/tmp/eng')
+WORK = os.environ.get('RIKUY_WORK', '/tmp/eng')
 REPO = os.environ.get('CORPUS_REPO', os.path.join(WORK, 'le-full/repo'))  # a clone of https://github.com/MartinThoma/LaTeX-examples at 8bfd313b8d98
 OLD = [json.loads(l)['doc'] for l in open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'corpus-docs.jsonl'))]
 # CORPUS_LIST: another corpus, as dev/arxiv-ids.txt lists it (id, category, main file), each paper

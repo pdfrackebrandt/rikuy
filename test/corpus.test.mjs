@@ -1,7 +1,13 @@
+// The editor model on every document of a corpus (a LaTeX-examples clone): each must build
+// without throwing; also lists the slow ones and the commands the model does not know.
 import fs from 'fs';
 import path from 'path';
 import { buildModel } from '../src/model.js';
 const root = process.argv[2];
+if (!root) {
+  console.error('usage: node test/corpus.test.mjs CORPUS_DIR   (e.g. a clone of MartinThoma/LaTeX-examples at 8bfd313b8d98)');
+  process.exit(2);
+}
 const files = [];
 const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { if (e.name.startsWith('.')) continue; const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (/\.tex$/.test(e.name)) files.push(p); } };
 walk(root);

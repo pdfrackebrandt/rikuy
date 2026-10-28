@@ -1,26 +1,26 @@
 #!/bin/sh
-# A desktop Asymptote of exactly the version and source Galley's is built from (tex/build_tools.sh:
+# A desktop Asymptote of exactly the version and source Rikuy's is built from (tex/build_tools.sh:
 # TeX Live's utils/asymptote at its pinned commit), compiled natively, with the same features
 # switched off and on (no threads, readline, curl, sigsegv, language server or GC; GSL 2.8,
-# FFTW 3.3.11 and Eigen 3.4.0 as Galley's, built here natively from the same tarballs; GLM when
-# Galley has it; XDR; OpenGL through the same Mesa's OSMesa on softpipe, without GLUT, with MESA=1,
-# else none). PLAN tasks 9, 10 and 17 compare Galley's asy with this one.
-# Usage: build_asy_native.sh [OUT]   (default $GALLEY_WORK/asy-native; needs $GALLEY_SRC/tl, dl and
-#        eigen from build_tools.sh asy, and $GALLEY_SRC/glm when GLM=1; Galley's asy has GLM and
+# FFTW 3.3.11 and Eigen 3.4.0 as Rikuy's, built here natively from the same tarballs; GLM when
+# Rikuy has it; XDR; OpenGL through the same Mesa's OSMesa on softpipe, without GLUT, with MESA=1,
+# else none). PLAN tasks 9, 10 and 17 compare Rikuy's asy with this one.
+# Usage: build_asy_native.sh [OUT]   (default $RIKUY_WORK/asy-native; needs $RIKUY_SRC/tl, dl and
+#        eigen from build_tools.sh asy, and $RIKUY_SRC/glm when GLM=1; Rikuy's asy has GLM and
 #        Mesa: GLM=1 MESA=1)
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
-SRC=${GALLEY_SRC:-/tmp/src}
-OUT=${1:-${GALLEY_WORK:-/tmp/eng}/asy-native}
+SRC=${RIKUY_SRC:-/tmp/src}
+OUT=${1:-${RIKUY_WORK:-/tmp/eng}/asy-native}
 B="$OUT/build"
 rm -rf "$B" && mkdir -p "$OUT" && cp -r "$SRC/tl/utils/asymptote" "$B"
 cd "$B"
 touch -d '2000-01-01' configure.ac  # as build_tools.sh: make must not rerun autoconf
-# with GLM, asy needs the edits Galley's gets for GLM and for OSMesa without GLUT (patch_asy.py)
+# with GLM, asy needs the edits Rikuy's gets for GLM and for OSMesa without GLUT (patch_asy.py)
 [ "${GLM:-0}" = 1 ] && python3 "$HERE/../tex/native/patch_asy.py" . --native
 GLMINC=""
 [ "${GLM:-0}" = 1 ] && GLMINC="-I$SRC/glm"
-# Mesa as build_tools.sh builds it for Galley, natively and unpatched (a shared OSMesa); the GL
+# Mesa as build_tools.sh builds it for Rikuy, natively and unpatched (a shared OSMesa); the GL
 # asy's configure links with -lGL, which is OSMesa's own here
 GL="--disable-gl --disable-offscreen" GLINC="" GLLIB=""
 if [ "${MESA:-0}" = 1 ]; then
@@ -55,15 +55,15 @@ for L in gsl fftw; do
   fi
 done
 LIBINC="-I$OUT/gsl/include -I$OUT/fftw/include -I$SRC/eigen" LIBLIB="-L$OUT/gsl/lib -L$OUT/fftw/lib"
-# XDR (V3D, xinput/xoutput) as Galley's asy has it: libtirpc's headers from the system
+# XDR (V3D, xinput/xoutput) as Rikuy's asy has it: libtirpc's headers from the system
 # (libtirpc-dev) or from $TIRPC/include/tirpc with the library in $TIRPC/lib
-TIRPC=${TIRPC:-${GALLEY_WORK:-/tmp/eng}/tirpc}
+TIRPC=${TIRPC:-${RIKUY_WORK:-/tmp/eng}/tirpc}
 XDRFLAGS="" XDRLIB=""
 [ -d "$TIRPC/include/tirpc" ] && XDRFLAGS="-I$TIRPC/include/tirpc" XDRLIB="-L$TIRPC/lib"
 ./configure --prefix="$OUT/inst" --disable-gc --disable-threads --disable-readline $GL \
   --disable-curl --disable-lsp --disable-sigsegv CPPFLAGS="$GLMINC $XDRFLAGS $GLINC $LIBINC" LDFLAGS="$XDRLIB $GLLIB $LIBLIB" \
   CXXFLAGS=-O2 CFLAGS=-O2 > conf.log
-grep -q '^#define HAVE_LIBTIRPC 1' config.h || echo "build_asy_native.sh: no libtirpc, so no XDR or V3D (Galley's asy has both)" >&2
+grep -q '^#define HAVE_LIBTIRPC 1' config.h || echo "build_asy_native.sh: no libtirpc, so no XDR or V3D (Rikuy's asy has both)" >&2
 [ "${MESA:-0}" != 1 ] || grep -q '^#define HAVE_LIBOSMESA 1' config.h || { echo "build_asy_native.sh: configure did not take OSMesa" >&2; exit 1; }
 for d in HAVE_LIBGSL HAVE_LIBFFTW3 HAVE_EIGEN_DENSE; do
   grep -q "^#define $d 1" config.h || { echo "build_asy_native.sh: configure did not set $d" >&2; exit 1; }

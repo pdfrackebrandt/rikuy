@@ -1,11 +1,16 @@
-"""Galley browser tests: load the built page in Chromium, type on the
+"""Rikuy browser tests: load the built page in Chromium, type on the
 typeset pages, and check the .tex source changes exactly as intended."""
-import json, os, sys, time, re
+import json, os, sys, time, re, tempfile
 from playwright.sync_api import sync_playwright
+
+# The build machine keeps Chromium in /opt/pw-browsers. Anywhere else Playwright's own default
+# must stay, or it would miss a browser installed the usual way (`playwright install`). Every
+# test imports this module before it starts Playwright, so this covers them all.
+if os.path.isdir('/opt/pw-browsers'): os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 NM = os.path.join(ROOT, 'node_modules')
-SHOTS = os.environ.get('SHOTS', '/tmp/claude-0/-home-claude/8e522320-e94c-5af0-b5c6-59aa3f1e4221/scratchpad/shots')
+SHOTS = os.environ.get('SHOTS', os.path.join(tempfile.gettempdir(), 'rikuy-shots'))
 os.makedirs(SHOTS, exist_ok=True)
 
 SKELETON_HEAD = ('<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover">'
@@ -35,14 +40,14 @@ def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None):
     errors = []
     page.on('console', lambda m: errors.append(m.text) if m.type == 'error' and 'Failed to load resource' not in m.text else None)
     page.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
-    dist = os.environ.get('GALLEY_DIST') or os.path.join(ROOT, 'dist')
-    html = open(os.path.join(dist, 'galley.html'), encoding='utf8').read()
+    dist = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
+    html = open(os.path.join(dist, 'rikuy.html'), encoding='utf8').read()
     doc = SKELETON_HEAD + html + '</body></html>'
 
     def handler(route):
         url = route.request.url
-        if url.startswith('https://galley.test/'):
-            path = url[len('https://galley.test/'):].split('?')[0]
+        if url.startswith('https://rikuy.test/'):
+            path = url[len('https://rikuy.test/'):].split('?')[0]
             f = os.path.join(dist, path)
             if path and os.path.isfile(f):
                 ct = 'text/javascript' if path.endswith(('.js', '.mjs')) else 'application/wasm' if path.endswith('.wasm') else 'application/octet-stream'
@@ -56,17 +61,25 @@ def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None):
     page.route('**/*', handler)
     if init:
         page.add_init_script(init)
-    page.goto('https://galley.test/')
+    page.goto('https://rikuy.test/')
     if clear:
         page.evaluate('localStorage.clear()')
         page.reload()
-    page.wait_for_function('window.galley && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
+    page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
     page.wait_for_timeout(300)
     return browser, page, errors
 
 
 def src(page, f='main.tex'):
-    return page.evaluate('(f) => window.galley.files.get(f)', f)
+    return page.evaluate('(f) => window.rikuy.files.get(f)', f)
+
+
+def wait_src(page, text, f='main.tex', timeout=5000):
+    # edits that go through a debounce or the math field land a moment later on a busy machine
+    try:
+        page.wait_for_function('([f, t]) => (window.rikuy.files.get(f) || "").includes(t)', arg=[f, text], timeout=timeout)
+    except Exception:
+        pass
 
 
 def click_text(page, text, offset_chars=0, nth=0):
@@ -97,7 +110,7 @@ def select_text(page, text, nth=0):
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        t = page.evaluate('window.galley.lastMs')
+        t = page.evaluate('window.rikuy.lastMs')
         npages = page.evaluate('document.querySelectorAll(".page").length')
         check('renders pages', npages >= 2, npages)
         check('initial build time < 1500ms', t < 1500, t)
@@ -135,13 +148,13 @@ def run():
         check('ctrl+b again unwraps', s5 == base, s5[s5.find('start')-10:s5.find('start')+30])
 
         # 3. undo / redo
-        click_text(page, 'Galley escapes special characters', 6)
+        click_text(page, 'Rikuy escapes special characters', 5)
         page.keyboard.type(' happily')
-        check('typed word', 'Galley happily escapes' in src(page))
+        check('typed word', 'Rikuy happily escapes' in src(page))
         page.keyboard.press('Control+z')
-        check('undo restores', src(page) == base, src(page)[src(page).find('Galley escapes')-5:][:40])
+        check('undo restores', src(page) == base, src(page)[src(page).find('Rikuy escapes')-5:][:40])
         page.keyboard.press('Control+Shift+z')
-        check('redo reapplies', 'Galley happily escapes' in src(page))
+        check('redo reapplies', 'Rikuy happily escapes' in src(page))
         page.keyboard.press('Control+z')
 
         # 4. enter splits paragraph
@@ -159,7 +172,7 @@ def run():
         page.click('.a-math >> nth=0')
         page.wait_for_selector('.pop-math textarea')
         page.fill('.pop-math textarea', '\\alpha + \\beta = \\delta')
-        page.wait_for_timeout(450)
+        wait_src(page, '$\\alpha + \\beta = \\delta$')
         s8 = src(page)
         check('math popover edits source live', '$\\alpha + \\beta = \\delta$' in s8, s8[s8.find('Click $'):][:50])
         page.keyboard.press('Enter')
@@ -275,14 +288,14 @@ def run():
             page.click('#b-src')
         page.wait_for_selector('#cmhost .CodeMirror', timeout=5000)
         page.wait_for_timeout(200)
-        cmv = page.evaluate('window.galley.cm.getValue()')
+        cmv = page.evaluate('window.rikuy.cm.getValue()')
         check('source pane shows main.tex', cmv == src(page))
         click_text(page, 'Math is an object', 4)
         page.keyboard.type('W')
         page.wait_for_timeout(100)
-        check('page edit mirrors into source pane', page.evaluate('window.galley.cm.getValue()') == src(page) and 'MathW' in src(page))
+        check('page edit mirrors into source pane', page.evaluate('window.rikuy.cm.getValue()') == src(page) and 'MathW' in src(page))
         page.keyboard.press('Control+z')
-        page.evaluate('''() => { const cm = window.galley.cm; const d = cm.getDoc(); const i = d.getValue().indexOf('Math is an object'); d.replaceRange('Algebra ', d.posFromIndex(i)); }''')
+        page.evaluate('''() => { const cm = window.rikuy.cm; const d = cm.getDoc(); const i = d.getValue().indexOf('Math is an object'); d.replaceRange('Algebra ', d.posFromIndex(i)); }''')
         page.wait_for_timeout(600)
         has = page.evaluate('[...document.querySelectorAll("#pages span.t")].some(s => s.textContent.includes("Algebra Math is"))')
         check('source edit re-typesets page', has)

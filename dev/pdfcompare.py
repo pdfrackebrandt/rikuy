@@ -1,8 +1,8 @@
-"""Compare Galley's PDFs with a desktop TeX Live 2026's, document by document.
+"""Compare Rikuy's PDFs with a desktop TeX Live 2026's, document by document.
 
-Galley's side comes from a corpus run that kept its PDFs (corpus_full.py with PDF_DIR and SDE
+Rikuy's side comes from a corpus run that kept its PDFs (corpus_full.py with PDF_DIR and SDE
 set). For each document that compiled, this runs the desktop TeX Live (dev/tl26.sh) with the
-engine Galley chose and the same fixed clock, through latexmk with shell escape (Galley's own
+engine Rikuy chose and the same fixed clock, through latexmk with shell escape (Rikuy's own
 loop: TeX, then bibtex or biber, makeindex, xindy, asy, until the references settle), and
 compares:
 
@@ -16,13 +16,13 @@ A document matches when all three do. Usage:
 env: SDE (the SOURCE_DATE_EPOCH the corpus run used, default 1700000000), CORPUS_REPO,
      TL26 (default /opt/tl26), KEEP (a folder to keep both PDFs of each mismatch in),
      DESKTOP_CACHE (a folder for the desktop's PDFs, reused by later comparisons of other
-     Galley builds: the desktop side depends only on the document and the engine)
+     Rikuy builds: the desktop side depends only on the document and the engine)
 """
 import difflib, json, os, re, shutil, subprocess, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from corpus_full import project, OLD  # noqa: E402  the same files Galley compiled
+from corpus_full import project, OLD  # noqa: E402  the same files Rikuy compiled
 
 SDE = os.environ.get('SDE', '1700000000')
 TL26 = os.environ.get('TL26', '/opt/tl26')
@@ -32,7 +32,7 @@ PIXEL_TOL = 64
 PAGE_SHARE = 0.001
 ENGINE_FLAG = {'pdflatex': '-pdf', 'xelatex': '-xelatex', 'lualatex': '-lualatex', 'latex': '-pdfps'}
 LATEXMKRC = r'''
-# what Galley's worker does between passes, written as latexmk custom dependencies
+# what Rikuy's worker does between passes, written as latexmk custom dependencies
 add_cus_dep('glo', 'gls', 0, 'makeglossaries');
 add_cus_dep('acn', 'acr', 0, 'makeglossaries');
 sub makeglossaries { my ($base_name, $path) = fileparse($_[0]); pushd $path; my $r = system "makeglossaries", "$base_name"; popd; return $r; }

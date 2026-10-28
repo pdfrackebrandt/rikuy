@@ -7,6 +7,8 @@ that did not shrink is stored as is). The last chunk is usually shorter than 204
 
 texlive-extra holds everything basic and recommended hold, so it is unpacked last; files that
 several packages share (ls-R, the updmap maps, the formats) then come from it.
+Usage: unpack_busytex.py [BUSYTEX [OUT]]   (BusyTeX's release folder with the texlive-*.js and .data,
+       default $RIKUY_WORK/busy/busytex; the tree, default $RIKUY_WORK/tree-extra; fetch_inputs.sh runs it)
 """
 import json, os, re, sys
 
@@ -47,8 +49,8 @@ def unpack(js_path, data_path, out_dir):
 
 
 if __name__ == '__main__':
-    base = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.environ.get('GALLEY_WORK', '/tmp/eng'), 'busy/busytex')
-    out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.environ.get('GALLEY_WORK', '/tmp/eng'), 'tree-extra')
+    base = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.environ.get('RIKUY_WORK', '/tmp/eng'), 'busy/busytex')
+    out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(os.environ.get('RIKUY_WORK', '/tmp/eng'), 'tree-extra')
     os.makedirs(out, exist_ok=True)
     for name in ['texlive-basic', 'texlive-recommended', 'texlive-extra']:
         js, data = os.path.join(base, name + '.js'), os.path.join(base, name + '.data')

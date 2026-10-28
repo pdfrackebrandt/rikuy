@@ -1,6 +1,10 @@
+// The editor model on the sample document: prints its blocks, and checks that every character
+// on the page maps back to the source text that makes it.
 import fs from 'fs';
 import { buildModel } from '../src/model.js';
-const files = new Map([['main.tex', fs.readFileSync('sample/main.tex','utf8')], ['refs.bib', fs.readFileSync('sample/refs.bib','utf8')]]);
+// the repository's sample/, found from this file rather than the working folder
+const sample = (n) => fs.readFileSync(new URL('../sample/' + n, import.meta.url), 'utf8');
+const files = new Map([['main.tex', sample('main.tex')], ['refs.bib', sample('refs.bib')]]);
 const t0 = performance.now();
 const M = buildModel({ files, main: 'main.tex' });
 const t1 = performance.now();

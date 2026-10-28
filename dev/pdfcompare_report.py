@@ -13,7 +13,7 @@ classes = json.load(open(sys.argv[2])) if len(sys.argv) > 2 else {}
 both = [r for r in rows if r.get('galley_ok') and r.get('desktop_ok') and 'pages' in r]
 match = [r for r in both if r.get('match')]
 print('documents %d; both compiled %d; match %d (%.1f %%)' % (len(rows), len(both), len(match), 100 * len(match) / max(1, len(both))))
-print('desktop failed where Galley compiled: %d; Galley failed (desktop not run): %d; not compared: %d' % (
+print('desktop failed where Rikuy compiled: %d; Rikuy failed (desktop not run): %d; not compared: %d' % (
     sum(1 for r in rows if r.get('galley_ok') and not r.get('desktop_ok')),
     sum(1 for r in rows if not r.get('galley_ok')),
     sum(1 for r in rows if r.get('galley_ok') and r.get('desktop_ok') and 'pages' not in r)))

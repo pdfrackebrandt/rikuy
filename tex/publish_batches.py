@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Plan the Artifact publishes for dist/: at most ~58 MB and 240 entries each (a publish may carry
+"""Rikuy's hosted copy is a claude.ai artifact, which takes a version in publishes of limited
+size. This plans those publishes for dist/: at most ~58 MB and 240 entries each (a publish may carry
 64 MB and 255 files), the engine and core first, and the first one also removing what the live
 version holds that this build no longer has (so the version stays under its 256 MB).
 
 Usage: publish_batches.py [live-files.txt]   (one published path per line, from a files listing)
-Writes $GALLEY_WORK/batch<i>.json, each a `files` map for the Artifact tool (path -> source or null).
+Writes $RIKUY_WORK/batch<i>.json, each a `files` map for the Artifact tool (path -> source or null).
 """
 import json, os, sys, gzip
 
@@ -58,7 +59,7 @@ for f in uploads:
 if cur:
     batches.append(cur)
 for i, b in enumerate(batches):
-    json.dump(b, open(os.path.join(os.environ.get('GALLEY_WORK', '/tmp/eng'), 'batch%d.json') % i, 'w'))
+    json.dump(b, open(os.path.join(os.environ.get('RIKUY_WORK', '/tmp/eng'), 'batch%d.json') % i, 'w'))
     print(i, len(b), 'entries', sum(1 for v in b.values() if v is None), 'removals',
           round(sum(os.path.getsize(v) for v in b.values() if v) / 1e6, 1), 'MB')
 print('uploads', len(uploads), 'of', len(order), 'kept', len(order) - len(uploads), 'removed', len(removals))

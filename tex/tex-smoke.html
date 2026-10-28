@@ -1,5 +1,6 @@
 <!doctype html><meta charset=utf8><pre id=o></pre><script>
-// Test page for the TeX worker alone (used by the corpus and engine tests, not shipped to users).
+// Test page for the TeX worker alone, for the corpus and engine tests and the build scripts.
+// build.mjs copies it into dist/ beside the worker; the editor never loads it.
 const w = new Worker('tex/engine.js');
 window.events = [];
 w.onmessage = ({ data }) => {

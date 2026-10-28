@@ -1,24 +1,31 @@
 #!/usr/bin/env python3
-"""Assemble the TeX tree Galley ships, and cut it into packs.
+"""Assemble the TeX tree Rikuy ships, and cut it into packs.
 
-  build_tree.py tree   -> $GALLEY_WORK/galley-tree  (the merged TeX Live tree, for format building and tests)
-  build_tree.py packs  -> dist/tex/              (tree.json.gz, p-*.bin, w-*.bin)
+  build_tree.py tree     -> $RIKUY_WORK/rikuy-tree  (the merged tree, for formats and tests)
+  build_tree.py packs    -> dist/tex/  (tree.wasm, the index; p-*.wasm packs; w-*, b-*, t-*.wasm
+                            the engine, biber and the shell's programs)
+  build_tree.py tools    -> rewrite only the programs in an existing dist/tex
+  build_tree.py mirror   -> $RIKUY_WORK/mirror  (the rest of TeX Live, for a self hosted Rikuy)
+  build_tree.py lsr      -> write ls-R again
 
 Sources:
-  BASE   TeX Live 2026 as built for BusyTeX (scheme-basic + latex, latexrecommended,
-         latexextra, fontsrecommended), unpacked from its data package.
-  DEBS   Ubuntu 24.04 TeX Live 2023 packages, for what BASE lacks: languages, science,
-         pictures, publishers, bibliography styles, a few font families. A file is only
-         added when BASE has nothing of the same name, so BASE always wins.
+  BASE   the tree in BusyTeX's release (TeX Live 2026 basic + LaTeX, unpacked from its data package),
+         which also carries its own web2c, texmf-var and config (protected()).
+  DEBS   Ubuntu 26.10's TeX Live 2026.20260711 packages. CORE_SETS replace BASE's copies while
+         RIKUY_TL_FIRST=1 (the default), so the tree is TeX Live's own; DEB_SETS add languages,
+         science, pictures, publishers and more; FONT_PICKS take single families from the big
+         font packages.
+Every file in dist/tex travels as an empty WebAssembly module with one custom section
+(wasm_wrap), because the artifact host serves no plain binary type.
 """
 import gzip, hashlib, json, os, re, shutil, sys
 from collections import defaultdict
 
-WORK = os.environ.get('GALLEY_WORK', '/tmp/eng')
+WORK = os.environ.get('RIKUY_WORK', '/tmp/eng')
 BASE = os.path.join(WORK, 'tree-extra')
 DEBS = os.path.join(WORK, 'debs/x')
-TREE = os.environ.get('GALLEY_TREE', os.path.join(WORK, 'galley-tree'))
-OUT = os.environ.get('GALLEY_TEX_OUT', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dist', 'tex'))
+TREE = os.environ.get('RIKUY_TREE', os.path.join(WORK, 'rikuy-tree'))
+OUT = os.environ.get('RIKUY_TEX_OUT', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dist', 'tex'))
 WASM_SRC = os.path.join(WORK, 'busy', 'busytex', 'busytex.wasm')   # BusyTeX's binary, as released
 WASM = os.path.join(WORK, 'busytex-patched.wasm')           # with xdvipdfmx's program calls routed to the shell (patch_wasm.py)
 EXTRA = os.path.join(WORK, 'extra')   # overlay: trimmed ICU data and the like
@@ -95,7 +102,7 @@ DEB_SETS = ['texlive-lang-german', 'texlive-lang-spanish', 'texlive-lang-french'
 # the core of TeX Live that BusyTeX's tree also holds; with TL_FIRST these replace its copies
 CORE_SETS = ['texlive-base', 'texlive-latex-base', 'texlive-fonts-recommended', 'texlive-lang-english', 'texlive-lang-polish',
              'texlive-lang-czechslovak']
-TL_FIRST = os.environ.get('GALLEY_TL_FIRST', '1') == '1'
+TL_FIRST = os.environ.get('RIKUY_TL_FIRST', '1') == '1'
 
 
 def protected(rel):
@@ -237,7 +244,7 @@ def build_tree():
         fh.write('<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd"><fontconfig>'
                  '<dir>/texlive/texmf-dist/fonts/opentype</dir><dir>/texlive/texmf-dist/fonts/truetype</dir>'
                  '<dir>/texlive/texmf-dist/fonts/type1</dir><cachedir>/texlive/fontconfig-cache</cachedir></fontconfig>\n')
-    # files made for Galley (the trimmed ICU data XeTeX needs, see build_icu.sh), laid over the tree
+    # files made for Rikuy (the trimmed ICU data XeTeX needs, see build_icu.sh), laid over the tree
     for p in walk(EXTRA):
         dst = os.path.join(TREE, os.path.relpath(p, EXTRA))
         os.makedirs(os.path.dirname(dst), exist_ok=True)
@@ -278,7 +285,7 @@ def build_tree():
             continue
         kept.append(l)
     with open(pmap, 'w', encoding='latin-1') as fh:
-        fh.write('% pdftex.map for Galley: entries whose fonts are installed\n' + '\n'.join(kept) + '\n')
+        fh.write('% pdftex.map for Rikuy: entries whose fonts are installed\n' + '\n'.join(kept) + '\n')
     print('map lines kept', len(kept), 'of', len([l for l in lines if l and not l.startswith('%')]) + len(extra))
     write_lsr()
     print('files', len(files), 'map lines', len(extra))
@@ -332,16 +339,29 @@ def write_wrapped(fname, payload):
 
 # ---- Type 1 fonts, stored so they compress --------------------------------------------------
 # A .pfb's program is encrypted twice (eexec over the private part, then each glyph program),
-# which leaves gzip nothing to find: TeX Live's Type 1 fonts are half of what Galley ships.
+# which leaves gzip nothing to find: TeX Live's Type 1 fonts are half of what Rikuy ships.
 # The packs store them decrypted, with the glyph positions; the worker encrypts them again on
 # first read. Both ciphers are deterministic (the random bytes are part of the plaintext), so
 # the font TeX reads is byte for byte the original.
 
-try:
-    import ctypes
-    _T1 = ctypes.CDLL(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'native', 't1crypt.so'))
-except OSError:
-    _T1 = None
+# The ciphers run in C (native/t1crypt.c, compiled here on first use when a C compiler is
+# found); without one the same bytes come from pure Python, many times slower.
+import ctypes
+
+
+def _load_t1():
+    import shutil, subprocess
+    so = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'native', 't1crypt.so')
+    if not os.path.exists(so) and shutil.which('cc'):
+        subprocess.call(['cc', '-O2', '-shared', '-fPIC', '-o', so, so[:-3] + '.c'])
+    try:
+        return ctypes.CDLL(so)
+    except OSError:
+        print('build_tree.py: no native/t1crypt.so, Type 1 fonts go through pure Python (slow)', file=sys.stderr)
+        return None
+
+
+_T1 = _load_t1()
 
 
 def _t1_c(fn, data, r):
@@ -666,12 +686,12 @@ def update_tools():
     print('tools', sorted(index['tools']), 'removed', sorted(old - new))
 
 
-# ---- the full TeX Live mirror, for Galley on its own site ------------------------------------
+# ---- the full TeX Live mirror, for Rikuy on its own site ------------------------------------
 # Everything in TeX Live the artifact leaves out, in the same pack format, with its own index.
 # The worker asks it for a file only when kpathsea finds nothing locally (BusyTeX's
 # kpse_remote_fetch_js hook), so a document pays only for what it uses. Fonts that come from
 # the mirror need their map lines, so the mirror carries TeX Live's whole pdftex.map too.
-MIRROR_OUT = os.environ.get('GALLEY_MIRROR_OUT', os.path.join(WORK, 'mirror'))
+MIRROR_OUT = os.environ.get('RIKUY_MIRROR_OUT', os.path.join(WORK, 'mirror'))
 
 
 def build_mirror():
@@ -700,7 +720,7 @@ def build_mirror():
             files[rel] = p
     # TeX Live's whole font map: for each font the line of the base map when the files it names
     # are here (local or mirror), else a line from the added packages' maps that names files that
-    # are (the packages are TeX Live 2023 where the base is 2026, and encodings got new names)
+    # are (the packages and the base are different TeX Live snapshots, so file names can differ)
     avail = set(os.path.basename(r) for r in list(files) + list(local))
     tfm_names = set(n[:-4] for n in avail if n.endswith('.tfm'))
 
@@ -730,7 +750,7 @@ def build_mirror():
             if k in chosen or k not in tfm_names or not is_map_line(l) or not complete(l):
                 continue
             chosen[k] = l; order.append(k)
-    full = ['% pdftex.map for Galley with the full TeX Live mirror'] + [chosen[k] for k in order]
+    full = ['% pdftex.map for Rikuy with the full TeX Live mirror'] + [chosen[k] for k in order]
     print('full map lines', len(full) - 1)
     os.makedirs(os.path.join(WORK, 'mirror-extra'), exist_ok=True)
     fullmap = os.path.join(WORK, 'mirror-extra/pdftex-full.map')

@@ -1,6 +1,6 @@
 #!/bin/sh
-# Lay out the work folder the build scripts read ($GALLEY_WORK, default /tmp/eng) with, byte for
-# byte, the inputs the published Galley was built from: BusyTeX's TeX Live 2026 engines and the
+# Lay out the work folder the build scripts read ($RIKUY_WORK, default /tmp/eng) with, byte for
+# byte, the inputs the published Rikuy was built from: BusyTeX's TeX Live 2026 engines and the
 # TeX Live 2026 packages of Ubuntu 26.10. Safe to rerun: finished steps are skipped.
 #
 #   busy/busytex/   BusyTeX 1.4.0 release assets (TeX Live 2026 engines, texlive-*.data)
@@ -8,7 +8,7 @@
 #   debs/x/<pkg>/   44 Ubuntu 26.10 packages (TeX Live 2026 and friends), each dpkg-deb -x
 #   mf/x/           texlive-binaries, texlive-base, libkpathsea6 and libc6 in one folder (METAFONT
 #                   for build_pk.py, started through that libc's own loader)
-#   extra/ fccache/ fmt/ usage.json pdflatex-all.fmt   from inputs/generated*.tar.gz: what Galley's
+#   extra/ fccache/ fmt/ usage.json pdflatex-all.fmt   from inputs/generated*.tar.gz: what Rikuy's
 #                   own engines made from this tree (formats, PK fonts, font caches), see build_all.sh
 #
 # Every download is checked against its hash. The Ubuntu files come from the 26.10 (stonking)
@@ -16,7 +16,7 @@
 # https://snapshot.ubuntu.com/ubuntu/20261016T000000Z (same paths).
 # Needs curl, sha256sum, sha512sum, dpkg-deb, and python3 with lz4 (pip install lz4).
 set -eu
-WORK=${GALLEY_WORK:-/tmp/eng}
+WORK=${RIKUY_WORK:-/tmp/eng}
 MIRROR=${UBUNTU_MIRROR:-http://archive.ubuntu.com/ubuntu}
 HERE=$(cd "$(dirname "$0")" && pwd)
 DONE="$WORK/.fetched"

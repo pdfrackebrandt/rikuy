@@ -2,7 +2,6 @@
 marks it on the pages, keeps versions across reloads, and restores a named version."""
 import os, sys
 sys.path.insert(0, os.path.dirname(__file__))
-os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
 from browser import open_page, check, results, src, click_text, select_text, SHOTS
 from playwright.sync_api import sync_playwright
 
@@ -10,7 +9,7 @@ COUNT = "document.getElementById('nt-ccount').textContent"
 ITEMS = "[...document.querySelectorAll('#nav-body .chg:not(.spacing)')].map(e => e.querySelector('.chg-txt').textContent)"
 
 def edit(page, find, repl, nth=0):
-    page.evaluate("""([a, b, nth]) => { const g = window.galley; const f = 'main.tex'; const s = g.files.get(f);
+    page.evaluate("""([a, b, nth]) => { const g = window.rikuy; const f = 'main.tex'; const s = g.files.get(f);
       let at = -1; for (let k = 0; k <= nth; k++) at = s.indexOf(a, at + 1);
       if (at < 0) throw new Error('not found: ' + a);
       g.closeGroup(); g.commit([{ f, s: at, e: at + a.length, t: b }], null, 'type'); g.closeGroup(); }""", [find, repl, nth])
@@ -56,13 +55,13 @@ with sync_playwright() as p:
     page.screenshot(path=SHOTS + '/history-marks.png')
 
     # two quick Rejects on the same stale item must not touch other text
-    stale = page.evaluate("window.galley.currentChanges().find(c => c.b.trim() === 'Now')")
+    stale = page.evaluate("window.rikuy.currentChanges().find(c => c.b.trim() === 'Now')")
     before_txt = src(page)
-    page.evaluate("(c) => { window.galley.rejectChanges([c]); window.galley.rejectChanges([c]); }", stale)
+    page.evaluate("(c) => { window.rikuy.rejectChanges([c]); window.rikuy.rejectChanges([c]); }", stale)
     page.wait_for_timeout(600)
     after_txt = src(page)
     check('a second Reject on the same change does nothing', after_txt == before_txt.replace('Now ', '', 1), after_txt[after_txt.find('How to use'):][:80])
-    page.evaluate("window.galley.undo()"); page.wait_for_timeout(600)
+    page.evaluate("window.rikuy.undo()"); page.wait_for_timeout(600)
     check('undo brings the word back', src(page) == before_txt)
     # reject the replacement: text comes back, one change fewer
     idx = page.evaluate("[...document.querySelectorAll('#nav-body .chg .where')].findIndex(e => e.textContent.startsWith('Changed'))")
@@ -79,7 +78,7 @@ with sync_playwright() as p:
     check('no deletion marker after accept', page.evaluate("document.querySelectorAll('.del-mk').length") == 0)
 
     # undo the reject restores the replacement and the change reappears
-    page.evaluate("window.galley.undo()"); page.wait_for_timeout(600)
+    page.evaluate("window.rikuy.undo()"); page.wait_for_timeout(600)
     check('undo brings the rejected change back', 'return trip' in src(page) and page.evaluate(COUNT) == '2', page.evaluate(COUNT))
 
     # a math change outlines the equation
@@ -89,10 +88,10 @@ with sync_playwright() as p:
     if m:
         inner = m.group(1)
         tok = re.search(r'[a-z]', inner)
-        page.evaluate("""([at]) => { const g = window.galley; g.closeGroup(); g.commit([{ f: 'main.tex', s: at, e: at, t: '2' }], null, 'type'); g.closeGroup(); }""", [m.start(1) + tok.start()])
+        page.evaluate("""([at]) => { const g = window.rikuy; g.closeGroup(); g.commit([{ f: 'main.tex', s: at, e: at, t: '2' }], null, 'type'); g.closeGroup(); }""", [m.start(1) + tok.start()])
         page.wait_for_timeout(600)
         check('changed equation is outlined', page.evaluate("document.querySelectorAll('.chg-atom').length") >= 1)
-        page.evaluate("window.galley.undo()"); page.wait_for_timeout(400)
+        page.evaluate("window.rikuy.undo()"); page.wait_for_timeout(400)
 
     # a named version, then more edits, then restore it
     page.fill('.ver-form input', 'Draft A')
@@ -107,7 +106,7 @@ with sync_playwright() as p:
     page.locator('.ver').nth(idx).get_by_role('button', name='Restore').click()
     page.wait_for_timeout(800)
     check('restore brings back the named version', src(page) == draft)
-    page.evaluate("window.galley.undo()"); page.wait_for_timeout(500)
+    page.evaluate("window.rikuy.undo()"); page.wait_for_timeout(500)
     check('undo after restore returns the later text', 'way round}' in src(page))
 
     # compare with a version: changes are counted from there
@@ -118,10 +117,10 @@ with sync_playwright() as p:
     check('compared version is marked', page.evaluate("document.querySelector('.ver.on') && document.querySelector('.ver.on').textContent.includes('Draft A')"))
 
     # survives a reload
-    page.evaluate("window.galley.saveSoon.flush()"); page.wait_for_timeout(600)
+    page.evaluate("window.rikuy.saveSoon.flush()"); page.wait_for_timeout(600)
     cur = src(page)
     page.reload()
-    page.wait_for_function('window.galley && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
+    page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
     page.wait_for_timeout(1200)
     check('text kept across reload', src(page) == cur)
     check('changes still counted after reload', page.evaluate(COUNT) == '1', page.evaluate(COUNT))
@@ -134,7 +133,7 @@ with sync_playwright() as p:
     # accept all / reject all
     page.get_by_role('button', name='Reject all').click(); page.wait_for_timeout(700)
     check('reject all returns to the compared version', src(page) == draft and page.evaluate(COUNT) == '')
-    page.evaluate("window.galley.undo()"); page.wait_for_timeout(500)
+    page.evaluate("window.rikuy.undo()"); page.wait_for_timeout(500)
     page.get_by_role('button', name='Accept all').click(); page.wait_for_timeout(500)
     check('accept all clears the list and keeps the text', src(page) == cur and page.evaluate(COUNT) == '')
     check('no marks once all accepted', page.evaluate("document.querySelectorAll('.chg-bar').length") == 0)

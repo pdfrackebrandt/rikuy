@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bitmap (PK) fonts for the METAFONT-only families in Galley's tree.
+"""Bitmap (PK) fonts for the METAFONT-only families in Rikuy's tree.
 
 A desktop TeX Live meets a font that exists only as METAFONT source by running mktexpk, which
 runs METAFONT and gftopk and leaves the PK file for pdfTeX. The WebAssembly binary has no
@@ -14,17 +14,17 @@ the others with mktextfm when a document asks (a 12 pt sans bold heading in Russ
 Those TFM files are made here the way mktexmf and mktextfm make them, into
 fonts/tfm/mktextfm/<encoding>/ of the overlay; pdfTeX then takes the glyphs from cm-super.
 
-Usage: build_pk.py   (needs $GALLEY_WORK/mf/x from texlive-binaries, texlive-base, libkpathsea6 and, for
+Usage: build_pk.py   (needs $RIKUY_WORK/mf/x from texlive-binaries, texlive-base, libkpathsea6 and, for
                      TeX Live 2026's, libc6)
 """
 import json, os, subprocess, shutil, tempfile, sys
 from concurrent.futures import ThreadPoolExecutor
 
-WORK = os.environ.get('GALLEY_WORK', '/tmp/eng')
+WORK = os.environ.get('RIKUY_WORK', '/tmp/eng')
 MF = os.path.join(WORK, 'mf/x/usr/bin/mf-nowin')
 GFTOPK = os.path.join(WORK, 'mf/x/usr/bin/gftopk')
 LIB = os.path.join(WORK, 'mf/x/usr/lib/x86_64-linux-gnu')
-TREE = os.environ.get('GALLEY_TREE', os.path.join(WORK, 'galley-tree')) + '/texlive/texmf-dist'
+TREE = os.environ.get('RIKUY_TREE', os.path.join(WORK, 'rikuy-tree')) + '/texlive/texmf-dist'
 OUT = os.path.join(WORK, 'extra/texlive/texmf-dist/fonts/pk/ljfour/public')
 OUT_TFM = os.path.join(WORK, 'extra/texlive/texmf-dist/fonts/tfm/mktextfm')
 # the encodings whose missing sizes are made (T2B, T2C and X2, the other Cyrillic ones, would add

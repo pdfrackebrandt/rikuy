@@ -1,7 +1,7 @@
 """Serve dist/ the way the artifact host does: the page wrapped in the publish skeleton,
 its files next to it, the same Content-Security-Policy on every response."""
 import http.server, os, socketserver, sys, threading, functools
-ROOT = os.environ.get('GALLEY_DIST') or os.path.join(os.path.dirname(__file__), '..', 'dist')
+ROOT = os.environ.get('RIKUY_DIST') or os.path.join(os.path.dirname(__file__), '..', 'dist')
 CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net/pyodide/ "
        "https://cdn.jsdelivr.net/npm/ https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; "
        "font-src 'self' data: blob: https://fonts.gstatic.com; media-src 'self' data: blob:; connect-src 'self' blob: https://fonts.googleapis.com https://fonts.gstatic.com; "
@@ -16,7 +16,7 @@ class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split('?')[0]
         if path in ('/', '/index.html'):
-            body = (SKELETON + open(os.path.join(ROOT, 'galley.html'), encoding='utf8').read() + '</body></html>').encode()
+            body = (SKELETON + open(os.path.join(ROOT, 'rikuy.html'), encoding='utf8').read() + '</body></html>').encode()
             ctype = 'text/html; charset=utf-8'
         else:
             f = os.path.normpath(os.path.join(ROOT, path.lstrip('/')))

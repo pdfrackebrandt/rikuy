@@ -1,4 +1,4 @@
-// Shell escape for Galley's TeX worker.
+// Shell escape for Rikuy's TeX worker.
 //
 // TeX runs programs through \write18 (\ShellEscape, os.execute, xdvipdfmx's Ghostscript calls).
 // The WebAssembly TeX hands each command line to JavaScript (BusyTeX's shell_escape_dispatch_js
@@ -145,7 +145,7 @@ self.GalleyShell = function GalleyShell(ctx) {
   const DEFER = new Set(['makeindex', 'bibtex', 'bibtex8', 'upmendex', 'mendex', 'splitindex']);
   const GS = new Set(['gs', 'rungs', 'gswin32c', 'gswin64c', 'repstopdf', 'epstopdf', 'ps2pdf', 'ps2pdf12', 'ps2pdf13', 'ps2pdf14', 'eps2pdf', 'ps2eps', 'eps2eps', 'pdf2ps', 'ps2ps']);
   const PY = new Set(['latexminted', 'pygmentize']);
-  const BUILT = new Set(['dvips', 'pdfcrop', 'asy']); // built for Galley (build_tools.sh), or written here (pdfcrop)
+  const BUILT = new Set(['dvips', 'pdfcrop', 'asy']); // built for Rikuy (build_tools.sh), or written here (pdfcrop)
   const XINDY = new Set(['xindy', 'texindy', 'tex2xindy']); // xindy's front ends and filter (tools.js)
   // TeX itself, run from TeX (engine.js runs it on a second instance)
   const TEXES = new Set(['pdflatex', 'latex', 'xelatex', 'lualatex', 'luahblatex', 'pdflatex-dev', 'latex-dev', 'xelatex-dev', 'lualatex-dev', 'pdftex', 'tex', 'etex', 'xetex', 'luatex', 'luahbtex']);
@@ -160,9 +160,9 @@ self.GalleyShell = function GalleyShell(ctx) {
       case 'false': return 1;
       case 'exit': return parseInt(a[0] || '0', 10) || 0;
       case 'sleep': return 0;
-      case 'uname': io.out((a.includes('-a') ? 'Linux galley 6.0 #1 SMP wasm32 GNU/Linux' : a.includes('-m') ? 'wasm32' : a.includes('-r') ? '6.0' : a.includes('-n') ? 'galley' : 'Linux') + '\n'); return 0; // ifplatform asks
+      case 'uname': io.out((a.includes('-a') ? 'Linux rikuy 6.0 #1 SMP wasm32 GNU/Linux' : a.includes('-m') ? 'wasm32' : a.includes('-r') ? '6.0' : a.includes('-n') ? 'rikuy' : 'Linux') + '\n'); return 0; // ifplatform asks
       case 'whoami': io.out('web_user\n'); return 0;
-      case 'hostname': io.out('galley\n'); return 0;
+      case 'hostname': io.out('rikuy\n'); return 0;
       case 'tput': io.out(a[0] === 'cols' ? '80\n' : a[0] === 'lines' ? '24\n' : ''); return 0; // no terminal
       case 'echo': {
         let nl = true, words = a;
@@ -225,7 +225,7 @@ self.GalleyShell = function GalleyShell(ctx) {
       case 'makeglossaries': case 'makeglossaries-lite':
         // the compile makes each glossary after every pass, with makeindex or xindy as these
         // would (engine.js indexTools)
-        io.out('galley: glossaries are made after each pass\n');
+        io.out('rikuy: glossaries are made after each pass\n');
         return 0;
       case 'kpsewhich': return kpsewhich(a, io);
       case 'l3sys-query': return l3sysQuery(a, io);
@@ -238,7 +238,7 @@ self.GalleyShell = function GalleyShell(ctx) {
         if (XINDY.has(name)) return tool('xindy', argv, io);
         if (TEXES.has(name)) return tool('tex', argv, io);
         S.missing.add(name);
-        io.err('galley: ' + name + ' cannot run in a browser\n');
+        io.err('rikuy: ' + name + ' cannot run in a browser\n');
         return 127;
     }
   }
@@ -254,7 +254,7 @@ self.GalleyShell = function GalleyShell(ctx) {
 
   function tool(kind, argv, io) {
     const t = ctx.tools[kind];
-    if (!t) { S.need.add(kind); io.err('galley: loading ' + kind + ', the pass runs again\n'); return 1; }
+    if (!t) { S.need.add(kind); io.err('rikuy: loading ' + kind + ', the pass runs again\n'); return 1; }
     return t.run(argv, io, { abs: (p) => abs(io.env.cwd, p), readB, writeB, isFile, isDir, FS: fsx });
   }
 

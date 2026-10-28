@@ -1,3 +1,5 @@
+// The editor model on broken and odd input (unclosed groups and math, stray closers, empty
+// arguments, accents, babel shorthands): every case must build without throwing.
 import { buildModel } from '../src/model.js';
 import { isBalanced } from '../src/parser.js';
 const cases = [

@@ -104,7 +104,7 @@ async function emProgram(factoryName, asset, extra) {
   const spGet = ex[names[0]], spSet = ex[names[1]];
   if (typeof spGet !== 'function' || typeof spSet !== 'function' || spGet.length !== 0 || spSet.length !== 1) throw new Error(factoryName + ': no stack pointer functions ' + names.join(', '));
   const sp0 = spGet();
-  // programs built for Galley (build_tools.sh) start at galley_main (native/galley_main.c),
+  // programs built for Rikuy (build_tools.sh) start at galley_main (native/galley_main.c),
   // which takes the whole argv, program name included
   const enter = P._galley_main ? (argv) => {
     const enc = new TextEncoder();
@@ -146,7 +146,7 @@ async function emProgram(factoryName, asset, extra) {
 }
 
 // A mount showing another module's file system (Emscripten's PROXYFS, written out here so
-// any module can take it): programs built for Galley and a second TeX see the TeX tree and
+// any module can take it): programs built for Rikuy and a second TeX see the TeX tree and
 // the project folders exactly as TeX does, reading and writing straight through.
 function proxyFS(FS, remote) {
   const wrap = (f) => { try { return f(); } catch (e) { if (e && e.errno != null && !(e instanceof FS.ErrnoError)) throw new FS.ErrnoError(e.errno); throw e; } };
@@ -221,7 +221,7 @@ function flushProxyCache(FS) {
     }
   }
 }
-// what a program built for Galley sees: the tree and the home folder (the projects) of TeX's
+// what a program built for Rikuy sees: the tree and the home folder (the projects) of TeX's
 // file system; its own /tmp stays its own
 function mountTeX(FS) {
   const remote = MAIN.FS;
@@ -232,7 +232,7 @@ function mountTeX(FS) {
   }
 }
 
-// a program built for Galley, run in TeX's folder; what it prints goes to the shell
+// a program built for Rikuy, run in TeX's folder; what it prints goes to the shell
 async function galleyTool(factoryName, asset, envExtra, init) {
   const G = await emProgram(factoryName, asset, { env: Object.assign({}, ENV, { TEXMFCNF: '/texlive/texmf-dist/web2c' }, envExtra || {}), init });
   mountTeX(G.P.FS);
@@ -249,7 +249,7 @@ function runGalleyTool(G, argv0, argv, io) {
   return code;
 }
 
-// ---- dvips (TeX Live's, built for Galley: build_tools.sh) ----------------------------------
+// ---- dvips (TeX Live's, built for Rikuy: build_tools.sh) ----------------------------------
 async function makeDvips() {
   const G = await galleyTool('GalleyDvips', INDEX.tools.dvips);
   return {
@@ -258,7 +258,7 @@ async function makeDvips() {
   };
 }
 
-// ---- Asymptote 3.09 (built for Galley: build_tools.sh, native/patch_asy.py) ----------------------
+// ---- Asymptote 3.09 (built for Rikuy: build_tools.sh, native/patch_asy.py) ----------------------
 // The programs it starts (LaTeX for its labels and the final picture, Ghostscript, dvips) run
 // through the shell here; the base modules are in the tree, at TeX Live's place.
 async function makeAsy() {
@@ -277,7 +277,7 @@ async function makeAsy() {
   };
 }
 
-// ---- xindy 2.5.1 (TeX Live's Lisp sources on ECL, built for Galley: build_tools.sh xindy) ----
+// ---- xindy 2.5.1 (TeX Live's Lisp sources on ECL, built for Rikuy: build_tools.sh xindy) ----
 // The program loads xindy's Lisp once (xindy_boot), and every run starts from that memory, as
 // CLISP starts from xindy.mem. TeX Live's Perl front ends, xindy and texindy, are written out
 // here: their options, the raw index through tex2xindy, the language module, the style file
@@ -686,7 +686,7 @@ function pdfcrop(argv, io, h) {
   const inp = h.abs(files[0].replace(/^"|"$/g, ''));
   const out = h.abs(files[1] || files[0].replace(/\.pdf$/i, '') + '-crop.pdf');
   if (!texIsFile(inp)) { io.err('pdfcrop: ' + files[0] + ' not found\n'); return 1; }
-  if (!TOOLS.gs) { SHELL.state.need.add('gs'); io.err('galley: loading Ghostscript, the pass runs again\n'); return 1; }
+  if (!TOOLS.gs) { SHELL.state.need.add('gs'); io.err('rikuy: loading Ghostscript, the pass runs again\n'); return 1; }
   let boxes;
   if (fixed) {
     const n = (M.FS.readFile(inp, { encoding: 'binary' }).match(/\/Type\s*\/Page\b/g) || [1]).length;
@@ -762,7 +762,7 @@ async function makeGnuplot() {
         try {
           const t = new TextDecoder().decode(FS2.readFile(p));
           const t2 = t.replace(/^(\s*set\s+term(?:inal)?\s+)latex\b/gm, '$1pict2e');
-          if (t2 !== t) { FS2.writeFile(p, t2); io.err('galley: gnuplot 6 has no latex terminal; using pict2e\n'); }
+          if (t2 !== t) { FS2.writeFile(p, t2); io.err('rikuy: gnuplot 6 has no latex terminal; using pict2e\n'); }
         } catch (e) { /* not a file */ }
       }
       const before = folderState(FS2, root);
@@ -821,7 +821,7 @@ async function makePythonIn(T) {
   const site = py.runPython("import sysconfig; sysconfig.get_paths()['purelib']");
   for (const w of wheels) py.unpackArchive(w, 'wheel', { extractDir: site });
   py.runPython('import importlib; importlib.invalidate_caches()');
-  // kpsewhich for latexrestricted, answered by Galley's shell
+  // kpsewhich for latexrestricted, answered by Rikuy's shell
   self.galleyKpsewhich = (args, cwd) => {
     const r = SHELL.capture(['kpsewhich', ...args.toJs ? args.toJs() : args], cwd);
     return [r.code, r.out];

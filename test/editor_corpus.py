@@ -14,14 +14,13 @@ compiled by the TeX worker: it must compile when the original compiled in the la
 (dev/corpus-results.jsonl). Projects without an edit are not compiled again.
 
 Usage: editor_corpus.py OUT.jsonl [filter]
-env: GALLEY_DIST, CORPUS_REPO, N (first N docs), DOCS (file listing the docs), KINDS (e.g. math),
+env: RIKUY_DIST, CORPUS_REPO, N (first N docs), DOCS (file listing the docs), KINDS (e.g. math),
      NOCOMPILE (skip the compile check)
 """
 import base64, io, json, os, random, re, sys, time, zipfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, '..', 'dev'))
-os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
 from browser import open_page  # noqa: E402
 from corpus_full import project, OLD, REPO  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
@@ -134,7 +133,7 @@ PICK = r'''([kind, seed]) => {
 
 
 def src_all(page):
-    return page.evaluate('() => Object.fromEntries(window.galley.files)')
+    return page.evaluate('() => Object.fromEntries(window.rikuy.files)')
 
 
 def changed_file(b, a):
@@ -260,11 +259,11 @@ def main():
             errors.clear()
             try:
                 # documents of one folder open the same files: wait for this open, not the last one
-                page.evaluate('() => { window.__prevFiles = window.galley.files; }')
+                page.evaluate('() => { window.__prevFiles = window.rikuy.files; }')
                 page.set_input_files('#fileinput', zp)
-                page.wait_for_function('(m) => window.galley.files !== window.__prevFiles && window.galley.files.has(m)', arg=main, timeout=15000)
-                if page.evaluate('window.galley.main') != main:
-                    page.evaluate('(m) => { const g = window.galley; g.main = m; g.srcFile = m; g.forceRender = true; g.rebuild(); }', main)
+                page.wait_for_function('(m) => window.rikuy.files !== window.__prevFiles && window.rikuy.files.has(m)', arg=main, timeout=15000)
+                if page.evaluate('window.rikuy.main') != main:
+                    page.evaluate('(m) => { const g = window.rikuy; g.main = m; g.srcFile = m; g.forceRender = true; g.rebuild(); }', main)
                 page.wait_for_timeout(400)
             except Exception as e:
                 rec['error'] = 'open: ' + str(e)[:200]
@@ -298,7 +297,7 @@ def main():
                     page.wait_for_timeout(120)
                 if src_all(page) != before:
                     rec['kinds'][k + '-undo'] = 'fail'
-                    page.evaluate('(fs) => { const g = window.galley; for (const [k, v] of Object.entries(fs)) g.files.set(k, v); g.forceRender = true; g.rebuild(); }', before)
+                    page.evaluate('(fs) => { const g = window.rikuy; for (const [k, v] of Object.entries(fs)) g.files.set(k, v); g.forceRender = true; g.rebuild(); }', before)
                     page.wait_for_timeout(200)
                 else:
                     rec['kinds'][k + '-undo'] = 'ok'

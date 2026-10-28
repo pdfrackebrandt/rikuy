@@ -22,7 +22,7 @@ YEARS = list(range(2015, 2027))
 PER_YEAR = 84
 SPARES = 16
 SEED = 20261016
-UA = 'Galley corpus test (github.com/pdfrackebrandt/galley)'
+UA = 'Rikuy corpus test (github.com/pdfrackebrandt/rikuy)'
 _last = [0.0]
 
 

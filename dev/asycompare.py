@@ -1,29 +1,34 @@
-"""Galley's Asymptote against a desktop asy of the same version (PLAN task 9).
+"""Rikuy's Asymptote against an asy on this machine, on the same files (PLAN tasks 9, 17, 19).
 
-Each .asy file is drawn twice as PDF (asy -f pdf): by Galley's asy in the worker (Chromium,
-tex-smoke.html's shell) and by a native asy 3.09 built from the same source with the same
-features (dev/build_asy_native.sh), which typesets its labels with the desktop TeX Live 2026
-(dev/tl26.sh). The two PDFs are compared as pdfcompare.py compares documents: pages, text per
-page, pixels at 72 dpi.
+Each .asy file is drawn twice as PDF (asy -f pdf): by Rikuy's asy in the worker (Chromium,
+tex-smoke.html's shell) and by the asy in the folder ASY_NATIVE names (its `asy` and its base
+modules in `base`), run through dev/tl26.sh so that it typesets its labels with the desktop TeX
+Live 2026. The two PDFs are compared as pdfcompare.py compares documents: pages, text per page,
+pixels at 72 dpi. Two asys have been held against Rikuy's:
+  - the desktop's own, Ubuntu 26.10's asy 3.11 from dev/fetch_tl26.sh, the one a desktop TeX Live
+    user has: the headline results, dev/asycompare-desktop-results.jsonl. ASY_NATIVE is then a
+    folder with an `asy` that runs /opt/tl26/usr/bin/asy and `base` linked to
+    /opt/tl26/usr/share/asymptote. It renders 3D through a window: run under `xvfb-run -a`.
+  - a native asy 3.09, Rikuy's version, built from the same source with the same features
+    (dev/build_asy_native.sh with GLM=1 MESA=1; ASY_NATIVE's default): what differs here comes
+    from the WebAssembly build, not from another version (dev/asycompare-results.jsonl).
 
 Each file runs in a folder with the .asy files beside it and the data files it names, as asy
-would find them in its own folder. When the native asy writes no PDF of the file's name (an
+would find them in its own folder. When the other asy writes no PDF of the file's name (an
 example that ships only an embedded picture, as BezierSurface's label.pdf), the PDFs it did write
-are compared, each with Galley's of the same name.
-Usage: asycompare.py OUT.jsonl FILE_OR_DIR...   env: GALLEY_DIST, ASY_NATIVE (the build folder,
-       default $GALLEY_WORK/asy-native/build), FORMAT (default pdf), KEEP (keep mismatching PDFs)
-The desktop's own asy can stand in for the native one: a folder with an `asy` that runs
-/opt/tl26/usr/bin/asy and `base` linked to /opt/tl26/usr/share/asymptote; it renders 3D through
-a window, so run under `xvfb-run -a`.
+are compared, each with Rikuy's of the same name.
+Usage: asycompare.py OUT.jsonl FILE_OR_DIR...   env: RIKUY_DIST, ASY_NATIVE (default
+       $RIKUY_WORK/asy-native/build), FORMAT (default pdf), KEEP (keep mismatching PDFs)
+Files already in OUT.jsonl are skipped, so a stopped run goes on where it stopped.
 """
 import base64, json, os, re, shutil, subprocess, sys, tempfile, time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, '..', 'test'))
-os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
+if os.path.isdir('/opt/pw-browsers'): os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
 from pdfcompare import compare  # noqa: E402
 
-WORK = os.environ.get('GALLEY_WORK', '/tmp/eng')
+WORK = os.environ.get('RIKUY_WORK', '/tmp/eng')
 NATIVE = os.environ.get('ASY_NATIVE', os.path.join(WORK, 'asy-native', 'build'))
 FORMAT = os.environ.get('FORMAT', 'pdf')
 KEEP = os.environ.get('KEEP')

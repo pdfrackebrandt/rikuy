@@ -1,9 +1,8 @@
-"""Real pdfLaTeX inside Galley: the PDF pane compiles the project with pdfTeX (WebAssembly),
+"""Real pdfLaTeX inside Rikuy: the PDF pane compiles the project with pdfTeX (WebAssembly),
 shows the pages, recompiles after edits, reports TeX's errors with their lines, and links
 PDF and page both ways (SyncTeX). Served with the artifact host's CSP."""
 import os, sys, time, json
 sys.path.insert(0, os.path.dirname(__file__))
-os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
 import serve
 from browser import ROUTES, check, results, SHOTS
 from playwright.sync_api import sync_playwright
@@ -29,19 +28,19 @@ def open_app(p, width=1600, height=1000, dark=False):
         return route.abort()
     page.route('**/*', h)
     page.goto(f'http://127.0.0.1:{PORT}/')
-    page.wait_for_function('window.galley && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=30000)
+    page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=30000)
     return b, page, errors
 
 def wait_pdf(page, timeout=120):
     t0 = time.time()
     while time.time() - t0 < timeout:
         st = page.evaluate("document.getElementById('pdf-status').textContent")
-        if (' page' in st and 'pdfLaTeX' in st and not page.evaluate('window.galley.compiling')) or 'stopped' in st or 'could not' in st:
+        if (' page' in st and 'pdfLaTeX' in st and not page.evaluate('window.rikuy.compiling')) or 'stopped' in st or 'could not' in st:
             return st, time.time() - t0
         time.sleep(0.25)
     return page.evaluate("document.getElementById('pdf-status').textContent"), timeout
 
-src = lambda page: page.evaluate("window.galley.files.get('main.tex')")
+src = lambda page: page.evaluate("window.rikuy.files.get('main.tex')")
 
 with sync_playwright() as p:
     b, page, errors = open_app(p)
@@ -53,37 +52,37 @@ with sync_playwright() as p:
     drawn = page.evaluate("""(() => { const c = document.querySelector('.pdf-page canvas'); if (!c || !c.width) return 0;
       const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let ink = 0; for (let i = 0; i < d.length; i += 4 * 97) if (d[i] < 128) ink++; return ink; })()""")
     check('PDF pages are drawn', drawn > 50, drawn)
-    pdf = page.evaluate("(() => { const u = new Uint8Array(window.galley.lastPdf); return [u.length, String.fromCharCode(...u.slice(0, 5))]; })()")
+    pdf = page.evaluate("(() => { const u = new Uint8Array(window.rikuy.lastPdf); return [u.length, String.fromCharCode(...u.slice(0, 5))]; })()")
     check('the PDF is a real PDF', pdf[1] == '%PDF-' and pdf[0] > 100000, pdf)
     page.screenshot(path=SHOTS + '/pdf-pane.png')
 
     # an edit on the page shows up in the PDF a moment later, in one pass
-    page.evaluate("""(() => { const g = window.galley; const s = g.files.get('main.tex'); const at = s.indexOf('Click anywhere');
+    page.evaluate("""(() => { const g = window.rikuy; const s = g.files.get('main.tex'); const at = s.indexOf('Click anywhere');
       g.commit([{ f: 'main.tex', s: at, e: at, t: 'Zebra quokka. ' }], null, 'type'); })()""")
     page.wait_for_timeout(300)
     st, dt = wait_pdf(page, 60)
     page.wait_for_timeout(1500)
     st, dt2 = wait_pdf(page, 60)
     text = page.evaluate("""(async () => { const lib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs');
-      const doc = await lib.getDocument({ data: new Uint8Array(window.galley.lastPdf.slice(0)) }).promise; const pg = await doc.getPage(1);
+      const doc = await lib.getDocument({ data: new Uint8Array(window.rikuy.lastPdf.slice(0)) }).promise; const pg = await doc.getPage(1);
       const tc = await pg.getTextContent(); return tc.items.map(i => i.str).join(' '); })()""")
     check('edit reaches the PDF', 'Zebra quokka' in text, text[:200])
 
     # a TeX error: listed with its line, and the PDF still shows
-    page.evaluate("""(() => { const g = window.galley; const s = g.files.get('main.tex'); const at = s.indexOf('Zebra quokka');
+    page.evaluate("""(() => { const g = window.rikuy; const s = g.files.get('main.tex'); const at = s.indexOf('Zebra quokka');
       g.commit([{ f: 'main.tex', s: at, e: at, t: '\\\\notacommand ' }], null, 'type'); })()""")
     page.wait_for_timeout(2000)
     st, dt = wait_pdf(page, 60)
-    probs = page.evaluate("window.galley.texIssues.map(x => [x.sev, x.line, x.msg])")
-    line = page.evaluate("(() => { const s = window.galley.files.get('main.tex'); return s.slice(0, s.indexOf('\\\\notacommand')).split('\\n').length; })()")
+    probs = page.evaluate("window.rikuy.texIssues.map(x => [x.sev, x.line, x.msg])")
+    line = page.evaluate("(() => { const s = window.rikuy.files.get('main.tex'); return s.slice(0, s.indexOf('\\\\notacommand')).split('\\n').length; })()")
     check('TeX error reported with its line', any(x[0] == 'error' and x[1] == line and 'Undefined control sequence' in x[2] for x in probs), (line, probs[:3]))
     check('error banner shows', page.evaluate("!document.getElementById('pdf-msg').hidden && /error/.test(document.getElementById('pdf-msg').textContent)"))
     page.click('#pdf-msg'); page.wait_for_timeout(400)
     tex_rows = page.evaluate("[...document.querySelectorAll('.prob.tex')].map(e => e.textContent)")
     check('problems panel lists pdfLaTeX errors', any('Undefined control sequence' in r for r in tex_rows), tex_rows[:3])
-    page.evaluate("window.galley.undo()"); page.wait_for_timeout(2500)
+    page.evaluate("window.rikuy.undo()"); page.wait_for_timeout(2500)
     st, dt = wait_pdf(page, 60)
-    check('fixing it clears the error', not page.evaluate("window.galley.texIssues.some(x => x.sev === 'error')"), page.evaluate("window.galley.texIssues.map(x => x.msg)"))
+    check('fixing it clears the error', not page.evaluate("window.rikuy.texIssues.some(x => x.sev === 'error')"), page.evaluate("window.rikuy.texIssues.map(x => x.msg)"))
 
     # SyncTeX: clicking a PDF line moves to that spot in the document
     page.evaluate("document.querySelector('#desk').scrollTop = 0")
@@ -96,22 +95,22 @@ with sync_playwright() as p:
     after = page.evaluate("document.querySelector('#desk').scrollTop")
     flashed = page.evaluate("(document.querySelector('.it.flash') || {}).textContent || ''")
     p2 = page.evaluate("""(async () => { const lib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs');
-      const doc = await lib.getDocument({ data: new Uint8Array(window.galley.lastPdf.slice(0)) }).promise; const pg = await doc.getPage(2);
+      const doc = await lib.getDocument({ data: new Uint8Array(window.rikuy.lastPdf.slice(0)) }).promise; const pg = await doc.getPage(2);
       return (await pg.getTextContent()).items.map(i => i.str).join(' ').replace(/\\s+/g, ' '); })()""")
     words = [w for w in flashed.split() if len(w) > 5][:4]
     check('clicking the PDF jumps to the same text on the page', after > before and words and all(w in p2 for w in words), (before, after, flashed[:80]))
 
     # a run that never ends can be stopped, and the next compile starts a fresh engine
-    page.evaluate("""(() => { const g = window.galley; const s = g.files.get('main.tex'); const at = s.indexOf('\\\\begin{document}');
+    page.evaluate("""(() => { const g = window.rikuy; const s = g.files.get('main.tex'); const at = s.indexOf('\\\\begin{document}');
       g.commit([{ f: 'main.tex', s: at, e: at, t: '\\\\def\\\\loopforever{\\\\loopforever}\\n' }], null, 'type');
       const t = g.files.get('main.tex'); const b = t.indexOf('\\\\maketitle'); g.commit([{ f: 'main.tex', s: b, e: b, t: '\\\\loopforever ' }], null, 'type'); })()""")
     page.wait_for_function("document.getElementById('pdf-re').textContent === 'Stop'", timeout=30000)
     page.click('#pdf-re')
-    page.wait_for_function("!window.galley.compiling", timeout=20000)
+    page.wait_for_function("!window.rikuy.compiling", timeout=20000)
     check('a stuck run can be stopped', 'Stopped after' in page.evaluate("document.getElementById('pdf-msg').textContent"), page.evaluate("document.getElementById('pdf-msg').textContent"))
-    page.evaluate("window.galley.undo()"); page.wait_for_timeout(200); page.evaluate("window.galley.undo()")
+    page.evaluate("window.rikuy.undo()"); page.wait_for_timeout(200); page.evaluate("window.rikuy.undo()")
     try:
-        page.wait_for_function("/3 pages/.test(document.getElementById('pdf-status').textContent) && !window.galley.compiling", timeout=120000)
+        page.wait_for_function("/3 pages/.test(document.getElementById('pdf-status').textContent) && !window.rikuy.compiling", timeout=120000)
     except Exception:
         pass
     st = page.evaluate("document.getElementById('pdf-status').textContent")

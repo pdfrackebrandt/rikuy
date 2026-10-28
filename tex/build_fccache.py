@@ -1,15 +1,16 @@
-"""fontconfig caches for the fonts in Galley's tree, made by the engine itself in Chromium.
+"""fontconfig caches for the fonts in Rikuy's tree, made by the engine itself in Chromium.
 
 XeTeX asks fontconfig for fonts by name; without caches fontconfig reads every font file in the
 tree once per session (about 100 MB of packs). This runs one XeLaTeX job that makes fontconfig
-scan and write its caches, and saves them to $GALLEY_WORK/fccache for build_tree.py.
-Usage: build_fccache.py [dist dir served as the artifact]
+scan and write its caches, and saves them to $RIKUY_WORK/fccache for build_tree.py.
+Usage: build_fccache.py [DIST]   (a dist/ built from the tree the caches are for, as build_all.sh
+       passes it; without one, $RIKUY_DIST, else the repository's dist/)
 """
 import os, sys, json, hashlib
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'test'))
-os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
-WORK = os.environ.get('GALLEY_WORK', '/tmp/eng')
-os.environ['GALLEY_DIST'] = sys.argv[1] if len(sys.argv) > 1 else os.path.join(WORK, 'dist2')
+if os.path.isdir('/opt/pw-browsers'): os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
+WORK = os.environ.get('RIKUY_WORK', '/tmp/eng')
+if len(sys.argv) > 1: os.environ['RIKUY_DIST'] = sys.argv[1]  # else serve.py's own default
 import serve
 from playwright.sync_api import sync_playwright
 serve.start(8798)

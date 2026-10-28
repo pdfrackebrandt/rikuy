@@ -1,4 +1,4 @@
-// Galley's TeX engine worker: TeX Live 2026's pdfTeX, XeTeX (+ xdvipdfmx) and LuaHBTeX (the
+// Rikuy's TeX engine worker: TeX Live 2026's pdfTeX, XeTeX (+ xdvipdfmx) and LuaHBTeX (the
 // BusyTeX WebAssembly build) running over a TeX tree that is fetched in packs only when a file
 // is first read, with shell escape answered by shell.js and the programs in tools.js.
 //
@@ -10,9 +10,10 @@
 //   p-*.wasm    packs: gzip of the concatenated files (Type 1 fonts stored decrypted, kind 1)
 //   b-*, t-*    biber and the shell's programs, fetched on first use
 // Every file travels as a WebAssembly module with one custom section (see unwrap()).
-// Messages in:  {init, base, mirror}, {compile: {id, project, files, main, engine, shellEscape, clean, bibSig}},
-//               {prefetch: [packs]}, {exec: {args, files, read, list}} (build scripts and tests)
-// Messages out: {status}, {ready}, {result}, {execResult}, {error}
+// Messages in:  {init, base, mirror, env}, {compile: {id, project, files, main, engine, shellEscape, clean, bibSig}},
+//               {prefetch: [packs]}, {exec: {args, files, read, list}} (build scripts and tests),
+//               {shell} (one program through the shell, for tests)
+// Messages out: {status}, {ready}, {result}, {execResult}, {shellResult}, {error}
 
 /* global busytex, fflate */
 // The page starts this worker from a small blob script (blob workers take the page's own
@@ -323,10 +324,10 @@ const TEX_PROGRAMS = {
 function nestedTeX(argv, io, opts) {
   const name = argv[0].replace(/^.*\//, '');
   const P = TEX_PROGRAMS[name];
-  if (!P) { io.err('galley: ' + name + ' (plain TeX) is not in this TeX tree\n'); SHELL.state.missing.add(name); return 127; }
+  if (!P) { io.err('rikuy: ' + name + ' (plain TeX) is not in this TeX tree\n'); SHELL.state.missing.add(name); return 127; }
   const depth = texDepth + 1;
   const T = texPool[depth];
-  if (!T) { SHELL.state.need.add('tex'); io.err('galley: starting a second TeX, the pass runs again\n'); return 1; }
+  if (!T) { SHELL.state.need.add('tex'); io.err('rikuy: starting a second TeX, the pass runs again\n'); return 1; }
   const args = [P.prog];
   let pdfAfter = false;
   for (const a of argv.slice(1)) {
@@ -487,7 +488,7 @@ function newestWith(ext, dir) {
   return best;
 }
 
-// ---- the full TeX Live mirror (Galley on its own site; see build_tree.py mirror) -----------
+// ---- the full TeX Live mirror (Rikuy on its own site; see build_tree.py mirror) -----------
 let MIRROR_URL = null;
 let MIRROR = null;
 let mirrorError = null;
@@ -587,7 +588,7 @@ async function boot(base) {
   if (MIRROR_URL) await loadMirror(MIRROR_URL);
   INDEX.packs.forEach((p) => { p.f = new URL(p.f, base).href; });
 
-  // the engine itself (about 11 MB to download, once)
+  // the engine itself (about 13 MB to download, once)
   let wasm = await cacheGet('w:' + INDEX.wasmHash);
   if (!wasm) {
     const total = INDEX.wasm.reduce((s, c) => s + c.z, 0);
@@ -1156,7 +1157,6 @@ async function compile(job) {
       }
     }
   }
-  for (const f of INDEX.enginePacks ? INDEX.enginePacks[engine] || [] : []) want.add(f);
   if (MIRROR) {
     const mw = new Set();
     for (const f of texFiles) for (const m of textOf(f).matchAll(/\\(?:usepackage|RequirePackage|documentclass)\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}/g)) for (const n of m[1].split(',')) {
@@ -1267,7 +1267,7 @@ async function compile(job) {
   if (!fatal(r) && await indexTools(base, dir, runs)) r = await pass();
   // (a document of figures alone has no pages until they are drawn)
   if (!/Emergency stop|Fatal error occurred|==> Fatal error/.test(r.log) && await asyFigures(base, dir, runs)) r = await pass();
-  // reruns until references settle (at most four TeX passes in all, five with an index)
+  // reruns until references settle, five TeX passes in all at most (bibliography and index passes count)
   while (!fatal(r) && (needsRerun(r.log) || pendingRerun) && texPasses() < 5) { pendingRerun = false; r = await pass(); if (await indexTools(base, dir, runs)) pendingRerun = true; }
   let log = r.log;
   // XeTeX's output goes through xdvipdfmx, as xelatex does it on a desktop

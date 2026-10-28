@@ -1,20 +1,31 @@
 #!/bin/sh
-# Programs Galley builds from source with Emscripten (Ubuntu's emscripten 3.1.6 package, which
-# brings clang 15): TeX Live's dvips, Asymptote and xindy, and gnuplot. Each lands in vendor/<name>/ as
-# <name>.js (a classic script defining Galley<Name>) and <name>.wasm; build_tree.py packs the
-# .wasm with the other programs and build.mjs copies the .js next to the engine.
+# Programs Rikuy builds from source with Emscripten (Ubuntu's emscripten 3.1.6 package, which
+# brings clang 15): TeX Live's dvips, Asymptote and xindy, and gnuplot. Each lands in
+# vendor/<name>/ as <name>.js (a classic script defining Galley<Name>: Rikuy's first name, kept
+# inside the programs) and <name>.wasm; build_tree.py packs the .wasm with the other programs
+# and build.mjs copies the .js next to the engine.
 #
 # Their main() is compiled as real_main and entered through galley_main (native/galley_main.c):
 # this Emscripten does not export a main(int, char **) built by clang 15. tools.js calls it.
 #
-# Usage: build_tools.sh [dvips] [asy] [xindy] [gnuplot]   (default: all)   env: GALLEY_SRC, GALLEY_VENDOR
+# Usage: build_tools.sh [dvips] [asy] [xindy] [gnuplot] [mesa] [gsl] [fftw] [eigen]
+#   (default: the four programs; mesa, gsl, fftw and eigen build only asy's libraries, into
+#   $RIKUY_SRC)   env: RIKUY_SRC, RIKUY_VENDOR, UBUNTU_POOL
+# Needs: Ubuntu's emscripten 3.1.6 and node; git, curl, make, pkg-config, xz and bzip2; meson,
+#   ninja, bison, flex and Python 3 with mako (Mesa); gcc with libgmp-dev and libgc-dev (a native
+#   ECL, which compiles ECL's Lisp for WebAssembly); npm (binaryen); dpkg-deb (xindy's modules)
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
-SRC=${GALLEY_SRC:-/tmp/src}
-VENDOR=${GALLEY_VENDOR:-$HERE/vendor}   # set GALLEY_VENDOR to build somewhere else and compare
+SRC=${RIKUY_SRC:-/tmp/src}
+VENDOR=${RIKUY_VENDOR:-$HERE/vendor}   # set RIKUY_VENDOR to build somewhere else and compare
 TL_COMMIT=f6b450440fca5d39f069f1d43153f7a8a75b04a1   # TeX-Live/texlive-source, 2026-10-10
 mkdir -p "$SRC" "$VENDOR"
 export EM_NODE_JS=${EM_NODE_JS:-/usr/bin/node}
+# The compiler writes source file names into the programs (__FILE__, in assert messages): they
+# name $SRC as /src and this folder as /repo/tex, so the programs are the same wherever the
+# sources and the repository are. EMCC_CFLAGS reaches every emcc and em++, configure's and
+# meson's included, and stays out of the flags some libraries record (FFTW's fftw_cc).
+export EMCC_CFLAGS="-ffile-prefix-map=$SRC=/src -ffile-prefix-map=$HERE=/repo/tex"
 LINK="-O2 -sMODULARIZE=1 -sINVOKE_RUN=0 -sALLOW_MEMORY_GROWTH=1 -sFORCE_FILESYSTEM=1 -sENVIRONMENT=web,worker,node -sEXPORTED_RUNTIME_METHODS=callMain,FS,ENV -sEXPORTED_FUNCTIONS=_galley_main,_malloc,_fflush,_main"
 
 texlive_source() {
@@ -63,7 +74,8 @@ zlib() {
 }
 
 # GLM 1.0.1, the header-only vector library Asymptote's WebGL (HTML) and V3D outputs need; it
-# needs no OpenGL (git: GitHub's archive downloads are refused to the build machine)
+# needs no OpenGL (a git clone of its tag, checked against the commit: the commit pins the files
+# as a hash pins a tarball)
 GLM_COMMIT=0af55ccecd98d4e5a8d1fad7de25ba429d60e863
 glm() {
   [ -f "$SRC/glm/glm/glm.hpp" ] && return
@@ -228,12 +240,16 @@ gnuplot() {
 
 # ---- xindy -----------------------------------------------------------------------------------
 # TeX Live's xindy is Common Lisp run by CLISP. Here it runs on ECL 24.5.10, built for
-# WebAssembly with its GMP and Boehm GC (Ubuntu's source packages: GitLab and gnu.org are not
-# reachable from the build machine), with tex2xindy and native/xindy/main.c in one program.
+# WebAssembly with its GMP and Boehm GC (from Ubuntu's source packages, like every tarball
+# here), with tex2xindy and native/xindy/main.c in one program.
 # ECL's cross build needs a native ECL of the same version to compile its Lisp library.
 # The Boehm GC finds pointers only in memory, so binaryen's spill-pointers pass (from npm: the
 # system's binaryen 108 lacks it) copies those held in WebAssembly locals there at each call.
-UBUNTU=https://archive.ubuntu.com/ubuntu/pool
+# Source tarballs come from Ubuntu's archive, each checked against its hash. The same files are
+# kept as assets of this repository's "sources" release (SOURCES.md): put them in $SRC/dl first,
+# or set UBUNTU_POOL to https://snapshot.ubuntu.com/ubuntu/20261028T000000Z/pool, if the archive
+# ever drops one.
+UBUNTU=${UBUNTU_POOL:-https://archive.ubuntu.com/ubuntu/pool}
 fetch() { # fetch URL SHA256: into $SRC/dl, checked
   mkdir -p "$SRC/dl"
   f="$SRC/dl/$(basename "$1")"
@@ -272,10 +288,15 @@ ecl_wasm() {
   ecl_source "$SRC/ecl-wasm"
   # ECL's settings for Emscripten expect a newer one than Ubuntu's 3.1.6 (STACK_SIZE, the
   # spill-pointers pass at link, done here after linking instead), optimize nothing, and use
-  # the bundled GMP Debian removed
-  python3 - "$SRC/ecl-wasm/src/configure" <<'PY'
+  # the bundled GMP Debian removed. Its compiled Lisp would also hold the source folder (as
+  # SRC:) and the time of the build: each file's init function is named from its full path and
+  # the clock, and the name is kept as a string in the program. The folder is given as /src
+  # (the build itself, which loads its Lisp through SRC:, is told the real one by ECLSRCDIR), and
+  # the names come from the file's own folder and name, which are unique in ECL.
+  python3 - "$SRC/ecl-wasm/src" <<'PY'
 import sys
-p = sys.argv[1]; s = open(p).read()
+d = sys.argv[1]
+p = d + '/configure'; s = open(p).read()
 a = s.index('        wasm32-unknown-emscripten)'); b = s.index("INSTALL_TARGET='flatinstall'", a)
 seg = s[a:b]
 new = (seg.replace('-DECL_C_COMPATIBLE_VARIADIC_DISPATCH -O0', '-DECL_C_COMPATIBLE_VARIADIC_DISPATCH')
@@ -283,12 +304,28 @@ new = (seg.replace('-DECL_C_COMPATIBLE_VARIADIC_DISPATCH -O0', '-DECL_C_COMPATIB
           .replace("                enable_gmp='portable'\n                with_c_gmp=yes\n", ''))
 assert new != seg
 open(p, 'w').write(s[:a] + new + s[b:])
+def patch(f, old, new):
+    p = d + '/' + f; s = open(p).read()
+    assert s.count(old) == 1, f
+    open(p, 'w').write(s.replace(old, new))
+patch('lsp/config.lsp.in', '#.(truename "@true_srcdir@/")', '#P"/src/ecl-wasm/src/"')
+patch('cmp/cmpname.lsp', '''(path-hash (logxor (ash (sxhash path) 8)
+                            (ash (sxhash (cddr (pathname-directory path))) 16)
+                            (sxhash (pathname-name path))))
+         (seconds (get-universal-time))
+         (ms (+ (* seconds 1000)
+                (mod (floor (* 1000 (get-internal-real-time))
+                            internal-time-units-per-second)
+                     1000)))''', '''(path-hash (logxor (ash (sxhash (last (pathname-directory path))) 16)
+                            (sxhash (pathname-name path))))
+         (ms 0)''')
 PY
+  # (the prefix is never installed to; ECL compiles it in as SYS:, so it too is named under /src)
   (cd "$SRC/ecl-wasm" && ECL_TO_RUN="$SRC/ecl-host/bin/ecl" emconfigure ./configure --host=wasm32-unknown-emscripten --build=x86_64-pc-linux-gnu \
-      --with-cross-config="$SRC/ecl-wasm/src/util/wasm32-unknown-emscripten.cross_config" --prefix="$SRC/ecl-wasm/out" --disable-shared \
+      --with-cross-config="$SRC/ecl-wasm/src/util/wasm32-unknown-emscripten.cross_config" --prefix=/src/ecl-wasm/out --disable-shared \
       --with-tcp=no --with-cmp=no --enable-gmp=system --with-gmp-prefix="$SRC/wasm-prefix" --enable-boehm=system --enable-threads=no --with-dffi=no \
       CPPFLAGS="-I$SRC/wasm-prefix/include" LDFLAGS="-L$SRC/wasm-prefix/lib" CFLAGS=-O2 > conf.log &&
-    ECL_TO_RUN="$SRC/ecl-host/bin/ecl" emmake make -j2 > make.log)
+    ECL_TO_RUN="$SRC/ecl-host/bin/ecl" ECLSRCDIR="$SRC/ecl-wasm/src/" emmake make -j2 > make.log)
 }
 xindy() {
   texlive_source; ecl_wasm; binaryen

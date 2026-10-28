@@ -1,9 +1,10 @@
 """Compile a folder (or one .tex from stdin) through the worker in Chromium.
-Usage: texrun.py DIR MAIN [engine] [timeout]   env: DIST, PORT, OUT (dir for result.json, out.pdf), SHELL_ESCAPE=0"""
+Usage: texrun.py DIR MAIN [engine] [timeout]   env: RIKUY_DIST (or DIST), PORT, OUT (dir for result.json, out.pdf), SHELL_ESCAPE=0"""
 import os, sys, json, time, base64
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'test'))
-os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
-os.environ['GALLEY_DIST'] = os.environ.get('DIST', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dist'))
+if os.path.isdir('/opt/pw-browsers'): os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
+# RIKUY_DIST as everywhere else; DIST is this script's older name for it, still taken
+os.environ['RIKUY_DIST'] = os.environ.get('RIKUY_DIST') or os.environ.get('DIST') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dist')
 import serve
 from playwright.sync_api import sync_playwright
 PORT = int(os.environ.get('PORT', str(8700 + os.getpid() % 200))); serve.start(PORT)

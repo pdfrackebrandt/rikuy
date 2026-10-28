@@ -1,9 +1,10 @@
 """Run one program through the worker's shell in a folder of files.
-Usage: shellrun.py DIR TOOLS ARGV...   env: DIST, READ=a,b  (TOOLS: comma list or -)"""
+Usage: shellrun.py DIR TOOLS ARGV...   env: RIKUY_DIST (or DIST), READ=a,b  (TOOLS: comma list or -)"""
 import os, sys, json, time, base64
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'test'))
-os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
-os.environ['GALLEY_DIST'] = os.environ.get('DIST', os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dist'))
+if os.path.isdir('/opt/pw-browsers'): os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
+# RIKUY_DIST as everywhere else; DIST is this script's older name for it, still taken
+os.environ['RIKUY_DIST'] = os.environ.get('RIKUY_DIST') or os.environ.get('DIST') or os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'dist')
 import serve
 from playwright.sync_api import sync_playwright
 PORT = int(os.environ.get('PORT', str(8500 + os.getpid() % 200))); serve.start(PORT)

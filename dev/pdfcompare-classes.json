@@ -1,14 +1,14 @@
 {
   "le/presentations/CNN-Intro/CNN-Intro.tex": {
-    "class": "font not in Galley (Fira Sans)",
-    "note": "Metropolis asks for Fira Sans. The desktop's fontconfig lists it but XeTeX cannot load it (T1/FiraSansLight(0) undefined), so the desktop falls back to Computer Modern serif; Galley has no Fira (texlive-fonts-extra is not shipped), says so, and keeps Latin Modern Sans."
+    "class": "font not in Rikuy (Fira Sans)",
+    "note": "Metropolis asks for Fira Sans. The desktop's fontconfig lists it but XeTeX cannot load it (T1/FiraSansLight(0) undefined), so the desktop falls back to Computer Modern serif; Rikuy has no Fira (texlive-fonts-extra is not shipped), says so, and keeps Latin Modern Sans."
   },
   "le/documents/bachelor-proposal/bachelor-proposal.tex": {
     "class": "font build (Linux Libertine)",
-    "note": "Pixels equal. Debian ships its own build of Linux Libertine, whose opening quote has no Unicode mapping, so pdftotext reads nothing for it; Galley's TeX Live copy maps it."
+    "note": "Pixels equal. Debian ships its own build of Linux Libertine, whose opening quote has no Unicode mapping, so pdftotext reads nothing for it; Rikuy's TeX Live copy maps it."
   },
   "le/uml/class-diagramm/class-diagram.tex": {
     "class": "document's own (Makefile step)",
-    "note": "The figure meta.1 comes from running mpost on meta.mp, a step of the document's Makefile that neither latexmk nor Galley takes; both PDFs lack it, latexmk reports the error as a failure."
+    "note": "The figure meta.1 comes from running mpost on meta.mp, a step of the document's Makefile that neither latexmk nor Rikuy takes; both PDFs lack it, latexmk reports the error as a failure."
   }
 }

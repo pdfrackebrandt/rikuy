@@ -1,3 +1,5 @@
+// Brackets in the equation field (fences.js): plain pairs become \mleft...\mright while editing
+// and come back as written, tall content gets \left...\right, the author's own pairs stay.
 import { fenceSource, unfence, tallTest, fitBrackets } from '../src/fences.js';
 let bad = 0;
 const eq = (name, got, want) => { const ok = got === want; if (!ok) bad++; console.log((ok ? 'PASS ' : 'FAIL ') + name + (ok ? '' : '\n   got:  ' + got + '\n   want: ' + want)); };

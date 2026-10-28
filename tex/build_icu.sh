@@ -3,9 +3,11 @@
 # normalization). TeX Live's is 22 MB, mostly locale data no TeX engine reads; this keeps the
 # converters (single-byte ones and what they depend on), normalization, break iterators and
 # the resource-bundle roots. Needs icupkg (Ubuntu: icu-devtools).
+# Usage: build_icu.sh [SRC [OUT]]   (TeX Live's file, default $RIKUY_WORK/tree-extra/texlive/icudt78l.dat;
+#        the trimmed one, default $RIKUY_WORK/extra/texlive/icudt78l.dat, where build_tree.py takes it)
 set -e
-SRC=${1:-${GALLEY_WORK:-/tmp/eng}/tree-extra/texlive/icudt78l.dat}
-OUT=${2:-${GALLEY_WORK:-/tmp/eng}/extra/texlive/icudt78l.dat}
+SRC=${1:-${RIKUY_WORK:-/tmp/eng}/tree-extra/texlive/icudt78l.dat}
+OUT=${2:-${RIKUY_WORK:-/tmp/eng}/extra/texlive/icudt78l.dat}
 W=$(mktemp -d)
 icupkg -l "$SRC" > "$W/items.txt"
 mkdir "$W/ex" && icupkg -x '*' -d "$W/ex" "$SRC"

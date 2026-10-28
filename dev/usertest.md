@@ -2,7 +2,7 @@
 
 PLAN task 13. The automated harness (`test/editor_corpus.py`) checks that scripted edits land in
 the source. This session checks what it cannot: whether people who write LaTeX can find and trust
-editing on the typeset page. The owner runs it; nothing here needs Claude.
+editing on the typeset page. The maintainer runs it, in person.
 
 ## People
 
@@ -16,7 +16,7 @@ Five who write LaTeX at least monthly, recruited for spread, not convenience:
 | 4 | Beamer or TikZ user | layouts the page view handles worst |
 | 5 | occasional user, a report a year | does the page view lower the bar |
 
-No one who has seen Galley before. Pay or thank them the same way.
+No one who has seen Rikuy before. Pay or thank them the same way.
 
 ## Setup (before each session)
 
@@ -32,7 +32,7 @@ No one who has seen Galley before. Pay or thank them the same way.
 
 | min | part | what the moderator does |
 |---|---|---|
-| 0 to 5 | intro | Explain think aloud. "We are testing the editor, not you." No demo of Galley. |
+| 0 to 5 | intro | Explain think aloud. "We are testing the editor, not you." No demo of Rikuy. |
 | 5 to 10 | first look | Open `paper.zip` (Ctrl+O). Ask: "What do you think you can do here?" Do not help. |
 | 10 to 35 | tasks 1 to 7 | One card at a time. Stop a task after its time limit and note it as not done. |
 | 35 to 45 | own document | The person opens their own project (or `thesis-chapter.zip`) and fixes or writes anything they like for 10 minutes. |

@@ -10,6 +10,12 @@ does what those scripts do, inside $TL26, without touching the host:
     fmtutil.cnf, updmap.cfg and language.dat; then mktexlsr, updmap-sys and fmtutil-sys --all
 Files are unlinked before they are written, because the tree is made of hard links into the
 per package folders that build_tree.py reads.
+Usage: tl26_setup.py [STEP...]   env: TL26
+The steps, in the order they run (all of them when none is named, else the named ones, still in this
+order): links (absolute symlinks), cnf (texmf.cnf), wrap (the launchers), postinst (cm-super's fonts,
+the bibtex and gnuplot names), debian (fmtutil.cnf, updmap.cfg, language.dat), fonts
+(galley/fonts.conf), lsr (mktexlsr), fontdb (fontconfig's cache, luaotfload's names), maps
+(updmap-sys), formats (fmtutil-sys --all).
 """
 import os, re, stat, subprocess, sys
 

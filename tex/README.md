@@ -1,8 +1,8 @@
-# Real TeX in Galley
+# Real TeX in Rikuy
 
 The PDF pane runs TeX Live 2026 in the browser: pdfTeX, XeTeX (with xdvipdfmx) and LuaHBTeX,
 compiled to WebAssembly by the BusyTeX project (texlyre-busytex 1.4.0), in a Web Worker. The
-programs packages run through shell escape run in the browser too.
+programs that packages start through shell escape run in the browser too.
 
 ## Engines
 
@@ -48,7 +48,7 @@ popen() and pclose(), stubs in BusyTeX, get bodies that run the command through 
 and hand back a file of its output (or, for a write pipe, run it on what was written at
 pclose()). `swap_wasm.py` puts a newly patched engine into a built tree.
 
-### Programs built for Galley (`build_tools.sh`)
+### Programs built for Rikuy (`build_tools.sh`)
 
 dvips, Asymptote and xindy are compiled from TeX Live's source (pinned commit), gnuplot 6.0.2
 from Ubuntu's source package, all with Ubuntu's Emscripten 3.1.6. Their `main` is entered
@@ -79,8 +79,8 @@ and nomenclatures, asy for asymptote.sty's figures, and reruns until references 
 LaTeX asks, and, as latexmk decides from TeX's recorder file, when a pass read a file it then
 wrote with other content (a table of contents whose page numbers moved; LaTeX itself warns only
 about labels). At most five passes. As with latexmk, a first run starts from the `.aux` a one
-page document writes, so such a document takes one pass, not two. When imakeidx may not run its program itself it names the
-command in the log; that command runs.
+page document writes, so such a document takes one pass, not two. When imakeidx may not run
+its program itself it names the command in the log; that command runs.
 
 ## The tree
 
@@ -88,10 +88,11 @@ command in the log; that command runs.
   `DEB_SETS` collections) over the tree inside BusyTeX's release (TeX Live 2026 of March), so
   packages are July's; BusyTeX's files stay where Debian leaves files out (fonts it packages
   separately, for one) and for the engine's own configuration (`web2c`, `tex/generic/config`).
-  `pdftex.map` keeps only lines whose fonts are present. `GALLEY_TL_FIRST=0` gives the earlier
-  tree: BusyTeX's, with Ubuntu 24.04's TeX Live 2023 only for what it lacks.
+  `pdftex.map` keeps only lines whose fonts are present. `RIKUY_TL_FIRST=0` turns the order
+  round: BusyTeX's files win, and Ubuntu's packages add only what it lacks (v19's order, when
+  those packages were Ubuntu 24.04's TeX Live 2023).
 - `build_formats.py` makes the formats (pdfLaTeX, XeLaTeX, LuaLaTeX, every language of
-  `language.dat`) with Galley's own engines from that tree, as fmtutil does on a desktop.
+  `language.dat`) with Rikuy's own engines from that tree, as fmtutil does on a desktop.
 - `build_pk.py` makes PK fonts with METAFONT for the families that exist only as METAFONT
   source (Concrete, bbm, blackletter, chess and symbol fonts, bold typewriter), as mktexpk
   would on a desktop, and the EC and Cyrillic (T1, TS1, T2A) metrics TeX Live leaves to
@@ -101,23 +102,23 @@ command in the log; that command runs.
   ciphers removed (they compress to half) and put back on read, byte for byte.
 - `build_all.sh` runs the whole sequence.
 
-The artifact on claude.ai holds about 250 MB (its limit is 256 MB).
+The artifact on claude.ai holds about 252 MB (its limit is 256 MB).
 
-## Full TeX Live for Galley on its own site
+## Full TeX Live for Rikuy on its own site
 
 `build_tree.py mirror` packs everything the artifact leaves out (all of TeX Live's runtime files:
-about 114,000 files, 830 MB in 620 packs) with its own index and TeX Live's whole font map. Host
-the folder anywhere that serves files with CORS (GitHub Pages, a bucket) and point Galley at it
-with `?texlive=URL`, or build the page with `GALLEY_MIRROR=mirror/`. When kpathsea does not find a
+about 114,000 files, 840 MB in 634 packs) with its own index and TeX Live's whole font map. Host
+the folder anywhere that serves files with CORS (GitHub Pages, a bucket) and point Rikuy at it
+with `?texlive=URL`, or build the page with `RIKUY_MIRROR=mirror/`. When kpathsea does not find a
 file in the local tree it asks the mirror (BusyTeX's `kpse_remote_fetch_js` hook), so a document
 downloads only what it uses. A page on claude.ai can only reach its own server, so the mirror
-works on a self-hosted Galley, not inside the artifact.
+works on a self-hosted Rikuy, not inside the artifact.
 
 ## Limits
 
 Fonts that come from the mirror are found by file name, not by family name. Programs outside
 TeX Live (inkscape, R, Java's bib2gls) cannot run (PLAN.md, task 11). Asymptote renders 3D in
-software, two to three times slower than natively (a torus 2 s, the teapot 18 s); WebGL
+software, two and a half to three times slower than a native asy (PLAN.md, task 17); WebGL
 (`-f html`), V3D and PRC output work too. It runs without its garbage collector, so a run frees
 nothing until it ends: a long computation such as TeX Live's `slope.asy` example runs out of
 WebAssembly's 2 GB (the collector, tried, did not keep it under that; `build_tools.sh` has the

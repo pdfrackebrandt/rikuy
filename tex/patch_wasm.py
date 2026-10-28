@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Let the programs in the BusyTeX binary that start other programs reach Galley's shell.
+"""Let the programs in the BusyTeX binary that start other programs reach Rikuy's shell.
 
 BusyTeX routes TeX's own \\write18 to an import, shell_escape_dispatch_js(cmd, cwd), which
-Galley answers (tex/shell.js). xdvipdfmx does not use it: to have Ghostscript convert an EPS
+Rikuy answers (tex/shell.js). xdvipdfmx does not use it: to have Ghostscript convert an EPS
 figure or a PSTricks drawing it splits the command into argv and calls fork() and execvp()
 (dpx_file_apply_filter in dvipdfm-x/dpxfile.c). In WebAssembly fork() always fails, and the
 optimizer inlined all of it, so the conversion fails before any JavaScript sees it.

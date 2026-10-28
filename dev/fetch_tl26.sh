@@ -1,13 +1,13 @@
 #!/bin/sh
-# Lay out the desktop TeX Live 2026 that dev/pdfcompare.py compares Galley with: the Ubuntu
+# Lay out the desktop TeX Live 2026 that dev/pdfcompare.py compares Rikuy with: the Ubuntu
 # 26.10 packages in dev/tl26-packages.txt (TeX Live 2026.20260711, its binaries, Ghostscript,
 # biber, xindy, Asymptote and the libraries they need), each checked against its hash, unpacked
-# per package into $GALLEY_WORK/s26/x/<name>/ and merged by hard links into $TL26 (default
+# per package into $RIKUY_WORK/s26/x/<name>/ and merged by hard links into $TL26 (default
 # /opt/tl26); then dev/tl26_setup.py makes it runnable there. Nothing outside those folders
 # changes. Rerunnable; arguments name the setup steps to rerun (default all). Needs curl,
 # sha256sum/sha512sum, dpkg-deb, python3, perl (for updmap).
 set -eu
-WORK=${GALLEY_WORK:-/tmp/eng}
+WORK=${RIKUY_WORK:-/tmp/eng}
 TL=${TL26:-/opt/tl26}
 MIRROR=${UBUNTU_MIRROR:-http://archive.ubuntu.com/ubuntu}
 HERE=$(cd "$(dirname "$0")" && pwd)

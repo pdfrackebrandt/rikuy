@@ -1,12 +1,12 @@
 """Where a corpus document's compile spends its time (PLAN task 6): every status the worker
 reports (each TeX pass, each program, each tool fetched), with the time it came, the passes
 TeX made and the programs its shell ran. Usage: profile.py DOC [LIMIT_S]   (DOC as corpus_full.py names it, le/...)
-env: GALLEY_DIST, CORPUS_REPO, SDE"""
+env: RIKUY_DIST, CORPUS_REPO, SDE"""
 import json, os, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, '..', 'test'))
-os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
+if os.path.isdir('/opt/pw-browsers'): os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
 from corpus_full import project  # noqa: E402
 import serve  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
