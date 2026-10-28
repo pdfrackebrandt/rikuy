@@ -1,6 +1,6 @@
 // Problems a reader would hit in the PDF, found without compiling: references with no
 // label, citations with no .bib entry, duplicate labels, unclosed environments and braces,
-// missing files, math KaTeX cannot read, commands Galley shows as source.
+// missing files, math KaTeX cannot read, commands Rikuy shows as source.
 
 // Comments blanked out (same length, so positions stay true) and verbatim bodies hidden.
 function scrub(src) {
@@ -103,7 +103,7 @@ export function findProblems(o) {
   for (const name of o.unknown || []) {
     for (const [f, s] of scrubbed) {
       const i = s.search(new RegExp(name.replace(/\\/g, '\\\\') + '(?![A-Za-z])'));
-      if (i >= 0) { add('info', f, i, name + ' is shown as source; Galley cannot typeset it.'); break; }
+      if (i >= 0) { add('info', f, i, name + ' is shown as source; Rikuy cannot typeset it.'); break; }
     }
   }
   const rank = { error: 0, warn: 1, info: 2 };

@@ -1,4 +1,4 @@
-// Galley app shell: rebuild pipeline, history, input, popovers, files.
+// Rikuy app shell: rebuild pipeline, history, input, popovers, files.
 import { siInMath } from './siunitx.js';
 import { buildModel } from './model.js';
 import { Renderer, BLOCKS, esc } from './render.js';
@@ -19,9 +19,13 @@ import { kvGet, kvPut, decodeText, encodeText, snapAdd, snapAll, snapFiles, snap
 import { changes, spacingOnly } from './diff.js';
 import { TeXEngine, parseTeXLog } from './tex.js';
 import { PdfView } from './pdfview.js';
+import { collab, installCollab } from './collab.js';
+import { shareParam, commentOnly } from './share.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const PX_PER_PT = 96 / 72.27;
+// Rikuy was called Galley at first; the keys of what a browser keeps keep that name, so
+// nobody's documents or settings are lost
 const STORE = 'galley.project.v1';
 const ENGINE_LABEL = { pdflatex: 'pdfLaTeX', xelatex: 'XeLaTeX', lualatex: 'LuaLaTeX', latex: 'LaTeX (dvips)' };
 const PREFS = 'galley.prefs.v1';
@@ -234,7 +238,7 @@ class App {
     this.name = 'Editing in Print';
     this.assets = new Map();
     this.assetBlobs = new Map();
-    this.extra = new Map(); // files Galley does not read (data, fonts, figures it cannot show): saved back untouched
+    this.extra = new Map(); // files Rikuy does not read (data, fonts, figures it cannot show): saved back untouched
     this.orig = new Map(); // name -> { bytes, enc, bom, text } as opened, so untouched files leave byte-identical
     this.zipDirty = false;
     this.root = $('#pages');
@@ -258,6 +262,7 @@ class App {
     this.saveSoon = Object.assign(() => { this.zipDirty = true; document.body.classList.add('zip-dirty'); persistSoon(); this.noteEdit(); }, { flush: () => persistSoon.flush(), cancel: () => persistSoon.cancel() });
     this.memSnaps = []; // versions kept in memory when this browser cannot store them
     this.marksSoon = debounce(() => this.paintChanges(), 180);
+    this.commentsSoon = debounce(() => this.paintComments(), 200);
     this.pdfSoon = debounce(() => { if (document.body.classList.contains('pdf-on')) this.compilePdf(); }, 1400);
     this.texIssues = [];
     this.syncSoon = debounce(() => this.revealCaret(), 120);
@@ -296,7 +301,16 @@ class App {
     new ResizeObserver(debounce(() => { if (this.computePx()) this.relayout(true); }, 150)).observe(this.desk);
     this.initCaps();
     await this.loadReview();
-    if (this.prefs.source) this.toggleSource(true);
+    await this.loadShareCtx();
+    // a link with a document in it (#share=...): open that document; the fragment goes, so a
+    // reload keeps what was typed since
+    const shared = shareParam(location.hash);
+    if (shared) {
+      try { history.replaceState(null, '', location.href.split('#')[0]); } catch (e) { /* framed */ }
+      await this.openSharedLink(shared);
+    }
+    // someone a document was shared with sees the page; the source is one click away
+    if (this.prefs.source && !document.body.classList.contains('guest')) this.toggleSource(true);
     if (this.prefs.nav && window.innerWidth > 860) this.toggleNav(true);
     if (this.prefs.pdf && window.innerWidth > 860) this.togglePdf(true);
     setTimeout(() => this.ensureMathLive(), 2500);
@@ -325,7 +339,7 @@ class App {
 
   async loadFonts() {
     if (!document.fonts || !document.fonts.load) return;
-    const faces = ['400 16px "CMU Serif"', 'italic 400 16px "CMU Serif"', 'bold 16px "CMU Serif"', 'italic bold 16px "CMU Serif"', '16px "CMU Typewriter"', '16px KaTeX_Main', 'italic 16px KaTeX_Math', '16px KaTeX_Size1', '16px KaTeX_Size2', '16px KaTeX_AMS'];
+    const faces = ['400 16px "Paper Modern Serif"', 'italic 400 16px "Paper Modern Serif"', 'bold 16px "Paper Modern Serif"', 'italic bold 16px "Paper Modern Serif"', '16px "Paper Modern Typewriter"', '16px KaTeX_Main', 'italic 16px KaTeX_Math', '16px KaTeX_Size1', '16px KaTeX_Size2', '16px KaTeX_AMS'];
     await Promise.all(faces.map((f) => document.fonts.load(f).catch(() => null)));
   }
 
@@ -395,6 +409,7 @@ class App {
     this.index.dirty = true;
     this.tocPages(plan);
     if (this.prefs.marks) this.marksSoon();
+    this.commentsSoon();
   }
 
   relayout(force) {
@@ -559,6 +574,7 @@ class App {
   updateUndoUI() { $('#b-undo').disabled = !this.hist.length; $('#b-redo').disabled = !this.redoStack.length; }
 
   src(f) { return this.files.get(f) ?? ''; }
+  savePrefs() { store(PREFS, this.prefs); }
 
   // ---- input --------------------------------------------------------------------
   bindUI() {
@@ -587,6 +603,9 @@ class App {
     $('#fileinput').addEventListener('change', (e) => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) this.openFiles(fs); });
     $('#b-save').addEventListener('click', () => this.save());
     $('#b-copy').addEventListener('click', () => this.copySource());
+    $('#b-share').addEventListener('click', () => this.openSharePanel());
+    $('#guest-send').addEventListener('click', () => this.openSharePanel());
+    $('#guest-x').addEventListener('click', () => { $('#guest').hidden = true; document.body.classList.remove('guest'); if (this.shareCtx) { this.shareCtx.dismissed = true; kvPut('share:' + this.name + '|' + this.main, this.shareCtx).catch(() => {}); } });
     $('#b-pdf').addEventListener('click', () => this.togglePdf());
     $('#pdf-x').addEventListener('click', () => this.togglePdf(false));
     $('#pdf-re').addEventListener('click', () => { if (this.compiling && this.passStart && Date.now() - this.passStart > 4000) this.stopPdf(); else this.compilePdf({ clean: true }); });
@@ -627,6 +646,7 @@ class App {
       if (a === 'em') this.toggleStyle('emph');
       if (a === 'tt') this.toggleStyle('texttt');
       if (a === 'ai') this.openAsk();
+      if (a === 'cm') this.commentOnSelection();
       if (a === 'src') this.revealCaret(true);
     });
     $('#gutter').addEventListener('pointerdown', (e) => this.dragGutter(e));
@@ -2263,7 +2283,7 @@ class App {
     $('#nt-count').textContent = probs.length ? String(probs.length) : '';
     $('#nav-dot').hidden = !probs.some((x) => x.sev === 'error');
     if (this.base && (document.body.classList.contains('nav-on') || this.prefs.marks)) {
-      const n = this.currentChanges().filter((c) => !spacingOnly(c)).length;
+      const n = this.currentChanges().filter((c) => !spacingOnly(c) && !commentOnly(c)).length + this.allComments().length;
       $('#nt-ccount').textContent = n ? String(n) : '';
     }
     if (!document.body.classList.contains('nav-on')) return;
@@ -2287,6 +2307,8 @@ class App {
       this.navStale = false;
       const y = body.scrollTop;
       body.replaceChildren();
+      // Review, as in Word: the comments, then the changes and versions
+      this.renderComments(body);
       this.renderChanges(body);
       body.scrollTop = y;
       return;
@@ -2700,7 +2722,7 @@ class App {
         if (st.length) { this.toast('Commit your ' + st.length + ' change' + (st.length === 1 ? '' : 's') + ' first: pull merges into the last commit.', 7000); msg.focus(); return; }
         busy(b, 'Pulling…');
         try {
-          await G.pull(dir, opts(), this.gitAuthor().name ? this.gitAuthor() : { name: 'Galley', email: 'galley@localhost' });
+          await G.pull(dir, opts(), this.gitAuthor().name ? this.gitAuthor() : { name: 'Rikuy', email: 'rikuy@localhost' });
           await this.loadGitFiles(await G.workingFiles(dir), 'Pulled');
         } catch (err) { fail(b, err); return; }
         done(b); this.gitRefresh();
@@ -2716,7 +2738,7 @@ class App {
         } catch (err) { fail(b, err); return; }
         done(b);
       }, 'git push'));
-    rem.append(url, tok, prox, rrow, mk('div', 'git-note', 'GitHub and GitLab need a token with write access and, from a browser, a CORS proxy. Inside claude.ai the page can only reach its own server, so pushing works from Galley on its own site; here, Save .zip gives a clone to push from your computer.'));
+    rem.append(url, tok, prox, rrow, mk('div', 'git-note', 'GitHub and GitLab need a token with write access and, from a browser, a CORS proxy. Inside claude.ai the page can only reach its own server, so pushing works from Rikuy on its own site; here, Save .zip gives a clone to push from your computer.'));
     out.append(rem);
 
     // history
@@ -2761,14 +2783,15 @@ class App {
   gitCloneForm(G) {
     const det = mk('details', 'git-remote');
     det.append(mk('summary', '', 'Clone from a URL'));
-    const url = mk('input'); url.type = 'url'; url.placeholder = 'https://github.com/you/paper.git'; url.setAttribute('aria-label', 'Repository URL');
-    const tok = mk('input'); tok.type = 'password'; tok.placeholder = 'Access token (private repositories)'; tok.value = this.prefs.gitToken || '';
+    const url = mk('input'); url.type = 'url'; url.placeholder = 'https://github.com/you/paper.git, or an Overleaf project'; url.setAttribute('aria-label', 'Repository URL, or the address of an Overleaf project');
+    const tok = mk('input'); tok.type = 'password'; tok.placeholder = 'Access token (private repositories; for Overleaf, its Git token)'; tok.value = this.prefs.gitToken || '';
     const prox = mk('input'); prox.type = 'url'; prox.placeholder = 'CORS proxy'; prox.value = this.prefs.gitProxy ?? 'https://cors.isomorphic-git.org';
     const b = mkBtn('Clone', async () => {
-      const u = url.value.trim();
+      // an Overleaf project's address becomes its git address (Overleaf, Account settings, Git integration)
+      const u = G.gitUrlOf(url.value);
       if (!u) { url.focus(); return; }
       this.prefs.gitToken = tok.value.trim(); this.prefs.gitProxy = prox.value.trim(); store(PREFS, this.prefs);
-      const name = u.replace(/\.git$/, '').split('/').pop() || 'paper';
+      const name = /git\.overleaf\.com/.test(u) ? 'overleaf-' + u.split('/').pop().slice(0, 6) : u.replace(/\.git$/, '').split('/').pop() || 'paper';
       b.disabled = true; b.textContent = 'Cloning…';
       try {
         const files = await G.clone(G.dirFor(name), u, { token: this.prefs.gitToken, corsProxy: this.prefs.gitProxy, depth: 200 });
@@ -2782,7 +2805,7 @@ class App {
 
   gitError(e) {
     const m = String((e && (e.message || e.code)) || e);
-    if (/Failed to fetch|NetworkError|Load failed|Content Security Policy|CORS/i.test(m)) return 'Could not reach the remote. From inside claude.ai the page may only talk to its own server; run Galley on its own site, or Save .zip and push from your computer. (' + m + ')';
+    if (/Failed to fetch|NetworkError|Load failed|Content Security Policy|CORS/i.test(m)) return 'Could not reach the remote. From inside claude.ai the page may only talk to its own server; run Rikuy on its own site, or Save .zip and push from your computer. (' + m + ')';
     if (/401|403|auth/i.test(m)) return 'The remote refused the credentials. Check the token and that it can write to this repository. (' + m + ')';
     if (/MergeConflict|conflict/i.test(m)) return 'Pull found conflicting edits to the same lines. Commit, then merge on your computer, or restore one side. (' + m + ')';
     return m;
@@ -2834,7 +2857,8 @@ class App {
 
   renderChanges(body) {
     const all = this.currentChanges();
-    const real = all.filter((c) => !spacingOnly(c)), space = all.filter(spacingOnly);
+    // comment lines are listed above, as comments; Accept all takes them along
+    const real = all.filter((c) => !spacingOnly(c) && !commentOnly(c)), space = all.filter(spacingOnly);
     const top = mk('div', 'chg-top');
     const cmp = mk('div', 'chg-base');
     cmp.append('Changes since ', mk('b', '', this.base ? when(this.base.t) : ''), this.base && this.base.label ? ' · ' + this.base.label : '');
@@ -2934,7 +2958,7 @@ class App {
     const HL = window.CSS && CSS.highlights;
     if (HL) HL.delete('g-ins');
     if (!this.prefs.marks || !this.base || !this.model) return;
-    const list = this.currentChanges().filter((c) => !spacingOnly(c));
+    const list = this.currentChanges().filter((c) => !spacingOnly(c) && !commentOnly(c));
     if (!list.length) return;
     const ins = new Map(), dels = [];
     for (const c of list) {
@@ -3236,7 +3260,9 @@ class App {
     const show = (ok) => {
       $('#st-save').textContent = ok ? 'Saved in this browser' : 'Too large to keep in this browser. Save the .zip.';
       document.body.classList.toggle('zip-dirty', !!this.zipDirty);
-      $('#b-save').title = this.zipDirty ? 'Changes since your last .zip. Download the project (Ctrl+S)' : 'Download the project as .zip (Ctrl+S)';
+      const what = this.singleFile() ? this.main.split('/').pop() : 'the project as .zip';
+      $('#b-save').title = (this.zipDirty ? 'Changes since you last saved. ' : '') + 'Download ' + what + ' (Ctrl+S)';
+      $('#b-save span').textContent = this.singleFile() ? 'Save .tex' : 'Save .zip';
     };
     const fallback = () => show(store(STORE, meta));
     if (this.noIdb) { fallback(); return; }
@@ -3278,34 +3304,54 @@ class App {
     this.refreshNav();
   }
 
+  // the project as a .zip: text in the encoding it came in (untouched files byte for byte),
+  // figures and other files as they were; with git, its .git folder too
+  async zipBlob(o = {}) {
+    if (!window.JSZip) await loadScript(CDN.zip);
+    const z = new window.JSZip();
+    for (const [n, t] of this.files) {
+      const o2 = this.orig.get(n);
+      const out = /\.tex$/i.test(n) ? this.exportText(t) : t;
+      z.file(n, o2 && o2.text === out ? o2.bytes : encodeText(out, o2 ? o2.enc : 'utf-8', o2 ? o2.bom : false));
+    }
+    for (const [n, b] of this.assetBlobs) z.file(n, b);
+    for (const [n, b] of this.extra) if (!this.files.has(n) && !this.assetBlobs.has(n)) z.file(n, b);
+    // a project kept in git leaves as a clone: its .git folder goes into the .zip too
+    let withGit = false;
+    if (o.git !== false && (this.gitP || (await this.hasGitRepo()))) {
+      try {
+        const G = await this.loadGit();
+        const dir = G.dirFor(this.name);
+        if (await G.isRepo(dir)) {
+          await G.writeTree(dir, await this.gitFiles());
+          for (const [n, b] of await G.exportAll(dir)) if (n.startsWith('.git/')) z.file(n, b);
+          withGit = true;
+        }
+      } catch (e) { /* the .zip without history is still a good .zip */ }
+    }
+    const blob = await z.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+    blob.withGit = withGit;
+    return blob;
+  }
+
+  // Save: one file stays one .tex, anything more a .zip; both exactly the source
   async save() {
     const D = this.caps.downloads;
     const standalone = !window.claude;
     if (!D && !standalone) { this.toast('Saving is not available in this view. Use Copy source instead.'); return; }
     try {
-      if (!window.JSZip) await loadScript(CDN.zip);
-      const z = new window.JSZip();
-      for (const [n, t] of this.files) {
-        const o = this.orig.get(n);
-        z.file(n, o && o.text === t ? o.bytes : encodeText(t, o ? o.enc : 'utf-8', o ? o.bom : false));
+      let blob, fname, withGit = false;
+      const single = this.singleFile() && !(this.gitP && (await this.hasGitRepo()));
+      if (single) {
+        const o = this.orig.get(this.main);
+        const out = this.exportText(this.src(this.main));
+        blob = new Blob([o && o.text === out ? o.bytes : encodeText(out, o ? o.enc : 'utf-8', o ? o.bom : false)], { type: 'application/x-tex' });
+        fname = this.main.split('/').pop();
+      } else {
+        blob = await this.zipBlob();
+        withGit = blob.withGit;
+        fname = (this.name || 'paper').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') + '.zip';
       }
-      for (const [n, b] of this.assetBlobs) z.file(n, b);
-      for (const [n, b] of this.extra) if (!this.files.has(n) && !this.assetBlobs.has(n)) z.file(n, b);
-      // a project kept in git leaves as a clone: its .git folder goes into the .zip too
-      let withGit = false;
-      if (this.gitP || (await this.hasGitRepo())) {
-        try {
-          const G = await this.loadGit();
-          const dir = G.dirFor(this.name);
-          if (await G.isRepo(dir)) {
-            await G.writeTree(dir, await this.gitFiles());
-            for (const [n, b] of await G.exportAll(dir)) if (n.startsWith('.git/')) z.file(n, b);
-            withGit = true;
-          }
-        } catch (e) { /* the .zip without history is still a good .zip */ }
-      }
-      const blob = await z.generateAsync({ type: 'blob', compression: 'DEFLATE' });
-      const fname = (this.name || 'paper').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') + '.zip';
       if (D) await D.save({ filename: fname, data: blob });
       else {
         const a = document.createElement('a');
@@ -3316,7 +3362,7 @@ class App {
       this.zipDirty = false;
       this.persist();
       this.snapshot('Saved ' + fname);
-      this.toast('Saved ' + fname + (withGit ? ', with its git history (unzip it: git log and git push work there).' : '. Upload it to Overleaf or unzip it next to your other files.'), 7000);
+      this.toast('Saved ' + fname + (withGit ? ', with its git history (unzip it: git log and git push work there).' : single ? '.' : '. Upload it to Overleaf or unzip it next to your other files.'), 7000);
     } catch (e) {
       if (e && e.code === 'declined') return;
       this.toast('Could not save: ' + ((e && (e.message || e.code)) || 'unknown error'));
@@ -3344,9 +3390,9 @@ class App {
 
   texEngine() {
     if (!this.tex) {
-      // a full TeX Live mirror: ?texlive=URL, or the one a self-hosted build names (GALLEY_MIRROR)
+      // a full TeX Live mirror: ?texlive=URL, or the one a self-hosted build names (RIKUY_MIRROR)
       let mirror = null;
-      try { mirror = new URLSearchParams(location.search).get('texlive') || (typeof __GALLEY_MIRROR__ !== 'undefined' && __GALLEY_MIRROR__) || null; } catch (e) { /* none */ }
+      try { mirror = new URLSearchParams(location.search).get('texlive') || (typeof __RIKUY_MIRROR__ !== 'undefined' && __RIKUY_MIRROR__) || null; } catch (e) { /* none */ }
       this.tex = new TeXEngine(new URL('tex/', location.href).href, mirror ? new URL(mirror, location.href).href : null);
       this.tex.onStatus = (s) => this.texStatus(s);
     }
@@ -3674,7 +3720,7 @@ class App {
   }
 
   openHelp() {
-    const p = this.makePop($('#b-help'), 'pop-help', 'How Galley works');
+    const p = this.makePop($('#b-help'), 'pop-help', 'How Rikuy works');
     const mod = isMac ? 'Cmd' : 'Ctrl';
     p.insertAdjacentHTML('beforeend', `
       <p>The page is typeset from your LaTeX source. Every edit you make on the page is written back into the source as the smallest possible change.</p>
@@ -3688,12 +3734,14 @@ class App {
         <dt>Alt+click</dt><dd>Show that spot in the source</dd>
         <dt>Tab, ${mod}+Enter</dt><dd>Next cell, new row in tables</dd>
         <dt>${mod}+Z, ${mod}+Shift+Z</dt><dd>Undo, redo</dd>
+        <dt>${mod}+Alt+M</dt><dd>Comment on the selected words. A comment is a LaTeX comment line in the source, so Overleaf, Git and TeX keep it and print nothing</dd>
         <dt>Paste</dt><dd>From Word, Google Docs or the web: bold, italics, lists, links, tables and equations become LaTeX. ${mod}+Shift+V pastes plain text</dd>
         <dt>Copy</dt><dd>Keeps formatting; equations paste into Word as equations</dd>
         <dt>${mod}+Shift+O</dt><dd>Outline, problems (undefined references, missing citations, unclosed environments) and changes</dd>
         <dt>PDF or ${mod}+P</dt><dd>Compiles with TeX Live 2026, running in this browser, and shows the exact PDF: pdfLaTeX, XeLaTeX or LuaLaTeX (Auto reads a <code>% !TeX program</code> line or the preamble). Shell escape runs Ghostscript, gnuplot, Pygments for minted and makeindex here too. It recompiles after each edit; TeX's errors appear under Problems with their line; click the PDF to find that text, click the page to find it in the PDF</dd>
       </dl>
-      <p><b>Changes</b> lists every edit since you opened the project, or since any saved version, with Accept and Reject; tick Show changes on the pages to see them marked like Word's Track Changes. Versions are kept every few minutes, when you leave, when you save the .zip, and under any name you give.</p>
+      <p><b>Review</b> lists the comments, then every edit since you opened the project, or since any saved version, with Accept and Reject; tick Show changes on the pages to see them marked like Word's Track Changes. Versions are kept every few minutes, when you leave, when you save the .zip, and under any name you give.</p>
+      <p><b>Share</b> copies a link that opens this document for anyone, ready to type in, with no account: the document travels inside the link and is not uploaded. Coauthors type and comment on the page and send a link back; their edits arrive here as changes to accept or reject. Share also opens the project in Overleaf, and Save gives a plain .tex (or a .zip with several files), so leaving takes one click. From Overleaf: Menu, Download, Source, and drop the .zip on the page. With Overleaf's Git integration, paste the project's address under Git, Clone, and push and pull keep both in step.</p>
       <p><b>Git</b> makes the project a real repository in this browser: commit, history, compare or restore any commit, branches, push and pull. Save .zip then includes the .git folder, so the download is a clone; opening a .zip or folder that has one brings its history in.</p>
       <p><b>Equations</b> work like Word's equation editor, with every name from Word's Math AutoCorrect list.</p>
       <dl class="keys">
@@ -3788,7 +3836,10 @@ function commonDir(names) {
 }
 function stripTop(n) { const i = n.indexOf('/'); return i > 0 && n.split('/').length > 1 ? n.slice(i + 1) : n; }
 
+Object.assign(App.prototype, collab);
+
 const app = new App();
-window.galley = app;
+window.rikuy = app;
+installCollab(app);
 app.isBalanced = isBalanced;
-app.init().catch((e) => { console.error(e); const b = document.getElementById('boot'); if (b) b.textContent = 'Galley could not start: ' + e.message; });
+app.init().catch((e) => { console.error(e); const b = document.getElementById('boot'); if (b) b.textContent = 'Rikuy could not start: ' + e.message; });

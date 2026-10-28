@@ -1,3 +1,5 @@
+// Typing math in the equation field (MathLive) as Word's equation editor takes it: \name and Space,
+// Word's names and ASCII shortcuts, scripts and fractions; and the field's LaTeX put back in the document's spelling.
 import { fenceSource, unfence, tallTest, OPEN_KEY, CLOSE_KEY, MATCH, isBar, sameClose } from './fences.js';
 
 // Where a selection goes when a command is typed over it: the base, not an index or label.

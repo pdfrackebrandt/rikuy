@@ -1,7 +1,7 @@
 // Project storage in this browser (IndexedDB, so images and large projects fit), plus the
-// byte-level bookkeeping that lets an untouched file leave Galley exactly as it came in.
+// byte-level bookkeeping that lets an untouched file leave Rikuy exactly as it came in.
 
-const DB = 'galley';
+const DB = 'galley'; // Rikuy's first name, kept so documents already in a browser stay found
 const VERSION = 2;
 let dbp = null;
 
@@ -18,7 +18,7 @@ function db() {
     };
     req.onsuccess = () => {
       const d = req.result;
-      // a newer Galley in another tab needs to upgrade: step aside instead of blocking it
+      // a newer Rikuy in another tab needs to upgrade: step aside instead of blocking it
       d.onversionchange = () => { d.close(); dbp = null; };
       resolve(d);
     };

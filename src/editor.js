@@ -1,4 +1,4 @@
-// Galley editor: maps carets between page and source, and turns every
+// Rikuy editor: maps carets between page and source, and turns every
 // input event into a minimal patch of the .tex source.
 import { BLOCKS } from './render.js';
 import { isBalanced } from './parser.js';

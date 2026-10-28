@@ -1,4 +1,4 @@
-// Real TeX for Galley. The engines run in a worker (tex/engine.js): TeX Live 2026's pdfTeX,
+// Real TeX for Rikuy. The engines run in a worker (tex/engine.js): TeX Live 2026's pdfTeX,
 // XeTeX and LuaHBTeX compiled to WebAssembly, reading a TeX Live tree that arrives in packs as
 // the document asks for files. The first PDF downloads the engine (about 13 MB) and the core
 // of LaTeX (about 6 MB); both stay in the browser afterwards.

@@ -1,4 +1,4 @@
-// Galley LaTeX parser: a forgiving syntax tree where every node keeps exact
+// Rikuy LaTeX parser: a forgiving syntax tree where every node keeps exact
 // source offsets. Nothing here interprets meaning; model.js does that.
 
 export const MATH_ENVS = new Set([

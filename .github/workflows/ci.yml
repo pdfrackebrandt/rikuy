@@ -14,17 +14,56 @@ jobs:
           cache: npm
       - run: npm ci
       # every test must pass; a test that cannot run here is left out, never run with `|| true`
-      - name: Editor model
-        run: |
-          node test/model.test.mjs
-          node test/edge.test.mjs
-          node test/fences.test.mjs
-          node test/minimal.test.mjs
-          node test/siunitx.test.mjs
+      - name: Unit tests (editor model, minimal patch, siunitx, xindy against TeX Live's)
+        run: npm test
       - name: Editor model on the LaTeX-examples corpus
         run: |
           git clone -q https://github.com/MartinThoma/LaTeX-examples.git "$RUNNER_TEMP/le"
           git -C "$RUNNER_TEMP/le" checkout -q 8bfd313b8d98b5e46c27eb23e082d0455fe692d3
-          node test/corpus.test.mjs "$RUNNER_TEMP/le"
-      - name: xindy against TeX Live's
-        run: node --no-experimental-fetch tex/native/xindy/test.cjs
+          npm run test:corpus -- "$RUNNER_TEMP/le"
+  # The editor in Chromium. These tests need only the page (npm run build), not the TeX tree's
+  # packs; pdf.py and engines.py compile with TeX and need them, and stress.py holds keystroke
+  # times to limits a shared runner may miss, so those three are left out.
+  editor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      # a Python of its own: pip does not install into Ubuntu 24.04's system Python
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: npm ci
+      - run: npm run build
+      # the versions the tests last passed with; pypdf lets frontier.py read its printed PDF back
+      - name: Playwright and Chromium
+        run: |
+          python3 -m pip install playwright==1.56.0 pypdf==5.9.0
+          python3 -m playwright install --with-deps chromium
+      # every test must pass; a test that cannot run here is left out, never run with `|| true`
+      - name: Typing on the page
+        run: npm run test:browser
+      - name: Projects with several files
+        run: cd test && python3 features.py
+      - name: Whole projects saved byte for byte
+        run: cd test && python3 files.py
+      - name: Git, push and pull through git http-backend
+        run: cd test && python3 git.py
+      - name: Versions and track changes
+        run: cd test && python3 history.py
+      - name: Paste from Word, Google Docs, web pages and chat assistants
+        run: cd test && python3 paste.py
+      - name: The math field
+        run: cd test && python3 mathfield.py
+      - name: Word style math
+        run: cd test && python3 wordmath.py
+      - name: Equation extras
+        run: cd test && python3 eqextras.py
+      - name: Print, outline, problems and rich copy
+        run: cd test && python3 frontier.py
+      - name: Share links, comments, the copy back, Overleaf and .tex out
+        run: cd test && python3 share.py

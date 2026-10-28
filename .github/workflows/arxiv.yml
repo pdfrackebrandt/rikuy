@@ -1,10 +1,10 @@
-# PLAN task 3: the arXiv corpus, run where arXiv is reachable (the machine Galley is developed
+# PLAN task 3: the arXiv corpus, run where arXiv is reachable (the machine Rikuy is developed
 # on cannot reach it). Started by hand (Actions, "arXiv corpus", Run workflow); it takes about
-# 20 runner hours in all, which a private repository pays for in Actions minutes.
+# 20 runner hours in all (free on a public repository, Actions minutes on a private one).
 #   sources   choose the sample (dev/arxiv_corpus.py, seeded) unless dev/arxiv-ids.txt exists,
 #             download the papers at one request per 3 s, keep them in the Actions cache
-#   galley    build dist/ as PLAN.md's Building section does
-#   shard     8 jobs, each compiling an eighth of the papers with Galley (corpus_full.py) and
+#   rikuy     build dist/ as PLAN.md's Building section does
+#   shard     8 jobs, each compiling an eighth of the papers with Rikuy (corpus_full.py) and
 #             with a desktop TeX Live 2026 (pdfcompare.py)
 #   collect   commit the identifiers, the compile results and the comparison to the branch
 #             arxiv-results; the sources are never committed
@@ -35,7 +35,7 @@ jobs:
         with:
           name: arxiv-ids
           path: dev/arxiv-ids.txt
-  galley:
+  rikuy:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -49,16 +49,16 @@ jobs:
           npm ci
           pip install --break-system-packages lz4
           sudo mkdir -p /mnt/eng && sudo chown "$USER" /mnt/eng
-          export GALLEY_WORK=/mnt/eng
+          export RIKUY_WORK=/mnt/eng
           sh tex/fetch_inputs.sh
           python3 tex/build_tree.py tree && python3 tex/build_tree.py packs && node build.mjs
           du -sh dist
       - uses: actions/cache/save@v4
         with:
           path: dist
-          key: galley-dist-${{ github.run_id }}
+          key: rikuy-dist-${{ github.run_id }}
   shard:
-    needs: [sources, galley]
+    needs: [sources, rikuy]
     runs-on: ubuntu-24.04
     timeout-minutes: 350
     env:
@@ -81,7 +81,7 @@ jobs:
       - uses: actions/cache/restore@v4
         with:
           path: dist
-          key: galley-dist-${{ github.run_id }}
+          key: rikuy-dist-${{ github.run_id }}
           fail-on-cache-miss: true
       - name: Chromium, poppler and the desktop TeX Live 2026
         run: |
@@ -90,10 +90,10 @@ jobs:
           sudo apt-get install -y poppler-utils
           # the packages' folder and the TeX Live made of hard links to it share one file system
           sudo mkdir -p /mnt/eng /mnt/tl26 && sudo chown "$USER" /mnt/eng /mnt/tl26
-          GALLEY_WORK=/mnt/eng UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu sh dev/fetch_tl26.sh
-      - name: Compile with Galley
+          RIKUY_WORK=/mnt/eng UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu sh dev/fetch_tl26.sh
+      - name: Compile with Rikuy
         run: |
-          CORPUS_LIST=dev/arxiv-ids.txt CORPUS_REPO="$HOME/arxiv" GALLEY_DIST="$PWD/dist" PDF_DIR="$RUNNER_TEMP/pdf" \
+          CORPUS_LIST=dev/arxiv-ids.txt CORPUS_REPO="$HOME/arxiv" RIKUY_DIST="$PWD/dist" PDF_DIR="$RUNNER_TEMP/pdf" \
             SHARD=${{ matrix.k }}/$SHARDS python3 dev/corpus_full.py "arxiv-results-${{ matrix.k }}.jsonl"
       - name: Compare with the desktop TeX Live
         run: |
@@ -128,9 +128,9 @@ jobs:
                       out.write(json.dumps(r) + '\n')
               print(kind, len(rows))
           PY
-          git config user.name "Pedro F. Rackebrandt"
-          git config user.email pedro.fernandezrackebrandt@merton.ox.ac.uk
+          git config user.name "github-actions[bot]"
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git checkout -b arxiv-results
           git add dev/arxiv-ids.txt dev/arxiv-results.jsonl dev/arxiv-pdfcompare.jsonl
-          git commit -m "arXiv corpus: identifiers, Galley's results and the comparison with TeX Live 2026 (run ${{ github.run_id }})"
+          git commit -m "arXiv corpus: identifiers, Rikuy's results and the comparison with TeX Live 2026 (run ${{ github.run_id }})"
           git push -f origin arxiv-results

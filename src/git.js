@@ -1,4 +1,4 @@
-// Git for Galley: a real repository per project, kept in this browser (isomorphic-git over
+// Git for Rikuy: a real repository per project, kept in this browser (isomorphic-git over
 // LightningFS, which stores files in IndexedDB). It is the same format git uses on disk, so a
 // repository opened from a .zip keeps its history, and a .zip saved from here is a clone that
 // `git push` works from. Push and pull speak git's smart HTTP protocol to any host that answers
@@ -162,7 +162,15 @@ export async function setRemote(dir, url) {
   await git.setConfig({ fs, dir, path: 'remote.origin.fetch', value: '+refs/heads/*:refs/remotes/origin/*' });
 }
 
-const net = (o) => ({ fs, http, corsProxy: o.corsProxy || undefined, onAuth: o.token ? () => ({ username: o.username || 'x-access-token', password: o.token }) : undefined });
+// Overleaf's git server takes the user name "git" with a token from the account settings
+const userFor = (url, o) => o.username || (/(^|\/\/)git\.overleaf\.com\//.test(url || '') ? 'git' : 'x-access-token');
+const net = (o) => ({ fs, http, corsProxy: o.corsProxy || undefined, onAuth: o.token ? (url) => ({ username: userFor(url, o), password: o.token }) : undefined });
+
+// an Overleaf project's address in the browser, as its git address (Overleaf's Git integration)
+export function gitUrlOf(u) {
+  const m = /^https?:\/\/(?:www\.)?overleaf\.com\/project\/([0-9a-f]{24})\b/i.exec(String(u).trim());
+  return m ? 'https://git.overleaf.com/' + m[1] : String(u).trim();
+}
 
 export async function push(dir, o) {
   const { current } = await branches(dir);

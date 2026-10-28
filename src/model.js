@@ -1,4 +1,4 @@
-// Galley model: turns the syntax tree into blocks of flow items with
+// Rikuy model: turns the syntax tree into blocks of flow items with
 // numbering, cross references and citations resolved. Every editable
 // character keeps a pointer to its exact source range.
 import { parse, scanUserSigs, CHARS, ACCENTS, splitRows } from './parser.js';

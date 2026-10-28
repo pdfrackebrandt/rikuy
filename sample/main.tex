@@ -16,7 +16,7 @@
 \newcommand{\key}[1]{\texttt{#1}}
 
 \title{Editing in Print}
-\author{Galley\thanks{A typeset editor for \LaTeX{} sources. Everything on this page is live.}}
+\author{Rikuy\thanks{A typeset editor for \LaTeX{} sources. Everything on this page is live.}}
 \date{\today}
 
 \begin{document}
@@ -27,7 +27,7 @@ You are reading a \LaTeX{} document that you can edit where it stands. Click int
 \end{abstract}
 
 \section{How to use it}
-Click anywhere in this paragraph and start typing. Select a phrase and press \key{Ctrl+B} to make it \textbf{bold} or \key{Ctrl+I} to \emph{emphasise} it. Press \key{Enter} for a new paragraph. Typing a percent sign gives you 50\%, not a comment, because Galley escapes special characters for you.
+Click anywhere in this paragraph and start typing. Select a phrase and press \key{Ctrl+B} to make it \textbf{bold} or \key{Ctrl+I} to \emph{emphasise} it. Press \key{Enter} for a new paragraph. Typing a percent sign gives you 50\%, not a comment, because Rikuy escapes special characters for you.
 
 Math is an object on the page. Click $\alpha + \beta = \gamma$ to edit its source with a live preview, or type a dollar sign to insert new math. Display equations work the same way, numbers and all:
 \begin{equation}
@@ -47,13 +47,13 @@ If an edit only touches characters inside one source map span, the patch changes
 \end{proposition}
 
 \begin{proof}
-Galley never regenerates the file. Insertions are escaped and placed at the mapped offset; deletions that would cut through markup fall back to removing only the visible characters, which leaves every brace balanced.
+Rikuy never regenerates the file. Insertions are escaped and placed at the mapped offset; deletions that would cut through markup fall back to removing only the visible characters, which leaves every brace balanced.
 \end{proof}
 
 Proposition~\ref{prop:patch} is why your diffs stay small:\footnote{Try it: edit this footnote, then look at the source pane.} the history of a paper edited here reads like one edited by hand.
 
 \section{Citations and cross references}
-Citations come from the bibliography file in this project. \citet{knuth1984} designed \TeX{} around a source language, and \citet{lamport1994} built \LaTeX{} on top of it. Editing the typeset output directly is an old idea \citep{kastrup2002, wen2018}, usually defeated by the gap between source and print. Section~\ref{sec:roundtrip} explains how Galley closes it.
+Citations come from the bibliography file in this project. \citet{knuth1984} designed \TeX{} around a source language, and \citet{lamport1994} built \LaTeX{} on top of it. Editing the typeset output directly is an old idea \citep{kastrup2002, wen2018}, usually defeated by the gap between source and print. Section~\ref{sec:roundtrip} explains how Rikuy closes it.
 \begin{align}
   \E[\,y \mid x\,] &= \int_{\R} y \, f(y \mid x)\, dy \label{eq:cond}\\
   \hat\theta &= \argmax_{\theta \in \Theta} \sum_{i=1}^{n} \log f(y_i \mid x_i; \theta) \label{eq:mle}

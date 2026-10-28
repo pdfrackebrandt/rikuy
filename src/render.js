@@ -1,4 +1,4 @@
-// Galley renderer: model blocks -> DOM flow items. Each block owns a
+// Rikuy renderer: model blocks -> DOM flow items. Each block owns a
 // registry of segments, atoms and style wrappers with offsets relative
 // to the block start, so unchanged blocks survive edits elsewhere.
 

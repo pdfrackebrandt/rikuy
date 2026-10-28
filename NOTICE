@@ -1,12 +1,12 @@
-Galley
+Rikuy
 Copyright (C) 2026 Pedro F. Rackebrandt
 
-Galley is free software under the GNU Affero General Public License, version 3 or (at your
+Rikuy is free software under the GNU Affero General Public License, version 3 or (at your
 option) any later version; the full text is in LICENSE. The AGPL is not only a choice: two of
-the programs Galley ships are AGPL themselves (BusyTeX and Ghostscript), and a web page that
+the programs Rikuy ships are AGPL themselves (BusyTeX and Ghostscript), and a web page that
 runs them is network use of them.
 
-Galley ships these programs and libraries. Each keeps its own license; the source of each is
+Rikuy ships these programs and libraries. Each keeps its own license; the source of each is
 at the address given.
 
 Built into the TeX engines and tree
@@ -22,7 +22,7 @@ Built into the TeX engines and tree
   License (LPPL-1.3c), GPL, the SIL Open Font License and public domain; see the package's
   files in the tree and tlpkg/texlive.tlpdb in TeX Live.  www.tug.org/texlive
 
-Built for Galley from source (tex/build_tools.sh, tex/native/)
+Built for Rikuy from source (tex/build_tools.sh, tex/native/)
   dvips (TeX Live)                    GPL-2.0-or-later
   Asymptote 3.09                      GPL-3.0-or-later                       github.com/vectorgraphics/asymptote
   xindy 2.5.1                         GPL-2.0-or-later                       TeX Live source, utils/xindy
@@ -36,6 +36,10 @@ Built for Galley from source (tex/build_tools.sh, tex/native/)
   GSL 2.8 (in Asymptote)              GPL-3.0-or-later                       www.gnu.org/software/gsl
   FFTW 3.3.11 (in Asymptote)          GPL-2.0-or-later                       www.fftw.org
   Eigen 3.4.0 (headers, in Asymptote) MPL-2.0                                eigen.tuxfamily.org
+  TinyEXR (in Asymptote's source,     BSD-3-Clause                           github.com/syoyo/tinyexr
+    with OpenEXR code)
+  zlib (TeX Live's, in dvips,         zlib license                           zlib.net
+    Asymptote and Mesa)
   gnuplot 6.0.2                       gnuplot license                        www.gnuplot.info
 
 Other programs run in the page
@@ -46,6 +50,8 @@ Other programs run in the page
 
 The editor page
   CodeMirror 5 (MIT), KaTeX (MIT), MathLive (MIT), pdf.js (Apache-2.0), JSZip (MIT or
-  GPL-3.0), fflate (MIT), isomorphic-git and lightning-fs (MIT), the Computer Modern web
-  fonts (computer-modern, MIT; the fonts themselves under the SIL Open Font License), and the
-  small npm packages they depend on (MIT, BSD, Apache-2.0); see node_modules/*/package.json.
+  GPL-3.0), fflate (MIT), isomorphic-git and lightning-fs (MIT), and the small npm packages
+  they depend on (MIT, BSD, Apache-2.0); see node_modules/*/package.json.
+  Paper Modern, the page's text fonts: subsets of Andrey V. Panov's Computer Modern Unicode
+  fonts (from the computer-modern npm package), renamed as the SIL Open Font License 1.1
+  asks of a modified version; build/fonts/subset.py makes them, build/fonts/OFL.txt.

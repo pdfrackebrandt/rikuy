@@ -1,4 +1,4 @@
-<title>Galley</title>
+<title>Rikuy</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -9,12 +9,13 @@
 <div id="app">
   <header id="bar">
     <button id="b-nav" class="btn ghost icon" type="button" aria-pressed="false" title="Outline, problems and changes (Ctrl+Shift+O)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 5.5h13M6.5 10h10M6.5 14.5h10"/></svg><span class="sr">Outline and problems</span><span id="nav-dot" class="nav-dot" hidden></span></button>
-    <div class="brand"><span class="mark">Galley</span><span id="docname" class="docname"></span></div>
+    <div class="brand"><span class="mark">Rikuy</span><span id="docname" class="docname"></span></div>
     <div class="tools">
       <button id="b-open" class="btn ghost" type="button" title="Open .tex, .bib, images or an Overleaf .zip (Ctrl+O)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h5l1.5 1.5H17v8.5H3z"/></svg><span>Open</span></button>
       <button id="b-save" class="btn ghost" type="button" title="Download the project as .zip (Ctrl+S)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 3v9m-4-4 4 4 4-4M4 15.5h12"/></svg><span>Save .zip</span></button>
       <button id="b-pdf" class="btn ghost" type="button" aria-pressed="false" title="Compile with pdfLaTeX and show the PDF (Ctrl+P)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5h7l3.5 3.5v11.5H5zM12 2.5V6h3.5M7.5 10h5M7.5 13h5"/></svg><span>PDF</span></button>
       <button id="b-copy" class="btn ghost" type="button" title="Copy the .tex source to the clipboard"><svg viewBox="0 0 20 20" aria-hidden="true"><rect x="6.5" y="6.5" width="9" height="10" rx="1"/><path d="M4.5 13V4.5a1 1 0 0 1 1-1H12"/></svg><span>Copy source</span></button>
+      <button id="b-share" class="btn ghost" type="button" title="A link anyone can open and type in, or a copy for Overleaf"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="5" cy="10" r="2.2"/><circle cx="15" cy="5" r="2.2"/><circle cx="15" cy="15" r="2.2"/><path d="M7 9l6-3M7 11l6 3"/></svg><span>Share</span></button>
       <span class="sep"></span>
       <button id="b-undo" class="btn ghost icon" type="button" title="Undo (Ctrl+Z)" disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5 3.5 8.5 7 12M4 8.5h8a4 4 0 0 1 0 8H9"/></svg><span class="sr">Undo</span></button>
       <button id="b-redo" class="btn ghost icon" type="button" title="Redo (Ctrl+Shift+Z)" disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m13 5 3.5 3.5L13 12m3-3.5H8a4 4 0 0 0 0 8h3"/></svg><span class="sr">Redo</span></button>
@@ -30,12 +31,13 @@
       <button id="b-help" class="btn ghost icon" type="button" title="How it works"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M8 8a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.2v.5M10 14v.2"/></svg><span class="sr">Help</span></button>
     </div>
   </header>
+  <div id="guest" class="guest-bar" hidden role="status"><span id="guest-msg"></span><button id="guest-send" class="btn sm" type="button">Send back</button><button id="guest-x" class="pop-x" type="button" aria-label="Hide">&times;</button></div>
   <main id="main">
     <aside id="nav" aria-label="Outline, problems, changes and git">
       <div class="nav-tabs" role="tablist">
         <button id="nt-outline" class="nav-tab on" type="button" role="tab" aria-selected="true">Outline</button>
         <button id="nt-problems" class="nav-tab" type="button" role="tab" aria-selected="false">Problems<span id="nt-count" class="nt-count"></span></button>
-        <button id="nt-changes" class="nav-tab" type="button" role="tab" aria-selected="false" title="Changes and versions">Changes<span id="nt-ccount" class="nt-count"></span></button>
+        <button id="nt-changes" class="nav-tab" type="button" role="tab" aria-selected="false" title="Comments, changes and versions">Review<span id="nt-ccount" class="nt-count"></span></button>
         <button id="nt-git" class="nav-tab" type="button" role="tab" aria-selected="false" title="Commits, branches, push and pull">Git<span id="nt-gcount" class="nt-count"></span></button>
         <span class="grow"></span>
         <button id="nav-close" class="pop-x" type="button" aria-label="Close">&times;</button>
@@ -82,6 +84,7 @@
     <button type="button" data-act="bf" title="Bold"><b>B</b></button>
     <button type="button" data-act="em" title="Emphasis"><i>I</i></button>
     <button type="button" data-act="tt" title="Typewriter" class="mono">tt</button>
+    <button type="button" data-act="cm" title="Comment (Ctrl+Alt+M)">Comment</button>
     <button type="button" data-act="src" title="Show in source">&lt;/&gt;</button>
     <button type="button" data-act="ai" class="ai-only" title="Ask Claude">Ask Claude</button>
   </div>

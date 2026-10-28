@@ -1,4 +1,4 @@
-// Galley layout: measure flow items once, paginate arithmetically, and
+// Rikuy layout: measure flow items once, paginate arithmetically, and
 // touch only the pages whose contents changed.
 
 const EPS = 1.5;
