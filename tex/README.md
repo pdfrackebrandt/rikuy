@@ -108,8 +108,10 @@ The artifact on claude.ai holds about 252 MB (its limit is 256 MB).
 
 `build_tree.py mirror` packs everything the artifact leaves out (all of TeX Live's runtime files:
 about 114,000 files, 840 MB in 634 packs) with its own index and TeX Live's whole font map. Host
-the folder anywhere that serves files with CORS (GitHub Pages, a bucket) and point Rikuy at it
-with `?texlive=URL`, or build the page with `RIKUY_MIRROR=mirror/`. When kpathsea does not find a
+the folder anywhere that serves files with CORS (GitHub Pages, a bucket) and build the page with
+`RIKUY_MIRROR=URL`; a mirror on the page's own site can also be named in its address,
+`?texlive=URL` (only there, so a link to someone's copy cannot fill their browser's TeX cache from
+elsewhere). When kpathsea does not find a
 file in the local tree it asks the mirror (BusyTeX's `kpse_remote_fetch_js` hook), so a document
 downloads only what it uses. A page on claude.ai can only reach its own server, so the mirror
 works on a self-hosted Rikuy, not inside the artifact.

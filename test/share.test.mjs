@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { packShare, unpackShare, shareParam, findComments, commentEdit, stripComments, merge3, mergeProjects, commentOnly } from '../src/share.js';
 import { changes } from '../src/diff.js';
+import { TeXEngine } from '../src/tex.js';
 
 let n = 0;
 const ok = (name, f) => Promise.resolve(f()).then(() => { n++; }, (e) => { console.error('FAIL', name); throw e; });
@@ -115,6 +116,26 @@ await ok('a change that only adds a comment is told apart from a change to the t
   assert.ok(cs.length && cs.every(commentOnly), JSON.stringify(cs));
   const t2 = t.replace('Second line', 'Second LINE');
   assert.ok(changes(DOC, t2, 'main.tex').some((c) => !commentOnly(c)));
+});
+
+await ok('the worker that compiled a document from a link is let go before anything else', async () => {
+  const e = new TeXEngine('https://x.test/tex/');
+  let workers = 0, resets = 0;
+  e.start = async () => { if (!e.worker) { workers++; e.worker = { postMessage() {}, terminate() {} }; } };
+  const reset = e.reset.bind(e);
+  e.reset = () => { resets++; reset(); };
+  const run = (project, untrusted) => { e.compile({ project, files: [], main: 'main.tex', untrusted }).catch(() => {}); return new Promise((r) => setTimeout(r, 0)); };
+  await run('mine|main.tex', false);
+  await run('mine|main.tex', false);
+  assert.deepEqual([workers, resets], [1, 0]);
+  await run('link|main.tex', true);
+  await run('link|main.tex', true);
+  assert.deepEqual([workers, resets], [1, 0], 'the same document from a link keeps its worker');
+  await run('mine|main.tex', false);
+  assert.deepEqual([workers, resets], [2, 1], 'another project gets a fresh worker');
+  await run('link|main.tex', true);
+  await run('link2|main.tex', true);
+  assert.deepEqual([workers, resets], [3, 2], 'so does another document from a link');
 });
 
 console.log(n + '/' + n + ' passed');

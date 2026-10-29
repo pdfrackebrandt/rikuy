@@ -1,5 +1,6 @@
 """Engines and shell escape in the page: Auto picks XeLaTeX for fontspec and LuaLaTeX for a
-magic comment, the menu overrides it per project, minted and EPS figures compile, PSTricks with
+magic comment, the menu overrides it per project, minted and EPS figures compile, pygmentize
+does not load code a document wrote, PSTricks with
 XeLaTeX and with latex + dvips, Asymptote figures, xindy indexes and glossaries, pipes, and a
 program that cannot run in a browser is reported in Problems."""
 import os, sys, time, base64, traceback
@@ -57,6 +58,15 @@ try:
         probs = page.evaluate("window.rikuy.texIssues.map(x => x.sev + ': ' + x.msg)")
         check('no TeX errors for them', not [x for x in probs if x.startswith('error')], probs[:5])
         page.screenshot(path=SHOTS + '/engines-minted.png')
+
+        # pygmentize -x would run a lexer from a .py file the document wrote: Python of the
+        # document's choosing in the worker, next to this browser's storage
+        open_doc(page, [['probe.tex', '\\begin{filecontents*}[overwrite]{evil.py}\nopen("pwned.txt", "w").write("x")\nfrom pygments.lexer import RegexLexer\nclass Evil(RegexLexer):\n    tokens = {"root": []}\n\\end{filecontents*}\n'
+                         '\\begin{filecontents*}[overwrite]{in.txt}\nhello\n\\end{filecontents*}\n\\documentclass{article}\n\\immediate\\write18{pygmentize -x -l evil.py:Evil -o out.txt in.txt}\n'
+                         '\\begin{document}\n\\IfFileExists{pwned.txt}{\\PackageWarning{probe}{RIKUY-PWNED}}{\\PackageWarning{probe}{RIKUY-SAFE}}x\n\\end{document}\n']])
+        st = wait_pdf(page, 240)
+        probs = ' '.join(page.evaluate("window.rikuy.texIssues.map(x => x.msg)"))
+        check('pygmentize -x does not run Python a document wrote', 'RIKUY-SAFE' in probs and 'RIKUY-PWNED' not in probs, (st, probs[:300]))
 
         # PSTricks: labels on connections (\nbput) make xdvipdfmx ask Ghostscript for their position
         open_doc(page, [['tree.tex', '\\documentclass{article}\n\\usepackage{pstricks-add,pst-node,pst-tree}\n\\begin{document}\n'

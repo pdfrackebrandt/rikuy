@@ -10,6 +10,15 @@ sys.path.insert(0, os.path.dirname(__file__))
 from browser import open_page, check, results, src, wait_src, click_text, select_text
 from playwright.sync_api import sync_playwright
 
+# what the page would ask the TeX worker for: compile() is replaced by one that notes its
+# arguments and answers with an empty run
+STUB_COMPILE = '''async () => {
+  const g = window.rikuy, e = g.texEngine();
+  let job = null;
+  e.compile = async (o) => { job = { shellEscape: o.shellEscape, untrusted: o.untrusted }; return { id: o.project, log: '', runs: [], missing: [], pdf: null, engineLabel: 'pdfLaTeX' }; };
+  await g.compilePdf();
+  return job;
+}'''
 PAGE_TEXT = '() => [...document.querySelectorAll("#pages .flow")].map(f => f.innerText).join("\\n")'
 
 
@@ -43,6 +52,15 @@ def run():
         check('and a line saying who shared it', 'Pedro shared this document' in page2.inner_text('#guest'))
         check('the source pane stays closed for them', 'src-on' not in (page2.get_attribute('body', 'class') or ''))
         check('the link left the address bar', '#share=' not in page2.url, page2.url)
+        # a document from a link compiles with restricted shell escape, and the worker keeps nothing
+        # of it, until its owner allows more for it
+        job = page2.evaluate(STUB_COMPILE)
+        check('a document from a link compiles with restricted shell escape', job and job.get('shellEscape') is False and job.get('untrusted') is True, job)
+        check('the Shell escape box shows it off for this document', page2.is_checked('#pdf-shell') is False)
+        check('and Problems says why', 'came in a link from Pedro' in page2.evaluate('() => (window.rikuy.texIssues || []).map((x) => x.msg).join(" ")'))
+        page2.evaluate('() => window.rikuy.allowShellHere()')
+        job = page2.evaluate(STUB_COMPILE)
+        check('allowing it for the document lifts the restriction', job and job.get('shellEscape') is True and job.get('untrusted') is False, job)
         click_text(page2, 'Click anywhere', 5)
         page2.keyboard.type(' quickly')
         check('typing on the page edits their copy', 'Click quickly anywhere' in src(page2), src(page2)[src(page2).find('Click'):][:40])
@@ -95,6 +113,8 @@ def run():
         check('and the author\'s own edit is not among them', not any('AUTHOR' in c for c in page.evaluate('() => window.rikuy.currentChanges().map(c => c.b)')))
         check('the author is not in the coauthor view', 'guest' not in (page.get_attribute('body', 'class') or ''))
         check('the marks are on', page.evaluate('() => window.rikuy.prefs.marks') is True)
+        job = page.evaluate(STUB_COMPILE)
+        check('the project the copy came back into compiles restricted too', job and job.get('untrusted') is True, job)
         page.evaluate('() => window.rikuy.toggleNav(true, "changes")')
         page.click('.cm-card button >> text=Resolve')
         page.wait_for_timeout(300)

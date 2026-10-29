@@ -10,7 +10,7 @@
 //   p-*.wasm    packs: gzip of the concatenated files (Type 1 fonts stored decrypted, kind 1)
 //   b-*, t-*    biber and the shell's programs, fetched on first use
 // Every file travels as a WebAssembly module with one custom section (see unwrap()).
-// Messages in:  {init, base, mirror, env}, {compile: {id, project, files, main, engine, shellEscape, clean, bibSig}},
+// Messages in:  {init, base, mirror, env}, {compile: {id, project, files, main, engine, shellEscape, untrusted, clean, bibSig}},
 //               {prefetch: [packs]}, {exec: {args, files, read, list}} (build scripts and tests),
 //               {shell} (one program through the shell, for tests)
 // Messages out: {status}, {ready}, {result}, {execResult}, {shellResult}, {error}
@@ -582,7 +582,11 @@ function mirrorFetch(name, format) {
 async function boot(base) {
   BASE = base;
   status('index');
-  const idx = await gunzip(await fetchBytes(HERE + 'tree.wasm'));
+  // a build of the page alone (npm run build without tex/build_tree.py) has the worker's scripts
+  // but no TeX tree: say that, not "Failed to fetch"
+  let tree;
+  try { tree = await fetchBytes(HERE + 'tree.wasm'); } catch (e) { throw new Error('The TeX tree is not next to this page (tex/tree.wasm: ' + e.message + '). A copy built from source needs tex/build_tree.py first; README.md, Running it'); }
+  const idx = await gunzip(tree);
   INDEX = JSON.parse(new TextDecoder().decode(idx));
   INDEX_PATHS = new Set(INDEX.files.map((f) => f[0]));
   if (MIRROR_URL) await loadMirror(MIRROR_URL);
@@ -1291,7 +1295,9 @@ async function compile(job) {
       if (code) break;
     }
   }
-  if (engine === 'lualatex') saveFontCaches().catch(() => {});
+  // a document from a link may have written into the cache folder itself (Lua can write
+  // anywhere), and what is kept is loaded by every later LuaLaTeX run: keep nothing of its runs
+  if (engine === 'lualatex' && !job.untrusted) saveFontCaches().catch(() => {});
   // pdfTeX leaves an empty .pdf behind when a run had "No pages of output": that is no PDF
   const pdfFile = readBytes(base + '.pdf');
   const pdf = pdfFile && pdfFile.length ? pdfFile : null;

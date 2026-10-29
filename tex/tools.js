@@ -882,8 +882,14 @@ sys.argv = list(galley_argv)
 code = 0
 try:
     if sys.argv[0] == 'pygmentize':
-        from pygments.cmdline import main as _m
-        code = _m(sys.argv) or 0
+        # pygmentize -x runs a lexer or formatter from a .py file in the document's folder:
+        # Python a document wrote, with this page's storage within reach of the worker. Refused.
+        import pygments.cmdline as _pc
+        from pygments.util import ClassNotFound as _CNF
+        def _no_py_file(*a, **k):
+            raise _CNF('lexers and formatters from .py files cannot run here')
+        _pc.load_lexer_from_file = _pc.load_formatter_from_file = _no_py_file
+        code = _pc.main(sys.argv) or 0
     else:
         galley_fresh_latexminted()()
 except SystemExit as e:

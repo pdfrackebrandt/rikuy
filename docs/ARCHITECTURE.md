@@ -139,6 +139,14 @@ prototype).
   touch different lines, the coauthor's where they touch the same ones, with a note), applies the
   result as one undo step and sets the author's own text as the base: what Changes lists and
   the page marks are exactly the coauthor's edits.
+- **Text from someone else compiles restricted.** A project opened from a link, or one a copy
+  came back into, is marked (`markFromLink`, kept per project as `link:` in IndexedDB) and
+  compiles with TeX Live's restricted shell escape until its owner allows more (`allowShellHere`,
+  or ticking Shell escape), because shell escape lets a document run programs in the worker. The
+  worker that compiled such a document keeps no LuaTeX font cache from it and is let go before it
+  compiles anything else (`TeXEngine.compile`, `tainted`), since Lua and the shell's commands can
+  write anywhere in its files. And `pygmentize -x`, which would load a lexer from a `.py` file the
+  document wrote, is refused for every document.
 - **Comments** are lines `% comment (Name) on "words": text` and `% reply (Name): text` under the
   line they are about (`commentEdit`, `findComments`). On a line of its own a comment changes
   nothing TeX typesets (the line above ended in a space, the comment takes its own line end), and
@@ -287,7 +295,7 @@ the file out; `usedBytes` answers sizes without loading. Unpacked packs stay in 
 ones go to IndexedDB `galley-tex`/`blobs` (key `p:<hash>`), so a later session needs no network.
 
 `build_tree.py mirror` packs the rest of TeX Live into `$RIKUY_WORK/mirror` (`m-*.wasm`,
-`index.wasm` with a complete `pdftex.map`). Given `?texlive=URL` or `RIKUY_MIRROR` at build time,
+`index.wasm` with a complete `pdftex.map`). Given `RIKUY_MIRROR` at build time, or `?texlive=URL` naming one on the page's own site,
 the worker loads it (`loadMirror`, `mirrorPopulate`), and BusyTeX's `kpse_remote_fetch_js` calls
 `mirrorFetch(name, format)` when kpathsea finds nothing locally (basename plus `KPSE_SUFFIX`, file
 written into `MAIN.FS`). A page on claude.ai reaches only its own server: self hosted use only.

@@ -156,6 +156,8 @@ export const collab = {
     };
     let name = o.name || o.main;
     for (let k = 1; await keeps(name); k++) name = (o.name || o.main) + ' (' + by + (k > 1 ? ' ' + k : '') + ')';
+    // marked before it loads: loading may start a compile, which must already see the mark
+    this.markFromLink(by, name, o.main);
     this.loadProject(theirs, o.main, name, 'As ' + by + ' shared it');
     if (o.role === 'back') {
       this.toast(by + "'s copy is open. This browser does not have the version you shared, so their edits cannot be marked; your earlier text is under Review, Versions.", 10000);
@@ -164,6 +166,48 @@ export const collab = {
     this.shareCtx = { base: o.base, by, name: this.name, main: this.main };
     kvPut('share:' + this.name + '|' + this.main, this.shareCtx).catch(() => {});
     this.guestMode(true);
+  },
+
+  // Text that came in a link was written by someone else, and shell escape lets a document run
+  // programs in this page's worker, where they could reach this browser's other projects. So a
+  // project opened from a link, or holding a copy that came back, compiles with TeX Live's
+  // restricted shell escape (the programs TeX Live allows by default) until its owner allows
+  // more for it. Kept per project, so switching away and back keeps the restriction.
+  async linkInfo() {
+    const k = this.name + '|' + this.main;
+    this.linkCache = this.linkCache || new Map();
+    if (!this.linkCache.has(k)) {
+      let v = null;
+      try { v = this.noIdb ? null : await kvGet('link:' + k); } catch (e) { v = null; }
+      if (!this.linkCache.has(k)) this.linkCache.set(k, v || null); // a mark made meanwhile wins
+    }
+    return this.linkCache.get(k);
+  },
+  markFromLink(by, name = this.name, main = this.main) {
+    const k = name + '|' + main;
+    const v = { by, t: Date.now(), allowed: false };
+    this.linkCache = this.linkCache || new Map();
+    this.linkCache.set(k, v);
+    if (!this.noIdb) kvPut('link:' + k, v).catch(() => {});
+  },
+  async allowShellHere() {
+    const v = await this.linkInfo();
+    if (!v) return;
+    v.allowed = true;
+    if (!this.noIdb) kvPut('link:' + this.name + '|' + this.main, v).catch(() => {});
+    this.syncEngineMenu();
+    if (document.body.classList.contains('pdf-on')) this.compilePdf({ clean: true });
+  },
+  // said under Problems at every compile, and once per project in a toast that can allow it
+  noteRestricted(issues) {
+    const v = this.linkCache && this.linkCache.get(this.name + '|' + this.main);
+    const who = v && v.by ? v.by : 'someone else';
+    issues.unshift({ sev: 'warn', file: null, line: null, msg: 'Shell escape is restricted: this document came in a link from ' + who + ', so it runs only the programs TeX Live allows by default. Tick Shell escape if you trust it.' });
+    const k = this.name + '|' + this.main;
+    this.restrictNoted = this.restrictNoted || new Set();
+    if (this.restrictNoted.has(k)) return;
+    this.restrictNoted.add(k);
+    this.toast('This document came in a link from ' + who + ', so it compiles with restricted shell escape: packages that run other programs (gnuplot, some figures) are skipped.', 10000, { label: 'Allow', fn: () => this.allowShellHere() });
   },
 
   // a copy coming back: three way merge with what I wrote meanwhile, their edits marked
@@ -183,7 +227,7 @@ export const collab = {
     this.closeGroup();
     const edits = [];
     for (const [n, t] of files) if ((this.files.get(n) ?? null) !== t) edits.push({ f: n, s: 0, e: (this.files.get(n) ?? '').length, t });
-    if (edits.length) this.commit(edits, null, 'merge');
+    if (edits.length) { this.markFromLink(by); this.commit(edits, null, 'merge'); }
     this.closeGroup();
     this.setBase({ t: Date.now(), label: 'Before the changes from ' + by, files: mine });
     this.setMarks(true);

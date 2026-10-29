@@ -636,7 +636,12 @@ class App {
     $('#pdf-re').addEventListener('click', () => { if (this.compiling && this.passStart && Date.now() - this.passStart > 4000) this.stopPdf(); else this.compilePdf({ clean: true }); });
     $('#pdf-dl').addEventListener('click', () => this.downloadPdf());
     $('#pdf-engine').addEventListener('change', (e) => this.setEngine(e.target.value));
-    $('#pdf-shell').addEventListener('change', (e) => { this.prefs.shellEscape = e.target.checked; store(PREFS, this.prefs); if (document.body.classList.contains('pdf-on')) this.compilePdf({ clean: true }); });
+    $('#pdf-shell').addEventListener('change', (e) => {
+      // ticking it on a document that came in a link allows shell escape for that document only
+      const li = this.linkCache && this.linkCache.get(this.name + '|' + this.main);
+      if (e.target.checked && li && !li.allowed) { if (this.prefs.shellEscape === false) { this.prefs.shellEscape = true; store(PREFS, this.prefs); } this.allowShellHere(); return; }
+      this.prefs.shellEscape = e.target.checked; store(PREFS, this.prefs); if (document.body.classList.contains('pdf-on')) this.compilePdf({ clean: true });
+    });
     this.syncEngineMenu();
     $('#pdf-msg').addEventListener('click', () => { if (this.texIssues.some((x) => x.sev !== 'info')) this.toggleNav(true, 'problems'); });
     window.addEventListener('beforeprint', () => { this.printSeen = true; if (!this.printing) this.preparePrint(); });
@@ -3443,6 +3448,9 @@ class App {
       // a full TeX Live mirror: ?texlive=URL, or the one a self-hosted build names (RIKUY_MIRROR)
       let mirror = null;
       try { mirror = new URLSearchParams(location.search).get('texlive') || (typeof __RIKUY_MIRROR__ !== 'undefined' && __RIKUY_MIRROR__) || null; } catch (e) { /* none */ }
+      // the page's own address can name a mirror only on its own site: a link to someone's copy
+      // with ?texlive= pointing elsewhere would fill their browser's TeX cache from a stranger
+      try { if (mirror && new URLSearchParams(location.search).get('texlive') === mirror && new URL(mirror, location.href).origin !== location.origin) mirror = null; } catch (e) { mirror = null; }
       this.tex = new TeXEngine(new URL('tex/', location.href).href, mirror ? new URL(mirror, location.href).href : null);
       this.tex.onStatus = (s) => this.texStatus(s);
     }
@@ -3531,13 +3539,18 @@ class App {
     try {
       const engine = this.texEngine();
       if (!engine.info) bar.hidden = false;
-      const res = await engine.compile({ project: this.name + '|' + this.main, files: await this.compileFiles(), main: this.main, clean: !!opts.clean, bibSig, engine: this.engineChoice(), shellEscape: this.prefs.shellEscape !== false });
+      // a document that came in a link compiles restricted, and the worker keeps nothing of it
+      const li = await this.linkInfo();
+      const untrusted = !!(li && !li.allowed);
+      this.syncEngineMenu();
+      const res = await engine.compile({ project: this.name + '|' + this.main, files: await this.compileFiles(), main: this.main, clean: !!opts.clean, bibSig, engine: this.engineChoice(), shellEscape: this.prefs.shellEscape !== false && !untrusted, untrusted });
       if (gen !== (this.pdfGen || 0)) return; // another project was opened meanwhile
       const issues = parseTeXLog(res.log);
       this.engineLabel = res.engineLabel || 'LaTeX';
       this.showEngine(res);
       // programs a package wanted that cannot run in a browser (inkscape, R, ...)
       for (const p of res.missing || []) issues.unshift({ sev: 'warn', file: null, line: null, msg: 'Shell escape: ' + p + ' cannot run in the browser, so what it makes is missing' });
+      if (untrusted) this.noteRestricted(issues);
       for (const r of res.runs) if (r.cmd !== 'tex' && r.cmd !== 'shell' && r.code) issues.unshift({ sev: r.cmd === 'biber' ? 'warn' : 'error', file: null, line: null, msg: (r.cmd === 'bibtex' ? 'BibTeX: ' : '') + (r.log.split('\n').find((l) => /error|warning|I couldn't|I found no/i.test(l)) || r.log.split('\n')[0] || 'failed').trim() });
       this.texIssues = issues.map((x) => {
         const known = x.file && this.fromTexPath(x.file);
@@ -3611,7 +3624,8 @@ class App {
     const sel = $('#pdf-engine');
     if (sel) sel.value = this.engineChoice();
     const se = $('#pdf-shell');
-    if (se) se.checked = this.prefs.shellEscape !== false;
+    const li = this.linkCache && this.linkCache.get(this.name + '|' + this.main);
+    if (se) se.checked = this.prefs.shellEscape !== false && !(li && !li.allowed);
   }
   showEngine(res) {
     const sel = $('#pdf-engine');

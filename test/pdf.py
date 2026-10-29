@@ -17,7 +17,8 @@ def open_app(p, width=1600, height=1000, dark=False):
     ctx = b.new_context(viewport={'width': width, 'height': height}, color_scheme='dark' if dark else 'light', accept_downloads=True)
     page = ctx.new_page()
     errors = []
-    page.on('console', lambda m: errors.append(m.text) if m.type == 'error' and 'Failed to load resource' not in m.text else None)
+    # the browser reports the policy refusing Open in Overleaf's form, which the page then explains
+    page.on('console', lambda m: errors.append(m.text) if m.type == 'error' and 'Failed to load resource' not in m.text and 'Refused to send form data' not in m.text else None)
     page.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
     def h(route):
         u = route.request.url

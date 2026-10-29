@@ -57,10 +57,16 @@ export class TeXEngine {
   }
 
   // files: [{path, data: string | Uint8Array}]
-  async compile({ project, files, main, clean, prefetch, bibSig, engine, shellEscape }) {
+  async compile({ project, files, main, clean, prefetch, bibSig, engine, shellEscape, untrusted }) {
+    // A document that came in a link (untrusted) can still write anywhere in the worker's files
+    // (LuaTeX's Lua, the shell's own commands), which later compiles of other projects read. So
+    // the worker that compiled one is let go before it compiles anything else.
+    const p = project || 'doc';
+    if (this.tainted && (this.tainted !== p || !untrusted)) { for (const j of this.jobs.values()) j.reject(new Error('stopped')); this.jobs.clear(); this.reset(); }
     await this.start();
+    if (untrusted) this.tainted = p;
     const id = ++this.seq;
-    const job = { id: (project || 'doc') + '#' + id, project: project || 'doc', files, main, clean: !!clean, prefetch: prefetch || [], bibSig: bibSig || '', engine: engine || 'auto', shellEscape: shellEscape !== false };
+    const job = { id: p + '#' + id, project: p, files, main, clean: !!clean, prefetch: prefetch || [], bibSig: bibSig || '', engine: engine || 'auto', shellEscape: shellEscape !== false, untrusted: !!untrusted };
     return new Promise((resolve, reject) => {
       this.jobs.set(job.id, { resolve, reject });
       this.worker.postMessage({ compile: job });
@@ -77,7 +83,7 @@ export class TeXEngine {
 
   reset() {
     if (this.worker) this.worker.terminate();
-    this.worker = null; this.readyP = null; this.info = null; this.rejectReady = null;
+    this.worker = null; this.readyP = null; this.info = null; this.rejectReady = null; this.tainted = null;
   }
 
   stop() {
