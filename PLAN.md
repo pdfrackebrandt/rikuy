@@ -129,7 +129,7 @@ and `dev/pdfcompare-results.jsonl`.
 
 ## Building
 
-1. `npm ci` (node 22); `pip install lz4 playwright numpy`; Chromium for Playwright through
+1. `npm ci` (node 22); `pip install lz4 playwright numpy pypdf`; Chromium for Playwright through
    `PLAYWRIGHT_BROWSERS_PATH`; `poppler-utils` for the comparisons.
 2. `tex/fetch_inputs.sh` lays out `$RIKUY_WORK` (default `/tmp/eng`): about 3 GB, rerunnable,
    every download checked against its hash.

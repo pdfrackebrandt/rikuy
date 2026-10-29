@@ -1,7 +1,8 @@
 # Contributing to Rikuy
 
 Thanks for taking the time. Bug reports with a document attached are the most useful thing you
-can send; pull requests are welcome too.
+can send; pull requests are welcome too. A security problem goes by email or private report
+instead ([SECURITY.md](SECURITY.md)).
 
 ## Reporting a bug
 
@@ -23,7 +24,8 @@ a difference from an older TeX Live may be TeX Live's change, not Rikuy's.
    [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) explains how the parts fit.
 2. Make the change on a branch of your fork.
 3. Run the checks that cover what you touched (AGENTS.md, "Checking a change"). `npm test` is
-   the minimum and is what CI runs, together with the editor model on the 716 document corpus.
+   the minimum. CI runs it, the editor model on the 716 document corpus, and the browser tests
+   that need no TeX tree; the TeX checks (`npm run test:engines`) are yours to run.
 4. Open a pull request saying what changed, why, and what you ran. For a fix found on a real
    document, include that document or a reduced copy of it as a test.
 

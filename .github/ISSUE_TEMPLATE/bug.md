@@ -1,6 +1,7 @@
 ---
 name: Bug
 about: Something on the page or in a compile went wrong
+labels: bug
 ---
 
 **The document.** Attach the smallest `.tex` (with its `.bib` or images) that shows it, or a zip

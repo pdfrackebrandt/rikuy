@@ -11,8 +11,11 @@
 name: arXiv corpus
 on:
   workflow_dispatch:
+# Read only, except the job that commits: the shards compile papers from arXiv with a desktop
+# TeX Live and shell escape, which runs whatever a paper asks for, so no job that compiles holds
+# a token that can push, and their checkouts keep no credentials.
 permissions:
-  contents: write
+  contents: read
 env:
   SHARDS: 8
   SDE: '1700000000'
@@ -22,16 +25,18 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
       - name: Sample and fetch
         run: |
           [ -f dev/arxiv-ids.txt ] || python3 dev/arxiv_corpus.py sample dev/arxiv-ids.txt
           python3 dev/arxiv_corpus.py fetch dev/arxiv-ids.txt "$HOME/arxiv"
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/arxiv
           key: arxiv-src-${{ github.run_id }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: arxiv-ids
           path: dev/arxiv-ids.txt
@@ -39,8 +44,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: npm
@@ -53,7 +60,7 @@ jobs:
           sh tex/fetch_inputs.sh
           python3 tex/build_tree.py tree && python3 tex/build_tree.py packs && node build.mjs
           du -sh dist
-      - uses: actions/cache/save@v4
+      - uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: dist
           key: rikuy-dist-${{ github.run_id }}
@@ -68,17 +75,19 @@ jobs:
       matrix:
         k: [0, 1, 2, 3, 4, 5, 6, 7]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: arxiv-ids
           path: dev
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/arxiv
           key: arxiv-src-${{ github.run_id }}
           fail-on-cache-miss: true
-      - uses: actions/cache/restore@v4
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: dist
           key: rikuy-dist-${{ github.run_id }}
@@ -99,7 +108,7 @@ jobs:
         run: |
           CORPUS_LIST=dev/arxiv-ids.txt CORPUS_REPO="$HOME/arxiv" \
             python3 dev/pdfcompare.py "arxiv-results-${{ matrix.k }}.jsonl" "$RUNNER_TEMP/pdf" "arxiv-pdfcompare-${{ matrix.k }}.jsonl"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: arxiv-shard-${{ matrix.k }}
@@ -108,9 +117,11 @@ jobs:
     needs: shard
     if: always()
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: shards
       - name: Merge and commit to arxiv-results

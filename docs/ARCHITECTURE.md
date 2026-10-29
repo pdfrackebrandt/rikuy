@@ -4,9 +4,8 @@ Rikuy is one HTML page plus a folder of WebAssembly. The page (`src/`, bundled i
 `dist/rikuy.html`) parses the project's `.tex` files, typesets them itself as HTML (KaTeX for
 math, Computer Modern fonts cut for the page) and turns every input on that rendering into a
 patch of the source. A Web Worker (`tex/engine.js`) runs TeX Live 2026 on the same files for the
-PDF pane. The halves share only the
-project files and SyncTeX; the page you type on is never the PDF. Paths are from the repository
-root; `name()` is a function, `Class.method` a method.
+PDF pane. The halves share only the project files and SyncTeX; the page you type on is never the
+PDF. Paths are from the repository root; `name()` is a function, `Class.method` a method.
 
 ```
 Page    src/ → dist/rikuy.html
@@ -128,6 +127,10 @@ prototype).
   frame. On start (and on `hashchange`, or a pasted link) `openSharedLink()` drops the fragment
   from the address and opens the document. A page in a frame (the claude.ai artifact) never sees
   the fragment of the outer address, so there the recipient pastes the link onto the page.
+  `unpackShare()` treats every field as the sender's: it stops inflating past 32 MB, takes only
+  `[name, text]` files whose names `cleanPath()` accepts (nothing outside the project folder,
+  no `.git`), and the document must parse; a link opened under the name of a project whose
+  figures this browser keeps opens as `Name (Sender)`, so it never takes that project's place.
 - **The coauthor** gets the document as a new project (`loadProject`), the version shared as the
   base of the Changes tab, the marks on, the source closed and a bar saying who shared it
   (`guestMode`); `shareCtx` (kept per project in IndexedDB) remembers whom to send it back to.
@@ -302,10 +305,13 @@ written into `MAIN.FS`). A page on claude.ai reaches only its own server: self h
    by `build/fonts/subset.py`) and the CSS go into `src/template.html` as `dist/rikuy.html`;
    worker scripts, `busytex.js`, `biber.js`, `fflate.js`, `pyodide.js`, the PDF.js worker and
    vendor tool scripts go to `dist/tex/`, npm's Ghostscript module made a classic script (`self.GalleyGs`; the build
-   fails if its stack exports moved), control bytes escaped. `RIKUY_OUT` moves the output.
+   fails if its stack exports moved), control bytes escaped. `dist/index.html` is the page inside
+   the document the artifact host wraps it in, for any static server; `dist/LICENSES.txt` holds
+   `NOTICE` and the license texts of what `dist/` ships. `RIKUY_OUT` moves the output.
 
 KaTeX's JS, CodeMirror, JSZip, MathLive, mhchem and PDF.js load from CDNs at run time (`CDN` in
-`src/app.js`). `tex/build_all.sh` remakes what the engines make for a changed tree (`build_pk.py`;
+`src/app.js`), each but PDF.js (a module `import()`, which takes no hash) checked against the
+npm file's hash (`SRI`; KaTeX's in `src/template.html`). `tex/build_all.sh` remakes what the engines make for a changed tree (`build_pk.py`;
 `build_formats.py`, `build_fccache.py`, `build_luacache.py` drive the worker in Chromium through
 `tex-smoke.html`'s `exec`). Also: `swap_wasm.py` (a patched engine into a built `dist/tex`),
 `build_tree.py tools` (the programs only), `publish_batches.py` (uploads to the hosted copy).

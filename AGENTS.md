@@ -16,14 +16,14 @@ a command fails, trust the code and fix this file.
 | `tex/build_tree.py` | the TeX tree and its packs (`dist/tex/`) |
 | `tex/build_tools.sh`, `tex/native/` | programs built here with Emscripten 3.1.6, and Rikuy's patches to them; output in `tex/vendor/` (committed) |
 | `tex/fetch_inputs.sh` | lays out the build inputs (`$RIKUY_WORK`, default `/tmp/eng`), every download checked by hash |
-| `build.mjs` | bundles the page and copies the worker into `dist/` |
+| `build.mjs` | bundles the page and copies the worker into `dist/`; writes `dist/index.html` (the page as a whole document, for any static server) and `dist/LICENSES.txt` |
 | `build/fonts/` | the page's text fonts, cut from the Computer Modern Unicode fonts by `subset.py` (OFL) |
 | `test/` | node unit tests (`*.test.mjs`) and Playwright browser tests (`*.py`) |
 | `dev/` | the comparison harness: one compile, one shell command, the corpus, PDFs against a desktop TeX Live, Asymptote against a desktop asy; and its results (`*.jsonl`) |
 | `inputs/` | build inputs that took an engine run to make (formats, PK fonts, caches) |
 | `docs/ARCHITECTURE.md` | how the editor, the worker, the programs and the tree fit, with the functions to start at |
 | `PLAN.md` | status, numbers, finished and open tasks, and the rules for commits |
-| `SOURCES.md`, `NOTICE` | where every shipped part's source is, and its license |
+| `SOURCES.md`, `NOTICE`, `LICENSES/` | where every shipped part's source is, its license, and the license texts not elsewhere in the repository |
 | `.github/` | CI (`npm test`, the corpus model run, the editor in Chromium), the arXiv corpus workflow, issue and pull request templates |
 
 `dist/` and `node_modules/` are not in git.
@@ -31,10 +31,10 @@ a command fails, trust the code and fix this file.
 ## Setup
 
 - node 22, then `npm ci`
-- Python 3 with `pip install lz4 playwright numpy pypdf`, then `python3 -m playwright install chromium` (the scripts use `/opt/pw-browsers` instead when that folder exists); `poppler-utils` for the comparisons
+- Python 3 with `pip install lz4 playwright numpy pypdf` (CI pins `playwright==1.56.0`; where the system Python refuses pip, as Ubuntu 24.04's does, first `python3 -m venv .venv && . .venv/bin/activate`), then `python3 -m playwright install chromium` (the scripts use `/opt/pw-browsers` instead when that folder exists); `poppler-utils` for the comparisons
 - a C compiler, so `tex/build_tree.py` can build `tex/native/t1crypt.so` on first use (without one it still works, many times slower)
 - for `tex/build_tools.sh`: Ubuntu's `emscripten` 3.1.6 package and node; `git`, `curl`, `make`, `pkg-config`, `xz`, `bzip2`, `dpkg-deb`, `npm` (binaryen); for Mesa `meson`, `ninja`, `bison`, `flex` and Python's `mako`; for the native ECL that builds xindy's `gcc` with `libgmp-dev` and `libgc-dev` (the script's header has the list)
-- for comparisons with a desktop: `dev/fetch_tl26.sh` (about 6 GB into `/opt/tl26`) and `xvfb`
+- for comparisons with a desktop: `dev/fetch_tl26.sh` (about 6 GB into `/opt/tl26`, or the folder `TL26` names) and `xvfb`
 
 ## Commands
 
@@ -90,7 +90,7 @@ Pick the checks by what you touched, and run them before you call it done:
 - asy runs twice per figure: a rehearsal that only notes the labels it will ask TeX about, then the real run (`tex/README.md`). Anything asy starts fails during the rehearsal on purpose.
 - asy has no fork here: it renders 3D pictures in place and then copies its memory back (`tex/native/patch_asy.py`); keep that when touching its rendering.
 - The desktop's asy renders 3D through a window: run its comparisons under `xvfb-run -a`.
-- The copy published on claude.ai is built with `RIKUY_SHARE=https://claude.ai/artifact/W7htGmmfauM4Z3KpjV9vzK`, because a page in a frame cannot see its own address; run the browser tests on a build without it (`test/share.py` expects links to the page itself).
+- The copy the maintainer publishes on claude.ai is built with `RIKUY_SHARE` set to that artifact's address (`https://claude.ai/artifact/W7htGmmfauM4Z3KpjV9vzK`, which opens for others only once it is shared), because a page in a frame cannot see its own address; a copy on your own site needs no `RIKUY_SHARE`. Run the browser tests on a build without it (`test/share.py` expects links to the page itself).
 - The page runs under a strict Content Security Policy (`connect-src 'self'`, see `test/serve.py`): the worker can fetch only files next to the page.
 - The published artifact may hold 256 MB; `PLAN.md` gives the current size.
 - The build machine has two cores: corpus runs use a 240 s limit per document and must run alone.

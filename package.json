@@ -5,6 +5,8 @@
   "description": "A LaTeX editor in the browser where you type on the typeset page, with TeX Live 2026 running in a Web Worker",
   "license": "AGPL-3.0-or-later",
   "author": "Pedro F. Rackebrandt",
+  "homepage": "https://github.com/pdfrackebrandt/rikuy#readme",
+  "bugs": "https://github.com/pdfrackebrandt/rikuy/issues",
   "repository": {
     "type": "git",
     "url": "https://github.com/pdfrackebrandt/rikuy.git"

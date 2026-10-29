@@ -4,3 +4,4 @@ __pycache__/
 *.pyc
 tex/native/t1crypt.so
 test/stress/out/
+.venv/
