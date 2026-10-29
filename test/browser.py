@@ -151,6 +151,16 @@ def hidden_deletes(page):
         if '\\date{\\today}' not in t or '\\subject{' not in t:
             lost.append(k)
     check('Backspace anywhere in a letter keeps its hidden \\date and \\subject', n > 0 and not lost, (n, lost))
+    # two display formulas, then a paragraph: Backspace at its start selects the nearer formula,
+    # as with one formula, and deletes nothing yet (both went at once)
+    two = ('\\documentclass{article}\n\\begin{document}\nThen:\n$$a = b$$\n$$= c.$$\n\nSo it follows.\n\\end{document}\n')
+    load_doc(page, two)
+    page.wait_for_timeout(300)
+    click_text(page, 'So it follows', 0)
+    page.keyboard.press('Backspace')
+    page.wait_for_timeout(200)
+    check('Backspace after two display formulas selects one and deletes nothing', src(page) == two and 'Press Backspace again' in page.inner_text('#toast'), (src(page)[-60:], page.inner_text('#toast')[:60]))
+    page.keyboard.press('Escape')
     # a formula a macro's own text makes (\\newcommand{\\arrow}{$\\rightarrow$}, here or in a .sty)
     # is not at the call site in the file: clicking it edits nothing (it wrote \\documentcla+1ss)
     for files in ({'main.tex': '\\documentclass{article}\n\\newcommand{\\arrow}{$\\rightarrow$}\n\\begin{document}\nA \\arrow{} B.\n\\end{document}\n'},

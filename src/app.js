@@ -954,7 +954,14 @@ class App {
       }
       f = r.f; a = r.a; b = r.b;
       // Select-first for atoms
-      const vr = visibleRanges(this.renderer.blocks, f, a, b);
+      let vr = visibleRanges(this.renderer.blocks, f, a, b);
+      // One keystroke takes one visible thing: a range reaching over several (two display
+      // formulas before a paragraph) is cut to the one next to the caret, which is then selected
+      // first like any formula; whole, both went at once.
+      if (vr.length > 1) {
+        if (/Backward/.test(type)) a = vr[vr.length - 1][0]; else b = vr[0][1];
+        vr = visibleRanges(this.renderer.blocks, f, a, b);
+      }
       // Nothing of it is on the page, yet it holds a command with an argument (a letter's
       // \date{...} and \subject{...}, a \label, a \vspace): one keystroke would delete what the
       // user cannot see. The caret steps over it instead.
