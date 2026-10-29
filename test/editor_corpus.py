@@ -157,7 +157,8 @@ def do_edit(page, kind, seed):
     elif kind == 'math':
         page.mouse.click(info['x'], info['y'])
         try:
-            page.wait_for_selector('#pop-field, #pop-raw, #pop-lossy', timeout=4000)
+            # the first formula of a run loads the equation field (MathLive) and takes longer
+            page.wait_for_selector('#pop-field, #pop-raw, #pop-lossy', timeout=10000)
         except Exception:
             info['nofield'] = True
             return info
