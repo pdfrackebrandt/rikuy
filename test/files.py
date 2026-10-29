@@ -39,6 +39,8 @@ def saved(page):
 try:
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
+        # an EPS figure was greyed out in the Open dialog, though the PDF draws it
+        check('the Open dialog offers EPS figures', '.eps' in page.get_attribute('#fileinput', 'accept').split(','))
         page.set_input_files('#fileinput', zpath)
         page.wait_for_function("window.rikuy.main === 'main.tex' && window.rikuy.files.has('sec/intro.tex')", timeout=10000)
         page.wait_for_timeout(600)
@@ -102,6 +104,7 @@ try:
         names = sorted(page.evaluate('[...window.rikuy.files.keys(), ...window.rikuy.extra.keys()]'))
         check('no name from a zip leaves the project', names == ['abs/inside.tex', 'escape.tex', 'main.tex', 'win/path.tex'], names)
         check('and the user is told what was left out', 'Left out 1 file' in page.inner_text('#toast'), page.inner_text('#toast')[:160])
+        check('and where the project open before is kept', 'proj is kept under Review, Versions.' in page.inner_text('#toast'), page.inner_text('#toast')[:200])
         print('errors:', errors[:5])
         check('no page errors', not errors, errors[:5])
         browser.close()

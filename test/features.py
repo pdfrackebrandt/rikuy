@@ -2,7 +2,7 @@
 included file, undo there, and save a zip whose files come back byte for byte."""
 import os, sys, time, json, zipfile, io, struct, zlib, base64, tempfile, traceback
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import open_page, check, results, SHOTS, src, wait_src, click_text, select_text
+from browser import open_page, check, results, SHOTS, src, wait_src, click_text, select_text, load_doc
 from playwright.sync_api import sync_playwright
 
 TMP = tempfile.mkdtemp(prefix='rikuy-features-')
@@ -172,6 +172,32 @@ try:
         page.keyboard.press('Backspace')
         s = src(page)
         check('backspace in empty bold removes wrapper', 'before input' in s and '\\textbf{}' not in s, s[s.find('Main'):][:50])
+        # --- a chapter (no \documentclass) opened beside the project joins it, as an upload to
+        # Overleaf does; it used to replace the whole project
+        chap = os.path.join(TMP, 'conclusion.tex')
+        open(chap, 'w').write('\\section{Conclusion}\nWe are done.\n')
+        page.set_input_files('#fileinput', chap)
+        page.wait_for_function('window.rikuy.files.has("conclusion.tex")', timeout=8000)
+        check('a chapter opened beside a project joins it', page.evaluate('window.rikuy.main') == 'main.tex' and page.evaluate('window.rikuy.files.has("sections/body.tex")'), page.evaluate('[window.rikuy.main, [...window.rikuy.files.keys()]]'))
+        check('and the toast says how to use it', '\\input{conclusion}' in page.inner_text('#toast'), page.inner_text('#toast'))
+        # --- biblatex without its natbib option has no \citep: Insert, Citation writes \parencite
+        load_doc(page, {'main.tex': '\\documentclass{article}\n\\usepackage[style=authoryear]{biblatex}\n\\addbibresource{refs.bib}\n\\begin{document}\nHybrid regimes are common.\n\\end{document}\n', 'refs.bib': BIB})
+        click_text(page, 'are common', 10)
+        page.keyboard.press('Control+k')
+        page.wait_for_selector('#pop-cmd')
+        page.keyboard.type('cite')
+        page.keyboard.press('Enter')
+        page.wait_for_selector('.pop-cite')
+        opts = page.evaluate("[...document.querySelectorAll('#pop-citecmd option')].map((o) => o.value)")
+        check('biblatex: a new citation is \\parencite', '\\parencite{}' in src(page), src(page)[src(page).find('common'):][:30])
+        check('biblatex: the menu offers its own commands, not natbib\'s', 'citep' not in opts and 'textcite' in opts, opts)
+        page.keyboard.press('Escape')
+        # --- a PDF figure named without its extension is in the project, not missing
+        page.evaluate("() => window.rikuy.addAsset('figs/curve.pdf', new Blob(['%PDF-1.4'], { type: 'application/pdf' }))")
+        load_doc(page, '\\documentclass{article}\n\\usepackage{graphicx}\n\\begin{document}\n\\includegraphics{curve}\n\\end{document}\n')
+        page.wait_for_selector('.img-missing small', timeout=5000)
+        note = page.evaluate("(document.querySelector('.img-missing small') || {}).textContent")
+        check('\\includegraphics{curve} of a curve.pdf says it shows in the PDF', note == 'PDF and EPS figures show in the compiled PDF', note)
         check('no console errors', not errors, errors[:5])
         browser.close()
 except Exception as e:

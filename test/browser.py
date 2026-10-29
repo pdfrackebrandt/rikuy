@@ -193,6 +193,14 @@ def edges(page, errors):
     page.mouse.click(box[0], box[1])
     page.keyboard.type('Hello')
     check('typing on an empty page starts its first paragraph', src(page) == '\\documentclass{article}\n\\begin{document}\n\nHello\n\n\\end{document}\n', repr(src(page)))
+    # Enter at the end of a heading: the \label on its next line stays with the heading
+    labelled = '\\documentclass{article}\n\\begin{document}\n\\section{Intro}\n\\label{sec:i}\nText here.\n\\end{document}\n'
+    load_doc(page, labelled)
+    click_text(page, 'Intro', 5)
+    page.keyboard.press('Enter')
+    page.keyboard.type('New.')
+    check('a paragraph after a heading goes after its \\label', '\\section{Intro}\n\\label{sec:i}\n\nNew.\n\nText here.' in src(page), repr(src(page)))
+    undo_all(page)
     # a document the page cannot build: the old pages take no typing
     load_doc(page, DOC_EDGES)
     deep = DOC_EDGES.replace('Second paragraph', '\\textbf{' * 10000 + 'x' + '}' * 10000 + ' Second paragraph')
@@ -214,6 +222,69 @@ def edges(page, errors):
     page.keyboard.type('Y')
     check('after composing over a selection the caret follows the new text', 'paragraph 漢字Y here' in src(page), src(page)[src(page).find('Second'):][:40])
     undo_all(page)
+
+
+DOC_POP = r"""\documentclass{article}
+\usepackage{amsmath,natbib}
+\begin{document}
+Mass $m$ and energy \citep{a} here.
+
+Last paragraph.
+\bibliographystyle{plainnat}
+\bibliography{refs}
+\end{document}
+"""
+BIB_POP = '@book{a, author={Ann, A.}, title={T}, year={2001}}\n@book{bbbbbbbb, author={Bob, B.}, title={U}, year={2002}}\n'
+
+
+def popovers(page):
+    """What is typed after a popover closes goes after the formula, citation or equation it made
+    longer (it went inside them: \\end{ More.equation}); a new equation holds no blank line;
+    Ctrl+A selects the pages' text."""
+    load_doc(page, {'main.tex': DOC_POP, 'refs.bib': BIB_POP})
+    base = src(page)
+    page.click('.a-math >> nth=0')
+    page.wait_for_selector('.pop-math textarea')
+    page.fill('.pop-math textarea', 'E = m c^2 + \\mathcal{O}(v^4)')
+    wait_src(page, 'O}(v^4)$')
+    page.keyboard.press('Enter')
+    page.wait_for_timeout(150)
+    page.keyboard.type('Q')
+    check('typing after a formula made longer goes after it', '$E = m c^2 + \\mathcal{O}(v^4)$Q and' in src(page), src(page)[src(page).find('Mass'):][:60])
+    undo_all(page)
+    page.click('.a-cite >> nth=0')
+    page.wait_for_selector('.pop-cite')
+    page.keyboard.type('bob')
+    page.keyboard.press('Enter')
+    page.wait_for_timeout(150)
+    page.keyboard.press('Escape')
+    page.wait_for_timeout(150)
+    page.keyboard.type('Q')
+    check('typing after a citation that gained a key goes after it', '\\citep{a, bbbbbbbb}Q here' in src(page), src(page)[src(page).find('energy'):][:50])
+    undo_all(page)
+    click_text(page, 'here.', 5)
+    page.keyboard.press('Control+Shift+E')
+    page.wait_for_selector('.pop-math')
+    page.wait_for_timeout(300)
+    page.keyboard.type('E=mc^2', delay=60)
+    wait_src(page, 'E=mc^2')
+    page.keyboard.press('Enter')
+    page.wait_for_timeout(150)
+    page.keyboard.type('Q')
+    s = src(page)
+    eq = s[s.find('\\begin{equation}'):s.find('\\end{equation}') + 14]
+    check('a new equation holds no blank line', re.fullmatch(r'\\begin\{equation\}\n *E=mc\^2\n\\end\{equation\}', eq), repr(eq))
+    check('and what is typed after it goes after \\end{equation}', '\\end{equation}Q' in s, repr(s[s.find('here.'):][:80]))
+    undo_all(page)
+    click_text(page, 'Last paragraph', 2)
+    page.keyboard.press('Control+a')
+    sel = page.evaluate('getSelection().toString()')
+    check('Ctrl+A selects the text of the pages', 'Mass' in sel and 'Last paragraph.' in sel, sel[:80])
+    page.keyboard.press('Backspace')
+    page.wait_for_timeout(150)
+    check('and Backspace deletes it', 'energy' not in src(page) and 'Last paragraph' not in src(page), src(page)[src(page).find('document}'):][:80])
+    undo_all(page)
+    check('popovers: undo gives the bytes back', src(page) == base)
 
 
 def run():
@@ -438,7 +509,13 @@ def run():
         check('typing in the source, then at once on the page, keeps both', 'TheUVW round' in src(page) and 'CitPations' in src(page), src(page)[src(page).find('Citations') - 4:][:20])
         undo_all(page)
         check('and undo gives the bytes back', src(page) == base)
+        # Tab indents in the source pane; Escape, then Tab, leaves it without typing anything
+        page.evaluate('() => { const cm = window.rikuy.cm; cm.focus(); cm.setCursor({line: 0, ch: 0}); }')
+        page.keyboard.press('Escape'); page.keyboard.press('Tab')
+        page.wait_for_timeout(400)
+        check('Escape, then Tab, leaves the source pane and types nothing', src(page) == base and not page.evaluate("!!document.activeElement.closest('#srcpane')"), page.evaluate('document.activeElement.className'))
         edges(page, errors)
+        popovers(page)
 
         check('no console errors', not errors, errors[:5])
         browser.close()

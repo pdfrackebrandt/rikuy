@@ -48,6 +48,16 @@ try:
         check('plain paste ignores formatting', 'bold\nClick anywhere' in src(page) or 'boldClick anywhere' in src(page), src(page)[src(page).find('use it}'):][:60])
         page.keyboard.press('Control+z'); page.wait_for_timeout(150)
         check('source restored', src(page) == base)
+        # a pasted screenshot joins the project under a name of its own (the paste did nothing)
+        PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+        for _ in range(2):
+            click_text(page, 'Click anywhere in this paragraph', 0)
+            page.evaluate('''(b) => { const f = new File([Uint8Array.from(atob(b), (c) => c.charCodeAt(0))], 'image.png', { type: 'image/png' });
+              const dt = new DataTransfer(); dt.items.add(f); document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }''', PNG)
+            page.wait_for_timeout(300)
+        pasted = page.evaluate("[...window.rikuy.assetBlobs.keys()].filter((n) => n.startsWith('pasted-'))")
+        check('two pasted screenshots are two figures in the project', len(pasted) == 2, pasted)
+        check('and the toast says how to place one', '\\includegraphics{pasted-' in page.inner_text('#toast'), page.inner_text('#toast'))
         check('no page errors', not errors, errors[:5])
         browser.close()
 except Exception as e:

@@ -241,14 +241,7 @@ class Builder {
 
   preamble(nodes, ctx) {
     const O = this.opts;
-    const walk = (ns) => {
-      for (const nd of ns) {
-        if (nd.t === 'cmd') this.preCmd(nd, ctx);
-        else if (nd.t === 'group') walk(nd.nodes);
-        else if (nd.t === 'env' && !nd.raw && nd.nodes) walk(nd.nodes);
-      }
-    };
-    walk(nodes);
+    this.preWalk(nodes, ctx, false);
     O.chapters = /^(report|book|scrbook|scrreprt|memoir|amsbook|thesis|ociamthesis)$/.test(O.cls);
     if (O.chapters) {
       if (!O.secnumdepthSet) O.secnumdepth = 2;
@@ -261,22 +254,62 @@ class Builder {
     if (O.natbib && ['plain', 'unsrt', 'abbrv', 'alpha', 'ieeetr', 'siam', 'acm', 'amsplain', 'unsrtnat_num'].includes(O.bibstyle) && !O.forceAY) O.citeStyle = O.forceNumeric ? 'numeric' : O.citeStyle;
   }
 
+  // The preamble's commands, here or in a file it reads: \input{preamble}, or a class or package
+  // that comes with the project (own: thesis.cls, macros.sty), so that \E from macros.sty is known
+  // on the page. From those only new names are taken (\newcommand, \DeclareMathOperator,
+  // \newtheorem), and the project's other packages they load: TeX refuses \newcommand for a
+  // command that exists, so none hides one of LaTeX's own. What else a copy of a journal's class
+  // does (\title, counters, package options held in macros, \@internals) is left to TeX.
+  preWalk(ns, c, own) {
+    for (const nd of ns) {
+      if (nd.t === 'group') this.preWalk(nd.nodes, c, own);
+      else if (nd.t === 'env' && !nd.raw && nd.nodes) this.preWalk(nd.nodes, c, own);
+      else if (nd.t !== 'cmd') continue;
+      else if (nd.name === 'input' && nd.args[0]) this.preFile(this.resolveFile(this.argText(c, nd.args[0])), own);
+      else if (!own) this.preCmd(nd, c);
+      else if (nd.name === 'usepackage' || nd.name === 'RequirePackage') {
+        for (const p of this.argText(c, nd.args[1]).split(',')) if (this.files.has(p.trim() + '.sty')) this.preFile(p.trim() + '.sty', true);
+      } else if (/^(newcommand|providecommand|newenvironment|DeclareMathOperator|newtheorem|theoremstyle|numberwithin)$/.test(nd.name) &&
+        !(nd.def && (nd.def.bs < 0 || /@/.test(c.src.slice(nd.s, nd.def.bs > 0 ? nd.def.bs : nd.e))))) this.defCmd(nd, c);
+    }
+  }
+
+  preFile(f, own) {
+    if (!f || this.included.has('pre:' + f)) return;
+    this.included.add('pre:' + f);
+    this.preWalk(this.parseFile(f), { f, src: this.files.get(f) || '', pm: null }, own);
+  }
+
+  classOpts(list) {
+    const O = this.opts;
+    for (const o of list.split(',').map((x) => x.trim())) {
+      if (/^(10|11|12)pt$/.test(o)) O.pt = parseInt(o, 10);
+      if (o === 'a4paper') O.paper = 'a4';
+      if (o === 'letterpaper') O.paper = 'letter';
+      if (o === 'twocolumn') O.twocolumn = true;
+      if (o === 'titlepage') O.titlepage = true;
+      if (/^(ngerman|german|austrian|naustrian)$/.test(o)) O.lang = 'de';
+      if (/^spanish$/.test(o)) O.lang = 'es';
+      if (/^(french|francais)$/.test(o)) O.lang = 'fr';
+    }
+  }
+
   preCmd(nd, ctx) {
     const O = this.opts;
     const A = (k) => this.argText(ctx, nd.args[k]);
     switch (nd.name) {
       case 'documentclass': {
-        const opts = A(0).split(',').map((x) => x.trim());
         O.cls = A(1).trim() || 'article';
-        for (const o of opts) {
-          if (/^(10|11|12)pt$/.test(o)) O.pt = parseInt(o, 10);
-          if (o === 'a4paper') O.paper = 'a4';
-          if (o === 'letterpaper') O.paper = 'letter';
-          if (o === 'twocolumn') O.twocolumn = true;
-          if (o === 'titlepage') O.titlepage = true;
-          if (/^(ngerman|german|austrian|naustrian)$/.test(o)) O.lang = 'de';
-          if (/^spanish$/.test(o)) O.lang = 'es';
-          if (/^(french|francais)$/.test(o)) O.lang = 'fr';
+        this.classOpts(A(0));
+        // a class that comes with the project and loads a standard one (\LoadClass{book}) is laid
+        // out as that one: chapters, numbered 1.1. Its own new commands are known too.
+        for (let k = 0; k < 4 && this.files.has(O.cls + '.cls'); k++) {
+          const own = O.cls + '.cls';
+          this.preFile(own, true);
+          const m = /\\LoadClass(?:WithOptions)?\s*(?:\[([^\]]*)\])?\s*\{([^}]+)\}/.exec(this.files.get(own).replace(/(^|[^\\])%.*$/gm, '$1'));
+          if (!m || !(/^(article|report|book|scrartcl|scrreprt|scrbook|memoir|amsbook)$/.test(m[2].trim()) || this.files.has(m[2].trim() + '.cls'))) break;
+          O.cls = m[2].trim();
+          this.classOpts(m[1] || '');
         }
         if (/^(amsart|amsbook)$/.test(O.cls)) O.ams = true;
         break;
@@ -294,11 +327,14 @@ class Builder {
           if (p === 'biblatex') {
             O.biblatex = true;
             O.biblatexStyle = /style\s*=\s*(authoryear|apa|chicago|ext-authoryear)/.test(op) ? 'authoryear' : 'numeric';
+            // natbib=true gives biblatex natbib's \citep and \citet; without it they are undefined
+            O.biblatexNatbib = /\bnatbib\b(?!\s*=\s*false)/.test(op);
           }
+          if (this.files.has(p + '.sty')) this.preFile(p + '.sty', true);
           if (p === 'apacite' || p === 'harvard' || p === 'chicago') { O.natbib = true; O.forceAY = true; }
           if (p === 'setspace') { /* spacing commands handled separately */ }
           if (p === 'parskip') { O.parskip = 0.6; O.parindent = 0; }
-          if (p === 'cleveref') O.cleveref = true;
+          if (p === 'cleveref') { O.cleveref = true; O.crefCap = /capitali[sz]e/.test(op); }
           if (p === 'fullpage') O.margins = { l: 72.27, r: 72.27, t: 72.27, b: 72.27 };
           if (p === 'geometry' && op) this.geometry(op);
           if (p === 'babel') {
@@ -611,6 +647,8 @@ class Builder {
           continue;
         }
         if (name === 'appendix') { flushPara(); this.appendix = true; if (this.opts.chapters) this.c.chapter = 0; else this.c.section = 0; continue; }
+        // a book's front and back matter: chapters there have no number; \mainmatter numbers them
+        if (name === 'frontmatter' || name === 'mainmatter' || name === 'backmatter') { flushPara(); this.front = name !== 'mainmatter'; continue; }
         if (name === 'bibliography' || name === 'printbibliography') {
           flushPara();
           if (env.top) this.sig = [];
@@ -658,20 +696,21 @@ class Builder {
     const star = nd.star;
     let num = '';
     const minLevel = this.opts.chapters ? 0 : 1;
-    const numbered = !star && level <= this.opts.secnumdepth && level >= minLevel && level <= 3;
-    if (!star && level >= 0) {
+    const front = this.front && level === 0 && this.opts.chapters; // \frontmatter's Preface, unnumbered
+    const numbered = !star && !front && level <= this.opts.secnumdepth && level >= minLevel && level <= 3;
+    if (!star && !front && level >= 0) {
       this.stepSection(level);
       if (numbered) num = this.secNum(level);
     }
     this.use('h' + num + (this.appendix ? 'A' : ''));
-    if (!star) this.lastTarget = { num, kind: { '-1': 'part', 0: 'chapter', 1: 'section', 2: 'subsection', 3: 'subsubsection', 4: 'paragraph', 5: 'subparagraph' }[level] || 'section', name: this.appendix && level === minLevel ? 'appendix' : null };
+    if (!star && !front) this.lastTarget = { num, kind: { '-1': 'part', 0: 'chapter', 1: 'section', 2: 'subsection', 3: 'subsubsection', 4: 'paragraph', 5: 'subparagraph' }[level] || 'section', name: this.appendix && level === minLevel ? 'appendix' : null };
     const fns = [];
     const inl = titleArg ? this.inl(titleArg.nodes, ctx, fns) : [];
     if (titleArg && !inl.length) inl.push({ k: 'seg', f: ctx.f, t: '​', map: [titleArg.is, titleArg.is], ph: true });
     const text = this.plain(inl);
     this.headings.push({ level, num, text, parts: this.tocParts(inl), star, f: ctx.f, s: nd.s });
     const de = this.opts.lang === 'de';
-    const chapLabel = level === 0 && this.opts.chapters ? (this.appendix ? (de ? 'Anhang' : 'Appendix') : (de ? 'Kapitel' : 'Chapter')) : null;
+    const chapLabel = level === 0 && this.opts.chapters && !front ? (this.appendix ? (de ? 'Anhang' : 'Appendix') : (de ? 'Kapitel' : 'Chapter')) : null;
     return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'h', level, num, inl, star, f: ctx.f, ctx: 'h', s: nd.s, e: nd.e, chapLabel }], fns, sig: this.sig ? this.sig.join('\u0001') : '' };
   }
 
@@ -708,9 +747,11 @@ class Builder {
     if (!m.title && !m.author) return null;
     const fns = [];
     const ranges = [];
+    // a \title in a preamble file of its own (\input{preamble}) is not a range of this file
+    const at = (x) => { if (x.ctx.f === ctx.f) ranges.push([x.nd.s, x.nd.e]); };
     let title = [], authors = [], date = null;
     this.thanksMode = true;
-    if (m.title && m.title.a) { title = this.inl(m.title.a.nodes, m.title.ctx, fns); ranges.push([m.title.nd.s, m.title.nd.e]); }
+    if (m.title && m.title.a) { title = this.inl(m.title.a.nodes, m.title.ctx, fns); at(m.title); }
     if (m.author && m.author.a) {
       const a = m.author.a;
       let cur = [];
@@ -719,10 +760,10 @@ class Builder {
         if (n.t === 'cmd' && n.name === 'and') { cur = []; groups.push(cur); } else cur.push(n);
       }
       authors = groups.map((g) => { const r = this.inl(g, m.author.ctx, fns); trimInl(r); return r; });
-      ranges.push([m.author.nd.s, m.author.nd.e]);
+      at(m.author);
     }
     if (m.date) {
-      if (m.date.a) { date = this.inl(m.date.a.nodes, m.date.ctx, fns); trimInl(date); ranges.push([m.date.nd.s, m.date.nd.e]); }
+      if (m.date.a) { date = this.inl(m.date.a.nodes, m.date.ctx, fns); trimInl(date); at(m.date); }
     } else date = [{ k: 'chr', text: today(this.opts.lang) }];
     this.thanksMode = false;
     const s = Math.min(nd.s, ...ranges.map((r) => r[0]));
@@ -889,7 +930,8 @@ class Builder {
       if (name === 'appendices') { this.appendix = true; if (this.opts.chapters) this.c.chapter = 0; else this.c.section = 0; }
       if (name === 'acknowledgments' || name === 'acknowledgements') {
         const r = this.container(nd, ctx, env, {});
-        if (r) r.items.unshift({ type: 'h', level: 3, num: '', inl: [{ k: 'chr', text: 'Acknowledgments' }], star: true, ctx: 'h', f: ctx.f });
+        // the heading is spelt as the environment is: a thesis in British English says Acknowledgements
+        if (r) r.items.unshift({ type: 'h', level: 3, num: '', inl: [{ k: 'chr', text: name === 'acknowledgements' ? 'Acknowledgements' : 'Acknowledgments' }], star: true, ctx: 'h', f: ctx.f });
         return r;
       }
       return this.container(nd, ctx, env, ex);
@@ -1654,7 +1696,9 @@ class Builder {
       if (cmd === 'nameref') return n;
       let nm = names[L.name === 'appendix' ? 'appendix' : L.kind];
       if (!nm) { const t = (L.name || L.kind || ''); nm = [t.toLowerCase(), t.charAt(0).toUpperCase() + t.slice(1)]; }
-      const word = cmd === 'Cref' || cmd === 'autoref' || cmd === 'Vref' ? nm[1] : nm[0];
+      let word = cmd === 'Cref' || cmd === 'autoref' || cmd === 'Vref' ? nm[1] : nm[0];
+      // cleveref's capitalise option: Fig. 3.2 and Chapter 3, mid sentence too
+      if (this.opts.crefCap && word) word = word.charAt(0).toUpperCase() + word.slice(1);
       const num = L.kind === 'equation' ? '(' + n + ')' : n;
       return (word ? word + ' ' : '') + num;
     };

@@ -46,3 +46,22 @@ for (const [s, a, b, want] of [
 ]) {
   if (isBalanced(s, a, b) !== want) { process.exitCode = 1; console.log('FAIL isBalanced', JSON.stringify(s.slice(a, b)), 'should be', want); }
 }
+// An Overleaf thesis: a class of its own that loads book, macros in a package of its own and in an
+// \input preamble, \frontmatter and \mainmatter. The page numbers it as the PDF does (Chapter 1,
+// 1.1, (1.1)), knows \E, and shows neither \frontmatter nor \mainmatter as source.
+{
+  const files = new Map([
+    ['thesis.tex', '\\documentclass[11pt]{MyThesis}\n\\usepackage{mymacros}\n\\input{preamble}\n\\usepackage[capitalise]{cleveref}\n\\begin{document}\n\\frontmatter\n\\chapter{Preface}\nHi.\n\\begin{acknowledgements}\nThanks.\n\\end{acknowledgements}\n\\mainmatter\n\\chapter{Intro}\\label{ch:i}\n\\section{Q}\\label{s:q}\n\\begin{equation}\\E x = \\V y\\label{e:v}\\end{equation}\nSee \\cref{ch:i}, \\cref{s:q} and \\ref{e:v}.\n\\end{document}\n'],
+    ['MyThesis.cls', '\\ProvidesClass{MyThesis}\n\\LoadClass{book}\n\\def\\@supervisor{x}\n\\renewcommand{\\maketitle}{\\@supervisor}\n\\newcommand{\\V}{\\mathbb{V}}\n'],
+    ['mymacros.sty', '\\ProvidesPackage{mymacros}\n\\newcommand{\\E}{\\mathbb{E}}\n\\def\\section{broken}\n'],
+    ['preamble.tex', '\\newcommand{\\R}{\\mathbb{R}}\n']
+  ]);
+  const M = buildModel({ files, main: 'thesis.tex' });
+  const text = (inl) => (inl || []).map((x) => x.k === 'seg' ? x.t : x.k === 'chr' ? x.text : x.kids ? text(x.kids) : x.text || '').join('');
+  const heads = M.blocks.flatMap((b) => b.items.filter((it) => it.type === 'h').map((it) => (it.chapLabel ? it.chapLabel + ' ' : '') + it.num + ' ' + text(it.inl)));
+  const body = M.blocks.flatMap((b) => b.items.filter((it) => it.type === 'p').map((it) => text(it.inl))).join(' | ');
+  const want = { cls: M.opts.cls === 'book' && M.opts.chapters, macros: ['\\E', '\\V', '\\R'].every((k) => k in M.mathMacros), noInternals: !('\\section' in M.mathMacros) && !('\\maketitle' in M.mathMacros) && !('\\@' in M.mathMacros),
+    heads: JSON.stringify(heads) === JSON.stringify([' Preface', ' Acknowledgements', 'Chapter 1 Intro', '1.1 Q']), refs: /See Chapter 1, Section 1\.1 and 1\.1\./.test(body),
+    noChips: !M.warn.includes('\\frontmatter') && !M.warn.includes('\\mainmatter') };
+  for (const [k, v] of Object.entries(want)) if (!v) { process.exitCode = 1; console.log('FAIL thesis project:', k, JSON.stringify({ heads, body, cls: M.opts.cls, macros: Object.keys(M.mathMacros), warn: M.warn })); }
+}

@@ -465,6 +465,8 @@ body.dropping .dropzone { display: grid; }
   .tools { gap: 0; }
   .sep { display: none; }
   #b-zout, #b-zin, #b-help { display: none; }
+  /* a popover sits at the bottom of a phone: a message goes to the top, not over its buttons */
+  body:has(> .pop) .toast { bottom: auto; top: calc(54px + env(safe-area-inset-top, 0px)); }
   .sheet { padding: 10px 0 40px; }
   #pages { gap: 12px; }
   #st-save { display: none; }

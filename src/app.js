@@ -759,6 +759,13 @@ class App {
     if (mod && e.key === '\\') { e.preventDefault(); this.toggleSource(); }
     if (mod && e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); this.toggleNav(); }
     if (e.key === 'Escape') { if (this.pop) { this.closePop(); e.preventDefault(); } this.disarm(); }
+    // Ctrl+Z where no field takes it, after a click on Reject, a zoom button or the bubble, undoes
+    // in the document as on the page; it did nothing until a click back on the page
+    const k = e.key.toLowerCase();
+    if (mod && !e.altKey && (k === 'z' || k === 'y') && !e.defaultPrevented && !(e.target.closest && e.target.closest('input, textarea, select, [contenteditable="true"], .CodeMirror, math-field'))) {
+      e.preventDefault();
+      if (k === 'y' || e.shiftKey) this.redo(); else this.undo();
+    }
   }
 
   onKeyDown(e) {
@@ -774,6 +781,9 @@ class App {
       if (k === 'e' && e.shiftKey) { e.preventDefault(); this.newDisplayMath(); return; }
       if (k === 'enter') { e.preventDefault(); this.tableRow(); return; }
       if (k === 'k') { e.preventDefault(); this.openPalette(); return; }
+      // the browser's own select-all ends on a page number, which cannot be selected, and
+      // collapses to the top of the page: Ctrl+A then Ctrl+C copied nothing and Delete did nothing
+      if (k === 'a' && !e.shiftKey) { e.preventDefault(); this.selectAllText(); return; }
     }
     if (e.key === 'Tab') {
       const n = getSelection().anchorNode;
@@ -1025,7 +1035,9 @@ class App {
     const itemEl = el.closest('.it');
     if (kind === 'h') {
       const B = itemEl && BLOCKS.get(+itemEl.dataset.b);
-      if (B) this.showGhost(itemEl, f, B.e);
+      // the \label on the heading's next line stays with the heading: the new paragraph goes after it
+      const lab = B && /^\s*\\label\s*\{[^}]*\}/.exec(src.slice(B.e));
+      if (B) this.showGhost(itemEl, f, B.e + (lab ? lab[0].length : 0));
       return;
     }
     if (kind === 'li' && itemEl && itemEl.dataset.li) {
@@ -1188,6 +1200,10 @@ class App {
     const html = dt.getData('text/html') || '';
     const plainOnly = this.plainPaste;
     this.plainPaste = false;
+    // a screenshot or an image copied from a page joins the project, as a dropped file does (the
+    // paste did nothing at all), under a name of its own: browsers call every pasted image image.png
+    const imgs = !plain && !html ? [...(dt.files || [])].filter((f) => /^image\/(png|jpeg|gif|webp)$/.test(f.type)) : [];
+    if (imgs.length) { this.openFiles(imgs.map((f, i) => new File([f], 'pasted-' + Date.now().toString(36) + (i ? '-' + i : '') + '.' + f.type.slice(6).replace('jpeg', 'jpg'), { type: f.type }))); return; }
     let latex = '';
     try { latex = dt.getData('text/x-galley-latex') || ''; } catch (err) { latex = ''; }
     if (!latex && this.lastCopy && plain === this.lastCopy.plain) latex = this.lastCopy.latex;
@@ -1349,6 +1365,19 @@ class App {
     if (this.ourSel) { this.ourSel = false; }
     if (!sel.isCollapsed) { this.showBubble(); const c = this.caretNow(); if (c && !c.collapsed) { this.lastSel = c; this.lastSelT = Date.now(); } } else this.hideBubble();
     this.syncSoon();
+  }
+
+  // Select all: from the first character of the text on the pages to the last one
+  selectAllText() {
+    const ts = this.root.querySelectorAll('span.t');
+    if (!ts.length) return;
+    const a = ts[0].firstChild || ts[0], z = ts[ts.length - 1].lastChild || ts[ts.length - 1];
+    const r = document.createRange();
+    r.setStart(a, 0);
+    r.setEnd(z, z.nodeType === 3 ? z.length : z.childNodes.length);
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
   }
 
   showBubble() {
@@ -1522,6 +1551,10 @@ class App {
       if (cur === text) return;
       const keepSel = document.activeElement;
       this.commit([{ f: R.f, s: R.s, e: R.e, t: text }], null, P.session);
+      // the caret goes back after the formula or citation when the popover closes: it moves with
+      // the range's end, or what is typed next lands inside the new text (\end{ More.equation})
+      const rc = P.returnCaret;
+      if (rc && rc.f === R.f && rc.p >= R.e) P.returnCaret = { ...rc, p: rc.p + text.length - (R.e - R.s) };
       R.e = R.s + text.length;
       if (keepSel && keepSel.isConnected) keepSel.focus({ preventScroll: true });
       this.positionPop();
@@ -1684,9 +1717,15 @@ class App {
     ta.className = 'code';
     ta.id = 'pop-tex';
     ta.spellcheck = false;
-    ta.value = display ? inner.replace(/^\n/, '').replace(/\n\s*$/, '') : inner;
     const lead = display ? inner.match(/^\n?/)[0] : '';
-    const trail = display ? (inner.match(/\n\s*$/) || [''])[0] : '';
+    // the trailing line end is looked for after the leading one: in a new, empty equation
+    // ("\n  \n") it is the last line end alone, not the whole blank line, which TeX reads as a
+    // paragraph break inside the equation (Missing $ inserted)
+    const rest = inner.slice(lead.length);
+    const end = rest.match(/\n\s*$/);
+    // an equation whose two lines hold nothing ("\n"): the formula goes on a line of its own
+    const trail = !display ? '' : end ? end[0] : rest.trim() ? '' : lead;
+    ta.value = display ? (end ? rest.slice(0, end.index) : rest) : inner;
     ta.rows = Math.min(10, Math.max(display ? 3 : 1, ta.value.split('\n').length));
     const prev = document.createElement('div');
     prev.className = 'pv';
@@ -2021,8 +2060,7 @@ class App {
     };
     const top = document.createElement('div'); top.className = 'pop-row';
     const cs = document.createElement('select'); cs.id = 'pop-citecmd';
-    const authorYear = this.model.opts.citeStyle === 'authoryear';
-    const choices = authorYear ? [['citep', '(Author, Year)'], ['citet', 'Author (Year)'], ['citealt', 'Author Year'], ['citealp', 'Author, Year'], ['citeauthor', 'Author'], ['citeyear', 'Year'], ['cite', '\\cite']] : [['cite', '[1]'], ['citep', '[1] (natbib)'], ['citet', 'Author [1]'], ['citeauthor', 'Author']];
+    const choices = this.citeChoices();
     for (const [v, l] of choices) { const o = document.createElement('option'); o.value = v; o.textContent = l; if (v === cmd) o.selected = true; cs.appendChild(o); }
     if (![...cs.options].some((o) => o.selected)) { const o = document.createElement('option'); o.value = cmd; o.textContent = '\\' + cmd; o.selected = true; cs.appendChild(o); }
     cs.addEventListener('change', () => { cmd = cs.value; write(); });
@@ -2067,6 +2105,17 @@ class App {
     draw();
     this.positionPop();
     search.focus();
+  }
+
+  // The citation commands the document's packages define: natbib's \citep and \citet, biblatex's
+  // own (it has \citep only with its natbib option), or LaTeX's \cite alone. Offering another
+  // gives "Undefined control sequence" in the PDF while the page shows the citation.
+  citeChoices() {
+    const O = this.model.opts;
+    const ay = O.citeStyle === 'authoryear';
+    if (O.biblatex && !O.biblatexNatbib && !O.natbib) return ay ? [['parencite', '(Author, Year)'], ['textcite', 'Author (Year)'], ['cite', 'Author Year'], ['citeauthor', 'Author'], ['citeyear', 'Year']] : [['cite', '[1]'], ['textcite', 'Author [1]'], ['citeauthor', 'Author']];
+    if (O.natbib || O.biblatex) return ay ? [['citep', '(Author, Year)'], ['citet', 'Author (Year)'], ['citealt', 'Author Year'], ['citealp', 'Author, Year'], ['citeauthor', 'Author'], ['citeyear', 'Year'], ['cite', '\\cite']] : [['cite', '[1]'], ['citep', '[1] (natbib)'], ['citet', 'Author [1]'], ['citeauthor', 'Author']];
+    return [['cite', '[1]']];
   }
 
   openRef(el, info) {
@@ -2187,7 +2236,7 @@ class App {
       if (x.act === 'math') { if (base) this.restoreCaret({ f: base.f, p: base.a }); this.newMath(); return; }
       if (x.act === 'equation') { if (base) this.restoreCaret({ f: base.f, p: base.a }); this.newDisplayMath(); return; }
       if (x.act === 'cite' || x.act === 'ref' || x.act === 'eqref') {
-        const cmd = x.act === 'cite' ? (this.model.opts.citeStyle === 'authoryear' ? 'citep' : 'cite') : x.act;
+        const cmd = x.act === 'cite' ? this.citeChoices()[0][0] : x.act;
         const t = '\\' + cmd + '{}';
         if (!base) { insertAt(t, ''); return; }
         this.commit([{ f: base.f, s: base.a, e: base.a, t }], { f: base.f, p: base.a + t.length, bias: 1 }, 'insert');
@@ -2323,9 +2372,17 @@ class App {
           value: '', mode: 'stex', lineNumbers: true, lineWrapping: true, indentUnit: 2, tabSize: 2,
           extraKeys: {
             'Ctrl-Z': () => this.undo(), 'Cmd-Z': () => this.undo(), 'Shift-Ctrl-Z': () => this.redo(), 'Shift-Cmd-Z': () => this.redo(), 'Ctrl-Y': () => this.redo(),
-            'Ctrl-S': () => this.save(), 'Cmd-S': () => this.save()
+            'Ctrl-S': () => this.save(), 'Cmd-S': () => this.save(),
+            // Tab indents in the source, so a keyboard that tabbed in stayed caught here, typing tabs
+            // into the file: Escape, then Tab or Shift+Tab, moves on to the next control
+            'Esc': () => { this.cmTabOut = true; }
           }
         });
+        this.cm.on('keydown', (cm, e) => {
+          if (e.key === 'Tab' && this.cmTabOut) e.codemirrorIgnore = true; // the browser moves the focus
+          if (e.key !== 'Escape') this.cmTabOut = false;
+        });
+        this.cm.getInputField().setAttribute('aria-label', 'LaTeX source. Tab indents; Escape, then Tab, leaves.');
         this.cm.on('changes', (cm, chs) => { if (chs.some((c) => c.origin !== 'galley' && c.origin !== 'setValue')) this.srcRebuild(); });
         // leaving the pane (a click on the page) takes its typing in before the page edits anything
         this.cm.on('blur', () => { if (this.srcRebuild.pending()) this.srcRebuild.flush(); });
@@ -3296,6 +3353,13 @@ class App {
     return null;
   }
 
+  // a figure the page cannot draw but the project has, as \includegraphics{plot} names plot.pdf
+  // or plot.eps without the extension: it is there, in the PDF, not missing
+  vectorFigure(name) {
+    const short = (name || '').replace(/^\.\//, '').split('/').pop();
+    return [...this.assetBlobs.keys()].some((k) => /\.(pdf|eps)$/i.test(k) && k.split('/').pop().replace(/\.[^.]+$/, '') === short);
+  }
+
   async openFiles(list) {
     const texts = new Map();
     const blobs = new Map();
@@ -3360,8 +3424,12 @@ class App {
     if (!texts.size && !blobs.size && !extra.size) { this.toast(skipNote.trim() || 'Nothing to open. Choose .tex, .bib, image or .zip files.', 9000); return; }
     const hasDoc = [...texts.entries()].some(([n, t]) => /\.tex$/i.test(n) && /\\documentclass/.test(t));
     const onlyTex = [...texts.keys()].filter((n) => /\.tex$/i.test(n));
-    if (!hasDoc && !onlyTex.length) {
-      // Add to the current project (bib files, images)
+    // a chapter (a .tex with no \documentclass) opened beside a document of one's own joins its
+    // project, as an upload to Overleaf does; it used to replace the whole thesis. Over the
+    // untouched sample it still opens on its own.
+    const sample = this.files.size === Object.keys(SAMPLE).length && Object.entries(SAMPLE).every(([n, t]) => this.files.get(n) === t);
+    if (!hasDoc && (!onlyTex.length || (!sample && !zipName))) {
+      // Add to the current project (bib files, images, chapters)
       for (const [n, t] of texts) this.files.set(n, t);
       for (const [n, o] of orig) this.orig.set(n, o);
       for (const [n, b] of blobs) this.addAsset(n, b);
@@ -3373,9 +3441,14 @@ class App {
       this.pushToSource();
       this.updateFileTabs();
       this.saveSoon();
-      this.toast('Added ' + [...texts.keys(), ...blobs.keys(), ...extra.keys()].join(', ') + ' to the project.' + skipNote, skipNote ? 9000 : undefined);
+      // an added chapter or figure shows on the page only once the source names it
+      const fig = [...blobs.keys()][0];
+      const use = onlyTex.length ? ' Write \\input{' + onlyTex[0].replace(/\.tex$/i, '') + '} where it goes.' : fig ? ' Write \\includegraphics{' + fig + '} where it goes.' : '';
+      this.toast('Added ' + [...texts.keys(), ...blobs.keys(), ...extra.keys()].join(', ') + ' to the project.' + use + skipNote, skipNote || use ? 9000 : undefined);
       return;
     }
+    // the project open until now stays in this browser; the toast says where, so nobody thinks it gone
+    const prev = this.base && !sample ? this.name : null;
     if (this.base) { await this.snapshot('Before opening another project', { force: !this.lastSig }); await this.stashBinary(); }
     for (const u of this.assets.values()) URL.revokeObjectURL(u);
     this.assets.clear(); this.assetBlobs.clear();
@@ -3417,7 +3490,7 @@ class App {
         }
       } catch (e) { gitNote = ' Its .git folder could not be read: ' + e.message + '.'; }
     }
-    this.toast('Opened ' + this.main + (texts.size > 1 ? ' and ' + (texts.size - 1) + ' more file' + (texts.size > 2 ? 's' : '') : '') + '.' + (missing.length ? ' Not found: ' + missing.join(', ') + '.' : '') + gitNote + skipNote, skipNote ? 10000 : 7000);
+    this.toast('Opened ' + this.main + (texts.size > 1 ? ' and ' + (texts.size - 1) + ' more file' + (texts.size > 2 ? 's' : '') : '') + '.' + (missing.length ? ' Not found: ' + missing.join(', ') + '.' : '') + gitNote + (prev && prev !== this.name ? ' ' + prev + ' is kept under Review, Versions.' : '') + skipNote, skipNote ? 10000 : 7000);
   }
 
   addAsset(name, blob) {
@@ -3978,6 +4051,7 @@ class App {
         <dt>Paste</dt><dd>From Word, Google Docs or the web: bold, italics, lists, links, tables and equations become LaTeX. ${mod}+Shift+V pastes plain text</dd>
         <dt>Copy</dt><dd>Keeps formatting; equations paste into Word as equations</dd>
         <dt>${mod}+Shift+O</dt><dd>Outline, problems (undefined references, missing citations, unclosed environments) and changes</dd>
+        <dt>Esc, then Tab</dt><dd>Leave the source pane, where Tab indents</dd>
         <dt>PDF or ${mod}+P</dt><dd>Compiles with TeX Live 2026, running in this browser, and shows the exact PDF: pdfLaTeX, XeLaTeX or LuaLaTeX (Auto reads a <code>% !TeX program</code> line or the preamble). Shell escape runs Ghostscript, gnuplot, Pygments for minted and makeindex here too. It recompiles after each edit; TeX's errors appear under Problems with their line; click the PDF to find that text, click the page to find it in the PDF</dd>
       </dl>
       <p><b>Review</b> lists the comments, then every edit since you opened the project, or since any saved version, with Accept and Reject; tick Show changes on the pages to see them marked like Word's Track Changes. Versions are kept every few minutes, when you leave, when you save the .zip, and under any name you give.</p>

@@ -77,9 +77,10 @@ with sync_playwright() as p:
     check('one change left', page.evaluate(COUNT) == '1', page.evaluate(COUNT))
     check('no deletion marker after accept', page.evaluate("document.querySelectorAll('.del-mk').length") == 0)
 
-    # undo the reject restores the replacement and the change reappears
-    page.evaluate("window.rikuy.undo()"); page.wait_for_timeout(600)
-    check('undo brings the rejected change back', 'return trip' in src(page) and page.evaluate(COUNT) == '2', page.evaluate(COUNT))
+    # undo the reject restores the replacement and the change reappears: Ctrl+Z, with the focus
+    # still in the panel whose button was clicked (it did nothing off the page)
+    page.keyboard.press('Control+z'); page.wait_for_timeout(600)
+    check('Ctrl+Z after a click in the panel brings the rejected change back', 'return trip' in src(page) and page.evaluate(COUNT) == '2', page.evaluate(COUNT))
 
     # a math change outlines the equation
     s = src(page)
