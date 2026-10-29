@@ -118,6 +118,58 @@ def load_doc(page, files, main='main.tex'):
     page.wait_for_timeout(50)
 
 
+
+def hidden_deletes(page):
+    """One Backspace never removes what the page does not show: at the start of a theorem's body
+    the browser names a range from the paragraph's end, and a letter's \\date and \\subject sit
+    between two visible lines."""
+    thm = ('\\documentclass{article}\n\\usepackage{amsthm}\n\\newtheorem{theorem}{Theorem}\n\\begin{document}\n'
+           '\\begin{theorem}\n    Let $x$ be a number.\n    Then it is one.\n\\end{theorem}\nAfter.\n\\end{document}\n')
+    load_doc(page, thm)
+    page.wait_for_timeout(300)
+    click_text(page, 'Let', 0)
+    page.keyboard.press('Backspace')
+    page.wait_for_timeout(200)
+    check('Backspace at the start of a theorem keeps its first paragraph', 'Let $x$ be a number.' in src(page) and 'Then it is one.' in src(page), src(page)[-120:])
+    letter = ('\\documentclass[a4paper, 12pt, KOMAold, sections]{scrlttr2}\n\\newcommand{\\Empfaenger}{Lisa M}\n'
+              '\\newcommand{\\EStrasse}{Main Street}\n\\newcommand{\\DocTitle}{Small worlds}\n\\begin{document}\n'
+              '    \\begin{letter}{\\Empfaenger \\\\ \\EStrasse}\n    \\date{\\today}%a note\n    \\subject{\\DocTitle}\n'
+              '    \\opening{Dear Lisa,}\n    The letter itself.\n    \\closing{Yours}\n    \\end{letter}\n\\end{document}\n')
+    lost = []
+    n = 0
+    load_doc(page, letter)
+    page.wait_for_timeout(300)
+    n = page.evaluate('document.querySelectorAll("#pages span.t:not(.ph)").length')
+    for k in range(n):
+        load_doc(page, letter)
+        page.wait_for_timeout(80)
+        page.evaluate('''(k) => { const s = [...document.querySelectorAll('#pages span.t:not(.ph)')][k]; if (!s || !s.firstChild) return; const r = document.createRange(); r.setStart(s.firstChild, 0); r.collapse(true); document.getElementById('pages').focus(); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }''', k)
+        page.keyboard.press('Backspace')
+        page.wait_for_timeout(80)
+        t = src(page)
+        # a visible letter of the subject may go; the commands themselves must stay
+        if '\\date{\\today}' not in t or '\\subject{' not in t:
+            lost.append(k)
+    check('Backspace anywhere in a letter keeps its hidden \\date and \\subject', n > 0 and not lost, (n, lost))
+    # a formula a macro's own text makes (\\newcommand{\\arrow}{$\\rightarrow$}, here or in a .sty)
+    # is not at the call site in the file: clicking it edits nothing (it wrote \\documentcla+1ss)
+    for files in ({'main.tex': '\\documentclass{article}\n\\newcommand{\\arrow}{$\\rightarrow$}\n\\begin{document}\nA \\arrow{} B.\n\\end{document}\n'},
+                  {'main.tex': '\\documentclass{article}\n\\usepackage{myStyle}\n\\begin{document}\nA \\arrow{} B.\n\\end{document}\n', 'myStyle.sty': '\\newcommand{\\arrow}{$\\rightarrow$}\n'}):
+        load_doc(page, files)
+        page.wait_for_timeout(300)
+        box = page.evaluate("() => { const k = document.querySelector('#pages .katex'); if (!k) return null; const r = k.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }")
+        if box:
+            page.mouse.click(box[0], box[1])
+            page.wait_for_timeout(400)
+            if page.evaluate("!!document.getElementById('pop-field')"):
+                page.evaluate("document.getElementById('pop-field').executeCommand('moveToMathfieldEnd')")
+                page.keyboard.type('+1')
+                page.wait_for_timeout(300)
+            page.keyboard.press('Escape')
+            page.wait_for_timeout(200)
+        same = all(page.evaluate('(f) => window.rikuy.files.get(f)', k) == v for k, v in files.items())
+        check('a formula made by a macro%s edits nothing in the file' % (' from a .sty' if len(files) > 1 else ''), box and same, box)
+
 def select_between(page, t1, o1, t2, o2):
     return page.evaluate('''([t1, o1, t2, o2]) => {
       const sp = [...document.querySelectorAll('#pages span.t')];
@@ -516,6 +568,7 @@ def run():
         check('Escape, then Tab, leaves the source pane and types nothing', src(page) == base and not page.evaluate("!!document.activeElement.closest('#srcpane')"), page.evaluate('document.activeElement.className'))
         edges(page, errors)
         popovers(page)
+        hidden_deletes(page)
 
         check('no console errors', not errors, errors[:5])
         browser.close()

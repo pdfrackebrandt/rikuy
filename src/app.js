@@ -942,6 +942,11 @@ class App {
       const tr = ranges && ranges[0];
       let r = tr ? this.rangeToSrc(tr) : null;
       if (r && r.a === r.b) r = null;
+      // With nothing selected, Backspace takes only what is before the caret and Delete only
+      // what is after it. At the start of a theorem's body the browser names a range that begins
+      // past the generated "Theorem 1." label, which maps to the paragraph's end: taken as it
+      // came, one Backspace deleted the whole paragraph.
+      if (r && (/Backward/.test(type) ? r.b > c.a : r.a < c.a)) r = null;
       if (!r) {
         // Nothing the browser would delete: paragraph boundary or atom edge.
         r = this.fallbackDeleteRange(c, /Backward/.test(type));
@@ -950,6 +955,13 @@ class App {
       f = r.f; a = r.a; b = r.b;
       // Select-first for atoms
       const vr = visibleRanges(this.renderer.blocks, f, a, b);
+      // Nothing of it is on the page, yet it holds a command with an argument (a letter's
+      // \date{...} and \subject{...}, a \label, a \vspace): one keystroke would delete what the
+      // user cannot see. The caret steps over it instead.
+      if (!vr.length && /\\[A-Za-z@]+\*?\s*(?:\[[^\]]*\]\s*)*\{/.test(this.src(f).slice(a, b))) {
+        this.restoreCaret({ f, p: /Backward/.test(type) ? a : b, bias: /Backward/.test(type) ? -1 : 1 });
+        return;
+      }
       const atom = this.soleAtom(f, a, b, vr);
       if (atom) { this.arm(atom); return; }
     }
@@ -1407,12 +1419,14 @@ class App {
   // ---- popovers ------------------------------------------------------------------
   openAtom(el, info) {
     const k = info.a.kind;
+    // made by a macro's own text: nothing of it sits at this spot in the file, so no editor
+    // may open on it (a formula's field wrote its edit at offsets into the macro's text)
+    if (info.a.ro && k !== 'fn') { this.toast('This comes from a macro: edit its definition, in the preamble or the .sty file that has it.'); return; }
     if (k === 'math') return info.is == null ? this.openRaw(el, info) : this.openMath(el, info);
     if (k === 'cite') return this.openCite(el, info);
     if (k === 'ref') return this.openRef(el, info);
     if (k === 'fn') return this.gotoFootnote(el, info);
     if (k === 'br' || k === 'sp') { this.arm({ f: info.f, s: info.s, e: info.e, el, kind: k }); return; }
-    if (info.a.ro) { this.toast('This part comes from a macro definition. Edit the macro in the preamble.'); return; }
     return this.openRaw(el, info);
   }
 

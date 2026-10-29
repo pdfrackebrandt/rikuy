@@ -1342,8 +1342,12 @@ class Builder {
     a.f = ctx.f;
     if (ctx.pm) {
       const s = ctx.pm[a.s], e = ctx.pm[a.e - 1];
-      if (s < 0 || e < 0) { a.ro = true; a.s = -1; a.e = -1; }
-      else { a.s = s; a.e = e + 1; if (a.is != null) { a.is = ctx.pm[a.is]; a.ie = ctx.pm[a.ie - 1] + 1; if (a.is < 0) a.ro = true; } }
+      // made by a macro's own text (its \newcommand body, not an argument): nothing of it is in
+      // the file at the call site, so it is shown but not edited there. Its inner range is cleared
+      // too: left as offsets into the macro's text, an edit of the formula wrote them into the file
+      // at those numbers (\documentcla+1ss).
+      if (s < 0 || e < 0) { a.ro = true; a.s = -1; a.e = -1; if (a.is != null) { a.is = -1; a.ie = -1; } }
+      else { a.s = s; a.e = e + 1; if (a.is != null) { a.is = ctx.pm[a.is]; a.ie = ctx.pm[a.ie - 1] + 1; if (a.is < 0 || a.ie <= 0) a.ro = true; } }
     }
     return a;
   }
