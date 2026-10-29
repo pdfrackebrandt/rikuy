@@ -155,6 +155,8 @@ try:
           return [...files.keys()]; }""", URL)
         page.wait_for_timeout(1500)
         check('clone loads the repository files', 'main.tex' in files and 'remote trip' in src(page), files)
+        info = page.evaluate('async () => { const v = await window.rikuy.linkInfo(); return v && [v.origin, v.allowed]; }')
+        check('a cloned repository compiles with restricted shell escape until allowed', info == ['git', False], info)
         errs = [e for e in errors + errors2 if 'favicon' not in e]
         check('no page errors', not errs, errs[:5])
         browser.close()

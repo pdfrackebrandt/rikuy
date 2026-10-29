@@ -43,6 +43,25 @@ try:
         page.wait_for_function("window.rikuy.main === 'main.tex' && window.rikuy.files.has('sec/intro.tex')", timeout=10000)
         page.wait_for_timeout(600)
         check('latin-1 file decodes', '\u00fc' in src(page), src(page)[:120])
+        # a .zip is content from someone else, like a share link: it compiles with restricted
+        # shell escape (the worker runs only TeX Live's safe programs) until the owner allows more
+        job = page.evaluate("""async () => {
+          const g = window.rikuy, e = g.texEngine();
+          let job = null;
+          e.compile = async (o) => { job = { shellEscape: o.shellEscape, untrusted: o.untrusted }; return { id: o.project, log: '', runs: [], missing: [], pdf: null, engineLabel: 'pdfLaTeX' }; };
+          await g.compilePdf();
+          return job;
+        }""")
+        check('a project opened from a .zip compiles with restricted shell escape', job and job.get('shellEscape') is False and job.get('untrusted') is True, job)
+        page.evaluate('() => window.rikuy.allowShellHere()')
+        job = page.evaluate("""async () => {
+          const g = window.rikuy, e = g.texEngine();
+          let job = null;
+          e.compile = async (o) => { job = { shellEscape: o.shellEscape, untrusted: o.untrusted }; return { id: o.project, log: '', runs: [], missing: [], pdf: null, engineLabel: 'pdfLaTeX' }; };
+          await g.compilePdf();
+          return job;
+        }""")
+        check('allowing it lifts the restriction for the .zip project', job and job.get('shellEscape') is True and job.get('untrusted') is False, job)
         out = saved(page)
         for n, b in files.items():
             rel = n[len('paper/'):]

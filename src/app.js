@@ -2980,7 +2980,7 @@ class App {
   }
 
   // put a checked-out tree into the editor (branch switch, pull): text, images, other files
-  async loadGitFiles(files, label) {
+  async loadGitFiles(files, label, origin) {
     const texts = new Map(), blobs = new Map(), extra = new Map(), orig = new Map();
     for (const [n, b] of files) {
       if (TEXT_EXT.test(n)) { const d = decodeText(b); texts.set(n, d.text); orig.set(n, { bytes: b, enc: d.enc, bom: d.bom, text: d.text }); }
@@ -2995,6 +2995,9 @@ class App {
       const docs = [...texts.entries()].filter(([n, t]) => /\.tex$/i.test(n) && /\\documentclass/.test(t));
       this.main = (docs.find(([n]) => /(^|\/)main\.tex$/i.test(n)) || docs[0] || [this.main])[0];
     }
+    // a cloned repository is someone else's content: its shell escape is restricted until the
+    // owner allows more, marked before anything below can start a compile
+    if (origin) this.markFromLink('', this.name, this.main, origin);
     this.binaryDirty = true; this.forceRender = true;
     this.hist = []; this.redoStack = []; this.updateUndoUI();
     this.srcFile = this.main;
@@ -3012,7 +3015,7 @@ class App {
     if (this.base) { await this.snapshot('Before opening another project', { force: !this.lastSig }); await this.stashBinary(); }
     this.name = name;
     this.main = '';
-    await this.loadGitFiles(files, 'Cloned');
+    await this.loadGitFiles(files, 'Cloned', 'git');
     this.toast('Cloned ' + name + '.');
   }
 
@@ -3386,6 +3389,11 @@ class App {
     const pick = docs.find(([n]) => /(^|\/)main\.tex$/i.test(n)) || docs.sort((x, y) => x[0].split('/').length - y[0].split('/').length)[0] || [onlyTex[0]];
     this.main = pick[0];
     this.name = zipName || this.main.replace(/\.tex$/i, '').split('/').pop();
+    // A .zip or a project with a git history is content from someone else, like a share link:
+    // its shell escape is restricted (the worker runs only TeX Live's safe programs, keeps no
+    // LuaTeX font cache and is let go after) until the owner allows more. Loose .tex/.bib files
+    // the user opened are their own and stay unrestricted.
+    if (zipName || gitFiles.has('.git/HEAD')) this.markFromLink('', this.name, this.main, gitFiles.has('.git/HEAD') ? 'git' : 'zip');
     this.hist = []; this.redoStack = []; this.updateUndoUI();
     this.forceRender = true;
     this.srcFile = this.main;

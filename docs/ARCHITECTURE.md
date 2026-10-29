@@ -143,8 +143,9 @@ prototype).
   touch different lines, the coauthor's where they touch the same ones, with a note), applies the
   result as one undo step and sets the author's own text as the base: what Changes lists and
   the page marks are exactly the coauthor's edits.
-- **Text from someone else compiles restricted.** A project opened from a link, or one a copy
-  came back into, is marked (`markFromLink`, kept per project as `link:` in IndexedDB) and
+- **Text from someone else compiles restricted.** A project opened from a link, one a copy came
+  back into, one opened from a .zip and one cloned from a git repository are marked
+  (`markFromLink`, with where it came from, kept per project as `link:` in IndexedDB) and
   compiles with TeX Live's restricted shell escape until its owner allows more (`allowShellHere`,
   or ticking Shell escape), because shell escape lets a document run programs in the worker. The
   worker that compiled such a document keeps no LuaTeX font cache from it and is let go before it

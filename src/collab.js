@@ -183,9 +183,9 @@ export const collab = {
     }
     return this.linkCache.get(k);
   },
-  markFromLink(by, name = this.name, main = this.main) {
+  markFromLink(by, name = this.name, main = this.main, origin = 'link') {
     const k = name + '|' + main;
-    const v = { by, t: Date.now(), allowed: false };
+    const v = { by, t: Date.now(), allowed: false, origin };
     this.linkCache = this.linkCache || new Map();
     this.linkCache.set(k, v);
     if (!this.noIdb) kvPut('link:' + k, v).catch(() => {});
@@ -202,12 +202,16 @@ export const collab = {
   noteRestricted(issues) {
     const v = this.linkCache && this.linkCache.get(this.name + '|' + this.main);
     const who = v && v.by ? v.by : 'someone else';
-    issues.unshift({ sev: 'warn', file: null, line: null, msg: 'Shell escape is restricted: this document came in a link from ' + who + ', so it runs only the programs TeX Live allows by default. Tick Shell escape if you trust it.' });
+    // a .zip or a git repository is content from someone else just as a link is, so it is
+    // restricted the same way; the wording follows how it arrived
+    const origin = v && v.origin;
+    const came = origin === 'zip' ? 'was opened from a .zip file' : origin === 'git' ? 'was cloned from a git repository' : 'came in a link from ' + who;
+    issues.unshift({ sev: 'warn', file: null, line: null, msg: 'Shell escape is restricted: this document ' + came + ', so it runs only the programs TeX Live allows by default. Tick Shell escape if you trust it.' });
     const k = this.name + '|' + this.main;
     this.restrictNoted = this.restrictNoted || new Set();
     if (this.restrictNoted.has(k)) return;
     this.restrictNoted.add(k);
-    this.toast('This document came in a link from ' + who + ', so it compiles with restricted shell escape: packages that run other programs (gnuplot, some figures) are skipped.', 10000, { label: 'Allow', fn: () => this.allowShellHere() });
+    this.toast('This document ' + came + ', so until you allow it, it compiles with restricted shell escape: packages that run other programs (gnuplot, some figures) are skipped.', 10000, { label: 'Allow', fn: () => this.allowShellHere() });
   },
 
   // a copy coming back: three way merge with what I wrote meanwhile, their edits marked
