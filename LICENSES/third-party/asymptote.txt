@@ -1,0 +1,2656 @@
+Asymptote and the libraries compiled into it
+
+tex/vendor/asy/asy.wasm is Asymptote 3.09, built by tex/build_tools.sh from texlive-source at
+f6b450440fca5d39f069f1d43153f7a8a75b04a1 (utils/asymptote, with the parts bundled there: GLEW,
+TinyEXR, the PRC library, optional-lite), linked with GLM 1.0.1, Mesa 24.0.5 (OSMesa and softpipe),
+GSL 2.8, FFTW 3.3.11, Eigen 3.4.0 and TeX Live's zlib, each from the archive SOURCES.md names.
+Asymptote is under the GNU LGPL 3 or later; linked with GSL and FFTW, the program as built is under
+the GNU GPL 3 or later. Emscripten's libraries in it: emscripten.txt.
+
+The license texts these notices refer to that are not copied below (the GNU GPL, LGPL and
+AGPL, the Mozilla Public License 2.0, the Apache License 2.0 and the Artistic License 2.0) are in
+LICENSE and LICENSES/ and, in the built page, earlier in LICENSES.txt. SOURCES.md says where the
+exact source of each part is. Apart from the headings and the lines that say what each part is
+and what its license asks, everything below is copied from the file named under its heading;
+comment markers are removed.
+
+----------------------------------------------------------------------------------------------------
+Asymptote 3.09
+LGPL-3.0-or-later (the program as built: GPL-3.0-or-later, with GSL).
+Copied from: texlive-source f6b4504, utils/asymptote/README
+----------------------------------------------------------------------------------------------------
+
+			  ASYMPTOTE
+      Copyright 2004-26 Andy Hammerlindl, John Bowman, and Tom Prince
+
+All source files in the Asymptote project, unless explicitly noted otherwise,
+are released under version 3 (or later) of the GNU Lesser General Public
+License (see the files LICENSE.LESSER and LICENSE in the top-level source
+directory).
+
+========================================================================
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU Lesser General Public License as published by
+the Free Software Foundation; either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Lesser General Public License for more details.
+
+You should have received a copy of the GNU Lesser General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+----------------------------------------------------------------------------------------------------
+The PRC library (in Asymptote: prc/)
+LGPL-3.0-or-later.
+Copied from: texlive-source f6b4504, utils/asymptote/prc/oPRCFile.cc
+----------------------------------------------------------------------------------------------------
+
+This file is part of a tool for producing 3D content in the PRC format.
+Copyright (C) 2008  Orest Shardt <shardtor (at) gmail dot com> and
+                    Michail Vidiassov <master@iaas.msu.ru>
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Lesser General Public License as published by
+the Free Software Foundation, either version 3 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU Lesser General Public License for more details.
+
+You should have received a copy of the GNU Lesser General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+----------------------------------------------------------------------------------------------------
+GTS rounding code (in Asymptote: rounding.h)
+LGPL-2.0-or-later (the LGPL 2.1 text applies under "any later version").
+Copied from: texlive-source f6b4504, utils/asymptote/rounding.h
+----------------------------------------------------------------------------------------------------
+
+GTS - Library for the manipulation of triangulated surfaces
+Copyright (C) 1999 Stéphane Popinet
+
+This library is free software; you can redistribute it and/or
+modify it under the terms of the GNU Library General Public
+License as published by the Free Software Foundation; either
+version 2 of the License, or (at your option) any later version.
+
+This library is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+Library General Public License for more details.
+
+You should have received a copy of the GNU Library General Public
+License along with this library; if not, write to the
+Free Software Foundation, Inc., 59 Temple Place - Suite 330,
+Boston, MA 02111-1307, USA.
+
+----------------------------------------------------------------------------------------------------
+Robust geometric predicates (in Asymptote: predicates.cc)
+Public domain: nothing is asked.
+Copied from: texlive-source f6b4504, utils/asymptote/predicates.cc
+----------------------------------------------------------------------------------------------------
+
+Routines for Arbitrary Precision Floating-point Arithmetic
+and Fast Robust Geometric Predicates
+(predicates.c)
+
+May 18, 1996
+
+Placed in the public domain by
+Jonathan Richard Shewchuk
+School of Computer Science
+Carnegie Mellon University
+5000 Forbes Avenue
+Pittsburgh, Pennsylvania  15213-3891
+jrs@cs.cmu.edu
+
+----------------------------------------------------------------------------------------------------
+optional-lite (in Asymptote: backports/optional)
+Boost Software License 1.0, which asks for nothing in compiled form; its text is in the Mesa part
+below (src/c11/impl/threads_posix.c).
+Copied from: texlive-source f6b4504, utils/asymptote/backports/optional/include/optional.hpp
+----------------------------------------------------------------------------------------------------
+
+Copyright (c) 2014-2021 Martin Moene
+
+https://github.com/martinmoene/optional-lite
+
+Distributed under the Boost Software License, Version 1.0.
+(See accompanying file LICENSE.txt or copy at http://www.boost.org/LICENSE_1_0.txt)
+
+----------------------------------------------------------------------------------------------------
+GLEW, the OpenGL Extension Wrangler (in Asymptote: backports/glew)
+Modified BSD (copyright notice and license with binary copies), with Mesa's MIT and Khronos' MIT
+notices for the parts derived from them.
+Copied from: texlive-source f6b4504, utils/asymptote/backports/glew/include/GL/glew.h
+----------------------------------------------------------------------------------------------------
+
+The OpenGL Extension Wrangler Library
+Copyright (C) 2008-2017, Nigel Stewart <nigels[]users sourceforge net>
+Copyright (C) 2002-2008, Milan Ikits <milan ikits[]ieee org>
+Copyright (C) 2002-2008, Marcelo E. Magallon <mmagallo[]debian org>
+Copyright (C) 2002, Lev Povalahev
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice,
+  this list of conditions and the following disclaimer.
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+* The name of the author may be used to endorse or promote products
+  derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF
+THE POSSIBILITY OF SUCH DAMAGE.
+
+Mesa 3-D graphics library
+Version:  7.0
+
+Copyright (C) 1999-2007  Brian Paul   All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+BRIAN PAUL BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
+AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Copyright (c) 2007 The Khronos Group Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and/or associated documentation files (the
+"Materials"), to deal in the Materials without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Materials, and to
+permit persons to whom the Materials are furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Materials.
+
+THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+MATERIALS OR THE USE OR OTHER DEALINGS IN THE MATERIALS.
+
+----------------------------------------------------------------------------------------------------
+TinyEXR (in Asymptote: tinyexr/), with code from OpenEXR
+BSD-3-Clause, for TinyEXR and for the OpenEXR code in it: copyright notice and license with binary
+copies. Built with zlib, so the miniz copy it carries is not compiled.
+Copied from: texlive-source f6b4504, utils/asymptote/tinyexr/tinyexr.h
+----------------------------------------------------------------------------------------------------
+
+Copyright (c) 2014 - 2021, Syoyo Fujita and many contributors.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+    * Redistributions of source code must retain the above copyright
+      notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in the
+      documentation and/or other materials provided with the distribution.
+    * Neither the name of the Syoyo Fujita nor the
+      names of its contributors may be used to endorse or promote products
+      derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Copyright (c) 2002, Industrial Light & Magic, a division of Lucas
+Digital Ltd. LLC
+
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+*       Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+*       Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+*       Neither the name of Industrial Light & Magic nor the names of
+its contributors may be used to endorse or promote products derived
+from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+PIZ compress/uncompress, based on OpenEXR's ImfPizCompressor.cpp
+
+-----------------------------------------------------------------
+Copyright (c) 2004, Industrial Light & Magic, a division of Lucas
+Digital Ltd. LLC)
+(3 clause BSD license)
+
+----------------------------------------------------------------------------------------------------
+GLM 1.0.1
+The Happy Bunny License or the MIT License: copyright notice and license with every copy.
+Copied from: github.com/g-truc/glm at 0af55ccecd98d4e5a8d1fad7de25ba429d60e863, copying.txt
+----------------------------------------------------------------------------------------------------
+
+================================================================================
+OpenGL Mathematics (GLM)
+--------------------------------------------------------------------------------
+GLM is licensed under The Happy Bunny License or MIT License
+
+================================================================================
+The Happy Bunny License (Modified MIT License)
+--------------------------------------------------------------------------------
+Copyright (c) 2005 - G-Truc Creation
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+Restrictions:
+ By making use of the Software for military purposes, you choose to make a
+ Bunny unhappy.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+================================================================================
+The MIT License
+--------------------------------------------------------------------------------
+Copyright (c) 2005 - G-Truc Creation
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+----------------------------------------------------------------------------------------------------
+Eigen 3.4.0 (headers)
+MPL-2.0 (Executable Form: say where the source is, which SOURCES.md does); the BSD and Apache
+notices of three headers asy includes follow. None of the LGPL files Eigen carries is among the
+headers asy includes.
+Copied from: eigen3_3.4.0.orig.tar.bz2 (Ubuntu), COPYING.README; Eigen/src/Core/arch/Default/Half.h, BFloat16.h; Eigen/src/Core/util/MKL_support.h
+----------------------------------------------------------------------------------------------------
+
+Eigen is primarily MPL2 licensed. See COPYING.MPL2 and these links:
+  http://www.mozilla.org/MPL/2.0/
+  http://www.mozilla.org/MPL/2.0/FAQ.html
+
+Some files contain third-party code under BSD or LGPL licenses, whence the other
+COPYING.* files here.
+
+All the LGPL code is either LGPL 2.1-only, or LGPL 2.1-or-later.
+For this reason, the COPYING.LGPL file contains the LGPL 2.1 text.
+
+If you want to guarantee that the Eigen code that you are #including is licensed
+under the MPL2 and possibly more permissive licenses (like BSD), #define this
+preprocessor symbol:
+  EIGEN_MPL2_ONLY
+For example, with most compilers, you could add this to your project CXXFLAGS:
+  -DEIGEN_MPL2_ONLY
+This will cause a compilation error to be generated if you #include any code that is
+LGPL licensed.
+
+This file is part of Eigen, a lightweight C++ template library
+for linear algebra.
+
+This Source Code Form is subject to the terms of the Mozilla
+Public License v. 2.0. If a copy of the MPL was not distributed
+with this file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+The conversion routines are Copyright (c) Fabian Giesen, 2016.
+The original license follows:
+
+Copyright (c) Fabian Giesen, 2016
+All rights reserved.
+Redistribution and use in source and binary forms, with or without
+modification, are permitted.
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Copyright 2017 The TensorFlow Authors. All Rights Reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+Copyright (c) 2011, Intel Corporation. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+* Redistributions of source code must retain the above copyright notice, this
+  list of conditions and the following disclaimer.
+* Redistributions in binary form must reproduce the above copyright notice,
+  this list of conditions and the following disclaimer in the documentation
+  and/or other materials provided with the distribution.
+* Neither the name of Intel Corporation nor the names of its contributors may
+  be used to endorse or promote products derived from this software without
+  specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+********************************************************************************
+*   Content : Eigen bindings to Intel(R) MKL
+*   Include file with common MKL declarations
+
+----------------------------------------------------------------------------------------------------
+GSL 2.8, the GNU Scientific Library
+GPL-3.0-or-later.
+Copied from: gsl_2.8+dfsg.orig.tar.gz (Ubuntu), README
+----------------------------------------------------------------------------------------------------
+
+GSL - GNU Scientific Library
+============================
+
+This is GSL, the GNU Scientific Library, a collection of numerical
+routines for scientific computing.
+
+GSL is free software, you can redistribute it and/or modify it under
+the terms of the GNU General Public License.
+
+The GNU General Public License does not permit this software to be
+redistributed in proprietary programs.
+
+This library is distributed in the hope that it will be useful, but
+WITHOUT ANY WARRANTY; without even the implied warranty of
+
+----------------------------------------------------------------------------------------------------
+FFTW 3.3.11
+GPL-2.0-or-later.
+Copied from: fftw3_3.3.11.orig.tar.gz (Ubuntu), COPYRIGHT
+----------------------------------------------------------------------------------------------------
+
+Copyright (c) 2003, 2007-14 Matteo Frigo
+Copyright (c) 2003, 2007-14 Massachusetts Institute of Technology
+
+This program is free software; you can redistribute it and/or modify
+it under the terms of the GNU General Public License as published by
+the Free Software Foundation; either version 2 of the License, or
+(at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program; if not, write to the Free Software
+Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+
+----------------------------------------------------------------------------------------------------
+zlib 1.3.1 (TeX Live's copy, in Asymptote and Mesa)
+zlib license: asks for nothing in binary copies.
+Copied from: texlive-source f6b4504, libs/zlib/zlib-src/LICENSE
+----------------------------------------------------------------------------------------------------
+
+Copyright notice:
+
+ (C) 1995-2026 Jean-loup Gailly and Mark Adler
+
+  This software is provided 'as-is', without any express or implied
+  warranty.  In no event will the authors be held liable for any damages
+  arising from the use of this software.
+
+  Permission is granted to anyone to use this software for any purpose,
+  including commercial applications, and to alter it and redistribute it
+  freely, subject to the following restrictions:
+
+  1. The origin of this software must not be misrepresented; you must not
+     claim that you wrote the original software. If you use this software
+     in a product, an acknowledgment in the product documentation would be
+     appreciated but is not required.
+  2. Altered source versions must be plainly marked as such, and must not be
+     misrepresented as being the original software.
+  3. This notice may not be removed or altered from any source distribution.
+
+  Jean-loup Gailly        Mark Adler
+  jloup@gzip.org          madler@alumni.caltech.edu
+
+----------------------------------------------------------------------------------------------------
+Mesa 24.0.5 (OSMesa, softpipe and the parts they use)
+MIT for most of it (copyright notice and license with every copy); the C11 threads code is under the
+Boost Software License 1.0, Berkeley SoftFloat and a few others under BSD licenses, BLAKE3 under CC0
+or Apache 2.0. Mesa's own summary comes first; then the notices of every file compiled into
+libOSMesa.a, libsoftpipe.a, libblake3.a and libmesa_util_sse41.a (and the headers and shader sources
+they include), grouped by license text: each group names its files, then gives their
+copyright lines, then the text once. Files named "generated" were written by Mesa's build scripts
+during the build; 44 files carry no notice of their own and fall under the summary.
+Copied from: mesa_24.0.5.orig.tar.gz (Ubuntu): docs/license.rst and the files named in the groups; src/util/blake3/README
+----------------------------------------------------------------------------------------------------
+
+License and Copyright
+=====================
+
+Disclaimer
+----------
+
+Mesa implements various APIs, including `OpenGL`_, `OpenGL ES`_,
+`Vulkan`_ and `OpenCL`_. Even though Mesa implements these APIs, the
+implementation isn't formally conformant on all combinations of drivers
+and hardware. `Khronos`_ maintains lists of conformant implementations
+for each of their APIs, as well as `trademark details`_.
+
+Please do not refer to the library as *MesaGL* (for legal reasons). It's
+just *Mesa* or *The Mesa 3-D graphics library*.
+
+.. _OpenGL: https://www.opengl.org/
+.. _OpenGL ES: https://www.khronos.org/opengles/
+.. _Vulkan: https://www.vulkan.org/
+.. _OpenCL: https://www.khronos.org/opencl/
+.. _Khronos: https://www.khronos.org/
+.. _trademark details: https://www.khronos.org/legal/trademarks/
+
+License / Copyright Information
+-------------------------------
+
+The Mesa distribution consists of several components. Different
+copyrights and licenses apply to different components. For example, the
+GLX client code uses the SGI Free Software License B, and some of the
+Mesa device drivers are copyrighted by their authors. See below for a
+list of Mesa's main components and the license for each.
+
+The core Mesa library is licensed according to the terms of the MIT
+license. This allows integration with the XFree86, X.Org and DRI
+projects.
+
+The default Mesa license is as follows:
+
+::
+
+   Copyright (C) 1999-2007  Brian Paul   All Rights Reserved.
+
+   Permission is hereby granted, free of charge, to any person obtaining a
+   copy of this software and associated documentation files (the "Software"),
+   to deal in the Software without restriction, including without limitation
+   the rights to use, copy, modify, merge, publish, distribute, sublicense,
+   and/or sell copies of the Software, and to permit persons to whom the
+   Software is furnished to do so, subject to the following conditions:
+
+   The above copyright notice and this permission notice shall be included
+   in all copies or substantial portions of the Software.
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+   THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+   OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+   SOFTWARE.
+
+Attention, Contributors
+-----------------------
+
+When contributing to the Mesa project you must agree to the licensing
+terms of the component to which you're contributing. The following
+section lists the primary components of the Mesa distribution and their
+respective licenses.
+
+Mesa Component Licenses
+-----------------------
+
++-----------------+------------------------+-----------------------------+
+| Component       | Location               | License                     |
++=================+========================+=============================+
+| Main Mesa code  | src/mesa/              | MIT                         |
++-----------------+------------------------+-----------------------------+
+| Gallium code    | src/gallium/           | MIT                         |
++-----------------+------------------------+-----------------------------+
+| Ext headers     | include/GL/glext.h,    | Khronos                     |
+|                 | include/GL/glxext.h    |                             |
++-----------------+------------------------+-----------------------------+
+| GLX client code | src/glx/               | SGI Free Software License B |
++-----------------+------------------------+-----------------------------+
+| C11 thread      | src/c11/impl/threads*  | Boost (permissive)          |
+| emulation       |                        |                             |
++-----------------+------------------------+-----------------------------+
+
+In general, consult the source files for license terms.
+
+Files: include/GL/gl.h, include/GL/mesa_glinterop.h, include/GL/osmesa.h, src/compiler/shader_enums.h, src/gallium/auxiliary/draw/draw_decompose_tmp.h, src/gallium/auxiliary/draw/draw_pt_vsplit.c and 220 more
+Copyright (C) 1999-2006  Brian Paul   All Rights Reserved.
+Copyright (C) 2009  VMware, Inc.  All Rights Reserved.
+Copyright 2016 Advanced Micro Devices, Inc.
+Copyright (C) 1999-2005  Brian Paul   All Rights Reserved.
+Copyright (C) 1999-2008  Brian Paul   All Rights Reserved.
+Copyright 2008 VMware, Inc.
+Copyright (C) 2010 LunarG Inc.
+Copyright 2007-2008 VMware, Inc.
+Copyright (C) 1999-2004  Brian Paul   All Rights Reserved.
+Copyright (C) 2010  VMware, Inc.  All Rights Reserved.
+Copyright (C) 1999-2001  Brian Paul   All Rights Reserved.
+Copyright (C) 1999-2007  Brian Paul   All Rights Reserved.
+Copyright (C) 2009  VMware, Inc.   All Rights Reserved.
+Copyright (C) 2016 Ilia Mirkin.  All Rights Reserved.
+Copyright (C) 1999-2013  VMware, Inc.  All Rights Reserved.
+Copyright (C) 2008  VMware, Inc.  All Rights Reserved.
+Copyright (C) 2018 Rhys Perry
+Copyright (C) 2014 Intel Corporation.  All Rights Reserved.
+Copyright (C) 1999-2016  Brian Paul, et al   All Rights Reserved.
+Copyright (C) 1999-2003  Brian Paul   All Rights Reserved.
+Copyright (C) 2017 Red Hat.
+Copyright (C) 1999-2009  VMware, Inc.  All Rights Reserved.
+Copyright (c) 2011 VMware, Inc.
+Copyright (C) 2014  Intel Corporation  All Rights Reserved.
+Copyright (C) 1999-2006  Brian Paul  All Rights Reserved.
+Copyright (c) 2008-2009  VMware, Inc.
+Copyright (c) 2012 Intel Corporation
+Copyright (C) 2022 Advanced Micro Devices, Inc.
+Copyright (C) 1999-2002  Brian Paul   All Rights Reserved.
+Copyright (C) 2018 Advanced Micro Devices, Inc.  All Rights Reserved.
+Copyright (C) 2013  Timothy Arceri   All Rights Reserved.
+Copyright (C) 1999-2010  VMware, Inc.  All Rights Reserved.
+Copyright (C) 2009-2011  VMware, Inc.  All Rights Reserved.
+Copyright (C) 2009-2010  VMware, Inc.  All Rights Reserved.
+Copyright (c) 2017 Intel Corporation
+Copyright (C) 2004-2007  Brian Paul   All Rights Reserved.
+Copyright (C) 2015 Intel Corporation.  All Rights Reserved.
+Copyright (C) 2009 Chia-I Wu <olv@0xlab.org>
+Copyright (C) 2011  VMware, Inc.  All Rights Reserved.
+Copyright (C) 2004-2008  Brian Paul   All Rights Reserved.
+Copyright (c) 2008 VMware, Inc.
+Copyright (C) 1999-2010  Brian Paul   All Rights Reserved.
+Copyright (c) 2009 VMware, Inc.
+Copyright (C) 2013 LunarG, Inc.
+Copyright (C) 2012-2013 LunarG, Inc.
+Copyright © 2010, 2011 Intel Corporation
+Copyright © 2010 Intel Corporation
+Copyright (C) 2006  Brian Paul   All Rights Reserved.
+Copyright (C) 2018-2019 Intel Corporation
+Copyright (C) 2022  Yongang Luo       All Rights Reserved.
+Copyright 2015 Philip Taylor <philip@zaynar.co.uk>
+Copyright 2018 Advanced Micro Devices, Inc.
+
+Mesa 3-D graphics library
+
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+Files: include/GL/glext.h, include/GLES/gl.h, include/GLES/glext.h, include/GLES2/gl2.h, include/GLES2/gl2ext.h, include/GLES3/gl3.h and 2 more
+Copyright 2013-2020 The Khronos Group Inc.
+
+SPDX-License-Identifier: MIT
+
+This header is generated from the Khronos OpenGL / OpenGL ES XML
+API Registry. The current version of the Registry, generator scripts
+used to make the header, and the header can be found at
+  https://github.com/KhronosGroup/OpenGL-Registry
+
+Files: include/GL/internal/dri_interface.h
+Copyright 1998-1999 Precision Insight, Inc., Cedar Park, Texas.
+Copyright 2007-2008 Red Hat, Inc.
+
+(C) Copyright IBM Corporation 2004
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+on the rights to use, copy, modify, merge, publish, distribute, sub
+license, and/or sell copies of the Software, and to permit persons to whom
+the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.  IN NO EVENT SHALL
+THE COPYRIGHT HOLDERS AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: include/GLES/glplatform.h, include/GLES2/gl2platform.h, include/GLES3/gl3platform.h, include/vk_video/vulkan_video_codec_h264std.h, include/vk_video/vulkan_video_codec_h264std_decode.h, include/vk_video/vulkan_video_codec_h264std_encode.h and 6 more
+Copyright 2017-2020 The Khronos Group Inc.
+Copyright 2015-2023 The Khronos Group Inc.
+Copyright 2014-2023 The Khronos Group Inc.
+
+SPDX-License-Identifier: Apache-2.0
+
+Files: include/KHR/khrplatform.h
+Copyright (c) 2008-2018 The Khronos Group Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and/or associated documentation files (the
+"Materials"), to deal in the Materials without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Materials, and to
+permit persons to whom the Materials are furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Materials.
+
+THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+MATERIALS OR THE USE OR OTHER DEALINGS IN THE MATERIALS.
+
+Files: include/c99_alloca.h, include/c99_compat.h, src/compiler/nir/nir_vla.h, src/gallium/auxiliary/cso_cache/cso_cache.c, src/gallium/auxiliary/cso_cache/cso_cache.h, src/gallium/auxiliary/cso_cache/cso_context.c and 286 more
+Copyright 2015 VMware, Inc.
+Copyright 2007-2013 VMware, Inc.
+Copyright 2007 VMware, Inc.
+Copyright 2007-2008 VMware, Inc.
+Copyright 2010, VMware, inc.
+Copyright 2010 VMware, Inc.
+Copyright 2009 VMware, Inc.
+Copyright 2007-2018 VMware, Inc.
+Copyright 2008 VMware, Inc.
+Copyright 2013 VMware, Inc.
+Copyright 2007-2010 VMware, Inc.
+Copyright 2006 VMware, Inc.
+Copyright 2009-2010 VMware, Inc.  All rights Reserved.
+Copyright 2008 VMware, Inc.  All rights Reserved.
+Copyright 2007-2023 VMware, Inc.
+Copyright 2019 Sonny Jiang <sonnyj608@gmail.com>
+Copyright 2019 Advanced Micro Devices, Inc.
+Copyright 2012 VMware, Inc.
+Copyright (c) 2008-2016 VMware, Inc.
+Copyright 2011 VMware, Inc.
+Copyright 2008-2010 VMware, Inc.
+Copyright 2008  VMware, Inc.  All rights reserved.
+Copyright 2014 Advanced Micro Devices, Inc.
+Copyright 2014 VMware, Inc.
+Copyright 2009 Marek Olšák <maraeo@gmail.com>
+Copyright 2008 VMware, Inc.  All rights reserved.
+Copyright 2009 Younes Manton.
+Copyright 2011 Christian König
+Copyright 2009 VMware, Inc.  All Rights Reserved.
+Copyright 2003 VMware, Inc.
+Copyright 2008-2010 VMware, Inc.  All rights reserved.
+Copyright 2010 VMware, Inc.  All rights reserved.
+Copyright 2007-2009 VMware, Inc.
+Copyright 2009-2010 VMware, Inc.
+Copyright © 2010-2011 Intel Corporation
+Copyright 2004 VMware, Inc.
+Copyright (c) 2008 VMware, Inc.
+Copyright (c) 2008-2010 VMware, Inc.
+Copyright (c) 2010 VMware, Inc.
+Copyright 2016 VMware, Inc.
+Copyright 2016 Ilia Mirkin
+Copyright 2016 Ilia Mirkin.
+Copyright 2019 VMware, Inc.
+Copyright 2005 VMware, Inc.
+Copyright 2002 VMware, Inc.
+Copyright 2011 Dave Airlie (ARB_vertex_type_2_10_10_10_rev support)
+Copyright 2020 Advanced Micro Devices, Inc.
+Copyright 2022 Yonggang Luo
+Copyright 2020 Lag Free Games, LLC
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sub license, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice (including the
+next paragraph) shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+IN NO EVENT SHALL VMWARE AND/OR ITS SUPPLIERS BE LIABLE FOR
+ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: include/no_extern_c.h, src/gallium/auxiliary/draw/draw_mesh.c, src/gallium/auxiliary/draw/draw_mesh.h, src/gallium/auxiliary/draw/draw_mesh_prim.c, src/gallium/auxiliary/draw/draw_mesh_prim.h, src/gallium/auxiliary/draw/draw_pt_mesh_pipeline.c and 9 more
+Copyright 2014 VMware, Inc.
+Copyright 2023 Red Hat.
+Copyright 2020 Red Hat.
+Copyright 2019 Red Hat.
+Copyright 2015 VMware, Inc.
+Copyright 2022 Advanced Micro Devices, Inc.
+Copyright 1999-2006 Brian Paul
+Copyright 2008 VMware, Inc.
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/c11/impl/threads_posix.c, src/c11/threads.h
+Copyright 2022 Yonggang Luo
+
+C11 <threads.h> emulation library
+
+(C) Copyright yohhoy 2012.
+Distributed under the Boost Software License, Version 1.0.
+
+Permission is hereby granted, free of charge, to any person or organization
+obtaining a copy of the software and accompanying documentation covered by
+this license (the "Software") to use, reproduce, display, distribute,
+execute, and transmit the Software, and to prepare [[derivative work]]s of the
+Software, and to permit third-parties to whom the Software is furnished to
+do so, all subject to the following:
+
+The copyright notices in the Software and this entire statement, including
+the above license grant, this restriction and the following disclaimer,
+must be included in all copies of the Software, in whole or in part, and
+all derivative works of the Software, unless such copies or derivative
+works are solely in the form of machine-executable object code generated by
+a source language processor.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, TITLE AND NON-INFRINGEMENT. IN NO EVENT
+SHALL THE COPYRIGHT HOLDERS OR ANYONE DISTRIBUTING THE SOFTWARE BE LIABLE
+FOR ANY DAMAGES OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+Files: src/c11/impl/time.c
+Copyright 2022 Yonggang Luo
+
+C11 <time.h> implementation
+
+(C) Copyright yohhoy 2012.
+Distributed under the Boost Software License, Version 1.0.
+
+Permission is hereby granted, free of charge, to any person or organization
+obtaining a copy of the software and accompanying documentation covered by
+this license (the "Software") to use, reproduce, display, distribute,
+execute, and transmit the Software, and to prepare [[derivative work]]s of the
+Software, and to permit third-parties to whom the Software is furnished to
+do so, all subject to the following:
+
+The copyright notices in the Software and this entire statement, including
+the above license grant, this restriction and the following disclaimer,
+must be included in all copies of the Software, in whole or in part, and
+all derivative works of the Software, unless such copies or derivative
+works are solely in the form of machine-executable object code generated by
+a source language processor.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE, TITLE AND NON-INFRINGEMENT. IN NO EVENT
+SHALL THE COPYRIGHT HOLDERS OR ANYONE DISTRIBUTING THE SOFTWARE BE LIABLE
+FOR ANY DAMAGES OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+Files: src/c11/time.h
+Copyright 2022 Yonggang Luo
+
+SPDX-License-Identifier: MIT
+
+C11 <time.h> emulation library
+
+Files: src/compiler/glsl/CrossPlatformSettings_piece_all.glsl, src/compiler/glsl/astc_decoder.glsl, src/compiler/glsl/bc1.glsl, src/compiler/glsl/bc4.glsl, src/compiler/glsl/etc2_rgba_stitch.glsl, src/compiler/glsl/program.h and 24 more
+Copyright 2020-2022 Matias N. Goldberg
+Copyright (c) 2020-2022 Hans-Kristian Arntzen
+Copyright (c) 2022 Intel Corporation
+Copyright 2022 Intel Corporation
+Copyright (C) 1999-2008  Brian Paul   All Rights Reserved.
+Copyright (C) 2009  VMware, Inc.  All Rights Reserved.
+Copyright © 2010 Intel Corporation
+Copyright (C) 1999-2005  Brian Paul   All Rights Reserved.
+Copyright (c) 2008 VMware, Inc.
+Copyright © 2018 Intel Corporation
+Copyright (c) 2013  Brian Paul   All Rights Reserved.
+Copyright 2010 VMware, Inc.  All rights reserved.
+Copyright (C) 2010  Brian Paul   All Rights Reserved.
+Copyright (C) 2010  Intel Corporation
+Copyright (C) 2016 Miklós Máté
+Copyright (C) 2020 Google LLC
+Copyright (C) 1999-2007  Brian Paul   All Rights Reserved.
+Copyright (C) 2011 Red Hat Inc.
+Copyright © 2017 Faith Ekstrand
+Copyright (c) 2017-2022 Hans-Kristian Arntzen
+Copyright © 2022 Intel Corporation
+Copyright 2020 Serge Martin
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+Files: src/compiler/glsl/ast.h, src/compiler/glsl/ast_array_index.cpp, src/compiler/glsl/ast_expr.cpp, src/compiler/glsl/ast_function.cpp, src/compiler/glsl/ast_to_hir.cpp, src/compiler/glsl/ast_type.cpp and 450 more
+Copyright © 2009 Intel Corporation
+Copyright © 2010 Intel Corporation
+Copyright © 2013 Intel Corporation
+Copyright © 2016 Intel Corporation
+Copyright © 2018 Timothy Arceri
+Copyright © 2018 Intel Corporation
+Copyright © 2019 Intel Corporation
+Copyright © 2012 Intel Corporation
+Copyright © 2021 Valve Corporation
+Copyright © 2022 Valve Corporation
+Copyright © 2017 Intel Corporation
+Copyright © 2014 Intel Corporation
+Copyright © 2023 Timothy Arceri <tarceri@itsqueeze.com>
+Copyright © 2019 Red Hat Inc.
+Copyright © 2023 Valve Corporation
+Copyright © 2011 Intel Corporation
+Copyright (C) 2005-2007  Brian Paul   All Rights Reserved.
+Copyright (C) 2008  VMware, Inc.   All Rights Reserved.
+Copyright © 2017 Advanced Micro Devices, Inc.
+Copyright © 2019 Collabora Ltd.
+Copyright © 2013 Marek Olšák <maraeo@gmail.com>
+Copyright © 2008, 2009 Intel Corporation
+Copyright © 2008, 2010 Intel Corporation
+Copyright © 2019 Google, Inc.
+Copyright © 2010 Luca Barbieri
+Copyright © 2019 Google, Inc
+Copyright © 2015 Red Hat
+Copyright (c) 2017 Intel Corporation
+Copyright © 2008 Intel Corporation
+Copyright © 2014 Connor Abbott
+Copyright © 2014-2015 Broadcom
+Copyright © 2021 Google
+Copyright © 2018 Red Hat Inc.
+Copyright © 2015 Intel Corporation
+Copyright © 2020 Collabora Ltd.
+Copyright © 2018 Valve Corporation
+Copyright © 2021 Advanced Micro Devices, Inc.
+Copyright © 2020 Advanced Micro Devices, Inc.
+Copyright © 2015 Thomas Helland
+Copyright © 2017 Broadcom
+Copyright © 2018 Broadcom
+Copyright © 2017 Red Hat
+Copyright (C) 2019-2021 Collabora, Ltd.
+Copyright (C) 2019 Alyssa Rosenzweig
+Copyright Â 2019 Alyssa Rosenzweig
+Copyright © 2020 Mike Blumenkrantz
+Copyright © 2020 Intel Corporation
+Copyright © 2020 Valve Corporation
+Copyright © Microsoft Corporation
+Copyright (C) 2019 Andreas Baierl
+Copyright © 2019 Valve Corporation
+Copyright © 2020 Julian Winkler
+Copyright (C) 2020-2021 Collabora, Ltd.
+Copyright © 2021 Intel Corporation
+Copyright © 2019 Vasily Khoruzhick <anarsoul@gmail.com>
+Copyright © 2017 Timothy Arceri
+Copyright © 2016 Broadcom
+Copyright © 2021 Igalia S.L.
+Copyright © 2015 Broadcom
+Copyright (C) 2020 Google, Inc.
+Copyright (C) 2021 Advanced Micro Devices, Inc.
+Copyright © 2023 Collabora, Ltd.
+Copyright © 2020 Igalia S.L.
+Copyright © 2019 Raspberry Pi Ltd
+Copyright © 2019 Collabora Ltd
+Copyright © 2022 Advanced Micro Devices, Inc.
+Copyright © 2020 Microsoft Corporation
+Copyright © 2021 Collabora Ltd.
+Copyright © 2020 Collabora, Ltd.
+Copyright © 2020 Google LLC
+Copyright © 2020 Google, Inc.
+Copyright © 2022 Intel Corporation
+Copyright © 2016 Red Hat
+Copyright © 2022 Collabora Ltd.
+Copyright © 2021 Google, Inc.
+Copyright © 2015 Connor Abbott
+Copyright © 2018 Red Hat
+Copyright © 2022 Collabora Ltc.
+Copyright © 2022 Google, Inc.
+Copyright © 2023 Intel Corporation
+Copyright © 2019 Broadcom
+Copyright © 2017 Connor Abbott
+Copyright © 2022 Collabora Ltd
+Copyright © 2015-2023 Intel Corporation
+Copyright (C) 2013 Rob Clark <robclark@freedesktop.org>
+Copyright © 2014 Broadcom
+Copyright (C) 2014 Rob Clark <robclark@freedesktop.org>
+Copyright © 2011 Marek Olšák <maraeo@gmail.com>
+Copyright (C) 2009 Chia-I Wu <olv@0xlab.org>
+Copyright © 2016 Red Hat.
+Copyright © 2012-2017 Intel Corporation
+Copyright © 2012,2015 Intel Corporation
+Copyright 2013 Intel Corporation
+Copyright © 2014 Timothy Arceri
+Copyright 2015 Philip Taylor <philip@zaynar.co.uk>
+Copyright 2018 Advanced Micro Devices, Inc.
+Copyright (C) 2014 Intel Corporation
+Copyright (C) 2011 LunarG, Inc.
+Copyright (C) 2011 Red Hat Inc.
+Copyright © 2017 Valve Corporation.
+Copyright © 2011 Bryan Cain
+Copyright 2009, VMware, Inc.
+Copyright (C) 2010 LunarG Inc.
+Copyright © 2012 Collabora, Ltd.
+Copyright © 2020 Red Hat Inc.
+Copyright © 2018 Advanced Micro Devices, Inc.
+Copyright © 2010 Valve Software
+Copyright © 2021 Google LLC
+Copyright (C) 2011 Marek Olšák <maraeo@gmail.com>
+Copyright © 2015 Intel
+Copyright © 2022 Yonggang Luo
+Copyright © 2009,2012 Intel Corporation
+Copyright © 2017 Google, Inc.
+Copyright 2017 Google
+Copyright © 2007 Carl Worth
+Copyright © 2009 Jeremy Huddleston, Julien Cristau, and Matthieu Herrb
+Copyright © 2009-2010 Mikhail Gusarov
+Copyright © 2012 Yaakov Selkowitz and Keith Packard
+Copyright 2017 Timothy Arceri
+Copyright © 2014 Red Hat
+Copyright © 2009-2012 Intel Corporation
+Copyright © 2017 Thomas Helland
+Copyright (c) 2015 Intel Corporation
+Copyright © 2017 Gražvydas Ignotas
+Copyright (c) 2022 Collabora Ltd.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+Files: src/compiler/glsl/float64.glsl
+Copyright 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018 The Regents of the
+
+The implementations contained in this file are heavily based on the
+implementations found in the Berkeley SoftFloat library. As such, they are
+licensed under the same 3-clause BSD license:
+
+License for Berkeley SoftFloat Release 3e
+
+John R. Hauser
+2018 January 20
+
+The following applies to the whole of SoftFloat Release 3e as well as to
+each source file individually.
+
+University of California.  All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+ 1. Redistributions of source code must retain the above copyright notice,
+    this list of conditions, and the following disclaimer.
+
+ 2. Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions, and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+
+ 3. Neither the name of the University nor the names of its contributors
+    may be used to endorse or promote products derived from this software
+    without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS "AS IS", AND ANY
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE, ARE
+DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+Files: src/compiler/nir/nir_legacy.c, src/compiler/nir/nir_legacy.h, src/compiler/nir/nir_lower_cl_images.c, src/compiler/nir/nir_lower_frag_coord_to_pixel_coord.c, src/compiler/nir/nir_lower_image_atomics_to_global.c, src/compiler/nir/nir_lower_reg_intrinsics_to_ssa.c and 26 more
+Copyright 2023 Valve Corporation
+Copyright 2020 Collabora, Ltd.
+Copyright 2014 Connor Abbott
+Copyright 2023 Valve Corpoation
+Copyright 2014 Intel Corporation
+Copyright 2020 Raspberry Pi Ltd
+Copyright 2022 Alyssa Rosenzweig
+Copyright 2023 Intel Corporation
+Copyright 2023 Alyssa Rosenzweig
+Copyright © 2023 Google LLC
+Copyright 2007 VMware, Inc.
+Copyright © 2022 Collabora, Ltd.
+Copyright 2019 Intel Corporation
+Copyright 2022 Google LLC
+Copyright 2023 Bas Nieuwenhuizen
+Copyright 2020 Lag Free Games, LLC
+Copyright 2022 Yonggang Luo
+Copyright 1999-2006 Brian Paul
+Copyright 2008 VMware, Inc.
+
+SPDX-License-Identifier: MIT
+
+Files: src/compiler/nir/nir_lower_clip_halfz.c, src/compiler/nir/nir_lower_discard_if.c, src/compiler/nir/nir_lower_tex_shadow.c, src/compiler/nir/nir_lower_uniforms_to_ubo.c, src/gallium/auxiliary/driver_noop/noop_pipe.c, src/gallium/auxiliary/driver_noop/noop_public.h and 25 more
+Copyright 2018-2019 Collabora Ltd.
+Copyright 2018 Collabora Ltd.
+Copyright © Microsoft Corporation
+Copyright 2017 Advanced Micro Devices, Inc.
+Copyright 2010 Red Hat Inc.
+Copyright (C) 2022 Collabora, Ltd.
+Copyright 2010 Marek Olšák <maraeo@gmail.com>
+Copyright 2013 Marek Olšák <maraeo@gmail.com>
+Copyright 2016 Red Hat.
+Copyright © 2017 Intel Corporation
+Copyright 2017 Intel Corporation
+Copyright 2015 Advanced Micro Devices, Inc.
+Copyright 2007 VMware, Inc.
+Copyright 2016 Advanced Micro Devices, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+on the rights to use, copy, modify, merge, publish, distribute, sub
+license, and/or sell copies of the Software, and to permit persons to whom
+the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
+THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/compiler/nir/nir_lower_fp16_conv.c
+Copyright (c) 2012-2019 Christian Rau <rauy@users.sourceforge.net>
+COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+
+The following float-to-half conversion routines are based on the "half" library:
+https://sourceforge.net/projects/half/
+
+half - IEEE 754-based half-precision floating-point library.
+
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation
+files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy,
+modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Version 2.1.0
+
+Files: src/compiler/nir/nir_lower_ssbo.c, src/compiler/nir/nir_lower_undef_to_zero.c
+Copyright © 2019 Collabora, Ltd.
+Copyright (C) 2019 Collabora, Ltd.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+
+Authors (Collabora):
+   Alyssa Rosenzweig <alyssa.rosenzweig@collabora.com>
+
+Files: src/compiler/shader_enums.c, src/mesa/main/condrender.c, src/mesa/main/condrender.h, src/mesa/main/pipelineobj.c, src/mesa/main/pipelineobj.h
+Copyright © 2015 Red Hat
+Copyright (C) 2009  VMware, Inc.   All Rights Reserved.
+Copyright © 2013 Gregory Hainaut <gregory.hainaut@gmail.com>
+
+Mesa 3-D graphics library
+
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+
+Files: src/compiler/spirv/GLSL.ext.AMD.h, src/compiler/spirv/GLSL.std.450.h, src/compiler/spirv/OpenCL.std.h, src/compiler/spirv/spirv.h
+Copyright (c) 2014-2016 The Khronos Group Inc.
+Copyright (c) 2015-2019 The Khronos Group Inc.
+Copyright (c) 2014-2020 The Khronos Group Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and/or associated documentation files (the "Materials"),
+to deal in the Materials without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Materials, and to permit persons to whom the
+Materials are furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Materials.
+
+MODIFICATIONS TO THIS FILE MAY MEAN IT NO LONGER ACCURATELY REFLECTS KHRONOS
+STANDARDS. THE UNMODIFIED, NORMATIVE VERSIONS OF KHRONOS SPECIFICATIONS AND
+HEADER INFORMATION ARE LOCATED AT https://www.khronos.org/registry/
+
+THE MATERIALS ARE PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM,OUT OF OR IN CONNECTION WITH THE MATERIALS OR THE USE OR OTHER DEALINGS
+IN THE MATERIALS.
+
+Files: src/gallium/auxiliary/driver_ddebug/dd_context.c, src/gallium/auxiliary/driver_ddebug/dd_draw.c, src/gallium/auxiliary/driver_ddebug/dd_pipe.h, src/gallium/auxiliary/driver_ddebug/dd_public.h, src/gallium/auxiliary/driver_ddebug/dd_screen.c, src/gallium/auxiliary/driver_ddebug/dd_util.h and 9 more
+Copyright 2015 Advanced Micro Devices, Inc.
+Copyright 2008 VMware, Inc.
+Copyright 2010 VMware, Inc.
+Copyright 2019 Red Hat
+Copyright 2017 Advanced Micro Devices, Inc.
+Copyright 2019 Advanced Micro Devices, Inc.
+Copyright 2021 Advanced Micro Devices, Inc.
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+on the rights to use, copy, modify, merge, publish, distribute, sub
+license, and/or sell copies of the Software, and to permit persons to whom
+the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
+THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/gallium/auxiliary/driver_trace/tr_public.h, src/gallium/auxiliary/pipebuffer/pb_bufmgr_slab.c, src/gallium/drivers/softpipe/sp_fence.c, src/gallium/drivers/softpipe/sp_fence.h, src/gallium/winsys/sw/null/null_sw_winsys.c, src/gallium/winsys/sw/null/null_sw_winsys.h and 21 more
+Copyright 2010 VMware, Inc.
+Copyright 2006-2008 VMware, Inc., USA
+Copyright 2011 LunarG, Inc.
+Copyright 2011 Red Hat Inc.
+Copyright 2006 VMware, Inc., Bismarck, ND. USA.
+Copyright 2009 VMware, Inc.
+Copyright 1999-2008  Brian Paul
+Copyright © 2003 Felix Kuehling
+Copyright © 2018 Advanced Micro Devices, Inc.
+Copyright © 2016 Advanced Micro Devices, Inc.
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sub license, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
+THE COPYRIGHT HOLDERS, AUTHORS AND/OR ITS SUPPLIERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+The above copyright notice and this permission notice (including the
+next paragraph) shall be included in all copies or substantial portions
+of the Software.
+
+Files: src/gallium/auxiliary/hud/font.c, src/gallium/auxiliary/hud/font.h, src/gallium/auxiliary/hud/hud_context.c, src/gallium/auxiliary/hud/hud_context.h, src/gallium/auxiliary/hud/hud_cpu.c, src/gallium/auxiliary/hud/hud_cpufreq.c and 30 more
+Copyright 2013 Marek Olšák <maraeo@gmail.com>
+Copyright (C) 2016 Steven Toth <stoth@kernellabs.com>
+Copyright (C) 2016 Zodiac Inflight Innovations
+Copyright 2014 VMware, Inc.
+Copyright 2018 VMware, Inc.
+Copyright 2007-2008 VMware, Inc.
+Copyright 2012 VMware, Inc.
+Copyright 2013 VMware, Inc.
+Copyright © 2016 Intel Corporation
+Copyright 2009 VMware, Inc.
+Copyright 2012 Marek Olšák <maraeo@gmail.com>
+Copyright 2010 VMware, Inc.
+Copyright 2007 VMware, Inc.
+Copyright 2015 Advanced Micro Devices, Inc.
+Copyright 2017 Valve Corporation
+Copyright 2020 Red Hat
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sub license, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice (including the
+next paragraph) shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS AND/OR ITS SUPPLIERS BE LIABLE FOR
+ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/gallium/auxiliary/hud/font.c
+Copyright (c) 1999-2000 Pawel W. Olszta. All Rights Reserved.
+
+Written by Pawel W. Olszta, <olszta@sourceforge.net>
+Creation date: Thu Dec 16 1999
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+PAWEL W. OLSZTA BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/gallium/auxiliary/indices/u_indices.c, src/gallium/auxiliary/indices/u_indices.h, src/gallium/auxiliary/indices/u_indices_priv.h, src/gallium/auxiliary/indices/u_unfilled_indices.c, src/gallium/auxiliary/translate/translate.h, src/gallium/auxiliary/translate/translate_cache.h and 6 more
+Copyright 2009 VMware, Inc.
+Copyright 2008 VMware, Inc.
+Copyright 2003 VMware, Inc.
+Copyright 2002 VMware, Inc.
+Copyright 2011 Dave Airlie (ARB_vertex_type_2_10_10_10_rev support)
+Copyright 2002-2008 VMware, Inc.
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+on the rights to use, copy, modify, merge, publish, distribute, sub
+license, and/or sell copies of the Software, and to permit persons to whom
+the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.  IN NO EVENT SHALL
+VMWARE AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/gallium/auxiliary/pipebuffer/pb_cache.c, src/gallium/auxiliary/pipebuffer/pb_cache.h, src/gallium/auxiliary/util/u_vbuf.c, src/gallium/auxiliary/util/u_vbuf.h, src/mesa/state_tracker/st_atom_array.cpp
+Copyright 2007-2008 VMware, Inc.
+Copyright 2015 Advanced Micro Devices, Inc.
+Copyright 2011 Marek Olšák <maraeo@gmail.com>
+Copyright 2007 VMware, Inc.
+Copyright 2012 Marek Olšák <maraeo@gmail.com>
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sub license, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice (including the
+next paragraph) shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+IN NO EVENT SHALL AUTHORS AND/OR ITS SUPPLIERS BE LIABLE FOR
+ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/gallium/auxiliary/pipebuffer/pb_slab.c, src/gallium/auxiliary/pipebuffer/pb_slab.h
+Copyright 2016 Advanced Micro Devices, Inc.
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sub license, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice (including the
+next paragraph) shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES
+OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NON-INFRINGEMENT. IN NO EVENT SHALL THE COPYRIGHT HOLDERS, AUTHORS
+AND/OR ITS SUPPLIERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/gallium/auxiliary/postprocess/filters.h, src/gallium/auxiliary/postprocess/postprocess.h, src/gallium/auxiliary/postprocess/pp_celshade.c, src/gallium/auxiliary/postprocess/pp_celshade.h, src/gallium/auxiliary/postprocess/pp_colors.c, src/gallium/auxiliary/postprocess/pp_colors.h and 5 more
+Copyright 2011 Lauri Kasanen
+Copyright 2010 Jakob Bornecrantz
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sub license, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice (including the
+next paragraph) shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR
+ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/gallium/auxiliary/postprocess/pp_mlaa.c, src/gallium/auxiliary/postprocess/pp_mlaa.h, src/gallium/auxiliary/postprocess/pp_mlaa_areamap.h
+Copyright (C) 2010 Jorge Jimenez (jorge@iryoku.com)
+Copyright (C) 2010 Belen Masia (bmasia@unizar.es)
+Copyright (C) 2010 Jose I. Echevarria (joseignacioechevarria@gmail.com)
+Copyright (C) 2010 Fernando Navarro (fernandn@microsoft.com)
+Copyright (C) 2010 Diego Gutierrez (diegog@unizar.es)
+Copyright (C) 2011 Lauri Kasanen (cand@gmx.com)
+
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+   1. Redistributions of source code must retain the above copyright notice,
+      this list of conditions and the following disclaimer.
+
+   2. Redistributions in binary form must reproduce the following statement:
+
+      "Uses Jimenez's MLAA. Copyright (C) 2010 by Jorge Jimenez, Belen Masia,
+       Jose I. Echevarria, Fernando Navarro and Diego Gutierrez."
+
+      Only for use in the Mesa project, this point 2 is filled by naming the
+      technique Jimenez's MLAA in the Mesa config options.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS ``AS
+IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL COPYRIGHT HOLDERS OR CONTRIBUTORS
+BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+POSSIBILITY OF SUCH DAMAGE.
+
+The views and conclusions contained in the software and documentation are
+those of the authors and should not be interpreted as representing official
+policies, either expressed or implied, of the copyright holders.
+
+Files: src/gallium/auxiliary/tgsi/tgsi_ureg.c, src/gallium/auxiliary/tgsi/tgsi_ureg.h
+Copyright 2009-2010 VMware, Inc.
+Copyright 2009 VMware, Inc.
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sub license, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice (including the
+next paragraph) shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+IN NO EVENT SHALL VMWARE, INC AND/OR ITS SUPPLIERS BE LIABLE FOR
+ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/gallium/auxiliary/util/u_blitter.c, src/gallium/auxiliary/util/u_blitter.h, src/gallium/auxiliary/util/u_framebuffer.c, src/gallium/auxiliary/util/u_framebuffer.h, src/gallium/auxiliary/util/u_surface.c, src/gallium/auxiliary/util/u_surface.h and 4 more
+Copyright 2009 Marek Olšák <maraeo@gmail.com>
+Copyright 2009-2010 VMware, Inc.  All Rights Reserved.
+Copyright 2009 VMware, Inc.  All Rights Reserved.
+Copyright 2014 Ilia Mirkin. All Rights Reserved.
+Copyright 2016 Ilia Mirkin. All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sub license, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice (including the
+next paragraph) shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+IN NO EVENT SHALL VMWARE AND/OR ITS SUPPLIERS BE LIABLE FOR
+ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/gallium/auxiliary/util/u_debug_describe.c, src/gallium/auxiliary/util/u_debug_describe.h, src/gallium/auxiliary/util/u_debug_refcnt.c, src/gallium/auxiliary/util/u_debug_refcnt.h, src/util/u_dynarray.h
+Copyright 2010 Luca Barbieri
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice (including the
+next paragraph) shall be included in all copies or substantial
+portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE COPYRIGHT OWNER(S) AND/OR ITS SUPPLIERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/gallium/auxiliary/util/u_helpers.c, src/gallium/auxiliary/util/u_helpers.h
+Copyright 2012 Marek Olšák <maraeo@gmail.com>
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sub license, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice (including the
+next paragraph) shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS AND/OR THEIR SUPPLIERS BE LIABLE FOR
+ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/gallium/auxiliary/util/u_tests.c, src/gallium/auxiliary/util/u_tests.h, src/mesa/main/vdpau.c, src/mesa/state_tracker/st_vdpau.c, src/mesa/state_tracker/st_vdpau.h
+Copyright 2014 Advanced Micro Devices, Inc.
+Copyright 2013 Advanced Micro Devices, Inc.
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sub license, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice (including the
+next paragraph) shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+IN NO EVENT SHALL THE COPYRIGHT HOLDER(S) OR AUTHOR(S) BE LIABLE FOR
+ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/gallium/drivers/softpipe/sp_quad_depth_test_tmp.h
+Copyright 2010 VMware, Inc.  All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sub license, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice (including the
+next paragraph) shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS AND/OR ITS SUPPLIERS BE LIABLE FOR
+ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/mesa/main/arrayobj.c, src/mesa/main/arrayobj.h
+Copyright (C) 1999-2008  Brian Paul   All Rights Reserved.
+Copyright (C) 2009  VMware, Inc.  All Rights Reserved.
+Copyright (C) 1999-2004  Brian Paul   All Rights Reserved.
+
+Mesa 3-D graphics library
+
+(C) Copyright IBM Corporation 2006
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/mesa/main/atifragshader.c
+Copyright (C) 2004  David Airlie   All Rights Reserved.
+
+\file atifragshader.c
+\author David Airlie
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+DAVID AIRLIE BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
+AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/mesa/main/atifragshader.h
+Copyright (C) 2004  David Airlie   All Rights Reserved.
+
+Mesa 3-D graphics library ATI Fragment Shader
+
+Files: src/mesa/main/pack.c
+Copyright (C) 1999-2008  Brian Paul   All Rights Reserved.
+Copyright (C) 2009-2010  VMware, Inc.  All Rights Reserved.
+
+Mesa 3-D graphics library
+
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THEA AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
+AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/mesa/main/querymatrix.c, src/mesa/state_tracker/st_cb_drawtex.c, src/mesa/state_tracker/st_cb_drawtex.h
+Copyright 2008 VMware, Inc.
+
+All Rights Reserved.
+
+Files: src/mesa/main/texcompress_rgtc.c, src/util/rgtc.c, src/util/texcompress_rgtc_tmp.h
+Copyright (C) 2011 Red Hat Inc.
+Copyright (C) 2004  Roland Scheidegger   All Rights Reserved.
+
+block compression parts are:
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+Files: src/mesa/vbo/vbo_attrib.h
+Copyright (C) Intel Corp.  2006.  All Rights Reserved.
+
+Intel funded Tungsten Graphics to
+develop this 3D driver.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice (including the
+next paragraph) shall be included in all copies or substantial
+portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE COPYRIGHT OWNER(S) AND/OR ITS SUPPLIERS BE
+LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
+WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/mesa/vbo/vbo_minmax_index.c
+Copyright 2003 VMware, Inc.
+Copyright 2009 VMware, Inc.
+Copyright (C) 2016 Advanced Micro Devices, Inc.
+
+Mesa 3-D graphics library
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT. IN NO EVENT SHALL
+THE AUTHOR(S) AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/util/detect_os.h
+Copyright 2008 VMware, Inc.
+
+Files: src/util/fast_idiv_by_const.c
+Imported from:
+  https://raw.githubusercontent.com/ridiculousfish/libdivide/master/divide_by_constants_codegen_reference.c
+Paper:
+  http://ridiculousfish.com/files/faster_unsigned_division_by_constants.pdf
+
+The author, ridiculous_fish, wrote:
+
+ ''Reference implementations of computing and using the "magic number"
+   approach to dividing by constants, including codegen instructions.
+   The unsigned division incorporates the "round down" optimization per
+   ridiculous_fish.
+
+   This is free and unencumbered software. Any copyright is dedicated
+   to the Public Domain.''
+
+Files: src/util/format/texcompress_s3tc_tmp.h
+Copyright (C) 2004  Roland Scheidegger   All Rights Reserved.
+
+libtxc_dxtn
+Version:  1.0
+
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+BRIAN PAUL BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN
+AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/util/hash_table.c, src/util/set.c
+Copyright © 2009,2012 Intel Corporation
+Copyright © 1988-2004 Keith Packard and Bart Massey.
+Copyright © 2009-2012 Intel Corporation
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+
+Except as contained in this notice, the names of the authors
+or their institutions shall not be used in advertising or
+otherwise to promote the sale, use or other dealings in this
+Software without prior written authorization from the
+authors.
+
+Files: src/util/mesa_cache_db.c, src/util/mesa_cache_db.h
+Copyright © 2022 Collabora, Ltd.
+Copyright © 2020 Valve Corporation
+
+Based on Fossilize DB:
+
+SPDX-License-Identifier: MIT
+
+Files: src/util/os_file.h
+Copyright 2019 Intel Corporation
+
+SPDX-License-Identifier: MIT
+
+File operations helpers
+
+Files: src/util/os_memory_fd.c, src/util/os_memory_fd.h
+Copyright 2021 Snap Inc.
+
+SPDX-License-Identifier: MIT
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/util/os_socket.h
+Copyright 2019 Intel Corporation
+
+SPDX-License-Identifier: MIT
+
+Socket operations helpers
+
+Files: src/util/rand_xor.c
+Super fast random number generator.
+
+This rand_xorshift128plus function by Sebastiano Vigna belongs
+to the public domain.
+
+Files: src/util/sha1/sha1.c
+SHA-1 in C
+By Steve Reid <steve@edmweb.com>
+100% Public Domain
+
+Test Vectors (from FIPS PUB 180-1)
+"abc"
+  A9993E36 4706816A BA3E2571 7850C26C 9CD0D89D
+"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
+  84983E44 1C3BD26E BAAE4AA1 F95129E5 E54670F1
+A million repetitions of "a"
+  34AA973C D4C4DAA4 F61EEB2B DBAD2731 6534016F
+
+Files: src/util/sha1/sha1.h
+SHA-1 in C
+By Steve Reid <steve@edmweb.com>
+100% Public Domain
+
+Files: src/util/softfloat.c
+Copyright 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018 The Regents of the
+
+License for Berkeley SoftFloat Release 3e
+
+John R. Hauser
+2018 January 20
+
+The following applies to the whole of SoftFloat Release 3e as well as to
+each source file individually.
+
+University of California.  All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+ 1. Redistributions of source code must retain the above copyright notice,
+    this list of conditions, and the following disclaimer.
+
+ 2. Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions, and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+
+ 3. Neither the name of the University nor the names of its contributors
+    may be used to endorse or promote products derived from this software
+    without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS "AS IS", AND ANY
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE, ARE
+DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+The functions listed in this file are modified versions of the ones
+from the Berkeley SoftFloat 3e Library.
+
+Their implementation correctness has been checked with the Berkeley
+TestFloat Release 3e tool for x86_64.
+
+Files: src/util/softfloat.h
+Copyright 2011, 2012, 2013, 2014, 2015, 2016, 2017, 2018 The Regents of the
+
+License for Berkeley SoftFloat Release 3e
+
+John R. Hauser
+2018 January 20
+
+The following applies to the whole of SoftFloat Release 3e as well as to
+each source file individually.
+
+University of California.  All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+ 1. Redistributions of source code must retain the above copyright notice,
+    this list of conditions, and the following disclaimer.
+
+ 2. Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions, and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+
+ 3. Neither the name of the University nor the names of its contributors
+    may be used to endorse or promote products derived from this software
+    without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE REGENTS AND CONTRIBUTORS "AS IS", AND ANY
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE, ARE
+DISCLAIMED.  IN NO EVENT SHALL THE REGENTS OR CONTRIBUTORS BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+The functions listed in this file are modified versions of the ones
+from the Berkeley SoftFloat 3e Library.
+
+Files: src/util/u_atomic.h
+Many similar implementations exist. See for example libwsbm
+or the linux kernel include/atomic.h
+
+No copyright claimed on this file.
+
+Files: src/util/u_call_once.h
+Copyright 2022 Yonggang Luo
+
+SPDX-License-Identifier: MIT
+
+Extend C11 call_once to support context parameter
+
+Files: src/util/u_cpu_detect.c, src/util/u_cpu_detect.h
+Copyright 2008 Dennis Smit
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+on the rights to use, copy, modify, merge, publish, distribute, sub
+license, and/or sell copies of the Software, and to permit persons to whom
+the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.  IN NO EVENT SHALL
+AUTHORS, COPYRIGHT HOLDERS, AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/util/u_mm.c
+Copyright (C) 1999 Wittawat Yamwong
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+WITTAWAT YAMWONG, OR ANY OTHER CONTRIBUTORS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/util/u_mm.h
+Copyright (C) 1999 Wittawat Yamwong
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+KEITH WHITWELL, OR ANY OTHER CONTRIBUTORS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/util/u_printf.c
+Copyright 2020 Serge Martin
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+Extract from Serge's printf clover code by airlied.
+
+Files: src/util/xmlconfig.h
+Copyright (C) 2003 Felix Kuehling
+
+XML DRI client-side driver configuration
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+FELIX KUEHLING, OR ANY OTHER CONTRIBUTORS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE
+OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/util/xxhash.h
+Copyright (C) 2012-2016, Yann Collet.
+copyright notice, this list of conditions and the following disclaimer
+
+xxHash - Extremely Fast Hash algorithm
+Header File
+
+BSD 2-Clause License (http://www.opensource.org/licenses/bsd-license.php)
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+    * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+    * Redistributions in binary form must reproduce the above
+in the documentation and/or other materials provided with the
+distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+You can contact the author at :
+- xxHash source repository : https://github.com/Cyan4973/xxHash
+
+Files: generated: src/compiler/builtin_types.c, generated: src/compiler/builtin_types.h
+Copyright 2023 Intel Corporation
+
+SPDX-License-Identifier: MIT
+
+Files: generated: src/compiler/glsl/glcpp/glcpp-lex.c, generated: src/compiler/glsl/glcpp/glcpp-parse.c, generated: src/compiler/glsl/glsl_lexer.cpp, generated: src/compiler/glsl/glsl_parser.cpp, generated: src/compiler/glsl/ir_expression_operation_strings.h, generated: src/compiler/ir_expression_operation.h and 13 more
+Copyright © 2010 Intel Corporation
+Copyright © 2008, 2009 Intel Corporation
+Copyright (C) 2010 Intel Corporation
+Copyright (C) 2015 Broadcom
+Copyright (C) 2014 Intel Corporation
+Copyright (C) 2018 Red Hat
+Copyright (C) 2020 Valve Corporation
+Copyright (C) 2014 Connor Abbott
+Copyright (C) 2017 Intel Corporation
+Copyright (C) 2020 Google, Inc.
+Copyright © 2009 Intel Corporation
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+Files: generated: src/compiler/glsl/glcpp/glcpp-parse.c, generated: src/compiler/glsl/glsl_parser.cpp, generated: src/mesa/program/program_parse.tab.c
+Copyright (C) 1984, 1989-1990, 2000-2015, 2018-2021 Free Software Foundation, Inc.
+
+Bison implementation for Yacc-like parsers in C
+
+
+   This program is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+Files: generated: src/compiler/glsl/glcpp/glcpp-parse.c, generated: src/compiler/glsl/glcpp/glcpp-parse.h, generated: src/compiler/glsl/glsl_parser.cpp, generated: src/compiler/glsl/glsl_parser.h, generated: src/mesa/program/program_parse.tab.c, generated: src/mesa/program/program_parse.tab.h
+As a special exception, you may create a larger work that contains
+   part or all of the Bison parser skeleton and distribute that work
+   under terms of your choice, so long as that work isn't itself a
+   parser generator using the skeleton or a modified version thereof
+   as a parser skeleton.  Alternatively, if you modify or redistribute
+   the parser skeleton itself, you may (at your option) remove this
+   special exception, which will cause the skeleton and the resulting
+   Bison output files to be licensed under the GNU General Public
+   License without this special exception.
+
+   This special exception was added by the Free Software Foundation in
+   version 2.2 of Bison.
+
+Files: generated: src/compiler/glsl/glcpp/glcpp-parse.h, generated: src/compiler/glsl/glsl_parser.h, generated: src/mesa/program/program_parse.tab.h
+Copyright (C) 1984, 1989-1990, 2000-2015, 2018-2021 Free Software Foundation, Inc.
+
+Bison interface for Yacc-like parsers in C
+
+
+   This program is free software: you can redistribute it and/or modify
+   it under the terms of the GNU General Public License as published by
+   the Free Software Foundation, either version 3 of the License, or
+   (at your option) any later version.
+
+   This program is distributed in the hope that it will be useful,
+   but WITHOUT ANY WARRANTY; without even the implied warranty of
+   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+   GNU General Public License for more details.
+
+   You should have received a copy of the GNU General Public License
+   along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+Files: generated: src/gallium/auxiliary/u_indices_gen.c, generated: src/gallium/auxiliary/u_unfilled_gen.c
+Copyright 2009 VMware, Inc.
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+on the rights to use, copy, modify, merge, publish, distribute, sub
+license, and/or sell copies of the Software, and to permit persons to whom
+the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.  IN NO EVENT SHALL
+VMWARE AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE
+USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: generated: src/mapi/glapi/gen/api_beginend_init.h, generated: src/mapi/glapi/gen/api_exec_decl.h, generated: src/mapi/glapi/gen/api_hw_select_init.h, generated: src/mapi/glapi/gen/api_save.h, generated: src/mapi/glapi/gen/api_save_init.h
+Copyright (C) 2012 Intel Corporation
+Copyright (C) 2021 Advanced Micro Devices, Inc.
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sub license,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.  IN NO EVENT SHALL
+AUTHORS,
+AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
+OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Files: generated: src/mapi/glapi/gen/api_exec_init.c, generated: src/mapi/glapi/gen/marshal_generated0.c, generated: src/mapi/glapi/gen/marshal_generated1.c, generated: src/mapi/glapi/gen/marshal_generated2.c, generated: src/mapi/glapi/gen/marshal_generated3.c, generated: src/mapi/glapi/gen/marshal_generated4.c and 5 more
+Copyright (C) 2012 Intel Corporation
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sub license,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.  IN NO EVENT SHALL
+Intel Corporation,
+AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
+OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Files: generated: src/mapi/glapi/gen/enums.c
+Copyright (C) 1999-2005 Brian Paul All Rights Reserved.
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sub license,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.  IN NO EVENT SHALL
+BRIAN PAUL,
+AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
+OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Files: generated: src/mapi/glapi/gen/glapitable.h, generated: src/mapi/glapi/gen/glapitemp.h
+Copyright (C) 1999-2003  Brian Paul   All Rights Reserved.
+Copyright (C) 1999-2001  Brian Paul   All Rights Reserved.
+
+(C) Copyright IBM Corporation 2004
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sub license,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.  IN NO EVENT SHALL
+BRIAN PAUL, IBM,
+AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
+OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Files: generated: src/mapi/glapi/gen/glprocs.h
+Copyright (C) 1999-2001  Brian Paul   All Rights Reserved.
+
+(C) Copyright IBM Corporation 2004, 2006
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sub license,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.  IN NO EVENT SHALL
+BRIAN PAUL, IBM,
+AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
+OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Files: generated: src/mesa/format_fallback.c
+Copyright 2017 Google
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sub license, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice (including the
+next paragraph) shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+IN NO EVENT SHALL VMWARE AND/OR ITS SUPPLIERS BE LIABLE FOR
+ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: generated: src/mesa/format_info.h
+Copyright (c) 2014 Intel Corporation
+
+Mesa 3-D graphics library
+
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sublicense,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included
+in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.  IN NO EVENT SHALL
+THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
+OTHER DEALINGS IN THE SOFTWARE.
+
+Files: generated: src/mesa/main/dispatch.h
+(C) Copyright IBM Corporation 2005
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sub license,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.  IN NO EVENT SHALL
+IBM,
+AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
+OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Files: generated: src/mesa/main/remap_helper.h
+Copyright (C) 2009 Chia-I Wu <olv@0xlab.org>
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the "Software"),
+to deal in the Software without restriction, including without limitation
+the rights to use, copy, modify, merge, publish, distribute, sub license,
+and/or sell copies of the Software, and to permit persons to whom the
+Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice (including the next
+paragraph) shall be included in all copies or substantial portions of the
+Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.  IN NO EVENT SHALL
+Chia-I Wu,
+AND/OR THEIR SUPPLIERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
+WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF
+OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+Files: generated: src/util/format/u_format_pack.h, generated: src/util/format/u_format_table.c, generated: src/util/format_srgb.c
+Copyright 2010 VMware, Inc.
+
+All Rights Reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a
+copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sub license, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice (including the
+next paragraph) shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NON-INFRINGEMENT.
+IN NO EVENT SHALL VMWARE AND/OR ITS SUPPLIERS BE LIABLE FOR
+ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+Files: src/util/blake3/* (README; and the LICENSE of BLAKE3 1.3.3, github.com/BLAKE3-team/BLAKE3)
+This folder contains a local copy of BLAKE3 cryptographic hash library, version 1.3.3.
+
+Except for changes listed in the "Changes" section, this is a verbatim copy from
+https://github.com/BLAKE3-team/BLAKE3, tag 1.3.3.
+
+This work is released into the public domain with CC0 1.0. Alternatively, it is
+licensed under the Apache License 2.0.

@@ -103,8 +103,9 @@ fs.writeFileSync(O('tex/pdf.worker.min.mjs'), escapeCtl(fs.readFileSync(R('node_
 fs.copyFileSync(R('tex/tex-smoke.html'), O('tex-smoke.html'));
 console.log(O('tex'), fs.readdirSync(O('tex')).length, 'files');
 
-// 8. LICENSES.txt: NOTICE, then the license texts of what dist/ holds. The MIT, BSD and Apache
-// licenses ask that their notices travel with every copy, and the minified bundles drop them.
+// 8. LICENSES.txt: NOTICE, then the license texts of what dist/ holds and the notices of the
+// libraries inside its programs. The MIT, BSD and Apache licenses ask that their notices travel
+// with every copy, and the minified bundles and compiled programs drop them.
 // The npm packages: those git.js bundles, and those whose files the steps above copy.
 const pkgOf = (f) => (f.match(/node_modules\/((?:@[^/]+\/)?[^/]+)\//) || [])[1];
 const npm = new Set(Object.keys(gitOut.metafile.inputs).map(pkgOf).filter(Boolean));
@@ -122,10 +123,16 @@ const rule = (title) => '\n\n' + '='.repeat(100) + '\n' + title + '\n' + '='.rep
 let lic = 'Rikuy and what it ships. The source of Rikuy and the address of the exact source of every\n'
   + 'part: https://github.com/pdfrackebrandt/rikuy (SOURCES.md).\n\n' + fs.readFileSync(R('NOTICE'), 'utf8').trim();
 lic += rule('GNU Affero General Public License 3.0: Rikuy, BusyTeX, Ghostscript') + fs.readFileSync(R('LICENSE'), 'utf8').trim();
-const texts = [['GPL-3.0', 'Asymptote, GSL'], ['GPL-2.0', 'TeX Live\'s programs, dvips, xindy, FFTW, GMP'], ['LGPL-3.0', 'GMP'], ['LGPL-2.1', 'kpathsea, ECL'],
-  ['MPL-2.0', 'Pyodide, Eigen'], ['Apache-2.0', 'pdf.js and npm packages below'], ['Artistic-2.0', 'biber'], ['gnuplot', 'gnuplot']];
+const texts = [['GPL-3.0', 'Asymptote as built (with GSL), GSL, Xpdf'], ['GPL-2.0', 'TeX Live\'s programs, dvips, xindy, FFTW, GMP, Xpdf, libpaper'], ['LGPL-3.0', 'GMP, Asymptote, its PRC library'],
+  ['LGPL-2.1', 'kpathsea, ECL, Graphite2, TECkit, btparse'], ['MPL-2.0', 'Pyodide, Eigen'], ['Apache-2.0', 'pdf.js and npm packages below'], ['Artistic-2.0', 'biber'], ['gnuplot', 'gnuplot']];
 for (const [id, who] of texts) lic += rule((id === 'gnuplot' ? 'The gnuplot license' : id) + ': ' + who) + fs.readFileSync(R('LICENSES/' + id + '.txt'), 'utf8').trim();
 lic += rule('SIL Open Font License 1.1: Paper Modern, the page\'s text fonts (KaTeX\'s fonts carry the same license in their own name tables)') + fs.readFileSync(R('build/fonts/OFL.txt'), 'utf8').trim();
+// the notices of the libraries compiled into the programs (MIT, BSD and the like ask for them
+// with binary copies too), one file per program; each file's first line is its title
+for (const f of fs.readdirSync(R('LICENSES/third-party')).filter((n) => n.endsWith('.txt')).sort()) {
+  const [title, ...rest] = fs.readFileSync(R('LICENSES/third-party/' + f), 'utf8').trim().split('\n');
+  lic += rule(title + ' (LICENSES/third-party/' + f + ')') + rest.join('\n').trim();
+}
 for (const [text, pkgs] of byText) lic += rule('npm: ' + pkgs.join(', ')) + text;
 fs.writeFileSync(O('LICENSES.txt'), lic + '\n');
 console.log(O('LICENSES.txt'), npm.size, 'npm packages', (lic.length / 1024).toFixed(0) + ' KB');

@@ -315,7 +315,8 @@ written into `MAIN.FS`). A page on claude.ai reaches only its own server: self h
    vendor tool scripts go to `dist/tex/`, npm's Ghostscript module made a classic script (`self.GalleyGs`; the build
    fails if its stack exports moved), control bytes escaped. `dist/index.html` is the page inside
    the document the artifact host wraps it in, for any static server; `dist/LICENSES.txt` holds
-   `NOTICE` and the license texts of what `dist/` ships. `RIKUY_OUT` moves the output.
+   `NOTICE`, the license texts of what `dist/` ships and the notices of the libraries compiled into
+   its programs (`LICENSES/third-party/`). `RIKUY_OUT` moves the output.
 
 KaTeX's JS, CodeMirror, JSZip, MathLive, mhchem and PDF.js load from CDNs at run time (`CDN` in
 `src/app.js`), each but PDF.js (a module `import()`, which takes no hash) checked against the

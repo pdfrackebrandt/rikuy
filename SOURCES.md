@@ -1,9 +1,10 @@
 # Sources of what Rikuy ships
 
 Rikuy is AGPL-3.0-or-later (`LICENSE`); what it ships keeps its own license (`NOTICE`, with the
-texts in `LICENSES/`). This file says where the exact source of every compiled part is, so anyone
-can rebuild it or check it. Every download in the build scripts is pinned by hash; the hashes
-below are the same.
+texts in `LICENSES/` and the notices of the libraries compiled into each program in
+`LICENSES/third-party/`). This file says where the exact source of every compiled part is, so
+anyone can rebuild it or check it. Every download in the build scripts is pinned by hash; the
+hashes below are the same.
 
 ## Compiled here (`tex/vendor/`, by `tex/build_tools.sh`)
 
@@ -49,12 +50,35 @@ says what and why); the rest is shipped as the release has it.
 
 | part | version | binary from | source | license |
 |---|---|---|---|---|
-| BusyTeX (pdfTeX, XeTeX, LuaHBTeX, bibtex8, makeindex, xdvipdfmx, biber) | 1.4.0 | [release assets](https://github.com/TeXlyre/texlyre-busytex/releases/tag/assets-v1.4.0), SHA-256 `1caa434fb5aab5bdd59dc303bca2ac7b9b9af02ef1627bf8652caabfa1b7cd2b` (`tex/fetch_inputs.sh`) | [TeXlyre/texlyre-busytex](https://github.com/TeXlyre/texlyre-busytex) at the tag `assets-v1.4.0` (`1d9ba827ad0da2c85d05da2ada26a4debf6df81e`) | AGPL-3.0 (TeX Live parts GPL, LGPL, MIT) |
-| Ghostscript 10.06.0 | `@okathira/ghostpdl-wasm` 1.1.0 (npm, `package-lock.json`) | npm | [okathira/ghostpdl-wasm](https://github.com/okathira/ghostpdl-wasm) at the tag `v1.1.0` (`a62b7d686b21cf88f6425b3e989d1062b9af4256`), GhostPDL as its submodule | AGPL-3.0-or-later |
-| Pyodide (CPython 3.14.2) | 314.0.7 (npm) | npm | [pyodide/pyodide](https://github.com/pyodide/pyodide) | MPL-2.0; CPython PSF-2.0 |
+| BusyTeX (pdfTeX, XeTeX, LuaHBTeX, bibtex8, makeindex, xdvipdfmx, biber) | 1.4.0 | [release assets](https://github.com/TeXlyre/texlyre-busytex/releases/tag/assets-v1.4.0), SHA-256 `1caa434fb5aab5bdd59dc303bca2ac7b9b9af02ef1627bf8652caabfa1b7cd2b` (`tex/fetch_inputs.sh`) | [TeXlyre/texlyre-busytex-build](https://github.com/TeXlyre/texlyre-busytex-build) at `46ebb6216a5c1fe63dd1dc885831d1a8cef2dc86`, with the inputs below; the JavaScript runner [TeXlyre/texlyre-busytex](https://github.com/TeXlyre/texlyre-busytex) at the tag `assets-v1.4.0` (`1d9ba827ad0da2c85d05da2ada26a4debf6df81e`) | AGPL-3.0 (TeX Live parts GPL, LGPL, MIT; `LICENSES/third-party/busytex.txt`) |
+| Ghostscript 10.06.0 | `@okathira/ghostpdl-wasm` 1.1.0 (npm, `package-lock.json`) | npm | [okathira/ghostpdl-wasm](https://github.com/okathira/ghostpdl-wasm) at the tag `v1.1.0` (`a62b7d686b21cf88f6425b3e989d1062b9af4256`), GhostPDL as its submodule (`2d6e764c1f4a73520ed6de6dd3fa78ad30cd6a63`) | AGPL-3.0-or-later |
+| Pyodide (CPython 3.14.2) | 314.0.7 (npm) | npm | [pyodide/pyodide](https://github.com/pyodide/pyodide) at the tag `314.0.7` (`b1e4fcc2488962f6360a97f19b9982d6fdb5d16f`) | MPL-2.0; CPython PSF-2.0 |
 | Pygments, latexminted, latexrestricted, latex2pydata | the wheels TeX Live's minted bundles (`tex/vendor/wheels/` when the tree is not TeX Live first) | TeX Live, PyPI | PyPI | BSD-2-Clause, LPPL-1.3c |
 | the editor's libraries (CodeMirror, KaTeX, MathLive, pdf.js, JSZip, fflate, isomorphic-git) | `package-lock.json` | npm | their repositories | MIT, Apache-2.0, BSD, ISC; KaTeX's fonts OFL-1.1 |
 | Paper Modern (the page's text fonts) | Computer Modern Unicode 0.7.0, from npm's `computer-modern` 0.1.3 | `build/fonts/`, cut by `build/fonts/subset.py` | [CTAN cm-unicode](https://ctan.org/pkg/cm-unicode) | OFL-1.1 (`build/fonts/OFL.txt`) |
+
+BusyTeX's `busytex.wasm` and `biber.wasm` are byte for byte those of the release
+`build_wasm_46ebb6216a5c1fe63dd1dc885831d1a8cef2dc86_31802832436_1` of texlyre-busytex-build
+(compared by SHA-256), which its workflow `build-wasm.yml` built from that commit with Emscripten
+5.0.4. That build downloads its inputs without pinning them: TeX Live's source at the branch
+`tags/texlive-2026.0` of [TeX-Live/texlive-source](https://github.com/TeX-Live/texlive-source)
+(commit `f26cc5ed05a1f784d1e694fe5b9cfc3ce992c03d`), expat 2.5.0 (libexpat's release `R_2_5_0`) and
+fontconfig 2.13.96 (a release asset of texlyre-busytex-build); for biber, Perl 5.38.2, biber 2.22,
+the CPAN modules of `biber/modules.txt`, libxml2 2.9.14, sombok and emperl5
+(`biber/fetch_sources.sh`); its TeX tree comes from the TeX Live 2026 DVD image. The notices of the
+libraries compiled into these programs are in `LICENSES/third-party/`.
+
+The sources that live only on other people's GitHub are attached to the release
+`sources-2026-10-28` too, made by `git archive` (for ghostpdl-wasm, the repository and its
+submodule's tree in one archive) or as downloaded:
+
+| file | what | SHA-256 |
+|---|---|---|
+| `texlyre-busytex-build-46ebb62.tar.xz` | TeXlyre/texlyre-busytex-build at `46ebb6216a5c1fe63dd1dc885831d1a8cef2dc86` | `27c0d4f2999d8411c6b8a749a44cc70745f33f3f9da512d2281386ac33893423` |
+| `texlyre-busytex-1d9ba82.tar.xz` | TeXlyre/texlyre-busytex at `1d9ba827ad0da2c85d05da2ada26a4debf6df81e` | `93b757e028f390af700d9d2c7fc6fea0a8f8fa7cd4c7b4634e4b8f0efec89e5c` |
+| `ghostpdl-wasm-a62b7d6.tar.xz` | okathira/ghostpdl-wasm at `a62b7d686b21cf88f6425b3e989d1062b9af4256`, with ArtifexSoftware/ghostpdl at `2d6e764c1f4a73520ed6de6dd3fa78ad30cd6a63` in `ghostpdl/` | `883a7c83f73a6e1f62db7053cded9c66b47d8001704ac19362f3af12ceb1bc06` |
+| `fontconfig-2.13.96.tar.gz` | the release asset `fontconfig-2.13.96` of texlyre-busytex-build | `dbabc038d41cfc3f14da1b173ae103ba7cc678efb17e091b9e801c6286b3f684` |
+| `expat-2.5.0.tar.gz` | libexpat's release `R_2_5_0` | `6b902ab103843592be5e99504f846ec109c1abb692e85347587f237a4ffa1033` |
 
 ## The TeX tree
 

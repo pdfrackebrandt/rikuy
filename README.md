@@ -89,5 +89,7 @@ private report, not in an issue: [SECURITY.md](SECURITY.md).
 Rikuy is free software under the GNU Affero General Public License 3.0 or later
 ([LICENSE](LICENSE)). It ships TeX Live, BusyTeX, Ghostscript, Asymptote, Mesa and other free
 software, each under its own license: [NOTICE](NOTICE) lists them, [SOURCES.md](SOURCES.md)
-says where the exact source of each is, and [LICENSES/](LICENSES) holds the license texts that
-are not elsewhere in the repository. `npm run build` puts all of them in `dist/LICENSES.txt`.
+says where the exact source of each is, [LICENSES/](LICENSES) holds the license texts that
+are not elsewhere in the repository, and [LICENSES/third-party/](LICENSES/third-party) the notices
+of the libraries compiled into each program. `npm run build` puts all of them in
+`dist/LICENSES.txt`.

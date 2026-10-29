@@ -8,17 +8,25 @@ use that license was written for.
 
 Rikuy ships these programs and libraries. Each keeps its own license; the source of each is
 at the address given, and SOURCES.md gives the exact version. The license texts that are not
-in LICENSE or build/fonts/OFL.txt are in LICENSES/; `npm run build` collects all of them, with
-this file, in dist/LICENSES.txt.
+in LICENSE or build/fonts/OFL.txt are in LICENSES/, and the notices of the libraries compiled
+into each program (Mesa, ICU, HarfBuzz, FreeType, Lua, libjpeg and the rest) are in
+LICENSES/third-party/, one file per program; `npm run build` collects all of them, with this
+file, in dist/LICENSES.txt.
+
+In the words the FreeType License and the Independent JPEG Group ask for: Portions of this
+software are copyright © 2024, 2025 The FreeType Project (https://freetype.org). All rights
+reserved. This software is based in part on the work of the Independent JPEG Group.
 
 Built into the TeX engines and tree
   BusyTeX (texlyre-busytex 1.4.0), TeX Live 2026 compiled to WebAssembly
       AGPL-3.0                        github.com/TeXlyre/texlyre-busytex
+      Its engines are built by github.com/TeXlyre/texlyre-busytex-build (SOURCES.md).
       Modified by Rikuy: tex/patch_wasm.py rewrites two places in its engine binary (xdvipdfmx's
       fork of Ghostscript, and the popen and pclose stubs) to call Rikuy's shell (2026).
   TeX Live 2026 programs inside it: pdfTeX, LuaHBTeX, bibtex8, makeindex, kpathsea and the
   rest (GPL-2.0-or-later, LGPL-2.1-or-later), XeTeX and xdvipdfmx (MIT/X11, GPL-2.0-or-later),
-  HarfBuzz (MIT), ICU (Unicode License), FreeType (FTL or GPL-2.0), fontconfig (MIT)
+  HarfBuzz (MIT), ICU (Unicode License), FreeType (FTL or GPL-2.0), fontconfig (MIT), and the
+  others LICENSES/third-party/busytex.txt lists
                                       github.com/TeX-Live/texlive-source
   biber (Artistic-2.0) with its Perl, as BusyTeX packages it
   The TeX Live tree: TeX Live 2026.20260711 from Ubuntu 26.10's packages, laid over BusyTeX's
@@ -28,7 +36,7 @@ Built into the TeX engines and tree
 
 Built for Rikuy from source (tex/build_tools.sh, tex/native/)
   dvips (TeX Live)                    GPL-2.0-or-later
-  Asymptote 3.09                      GPL-3.0-or-later                       github.com/vectorgraphics/asymptote
+  Asymptote 3.09                      LGPL-3.0-or-later, GPL as built        github.com/vectorgraphics/asymptote
   xindy 2.5.1                         GPL-2.0-or-later                       TeX Live source, utils/xindy
   ECL 24.5.10 (runs xindy)            LGPL-2.1-or-later                      ecl.common-lisp.dev
   GMP 6.3.0                           LGPL-3.0-or-later or GPL-2.0-or-later  gmplib.org
@@ -42,7 +50,7 @@ Built for Rikuy from source (tex/build_tools.sh, tex/native/)
   Eigen 3.4.0 (headers, in Asymptote) MPL-2.0                                eigen.tuxfamily.org
   TinyEXR (in Asymptote's source,     BSD-3-Clause                           github.com/syoyo/tinyexr
     with OpenEXR code)
-  zlib (TeX Live's, in dvips,         zlib license                           zlib.net
+  zlib (TeX Live's, in                zlib license                           zlib.net
     Asymptote and Mesa)
   gnuplot 6.0.2                       gnuplot license (LICENSES/gnuplot.txt) www.gnuplot.info
       Modified by Rikuy: tex/native/patch_gnuplot.py changes one line of src/complexfun.c (the
