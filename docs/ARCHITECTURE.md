@@ -102,7 +102,11 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   minimal `diff()`, origin `galley`) and `saveSoon()`: `persist()` to IndexedDB (`src/store.js`;
   localStorage fallback) and `noteEdit()`, which schedules `pdfSoon` (1.4 s) and snapshots. The
   CodeMirror pane goes the other way: `srcRebuild` (260 ms) → `fromSource()` → `record` →
-  `rebuild`.
+  `rebuild`; undo, redo and leaving the pane flush it first.
+- **Tabs.** All tabs of a browser share one project record. `persist()` writes one at a time and
+  first checks the record's time against `savedT`: what another tab saved since goes into the
+  versions (`keepOtherTab`). A tab shown again takes that tab's text as one undo step
+  (`adoptOtherTab`), and a tab with nothing unsaved writes nothing when it is hidden or closed.
 
 ## 3. Undo and redo
 

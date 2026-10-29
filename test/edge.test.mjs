@@ -28,3 +28,21 @@ for (const c of cases) {
 }
 const s = 'a \\textbf{bold} b $x$ c';
 console.log('bal', isBalanced(s, 0, s.length), isBalanced(s, 3, 9), isBalanced(s,2,16), isBalanced(s, 11, 15));
+// A character command takes an empty {} at most: text in a group after it is text of its own.
+for (const [c, want] of [['x \\%{b} c', 'x %b c'], ['a\\textasciitilde{}{b c} d', 'a~b c d'], ['a\\ldots{}{\\em x}', 'a…x'], ['50\\%{} more', '50% more']]) {
+  const M = buildModel({ files: new Map([['m.tex', c]]), main: 'm.tex' });
+  const text = (inl) => (inl || []).map((x) => x.k === 'seg' ? x.t : x.kids ? text(x.kids) : '').join('');
+  const got = M.blocks.map((b) => b.items.map((it) => text(it.inl)).join('')).join('');
+  if (got !== want) { process.exitCode = 1; console.log('FAIL char command group', JSON.stringify(c), '=>', JSON.stringify(got)); }
+}
+// Ranges a deletion may take whole: never one that splits [...] or reads a % inside \verb as a comment.
+for (const [s, a, b, want] of [
+  ['\\begin{theorem}[Title]\\label{t} Body', 18, 33, false],
+  ['see [1] and [2] here', 0, 20, true],
+  ['Use \\verb|%| then \\textbf{bold}', 0, 26, false],
+  ['Use \\verb|%| then \\textbf{bold}', 0, 31, true],
+  ['line\\\\[2pt] next', 0, 16, true],
+  ['$[0,1)$ interval', 0, 7, true]
+]) {
+  if (isBalanced(s, a, b) !== want) { process.exitCode = 1; console.log('FAIL isBalanced', JSON.stringify(s.slice(a, b)), 'should be', want); }
+}

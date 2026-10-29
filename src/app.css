@@ -125,8 +125,10 @@ body.pdf-on #pdfpane { display: flex; }
 .sheet[data-font="times"] { --font-doc: "Times New Roman", Times, "Nimbus Roman", serif; }
 .sheet[data-font="palatino"] { --font-doc: "Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", serif; }
 .sheet[data-font="sans"] { --font-doc: "Helvetica Neue", Helvetica, Arial, sans-serif; }
-#pages { outline: none; caret-color: #1E6BAA; display: flex; flex-direction: column; align-items: center; gap: 22px; }
-.page { position: relative; width: var(--pw); height: var(--ph); background: var(--paper); color: var(--ink); box-shadow: var(--shadow); flex: none; content-visibility: auto; contain-intrinsic-size: auto var(--pw) auto var(--ph); contain: layout style paint; }
+/* pages centre by their auto margins, not align-items: a page zoomed wider than the window then
+   overflows to the right, where it scrolls, instead of losing its left side off screen */
+#pages { outline: none; caret-color: #1E6BAA; display: flex; flex-direction: column; align-items: flex-start; gap: 22px; }
+.page { margin: 0 auto; position: relative; width: var(--pw); height: var(--ph); background: var(--paper); color: var(--ink); box-shadow: var(--shadow); flex: none; content-visibility: auto; contain-intrinsic-size: auto var(--pw) auto var(--ph); contain: layout style paint; }
 .pb { position: absolute; left: var(--ml); top: var(--mt); width: var(--tw); height: var(--th); display: flex; flex-direction: column; }
 .flow { font-size: var(--fs); line-height: var(--lh); text-align: justify; text-wrap: pretty; hyphens: auto; -webkit-hyphens: auto; font-kerning: normal; font-variant-ligatures: common-ligatures; overflow-wrap: break-word; }
 .folio { position: absolute; left: var(--ml); width: var(--tw); top: calc(var(--mt) + var(--th) + var(--footskip) - var(--fs)); text-align: center; font-size: var(--fs); line-height: 1; user-select: none; }
@@ -322,6 +324,8 @@ body.pdf-on #pdfpane { display: flex; }
 .flash { animation: flash 1.2s ease-out; }
 @keyframes flash { 0% { background: rgba(43, 116, 176, .28); } 100% { background: transparent; } }
 .ghostp { outline: 1px dashed rgba(43, 116, 176, .45); outline-offset: 2px; min-height: var(--lh); }
+#pages.stale { opacity: .45; }
+.ghostp.empty .gh::after { content: 'Type here to start.'; color: #8A9098; pointer-events: none; }
 .pbk { height: 0; }
 
 /* drop + boot */
@@ -334,7 +338,9 @@ body.dropping .dropzone { display: grid; }
 .bubble button { border: 0; background: transparent; color: inherit; height: 28px; min-width: 30px; padding: 0 8px; border-radius: 5px; cursor: pointer; font-size: 13px; }
 .bubble button:hover { background: color-mix(in srgb, var(--chrome) 18%, transparent); }
 .bubble .mono { font-family: var(--font-mono); font-size: 12px; }
-.pop { position: fixed; z-index: 40; width: min(440px, calc(100vw - 16px)); background: var(--panel); color: var(--ink-ui); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 40px rgba(10, 20, 30, .22); padding: 10px; display: flex; flex-direction: column; gap: 8px; max-height: calc(100vh - 70px); overflow: auto; }
+/* border-box: the max height set from the window then holds the padding too, so a tall popover
+   (the help) ends inside the window instead of 22px below it */
+.pop { box-sizing: border-box; position: fixed; z-index: 40; width: min(440px, calc(100vw - 16px)); background: var(--panel); color: var(--ink-ui); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 40px rgba(10, 20, 30, .22); padding: 10px; display: flex; flex-direction: column; gap: 8px; max-height: calc(100vh - 70px); overflow: auto; }
 .pop.pop-math { width: min(660px, calc(100vw - 16px)); }
 .pop.sheet-mode { left: 8px !important; right: 8px; bottom: calc(8px + var(--kb-h, 0px) + env(safe-area-inset-bottom, 0px)); top: auto !important; width: auto; max-height: 60vh; }
 .pop-h { display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 12px; letter-spacing: .02em; color: var(--mute); }
@@ -432,6 +438,16 @@ body.dropping .dropzone { display: grid; }
 #cmhost .CodeMirror-activeline-background { background: transparent; }
 
 /* ---- small screens ---- */
+/* the labelled buttons and the name need about 960px (1080px with Ask Claude): narrower, the
+   buttons show their icons alone instead of running over the name */
+@media (max-width: 980px) {
+  #bar .btn span:not(.sr) { display: none; }
+  #bar .btn:not(.icon):not(.sm):not(.zv) { width: 32px; padding: 0; justify-content: center; }
+}
+@media (max-width: 1100px) {
+  body.has-ai #bar .btn span:not(.sr) { display: none; }
+  body.has-ai #bar .btn:not(.icon):not(.sm):not(.zv) { width: 32px; padding: 0; justify-content: center; }
+}
 @media (max-width: 860px) {
   .btn span:not(.sr) { display: none; }
   .btn:not(.icon):not(.sm) { width: 32px; padding: 0; justify-content: center; }

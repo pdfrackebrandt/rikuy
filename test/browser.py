@@ -60,7 +60,8 @@ def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None):
             # the CDN answers with CORS, as a script loaded with crossorigin needs
             return route.fulfill(status=200, content_type='application/javascript', headers={'Access-Control-Allow-Origin': '*'}, body=open(ROUTES[url], 'rb').read())
         return route.abort()
-    page.route('**/*', handler)
+    # on the context, so a second tab (page.context.new_page()) loads the same page and storage
+    ctx.route('**/*', handler)
     if init:
         page.add_init_script(init)
     page.goto('https://rikuy.test/')
@@ -107,6 +108,112 @@ def select_text(page, text, nth=0):
       document.getElementById('pages').focus();
       const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
       return true; }''', [text, nth])
+
+
+def load_doc(page, files, main='main.tex'):
+    """Replace the project with these files, as opening them would, without its toasts."""
+    if isinstance(files, str):
+        files = {main: files}
+    page.evaluate('''([files, main]) => { const g = window.rikuy; g.files = new Map(Object.entries(files)); g.main = main; g.hist = []; g.redoStack = []; g.forceRender = true; g.rebuild(); if (g.cm) g.showSrcFile(main); }''', [files, main])
+    page.wait_for_timeout(50)
+
+
+def select_between(page, t1, o1, t2, o2):
+    return page.evaluate('''([t1, o1, t2, o2]) => {
+      const sp = [...document.querySelectorAll('#pages span.t')];
+      const a = sp.find(s => s.textContent.includes(t1)), b = sp.find(s => s.textContent.includes(t2));
+      if (!a || !b) return false;
+      const r = document.createRange(); r.setStart(a.firstChild, a.textContent.indexOf(t1) + o1); r.setEnd(b.firstChild, b.textContent.indexOf(t2) + o2);
+      document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); return true; }''', [t1, o1, t2, o2])
+
+
+def undo_all(page):
+    for _ in range(200):
+        if not page.evaluate('window.rikuy.hist.length'): break
+        page.evaluate('window.rikuy.undo()')
+
+
+DOC_EDGES = r"""\documentclass{article}
+\begin{document}
+First paragraph ends here.
+% comment (Ana) on "ends": please fix
+
+Second paragraph starts here, 50\%{more} and a tilde.
+
+Line one\\
+line two follows.
+
+\begin{itemize}
+\item alpha item
+\end{itemize}
+
+Use \verb|%| for comments, then \textbf{bold words here} follow.
+\end{document}
+"""
+
+
+def edges(page, errors):
+    """Edits next to comments, optional arguments, \\verb, wrappers and empty documents."""
+    load_doc(page, DOC_EDGES)
+    base = src(page)
+    click_text(page, 'Second paragraph', 0)
+    page.keyboard.press('Backspace')
+    s = src(page)
+    check('joining paragraphs keeps the comment lines between them', s == base.replace('please fix\n\nSecond', 'please fix\nSecond'), s[s.find('here.'):][:80])
+    undo_all(page)
+    click_text(page, 'ends here.', 10)
+    page.keyboard.press('Enter')
+    page.keyboard.type('New.')
+    s = src(page)
+    check('a new paragraph goes after the comment under the line', 'please fix\n\nNew.\n\nSecond' in s, s[s.find('here.'):][:80])
+    undo_all(page)
+    check('text in a group after a character command is on the page', page.evaluate('[...document.querySelectorAll("#pages span.t")].some(s => s.textContent === "more")'))
+    click_text(page, 'line two', 0)
+    page.keyboard.type('[1]')
+    check('[ after \\\\ is written {[} (else an optional argument)', 'Line one\\\\\n{[}1]line two' in src(page), src(page)[src(page).find('Line one'):][:40])
+    undo_all(page)
+    click_text(page, 'alpha item', 0)
+    page.keyboard.type('[x]')
+    check('[ at the start of an item is written {[}', '\\item {[}x]alpha' in src(page), src(page)[src(page).find('\\item'):][:30])
+    undo_all(page)
+    click_text(page, 'bold words', 2)
+    page.keyboard.press('Enter')
+    check('Enter inside \\textbf closes and reopens it', '\\textbf{bo}\n\n\\textbf{ld words here}' in src(page), src(page)[src(page).find('then'):][:60])
+    undo_all(page)
+    select_between(page, 'Use', 1, 'bold words', 4)
+    page.keyboard.press('Backspace')
+    check('deleting across \\verb|%| keeps the \\textbf{ it reaches into', 'U\\textbf{ words here}' in src(page), src(page)[src(page).find('U'):][:60])
+    undo_all(page)
+    check('edges: undo gives the bytes back', src(page) == base)
+    # an empty document: a blank paragraph to type into
+    empty = '\\documentclass{article}\n\\begin{document}\n\n\\end{document}\n'
+    load_doc(page, empty)
+    check('an empty document offers a paragraph to type in', page.evaluate('!!document.querySelector("#pages .ghostp.empty")'))
+    box = page.evaluate('(() => { const r = document.querySelector(".page").getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()')
+    page.mouse.click(box[0], box[1])
+    page.keyboard.type('Hello')
+    check('typing on an empty page starts its first paragraph', src(page) == '\\documentclass{article}\n\\begin{document}\n\nHello\n\n\\end{document}\n', repr(src(page)))
+    # a document the page cannot build: the old pages take no typing
+    load_doc(page, DOC_EDGES)
+    deep = DOC_EDGES.replace('Second paragraph', '\\textbf{' * 10000 + 'x' + '}' * 10000 + ' Second paragraph')
+    page.evaluate('(t) => { const g = window.rikuy; g.files.set("main.tex", t); g.rebuild(); }', deep)
+    click_text(page, 'First paragraph', 3)
+    page.keyboard.type('Z')
+    check('pages that could not be rebuilt take no typing', src(page) == deep and page.evaluate('document.getElementById("pages").classList.contains("stale")'))
+    errors[:] = [e for e in errors if 'Maximum call stack' not in e]
+    page.evaluate('(t) => { const g = window.rikuy; g.files.set("main.tex", t); g.rebuild(); }', DOC_EDGES)
+    check('a build that works again makes them editable', page.evaluate('document.getElementById("pages").contentEditable') == 'true')
+    # an input method replacing a selected word: what is typed next follows it
+    load_doc(page, DOC_EDGES)
+    cdp = page.context.new_cdp_session(page)
+    select_text(page, 'starts')
+    for t in ['k', 'か']:
+        cdp.send('Input.imeSetComposition', {'text': t, 'selectionStart': len(t), 'selectionEnd': len(t)})
+    cdp.send('Input.insertText', {'text': '漢字'})
+    page.wait_for_timeout(100)
+    page.keyboard.type('Y')
+    check('after composing over a selection the caret follows the new text', 'paragraph 漢字Y here' in src(page), src(page)[src(page).find('Second'):][:40])
+    undo_all(page)
 
 
 def run():
@@ -285,6 +392,16 @@ def run():
         check('ref popover lists labels', n >= 5, n)
         page.keyboard.press('Escape')
 
+        # 18b. Enter on an equation that Backspace selected opens it, and changes nothing
+        click_text(page, ' to edit its source', 0)
+        page.keyboard.press('Backspace')
+        page.keyboard.press('Enter')
+        page.wait_for_timeout(200)
+        check('Enter on a selected equation opens it', page.evaluate('!!document.querySelector(".pop-math")') and src(page) == base)
+        page.keyboard.press('Escape')
+        page.wait_for_timeout(100)
+        check('closing it leaves the source alone', src(page) == base)
+
         # 19. source pane opens and syncs
         if not page.evaluate("document.body.classList.contains('src-on')"):
             page.click('#b-src')
@@ -303,6 +420,25 @@ def run():
         check('source edit re-typesets page', has)
         page.screenshot(path=SHOTS + '/02-source.png')
         page.keyboard.press('Control+z')
+        page.wait_for_timeout(300)
+        # typing in the source and undoing at once: the typing goes, nothing older does
+        click_text(page, 'Math is an object', 4)
+        page.keyboard.type('Q')
+        page.wait_for_timeout(2100)
+        page.evaluate('''() => { const cm = window.rikuy.cm; const d = cm.getDoc(); const i = d.getValue().indexOf('The round trip'); cm.focus(); d.setCursor(d.posFromIndex(i + 3)); }''')
+        page.keyboard.type('XYZ')
+        page.keyboard.press('Control+z')
+        page.wait_for_timeout(400)
+        check('Ctrl+Z right after typing in the source undoes that typing only', 'MathQ is' in src(page) and 'XYZ' not in src(page) and page.evaluate('window.rikuy.cm.getValue()') == src(page))
+        page.evaluate('''() => { const cm = window.rikuy.cm; const d = cm.getDoc(); const i = d.getValue().indexOf('The round trip'); cm.focus(); d.setCursor(d.posFromIndex(i + 3)); }''')
+        page.keyboard.type('UVW')
+        box = page.evaluate('''() => { const s = [...document.querySelectorAll('#pages span.t')].find(x => x.textContent.includes('Citations come from')); s.scrollIntoView({block: 'center'}); const r = document.createRange(); r.setStart(s.firstChild, 3); r.setEnd(s.firstChild, 4); const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }''')
+        page.mouse.click(box[0], box[1])
+        page.keyboard.type('P')
+        check('typing in the source, then at once on the page, keeps both', 'TheUVW round' in src(page) and 'CitPations' in src(page), src(page)[src(page).find('Citations') - 4:][:20])
+        undo_all(page)
+        check('and undo gives the bytes back', src(page) == base)
+        edges(page, errors)
 
         check('no console errors', not errors, errors[:5])
         browser.close()
@@ -312,7 +448,73 @@ def run():
         page.screenshot(path=SHOTS + '/03-mobile-dark.png')
         sw = page.evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth')
         check('no horizontal page scroll on phone', sw <= 0, sw)
+        page.click('#zoomv')
+        page.wait_for_timeout(300)
+        r = page.evaluate('''() => { const d = document.getElementById('desk'); d.scrollLeft = 0; const pg = document.querySelector('.page').getBoundingClientRect(); return [document.getElementById('zoomv').textContent, Math.round(pg.left - d.getBoundingClientRect().left), d.scrollWidth - d.clientWidth]; }''')
+        check('on a phone the Fit button switches to actual size', r[0] == '100%', r)
+        check('a page wider than the window starts at its left edge and scrolls', r[1] >= 0 and r[2] > 0, r)
+        page.set_viewport_size({'width': 900, 'height': 700})
+        page.wait_for_timeout(300)
+        over = page.evaluate('''() => { const m = document.querySelector('.brand .mark').getBoundingClientRect(); const b = document.getElementById('b-open').getBoundingClientRect(); return [Math.round(m.right), Math.round(b.left)]; }''')
+        check('the name and the buttons do not overlap at 900px', over[0] <= over[1], over)
         check('no console errors (mobile)', not errors, errors[:5])
+        browser.close()
+
+        # Two tabs on the project, switching between them; a tab hidden then killed
+        browser, A, errors = open_page(p, width=1200, height=800)
+        def tab():
+            t = A.context.new_page()
+            t.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
+            t.goto('https://rikuy.test/')
+            t.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
+            t.wait_for_timeout(300)
+            return t
+        def vis(t, state):
+            t.evaluate('''(s) => { Object.defineProperty(document, 'visibilityState', {value: s, configurable: true}); document.dispatchEvent(new Event('visibilitychange')); }''', state)
+            t.wait_for_timeout(300)
+        B = tab()
+        vis(B, 'hidden')
+        click_text(A, 'Click anywhere in this paragraph', 5)
+        A.keyboard.type('AAA')
+        vis(A, 'hidden'); vis(B, 'visible')
+        check('a tab brings in what another tab typed when it is shown', 'ClickAAA' in src(B))
+        click_text(B, 'Math is an object', 4)
+        B.keyboard.type('BBB')
+        vis(B, 'hidden'); vis(A, 'visible')
+        check('and back again, keeping its own', 'MathBBB' in src(A) and 'ClickAAA' in src(A))
+        A.wait_for_timeout(900)
+        C = tab()
+        click_text(C, 'start typing', 3)
+        C.keyboard.type('CCC')
+        C.wait_for_timeout(1000)
+        B.close(run_before_unload=True)  # B changed nothing since it last saved
+        D = tab()
+        check('closing a tab that changed nothing keeps what another tab saved', 'staCCCrt typing' in src(D) and 'ClickAAA' in src(D) and 'MathBBB' in src(D))
+        # both visible (side by side): A types without having seen C's text
+        click_text(A, 'Rikuy escapes', 3)
+        A.keyboard.type('Z')
+        A.wait_for_timeout(1200)
+        vs = A.evaluate('window.rikuy.allSnaps().then(async vs => { for (const v of vs) { const f = new Map(await window.rikuy.versionFiles(v) || []); if (v.label === "From another tab" && (f.get("main.tex") || "").includes("staCCCrt")) return true; } return false; })')
+        check('a tab that writes over another tab\'s text keeps that text as a version', vs)
+        # a phone hides the page, then kills it without unload
+        click_text(D, 'MathBBB is an object', 0)
+        D.keyboard.type('V')
+        vis(D, 'hidden')
+        D.close()
+        E = tab()
+        check('a keystroke just before the page is hidden and killed is kept', 'VMathBBB' in src(E), src(E)[src(E).find('MathBBB') - 3:][:20])
+        # pruning keeps the newest version of every project
+        E.evaluate('''async () => { const g = window.rikuy; const n = g.name; g.name = 'Another project'; await g.snapshot('', {force: true}); g.name = n; for (let i = 0; i < 85; i++) { g.files.set('main.tex', g.files.get('main.tex') + ' '); await g.snapshot('', {force: true}); } await new Promise(r => setTimeout(r, 500)); g.snapList = null; }''')
+        names = E.evaluate('window.rikuy.allSnaps().then(vs => vs.map(v => v.name))')
+        check('pruning versions keeps the last one of a project no longer open', 'Another project' in names and len(names) <= 82, len(names))
+        # an edit made just before a quick navigation away (a link followed, a bookmark)
+        click_text(E, 'Rikuy escapes', 0)
+        E.keyboard.type('W')
+        E.goto('about:blank')
+        E.goto('https://rikuy.test/')
+        E.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
+        check('an edit made just before navigating away is kept', 'WRikuy escapes' in src(E), src(E)[src(E).find('Rikuy escapes') - 3:][:20])
+        check('no console errors (tabs)', not errors, errors[:5])
         browser.close()
 
     bad = [r for r in results if not r[1]]

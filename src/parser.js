@@ -411,6 +411,17 @@ export function parse(src, opts = {}) {
     let sig = SIG[name];
     if (sig === undefined) sig = userSigs[name];
     if (name === '\\') sig = 'o';
+    if (sig === undefined && name in CHARS) {
+      // A character command takes no argument: an empty {} after it only ends its name, and a
+      // group with text in it (\%{b}, \ldots{}{\em x}) is text of its own, shown and kept
+      i = ne;
+      if (src[i] === '{' && src[i + 1] === '}') {
+        i += 2;
+        node.args = [{ o: false, s: ne, e: i, is: ne + 1, ie: ne + 1, nodes: [] }];
+        node.e = i;
+      } else { i = ge; node.e = ge; }
+      return node;
+    }
     if (sig === undefined) {
       // Unknown: attach directly adjacent {..} groups (no whitespace) only.
       const args = [];
@@ -623,13 +634,21 @@ export function isBalanced(src, a, b) {
     return nb % 2 === 1;
   };
   if (insideCs(a) || insideCs(b)) return false;
-  let depth = 0, dollars = 0;
+  // brackets count too: a range that takes the ] of an optional argument (a theorem's title,
+  // \item[...]) and not its [ leaves "Runaway argument" behind
+  let depth = 0, dollars = 0, brackets = 0;
   const envs = [];
   for (let k = a; k < b; k++) {
     const c = src[k];
     if (c === '\\') {
       const rest = src.slice(k, k + 60);
       let m;
+      // \verb|...|: a % or a brace between the delimiters is text, not a comment or a group
+      if ((m = /^\\(?:verb\*?|lstinline)(?![A-Za-z])/.exec(rest))) {
+        const at = k + m[0].length, d = src[at];
+        const close = d && !/[\s{[a-zA-Z]/.test(d) ? src.indexOf(d, at + 1) : -1;
+        if (close >= 0 && !src.slice(at, close).includes('\n')) { if (close >= b) return false; k = close; continue; }
+      }
       if ((m = /^\\begin\s*\{([^}]*)\}/.exec(rest))) { envs.push(m[1].trim()); k += m[0].length - 1; continue; }
       if ((m = /^\\end\s*\{([^}]*)\}/.exec(rest))) {
         if (envs.pop() !== m[1].trim()) return false;
@@ -643,8 +662,10 @@ export function isBalanced(src, a, b) {
     if (c === '{') depth++;
     else if (c === '}') { depth--; if (depth < 0) return false; }
     else if (c === '$') dollars ^= 1;
+    else if (c === '[' && !dollars) brackets++;
+    else if (c === ']' && !dollars) { brackets--; if (brackets < 0) return false; }
   }
-  if (depth !== 0 || envs.length || dollars !== 0) return false;
+  if (depth !== 0 || envs.length || dollars !== 0 || brackets !== 0) return false;
   // A comment started before a and running into the range is fine; but the range
   // must not end inside a comment line whose start lies outside (rare); ignore.
   return true;

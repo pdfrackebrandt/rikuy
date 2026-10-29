@@ -15,7 +15,7 @@ import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath } from './paste.js';
 import { findProblems } from './problems.js';
 import { texToPlain, shortAuthors, entryYear } from './bib.js';
-import { kvGet, kvPut, decodeText, encodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
+import { kvGet, kvPut, kvSwap, decodeText, encodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
 import { changes, spacingOnly } from './diff.js';
 import { TeXEngine, parseTeXLog } from './tex.js';
 import { PdfView } from './pdfview.js';
@@ -150,6 +150,22 @@ function braceDepth(src, p) {
   }
   return d;
 }
+// Would a "[" (or "*") written at p be taken as the optional argument (or the star) of the
+// command before it? \\ and \item look past spaces and one line break for one: "\\" then
+// "[1]" on the next line is a TeX error, "\item" then "[x]" replaces the bullet with x.
+function grabsBracket(src, p, ch) {
+  let k = p;
+  const sp = () => { while (k > 0 && (src[k - 1] === ' ' || src[k - 1] === '\t')) k--; };
+  sp();
+  if (src[k - 1] === '\n') { k--; if (src[k - 1] === '\r') k--; sp(); }
+  const star = ch === '[' && src[k - 1] === '*';
+  if (star) k--;
+  let n = 0;
+  while (k - n > 0 && src[k - n - 1] === '\\') n++;
+  if (n >= 2 && n % 2 === 0) return true;
+  return ch === '[' && !star && endsWithControlWord(src, k);
+}
+const crlfOnly = (t) => t.includes('\r\n') && !/(^|[^\r])\n/.test(t);
 function mk(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
 function mkBtn(label, fn, title, type) { const b = mk('button', 'btn ghost sm', label); b.type = type || 'button'; if (title) b.title = title; if (fn) b.addEventListener('click', fn); return b; }
 function textSig(main, files) {
@@ -185,7 +201,7 @@ async function copyRich(html, text) {
 const lineOf = (src, p) => { let n = 1; for (let i = 0; i < p && i < src.length; i++) if (src.charCodeAt(i) === 10) n++; return n; };
 const lineStart = (src, line) => { let p = 0; for (let n = 1; n < line; n++) { const i = src.indexOf('\n', p); if (i < 0) return src.length; p = i + 1; } return p; };
 const fmtMB = (b) => (b / 1e6).toFixed(b < 1e7 ? 1 : 0) + ' MB';
-function debounce(fn, ms) { let t; const d = (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; d.flush = (...a) => { clearTimeout(t); fn(...a); }; d.cancel = () => clearTimeout(t); return d; }
+function debounce(fn, ms) { let t = null; const d = (...a) => { clearTimeout(t); t = setTimeout(() => { t = null; fn(...a); }, ms); }; d.flush = (...a) => { clearTimeout(t); t = null; fn(...a); }; d.cancel = () => { clearTimeout(t); t = null; }; d.pending = () => t !== null; return d; }
 
 // ---------------------------------------------------------------------------
 // LaTeX box <-> visual equation field. Row commands (\label, \tag, \notag)
@@ -284,7 +300,9 @@ class App {
     this.pending = null;
     this.armed = null;
     const persistSoon = debounce(() => this.persist(), 700);
-    this.saveSoon = Object.assign(() => { this.zipDirty = true; document.body.classList.add('zip-dirty'); persistSoon(); this.noteEdit(); }, { flush: () => persistSoon.flush(), cancel: () => persistSoon.cancel() });
+    // unsaved: an edit waits for persistSoon. Leaving the page writes only then: a tab that changed
+    // nothing must not write its older copy over what another tab saved since.
+    this.saveSoon = Object.assign(() => { this.zipDirty = true; this.unsaved = true; document.body.classList.add('zip-dirty'); persistSoon(); this.noteEdit(); }, { flush: () => persistSoon.flush(), cancel: () => persistSoon.cancel() });
     this.memSnaps = []; // versions kept in memory when this browser cannot store them
     this.marksSoon = debounce(() => this.paintChanges(), 180);
     this.commentsSoon = debounce(() => this.paintComments(), 200);
@@ -299,6 +317,7 @@ class App {
   async init() {
     let saved = null;
     try { saved = await kvGet('project'); } catch (e) { saved = null; this.noIdb = true; }
+    this.savedT = saved ? saved.t : null; // the copy in IndexedDB this tab last read or wrote
     const ls = load(STORE);
     if (ls && ls.files && (!saved || (ls.t || 0) > (saved.t || 0))) saved = ls; // a session that could not use IndexedDB
     if (saved && saved.files && saved.files.length) {
@@ -393,7 +412,17 @@ class App {
     const t0 = performance.now();
     let model;
     try { model = buildModel({ files: this.files, main: this.main }, this.model && this.model.main === this.main ? this.model : null); model.main = this.main; }
-    catch (e) { console.error(e); this.toast('Could not read the document: ' + e.message); return; }
+    catch (e) {
+      // The pages still show the text before this change, and their offsets no longer match it:
+      // a keystroke there would land in the wrong place. They take no typing until a build works.
+      console.error(e);
+      this.stale = true;
+      this.root.classList.add('stale');
+      this.root.contentEditable = 'false';
+      this.toast('The page cannot show this version of the document (' + e.message + '). Edit the source, or undo.', 8000);
+      return;
+    }
+    if (this.stale) { this.stale = false; this.root.classList.remove('stale'); this.root.contentEditable = 'true'; }
     this.model = model;
     // chemistry (\ce, \pu): KaTeX's mhchem, fetched the first time a document uses it
     if (!this.chemReq && window.katex && [...this.files.values()].some((t) => /\\(?:ce|pu|ch)\s*[[{]/.test(t))) {
@@ -435,6 +464,27 @@ class App {
     this.tocPages(plan);
     if (this.prefs.marks) this.marksSoon();
     this.commentsSoon();
+    this.emptyGhost();
+  }
+
+  // A document with no text on the page to type into (a new one, an empty file, a preamble
+  // alone): a blank paragraph at the end of its body that stays, so typing on the page starts it.
+  emptyGhost() {
+    if (this.root.querySelector('span.t')) return;
+    const flows = this.root.querySelectorAll('.page .flow');
+    const flow = flows[flows.length - 1];
+    if (!flow) return;
+    const f = this.main, src = this.src(f);
+    const begin = /\\begin\s*\{document\}/.exec(src);
+    const from = begin ? begin.index + begin[0].length : 0;
+    const end = src.slice(from).search(/\\end\s*\{document\}/);
+    let pos = begin && end >= 0 ? from + end : src.length;
+    while (pos > from && /\s/.test(src[pos - 1])) pos--;
+    const g = mk('div', 'it p ghostp empty');
+    g.dataset.ctx = 'p';
+    g.appendChild(mk('span', 't gh', '\u200B'));
+    flow.appendChild(g);
+    this.ghost = { el: g, f, pos, sticky: true };
   }
 
   relayout(force) {
@@ -527,6 +577,8 @@ class App {
 
   // ---- edits & history ----------------------------------------------------------
   commit(edits, caret, kind) {
+    // while the pages are stale (see rebuild) only edits made from the text itself go through
+    if (this.stale && !/^(restore|reject|merge|other-tab)$/.test(kind || '')) { this.toast('The page cannot show the document as it is now. Edit the source, or undo.'); return; }
     edits = edits.filter((ed) => { const n = (this.files.get(ed.f) ?? '').length; return ed.s >= 0 && ed.e >= ed.s && ed.e <= n; });
     if (!edits.length) { if (caret) this.restoreCaret(caret); return; }
     const cb = this.caretNow() || caret;
@@ -572,6 +624,9 @@ class App {
   closeGroup() { const top = this.hist[this.hist.length - 1]; if (top) { top.open = false; top.before = null; } }
 
   undo() {
+    // typing in the source pane joins the history only after a pause: take it in first, so
+    // Ctrl+Z right after typing undoes that typing instead of wiping it
+    if (this.srcRebuild.pending()) this.srcRebuild.flush();
     this.closePop(true);
     const h = this.hist.pop();
     if (!h) { this.toast('Nothing to undo'); return; }
@@ -585,6 +640,7 @@ class App {
     this.updateUndoUI();
   }
   redo() {
+    if (this.srcRebuild.pending()) this.srcRebuild.flush();
     this.closePop(true);
     const h = this.redoStack.pop();
     if (!h) { this.toast('Nothing to redo'); return; }
@@ -663,9 +719,11 @@ class App {
     $('#nt-changes').addEventListener('click', () => this.toggleNav(true, 'changes'));
     $('#nt-git').addEventListener('click', () => this.toggleNav(true, 'git'));
     $('#nav-body').addEventListener('focusout', () => setTimeout(() => { if (this.navStale && !$('#nav-body').contains(document.activeElement)) this.refreshNav(); }, 0));
-    const away = () => { if (this.snapDirty) this.snapshot(''); };
+    // a phone kills a hidden page without beforeunload: the last keystrokes are written as it hides
+    const away = () => { this.leaving(); if (this.snapDirty) this.snapshot(''); };
     window.addEventListener('pagehide', away);
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') away(); });
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') away(); else this.adoptOtherTab(); });
+    window.addEventListener('focus', () => this.adoptOtherTab());
     D.addEventListener('scroll', debounce(() => this.markCurrentHeading(), 80), { passive: true });
     $('#bubble').addEventListener('mousedown', (e) => e.preventDefault());
     $('#bubble').addEventListener('click', (e) => {
@@ -680,7 +738,16 @@ class App {
       if (a === 'src') this.revealCaret(true);
     });
     $('#gutter').addEventListener('pointerdown', (e) => this.dragGutter(e));
-    window.addEventListener('beforeunload', () => { this.saveSoon.flush(); if (this.noIdb) store(STORE, { name: this.name, main: this.main, files: [...this.files.entries()], t: Date.now() }); });
+    window.addEventListener('beforeunload', () => this.leaving());
+  }
+
+  // Leaving with an edit not written yet. IndexedDB may not finish before the page is gone (a
+  // quick navigation drops the write), so the text also goes to localStorage, which is written
+  // at once; init takes whichever copy is newer, and the next write to IndexedDB clears it.
+  leaving() {
+    if (!this.unsaved) return;
+    store(STORE, { name: this.name, main: this.main, files: [...this.files.entries()], t: Date.now(), zipDirty: this.zipDirty });
+    this.saveSoon.flush();
   }
 
   onGlobalKey(e) {
@@ -714,6 +781,18 @@ class App {
       if (el && el.closest('td')) { e.preventDefault(); this.tabCell(e.shiftKey); return; }
     }
     if (e.key === 'Escape') { this.disarm(); }
+    // Enter on an equation, citation or block that Backspace selected opens it, as a click does:
+    // the keyboard's way in (Enter used to replace it with a paragraph break)
+    if (e.key === 'Enter' && !e.shiftKey && this.armed && this.armed.el && this.armed.el.isConnected) {
+      const info = atomOfEl(this.armed.el);
+      if (info && !['br', 'sp'].includes(info.a.kind)) {
+        e.preventDefault();
+        const el = this.armed.el;
+        this.disarm();
+        this.openAtom(el, info);
+        return;
+      }
+    }
     if ((e.key === 'Backspace' || e.key === 'Delete') && this.armed) {
       e.preventDefault();
       const A = this.armed;
@@ -776,6 +855,14 @@ class App {
       if ((slice.match(/\n/g) || []).length >= 2) return [{ f, s: a, e: b, t: ' ' }];
       return [{ f, s: a, e: b, t: '' }];
     }
+    // Only comment lines between two paragraphs (a note, a review comment): joining them takes
+    // out the blank lines alone. The comments are text nobody sees on the page, and the line
+    // break left before them keeps a space between the two paragraphs' words.
+    if (/^(?:\s|%[^\n]*\n)+$/.test(slice) && /\n[ \t]*\n/.test(slice)) {
+      const lines = slice.split('\n');
+      const kept = lines.filter((l, i) => i === 0 || i === lines.length - 1 || l.trim() !== '');
+      return [{ f, s: a, e: b, t: kept.join('\n') }];
+    }
     if (isBalanced(src, a, b) && !/\\(begin|end)\s*\{(document)\}/.test(slice) && !/\\(section|subsection|subsubsection|chapter|part|maketitle|item|bibliography)\b/.test(slice)) {
       return [{ f, s: a, e: b, t: '' }];
     }
@@ -800,6 +887,7 @@ class App {
     const prev = src[at - 1] || ' ';
     let t = escapeTeX(data, prev);
     if (/^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
+    if (/^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
     // merge if insertion point coincides with a deletion start
     const merged = [];
     let inserted = false;
@@ -816,7 +904,7 @@ class App {
   deleteInput(type, ranges) {
     const c = this.caretNow();
     if (c && c.ghost) {
-      if (/Backward/.test(type)) { const g = this.ghost; this.removeGhost(); this.restoreCaret({ f: g.f, p: g.pos }); }
+      if (/Backward/.test(type) && !this.ghost.sticky) { const g = this.ghost; this.removeGhost(); this.restoreCaret({ f: g.f, p: g.pos }); }
       return;
     }
     if (!c) return;
@@ -907,7 +995,7 @@ class App {
       this.ourSel = true;
       s.removeAllRanges(); s.addRange(r);
     }
-    this.toast('Press Backspace again to delete this ' + ({ math: 'equation', cite: 'citation', ref: 'reference', fn: 'footnote', img: 'figure', chip: 'command', raw: 'block' }[atom.kind] || 'item') + '.', 1800);
+    this.toast('Press Backspace again to delete this ' + ({ math: 'equation', cite: 'citation', ref: 'reference', fn: 'footnote', img: 'figure', chip: 'command', raw: 'block' }[atom.kind] || 'item') + (atom.kind === 'br' || atom.kind === 'sp' ? '.' : ', or Enter to edit it.'), 1800);
   }
   disarm() {
     if (this.armed && this.armed.el) this.armed.el.classList.remove('sel');
@@ -960,8 +1048,9 @@ class App {
       // indent like the current item line
       let ls2 = +is + base; let ind = '';
       while (ls2 > 0 && (src[ls2 - 1] === ' ' || src[ls2 - 1] === '\t')) { ind = src[ls2 - 1] + ind; ls2--; }
-      const ins = '\n' + ind + t.slice(1);
-      this.commit([...edits, { f, s: p, e: p, t: ins }], { f, p: p + ins.length, bias: 1 }, 'enter');
+      const w = c.collapsed ? this.wrapBreak(el, f, p) : { p, close: '', open: '' };
+      const ins = w.close + '\n' + ind + t.slice(1) + w.open;
+      this.commit([...edits, { f, s: w.p, e: w.p, t: ins }], { f, p: Math.max(w.p, p) + ins.length, bias: 1 }, 'enter');
       return;
     }
     // Paragraph: at end -> ghost paragraph; otherwise split
@@ -969,7 +1058,27 @@ class App {
       this.showGhost(itemEl, f, p);
       return;
     }
-    this.commit([...edits, { f, s: p, e: p, t: '\n\n' }], { f, p: p + 2, bias: 1 }, 'enter');
+    const w = c.collapsed ? this.wrapBreak(el, f, p) : { p, close: '', open: '' };
+    const ins = w.close + '\n\n' + w.open;
+    // a break moved before a wrapper leaves the caret at the start of its text, still inside it
+    this.commit([...edits, { f, s: w.p, e: w.p, t: ins }], { f, p: Math.max(w.p, p) + ins.length, bias: 1 }, 'enter');
+  }
+
+  // Enter inside \textbf{...}, \emph{...} and the like: TeX stops with "Paragraph ended before
+  // \textbf was complete" at a break inside their argument, so they close before the break and
+  // open again after it. At the very start or end of one the break goes outside it instead.
+  wrapBreak(el, f, p) {
+    const src = this.src(f);
+    let close = '', open = '';
+    for (let n = el; n && n !== this.root && !n.classList.contains('it'); n = n.parentElement) {
+      const y = n.dataset.y ? styOfEl(n) : null;
+      if (!y || y.f !== f || !Number.isFinite(y.s) || p < y.is || p > y.ie) continue;
+      if (!close && p === y.ie) { p = y.e; continue; }
+      if (!open && p === y.is) { p = y.s; continue; }
+      close += src.slice(y.ie, y.e);
+      open = src.slice(y.s, y.is) + open;
+    }
+    return { p, close, open };
   }
 
   atItemEnd(itemEl, sel) {
@@ -1006,10 +1115,15 @@ class App {
   ghostInsert(tex) {
     const g = this.ghost;
     const src = this.src(g.f);
+    // comment lines right under the paragraph belong to it (a review comment is about the line
+    // above it): the new paragraph goes after them
+    const cm = /^[ \t]*(?:%[^\n]*)?(?:\r?\n[ \t]*%[^\n]*)*/.exec(src.slice(g.pos));
+    if (cm[0].includes('%')) g.pos += cm[0].length;
     let nlB = 0; for (let k = g.pos - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
     let nlA = 0; for (let k = g.pos; k < src.length && /\s/.test(src[k]); k++) if (src[k] === '\n') nlA++;
-    const pre = '\n'.repeat(Math.max(0, 2 - nlB));
-    const post = '\n'.repeat(Math.max(0, 2 - nlA));
+    // no blank lines at the very start or end of a file: there is no paragraph to keep apart
+    const pre = g.pos === 0 ? '' : '\n'.repeat(Math.max(0, 2 - nlB));
+    const post = g.pos >= src.length ? '' : '\n'.repeat(Math.max(0, 2 - nlA));
     this.removeGhost();
     this.commit([{ f: g.f, s: g.pos, e: g.pos, t: pre + tex + post }], { f: g.f, p: g.pos + pre.length + tex.length, bias: -1 }, 'type');
   }
@@ -1032,7 +1146,9 @@ class App {
     const edits = c.collapsed ? [] : this.deletionEdits(c.f, c.a, c.b);
     let t = escapeTeX(data, src[c.a - 1] || ' ');
     if (/^[A-Za-z]/.test(t) && endsWithControlWord(src, c.a)) t = '{}' + t;
-    this.commit([...edits, { f: c.f, s: c.a, e: c.a, t }], { f: c.f, p: c.a + t.length - edits.reduce((s, ed) => s + (ed.e - ed.s), 0) }, 'type');
+    // the deletions of a replaced selection lie after c.a: they do not move the caret back
+    const removedBefore = edits.filter((ed) => ed.e <= c.a).reduce((s, ed) => s + (ed.e - ed.s) - ed.t.length, 0);
+    this.commit([...edits, { f: c.f, s: c.a, e: c.a, t }], { f: c.f, p: c.a - removedBefore + t.length }, 'type');
   }
 
   // ---- clipboard ------------------------------------------------------------------
@@ -1098,6 +1214,7 @@ class App {
     const at = edits.length && edits[0].s >= c.a ? edits[0].s : c.a;
     let t = latex || rich();
     if (/^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
+    if (/^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
     const removedBefore = edits.filter((ed) => ed.e <= at).reduce((s, ed) => s + (ed.e - ed.s), 0);
     this.commit([...edits, { f: c.f, s: at, e: at, t }], { f: c.f, p: at - removedBefore + t.length }, 'paste');
     // LaTeX source pasted as text got its backslashes escaped: offer to keep it as LaTeX
@@ -1195,7 +1312,12 @@ class App {
       if (pos && !pos.ghost) this.reveal(pos.f, pos.p, true);
       return;
     }
-    if (!atomEl) { this.disarm(); return; }
+    if (!atomEl) {
+      this.disarm();
+      // an empty document: a click anywhere on the page goes to the blank paragraph
+      if (this.ghost && this.ghost.sticky) { e.preventDefault(); this.root.focus({ preventScroll: true }); getSelection().collapse(this.ghost.el.firstChild.firstChild, 1); }
+      return;
+    }
     const info = atomOfEl(atomEl);
     if (!info) return;
     e.preventDefault();
@@ -1218,7 +1340,7 @@ class App {
   onSelChange() {
     const sel = getSelection();
     const inRoot = sel.rangeCount && this.root.contains(sel.anchorNode);
-    if (this.ghost && !(inRoot && this.ghost.el.contains(sel.anchorNode))) {
+    if (this.ghost && !this.ghost.sticky && !(inRoot && this.ghost.el.contains(sel.anchorNode))) {
       // keep ghost while focus is in the popover; drop otherwise
       if (!this.pop) this.removeGhost();
     }
@@ -2205,6 +2327,8 @@ class App {
           }
         });
         this.cm.on('changes', (cm, chs) => { if (chs.some((c) => c.origin !== 'galley' && c.origin !== 'setValue')) this.srcRebuild(); });
+        // leaving the pane (a click on the page) takes its typing in before the page edits anything
+        this.cm.on('blur', () => { if (this.srcRebuild.pending()) this.srcRebuild.flush(); });
         this.cm.on('cursorActivity', debounce(() => { if (this.cm.hasFocus()) this.revealInPage(); }, 120));
       } catch (e) {
         const ta = document.createElement('textarea');
@@ -2212,6 +2336,7 @@ class App {
         ta.spellcheck = false;
         host.appendChild(ta);
         ta.addEventListener('input', () => this.srcRebuild());
+        ta.addEventListener('blur', () => { if (this.srcRebuild.pending()) this.srcRebuild.flush(); });
         this.cmFallback = ta;
       }
     })();
@@ -2221,7 +2346,9 @@ class App {
   showSrcFile(name) {
     this.srcFile = name;
     const text = this.src(name);
-    if (this.cm) { this.cm.setValue(text); this.cm.clearHistory(); this.cm.setOption('mode', /\.bib$/.test(name) ? 'text/plain' : 'stex'); }
+    // a file written with \r\n line ends: CodeMirror joins its lines with them too, so offsets
+    // in the pane are offsets in the file and no edit turns its line ends into \n
+    if (this.cm) { this.cm.setOption('lineSeparator', crlfOnly(text) ? '\r\n' : null); this.cm.setValue(text); this.cm.clearHistory(); this.cm.setOption('mode', /\.bib$/.test(name) ? 'text/plain' : 'stex'); }
     else if (this.cmFallback) this.cmFallback.value = text;
     this.updateFileTabs();
   }
@@ -2259,7 +2386,9 @@ class App {
 
   fromSource() {
     const name = this.srcFile || this.main;
-    const text = this.cm ? this.cm.getValue() : this.cmFallback ? this.cmFallback.value : null;
+    let text = this.cm ? this.cm.getValue() : this.cmFallback ? this.cmFallback.value : null;
+    // a textarea (and a line pasted into the pane) gives \n: a \r\n file keeps its line ends
+    if (text != null && crlfOnly(this.src(name))) text = text.replace(/\r?\n/g, '\r\n');
     if (text == null || text === this.src(name)) return;
     const before = new Map([[name, this.src(name)]]);
     this.files.set(name, text);
@@ -3138,7 +3267,9 @@ class App {
 
   setZoom(dir) {
     const steps = [0.5, 0.6, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
-    if (dir === 0) this.prefs.zoom = 'fit';
+    // on a phone, where − and + are hidden, the Fit button switches between fitting the width
+    // (text a few pixels high) and actual size
+    if (dir === 0) this.prefs.zoom = this.prefs.zoom === 'fit' && window.innerWidth <= 520 ? 1 : 'fit';
     else {
       const cur = this.prefs.zoom === 'fit' ? this.px / PX_PER_PT : this.prefs.zoom;
       let i = steps.findIndex((s) => s >= cur - 0.001);
@@ -3319,9 +3450,14 @@ class App {
       $('#b-save').title = (this.zipDirty ? 'Changes since you last saved. ' : '') + 'Download ' + what + ' (Ctrl+S)';
       $('#b-save span').textContent = this.singleFile() ? 'Save .tex' : 'Save .zip';
     };
+    this.unsaved = false;
     const fallback = () => show(store(STORE, meta), this.assetBlobs.size > 0 || this.extra.size > 0);
     if (this.noIdb) { fallback(); return; }
-    const jobs = [kvPut('project', meta)];
+    // The write hands back the copy it replaces: when another tab of this browser saved it after
+    // this one last read or wrote, that tab's text goes into the versions instead of being lost.
+    const prevT = this.savedT;
+    this.savedT = meta.t;
+    const jobs = [kvSwap('project', meta).then((cur) => { if (cur && cur.files && cur.t !== prevT) return this.keepOtherTab(cur); })];
     if (this.binaryDirty) {
       this.binaryDirty = false;
       jobs.push(kvPut('binary', {
@@ -3332,6 +3468,35 @@ class App {
     }
     Promise.all(jobs).then(() => { show(true); try { localStorage.removeItem(STORE); } catch (e) { /* ignore */ } })
       .catch(() => { this.noIdb = true; fallback(); });
+  }
+
+  // Another tab saved this project (or another one) after this tab last read it: keep that text
+  // as a named version, so it is never pruned, and say where it is.
+  async keepOtherTab(cur) {
+    const sig = textSig(cur.main, cur.files);
+    if (sig === textSig(this.main, [...this.files.entries()])) return;
+    try { await snapAdd({ t: Date.now(), label: 'From another tab', named: true, name: cur.name || cur.main, main: cur.main, sig, files: cur.files }); } catch (e) { return; }
+    this.snapList = null;
+    this.toast('This document is open in another tab too. What that tab saved is kept under Review, Versions, as “From another tab”.', 9000);
+  }
+
+  // Back in this tab after working in another one on the same project: take its text, as one
+  // step Ctrl+Z undoes, so this tab does not go on from an older copy.
+  async adoptOtherTab() {
+    if (this.noIdb || this.unsaved || !this.model) return;
+    let cur = null;
+    try { cur = await kvGet('project'); } catch (e) { return; }
+    if (!cur || !cur.files || cur.t === this.savedT || this.unsaved) return;
+    if (cur.name !== this.name || cur.main !== this.main) return;
+    const edits = [];
+    for (const [n, t] of cur.files) { const was = this.files.get(n); if (was !== t) edits.push({ f: n, s: 0, e: was == null ? 0 : was.length, t }); }
+    this.savedT = cur.t;
+    if (!edits.length) return;
+    this.closePop(true);
+    this.closeGroup();
+    this.commit(edits, null, 'other-tab');
+    this.closeGroup();
+    this.toast('Brought in what was typed in another tab. Ctrl+Z undoes it.', 5000);
   }
 
   resetToSample() {

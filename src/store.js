@@ -43,6 +43,12 @@ function tx(store, mode, fn) {
 export const kvGet = (k) => tx('kv', 'readonly', (s) => s.get(k));
 export const kvPut = (k, v) => tx('kv', 'readwrite', (s) => s.put(v, k));
 export const kvDel = (k) => tx('kv', 'readwrite', (s) => s.delete(k));
+// Write v under k and hand back what was there, in one transaction: both requests go out at
+// once, so a write made as the page closes is not left waiting on a read first.
+export function kvSwap(k, v) {
+  let was;
+  return tx('kv', 'readwrite', (s) => { const g = s.get(k); g.onsuccess = () => { was = g.result; }; s.put(v, k); }).then(() => was);
+}
 
 // Versions. The list ('snaps') holds { id, t, label, named, name, main, sig } so it loads
 // fast; each version's text, [[name, text], ...], sits under the same id in 'vtext'.
@@ -72,8 +78,12 @@ export function snapDel(id) {
 export async function snapPrune(keep) {
   const all = await snapAll();
   if (all.length <= keep) return 0;
-  // keep versions the user named, drop the oldest automatic ones
-  const auto = all.filter((x) => !x.named).sort((a, b) => a.t - b.t);
+  // keep versions the user named and the newest version of every project (once another project
+  // is opened, its versions are all that is left of it); drop the oldest automatic ones
+  const newest = new Map();
+  for (const x of all) { const k = x.name + '|' + x.main; if (!newest.has(k) || newest.get(k).t < x.t) newest.set(k, x); }
+  const last = new Set([...newest.values()].map((x) => x.id));
+  const auto = all.filter((x) => !x.named && !last.has(x.id)).sort((a, b) => a.t - b.t);
   const drop = auto.slice(0, all.length - keep);
   for (const x of drop) await snapDel(x.id);
   return drop.length;
