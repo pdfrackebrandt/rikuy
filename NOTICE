@@ -46,7 +46,8 @@ Built for Rikuy from source (tex/build_tools.sh, tex/native/)
     Asymptote and Mesa)
   gnuplot 6.0.2                       gnuplot license (LICENSES/gnuplot.txt) www.gnuplot.info
       Modified by Rikuy: tex/native/patch_gnuplot.py changes one line of src/complexfun.c (the
-      underflow check after cexp()) and tex/build_tools.sh compiles it for WebAssembly. Questions
+      underflow check after cexp()) and gives the build its own version label (patchlevel
+      2-rikuy, in src/version.c); tex/build_tools.sh compiles it for WebAssembly. Questions
       about this modified version go to Pedro F. Rackebrandt,
       pedro.fernandezrackebrandt@merton.ox.ac.uk, or an issue in this repository; about gnuplot
       itself, to the gnuplot project at www.gnuplot.info. The change, as a patch to the release:
@@ -58,6 +59,13 @@ Built for Rikuy from source (tex/build_tools.sh, tex/native/)
 -#define handle_underflow( who, var ) int_error(NO_CARET, "%s: errno = %d", who, errno);
 +#define handle_underflow( who, var ) if (errno) int_error(NO_CARET, "%s: errno = %d", who, errno);
  #endif
+--- gnuplot-6.0.2/src/version.c
++++ gnuplot-6.0.2-rikuy/src/version.c
+@@ -39,3 +39,3 @@
+ const char gnuplot_version[] = "6.0";
+-const char gnuplot_patchlevel[] = "2";
++const char gnuplot_patchlevel[] = "2-rikuy";
+ #ifdef DEVELOPMENT_VERSION
 
 
 Other programs run in the page

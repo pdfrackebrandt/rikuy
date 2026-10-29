@@ -7,6 +7,9 @@ WebAssembly has no floating point exception flags) the fallback raises the error
 errno or not, so every igamma() failed with "Igamma: errno = 0" (pgfplots' gnuplot plots of the
 chi-squared distribution came out empty). The fallback here raises it only when errno is set.
 
+gnuplot's license lets a modified build be passed on only under its own version label, so the
+patchlevel says this is Rikuy's build ("show version" prints "patchlevel 2-rikuy").
+
 Usage: patch_gnuplot.py GNUPLOT_SOURCE_DIR
 """
 import os, sys
@@ -26,4 +29,7 @@ def edit(name, old, new):
 edit('src/complexfun.c',
      '#define handle_underflow( who, var ) int_error(NO_CARET, "%s: errno = %d", who, errno);',
      '#define handle_underflow( who, var ) if (errno) int_error(NO_CARET, "%s: errno = %d", who, errno);')
+edit('src/version.c',
+     'const char gnuplot_patchlevel[] = "2";',
+     'const char gnuplot_patchlevel[] = "2-rikuy";')
 print('patched', d)
