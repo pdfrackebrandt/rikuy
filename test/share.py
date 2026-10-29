@@ -71,6 +71,16 @@ def run():
         back = share_link(page2, 'Ana', 'Copy the link for Pedro')
         check('the coauthor sends a link back', back.startswith('https://rikuy.test/#share=1.') and back != link)
 
+        # ---- the coauthor opens the same link again (bookmark, re-click): edits must survive, not
+        # be wiped back to the pristine shared copy
+        page2.goto('about:blank')
+        page2.goto(link)
+        page2.wait_for_function('window.rikuy && document.getElementById("boot").hidden', timeout=20000)
+        page2.wait_for_timeout(600)
+        s_re = src(page2)
+        check('reopening the link keeps the coauthor edits', 'Click quickly anywhere' in s_re and '% reply (Ana)' in s_re, s_re[s_re.find('Click'):][:40])
+        check('reopening leaves them in the coauthor view', 'guest' in (page2.get_attribute('body', 'class') or ''))
+
         # ---- the author, who kept writing meanwhile
         click_text(page, 'every edit is computed back', 0)
         page.keyboard.type('AUTHOR ')

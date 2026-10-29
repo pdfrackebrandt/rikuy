@@ -94,6 +94,12 @@ await ok('merge keeps both sides when they touch different lines', () => {
   assert.equal(merge3(base, 'one\nTWO\nthree\nfour\n', 'one\nTwo!\nthree\nfour\n').clean, false);
   // an insertion right before a line the other side replaced
   assert.deepEqual(merge3(base, 'one\nnew\ntwo\nthree\nfour\n', 'one\nTWO\nthree\nfour\n'), { text: 'one\nnew\nTWO\nthree\nfour\n', clean: true });
+  // a conflict on one line must keep the author's edits on lines the other side did not touch,
+  // not drop the whole copy: both change line 3, only the author changed lines 1 and 5
+  const five = 'one\ntwo\nthree\nfour\nfive\n';
+  assert.deepEqual(
+    merge3(five, 'ONE\ntwo\nthree-mine\nfour\nFIVE\n', 'one\ntwo\nthree-theirs\nfour\nfive\n'),
+    { text: 'ONE\ntwo\nthree-theirs\nfour\nFIVE\n', clean: false });
 });
 
 await ok('merge of whole projects', () => {

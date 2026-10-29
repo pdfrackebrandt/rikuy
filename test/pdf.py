@@ -44,6 +44,18 @@ src = lambda page: page.evaluate("window.rikuy.files.get('main.tex')")
 
 with sync_playwright() as p:
     b, page, errors = open_app(p)
+
+    # Under the hosted page's CSP (form-action 'self', which serve.py mirrors) the Overleaf form
+    # POST is refused: the user must be told, not left with a false "it opened". This runs before
+    # the heavy compile so it needs no engine.
+    page.evaluate("document.addEventListener('securitypolicyviolation', e => { (window.__viol = window.__viol || []).push(e.effectiveDirective); })")
+    page.evaluate("() => window.rikuy.openInOverleaf()")
+    page.wait_for_timeout(400)
+    viol = page.evaluate("(window.__viol || []).some(d => (d || '').startsWith('form-action'))")
+    msg = page.evaluate("document.getElementById('toast').hidden ? '' : document.getElementById('toast').innerText")
+    check('Open in Overleaf is blocked by the hosted CSP', viol, page.evaluate("window.__viol"))
+    check('and the user is told to use Download .zip, not a false success', 'Download .zip' in msg and 'opens in a new tab' not in msg, msg)
+
     page.click('#b-pdf')
     st, dt = wait_pdf(page, 180)
     check('first PDF compiles', '3 pages' in st, st)

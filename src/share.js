@@ -202,11 +202,20 @@ export function merge3(base, mine, theirs) {
   if (mine === base) return { text: theirs, clean: true };
   const A = hunks(base, mine).map((h) => ({ s: h.as, e: h.as + h.a.length, t: h.b }));
   const C = hunks(base, theirs).map((h) => ({ s: h.as, e: h.as + h.a.length, t: h.b }));
-  for (const a of A) for (const c of C) if (clash(a, c)) return { text: theirs, clean: false };
+  // Take every one of their hunks, and every one of mine that clashes with none of theirs, so my
+  // edits on lines they did not touch survive: a clash on one line must not throw away the rest of
+  // my work. Where we do clash, their version wins (and the result is flagged as not clean, so the
+  // author is told and keeps the pre-merge text under Versions).
+  let clean = true;
+  const keep = [];
+  for (const a of A) { if (C.some((c) => clash(a, c))) clean = false; else keep.push(a); }
   // an insertion at a point goes before a replacement that starts there
   let out = '', p = 0;
-  for (const h of [...A, ...C].sort((x, y) => x.s - y.s || x.e - y.e)) { out += base.slice(p, h.s) + h.t; p = h.e; }
-  return { text: out + base.slice(p), clean: true };
+  for (const h of [...keep, ...C].sort((x, y) => x.s - y.s || x.e - y.e)) {
+    if (h.s < p) continue; // a kept hunk never overlaps a later one, but never write past p
+    out += base.slice(p, h.s) + h.t; p = h.e;
+  }
+  return { text: out + base.slice(p), clean };
 }
 
 // whole projects as Maps name -> text; a file one side removed and the other left alone goes

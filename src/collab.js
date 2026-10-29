@@ -137,6 +137,14 @@ export const collab = {
     try { buildModel({ files: theirs, main: o.main }); } catch (e) { this.toast('Could not open the link: the editor cannot read the document in it (' + e.message + ').', 8000); return; }
     const base = o.base ? (await this.allSnaps()).find((v) => v.sig === o.base) : null;
     if (o.role === 'back' && base) { await this.takeBack(o, base, theirs); return; }
+    // the same coauthor link opened again (bookmarked, or clicked a second time in the chat): they
+    // are already in this document, so keep what they have typed instead of resetting it to the
+    // pristine shared copy, which would silently throw their edits away.
+    if (o.role !== 'back' && this.shareCtx && this.shareCtx.base === o.base && this.name === (o.name || o.main) && this.main === o.main) {
+      this.guestMode(true);
+      this.toast('You already have this shared document open, so your edits are kept. Earlier versions are under Review, Versions.', 7000);
+      return;
+    }
     if (this.base) { await this.snapshot('Before opening a shared document', { force: !this.lastSig }); await this.stashBinary(); }
     // A project's figures (and the bytes its files came in) are kept under its name and main
     // file, and a link carries none: opened under the name of a project this browser keeps
@@ -425,18 +433,37 @@ export const collab = {
   async openInOverleaf() {
     try {
       const blob = await this.zipBlob({ git: false });
+      const uri = 'data:application/zip;base64,' + await blobToBase64(blob);
       const form = document.createElement('form');
       form.method = 'POST'; form.action = 'https://www.overleaf.com/docs'; form.target = '_blank'; form.hidden = true;
       const field = (n, v) => { const i = document.createElement('input'); i.type = 'hidden'; i.name = n; i.value = v; form.append(i); };
-      field('snip_uri', 'data:application/zip;base64,' + await blobToBase64(blob));
+      field('snip_uri', uri);
       field('snip_name', (this.name || 'paper').replace(/[^\w.-]+/g, '-'));
       const eng = this.engineChoice && this.engineChoice();
       if (eng && /^(pdflatex|xelatex|lualatex)$/.test(eng)) field('engine', eng);
       field('main_document', this.main);
+      // On the hosted copy the page's Content-Security-Policy is form-action 'self', so the POST to
+      // overleaf.com is refused and no tab opens. Catch that and point to the way that does work,
+      // instead of claiming success that never happened.
+      let blocked = false;
+      const onViol = (e) => { if (/^form-action/.test(e.effectiveDirective || '')) blocked = true; };
+      document.addEventListener('securitypolicyviolation', onViol);
       document.body.append(form);
       form.submit();
       form.remove();
-      this.toast('Overleaf opens in a new tab with a copy of this project.', 6000);
+      await new Promise((r) => setTimeout(r, 60));
+      document.removeEventListener('securitypolicyviolation', onViol);
+      if (blocked) {
+        this.toast('This copy of Rikuy cannot hand the project to Overleaf directly (its page is locked to its own site). Use Download .zip, then in Overleaf choose New Project, Upload Project.', 12000);
+        return;
+      }
+      // the form posts to a new tab, so Rikuy never sees whether Overleaf accepted it; a large
+      // project (the whole .zip travels in the data URL) is where it may be rejected, so say so
+      // plainly here rather than leave a silent failure, and point to the reliable way in.
+      const big = uri.length > 8e6;
+      this.toast(big
+        ? 'Overleaf is opening in a new tab. This project is large (' + Math.round(uri.length / 1e6) + ' MB), and Overleaf may refuse an import this size. If it does, use Download .zip and upload it there.'
+        : 'Overleaf opens in a new tab with a copy of this project.', big ? 10000 : 6000);
     } catch (e) {
       this.toast('Could not send the project to Overleaf: ' + ((e && e.message) || e), 8000);
     }
