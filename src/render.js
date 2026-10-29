@@ -593,10 +593,15 @@ function imgWidth(opts) {
 }
 
 const NAMED = { lightgreen: '#cfeccf', verylightgreen: '#e6f5e6', lightblue: '#d6e6f5', lightyellow: '#fff8cc', red: '#c0392b', blue: '#1f5fa8', green: '#1e7b3c', gray: '#777', grey: '#777', black: '#111', white: '#fff', orange: '#d9761a', purple: '#7b3fa0', magenta: '#b0307a', cyan: '#1b8a9c', yellow: '#d6b500', brown: '#8a5a2b', teal: '#1b7a7a', olive: '#6b6b1e', violet: '#6b3fa0', pink: '#d4789a', lightgray: '#bbb', darkgray: '#444', lime: '#7bbf2a' };
+// Only a colour reaches the style: the argument is the document's text, maybe a stranger's,
+// and url(...) there would have the reader's browser fetch from wherever it points (a copy
+// served without the artifact host's policy lets it).
+const SAFE_COLOR = /^(#[0-9a-f]{3,8}|[a-z]+)$/i;
 function cssColor(c) {
   c = (c || '').trim();
   if (NAMED[c.toLowerCase()] && !NAMED[c]) return NAMED[c.toLowerCase()];
   const mix = /^(\w+)!(\d+)/.exec(c);
   if (mix) return 'color-mix(in srgb, ' + (NAMED[mix[1]] || mix[1]) + ' ' + mix[2] + '%, white)';
-  return NAMED[c] || c;
+  const out = NAMED[c] || c;
+  return SAFE_COLOR.test(out) ? out : '';
 }

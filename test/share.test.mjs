@@ -20,6 +20,31 @@ await ok('a link round trips, unicode and all', async () => {
   await assert.rejects(unpackShare('2.abc'));
 });
 
+await ok('a hostile link is refused, not opened', async () => {
+  const doc = (o) => packShare({ v: 1, name: 'x', main: 'main.tex', files: [['main.tex', 'x']], ...o });
+  // names that would leave the project's folder, or reach its git repository
+  for (const bad of ['../../texlive/texmf-dist/tex/latex/base/article.cls', 'a/../../b.tex', '.git/config', 'a\u0000.tex', '', 7]) {
+    await assert.rejects(unpackShare(await doc({ files: [['main.tex', 'x'], [bad, 'y']] })), String(bad));
+  }
+  await assert.rejects(unpackShare(await doc({ files: [['main.tex', { toString: 1 }]] })));
+  await assert.rejects(unpackShare(await doc({ main: 'other.tex' })));
+  await assert.rejects(unpackShare(await doc({ files: Array.from({ length: 2001 }, (_, i) => ['f' + i + '.tex', '']) })));
+  await assert.rejects(unpackShare('1.%E0%A4%A'));
+  await assert.rejects(unpackShare('1.!!!!'));
+  // a small link that inflates past the cap (64 MB of spaces): refused, quickly
+  const zlib = await import('node:zlib');
+  const z = zlib.deflateRawSync(Buffer.concat([Buffer.from('{"files":[["main.tex","'), Buffer.alloc(64e6, 32), Buffer.from('"]],"main":"main.tex"}')]), { level: 9 });
+  const t0 = Date.now();
+  await assert.rejects(unpackShare('1.' + z.toString('base64url')), /too large/);
+  assert.ok(Date.now() - t0 < 3000, 'took ' + (Date.now() - t0) + ' ms');
+  // backslashes, ./ and a leading / are tidied, other fields become strings of a sane length
+  const o = await unpackShare(await doc({ files: [['main.tex', 'x'], ['figs\\a.tex', 'y'], ['./b.tex', 'z'], ['/abs/c.tex', 'w']], name: { a: 1 }, by: 'B'.repeat(5000), role: 'admin' }));
+  assert.deepEqual(o.files.map((f) => f[0]), ['main.tex', 'figs/a.tex', 'b.tex', 'abs/c.tex']);
+  assert.equal(o.name, 'main.tex');
+  assert.equal(o.by.length, 200);
+  assert.equal(o.role, 'coauthor');
+});
+
 await ok('a long document makes a short link', async () => {
   const body = Array.from({ length: 400 }, (_, i) => 'Sentence number ' + i + ' of a paper about mechanism design.').join('\n');
   const s = await packShare({ v: 1, name: 'x', main: 'main.tex', files: [['main.tex', body]] });

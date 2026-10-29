@@ -2,8 +2,10 @@
 coauthor types and comments on the typeset page, sends a link back, and the author's copy takes
 the edits as tracked changes (merged with what the author wrote meanwhile). Comments are LaTeX
 comment lines that change nothing on the page. Save gives one .tex for a one file project, and
-Open in Overleaf posts the project as a .zip."""
-import base64, io, os, sys, zipfile
+Open in Overleaf posts the project as a .zip. Opening one's own link keeps the project and its
+figures; a link naming files outside the project, or inflating past any document, is refused; a link in
+a stranger's document opens only as a web or mail address."""
+import base64, io, json, os, sys, zipfile, zlib
 sys.path.insert(0, os.path.dirname(__file__))
 from browser import open_page, check, results, src, wait_src, click_text, select_text
 from playwright.sync_api import sync_playwright
@@ -117,6 +119,51 @@ def run():
         names = zipfile.ZipFile(io.BytesIO(base64.b64decode(uri.split(',', 1)[1]))).namelist() if ok else []
         check('Open in Overleaf posts the project as a .zip', ok and names == ['paper.tex'], (uri[:60], names))
         check('naming its main file', (form.get('main_document') or [''])[0] == 'paper.tex')
+
+        # ---- the author tries their own link: the project with its figure stays as it was
+        page.evaluate('''() => { const g = window.rikuy;
+          g.loadProject(new Map([['main.tex', '\\\\documentclass{article}\\n\\\\begin{document}\\nA figure: \\\\includegraphics{fig.png}\\n\\\\end{document}\\n']]), 'main.tex', 'Thesis', 'Opened');
+          const png = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='), (c) => c.charCodeAt(0));
+          g.addAsset('fig.png', new Blob([png], { type: 'image/png' })); g.binaryDirty = true; g.persist(); }''')
+        own = share_link(page, 'Pedro', 'Copy link')
+        page.evaluate('(s) => window.rikuy.openSharedLink(s)', own.split('#share=')[1])
+        page.wait_for_function('() => document.body.classList.contains("guest")', timeout=8000)
+        check('one\'s own link opens as a project of its own', page.evaluate('() => window.rikuy.name') == 'Thesis (Pedro)', page.evaluate('() => window.rikuy.name'))
+        page.evaluate('async () => { await window.rikuy.doReset(); }')
+        page.wait_for_timeout(300)
+        kept = page.evaluate('''() => new Promise((res) => { const r = indexedDB.open('galley'); r.onsuccess = () => {
+          const q = r.result.transaction('kv').objectStore('kv').get('bin:Thesis|main.tex'); q.onsuccess = () => res(q.result ? q.result.assets.map((a) => a[0]) : null); }; })''')
+        check('and the project\'s figure is still kept after switching away', kept == ['fig.png'], kept)
+
+        # ---- a stranger's link that names a file outside the project, inflates past any document, or
+        # nests deeper than the parser goes
+        def pack(o):
+            c = zlib.compressobj(9, zlib.DEFLATED, -15)
+            return '1.' + base64.urlsafe_b64encode(c.compress(json.dumps(o).encode()) + c.flush()).decode().rstrip('=')
+        before = page.evaluate('() => [window.rikuy.name, window.rikuy.files.get("main.tex")]')
+        for k, s in enumerate([pack({'v': 1, 'name': 'x', 'main': 'main.tex', 'files': [['main.tex', 'x'], ['../../../texlive/texmf-dist/tex/latex/base/article.cls', 'y']]}),
+                               pack({'v': 1, 'name': 'x', 'main': 'main.tex', 'files': [['main.tex', ' ' * 40000000]]}),
+                               pack({'v': 1, 'name': 'x', 'main': 'main.tex', 'files': [['main.tex', '\\begin{document}' + '{' * 200000 + '}' * 200000]]})]):
+            page.evaluate('(s) => window.rikuy.openSharedLink(s)', s)
+            page.wait_for_timeout(300)
+            check('a hostile link is refused (%d)' % k, 'Could not open the link' in page.inner_text('#toast'), page.inner_text('#toast')[:100])
+        check('and the open project is untouched', page.evaluate('() => [window.rikuy.name, window.rikuy.files.get("main.tex")]') == before)
+
+        # ---- a stranger's document with links: Ctrl+click opens only web and mail addresses
+        page.evaluate('''() => window.rikuy.loadProject(new Map([['main.tex', '\\\\documentclass{article}\\n\\\\begin{document}\\nSee \\\\href{javascript:void(document.title=1)}{the script link} and \\\\href{https://example.org/paper}{the web link}. \\\\colorbox{url(https://example.invalid/t.png)}{Boxed}.\\n\\\\end{document}\\n']]), 'main.tex', 'Links', 'Opened')''')
+        page.wait_for_timeout(300)
+        opened = []
+        page.context.on('page', lambda pg: opened.append(pg))
+        for name, want in [('the script link', 0), ('the web link', 1)]:
+            box = page.locator('#pages .y-link', has_text=name).first.bounding_box()
+            n0 = len(opened)
+            page.keyboard.down('Control'); page.mouse.click(box['x'] + 3, box['y'] + box['height'] / 2); page.keyboard.up('Control')
+            page.wait_for_timeout(600)
+            check('Ctrl+click on %s opens %d windows' % (name, want), len(opened) - n0 == want, len(opened) - n0)
+            for pg in opened[n0:]: pg.close()
+        # nor does a colour argument make the reader's browser fetch anything
+        bg = page.evaluate('''() => { const s = [...document.querySelectorAll('#pages .y-bg')].find((e) => e.textContent.includes('Boxed')); return s ? getComputedStyle(s).backgroundImage : null; }''')
+        check('a colour that is a url() is no colour', bg == 'none', bg)
 
         bad = [e for e in errs + errs2 if 'clipboard' not in e.lower()]
         check('no page errors', not bad, bad[:3])

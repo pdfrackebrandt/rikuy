@@ -19,8 +19,8 @@ SKELETON_HEAD = ('<!doctype html><html><head><meta charset=utf8><meta name=viewp
 
 ROUTES = {
     'https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js': os.path.join(NM, 'katex/dist/katex.min.js'),
-    'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js': os.path.join(NM, 'codemirror/lib/codemirror.js'),
-    'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/stex/stex.min.js': os.path.join(NM, 'codemirror/mode/stex/stex.js'),
+    'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.js': os.path.join(NM, 'codemirror/lib/codemirror.js'),
+    'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/stex/stex.js': os.path.join(NM, 'codemirror/mode/stex/stex.js'),
     'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js': os.path.join(NM, 'jszip/dist/jszip.min.js'),
     'https://cdn.jsdelivr.net/npm/mathlive@0.110.0/mathlive.min.js': os.path.join(NM, 'mathlive/mathlive.min.js'),
     'https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/contrib/mhchem.min.js': os.path.join(NM, 'katex/dist/contrib/mhchem.min.js'),
@@ -56,7 +56,9 @@ def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None):
         if url.startswith('http://127.0.0.1:'):
             return route.continue_()
         if url in ROUTES:
-            return route.fulfill(status=200, content_type='application/javascript', body=open(ROUTES[url], encoding='utf8').read())
+            # the npm package's own bytes, which the page checks against its integrity hashes;
+            # the CDN answers with CORS, as a script loaded with crossorigin needs
+            return route.fulfill(status=200, content_type='application/javascript', headers={'Access-Control-Allow-Origin': '*'}, body=open(ROUTES[url], 'rb').read())
         return route.abort()
     page.route('**/*', handler)
     if init:

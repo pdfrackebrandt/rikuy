@@ -5,6 +5,7 @@
 
 import { packShare, unpackShare, shareParam, findComments, commentEdit, stripComments, mergeProjects, commentOnly } from './share.js';
 import { kvGet, kvPut } from './store.js';
+import { buildModel } from './model.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 function mk(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
@@ -131,10 +132,23 @@ export const collab = {
     try { o = await unpackShare(s); } catch (e) { this.toast('Could not open the link: ' + e.message, 8000); return; }
     const theirs = new Map(o.files);
     const by = String(o.by || 'A coauthor');
+    // a document the page cannot read (nesting deeper than the parser's stack) would replace
+    // the open project with one whose page and panels fail on every start: refused instead
+    try { buildModel({ files: theirs, main: o.main }); } catch (e) { this.toast('Could not open the link: the editor cannot read the document in it (' + e.message + ').', 8000); return; }
     const base = o.base ? (await this.allSnaps()).find((v) => v.sig === o.base) : null;
     if (o.role === 'back' && base) { await this.takeBack(o, base, theirs); return; }
     if (this.base) { await this.snapshot('Before opening a shared document', { force: !this.lastSig }); await this.stashBinary(); }
-    this.loadProject(theirs, o.main, o.name || o.main, 'As ' + by + ' shared it');
+    // A project's figures (and the bytes its files came in) are kept under its name and main
+    // file, and a link carries none: opened under the name of a project this browser keeps
+    // them for (the author trying their own link), it would take that project's place and its
+    // figures would be overwritten at the next switch. Then it opens as a project of its own.
+    const keeps = async (n) => {
+      if (n === this.name && o.main === this.main && (this.assetBlobs.size || this.extra.size || this.orig.size)) return true;
+      try { const b = await kvGet('bin:' + n + '|' + o.main); return !!(b && ((b.assets || []).length || (b.extra || []).length || (b.orig || []).length)); } catch (e) { return false; }
+    };
+    let name = o.name || o.main;
+    for (let k = 1; await keeps(name); k++) name = (o.name || o.main) + ' (' + by + (k > 1 ? ' ' + k : '') + ')';
+    this.loadProject(theirs, o.main, name, 'As ' + by + ' shared it');
     if (o.role === 'back') {
       this.toast(by + "'s copy is open. This browser does not have the version you shared, so their edits cannot be marked; your earlier text is under Review, Versions.", 10000);
       return;

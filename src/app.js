@@ -20,7 +20,7 @@ import { changes, spacingOnly } from './diff.js';
 import { TeXEngine, parseTeXLog } from './tex.js';
 import { PdfView } from './pdfview.js';
 import { collab, installCollab } from './collab.js';
-import { shareParam, commentOnly } from './share.js';
+import { shareParam, commentOnly, cleanPath } from './share.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const PX_PER_PT = 96 / 72.27;
@@ -30,12 +30,25 @@ const STORE = 'galley.project.v1';
 const ENGINE_LABEL = { pdflatex: 'pdfLaTeX', xelatex: 'XeLaTeX', lualatex: 'LuaLaTeX', latex: 'LaTeX (dvips)' };
 const PREFS = 'galley.prefs.v1';
 const CDN = {
-  cm: 'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.js',
-  cmTex: 'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/stex/stex.min.js',
+  cm: 'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.js',
+  cmTex: 'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/stex/stex.js',
   zip: 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
   ml: 'https://cdn.jsdelivr.net/npm/mathlive@0.110.0/mathlive.min.js',
   chem: 'https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/contrib/mhchem.min.js'
 };
+// The hash of each file as published on npm, which jsDelivr serves unchanged: a CDN that
+// served anything else would get no script run in this page. (CodeMirror's .min.js names
+// are minified by jsDelivr itself, so their bytes are not the package's: the package's own
+// files load instead.) A new version needs its new hash here.
+const SRI = {
+  [CDN.cm]: 'sha384-/WlgLpnUCi+5eS6SnLPKTwRY0l8X4TxBIroMKS0KpFjlFoST+ZbSMKqTpgS24m8i',
+  [CDN.cmTex]: 'sha384-tab09zZeKEC2HRX/8GcAyeUuP7KBvb9DKKK4wegfZ/qW7tMcwh14TRJ0o6woQ9M0',
+  [CDN.zip]: 'sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG',
+  [CDN.ml]: 'sha384-5IN6K0kiaz8MufrTGBvPCP3oDeMjmwe+DDTvuyQLNv6gc634FpKbQfllonjHJPmy',
+  [CDN.chem]: 'sha384-F2ptQFZqNJuqfGGl28mIXyQ5kXH48spn7rcoS0Y9psqIKAcZPLd1NzwFlm/bl1mH'
+};
+// what an opened .zip may unpack to; past it the tab would run out of memory
+const MAX_ZIP = 1.5e9;
 const TEXT_EXT = /\.(tex|bib|sty|cls|bst|bbl|txt|ltx|dtx|clo|cfg|def|md)$/i;
 const IMG_EXT = /\.(png|jpe?g|gif|svg|webp)$/i;
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
@@ -43,9 +56,21 @@ const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 function loadScript(src) {
   return new Promise((res, rej) => {
     const s = document.createElement('script');
+    if (SRI[src]) { s.integrity = SRI[src]; s.crossOrigin = 'anonymous'; }
     s.src = src; s.onload = () => res(); s.onerror = () => rej(new Error('Could not load ' + src));
     document.head.appendChild(s);
   });
+}
+// A link in a document opens only as a web or mail address: the document may be a
+// stranger's, and a javascript: or data: address would run as, or pretend to be, this page.
+function openLink(u) {
+  let s = String(u || '').trim();
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(s)) s = 'https://' + s.replace(/^\/+/, ''); // \url{www.example.org}
+  let url;
+  try { url = new URL(s); } catch (e) { return false; }
+  if (!/^(https?|mailto|ftp):$/.test(url.protocol)) return false;
+  window.open(url.href, '_blank', 'noopener');
+  return true;
 }
 function store(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); return true; } catch (e) { return false; } }
 function load(key) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
@@ -1170,7 +1195,7 @@ class App {
     if (!info) return;
     e.preventDefault();
     this.disarm();
-    if ((e.metaKey || e.ctrlKey) && (info.a.kind === 'url' || atomEl.closest('.y-link'))) { const u = info.a.url || atomEl.closest('.y-link').dataset.url; if (u) window.open(u, '_blank', 'noopener'); return; }
+    if ((e.metaKey || e.ctrlKey) && (info.a.kind === 'url' || atomEl.closest('.y-link'))) { const u = info.a.url || atomEl.closest('.y-link').dataset.url; if (u) openLink(u); return; }
     this.openAtom(atomEl, info);
   }
 
@@ -1180,7 +1205,7 @@ class App {
       if (c && c.f != null && !c.ghost) this.pdfView.reveal(this.texPath(c.f), lineOf(this.src(c.f), c.a));
     }
     const link = e.target.closest('.y-link');
-    if (link && (e.metaKey || e.ctrlKey) && link.dataset.url) window.open(link.dataset.url, '_blank', 'noopener');
+    if (link && (e.metaKey || e.ctrlKey) && link.dataset.url) openLink(link.dataset.url);
     const mac = e.target.closest('.mac');
     if (mac && e.altKey) { const a = atomOfEl(mac); if (a) this.openRaw(mac, a); }
   }
@@ -2551,6 +2576,8 @@ class App {
     for (const [n, t] of this.files) { const o = this.orig.get(n); files.set(n, o && o.text === t ? o.bytes : encodeText(t, o ? o.enc : 'utf-8', o ? o.bom : false)); }
     for (const [n, b] of this.assetBlobs) files.set(n, new Uint8Array(await b.arrayBuffer()));
     for (const [n, b] of this.extra) if (!files.has(n)) files.set(n, new Uint8Array(await b.arrayBuffer()));
+    // git writes each at the repository's folder + its name: never outside it, never into .git
+    for (const n of [...files.keys()]) if (cleanPath(n) !== n) files.delete(n);
     return files;
   }
 
@@ -3138,6 +3165,10 @@ class App {
     let zipName = null;
     const gitFiles = new Map(); // a repository's .git folder, when the project came with one
     const gitIn = [];
+    // names inside a .zip are whatever its maker wrote (../, /, \): one that would leave the
+    // project's folder, here or in git, is left out and named
+    const skipped = [];
+    const gitOk = (p) => /^\.git\//.test(p) && cleanPath(p.slice(5)) === p.slice(5);
     for (const file of list) {
       const nm = file.webkitRelativePath || file.name;
       if (/(^|\/)\.git\//.test(nm)) { gitIn.push(file); continue; }
@@ -3146,15 +3177,20 @@ class App {
         try {
           if (!window.JSZip) await loadScript(CDN.zip);
           const z = await window.JSZip.loadAsync(file);
+          // a zip bomb is refused by the sizes it declares, before anything is inflated
+          let total = 0;
+          for (const n of Object.keys(z.files)) total += (z.files[n]._data && z.files[n]._data.uncompressedSize) || 0;
+          if (total > MAX_ZIP) throw new Error('it would unpack to ' + fmtMB(total) + ', more than this page can hold');
           const names = Object.keys(z.files).filter((n) => !z.files[n].dir && !/(^|\/)(__MACOSX|\.)/.test(n));
           const prefix = commonDir(names);
           for (const n of Object.keys(z.files)) {
             if (z.files[n].dir || !n.startsWith(prefix)) continue;
             const rel = n.slice(prefix.length);
-            if (rel.startsWith('.git/')) gitFiles.set(rel, await z.files[n].async('uint8array'));
+            if (rel.startsWith('.git/')) { if (gitOk(rel)) gitFiles.set(rel, await z.files[n].async('uint8array')); else skipped.push(rel); }
           }
           for (const n of names) {
-            const rel = n.slice(prefix.length);
+            const rel = cleanPath(n.slice(prefix.length));
+            if (rel === null) { skipped.push(n); continue; }
             if (TEXT_EXT.test(rel)) {
               const bytes = await z.files[n].async('uint8array');
               const d = decodeText(bytes);
@@ -3164,19 +3200,25 @@ class App {
             else extra.set(rel, await z.files[n].async('blob'));
           }
         } catch (e) { this.toast('Could not read ' + file.name + ': ' + e.message); }
-      } else if (TEXT_EXT.test(nm)) {
-        const bytes = new Uint8Array(await file.arrayBuffer());
-        const d = decodeText(bytes);
-        texts.set(stripTop(nm), d.text);
-        orig.set(stripTop(nm), { bytes, enc: d.enc, bom: d.bom, text: d.text });
-      } else if (IMG_EXT.test(nm) || /\.(pdf|eps)$/i.test(nm)) blobs.set(stripTop(nm), file);
-      else extra.set(stripTop(nm), file);
+      } else {
+        const rel = cleanPath(stripTop(nm));
+        if (rel === null) { skipped.push(nm); continue; }
+        if (TEXT_EXT.test(rel)) {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const d = decodeText(bytes);
+          texts.set(rel, d.text);
+          orig.set(rel, { bytes, enc: d.enc, bom: d.bom, text: d.text });
+        } else if (IMG_EXT.test(rel) || /\.(pdf|eps)$/i.test(rel)) blobs.set(rel, file);
+        else extra.set(rel, file);
+      }
     }
     for (const f of gitIn) {
       const nm = f.webkitRelativePath || f.name;
-      gitFiles.set(nm.slice(nm.search(/(^|\/)\.git\//) + (nm.startsWith('.git/') ? 0 : 1)), new Uint8Array(await f.arrayBuffer()));
+      const rel = nm.slice(nm.search(/(^|\/)\.git\//) + (nm.startsWith('.git/') ? 0 : 1));
+      if (gitOk(rel)) gitFiles.set(rel, new Uint8Array(await f.arrayBuffer())); else skipped.push(nm);
     }
-    if (!texts.size && !blobs.size && !extra.size) { this.toast('Nothing to open. Choose .tex, .bib, image or .zip files.'); return; }
+    const skipNote = skipped.length ? ' Left out ' + skipped.length + (skipped.length === 1 ? ' file whose name points' : ' files whose names point') + ' outside the project: ' + skipped.slice(0, 3).join(', ') + (skipped.length > 3 ? '…' : '.') : '';
+    if (!texts.size && !blobs.size && !extra.size) { this.toast(skipNote.trim() || 'Nothing to open. Choose .tex, .bib, image or .zip files.', 9000); return; }
     const hasDoc = [...texts.entries()].some(([n, t]) => /\.tex$/i.test(n) && /\\documentclass/.test(t));
     const onlyTex = [...texts.keys()].filter((n) => /\.tex$/i.test(n));
     if (!hasDoc && !onlyTex.length) {
@@ -3192,7 +3234,7 @@ class App {
       this.pushToSource();
       this.updateFileTabs();
       this.saveSoon();
-      this.toast('Added ' + [...texts.keys(), ...blobs.keys(), ...extra.keys()].join(', ') + ' to the project.');
+      this.toast('Added ' + [...texts.keys(), ...blobs.keys(), ...extra.keys()].join(', ') + ' to the project.' + skipNote, skipNote ? 9000 : undefined);
       return;
     }
     if (this.base) { await this.snapshot('Before opening another project', { force: !this.lastSig }); await this.stashBinary(); }
@@ -3231,7 +3273,7 @@ class App {
         }
       } catch (e) { gitNote = ' Its .git folder could not be read: ' + e.message + '.'; }
     }
-    this.toast('Opened ' + this.main + (texts.size > 1 ? ' and ' + (texts.size - 1) + ' more file' + (texts.size > 2 ? 's' : '') : '') + '.' + (missing.length ? ' Not found: ' + missing.join(', ') + '.' : '') + gitNote, 7000);
+    this.toast('Opened ' + this.main + (texts.size > 1 ? ' and ' + (texts.size - 1) + ' more file' + (texts.size > 2 ? 's' : '') : '') + '.' + (missing.length ? ' Not found: ' + missing.join(', ') + '.' : '') + gitNote + skipNote, skipNote ? 10000 : 7000);
   }
 
   addAsset(name, blob) {
@@ -3257,14 +3299,22 @@ class App {
   // Keep the project in this browser: text on every change, binary files when they change.
   persist() {
     const meta = { name: this.name, main: this.main, files: [...this.files.entries()], t: Date.now(), zipDirty: this.zipDirty };
-    const show = (ok) => {
-      $('#st-save').textContent = ok ? 'Saved in this browser' : 'Too large to keep in this browser. Save the .zip.';
+    // when this browser keeps nothing (storage turned off, as in some private windows, or
+    // full) or keeps the text but not the figures, the user hears it once, not only in the
+    // status line, so nobody closes the page trusting a copy that is not there
+    const show = (ok, partial) => {
+      const out = this.singleFile() ? 'the .tex' : 'the .zip';
+      $('#st-save').textContent = !ok ? 'Not kept in this browser. Save ' + out + '.' : partial ? 'Text kept in this browser, figures not. Save ' + out + '.' : 'Saved in this browser';
+      if ((!ok || partial) && !this.saveWarned) {
+        this.saveWarned = true;
+        this.toast((!ok ? 'This browser is not keeping your work: its storage is full or turned off here.' : 'This browser keeps the text but not the figures: its storage is full or turned off here.') + ' Save ' + out + ' before you close the page.', 12000);
+      }
       document.body.classList.toggle('zip-dirty', !!this.zipDirty);
       const what = this.singleFile() ? this.main.split('/').pop() : 'the project as .zip';
       $('#b-save').title = (this.zipDirty ? 'Changes since you last saved. ' : '') + 'Download ' + what + ' (Ctrl+S)';
       $('#b-save span').textContent = this.singleFile() ? 'Save .tex' : 'Save .zip';
     };
-    const fallback = () => show(store(STORE, meta));
+    const fallback = () => show(store(STORE, meta), this.assetBlobs.size > 0 || this.extra.size > 0);
     if (this.noIdb) { fallback(); return; }
     const jobs = [kvPut('project', meta)];
     if (this.binaryDirty) {
@@ -3448,7 +3498,10 @@ class App {
     const bin = async (b) => new Uint8Array(await b.arrayBuffer());
     for (const [n, b] of this.assetBlobs) files.push({ path: n, data: await bin(b) });
     for (const [n, b] of this.extra) if (!this.files.has(n) && !this.assetBlobs.has(n)) files.push({ path: n, data: await bin(b) });
-    return files;
+    // the worker writes each file at the project's folder + its name: a name with .. (kept from
+    // before names were checked on the way in) would overwrite TeX's own files or another
+    // project's for the rest of the session
+    return files.filter((x) => cleanPath(x.path) === x.path);
   }
 
   async compilePdf(opts = {}) {

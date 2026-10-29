@@ -29,6 +29,40 @@ async function through(bytes, stream) {
   return new Uint8Array(await new Response(r).arrayBuffer());
 }
 
+// Anyone can make a link, so what it holds is checked before it is opened. A link of half a
+// megabyte can inflate to gigabytes; text this long is no document anyone shares.
+const MAX_JSON = 32e6, MAX_FILES = 2000, MAX_LABEL = 200;
+
+async function inflateCapped(bytes, cap) {
+  const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('deflate-raw')).getReader();
+  const parts = [];
+  let n = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    n += value.length;
+    if (n > cap) { reader.cancel().catch(() => {}); throw new Error('The document in this link is too large to open.'); }
+    parts.push(value);
+  }
+  const out = new Uint8Array(n);
+  let o = 0;
+  for (const p of parts) { out.set(p, o); o += p.length; }
+  return out;
+}
+
+// A file name from outside (a link, a .zip, a folder) as the project keeps it: forward slashes,
+// no leading slash, no empty, . or .. parts, no .git folder, no control characters. null when it
+// cannot be made safe, so no file lands outside the project's folder in TeX's file system or
+// in git, whatever name a stranger gave it.
+export function cleanPath(name) {
+  if (typeof name !== 'string' || name.length > 1024) return null;
+  const parts = name.replace(/\\/g, '/').split('/').filter((p) => p && p !== '.');
+  if (!parts.length || parts.some((p) => p === '..' || p.toLowerCase() === '.git' || /[\u0000-\u001f\u007f]/.test(p))) return null;
+  return parts.join('/');
+}
+
+const label = (x, dflt) => (typeof x === 'string' && x.trim() ? x.trim().slice(0, MAX_LABEL) : dflt);
+
 // { v, name, main, files: [[name, text]], base, by, role, t } -> the text after "#share="
 export async function packShare(o) {
   const z = await through(enc.encode(JSON.stringify(o)), new CompressionStream('deflate-raw'));
@@ -36,11 +70,35 @@ export async function packShare(o) {
 }
 
 export async function unpackShare(s) {
-  s = decodeURIComponent(String(s).trim());
+  let o;
+  try {
+    s = decodeURIComponent(String(s).trim());
+  } catch (e) { throw new Error('The link is damaged or cut short.'); }
   if (!s.startsWith(V)) throw new Error('This link was made by another version of the editor.');
-  const o = JSON.parse(dec.decode(await through(unb64url(s.slice(V.length)), new DecompressionStream('deflate-raw'))));
-  if (!o || !Array.isArray(o.files) || !o.main) throw new Error('The link does not hold a document.');
-  return o;
+  try {
+    o = JSON.parse(dec.decode(await inflateCapped(unb64url(s.slice(V.length)), MAX_JSON)));
+  } catch (e) {
+    if (/too large/.test(e.message)) throw e;
+    throw new Error('The link is damaged or cut short.');
+  }
+  if (!o || typeof o !== 'object' || !Array.isArray(o.files) || !o.files.length) throw new Error('The link does not hold a document.');
+  if (o.files.length > MAX_FILES) throw new Error('The link holds too many files.');
+  // every field is the sender's to choose: keep only well formed files with safe names
+  const files = [];
+  for (const f of o.files) {
+    const n = Array.isArray(f) && typeof f[1] === 'string' ? cleanPath(f[0]) : null;
+    if (n === null) throw new Error('The link holds a file with a name or content the editor cannot accept.');
+    files.push([n, f[1]]);
+  }
+  const main = cleanPath(o.main);
+  if (!main || !files.some(([n]) => n === main)) throw new Error('The link does not hold a document.');
+  const out = {
+    v: 1, name: label(o.name, main), main, files,
+    base: typeof o.base === 'string' && o.base.length <= 100 ? o.base : null,
+    by: label(o.by, 'A coauthor'), role: o.role === 'back' ? 'back' : 'coauthor'
+  };
+  if (typeof o.t === 'number') out.t = o.t;
+  return out;
 }
 
 // the payload of a link or of a pasted URL, or null
