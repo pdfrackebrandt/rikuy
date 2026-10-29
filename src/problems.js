@@ -12,6 +12,25 @@ function scrub(src) {
 }
 const lineOf = (src, p) => src.slice(0, p).split('\n').length;
 
+const FIG_EXTS = ['', '.png', '.jpg', '.jpeg', '.pdf', '.eps', '.svg', '.gif'];
+function* figureRefs(s) {
+  const img = /\\includegraphics\*?\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}/g;
+  let m;
+  while ((m = img.exec(s))) yield { n: m[1].trim(), p: m.index };
+}
+
+// the figures the .tex files ask for that the project does not have, by the name as written
+export function missingFigures(o) {
+  const names = [...o.files.keys(), ...(o.assets || [])];
+  const has = (n) => FIG_EXTS.some((x) => names.some((k) => k === n + x || k.endsWith('/' + n + x)));
+  const out = new Set();
+  for (const [n, t] of o.files) {
+    if (!/\.(tex|ltx)$/i.test(n)) continue;
+    for (const { n: fig } of figureRefs(scrub(t))) if (fig && !['', ...(o.graphicsPath || [])].some((d) => has(d + fig))) out.add(fig);
+  }
+  return [...out];
+}
+
 export function findProblems(o) {
   const out = [];
   const add = (sev, f, p, msg, key) => out.push({ sev, f, p, line: lineOf(o.files.get(f) || '', p), msg, key: key || msg });
@@ -91,11 +110,12 @@ export function findProblems(o) {
     let m;
     const inp = /\\(input|include|subfile)\s*\{([^}]*)\}/g;
     while ((m = inp.exec(s))) if (!has(m[2].trim(), ['', '.tex'])) add('error', f, m.index, 'File “' + m[2].trim() + '” is not in the project.');
-    const img = /\\includegraphics\*?\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}/g;
-    while ((m = img.exec(s))) {
-      const n = m[1].trim();
+    // a copy opened from someone's link has no figures (the link carries none): the page says
+    // whose they are and the PDF gets gray boxes in their place (missingFigures), not problems
+    if (o.figuresWith) continue;
+    for (const { n, p } of figureRefs(s)) {
       const dirs = ['', ...(o.graphicsPath || [])];
-      if (!dirs.some((d) => has(d + n, ['', '.png', '.jpg', '.jpeg', '.pdf', '.eps', '.svg', '.gif']))) add('warn', f, m.index, 'Image “' + n + '” is not in the project.');
+      if (!dirs.some((d) => has(d + n, FIG_EXTS))) add('warn', f, p, 'Image “' + n + '” is not in the project.');
     }
   }
   // math and unknown commands, reported by the renderer and the model

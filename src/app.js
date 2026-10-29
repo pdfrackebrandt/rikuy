@@ -13,7 +13,13 @@ import { installWordTyping, wordShortcuts, makeDialect, classifyMacros, resolveC
 import { isTallDef, fitBrackets, tallTest } from './fences.js';
 import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath } from './paste.js';
-import { findProblems } from './problems.js';
+import { findProblems, missingFigures } from './problems.js';
+
+// Gray boxes of 320 by 240 points that stand in, in a coauthor's PDF, for figures a link does
+// not carry: a PDF, a PNG whose resolution makes it that size, and EPS for latex with dvips.
+const PLACEHOLDER_PDF = 'JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXMgMiAwIFIgPj4KZW5kb2JqCjIgMCBvYmoKPDwgL1R5cGUgL1BhZ2VzIC9LaWRzIFszIDAgUl0gL0NvdW50IDEgPj4KZW5kb2JqCjMgMCBvYmoKPDwgL1R5cGUgL1BhZ2UgL1BhcmVudCAyIDAgUiAvTWVkaWFCb3ggWzAgMCAzMjAgMjQwXSAvQ29udGVudHMgNCAwIFIgL1Jlc291cmNlcyA8PCA+PiA+PgplbmRvYmoKNCAwIG9iago8PCAvTGVuZ3RoIDUxID4+CnN0cmVhbQowLjg1IGcgMCAwIDMyMCAyNDAgcmUgZiAwLjYgRyAyIHcgMSAxIDMxOCAyMzggcmUgUwplbmRzdHJlYW0KZW5kb2JqCnhyZWYKMCA1CjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDAwOSAwMDAwMCBuIAowMDAwMDAwMDU4IDAwMDAwIG4gCjAwMDAwMDAxMTUgMDAwMDAgbiAKMDAwMDAwMDIxOSAwMDAwMCBuIAp0cmFpbGVyCjw8IC9TaXplIDUgL1Jvb3QgMSAwIFIgPj4Kc3RhcnR4cmVmCjMxOQolJUVPRgo=';
+const PLACEHOLDER_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAAAAACRn/EaAAAACXBIWXMAAAAjAAAAIwHV9BZdAAAADklEQVR42mO4CQQMcAIATFkKLSVMoyAAAAAASUVORK5CYII=';
+const PLACEHOLDER_EPS = '%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 320 240\n0.85 setgray 0 0 320 240 rectfill\n0.6 setgray 2 setlinewidth 1 1 318 238 rectstroke\nshowpage\n';
 import { texToPlain, shortAuthors, entryYear } from './bib.js';
 import { kvGet, kvPut, kvSwap, decodeText, encodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
 import { changes, spacingOnly } from './diff.js';
@@ -2482,7 +2488,8 @@ class App {
     const gp = /\\graphicspath\s*\{((?:\{[^}]*\})+)\}/.exec(pre);
     const found = findProblems({
       files: this.files, main: this.main, bibKeys: new Set(m.bibEntries ? m.bibEntries.keys() : []), unknown: m.warn,
-      mathErrors, assets: [...this.assetBlobs.keys(), ...this.extra.keys()], graphicsPath: gp ? [...gp[1].matchAll(/\{([^}]*)\}/g)].map((x) => x[1]) : []
+      mathErrors, assets: [...this.assetBlobs.keys(), ...this.extra.keys()], graphicsPath: gp ? [...gp[1].matchAll(/\{([^}]*)\}/g)].map((x) => x[1]) : [],
+      figuresWith: this.figuresWith()
     });
     // what pdfLaTeX itself reported on the last compile comes first: it is the real verdict
     const tex = this.texIssues.filter((x) => x.sev !== 'info' || x.msg.startsWith('Overfull'));
@@ -3752,6 +3759,19 @@ class App {
     const bin = async (b) => new Uint8Array(await b.arrayBuffer());
     for (const [n, b] of this.assetBlobs) files.push({ path: n, data: await bin(b) });
     for (const [n, b] of this.extra) if (!this.files.has(n) && !this.assetBlobs.has(n)) files.push({ path: n, data: await bin(b) });
+    // A copy opened from a link has none of the sender's figures. TeX gets a gray box for each,
+    // so a coauthor who never wrote LaTeX sees the document compile, not "File not found" errors.
+    if (this.figuresWith()) {
+      const b64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+      for (const n of missingFigures({ files: this.files, assets: [...this.assetBlobs.keys(), ...this.extra.keys()] })) {
+        const ext = (/\.([A-Za-z]+)$/.exec(n) || [])[1];
+        const low = ext ? ext.toLowerCase() : '';
+        if (/^(png|jpe?g)$/.test(low)) files.push({ path: n, data: b64(PLACEHOLDER_PNG) }); // TeX reads the type from the bytes
+        else if (low === 'pdf') files.push({ path: n, data: b64(PLACEHOLDER_PDF) });
+        else if (low === 'eps') files.push({ path: n, data: PLACEHOLDER_EPS });
+        else if (!ext) { files.push({ path: n + '.pdf', data: b64(PLACEHOLDER_PDF) }); files.push({ path: n + '.eps', data: PLACEHOLDER_EPS }); }
+      }
+    }
     // the worker writes each file at the project's folder + its name: a name with .. (kept from
     // before names were checked on the way in) would overwrite TeX's own files or another
     // project's for the rest of the session

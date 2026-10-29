@@ -159,6 +159,13 @@ def run():
         page.evaluate('(s) => window.rikuy.openSharedLink(s)', own.split('#share=')[1])
         page.wait_for_function('() => document.body.classList.contains("guest")', timeout=8000)
         check('one\'s own link opens as a project of its own', page.evaluate('() => window.rikuy.name') == 'Thesis (Pedro)', page.evaluate('() => window.rikuy.name'))
+        # the copy has no figures (a link carries none): the page says whose they are, Problems
+        # stays quiet about them, and TeX gets a gray box in their place
+        page.wait_for_timeout(300)
+        check('a copy from a link says whose its figures are', 'Stays with Pedro' in page.inner_text('#pages'), page.inner_text('#pages')[:200])
+        check('and lists no missing figure as a problem', not [x for x in page.evaluate('() => window.rikuy.computeProblems().map((x) => x.msg)') if 'fig.png' in x])
+        sent = page.evaluate('async () => (await window.rikuy.compileFiles()).map((f) => [f.path, f.data.length])')
+        check('TeX gets a stand-in for the figure', any(p == 'fig.png' and n > 50 for p, n in sent), sent)
         page.evaluate('async () => { await window.rikuy.doReset(); }')
         page.wait_for_timeout(300)
         kept = page.evaluate('''() => new Promise((res) => { const r = indexedDB.open('galley'); r.onsuccess = () => {

@@ -231,7 +231,7 @@ export const collab = {
     this.closeGroup();
     const edits = [];
     for (const [n, t] of files) if ((this.files.get(n) ?? null) !== t) edits.push({ f: n, s: 0, e: (this.files.get(n) ?? '').length, t });
-    if (edits.length) { this.markFromLink(by); this.commit(edits, null, 'merge'); }
+    if (edits.length) { this.markFromLink(by, this.name, this.main, 'back'); this.commit(edits, null, 'merge'); }
     this.closeGroup();
     this.setBase({ t: Date.now(), label: 'Before the changes from ' + by, files: mine });
     this.setMarks(true);
@@ -274,6 +274,13 @@ export const collab = {
   async loadShareCtx() {
     try { this.shareCtx = await kvGet('share:' + this.name + '|' + this.main); } catch (e) { this.shareCtx = null; }
     if (this.shareCtx && this.shareCtx.dismissed !== true) this.guestMode(true);
+    // a copy from a link shows whose its missing figures are: redrawn once that is known
+    if ((await this.linkInfo()) && this.figuresWith()) { this.forceRender = true; this.rebuild(); }
+  },
+  // who has the figures of a copy opened from a link (a link carries none), or null
+  figuresWith() {
+    const v = this.linkCache && this.linkCache.get(this.name + '|' + this.main);
+    return v && (v.origin || 'link') === 'link' && v.by ? v.by : null;
   },
 
   // the view for someone the document was shared with: the page, a line saying what to do,

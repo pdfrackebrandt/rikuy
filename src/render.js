@@ -538,7 +538,8 @@ export class Renderer {
           const lab = document.createElement('span');
           lab.textContent = x.file;
           const sub = document.createElement('small');
-          sub.textContent = /\.(pdf|eps)$/i.test(x.file) || (this.app.vectorFigure && this.app.vectorFigure(x.file)) ? 'PDF and EPS figures show in the compiled PDF' : 'Image file not loaded';
+          const held = this.app.figuresWith && this.app.figuresWith();
+          sub.textContent = held ? 'Stays with ' + held + ': a link carries no figures' : /\.(pdf|eps)$/i.test(x.file) || (this.app.vectorFigure && this.app.vectorFigure(x.file)) ? 'PDF and EPS figures show in the compiled PDF' : 'Image file not loaded';
           s.append(lab, sub);
         }
         rec.file = x.file;
