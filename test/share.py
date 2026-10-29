@@ -51,6 +51,7 @@ def run():
         check('the coauthor sees the document', src(page2) == base_src)
         check('and a line saying who shared it', 'Pedro shared this document' in page2.inner_text('#guest'))
         check('the source pane stays closed for them', 'src-on' not in (page2.get_attribute('body', 'class') or ''))
+        check('and the sample and New document stay out of their way', not page2.is_visible('#b-sample') and not page2.is_visible('#b-new'))
         check('the link left the address bar', '#share=' not in page2.url, page2.url)
         # a document from a link compiles with restricted shell escape, and the worker keeps nothing
         # of it, until its owner allows more for it
