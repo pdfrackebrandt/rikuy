@@ -102,7 +102,7 @@ its program itself it names the command in the log; that command runs.
   ciphers removed (they compress to half) and put back on read, byte for byte.
 - `build_all.sh` runs the whole sequence.
 
-The artifact on claude.ai holds about 252 MB (its limit is 256 MB).
+The artifact on claude.ai holds about 253 MB (its limit is 256 MB).
 
 ## Full TeX Live for Rikuy on its own site
 

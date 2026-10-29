@@ -5,16 +5,16 @@ Read the rules at the end before the first commit.
 
 ## Where it stands
 
-| check | v19 (published 2026-10-12) | version 23 (published 2026-10-26) | version 25 (2026-10-28) |
-|---|---|---|---|
-| corpus compiles (LaTeX-examples, 716 documents present) | 705 | 706 | 706 |
-| corpus PDFs equal to a desktop TeX Live 2026's | 615 of 704 (87.4 %) | 700 of 705 (99.3 %) | 703 of 705 (99.7 %) |
-| TeX passes over the whole corpus | not counted | 995 (1,471 without latexmk's first-run `.aux`) | 995 |
-| `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) | 22/22 |
-| `tex/native/xindy/test.cjs` (against CLISP's xindy) | 11/11 | 11/11 | 11/11 |
-| TeX Live's 220 Asymptote examples as a desktop's asy draws them | not measured | against a native asy 3.09: 216 (196 equal PDFs, 12 equal failures, 7 random by design, 1 equal alone); 4 open | against the desktop's asy 3.11: 218 (201 equal PDFs, the 3D ones rendered as bitmaps; 10 equal failures; 7 random by design); 2 open: 1 numerical, `slope` out of memory |
-| edits on the typeset page landing exactly, undone byte for byte (`test/editor_corpus.py`) | not measured | 780 of 780, in the 222 documents with text, a formula, a cell or a footnote; 211 of 211 edited projects compile | as version 23 (page unchanged) |
-| artifact size (limit 256 MB) | 250.0 MB | 249.7 MB | 252.3 MB |
+| check | v19 (published 2026-10-12) | version 23 (published 2026-10-26) | version 25 (2026-10-28) | version 28 (2026-10-29) |
+|---|---|---|---|---|
+| corpus compiles (LaTeX-examples, 716 documents present) | 705 | 706 | 706 | as version 25 |
+| corpus PDFs equal to a desktop TeX Live 2026's | 615 of 704 (87.4 %) | 700 of 705 (99.3 %) | 703 of 705 (99.7 %) | as version 25 |
+| TeX passes over the whole corpus | not counted | 995 (1,471 without latexmk's first-run `.aux`) | 995 | as version 25 |
+| `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) | 22/22 | 23/23 (a check that pygmentize loads no code a document wrote) |
+| `tex/native/xindy/test.cjs` (against CLISP's xindy) | 11/11 | 11/11 | 11/11 | 11/11 |
+| TeX Live's 220 Asymptote examples as a desktop's asy draws them | not measured | against a native asy 3.09: 216 (196 equal PDFs, 12 equal failures, 7 random by design, 1 equal alone); 4 open | against the desktop's asy 3.11: 218 (201 equal PDFs, the 3D ones rendered as bitmaps; 10 equal failures; 7 random by design); 2 open: 1 numerical, `slope` out of memory | as version 25 |
+| edits on the typeset page landing exactly, undone byte for byte (`test/editor_corpus.py`) | not measured | 780 of 780, in the 222 documents with text, a formula, a cell or a footnote; 211 of 211 edited projects compile | as version 23 (page unchanged) | 781 of 792 land, 11 open as source by design, all 792 undone byte for byte, on the complete corpus; 211 of 211 edited projects compile |
+| artifact size (limit 256 MB) | 250.0 MB | 249.7 MB | 252.3 MB | 253.1 MB (with the 0.8 MB license bundle) |
 
 Version 23 changed only the page (task 13): its `dist/tex` is version 22's byte for byte, so the
 TeX rows are version 22's runs. Version 24 changed Asymptote (tasks 17 and 18: `asy.wasm`, the
@@ -26,6 +26,11 @@ corpus documents that run asy compiled again and compared with the repaired desk
 Version 26 (2026-10-28) adds sharing and comments (task 20) and programs rebuilt so that the
 build no longer depends on the machine (task 21); its TeX rows are version 25's, with
 `test/engines.py` 22/22 and xindy 11/11 again on the rebuilt programs; artifact 252.3 MB.
+
+Version 28 (2026-10-29) is the one attacked before going public (task 22). Its TeX tree is
+version 25's but for gnuplot, which only says 2-rikuy in its version now, so the corpus and
+Asymptote rows are version 25's runs; the page, the worker's scripts and the license bundle
+changed.
 
 Equal means: the same number of pages, the same text on each page (`pdftotext -layout`,
 whitespace collapsed), and no page with more than 0.1 % of its pixels differing by more than
@@ -241,8 +246,10 @@ Tests:
     text); of 792 edits tried, 780 land exactly (191 typed, 203 deleted, 202 bold, 111 formulas,
     56 table cells, 17 footnotes) and 12 formulas open as source by design (9 siunitx commands,
     3 formulas the equation field cannot hold); all 792 undo byte for byte; the 211 edited
-    projects whose original compiles all compile. Results:
-    `dev/editor-results.jsonl`, `dev/editor-compile.jsonl`. The runs found the six bugs above.
+    projects whose original compiles all compile. Version 28's run, on the complete corpus with
+    each project's own .sty files (task 22): 781 land, 11 open as source, all 792 undo, 211 of
+    211 compile. Results: `dev/editor-results.jsonl`, `dev/editor-compile.jsonl`. The runs found
+    the six bugs above.
     The user test (`dev/usertest.md`: one hour, five people) is the maintainer's to run.
 14. Left alone: the documents' own faults.
 15. **License.** Done: the AGPL-3.0 text in `LICENSE`, the components in `NOTICE`.
@@ -325,6 +332,50 @@ Tests:
     the repository copied elsewhere, give all 532 files of asy, dvips, gnuplot and xindy the same
     SHA-256 (dvips and gnuplot unchanged; in asy only data addresses moved, 253 bytes smaller). xindy
     against CLISP 11/11, `test/engines.py` 22/22.
+
+22. **Attacked before going public.** Done in version 28. Six reviews, each in a copy of its
+    own, tried to break Rikuy: its security, the editor, coauthoring with hostile TeX documents,
+    the repository as a stranger meets it, then a second security review and a first-time user
+    on the merged result. The corpus checks, run again on the complete corpus (the copy used
+    before held only the .tex files), found three more. What changed, by what it protects:
+    - **The user's browser.** A document could run Python of its choosing in the TeX worker,
+      beside this browser's storage: `pygmentize -x` with a `.py` file the document wrote
+      (`RIKUY-PWNED` on version 27). Refused for every document. A document from a link, a
+      `.zip` or a git clone compiles with TeX Live's restricted shell escape until its owner
+      allows more, keeps no LuaTeX font cache, and the worker is let go after it. A 518 KB link
+      inflated to 400 MB (now capped at 32 MB); link fields and file names are checked;
+      Ctrl+click opens only web and mail links; colours cannot fetch; KaTeX, mhchem, JSZip,
+      MathLive and CodeMirror carry integrity hashes; `?texlive=` names only a mirror on the
+      page's own site; the arXiv workflow can no longer push from a job that compiles papers.
+    - **The user's work.** Opening one's own link replaced the project and lost its figures;
+      two tabs overwrote each other; pruning could delete a project's last version; an edit
+      just before leaving the page was lost in 3 of 4 runs; Ctrl+Z after typing in the source
+      pane dropped that typing; a copy back with one clashing line dropped all the author's
+      other edits; reopening a link reset a coauthor's typing; a storage failure said "Saved".
+    - **The source.** Joins deleted comment lines; deletions across a theorem's title,
+      `\verb|%|` or a character command broke markup; Enter inside `\textbf` broke the build;
+      typing after a formula's popover landed inside it; a new numbered equation did not
+      compile; Insert, Citation wrote `\citep` for biblatex; Backspace at a theorem's start
+      deleted its first paragraph, in a letter it deleted the hidden `\date` and `\subject`,
+      after two display formulas it deleted both; a formula made by a macro's own text wrote
+      its edit into `\documentclass`.
+    - **Licenses.** The page offers its source and the license texts (AGPL section 13);
+      `dist/LICENSES.txt` holds every shipped part's license and the notices of every library
+      compiled into the programs (`LICENSES/third-party/`); gnuplot says 2-rikuy and NOTICE
+      carries its patch, as gnuplot's license asks; the release mirrors the BusyTeX build's and
+      ghostpdl-wasm's sources, Expat's and fontconfig's; SOURCES.md names
+      TeXlyre/texlyre-busytex-build, whose release is byte for byte our `busytex.wasm` and
+      `biber.wasm`.
+    - **First contact.** A New document button; a coauthor's copy shows gray boxes for the
+      sender's figures and says whose they are, where it showed errors; a thesis template's own
+      `.cls` and `.sty` macros are known on the page; Open in Overleaf on the hosted page says
+      it cannot and how to upload instead; `dist/index.html` serves from any static server;
+      SECURITY.md; the README says what is tested and what the page loads from the network.
+    Evidence: `npm test`; the model on the 716 documents, 716 ok; `test/browser.py` 84/84,
+    stress 9, features 36, files 30, paste 22, history 39, share 46, mathfield 19, eqextras 18,
+    wordmath 83, frontier 13, git 25, pdf 18, `test/engines.py` 23/23; `test/corpus_browser.py`
+    on 78 documents, no failure; `test/editor_corpus.py` on the complete corpus as in task 13.
+    Every check added for a bug fails on the build before its fix.
 
 ## Open tasks
 

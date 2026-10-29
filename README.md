@@ -45,13 +45,13 @@ and pixels at 72 dpi: **703 of the 705 documents both compile give equal PDFs** 
 other two differ on the desktop's side (a font it lists but cannot load, Debian's own build of a
 font). Of TeX Live's 220 Asymptote examples, 211 give the desktop's asy's PDF or fail the same
 way, 7 draw random data on purpose, and 2 differ (one in floating point, one out of memory).
-Of 792 scripted edits on the typeset pages of the corpus, 780 land where they were made and 12
+Of 792 scripted edits on the typeset pages of the corpus, 781 land where they were made and 11
 open their formula as source by design; all 792 undo exactly. The method, every number and every
 mismatch with its cause: [PLAN.md](PLAN.md).
 
 ## Running it
 
-Rikuy is one HTML page plus `dist/tex/` (about 252 MB of engines, TeX packs and programs), which
+Rikuy is one HTML page plus `dist/tex/` (about 250 MB of engines, TeX packs and programs), which
 any static web server can serve (`dist/index.html` is the page); the page fetches packs as a
 document needs them. It also loads KaTeX, CodeMirror, MathLive, JSZip and pdf.js from jsDelivr
 and its interface font from Google Fonts, so it needs a network connection.
