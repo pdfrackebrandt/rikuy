@@ -717,6 +717,7 @@ class App {
     $('#b-ai').addEventListener('click', () => this.openAsk());
     $('#b-help').addEventListener('click', () => this.openHelp());
     $('#b-sample').addEventListener('click', () => this.resetToSample());
+    $('#b-new').addEventListener('click', () => this.newDocument());
     $('#st-warn').addEventListener('click', () => this.toggleNav(true, 'problems'));
     $('#b-nav').addEventListener('click', () => this.toggleNav());
     $('#nav-close').addEventListener('click', () => this.toggleNav(false));
@@ -3595,6 +3596,17 @@ class App {
       return;
     }
   }
+  // a blank article to type into; the open project stays under Review, Versions
+  async newDocument() {
+    await this.snapshot('Before starting a new document', { force: !this.lastSig });
+    await this.stashBinary();
+    const taken = new Set((await this.allSnaps()).map((v) => v.name));
+    let name = 'Untitled';
+    for (let k = 2; taken.has(name) || name === this.name; k++) name = 'Untitled ' + k;
+    this.loadProject(new Map([['main.tex', '\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\end{document}\n']]), 'main.tex', name, 'New document');
+    this.toast('A new document. The one you had is under Review, Versions.', 5000);
+  }
+
   async doReset() {
     await this.snapshot('Before loading the sample', { force: !this.lastSig });
     await this.stashBinary();

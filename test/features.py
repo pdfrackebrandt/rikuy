@@ -198,6 +198,18 @@ try:
         page.wait_for_selector('.img-missing small', timeout=5000)
         note = page.evaluate("(document.querySelector('.img-missing small') || {}).textContent")
         check('\\includegraphics{curve} of a curve.pdf says it shows in the PDF', note == 'PDF and EPS figures show in the compiled PDF', note)
+        # New document: a blank article to type into, the old one kept as a version
+        before = page.evaluate('() => window.rikuy.name')
+        page.click('#b-new')
+        page.wait_for_function("() => window.rikuy.name.startsWith('Untitled')", timeout=5000)
+        page.wait_for_timeout(400)
+        check('New document opens a blank article', page.evaluate("() => window.rikuy.files.get('main.tex')") == '\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\end{document}\n')
+        kept = page.evaluate('async (n) => (await window.rikuy.allSnaps()).some((v) => v.name === n)', before)
+        check('and the document before it stays under Versions', kept, before)
+        page.click('#pages .page')
+        page.keyboard.type('Hello')
+        wait_src(page, 'Hello')
+        check('typing on its empty page starts the text', '\\begin{document}\nHello' in src(page) or '\nHello\n' in src(page), src(page))
         check('no console errors', not errors, errors[:5])
         browser.close()
 except Exception as e:
