@@ -297,6 +297,9 @@ body.pdf-on #pdfpane { display: flex; }
 /* atoms */
 .atom { border-radius: 2px; cursor: pointer; text-indent: 0; }
 .atom:hover { background: rgba(43, 116, 176, .08); box-shadow: 0 0 0 1px rgba(43, 116, 176, .28); }
+/* made by a macro's own text: nothing to edit at this spot */
+.atom.a-ro { cursor: default; }
+.atom.a-ro:hover { background: none; box-shadow: none; }
 .atom.sel, .atom.sel:hover { background: rgba(43, 116, 176, .16); box-shadow: 0 0 0 1.5px #2B74B0; }
 .it.dm.atom:hover, .it.raw.atom:hover { box-shadow: 0 0 0 1px rgba(43, 116, 176, .28); }
 .a-fn { font-size: .72em; vertical-align: .55em; line-height: 0; padding: 0 .05em; }

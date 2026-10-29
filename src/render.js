@@ -493,6 +493,8 @@ export class Renderer {
     const s = document.createElement(x.k === 'fn' ? 'sup' : 'span');
     s.contentEditable = 'false';
     s.className = 'atom a-' + x.k;
+    // made by a macro's own text: shown, not edited here (openAtom says where it is defined)
+    if (x.ro) s.classList.add('a-ro');
     const rec = { kind: x.k, f: x.f, s: this.rel(x.s), e: this.rel(x.e), is: this.rel(x.is), ie: this.rel(x.ie), ro: !!x.ro };
     switch (x.k) {
       case 'math': {

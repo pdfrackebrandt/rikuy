@@ -101,7 +101,8 @@ PICK = r'''([kind, seed]) => {
   const inFn = (s) => !!s.closest('.fn'), inTab = (s) => !!s.closest('table.tab'), bold = (s) => !!s.closest('.y-bf');
   const words = (s) => [...s.firstChild.data.matchAll(/[A-Za-zÄÖÜäöüß]{3,}/g)];
   if (kind === 'math') {
-    const ms = [...document.querySelectorAll('#pages .a-math')].filter(vis);
+    // a formula a macro's own text makes is not edited where it shows (.a-ro)
+    const ms = [...document.querySelectorAll('#pages .a-math:not(.a-ro)')].filter(vis);
     if (!ms.length) return null;
     const m = ms[rnd(ms.length)]; m.scrollIntoView({ block: 'center' });
     // a formula broken over two lines: click its first piece, not the middle of the box around both
