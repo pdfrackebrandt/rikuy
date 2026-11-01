@@ -1,0 +1,28 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1.1in]{geometry}
+\usepackage{amsmath}
+\usepackage{rikuy}
+
+\title{The Central Limit Theorem, Live}
+\author{Rikuy}
+\date{}
+
+\begin{document}
+\maketitle
+
+Draw $n$ values from the exponential distribution with mean $1$ and variance $1$, and standardise their mean:
+\[
+  Z_n = \sqrt{n}\,\bigl(\bar X_n - 1\bigr).
+\]
+The central limit theorem says that $Z_n$ converges in distribution to $N(0,1)$ as $n \to \infty$. Figure~\ref{fig:clt} draws $Z_n$ four thousand times. On Rikuy's typeset page the figure is live: move its slider to change $n$. Every \TeX{}, Rikuy's PDF included, prints the picture in \texttt{figures/clt.png} instead, which is the widget at $n = 4$.
+
+\begin{figure}[ht]
+  \centering
+  \rikuywidget[width=\textwidth]{widgets/clt.html}{figures/clt.png}
+  \caption{Histogram of 4,000 draws of $Z_n$ for $n = 4$, with the $N(0,1)$ density.}
+  \label{fig:clt}
+\end{figure}
+
+At $n = 1$ the histogram is the exponential's own shape: nothing below $-1$ and a long right tail. The skewness of $Z_n$ is $2/\sqrt{n}$ and its mode is $-1/\sqrt{n}$, so the asymmetry fades only at the rate $n^{-1/2}$.
+
+\end{document}

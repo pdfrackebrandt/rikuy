@@ -99,8 +99,20 @@ export class Layout {
       it.sb = (it.sbEm || 0) * this.g.pt * this.px;
       it.measured = true;
       it.pieces = null;
+      // a picture not loaded yet was measured at no height: the item is measured again when it
+      // loads (App, the sheet's load listener)
+      it.late = null;
+      for (const im of it.el.querySelectorAll('img')) if (!im.complete) (it.late || (it.late = new Set())).add(im);
     }
     for (const f of fnTodo) { f.h = f.el.getBoundingClientRect().height + 1; f.measured = true; }
+  }
+
+  // Items whose size changed after they were placed (a live figure that asked for a height):
+  // measured again, and their pages rewritten even if the plan keeps them where they were, since
+  // measuring takes an item out of its page.
+  invalidate(its) {
+    for (const it of its) { it.measured = false; it.pieces = null; }
+    for (const P of this.pages) if (P.entries && P.entries.some((e) => its.includes(e.it))) P.sig = null;
   }
 
   // Pure pagination over measured items.

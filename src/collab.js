@@ -13,6 +13,7 @@ function btn(label, fn, cls) { const b = mk('button', cls || 'btn ghost sm', lab
 
 // past this many characters a few mail and chat apps cut links short
 const LONG_LINK = 60000;
+const MAX_ADDRESS = 2 * 1024 * 1024;
 
 const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
 
@@ -76,7 +77,9 @@ export const collab = {
     try { framed = window.top !== window; } catch (e) { framed = true; }
     if (framed) parts.push('Here the page cannot read the link it is opened with, so whoever opens it pastes the link onto the page once (they will see Open it). A copy of Rikuy on its own site opens links directly.');
     if (L.figures) parts.push('The ' + plural(L.figures, 'figure stays', 'figures stay') + ' with you: the link carries the text, and the page shows a frame where a figure goes.');
-    if (L.url.length > LONG_LINK) parts.push('This link is long (' + Math.round(L.url.length / 1000) + ' thousand characters); if a chat app cuts it, send it by email.');
+    // Chrome opens no address longer than 2 MiB (a large live figure's .html travels in the link)
+    if (L.url.length > MAX_ADDRESS) parts.push('This link is ' + (L.url.length / 1e6).toFixed(1) + ' million characters, more than Chrome opens from its address bar: whoever gets it pastes it onto this page, or send the .zip instead.');
+    else if (L.url.length > LONG_LINK) parts.push('This link is long (' + Math.round(L.url.length / 1000) + ' thousand characters); if a chat app cuts it, send it by email.');
     return parts.join(' ');
   },
 

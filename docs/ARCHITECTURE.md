@@ -40,6 +40,7 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | what a keystroke writes | `App.onBeforeInput`, `insertText`, `deletionEdits`, `enter`, `toggleStyle` (`src/app.js`); `escapeTeX` |
 | undo grouping | `App.record`, `App.undo`, `App.redo` |
 | share links, comments, the copy back, Overleaf | `makeShareLink`, `openSharedLink`, `takeBack`, `commentPop`, `openInOverleaf` (`src/collab.js`); `commentEdit`, `merge3` (`src/share.js`) |
+| live figures (`\rikuywidget`) | `WidgetLayer`, `widgetDoc`, `WIDGET_CSP` (`src/widget.js`); `Builder.cmd` (kind `widget`), `Renderer.atomEl`; `App.widgetsAllowed`, `widgetResized` |
 | equation editing | `App.openMath`, `attachField`, `toField`, `fromField`; `src/minimal.js`, `wordmath.js`, `fences.js` |
 | engine choice, passes, bibliography, indexes | `pickEngine`, `compile`, `runBiber`, `indexTools` (`tex/engine.js`) |
 | a shell escape program | `exec` (`tex/shell.js`); `loadTool`, `make*` (`tex/tools.js`) |
@@ -72,7 +73,8 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
   `segs`, `atoms`, `stys` in `BLOCKS` with offsets relative to `base`; spans carry `data-g`,
   `data-a`, `data-y`, `data-m` as `blockId.index`, so a block that only moved needs no new DOM.
   A new `prefix` (all redrawn) comes when macros or the option signature change.
-- **Layout.** `App.layoutPass()`: `Layout.measure` (new items measured once in hidden `#mhost`),
+- **Layout.** `App.layoutPass()`: `Layout.measure` (new items measured once in hidden `#mhost`;
+  one whose picture had not loaded is measured again when it has: `it.late`, `Layout.invalidate`),
   `Layout.plan` (pure pagination, footnotes, line splits), `Layout.apply` (rewrites only pages
   whose signature changed). Also on this path: `src/bib.js`, `src/siunitx.js`, `src/problems.js`.
 
@@ -164,7 +166,73 @@ prototype).
   `engine`). For Overleaf's Git integration `gitUrlOf()` turns a project's address into
   `https://git.overleaf.com/<id>`, and the user name becomes `git`.
 
-## 5. Page and worker
+## 5. Live figures
+
+`rikuy.sty` (in `sample/widget/`; a document carries a copy beside its main file, so Overleaf
+needs no install) defines `\rikuywidget[<options>]{<widget.html>}{<fallback image>}` as
+`\includegraphics[#1]{#3}` (graphicx), robust and nothing else: every TeX prints the picture and
+never opens the widget. On the page the command is one atom (`Builder.cmd`, kind `widget`) that
+runs the widget, a self contained HTML file of the project. `sample/widget/` is a short document
+with one (the central limit theorem, an `n` slider) and `make_fallback.py`, which draws its
+fallback from the widget's own generator.
+
+- **Files.** `.html` is a text extension (`TEXT_EXT`), so a widget is an ordinary project file:
+  in the source pane, share links, Review, merges, git, versions, the .zip and Overleaf, saved
+  byte for byte. `widgetPath()` reads its name from the main file's folder, as TeX does. The
+  block's key holds the file's signature (`hashText`), so a widget edited in the source pane is
+  drawn again and starts from its new text.
+- **Where it runs.** The atom renders a box (`.w-live`) as wide as the text; the widget runs in
+  an iframe that `WidgetLayer` lays over the box, in `#wlayer`, outside the pages. A frame taken
+  out of the document and put back starts from nothing, and the pages move their blocks all the
+  time (a block redrawn after its caption is edited, measuring in `#mhost`, pagination); outside
+  them the widget keeps its state through typing, undo, zoom and page moves. `place()` runs after
+  every layout pass and on any change to the pages (a MutationObserver), pairs frames with boxes
+  by file, signature and order, and scales each frame with the page: a widget lays itself out at
+  the text width of 100 % zoom and is magnified with the page, as a figure is.
+- **Editing.** Clicks inside the widget are the widget's. Its `LaTeX` tab opens the command in
+  the source popover as a figure's does (`openRaw`); with Alt it shows the line in the source
+  pane; Backspace beside it selects it like any atom, and the frame shows the selection. Typing
+  never writes into the command, so the smallest patch and undo work as beside any atom.
+- **Height.** The widget sends `parent.postMessage({rikuy: "height", px: N}, "*")`. `onMessage`
+  takes it only from the window of one of its own frames (every sandboxed frame's origin is
+  `"null"`, so the window is what tells them apart), cuts it to a page's text height, and
+  `widgetResized()` sets the box's height and measures its item again; `Layout.invalidate`
+  rewrites the item's pages, since measuring takes an item out of its page.
+- **Isolation.** `sandbox="allow-scripts"`, without `allow-same-origin`: an opaque origin, so no
+  storage, no cookies, no access to the page, the project or other frames, and no popups, forms,
+  top navigation or dialogs. The widget arrives as `srcdoc`, behind a head that starts with its
+  own policy (`WIDGET_CSP`: `default-src 'none'`; inline script and style; pictures, media and
+  fonts as `data:` or `blob:`; no connection, frame, form or `<base>`) and turns DNS prefetching
+  off. The page's own `frame-src` refuses to navigate the frame to another site.
+- **Why `srcdoc`.** A `srcdoc` or `blob:` frame inherits the embedding page's Content Security
+  Policy, and a policy the widget's document adds can only restrict further. Rikuy's policy, as
+  `test/serve.py` serves it (the artifact host's), has `script-src 'self' 'unsafe-inline'
+  'unsafe-eval' …`, so inline widget scripts run under it. They always will where Rikuy runs:
+  the page's own code is one inline script, so a policy that refused inline scripts would stop
+  Rikuy first. `blob:` frames would work as well (`frame-src blob:`) but add object URLs to
+  revoke and nothing else; `data:` frames depend on `frame-src data:` and on URL length; a widget
+  served as a file of the page's own site would have to be on the server, and projects live in
+  the browser. Nothing in the page's policy changed.
+- **What no policy stops.** Chromium ignores CSP's `webrtc` directive (version 141 calls it
+  unrecognized), so a widget can open WebRTC connections: a STUN request to its author's server
+  tells them who opened the document, and when, though nothing of the document or the browser.
+  So in a project from someone else (a link, a .zip, a git clone: `markFromLink`) each widget
+  shows its fallback with a button until the owner runs them (`widgetsAllowed`, `allowWidgets`,
+  the `widgets` field of the project's `link:` record, kept apart from shell escape); one's own
+  projects run them at once. A widget's script may share the page's thread (not every browser
+  gives sandboxed frames a process of their own), so one that loops forever can hang the tab, as
+  a bad web page can.
+- **Missing files.** No widget file: the fallback image, as TeX prints it; neither: a quiet
+  placeholder naming the path. Problems names a missing widget, and a `\rikuywidget` without
+  `\usepackage{rikuy}` and `rikuy.sty` (TeX would stop there). A link carries no figures, so a
+  coauthor's PDF gets a gray box for the fallback (`missingFigures`) and their page runs the
+  widget, which the link does carry. Printing the page prints the fallback.
+- **Size.** Widgets travel in share links as text: five of 65 KB made a link of 174 thousand
+  characters (`test/widgets.py`). Nothing is dropped: `unpackShare` refuses more than 32 MB of
+  text with a message, and past 2 MiB, more than Chrome opens from its address bar, the link's
+  note says to paste it onto the page or send the .zip.
+
+## 6. Page and worker
 
 `TeXEngine` (`src/tex.js`) starts the worker from a blob (so it runs under the page's policy)
 that sets `self.__galleyBase` and imports `engine.js`. Its `onmessage` takes `{init, base, mirror,
@@ -176,7 +244,7 @@ files and lines; `PdfView.show(pdf, synctex)` draws with PDF.js; past 5 minutes 
 `stopPdf` ends the worker. `boot()` fetches `tree.wasm`, the mirror index, the engine chunks
 `w-*.wasm` and the core packs; `newTeX(true)` makes `MAIN`; `restoreFontCaches()` follows.
 
-## 6. The compile loop: `compile(job)` in `tex/engine.js`
+## 7. The compile loop: `compile(job)` in `tex/engine.js`
 
 1. **Folder.** `projectDir(job.project)`, stable per project (`touchProject` keeps three); `KEEP`
    files (aux, bbl, toc, idx…) and `ASY_OUT` survive unless `job.clean`.
@@ -208,7 +276,7 @@ files and lines; `PdfView.show(pdf, synctex)` draws with PDF.js; past 5 minutes 
 10. **Driver**: `.xdv` → `xdvipdfmx`; `.dvi` → `dvips`, then `ps2pdf` via `SHELL.dispatch`. The
     result holds `pdf` (null when empty), `synctex`, `log`, `runs`, `passes`, `missing`, `packs`.
 
-## 7. Shell escape: finding and running programs
+## 8. Shell escape: finding and running programs
 
 `newTeX()` sets `imports.env.shell_escape_dispatch_js(a, b)`: `SHELL.dispatch(cmd, cwd)` for
 `b >= 0`, else `pipeHook()`, which serves the `popen`/`pclose` bodies `tex/patch_wasm.py` writes
@@ -234,7 +302,7 @@ reruns TeX on all written so far (`texPipe`, `pipeSessions`; `pipeCache` keeps T
 `asyRun()` first runs up to three rehearsals (`asyRehearsal`: questions noted, sizes guessed,
 nothing drawn), each answered in one TeX run (`asyAnswerAll`), then runs asy for real.
 
-## 8. File systems shared between programs
+## 9. File systems shared between programs
 
 - `MAIN.FS`, the first TeX instance's MEMFS, holds the tree at `/texlive` and the projects at
   `/home/web_user/project`. Tree nodes carry `TREE_MTIME`, so build time fontconfig caches hold.
@@ -247,7 +315,7 @@ nothing drawn), each answered in one TeX run (`asyAnswerAll`), then runs asy for
   folder in (`mirrorFolder`) and copy back what changed or vanished (`copyBackChanged`). Copies
   are dated 0, so an equal size rewrite within a millisecond still counts. biber gets copies.
 
-## 9. Programs built for Rikuy, and their memory
+## 10. Programs built for Rikuy, and their memory
 
 `tex/build_tools.sh` compiles dvips, Asymptote (with GLM, Mesa's OSMesa, GSL, FFTW, Eigen), xindy
 (ECL, GMP, Boehm GC) and gnuplot with Ubuntu's Emscripten 3.1.6 into the committed `tex/vendor/`.
@@ -272,7 +340,7 @@ kept and restored after every run, the rest zeroed, the stack reset to `_sp0`, d
 closed; that also frees strings the worker mallocs into TeX's heap. asy's fork to render a 3D
 bitmap becomes `galley_fork_save` (memory below `sbrk(0)`), render, `galley_fork_restore`.
 
-## 10. The TeX tree, packs, lazy loading, mirror
+## 11. The TeX tree, packs, lazy loading, mirror
 
 `build_tree.py tree` (`build_tree`) assembles `$RIKUY_WORK/rikuy-tree` from BusyTeX's release
 tree (`tree-extra`, via `unpack_busytex.py`) and Ubuntu 26.10's TeX Live 2026.20260711 packages
@@ -305,7 +373,7 @@ the worker loads it (`loadMirror`, `mirrorPopulate`), and BusyTeX's `kpse_remote
 `mirrorFetch(name, format)` when kpathsea finds nothing locally (basename plus `KPSE_SUFFIX`, file
 written into `MAIN.FS`). A page on claude.ai reaches only its own server: self hosted use only.
 
-## 11. Build pipeline
+## 12. Build pipeline
 
 1. `tex/fetch_inputs.sh` fills `$RIKUY_WORK` (default `/tmp/eng`), hash checked: `busy/busytex`
    (BusyTeX 1.4.0), `tree-extra`, `debs/x/<pkg>`, `mf/x` (METAFONT for `build_pk.py`), and
@@ -330,7 +398,7 @@ npm file's hash (`SRI`; KaTeX's in `src/template.html`). `tex/build_all.sh` rema
 `tex-smoke.html`'s `exec`). Also: `swap_wasm.py` (a patched engine into a built `dist/tex`),
 `build_tree.py tools` (the programs only), `publish_batches.py` (uploads to the hosted copy).
 
-## 12. Tests and harness
+## 13. Tests and harness
 
 - **Node, in CI** (`.github/workflows/ci.yml`, `npm test`): `test/model.test.mjs` (sample model,
   seg maps checked), `edge.test.mjs` (malformed input must not throw), `fences.test.mjs`,
@@ -340,7 +408,7 @@ npm file's hash (`SRI`; KaTeX's in `src/template.html`). `tex/build_all.sh` rema
   the CSP server `serve.py`): `browser.py` (typing), `features.py`, `files.py` (zip round trip),
   `git.py`, `history.py`, `paste.py`, `pdf.py` (pdfLaTeX, SyncTeX), `engines.py` (engines, shell
   escape), `mathfield.py`, `wordmath.py`, `eqextras.py`, `frontier.py`, `share.py` (two browsers: share, comment,
-  send back, merge), `stress.py`; on a corpus,
+  send back, merge), `stress.py`, `widgets.py` (live figures, under the host's policy); on a corpus,
   `corpus_browser.py` (random keystrokes) and `editor_corpus.py` (six edits per document land
   where made, undo byte for byte, projects compile). Each says at its top what it checks.
 - **dev/** drives the worker through `tex/tex-smoke.html`: `texrun.py`, `shellrun.py`,
@@ -349,7 +417,7 @@ npm file's hash (`SRI`; KaTeX's in `src/template.html`). `tex/build_all.sh` rema
 
 Which check covers which change, and how long each takes: `AGENTS.md`. The numbers: `PLAN.md`.
 
-## 13. Known gaps
+## 14. Known gaps
 
 - `usage.json`, the list of files in the core packs, comes only in `inputs/generated.tar.gz`.
   It was made from the files a corpus run read (`job.trace` returns them), but the script that

@@ -377,6 +377,31 @@ Tests:
     on 78 documents, no failure; `test/editor_corpus.py` on the complete corpus as in task 13.
     Every check added for a bug fails on the build before its fix.
 
+23. **Live figures.** Done (`src/widget.js`, `sample/widget/`). `rikuy.sty`, which a document
+    carries beside its main file, makes `\rikuywidget[<options>]{<widget .html>}{<fallback
+    image>}` plain `\includegraphics[#1]{#3}` in every TeX, and the page runs the widget: a self
+    contained HTML file of the project, in a frame sandboxed to scripts (no `allow-same-origin`),
+    behind a policy of its own that refuses every request, laid over a box the text keeps for it,
+    so it keeps its state while the pages around it are typed in, redrawn, zoomed and paginated.
+    Its height comes from `{rikuy: "height", px}` messages, taken only from its own frame.
+    `.html` is a text file now, so widgets travel in share links, git, versions and every export.
+    Chromium ignores CSP's `webrtc` directive, so a widget could open a WebRTC connection that
+    tells its author who reads the document: in a project from a link, a `.zip` or git, widgets
+    wait for one click (docs/ARCHITECTURE.md, Live figures). Found on the way: a picture was
+    measured before it loaded, at no height (a figure's paragraph measured at 15 px and drawn at
+    192), so the pages under-counted every figure; such an item is measured again when its picture
+    loads. Evidence: `test/widgets.py` 55/55 under the artifact host's policy (sandbox, a slider
+    moved in the frame, typing in the caption and beside the figure patches only the typed text,
+    undo byte for byte, the widget's state through edits, undo, zoom and a page move, the fallback
+    and the placeholder, the gate and its permission through a reload, five widgets of 65 KB in
+    a 174 thousand character link, requests and foreign messages refused; its two height checks
+    fail on a build without the fix); `npm test`, the model on the 716 documents, 716 ok;
+    `test/browser.py` 84/84, files 30, share 46, git 25, features 36, history 39, paste 22, stress
+    9, mathfield 19, wordmath 83, eqextras 18, frontier 13. The sample, and `\rikuywidget` in a
+    heading, a caption's short form and the list of figures, compile without error under pdfLaTeX,
+    XeLaTeX and LuaLaTeX of TeX Live 2023 (Debian); this machine has no TeX Live 2026 tree, so
+    Rikuy's PDF pane did not compile them.
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000

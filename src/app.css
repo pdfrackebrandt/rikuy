@@ -318,6 +318,26 @@ body.pdf-on #pdfpane { display: flex; }
 .a-img img { display: block; max-width: 100%; height: auto; margin: 0 auto; }
 .img-missing { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: .25em; width: 60%; aspect-ratio: 4 / 2.6; border: 1px dashed #A9B4BF; background: repeating-linear-gradient(45deg, #FAFBFC 0 8px, #F3F5F7 8px 16px); color: #5A6774; font-family: var(--font-mono); font-size: .75em; text-align: center; padding: .5em; box-sizing: border-box; line-height: 1.3; }
 .img-missing small { font-family: var(--font-ui); font-size: .9em; color: #7A8794; }
+/* live figures: the box in the text, and the frame laid over it (src/widget.js) */
+.w-live { display: block; position: relative; width: 100%; aspect-ratio: 16 / 10; }
+.w-live.sized { aspect-ratio: auto; }
+.w-live .wfb { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; visibility: hidden; }
+.w-live.gated { aspect-ratio: auto; }
+.w-live.gated > img { display: block; width: 100%; height: auto; }
+.w-live.gated.img-missing { display: flex; width: 100%; aspect-ratio: 16 / 10; }
+.wlayer { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 1; }
+.wbox { position: absolute; transform-origin: 0 0; border-radius: 2px; }
+.wbox:hover { box-shadow: 0 0 0 1px rgba(43, 116, 176, .28); }
+/* the page is white in dark mode too: a widget's prefers-color-scheme says light, as the paper is */
+.wbox iframe { display: block; width: 100%; height: 100%; border: 0; background: transparent; color-scheme: light; }
+.wbox.sel { box-shadow: 0 0 0 1.5px #2B74B0; }
+.wgate { pointer-events: none; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 10px; box-sizing: border-box; }
+.wgate:hover { box-shadow: none; }
+.w-run { pointer-events: auto; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink-ui); font: 500 12px/1.4 var(--font-ui); padding: 4px 10px; cursor: pointer; box-shadow: 0 2px 8px rgba(10, 20, 30, .15); }
+.w-run:hover { border-color: var(--blue); }
+.w-src { position: absolute; top: 4px; right: 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink-ui); font: 500 11px/1.4 var(--font-mono); padding: 1px 6px; cursor: pointer; opacity: 0; transition: opacity .12s; }
+.wbox:hover .w-src, .w-src:focus-visible { opacity: 1; }
+@media (hover: none) { .w-src { opacity: .85; } }
 .a-logo { white-space: nowrap; }
 .lg-a { text-transform: uppercase; font-size: .72em; vertical-align: .24em; margin-left: -.34em; margin-right: -.12em; }
 .lg-e { text-transform: uppercase; vertical-align: -.22em; margin-left: -.1667em; margin-right: -.125em; display: inline-block; }
@@ -590,7 +610,8 @@ body.nav-on.nav-wide #nav { width: 340px; }
 /* ---- print: only the pages, at their real size ---- */
 @media print {
   html, body, #app, #main, #desk { height: auto !important; overflow: visible !important; display: block !important; background: #fff !important; }
-  #bar, #status, #nav, #srcpane, #gutter, .pop, #bubble, #toast, #ask, .boot, .dropzone, .wm-chip, #mhost { display: none !important; }
+  #bar, #status, #nav, #srcpane, #gutter, .pop, #bubble, #toast, #ask, .boot, .dropzone, .wm-chip, #mhost, .wlayer { display: none !important; }
+  .w-live .wfb { visibility: visible !important; }
   .sheet { padding: 0 !important; }
   #pages { display: block !important; gap: 0 !important; caret-color: transparent; }
   .page { box-shadow: none !important; margin: 0 !important; break-after: page; break-inside: avoid; content-visibility: visible !important; contain: none !important; }

@@ -4,7 +4,9 @@
 import { parse, scanUserSigs, CHARS, ACCENTS, splitRows } from './parser.js';
 import { parseBib, texToPlain, shortAuthors, entryYear, formatEntry } from './bib.js';
 import { siTex, siOptions, siUnitSymbol } from './siunitx.js';
+import { widgetPath, hashText } from './widget.js';
 
+const WIDGET_FILE = /\.html?$/i;
 const STY = {
   textbf: 'bf', textit: 'it', emph: 'em', texttt: 'tt', textsc: 'sc', textsf: 'sf', textrm: 'rm', textup: 'up',
   textsl: 'sl', textmd: 'md', textnormal: 'rm', underline: 'ul', uline: 'ul', uuline: 'ul', uwave: 'ul',
@@ -182,7 +184,8 @@ class Builder {
     const main = this.project.main;
     const src = this.files.get(main) || '';
     const userSigs = {};
-    for (const [, t] of this.files) scanUserSigs(t, userSigs);
+    // a widget's HTML is no TeX: its script's backslashes are not definitions
+    for (const [n, t] of this.files) if (!WIDGET_FILE.test(n)) scanUserSigs(t, userSigs);
     this.userSigs = userSigs;
     this.parsed = new Map();
     const nodes = this.parseFile(main);
@@ -795,7 +798,8 @@ class Builder {
     this.bibLoaded = true;
     const names = new Set(this.bibFiles);
     // Also scan for \bibliography / \addbibresource anywhere in main source.
-    for (const [, t] of this.files) {
+    for (const [n, t] of this.files) {
+      if (WIDGET_FILE.test(n)) continue;
       const re = /\\(?:bibliography|addbibresource)(?:\[[^\]]*\])?\{([^}]*)\}/g;
       let m;
       while ((m = re.exec(t))) for (const b of m[1].split(',')) names.add(b.trim());
@@ -1524,6 +1528,18 @@ class Builder {
       const file = A(1).trim();
       const opts = A(0);
       out.push(this.atom(ctx, { k: 'img', s: nd.s, e: nd.e, file, opts }));
+      return false;
+    }
+    if (name === 'rikuywidget') {
+      // a live figure (rikuy.sty): TeX prints the fallback image, the page runs the widget. Its
+      // file's signature is part of the block's key, so a widget edited in the source pane is
+      // drawn again from its new text.
+      acc.flush();
+      const file = A(1).trim();
+      const wfile = widgetPath(this.files, this.project.main, file);
+      const wsig = wfile ? hashText(this.files.get(wfile)) : '';
+      this.use('W' + (wfile || '-' + file) + ':' + wsig);
+      out.push(this.atom(ctx, { k: 'widget', s: nd.s, e: nd.e, file, wfile, wsig, fallback: A(2).trim(), opts: A(0) }));
       return false;
     }
     if (name === 'ensuremath') {

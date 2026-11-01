@@ -160,6 +160,9 @@ export class Renderer {
         const a = this.atomOf(m);
         if (a && a.fnIndex != null) item.fnIdx.push(a.fnIndex);
       }
+      // live figures inside: their boxes take a new height when the widget asks (App.widgetResized)
+      const w = item.el.querySelectorAll('.w-live');
+      if (w.length) item.widgets = [...w];
       B.items.push(item);
     }
     // Attach fn index to atoms (by order of fn marks)
@@ -547,6 +550,55 @@ export class Renderer {
         rec.file = x.file;
         break;
       }
+      case 'widget': {
+        // A live figure. This box keeps the widget's place and size in the text; the widget runs
+        // in a frame laid over it (src/widget.js), which outlives this box being drawn again.
+        const fb = this.app.assetURL(x.fallback);
+        const html = x.wfile ? this.app.files.get(x.wfile) : null;
+        if (html != null && !this.app.widgetsAllowed()) {
+          // from someone else and not allowed yet: the fallback, and a button over it (WidgetLayer)
+          s.classList.add('w-live', 'gated');
+          s.dataset.w = x.wfile + ':' + x.wsig;
+          s.dataset.wf = x.wfile;
+          if (fb) { const img = document.createElement('img'); img.src = fb; img.alt = x.fallback; s.appendChild(img); }
+          else {
+            s.classList.add('img-missing');
+            const lab = document.createElement('span');
+            lab.textContent = x.file;
+            const sub = document.createElement('small');
+            const held = this.app.figuresWith && this.app.figuresWith();
+            sub.textContent = 'Live figure' + (held ? ' from ' + held : '') + ', not run yet';
+            s.append(lab, sub);
+          }
+        } else if (html != null) {
+          s.classList.add('w-live');
+          s.dataset.w = x.wfile + ':' + x.wsig;
+          s.dataset.wf = x.wfile;
+          const h = this.app.widgetHeight && this.app.widgetHeight(s.dataset.w, x.wfile);
+          if (h) { s.classList.add('sized'); s.style.height = widgetCss(h); }
+          // printed in its place: a print of the page shows the picture TeX prints
+          if (fb) { const img = document.createElement('img'); img.className = 'wfb'; img.src = fb; img.alt = ''; s.appendChild(img); }
+        } else if (fb) {
+          // no widget file in the project: its fallback, as TeX prints it
+          s.classList.add('a-img');
+          s.title = x.file + ' is not in the project: its fallback image shows instead';
+          const img = document.createElement('img');
+          img.src = fb;
+          img.alt = x.fallback;
+          const w = imgWidth(x.opts);
+          if (w) img.style.width = w;
+          s.appendChild(img);
+        } else {
+          s.classList.add('img-missing');
+          const lab = document.createElement('span');
+          lab.textContent = x.file;
+          const sub = document.createElement('small');
+          sub.textContent = 'Widget file not in the project, nor its fallback ' + (x.fallback || 'image');
+          s.append(lab, sub);
+        }
+        rec.file = x.file;
+        break;
+      }
       default: s.textContent = x.text || '';
     }
     const idx = B.atoms.length;
@@ -580,6 +632,9 @@ function logo(name) {
     default: return name;
   }
 }
+
+// a widget's height in its own pixels (laid out at 100 % zoom) as a length that follows the zoom
+export function widgetCss(h) { return 'calc(var(--pt) * ' + (h * 72.27 / 96).toFixed(4) + ' * 1px)'; }
 
 function imgWidth(opts) {
   if (!opts) return null;

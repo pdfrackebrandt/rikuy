@@ -10,7 +10,7 @@ a command fails, trust the code and fix this file.
 
 | path | what is there |
 |---|---|
-| `src/` | the editor. `app.js` is the entry; `model.js` maps source to page, `parser.js`, `render.js`, `editor.js`, `minimal.js` (smallest source patch), `siunitx.js`, `wordmath.js`; `share.js` (links, comments in the source, the three way merge) and `collab.js` (their UI) |
+| `src/` | the editor. `app.js` is the entry; `model.js` maps source to page, `parser.js`, `render.js`, `editor.js`, `minimal.js` (smallest source patch), `siunitx.js`, `wordmath.js`; `share.js` (links, comments in the source, the three way merge) and `collab.js` (their UI); `widget.js` (live figures from `rikuy.sty`) |
 | `tex/engine.js` | the TeX worker: compile loop, passes, bibtex/biber/makeindex/xindy between them |
 | `tex/shell.js`, `tex/tools.js` | the shell TeX's `\write18` and pipes reach, and the programs behind it (Ghostscript, gnuplot, Python, dvips, asy, xindy) |
 | `tex/build_tree.py` | the TeX tree and its packs (`dist/tex/`) |
@@ -21,6 +21,7 @@ a command fails, trust the code and fix this file.
 | `test/` | node unit tests (`*.test.mjs`) and Playwright browser tests (`*.py`) |
 | `dev/` | the comparison harness: one compile, one shell command, the corpus, PDFs against a desktop TeX Live, Asymptote against a desktop asy; and its results (`*.jsonl`) |
 | `inputs/` | build inputs that took an engine run to make (formats, PK fonts, caches) |
+| `sample/` | the document the page opens with (built into the page); `sample/widget/`, a document with a live figure and `rikuy.sty` |
 | `docs/ARCHITECTURE.md` | how the editor, the worker, the programs and the tree fit, with the functions to start at |
 | `PLAN.md` | status, numbers, finished and open tasks, and the rules for commits |
 | `SOURCES.md`, `NOTICE`, `LICENSES/` | where every shipped part's source is, its license, and the license texts not elsewhere in the repository |
@@ -47,7 +48,7 @@ a command fails, trust the code and fix this file.
 | serve `dist/` as the artifact host does | `npm run serve` (port 8790) | |
 | engines and shell escape in the page | `npm run test:engines` (23 checks) | 5 min |
 | typing on the page | `npm run test:browser` | 20 s |
-| one feature in the page (projects, files, git, history, paste, PDF, math field, Word style math, equation extras, sharing and comments, stress) | `cd test && python3 features.py` (or `files.py`, `git.py`, `history.py`, `paste.py`, `pdf.py`, `mathfield.py`, `wordmath.py`, `eqextras.py`, `frontier.py`, `share.py`, `stress.py`); each says what it checks at the top | under a minute each |
+| one feature in the page (projects, files, git, history, paste, PDF, math field, Word style math, equation extras, sharing and comments, stress, live figures) | `cd test && python3 features.py` (or `files.py`, `git.py`, `history.py`, `paste.py`, `pdf.py`, `mathfield.py`, `wordmath.py`, `eqextras.py`, `frontier.py`, `share.py`, `stress.py`, `widgets.py`); each says what it checks at the top | under a minute each |
 | random keystrokes on real documents, then every scripted edit on the corpus | `python3 test/corpus_browser.py <corpus>`, then `CORPUS_REPO=<corpus> python3 test/editor_corpus.py out.jsonl` | 1 min; 1 hour (40 min of edits, 20 of compiles) |
 | compile one folder | `RIKUY_DIST=dist python3 dev/texrun.py DIR main.tex auto 300` | |
 | run one program through the shell | `python3 dev/shellrun.py DIR asy asy -f pdf fig.asy` | |

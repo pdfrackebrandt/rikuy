@@ -1,7 +1,7 @@
 // Rikuy app shell: rebuild pipeline, history, input, popovers, files.
 import { siInMath } from './siunitx.js';
 import { buildModel } from './model.js';
-import { Renderer, BLOCKS, esc } from './render.js';
+import { Renderer, BLOCKS, esc, widgetCss } from './render.js';
 import { Layout, geometry } from './layout.js';
 import {
   posFromDom, CaretIndex, segOfSpan, atomOfEl, styOfEl, visibleRanges, escapeTeX, textToTeX,
@@ -14,6 +14,7 @@ import { isTallDef, fitBrackets, tallTest } from './fences.js';
 import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath } from './paste.js';
 import { findProblems, missingFigures } from './problems.js';
+import { WidgetLayer } from './widget.js';
 
 // Gray boxes of 320 by 240 points that stand in, in a coauthor's PDF, for figures a link does
 // not carry: a PDF, a PNG whose resolution makes it that size, and EPS for latex with dvips.
@@ -55,7 +56,8 @@ const SRI = {
 };
 // what an opened .zip may unpack to; past it the tab would run out of memory
 const MAX_ZIP = 1.5e9;
-const TEXT_EXT = /\.(tex|bib|sty|cls|bst|bbl|txt|ltx|dtx|clo|cfg|def|md)$/i;
+// .html: live figures (rikuy.sty), which travel in share links, diff in git and open in the source pane
+const TEXT_EXT = /\.(tex|bib|sty|cls|bst|bbl|txt|ltx|dtx|clo|cfg|def|md|html?)$/i;
 const IMG_EXT = /\.(png|jpe?g|gif|svg|webp)$/i;
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
@@ -296,6 +298,24 @@ class App {
     this.layout = new Layout(this.root, this.host);
     this.index = new CaretIndex(this.root);
     this.index.blocksOf = () => this.renderer.blocks;
+    // live figures: their frames, laid over the boxes the pages keep for them (src/widget.js)
+    this.widgets = new WidgetLayer(this.root, $('#wlayer'), {
+      scale: () => (this.px || PX_PER_PT) / PX_PER_PT,
+      text: (p) => this.files.get(p),
+      maxHeight: () => (this.layout.g ? this.layout.g.th : 550) * PX_PER_PT,
+      resized: (key) => this.widgetResized(key),
+      source: (ph, e) => this.widgetSource(ph, e),
+      allow: () => this.allowWidgets()
+    });
+    this.relayoutSoon = debounce(() => this.relayout(), 40);
+    // a figure, or a live figure's fallback, measured before its picture loaded: measured again
+    // once it has, or the pages kept it at no height and the text below ran into it
+    this.sheet.addEventListener('load', (e) => {
+      const late = (this.items || []).filter((it) => it.late && it.late.delete(e.target));
+      if (!late.length) return;
+      this.layout.invalidate(late);
+      this.relayoutSoon();
+    }, true);
     this.hist = [];
     this.redoStack = [];
     this.prefix = 'r0|';
@@ -345,6 +365,8 @@ class App {
     await this.waitForKaTeX();
     await Promise.race([this.loadFonts(), new Promise((r) => setTimeout(r, 2500))]);
     this.computePx();
+    // whether this project came from someone else, before its live figures are drawn
+    await this.linkInfo();
     this.rebuild();
     $('#boot').hidden = true;
     document.fonts && document.fonts.addEventListener && document.fonts.addEventListener('loadingdone', debounce(() => this.relayout(true), 200));
@@ -471,6 +493,63 @@ class App {
     if (this.prefs.marks) this.marksSoon();
     this.commentsSoon();
     this.emptyGhost();
+    this.widgets.place();
+  }
+
+  // ---- live figures ------------------------------------------------------------
+  // Live figures run at once in one's own projects. In a project from someone else (a link, a
+  // .zip, a git clone: markFromLink) they wait for its owner's click, kept per project like the
+  // shell escape it may allow. A widget cannot reach this page, its storage or the project, and
+  // its policy refuses every request, but Chromium lets any script open WebRTC connections, which
+  // no policy stops: a stranger's widget could tell its author who opens the document, and when.
+  widgetsAllowed() {
+    const k = this.name + '|' + this.main;
+    if (!this.linkCache || !this.linkCache.has(k)) {
+      // not known yet (another project of one's own, just switched to): drawn again once it is
+      if (!this.linkAsk) {
+        this.linkAsk = this.linkInfo().then(() => { this.linkAsk = null; if (this.widgetsAllowed()) { this.forceRender = true; this.rebuild(this.caretNow()); } });
+      }
+      return false;
+    }
+    const v = this.linkCache.get(k);
+    return !v || !!v.widgets;
+  }
+
+  async allowWidgets() {
+    const v = await this.linkInfo();
+    if (v && !v.widgets) { v.widgets = true; if (!this.noIdb) kvPut('link:' + this.name + '|' + this.main, v).catch(() => {}); }
+    this.forceRender = true;
+    this.rebuild(this.caretNow());
+  }
+
+  // the height a widget last asked for, so its box is drawn again at that size, not the default
+  widgetHeight(key, path) { return this.widgets.heights.get(key) || this.widgets.byPath.get(path) || 0; }
+
+  // a widget asked for another height: its boxes take it, and the blocks they are in are measured
+  // again (moving a box costs nothing: the frame is not in it)
+  widgetResized(key) {
+    const css = widgetCss(this.widgets.heights.get(key));
+    const touched = [];
+    for (const it of this.items || []) {
+      if (!it.widgets) continue;
+      let hit = false;
+      for (const ph of it.widgets) if (ph.dataset.w === key) { ph.classList.add('sized'); ph.style.height = css; hit = true; }
+      if (hit) touched.push(it);
+    }
+    if (!touched.length) return;
+    this.layout.invalidate(touched);
+    this.widgets.placeSoon();
+    this.relayoutSoon();
+  }
+
+  // the tab on a widget's frame: its command in the source popover, as for a figure; with Alt,
+  // its line in the source pane. The widget itself takes every other click.
+  widgetSource(ph, e) {
+    const info = atomOfEl(ph);
+    if (!info || info.s == null) return;
+    if (e.altKey) { this.reveal(info.f, info.s, true); return; }
+    this.disarm();
+    this.openAtom(ph, info);
   }
 
   // A document with no text on the page to type into (a new one, an empty file, a preamble
@@ -1031,7 +1110,7 @@ class App {
       this.ourSel = true;
       s.removeAllRanges(); s.addRange(r);
     }
-    this.toast('Press Backspace again to delete this ' + ({ math: 'equation', cite: 'citation', ref: 'reference', fn: 'footnote', img: 'figure', chip: 'command', raw: 'block' }[atom.kind] || 'item') + (atom.kind === 'br' || atom.kind === 'sp' ? '.' : ', or Enter to edit it.'), 1800);
+    this.toast('Press Backspace again to delete this ' + ({ math: 'equation', cite: 'citation', ref: 'reference', fn: 'footnote', img: 'figure', widget: 'live figure', chip: 'command', raw: 'block' }[atom.kind] || 'item') + (atom.kind === 'br' || atom.kind === 'sp' ? '.' : ', or Enter to edit it.'), 1800);
   }
   disarm() {
     if (this.armed && this.armed.el) this.armed.el.classList.remove('sel');
@@ -2028,7 +2107,7 @@ class App {
     const f = info.f;
     if (info.s == null) return;
     const src = this.src(f);
-    const kindName = { chip: 'Command source', raw: 'Source block', img: 'Figure source', url: 'Link source', verb: 'Verbatim source', logo: 'Command source', bib: 'Bibliography entry', mac: 'Macro call', rule: 'Rule' }[info.a.kind] || 'Source';
+    const kindName = { chip: 'Command source', raw: 'Source block', img: 'Figure source', widget: 'Live figure source', url: 'Link source', verb: 'Verbatim source', logo: 'Command source', bib: 'Bibliography entry', mac: 'Macro call', rule: 'Rule' }[info.a.kind] || 'Source';
     const p = this.makePop(el, 'pop-raw', kindName + (f !== this.main ? ' \u00B7 ' + f : ''));
     this.pop.anchorPos = { f, s: info.s, kind: info.a.kind };
     this.pop.returnCaret = { f, p: info.e, bias: 1 };
@@ -2433,7 +2512,7 @@ class App {
     const text = this.src(name);
     // a file written with \r\n line ends: CodeMirror joins its lines with them too, so offsets
     // in the pane are offsets in the file and no edit turns its line ends into \n
-    if (this.cm) { this.cm.setOption('lineSeparator', crlfOnly(text) ? '\r\n' : null); this.cm.setValue(text); this.cm.clearHistory(); this.cm.setOption('mode', /\.bib$/.test(name) ? 'text/plain' : 'stex'); }
+    if (this.cm) { this.cm.setOption('lineSeparator', crlfOnly(text) ? '\r\n' : null); this.cm.setValue(text); this.cm.clearHistory(); this.cm.setOption('mode', /\.(bib|html?)$/i.test(name) ? 'text/plain' : 'stex'); }
     else if (this.cmFallback) this.cmFallback.value = text;
     this.updateFileTabs();
   }
@@ -3472,7 +3551,8 @@ class App {
       this.saveSoon();
       // an added chapter or figure shows on the page only once the source names it
       const fig = [...blobs.keys()][0];
-      const use = onlyTex.length ? ' Write \\input{' + onlyTex[0].replace(/\.tex$/i, '') + '} where it goes.' : fig ? ' Write \\includegraphics{' + fig + '} where it goes.' : '';
+      const widget = [...texts.keys()].find((n) => /\.html?$/i.test(n));
+      const use = onlyTex.length ? ' Write \\input{' + onlyTex[0].replace(/\.tex$/i, '') + '} where it goes.' : widget ? ' Write \\rikuywidget{' + widget + '}{' + (fig || 'fallback.png') + '} where it goes (rikuy.sty, from Rikuy\'s sample/widget, defines it).' : fig ? ' Write \\includegraphics{' + fig + '} where it goes.' : '';
       this.toast('Added ' + [...texts.keys(), ...blobs.keys(), ...extra.keys()].join(', ') + ' to the project.' + use + skipNote, skipNote || use ? 9000 : undefined);
       return;
     }
@@ -4035,7 +4115,7 @@ class App {
     }
     const sheet = this.sheet;
     const html = '<!doctype html><html lang="' + (sheet.lang || 'en') + '"><head><meta charset="utf-8"><title>' + esc(this.name || 'paper') + '</title><style>' + css +
-      '\nbody{margin:0;background:#fff;overflow:visible;height:auto}#pages{display:block}.page{box-shadow:none;margin:0 auto;break-after:page;content-visibility:visible;contain:none}.page:last-child{break-after:auto}.has-err,.ghostp{outline:none}' +
+      '\nbody{margin:0;background:#fff;overflow:visible;height:auto}#pages{display:block}.page{box-shadow:none;margin:0 auto;break-after:page;content-visibility:visible;contain:none}.page:last-child{break-after:auto}.has-err,.ghostp{outline:none}.w-live .wfb{visibility:visible}' +
       '@media screen{#pages{display:flex;flex-direction:column;align-items:center;gap:16px;padding:16px 0;background:#DCE1E7}.page{box-shadow:0 1px 2px rgba(0,0,0,.2)}}</style></head><body>' +
       '<div class="sheet" lang="' + (sheet.lang || 'en') + '" style="' + (sheet.getAttribute('style') || '').replace(/"/g, '&quot;') + '"' + (sheet.dataset.font ? ' data-font="' + sheet.dataset.font + '"' : '') + '>' + clone.outerHTML + '</div>' +
       '<script>addEventListener("load",function(){setTimeout(function(){print()},500)})<\/script></body></html>';

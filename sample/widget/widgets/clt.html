@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Central limit theorem</title>
+<style>
+  html, body { margin: 0; background: transparent; }
+  body { color: #111; font: 13px/1.35 "Latin Modern Roman", "CMU Serif", Georgia, serif; }
+  #w { padding: 4px 2px 2px; }
+  canvas { display: block; width: 100%; }
+  .row { display: flex; align-items: center; gap: 10px; margin: 2px 34px 0 34px; }
+  .row label { font-style: italic; }
+  input[type=range] { flex: 1; margin: 0; accent-color: #3F6C99; }
+  output { min-width: 5.2em; font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+<div id="w">
+  <canvas id="c" role="img" aria-label="Histogram of the standardised mean, with the standard normal density"></canvas>
+  <div class="row">
+    <label for="n">n</label>
+    <input id="n" type="range" min="1" max="50" step="1" value="4">
+    <output id="v" for="n">n = 4</output>
+  </div>
+</div>
+<script>
+(function () {
+  'use strict';
+  var REPS = 4000, LO = -4, HI = 4, BINS = 32, YMAX = 0.9;
+  var cv = document.getElementById('c'), box = document.getElementById('w');
+  var slider = document.getElementById('n'), out = document.getElementById('v');
+
+  // The generator figures/clt.png was drawn with (make_fallback.py), so at n = 4 the widget
+  // shows that picture.
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  // Z_n = sqrt(n) (mean of n Exp(1) draws - 1), REPS times
+  function histogram(n) {
+    var r = mulberry32(2026), bw = (HI - LO) / BINS, cnt = new Array(BINS).fill(0);
+    for (var i = 0; i < REPS; i++) {
+      var s = 0;
+      for (var k = 0; k < n; k++) s -= Math.log(1 - r());
+      var b = Math.floor((Math.sqrt(n) * (s / n - 1) - LO) / bw);
+      if (b >= 0 && b < BINS) cnt[b]++;
+    }
+    return cnt.map(function (c) { return c / (REPS * bw); });
+  }
+
+  function draw() {
+    var n = +slider.value;
+    out.textContent = 'n = ' + n;
+    var w = cv.clientWidth || 400, h = Math.round(w * 0.46), dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); cv.style.height = h + 'px';
+    var g = cv.getContext('2d');
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    var L = 34, R = 10, T = 8, B = 24, pw = w - L - R, ph = h - T - B;
+    var X = function (x) { return L + (x - LO) / (HI - LO) * pw; };
+    var Y = function (y) { return T + ph - Math.min(y, YMAX) / YMAX * ph; };
+    var d = histogram(n), bw = (HI - LO) / BINS;
+    g.fillStyle = '#A9C1DA'; g.strokeStyle = '#5E83AA'; g.lineWidth = 0.8;
+    for (var b = 0; b < BINS; b++) {
+      if (!d[b]) continue;
+      var x0 = X(LO + b * bw), x1 = X(LO + (b + 1) * bw), y = Y(d[b]);
+      g.fillRect(x0, y, x1 - x0, T + ph - y);
+      g.strokeRect(x0 + 0.4, y + 0.4, x1 - x0 - 0.8, T + ph - y - 0.4);
+    }
+    g.beginPath();
+    for (var k = 0; k <= 160; k++) {
+      var x = LO + k * (HI - LO) / 160, f = Math.exp(-x * x / 2) / Math.sqrt(2 * Math.PI);
+      if (k) g.lineTo(X(x), Y(f)); else g.moveTo(X(x), Y(f));
+    }
+    g.strokeStyle = '#B03A2E'; g.lineWidth = 1.6; g.stroke();
+    g.strokeStyle = '#222'; g.lineWidth = 1; g.fillStyle = '#222';
+    g.beginPath(); g.moveTo(L, T); g.lineTo(L, T + ph + 0.5); g.lineTo(L + pw, T + ph + 0.5); g.stroke();
+    g.font = '12px "Latin Modern Roman", "CMU Serif", Georgia, serif';
+    g.textAlign = 'center'; g.textBaseline = 'top';
+    for (var t = LO; t <= HI; t++) { g.beginPath(); g.moveTo(X(t), T + ph); g.lineTo(X(t), T + ph + 4); g.stroke(); g.fillText(String(t).replace('-', '−'), X(t), T + ph + 6); }
+    g.textAlign = 'right'; g.textBaseline = 'middle';
+    for (var v = 0; v <= YMAX + 1e-9; v += 0.2) { g.beginPath(); g.moveTo(L - 4, Y(v)); g.lineTo(L, Y(v)); g.stroke(); g.fillText(v.toFixed(1), L - 6, Y(v)); }
+    g.textAlign = 'left'; g.textBaseline = 'top'; g.fillStyle = '#B03A2E';
+    g.fillText('N(0, 1)', X(1.35), Y(0.3));
+    // the page sizes this frame to what the widget needs
+    parent.postMessage({ rikuy: 'height', px: Math.ceil(box.getBoundingClientRect().height) }, '*');
+  }
+
+  slider.addEventListener('input', draw);
+  window.addEventListener('resize', draw);
+  draw();
+})();
+</script>
+</body>
+</html>

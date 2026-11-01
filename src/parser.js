@@ -26,7 +26,7 @@ const SIG = {
   ref: 'm', eqref: 'm', pageref: 'm', cref: 'm', Cref: 'm', autoref: 'm', nameref: 'm', vref: 'm', Vref: 'm',
   labelcref: 'm', label: 'm',
   url: 'v', href: 'vm', hyperref: 'om', hypertarget: 'mm', hyperlink: 'mm', nolinkurl: 'v',
-  includegraphics: 'om', caption: 'om', captionof: 'mom', subcaption: 'om',
+  includegraphics: 'om', rikuywidget: 'omm', caption: 'om', captionof: 'mom', subcaption: 'om',
   item: 'o', title: 'om', author: 'om', date: 'm', and: '',
   vspace: 'm', hspace: 'm', setlength: 'mm', addtolength: 'mm', setcounter: 'mm', addtocounter: 'mm',
   stepcounter: 'm', refstepcounter: 'm', newcounter: 'mo',

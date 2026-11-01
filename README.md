@@ -36,6 +36,10 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   you can put your own there.
 - **Projects.** Folders of files, zip import and export, the PDF beside the page with SyncTeX
   both ways.
+- **Live figures.** `\rikuywidget{plot.html}{plot.png}` from `rikuy.sty` (in `sample/widget/`,
+  copied beside the document) runs a self contained HTML widget, sliders and all, on the typeset
+  page, sandboxed; every TeX, Overleaf's included, prints the PNG. Widgets in a document from
+  someone else run after one click.
 
 ## How close to a desktop TeX Live
 

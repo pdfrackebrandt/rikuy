@@ -2,6 +2,8 @@
 // label, citations with no .bib entry, duplicate labels, unclosed environments and braces,
 // missing files, math KaTeX cannot read, commands Rikuy shows as source.
 
+import { widgetPath } from './widget.js';
+
 // Comments blanked out (same length, so positions stay true) and verbatim bodies hidden.
 function scrub(src) {
   let out = src.replace(/(^|[^\\])(%.*)$/gm, (m, a, c) => a + ' '.repeat(c.length));
@@ -17,7 +19,11 @@ function* figureRefs(s) {
   const img = /\\includegraphics\*?\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}/g;
   let m;
   while ((m = img.exec(s))) yield { n: m[1].trim(), p: m.index };
+  // a live figure's fallback is the picture TeX prints (rikuy.sty)
+  const w = new RegExp(WIDGET, 'g');
+  while ((m = w.exec(s))) yield { n: m[2].trim(), p: m.index };
 }
+const WIDGET = /\\rikuywidget\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}\s*\{([^}]*)\}/;
 
 // the figures the .tex files ask for that the project does not have, by the name as written
 export function missingFigures(o) {
@@ -116,6 +122,18 @@ export function findProblems(o) {
     for (const { n, p } of figureRefs(s)) {
       const dirs = ['', ...(o.graphicsPath || [])];
       if (!dirs.some((d) => has(d + n, FIG_EXTS))) add('warn', f, p, 'Image “' + n + '” is not in the project.');
+    }
+  }
+  // live figures: rikuy.sty defines the command for TeX, and the page runs the widget's file
+  const usesRikuy = [...scrubbed.values()].some((s) => /\\usepackage\s*(?:\[[^\]]*\])?\s*\{[^}]*\brikuy\b[^}]*\}/.test(s));
+  const hasSty = names.some((k) => k === 'rikuy.sty' || k.endsWith('/rikuy.sty'));
+  let told = false;
+  for (const [f, s] of scrubbed) {
+    const re = new RegExp(WIDGET, 'g');
+    let m;
+    while ((m = re.exec(s))) {
+      if (!told && !(usesRikuy && hasSty)) { told = true; add('error', f, m.index, '\\rikuywidget needs \\usepackage{rikuy} and rikuy.sty in the project (sample/widget has it); without them TeX stops here.', 'rikuy.sty'); }
+      if (!widgetPath(o.files, o.main, m[1])) add('warn', f, m.index, 'Widget “' + m[1].trim() + '” is not in the project; the page shows its fallback image.');
     }
   }
   // math and unknown commands, reported by the renderer and the model

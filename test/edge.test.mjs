@@ -16,6 +16,7 @@ const cases = [
   '\\begin{enumerate}[label=(\\roman*)]\\item one\\item two\\end{enumerate}',
   '\\begin{tabular}{|l|c|}\\hline a & b \\\\ \\multicolumn{2}{c}{wide}\\\\\\hline\\end{tabular}',
   'x\\footnote{} y \\textbf{} z',
+  'a \\rikuywidget b \\rikuywidget[width=1cm]{} c \\rikuywidget{../../x.html}{} \\rikuywidget{w.html}{f.png',
   '\\documentclass{article}\\usepackage[ngerman]{babel}\\begin{document}Gr"u"se "`Hallo"\' Stra"se\\end{document}',
   ''
 ];
