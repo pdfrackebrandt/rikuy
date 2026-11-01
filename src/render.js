@@ -10,7 +10,7 @@ let itemSeq = 1;
 
 const KATEX_DEFAULT_MACROS = {
   '\\mathbbm': '\\mathbb', '\\mathds': '\\mathbb', '\\bbm': '\\mathbb', '\\nicefrac': '\\frac',
-  '\\tfrac': '\\tfrac', '\\eqqcolon': '=\\vcentcolon', '\\T': '^{\\top}', '\\middlebar': '\\middle|',
+  '\\eqqcolon': '=\\vcentcolon', '\\T': '^{\\top}', '\\middlebar': '\\middle|',
   // \mleft ... \mright (mleftright package): brackets without the extra space before them
   '\\mleft': '\\left', '\\mright': '\\right',
   // amsmath and mathdots symbols KaTeX lacks

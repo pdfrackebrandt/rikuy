@@ -119,6 +119,19 @@ def load_doc(page, files, main='main.tex'):
 
 
 
+def default_macros(page):
+    """The math the page knows without a definition renders: \\tfrac was once mapped to itself,
+    so KaTeX expanded it until its limit and every formula with it showed as an error."""
+    doc = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nHalf is $\\tfrac{1}{2}$, so\n'
+           '\\[\\begin{aligned} a &= \\tfrac{1}{3} + \\nicefrac{1}{6} \\\\ b &= \\mathbbm{R}\\end{aligned}\\]\nAfter.\n\\end{document}\n')
+    load_doc(page, doc)
+    page.wait_for_timeout(600)
+    page.evaluate('window.rikuy.refreshNav()')
+    probs = page.evaluate("(window.rikuy.problems || []).filter((x) => /Math error/.test(x.msg)).map((x) => x.msg)")
+    n = page.evaluate("document.querySelectorAll('#pages .katex').length")
+    check('\\tfrac, \\nicefrac and \\mathbbm render without a math error', not probs and n >= 2, (probs, n))
+
+
 def hidden_deletes(page):
     """One Backspace never removes what the page does not show: at the start of a theorem's body
     the browser names a range from the paragraph's end, and a letter's \\date and \\subject sit
@@ -579,6 +592,7 @@ def run():
         edges(page, errors)
         popovers(page)
         hidden_deletes(page)
+        default_macros(page)
 
         check('no console errors', not errors, errors[:5])
         browser.close()
