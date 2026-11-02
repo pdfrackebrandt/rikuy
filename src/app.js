@@ -1722,7 +1722,7 @@ class App {
     let fieldMacros = [];
     try { fieldMacros = Object.keys(mf.macros).filter((k) => /^[A-Za-z]+$/.test(k) && !canon[k]); } catch (e) { fieldMacros = Object.keys(plain); }
     const tallMacros = new Set(Object.entries(docMacros).filter(([, v]) => isTallDef(v)).map(([k]) => k));
-    const optMacros = new Set((this.renderer.optMacros || []).map(([k]) => String(k).replace(/^\\/, '')));
+    const optMacros = new Set((this.renderer.optMacros || []).filter(([, v]) => v.opt).map(([k]) => String(k).replace(/^\\/, '')));
     const pre = this.src(this.main).split(/\\begin\s*\{document\}/)[0];
     const decimalComma = /^(de|fr|es)$/.test((this.model && this.model.opts.lang) || '') && !/\\usepackage\s*(\[[^\]]*\])?\s*\{[^}]*\b(icomma|ziffer|ncccomma)\b/.test(pre);
     const D = makeDialect({ display: !!opts.display, ops: canon, operators, fieldMacros, tallMacros, optMacros });
@@ -1874,7 +1874,7 @@ class App {
     // Brackets in the source that are smaller than what they hold: offer Word's sizing.
     const docMacros = this.mlMacros();
     const tall = tallTest(display, new Set(Object.entries(docMacros).filter(([, v]) => isTallDef(v)).map(([k]) => k)));
-    const optNames = new Set((this.renderer.optMacros || []).map(([k]) => String(k).replace(/^\\/, '')));
+    const optNames = new Set((this.renderer.optMacros || []).filter(([, v]) => v.opt).map(([k]) => String(k).replace(/^\\/, '')));
     const fit = fitBrackets(ta.value, tall, optNames);
     if (fit.count) {
       const note = document.createElement('div');

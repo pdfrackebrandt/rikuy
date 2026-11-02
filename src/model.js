@@ -420,8 +420,12 @@ class Builder {
     if (nd.def && nd.def.kind === 'cmd') {
       const d = nd.def;
       this.textMacros.set(d.name, { nargs: d.nargs, dflt: d.dflt, body: d.body });
-      if (d.dflt == null) this.mathMacros['\\' + d.name] = d.body;
-      else this.mathMacros['\\' + d.name] = { opt: true, nargs: d.nargs, dflt: d.dflt, body: d.body };
+      // KaTeX counts a string macro's arguments as #1, #2, ... up to the first one missing, so a body
+      // that skips one (\newcommand{\second}[2]{#2}) would take none: those expand here instead
+      let seen = 0;
+      while (d.body.replace(/##/g, '').includes('#' + (seen + 1))) seen++;
+      if (d.dflt == null && seen === d.nargs) this.mathMacros['\\' + d.name] = d.body;
+      else this.mathMacros['\\' + d.name] = { opt: d.dflt != null, nargs: d.nargs, dflt: d.dflt, body: d.body };
     } else if (nd.def && nd.def.kind === 'let') {
       this.mathMacros['\\' + nd.def.name] = nd.def.body;
     } else if (nd.def && nd.def.kind === 'env') {
@@ -1598,7 +1602,9 @@ class Builder {
       if (a) out.push(...this.inl(a.nodes, ctx, fns));
       return false;
     }
-    if (INVIS.has(name) || nd.def) return false;
+    // vertical space inside a line (\title{\vspace{-1.5em}...}, a box's \smallskip) has no width: TeX
+    // ends the paragraph or ignores it, and the page shows nothing either
+    if (INVIS.has(name) || nd.def || name === 'vspace' || name === 'smallskip' || name === 'medskip' || name === 'bigskip') return false;
     if (name === 'marginpar' || name === 'todo') {
       acc.flush();
       const a = nd.args[1];

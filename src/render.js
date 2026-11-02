@@ -58,8 +58,10 @@ export class Renderer {
           let k = after;
           const args = [];
           while (tex[k] === ' ') k++;
-          if (tex[k] === '[') { const e = tex.indexOf(']', k); args.push(tex.slice(k + 1, e)); k = e + 1; } else args.push(M.dflt);
-          for (let n = 1; n < M.nargs; n++) {
+          if (M.opt) {
+            if (tex[k] === '[') { const e = tex.indexOf(']', k); args.push(tex.slice(k + 1, e)); k = e + 1; } else args.push(M.dflt);
+          }
+          for (let n = M.opt ? 1 : 0; n < M.nargs; n++) {
             while (tex[k] === ' ') k++;
             if (tex[k] === '{') {
               let d = 0, j = k;

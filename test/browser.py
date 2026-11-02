@@ -132,6 +132,22 @@ def default_macros(page):
     check('\\tfrac, \\nicefrac and \\mathbbm render without a math error', not probs and n >= 2, (probs, n))
 
 
+def skipped_args(page):
+    """A macro whose body skips an argument (\\newcommand{\\second}[2]{#2}) renders: KaTeX counts a
+    string macro's arguments only up to the first one missing, so it took none and showed #2 as an
+    error. Vertical space inside a title or a line (\\vspace, \\smallskip) shows nothing, not its length."""
+    doc = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\newcommand{\\nv}[2]{#2}\n\\newcommand{\\pick}[3]{#3+#1}\n'
+           '\\title{\\vspace{-1.5em}\\textbf{Demand}}\n\\begin{document}\n\\maketitle\n'
+           'Shares are $\\nv{b1}{0.50}$ and $\\pick{x}{y}{z}$.\\smallskip{} After.\n\\end{document}\n')
+    load_doc(page, doc)
+    page.wait_for_timeout(600)
+    page.evaluate('window.rikuy.refreshNav()')
+    probs = page.evaluate("(window.rikuy.problems || []).filter((x) => x.sev !== 'info' || /smallskip|vspace/.test(x.msg)).map((x) => x.msg)")
+    text = page.evaluate("document.getElementById('pages').innerText")
+    check('a macro that skips an argument renders, and \\vspace or \\smallskip in a line shows nothing',
+          not probs and '0.50' in text and 'z+x' in text.replace(' ', '') and '1.5em' not in text and 'Demand' in text, (probs, text[:200]))
+
+
 def hidden_deletes(page):
     """One Backspace never removes what the page does not show: at the start of a theorem's body
     the browser names a range from the paragraph's end, and a letter's \\date and \\subject sit
@@ -593,6 +609,7 @@ def run():
         popovers(page)
         hidden_deletes(page)
         default_macros(page)
+        skipped_args(page)
 
         check('no console errors', not errors, errors[:5])
         browser.close()
