@@ -23,22 +23,32 @@ export function authFor(url, o) {
   return { username: userFor(url, o), password: o.token };
 }
 
-// The token the Git panel fills in for a remote: the one kept for its host. The single token of
-// earlier versions (prefs.gitToken) is offered only for a remote the user set up (own), never
-// for one that came with an opened project.
-export function savedToken(prefs, url, own) {
+// The token the Git panel fills in for a remote: the one kept for its host, else the single
+// token of earlier versions (prefs.gitToken). Only for a remote the user set up or one whose
+// origin is not recorded (offer); never for one that came with an opened project.
+export function savedToken(prefs, url, offer) {
   const k = remoteKey(url);
-  if (!k || !own) return '';
+  if (!k || !offer) return '';
   return (prefs.gitTokens && prefs.gitTokens[k]) || prefs.gitToken || '';
 }
 
-// Keep what the token field holds for this remote's host (an empty field forgets it). The old
-// single token is gone once it is kept for a host, or once the user empties the field it filled.
-export function keepToken(prefs, url, token, shown) {
+// Before a push, pull or clone: once the user replaces or empties the field the old single token
+// filled, it is gone, so no other host is offered it.
+export function dropReplaced(prefs, token, shown) {
+  if (prefs.gitToken && shown === prefs.gitToken && token !== shown) delete prefs.gitToken;
+}
+
+// After one worked: what the field held is kept for that host (emptying a filled field forgets
+// it). The old single token moves only to a host that asked for it and accepted it (accepted:
+// isomorphic-git's onAuthSuccess), so a first pull from another host does not take it.
+export function keepToken(prefs, url, token, shown, accepted) {
   const k = remoteKey(url);
   if (!k) return;
+  if (token && token === prefs.gitToken) {
+    if (!accepted) return;
+    delete prefs.gitToken;
+  }
   const all = Object.assign({}, prefs.gitTokens);
-  if (token) all[k] = token; else delete all[k];
+  if (token) all[k] = token; else if (shown) delete all[k];
   prefs.gitTokens = all;
-  if (prefs.gitToken && (token ? token === prefs.gitToken : shown === prefs.gitToken)) delete prefs.gitToken;
 }

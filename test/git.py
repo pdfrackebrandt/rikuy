@@ -1,8 +1,9 @@
 """Git: a project becomes a repository in the browser, commits, history, compare and restore,
 branches, push and pull over smart HTTP (a local git http-backend), .zip with .git out and in,
-and clone. Access tokens are kept per host, the old single token moves to the first remote of
-the user's own, and a remote that came in an opened .zip's .git/config (its url, pushurl or
-http.corsProxy) never receives a token."""
+and clone. Access tokens are kept per host; the old single token moves only to a host that asks
+for it and takes it, is dropped when the user replaces it, and is still offered for a clone made
+before remotes were recorded; a remote that came in an opened .zip's .git/config (its url,
+pushurl or http.corsProxy) never receives a token."""
 import os, sys, subprocess, tempfile, shutil, time, json, zipfile, io, traceback, re, http.server, threading
 sys.path.insert(0, os.path.dirname(__file__))
 # the test page (https://rikuy.test) talks to a git server on 127.0.0.1, which Chrome's local
@@ -18,6 +19,10 @@ subprocess.run(['git', 'init', '-q', '--bare', '-b', 'main', ROOT + '/paper.git'
 subprocess.run(['git', '--git-dir', ROOT + '/paper.git', 'config', 'http.receivepack', 'true'], check=True)
 git_server.start(ROOT, PORT)
 URL = 'http://127.0.0.1:%d/paper.git' % PORT
+# the same repositories, private: Basic credentials x-access-token and the old single token
+git_server.start(ROOT, 8812, auth='x-access-token:DUMMY-OLD-TOKEN')
+PRIVATE = 'http://127.0.0.1:8812/paper.git'
+PREFS = "JSON.parse(localStorage.getItem('galley.prefs.v1'))"
 GITSTAT = "document.getElementById('nt-gcount').textContent"
 
 # a stranger's git server: every request is logged with its Authorization header and refused
@@ -153,9 +158,9 @@ try:
         print('  toast:', page.evaluate("[...document.querySelectorAll('.toast, #toast')].map(e => e.textContent).join(' | ')"))
         log = subprocess.run(['git', '--git-dir', ROOT + '/paper.git', 'log', '--format=%s|%an', 'main'], capture_output=True, text=True).stdout.split('\n')
         check('push reaches the server with both commits', log[:2] == ['Return trip|Ada Lovelace', 'First draft|Ada Lovelace'], log)
-        kept = page.evaluate("JSON.parse(localStorage.getItem('galley.prefs.v1'))")
-        check('the old single token now belongs to the host of the remote it was used with', kept.get('gitTokens') == {'http://127.0.0.1:%d' % PORT: 'DUMMY-OLD-TOKEN'} and 'gitToken' not in kept,
-              (kept.get('gitTokens'), 'gitToken' in kept))
+        kept = page.evaluate(PREFS)
+        check('a push to a host that never asked for the old token leaves it where it was', kept.get('gitToken') == 'DUMMY-OLD-TOKEN' and not kept.get('gitTokens'),
+              (kept.get('gitTokens'), kept.get('gitToken')))
 
         # a commit made elsewhere, then pull
         work = tempfile.mkdtemp(prefix='gitwork-')
@@ -164,9 +169,13 @@ try:
         open(work + '/main.tex', 'w', encoding='utf8').write(t)
         subprocess.run(['git', '-C', work, '-c', 'user.name=Bob', '-c', 'user.email=bob@example.org', 'commit', '-qam', 'From the desktop'], check=True)
         subprocess.run(['git', '-C', work, 'push', '-q', 'origin', 'main'], check=True)
+        page.fill('.git-remote input[aria-label="Access token"]', 'DUMMY-NEW-TOKEN')
         page.click('.git-remote button:has-text("Pull")')
         page.wait_for_timeout(4000)
         check('pull brings the remote commit into the editor', 'remote trip' in src(page), src(page)[:200])
+        kept = page.evaluate(PREFS)
+        check('a token typed over the old one replaces it everywhere and is kept for its host', kept.get('gitTokens') == {'http://127.0.0.1:%d' % PORT: 'DUMMY-NEW-TOKEN'} and 'gitToken' not in kept,
+              (kept.get('gitTokens'), kept.get('gitToken')))
         refresh(page)
         check('pulled commit is in the history', commits(page)[:1] == ['From the desktop'], commits(page))
         page.screenshot(path=SHOTS + '/git-panel.png')
@@ -239,6 +248,27 @@ try:
         check('clone loads the repository files', 'main.tex' in files and 'remote trip' in src(page), files)
         info = page.evaluate('async () => { const v = await window.rikuy.linkInfo(); return v && [v.origin, v.allowed]; }')
         check('a cloned repository compiles with restricted shell escape until allowed', info == ['git', False], info)
+
+        # A clone made before remotes were recorded (as this one, cloned without the form) of a
+        # private repository, by a user of the old single token: the token is offered as before,
+        # with no word of an opened project, and moves to the host once the host takes it.
+        page.evaluate("indexedDB.deleteDatabase('galley-git')")
+        page.evaluate("""async (url) => { const g = window.rikuy; g.prefs.gitTokens = {}; g.prefs.gitToken = 'DUMMY-OLD-TOKEN'; g.prefs.gitProxy = '';
+          const G = await g.loadGit(); const files = await G.clone(G.dirFor('paper'), url, { corsProxy: '', token: 'DUMMY-OLD-TOKEN', remote: url });
+          await g.openRepoFiles('paper', files); }""", PRIVATE)
+        page.wait_for_timeout(1500)
+        open_remote(page)
+        note = page.evaluate("[...document.querySelectorAll('.git-remote .git-note')].map(e => e.textContent).join(' ')")
+        check('a clone from before the record is offered the token it used, with no word of an opened project', page.input_value(TOKEN) == 'DUMMY-OLD-TOKEN' and page.locator('.git-unknown').count() == 1 and 'project you opened' not in note,
+              (page.input_value(TOKEN), note[:200]))
+        page.click('.git-remote button:has-text("Pull")')
+        page.wait_for_timeout(3000)
+        kept = page.evaluate(PREFS)
+        check('the private host takes it, and the old token now belongs to that host only', kept.get('gitTokens') == {'http://127.0.0.1:8812': 'DUMMY-OLD-TOKEN'} and 'gitToken' not in kept,
+              (kept.get('gitTokens'), kept.get('gitToken'), page.evaluate("document.getElementById('toast').innerText")))
+        open_remote(page)
+        check('and the remote is the user\'s from then on', page.input_value(TOKEN) == 'DUMMY-OLD-TOKEN' and page.locator('.git-unknown, .git-foreign').count() == 0,
+              (page.input_value(TOKEN), page.locator('.git-unknown, .git-foreign').count()))
         errs = [e for e in errors + errors2 if 'favicon' not in e]
         check('no page errors', not errs, errs[:5])
         browser.close()

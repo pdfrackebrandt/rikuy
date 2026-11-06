@@ -1,6 +1,6 @@
 // Git access tokens kept per remote host and handed only to it (src/gitauth.js).
 import assert from 'node:assert/strict';
-import { remoteKey, authFor, savedToken, keepToken } from '../src/gitauth.js';
+import { remoteKey, authFor, savedToken, keepToken, dropReplaced } from '../src/gitauth.js';
 
 let n = 0;
 const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
@@ -37,25 +37,44 @@ ok('the token filled in is the one kept for the host, and only for a remote of t
   assert.equal(savedToken(prefs, '', true), '');
 });
 
-ok('the old single token goes to the first remote of the user\'s it is used with, then is gone', () => {
+ok('the old single token moves to the first host that asks for it and takes it, then is gone', () => {
   const prefs = { gitToken: 'OLD' };
   assert.equal(savedToken(prefs, 'https://github.com/you/paper.git', true), 'OLD');
   assert.equal(savedToken(prefs, 'https://evil.example/paper.git', false), '', 'never for a remote from an opened project');
-  keepToken(prefs, 'https://github.com/you/paper.git', 'OLD', 'OLD');
+  // a pull from a host that never asked for a token (a public repository elsewhere) leaves it
+  keepToken(prefs, 'https://gitlab.com/someone/public.git', 'OLD', 'OLD', false);
+  assert.deepEqual(prefs, { gitToken: 'OLD' });
+  keepToken(prefs, 'https://github.com/you/paper.git', 'OLD', 'OLD', true);
   assert.deepEqual(prefs, { gitTokens: { 'https://github.com': 'OLD' } });
   assert.equal(savedToken(prefs, 'https://gitlab.com/you/paper.git', true), '', 'not offered to a second host');
 });
 
-ok('a token typed for one host leaves the others, and the old token, alone', () => {
+ok('replacing or emptying the field the old token filled drops it at once', () => {
+  let prefs = { gitToken: 'OLD' };
+  dropReplaced(prefs, 'NEW', 'OLD');
+  assert.deepEqual(prefs, {}, 'replaced: no other host is offered the old one');
+  keepToken(prefs, 'https://github.com/you/paper.git', 'NEW', 'OLD', false);
+  assert.deepEqual(prefs, { gitTokens: { 'https://github.com': 'NEW' } }, 'the new one is kept once the pull or push worked');
+  prefs = { gitToken: 'OLD' };
+  dropReplaced(prefs, '', 'OLD');
+  assert.deepEqual(prefs, {});
+  prefs = { gitToken: 'OLD', gitTokens: { 'https://github.com': 'GH' } };
+  dropReplaced(prefs, 'OLD', 'OLD');
+  dropReplaced(prefs, 'X', 'GH');
+  dropReplaced(prefs, 'X', '');
+  assert.deepEqual(prefs, { gitToken: 'OLD', gitTokens: { 'https://github.com': 'GH' } }, 'kept while it is what the field shows, or it never filled the field');
+});
+
+ok('a token typed for one host leaves the others alone', () => {
   const prefs = { gitToken: 'OLD', gitTokens: { 'https://github.com': 'GH' } };
-  keepToken(prefs, 'https://gitlab.com/you/paper.git', 'GL', '');
+  keepToken(prefs, 'https://gitlab.com/you/paper.git', 'GL', '', false);
   assert.deepEqual(prefs, { gitToken: 'OLD', gitTokens: { 'https://github.com': 'GH', 'https://gitlab.com': 'GL' } });
-  keepToken(prefs, 'https://github.com/you/paper.git', '', 'GH');
+  keepToken(prefs, 'https://github.com/you/paper.git', '', 'GH', false);
   assert.deepEqual(prefs, { gitToken: 'OLD', gitTokens: { 'https://gitlab.com': 'GL' } }, 'emptying the field forgets that host\'s token');
-  keepToken(prefs, 'https://github.com/you/paper.git', '', 'OLD');
-  assert.deepEqual(prefs, { gitTokens: { 'https://gitlab.com': 'GL' } }, 'emptying the field the old token filled forgets it');
-  keepToken(prefs, 'git@github.com:you/paper.git', 'X', '');
-  assert.deepEqual(prefs, { gitTokens: { 'https://gitlab.com': 'GL' } }, 'nothing kept for an address that is not http(s)');
+  keepToken(prefs, 'https://bitbucket.org/you/paper.git', '', '', false);
+  assert.deepEqual(prefs.gitTokens, { 'https://gitlab.com': 'GL' }, 'an empty field that showed nothing changes nothing');
+  keepToken(prefs, 'git@github.com:you/paper.git', 'X', '', true);
+  assert.deepEqual(prefs.gitTokens, { 'https://gitlab.com': 'GL' }, 'nothing kept for an address that is not http(s)');
 });
 
 console.log(n + '/' + n + ' passed');
