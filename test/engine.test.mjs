@@ -1,6 +1,7 @@
 // The TeX worker's own checks, run in node with no TeX tree (tex/engine.js in a vm, with
 // shell.js, tools.js and fflate, and stand-ins for the network and IndexedDB): a mirror pack is
-// kept and used only if its bytes match the hash its index names it by.
+// kept and used only if its bytes match the hash its index names it by, and a compile writes
+// only inside its project's folder.
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import fs from 'node:fs';
@@ -92,6 +93,23 @@ await ok('a pack planted in the cache under a real pack\'s name is refused and f
   mirror('https://rikuy.test/mirror/');
   await ctx.mirrorPackAsync(0);
   assert.ok(same(run('mirrorPacks.get(0)'), real));
+});
+
+await ok('a project file name cannot leave the project\'s folder', async () => {
+  for (const [p, want] of [['main.tex', 'main.tex'], ['/main.tex', 'main.tex'], ['chapters/intro.tex', 'chapters/intro.tex'], ['a..b/c...tex', 'a..b/c...tex'], ['./x.tex', './x.tex']]) assert.equal(ctx.projectPath(p), want, p);
+  for (const bad of ['../x.tex', 'a/../../texlive/texmf-dist/tex/latex/base/article.cls', '/../x', 'a/..', '..', 'a\u0000.tex']) assert.throws(() => ctx.projectPath(bad), /leaves the project/, JSON.stringify(bad));
+  const P = '/home/web_user/project/';
+  assert.equal(ctx.projectDir('paper|main.tex'), P + 'paper_main.tex');
+  for (const id of ['.', '..', '...']) assert.notEqual(ctx.projectDir(id), P + id, id);
+  // a compile with such a name is refused before anything is written or cleaned
+  const touched = [];
+  run('M = null; MAIN = null;');
+  ctx.__fs = new Proxy({}, { get: (t, k) => (...a) => { touched.push(k); return null; } });
+  run('M = MAIN = { FS: __fs };');
+  const job = (files, main = 'main.tex') => ({ id: 'x', project: 'p|main.tex', files: files.map((path) => ({ path, data: 'x' })), main });
+  await assert.rejects(ctx.compile(job(['main.tex', '../../../texlive/texmf-dist/tex/latex/base/article.cls'])), /leaves the project/);
+  await assert.rejects(ctx.compile(job(['main.tex'], '../main.tex')), /leaves the project/);
+  assert.deepEqual(touched, []);
 });
 
 console.log(n + '/' + n + ' passed');

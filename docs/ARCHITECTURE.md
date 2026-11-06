@@ -254,7 +254,8 @@ files and lines; `PdfView.show(pdf, synctex)` draws with PDF.js; past 5 minutes 
 ## 7. The compile loop: `compile(job)` in `tex/engine.js`
 
 1. **Folder.** `projectDir(job.project)`, stable per project (`touchProject` keeps three); `KEEP`
-   files (aux, bbl, toc, idx…) and `ASY_OUT` survive unless `job.clean`.
+   files (aux, bbl, toc, idx…) and `ASY_OUT` survive unless `job.clean`. Every file name and the
+   main file pass `projectPath()` first (no `..` segment, no NUL), whatever the page cleaned.
 2. **Engine.** `pickEngine()`: the menu, else `% !TeX program = …`, else packages (LuaTeX ones or
    `\directlua`: lualatex; XeTeX ones, fontspec family, PSTricks: xelatex), else pdflatex.
    `ENGINES` holds the command lines: TeX Live's `-progname`, `-synctex=1`, `-recorder`,
