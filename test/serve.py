@@ -24,8 +24,10 @@ class H(http.server.BaseHTTPRequestHandler):
             body = open(SMOKE, 'rb').read()
             ctype = 'text/html; charset=utf-8'
         else:
-            f = os.path.normpath(os.path.join(ROOT, path.lstrip('/')))
-            if not f.startswith(os.path.normpath(ROOT)) or not os.path.isfile(f):
+            # inside ROOT itself: a plain prefix test let /../dist-old/x reach a sibling folder
+            root = os.path.abspath(ROOT)
+            f = os.path.normpath(os.path.join(root, path.lstrip('/')))
+            if os.path.commonpath([root, f]) != root or not os.path.isfile(f):
                 self.send_response(404); self.send_header('Content-Security-Policy', CSP); self.end_headers(); return
             body = open(f, 'rb').read()
             ctype = TYPES.get(os.path.splitext(f)[1], 'application/octet-stream')

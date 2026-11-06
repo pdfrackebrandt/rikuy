@@ -870,7 +870,19 @@ async function runBiber(cwd, base, files, sub) {
 
 // Projects keep their intermediate files (aux, bbl, toc) between compiles under their own dir;
 // the few most recent projects stay, older ones are dropped.
-function projectDir(id) { return PROJECT + '/' + String(id || 'doc').replace(/[^\w.-]+/g, '_'); }
+function projectDir(id) {
+  const name = String(id || 'doc').replace(/[^\w.-]+/g, '_');
+  // "." or ".." would be the projects' folder or its parent, which a clean build empties
+  return PROJECT + '/' + (/^\.+$/.test(name) ? '_' + name : name);
+}
+// A project's file name, as the worker writes it under the project's folder. The page sends only
+// names it has cleaned (share.js cleanPath); the worker refuses any other on its own, so no caller
+// can write into the tree or another project with ../, or cut a name short with a NUL.
+function projectPath(p) {
+  const rel = String(p ?? '').replace(/^\/+/, '');
+  if (rel.includes('\0') || rel.split('/').includes('..')) throw new Error('A file name leaves the project: ' + JSON.stringify(String(p)).slice(0, 200));
+  return rel;
+}
 const recent = [];
 const bibSigs = new Map(); // project dir -> signature of its .bib files when bibtex/biber last ran
 function touchProject(dir) {
@@ -1172,6 +1184,9 @@ async function asyFigures(base, dir, runs) {
 }
 
 async function compile(job) {
+  // every name is checked before anything is written or cleaned
+  for (const f of job.files) projectPath(f.path);
+  projectPath(job.main);
   const t0 = performance.now();
   readLog = new Set();
   netBytes = 0;
@@ -1183,7 +1198,7 @@ async function compile(job) {
   rmTree(dir, job.clean ? null : (p) => KEEP.test(p) || ASY_OUT.test(p));
   if (job.clean) asySigs.delete(dir);
   for (const f of job.files) {
-    const p = dir + '/' + f.path.replace(/^\/+/, '');
+    const p = dir + '/' + projectPath(f.path);
     mkdirp(p.slice(0, p.lastIndexOf('/')));
     M.FS.writeFile(p, f.data);
   }
@@ -1442,9 +1457,9 @@ onmessage = async ({ data }) => {
       await booting;
       const j = data.shell;
       for (const k of j.tools || []) await loadTool(k);
-      const dir = PROJECT + '/shell-' + (j.id || 'x');
+      const dir = projectDir('shell-' + (j.id || 'x'));
       mkdirp(dir);
-      for (const f of j.files || []) { const p = dir + '/' + f.path; mkdirp(p.slice(0, p.lastIndexOf('/'))); M.FS.writeFile(p, f.data); }
+      for (const f of j.files || []) { const p = dir + '/' + projectPath(f.path); mkdirp(p.slice(0, p.lastIndexOf('/'))); M.FS.writeFile(p, f.data); }
       SHELL.reset();
       // asy as asymptote.sty's figures run it: a second TeX for its labels, answered ahead
       if (j.argv[0] === 'asy' && texPool.length < 2) await addTeXInstance().catch(() => {});
