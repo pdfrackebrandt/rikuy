@@ -1,0 +1,2 @@
+Vendored from https://github.com/cloudflare/security-audit-skill (folder skills/security-audit), commit c1c8a8c1471069fb0e188eeaff69b8e8db6564a8, MIT licensed (LICENSE).
+The two validator self tests (*.test.cjs) are left out. To update: copy that folder again and change the commit here.

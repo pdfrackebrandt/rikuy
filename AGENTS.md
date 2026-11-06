@@ -26,6 +26,7 @@ a command fails, trust the code and fix this file.
 | `PLAN.md` | status, numbers, finished and open tasks, and the rules for commits |
 | `SOURCES.md`, `NOTICE`, `LICENSES/` | where every shipped part's source is, its license, and the license texts not elsewhere in the repository |
 | `.github/` | CI (`npm test`, the corpus model run, the editor in Chromium), the arXiv corpus workflow, issue and pull request templates |
+| `.claude/skills/security-audit/` | Cloudflare's security audit skill (MIT, source commit in `UPSTREAM`); Claude Code and OpenCode load it from here, other agents read its `SKILL.md` |
 
 `dist/` and `node_modules/` are not in git.
 
@@ -66,6 +67,7 @@ Pick the checks by what you touched, and run them before you call it done:
 - the tree or packs: `cd dist/tex && find . -type f | sort | xargs sha256sum | diff ../../dev/dist-manifest.txt -`; any difference must be one you meant
 - a program in `tex/vendor/`: rebuild it from an empty `RIKUY_SRC` (any folder: the builds map their paths away) and compare the hash with the committed file; then `dev/asycompare.py` (Asymptote) or `tex/native/xindy/test.cjs` (xindy)
 - docs: numbers in `README.md`, `tex/README.md` and `NOTICE` must agree with the table in `PLAN.md`
+- anything a document, a share link, an imported project, a remote or a widget from someone else can reach (rendering into the page, the worker's files, git, storage, messages between frames, the shell): run the security audit skill in its quick profile on the files you changed, and fix confirmed findings in the same commit with a test. Its output stays outside the repository (`~/security-audit-skill/rikuy/`) and never goes in git. A scheduled Claude session also audits each week's commits every Sunday (the whole repository on the first Sunday of the month) and opens a fix pull request
 
 ## Rules that hold everywhere
 
