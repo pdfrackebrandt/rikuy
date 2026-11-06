@@ -11,6 +11,7 @@ import './git-shim.js';
 import git from 'isomorphic-git';
 import http from 'isomorphic-git/http/web';
 import LightningFS from '@isomorphic-git/lightning-fs';
+import { authFor } from './gitauth.js';
 
 const lfs = new LightningFS('galley-git');
 const fs = lfs;
@@ -162,9 +163,17 @@ export async function setRemote(dir, url) {
   await git.setConfig({ fs, dir, path: 'remote.origin.fetch', value: '+refs/heads/*:refs/remotes/origin/*' });
 }
 
-// Overleaf's git server takes the user name "git" with a token from the account settings
-const userFor = (url, o) => o.username || (/(^|\/\/)git\.overleaf\.com\//.test(url || '') ? 'git' : 'x-access-token');
-const net = (o) => ({ fs, http, corsProxy: o.corsProxy || undefined, onAuth: o.token ? (url) => ({ username: userFor(url, o), password: o.token }) : undefined });
+// A repository opened from a .zip or folder brings someone else's .git/config, and isomorphic-git
+// reads that file for whatever a call leaves out: remote.origin.pushurl for where to push,
+// http.corsProxy when no proxy is given. So every call names the address (o.remote, the one the
+// panel shows) and the proxy ('' for none), and the token answers only for o.remote's host: a
+// call that does not say which remote its token is for sends none.
+const net = (o) => ({ fs, http, corsProxy: o.corsProxy || '', onAuth: o.token ? (url) => authFor(url, o) : undefined });
+async function target(dir, o) {
+  const url = o.remote || (await remoteUrl(dir));
+  if (!url) throw new Error('Set the remote URL first.');
+  return url;
+}
 
 // an Overleaf project's address in the browser, as its git address (Overleaf's Git integration)
 export function gitUrlOf(u) {
@@ -174,19 +183,21 @@ export function gitUrlOf(u) {
 
 export async function push(dir, o) {
   const { current } = await branches(dir);
-  return git.push({ ...net(o), dir, remote: 'origin', ref: current || 'main', force: !!o.force });
+  const url = await target(dir, o);
+  return git.push({ ...net(o), dir, remote: 'origin', url, ref: current || 'main', force: !!o.force });
 }
 
 // fetch and merge (fast-forward or a real merge commit); conflicts are reported, not written
 export async function pull(dir, o, author) {
   const { current } = await branches(dir);
-  return git.pull({ ...net(o), dir, remote: 'origin', ref: current || 'main', singleBranch: true, fastForward: true, author: { name: author.name, email: author.email } });
+  const url = await target(dir, o);
+  return git.pull({ ...net(o), dir, remote: 'origin', url, ref: current || 'main', singleBranch: true, fastForward: true, author: { name: author.name, email: author.email } });
 }
 
 export async function clone(dir, url, o) {
   await rmrf(dir);
   await mkdirp(dir);
-  await git.clone({ ...net(o), dir, url, singleBranch: true, depth: o.depth || undefined });
+  await git.clone({ ...net({ ...o, remote: o.remote || url }), dir, url, singleBranch: true, depth: o.depth || undefined });
   return workingFiles(dir);
 }
 

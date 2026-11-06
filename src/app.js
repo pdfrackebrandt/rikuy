@@ -28,6 +28,7 @@ import { TeXEngine, parseTeXLog } from './tex.js';
 import { PdfView } from './pdfview.js';
 import { collab, installCollab } from './collab.js';
 import { shareParam, commentOnly, cleanPath } from './share.js';
+import { savedToken, keepToken } from './gitauth.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const PX_PER_PT = 96 / 72.27;
@@ -2893,6 +2894,29 @@ class App {
     return { name: this.prefs.gitName || '', email: this.prefs.gitEmail || '' };
   }
 
+  // Whether a repository's remote is one the user set up (typed, cloned from, or gave a token
+  // for), kept per repository folder. A remote that came in the .git folder of an opened .zip or
+  // folder is someone else's choice: the panel does not fill in a token for it. A repository
+  // kept from before this was recorded counts as the user's unless its project came with a .git.
+  async gitRemoteOwn(dir, remote) {
+    if (!remote) return true;
+    this.gitRemotes = this.gitRemotes || new Map();
+    let rec = this.gitRemotes.get(dir);
+    if (rec === undefined) {
+      try { rec = this.noIdb ? null : await kvGet('gitremote:' + dir); } catch (e) { rec = null; }
+      if (!this.gitRemotes.has(dir)) this.gitRemotes.set(dir, typeof rec === 'string' ? rec : null);
+      rec = this.gitRemotes.get(dir);
+    }
+    if (typeof rec === 'string') return rec === remote;
+    const li = await this.linkInfo();
+    return !(li && li.origin === 'git');
+  }
+  gitOwnRemote(dir, url) {
+    this.gitRemotes = this.gitRemotes || new Map();
+    this.gitRemotes.set(dir, url);
+    if (!this.noIdb) kvPut('gitremote:' + dir, url).catch(() => {});
+  }
+
   // after something done in the Git panel: show its result now
   gitRefresh() { this.gitLast = 0; this.gitRendering = false; this.refreshNav(); }
 
@@ -3033,13 +3057,26 @@ class App {
     const sum = mk('summary', '', remote ? 'Remote: ' + remote.replace(/^https?:\/\//, '') : 'Remote (push and pull)');
     rem.append(sum);
     const url = mk('input'); url.type = 'url'; url.placeholder = 'https://github.com/you/paper.git'; url.value = remote || ''; url.setAttribute('aria-label', 'Remote URL');
-    const tok = mk('input'); tok.type = 'password'; tok.placeholder = 'Access token (kept in this browser)'; tok.value = this.prefs.gitToken || ''; tok.setAttribute('aria-label', 'Access token');
+    const tok = mk('input'); tok.type = 'password'; tok.placeholder = 'Access token (kept in this browser for this host)'; tok.setAttribute('aria-label', 'Access token');
     const prox = mk('input'); prox.type = 'url'; prox.placeholder = 'CORS proxy, e.g. https://cors.isomorphic-git.org'; prox.value = this.prefs.gitProxy ?? 'https://cors.isomorphic-git.org'; prox.setAttribute('aria-label', 'CORS proxy');
+    // the token kept for the remote's host, filled in only for a remote the user set up; a URL
+    // typed here is the user's own, and the field follows it until a token is typed
+    const own = await this.gitRemoteOwn(dir, remote);
+    if (gen !== this.gitGen) return;
+    const fill = () => savedToken(this.prefs, url.value.trim(), url.value.trim() !== (remote || '') || own);
+    let shown = tok.value = fill(), typed = false;
+    tok.addEventListener('input', () => { typed = true; });
+    url.addEventListener('input', () => { if (!typed) shown = tok.value = fill(); });
     const opts = () => {
-      this.prefs.gitToken = tok.value.trim(); this.prefs.gitProxy = prox.value.trim(); store(PREFS, this.prefs);
-      return { token: this.prefs.gitToken, corsProxy: this.prefs.gitProxy };
+      const u = url.value.trim(), t = tok.value.trim();
+      if (t || shown) keepToken(this.prefs, u, t, shown);
+      shown = t;
+      this.prefs.gitProxy = prox.value.trim(); store(PREFS, this.prefs);
+      // a token typed for this remote: the user vouches for it
+      if (t && u === (remote || '') && !own) this.gitOwnRemote(dir, u);
+      return { token: t, remote: u, corsProxy: this.prefs.gitProxy };
     };
-    const saveUrl = async () => { const u = url.value.trim(); if (u && u !== remote) await G.setRemote(dir, u); return u; };
+    const saveUrl = async () => { const u = url.value.trim(); if (u && u !== remote) { await G.setRemote(dir, u); this.gitOwnRemote(dir, u); } return u; };
     const rrow = mk('div', 'git-row');
     rrow.append(
       mkBtn('Pull', async (e) => {
@@ -3064,6 +3101,7 @@ class App {
         } catch (err) { fail(b, err); return; }
         done(b);
       }, 'git push'));
+    if (remote && !own) rem.append(mk('div', 'git-note git-foreign', 'This remote came in the .git folder of the project you opened, so no token is filled in for it. Give one only if ' + remote.replace(/^https?:\/\//, '') + ' is yours.'));
     rem.append(url, tok, prox, rrow, mk('div', 'git-note', 'GitHub and GitLab need a token with write access and, from a browser, a CORS proxy. Inside claude.ai the page can only reach its own server, so pushing works from Rikuy on its own site; here, Save .zip gives a clone to push from your computer.'));
     out.append(rem);
 
@@ -3110,17 +3148,26 @@ class App {
     const det = mk('details', 'git-remote');
     det.append(mk('summary', '', 'Clone from a URL'));
     const url = mk('input'); url.type = 'url'; url.placeholder = 'https://github.com/you/paper.git, or an Overleaf project'; url.setAttribute('aria-label', 'Repository URL, or the address of an Overleaf project');
-    const tok = mk('input'); tok.type = 'password'; tok.placeholder = 'Access token (private repositories; for Overleaf, its Git token)'; tok.value = this.prefs.gitToken || '';
+    const tok = mk('input'); tok.type = 'password'; tok.placeholder = 'Access token (private repositories; for Overleaf, its Git token)'; tok.setAttribute('aria-label', 'Access token');
     const prox = mk('input'); prox.type = 'url'; prox.placeholder = 'CORS proxy'; prox.value = this.prefs.gitProxy ?? 'https://cors.isomorphic-git.org';
+    // the token kept for the host of the address typed, until a token is typed
+    let shown = '', typed = false;
+    tok.addEventListener('input', () => { typed = true; });
+    url.addEventListener('input', () => { if (!typed) shown = tok.value = savedToken(this.prefs, G.gitUrlOf(url.value), true); });
     const b = mkBtn('Clone', async () => {
       // an Overleaf project's address becomes its git address (Overleaf, Account settings, Git integration)
       const u = G.gitUrlOf(url.value);
       if (!u) { url.focus(); return; }
-      this.prefs.gitToken = tok.value.trim(); this.prefs.gitProxy = prox.value.trim(); store(PREFS, this.prefs);
+      const t = tok.value.trim();
+      if (t || shown) keepToken(this.prefs, u, t, shown);
+      shown = t;
+      this.prefs.gitProxy = prox.value.trim(); store(PREFS, this.prefs);
       const name = /git\.overleaf\.com/.test(u) ? 'overleaf-' + u.split('/').pop().slice(0, 6) : u.replace(/\.git$/, '').split('/').pop() || 'paper';
       b.disabled = true; b.textContent = 'Cloning…';
       try {
-        const files = await G.clone(G.dirFor(name), u, { token: this.prefs.gitToken, corsProxy: this.prefs.gitProxy, depth: 200 });
+        const files = await G.clone(G.dirFor(name), u, { token: t, remote: u, corsProxy: this.prefs.gitProxy, depth: 200 });
+        // the address typed here is the user's own remote
+        this.gitOwnRemote(G.dirFor(name), u);
         await this.openRepoFiles(name, files);
       } catch (e) { this.toast(this.gitError(e), 9000); }
       b.disabled = false; b.textContent = 'Clone';
@@ -3593,6 +3640,8 @@ class App {
     if (gitFiles.has('.git/HEAD')) {
       try {
         const G = await this.loadGit();
+        // its remote is the .zip's, not the user's, until the user sets one or gives it a token
+        this.gitOwnRemote(G.dirFor(this.name), '');
         if (await G.importGit(G.dirFor(this.name), gitFiles)) {
           const n = (await G.log(G.dirFor(this.name))).length;
           gitNote = ' Its git history came along (' + n + (n === 1 ? ' commit' : ' commits') + '; see Git).';

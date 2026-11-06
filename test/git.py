@@ -1,7 +1,9 @@
 """Git: a project becomes a repository in the browser, commits, history, compare and restore,
 branches, push and pull over smart HTTP (a local git http-backend), .zip with .git out and in,
-and clone."""
-import os, sys, subprocess, tempfile, shutil, time, json, zipfile, io, traceback
+and clone. Access tokens are kept per host, the old single token moves to the first remote of
+the user's own, and a remote that came in an opened .zip's .git/config (its url, pushurl or
+http.corsProxy) never receives a token."""
+import os, sys, subprocess, tempfile, shutil, time, json, zipfile, io, traceback, re, http.server, threading
 sys.path.insert(0, os.path.dirname(__file__))
 # the test page (https://rikuy.test) talks to a git server on 127.0.0.1, which Chrome's local
 # network checks would otherwise hold for a permission prompt
@@ -17,6 +19,48 @@ subprocess.run(['git', '--git-dir', ROOT + '/paper.git', 'config', 'http.receive
 git_server.start(ROOT, PORT)
 URL = 'http://127.0.0.1:%d/paper.git' % PORT
 GITSTAT = "document.getElementById('nt-gcount').textContent"
+
+# a stranger's git server: every request is logged with its Authorization header and refused
+# with 401, which is when isomorphic-git asks onAuth for credentials
+FOREIGN = 'http://127.0.0.1:8813'
+seen = []
+
+
+class Foreign(http.server.BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+
+    def do_OPTIONS(self):
+        self.send_response(204)
+        for k, v in git_server.CORS: self.send_header(k, v)
+        self.end_headers()
+
+    def answer(self):
+        n = int(self.headers.get('Content-Length') or 0)
+        if n: self.rfile.read(n)
+        seen.append((self.command, self.path, self.headers.get('Authorization')))
+        self.send_response(401)
+        self.send_header('WWW-Authenticate', 'Basic realm="git"')
+        for k, v in git_server.CORS: self.send_header(k, v)
+        self.send_header('Content-Length', '0')
+        self.end_headers()
+    do_GET = do_POST = answer
+
+
+threading.Thread(target=git_server.S(('127.0.0.1', 8813), Foreign).serve_forever, daemon=True).start()
+
+
+def foreign_zip(zf, names, path, cfg):
+    """The repository saved above, as a stranger could send it: their own .git/config."""
+    with zipfile.ZipFile(path, 'w') as z:
+        for n in names: z.writestr('paper/' + n, cfg if n == '.git/config' else zf.read(n))
+    return path
+
+
+def open_remote(page):
+    """Open the Remote part of the Git panel, after the panel has been drawn again."""
+    refresh(page)
+    page.evaluate("document.querySelector('.git-remote').open = true")
+    page.wait_for_timeout(200)
 
 
 def edit(page, find, repl):
@@ -38,6 +82,8 @@ def commits(page):
 try:
     with sync_playwright() as p:
         browser, page, errors = open_page(p, width=1440, height=900)
+        # a user of an earlier version: one token for every remote
+        page.evaluate("window.rikuy.prefs.gitToken = 'DUMMY-OLD-TOKEN'")
         base = src(page)
         page.click('#b-nav'); page.wait_for_timeout(200)
         page.click('#nt-git'); page.wait_for_timeout(1500)
@@ -107,6 +153,9 @@ try:
         print('  toast:', page.evaluate("[...document.querySelectorAll('.toast, #toast')].map(e => e.textContent).join(' | ')"))
         log = subprocess.run(['git', '--git-dir', ROOT + '/paper.git', 'log', '--format=%s|%an', 'main'], capture_output=True, text=True).stdout.split('\n')
         check('push reaches the server with both commits', log[:2] == ['Return trip|Ada Lovelace', 'First draft|Ada Lovelace'], log)
+        kept = page.evaluate("JSON.parse(localStorage.getItem('galley.prefs.v1'))")
+        check('the old single token now belongs to the host of the remote it was used with', kept.get('gitTokens') == {'http://127.0.0.1:%d' % PORT: 'DUMMY-OLD-TOKEN'} and 'gitToken' not in kept,
+              (kept.get('gitTokens'), 'gitToken' in kept))
 
         # a commit made elsewhere, then pull
         work = tempfile.mkdtemp(prefix='gitwork-')
@@ -147,6 +196,39 @@ try:
         page.click('#b-nav'); page.wait_for_timeout(200)
         page.click('#nt-git'); page.wait_for_timeout(2000)
         check('opening a .zip with .git brings its history', commits(page)[:3] == ['From the desktop', 'Return trip', 'First draft'], commits(page))
+
+        # A .zip's .git/config is whoever made it. Its remote gets no token filled in, even one
+        # kept for its host; a remote on another host never receives one; and its pushurl and
+        # http.corsProxy cannot send a push elsewhere than the address the panel shows.
+        page.evaluate("""(port) => { const g = window.rikuy; g.prefs.gitProxy = ''; g.prefs.gitToken = 'DUMMY-OLD-TOKEN';
+          g.prefs.gitTokens = { ['http://127.0.0.1:' + port]: 'DUMMY-HOST-TOKEN' }; }""", PORT)
+        TOKEN = '.git-remote input[aria-label="Access token"]'
+        open_remote(page)
+        check('a remote that came in an opened .zip gets no token filled in, though its host has one', page.input_value(TOKEN) == '' and page.locator('.git-foreign').count() == 1,
+              (page.input_value(TOKEN), page.locator('.git-foreign').count()))
+        cfg = zf.read('.git/config').decode()
+        page.set_input_files('#fileinput', foreign_zip(zf, names, os.path.join(tmpd, '..', 'stranger.zip'), cfg.replace(URL, FOREIGN + '/paper.git')))
+        page.wait_for_timeout(3000)
+        open_remote(page)
+        check('a stranger\'s remote shows with no token, though an old one is kept', page.input_value('.git-remote input[aria-label="Remote URL"]') == FOREIGN + '/paper.git' and page.input_value(TOKEN) == '',
+              (page.input_value('.git-remote input[aria-label="Remote URL"]'), page.input_value(TOKEN)))
+        page.click('.git-remote button:has-text("Push")')
+        page.wait_for_timeout(2500)
+        check('pushing to it sends no token', seen and not [x for x in seen if x[2]], seen[:4])
+        del seen[:]
+        twisted = re.sub(r'(\[remote "origin"\]\n)', lambda m: m.group(1) + '\tpushurl = ' + FOREIGN + '/push.git\n', cfg).rstrip('\n') + '\n[http]\n\tcorsProxy = ' + FOREIGN + '/proxy\n'
+        assert 'pushurl = ' in twisted, cfg
+        page.set_input_files('#fileinput', foreign_zip(zf, names, os.path.join(tmpd, '..', 'twisted.zip'), twisted))
+        page.wait_for_timeout(3000)
+        open_remote(page)
+        page.fill(TOKEN, 'DUMMY-HOST-TOKEN')
+        page.click('.git-remote button:has-text("Push")')
+        page.wait_for_timeout(2500)
+        toast = page.evaluate("document.getElementById('toast').innerText")
+        check('a pushurl and http.corsProxy in its .git/config do not take the push elsewhere', not seen and 'Pushed' in toast, (seen[:4], toast))
+        open_remote(page)
+        check('a remote the user gave a token for is theirs from then on', page.input_value(TOKEN) == 'DUMMY-HOST-TOKEN' and page.locator('.git-foreign').count() == 0,
+              (page.input_value(TOKEN), page.locator('.git-foreign').count()))
 
         # clone from the server into a new project
         page.evaluate("indexedDB.deleteDatabase('galley-git')")
