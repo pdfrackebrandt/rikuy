@@ -2,6 +2,7 @@
 its files next to it, the same Content-Security-Policy on every response."""
 import http.server, os, socketserver, sys, threading, functools
 ROOT = os.environ.get('RIKUY_DIST') or os.path.join(os.path.dirname(__file__), '..', 'dist')
+SMOKE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'tex', 'tex-smoke.html')
 CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net/pyodide/ "
        "https://cdn.jsdelivr.net/npm/ https://unpkg.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: blob:; "
        "font-src 'self' data: blob: https://fonts.gstatic.com; media-src 'self' data: blob:; connect-src 'self' blob: https://fonts.googleapis.com https://fonts.gstatic.com; "
@@ -17,6 +18,10 @@ class H(http.server.BaseHTTPRequestHandler):
         path = self.path.split('?')[0]
         if path in ('/', '/index.html'):
             body = (SKELETON + open(os.path.join(ROOT, 'rikuy.html'), encoding='utf8').read() + '</body></html>').encode()
+            ctype = 'text/html; charset=utf-8'
+        elif path == '/tex-smoke.html':
+            # the worker's test page, from the repository: dist/ does not ship it
+            body = open(SMOKE, 'rb').read()
             ctype = 'text/html; charset=utf-8'
         else:
             f = os.path.normpath(os.path.join(ROOT, path.lstrip('/')))

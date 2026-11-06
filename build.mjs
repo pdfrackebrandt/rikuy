@@ -101,7 +101,10 @@ fs.writeFileSync(O('tex/pyodide.js'), escapeCtl(fs.readFileSync(R('node_modules/
 // literals here, where \xHH means the same. pdf.js itself ships beside its worker, so the page
 // imports it from its own site (src/pdfview.js), never from a CDN
 for (const f of ['pdf.min.mjs', 'pdf.worker.min.mjs']) fs.writeFileSync(O('tex/' + f), escapeCtl(fs.readFileSync(R('node_modules/pdfjs-dist/build/' + f), 'utf8')));
-fs.copyFileSync(R('tex/tex-smoke.html'), O('tex-smoke.html'));
+// tex/tex-smoke.html, the worker's test page, is not part of the page: it passes any ?texlive= to
+// the worker, where the editor takes a mirror only from its own site. test/serve.py serves it
+// from tex/ for the tests and build scripts; a dist/ built before keeps no copy of it.
+fs.rmSync(O('tex-smoke.html'), { force: true });
 console.log(O('tex'), fs.readdirSync(O('tex')).length, 'files');
 
 // 8. LICENSES.txt: NOTICE, then the license texts of what dist/ holds and the notices of the
