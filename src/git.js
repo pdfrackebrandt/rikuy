@@ -167,8 +167,9 @@ export async function setRemote(dir, url) {
 // reads that file for whatever a call leaves out: remote.origin.pushurl for where to push,
 // http.corsProxy when no proxy is given. So every call names the address (o.remote, the one the
 // panel shows) and the proxy ('' for none), and the token answers only for o.remote's host: a
-// call that does not say which remote its token is for sends none.
-const net = (o) => ({ fs, http, corsProxy: o.corsProxy || '', onAuth: o.token ? (url) => authFor(url, o) : undefined });
+// call that does not say which remote its token is for sends none. o.onAccepted hears when the
+// remote asked for the token and took it.
+const net = (o) => ({ fs, http, corsProxy: o.corsProxy || '', onAuth: o.token ? (url) => authFor(url, o) : undefined, onAuthSuccess: o.onAccepted ? () => { o.onAccepted(); } : undefined });
 async function target(dir, o) {
   const url = o.remote || (await remoteUrl(dir));
   if (!url) throw new Error('Set the remote URL first.');

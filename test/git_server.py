@@ -1,7 +1,8 @@
 """A git smart-HTTP server for the Git tests: `git http-backend` behind a small Python server
 that adds the CORS headers a browser needs (as a CORS proxy would for GitHub).
-Usage: git_server.py ROOT PORT  (serves ROOT/*.git)"""
-import http.server, os, subprocess, sys, threading, socketserver
+Usage: git_server.py ROOT PORT  (serves ROOT/*.git); start(root, port, auth='user:token') answers
+only requests with those Basic credentials, and 401 to the rest, as a private repository does."""
+import base64, http.server, os, subprocess, sys, threading, socketserver
 
 ROOT = sys.argv[1] if len(sys.argv) > 1 else '/tmp/git-root'
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 8810
@@ -11,7 +12,18 @@ CORS = [('Access-Control-Allow-Origin', '*'), ('Access-Control-Allow-Headers', '
 
 
 class H(http.server.BaseHTTPRequestHandler):
+    AUTH = None
     def log_message(self, *a): pass
+
+    def denied(self):
+        if not self.AUTH or self.headers.get('Authorization') == 'Basic ' + base64.b64encode(self.AUTH.encode()).decode():
+            return False
+        self.send_response(401)
+        self.send_header('WWW-Authenticate', 'Basic realm="git"')
+        for k, v in CORS: self.send_header(k, v)
+        self.send_header('Content-Length', '0')
+        self.end_headers()
+        return True
 
     def do_OPTIONS(self):
         self.send_response(204)
@@ -38,7 +50,8 @@ class H(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(rest)
 
-    def do_GET(self): self.run()
+    def do_GET(self):
+        if not self.denied(): self.run()
 
     def do_POST(self):
         n = int(self.headers.get('Content-Length') or 0)
@@ -46,7 +59,7 @@ class H(http.server.BaseHTTPRequestHandler):
         if self.headers.get('Content-Encoding') == 'gzip':
             import gzip
             body = gzip.decompress(body)
-        self.run(body)
+        if not self.denied(): self.run(body)
 
 
 class S(socketserver.ThreadingMixIn, http.server.HTTPServer):
@@ -54,10 +67,10 @@ class S(socketserver.ThreadingMixIn, http.server.HTTPServer):
     allow_reuse_address = True
 
 
-def start(root, port):
+def start(root, port, auth=None):
     global ROOT
     ROOT = root
-    s = S(('127.0.0.1', port), H)
+    s = S(('127.0.0.1', port), type('HA', (H,), {'AUTH': auth}) if auth else H)
     threading.Thread(target=s.serve_forever, daemon=True).start()
     return s
 

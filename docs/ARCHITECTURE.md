@@ -168,10 +168,14 @@ prototype).
 - **Git tokens** are kept per remote host (`prefs.gitTokens`, `src/gitauth.js`) and `authFor`
   answers isomorphic-git's `onAuth` only for that host. Every push, pull and clone names its
   address and proxy, so a repository's own `.git/config` (`pushurl`, `http.corsProxy`) cannot
-  send it elsewhere. A remote that came in the `.git` folder of an opened `.zip` or folder gets
-  no token filled in until the user sets a remote or gives it a token (`gitRemoteOwn`, kept per
-  repository folder as `gitremote:<dir>`). The single token of earlier versions goes to the
-  first remote of the user's own it is used with.
+  send it elsewhere. Where a remote came from is kept per repository folder as
+  `gitremote:<dir>` (`gitRemoteFrom`): one that came in the `.git` folder of an opened `.zip` or
+  folder gets no token filled in until the user sets a remote or a pull or push with a token they
+  typed works. A repository from before that record (a clone or an opened `.git`, which cannot
+  be told apart) is offered the token as before, with a note to check the host. Tokens are kept
+  only after the operation worked; the single token of earlier versions (`prefs.gitToken`) moves
+  only to a host that asked for it and took it (`onAuthSuccess`), and is dropped as soon as the
+  user replaces it.
 
 ## 5. Live figures
 

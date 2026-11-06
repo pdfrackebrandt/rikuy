@@ -32,8 +32,9 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
 - **Overleaf and Git.** An Overleaf project comes in as its source .zip, or through Overleaf's
   Git integration; it leaves with one click to Overleaf, or as a plain .tex (.zip for several
   files). Git: clone, commit, push and pull. Access tokens are kept in the browser per host and
-  sent only to that host; a remote that came in the .git folder of a project you opened gets no
-  token until you give it one. A browser reaches a git server only through a CORS proxy, which
+  sent only to that host (the one token earlier versions kept moves to the first host that
+  accepts it); a remote that came in the .git folder of a project you opened gets no token until
+  you give it one. A browser reaches a git server only through a CORS proxy, which
   sees your access token: the field starts with isomorphic-git's public proxy, and you can put
   your own there.
 - **Projects.** Folders of files, zip import and export, the PDF beside the page with SyncTeX

@@ -876,8 +876,10 @@ function projectDir(id) {
   return PROJECT + '/' + (/^\.+$/.test(name) ? '_' + name : name);
 }
 // A project's file name, as the worker writes it under the project's folder. The page sends only
-// names it has cleaned (share.js cleanPath); the worker refuses any other on its own, so no caller
-// can write into the tree or another project with ../, or cut a name short with a NUL.
+// names it has cleaned (share.js cleanPath); the worker refuses any other on its own, so a compile
+// (and a shell job's files) cannot write into the tree or another project with ../, or cut a name
+// short with a NUL. The build scripts' and tests' own messages still reach any path on purpose:
+// execJob writes absolute paths (formats, caches) and a shell job's read list reads any file.
 function projectPath(p) {
   const rel = String(p ?? '').replace(/^\/+/, '');
   if (rel.includes('\0') || rel.split('/').includes('..')) throw new Error('A file name leaves the project: ' + JSON.stringify(String(p)).slice(0, 200));
