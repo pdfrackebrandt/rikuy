@@ -378,7 +378,10 @@ ones go to IndexedDB `galley-tex`/`blobs` (key `p:<hash>`), so a later session n
 `index.wasm` with a complete `pdftex.map`). Given `RIKUY_MIRROR` at build time, or `?texlive=URL` naming one on the page's own site,
 the worker loads it (`loadMirror`, `mirrorPopulate`), and BusyTeX's `kpse_remote_fetch_js` calls
 `mirrorFetch(name, format)` when kpathsea finds nothing locally (basename plus `KPSE_SUFFIX`, file
-written into `MAIN.FS`). A page on claude.ai reaches only its own server: self hosted use only.
+written into `MAIN.FS`). A mirror pack's bytes must hash to the name its index gives it
+(`packOk`, `sha256hex`, synchronous because TeX cannot wait) before they are kept as `m:<hash>`,
+and again when read back: the cache is the whole site's, so another mirror cannot plant a pack
+under a real one's name. A page on claude.ai reaches only its own server: self hosted use only.
 
 ## 12. Build pipeline
 
