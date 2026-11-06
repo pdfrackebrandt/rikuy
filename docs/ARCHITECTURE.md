@@ -165,6 +165,13 @@ prototype).
   the `.zip` as a data URL to `https://www.overleaf.com/docs` (`snip_uri`, `main_document`,
   `engine`). For Overleaf's Git integration `gitUrlOf()` turns a project's address into
   `https://git.overleaf.com/<id>`, and the user name becomes `git`.
+- **Git tokens** are kept per remote host (`prefs.gitTokens`, `src/gitauth.js`) and `authFor`
+  answers isomorphic-git's `onAuth` only for that host. Every push, pull and clone names its
+  address and proxy, so a repository's own `.git/config` (`pushurl`, `http.corsProxy`) cannot
+  send it elsewhere. A remote that came in the `.git` folder of an opened `.zip` or folder gets
+  no token filled in until the user sets a remote or gives it a token (`gitRemoteOwn`, kept per
+  repository folder as `gitremote:<dir>`). The single token of earlier versions goes to the
+  first remote of the user's own it is used with.
 
 ## 5. Live figures
 
