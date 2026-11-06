@@ -86,13 +86,13 @@ Other programs run in the page
 
 The editor page
   In the page and beside it: KaTeX's style sheet and fonts (MIT; the fonts SIL Open Font
-  License 1.1, as their name tables say), CodeMirror 5's style sheet (MIT), pdf.js's worker
-  (Apache-2.0), fflate (MIT), and in git.js isomorphic-git, lightning-fs, buffer and the small
-  npm packages they depend on (MIT, Apache-2.0, BSD, ISC, zlib); dist/LICENSES.txt lists each
-  with its license text.
+  License 1.1, as their name tables say), CodeMirror 5's style sheet (MIT), pdf.js and its
+  worker (Apache-2.0), fflate (MIT), and in git.js isomorphic-git, lightning-fs, buffer and
+  the small npm packages they depend on (MIT, Apache-2.0, BSD, ISC, zlib); dist/LICENSES.txt
+  lists each with its license text.
   Paper Modern, the page's text fonts: subsets of Andrey V. Panov's Computer Modern Unicode
   fonts (from the computer-modern npm package), renamed as the SIL Open Font License 1.1
   asks of a modified version; build/fonts/subset.py makes them, build/fonts/OFL.txt.
   Loaded from jsDelivr while the page runs, not shipped: KaTeX with its mhchem extension,
-  CodeMirror 5, MathLive, JSZip (MIT; JSZip MIT or GPL-3.0) and pdf.js (Apache-2.0); from
-  Google Fonts, IBM Plex Sans and Mono (SIL Open Font License 1.1).
+  CodeMirror 5, MathLive and JSZip (MIT; JSZip MIT or GPL-3.0), each checked against its npm
+  file's hash; from Google Fonts, IBM Plex Sans and Mono (SIL Open Font License 1.1).

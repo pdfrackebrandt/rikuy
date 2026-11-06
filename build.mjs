@@ -98,8 +98,9 @@ for (const t of ['dvips', 'asy', 'xindy', 'gnuplot']) fs.writeFileSync(O('tex/' 
 // Pyodide's loader is a classic script already; its runtime comes from build_tree.py
 fs.writeFileSync(O('tex/pyodide.js'), escapeCtl(fs.readFileSync(R('node_modules/pyodide/pyodide.js'), 'utf8')).replace(/\n\/\/# sourceMappingURL=.*$/, '\n'));
 // the artifact host refuses raw control bytes in text files; they only occur inside string
-// literals here, where \xHH means the same
-fs.writeFileSync(O('tex/pdf.worker.min.mjs'), escapeCtl(fs.readFileSync(R('node_modules/pdfjs-dist/build/pdf.worker.min.mjs'), 'utf8')));
+// literals here, where \xHH means the same. pdf.js itself ships beside its worker, so the page
+// imports it from its own site (src/pdfview.js), never from a CDN
+for (const f of ['pdf.min.mjs', 'pdf.worker.min.mjs']) fs.writeFileSync(O('tex/' + f), escapeCtl(fs.readFileSync(R('node_modules/pdfjs-dist/build/' + f), 'utf8')));
 fs.copyFileSync(R('tex/tex-smoke.html'), O('tex-smoke.html'));
 console.log(O('tex'), fs.readdirSync(O('tex')).length, 'files');
 

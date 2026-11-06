@@ -57,7 +57,7 @@ mismatch with its cause: [PLAN.md](PLAN.md).
 
 Rikuy is one HTML page plus `dist/tex/` (about 250 MB of engines, TeX packs and programs), which
 any static web server can serve (`dist/index.html` is the page); the page fetches packs as a
-document needs them. It also loads KaTeX, CodeMirror, MathLive, JSZip and pdf.js from jsDelivr
+document needs them. It also loads KaTeX, CodeMirror, MathLive and JSZip from jsDelivr
 and its interface font from Google Fonts, so it needs a network connection.
 
 ```sh

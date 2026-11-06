@@ -384,16 +384,16 @@ written into `MAIN.FS`). A page on claude.ai reaches only its own server: self h
    unless `--dev`, `__RIKUY_MIRROR__`) and `src/git.js` as `dist/git.js` (loaded by the Git
    panel); the fonts of `build/fonts` (Paper Modern, cut from the Computer Modern Unicode fonts
    by `build/fonts/subset.py`) and the CSS go into `src/template.html` as `dist/rikuy.html`;
-   worker scripts, `busytex.js`, `biber.js`, `fflate.js`, `pyodide.js`, the PDF.js worker and
+   worker scripts, `busytex.js`, `biber.js`, `fflate.js`, `pyodide.js`, PDF.js and its worker and
    vendor tool scripts go to `dist/tex/`, npm's Ghostscript module made a classic script (`self.GalleyGs`; the build
    fails if its stack exports moved), control bytes escaped. `dist/index.html` is the page inside
    the document the artifact host wraps it in, for any static server; `dist/LICENSES.txt` holds
    `NOTICE`, the license texts of what `dist/` ships and the notices of the libraries compiled into
    its programs (`LICENSES/third-party/`). `RIKUY_OUT` moves the output.
 
-KaTeX's JS, CodeMirror, JSZip, MathLive, mhchem and PDF.js load from CDNs at run time (`CDN` in
-`src/app.js`), each but PDF.js (a module `import()`, which takes no hash) checked against the
-npm file's hash (`SRI`; KaTeX's in `src/template.html`). `tex/build_all.sh` remakes what the engines make for a changed tree (`build_pk.py`;
+KaTeX's JS, CodeMirror, JSZip, MathLive and mhchem load from CDNs at run time (`CDN` in
+`src/app.js`), each checked against the npm file's hash (`SRI`; KaTeX's in `src/template.html`).
+PDF.js is a module `import()`, which takes no hash, so it ships in `dist/tex/` beside its worker. `tex/build_all.sh` remakes what the engines make for a changed tree (`build_pk.py`;
 `build_formats.py`, `build_fccache.py`, `build_luacache.py` drive the worker in Chromium through
 `tex-smoke.html`'s `exec`). Also: `swap_wasm.py` (a patched engine into a built `dist/tex`),
 `build_tree.py tools` (the programs only), `publish_batches.py` (uploads to the hosted copy).

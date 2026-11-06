@@ -1,12 +1,14 @@
 // The compiled PDF, shown with PDF.js, plus SyncTeX both ways: click the PDF to find the
 // source line, or ask where a source line landed in the PDF.
 
-const PDFJS = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs';
 let pdfjsP = null;
 
 export function loadPdfjs(workerUrl) {
   if (!pdfjsP) {
-    const u = PDFJS;
+    // pdf.js ships beside its worker (build.mjs copies both from package-lock.json's pdfjs-dist):
+    // a module import() takes no integrity hash, so from a CDN it would run whatever the CDN
+    // answered as this page, with every project and the git tokens in reach
+    const u = new URL('pdf.min.mjs', workerUrl).href;
     pdfjsP = import(u).then((lib) => {
       lib.GlobalWorkerOptions.workerSrc = workerUrl;
       return lib;

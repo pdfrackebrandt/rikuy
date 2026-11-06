@@ -4,11 +4,8 @@ PDF and page both ways (SyncTeX). Served with the artifact host's CSP."""
 import os, sys, time, json
 sys.path.insert(0, os.path.dirname(__file__))
 import serve
-from browser import ROUTES, check, results, SHOTS
+from browser import ROUTES, check, results, SHOTS, pdfjs_local
 from playwright.sync_api import sync_playwright
-NM = os.path.join(os.path.dirname(__file__), '..', 'node_modules')
-ROUTES = dict(ROUTES)
-ROUTES['https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs'] = os.path.join(NM, 'pdfjs-dist/build/pdf.min.mjs')
 PORT = 8792
 serve.start(PORT)
 
@@ -56,6 +53,8 @@ with sync_playwright() as p:
     msg = page.evaluate("document.getElementById('toast').hidden ? '' : document.getElementById('toast').innerText")
     check('Open in Overleaf is blocked by the hosted CSP', viol, page.evaluate("window.__viol"))
     check('and the user is told to use Download .zip, not a false success', 'Download .zip' in msg and 'opens in a new tab' not in msg, msg)
+    # pdf.js from the page's own site under the host's policy, before any compile
+    pdfjs_local(page, f'http://127.0.0.1:{PORT}/')
 
     page.click('#b-pdf')
     st, dt = wait_pdf(page, 180)
@@ -76,7 +75,7 @@ with sync_playwright() as p:
     st, dt = wait_pdf(page, 60)
     page.wait_for_timeout(1500)
     st, dt2 = wait_pdf(page, 60)
-    text = page.evaluate("""(async () => { const lib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs');
+    text = page.evaluate("""(async () => { const lib = await import(new URL('tex/pdf.min.mjs', location.href).href);
       const doc = await lib.getDocument({ data: new Uint8Array(window.rikuy.lastPdf.slice(0)) }).promise; const pg = await doc.getPage(1);
       const tc = await pg.getTextContent(); return tc.items.map(i => i.str).join(' '); })()""")
     check('edit reaches the PDF', 'Zebra quokka' in text, text[:200])
@@ -107,7 +106,7 @@ with sync_playwright() as p:
     page.wait_for_timeout(300)
     after = page.evaluate("document.querySelector('#desk').scrollTop")
     flashed = page.evaluate("(document.querySelector('.it.flash') || {}).textContent || ''")
-    p2 = page.evaluate("""(async () => { const lib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs');
+    p2 = page.evaluate("""(async () => { const lib = await import(new URL('tex/pdf.min.mjs', location.href).href);
       const doc = await lib.getDocument({ data: new Uint8Array(window.rikuy.lastPdf.slice(0)) }).promise; const pg = await doc.getPage(2);
       return (await pg.getTextContent()).items.map(i => i.str).join(' ').replace(/\\s+/g, ' '); })()""")
     words = [w for w in flashed.split() if len(w) > 5][:4]
