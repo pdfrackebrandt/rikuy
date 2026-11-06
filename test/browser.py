@@ -24,7 +24,6 @@ ROUTES = {
     'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js': os.path.join(NM, 'jszip/dist/jszip.min.js'),
     'https://cdn.jsdelivr.net/npm/mathlive@0.110.0/mathlive.min.js': os.path.join(NM, 'mathlive/mathlive.min.js'),
     'https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/contrib/mhchem.min.js': os.path.join(NM, 'katex/dist/contrib/mhchem.min.js'),
-    'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs': os.path.join(NM, 'pdfjs-dist/build/pdf.min.mjs'),
 }
 
 results = []
@@ -117,6 +116,39 @@ def load_doc(page, files, main='main.tex'):
     page.evaluate('''([files, main]) => { const g = window.rikuy; g.files = new Map(Object.entries(files)); g.main = main; g.hist = []; g.redoStack = []; g.forceRender = true; g.rebuild(); if (g.cm) g.showSrcFile(main); }''', [files, main])
     page.wait_for_timeout(50)
 
+
+
+def tiny_pdf():
+    """A one page PDF with a blue box, written out here so the check needs no TeX."""
+    stream = b'0 0 1 rg 20 20 160 60 re f'
+    objs = [b'<< /Type /Catalog /Pages 2 0 R >>', b'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+            b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Contents 4 0 R >>',
+            b'<< /Length %d >>\nstream\n' % len(stream) + stream + b'\nendstream']
+    out, offs = bytearray(b'%PDF-1.4\n'), []
+    for i, o in enumerate(objs, 1):
+        offs.append(len(out))
+        out += b'%d 0 obj\n' % i + o + b'\nendobj\n'
+    xref = len(out)
+    out += b'xref\n0 %d\n0000000000 65535 f \n' % (len(objs) + 1) + b''.join(b'%010d 00000 n \n' % o for o in offs)
+    out += b'trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n' % (len(objs) + 1, xref)
+    return bytes(out)
+
+
+def pdfjs_local(page, origin):
+    """pdf.js loads from the page's own site and shows a PDF. A module import() takes no
+    integrity hash, so pdf.js from a CDN would run whatever the CDN sent as the page; the
+    routes answer only the CDN files the page pins (ROUTES), so a script from anywhere else
+    fails here."""
+    import base64
+    reqs = []
+    page.on('request', lambda r: reqs.append((r.url, r.resource_type)))
+    n = page.evaluate('''async (b64) => { const g = window.rikuy; const had = g.lastPdf; g.lastPdf = had || {}; g.pdfStale = false;
+      g.togglePdf(true); try { await g.pdfView.show(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))); return g.pdfView.doc.numPages; }
+      catch (e) { return String(e); } finally { g.togglePdf(false); g.lastPdf = had; } }''', base64.b64encode(tiny_pdf()).decode())
+    mine = [u for u, t in reqs if u == origin + 'tex/pdf.min.mjs']
+    foreign = [u for u, t in reqs if t == 'script' and not u.startswith(origin) and u not in ROUTES]
+    check('pdf.js comes from the page\'s own site (tex/pdf.min.mjs) and shows a PDF', n == 1 and mine, (n, reqs[:6]))
+    check('and no script comes from another site without an integrity hash', not foreign, foreign)
 
 
 def default_macros(page):
@@ -686,6 +718,12 @@ def run():
         E.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
         check('an edit made just before navigating away is kept', 'WRikuy escapes' in src(E), src(E)[src(E).find('Rikuy escapes') - 3:][:20])
         check('no console errors (tabs)', not errors, errors[:5])
+        browser.close()
+
+        # on a page of its own, so nothing above meets the PDF pane
+        browser, page, errors = open_page(p)
+        pdfjs_local(page, 'https://rikuy.test/')
+        check('no console errors (pdf.js)', not errors, errors[:5])
         browser.close()
 
     bad = [r for r in results if not r[1]]

@@ -78,7 +78,7 @@ try:
         # the connection is drawn only if xdvipdfmx had Ghostscript render PSTricks' PostScript (a
         # form on the page): without PSTricks' XeTeX driver (pst: specials) the page had the tree's
         # names and no line at all
-        drawn = page.evaluate("""async () => { const lib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs');
+        drawn = page.evaluate("""async () => { const lib = await import(new URL('tex/pdf.min.mjs', location.href).href);
           const p = await window.rikuy.pdfView.doc.getPage(1); const ops = (await p.getOperatorList()).fnArray;
           return ops.filter(o => o === lib.OPS.paintFormXObjectBegin || o === lib.OPS.constructPath).length; }""")
         check('with lines and labels drawn by Ghostscript', not [x for x in probs if x.startswith('error')] and drawn > 0, (probs[:5], drawn))
