@@ -6,14 +6,17 @@ through a reload, while one's own project runs them at once. The widget runs in 
 over the box the text keeps for it and outside the editable pages; it sizes its frame through
 {rikuy: "height"}, and its slider works. Inside the frame there is no storage, no parent page, no
 connection and no picture from the network, while inline script runs; messages from anywhere else
-are ignored and a height past a page is cut. Typing in the caption and around the figure patches
-only the typed characters, undo gives the source back byte for byte, and the widget keeps its state
-through all of it, through zoom and through being moved to another page. The tab on the frame opens
-its command; Alt+click shows it in the source. Save .zip and a share link carry the widget file;
-a coauthor's copy runs it and compiles with a gray box for the fallback. A widget whose file is
-missing shows its fallback image, then a quiet placeholder, and Problems names both, and a
-missing rikuy.sty. Five widgets of 60 KB each open, run, share and survive a reload."""
-import os, sys, io, re, json, zlib, base64, zipfile, tempfile, traceback, time
+are ignored and a height past a page is cut. WebRTC is gone from the widget's window, srcdoc frames
+it adds are taken out before they run, document.write brings nothing back and the frame cannot be
+sent to a data: document; no STUN request reaches the test's own server. Typing in the caption and
+around the figure patches only the typed characters, undo gives the source back byte for byte, and
+the widget keeps its state through all of it, through zoom and through being moved to another
+page. The tab on the frame opens its command; Alt+click shows it in the source. Save .zip and a
+share link carry the widget file; a coauthor's copy runs it and compiles with a gray box for the
+fallback. A widget whose file is missing shows its fallback image, then a quiet placeholder, and
+Problems names both, and a missing rikuy.sty. Five widgets of 60 KB each open, run, share and
+survive a reload."""
+import os, sys, io, re, json, zlib, base64, zipfile, tempfile, traceback, time, socket, threading
 sys.path.insert(0, os.path.dirname(__file__))
 import serve
 from browser import ROUTES, check, results, click_text
@@ -151,6 +154,58 @@ PROBE = """<!doctype html><html><body><div style="height:90px">probe</div><scrip
   parent.postMessage({ rikuy: 'height', px: 100000 }, '*');
 })();
 </script></body></html>""" % {'url': URL}
+
+
+# WebRTC, the way out no policy closes in Chromium: a STUN request to the author's server would tell
+# them who opened the document. widgetGuard takes the interfaces away; these try them, and the ways
+# around that the guard closes. Every child that runs at all is in a window of its own, so it posts
+# what it found; each also aims a STUN request at the test's own UDP port.
+STUN = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+STUN.bind(('127.0.0.1', 0))
+STUN_PORT = STUN.getsockname()[1]
+stun_packets = []
+
+
+def stun_listen():
+    while True:
+        stun_packets.append(STUN.recvfrom(2048)[1])
+
+
+threading.Thread(target=stun_listen, daemon=True).start()
+
+
+def rtc_child(how):
+    return ("<script>try { var pc = new RTCPeerConnection({iceServers: [{urls: 'stun:127.0.0.1:%d'}]}); pc.createDataChannel('x');"
+            " pc.createOffer().then(function (o) { return pc.setLocalDescription(o); }); } catch (e) {}"
+            " top.postMessage({rtcChild: '%s', rtc: typeof RTCPeerConnection}, '*');</script>" % (STUN_PORT, how))
+
+
+def attr(s):
+    return s.replace('&', '&amp;').replace('"', '&quot;')
+
+
+def js(s):
+    return json.dumps(s).replace('</', '<\\/')
+
+
+RTC_PROBE = """<!doctype html><html><body><div style="height:90px">rtc</div>
+<iframe srcdoc="%(markup)s"></iframe>
+<script>
+(function () {
+  var out = {};
+  try { var pc = new RTCPeerConnection({iceServers: [{urls: 'stun:127.0.0.1:%(port)d'}]}); pc.createDataChannel('x');
+    pc.createOffer().then(function (o) { return pc.setLocalDescription(o); }); out.rtc = 'made'; } catch (e) { out.rtc = 'refused'; }
+  out.left = Object.getOwnPropertyNames(window).filter(function (n) { return /RTC/.test(n); });
+  var f = document.createElement('iframe'); f.srcdoc = %(script)s; document.body.appendChild(f);
+  var h = document.createElement('div'); document.body.appendChild(h);
+  h.attachShadow({ mode: 'closed' }).innerHTML = '<iframe srcdoc="' + %(shadow)s + '"></iframe>';
+  parent.postMessage({ rtcProbe: out }, '*');
+})();
+</script></body></html>""" % {'markup': attr(rtc_child('markup')), 'port': STUN_PORT, 'script': js(rtc_child('script')), 'shadow': js(attr(rtc_child('shadow')))}
+RTC_WRITE = """<!doctype html><html><body>w<script>addEventListener('load', function () { document.open();
+  document.write(%s); document.close(); });</script></body></html>""" % js("<script>top.postMessage({rtcWrite: typeof RTCPeerConnection + ' ' + typeof webkitRTCPeerConnection}, '*')</script>")
+RTC_LEAVE = """<!doctype html><html><body>leave<script>setTimeout(function () { location.href = 'data:text/html,' + encodeURIComponent(%s); }, 50);</script></body></html>""" % js(rtc_child('location'))
+RTC_REFRESH = """<!doctype html><html><head><meta http-equiv="refresh" content="0;url=data:text/html,%s"></head><body>refresh</body></html>""" % attr(rtc_child('refresh'))
 
 
 def big_widget(k):
@@ -315,6 +370,25 @@ try:
         check('height messages from the page itself or another frame are ignored', page.evaluate("JSON.stringify([...window.rikuy.widgets.heights])") == before)
         errors[:] = [e for e in errors if 'Content Security Policy' not in e and 'Blocked opening' not in e and 'sandboxed' not in e and 'Unsafe attempt' not in e]
         check('no page errors (beyond what the probe was refused)', not errors, errors[:3])
+
+        # WebRTC: the guard, and the ways around it it closes
+        page.evaluate("""() => { window.__rtc = []; window.addEventListener('message', (e) => {
+          const d = e.data; if (d && (d.rtcProbe || d.rtcChild || d.rtcWrite)) window.__rtc.push(d); }); }""")
+        rtc = lambda: page.evaluate('window.__rtc')
+        page.evaluate("(t) => { const g = window.rikuy; g.files.set('widgets/clt.html', t); g.rebuild(); }", RTC_PROBE)
+        page.wait_for_function('window.__rtc.some((d) => d.rtcProbe)', timeout=10000)
+        page.wait_for_timeout(1500)
+        pr = next(d['rtcProbe'] for d in rtc() if 'rtcProbe' in d)
+        check('a widget\'s new RTCPeerConnection() throws: it and every RTC interface are gone from its window', pr['rtc'] == 'refused' and not pr['left'], pr)
+        check('a srcdoc frame the widget adds (in its markup, by script, in a shadow root it attaches) is taken out before it runs', not [d for d in rtc() if 'rtcChild' in d], [d['rtcChild'] for d in rtc() if 'rtcChild' in d])
+        page.evaluate("(t) => { const g = window.rikuy; g.files.set('widgets/clt.html', t); g.rebuild(); }", RTC_WRITE)
+        page.wait_for_function('window.__rtc.some((d) => d.rtcWrite)', timeout=10000)
+        check('document.open() and write() bring none of it back', [d['rtcWrite'] for d in rtc() if 'rtcWrite' in d] == ['undefined undefined'], [d['rtcWrite'] for d in rtc() if 'rtcWrite' in d])
+        for t in (RTC_LEAVE, RTC_REFRESH):
+            page.evaluate("(t) => { const g = window.rikuy; g.files.set('widgets/clt.html', t); g.rebuild(); }", t)
+            page.wait_for_timeout(1500)
+        check('the widget cannot take its frame to a document of its own, by location or a refresh <meta>: the page refuses it', not [d for d in rtc() if d.get('rtcChild') in ('location', 'refresh')], [d['rtcChild'] for d in rtc() if 'rtcChild' in d])
+        check('no STUN request from any of them reached the test\'s server', not stun_packets, len(stun_packets))
         browser.close()
 
         # one's own project (here the sample's, replaced in place) runs its widget with no click

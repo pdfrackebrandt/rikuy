@@ -213,26 +213,43 @@ fallback from the widget's own generator.
   storage, no cookies, no access to the page, the project or other frames, and no popups, forms,
   top navigation or dialogs. The widget arrives as `srcdoc`, behind a head that starts with its
   own policy (`WIDGET_CSP`: `default-src 'none'`; inline script and style; pictures, media and
-  fonts as `data:` or `blob:`; no connection, frame, form or `<base>`) and turns DNS prefetching
-  off. The page's own `frame-src` refuses to navigate the frame to another site.
+  fonts as `data:` or `blob:`; no connection, frame, form or `<base>`), turns DNS prefetching
+  off and runs `widgetGuard` (below) before any of the widget. The page adds `frame-src 'self'`
+  to its host's policy (`framesOnlySrcdoc`, a `<meta>` in the head, which can only narrow it): no
+  frame-src refuses a srcdoc frame, and a frame may go nowhere but the page's own site, so a
+  widget cannot take its frame to a `data:` or `blob:` document of its own making.
 - **Why `srcdoc`.** A `srcdoc` or `blob:` frame inherits the embedding page's Content Security
   Policy, and a policy the widget's document adds can only restrict further. Rikuy's policy, as
   `test/serve.py` serves it (the artifact host's), has `script-src 'self' 'unsafe-inline'
   'unsafe-eval' …`, so inline widget scripts run under it. They always will where Rikuy runs:
   the page's own code is one inline script, so a policy that refused inline scripts would stop
-  Rikuy first. `blob:` frames would work as well (`frame-src blob:`) but add object URLs to
+  Rikuy first. `blob:` frames would work as well (with `frame-src blob:`) but add object URLs to
   revoke and nothing else; `data:` frames depend on `frame-src data:` and on URL length; a widget
   served as a file of the page's own site would have to be on the server, and projects live in
-  the browser. Nothing in the page's policy changed.
+  the browser. The page's policy gained only `frame-src 'self'`, which refuses no srcdoc frame.
 - **What no policy stops.** Chromium ignores CSP's `webrtc` directive (version 141 calls it
   unrecognized), so a widget can open WebRTC connections: a STUN request to its author's server
   tells them who opened the document, and when, though nothing of the document or the browser.
   So in a project from someone else (a link, a .zip, a git clone: `markFromLink`) each widget
   shows its fallback with a button until the owner runs them (`widgetsAllowed`, `allowWidgets`,
   the `widgets` field of the project's `link:` record, kept apart from shell escape); one's own
-  projects run them at once. A widget's script may share the page's thread (not every browser
-  gives sandboxed frames a process of their own), so one that loops forever can hang the tab, as
-  a bad web page can.
+  projects run them at once. That click is the control. Behind it, as defense in depth,
+  `widgetGuard`, the widget document's first script, deletes every `RTC…` interface from the
+  widget's window, so a tracker that calls `RTCPeerConnection` plainly fails, and closes the
+  ways around that found by trying: srcdoc frames the widget adds (in its markup, by script, in a
+  shadow root it attaches) are taken out before they run, since no policy refuses srcdoc and
+  each runs in a window of its own; leaving for a `data:` or `blob:` document (`location`, a
+  link, `open(url, '_self')`, a refresh `<meta>`) meets the page's `frame-src 'self'`, since
+  `location` cannot be patched and the Navigation API sends an opaque origin no events.
+  `document.open()` keeps the window, so nothing comes back; an about:blank frame the widget
+  adds has an opaque origin of its own, so `frames[0]` and `contentWindow` are out of reach; a
+  Worker has no `RTCPeerConnection`; `open()` is refused by the sandbox. What still gets
+  through: a srcdoc frame inside a shadow root the HTML parser makes (`<template
+  shadowrootmode>` in the widget's markup, in `document.write` or through `setHTMLUnsafe`),
+  which the guard cannot see into. A widget written to get around the guard will; the click
+  stays. `test/widgets.py` checks each closed way with a STUN server of its own. A widget's
+  script may share the page's thread (not every browser gives sandboxed frames a process of
+  their own), so one that loops forever can hang the tab, as a bad web page can.
 - **Missing files.** No widget file: the fallback image, as TeX prints it; neither: a quiet
   placeholder naming the path. Problems names a missing widget, and a `\rikuywidget` without
   `\usepackage{rikuy}` and `rikuy.sty` (TeX would stop there). A link carries no figures, so a
