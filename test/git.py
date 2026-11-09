@@ -269,6 +269,20 @@ try:
         page.wait_for_timeout(2500)
         check('pushing to it sends no token', seen and not [x for x in seen if x[2]], seen[:4])
         del seen[:]
+        # the same remote, quoted with a space in front: the URL field drops the space, so the address
+        # looked changed by the user and got the host's token, and a pull made it the user's own
+        spaced = cfg.replace('url = ' + URL, 'url = " ' + URL + '"')
+        assert spaced != cfg, cfg
+        page.set_input_files('#fileinput', foreign_zip(zf, names, os.path.join(tmpd, '..', 'spaced.zip'), spaced))
+        page.wait_for_timeout(3000)
+        open_remote(page)
+        legacy = page.locator('details.git-remote', has_text='Push').locator('.git-legacy')
+        check('a stranger\'s remote written with a space in front is still theirs: no token, no old token offered',
+              page.input_value(TOKEN) == '' and page.locator('.git-foreign').count() == 1 and not legacy.is_visible(), (page.input_value(TOKEN), page.locator('.git-foreign').count()))
+        page.click('.git-remote button:has-text("Pull")')
+        page.wait_for_timeout(2500)
+        open_remote(page)
+        check('and a pull does not make it the user\'s', page.input_value(TOKEN) == '' and page.locator('.git-foreign').count() == 1, (page.input_value(TOKEN), page.locator('.git-foreign').count()))
         twisted = re.sub(r'(\[remote "origin"\]\n)', lambda m: m.group(1) + '\tpushurl = ' + FOREIGN + '/push.git\n', cfg).rstrip('\n') + '\n[http]\n\tcorsProxy = ' + FOREIGN + '/proxy\n'
         # and the branch a push goes to: isomorphic-git takes branch.<name>.merge from the config
         twisted = re.sub(r'\[branch "main"\]\n(\t[^\n]*\n)*', '', twisted) + '[branch "main"]\n\tremote = origin\n\tmerge = refs/heads/strangers-pick\n'

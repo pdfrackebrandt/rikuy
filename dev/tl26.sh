@@ -13,8 +13,10 @@ G="$TL/usr/share/ghostscript/10.07.1"
 export GS_LIB="$G/Resource/Init:$G/lib:$G/Resource/Font:$TL/usr/share/ghostscript/fonts:$TL/var/lib/ghostscript/fonts:$TL/usr/share/fonts/type1/urw-base35"
 export GS_OPTIONS="-sGenericResourceDir=$G/Resource/ -sICCProfilesDir=$G/iccprofiles/"
 # libpaper 2 reads its table of sizes from $XDG_CONFIG_HOME (the host has none in /etc); a4, as TeX Live
-export XDG_CONFIG_HOME="$TL/home/config" PAPERSIZE=a4
-export TEXMFVAR="$TL/home/texmf-var" TEXMFCONFIG="$TL/home/texmf-config" TEXMFHOME="$TL/home/texmf"
+# TL26_HOME: another folder for these (dev/pdfcompare.py gives each document a copy of its own)
+H=${TL26_HOME:-$TL/home}
+export XDG_CONFIG_HOME="$H/config" PAPERSIZE=a4
+export TEXMFVAR="$H/texmf-var" TEXMFCONFIG="$H/texmf-config" TEXMFHOME="$H/texmf"
 # asy: Debian's looks for its base modules in /usr/share/asymptote, and renders 3D through GLX
 # with the release's Mesa (llvmpipe), which needs an X display: pdfcompare.py starts Xvfb
 export ASYMPTOTE_SYSDIR="${ASYMPTOTE_SYSDIR:-$TL/usr/share/asymptote}"

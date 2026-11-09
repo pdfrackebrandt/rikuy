@@ -94,6 +94,14 @@ def desktop(doc, engine, key=None):
     base = os.path.basename(main)
     open(os.path.join(cwd, 'latexmkrc'), 'w').write(LATEXMKRC)
     env = dict(os.environ, SOURCE_DATE_EPOCH=SDE, FORCE_SOURCE_DATE='1', DISPLAY=display())
+    # TL26_HOME_TEMPLATE (the arXiv workflow): each document compiles with a copy of that folder as
+    # its TEXMFHOME, TEXMFVAR, TEXMFCONFIG and HOME, discarded after it, so what one document
+    # writes there with shell escape (a .sty, a format, a ~/.latexmkrc) cannot change the next
+    home = None
+    if os.environ.get('TL26_HOME_TEMPLATE'):
+        home = tempfile.mkdtemp(prefix='tlhome-')
+        shutil.copytree(os.environ['TL26_HOME_TEMPLATE'], home, symlinks=True, dirs_exist_ok=True)
+        env.update(TL26_HOME=home, HOME=home)
     cmd = [os.path.join(HERE, 'tl26.sh'), 'latexmk', ENGINE_FLAG.get(engine, '-pdf'), '-shell-escape', '-interaction=nonstopmode',
            '-f', '-r', 'latexmkrc', base]
     t0 = time.time()
@@ -105,6 +113,8 @@ def desktop(doc, engine, key=None):
     pdf_path = os.path.join(cwd, base[:-4] + '.pdf')
     pdf = open(pdf_path, 'rb').read() if os.path.exists(pdf_path) and os.path.getsize(pdf_path) else None  # pdfTeX leaves an empty file after "No pages of output"
     shutil.rmtree(d, ignore_errors=True)
+    if home:
+        shutil.rmtree(home, ignore_errors=True)
     return pdf, tail, round(time.time() - t0, 1)
 
 

@@ -97,8 +97,11 @@ jobs:
           key: rikuy-dist-${{ github.run_id }}
           fail-on-cache-miss: true
       # What the sandbox sees: /mnt/corpus/py (Python), pw (Chromium), rikuy (dev/, test/,
-      # tex/tex-smoke.html, dist/), arxiv (the sources) and /mnt/tl26, read only; it writes only
-      # /mnt/corpus/home, out (the results) and /mnt/tl26/home (TEXMFVAR, font caches).
+      # tex/tex-smoke.html, dist/), arxiv (the sources) and /mnt/tl26, read only. Rikuy's step
+      # writes only /mnt/corpus/home and out; its results then move to rikuy-out, which the
+      # desktop's step can read but not change, and that step writes only home and out2. Each paper
+      # on the desktop gets a copy of /mnt/tl26/home (TEXMFVAR, TEXMFHOME, its HOME), warmed by
+      # three trusted documents and read only after, so no paper's files reach the next paper.
       - name: Chromium, poppler and the desktop TeX Live 2026
         env:
           PLAYWRIGHT_BROWSERS_PATH: /mnt/corpus/pw
@@ -118,31 +121,49 @@ jobs:
           chmod -R a+rX /mnt/corpus
           sudo useradd --no-create-home --home-dir /mnt/corpus/home --shell /usr/sbin/nologin --user-group corpus
           sudo install -d -o corpus -g corpus -m 700 /mnt/corpus/home
-          sudo install -d -o corpus -g corpus -m 755 /mnt/corpus/out
+          sudo install -d -o corpus -g corpus -m 755 /mnt/corpus/out /mnt/corpus/out2
           sudo chown -R corpus:corpus /mnt/tl26/home
           sudo sh dev/sandbox.sh corpus -w /mnt/corpus/home -w /mnt/corpus/out -w /mnt/tl26/home \
             PATH=/usr/bin:/bin HOME=/mnt/corpus/home \
             python3 -I /mnt/corpus/rikuy/dev/sandbox_check.py /mnt/corpus/home /mnt/corpus/out /mnt/tl26/home
+          # the font caches and formats a paper would otherwise build in its own copy, made once
+          # from documents of ours; then the folder is root's, read only to the papers
+          printf '%s\n' '\documentclass{article}' '\begin{document}' 'Warm.' '\end{document}' | sudo tee /mnt/corpus/warm.tex > /dev/null
+          sudo sh dev/sandbox.sh corpus -w /mnt/tl26/home PATH=/usr/bin:/bin HOME=/mnt/tl26/home TL26=/mnt/tl26 \
+            sh -c 'mkdir -p /tmp/w && cp /mnt/corpus/warm.tex /tmp/w/ && cd /tmp/w && for e in -pdf -pdfxe -pdflua; do /mnt/corpus/rikuy/dev/tl26.sh latexmk $e -interaction=nonstopmode warm.tex > /dev/null || exit 1; rm -f warm.pdf; done' \
+            || { echo "warming the desktop TeX Live failed" >&2; exit 1; }
+          sudo chown -R -h root:root /mnt/tl26/home && sudo chmod -R a+rX,go-w /mnt/tl26/home
       # the two steps that run what the papers ask for; nothing they leave running outlives them
       - name: Compile with Rikuy
         run: |
-          sudo sh dev/sandbox.sh corpus -w /mnt/corpus/home -w /mnt/corpus/out -w /mnt/tl26/home \
+          sudo sh dev/sandbox.sh corpus -w /mnt/corpus/home -w /mnt/corpus/out \
             PATH=/mnt/corpus/py/bin:/usr/bin:/bin HOME=/mnt/corpus/home LANG=C.UTF-8 \
             PLAYWRIGHT_BROWSERS_PATH=/mnt/corpus/pw SDE="$SDE" SHARD="${{ matrix.k }}/$SHARDS" \
             CORPUS_LIST=/mnt/corpus/rikuy/dev/arxiv-ids.txt CORPUS_REPO=/mnt/corpus/arxiv RIKUY_DIST=/mnt/corpus/rikuy/dist PDF_DIR=/mnt/corpus/out/pdf \
             python3 /mnt/corpus/rikuy/dev/corpus_full.py "/mnt/corpus/out/arxiv-results-${{ matrix.k }}.jsonl"
+      # Rikuy's results and PDFs out of the papers' reach: the desktop's step runs what they ask
+      # for, and could otherwise rewrite what it is compared with (the step before has ended, and
+      # with it every process it started)
+      - name: Keep Rikuy's results
+        if: always()
+        run: |
+          sudo install -d -o root -g root -m 755 /mnt/corpus/rikuy-out
+          for f in /mnt/corpus/out/arxiv-results-${{ matrix.k }}.jsonl /mnt/corpus/out/pdf; do
+            if [ -e "$f" ] && [ ! -L "$f" ]; then sudo mv -- "$f" /mnt/corpus/rikuy-out/; fi
+          done
+          sudo chown -R -h root:root /mnt/corpus/rikuy-out && sudo chmod -R a+rX,go-w /mnt/corpus/rikuy-out
       - name: Compare with the desktop TeX Live
         run: |
-          sudo sh dev/sandbox.sh corpus -w /mnt/corpus/home -w /mnt/corpus/out -w /mnt/tl26/home \
+          sudo sh dev/sandbox.sh corpus -w /mnt/corpus/home -w /mnt/corpus/out2 \
             PATH=/mnt/corpus/py/bin:/usr/bin:/bin HOME=/mnt/corpus/home LANG=C.UTF-8 \
-            TL26=/mnt/tl26 SDE="$SDE" CORPUS_LIST=/mnt/corpus/rikuy/dev/arxiv-ids.txt CORPUS_REPO=/mnt/corpus/arxiv \
-            python3 /mnt/corpus/rikuy/dev/pdfcompare.py "/mnt/corpus/out/arxiv-results-${{ matrix.k }}.jsonl" /mnt/corpus/out/pdf \
-              "/mnt/corpus/out/arxiv-pdfcompare-${{ matrix.k }}.jsonl"
+            TL26=/mnt/tl26 TL26_HOME_TEMPLATE=/mnt/tl26/home SDE="$SDE" CORPUS_LIST=/mnt/corpus/rikuy/dev/arxiv-ids.txt CORPUS_REPO=/mnt/corpus/arxiv \
+            python3 /mnt/corpus/rikuy/dev/pdfcompare.py "/mnt/corpus/rikuy-out/arxiv-results-${{ matrix.k }}.jsonl" /mnt/corpus/rikuy-out/pdf \
+              "/mnt/corpus/out2/arxiv-pdfcompare-${{ matrix.k }}.jsonl"
       # the results are the papers' output: only regular files are taken, never a link they made
       - name: Take the results out
         if: always()
         run: |
-          for f in /mnt/corpus/out/arxiv-results-${{ matrix.k }}.jsonl /mnt/corpus/out/arxiv-pdfcompare-${{ matrix.k }}.jsonl; do
+          for f in /mnt/corpus/rikuy-out/arxiv-results-${{ matrix.k }}.jsonl /mnt/corpus/out2/arxiv-pdfcompare-${{ matrix.k }}.jsonl; do
             if [ -f "$f" ] && [ ! -L "$f" ]; then cp -- "$f" .; fi
           done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -164,18 +185,8 @@ jobs:
       - name: Merge and commit to arxiv-results
         run: |
           cp shards/arxiv-ids/arxiv-ids.txt dev/arxiv-ids.txt
-          python3 - <<'PY'
-          import glob, json
-          ids = [l.split()[0] for l in open('dev/arxiv-ids.txt') if l.strip() and not l.startswith('#')]
-          order = {i: n for n, i in enumerate(ids)}
-          for kind in ('results', 'pdfcompare'):
-              rows = [json.loads(l) for f in glob.glob('shards/arxiv-shard-*/arxiv-%s-*.jsonl' % kind) for l in open(f)]
-              rows.sort(key=lambda r: order.get(r['doc'].split('/')[1], 1 << 30))
-              with open('dev/arxiv-%s.jsonl' % kind, 'w') as out:
-                  for r in rows:
-                      out.write(json.dumps(r) + '\n')
-              print(kind, len(rows))
-          PY
+          # the shard files come from jobs that ran the papers: rows are checked, not trusted
+          python3 -I dev/arxiv_collect.py dev/arxiv-ids.txt shards dev
           git config user.name "github-actions[bot]"
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git checkout -b arxiv-results
