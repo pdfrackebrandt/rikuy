@@ -3069,7 +3069,12 @@ class App {
     // project; a URL typed here is the user's own, and the field follows it until a token is typed
     const from = await this.gitRemoteFrom(dir, remote);
     if (gen !== this.gitGen) return;
-    const mine = () => url.value.trim() !== (remote || '') || from !== 'theirs';
+    // compared as the browser will request them: an <input type=url> drops the spaces, tabs and
+    // line breaks a quoted .git/config value can keep, so " https://host/x" from a stranger's
+    // config looked typed by the user, got the host's token and became the user's own remote
+    const remoteC = canonicalRemote(remote);
+    const changed = () => canonicalRemote(url.value) !== remoteC;
+    const mine = () => changed() || from !== 'theirs';
     const fill = () => savedToken(this.prefs, url.value.trim(), mine());
     let shown = tok.value = fill(), typed = false;
     const legacy = this.gitLegacyButton(url, tok, () => { typed = true; shown = tok.value; }, mine);
@@ -3093,7 +3098,7 @@ class App {
     };
     const saveUrl = async () => {
       const u = url.value.trim();
-      if (u && u !== remote) {
+      if (u && changed()) {
         if (!canonicalRemote(u)) { this.toast(G.BAD_REMOTE, 7000); return ''; }
         await G.setRemote(dir, u); this.gitOwnRemote(dir, canonicalRemote(u));
       }
@@ -3213,21 +3218,23 @@ class App {
   // its prefix names no host (or one the remote is not), so filling it in for whatever address
   // was typed sent it to strangers' remotes. The button names the host it will go to.
   gitLegacyButton(url, tok, picked, mine = () => true) {
-    let chosen = false;
+    // the choice is for the host the button named: an address edited afterwards is not chosen
+    let chosen = '';
+    const host = () => canonicalRemote(url.value) && new URL(canonicalRemote(url.value)).origin;
     const el = mkBtn('', () => {
       const t = mine() ? legacyChoice(this.prefs, url.value) : '';
       if (!t) return;
-      tok.value = t; chosen = true; picked(); sync();
+      tok.value = t; chosen = host(); picked(); sync();
     }, 'Fill in the access token you saved in an earlier version of Rikuy');
     el.classList.add('git-legacy');
     const sync = () => {
       const t = mine() ? legacyChoice(this.prefs, url.value) : '';
-      if (tok.value !== t) chosen = false;
+      if (tok.value !== t || host() !== chosen) chosen = '';
       el.hidden = !t || !!tok.value.trim();
       if (t) el.textContent = 'Use the token you saved before, for ' + remoteHost(url.value);
     };
     sync();
-    return { el, sync, chosen: () => chosen && tok.value.trim() === this.prefs.gitToken };
+    return { el, sync, chosen: () => !!chosen && chosen === host() && tok.value.trim() === this.prefs.gitToken };
   }
 
   gitError(e) {

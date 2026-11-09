@@ -23,6 +23,10 @@ export function canonicalRemote(url) {
   try {
     const u = new URL(String(url || '').trim());
     if ((u.protocol !== 'https:' && u.protocol !== 'http:') || u.username || u.password || u.search || u.hash || u.href.includes('?') || u.href.includes('#')) return '';
+    // an encoded slash, backslash or dot (or an encoded %, which decodes to one) is left in the
+    // path, where a proxy that decodes before it reads the host could make another host of it;
+    // no repository needs one
+    if (/%(2f|5c|2e|25)/i.test(u.pathname)) return '';
     return u.href;
   } catch (e) { return ''; }
 }

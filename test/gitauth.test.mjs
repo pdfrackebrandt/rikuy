@@ -44,7 +44,8 @@ ok('a remote is used as the browser will request it; one that can mean two thing
   assert.equal(canonicalRemote('https://github.com/alice/%2e%2e/%2e%2e/evil.example/paper.git'), 'https://github.com/evil.example/paper.git');
   assert.equal(canonicalRemote('https://github.com/a/.%2E/./b\\c.git'), 'https://github.com/b/c.git');
   for (const bad of ['https://x-access-token:t@github.com/you/paper.git', 'https://github.com@evil.example/x', 'https://github.com/you/paper.git?x=1', 'https://github.com/you/paper.git?',
-    'https://github.com/you/paper.git#main', 'git@github.com:you/paper.git', 'ssh://github.com/x', 'file:///tmp/x', '', null, 'not a url']) assert.equal(canonicalRemote(bad), '', String(bad));
+    'https://github.com/you/paper.git#main', 'https://github.com/a%2f..%2f..%2fevil.example%2fx', 'https://github.com/a%5C..%5Cx', 'https://github.com/a/%252e%252e/x',
+    'git@github.com:you/paper.git', 'ssh://github.com/x', 'file:///tmp/x', '', null, 'not a url']) assert.equal(canonicalRemote(bad), '', String(bad));
   assert.equal(remoteHost('https://GitHub.com/a/%2e%2e/%2e%2e/evil.example/x'), 'github.com');
   assert.equal(remoteHost('http://127.0.0.1:8812/paper.git'), '127.0.0.1:8812');
 });

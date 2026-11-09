@@ -425,6 +425,20 @@ Tests:
       (`ghp_`, `github_pat_`: GitHub; `glpat-`: GitLab; `olp_`: Overleaf); otherwise a button
       offers it, naming the host.
     - Push and pull followed an opened config's `branch.<name>.merge`; they name the branch now.
+    A second review, of everything after the first, found:
+    - **A stranger's remote quoted with a space in front was taken for the user's own.** The URL
+      field drops spaces, tabs and line breaks a quoted `.git/config` value keeps, so the panel
+      saw an address the user had changed, filled in the host's token and recorded the remote as
+      the user's after one pull. Remotes are compared in their canonical form now.
+    - Encoded slashes, backslashes, dots and percent signs in a remote's path are refused (a proxy
+      that decodes before it reads the host could make another host of them); the old token's
+      button holds its choice only for the host it named.
+    - `arxiv.yml`: the desktop's step could rewrite Rikuy's results and PDFs it is compared with,
+      and one paper could leave a `.sty`, a format or a `~/.latexmkrc` for the next; `collect`
+      took rows on trust and stopped on one without `doc`. Rikuy's results now move out of the
+      papers' reach before the desktop's step; each paper compiles with its own copy of a TeX home
+      warmed by three trusted documents (`TL26_HOME_TEMPLATE`, `dev/pdfcompare.py`); `collect`
+      keeps only rows that name a paper of the sample, once each (`dev/arxiv_collect.py`).
     The audit's hardening items, done too: a widget's window loses WebRTC before its scripts run,
     and frames it adds are removed, with the page refusing data: and blob: frames (`frame-src
     'self'`), since Chromium ignores CSP's `webrtc` directive; IBM Plex, the interface font, is
@@ -434,7 +448,7 @@ Tests:
     unprivileged user with no network, no sudo and the runner's processes hidden
     (`dev/sandbox.sh`, checked by `dev/sandbox_check.py` before any paper runs).
     Evidence: `npm test` (with `test/gitauth.test.mjs` 8/8, `test/engine.test.mjs` 5/5,
-    `test/arxiv_unpack.py` 10/10); `test/browser.py` 92/92, git 42/42, widgets 60/60, share 46,
+    `test/arxiv_unpack.py` 10/10, `test/arxiv_collect.py` 5/5); `test/browser.py` 92/92, git 44/44, widgets 60/60, share 46,
     files 30, features 36, history 39, paste 22, wordmath 83, mathfield 19, eqextras 18, frontier
     13; `test/engines.py` 23/23 and `test/pdf.py` 20/20 in CI's TeX job. Every check added for a
     finding fails on the build before its fix; the dot segment one sees the token reach the
@@ -445,7 +459,10 @@ Tests:
     a compile is not checked by the path guard (not shown to be reachable); the mirror's pack
     hashes are 64 bits, which a second preimage needs about 2^64 / packs trials to beat, and the
     mirror's index comes from the page's own site; Latin Extended letters in the interface fall
-    back to a system font (the inlined Plex is cut to Latin and Latin-1).
+    back to a system font (the inlined Plex is cut to Latin and Latin-1). In the arXiv workflow the
+    papers of one shard run as the same user as the harness that compares them, so a paper could
+    still alter its shard's comparison rows (they are checked for form, not truth); the workflow's
+    changes have not run, since the workflow has not.
 
 25. **CI rebuilds what was rebuilt only by hand.** Done. `.github/workflows/tex.yml` lays out the
     inputs from the pinned downloads, builds the tree and packs, diffs `dist/tex` against
