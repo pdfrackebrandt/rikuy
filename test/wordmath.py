@@ -1,6 +1,6 @@
 """Typing math the way Word's equation editor takes it: command chips and Space, Tab for a
 suggestion, fractions and scripts left with Space, -> and <= turned into symbols."""
-import os, sys, json, traceback
+import os, sys, json, time, traceback
 sys.path.insert(0, os.path.dirname(__file__))
 from browser import ROUTES, SKELETON_HEAD, ROOT, SHOTS, check, results
 from playwright.sync_api import sync_playwright
@@ -12,6 +12,23 @@ inner = SKELETON_HEAD + html + '</body></html>'
 outer = '<!doctype html><html><body style="margin:0"><iframe id="f" src="https://sandbox.test/a" sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads" style="border:0;width:100vw;height:100vh"></iframe></body></html>'
 
 PW = sync_playwright().start()
+
+
+def wait_js(frame, expr, timeout=20000):
+    # frame.wait_for_function runs its predicate through eval inside the frame, which the host's
+    # policy (no 'unsafe-eval') refuses; Playwright gets around that only some of the time, and
+    # CI failed about one run in three ("Refused to evaluate a string as JavaScript").
+    # frame.evaluate goes through the debugger protocol, which the policy does not cover.
+    end, err = time.time() + timeout / 1000, None
+    while time.time() < end:
+        try:
+            if frame.evaluate(expr): return
+        except Exception as e:  # the frame may still be loading: its context goes away mid call
+            err = e
+        time.sleep(0.1)
+    raise TimeoutError('%s not true after %d ms%s' % (expr, timeout, (': %s' % err) if err else ''))
+
+
 def run(touch=False):
     if True:
         p = PW
@@ -31,7 +48,7 @@ def run(touch=False):
         page.goto('https://host.test/')
         fr = page.frame_locator('#f')
         frame = page.frames[1]
-        frame.wait_for_function('window.rikuy && document.getElementById("boot").hidden', timeout=20000)
+        wait_js(frame, '!!(window.rikuy && document.getElementById("boot").hidden)')
         frame.evaluate("localStorage.clear()")
         return b, page, fr, frame, logs
 
