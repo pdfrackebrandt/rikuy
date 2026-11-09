@@ -13,7 +13,7 @@
 #   $RIKUY_SRC)   env: RIKUY_SRC, RIKUY_VENDOR, UBUNTU_POOL
 # Needs: Ubuntu's emscripten 3.1.6 and node; git, curl, make, pkg-config, xz and bzip2; meson,
 #   ninja, bison, flex and Python 3 with mako (Mesa); gcc with libgmp-dev and libgc-dev (a native
-#   ECL, which compiles ECL's Lisp for WebAssembly); npm (binaryen); dpkg-deb (xindy's modules)
+#   ECL, which compiles ECL's Lisp for WebAssembly); dpkg-deb (xindy's modules)
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 SRC=${RIKUY_SRC:-/tmp/src}
@@ -140,9 +140,17 @@ eigen() {
   fetch $UBUNTU/universe/e/eigen3/eigen3_3.4.0.orig.tar.bz2 b4c198460eba6f28d34894e3a5710998818515104d6e74e5cc331ce31e46e626
   rm -rf "$SRC/eigen" && mkdir -p "$SRC/eigen" && tar --no-same-owner -xjf "$SRC/dl/eigen3_3.4.0.orig.tar.bz2" -C "$SRC/eigen" --strip-components=1
 }
-# binaryen 123 (npm) for its spill-pointers pass, which the Boehm GC needs (xindy below)
+# binaryen 123 (npm) for its spill-pointers pass, which the Boehm GC needs (xindy below): the
+# registry's tarball, the one npm install binaryen@123.0.0 unpacks, checked like every other
+# download (its sha512 is the registry's dist.integrity,
+# sha512-/hls/a309aZCc0itqP6uhoR+5DsKSlJVfB8Opd2BY9Ndghs84IScTunlyidyF4r2Xe3lQttnfBNIDjaNpj6mTw==).
+# It has no dependencies and no install scripts, so unpacking is all npm would do.
+BINARYEN_V=123.0.0
+WASM_OPT="$SRC/binaryen/package/bin/wasm-opt"
 binaryen() {
-  [ -x "$SRC/binaryen/node_modules/binaryen/bin/wasm-opt" ] || (mkdir -p "$SRC/binaryen" && cd "$SRC/binaryen" && npm install --silent binaryen@123.0.0 > /dev/null)
+  [ -f "$WASM_OPT" ] && return
+  fetch https://registry.npmjs.org/binaryen/-/binaryen-$BINARYEN_V.tgz 11fcbcb97b5c8da3990106fb4e2d364ba95ddf313d7c0e61ca8e8c7948600f7f
+  rm -rf "$SRC/binaryen" && mkdir -p "$SRC/binaryen" && tar --no-same-owner -xzf "$SRC/dl/binaryen-$BINARYEN_V.tgz" -C "$SRC/binaryen"
 }
 
 # Asymptote 3.09 with what the desktop's has, but threads, readline, curl, sigsegv, the language
@@ -338,7 +346,7 @@ xindy() {
   emcc -O2 "$X/main.o" "$X/tex2xindy.o" "$SRC/ecl-wasm/build/libecl.a" -L"$SRC/wasm-prefix/lib" -lgmp -lgc -lm --embed-file "$X/lisp@/xindy" \
     -sMODULARIZE=1 -sINVOKE_RUN=0 -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=67108864 -sTOTAL_STACK=4194304 -sFORCE_FILESYSTEM=1 -sENVIRONMENT=web,worker,node \
     -sEXPORTED_RUNTIME_METHODS=FS,ENV -sEXPORTED_FUNCTIONS=_galley_main,_xindy_boot,_malloc,_fflush -sEXPORT_NAME=GalleyXindy -o "$VENDOR/xindy/xindy.js"
-  node "$SRC/binaryen/node_modules/binaryen/bin/wasm-opt" "$VENDOR/xindy/xindy.wasm" --spill-pointers -O2 -o "$VENDOR/xindy/xindy.wasm"
+  node "$WASM_OPT" "$VENDOR/xindy/xindy.wasm" --spill-pointers -O2 -o "$VENDOR/xindy/xindy.wasm"
   # Loading the kernel as ECL bytecode (.fasc, compiled by this program) instead of source was
   # measured on 2026-10-19 (PLAN task 12): first boot in a fresh process 293 to 350 ms against
   # 321 to 418 ms, of which ECL's own start is about 200 ms. Not worth a second link and 130 KB.

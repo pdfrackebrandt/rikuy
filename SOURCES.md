@@ -10,7 +10,9 @@ hashes below are the same.
 
 dvips, Asymptote and xindy are built from TeX Live's own source tree; gnuplot and the libraries
 from Ubuntu's source packages. An empty `RIKUY_SRC`, in any folder, rebuilds every committed
-program byte for byte (PLAN.md, task 21).
+program byte for byte (PLAN.md, task 21). The compiler is Ubuntu 24.04's `emscripten` 3.1.6
+package; xindy's `wasm-opt --spill-pointers` comes from binaryen 123.0.0, the npm registry's
+tarball (SHA-256 `11fcbcb97b5c8da3990106fb4e2d364ba95ddf313d7c0e61ca8e8c7948600f7f`).
 
 | part | version | source | license |
 |---|---|---|---|
