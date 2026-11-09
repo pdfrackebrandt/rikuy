@@ -415,7 +415,9 @@ under a real one's name. A page on claude.ai reaches only its own server: self h
 3. `node build.mjs`: `src/sample.js` from `sample/`; esbuild bundles `src/app.js` (IIFE, minified
    unless `--dev`, `__RIKUY_MIRROR__`) and `src/git.js` as `dist/git.js` (loaded by the Git
    panel); the fonts of `build/fonts` (Paper Modern, cut from the Computer Modern Unicode fonts
-   by `build/fonts/subset.py`) and the CSS go into `src/template.html` as `dist/rikuy.html`;
+   by `build/fonts/subset.py`), the interface's IBM Plex Sans and Mono (Google Fonts' Latin cut,
+   unchanged, from npm's `@fontsource` packages) and the CSS go into `src/template.html` as
+   `dist/rikuy.html`, every font as `data:`;
    worker scripts, `busytex.js`, `biber.js`, `fflate.js`, `pyodide.js`, PDF.js and its worker and
    vendor tool scripts go to `dist/tex/`, npm's Ghostscript module made a classic script (`self.GalleyGs`; the build
    fails if its stack exports moved), control bytes escaped. `dist/index.html` is the page inside

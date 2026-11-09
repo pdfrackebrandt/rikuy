@@ -17,7 +17,7 @@ a command fails, trust the code and fix this file.
 | `tex/build_tools.sh`, `tex/native/` | programs built here with Emscripten 3.1.6, and Rikuy's patches to them; output in `tex/vendor/` (committed) |
 | `tex/fetch_inputs.sh` | lays out the build inputs (`$RIKUY_WORK`, default `/tmp/eng`), every download checked by hash |
 | `build.mjs` | bundles the page and copies the worker into `dist/`; writes `dist/index.html` (the page as a whole document, for any static server) and `dist/LICENSES.txt` |
-| `build/fonts/` | the page's text fonts, cut from the Computer Modern Unicode fonts by `subset.py` (OFL) |
+| `build/fonts/` | the page's text fonts, cut from the Computer Modern Unicode fonts by `subset.py` (OFL); the interface's IBM Plex comes unchanged from npm's `@fontsource` packages (`build.mjs`) |
 | `test/` | node unit tests (`*.test.mjs`) and Playwright browser tests (`*.py`) |
 | `dev/` | the comparison harness: one compile, one shell command, the corpus, PDFs against a desktop TeX Live, Asymptote against a desktop asy; and its results (`*.jsonl`) |
 | `inputs/` | build inputs that took an engine run to make (formats, PK fonts, caches) |
