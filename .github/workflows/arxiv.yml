@@ -5,7 +5,7 @@
 #             download the papers at one request per 3 s, keep them in the Actions cache
 #   rikuy     build dist/ as PLAN.md's Building section does
 #   shard     8 jobs, each compiling an eighth of the papers with Rikuy (corpus_full.py) and
-#             with a desktop TeX Live 2026 (pdfcompare.py)
+#             with a desktop TeX Live 2026 (pdfcompare.py), both inside dev/sandbox.sh
 #   collect   commit the identifiers, the compile results and the comparison to the branch
 #             arxiv-results; the sources are never committed
 name: arXiv corpus
@@ -13,13 +13,16 @@ on:
   workflow_dispatch:
 # Read only, except the job that commits: the shards compile papers from arXiv with a desktop
 # TeX Live and shell escape, which runs whatever a paper asks for, so no job that compiles holds
-# a token that can push, and their checkouts keep no credentials.
+# a token that can push, and their checkouts keep no credentials. The runner user could still
+# read the token for the Actions cache from the runner's memory (it has passwordless sudo) and
+# plant a cache entry a trusted workflow restores later, so the compiles run as another user,
+# with no way to sudo and only their own folders writable (dev/sandbox.sh). Python packages are
+# pinned by hash (dev/arxiv-requirements.txt).
 permissions:
   contents: read
 env:
   SHARDS: 8
   SDE: '1700000000'
-  PLAYWRIGHT_BROWSERS_PATH: /home/runner/pw
 jobs:
   sources:
     runs-on: ubuntu-24.04
@@ -54,7 +57,8 @@ jobs:
       - name: Build dist/
         run: |
           npm ci
-          pip install --break-system-packages lz4
+          python3 -m venv "$RUNNER_TEMP/py" && . "$RUNNER_TEMP/py/bin/activate"
+          pip install --require-hashes --only-binary :all: -r dev/arxiv-requirements.txt
           sudo mkdir -p /mnt/eng && sudo chown "$USER" /mnt/eng
           export RIKUY_WORK=/mnt/eng
           sh tex/fetch_inputs.sh
@@ -92,22 +96,55 @@ jobs:
           path: dist
           key: rikuy-dist-${{ github.run_id }}
           fail-on-cache-miss: true
+      # What the sandbox sees: /mnt/corpus/py (Python), pw (Chromium), rikuy (dev/, test/,
+      # tex/tex-smoke.html, dist/), arxiv (the sources) and /mnt/tl26, read only; it writes only
+      # /mnt/corpus/home, out (the results) and /mnt/tl26/home (TEXMFVAR, font caches).
       - name: Chromium, poppler and the desktop TeX Live 2026
+        env:
+          PLAYWRIGHT_BROWSERS_PATH: /mnt/corpus/pw
         run: |
-          pip install --break-system-packages playwright numpy
-          python3 -m playwright install --with-deps chromium
-          sudo apt-get install -y poppler-utils
+          sudo mkdir -p /mnt/corpus /mnt/eng /mnt/tl26 && sudo chown "$USER" /mnt/corpus /mnt/eng /mnt/tl26
+          python3 -m venv /mnt/corpus/py
+          /mnt/corpus/py/bin/pip install --require-hashes --only-binary :all: -r dev/arxiv-requirements.txt
+          /mnt/corpus/py/bin/python -m playwright install --with-deps chromium
+          sudo apt-get install -y poppler-utils xvfb
           # the packages' folder and the TeX Live made of hard links to it share one file system
-          sudo mkdir -p /mnt/eng /mnt/tl26 && sudo chown "$USER" /mnt/eng /mnt/tl26
           RIKUY_WORK=/mnt/eng UBUNTU_MIRROR=http://azure.archive.ubuntu.com/ubuntu sh dev/fetch_tl26.sh
+      - name: The sandbox, and a check that it holds
+        run: |
+          mkdir -p /mnt/corpus/rikuy/tex
+          cp -r dev test dist /mnt/corpus/rikuy/ && cp tex/tex-smoke.html /mnt/corpus/rikuy/tex/
+          mv "$HOME/arxiv" /mnt/corpus/arxiv
+          chmod -R a+rX /mnt/corpus
+          sudo useradd --no-create-home --home-dir /mnt/corpus/home --shell /usr/sbin/nologin --user-group corpus
+          sudo install -d -o corpus -g corpus -m 700 /mnt/corpus/home
+          sudo install -d -o corpus -g corpus -m 755 /mnt/corpus/out
+          sudo chown -R corpus:corpus /mnt/tl26/home
+          sudo sh dev/sandbox.sh corpus -w /mnt/corpus/home -w /mnt/corpus/out -w /mnt/tl26/home \
+            PATH=/usr/bin:/bin HOME=/mnt/corpus/home \
+            python3 -I /mnt/corpus/rikuy/dev/sandbox_check.py /mnt/corpus/home /mnt/corpus/out /mnt/tl26/home
+      # the two steps that run what the papers ask for; nothing they leave running outlives them
       - name: Compile with Rikuy
         run: |
-          CORPUS_LIST=dev/arxiv-ids.txt CORPUS_REPO="$HOME/arxiv" RIKUY_DIST="$PWD/dist" PDF_DIR="$RUNNER_TEMP/pdf" \
-            SHARD=${{ matrix.k }}/$SHARDS python3 dev/corpus_full.py "arxiv-results-${{ matrix.k }}.jsonl"
+          sudo sh dev/sandbox.sh corpus -w /mnt/corpus/home -w /mnt/corpus/out -w /mnt/tl26/home \
+            PATH=/mnt/corpus/py/bin:/usr/bin:/bin HOME=/mnt/corpus/home LANG=C.UTF-8 \
+            PLAYWRIGHT_BROWSERS_PATH=/mnt/corpus/pw SDE="$SDE" SHARD="${{ matrix.k }}/$SHARDS" \
+            CORPUS_LIST=/mnt/corpus/rikuy/dev/arxiv-ids.txt CORPUS_REPO=/mnt/corpus/arxiv RIKUY_DIST=/mnt/corpus/rikuy/dist PDF_DIR=/mnt/corpus/out/pdf \
+            python3 /mnt/corpus/rikuy/dev/corpus_full.py "/mnt/corpus/out/arxiv-results-${{ matrix.k }}.jsonl"
       - name: Compare with the desktop TeX Live
         run: |
-          CORPUS_LIST=dev/arxiv-ids.txt CORPUS_REPO="$HOME/arxiv" \
-            python3 dev/pdfcompare.py "arxiv-results-${{ matrix.k }}.jsonl" "$RUNNER_TEMP/pdf" "arxiv-pdfcompare-${{ matrix.k }}.jsonl"
+          sudo sh dev/sandbox.sh corpus -w /mnt/corpus/home -w /mnt/corpus/out -w /mnt/tl26/home \
+            PATH=/mnt/corpus/py/bin:/usr/bin:/bin HOME=/mnt/corpus/home LANG=C.UTF-8 \
+            TL26=/mnt/tl26 SDE="$SDE" CORPUS_LIST=/mnt/corpus/rikuy/dev/arxiv-ids.txt CORPUS_REPO=/mnt/corpus/arxiv \
+            python3 /mnt/corpus/rikuy/dev/pdfcompare.py "/mnt/corpus/out/arxiv-results-${{ matrix.k }}.jsonl" /mnt/corpus/out/pdf \
+              "/mnt/corpus/out/arxiv-pdfcompare-${{ matrix.k }}.jsonl"
+      # the results are the papers' output: only regular files are taken, never a link they made
+      - name: Take the results out
+        if: always()
+        run: |
+          for f in /mnt/corpus/out/arxiv-results-${{ matrix.k }}.jsonl /mnt/corpus/out/arxiv-pdfcompare-${{ matrix.k }}.jsonl; do
+            if [ -f "$f" ] && [ ! -L "$f" ]; then cp -- "$f" .; fi
+          done
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
