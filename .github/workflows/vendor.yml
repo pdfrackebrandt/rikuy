@@ -1,0 +1,96 @@
+# The programs committed in tex/vendor/ are build outputs of tex/build_tools.sh (AGENTS.md). This
+# rebuilds each one from an empty RIKUY_SRC into a folder of its own (RIKUY_VENDOR) and compares
+# every file with the committed one by SHA-256: a binary that the scripts do not make, or a script
+# change that moves a binary without it being committed, fails here. Mesa has no job of its own:
+# it is a library only asy links, and asy's job builds it from scratch with GSL, FFTW and Eigen.
+# Runs when the programs, their patches or the script change, and by hand: about an hour of
+# runner time, 42 minutes of it asy's (Mesa alone 30). A difference is reported, never fixed by
+# copying the rebuilt file over the committed one: find what moved it.
+name: Vendored programs
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tex/vendor/**'
+      - 'tex/native/**'
+      - 'tex/build_tools.sh'
+      - '.github/workflows/vendor.yml'
+  pull_request:
+    paths:
+      - 'tex/vendor/**'
+      - 'tex/native/**'
+      - 'tex/build_tools.sh'
+      - '.github/workflows/vendor.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: vendor-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  rebuild:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        program: [dvips, gnuplot, xindy, asy]
+    env:
+      # Azure's copy of Ubuntu's archive, next to the runner; same paths, so the same hashes
+      UBUNTU_POOL: http://azure.archive.ubuntu.com/ubuntu/pool
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      # build_tools.sh's header lists what it needs. The programs were built with Ubuntu's
+      # emscripten 3.1.6 package (clang 15); another Emscripten gives other bytes, so it is checked.
+      - name: Toolchain
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends emscripten nodejs git curl make pkg-config xz-utils bzip2 dpkg \
+            meson ninja-build bison flex python3-mako python3-packaging gcc libgmp-dev libgc-dev
+          v=$(dpkg-query -W -f='${Version}' emscripten)
+          echo "emscripten package $v"; emcc --version | head -1; echo "its cache: $(em-config CACHE)"
+          echo "node $(/usr/bin/node --version), meson $(meson --version), $(python3 --version)"
+          case "$v" in 3.1.6~*|3.1.6-*) ;; *) echo "::error::emscripten is $v, not 3.1.6"; exit 1 ;; esac
+      - name: Build ${{ matrix.program }} from an empty RIKUY_SRC
+        run: |
+          RIKUY_SRC="$RUNNER_TEMP/src" RIKUY_VENDOR="$RUNNER_TEMP/vendor" sh tex/build_tools.sh ${{ matrix.program }}
+      - name: Compare with tex/vendor/${{ matrix.program }}
+        run: |
+          p=${{ matrix.program }}
+          # every file but folders, symbolic links included, by name; sha256sum reads through links
+          sums() { (cd "$1" && find . ! -type d -print0 | LC_ALL=C sort -z | xargs -0 sha256sum); }
+          sums "tex/vendor/$p" > "$RUNNER_TEMP/committed.sha256"
+          sums "$RUNNER_TEMP/vendor/$p" > "$RUNNER_TEMP/rebuilt.sha256"
+          echo "committed $(wc -l < "$RUNNER_TEMP/committed.sha256") files, rebuilt $(wc -l < "$RUNNER_TEMP/rebuilt.sha256")"
+          grep -E '\.(wasm|js)$' "$RUNNER_TEMP/rebuilt.sha256"
+          {
+            echo "### $p"
+            echo '```'
+            grep -E '\.(wasm|js)$' "$RUNNER_TEMP/rebuilt.sha256"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if diff -u "$RUNNER_TEMP/committed.sha256" "$RUNNER_TEMP/rebuilt.sha256"; then
+            echo "all $(wc -l < "$RUNNER_TEMP/committed.sha256") files of $p equal" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            # sizes and the count of bytes that differ: moved data or changed code
+            join -j 2 <(sort -k2 "$RUNNER_TEMP/committed.sha256") <(sort -k2 "$RUNNER_TEMP/rebuilt.sha256") | awk '$2 != $3 {print $1}' |
+              while read -r f; do
+                a="tex/vendor/$p/$f" b="$RUNNER_TEMP/vendor/$p/$f"
+                echo "$f: $(stat -c %s "$a") bytes committed, $(stat -c %s "$b") rebuilt, $(cmp -l "$a" "$b" | wc -l) differ"
+              done
+            echo "::error::the rebuilt $p differs from tex/vendor/$p (diff above: - committed, + rebuilt)"
+            echo "**differs from tex/vendor/$p**" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+      # what was built, and the build's logs, to find what moved a difference
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: failure()
+        with:
+          name: rebuilt-${{ matrix.program }}
+          path: |
+            ${{ runner.temp }}/vendor
+            ${{ runner.temp }}/src/**/*.log
+          retention-days: 7
+          if-no-files-found: ignore

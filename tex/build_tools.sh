@@ -183,10 +183,13 @@ asy() {
     # configure's link tests for GL and OSMesa cannot pass here (-lGL is Emscripten's WebGL), and
     # it would take Emscripten's GLUT emulation for a window toolkit; those for FFTW and GSL
     # declare the function with another signature, which this Emscripten's binaryen cannot
-    # finish linking: the answers are given. GSL and FFTW give their flags by pkg-config.
+    # finish linking: the answers are given. GSL and FFTW give their flags by pkg-config. The
+    # folders for asy's LaTeX and ConTeXt files are given too: only make install uses them, and
+    # without them configure asks kpsewhich, or, where there is none, fails when cross compiling.
     PKG_CONFIG_LIBDIR="$SRC/gsl/lib/pkgconfig:$SRC/fftw/lib/pkgconfig" \
     emconfigure ./configure --host=wasm32-unknown-emscripten --build=x86_64-pc-linux-gnu --disable-gc --disable-threads --disable-readline \
       --disable-curl --disable-lsp --disable-sigsegv --disable-xdr --enable-offscreen \
+      --with-latex=/usr/share/texmf/tex/latex --with-context=/usr/share/texmf/tex/context/third \
       ac_cv_lib_glut_glutMainLoop=no ac_cv_lib_GL_glDepthMask=yes ac_cv_lib_OSMesa_OSMesaCreateContext=yes \
       ac_cv_lib_fftw3_fftw_execute=yes ac_cv_lib_gsl_gsl_sf_debye_6=yes \
       CXXFLAGS="-O2 -fexceptions" CFLAGS=-O2 CPPFLAGS="-I$SRC/zlib/include -I$SRC/glm -I$SRC/mesa/src/include $ASYLIBINC" \
@@ -342,8 +345,14 @@ xindy() {
   I="-I$SRC/ecl-wasm/build -I$SRC/wasm-prefix/include"
   emcc -O2 $I -c "$HERE/native/xindy/main.c" -o "$X/main.o"
   emcc -O2 -Dmain=tex2xindy_main -c "$SRC/tl/utils/xindy/xindy-src/tex2xindy/tex2xindy.c" -o "$X/tex2xindy.o"
+  # The Lisp files go in one by one, in a fixed order: given the folder, Emscripten 3.1.6's file
+  # packager takes them in the order the file system lists them (os.walk, unsorted), which is
+  # another one on another disk, and so is xindy.wasm. This is the order the committed one has.
+  LISP="defaults.xdy compat.lsp locref.lsp markup.lsp base.lsp version.lsp idxstyle.lsp index.lsp ordrules.lsp"
+  [ "$(ls "$X/lisp" | sort)" = "$(printf '%s\n' $LISP | sort)" ] || { echo "build_tools.sh: xindy's Lisp files are not $LISP" >&2; exit 1; }
+  EMBED=$(for f in $LISP; do printf ' --embed-file %s/lisp/%s@/xindy/%s' "$X" "$f" "$f"; done)
   mkdir -p "$VENDOR/xindy"
-  emcc -O2 "$X/main.o" "$X/tex2xindy.o" "$SRC/ecl-wasm/build/libecl.a" -L"$SRC/wasm-prefix/lib" -lgmp -lgc -lm --embed-file "$X/lisp@/xindy" \
+  emcc -O2 "$X/main.o" "$X/tex2xindy.o" "$SRC/ecl-wasm/build/libecl.a" -L"$SRC/wasm-prefix/lib" -lgmp -lgc -lm $EMBED \
     -sMODULARIZE=1 -sINVOKE_RUN=0 -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=67108864 -sTOTAL_STACK=4194304 -sFORCE_FILESYSTEM=1 -sENVIRONMENT=web,worker,node \
     -sEXPORTED_RUNTIME_METHODS=FS,ENV -sEXPORTED_FUNCTIONS=_galley_main,_xindy_boot,_malloc,_fflush -sEXPORT_NAME=GalleyXindy -o "$VENDOR/xindy/xindy.js"
   node "$WASM_OPT" "$VENDOR/xindy/xindy.wasm" --spill-pointers -O2 -o "$VENDOR/xindy/xindy.wasm"
