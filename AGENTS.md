@@ -25,7 +25,7 @@ a command fails, trust the code and fix this file.
 | `docs/ARCHITECTURE.md` | how the editor, the worker, the programs and the tree fit, with the functions to start at |
 | `PLAN.md` | status, numbers, finished and open tasks, and the rules for commits |
 | `SOURCES.md`, `NOTICE`, `LICENSES/` | where every shipped part's source is, its license, and the license texts not elsewhere in the repository |
-| `.github/` | CI (`npm test`, the corpus model run, the editor in Chromium), the arXiv corpus workflow, issue and pull request templates |
+| `.github/` | CI (`npm test`, the corpus model run, the editor in Chromium), `tex.yml` (builds `dist/tex` from the pinned inputs, checks the manifest, runs `test/engines.py` and `test/pdf.py`, keeps `dist/` as a workflow artifact), the arXiv corpus workflow, issue and pull request templates |
 | `.claude/skills/security-audit/` | Cloudflare's security audit skill (MIT, source commit in `UPSTREAM`); Claude Code and OpenCode load it from here, other agents read its `SKILL.md` |
 
 `dist/` and `node_modules/` are not in git.

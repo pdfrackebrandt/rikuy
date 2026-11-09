@@ -1,0 +1,86 @@
+# The TeX side, which ci.yml leaves out: build dist/tex as PLAN.md's Building section does (about
+# 3 GB of downloads, every one checked by hash, from GitHub and Ubuntu's archive, which the machine
+# Rikuy is developed on cannot reach), check it byte for byte against dev/dist-manifest.txt, then
+# run the tests that compile with TeX in the page: test/engines.py and test/pdf.py. The built
+# dist/ is kept as a workflow artifact for a week, so a release can be published from it.
+# Runs when something the TeX side is made of or tested with changes, and by hand.
+name: TeX
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tex/**'
+      - 'inputs/**'
+      - 'build.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'src/pdfview.js'
+      - 'dev/dist-manifest.txt'
+      - 'test/engines.py'
+      - 'test/pdf.py'
+      - 'test/serve.py'
+      - 'test/browser.py'
+      - '.github/workflows/tex.yml'
+  pull_request:
+    paths:
+      - 'tex/**'
+      - 'inputs/**'
+      - 'build.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'src/pdfview.js'
+      - 'dev/dist-manifest.txt'
+      - 'test/engines.py'
+      - 'test/pdf.py'
+      - 'test/serve.py'
+      - 'test/browser.py'
+      - '.github/workflows/tex.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tex:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      RIKUY_WORK: /mnt/eng
+      # Azure's copy of Ubuntu's archive, next to the runner; same paths, same hashes
+      UBUNTU_MIRROR: http://azure.archive.ubuntu.com/ubuntu
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+      # a Python of its own: pip does not install into Ubuntu 24.04's system Python
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.13'
+      - name: Tools
+        run: |
+          npm ci
+          python3 -m pip install lz4==4.4.4 playwright==1.56.0 pypdf==5.9.0 numpy==2.3.4
+          python3 -m playwright install --with-deps chromium
+          # the work folder holds about 10 GB; the runner's second disk has room
+          sudo mkdir -p /mnt/eng && sudo chown "$USER" /mnt/eng
+          df -h / /mnt
+      - name: Build inputs
+        run: sh tex/fetch_inputs.sh
+      - name: Build the tree, its packs and the page
+        run: python3 tex/build_tree.py tree && python3 tex/build_tree.py packs && node build.mjs && du -sh dist dist/tex
+      - name: dist/tex as dev/dist-manifest.txt lists it
+        run: cd dist/tex && find . -type f | sort | xargs sha256sum | diff ../../dev/dist-manifest.txt -
+      # every test must pass; a test that cannot run here is left out, never run with `|| true`
+      - name: Engines and shell escape in the page
+        run: npm run test:engines
+      - name: pdfLaTeX in the PDF pane, under the host's policy
+        run: cd test && python3 pdf.py
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: rikuy-dist
+          path: dist
+          retention-days: 7
+          # the packs are compressed already
+          compression-level: 0
