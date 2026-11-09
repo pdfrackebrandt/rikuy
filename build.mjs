@@ -44,6 +44,23 @@ const fonts = [
   F('Paper Modern Sans', 'cmu-sans-serif-500-roman.woff2', 400, 'normal'),
   F('Paper Modern Sans', 'cmu-sans-serif-700-roman.woff2', 700, 'normal')
 ].join('\n');
+// The interface's fonts, IBM Plex Sans and Mono, inside the page as the text fonts are: fetched
+// from a font server while the page runs, they told it the address of everyone who opened it, and
+// the artifact host lets a page take fonts only as data: (font-src data: and Google's server).
+// They are Google Fonts' own Latin cut (Latin-1, general punctuation and a few symbols: every
+// character of the interface's text), as @fontsource ships it, unchanged; package-lock.json pins
+// them. Each face takes its unicode-range from the package's style sheet, so characters past it
+// fall back to the next font, as they did when Google served the same cut.
+const plex = (pkg, weight) => {
+  const file = `${pkg}-latin-${weight}-normal.woff2`;
+  const dir = R('node_modules/@fontsource/' + pkg);
+  const face = fs.readFileSync(path.join(dir, weight + '.css'), 'utf8').split('@font-face').find((b) => b.includes('/files/' + file + ')'));
+  const family = face && (face.match(/font-family:\s*'([^']+)'/) || [])[1];
+  const range = face && (face.match(/unicode-range:\s*([^;]+);/) || [])[1];
+  if (!family || !range) throw new Error('@fontsource/' + pkg + ': no Latin face for weight ' + weight + ' in ' + weight + '.css');
+  return `@font-face{font-family:"${family}";src:url(data:font/woff2;base64,${b64(path.join(dir, 'files', file))}) format("woff2");font-weight:${weight};font-style:normal;font-display:block;unicode-range:${range}}`;
+};
+const uiFonts = [plex('ibm-plex-sans', 400), plex('ibm-plex-sans', 500), plex('ibm-plex-sans', 600), plex('ibm-plex-mono', 400), plex('ibm-plex-mono', 500)].join('\n');
 
 // 4. KaTeX css with embedded woff2
 let katexCss = fs.readFileSync(R('node_modules/katex/dist/katex.min.css'), 'utf8');
@@ -56,7 +73,7 @@ const cmCss = fs.readFileSync(R('node_modules/codemirror/lib/codemirror.css'), '
 // 6. assemble
 const css = fs.readFileSync(R('src/app.css'), 'utf8');
 let html = fs.readFileSync(R('src/template.html'), 'utf8');
-html = html.replace('/*FONTS*/', () => fonts).replace('/*KATEX*/', () => katexCss).replace('/*CODEMIRROR*/', () => cmCss).replace('/*APP*/', () => css).replace('/*APPJS*/', () => js);
+html = html.replace('/*FONTS*/', () => fonts + '\n' + uiFonts).replace('/*KATEX*/', () => katexCss).replace('/*CODEMIRROR*/', () => cmCss).replace('/*APP*/', () => css).replace('/*APPJS*/', () => js);
 html += '\n<!-- Rikuy is free software under the GNU AGPL 3.0 or later: https://github.com/pdfrackebrandt/rikuy (SOURCES.md says where the source of every part is). Licenses of what it ships: LICENSES.txt beside this page. -->\n';
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(O('rikuy.html'), html);
@@ -113,7 +130,7 @@ console.log(O('tex'), fs.readdirSync(O('tex')).length, 'files');
 // The npm packages: those git.js bundles, and those whose files the steps above copy.
 const pkgOf = (f) => (f.match(/node_modules\/((?:@[^/]+\/)?[^/]+)\//) || [])[1];
 const npm = new Set(Object.keys(gitOut.metafile.inputs).map(pkgOf).filter(Boolean));
-for (const p of ['katex', 'codemirror', 'fflate', 'pdfjs-dist', 'pyodide']) npm.add(p);
+for (const p of ['katex', 'codemirror', 'fflate', 'pdfjs-dist', 'pyodide', '@fontsource/ibm-plex-sans', '@fontsource/ibm-plex-mono']) npm.add(p);
 const byText = new Map();  // packages whose license file says the same, printed once
 for (const p of [...npm].sort()) {
   const dir = R('node_modules/' + p);
@@ -130,7 +147,7 @@ lic += rule('GNU Affero General Public License 3.0: Rikuy, BusyTeX, Ghostscript'
 const texts = [['GPL-3.0', 'Asymptote as built (with GSL), GSL, Xpdf'], ['GPL-2.0', 'TeX Live\'s programs, dvips, xindy, FFTW, GMP, Xpdf, libpaper'], ['LGPL-3.0', 'GMP, Asymptote, its PRC library'],
   ['LGPL-2.1', 'kpathsea, ECL, Graphite2, TECkit, btparse'], ['MPL-2.0', 'Pyodide, Eigen'], ['Apache-2.0', 'pdf.js and npm packages below'], ['Artistic-2.0', 'biber'], ['gnuplot', 'gnuplot']];
 for (const [id, who] of texts) lic += rule((id === 'gnuplot' ? 'The gnuplot license' : id) + ': ' + who) + fs.readFileSync(R('LICENSES/' + id + '.txt'), 'utf8').trim();
-lic += rule('SIL Open Font License 1.1: Paper Modern, the page\'s text fonts (KaTeX\'s fonts carry the same license in their own name tables)') + fs.readFileSync(R('build/fonts/OFL.txt'), 'utf8').trim();
+lic += rule('SIL Open Font License 1.1: Paper Modern, the page\'s text fonts (KaTeX\'s fonts carry the same license in their own name tables; IBM Plex Sans and Mono, the interface\'s fonts, have it with IBM\'s copyright under npm below)') + fs.readFileSync(R('build/fonts/OFL.txt'), 'utf8').trim();
 // the notices of the libraries compiled into the programs (MIT, BSD and the like ask for them
 // with binary copies too), one file per program; each file's first line is its title
 for (const f of fs.readdirSync(R('LICENSES/third-party')).filter((n) => n.endsWith('.txt')).sort()) {

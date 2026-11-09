@@ -412,7 +412,11 @@ class App {
 
   async loadFonts() {
     if (!document.fonts || !document.fonts.load) return;
-    const faces = ['400 16px "Paper Modern Serif"', 'italic 400 16px "Paper Modern Serif"', 'bold 16px "Paper Modern Serif"', 'italic bold 16px "Paper Modern Serif"', '16px "Paper Modern Typewriter"', '16px KaTeX_Main', 'italic 16px KaTeX_Math', '16px KaTeX_Size1', '16px KaTeX_Size2', '16px KaTeX_AMS'];
+    // the interface's faces as well: they are in the page, so they load in no time, and any face
+    // that finishes loading after boot lays the pages out again (the loadingdone listener in
+    // init), which drops a selection; a weight first used by a toast or the selection bubble did
+    const faces = ['400 16px "Paper Modern Serif"', 'italic 400 16px "Paper Modern Serif"', 'bold 16px "Paper Modern Serif"', 'italic bold 16px "Paper Modern Serif"', '16px "Paper Modern Typewriter"', '16px KaTeX_Main', 'italic 16px KaTeX_Math', '16px KaTeX_Size1', '16px KaTeX_Size2', '16px KaTeX_AMS',
+      '400 13px "IBM Plex Sans"', '500 13px "IBM Plex Sans"', '600 13px "IBM Plex Sans"', '400 13px "IBM Plex Mono"', '500 13px "IBM Plex Mono"'];
     await Promise.all(faces.map((f) => document.fonts.load(f).catch(() => null)));
   }
 

@@ -151,6 +151,38 @@ def pdfjs_local(page, origin):
     check('and no script comes from another site without an integrity hash', not foreign, foreign)
 
 
+def ui_fonts(page):
+    """The interface's fonts ship inside the page: loading it asks nothing of Google's font
+    servers (which would learn the address of everyone who opens it), and its text is drawn in
+    IBM Plex Sans and Mono, the faces the page carries, not in a system font."""
+    reqs = []
+    page.on('request', lambda r: reqs.append(r.url))
+    page.reload()
+    page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
+    google = [u for u in reqs if re.match(r'https?://fonts\.(googleapis|gstatic)\.com/', u)]
+    check('loading the page asks nothing of fonts.googleapis.com or fonts.gstatic.com', reqs and not google, google[:3])
+    faces = page.evaluate('''async () => { const out = [];
+      for (const f of ['400 13px "IBM Plex Sans"', '500 13px "IBM Plex Sans"', '600 13px "IBM Plex Sans"', '400 13px "IBM Plex Mono"', '500 13px "IBM Plex Mono"'])
+        out.push((await document.fonts.load(f, 'Rikuy')).filter((x) => x.status === 'loaded').length && document.fonts.check(f, 'Rikuy'));
+      document.body.insertAdjacentHTML('beforeend', '<div id="monoprobe" style="font: 500 12px var(--font-mono)">pitem 0123</div>');
+      return out; }''')
+    # what Chromium drew the text with: the fonts it used for a toolbar label and a line of mono
+    cdp = page.context.new_cdp_session(page)
+    cdp.send('DOM.enable')
+    cdp.send('CSS.enable')
+    root = cdp.send('DOM.getDocument', {'depth': -1})['root']['nodeId']
+    drawn = {}
+    for sel in ('#b-open span', '#st-save', '#monoprobe'):
+        nid = cdp.send('DOM.querySelector', {'nodeId': root, 'selector': sel})['nodeId']
+        drawn[sel] = [(f['familyName'], f['isCustomFont']) for f in cdp.send('CSS.getPlatformFontsForNode', {'nodeId': nid})['fonts']]
+    page.evaluate("document.getElementById('monoprobe').remove()")
+    check('IBM Plex Sans 400, 500, 600 and Mono 400, 500 load from the page itself', faces == [True] * 5, faces)
+    # Chromium names a face with its style ("IBM Plex Sans Medium"); custom means the page's own
+    only = lambda sel, fam: drawn[sel] and all(n.startswith(fam) and own for n, own in drawn[sel])
+    check('and the interface is drawn in them: a toolbar label and the status line in Plex Sans, mono text in Plex Mono',
+          only('#b-open span', 'IBM Plex Sans') and only('#st-save', 'IBM Plex Sans') and only('#monoprobe', 'IBM Plex Mono'), drawn)
+
+
 def default_macros(page):
     """The math the page knows without a definition renders: \\tfrac was once mapped to itself,
     so KaTeX expanded it until its limit and every formula with it showed as an error."""
@@ -724,6 +756,10 @@ def run():
         browser, page, errors = open_page(p)
         pdfjs_local(page, 'https://rikuy.test/')
         check('no console errors (pdf.js)', not errors, errors[:5])
+        browser.close()
+
+        browser, page, errors = open_page(p)
+        ui_fonts(page)
         browser.close()
 
     bad = [r for r in results if not r[1]]

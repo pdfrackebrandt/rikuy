@@ -93,6 +93,11 @@ The editor page
   Paper Modern, the page's text fonts: subsets of Andrey V. Panov's Computer Modern Unicode
   fonts (from the computer-modern npm package), renamed as the SIL Open Font License 1.1
   asks of a modified version; build/fonts/subset.py makes them, build/fonts/OFL.txt.
+  IBM Plex Sans (400, 500, 600) and IBM Plex Mono (400, 500), the interface's fonts, in the
+  page: Google Fonts' Latin cut as the @fontsource/ibm-plex-sans and @fontsource/ibm-plex-mono
+  npm packages ship it, unchanged. Copyright 2017, 2019 IBM Corp., SIL Open Font License 1.1
+  (these builds name no Reserved Font Name); dist/LICENSES.txt has the license as each package
+  carries it, and the source is at github.com/IBM/plex.
   Loaded from jsDelivr while the page runs, not shipped: KaTeX with its mhchem extension,
   CodeMirror 5, MathLive and JSZip (MIT; JSZip MIT or GPL-3.0), each checked against its npm
-  file's hash; from Google Fonts, IBM Plex Sans and Mono (SIL Open Font License 1.1).
+  file's hash.
