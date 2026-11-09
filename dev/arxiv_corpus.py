@@ -14,7 +14,7 @@ not needed are marked SPARE. The list is the same every time it is made from the
 Sources are never committed: dev/arxiv-ids.txt holds the identifiers and the main file of each,
 and corpus_full.py (CORPUS_LIST) compiles the papers with a main file.
 """
-import gzip, io, json, os, random, re, sys, tarfile, time, urllib.request
+import gzip, io, json, os, random, re, shutil, sys, tarfile, time, urllib.request
 
 API = 'https://export.arxiv.org/api/query?id_list=%s&max_results=100'
 EPRINT = 'https://arxiv.org/e-print/%s'
@@ -63,9 +63,30 @@ def meta(ids):
     return out
 
 
+def safe_name(name):
+    """A member name that stays inside the paper's folder: relative, no .. part, and no control
+    character (a line break in a name would start a line of its own in arxiv-ids.txt)."""
+    return (bool(name) and not name.startswith('/') and '..' not in name.split('/')
+            and not any(ord(c) < 32 or ord(c) == 127 for c in name))
+
+
+def write_new(path, data):
+    """Write a file the archive brought, never through a link: only regular files are taken from
+    it, and dest starts empty, so a link here was put by something else."""
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o644)
+    with os.fdopen(fd, 'wb') as f:
+        f.write(data)
+
+
 def unpack(blob, ctype, dest):
-    """arXiv sends a gzipped tar, a gzipped single file, or a PDF. Returns the file names."""
-    os.makedirs(dest, exist_ok=True)
+    """arXiv sends a gzipped tar, a gzipped single file, or a PDF. Returns the file names.
+    Sources come from strangers: only regular files with safe names are written, links and
+    devices are left out, and dest is emptied first, so nothing from an earlier try is followed."""
+    if os.path.islink(dest) or os.path.isfile(dest):
+        os.remove(dest)
+    elif os.path.isdir(dest):
+        shutil.rmtree(dest)
+    os.makedirs(dest)
     if blob[:4] == b'%PDF' or 'pdf' in ctype:
         return []
     raw = gzip.decompress(blob) if blob[:2] == b'\x1f\x8b' else blob
@@ -73,15 +94,15 @@ def unpack(blob, ctype, dest):
         with tarfile.open(fileobj=io.BytesIO(raw)) as t:
             names = []
             for m in t.getmembers():
-                if not m.isfile() or m.name.startswith('/') or '..' in m.name.split('/'):
+                if not m.isfile() or not safe_name(m.name):
                     continue
                 p = os.path.join(dest, m.name)
                 os.makedirs(os.path.dirname(p), exist_ok=True)
-                open(p, 'wb').write(t.extractfile(m).read())
+                write_new(p, t.extractfile(m).read())
                 names.append(m.name)
             return names
     except tarfile.ReadError:
-        open(os.path.join(dest, 'main.tex'), 'wb').write(raw)
+        write_new(os.path.join(dest, 'main.tex'), raw)
         return ['main.tex']
 
 
@@ -94,7 +115,8 @@ def main_file(dest, names):
         m = re.search(r'^\s*(\S+\.tex)\s+toplevelfile', t, re.M)
         if m and m.group(1) in names:
             return m.group(1)
-    texs = [n for n in names if n.lower().endswith('.tex')]
+    # (the main file is written into arxiv-ids.txt, whose fields are split at white space)
+    texs = [n for n in names if n.lower().endswith('.tex') and not re.search(r'\s', n)]
     docs = []
     for n in texs:
         t = open(os.path.join(dest, n), encoding='utf8', errors='replace').read()
@@ -143,6 +165,9 @@ def fetch(ids_path, root):
         if not line.strip() or line.startswith('#'):
             out.append(line); continue
         pid, cat, main = line.split()
+        # the identifier names the folder unpack() empties: nothing but an arXiv identifier
+        if not re.fullmatch(r'\d{4}\.\d{4,5}', pid):
+            raise SystemExit('arxiv_corpus.py: %r in %s is not an arXiv identifier' % (pid, ids_path))
         year = 2000 + int(pid[:2])
         if main in ('-', 'SPARE'):
             if have.get(year, 0) >= quota(year):

@@ -19,7 +19,7 @@ a command fails, trust the code and fix this file.
 | `build.mjs` | bundles the page and copies the worker into `dist/`; writes `dist/index.html` (the page as a whole document, for any static server) and `dist/LICENSES.txt` |
 | `build/fonts/` | the page's text fonts, cut from the Computer Modern Unicode fonts by `subset.py` (OFL); the interface's IBM Plex comes unchanged from npm's `@fontsource` packages (`build.mjs`) |
 | `test/` | node unit tests (`*.test.mjs`) and Playwright browser tests (`*.py`) |
-| `dev/` | the comparison harness: one compile, one shell command, the corpus, PDFs against a desktop TeX Live, Asymptote against a desktop asy; and its results (`*.jsonl`) |
+| `dev/` | the comparison harness: one compile, one shell command, the corpus, PDFs against a desktop TeX Live, Asymptote against a desktop asy; and its results (`*.jsonl`); `sandbox.sh`, which runs the arXiv corpus's compiles as a user with no sudo, no network and nothing writable but its own folders (`sandbox_check.py` checks that from inside) |
 | `inputs/` | build inputs that took an engine run to make (formats, PK fonts, caches) |
 | `sample/` | the document the page opens with (built into the page); `sample/widget/`, a document with a live figure and `rikuy.sty` |
 | `docs/ARCHITECTURE.md` | how the editor, the worker, the programs and the tree fit, with the functions to start at |
@@ -33,7 +33,7 @@ a command fails, trust the code and fix this file.
 ## Setup
 
 - node 22, then `npm ci`
-- Python 3 with `pip install lz4 playwright numpy pypdf` (CI pins `playwright==1.56.0`; where the system Python refuses pip, as Ubuntu 24.04's does, first `python3 -m venv .venv && . .venv/bin/activate`), then `python3 -m playwright install chromium` (the scripts use `/opt/pw-browsers` instead when that folder exists); `poppler-utils` for the comparisons
+- Python 3 with `pip install lz4 playwright numpy pypdf` (CI pins `playwright==1.56.0`; the arXiv corpus workflow installs `dev/arxiv-requirements.txt`, pinned by hash; where the system Python refuses pip, as Ubuntu 24.04's does, first `python3 -m venv .venv && . .venv/bin/activate`), then `python3 -m playwright install chromium` (the scripts use `/opt/pw-browsers` instead when that folder exists); `poppler-utils` for the comparisons
 - a C compiler, so `tex/build_tree.py` can build `tex/native/t1crypt.so` on first use (without one it still works, many times slower)
 - for `tex/build_tools.sh`: Ubuntu's `emscripten` 3.1.6 package and node; `git`, `curl`, `make`, `pkg-config`, `xz`, `bzip2`, `dpkg-deb`; for Mesa `meson`, `ninja`, `bison`, `flex` and Python's `mako`; for the native ECL that builds xindy's `gcc` with `libgmp-dev` and `libgc-dev` (the script's header has the list)
 - for comparisons with a desktop: `dev/fetch_tl26.sh` (about 6 GB into `/opt/tl26`, or the folder `TL26` names) and `xvfb`
@@ -42,7 +42,7 @@ a command fails, trust the code and fix this file.
 
 | to | run | takes |
 |---|---|---|
-| unit tests (editor model, minimal patch, siunitx, share links and merge, git tokens per host (`test/gitauth.test.mjs`), the worker's pack hashes and path guard (`test/engine.test.mjs`), xindy) | `npm test` | 1 min |
+| unit tests (editor model, minimal patch, siunitx, share links and merge, git tokens per host (`test/gitauth.test.mjs`), the worker's pack hashes and path guard (`test/engine.test.mjs`), xindy, unpacking arXiv sources (`test/arxiv_unpack.py`)) | `npm test` | 1 min |
 | the model on the 716 document corpus | `npm run test:corpus -- <LaTeX-examples clone at 8bfd313b8d98>` | 2 min |
 | build the inputs, then the TeX tree and packs | `tex/fetch_inputs.sh`, then `python3 tex/build_tree.py tree && python3 tex/build_tree.py packs` | about 3 GB of downloads |
 | build the page into `dist/` | `npm run build`; the editor and its browser tests need nothing more, the PDF pane and the TeX tests need `dist/tex/` from the step above | 10 s |

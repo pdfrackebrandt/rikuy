@@ -1,0 +1,18 @@
+# Python for the arXiv corpus workflow (.github/workflows/arxiv.yml): build_tree.py needs lz4,
+# corpus_full.py playwright, pdfcompare.py numpy. Installed with
+#   pip install --require-hashes --only-binary :all: -r dev/arxiv-requirements.txt
+# into ubuntu-24.04's system Python 3.12 on x86_64, so each line holds the hash of that one wheel
+# (from PyPI's JSON API, checked against the downloaded file); playwright is the version ci.yml
+# uses, and its dependencies are pinned because hash checking installs nothing unlisted.
+lz4==4.4.4 \
+    --hash=sha256:8ccab8f7f7b82f9fa9fc3b0ba584d353bd5aa818d5821d77d5b9447faad2aaad
+numpy==2.3.4 \
+    --hash=sha256:4121c5beb58a7f9e6dfdee612cb24f4df5cd4db6e8261d7f4d7450a997a65d6a
+playwright==1.56.0 \
+    --hash=sha256:404be089b49d94bc4c1fe0dfb07664bda5ffe87789034a03bffb884489bdfb5c
+greenlet==3.5.6 \
+    --hash=sha256:975736b002ed080d124cf81a79cb7e05cb26d6b3f5c7a7b651c0fcce70353aa1
+pyee==13.0.1 \
+    --hash=sha256:af2f8fede4171ef667dfded53f96e2ed0d6e6bd7ee3bb46437f77e3b57689228
+typing-extensions==4.16.0 \
+    --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8
