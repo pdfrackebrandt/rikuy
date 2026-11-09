@@ -6,8 +6,9 @@ before remotes were recorded; a remote that came in an opened .zip's .git/config
 pushurl or http.corsProxy) never receives a token. A remote is requested as the browser parses
 it, so dot segments cannot take a token through the CORS proxy to another host; the old token is
 filled in only for the host its prefix names, otherwise picked with a button that names the host;
-a push goes to the branch of the same name, not one an opened .git/config names."""
-import os, sys, subprocess, tempfile, shutil, time, json, zipfile, io, traceback, re, http.server, threading
+a push goes to the branch of the same name, not one an opened .git/config names. The test's git
+server lets only the test page's origin read its answers."""
+import os, sys, subprocess, tempfile, shutil, time, json, zipfile, io, traceback, re, http.server, threading, urllib.request, urllib.error
 sys.path.insert(0, os.path.dirname(__file__))
 # the test page (https://rikuy.test) talks to a git server on 127.0.0.1, which Chrome's local
 # network checks would otherwise hold for a permission prompt
@@ -76,6 +77,24 @@ class Proxy(Foreign):
 
 
 threading.Thread(target=git_server.S(('127.0.0.1', 8814), Proxy).serve_forever, daemon=True).start()
+
+# the git server answers the page open_page loads (https://rikuy.test) by its origin, refuses a
+# browser request from any other before git runs, and serves desktop git, which sends no Origin
+DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+
+
+def ask(origin, method='GET'):
+    req = urllib.request.Request(URL + '/info/refs?service=git-upload-pack', method=method, headers={'Origin': origin} if origin else {})
+    try:
+        r = DIRECT.open(req, timeout=10)
+        return r.status, r.headers.get('Access-Control-Allow-Origin')
+    except urllib.error.HTTPError as e:
+        return e.code, e.headers.get('Access-Control-Allow-Origin')
+
+
+asked = [ask('https://rikuy.test'), ask('https://elsewhere.test'), ask('https://elsewhere.test', 'OPTIONS'), ask(None)]
+check('the git server lets the test page read its answers, refuses another origin (403, no CORS header) and serves desktop git',
+      asked == [(200, 'https://rikuy.test'), (403, None), (403, None), (200, 'https://rikuy.test')], asked)
 
 
 def foreign_zip(zf, names, path, cfg):
