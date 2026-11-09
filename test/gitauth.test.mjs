@@ -1,6 +1,6 @@
 // Git access tokens kept per remote host and handed only to it (src/gitauth.js).
 import assert from 'node:assert/strict';
-import { remoteKey, authFor, savedToken, keepToken, dropReplaced } from '../src/gitauth.js';
+import { remoteKey, authFor, savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, tokenHost, legacyChoice } from '../src/gitauth.js';
 
 let n = 0;
 const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
@@ -37,15 +37,49 @@ ok('the token filled in is the one kept for the host, and only for a remote of t
   assert.equal(savedToken(prefs, '', true), '');
 });
 
+ok('a remote is used as the browser will request it; one that can mean two things is refused', () => {
+  assert.equal(canonicalRemote(' https://GitHub.com/you/paper.git '), 'https://github.com/you/paper.git');
+  // dot segments, encoded or not, are resolved: through a CORS proxy the browser resolves them in
+  // proxy/<host>/<path>, so the host the token is matched against must be the one requested
+  assert.equal(canonicalRemote('https://github.com/alice/%2e%2e/%2e%2e/evil.example/paper.git'), 'https://github.com/evil.example/paper.git');
+  assert.equal(canonicalRemote('https://github.com/a/.%2E/./b\\c.git'), 'https://github.com/b/c.git');
+  for (const bad of ['https://x-access-token:t@github.com/you/paper.git', 'https://github.com@evil.example/x', 'https://github.com/you/paper.git?x=1', 'https://github.com/you/paper.git?',
+    'https://github.com/you/paper.git#main', 'git@github.com:you/paper.git', 'ssh://github.com/x', 'file:///tmp/x', '', null, 'not a url']) assert.equal(canonicalRemote(bad), '', String(bad));
+  assert.equal(remoteHost('https://GitHub.com/a/%2e%2e/%2e%2e/evil.example/x'), 'github.com');
+  assert.equal(remoteHost('http://127.0.0.1:8812/paper.git'), '127.0.0.1:8812');
+});
+
+ok('the old single token is filled in only for the host its prefix names', () => {
+  assert.equal(tokenHost('ghp_abc'), 'https://github.com');
+  assert.equal(tokenHost('github_pat_11AB'), 'https://github.com');
+  assert.equal(tokenHost('glpat-xyz'), 'https://gitlab.com');
+  assert.equal(tokenHost('olp_123'), 'https://git.overleaf.com');
+  assert.equal(tokenHost('OLD'), '');
+  const gh = { gitToken: 'ghp_OLD' };
+  assert.equal(savedToken(gh, 'https://github.com/you/paper.git', true), 'ghp_OLD');
+  // a stranger's address pasted into the clone form, which answers 401 and then 200, got it before
+  assert.equal(savedToken(gh, 'https://evil.example/paper.git', true), '');
+  assert.equal(savedToken(gh, 'https://gitlab.com/you/paper.git', true), '');
+  assert.equal(legacyChoice(gh, 'https://github.com/you/paper.git'), '', 'filled in already');
+  assert.equal(legacyChoice(gh, 'https://gitlab.com/you/paper.git'), '', 'a GitHub token is not offered to GitLab');
+  assert.equal(legacyChoice(gh, 'https://github.example.com/you/paper.git'), 'ghp_OLD', 'a GitHub Enterprise host: on a click that names it');
+  const plain = { gitToken: 'OLD' };
+  assert.equal(savedToken(plain, 'https://github.com/you/paper.git', true), '', 'a token that names no host is never filled in by itself');
+  assert.equal(legacyChoice(plain, 'https://evil.example/paper.git'), 'OLD', 'but can be picked, for the host the button names');
+  assert.equal(legacyChoice(plain, 'https://evil.example/paper.git?x'), '', 'not for an address Rikuy refuses');
+  assert.equal(legacyChoice({ gitToken: 'OLD', gitTokens: { 'https://github.com': 'GH' } }, 'https://github.com/x.git'), '', 'not where the host has its own');
+  assert.equal(legacyChoice({}, 'https://github.com/x.git'), '');
+});
+
 ok('the old single token moves to the first host that asks for it and takes it, then is gone', () => {
-  const prefs = { gitToken: 'OLD' };
-  assert.equal(savedToken(prefs, 'https://github.com/you/paper.git', true), 'OLD');
+  const prefs = { gitToken: 'ghp_OLD' };
+  assert.equal(savedToken(prefs, 'https://github.com/you/paper.git', true), 'ghp_OLD');
   assert.equal(savedToken(prefs, 'https://evil.example/paper.git', false), '', 'never for a remote from an opened project');
   // a pull from a host that never asked for a token (a public repository elsewhere) leaves it
-  keepToken(prefs, 'https://gitlab.com/someone/public.git', 'OLD', 'OLD', false);
-  assert.deepEqual(prefs, { gitToken: 'OLD' });
-  keepToken(prefs, 'https://github.com/you/paper.git', 'OLD', 'OLD', true);
-  assert.deepEqual(prefs, { gitTokens: { 'https://github.com': 'OLD' } });
+  keepToken(prefs, 'https://gitlab.com/someone/public.git', 'ghp_OLD', 'ghp_OLD', false);
+  assert.deepEqual(prefs, { gitToken: 'ghp_OLD' });
+  keepToken(prefs, 'https://github.com/you/paper.git', 'ghp_OLD', 'ghp_OLD', true);
+  assert.deepEqual(prefs, { gitTokens: { 'https://github.com': 'ghp_OLD' } });
   assert.equal(savedToken(prefs, 'https://gitlab.com/you/paper.git', true), '', 'not offered to a second host');
 });
 

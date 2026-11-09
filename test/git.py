@@ -3,7 +3,10 @@ branches, push and pull over smart HTTP (a local git http-backend), .zip with .g
 and clone. Access tokens are kept per host; the old single token moves only to a host that asks
 for it and takes it, is dropped when the user replaces it, and is still offered for a clone made
 before remotes were recorded; a remote that came in an opened .zip's .git/config (its url,
-pushurl or http.corsProxy) never receives a token."""
+pushurl or http.corsProxy) never receives a token. A remote is requested as the browser parses
+it, so dot segments cannot take a token through the CORS proxy to another host; the old token is
+filled in only for the host its prefix names, otherwise picked with a button that names the host;
+a push goes to the branch of the same name, not one an opened .git/config names."""
 import os, sys, subprocess, tempfile, shutil, time, json, zipfile, io, traceback, re, http.server, threading
 sys.path.insert(0, os.path.dirname(__file__))
 # the test page (https://rikuy.test) talks to a git server on 127.0.0.1, which Chrome's local
@@ -52,6 +55,27 @@ class Foreign(http.server.BaseHTTPRequestHandler):
 
 
 threading.Thread(target=git_server.S(('127.0.0.1', 8813), Foreign).serve_forever, daemon=True).start()
+
+# a CORS proxy that logs the path it is asked for (proxy/<host>/<path>: the host it would forward
+# to comes first) and the Authorization it would forward, then refuses with 401
+PROXY = 'http://127.0.0.1:8814'
+proxied = []
+
+
+class Proxy(Foreign):
+    def answer(self):
+        n = int(self.headers.get('Content-Length') or 0)
+        if n: self.rfile.read(n)
+        proxied.append((self.path, self.headers.get('Authorization')))
+        self.send_response(401)
+        self.send_header('WWW-Authenticate', 'Basic realm="git"')
+        for k, v in git_server.CORS: self.send_header(k, v)
+        self.send_header('Content-Length', '0')
+        self.end_headers()
+    do_GET = do_POST = answer
+
+
+threading.Thread(target=git_server.S(('127.0.0.1', 8814), Proxy).serve_forever, daemon=True).start()
 
 
 def foreign_zip(zf, names, path, cfg):
@@ -174,7 +198,8 @@ try:
         page.wait_for_timeout(4000)
         check('pull brings the remote commit into the editor', 'remote trip' in src(page), src(page)[:200])
         kept = page.evaluate(PREFS)
-        check('a token typed over the old one replaces it everywhere and is kept for its host', kept.get('gitTokens') == {'http://127.0.0.1:%d' % PORT: 'DUMMY-NEW-TOKEN'} and 'gitToken' not in kept,
+        # the old token names no host, so it was never filled in here: it stays, offered only on a click
+        check('a token typed for a host is kept for it, and the old one is left for a click', kept.get('gitTokens') == {'http://127.0.0.1:%d' % PORT: 'DUMMY-NEW-TOKEN'} and kept.get('gitToken') == 'DUMMY-OLD-TOKEN',
               (kept.get('gitTokens'), kept.get('gitToken')))
         refresh(page)
         check('pulled commit is in the history', commits(page)[:1] == ['From the desktop'], commits(page))
@@ -226,6 +251,8 @@ try:
         check('pushing to it sends no token', seen and not [x for x in seen if x[2]], seen[:4])
         del seen[:]
         twisted = re.sub(r'(\[remote "origin"\]\n)', lambda m: m.group(1) + '\tpushurl = ' + FOREIGN + '/push.git\n', cfg).rstrip('\n') + '\n[http]\n\tcorsProxy = ' + FOREIGN + '/proxy\n'
+        # and the branch a push goes to: isomorphic-git takes branch.<name>.merge from the config
+        twisted = re.sub(r'\[branch "main"\]\n(\t[^\n]*\n)*', '', twisted) + '[branch "main"]\n\tremote = origin\n\tmerge = refs/heads/strangers-pick\n'
         assert 'pushurl = ' in twisted, cfg
         page.set_input_files('#fileinput', foreign_zip(zf, names, os.path.join(tmpd, '..', 'twisted.zip'), twisted))
         page.wait_for_timeout(3000)
@@ -235,12 +262,41 @@ try:
         page.wait_for_timeout(2500)
         toast = page.evaluate("document.getElementById('toast').innerText")
         check('a pushurl and http.corsProxy in its .git/config do not take the push elsewhere', not seen and 'Pushed' in toast, (seen[:4], toast))
+        heads = subprocess.run(['git', '--git-dir', ROOT + '/paper.git', 'for-each-ref', '--format=%(refname)', 'refs/heads'], capture_output=True, text=True).stdout.split()
+        check('nor to the branch its branch.main.merge names: main is pushed to main', heads == ['refs/heads/main'], heads)
         open_remote(page)
         check('a remote the user gave a token for is theirs from then on', page.input_value(TOKEN) == 'DUMMY-HOST-TOKEN' and page.locator('.git-foreign').count() == 0,
               (page.input_value(TOKEN), page.locator('.git-foreign').count()))
 
+        # An address whose dot segments climb out of its host. Matched against 127.0.0.1:8812, whose
+        # token is kept, it reached 127.0.0.1:8813 with that token: through a CORS proxy the
+        # browser resolves the segments in proxy/<host>/<path>, and the proxy forwards to the host
+        # that comes first. Now the address is requested as parsed, so the host stays 8812.
+        del proxied[:]
+        climb = 'http://127.0.0.1:8812/a/%2e%2e/%2e%2e/127.0.0.1:8813/paper.git'
+        page.evaluate("""async ([url, proxy]) => { const g = window.rikuy; const G = await g.loadGit();
+          try { await G.clone(G.dirFor('climb'), url, { corsProxy: proxy, token: 'DUMMY-HOST-TOKEN', remote: url }); } catch (e) { } }""", [climb, PROXY])
+        hosts = sorted(set(x[0].split('/')[1] for x in proxied))
+        check('dot segments in a remote cannot send its token through the proxy to another host', proxied and hosts == ['127.0.0.1:8812'] and any(x[1] for x in proxied), (hosts, proxied[:3]))
         # clone from the server into a new project
         page.evaluate("indexedDB.deleteDatabase('galley-git')")
+        # the clone form: the old token, which names no host, is not filled in for the address
+        # typed but offered on a button that says where it would go
+        page.evaluate("() => { const g = window.rikuy; g.prefs.gitTokens = {}; g.prefs.gitToken = 'DUMMY-OLD-TOKEN'; }")
+        # (the panel shows the form only for a project that is not a repository: drawn here alone)
+        page.evaluate("""async () => { const g = window.rikuy; const f = g.gitCloneForm(await g.loadGit()); f.id = 'clone-form'; f.open = true;
+          f.style.cssText = 'position:fixed;top:60px;left:60px;z-index:99;background:#fff;width:420px'; document.body.append(f); }""")
+        form = page.locator('#clone-form')
+        form.locator('input[aria-label^="Repository URL"]').fill(FOREIGN + '/paper.git')
+        page.wait_for_timeout(200)
+        btn = form.locator('.git-legacy')
+        check('the clone form does not fill the old token in for an address typed', form.locator('input[aria-label="Access token"]').input_value() == '', form.locator('input[aria-label="Access token"]').input_value())
+        check('but offers it on a button that names the host', btn.is_visible() and '127.0.0.1:8813' in btn.inner_text(), btn.inner_text() if btn.count() else None)
+        form.locator('input[aria-label^="Repository URL"]').fill(FOREIGN + '/paper.git?x')
+        page.wait_for_timeout(200)
+        check('and not for an address Rikuy refuses', not btn.is_visible())
+        page.evaluate("document.getElementById('clone-form').remove()")
+
         files = page.evaluate("""async (url) => { const g = window.rikuy; const G = await g.loadGit();
           const files = await G.clone(G.dirFor('paper'), url, { corsProxy: '' }); await g.openRepoFiles('paper', files);
           return [...files.keys()]; }""", URL)
@@ -250,8 +306,9 @@ try:
         check('a cloned repository compiles with restricted shell escape until allowed', info == ['git', False], info)
 
         # A clone made before remotes were recorded (as this one, cloned without the form) of a
-        # private repository, by a user of the old single token: the token is offered as before,
-        # with no word of an opened project, and moves to the host once the host takes it.
+        # private repository, by a user of the old single token, which names no host: the token is
+        # offered on a button that names the host, with no word of an opened project, and moves to
+        # the host once the host takes it.
         page.evaluate("indexedDB.deleteDatabase('galley-git')")
         page.evaluate("""async (url) => { const g = window.rikuy; g.prefs.gitTokens = {}; g.prefs.gitToken = 'DUMMY-OLD-TOKEN'; g.prefs.gitProxy = '';
           const G = await g.loadGit(); const files = await G.clone(G.dirFor('paper'), url, { corsProxy: '', token: 'DUMMY-OLD-TOKEN', remote: url });
@@ -259,8 +316,13 @@ try:
         page.wait_for_timeout(1500)
         open_remote(page)
         note = page.evaluate("[...document.querySelectorAll('.git-remote .git-note')].map(e => e.textContent).join(' ')")
-        check('a clone from before the record is offered the token it used, with no word of an opened project', page.input_value(TOKEN) == 'DUMMY-OLD-TOKEN' and page.locator('.git-unknown').count() == 1 and 'project you opened' not in note,
-              (page.input_value(TOKEN), note[:200]))
+        legacy = page.locator('details.git-remote', has_text='Push').locator('.git-legacy')
+        check('a clone from before the record is offered the token it used, on a button naming the host, with no word of an opened project',
+              page.input_value(TOKEN) == '' and legacy.is_visible() and '127.0.0.1:8812' in legacy.inner_text() and 'project you opened' not in note,
+              (page.input_value(TOKEN), legacy.count() and legacy.inner_text(), note[:200]))
+        legacy.click()
+        page.wait_for_timeout(200)
+        check('the button fills it in and goes away', page.input_value(TOKEN) == 'DUMMY-OLD-TOKEN' and not legacy.is_visible(), page.input_value(TOKEN))
         page.click('.git-remote button:has-text("Pull")')
         page.wait_for_timeout(3000)
         kept = page.evaluate(PREFS)

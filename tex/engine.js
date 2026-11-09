@@ -615,7 +615,11 @@ function mirrorFetch(name, format) {
         }
         path = p;
         if (readLog) readLog.add(p);
-      } catch (e) { path = null; }
+      } catch (e) {
+        // say why in TeX's output: without it a pack refused for its hash looked like a missing file
+        path = null;
+        try { M._out.stdout += 'Rikuy: ' + c + ' was not loaded from the TeX Live mirror: ' + String((e && e.message) || e) + '\n'; } catch (e2) { }
+      }
       break;
     }
     MIRROR.hits.set(key, path);
