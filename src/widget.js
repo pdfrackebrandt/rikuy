@@ -11,19 +11,85 @@
 // test/serve.py, it allows inline scripts); this one is added inside the frame, before any of
 // the widget's markup is read, and policies only ever add restrictions to each other. WebRTC is
 // the one way out no policy closes in Chromium (it ignores CSP's webrtc directive), which is why
-// widgets from someone else wait for a click (App.widgetsAllowed).
+// widgets from someone else wait for a click (App.widgetsAllowed); widgetGuard below only makes
+// the plain ways to it fail.
 export const WIDGET_CSP = "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; " +
   "img-src data: blob:; font-src data:; media-src data: blob:; worker-src blob:; base-uri 'none'; form-action 'none'";
 
-// The document the frame runs: the policy first, then the widget. The widget's own doctype goes,
-// since ours must come first for the frame to be in standards mode; its <html>, <head> and
-// <body> tags after ours are merged into ours by the HTML parser, as for any second such tag.
+// The first script of every widget's document, run before any of the widget's markup is parsed.
+// A widget can open an RTCPeerConnection and send a STUN request to its author's server, which
+// tells them who opened the document and when; no policy stops that in Chromium. This takes the
+// WebRTC interfaces away, so a tracker that calls them plainly fails. It is defense in depth,
+// not the control: the control is the click a project from someone else needs before its widgets
+// run. Every way around it found by trying (test/widgets.py checks the ones closed):
+// - a new frame's own window: an about:blank frame the widget adds has an opaque origin of its
+//   own (the sandbox gives every document in it one), so `frames[0].RTCPeerConnection` and
+//   `contentWindow` throw, and `contentDocument` is null; a data: or blob: frame, `<object>`
+//   and `<embed>` are refused by the policy. A srcdoc frame is not (no policy covers srcdoc) and
+//   runs its own scripts in a window this never reaches, so frames are taken out of the document
+//   as soon as they are added: a widget has no frames.
+// - leaving: `location`, a link, `open(url, '_self')`, `navigation.navigate()` or a refresh
+//   `<meta>` can take the frame to a data: or blob: document, which keeps the sandbox but not
+//   this script, and none of them can be patched (`location` is unforgeable; the Navigation API
+//   sends no events to an opaque origin). The parent's frame-src decides where a frame may go,
+//   so the page refuses data: and blob: (framesOnlySrcdoc); a reload gets this script again.
+// - `document.open()` and `write()` keep the window, so what was taken stays taken; a Worker has
+//   no RTCPeerConnection; `open()` is refused by the sandbox.
+// What still gets through: a srcdoc frame inside a shadow root the HTML parser makes
+// (`<template shadowrootmode>` in the widget's markup, in `document.write` or through
+// setHTMLUnsafe), which no observer here sees into. A widget written to get around this will.
+// The function is sent as its text, so it uses nothing outside itself, and it holds on to every
+// built-in it calls: by the time its callbacks run the widget may have replaced them.
+function widgetGuard() {
+  'use strict';
+  const W = window, apply = Reflect.apply, gopd = Object.getOwnPropertyDescriptor;
+  for (const n of Object.getOwnPropertyNames(W)) if (/^(webkit|moz)?RTC/.test(n)) try { delete W[n]; } catch (e) {}
+  const SEL = 'iframe,frame,object,embed,fencedframe';
+  const added = gopd(MutationRecord.prototype, 'addedNodes').get, count = gopd(NodeList.prototype, 'length').get;
+  const matches = Element.prototype.matches, all = Element.prototype.querySelectorAll, remove = Element.prototype.remove;
+  const drop = (list) => { for (let i = 0, n = apply(count, list, []); i < n; i++) apply(remove, list[i], []); };
+  const mo = new MutationObserver((recs) => {
+    for (let r = 0; r < recs.length; r++) {
+      const nodes = apply(added, recs[r], []);
+      for (let i = 0, n = apply(count, nodes, []); i < n; i++) {
+        // text and comments throw here: matches is an Element's
+        try { if (apply(matches, nodes[i], [SEL])) apply(remove, nodes[i], []); else drop(apply(all, nodes[i], [SEL])); } catch (e) {}
+      }
+    }
+  });
+  const watch = MutationObserver.prototype.observe, opts = { childList: true, subtree: true };
+  apply(watch, mo, [document, opts]);
+  // a shadow root made by script is watched as well (the HTML parser's are not: see above)
+  const attach = Element.prototype.attachShadow;
+  Element.prototype.attachShadow = function attachShadow(o) { const root = apply(attach, this, [o]); apply(watch, mo, [root, opts]); return root; };
+}
+
+// The page's only frames are the widgets' srcdoc frames, which no frame-src refuses. A frame's
+// navigations answer to its parent's frame-src, so a policy of frame-src 'self' added to the page
+// keeps a widget from taking its frame to a data: or blob: document of its own making (see
+// widgetGuard); the page's own site holds only the page's files. 'self' and not 'none', so a
+// frame the host itself might add from its own site still loads. The host sends the page's
+// policy; a second one in a <meta> can only narrow it, and one added to the head by script
+// applies from then on (to every frame made after it: this runs before any).
+function framesOnlySrcdoc() {
+  if (document.querySelector('meta[data-rikuy-frames]')) return;
+  const m = document.createElement('meta');
+  m.httpEquiv = 'Content-Security-Policy';
+  m.content = "frame-src 'self'";
+  m.dataset.rikuyFrames = '';
+  document.head.append(m);
+}
+
+// The document the frame runs: the policy first, then widgetGuard, then the widget. The widget's
+// own doctype goes, since ours must come first for the frame to be in standards mode; its <html>,
+// <head> and <body> tags after ours are merged into ours by the HTML parser, as for any second
+// such tag.
 export function widgetDoc(html) {
   const body = String(html).replace(/^\uFEFF?\s*<!doctype[^>]*>/i, '');
   // DNS prefetching off as well (a link's host name looked up is a request out too); once off,
   // a document cannot turn it on again
   return '<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="' + WIDGET_CSP + '">' +
-    '<meta http-equiv="x-dns-prefetch-control" content="off"></head>' + body;
+    '<meta http-equiv="x-dns-prefetch-control" content="off"><script>(' + widgetGuard + ')()</script></head>' + body;
 }
 
 // A short signature of a widget's text, for the page's block keys: a widget edited in the source
@@ -82,6 +148,7 @@ export class WidgetLayer {
     this.heights = new Map();  // 'path:sig' -> the height its widget last asked for
     this.byPath = new Map();   // path -> the same, so a widget edited keeps its size until it asks
     this.queued = false;
+    framesOnlySrcdoc();
     window.addEventListener('message', (e) => this.onMessage(e));
     // the boxes move whenever the pages change: a new layout, a blank paragraph shown while
     // typing, a picture above that finished loading; and a box selected for deletion shows it on
