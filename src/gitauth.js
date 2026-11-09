@@ -12,6 +12,45 @@ export function remoteKey(url) {
   } catch (e) { return ''; }
 }
 
+// A remote's address as the browser will request it, or '' for one Rikuy does not use. The token
+// is matched against the host the URL parser reads, but isomorphic-git requests the address as
+// written, through the CORS proxy as proxy/<host>/<path>, and the browser collapses dot segments
+// in that path: https://github.com/a/%2e%2e/%2e%2e/evil.example/x matched github.com and was
+// sent, token and all, to evil.example. So every remote is used in its parsed form (no dot
+// segments left, host lowercased), and one with a user name, a query or a fragment is refused:
+// none is needed to name a repository, and each lets the address mean two things.
+export function canonicalRemote(url) {
+  try {
+    const u = new URL(String(url || '').trim());
+    if ((u.protocol !== 'https:' && u.protocol !== 'http:') || u.username || u.password || u.search || u.hash || u.href.includes('?') || u.href.includes('#')) return '';
+    return u.href;
+  } catch (e) { return ''; }
+}
+
+// the host a remote names, for notes that tell the user whose remote it is
+export function remoteHost(url) {
+  const c = canonicalRemote(url);
+  return c ? new URL(c).host : String(url || '').replace(/^https?:\/\//, '').split(/[/?#]/)[0];
+}
+
+// The host a token of earlier versions (one token for every remote) was made for, where its
+// prefix says: GitHub's, GitLab's and Overleaf's tokens say whose they are. '' when it does not.
+const PREFIXES = [[/^(ghp|gho|ghu|ghs|ghr)_|^github_pat_/, 'https://github.com'], [/^glpat-/, 'https://gitlab.com'], [/^olp_/, 'https://git.overleaf.com']];
+export function tokenHost(token) {
+  for (const [re, k] of PREFIXES) if (re.test(token || '')) return k;
+  return '';
+}
+
+// The token of earlier versions, when it may be offered for this remote only on the user's
+// click: it names no host, or not this one but the remote is not one of the hosts tokens are
+// recognised for (a GitHub Enterprise or self-hosted git). '' otherwise.
+export function legacyChoice(prefs, url) {
+  const k = remoteKey(canonicalRemote(url)), t = prefs.gitToken;
+  if (!k || !t || (prefs.gitTokens && prefs.gitTokens[k])) return '';
+  const h = tokenHost(t);
+  return !h || !PREFIXES.some(([, p]) => p === k) ? t : '';
+}
+
 // Overleaf's git server takes the user name "git" with a token from the account settings
 const userFor = (url, o) => o.username || (/(^|\/\/)git\.overleaf\.com\//.test(url || '') ? 'git' : 'x-access-token');
 
@@ -24,12 +63,16 @@ export function authFor(url, o) {
 }
 
 // The token the Git panel fills in for a remote: the one kept for its host, else the single
-// token of earlier versions (prefs.gitToken). Only for a remote the user set up or one whose
-// origin is not recorded (offer); never for one that came with an opened project.
+// token of earlier versions (prefs.gitToken) when its prefix names this host. Only for a remote
+// the user set up or one whose origin is not recorded (offer); never for one that came with an
+// opened project. The old token used to be filled in for any host typed, so a stranger's address
+// pasted into the clone form, which answers 401 and then 200, received it; a token whose prefix
+// names no host is now offered only on a click that names the host (legacyChoice).
 export function savedToken(prefs, url, offer) {
-  const k = remoteKey(url);
+  const k = remoteKey(canonicalRemote(url));
   if (!k || !offer) return '';
-  return (prefs.gitTokens && prefs.gitTokens[k]) || prefs.gitToken || '';
+  if (prefs.gitTokens && prefs.gitTokens[k]) return prefs.gitTokens[k];
+  return prefs.gitToken && tokenHost(prefs.gitToken) === k ? prefs.gitToken : '';
 }
 
 // Before a push, pull or clone: once the user replaces or empties the field the old single token
@@ -42,7 +85,7 @@ export function dropReplaced(prefs, token, shown) {
 // it). The old single token moves only to a host that asked for it and accepted it (accepted:
 // isomorphic-git's onAuthSuccess), so a first pull from another host does not take it.
 export function keepToken(prefs, url, token, shown, accepted) {
-  const k = remoteKey(url);
+  const k = remoteKey(canonicalRemote(url));
   if (!k) return;
   if (token && token === prefs.gitToken) {
     if (!accepted) return;

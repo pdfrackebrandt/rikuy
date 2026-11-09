@@ -11,7 +11,7 @@ import './git-shim.js';
 import git from 'isomorphic-git';
 import http from 'isomorphic-git/http/web';
 import LightningFS from '@isomorphic-git/lightning-fs';
-import { authFor } from './gitauth.js';
+import { authFor, canonicalRemote } from './gitauth.js';
 
 const lfs = new LightningFS('galley-git');
 const fs = lfs;
@@ -159,7 +159,9 @@ export async function remoteUrl(dir) {
   try { return await git.getConfig({ fs, dir, path: 'remote.origin.url' }); } catch (e) { return null; }
 }
 export async function setRemote(dir, url) {
-  await git.setConfig({ fs, dir, path: 'remote.origin.url', value: url });
+  const c = canonicalRemote(url);
+  if (!c) throw new Error(BAD_REMOTE);
+  await git.setConfig({ fs, dir, path: 'remote.origin.url', value: c });
   await git.setConfig({ fs, dir, path: 'remote.origin.fetch', value: '+refs/heads/*:refs/remotes/origin/*' });
 }
 
@@ -170,11 +172,17 @@ export async function setRemote(dir, url) {
 // call that does not say which remote its token is for sends none. o.onAccepted hears when the
 // remote asked for the token and took it.
 const net = (o) => ({ fs, http, corsProxy: o.corsProxy || '', onAuth: o.token ? (url) => authFor(url, o) : undefined, onAuthSuccess: o.onAccepted ? () => { o.onAccepted(); } : undefined });
+// The address a call uses, in the form the browser will request (canonicalRemote, src/gitauth.js):
+// the token is matched against that form, so it must be the one requested.
 async function target(dir, o) {
-  const url = o.remote || (await remoteUrl(dir));
-  if (!url) throw new Error('Set the remote URL first.');
+  const raw = o.remote || (await remoteUrl(dir));
+  if (!raw) throw new Error('Set the remote URL first.');
+  const url = canonicalRemote(raw);
+  if (!url) throw new Error(BAD_REMOTE);
+  o.remote = url;
   return url;
 }
+export const BAD_REMOTE = 'A remote is an http or https address with no user name, ? or # in it, such as https://github.com/you/paper.git.';
 
 // an Overleaf project's address in the browser, as its git address (Overleaf's Git integration)
 export function gitUrlOf(u) {
@@ -185,20 +193,24 @@ export function gitUrlOf(u) {
 export async function push(dir, o) {
   const { current } = await branches(dir);
   const url = await target(dir, o);
-  return git.push({ ...net(o), dir, remote: 'origin', url, ref: current || 'main', force: !!o.force });
+  // remoteRef named: isomorphic-git would otherwise push to the branch .git/config's
+  // branch.<name>.merge names, which an opened project's config chooses
+  return git.push({ ...net(o), dir, remote: 'origin', url, ref: current || 'main', remoteRef: current || 'main', force: !!o.force });
 }
 
 // fetch and merge (fast-forward or a real merge commit); conflicts are reported, not written
 export async function pull(dir, o, author) {
   const { current } = await branches(dir);
   const url = await target(dir, o);
-  return git.pull({ ...net(o), dir, remote: 'origin', url, ref: current || 'main', singleBranch: true, fastForward: true, author: { name: author.name, email: author.email } });
+  return git.pull({ ...net(o), dir, remote: 'origin', url, ref: current || 'main', remoteRef: current || 'main', singleBranch: true, fastForward: true, author: { name: author.name, email: author.email } });
 }
 
-export async function clone(dir, url, o) {
+export async function clone(dir, raw, o) {
+  const url = canonicalRemote(raw);
+  if (!url) throw new Error(BAD_REMOTE);
   await rmrf(dir);
   await mkdirp(dir);
-  await git.clone({ ...net({ ...o, remote: o.remote || url }), dir, url, singleBranch: true, depth: o.depth || undefined });
+  await git.clone({ ...net({ ...o, remote: url }), dir, url, singleBranch: true, depth: o.depth || undefined });
   return workingFiles(dir);
 }
 

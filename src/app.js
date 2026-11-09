@@ -28,7 +28,7 @@ import { TeXEngine, parseTeXLog } from './tex.js';
 import { PdfView } from './pdfview.js';
 import { collab, installCollab } from './collab.js';
 import { shareParam, commentOnly, cleanPath } from './share.js';
-import { savedToken, keepToken, dropReplaced } from './gitauth.js';
+import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const PX_PER_PT = 96 / 72.27;
@@ -2908,7 +2908,8 @@ class App {
       if (!this.gitRemotes.has(dir)) this.gitRemotes.set(dir, typeof rec === 'string' ? rec : null);
       rec = this.gitRemotes.get(dir);
     }
-    if (typeof rec === 'string') return rec === remote ? 'own' : 'theirs';
+    // the record is the address as the user gave it or as Rikuy uses it (canonicalRemote)
+    if (typeof rec === 'string') return rec === remote || (rec && rec === canonicalRemote(remote)) ? 'own' : 'theirs';
     const li = await this.linkInfo();
     return li && li.origin === 'git' ? 'unknown' : 'own';
   }
@@ -3064,15 +3065,17 @@ class App {
     // project; a URL typed here is the user's own, and the field follows it until a token is typed
     const from = await this.gitRemoteFrom(dir, remote);
     if (gen !== this.gitGen) return;
-    const fill = () => savedToken(this.prefs, url.value.trim(), url.value.trim() !== (remote || '') || from !== 'theirs');
+    const mine = () => url.value.trim() !== (remote || '') || from !== 'theirs';
+    const fill = () => savedToken(this.prefs, url.value.trim(), mine());
     let shown = tok.value = fill(), typed = false;
-    tok.addEventListener('input', () => { typed = true; });
-    url.addEventListener('input', () => { if (!typed) shown = tok.value = fill(); });
+    const legacy = this.gitLegacyButton(url, tok, () => { typed = true; shown = tok.value; }, mine);
+    tok.addEventListener('input', () => { typed = true; legacy.sync(); });
+    url.addEventListener('input', () => { if (!typed) shown = tok.value = fill(); legacy.sync(); });
     const opts = () => {
       const t = tok.value.trim();
       dropReplaced(this.prefs, t, shown);
       this.prefs.gitProxy = prox.value.trim(); store(PREFS, this.prefs);
-      const o = { token: t, remote: url.value.trim(), corsProxy: this.prefs.gitProxy, accepted: false };
+      const o = { token: t, remote: url.value.trim(), corsProxy: this.prefs.gitProxy, accepted: legacy.chosen() };
       o.onAccepted = () => { o.accepted = true; };
       return o;
     };
@@ -3081,10 +3084,17 @@ class App {
     const kept = (o) => {
       keepToken(this.prefs, o.remote, o.token, shown, o.accepted);
       store(PREFS, this.prefs);
-      if (o.token && (typed || o.accepted) && o.remote === (remote || '') && from !== 'own') this.gitOwnRemote(dir, o.remote);
+      if (o.token && (typed || o.accepted) && o.remote === canonicalRemote(remote) && from !== 'own') this.gitOwnRemote(dir, o.remote);
       shown = o.token;
     };
-    const saveUrl = async () => { const u = url.value.trim(); if (u && u !== remote) { await G.setRemote(dir, u); this.gitOwnRemote(dir, u); } return u; };
+    const saveUrl = async () => {
+      const u = url.value.trim();
+      if (u && u !== remote) {
+        if (!canonicalRemote(u)) { this.toast(G.BAD_REMOTE, 7000); return ''; }
+        await G.setRemote(dir, u); this.gitOwnRemote(dir, canonicalRemote(u));
+      }
+      return u;
+    };
     const rrow = mk('div', 'git-row');
     rrow.append(
       mkBtn('Pull', async (e) => {
@@ -3113,10 +3123,11 @@ class App {
         } catch (err) { fail(b, err); return; }
         done(b);
       }, 'git push'));
-    const host = (remote || '').replace(/^https?:\/\//, '').split('/')[0];
+    // the host the browser will reach, not the address as written (canonicalRemote)
+    const host = remoteHost(remote);
     if (from === 'theirs') rem.append(mk('div', 'git-note git-foreign', 'This remote came in the .git folder of the project you opened, so no token is filled in for it. Give one only if ' + host + ' is yours.'));
     else if (from === 'unknown' && tok.value) rem.append(mk('div', 'git-note git-unknown', 'This repository is older than Rikuy\'s record of where remotes come from, so your token is filled in as before. Check that ' + host + ' is yours before you pull or push.'));
-    rem.append(url, tok, prox, rrow, mk('div', 'git-note', 'GitHub and GitLab need a token with write access and, from a browser, a CORS proxy. Inside claude.ai the page can only reach its own server, so pushing works from Rikuy on its own site; here, Save .zip gives a clone to push from your computer.'));
+    rem.append(url, tok, legacy.el, prox, rrow, mk('div', 'git-note', 'GitHub and GitLab need a token with write access and, from a browser, a CORS proxy. Inside claude.ai the page can only reach its own server, so pushing works from Rikuy on its own site; here, Save .zip gives a clone to push from your computer.'));
     out.append(rem);
 
     // history
@@ -3166,16 +3177,17 @@ class App {
     const prox = mk('input'); prox.type = 'url'; prox.placeholder = 'CORS proxy'; prox.value = this.prefs.gitProxy ?? 'https://cors.isomorphic-git.org';
     // the token kept for the host of the address typed, until a token is typed
     let shown = '', typed = false;
-    tok.addEventListener('input', () => { typed = true; });
-    url.addEventListener('input', () => { if (!typed) shown = tok.value = savedToken(this.prefs, G.gitUrlOf(url.value), true); });
+    const legacy = this.gitLegacyButton({ get value() { return G.gitUrlOf(url.value); } }, tok, () => { typed = true; shown = tok.value; });
+    tok.addEventListener('input', () => { typed = true; legacy.sync(); });
+    url.addEventListener('input', () => { if (!typed) shown = tok.value = savedToken(this.prefs, G.gitUrlOf(url.value), true); legacy.sync(); });
     const b = mkBtn('Clone', async () => {
       // an Overleaf project's address becomes its git address (Overleaf, Account settings, Git integration)
-      const u = G.gitUrlOf(url.value);
-      if (!u) { url.focus(); return; }
+      const u = canonicalRemote(G.gitUrlOf(url.value));
+      if (!u) { if (url.value.trim()) this.toast(G.BAD_REMOTE, 7000); url.focus(); return; }
       const t = tok.value.trim();
       dropReplaced(this.prefs, t, shown);
       this.prefs.gitProxy = prox.value.trim(); store(PREFS, this.prefs);
-      const o = { token: t, remote: u, corsProxy: this.prefs.gitProxy, depth: 200, accepted: false };
+      const o = { token: t, remote: u, corsProxy: this.prefs.gitProxy, depth: 200, accepted: legacy.chosen() };
       o.onAccepted = () => { o.accepted = true; };
       const name = /git\.overleaf\.com/.test(u) ? 'overleaf-' + u.split('/').pop().slice(0, 6) : u.replace(/\.git$/, '').split('/').pop() || 'paper';
       b.disabled = true; b.textContent = 'Cloning…';
@@ -3189,8 +3201,29 @@ class App {
       } catch (e) { this.toast(this.gitError(e), 9000); }
       b.disabled = false; b.textContent = 'Clone';
     });
-    det.append(url, tok, prox, b);
+    det.append(url, tok, legacy.el, prox, b);
     return det;
+  }
+
+  // The single token of earlier versions, offered for a host only when the user picks it here:
+  // its prefix names no host (or one the remote is not), so filling it in for whatever address
+  // was typed sent it to strangers' remotes. The button names the host it will go to.
+  gitLegacyButton(url, tok, picked, mine = () => true) {
+    let chosen = false;
+    const el = mkBtn('', () => {
+      const t = mine() ? legacyChoice(this.prefs, url.value) : '';
+      if (!t) return;
+      tok.value = t; chosen = true; picked(); sync();
+    }, 'Fill in the access token you saved in an earlier version of Rikuy');
+    el.classList.add('git-legacy');
+    const sync = () => {
+      const t = mine() ? legacyChoice(this.prefs, url.value) : '';
+      if (tok.value !== t) chosen = false;
+      el.hidden = !t || !!tok.value.trim();
+      if (t) el.textContent = 'Use the token you saved before, for ' + remoteHost(url.value);
+    };
+    sync();
+    return { el, sync, chosen: () => chosen && tok.value.trim() === this.prefs.gitToken };
   }
 
   gitError(e) {
