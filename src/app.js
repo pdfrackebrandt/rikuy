@@ -3886,21 +3886,25 @@ class App {
       // command to write. Its name comes from outside, and in the source it is letters, digits,
       // dot, dash and underscore alone, with no folder: it cannot close the braces, start a
       // command or a comment. Pictures shared to the app by another page are not placed.
-      let placed = null;
+      // A name of its own, too: never the name of a file the project has, whose bytes it would
+      // replace (two pictures named in another script both came to figure.png, and versions
+      // keep text alone, so the first was gone for good).
+      let placed = null, place = false;
       // (PNG, JPEG and PDF, which every TeX engine here includes as they are; an SVG, a GIF or
       // an EPS joins the project as before and is not written into the text)
       if (!from && !zipName && !texts.size && !extra.size && blobs.size && blobs.size <= 12 && [...blobs.keys()].every((n) => /\.(png|jpe?g|pdf)$/i.test(n))) {
         const safe = new Map();
+        const taken = (n) => safe.has(n) || this.assetBlobs.has(n) || this.files.has(n) || this.extra.has(n);
         for (const [n, b] of blobs) {
           const ext = /\.[A-Za-z0-9]+$/.exec(n)[0].toLowerCase();
           const base = (n.split('/').pop().slice(0, -ext.length).replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'figure').slice(0, 60);
           let name = base + ext;
-          for (let k = 2; safe.has(name); k++) name = base + '-' + k + ext;
+          for (let k = 2; taken(name); k++) name = base + '-' + k + ext;
           safe.set(name, b);
         }
         blobs.clear();
         for (const [n, b] of safe) blobs.set(n, b);
-        placed = this.figureEdits([...blobs.keys()]);
+        place = true;
       }
       const over = [...texts.keys(), ...blobs.keys(), ...extra.keys()].filter((n) => this.files.has(n) || this.assetBlobs.has(n) || this.extra.has(n));
       if (over.length && this.base) await this.snapshot('Before ' + over[0] + (over.length > 1 ? ' and ' + (over.length - 1) + ' more' : '') + ' was replaced', { force: true });
@@ -3915,7 +3919,9 @@ class App {
       this.binaryDirty = true;
       this.zipDirty = true;
       this.forceRender = true;
-      // one edit for the figure and its package: one undo takes both out again
+      // one edit for the figure and its package: one undo takes both out again. Worked out here,
+      // after every await above, from the text and the caret as they are now.
+      if (place) placed = this.figureEdits([...blobs.keys()]);
       if (placed) this.commit(placed.edits, placed.caret, 'figure');
       else { this.rebuild(this.caretNow()); this.pushToSource(); }
       this.updateFileTabs();
@@ -3989,11 +3995,17 @@ class App {
     if (c && c.ghost) { f = this.ghost.f; p = this.ghost.pos; }
     else if (c) {
       const n = getSelection().anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement);
-      const it = el && el.closest('.it'), B = it && BLOCKS.get(+it.dataset.b);
+      // a footnote is drawn at the foot of the page, outside its paragraph: its block is the
+      // one its text belongs to, the paragraph that holds the footnote
+      const it = el && el.closest('.it'), sp = !it && el ? el.closest('span.t') : null, seg = sp ? segOfSpan(sp) : null;
+      const B = it ? BLOCKS.get(+it.dataset.b) : seg && seg.B;
       if (B) { f = B.f; p = B.e; }
     }
-    const main = this.src(this.main), docAt = main.search(/\\begin\s*\{document\}/);
-    if (p < 0 || (f === this.main && p < docAt)) { const end = main.search(/\\end\s*\{document\}/); f = this.main; p = end >= 0 ? end : main.length; }
+    // where the preamble ends and where the text ends are the parser's (model.docBody): a
+    // comment that names \begin{document} is neither
+    const d = this.model && !this.stale && this.model.main === this.main ? this.model.docBody : null;
+    const main = this.src(this.main);
+    if (p < 0 || (f === this.main && d && p < d.s)) { f = this.main; p = d ? d.e : main.length; }
     const src = this.src(f);
     let nlB = 0; for (let k = p - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
     let nlA = 0; for (let k = p; k < src.length && /\s/.test(src[k]); k++) if (src[k] === '\n') nlA++;
@@ -4001,7 +4013,8 @@ class App {
     const tex = names.map((n) => '\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{' + n + '}\n\\end{center}').join('\n\n');
     const edits = [{ f, s: p, e: p, t: pre + tex + post }];
     let shift = 0;
-    if (docAt >= 0 && !/\\(?:usepackage|RequirePackage)\s*(?:\[[^\]]*\])?\s*\{[^}]*\bgraphic[sx]\b[^}]*\}/.test(main.slice(0, docAt).replace(/(^|[^\\])%.*$/gm, '$1'))) {
+    const docAt = d ? d.at : -1;
+    if (d && !/\\(?:usepackage|RequirePackage)\s*(?:\[[^\]]*\])?\s*\{[^}]*\bgraphic[sx]\b[^}]*\}/.test(main.slice(0, docAt).replace(/(^|[^\\])%.*$/gm, '$1'))) {
       // after the last \usepackage line, as a package for an equation's symbol is added
       let at = docAt, m;
       const re = /^[ \t]*\\usepackage\s*(?:\[[^\]]*\])?\s*\{[^}]*\}[^\n]*\n/gm;

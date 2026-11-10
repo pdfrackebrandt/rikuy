@@ -162,6 +162,40 @@ try:
         check('one undo takes it out of the text again', page.evaluate('window.rikuy.files.get("main.tex")') == before)
         toast = drop(('art.svg', b'<svg xmlns="http://www.w3.org/2000/svg"/>'))
         check('a picture TeX cannot include as it is (SVG) joins the project and is not written into the text', 'Added art.svg' in toast and 'placed' not in toast and page.evaluate('window.rikuy.files.get("main.tex")') == before, toast)
+        # two pictures whose names come to the same safe name, and one that comes to the name of a
+        # picture the project has: each keeps a name of its own, and no bytes are replaced
+        BYTES = '(n) => window.rikuy.assetBlobs.get(n) ? window.rikuy.assetBlobs.get(n).arrayBuffer().then((b) => b.byteLength) : -1'
+        click_text(page, 'References follow')
+        drop(('\u56fe\u4e00.png', PNG)); page.wait_for_timeout(300)
+        drop(('\u56fe\u4e8c.png', PNG + b'\0\0\0')); page.wait_for_timeout(300)
+        s = page.evaluate('window.rikuy.files.get("main.tex")')
+        check('two pictures with names of no Latin letters are two files and two figures', page.evaluate(BYTES, 'figure.png') == len(PNG) and page.evaluate(BYTES, 'figure-2.png') == len(PNG) + 3 and '{figure.png}' in s and '{figure-2.png}' in s, (page.evaluate('[...window.rikuy.assetBlobs.keys()]'), page.evaluate(BYTES, 'figure.png')))
+        drop(('my-plot.png', PNG)); page.wait_for_timeout(300)
+        toast = drop(('my plot.png', PNG + b'\0' * 7)); page.wait_for_timeout(300)
+        check('a picture whose safe name the project already has does not replace that picture', page.evaluate(BYTES, 'my-plot.png') == len(PNG) and page.evaluate(BYTES, 'my-plot-2.png') == len(PNG) + 7 and 'my-plot-2.png' in toast, (toast, page.evaluate('[...window.rikuy.assetBlobs.keys()]')))
+        # typing while a version is being kept (the await before the figure is written) must not
+        # leave the figure at an offset of the text as it was before
+        page.evaluate("""() => { const g = window.rikuy, keep = g.snapshot.bind(g); g.keptSnapshot = keep; g.snapshot = async (...a) => { g.snapshot = keep;
+          const s = g.files.get('main.tex'), at = s.indexOf('\\\\maketitle') + 10; g.commit([{ f: 'main.tex', s: at, e: at, t: '\\n\\nTyped meanwhile.' }], null, 'type'); return keep(...a); }; }""")
+        click_text(page, 'The page and the source never disagree')
+        drop(('my-plot.png', PNG + b'\0')); page.wait_for_timeout(400)
+        s = page.evaluate('window.rikuy.files.get("main.tex")')
+        k = s.rfind('\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{my-plot-3.png}')
+        check('a figure placed while the text changes lands after its paragraph, not inside it', k > 0 and s[:k].endswith('every edit is computed back into it.\n\n'), s[max(0, k - 60):k + 30] if k > 0 else page.evaluate('[...window.rikuy.assetBlobs.keys()]'))
+        page.evaluate('window.rikuy.snapshot = window.rikuy.keptSnapshot')
+        # with the caret in a footnote the figure goes after the paragraph that holds the footnote
+        click_text(page, 'edit this footnote')
+        drop(('in-note.png', PNG)); page.wait_for_timeout(400)
+        s = page.evaluate('window.rikuy.files.get("main.tex")')
+        k = s.find('{in-note.png}')
+        check('with the caret in a footnote the figure goes after the paragraph of the footnote, not to the end', k > 0 and s[:k].endswith('one edited by hand.\n\n\\begin{center}\n\\includegraphics[width=0.8\\linewidth]') and k < s.find('\\section{Citations'), s[max(0, k - 120):k + 20])
+        # the preamble ends where the parser says: a comment naming \begin{document} is not it
+        page.evaluate("""() => { const g = window.rikuy; g.files = new Map([['main.tex', '\\\\documentclass{article}\\n% was: \\\\begin{document} here\\n\\\\usepackage{amsmath}\\n\\\\begin{document}\\nA paragraph.\\n\\\\end{document}\\n']]); g.main = 'main.tex'; g.hist = []; g.forceRender = true; g.rebuild(); }""")
+        click_text(page, 'A paragraph')
+        drop(('late.png', PNG)); page.wait_for_timeout(400)
+        s = page.evaluate('window.rikuy.files.get("main.tex")')
+        check('graphicx goes after the last package, though a comment before it names \\begin{document}', s.startswith('\\documentclass{article}\n% was: \\begin{document} here\n\\usepackage{amsmath}\n\\usepackage{graphicx}\n\\begin{document}\nA paragraph.\n\n\\begin{center}'), s[:200])
+        page.evaluate('window.rikuy.doReset()'); page.wait_for_timeout(600)
         many = io.BytesIO()
         with zipfile.ZipFile(many, 'w') as z:
             for i in range(30): z.writestr('pics/p%02d.png' % i, PNG)
