@@ -83,6 +83,8 @@ body.has-ai .ai-only { display: inline-flex !important; }
 .rb-style:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .rb .btn.icon b, .rb .btn.icon i, .rb .btn.icon u { font: 15px var(--font-doc); }
 .rb .btn.icon b { font-weight: 700; }
+/* a press on a disabled button reaches the row, which keeps the caret on the page */
+.rb .btn:disabled { pointer-events: none; }
 .rb-dl { display: flex; align-items: center; gap: 2px; }
 .rb-lab { font-size: 12px; color: var(--mute); margin-right: 4px; }
 /* the LaTeX download keeps live graphs live: a mark says so when the document has some */

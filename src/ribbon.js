@@ -27,7 +27,13 @@ export const ribbon = {
     if (!c) return null;
     const n = getSelection().anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement);
     const it = c.ghost ? null : el && el.closest('.it');
-    return { c, el, it, B: it ? BLOCKS.get(+it.dataset.b) : null };
+    // What the caret is inside, nearest first: a footnote's text and a caption are not items of
+    // the page, a cell and bold or italic words lie within one. An equation or a footnote
+    // written there would land inside the cell, the braces or the other footnote.
+    const near = c.ghost || !el ? null : el.closest('[data-ctx]');
+    const r = getSelection().getRangeAt(0), end = r.endContainer.nodeType === 1 ? r.endContainer : r.endContainer.parentElement;
+    return { c, el, it, B: it ? BLOCKS.get(+it.dataset.b) : null, ctx: near ? near.dataset.ctx : '', cell: !!(el && el.closest('td')), sty: !!(el && el.closest('[data-y]')),
+      multi: !c.ghost && !r.collapsed && !!it && (end && end.closest('.it')) !== it };
   },
 
   // a block that is one plain paragraph of the text: [s, e) of its words, or null
@@ -46,6 +52,8 @@ export const ribbon = {
     const { c, it, B } = at;
     if (c.ghost) return { v: 'p', can: true };
     if (!it || !B) return { v: '', can: false };
+    // a selection that runs over several paragraphs: the list would change only the first
+    if (at.multi) return { v: it.dataset.ctx === 'p' ? 'p' : '', can: false };
     if (it.dataset.ctx === 'ttl') return { v: 'title', can: false };
     if (it.dataset.ctx === 'h') {
       const src = this.src(B.f), m = HEAD.exec(src.slice(B.s, B.e));
@@ -236,14 +244,17 @@ export const ribbon = {
     sel.value = st.v;
     sel.disabled = !at || !st.can;
     const inside = (names) => { for (let n = at && at.el; n && n !== this.root; n = n.parentElement) if (n.dataset && n.dataset.y) { const y = styOfEl(n); if (y && names.includes(y.cmd)) return true; } return false; };
-    const L = at && this.listAt(at), ctx = at && at.it ? at.it.dataset.ctx : '';
+    const L = at && this.listAt(at);
+    const tight = !!at && (/^(h|ttl|cell|cap|fn)$/.test(at.ctx) || at.cell);
     for (const b of rb.querySelectorAll('button[data-rb]')) {
       const act = b.dataset.rb;
       if (act.startsWith('dl-')) continue;
       let off = !at, on = null;
       if (act in STYLES) { off = !at || !!at.c.ghost; on = !off && inside(STYLES[act]); }
       else if (act === 'itemize' || act === 'enumerate') { off = !L; on = !!L && L.kind === act; }
-      else if (act === 'equation') off = !at || /^(h|ttl|cell|cap)$/.test(ctx);
+      // Table and Picture go after the caret's block wherever the caret is, so they stay on
+      else if (act === 'equation') off = !at || tight || at.sty;
+      else if (act === 'footnote') off = !at || tight;
       b.disabled = off;
       if (on !== null) b.setAttribute('aria-pressed', on ? 'true' : 'false');
     }
@@ -268,15 +279,33 @@ export function installRibbon(app) {
   // a style that is none of the list's (a list, a table, a theorem) shows as an empty choice
   sel.add(new Option('', ''));
   app.ribbonSoon = (() => { let t = 0; return () => { clearTimeout(t); t = setTimeout(() => app.ribbonSync(), 60); }; })();
-  // a press must not take the caret or the selection off the page
-  rb.addEventListener('mousedown', (e) => { if (e.target.closest('button')) e.preventDefault(); });
+  // A press must not take the caret or the selection off the page: not on a button, and not on
+  // a disabled one (which lets the press through to the row, see .rb .btn:disabled), the
+  // Download label or the empty part of the row either. Only the style list takes the focus.
+  rb.addEventListener('mousedown', (e) => { if (!e.target.closest('select')) e.preventDefault(); });
   rb.addEventListener('click', (e) => { const b = e.target.closest('button[data-rb]'); if (b && !b.disabled) app.ribbonDo(b.dataset.rb); });
   // the list takes the focus while it is open: the place on the page is kept and put back
   const keep = () => { const s = getSelection(); if (s.rangeCount && app.root.contains(s.anchorNode)) app.rbRange = s.getRangeAt(0).cloneRange(); };
-  const back = () => { const r = app.rbRange, s = getSelection(); if (r && app.root.contains(r.startContainer)) { app.root.focus({ preventScroll: true }); s.removeAllRanges(); s.addRange(r); } };
+  // (the place as it is now if the page still has it; the kept one only when it is still a place
+  // in a text of the page: a range whose text was drawn again has collapsed to the page's start)
+  const back = () => {
+    const r = app.rbRange, s = getSelection();
+    app.root.focus({ preventScroll: true });
+    if (s.rangeCount && app.root.contains(s.anchorNode)) return;
+    if (r && r.startContainer.nodeType === 3 && app.root.contains(r.startContainer)) { s.removeAllRanges(); s.addRange(r); }
+  };
   sel.addEventListener('pointerdown', keep);
   sel.addEventListener('focus', keep);
   sel.addEventListener('change', () => { const v = sel.value; back(); app.setBlockStyle(v); app.ribbonSync(); });
+  // The list keeps the focus when it is closed with Escape or with the style it already showed.
+  // What is typed next is meant for the page: it went into the list, where "H" picked Heading 1.
+  sel.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); back(); return; }
+    if (e.key.length !== 1 || e.key === ' ' || e.ctrlKey || e.metaKey || e.altKey) return;
+    e.preventDefault();
+    back();
+    app.insertText(e.key);
+  });
   $('#picinput').addEventListener('change', (e) => { const fs = [...e.target.files]; e.target.value = ''; back(); if (fs.length) app.openFiles(fs); });
   // a toolbar: arrows move between its controls (in the style list, up and down pick a style)
   rb.addEventListener('keydown', (e) => {

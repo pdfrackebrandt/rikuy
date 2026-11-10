@@ -324,9 +324,44 @@ def one_save(page):
     page.evaluate('window.rikuy.toggleSource(false)')
 
 
+def where_it_applies(page):
+    """What a button can do depends on where the caret is: in a cell, a caption, a footnote or
+    bold words an equation or a footnote cannot be written; the row never takes the caret away."""
+    doc = ('\\documentclass{article}\n\\begin{document}\n\\section{Opening}\nPlain words and \\textbf{bold words} here.\\footnote{A note below.}\n\n'
+           'Second paragraph here.\n\n\\begin{table}[h]\n\\begin{tabular}{ll}\ncell & other \\\\\n\\end{tabular}\n\\caption{The caption.}\n\\end{table}\n\\end{document}\n')
+    load_doc(page, doc)
+    for where, text, off, on in (('a table cell', 'cell', ('rb-eq', 'rb-fn'), ('rb-table', 'rb-pic', 'rb-math')), ('a caption', 'The caption', ('rb-eq', 'rb-fn'), ('rb-table', 'rb-pic')),
+                                 ('a footnote', 'A note below', ('rb-eq', 'rb-fn'), ('rb-pic', 'rb-math')), ('bold words', 'bold words', ('rb-eq',), ('rb-fn', 'rb-math')),
+                                 ('a heading', 'Opening', ('rb-eq', 'rb-fn'), ('rb-math',)), ('a paragraph', 'Second paragraph', (), ('rb-eq', 'rb-fn', 'rb-table', 'rb-pic'))):
+        click_text(page, text, 2)
+        st = state(page)
+        check('in %s: %s' % (where, ', '.join([b[3:] + ' off' for b in off] + [b[3:] + ' on' for b in on])), all(st[b][0] for b in off) and not any(st[b][0] for b in on), {b: st[b][0] for b in off + on})
+    page.evaluate("""() => { const sp = [...document.querySelectorAll('#pages span.t')]; const a = sp.find((s) => s.textContent.includes('Plain words')), z = sp.find((s) => s.textContent.includes('Second paragraph'));
+      const r = document.createRange(); r.setStart(a.firstChild, 2); r.setEnd(z.firstChild, 5); document.getElementById('pages').focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }""")
+    check('with a selection over two paragraphs the style cannot be changed', state(page)['rb-style'][0])
+    # the row keeps the caret: a click on a disabled button, on the Download label, on empty space
+    click_text(page, 'cell', 2); state(page)
+    for what, sel in (('a disabled button', '#rb-eq'), ('the Download label', '.rb-lab'), ('the empty part of the row', '#ribbon > .grow')):
+        r = page.evaluate('(s) => { const r = document.querySelector(s).getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }', sel)
+        page.mouse.click(*r); page.wait_for_timeout(100)
+        page.keyboard.type('Q'); page.wait_for_timeout(150)
+        ok = 'ceQll' in src(page)
+        page.keyboard.press('Control+z'); page.wait_for_timeout(120)
+        check('a click on %s leaves the caret on the page' % what, ok and page.evaluate('document.activeElement.id') == 'pages')
+        click_text(page, 'cell', 2); state(page)
+    # the style list gives the focus back: typing after it goes to the page, not into the list
+    click_text(page, 'Second paragraph', 7); state(page)
+    page.focus('#rb-style'); page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    check('Escape in the style list returns to the page', page.evaluate('document.activeElement.id') == 'pages')
+    page.focus('#rb-style'); page.keyboard.type('Hello'); page.wait_for_timeout(250)
+    check('typing with the style list focused types on the page and picks no heading', 'Second Helloparagraph here.' in src(page) and '\\section{Second' not in src(page) and src(page).count('\\section') == 1, src(page)[src(page).find('Second') - 12:][:50])
+    style(page, 'section'); page.keyboard.type('X'); page.wait_for_timeout(200)
+    check('after a style is picked the caret is back in the words', page.evaluate('document.activeElement.id') == 'pages' and 'X' in src(page)[src(page).find('\\section{Second'):][:40], src(page)[src(page).find('Second') - 12:][:50])
+
+
 def run():
     with sync_playwright() as p:
-        for fn in (top_bar, styles, letters, lists, inserts, keyboard, narrow, downloads, one_save, live_graphs):
+        for fn in (top_bar, styles, letters, lists, inserts, keyboard, narrow, downloads, one_save, where_it_applies, live_graphs):
             browser, page, errors = open_page(p)
             try:
                 fn(page)
