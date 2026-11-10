@@ -508,4 +508,21 @@ await ok('to Word: a formula with colour stays a Word equation; a colour the pre
   assert.equal(uncolor('\\textcolor{red}{x}+{\\color[HTML]{C00000} y}+\\frac{a}{b}'), '{x}+{ y}+\\frac{a}{b}');
 });
 
+await ok('code keeps no colour marks: a file pandoc wrote with highlighted code opens as plain verbatim', () => {
+  // as pandoc, Quarto and R Markdown write code: Source Code paragraphs, a coloured character style per token
+  const made = P.convert({ from: 'markdown', to: 'docx', 'output-file': 'out.docx', 'highlight-style': 'pygments' }, 'Text with `inline code` and **bold**.\n\n```python\nimport os\nx = "a string"  # comment\n```\n\nAfter.\n', {}).files['out.docx'];
+  assert.match(text(unzip(made).get('word/document.xml')), /<w:rStyle w:val="ImportTok" \/>/);
+  const r = open(made);
+  assert.ok(bodyOf(r.tex).includes('\\begin{verbatim}\nimport os\nx = "a string"  # comment\n\\end{verbatim}'), r.tex);
+  assert.ok(bodyOf(r.tex).includes('\\texttt{inline\\ code}') && !/textcolor|xcolor/.test(r.tex), r.tex);
+  // and a mark that gets into code all the same (here a page break inside a listing and inside an
+  // inline code span) is dropped there, not printed as \newpage
+  const br = edit(made, (d) => d.replace('<w:t xml:space="preserve">import</w:t>', '<w:t xml:space="preserve">import</w:t><w:br w:type="page"/>').replace(/(<w:rStyle w:val="VerbatimChar" \/><\/w:rPr>)<w:t/, '$1<w:br w:type="page"/><w:t'));
+  const t2 = open(br).tex;
+  assert.ok(!/newpage|[\uE000-\uE01F]/.test(t2) && t2.includes('\\begin{verbatim}\nimport os\n') && /\\texttt\{inline\\ code\}/.test(t2), t2);
+  // a direct colour on a run of code, and on a run in a code style of Word's own
+  const col = edit(made, (d) => d.replace(/<w:rStyle w:val="(NormalTok|VerbatimChar)" \/>/g, '<w:rStyle w:val="$1" /><w:color w:val="FF0000" />'));
+  assert.ok(!/textcolor/.test(open(col).tex));
+});
+
 console.log('word: ' + n + ' groups of checks passed');

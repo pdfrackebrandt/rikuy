@@ -721,13 +721,17 @@ function tocFields(C, box) {
   }
 }
 
+// styles of code: pandoc's Source Code and Verbatim Char, its token styles (KeywordTok, StringTok,
+// ...), Word's HTML Code and HTML Preformatted
+const CODE = /^source code$|verbatim|tok$|(^| )code( |$)|preformatted/i;
+
 function paraFix(C, p, top) {
   if (p.own) return;
   const ppr = kid(p, 'w:pPr');
   const sid = val(ppr, 'w:pStyle');
   const sname = C.styles.names.get(sid) || sid.toLowerCase();
   // text Rikuy or LaTeX styles itself keeps no colour or alignment of Word's
-  const own = /^(heading|title|subtitle|caption|toc|table of|author|abstract|date|bibliography)/.test(sname);
+  const own = /^(heading|title|subtitle|caption|toc|table of|author|abstract|date|bibliography)/.test(sname) || CODE.test(sname);
   const prpr = kid(ppr, 'w:rPr');
   if (prpr && (kid(prpr, 'w:ins') || kid(prpr, 'w:del') || kid(prpr, 'w:moveFrom') || kid(prpr, 'w:moveTo'))) C.info.tracked++;
   const st = { color: !own, link: false, n: 0, hold: false };
@@ -815,6 +819,9 @@ function runFix(C, r, st) {
   C.info.chars += len;
   if (!len || !st.color || st.link) return;
   const rpr = kid(r, 'w:rPr');
+  // code is set verbatim in LaTeX, where a mark's command would be printed as it is written:
+  // the colours of syntax highlighting (pandoc's, Quarto's, R Markdown's token styles) stay behind
+  if (CODE.test(C.styles.names.get(val(rpr, 'w:rStyle')) || val(rpr, 'w:rStyle'))) return;
   const col = colorOf(rpr) || C.styles.colors.get(val(rpr, 'w:rStyle')) || null;
   if (!col) return;
   const first = ts[0], last = ts[ts.length - 1];
