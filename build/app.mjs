@@ -26,7 +26,7 @@ const THEME = { light: '#F5F7F9', dark: '#1B222A', background: '#DCE1E7' };
 const DESCRIPTION = 'A LaTeX editor where you type on the typeset page. TeX Live 2026 runs in the browser; nothing is uploaded.';
 const ZERO = '0000000000000000';
 const META = /(<meta name="rikuy-app" content=")([0-9a-f]{16})(")/;
-const WORD = !process.env.RIKUY_NO_WORD;
+const WORD = !process.env.RIKUY_NO_WORD && !process.env.RIKUY_SHARE;
 const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 // The libraries the page loads from jsDelivr (the CDN map in src/app.js, KaTeX's tag in
@@ -159,9 +159,9 @@ export function headers() {
   const rule = (p, ...h) => p + '\n' + h.map((x) => '  ' + x).join('\n') + '\n';
   return '# Written by build/app.mjs for Cloudflare Pages; see docs/HOSTING.md\n'
     + rule('/*', 'Content-Security-Policy: ' + CSP, 'X-Content-Type-Options: nosniff', 'X-Frame-Options: DENY', 'Referrer-Policy: no-referrer',
-      'Permissions-Policy: accelerometer=(), bluetooth=(), browsing-topics=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), hid=(), magnetometer=(), microphone=(), midi=(), payment=(), serial=(), usb=(), xr-spatial-tracking=()')
+      'Permissions-Policy: accelerometer=(), browsing-topics=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), hid=(), magnetometer=(), microphone=(), midi=(), payment=(), serial=(), usb=(), xr-spatial-tracking=()')
     + ['/', '/index.html', '/sw.js', '/manifest.webmanifest'].map((p) => rule(p, 'Cache-Control: ' + NO_CACHE)).join('')
-    + ['/tex/p-*', '/tex/t-*', '/tex/b-*', '/tex/w-*', '/fonts/*'].map((p) => rule(p, 'Cache-Control: ' + FOREVER)).join('');
+    + ['/tex/p-*', '/tex/t-*', '/tex/b-*', '/tex/w-*', '/tex/m-*', '/fonts/*', '/word/pandoc-*'].map((p) => rule(p, 'Cache-Control: ' + FOREVER)).join('');
 }
 
 // Without a 404.html, Pages answers a missing file with index.html and 200 (it takes the site for

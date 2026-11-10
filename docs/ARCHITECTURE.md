@@ -396,6 +396,14 @@ alignment and the import plan. `src/wordast.js` (in the page) walks the model in
   A file whose project is not open opens that project (its last version here, else the source the
   file carries) first.
 
+**Whose edits are merged.** The data a .docx carries says where every edit goes in the source,
+so it is trusted only when this browser wrote it: the worker returns the SHA-256 of the data at
+export (`mark`), the page keeps the marks of its newest 300 exports (`wordRemember`, the
+`word-exports` key), and `openDocx` merges edits only from a file whose data hashes to one of
+them (`wordKnows`). Any other file with Rikuy data (forged, changed, from another computer or a
+cleared browser) opens as a Word file does, as a new project marked as someone else's. The data
+holds the main file and the files its blocks come from, not the whole project.
+
 ## 8. Page and worker
 
 `TeXEngine` (`src/tex.js`) starts the worker from a blob (so it runs under the page's policy)

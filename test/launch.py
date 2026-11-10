@@ -109,6 +109,24 @@ with sync_playwright() as p:
     page.click('#toast button')
     page.wait_for_function('window.rikuy.files.has("notes.tex")', timeout=10000)
     check('shared files never replace a file of the project open now', page.evaluate('window.rikuy.files.get("shared.tex")') == before and 'Not replaced: shared.tex' in page.inner_text('#toast'), page.inner_text('#toast'))
+    # the user's own project (opened from the file manager, unrestricted), then a class shared to
+    # it by a page elsewhere: with a stranger's code in it, the project is someone else's
+    page.evaluate(LAUNCH, [['thesis.tex', b64(PAPER)]])
+    page.wait_for_function('window.rikuy.main === "thesis.tex"', timeout=10000)
+    check('(a project of the user\'s own is open, unrestricted)', project(page)['link'] is None, project(page)['link'])
+    with page.expect_navigation():
+        page.evaluate(POST, [[['article.cls', b64('\\ProvidesClass{article}\n')], ['hyperref.cfg', b64('% planted\n')]]])
+    ready(page)
+    page.click('#toast button')
+    page.wait_for_function('window.rikuy.files.has("article.cls")', timeout=10000)
+    pr = project(page)
+    check('a class shared into the user\'s own project makes it someone else\'s: shell escape restricted', pr['main'] == 'thesis.tex' and pr['link'] and pr['link']['origin'] == 'share' and not pr['link']['allowed'], pr)
+    # opening a file of the same name with the app replaces it, with the version before in History
+    n0 = page.evaluate('window.rikuy.allSnaps().then((a) => a.length)')
+    page.evaluate(LAUNCH, [['article.cls', b64('% mine now\n')]])
+    page.wait_for_function('window.rikuy.files.get("article.cls").includes("mine now")', timeout=10000)
+    labels = page.evaluate('window.rikuy.allSnaps().then((a) => a.map((v) => v.label))')
+    check('a file opened over one of the same name leaves the version before in History', len(labels) > n0 and any('article.cls was replaced' in (l or '') for l in labels), labels[:4])
     check('no page errors', not errors, errors[:3])
     b.close()
 srv.shutdown(); srv.server_close()

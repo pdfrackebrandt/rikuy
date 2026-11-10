@@ -17,7 +17,7 @@ grep -v '^#' "$HERE/tl26-packages.txt" | while read -r name pool hash; do
   f="$S/debs/${pool##*/}"
   algo=${hash%%:*}; sum=${hash#*:}
   if ! { [ -f "$f" ] && echo "$sum  $f" | ${algo}sum -c --status; }; then
-    curl -fL --retry 3 -sS -o "$f.part" "$MIRROR/$pool" || { echo "fetch_tl26: cannot download $pool" >&2; exit 1; }
+    curl -fL --retry 6 --retry-all-errors --retry-delay 5 -sS -o "$f.part" "$MIRROR/$pool" || { echo "fetch_tl26: cannot download $pool" >&2; exit 1; }
     echo "$sum  $f.part" | ${algo}sum -c --status || { echo "fetch_tl26: hash mismatch for $pool" >&2; exit 1; }
     mv "$f.part" "$f"
   fi

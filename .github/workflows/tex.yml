@@ -36,6 +36,11 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+# one run per branch: a newer push replaces the run of an older one, so an old commit's run cannot
+# finish last and be deployed over a newer one
+concurrency:
+  group: tex-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   tex:
     runs-on: ubuntu-24.04

@@ -94,8 +94,12 @@ self.onmessage = async ({ data }) => {
     const { P, version } = await pandocP;
     let result;
     if (op === 'ping') result = { version };
-    else if (op === 'export') result = exportDocx(P, data.req);
-    else if (op === 'read') result = readDocx(P, data.bytes);
+    // mark: the SHA-256 of the Rikuy data a .docx carries, as written at export and as read back.
+    // The page remembers the marks of its own exports and merges edits only from a file that
+    // carries one of them: the data says where every edit goes in the source, so data from
+    // anywhere else (forged, or another project of the same name) could patch anything.
+    else if (op === 'export') { result = exportDocx(P, data.req); result.mark = await sha256(new TextEncoder().encode(result.json)); delete result.json; }
+    else if (op === 'read') { result = readDocx(P, data.bytes); if (result.data) result.mark = await sha256(new TextEncoder().encode(JSON.stringify(result.data))); }
     else if (op === 'open') result = docxToLatex(P, data.bytes, data.name);
     else throw new Error('unknown request');
     const transfer = [];

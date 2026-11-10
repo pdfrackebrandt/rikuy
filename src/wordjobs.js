@@ -49,9 +49,14 @@ export function exportDocx(P, req) {
   const tex = mathTeX(P, objs);
   tex.forEach((t, i) => { const a = atoms[owner[i]]; if (a && t != null) a.was = t; });
   const unread = tex.filter((t) => t == null).length;
-  const data = exportData({ ...req.project, anchors, atoms, t: Date.now(), app: req.app });
+  // The file carries the source of what it shows, to place a coauthor's edits later: the main
+  // file and the files its blocks come from, not the whole project (a chapter no \input names,
+  // notes, a .bib would otherwise travel to everyone the Word file is sent to).
+  const used = new Set([req.project.main, ...anchors.map((A) => A.f), ...atoms.map((a) => a && a.f).filter(Boolean)]);
+  const data = exportData({ ...req.project, files: req.project.files.filter(([n]) => used.has(n)), anchors, atoms, t: Date.now(), app: req.app });
   const out = addRikuyPart(docx, data);
-  return { docx: out, warnings: said(r.warnings), lost, unread, size: out.length };
+  // json: what the worker hashes into the export's mark (src/wordworker.js)
+  return { docx: out, warnings: said(r.warnings), lost, unread, size: out.length, json: JSON.stringify(data) };
 }
 
 // the atom index of text position i in run coded map, or null
@@ -170,6 +175,9 @@ export function docxToLatex(P, bytes, name) {
   if (used(/\\(passthrough|NormalTok)/)) pre.push('\\providecommand{\\passthrough}[1]{#1}');
   // pandoc puts \hspace{0pt} after a formula that ends a paragraph; it typesets as nothing
   tex = tex.replace(/(\\\))\\hspace\{0pt\}/g, '$1');
+  // after each rule of a table pandoc writes \noalign{}, which sets nothing: the typeset page
+  // (and so the Word file saved from it) showed the word \noalign in the table's cells
+  tex = tex.replace(/(\\(?:toprule|midrule|bottomrule))\\noalign\{\}/g, '$1');
   // and wraps a table without a caption in a group that keeps the table counter still; the group
   // makes the editor read the table as inline text, so the table goes without it
   tex = tex.replace(/\{\\def\\LTcaptype\{none\} % do not increment counter\n(\\begin\{longtable\}[\s\S]*?\\end\{longtable\})\n\}/g, '$1');

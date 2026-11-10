@@ -7,6 +7,7 @@
 import { buildWordDoc } from './wordast.js';
 import { checkData, planImport, unpackRead } from './wordsync.js';
 import { loadPdfjs } from './pdfview.js';
+import { kvGet, kvPut } from './store.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const WORD = typeof __RIKUY_WORD__ === 'undefined' ? true : __RIKUY_WORD__;
@@ -89,6 +90,26 @@ export const word = {
     return this.wordE;
   },
 
+  // The marks of the Word files this browser exported (the newest 300), kept with the projects
+  async wordMarks() {
+    if (!this.wordMarkList) {
+      let l = null;
+      if (!this.noIdb) { try { l = await kvGet('word-exports'); } catch (e) { l = null; } }
+      this.wordMarkList = Array.isArray(l) ? l.filter((m) => typeof m === 'string' && /^[0-9a-f]{64}$/.test(m)) : [];
+    }
+    return this.wordMarkList;
+  },
+  async wordRemember(mark) {
+    if (!/^[0-9a-f]{64}$/.test(mark || '')) return;
+    const l = await this.wordMarks();
+    if (!l.includes(mark)) l.push(mark);
+    while (l.length > 300) l.shift();
+    if (!this.noIdb) await kvPut('word-exports', l).catch(() => {});
+  },
+  async wordKnows(mark) {
+    return /^[0-9a-f]{64}$/.test(mark || '') && (await this.wordMarks()).includes(mark);
+  },
+
   // "Make available offline" (src/pwa.js): start pandoc once, so the worker fetches, checks and
   // keeps it in IndexedDB; false where this build has no Word
   async keepWord() {
@@ -113,6 +134,7 @@ export const word = {
       this.toast('Making the Word file…', 60000);
       const req = await this.wordRequest();
       const res = await this.wordEngine().run('export', { req });
+      await this.wordRemember(res.mark);
       const blob = new Blob([res.docx], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
       const fname = (this.name || 'paper').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') + '.docx';
       this.lastDocx = { blob, name: fname, degraded: req.degraded, warnings: res.warnings };
@@ -191,7 +213,7 @@ export const word = {
   },
 
   // ---- Open a .docx ----
-  async openDocx(file) {
+  async openDocx(file, from) {
     if (!WORD) { this.wordMissing(); return; }
     if (file.size > MAX_DOCX) { this.toast(file.name + ' is larger than 100 MB; Rikuy does not open Word files that large.', 8000); return; }
     if (this.wordBusy) return;
@@ -201,15 +223,21 @@ export const word = {
       this.toast('Reading ' + file.name + '…', 60000);
       const bytes = new Uint8Array(await file.arrayBuffer());
       const read = await this.wordEngine().run('read', { bytes: bytes.slice() });
-      if (read && read.data) { await this.wordEdits(read, file.name); return; }
+      // edits are merged only from an export this browser made (wordRemember); a file carrying
+      // any other Rikuy data opens as a Word file does, as a document of its own
+      let note = '';
+      if (read && read.data) {
+        if (await this.wordKnows(read.mark)) { await this.wordEdits(read, file.name); return; }
+        note = ' It carries edits to a Rikuy export this browser did not make (another computer, a cleared browser, or data that was changed), so it opened as a new document and nothing was merged into a project.';
+      }
       const r = await this.wordEngine().run('open', { bytes, name: file.name });
-      await this.openWordProject(r, file.name);
+      await this.openWordProject(r, file.name, note);
     } catch (e) {
       this.toast('Could not open ' + file.name + ': ' + ((e && e.message) || e), 10000);
     } finally { this.wordBusy = false; $('#st-save').textContent = keep; }
   },
 
-  async openWordProject(r, fname) {
+  async openWordProject(r, fname, note = '') {
     const name = fname.replace(/\.docx$/i, '').split('/').pop() || 'Word document';
     if (this.base) { await this.snapshot('Before opening another project', { force: !this.lastSig }); await this.stashBinary(); }
     const files = new Map([['main.tex', r.tex]]);
@@ -220,7 +248,7 @@ export const word = {
     for (const [n, b] of Object.entries(r.media || {})) this.addAsset(n, new Blob([b]));
     if (Object.keys(r.media || {}).length) { this.binaryDirty = true; this.forceRender = true; this.rebuild(); this.persist(); }
     const n = Object.keys(r.media || {}).length;
-    this.toast('Opened ' + fname + ' as LaTeX' + (n ? ', with ' + n + (n === 1 ? ' picture' : ' pictures') + ' in figures/' : '') + (r.bib ? ' and its citations in references.bib' : '') + '.' + (r.warnings && r.warnings.length ? ' ' + r.warnings.slice(0, 3).join(' ') : ''), 9000);
+    this.toast('Opened ' + fname + ' as LaTeX' + (n ? ', with ' + n + (n === 1 ? ' picture' : ' pictures') + ' in figures/' : '') + (r.bib ? ' and its citations in references.bib' : '') + '.' + (r.warnings && r.warnings.length ? ' ' + r.warnings.slice(0, 3).join(' ') : '') + note, note ? 16000 : 9000);
   },
 
   // ---- a coauthor's edits come back ----

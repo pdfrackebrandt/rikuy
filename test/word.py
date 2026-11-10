@@ -297,6 +297,7 @@ try:
                         ('the picture', '\\includegraphics[width=2in'), ('the title', '\\title{Growth and Institutions}')]:
             check('Open .docx keeps %s' % what, s in t, t[:600] if s not in t else '')
         check('a javascript: link in the Word file is plain text, not a link', 'javascript' not in t)
+        check('the table on the page shows its cells, not pandoc\'s \\noalign', '\\noalign' not in t and 'noalign' not in page.inner_text('#pages') and 'Peru' in page.inner_text('#pages'), page.inner_text('#pages')[:300])
         check('the picture is a file of the project, shown on the page', page.evaluate("window.rikuy.assetBlobs.has('figures/figure1.png')") and page.evaluate("[...document.querySelectorAll('#pages img')].some(i => i.complete && i.naturalWidth > 0)"))
         check('the page shows it without error chips', page.evaluate("document.querySelectorAll('#pages .a-chip.err').length") == 0, page.evaluate("[...document.querySelectorAll('#pages .a-chip.err')].map(x => x.textContent)"))
         check('a project from a Word file compiles with restricted shell escape', page.evaluate("(window.rikuy.linkCache.get(window.rikuy.name + '|' + window.rikuy.main) || {}).origin") == 'docx')
@@ -328,6 +329,46 @@ try:
             for n, b in P.items(): z.writestr(n, b)
         open_file(page, xxe)
         check('a Word file with a DTD (XXE, entity expansion) is refused', 'DTD' in page.inner_text('#toast') or 'could not' in page.inner_text('#toast').lower(), page.inner_text('#toast')[:200])
+        # ---- only this browser's own exports are merged; the file carries only what it shows ----
+        page.evaluate('window.rikuy.doReset()')
+        page.wait_for_timeout(500)
+        page.evaluate('() => { const g = window.rikuy; g.files.set("unused.tex", "SECRET-CHAPTER nobody inputs"); g.saveSoon && g.saveSoon(); }')
+        own = save_docx(page, os.path.join(TMP, 'own.docx'))
+        P = parts(own)
+        rk = [k for k in P if re.match(r'customXml/item\d+\.xml$', k) and b'<rikuy' in P[k]][0]
+        check('the Word file carries the files its text comes from, not the whole project', b'SECRET-CHAPTER' not in P[rk] and b'Editing in Print' in P[rk], len(P[rk]))
+        before = src(page)
+        # the same file with its Rikuy data changed: the first block mapped onto the preamble, and
+        # a word edited in Word so that there is something to bring back
+        from xml.sax.saxutils import escape, unescape
+        raw = P[rk].decode()
+        m = re.search(r'(<rikuy[^>]*>)(.*)(</rikuy>)', raw, re.S)
+        data = json.loads(unescape(m.group(2), {'&quot;': '"', '&apos;': "'"}))
+        A = data['anchors'][0]
+        A['s'], A['e'] = 0, 5
+        P[rk] = (raw[:m.start(2)] + escape(json.dumps(data)) + raw[m.end(2):]).encode()
+        d = P['word/document.xml'].decode()
+        assert 'Click anywhere' in d
+        P['word/document.xml'] = d.replace('Click anywhere', 'Click FORGED anywhere', 1).encode()
+        forged = os.path.join(TMP, 'forged.docx')
+        with zipfile.ZipFile(forged, 'w', zipfile.ZIP_DEFLATED) as z:
+            for k, b in P.items(): z.writestr(k, b)
+        open_file(page, forged)
+        toast = page.inner_text('#toast')
+        info = page.evaluate('window.rikuy.linkInfo()')
+        check('a Word file whose Rikuy data this browser did not write merges nothing: it opens as a document of its own, as someone else\'s',
+              'did not make' in toast and page.evaluate('window.rikuy.name') == 'forged' and bool(info) and info.get('origin') == 'docx' and not info.get('allowed'), (toast[:200], info))
+        snaps = page.evaluate('''async () => { const g = window.rikuy; const all = await g.allSnaps(); const v = all.find((x) => x.name !== 'forged' && x.main === 'main.tex');
+          return v ? new Map(await g.versionFiles(v)).get('main.tex') : null; }''')
+        check('and the project it claimed to edit is as it was, in History', snaps == before, (snaps or '')[:120])
+        # the untouched export, edited in Word, still comes back as edits to its project
+        page.evaluate('window.rikuy.doReset()')
+        page.wait_for_timeout(500)
+        own2 = save_docx(page, os.path.join(TMP, 'own2.docx'))
+        ed = edit_docx(own2, os.path.join(TMP, 'own2-edited.docx'), [('Click anywhere', 'Click nearly anywhere')])
+        open_file(page, ed)
+        check('this browser\'s own export, edited in Word, comes back as edits', 'Click nearly anywhere' in src(page) and 'Brought in from' in page.inner_text('#toast'), page.inner_text('#toast')[:160])
+
         print('errors:', errors[:5])
         check('no page errors', not errors, errors[:5])
         browser.close()

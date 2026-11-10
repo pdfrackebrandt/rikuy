@@ -87,6 +87,8 @@ def main():
         check('the hosted page names its version and its manifest', version(page) == va and page.evaluate("!!document.querySelector('link[rel=manifest]')"), version(page))
         wait_sw(page)
         check('the service worker controls the page on the first visit (claimed)', page.evaluate('navigator.serviceWorker.controller.scriptURL').endswith('/sw.js'))
+        page.wait_for_timeout(300)
+        check('and that first claim is not announced as an update', not page.is_visible('#st-update'), page.inner_text('#st-update') if page.query_selector('#st-update') else None)
         kept = page.evaluate('async (v) => (await (await caches.open("rikuy-v-" + v)).keys()).map(r => r.url)', va)
         check('install kept the page and every script of the version (%d files)' % len(pre), len(kept) == len(pre) and any(u.endswith('/tex/engine.js') for u in kept) and URL in kept, (len(kept), len(pre)))
         both = page.evaluate(ENGINE_BOTH)

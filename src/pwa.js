@@ -77,7 +77,10 @@ export function registerApp(app) {
   if (!sw || !window.isSecureContext || window.top !== window) return;
   // a new version took over (this tab's button, or another tab's): this tab reloads only if it
   // asked; otherwise it offers to, as it runs the older version until then
+  // (the first worker claiming a page that had none is not an update: nothing to say)
+  let had = !!sw.controller;
   sw.addEventListener('controllerchange', () => {
+    if (!had) { had = true; return; }
     if (APP.updating) { location.reload(); return; }
     if (!upd || !APP.reg || !APP.reg.active) return;
     upd.textContent = 'Updated in another window: reload';

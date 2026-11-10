@@ -518,7 +518,9 @@ const MATH_ENV = /^(aligned|alignedat|gathered|split|array|matrix|pmatrix|bmatri
 export function safeMath(t) {
   if (typeof t !== 'string') return null;
   if (/(^|[^\\])(\\\\)*\$/.test(t) || /\\[()[\]]/.test(t)) return null;
-  if (/\\(write|input|include|openout|openin|immediate|catcode|def|edef|gdef|xdef|let|newcommand|renewcommand|special|directlua|csname|usepackage|documentclass|read|newwrite|newread)(?![A-Za-z])/.test(t)) return null;
+  // ^^5c is TeX's own spelling of a backslash: no command name can be trusted once it appears
+  if (/\^\^/.test(t)) return null;
+  if (/\\(write|input|include|includegraphics|includepdf|openout|openin|immediate|catcode|def|edef|gdef|xdef|let|newcommand|renewcommand|providecommand|special|directlua|latelua|csname|usepackage|RequirePackage|documentclass|read|newwrite|newread|ShellEscape|scantokens|uccode|lccode|expandafter|href|url|verb)(?![A-Za-z])/.test(t)) return null;
   for (const m of t.matchAll(/\\(?:begin|end)\s*\{([^}]*)\}/g)) if (!MATH_ENV.test(m[1])) return null;
   return t;
 }

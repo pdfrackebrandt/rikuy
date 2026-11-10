@@ -70,8 +70,10 @@ jobs:
             if [ -n "$ASKED" ]; then id="$ASKED"
             else id=$(gh run list -R "$REPO" --workflow tex.yml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId'); fi
             case "$id" in ''|*[!0-9]*) echo "::error::No passing TeX run to deploy (asked: '$ASKED')"; exit 1;; esac
-            sha=$(gh run view "$id" -R "$REPO" --json headSha,conclusion,workflowName --jq 'select(.conclusion == "success" and .workflowName == "TeX") | .headSha')
-            [ -n "$sha" ] || { echo "::error::Run $id is not a passing TeX run"; exit 1; }
+            # only a run of main's own commits, started by a push or by hand: a pull request's run
+            # is also called TeX and passes, and deploying it would build its head with the token
+            sha=$(gh run view "$id" -R "$REPO" --json headSha,headBranch,event,conclusion,workflowName --jq 'select(.conclusion == "success" and .workflowName == "TeX" and .headBranch == "main" and (.event == "push" or .event == "workflow_dispatch")) | .headSha')
+            [ -n "$sha" ] || { echo "::error::Run $id is not a passing TeX run of main (a push or a run by hand)"; exit 1; }
           fi
           echo "id=$id" >> "$GITHUB_OUTPUT"
           echo "sha=$sha" >> "$GITHUB_OUTPUT"

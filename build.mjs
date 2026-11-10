@@ -28,7 +28,8 @@ const O = (p) => path.join(OUT, p);
 const b64 = (p) => fs.readFileSync(p).toString('base64');
 // the installed app (service worker, manifest, offline copy): every build but the artifact's
 const APP = !process.env.RIKUY_SHARE;
-const WORD = !process.env.RIKUY_NO_WORD;
+// (the artifact's copy, built with RIKUY_SHARE, has no room for it either way)
+const WORD = !process.env.RIKUY_NO_WORD && !process.env.RIKUY_SHARE;
 
 // 1. sample
 const sample = { 'main.tex': fs.readFileSync(R('sample/main.tex'), 'utf8'), 'refs.bib': fs.readFileSync(R('sample/refs.bib'), 'utf8') };

@@ -477,6 +477,54 @@ Tests:
     97). The asy job takes about 42 minutes. `test/wordmath.py` no longer waits with
     `wait_for_function`, which the host's policy failed one run in three.
 
+26. **An installed app that works offline, hosted on Cloudflare Pages.** Done in the code
+    (pull request 2); not deployed yet: the owner has no Cloudflare account, and the site stays
+    behind a sign-in until the repository is public (docs/HOSTING.md). The build without
+    `RIKUY_SHARE` makes `dist/index.html` installable: a service worker (`src/sw.js`) keeps the
+    page and every script, one version at a time, checked by hash; "Update ready" in the status
+    bar; "Make available offline" keeps the engine, the 60 packs a typical pdfLaTeX paper reads
+    (39 MB) and Word. TeX packs live once, in the worker's IndexedDB, and the service worker
+    answers TeX's synchronous reads from there. The installed app opens `.tex`, `.bib`, Overleaf
+    `.zip` and `.docx` from the file manager (Chromium on the desktop) and takes shared files.
+    `deploy.yml` uploads what `tex.yml` built, with a pinned wrangler, after
+    `dev/pages_check.py` (20,000 files, 25 MiB each, 100 header rules); `_headers` carries the
+    page's policy without outside sources. IBM Plex's Latin Extended cut is in. The claude.ai copy
+    is unchanged in kind: no service worker, no manifest. Evidence: `test/offline.py` 31/31,
+    `test/launch.py` 18/18, `test/deploy_check.py` 21/21, browser 93, CI green on the pull request;
+    the offline compile runs in CI's TeX job. An independent review found, and this fixes: files
+    shared into the user's own project left it unrestricted (a posted `article.cls` would have
+    run with full shell escape: the project is now marked as someone else's); a file opened over
+    one of the same name left no way back (a version is kept first); the first visit announced
+    an update; a run by hand of Deploy took any passing TeX run, a pull request's included; an
+    older TeX run could finish last and be deployed (one run per branch now). Open: Chromium can
+    leave a new version waiting for minutes when "Update ready" is clicked within a second of
+    opening a second tab (17 of 60 clicks in a loop; 0 of 18 otherwise): the button says what it
+    waits for. Offline in Safari and Firefox is untested. Old packs in IndexedDB are never pruned.
+    Git push and pull reach only Rikuy's own site under the hosted policy (`connect-src 'self'`).
+
+27. **Word, both ways.** Done in the code (pull request 2), on the hosted build only: pandoc 3.10
+    as WebAssembly (GPL-2.0-or-later, npm's `pandoc-wasm` 1.1.0) runs in a worker of its own,
+    fetched on first use as two hashed parts (16.3 MB gzipped), kept once in IndexedDB. The
+    claude.ai copy has no room and says where Word is. Open a `.docx`: a LaTeX project with its
+    equations (OMML to TeX), headings, lists, tables, footnotes, links, pictures and Zotero
+    citations, marked as someone else's. Save as `.docx`: native Word equations with the project's
+    macros expanded, citations by citeproc, PDF figures as pictures; TikZ, asy and unknown
+    environments become a line naming them, EPS its name. A coauthor's edits come back: the file
+    carries a bookmark per block and the source of what it shows; edits in text, cells, captions,
+    footnotes, the title block and inside equations, tracked or not, and Word comments, become
+    minimal patches under Review; what cannot be placed (text the owner changed since, generated
+    numbers, new table rows, pictures, moved paragraphs) becomes a comment where it happened;
+    formatting changes are dropped. Evidence: `test/word.test.mjs` 16 groups against the real
+    pandoc; `test/word.py` 61/61 including a LibreOffice 24.2 save and hostile files (zip bomb,
+    DTD, script links). The review found the data a returning file carries could be forged to
+    patch the preamble, another file or a command name, and that a file from another project of
+    the same name was merged: edits are now merged only from a file whose data hashes to an
+    export this browser made (`wordRemember`); any other opens as a document of its own. The file
+    no longer carries project files its text does not come from. Open: an export made on one
+    computer cannot be merged on another (it opens as a new document); Microsoft Word itself was
+    not available to test (LibreOffice keeps the bookmarks and the data through a save);
+    equation numbers are text after the formula, not Word's numbering.
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000

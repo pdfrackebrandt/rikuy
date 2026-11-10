@@ -3675,7 +3675,15 @@ class App {
     if (!hasDoc && (!onlyTex.length || (!sample && !zipName))) {
       for (const n of held) { texts.delete(n); orig.delete(n); blobs.delete(n); extra.delete(n); }
       if (!texts.size && !blobs.size && !extra.size) { this.toast('Not opened: this project already has ' + held.join(', ') + '. Open them from a new document.', 9000); return; }
-      // Add to the current project (bib files, images, chapters)
+      // Add to the current project (bib files, images, chapters). A file of the same name is
+      // replaced, as an upload to Overleaf replaces it: the version before is kept in History
+      // first (opening a .tex with the installed app comes here too, and left no way back).
+      const over = [...texts.keys(), ...blobs.keys(), ...extra.keys()].filter((n) => this.files.has(n) || this.assetBlobs.has(n) || this.extra.has(n));
+      if (over.length && this.base) await this.snapshot('Before ' + over[0] + (over.length > 1 ? ' and ' + (over.length - 1) + ' more' : '') + ' was replaced', { force: true });
+      // Files shared to the app may come from any web page, and a class, a package or a .bib is
+      // code TeX runs: with them in it, the project is someone else's as far as shell escape
+      // goes, until the owner ticks Shell escape (the click on Open was all that was asked).
+      if (from) this.markFromLink('', this.name, this.main, from);
       for (const [n, t] of texts) this.files.set(n, t);
       for (const [n, o] of orig) this.orig.set(n, o);
       for (const [n, b] of blobs) this.addAsset(n, b);

@@ -34,7 +34,7 @@ get() {
   sum=${3#*:}
   if [ -f "$2" ] && echo "$sum  $2" | $algo -c --status; then return 0; fi
   echo "downloading $1"
-  curl -fL --retry 3 -sS -o "$2.part" "$1" || { echo "fetch_inputs: cannot download $1" >&2; exit 1; }
+  curl -fL --retry 6 --retry-all-errors --retry-delay 5 -sS -o "$2.part" "$1" || { echo "fetch_inputs: cannot download $1" >&2; exit 1; }
   echo "$sum  $2.part" | $algo -c --status || { echo "fetch_inputs: hash mismatch for $1" >&2; exit 1; }
   mv "$2.part" "$2"
 }
