@@ -657,3 +657,12 @@ body.guest #b-new, body.guest #b-sample { display: none; }
   .cm-layer, .guest-bar { display: none !important; }
   ::highlight(g-cmt), ::highlight(g-cmt-on) { background-color: transparent; }
 }
+/* Save, and the caret beside it for the other ways out (.zip or .tex, Word, PDF) */
+#b-save { margin-right: -6px; }
+#b-save-more.caret { width: 22px; min-width: 22px; padding: 0; }
+#b-save-more.caret svg { width: 14px; height: 14px; }
+.pop-save { display: flex; flex-direction: column; gap: 2px; min-width: 260px; }
+.pop-save .save-item { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; background: none; border: 0; border-radius: 6px; padding: 7px 9px; font: inherit; color: var(--ink-ui); cursor: pointer; }
+.pop-save .save-item:hover, .pop-save .save-item:focus-visible { background: var(--hover, rgba(0, 0, 0, .05)); outline: none; }
+.pop-save .save-item b { font-weight: 600; font-size: 13px; }
+.pop-save .save-item span { font-size: 12px; color: var(--mute); }

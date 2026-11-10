@@ -10,13 +10,13 @@ a command fails, trust the code and fix this file.
 
 | path | what is there |
 |---|---|
-| `src/` | the editor. `app.js` is the entry; `model.js` maps source to page, `parser.js`, `render.js`, `editor.js`, `minimal.js` (smallest source patch), `siunitx.js`, `wordmath.js`; `share.js` (links, comments in the source, the three way merge) and `collab.js` (their UI); `widget.js` (live figures from `rikuy.sty`); `pwa.js` and `sw.js` (the installed app: its service worker, updates, offline copy) |
+| `src/` | the editor. `app.js` is the entry; `model.js` maps source to page, `parser.js`, `render.js`, `editor.js`, `minimal.js` (smallest source patch), `siunitx.js`, `wordmath.js`; `share.js` (links, comments in the source, the three way merge) and `collab.js` (their UI); `widget.js` (live figures from `rikuy.sty`); `pwa.js` and `sw.js` (the installed app: its service worker, updates, offline copy); Word: `word.js` (its UI and the worker's client), `wordast.js` (the page as pandoc's AST), `wordsync.js` (a coauthor's edits back into the source), and in the Word worker `wordworker.js`, `wordjobs.js`, `docx.js`, `pandoc.js` |
 | `tex/engine.js` | the TeX worker: compile loop, passes, bibtex/biber/makeindex/xindy between them |
 | `tex/shell.js`, `tex/tools.js` | the shell TeX's `\write18` and pipes reach, and the programs behind it (Ghostscript, gnuplot, Python, dvips, asy, xindy) |
 | `tex/build_tree.py` | the TeX tree and its packs (`dist/tex/`) |
 | `tex/build_tools.sh`, `tex/native/` | programs built here with Emscripten 3.1.6, and Rikuy's patches to them; output in `tex/vendor/` (committed) |
 | `tex/fetch_inputs.sh` | lays out the build inputs (`$RIKUY_WORK`, default `/tmp/eng`), every download checked by hash |
-| `build.mjs` | bundles the page and copies the worker into `dist/`; writes `dist/index.html` (the page as a whole document, for any static server) and `dist/LICENSES.txt` |
+| `build.mjs` | bundles the page and copies the worker into `dist/`; writes `dist/index.html` (the page as a whole document, for any static server), `dist/LICENSES.txt` and, unless `RIKUY_NO_WORD` is set, `dist/word/` (the Word worker and pandoc in hashed parts) |
 | `build/app.mjs`, `build/icons/` | the installed app's part of the build (all but the artifact's, which sets `RIKUY_SHARE`): `lib/`, icons, manifest, the version and `sw.js`; the icons and `make.py`, which draws them |
 | `build/fonts/` | the page's text fonts, cut from the Computer Modern Unicode fonts by `subset.py` (OFL); the interface's IBM Plex (Latin and Latin Extended cuts) comes unchanged from npm's `@fontsource` packages (`build.mjs`) |
 | `test/` | node unit tests (`*.test.mjs`) and Playwright browser tests (`*.py`) |
@@ -35,7 +35,7 @@ a command fails, trust the code and fix this file.
 ## Setup
 
 - node 22, then `npm ci`
-- Python 3 with `pip install lz4 playwright numpy pypdf` (CI pins `playwright==1.56.0`; the arXiv corpus workflow installs `dev/arxiv-requirements.txt`, pinned by hash; where the system Python refuses pip, as Ubuntu 24.04's does, first `python3 -m venv .venv && . .venv/bin/activate`), then `python3 -m playwright install chromium` (the scripts use `/opt/pw-browsers` instead when that folder exists); `poppler-utils` for the comparisons
+- Python 3 with `pip install lz4 playwright numpy pypdf python-docx` (CI pins `playwright==1.56.0`; the arXiv corpus workflow installs `dev/arxiv-requirements.txt`, pinned by hash; where the system Python refuses pip, as Ubuntu 24.04's does, first `python3 -m venv .venv && . .venv/bin/activate`), then `python3 -m playwright install chromium` (the scripts use `/opt/pw-browsers` instead when that folder exists); `poppler-utils` for the comparisons
 - a C compiler, so `tex/build_tree.py` can build `tex/native/t1crypt.so` on first use (without one it still works, many times slower)
 - for `tex/build_tools.sh`: Ubuntu's `emscripten` 3.1.6 package and node; `git`, `curl`, `make`, `pkg-config`, `xz`, `bzip2`, `dpkg-deb`; for Mesa `meson`, `ninja`, `bison`, `flex` and Python's `mako`; for the native ECL that builds xindy's `gcc` with `libgmp-dev` and `libgc-dev` (the script's header has the list)
 - for comparisons with a desktop: `dev/fetch_tl26.sh` (about 6 GB into `/opt/tl26`, or the folder `TL26` names) and `xvfb`
@@ -44,7 +44,7 @@ a command fails, trust the code and fix this file.
 
 | to | run | takes |
 |---|---|---|
-| unit tests (editor model, minimal patch, siunitx, share links and merge, git tokens per host (`test/gitauth.test.mjs`), the worker's pack hashes, path guard and offline plan (`test/engine.test.mjs`), xindy, unpacking arXiv sources (`test/arxiv_unpack.py`) and merging the shards' rows (`test/arxiv_collect.py`), Cloudflare Pages' limits and the hosted headers (`test/deploy_check.py`)) | `npm test` | 1 min |
+| unit tests (editor model, minimal patch, siunitx, share links and merge, Word export and import with the real pandoc (`test/word.test.mjs`), git tokens per host (`test/gitauth.test.mjs`), the worker's pack hashes, path guard and offline plan (`test/engine.test.mjs`), xindy, unpacking arXiv sources (`test/arxiv_unpack.py`) and merging the shards' rows (`test/arxiv_collect.py`), Cloudflare Pages' limits and the hosted headers (`test/deploy_check.py`)) | `npm test` | 1 min |
 | the model on the 716 document corpus | `npm run test:corpus -- <LaTeX-examples clone at 8bfd313b8d98>` | 2 min |
 | build the inputs, then the TeX tree and packs | `tex/fetch_inputs.sh`, then `python3 tex/build_tree.py tree && python3 tex/build_tree.py packs` | about 3 GB of downloads |
 | build the page into `dist/` | `npm run build`; the editor and its browser tests need nothing more, the PDF pane and the TeX tests need `dist/tex/` from the step above | 10 s |
@@ -56,7 +56,8 @@ a command fails, trust the code and fix this file.
 | serve `dist/` as Cloudflare Pages serves the hosted app (`index.html` as the page, `_headers`) | `npm run serve:app` (port 8791) | |
 | check a built `dist/` against Cloudflare Pages' limits (deploy.yml runs it) | `python3 dev/pages_check.py dist` | 1 s |
 | lint the workflows | `actionlint` (CI: `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12`) | 2 s |
-| one feature in the page (projects, files, git, history, paste, PDF, math field, Word style math, equation extras, sharing and comments, stress, live figures) | `cd test && python3 features.py` (or `files.py`, `git.py`, `history.py`, `paste.py`, `pdf.py`, `mathfield.py`, `wordmath.py`, `eqextras.py`, `frontier.py`, `share.py`, `stress.py`, `widgets.py`); each says what it checks at the top | under a minute each |
+| one feature in the page (projects, files, git, history, paste, PDF, math field, Word style math, equation extras, sharing and comments, stress, live figures, Word files) | `cd test && python3 features.py` (or `files.py`, `git.py`, `history.py`, `paste.py`, `pdf.py`, `mathfield.py`, `wordmath.py`, `eqextras.py`, `frontier.py`, `share.py`, `stress.py`, `widgets.py`, `word.py`); each says what it checks at the top | under a minute each; `word.py` 2 min (with LibreOffice and `libreoffice-math` installed it also edits in LibreOffice) |
+| build the page without Word, as for the claude.ai copy | `RIKUY_NO_WORD=1 npm run build` | 5 s |
 | random keystrokes on real documents, then every scripted edit on the corpus | `python3 test/corpus_browser.py <corpus>`, then `CORPUS_REPO=<corpus> python3 test/editor_corpus.py out.jsonl` | 1 min; 1 hour (40 min of edits, 20 of compiles) |
 | compile one folder | `RIKUY_DIST=dist python3 dev/texrun.py DIR main.tex auto 300` | |
 | run one program through the shell | `python3 dev/shellrun.py DIR asy asy -f pdf fig.asy` | |
@@ -108,5 +109,10 @@ Pick the checks by what you touched, and run them before you call it done:
   `test/offline.py` and `test/pages.py` test it. A service worker answers the requests of the pages
   it controls; a test that changes what a server returns must go through it (or a new context).
 - The page runs under a strict Content Security Policy (`connect-src 'self'`, see `test/serve.py`): the worker can fetch only files next to the page.
-- The published artifact may hold 256 MB; `PLAN.md` gives the current size.
+- The published artifact may hold 256 MB; `PLAN.md` gives the current size. It has no room for
+  pandoc: build that copy with `RIKUY_NO_WORD=1` (and `RIKUY_WORD_HOST` naming a copy with Word).
+- `test/fixtures/word-fixture.docx` is `test/word_fixture.py`'s output, kept so `npm test` needs no
+  Python packages; write it again after changing the script.
+- LibreOffice without its Math module (`libreoffice-math`) drops every equation of a .docx it
+  saves; `word.py`'s LibreOffice checks need it.
 - The build machine has two cores: corpus runs use a 240 s limit per document and must run alone.

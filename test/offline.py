@@ -110,12 +110,28 @@ def main():
             t.oncomplete = () => res(); t.onerror = rej; };
         })''', [good])
 
+        # Word once while online: its worker fetches pandoc's parts, checks them and keeps pandoc
+        word = os.path.isfile(os.path.join(DIST, 'word', 'pandoc.json'))
+        if word:
+            page.evaluate('window.rikuy.keepWord()')
+            kept = page.evaluate('''async () => { const out = [];
+              for (const k of await caches.keys()) for (const r of await (await caches.open(k)).keys()) if (/pandoc-[0-9a-f]+-\\d+\\.bin$/.test(r.url)) out.push(r.url);
+              return out; }''')
+            check('the service worker does not keep pandoc\'s parts a second time (the Word worker keeps pandoc)', kept == [], kept)
+
         # ---- no network at all --------------------------------------------------------
         ctx.set_offline(True)
         srv.shutdown(); srv.server_close()
         page.reload()
         ready(page)
         page.wait_for_timeout(500)
+        if word:
+            with page.expect_download(timeout=180000) as d:
+                page.evaluate('window.rikuy.saveDocx()')
+            docx = d.value.path()
+            import zipfile
+            names = zipfile.ZipFile(docx).namelist()
+            check('offline, Save as Word makes a .docx with pandoc from the kept copy', 'word/document.xml' in names and os.path.getsize(docx) > 5000, names[:5])
         check('offline, the page reloads from the service worker and renders math', nmath > 0 and page.evaluate("document.querySelectorAll('#pages .katex').length") == nmath, nmath)
         check('offline, the project typed before is still there', 'Offline proof. Click anywhere' in page.evaluate('window.rikuy.files.get("main.tex")'))
         click_text(page, 'Offline proof.')
@@ -159,8 +175,22 @@ def main():
         page2.goto(URL)
         ready(page2)
         check('a second tab opened meanwhile gets the old version too', version(page2) == va)
+        # let the second tab finish loading through the old version first: asked to take over in
+        # that second, Chromium can leave the new version waiting for minutes (src/pwa.js)
+        page2.wait_for_load_state('networkidle')
+        page2.wait_for_timeout(3000)
         page.click('#st-update')
-        page.wait_for_function('document.querySelector(\'meta[name="rikuy-app"]\') && document.querySelector(\'meta[name="rikuy-app"]\').content === "%s"' % vb, timeout=30000)
+        try:
+            page.wait_for_function('document.querySelector(\'meta[name="rikuy-app"]\') && document.querySelector(\'meta[name="rikuy-app"]\').content === "%s"' % vb, timeout=30000)
+        except Exception:
+            # say what state the update was left in before failing
+            print('update did not land:', page.evaluate('''async () => { const r = await navigator.serviceWorker.getRegistration();
+              return { meta: (document.querySelector('meta[name="rikuy-app"]') || {}).content, waiting: !!(r && r.waiting), installing: !!(r && r.installing), active: !!(r && r.active),
+                       controller: !!navigator.serviceWorker.controller, upd: (document.getElementById('st-update') || {}).textContent, hidden: (document.getElementById('st-update') || {}).hidden,
+                       caches: await caches.keys(),
+                       workers: await Promise.all(['active', 'waiting'].map((k) => new Promise((res) => { const w = r && r[k]; if (!w) return res([k, null]);
+                         const ch = new MessageChannel(); ch.port1.onmessage = (e) => res([k, e.data]); setTimeout(() => res([k, 'no answer']), 3000); w.postMessage({ rikuy: 'version' }, [ch.port2]); }))) }; }'''), 'want', vb, 'had', va, 'errors', errors)
+            raise
         ready(page)
         both = page.evaluate(ENGINE_BOTH)
         check('after the click the page reloads as the new version, its worker\'s scripts too', both['page'].strip().endswith('// version B') and both['worker'] == both['page'], both)

@@ -104,4 +104,9 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           PROJECT: ${{ vars.CLOUDFLARE_PROJECT_NAME || 'rikuy' }}
           SHA: ${{ steps.run.outputs.sha }}
-        run: npx --no-install wrangler pages deploy dist --project-name "$PROJECT" --branch main --commit-hash "$SHA" --commit-dirty=false
+        run: |
+          # the first deployment makes the project, so nothing has to be run on a laptop
+          if ! npx --no-install wrangler pages project list --json | python3 -c 'import json,sys; sys.exit(0 if any(p.get("Project Name") == sys.argv[1] or p.get("name") == sys.argv[1] for p in json.load(sys.stdin)) else 1)' "$PROJECT"; then
+            npx --no-install wrangler pages project create "$PROJECT" --production-branch main
+          fi
+          npx --no-install wrangler pages deploy dist --project-name "$PROJECT" --branch main --commit-hash "$SHA" --commit-dirty=false

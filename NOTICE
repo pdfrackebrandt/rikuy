@@ -81,6 +81,11 @@ Other programs run in the page
       Its JavaScript loader is adapted by build.mjs to load as a classic script in the worker.
   Pyodide 314.0.7, with CPython 3.14     MPL-2.0; CPython under the PSF License 2.0
                                                     github.com/pyodide/pyodide, python.org
+  pandoc 3.10 (pandoc-wasm 1.1.0), for Word  GPL-2.0-or-later  github.com/jgm/pandoc, github.com/pandoc/pandoc-wasm
+      Shipped in dist/word/ unless the build sets RIKUY_NO_WORD; its COPYRIGHT file, with the
+      parts under other licenses (pandoc-types BSD-3-Clause, Lua MIT and the rest), is
+      LICENSES/third-party/pandoc.txt. It runs on @bjorn3/browser_wasi_shim 0.4.2 (MIT or
+      Apache-2.0); pandoc-wasm's own JavaScript, adapted in src/pandoc.js, is MIT.
   Pygments 2.19, latexminted 0.7, latexrestricted and latex2pydata (in Pyodide), the wheels
   TeX Live's minted bundles               BSD-2-Clause; LPPL-1.3c (each wheel carries its license)
 

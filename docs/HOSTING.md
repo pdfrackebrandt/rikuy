@@ -15,14 +15,9 @@ and deploys it on every push to `main`; nothing is deployed from a laptop.
    Custom Token. Name it `rikuy-deploy`; Permissions: **Account, Cloudflare Pages, Edit** and
    nothing else; Account Resources: Include, your account. Continue, Create Token, and copy it
    (it is shown once).
-3. **The Pages project.** On a computer with the repository and `npm ci` done:
-
-   ```sh
-   CLOUDFLARE_API_TOKEN=<the token> CLOUDFLARE_ACCOUNT_ID=<the account id> \
-     npx wrangler pages project create rikuy --production-branch main
-   ```
-
-   (`rikuy` becomes `https://rikuy.pages.dev`; another name works if the variable below says it.)
+3. **The Pages project** needs no step: the first deployment creates it, named `rikuy`
+   (`https://rikuy.pages.dev`, or `rikuy-<letters>.pages.dev` if that name is taken; another name
+   works if the variable below says it).
 4. **The secrets on GitHub.** In `pdfrackebrandt/rikuy`: Settings, Secrets and variables,
    Actions. New repository secret `CLOUDFLARE_API_TOKEN` (the token) and `CLOUDFLARE_ACCOUNT_ID`
    (the account id). If the project is not called `rikuy`, add under Variables
@@ -31,14 +26,27 @@ and deploys it on every push to `main`; nothing is deployed from a laptop.
 5. **First deployment.** Actions, TeX, Run workflow on `main` (about an hour the first time, while
    it builds the TeX tree; later runs take the tree from the cache). When it passes, Deploy runs
    by itself. Check `https://rikuy.pages.dev`.
-6. **The address rikuy.rackebrandt.pe.** First in Cloudflare: Workers & Pages, the `rikuy`
+6. **Private until launch.** Rikuy ships GPL and AGPL programs, so a copy anyone can open comes
+   with the duty to offer its source; while the repository is private, keep the site to yourself.
+   Cloudflare dashboard, Zero Trust (the free plan covers 50 people), Access, Applications, Add an
+   application, Self-hosted: application domain `rikuy.pages.dev` (and a second application for
+   `*.rikuy.pages.dev`, the address every single deployment also gets), one policy, Allow, Include,
+   Emails, your address. Signing in is a code Cloudflare mails you. The page asks for its manifest
+   with credentials (`build/app.mjs`), so installing and updating work behind the wall, and an
+   installed Rikuy keeps working offline whether or not the sign-in has lapsed. At launch: delete
+   the two applications, make the repository public.
+7. **The address, at launch.** Either the subdomain below, or `rackebrandt.pe/rikuy`: a path
+   under the site needs the whole domain's DNS on Cloudflare (free: add the site in Cloudflare,
+   copy the existing records, switch the nameservers at Punto.pe) and a Worker route that hands
+   `/rikuy/*` to this project; the page is built for any folder, so nothing in the build changes.
+   **rikuy.rackebrandt.pe.** First in Cloudflare: Workers & Pages, the `rikuy`
    project, Custom domains, Set up a custom domain, `rikuy.rackebrandt.pe`, Continue. Cloudflare
    then shows a CNAME to add. Then in Punto.pe's DNS panel for `rackebrandt.pe`, add a record:
    type **CNAME**, name (host) **`rikuy`**, value (target) **`rikuy.pages.dev`**, TTL as offered.
    Cloudflare checks it and issues the certificate, usually within minutes, sometimes an hour or
    two while the record spreads; the project's Custom domains page says Active when done. (Adding
    the CNAME before the domain is set up in Cloudflare gives errors until it is.)
-7. **Leave Cloudflare Web Analytics off** for this project: it adds a script to the page that the
+8. **Leave Cloudflare Web Analytics off** for this project: it adds a script to the page that the
    page's policy refuses anyway, so it would count nothing.
 
 ## What the workflows do

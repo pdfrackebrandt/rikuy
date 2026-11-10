@@ -92,6 +92,18 @@ export function registerApp(app) {
     if (!w) { location.reload(); return; }
     APP.updating = true;
     w.postMessage({ rikuy: 'activate' });
+    // The waiting version takes over once the one in charge has nothing left to do. Asked while
+    // another window is still loading through it, Chromium can miss that moment (1 click in 3
+    // made within a second of opening a second tab; none when that tab had been open for 3 s) and
+    // then waits until the old version has been idle for minutes or its windows are closed.
+    // Asking again, or a message through the old version, changes nothing, so the button says
+    // what it waits for; controllerchange reloads the page whenever the new one takes over.
+    upd.textContent = 'Updating…';
+    setTimeout(() => {
+      if (!APP.reg || !APP.reg.waiting) return;
+      upd.textContent = 'Updating: waiting for other Rikuy windows';
+      upd.title = 'The new version starts as soon as the other windows of Rikuy are idle or closed. Your work is saved; you can keep typing.';
+    }, 4000);
   });
   const ready = () => {
     if (!upd || !APP.reg || !APP.reg.waiting || !sw.controller) return;
@@ -176,9 +188,13 @@ export async function keepOffline(app) {
     keep.textContent = 'Starting TeX…';
     const tex = app.texEngine();
     const res = await tex.keep(OFFLINE_FOLDERS, (s) => { keep.textContent = 'Keeping for offline: ' + mb(s.got) + ' of ' + mb(s.total); });
+    // Word too (pandoc, 16 MB, kept by its own worker), where this build has it
+    keep.textContent = 'Keeping Word support…';
+    const wordKept = await app.keepWord();
     if (APP.tree) { app.prefs.offlineTree = APP.tree; app.savePrefs(); }
     keep.textContent = 'Available offline';
-    app.toast(res.fetched ? 'Rikuy now works offline: the TeX engine and the packages of a typical paper (' + mb(res.total) + ') are kept in this browser.' : 'Rikuy already works offline here: everything a typical paper needs (' + mb(res.total) + ') is kept in this browser.', 9000);
+    const also = wordKept ? ', and Word import and export' : '';
+    app.toast(res.fetched ? 'Rikuy now works offline: the TeX engine and the packages of a typical paper (' + mb(res.total) + ')' + also + ' are kept in this browser.' : 'Rikuy already works offline here: everything a typical paper needs (' + mb(res.total) + ')' + also + ' is kept in this browser.', 9000);
   } catch (e) {
     keep.textContent = label;
     app.toast('Could not keep everything for offline use: ' + e.message, 9000);

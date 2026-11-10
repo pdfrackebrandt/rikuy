@@ -46,10 +46,11 @@ jobs:
       # deploy.yml's check on the hosted build, without dist/tex: it fits Cloudflare Pages
       - name: The hosted build within Cloudflare Pages' limits (a dry run of deploy.yml's check)
         run: python3 dev/pages_check.py dist
-      # the versions the tests last passed with; pypdf lets frontier.py read its printed PDF back
+      # the versions the tests last passed with; pypdf lets frontier.py read its printed PDF back,
+      # python-docx lets word.py write and edit Word files as Word users' tools do
       - name: Playwright and Chromium
         run: |
-          python3 -m pip install playwright==1.56.0 pypdf==5.9.0
+          python3 -m pip install playwright==1.56.0 pypdf==5.9.0 python-docx==1.2.0
           python3 -m playwright install --with-deps chromium
       # every test must pass; a test that cannot run here is left out, never run with `|| true`
       - name: Typing on the page
@@ -81,6 +82,8 @@ jobs:
         run: cd test && python3 offline.py
       - name: Opening .tex, .bib and .zip with the installed app, and sharing files to it
         run: cd test && python3 launch.py
+      - name: Word, both ways, and a coauthor's edits back (LibreOffice's checks run where it is installed)
+        run: cd test && python3 word.py
   # the workflows themselves: actionlint, run through Go's module proxy, which checks the module
   # against the checksum database (sum.golang.org), so the version is pinned by hash
   workflows:

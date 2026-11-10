@@ -113,33 +113,48 @@ async function activate() {
 self.addEventListener('message', (e) => {
   const d = e.data || {};
   // the page's "Update ready": the waiting version takes over; the page reloads on controllerchange
-  if (d.rikuy === 'activate') self.skipWaiting();
-  else if (d.rikuy === 'version' && e.ports[0]) e.ports[0].postMessage({ v: VERSION });
+  // (held open until it has taken over: a worker started just for this message could otherwise be
+  // stopped before it does)
+  if (d.rikuy === 'activate') e.waitUntil(self.skipWaiting());
+  else if (d.rikuy === 'version' && e.ports[0]) e.ports[0].postMessage({ v: VERSION, busy: [...BUSY.values()].map(([what, t]) => [what, Date.now() - t]) });
 });
 
 const offline = () => new Response('Rikuy is offline and has not kept this file yet.', { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
 const gone = () => new Response('This copy of Rikuy was replaced by a newer one. Reload the page.', { status: 410, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+
+// What this worker is answering now. A version that waits takes over only once the active one
+// has no event left open, so an answer that never came would leave "Update ready" doing nothing:
+// the page can ask what is open ({rikuy: 'version'}), and test/offline.py prints it.
+const BUSY = new Map();
+let busySeq = 0;
+function hold(e, what, answer) {
+  const id = ++busySeq;
+  BUSY.set(id, [what, Date.now()]);
+  e.respondWith(Promise.resolve(answer).finally(() => BUSY.delete(id)));
+}
 
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   const url = new URL(req.url);
   if (url.origin !== SCOPE.origin || !url.pathname.startsWith(ROOT)) return;
   let rel = url.pathname.slice(ROOT.length);
-  if (req.method === 'POST' && rel === 'share-target') { e.respondWith(shareTarget(req)); return; }
+  if (req.method === 'POST' && rel === 'share-target') { hold(e, rel, shareTarget(req)); return; }
   if (req.method !== 'GET') return;
   if (req.mode === 'navigate') {
-    if (rel === '' || rel === 'index.html') e.respondWith(page(req));
+    if (rel === '' || rel === 'index.html') hold(e, rel, page(req));
     return;
   }
   let ver = VERSION, pinned = false;
   const m = /^_v\/([0-9a-f]{16})\/(.+)$/.exec(rel);
   if (m) { ver = m[1]; rel = m[2]; pinned = true; }
   const p = /^tex\/p-([0-9a-f]{16})\.wasm$/.exec(rel);
-  if (p) { e.respondWith(pack(p[1], at(rel))); return; }
+  if (p) { hold(e, rel, pack(p[1], at(rel))); return; }
   const f = FILES[rel];
-  if (f && f[2] === 'i') { e.respondWith(immutable(rel, f)); return; }
-  if (f && ver === VERSION) { e.respondWith(current(rel, f)); return; }
-  if (pinned) e.respondWith(older(ver, rel));
+  // pandoc's parts: the Word worker checks and keeps them itself, so they are not kept twice
+  if (f && f[2] === 'n') { if (pinned) hold(e, rel, fetch(at(rel))); return; }
+  if (f && f[2] === 'i') { hold(e, rel, immutable(rel, f)); return; }
+  if (f && ver === VERSION) { hold(e, rel, current(rel, f)); return; }
+  if (pinned) hold(e, rel, older(ver, rel));
 });
 
 // the page: this version's, kept at install; the network only if the cache was lost

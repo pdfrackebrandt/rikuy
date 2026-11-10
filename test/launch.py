@@ -61,7 +61,7 @@ with sync_playwright() as p:
 
     man = json.loads(open(os.path.join(DIST, 'manifest.webmanifest'), encoding='utf8').read())
     acc = {ext for h in man.get('file_handlers', []) for exts in h['accept'].values() for ext in exts}
-    check('the manifest hands .tex, .bib and .zip files to the app, in its scope', acc == {'.tex', '.bib', '.zip'} and all(h['action'] == './' for h in man['file_handlers']), man.get('file_handlers'))
+    check('the manifest hands .tex, .bib, .zip and Word files to the app, in its scope', acc == {'.tex', '.bib', '.zip', '.docx'} and all(h['action'] == './' for h in man['file_handlers']), man.get('file_handlers'))
     check('into the window already open', man.get('launch_handler', {}).get('client_mode', [None])[0] == 'focus-existing')
     check('and takes files shared to it by post', man.get('share_target', {}).get('method') == 'POST' and man['share_target']['action'] == './share-target')
 

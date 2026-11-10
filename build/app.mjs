@@ -26,6 +26,8 @@ const THEME = { light: '#F5F7F9', dark: '#1B222A', background: '#DCE1E7' };
 const DESCRIPTION = 'A LaTeX editor where you type on the typeset page. TeX Live 2026 runs in the browser; nothing is uploaded.';
 const ZERO = '0000000000000000';
 const META = /(<meta name="rikuy-app" content=")([0-9a-f]{16})(")/;
+const WORD = !process.env.RIKUY_NO_WORD;
+const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
 
 // The libraries the page loads from jsDelivr (the CDN map in src/app.js, KaTeX's tag in
 // src/template.html), as npm installed them: the same files, which the page checks by the same
@@ -62,7 +64,9 @@ export function appPage(OUT, html, skeleton) {
     + '<meta name="description" content="' + DESCRIPTION + '">'
     + '<meta name="theme-color" content="' + THEME.light + '" media="(prefers-color-scheme: light)">'
     + '<meta name="theme-color" content="' + THEME.dark + '" media="(prefers-color-scheme: dark)">'
-    + '<link rel="manifest" href="manifest.webmanifest">'
+    // with credentials: behind a sign-in wall (Cloudflare Access, docs/HOSTING.md) a manifest
+    // asked for without the cookie gets the sign-in page, and the app cannot be installed
+    + '<link rel="manifest" href="manifest.webmanifest" crossorigin="use-credentials">'
     + '<link rel="icon" href="icons/favicon-32.png" sizes="32x32" type="image/png">'
     + '<link rel="icon" href="icons/icon-192.png" sizes="192x192" type="image/png">'
     + '<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">';
@@ -92,13 +96,15 @@ export function manifest() {
     // app (Chromium on the desktop), into the window already open: all of a browser's Rikuy tabs
     // share one project, so a second window would only show the same one. src/pwa.js takes the
     // files from launchQueue and opens them as the Open button does.
-    file_handlers: [{ action: './', accept: { 'text/x-tex': ['.tex'], 'text/x-bibtex': ['.bib'], 'application/zip': ['.zip'] } }],
+    // a Word file too where the build has Word (not RIKUY_NO_WORD): it opens as a project, or
+    // brings a coauthor's edits back
+    file_handlers: [{ action: './', accept: { 'text/x-tex': ['.tex'], 'text/x-bibtex': ['.bib'], 'application/zip': ['.zip'], ...(WORD ? { [DOCX]: ['.docx'] } : {}) } }],
     launch_handler: { client_mode: ['focus-existing', 'auto'] },
     // Sharing files to Rikuy from another app (Android): src/sw.js takes the post and hands the
     // files to the page it opens
     share_target: {
       action: './share-target', method: 'POST', enctype: 'multipart/form-data',
-      params: { files: [{ name: 'files', accept: ['.tex', '.bib', '.zip', 'text/x-tex', 'text/x-bibtex', 'text/plain', 'application/zip', 'application/x-zip-compressed'] }] }
+      params: { files: [{ name: 'files', accept: ['.tex', '.bib', '.zip', 'text/x-tex', 'text/x-bibtex', 'text/plain', 'application/zip', 'application/x-zip-compressed', ...(WORD ? ['.docx', DOCX] : [])] }] }
     }
   };
 }
@@ -179,11 +185,15 @@ function walk(dir, pre = '') {
 //     content addressed, kept across versions (kind i)
 //   everything else the page or the worker loads: bound to the version, kept at install (p) up
 //     to 4 MiB, larger ones when first used (l)
+//   word/pandoc-<hash>-<n>.bin, the parts of pandoc: never kept by the service worker (kind n),
+//     because the Word worker keeps pandoc itself in IndexedDB once it has checked it
+//     (src/wordworker.js); kept here too, its 16 MB would be stored twice, 4 of them at install
 //   rikuy.html, LICENSES.txt, 404.html, _headers: in the version, but not served by the worker
 const PACK = /^tex\/[pbtwm]-[0-9a-f]{16}\.wasm$/;
 const ADDRESSED = /-([0-9a-f]{16})\.[A-Za-z0-9]+$/;
 const NOT_SERVED = new Set(['rikuy.html', 'LICENSES.txt', '404.html', '_headers', '_redirects']);
 const PRECACHE_MAX = 4 * 1024 * 1024;
+const WORD_PART = /^word\/pandoc-[0-9a-f]+-\d+\.bin$/;
 
 export function finishApp(OUT) {
   const index = path.join(OUT, 'index.html');
@@ -201,7 +211,7 @@ export function finishApp(OUT) {
     // a name whose digits are not the start of the file's own SHA-256 (a hash of something else,
     // such as what the file wraps) is treated as bound to the version: never kept as immutable
     const ca = ADDRESSED.exec(path.basename(rel));
-    files[rel] = [h, buf.length, ca && h.startsWith(ca[1]) ? 'i' : buf.length <= PRECACHE_MAX ? 'p' : 'l'];
+    files[rel] = [h, buf.length, WORD_PART.test(rel) ? 'n' : ca && h.startsWith(ca[1]) ? 'i' : buf.length <= PRECACHE_MAX ? 'p' : 'l'];
   }
   const v = sha(lines.join('\n')).slice(0, 16);
   const stamped = normal.replace(META, '$1' + v + '$3');
