@@ -235,6 +235,9 @@ def downloads(page):
 def live_graphs(page):
     W = os.path.join(ROOT, 'sample', 'widget')
     read = lambda n, m='r': open(os.path.join(W, n), m, **({} if 'b' in m else {'encoding': 'utf8'})).read()
+    load_doc(page, '\\documentclass{article}\n\\begin{document}\nWords.\n% \\rikuywidget{widgets/clt.html}{figures/clt.png} was here\n\\end{document}\n')
+    page.evaluate('window.rikuy.persist()'); page.wait_for_timeout(300)
+    check('a live graph named only in a comment sets no mark', not page.evaluate('document.getElementById("b-save").classList.contains("live")'), page.evaluate('document.getElementById("b-save").title'))
     check('a document with no live graph has no mark on LaTeX', not page.evaluate('document.getElementById("b-save").classList.contains("live")') and 'live graphs' not in page.evaluate('document.getElementById("b-save").title'))
     load_doc(page, {'main.tex': read('main.tex'), 'rikuy.sty': read('rikuy.sty'), 'widgets/clt.html': read('widgets/clt.html')})
     page.evaluate('(() => { const g = window.rikuy; g.name = "live"; g.persist(); })()')
@@ -246,11 +249,12 @@ def live_graphs(page):
         with page.expect_download(timeout=180000) as d:
             press(page, 'rb-word')
         page.wait_for_timeout(300)
-        check('Download Word still works there and says what becomes of the graphs', d.value.suggested_filename.endswith('.docx') and page.inner_text('#toast') == note, page.inner_text('#toast'))
+        said = page.inner_text('#toast')
+        check('Download Word still works there and says what becomes of the graphs, after its own message', d.value.suggested_filename.endswith('.docx') and said.startswith('Saved live.docx') and said.endswith(note), said)
         with page.expect_download(timeout=180000) as d:
             press(page, 'rb-word')
         page.wait_for_timeout(300)
-        check('once for a document: the second download does not say it again', page.inner_text('#toast') != note, page.inner_text('#toast')[:60])
+        check('once for a document: the second download does not say it again', note not in page.inner_text('#toast') and 'Saved' in page.inner_text('#toast'), page.inner_text('#toast')[:60])
     else:
         press(page, 'rb-word'); page.wait_for_timeout(400)
         check('on a copy without Word the notice about Word stays, not the one about graphs', 'hosted copy' in page.inner_text('#toast') and page.inner_text('#toast') != note, page.inner_text('#toast')[:80])

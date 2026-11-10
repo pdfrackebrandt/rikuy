@@ -3222,7 +3222,7 @@ class App {
     const fail = (b, e) => { done(b); this.toast(this.gitError(e), 9000); };
     if (!(await G.isRepo(dir))) {
       if (gen !== this.gitGen) return;
-      out.append(mk('div', 'git-intro', 'This project is not a git repository yet. Starting one keeps every commit of it in this browser; Save .zip then gives a clone you can push from your computer.'));
+      out.append(mk('div', 'git-intro', 'This project is not a git repository yet. Starting one keeps every commit of it in this browser; Download LaTeX then gives a .zip that is a clone you can push from your computer.'));
       const row = mk('div', 'git-row');
       row.append(mkBtn('Start a repository', async (e) => {
         const b = e.currentTarget; busy(b, 'Starting…');
@@ -3417,7 +3417,7 @@ class App {
     const host = remoteHost(remote);
     if (from === 'theirs') rem.append(mk('div', 'git-note git-foreign', 'This remote came in the .git folder of the project you opened, so no token is filled in for it. Give one only if ' + host + ' is yours.'));
     else if (from === 'unknown' && tok.value) rem.append(mk('div', 'git-note git-unknown', 'This repository is older than Rikuy\'s record of where remotes come from, so your token is filled in as before. Check that ' + host + ' is yours before you pull or push.'));
-    rem.append(url, tok, legacy.el, prox, rrow, mk('div', 'git-note', 'GitHub and GitLab need a token with write access and, from a browser, a CORS proxy. Inside claude.ai the page can only reach its own server, so pushing works from Rikuy on its own site; here, Save .zip gives a clone to push from your computer.'));
+    rem.append(url, tok, legacy.el, prox, rrow, mk('div', 'git-note', 'GitHub and GitLab need a token with write access and, from a browser, a CORS proxy. Inside claude.ai the page can only reach its own server, so pushing works from Rikuy on its own site; here, Download LaTeX gives a clone to push from your computer.'));
     out.append(rem);
 
     // history
@@ -3454,7 +3454,7 @@ class App {
       hist.append(it);
     }
     out.append(hist);
-    out.append(mk('div', 'git-note', 'Save .zip includes the .git folder, so the download is a clone: unzip it and git log, git push work as usual. isomorphic-git ' + G.version + '.'));
+    out.append(mk('div', 'git-note', 'Download LaTeX gives a .zip with the .git folder in it, so the download is a clone: unzip it and git log, git push work as usual. isomorphic-git ' + G.version + '.'));
     body.replaceChildren(out);
     body.scrollTop = y;
   }
@@ -3520,7 +3520,7 @@ class App {
 
   gitError(e) {
     const m = String((e && (e.message || e.code)) || e);
-    if (/Failed to fetch|NetworkError|Load failed|Content Security Policy|CORS/i.test(m)) return 'Could not reach the remote. From inside claude.ai the page may only talk to its own server; run Rikuy on its own site, or Save .zip and push from your computer. (' + m + ')';
+    if (/Failed to fetch|NetworkError|Load failed|Content Security Policy|CORS/i.test(m)) return 'Could not reach the remote. From inside claude.ai the page may only talk to its own server; run Rikuy on its own site, or Download LaTeX and push from your computer. (' + m + ')';
     if (/401|403|auth/i.test(m)) return 'The remote refused the credentials. Check the token and that it can write to this repository. (' + m + ')';
     if (/MergeConflict|conflict/i.test(m)) return 'Pull found conflicting edits to the same lines. Commit, then merge on your computer, or restore one side. (' + m + ')';
     return m;
@@ -4782,8 +4782,8 @@ class App {
         <dt>PDF or ${mod}+P</dt><dd>Compiles with TeX Live 2026, running in this browser, and shows the exact PDF: pdfLaTeX, XeLaTeX or LuaLaTeX (Auto reads a <code>% !TeX program</code> line or the preamble). Shell escape runs Ghostscript, gnuplot, Pygments for minted and makeindex here too. It recompiles after each edit; TeX's errors appear under Problems with their line; click the PDF to find that text, click the page to find it in the PDF</dd>
       </dl>
       <p><b>Review</b> lists the comments, then every edit since you opened the project, or since any saved version, with Accept and Reject; tick Show changes on the pages to see them marked like Word's Track Changes. Versions are kept every few minutes, when you leave, when you save the .zip, and under any name you give.</p>
-      <p><b>Share</b> copies a link that opens this document for anyone, ready to type in, with no account: the document travels inside the link and is not uploaded. Coauthors type and comment on the page and send a link back; their edits arrive here as changes to accept or reject. Share also opens the project in Overleaf, and Save gives a plain .tex (or a .zip with several files), so leaving takes one click. From Overleaf: Menu, Download, Source, and drop the .zip on the page. With Overleaf's Git integration, paste the project's address under Git, Clone, and push and pull keep both in step.</p>
-      <p><b>Git</b> makes the project a real repository in this browser: commit, history, compare or restore any commit, branches, push and pull. Save .zip then includes the .git folder, so the download is a clone; opening a .zip or folder that has one brings its history in.</p>
+      <p><b>Share</b> copies a link that opens this document for anyone, ready to type in, with no account: the document travels inside the link and is not uploaded. Coauthors type and comment on the page and send a link back; their edits arrive here as changes to accept or reject. Share also opens the project in Overleaf, and Download LaTeX gives a plain .tex (or a .zip with several files), so leaving takes one click. From Overleaf: Menu, Download, Source, and drop the .zip on the page. With Overleaf's Git integration, paste the project's address under Git, Clone, and push and pull keep both in step.</p>
+      <p><b>Git</b> makes the project a real repository in this browser: commit, history, compare or restore any commit, branches, push and pull. Download LaTeX then gives a .zip with the .git folder in it, so the download is a clone; opening a .zip or folder that has one brings its history in.</p>
       <p><b>Equations</b> work like Word's equation editor, with every name from Word's Math AutoCorrect list.</p>
       <dl class="keys">
         <dt>\\alpha then Space</dt><dd>&alpha;. Any LaTeX or Word name: \\degree, \\cbrt, \\matrix, \\doubleR</dd>

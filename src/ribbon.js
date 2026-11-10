@@ -244,13 +244,16 @@ export const ribbon = {
     } else this.commit([{ f: w.f, s: w.s, e: w.s + w.t.length, t: '' }], at, 'insert');
   },
 
-  hasLive() { return [...this.files].some(([n, t]) => /\.tex$/i.test(n) && /(^|[^\\%])\\rikuywidget\b/m.test(t)); },
-  // PDF and Word hold a live graph as its picture: said once for each document
+  // a live graph on the page, as the parser found it (one named in a comment is none)
+  hasLive() { return this.renderer.blocks.some((B) => B.atoms.some((a) => a.kind === 'widget')); },
+  // PDF and Word hold a live graph as its picture: said once for each document, after what the
+  // download itself has to say (Word's "Saved, shown differently in Word"), in the same message
   liveNote() {
     const k = this.name + '|' + this.main;
     if (!this.hasLive() || this.liveTold === k) return;
     this.liveTold = k;
-    this.toast(LIVE_NOTE, 9000);
+    const said = $('#toast').hidden ? '' : $('#toast').firstChild.textContent;
+    this.toast((said ? said + ' ' : '') + LIVE_NOTE, 14000);
   },
   // the LaTeX download's title: what it gives, whether there are changes since, and that it
   // alone keeps live graphs live (the button then carries a mark)
