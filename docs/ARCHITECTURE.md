@@ -40,6 +40,7 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | what a keystroke writes | `App.onBeforeInput`, `insertText`, `deletionEdits`, `enter`, `toggleStyle` (`src/app.js`); `escapeTeX` |
 | undo grouping | `App.record`, `App.undo`, `App.redo` |
 | share links, comments, the copy back, Overleaf | `makeShareLink`, `openSharedLink`, `takeBack`, `commentPop`, `openInOverleaf` (`src/collab.js`); `commentEdit`, `merge3` (`src/share.js`) |
+| the installed app: offline copy, updates, "Make available offline" | `install`, `activate`, the `fetch` listener (`src/sw.js`); `registerApp`, `asset`, `keepOffline`, `OFFLINE_FOLDERS` (`src/pwa.js`); `appPage`, `finishApp` (`build/app.mjs`); `keepPlan`, `keep` (`tex/engine.js`) |
 | live figures (`\rikuywidget`) | `WidgetLayer`, `widgetDoc`, `WIDGET_CSP` (`src/widget.js`); `Builder.cmd` (kind `widget`), `Renderer.atomEl`; `App.widgetsAllowed`, `widgetResized` |
 | equation editing | `App.openMath`, `attachField`, `toField`, `fromField`; `src/minimal.js`, `wordmath.js`, `fences.js` |
 | engine choice, passes, bibliography, indexes | `pickEngine`, `compile`, `runBiber`, `indexTools` (`tex/engine.js`) |
@@ -260,11 +261,53 @@ fallback from the widget's own generator.
   text with a message, and past 2 MiB, more than Chrome opens from its address bar, the link's
   note says to paste it onto the page or send the .zip.
 
-## 6. Page and worker
+## 6. The installed app (hosted build)
+
+The build without `RIKUY_SHARE` makes `dist/index.html` an installable app: `appPage()`
+(`build/app.mjs`) gives it a head with `<meta name="rikuy-app" content="<version>">`, the
+manifest (`manifest.webmanifest`: name, standalone, theme colour of the bar, the icons drawn by
+`build/icons/make.py`) and KaTeX from `lib/` instead of jsDelivr; `appFiles()` puts the six
+libraries the page otherwise takes from jsDelivr into `lib/` (npm's files, refused unless their
+SHA-384 is the one the page pins). `rikuy.html`, which a host wraps (the artifact host, the test
+servers), is unchanged, and the artifact build (`RIKUY_SHARE` set) compiles `src/pwa.js` out
+(`__RIKUY_APP__` false) and builds none of this (`cleanApp`).
+
+- **Version.** `finishApp()` hashes every file of `dist/` but `sw.js`, the TeX packs
+  (`tex/[pbtwm]-*.wasm`) and a mirror into the version, stamps it into `index.html` and writes
+  `sw.js` as `const RIKUY = {v, files}` (path → SHA-256, size, kind) followed by `src/sw.js`.
+  `_headers` is in the version, so a change of policy reaches the kept page too.
+- **Service worker** (`src/sw.js`). `install` fetches every file of kind `p` (all the page and
+  the TeX worker load, about 7 MB; `l` for any over 4 MiB, fetched on first use) into
+  `rikuy-v-<version>`, each checked against its hash (the page by its version tag), so a version
+  is kept whole or not at all. `activate` keeps that version and the one before, drops older
+  caches and claims the open pages. `fetch` answers the page (navigations to the scope) from the
+  cache first, so a new version applies only when its worker is active: when every tab is
+  closed, or after "Update ready" (`skipWaiting` on the page's message, then `controllerchange`
+  reloads that tab; another tab offers a reload).
+- **One version at a time.** A page under a worker asks for its own files as
+  `_v/<version>/<path>` (`asset()` in `src/pwa.js`, used for `git.js`, `lib/`, pdf.js and the TeX
+  worker's script folder: `TeXEngine`'s `scripts`, which becomes the worker's `HERE`), and the
+  worker answers from that version's cache, or 410: a tab left on the old version gets the old
+  scripts, never the new ones. The packs keep their plain `tex/` address (`TeXEngine`'s `base`).
+- **Packs.** The service worker does not keep TeX packs: the TeX worker keeps them in IndexedDB
+  by hash (section 12), and the service worker answers `tex/p-<hash>.wasm` from there when it is
+  kept. That is what lets TeX's synchronous XHR (`loadPackSync`) work offline: a blob worker is
+  controlled by the page's service worker in Chromium. Keeping them in Cache Storage as well
+  would double the largest part of what Rikuy keeps.
+- **Make available offline** (`#b-offline`): `TeXEngine.keep(OFFLINE_FOLDERS)` boots the worker
+  (which keeps the engine and the core packs, as for a first PDF) and sends `{keep: {folders}}`;
+  `keepPlan()` turns the folders into the packs holding their files and `keep()` fetches those not
+  kept yet into IndexedDB without unpacking them, sending `{status: 'keep', got, total}`. The
+  set is a typical paper under pdfLaTeX: 60 packs, 39 MB (version 29's tree), the engine (12 MB)
+  apart; cm-super and biber are left out.
+- **Status bar.** `#st-net` ("Offline", from `online`/`offline` events), `#st-update`,
+  `#b-offline`; only in the app build.
+
+## 7. Page and worker
 
 `TeXEngine` (`src/tex.js`) starts the worker from a blob (so it runs under the page's policy)
-that sets `self.__galleyBase` and imports `engine.js`. Its `onmessage` takes `{init, base, mirror,
-env}`, `{compile}`, `{prefetch}`, `{exec}` (one program, files read back: build scripts),
+that sets `self.__galleyBase` (its `scripts` folder, section 6) and imports `engine.js`. Its `onmessage` takes `{init, base, mirror,
+env}`, `{compile}`, `{prefetch}`, `{keep}` (section 6), `{exec}` (one program, files read back: build scripts),
 `{shell}` (one program through the shell: tests) and sends `{status}`, `{ready}`, `{result}`,
 `{execResult}`, `{shellResult}`, `{error}`. `App.compilePdf` sends all project files
 (`compileFiles`), the engine choice and the shell escape box; `parseTeXLog()` maps the log to
@@ -272,7 +315,7 @@ files and lines; `PdfView.show(pdf, synctex)` draws with PDF.js; past 5 minutes 
 `stopPdf` ends the worker. `boot()` fetches `tree.wasm`, the mirror index, the engine chunks
 `w-*.wasm` and the core packs; `newTeX(true)` makes `MAIN`; `restoreFontCaches()` follows.
 
-## 7. The compile loop: `compile(job)` in `tex/engine.js`
+## 8. The compile loop: `compile(job)` in `tex/engine.js`
 
 1. **Folder.** `projectDir(job.project)`, stable per project (`touchProject` keeps three); `KEEP`
    files (aux, bbl, toc, idx…) and `ASY_OUT` survive unless `job.clean`. Every file name and the
@@ -305,7 +348,7 @@ files and lines; `PdfView.show(pdf, synctex)` draws with PDF.js; past 5 minutes 
 10. **Driver**: `.xdv` → `xdvipdfmx`; `.dvi` → `dvips`, then `ps2pdf` via `SHELL.dispatch`. The
     result holds `pdf` (null when empty), `synctex`, `log`, `runs`, `passes`, `missing`, `packs`.
 
-## 8. Shell escape: finding and running programs
+## 9. Shell escape: finding and running programs
 
 `newTeX()` sets `imports.env.shell_escape_dispatch_js(a, b)`: `SHELL.dispatch(cmd, cwd)` for
 `b >= 0`, else `pipeHook()`, which serves the `popen`/`pclose` bodies `tex/patch_wasm.py` writes
@@ -331,7 +374,7 @@ reruns TeX on all written so far (`texPipe`, `pipeSessions`; `pipeCache` keeps T
 `asyRun()` first runs up to three rehearsals (`asyRehearsal`: questions noted, sizes guessed,
 nothing drawn), each answered in one TeX run (`asyAnswerAll`), then runs asy for real.
 
-## 9. File systems shared between programs
+## 10. File systems shared between programs
 
 - `MAIN.FS`, the first TeX instance's MEMFS, holds the tree at `/texlive` and the projects at
   `/home/web_user/project`. Tree nodes carry `TREE_MTIME`, so build time fontconfig caches hold.
@@ -344,7 +387,7 @@ nothing drawn), each answered in one TeX run (`asyAnswerAll`), then runs asy for
   folder in (`mirrorFolder`) and copy back what changed or vanished (`copyBackChanged`). Copies
   are dated 0, so an equal size rewrite within a millisecond still counts. biber gets copies.
 
-## 10. Programs built for Rikuy, and their memory
+## 11. Programs built for Rikuy, and their memory
 
 `tex/build_tools.sh` compiles dvips, Asymptote (with GLM, Mesa's OSMesa, GSL, FFTW, Eigen), xindy
 (ECL, GMP, Boehm GC) and gnuplot with Ubuntu's Emscripten 3.1.6 into the committed `tex/vendor/`.
@@ -369,7 +412,7 @@ kept and restored after every run, the rest zeroed, the stack reset to `_sp0`, d
 closed; that also frees strings the worker mallocs into TeX's heap. asy's fork to render a 3D
 bitmap becomes `galley_fork_save` (memory below `sbrk(0)`), render, `galley_fork_restore`.
 
-## 11. The TeX tree, packs, lazy loading, mirror
+## 12. The TeX tree, packs, lazy loading, mirror
 
 `build_tree.py tree` (`build_tree`) assembles `$RIKUY_WORK/rikuy-tree` from BusyTeX's release
 tree (`tree-extra`, via `unpack_busytex.py`) and Ubuntu 26.10's TeX Live 2026.20260711 packages
@@ -405,7 +448,7 @@ written into `MAIN.FS`). A mirror pack's bytes must hash to the name its index g
 and again when read back: the cache is the whole site's, so another mirror cannot plant a pack
 under a real one's name. A page on claude.ai reaches only its own server: self hosted use only.
 
-## 12. Build pipeline
+## 13. Build pipeline
 
 1. `tex/fetch_inputs.sh` fills `$RIKUY_WORK` (default `/tmp/eng`), hash checked: `busy/busytex`
    (BusyTeX 1.4.0), `tree-extra`, `debs/x/<pkg>`, `mf/x` (METAFONT for `build_pk.py`), and
@@ -420,29 +463,35 @@ under a real one's name. A page on claude.ai reaches only its own server: self h
    `dist/rikuy.html`, every font as `data:`;
    worker scripts, `busytex.js`, `biber.js`, `fflate.js`, `pyodide.js`, PDF.js and its worker and
    vendor tool scripts go to `dist/tex/`, npm's Ghostscript module made a classic script (`self.GalleyGs`; the build
-   fails if its stack exports moved), control bytes escaped. `dist/index.html` is the page inside
-   the document the artifact host wraps it in, for any static server; `dist/LICENSES.txt` holds
+   fails if its stack exports moved), control bytes escaped. `dist/index.html` is the page as a
+   whole document, for any static server: without `RIKUY_SHARE` the installed app (section 6,
+   with `lib/`, `icons/`, `manifest.webmanifest` and, last, `sw.js` and the version), with it the
+   page inside the skeleton the artifact host wraps it in; `dist/LICENSES.txt` holds
    `NOTICE`, the license texts of what `dist/` ships and the notices of the libraries compiled into
    its programs (`LICENSES/third-party/`). `RIKUY_OUT` moves the output.
 
-KaTeX's JS, CodeMirror, JSZip, MathLive and mhchem load from CDNs at run time (`CDN` in
-`src/app.js`), each checked against the npm file's hash (`SRI`; KaTeX's in `src/template.html`).
+In `rikuy.html` (the artifact) KaTeX's JS, CodeMirror, JSZip, MathLive and mhchem load from CDNs
+at run time (`CDN` in `src/app.js`), each checked against the npm file's hash (`SRI`; KaTeX's in
+`src/template.html`); the installed app loads the same npm files from `lib/`, by the same hashes.
 PDF.js is a module `import()`, which takes no hash, so it ships in `dist/tex/` beside its worker. `tex/build_all.sh` remakes what the engines make for a changed tree (`build_pk.py`;
 `build_formats.py`, `build_fccache.py`, `build_luacache.py` drive the worker in Chromium through
 `tex-smoke.html`'s `exec`). Also: `swap_wasm.py` (a patched engine into a built `dist/tex`),
 `build_tree.py tools` (the programs only), `publish_batches.py` (uploads to the hosted copy).
 
-## 13. Tests and harness
+## 14. Tests and harness
 
 - **Node, in CI** (`.github/workflows/ci.yml`, `npm test`): `test/model.test.mjs` (sample model,
   seg maps checked), `edge.test.mjs` (malformed input must not throw), `fences.test.mjs`,
-  `minimal.test.mjs`, `siunitx.test.mjs`, `share.test.mjs`, `tex/native/xindy/test.cjs` (against CLISP), and
+  `minimal.test.mjs`, `siunitx.test.mjs`, `share.test.mjs`, `engine.test.mjs` (the worker's
+  pack hashes, path guard and offline plan), `tex/native/xindy/test.cjs` (against CLISP), and
   `corpus.test.mjs DIR` (`buildModel` over `MartinThoma/LaTeX-examples` at `8bfd313b8d98`).
 - **Playwright** (`cd test && python3 X.py`, on `dist/` or `RIKUY_DIST`; helpers in `browser.py`,
   the CSP server `serve.py`): `browser.py` (typing), `features.py`, `files.py` (zip round trip),
   `git.py`, `history.py`, `paste.py`, `pdf.py` (pdfLaTeX, SyncTeX), `engines.py` (engines, shell
   escape), `mathfield.py`, `wordmath.py`, `eqextras.py`, `frontier.py`, `share.py` (two browsers: share, comment,
-  send back, merge), `stress.py`, `widgets.py` (live figures, under the host's policy); on a corpus,
+  send back, merge), `stress.py`, `widgets.py` (live figures, under the host's policy),
+  `offline.py` (the installed app offline and its updates, served by `pages.py` as Cloudflare Pages
+  serves it); on a corpus,
   `corpus_browser.py` (random keystrokes) and `editor_corpus.py` (six edits per document land
   where made, undo byte for byte, projects compile). Each says at its top what it checks.
 - **dev/** drives the worker through `tex/tex-smoke.html`: `texrun.py`, `shellrun.py`,
@@ -451,7 +500,7 @@ PDF.js is a module `import()`, which takes no hash, so it ships in `dist/tex/` b
 
 Which check covers which change, and how long each takes: `AGENTS.md`. The numbers: `PLAN.md`.
 
-## 14. Known gaps
+## 15. Known gaps
 
 - `usage.json`, the list of files in the core packs, comes only in `inputs/generated.tar.gz`.
   It was made from the files a corpus run read (`job.trace` returns them), but the script that

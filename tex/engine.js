@@ -11,9 +11,10 @@
 //   b-*, t-*    biber and the shell's programs, fetched on first use
 // Every file travels as a WebAssembly module with one custom section (see unwrap()).
 // Messages in:  {init, base, mirror, env}, {compile: {id, project, files, main, engine, shellEscape, untrusted, clean, bibSig}},
-//               {prefetch: [packs]}, {exec: {args, files, read, list}} (build scripts and tests),
-//               {shell} (one program through the shell, for tests)
-// Messages out: {status}, {ready}, {result}, {execResult}, {shellResult}, {error}
+//               {prefetch: [packs]}, {keep: {folders}} (packs kept for offline use, not unpacked),
+//               {exec: {args, files, read, list}} (build scripts and tests), {shell} (one program
+//               through the shell, for tests)
+// Messages out: {status}, {ready}, {result}, {kept}, {execResult}, {shellResult}, {error}
 
 /* global busytex, fflate */
 // The page starts this worker from a small blob script (blob workers take the page's own
@@ -86,10 +87,29 @@ async function cacheGet(key) {
     } catch (e) { resolve(null); }
   });
 }
+// resolves true once the value is written, false when the browser refused it (quota, storage off)
 async function cachePut(key, val) {
   const d = await db();
-  if (!d) return;
-  try { d.transaction('blobs', 'readwrite').objectStore('blobs').put(val, key); } catch (e) { /* quota: fine */ }
+  if (!d) return false;
+  return new Promise((resolve) => {
+    try {
+      const t = d.transaction('blobs', 'readwrite');
+      t.oncomplete = () => resolve(true);
+      t.onerror = t.onabort = () => resolve(false);
+      t.objectStore('blobs').put(val, key);
+    } catch (e) { resolve(false); } // quota: fine
+  });
+}
+async function cacheHas(key) {
+  const d = await db();
+  if (!d) return false;
+  return new Promise((resolve) => {
+    try {
+      const q = d.transaction('blobs', 'readonly').objectStore('blobs').count(key);
+      q.onsuccess = () => resolve(q.result > 0);
+      q.onerror = () => resolve(false);
+    } catch (e) { resolve(false); }
+  });
 }
 
 // SHA-256, synchronous: mirror packs are read from inside TeX, which cannot wait for
@@ -190,6 +210,43 @@ async function loadPackAsync(n) {
   })();
   pending.set(n, job);
   return job;
+}
+
+// The packs "Make available offline" keeps (src/pwa.js): the core packs and every pack holding a
+// file under one of the given folders of texmf-dist. A folder is a path inside the tree, never
+// outside it; the result is pack numbers of this index, so a page cannot name other files.
+function keepPlan(folders) {
+  const pre = [];
+  for (const f of folders || []) {
+    const p = String(f).replace(/^\/+|\/+$/g, '');
+    if (p && !p.split('/').some((x) => x === '..' || x === '.' || x === '')) pre.push('/texlive/texmf-dist/' + p + '/');
+  }
+  const want = new Set(INDEX.core || []);
+  for (const f of INDEX.files) if (pre.some((p) => f[0].startsWith(p))) want.add(f[2]);
+  return [...want].sort((a, b) => a - b);
+}
+// Fetches the planned packs this browser does not keep yet into the cache, as they come, without
+// unpacking them (a compile unpacks what it reads); a second session, or the service worker
+// answering TeX's synchronous reads while offline, finds them there.
+async function keep(folders) {
+  const plan = keepPlan(folders);
+  const total = plan.reduce((s, n) => s + INDEX.packs[n].z, 0);
+  let got = 0, fetched = 0;
+  const todo = [];
+  for (const n of plan) { if (await cacheHas('p:' + INDEX.packs[n].h)) got += INDEX.packs[n].z; else todo.push(n); }
+  status('keep', { got, total });
+  let i = 0;
+  const lane = async () => {
+    while (i < todo.length) {
+      const P = INDEX.packs[todo[i++]];
+      const z = await fetchBytes(P.f);
+      if (!(await cachePut('p:' + P.h, z))) throw new Error('this browser has no room left to keep them');
+      got += P.z; fetched += z.length;
+      status('keep', { got, total });
+    }
+  };
+  await Promise.all([lane(), lane(), lane(), lane()]);
+  return { packs: plan.length, total, fetched };
 }
 
 // Called from inside TeX (synchronously) when it opens a file whose pack is not here yet.
@@ -1450,6 +1507,12 @@ onmessage = async ({ data }) => {
     } else if (data.prefetch) {
       await booting;
       await Promise.all(data.prefetch.map((n) => loadPackAsync(n).catch(() => null)));
+    } else if (data.keep) {
+      try {
+        if (!booting) throw new Error('the engine has not started');
+        await booting;
+        post({ kept: await keep(data.keep.folders) });
+      } catch (e) { post({ kept: { error: String((e && e.message) || e) } }); }
     } else if (data.compile) {
       await booting;
       const res = await compile(data.compile);

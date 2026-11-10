@@ -15,6 +15,7 @@ import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath } from './paste.js';
 import { findProblems, missingFigures } from './problems.js';
 import { WidgetLayer } from './widget.js';
+import { APP, appInit, asset as appAsset, registerApp } from './pwa.js';
 
 // Gray boxes of 320 by 240 points that stand in, in a coauthor's PDF, for figures a link does
 // not carry: a PDF, a PNG whose resolution makes it that size, and EPS for latex with dvips.
@@ -62,11 +63,17 @@ const TEXT_EXT = /\.(tex|bib|sty|cls|bst|bbl|txt|ltx|dtx|clo|cfg|def|md|html?)$/
 const IMG_EXT = /\.(png|jpe?g|gif|svg|webp)$/i;
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
+// One of the build's own files (git.js, tex/...): in the installed app, the copy of this page's
+// version (src/pwa.js); elsewhere simply the file next to the page.
+const asset = (p) => (__RIKUY_APP__ ? appAsset(p) : new URL(p, location.href).href);
 function loadScript(src) {
   return new Promise((res, rej) => {
     const s = document.createElement('script');
     if (SRI[src]) { s.integrity = SRI[src]; s.crossOrigin = 'anonymous'; }
-    s.src = src; s.onload = () => res(); s.onerror = () => rej(new Error('Could not load ' + src));
+    // the installed app ships these libraries itself (lib/, the same npm files: build/app.mjs), so
+    // it works offline and asks no CDN; the hash still has to match
+    s.src = __RIKUY_APP__ && APP.on && SRI[src] ? asset('lib/' + src.slice(src.lastIndexOf('/') + 1)) : src;
+    s.onload = () => res(); s.onerror = () => rej(new Error('Could not load ' + src));
     document.head.appendChild(s);
   });
 }
@@ -363,6 +370,8 @@ class App {
     } else this.loadSample();
     this.bindUI();
     this.applyPrefs();
+    // the installed app (hosted build only): its service worker, updates, the offline marks
+    if (__RIKUY_APP__ && appInit().on) registerApp(this);
     await this.waitForKaTeX();
     await Promise.race([this.loadFonts(), new Promise((r) => setTimeout(r, 2500))]);
     this.computePx();
@@ -2868,7 +2877,7 @@ class App {
   // the working tree: the panel writes them into it, so a commit takes exactly what is open.
   loadGit() {
     if (!this.gitP) {
-      this.gitP = import(new URL('git.js', location.href).href);
+      this.gitP = import(asset('git.js'));
       this.gitP.catch(() => { this.gitP = null; });
     }
     return this.gitP;
@@ -3913,7 +3922,7 @@ class App {
     this.prefs.pdf = on;
     store(PREFS, this.prefs);
     if (on) {
-      if (!this.pdfView) this.pdfView = new PdfView($('#pdf-host'), { workerUrl: new URL('tex/pdf.worker.min.mjs', location.href).href, onClickSource: (f, line) => this.fromPdf(f, line) });
+      if (!this.pdfView) this.pdfView = new PdfView($('#pdf-host'), { workerUrl: asset('tex/pdf.worker.min.mjs'), onClickSource: (f, line) => this.fromPdf(f, line) });
       if (!this.lastPdf || this.pdfStale) this.compilePdf();
     }
     setTimeout(() => { if (this.computePx()) this.relayout(true); }, 30);
@@ -3927,7 +3936,7 @@ class App {
       // the page's own address can name a mirror only on its own site: a link to someone's copy
       // with ?texlive= pointing elsewhere would fill their browser's TeX cache from a stranger
       try { if (mirror && new URLSearchParams(location.search).get('texlive') === mirror && new URL(mirror, location.href).origin !== location.origin) mirror = null; } catch (e) { mirror = null; }
-      this.tex = new TeXEngine(new URL('tex/', location.href).href, mirror ? new URL(mirror, location.href).href : null);
+      this.tex = new TeXEngine(new URL('tex/', location.href).href, mirror ? new URL(mirror, location.href).href : null, asset('tex/'));
       this.tex.onStatus = (s) => this.texStatus(s);
     }
     return this.tex;
@@ -4080,7 +4089,9 @@ class App {
       st.textContent = 'TeX could not run here';
       $('#pdf-host').innerHTML = '';
       const d = document.createElement('div'); d.className = 'pdf-empty';
-      d.textContent = (e && e.message ? e.message + '. ' : '') + 'The page preview can still be printed.';
+      // offline, a file TeX has not kept fails to load; say what to do rather than "Failed to fetch"
+      const off = __RIKUY_APP__ && APP.on && navigator.onLine === false ? 'You are offline, and this needs TeX files this browser has not kept yet. Compile it once with a network, or use Make available offline in the status bar. ' : '';
+      d.textContent = off + (e && e.message ? e.message + '. ' : '') + 'The page preview can still be printed.';
       const b = document.createElement('button'); b.className = 'btn sm'; b.type = 'button'; b.textContent = 'Print the preview'; b.style.marginTop = '10px';
       b.addEventListener('click', () => this.printPDF());
       d.append(document.createElement('br'), b);

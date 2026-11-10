@@ -1,7 +1,8 @@
 // The TeX worker's own checks, run in node with no TeX tree (tex/engine.js in a vm, with
 // shell.js, tools.js and fflate, and stand-ins for the network and IndexedDB): a mirror pack is
-// kept and used only if its bytes match the hash its index names it by, and a compile writes
-// only inside its project's folder.
+// kept and used only if its bytes match the hash its index names it by, a compile writes only
+// inside its project's folder, and "Make available offline" keeps the packs of the folders it
+// names, without unpacking them, fetching none already kept.
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import fs from 'node:fs';
@@ -23,14 +24,25 @@ const fetch = async (url) => { const b = served.get(url); return { ok: !!b, stat
 // IndexedDB, as much of it as the worker's cache uses
 const blobs = new Map();
 const later = (q, v) => { setTimeout(() => { q.result = v; if (q.onsuccess) q.onsuccess(); }, 0); return q; };
-const store = { get: (k) => later({}, blobs.get(k)), put: (v, k) => { blobs.set(k, v); return later({}, k); } };
-const idb = { transaction: () => ({ objectStore: () => store }) };
+let refuse = false; // a full disk: writes fail
+const idb = {
+  transaction: () => {
+    const t = {};
+    t.objectStore = () => ({
+      get: (k) => later({}, blobs.get(k)),
+      count: (k) => later({}, blobs.has(k) ? 1 : 0),
+      put: (v, k) => { if (!refuse) blobs.set(k, v); setTimeout(() => { const f = refuse ? t.onabort : t.oncomplete; if (f) f(); }, 0); return later({}, k); }
+    });
+    return t;
+  }
+};
 const indexedDB = { open: () => { const r = {}; setTimeout(() => { r.result = idb; if (r.onsuccess) r.onsuccess(); }, 0); return r; } };
 
+const posted = [];
 const ctx = { console, URL, TextEncoder, TextDecoder, performance, setTimeout, Blob, Response, DecompressionStream, XMLHttpRequest: XHR, fetch, indexedDB };
 ctx.self = ctx;
 ctx.__galleyBase = 'https://rikuy.test/tex/';
-ctx.postMessage = () => {};
+ctx.postMessage = (m) => posted.push(m);
 ctx.importScripts = (...urls) => {
   for (const u of urls) {
     const f = u.endsWith('fflate.js') ? 'node_modules/fflate/umd/index.js' : u.endsWith('shell.js') ? 'tex/shell.js' : u.endsWith('tools.js') ? 'tex/tools.js' : null;
@@ -110,6 +122,48 @@ await ok('a project file name cannot leave the project\'s folder', async () => {
   await assert.rejects(ctx.compile(job(['main.tex', '../../../texlive/texmf-dist/tex/latex/base/article.cls'])), /leaves the project/);
   await assert.rejects(ctx.compile(job(['main.tex'], '../main.tex')), /leaves the project/);
   assert.deepEqual(touched, []);
+});
+
+// a small index: the core pack 0, packs 1 to 3 holding files of three folders
+const zp = [0, 1, 2, 3].map((i) => zlib.gzipSync(Buffer.from('pack ' + i)));
+const T = '/texlive/texmf-dist/';
+run('INDEX = ' + JSON.stringify({
+  core: [0],
+  packs: zp.map((z, i) => ({ f: 'https://rikuy.test/tex/p-' + sha16(z) + '.wasm', z: z.length, n: 6, h: sha16(z) })),
+  files: [[T + 'tex/latex/base/article.cls', 1, 0, 0], [T + 'tex/latex/amsmath/amsmath.sty', 1, 1, 0], [T + 'tex/latex/amsmath2/x.sty', 1, 2, 0],
+    [T + 'fonts/type1/public/lm/lmr10.pfb', 1, 3, 0], ['/texlive/fonts.conf', 1, 2, 0]]
+}) + '; packs.clear();');
+const P = (i) => 'p:' + sha16(zp[i]);
+
+await ok('the offline plan is the core packs and the packs holding files under the folders named', () => {
+  assert.deepEqual([...ctx.keepPlan(['tex/latex/amsmath'])], [0, 1], 'a folder is a whole path segment: amsmath2 is not amsmath');
+  assert.deepEqual([...ctx.keepPlan(['/fonts/type1/public/lm/', 'tex/latex/amsmath2'])], [0, 2, 3]);
+  // nothing outside texmf-dist, whatever the page sends
+  assert.deepEqual([...ctx.keepPlan(['..', '../fonts.conf', 'tex/../..', '', '.', null])], [0]);
+});
+
+await ok('keep fetches what is not kept yet, keeps it packed, and reports its progress', async () => {
+  blobs.clear(); served.clear(); posted.length = 0;
+  blobs.set(P(0), new Uint8Array(zp[0])); // the core pack: kept by an earlier compile
+  for (const i of [1, 3]) served.set(run('INDEX.packs[' + i + '].f'), new Uint8Array(zp[i]));
+  const r = await ctx.keep(['tex/latex/amsmath', 'fonts/type1/public/lm']);
+  assert.equal(r.packs, 3);
+  assert.equal(r.total, zp[0].length + zp[1].length + zp[3].length);
+  assert.equal(r.fetched, zp[1].length + zp[3].length, 'the kept core pack is not fetched again');
+  assert.ok(same(blobs.get(P(1)), zp[1]) && same(blobs.get(P(3)), zp[3]), 'kept as fetched, still gzipped');
+  assert.equal(run('packs.size'), 0, 'nothing unpacked into memory');
+  const st = posted.filter((m) => m.status === 'keep');
+  assert.deepEqual([st[0].got, st[st.length - 1].got], [zp[0].length, r.total]);
+  // and again: nothing to fetch
+  served.clear();
+  assert.equal((await ctx.keep(['tex/latex/amsmath', 'fonts/type1/public/lm'])).fetched, 0);
+});
+
+await ok('keep fails, saying so, when the browser will not store the packs', async () => {
+  blobs.clear(); served.set(run('INDEX.packs[0].f'), new Uint8Array(zp[0]));
+  refuse = true;
+  await assert.rejects(ctx.keep([]), /no room left/);
+  refuse = false;
 });
 
 console.log(n + '/' + n + ' passed');

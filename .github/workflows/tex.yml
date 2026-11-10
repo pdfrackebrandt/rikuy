@@ -1,7 +1,8 @@
 # The TeX side, which ci.yml leaves out: build dist/tex as PLAN.md's Building section does (about
 # 3 GB of downloads, every one checked by hash, from GitHub and Ubuntu's archive, which the machine
 # Rikuy is developed on cannot reach), check it byte for byte against dev/dist-manifest.txt, then
-# run the tests that compile with TeX in the page: test/engines.py and test/pdf.py. The built
+# run the tests that compile with TeX in the page: test/engines.py, test/pdf.py and the offline
+# compile of test/offline.py. The built
 # dist/ is kept as a workflow artifact for a week, so a release can be published from it.
 # Runs when something the TeX side is made of or tested with changes, and by hand.
 name: TeX
@@ -15,6 +16,12 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'src/pdfview.js'
+      - 'src/tex.js'
+      - 'src/sw.js'
+      - 'src/pwa.js'
+      - 'build/app.mjs'
+      - 'test/offline.py'
+      - 'test/pages.py'
       - 'dev/dist-manifest.txt'
       - 'test/engines.py'
       - 'test/pdf.py'
@@ -29,6 +36,12 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'src/pdfview.js'
+      - 'src/tex.js'
+      - 'src/sw.js'
+      - 'src/pwa.js'
+      - 'build/app.mjs'
+      - 'test/offline.py'
+      - 'test/pages.py'
       - 'dev/dist-manifest.txt'
       - 'test/engines.py'
       - 'test/pdf.py'
@@ -77,6 +90,8 @@ jobs:
         run: npm run test:engines
       - name: pdfLaTeX in the PDF pane, under the host's policy
         run: cd test && python3 pdf.py
+      - name: The installed app, Make available offline, then a compile with no network
+        run: cd test && python3 offline.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rikuy-dist

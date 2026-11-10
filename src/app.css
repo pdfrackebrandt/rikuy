@@ -118,6 +118,10 @@ body.pdf-on #pdfpane { display: flex; }
 /* ---- status ---- */
 #status { display: flex; align-items: center; gap: 14px; padding: 0 14px; min-height: 28px; font-size: 12px; color: var(--mute); background: var(--chrome); border-top: 1px solid var(--line); flex: none; font-variant-numeric: tabular-nums; }
 #st-warn { color: var(--warn); }
+/* the installed app's marks (src/pwa.js): no network, a new version ready */
+#st-net { color: var(--warn); font-weight: 500; }
+#st-update { font-weight: 600; }
+#b-offline:disabled { cursor: progress; text-decoration: none; color: var(--mute); }
 .grow { flex: 1 1 auto; }
 
 /* ---- the sheet: everything typeset ---- */
@@ -492,7 +496,7 @@ body.dropping .dropzone { display: grid; }
   body:has(> .pop) .toast { bottom: auto; top: calc(54px + env(safe-area-inset-top, 0px)); }
   .sheet { padding: 10px 0 40px; }
   #pages { gap: 12px; }
-  #st-save { display: none; }
+  #st-save, #b-offline { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .flash { animation: none; }

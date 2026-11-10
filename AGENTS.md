@@ -10,13 +10,14 @@ a command fails, trust the code and fix this file.
 
 | path | what is there |
 |---|---|
-| `src/` | the editor. `app.js` is the entry; `model.js` maps source to page, `parser.js`, `render.js`, `editor.js`, `minimal.js` (smallest source patch), `siunitx.js`, `wordmath.js`; `share.js` (links, comments in the source, the three way merge) and `collab.js` (their UI); `widget.js` (live figures from `rikuy.sty`) |
+| `src/` | the editor. `app.js` is the entry; `model.js` maps source to page, `parser.js`, `render.js`, `editor.js`, `minimal.js` (smallest source patch), `siunitx.js`, `wordmath.js`; `share.js` (links, comments in the source, the three way merge) and `collab.js` (their UI); `widget.js` (live figures from `rikuy.sty`); `pwa.js` and `sw.js` (the installed app: its service worker, updates, offline copy) |
 | `tex/engine.js` | the TeX worker: compile loop, passes, bibtex/biber/makeindex/xindy between them |
 | `tex/shell.js`, `tex/tools.js` | the shell TeX's `\write18` and pipes reach, and the programs behind it (Ghostscript, gnuplot, Python, dvips, asy, xindy) |
 | `tex/build_tree.py` | the TeX tree and its packs (`dist/tex/`) |
 | `tex/build_tools.sh`, `tex/native/` | programs built here with Emscripten 3.1.6, and Rikuy's patches to them; output in `tex/vendor/` (committed) |
 | `tex/fetch_inputs.sh` | lays out the build inputs (`$RIKUY_WORK`, default `/tmp/eng`), every download checked by hash |
 | `build.mjs` | bundles the page and copies the worker into `dist/`; writes `dist/index.html` (the page as a whole document, for any static server) and `dist/LICENSES.txt` |
+| `build/app.mjs`, `build/icons/` | the installed app's part of the build (all but the artifact's, which sets `RIKUY_SHARE`): `lib/`, icons, manifest, the version and `sw.js`; the icons and `make.py`, which draws them |
 | `build/fonts/` | the page's text fonts, cut from the Computer Modern Unicode fonts by `subset.py` (OFL); the interface's IBM Plex comes unchanged from npm's `@fontsource` packages (`build.mjs`) |
 | `test/` | node unit tests (`*.test.mjs`) and Playwright browser tests (`*.py`) |
 | `dev/` | the comparison harness: one compile, one shell command, the corpus, PDFs against a desktop TeX Live, Asymptote against a desktop asy; and its results (`*.jsonl`); `sandbox.sh`, which runs the arXiv corpus's compiles as a user with no sudo, no network and nothing writable but its own folders (`sandbox_check.py` checks that from inside) |
@@ -49,6 +50,8 @@ a command fails, trust the code and fix this file.
 | serve `dist/` as the artifact host does | `npm run serve` (port 8790) | |
 | engines and shell escape in the page | `npm run test:engines` (23 checks) | 5 min |
 | typing on the page | `npm run test:browser` | 20 s |
+| the installed app: offline, updates, one version at a time, none in the artifact build (and a compile offline where `dist/tex` exists) | `npm run test:offline` | 1 min |
+| serve `dist/` as Cloudflare Pages serves the hosted app (`index.html` as the page, `_headers`) | `npm run serve:app` (port 8791) | |
 | one feature in the page (projects, files, git, history, paste, PDF, math field, Word style math, equation extras, sharing and comments, stress, live figures) | `cd test && python3 features.py` (or `files.py`, `git.py`, `history.py`, `paste.py`, `pdf.py`, `mathfield.py`, `wordmath.py`, `eqextras.py`, `frontier.py`, `share.py`, `stress.py`, `widgets.py`); each says what it checks at the top | under a minute each |
 | random keystrokes on real documents, then every scripted edit on the corpus | `python3 test/corpus_browser.py <corpus>`, then `CORPUS_REPO=<corpus> python3 test/editor_corpus.py out.jsonl` | 1 min; 1 hour (40 min of edits, 20 of compiles) |
 | compile one folder | `RIKUY_DIST=dist python3 dev/texrun.py DIR main.tex auto 300` | |
@@ -62,7 +65,7 @@ a command fails, trust the code and fix this file.
 
 Pick the checks by what you touched, and run them before you call it done:
 
-- `src/`: `npm test`, `npm run test:browser`, and `npm run test:corpus` for anything in the model or parser
+- `src/`: `npm test`, `npm run test:browser`, and `npm run test:corpus` for anything in the model or parser; `npm run test:offline` for `pwa.js`, `sw.js`, `tex.js` or `build/app.mjs`
 - `tex/engine.js`, `shell.js`, `tools.js`: `npm run test:engines`; for a fix found on a document, compile it with `dev/texrun.py` before and after
 - the tree or packs: `cd dist/tex && find . -type f | sort | xargs sha256sum | diff ../../dev/dist-manifest.txt -`; any difference must be one you meant
 - a program in `tex/vendor/`: rebuild it from an empty `RIKUY_SRC` (any folder: the builds map their paths away) and compare the hash with the committed file (`vendor.yml` does this on a runner for every pull request that touches `tex/vendor/`, `tex/native/` or `tex/build_tools.sh`); then `dev/asycompare.py` (Asymptote) or `tex/native/xindy/test.cjs` (xindy)
@@ -94,6 +97,11 @@ Pick the checks by what you touched, and run them before you call it done:
 - asy has no fork here: it renders 3D pictures in place and then copies its memory back (`tex/native/patch_asy.py`); keep that when touching its rendering.
 - The desktop's asy renders 3D through a window: run its comparisons under `xvfb-run -a`.
 - The copy the maintainer publishes on claude.ai is built with `RIKUY_SHARE` set to that artifact's address (`https://claude.ai/artifact/W7htGmmfauM4Z3KpjV9vzK`, which opens for others only once it is shared), because a page in a frame cannot see its own address; a copy on your own site needs no `RIKUY_SHARE`. Run the browser tests on a build without it (`test/share.py` expects links to the page itself).
+  That build is also the only one without the installed app (service worker, manifest, `lib/`).
+- The browser tests that wrap `rikuy.html` (`browser.py`, `serve.py`) never start the installed
+  app: it starts only in a document with `<meta name="rikuy-app">`, which only `index.html` has.
+  `test/offline.py` and `test/pages.py` test it. A service worker answers the requests of the pages
+  it controls; a test that changes what a server returns must go through it (or a new context).
 - The page runs under a strict Content Security Policy (`connect-src 'self'`, see `test/serve.py`): the worker can fetch only files next to the page.
 - The published artifact may hold 256 MB; `PLAN.md` gives the current size.
 - The build machine has two cores: corpus runs use a 240 s limit per document and must run alone.

@@ -60,15 +60,19 @@ mismatch with its cause: [PLAN.md](PLAN.md).
 
 Rikuy is one HTML page plus `dist/tex/` (about 250 MB of engines, TeX packs and programs), which
 any static web server can serve (`dist/index.html` is the page); the page fetches packs as a
-document needs them. It also loads KaTeX, CodeMirror, MathLive and JSZip from jsDelivr, so it
-needs a network connection; its fonts, the interface's IBM Plex included, are inside the page.
+document needs them. Served that way it is an app the browser can install: after one visit it
+opens and works with no network, compiles what this browser has compiled before, and "Make
+available offline" in the status bar keeps what a typical paper needs (about 50 MB with the
+engine). The copy on claude.ai loads KaTeX, CodeMirror, MathLive and JSZip from jsDelivr and
+needs the network; its fonts, the interface's IBM Plex included, are inside the page.
 
 ```sh
 npm ci
 tex/fetch_inputs.sh                      # build inputs into $RIKUY_WORK (default /tmp/eng), about 3 GB, every file checked by hash
 python3 tex/build_tree.py tree && python3 tex/build_tree.py packs
 npm run build                            # the page, into dist/
-npm run serve                            # http://127.0.0.1:8790
+npm run serve:app                        # http://127.0.0.1:8791, the installed app as Cloudflare Pages serves it
+npm run serve                            # http://127.0.0.1:8790, the page as the claude.ai artifact host serves it
 ```
 
 The TeX build has been run on Ubuntu. It needs curl, sha256sum, sha512sum, dpkg-deb, Python 3

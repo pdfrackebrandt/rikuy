@@ -72,3 +72,6 @@ jobs:
         run: cd test && python3 share.py
       - name: Live figures (rikuy.sty), under the host's policy
         run: cd test && python3 widgets.py
+      # its compile offline needs dist/tex and runs in tex.yml; here it says it skips that part
+      - name: The installed app offline, its updates, and none in the artifact build
+        run: cd test && python3 offline.py
