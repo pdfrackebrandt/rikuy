@@ -140,6 +140,12 @@ await ok('the offline plan is the core packs and the packs holding files under t
   assert.deepEqual([...ctx.keepPlan(['/fonts/type1/public/lm/', 'tex/latex/amsmath2'])], [0, 2, 3]);
   // nothing outside texmf-dist, whatever the page sends
   assert.deepEqual([...ctx.keepPlan(['..', '../fonts.conf', 'tex/../..', '', '.', null])], [0]);
+  // a family of a folder's files: lmr* is lmr10.pfb, and the star stands nowhere else
+  assert.deepEqual([...ctx.keepPlan(['fonts/type1/public/lm/lmr*'])], [0, 3]);
+  assert.deepEqual([...ctx.keepPlan(['fonts/type1/public/lm/cm*', 'tex/latex/ams*/x', 'tex/*/amsmath', '*', '../fonts*'])], [0]);
+  assert.deepEqual([...ctx.keepPlan(['tex/latex/amsmath*'])], [0, 1, 2], 'a family is a prefix of names');
+  assert.deepEqual(ctx.packFolder(0), 'core');
+  assert.deepEqual([ctx.packFolder(1), ctx.packFolder(3), ctx.packFolder(2)], ['tex/latex/amsmath', 'fonts/type1/public/lm', 'tex/latex/amsmath2']);
 });
 
 await ok('keep fetches what is not kept yet, keeps it packed, and reports its progress', async () => {

@@ -33,9 +33,11 @@ export function asset(p) {
 // captions, lists, natbib and BibTeX's styles, cleveref, microtype, listings, algorithms,
 // siunitx, TikZ and pgfplots, Latin Modern, the Times, Helvetica and Courier clones of psnfss,
 // rsfs and doublestroke. The worker turns them into the packs that hold them (tex/engine.js,
-// keepPlan): 60 packs, about 39 MB, with TeX Live 2026.20260711 as built in version 29. cm-super
-// (the T1 fonts a document gets without lmodern, 29 MB more) and biber (15 MB) are left out:
-// a document needing them fetches them the first time, online, and keeps them from then on.
+// keepPlan; docs/ARCHITECTURE.md, the installed app, has their number and size). The
+// rest of cm-super (its other families, some 20 MB) and biber (15 MB) are left out: a document
+// needing them fetches them the first time, online, and keeps them from then on. The open
+// document is compiled once as well (keepOffline), so whatever it reads is kept whether or not
+// it is listed here.
 export const OFFLINE_FOLDERS = [
   'tex/latex/base', 'tex/latex/amsmath', 'tex/latex/amsfonts', 'tex/latex/amscls', 'tex/latex/tools', 'tex/latex/graphics',
   'tex/latex/graphics-cfg', 'tex/latex/graphics-def', 'tex/latex/xcolor', 'tex/latex/hyperref', 'tex/latex/url', 'tex/latex/geometry',
@@ -60,7 +62,11 @@ export const OFFLINE_FOLDERS = [
   'fonts/tfm/public/amsfonts', 'fonts/tfm/public/cm', 'fonts/tfm/public/latex-fonts', 'fonts/tfm/public/lm', 'fonts/tfm/public/rsfs', 'fonts/tfm/public/doublestroke',
   'fonts/tfm/adobe/times', 'fonts/tfm/adobe/helvetic', 'fonts/tfm/adobe/courier', 'fonts/tfm/adobe/symbol', 'fonts/tfm/adobe/zapfding',
   'fonts/vf/adobe/times', 'fonts/vf/adobe/helvetic', 'fonts/vf/adobe/courier', 'fonts/tfm/jknappen/ec',
-  'fonts/enc/dvips/lm', 'fonts/enc/dvips/base', 'bibtex/bst/base', 'bibtex/bst/natbib'
+  'fonts/enc/dvips/lm', 'fonts/enc/dvips/base', 'bibtex/bst/base', 'bibtex/bst/natbib',
+  // cm-super's upright, bold, italic and typewriter: the symbols of \thanks and textcomp (TS1)
+  // in any document, and the text of one with T1 and no lmodern
+  'tex/latex/cm-super', 'fonts/enc/dvips/cm-super',
+  'fonts/type1/public/cm-super/sfrm*', 'fonts/type1/public/cm-super/sfbx*', 'fonts/type1/public/cm-super/sfti*', 'fonts/type1/public/cm-super/sftt*'
 ];
 
 const $ = (s) => document.querySelector(s);
@@ -208,7 +214,7 @@ export async function keepOffline(app) {
     const plan = new Set(res.plan || []);
     const read = await app.compileForOffline();
     app.offlineKept = { packs: res.packs, total: res.total };
-    app.offlineExtra = read ? [...new Set(read.filter(([n]) => !plan.has(n)).map(([, f]) => f))] : null;
+    app.offlineExtra = read ? [...new Set(read.filter(([n]) => !plan.has(n)).map(([, f, first]) => f + ' (the pack from ' + first + ')'))] : null;
     if (APP.tree) { app.prefs.offlineTree = APP.tree; app.savePrefs(); }
     keep.textContent = 'Available offline';
     const also = wordKept ? ', and Word import and export' : '';

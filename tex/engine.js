@@ -215,11 +215,14 @@ async function loadPackAsync(n) {
 // The packs "Make available offline" keeps (src/pwa.js): the core packs and every pack holding a
 // file under one of the given folders of texmf-dist. A folder is a path inside the tree, never
 // outside it; the result is pack numbers of this index, so a page cannot name other files.
+// An entry ending in * names the files of a folder that start so (cm-super is 29 MB, and a
+// paper reads a few of its families): folder/sfrm* is sfrm0500.pfb to sfrm3583.pfb.
 function keepPlan(folders) {
   const pre = [];
   for (const f of folders || []) {
-    const p = String(f).replace(/^\/+|\/+$/g, '');
-    if (p && !p.split('/').some((x) => x === '..' || x === '.' || x === '')) pre.push('/texlive/texmf-dist/' + p + '/');
+    const some = /[^/*]\*$/.test(String(f));
+    const p = String(f).replace(/\*$/, '').replace(/^\/+|\/+$/g, '');
+    if (p && !p.split('/').some((x) => x === '..' || x === '.' || x === '' || x.includes('*'))) pre.push('/texlive/texmf-dist/' + p + (some ? '' : '/'));
   }
   const want = new Set(INDEX.core || []);
   for (const f of INDEX.files) if (pre.some((p) => f[0].startsWith(p))) want.add(f[2]);
@@ -260,6 +263,12 @@ function packFolder(n) {
   if (!f) return 'pack ' + n;
   const t = f[0].replace(/^\/texlive\/texmf-dist\//, '').replace(/^\//, '').split('/');
   return t.slice(0, Math.max(1, Math.min(t.length - 1, t[0] === 'fonts' ? 4 : t[0] === 'tex' ? 3 : 2))).join('/');
+}
+
+// (a large folder is cut into several packs: the first file's name tells them apart)
+function packFirst(n) {
+  const f = INDEX.files.find((x) => x[2] === n);
+  return f ? f[0].slice(f[0].lastIndexOf('/') + 1) : '';
 }
 
 // Called from inside TeX (synchronously) when it opens a file whose pack is not here yet.
@@ -1462,7 +1471,7 @@ async function compile(job) {
     shell: SHELL.state.log.slice(0, 200),
     missing: [...SHELL.state.missing],
     // the packs this compile read, [number, folder], and the folders of those it could not load
-    read: [...jobPacks].sort((x, y) => x - y).map((n) => [n, packFolder(n)]),
+    read: [...jobPacks].sort((x, y) => x - y).map((n) => [n, packFolder(n), packFirst(n)]),
     unkept: [...new Set([...packMissed].map(packFolder))],
     ms: Math.round(performance.now() - t0),
     net: netBytes,
