@@ -241,6 +241,25 @@ function mathBreaksOut(tex, katexErr) {
   if (/^Can't use function '\$'/.test(katexErr || '')) return 'A $ cannot stand inside a formula: write \\$ for the sign.';
   return '';
 }
+// The same text made whole, with every character that was typed kept: a closing brace at the
+// end for each one left open, an opening one at the start for each } that has none, a stray $
+// as the sign \\$. This is what a formula's box writes when it is closed while mathBreaksOut
+// holds its text back, so nothing typed is lost and undo has a step for it.
+function mathMadeWhole(tex, katexErr) {
+  const dollar = /^Can't use function '\$'/.test(katexErr || '');
+  let out = '', d = 0, pre = 0, comment = false;
+  for (let i = 0; i < tex.length; i++) {
+    const ch = tex[i];
+    comment = false;
+    if (ch === '\\') { out += tex.slice(i, i + 2); i++; continue; }
+    if (ch === '%') { const nl = tex.indexOf('\n', i); comment = nl < 0; out += tex.slice(i, nl < 0 ? tex.length : nl); i = (nl < 0 ? tex.length : nl) - 1; continue; }
+    if (ch === '{') d++;
+    else if (ch === '}') { if (d) d--; else pre++; }
+    out += ch === '$' && dollar ? '\\$' : ch;
+  }
+  // (closing braces after a comment at the very end would be part of the comment)
+  return '{'.repeat(pre) + out + (d && comment ? '\n' : '') + '}'.repeat(d);
+}
 // KaTeX's message for a mistake in a formula, in plain words where there are some ("Expected
 // 'EOF', got '#' at position 3" says little to someone who has never seen TeX). KaTeX's own
 // words stay as the tooltip of the line.
@@ -2093,15 +2112,21 @@ class App {
       err.hidden = !(r.err || held());
     };
     // text that would not stay a formula in the document is not written there (mathBreaksOut)
-    const held = () => mathBreaksOut(ta.value, this.renderer.katex(this.mathPreviewTex(ta.value, display), display).err);
+    const kerr = () => this.renderer.katex(this.mathPreviewTex(ta.value, display), display).err;
+    const held = () => mathBreaksOut(ta.value, kerr());
+    // Enter says the formula is done. With a } or a $ too many there is no telling which one was
+    // meant, so the box stays open with its message; an open brace is closed for the writer.
+    const stay = () => { const h = held(); return !!h && !/^A \{/.test(h); };
     preview();
     const push = debounce(() => { if (this.pop && !held()) this.pop.applyInner(ta.value); }, 140);
     ta.addEventListener('input', () => { preview(); push(); ta.rows = Math.min(10, Math.max(display ? 3 : 1, ta.value.split('\n').length)); });
     ta.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && (!display || e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); push.flush(); this.closePop(); }
+      if (e.key === 'Enter' && (!display || e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
     });
-    this.pop.onClose = () => push.flush();
+    // However the box closes, what was typed is kept: text held back is written made whole
+    // (mathMadeWhole), in the box's undo step.
+    this.pop.onClose = () => { push.cancel(); if (!this.pop) return; this.pop.applyInner(held() ? mathMadeWhole(ta.value, kerr()) : ta.value); };
     this.pop.mathText = () => ta.value;
     this.positionPop();
     ta.focus();
@@ -2127,7 +2152,7 @@ class App {
         try { mf.position = Math.max(0, mf.lastOffset - 1); } catch (e) { /* ignore */ }
         P.wordTyping.newRow();
       } : null,
-      onEnter: () => { push.flush(); this.closePop(); },
+      onEnter: () => { if (stay()) return; push.flush(); this.closePop(); },
       onEscape: () => { push.flush(); this.closePop(); }
     });
   }
@@ -2191,9 +2216,13 @@ class App {
     let ins = null;
     const base = c.ghost ? null : { f: c.f, a: c.a, b: c.b };
     const ghost = c.ghost ? this.ghost : null;
+    const kerr = (v) => this.renderer.katex(this.mathPreviewTex(v, false), false).err;
+    const held = (v) => (v ? mathBreaksOut(v, kerr(v)) : '');
+    const stay = () => { const h = held(ta.value); return !!h && !/^A \{/.test(h); };
     const insert = (v) => {
-      // not while it would not stay a formula in the document (an unclosed brace)
-      if (v && mathBreaksOut(v, this.renderer.katex(this.mathPreviewTex(v, false), false).err)) return;
+      // not while it would not stay a formula in the document (an unclosed brace); when the box
+      // closes it comes here made whole
+      if (held(v)) return;
       if (!ins) {
         if (!v) return;
         const t = '$' + v + '$';
@@ -2233,10 +2262,10 @@ class App {
     });
     ta.addEventListener('input', () => { preview(); push(); });
     ta.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); push.flush(); this.closePop(); }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
     });
-    this.pop.onClose = () => push.flush();
+    this.pop.onClose = () => { push.cancel(); if (this.pop) insert(held(ta.value) ? mathMadeWhole(ta.value, kerr(ta.value)) : ta.value); };
     this.pop.mathText = () => ta.value;
     this.pop.returnCaret = base ? { f: base.f, p: base.a } : null;
     this.positionPop();
@@ -2244,7 +2273,7 @@ class App {
     this.attachField(prev, ta, {
       display: false, initial: '', keepFocus: true,
       env: () => '$',
-      onEnter: () => { push.flush(); this.closePop(); },
+      onEnter: () => { if (stay()) return; push.flush(); this.closePop(); },
       onEscape: () => { push.flush(); this.closePop(); },
       onKey: (e) => {
         if (e.key === '$' && !ta.value && !ins) {
@@ -2264,6 +2293,17 @@ class App {
     this.commit([{ f: c.f, s: c.a, e: c.a, t }], { f: c.f, p: c.a + t.length }, 'insert');
     const el = this.findAtomEl({ f: c.f, s: c.a + 1, kind: 'math' });
     if (el) { const info = atomOfEl(el); if (info) this.openMath(el, info); }
+    // closed with nothing typed, the equation goes again: it stayed as an empty environment,
+    // which prints a number beside nothing
+    const P = this.pop;
+    if (!P || !P.onClose) return;
+    const done = P.onClose;
+    P.onClose = () => {
+      done();
+      if (this.src(c.f).slice(c.a, c.a + t.length) !== t) return;
+      this.commit([{ f: c.f, s: c.a, e: c.a + t.length, t: '' }], null, P.session);
+      P.returnCaret = { f: c.f, p: c.a };
+    };
   }
 
   async describeMath(ta, display) {

@@ -712,6 +712,76 @@ def select_all(page):
     check('a comment in the preamble that names \\begin{document} is not where the body starts', src(page) == doc.replace('\nBody words.\n', '\n\n'), src(page))
 
 
+def formula_mistakes(page):
+    """A mistake in a formula's source box is said in plain words, with KaTeX's own as the
+    tooltip; text that would not stay a formula (an unclosed brace) is not written into the
+    document, so the paragraph around it stays as it was."""
+    base = src(page)
+    page.click('.a-math >> nth=0')
+    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
+    ERR = '(() => { const e = document.querySelector(".pop-math .pv-err"); return e && !e.hidden ? [e.textContent, e.title] : null; })()'
+
+    def typed(v):
+        # the source box's text set as typing sets it; page.fill at times lost it to the math
+        # field, which takes the focus back while it settles
+        page.evaluate('(v) => { const ta = document.querySelector(".pop-math textarea"); ta.focus(); ta.value = v; ta.dispatchEvent(new Event("input", { bubbles: true })); }', v)
+        page.wait_for_timeout(350)
+        return page.evaluate(ERR)
+    e = typed('\\frac{a}{b')
+    check('an unclosed brace is named in plain words, KaTeX\'s own in the tooltip', e and e[0].startswith('A { is not closed.') and 'Unexpected end of input' in e[1], e)
+    check('and is not written into the document: the paragraph stays as it was', src(page) == base and page.evaluate('document.querySelectorAll("#pages .a-chip.err, #pages .merr").length') == 0, src(page)[src(page).find('Click $'):][:60])
+    e = typed('a}')
+    check('a brace too many is held back the same way', e and e[0].startswith('A } has no { before it.') and src(page) == base, e)
+    for v, want in (('x^', 'Something is missing after ^.'), ('\\foo + 1', 'This command is not known: \\foo'), ('5 # x', '# cannot stand here: write \\# for the sign.'),
+                    ('\\left( x', '\\left has no \\right to close it.'), ('\\frac', 'Something is missing after \\frac.'), ('x^2^3', 'Two ^ in a row: put the first in braces, as in {x^2}^3.')):
+        e = typed(v)
+        check('%s: "%s"' % (v, want), e and e[0] == want and e[1] and e[1] != want, e)
+    wait_src(page, '$x^2^3$')
+    check('a mistake that stays inside the formula is still written, as before', '$x^2^3$' in src(page))
+    e = typed('\\frac{a}{b}')
+    wait_src(page, '$\\frac{a}{b}$')
+    check('put right, the formula is written and the message goes', e is None and '$\\frac{a}{b}$' in src(page), e)
+    # What was typed is never lost: closed with a brace open, the box writes the text with the
+    # missing braces added, and undo has a step for it.
+    typed('\\frac{a}{b}+{c')
+    page.focus('.pop-math textarea'); page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    check('Enter with a brace open closes the box and writes the formula with the brace closed', '$\\frac{a}{b}+{c}$' in src(page) and page.evaluate('document.querySelectorAll("body > .pop").length') == 0 and page.evaluate('document.querySelectorAll("#pages .a-chip.err, #pages .merr").length') == 0, src(page)[src(page).find('Click $'):][:60])
+    page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    check('and one undo takes back what the box wrote, as for any formula box', src(page) == base, src(page)[src(page).find('Click $'):][:60])
+    page.click('.a-math >> nth=0')
+    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
+    typed('\\sqrt{x')
+    r = page.evaluate('(() => { const s = [...document.querySelectorAll("#pages span.t")].find((s) => s.textContent.includes("Editing in Print")); const r = s.getBoundingClientRect(); return [r.left + 10, r.top + r.height / 2]; })()')
+    page.mouse.click(*r); page.wait_for_timeout(300)
+    check('a click on the page with a brace open keeps what was typed, the brace closed', '$\\sqrt{x}$' in src(page) and page.evaluate('document.querySelectorAll("body > .pop").length') == 0, src(page)[src(page).find('Click $'):][:60])
+    page.click('.a-math >> nth=0')
+    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
+    typed('y^2}')
+    page.focus('.pop-math textarea'); page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    check('Enter with a brace too many keeps the box open with its message', page.evaluate('document.querySelectorAll("body > .pop.pop-math").length') == 1 and (page.evaluate(ERR) or [''])[0].startswith('A } has no { before it.') and '$\\sqrt{x}$' in src(page), page.evaluate(ERR))
+    page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    check('and Escape then keeps every character typed, in a formula that is whole', '${y^2}$' in src(page) and page.evaluate('document.querySelectorAll("body > .pop").length') == 0, src(page)[src(page).find('Click $'):][:60])
+    # a new formula: nothing is put into the text while a brace is open, all of it when the box closes
+    click_text(page, 'References follow'); page.keyboard.type('$')
+    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
+    before = src(page)
+    e = typed('x^{2')
+    check('a new formula with a brace open is not put into the text while it is typed', e and e[0] == 'A { is not closed.' and src(page) == before, e)
+    page.focus('.pop-math textarea'); page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    check('and closing its box then puts it there, the brace closed', '$x^{2}$References' in src(page), src(page)[src(page).find('References') - 12:][:40])
+    # a new numbered equation given up with nothing typed leaves nothing behind
+    before = src(page)
+    click_text(page, 'The page and the source never disagree'); page.keyboard.press('Control+Shift+e')
+    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
+    made = src(page) != before and '\\begin{equation}\n  \n\\end{equation}' in src(page)
+    page.focus('.pop-math textarea'); page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    check('a new numbered equation closed empty leaves no empty equation in the text', made and src(page) == before, src(page)[src(page).find('The page and the source') - 60:][:90])
+    click_text(page, 'The page and the source never disagree'); page.keyboard.press('Control+Shift+e')
+    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
+    typed('E = m c^{2')
+    page.mouse.click(*r); page.wait_for_timeout(300)
+    check('typed into and left with a brace open, it keeps the formula, the brace closed', re.search(r'\\begin\{equation\}\s+E = m c\^\{2\}\s+\\end\{equation\}', src(page)), src(page)[src(page).find('The page and the source') - 70:][:100])
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
