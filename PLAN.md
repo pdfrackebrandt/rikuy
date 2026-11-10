@@ -559,9 +559,14 @@ Tests:
     or the preamble; a second pasted picture could overwrite the first; a formula with an open
     brace lost its text on closing; a `.zip` with no document joined the user's own project
     unmarked (on main before this task); colour marks landed inside code from pandoc made files;
-    a colour called `constructor` crashed Save as Word; and three smaller ones. Evidence on the
-    merged branch: `npm test` (`word.test.mjs` 27 groups), `test/browser.py` 174, `offline.py`
-    31/31, `launch.py` 18/18, `files.py` 51, `paste.py` 25, `word.py` 79 with LibreOffice; CI's
+    a colour called `constructor` crashed Save as Word; and three smaller ones. A second agent then
+    checked the fixes against the first build side by side: seven held, the formula box did not
+    for text ending in a backslash, and the fixes had four side effects (any `.zip`, even one of
+    pictures only, marked the project as a stranger's; a picture could no longer be updated by
+    dropping it again; an abandoned empty equation left an undo step; one test tested nothing),
+    all fixed with tests. Evidence on the merged branch: `npm test` (`word.test.mjs` 27 groups),
+    `test/browser.py` 182, `offline.py` 31/31, `launch.py` 18/18, `files.py` 68, `paste.py` 25,
+    `share.py` 46, `word.py` 79 with LibreOffice; CI's
     TeX job for the compiles. Open: Microsoft Word itself, real phones and iOS Safari are
     untested; CJK and Arabic text has no font in the tree (the user is told); Word renumbering
     its own references on export (REF and SEQ fields) is not built; editing inside a list or
