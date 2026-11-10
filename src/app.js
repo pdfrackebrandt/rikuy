@@ -846,8 +846,18 @@ class App {
     $('#st-warn').addEventListener('click', () => this.toggleNav(true, 'problems'));
     $('#b-nav').addEventListener('click', () => this.toggleNav());
     $('#nav-close').addEventListener('click', () => this.toggleNav(false));
-    // a phone's bar has no room for the Help button: it is in this panel there
-    $('#nav-help').addEventListener('click', () => { this.toggleNav(false); this.openHelp(); });
+    // Where the bar shows icons alone (a phone hides Help and the zoom steps too), the menu
+    // panel lists each of its actions by name: the bar's own buttons, pressed from here.
+    for (const id of ['b-open', 'b-save', 'b-save-more', 'b-pdf', 'b-copy', 'b-share', 'b-undo', 'b-redo', 'b-zout', 'zoomv', 'b-zin', 'b-src', 'b-help']) {
+      const b = $('#' + id), a = mk('button', 'nav-act');
+      a.type = 'button'; a.dataset.for = id;
+      const svg = b.querySelector('svg'), lab = b.querySelector('span');
+      if (svg) a.appendChild(svg.cloneNode(true));
+      a.appendChild(mk('span', '', lab ? lab.textContent : ''));
+      // the zoom steps leave the panel open, to press again
+      a.addEventListener('click', () => { if (!/^b-z/.test(id)) this.toggleNav(false); b.click(); if (/^b-z|zoomv/.test(id)) this.navActs(); });
+      $('#nav-acts').appendChild(a);
+    }
     $('#nt-outline').addEventListener('click', () => this.toggleNav(true, 'outline'));
     $('#nt-problems').addEventListener('click', () => this.toggleNav(true, 'problems'));
     $('#nt-changes').addEventListener('click', () => this.toggleNav(true, 'changes'));
@@ -2680,6 +2690,15 @@ class App {
   }
 
   // ---- outline and problems -------------------------------------------------------------
+  // the list of actions in the menu panel shows what the bar shows now: Undo and Redo greyed
+  // when there is nothing to undo, the zoom by its value
+  navActs() {
+    for (const a of $('#nav-acts').children) {
+      const b = $('#' + a.dataset.for);
+      a.disabled = b.disabled;
+      if (a.dataset.for === 'zoomv') a.lastChild.textContent = 'Zoom: ' + b.textContent;
+    }
+  }
   toggleNav(force, tab) {
     const on = force ?? !document.body.classList.contains('nav-on');
     document.body.classList.toggle('nav-on', on);
@@ -2690,7 +2709,7 @@ class App {
     for (const [id, t] of [['#nt-outline', 'outline'], ['#nt-problems', 'problems'], ['#nt-changes', 'changes'], ['#nt-git', 'git']]) { $(id).classList.toggle('on', this.navTab === t); $(id).setAttribute('aria-selected', this.navTab === t ? 'true' : 'false'); }
     this.prefs.nav = on;
     store(PREFS, this.prefs);
-    if (on) this.refreshNav();
+    if (on) { this.refreshNav(); this.navActs(); }
     if (window.innerWidth > 860) setTimeout(() => { if (this.computePx()) this.relayout(true); }, 30);
   }
 
