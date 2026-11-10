@@ -1014,10 +1014,38 @@ class App {
     return vr.map(([s, e]) => ({ f, s, e, t: '' }));
   }
 
+  // Everything on the page is selected (Ctrl+A, or from the first character to the last): what
+  // is typed, pasted or deleted then replaces the document's body, as New document would, and
+  // the preamble stays. Taking only the visible characters, as for any other selection, left
+  // every heading, list, theorem and table standing empty with no way to remove them.
+  wholeDoc() {
+    const sel = getSelection();
+    if (!sel.rangeCount || sel.isCollapsed || !this.root.contains(sel.anchorNode)) return null;
+    const ts = this.root.querySelectorAll('span.t:not(.gh)');
+    if (!ts.length) return null;
+    const r = sel.getRangeAt(0), a = document.createRange(), z = document.createRange();
+    // in the text nodes, as selectAllText and a drag put the ends of a selection
+    const first = ts[0].firstChild || ts[0], last = ts[ts.length - 1].lastChild || ts[ts.length - 1];
+    a.setStart(first, 0); z.setEnd(last, last.nodeType === 3 ? last.length : last.childNodes.length); z.collapse(false);
+    a.collapse(true);
+    if (r.compareBoundaryPoints(Range.START_TO_START, a) > 0 || r.compareBoundaryPoints(Range.END_TO_END, z) < 0) return null;
+    const src = this.src(this.main);
+    const begin = /\\begin\s*\{document\}/.exec(src);
+    const end = begin ? src.indexOf('\\end{document}', begin.index) : -1;
+    return begin && end >= 0 ? { s: begin.index + begin[0].length, e: end, env: true } : { s: 0, e: src.length, env: false };
+  }
+  // one edit, so one undo step brings the whole document back as it was
+  replaceBody(w, tex, kind) {
+    const pad = w.env ? '\n\n' : '';
+    this.commit([{ f: this.main, s: w.s, e: w.e, t: tex ? pad + tex + pad : pad }], { f: this.main, p: w.s + pad.length + tex.length, bias: -1 }, kind);
+  }
+
   insertText(data, range) {
     if (!data) return;
     const c = this.caretNow();
     if (!c) return;
+    const whole = range ? null : this.wholeDoc();
+    if (whole) { this.replaceBody(whole, escapeTeX(data, ' '), 'replace'); return; }
     // in a blank paragraph too (a new document, the line after Enter): there they were typed
     // as the characters, though that is where an equation or a heading most often starts
     if (data === '$' && !range && (c.collapsed || c.ghost)) { this.newMath(); return; }
@@ -1054,6 +1082,8 @@ class App {
       return;
     }
     if (!c) return;
+    const whole = this.wholeDoc();
+    if (whole) { this.replaceBody(whole, '', 'del'); return; }
     let f = c.f, a = c.a, b = c.b;
     if (c.collapsed) {
       // Caret in an empty placeholder: remove the empty wrapper it belongs to.
@@ -1363,6 +1393,8 @@ class App {
     try { e.clipboardData.setData('text/html', selectionHTML(getSelection(), (el) => this.mathML(el))); } catch (err) { /* plain text still works */ }
     this.lastCopy = { plain, latex };
     if (cut) {
+      const whole = this.wholeDoc();
+      if (whole) { this.replaceBody(whole, '', 'cut'); return; }
       const edits = this.deletionEdits(c.f, c.a, c.b);
       this.commit(edits, { f: c.f, p: c.a }, 'cut');
     }
@@ -1390,9 +1422,12 @@ class App {
     const src = this.src(c.ghost ? this.ghost.f : c.f);
     const at0 = c.ghost ? this.ghost.pos : c.a;
     // inside a command argument (a heading, a cell, a caption) a paste stays one paragraph
-    const inArg = c.ghost ? false : braceDepth(src, at0) > 0;
+    // over a selection of everything the paste becomes the body: paragraphs stay paragraphs
+    // though the selection starts in the title
+    const whole = c.ghost ? null : this.wholeDoc();
+    const inArg = c.ghost || whole ? false : braceDepth(src, at0) > 0;
     const el = getSelection().anchorNode && (getSelection().anchorNode.nodeType === 1 ? getSelection().anchorNode : getSelection().anchorNode.parentElement);
-    const inline = inArg || !!(el && el.closest && el.closest('td, .it.h, .cap'));
+    const inline = inArg || (!whole && !!(el && el.closest && el.closest('td, .it.h, .cap')));
     const pre = this.src(this.main).split(/\\begin\s*\{document\}/)[0];
     const o = { prev: src[at0 - 1] || ' ', hyperref: /\\usepackage(\[[^\]]*\])?\{[^}]*hyperref/.test(pre), booktabs: /\\usepackage(\[[^\]]*\])?\{[^}]*booktabs/.test(pre), inlineOnly: inline };
     const rich = () => {
@@ -1404,6 +1439,7 @@ class App {
       return t;
     };
     if (c.ghost) { this.ghostInsert(latex || rich()); return; }
+    if (whole) { this.replaceBody(whole, latex || rich(), 'paste'); return; }
     const edits = this.deletionEdits(c.f, c.a, c.b);
     const at = edits.length && edits[0].s >= c.a ? edits[0].s : c.a;
     let t = latex || rich();

@@ -631,6 +631,39 @@ def first_visit(p):
         browser.close()
 
 
+def select_all(page):
+    """Select all, then Delete, typing, cut or paste: the body is replaced as New document would
+    leave it, the preamble stays, and one undo brings every byte back."""
+    base = src(page)
+    pre = base[:base.find('\\begin{document}') + len('\\begin{document}')]
+    body = lambda: src(page)[len(pre):] if src(page).startswith(pre) else None
+    click_text(page, 'Click anywhere'); page.keyboard.press('Control+a'); page.keyboard.press('Delete'); page.wait_for_timeout(300)
+    check('select all, Delete leaves a blank body and the preamble as it was', body() == '\n\n\\end{document}\n', body())
+    check('with the blank paragraph ready for typing', page.evaluate('!!(window.rikuy.ghost && window.rikuy.ghost.sticky)') and page.evaluate('(window.rikuy.caretNow() || {}).ghost === true') and page.evaluate('document.querySelectorAll("#pages .it:not(.ghostp)").length') == 0)
+    page.keyboard.type('Fresh start'); wait_src(page, 'Fresh start')
+    check('and typing starts the new text', (body() or '').split() == ['Fresh', 'start', '\\end{document}'], body())
+    page.keyboard.press('Control+z'); page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    check('undo brings the whole document back byte for byte', src(page) == base)
+    click_text(page, 'Click anywhere'); page.keyboard.press('Control+a'); page.keyboard.type('Z'); wait_src(page, '\n\nZ\n\n')
+    one = body()
+    page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    check('typing over a selection of everything replaces the body, in one undo step', one == '\n\nZ\n\n\\end{document}\n' and src(page) == base, one)
+    click_text(page, 'Click anywhere'); page.keyboard.press('Control+a')
+    page.evaluate("""() => { const dt = new DataTransfer(); dt.setData('text/plain', 'First pasted.\\n\\nSecond pasted.');
+      document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }""")
+    wait_src(page, 'Second pasted.')
+    one = body()
+    page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    check('a paste over everything becomes the body, its paragraphs kept', one == '\n\nFirst pasted.\n\nSecond pasted.\n\n\\end{document}\n' and src(page) == base, one)
+    select_text(page, 'paragraph'); page.keyboard.press('Delete'); page.wait_for_timeout(200)
+    check('a selection of less than everything deletes as before', 'in this  and start typing' in src(page) and '\\section{How to use it}' in src(page))
+    page.keyboard.press('Control+z'); page.wait_for_timeout(200)
+    # a file with no preamble: the whole text is the body
+    load_doc(page, 'Only words here.\n\nAnd a second paragraph.\n')
+    click_text(page, 'Only words'); page.keyboard.press('Control+a'); page.keyboard.type('New'); page.wait_for_timeout(300)
+    check('in a file with no preamble the whole text is replaced', src(page) == 'New', src(page))
+
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
@@ -942,6 +975,11 @@ def run():
         E.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
         check('an edit made just before navigating away is kept', 'WRikuy escapes' in src(E), src(E)[src(E).find('Rikuy escapes') - 3:][:20])
         check('no console errors (tabs)', not errors, errors[:5])
+        browser.close()
+
+        browser, page, errors = open_page(p)
+        select_all(page)
+        check('no console errors (select all)', not errors, errors[:5])
         browser.close()
 
         browser, page, errors = open_page(p)
