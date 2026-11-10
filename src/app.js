@@ -917,7 +917,7 @@ class App {
 
     $('#b-open').addEventListener('click', () => $('#fileinput').click());
     $('#fileinput').addEventListener('change', (e) => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) this.openFiles(fs); });
-    $('#b-save').addEventListener('click', () => this.save());
+    // (b-save is the ribbon's LaTeX download: src/ribbon.js answers its click)
     $('#b-copy').addEventListener('click', () => this.copySource());
     $('#b-share').addEventListener('click', () => this.openSharePanel());
     $('#guest-send').addEventListener('click', () => this.openSharePanel());
@@ -2746,7 +2746,7 @@ class App {
           value: '', mode: 'stex', lineNumbers: true, lineWrapping: true, indentUnit: 2, tabSize: 2,
           extraKeys: {
             'Ctrl-Z': () => this.undo(), 'Cmd-Z': () => this.undo(), 'Shift-Ctrl-Z': () => this.redo(), 'Shift-Cmd-Z': () => this.redo(), 'Ctrl-Y': () => this.redo(),
-            'Ctrl-S': () => this.save(), 'Cmd-S': () => this.save(),
+            // (Ctrl+S is the page's own shortcut, heard here too: a second one saved every file twice)
             // Tab indents in the source, so a keyboard that tabbed in stayed caught here, typing tabs
             // into the file: Escape, then Tab or Shift+Tab, moves on to the next control
             'Esc': () => { this.cmTabOut = true; }

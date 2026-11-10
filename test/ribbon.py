@@ -301,9 +301,32 @@ def top_bar(page):
     page.keyboard.press('Escape')
 
 
+def one_save(page):
+    """One press, one file: on the ribbon, from the menu panel, and with Ctrl+S in the source pane."""
+    load_doc(page, DOC)
+    page.evaluate('(() => { const g = window.rikuy; g.assets.clear(); g.assetBlobs.clear(); g.extra.clear(); g.name = "paper"; g.persist(); })()')
+    got = []
+    page.on('download', lambda d: got.append(d.suggested_filename))
+
+    def count(do):
+        got.clear(); do(); page.wait_for_timeout(1200)
+        return list(got)
+    check('one click on Download LaTeX saves one file', count(lambda: page.click('#b-save')) == ['main.tex'], got)
+    page.set_viewport_size({'width': 390, 'height': 800}); page.wait_for_timeout(300)
+    page.click('#b-nav'); page.wait_for_timeout(200)
+    check('Download LaTeX in the menu panel saves one file', count(lambda: page.click('#nav-acts [data-for=b-save]')) == ['main.tex'], got)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
+    page.evaluate('window.rikuy.toggleSource(true)'); page.wait_for_timeout(600)
+    page.click('#cmhost .CodeMirror-lines'); page.wait_for_timeout(150)
+    check('Ctrl+S in the source pane saves one file', count(lambda: page.keyboard.press('Control+s')) == ['main.tex'], got)
+    click_text(page, 'First paragraph', 3)
+    check('Ctrl+S on the page saves one file', count(lambda: page.keyboard.press('Control+s')) == ['main.tex'], got)
+    page.evaluate('window.rikuy.toggleSource(false)')
+
+
 def run():
     with sync_playwright() as p:
-        for fn in (top_bar, styles, letters, lists, inserts, keyboard, narrow, downloads, live_graphs):
+        for fn in (top_bar, styles, letters, lists, inserts, keyboard, narrow, downloads, one_save, live_graphs):
             browser, page, errors = open_page(p)
             try:
                 fn(page)
