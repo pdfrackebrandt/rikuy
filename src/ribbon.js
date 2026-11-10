@@ -288,6 +288,21 @@ export const ribbon = {
     if (fresh()) { await this.downloadPdf(); this.liveNote(); } else if (!document.body.classList.contains('pdf-on')) this.togglePdf(true, true);
   },
 
+  // A phone's one Download button: the three downloads by name, each pressing its own button.
+  openDownloads() {
+    const p = this.makePop($('#rb-dl-menu'), 'pop-dl', 'Download');
+    p.setAttribute('role', 'menu');
+    for (const id of ['rb-pdf', 'rb-word', 'b-save']) {
+      const b = $('#' + id), a = document.createElement('button');
+      a.type = 'button'; a.className = 'nav-act'; a.setAttribute('role', 'menuitem'); a.title = b.title;
+      a.append(b.querySelector('svg').cloneNode(true), Object.assign(document.createElement('span'), { textContent: b.querySelector('span').textContent }));
+      if (id === 'b-save' && b.classList.contains('live')) a.classList.add('live');
+      a.addEventListener('click', () => { this.closePop(true); b.click(); });
+      p.append(a);
+    }
+    this.positionPop();
+  },
+
   // one press of a ribbon button (data-rb)
   async ribbonDo(act) {
     if (act in STYLES) this.toggleStyle(act);
@@ -299,6 +314,7 @@ export const ribbon = {
     else if (act === 'footnote') this.insertEmpty('\\footnote{', '}');
     else if (act === 'url') this.insertEmpty('\\url{', '}');
     else if (act === 'cite') this.insertCite();
+    else if (act === 'dl-menu') this.openDownloads();
     else if (act === 'dl-tex') await this.save();
     // (the note only once a file was made: on a copy without Word the notice about that stays)
     else if (act === 'dl-word') { const had = this.lastDocx; await this.saveDocx(); if (this.lastDocx !== had) this.liveNote(); }
@@ -342,10 +358,11 @@ export const ribbon = {
   },
   // one tab stop for the whole ribbon: the control the arrows last reached, or the first that works
   ribbonRove(to) {
-    const all = [...$('#ribbon').querySelectorAll('select, button')];
+    // (of the controls this width shows: a phone has one Download button, a wider screen the three)
+    const every = [...$('#ribbon').querySelectorAll('select, button')], all = every.filter((x) => x.offsetParent !== null);
     if (to) this.rbStop = to;
-    const cur = this.rbStop && !this.rbStop.disabled ? this.rbStop : all.find((x) => !x.disabled);
-    for (const x of all) x.tabIndex = x === cur ? 0 : -1;
+    const cur = this.rbStop && !this.rbStop.disabled && all.includes(this.rbStop) ? this.rbStop : all.find((x) => !x.disabled);
+    for (const x of every) x.tabIndex = x === cur ? 0 : -1;
     return all;
   }
 };

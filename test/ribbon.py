@@ -189,7 +189,7 @@ def downloads(page):
     load_doc(page, DOC)
     page.evaluate('(() => { const g = window.rikuy; g.assets.clear(); g.assetBlobs.clear(); g.extra.clear(); g.name = "paper"; g.persist(); })()')
     page.wait_for_timeout(200)
-    labels = page.evaluate('[...document.querySelectorAll(".rb-dl button")].map((b) => b.textContent.trim())')
+    labels = page.evaluate('[...document.querySelectorAll(".rb-dl button")].filter((b) => b.offsetParent).map((b) => b.textContent.trim())')
     check('Download has three buttons with their names: PDF, Word, LaTeX', labels == ['PDF', 'Word', 'LaTeX'] and page.inner_text('.rb-lab') == 'Download', labels)
     with page.expect_download(timeout=15000) as d:
         press(page, 'b-save')
@@ -283,11 +283,9 @@ def narrow(page):
           return { page: document.documentElement.scrollWidth - document.documentElement.clientWidth, h: Math.round(b.height), scrolls: r.scrollWidth > r.clientWidth, right: Math.round(b.right), w: innerWidth, label: getComputedStyle(d).display }; }''')
         check('at %dpx the ribbon is one row inside the screen and scrolls sideways when it is longer' % w, m['page'] <= 0 and m['h'] <= 44 and m['right'] <= m['w'] and (m['scrolls'] or w > 700) and m['label'] != 'none', m)
     page.set_viewport_size({'width': 390, 'height': 800}); page.wait_for_timeout(300)
-    page.evaluate('document.getElementById("b-save").scrollIntoView({ inline: "end" })'); page.wait_for_timeout(100)
-    seen = page.evaluate('(() => { const b = document.getElementById("b-save").getBoundingClientRect(); return b.left >= 0 && b.right <= innerWidth + 1; })()')
     page.click('#b-nav'); page.wait_for_timeout(200)
     acts = page.evaluate('[...document.querySelectorAll("#nav-acts .nav-act")].map((a) => a.textContent.trim())')
-    check('the downloads are reached by scrolling the ribbon, and are first in the menu panel', seen and acts[:3] == ['Download PDF', 'Download Word', 'Download LaTeX'], acts[:4])
+    check('the downloads are first in the menu panel too', acts[:3] == ['Download PDF', 'Download Word', 'Download LaTeX'], acts[:4])
     page.evaluate('window.rikuy.toggleNav(false)')
     page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(200)
 
@@ -446,9 +444,41 @@ def insert_edges(page):
     check('with a picture among them, the picture is placed and the other file named as left out', '{fig.png}' in src(page) and not page.evaluate('window.rikuy.files.has("notes.txt")') and 'notes.txt' in page.inner_text('#toast'), page.inner_text('#toast'))
 
 
+def downloads_in_sight(page):
+    """The downloads stay at the right end of the row at every width, the other buttons scrolling
+    under a soft edge beside them; on a phone they are one Download button with the three choices."""
+    load_doc(page, DOC)
+    IN = """(ids) => { const r = document.getElementById('ribbon'); r.scrollLeft = 0; return ids.map((id) => { const e = document.getElementById(id), b = e.getBoundingClientRect(), rr = r.getBoundingClientRect();
+      const top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return b.width > 0 && b.left >= rr.left - 1 && b.right <= innerWidth + 1 && !!top && (top === e || e.contains(top)); }); }"""
+    for w in (820, 1000):
+        page.set_viewport_size({'width': w, 'height': 800}); page.wait_for_timeout(300)
+        seen = page.evaluate(IN, ['rb-pdf', 'rb-word', 'b-save'])
+        over = page.evaluate('(() => { const r = document.getElementById("ribbon"); return r.scrollWidth > r.clientWidth; })()')
+        check('at %dpx PDF, Word and LaTeX are in sight with the row not scrolled' % w, all(seen) and (over or w > 900), (seen, over))
+        clear = page.evaluate("""() => { const r = document.getElementById('ribbon'); r.scrollLeft = r.scrollWidth; const a = document.getElementById('rb-link').getBoundingClientRect(), d = document.querySelector('.rb-dl').getBoundingClientRect(); r.scrollLeft = 0; return a.right <= d.left + 1; }""")
+        check('and scrolled to its end, the last button to insert is clear of them', clear)
+    for w in (360, 390, 430):
+        page.set_viewport_size({'width': w, 'height': 800}); page.wait_for_timeout(300)
+        seen = page.evaluate(IN, ['rb-dl-menu'])
+        m = page.evaluate('(() => { const r = document.getElementById("ribbon"), b = r.getBoundingClientRect(); return { page: document.documentElement.scrollWidth - document.documentElement.clientWidth, h: Math.round(b.height), label: document.getElementById("rb-dl-menu").textContent.trim(), room: Math.round(document.querySelector(".rb-dl").getBoundingClientRect().left) }; })()')
+        check('at %dpx one Download button is in sight at the row\'s end, with room for the other buttons' % w, all(seen) and m['label'] == 'Download' and m['page'] <= 0 and m['h'] <= 44 and m['room'] >= 200, (seen, m))
+    page.set_viewport_size({'width': 390, 'height': 800}); page.wait_for_timeout(300)
+    page.evaluate('(() => { const g = window.rikuy; g.assets.clear(); g.assetBlobs.clear(); g.extra.clear(); g.name = "paper"; g.persist(); })()')
+    click_text(page, 'First paragraph', 3)
+    page.click('#rb-dl-menu'); page.wait_for_timeout(300)
+    items = page.evaluate('[...document.querySelectorAll("body > .pop.pop-dl button.nav-act")].map((b) => b.textContent.trim())')
+    check('it opens the three choices by name', items == ['PDF', 'Word', 'LaTeX'], items)
+    got = []
+    page.on('download', lambda d: got.append(d.suggested_filename))
+    page.click('body > .pop.pop-dl button.nav-act >> nth=2'); page.wait_for_timeout(1200)
+    check('and LaTeX there saves the file, once', got == ['main.tex'] and page.evaluate('document.querySelectorAll("body > .pop").length') == 0, got)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(200)
+    check('a wide screen shows the three buttons and no Download button', not page.is_visible('#rb-dl-menu') and page.is_visible('#rb-pdf') and page.is_visible('#b-save'))
+
+
 def run():
     with sync_playwright() as p:
-        for fn in (top_bar, styles, letters, lists, inserts, keyboard, narrow, downloads, one_save, where_it_applies, list_edges, insert_edges, live_graphs):
+        for fn in (top_bar, styles, letters, lists, inserts, keyboard, narrow, downloads, one_save, where_it_applies, list_edges, insert_edges, downloads_in_sight, live_graphs):
             browser, page, errors = open_page(p)
             try:
                 fn(page)

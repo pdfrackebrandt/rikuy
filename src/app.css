@@ -74,7 +74,7 @@ body.has-ai .ai-only { display: inline-flex !important; }
 .linkish { background: none; border: 0; padding: 0; color: var(--blue-ink); cursor: pointer; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 2px; font-size: 12.5px; }
 
 /* ---- the ribbon: style, formatting, inserting and downloading, in a row under the bar ---- */
-.rb { display: flex; align-items: center; gap: 2px; padding: 0 12px; min-height: 40px; background: var(--chrome); border-bottom: 1px solid var(--line); flex: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; white-space: nowrap; }
+.rb { display: flex; align-items: center; gap: 2px; padding: 0 0 0 12px; min-height: 40px; background: var(--chrome); border-bottom: 1px solid var(--line); flex: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; white-space: nowrap; }
 .rb::-webkit-scrollbar { display: none; }
 .rb > * { flex: none; }
 .rb > .grow { flex: 1 1 10px; min-width: 10px; }
@@ -85,7 +85,12 @@ body.has-ai .ai-only { display: inline-flex !important; }
 .rb .btn.icon b { font-weight: 700; }
 /* a press on a disabled button reaches the row, which keeps the caret on the page */
 .rb .btn:disabled { pointer-events: none; }
-.rb-dl { display: flex; align-items: center; gap: 2px; }
+/* The downloads stay in sight at the row's right end when the row is longer than the screen: the
+   other buttons scroll under them, behind a soft edge that shows there is more. */
+.rb-dl { display: flex; align-items: center; gap: 2px; position: sticky; right: 0; z-index: 1; align-self: stretch; padding: 0 12px 0 6px; background: var(--chrome); }
+.rb-dl::before { content: ""; position: absolute; top: 0; bottom: 0; right: 100%; width: 18px; background: linear-gradient(to right, transparent, var(--chrome)); pointer-events: none; }
+/* on a phone the three are one button that opens them (see the 520px rule) */
+#rb-dl-menu { display: none; }
 .rb-lab { font-size: 12px; color: var(--mute); margin-right: 4px; }
 /* the LaTeX download keeps live graphs live: a mark says so when the document has some */
 #b-save.live { padding-left: 13px; }
@@ -531,8 +536,12 @@ body.dropping .dropzone { display: grid; }
   .sheet { padding: 10px 0 40px; }
   #pages { gap: 12px; }
   #st-save, #b-offline { display: none; }
-  .rb { padding: 0 6px; }
+  .rb { padding: 0 0 0 6px; }
   .rb-style { width: 112px; }
+  /* three named buttons would leave the others a third of the row: one Download button opens them */
+  .rb-dl { padding: 0 6px 0 2px; }
+  .rb-dl .rb-lab, .rb-dl #rb-pdf, .rb-dl #rb-word, .rb-dl #b-save { display: none; }
+  .rb-dl #rb-dl-menu { display: inline-flex; }
   /* its two columns share the width: the longest key took most of it and left the
      explanations a column three words wide */
   .keys { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); }
