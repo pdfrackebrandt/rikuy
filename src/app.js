@@ -329,7 +329,12 @@ class App {
     this.redoStack = [];
     this.prefix = 'r0|';
     this.renderVer = 0;
-    this.prefs = Object.assign({ zoom: 'fit', source: window.innerWidth > 1100, style: 'Plain, direct academic prose. No em dashes. No filler, no hedging.' }, load(PREFS) || {});
+    // A first visit shows the page alone: the source pane, open by default on a wide screen,
+    // put a wall of LaTeX beside the page for someone who has never seen any. zoom 'auto' is
+    // 'fit', except on a phone, where it fits the text's width (see computePx).
+    const kept = load(PREFS);
+    this.newPrefs = !kept;
+    this.prefs = Object.assign({ zoom: 'auto', source: false, style: 'Plain, direct academic prose. No em dashes. No filler, no hedging.' }, kept || {});
     this.pop = null;
     this.ghost = null;
     this.pending = null;
@@ -355,6 +360,13 @@ class App {
     this.savedT = saved ? saved.t : null; // the copy in IndexedDB this tab last read or wrote
     const ls = load(STORE);
     if (ls && ls.files && (!saved || (ls.t || 0) > (saved.t || 0))) saved = ls; // a session that could not use IndexedDB
+    if (this.newPrefs) {
+      // someone who was here before the first visit changed (a project kept, no settings ever
+      // written) keeps the source pane a wide screen gave them; a newcomer's choice is written
+      // now, so the next visit is no first visit
+      if (saved && saved.files && saved.files.length && window.innerWidth > 1100) this.prefs.source = true;
+      store(PREFS, this.prefs);
+    }
     if (saved && saved.files && saved.files.length) {
       this.files = new Map(saved.files);
       this.main = saved.main || this.files.keys().next().value;
@@ -444,12 +456,20 @@ class App {
     const P = geometry(this.model ? this.model.opts : { paper: 'letter', pt: 10 });
     const avail = Math.max(240, this.desk.clientWidth - (window.innerWidth < 640 ? 16 : 56));
     let px;
-    if (this.prefs.zoom === 'fit') px = Math.min(PX_PER_PT * 1.25, avail / P.pw);
-    else px = PX_PER_PT * this.prefs.zoom;
+    const z = this.prefs.zoom;
+    // On a phone the whole sheet across the screen leaves the text about 6px high. Until a zoom
+    // is chosen, the text block fills the width there and the margins are off to the sides:
+    // half as large again, and a line is read without moving the page.
+    this.textFit = z === 'auto' && window.innerWidth <= 520;
+    if (this.textFit) px = Math.min(PX_PER_PT * 1.25, Math.max(avail / P.pw, (this.desk.clientWidth - 12) / P.tw));
+    else if (z === 'fit' || z === 'auto') px = Math.min(PX_PER_PT * 1.25, avail / P.pw);
+    else px = PX_PER_PT * z;
     px = Math.round(px * 1000) / 1000;
     const changed = px !== this.px;
     this.px = px;
-    $('#zoomv').textContent = this.prefs.zoom === 'fit' ? 'Fit' : Math.round(this.prefs.zoom * 100) + '%';
+    $('#zoomv').textContent = this.textFit ? Math.round(px / PX_PER_PT * 100) + '%' : z === 'fit' || z === 'auto' ? 'Fit' : Math.round(z * 100) + '%';
+    // with the text block as wide as the screen, the view starts at the text, not at the margin
+    if (this.textFit && changed) requestAnimationFrame(() => { if (this.textFit) this.desk.scrollLeft = Math.max(0, P.ml * px - 6); });
     return changed;
   }
 
@@ -3601,9 +3621,11 @@ class App {
     const steps = [0.5, 0.6, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
     // on a phone, where − and + are hidden, the Fit button switches between fitting the width
     // (text a few pixels high) and actual size
-    if (dir === 0) this.prefs.zoom = this.prefs.zoom === 'fit' && window.innerWidth <= 520 ? 1 : 'fit';
+    // (and the size the page opens at there, the text block across the screen)
+    const z = this.prefs.zoom;
+    if (dir === 0) this.prefs.zoom = window.innerWidth > 520 ? 'fit' : z === 'fit' ? 'auto' : z === 'auto' ? 1 : 'fit';
     else {
-      const cur = this.prefs.zoom === 'fit' ? this.px / PX_PER_PT : this.prefs.zoom;
+      const cur = z === 'fit' || z === 'auto' ? this.px / PX_PER_PT : z;
       let i = steps.findIndex((s) => s >= cur - 0.001);
       if (i < 0) i = steps.length - 1;
       if (dir > 0) i = steps[i] > cur + 0.001 ? i : Math.min(steps.length - 1, i + 1);
@@ -4415,6 +4437,7 @@ class App {
     const p = this.makePop($('#b-help'), 'pop-help', 'How Rikuy works');
     const mod = isMac ? 'Cmd' : 'Ctrl';
     p.insertAdjacentHTML('beforeend', `
+      <p>Rikuy is a writing app for papers: you type on the finished page, and it keeps a LaTeX file up to date behind it.</p>
       <p>The page is typeset from your LaTeX source. Every edit you make on the page is written back into the source as the smallest possible change.</p>
       <dl class="keys">
         <dt>Type, select, delete</dt><dd>As in any editor</dd>

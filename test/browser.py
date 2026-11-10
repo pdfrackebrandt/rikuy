@@ -574,6 +574,63 @@ def phone_layout(page):
     check('Escape closes Share, Save and Help and the focus returns to their buttons', all(o == 1 and c == 0 and a == b for b, o, c, a in back), back)
 
 
+def first_visit(p):
+    """Someone who has never been here sees the page alone, at a size they can read; what they
+    choose is kept; someone who was here before the page opened this way keeps the source pane."""
+    browser = p.chromium.launch()
+    try:
+        def visit(ctx):
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            page.goto('https://rikuy.test/')
+            page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
+            page.wait_for_timeout(300)
+            return page
+        dist = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
+        doc = SKELETON_HEAD + open(os.path.join(dist, 'rikuy.html'), encoding='utf8').read() + '</body></html>'
+
+        def serve(route):
+            url = route.request.url
+            if url in ROUTES: return route.fulfill(status=200, content_type='application/javascript', headers={'Access-Control-Allow-Origin': '*'}, body=open(ROUTES[url], 'rb').read())
+            if url == 'https://rikuy.test/': return route.fulfill(status=200, content_type='text/html; charset=utf-8', body=doc)
+            f = os.path.join(dist, url[len('https://rikuy.test/'):].split('?')[0]) if url.startswith('https://rikuy.test/') else ''
+            return route.fulfill(status=200, content_type='text/javascript', body=open(f, 'rb').read()) if f and os.path.isfile(f) else route.abort()
+        on = 'document.body.classList.contains("src-on")'
+        ctx = browser.new_context(viewport={'width': 1400, 'height': 900}); ctx.route('**/*', serve)
+        page = visit(ctx)
+        check('a first visit on a wide screen shows the page without the source pane', not page.evaluate(on) and page.is_visible('#b-src'))
+        page.click('#b-help'); page.wait_for_timeout(200)
+        first = page.evaluate('document.querySelector(".pop-help p").textContent')
+        check('Help starts by saying what Rikuy is, before any word about LaTeX source', first.startswith('Rikuy is a writing app for papers') and 'source' not in first, first)
+        page.keyboard.press('Escape')
+        page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); page.wait_for_timeout(300)
+        check('a second visit with nothing chosen is the same', not page.evaluate(on))
+        page.click('#b-src'); page.wait_for_timeout(300)
+        page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); page.wait_for_timeout(500)
+        check('the Source button opens the pane and the choice is kept', page.evaluate(on))
+        # here before the change: a project kept in this browser, no settings ever written
+        click_text(page, 'Click anywhere'); page.keyboard.type('Mine. '); page.wait_for_timeout(1200)
+        page.evaluate('localStorage.removeItem(Object.keys(localStorage).find((k) => /pref/i.test(k)))')
+        page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); page.wait_for_timeout(500)
+        check('someone with a document kept and no settings keeps the source pane of a wide screen', page.evaluate(on) and 'Mine. ' in src(page), page.evaluate('Object.keys(localStorage)'))
+        ctx.close()
+        for w in (360, 390, 430):
+            ctx = browser.new_context(viewport={'width': w, 'height': 800}, has_touch=True, is_mobile=True); ctx.route('**/*', serve)
+            page = visit(ctx)
+            m = page.evaluate('(() => { const d = document.getElementById("desk"), r = document.querySelector("#pages .it.p").getBoundingClientRect(); return { font: parseFloat(getComputedStyle(document.querySelector("#pages .it.p")).fontSize), left: r.left, right: r.right, w: d.clientWidth, label: document.getElementById("zoomv").textContent, src: ' + on + ' }; })()')
+            check('a first visit on a %dpx phone opens with the text block across the screen, not the sheet' % w, m['font'] > 7.5 and m['left'] >= 0 and m['right'] <= m['w'] and m['right'] - m['left'] > m['w'] - 30 and not m['src'], m)
+            if w == 390:
+                seen = []
+                for _ in range(3):
+                    page.tap('#zoomv'); page.wait_for_timeout(300); seen.append(page.inner_text('#zoomv'))
+                check('the zoom button there goes to actual size, the whole sheet, and back', seen[0] == '100%' and seen[1] == 'Fit' and seen[2] == m['label'], seen)
+                page.tap('#zoomv'); page.wait_for_timeout(300)
+                page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); page.wait_for_timeout(300)
+                check('and a zoom that was chosen is the one the next visit opens with', page.inner_text('#zoomv') == '100%', page.inner_text('#zoomv'))
+            ctx.close()
+    finally:
+        browser.close()
+
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
@@ -638,6 +695,9 @@ def run():
         # 5. math popover
         page.click('.a-math >> nth=0')
         page.wait_for_selector('.pop-math textarea')
+        # the math field takes the focus when it arrives: filled a moment before, the source box
+        # lost the rest of its text to the field
+        page.wait_for_selector('.pop-math math-field')
         page.fill('.pop-math textarea', '\\alpha + \\beta = \\delta')
         wait_src(page, '$\\alpha + \\beta = \\delta$')
         s8 = src(page)
@@ -892,6 +952,8 @@ def run():
         browser, page, errors = open_page(p, width=390, height=844)
         phone_layout(page)
         browser.close()
+
+        first_visit(p)
 
         # on a page of its own, so nothing above meets the PDF pane
         browser, page, errors = open_page(p)
