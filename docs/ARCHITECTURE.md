@@ -396,7 +396,8 @@ alignment and the import plan. `src/wordast.js` (in the page) walks the model in
   touches text the owner changed since is not applied and becomes a comment there, quoting the
   coauthor's version. Word comments become Rikuy comments (replies by `commentsExtended.xml`),
   except those already there. Text in a new table row, a moved block and an inserted picture are
-  noted as comments, never dropped silently. `wordEdits` applies the result as one undo step and
+  noted as comments, never dropped silently. Text with no bookmark of its own (a code listing)
+  that Word hands to the block before a deleted one is taken off there, not written again. `wordEdits` applies the result as one undo step and
   sets the text before as the Review base, as `takeBack` does, so each edit can be accepted or
   rejected; the project then compiles with restricted shell escape until its owner allows more.
   A file whose project is not open opens that project (its last version here, else the source the

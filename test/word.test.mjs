@@ -308,4 +308,16 @@ await ok('hostile files: bombs, DTDs, deep nesting, names that climb out, forged
   assert.equal(safeMath('\\begin{aligned}a&=b\\\\ c&=\\$5\\end{aligned}'), '\\begin{aligned}a&=b\\\\ c&=\\$5\\end{aligned}');
 });
 
+await ok('a paragraph deleted in Word before a code listing: the listing is not written a second time', async () => {
+  const src = doc('First paragraph.\n\n\\begin{quote}\nA quoted passage.\n\\end{quote}\n\\begin{verbatim}\nx <- lm(y ~ k)\n\\end{verbatim}\nLast paragraph.\n');
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  const del = (d) => d.replace(/<w:p>(?:(?!<w:p>)[\s\S])*?A quoted passage\.[\s\S]*?<\/w:p>/, '');
+  const plan = importInto(edit(E.docx, del), files);
+  assert.equal(plan.files.get('main.tex'), src.replace('\\begin{quote}\nA quoted passage.\n\\end{quote}\n', ''));
+  // and words typed after the listing in Word still arrive
+  const add = (d) => del(d).replace(/(lm\(y ~ k\)[\s\S]*?<\/w:p>)/, '$1<w:p><w:r><w:t>Typed in Word.</w:t></w:r></w:p>');
+  assert.ok(importInto(edit(E.docx, add), files).files.get('main.tex').includes('Typed in Word.'));
+});
+
 console.log('word: ' + n + ' groups of checks passed');
