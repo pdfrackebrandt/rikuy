@@ -42,10 +42,11 @@ jobs:
           python-version: '3.13'
       - run: npm ci
       - run: npm run build
-      # the versions the tests last passed with; pypdf lets frontier.py read its printed PDF back
+      # the versions the tests last passed with; pypdf lets frontier.py read its printed PDF back,
+      # python-docx lets word.py write and edit Word files as Word users' tools do
       - name: Playwright and Chromium
         run: |
-          python3 -m pip install playwright==1.56.0 pypdf==5.9.0
+          python3 -m pip install playwright==1.56.0 pypdf==5.9.0 python-docx==1.2.0
           python3 -m playwright install --with-deps chromium
       # every test must pass; a test that cannot run here is left out, never run with `|| true`
       - name: Typing on the page
@@ -72,3 +73,5 @@ jobs:
         run: cd test && python3 share.py
       - name: Live figures (rikuy.sty), under the host's policy
         run: cd test && python3 widgets.py
+      - name: Word files opened as projects
+        run: cd test && python3 word.py

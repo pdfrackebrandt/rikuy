@@ -1,0 +1,121 @@
+// What the Word worker does, given a pandoc (src/pandoc.js): open a stranger's .docx as LaTeX.
+// Kept apart from the worker's messaging so the node tests run the same code.
+import { unzip, zip, LIMITS } from './docx.js';
+
+// pandoc's messages worth telling the user: the ones that say something was lost
+const said = (ws) => (ws || []).filter((w) => w.verbosity && w.verbosity !== 'INFO').map((w) => w.pretty || w.type).slice(0, 20);
+
+// links leave only as web or mail addresses: a document may be a stranger's, and Word and the
+// PDF open what a link says when it is clicked
+export function safeUrl(u) {
+  let s = String(u || '').trim();
+  if (!s) return null;
+  if (s.startsWith('#')) return s;
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(s)) s = 'https://' + s.replace(/^\/+/, '');
+  try { const x = new URL(s); return /^(https?|mailto|ftp):$/.test(x.protocol) ? x.href : null; } catch (e) { return null; }
+}
+
+// ---- a stranger's .docx, opened as LaTeX ----------------------------------------------------------
+
+const MEDIA_MAX = 50e6;
+const PICTURE = /^(png|jpe?g|gif|svg|webp|bmp|tiff?|emf|wmf|pdf|eps)$/;
+
+// docx -> { tex (a whole document with a short preamble), media: {name: bytes}, bib, warnings }
+export function docxToLatex(P, bytes, name) {
+  // the zip pandoc reads is the one rebuilt from what passed the checks
+  const parts = unzip(bytes);
+  const clean = zip(parts);
+  const r = P.convert({ from: 'docx+citations', to: 'json', 'input-files': ['in.docx'], 'extract-media': 'media', 'track-changes': 'accept' }, null, { 'in.docx': clean });
+  if (!r.stdout) throw new Error('pandoc could not read the file: ' + (r.stderr || '').trim().slice(0, 300));
+  const doc = JSON.parse(r.stdout);
+  const media = {};
+  const renamed = new Map();
+  let k = 0, total = 0;
+  for (const [n, b] of Object.entries(r.files)) {
+    if (!n.startsWith('media/')) continue;
+    const ext = (/\.([A-Za-z0-9]{1,5})$/.exec(n) || [, 'bin'])[1].toLowerCase();
+    // pictures only: the project keeps them as figures, never as a .tex or .html of the sender's
+    if (!PICTURE.test(ext)) continue;
+    if (b.length > MEDIA_MAX || (total += b.length) > LIMITS.total) continue;
+    const nn = 'figures/figure' + (++k) + '.' + ext;
+    renamed.set(n, nn);
+    media[nn] = b;
+  }
+  const warn = said(r.warnings);
+  const odd = new Set();
+  // links only to web or mail addresses; pictures only from the file itself
+  walk(doc.blocks, (x) => {
+    if (x.t === 'Link') { const u = safeUrl(x.c[2][0]); if (!u) { x.t = 'Span'; x.c = [x.c[0], x.c[1]]; } else x.c[2][0] = u; }
+    if (x.t === 'Image') {
+      const to = renamed.get(x.c[2][0]);
+      if (!to) { x.t = 'Span'; x.c = [['', [], []], [{ t: 'Str', c: '[picture]' }]]; return; }
+      x.c[2][0] = to;
+      if (/\.(emf|wmf|tiff?)$/i.test(to)) odd.add(to.split('.').pop());
+    }
+    // a table of short cells as plain columns (l, c, r): pandoc writes the widths Word kept as
+    // p{} columns with a minipage in every head cell, which reads badly in the source
+    if (x.t === 'Table') {
+      let long = false;
+      walk([x.c[3], x.c[4], x.c[5]], (y) => { if (y.t === 'Str' && y.c.length > 30) long = true; if (y.t === 'Para' || y.t === 'Plain') { let n = 0; walk(y.c, (z) => { if (z.t === 'Str') n += z.c.length + 1; }); if (n > 40) long = true; } });
+      if (!long) x.c[2] = x.c[2].map(([al]) => [al, { t: 'ColWidthDefault' }]);
+    }
+  });
+  if (odd.size) warn.push('Pictures in formats pdfLaTeX cannot include (' + [...odd].join(', ') + ') are in figures/; convert them to PNG or PDF.');
+  const refs = doc.meta && doc.meta.references;
+  let bib = '';
+  if (refs) {
+    const b = P.convert({ from: 'json', to: 'biblatex' }, JSON.stringify({ ...doc, blocks: [] }), {});
+    bib = b.stdout || '';
+  }
+  const body = P.convert({ from: 'json', to: 'latex', 'cite-method': 'natbib', wrap: 'none' }, JSON.stringify(doc), {});
+  let tex = body.stdout || '';
+  const used = (re) => re.test(tex);
+  // the meta data pandoc read (title, authors, date, abstract) in LaTeX of its own
+  const metaTex = (key) => {
+    const v = doc.meta && doc.meta[key];
+    if (!v) return '';
+    const one = (x) => P.convert({ from: 'json', to: 'latex', wrap: 'none' }, JSON.stringify({ 'pandoc-api-version': doc['pandoc-api-version'], meta: {}, blocks: [{ t: x.t === 'MetaBlocks' ? 'Div' : 'Plain', c: x.t === 'MetaBlocks' ? [['', [], []], x.c] : x.c }] }), {}).stdout.trim();
+    if (v.t === 'MetaList') return v.c.map(one).join(' \\and ');
+    if (v.t === 'MetaString') return v.c;
+    return one(v);
+  };
+  const title = metaTex('title'), author = metaTex('author'), date = metaTex('date'), abstract = metaTex('abstract');
+  // pandoc writes some commands of its own: those used get their definitions
+  const pre = ['\\documentclass{article}', '\\usepackage[T1]{fontenc}', '\\usepackage{lmodern}', '\\usepackage{amsmath,amssymb}'];
+  if (used(/\\includegraphics/)) pre.push('\\usepackage{graphicx}');
+  if (used(/\\begin\{longtable\}/)) pre.push('\\usepackage{longtable,booktabs,array}', '\\usepackage{calc}');
+  if (used(/\\(sout|ul|st)\{/)) pre.push('\\usepackage[normalem]{ulem}', '\\providecommand{\\ul}{\\uline}', '\\providecommand{\\st}{\\sout}');
+  if (used(/\\(cite[tp]?|citeauthor|citeyear)\{/) || bib) pre.push('\\usepackage[authoryear,round]{natbib}');
+  if (used(/\\(texttt|verb)|\\begin\{verbatim\}/)) { /* the class has them */ }
+  if (used(/\\(href|url|hyperlink|hypertarget)/)) pre.push('\\usepackage[hidelinks]{hyperref}');
+  if (used(/\\tightlist/)) pre.push('\\providecommand{\\tightlist}{\\setlength{\\itemsep}{0pt}\\setlength{\\parskip}{0pt}}');
+  if (used(/\\pandocbounded/)) pre.push('% pictures at their own size, no wider than the text', '\\newcommand{\\pandocbounded}[1]{\\resizebox{\\ifdim\\width>\\linewidth\\linewidth\\else\\width\\fi}{!}{#1}}');
+  if (used(/\\begin\{CSLReferences\}/)) pre.push('\\newenvironment{CSLReferences}[2]{}{}', '\\newcommand{\\CSLLeftMargin}[1]{#1}', '\\newcommand{\\CSLRightInline}[1]{#1}', '\\newcommand{\\CSLBlock}[1]{#1}');
+  if (used(/\\(passthrough|NormalTok)/)) pre.push('\\providecommand{\\passthrough}[1]{#1}');
+  // pandoc puts \hspace{0pt} after a formula that ends a paragraph; it typesets as nothing
+  tex = tex.replace(/(\\\))\\hspace\{0pt\}/g, '$1');
+  // and wraps a table without a caption in a group that keeps the table counter still; the group
+  // makes the editor read the table as inline text, so the table goes without it
+  tex = tex.replace(/\{\\def\\LTcaptype\{none\} % do not increment counter\n(\\begin\{longtable\}[\s\S]*?\\end\{longtable\})\n\}/g, '$1');
+  const lines = [...pre];
+  if (title) lines.push('', '\\title{' + title + '}');
+  if (author) lines.push('\\author{' + author + '}');
+  if (title || author) lines.push('\\date{' + (date || '') + '}');
+  lines.push('', '\\begin{document}');
+  if (title || author) lines.push('\\maketitle');
+  if (abstract) lines.push('', '\\begin{abstract}', abstract, '\\end{abstract}');
+  lines.push('', tex.trim(), '');
+  if (bib) lines.push('\\bibliographystyle{plainnat}', '\\bibliography{references}', '');
+  lines.push('\\end{document}', '');
+  return { tex: lines.join('\n'), media, bib, warnings: warn, name };
+}
+
+function walk(blocks, fn) {
+  const go = (x) => {
+    if (Array.isArray(x)) { for (const y of x) go(y); return; }
+    if (!x || typeof x !== 'object') return;
+    if (typeof x.t === 'string') fn(x);
+    if ('c' in x) go(x.c);
+  };
+  go(blocks);
+}

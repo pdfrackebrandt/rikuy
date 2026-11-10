@@ -27,6 +27,7 @@ import { changes, spacingOnly } from './diff.js';
 import { TeXEngine, parseTeXLog } from './tex.js';
 import { PdfView } from './pdfview.js';
 import { collab, installCollab } from './collab.js';
+import { word, installWord, isDocx } from './word.js';
 import { shareParam, commentOnly, cleanPath } from './share.js';
 import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
 
@@ -1312,6 +1313,9 @@ class App {
     this.plainPaste = false;
     // a screenshot or an image copied from a page joins the project, as a dropped file does (the
     // paste did nothing at all), under a name of its own: browsers call every pasted image image.png
+    // a .docx copied in the file manager and pasted here opens as Open would open it
+    const docx = [...(dt.files || [])].find((f) => isDocx(f));
+    if (docx) { this.openDocx(docx); return; }
     const imgs = !plain && !html ? [...(dt.files || [])].filter((f) => /^image\/(png|jpeg|gif|webp)$/.test(f.type)) : [];
     if (imgs.length) { this.openFiles(imgs.map((f, i) => new File([f], 'pasted-' + Date.now().toString(36) + (i ? '-' + i : '') + '.' + f.type.slice(6).replace('jpeg', 'jpg'), { type: f.type }))); return; }
     let latex = '';
@@ -3577,6 +3581,13 @@ class App {
   }
 
   async openFiles(list) {
+    // a Word file opens as a project of its own, or brings a coauthor's edits back (src/word.js)
+    const docx = list.find((f) => isDocx(f));
+    if (docx) {
+      if (list.length > 1) this.toast('Opening ' + docx.name + ' alone: a Word file opens on its own.', 6000);
+      await this.openDocx(docx);
+      return;
+    }
     const texts = new Map();
     const blobs = new Map();
     const orig = new Map();
@@ -4394,10 +4405,11 @@ function commonDir(names) {
 }
 function stripTop(n) { const i = n.indexOf('/'); return i > 0 && n.split('/').length > 1 ? n.slice(i + 1) : n; }
 
-Object.assign(App.prototype, collab);
+Object.assign(App.prototype, collab, word);
 
 const app = new App();
 window.rikuy = app;
 installCollab(app);
+installWord(app);
 app.isBalanced = isBalanced;
 app.init().catch((e) => { console.error(e); const b = document.getElementById('boot'); if (b) b.textContent = 'Rikuy could not start: ' + e.message; });

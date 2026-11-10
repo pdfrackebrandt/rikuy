@@ -39,10 +39,11 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   your own there.
 - **Projects.** Folders of files, zip import and export, the PDF beside the page with SyncTeX
   both ways.
-- **Live figures.** `\rikuywidget{plot.html}{plot.png}` from `rikuy.sty` (in `sample/widget/`,
-  copied beside the document) runs a self contained HTML widget, sliders and all, on the typeset
-  page, sandboxed; every TeX, Overleaf's included, prints the PNG. Widgets in a document from
-  someone else run after one click.
+- **Word files.** Open a .docx (Open, drop or paste) and it becomes a LaTeX project: Word
+  equations as LaTeX math, pictures in `figures/`, headings, lists, tables, footnotes, links, and
+  Zotero or Mendeley citations as a `.bib`. pandoc, compiled to WebAssembly, does the conversion
+  in the browser; it loads (16 MB, once) only when a Word file is opened. Not in the copy on
+  claude.ai, which has no room for it.
 
 ## How close to a desktop TeX Live
 

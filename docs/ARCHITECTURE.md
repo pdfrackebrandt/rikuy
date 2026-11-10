@@ -40,6 +40,7 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | what a keystroke writes | `App.onBeforeInput`, `insertText`, `deletionEdits`, `enter`, `toggleStyle` (`src/app.js`); `escapeTeX` |
 | undo grouping | `App.record`, `App.undo`, `App.redo` |
 | share links, comments, the copy back, Overleaf | `makeShareLink`, `openSharedLink`, `takeBack`, `commentPop`, `openInOverleaf` (`src/collab.js`); `commentEdit`, `merge3` (`src/share.js`) |
+| Word (.docx in) | `openDocx` (`src/word.js`); `docxToLatex` (`src/wordjobs.js`); `unzip`, `parseXml` (`src/docx.js`) |
 | live figures (`\rikuywidget`) | `WidgetLayer`, `widgetDoc`, `WIDGET_CSP` (`src/widget.js`); `Builder.cmd` (kind `widget`), `Renderer.atomEl`; `App.widgetsAllowed`, `widgetResized` |
 | equation editing | `App.openMath`, `attachField`, `toField`, `fromField`; `src/minimal.js`, `wordmath.js`, `fences.js` |
 | engine choice, passes, bibliography, indexes | `pickEngine`, `compile`, `runBiber`, `indexTools` (`tex/engine.js`) |
@@ -260,7 +261,33 @@ fallback from the widget's own generator.
   text with a message, and past 2 MiB, more than Chrome opens from its address bar, the link's
   note says to paste it onto the page or send the .zip.
 
-## 6. Page and worker
+## 6. Word
+
+Word support is optional at build time and lazy at run time. `src/word.js` holds the App methods
+(`openDocx`, `openWordProject`) and `WordEngine`, the page's side of a worker of its own
+(`src/wordworker.js`, bundled by `build.mjs` into `dist/word/word.js` and started from a blob, as
+the TeX worker is). In the worker, `src/pandoc.js` runs pandoc 3.10 (npm's `pandoc-wasm` 1.1.0,
+the pandoc project's WASI build) on an in-memory file system with folders; `src/wordjobs.js` holds
+the job (`docxToLatex`) and `src/docx.js` the zip and a small XML reader.
+
+- **Loading.** Nothing loads with the page. The first Word action starts the worker, which reads
+  `word/pandoc.json` (pandoc's version, the SHA-256 of `pandoc.wasm` and of its gzip, and of each
+  part), fetches the parts `pandoc-<hash>-<n>.bin` (gzip, 12 MiB each: the host takes no file
+  over 25 MiB), checks each part, the joined gzip and the inflated module, and keeps the gzip in
+  IndexedDB (`galley-tex`, `blobs`, key `pandoc:<sha256>`), re-hashed whenever it is read back.
+  The worker is let go a minute after its last job and stopped if one runs past four minutes.
+  `RIKUY_NO_WORD=1` builds leave `dist/word/` out; the Word buttons then say where Word support is
+  (`wordMissing`, `RIKUY_WORD_HOST`).
+- **Open (`docxToLatex`).** `unzip()` refuses a file over 100 MB, more than 4000 parts or 400 MB
+  declared, any part with a DTD, and names that climb out; pandoc reads the zip rebuilt from what
+  passed (`docx+citations`, tracked changes accepted) into its JSON, which is cleaned there: links
+  only to web or mail addresses, pictures only (renamed `figures/figureN.ext`, 50 MB each),
+  tables of short cells as plain `l`/`c`/`r` columns. pandoc writes the LaTeX body; Rikuy writes a
+  short preamble with only the packages the body uses, the title block from pandoc's metadata and,
+  when the file had Zotero or Mendeley citations, `references.bib` (pandoc's biblatex writer) with
+  natbib. The project is marked as someone else's (`markFromLink`, origin `docx`).
+
+## 7. Page and worker
 
 `TeXEngine` (`src/tex.js`) starts the worker from a blob (so it runs under the page's policy)
 that sets `self.__galleyBase` and imports `engine.js`. Its `onmessage` takes `{init, base, mirror,
@@ -272,7 +299,7 @@ files and lines; `PdfView.show(pdf, synctex)` draws with PDF.js; past 5 minutes 
 `stopPdf` ends the worker. `boot()` fetches `tree.wasm`, the mirror index, the engine chunks
 `w-*.wasm` and the core packs; `newTeX(true)` makes `MAIN`; `restoreFontCaches()` follows.
 
-## 7. The compile loop: `compile(job)` in `tex/engine.js`
+## 8. The compile loop: `compile(job)` in `tex/engine.js`
 
 1. **Folder.** `projectDir(job.project)`, stable per project (`touchProject` keeps three); `KEEP`
    files (aux, bbl, toc, idx…) and `ASY_OUT` survive unless `job.clean`. Every file name and the
@@ -305,7 +332,7 @@ files and lines; `PdfView.show(pdf, synctex)` draws with PDF.js; past 5 minutes 
 10. **Driver**: `.xdv` → `xdvipdfmx`; `.dvi` → `dvips`, then `ps2pdf` via `SHELL.dispatch`. The
     result holds `pdf` (null when empty), `synctex`, `log`, `runs`, `passes`, `missing`, `packs`.
 
-## 8. Shell escape: finding and running programs
+## 9. Shell escape: finding and running programs
 
 `newTeX()` sets `imports.env.shell_escape_dispatch_js(a, b)`: `SHELL.dispatch(cmd, cwd)` for
 `b >= 0`, else `pipeHook()`, which serves the `popen`/`pclose` bodies `tex/patch_wasm.py` writes
@@ -331,7 +358,7 @@ reruns TeX on all written so far (`texPipe`, `pipeSessions`; `pipeCache` keeps T
 `asyRun()` first runs up to three rehearsals (`asyRehearsal`: questions noted, sizes guessed,
 nothing drawn), each answered in one TeX run (`asyAnswerAll`), then runs asy for real.
 
-## 9. File systems shared between programs
+## 10. File systems shared between programs
 
 - `MAIN.FS`, the first TeX instance's MEMFS, holds the tree at `/texlive` and the projects at
   `/home/web_user/project`. Tree nodes carry `TREE_MTIME`, so build time fontconfig caches hold.
@@ -344,7 +371,7 @@ nothing drawn), each answered in one TeX run (`asyAnswerAll`), then runs asy for
   folder in (`mirrorFolder`) and copy back what changed or vanished (`copyBackChanged`). Copies
   are dated 0, so an equal size rewrite within a millisecond still counts. biber gets copies.
 
-## 10. Programs built for Rikuy, and their memory
+## 11. Programs built for Rikuy, and their memory
 
 `tex/build_tools.sh` compiles dvips, Asymptote (with GLM, Mesa's OSMesa, GSL, FFTW, Eigen), xindy
 (ECL, GMP, Boehm GC) and gnuplot with Ubuntu's Emscripten 3.1.6 into the committed `tex/vendor/`.
@@ -369,7 +396,7 @@ kept and restored after every run, the rest zeroed, the stack reset to `_sp0`, d
 closed; that also frees strings the worker mallocs into TeX's heap. asy's fork to render a 3D
 bitmap becomes `galley_fork_save` (memory below `sbrk(0)`), render, `galley_fork_restore`.
 
-## 11. The TeX tree, packs, lazy loading, mirror
+## 12. The TeX tree, packs, lazy loading, mirror
 
 `build_tree.py tree` (`build_tree`) assembles `$RIKUY_WORK/rikuy-tree` from BusyTeX's release
 tree (`tree-extra`, via `unpack_busytex.py`) and Ubuntu 26.10's TeX Live 2026.20260711 packages
@@ -405,7 +432,7 @@ written into `MAIN.FS`). A mirror pack's bytes must hash to the name its index g
 and again when read back: the cache is the whole site's, so another mirror cannot plant a pack
 under a real one's name. A page on claude.ai reaches only its own server: self hosted use only.
 
-## 12. Build pipeline
+## 13. Build pipeline
 
 1. `tex/fetch_inputs.sh` fills `$RIKUY_WORK` (default `/tmp/eng`), hash checked: `busy/busytex`
    (BusyTeX 1.4.0), `tree-extra`, `debs/x/<pkg>`, `mf/x` (METAFONT for `build_pk.py`), and
@@ -424,6 +451,10 @@ under a real one's name. A page on claude.ai reaches only its own server: self h
    the document the artifact host wraps it in, for any static server; `dist/LICENSES.txt` holds
    `NOTICE`, the license texts of what `dist/` ships and the notices of the libraries compiled into
    its programs (`LICENSES/third-party/`). `RIKUY_OUT` moves the output.
+4. Unless `RIKUY_NO_WORD` is set, `build.mjs` also writes `dist/word/`: `word.js` (esbuild's
+   bundle of `src/wordworker.js` with fflate and the WASI shim), npm's `pandoc.wasm` gzipped (level
+   9) in parts of 12 MiB, and `pandoc.json`, their manifest (section 6). A manifest of the same
+   pandoc whose parts are intact is kept, so a rebuild does not gzip again.
 
 KaTeX's JS, CodeMirror, JSZip, MathLive and mhchem load from CDNs at run time (`CDN` in
 `src/app.js`), each checked against the npm file's hash (`SRI`; KaTeX's in `src/template.html`).
@@ -432,15 +463,17 @@ PDF.js is a module `import()`, which takes no hash, so it ships in `dist/tex/` b
 `tex-smoke.html`'s `exec`). Also: `swap_wasm.py` (a patched engine into a built `dist/tex`),
 `build_tree.py tools` (the programs only), `publish_batches.py` (uploads to the hosted copy).
 
-## 13. Tests and harness
+## 14. Tests and harness
 
 - **Node, in CI** (`.github/workflows/ci.yml`, `npm test`): `test/model.test.mjs` (sample model,
   seg maps checked), `edge.test.mjs` (malformed input must not throw), `fences.test.mjs`,
-  `minimal.test.mjs`, `siunitx.test.mjs`, `share.test.mjs`, `tex/native/xindy/test.cjs` (against CLISP), and
+  `minimal.test.mjs`, `siunitx.test.mjs`, `share.test.mjs`, `word.test.mjs` (a .docx opened with the
+  real pandoc; hostile files), `tex/native/xindy/test.cjs` (against CLISP), and
   `corpus.test.mjs DIR` (`buildModel` over `MartinThoma/LaTeX-examples` at `8bfd313b8d98`).
 - **Playwright** (`cd test && python3 X.py`, on `dist/` or `RIKUY_DIST`; helpers in `browser.py`,
   the CSP server `serve.py`): `browser.py` (typing), `features.py`, `files.py` (zip round trip),
-  `git.py`, `history.py`, `paste.py`, `pdf.py` (pdfLaTeX, SyncTeX), `engines.py` (engines, shell
+  `git.py`, `history.py`, `paste.py`, `pdf.py` (pdfLaTeX, SyncTeX), `word.py` (a .docx opened under the
+  host's policy), `engines.py` (engines, shell
   escape), `mathfield.py`, `wordmath.py`, `eqextras.py`, `frontier.py`, `share.py` (two browsers: share, comment,
   send back, merge), `stress.py`, `widgets.py` (live figures, under the host's policy); on a corpus,
   `corpus_browser.py` (random keystrokes) and `editor_corpus.py` (six edits per document land
@@ -451,7 +484,7 @@ PDF.js is a module `import()`, which takes no hash, so it ships in `dist/tex/` b
 
 Which check covers which change, and how long each takes: `AGENTS.md`. The numbers: `PLAN.md`.
 
-## 14. Known gaps
+## 15. Known gaps
 
 - `usage.json`, the list of files in the core packs, comes only in `inputs/generated.tar.gz`.
   It was made from the files a corpus run read (`job.trace` returns them), but the script that
