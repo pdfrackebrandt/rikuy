@@ -65,7 +65,13 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 - **Source map.** Text becomes `seg` items `{k: 'seg', f, t, map}`: `Acc.ch()` pushes one
   `[start, end)` source range per character, so “ points back at both characters of ``` `` ```.
   Units on the page (math, citation, reference, footnote, figure, raw block, error chip) are
-  atoms with `s`, `e`, `is`, `ie`; style commands are `sty` wrappers. `expandMacro()` expands a
+  atoms with `s`, `e`, `is`, `ie`; style commands are `sty` wrappers. A colour reaches the page
+  as `#RRGGBB` when the source gives numbers (`\textcolor[HTML]`, `[RGB]`, `[rgb]`) or a name
+  of its own (`\definecolor`, kept in `colors`), checked by `colorValue`, else as the text
+  written, which `cssColor` takes only as a name it knows; in formulas `mathRefs` writes the
+  same values for KaTeX. A plain list or a `tabular` inside a table cell is one chip atom that
+  carries its items or rows (`cellList`, `tabular`); `Renderer.ro` draws them without source
+  maps, so they are read on the page and edited as source. `expandMacro()` expands a
   user macro with a position map `pm`; characters from the macro body get `-1` (read only).
   `test/model.test.mjs` checks every seg map against the source.
 - **Render.** `Builder.result()` keys each block by file, source text, `sig` (each resolved value
@@ -348,20 +354,46 @@ alignment and the import plan. `src/wordast.js` (in the page) walks the model in
   `RIKUY_NO_WORD=1` builds leave `dist/word/` out; the Word buttons then say where Word support is
   (`wordMissing`, `RIKUY_WORD_HOST`).
 - **Open (`docxToLatex`).** `unzip()` refuses a file over 100 MB, more than 4000 parts or 400 MB
-  declared, any part with a DTD, and names that climb out; pandoc reads the zip rebuilt from what
-  passed (`docx+citations`, tracked changes accepted) into its JSON, which is cleaned there: links
-  only to web or mail addresses, pictures only (renamed `figures/figureN.ext`, 50 MB each),
-  tables of short cells as plain `l`/`c`/`r` columns. pandoc writes the LaTeX body; Rikuy writes a
-  short preamble with only the packages the body uses, the title block from pandoc's metadata and,
-  when the file had Zotero or Mendeley citations, `references.bib` (pandoc's biblatex writer) with
-  natbib. The project is marked as someone else's (`markFromLink`, origin `docx`).
+  declared, any part with a DTD, and names that climb out, and says what a file that is not a
+  .docx is (a .doc, an .odt, an .rtf renamed). `premark()` (`src/docx.js`) then rewrites the
+  parts pandoc reads, for what pandoc passes over: a field in the short form (`w:fldSimple`: a
+  caption's number, a cross reference), which pandoc drops with its text, becomes the long form;
+  and marks made of private use characters (U+E000 to U+E01F, removed from the file's own text
+  first) go into the text where a comment starts, a page breaks, a run is coloured, a paragraph
+  is centred or right aligned, and in place of the table of contents Word stored. The XML is
+  parsed strictly there, so a part cut short is never written back as a shorter whole one; a
+  part that does not parse goes to pandoc as it is, and if pandoc refuses the marked file it
+  reads the original. pandoc reads the zip rebuilt from what passed (`docx+citations`, tracked
+  changes accepted) into its JSON, which is cleaned and tidied (`tidy`): links only to web or
+  mail addresses, pictures only (renamed `figures/figureN.ext`, 50 MB each) as wide a share of
+  the line as in Word, "Figure 2:" taken off a caption LaTeX numbers the same and Word's
+  reference to it made a `\ref`, symbols typed as text (≤, ≠, −) as their commands, several
+  formulas of one math paragraph as `aligned`, a formula typed with its number as `equation`.
+  pandoc writes the LaTeX body; `tables` turns each longtable of up to 40 rows into a `tabular`
+  (in a `table` float under its caption, or centred; inside another table always), `unmark`
+  turns the marks into `\tableofcontents`, `\newpage`, `\textcolor[HTML]`, `center` and
+  `flushright`, and `comments` writes Word's comments and their replies as Rikuy comments under
+  their lines (`commentEdit`). Rikuy writes a short preamble with only the packages the body
+  uses (Greek through `textalpha`, Cyrillic through T2A defaults, a highlighter of ulem's; with
+  40 or more characters TeX Live's default fonts lack, `fontspec`, so XeLaTeX runs and pdfLaTeX
+  does not stop at its hundredth error), the paper, margins and type size of the Word file
+  (`geometry`), the title block from pandoc's metadata (the Subtitle style under the title)
+  and, when the file had Zotero or Mendeley citations, `references.bib` (pandoc's biblatex
+  writer) with natbib. What could not be kept (header and footer text, charts and SmartArt,
+  colour inside formulas, characters without a font) and what came differently (tracked changes
+  accepted, endnotes as footnotes) is returned as `warnings`, shown in the toast and written as
+  comment lines above `\documentclass`. The project is marked as someone else's
+  (`markFromLink`, origin `docx`).
 - **Save (`buildWordDoc`, `exportDocx`).** The page as the model has it, not the source: headings
   with their numbers, paragraphs, nested lists (`list()` rebuilds them from the model's flat
   items), description lists, theorem heads, tables (a first row set off by a rule is the header),
   captions, footnotes, the title block and abstract (pandoc's metadata), cross references as the
   text the page shows, `\url`/`\href` links, images (a PDF figure as a PNG of its first page drawn
   by pdf.js, `pdfPicture`; EPS and missing files as a bracketed name), live figures as their
-  fallback picture, verbatim as code. Equations go in as TeX with the project's macros expanded
+  fallback picture, verbatim as code, coloured, shaded and highlighted text and centred or right
+  aligned paragraphs as styles named after what they do (`Colour C00000`, `Highlight`,
+  `Centred`), which pandoc writes empty and `styled()` fills in, a numbered list with the labels
+  the page shows (`listStyle`). Equations go in as TeX with the project's macros expanded
   (`expandMath` over `model.mathMacros`) and become Word equations (texmath); texmath drops
   `\tag`, so numbers follow the formula as `\qquad (n)` (`numberRows`). Citations go to pandoc's
   citeproc with the project's `.bib` files: Chicago author-date, or Rikuy's own numeric style when
@@ -396,7 +428,8 @@ alignment and the import plan. `src/wordast.js` (in the page) walks the model in
   touches text the owner changed since is not applied and becomes a comment there, quoting the
   coauthor's version. Word comments become Rikuy comments (replies by `commentsExtended.xml`),
   except those already there. Text in a new table row, a moved block and an inserted picture are
-  noted as comments, never dropped silently. `wordEdits` applies the result as one undo step and
+  noted as comments, never dropped silently. Text with no bookmark of its own (a code listing)
+  that Word hands to the block before a deleted one is taken off there, not written again. `wordEdits` applies the result as one undo step and
   sets the text before as the Review base, as `takeBack` does, so each edit can be accepted or
   rejected; the project then compiles with restricted shell escape until its owner allows more.
   A file whose project is not open opens that project (its last version here, else the source the

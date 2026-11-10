@@ -30,6 +30,29 @@ export function safeUrl(u) {
   try { const x = new URL(s); return /^(https?|mailto|ftp):$/.test(x.protocol) ? x.href : null; } catch (e) { return null; }
 }
 
+// A colour as Word writes one (RRGGBB): a hex value, one of xcolor's base names, or "red!40"
+// (mixed with white, as xcolor does); null for a name only the document's preamble knows.
+const XCOLOR = { red: 'FF0000', green: '00FF00', blue: '0000FF', cyan: '00FFFF', magenta: 'FF00FF', yellow: 'FFFF00', black: '000000', white: 'FFFFFF', gray: '808080', grey: '808080', darkgray: '404040', lightgray: 'BFBFBF', brown: 'BF8040', lime: 'BFFF00', olive: '808000', orange: 'FF8000', pink: 'FFBFBF', purple: 'BF0040', teal: '008080', violet: '800080' };
+export function wordColor(c) {
+  c = String(c || '').trim();
+  if (/^#?[0-9a-fA-F]{6}$/.test(c)) return c.replace('#', '').toUpperCase();
+  const m = /^([A-Za-z]+)(?:!(\d{1,3}))?$/.exec(c);
+  const base = m && XCOLOR[m[1].toLowerCase()];
+  if (!base) return null;
+  const k = m[2] == null ? 1 : Math.min(100, +m[2]) / 100;
+  return [0, 2, 4].map((i) => Math.round(parseInt(base.slice(i, i + 2), 16) * k + 255 * (1 - k)).toString(16).padStart(2, '0')).join('').toUpperCase();
+}
+// A numbered list's style as pandoc names it, from the label the page shows on its first item:
+// "(a)", "i)", "3."
+export function listStyle(label) {
+  const m = /^(\()?([a-z]|[A-Z]|\d{1,4})([.)])?$/.exec(String(label || '').trim());
+  if (!m) return [1, { t: 'DefaultStyle' }, { t: 'DefaultDelim' }];
+  const x = m[2];
+  const style = /\d/.test(x) ? 'Decimal' : x === 'i' ? 'LowerRoman' : x === 'I' ? 'UpperRoman' : x === x.toLowerCase() ? 'LowerAlpha' : 'UpperAlpha';
+  const start = /\d/.test(x) ? +x : /Roman/.test(style) ? 1 : x.toLowerCase().charCodeAt(0) - 96;
+  return [Math.max(1, start), { t: style }, { t: m[1] && m[3] === ')' ? 'TwoParens' : m[3] === ')' ? 'OneParen' : m[3] === '.' ? 'Period' : 'DefaultDelim' }];
+}
+
 // ---- user macros in math -------------------------------------------------------------------
 
 // pandoc turns TeX into Word's equations (texmath), which knows no \newcommand of the document's:
@@ -81,6 +104,13 @@ export function expandMath(tex, macros) {
 function maxArg(b) { let n = 0; b.replace(/#(\d)/g, (s, d) => { n = Math.max(n, +d); return s; }); return n; }
 function tokenize(s) { return s.match(/\\[A-Za-z]+|\\.|\s+|[\s\S]/g) || []; }
 
+// texmath has no colour: one \textcolor in a formula and pandoc gave the whole formula up,
+// writing its TeX into the Word file as text. The colour goes, the formula stays an equation.
+export function uncolor(tex) {
+  if (!/\\(textcolor|color|colorbox)\b/.test(tex)) return tex;
+  return tex.replace(/\\(textcolor|colorbox|color)\s*(?:\[[^\]{}]*\])?\s*\{[^{}]*\}/g, '');
+}
+
 // \tag{n} that the model puts on numbered rows: texmath drops \tag without a word, so the number
 // goes after the formula as Word shows it, \qquad (n)
 export function numberRows(tex) {
@@ -126,6 +156,12 @@ class Walker {
     const doc = { 'pandoc-api-version': API, meta: this.metaOut(), blocks: this.blocks };
     const deg = [...this.degraded.entries()].map(([k, n]) => k + (n > 1 ? ' (' + n + ')' : ''));
     return { doc, anchors: this.anchors.map(packAnchor), atoms: this.atoms, images: [...this.images], warnings: this.warnings, degraded: deg, comments: this.ncomments };
+  }
+
+  plainMath(tex) {
+    const t = uncolor(tex);
+    if (t !== tex) this.degrade('a formula without its colours');
+    return t;
   }
 
   degrade(what) { this.degraded.set(what, (this.degraded.get(what) || 0) + 1); }
@@ -201,6 +237,9 @@ class Walker {
       return out;
     }, { top: !!(u && u.items.length === 1 && it === u.items[0] && !it.li && !it.lead), after: u ? u.e : null });
     let b = { t: plain ? 'Plain' : 'Para', c: inl };
+    // centred and right aligned text keeps its place: a paragraph style of that name, which
+    // exportDocx (src/wordjobs.js) gives its alignment
+    if (!plain && (it.align === 'center' || it.align === 'right')) b = { t: 'Div', c: [attr('', [], [['custom-style', it.align === 'center' ? 'Centred' : 'Right Aligned']]), [b]] };
     if (/\bquote\b/.test(it.cls || '')) b = { t: 'BlockQuote', c: [b] };
     return b;
   }
@@ -221,7 +260,7 @@ class Walker {
   }
 
   display(it) {
-    const tex = numberRows(expandMath(it.tex, this.m.mathMacros));
+    const tex = numberRows(this.plainMath(expandMath(it.tex, this.m.mathMacros)));
     const ai = this.atom({ k: 'math', f: it.f, s: it.s, e: it.e, is: it.is, ie: it.ie, disp: true, env: it.env || '', tags: it.tags || [] });
     const inl = this.wrap('math', it.f, it.s, it.e, () => { this.atomText(OBJ, ai); return [{ t: 'Math', c: [{ t: 'DisplayMath' }, tex] }]; }, { after: it.e });
     return { t: 'Para', c: inl };
@@ -323,7 +362,7 @@ class Walker {
         entries[entries.length - 1].blocks.push(...(it.type === 'p' ? [this.para({ ...it, label: null }, u)] : this.item(it, u)));
         i++;
       }
-      if (kind === 'enum') return [{ t: 'OrderedList', c: [[1, { t: 'DefaultStyle' }, { t: 'DefaultDelim' }], entries.map((x) => x.blocks)] }];
+      if (kind === 'enum') return [{ t: 'OrderedList', c: [listStyle((first.label || []).map((x) => x.text || '').join('')), entries.map((x) => x.blocks)] }];
       if (kind === 'desc') return [{ t: 'DefinitionList', c: entries.map((x) => [x.term || [], [x.blocks]]) }];
       return [{ t: 'BulletList', c: entries.map((x) => x.blocks) }];
     };
@@ -380,6 +419,14 @@ class Walker {
           case 'sup': return [{ t: 'Superscript', c: kids }];
           case 'sub': return [{ t: 'Subscript', c: kids }];
           case 'link': { const u = safeUrl(x.url); return u ? [{ t: 'Link', c: [attr(), kids, [u, '']] }] : kids; }
+          // colour, shading and the highlighter: character styles named after what they do,
+          // filled in by exportDocx (pandoc's tree has no colour)
+          case 'color': case 'bg': {
+            const hex = wordColor(x.color);
+            if (!hex) { this.degrade('text in a colour the preamble defines, without the colour'); return kids; }
+            return [{ t: 'Span', c: [attr('', [], [['custom-style', (x.st === 'bg' ? 'Shade ' : 'Colour ') + hex]]), kids] }];
+          }
+          case 'hl': return [{ t: 'Span', c: [attr('', [], [['custom-style', 'Highlight']]), kids] }];
           default: return kids;
         }
       }
@@ -387,7 +434,7 @@ class Walker {
       case 'math': {
         const ai = this.atom({ k: 'math', f: x.f, s: x.s, e: x.e, is: x.is, ie: x.ie, ro: !!x.ro });
         this.atomText(OBJ, ai);
-        return [{ t: 'Math', c: [{ t: 'InlineMath' }, expandMath(x.tex, this.m.mathMacros)] }];
+        return [{ t: 'Math', c: [{ t: 'InlineMath' }, this.plainMath(expandMath(x.tex, this.m.mathMacros))] }];
       }
       case 'cite': {
         const ai = this.atom({ k: 'cite', f: x.f, s: x.s, e: x.e, ro: !!x.ro });

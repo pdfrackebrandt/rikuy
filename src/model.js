@@ -110,6 +110,30 @@ function parseLen(s, em = 10) {
 // ---------------------------------------------------------------------------
 // One pass when the previous result's labels and citations still hold;
 // otherwise a second pass resolves forward references.
+// whether a command of that name is anywhere in the nodes
+function hasCmd(ns, name) {
+  for (const n of ns) {
+    if (n.t === 'cmd' && n.name === name) return true;
+    if (n.nodes && hasCmd(n.nodes, name)) return true;
+    if (n.args) for (const a of n.args) if (a && a.nodes && hasCmd(a.nodes, name)) return true;
+  }
+  return false;
+}
+
+// A colour given by its numbers, as xcolor's HTML, RGB and rgb models write one: "#RRGGBB", or
+// null. The text is the document's, maybe a stranger's: only digits in range make a colour, and
+// nothing else of it reaches the page's styles.
+export function colorValue(model, spec) {
+  model = String(model || '').trim();
+  spec = String(spec || '').trim();
+  if (model === 'HTML') return /^[0-9a-fA-F]{6}$/.test(spec) ? '#' + spec.toUpperCase() : null;
+  const v = spec.split(',').map((x) => x.trim());
+  const hex = (n) => Math.round(n).toString(16).padStart(2, '0').toUpperCase();
+  if (model === 'RGB' && v.length === 3 && v.every((x) => /^\d{1,3}$/.test(x) && +x <= 255)) return '#' + v.map((x) => hex(+x)).join('');
+  if (model === 'rgb' && v.length === 3 && v.every((x) => /^(0|1|0?\.\d{1,6}|1\.0{1,6})$/.test(x))) return '#' + v.map((x) => hex(+x * 255)).join('');
+  return null;
+}
+
 export function buildModel(project, hint) {
   if (hint && hint.labels) {
     const b = new Builder(project, hint);
@@ -163,6 +187,8 @@ class Builder {
     this.lastTarget = null;
     this.textMacros = new Map();
     this.mathMacros = {};
+    this.colors = new Map(); // \definecolor's names -> #RRGGBB
+    this.inCell = 0;
     this.siOpts = {};
     this.siUnits = new Map();
     this.envDefs = new Map();
@@ -270,6 +296,7 @@ class Builder {
       else if (nd.t !== 'cmd') continue;
       else if (nd.name === 'input' && nd.args[0]) this.preFile(this.resolveFile(this.argText(c, nd.args[0])), own);
       else if (!own) this.preCmd(nd, c);
+      else if (nd.name === 'definecolor') this.defColor(nd, c);
       else if (nd.name === 'usepackage' || nd.name === 'RequirePackage') {
         for (const p of this.argText(c, nd.args[1]).split(',')) if (this.files.has(p.trim() + '.sty')) this.preFile(p.trim() + '.sty', true);
       } else if (/^(newcommand|providecommand|newenvironment|DeclareMathOperator|newtheorem|theoremstyle|numberwithin)$/.test(nd.name) &&
@@ -301,6 +328,7 @@ class Builder {
     const O = this.opts;
     const A = (k) => this.argText(ctx, nd.args[k]);
     switch (nd.name) {
+      case 'definecolor': this.defColor(nd, ctx); break;
       case 'documentclass': {
         O.cls = A(1).trim() || 'article';
         this.classOpts(A(0));
@@ -415,8 +443,31 @@ class Builder {
     walk(nodes, ctx);
   }
 
+  // \definecolor{name}{HTML}{C00000}: the name stands for that colour on the page
+  defColor(nd, ctx) {
+    const name = this.argText(ctx, nd.args[0]).trim();
+    const v = colorValue(this.argText(ctx, nd.args[1]), this.argText(ctx, nd.args[2]));
+    if (name && v) this.colors.set(name, v);
+  }
+
+  // the colour of \textcolor[model]{spec} and the like, for the page: #RRGGBB where the document
+  // gives numbers or a name of its own, else the text as written (render.js knows xcolor's names)
+  colorArg(ctx, opt, val) {
+    const spec = this.argText(ctx, val).trim();
+    if (opt) return colorValue(this.argText(ctx, opt), spec) || spec;
+    return this.named(spec) || spec;
+  }
+
+  // a name of the document's own; used, so the block is drawn again when its \definecolor changes
+  named(name) {
+    const v = this.colors.get(name);
+    if (v) this.use('c' + name + v);
+    return v;
+  }
+
   defCmd(nd, ctx) {
     const A = (k) => this.argText(ctx, nd.args[k]);
+    if (nd.name === 'definecolor') { this.defColor(nd, ctx); return; }
     if (nd.def && nd.def.kind === 'cmd') {
       const d = nd.def;
       this.textMacros.set(d.name, { nargs: d.nargs, dflt: d.dflt, body: d.body });
@@ -1187,11 +1238,28 @@ class Builder {
     return { type: 'tabular', cols, rows: outRows, f: ctx.f, s: nd.s, e: nd.e, fns };
   }
 
+  // A list in a table cell, for the page to draw (read only: a cell's words are edited on the
+  // page, a list in it as source). Only a plain one: \item after \item, before the first nothing
+  // but space and the settings pandoc writes, no footnote (its number is the page's to give).
+  // Anything else is left to what the page did before. build: its items' inlines, else whether.
+  cellList(nd, ctx, build) {
+    const items = [];
+    for (const n of nd.nodes) {
+      if (n.t === 'cmd' && n.name === 'item') { if (n.args.some(Boolean)) return null; items.push([]); continue; }
+      if (items.length) { items[items.length - 1].push(n); continue; }
+      if (n.t === 'comment' || (n.t === 'text' && !ctx.src.slice(n.s, n.e).trim()) || (n.t === 'cmd' && /^(tightlist|def|setcounter|setlength)$/.test(n.name))) continue;
+      return null;
+    }
+    if (!items.length || hasCmd(nd.nodes, 'footnote')) return null;
+    if (!build) return true;
+    return { ordered: nd.name === 'enumerate', items: items.map((ns) => { const inl = this.inl(ns, ctx, []); trimInl(inl); return inl; }) };
+  }
+
   tableCell(nodes, ctx, fns, ci, cols) {
     let bg = null, rowbg = null;
     nodes = nodes.filter((n) => {
       if (n.t === 'cmd' && (n.name === 'cellcolor' || n.name === 'rowcolor') && n.args.length) {
-        const c = this.argText(ctx, n.args[n.args.length - 1]).trim();
+        const c = this.colorArg(ctx, n.args.length > 1 ? n.args[0] : null, n.args[n.args.length - 1]);
         if (n.name === 'cellcolor') bg = c; else rowbg = c;
         return false;
       }
@@ -1211,7 +1279,9 @@ class Builder {
       const a = vis[0].args.filter(Boolean).pop();
       inner = a.nodes; pos = a.is;
     }
-    const inl = this.inl(inner, ctx, fns);
+    this.inCell++;
+    let inl;
+    try { inl = this.inl(inner, ctx, fns); } finally { this.inCell--; }
     trimInl(inl);
     if (!inl.length) {
       const p = pos != null ? pos : (nodes.length ? nodes[0].s : null);
@@ -1286,6 +1356,12 @@ class Builder {
     });
     t = t.replace(/\\intertext\s*\{([^}]*)\}/g, '\\text{$1}');
     t = t.replace(/\\(shortintertext)\s*\{([^}]*)\}/g, '\\text{$2}');
+    // KaTeX takes \textcolor{#RRGGBB}{..} and CSS names: a colour given by its numbers
+    // (\textcolor[HTML]{C00000}) or defined in the preamble goes in as its value
+    if (t.includes('color')) t = t.replace(/\\(textcolor|color|colorbox)\s*(?:\[([^\]{}]*)\])?\s*\{([^{}]*)\}/g, (m, cmd, model, spec) => {
+      const v = model != null ? colorValue(model, spec) : this.named(spec.trim());
+      return v ? '\\' + cmd + '{' + v + '}' : m;
+    });
     return t;
   }
 
@@ -1325,7 +1401,12 @@ class Builder {
             const tex = this.mathRefs(ctx.src.slice(nd.be, nd.es));
             out.push(this.atom(ctx, { k: 'math', s: nd.s, e: nd.e, is: nd.be, ie: nd.es, tex, display: false }));
           } else if (/^(tabular|array)$/.test(nd.name)) {
-            out.push(this.chip(ctx, nd.s, nd.e, 'table', 'Inline tabular'));
+            // in a table's cell the inner table is drawn (read only; edited as source)
+            const table = this.inCell && nd.name === 'tabular' && nd.nodes && !hasCmd(nd.nodes, 'footnote') ? this.tabular(nd, ctx, []) : null;
+            if (table && table.rows.some((r) => !r.empty)) out.push(this.atom(ctx, { k: 'chip', s: nd.s, e: nd.e, text: 'table', title: 'A table in a table cell. Click to edit its source.', plain: true, table }));
+            else out.push(this.chip(ctx, nd.s, nd.e, 'table', 'Inline tabular'));
+          } else if (this.inCell && /^(itemize|enumerate)$/.test(nd.name) && nd.nodes && this.cellList(nd, ctx)) {
+            out.push(this.atom(ctx, { k: 'chip', s: nd.s, e: nd.e, text: 'list', title: 'A list in a table cell. Click to edit its source.', plain: true, list: this.cellList(nd, ctx, true) }));
           } else {
             const kids = nd.nodes ? this.inl(nd.nodes, ctx, fns) : [];
             out.push(...kids);
@@ -1435,7 +1516,7 @@ class Builder {
       acc.flush();
       const rest = nodes.slice(k + 1);
       const kids = this.inl(rest, ctx, fns);
-      out.push({ k: 'sty', st: 'color', color: A(1).trim(), kids, f: ctx.f, decl: true });
+      out.push({ k: 'sty', st: 'color', color: this.colorArg(ctx, nd.args[0], nd.args[1]), kids, f: ctx.f, decl: true });
       return true;
     }
     if ((name === 'textcolor' || name === 'colorbox') && nd.args[2]) {
@@ -1443,7 +1524,7 @@ class Builder {
       const a = nd.args[2];
       const kids = this.inl(a.nodes, ctx, fns);
       if (!kids.length) kids.push(this.ph(ctx, a.is));
-      out.push(this.styAtom(ctx, { k: 'sty', st: name === 'colorbox' ? 'bg' : 'color', color: A(1).trim(), kids, s: nd.s, e: nd.e, is: a.is, ie: a.ie, cmd: name }));
+      out.push(this.styAtom(ctx, { k: 'sty', st: name === 'colorbox' ? 'bg' : 'color', color: this.colorArg(ctx, nd.args[0], nd.args[1]), kids, s: nd.s, e: nd.e, is: a.is, ie: a.ie, cmd: name }));
       return false;
     }
     if (name === 'footnote' || (name === 'thanks')) {
