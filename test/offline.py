@@ -254,7 +254,10 @@ def main():
             wait_sw(page)
             page.click('#b-offline')
             page.wait_for_function('document.getElementById("b-offline").textContent === "Available offline"', timeout=600000)
-            print('kept for offline:', page.inner_text('#toast'))
+            print('kept for offline:', page.inner_text('#toast'), page.evaluate('window.rikuy.offlineKept'))
+            # the folders src/pwa.js lists are meant to cover a typical paper; the sample is one
+            extra = page.evaluate('window.rikuy.offlineExtra')
+            check('the sample reads no TeX pack outside the ones Make available offline plans to keep', extra == [], extra)
             ctx.set_offline(True)
             srv.shutdown(); srv.server_close()
             page.reload()

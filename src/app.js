@@ -3952,10 +3952,15 @@ class App {
     this.prefs.pdf = on;
     store(PREFS, this.prefs);
     if (on) {
-      if (!this.pdfView) this.pdfView = new PdfView($('#pdf-host'), { workerUrl: asset('tex/pdf.worker.min.mjs'), onClickSource: (f, line) => this.fromPdf(f, line) });
+      this.pdfPane();
       if (!this.lastPdf || this.pdfStale) this.compilePdf();
     }
     setTimeout(() => { if (this.computePx()) this.relayout(true); }, 30);
+  }
+
+  pdfPane() {
+    if (!this.pdfView) this.pdfView = new PdfView($('#pdf-host'), { workerUrl: asset('tex/pdf.worker.min.mjs'), onClickSource: (f, line) => this.fromPdf(f, line) });
+    return this.pdfView;
   }
 
   texEngine() {
@@ -4040,6 +4045,18 @@ class App {
     return files.filter((x) => cleanPath(x.path) === x.path);
   }
 
+  // "Make available offline" (src/pwa.js) compiles the open document once: whatever it reads
+  // beyond the planned folders is then kept too. Gives the packs it read, [number, folder].
+  async compileForOffline() {
+    const idle = async () => { while (this.compiling) await new Promise((r) => setTimeout(r, 150)); };
+    await idle();
+    this.lastRead = null;
+    this.pdfPane(); // the viewer too: its scripts are then kept with the rest
+    await this.compilePdf();
+    await idle();
+    return this.lastRead;
+  }
+
   async compilePdf(opts = {}) {
     if (this.compiling) { this.compileAgain = opts.clean ? 'clean' : (this.compileAgain || true); return; }
     this.compiling = true;
@@ -4073,6 +4090,9 @@ class App {
       this.syncEngineMenu();
       const res = await engine.compile({ project: this.name + '|' + this.main, files: await this.compileFiles(), main: this.main, clean: !!opts.clean, bibSig, engine: this.engineChoice(), shellEscape: this.prefs.shellEscape !== false && !untrusted, untrusted });
       if (gen !== (this.pdfGen || 0)) return; // another project was opened meanwhile
+      this.lastRead = res.read || [];
+      // TeX stopped where a file's pack could not be loaded (offline, or the network failed)
+      if (res.unkept && res.unkept.length) throw Object.assign(new Error('Some TeX files could not be loaded (' + res.unkept.slice(0, 5).join(', ') + (res.unkept.length > 5 ? ' and more' : '') + '); check the network and compile again'), { unkept: res.unkept });
       const issues = parseTeXLog(res.log);
       this.engineLabel = res.engineLabel || 'LaTeX';
       this.showEngine(res);
@@ -4120,8 +4140,9 @@ class App {
       $('#pdf-host').innerHTML = '';
       const d = document.createElement('div'); d.className = 'pdf-empty';
       // offline, a file TeX has not kept fails to load; say what to do rather than "Failed to fetch"
-      const off = __RIKUY_APP__ && APP.on && navigator.onLine === false ? 'You are offline, and this needs TeX files this browser has not kept yet. Compile it once with a network, or use Make available offline in the status bar. ' : '';
-      d.textContent = off + (e && e.message ? e.message + '. ' : '') + 'The page preview can still be printed.';
+      const need = e && e.unkept ? ' (' + e.unkept.slice(0, 5).join(', ') + (e.unkept.length > 5 ? ' and more' : '') + ')' : '';
+      const off = __RIKUY_APP__ && APP.on && navigator.onLine === false ? 'You are offline, and this document needs TeX files this browser has not kept yet' + need + '. Compile it once with a network and they stay; Make available offline in the status bar keeps those of a typical paper and of the open document. ' : '';
+      d.textContent = off + (e && e.message && !(off && need) ? e.message + '. ' : '') + 'The page preview can still be printed.';
       const b = document.createElement('button'); b.className = 'btn sm'; b.type = 'button'; b.textContent = 'Print the preview'; b.style.marginTop = '10px';
       b.addEventListener('click', () => this.printPDF());
       d.append(document.createElement('br'), b);

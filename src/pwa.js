@@ -48,9 +48,16 @@ export const OFFLINE_FOLDERS = [
   'tex/latex/units', 'tex/latex/csquotes', 'tex/latex/footmisc', 'tex/latex/subfig', 'tex/latex/comment', 'tex/latex/epstopdf-pkg',
   'tex/generic/pgf', 'tex/generic/pgfplots', 'tex/generic/ulem', 'tex/generic/soul', 'tex/generic/babel', 'tex/generic/babel-english',
   'tex/generic/iftex',
+  // hyperref's own needs (once in oberdiek, now a folder each) and the configuration files
+  'tex/latex/latexconfig', 'tex/generic/ltxcmds', 'tex/generic/pdftexcmds', 'tex/generic/infwarerr', 'tex/generic/kvsetkeys',
+  'tex/latex/kvdefinekeys', 'tex/generic/kvdefinekeys', 'tex/generic/pdfescape', 'tex/latex/hycolor', 'tex/latex/letltxmacro',
+  'tex/latex/auxhook', 'tex/latex/refcount', 'tex/generic/gettitlestring', 'tex/generic/intcalc', 'tex/generic/etexcmds',
+  'tex/generic/bitset', 'tex/generic/bigintcalc', 'tex/latex/rerunfilecheck', 'tex/generic/uniquecounter', 'tex/generic/stringenc',
+  'tex/generic/atbegshi', 'tex/latex/atveryend', 'tex/latex/bookmark', 'tex/latex/grfext', 'tex/latex/pdflscape', 'tex/latex/colortbl',
+  'tex/latex/parskip', 'tex/latex/placeins', 'tex/latex/lineno',
   'fonts/type1/public/amsfonts', 'fonts/type1/public/lm', 'fonts/type1/public/rsfs', 'fonts/type1/public/doublestroke',
   'fonts/type1/urw/times', 'fonts/type1/urw/helvetic', 'fonts/type1/urw/courier', 'fonts/type1/urw/symbol', 'fonts/type1/urw/zapfding',
-  'fonts/tfm/public/amsfonts', 'fonts/tfm/public/cm', 'fonts/tfm/public/lm', 'fonts/tfm/public/rsfs', 'fonts/tfm/public/doublestroke',
+  'fonts/tfm/public/amsfonts', 'fonts/tfm/public/cm', 'fonts/tfm/public/latex-fonts', 'fonts/tfm/public/lm', 'fonts/tfm/public/rsfs', 'fonts/tfm/public/doublestroke',
   'fonts/tfm/adobe/times', 'fonts/tfm/adobe/helvetic', 'fonts/tfm/adobe/courier', 'fonts/tfm/adobe/symbol', 'fonts/tfm/adobe/zapfding',
   'fonts/vf/adobe/times', 'fonts/vf/adobe/helvetic', 'fonts/vf/adobe/courier', 'fonts/tfm/jknappen/ec',
   'fonts/enc/dvips/lm', 'fonts/enc/dvips/base', 'bibtex/bst/base', 'bibtex/bst/natbib'
@@ -194,6 +201,14 @@ export async function keepOffline(app) {
     // Word too (pandoc, 16 MB, kept by its own worker), where this build has it
     keep.textContent = 'Keeping Word support…';
     const wordKept = await app.keepWord();
+    // The open document, compiled once: a pack it reads outside the folders above is fetched
+    // and kept as any compile keeps what it reads. (app.offlineExtra: those folders, which
+    // test/offline.py wants empty for the sample, so the list above stays what it says.)
+    keep.textContent = 'Compiling this document once…';
+    const plan = new Set(res.plan || []);
+    const read = await app.compileForOffline();
+    app.offlineKept = { packs: res.packs, total: res.total };
+    app.offlineExtra = read ? [...new Set(read.filter(([n]) => !plan.has(n)).map(([, f]) => f))] : null;
     if (APP.tree) { app.prefs.offlineTree = APP.tree; app.savePrefs(); }
     keep.textContent = 'Available offline';
     const also = wordKept ? ', and Word import and export' : '';

@@ -246,7 +246,20 @@ async function keep(folders) {
     }
   };
   await Promise.all([lane(), lane(), lane(), lane()]);
-  return { packs: plan.length, total, fetched };
+  return { packs: plan.length, total, fetched, plan };
+}
+
+// What one compile read and could not load, by pack number (compile() empties both).
+const jobPacks = new Set();
+const packMissed = new Set();
+// The folder of the tree a pack holds, as build_tree.py grouped the files ('core' for the packs
+// loaded at start): what the page shows for a pack, and what src/pwa.js lists.
+function packFolder(n) {
+  if ((INDEX.core || []).includes(n)) return 'core';
+  const f = INDEX.files.find((x) => x[2] === n);
+  if (!f) return 'pack ' + n;
+  const t = f[0].replace(/^\/texlive\/texmf-dist\//, '').replace(/^\//, '').split('/');
+  return t.slice(0, Math.max(1, Math.min(t.length - 1, t[0] === 'fonts' ? 4 : t[0] === 'tex' ? 3 : 2))).join('/');
 }
 
 // Called from inside TeX (synchronously) when it opens a file whose pack is not here yet.
@@ -257,8 +270,11 @@ function loadPackSync(n) {
   const x = new XMLHttpRequest();
   x.open('GET', P.f, false);
   x.responseType = 'arraybuffer';
-  x.send();
-  if (x.status !== 200) throw new Error('pack ' + P.f + ' HTTP ' + x.status);
+  // Without a network (and the pack not kept) send() throws. TeX stops there, in the middle of
+  // a page; the compile says which folders were missing rather than hand over half a PDF.
+  let failed = '';
+  try { x.send(); if (x.status !== 200) failed = 'HTTP ' + x.status; } catch (e) { failed = 'no network'; }
+  if (failed) { packMissed.add(n); throw new Error('pack ' + P.f + ' ' + failed); }
   const z = unwrap(new Uint8Array(x.response));
   netBytes += z.length;
   cachePut('p:' + P.h, z);
@@ -334,6 +350,7 @@ function populate(Module) {
           usedPacks.add(pack);
         }
         if (readLog) readLog.add(path);
+        jobPacks.add(pack);
         return data;
       },
       set(v) { data = v; }
@@ -1252,6 +1269,7 @@ async function compile(job) {
   projectPath(job.main);
   const t0 = performance.now();
   readLog = new Set();
+  jobPacks.clear(); packMissed.clear();
   netBytes = 0;
   pipeCache.clear(); pipeCacheSize = 0; pipeSessions.clear();
   const dir = projectDir(job.project || job.id); // stable per project, so its .aux and .bbl carry over
@@ -1427,7 +1445,8 @@ async function compile(job) {
   if (engine === 'lualatex' && !job.untrusted) saveFontCaches().catch(() => {});
   // pdfTeX leaves an empty .pdf behind when a run had "No pages of output": that is no PDF
   const pdfFile = readBytes(base + '.pdf');
-  const pdf = pdfFile && pdfFile.length ? pdfFile : null;
+  // (nor is what TeX had written when a file it needed could not be loaded)
+  const pdf = pdfFile && pdfFile.length && !packMissed.size ? pdfFile : null;
   const synctex = readBytes(base + '.synctex.gz');
   const out = {
     id: job.id,
@@ -1442,6 +1461,9 @@ async function compile(job) {
     passes: texPasses(),
     shell: SHELL.state.log.slice(0, 200),
     missing: [...SHELL.state.missing],
+    // the packs this compile read, [number, folder], and the folders of those it could not load
+    read: [...jobPacks].sort((x, y) => x - y).map((n) => [n, packFolder(n)]),
+    unkept: [...new Set([...packMissed].map(packFolder))],
     ms: Math.round(performance.now() - t0),
     net: netBytes,
     reads: job.trace ? [...readLog] : undefined,
