@@ -3867,6 +3867,12 @@ class App {
     // what was not opened and why, in words for someone who only dropped a file: a .zip that is
     // not one, a picture under a text file's name, a word processor's file that is not .docx
     const unread = [], notText = [], wordLike = [];
+    // The names that came out of an archive. With any of them added that TeX, or a program TeX
+    // starts, can run or read as code, the project holds a stranger's files: marked as someone
+    // else's, its shell escape restricted. Raster pictures and PDFs alone do not make it so
+    // (a .zip of figures dropped on one's own paper), nor does an archive that gave nothing.
+    const zipAdded = new Set();
+    const zipCode = () => [...zipAdded].some((n) => (texts.has(n) || blobs.has(n) || extra.has(n)) && !/\.(png|jpe?g|gif|webp|pdf)$/i.test(n));
     const gitOk = (p) => /^\.git\//.test(p) && cleanPath(p.slice(5)) === p.slice(5);
     for (const file of list) {
       const nm = file.webkitRelativePath || file.name;
@@ -3895,11 +3901,12 @@ class App {
               const bytes = await z.files[n].async('uint8array');
               const d = decodeText(bytes);
               // not text, whatever its name says: kept as the file it is, not shown as a page of noise
+              zipAdded.add(rel);
               if (d.text.includes('\0')) { extra.set(rel, new Blob([bytes])); continue; }
               texts.set(rel, d.text);
               orig.set(rel, { bytes, enc: d.enc, bom: d.bom, text: d.text });
-            } else if (IMG_EXT.test(rel) || /\.(pdf|eps)$/i.test(rel)) blobs.set(rel, await z.files[n].async('blob'));
-            else extra.set(rel, await z.files[n].async('blob'));
+            } else if (IMG_EXT.test(rel) || /\.(pdf|eps)$/i.test(rel)) { blobs.set(rel, await z.files[n].async('blob')); zipAdded.add(rel); }
+            else { extra.set(rel, await z.files[n].async('blob')); zipAdded.add(rel); }
           }
         } catch (e) {
           // the reason stays in the message shown at the end (it used to be replaced at once by
@@ -3982,9 +3989,15 @@ class App {
       // Files shared to the app may come from any web page, and a class, a package or a .bib is
       // code TeX runs: with them in it, the project is someone else's as far as shell escape
       // goes, until the owner ticks Shell escape (the click on Open was all that was asked).
-      // The same for files that came in an archive with no document of its own (a .zip holding a
-      // class alone joined the user's project unmarked). Loose files the user opened stay theirs.
-      if (from || zipName) this.markFromLink('', this.name, this.main, from || 'zip');
+      // The same for code that came in an archive with no document of its own (a .zip holding a
+      // class alone joined the user's project unmarked; see zipCode). Loose files the user
+      // opened stay theirs. An Allow given before goes: new files arrived, and the message says so.
+      let markNote = '';
+      if (from || zipCode()) {
+        const was = from ? null : await this.linkInfo();
+        this.markFromLink('', this.name, this.main, from || 'zip');
+        if (!from) markNote = was && was.allowed ? ' Shell escape, allowed for this project before, is restricted again: new files from an archive arrived. Allow it in the PDF pane if you trust them.' : ' They came in an archive, so shell escape is restricted for this project until you allow it in the PDF pane.';
+      }
       for (const [n, t] of texts) this.files.set(n, t);
       for (const [n, o] of orig) this.orig.set(n, o);
       for (const [n, b] of blobs) this.addAsset(n, b);
@@ -4007,7 +4020,7 @@ class App {
       const use = placed ? ' Undo takes ' + (blobs.size === 1 ? 'it' : 'them') + ' out of the text again.' : onlyTex.length ? ' Write \\input{' + onlyTex[0].replace(/\.tex$/i, '') + '} where it goes.' : widget ? ' Write \\rikuywidget{' + widget + '}{' + (fig || 'fallback.png') + '} where it goes (rikuy.sty, from Rikuy\'s sample/widget, defines it).' : fig ? ' Write \\includegraphics{' + fig + '} where it goes.' : '';
       const heldNote = held.length ? ' Not replaced: ' + held.join(', ') + ', which the project has.' : '';
       // a few names, then a count: a .zip of fifty pictures filled the screen with their names
-      this.toast('Added ' + few([...texts.keys(), ...blobs.keys(), ...extra.keys()]) + ' to the project' + asFig + (placed ? ' and placed ' + (blobs.size === 1 ? 'it' : 'them') + ' in the text' : '') + '.' + use + heldNote + skipNote, skipNote || use || heldNote ? 9000 : undefined);
+      this.toast('Added ' + few([...texts.keys(), ...blobs.keys(), ...extra.keys()]) + ' to the project' + asFig + (placed ? ' and placed ' + (blobs.size === 1 ? 'it' : 'them') + ' in the text' : '') + '.' + use + heldNote + markNote + skipNote, skipNote || use || heldNote || markNote ? 9000 : undefined);
       return;
     }
     // the project open until now stays in this browser; the toast says where, so nobody thinks it gone
@@ -4029,7 +4042,7 @@ class App {
     // its shell escape is restricted (the worker runs only TeX Live's safe programs, keeps no
     // LuaTeX font cache and is let go after) until the owner allows more. Loose .tex/.bib files
     // the user opened are their own and stay unrestricted.
-    if (from || zipName || gitFiles.has('.git/HEAD')) this.markFromLink('', this.name, this.main, from || (gitFiles.has('.git/HEAD') ? 'git' : 'zip'));
+    if (from || zipCode() || gitFiles.has('.git/HEAD')) this.markFromLink('', this.name, this.main, from || (gitFiles.has('.git/HEAD') ? 'git' : 'zip'));
     this.hist = []; this.redoStack = []; this.updateUndoUI();
     this.forceRender = true;
     this.srcFile = this.main;
@@ -4201,6 +4214,7 @@ class App {
     const taken = new Set((await this.allSnaps()).map((v) => v.name));
     let name = 'Untitled';
     for (let k = 2; taken.has(name) || name === this.name; k++) name = 'Untitled ' + k;
+    this.clearLink(name, 'main.tex');
     this.loadProject(new Map([['main.tex', '\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\end{document}\n']]), 'main.tex', name, 'New document');
     // ready to type: the button kept the focus, so the first words went nowhere and a space
     // pressed it again
@@ -4212,6 +4226,7 @@ class App {
     await this.snapshot('Before loading the sample', { force: !this.lastSig });
     await this.stashBinary();
     this.loadSample();
+    this.clearLink();
     this.hist = []; this.redoStack = []; this.updateUndoUI();
     this.forceRender = true;
     this.srcFile = this.main;

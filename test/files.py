@@ -232,6 +232,66 @@ try:
         check('no page errors (dropped files)', not errors, errors[:5])
         browser.close()
 
+    # When an archive makes the project someone else's (restricted shell escape): only when a
+    # file from it was added that TeX can run or read as code. Pictures alone do not, a .zip that
+    # could not be read does not, and the sample or a new document holds nothing of a stranger's.
+    with sync_playwright() as p:
+        browser, page, errors = open_page(p)
+        DROP = """(files) => { const dt = new DataTransfer();
+          for (const [name, b64] of files) dt.items.add(new File([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], name));
+          document.getElementById('desk').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); }"""
+        b64 = lambda b: __import__('base64').b64encode(b).decode()
+        LINK = "(async () => { const v = await window.rikuy.linkInfo(); return v ? { origin: v.origin, allowed: v.allowed } : null; })()"
+
+        def drop(*fs):
+            page.evaluate('document.getElementById("toast").hidden = true')
+            page.evaluate(DROP, [[n, b64(b)] for n, b in fs])
+            for _ in range(40):
+                page.wait_for_timeout(100)
+                if page.is_visible('#toast'): break
+            page.wait_for_timeout(200)
+            return page.inner_text('#toast')
+
+        def zipped(d):
+            z = io.BytesIO()
+            with zipfile.ZipFile(z, 'w') as f:
+                for k, v in d.items(): f.writestr(k, v)
+            return z.getvalue()
+        toast = drop(('pics.zip', zipped({'a.png': PNG, 'sub/b.JPG': PNG, 'c.pdf': b'%PDF-1.4\n%%EOF\n'})))
+        check('a .zip of pictures alone joins the project and leaves it the user\'s own', page.evaluate(LINK) is None and page.evaluate('window.rikuy.assetBlobs.has("a.png")') and 'restricted' not in toast, (page.evaluate(LINK), toast))
+        toast = drop(('broken.zip', b'no archive at all'), ('mine.sty', b'\\ProvidesPackage{mine}\n'))
+        check('a .zip that could not be read, dropped with the user\'s own package, marks nothing', page.evaluate(LINK) is None and page.evaluate('window.rikuy.files.has("mine.sty")'), (page.evaluate(LINK), toast))
+        for name, body in (('fig.eps', '%!PS\n'), ('macros.def', '\\def\\x{}\n'), ('run.py', 'print(1)\n'), ('Makefile', 'all:\n')):
+            page.evaluate('window.rikuy.clearLink()')
+            toast = drop(('code.zip', zipped({name: body})))
+            v = page.evaluate(LINK)
+            check('a .zip that adds %s marks the project, and says so' % name, v and v['origin'] == 'zip' and not v['allowed'] and 'restricted' in toast, (v, toast))
+        page.evaluate('window.rikuy.allowShellHere()'); page.wait_for_timeout(200)
+        allowed = (page.evaluate(LINK) or {}).get('allowed')
+        toast = drop(('later.zip', zipped({'later.cls': '\\ProvidesClass{later}\n'})))
+        v = page.evaluate(LINK)
+        check('a later archive with code takes an earlier Allow back, and the message says so', allowed is True and v and not v['allowed'] and 'restricted again' in toast, (allowed, v, toast))
+        page.evaluate('window.rikuy.doReset()'); page.wait_for_timeout(700)
+        check('loading the sample clears the mark: the sample holds nothing of a stranger\'s', page.evaluate(LINK) is None, page.evaluate(LINK))
+        page.evaluate("window.rikuy.markFromLink('Ana')"); page.wait_for_timeout(100)
+        marked = page.evaluate(LINK)
+        page.evaluate('window.rikuy.doReset()'); page.wait_for_timeout(700)
+        check('the same for a mark a shared link left under the sample\'s name', marked and page.evaluate(LINK) is None, (marked, page.evaluate(LINK)))
+        page.evaluate("for (const n of ['Untitled', 'Untitled 2', 'Untitled 3', 'Untitled 4']) window.rikuy.markFromLink('', n, 'main.tex', 'zip')")
+        page.click('#b-new'); page.wait_for_function('window.rikuy.name.startsWith("Untitled")', timeout=5000); page.wait_for_timeout(300)
+        check('a new document carries no mark, whatever an earlier project of its name had', page.evaluate(LINK) is None, (page.evaluate('window.rikuy.name'), page.evaluate(LINK)))
+        # with a document of its own a readable archive is someone else's project, as before;
+        # a broken one dropped with the user's own document is not
+        toast = drop(('broken.zip', b'no archive at all'), ('paper.tex', b'\\documentclass{article}\n\\begin{document}\nMine.\n\\end{document}\n'))
+        page.wait_for_function("window.rikuy.main === 'paper.tex'", timeout=5000)
+        check('a broken .zip dropped with the user\'s own document does not make the document a stranger\'s', page.evaluate(LINK) is None, (page.evaluate(LINK), toast))
+        drop(('Thesis.zip', zipped({'main.tex': '\\documentclass{article}\n\\begin{document}\nTheirs.\n\\end{document}\n'})))
+        page.wait_for_function("window.rikuy.name === 'Thesis'", timeout=5000)
+        v = page.evaluate(LINK)
+        check('a .zip with a document still opens as someone else\'s project', v and v['origin'] == 'zip' and not v['allowed'], v)
+        check('no page errors (archive marks)', not errors, errors[:5])
+        browser.close()
+
     # storage turned off (as in some private windows), or full: the page still opens, and says so
     NO_STORE = ("Object.defineProperty(IDBFactory.prototype, 'open', { value() { throw new DOMException('denied', 'SecurityError'); } });"
                 "Object.defineProperty(window, 'localStorage', { get() { throw new DOMException('denied', 'SecurityError'); } });")
