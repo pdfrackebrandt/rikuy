@@ -613,6 +613,11 @@ class App {
     flow.appendChild(g);
     this.ghost = { el: g, f, pos, sticky: true };
   }
+  // a picture dropped on the text goes where it was dropped: the caret moves to that spot
+  caretAtPoint(x, y) {
+    const r = document.caretRangeFromPoint ? document.caretRangeFromPoint(x, y) : null;
+    if (r && this.root.contains(r.startContainer) && posFromDom(r.startContainer, r.startOffset, this.root)) getSelection().collapse(r.startContainer, r.startOffset);
+  }
   caretToGhost() {
     this.root.focus({ preventScroll: true });
     getSelection().collapse(this.ghost.el.firstChild.firstChild, 1);
@@ -808,7 +813,7 @@ class App {
     const D = this.desk;
     D.addEventListener('dragover', (e) => { if (e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files')) { e.preventDefault(); document.body.classList.add('dropping'); } });
     D.addEventListener('dragleave', (e) => { if (e.target === D) document.body.classList.remove('dropping'); });
-    D.addEventListener('drop', (e) => { if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) { e.preventDefault(); document.body.classList.remove('dropping'); this.openFiles([...e.dataTransfer.files]); } });
+    D.addEventListener('drop', (e) => { if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) { e.preventDefault(); document.body.classList.remove('dropping'); this.caretAtPoint(e.clientX, e.clientY); this.openFiles([...e.dataTransfer.files]); } });
     D.addEventListener('scroll', () => { if (this.pop) this.positionPop(); this.hideBubble(); }, { passive: true });
 
     $('#b-open').addEventListener('click', () => $('#fileinput').click());
@@ -3817,6 +3822,27 @@ class App {
       // Add to the current project (bib files, images, chapters). A file of the same name is
       // replaced, as an upload to Overleaf replaces it: the version before is kept in History
       // first (opening a .tex with the installed app comes here too, and left no way back).
+      // A picture dropped, pasted or opened into one's own document goes where the caret is, as
+      // in a word processor: it used to join the project unseen, with a message naming the
+      // command to write. Its name comes from outside, and in the source it is letters, digits,
+      // dot, dash and underscore alone, with no folder: it cannot close the braces, start a
+      // command or a comment. Pictures shared to the app by another page are not placed.
+      let placed = null;
+      // (PNG, JPEG and PDF, which every TeX engine here includes as they are; an SVG, a GIF or
+      // an EPS joins the project as before and is not written into the text)
+      if (!from && !zipName && !texts.size && !extra.size && blobs.size && blobs.size <= 12 && [...blobs.keys()].every((n) => /\.(png|jpe?g|pdf)$/i.test(n))) {
+        const safe = new Map();
+        for (const [n, b] of blobs) {
+          const ext = /\.[A-Za-z0-9]+$/.exec(n)[0].toLowerCase();
+          const base = (n.split('/').pop().slice(0, -ext.length).replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'figure').slice(0, 60);
+          let name = base + ext;
+          for (let k = 2; safe.has(name); k++) name = base + '-' + k + ext;
+          safe.set(name, b);
+        }
+        blobs.clear();
+        for (const [n, b] of safe) blobs.set(n, b);
+        placed = this.figureEdits([...blobs.keys()]);
+      }
       const over = [...texts.keys(), ...blobs.keys(), ...extra.keys()].filter((n) => this.files.has(n) || this.assetBlobs.has(n) || this.extra.has(n));
       if (over.length && this.base) await this.snapshot('Before ' + over[0] + (over.length > 1 ? ' and ' + (over.length - 1) + ' more' : '') + ' was replaced', { force: true });
       // Files shared to the app may come from any web page, and a class, a package or a .bib is
@@ -3830,8 +3856,9 @@ class App {
       this.binaryDirty = true;
       this.zipDirty = true;
       this.forceRender = true;
-      this.rebuild(this.caretNow());
-      this.pushToSource();
+      // one edit for the figure and its package: one undo takes both out again
+      if (placed) this.commit(placed.edits, placed.caret, 'figure');
+      else { this.rebuild(this.caretNow()); this.pushToSource(); }
       this.updateFileTabs();
       this.saveSoon();
       // an added chapter or figure shows on the page only once the source names it
@@ -3839,10 +3866,10 @@ class App {
       const widget = [...texts.keys()].find((n) => /\.html?$/i.test(n));
       // a PDF dropped alone is most often a document someone hoped to edit
       const asFig = !texts.size && !extra.size && [...blobs.keys()].every((n) => /\.pdf$/i.test(n)) ? ' as a figure (a PDF cannot be opened for editing here)' : '';
-      const use = onlyTex.length ? ' Write \\input{' + onlyTex[0].replace(/\.tex$/i, '') + '} where it goes.' : widget ? ' Write \\rikuywidget{' + widget + '}{' + (fig || 'fallback.png') + '} where it goes (rikuy.sty, from Rikuy\'s sample/widget, defines it).' : fig ? ' Write \\includegraphics{' + fig + '} where it goes.' : '';
+      const use = placed ? ' Undo takes ' + (blobs.size === 1 ? 'it' : 'them') + ' out of the text again.' : onlyTex.length ? ' Write \\input{' + onlyTex[0].replace(/\.tex$/i, '') + '} where it goes.' : widget ? ' Write \\rikuywidget{' + widget + '}{' + (fig || 'fallback.png') + '} where it goes (rikuy.sty, from Rikuy\'s sample/widget, defines it).' : fig ? ' Write \\includegraphics{' + fig + '} where it goes.' : '';
       const heldNote = held.length ? ' Not replaced: ' + held.join(', ') + ', which the project has.' : '';
       // a few names, then a count: a .zip of fifty pictures filled the screen with their names
-      this.toast('Added ' + few([...texts.keys(), ...blobs.keys(), ...extra.keys()]) + ' to the project' + asFig + '.' + use + heldNote + skipNote, skipNote || use || heldNote ? 9000 : undefined);
+      this.toast('Added ' + few([...texts.keys(), ...blobs.keys(), ...extra.keys()]) + ' to the project' + asFig + (placed ? ' and placed ' + (blobs.size === 1 ? 'it' : 'them') + ' in the text' : '') + '.' + use + heldNote + skipNote, skipNote || use || heldNote ? 9000 : undefined);
       return;
     }
     // the project open until now stays in this browser; the toast says where, so nobody thinks it gone
@@ -3891,6 +3918,40 @@ class App {
       } catch (e) { gitNote = ' Its .git folder could not be read: ' + e.message + '.'; }
     }
     this.toast('Opened ' + this.main + (texts.size > 1 ? ' and ' + (texts.size - 1) + ' more file' + (texts.size > 2 ? 's' : '') : '') + '.' + (missing.length ? ' Not found: ' + missing.join(', ') + '.' : '') + gitNote + (prev && prev !== this.name ? ' ' + prev + ' is kept under Review, Versions.' : '') + skipNote, skipNote ? 10000 : 7000);
+  }
+
+  // The edits that put these pictures of the project into the text: a centered
+  // \includegraphics after the paragraph, list or table the caret is in (inside one, or inside
+  // a heading's braces, the block would stop TeX), at the end of the text when there is no
+  // caret; and \usepackage{graphicx} when the preamble has none. names are safe (openFiles).
+  figureEdits(names) {
+    const c = this.caretNow();
+    let f = this.main, p = -1;
+    if (c && c.ghost) { f = this.ghost.f; p = this.ghost.pos; }
+    else if (c) {
+      const n = getSelection().anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement);
+      const it = el && el.closest('.it'), B = it && BLOCKS.get(+it.dataset.b);
+      if (B) { f = B.f; p = B.e; }
+    }
+    const main = this.src(this.main), docAt = main.search(/\\begin\s*\{document\}/);
+    if (p < 0 || (f === this.main && p < docAt)) { const end = main.search(/\\end\s*\{document\}/); f = this.main; p = end >= 0 ? end : main.length; }
+    const src = this.src(f);
+    let nlB = 0; for (let k = p - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
+    let nlA = 0; for (let k = p; k < src.length && /\s/.test(src[k]); k++) if (src[k] === '\n') nlA++;
+    const pre = p === 0 ? '' : '\n'.repeat(Math.max(0, 2 - nlB)), post = '\n'.repeat(Math.max(0, 2 - nlA));
+    const tex = names.map((n) => '\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{' + n + '}\n\\end{center}').join('\n\n');
+    const edits = [{ f, s: p, e: p, t: pre + tex + post }];
+    let shift = 0;
+    if (docAt >= 0 && !/\\(?:usepackage|RequirePackage)\s*(?:\[[^\]]*\])?\s*\{[^}]*\bgraphic[sx]\b[^}]*\}/.test(main.slice(0, docAt).replace(/(^|[^\\])%.*$/gm, '$1'))) {
+      // after the last \usepackage line, as a package for an equation's symbol is added
+      let at = docAt, m;
+      const re = /^[ \t]*\\usepackage\s*(?:\[[^\]]*\])?\s*\{[^}]*\}[^\n]*\n/gm;
+      while ((m = re.exec(main.slice(0, docAt)))) at = m.index + m[0].length;
+      const line = (at && main[at - 1] !== '\n' ? '\n' : '') + '\\usepackage{graphicx}\n';
+      edits.push({ f: this.main, s: at, e: at, t: line });
+      if (f === this.main) shift = line.length;
+    }
+    return { edits, caret: { f, p: p + shift + pre.length + tex.length, bias: -1 } };
   }
 
   addAsset(name, blob) {

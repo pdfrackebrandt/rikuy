@@ -144,12 +144,29 @@ try:
         toast = drop(('notes.rtf', b'{\\rtf1 hi}'), ('more.bib', b'@misc{x, title={X}}\n'))
         check('beside a file that opens, the refused one is still named', 'Added more.bib' in toast and 'notes.rtf was not opened' in toast and page.evaluate('window.rikuy.files.has("more.bib")'), toast)
         toast = drop(('paper.pdf', b'%PDF-1.4\n%%EOF\n'))
-        check('a PDF dropped alone joins as a figure, and the message says it cannot be edited', 'as a figure' in toast and 'cannot be opened for editing' in toast and 'includegraphics{paper.pdf}' in toast, toast)
+        check('a PDF dropped alone joins as a figure, placed in the text, and the message says it cannot be edited', 'as a figure' in toast and 'cannot be opened for editing' in toast and '\\includegraphics[width=0.8\\linewidth]{paper.pdf}' in page.evaluate('window.rikuy.files.get("main.tex")'), toast)
+        page.keyboard.press('Control+z'); page.wait_for_timeout(200)
+        # a picture's name comes from outside: in the source it is letters, digits, dot, dash and
+        # underscore, and the figure goes after the heading it was dropped on, not into its braces
+        before = page.evaluate('window.rikuy.files.get("main.tex")')
+        xy = page.evaluate('(() => { const s = [...document.querySelectorAll("#pages span.t")].find((s) => s.textContent.includes("How to use it")); s.scrollIntoView({ block: "center" }); const r = s.getBoundingClientRect(); return [r.left + 20, r.top + r.height / 2]; })()')
+        page.evaluate("""([name, b, x, y]) => { const dt = new DataTransfer(); dt.items.add(new File([Uint8Array.from(atob(b), (c) => c.charCodeAt(0))], name));
+          document.elementFromPoint(x, y).dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true, clientX: x, clientY: y })); }""", ['my plot} \\end{document} %50 (v2).PNG', b64(PNG), xy[0], xy[1]])
+        page.wait_for_function('window.rikuy.files.get("main.tex").includes("includegraphics")', timeout=5000)
+        after = page.evaluate('window.rikuy.files.get("main.tex")')
+        names = [n for n in page.evaluate('[...window.rikuy.assetBlobs.keys()]') if n not in ('paper.pdf',)]
+        import re as _re
+        check('a dropped picture is kept under a name of letters, digits, dot, dash and underscore', len(names) == 1 and _re.fullmatch(r'[A-Za-z0-9_-]+\.png', names[0]), names)
+        check('and placed after the heading it was dropped on, under that name', names and '\\section{How to use it}\n\n\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{%s}\n\\end{center}\n' % names[0] in after and after.count('\\end{document}') == 1 and after.count('%50') == 0, after[after.find('\\section{How'):][:200])
+        page.keyboard.press('Control+z'); page.wait_for_timeout(200)
+        check('one undo takes it out of the text again', page.evaluate('window.rikuy.files.get("main.tex")') == before)
+        toast = drop(('art.svg', b'<svg xmlns="http://www.w3.org/2000/svg"/>'))
+        check('a picture TeX cannot include as it is (SVG) joins the project and is not written into the text', 'Added art.svg' in toast and 'placed' not in toast and page.evaluate('window.rikuy.files.get("main.tex")') == before, toast)
         many = io.BytesIO()
         with zipfile.ZipFile(many, 'w') as z:
             for i in range(30): z.writestr('pics/p%02d.png' % i, PNG)
         toast = drop(('pics.zip', many.getvalue()))
-        check('thirty files added are a few names and a count', 'and 26 more' in toast and len(toast) < 220 and len(page.evaluate('[...window.rikuy.assetBlobs.keys()]')) == 31, toast)
+        check('thirty files added are a few names and a count', 'and 26 more' in toast and len(toast) < 220 and len([n for n in page.evaluate('[...window.rikuy.assetBlobs.keys()]') if n.startswith('p')and n[1:3].isdigit()]) == 30, toast)
         mixed = io.BytesIO()
         with zipfile.ZipFile(mixed, 'w') as z:
             z.writestr('main.tex', '\\documentclass{article}\n\\begin{document}\nFrom the archive.\n\\end{document}\n')
