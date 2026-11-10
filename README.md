@@ -10,8 +10,9 @@ the document itself, a file, or a git push.
 
 ![Rikuy with its sample document: the typeset page you type on, and the LaTeX source beside it](docs/screenshot.png)
 
-There is no public copy to open yet. To try the editor on your own machine you need node 22 and
-Python 3: `npm ci && npm run build && npm run serve`, then open http://127.0.0.1:8790. The PDF
+Open it at <https://rikuy-3dl.pages.dev/> (also reached as <https://rackebrandt.pe/rikuy/>): the
+page installs as an app, works offline after one visit and reads and writes Word files. To build
+the editor on your own machine you need node 22 and Python 3: `npm ci && npm run build && npm run serve`, then open http://127.0.0.1:8790. The PDF
 pane also needs the TeX tree, which takes the longer build under [Running it](#running-it).
 
 ## What works

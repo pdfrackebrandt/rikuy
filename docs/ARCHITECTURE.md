@@ -99,7 +99,11 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
 - **Edits** are `{f, s, e, t}`. `escapeTeX()` escapes typed text (`%` to `\%`, quotes to ``` `` ```
   and `''`, no break space to `~`); `{}` follows a control word (`endsWithControlWord`).
   `deletionEdits()` deletes a balanced range outright, else only its visible characters
-  (`visibleRanges`), so markup survives. `enter` inserts `\n\n`, `\item`, `\\` or `\newline` by
+  (`visibleRanges`), so markup survives; only an explicit Select all followed by Delete or typing
+  replaces the body the parser found, preamble kept, in one undo step (`wholeDoc`). A picture
+  pasted, dropped or opened into a document is placed after the caret's block as a centered
+  `\includegraphics`, under a name reduced to safe characters that no project file has, with
+  `graphicx` added (`figureEdits`). `enter` inserts `\n\n`, `\item`, `\\` or `\newline` by
   `data-ctx`, or at an item's end shows a ghost paragraph (`showGhost`, `ghostInsert`).
   `toggleStyle` wraps in `\textbf{…}` or unwraps the enclosing wrapper (`styOfEl`). Backspace
   beside an atom first selects it (`soleAtom`, `arm`). Paste goes through `src/paste.js`.

@@ -6,6 +6,12 @@ serves it as static files, free: static requests are unlimited, and a deployment
 files of at most 25 MiB each (Rikuy has about 300; its largest is 12 MB). GitHub Actions builds
 and deploys it on every push to `main`; nothing is deployed from a laptop.
 
+Since 2026-11-10 it runs at <https://rikuy-3dl.pages.dev/> (the name `rikuy` was taken on
+pages.dev), in the open: the repository is public with it, which is how the source of the GPL and
+AGPL programs it ships is offered. `rackebrandt.pe/rikuy/` forwards there (a page of the
+maintainer's site). Browsers keep documents by address, so a move to another address (step 7)
+leaves what people kept behind at the old one: decide it early.
+
 ## Once, by hand
 
 1. **A Cloudflare account** (the free plan is enough): <https://dash.cloudflare.com/sign-up>.
@@ -26,7 +32,7 @@ and deploys it on every push to `main`; nothing is deployed from a laptop.
 5. **First deployment.** Actions, TeX, Run workflow on `main` (about an hour the first time, while
    it builds the TeX tree; later runs take the tree from the cache). When it passes, Deploy runs
    by itself. Check `https://rikuy.pages.dev`.
-6. **Private until launch.** Rikuy ships GPL and AGPL programs, so a copy anyone can open comes
+6. **Private until launch** (not in use: the launch was public). Rikuy ships GPL and AGPL programs, so a copy anyone can open comes
    with the duty to offer its source; while the repository is private, keep the site to yourself.
    Cloudflare dashboard, Zero Trust (the free plan covers 50 people), Access, Applications, Add an
    application, Self-hosted: application domain `rikuy.pages.dev` (and a second application for
