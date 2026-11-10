@@ -218,6 +218,73 @@ async function copyRich(html, text) {
 const lineOf = (src, p) => { let n = 1; for (let i = 0; i < p && i < src.length; i++) if (src.charCodeAt(i) === 10) n++; return n; };
 const lineStart = (src, line) => { let p = 0; for (let n = 1; n < line; n++) { const i = src.indexOf('\n', p); if (i < 0) return src.length; p = i + 1; } return p; };
 const fmtMB = (b) => (b / 1e6).toFixed(b < 1e7 ? 1 : 0) + ' MB';
+// What a formula's source has that would not stay inside the formula once written into the
+// document: braces left open, closing braces with none before them, a backslash at the very end
+// (it would take the formula's closing $ or brace as its name), a comment at the very end (it
+// would hide the closing $). \{ and \} are characters; % starts a comment.
+function mathScan(tex) {
+  let open = 0, extra = 0, slash = false, comment = false;
+  for (let i = 0; i < tex.length; i++) {
+    const ch = tex[i];
+    if (ch === '\\') { if (i === tex.length - 1) slash = true; i++; continue; }
+    if (ch === '%') { const nl = tex.indexOf('\n', i); if (nl < 0) { comment = true; break; } i = nl; continue; }
+    if (ch === '{') open++;
+    else if (ch === '}') { if (open) open--; else extra++; }
+  }
+  return { open, extra, slash, comment };
+}
+// Such a text is not written while it is typed: an unclosed { took the rest of the paragraph
+// into the formula (the page showed it as red source), a } or a $ too many ends it early. This
+// is the reason shown in the box, or ''.
+function mathBreaksOut(tex, katexErr) {
+  const s = mathScan(tex);
+  if (s.extra) return 'A } has no { before it.';
+  if (s.open) return 'A { is not closed.';
+  if (/^Can't use function '\$'/.test(katexErr || '')) return 'A $ cannot stand inside a formula: write \\$ for the sign.';
+  if (s.slash) return 'A \\ at the end needs a name after it, as in \\alpha.';
+  if (s.comment) return 'A % makes the rest of its line a comment: write \\% for the sign.';
+  return '';
+}
+// The same text made whole, with what was typed kept: a closing brace at the end for each one
+// left open, an opening one at the start for each } that has none, a stray $ as the sign \$, a
+// line end after a comment at the very end. A lone backslash at the end is dropped: nothing can
+// follow it but the formula's own end. This is what a formula's box writes when it closes while
+// its text is held back, so the text is not lost and undo has a step for it.
+function mathMadeWhole(tex, katexErr) {
+  const dollar = /^Can't use function '\$'/.test(katexErr || '');
+  const s = mathScan(tex);
+  let out = '';
+  for (let i = 0; i < tex.length; i++) {
+    const ch = tex[i];
+    if (ch === '\\') { if (i < tex.length - 1) out += tex.slice(i, i + 2); i++; continue; }
+    if (ch === '%') { const nl = tex.indexOf('\n', i); out += tex.slice(i, nl < 0 ? tex.length : nl); if (nl < 0) break; i = nl - 1; continue; }
+    out += ch === '$' && dollar ? '\\$' : ch;
+  }
+  return '{'.repeat(s.extra) + out + (s.comment ? '\n' : '') + '}'.repeat(s.open);
+}
+// KaTeX's message for a mistake in a formula, in plain words where there are some ("Expected
+// 'EOF', got '#' at position 3" says little to someone who has never seen TeX). KaTeX's own
+// words stay as the tooltip of the line.
+function plainMathError(msg, tex) {
+  const m = String(msg || '');
+  const hold = mathBreaksOut(tex || '', m);
+  let x;
+  if (hold) return hold;
+  if ((x = /^Undefined control sequence: (\\\S+)/.exec(m))) return 'This command is not known: ' + x[1];
+  if ((x = /^Expected group after '(.)'/.exec(m))) return 'Something is missing after ' + x[1] + '.';
+  if ((x = /^Double (super|sub)script/.exec(m))) return 'Two ' + (x[1] === 'super' ? '^' : '_') + ' in a row: put the first in braces, as in {x^2}^3.';
+  if (/expected '\}' at end of input/.test(m)) { x = (tex || '').match(/\\[A-Za-z]+/g); return 'Something is missing after ' + (x ? x[x.length - 1] : 'the last command') + '.'; }
+  if (/expected '\]'/.test(m)) return 'A [ is not closed.';
+  if (/^Expected '\\right'/.test(m)) return '\\left has no \\right to close it.';
+  if (/^Expected 'EOF', got '\\right'/.test(m)) return '\\right has no \\left before it.';
+  if (/^Expected 'EOF', got '\\end'/.test(m)) return '\\end has no \\begin before it.';
+  if (/^Expected 'EOF', got '&'/.test(m)) return '& separates columns: it works in a matrix or in aligned rows.';
+  if (/^Expected 'EOF', got '#'/.test(m)) return '# cannot stand here: write \\# for the sign.';
+  if ((x = /^No such environment: (\S+)/.exec(m))) return 'This environment is not known: ' + x[1];
+  if ((x = /^Mismatch: \\begin\{([^}]+)\} matched by \\end\{([^}]+)\}/.exec(m))) return '\\begin{' + x[1] + '} is closed by \\end{' + x[2] + '}: the two names must be the same.';
+  if (/^Expected & or/.test(m)) return 'A \\begin{…} is not closed by its \\end{…}.';
+  return m;
+}
 function debounce(fn, ms) { let t = null; const d = (...a) => { clearTimeout(t); t = setTimeout(() => { t = null; fn(...a); }, ms); }; d.flush = (...a) => { clearTimeout(t); t = null; fn(...a); }; d.cancel = () => { clearTimeout(t); t = null; }; d.pending = () => t !== null; return d; }
 
 // ---------------------------------------------------------------------------
@@ -329,7 +396,14 @@ class App {
     this.redoStack = [];
     this.prefix = 'r0|';
     this.renderVer = 0;
-    this.prefs = Object.assign({ zoom: 'fit', source: window.innerWidth > 1100, style: 'Plain, direct academic prose. No em dashes. No filler, no hedging.' }, load(PREFS) || {});
+    // A first visit shows the page alone: the source pane, open by default on a wide screen,
+    // put a wall of LaTeX beside the page for someone who has never seen any. zoom stays 'fit'
+    // or a number, the two the version before this one reads (it multiplies anything else, and
+    // after a rollback the page would have no size); what 'fit' fits on a phone is in `phone`.
+    const kept = load(PREFS);
+    this.newPrefs = !kept;
+    this.prefs = Object.assign({ zoom: 'fit', source: false, style: 'Plain, direct academic prose. No em dashes. No filler, no hedging.' }, kept || {});
+    if (typeof this.prefs.zoom !== 'number') this.prefs.zoom = 'fit';
     this.pop = null;
     this.ghost = null;
     this.pending = null;
@@ -355,6 +429,13 @@ class App {
     this.savedT = saved ? saved.t : null; // the copy in IndexedDB this tab last read or wrote
     const ls = load(STORE);
     if (ls && ls.files && (!saved || (ls.t || 0) > (saved.t || 0))) saved = ls; // a session that could not use IndexedDB
+    if (this.newPrefs) {
+      // someone who was here before the first visit changed (a project kept, no settings ever
+      // written) keeps the source pane a wide screen gave them; a newcomer's choice is written
+      // now, so the next visit is no first visit
+      if (saved && saved.files && saved.files.length && window.innerWidth > 1100) this.prefs.source = true;
+      store(PREFS, this.prefs);
+    }
     if (saved && saved.files && saved.files.length) {
       this.files = new Map(saved.files);
       this.main = saved.main || this.files.keys().next().value;
@@ -444,12 +525,21 @@ class App {
     const P = geometry(this.model ? this.model.opts : { paper: 'letter', pt: 10 });
     const avail = Math.max(240, this.desk.clientWidth - (window.innerWidth < 640 ? 16 : 56));
     let px;
-    if (this.prefs.zoom === 'fit') px = Math.min(PX_PER_PT * 1.25, avail / P.pw);
-    else px = PX_PER_PT * this.prefs.zoom;
+    const z = this.prefs.zoom;
+    // On a phone the whole sheet across the screen leaves the text about 6px high. Until a zoom
+    // is chosen, the text block fills the width there and the margins are off to the sides:
+    // half as large again, and a line is read without moving the page.
+    // (prefs.phone: 'sheet' once the whole sheet was chosen with the zoom button there)
+    this.textFit = z === 'fit' && this.prefs.phone !== 'sheet' && window.innerWidth <= 520;
+    if (this.textFit) px = Math.min(PX_PER_PT * 1.25, Math.max(avail / P.pw, (this.desk.clientWidth - 12) / P.tw));
+    else if (z === 'fit') px = Math.min(PX_PER_PT * 1.25, avail / P.pw);
+    else px = PX_PER_PT * z;
     px = Math.round(px * 1000) / 1000;
     const changed = px !== this.px;
     this.px = px;
-    $('#zoomv').textContent = this.prefs.zoom === 'fit' ? 'Fit' : Math.round(this.prefs.zoom * 100) + '%';
+    $('#zoomv').textContent = this.textFit ? Math.round(px / PX_PER_PT * 100) + '%' : z === 'fit' ? 'Fit' : Math.round(z * 100) + '%';
+    // with the text block as wide as the screen, the view starts at the text, not at the margin
+    if (this.textFit && changed) requestAnimationFrame(() => { if (this.textFit) this.desk.scrollLeft = Math.max(0, P.ml * px - 6); });
     return changed;
   }
 
@@ -482,6 +572,9 @@ class App {
     this.renderer.sync(model, this.prefix);
     this.layoutPass();
     if (caret) this.restoreCaret(caret);
+    // the edit took the last text off the page: the caret goes to the blank paragraph that
+    // stands in for it (it was left nowhere, and the next keystroke did nothing)
+    if (caret && this.ghost && this.ghost.sticky && document.activeElement === this.root && caret.f === this.ghost.f && caret.p >= this.ghost.pos) this.caretToGhost();
     this.status(performance.now() - t0);
   }
 
@@ -572,7 +665,9 @@ class App {
   // A document with no text on the page to type into (a new one, an empty file, a preamble
   // alone): a blank paragraph at the end of its body that stays, so typing on the page starts it.
   emptyGhost() {
-    if (this.root.querySelector('span.t')) return;
+    // a title block does not count: its text is \title's, and below it there is still nowhere
+    // to put a first paragraph
+    for (const t of this.root.querySelectorAll('span.t')) if (!t.closest('.it.ttl')) return;
     const flows = this.root.querySelectorAll('.page .flow');
     const flow = flows[flows.length - 1];
     if (!flow) return;
@@ -587,6 +682,15 @@ class App {
     g.appendChild(mk('span', 't gh', '\u200B'));
     flow.appendChild(g);
     this.ghost = { el: g, f, pos, sticky: true };
+  }
+  // a picture dropped on the text goes where it was dropped: the caret moves to that spot
+  caretAtPoint(x, y) {
+    const r = document.caretRangeFromPoint ? document.caretRangeFromPoint(x, y) : null;
+    if (r && this.root.contains(r.startContainer) && posFromDom(r.startContainer, r.startOffset, this.root)) getSelection().collapse(r.startContainer, r.startOffset);
+  }
+  caretToGhost() {
+    this.root.focus({ preventScroll: true });
+    getSelection().collapse(this.ghost.el.firstChild.firstChild, 1);
   }
 
   relayout(force) {
@@ -779,7 +883,7 @@ class App {
     const D = this.desk;
     D.addEventListener('dragover', (e) => { if (e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files')) { e.preventDefault(); document.body.classList.add('dropping'); } });
     D.addEventListener('dragleave', (e) => { if (e.target === D) document.body.classList.remove('dropping'); });
-    D.addEventListener('drop', (e) => { if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) { e.preventDefault(); document.body.classList.remove('dropping'); this.openFiles([...e.dataTransfer.files]); } });
+    D.addEventListener('drop', (e) => { if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) { e.preventDefault(); document.body.classList.remove('dropping'); this.caretAtPoint(e.clientX, e.clientY); this.openFiles([...e.dataTransfer.files]); } });
     D.addEventListener('scroll', () => { if (this.pop) this.positionPop(); this.hideBubble(); }, { passive: true });
 
     $('#b-open').addEventListener('click', () => $('#fileinput').click());
@@ -817,6 +921,18 @@ class App {
     $('#st-warn').addEventListener('click', () => this.toggleNav(true, 'problems'));
     $('#b-nav').addEventListener('click', () => this.toggleNav());
     $('#nav-close').addEventListener('click', () => this.toggleNav(false));
+    // Where the bar shows icons alone (a phone hides Help and the zoom steps too), the menu
+    // panel lists each of its actions by name: the bar's own buttons, pressed from here.
+    for (const id of ['b-open', 'b-save', 'b-save-more', 'b-pdf', 'b-copy', 'b-share', 'b-undo', 'b-redo', 'b-zout', 'zoomv', 'b-zin', 'b-src', 'b-help']) {
+      const b = $('#' + id), a = mk('button', 'nav-act');
+      a.type = 'button'; a.dataset.for = id;
+      const svg = b.querySelector('svg'), lab = b.querySelector('span');
+      if (svg) a.appendChild(svg.cloneNode(true));
+      a.appendChild(mk('span', '', lab ? lab.textContent : ''));
+      // the zoom steps leave the panel open, to press again
+      a.addEventListener('click', () => { if (!/^b-z/.test(id)) this.toggleNav(false); b.click(); if (/^b-z|zoomv/.test(id)) this.navActs(); });
+      $('#nav-acts').appendChild(a);
+    }
     $('#nt-outline').addEventListener('click', () => this.toggleNav(true, 'outline'));
     $('#nt-problems').addEventListener('click', () => this.toggleNav(true, 'problems'));
     $('#nt-changes').addEventListener('click', () => this.toggleNav(true, 'changes'));
@@ -983,13 +1099,44 @@ class App {
     return vr.map(([s, e]) => ({ f, s, e, t: '' }));
   }
 
+  // Everything on the page is selected: what is typed, pasted or deleted then replaces the
+  // document's body, as New document would, and the preamble stays. Taking only the visible
+  // characters, as for any other selection, left every heading, list, theorem and table
+  // standing empty with no way to remove them. Only Select all counts (allSel: the range
+  // selectAllText made and still the selection), or a selection that holds the whole page, as
+  // a phone's own Select all makes: one drawn from the first word to the last can leave a
+  // picture, an equation, a listing or an \input outside it, and those must stay. The body is
+  // the one the parser found: with no \begin{document}, or no \end{document} to close it,
+  // there is none to replace, and the selection is deleted as any other.
+  wholeDoc() {
+    const sel = getSelection();
+    if (!sel.rangeCount || sel.isCollapsed || !this.root.contains(sel.anchorNode)) return null;
+    const r = sel.getRangeAt(0), A = this.allSel;
+    if (!(A && r.startContainer === A.sc && r.startOffset === A.so && r.endContainer === A.ec && r.endOffset === A.eo)) {
+      const all = document.createRange();
+      all.selectNodeContents(this.root);
+      if (r.compareBoundaryPoints(Range.START_TO_START, all) > 0 || r.compareBoundaryPoints(Range.END_TO_END, all) < 0) return null;
+    }
+    const d = this.model && !this.stale && this.model.main === this.main ? this.model.docBody : null;
+    return d && d.closed ? { s: d.s, e: d.e } : null;
+  }
+  // one edit, so one undo step brings the whole document back as it was
+  replaceBody(w, tex, kind) {
+    const pad = '\n\n';
+    this.commit([{ f: this.main, s: w.s, e: w.e, t: tex ? pad + tex + pad : pad }], { f: this.main, p: w.s + pad.length + tex.length, bias: -1 }, kind);
+  }
+
   insertText(data, range) {
     if (!data) return;
+    const whole = range ? null : this.wholeDoc();
+    if (whole) { this.replaceBody(whole, escapeTeX(data, ' '), 'replace'); return; }
     const c = this.caretNow();
-    if (c && c.ghost) { this.ghostInsert(escapeTeX(data, ' ')); return; }
     if (!c) return;
-    if (data === '$' && (!range && c.collapsed)) { this.newMath(); return; }
-    if (data === '\\' && (!range && c.collapsed)) { this.openPalette(); return; }
+    // in a blank paragraph too (a new document, the line after Enter): there they were typed
+    // as the characters, though that is where an equation or a heading most often starts
+    if (data === '$' && !range && (c.collapsed || c.ghost)) { this.newMath(); return; }
+    if (data === '\\' && !range && (c.collapsed || c.ghost)) { this.openPalette(); return; }
+    if (c.ghost) { this.ghostInsert(escapeTeX(data, ' ')); return; }
     const f = range ? range.f : c.f;
     let a = range ? range.a : c.a, b = range ? range.b : c.b;
     const src = this.src(f);
@@ -1020,6 +1167,8 @@ class App {
       if (/Backward/.test(type) && !this.ghost.sticky) { const g = this.ghost; this.removeGhost(); this.restoreCaret({ f: g.f, p: g.pos }); }
       return;
     }
+    const whole = this.wholeDoc();
+    if (whole) { this.replaceBody(whole, '', 'del'); return; }
     if (!c) return;
     let f = c.f, a = c.a, b = c.b;
     if (c.collapsed) {
@@ -1033,6 +1182,19 @@ class App {
         if (y && this.src(y.f).slice(y.is, y.ie).trim() === '') {
           this.commit([{ f: y.f, s: y.s, e: y.e, t: '' }], { f: y.f, p: y.s }, 'del');
           return;
+        }
+        // A heading whose words were all deleted: the next Backspace or Delete takes the heading
+        // itself. It stayed as a number with nothing after it, and only the source could remove it.
+        if (ph.closest('.it.h')) {
+          // the command is looked for just before the caret, not through the whole file: a long
+          // document from someone else must not make a keystroke slow
+          const src = this.src(c.f), from = Math.max(0, c.a - 400);
+          const open = /\\(?:part|chapter|(?:sub){0,2}section|(?:sub)?paragraph)\*?\s*(?:\[[^\]]*\]\s*)?\{\s*$/.exec(src.slice(from, c.a));
+          const close = /^\s*\}/.exec(src.slice(c.a, c.a + 400));
+          if (open && close) {
+            this.commit([{ f: c.f, s: from + open.index, e: c.a + close[0].length, t: '' }], { f: c.f, p: from + open.index, bias: -1 }, 'del');
+            return;
+          }
         }
       }
       const tr = ranges && ranges[0];
@@ -1153,8 +1315,15 @@ class App {
       this.commit([...edits, { f, s: p, e: p, t: '\\\\\n' }], { f, p: p + 3, bias: 1 }, 'type');
       return;
     }
-    if (kind === 'cell' || kind === 'cap' || kind === 'ttl') return;
+    if (kind === 'cell' || kind === 'cap') return;
     const itemEl = el.closest('.it');
+    if (kind === 'ttl') {
+      // Enter in the title, an author or the date starts the text below them, after \maketitle
+      // (it did nothing, so a document with a title alone had no way to its first paragraph)
+      const B = itemEl && BLOCKS.get(+itemEl.dataset.b);
+      if (B) this.showGhost(itemEl, B.f, B.e);
+      return;
+    }
     if (kind === 'h') {
       const B = itemEl && BLOCKS.get(+itemEl.dataset.b);
       // the \label on the heading's next line stays with the heading: the new paragraph goes after it
@@ -1310,6 +1479,8 @@ class App {
     try { e.clipboardData.setData('text/html', selectionHTML(getSelection(), (el) => this.mathML(el))); } catch (err) { /* plain text still works */ }
     this.lastCopy = { plain, latex };
     if (cut) {
+      const whole = this.wholeDoc();
+      if (whole) { this.replaceBody(whole, '', 'cut'); return; }
       const edits = this.deletionEdits(c.f, c.a, c.b);
       this.commit(edits, { f: c.f, p: c.a }, 'cut');
     }
@@ -1328,7 +1499,7 @@ class App {
     const docx = [...(dt.files || [])].find((f) => isDocx(f));
     if (docx) { this.openDocx(docx); return; }
     const imgs = !plain && !html ? [...(dt.files || [])].filter((f) => /^image\/(png|jpeg|gif|webp)$/.test(f.type)) : [];
-    if (imgs.length) { this.openFiles(imgs.map((f, i) => new File([f], 'pasted-' + Date.now().toString(36) + (i ? '-' + i : '') + '.' + f.type.slice(6).replace('jpeg', 'jpg'), { type: f.type }))); return; }
+    if (imgs.length) { this.openFiles(imgs.map((f, i) => new File([f], 'pasted-' + Date.now().toString(36) + (i ? '-' + i : '') + '.' + f.type.slice(6).replace('jpeg', 'jpg'), { type: f.type })), undefined, { fresh: true }); return; }
     let latex = '';
     try { latex = dt.getData('text/x-galley-latex') || ''; } catch (err) { latex = ''; }
     if (!latex && this.lastCopy && plain === this.lastCopy.plain) latex = this.lastCopy.latex;
@@ -1337,9 +1508,12 @@ class App {
     const src = this.src(c.ghost ? this.ghost.f : c.f);
     const at0 = c.ghost ? this.ghost.pos : c.a;
     // inside a command argument (a heading, a cell, a caption) a paste stays one paragraph
-    const inArg = c.ghost ? false : braceDepth(src, at0) > 0;
+    // over a selection of everything the paste becomes the body: paragraphs stay paragraphs
+    // though the selection starts in the title
+    const whole = c.ghost ? null : this.wholeDoc();
+    const inArg = c.ghost || whole ? false : braceDepth(src, at0) > 0;
     const el = getSelection().anchorNode && (getSelection().anchorNode.nodeType === 1 ? getSelection().anchorNode : getSelection().anchorNode.parentElement);
-    const inline = inArg || !!(el && el.closest && el.closest('td, .it.h, .cap'));
+    const inline = inArg || (!whole && !!(el && el.closest && el.closest('td, .it.h, .cap')));
     const pre = this.src(this.main).split(/\\begin\s*\{document\}/)[0];
     const o = { prev: src[at0 - 1] || ' ', hyperref: /\\usepackage(\[[^\]]*\])?\{[^}]*hyperref/.test(pre), booktabs: /\\usepackage(\[[^\]]*\])?\{[^}]*booktabs/.test(pre), inlineOnly: inline };
     const rich = () => {
@@ -1351,6 +1525,7 @@ class App {
       return t;
     };
     if (c.ghost) { this.ghostInsert(latex || rich()); return; }
+    if (whole) { this.replaceBody(whole, latex || rich(), 'paste'); return; }
     const edits = this.deletionEdits(c.f, c.a, c.b);
     const at = edits.length && edits[0].s >= c.a ? edits[0].s : c.a;
     let t = latex || rich();
@@ -1456,7 +1631,8 @@ class App {
     if (!atomEl) {
       this.disarm();
       // an empty document: a click anywhere on the page goes to the blank paragraph
-      if (this.ghost && this.ghost.sticky) { e.preventDefault(); this.root.focus({ preventScroll: true }); getSelection().collapse(this.ghost.el.firstChild.firstChild, 1); }
+      // (not a click on the title above it, which is edited where it stands)
+      if (this.ghost && this.ghost.sticky && !e.target.closest('.it.ttl')) { e.preventDefault(); this.caretToGhost(); }
       return;
     }
     const info = atomOfEl(atomEl);
@@ -1486,6 +1662,10 @@ class App {
       if (!this.pop) this.removeGhost();
     }
     if (this.pending && (!sel.rangeCount || sel.anchorNode !== this.pending.node || sel.anchorOffset !== this.pending.offset)) this.pending = null;
+    if (this.allSel) {
+      const r = sel.rangeCount ? sel.getRangeAt(0) : null, A = this.allSel;
+      if (!r || r.startContainer !== A.sc || r.startOffset !== A.so || r.endContainer !== A.ec || r.endOffset !== A.eo) this.allSel = null;
+    }
     if (!inRoot) { this.hideBubble(); return; }
     if (this.ourSel) { this.ourSel = false; }
     if (!sel.isCollapsed) { this.showBubble(); const c = this.caretNow(); if (c && !c.collapsed) { this.lastSel = c; this.lastSelT = Date.now(); } } else this.hideBubble();
@@ -1503,6 +1683,9 @@ class App {
     const sel = getSelection();
     sel.removeAllRanges();
     sel.addRange(r);
+    // what wholeDoc knows a Select all by, until the selection changes
+    const now = sel.getRangeAt(0);
+    this.allSel = { sc: now.startContainer, so: now.startOffset, ec: now.endContainer, eo: now.endOffset };
   }
 
   showBubble() {
@@ -1559,6 +1742,7 @@ class App {
 
   makePop(anchor, cls, title) {
     this.closePop();
+    if (this.pop) this.closePop(false, true);
     const p = document.createElement('div');
     p.className = 'pop ' + (cls || '');
     p.setAttribute('role', 'dialog');
@@ -1626,9 +1810,12 @@ class App {
     }
     return null;
   }
-  closePop(silent) {
+  // force: for a box that would refuse (a formula's text that cannot be written, see
+  // openMath) when another popover is opening over it; its text is then written as it is
+  closePop(silent, force) {
     if (!this.pop) return;
     const P = this.pop;
+    if (!force && P.refuse && P.refuse()) return;
     if (P.onClose) { try { P.onClose(); } catch (e) { console.error(e); } }
     if (P.mathText) { try { this.ensurePackages(P.mathText(), P); } catch (e) { console.error(e); } }
     if (P.wordTyping) P.wordTyping.destroy();
@@ -1638,6 +1825,13 @@ class App {
     P.el.remove();
     this.closeGroup();
     if (!silent && P.returnCaret) this.restoreCaret(P.returnCaret);
+    // Opened from a blank paragraph and closed with nothing made, or a document that so far
+    // holds only what the popover made (a first formula) and has no text to put the caret in:
+    // the caret goes to the blank paragraph, so typing goes on
+    if (!silent && this.ghost && this.root.contains(this.ghost.el) && !this.caretNow()) this.caretToGhost();
+    // Share, Save and Help open from a button of the bar: closed from the keyboard, the focus
+    // goes back to it (it fell to the page's start, and Tab began again from the menu button)
+    if (P.anchor instanceof HTMLButtonElement && P.anchor.offsetParent && (!document.activeElement || document.activeElement === document.body)) P.anchor.focus({ preventScroll: true });
   }
 
   // A few Word symbols need a package beyond amsmath and amssymb (\\llbracket needs stmaryrd).
@@ -1919,17 +2113,30 @@ class App {
     const preview = () => {
       const r = this.renderer.katex(this.mathPreviewTex(ta.value, display), display);
       prev.innerHTML = r.html;
-      err.textContent = r.err ? r.err : '';
-      err.hidden = !r.err;
+      err.textContent = r.err || held() ? plainMathError(r.err, ta.value) + (held() ? ' The document keeps the formula as it was until this is put right.' : '') : '';
+      err.title = r.err || '';
+      err.hidden = !(r.err || held());
     };
+    // text that would not stay a formula in the document is not written there (mathBreaksOut)
+    const kerr = () => this.renderer.katex(this.mathPreviewTex(ta.value, display), display).err;
+    const held = () => mathBreaksOut(ta.value, kerr());
+    // Enter says the formula is done. With a } or a $ too many there is no telling which one was
+    // meant, so the box stays open with its message; an open brace is closed for the writer.
+    const stay = () => /^A [}$]/.test(held());
     preview();
-    const push = debounce(() => this.pop && this.pop.applyInner(ta.value), 140);
+    const push = debounce(() => { if (this.pop && !held()) this.pop.applyInner(ta.value); }, 140);
     ta.addEventListener('input', () => { preview(); push(); ta.rows = Math.min(10, Math.max(display ? 3 : 1, ta.value.split('\n').length)); });
     ta.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && (!display || e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); push.flush(); this.closePop(); }
+      if (e.key === 'Enter' && (!display || e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
     });
-    this.pop.onClose = () => push.flush();
+    // However the box closes, what was typed is kept: text held back is written made whole
+    // (mathMadeWhole), in the box's undo step.
+    const whole = () => mathMadeWhole(ta.value, kerr());
+    this.pop.onClose = () => { push.cancel(); if (!this.pop) return; this.pop.applyInner(held() ? whole() : ta.value); };
+    // what is written must itself pass the box's check; if making it whole could not get it
+    // there, the box stays open with its message (closePop asks) and nothing is lost
+    this.pop.refuse = () => !!held() && !!mathBreaksOut(whole(), this.renderer.katex(this.mathPreviewTex(whole(), display), display).err);
     this.pop.mathText = () => ta.value;
     this.positionPop();
     ta.focus();
@@ -1955,7 +2162,7 @@ class App {
         try { mf.position = Math.max(0, mf.lastOffset - 1); } catch (e) { /* ignore */ }
         P.wordTyping.newRow();
       } : null,
-      onEnter: () => { push.flush(); this.closePop(); },
+      onEnter: () => { if (stay()) return; push.flush(); this.closePop(); },
       onEscape: () => { push.flush(); this.closePop(); }
     });
   }
@@ -2019,7 +2226,13 @@ class App {
     let ins = null;
     const base = c.ghost ? null : { f: c.f, a: c.a, b: c.b };
     const ghost = c.ghost ? this.ghost : null;
+    const kerr = (v) => this.renderer.katex(this.mathPreviewTex(v, false), false).err;
+    const held = (v) => (v ? mathBreaksOut(v, kerr(v)) : '');
+    const stay = () => /^A [}$]/.test(held(ta.value));
     const insert = (v) => {
+      // not while it would not stay a formula in the document (an unclosed brace); when the box
+      // closes it comes here made whole
+      if (held(v)) return;
       if (!ins) {
         if (!v) return;
         const t = '$' + v + '$';
@@ -2048,7 +2261,7 @@ class App {
       this.pop.returnCaret = { f: ins.f, p: ins.e, bias: 1 };
     };
     const push = debounce(() => this.pop && insert(ta.value), 160);
-    const preview = () => { const r = this.renderer.katex(this.mathPreviewTex(ta.value, false), false); prev.innerHTML = ta.value ? r.html : ''; err.textContent = r.err || ''; err.hidden = !r.err || !ta.value; };
+    const preview = () => { const r = this.renderer.katex(this.mathPreviewTex(ta.value, false), false); prev.innerHTML = ta.value ? r.html : ''; err.textContent = r.err ? plainMathError(r.err, ta.value) : ''; err.title = r.err || ''; err.hidden = !r.err || !ta.value; };
     ta.addEventListener('beforeinput', (e) => {
       if (e.data === '$' && !ta.value && !ins) {
         e.preventDefault();
@@ -2059,10 +2272,12 @@ class App {
     });
     ta.addEventListener('input', () => { preview(); push(); });
     ta.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); push.flush(); this.closePop(); }
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
     });
-    this.pop.onClose = () => push.flush();
+    const whole = () => mathMadeWhole(ta.value, kerr(ta.value));
+    this.pop.onClose = () => { push.cancel(); if (this.pop) insert(held(ta.value) ? whole() : ta.value); };
+    this.pop.refuse = () => !!held(ta.value) && !!held(whole());
     this.pop.mathText = () => ta.value;
     this.pop.returnCaret = base ? { f: base.f, p: base.a } : null;
     this.positionPop();
@@ -2070,7 +2285,7 @@ class App {
     this.attachField(prev, ta, {
       display: false, initial: '', keepFocus: true,
       env: () => '$',
-      onEnter: () => { push.flush(); this.closePop(); },
+      onEnter: () => { if (stay()) return; push.flush(); this.closePop(); },
       onEscape: () => { push.flush(); this.closePop(); },
       onKey: (e) => {
         if (e.key === '$' && !ta.value && !ins) {
@@ -2087,9 +2302,31 @@ class App {
     const c = this.caretNow();
     if (!c || c.ghost) return;
     const t = '\n\\begin{equation}\n  \n\\end{equation}\n';
+    // (the history as it is before the equation: given up empty, it goes back to this)
+    this.closeGroup();
+    const h0 = this.hist.length, redo0 = this.redoStack;
     this.commit([{ f: c.f, s: c.a, e: c.a, t }], { f: c.f, p: c.a + t.length }, 'insert');
     const el = this.findAtomEl({ f: c.f, s: c.a + 1, kind: 'math' });
     if (el) { const info = atomOfEl(el); if (info) this.openMath(el, info); }
+    // closed with nothing typed, the equation goes again: it stayed as an empty environment,
+    // which prints a number beside nothing
+    const P = this.pop;
+    if (!P || !P.onClose) return;
+    const done = P.onClose;
+    P.onClose = () => {
+      done();
+      if (this.src(c.f).slice(c.a, c.a + t.length) !== t) return;
+      // Its insertion is taken back and leaves no step, forward or back: with a step of its
+      // own for the removal, the first undo brought the empty equation back.
+      if (this.hist.length === h0 + 1) {
+        const h = this.hist.pop();
+        for (const d of h.files) { const s = this.files.get(d.f) ?? ''; this.files.set(d.f, s.slice(0, d.s) + d.del + s.slice(d.s + d.ins.length)); }
+        this.redoStack = redo0;
+        this.rebuild({ f: c.f, p: c.a });
+        this.pushToSource(); this.saveSoon(); this.updateUndoUI();
+      } else this.commit([{ f: c.f, s: c.a, e: c.a + t.length, t: '' }], null, P.session);
+      P.returnCaret = { f: c.f, p: c.a };
+    };
   }
 
   async describeMath(ta, display) {
@@ -2583,6 +2820,15 @@ class App {
   }
 
   // ---- outline and problems -------------------------------------------------------------
+  // the list of actions in the menu panel shows what the bar shows now: Undo and Redo greyed
+  // when there is nothing to undo, the zoom by its value
+  navActs() {
+    for (const a of $('#nav-acts').children) {
+      const b = $('#' + a.dataset.for);
+      a.disabled = b.disabled;
+      if (a.dataset.for === 'zoomv') a.lastChild.textContent = 'Zoom: ' + b.textContent;
+    }
+  }
   toggleNav(force, tab) {
     const on = force ?? !document.body.classList.contains('nav-on');
     document.body.classList.toggle('nav-on', on);
@@ -2593,7 +2839,7 @@ class App {
     for (const [id, t] of [['#nt-outline', 'outline'], ['#nt-problems', 'problems'], ['#nt-changes', 'changes'], ['#nt-git', 'git']]) { $(id).classList.toggle('on', this.navTab === t); $(id).setAttribute('aria-selected', this.navTab === t ? 'true' : 'false'); }
     this.prefs.nav = on;
     store(PREFS, this.prefs);
-    if (on) this.refreshNav();
+    if (on) { this.refreshNav(); this.navActs(); }
     if (window.innerWidth > 860) setTimeout(() => { if (this.computePx()) this.relayout(true); }, 30);
   }
 
@@ -3560,9 +3806,16 @@ class App {
     const steps = [0.5, 0.6, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
     // on a phone, where − and + are hidden, the Fit button switches between fitting the width
     // (text a few pixels high) and actual size
-    if (dir === 0) this.prefs.zoom = this.prefs.zoom === 'fit' && window.innerWidth <= 520 ? 1 : 'fit';
-    else {
-      const cur = this.prefs.zoom === 'fit' ? this.px / PX_PER_PT : this.prefs.zoom;
+    // (and the size the page opens at there, the text block across the screen)
+    const z = this.prefs.zoom;
+    // text block, actual size, whole sheet, and round again
+    if (dir === 0) {
+      if (window.innerWidth > 520) this.prefs.zoom = 'fit';
+      else if (z !== 'fit') { this.prefs.zoom = 'fit'; this.prefs.phone = 'sheet'; }
+      else if (this.prefs.phone === 'sheet') this.prefs.phone = 'text';
+      else this.prefs.zoom = 1;
+    } else {
+      const cur = z === 'fit' ? this.px / PX_PER_PT : z;
       let i = steps.findIndex((s) => s >= cur - 0.001);
       if (i < 0) i = steps.length - 1;
       if (dir > 0) i = steps[i] > cur + 0.001 ? i : Math.min(steps.length - 1, i + 1);
@@ -3593,7 +3846,9 @@ class App {
 
   // from: how the files came when not from the user's own disk ('share': shared to the installed
   // app, which any page can do), so the project opens as someone else's
-  async openFiles(list, from) {
+  // opts.fresh: pictures from the clipboard, which have no name of their own (every screenshot
+  // is image.png) and so never stand for a file the project has
+  async openFiles(list, from, opts = {}) {
     // a Word file opens as a project of its own, or brings a coauthor's edits back (src/word.js)
     const docx = list.find((f) => isDocx(f));
     if (docx) {
@@ -3611,6 +3866,15 @@ class App {
     // names inside a .zip are whatever its maker wrote (../, /, \): one that would leave the
     // project's folder, here or in git, is left out and named
     const skipped = [];
+    // what was not opened and why, in words for someone who only dropped a file: a .zip that is
+    // not one, a picture under a text file's name, a word processor's file that is not .docx
+    const unread = [], notText = [], wordLike = [];
+    // The names that came out of an archive. With any of them added that TeX, or a program TeX
+    // starts, can run or read as code, the project holds a stranger's files: marked as someone
+    // else's, its shell escape restricted. Raster pictures and PDFs alone do not make it so
+    // (a .zip of figures dropped on one's own paper), nor does an archive that gave nothing.
+    const zipAdded = new Set();
+    const zipCode = () => [...zipAdded].some((n) => (texts.has(n) || blobs.has(n) || extra.has(n)) && !/\.(png|jpe?g|gif|webp|pdf)$/i.test(n));
     const gitOk = (p) => /^\.git\//.test(p) && cleanPath(p.slice(5)) === p.slice(5);
     for (const file of list) {
       const nm = file.webkitRelativePath || file.name;
@@ -3625,6 +3889,7 @@ class App {
           for (const n of Object.keys(z.files)) total += (z.files[n]._data && z.files[n]._data.uncompressedSize) || 0;
           if (total > MAX_ZIP) throw new Error('it would unpack to ' + fmtMB(total) + ', more than this page can hold');
           const names = Object.keys(z.files).filter((n) => !z.files[n].dir && !/(^|\/)(__MACOSX|\.)/.test(n));
+          if (!names.length) unread.push(file.name + ' has no files in it.');
           const prefix = commonDir(names);
           for (const n of Object.keys(z.files)) {
             if (z.files[n].dir || !n.startsWith(prefix)) continue;
@@ -3637,18 +3902,33 @@ class App {
             if (TEXT_EXT.test(rel)) {
               const bytes = await z.files[n].async('uint8array');
               const d = decodeText(bytes);
+              // not text, whatever its name says: kept as the file it is, not shown as a page of noise
+              zipAdded.add(rel);
+              if (d.text.includes('\0')) { extra.set(rel, new Blob([bytes])); continue; }
               texts.set(rel, d.text);
               orig.set(rel, { bytes, enc: d.enc, bom: d.bom, text: d.text });
-            } else if (IMG_EXT.test(rel) || /\.(pdf|eps)$/i.test(rel)) blobs.set(rel, await z.files[n].async('blob'));
-            else extra.set(rel, await z.files[n].async('blob'));
+            } else if (IMG_EXT.test(rel) || /\.(pdf|eps)$/i.test(rel)) { blobs.set(rel, await z.files[n].async('blob')); zipAdded.add(rel); }
+            else { extra.set(rel, await z.files[n].async('blob')); zipAdded.add(rel); }
           }
-        } catch (e) { this.toast('Could not read ' + file.name + ': ' + e.message); }
+        } catch (e) {
+          // the reason stays in the message shown at the end (it used to be replaced at once by
+          // "Nothing to open. Choose ... .zip files"); JSZip's own words for a file that is no
+          // archive are a question and a link to its documentation
+          const mine = /^it would unpack/.test((e && e.message) || '');
+          // (zipName stays: files read before a damaged entry still open as someone else's)
+          unread.push(file.name + (mine ? ' was not opened: ' + e.message + '.' : ' is not a .zip file this page can read: it may be damaged, or another kind of file under that name.'));
+        }
       } else {
         const rel = cleanPath(stripTop(nm));
         if (rel === null) { skipped.push(nm); continue; }
+        // Word's old format and other word processors' files: added silently as a file of the
+        // project, they looked opened and nothing showed
+        if (/\.(doc|odt|rtf|pages|wpd)$/i.test(rel)) { wordLike.push(nm); continue; }
         if (TEXT_EXT.test(rel)) {
           const bytes = new Uint8Array(await file.arrayBuffer());
           const d = decodeText(bytes);
+          // a picture or an archive renamed .tex, or UTF-16 text: it opened as a page of noise
+          if (d.text.includes('\0')) { notText.push(nm); continue; }
           texts.set(rel, d.text);
           orig.set(rel, { bytes, enc: d.enc, bom: d.bom, text: d.text });
         } else if (IMG_EXT.test(rel) || /\.(pdf|eps)$/i.test(rel)) blobs.set(rel, file);
@@ -3660,8 +3940,11 @@ class App {
       const rel = nm.slice(nm.search(/(^|\/)\.git\//) + (nm.startsWith('.git/') ? 0 : 1));
       if (gitOk(rel)) gitFiles.set(rel, new Uint8Array(await f.arrayBuffer())); else skipped.push(nm);
     }
-    const skipNote = skipped.length ? ' Left out ' + skipped.length + (skipped.length === 1 ? ' file whose name points' : ' files whose names point') + ' outside the project: ' + skipped.slice(0, 3).join(', ') + (skipped.length > 3 ? '…' : '.') : '';
-    if (!texts.size && !blobs.size && !extra.size) { this.toast(skipNote.trim() || 'Nothing to open. Choose .tex, .bib, image or .zip files.', 9000); return; }
+    const few = (a) => a.slice(0, 4).join(', ') + (a.length > 4 ? ' and ' + (a.length - 4) + ' more' : '');
+    if (notText.length) unread.push(few(notText) + (notText.length === 1 ? ' was not opened: it is' : ' were not opened: they are') + ' not text this page can read (a picture or an archive under a text file\'s name, or text saved as UTF-16).');
+    if (wordLike.length) unread.push(few(wordLike) + (wordLike.length === 1 ? ' was' : ' were') + ' not opened: Rikuy reads Word files saved as .docx. In your word processor choose Save As, Word Document (.docx), and open that.');
+    const skipNote = (skipped.length ? ' Left out ' + skipped.length + (skipped.length === 1 ? ' file whose name points' : ' files whose names point') + ' outside the project: ' + skipped.slice(0, 3).join(', ') + (skipped.length > 3 ? '…' : '.') : '') + (unread.length ? ' ' + unread.join(' ') : '');
+    if (!texts.size && !blobs.size && !extra.size) { this.toast(skipNote.trim() || 'Nothing to open. Choose .tex, .bib, image, .zip or Word .docx files.', 10000); return; }
     // files shared to the app may come from any web page: they add to the project open now only
     // under names it does not have, never over one of its files
     const held = [];
@@ -3678,12 +3961,59 @@ class App {
       // Add to the current project (bib files, images, chapters). A file of the same name is
       // replaced, as an upload to Overleaf replaces it: the version before is kept in History
       // first (opening a .tex with the installed app comes here too, and left no way back).
+      // A picture dropped, pasted or opened into one's own document goes where the caret is, as
+      // in a word processor: it used to join the project unseen, with a message naming the
+      // command to write. Its name comes from outside, and in the source it is letters, digits,
+      // dot, dash and underscore alone, with no folder: it cannot close the braces, start a
+      // command or a comment. Pictures shared to the app by another page are not placed.
+      // A name of its own, too: never the name of a file the project has, whose bytes it would
+      // replace (two pictures named in another script both came to figure.png, and versions
+      // keep text alone, so the first was gone for good).
+      // Dropped or opened under exactly the name of a picture the project has, it is that
+      // picture made again (a plot drawn anew): its bytes are replaced and no second figure is
+      // placed, unless the text does not include it yet. Only a name that came to an existing
+      // one by being made safe, and a pasted picture, get a new name.
+      let placed = null;
+      const toPlace = [], replaced = [];
+      // (PNG, JPEG and PDF, which every TeX engine here includes as they are; an SVG, a GIF or
+      // an EPS joins the project as before and is not written into the text)
+      if (!from && !zipName && !texts.size && !extra.size && blobs.size && blobs.size <= 12 && [...blobs.keys()].every((n) => /\.(png|jpe?g|pdf)$/i.test(n))) {
+        const safe = new Map();
+        const taken = (n) => safe.has(n) || this.assetBlobs.has(n) || this.files.has(n) || this.extra.has(n);
+        for (const [n, b] of blobs) {
+          if (!opts.fresh && this.assetBlobs.has(n) && !safe.has(n)) {
+            safe.set(n, b);
+            replaced.push(n);
+            const stem = n.replace(/\.[^.]+$/, '');
+            const used = [...this.files.values()].some((s) => s.includes(n) || s.includes(stem + '}'));
+            // (a name the project took from elsewhere is written into the source only if it is safe there)
+            if (!used && /^[A-Za-z0-9_-]+\.[A-Za-z0-9]+$/.test(n)) toPlace.push(n);
+            continue;
+          }
+          const ext = /\.[A-Za-z0-9]+$/.exec(n)[0].toLowerCase();
+          const base = (n.split('/').pop().slice(0, -ext.length).replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'figure').slice(0, 60);
+          let name = base + ext;
+          for (let k = 2; taken(name); k++) name = base + '-' + k + ext;
+          safe.set(name, b);
+          toPlace.push(name);
+        }
+        blobs.clear();
+        for (const [n, b] of safe) blobs.set(n, b);
+      }
       const over = [...texts.keys(), ...blobs.keys(), ...extra.keys()].filter((n) => this.files.has(n) || this.assetBlobs.has(n) || this.extra.has(n));
       if (over.length && this.base) await this.snapshot('Before ' + over[0] + (over.length > 1 ? ' and ' + (over.length - 1) + ' more' : '') + ' was replaced', { force: true });
       // Files shared to the app may come from any web page, and a class, a package or a .bib is
       // code TeX runs: with them in it, the project is someone else's as far as shell escape
       // goes, until the owner ticks Shell escape (the click on Open was all that was asked).
-      if (from) this.markFromLink('', this.name, this.main, from);
+      // The same for code that came in an archive with no document of its own (a .zip holding a
+      // class alone joined the user's project unmarked; see zipCode). Loose files the user
+      // opened stay theirs. An Allow given before goes: new files arrived, and the message says so.
+      let markNote = '';
+      if (from || zipCode()) {
+        const was = from ? null : await this.linkInfo();
+        this.markFromLink('', this.name, this.main, from || 'zip');
+        if (!from) markNote = was && was.allowed ? ' Shell escape, allowed for this project before, is restricted again: new files from an archive arrived. Allow it in the PDF pane if you trust them.' : ' They came in an archive, so shell escape is restricted for this project until you allow it in the PDF pane.';
+      }
       for (const [n, t] of texts) this.files.set(n, t);
       for (const [n, o] of orig) this.orig.set(n, o);
       for (const [n, b] of blobs) this.addAsset(n, b);
@@ -3691,16 +4021,26 @@ class App {
       this.binaryDirty = true;
       this.zipDirty = true;
       this.forceRender = true;
-      this.rebuild(this.caretNow());
-      this.pushToSource();
+      // one edit for the figure and its package: one undo takes both out again. Worked out here,
+      // after every await above, from the text and the caret as they are now.
+      if (toPlace.length) placed = this.figureEdits(toPlace);
+      // (a step of its own: two pictures dropped one after the other are two undos)
+      if (placed) { this.closeGroup(); this.commit(placed.edits, placed.caret, 'figure'); this.closeGroup(); }
+      else { this.rebuild(this.caretNow()); this.pushToSource(); }
       this.updateFileTabs();
       this.saveSoon();
       // an added chapter or figure shows on the page only once the source names it
       const fig = [...blobs.keys()][0];
       const widget = [...texts.keys()].find((n) => /\.html?$/i.test(n));
-      const use = onlyTex.length ? ' Write \\input{' + onlyTex[0].replace(/\.tex$/i, '') + '} where it goes.' : widget ? ' Write \\rikuywidget{' + widget + '}{' + (fig || 'fallback.png') + '} where it goes (rikuy.sty, from Rikuy\'s sample/widget, defines it).' : fig ? ' Write \\includegraphics{' + fig + '} where it goes.' : '';
+      // a PDF dropped alone is most often a document someone hoped to edit
+      const asFig = !texts.size && !extra.size && [...blobs.keys()].every((n) => /\.pdf$/i.test(n)) ? ' as a figure (a PDF cannot be opened for editing here)' : '';
+      const added = [...texts.keys(), ...blobs.keys(), ...extra.keys()].filter((n) => !replaced.includes(n));
+      const use = placed ? ' Undo takes ' + (toPlace.length === 1 ? 'it' : 'them') + ' out of the text again.' : !added.length ? '' : onlyTex.length ? ' Write \\input{' + onlyTex[0].replace(/\.tex$/i, '') + '} where it goes.' : widget ? ' Write \\rikuywidget{' + widget + '}{' + (fig || 'fallback.png') + '} where it goes (rikuy.sty, from Rikuy\'s sample/widget, defines it).' : fig ? ' Write \\includegraphics{' + fig + '} where it goes.' : '';
       const heldNote = held.length ? ' Not replaced: ' + held.join(', ') + ', which the project has.' : '';
-      this.toast('Added ' + [...texts.keys(), ...blobs.keys(), ...extra.keys()].join(', ') + ' to the project.' + use + heldNote + skipNote, skipNote || use || heldNote ? 9000 : undefined);
+      // a few names, then a count: a .zip of fifty pictures filled the screen with their names
+      const said = (replaced.length ? few(replaced) + ' replaced' + (placed && !added.length ? ' and placed in the text' : '') + '.' + (added.length ? ' ' : '') : '')
+        + (added.length ? 'Added ' + few(added) + ' to the project' + asFig + (placed ? ' and placed ' + (added.length === 1 ? 'it' : 'them') + ' in the text' : '') + '.' : '');
+      this.toast(said + use + heldNote + markNote + skipNote, skipNote || use || heldNote || markNote ? 9000 : undefined);
       return;
     }
     // the project open until now stays in this browser; the toast says where, so nobody thinks it gone
@@ -3722,7 +4062,7 @@ class App {
     // its shell escape is restricted (the worker runs only TeX Live's safe programs, keeps no
     // LuaTeX font cache and is let go after) until the owner allows more. Loose .tex/.bib files
     // the user opened are their own and stay unrestricted.
-    if (from || zipName || gitFiles.has('.git/HEAD')) this.markFromLink('', this.name, this.main, from || (gitFiles.has('.git/HEAD') ? 'git' : 'zip'));
+    if (from || zipCode() || gitFiles.has('.git/HEAD')) this.markFromLink('', this.name, this.main, from || (gitFiles.has('.git/HEAD') ? 'git' : 'zip'));
     this.hist = []; this.redoStack = []; this.updateUndoUI();
     this.forceRender = true;
     this.srcFile = this.main;
@@ -3749,6 +4089,47 @@ class App {
       } catch (e) { gitNote = ' Its .git folder could not be read: ' + e.message + '.'; }
     }
     this.toast('Opened ' + this.main + (texts.size > 1 ? ' and ' + (texts.size - 1) + ' more file' + (texts.size > 2 ? 's' : '') : '') + '.' + (missing.length ? ' Not found: ' + missing.join(', ') + '.' : '') + gitNote + (prev && prev !== this.name ? ' ' + prev + ' is kept under Review, Versions.' : '') + skipNote, skipNote ? 10000 : 7000);
+  }
+
+  // The edits that put these pictures of the project into the text: a centered
+  // \includegraphics after the paragraph, list or table the caret is in (inside one, or inside
+  // a heading's braces, the block would stop TeX), at the end of the text when there is no
+  // caret; and \usepackage{graphicx} when the preamble has none. names are safe (openFiles).
+  figureEdits(names) {
+    const c = this.caretNow();
+    let f = this.main, p = -1;
+    if (c && c.ghost) { f = this.ghost.f; p = this.ghost.pos; }
+    else if (c) {
+      const n = getSelection().anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement);
+      // a footnote is drawn at the foot of the page, outside its paragraph: its block is the
+      // one its text belongs to, the paragraph that holds the footnote
+      const it = el && el.closest('.it'), sp = !it && el ? el.closest('span.t') : null, seg = sp ? segOfSpan(sp) : null;
+      const B = it ? BLOCKS.get(+it.dataset.b) : seg && seg.B;
+      if (B) { f = B.f; p = B.e; }
+    }
+    // where the preamble ends and where the text ends are the parser's (model.docBody): a
+    // comment that names \begin{document} is neither
+    const d = this.model && !this.stale && this.model.main === this.main ? this.model.docBody : null;
+    const main = this.src(this.main);
+    if (p < 0 || (f === this.main && d && p < d.s)) { f = this.main; p = d ? d.e : main.length; }
+    const src = this.src(f);
+    let nlB = 0; for (let k = p - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
+    let nlA = 0; for (let k = p; k < src.length && /\s/.test(src[k]); k++) if (src[k] === '\n') nlA++;
+    const pre = p === 0 ? '' : '\n'.repeat(Math.max(0, 2 - nlB)), post = '\n'.repeat(Math.max(0, 2 - nlA));
+    const tex = names.map((n) => '\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{' + n + '}\n\\end{center}').join('\n\n');
+    const edits = [{ f, s: p, e: p, t: pre + tex + post }];
+    let shift = 0;
+    const docAt = d ? d.at : -1;
+    if (d && !/\\(?:usepackage|RequirePackage)\s*(?:\[[^\]]*\])?\s*\{[^}]*\bgraphic[sx]\b[^}]*\}/.test(main.slice(0, docAt).replace(/(^|[^\\])%.*$/gm, '$1'))) {
+      // after the last \usepackage line, as a package for an equation's symbol is added
+      let at = docAt, m;
+      const re = /^[ \t]*\\usepackage\s*(?:\[[^\]]*\])?\s*\{[^}]*\}[^\n]*\n/gm;
+      while ((m = re.exec(main.slice(0, docAt)))) at = m.index + m[0].length;
+      const line = (at && main[at - 1] !== '\n' ? '\n' : '') + '\\usepackage{graphicx}\n';
+      edits.push({ f: this.main, s: at, e: at, t: line });
+      if (f === this.main) shift = line.length;
+    }
+    return { edits, caret: { f, p: p + shift + pre.length + tex.length, bias: -1 } };
   }
 
   addAsset(name, blob) {
@@ -3853,7 +4234,11 @@ class App {
     const taken = new Set((await this.allSnaps()).map((v) => v.name));
     let name = 'Untitled';
     for (let k = 2; taken.has(name) || name === this.name; k++) name = 'Untitled ' + k;
+    this.clearLink(name, 'main.tex');
     this.loadProject(new Map([['main.tex', '\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\end{document}\n']]), 'main.tex', name, 'New document');
+    // ready to type: the button kept the focus, so the first words went nowhere and a space
+    // pressed it again
+    if (this.ghost && this.ghost.sticky) this.caretToGhost();
     this.toast('A new document. The one you had is under Review, Versions.', 5000);
   }
 
@@ -3861,6 +4246,7 @@ class App {
     await this.snapshot('Before loading the sample', { force: !this.lastSig });
     await this.stashBinary();
     this.loadSample();
+    this.clearLink();
     this.hist = []; this.redoStack = []; this.updateUndoUI();
     this.forceRender = true;
     this.srcFile = this.main;
@@ -4148,7 +4534,7 @@ class App {
       // offline, a file TeX has not kept fails to load; say what to do rather than "Failed to fetch"
       const need = e && e.unkept ? ' (' + e.unkept.slice(0, 5).join(', ') + (e.unkept.length > 5 ? ' and more' : '') + ')' : '';
       const off = __RIKUY_APP__ && APP.on && navigator.onLine === false ? 'You are offline, and this document needs TeX files this browser has not kept yet' + need + '. Compile it once with a network and they stay; Make available offline in the status bar keeps those of a typical paper and of the open document. ' : '';
-      d.textContent = off + (e && e.message && !(off && need) ? e.message + '. ' : '') + 'The page preview can still be printed.';
+      d.textContent = off + this.texFailText(e, !!off, !!need) + 'The page preview can still be printed.';
       const b = document.createElement('button'); b.className = 'btn sm'; b.type = 'button'; b.textContent = 'Print the preview'; b.style.marginTop = '10px';
       b.addEventListener('click', () => this.printPDF());
       d.append(document.createElement('br'), b);
@@ -4347,10 +4733,11 @@ class App {
     const p = this.makePop($('#b-help'), 'pop-help', 'How Rikuy works');
     const mod = isMac ? 'Cmd' : 'Ctrl';
     p.insertAdjacentHTML('beforeend', `
+      <p>Rikuy is a writing app for papers: you type on the finished page, and it keeps a LaTeX file up to date behind it.</p>
       <p>The page is typeset from your LaTeX source. Every edit you make on the page is written back into the source as the smallest possible change.</p>
       <dl class="keys">
         <dt>Type, select, delete</dt><dd>As in any editor</dd>
-        <dt>${mod}+B, ${mod}+I</dt><dd>\\textbf, \\emph</dd>
+        <dt>${mod}+B, ${mod}+I</dt><dd>Bold, italic (\\textbf, \\emph)</dd>
         <dt>$ or ${mod}+M</dt><dd>New inline math</dd>
         <dt>${mod}+Shift+E</dt><dd>New numbered equation</dd>
         <dt>\\ or ${mod}+K</dt><dd>Insert a command</dd>
@@ -4436,6 +4823,16 @@ class App {
         sec.hidden = !any;
       }
     });
+  }
+
+  // Why TeX did not start, for the PDF pane. The worker's message for a missing TeX tree is
+  // written for whoever built the page (tex/build_tree.py, README.md) and is right when the
+  // server says the file is not there. A visitor whose download failed (no answer, a server
+  // error) read the same build instructions: they get what to do instead.
+  texFailText(e, off, need) {
+    const m = (e && e.message) || '';
+    if (/^The TeX tree is not next to this page/.test(m) && !/\(HTTP 4\d\d\)/.test(m)) return off ? '' : 'The TeX engine could not be downloaded. Check your connection, then press Recompile. ';
+    return m && !(off && need) ? m + '. ' : '';
   }
 
   toast(msg, ms = 3200, action) {

@@ -248,7 +248,10 @@ export const word = {
     for (const [n, b] of Object.entries(r.media || {})) this.addAsset(n, new Blob([b]));
     if (Object.keys(r.media || {}).length) { this.binaryDirty = true; this.forceRender = true; this.rebuild(); this.persist(); }
     const n = Object.keys(r.media || {}).length;
-    this.toast('Opened ' + fname + ' as LaTeX' + (n ? ', with ' + n + (n === 1 ? ' picture' : ' pictures') + ' in figures/' : '') + (r.bib ? ' and its citations in references.bib' : '') + '.' + (r.warnings && r.warnings.length ? ' ' + r.warnings.slice(0, 3).join(' ') : '') + note, note ? 16000 : 9000);
+    // what did not come over, or came differently: said here, and kept at the top of main.tex
+    // (src/wordjobs.js), where it stays after the toast is gone
+    const said = r.warnings || [];
+    this.toast('Opened ' + fname + ' as LaTeX' + (n ? ', with ' + n + (n === 1 ? ' picture' : ' pictures') + ' in figures/' : '') + (r.bib ? ' and its citations in references.bib' : '') + '.' + (said.length ? ' ' + said.slice(0, 4).join(' ') + (said.length > 4 ? ' The rest is at the top of main.tex.' : '') : '') + note, (note ? 16000 : 9000) + 5000 * Math.min(4, said.length));
   },
 
   // ---- a coauthor's edits come back ----

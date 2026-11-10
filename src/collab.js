@@ -4,7 +4,7 @@
 // one click out to Overleaf or a plain .tex. The methods join App's prototype (app.js).
 
 import { packShare, unpackShare, shareParam, findComments, commentEdit, stripComments, mergeProjects, commentOnly } from './share.js';
-import { kvGet, kvPut } from './store.js';
+import { kvGet, kvPut, kvDel } from './store.js';
 import { buildModel } from './model.js';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -192,6 +192,14 @@ export const collab = {
     this.linkCache = this.linkCache || new Map();
     this.linkCache.set(k, v);
     if (!this.noIdb) kvPut('link:' + k, v).catch(() => {});
+  },
+  // the sample and a new document hold nothing of a stranger's: a mark left under their name
+  // (by an archive dropped on the sample, or a link to a document of that name) goes
+  clearLink(name = this.name, main = this.main) {
+    const k = name + '|' + main;
+    this.linkCache = this.linkCache || new Map();
+    this.linkCache.set(k, null);
+    if (!this.noIdb) kvDel('link:' + k).catch(() => {});
   },
   async allowShellHere() {
     const v = await this.linkInfo();

@@ -485,6 +485,11 @@ body.dropping .dropzone { display: grid; }
   body.src-on #gutter { display: none; }
   body.pdf-on #pdfpane { position: absolute; inset: 0 0 0 auto; width: 100% !important; z-index: 22; box-shadow: -10px 0 30px rgba(0, 0, 0, .2); }
   .sep { margin: 0 2px; }
+  /* the menu button keeps its width (the row squeezed it to 19px), and a row with more buttons
+     than the screen has room for scrolls by itself: it ran under the name and off the screen */
+  #b-nav { flex: none; }
+  .tools { flex: 0 1 auto; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .tools::-webkit-scrollbar { display: none; }
 }
 @media (max-width: 520px) {
   #bar { gap: 6px; padding: 0 6px; }
@@ -497,6 +502,22 @@ body.dropping .dropzone { display: grid; }
   .sheet { padding: 10px 0 40px; }
   #pages { gap: 12px; }
   #st-save, #b-offline { display: none; }
+  /* its two columns share the width: the longest key took most of it and left the
+     explanations a column three words wide */
+  .keys { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); }
+  /* one line on a 360px phone: there it wrapped to two and took the height of a line of text */
+  #status { gap: 10px; padding: 0 8px; white-space: nowrap; overflow-x: auto; scrollbar-width: none; }
+  #status::-webkit-scrollbar { display: none; }
+  /* the PDF bar's close button stays on the screen */
+  .pdf-bar { padding-left: 8px; gap: 2px; }
+  .pdf-status { flex: 0 10 auto; }
+  .pdf-engine { max-width: 86px; }
+  .pdf-bar .btn.sm { padding: 0 6px; }
+}
+/* the buttons alone need about 360px; the name beside them fits from about 430px, and narrower
+   it was drawn under the Open button */
+@media (max-width: 430px) {
+  .mark { display: none; }
 }
 @media (prefers-reduced-motion: reduce) {
   .flash { animation: none; }
@@ -515,6 +536,14 @@ body.nav-on #nav { display: flex; }
 .nav-tabs::-webkit-scrollbar { display: none; }
 #nav-close { position: sticky; right: 0; margin-left: auto; flex: none; background: var(--chrome); }
 .nav-tab { border: 0; background: transparent; padding: 6px 8px; flex: none; font: 500 12.5px var(--font-ui); color: var(--mute); border-radius: 6px 6px 0 0; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+/* the bar's actions by name, where its buttons are icons alone (see the 980px rule above) */
+.nav-acts { display: none; grid-template-columns: 1fr 1fr; gap: 2px; padding: 8px 6px; border-bottom: 1px solid var(--line); flex: none; }
+.nav-act { display: flex; align-items: center; gap: 8px; min-height: 36px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--ink-ui); font: 500 13px var(--font-ui); text-align: left; cursor: pointer; }
+.nav-act:hover, .nav-act:focus-visible { background: var(--blue-wash); }
+.nav-act:disabled { opacity: .38; cursor: default; }
+.nav-act svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.nav-act span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 980px) { .nav-acts { display: grid; } }
 .nav-tab.on { background: var(--panel); color: var(--ink-ui); box-shadow: 0 1px 0 var(--panel), inset 0 2px 0 var(--blue); }
 .nt-count { font: 500 11px var(--font-ui); color: var(--warn); }
 #nt-ccount { color: var(--blue); }

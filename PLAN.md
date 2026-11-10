@@ -541,6 +541,37 @@ Tests:
     not available to test (LibreOffice keeps the bookmarks and the data through a save);
     equation numbers are text after the formula, not Word's numbering.
 
+28. **Before the public launch: a newcomer's first minutes, and Word files that open right.** Done
+    (pull request 3). Two passes on the hosted build as a first time user would meet it, at desktop
+    and phone sizes, each fixing what it found, then an independent review of the lot. The editor:
+    New document, an emptied page and a title only document take typing; a first visit shows the
+    page alone at a size a phone can read, and Help says what Rikuy is; on a phone every action is
+    named in the menu; Select all then Delete leaves a blank body; a pasted or dropped picture is
+    placed in the text; formula mistakes are said in plain words and never lose what was typed;
+    files that cannot be opened are refused in plain words. Word: 33 realistic `.docx` files
+    through the real import now give LaTeX that compiles (highlight, merged cells, nested tables,
+    symbols typed as text, comments, captions and references, the table of contents, numbered
+    and multi line equations) and list for the user what could not be kept; Save as Word keeps
+    colour, shading, alignment and list labels; the page draws colours given by number or defined
+    in the preamble (validated, set through the style API), also in formulas, and a list or table
+    inside a table cell. The review reproduced eight problems, all fixed with tests: Select all
+    took any first to last selection for the whole document and could delete pictures, equations
+    or the preamble; a second pasted picture could overwrite the first; a formula with an open
+    brace lost its text on closing; a `.zip` with no document joined the user's own project
+    unmarked (on main before this task); colour marks landed inside code from pandoc made files;
+    a colour called `constructor` crashed Save as Word; and three smaller ones. A second agent then
+    checked the fixes against the first build side by side: seven held, the formula box did not
+    for text ending in a backslash, and the fixes had four side effects (any `.zip`, even one of
+    pictures only, marked the project as a stranger's; a picture could no longer be updated by
+    dropping it again; an abandoned empty equation left an undo step; one test tested nothing),
+    all fixed with tests. Evidence on the merged branch: `npm test` (`word.test.mjs` 27 groups),
+    `test/browser.py` 182, `offline.py` 31/31, `launch.py` 18/18, `files.py` 68, `paste.py` 25,
+    `share.py` 46, `word.py` 79 with LibreOffice; CI's
+    TeX job for the compiles. Open: Microsoft Word itself, real phones and iOS Safari are
+    untested; CJK and Arabic text has no font in the tree (the user is told); Word renumbering
+    its own references on export (REF and SEQ fields) is not built; editing inside a list or
+    table in a table cell is by its source.
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000

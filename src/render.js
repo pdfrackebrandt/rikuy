@@ -462,8 +462,7 @@ export class Renderer {
           const tag = x.st === 'sup' ? 'sup' : x.st === 'sub' ? 'sub' : 'span';
           const s = document.createElement(tag);
           s.className = 'y y-' + (x.st || 'none') + (x.decl ? ' decl' : '');
-          if (x.color) s.style.color = cssColor(x.color);
-          if (x.st === 'bg' && x.color) { s.style.background = cssColor(x.color); s.style.color = ''; }
+          paint(s, x);
           if (x.title) s.title = x.title;
           if (x.url) s.dataset.url = x.url;
           if (x.s != null && x.s >= 0 && !x.ro) {
@@ -493,6 +492,56 @@ export class Renderer {
     }
   }
 
+  // Inlines drawn to be read, not edited: no source maps, so nothing in them takes a caret or an
+  // edit (the atom around them is edited as source).
+  ro(list, parent) {
+    for (const x of list) {
+      if (x.k === 'seg') { if (!x.ph) parent.appendChild(document.createTextNode(x.t)); }
+      else if (x.k === 'sty' || x.k === 'mac') {
+        const s = document.createElement(x.st === 'sup' ? 'sup' : x.st === 'sub' ? 'sub' : 'span');
+        if (x.k === 'sty') { s.className = 'y y-' + (x.st || 'none'); paint(s, x); }
+        this.ro(x.kids, s);
+        parent.appendChild(s);
+      } else if (x.k === 'math') {
+        const s = document.createElement('span');
+        s.className = 'm';
+        s.innerHTML = this.katex(x.tex, false).html;
+        parent.appendChild(s);
+      } else if (x.k === 'br') parent.appendChild(document.createElement('br'));
+      else if (x.k === 'chip' && (x.list || x.table)) parent.appendChild(x.list ? this.roList(x.list) : this.roTable(x.table));
+      else if (x.text != null || x.num != null) parent.appendChild(document.createTextNode(String(x.text != null ? x.text : x.num)));
+    }
+  }
+
+  roList(l) {
+    const el = document.createElement(l.ordered ? 'ol' : 'ul');
+    el.style.margin = '0'; el.style.paddingLeft = '1.3em';
+    for (const it of l.items) { const li = document.createElement('li'); this.ro(it, li); el.appendChild(li); }
+    return el;
+  }
+
+  roTable(p) {
+    const t = document.createElement('table');
+    t.className = 'tab';
+    const tb = document.createElement('tbody');
+    p.rows.forEach((r, ri) => {
+      if (r.empty) return;
+      const tr = document.createElement('tr');
+      for (const rule of r.rules) if (!rule.range) tr.classList.add(rule.kind === 'heavy' ? (ri === 0 ? 'r-top' : 'r-heavy') : rule.kind === 'light' ? 'r-light' : 'r-space');
+      for (const c of r.cells) {
+        const td = document.createElement('td');
+        td.className = 'al-' + (c.align === 'p' ? 'l' : c.align);
+        if (c.span > 1) td.colSpan = c.span;
+        if (c.bg) td.style.background = cssColor(c.bg);
+        this.ro(c.inl, td);
+        tr.appendChild(td);
+      }
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);
+    return t;
+  }
+
   atomEl(x) {
     const B = this.B;
     const s = document.createElement(x.k === 'fn' ? 'sup' : 'span');
@@ -516,6 +565,14 @@ export class Renderer {
       case 'url': s.textContent = x.text; rec.url = x.url; break;
       case 'verb': s.textContent = x.text; break;
       case 'chip': {
+        // a list or a table in a table cell: drawn, and edited as source like any chip
+        if (x.list || x.table) {
+          s.classList.add('plain');
+          s.style.display = 'inline-block'; s.style.verticalAlign = 'top'; s.style.whiteSpace = 'normal'; s.style.textAlign = 'left';
+          s.appendChild(x.list ? this.roList(x.list) : this.roTable(x.table));
+          if (x.title) s.title = x.title;
+          break;
+        }
         s.textContent = x.text;
         if (x.title) s.title = x.title;
         if (x.err) s.classList.add('err');
@@ -656,6 +713,11 @@ const NAMED = { lightgreen: '#cfeccf', verylightgreen: '#e6f5e6', lightblue: '#d
 // Only a colour reaches the style: the argument is the document's text, maybe a stranger's,
 // and url(...) there would have the reader's browser fetch from wherever it points (a copy
 // served without the artifact host's policy lets it).
+// a styled run's colour (or its background, for \colorbox), through the style API only
+function paint(s, x) {
+  if (!x.color) return;
+  if (x.st === 'bg') s.style.background = cssColor(x.color); else s.style.color = cssColor(x.color);
+}
 const SAFE_COLOR = /^(#[0-9a-f]{3,8}|[a-z]+)$/i;
 function cssColor(c) {
   c = (c || '').trim();

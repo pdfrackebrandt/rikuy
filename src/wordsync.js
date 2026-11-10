@@ -246,8 +246,29 @@ export function planImport(data, X, cur, H = {}) {
 
   const show = (t) => '“' + t.replace(new RegExp(OBJ, 'g'), '…').replace(/\s+/g, ' ').trim().slice(0, 80) + '”';
 
-  for (const A of data.anchors) {
+  // Text with no bookmark of its own (a code listing, the line that stands for a TikZ picture)
+  // belongs in Word to the block before it. When that block is deleted, Word hands the text to
+  // the block before that one, where it would read as words the coauthor typed and be written
+  // into the source a second time: it is taken off there, as the source still has what made it.
+  const tail = (A) => {
+    let k = A.text.length;
+    while (k > 0 && A.map[2 * (k - 1)] === RO) k--;
+    const j = A.text.indexOf('\n\n', k);
+    return j < 0 ? '' : A.text.slice(j);
+  };
+  const cut = new Map();
+  data.anchors.forEach((A, i) => {
     const R = X.regions.get(A.id);
+    if (!R) return;
+    let acc = '';
+    for (let j = i + 1; j < data.anchors.length && !X.regions.has(data.anchors[j].id); j++) acc += tail(data.anchors[j]);
+    if (!acc || !R.text.endsWith(acc) || R.text.length - acc.length < A.text.length - tail(A).length) return;
+    const n = R.text.length - acc.length;
+    cut.set(A.id, { ...R, text: R.text.slice(0, n), objs: R.objs.filter((o) => o.at < n), items: (R.items || []).filter((x) => x <= n), cs: R.cs.filter((x) => x[1] <= n), ce: R.ce.map((x) => [x[0], Math.min(x[1], n)]) });
+  });
+
+  for (const A of data.anchors) {
+    const R = cut.get(A.id) || X.regions.get(A.id);
     if (!R) {
       // the block is gone from the Word file: a paragraph of its own is deleted whole
       if (A.top && A.s != null && isBalanced(base.get(A.f), A.s, A.e)) { edits.push(delBlock(base.get(A.f), A)); stats.deleted++; deletedTop.add(A.id); }

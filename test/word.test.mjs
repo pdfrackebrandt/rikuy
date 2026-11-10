@@ -6,8 +6,8 @@
 // changed since is a conflict, not applied; hostile files are refused.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { buildModel } from '../src/model.js';
-import { buildWordDoc, expandMath, unpackRuns } from '../src/wordast.js';
+import { buildModel, colorValue } from '../src/model.js';
+import { buildWordDoc, expandMath, unpackRuns, wordColor, listStyle, uncolor } from '../src/wordast.js';
 import { createPandoc } from '../src/pandoc.js';
 import { exportDocx, readDocx, docxToLatex } from '../src/wordjobs.js';
 import { checkData, planImport, unpackRead, rebase, textHunks, mathPatch, stripNumbers, safeMath } from '../src/wordsync.js';
@@ -273,7 +273,7 @@ await ok('a stranger\'s .docx opens as LaTeX with its equations, table, list, fo
   // written by python-docx (test/word_fixture.py), kept here so npm test needs no Python packages
   const fx = fs.readFileSync(new URL('./fixtures/word-fixture.docx', import.meta.url));
   const r = docxToLatex(P, new Uint8Array(fx), 'fx.docx');
-  for (const s of ['\\section{Introduction}', '\\(x^{2} + \\alpha\\)', '\\[\\int_{0}^{1}', '\\begin{itemize}', 'Peru & 3.1', '\\footnote{Data from the World Bank.}', '\\includegraphics[width=2in', '\\href{https://example.org/data}{online}']) assert.ok(r.tex.includes(s), s);
+  for (const s of ['\\section{Introduction}', '\\(x^{2} + \\alpha\\)', '\\[\\int_{0}^{1}', '\\begin{itemize}', 'Peru & 3.1', '\\footnote{Data from the World Bank.}', '\\includegraphics[width=0.33\\linewidth', '\\href{https://example.org/data}{online}']) assert.ok(r.tex.includes(s), s);
   assert.ok(!r.tex.includes('javascript'));
   assert.deepEqual(Object.keys(r.media), ['figures/figure1.png']);
   const m = buildModel({ files: new Map([['main.tex', r.tex]]), main: 'main.tex' });
@@ -306,6 +306,239 @@ await ok('hostile files: bombs, DTDs, deep nesting, names that climb out, forged
   for (const bad of ['x$ \\input{a}', 'a\\)b', '\\immediate\\write18{x}', '\\end{equation}x', '\\def\\a{b}', 'x^^5cwrite18{id}', '\\ShellEscape{id}', '\\includegraphics{/etc/passwd}', '\\href{javascript:1}{x}']) assert.equal(safeMath(bad), null, bad);
   assert.equal(safeMath('x^{2}+\\frac{a}{b}^{\\prime}'), 'x^{2}+\\frac{a}{b}^{\\prime}');
   assert.equal(safeMath('\\begin{aligned}a&=b\\\\ c&=\\$5\\end{aligned}'), '\\begin{aligned}a&=b\\\\ c&=\\$5\\end{aligned}');
+});
+
+await ok('a paragraph deleted in Word before a code listing: the listing is not written a second time', async () => {
+  const src = doc('First paragraph.\n\n\\begin{quote}\nA quoted passage.\n\\end{quote}\n\\begin{verbatim}\nx <- lm(y ~ k)\n\\end{verbatim}\nLast paragraph.\n');
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  const del = (d) => d.replace(/<w:p>(?:(?!<w:p>)[\s\S])*?A quoted passage\.[\s\S]*?<\/w:p>/, '');
+  const plan = importInto(edit(E.docx, del), files);
+  assert.equal(plan.files.get('main.tex'), src.replace('\\begin{quote}\nA quoted passage.\n\\end{quote}\n', ''));
+  // and words typed after the listing in Word still arrive
+  const add = (d) => del(d).replace(/(lm\(y ~ k\)[\s\S]*?<\/w:p>)/, '$1<w:p><w:r><w:t>Typed in Word.</w:t></w:r></w:p>');
+  assert.ok(importInto(edit(E.docx, add), files).files.get('main.tex').includes('Typed in Word.'));
+});
+
+await ok('to Word: colour, highlight, centred text and a list\'s own labels are kept, and still round trip', async () => {
+  const src = doc('\\textcolor{red}{Red words} and \\hl{marked ones} and \\textcolor[HTML]{0F9ED5}{blue}.\n\n\\begin{center}\nA centred line.\n\\end{center}\n\n\\begin{enumerate}[label=(\\alph*)]\n  \\item Alpha\n  \\item Beta\n\\end{enumerate}\n', '\\usepackage{xcolor,soul,enumitem}\n');
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  const parts = unzip(E.docx);
+  const d = text(parts.get('word/document.xml')), st = text(parts.get('word/styles.xml')), nu = text(parts.get('word/numbering.xml'));
+  assert.match(d, /<w:rStyle w:val="ColourFF0000" \/><\/w:rPr><w:t[^>]*>Red words/);
+  assert.match(d, /<w:rStyle w:val="Highlight" \/><\/w:rPr><w:t[^>]*>marked ones/);
+  assert.match(d, /<w:pStyle w:val="Centred" \/>/);
+  assert.match(st, /w:styleId="ColourFF0000">(?:(?!<\/w:style>)[\s\S])*<w:rPr><w:color w:val="FF0000" \/><\/w:rPr><\/w:style>/);
+  assert.match(st, /w:styleId="Colour0F9ED5">(?:(?!<\/w:style>)[\s\S])*<w:color w:val="0F9ED5" \/>/);
+  assert.match(st, /w:styleId="Highlight">(?:(?!<\/w:style>)[\s\S])*<w:shd [^>]*w:fill="FFFF00" \/>/);
+  assert.match(st, /w:styleId="Centred">(?:(?!<\/w:style>)[\s\S])*<w:pPr><w:jc w:val="center" \/><\/w:pPr><\/w:style>/);
+  assert.match(nu, /<w:numFmt w:val="lowerLetter" \/><w:lvlText w:val="\(%1\)" \/>/);
+  assert.equal(importInto(E.docx, files).files.size, 0);
+  await roundTrip(src, (x) => rep('Red words', 'Crimson words')(rep('A centred line.', 'A centred heading.')(x)), src.replace('Red words', 'Crimson words').replace('A centred line.', 'A centred heading.'));
+  assert.equal(wordColor('blue!50'), '8080FF');
+  assert.equal(wordColor('mycolour'), null);
+  assert.deepEqual(listStyle('iv)'), [1, { t: 'DefaultStyle' }, { t: 'DefaultDelim' }]);
+  assert.deepEqual(listStyle('3.'), [3, { t: 'Decimal' }, { t: 'Period' }]);
+});
+
+// a .docx of one body, as small as pandoc reads: for the cases a line of XML says best
+const NSW = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+function tiny(body, extra = {}) {
+  const u = (t) => new TextEncoder().encode(t);
+  const over = Object.keys(extra).map((k) => '<Override PartName="/' + k + '" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.' + k.replace(/^word\/|\.xml$/g, '') + '+xml"/>').join('');
+  const o = {
+    '[Content_Types].xml': u('<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' + over + '</Types>'),
+    '_rels/.rels': u('<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'),
+    'word/_rels/document.xml.rels': u('<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'),
+    'word/document.xml': u('<?xml version="1.0"?><w:document ' + NSW + '><w:body>' + body + '</w:body></w:document>')
+  };
+  for (const [k, v] of Object.entries(extra)) o[k] = u(v);
+  return zipSync(o);
+}
+const open = (bytes) => docxToLatex(P, new Uint8Array(bytes), 'x.docx');
+const bodyOf = (tex) => tex.slice(tex.indexOf('\\begin{document}'));
+const wp = (t, ppr = '') => '<w:p>' + ppr + '<w:r><w:t xml:space="preserve">' + t + '</w:t></w:r></w:p>';
+
+await ok('a Word file of what pandoc alone loses: nothing goes without a word, and every command has its package', () => {
+  // test/word_fixture.py's make_rich()
+  const r = open(fs.readFileSync(new URL('./fixtures/word-rich.docx', import.meta.url)));
+  const t = r.tex, b = bodyOf(t);
+  // kept, which plain pandoc drops or writes so that LaTeX stops
+  assert.ok(t.includes('\\title{Reform and Growth\\\\[0.5ex]\\large Evidence from Peru}'), 'the subtitle');
+  for (const s of ['\\tableofcontents', '\\textcolor[HTML]{C00000}{red words}', '\\hl{marked}', '\\uline{under}', '\\sout{struck}',
+    'p \\(\\leq\\) 0.05', '\\(\\neq\\) 0', '\\(\\infty\\)', '\\textminus{} 5\\,\\%', 'Ελληνικά, Привет', '\n% comment (Ana P) on "robust": Is it? \\input{/etc/passwd} 50% }\n',
+    '\\begin{center}\nCentred line.\n\\end{center}', 'Before the break.\n\n\\newpage', 'See Figure~\\ref{_Ref7} and', '\\label{_Ref7}{}A blue box.}', 'width=1\\linewidth', '\\begin{table}[htbp]\n\\centering\n\\caption{Growth by region}\n\\begin{tabular}',
+    '\\multirow{2}{*}{Region}', 'South & 3 & \\begin{tabular}{@{}ll@{}}', '\\begin{aligned}\nx &= 1 \\\\\ny &= 2 + x \\\\\nz &= 3\n\\end{aligned}', '\\begin{equation}\nE = mc^{2}\n\\end{equation}', '\\begin{equation}\nF = ma\n\\tag{7}\n\\end{equation}', '\\footnote{The endnote text.}', 'The result is strong and'])
+    assert.ok(b.includes(s), s + '\n' + b);
+  for (const s of ['Stale entry', '\\ul{', '\\st{', 'longtable', 'Figure 1:', 'Table 1:', 'weak']) assert.ok(!b.includes(s), s);
+  // every command the body uses is defined by the preamble: these were undefined before
+  for (const [cmd, pkg] of [['\\multirow', '{multirow}'], ['\\hl{', '\\DeclareRobustCommand{\\hl}'], ['\\uline{', '[normalem]{ulem}'], ['\\textcolor', '{xcolor}'], ['\\ref{', '{hyperref}'], ['\\toprule', '{booktabs}'], ['Ελ', '\\usepackage{textalpha}'], ['Привет', '\\DeclareTextSymbolDefault']])
+    assert.ok(b.includes(cmd) && t.slice(0, t.indexOf('\\begin{document}')).includes(pkg), cmd);
+  assert.match(t, /\\usepackage\[LGR,T2A,T1\]\{fontenc\}/);
+  assert.match(t, /\\documentclass\[11pt\]\{article\}\n\\usepackage\[letterpaper,[^\]]*\]\{geometry\}/);
+  assert.ok(!/[\uE000-\uE01F]/.test(t), 'no mark is left in the source');
+  assert.ok(isBalanced(t, 0, t.length));
+  // told: in the result and at the top of the source
+  const said = r.warnings.join(' ');
+  for (const s of ['Chinese or Japanese: 你好', '1 chart', 'the header and footer text (“Draft: do not cite”)', '1 Word comment came in', '2 tracked changes in the file were accepted', 'Endnotes are footnotes', 'table of contents is LaTeX', '2 equations typed with a number'])
+    assert.ok(said.includes(s), s + '\n' + said);
+  assert.ok(t.startsWith('% Opened from a Word file by Rikuy.\n% - Not kept: 2 characters pdfLaTeX has no font'));
+  // and the page reads it: a title, the contents, a page break, three floats, no raw source
+  const m = buildModel({ files: new Map([['main.tex', t]]), main: 'main.tex' });
+  const kinds = m.blocks.flatMap((u) => u.items.map((x) => x.type));
+  for (const k of ['title', 'toc', 'pagebreak', 'float', 'math']) assert.ok(kinds.includes(k), k);
+  assert.ok(!kinds.includes('raw'), kinds.join(' '));
+});
+
+await ok('comments with replies, a short field, a field that never ends, colour that is the ink, marks a file brings itself', () => {
+  const cm = '<w:comments ' + NSW + ' xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"><w:comment w:id="3" w:author="Ana"><w:p w14:paraId="A1"><w:r><w:t>Cite it.</w:t></w:r></w:p></w:comment><w:comment w:id="4" w:author="Ben"><w:p w14:paraId="B2"><w:r><w:t>Done.</w:t></w:r></w:p></w:comment><w:comment w:id="5" w:author="Cy"><w:p w14:paraId="C3"><w:r><w:t>No range.</w:t></w:r></w:p></w:comment></w:comments>';
+  const ex = '<w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml"><w15:commentEx w15:paraId="A1" w15:done="0"/><w15:commentEx w15:paraId="B2" w15:paraIdParent="A1" w15:done="0"/></w15:commentsEx>';
+  const body = '<w:p><w:r><w:t xml:space="preserve">The </w:t></w:r><w:commentRangeStart w:id="3"/><w:commentRangeStart w:id="4"/><w:r><w:t>claim</w:t></w:r><w:commentRangeEnd w:id="3"/><w:commentRangeEnd w:id="4"/><w:r><w:t xml:space="preserve"> holds, see </w:t></w:r><w:fldSimple w:instr=" REF _Ref1 \\h "><w:r><w:t>Table 2</w:t></w:r></w:fldSimple><w:r><w:t>.</w:t></w:r><w:r><w:commentReference w:id="5"/></w:r></w:p>'
+    + wp('Second paragraph.');
+  const r = open(tiny(body, { 'word/comments.xml': cm, 'word/commentsExtended.xml': ex }));
+  assert.ok(bodyOf(r.tex).includes('The claim holds, see Table 2.\n% comment (Ana) on "claim": Cite it.\n% reply (Ben): Done.\n% comment (Cy): No range.\n\nSecond paragraph.'), r.tex);
+  assert.ok(r.warnings.some((w) => /^2 Word comments came in/.test(w)), r.warnings.join('|'));
+  // plain pandoc on the same file: neither the comments nor the field's text
+  const raw = P.convert({ from: 'docx', to: 'latex', 'input-files': ['in.docx'], wrap: 'none' }, null, { 'in.docx': tiny(body, { 'word/comments.xml': cm }) }).stdout;
+  assert.ok(!raw.includes('Table 2') && !raw.includes('Cite it'), raw);
+  // a TOC field with no end takes no text with it; one that ends goes as a whole
+  const toc = (end) => '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> TOC \\o "1-3" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:hyperlink w:anchor="_Toc1"><w:r><w:t>Old entry 4</w:t></w:r></w:hyperlink></w:p>' + (end ? '<w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>' : '') + wp('Real text.') + wp('More text.');
+  assert.ok(bodyOf(open(tiny(toc(true))).tex).includes('\\tableofcontents\n\nReal text.\n\nMore text.'));
+  const open2 = bodyOf(open(tiny(toc(false))).tex);
+  assert.ok(open2.includes('Real text.') && open2.includes('More text.') && !open2.includes('\\tableofcontents'), open2);
+  // one colour over the whole text is the ink of the document, not a colour
+  const col = (c, t) => '<w:p><w:r><w:rPr><w:color w:val="' + c + '"/></w:rPr><w:t xml:space="preserve">' + t + '</w:t></w:r></w:p>';
+  const ink = bodyOf(open(tiny(col('1F4E79', 'All of the text is dark blue here.') + col('1F4E79', 'And here too, with ') + col('FF0000', 'red'))).tex);
+  assert.ok(!ink.includes('1F4E79') && ink.includes('\\textcolor[HTML]{FF0000}{red}'), ink);
+  // not a colour, nearly black: left alone
+  assert.ok(!/textcolor/.test(open(tiny(col('zzzzzz', 'a') + col('101010', 'b') + wp('c'))).tex));
+  // private use characters of the file's own are not read as marks (a page break, a colour)
+  const own = open(tiny(wp('A\uE004B \uE005\uE010\uE010\uE010\uE010\uE010\uE010\uE001C\uE006 \uE000\uE011\uE001D \uE003\uE010\uE001')));
+  assert.ok(bodyOf(own.tex).includes('AB C D') && !/newpage|textcolor|tableofcontents|% comment/.test(own.tex), own.tex);
+  // a page break inside a table cell has no place: it goes, the row stays whole
+  const cell = open(tiny('<w:tbl><w:tr><w:tc><w:p><w:r><w:t>a</w:t><w:br w:type="page"/></w:r></w:p></w:tc><w:tc>' + wp('b') + '</w:tc></w:tr></w:tbl>'));
+  assert.ok(/a & b \\\\/.test(cell.tex) && !cell.tex.includes('\\newpage'), cell.tex);
+});
+
+await ok('files that are not a .docx say what they are; a part cut short is an error, not half a document', () => {
+  const u = (t) => new TextEncoder().encode(t);
+  const pad = (b) => { const o = new Uint8Array(64); o.set(b); return o; };
+  assert.throws(() => open(pad([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])), /old Word format \(\.doc\)[\s\S]*save it as "Word Document/);
+  assert.throws(() => open(pad(u('{\\rtf1\\ansi hello}'))), /Rich Text file \(\.rtf\)/);
+  assert.throws(() => open(zipSync({ mimetype: u('application/vnd.oasis.opendocument.text'), 'content.xml': u('<a/>') })), /OpenDocument text \(\.odt\)/);
+  assert.throws(() => open(zipSync({ '[Content_Types].xml': u('<Types/>'), 'xl/workbook.xml': u('<a/>') })), /Excel file/);
+  assert.throws(() => open(new Uint8Array(0)), /empty/);
+  assert.throws(() => parseXml('<a><b></a>', undefined, true), /well formed/);
+  assert.throws(() => parseXml('<a><b>', undefined, true), /well formed/);
+  assert.equal(parseXml('<a><b/>t</a>', undefined, true).c[0].c.length, 2);
+  // word/document.xml cut in the middle: pandoc refuses it and so does Rikuy (never the first half)
+  const whole = unzip(tiny(wp('One.') + wp('Two.') + wp('Three.')));
+  const d = text(whole.get('word/document.xml'));
+  whole.set('word/document.xml', d.slice(0, d.indexOf('Two.') + 2));
+  assert.throws(() => open(zip(whole)), /damaged: its text \(word\/document\.xml\) is cut short/);
+  // an empty document opens, and says so
+  assert.ok(open(tiny('')).warnings.includes('The Word file has no text.'));
+});
+
+await ok('bookmarks nothing refers to are not labels: a Rikuy export opened as a stranger\'s file compiles; an author\'s footnote is \\thanks', () => {
+  const src = doc('\\maketitle\n\\section{One}\\label{sec:one}\nText in Section~\\ref{sec:one}.\\footnote{A note.}\n', '\\title{A \\emph{Title}}\n\\author{Ana\\thanks{Lima.} \\and Ben}\n');
+  const E = exportFiles(new Map([['main.tex', src]]));
+  const r = open(E.docx);
+  assert.ok(!/\\label\{Rk\d+\}|phantomsection|\{\}/.test(r.tex), r.tex);
+  assert.ok(r.tex.includes('\\title{A \\emph{Title}}\n\\author{Ana\\thanks{Lima.} \\and Ben}'), r.tex);
+  assert.ok(r.tex.includes('\\footnote{A note.}'));
+  // Word's own leftovers (_GoBack, _Hlk) go the same way; a bookmark a link names stays
+  const bm = (n, t) => '<w:bookmarkStart w:id="1" w:name="' + n + '"/><w:r><w:t xml:space="preserve">' + t + '</w:t></w:r><w:bookmarkEnd w:id="1"/>';
+  const t2 = open(tiny('<w:p>' + bm('_Hlk123', 'Marked ') + bm('target', 'place') + '</w:p><w:p><w:hyperlink w:anchor="target"><w:r><w:t>go there</w:t></w:r></w:hyperlink></w:p>')).tex;
+  assert.ok(!t2.includes('_Hlk123') && t2.includes('\\label{target}') && t2.includes('\\hyperref[target]{go there}') && t2.includes('{hyperref}'), t2);
+});
+
+await ok('a document mostly in a script TeX Live has no default font for is set up for XeLaTeX, and says so', () => {
+  const r = open(tiny(wp('研究表明，制度变迁对经济增长具有显著影响。本文利用秘鲁的数据进行了检验，结果稳健。政策含义在最后一节讨论。') + wp('Latin too.')));
+  assert.match(r.tex, /\\usepackage\{fontspec\}/);
+  assert.ok(!/fontenc/.test(r.tex));
+  assert.ok(/^Not kept: a font for \d+ characters \(Chinese or Japanese: /.test(r.warnings[0]), r.warnings[0]);
+});
+
+await ok('the page\'s model: colours by number and by \\definecolor, in text and in formulas; a list and a table in a table cell', () => {
+  const src = doc('A \\textcolor[HTML]{0f9ed5}{blue}, \\textcolor{key}{key}, \\colorbox{soft}{soft}, \\colorbox[RGB]{255,255,0}{y}, \\textcolor{red}{r}, \\textcolor{bad}{b}, \\textcolor[HTML]{url(x)}{w}, {\\color[rgb]{1,0,0} d}.\n'
+    + 'Math $\\textcolor[HTML]{0F9ED5}{x} + \\textcolor{key}{y} + {\\color{key} z} + \\textcolor{red}{w} + \\textcolor[HTML]{zz}{v}$.\n\n'
+    + '\\begin{tabular}{ll}\n\\begin{itemize}\n\\tightlist\n\\item\n  one \\textbf{b}\n\\item two\n  \\begin{enumerate}\n  \\def\\labelenumi{\\arabic{enumi}.}\n  \\item deep\n  \\end{enumerate}\n\\end{itemize} & \\begin{tabular}{ll}\nin1 & \\cellcolor[HTML]{FFFF00} in2 \\\\\n\\end{tabular} \\\\\n'
+    + '\\begin{itemize} stray \\item x \\end{itemize} & \\begin{itemize}\\item y\\footnote{n}\\end{itemize} \\\\\n\\end{tabular}\n',
+  '\\usepackage{xcolor}\n\\definecolor{key}{HTML}{C00000}\n\\definecolor{soft}{rgb}{0.9,0.95,1}\n\\definecolor{bad}{HTML}{url(x)}\n\\definecolor{worse}{RGB}{300,0,0}\n');
+  const m = buildModel({ files: new Map([['main.tex', src]]), main: 'main.tex' });
+  const items = m.blocks.flatMap((u) => u.items);
+  const cols = items[0].inl.filter((x) => x.k === 'sty').map((x) => x.st + ' ' + x.color);
+  // a colour is #RRGGBB or the text as written, which the page takes only as a name it knows
+  assert.deepEqual(cols, ['color #0F9ED5', 'color #C00000', 'bg #E6F2FF', 'bg #FFFF00', 'color red', 'color bad', 'color url(x)', 'color #FF0000']);
+  assert.equal(items[0].inl.find((x) => x.k === 'math').tex, '\\textcolor{#0F9ED5}{x} + \\textcolor{#C00000}{y} + {\\color{#C00000} z} + \\textcolor{red}{w} + \\textcolor[HTML]{zz}{v}');
+  for (const [mdl, spec, want] of [['HTML', 'C00000', '#C00000'], ['HTML', 'C0000', null], ['HTML', 'red;x', null], ['RGB', '160, 43, 147', '#A02B93'], ['RGB', '256,0,0', null], ['RGB', '1,2', null], ['rgb', '0,0.5,1', '#0080FF'], ['rgb', '1.5,0,0', null], ['rgb', '1e3,0,0', null], ['cmyk', '0,0,0,1', null], ['HTML', 'url(//x)', null]])
+    assert.equal(colorValue(mdl, spec), want, mdl + ' ' + spec);
+  // the cells: a plain list and an inner table are drawn; the others are as before
+  const rows = items.find((x) => x.type === 'float' || x.type === 'tabular');
+  const tab = rows.type === 'tabular' ? rows : rows.parts.find((p) => p.type === 'tabular');
+  const [c00, c01] = tab.rows[0].cells, [c10, c11] = tab.rows[1].cells;
+  const chip = (c) => c.inl.find((x) => x.k === 'chip');
+  assert.equal(chip(c00).list.ordered, false);
+  assert.equal(chip(c00).list.items.length, 2);
+  assert.equal(chip(c00).list.items[1].find((x) => x.k === 'chip').list.ordered, true);
+  assert.ok(!chip(c00).err && chip(c00).s >= 0 && src.slice(chip(c00).s, chip(c00).e).startsWith('\\begin{itemize}') && src.slice(chip(c00).s, chip(c00).e).endsWith('\\end{itemize}'));
+  assert.equal(chip(c01).table.rows[0].cells.length, 2);
+  assert.equal(chip(c01).table.rows[0].cells[1].bg, '#FFFF00');
+  assert.ok(chip(c10).err && chip(c10).text === '\\item' && !chip(c10).list, 'text before the first item: as before');
+  assert.ok(!c11.inl.some((x) => x.k === 'chip' && x.list), 'a footnote in the list: as before');
+  // outside a table's cell nothing changes
+  const m2 = buildModel({ files: new Map([['main.tex', doc('Text \\begin{tabular}{l}a\\end{tabular} more.\n')]]), main: 'main.tex' });
+  assert.ok(!m2.blocks.flatMap((u) => u.items).some((it) => (it.inl || []).some((x) => x.k === 'chip' && (x.table || x.list))));
+});
+
+await ok('to Word: a formula with colour stays a Word equation; a colour the preamble defines is kept', () => {
+  const src = doc('Then $\\textcolor{red}{x} + \\textcolor[HTML]{0F9ED5}{y^2} + {\\color{key} z}$ and \\textcolor{key}{key words}.\n\\[ \\textcolor{key}{E} = mc^2 \\]\n', '\\usepackage{xcolor}\n\\definecolor{key}{HTML}{C00000}\n');
+  const files = new Map([['main.tex', src]]);
+  const m = buildModel({ files, main: 'main.tex' });
+  const W = buildWordDoc(m, files, { now: 0 });
+  assert.ok(W.degraded.some((d) => /a formula without its colours \(2\)/.test(d)), W.degraded.join('|'));
+  const E = exportFiles(files);
+  const d = text(unzip(E.docx).get('word/document.xml'));
+  assert.equal((d.match(/<m:oMath>/g) || []).length, 2);
+  assert.ok(!d.includes('textcolor') && !/\$[^<]*\$/.test(d.replace(/<[^>]+>/g, '')), 'no formula left as TeX text');
+  assert.match(d, /<w:rStyle w:val="ColourC00000" \/><\/w:rPr><w:t[^>]*>key words/);
+  assert.equal(importInto(E.docx, files).files.size, 0);
+  assert.equal(uncolor('\\textcolor{red}{x}+{\\color[HTML]{C00000} y}+\\frac{a}{b}'), '{x}+{ y}+\\frac{a}{b}');
+});
+
+await ok('code keeps no colour marks: a file pandoc wrote with highlighted code opens as plain verbatim', () => {
+  // as pandoc, Quarto and R Markdown write code: Source Code paragraphs, a coloured character style per token
+  const made = P.convert({ from: 'markdown', to: 'docx', 'output-file': 'out.docx', 'highlight-style': 'pygments' }, 'Text with `inline code` and **bold**.\n\n```python\nimport os\nx = "a string"  # comment\n```\n\nAfter.\n', {}).files['out.docx'];
+  assert.match(text(unzip(made).get('word/document.xml')), /<w:rStyle w:val="ImportTok" \/>/);
+  const r = open(made);
+  assert.ok(bodyOf(r.tex).includes('\\begin{verbatim}\nimport os\nx = "a string"  # comment\n\\end{verbatim}'), r.tex);
+  assert.ok(bodyOf(r.tex).includes('\\texttt{inline\\ code}') && !/textcolor|xcolor/.test(r.tex), r.tex);
+  // and a mark that gets into code all the same (here a page break inside a listing and inside an
+  // inline code span) is dropped there, not printed as \newpage
+  const br = edit(made, (d) => d.replace('<w:t xml:space="preserve">import</w:t>', '<w:t xml:space="preserve">import</w:t><w:br w:type="page"/>').replace(/(<w:rStyle w:val="VerbatimChar" \/><\/w:rPr>)<w:t/, '$1<w:br w:type="page"/><w:t'));
+  const t2 = open(br).tex;
+  assert.ok(!/newpage|[\uE000-\uE01F]/.test(t2) && t2.includes('\\begin{verbatim}\nimport os\n') && /\\texttt\{inline\\ code\}/.test(t2), t2);
+  // a direct colour on a run of code, and on a run in a code style of Word's own
+  const col = edit(made, (d) => d.replace(/<w:rStyle w:val="(NormalTok|VerbatimChar)" \/>/g, '<w:rStyle w:val="$1" /><w:color w:val="FF0000" />'));
+  assert.ok(!/textcolor/.test(open(col).tex));
+});
+
+await ok('names from the document that every object has (constructor, __proto__) are unknown names, not lookups that hit', () => {
+  for (const c of ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf!50', 'Constructor']) assert.equal(wordColor(c), null, c);
+  assert.equal(wordColor('Red!50'), 'FF8080');
+  // Save as Word with such a colour name: the text without the colour, said so; no throw
+  const src = doc('A \\textcolor{constructor}{word}, \\colorbox{__proto__}{two}, \\textcolor{toString!30}{three} and $\\textcolor{hasOwnProperty}{x}$.\n', '\\usepackage{xcolor}\n\\definecolor{__proto__}{HTML}{C00000}\n\\definecolor{constructor}{rgb}{2,0,0}\n');
+  const files = new Map([['main.tex', src]]);
+  const m = buildModel({ files, main: 'main.tex' });
+  const W = buildWordDoc(m, files, { now: 0 });
+  assert.ok(W.degraded.some((d) => /text in a colour the preamble defines, without the colour \(2\)/.test(d)), W.degraded.join('|'));
+  const d = text(unzip(exportFiles(files).docx).get('word/document.xml'));
+  assert.ok(d.includes('word') && d.includes('three') && /<w:rStyle w:val="ShadeC00000" \/>/.test(d), 'the defined one keeps its shade');
+  // a Word file whose text, styles, bookmarks and comment ids are such names opens like any other
+  const odd = open(tiny('<w:p><w:pPr><w:pStyle w:val="constructor"/></w:pPr><w:bookmarkStart w:id="1" w:name="__proto__"/><w:r><w:rPr><w:rStyle w:val="toString"/></w:rPr><w:t>Odd \u2264 names</w:t></w:r><w:bookmarkEnd w:id="1"/><w:commentRangeStart w:id="constructor"/></w:p><w:p><w:hyperlink w:anchor="constructor"><w:r><w:t>link</w:t></w:r></w:hyperlink></w:p>'));
+  assert.ok(bodyOf(odd.tex).includes('Odd \\(\\leq\\) names\n\nlink'), odd.tex);
 });
 
 console.log('word: ' + n + ' groups of checks passed');

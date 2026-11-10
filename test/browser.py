@@ -465,6 +465,361 @@ def popovers(page):
     check('popovers: undo gives the bytes back', src(page) == base)
 
 
+def first_words(page):
+    """What someone who has never used LaTeX does first: New document and typing at once,
+    deleting it all and typing again, a formula or a heading as the first thing in a paragraph,
+    Enter in the title, Backspace in a heading left empty."""
+    body = lambda: src(page)[src(page).find('\\begin{document}') + 16:src(page).find('\\end{document}')]
+    slow = dict(delay=40)   # the math field takes keys as a person types them, not all at once
+    page.click('#b-new')
+    page.wait_for_function('window.rikuy.name.startsWith("Untitled") && window.rikuy.ghost', timeout=5000)
+    name = page.evaluate('window.rikuy.name')
+    page.keyboard.type('First words')
+    wait_src(page, 'First words')
+    check('after New document the first words typed land on the page, with no click', 'First words' in body() and page.evaluate('window.rikuy.name') == name, (body(), page.evaluate('window.rikuy.name')))
+    for _ in range(len('First words')): page.keyboard.press('Backspace')
+    page.wait_for_timeout(150)
+    page.keyboard.type('again')
+    wait_src(page, 'again')
+    check('with every word deleted, typing starts the document again', body().strip() == 'again', body())
+    page.keyboard.press('Enter'); page.keyboard.type('$'); page.wait_for_timeout(400)
+    opened = page.evaluate('!!document.querySelector("body > .pop.pop-math")')
+    page.keyboard.type('x^2', **slow); page.wait_for_timeout(100); page.keyboard.press('Enter')
+    wait_src(page, '$x^2$')
+    check('a dollar sign on a new line starts a formula, as it does inside a line', opened and 'again\n\n$x^2$' in body(), body())
+    page.keyboard.type(' is math'); page.keyboard.press('Enter'); page.keyboard.type('$'); page.wait_for_timeout(400)
+    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    page.keyboard.type('next')
+    wait_src(page, 'next')
+    check('closing that formula empty leaves the caret on the line', re.search(r'is math\n\nnext\s*$', body()), body())
+    page.keyboard.press('Enter'); page.keyboard.type('\\'); page.wait_for_timeout(400)
+    pal = page.evaluate('!!document.querySelector("body > .pop.pop-pal")')
+    page.keyboard.type('sec', **slow); page.wait_for_timeout(200); page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    page.keyboard.type('Results')
+    wait_src(page, '\\section{Results}')
+    check('a backslash on a new line opens the list of things to insert', pal and '\\section{Results}' in body(), body())
+    click_text(page, 'Results'); page.keyboard.press('Shift+End'); page.keyboard.press('Delete'); page.wait_for_timeout(200)
+    emptied = '\\section{}' in body()
+    page.keyboard.press('Backspace'); page.wait_for_timeout(200)
+    check('Backspace in a heading left empty removes the heading', emptied and '\\section' not in body() and 'next' in body(), body())
+    # a formula as the first thing in a new document, then more typing
+    page.click('#b-new'); page.wait_for_timeout(400)
+    page.keyboard.type('$'); page.wait_for_timeout(400); page.keyboard.type('y', **slow); page.wait_for_timeout(100); page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    page.keyboard.type('follows')
+    wait_src(page, 'follows')
+    check('after a formula that is all the document holds, typing goes on', re.search(r'\$y\$\s+follows', body()), body())
+    # a title alone: the page had nowhere to start the text
+    load_doc(page, '\\documentclass{article}\n\\title{Only a title}\n\\begin{document}\n\\maketitle\n\\end{document}\n')
+    page.wait_for_timeout(200)
+    r = page.evaluate('(() => { const r = document.querySelector(".page").getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()')
+    page.mouse.click(*r); page.keyboard.type('Below')
+    wait_src(page, 'Below')
+    check('under a title alone, a click on the page and typing start the first paragraph', '\\title{Only a title}' in src(page) and '\\maketitle\n\nBelow' in src(page), src(page))
+    for _ in range(5): page.keyboard.press('Backspace')
+    page.wait_for_timeout(150)
+    r = page.evaluate('(() => { const s = [...document.querySelectorAll("#pages span.t")].find((s) => s.textContent.includes("Only a title")); const r = s.getBoundingClientRect(); return [r.right - 2, r.top + r.height / 2]; })()')
+    page.mouse.click(*r); page.keyboard.type('!')
+    wait_src(page, 'title!')
+    check('and the title itself is still edited where it stands', '\\title{Only a title!}' in src(page), src(page))
+    page.keyboard.press('Enter'); page.keyboard.type('From the title')
+    wait_src(page, 'From the title')
+    check('Enter in the title starts the text after \\maketitle', '\\title{Only a title!}' in src(page) and '\\maketitle\n\nFrom the title' in src(page), src(page))
+
+
+def phone_layout(page):
+    """The bar, the status line, Help and the PDF bar on screens as wide as phones are."""
+    BAR = """() => { const W = document.documentElement.clientWidth; const box = (e) => e.getBoundingClientRect(); const vis = (e) => box(e).width > 0;
+      const kids = [...document.querySelectorAll('#b-nav, #bar .brand .mark, #bar .tools > button, #bar .tools .zoom > *')].filter(vis);
+      const off = kids.filter((e) => box(e).right > W + 0.5 || box(e).left < -0.5).map((e) => e.id || e.className);
+      const over = [];
+      for (let i = 0; i < kids.length; i++) for (let j = i + 1; j < kids.length; j++) { const a = box(kids[i]), b = box(kids[j]); if (a.left < b.right - 1 && b.left < a.right - 1) over.push((kids[i].id || kids[i].className) + '~' + (kids[j].id || kids[j].className)); }
+      const st = document.getElementById('status');
+      return { off, over: over.filter((x) => x !== 'b-save~b-save-more'), nav: Math.round(box(document.getElementById('b-nav')).width), page: document.documentElement.scrollWidth - W,
+        status: Math.round(box(st).height), pdfx: Math.round(box(document.getElementById('pdf-x')).right) - W }; }"""
+    for w in (360, 390, 430, 540, 700):
+        page.set_viewport_size({'width': w, 'height': 800})
+        page.wait_for_timeout(250)
+        m = page.evaluate(BAR)
+        check('at %dpx no button of the bar lies over another or the name, or off the screen' % w, not m['off'] and not m['over'] and m['page'] <= 0 and m['nav'] >= 28, m)
+        if w <= 430: check('at %dpx the status line is one line' % w, m['status'] <= 30, m['status'])
+    page.set_viewport_size({'width': 360, 'height': 800})
+    page.wait_for_timeout(250)
+    page.evaluate('window.rikuy.togglePdf(true)')
+    page.wait_for_timeout(300)
+    m = page.evaluate(BAR)
+    check('at 360px the PDF pane\'s close button is on the screen', m['pdfx'] <= 0, m['pdfx'])
+    page.evaluate('window.rikuy.togglePdf(false)')
+    check('a phone has no Help button in the bar', not page.is_visible('#b-help'))
+    page.click('#b-nav')
+    page.wait_for_timeout(200)
+    acts = page.evaluate('[...document.querySelectorAll("#nav-acts .nav-act")].map((a) => [a.dataset.for, a.textContent.trim(), a.disabled, a.getBoundingClientRect().height])')
+    bar = page.evaluate('[...document.querySelectorAll("#bar .tools button:not(.ai-only)")].map((b) => b.id)')
+    check('the menu panel lists every action of the bar by name, each large enough to tap', sorted(a[0] for a in acts) == sorted(bar) and all(a[1] and a[3] >= 36 for a in acts), (acts, bar))
+    check('Undo and Redo are greyed there when there is nothing to undo, and the zoom shows its value', all(a[2] for a in acts if a[0] in ('b-undo', 'b-redo')) and re.match(r'Zoom: (Fit|\d+%)$', [a[1] for a in acts if a[0] == 'zoomv'][0]), acts)
+    page.click('#nav-acts [data-for=b-help]')
+    page.wait_for_timeout(300)
+    r = page.evaluate('(() => { const e = document.querySelector("body > .pop.pop-help"); if (!e) return null; const dd = e.querySelector(".keys dd").getBoundingClientRect(), b = e.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right), Math.round(dd.width), document.documentElement.clientWidth]; })()')
+    check('so Help opens from the menu panel, which closes', r and not page.evaluate('document.body.classList.contains("nav-on")'), r)
+    check('and fits the screen, its explanations in a column wide enough to read', r and r[0] >= 0 and r[1] <= r[3] and r[2] >= 150, r)
+    page.keyboard.press('Escape')
+    page.click('#b-nav'); page.wait_for_timeout(200)
+    page.click('#nav-acts [data-for=b-src]'); page.wait_for_timeout(300)
+    check('an action pressed there does what its button does', page.evaluate('document.body.classList.contains("src-on")') and not page.evaluate('document.body.classList.contains("nav-on")'))
+    page.evaluate('window.rikuy.toggleSource(false)')
+    page.set_viewport_size({'width': 1400, 'height': 1000})
+    page.wait_for_timeout(250)
+    page.evaluate('window.rikuy.toggleNav(true)')
+    check('a wide screen, where the buttons carry their names, has no such list', page.is_visible('#b-help') and not page.is_visible('#nav-acts'))
+    page.evaluate('window.rikuy.toggleNav(false)')
+    # keyboard alone: a popover opened from a button of the bar gives the focus back to it
+    back = []
+    for b in ('#b-share', '#b-save-more', '#b-help'):
+        page.focus(b); page.keyboard.press('Enter'); page.wait_for_timeout(250)
+        opened = page.evaluate('document.querySelectorAll("body > .pop").length')
+        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+        back.append((b, opened, page.evaluate('document.querySelectorAll("body > .pop").length'), page.evaluate('"#" + document.activeElement.id')))
+    check('Escape closes Share, Save and Help and the focus returns to their buttons', all(o == 1 and c == 0 and a == b for b, o, c, a in back), back)
+
+
+def first_visit(p):
+    """Someone who has never been here sees the page alone, at a size they can read; what they
+    choose is kept; someone who was here before the page opened this way keeps the source pane."""
+    browser = p.chromium.launch()
+    try:
+        def visit(ctx):
+            page = ctx.pages[0] if ctx.pages else ctx.new_page()
+            page.goto('https://rikuy.test/')
+            page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
+            page.wait_for_timeout(300)
+            return page
+        dist = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
+        doc = SKELETON_HEAD + open(os.path.join(dist, 'rikuy.html'), encoding='utf8').read() + '</body></html>'
+
+        def serve(route):
+            url = route.request.url
+            if url in ROUTES: return route.fulfill(status=200, content_type='application/javascript', headers={'Access-Control-Allow-Origin': '*'}, body=open(ROUTES[url], 'rb').read())
+            if url == 'https://rikuy.test/': return route.fulfill(status=200, content_type='text/html; charset=utf-8', body=doc)
+            f = os.path.join(dist, url[len('https://rikuy.test/'):].split('?')[0]) if url.startswith('https://rikuy.test/') else ''
+            return route.fulfill(status=200, content_type='text/javascript', body=open(f, 'rb').read()) if f and os.path.isfile(f) else route.abort()
+        on = 'document.body.classList.contains("src-on")'
+        ctx = browser.new_context(viewport={'width': 1400, 'height': 900}); ctx.route('**/*', serve)
+        page = visit(ctx)
+        check('a first visit on a wide screen shows the page without the source pane', not page.evaluate(on) and page.is_visible('#b-src'))
+        page.click('#b-help'); page.wait_for_timeout(200)
+        first = page.evaluate('document.querySelector(".pop-help p").textContent')
+        check('Help starts by saying what Rikuy is, before any word about LaTeX source', first.startswith('Rikuy is a writing app for papers') and 'source' not in first, first)
+        page.keyboard.press('Escape')
+        page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); page.wait_for_timeout(300)
+        check('a second visit with nothing chosen is the same', not page.evaluate(on))
+        page.click('#b-src'); page.wait_for_timeout(300)
+        page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); page.wait_for_timeout(500)
+        check('the Source button opens the pane and the choice is kept', page.evaluate(on))
+        # here before the change: a project kept in this browser, no settings ever written
+        click_text(page, 'Click anywhere'); page.keyboard.type('Mine. '); page.wait_for_timeout(1200)
+        page.evaluate('localStorage.removeItem(Object.keys(localStorage).find((k) => /pref/i.test(k)))')
+        page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); page.wait_for_timeout(500)
+        check('someone with a document kept and no settings keeps the source pane of a wide screen', page.evaluate(on) and 'Mine. ' in src(page), page.evaluate('Object.keys(localStorage)'))
+        ctx.close()
+        for w in (360, 390, 430):
+            ctx = browser.new_context(viewport={'width': w, 'height': 800}, has_touch=True, is_mobile=True); ctx.route('**/*', serve)
+            page = visit(ctx)
+            m = page.evaluate('(() => { const d = document.getElementById("desk"), r = document.querySelector("#pages .it.p").getBoundingClientRect(); return { font: parseFloat(getComputedStyle(document.querySelector("#pages .it.p")).fontSize), left: r.left, right: r.right, w: d.clientWidth, label: document.getElementById("zoomv").textContent, src: ' + on + ' }; })()')
+            check('a first visit on a %dpx phone opens with the text block across the screen, not the sheet' % w, m['font'] > 7.5 and m['left'] >= 0 and m['right'] <= m['w'] and m['right'] - m['left'] > m['w'] - 30 and not m['src'], m)
+            # what is stored must be a zoom the version before this one can read (it multiplies
+            # anything but 'fit'): after a rollback its page would have no size
+            z = page.evaluate('JSON.parse(localStorage.getItem("galley.prefs.v1")).zoom')
+            check('the settings kept on a %dpx first visit hold a zoom the previous version reads' % w, z == 'fit' or isinstance(z, (int, float)), z)
+            if w == 390:
+                seen = []
+                for _ in range(3):
+                    page.tap('#zoomv'); page.wait_for_timeout(300); seen.append(page.inner_text('#zoomv'))
+                check('the zoom button there goes to actual size, the whole sheet, and back', seen[0] == '100%' and seen[1] == 'Fit' and seen[2] == m['label'], seen)
+                page.tap('#zoomv'); page.tap('#zoomv'); page.wait_for_timeout(300)
+                z = page.evaluate('JSON.parse(localStorage.getItem("galley.prefs.v1")).zoom')
+                page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); page.wait_for_timeout(300)
+                check('the whole sheet, once chosen, is kept too, under a zoom the previous version reads', page.inner_text('#zoomv') == 'Fit' and z == 'fit', (page.inner_text('#zoomv'), z))
+                page.tap('#zoomv'); page.wait_for_timeout(300)
+                page.tap('#zoomv'); page.wait_for_timeout(300)
+                page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); page.wait_for_timeout(300)
+                check('and a zoom that was chosen is the one the next visit opens with', page.inner_text('#zoomv') == '100%', page.inner_text('#zoomv'))
+            ctx.close()
+    finally:
+        browser.close()
+
+
+def select_all(page):
+    """Select all, then Delete, typing, cut or paste: the body is replaced as New document would
+    leave it, the preamble stays, and one undo brings every byte back."""
+    base = src(page)
+    pre = base[:base.find('\\begin{document}') + len('\\begin{document}')]
+    body = lambda: src(page)[len(pre):] if src(page).startswith(pre) else None
+    click_text(page, 'Click anywhere'); page.keyboard.press('Control+a'); page.keyboard.press('Delete'); page.wait_for_timeout(300)
+    check('select all, Delete leaves a blank body and the preamble as it was', body() == '\n\n\\end{document}\n', body())
+    check('with the blank paragraph ready for typing', page.evaluate('!!(window.rikuy.ghost && window.rikuy.ghost.sticky)') and page.evaluate('(window.rikuy.caretNow() || {}).ghost === true') and page.evaluate('document.querySelectorAll("#pages .it:not(.ghostp)").length') == 0)
+    page.keyboard.type('Fresh start'); wait_src(page, 'Fresh start')
+    check('and typing starts the new text', (body() or '').split() == ['Fresh', 'start', '\\end{document}'], body())
+    page.keyboard.press('Control+z'); page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    check('undo brings the whole document back byte for byte', src(page) == base)
+    click_text(page, 'Click anywhere'); page.keyboard.press('Control+a'); page.keyboard.type('Z'); wait_src(page, '\n\nZ\n\n')
+    one = body()
+    page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    check('typing over a selection of everything replaces the body, in one undo step', one == '\n\nZ\n\n\\end{document}\n' and src(page) == base, one)
+    click_text(page, 'Click anywhere'); page.keyboard.press('Control+a')
+    page.evaluate("""() => { const dt = new DataTransfer(); dt.setData('text/plain', 'First pasted.\\n\\nSecond pasted.');
+      document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }""")
+    wait_src(page, 'Second pasted.')
+    one = body()
+    page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    check('a paste over everything becomes the body, its paragraphs kept', one == '\n\nFirst pasted.\n\nSecond pasted.\n\n\\end{document}\n' and src(page) == base, one)
+    select_text(page, 'paragraph'); page.keyboard.press('Delete'); page.wait_for_timeout(200)
+    check('a selection of less than everything deletes as before', 'in this  and start typing' in src(page) and '\\section{How to use it}' in src(page))
+    page.keyboard.press('Control+z'); page.wait_for_timeout(200)
+    # Only Select all is "everything". A selection from the first word to the last can leave
+    # blocks with no text outside it (a picture, an equation, a listing): they must stay.
+    DOC = ('\\documentclass{article}\n\\usepackage{graphicx}\n\\begin{document}\n\\begin{equation}\n  x = 1\n\\end{equation}\n\n'
+           'The only sentence here.\n\n\\begin{verbatim}\ncode stays\n\\end{verbatim}\n\n\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{shot.png}\n\\end{center}\n\\end{document}\n')
+    load_doc(page, DOC)
+    select_text(page, 'The only sentence here.'); page.wait_for_timeout(100)
+    page.keyboard.type('B'); page.wait_for_timeout(300)
+    check('a sentence selected from its first word to its last and typed over leaves the picture, the equation and the listing', src(page) == DOC.replace('The only sentence here.', 'B'), src(page))
+    page.keyboard.press('Control+z'); page.wait_for_timeout(200)
+    r = page.evaluate('(() => { const s = [...document.querySelectorAll("#pages span.t")].find((s) => s.textContent.includes("The only sentence")); const r = s.getBoundingClientRect(); return [r.left + 30, r.top + r.height / 2]; })()')
+    page.mouse.click(r[0], r[1], click_count=3); page.wait_for_timeout(150)
+    page.keyboard.press('Delete'); page.wait_for_timeout(300)
+    s = src(page)
+    check('the same with a triple click and Delete', all(x in s for x in ('x = 1', 'code stays', '\\includegraphics[width=0.8\\linewidth]{shot.png}')) and 'only sentence' not in s, s)
+    load_doc(page, DOC)
+    click_text(page, 'The only sentence'); page.keyboard.press('Control+a'); page.wait_for_timeout(100)
+    click_text(page, 'The only sentence', 4); page.wait_for_timeout(100)
+    select_text(page, 'The only sentence here.'); page.wait_for_timeout(100)
+    page.keyboard.press('Delete'); page.wait_for_timeout(300)
+    check('a Select all given up for another selection no longer counts', 'code stays' in src(page) and 'x = 1' in src(page), src(page))
+    load_doc(page, DOC)
+    click_text(page, 'The only sentence'); page.keyboard.press('Control+a'); page.keyboard.press('Delete'); page.wait_for_timeout(300)
+    check('Select all itself still takes every block', src(page) == '\\documentclass{article}\n\\usepackage{graphicx}\n\\begin{document}\n\n\\end{document}\n', src(page))
+    # the body is the parser's: no \end{document}, and the preamble is not what gets replaced
+    for label, doc in (('with no \\end{document}', '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nWords with no end.\n'),
+                       ('with \\end {document} spaced', '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nWords with an end.\n\\end {document}\n'),
+                       ('with no preamble at all', 'Only words here.\n\nAnd a second paragraph.\n')):
+        load_doc(page, doc)
+        click_text(page, 'ords'); page.keyboard.press('Control+a'); page.keyboard.type('N'); page.wait_for_timeout(300)
+        s = src(page)
+        pre = doc[:doc.find('\\begin{document}') + 16] if '\\begin{document}' in doc else ''
+        check('Select all and typing %s keeps everything before the text' % label, s.startswith(pre) and 'N' in s[len(pre):] and 'ords' not in s, s)
+    doc = '\\documentclass{article}\n% moved from below: \\begin{document}\n\\usepackage{amsmath}\n\\newcommand{\\R}{\\mathbb{R}}\n\\begin{document}\nBody words.\n\\end{document}\n'
+    load_doc(page, doc)
+    click_text(page, 'Body words'); page.keyboard.press('Control+a'); page.keyboard.press('Delete'); page.wait_for_timeout(300)
+    check('a comment in the preamble that names \\begin{document} is not where the body starts', src(page) == doc.replace('\nBody words.\n', '\n\n'), src(page))
+
+
+def formula_mistakes(page):
+    """A mistake in a formula's source box is said in plain words, with KaTeX's own as the
+    tooltip; text that would not stay a formula (an unclosed brace) is not written into the
+    document, so the paragraph around it stays as it was."""
+    base = src(page)
+    page.click('.a-math >> nth=0')
+    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
+    ERR = '(() => { const e = document.querySelector(".pop-math .pv-err"); return e && !e.hidden ? [e.textContent, e.title] : null; })()'
+
+    def typed(v):
+        # the source box's text set as typing sets it; page.fill at times lost it to the math
+        # field, which takes the focus back while it settles
+        page.evaluate('(v) => { const ta = document.querySelector(".pop-math textarea"); ta.focus(); ta.value = v; ta.dispatchEvent(new Event("input", { bubbles: true })); }', v)
+        page.wait_for_timeout(350)
+        return page.evaluate(ERR)
+    e = typed('\\frac{a}{b')
+    check('an unclosed brace is named in plain words, KaTeX\'s own in the tooltip', e and e[0].startswith('A { is not closed.') and 'Unexpected end of input' in e[1], e)
+    check('and is not written into the document: the paragraph stays as it was', src(page) == base and page.evaluate('document.querySelectorAll("#pages .a-chip.err, #pages .merr").length') == 0, src(page)[src(page).find('Click $'):][:60])
+    e = typed('a}')
+    check('a brace too many is held back the same way', e and e[0].startswith('A } has no { before it.') and src(page) == base, e)
+    for v, want in (('x^', 'Something is missing after ^.'), ('\\foo + 1', 'This command is not known: \\foo'), ('5 # x', '# cannot stand here: write \\# for the sign.'),
+                    ('\\left( x', '\\left has no \\right to close it.'), ('\\frac', 'Something is missing after \\frac.'), ('x^2^3', 'Two ^ in a row: put the first in braces, as in {x^2}^3.')):
+        e = typed(v)
+        check('%s: "%s"' % (v, want), e and e[0] == want and e[1] and e[1] != want, e)
+    wait_src(page, '$x^2^3$')
+    check('a mistake that stays inside the formula is still written, as before', '$x^2^3$' in src(page))
+    e = typed('\\frac{a}{b}')
+    wait_src(page, '$\\frac{a}{b}$')
+    check('put right, the formula is written and the message goes', e is None and '$\\frac{a}{b}$' in src(page), e)
+    # What was typed is never lost: closed with a brace open, the box writes the text with the
+    # missing braces added, and undo has a step for it.
+    typed('\\frac{a}{b}+{c')
+    page.focus('.pop-math textarea'); page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    check('Enter with a brace open closes the box and writes the formula with the brace closed', '$\\frac{a}{b}+{c}$' in src(page) and page.evaluate('document.querySelectorAll("body > .pop").length') == 0 and page.evaluate('document.querySelectorAll("#pages .a-chip.err, #pages .merr").length') == 0, src(page)[src(page).find('Click $'):][:60])
+    page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    check('and one undo takes back what the box wrote, as for any formula box', src(page) == base, src(page)[src(page).find('Click $'):][:60])
+    page.click('.a-math >> nth=0')
+    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
+    typed('\\sqrt{x')
+    r = page.evaluate('(() => { const s = [...document.querySelectorAll("#pages span.t")].find((s) => s.textContent.includes("Editing in Print")); const r = s.getBoundingClientRect(); return [r.left + 10, r.top + r.height / 2]; })()')
+    page.mouse.click(*r); page.wait_for_timeout(300)
+    check('a click on the page with a brace open keeps what was typed, the brace closed', '$\\sqrt{x}$' in src(page) and page.evaluate('document.querySelectorAll("body > .pop").length') == 0, src(page)[src(page).find('Click $'):][:60])
+    page.click('.a-math >> nth=0')
+    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
+    typed('y^2}')
+    page.focus('.pop-math textarea'); page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    check('Enter with a brace too many keeps the box open with its message', page.evaluate('document.querySelectorAll("body > .pop.pop-math").length') == 1 and (page.evaluate(ERR) or [''])[0].startswith('A } has no { before it.') and '$\\sqrt{x}$' in src(page), page.evaluate(ERR))
+    page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    check('and Escape then keeps every character typed, in a formula that is whole', '${y^2}$' in src(page) and page.evaluate('document.querySelectorAll("body > .pop").length') == 0, src(page)[src(page).find('Click $'):][:60])
+    # a new formula: nothing is put into the text while a brace is open, all of it when the box closes
+    click_text(page, 'References follow'); page.keyboard.type('$')
+    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
+    before = src(page)
+    e = typed('x^{2')
+    check('a new formula with a brace open is not put into the text while it is typed', e and e[0] == 'A { is not closed.' and src(page) == before, e)
+    page.focus('.pop-math textarea'); page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    check('and closing its box then puts it there, the brace closed', '$x^{2}$References' in src(page), src(page)[src(page).find('References') - 12:][:40])
+    # a new numbered equation given up with nothing typed leaves nothing behind
+    before = src(page)
+    click_text(page, 'The page and the source never disagree'); page.keyboard.press('Control+Shift+e')
+    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
+    made = src(page) != before and '\\begin{equation}\n  \n\\end{equation}' in src(page)
+    page.focus('.pop-math textarea'); page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    check('a new numbered equation closed empty leaves no empty equation in the text', made and src(page) == before, src(page)[src(page).find('The page and the source') - 60:][:90])
+    click_text(page, 'The page and the source never disagree'); page.keyboard.press('Control+Shift+e')
+    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
+    typed('E = m c^{2')
+    page.mouse.click(*r); page.wait_for_timeout(300)
+    check('typed into and left with a brace open, it keeps the formula, the brace closed', re.search(r'\\begin\{equation\}\s+E = m c\^\{2\}\s+\\end\{equation\}', src(page)), src(page)[src(page).find('The page and the source') - 70:][:100])
+    # a backslash left at the end would take the closing brace (or the formula's closing $) with
+    # it: it is held like an open brace, and dropped when the box closes
+    page.evaluate('window.rikuy.doReset()'); page.wait_for_timeout(600)
+    base = src(page)
+    red = 'document.querySelectorAll("#pages .a-chip.err, #pages .merr").length'
+    page.click('.a-math >> nth=0')
+    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
+    e = typed('x^{2}\\')
+    check('a backslash at the end is not written while it is typed', e and src(page) == base, e)
+    typed('x^{2\\')
+    page.focus('.pop-math textarea'); page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    check('x^{2\\ and Escape: the formula is written whole, with no \\} and nothing red on the page', '$x^{2}$' in src(page) and '\\}' not in src(page)[src(page).find('Click $'):][:20] and page.evaluate(red) == 0, src(page)[src(page).find('Click $'):][:40])
+    page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    page.click('.a-math >> nth=0')
+    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
+    typed('x\\\\')
+    page.focus('.pop-math textarea'); page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    check('two backslashes at the end are a line break and stay', '$x\\\\$' in src(page), src(page)[src(page).find('Click $'):][:40])
+    page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    click_text(page, 'References follow'); page.keyboard.type('$')
+    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
+    n = page.evaluate('window.rikuy.hist.length')
+    typed('\\frac{a}{\\')
+    page.focus('.pop-math textarea'); page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    check('a new formula \\frac{a}{\\ and Escape: the text is kept, whole, with an undo step', '$\\frac{a}{}$References' in src(page) and page.evaluate('window.rikuy.hist.length') == n + 1 and page.evaluate(red) == 0, src(page)[src(page).find('References') - 16:][:40])
+    page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    check('and undo takes it out', src(page) == base)
+    # a new numbered equation given up empty: undo is as it was before it
+    click_text(page, 'References follow', 3); page.keyboard.type('Q'); page.wait_for_timeout(2200)
+    mark, n = src(page), page.evaluate('window.rikuy.hist.length')
+    click_text(page, 'The page and the source never disagree'); page.keyboard.press('Control+Shift+e')
+    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
+    page.focus('.pop-math textarea'); page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    check('an empty new equation given up leaves the undo history as it was', src(page) == mark and page.evaluate('window.rikuy.hist.length') == n, (page.evaluate('window.rikuy.hist.length'), n))
+    page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    check('so the next undo takes back the typing before it, not an empty equation', src(page) == base and '\\begin{equation}\n  \n\\end{equation}' not in src(page), src(page)[src(page).find('References') - 5:][:30])
+    page.keyboard.press('Control+Shift+z'); page.wait_for_timeout(300)
+    check('and redo brings that typing back, not the equation', src(page) == mark)
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
@@ -529,6 +884,9 @@ def run():
         # 5. math popover
         page.click('.a-math >> nth=0')
         page.wait_for_selector('.pop-math textarea')
+        # the math field takes the focus when it arrives: filled a moment before, the source box
+        # lost the rest of its text to the field
+        page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
         page.fill('.pop-math textarea', '\\alpha + \\beta = \\delta')
         wait_src(page, '$\\alpha + \\beta = \\delta$')
         s8 = src(page)
@@ -775,9 +1133,38 @@ def run():
         check('no console errors (tabs)', not errors, errors[:5])
         browser.close()
 
+        browser, page, errors = open_page(p)
+        formula_mistakes(page)
+        check('no console errors (formula mistakes)', not errors, errors[:5])
+        browser.close()
+
+        browser, page, errors = open_page(p)
+        select_all(page)
+        check('no console errors (select all)', not errors, errors[:5])
+        browser.close()
+
+        browser, page, errors = open_page(p)
+        first_words(page)
+        check('no console errors (first words)', not errors, errors[:5])
+        browser.close()
+
+        browser, page, errors = open_page(p, width=390, height=844)
+        phone_layout(page)
+        browser.close()
+
+        first_visit(p)
+
         # on a page of its own, so nothing above meets the PDF pane
         browser, page, errors = open_page(p)
         pdfjs_local(page, 'https://rikuy.test/')
+        # why TeX did not start: build instructions for a page built without its TeX tree, what
+        # to do for a visitor whose download of it failed
+        m = page.evaluate('''() => { const g = window.rikuy; const built = 'The TeX tree is not next to this page (tex/tree.wasm: Could not load https://x/tex/tree.wasm (HTTP 404)). A copy built from source needs tex/build_tree.py first; README.md, Running it';
+          const net = built.replace(/Could not load.*\\(HTTP 404\\)/, 'Failed to fetch');
+          return [g.texFailText(new Error(net)), g.texFailText(new Error(built)), g.texFailText(new Error(built.replace('404', '503'))), g.texFailText(new Error('TeX ran out of memory')), g.texFailText(new Error(net), true)]; }''')
+        plain = 'The TeX engine could not be downloaded. Check your connection, then press Recompile. '
+        check('a failed download of the TeX engine is said in plain words, with what to do', m[0] == plain and m[2] == plain and 'build_tree' not in m[0], m)
+        check('a page built without its TeX tree still names the build step; other errors pass as they are; offline has its own message', 'tex/build_tree.py' in m[1] and m[3] == 'TeX ran out of memory. ' and m[4] == '', m)
         check('no console errors (pdf.js)', not errors, errors[:5])
         browser.close()
 
