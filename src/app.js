@@ -218,6 +218,52 @@ async function copyRich(html, text) {
 const lineOf = (src, p) => { let n = 1; for (let i = 0; i < p && i < src.length; i++) if (src.charCodeAt(i) === 10) n++; return n; };
 const lineStart = (src, line) => { let p = 0; for (let n = 1; n < line; n++) { const i = src.indexOf('\n', p); if (i < 0) return src.length; p = i + 1; } return p; };
 const fmtMB = (b) => (b / 1e6).toFixed(b < 1e7 ? 1 : 0) + ' MB';
+// How the braces of a formula's source stand: 1 when a { is never closed, -1 when a } has no {
+// before it, 0 when they pair up. \\{ and \\} are characters, and % starts a comment.
+function braceGap(tex) {
+  let d = 0;
+  for (let i = 0; i < tex.length; i++) {
+    const ch = tex[i];
+    if (ch === '\\') { i++; continue; }
+    if (ch === '%') { while (i < tex.length && tex[i] !== '\n') i++; continue; }
+    if (ch === '{') d++;
+    else if (ch === '}' && --d < 0) return -1;
+  }
+  return d > 0 ? 1 : 0;
+}
+// A formula's source that would not stay a formula once written into the document: an unclosed
+// { takes the rest of the paragraph into the formula (the page showed it as red source), a } or
+// a $ too many ends it early. Such a text is not written; this is the reason shown, or ''.
+function mathBreaksOut(tex, katexErr) {
+  const gap = braceGap(tex);
+  if (gap > 0) return 'A { is not closed.';
+  if (gap < 0) return 'A } has no { before it.';
+  if (/^Can't use function '\$'/.test(katexErr || '')) return 'A $ cannot stand inside a formula: write \\$ for the sign.';
+  return '';
+}
+// KaTeX's message for a mistake in a formula, in plain words where there are some ("Expected
+// 'EOF', got '#' at position 3" says little to someone who has never seen TeX). KaTeX's own
+// words stay as the tooltip of the line.
+function plainMathError(msg, tex) {
+  const m = String(msg || '');
+  const hold = mathBreaksOut(tex || '', m);
+  let x;
+  if (hold) return hold;
+  if ((x = /^Undefined control sequence: (\\\S+)/.exec(m))) return 'This command is not known: ' + x[1];
+  if ((x = /^Expected group after '(.)'/.exec(m))) return 'Something is missing after ' + x[1] + '.';
+  if ((x = /^Double (super|sub)script/.exec(m))) return 'Two ' + (x[1] === 'super' ? '^' : '_') + ' in a row: put the first in braces, as in {x^2}^3.';
+  if (/expected '\}' at end of input/.test(m)) { x = (tex || '').match(/\\[A-Za-z]+/g); return 'Something is missing after ' + (x ? x[x.length - 1] : 'the last command') + '.'; }
+  if (/expected '\]'/.test(m)) return 'A [ is not closed.';
+  if (/^Expected '\\right'/.test(m)) return '\\left has no \\right to close it.';
+  if (/^Expected 'EOF', got '\\right'/.test(m)) return '\\right has no \\left before it.';
+  if (/^Expected 'EOF', got '\\end'/.test(m)) return '\\end has no \\begin before it.';
+  if (/^Expected 'EOF', got '&'/.test(m)) return '& separates columns: it works in a matrix or in aligned rows.';
+  if (/^Expected 'EOF', got '#'/.test(m)) return '# cannot stand here: write \\# for the sign.';
+  if ((x = /^No such environment: (\S+)/.exec(m))) return 'This environment is not known: ' + x[1];
+  if ((x = /^Mismatch: \\begin\{([^}]+)\} matched by \\end\{([^}]+)\}/.exec(m))) return '\\begin{' + x[1] + '} is closed by \\end{' + x[2] + '}: the two names must be the same.';
+  if (/^Expected & or/.test(m)) return 'A \\begin{…} is not closed by its \\end{…}.';
+  return m;
+}
 function debounce(fn, ms) { let t = null; const d = (...a) => { clearTimeout(t); t = setTimeout(() => { t = null; fn(...a); }, ms); }; d.flush = (...a) => { clearTimeout(t); t = null; fn(...a); }; d.cancel = () => { clearTimeout(t); t = null; }; d.pending = () => t !== null; return d; }
 
 // ---------------------------------------------------------------------------
@@ -2031,11 +2077,14 @@ class App {
     const preview = () => {
       const r = this.renderer.katex(this.mathPreviewTex(ta.value, display), display);
       prev.innerHTML = r.html;
-      err.textContent = r.err ? r.err : '';
-      err.hidden = !r.err;
+      err.textContent = r.err || held() ? plainMathError(r.err, ta.value) + (held() ? ' The document keeps the formula as it was until this is put right.' : '') : '';
+      err.title = r.err || '';
+      err.hidden = !(r.err || held());
     };
+    // text that would not stay a formula in the document is not written there (mathBreaksOut)
+    const held = () => mathBreaksOut(ta.value, this.renderer.katex(this.mathPreviewTex(ta.value, display), display).err);
     preview();
-    const push = debounce(() => this.pop && this.pop.applyInner(ta.value), 140);
+    const push = debounce(() => { if (this.pop && !held()) this.pop.applyInner(ta.value); }, 140);
     ta.addEventListener('input', () => { preview(); push(); ta.rows = Math.min(10, Math.max(display ? 3 : 1, ta.value.split('\n').length)); });
     ta.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && (!display || e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); push.flush(); this.closePop(); }
@@ -2132,6 +2181,8 @@ class App {
     const base = c.ghost ? null : { f: c.f, a: c.a, b: c.b };
     const ghost = c.ghost ? this.ghost : null;
     const insert = (v) => {
+      // not while it would not stay a formula in the document (an unclosed brace)
+      if (v && mathBreaksOut(v, this.renderer.katex(this.mathPreviewTex(v, false), false).err)) return;
       if (!ins) {
         if (!v) return;
         const t = '$' + v + '$';
@@ -2160,7 +2211,7 @@ class App {
       this.pop.returnCaret = { f: ins.f, p: ins.e, bias: 1 };
     };
     const push = debounce(() => this.pop && insert(ta.value), 160);
-    const preview = () => { const r = this.renderer.katex(this.mathPreviewTex(ta.value, false), false); prev.innerHTML = ta.value ? r.html : ''; err.textContent = r.err || ''; err.hidden = !r.err || !ta.value; };
+    const preview = () => { const r = this.renderer.katex(this.mathPreviewTex(ta.value, false), false); prev.innerHTML = ta.value ? r.html : ''; err.textContent = r.err ? plainMathError(r.err, ta.value) : ''; err.title = r.err || ''; err.hidden = !r.err || !ta.value; };
     ta.addEventListener('beforeinput', (e) => {
       if (e.data === '$' && !ta.value && !ins) {
         e.preventDefault();
