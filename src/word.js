@@ -1,9 +1,11 @@
-// Word, both ways: open a .docx as a project, and save the project as a .docx with native Word
-// equations. pandoc does the conversions in a worker of its own (src/wordworker.js),
+// Word, both ways: open a .docx as a project, save the project as a .docx with native Word
+// equations, and bring a coauthor's edits to that .docx back into the .tex as changes to accept or
+// reject under Review. pandoc does the conversions in a worker of its own (src/wordworker.js),
 // fetched the first time a Word action is used; the methods here join App's prototype, as
 // collab.js's do. A build without Word (RIKUY_NO_WORD, the claude.ai copy, which has no room for
 // pandoc) keeps the buttons and says where Word support is.
 import { buildWordDoc } from './wordast.js';
+import { checkData, planImport, unpackRead } from './wordsync.js';
 import { loadPdfjs } from './pdfview.js';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -114,7 +116,7 @@ export const word = {
       }
       this.snapshot('Saved ' + fname, { force: true, named: true });
       const lost = [...req.degraded, ...(res.unread ? [res.unread + ' equation(s) Word may not edit cleanly'] : [])];
-      this.toast('Saved ' + fname + '. Equations are Word equations.' + (lost.length ? ' Shown differently in Word: ' + lost.join('; ') + '.' : ''), 12000);
+      this.toast('Saved ' + fname + '. Equations are Word equations; open the edited file here again (Open) and the edits come back as changes to accept or reject.' + (lost.length ? ' Shown differently in Word: ' + lost.join('; ') + '.' : ''), 12000);
     } catch (e) {
       if (!(e && e.code === 'declined')) this.toast('Could not make the Word file: ' + ((e && e.message) || e), 10000);
     } finally { this.wordBusy = false; $('#st-save').textContent = keep; }
@@ -189,6 +191,8 @@ export const word = {
     try {
       this.toast('Reading ' + file.name + '…', 60000);
       const bytes = new Uint8Array(await file.arrayBuffer());
+      const read = await this.wordEngine().run('read', { bytes: bytes.slice() });
+      if (read && read.data) { await this.wordEdits(read, file.name); return; }
       const r = await this.wordEngine().run('open', { bytes, name: file.name });
       await this.openWordProject(r, file.name);
     } catch (e) {
@@ -209,6 +213,46 @@ export const word = {
     const n = Object.keys(r.media || {}).length;
     this.toast('Opened ' + fname + ' as LaTeX' + (n ? ', with ' + n + (n === 1 ? ' picture' : ' pictures') + ' in figures/' : '') + (r.bib ? ' and its citations in references.bib' : '') + '.' + (r.warnings && r.warnings.length ? ' ' + r.warnings.slice(0, 3).join(' ') : ''), 9000);
   },
+
+  // ---- a coauthor's edits come back ----
+  async wordEdits(read, fname) {
+    const data = checkData(read.data);
+    if (!data) { this.toast(fname + ' carries Rikuy data this editor cannot read; it was not changed.', 9000); return; }
+    const X = unpackRead(read.X);
+    const who = (X.authors[0] || read.lastBy || 'Word').replace(/[()]/g, '').trim() || 'Word';
+    // the project it came from: the one open, else its latest version here, else the text as
+    // it was exported (the file carries it)
+    if (!(data.name === this.name && data.main === this.main)) {
+      if (this.base) { await this.snapshot('Before opening a Word file', { force: !this.lastSig }); await this.stashBinary(); }
+      const last = (await this.allSnaps()).find((v) => v.name === data.name && v.main === data.main);
+      const files = last ? await this.versionFiles(last) : null;
+      if (last && files) { await this.loadBinary(data.name, data.main); this.loadProject(new Map(files), data.main, data.name, 'Opened', true); }
+      else { this.markFromLink(who, data.name, data.main, 'word'); this.loadProject(new Map(data.files), data.main, data.name, 'As exported to Word'); }
+    }
+    const mine = new Map(this.files);
+    const plan = planImport(data, X, mine, { who });
+    if (!plan.files.size) { this.toast(fname + ' has no changes to the text exported from Rikuy.', 7000); return; }
+    await this.snapshot('Before the edits from Word (' + who + ')', { force: true });
+    this.closePop(true);
+    this.closeGroup();
+    const edits = [];
+    for (const [f, t] of plan.files) edits.push({ f, s: 0, e: (this.files.get(f) ?? '').length, t });
+    this.markFromLink(who, this.name, this.main, 'word');
+    this.commit(edits, null, 'word');
+    this.closeGroup();
+    this.setBase({ t: Date.now(), label: 'Before the edits from Word (' + who + ')', files: mine });
+    this.setMarks(true);
+    this.toggleNav(true, 'changes');
+    const S = plan.stats;
+    const parts = [];
+    if (S.applied) parts.push(S.applied + (S.applied === 1 ? ' edit' : ' edits') + (S.math ? ' (' + S.math + ' in equations)' : ''));
+    if (S.comments) parts.push(S.comments + (S.comments === 1 ? ' comment' : ' comments'));
+    let msg = 'Brought in from ' + fname + ': ' + (parts.join(' and ') || 'no edits') + ', marked on the page. Accept or reject each under Review.';
+    if (S.conflicts) msg += ' ' + S.conflicts + ' could not be applied because you changed the same text since the export; each is a comment where it was.';
+    if (S.skipped || S.moved) msg += ' ' + (S.skipped + S.moved) + ' other change' + (S.skipped + S.moved === 1 ? ' is' : 's are') + ' noted as comments (generated text, moved blocks, new table cells).';
+    this.toast(msg, 14000);
+    this.lastWordPlan = plan;
+  }
 };
 
 export function installWord(app) {

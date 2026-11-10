@@ -208,7 +208,7 @@ export const collab = {
     // a .zip or a git repository is content from someone else just as a link is, so it is
     // restricted the same way; the wording follows how it arrived
     const origin = v && v.origin;
-    const came = origin === 'zip' ? 'was opened from a .zip file' : origin === 'git' ? 'was cloned from a git repository' : origin === 'docx' ? 'was opened from a Word file' : 'came in a link from ' + who;
+    const came = origin === 'zip' ? 'was opened from a .zip file' : origin === 'git' ? 'was cloned from a git repository' : origin === 'docx' ? 'was opened from a Word file' : origin === 'word' ? 'has edits from a Word file by ' + who : 'came in a link from ' + who;
     issues.unshift({ sev: 'warn', file: null, line: null, msg: 'Shell escape is restricted: this document ' + came + ', so it runs only the programs TeX Live allows by default. Tick Shell escape if you trust it.' });
     const k = this.name + '|' + this.main;
     this.restrictNoted = this.restrictNoted || new Set();
@@ -494,7 +494,7 @@ export const collab = {
       return b;
     };
     item(this.singleFile() ? 'LaTeX (.tex)' : 'Project (.zip)', 'Exactly the source, for Overleaf or your own TeX', () => this.save());
-    item('Word (.docx)', 'Native Word equations, footnotes and figures', () => this.saveDocx());
+    item('Word (.docx)', 'Native Word equations and footnotes; a coauthor\'s edits there come back as changes', () => this.saveDocx());
     item('PDF', 'As TeX typesets it', () => (this.lastPdf ? this.downloadPdf() : this.togglePdf(true)));
     this.positionPop();
     p.querySelector('button.save-item').focus();

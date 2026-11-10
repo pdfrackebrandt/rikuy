@@ -19,7 +19,7 @@ export const LIMITS = {
 // as an opaque custom XML part (both were seen to: test/word.py, docs/ARCHITECTURE.md)
 export const RIKUY_NS = 'urn:rikuy:word:1';
 export const ANCHOR = /^Rk\d{1,7}$/;
-export const OBJ = '￼';
+export const OBJ = '\uFFFC';
 
 const dec = new TextDecoder('utf-8', { fatal: false });
 const enc = new TextEncoder();
@@ -217,6 +217,23 @@ export function addRikuyPart(bytes, data) {
   return zip(parts);
 }
 
+// Rikuy's data, if the file carries it (any custom XML item in Rikuy's namespace), else null.
+// It is the sender's to write, so the caller checks every field before using it.
+export function readRikuyPart(parts) {
+  for (const [n, b] of parts) {
+    if (!/^customXml\/item\d+\.xml$/i.test(n)) continue;
+    if (b.length > LIMITS.rikuy) continue;
+    let root;
+    try { root = parseXml(text(b)); } catch (e) { continue; }
+    const el = root.c.find((x) => typeof x !== 'string');
+    if (!el || local(el.n) !== 'rikuy') continue;
+    const ns = Object.entries(el.a).find(([k]) => k === 'xmlns' || k.startsWith('xmlns:'));
+    if (!ns || ns[1] !== RIKUY_NS) continue;
+    try { const d = JSON.parse(textContent(el)); if (d && typeof d === 'object') return d; } catch (e) { /* not ours after all */ }
+  }
+  return null;
+}
+
 // ---- the text of each marked block ------------------------------------------------------------
 
 // What a reader of the document sees, block by block. Every block Rikuy exported starts with a
@@ -247,7 +264,7 @@ export function extract(parts) {
   return R;
 }
 
-function region(id, box) { return { id, text: '', objs: [], cs: [], ce: [], joined: false, box, tracked: false }; }
+function region(id, box) { return { id, text: '', objs: [], cs: [], ce: [], items: [], joined: false, box, tracked: false }; }
 
 function stream(R, container, box, pre) {
   const S = { R, cur: pre, glue: false, pending: [], box, boxes: 0 };
@@ -298,7 +315,11 @@ function para(S, p, box) {
       o.after = cur.id;
       R.orphans.push(o);
       S.cur = cur = o;
-    } else if (!S.glue && (cur.text || cur.objs.length)) cur.text += '\n\n';
+    } else if (!S.glue && (cur.text || cur.objs.length)) {
+      cur.text += '\n\n';
+      // a paragraph of a Word list (Enter in a bulleted or numbered list): a new item
+      if (ppr && kid(ppr, 'w:numPr')) cur.items.push(cur.text.length);
+    }
   }
   if (st.tracked) cur.tracked = true;
   for (const x of pieces) {

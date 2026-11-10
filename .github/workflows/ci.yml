@@ -73,5 +73,5 @@ jobs:
         run: cd test && python3 share.py
       - name: Live figures (rikuy.sty), under the host's policy
         run: cd test && python3 widgets.py
-      - name: Word, both ways
+      - name: Word, both ways, and a coauthor's edits back (LibreOffice's checks run where it is installed)
         run: cd test && python3 word.py

@@ -1,14 +1,19 @@
 """Word, both ways, in the page as the host serves it (serve.py's CSP). Nothing of pandoc loads with
 the page: its manifest and parts come from word/ next to the page at the first Word action, and
 from IndexedDB after a reload. Save as Word writes a .docx that python-docx opens, with Word
-equations (m:oMath) with the project's macros expanded, the figure, the footnote, the citation as
-the citation style writes it, cross references as text, a bookmark on every block and Rikuy's data
-in a custom XML part. A Word file of one's own (python-docx, test/word_fixture.py) opens as a new
-project by Open, by dropping it and by pasting it, with its equations as LaTeX math, its picture in
-figures/, its table, list, footnote and link, and a javascript: link as plain text. A zip bomb and
-a file with a DTD are refused. A build without Word (RIKUY_NO_WORD) says where Word support is and
-fetches nothing of it."""
-import os, sys, io, re, json, base64, zipfile, tempfile, traceback, time, subprocess, shutil
+equations (m:oMath), the figure, the footnote, the citation as the citation style writes it, a
+bookmark on every block and Rikuy's data in a custom XML part. That file, edited as a coauthor
+would (python-docx: words changed, a sentence added and one deleted, a paragraph deleted and one
+added; raw XML: a tracked insertion and deletion; a comment), opened again, writes only the edited
+spans into main.tex, shown as changes under Review with the comment as a Rikuy comment; an edit
+of text the owner changed since the export is not applied and becomes a comment. A Word file of
+one's own (python-docx, test/word_fixture.py) opens as a new project by Open, by dropping it and
+by pasting it, with its equations as LaTeX math, its picture in figures/, its table, list,
+footnote and link, and a javascript: link as plain text. Where LibreOffice is installed, a file
+it opened and saved keeps the bookmarks and the custom XML part, and an edit made in LibreOffice
+with changes tracked comes back. A build without Word (RIKUY_NO_WORD) says where Word support is
+and fetches nothing of it."""
+import os, sys, io, re, json, base64, zipfile, tempfile, traceback, time, subprocess, shutil, difflib
 sys.path.insert(0, os.path.dirname(__file__))
 import serve
 from browser import ROUTES, check, results
@@ -148,6 +153,10 @@ def edit_docx(path, out, ops):
     return out
 
 
+def changed_lines(a, b):
+    return [l for l in difflib.unified_diff(a.split('\n'), b.split('\n'), lineterm='', n=0) if l[:1] in '+-' and not l.startswith(('+++', '---'))]
+
+
 try:
     with sync_playwright() as p:
         browser, page, errors, reqs = open_app(p)
@@ -187,6 +196,94 @@ try:
         save_docx(page, os.path.join(TMP, 'growth2.docx'))
         bins = [u for u in reqs[n0:] if u.endswith('.bin')]
         check('after a reload pandoc comes from IndexedDB: no part is fetched again', not bins, bins)
+
+        # ---- the owner keeps writing after the export ----
+        page.evaluate("""() => { const g = window.rikuy, t = g.files.get('main.tex'), a = t.indexOf('keeps writing');
+          g.commit([{ f: 'main.tex', s: a, e: a + 'keeps writing'.length, t: 'went on writing' }], null, 'type'); g.closeGroup(); }""")
+        before = src(page)
+
+        # ---- the coauthor edits the .docx ----
+        def delete_para(d):
+            m = re.search(r'<w:p>(?:(?!<w:p>).)*?This paragraph will be deleted in Word\..*?</w:p>', d, re.S)
+            return d[:m.start()] + d[m.end():]
+
+        def add_para(d):
+            m = re.search(r'<w:p>(?:(?!<w:p>).)*?The second paragraph stays.*?</w:p>', d, re.S)
+            return d[:m.end()] + '<w:p><w:r><w:t>A paragraph added in Word costs $5 &amp; more.</w:t></w:r></w:p>' + d[m.end():]
+        ed = edit_docx(out, os.path.join(TMP, 'growth-ed.docx'), [
+            ('weak', 'fragile'),                                                      # a word changed inside \emph
+            ('closely.', 'closely. Growth is slow.'),                                   # a sentence added
+            (' is the production function.', ' is the production function of 100% output.'),
+            (delete_para, None),
+            (add_para, None),
+            # a tracked deletion and insertion
+            ('The second paragraph stays', 'The second paragraph </w:t></w:r><w:del w:id="901" w:author="Ana Pérez" w:date="2026-11-10T00:00:00Z"><w:r><w:delText>stays</w:delText></w:r></w:del><w:ins w:id="902" w:author="Ana Pérez" w:date="2026-11-10T00:00:00Z"><w:r><w:t>remains</w:t></w:r></w:ins><w:r><w:t xml:space="preserve">'),
+            ('owner keeps writing', 'owner always writes'),   # the owner changed the same word since
+        ])
+        # a comment, as Word writes one (python-docx)
+        Dd = pydocx.Document(ed)
+        par = next(x for x in Dd.paragraphs if 'Growth is slow.' in x.text)
+        run = next(r for r in par.runs if 'Growth is slow' in r.text)
+        Dd.add_comment(run, text='Which institutions?', author='Ana Pérez', initials='AP')
+        Dd.save(ed)
+        open_file(page, ed)
+        after = src(page)
+        lines = changed_lines(before, after)
+        print('\n'.join(lines))
+        exp = [
+            '-We study growth in $\\R^n$ with \\emph{weak} institutions at 50\\% capacity.\\footnote{Data from the census.}',
+            '+We study growth in $\\R^n$ with \\emph{fragile} institutions at 50\\% capacity.\\footnote{Data from the census.}',
+            '-The economy follows \\citet{solow1956} closely.',
+            '+The economy follows \\citet{solow1956} closely. Growth is slow.',
+        ]
+        check('a Word comment becomes a Rikuy comment under its line, quoting the words', any(re.match(r'\+% comment \(Ana Pérez\) on "[^"]*Growth is slow\.": Which institutions\?$', l) for l in lines), lines)
+        check('edits inside markup patch only the changed words (\\emph{weak} -> \\emph{fragile})', all(l in lines for l in exp), lines)
+        check('a tracked deletion and insertion come in as accepted', 'The second paragraph remains as it was in the source.' in after)
+        check('a paragraph added in Word arrives escaped, after its neighbour', 'The second paragraph remains as it was in the source.\n\nA paragraph added in Word costs \\$5 \\& more.' in after, after[after.find('second paragraph'):][:160])
+        check('the deleted paragraph is gone, with its blank line', 'will be deleted' not in after and '\n\n\n' not in after)
+        check('the added sentence with % is escaped', 'production function of 100\\% output.' in after)
+        check('nothing else in the file changed', len(lines) <= 14 and all(re.search(r'weak|fragile|closely|second paragraph|added in Word|deleted in Word|production function|comment|writing|typing|^[-+]$', l) for l in lines), lines)
+        check('the owner\'s edit since the export is kept, and the coauthor\'s edit of the same words is a comment there', 'owner went on writing' in after and 'always' not in after.replace('always writes”', '') and re.search(r'% comment \(Ana Pérez\)[^\n]*always writes[^\n]*Not applied', after), after[after.find('went on'):][:300])
+        n = page.evaluate('window.rikuy.currentChanges().length')
+        check('the edits show as changes under Review, to accept or reject', n >= 6 and page.evaluate("document.body.classList.contains('nav-on')"), n)
+        check('the toast says what came in', 'Brought in from growth-ed.docx' in page.inner_text('#toast'), page.inner_text('#toast')[:200])
+        # reject one: the source goes back for that change only
+        page.evaluate("""() => { const g = window.rikuy; const c = g.currentChanges().find((x) => /fragile/.test(x.b)); g.rejectChanges([c]); }""")
+        check('rejecting one change puts back exactly that word', '\\emph{weak} institutions' in src(page) and 'Growth is slow.' in src(page))
+
+        # ---- an equation changed in Word ----
+        save_docx(page, os.path.join(TMP, 'growth3.docx'))
+        base3 = src(page)
+
+        def change_alpha(d):
+            i = d.index('<m:oMathPara')
+            j = d.index('α', i)
+            return d[:j] + 'β' + d[j + 1:]
+        ed3 = edit_docx(os.path.join(TMP, 'growth3.docx'), os.path.join(TMP, 'growth3-ed.docx'), [(change_alpha, None)])
+        open_file(page, ed3)
+        l3 = changed_lines(base3, src(page))
+        check('an equation edited in Word patches only its token: \\alpha -> \\beta, label kept', l3 == ['-  y_t = A k_t^{\\alpha} \\label{eq:prod}', '+  y_t = A k_t^{\\beta} \\label{eq:prod}'], l3)
+
+        # ---- LibreOffice: open and save keeps the anchors; an edit there with changes tracked comes back ----
+        soffice = shutil.which('soffice')
+        if soffice:
+            save_docx(page, os.path.join(TMP, 'growth4.docx'))
+            base4 = src(page)
+            lo = os.path.join(TMP, 'lo')
+            shutil.rmtree(lo, ignore_errors=True)
+            os.makedirs(lo)
+            r = subprocess.run(['/usr/bin/python3', os.path.join(os.path.dirname(__file__), 'word_lo.py'), os.path.join(TMP, 'growth4.docx'), os.path.join(lo, 'saved.docx'), os.path.join(lo, 'edited.docx')], capture_output=True, text=True, timeout=300)
+            if r.returncode == 0:
+                L = parts(os.path.join(lo, 'saved.docx'))
+                check('LibreOffice keeps every Rk bookmark and the custom XML part through open and save', len(re.findall(r'w:name="Rk\d+"', L['word/document.xml'].decode())) == len(re.findall(r'w:name="Rk\d+"', parts(os.path.join(TMP, 'growth4.docx'))['word/document.xml'].decode())) and any(b'urn:rikuy:word:1' in v for k, v in L.items() if k.startswith('customXml/')))
+                open_file(page, os.path.join(lo, 'saved.docx'))
+                check('a file LibreOffice only opened and saved brings no change', src(page) == base4, changed_lines(base4, src(page)))
+                open_file(page, os.path.join(lo, 'edited.docx'))
+                l4 = changed_lines(base4, src(page))
+                check('an edit made in LibreOffice with changes tracked comes back as one word', l4 == ['-The economy follows \\citet{solow1956} closely. Growth is slow.', '+The economy follows \\citet{solow1956} closely. Growth is very slow.'], l4)
+            else:
+                print('LibreOffice run failed:', r.stderr[-800:])
+                check('LibreOffice edits the file (word_lo.py)', False, r.stderr[-300:])
 
         # ---- a Word file of one's own opens as a project ----
         fx = os.path.join(TMP, 'Growth and Institutions.docx')

@@ -40,7 +40,7 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | what a keystroke writes | `App.onBeforeInput`, `insertText`, `deletionEdits`, `enter`, `toggleStyle` (`src/app.js`); `escapeTeX` |
 | undo grouping | `App.record`, `App.undo`, `App.redo` |
 | share links, comments, the copy back, Overleaf | `makeShareLink`, `openSharedLink`, `takeBack`, `commentPop`, `openInOverleaf` (`src/collab.js`); `commentEdit`, `merge3` (`src/share.js`) |
-| Word (.docx in and out) | `saveDocx`, `openDocx` (`src/word.js`); `buildWordDoc` (`src/wordast.js`); `extract` (`src/docx.js`); `alignRuns` (`src/wordsync.js`); `exportDocx`, `docxToLatex` (`src/wordjobs.js`) |
+| Word (.docx in and out, a coauthor's edits back) | `saveDocx`, `openDocx`, `wordEdits` (`src/word.js`); `buildWordDoc` (`src/wordast.js`); `extract` (`src/docx.js`); `planImport`, `mathPatch` (`src/wordsync.js`); `docxToLatex` (`src/wordjobs.js`) |
 | live figures (`\rikuywidget`) | `WidgetLayer`, `widgetDoc`, `WIDGET_CSP` (`src/widget.js`); `Builder.cmd` (kind `widget`), `Renderer.atomEl`; `App.widgetsAllowed`, `widgetResized` |
 | equation editing | `App.openMath`, `attachField`, `toField`, `fromField`; `src/minimal.js`, `wordmath.js`, `fences.js` |
 | engine choice, passes, bibliography, indexes | `pickEngine`, `compile`, `runBiber`, `indexTools` (`tex/engine.js`) |
@@ -264,12 +264,13 @@ fallback from the widget's own generator.
 ## 6. Word
 
 Word support is optional at build time and lazy at run time. `src/word.js` holds the App methods
-(`saveDocx`, `openDocx`, `openWordProject`) and `WordEngine`, the page's side of a
+(`saveDocx`, `openDocx`, `wordEdits`, `openWordProject`) and `WordEngine`, the page's side of a
 worker of its own (`src/wordworker.js`, bundled by `build.mjs` into `dist/word/word.js` and started
 from a blob, as the TeX worker is). In the worker, `src/pandoc.js` runs pandoc 3.10 (npm's
 `pandoc-wasm` 1.1.0, the pandoc project's WASI build) on an in-memory file system with folders;
-`src/wordjobs.js` holds the jobs (`exportDocx`, `docxToLatex`), `src/docx.js` the zip, a small
-XML reader, Rikuy's custom XML part and `extract()`, and `src/wordsync.js` the alignment. `src/wordast.js` (in the page) walks the model into pandoc's AST.
+`src/wordjobs.js` holds the three jobs (`exportDocx`, `readDocx`, `docxToLatex`), `src/docx.js` the
+zip, a small XML reader, Rikuy's custom XML part and `extract()`, and `src/wordsync.js` the
+alignment and the import plan. `src/wordast.js` (in the page) walks the model into pandoc's AST.
 
 - **Loading.** Nothing loads with the page. The first Word action starts the worker, which reads
   `word/pandoc.json` (pandoc's version, the SHA-256 of `pandoc.wasm` and of its gzip, and of each
@@ -308,7 +309,31 @@ XML reader, Rikuy's custom XML part and `extract()`, and `src/wordsync.js` the a
   picture). Each equation is read back to TeX by pandoc once (`mathTeX`, one file of all of them,
   `mathDocx`), as `was`. The whole source as exported, the blocks (text and run coded map) and the
   atoms go into `customXml/itemN.xml` as JSON in an element of namespace `urn:rikuy:word:1`, so
-  the file alone is enough to bring edits back.
+  the file alone is enough to bring edits back. LibreOffice 24.2 keeps both the bookmarks and the
+  part through open, edit and save (`test/word.py`, `test/word_lo.py`); Word keeps bookmarks and
+  custom XML parts by design, but Rikuy has not been run against a real Word here.
+- **Edits back (`extract`, `planImport`).** A region runs from one `Rk` bookmark to the next, so
+  a paragraph added after a block joins it as `\n\n` (one in a Word list, after a list item, is a
+  new `\item`) and a paragraph whose bookmark is gone was deleted; tracked insertions count,
+  deletions do not; a deleted paragraph mark joins paragraphs.
+  Per block, `textHunks` diffs old and new text by words (changes a word apart are one), trimmed to
+  the characters that differ; each hunk goes through the map into an edit of the source as
+  exported: a balanced range is spliced, one across markup loses only its visible characters (as
+  `deletionEdits` does), and new text is escaped by `escapeTeX`, with paragraphs where the block
+  takes them. A whole atom deleted deletes its command; part of one changed (a citation's text, a
+  section number) is not applied and becomes a comment. An equation whose TeX differs from `was`
+  (spacing, fonts and `\left`/`\right` aside, which LibreOffice rewrites) is patched by
+  `mathPatch`: the changed tokens, with context, found in the original source and replaced there,
+  else the formula replaced, its `\label`s kept; `safeMath` refuses TeX that would leave math mode.
+  Edits are carried onto the source as it is now (`rebase` over `changes(base, now)`); one that
+  touches text the owner changed since is not applied and becomes a comment there, quoting the
+  coauthor's version. Word comments become Rikuy comments (replies by `commentsExtended.xml`),
+  except those already there. Text in a new table row, a moved block and an inserted picture are
+  noted as comments, never dropped silently. `wordEdits` applies the result as one undo step and
+  sets the text before as the Review base, as `takeBack` does, so each edit can be accepted or
+  rejected; the project then compiles with restricted shell escape until its owner allows more.
+  A file whose project is not open opens that project (its last version here, else the source the
+  file carries) first.
 
 ## 7. Page and worker
 
@@ -490,13 +515,13 @@ PDF.js is a module `import()`, which takes no hash, so it ships in `dist/tex/` b
 
 - **Node, in CI** (`.github/workflows/ci.yml`, `npm test`): `test/model.test.mjs` (sample model,
   seg maps checked), `edge.test.mjs` (malformed input must not throw), `fences.test.mjs`,
-  `minimal.test.mjs`, `siunitx.test.mjs`, `share.test.mjs`, `word.test.mjs` (export and a .docx
-  opened, with the real pandoc; hostile files), `tex/native/xindy/test.cjs` (against CLISP), and
+  `minimal.test.mjs`, `siunitx.test.mjs`, `share.test.mjs`, `word.test.mjs` (export, read back and
+  import with the real pandoc; hostile files), `tex/native/xindy/test.cjs` (against CLISP), and
   `corpus.test.mjs DIR` (`buildModel` over `MartinThoma/LaTeX-examples` at `8bfd313b8d98`).
 - **Playwright** (`cd test && python3 X.py`, on `dist/` or `RIKUY_DIST`; helpers in `browser.py`,
   the CSP server `serve.py`): `browser.py` (typing), `features.py`, `files.py` (zip round trip),
   `git.py`, `history.py`, `paste.py`, `pdf.py` (pdfLaTeX, SyncTeX), `word.py` (Word both ways, under
-  the host's policy), `engines.py` (engines, shell
+  the host's policy; with LibreOffice installed, an edit made there), `engines.py` (engines, shell
   escape), `mathfield.py`, `wordmath.py`, `eqextras.py`, `frontier.py`, `share.py` (two browsers: share, comment,
   send back, merge), `stress.py`, `widgets.py` (live figures, under the host's policy); on a corpus,
   `corpus_browser.py` (random keystrokes) and `editor_corpus.py` (six edits per document land

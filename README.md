@@ -42,10 +42,13 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
 - **Word, both ways.** Open a .docx (Open, drop or paste) and it becomes a LaTeX project: Word
   equations as LaTeX math, pictures in `figures/`, headings, lists, tables, footnotes, links, and
   Zotero or Mendeley citations as a `.bib`. Save as Word writes the page as a .docx with native,
-  editable Word equations, footnotes, tables, figures, numbered cross references, citations set
-  from your `.bib`, and your comments as Word comments. pandoc, compiled to WebAssembly, does the
-  conversions in the browser; it loads (16 MB, once) only when a Word action is used. Not in the
-  copy on claude.ai, which has no room for it.
+  editable Word equations, footnotes, tables, figures, numbered cross references and citations
+  set from your `.bib`. A coauthor edits that file in Word or LibreOffice, with or without
+  Track Changes, and sends it back; opening it writes their edits into the `.tex` as the smallest
+  patches, each one to accept or reject, their comments as comments, and anything that cannot be
+  placed (text you changed meanwhile, generated numbers, a new table row) as a comment where it
+  was. pandoc, compiled to WebAssembly, does the conversions in the browser; it loads (16 MB, once)
+  only when a Word action is used. Not in the copy on claude.ai, which has no room for it.
 - **Live figures.** `\rikuywidget{plot.html}{plot.png}` from `rikuy.sty` (in `sample/widget/`,
   copied beside the document) runs a self contained HTML widget, sliders and all, on the typeset
   page, sandboxed; every TeX, Overleaf's included, prints the PNG. Widgets in a document from

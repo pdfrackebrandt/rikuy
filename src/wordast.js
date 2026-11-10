@@ -14,7 +14,7 @@ import { findComments } from './share.js';
 import { texToPlain } from './bib.js';
 
 export const API = [1, 23, 1, 2];
-const OBJ = '￼';
+const OBJ = '\uFFFC';
 const RO = -1, ATOM = -2;
 
 const Str = (s) => ({ t: 'Str', c: s });
@@ -190,9 +190,9 @@ class Walker {
     }
   }
 
-  para(it, u, plain) {
+  para(it, u, plain, kind = 'p') {
     const fns = u ? u.fns : [];
-    const inl = this.wrap('p', it.f, u ? u.s : null, u ? u.e : null, () => {
+    const inl = this.wrap(kind, it.f, u ? u.s : null, u ? u.e : null, () => {
       const out = [];
       if (it.label && it.labelKind === 'bib') { out.push(...this.inl(it.label, fns)); out.push(Str(' ')); this.ro(' '); }
       if (it.lead) out.push(...this.inl(it.lead, fns));
@@ -314,7 +314,7 @@ class Walker {
           if (it.li.listS !== listS && entries.length) break;
           // a term is a block of its own, made before its definition so the bookmarks keep the order
           entries.push({ term: kind === 'desc' && it.label ? this.labelInl(it.label, u) : null, blocks: [] });
-          entries[entries.length - 1].blocks.push(this.para({ ...it, label: null }, u, true));
+          entries[entries.length - 1].blocks.push(this.para({ ...it, label: null }, u, true, 'li'));
           i++;
           continue;
         }

@@ -1,8 +1,8 @@
 // What the Word worker does, given a pandoc (src/pandoc.js): write a project's page as .docx with
-// Rikuy's part in it, open a stranger's .docx as LaTeX. Kept apart from
+// Rikuy's part in it, read an edited .docx back, open a stranger's .docx as LaTeX. Kept apart from
 // the worker's messaging so the node tests run the same code.
-import { unzip, zip, extract, addRikuyPart, mathDocx, mathFromJson, LIMITS } from './docx.js';
-import { alignRuns, exportData } from './wordsync.js';
+import { unzip, zip, extract, addRikuyPart, readRikuyPart, mathDocx, mathFromJson, text, LIMITS } from './docx.js';
+import { alignRuns, exportData, allObjs } from './wordsync.js';
 import { safeUrl } from './wordast.js';
 
 // pandoc's messages worth telling the user: the ones that say something was lost
@@ -63,6 +63,32 @@ function runAt(runs, i) {
     p += n;
   }
   return null;
+}
+
+// An edited .docx: Rikuy's data if it carries it, the text of each block, its equations as TeX
+export function readDocx(P, bytes) {
+  const parts = unzip(bytes);
+  const data = readRikuyPart(parts);
+  if (!data) return { data: null };
+  const X = extract(parts);
+  const objs = allObjs(X);
+  const tex = mathTeX(P, objs);
+  const mathTex = objs.map((o, i) => tex[i]);
+  let lastBy = '';
+  if (parts.has('docProps/core.xml')) {
+    const m = /<cp:lastModifiedBy>([^<]*)<\/cp:lastModifiedBy>/.exec(text(parts.get('docProps/core.xml')));
+    if (m) lastBy = m[1].trim();
+  }
+  // Maps and Sets do not cross postMessage as the page needs them: plain arrays instead
+  return {
+    data,
+    X: {
+      regions: [...X.regions.entries()], order: X.order, pre: X.pre, orphans: X.orphans,
+      notes: [...X.notes.entries()], comments: [...X.comments.entries()], authors: [...X.authors], tracked: X.tracked, dupes: X.dupes,
+      mathTex
+    },
+    lastBy
+  };
 }
 
 // ---- a stranger's .docx, opened as LaTeX ----------------------------------------------------------
