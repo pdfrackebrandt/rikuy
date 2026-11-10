@@ -359,9 +359,48 @@ def where_it_applies(page):
     check('after a style is picked the caret is back in the words', page.evaluate('document.activeElement.id') == 'pages' and 'X' in src(page)[src(page).find('\\section{Second'):][:40], src(page)[src(page).find('Second') - 12:][:50])
 
 
+def list_edges(page):
+    """A list item made a paragraph again keeps clear of its neighbours, keeps the list's own
+    setup with the items that stay, and never leaves a list with no item; a comment at a
+    paragraph's end does not swallow a heading's closing brace."""
+    wrap = lambda body: '\\documentclass{article}\n\\begin{document}\n' + body + '\n\\end{document}\n'
+    tight = 'Before.\n\\begin{itemize}\n  \\item one\n  \\item two\n\\end{itemize}\nAfter.'
+    load_doc(page, wrap(tight)); click_text(page, 'one', 1); press(page, 'rb-ul')
+    check('the first item of a list with no blank line before it becomes a paragraph of its own', src(page) == wrap('Before.\n\none\n\n\\begin{itemize}\n  \\item two\n\\end{itemize}\nAfter.'), src(page)[40:])
+    check('undo restores it byte for byte', undo_is(page, wrap(tight)))
+    click_text(page, 'two', 1); press(page, 'rb-ul')
+    check('the last item of a list with no blank line after it does not join the next paragraph', src(page) == wrap('Before.\n\\begin{itemize}\n  \\item one\n\\end{itemize}\n\ntwo\n\nAfter.'), src(page)[40:])
+    load_doc(page, wrap('Before.\n\\begin{itemize}\n  \\item only\n\\end{itemize}\nAfter.')); click_text(page, 'only', 1); press(page, 'rb-ul')
+    check('the only item of such a list becomes a paragraph between the two', src(page) == wrap('Before.\n\nonly\n\nAfter.'), src(page)[40:])
+    setup = '\\begin{itemize}\n\\setlength\\itemsep{0pt}\n  \\item one\n  \\item two\n\\end{itemize}'
+    load_doc(page, wrap(setup)); click_text(page, 'one', 1); press(page, 'rb-ul')
+    check('with setup lines before the first item, the list that keeps items keeps them, and none is left without an item', src(page) == wrap('one\n\n\\begin{itemize}\n  \\setlength\\itemsep{0pt}\n  \\item two\n\\end{itemize}'), src(page)[40:])
+    check('undo restores it', undo_is(page, wrap(setup)))
+    click_text(page, 'two', 1); press(page, 'rb-ul')
+    check('the same from the last item', src(page) == wrap('\\begin{itemize}\n  \\setlength\\itemsep{0pt}\n  \\item one\n\\end{itemize}\n\ntwo'), src(page)[40:])
+    load_doc(page, wrap('\\begin{itemize}\n  \\item[a)] one\n  \\item[b)] two\n\\end{itemize}')); click_text(page, 'two', 1)
+    st = state(page)
+    check('an item with a label of its own is not offered the way back to a paragraph, which would lose the label', st['rb-ul'][0] and not st['rb-ol'][0], (st['rb-ul'], st['rb-ol']))
+    # a paragraph that starts with a bracket: \item would read it as the item's label
+    para = '[Draft] words to keep.'
+    load_doc(page, wrap(para)); click_text(page, 'words to keep', 2); press(page, 'rb-ul')
+    shown = page.evaluate('[...document.querySelectorAll("#pages .it")].map((e) => e.textContent).join("|")')
+    check('a paragraph starting with a bracket keeps the bracket as text in its item', src(page) == wrap('\\begin{itemize}\n  \\item {}[Draft] words to keep.\n\\end{itemize}') and '[Draft] words to keep.' in shown, (src(page)[40:], shown))
+    press(page, 'rb-ul')
+    check('and is the same paragraph again after the way back', src(page) == wrap(para), src(page)[40:])
+    # a comment at the paragraph's end: \\% is a line break and then a comment, \% is the sign
+    for label, para, want in (('after a line break (\\\\%)', 'alpha and gamma\\\\% hidden', '\\section{alpha and gamma\\\\% hidden\n}'), ('(a plain one)', 'alpha % hidden', '\\section{alpha % hidden\n}'),
+                              ('(none: \\% is the sign)', 'alpha 50\\% done', '\\section{alpha 50\\% done}')):
+        load_doc(page, wrap(para)); click_text(page, 'alpha', 2); style(page, 'section')
+        check('Heading on a paragraph ending in a comment %s closes its brace outside the comment' % label, src(page) == wrap(want) and page.evaluate('document.querySelectorAll("#pages .it.h").length') == 1, src(page)[40:])
+        check('undo restores it', undo_is(page, wrap(para)))
+    load_doc(page, wrap('alpha and gamma\\\\% hidden')); click_text(page, 'alpha', 2); press(page, 'rb-ol')
+    check('a list from that paragraph ends on a line of its own', src(page) == wrap('\\begin{enumerate}\n  \\item alpha and gamma\\\\% hidden\n\\end{enumerate}'), src(page)[40:])
+
+
 def run():
     with sync_playwright() as p:
-        for fn in (top_bar, styles, letters, lists, inserts, keyboard, narrow, downloads, one_save, where_it_applies, live_graphs):
+        for fn in (top_bar, styles, letters, lists, inserts, keyboard, narrow, downloads, one_save, where_it_applies, list_edges, live_graphs):
             browser, page, errors = open_page(p)
             try:
                 fn(page)

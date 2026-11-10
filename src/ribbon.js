@@ -12,6 +12,25 @@ const HEAD = /^\\(part|chapter|section|subsection|subsubsection|paragraph|subpar
 const STYLES = { textbf: ['textbf', 'bf', 'bfseries'], emph: ['emph', 'textit', 'it', 'itshape'], underline: ['underline', 'uline'] };
 // what cannot go inside a heading's braces or one list item without changing what TeX does
 const NOT_PLAIN = /\\begin\s*\{|\\end\s*\{|\\\[|\$\$|\\footnote\b|\\item\b|\n[ \t]*\n/;
+// where a % starts a comment in this line, or -1: \% is the sign, \\% a line break and then a comment
+function commentIn(line) {
+  for (let i = 0; i < line.length; i++) { if (line[i] === '\\') i++; else if (line[i] === '%') return i; }
+  return -1;
+}
+// The blank lines a paragraph needs before s and after e to stay a paragraph of its own: without
+// one TeX runs it into the words beside it. None where one is there, where the text starts or
+// ends, or where the neighbour is no paragraph (a heading, the end or the start of a block).
+const HEADING_LINE = /^\s*\\(?:part|chapter|(?:sub){0,2}section|(?:sub)?paragraph)\b.*\}\s*$/;
+function blankPads(src, s, e) {
+  const before = src.slice(0, s), after = src.slice(e);
+  const prev = before.trimEnd().split('\n').pop(), next = after.trimStart().split('\n')[0];
+  const closed = /\\(?:(?:begin|end)\s*\{[^}]*\}|maketitle|\]|par)\s*$/.test(prev) || HEADING_LINE.test(prev);
+  const opens = /^\\(?:(?:begin|end)\s*\{|\[|item\b|bibliography)/.test(next) || HEADING_LINE.test(next);
+  return {
+    b: !before.trim() || closed || /(^|\n)[ \t]*\n[ \t]*$/.test(before) ? '' : /\n[ \t]*$/.test(before) ? '\n' : '\n\n',
+    a: !after.trim() || opens || /^[ \t]*\n[ \t]*\n/.test(after) ? '' : /^[ \t]*\n/.test(after) ? '\n' : '\n\n'
+  };
+}
 const LIVE_NOTE = 'Graphs are pictures in a PDF or Word file. Download LaTeX to keep them live.';
 
 export const ribbon = {
@@ -80,15 +99,13 @@ export const ribbon = {
       const r = this.plainPara(B, it), open = '\\' + to + '{';
       // a comment on the last line would take the closing brace with it
       const last = src.slice(src.lastIndexOf('\n', r.e - 1) + 1, r.e);
-      edits = [{ f, s: r.e, e: r.e, t: /(^|[^\\])%/.test(last) ? '\n}' : '}' }, { f, s: r.s, e: r.s, t: open }];
+      edits = [{ f, s: r.e, e: r.e, t: commentIn(last) >= 0 ? '\n}' : '}' }, { f, s: r.s, e: r.s, t: open }];
       p = Math.max(c.a, r.s) + open.length;
     } else {
       const m = HEAD.exec(src.slice(B.s, B.e));
       if (to === 'p') {
         const lab = /^[ \t]*\\label\s*\{[^}]*\}/.exec(src.slice(B.e)), q = B.e + (lab ? lab[0].length : 0);
-        const after = src.slice(q), before = src.slice(0, B.s);
-        const padA = !after.trim() || /^[ \t]*\n[ \t]*\n/.test(after) || /^\s*\\end\s*\{document\}/.test(after) ? '' : /^[ \t]*\n/.test(after) ? '\n' : '\n\n';
-        const padB = /(^|\n)[ \t]*\n[ \t]*$/.test(before) || /\\begin\s*\{document\}\s*$/.test(before) ? '' : /\n[ \t]*$/.test(before) ? '\n' : '\n\n';
+        const { b: padB, a: padA } = blankPads(src, B.s, q);
         edits = [{ f, s: q, e: q, t: padA }, { f, s: B.e - 1, e: B.e, t: '' }, { f, s: B.s, e: B.s + m[0].length, t: padB }].filter((x) => x.s !== x.e || x.t);
         p = Math.min(Math.max(c.a, B.s + m[0].length), B.e - 1) - m[0].length + padB.length;
       } else {
@@ -111,7 +128,8 @@ export const ribbon = {
       const [is, ie, ls, le, cmdE] = it.dataset.li.split(',').map((x) => +x + B.base);
       const L = src.slice(ls, le), bm = /^\\begin\s*\{(itemize|enumerate)\}(\s*\[[^\]]*\])?/.exec(L), em = /\\end\s*\{(itemize|enumerate)\}\s*$/.exec(L);
       if (!bm || !em || bm[1] !== em[1] || ls !== B.s || le !== B.e || /\\begin\s*\{/.test(L.slice(bm[0].length))) return null;
-      return { kind: bm[1], f: B.f, is, ie, ls, le, cmdE, bodyS: ls + bm[0].length, bodyE: ls + em.index, begin: bm[0], end: em[0].trim() };
+      // (labelled: \item[b)] has a label of its own, which a paragraph could not keep)
+      return { kind: bm[1], f: B.f, is, ie, ls, le, cmdE, bodyS: ls + bm[0].length, bodyE: ls + em.index, begin: bm[0], end: em[0].trim(), labelled: /^\\item\s*\[/.test(src.slice(is, is + 60)) };
     }
     // every block from the one the selection starts in to the one it ends in
     const r = getSelection().getRangeAt(0);
@@ -140,7 +158,8 @@ export const ribbon = {
       const edits = [];
       let p = c.a, add = 0;
       L.paras.forEach((r, k) => {
-        const open = (k ? '' : '\\begin{' + kind + '}\n') + '  \\item ';
+        // (a paragraph that starts with a bracket: \item would read it as the item's label)
+        const open = (k ? '' : '\\begin{' + kind + '}\n') + '  \\item ' + (src[r.s] === '[' ? '{}' : '');
         if (r.s <= c.a) add += open.length;
         edits.push({ f, s: r.s, e: r.s, t: open });
         if (k === L.paras.length - 1) edits.push({ f, s: r.e, e: r.e, t: '\n\\end{' + kind + '}' });
@@ -151,12 +170,18 @@ export const ribbon = {
       const e0 = L.ls + L.begin.indexOf(L.kind), e1 = L.bodyE + L.end.indexOf(L.kind);
       this.commit([{ f, s: e1, e: e1 + L.kind.length, t: kind }, { f, s: e0, e: e0 + L.kind.length, t: kind }], { f, p: c.a + kind.length - L.kind.length, bias: -1 }, 'block');
     } else {
-      const before = src.slice(L.bodyS, L.is).trim(), after = src.slice(L.ie, L.bodyE).trim();
-      const raw = src.slice(L.cmdE, L.ie), text = raw.trim();
-      const head = before ? L.begin + '\n  ' + before + '\n' + L.end + '\n\n' : '';
-      const out = head + text + (after ? '\n\n' + L.begin + '\n  ' + after + '\n' + L.end : '');
+      if (L.labelled) return;
+      // What comes before the first \item (\setlength\itemsep...) sets the list up: it stays
+      // with each list that keeps items and goes only when none is left. A list is written
+      // only around items: one with setup lines alone would stop TeX.
+      const pre = src.slice(L.bodyS, L.is), k = pre.search(/\\item\b/);
+      const setup = (k < 0 ? pre : pre.slice(0, k)).trim(), prev = k < 0 ? '' : pre.slice(k).trim(), after = src.slice(L.ie, L.bodyE).trim();
+      const list = (items) => L.begin + '\n' + (setup ? '  ' + setup + '\n' : '') + '  ' + items + '\n' + L.end;
+      const raw = src.slice(L.cmdE, L.ie), text = raw.trim().replace(/^\{\}(?=\[)/, '');
+      const pad = blankPads(src, L.ls, L.le);
+      const head = prev ? list(prev) + '\n\n' : pad.b, tail = after ? '\n\n' + list(after) : pad.a;
       const off = Math.min(text.length, Math.max(0, c.a - L.cmdE - (raw.length - raw.trimStart().length)));
-      this.commit([{ f, s: L.ls, e: L.le, t: out }], { f, p: L.ls + head.length + off, bias: -1 }, 'block');
+      this.commit([{ f, s: L.ls, e: L.le, t: head + text + tail }], { f, p: L.ls + head.length + off, bias: -1 }, 'block');
     }
     this.closeGroup();
   },
@@ -251,7 +276,7 @@ export const ribbon = {
       if (act.startsWith('dl-')) continue;
       let off = !at, on = null;
       if (act in STYLES) { off = !at || !!at.c.ghost; on = !off && inside(STYLES[act]); }
-      else if (act === 'itemize' || act === 'enumerate') { off = !L; on = !!L && L.kind === act; }
+      else if (act === 'itemize' || act === 'enumerate') { on = !!L && L.kind === act; off = !L || (on && L.labelled); }
       // Table and Picture go after the caret's block wherever the caret is, so they stay on
       else if (act === 'equation') off = !at || tight || at.sty;
       else if (act === 'footnote') off = !at || tight;
