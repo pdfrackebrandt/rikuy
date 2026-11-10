@@ -117,7 +117,7 @@ export function appFiles(OUT) {
 }
 
 export function cleanApp(OUT) {
-  for (const p of ['lib', 'icons', 'manifest.webmanifest', 'sw.js', '_headers', '404.html']) fs.rmSync(path.join(OUT, p), { recursive: true, force: true });
+  for (const p of ['lib', 'icons', 'fonts', 'manifest.webmanifest', 'sw.js', '_headers', '404.html']) fs.rmSync(path.join(OUT, p), { recursive: true, force: true });
 }
 
 // The hosted page's Content-Security-Policy: test/serve.py's (the artifact host's, under which

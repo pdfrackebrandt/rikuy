@@ -12,6 +12,7 @@
 //                       workers and installation, so it also builds no installed app
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { build } from 'esbuild';
 import { appPage, appFiles, finishApp, cleanApp } from './build/app.mjs';
 
@@ -55,19 +56,32 @@ const fonts = [
 // from a font server while the page runs, they told it the address of everyone who opened it, and
 // the artifact host lets a page take fonts only as data: (font-src data: and Google's server).
 // They are Google Fonts' own Latin cut (Latin-1, general punctuation and a few symbols: every
-// character of the interface's text), as @fontsource ships it, unchanged; package-lock.json pins
-// them. Each face takes its unicode-range from the package's style sheet, so characters past it
-// fall back to the next font, as they did when Google served the same cut.
-const plex = (pkg, weight) => {
-  const file = `${pkg}-latin-${weight}-normal.woff2`;
+// character of the interface's text) and its Latin Extended cut (Ł, ő, ş, ā, ...: a file name, a
+// project or an author's name in the interface), as @fontsource ships them, unchanged;
+// package-lock.json pins them. Each face takes its unicode-range from the package's style sheet,
+// so the browser uses the extended cut only for text that needs it, and characters past both fall
+// back to the next font, as they did when Google served the same cuts.
+// The Latin Extended faces add 101 KB to the page as data: (75 KB of fonts), under the 200 KB the
+// artifact can spare, so rikuy.html carries them; the hosted page (index.html) takes them as files
+// in fonts/ instead, named by their hash and cached for good, fetched only when a character needs
+// them (fontFiles, below).
+const plexFace = (pkg, weight, cut) => {
+  const file = `${pkg}-${cut}-${weight}-normal.woff2`;
   const dir = R('node_modules/@fontsource/' + pkg);
   const face = fs.readFileSync(path.join(dir, weight + '.css'), 'utf8').split('@font-face').find((b) => b.includes('/files/' + file + ')'));
   const family = face && (face.match(/font-family:\s*'([^']+)'/) || [])[1];
   const range = face && (face.match(/unicode-range:\s*([^;]+);/) || [])[1];
-  if (!family || !range) throw new Error('@fontsource/' + pkg + ': no Latin face for weight ' + weight + ' in ' + weight + '.css');
-  return `@font-face{font-family:"${family}";src:url(data:font/woff2;base64,${b64(path.join(dir, 'files', file))}) format("woff2");font-weight:${weight};font-style:normal;font-display:block;unicode-range:${range}}`;
+  if (!family || !range) throw new Error('@fontsource/' + pkg + ': no ' + cut + ' face for weight ' + weight + ' in ' + weight + '.css');
+  const bytes = fs.readFileSync(path.join(dir, 'files', file));
+  const css = (src) => `@font-face{font-family:"${family}";src:url(${src}) format("woff2");font-weight:${weight};font-style:normal;font-display:${cut === 'latin' ? 'block' : 'swap'};unicode-range:${range}}`;
+  // the hosted page's file: its name carries the first 16 hex digits of its SHA-256 (build/app.mjs)
+  const name = 'fonts/' + file.replace(/\.woff2$/, '') + '-' + crypto.createHash('sha256').update(bytes).digest('hex').slice(0, 16) + '.woff2';
+  return { inline: css('data:font/woff2;base64,' + bytes.toString('base64')), asFile: css(name), name, bytes };
 };
-const uiFonts = [plex('ibm-plex-sans', 400), plex('ibm-plex-sans', 500), plex('ibm-plex-sans', 600), plex('ibm-plex-mono', 400), plex('ibm-plex-mono', 500)].join('\n');
+const PLEX = [['ibm-plex-sans', 400], ['ibm-plex-sans', 500], ['ibm-plex-sans', 600], ['ibm-plex-mono', 400], ['ibm-plex-mono', 500]];
+const uiFonts = PLEX.map(([p, w]) => plexFace(p, w, 'latin').inline).join('\n');
+const extFaces = PLEX.map(([p, w]) => plexFace(p, w, 'latin-ext'));
+const extInline = extFaces.map((f) => f.inline).join('\n');
 
 // 4. KaTeX css with embedded woff2
 let katexCss = fs.readFileSync(R('node_modules/katex/dist/katex.min.css'), 'utf8');
@@ -84,7 +98,7 @@ let html = fs.readFileSync(R('src/template.html'), 'utf8');
 const appStatus = APP ? '<span id="st-net" hidden title="No network. Typing works and is kept in this browser; compiling uses the TeX files this browser has kept.">Offline</span>'
   + '<button id="st-update" class="linkish" type="button" hidden>Update ready</button>'
   + '<button id="b-offline" class="linkish" type="button" hidden title="Keep the TeX engine and the packages a typical paper needs in this browser, so compiling works without a network">Make available offline</button>' : '';
-html = html.replace('/*FONTS*/', () => fonts + '\n' + uiFonts).replace('/*KATEX*/', () => katexCss).replace('/*CODEMIRROR*/', () => cmCss).replace('/*APP*/', () => css).replace('/*APPJS*/', () => js).replace('<!--APPSTATUS-->', () => appStatus);
+html = html.replace('/*FONTS*/', () => fonts + '\n' + uiFonts + '\n' + extInline).replace('/*KATEX*/', () => katexCss).replace('/*CODEMIRROR*/', () => cmCss).replace('/*APP*/', () => css).replace('/*APPJS*/', () => js).replace('<!--APPSTATUS-->', () => appStatus);
 html += '\n<!-- Rikuy is free software under the GNU AGPL 3.0 or later: https://github.com/pdfrackebrandt/rikuy (SOURCES.md says where the source of every part is). Licenses of what it ships: LICENSES.txt beside this page. -->\n';
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(O('rikuy.html'), html);
@@ -96,7 +110,13 @@ const SKELETON = '<!doctype html><html><head><meta charset=utf8><meta name=viewp
   + 'body{margin:0;font:14px system-ui,sans-serif;background:#fafafa}img{max-width:100%}[hidden]{display:none!important}</style></head><body>';
 // the hosted build's index.html is the installed app: its head names the version, the manifest and
 // the icons, and it takes KaTeX from lib/ (build/app.mjs); finishApp stamps the version at the end
-fs.writeFileSync(O('index.html'), APP ? appPage(OUT, html, SKELETON) : SKELETON + html + '</body></html>');
+// it also takes the Latin Extended faces from fonts/ rather than inside the page
+if (APP) {
+  fs.rmSync(O('fonts'), { recursive: true, force: true });
+  fs.mkdirSync(O('fonts'), { recursive: true });
+  for (const f of extFaces) fs.writeFileSync(O(f.name), f.bytes);
+}
+fs.writeFileSync(O('index.html'), APP ? appPage(OUT, html.replace(extInline, () => extFaces.map((f) => f.asFile).join('\n')), SKELETON) : SKELETON + html + '</body></html>');
 fs.writeFileSync(O('git.js'), gitJs);
 console.log(O('rikuy.html'), (html.length / 1024).toFixed(0) + ' KB', 'js', (js.length / 1024).toFixed(0) + ' KB');
 

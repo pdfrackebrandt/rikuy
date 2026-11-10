@@ -12,7 +12,7 @@ elsewhere that part says why it is skipped.
 Needs a page built without RIKUY_SHARE (npm run build); RIKUY_DIST names another dist/."""
 import hashlib, json, os, re, shutil, subprocess, sys, tempfile, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import ROOT, check, results, click_text, SHOTS
+from browser import ROOT, check, results, click_text, SHOTS, latin_ext_fonts
 import pages
 from playwright.sync_api import sync_playwright
 
@@ -91,6 +91,8 @@ def main():
         check('install kept the page and every script of the version (%d files)' % len(pre), len(kept) == len(pre) and any(u.endswith('/tex/engine.js') for u in kept) and URL in kept, (len(kept), len(pre)))
         both = page.evaluate(ENGINE_BOTH)
         check('the TeX worker\'s scripts are asked for under the page\'s version', ('/_v/' + va + '/tex/') in both['base'], both['base'])
+        imm = page.evaluate('caches.open("rikuy-immutable").then(c => c.keys()).then(k => k.map(r => r.url))')
+        check('install kept the Latin Extended fonts, named by their hash, apart from the version', sum('/fonts/ibm-plex-' in u for u in imm) == 5, imm)
 
         click_text(page, 'Click anywhere in this paragraph')
         page.keyboard.type('Offline proof. ')
@@ -122,6 +124,7 @@ def main():
         check('offline, typing patches the source', True)
         page.wait_for_function('document.getElementById("st-save").textContent === "Saved in this browser"', timeout=5000)
         check('offline, the status bar says so', page.is_visible('#st-net') and page.inner_text('#st-net') == 'Offline')
+        latin_ext_fonts(page, ', offline, from the hosted page\'s font files')
         page.evaluate('window.rikuy.toggleSource(true)')
         page.wait_for_selector('.CodeMirror', timeout=10000)
         check('offline, the source pane loads CodeMirror from the kept copy', page.evaluate("document.querySelector('.CodeMirror').CodeMirror.getValue().includes('Still typing')"))
