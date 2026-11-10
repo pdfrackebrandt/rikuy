@@ -1,0 +1,107 @@
+# Deploys the hosted Rikuy (the installed app: dist/index.html, its service worker and dist/tex) to
+# Cloudflare Pages. It builds no TeX tree: tex.yml builds dist/ for every push to main (restoring
+# dist/tex from its cache when the tree's inputs did not change) and keeps it as the workflow
+# artifact rikuy-dist; this workflow runs when that run has passed, takes its dist/, builds the page
+# again from the same commit (the hosted build: no RIKUY_SHARE), checks it against Pages' limits
+# and uploads it with the wrangler pinned in package.json. By hand (Run workflow) it deploys the
+# newest passing TeX run on main, or the run whose id it is given (an older one, to roll back,
+# while its artifact is kept: a week).
+#
+# Needs the repository secrets CLOUDFLARE_API_TOKEN (a token with Cloudflare Pages: Edit only) and
+# CLOUDFLARE_ACCOUNT_ID, and the variable CLOUDFLARE_PROJECT_NAME (default rikuy). Without the
+# secrets it says so and deploys nothing. docs/HOSTING.md has the steps.
+name: Deploy
+on:
+  workflow_run:
+    workflows: [TeX]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: 'A TeX workflow run whose dist/ to deploy (empty: the newest passing one on main)'
+        required: false
+        default: ''
+permissions:
+  contents: read
+  actions: read
+# one deployment at a time, in order; a newer one waits for the one running
+concurrency:
+  group: deploy-pages
+  cancel-in-progress: false
+jobs:
+  secrets:
+    runs-on: ubuntu-24.04
+    outputs:
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - id: check
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          ACCOUNT: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          if [ -n "$TOKEN" ] && [ -n "$ACCOUNT" ]; then
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice title=Not deployed::The repository secrets CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are not set, so nothing goes to Cloudflare Pages. docs/HOSTING.md says how to set them."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          fi
+  deploy:
+    needs: secrets
+    # a TeX run on main that passed after a push (not a pull request's), or a run by hand
+    if: >-
+      needs.secrets.outputs.ready == 'true' && (github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event != 'pull_request'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Which TeX run
+        id: run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_RUN: ${{ github.event.workflow_run.id }}
+          EVENT_SHA: ${{ github.event.workflow_run.head_sha }}
+          ASKED: ${{ inputs.run_id }}
+        run: |
+          if [ -n "$EVENT_RUN" ]; then
+            id="$EVENT_RUN"; sha="$EVENT_SHA"
+          else
+            if [ -n "$ASKED" ]; then id="$ASKED"
+            else id=$(gh run list -R "$REPO" --workflow tex.yml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId'); fi
+            case "$id" in ''|*[!0-9]*) echo "::error::No passing TeX run to deploy (asked: '$ASKED')"; exit 1;; esac
+            sha=$(gh run view "$id" -R "$REPO" --json headSha,conclusion,workflowName --jq 'select(.conclusion == "success" and .workflowName == "TeX") | .headSha')
+            [ -n "$sha" ] || { echo "::error::Run $id is not a passing TeX run"; exit 1; }
+          fi
+          echo "id=$id" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "Deploying TeX run $id, commit $sha"
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ steps.run.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '22'
+          cache: npm
+      # with the dev dependencies: wrangler, pinned in package.json and package-lock.json
+      - run: npm ci
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: rikuy-dist
+          path: dist
+          run-id: ${{ steps.run.outputs.id }}
+          github-token: ${{ github.token }}
+      - name: The page, built for the hosted site
+        run: node build.mjs
+      - name: dist/tex as dev/dist-manifest.txt lists it
+        run: cd dist/tex && find . -type f | sort | xargs sha256sum | diff ../../dev/dist-manifest.txt -
+      - name: Within Cloudflare Pages' limits
+        run: python3 dev/pages_check.py dist
+      - name: Upload to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          PROJECT: ${{ vars.CLOUDFLARE_PROJECT_NAME || 'rikuy' }}
+          SHA: ${{ steps.run.outputs.sha }}
+        run: npx --no-install wrangler pages deploy dist --project-name "$PROJECT" --branch main --commit-hash "$SHA" --commit-dirty=false

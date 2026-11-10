@@ -6,7 +6,7 @@
 //                    KaTeX from lib/ instead of jsDelivr
 //   appFiles(OUT)    lib/ (KaTeX, mhchem, CodeMirror, JSZip, MathLive: the npm files the page
 //                    otherwise takes from jsDelivr, each checked against the hash the page pins),
-//                    icons/, manifest.webmanifest
+//                    icons/, manifest.webmanifest, and for Cloudflare Pages _headers and 404.html
 //   finishApp(OUT)   the version (a hash over every file but the content addressed packs),
 //                    stamped into index.html, and sw.js with the list of files and their hashes
 //   cleanApp(OUT)    takes those files out again, for a build of the artifact into a used dist/
@@ -112,11 +112,55 @@ export function appFiles(OUT) {
   fs.mkdirSync(O('icons'), { recursive: true });
   for (const f of fs.readdirSync(R('build/icons')).filter((n) => n.endsWith('.png'))) fs.copyFileSync(R('build/icons/' + f), O('icons/' + f));
   fs.writeFileSync(O('manifest.webmanifest'), JSON.stringify(manifest(), null, 1) + '\n');
+  fs.writeFileSync(O('_headers'), headers());
+  fs.writeFileSync(O('404.html'), NOT_FOUND);
 }
 
 export function cleanApp(OUT) {
-  for (const p of ['lib', 'icons', 'manifest.webmanifest', 'sw.js']) fs.rmSync(path.join(OUT, p), { recursive: true, force: true });
+  for (const p of ['lib', 'icons', 'manifest.webmanifest', 'sw.js', '_headers', '404.html']) fs.rmSync(path.join(OUT, p), { recursive: true, force: true });
 }
+
+// The hosted page's Content-Security-Policy: test/serve.py's (the artifact host's, under which
+// every browser test runs) without the outside sources the hosted build never uses (it ships its
+// libraries and fonts; Pyodide comes in the packs), plus frame-ancestors 'none' (no site may frame
+// it) and manifest-src. test/deploy_check.py holds the two policies to exactly that difference.
+export const CSP = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data: blob:",
+  "media-src 'self' data: blob:",
+  "connect-src 'self' blob:",
+  "worker-src 'self' blob:",
+  "manifest-src 'self'",
+  "form-action 'self'",
+  "frame-src 'self' blob: data:",
+  "frame-ancestors 'none'",
+  "object-src 'none'",
+  "base-uri 'self'"
+].join('; ');
+
+// Cloudflare Pages' headers (_headers: at most 100 rules; every rule matching a path applies, and
+// a header two rules set gets both values joined), so Cache-Control is set by exactly one rule per
+// path. Content addressed files (TeX packs and engine chunks, programs, biber, the fonts) are
+// cached for a year as immutable; the page, the service worker and the manifest are revalidated
+// on every request, so an update is seen at once; everything else keeps Pages' default (max-age=0,
+// must-revalidate). The service worker checks every file it keeps by hash anyway.
+export function headers() {
+  const NO_CACHE = 'no-cache';
+  const FOREVER = 'public, max-age=31536000, immutable';
+  const rule = (p, ...h) => p + '\n' + h.map((x) => '  ' + x).join('\n') + '\n';
+  return '# Written by build/app.mjs for Cloudflare Pages; see docs/HOSTING.md\n'
+    + rule('/*', 'Content-Security-Policy: ' + CSP, 'X-Content-Type-Options: nosniff', 'X-Frame-Options: DENY', 'Referrer-Policy: no-referrer',
+      'Permissions-Policy: accelerometer=(), bluetooth=(), browsing-topics=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), hid=(), magnetometer=(), microphone=(), midi=(), payment=(), serial=(), usb=(), xr-spatial-tracking=()')
+    + ['/', '/index.html', '/sw.js', '/manifest.webmanifest'].map((p) => rule(p, 'Cache-Control: ' + NO_CACHE)).join('')
+    + ['/tex/p-*', '/tex/t-*', '/tex/b-*', '/tex/w-*', '/fonts/*'].map((p) => rule(p, 'Cache-Control: ' + FOREVER)).join('');
+}
+
+// Without a 404.html, Pages answers a missing file with index.html and 200 (it takes the site for
+// a single page app): a pack or tree.wasm the build lacks would reach the worker as HTML.
+const NOT_FOUND = '<!doctype html><html lang="en"><head><meta charset=utf8><title>Not found</title></head><body><p>Not found. <a href="./">Rikuy</a></p></body></html>\n';
 
 function walk(dir, pre = '') {
   const out = [];

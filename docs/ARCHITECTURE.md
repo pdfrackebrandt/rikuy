@@ -300,6 +300,12 @@ servers), is unchanged, and the artifact build (`RIKUY_SHARE` set) compiles `src
   kept yet into IndexedDB without unpacking them, sending `{status: 'keep', got, total}`. The
   set is a typical paper under pdfLaTeX: 60 packs, 39 MB (version 29's tree), the engine (12 MB)
   apart; cm-super and biber are left out.
+- **Serving.** `appFiles()` also writes Cloudflare Pages' `_headers` (`headers()`: the policy
+  `CSP`, which `test/deploy_check.py` holds to `test/serve.py`'s without outside sources plus
+  `frame-ancestors 'none'`; a year's immutable caching for the content addressed files; no-cache
+  for the page, `sw.js` and the manifest) and `404.html`, without which Pages answers a missing
+  file with the page. `test/pages.py` serves `dist/` the same way for the tests;
+  `.github/workflows/deploy.yml` deploys it (`docs/HOSTING.md`).
 - **Status bar.** `#st-net` ("Offline", from `online`/`offline` events), `#st-update`,
   `#b-offline`; only in the app build.
 - **Opening files with Rikuy.** The manifest's `file_handlers` take `.tex`, `.bib` and `.zip`
