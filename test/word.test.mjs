@@ -6,7 +6,7 @@
 // changed since is a conflict, not applied; hostile files are refused.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { buildModel } from '../src/model.js';
+import { buildModel, colorValue } from '../src/model.js';
 import { buildWordDoc, expandMath, unpackRuns, wordColor, listStyle } from '../src/wordast.js';
 import { createPandoc } from '../src/pandoc.js';
 import { exportDocx, readDocx, docxToLatex } from '../src/wordjobs.js';
@@ -459,6 +459,38 @@ await ok('a document mostly in a script TeX Live has no default font for is set 
   assert.match(r.tex, /\\usepackage\{fontspec\}/);
   assert.ok(!/fontenc/.test(r.tex));
   assert.ok(/^Not kept: a font for \d+ characters \(Chinese or Japanese: /.test(r.warnings[0]), r.warnings[0]);
+});
+
+await ok('the page\'s model: colours by number and by \\definecolor, in text and in formulas; a list and a table in a table cell', () => {
+  const src = doc('A \\textcolor[HTML]{0f9ed5}{blue}, \\textcolor{key}{key}, \\colorbox{soft}{soft}, \\colorbox[RGB]{255,255,0}{y}, \\textcolor{red}{r}, \\textcolor{bad}{b}, \\textcolor[HTML]{url(x)}{w}, {\\color[rgb]{1,0,0} d}.\n'
+    + 'Math $\\textcolor[HTML]{0F9ED5}{x} + \\textcolor{key}{y} + {\\color{key} z} + \\textcolor{red}{w} + \\textcolor[HTML]{zz}{v}$.\n\n'
+    + '\\begin{tabular}{ll}\n\\begin{itemize}\n\\tightlist\n\\item\n  one \\textbf{b}\n\\item two\n  \\begin{enumerate}\n  \\def\\labelenumi{\\arabic{enumi}.}\n  \\item deep\n  \\end{enumerate}\n\\end{itemize} & \\begin{tabular}{ll}\nin1 & \\cellcolor[HTML]{FFFF00} in2 \\\\\n\\end{tabular} \\\\\n'
+    + '\\begin{itemize} stray \\item x \\end{itemize} & \\begin{itemize}\\item y\\footnote{n}\\end{itemize} \\\\\n\\end{tabular}\n',
+  '\\usepackage{xcolor}\n\\definecolor{key}{HTML}{C00000}\n\\definecolor{soft}{rgb}{0.9,0.95,1}\n\\definecolor{bad}{HTML}{url(x)}\n\\definecolor{worse}{RGB}{300,0,0}\n');
+  const m = buildModel({ files: new Map([['main.tex', src]]), main: 'main.tex' });
+  const items = m.blocks.flatMap((u) => u.items);
+  const cols = items[0].inl.filter((x) => x.k === 'sty').map((x) => x.st + ' ' + x.color);
+  // a colour is #RRGGBB or the text as written, which the page takes only as a name it knows
+  assert.deepEqual(cols, ['color #0F9ED5', 'color #C00000', 'bg #E6F2FF', 'bg #FFFF00', 'color red', 'color bad', 'color url(x)', 'color #FF0000']);
+  assert.equal(items[0].inl.find((x) => x.k === 'math').tex, '\\textcolor{#0F9ED5}{x} + \\textcolor{#C00000}{y} + {\\color{#C00000} z} + \\textcolor{red}{w} + \\textcolor[HTML]{zz}{v}');
+  for (const [mdl, spec, want] of [['HTML', 'C00000', '#C00000'], ['HTML', 'C0000', null], ['HTML', 'red;x', null], ['RGB', '160, 43, 147', '#A02B93'], ['RGB', '256,0,0', null], ['RGB', '1,2', null], ['rgb', '0,0.5,1', '#0080FF'], ['rgb', '1.5,0,0', null], ['rgb', '1e3,0,0', null], ['cmyk', '0,0,0,1', null], ['HTML', 'url(//x)', null]])
+    assert.equal(colorValue(mdl, spec), want, mdl + ' ' + spec);
+  // the cells: a plain list and an inner table are drawn; the others are as before
+  const rows = items.find((x) => x.type === 'float' || x.type === 'tabular');
+  const tab = rows.type === 'tabular' ? rows : rows.parts.find((p) => p.type === 'tabular');
+  const [c00, c01] = tab.rows[0].cells, [c10, c11] = tab.rows[1].cells;
+  const chip = (c) => c.inl.find((x) => x.k === 'chip');
+  assert.equal(chip(c00).list.ordered, false);
+  assert.equal(chip(c00).list.items.length, 2);
+  assert.equal(chip(c00).list.items[1].find((x) => x.k === 'chip').list.ordered, true);
+  assert.ok(!chip(c00).err && chip(c00).s >= 0 && src.slice(chip(c00).s, chip(c00).e).startsWith('\\begin{itemize}') && src.slice(chip(c00).s, chip(c00).e).endsWith('\\end{itemize}'));
+  assert.equal(chip(c01).table.rows[0].cells.length, 2);
+  assert.equal(chip(c01).table.rows[0].cells[1].bg, '#FFFF00');
+  assert.ok(chip(c10).err && chip(c10).text === '\\item' && !chip(c10).list, 'text before the first item: as before');
+  assert.ok(!c11.inl.some((x) => x.k === 'chip' && x.list), 'a footnote in the list: as before');
+  // outside a table's cell nothing changes
+  const m2 = buildModel({ files: new Map([['main.tex', doc('Text \\begin{tabular}{l}a\\end{tabular} more.\n')]]), main: 'main.tex' });
+  assert.ok(!m2.blocks.flatMap((u) => u.items).some((it) => (it.inl || []).some((x) => x.k === 'chip' && (x.table || x.list))));
 });
 
 console.log('word: ' + n + ' groups of checks passed');

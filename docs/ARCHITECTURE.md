@@ -65,7 +65,13 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 - **Source map.** Text becomes `seg` items `{k: 'seg', f, t, map}`: `Acc.ch()` pushes one
   `[start, end)` source range per character, so “ points back at both characters of ``` `` ```.
   Units on the page (math, citation, reference, footnote, figure, raw block, error chip) are
-  atoms with `s`, `e`, `is`, `ie`; style commands are `sty` wrappers. `expandMacro()` expands a
+  atoms with `s`, `e`, `is`, `ie`; style commands are `sty` wrappers. A colour reaches the page
+  as `#RRGGBB` when the source gives numbers (`\textcolor[HTML]`, `[RGB]`, `[rgb]`) or a name
+  of its own (`\definecolor`, kept in `colors`), checked by `colorValue`, else as the text
+  written, which `cssColor` takes only as a name it knows; in formulas `mathRefs` writes the
+  same values for KaTeX. A plain list or a `tabular` inside a table cell is one chip atom that
+  carries its items or rows (`cellList`, `tabular`); `Renderer.ro` draws them without source
+  maps, so they are read on the page and edited as source. `expandMacro()` expands a
   user macro with a position map `pm`; characters from the macro body get `-1` (read only).
   `test/model.test.mjs` checks every seg map against the source.
 - **Render.** `Builder.result()` keys each block by file, source text, `sig` (each resolved value

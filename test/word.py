@@ -16,9 +16,42 @@ and fetches nothing of it."""
 import os, sys, io, re, json, base64, zipfile, tempfile, traceback, time, subprocess, shutil, difflib
 sys.path.insert(0, os.path.dirname(__file__))
 import serve
-from browser import ROUTES, check, results
+from browser import ROUTES, check, results, click_text, load_doc, undo_all
 from playwright.sync_api import sync_playwright
 import word_fixture
+
+# colours and cells for the page (the import writes these forms; lecture notes use them)
+PAGE_DOC = r"""\documentclass{article}
+\usepackage{xcolor,booktabs}
+\definecolor{keyterm}{HTML}{C00000}
+\definecolor{soft}{rgb}{0.9,0.95,1}
+\definecolor{bad}{HTML}{url(x)}
+\begin{document}
+A \textcolor[HTML]{0F9ED5}{blue result}, a \textcolor{keyterm}{key term}, \colorbox{soft}{shaded}, \textcolor{bad}{bad}, \textcolor[HTML]{zzz}{worse}, {\color[RGB]{233,113,50} orange}.
+Math $\textcolor[HTML]{0F9ED5}{x^2} + \textcolor{keyterm}{y}$.
+
+\begin{tabular}{@{}ll@{}}
+\toprule
+Outer & Inner \\
+\midrule
+\begin{itemize}
+\tightlist
+\item
+  first
+\item
+  second
+  \begin{enumerate}
+  \item nested
+  \end{enumerate}
+\end{itemize} & \begin{tabular}{@{}ll@{}}
+in1 & in2 \\
+a & b \\
+\end{tabular} \\
+plain & \begin{itemize} stray text \item x \end{itemize} \\
+\bottomrule
+\end{tabular}
+\end{document}
+"""
 
 PORT = 8803
 serve.start(PORT)
@@ -315,9 +348,48 @@ try:
         check('the page shows it: subtitle, contents, underlined and struck words, the centred line, both captions once, no stale contents',
               all(x in shown for x in ['Evidence from Peru', 'under', 'struck', 'red words', 'Centred line.', 'Figure 1: A blue box.', 'Table 1: Growth by region']) and 'South & 3 & \\begin{tabular}{@{}ll@{}}' in t and 'Stale entry' not in shown and 'Figure 1: Figure 1' not in shown and 'uline' not in shown, shown[:900])
         check('the cross reference follows the figure (\\ref), and shows its number', 'Figure~\\ref{_Ref7}' in t and 'See Figure 1 and the wide one' in shown.replace('\u00a0', ' '), shown[shown.find('See'):shown.find('See') + 80])
+        check('its colour shows on the page (\\textcolor[HTML], set through the style API)', page.evaluate("(() => { const e = [...document.querySelectorAll('#pages .y-color')].find(x => x.textContent === 'red words'); return e ? getComputedStyle(e).color : ''; })()") == 'rgb(192, 0, 0)')
         check('the rich file shows without error chips or page errors', page.evaluate("document.querySelectorAll('#pages .a-chip.err').length") == 0 and not errors, (page.evaluate("[...document.querySelectorAll('#pages .a-chip.err')].map(x => x.textContent)"), errors[:3]))
 
         # by dropping it, and by pasting it
+        # ---- on the page: colours by number and by name, in text and formulas; a list and a table in a cell ----
+        load_doc(page, PAGE_DOC)
+        page.wait_for_timeout(600)
+        look = page.evaluate("Object.fromEntries([...document.querySelectorAll('#pages .y-color, #pages .y-bg')].map(e => [e.textContent.trim(), [getComputedStyle(e).color, getComputedStyle(e).backgroundColor]]))")
+        check('colours given as numbers or defined in the preamble draw on the page', look.get('blue result', [''])[0] == 'rgb(15, 158, 213)' and look.get('key term', [''])[0] == 'rgb(192, 0, 0)' and look.get('shaded', ['', ''])[1] == 'rgb(230, 242, 255)' and look.get('orange', [''])[0] == 'rgb(233, 113, 50)', look)
+        check('what is not a colour of those models colours nothing', look.get('bad', [''])[0] == look.get('worse', [''])[0] and look['bad'][0] not in ('rgb(192, 0, 0)', 'rgb(15, 158, 213)') and 'url' not in page.evaluate("document.querySelector('#pages').innerHTML"), (look.get('bad'), look.get('worse')))
+        mcol = page.evaluate("[...document.querySelectorAll('#pages .katex [style*=color]')].map(e => e.style.color)")
+        check('colour inside formulas, by number and by the preamble\'s name', 'rgb(15, 158, 213)' in mcol and 'rgb(192, 0, 0)' in mcol and page.evaluate("document.querySelectorAll('#pages .merr, #pages .has-err').length") == 0, mcol[:6])
+        page.evaluate("() => { const g = window.rikuy, t = g.files.get('main.tex'), i = t.indexOf('C00000'); g.commit([{ f: 'main.tex', s: i, e: i + 6, t: '1E7B3C' }]); }")
+        page.wait_for_timeout(500)
+        check('a \\definecolor changed in the source recolours the text and the formula that use it', page.evaluate("[getComputedStyle([...document.querySelectorAll('#pages .y-color')].find(x => x.textContent === 'key term')).color, [...document.querySelectorAll('#pages .katex [style*=color]')].map(e => e.style.color).includes('rgb(30, 123, 60)')]") == ['rgb(30, 123, 60)', True])
+        undo_all(page)
+        click_text(page, 'blue result', 4)
+        page.keyboard.type('X')
+        click_text(page, 'key term', 3)
+        page.keyboard.type('s')
+        click_text(page, 'Outer', 5)
+        page.keyboard.type('most')
+        page.wait_for_timeout(200)
+        t = src(page)
+        want = PAGE_DOC.replace('{blue result}', '{blueX result}').replace('{key term}', '{keys term}').replace('Outer &', 'Outermost &')
+        check('typing inside coloured text and beside a list in a cell patches only those spots', t == want, [l for l in difflib.unified_diff(want.split('\n'), t.split('\n'), lineterm='', n=0)][:8])
+        undo_all(page)
+        check('and undo restores the source byte for byte', src(page) == PAGE_DOC)
+        cell = page.evaluate("({ li: [...document.querySelectorAll('#pages td ul > li')].map(x => x.firstChild.textContent.trim()), ol: document.querySelectorAll('#pages td ul ol li').length, inner: [...document.querySelectorAll('#pages td table td')].map(x => x.textContent), err: [...document.querySelectorAll('#pages .a-chip.err')].map(x => x.textContent), caret: document.querySelectorAll('#pages td .a-chip [data-g], #pages td .a-chip [data-y], #pages td .a-chip [data-a]').length })")
+        check('a list in a table cell is drawn as a list, a table as a table, with nothing in them that takes an edit', cell['li'] == ['first', 'second'] and cell['ol'] == 1 and cell['inner'] == ['in1', 'in2', 'a', 'b'] and cell['caret'] == 0, cell)
+        check('a list that is not plain \\item after \\item is shown as before', cell['err'] == ['\\item'], cell['err'])
+        page.click('#pages td ul li')
+        page.wait_for_selector('#pop-raw')
+        v = page.evaluate("document.getElementById('pop-raw').value")
+        check('a click on the list opens its source', v.startswith('\\begin{itemize}') and v.endswith('\\end{itemize}') and 'nested' in v, v[:80])
+        page.fill('#pop-raw', v.replace('second', 'SECOND'))
+        page.keyboard.press('Control+Enter')
+        page.wait_for_timeout(400)
+        check('an edit there changes that word in the source and on the page', src(page) == PAGE_DOC.replace('  second', '  SECOND') and 'SECOND' in page.inner_text('#pages td ul'), src(page)[src(page).find('itemize'):][:120])
+        undo_all(page)
+        check('and is undone to the byte', src(page) == PAGE_DOC)
+
         b64 = base64.b64encode(word_fixture.make()).decode()
         for how, js in [('drop', "(b) => { const f = new File([Uint8Array.from(atob(b), (c) => c.charCodeAt(0))], 'Dropped.docx'); const dt = new DataTransfer(); dt.items.add(f); document.getElementById('desk').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); }"),
                         ('paste', "(b) => { const f = new File([Uint8Array.from(atob(b), (c) => c.charCodeAt(0))], 'Pasted.docx', { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' }); const dt = new DataTransfer(); dt.items.add(f); document.getElementById('pages').focus(); document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }")]:
