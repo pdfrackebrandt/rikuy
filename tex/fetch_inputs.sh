@@ -17,7 +17,8 @@
 # Needs curl, sha256sum, sha512sum, dpkg-deb, and python3 with lz4 (pip install lz4).
 set -eu
 WORK=${RIKUY_WORK:-/tmp/eng}
-MIRROR=${UBUNTU_MIRROR:-http://archive.ubuntu.com/ubuntu}
+ARCHIVE=http://archive.ubuntu.com/ubuntu
+MIRROR=${UBUNTU_MIRROR:-$ARCHIVE}
 HERE=$(cd "$(dirname "$0")" && pwd)
 DONE="$WORK/.fetched"
 mkdir -p "$DONE" "$WORK/busy" "$WORK/debs/x" "$WORK/mf"
@@ -34,7 +35,16 @@ get() {
   sum=${3#*:}
   if [ -f "$2" ] && echo "$sum  $2" | $algo -c --status; then return 0; fi
   echo "downloading $1"
-  curl -fL --retry 6 --retry-all-errors --retry-delay 5 -sS -o "$2.part" "$1" || { echo "fetch_inputs: cannot download $1" >&2; exit 1; }
+  # A transfer that breaks off or stalls is tried again (under 1 kB/s for a minute counts as
+  # stalled); a file a mirror of Ubuntu's archive will not give is asked of the archive itself.
+  # Whatever arrives is checked by hash below.
+  dl() { curl -fL --retry 4 --retry-all-errors --retry-delay 5 --connect-timeout 30 --speed-limit 1024 --speed-time 60 -sS -o "$2.part" "$1"; }
+  if ! dl "$1" "$2"; then
+    alt=
+    case "$1" in "${MIRROR:-none}"/*) [ "$MIRROR" = "$ARCHIVE" ] || alt="$ARCHIVE${1#"$MIRROR"}" ;; esac
+    if [ -n "$alt" ]; then echo "downloading $alt (the mirror failed)"; dl "$alt" "$2" || { echo "fetch_inputs: cannot download $1" >&2; exit 1; }
+    else echo "fetch_inputs: cannot download $1" >&2; exit 1; fi
+  fi
   echo "$sum  $2.part" | $algo -c --status || { echo "fetch_inputs: hash mismatch for $1" >&2; exit 1; }
   mv "$2.part" "$2"
 }

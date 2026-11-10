@@ -9,7 +9,10 @@
 set -eu
 WORK=${RIKUY_WORK:-/tmp/eng}
 TL=${TL26:-/opt/tl26}
-MIRROR=${UBUNTU_MIRROR:-http://archive.ubuntu.com/ubuntu}
+ARCHIVE=http://archive.ubuntu.com/ubuntu
+MIRROR=${UBUNTU_MIRROR:-$ARCHIVE}
+# a transfer that breaks off or stalls is tried again, then asked of the archive itself
+dl() { curl -fL --retry 4 --retry-all-errors --retry-delay 5 --connect-timeout 30 --speed-limit 1024 --speed-time 60 -sS -o "$2" "$1"; }
 HERE=$(cd "$(dirname "$0")" && pwd)
 S="$WORK/s26"
 mkdir -p "$S/debs" "$S/x" "$TL"
@@ -17,7 +20,7 @@ grep -v '^#' "$HERE/tl26-packages.txt" | while read -r name pool hash; do
   f="$S/debs/${pool##*/}"
   algo=${hash%%:*}; sum=${hash#*:}
   if ! { [ -f "$f" ] && echo "$sum  $f" | ${algo}sum -c --status; }; then
-    curl -fL --retry 6 --retry-all-errors --retry-delay 5 -sS -o "$f.part" "$MIRROR/$pool" || { echo "fetch_tl26: cannot download $pool" >&2; exit 1; }
+    dl "$MIRROR/$pool" "$f.part" || { [ "$MIRROR" != "$ARCHIVE" ] && dl "$ARCHIVE/$pool" "$f.part"; } || { echo "fetch_tl26: cannot download $pool" >&2; exit 1; }
     echo "$sum  $f.part" | ${algo}sum -c --status || { echo "fetch_tl26: hash mismatch for $pool" >&2; exit 1; }
     mv "$f.part" "$f"
   fi
