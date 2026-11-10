@@ -51,6 +51,7 @@ a command fails, trust the code and fix this file.
 | engines and shell escape in the page | `npm run test:engines` (23 checks) | 5 min |
 | typing on the page | `npm run test:browser` | 20 s |
 | the installed app: offline, updates, one version at a time, none in the artifact build (and a compile offline where `dist/tex` exists) | `npm run test:offline` | 1 min |
+| opening `.tex`, `.bib` and `.zip` with the installed app (`launchQueue`), and files shared to it | `cd test && python3 launch.py` | 20 s |
 | serve `dist/` as Cloudflare Pages serves the hosted app (`index.html` as the page, `_headers`) | `npm run serve:app` (port 8791) | |
 | one feature in the page (projects, files, git, history, paste, PDF, math field, Word style math, equation extras, sharing and comments, stress, live figures) | `cd test && python3 features.py` (or `files.py`, `git.py`, `history.py`, `paste.py`, `pdf.py`, `mathfield.py`, `wordmath.py`, `eqextras.py`, `frontier.py`, `share.py`, `stress.py`, `widgets.py`); each says what it checks at the top | under a minute each |
 | random keystrokes on real documents, then every scripted edit on the corpus | `python3 test/corpus_browser.py <corpus>`, then `CORPUS_REPO=<corpus> python3 test/editor_corpus.py out.jsonl` | 1 min; 1 hour (40 min of edits, 20 of compiles) |
@@ -65,7 +66,7 @@ a command fails, trust the code and fix this file.
 
 Pick the checks by what you touched, and run them before you call it done:
 
-- `src/`: `npm test`, `npm run test:browser`, and `npm run test:corpus` for anything in the model or parser; `npm run test:offline` for `pwa.js`, `sw.js`, `tex.js` or `build/app.mjs`
+- `src/`: `npm test`, `npm run test:browser`, and `npm run test:corpus` for anything in the model or parser; `npm run test:offline` and `test/launch.py` for `pwa.js`, `sw.js`, `tex.js` or `build/app.mjs`
 - `tex/engine.js`, `shell.js`, `tools.js`: `npm run test:engines`; for a fix found on a document, compile it with `dev/texrun.py` before and after
 - the tree or packs: `cd dist/tex && find . -type f | sort | xargs sha256sum | diff ../../dev/dist-manifest.txt -`; any difference must be one you meant
 - a program in `tex/vendor/`: rebuild it from an empty `RIKUY_SRC` (any folder: the builds map their paths away) and compare the hash with the committed file (`vendor.yml` does this on a runner for every pull request that touches `tex/vendor/`, `tex/native/` or `tex/build_tools.sh`); then `dev/asycompare.py` (Asymptote) or `tex/native/xindy/test.cjs` (xindy)

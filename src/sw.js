@@ -22,7 +22,8 @@
 //   there when it is kept, which is what lets TeX's synchronous reads work offline; storing them
 //   again here would double the largest part of what Rikuy keeps.
 // - Nothing of the user's: projects live in IndexedDB and localStorage, which this worker does not
-//   touch.
+//   touch. Files shared to the app (manifest share_target) wait in 'rikuy-share' only until the
+//   page the share opens takes them.
 /* global RIKUY */
 const VERSION = RIKUY.v;
 const FILES = RIKUY.files;
@@ -31,6 +32,7 @@ const ROOT = SCOPE.pathname;
 const CACHE_PREFIX = 'rikuy-v-';
 const IMMUTABLE = 'rikuy-immutable';
 const META = 'rikuy-meta';
+const SHARE = 'rikuy-share';
 const HEX16 = /^[0-9a-f]{16}$/;
 // files of at most this size are fetched at install; larger ones the first time they are used
 const PRECACHE_MAX = 4 * 1024 * 1024;
@@ -123,6 +125,7 @@ self.addEventListener('fetch', (e) => {
   const url = new URL(req.url);
   if (url.origin !== SCOPE.origin || !url.pathname.startsWith(ROOT)) return;
   let rel = url.pathname.slice(ROOT.length);
+  if (req.method === 'POST' && rel === 'share-target') { e.respondWith(shareTarget(req)); return; }
   if (req.method !== 'GET') return;
   if (req.mode === 'navigate') {
     if (rel === '' || rel === 'index.html') e.respondWith(page(req));
@@ -201,4 +204,28 @@ async function pack(h, href) {
   const z = await packKept(h);
   if (z && (await sha256(z)).startsWith(h)) return new Response(z, { headers: { 'Content-Type': 'application/octet-stream' } });
   return fetch(href, { credentials: 'same-origin' });
+}
+
+// ---- files shared to the installed app (manifest share_target) -----------------------------
+// The system's share sheet posts the files here. They wait under a random id in 'rikuy-share'
+// and the page opens at ./?share-target=<id>, takes them and deletes them (src/pwa.js). Any web
+// page can post a form here too, so the page treats them as someone else's, as it does a share
+// link, which any page can open as well: the project opens with shell escape restricted. What
+// one post may leave is bounded, and what no page took is dropped after a day.
+const SHARE_MAX = 64 * 1024 * 1024, SHARE_FILES = 64, SHARE_DAY = 864e5;
+async function shareTarget(req) {
+  const back = (q) => Response.redirect(at(q || './'), 303);
+  let form;
+  try { form = await req.formData(); } catch (e) { return back(); }
+  const files = form.getAll('files').filter((f) => f && typeof f === 'object' && typeof f.arrayBuffer === 'function').slice(0, SHARE_FILES);
+  if (!files.length || files.reduce((s, f) => s + f.size, 0) > SHARE_MAX) return back();
+  const c = await caches.open(SHARE);
+  const now = Date.now();
+  for (const r of await c.keys()) { const t = +((/\/_share\/(\d+)-/.exec(r.url) || [])[1] || 0); if (now - t > SHARE_DAY) await c.delete(r); }
+  const id = now + '-' + crypto.randomUUID();
+  let i = 0;
+  for (const f of files) {
+    await c.put(at('_share/' + id + '/' + i++), new Response(f, { headers: { 'Content-Type': 'application/octet-stream', 'X-Rikuy-Name': encodeURIComponent(String(f.name || 'shared.tex').slice(0, 255)) } }));
+  }
+  return back('./?share-target=' + encodeURIComponent(id));
 }

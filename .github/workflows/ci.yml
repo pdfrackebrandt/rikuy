@@ -75,3 +75,5 @@ jobs:
       # its compile offline needs dist/tex and runs in tex.yml; here it says it skips that part
       - name: The installed app offline, its updates, and none in the artifact build
         run: cd test && python3 offline.py
+      - name: Opening .tex, .bib and .zip with the installed app, and sharing files to it
+        run: cd test && python3 launch.py

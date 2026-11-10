@@ -115,6 +115,51 @@ export function registerApp(app) {
   }).catch(() => { /* no offline copy; the page works as before */ });
 }
 
+// Files the system hands the installed app: opening a .tex, .bib or .zip with Rikuy (manifest
+// file_handlers, Chromium on the desktop) queues their handles in launchQueue. They open exactly
+// as the Open button opens files (app.openFiles); a .tex or .bib the user opened from their own
+// disk is their own, as with the Open button. Called once the project in this browser is loaded.
+export function takeLaunches(app) {
+  if (!('launchQueue' in window) || !window.launchQueue || typeof window.launchQueue.setConsumer !== 'function') return;
+  window.launchQueue.setConsumer(async (params) => {
+    const files = [];
+    for (const h of (params && params.files) || []) {
+      if (!h || h.kind !== 'file' || typeof h.getFile !== 'function') continue;
+      try { files.push(await h.getFile()); } catch (e) { /* gone or refused: skip it */ }
+    }
+    if (files.length) await app.openFiles(files);
+  });
+}
+
+// Files shared to the installed app (manifest share_target): src/sw.js keeps the post under an
+// id and opens ./?share-target=<id>. Any web page can post a form there as well, so nothing opens
+// without the user's click, and then as a link from someone else opens: shell escape restricted
+// until the owner allows it, and never over a file of the project open now (app.openFiles).
+export async function takeShared(app) {
+  let id = null;
+  try { id = new URLSearchParams(location.search).get('share-target'); } catch (e) { return; }
+  if (!id) return;
+  try { history.replaceState(null, '', location.href.replace(/[?&]share-target=[^&#]*/, '').replace(/\?$/, '').replace(/\?#/, '#')); } catch (e) { /* framed */ }
+  if (!/^\d+-[0-9a-f-]{36}$/.test(id) || !window.caches) return;
+  const c = await caches.open('rikuy-share');
+  const pre = new URL('_share/' + id + '/', location.href).href;
+  const files = [];
+  for (const r of await c.keys()) {
+    if (!r.url.startsWith(pre)) continue;
+    const res = await c.match(r);
+    await c.delete(r);
+    if (!res) continue;
+    let name = 'shared.tex';
+    try { name = decodeURIComponent(res.headers.get('X-Rikuy-Name') || name); } catch (e) { /* keep the default */ }
+    files.push([+r.url.slice(pre.length), new File([await res.blob()], name.replace(/[\\/]/g, '_'))]);
+  }
+  files.sort((a, b) => a[0] - b[0]);
+  if (!files.length) return;
+  const list = files.map((x) => x[1]);
+  const names = list.map((f) => f.name);
+  app.toast('Shared to Rikuy: ' + names.slice(0, 3).join(', ') + (names.length > 3 ? ' and ' + (names.length - 3) + ' more' : '') + '.', 60000, { label: 'Open', fn: () => app.openFiles(list, 'share') });
+}
+
 // "Make available offline": the engine, the core packs and the packs of OFFLINE_FOLDERS, kept by
 // the TeX worker in its IndexedDB cache (tex/engine.js, keep). Packs this browser already keeps
 // (everything any document compiled here read) are not fetched again.

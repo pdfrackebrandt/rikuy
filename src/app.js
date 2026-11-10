@@ -15,7 +15,7 @@ import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath } from './paste.js';
 import { findProblems, missingFigures } from './problems.js';
 import { WidgetLayer } from './widget.js';
-import { APP, appInit, asset as appAsset, registerApp } from './pwa.js';
+import { APP, appInit, asset as appAsset, registerApp, takeLaunches, takeShared } from './pwa.js';
 
 // Gray boxes of 320 by 240 points that stand in, in a coauthor's PDF, for figures a link does
 // not carry: a PDF, a PNG whose resolution makes it that size, and EPS for latex with dvips.
@@ -397,6 +397,8 @@ class App {
     if (this.prefs.pdf && window.innerWidth > 860) this.togglePdf(true);
     setTimeout(() => this.ensureMathLive(), 2500);
     this.placeInitialCaret();
+    // files the system handed the installed app: opened with Rikuy, or shared to it
+    if (__RIKUY_APP__ && APP.on) { await takeShared(this); takeLaunches(this); }
   }
 
   loadSample() {
@@ -3585,7 +3587,9 @@ class App {
     return [...this.assetBlobs.keys()].some((k) => /\.(pdf|eps)$/i.test(k) && k.split('/').pop().replace(/\.[^.]+$/, '') === short);
   }
 
-  async openFiles(list) {
+  // from: how the files came when not from the user's own disk ('share': shared to the installed
+  // app, which any page can do), so the project opens as someone else's
+  async openFiles(list, from) {
     const texts = new Map();
     const blobs = new Map();
     const orig = new Map();
@@ -3647,6 +3651,10 @@ class App {
     }
     const skipNote = skipped.length ? ' Left out ' + skipped.length + (skipped.length === 1 ? ' file whose name points' : ' files whose names point') + ' outside the project: ' + skipped.slice(0, 3).join(', ') + (skipped.length > 3 ? '…' : '.') : '';
     if (!texts.size && !blobs.size && !extra.size) { this.toast(skipNote.trim() || 'Nothing to open. Choose .tex, .bib, image or .zip files.', 9000); return; }
+    // files shared to the app may come from any web page: they add to the project open now only
+    // under names it does not have, never over one of its files
+    const held = [];
+    if (from) for (const n of [...texts.keys(), ...blobs.keys(), ...extra.keys()]) if (this.files.has(n) || this.assetBlobs.has(n) || this.extra.has(n)) held.push(n);
     const hasDoc = [...texts.entries()].some(([n, t]) => /\.tex$/i.test(n) && /\\documentclass/.test(t));
     const onlyTex = [...texts.keys()].filter((n) => /\.tex$/i.test(n));
     // a chapter (a .tex with no \documentclass) opened beside a document of one's own joins its
@@ -3654,6 +3662,8 @@ class App {
     // untouched sample it still opens on its own.
     const sample = this.files.size === Object.keys(SAMPLE).length && Object.entries(SAMPLE).every(([n, t]) => this.files.get(n) === t);
     if (!hasDoc && (!onlyTex.length || (!sample && !zipName))) {
+      for (const n of held) { texts.delete(n); orig.delete(n); blobs.delete(n); extra.delete(n); }
+      if (!texts.size && !blobs.size && !extra.size) { this.toast('Not opened: this project already has ' + held.join(', ') + '. Open them from a new document.', 9000); return; }
       // Add to the current project (bib files, images, chapters)
       for (const [n, t] of texts) this.files.set(n, t);
       for (const [n, o] of orig) this.orig.set(n, o);
@@ -3670,7 +3680,8 @@ class App {
       const fig = [...blobs.keys()][0];
       const widget = [...texts.keys()].find((n) => /\.html?$/i.test(n));
       const use = onlyTex.length ? ' Write \\input{' + onlyTex[0].replace(/\.tex$/i, '') + '} where it goes.' : widget ? ' Write \\rikuywidget{' + widget + '}{' + (fig || 'fallback.png') + '} where it goes (rikuy.sty, from Rikuy\'s sample/widget, defines it).' : fig ? ' Write \\includegraphics{' + fig + '} where it goes.' : '';
-      this.toast('Added ' + [...texts.keys(), ...blobs.keys(), ...extra.keys()].join(', ') + ' to the project.' + use + skipNote, skipNote || use ? 9000 : undefined);
+      const heldNote = held.length ? ' Not replaced: ' + held.join(', ') + ', which the project has.' : '';
+      this.toast('Added ' + [...texts.keys(), ...blobs.keys(), ...extra.keys()].join(', ') + ' to the project.' + use + heldNote + skipNote, skipNote || use || heldNote ? 9000 : undefined);
       return;
     }
     // the project open until now stays in this browser; the toast says where, so nobody thinks it gone
@@ -3692,7 +3703,7 @@ class App {
     // its shell escape is restricted (the worker runs only TeX Live's safe programs, keeps no
     // LuaTeX font cache and is let go after) until the owner allows more. Loose .tex/.bib files
     // the user opened are their own and stay unrestricted.
-    if (zipName || gitFiles.has('.git/HEAD')) this.markFromLink('', this.name, this.main, gitFiles.has('.git/HEAD') ? 'git' : 'zip');
+    if (from || zipName || gitFiles.has('.git/HEAD')) this.markFromLink('', this.name, this.main, from || (gitFiles.has('.git/HEAD') ? 'git' : 'zip'));
     this.hist = []; this.redoStack = []; this.updateUndoUI();
     this.forceRender = true;
     this.srcFile = this.main;

@@ -302,6 +302,19 @@ servers), is unchanged, and the artifact build (`RIKUY_SHARE` set) compiles `src
   apart; cm-super and biber are left out.
 - **Status bar.** `#st-net` ("Offline", from `online`/`offline` events), `#st-update`,
   `#b-offline`; only in the app build.
+- **Opening files with Rikuy.** The manifest's `file_handlers` take `.tex`, `.bib` and `.zip`
+  (an Overleaf export) into the window already open (`launch_handler` `focus-existing`: all tabs
+  share one project), and `takeLaunches()` hands the files from `launchQueue` to `openFiles()`,
+  as the Open button does. Only Chromium browsers on the desktop (Chrome, Edge) honour
+  `file_handlers`, and only for the installed app; the OS lists Rikuy under Open with once it is
+  installed. No `.rikuy` type: a project is already a `.tex` or a `.zip`, which Overleaf and
+  every TeX installation read; a format of Rikuy's own would add nothing they could open.
+- **Sharing to Rikuy** (`share_target`, Chrome on Android and ChromeOS): the share sheet posts the
+  files to `./share-target`; the service worker keeps them in `rikuy-share` under a random id (at
+  most 64 files, 64 MB; a day at most) and opens `./?share-target=<id>`, where `takeShared()`
+  takes them and offers them in a toast. Any web page can post that form too, so nothing opens
+  without the click, the project opens as someone else's (`markFromLink`, origin `share`: shell
+  escape restricted), and `openFiles(list, 'share')` never replaces a file of the open project.
 
 ## 7. Page and worker
 
@@ -491,7 +504,7 @@ PDF.js is a module `import()`, which takes no hash, so it ships in `dist/tex/` b
   escape), `mathfield.py`, `wordmath.py`, `eqextras.py`, `frontier.py`, `share.py` (two browsers: share, comment,
   send back, merge), `stress.py`, `widgets.py` (live figures, under the host's policy),
   `offline.py` (the installed app offline and its updates, served by `pages.py` as Cloudflare Pages
-  serves it); on a corpus,
+  serves it), `launch.py` (files opened with the installed app and shared to it); on a corpus,
   `corpus_browser.py` (random keystrokes) and `editor_corpus.py` (six edits per document land
   where made, undo byte for byte, projects compile). Each says at its top what it checks.
 - **dev/** drives the worker through `tex/tex-smoke.html`: `texrun.py`, `shellrun.py`,

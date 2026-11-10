@@ -208,7 +208,7 @@ export const collab = {
     // a .zip or a git repository is content from someone else just as a link is, so it is
     // restricted the same way; the wording follows how it arrived
     const origin = v && v.origin;
-    const came = origin === 'zip' ? 'was opened from a .zip file' : origin === 'git' ? 'was cloned from a git repository' : 'came in a link from ' + who;
+    const came = origin === 'zip' ? 'was opened from a .zip file' : origin === 'git' ? 'was cloned from a git repository' : origin === 'share' ? 'was shared to Rikuy from another app' : 'came in a link from ' + who;
     issues.unshift({ sev: 'warn', file: null, line: null, msg: 'Shell escape is restricted: this document ' + came + ', so it runs only the programs TeX Live allows by default. Tick Shell escape if you trust it.' });
     const k = this.name + '|' + this.main;
     this.restrictNoted = this.restrictNoted || new Set();
