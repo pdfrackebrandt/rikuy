@@ -183,6 +183,29 @@ def ui_fonts(page):
           only('#b-open span', 'IBM Plex Sans') and only('#st-save', 'IBM Plex Sans') and only('#monoprobe', 'IBM Plex Mono'), drawn)
 
 
+def latin_ext_fonts(page, where='', check=check):
+    """Letters past Latin-1 (Ł, ő, ř, ş, ā: a file, a project or an author's name in the
+    interface) are drawn in IBM Plex too, from its Latin Extended cut, not in a system font that
+    looks different beside them. rikuy.html carries the cut as data:, the hosted page as files."""
+    text = 'Łódź Erdős Dvořák Şişli Āpā'
+    page.evaluate('''async (text) => {
+      for (const f of ['400 13px "IBM Plex Sans"', '500 13px "IBM Plex Sans"', '600 13px "IBM Plex Sans"', '400 13px "IBM Plex Mono"', '500 13px "IBM Plex Mono"']) await document.fonts.load(f, text);
+      const w = (s, i) => '<div id="xp' + i + '" style="font: ' + s + '">' + text + '</div>';
+      document.body.insertAdjacentHTML('beforeend', [w('400 13px var(--font-ui)', 0), w('500 13px var(--font-ui)', 1), w('600 13px var(--font-ui)', 2), w('400 12px var(--font-mono)', 3), w('500 12px var(--font-mono)', 4)].join(''));
+    }''', text)
+    cdp = page.context.new_cdp_session(page)
+    cdp.send('DOM.enable'); cdp.send('CSS.enable')
+    root = cdp.send('DOM.getDocument', {'depth': -1})['root']['nodeId']
+    drawn = []
+    for i in range(5):
+        nid = cdp.send('DOM.querySelector', {'nodeId': root, 'selector': '#xp%d' % i})['nodeId']
+        drawn.append([(f['familyName'], f['isCustomFont']) for f in cdp.send('CSS.getPlatformFontsForNode', {'nodeId': nid})['fonts']])
+    page.evaluate("for (let i = 0; i < 5; i++) document.getElementById('xp' + i).remove()")
+    fam = ['IBM Plex Sans'] * 3 + ['IBM Plex Mono'] * 2
+    check('Ł, ő, ř, ş and ā are drawn in IBM Plex Sans and Mono, every weight, not a system font' + where,
+          all(d and all(n.startswith(f) and own for n, own in d) for d, f in zip(drawn, fam)), drawn)
+
+
 def default_macros(page):
     """The math the page knows without a definition renders: \\tfrac was once mapped to itself,
     so KaTeX expanded it until its limit and every formula with it showed as an error."""
@@ -760,6 +783,7 @@ def run():
 
         browser, page, errors = open_page(p)
         ui_fonts(page)
+        latin_ext_fonts(page)
         browser.close()
 
     bad = [r for r in results if not r[1]]

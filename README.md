@@ -39,6 +39,16 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   your own there.
 - **Projects.** Folders of files, zip import and export, the PDF beside the page with SyncTeX
   both ways.
+- **Word, both ways.** Open a .docx (Open, drop or paste) and it becomes a LaTeX project: Word
+  equations as LaTeX math, pictures in `figures/`, headings, lists, tables, footnotes, links, and
+  Zotero or Mendeley citations as a `.bib`. Save as Word writes the page as a .docx with native,
+  editable Word equations, footnotes, tables, figures, numbered cross references and citations
+  set from your `.bib`. A coauthor edits that file in Word or LibreOffice, with or without
+  Track Changes, and sends it back; opening it writes their edits into the `.tex` as the smallest
+  patches, each one to accept or reject, their comments as comments, and anything that cannot be
+  placed (text you changed meanwhile, generated numbers, a new table row) as a comment where it
+  was. pandoc, compiled to WebAssembly, does the conversions in the browser; it loads (16 MB, once)
+  only when a Word action is used. Not in the copy on claude.ai, which has no room for it.
 - **Live figures.** `\rikuywidget{plot.html}{plot.png}` from `rikuy.sty` (in `sample/widget/`,
   copied beside the document) runs a self contained HTML widget, sliders and all, on the typeset
   page, sandboxed; every TeX, Overleaf's included, prints the PNG. Widgets in a document from
@@ -60,15 +70,20 @@ mismatch with its cause: [PLAN.md](PLAN.md).
 
 Rikuy is one HTML page plus `dist/tex/` (about 250 MB of engines, TeX packs and programs), which
 any static web server can serve (`dist/index.html` is the page); the page fetches packs as a
-document needs them. It also loads KaTeX, CodeMirror, MathLive and JSZip from jsDelivr, so it
-needs a network connection; its fonts, the interface's IBM Plex included, are inside the page.
+document needs them. Served that way it is an app the browser can install: after one visit it
+opens and works with no network, compiles what this browser has compiled before, and "Make
+available offline" in the status bar keeps what a typical paper and the open document need (about 62 MB with the
+engine); [docs/HOSTING.md](docs/HOSTING.md) puts it on Cloudflare Pages. Installed from Chrome or Edge on a computer, it opens `.tex`, `.bib` and Overleaf `.zip`
+files from the file manager as Word opens `.docx`; on Android, files can be shared to it. The copy on claude.ai loads KaTeX, CodeMirror, MathLive and JSZip from jsDelivr and
+needs the network; its fonts, the interface's IBM Plex included, are inside the page.
 
 ```sh
 npm ci
 tex/fetch_inputs.sh                      # build inputs into $RIKUY_WORK (default /tmp/eng), about 3 GB, every file checked by hash
 python3 tex/build_tree.py tree && python3 tex/build_tree.py packs
 npm run build                            # the page, into dist/
-npm run serve                            # http://127.0.0.1:8790
+npm run serve:app                        # http://127.0.0.1:8791, the installed app as Cloudflare Pages serves it
+npm run serve                            # http://127.0.0.1:8790, the page as the claude.ai artifact host serves it
 ```
 
 The TeX build has been run on Ubuntu. It needs curl, sha256sum, sha512sum, dpkg-deb, Python 3

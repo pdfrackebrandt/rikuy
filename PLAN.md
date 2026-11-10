@@ -5,16 +5,16 @@ Read the rules at the end before the first commit.
 
 ## Where it stands
 
-| check | v19 (published 2026-10-12) | version 23 (published 2026-10-26) | version 25 (2026-10-28) | version 28 (2026-10-29) | version 29 (2026-11-09) |
-|---|---|---|---|---|---|
-| corpus compiles (LaTeX-examples, 716 documents present) | 705 | 706 | 706 | as version 25 | as version 25 |
-| corpus PDFs equal to a desktop TeX Live 2026's | 615 of 704 (87.4 %) | 700 of 705 (99.3 %) | 703 of 705 (99.7 %) | as version 25 | as version 25 |
-| TeX passes over the whole corpus | not counted | 995 (1,471 without latexmk's first-run `.aux`) | 995 | as version 25 | as version 25 |
-| `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) | 22/22 | 23/23 (a check that pygmentize loads no code a document wrote) | 23/23, now run by CI on a tree built there (`tex.yml`) |
-| `tex/native/xindy/test.cjs` (against CLISP's xindy) | 11/11 | 11/11 | 11/11 | 11/11 | 11/11 |
-| TeX Live's 220 Asymptote examples as a desktop's asy draws them | not measured | against a native asy 3.09: 216 (196 equal PDFs, 12 equal failures, 7 random by design, 1 equal alone); 4 open | against the desktop's asy 3.11: 218 (201 equal PDFs, the 3D ones rendered as bitmaps; 10 equal failures; 7 random by design); 2 open: 1 numerical, `slope` out of memory | as version 25 | as version 25 |
-| edits on the typeset page landing exactly, undone byte for byte (`test/editor_corpus.py`) | not measured | 780 of 780, in the 222 documents with text, a formula, a cell or a footnote; 211 of 211 edited projects compile | as version 23 (page unchanged) | 781 of 792 land, 11 open as source by design, all 792 undone byte for byte, on the complete corpus; 211 of 211 edited projects compile | as version 28 (model and parser unchanged) |
-| artifact size (limit 256 MB) | 250.0 MB | 249.7 MB | 252.3 MB | 253.1 MB (with the 0.8 MB license bundle) | 253.6 MB (pdf.js shipped, IBM Plex inlined) |
+| check | v19 (published 2026-10-12) | version 23 (published 2026-10-26) | version 25 (2026-10-28) | version 28 (2026-10-29) | version 29 (2026-11-09) | version 30 (2026-11-10) |
+|---|---|---|---|---|---|---|
+| corpus compiles (LaTeX-examples, 716 documents present) | 705 | 706 | 706 | as version 25 | as version 25 | as version 25 |
+| corpus PDFs equal to a desktop TeX Live 2026's | 615 of 704 (87.4 %) | 700 of 705 (99.3 %) | 703 of 705 (99.7 %) | as version 25 | as version 25 | as version 25 |
+| TeX passes over the whole corpus | not counted | 995 (1,471 without latexmk's first-run `.aux`) | 995 | as version 25 | as version 25 | as version 25 |
+| `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) | 22/22 | 23/23 (a check that pygmentize loads no code a document wrote) | 23/23, now run by CI on a tree built there (`tex.yml`) | 23/23 in CI's TeX job |
+| `tex/native/xindy/test.cjs` (against CLISP's xindy) | 11/11 | 11/11 | 11/11 | 11/11 | 11/11 | 11/11 |
+| TeX Live's 220 Asymptote examples as a desktop's asy draws them | not measured | against a native asy 3.09: 216 (196 equal PDFs, 12 equal failures, 7 random by design, 1 equal alone); 4 open | against the desktop's asy 3.11: 218 (201 equal PDFs, the 3D ones rendered as bitmaps; 10 equal failures; 7 random by design); 2 open: 1 numerical, `slope` out of memory | as version 25 | as version 25 | as version 25 |
+| edits on the typeset page landing exactly, undone byte for byte (`test/editor_corpus.py`) | not measured | 780 of 780, in the 222 documents with text, a formula, a cell or a footnote; 211 of 211 edited projects compile | as version 23 (page unchanged) | 781 of 792 land, 11 open as source by design, all 792 undone byte for byte, on the complete corpus; 211 of 211 edited projects compile | as version 28 (model and parser unchanged) | as version 28 (model and parser unchanged) |
+| artifact size (limit 256 MB) | 250.0 MB | 249.7 MB | 252.3 MB | 253.1 MB (with the 0.8 MB license bundle) | 253.6 MB (pdf.js shipped, IBM Plex inlined) | about 253.8 MB (version 29 and 154 kB: the page and `engine.js`) |
 
 Version 23 changed only the page (task 13): its `dist/tex` is version 22's byte for byte, so the
 TeX rows are version 22's runs. Version 24 changed Asymptote (tasks 17 and 18: `asy.wasm`, the
@@ -37,6 +37,15 @@ its fixes found (task 24), and has CI rebuild what was only rebuilt by hand (tas
 tree is version 28's: of `dist/tex`, only `engine.js` changed and `pdf.min.mjs` was added, so the
 corpus, Asymptote and editor rows are earlier runs; `test/engines.py` and `test/pdf.py` ran on a
 tree CI built from the pinned inputs, equal to `dev/dist-manifest.txt` byte for byte.
+
+Version 30 (2026-11-10) is the first with two builds (pull request 2). The hosted one, for
+Cloudflare Pages, is an installable app that works offline, opens `.tex`, `.bib`, `.zip` and
+`.docx` files and reads and writes Word files (tasks 26 and 27); it is built and tested in CI
+and not yet deployed: that waits for the maintainer's Cloudflare account. The claude.ai copy has
+no room for pandoc and no service worker, so there it changes the page and `engine.js` only
+(a compile that could not load a pack says which folders, in place of half a PDF); its TeX tree
+is version 29's but for `engine.js`, and the TeX rows are CI's TeX job on the pull request
+(`test/engines.py` 23/23, `test/pdf.py` 20/20, `test/offline.py` 34/34 with a compile offline).
 
 Equal means: the same number of pages, the same text on each page (`pdftotext -layout`,
 whitespace collapsed), and no page with more than 0.1 % of its pixels differing by more than
@@ -476,6 +485,61 @@ Tests:
     fixes both; then all 532 files equal the committed ones (dvips 2, gnuplot 2, xindy 431, asy
     97). The asy job takes about 42 minutes. `test/wordmath.py` no longer waits with
     `wait_for_function`, which the host's policy failed one run in three.
+
+26. **An installed app that works offline, hosted on Cloudflare Pages.** Done in the code
+    (pull request 2); not deployed yet: the owner has no Cloudflare account, and the site stays
+    behind a sign-in until the repository is public (docs/HOSTING.md). The build without
+    `RIKUY_SHARE` makes `dist/index.html` installable: a service worker (`src/sw.js`) keeps the
+    page and every script, one version at a time, checked by hash; "Update ready" in the status
+    bar; "Make available offline" keeps the engine, the 75 packs a typical pdfLaTeX paper reads
+    (50 MB), whatever else the open document reads (it is compiled once) and Word; a document
+    that needs more while offline is told which folders. TeX packs live once, in the worker's IndexedDB, and the service worker
+    answers TeX's synchronous reads from there. The installed app opens `.tex`, `.bib`, Overleaf
+    `.zip` and `.docx` from the file manager (Chromium on the desktop) and takes shared files.
+    `deploy.yml` uploads what `tex.yml` built, with a pinned wrangler, after
+    `dev/pages_check.py` (20,000 files, 25 MiB each, 100 header rules); `_headers` carries the
+    page's policy without outside sources. IBM Plex's Latin Extended cut is in. The claude.ai copy
+    is unchanged in kind: no service worker, no manifest. Evidence: `test/offline.py` 31/31 (33/33 in CI's TeX job, with the compile offline),
+    `test/launch.py` 18/18, `test/deploy_check.py` 21/21, browser 93, CI green on the pull request;
+    the offline compile runs in CI's TeX job. An independent review found, and this fixes: files
+    shared into the user's own project left it unrestricted (a posted `article.cls` would have
+    run with full shell escape: the project is now marked as someone else's); a file opened over
+    one of the same name left no way back (a version is kept first); the first visit announced
+    an update; a run by hand of Deploy took any passing TeX run, a pull request's included; an
+    older TeX run could finish last and be deployed (one run per branch now). The first compile
+    offline in CI then failed with half a PDF: the sample read packs the list did not name
+    (hyperref's own packages, cm-super for the mark of `\thanks`); the list has them, the open
+    document is compiled once, and a second review's findings are fixed with tests (a pack that
+    loaded on a later pass no longer withholds the PDF, bytes that do not unpack are not kept,
+    the button says when the open document did not compile through, and a mirror serving other
+    bytes falls back to Ubuntu's archive). Open: Chromium can
+    leave a new version waiting for minutes when "Update ready" is clicked within a second of
+    opening a second tab (17 of 60 clicks in a loop; 0 of 18 otherwise): the button says what it
+    waits for. Offline in Safari and Firefox is untested. Old packs in IndexedDB are never pruned.
+    Git push and pull reach only Rikuy's own site under the hosted policy (`connect-src 'self'`).
+
+27. **Word, both ways.** Done in the code (pull request 2), on the hosted build only: pandoc 3.10
+    as WebAssembly (GPL-2.0-or-later, npm's `pandoc-wasm` 1.1.0) runs in a worker of its own,
+    fetched on first use as two hashed parts (16.3 MB gzipped), kept once in IndexedDB. The
+    claude.ai copy has no room and says where Word is. Open a `.docx`: a LaTeX project with its
+    equations (OMML to TeX), headings, lists, tables, footnotes, links, pictures and Zotero
+    citations, marked as someone else's. Save as `.docx`: native Word equations with the project's
+    macros expanded, citations by citeproc, PDF figures as pictures; TikZ, asy and unknown
+    environments become a line naming them, EPS its name. A coauthor's edits come back: the file
+    carries a bookmark per block and the source of what it shows; edits in text, cells, captions,
+    footnotes, the title block and inside equations, tracked or not, and Word comments, become
+    minimal patches under Review; what cannot be placed (text the owner changed since, generated
+    numbers, new table rows, pictures, moved paragraphs) becomes a comment where it happened;
+    formatting changes are dropped. Evidence: `test/word.test.mjs` 16 groups against the real
+    pandoc; `test/word.py` 61/61 including a LibreOffice 24.2 save and hostile files (zip bomb,
+    DTD, script links). The review found the data a returning file carries could be forged to
+    patch the preamble, another file or a command name, and that a file from another project of
+    the same name was merged: edits are now merged only from a file whose data hashes to an
+    export this browser made (`wordRemember`); any other opens as a document of its own. The file
+    no longer carries project files its text does not come from. Open: an export made on one
+    computer cannot be merged on another (it opens as a new document); Microsoft Word itself was
+    not available to test (LibreOffice keeps the bookmarks and the data through a save);
+    equation numbers are text after the formula, not Word's numbering.
 
 ## Open tasks
 

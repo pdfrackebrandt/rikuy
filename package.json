@@ -19,10 +19,12 @@
     "build": "node build.mjs",
     "build:dev": "node build.mjs --dev",
     "serve": "python3 test/serve.py 8790",
-    "test": "node test/model.test.mjs && node test/edge.test.mjs && node test/fences.test.mjs && node test/minimal.test.mjs && node test/siunitx.test.mjs && node test/share.test.mjs && node test/gitauth.test.mjs && node test/engine.test.mjs && node --no-experimental-fetch tex/native/xindy/test.cjs && python3 test/arxiv_unpack.py && python3 test/arxiv_collect.py",
+    "test": "node test/model.test.mjs && node test/edge.test.mjs && node test/fences.test.mjs && node test/minimal.test.mjs && node test/siunitx.test.mjs && node test/share.test.mjs && node test/gitauth.test.mjs && node test/engine.test.mjs && node test/word.test.mjs && node --no-experimental-fetch tex/native/xindy/test.cjs && python3 test/arxiv_unpack.py && python3 test/arxiv_collect.py && python3 test/deploy_check.py",
     "test:corpus": "node test/corpus.test.mjs",
     "test:engines": "cd test && python3 engines.py",
-    "test:browser": "cd test && python3 browser.py"
+    "test:browser": "cd test && python3 browser.py",
+    "serve:app": "python3 test/pages.py 8791",
+    "test:offline": "cd test && python3 offline.py"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",
@@ -38,7 +40,11 @@
     "jszip": "^3.10.1",
     "katex": "^0.16.22",
     "mathlive": "0.110.0",
+    "pandoc-wasm": "1.1.0",
     "pdfjs-dist": "^4.10.38",
     "pyodide": "^314.0.7"
+  },
+  "devDependencies": {
+    "wrangler": "4.159.0"
   }
 }

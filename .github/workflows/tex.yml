@@ -1,26 +1,18 @@
 # The TeX side, which ci.yml leaves out: build dist/tex as PLAN.md's Building section does (about
 # 3 GB of downloads, every one checked by hash, from GitHub and Ubuntu's archive, which the machine
 # Rikuy is developed on cannot reach), check it byte for byte against dev/dist-manifest.txt, then
-# run the tests that compile with TeX in the page: test/engines.py and test/pdf.py. The built
-# dist/ is kept as a workflow artifact for a week, so a release can be published from it.
-# Runs when something the TeX side is made of or tested with changes, and by hand.
+# run the tests that compile with TeX in the page: test/engines.py, test/pdf.py and the offline
+# compile of test/offline.py. The built
+# dist/ is kept as a workflow artifact for a week: deploy.yml publishes it to Cloudflare Pages once
+# this run has passed. Runs on every push to main (dist/tex comes from a cache when the tree's
+# inputs are unchanged, so the tree is built once per set of inputs, never twice per push), on
+# pull requests that touch the TeX side, and by hand.
 name: TeX
 on:
+  # every push to main: deploy.yml deploys the dist/ this run keeps, so a change to the page alone
+  # needs a run too; the tree itself is built only when its inputs changed (the cache below)
   push:
     branches: [main]
-    paths:
-      - 'tex/**'
-      - 'inputs/**'
-      - 'build.mjs'
-      - 'package.json'
-      - 'package-lock.json'
-      - 'src/pdfview.js'
-      - 'dev/dist-manifest.txt'
-      - 'test/engines.py'
-      - 'test/pdf.py'
-      - 'test/serve.py'
-      - 'test/browser.py'
-      - '.github/workflows/tex.yml'
   pull_request:
     paths:
       - 'tex/**'
@@ -29,6 +21,12 @@ on:
       - 'package.json'
       - 'package-lock.json'
       - 'src/pdfview.js'
+      - 'src/tex.js'
+      - 'src/sw.js'
+      - 'src/pwa.js'
+      - 'build/app.mjs'
+      - 'test/offline.py'
+      - 'test/pages.py'
       - 'dev/dist-manifest.txt'
       - 'test/engines.py'
       - 'test/pdf.py'
@@ -38,6 +36,11 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+# one run per branch: a newer push replaces the run of an older one, so an old commit's run cannot
+# finish last and be deployed over a newer one
+concurrency:
+  group: tex-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   tex:
     runs-on: ubuntu-24.04
@@ -58,18 +61,30 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.13'
+      # dist/tex built by an earlier run from the same inputs: the tree is a function of tex/,
+      # inputs/ and the npm packages (Pyodide's wheels), and the manifest check below holds it
+      - name: The TeX tree of an earlier run with the same inputs
+        id: tree
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: dist/tex
+          key: dist-tex-${{ hashFiles('tex/**', 'inputs/**', 'package-lock.json', 'dev/dist-manifest.txt') }}
       - name: Tools
         run: |
-          npm ci
+          npm ci --omit=dev
           python3 -m pip install lz4==4.4.4 playwright==1.56.0 pypdf==5.9.0 numpy==2.3.4
           python3 -m playwright install --with-deps chromium
           # the work folder holds about 10 GB; the runner's second disk has room
           sudo mkdir -p /mnt/eng && sudo chown "$USER" /mnt/eng
           df -h / /mnt
       - name: Build inputs
+        if: steps.tree.outputs.cache-hit != 'true'
         run: sh tex/fetch_inputs.sh
-      - name: Build the tree, its packs and the page
-        run: python3 tex/build_tree.py tree && python3 tex/build_tree.py packs && node build.mjs && du -sh dist dist/tex
+      - name: Build the tree and its packs
+        if: steps.tree.outputs.cache-hit != 'true'
+        run: python3 tex/build_tree.py tree && python3 tex/build_tree.py packs
+      - name: Build the page
+        run: node build.mjs && du -sh dist dist/tex
       - name: dist/tex as dev/dist-manifest.txt lists it
         run: cd dist/tex && find . -type f | sort | xargs sha256sum | diff ../../dev/dist-manifest.txt -
       # every test must pass; a test that cannot run here is left out, never run with `|| true`
@@ -77,6 +92,8 @@ jobs:
         run: npm run test:engines
       - name: pdfLaTeX in the PDF pane, under the host's policy
         run: cd test && python3 pdf.py
+      - name: The installed app, Make available offline, then a compile with no network
+        run: cd test && python3 offline.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rikuy-dist

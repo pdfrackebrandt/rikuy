@@ -4,8 +4,12 @@
 // of LaTeX (about 6 MB); both stay in the browser afterwards.
 
 export class TeXEngine {
-  constructor(base, mirror) {
-    this.base = base; // URL of the folder holding engine.js
+  constructor(base, mirror, scripts) {
+    this.base = base; // URL of the folder holding the packs (tex/)
+    // URL of the folder holding engine.js, its scripts and tree.wasm: the same folder, but the
+    // installed app asks for them under its version (src/pwa.js asset()), so its service worker
+    // answers this page's version of them and never a newer one's
+    this.scripts = scripts || base;
     this.mirror = mirror || null; // URL of a full TeX Live mirror (build_tree.py mirror), if any
     this.worker = null;
     this.readyP = null;
@@ -24,12 +28,19 @@ export class TeXEngine {
       try {
         // a blob bootstrap: it runs under the page's policy (which allows WebAssembly) and
         // loads the engine from its real address
-        const boot = 'self.__galleyBase=' + JSON.stringify(this.base) + ';importScripts(' + JSON.stringify(new URL('engine.js', this.base).href) + ');';
+        const boot = 'self.__galleyBase=' + JSON.stringify(this.scripts) + ';importScripts(' + JSON.stringify(new URL('engine.js', this.scripts).href) + ');';
         w = new Worker(URL.createObjectURL(new Blob([boot], { type: 'text/javascript' })));
       } catch (e) { reject(e); return; }
       this.worker = w;
       w.onmessage = ({ data }) => {
         if (w !== this.worker) return;
+        if (data.status === 'keep') { if (this.keeping) this.keeping.progress(data); return; }
+        if (data.kept) {
+          const k = this.keeping;
+          this.keeping = null;
+          if (k) { if (data.kept.error) k.reject(new Error(data.kept.error)); else k.resolve(data.kept); }
+          return;
+        }
         if (data.status) { this.onStatus(data); return; }
         if (data.ready) { this.info = data; this.rejectReady = null; resolve(data); return; }
         if (data.result) {
@@ -73,6 +84,17 @@ export class TeXEngine {
     });
   }
 
+  // Keep the packs holding the given folders of the tree (and the core packs and the engine) in
+  // the worker's cache, for working offline (src/pwa.js). progress gets {got, total} in bytes.
+  async keep(folders, progress) {
+    await this.start();
+    if (this.keeping) throw new Error('already keeping files');
+    return new Promise((resolve, reject) => {
+      this.keeping = { resolve, reject, progress: progress || (() => {}) };
+      this.worker.postMessage({ keep: { folders } });
+    });
+  }
+
   // the worker died after it was ready: everything waiting on it fails, and the next
   // compile starts a fresh one
   crash(msg) {
@@ -82,6 +104,7 @@ export class TeXEngine {
   }
 
   reset() {
+    if (this.keeping) { this.keeping.reject(new Error('The TeX engine stopped')); this.keeping = null; }
     if (this.worker) this.worker.terminate();
     this.worker = null; this.readyP = null; this.info = null; this.rejectReady = null; this.tainted = null;
   }

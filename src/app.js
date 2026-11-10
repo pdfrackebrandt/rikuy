@@ -15,6 +15,7 @@ import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath } from './paste.js';
 import { findProblems, missingFigures } from './problems.js';
 import { WidgetLayer } from './widget.js';
+import { APP, appInit, asset as appAsset, registerApp, takeLaunches, takeShared } from './pwa.js';
 
 // Gray boxes of 320 by 240 points that stand in, in a coauthor's PDF, for figures a link does
 // not carry: a PDF, a PNG whose resolution makes it that size, and EPS for latex with dvips.
@@ -27,6 +28,7 @@ import { changes, spacingOnly } from './diff.js';
 import { TeXEngine, parseTeXLog } from './tex.js';
 import { PdfView } from './pdfview.js';
 import { collab, installCollab } from './collab.js';
+import { word, installWord, isDocx } from './word.js';
 import { shareParam, commentOnly, cleanPath } from './share.js';
 import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
 
@@ -62,11 +64,17 @@ const TEXT_EXT = /\.(tex|bib|sty|cls|bst|bbl|txt|ltx|dtx|clo|cfg|def|md|html?)$/
 const IMG_EXT = /\.(png|jpe?g|gif|svg|webp)$/i;
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
+// One of the build's own files (git.js, tex/...): in the installed app, the copy of this page's
+// version (src/pwa.js); elsewhere simply the file next to the page.
+const asset = (p) => (__RIKUY_APP__ ? appAsset(p) : new URL(p, location.href).href);
 function loadScript(src) {
   return new Promise((res, rej) => {
     const s = document.createElement('script');
     if (SRI[src]) { s.integrity = SRI[src]; s.crossOrigin = 'anonymous'; }
-    s.src = src; s.onload = () => res(); s.onerror = () => rej(new Error('Could not load ' + src));
+    // the installed app ships these libraries itself (lib/, the same npm files: build/app.mjs), so
+    // it works offline and asks no CDN; the hash still has to match
+    s.src = __RIKUY_APP__ && APP.on && SRI[src] ? asset('lib/' + src.slice(src.lastIndexOf('/') + 1)) : src;
+    s.onload = () => res(); s.onerror = () => rej(new Error('Could not load ' + src));
     document.head.appendChild(s);
   });
 }
@@ -363,6 +371,8 @@ class App {
     } else this.loadSample();
     this.bindUI();
     this.applyPrefs();
+    // the installed app (hosted build only): its service worker, updates, the offline marks
+    if (__RIKUY_APP__ && appInit().on) registerApp(this);
     await this.waitForKaTeX();
     await Promise.race([this.loadFonts(), new Promise((r) => setTimeout(r, 2500))]);
     this.computePx();
@@ -388,6 +398,8 @@ class App {
     if (this.prefs.pdf && window.innerWidth > 860) this.togglePdf(true);
     setTimeout(() => this.ensureMathLive(), 2500);
     this.placeInitialCaret();
+    // files the system handed the installed app: opened with Rikuy, or shared to it
+    if (__RIKUY_APP__ && APP.on) { await takeShared(this); takeLaunches(this); }
   }
 
   loadSample() {
@@ -1312,6 +1324,9 @@ class App {
     this.plainPaste = false;
     // a screenshot or an image copied from a page joins the project, as a dropped file does (the
     // paste did nothing at all), under a name of its own: browsers call every pasted image image.png
+    // a .docx copied in the file manager and pasted here opens as Open would open it
+    const docx = [...(dt.files || [])].find((f) => isDocx(f));
+    if (docx) { this.openDocx(docx); return; }
     const imgs = !plain && !html ? [...(dt.files || [])].filter((f) => /^image\/(png|jpeg|gif|webp)$/.test(f.type)) : [];
     if (imgs.length) { this.openFiles(imgs.map((f, i) => new File([f], 'pasted-' + Date.now().toString(36) + (i ? '-' + i : '') + '.' + f.type.slice(6).replace('jpeg', 'jpg'), { type: f.type }))); return; }
     let latex = '';
@@ -2868,7 +2883,7 @@ class App {
   // the working tree: the panel writes them into it, so a commit takes exactly what is open.
   loadGit() {
     if (!this.gitP) {
-      this.gitP = import(new URL('git.js', location.href).href);
+      this.gitP = import(asset('git.js'));
       this.gitP.catch(() => { this.gitP = null; });
     }
     return this.gitP;
@@ -3576,7 +3591,16 @@ class App {
     return [...this.assetBlobs.keys()].some((k) => /\.(pdf|eps)$/i.test(k) && k.split('/').pop().replace(/\.[^.]+$/, '') === short);
   }
 
-  async openFiles(list) {
+  // from: how the files came when not from the user's own disk ('share': shared to the installed
+  // app, which any page can do), so the project opens as someone else's
+  async openFiles(list, from) {
+    // a Word file opens as a project of its own, or brings a coauthor's edits back (src/word.js)
+    const docx = list.find((f) => isDocx(f));
+    if (docx) {
+      if (list.length > 1) this.toast('Opening ' + docx.name + ' alone: a Word file opens on its own.', 6000);
+      await this.openDocx(docx, from);
+      return;
+    }
     const texts = new Map();
     const blobs = new Map();
     const orig = new Map();
@@ -3638,6 +3662,10 @@ class App {
     }
     const skipNote = skipped.length ? ' Left out ' + skipped.length + (skipped.length === 1 ? ' file whose name points' : ' files whose names point') + ' outside the project: ' + skipped.slice(0, 3).join(', ') + (skipped.length > 3 ? '…' : '.') : '';
     if (!texts.size && !blobs.size && !extra.size) { this.toast(skipNote.trim() || 'Nothing to open. Choose .tex, .bib, image or .zip files.', 9000); return; }
+    // files shared to the app may come from any web page: they add to the project open now only
+    // under names it does not have, never over one of its files
+    const held = [];
+    if (from) for (const n of [...texts.keys(), ...blobs.keys(), ...extra.keys()]) if (this.files.has(n) || this.assetBlobs.has(n) || this.extra.has(n)) held.push(n);
     const hasDoc = [...texts.entries()].some(([n, t]) => /\.tex$/i.test(n) && /\\documentclass/.test(t));
     const onlyTex = [...texts.keys()].filter((n) => /\.tex$/i.test(n));
     // a chapter (a .tex with no \documentclass) opened beside a document of one's own joins its
@@ -3645,7 +3673,17 @@ class App {
     // untouched sample it still opens on its own.
     const sample = this.files.size === Object.keys(SAMPLE).length && Object.entries(SAMPLE).every(([n, t]) => this.files.get(n) === t);
     if (!hasDoc && (!onlyTex.length || (!sample && !zipName))) {
-      // Add to the current project (bib files, images, chapters)
+      for (const n of held) { texts.delete(n); orig.delete(n); blobs.delete(n); extra.delete(n); }
+      if (!texts.size && !blobs.size && !extra.size) { this.toast('Not opened: this project already has ' + held.join(', ') + '. Open them from a new document.', 9000); return; }
+      // Add to the current project (bib files, images, chapters). A file of the same name is
+      // replaced, as an upload to Overleaf replaces it: the version before is kept in History
+      // first (opening a .tex with the installed app comes here too, and left no way back).
+      const over = [...texts.keys(), ...blobs.keys(), ...extra.keys()].filter((n) => this.files.has(n) || this.assetBlobs.has(n) || this.extra.has(n));
+      if (over.length && this.base) await this.snapshot('Before ' + over[0] + (over.length > 1 ? ' and ' + (over.length - 1) + ' more' : '') + ' was replaced', { force: true });
+      // Files shared to the app may come from any web page, and a class, a package or a .bib is
+      // code TeX runs: with them in it, the project is someone else's as far as shell escape
+      // goes, until the owner ticks Shell escape (the click on Open was all that was asked).
+      if (from) this.markFromLink('', this.name, this.main, from);
       for (const [n, t] of texts) this.files.set(n, t);
       for (const [n, o] of orig) this.orig.set(n, o);
       for (const [n, b] of blobs) this.addAsset(n, b);
@@ -3661,7 +3699,8 @@ class App {
       const fig = [...blobs.keys()][0];
       const widget = [...texts.keys()].find((n) => /\.html?$/i.test(n));
       const use = onlyTex.length ? ' Write \\input{' + onlyTex[0].replace(/\.tex$/i, '') + '} where it goes.' : widget ? ' Write \\rikuywidget{' + widget + '}{' + (fig || 'fallback.png') + '} where it goes (rikuy.sty, from Rikuy\'s sample/widget, defines it).' : fig ? ' Write \\includegraphics{' + fig + '} where it goes.' : '';
-      this.toast('Added ' + [...texts.keys(), ...blobs.keys(), ...extra.keys()].join(', ') + ' to the project.' + use + skipNote, skipNote || use ? 9000 : undefined);
+      const heldNote = held.length ? ' Not replaced: ' + held.join(', ') + ', which the project has.' : '';
+      this.toast('Added ' + [...texts.keys(), ...blobs.keys(), ...extra.keys()].join(', ') + ' to the project.' + use + heldNote + skipNote, skipNote || use || heldNote ? 9000 : undefined);
       return;
     }
     // the project open until now stays in this browser; the toast says where, so nobody thinks it gone
@@ -3683,7 +3722,7 @@ class App {
     // its shell escape is restricted (the worker runs only TeX Live's safe programs, keeps no
     // LuaTeX font cache and is let go after) until the owner allows more. Loose .tex/.bib files
     // the user opened are their own and stay unrestricted.
-    if (zipName || gitFiles.has('.git/HEAD')) this.markFromLink('', this.name, this.main, gitFiles.has('.git/HEAD') ? 'git' : 'zip');
+    if (from || zipName || gitFiles.has('.git/HEAD')) this.markFromLink('', this.name, this.main, from || (gitFiles.has('.git/HEAD') ? 'git' : 'zip'));
     this.hist = []; this.redoStack = []; this.updateUndoUI();
     this.forceRender = true;
     this.srcFile = this.main;
@@ -3913,10 +3952,15 @@ class App {
     this.prefs.pdf = on;
     store(PREFS, this.prefs);
     if (on) {
-      if (!this.pdfView) this.pdfView = new PdfView($('#pdf-host'), { workerUrl: new URL('tex/pdf.worker.min.mjs', location.href).href, onClickSource: (f, line) => this.fromPdf(f, line) });
+      this.pdfPane();
       if (!this.lastPdf || this.pdfStale) this.compilePdf();
     }
     setTimeout(() => { if (this.computePx()) this.relayout(true); }, 30);
+  }
+
+  pdfPane() {
+    if (!this.pdfView) this.pdfView = new PdfView($('#pdf-host'), { workerUrl: asset('tex/pdf.worker.min.mjs'), onClickSource: (f, line) => this.fromPdf(f, line) });
+    return this.pdfView;
   }
 
   texEngine() {
@@ -3927,7 +3971,7 @@ class App {
       // the page's own address can name a mirror only on its own site: a link to someone's copy
       // with ?texlive= pointing elsewhere would fill their browser's TeX cache from a stranger
       try { if (mirror && new URLSearchParams(location.search).get('texlive') === mirror && new URL(mirror, location.href).origin !== location.origin) mirror = null; } catch (e) { mirror = null; }
-      this.tex = new TeXEngine(new URL('tex/', location.href).href, mirror ? new URL(mirror, location.href).href : null);
+      this.tex = new TeXEngine(new URL('tex/', location.href).href, mirror ? new URL(mirror, location.href).href : null, asset('tex/'));
       this.tex.onStatus = (s) => this.texStatus(s);
     }
     return this.tex;
@@ -4001,9 +4045,25 @@ class App {
     return files.filter((x) => cleanPath(x.path) === x.path);
   }
 
+  // "Make available offline" (src/pwa.js) compiles the open document once: whatever it reads
+  // beyond the planned folders is then kept too. Gives the packs it read, [number, folder].
+  // Also whether it went through: {read, unkept, ok, failed}, or null when no compile ended
+  // (another project was opened, or nothing came back in six minutes).
+  async compileForOffline() {
+    const until = Date.now() + 360000;
+    const idle = async () => { while (this.compiling && Date.now() < until) await new Promise((r) => setTimeout(r, 150)); };
+    await idle();
+    if (this.compiling) return null;
+    this.pdfPane(); // the viewer too: its scripts are then kept with the rest
+    await Promise.race([this.compilePdf(), new Promise((r) => setTimeout(r, Math.max(0, until - Date.now())))]);
+    await idle();
+    return this.compiling ? null : this.lastCompile;
+  }
+
   async compilePdf(opts = {}) {
     if (this.compiling) { this.compileAgain = opts.clean ? 'clean' : (this.compileAgain || true); return; }
     this.compiling = true;
+    this.lastCompile = null;
     this.pdfStale = false;
     this.stopped = false;
     const gen = this.pdfGen || 0;
@@ -4034,6 +4094,9 @@ class App {
       this.syncEngineMenu();
       const res = await engine.compile({ project: this.name + '|' + this.main, files: await this.compileFiles(), main: this.main, clean: !!opts.clean, bibSig, engine: this.engineChoice(), shellEscape: this.prefs.shellEscape !== false && !untrusted, untrusted });
       if (gen !== (this.pdfGen || 0)) return; // another project was opened meanwhile
+      this.lastCompile = { read: res.read || [], unkept: res.unkept || [], ok: !!res.ok, failed: '' };
+      // TeX stopped where a file's pack could not be loaded (offline, or the network failed)
+      if (res.unkept && res.unkept.length) throw Object.assign(new Error('Some TeX files could not be loaded (' + res.unkept.slice(0, 5).join(', ') + (res.unkept.length > 5 ? ' and more' : '') + '); check the network and compile again'), { unkept: res.unkept });
       const issues = parseTeXLog(res.log);
       this.engineLabel = res.engineLabel || 'LaTeX';
       this.showEngine(res);
@@ -4069,6 +4132,8 @@ class App {
         warns ? warns + (warns === 1 ? ' warning' : ' warnings') + ' from ' + this.engineLabel + ', such as undefined references. Show them' : '';
       if (errs || warns) msg.firstChild && (msg.title = this.texIssues.slice(0, 3).map((x) => x.msg).join('\n'));
     } catch (e) {
+      const why = this.stopped ? 'stopped' : String((e && e.message) || e || 'failed');
+      if (this.lastCompile) this.lastCompile.failed = why; else this.lastCompile = { read: [], unkept: [], ok: false, failed: why };
       if (this.stopped) {
         this.stopped = false;
         st.innerHTML = '<b>' + (this.engineLabel || 'TeX') + '</b> stopped';
@@ -4080,7 +4145,10 @@ class App {
       st.textContent = 'TeX could not run here';
       $('#pdf-host').innerHTML = '';
       const d = document.createElement('div'); d.className = 'pdf-empty';
-      d.textContent = (e && e.message ? e.message + '. ' : '') + 'The page preview can still be printed.';
+      // offline, a file TeX has not kept fails to load; say what to do rather than "Failed to fetch"
+      const need = e && e.unkept ? ' (' + e.unkept.slice(0, 5).join(', ') + (e.unkept.length > 5 ? ' and more' : '') + ')' : '';
+      const off = __RIKUY_APP__ && APP.on && navigator.onLine === false ? 'You are offline, and this document needs TeX files this browser has not kept yet' + need + '. Compile it once with a network and they stay; Make available offline in the status bar keeps those of a typical paper and of the open document. ' : '';
+      d.textContent = off + (e && e.message && !(off && need) ? e.message + '. ' : '') + 'The page preview can still be printed.';
       const b = document.createElement('button'); b.className = 'btn sm'; b.type = 'button'; b.textContent = 'Print the preview'; b.style.marginTop = '10px';
       b.addEventListener('click', () => this.printPDF());
       d.append(document.createElement('br'), b);
@@ -4394,10 +4462,13 @@ function commonDir(names) {
 }
 function stripTop(n) { const i = n.indexOf('/'); return i > 0 && n.split('/').length > 1 ? n.slice(i + 1) : n; }
 
-Object.assign(App.prototype, collab);
+Object.assign(App.prototype, collab, word);
+// the Word worker's files, asked for as the page asks for its other files (src/word.js)
+App.prototype.assetUrl = asset;
 
 const app = new App();
 window.rikuy = app;
 installCollab(app);
+installWord(app);
 app.isBalanced = isBalanced;
 app.init().catch((e) => { console.error(e); const b = document.getElementById('boot'); if (b) b.textContent = 'Rikuy could not start: ' + e.message; });

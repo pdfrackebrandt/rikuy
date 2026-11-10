@@ -11,9 +11,10 @@
 //   b-*, t-*    biber and the shell's programs, fetched on first use
 // Every file travels as a WebAssembly module with one custom section (see unwrap()).
 // Messages in:  {init, base, mirror, env}, {compile: {id, project, files, main, engine, shellEscape, untrusted, clean, bibSig}},
-//               {prefetch: [packs]}, {exec: {args, files, read, list}} (build scripts and tests),
-//               {shell} (one program through the shell, for tests)
-// Messages out: {status}, {ready}, {result}, {execResult}, {shellResult}, {error}
+//               {prefetch: [packs]}, {keep: {folders}} (packs kept for offline use, not unpacked),
+//               {exec: {args, files, read, list}} (build scripts and tests), {shell} (one program
+//               through the shell, for tests)
+// Messages out: {status}, {ready}, {result}, {kept}, {execResult}, {shellResult}, {error}
 
 /* global busytex, fflate */
 // The page starts this worker from a small blob script (blob workers take the page's own
@@ -86,10 +87,29 @@ async function cacheGet(key) {
     } catch (e) { resolve(null); }
   });
 }
+// resolves true once the value is written, false when the browser refused it (quota, storage off)
 async function cachePut(key, val) {
   const d = await db();
-  if (!d) return;
-  try { d.transaction('blobs', 'readwrite').objectStore('blobs').put(val, key); } catch (e) { /* quota: fine */ }
+  if (!d) return false;
+  return new Promise((resolve) => {
+    try {
+      const t = d.transaction('blobs', 'readwrite');
+      t.oncomplete = () => resolve(true);
+      t.onerror = t.onabort = () => resolve(false);
+      t.objectStore('blobs').put(val, key);
+    } catch (e) { resolve(false); } // quota: fine
+  });
+}
+async function cacheHas(key) {
+  const d = await db();
+  if (!d) return false;
+  return new Promise((resolve) => {
+    try {
+      const q = d.transaction('blobs', 'readonly').objectStore('blobs').count(key);
+      q.onsuccess = () => resolve(q.result > 0);
+      q.onerror = () => resolve(false);
+    } catch (e) { resolve(false); }
+  });
 }
 
 // SHA-256, synchronous: mirror packs are read from inside TeX, which cannot wait for
@@ -192,6 +212,65 @@ async function loadPackAsync(n) {
   return job;
 }
 
+// The packs "Make available offline" keeps (src/pwa.js): the core packs and every pack holding a
+// file under one of the given folders of texmf-dist. A folder is a path inside the tree, never
+// outside it; the result is pack numbers of this index, so a page cannot name other files.
+// An entry ending in * names the files of a folder that start so (cm-super is 29 MB, and a
+// paper reads a few of its families): folder/sfrm* is sfrm0500.pfb to sfrm3583.pfb.
+function keepPlan(folders) {
+  const pre = [];
+  for (const f of folders || []) {
+    const some = /[^/*]\*$/.test(String(f));
+    const p = String(f).replace(/\*$/, '').replace(/^\/+|\/+$/g, '');
+    if (p && !p.split('/').some((x) => x === '..' || x === '.' || x === '' || x.includes('*'))) pre.push('/texlive/texmf-dist/' + p + (some ? '' : '/'));
+  }
+  const want = new Set(INDEX.core || []);
+  for (const f of INDEX.files) if (pre.some((p) => f[0].startsWith(p))) want.add(f[2]);
+  return [...want].sort((a, b) => a - b);
+}
+// Fetches the planned packs this browser does not keep yet into the cache, as they come, without
+// unpacking them (a compile unpacks what it reads); a second session, or the service worker
+// answering TeX's synchronous reads while offline, finds them there.
+async function keep(folders) {
+  const plan = keepPlan(folders);
+  const total = plan.reduce((s, n) => s + INDEX.packs[n].z, 0);
+  let got = 0, fetched = 0;
+  const todo = [];
+  for (const n of plan) { if (await cacheHas('p:' + INDEX.packs[n].h)) got += INDEX.packs[n].z; else todo.push(n); }
+  status('keep', { got, total });
+  let i = 0;
+  const lane = async () => {
+    while (i < todo.length) {
+      const P = INDEX.packs[todo[i++]];
+      const z = await fetchBytes(P.f);
+      if (!(await cachePut('p:' + P.h, z))) throw new Error('this browser has no room left to keep them');
+      got += P.z; fetched += z.length;
+      status('keep', { got, total });
+    }
+  };
+  await Promise.all([lane(), lane(), lane(), lane()]);
+  return { packs: plan.length, total, fetched, plan };
+}
+
+// What one compile read and could not load, by pack number (compile() empties both).
+const jobPacks = new Set();
+const packMissed = new Set();
+// The folder of the tree a pack holds, as build_tree.py grouped the files ('core' for the packs
+// loaded at start): what the page shows for a pack, and what src/pwa.js lists.
+function packFolder(n) {
+  if ((INDEX.core || []).includes(n)) return 'core';
+  const f = INDEX.files.find((x) => x[2] === n);
+  if (!f) return 'pack ' + n;
+  const t = f[0].replace(/^\/texlive\/texmf-dist\//, '').replace(/^\//, '').split('/');
+  return t.slice(0, Math.max(1, Math.min(t.length - 1, t[0] === 'fonts' ? 4 : t[0] === 'tex' ? 3 : 2))).join('/');
+}
+
+// (a large folder is cut into several packs: the first file's name tells them apart)
+function packFirst(n) {
+  const f = INDEX.files.find((x) => x[2] === n);
+  return f ? f[0].slice(f[0].lastIndexOf('/') + 1) : '';
+}
+
 // Called from inside TeX (synchronously) when it opens a file whose pack is not here yet.
 function loadPackSync(n) {
   if (packs.has(n)) return packs.get(n);
@@ -200,12 +279,19 @@ function loadPackSync(n) {
   const x = new XMLHttpRequest();
   x.open('GET', P.f, false);
   x.responseType = 'arraybuffer';
-  x.send();
-  if (x.status !== 200) throw new Error('pack ' + P.f + ' HTTP ' + x.status);
-  const z = unwrap(new Uint8Array(x.response));
+  // Without a network (and the pack not kept) send() throws. TeX stops there, in the middle of
+  // a page; the compile says which folders were missing rather than hand over half a PDF.
+  // The same for bytes that do not unpack (a transfer cut short): they are not kept either.
+  let failed = '', z = null, raw = null;
+  try { x.send(); if (x.status !== 200) failed = 'HTTP ' + x.status; } catch (e) { failed = 'no network'; }
+  if (!failed) {
+    try { z = unwrap(new Uint8Array(x.response)); raw = fflate.gunzipSync(z); } catch (e) { failed = 'does not unpack'; }
+  }
+  if (failed) { packMissed.add(n); throw new Error('pack ' + P.f + ' ' + failed); }
+  // a later pass of the same compile that gets the pack after all has what it needs
+  packMissed.delete(n);
   netBytes += z.length;
   cachePut('p:' + P.h, z);
-  const raw = fflate.gunzipSync(z);
   packs.set(n, raw);
   return raw;
 }
@@ -277,6 +363,7 @@ function populate(Module) {
           usedPacks.add(pack);
         }
         if (readLog) readLog.add(path);
+        jobPacks.add(pack);
         return data;
       },
       set(v) { data = v; }
@@ -1195,6 +1282,7 @@ async function compile(job) {
   projectPath(job.main);
   const t0 = performance.now();
   readLog = new Set();
+  jobPacks.clear(); packMissed.clear();
   netBytes = 0;
   pipeCache.clear(); pipeCacheSize = 0; pipeSessions.clear();
   const dir = projectDir(job.project || job.id); // stable per project, so its .aux and .bbl carry over
@@ -1370,7 +1458,8 @@ async function compile(job) {
   if (engine === 'lualatex' && !job.untrusted) saveFontCaches().catch(() => {});
   // pdfTeX leaves an empty .pdf behind when a run had "No pages of output": that is no PDF
   const pdfFile = readBytes(base + '.pdf');
-  const pdf = pdfFile && pdfFile.length ? pdfFile : null;
+  // (nor is what TeX had written when a file it needed could not be loaded)
+  const pdf = pdfFile && pdfFile.length && !packMissed.size ? pdfFile : null;
   const synctex = readBytes(base + '.synctex.gz');
   const out = {
     id: job.id,
@@ -1385,6 +1474,9 @@ async function compile(job) {
     passes: texPasses(),
     shell: SHELL.state.log.slice(0, 200),
     missing: [...SHELL.state.missing],
+    // the packs this compile read, [number, folder], and the folders of those it could not load
+    read: [...jobPacks].sort((x, y) => x - y).map((n) => [n, packFolder(n), packFirst(n)]),
+    unkept: [...new Set([...packMissed].map(packFolder))],
     ms: Math.round(performance.now() - t0),
     net: netBytes,
     reads: job.trace ? [...readLog] : undefined,
@@ -1450,6 +1542,12 @@ onmessage = async ({ data }) => {
     } else if (data.prefetch) {
       await booting;
       await Promise.all(data.prefetch.map((n) => loadPackAsync(n).catch(() => null)));
+    } else if (data.keep) {
+      try {
+        if (!booting) throw new Error('the engine has not started');
+        await booting;
+        post({ kept: await keep(data.keep.folders) });
+      } catch (e) { post({ kept: { error: String((e && e.message) || e) } }); }
     } else if (data.compile) {
       await booting;
       const res = await compile(data.compile);

@@ -119,7 +119,7 @@ export const collab = {
     p.append(mk('div', 'share-sep'));
     p.append(mk('p', 'share-or', 'Take it elsewhere, as plain LaTeX:'));
     const row = mk('div', 'pop-row share-out');
-    row.append(btn('Open in Overleaf', () => this.openInOverleaf()), btn(this.exportLabel(), () => this.save()));
+    row.append(btn('Open in Overleaf', () => this.openInOverleaf()), btn(this.exportLabel(), () => this.save()), btn('Word (.docx)', () => { this.closePop(true); this.saveDocx(); }));
     const strip = mk('label', 'share-strip');
     const cb = mk('input'); cb.type = 'checkbox'; cb.checked = !!this.prefs.stripComments;
     cb.addEventListener('change', () => { this.prefs.stripComments = cb.checked; this.savePrefs(); });
@@ -208,7 +208,7 @@ export const collab = {
     // a .zip or a git repository is content from someone else just as a link is, so it is
     // restricted the same way; the wording follows how it arrived
     const origin = v && v.origin;
-    const came = origin === 'zip' ? 'was opened from a .zip file' : origin === 'git' ? 'was cloned from a git repository' : 'came in a link from ' + who;
+    const came = origin === 'zip' ? 'was opened from a .zip file' : origin === 'git' ? 'was cloned from a git repository' : origin === 'share' ? 'was shared to Rikuy from another app' : origin === 'docx' ? 'was opened from a Word file' : origin === 'word' ? 'has edits from a Word file by ' + who : 'came in a link from ' + who;
     issues.unshift({ sev: 'warn', file: null, line: null, msg: 'Shell escape is restricted: this document ' + came + ', so it runs only the programs TeX Live allows by default. Tick Shell escape if you trust it.' });
     const k = this.name + '|' + this.main;
     this.restrictNoted = this.restrictNoted || new Set();
@@ -482,6 +482,24 @@ export const collab = {
   },
 
   // ---- leaving ------------------------------------------------------------------------
+  // the caret beside Save: the project as it is (.tex or .zip), as Word, or the PDF
+  openSaveMenu() {
+    const p = this.makePop($('#b-save-more'), 'pop-save', 'Save');
+    p.setAttribute('role', 'menu');
+    const item = (label, sub, fn) => {
+      const b = mk('button', 'save-item'); b.type = 'button'; b.setAttribute('role', 'menuitem');
+      b.append(mk('b', '', label), mk('span', '', sub));
+      b.addEventListener('click', () => { this.closePop(true); fn(); });
+      p.append(b);
+      return b;
+    };
+    item(this.singleFile() ? 'LaTeX (.tex)' : 'Project (.zip)', 'Exactly the source, for Overleaf or your own TeX', () => this.save());
+    item('Word (.docx)', 'Native Word equations and footnotes; a coauthor\'s edits there come back as changes', () => this.saveDocx());
+    item('PDF', 'As TeX typesets it', () => (this.lastPdf ? this.downloadPdf() : this.togglePdf(true)));
+    this.positionPop();
+    p.querySelector('button.save-item').focus();
+  },
+
   // one .tex when the project is one file, else a .zip; both exactly the source
   exportLabel() { return this.singleFile() ? 'Download ' + this.main.split('/').pop() : 'Download .zip'; },
   singleFile() { return this.files.size === 1 && !this.assetBlobs.size && !this.extra.size; },

@@ -15,9 +15,10 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - run: npm ci
+      # without the dev dependencies: wrangler (and its 100 MB runtime) is only for deploy.yml
+      - run: npm ci --omit=dev
       # every test must pass; a test that cannot run here is left out, never run with `|| true`
-      - name: Unit tests (editor model, minimal patch, siunitx, xindy against TeX Live's)
+      - name: Unit tests (editor model, minimal patch, siunitx, xindy against TeX Live's, Pages' limits)
         run: npm test
       - name: Editor model on the LaTeX-examples corpus
         run: |
@@ -40,12 +41,16 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.13'
-      - run: npm ci
+      - run: npm ci --omit=dev
       - run: npm run build
-      # the versions the tests last passed with; pypdf lets frontier.py read its printed PDF back
+      # deploy.yml's check on the hosted build, without dist/tex: it fits Cloudflare Pages
+      - name: The hosted build within Cloudflare Pages' limits (a dry run of deploy.yml's check)
+        run: python3 dev/pages_check.py dist
+      # the versions the tests last passed with; pypdf lets frontier.py read its printed PDF back,
+      # python-docx lets word.py write and edit Word files as Word users' tools do
       - name: Playwright and Chromium
         run: |
-          python3 -m pip install playwright==1.56.0 pypdf==5.9.0
+          python3 -m pip install playwright==1.56.0 pypdf==5.9.0 python-docx==1.2.0
           python3 -m playwright install --with-deps chromium
       # every test must pass; a test that cannot run here is left out, never run with `|| true`
       - name: Typing on the page
@@ -72,3 +77,21 @@ jobs:
         run: cd test && python3 share.py
       - name: Live figures (rikuy.sty), under the host's policy
         run: cd test && python3 widgets.py
+      # its compile offline needs dist/tex and runs in tex.yml; here it says it skips that part
+      - name: The installed app offline, its updates, and none in the artifact build
+        run: cd test && python3 offline.py
+      - name: Opening .tex, .bib and .zip with the installed app, and sharing files to it
+        run: cd test && python3 launch.py
+      - name: Word, both ways, and a coauthor's edits back (LibreOffice's checks run where it is installed)
+        run: cd test && python3 word.py
+  # the workflows themselves: actionlint, run through Go's module proxy, which checks the module
+  # against the checksum database (sum.golang.org), so the version is pinned by hash
+  workflows:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+      - name: actionlint
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
