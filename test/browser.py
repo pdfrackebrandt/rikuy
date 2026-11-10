@@ -465,6 +465,67 @@ def popovers(page):
     check('popovers: undo gives the bytes back', src(page) == base)
 
 
+def first_words(page):
+    """What someone who has never used LaTeX does first: New document and typing at once,
+    deleting it all and typing again, a formula or a heading as the first thing in a paragraph,
+    Enter in the title, Backspace in a heading left empty."""
+    body = lambda: src(page)[src(page).find('\\begin{document}') + 16:src(page).find('\\end{document}')]
+    slow = dict(delay=40)   # the math field takes keys as a person types them, not all at once
+    page.click('#b-new')
+    page.wait_for_function('window.rikuy.name.startsWith("Untitled") && window.rikuy.ghost', timeout=5000)
+    name = page.evaluate('window.rikuy.name')
+    page.keyboard.type('First words')
+    wait_src(page, 'First words')
+    check('after New document the first words typed land on the page, with no click', 'First words' in body() and page.evaluate('window.rikuy.name') == name, (body(), page.evaluate('window.rikuy.name')))
+    for _ in range(len('First words')): page.keyboard.press('Backspace')
+    page.wait_for_timeout(150)
+    page.keyboard.type('again')
+    wait_src(page, 'again')
+    check('with every word deleted, typing starts the document again', body().strip() == 'again', body())
+    page.keyboard.press('Enter'); page.keyboard.type('$'); page.wait_for_timeout(400)
+    opened = page.evaluate('!!document.querySelector("body > .pop.pop-math")')
+    page.keyboard.type('x^2', **slow); page.wait_for_timeout(100); page.keyboard.press('Enter')
+    wait_src(page, '$x^2$')
+    check('a dollar sign on a new line starts a formula, as it does inside a line', opened and 'again\n\n$x^2$' in body(), body())
+    page.keyboard.type(' is math'); page.keyboard.press('Enter'); page.keyboard.type('$'); page.wait_for_timeout(400)
+    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    page.keyboard.type('next')
+    wait_src(page, 'next')
+    check('closing that formula empty leaves the caret on the line', re.search(r'is math\n\nnext\s*$', body()), body())
+    page.keyboard.press('Enter'); page.keyboard.type('\\'); page.wait_for_timeout(400)
+    pal = page.evaluate('!!document.querySelector("body > .pop.pop-pal")')
+    page.keyboard.type('sec', **slow); page.wait_for_timeout(200); page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    page.keyboard.type('Results')
+    wait_src(page, '\\section{Results}')
+    check('a backslash on a new line opens the list of things to insert', pal and '\\section{Results}' in body(), body())
+    click_text(page, 'Results'); page.keyboard.press('Shift+End'); page.keyboard.press('Delete'); page.wait_for_timeout(200)
+    emptied = '\\section{}' in body()
+    page.keyboard.press('Backspace'); page.wait_for_timeout(200)
+    check('Backspace in a heading left empty removes the heading', emptied and '\\section' not in body() and 'next' in body(), body())
+    # a formula as the first thing in a new document, then more typing
+    page.click('#b-new'); page.wait_for_timeout(400)
+    page.keyboard.type('$'); page.wait_for_timeout(400); page.keyboard.type('y', **slow); page.wait_for_timeout(100); page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    page.keyboard.type('follows')
+    wait_src(page, 'follows')
+    check('after a formula that is all the document holds, typing goes on', re.search(r'\$y\$\s+follows', body()), body())
+    # a title alone: the page had nowhere to start the text
+    load_doc(page, '\\documentclass{article}\n\\title{Only a title}\n\\begin{document}\n\\maketitle\n\\end{document}\n')
+    page.wait_for_timeout(200)
+    r = page.evaluate('(() => { const r = document.querySelector(".page").getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()')
+    page.mouse.click(*r); page.keyboard.type('Below')
+    wait_src(page, 'Below')
+    check('under a title alone, a click on the page and typing start the first paragraph', '\\title{Only a title}' in src(page) and '\\maketitle\n\nBelow' in src(page), src(page))
+    for _ in range(5): page.keyboard.press('Backspace')
+    page.wait_for_timeout(150)
+    r = page.evaluate('(() => { const s = [...document.querySelectorAll("#pages span.t")].find((s) => s.textContent.includes("Only a title")); const r = s.getBoundingClientRect(); return [r.right - 2, r.top + r.height / 2]; })()')
+    page.mouse.click(*r); page.keyboard.type('!')
+    wait_src(page, 'title!')
+    check('and the title itself is still edited where it stands', '\\title{Only a title!}' in src(page), src(page))
+    page.keyboard.press('Enter'); page.keyboard.type('From the title')
+    wait_src(page, 'From the title')
+    check('Enter in the title starts the text after \\maketitle', '\\title{Only a title!}' in src(page) and '\\maketitle\n\nFrom the title' in src(page), src(page))
+
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
@@ -773,6 +834,11 @@ def run():
         E.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
         check('an edit made just before navigating away is kept', 'WRikuy escapes' in src(E), src(E)[src(E).find('Rikuy escapes') - 3:][:20])
         check('no console errors (tabs)', not errors, errors[:5])
+        browser.close()
+
+        browser, page, errors = open_page(p)
+        first_words(page)
+        check('no console errors (first words)', not errors, errors[:5])
         browser.close()
 
         # on a page of its own, so nothing above meets the PDF pane

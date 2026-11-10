@@ -482,6 +482,9 @@ class App {
     this.renderer.sync(model, this.prefix);
     this.layoutPass();
     if (caret) this.restoreCaret(caret);
+    // the edit took the last text off the page: the caret goes to the blank paragraph that
+    // stands in for it (it was left nowhere, and the next keystroke did nothing)
+    if (caret && this.ghost && this.ghost.sticky && document.activeElement === this.root && caret.f === this.ghost.f && caret.p >= this.ghost.pos) this.caretToGhost();
     this.status(performance.now() - t0);
   }
 
@@ -572,7 +575,9 @@ class App {
   // A document with no text on the page to type into (a new one, an empty file, a preamble
   // alone): a blank paragraph at the end of its body that stays, so typing on the page starts it.
   emptyGhost() {
-    if (this.root.querySelector('span.t')) return;
+    // a title block does not count: its text is \title's, and below it there is still nowhere
+    // to put a first paragraph
+    for (const t of this.root.querySelectorAll('span.t')) if (!t.closest('.it.ttl')) return;
     const flows = this.root.querySelectorAll('.page .flow');
     const flow = flows[flows.length - 1];
     if (!flow) return;
@@ -587,6 +592,10 @@ class App {
     g.appendChild(mk('span', 't gh', '\u200B'));
     flow.appendChild(g);
     this.ghost = { el: g, f, pos, sticky: true };
+  }
+  caretToGhost() {
+    this.root.focus({ preventScroll: true });
+    getSelection().collapse(this.ghost.el.firstChild.firstChild, 1);
   }
 
   relayout(force) {
@@ -986,10 +995,12 @@ class App {
   insertText(data, range) {
     if (!data) return;
     const c = this.caretNow();
-    if (c && c.ghost) { this.ghostInsert(escapeTeX(data, ' ')); return; }
     if (!c) return;
-    if (data === '$' && (!range && c.collapsed)) { this.newMath(); return; }
-    if (data === '\\' && (!range && c.collapsed)) { this.openPalette(); return; }
+    // in a blank paragraph too (a new document, the line after Enter): there they were typed
+    // as the characters, though that is where an equation or a heading most often starts
+    if (data === '$' && !range && (c.collapsed || c.ghost)) { this.newMath(); return; }
+    if (data === '\\' && !range && (c.collapsed || c.ghost)) { this.openPalette(); return; }
+    if (c.ghost) { this.ghostInsert(escapeTeX(data, ' ')); return; }
     const f = range ? range.f : c.f;
     let a = range ? range.a : c.a, b = range ? range.b : c.b;
     const src = this.src(f);
@@ -1033,6 +1044,17 @@ class App {
         if (y && this.src(y.f).slice(y.is, y.ie).trim() === '') {
           this.commit([{ f: y.f, s: y.s, e: y.e, t: '' }], { f: y.f, p: y.s }, 'del');
           return;
+        }
+        // A heading whose words were all deleted: the next Backspace or Delete takes the heading
+        // itself. It stayed as a number with nothing after it, and only the source could remove it.
+        if (ph.closest('.it.h')) {
+          const src = this.src(c.f);
+          const open = /\\(?:part|chapter|(?:sub){0,2}section|(?:sub)?paragraph)\*?\s*(?:\[[^\]]*\]\s*)?\{\s*$/.exec(src.slice(0, c.a));
+          const close = /^\s*\}/.exec(src.slice(c.a));
+          if (open && close) {
+            this.commit([{ f: c.f, s: open.index, e: c.a + close[0].length, t: '' }], { f: c.f, p: open.index, bias: -1 }, 'del');
+            return;
+          }
         }
       }
       const tr = ranges && ranges[0];
@@ -1153,8 +1175,15 @@ class App {
       this.commit([...edits, { f, s: p, e: p, t: '\\\\\n' }], { f, p: p + 3, bias: 1 }, 'type');
       return;
     }
-    if (kind === 'cell' || kind === 'cap' || kind === 'ttl') return;
+    if (kind === 'cell' || kind === 'cap') return;
     const itemEl = el.closest('.it');
+    if (kind === 'ttl') {
+      // Enter in the title, an author or the date starts the text below them, after \maketitle
+      // (it did nothing, so a document with a title alone had no way to its first paragraph)
+      const B = itemEl && BLOCKS.get(+itemEl.dataset.b);
+      if (B) this.showGhost(itemEl, B.f, B.e);
+      return;
+    }
     if (kind === 'h') {
       const B = itemEl && BLOCKS.get(+itemEl.dataset.b);
       // the \label on the heading's next line stays with the heading: the new paragraph goes after it
@@ -1456,7 +1485,8 @@ class App {
     if (!atomEl) {
       this.disarm();
       // an empty document: a click anywhere on the page goes to the blank paragraph
-      if (this.ghost && this.ghost.sticky) { e.preventDefault(); this.root.focus({ preventScroll: true }); getSelection().collapse(this.ghost.el.firstChild.firstChild, 1); }
+      // (not a click on the title above it, which is edited where it stands)
+      if (this.ghost && this.ghost.sticky && !e.target.closest('.it.ttl')) { e.preventDefault(); this.caretToGhost(); }
       return;
     }
     const info = atomOfEl(atomEl);
@@ -1638,6 +1668,10 @@ class App {
     P.el.remove();
     this.closeGroup();
     if (!silent && P.returnCaret) this.restoreCaret(P.returnCaret);
+    // Opened from a blank paragraph and closed with nothing made, or a document that so far
+    // holds only what the popover made (a first formula) and has no text to put the caret in:
+    // the caret goes to the blank paragraph, so typing goes on
+    if (!silent && this.ghost && this.root.contains(this.ghost.el) && !this.caretNow()) this.caretToGhost();
   }
 
   // A few Word symbols need a package beyond amsmath and amssymb (\\llbracket needs stmaryrd).
@@ -3854,6 +3888,9 @@ class App {
     let name = 'Untitled';
     for (let k = 2; taken.has(name) || name === this.name; k++) name = 'Untitled ' + k;
     this.loadProject(new Map([['main.tex', '\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\end{document}\n']]), 'main.tex', name, 'New document');
+    // ready to type: the button kept the focus, so the first words went nowhere and a space
+    // pressed it again
+    if (this.ghost && this.ghost.sticky) this.caretToGhost();
     this.toast('A new document. The one you had is under Review, Versions.', 5000);
   }
 
