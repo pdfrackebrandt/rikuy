@@ -525,4 +525,20 @@ await ok('code keeps no colour marks: a file pandoc wrote with highlighted code 
   assert.ok(!/textcolor/.test(open(col).tex));
 });
 
+await ok('names from the document that every object has (constructor, __proto__) are unknown names, not lookups that hit', () => {
+  for (const c of ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf!50', 'Constructor']) assert.equal(wordColor(c), null, c);
+  assert.equal(wordColor('Red!50'), 'FF8080');
+  // Save as Word with such a colour name: the text without the colour, said so; no throw
+  const src = doc('A \\textcolor{constructor}{word}, \\colorbox{__proto__}{two}, \\textcolor{toString!30}{three} and $\\textcolor{hasOwnProperty}{x}$.\n', '\\usepackage{xcolor}\n\\definecolor{__proto__}{HTML}{C00000}\n\\definecolor{constructor}{rgb}{2,0,0}\n');
+  const files = new Map([['main.tex', src]]);
+  const m = buildModel({ files, main: 'main.tex' });
+  const W = buildWordDoc(m, files, { now: 0 });
+  assert.ok(W.degraded.some((d) => /text in a colour the preamble defines, without the colour \(2\)/.test(d)), W.degraded.join('|'));
+  const d = text(unzip(exportFiles(files).docx).get('word/document.xml'));
+  assert.ok(d.includes('word') && d.includes('three') && /<w:rStyle w:val="ShadeC00000" \/>/.test(d), 'the defined one keeps its shade');
+  // a Word file whose text, styles, bookmarks and comment ids are such names opens like any other
+  const odd = open(tiny('<w:p><w:pPr><w:pStyle w:val="constructor"/></w:pPr><w:bookmarkStart w:id="1" w:name="__proto__"/><w:r><w:rPr><w:rStyle w:val="toString"/></w:rPr><w:t>Odd \u2264 names</w:t></w:r><w:bookmarkEnd w:id="1"/><w:commentRangeStart w:id="constructor"/></w:p><w:p><w:hyperlink w:anchor="constructor"><w:r><w:t>link</w:t></w:r></w:hyperlink></w:p>'));
+  assert.ok(bodyOf(odd.tex).includes('Odd \\(\\leq\\) names\n\nlink'), odd.tex);
+});
+
 console.log('word: ' + n + ' groups of checks passed');

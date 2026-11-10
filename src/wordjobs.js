@@ -307,7 +307,7 @@ function tidy(doc, info, textW, N) {
       if (!x || typeof x !== 'object') continue;
       if (x.t === 'Math') {
         let t = '';
-        for (const ch of x.c[1]) t += MATHSYM[ch] ?? ch;
+        for (const ch of x.c[1]) t += Object.hasOwn(MATHSYM, ch) ? MATHSYM[ch] : ch;
         x.c[1] = t;
         for (const ch of t) if (ch > '\u007f' && !PLAIN.test(ch) && !GREEK.test(ch) && !CYRILLIC.test(ch) && !MARKS.test(ch)) seen.other.set(ch, (seen.other.get(ch) || 0) + 1);
         continue;
@@ -319,7 +319,7 @@ function tidy(doc, info, textW, N) {
         if (ch < '\u0100' || PLAIN.test(ch) || MARKS.test(ch)) { cur += ch; continue; }
         if (GREEK.test(ch)) { seen.greek++; cur += ch; continue; }
         if (CYRILLIC.test(ch)) { seen.cyrillic++; cur += ch; continue; }
-        const to = SYMBOL[ch];
+        const to = Object.hasOwn(SYMBOL, ch) ? SYMBOL[ch] : null;
         if (to == null) { seen.other.set(ch, (seen.other.get(ch) || 0) + 1); cur += ch; continue; }
         if (cur) { out.push({ t: 'Str', c: cur }); cur = ''; }
         if (to) out.push({ t: 'RawInline', c: ['latex', to] });
