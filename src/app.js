@@ -1609,6 +1609,25 @@ class App {
       return;
     }
     if (!isBalanced(src, c.a, c.b)) { this.toast('That selection crosses structure. Select text inside one paragraph or cell.'); return; }
+    // A selection over several paragraphs: each paragraph's part gets the command of its own.
+    // One command around all of them took the blank lines into its braces, which TeX refuses
+    // ("Paragraph ended before \textbf was complete") and the page showed as one paragraph.
+    const parts = [];
+    for (let p = c.a, m, re = /\n[ \t]*\n\s*/g; p < c.b;) {
+      re.lastIndex = p;
+      m = re.exec(src);
+      const e = m && m.index < c.b ? m.index : c.b;
+      if (e > p && src.slice(p, e).trim()) parts.push([p, e]);
+      p = m && m.index < c.b ? m.index + m[0].length : c.b;
+    }
+    if (parts.length > 1) {
+      if (parts.some(([s, e]) => !isBalanced(src, s, e))) { this.toast('That selection crosses structure. Select text inside one paragraph or cell.'); return; }
+      const edits = [];
+      for (const [s, e] of parts) edits.push({ f: c.f, s: e, e, t: '}' }, { f: c.f, s, e: s, t: open });
+      const grown = parts.length * (open.length + 1);
+      this.commit(edits.reverse(), { f: c.f, p: c.b + grown, selA: c.a + open.length, selB: c.b + grown - 1 }, 'style');
+      return;
+    }
     this.commit([{ f: c.f, s: c.b, e: c.b, t: '}' }, { f: c.f, s: c.a, e: c.a, t: open }], { f: c.f, p: c.b + open.length, selA: c.a + open.length, selB: c.b + open.length }, 'style');
   }
 

@@ -476,9 +476,26 @@ def downloads_in_sight(page):
     check('a wide screen shows the three buttons and no Download button', not page.is_visible('#rb-dl-menu') and page.is_visible('#rb-pdf') and page.is_visible('#b-save'))
 
 
+def bold_across(page):
+    """Bold over a selection that runs across paragraphs wraps each paragraph's part: one command
+    around both took the blank line between them inside its braces, which TeX refuses."""
+    SEL = """([a, i, z, j]) => { const sp = [...document.querySelectorAll('#pages span.t')]; const A = sp.find((s) => s.textContent.includes(a)), Z = sp.find((s) => s.textContent.includes(z));
+      const r = document.createRange(); r.setStart(A.firstChild, A.textContent.indexOf(a) + i); r.setEnd(Z.firstChild, Z.textContent.indexOf(z) + j); document.getElementById('pages').focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }"""
+    load_doc(page, DOC)
+    page.evaluate(SEL, ['First paragraph', 6, 'Third paragraph', 5]); page.wait_for_timeout(100)
+    press(page, 'rb-b')
+    want = DOC.replace('First paragraph here.\n\nSecond paragraph here.\n\nThird paragraph', 'First \\textbf{paragraph here.}\n\n\\textbf{Second paragraph here.}\n\n\\textbf{Third} paragraph')
+    check('B over three paragraphs wraps the part of each, and they stay three paragraphs', src(page) == want and page.evaluate('document.querySelectorAll("#pages .it.p").length') >= 3, src(page)[src(page).find('First'):][:120])
+    check('one undo takes all of it back, byte for byte', undo_is(page, DOC))
+    page.evaluate(SEL, ['First paragraph', 6, 'Second paragraph', 6]); page.wait_for_timeout(100)
+    page.keyboard.press('Control+i'); page.wait_for_timeout(200)
+    check('the same for Ctrl+I', src(page) == DOC.replace('First paragraph here.\n\nSecond paragraph', 'First \\emph{paragraph here.}\n\n\\emph{Second} paragraph'), src(page)[src(page).find('First'):][:90])
+    check('and its undo', undo_is(page, DOC))
+
+
 def run():
     with sync_playwright() as p:
-        for fn in (top_bar, styles, letters, lists, inserts, keyboard, narrow, downloads, one_save, where_it_applies, list_edges, insert_edges, downloads_in_sight, live_graphs):
+        for fn in (top_bar, styles, letters, lists, inserts, keyboard, narrow, downloads, one_save, where_it_applies, list_edges, insert_edges, downloads_in_sight, bold_across, live_graphs):
             browser, page, errors = open_page(p)
             try:
                 fn(page)
