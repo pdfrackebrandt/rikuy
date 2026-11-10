@@ -1499,7 +1499,7 @@ class App {
     const docx = [...(dt.files || [])].find((f) => isDocx(f));
     if (docx) { this.openDocx(docx); return; }
     const imgs = !plain && !html ? [...(dt.files || [])].filter((f) => /^image\/(png|jpeg|gif|webp)$/.test(f.type)) : [];
-    if (imgs.length) { this.openFiles(imgs.map((f, i) => new File([f], 'pasted-' + Date.now().toString(36) + (i ? '-' + i : '') + '.' + f.type.slice(6).replace('jpeg', 'jpg'), { type: f.type }))); return; }
+    if (imgs.length) { this.openFiles(imgs.map((f, i) => new File([f], 'pasted-' + Date.now().toString(36) + (i ? '-' + i : '') + '.' + f.type.slice(6).replace('jpeg', 'jpg'), { type: f.type })), undefined, { fresh: true }); return; }
     let latex = '';
     try { latex = dt.getData('text/x-galley-latex') || ''; } catch (err) { latex = ''; }
     if (!latex && this.lastCopy && plain === this.lastCopy.plain) latex = this.lastCopy.latex;
@@ -3846,7 +3846,9 @@ class App {
 
   // from: how the files came when not from the user's own disk ('share': shared to the installed
   // app, which any page can do), so the project opens as someone else's
-  async openFiles(list, from) {
+  // opts.fresh: pictures from the clipboard, which have no name of their own (every screenshot
+  // is image.png) and so never stand for a file the project has
+  async openFiles(list, from, opts = {}) {
     // a Word file opens as a project of its own, or brings a coauthor's edits back (src/word.js)
     const docx = list.find((f) => isDocx(f));
     if (docx) {
@@ -3967,22 +3969,36 @@ class App {
       // A name of its own, too: never the name of a file the project has, whose bytes it would
       // replace (two pictures named in another script both came to figure.png, and versions
       // keep text alone, so the first was gone for good).
-      let placed = null, place = false;
+      // Dropped or opened under exactly the name of a picture the project has, it is that
+      // picture made again (a plot drawn anew): its bytes are replaced and no second figure is
+      // placed, unless the text does not include it yet. Only a name that came to an existing
+      // one by being made safe, and a pasted picture, get a new name.
+      let placed = null;
+      const toPlace = [], replaced = [];
       // (PNG, JPEG and PDF, which every TeX engine here includes as they are; an SVG, a GIF or
       // an EPS joins the project as before and is not written into the text)
       if (!from && !zipName && !texts.size && !extra.size && blobs.size && blobs.size <= 12 && [...blobs.keys()].every((n) => /\.(png|jpe?g|pdf)$/i.test(n))) {
         const safe = new Map();
         const taken = (n) => safe.has(n) || this.assetBlobs.has(n) || this.files.has(n) || this.extra.has(n);
         for (const [n, b] of blobs) {
+          if (!opts.fresh && this.assetBlobs.has(n) && !safe.has(n)) {
+            safe.set(n, b);
+            replaced.push(n);
+            const stem = n.replace(/\.[^.]+$/, '');
+            const used = [...this.files.values()].some((s) => s.includes(n) || s.includes(stem + '}'));
+            // (a name the project took from elsewhere is written into the source only if it is safe there)
+            if (!used && /^[A-Za-z0-9_-]+\.[A-Za-z0-9]+$/.test(n)) toPlace.push(n);
+            continue;
+          }
           const ext = /\.[A-Za-z0-9]+$/.exec(n)[0].toLowerCase();
           const base = (n.split('/').pop().slice(0, -ext.length).replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'figure').slice(0, 60);
           let name = base + ext;
           for (let k = 2; taken(name); k++) name = base + '-' + k + ext;
           safe.set(name, b);
+          toPlace.push(name);
         }
         blobs.clear();
         for (const [n, b] of safe) blobs.set(n, b);
-        place = true;
       }
       const over = [...texts.keys(), ...blobs.keys(), ...extra.keys()].filter((n) => this.files.has(n) || this.assetBlobs.has(n) || this.extra.has(n));
       if (over.length && this.base) await this.snapshot('Before ' + over[0] + (over.length > 1 ? ' and ' + (over.length - 1) + ' more' : '') + ' was replaced', { force: true });
@@ -4007,8 +4023,9 @@ class App {
       this.forceRender = true;
       // one edit for the figure and its package: one undo takes both out again. Worked out here,
       // after every await above, from the text and the caret as they are now.
-      if (place) placed = this.figureEdits([...blobs.keys()]);
-      if (placed) this.commit(placed.edits, placed.caret, 'figure');
+      if (toPlace.length) placed = this.figureEdits(toPlace);
+      // (a step of its own: two pictures dropped one after the other are two undos)
+      if (placed) { this.closeGroup(); this.commit(placed.edits, placed.caret, 'figure'); this.closeGroup(); }
       else { this.rebuild(this.caretNow()); this.pushToSource(); }
       this.updateFileTabs();
       this.saveSoon();
@@ -4017,10 +4034,13 @@ class App {
       const widget = [...texts.keys()].find((n) => /\.html?$/i.test(n));
       // a PDF dropped alone is most often a document someone hoped to edit
       const asFig = !texts.size && !extra.size && [...blobs.keys()].every((n) => /\.pdf$/i.test(n)) ? ' as a figure (a PDF cannot be opened for editing here)' : '';
-      const use = placed ? ' Undo takes ' + (blobs.size === 1 ? 'it' : 'them') + ' out of the text again.' : onlyTex.length ? ' Write \\input{' + onlyTex[0].replace(/\.tex$/i, '') + '} where it goes.' : widget ? ' Write \\rikuywidget{' + widget + '}{' + (fig || 'fallback.png') + '} where it goes (rikuy.sty, from Rikuy\'s sample/widget, defines it).' : fig ? ' Write \\includegraphics{' + fig + '} where it goes.' : '';
+      const added = [...texts.keys(), ...blobs.keys(), ...extra.keys()].filter((n) => !replaced.includes(n));
+      const use = placed ? ' Undo takes ' + (toPlace.length === 1 ? 'it' : 'them') + ' out of the text again.' : !added.length ? '' : onlyTex.length ? ' Write \\input{' + onlyTex[0].replace(/\.tex$/i, '') + '} where it goes.' : widget ? ' Write \\rikuywidget{' + widget + '}{' + (fig || 'fallback.png') + '} where it goes (rikuy.sty, from Rikuy\'s sample/widget, defines it).' : fig ? ' Write \\includegraphics{' + fig + '} where it goes.' : '';
       const heldNote = held.length ? ' Not replaced: ' + held.join(', ') + ', which the project has.' : '';
       // a few names, then a count: a .zip of fifty pictures filled the screen with their names
-      this.toast('Added ' + few([...texts.keys(), ...blobs.keys(), ...extra.keys()]) + ' to the project' + asFig + (placed ? ' and placed ' + (blobs.size === 1 ? 'it' : 'them') + ' in the text' : '') + '.' + use + heldNote + markNote + skipNote, skipNote || use || heldNote || markNote ? 9000 : undefined);
+      const said = (replaced.length ? few(replaced) + ' replaced' + (placed && !added.length ? ' and placed in the text' : '') + '.' + (added.length ? ' ' : '') : '')
+        + (added.length ? 'Added ' + few(added) + ' to the project' + asFig + (placed ? ' and placed ' + (added.length === 1 ? 'it' : 'them') + ' in the text' : '') + '.' : '');
+      this.toast(said + use + heldNote + markNote + skipNote, skipNote || use || heldNote || markNote ? 9000 : undefined);
       return;
     }
     // the project open until now stays in this browser; the toast says where, so nobody thinks it gone

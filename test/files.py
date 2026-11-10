@@ -173,16 +173,39 @@ try:
         drop(('my-plot.png', PNG)); page.wait_for_timeout(300)
         toast = drop(('my plot.png', PNG + b'\0' * 7)); page.wait_for_timeout(300)
         check('a picture whose safe name the project already has does not replace that picture', page.evaluate(BYTES, 'my-plot.png') == len(PNG) and page.evaluate(BYTES, 'my-plot-2.png') == len(PNG) + 7 and 'my-plot-2.png' in toast, (toast, page.evaluate('[...window.rikuy.assetBlobs.keys()]')))
-        # typing while a version is being kept (the await before the figure is written) must not
-        # leave the figure at an offset of the text as it was before
-        page.evaluate("""() => { const g = window.rikuy, keep = g.snapshot.bind(g); g.keptSnapshot = keep; g.snapshot = async (...a) => { g.snapshot = keep;
-          const s = g.files.get('main.tex'), at = s.indexOf('\\\\maketitle') + 10; g.commit([{ f: 'main.tex', s: at, e: at, t: '\\n\\nTyped meanwhile.' }], null, 'type'); return keep(...a); }; }""")
+        # A picture dropped under exactly the name of one the project has is that picture made
+        # again: its bytes are replaced and no second figure is placed.
+        count = lambda: page.evaluate('window.rikuy.files.get("main.tex").split("\\\\includegraphics").length - 1')
+        figs = count()
+        toast = drop(('my-plot.png', PNG + b'\0' * 2)); page.wait_for_timeout(300)
+        check('a picture dropped under the exact name of one in the project replaces its bytes and places no figure', page.evaluate(BYTES, 'my-plot.png') == len(PNG) + 2 and count() == figs and 'my-plot.png replaced' in toast and not page.evaluate('window.rikuy.assetBlobs.has("my-plot-3.png")'), (toast, count(), figs, page.evaluate('[...window.rikuy.assetBlobs.keys()]')))
+        # ... placed as usual when the text does not have it yet
+        click_text(page, 'References follow')
+        drop(('solo.png', PNG)); page.wait_for_timeout(300)
+        page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+        gone = '{solo.png}' not in page.evaluate('window.rikuy.files.get("main.tex")')
+        click_text(page, 'References follow')
+        toast = drop(('solo.png', PNG + b'\0' * 5)); page.wait_for_timeout(300)
+        check('replaced and placed when the text does not include it yet', gone and page.evaluate(BYTES, 'solo.png') == len(PNG) + 5 and page.evaluate('window.rikuy.files.get("main.tex")').count('{solo.png}') == 1 and not page.evaluate('window.rikuy.assetBlobs.has("solo-2.png")'), toast)
+        # a pasted picture has no name of its own (every screenshot is image.png): always a new file
+        drop(('image.png', PNG)); page.wait_for_timeout(300)
+        click_text(page, 'References follow')
+        page.evaluate("""(b) => { const dt = new DataTransfer(); dt.items.add(new File([Uint8Array.from(atob(b), (c) => c.charCodeAt(0))], 'image.png', { type: 'image/png' }));
+          document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true })); }""", b64(PNG + b'\0' * 9))
+        page.wait_for_timeout(500)
+        pasted = [n for n in page.evaluate('[...window.rikuy.assetBlobs.keys()]') if n.startswith('pasted-')]
+        check('a pasted picture never replaces a file, whatever the clipboard calls it', page.evaluate(BYTES, 'image.png') == len(PNG) and len(pasted) == 1 and page.evaluate(BYTES, pasted[0] if pasted else '') == len(PNG) + 9, pasted)
+        # Typing while a version is being kept (the await before a replaced file is written): the
+        # figure dropped with it must land after the caret's paragraph in the text as it is then,
+        # not at an offset of the text as it was when the drop began.
+        page.evaluate("""() => { const g = window.rikuy, keep = g.snapshot.bind(g); g.hookRan = 0; g.snapshot = async (...a) => { g.snapshot = keep; g.hookRan++;
+          const s = g.files.get('main.tex'), at = s.indexOf('\\\\maketitle') + 10; g.commit([{ f: 'main.tex', s: at, e: at, t: '\\n\\nTyped meanwhile, forty characters or so.' }], g.caretNow(), 'type'); return keep(...a); }; }""")
         click_text(page, 'The page and the source never disagree')
-        drop(('my-plot.png', PNG + b'\0')); page.wait_for_timeout(400)
+        drop(('my-plot.png', PNG + b'\0' * 3), ('with-it.png', PNG)); page.wait_for_timeout(500)
         s = page.evaluate('window.rikuy.files.get("main.tex")')
-        k = s.rfind('\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{my-plot-3.png}')
-        check('a figure placed while the text changes lands after its paragraph, not inside it', k > 0 and s[:k].endswith('every edit is computed back into it.\n\n'), s[max(0, k - 60):k + 30] if k > 0 else page.evaluate('[...window.rikuy.assetBlobs.keys()]'))
-        page.evaluate('window.rikuy.snapshot = window.rikuy.keptSnapshot')
+        k = s.rfind('\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{with-it.png}')
+        check('(the version is kept and text is typed while the drop waits)', page.evaluate('window.rikuy.hookRan') == 1 and 'Typed meanwhile' in s, page.evaluate('window.rikuy.hookRan'))
+        check('a figure placed while the text changes lands after its paragraph, not inside it', k > 0 and s[:k].endswith('every edit is computed back into it.\n\n'), s[max(0, k - 400):k + 30] if k > 0 else page.evaluate('[...window.rikuy.assetBlobs.keys()]'))
         # with the caret in a footnote the figure goes after the paragraph that holds the footnote
         click_text(page, 'edit this footnote')
         drop(('in-note.png', PNG)); page.wait_for_timeout(400)
