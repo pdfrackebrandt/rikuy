@@ -157,6 +157,20 @@ try:
         drop(('mixed.zip', mixed.getvalue()))
         page.wait_for_function("window.rikuy.name === 'mixed'", timeout=10000)
         check('in a .zip, a file that is not text under a text name is kept as a file, not as text', page.evaluate('[...window.rikuy.files.keys()]') == ['main.tex'] and page.evaluate('[...window.rikuy.extra.keys()]') == ['logo.txt'], page.evaluate('[...window.rikuy.files.keys(), ...window.rikuy.extra.keys()]'))
+        # a .zip damaged after its first file: what was read opens, named as damaged, and still as
+        # someone else's project (restricted shell escape), like any .zip
+        raw = io.BytesIO()
+        with zipfile.ZipFile(raw, 'w') as z:
+            z.writestr('main.tex', '\\documentclass{article}\n\\begin{document}\nRead before the damage.\n\\end{document}\n')
+            z.writestr(zipfile.ZipInfo('zz.tex'), b'A later chapter. ' * 200, zipfile.ZIP_DEFLATED)
+        dmg = bytearray(raw.getvalue())
+        at = dmg.find(b'zz.tex') + len('zz.tex')          # the deflated bytes follow the local header's name
+        dmg[at:at + 8] = b'\xff' * 8
+        toast = drop(('half.zip', bytes(dmg)))
+        page.wait_for_function("window.rikuy.name === 'half'", timeout=10000)
+        link = page.evaluate("window.rikuy.linkCache.get(window.rikuy.name + '|' + window.rikuy.main) || null")
+        check('a .zip damaged part way opens what was read and says the archive is damaged', page.evaluate('[...window.rikuy.files.keys()]') == ['main.tex'] and 'half.zip is not a .zip file this page can read' in page.inner_text('#toast'), page.inner_text('#toast'))
+        check('and stays someone else\'s project, with shell escape restricted', bool(link) and link['origin'] == 'zip' and not link['allowed'], link)
         check('no page errors (dropped files)', not errors, errors[:5])
         browser.close()
 

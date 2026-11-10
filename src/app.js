@@ -1050,11 +1050,13 @@ class App {
         // A heading whose words were all deleted: the next Backspace or Delete takes the heading
         // itself. It stayed as a number with nothing after it, and only the source could remove it.
         if (ph.closest('.it.h')) {
-          const src = this.src(c.f);
-          const open = /\\(?:part|chapter|(?:sub){0,2}section|(?:sub)?paragraph)\*?\s*(?:\[[^\]]*\]\s*)?\{\s*$/.exec(src.slice(0, c.a));
-          const close = /^\s*\}/.exec(src.slice(c.a));
+          // the command is looked for just before the caret, not through the whole file: a long
+          // document from someone else must not make a keystroke slow
+          const src = this.src(c.f), from = Math.max(0, c.a - 400);
+          const open = /\\(?:part|chapter|(?:sub){0,2}section|(?:sub)?paragraph)\*?\s*(?:\[[^\]]*\]\s*)?\{\s*$/.exec(src.slice(from, c.a));
+          const close = /^\s*\}/.exec(src.slice(c.a, c.a + 400));
           if (open && close) {
-            this.commit([{ f: c.f, s: open.index, e: c.a + close[0].length, t: '' }], { f: c.f, p: open.index, bias: -1 }, 'del');
+            this.commit([{ f: c.f, s: from + open.index, e: c.a + close[0].length, t: '' }], { f: c.f, p: from + open.index, bias: -1 }, 'del');
             return;
           }
         }
@@ -3692,8 +3694,8 @@ class App {
           // "Nothing to open. Choose ... .zip files"); JSZip's own words for a file that is no
           // archive are a question and a link to its documentation
           const mine = /^it would unpack/.test((e && e.message) || '');
+          // (zipName stays: files read before a damaged entry still open as someone else's)
           unread.push(file.name + (mine ? ' was not opened: ' + e.message + '.' : ' is not a .zip file this page can read: it may be damaged, or another kind of file under that name.'));
-          zipName = null;
         }
       } else {
         const rel = cleanPath(stripTop(nm));
