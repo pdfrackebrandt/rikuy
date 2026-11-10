@@ -240,7 +240,7 @@ def live_graphs(page):
     page.evaluate('(() => { const g = window.rikuy; g.name = "live"; g.persist(); })()')
     page.wait_for_timeout(400)
     mark = page.evaluate('(() => { const b = document.getElementById("b-save"); return [b.classList.contains("live"), b.title, getComputedStyle(b, "::before").width]; })()')
-    check('with a live graph the LaTeX button carries a mark and says it keeps the live graphs', mark[0] and 'keeps the live graphs' in mark[1] and mark[2] == '7px', mark)
+    check('with a live graph the LaTeX button carries a mark and says it keeps the live graphs', mark[0] and 'keeps the live graphs' in mark[1] and mark[2] == '4px', mark)
     note = 'Graphs are pictures in a PDF or Word file. Download LaTeX to keep them live.'
     if os.path.isfile(os.path.join(DIST, 'word', 'pandoc.json')):
         with page.expect_download(timeout=180000) as d:
@@ -252,7 +252,8 @@ def live_graphs(page):
         page.wait_for_timeout(300)
         check('once for a document: the second download does not say it again', page.inner_text('#toast') != note, page.inner_text('#toast')[:60])
     else:
-        print('SKIP the live graph message after Download Word: this copy has no Word')
+        press(page, 'rb-word'); page.wait_for_timeout(400)
+        check('on a copy without Word the notice about Word stays, not the one about graphs', 'hosted copy' in page.inner_text('#toast') and page.inner_text('#toast') != note, page.inner_text('#toast')[:80])
 
 
 def keyboard(page):

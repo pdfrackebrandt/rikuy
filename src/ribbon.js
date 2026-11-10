@@ -215,7 +215,8 @@ export const ribbon = {
     else if (act === 'picture') { const s = getSelection(); this.rbRange = s.rangeCount ? s.getRangeAt(0).cloneRange() : null; $('#picinput').click(); }
     else if (act === 'footnote' || act === 'cite' || act === 'url') this.insertFromPalette(act);
     else if (act === 'dl-tex') await this.save();
-    else if (act === 'dl-word') { await this.saveDocx(); this.liveNote(); }
+    // (the note only once a file was made: on a copy without Word the notice about that stays)
+    else if (act === 'dl-word') { const had = this.lastDocx; await this.saveDocx(); if (this.lastDocx !== had) this.liveNote(); }
     else if (act === 'dl-pdf') await this.downloadPdfNow();
     this.ribbonSync();
   },
@@ -246,7 +247,8 @@ export const ribbon = {
       b.disabled = off;
       if (on !== null) b.setAttribute('aria-pressed', on ? 'true' : 'false');
     }
-    this.saveTitle();
+    // (the title reads every file for a live graph: once for each build of the page, not for each move of the caret)
+    if (this.rbModel !== this.model) { this.rbModel = this.model; this.saveTitle(); }
     this.ribbonRove();
   },
   // one tab stop for the whole ribbon: the control the arrows last reached, or the first that works
