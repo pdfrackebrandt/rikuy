@@ -887,6 +887,14 @@ def run():
         # on a page of its own, so nothing above meets the PDF pane
         browser, page, errors = open_page(p)
         pdfjs_local(page, 'https://rikuy.test/')
+        # why TeX did not start: build instructions for a page built without its TeX tree, what
+        # to do for a visitor whose download of it failed
+        m = page.evaluate('''() => { const g = window.rikuy; const built = 'The TeX tree is not next to this page (tex/tree.wasm: Could not load https://x/tex/tree.wasm (HTTP 404)). A copy built from source needs tex/build_tree.py first; README.md, Running it';
+          const net = built.replace(/Could not load.*\\(HTTP 404\\)/, 'Failed to fetch');
+          return [g.texFailText(new Error(net)), g.texFailText(new Error(built)), g.texFailText(new Error(built.replace('404', '503'))), g.texFailText(new Error('TeX ran out of memory')), g.texFailText(new Error(net), true)]; }''')
+        plain = 'The TeX engine could not be downloaded. Check your connection, then press Recompile. '
+        check('a failed download of the TeX engine is said in plain words, with what to do', m[0] == plain and m[2] == plain and 'build_tree' not in m[0], m)
+        check('a page built without its TeX tree still names the build step; other errors pass as they are; offline has its own message', 'tex/build_tree.py' in m[1] and m[3] == 'TeX ran out of memory. ' and m[4] == '', m)
         check('no console errors (pdf.js)', not errors, errors[:5])
         browser.close()
 

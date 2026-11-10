@@ -1,6 +1,7 @@
 """Round trip of whole projects: open a zip, save it, every file comes back byte-identical;
 an edit re-encodes only the edited file in its own encoding; everything survives a reload.
-Names in a zip that would leave the project are left out; with storage turned off or full the
+Names in a zip that would leave the project are left out; a file that cannot be opened (a broken
+.zip, a picture named .tex, a .doc) is refused in plain words; with storage turned off or full the
 page still opens and says the work is not kept."""
 import os, sys, io, zipfile, tempfile, traceback
 sys.path.insert(0, os.path.dirname(__file__))
@@ -107,6 +108,56 @@ try:
         check('and where the project open before is kept', 'proj is kept under Review, Versions.' in page.inner_text('#toast'), page.inner_text('#toast')[:200])
         print('errors:', errors[:5])
         check('no page errors', not errors, errors[:5])
+        browser.close()
+
+    # files someone who has never seen LaTeX drops on the page: each is opened, or refused in
+    # words that say what to do, and none becomes a page of noise or vanishes into the project
+    with sync_playwright() as p:
+        browser, page, errors = open_page(p)
+        DROP = """(files) => { const dt = new DataTransfer();
+          for (const [name, b64] of files) dt.items.add(new File([Uint8Array.from(atob(b64), (c) => c.charCodeAt(0))], name));
+          document.getElementById('desk').dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); }"""
+        b64 = lambda b: __import__('base64').b64encode(b).decode()
+        sample = page.evaluate('window.rikuy.files.get("main.tex")')
+
+        def drop(*fs):
+            page.evaluate('document.getElementById("toast").hidden = true')
+            page.evaluate(DROP, [[n, b64(b)] for n, b in fs])
+            for _ in range(40):
+                page.wait_for_timeout(100)
+                if page.is_visible('#toast'): break
+            return page.inner_text('#toast')
+
+        def untouched():
+            return page.evaluate('window.rikuy.main') == 'main.tex' and page.evaluate('window.rikuy.files.get("main.tex")') == sample and page.evaluate('[...window.rikuy.extra.keys()]') == []
+
+        empty = io.BytesIO()
+        zipfile.ZipFile(empty, 'w').close()
+        toast = drop(('broken.zip', b'this is no archive'))
+        check('a .zip that is none is refused by its name, not with "choose .zip files"', 'broken.zip is not a .zip file' in toast and 'Choose' not in toast and untouched(), toast)
+        toast = drop(('none.zip', empty.getvalue()))
+        check('an empty .zip is said to be empty', 'none.zip has no files in it' in toast and untouched(), toast)
+        toast = drop(('picture.tex', PNG * 20))
+        check('a picture named .tex is refused, not opened as a page of noise', 'picture.tex was not opened' in toast and 'not text' in toast and untouched(), toast)
+        toast = drop(('old.doc', b'\xd0\xcf\x11\xe0' + b'\0' * 64))
+        check('a .doc is refused with the way to a .docx, not added silently', 'old.doc was not opened' in toast and 'Save As' in toast and '.docx' in toast and untouched(), toast)
+        toast = drop(('notes.rtf', b'{\\rtf1 hi}'), ('more.bib', b'@misc{x, title={X}}\n'))
+        check('beside a file that opens, the refused one is still named', 'Added more.bib' in toast and 'notes.rtf was not opened' in toast and page.evaluate('window.rikuy.files.has("more.bib")'), toast)
+        toast = drop(('paper.pdf', b'%PDF-1.4\n%%EOF\n'))
+        check('a PDF dropped alone joins as a figure, and the message says it cannot be edited', 'as a figure' in toast and 'cannot be opened for editing' in toast and 'includegraphics{paper.pdf}' in toast, toast)
+        many = io.BytesIO()
+        with zipfile.ZipFile(many, 'w') as z:
+            for i in range(30): z.writestr('pics/p%02d.png' % i, PNG)
+        toast = drop(('pics.zip', many.getvalue()))
+        check('thirty files added are a few names and a count', 'and 26 more' in toast and len(toast) < 220 and len(page.evaluate('[...window.rikuy.assetBlobs.keys()]')) == 31, toast)
+        mixed = io.BytesIO()
+        with zipfile.ZipFile(mixed, 'w') as z:
+            z.writestr('main.tex', '\\documentclass{article}\n\\begin{document}\nFrom the archive.\n\\end{document}\n')
+            z.writestr('logo.txt', PNG * 20)
+        drop(('mixed.zip', mixed.getvalue()))
+        page.wait_for_function("window.rikuy.name === 'mixed'", timeout=10000)
+        check('in a .zip, a file that is not text under a text name is kept as a file, not as text', page.evaluate('[...window.rikuy.files.keys()]') == ['main.tex'] and page.evaluate('[...window.rikuy.extra.keys()]') == ['logo.txt'], page.evaluate('[...window.rikuy.files.keys(), ...window.rikuy.extra.keys()]'))
+        check('no page errors (dropped files)', not errors, errors[:5])
         browser.close()
 
     # storage turned off (as in some private windows), or full: the page still opens, and says so

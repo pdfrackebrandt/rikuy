@@ -3647,6 +3647,9 @@ class App {
     // names inside a .zip are whatever its maker wrote (../, /, \): one that would leave the
     // project's folder, here or in git, is left out and named
     const skipped = [];
+    // what was not opened and why, in words for someone who only dropped a file: a .zip that is
+    // not one, a picture under a text file's name, a word processor's file that is not .docx
+    const unread = [], notText = [], wordLike = [];
     const gitOk = (p) => /^\.git\//.test(p) && cleanPath(p.slice(5)) === p.slice(5);
     for (const file of list) {
       const nm = file.webkitRelativePath || file.name;
@@ -3661,6 +3664,7 @@ class App {
           for (const n of Object.keys(z.files)) total += (z.files[n]._data && z.files[n]._data.uncompressedSize) || 0;
           if (total > MAX_ZIP) throw new Error('it would unpack to ' + fmtMB(total) + ', more than this page can hold');
           const names = Object.keys(z.files).filter((n) => !z.files[n].dir && !/(^|\/)(__MACOSX|\.)/.test(n));
+          if (!names.length) unread.push(file.name + ' has no files in it.');
           const prefix = commonDir(names);
           for (const n of Object.keys(z.files)) {
             if (z.files[n].dir || !n.startsWith(prefix)) continue;
@@ -3673,18 +3677,32 @@ class App {
             if (TEXT_EXT.test(rel)) {
               const bytes = await z.files[n].async('uint8array');
               const d = decodeText(bytes);
+              // not text, whatever its name says: kept as the file it is, not shown as a page of noise
+              if (d.text.includes('\0')) { extra.set(rel, new Blob([bytes])); continue; }
               texts.set(rel, d.text);
               orig.set(rel, { bytes, enc: d.enc, bom: d.bom, text: d.text });
             } else if (IMG_EXT.test(rel) || /\.(pdf|eps)$/i.test(rel)) blobs.set(rel, await z.files[n].async('blob'));
             else extra.set(rel, await z.files[n].async('blob'));
           }
-        } catch (e) { this.toast('Could not read ' + file.name + ': ' + e.message); }
+        } catch (e) {
+          // the reason stays in the message shown at the end (it used to be replaced at once by
+          // "Nothing to open. Choose ... .zip files"); JSZip's own words for a file that is no
+          // archive are a question and a link to its documentation
+          const mine = /^it would unpack/.test((e && e.message) || '');
+          unread.push(file.name + (mine ? ' was not opened: ' + e.message + '.' : ' is not a .zip file this page can read: it may be damaged, or another kind of file under that name.'));
+          zipName = null;
+        }
       } else {
         const rel = cleanPath(stripTop(nm));
         if (rel === null) { skipped.push(nm); continue; }
+        // Word's old format and other word processors' files: added silently as a file of the
+        // project, they looked opened and nothing showed
+        if (/\.(doc|odt|rtf|pages|wpd)$/i.test(rel)) { wordLike.push(nm); continue; }
         if (TEXT_EXT.test(rel)) {
           const bytes = new Uint8Array(await file.arrayBuffer());
           const d = decodeText(bytes);
+          // a picture or an archive renamed .tex, or UTF-16 text: it opened as a page of noise
+          if (d.text.includes('\0')) { notText.push(nm); continue; }
           texts.set(rel, d.text);
           orig.set(rel, { bytes, enc: d.enc, bom: d.bom, text: d.text });
         } else if (IMG_EXT.test(rel) || /\.(pdf|eps)$/i.test(rel)) blobs.set(rel, file);
@@ -3696,8 +3714,11 @@ class App {
       const rel = nm.slice(nm.search(/(^|\/)\.git\//) + (nm.startsWith('.git/') ? 0 : 1));
       if (gitOk(rel)) gitFiles.set(rel, new Uint8Array(await f.arrayBuffer())); else skipped.push(nm);
     }
-    const skipNote = skipped.length ? ' Left out ' + skipped.length + (skipped.length === 1 ? ' file whose name points' : ' files whose names point') + ' outside the project: ' + skipped.slice(0, 3).join(', ') + (skipped.length > 3 ? '…' : '.') : '';
-    if (!texts.size && !blobs.size && !extra.size) { this.toast(skipNote.trim() || 'Nothing to open. Choose .tex, .bib, image or .zip files.', 9000); return; }
+    const few = (a) => a.slice(0, 4).join(', ') + (a.length > 4 ? ' and ' + (a.length - 4) + ' more' : '');
+    if (notText.length) unread.push(few(notText) + (notText.length === 1 ? ' was not opened: it is' : ' were not opened: they are') + ' not text this page can read (a picture or an archive under a text file\'s name, or text saved as UTF-16).');
+    if (wordLike.length) unread.push(few(wordLike) + (wordLike.length === 1 ? ' was' : ' were') + ' not opened: Rikuy reads Word files saved as .docx. In your word processor choose Save As, Word Document (.docx), and open that.');
+    const skipNote = (skipped.length ? ' Left out ' + skipped.length + (skipped.length === 1 ? ' file whose name points' : ' files whose names point') + ' outside the project: ' + skipped.slice(0, 3).join(', ') + (skipped.length > 3 ? '…' : '.') : '') + (unread.length ? ' ' + unread.join(' ') : '');
+    if (!texts.size && !blobs.size && !extra.size) { this.toast(skipNote.trim() || 'Nothing to open. Choose .tex, .bib, image, .zip or Word .docx files.', 10000); return; }
     // files shared to the app may come from any web page: they add to the project open now only
     // under names it does not have, never over one of its files
     const held = [];
@@ -3734,9 +3755,12 @@ class App {
       // an added chapter or figure shows on the page only once the source names it
       const fig = [...blobs.keys()][0];
       const widget = [...texts.keys()].find((n) => /\.html?$/i.test(n));
+      // a PDF dropped alone is most often a document someone hoped to edit
+      const asFig = !texts.size && !extra.size && [...blobs.keys()].every((n) => /\.pdf$/i.test(n)) ? ' as a figure (a PDF cannot be opened for editing here)' : '';
       const use = onlyTex.length ? ' Write \\input{' + onlyTex[0].replace(/\.tex$/i, '') + '} where it goes.' : widget ? ' Write \\rikuywidget{' + widget + '}{' + (fig || 'fallback.png') + '} where it goes (rikuy.sty, from Rikuy\'s sample/widget, defines it).' : fig ? ' Write \\includegraphics{' + fig + '} where it goes.' : '';
       const heldNote = held.length ? ' Not replaced: ' + held.join(', ') + ', which the project has.' : '';
-      this.toast('Added ' + [...texts.keys(), ...blobs.keys(), ...extra.keys()].join(', ') + ' to the project.' + use + heldNote + skipNote, skipNote || use || heldNote ? 9000 : undefined);
+      // a few names, then a count: a .zip of fifty pictures filled the screen with their names
+      this.toast('Added ' + few([...texts.keys(), ...blobs.keys(), ...extra.keys()]) + ' to the project' + asFig + '.' + use + heldNote + skipNote, skipNote || use || heldNote ? 9000 : undefined);
       return;
     }
     // the project open until now stays in this browser; the toast says where, so nobody thinks it gone
@@ -4187,7 +4211,7 @@ class App {
       // offline, a file TeX has not kept fails to load; say what to do rather than "Failed to fetch"
       const need = e && e.unkept ? ' (' + e.unkept.slice(0, 5).join(', ') + (e.unkept.length > 5 ? ' and more' : '') + ')' : '';
       const off = __RIKUY_APP__ && APP.on && navigator.onLine === false ? 'You are offline, and this document needs TeX files this browser has not kept yet' + need + '. Compile it once with a network and they stay; Make available offline in the status bar keeps those of a typical paper and of the open document. ' : '';
-      d.textContent = off + (e && e.message && !(off && need) ? e.message + '. ' : '') + 'The page preview can still be printed.';
+      d.textContent = off + this.texFailText(e, !!off, !!need) + 'The page preview can still be printed.';
       const b = document.createElement('button'); b.className = 'btn sm'; b.type = 'button'; b.textContent = 'Print the preview'; b.style.marginTop = '10px';
       b.addEventListener('click', () => this.printPDF());
       d.append(document.createElement('br'), b);
@@ -4475,6 +4499,16 @@ class App {
         sec.hidden = !any;
       }
     });
+  }
+
+  // Why TeX did not start, for the PDF pane. The worker's message for a missing TeX tree is
+  // written for whoever built the page (tex/build_tree.py, README.md) and is right when the
+  // server says the file is not there. A visitor whose download failed (no answer, a server
+  // error) read the same build instructions: they get what to do instead.
+  texFailText(e, off, need) {
+    const m = (e && e.message) || '';
+    if (/^The TeX tree is not next to this page/.test(m) && !/\(HTTP 4\d\d\)/.test(m)) return off ? '' : 'The TeX engine could not be downloaded. Check your connection, then press Recompile. ';
+    return m && !(off && need) ? m + '. ' : '';
   }
 
   toast(msg, ms = 3200, action) {
