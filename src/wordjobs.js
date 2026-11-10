@@ -307,7 +307,7 @@ function tidy(doc, info, textW, N) {
       if (!x || typeof x !== 'object') continue;
       if (x.t === 'Math') {
         let t = '';
-        for (const ch of x.c[1]) t += MATHSYM[ch] ?? ch;
+        for (const ch of x.c[1]) t += Object.hasOwn(MATHSYM, ch) ? MATHSYM[ch] : ch;
         x.c[1] = t;
         for (const ch of t) if (ch > '\u007f' && !PLAIN.test(ch) && !GREEK.test(ch) && !CYRILLIC.test(ch) && !MARKS.test(ch)) seen.other.set(ch, (seen.other.get(ch) || 0) + 1);
         continue;
@@ -319,7 +319,7 @@ function tidy(doc, info, textW, N) {
         if (ch < '\u0100' || PLAIN.test(ch) || MARKS.test(ch)) { cur += ch; continue; }
         if (GREEK.test(ch)) { seen.greek++; cur += ch; continue; }
         if (CYRILLIC.test(ch)) { seen.cyrillic++; cur += ch; continue; }
-        const to = SYMBOL[ch];
+        const to = Object.hasOwn(SYMBOL, ch) ? SYMBOL[ch] : null;
         if (to == null) { seen.other.set(ch, (seen.other.get(ch) || 0) + 1); cur += ch; continue; }
         if (cur) { out.push({ t: 'Str', c: cur }); cur = ''; }
         if (to) out.push({ t: 'RawInline', c: ['latex', to] });
@@ -392,9 +392,31 @@ function oneTable(t, inner) {
   return ['\\begin{center}', ...tab, '\\end{center}'].join('\n');
 }
 
+// Where LaTeX prints its source as written (verbatim, \verb, a \texttt code span) a mark has no
+// command to become: any that got there (a coloured run in a style not known as code) goes.
+// The comments' marks stay: comments() places them outside or says they have no place.
+function uncode(tex) {
+  const bare = (t) => t.replace(/[\uE003\uE005][\uE010-\uE01F]*\uE001?/g, '').replace(/[\uE002\uE004\uE006-\uE00F]/g, '');
+  if (!/[\uE002-\uE00F]/.test(tex)) return tex;
+  tex = tex.replace(/\\begin\{(verbatim\*?|Verbatim|Highlighting|lstlisting)\}[\s\S]*?\\end\{\1\}/g, bare)
+    .replace(/\\(?:verb\*?|VERB|lstinline)([^A-Za-z\s{])[^\n]*?\1/g, bare);
+  // \texttt{...} and \passthrough{...}: to the brace that closes them
+  let out = '', pos = 0;
+  const re = /\\(?:texttt|passthrough)\{/g;
+  for (let mm; (mm = re.exec(tex));) {
+    let d = 1, k = re.lastIndex;
+    for (; k < tex.length && d; k++) { if (tex[k] === '\\') { k++; continue; } if (tex[k] === '{') d++; else if (tex[k] === '}') d--; }
+    if (d) break;
+    out += tex.slice(pos, re.lastIndex) + bare(tex.slice(re.lastIndex, k));
+    pos = re.lastIndex = k;
+  }
+  return out + tex.slice(pos);
+}
+
 // pandoc's marks (premark) in the LaTeX it wrote, each as the command it stands for
 function unmark(tex, info, N) {
   const count = (k, n = 1) => { N[k] = (N[k] || 0) + n; };
+  tex = uncode(tex);
   // a table of contents, and the lists of figures and tables
   tex = tex.replace(/^[ \t]*\uE003([\uE010-\uE01F])\uE001[ \t]*$/gm, (s, k) => { count('toc'); return ['\\tableofcontents', '\\listoffigures', '\\listoftables'][+decode(k)] || '\\tableofcontents'; });
   // a page break: where it ends or begins a paragraph (inside a table row or the argument of a

@@ -37,7 +37,8 @@ export function wordColor(c) {
   c = String(c || '').trim();
   if (/^#?[0-9a-fA-F]{6}$/.test(c)) return c.replace('#', '').toUpperCase();
   const m = /^([A-Za-z]+)(?:!(\d{1,3}))?$/.exec(c);
-  const base = m && XCOLOR[m[1].toLowerCase()];
+  // a name is the document's text: "constructor" is no colour, though every object has one
+  const base = m && Object.hasOwn(XCOLOR, m[1].toLowerCase()) && XCOLOR[m[1].toLowerCase()];
   if (!base) return null;
   const k = m[2] == null ? 1 : Math.min(100, +m[2]) / 100;
   return [0, 2, 4].map((i) => Math.round(parseInt(base.slice(i, i + 2), 16) * k + 255 * (1 - k)).toString(16).padStart(2, '0')).join('').toUpperCase();

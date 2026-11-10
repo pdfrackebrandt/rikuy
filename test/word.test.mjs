@@ -508,4 +508,37 @@ await ok('to Word: a formula with colour stays a Word equation; a colour the pre
   assert.equal(uncolor('\\textcolor{red}{x}+{\\color[HTML]{C00000} y}+\\frac{a}{b}'), '{x}+{ y}+\\frac{a}{b}');
 });
 
+await ok('code keeps no colour marks: a file pandoc wrote with highlighted code opens as plain verbatim', () => {
+  // as pandoc, Quarto and R Markdown write code: Source Code paragraphs, a coloured character style per token
+  const made = P.convert({ from: 'markdown', to: 'docx', 'output-file': 'out.docx', 'highlight-style': 'pygments' }, 'Text with `inline code` and **bold**.\n\n```python\nimport os\nx = "a string"  # comment\n```\n\nAfter.\n', {}).files['out.docx'];
+  assert.match(text(unzip(made).get('word/document.xml')), /<w:rStyle w:val="ImportTok" \/>/);
+  const r = open(made);
+  assert.ok(bodyOf(r.tex).includes('\\begin{verbatim}\nimport os\nx = "a string"  # comment\n\\end{verbatim}'), r.tex);
+  assert.ok(bodyOf(r.tex).includes('\\texttt{inline\\ code}') && !/textcolor|xcolor/.test(r.tex), r.tex);
+  // and a mark that gets into code all the same (here a page break inside a listing and inside an
+  // inline code span) is dropped there, not printed as \newpage
+  const br = edit(made, (d) => d.replace('<w:t xml:space="preserve">import</w:t>', '<w:t xml:space="preserve">import</w:t><w:br w:type="page"/>').replace(/(<w:rStyle w:val="VerbatimChar" \/><\/w:rPr>)<w:t/, '$1<w:br w:type="page"/><w:t'));
+  const t2 = open(br).tex;
+  assert.ok(!/newpage|[\uE000-\uE01F]/.test(t2) && t2.includes('\\begin{verbatim}\nimport os\n') && /\\texttt\{inline\\ code\}/.test(t2), t2);
+  // a direct colour on a run of code, and on a run in a code style of Word's own
+  const col = edit(made, (d) => d.replace(/<w:rStyle w:val="(NormalTok|VerbatimChar)" \/>/g, '<w:rStyle w:val="$1" /><w:color w:val="FF0000" />'));
+  assert.ok(!/textcolor/.test(open(col).tex));
+});
+
+await ok('names from the document that every object has (constructor, __proto__) are unknown names, not lookups that hit', () => {
+  for (const c of ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf!50', 'Constructor']) assert.equal(wordColor(c), null, c);
+  assert.equal(wordColor('Red!50'), 'FF8080');
+  // Save as Word with such a colour name: the text without the colour, said so; no throw
+  const src = doc('A \\textcolor{constructor}{word}, \\colorbox{__proto__}{two}, \\textcolor{toString!30}{three} and $\\textcolor{hasOwnProperty}{x}$.\n', '\\usepackage{xcolor}\n\\definecolor{__proto__}{HTML}{C00000}\n\\definecolor{constructor}{rgb}{2,0,0}\n');
+  const files = new Map([['main.tex', src]]);
+  const m = buildModel({ files, main: 'main.tex' });
+  const W = buildWordDoc(m, files, { now: 0 });
+  assert.ok(W.degraded.some((d) => /text in a colour the preamble defines, without the colour \(2\)/.test(d)), W.degraded.join('|'));
+  const d = text(unzip(exportFiles(files).docx).get('word/document.xml'));
+  assert.ok(d.includes('word') && d.includes('three') && /<w:rStyle w:val="ShadeC00000" \/>/.test(d), 'the defined one keeps its shade');
+  // a Word file whose text, styles, bookmarks and comment ids are such names opens like any other
+  const odd = open(tiny('<w:p><w:pPr><w:pStyle w:val="constructor"/></w:pPr><w:bookmarkStart w:id="1" w:name="__proto__"/><w:r><w:rPr><w:rStyle w:val="toString"/></w:rPr><w:t>Odd \u2264 names</w:t></w:r><w:bookmarkEnd w:id="1"/><w:commentRangeStart w:id="constructor"/></w:p><w:p><w:hyperlink w:anchor="constructor"><w:r><w:t>link</w:t></w:r></w:hyperlink></w:p>'));
+  assert.ok(bodyOf(odd.tex).includes('Odd \\(\\leq\\) names\n\nlink'), odd.tex);
+});
+
 console.log('word: ' + n + ' groups of checks passed');
