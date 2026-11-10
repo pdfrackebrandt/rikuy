@@ -197,6 +197,53 @@ export const ribbon = {
     this.closeGroup();
   },
 
+  // Footnote and Link: the empty command at the caret, after any selected words (which stay as
+  // they are), the caret between its braces. Citation: the insert list's item, which opens its
+  // picker. Each is watched: given up empty, it goes again (dropEmpty).
+  insertEmpty(open, close) {
+    const c = this.caretNow();
+    if (!c) return;
+    this.closeGroup();
+    const mark = { h0: this.hist.length, redo0: this.redoStack };
+    const f = c.ghost ? this.ghost.f : c.f, from = c.ghost ? this.ghost.pos : c.b;
+    if (c.ghost) this.insertPiece(null, this.ghost, open, close);
+    else this.commit([{ f, s: from, e: from, t: open + close }], { f, p: from + open.length, bias: 1 }, 'insert');
+    this.watchEmpty(f, from, open + close, mark);
+  },
+  insertCite() {
+    const c = this.caretNow();
+    if (!c) return;
+    this.closeGroup();
+    const mark = { h0: this.hist.length, redo0: this.redoStack };
+    const f = c.ghost ? this.ghost.f : c.f, from = c.ghost ? this.ghost.pos : c.a;
+    this.insertFromPalette('cite');
+    this.watchEmpty(f, from, '\\' + this.citeChoices()[0][0] + '{}', mark);
+  },
+  watchEmpty(f, from, t, mark) {
+    const s = this.src(f).indexOf(t, from);
+    this.rbEmpty = s < 0 ? null : { f, s, t, ...mark };
+    this.closeGroup();
+  },
+  // An empty footnote, link or citation the caret has left (its picker closed with nothing
+  // picked) is taken out again: it showed as a bare mark or "[?]". Its insertion leaves no step
+  // in the history, so undo and redo are as they were before the button was pressed.
+  dropEmpty() {
+    const w = this.rbEmpty;
+    if (!w || this.pop) return;
+    const c = this.caretNow();
+    if (this.src(w.f).slice(w.s, w.s + w.t.length) !== w.t) { this.rbEmpty = null; return; }
+    if (c && !c.ghost && c.f === w.f && c.collapsed && c.a > w.s && c.a < w.s + w.t.length) return;
+    this.rbEmpty = null;
+    const at = c && !c.ghost ? { f: c.f, p: c.f === w.f && c.a >= w.s + w.t.length ? c.a - w.t.length : c.a, bias: -1 } : null;
+    if (this.hist.length === w.h0 + 1) {
+      const h = this.hist.pop();
+      for (const d of h.files) { const s = this.files.get(d.f) ?? ''; this.files.set(d.f, s.slice(0, d.s) + d.del + s.slice(d.s + d.ins.length)); }
+      this.redoStack = w.redo0;
+      this.rebuild(at);
+      this.pushToSource(); this.saveSoon(); this.updateUndoUI();
+    } else this.commit([{ f: w.f, s: w.s, e: w.s + w.t.length, t: '' }], at, 'insert');
+  },
+
   hasLive() { return [...this.files].some(([n, t]) => /\.tex$/i.test(n) && /(^|[^\\%])\\rikuywidget\b/m.test(t)); },
   // PDF and Word hold a live graph as its picture: said once for each document
   liveNote() {
@@ -246,7 +293,9 @@ export const ribbon = {
     else if (act === 'equation') this.newDisplayMath();
     else if (act === 'table') this.insertTable();
     else if (act === 'picture') { const s = getSelection(); this.rbRange = s.rangeCount ? s.getRangeAt(0).cloneRange() : null; $('#picinput').click(); }
-    else if (act === 'footnote' || act === 'cite' || act === 'url') this.insertFromPalette(act);
+    else if (act === 'footnote') this.insertEmpty('\\footnote{', '}');
+    else if (act === 'url') this.insertEmpty('\\url{', '}');
+    else if (act === 'cite') this.insertCite();
     else if (act === 'dl-tex') await this.save();
     // (the note only once a file was made: on a copy without Word the notice about that stays)
     else if (act === 'dl-word') { const had = this.lastDocx; await this.saveDocx(); if (this.lastDocx !== had) this.liveNote(); }
@@ -259,6 +308,7 @@ export const ribbon = {
   ribbonSync() {
     const rb = $('#ribbon');
     if (!rb) return;
+    this.dropEmpty();
     const at = this.ribbonAt(), st = at ? this.blockStyle(at) : { v: 'p', can: false };
     const sel = $('#rb-style');
     for (const o of sel.options) {
@@ -331,7 +381,16 @@ export function installRibbon(app) {
     back();
     app.insertText(e.key);
   });
-  $('#picinput').addEventListener('change', (e) => { const fs = [...e.target.files]; e.target.value = ''; back(); if (fs.length) app.openFiles(fs); });
+  // Picture places pictures. Anything else picked there (a .tex would open as a new project in
+  // place of this one) is left out and named.
+  $('#picinput').addEventListener('change', (e) => {
+    const all = [...e.target.files], fs = all.filter((x) => /\.(png|jpe?g|pdf)$/i.test(x.name)), no = all.filter((x) => !fs.includes(x)).map((x) => x.name);
+    e.target.value = '';
+    back();
+    const said = no.length ? no.slice(0, 3).join(', ') + (no.length > 3 ? ' and ' + (no.length - 3) + ' more' : '') + (no.length === 1 ? ' is' : ' are') + ' no picture and ' + (no.length === 1 ? 'was' : 'were') + ' left out: Picture takes PNG, JPEG and PDF files. Open takes the rest.' : '';
+    if (!fs.length) { if (said) app.toast(said, 9000); return; }
+    app.openFiles(fs).then(() => { if (said) app.toast($('#toast span').textContent + ' ' + said, 10000); });
+  });
   // a toolbar: arrows move between its controls (in the style list, up and down pick a style)
   rb.addEventListener('keydown', (e) => {
     if (!/^(ArrowLeft|ArrowRight|Home|End)$/.test(e.key) || e.altKey || e.ctrlKey || e.metaKey) return;

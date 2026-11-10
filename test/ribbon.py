@@ -398,9 +398,53 @@ def list_edges(page):
     check('a list from that paragraph ends on a line of its own', src(page) == wrap('\\begin{enumerate}\n  \\item alpha and gamma\\\\% hidden\n\\end{enumerate}'), src(page)[40:])
 
 
+def insert_edges(page):
+    """Footnote, Citation and Link leave nothing behind when they are given up empty, and the
+    undo history is as before the press; a footnote goes after selected words, not around them;
+    the Picture dialog takes pictures only."""
+    hist = lambda: page.evaluate('[window.rikuy.hist.length, window.rikuy.redoStack.length]')
+    away = lambda: (click_text(page, 'Third paragraph', 3), page.wait_for_timeout(250))
+    load_doc(page, DOC); click_text(page, 'First paragraph', 2); page.keyboard.type('Q'); page.wait_for_timeout(2200)
+    base, h0 = src(page), hist()
+    select_text(page, 'Second'); press(page, 'rb-fn')
+    check('Footnote with words selected puts an empty footnote after them and leaves the words', src(page) == base.replace('Second paragraph', 'Second\\footnote{} paragraph'), src(page)[src(page).find('Second'):][:40])
+    page.keyboard.type('n'); page.wait_for_timeout(200)
+    check('with the caret in it', 'Second\\footnote{n} paragraph' in src(page), src(page)[src(page).find('Second'):][:40])
+    page.keyboard.press('Control+z'); page.keyboard.press('Control+z'); page.wait_for_timeout(200)
+    h0 = hist()   # (with the two steps just undone waiting to be redone)
+    for name, bid, cmd in (('Footnote', 'rb-fn', '\\footnote{}'), ('Link', 'rb-link', '\\url{}')):
+        click_text(page, 'Second paragraph', 7); press(page, bid)
+        put = cmd in src(page)
+        away()
+        check('%s left empty goes again when the caret leaves it, and undo is as it was before' % name, put and src(page) == base and hist() == h0, (src(page)[src(page).find('Second'):][:40], hist(), h0))
+    click_text(page, 'Second paragraph', 7); press(page, 'rb-cite'); page.wait_for_timeout(300)
+    put = re.search(r'\\cite[a-z]*\{\}', src(page)) and page.evaluate('document.querySelectorAll("body > .pop.pop-cite").length') == 1
+    page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    check('Citation closed with nothing picked leaves no empty citation, and undo is as it was before', put and src(page) == base and hist() == h0 and page.evaluate('document.querySelectorAll("#pages .a-cite").length') == 0, (src(page)[src(page).find('Second'):][:40], hist(), h0))
+    page.keyboard.press('Control+z'); page.wait_for_timeout(200)
+    check('so the next undo takes back the typing before it', 'Q' not in src(page)[src(page).find('Opening'):][:30] and '\\cite' not in src(page) and '\\footnote' not in src(page))
+    # Link in a new, empty document: the caret is in the braces
+    page.click('#b-new'); page.wait_for_function('window.rikuy.name.startsWith("Untitled") && window.rikuy.ghost', timeout=5000); page.wait_for_timeout(200)
+    press(page, 'rb-link'); page.keyboard.type('example.org'); page.wait_for_timeout(250)
+    check('Link in an empty document puts the caret between its braces', '\\url{example.org}' in src(page), src(page)[60:])
+    # the Picture dialog takes pictures: a .tex picked there is not opened as a project
+    load_doc(page, DOC); click_text(page, 'Second paragraph', 7)
+    with page.expect_file_chooser() as fc:
+        press(page, 'rb-pic')
+    fc.value.set_files([{'name': 'other.tex', 'mimeType': 'text/plain', 'buffer': b'\\documentclass{article}\n\\begin{document}\nAnother paper.\n\\end{document}\n'}])
+    page.wait_for_timeout(500)
+    check('a .tex picked in the Picture dialog is refused in plain words, and the document stays', src(page) == DOC and page.evaluate('window.rikuy.main') == 'main.tex' and 'other.tex' in page.inner_text('#toast') and 'picture' in page.inner_text('#toast').lower(), page.inner_text('#toast'))
+    click_text(page, 'Second paragraph', 7)
+    with page.expect_file_chooser() as fc:
+        press(page, 'rb-pic')
+    fc.value.set_files([{'name': 'notes.txt', 'mimeType': 'text/plain', 'buffer': b'notes'}, {'name': 'fig.png', 'mimeType': 'image/png', 'buffer': PNG}])
+    wait_src(page, 'includegraphics')
+    check('with a picture among them, the picture is placed and the other file named as left out', '{fig.png}' in src(page) and not page.evaluate('window.rikuy.files.has("notes.txt")') and 'notes.txt' in page.inner_text('#toast'), page.inner_text('#toast'))
+
+
 def run():
     with sync_playwright() as p:
-        for fn in (top_bar, styles, letters, lists, inserts, keyboard, narrow, downloads, one_save, where_it_applies, list_edges, live_graphs):
+        for fn in (top_bar, styles, letters, lists, inserts, keyboard, narrow, downloads, one_save, where_it_applies, list_edges, insert_edges, live_graphs):
             browser, page, errors = open_page(p)
             try:
                 fn(page)

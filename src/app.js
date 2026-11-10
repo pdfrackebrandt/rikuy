@@ -762,10 +762,11 @@ class App {
     if (!sel.rangeCount) return null;
     const r = sel.getRangeAt(0);
     if (!this.root.contains(r.startContainer)) return null;
-    if (this.ghost && this.ghost.el.contains(r.startContainer)) return { ghost: true, f: this.ghost.f, p: this.ghost.pos };
+    // (first: the blank paragraph may be standing for a place inside a link, see restoreCaret)
     if (this.pending && r.collapsed && this.pending.node === r.startContainer && this.pending.offset === r.startOffset) {
       return { f: this.pending.f, p: this.pending.p, a: this.pending.p, b: this.pending.p, collapsed: true };
     }
+    if (this.ghost && this.ghost.el.contains(r.startContainer)) return { ghost: true, f: this.ghost.f, p: this.ghost.pos };
     const A = posFromDom(r.startContainer, r.startOffset, this.root);
     if (!A || A.ghost) return null;
     let Bp = A;
@@ -783,7 +784,16 @@ class App {
       if (x && y) { sel.setBaseAndExtent(x.node, x.offset, y.node, y.offset); this.root.focus({ preventScroll: true }); return; }
     }
     const r = this.index.find(c.f, c.p, c.bias ?? -1);
-    if (!r || !r.node) return;
+    if (!r || !r.node) {
+      // No text on the page to hold the caret, and the place is inside what the page does show
+      // (a document that so far is one link: between its braces). The blank paragraph holds the
+      // caret and stands for that place, so what is typed goes there, not after the link.
+      if (this.ghost && this.ghost.sticky && c.f === this.ghost.f && c.p < this.ghost.pos) {
+        this.caretToGhost();
+        this.pending = { f: c.f, p: c.p, node: this.ghost.el.firstChild.firstChild, offset: 1 };
+      }
+      return;
+    }
     if (document.activeElement !== this.root) this.root.focus({ preventScroll: true });
     sel.collapse(r.node, r.offset);
     const back = posFromDom(r.node, r.offset, this.root);
