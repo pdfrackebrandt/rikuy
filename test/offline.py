@@ -115,7 +115,9 @@ def main():
         # Word once while online: its worker fetches pandoc's parts, checks them and keeps pandoc
         word = os.path.isfile(os.path.join(DIST, 'word', 'pandoc.json'))
         if word:
+            before = page.inner_text('#st-save')
             page.evaluate('window.rikuy.keepWord()')
+            check('keeping Word leaves the status line as it was, not at "Starting pandoc"', page.inner_text('#st-save') == before and 'pandoc' not in before, (before, page.inner_text('#st-save')))
             kept = page.evaluate('''async () => { const out = [];
               for (const k of await caches.keys()) for (const r of await (await caches.open(k)).keys()) if (/pandoc-[0-9a-f]+-\\d+\\.bin$/.test(r.url)) out.push(r.url);
               return out; }''')

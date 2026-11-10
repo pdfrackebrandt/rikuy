@@ -114,7 +114,9 @@ export const word = {
   // keeps it in IndexedDB; false where this build has no Word
   async keepWord() {
     if (!WORD) return false;
-    await this.wordEngine().run('ping', {});
+    // the worker reports its start in the status line: put back what the line said
+    const keep = $('#st-save').textContent;
+    try { await this.wordEngine().run('ping', {}); } finally { $('#st-save').textContent = keep; }
     return true;
   },
 
