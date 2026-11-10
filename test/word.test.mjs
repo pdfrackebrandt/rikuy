@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { buildModel } from '../src/model.js';
-import { buildWordDoc, expandMath, unpackRuns } from '../src/wordast.js';
+import { buildWordDoc, expandMath, unpackRuns, wordColor, listStyle } from '../src/wordast.js';
 import { createPandoc } from '../src/pandoc.js';
 import { exportDocx, readDocx, docxToLatex } from '../src/wordjobs.js';
 import { checkData, planImport, unpackRead, rebase, textHunks, mathPatch, stripNumbers, safeMath } from '../src/wordsync.js';
@@ -318,6 +318,28 @@ await ok('a paragraph deleted in Word before a code listing: the listing is not 
   // and words typed after the listing in Word still arrive
   const add = (d) => del(d).replace(/(lm\(y ~ k\)[\s\S]*?<\/w:p>)/, '$1<w:p><w:r><w:t>Typed in Word.</w:t></w:r></w:p>');
   assert.ok(importInto(edit(E.docx, add), files).files.get('main.tex').includes('Typed in Word.'));
+});
+
+await ok('to Word: colour, highlight, centred text and a list\'s own labels are kept, and still round trip', async () => {
+  const src = doc('\\textcolor{red}{Red words} and \\hl{marked ones} and \\textcolor[HTML]{0F9ED5}{blue}.\n\n\\begin{center}\nA centred line.\n\\end{center}\n\n\\begin{enumerate}[label=(\\alph*)]\n  \\item Alpha\n  \\item Beta\n\\end{enumerate}\n', '\\usepackage{xcolor,soul,enumitem}\n');
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  const parts = unzip(E.docx);
+  const d = text(parts.get('word/document.xml')), st = text(parts.get('word/styles.xml')), nu = text(parts.get('word/numbering.xml'));
+  assert.match(d, /<w:rStyle w:val="ColourFF0000" \/><\/w:rPr><w:t[^>]*>Red words/);
+  assert.match(d, /<w:rStyle w:val="Highlight" \/><\/w:rPr><w:t[^>]*>marked ones/);
+  assert.match(d, /<w:pStyle w:val="Centred" \/>/);
+  assert.match(st, /w:styleId="ColourFF0000">(?:(?!<\/w:style>)[\s\S])*<w:rPr><w:color w:val="FF0000" \/><\/w:rPr><\/w:style>/);
+  assert.match(st, /w:styleId="Colour0F9ED5">(?:(?!<\/w:style>)[\s\S])*<w:color w:val="0F9ED5" \/>/);
+  assert.match(st, /w:styleId="Highlight">(?:(?!<\/w:style>)[\s\S])*<w:shd [^>]*w:fill="FFFF00" \/>/);
+  assert.match(st, /w:styleId="Centred">(?:(?!<\/w:style>)[\s\S])*<w:pPr><w:jc w:val="center" \/><\/w:pPr><\/w:style>/);
+  assert.match(nu, /<w:numFmt w:val="lowerLetter" \/><w:lvlText w:val="\(%1\)" \/>/);
+  assert.equal(importInto(E.docx, files).files.size, 0);
+  await roundTrip(src, (x) => rep('Red words', 'Crimson words')(rep('A centred line.', 'A centred heading.')(x)), src.replace('Red words', 'Crimson words').replace('A centred line.', 'A centred heading.'));
+  assert.equal(wordColor('blue!50'), '8080FF');
+  assert.equal(wordColor('mycolour'), null);
+  assert.deepEqual(listStyle('iv)'), [1, { t: 'DefaultStyle' }, { t: 'DefaultDelim' }]);
+  assert.deepEqual(listStyle('3.'), [3, { t: 'Decimal' }, { t: 'Period' }]);
 });
 
 console.log('word: ' + n + ' groups of checks passed');

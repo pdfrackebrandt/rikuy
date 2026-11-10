@@ -22,8 +22,8 @@ export function exportDocx(P, req) {
   if (req.citeproc && req.bibs && req.bibs.length) { opts.citeproc = true; opts.bibliography = req.bibs; if (req.csl) opts.csl = req.csl; }
   if (req.toc) opts['table-of-contents'] = true;
   const r = P.convert(opts, JSON.stringify(req.doc), req.resources || {});
-  const docx = r.files['out.docx'];
-  if (!docx) throw new Error('pandoc wrote no Word file: ' + (r.stderr || '').trim().slice(0, 300));
+  if (!r.files['out.docx']) throw new Error('pandoc wrote no Word file: ' + (r.stderr || '').trim().slice(0, 300));
+  const docx = styled(r.files['out.docx']);
   // what Word got, block by block, lined up with what the page showed
   const X = extract(unzip(docx));
   const anchors = [];
@@ -57,6 +57,29 @@ export function exportDocx(P, req) {
   const out = addRikuyPart(docx, data);
   // json: what the worker hashes into the export's mark (src/wordworker.js)
   return { docx: out, warnings: said(r.warnings), lost, unread, size: out.length, json: JSON.stringify(data) };
+}
+
+// The styles Rikuy names in the tree (src/wordast.js: Colour C00000, Shade FFFF00, Highlight,
+// Centred, Right Aligned) come out of pandoc empty: each gets here what its name says, so
+// coloured and centred text looks in Word as it does on the page.
+function styled(docx) {
+  const parts = unzip(docx);
+  const p = 'word/styles.xml';
+  if (!parts.has(p)) return docx;
+  let n = 0;
+  const st = text(parts.get(p)).replace(/(<w:style [^>]*w:styleId="(Colour|Shade|Highlight|Centred|RightAligned)([0-9A-F]{6})?"[^>]*>(?:(?!<\/w:style>)[\s\S])*?)(<\/w:style>)/g, (s, head, kind, hex, end) => {
+    const add = kind === 'Colour' && hex ? '<w:rPr><w:color w:val="' + hex + '" /></w:rPr>'
+      : kind === 'Shade' && hex ? '<w:rPr><w:shd w:val="clear" w:color="auto" w:fill="' + hex + '" /></w:rPr>'
+        : kind === 'Highlight' && !hex ? '<w:rPr><w:shd w:val="clear" w:color="auto" w:fill="FFFF00" /></w:rPr>'
+          : kind === 'Centred' && !hex ? '<w:pPr><w:jc w:val="center" /></w:pPr>'
+            : kind === 'RightAligned' && !hex ? '<w:pPr><w:jc w:val="right" /></w:pPr>' : '';
+    if (!add || /<w:[pr]Pr>/.test(head)) return s;
+    n++;
+    return head + add + end;
+  });
+  if (!n) return docx;
+  parts.set(p, st);
+  return zip(parts);
 }
 
 // the atom index of text position i in run coded map, or null

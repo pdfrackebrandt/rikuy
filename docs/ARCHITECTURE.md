@@ -361,7 +361,10 @@ alignment and the import plan. `src/wordast.js` (in the page) walks the model in
   captions, footnotes, the title block and abstract (pandoc's metadata), cross references as the
   text the page shows, `\url`/`\href` links, images (a PDF figure as a PNG of its first page drawn
   by pdf.js, `pdfPicture`; EPS and missing files as a bracketed name), live figures as their
-  fallback picture, verbatim as code. Equations go in as TeX with the project's macros expanded
+  fallback picture, verbatim as code, coloured, shaded and highlighted text and centred or right
+  aligned paragraphs as styles named after what they do (`Colour C00000`, `Highlight`,
+  `Centred`), which pandoc writes empty and `styled()` fills in, a numbered list with the labels
+  the page shows (`listStyle`). Equations go in as TeX with the project's macros expanded
   (`expandMath` over `model.mathMacros`) and become Word equations (texmath); texmath drops
   `\tag`, so numbers follow the formula as `\qquad (n)` (`numberRows`). Citations go to pandoc's
   citeproc with the project's `.bib` files: Chicago author-date, or Rikuy's own numeric style when
