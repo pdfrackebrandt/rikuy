@@ -826,6 +826,8 @@ class App {
     $('#st-warn').addEventListener('click', () => this.toggleNav(true, 'problems'));
     $('#b-nav').addEventListener('click', () => this.toggleNav());
     $('#nav-close').addEventListener('click', () => this.toggleNav(false));
+    // a phone's bar has no room for the Help button: it is in this panel there
+    $('#nav-help').addEventListener('click', () => { this.toggleNav(false); this.openHelp(); });
     $('#nt-outline').addEventListener('click', () => this.toggleNav(true, 'outline'));
     $('#nt-problems').addEventListener('click', () => this.toggleNav(true, 'problems'));
     $('#nt-changes').addEventListener('click', () => this.toggleNav(true, 'changes'));
@@ -4387,7 +4389,7 @@ class App {
       <p>The page is typeset from your LaTeX source. Every edit you make on the page is written back into the source as the smallest possible change.</p>
       <dl class="keys">
         <dt>Type, select, delete</dt><dd>As in any editor</dd>
-        <dt>${mod}+B, ${mod}+I</dt><dd>\\textbf, \\emph</dd>
+        <dt>${mod}+B, ${mod}+I</dt><dd>Bold, italic (\\textbf, \\emph)</dd>
         <dt>$ or ${mod}+M</dt><dd>New inline math</dd>
         <dt>${mod}+Shift+E</dt><dd>New numbered equation</dd>
         <dt>\\ or ${mod}+K</dt><dd>Insert a command</dd>

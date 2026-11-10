@@ -526,6 +526,45 @@ def first_words(page):
     check('Enter in the title starts the text after \\maketitle', '\\title{Only a title!}' in src(page) and '\\maketitle\n\nFrom the title' in src(page), src(page))
 
 
+def phone_layout(page):
+    """The bar, the status line, Help and the PDF bar on screens as wide as phones are."""
+    BAR = """() => { const W = document.documentElement.clientWidth; const box = (e) => e.getBoundingClientRect(); const vis = (e) => box(e).width > 0;
+      const kids = [...document.querySelectorAll('#b-nav, #bar .brand .mark, #bar .tools > button, #bar .tools .zoom > *')].filter(vis);
+      const off = kids.filter((e) => box(e).right > W + 0.5 || box(e).left < -0.5).map((e) => e.id || e.className);
+      const over = [];
+      for (let i = 0; i < kids.length; i++) for (let j = i + 1; j < kids.length; j++) { const a = box(kids[i]), b = box(kids[j]); if (a.left < b.right - 1 && b.left < a.right - 1) over.push((kids[i].id || kids[i].className) + '~' + (kids[j].id || kids[j].className)); }
+      const st = document.getElementById('status');
+      return { off, over: over.filter((x) => x !== 'b-save~b-save-more'), nav: Math.round(box(document.getElementById('b-nav')).width), page: document.documentElement.scrollWidth - W,
+        status: Math.round(box(st).height), pdfx: Math.round(box(document.getElementById('pdf-x')).right) - W }; }"""
+    for w in (360, 390, 430, 540, 700):
+        page.set_viewport_size({'width': w, 'height': 800})
+        page.wait_for_timeout(250)
+        m = page.evaluate(BAR)
+        check('at %dpx no button of the bar lies over another or the name, or off the screen' % w, not m['off'] and not m['over'] and m['page'] <= 0 and m['nav'] >= 28, m)
+        if w <= 430: check('at %dpx the status line is one line' % w, m['status'] <= 30, m['status'])
+    page.set_viewport_size({'width': 360, 'height': 800})
+    page.wait_for_timeout(250)
+    page.evaluate('window.rikuy.togglePdf(true)')
+    page.wait_for_timeout(300)
+    m = page.evaluate(BAR)
+    check('at 360px the PDF pane\'s close button is on the screen', m['pdfx'] <= 0, m['pdfx'])
+    page.evaluate('window.rikuy.togglePdf(false)')
+    check('a phone has no Help button in the bar', not page.is_visible('#b-help'))
+    page.click('#b-nav')
+    page.wait_for_timeout(200)
+    shown = page.is_visible('#nav-help')
+    page.click('#nav-help')
+    page.wait_for_timeout(300)
+    r = page.evaluate('(() => { const e = document.querySelector("body > .pop.pop-help"); if (!e) return null; const dd = e.querySelector(".keys dd").getBoundingClientRect(), b = e.getBoundingClientRect(); return [Math.round(b.left), Math.round(b.right), Math.round(dd.width), document.documentElement.clientWidth]; })()')
+    check('so Help opens from the menu panel, which closes', shown and r and not page.evaluate('document.body.classList.contains("nav-on")'), r)
+    check('and fits the screen, its explanations in a column wide enough to read', r and r[0] >= 0 and r[1] <= r[3] and r[2] >= 150, r)
+    page.keyboard.press('Escape')
+    page.set_viewport_size({'width': 1400, 'height': 1000})
+    page.wait_for_timeout(250)
+    page.evaluate('window.rikuy.toggleNav(true)')
+    check('a wide screen keeps Help in the bar alone', page.is_visible('#b-help') and not page.is_visible('#nav-help'))
+
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
@@ -839,6 +878,10 @@ def run():
         browser, page, errors = open_page(p)
         first_words(page)
         check('no console errors (first words)', not errors, errors[:5])
+        browser.close()
+
+        browser, page, errors = open_page(p, width=390, height=844)
+        phone_layout(page)
         browser.close()
 
         # on a page of its own, so nothing above meets the PDF pane
