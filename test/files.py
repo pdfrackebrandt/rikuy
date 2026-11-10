@@ -196,6 +196,13 @@ try:
         s = page.evaluate('window.rikuy.files.get("main.tex")')
         check('graphicx goes after the last package, though a comment before it names \\begin{document}', s.startswith('\\documentclass{article}\n% was: \\begin{document} here\n\\usepackage{amsmath}\n\\usepackage{graphicx}\n\\begin{document}\nA paragraph.\n\n\\begin{center}'), s[:200])
         page.evaluate('window.rikuy.doReset()'); page.wait_for_timeout(600)
+        # an archive with no document in it joins the project open now: it is someone else's
+        # files all the same, and the project is marked so (shell escape restricted)
+        cls = io.BytesIO()
+        with zipfile.ZipFile(cls, 'w') as z: z.writestr('evil.cls', '\\ProvidesClass{evil}\n')
+        drop(('styles.zip', cls.getvalue())); page.wait_for_timeout(400)
+        link = page.evaluate("window.rikuy.linkCache.get(window.rikuy.name + '|' + window.rikuy.main) || null")
+        check('a .zip holding only a class joins the project and marks it as holding someone else\'s files', page.evaluate('window.rikuy.files.has("evil.cls")') and bool(link) and link['origin'] == 'zip' and not link['allowed'], link)
         many = io.BytesIO()
         with zipfile.ZipFile(many, 'w') as z:
             for i in range(30): z.writestr('pics/p%02d.png' % i, PNG)

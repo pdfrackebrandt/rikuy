@@ -3911,7 +3911,9 @@ class App {
       // Files shared to the app may come from any web page, and a class, a package or a .bib is
       // code TeX runs: with them in it, the project is someone else's as far as shell escape
       // goes, until the owner ticks Shell escape (the click on Open was all that was asked).
-      if (from) this.markFromLink('', this.name, this.main, from);
+      // The same for files that came in an archive with no document of its own (a .zip holding a
+      // class alone joined the user's project unmarked). Loose files the user opened stay theirs.
+      if (from || zipName) this.markFromLink('', this.name, this.main, from || 'zip');
       for (const [n, t] of texts) this.files.set(n, t);
       for (const [n, o] of orig) this.orig.set(n, o);
       for (const [n, b] of blobs) this.addAsset(n, b);
