@@ -1075,38 +1075,39 @@ class App {
     return vr.map(([s, e]) => ({ f, s, e, t: '' }));
   }
 
-  // Everything on the page is selected (Ctrl+A, or from the first character to the last): what
-  // is typed, pasted or deleted then replaces the document's body, as New document would, and
-  // the preamble stays. Taking only the visible characters, as for any other selection, left
-  // every heading, list, theorem and table standing empty with no way to remove them.
+  // Everything on the page is selected: what is typed, pasted or deleted then replaces the
+  // document's body, as New document would, and the preamble stays. Taking only the visible
+  // characters, as for any other selection, left every heading, list, theorem and table
+  // standing empty with no way to remove them. Only Select all counts (allSel: the range
+  // selectAllText made and still the selection), or a selection that holds the whole page, as
+  // a phone's own Select all makes: one drawn from the first word to the last can leave a
+  // picture, an equation, a listing or an \input outside it, and those must stay. The body is
+  // the one the parser found: with no \begin{document}, or no \end{document} to close it,
+  // there is none to replace, and the selection is deleted as any other.
   wholeDoc() {
     const sel = getSelection();
     if (!sel.rangeCount || sel.isCollapsed || !this.root.contains(sel.anchorNode)) return null;
-    const ts = this.root.querySelectorAll('span.t:not(.gh)');
-    if (!ts.length) return null;
-    const r = sel.getRangeAt(0), a = document.createRange(), z = document.createRange();
-    // in the text nodes, as selectAllText and a drag put the ends of a selection
-    const first = ts[0].firstChild || ts[0], last = ts[ts.length - 1].lastChild || ts[ts.length - 1];
-    a.setStart(first, 0); z.setEnd(last, last.nodeType === 3 ? last.length : last.childNodes.length); z.collapse(false);
-    a.collapse(true);
-    if (r.compareBoundaryPoints(Range.START_TO_START, a) > 0 || r.compareBoundaryPoints(Range.END_TO_END, z) < 0) return null;
-    const src = this.src(this.main);
-    const begin = /\\begin\s*\{document\}/.exec(src);
-    const end = begin ? src.indexOf('\\end{document}', begin.index) : -1;
-    return begin && end >= 0 ? { s: begin.index + begin[0].length, e: end, env: true } : { s: 0, e: src.length, env: false };
+    const r = sel.getRangeAt(0), A = this.allSel;
+    if (!(A && r.startContainer === A.sc && r.startOffset === A.so && r.endContainer === A.ec && r.endOffset === A.eo)) {
+      const all = document.createRange();
+      all.selectNodeContents(this.root);
+      if (r.compareBoundaryPoints(Range.START_TO_START, all) > 0 || r.compareBoundaryPoints(Range.END_TO_END, all) < 0) return null;
+    }
+    const d = this.model && !this.stale && this.model.main === this.main ? this.model.docBody : null;
+    return d && d.closed ? { s: d.s, e: d.e } : null;
   }
   // one edit, so one undo step brings the whole document back as it was
   replaceBody(w, tex, kind) {
-    const pad = w.env ? '\n\n' : '';
+    const pad = '\n\n';
     this.commit([{ f: this.main, s: w.s, e: w.e, t: tex ? pad + tex + pad : pad }], { f: this.main, p: w.s + pad.length + tex.length, bias: -1 }, kind);
   }
 
   insertText(data, range) {
     if (!data) return;
-    const c = this.caretNow();
-    if (!c) return;
     const whole = range ? null : this.wholeDoc();
     if (whole) { this.replaceBody(whole, escapeTeX(data, ' '), 'replace'); return; }
+    const c = this.caretNow();
+    if (!c) return;
     // in a blank paragraph too (a new document, the line after Enter): there they were typed
     // as the characters, though that is where an equation or a heading most often starts
     if (data === '$' && !range && (c.collapsed || c.ghost)) { this.newMath(); return; }
@@ -1142,9 +1143,9 @@ class App {
       if (/Backward/.test(type) && !this.ghost.sticky) { const g = this.ghost; this.removeGhost(); this.restoreCaret({ f: g.f, p: g.pos }); }
       return;
     }
-    if (!c) return;
     const whole = this.wholeDoc();
     if (whole) { this.replaceBody(whole, '', 'del'); return; }
+    if (!c) return;
     let f = c.f, a = c.a, b = c.b;
     if (c.collapsed) {
       // Caret in an empty placeholder: remove the empty wrapper it belongs to.
@@ -1637,6 +1638,10 @@ class App {
       if (!this.pop) this.removeGhost();
     }
     if (this.pending && (!sel.rangeCount || sel.anchorNode !== this.pending.node || sel.anchorOffset !== this.pending.offset)) this.pending = null;
+    if (this.allSel) {
+      const r = sel.rangeCount ? sel.getRangeAt(0) : null, A = this.allSel;
+      if (!r || r.startContainer !== A.sc || r.startOffset !== A.so || r.endContainer !== A.ec || r.endOffset !== A.eo) this.allSel = null;
+    }
     if (!inRoot) { this.hideBubble(); return; }
     if (this.ourSel) { this.ourSel = false; }
     if (!sel.isCollapsed) { this.showBubble(); const c = this.caretNow(); if (c && !c.collapsed) { this.lastSel = c; this.lastSelT = Date.now(); } } else this.hideBubble();
@@ -1654,6 +1659,9 @@ class App {
     const sel = getSelection();
     sel.removeAllRanges();
     sel.addRange(r);
+    // what wholeDoc knows a Select all by, until the selection changes
+    const now = sel.getRangeAt(0);
+    this.allSel = { sc: now.startContainer, so: now.startOffset, ec: now.endContainer, eo: now.endOffset };
   }
 
   showBubble() {

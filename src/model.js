@@ -223,7 +223,8 @@ class Builder {
       const pre = nodes.slice(0, nodes.indexOf(docEnv));
       this.preamble(pre, ctx);
       this.collectDefs(docEnv.nodes, ctx);
-      this.docBody = { s: docEnv.be, e: docEnv.es };
+      // at: where \begin{document} starts; closed: its \end{document} was found
+      this.docBody = { s: docEnv.be, e: docEnv.es, at: docEnv.s, closed: docEnv.e > docEnv.es };
       this.top(docEnv.nodes, ctx);
     } else {
       this.fragment = true;

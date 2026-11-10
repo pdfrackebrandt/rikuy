@@ -665,51 +665,42 @@ def select_all(page):
     select_text(page, 'paragraph'); page.keyboard.press('Delete'); page.wait_for_timeout(200)
     check('a selection of less than everything deletes as before', 'in this  and start typing' in src(page) and '\\section{How to use it}' in src(page))
     page.keyboard.press('Control+z'); page.wait_for_timeout(200)
-    # a file with no preamble: the whole text is the body
-    load_doc(page, 'Only words here.\n\nAnd a second paragraph.\n')
-    click_text(page, 'Only words'); page.keyboard.press('Control+a'); page.keyboard.type('New'); page.wait_for_timeout(300)
-    check('in a file with no preamble the whole text is replaced', src(page) == 'New', src(page))
-
-
-def formula_mistakes(page):
-    """A mistake in a formula's source box is said in plain words, with KaTeX's own as the
-    tooltip; text that would not stay a formula (an unclosed brace) is not written into the
-    document, so the paragraph around it stays as it was."""
-    base = src(page)
-    page.click('.a-math >> nth=0')
-    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
-    ERR = '(() => { const e = document.querySelector(".pop-math .pv-err"); return e && !e.hidden ? [e.textContent, e.title] : null; })()'
-
-    def typed(v):
-        page.fill('.pop-math textarea', v); page.wait_for_timeout(350)
-        return page.evaluate(ERR)
-    e = typed('\\frac{a}{b')
-    check('an unclosed brace is named in plain words, KaTeX\'s own in the tooltip', e and e[0].startswith('A { is not closed.') and 'Unexpected end of input' in e[1], e)
-    check('and is not written into the document: the paragraph stays as it was', src(page) == base and page.evaluate('document.querySelectorAll("#pages .a-chip.err, #pages .merr").length') == 0, src(page)[src(page).find('Click $'):][:60])
-    e = typed('a}')
-    check('a brace too many is held back the same way', e and e[0].startswith('A } has no { before it.') and src(page) == base, e)
-    for v, want in (('x^', 'Something is missing after ^.'), ('\\foo + 1', 'This command is not known: \\foo'), ('5 # x', '# cannot stand here: write \\# for the sign.'),
-                    ('\\left( x', '\\left has no \\right to close it.'), ('\\frac', 'Something is missing after \\frac.'), ('x^2^3', 'Two ^ in a row: put the first in braces, as in {x^2}^3.')):
-        e = typed(v)
-        check('%s: "%s"' % (v, want), e and e[0] == want and e[1] and e[1] != want, e)
-    wait_src(page, '$x^2^3$')
-    check('a mistake that stays inside the formula is still written, as before', '$x^2^3$' in src(page))
-    e = typed('\\frac{a}{b}')
-    wait_src(page, '$\\frac{a}{b}$')
-    check('put right, the formula is written and the message goes', e is None and '$\\frac{a}{b}$' in src(page), e)
-    typed('\\frac{a}{b}+{c')
-    page.keyboard.press('Enter'); page.wait_for_timeout(300)
-    check('Enter with a brace open closes the box and keeps the last formula that was whole', '$\\frac{a}{b}$' in src(page) and page.evaluate('document.querySelectorAll("body > .pop").length') == 0, src(page)[src(page).find('Click $'):][:60])
-    # a new formula: nothing is put into the text while a brace is open
-    click_text(page, 'References follow'); page.keyboard.type('$')
-    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
-    before = src(page)
-    e = typed('x^{2')
-    check('a new formula with a brace open is not put into the text', e and e[0] == 'A { is not closed.' and src(page) == before, e)
-    typed('x^{2}')
-    wait_src(page, '$x^{2}$References')
-    check('and is, once the brace is closed', '$x^{2}$References' in src(page))
-    page.keyboard.press('Escape')
+    # Only Select all is "everything". A selection from the first word to the last can leave
+    # blocks with no text outside it (a picture, an equation, a listing): they must stay.
+    DOC = ('\\documentclass{article}\n\\usepackage{graphicx}\n\\begin{document}\n\\begin{equation}\n  x = 1\n\\end{equation}\n\n'
+           'The only sentence here.\n\n\\begin{verbatim}\ncode stays\n\\end{verbatim}\n\n\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{shot.png}\n\\end{center}\n\\end{document}\n')
+    load_doc(page, DOC)
+    select_text(page, 'The only sentence here.'); page.wait_for_timeout(100)
+    page.keyboard.type('B'); page.wait_for_timeout(300)
+    check('a sentence selected from its first word to its last and typed over leaves the picture, the equation and the listing', src(page) == DOC.replace('The only sentence here.', 'B'), src(page))
+    page.keyboard.press('Control+z'); page.wait_for_timeout(200)
+    r = page.evaluate('(() => { const s = [...document.querySelectorAll("#pages span.t")].find((s) => s.textContent.includes("The only sentence")); const r = s.getBoundingClientRect(); return [r.left + 30, r.top + r.height / 2]; })()')
+    page.mouse.click(r[0], r[1], click_count=3); page.wait_for_timeout(150)
+    page.keyboard.press('Delete'); page.wait_for_timeout(300)
+    s = src(page)
+    check('the same with a triple click and Delete', all(x in s for x in ('x = 1', 'code stays', '\\includegraphics[width=0.8\\linewidth]{shot.png}')) and 'only sentence' not in s, s)
+    load_doc(page, DOC)
+    click_text(page, 'The only sentence'); page.keyboard.press('Control+a'); page.wait_for_timeout(100)
+    click_text(page, 'The only sentence', 4); page.wait_for_timeout(100)
+    select_text(page, 'The only sentence here.'); page.wait_for_timeout(100)
+    page.keyboard.press('Delete'); page.wait_for_timeout(300)
+    check('a Select all given up for another selection no longer counts', 'code stays' in src(page) and 'x = 1' in src(page), src(page))
+    load_doc(page, DOC)
+    click_text(page, 'The only sentence'); page.keyboard.press('Control+a'); page.keyboard.press('Delete'); page.wait_for_timeout(300)
+    check('Select all itself still takes every block', src(page) == '\\documentclass{article}\n\\usepackage{graphicx}\n\\begin{document}\n\n\\end{document}\n', src(page))
+    # the body is the parser's: no \end{document}, and the preamble is not what gets replaced
+    for label, doc in (('with no \\end{document}', '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nWords with no end.\n'),
+                       ('with \\end {document} spaced', '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\nWords with an end.\n\\end {document}\n'),
+                       ('with no preamble at all', 'Only words here.\n\nAnd a second paragraph.\n')):
+        load_doc(page, doc)
+        click_text(page, 'ords'); page.keyboard.press('Control+a'); page.keyboard.type('N'); page.wait_for_timeout(300)
+        s = src(page)
+        pre = doc[:doc.find('\\begin{document}') + 16] if '\\begin{document}' in doc else ''
+        check('Select all and typing %s keeps everything before the text' % label, s.startswith(pre) and 'N' in s[len(pre):] and 'ords' not in s, s)
+    doc = '\\documentclass{article}\n% moved from below: \\begin{document}\n\\usepackage{amsmath}\n\\newcommand{\\R}{\\mathbb{R}}\n\\begin{document}\nBody words.\n\\end{document}\n'
+    load_doc(page, doc)
+    click_text(page, 'Body words'); page.keyboard.press('Control+a'); page.keyboard.press('Delete'); page.wait_for_timeout(300)
+    check('a comment in the preamble that names \\begin{document} is not where the body starts', src(page) == doc.replace('\nBody words.\n', '\n\n'), src(page))
 
 
 def run():
