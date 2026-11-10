@@ -77,6 +77,9 @@ jobs:
         run: cd test && python3 share.py
       - name: Live figures (rikuy.sty), under the host's policy
         run: cd test && python3 widgets.py
+      # its Download PDF needs dist/tex and runs where that exists; here it says it skips that part
+      - name: The ribbon (styles, lists, inserting, the three downloads)
+        run: cd test && python3 ribbon.py
       # its compile offline needs dist/tex and runs in tex.yml; here it says it skips that part
       - name: The installed app offline, its updates, and none in the artifact build
         run: cd test && python3 offline.py

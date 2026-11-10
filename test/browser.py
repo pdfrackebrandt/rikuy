@@ -534,7 +534,7 @@ def phone_layout(page):
       const over = [];
       for (let i = 0; i < kids.length; i++) for (let j = i + 1; j < kids.length; j++) { const a = box(kids[i]), b = box(kids[j]); if (a.left < b.right - 1 && b.left < a.right - 1) over.push((kids[i].id || kids[i].className) + '~' + (kids[j].id || kids[j].className)); }
       const st = document.getElementById('status');
-      return { off, over: over.filter((x) => x !== 'b-save~b-save-more'), nav: Math.round(box(document.getElementById('b-nav')).width), page: document.documentElement.scrollWidth - W,
+      return { off, over, nav: Math.round(box(document.getElementById('b-nav')).width), page: document.documentElement.scrollWidth - W,
         status: Math.round(box(st).height), pdfx: Math.round(box(document.getElementById('pdf-x')).right) - W }; }"""
     for w in (360, 390, 430, 540, 700):
         page.set_viewport_size({'width': w, 'height': 800})
@@ -553,8 +553,8 @@ def phone_layout(page):
     page.click('#b-nav')
     page.wait_for_timeout(200)
     acts = page.evaluate('[...document.querySelectorAll("#nav-acts .nav-act")].map((a) => [a.dataset.for, a.textContent.trim(), a.disabled, a.getBoundingClientRect().height])')
-    bar = page.evaluate('[...document.querySelectorAll("#bar .tools button:not(.ai-only)")].map((b) => b.id)')
-    check('the menu panel lists every action of the bar by name, each large enough to tap', sorted(a[0] for a in acts) == sorted(bar) and all(a[1] and a[3] >= 36 for a in acts), (acts, bar))
+    bar = page.evaluate('[...document.querySelectorAll("#bar .tools button:not(.ai-only), .rb-dl button, #b-copy")].map((b) => b.id)')
+    check('the menu panel lists every action of the bar, the downloads and Copy source by name, each large enough to tap', sorted(a[0] for a in acts) == sorted(bar) and all(a[1] and a[3] >= 36 for a in acts), (acts, bar))
     check('Undo and Redo are greyed there when there is nothing to undo, and the zoom shows its value', all(a[2] for a in acts if a[0] in ('b-undo', 'b-redo')) and re.match(r'Zoom: (Fit|\d+%)$', [a[1] for a in acts if a[0] == 'zoomv'][0]), acts)
     page.click('#nav-acts [data-for=b-help]')
     page.wait_for_timeout(300)
@@ -573,12 +573,12 @@ def phone_layout(page):
     page.evaluate('window.rikuy.toggleNav(false)')
     # keyboard alone: a popover opened from a button of the bar gives the focus back to it
     back = []
-    for b in ('#b-share', '#b-save-more', '#b-help'):
+    for b in ('#b-share', '#b-help'):
         page.focus(b); page.keyboard.press('Enter'); page.wait_for_timeout(250)
         opened = page.evaluate('document.querySelectorAll("body > .pop").length')
         page.keyboard.press('Escape'); page.wait_for_timeout(150)
         back.append((b, opened, page.evaluate('document.querySelectorAll("body > .pop").length'), page.evaluate('"#" + document.activeElement.id')))
-    check('Escape closes Share, Save and Help and the focus returns to their buttons', all(o == 1 and c == 0 and a == b for b, o, c, a in back), back)
+    check('Escape closes Share and Help and the focus returns to their buttons', all(o == 1 and c == 0 and a == b for b, o, c, a in back), back)
 
 
 def first_visit(p):

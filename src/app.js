@@ -29,6 +29,7 @@ import { TeXEngine, parseTeXLog } from './tex.js';
 import { PdfView } from './pdfview.js';
 import { collab, installCollab } from './collab.js';
 import { word, installWord, isDocx } from './word.js';
+import { ribbon, installRibbon } from './ribbon.js';
 import { shareParam, commentOnly, cleanPath } from './share.js';
 import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
 
@@ -285,6 +286,33 @@ function plainMathError(msg, tex) {
   if (/^Expected & or/.test(m)) return 'A \\begin{…} is not closed by its \\end{…}.';
   return m;
 }
+// What the insert list (\ or Ctrl+K) offers; the ribbon's Insert buttons run the same items.
+const piece = (open, close) => ({ open, close });
+const PALETTE = [
+  { k: 'footnote', d: 'Footnote', t: piece('\\footnote{', '}') },
+  { k: 'cite', d: 'Citation', act: 'cite' },
+  { k: 'ref', d: 'Cross reference', act: 'ref' },
+  { k: 'eqref', d: 'Equation reference', act: 'eqref' },
+  { k: 'emph', d: 'Emphasis', t: piece('\\emph{', '}') },
+  { k: 'textbf', d: 'Bold', t: piece('\\textbf{', '}') },
+  { k: 'texttt', d: 'Typewriter', t: piece('\\texttt{', '}') },
+  { k: 'equation', d: 'Numbered equation', act: 'equation' },
+  { k: 'math', d: 'Inline math', act: 'math' },
+  { k: 'section', d: 'Section heading', t: piece('\n\n\\section{', '}\n\n'), block: true },
+  { k: 'subsection', d: 'Subsection heading', t: piece('\n\n\\subsection{', '}\n\n'), block: true },
+  { k: 'itemize', d: 'Bulleted list', t: piece('\n\n\\begin{itemize}\n  \\item ', '\n\\end{itemize}\n\n'), block: true },
+  { k: 'enumerate', d: 'Numbered list', t: piece('\n\n\\begin{enumerate}\n  \\item ', '\n\\end{enumerate}\n\n'), block: true },
+  { k: 'proposition', d: 'Proposition', t: piece('\n\n\\begin{proposition}\n', '\n\\end{proposition}\n\n'), block: true },
+  { k: 'lemma', d: 'Lemma', t: piece('\n\n\\begin{lemma}\n', '\n\\end{lemma}\n\n'), block: true },
+  { k: 'theorem', d: 'Theorem', t: piece('\n\n\\begin{theorem}\n', '\n\\end{theorem}\n\n'), block: true },
+  { k: 'definition', d: 'Definition', t: piece('\n\n\\begin{definition}\n', '\n\\end{definition}\n\n'), block: true },
+  { k: 'assumption', d: 'Assumption', t: piece('\n\n\\begin{assumption}\n', '\n\\end{assumption}\n\n'), block: true },
+  { k: 'proof', d: 'Proof', t: piece('\n\n\\begin{proof}\n', '\n\\end{proof}\n\n'), block: true },
+  { k: 'label', d: 'Label', t: piece('\\label{', '}') },
+  { k: 'url', d: 'URL', t: piece('\\url{', '}') },
+  { k: 'ldots', d: 'Ellipsis \u2026', t: piece('\\ldots{}', '') },
+  { k: 'newline', d: 'Line break', t: piece('\\\\\n', '') }
+];
 function debounce(fn, ms) { let t = null; const d = (...a) => { clearTimeout(t); t = setTimeout(() => { t = null; fn(...a); }, ms); }; d.flush = (...a) => { clearTimeout(t); t = null; fn(...a); }; d.cancel = () => { clearTimeout(t); t = null; }; d.pending = () => t !== null; return d; }
 
 // ---------------------------------------------------------------------------
@@ -725,6 +753,7 @@ class App {
     $('#docname').textContent = this.name;
     this.lastMs = ms;
     this.updateFileTabs();
+    this.ribbonSoon();
   }
 
   // ---- caret ------------------------------------------------------------------
@@ -923,12 +952,13 @@ class App {
     $('#nav-close').addEventListener('click', () => this.toggleNav(false));
     // Where the bar shows icons alone (a phone hides Help and the zoom steps too), the menu
     // panel lists each of its actions by name: the bar's own buttons, pressed from here.
-    for (const id of ['b-open', 'b-save', 'b-save-more', 'b-pdf', 'b-copy', 'b-share', 'b-undo', 'b-redo', 'b-zout', 'zoomv', 'b-zin', 'b-src', 'b-help']) {
+    // The three downloads come first: on a phone the ribbon's end, where they are, is a swipe away.
+    for (const id of ['rb-pdf', 'rb-word', 'b-save', 'b-open', 'b-pdf', 'b-copy', 'b-share', 'b-undo', 'b-redo', 'b-zout', 'zoomv', 'b-zin', 'b-src', 'b-help']) {
       const b = $('#' + id), a = mk('button', 'nav-act');
       a.type = 'button'; a.dataset.for = id;
       const svg = b.querySelector('svg'), lab = b.querySelector('span');
       if (svg) a.appendChild(svg.cloneNode(true));
-      a.appendChild(mk('span', '', lab ? lab.textContent : ''));
+      a.appendChild(mk('span', '', (b.closest('.rb-dl') ? 'Download ' : '') + (lab ? lab.textContent : '')));
       // the zoom steps leave the panel open, to press again
       a.addEventListener('click', () => { if (!/^b-z/.test(id)) this.toggleNav(false); b.click(); if (/^b-z|zoomv/.test(id)) this.navActs(); });
       $('#nav-acts').appendChild(a);
@@ -2299,8 +2329,10 @@ class App {
   }
 
   newDisplayMath() {
-    const c = this.caretNow();
-    if (!c || c.ghost) return;
+    let c = this.caretNow();
+    if (!c) return;
+    // in the blank paragraph of a new document too (the ribbon's Equation is pressed there)
+    if (c.ghost) { c = { f: this.ghost.f, a: this.ghost.pos }; this.removeGhost(); }
     const t = '\n\\begin{equation}\n  \n\\end{equation}\n';
     // (the history as it is before the equation: given up empty, it goes back to this)
     this.closeGroup();
@@ -2523,6 +2555,39 @@ class App {
   }
 
   // ---- command palette -------------------------------------------------------------
+  // one item of the insert list, at a place in the text (base) or in the blank paragraph (ghost)
+  insertPiece(base, ghost, open, close) {
+    if (ghost) {
+      this.ghost = ghost;
+      const src = this.src(ghost.f);
+      let nlB = 0; for (let k = ghost.pos - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
+      const pre = '\n'.repeat(Math.max(0, 2 - nlB));
+      const o = open.replace(/^\n+/, '');
+      this.removeGhost();
+      this.commit([{ f: ghost.f, s: ghost.pos, e: ghost.pos, t: pre + o + close }], { f: ghost.f, p: ghost.pos + pre.length + o.length, bias: 1 }, 'insert');
+      return;
+    }
+    const src = this.src(base.f);
+    const inner = base.a !== base.b && isBalanced(src, base.a, base.b) ? src.slice(base.a, base.b) : '';
+    this.commit([{ f: base.f, s: base.a, e: inner ? base.b : base.a, t: open + inner + close }], { f: base.f, p: base.a + open.length + inner.length, bias: 1 }, 'insert');
+  }
+  runPalette(x, base, ghost) {
+    const insertAt = (open, close) => this.insertPiece(base, ghost, open, close);
+    if (x.act === 'math') { if (base) this.restoreCaret({ f: base.f, p: base.a }); this.newMath(); return; }
+    if (x.act === 'equation') { if (base) this.restoreCaret({ f: base.f, p: base.a }); this.newDisplayMath(); return; }
+    if (x.act === 'cite' || x.act === 'ref' || x.act === 'eqref') {
+      const cmd = x.act === 'cite' ? this.citeChoices()[0][0] : x.act;
+      const t = '\\' + cmd + '{}';
+      if (!base) { insertAt(t, ''); return; }
+      this.commit([{ f: base.f, s: base.a, e: base.a, t }], { f: base.f, p: base.a + t.length, bias: 1 }, 'insert');
+      const el = this.findAtomEl({ f: base.f, s: base.a, kind: x.act === 'eqref' ? 'ref' : x.act });
+      if (el) { const info = atomOfEl(el); if (info) (x.act === 'cite' ? this.openCite(el, info) : this.openRef(el, info)); }
+      return;
+    }
+    if (x.raw) { insertAt('\\' + x.k + (/[A-Za-z]$/.test(x.k) ? ' ' : ''), ''); return; }
+    insertAt(x.t.open, x.t.close);
+  }
+
   openPalette() {
     const c = this.caretNow();
     if (!c) return;
@@ -2539,32 +2604,7 @@ class App {
     const list = document.createElement('div'); list.className = 'plist';
     const hint = document.createElement('div'); hint.className = 'hint pad'; hint.textContent = 'Enter inserts the highlighted item. Anything else you type is inserted as a raw command.';
     p.append(inp, list, hint);
-    const B = (open, close) => ({ open, close });
-    const items = [
-      { k: 'footnote', d: 'Footnote', t: B('\\footnote{', '}') },
-      { k: 'cite', d: 'Citation', act: 'cite' },
-      { k: 'ref', d: 'Cross reference', act: 'ref' },
-      { k: 'eqref', d: 'Equation reference', act: 'eqref' },
-      { k: 'emph', d: 'Emphasis', t: B('\\emph{', '}') },
-      { k: 'textbf', d: 'Bold', t: B('\\textbf{', '}') },
-      { k: 'texttt', d: 'Typewriter', t: B('\\texttt{', '}') },
-      { k: 'equation', d: 'Numbered equation', act: 'equation' },
-      { k: 'math', d: 'Inline math', act: 'math' },
-      { k: 'section', d: 'Section heading', t: B('\n\n\\section{', '}\n\n'), block: true },
-      { k: 'subsection', d: 'Subsection heading', t: B('\n\n\\subsection{', '}\n\n'), block: true },
-      { k: 'itemize', d: 'Bulleted list', t: B('\n\n\\begin{itemize}\n  \\item ', '\n\\end{itemize}\n\n'), block: true },
-      { k: 'enumerate', d: 'Numbered list', t: B('\n\n\\begin{enumerate}\n  \\item ', '\n\\end{enumerate}\n\n'), block: true },
-      { k: 'proposition', d: 'Proposition', t: B('\n\n\\begin{proposition}\n', '\n\\end{proposition}\n\n'), block: true },
-      { k: 'lemma', d: 'Lemma', t: B('\n\n\\begin{lemma}\n', '\n\\end{lemma}\n\n'), block: true },
-      { k: 'theorem', d: 'Theorem', t: B('\n\n\\begin{theorem}\n', '\n\\end{theorem}\n\n'), block: true },
-      { k: 'definition', d: 'Definition', t: B('\n\n\\begin{definition}\n', '\n\\end{definition}\n\n'), block: true },
-      { k: 'assumption', d: 'Assumption', t: B('\n\n\\begin{assumption}\n', '\n\\end{assumption}\n\n'), block: true },
-      { k: 'proof', d: 'Proof', t: B('\n\n\\begin{proof}\n', '\n\\end{proof}\n\n'), block: true },
-      { k: 'label', d: 'Label', t: B('\\label{', '}') },
-      { k: 'url', d: 'URL', t: B('\\url{', '}') },
-      { k: 'ldots', d: 'Ellipsis \u2026', t: B('\\ldots{}', '') },
-      { k: 'newline', d: 'Line break', t: B('\\\\\n', '') }
-    ];
+    const items = PALETTE;
     let hi = 0;
     let shown = items;
     const draw = () => {
@@ -2580,37 +2620,7 @@ class App {
         list.appendChild(b);
       });
     };
-    const insertAt = (open, close) => {
-      if (ghost) {
-        this.ghost = ghost;
-        const src = this.src(ghost.f);
-        let nlB = 0; for (let k = ghost.pos - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
-        const pre = '\n'.repeat(Math.max(0, 2 - nlB));
-        const o = open.replace(/^\n+/, '');
-        this.removeGhost();
-        this.commit([{ f: ghost.f, s: ghost.pos, e: ghost.pos, t: pre + o + close }], { f: ghost.f, p: ghost.pos + pre.length + o.length, bias: 1 }, 'insert');
-        return;
-      }
-      const src = this.src(base.f);
-      const inner = base.a !== base.b && isBalanced(src, base.a, base.b) ? src.slice(base.a, base.b) : '';
-      this.commit([{ f: base.f, s: base.a, e: inner ? base.b : base.a, t: open + inner + close }], { f: base.f, p: base.a + open.length + inner.length, bias: 1 }, 'insert');
-    };
-    const run = (x) => {
-      this.closePop(true);
-      if (x.act === 'math') { if (base) this.restoreCaret({ f: base.f, p: base.a }); this.newMath(); return; }
-      if (x.act === 'equation') { if (base) this.restoreCaret({ f: base.f, p: base.a }); this.newDisplayMath(); return; }
-      if (x.act === 'cite' || x.act === 'ref' || x.act === 'eqref') {
-        const cmd = x.act === 'cite' ? this.citeChoices()[0][0] : x.act;
-        const t = '\\' + cmd + '{}';
-        if (!base) { insertAt(t, ''); return; }
-        this.commit([{ f: base.f, s: base.a, e: base.a, t }], { f: base.f, p: base.a + t.length, bias: 1 }, 'insert');
-        const el = this.findAtomEl({ f: base.f, s: base.a, kind: x.act === 'eqref' ? 'ref' : x.act });
-        if (el) { const info = atomOfEl(el); if (info) (x.act === 'cite' ? this.openCite(el, info) : this.openRef(el, info)); }
-        return;
-      }
-      if (x.raw) { insertAt('\\' + x.k + (/[A-Za-z]$/.test(x.k) ? ' ' : ''), ''); return; }
-      insertAt(x.t.open, x.t.close);
-    };
+    const run = (x) => { this.closePop(true); this.runPalette(x, base, ghost); };
     inp.addEventListener('input', () => { hi = 0; draw(); });
     inp.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowDown') { e.preventDefault(); hi = Math.min(shown.length - 1, hi + 1); draw(); }
@@ -4091,11 +4101,10 @@ class App {
     this.toast('Opened ' + this.main + (texts.size > 1 ? ' and ' + (texts.size - 1) + ' more file' + (texts.size > 2 ? 's' : '') : '') + '.' + (missing.length ? ' Not found: ' + missing.join(', ') + '.' : '') + gitNote + (prev && prev !== this.name ? ' ' + prev + ' is kept under Review, Versions.' : '') + skipNote, skipNote ? 10000 : 7000);
   }
 
-  // The edits that put these pictures of the project into the text: a centered
-  // \includegraphics after the paragraph, list or table the caret is in (inside one, or inside
-  // a heading's braces, the block would stop TeX), at the end of the text when there is no
-  // caret; and \usepackage{graphicx} when the preamble has none. names are safe (openFiles).
-  figureEdits(names) {
+  // Where a block of its own (a picture, a table) goes: after the paragraph, list or table the
+  // caret is in, at the end of the text when there is no caret; and the blank lines it needs
+  // before and after there.
+  afterBlockPos() {
     const c = this.caretNow();
     let f = this.main, p = -1;
     if (c && c.ghost) { f = this.ghost.f; p = this.ghost.pos; }
@@ -4110,12 +4119,20 @@ class App {
     // where the preamble ends and where the text ends are the parser's (model.docBody): a
     // comment that names \begin{document} is neither
     const d = this.model && !this.stale && this.model.main === this.main ? this.model.docBody : null;
-    const main = this.src(this.main);
-    if (p < 0 || (f === this.main && d && p < d.s)) { f = this.main; p = d ? d.e : main.length; }
+    if (p < 0 || (f === this.main && d && p < d.s)) { f = this.main; p = d ? d.e : this.src(this.main).length; }
     const src = this.src(f);
     let nlB = 0; for (let k = p - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
     let nlA = 0; for (let k = p; k < src.length && /\s/.test(src[k]); k++) if (src[k] === '\n') nlA++;
-    const pre = p === 0 ? '' : '\n'.repeat(Math.max(0, 2 - nlB)), post = '\n'.repeat(Math.max(0, 2 - nlA));
+    return { f, p, d, pre: p === 0 ? '' : '\n'.repeat(Math.max(0, 2 - nlB)), post: '\n'.repeat(Math.max(0, 2 - nlA)) };
+  }
+
+  // The edits that put these pictures of the project into the text: a centered
+  // \includegraphics after the paragraph, list or table the caret is in (inside one, or inside
+  // a heading's braces, the block would stop TeX), at the end of the text when there is no
+  // caret; and \usepackage{graphicx} when the preamble has none. names are safe (openFiles).
+  figureEdits(names) {
+    const { f, p, pre, post, d } = this.afterBlockPos();
+    const main = this.src(this.main);
     const tex = names.map((n) => '\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{' + n + '}\n\\end{center}').join('\n\n');
     const edits = [{ f, s: p, e: p, t: pre + tex + post }];
     let shift = 0;
@@ -4167,8 +4184,7 @@ class App {
       }
       document.body.classList.toggle('zip-dirty', !!this.zipDirty);
       const what = this.singleFile() ? this.main.split('/').pop() : 'the project as .zip';
-      $('#b-save').title = (this.zipDirty ? 'Changes since you last saved. ' : '') + 'Download ' + what + ' (Ctrl+S)';
-      $('#b-save span').textContent = this.singleFile() ? 'Save .tex' : 'Save .zip';
+      this.saveTitle();
     };
     this.unsaved = false;
     const fallback = () => show(store(STORE, meta), this.assetBlobs.size > 0 || this.extra.size > 0);
@@ -4330,7 +4346,8 @@ class App {
   // worker) and shows the result with PDF.js. It recompiles a moment after each edit while
   // open; TeX's errors go to the Problems list with their line; clicking the PDF finds the
   // source line (SyncTeX), and clicking the page finds the spot in the PDF.
-  togglePdf(force) {
+  // shown: the pane already holds what the last run left (Download PDF opens it on an error)
+  togglePdf(force, shown) {
     const on = force ?? !document.body.classList.contains('pdf-on');
     if (on && document.body.classList.contains('src-on') && window.innerWidth < 1500) this.toggleSource(false);
     document.body.classList.toggle('pdf-on', on);
@@ -4339,7 +4356,7 @@ class App {
     store(PREFS, this.prefs);
     if (on) {
       this.pdfPane();
-      if (!this.lastPdf || this.pdfStale) this.compilePdf();
+      if (!shown && (!this.lastPdf || this.pdfStale)) this.compilePdf();
     }
     setTimeout(() => { if (this.computePx()) this.relayout(true); }, 30);
   }
@@ -4734,6 +4751,8 @@ class App {
     const mod = isMac ? 'Cmd' : 'Ctrl';
     p.insertAdjacentHTML('beforeend', `
       <p>Rikuy is a writing app for papers: you type on the finished page, and it keeps a LaTeX file up to date behind it.</p>
+      <p>The row of buttons above the page works as in a word processor. Pick Heading or Normal text for the paragraph you are in, make words bold, italic or underlined, start a list. Insert adds a formula, an equation, a table, a picture, a footnote, a citation or a link where the caret is.</p>
+      <p>Download gives you the paper as a PDF, as a Word file or as LaTeX. Live graphs stay live only in the LaTeX download. Preview shows the PDF beside the page.</p>
       <p>The page is typeset from your LaTeX source. Every edit you make on the page is written back into the source as the smallest possible change.</p>
       <dl class="keys">
         <dt>Type, select, delete</dt><dd>As in any editor</dd>
@@ -4859,7 +4878,13 @@ function commonDir(names) {
 }
 function stripTop(n) { const i = n.indexOf('/'); return i > 0 && n.split('/').length > 1 ? n.slice(i + 1) : n; }
 
-Object.assign(App.prototype, collab, word);
+Object.assign(App.prototype, collab, word, ribbon);
+// one item of the insert list, where the caret is: what the ribbon's Insert buttons press
+App.prototype.insertFromPalette = function (k) {
+  const c = this.caretNow(), x = PALETTE.find((y) => y.k === k);
+  if (c && x) this.runPalette(x, c.ghost ? null : { f: c.f, a: c.a, b: c.b }, c.ghost ? this.ghost : null);
+};
+App.prototype.textSigNow = function () { return textSig(this.main, [...this.files.entries()]); };
 // the Word worker's files, asked for as the page asks for its other files (src/word.js)
 App.prototype.assetUrl = asset;
 
@@ -4867,5 +4892,6 @@ const app = new App();
 window.rikuy = app;
 installCollab(app);
 installWord(app);
+installRibbon(app);
 app.isBalanced = isBalanced;
 app.init().catch((e) => { console.error(e); const b = document.getElementById('boot'); if (b) b.textContent = 'Rikuy could not start: ' + e.message; });

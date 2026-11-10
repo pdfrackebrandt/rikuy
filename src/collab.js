@@ -490,24 +490,6 @@ export const collab = {
   },
 
   // ---- leaving ------------------------------------------------------------------------
-  // the caret beside Save: the project as it is (.tex or .zip), as Word, or the PDF
-  openSaveMenu() {
-    const p = this.makePop($('#b-save-more'), 'pop-save', 'Save');
-    p.setAttribute('role', 'menu');
-    const item = (label, sub, fn) => {
-      const b = mk('button', 'save-item'); b.type = 'button'; b.setAttribute('role', 'menuitem');
-      b.append(mk('b', '', label), mk('span', '', sub));
-      b.addEventListener('click', () => { this.closePop(true); fn(); });
-      p.append(b);
-      return b;
-    };
-    item(this.singleFile() ? 'LaTeX (.tex)' : 'Project (.zip)', 'Exactly the source, for Overleaf or your own TeX', () => this.save());
-    item('Word (.docx)', 'Native Word equations and footnotes; a coauthor\'s edits there come back as changes', () => this.saveDocx());
-    item('PDF', 'As TeX typesets it', () => (this.lastPdf ? this.downloadPdf() : this.togglePdf(true)));
-    this.positionPop();
-    p.querySelector('button.save-item').focus();
-  },
-
   // one .tex when the project is one file, else a .zip; both exactly the source
   exportLabel() { return this.singleFile() ? 'Download ' + this.main.split('/').pop() : 'Download .zip'; },
   singleFile() { return this.files.size === 1 && !this.assetBlobs.size && !this.extra.size; },

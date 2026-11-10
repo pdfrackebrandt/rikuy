@@ -471,8 +471,8 @@ try:
     try:
         with sync_playwright() as p:
             browser, page, errors, reqs = open_app(p, 'http://127.0.0.1:%d/' % port2)
-            check('without Word: the Save menu still offers Word', 'Word (.docx)' in (page.click('#b-save-more') or page.inner_text('.pop-save')))
-            page.click('.pop-save .save-item:has-text("Word")')
+            check('without Word: Download still offers Word', page.inner_text('#rb-word').strip() == 'Word' and not page.evaluate('document.getElementById("rb-word").disabled'))
+            page.click('#rb-word')
             page.wait_for_timeout(300)
             check('without Word: Word says it lives on the hosted copy', 'hosted copy' in page.inner_text('#toast'), page.inner_text('#toast'))
             page.set_input_files('#fileinput', fx)

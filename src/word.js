@@ -297,8 +297,6 @@ export const word = {
   }
 };
 
-export function installWord(app) {
-  // the caret beside Save: .zip or .tex as before, Word, the PDF
-  const b = $('#b-save-more');
-  if (b) b.addEventListener('click', () => app.openSaveMenu());
-}
+// Save's menu of .zip, Word and PDF, which this bound, is the ribbon's Download group now
+// (src/ribbon.js): nothing is left to install.
+export function installWord() {}
