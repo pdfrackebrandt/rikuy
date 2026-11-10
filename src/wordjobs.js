@@ -1,18 +1,68 @@
-// What the Word worker does, given a pandoc (src/pandoc.js): open a stranger's .docx as LaTeX.
-// Kept apart from the worker's messaging so the node tests run the same code.
-import { unzip, zip, LIMITS } from './docx.js';
+// What the Word worker does, given a pandoc (src/pandoc.js): write a project's page as .docx with
+// Rikuy's part in it, open a stranger's .docx as LaTeX. Kept apart from
+// the worker's messaging so the node tests run the same code.
+import { unzip, zip, extract, addRikuyPart, mathDocx, mathFromJson, LIMITS } from './docx.js';
+import { alignRuns, exportData } from './wordsync.js';
+import { safeUrl } from './wordast.js';
 
 // pandoc's messages worth telling the user: the ones that say something was lost
 const said = (ws) => (ws || []).filter((w) => w.verbosity && w.verbosity !== 'INFO').map((w) => w.pretty || w.type).slice(0, 20);
 
-// links leave only as web or mail addresses: a document may be a stranger's, and Word and the
-// PDF open what a link says when it is clicked
-export function safeUrl(u) {
-  let s = String(u || '').trim();
-  if (!s) return null;
-  if (s.startsWith('#')) return s;
-  if (!/^[a-z][a-z0-9+.-]*:/i.test(s)) s = 'https://' + s.replace(/^\/+/, '');
-  try { const x = new URL(s); return /^(https?|mailto|ftp):$/.test(x.protocol) ? x.href : null; } catch (e) { return null; }
+// The text of each equation in a Word file, as pandoc reads OMML into TeX: one run for all of them
+export function mathTeX(P, objs) {
+  if (!objs.length) return [];
+  const r = P.convert({ from: 'docx', to: 'json', 'input-files': ['m.docx'] }, null, { 'm.docx': mathDocx(objs.map((o) => o.xml)) });
+  return mathFromJson(r.stdout || '{"blocks":[]}', objs.length);
+}
+
+// req: { doc (pandoc JSON), anchors (packAnchor's), atoms, resources: {name: bytes|string},
+//        bibs: [names], csl: name|null, citeproc, toc, project: { name, main, files: [[n, t]], sig } }
+export function exportDocx(P, req) {
+  const opts = { from: 'json', to: 'docx', 'output-file': 'out.docx' };
+  if (req.citeproc && req.bibs && req.bibs.length) { opts.citeproc = true; opts.bibliography = req.bibs; if (req.csl) opts.csl = req.csl; }
+  if (req.toc) opts['table-of-contents'] = true;
+  const r = P.convert(opts, JSON.stringify(req.doc), req.resources || {});
+  const docx = r.files['out.docx'];
+  if (!docx) throw new Error('pandoc wrote no Word file: ' + (r.stderr || '').trim().slice(0, 300));
+  // what Word got, block by block, lined up with what the page showed
+  const X = extract(unzip(docx));
+  const anchors = [];
+  let lost = 0;
+  for (const A of req.anchors) {
+    const R = X.regions.get(A.id);
+    if (!R) { lost++; continue; }
+    anchors.push({ ...A, text: R.text, runs: alignRuns(A, R.text) });
+  }
+  // each equation as pandoc reads it back from Word, to tell later what a coauthor changed
+  const atoms = req.atoms.map((a) => ({ ...a }));
+  const objs = [];
+  const owner = [];
+  for (const A of anchors) {
+    const R = X.regions.get(A.id);
+    for (const o of R.objs) {
+      if (o.k !== 'math') continue;
+      // the atom at that place in the aligned map
+      const m = runAt(A.runs, o.at);
+      if (m != null) { objs.push(o); owner.push(m); }
+    }
+  }
+  const tex = mathTeX(P, objs);
+  tex.forEach((t, i) => { const a = atoms[owner[i]]; if (a && t != null) a.was = t; });
+  const unread = tex.filter((t) => t == null).length;
+  const data = exportData({ ...req.project, anchors, atoms, t: Date.now(), app: req.app });
+  const out = addRikuyPart(docx, data);
+  return { docx: out, warnings: said(r.warnings), lost, unread, size: out.length };
+}
+
+// the atom index of text position i in run coded map, or null
+function runAt(runs, i) {
+  let p = 0;
+  for (const r of runs) {
+    const n = r[0] > 0 ? r[0] : r[0] === 0 ? 1 : r[0] === -1 ? r[1] : r[2];
+    if (i < p + n) return r[0] === -2 ? r[1] : null;
+    p += n;
+  }
+  return null;
 }
 
 // ---- a stranger's .docx, opened as LaTeX ----------------------------------------------------------

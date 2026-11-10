@@ -10,7 +10,7 @@ a command fails, trust the code and fix this file.
 
 | path | what is there |
 |---|---|
-| `src/` | the editor. `app.js` is the entry; `model.js` maps source to page, `parser.js`, `render.js`, `editor.js`, `minimal.js` (smallest source patch), `siunitx.js`, `wordmath.js`; `share.js` (links, comments in the source, the three way merge) and `collab.js` (their UI); `widget.js` (live figures from `rikuy.sty`); Word: `word.js` (its UI and the worker's client), and in the Word worker `wordworker.js`, `wordjobs.js`, `docx.js`, `pandoc.js` |
+| `src/` | the editor. `app.js` is the entry; `model.js` maps source to page, `parser.js`, `render.js`, `editor.js`, `minimal.js` (smallest source patch), `siunitx.js`, `wordmath.js`; `share.js` (links, comments in the source, the three way merge) and `collab.js` (their UI); `widget.js` (live figures from `rikuy.sty`); Word: `word.js` (its UI and the worker's client), `wordast.js` (the page as pandoc's AST), `wordsync.js` (the text Word got, lined up with the source), and in the Word worker `wordworker.js`, `wordjobs.js`, `docx.js`, `pandoc.js` |
 | `tex/engine.js` | the TeX worker: compile loop, passes, bibtex/biber/makeindex/xindy between them |
 | `tex/shell.js`, `tex/tools.js` | the shell TeX's `\write18` and pipes reach, and the programs behind it (Ghostscript, gnuplot, Python, dvips, asy, xindy) |
 | `tex/build_tree.py` | the TeX tree and its packs (`dist/tex/`) |
@@ -42,7 +42,7 @@ a command fails, trust the code and fix this file.
 
 | to | run | takes |
 |---|---|---|
-| unit tests (editor model, minimal patch, siunitx, share links and merge, Word files opened with the real pandoc (`test/word.test.mjs`), git tokens per host (`test/gitauth.test.mjs`), the worker's pack hashes and path guard (`test/engine.test.mjs`), xindy, unpacking arXiv sources (`test/arxiv_unpack.py`) and merging the shards' rows (`test/arxiv_collect.py`)) | `npm test` | 1 min |
+| unit tests (editor model, minimal patch, siunitx, share links and merge, Word export and Word files opened, with the real pandoc (`test/word.test.mjs`), git tokens per host (`test/gitauth.test.mjs`), the worker's pack hashes and path guard (`test/engine.test.mjs`), xindy, unpacking arXiv sources (`test/arxiv_unpack.py`) and merging the shards' rows (`test/arxiv_collect.py`)) | `npm test` | 1 min |
 | the model on the 716 document corpus | `npm run test:corpus -- <LaTeX-examples clone at 8bfd313b8d98>` | 2 min |
 | build the inputs, then the TeX tree and packs | `tex/fetch_inputs.sh`, then `python3 tex/build_tree.py tree && python3 tex/build_tree.py packs` | about 3 GB of downloads |
 | build the page into `dist/` | `npm run build`; the editor and its browser tests need nothing more, the PDF pane and the TeX tests need `dist/tex/` from the step above | 10 s |

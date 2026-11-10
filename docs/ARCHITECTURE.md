@@ -40,7 +40,7 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | what a keystroke writes | `App.onBeforeInput`, `insertText`, `deletionEdits`, `enter`, `toggleStyle` (`src/app.js`); `escapeTeX` |
 | undo grouping | `App.record`, `App.undo`, `App.redo` |
 | share links, comments, the copy back, Overleaf | `makeShareLink`, `openSharedLink`, `takeBack`, `commentPop`, `openInOverleaf` (`src/collab.js`); `commentEdit`, `merge3` (`src/share.js`) |
-| Word (.docx in) | `openDocx` (`src/word.js`); `docxToLatex` (`src/wordjobs.js`); `unzip`, `parseXml` (`src/docx.js`) |
+| Word (.docx in and out) | `saveDocx`, `openDocx` (`src/word.js`); `buildWordDoc` (`src/wordast.js`); `extract` (`src/docx.js`); `alignRuns` (`src/wordsync.js`); `exportDocx`, `docxToLatex` (`src/wordjobs.js`) |
 | live figures (`\rikuywidget`) | `WidgetLayer`, `widgetDoc`, `WIDGET_CSP` (`src/widget.js`); `Builder.cmd` (kind `widget`), `Renderer.atomEl`; `App.widgetsAllowed`, `widgetResized` |
 | equation editing | `App.openMath`, `attachField`, `toField`, `fromField`; `src/minimal.js`, `wordmath.js`, `fences.js` |
 | engine choice, passes, bibliography, indexes | `pickEngine`, `compile`, `runBiber`, `indexTools` (`tex/engine.js`) |
@@ -264,11 +264,12 @@ fallback from the widget's own generator.
 ## 6. Word
 
 Word support is optional at build time and lazy at run time. `src/word.js` holds the App methods
-(`openDocx`, `openWordProject`) and `WordEngine`, the page's side of a worker of its own
-(`src/wordworker.js`, bundled by `build.mjs` into `dist/word/word.js` and started from a blob, as
-the TeX worker is). In the worker, `src/pandoc.js` runs pandoc 3.10 (npm's `pandoc-wasm` 1.1.0,
-the pandoc project's WASI build) on an in-memory file system with folders; `src/wordjobs.js` holds
-the job (`docxToLatex`) and `src/docx.js` the zip and a small XML reader.
+(`saveDocx`, `openDocx`, `openWordProject`) and `WordEngine`, the page's side of a
+worker of its own (`src/wordworker.js`, bundled by `build.mjs` into `dist/word/word.js` and started
+from a blob, as the TeX worker is). In the worker, `src/pandoc.js` runs pandoc 3.10 (npm's
+`pandoc-wasm` 1.1.0, the pandoc project's WASI build) on an in-memory file system with folders;
+`src/wordjobs.js` holds the jobs (`exportDocx`, `docxToLatex`), `src/docx.js` the zip, a small
+XML reader, Rikuy's custom XML part and `extract()`, and `src/wordsync.js` the alignment. `src/wordast.js` (in the page) walks the model into pandoc's AST.
 
 - **Loading.** Nothing loads with the page. The first Word action starts the worker, which reads
   `word/pandoc.json` (pandoc's version, the SHA-256 of `pandoc.wasm` and of its gzip, and of each
@@ -286,6 +287,28 @@ the job (`docxToLatex`) and `src/docx.js` the zip and a small XML reader.
   short preamble with only the packages the body uses, the title block from pandoc's metadata and,
   when the file had Zotero or Mendeley citations, `references.bib` (pandoc's biblatex writer) with
   natbib. The project is marked as someone else's (`markFromLink`, origin `docx`).
+- **Save (`buildWordDoc`, `exportDocx`).** The page as the model has it, not the source: headings
+  with their numbers, paragraphs, nested lists (`list()` rebuilds them from the model's flat
+  items), description lists, theorem heads, tables (a first row set off by a rule is the header),
+  captions, footnotes, the title block and abstract (pandoc's metadata), cross references as the
+  text the page shows, `\url`/`\href` links, images (a PDF figure as a PNG of its first page drawn
+  by pdf.js, `pdfPicture`; EPS and missing files as a bracketed name), live figures as their
+  fallback picture, verbatim as code. Equations go in as TeX with the project's macros expanded
+  (`expandMath` over `model.mathMacros`) and become Word equations (texmath); texmath drops
+  `\tag`, so numbers follow the formula as `\qquad (n)` (`numberRows`). Citations go to pandoc's
+  citeproc with the project's `.bib` files: Chicago author-date, or Rikuy's own numeric style when
+  the document is numeric, or a `.csl` in the project. What the page cannot draw (TikZ, an
+  unknown environment) is a line naming it. Rikuy's comment threads become Word comments on the
+  words they quote, replies as further comments.
+- **Anchors.** Each paragraph, heading, caption, table cell, description term, footnote and title
+  part is a span with an id, which pandoc writes as a bookmark `Rk<n>` inside the paragraph.
+  `exportDocx` reads the new file back with `extract()` and lines each block's text up with what
+  the walk recorded (`alignRuns`): every character keeps the source range that made it, or is
+  generated (`-1`), or belongs to an atom (`-2`: an equation, citation, reference, footnote mark,
+  picture). Each equation is read back to TeX by pandoc once (`mathTeX`, one file of all of them,
+  `mathDocx`), as `was`. The whole source as exported, the blocks (text and run coded map) and the
+  atoms go into `customXml/itemN.xml` as JSON in an element of namespace `urn:rikuy:word:1`, so
+  the file alone is enough to bring edits back.
 
 ## 7. Page and worker
 
@@ -467,13 +490,13 @@ PDF.js is a module `import()`, which takes no hash, so it ships in `dist/tex/` b
 
 - **Node, in CI** (`.github/workflows/ci.yml`, `npm test`): `test/model.test.mjs` (sample model,
   seg maps checked), `edge.test.mjs` (malformed input must not throw), `fences.test.mjs`,
-  `minimal.test.mjs`, `siunitx.test.mjs`, `share.test.mjs`, `word.test.mjs` (a .docx opened with the
-  real pandoc; hostile files), `tex/native/xindy/test.cjs` (against CLISP), and
+  `minimal.test.mjs`, `siunitx.test.mjs`, `share.test.mjs`, `word.test.mjs` (export and a .docx
+  opened, with the real pandoc; hostile files), `tex/native/xindy/test.cjs` (against CLISP), and
   `corpus.test.mjs DIR` (`buildModel` over `MartinThoma/LaTeX-examples` at `8bfd313b8d98`).
 - **Playwright** (`cd test && python3 X.py`, on `dist/` or `RIKUY_DIST`; helpers in `browser.py`,
   the CSP server `serve.py`): `browser.py` (typing), `features.py`, `files.py` (zip round trip),
-  `git.py`, `history.py`, `paste.py`, `pdf.py` (pdfLaTeX, SyncTeX), `word.py` (a .docx opened under the
-  host's policy), `engines.py` (engines, shell
+  `git.py`, `history.py`, `paste.py`, `pdf.py` (pdfLaTeX, SyncTeX), `word.py` (Word both ways, under
+  the host's policy), `engines.py` (engines, shell
   escape), `mathfield.py`, `wordmath.py`, `eqextras.py`, `frontier.py`, `share.py` (two browsers: share, comment,
   send back, merge), `stress.py`, `widgets.py` (live figures, under the host's policy); on a corpus,
   `corpus_browser.py` (random keystrokes) and `editor_corpus.py` (six edits per document land

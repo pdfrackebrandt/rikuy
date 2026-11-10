@@ -73,5 +73,5 @@ jobs:
         run: cd test && python3 share.py
       - name: Live figures (rikuy.sty), under the host's policy
         run: cd test && python3 widgets.py
-      - name: Word files opened as projects
+      - name: Word, both ways
         run: cd test && python3 word.py

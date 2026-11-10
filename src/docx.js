@@ -1,4 +1,5 @@
-// Word files without Word: the zip and a small XML reader. A .docx may come from a stranger, so everything here
+// Word files without Word: the zip, a small XML reader, Rikuy's own part (customXml) and the text
+// of each block Rikuy marked with a bookmark. A .docx may come from a stranger, so everything here
 // treats it as hostile: sizes are capped before anything is inflated, a part that declares a DTD
 // is refused (no entity is ever expanded, so neither XXE nor a billion laughs), nesting is capped,
 // and the zip handed on to pandoc is the one rebuilt here from what passed. Used by the Word
@@ -13,6 +14,12 @@ export const LIMITS = {
   depth: 400,       // elements inside elements
   rikuy: 64e6       // Rikuy's own part
 };
+
+// Rikuy's part: JSON in the text of one element in this namespace, so Word and LibreOffice keep it
+// as an opaque custom XML part (both were seen to: test/word.py, docs/ARCHITECTURE.md)
+export const RIKUY_NS = 'urn:rikuy:word:1';
+export const ANCHOR = /^Rk\d{1,7}$/;
+export const OBJ = '￼';
 
 const dec = new TextDecoder('utf-8', { fatal: false });
 const enc = new TextEncoder();
@@ -182,4 +189,260 @@ export function find(el, name) {
 export function textContent(el) {
   if (typeof el === 'string') return el;
   return el.c.map(textContent).join('');
+}
+
+// ---- Rikuy's part ----------------------------------------------------------------------------
+
+// The docx with Rikuy's data in a custom XML part: item, its properties, and the relationships
+// from the document and to the properties, as Word itself writes custom XML.
+export function addRikuyPart(bytes, data) {
+  const parts = unzip(bytes);
+  let k = 1;
+  while (parts.has('customXml/item' + k + '.xml')) k++;
+  const json = JSON.stringify(data);
+  parts.set('customXml/item' + k + '.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<rikuy xmlns="' + RIKUY_NS + '">' + escText(json) + '</rikuy>');
+  const guid = '{' + 'xxxxxxxx-xxxx-4xxx-8xxx-xxxxxxxxxxxx'.replace(/x/g, () => '0123456789ABCDEF'[Math.floor(Math.random() * 16)]) + '}';
+  parts.set('customXml/itemProps' + k + '.xml', '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n<ds:datastoreItem ds:itemID="' + guid + '" xmlns:ds="http://schemas.openxmlformats.org/officeDocument/2006/customXml"><ds:schemaRefs><ds:schemaRef ds:uri="' + RIKUY_NS + '"/></ds:schemaRefs></ds:datastoreItem>');
+  parts.set('customXml/_rels/item' + k + '.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXmlProps" Target="itemProps' + k + '.xml"/></Relationships>');
+  let ct = text(parts.get('[Content_Types].xml'));
+  if (!/Extension="xml"/i.test(ct)) ct = ct.replace('</Types>', '<Default Extension="xml" ContentType="application/xml"/></Types>');
+  ct = ct.replace('</Types>', '<Override PartName="/customXml/itemProps' + k + '.xml" ContentType="application/vnd.openxmlformats-officedocument.customXmlProperties+xml"/></Types>');
+  parts.set('[Content_Types].xml', ct);
+  const rp = 'word/_rels/document.xml.rels';
+  let rels = text(parts.get(rp));
+  let id = 'rIdRikuy';
+  while (rels.includes('Id="' + id + '"')) id += 'x';
+  rels = rels.replace('</Relationships>', '<Relationship Id="' + id + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml" Target="../customXml/item' + k + '.xml"/></Relationships>');
+  parts.set(rp, rels);
+  return zip(parts);
+}
+
+// ---- the text of each marked block ------------------------------------------------------------
+
+// What a reader of the document sees, block by block. Every block Rikuy exported starts with a
+// bookmark named Rk<n>; a region runs from one such bookmark to the next, so a paragraph the
+// coauthor added after a block joins that block's region as a new paragraph ("\n\n"). Tracked
+// insertions count, tracked deletions do not (the document as it reads with all changes accepted).
+// Equations, footnote marks and pictures are one OBJ character each, with what they are in objs.
+//   regions: Map id -> { id, text, objs: [{at, k: 'math'|'note'|'obj', xml, display, note}],
+//            cs: [[commentId, at]], ce: [[commentId, at]], joined, box, tracked }
+export function extract(parts) {
+  const R = { regions: new Map(), order: [], pre: region(null, 'body'), notes: new Map(), comments: new Map(), orphans: [], authors: new Set(), tracked: false, dupes: 0 };
+  const doc = parseXml(text(parts.get('word/document.xml')));
+  const body = find(doc, 'w:body');
+  if (body) stream(R, body, 'body', R.pre);
+  if (parts.has('word/footnotes.xml')) {
+    const fx = parseXml(text(parts.get('word/footnotes.xml')));
+    const fr = find(fx, 'w:footnotes');
+    for (const fn of kids(fr, 'w:footnote')) {
+      const t = fn.a['w:type'];
+      if (t === 'separator' || t === 'continuationSeparator' || t === 'continuationNotice') continue;
+      const pre = region(null, 'fn' + fn.a['w:id']);
+      const before = R.order.length;
+      stream(R, fn, 'fn' + fn.a['w:id'], pre);
+      R.notes.set(fn.a['w:id'], { pre, anchors: R.order.slice(before) });
+    }
+  }
+  comments(R, parts);
+  return R;
+}
+
+function region(id, box) { return { id, text: '', objs: [], cs: [], ce: [], joined: false, box, tracked: false }; }
+
+function stream(R, container, box, pre) {
+  const S = { R, cur: pre, glue: false, pending: [], box, boxes: 0 };
+  blocks(S, container, box);
+}
+
+function blocks(S, el, box) {
+  for (const c of el.c) {
+    if (typeof c === 'string') continue;
+    switch (c.n) {
+      case 'w:p': para(S, c, box); break;
+      case 'w:tbl':
+        for (const tr of kids(c, 'w:tr')) for (const tc of kids(tr, 'w:tc')) { S.boxes++; blocks(S, tc, box + '/c' + S.boxes); }
+        break;
+      case 'w:sdt': { const sc = kid(c, 'w:sdtContent'); if (sc) blocks(S, sc, box); break; }
+      case 'w:customXml': case 'w:ins': case 'w:moveTo': blocks(S, c, box); break;
+      case 'w:bookmarkStart': if (ANCHOR.test(c.a['w:name'] || '')) S.pending.push(c.a['w:name']); break;
+      default: break;
+    }
+  }
+}
+
+function para(S, p, box) {
+  const R = S.R;
+  const pieces = S.pending.map((id) => ({ t: 'a', id }));
+  S.pending = [];
+  const ppr = kid(p, 'w:pPr');
+  const prpr = ppr && kid(ppr, 'w:rPr');
+  const markDel = !!(prpr && (kid(prpr, 'w:del') || kid(prpr, 'w:moveFrom')));
+  const markIns = !!(prpr && (kid(prpr, 'w:ins') || kid(prpr, 'w:moveTo')));
+  const st = { del: false, fld: [], tracked: markDel || markIns };
+  inline(S, p, pieces, st);
+  if (st.tracked) R.tracked = true;
+  // the paragraph belongs to the first new anchor in it; a second one there means the coauthor
+  // joined two paragraphs
+  let owner = null;
+  for (const x of pieces) if (x.t === 'a' && !R.regions.has(x.id)) { owner = x; break; }
+  const has = pieces.some((x) => (x.t === 's' && x.s) || x.t === 'o' || x.t === 'cs' || x.t === 'ce');
+  let cur = S.cur;
+  if (owner) {
+    cur = newRegion(S, owner.id, box);
+    cur.joined = S.glue;
+  } else if (has) {
+    if (cur.box !== box && cur.id) {
+      // a paragraph in a table cell or footnote of its own, with no anchor: new content Rikuy
+      // cannot place (a new row, a new cell); kept so it is reported, never dropped silently
+      const o = region(null, box);
+      o.after = cur.id;
+      R.orphans.push(o);
+      S.cur = cur = o;
+    } else if (!S.glue && (cur.text || cur.objs.length)) cur.text += '\n\n';
+  }
+  if (st.tracked) cur.tracked = true;
+  for (const x of pieces) {
+    if (x.t === 'a') {
+      if (x === owner) continue;
+      if (R.regions.has(x.id)) { if (x.id !== owner?.id) R.dupes++; continue; }
+      const r = newRegion(S, x.id, box);
+      r.joined = true;
+      if (st.tracked) r.tracked = true;
+      cur = r;
+      continue;
+    }
+    if (x.t === 's') cur.text += x.s;
+    else if (x.t === 'o') { cur.objs.push({ ...x.o, at: cur.text.length }); cur.text += OBJ; }
+    else if (x.t === 'cs') cur.cs.push([x.id, cur.text.length]);
+    else if (x.t === 'ce') cur.ce.push([x.id, cur.text.length]);
+  }
+  S.cur = cur;
+  S.glue = markDel;
+}
+
+function newRegion(S, id, box) {
+  const r = region(id, box);
+  S.R.regions.set(id, r);
+  S.R.order.push(id);
+  S.cur = r;
+  return r;
+}
+
+function inline(S, el, out, st) {
+  for (const c of el.c) {
+    if (typeof c === 'string') continue;
+    const n = c.n;
+    switch (n) {
+      case 'w:pPr': case 'w:rPr': case 'w:proofErr': case 'w:lastRenderedPageBreak': case 'w:permStart': case 'w:permEnd': break;
+      case 'w:r': run(S, c, out, st); break;
+      case 'w:ins': case 'w:moveTo': st.tracked = true; if (c.a['w:author']) S.R.authors.add(c.a['w:author']); inline(S, c, out, st); break;
+      case 'w:del': case 'w:moveFrom': {
+        st.tracked = true;
+        if (c.a['w:author']) S.R.authors.add(c.a['w:author']);
+        const was = st.del; st.del = true; inline(S, c, out, st); st.del = was;
+        break;
+      }
+      case 'w:hyperlink': case 'w:smartTag': case 'w:customXml': case 'w:fldSimple': case 'w:dir': case 'w:bdo': inline(S, c, out, st); break;
+      case 'w:sdt': { const sc = kid(c, 'w:sdtContent'); if (sc) inline(S, sc, out, st); break; }
+      case 'w:bookmarkStart': if (ANCHOR.test(c.a['w:name'] || '')) out.push({ t: 'a', id: c.a['w:name'] }); break;
+      case 'w:commentRangeStart': out.push({ t: 'cs', id: c.a['w:id'] }); break;
+      case 'w:commentRangeEnd': out.push({ t: 'ce', id: c.a['w:id'] }); break;
+      case 'm:oMath': case 'm:oMathPara':
+        if (!st.del && !st.fld.some((f) => f === 'instr')) out.push({ t: 'o', o: { k: 'math', xml: serialize(c), display: n === 'm:oMathPara' } });
+        break;
+      case 'mc:AlternateContent': if (!st.del) out.push({ t: 'o', o: { k: 'obj' } }); break;
+      default: break;
+    }
+  }
+}
+
+function run(S, r, out, st) {
+  for (const c of r.c) {
+    if (typeof c === 'string') continue;
+    // fields: their code is not text; their result is
+    if (c.n === 'w:fldChar') {
+      const t = c.a['w:fldCharType'];
+      if (t === 'begin') st.fld.push('instr');
+      else if (t === 'separate' && st.fld.length) st.fld[st.fld.length - 1] = 'result';
+      else if (t === 'end') st.fld.pop();
+      continue;
+    }
+    if (st.fld.some((f) => f === 'instr')) continue;
+    if (st.del) {
+      if (c.n === 'w:delText' || c.n === 'w:t') continue;
+      continue;
+    }
+    const push = (s) => out.push({ t: 's', s });
+    switch (c.n) {
+      case 'w:t': push(textContent(c)); break;
+      case 'w:tab': case 'w:ptab': push('\t'); break;
+      case 'w:br': { const t = c.a['w:type']; if (t !== 'page' && t !== 'column') push('\n'); break; }
+      case 'w:cr': push('\n'); break;
+      case 'w:noBreakHyphen': push('-'); break;
+      case 'w:sym': { const ch = parseInt(c.a['w:char'] || '', 16); if (ch >= 0x20 && ch < 0xd800 && !(ch >= 0xe000 && ch < 0xf900)) push(String.fromCharCode(ch)); break; }
+      case 'w:footnoteReference': out.push({ t: 'o', o: { k: 'note', note: c.a['w:id'] } }); break;
+      case 'w:endnoteReference': out.push({ t: 'o', o: { k: 'obj', endnote: c.a['w:id'] } }); break;
+      case 'w:drawing': case 'w:pict': case 'w:object': case 'mc:AlternateContent': out.push({ t: 'o', o: { k: 'obj' } }); break;
+      default: break;
+    }
+  }
+}
+
+// Word's comments: who, when, the text, and (Word 2013 on) which comment a reply answers
+function comments(R, parts) {
+  if (!parts.has('word/comments.xml')) return;
+  const cx = parseXml(text(parts.get('word/comments.xml')));
+  const byPara = new Map();
+  for (const c of kids(find(cx, 'w:comments'), 'w:comment')) {
+    const ps = kids(c, 'w:p');
+    const body = ps.map((p) => { const o = []; inline({ R }, p, o, { del: false, fld: [] }); return o.filter((x) => x.t === 's').map((x) => x.s).join(''); }).join('\n').trim();
+    const id = c.a['w:id'];
+    const info = { id, author: (c.a['w:author'] || '').trim(), date: c.a['w:date'] || '', body, parent: null, done: false };
+    R.comments.set(id, info);
+    const last = ps[ps.length - 1];
+    if (last && last.a['w14:paraId']) byPara.set(last.a['w14:paraId'], info);
+  }
+  if (parts.has('word/commentsExtended.xml')) {
+    const ex = parseXml(text(parts.get('word/commentsExtended.xml')));
+    for (const e of kids(find(ex, 'w15:commentsEx'), 'w15:commentEx')) {
+      const me = byPara.get(e.a['w15:paraId']);
+      if (!me) continue;
+      if (e.a['w15:done'] === '1') me.done = true;
+      const parent = e.a['w15:paraIdParent'] && byPara.get(e.a['w15:paraIdParent']);
+      if (parent) me.parent = parent.id;
+    }
+  }
+}
+
+// ---- a Word file of nothing but equations -----------------------------------------------------
+
+// pandoc reads OMML into TeX; equations are taken out of their documents into one file of their
+// own, one paragraph each, so each comes back as one formula in a known order.
+const NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml" xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"';
+export function mathDocx(xmls) {
+  const paras = xmls.map((x, i) => '<w:p><w:r><w:t xml:space="preserve">@' + i + '@ </w:t></w:r>' + x + '</w:p>').join('');
+  const parts = new Map([
+    ['[Content_Types].xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'],
+    ['_rels/.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'],
+    ['word/_rels/document.xml.rels', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'],
+    ['word/document.xml', '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ' + NS + '><w:body>' + paras + '</w:body></w:document>']
+  ]);
+  return zip(parts);
+}
+
+// pandoc's JSON of mathDocx's file -> the TeX of each equation, by its number
+export function mathFromJson(json, n) {
+  const out = new Array(n).fill(null);
+  const blocks = (JSON.parse(json).blocks || []);
+  for (const b of blocks) {
+    if (b.t !== 'Para' && b.t !== 'Plain') continue;
+    let idx = -1;
+    const tex = [];
+    for (const x of b.c) {
+      if (x.t === 'Str' && /^@\d+@$/.test(x.c)) idx = +x.c.slice(1, -1);
+      else if (x.t === 'Math') tex.push(x.c[1]);
+    }
+    if (idx >= 0 && idx < n && tex.length) out[idx] = tex.join(' ');
+  }
+  return out;
 }

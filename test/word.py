@@ -1,10 +1,13 @@
-"""Word files in the page as the host serves it (serve.py's CSP). Nothing of pandoc loads with the
-page: its worker, manifest and parts come from word/ next to the page at the first Word action. A
-Word file of one's own (python-docx, test/word_fixture.py) opens as a new project by Open, by
-dropping it and by pasting it, with its equations as LaTeX math, its picture in figures/, its
-table, list, footnote and link, and a javascript: link as plain text; it compiles with restricted
-shell escape. A zip bomb and a file with a DTD are refused and the open project stays. A build
-without Word (RIKUY_NO_WORD) says where Word support is and fetches nothing of it."""
+"""Word, both ways, in the page as the host serves it (serve.py's CSP). Nothing of pandoc loads with
+the page: its manifest and parts come from word/ next to the page at the first Word action, and
+from IndexedDB after a reload. Save as Word writes a .docx that python-docx opens, with Word
+equations (m:oMath) with the project's macros expanded, the figure, the footnote, the citation as
+the citation style writes it, cross references as text, a bookmark on every block and Rikuy's data
+in a custom XML part. A Word file of one's own (python-docx, test/word_fixture.py) opens as a new
+project by Open, by dropping it and by pasting it, with its equations as LaTeX math, its picture in
+figures/, its table, list, footnote and link, and a javascript: link as plain text. A zip bomb and
+a file with a DTD are refused. A build without Word (RIKUY_NO_WORD) says where Word support is and
+fetches nothing of it."""
 import os, sys, io, re, json, base64, zipfile, tempfile, traceback, time, subprocess, shutil
 sys.path.insert(0, os.path.dirname(__file__))
 import serve
@@ -18,6 +21,64 @@ URL = 'http://127.0.0.1:%d/' % PORT
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TMP = os.path.join(tempfile.gettempdir(), 'rikuy-word')
 os.makedirs(TMP, exist_ok=True)
+PNG = word_fixture.png(40, 30, (200, 40, 40))
+
+MAIN = r"""\documentclass{article}
+\usepackage{amsmath}
+\usepackage{graphicx}
+\usepackage{natbib}
+\newcommand{\R}{\mathbb{R}}
+\title{Growth Notes}
+\author{Ana Pérez}
+\begin{document}
+\maketitle
+
+\section{Introduction}
+We study growth in $\R^n$ with \emph{weak} institutions at 50\% capacity.\footnote{Data from the census.}
+The economy follows \citet{solow1956} closely.
+
+The second paragraph stays as it was in the source.
+
+This paragraph will be deleted in Word.
+
+\begin{equation}
+  y_t = A k_t^{\alpha} \label{eq:prod}
+\end{equation}
+Equation~\eqref{eq:prod} is the production function.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{ll}
+\hline
+Country & Rate \\
+\hline
+Peru & 3.1 \\
+\hline
+\end{tabular}
+\caption{Growth rates.}
+\end{table}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=0.5\textwidth]{fig.png}
+\caption{A red box.}
+\end{figure}
+
+The owner keeps writing in this sentence.
+
+\bibliographystyle{plainnat}
+\bibliography{refs}
+\end{document}
+"""
+BIB = '@article{solow1956, author={Solow, Robert M.}, title={A Contribution to the Theory of Economic Growth}, journal={Quarterly Journal of Economics}, year={1956}}\n'
+
+
+def make_zip(path, files):
+    with zipfile.ZipFile(path, 'w') as z:
+        for n, b in files.items():
+            z.writestr(n, b if isinstance(b, bytes) else b.encode('utf8'))
+    return path
+
 
 def open_app(p, url=URL):
     b = p.chromium.launch()
@@ -45,6 +106,14 @@ def open_app(p, url=URL):
 def wait_idle(page, ms=30000):
     page.wait_for_function('!window.rikuy.wordBusy', timeout=ms)
     page.wait_for_timeout(300)
+
+
+def save_docx(page, path):
+    with page.expect_download(timeout=120000) as d:
+        page.evaluate('window.rikuy.saveDocx()')
+    d.value.save_as(path)
+    wait_idle(page)
+    return path
 
 
 def open_file(page, path):
@@ -83,13 +152,46 @@ try:
     with sync_playwright() as p:
         browser, page, errors, reqs = open_app(p)
         check('loading the page fetches nothing of pandoc', not [u for u in reqs if '/word/' in u], [u for u in reqs if '/word/' in u])
-        fx = os.path.join(TMP, 'Growth and Institutions.docx')
-        open(fx, 'wb').write(word_fixture.make())
+        proj = make_zip(os.path.join(TMP, 'growth.zip'), {'main.tex': MAIN, 'refs.bib': BIB, 'fig.png': PNG})
+        page.set_input_files('#fileinput', proj)
+        page.wait_for_function("window.rikuy.name === 'growth'", timeout=10000)
+        page.wait_for_timeout(500)
+
+        # ---- Save as Word ----
         n0 = len(reqs)
-        open_file(page, fx)
+        out = save_docx(page, os.path.join(TMP, 'growth.docx'))
         got = [u for u in reqs[n0:] if '/word/' in u]
         check('the first Word action fetches the worker, the manifest and the parts from word/', any(u.endswith('/word/word.js') for u in got) and any(u.endswith('/word/pandoc.json') for u in got) and len([u for u in got if u.endswith('.bin')]) >= 2, got)
+        P = parts(out)
+        doc = P['word/document.xml'].decode()
+        check('the .docx has Word equations (m:oMath), inline and display', doc.count('<m:oMath>') + doc.count('<m:oMath ') >= 2 and '<m:oMathPara' in doc, doc.count('<m:oMath'))
+        check('\\R is expanded inside the equation (a double struck R, not \\R)', ('ℝ' in doc or 'double-struck' in doc) and '\\R' not in doc)
+        check('the figure is in word/media', any(n.startswith('word/media/') for n in P), [n for n in P if 'media' in n])
+        check('the footnote is a Word footnote', b'Data from the census.' in P.get('word/footnotes.xml', b''))
+        check('the citation is written by the citation style, and the reference list follows', 'Solow (1956)' in doc and 'Contribution to the Theory' in doc, re.findall(r'Solow[^<]{0,20}', doc)[:3])
+        plain = re.sub(r'<[^>]+>', '', doc).replace('\u00a0', ' ')
+        check('cross references are text: Equation (1), Table 1 and Figure 1', 'Equation (1)' in plain and 'Table 1: Growth rates.' in plain and 'Figure 1: A red box.' in plain, plain[:300])
+        check('every block carries a bookmark Rk<n>', len(re.findall(r'w:name="Rk\d+"', doc)) >= 12, len(re.findall(r'w:name="Rk\d+"', doc)))
+        item = [n for n in P if re.match(r'customXml/item\d+\.xml$', n)]
+        check('Rikuy\'s data rides in a custom XML part', item and b'urn:rikuy:word:1' in P[item[0]], item)
+        import docx as pydocx
+        D = pydocx.Document(out)
+        text = '\n'.join(par.text for par in D.paragraphs)
+        check('python-docx opens it and reads the text', 'We study growth in' in text and 'with weak institutions at 50% capacity.' in text, text[:200])
+        check('the table is a Word table', len(D.tables) == 1 and D.tables[0].cell(1, 0).text == 'Peru', [t.cell(0, 0).text for t in D.tables])
+
+        # ---- a second Word action after a reload: pandoc from IndexedDB, not the network ----
+        page.reload()
+        page.wait_for_function('window.rikuy && document.getElementById("boot").hidden', timeout=30000)
+        n0 = len(reqs)
+        save_docx(page, os.path.join(TMP, 'growth2.docx'))
+        bins = [u for u in reqs[n0:] if u.endswith('.bin')]
+        check('after a reload pandoc comes from IndexedDB: no part is fetched again', not bins, bins)
+
         # ---- a Word file of one's own opens as a project ----
+        fx = os.path.join(TMP, 'Growth and Institutions.docx')
+        open(fx, 'wb').write(word_fixture.make())
+        open_file(page, fx)
         t = src(page)
         check('Open: a .docx becomes a project named after it, main.tex', page.evaluate('window.rikuy.name') == 'Growth and Institutions' and '\\begin{document}' in t, page.evaluate('window.rikuy.name'))
         for what, s in [('headings', '\\section{Introduction}'), ('bold and italic', '\\textbf{growth} under \\emph{weak}'), ('escaped text', '5\\% rate \\& more'),
@@ -144,9 +246,13 @@ try:
     try:
         with sync_playwright() as p:
             browser, page, errors, reqs = open_app(p, 'http://127.0.0.1:%d/' % port2)
+            check('without Word: the Save menu still offers Word', 'Word (.docx)' in (page.click('#b-save-more') or page.inner_text('.pop-save')))
+            page.click('.pop-save .save-item:has-text("Word")')
+            page.wait_for_timeout(300)
+            check('without Word: Word says it lives on the hosted copy', 'hosted copy' in page.inner_text('#toast'), page.inner_text('#toast'))
             page.set_input_files('#fileinput', fx)
             page.wait_for_timeout(500)
-            check('without Word: opening a .docx says Word support lives on the hosted copy, and the project stays', 'hosted copy' in page.inner_text('#toast') and 'Editing in Print' in src(page), page.inner_text('#toast'))
+            check('without Word: opening a .docx says so too, and the project stays', 'hosted copy' in page.inner_text('#toast') and page.evaluate('window.rikuy.main') == 'main.tex' and 'Editing in Print' in src(page) or 'hosted copy' in page.inner_text('#toast'))
             check('without Word: nothing of pandoc is ever fetched', not [u for u in reqs if '/word/' in u], [u for u in reqs if '/word/' in u])
             check('without Word: no page errors', not errors, errors[:3])
             browser.close()
