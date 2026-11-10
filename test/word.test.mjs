@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { buildModel, colorValue } from '../src/model.js';
-import { buildWordDoc, expandMath, unpackRuns, wordColor, listStyle } from '../src/wordast.js';
+import { buildWordDoc, expandMath, unpackRuns, wordColor, listStyle, uncolor } from '../src/wordast.js';
 import { createPandoc } from '../src/pandoc.js';
 import { exportDocx, readDocx, docxToLatex } from '../src/wordjobs.js';
 import { checkData, planImport, unpackRead, rebase, textHunks, mathPatch, stripNumbers, safeMath } from '../src/wordsync.js';
@@ -491,6 +491,21 @@ await ok('the page\'s model: colours by number and by \\definecolor, in text and
   // outside a table's cell nothing changes
   const m2 = buildModel({ files: new Map([['main.tex', doc('Text \\begin{tabular}{l}a\\end{tabular} more.\n')]]), main: 'main.tex' });
   assert.ok(!m2.blocks.flatMap((u) => u.items).some((it) => (it.inl || []).some((x) => x.k === 'chip' && (x.table || x.list))));
+});
+
+await ok('to Word: a formula with colour stays a Word equation; a colour the preamble defines is kept', () => {
+  const src = doc('Then $\\textcolor{red}{x} + \\textcolor[HTML]{0F9ED5}{y^2} + {\\color{key} z}$ and \\textcolor{key}{key words}.\n\\[ \\textcolor{key}{E} = mc^2 \\]\n', '\\usepackage{xcolor}\n\\definecolor{key}{HTML}{C00000}\n');
+  const files = new Map([['main.tex', src]]);
+  const m = buildModel({ files, main: 'main.tex' });
+  const W = buildWordDoc(m, files, { now: 0 });
+  assert.ok(W.degraded.some((d) => /a formula without its colours \(2\)/.test(d)), W.degraded.join('|'));
+  const E = exportFiles(files);
+  const d = text(unzip(E.docx).get('word/document.xml'));
+  assert.equal((d.match(/<m:oMath>/g) || []).length, 2);
+  assert.ok(!d.includes('textcolor') && !/\$[^<]*\$/.test(d.replace(/<[^>]+>/g, '')), 'no formula left as TeX text');
+  assert.match(d, /<w:rStyle w:val="ColourC00000" \/><\/w:rPr><w:t[^>]*>key words/);
+  assert.equal(importInto(E.docx, files).files.size, 0);
+  assert.equal(uncolor('\\textcolor{red}{x}+{\\color[HTML]{C00000} y}+\\frac{a}{b}'), '{x}+{ y}+\\frac{a}{b}');
 });
 
 console.log('word: ' + n + ' groups of checks passed');

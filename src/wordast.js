@@ -104,6 +104,13 @@ export function expandMath(tex, macros) {
 function maxArg(b) { let n = 0; b.replace(/#(\d)/g, (s, d) => { n = Math.max(n, +d); return s; }); return n; }
 function tokenize(s) { return s.match(/\\[A-Za-z]+|\\.|\s+|[\s\S]/g) || []; }
 
+// texmath has no colour: one \textcolor in a formula and pandoc gave the whole formula up,
+// writing its TeX into the Word file as text. The colour goes, the formula stays an equation.
+export function uncolor(tex) {
+  if (!/\\(textcolor|color|colorbox)\b/.test(tex)) return tex;
+  return tex.replace(/\\(textcolor|colorbox|color)\s*(?:\[[^\]{}]*\])?\s*\{[^{}]*\}/g, '');
+}
+
 // \tag{n} that the model puts on numbered rows: texmath drops \tag without a word, so the number
 // goes after the formula as Word shows it, \qquad (n)
 export function numberRows(tex) {
@@ -149,6 +156,12 @@ class Walker {
     const doc = { 'pandoc-api-version': API, meta: this.metaOut(), blocks: this.blocks };
     const deg = [...this.degraded.entries()].map(([k, n]) => k + (n > 1 ? ' (' + n + ')' : ''));
     return { doc, anchors: this.anchors.map(packAnchor), atoms: this.atoms, images: [...this.images], warnings: this.warnings, degraded: deg, comments: this.ncomments };
+  }
+
+  plainMath(tex) {
+    const t = uncolor(tex);
+    if (t !== tex) this.degrade('a formula without its colours');
+    return t;
   }
 
   degrade(what) { this.degraded.set(what, (this.degraded.get(what) || 0) + 1); }
@@ -247,7 +260,7 @@ class Walker {
   }
 
   display(it) {
-    const tex = numberRows(expandMath(it.tex, this.m.mathMacros));
+    const tex = numberRows(this.plainMath(expandMath(it.tex, this.m.mathMacros)));
     const ai = this.atom({ k: 'math', f: it.f, s: it.s, e: it.e, is: it.is, ie: it.ie, disp: true, env: it.env || '', tags: it.tags || [] });
     const inl = this.wrap('math', it.f, it.s, it.e, () => { this.atomText(OBJ, ai); return [{ t: 'Math', c: [{ t: 'DisplayMath' }, tex] }]; }, { after: it.e });
     return { t: 'Para', c: inl };
@@ -421,7 +434,7 @@ class Walker {
       case 'math': {
         const ai = this.atom({ k: 'math', f: x.f, s: x.s, e: x.e, is: x.is, ie: x.ie, ro: !!x.ro });
         this.atomText(OBJ, ai);
-        return [{ t: 'Math', c: [{ t: 'InlineMath' }, expandMath(x.tex, this.m.mathMacros)] }];
+        return [{ t: 'Math', c: [{ t: 'InlineMath' }, this.plainMath(expandMath(x.tex, this.m.mathMacros))] }];
       }
       case 'cite': {
         const ai = this.atom({ k: 'cite', f: x.f, s: x.s, e: x.e, ro: !!x.ro });
