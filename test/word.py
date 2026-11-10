@@ -294,13 +294,28 @@ try:
         for what, s in [('headings', '\\section{Introduction}'), ('bold and italic', '\\textbf{growth} under \\emph{weak}'), ('escaped text', '5\\% rate \\& more'),
                         ('inline math from OMML', '\\(x^{2} + \\alpha\\)'), ('display math from OMML', '\\[\\int_{0}^{1}'), ('a link', '\\href{https://example.org/data}{online}'),
                         ('lists', '\\begin{itemize}'), ('a numbered list', '\\begin{enumerate}'), ('the table', 'Peru & 3.1'), ('the footnote', '\\footnote{Data from the World Bank.}'),
-                        ('the picture', '\\includegraphics[width=2in'), ('the title', '\\title{Growth and Institutions}')]:
+                        ('the picture, as wide a share of the line as in Word', '\\includegraphics[width=0.33\\linewidth'), ('the title', '\\title{Growth and Institutions}')]:
             check('Open .docx keeps %s' % what, s in t, t[:600] if s not in t else '')
         check('a javascript: link in the Word file is plain text, not a link', 'javascript' not in t)
         check('the table on the page shows its cells, not pandoc\'s \\noalign', '\\noalign' not in t and 'noalign' not in page.inner_text('#pages') and 'Peru' in page.inner_text('#pages'), page.inner_text('#pages')[:300])
         check('the picture is a file of the project, shown on the page', page.evaluate("window.rikuy.assetBlobs.has('figures/figure1.png')") and page.evaluate("[...document.querySelectorAll('#pages img')].some(i => i.complete && i.naturalWidth > 0)"))
         check('the page shows it without error chips', page.evaluate("document.querySelectorAll('#pages .a-chip.err').length") == 0, page.evaluate("[...document.querySelectorAll('#pages .a-chip.err')].map(x => x.textContent)"))
         check('a project from a Word file compiles with restricted shell escape', page.evaluate("(window.rikuy.linkCache.get(window.rikuy.name + '|' + window.rikuy.main) || {}).origin") == 'docx')
+
+        # ---- what pandoc alone loses: kept where LaTeX has it, said where it has not ----
+        fx2 = os.path.join(TMP, 'Reform.docx')
+        open(fx2, 'wb').write(word_fixture.make_rich())
+        open_file(page, fx2)
+        t = src(page)
+        toast = page.inner_text('#toast')
+        shown = page.inner_text('#pages')
+        check('a rich Word file: the toast says what was not kept and what came differently', 'Not kept:' in toast and 'header and footer text' in toast and '1 chart' in toast and '1 Word comment came in' in toast and 'tracked changes' in toast, toast[:500])
+        check('and the same notes stay at the top of the source', t.startswith('% Opened from a Word file by Rikuy.\n% - Not kept:') and '\\documentclass' in t.split('\n')[7], t[:300])
+        check('its comment is a Rikuy comment under the words, its TeX inert', '\n% comment (Ana P) on "robust": Is it? \\input{/etc/passwd} 50% }\n' in t and 'passwd' not in shown, t[t.find('robust') - 60:t.find('robust') + 160])
+        check('the page shows it: subtitle, contents, underlined and struck words, the centred line, both captions once, no stale contents',
+              all(x in shown for x in ['Evidence from Peru', 'under', 'struck', 'red words', 'Centred line.', 'Figure 1: A blue box.', 'Table 1: Growth by region']) and 'South & 3 & \\begin{tabular}{@{}ll@{}}' in t and 'Stale entry' not in shown and 'Figure 1: Figure 1' not in shown and 'uline' not in shown, shown[:900])
+        check('the cross reference follows the figure (\\ref), and shows its number', 'Figure~\\ref{_Ref7}' in t and 'See Figure 1 and the wide one' in shown.replace('\u00a0', ' '), shown[shown.find('See'):shown.find('See') + 80])
+        check('the rich file shows without error chips or page errors', page.evaluate("document.querySelectorAll('#pages .a-chip.err').length") == 0 and not errors, (page.evaluate("[...document.querySelectorAll('#pages .a-chip.err')].map(x => x.textContent)"), errors[:3]))
 
         # by dropping it, and by pasting it
         b64 = base64.b64encode(word_fixture.make()).decode()

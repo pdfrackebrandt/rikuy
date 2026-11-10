@@ -273,7 +273,7 @@ await ok('a stranger\'s .docx opens as LaTeX with its equations, table, list, fo
   // written by python-docx (test/word_fixture.py), kept here so npm test needs no Python packages
   const fx = fs.readFileSync(new URL('./fixtures/word-fixture.docx', import.meta.url));
   const r = docxToLatex(P, new Uint8Array(fx), 'fx.docx');
-  for (const s of ['\\section{Introduction}', '\\(x^{2} + \\alpha\\)', '\\[\\int_{0}^{1}', '\\begin{itemize}', 'Peru & 3.1', '\\footnote{Data from the World Bank.}', '\\includegraphics[width=2in', '\\href{https://example.org/data}{online}']) assert.ok(r.tex.includes(s), s);
+  for (const s of ['\\section{Introduction}', '\\(x^{2} + \\alpha\\)', '\\[\\int_{0}^{1}', '\\begin{itemize}', 'Peru & 3.1', '\\footnote{Data from the World Bank.}', '\\includegraphics[width=0.33\\linewidth', '\\href{https://example.org/data}{online}']) assert.ok(r.tex.includes(s), s);
   assert.ok(!r.tex.includes('javascript'));
   assert.deepEqual(Object.keys(r.media), ['figures/figure1.png']);
   const m = buildModel({ files: new Map([['main.tex', r.tex]]), main: 'main.tex' });
@@ -340,6 +340,125 @@ await ok('to Word: colour, highlight, centred text and a list\'s own labels are 
   assert.equal(wordColor('mycolour'), null);
   assert.deepEqual(listStyle('iv)'), [1, { t: 'DefaultStyle' }, { t: 'DefaultDelim' }]);
   assert.deepEqual(listStyle('3.'), [3, { t: 'Decimal' }, { t: 'Period' }]);
+});
+
+// a .docx of one body, as small as pandoc reads: for the cases a line of XML says best
+const NSW = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+function tiny(body, extra = {}) {
+  const u = (t) => new TextEncoder().encode(t);
+  const over = Object.keys(extra).map((k) => '<Override PartName="/' + k + '" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.' + k.replace(/^word\/|\.xml$/g, '') + '+xml"/>').join('');
+  const o = {
+    '[Content_Types].xml': u('<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' + over + '</Types>'),
+    '_rels/.rels': u('<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>'),
+    'word/_rels/document.xml.rels': u('<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>'),
+    'word/document.xml': u('<?xml version="1.0"?><w:document ' + NSW + '><w:body>' + body + '</w:body></w:document>')
+  };
+  for (const [k, v] of Object.entries(extra)) o[k] = u(v);
+  return zipSync(o);
+}
+const open = (bytes) => docxToLatex(P, new Uint8Array(bytes), 'x.docx');
+const bodyOf = (tex) => tex.slice(tex.indexOf('\\begin{document}'));
+const wp = (t, ppr = '') => '<w:p>' + ppr + '<w:r><w:t xml:space="preserve">' + t + '</w:t></w:r></w:p>';
+
+await ok('a Word file of what pandoc alone loses: nothing goes without a word, and every command has its package', () => {
+  // test/word_fixture.py's make_rich()
+  const r = open(fs.readFileSync(new URL('./fixtures/word-rich.docx', import.meta.url)));
+  const t = r.tex, b = bodyOf(t);
+  // kept, which plain pandoc drops or writes so that LaTeX stops
+  assert.ok(t.includes('\\title{Reform and Growth\\\\[0.5ex]\\large Evidence from Peru}'), 'the subtitle');
+  for (const s of ['\\tableofcontents', '\\textcolor[HTML]{C00000}{red words}', '\\hl{marked}', '\\uline{under}', '\\sout{struck}',
+    'p \\(\\leq\\) 0.05', '\\(\\neq\\) 0', '\\(\\infty\\)', '\\textminus{} 5\\,\\%', 'Ελληνικά, Привет', '\n% comment (Ana P) on "robust": Is it? \\input{/etc/passwd} 50% }\n',
+    '\\begin{center}\nCentred line.\n\\end{center}', 'Before the break.\n\n\\newpage', 'See Figure~\\ref{_Ref7} and', '\\label{_Ref7}{}A blue box.}', 'width=1\\linewidth', '\\begin{table}[htbp]\n\\centering\n\\caption{Growth by region}\n\\begin{tabular}',
+    '\\multirow{2}{*}{Region}', 'South & 3 & \\begin{tabular}{@{}ll@{}}', '\\begin{aligned}\nx &= 1 \\\\\ny &= 2 + x \\\\\nz &= 3\n\\end{aligned}', '\\begin{equation}\nE = mc^{2}\n\\end{equation}', '\\begin{equation}\nF = ma\n\\tag{7}\n\\end{equation}', '\\footnote{The endnote text.}', 'The result is strong and'])
+    assert.ok(b.includes(s), s + '\n' + b);
+  for (const s of ['Stale entry', '\\ul{', '\\st{', 'longtable', 'Figure 1:', 'Table 1:', 'weak']) assert.ok(!b.includes(s), s);
+  // every command the body uses is defined by the preamble: these were undefined before
+  for (const [cmd, pkg] of [['\\multirow', '{multirow}'], ['\\hl{', '\\DeclareRobustCommand{\\hl}'], ['\\uline{', '[normalem]{ulem}'], ['\\textcolor', '{xcolor}'], ['\\ref{', '{hyperref}'], ['\\toprule', '{booktabs}'], ['Ελ', '\\usepackage{textalpha}'], ['Привет', '\\DeclareTextSymbolDefault']])
+    assert.ok(b.includes(cmd) && t.slice(0, t.indexOf('\\begin{document}')).includes(pkg), cmd);
+  assert.match(t, /\\usepackage\[LGR,T2A,T1\]\{fontenc\}/);
+  assert.match(t, /\\documentclass\[11pt\]\{article\}\n\\usepackage\[letterpaper,[^\]]*\]\{geometry\}/);
+  assert.ok(!/[\uE000-\uE01F]/.test(t), 'no mark is left in the source');
+  assert.ok(isBalanced(t, 0, t.length));
+  // told: in the result and at the top of the source
+  const said = r.warnings.join(' ');
+  for (const s of ['Chinese or Japanese: 你好', '1 chart', 'the header and footer text (“Draft: do not cite”)', '1 Word comment came in', '2 tracked changes in the file were accepted', 'Endnotes are footnotes', 'table of contents is LaTeX', '2 equations typed with a number'])
+    assert.ok(said.includes(s), s + '\n' + said);
+  assert.ok(t.startsWith('% Opened from a Word file by Rikuy.\n% - Not kept: 2 characters pdfLaTeX has no font'));
+  // and the page reads it: a title, the contents, a page break, three floats, no raw source
+  const m = buildModel({ files: new Map([['main.tex', t]]), main: 'main.tex' });
+  const kinds = m.blocks.flatMap((u) => u.items.map((x) => x.type));
+  for (const k of ['title', 'toc', 'pagebreak', 'float', 'math']) assert.ok(kinds.includes(k), k);
+  assert.ok(!kinds.includes('raw'), kinds.join(' '));
+});
+
+await ok('comments with replies, a short field, a field that never ends, colour that is the ink, marks a file brings itself', () => {
+  const cm = '<w:comments ' + NSW + ' xmlns:w14="http://schemas.microsoft.com/office/word/2010/wordml"><w:comment w:id="3" w:author="Ana"><w:p w14:paraId="A1"><w:r><w:t>Cite it.</w:t></w:r></w:p></w:comment><w:comment w:id="4" w:author="Ben"><w:p w14:paraId="B2"><w:r><w:t>Done.</w:t></w:r></w:p></w:comment><w:comment w:id="5" w:author="Cy"><w:p w14:paraId="C3"><w:r><w:t>No range.</w:t></w:r></w:p></w:comment></w:comments>';
+  const ex = '<w15:commentsEx xmlns:w15="http://schemas.microsoft.com/office/word/2012/wordml"><w15:commentEx w15:paraId="A1" w15:done="0"/><w15:commentEx w15:paraId="B2" w15:paraIdParent="A1" w15:done="0"/></w15:commentsEx>';
+  const body = '<w:p><w:r><w:t xml:space="preserve">The </w:t></w:r><w:commentRangeStart w:id="3"/><w:commentRangeStart w:id="4"/><w:r><w:t>claim</w:t></w:r><w:commentRangeEnd w:id="3"/><w:commentRangeEnd w:id="4"/><w:r><w:t xml:space="preserve"> holds, see </w:t></w:r><w:fldSimple w:instr=" REF _Ref1 \\h "><w:r><w:t>Table 2</w:t></w:r></w:fldSimple><w:r><w:t>.</w:t></w:r><w:r><w:commentReference w:id="5"/></w:r></w:p>'
+    + wp('Second paragraph.');
+  const r = open(tiny(body, { 'word/comments.xml': cm, 'word/commentsExtended.xml': ex }));
+  assert.ok(bodyOf(r.tex).includes('The claim holds, see Table 2.\n% comment (Ana) on "claim": Cite it.\n% reply (Ben): Done.\n% comment (Cy): No range.\n\nSecond paragraph.'), r.tex);
+  assert.ok(r.warnings.some((w) => /^2 Word comments came in/.test(w)), r.warnings.join('|'));
+  // plain pandoc on the same file: neither the comments nor the field's text
+  const raw = P.convert({ from: 'docx', to: 'latex', 'input-files': ['in.docx'], wrap: 'none' }, null, { 'in.docx': tiny(body, { 'word/comments.xml': cm }) }).stdout;
+  assert.ok(!raw.includes('Table 2') && !raw.includes('Cite it'), raw);
+  // a TOC field with no end takes no text with it; one that ends goes as a whole
+  const toc = (end) => '<w:p><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> TOC \\o "1-3" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:hyperlink w:anchor="_Toc1"><w:r><w:t>Old entry 4</w:t></w:r></w:hyperlink></w:p>' + (end ? '<w:p><w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>' : '') + wp('Real text.') + wp('More text.');
+  assert.ok(bodyOf(open(tiny(toc(true))).tex).includes('\\tableofcontents\n\nReal text.\n\nMore text.'));
+  const open2 = bodyOf(open(tiny(toc(false))).tex);
+  assert.ok(open2.includes('Real text.') && open2.includes('More text.') && !open2.includes('\\tableofcontents'), open2);
+  // one colour over the whole text is the ink of the document, not a colour
+  const col = (c, t) => '<w:p><w:r><w:rPr><w:color w:val="' + c + '"/></w:rPr><w:t xml:space="preserve">' + t + '</w:t></w:r></w:p>';
+  const ink = bodyOf(open(tiny(col('1F4E79', 'All of the text is dark blue here.') + col('1F4E79', 'And here too, with ') + col('FF0000', 'red'))).tex);
+  assert.ok(!ink.includes('1F4E79') && ink.includes('\\textcolor[HTML]{FF0000}{red}'), ink);
+  // not a colour, nearly black: left alone
+  assert.ok(!/textcolor/.test(open(tiny(col('zzzzzz', 'a') + col('101010', 'b') + wp('c'))).tex));
+  // private use characters of the file's own are not read as marks (a page break, a colour)
+  const own = open(tiny(wp('A\uE004B \uE005\uE010\uE010\uE010\uE010\uE010\uE010\uE001C\uE006 \uE000\uE011\uE001D \uE003\uE010\uE001')));
+  assert.ok(bodyOf(own.tex).includes('AB C D') && !/newpage|textcolor|tableofcontents|% comment/.test(own.tex), own.tex);
+  // a page break inside a table cell has no place: it goes, the row stays whole
+  const cell = open(tiny('<w:tbl><w:tr><w:tc><w:p><w:r><w:t>a</w:t><w:br w:type="page"/></w:r></w:p></w:tc><w:tc>' + wp('b') + '</w:tc></w:tr></w:tbl>'));
+  assert.ok(/a & b \\\\/.test(cell.tex) && !cell.tex.includes('\\newpage'), cell.tex);
+});
+
+await ok('files that are not a .docx say what they are; a part cut short is an error, not half a document', () => {
+  const u = (t) => new TextEncoder().encode(t);
+  const pad = (b) => { const o = new Uint8Array(64); o.set(b); return o; };
+  assert.throws(() => open(pad([0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1])), /old Word format \(\.doc\)[\s\S]*save it as "Word Document/);
+  assert.throws(() => open(pad(u('{\\rtf1\\ansi hello}'))), /Rich Text file \(\.rtf\)/);
+  assert.throws(() => open(zipSync({ mimetype: u('application/vnd.oasis.opendocument.text'), 'content.xml': u('<a/>') })), /OpenDocument text \(\.odt\)/);
+  assert.throws(() => open(zipSync({ '[Content_Types].xml': u('<Types/>'), 'xl/workbook.xml': u('<a/>') })), /Excel file/);
+  assert.throws(() => open(new Uint8Array(0)), /empty/);
+  assert.throws(() => parseXml('<a><b></a>', undefined, true), /well formed/);
+  assert.throws(() => parseXml('<a><b>', undefined, true), /well formed/);
+  assert.equal(parseXml('<a><b/>t</a>', undefined, true).c[0].c.length, 2);
+  // word/document.xml cut in the middle: pandoc refuses it and so does Rikuy (never the first half)
+  const whole = unzip(tiny(wp('One.') + wp('Two.') + wp('Three.')));
+  const d = text(whole.get('word/document.xml'));
+  whole.set('word/document.xml', d.slice(0, d.indexOf('Two.') + 2));
+  assert.throws(() => open(zip(whole)), /damaged: its text \(word\/document\.xml\) is cut short/);
+  // an empty document opens, and says so
+  assert.ok(open(tiny('')).warnings.includes('The Word file has no text.'));
+});
+
+await ok('bookmarks nothing refers to are not labels: a Rikuy export opened as a stranger\'s file compiles; an author\'s footnote is \\thanks', () => {
+  const src = doc('\\maketitle\n\\section{One}\\label{sec:one}\nText in Section~\\ref{sec:one}.\\footnote{A note.}\n', '\\title{A \\emph{Title}}\n\\author{Ana\\thanks{Lima.} \\and Ben}\n');
+  const E = exportFiles(new Map([['main.tex', src]]));
+  const r = open(E.docx);
+  assert.ok(!/\\label\{Rk\d+\}|phantomsection|\{\}/.test(r.tex), r.tex);
+  assert.ok(r.tex.includes('\\title{A \\emph{Title}}\n\\author{Ana\\thanks{Lima.} \\and Ben}'), r.tex);
+  assert.ok(r.tex.includes('\\footnote{A note.}'));
+  // Word's own leftovers (_GoBack, _Hlk) go the same way; a bookmark a link names stays
+  const bm = (n, t) => '<w:bookmarkStart w:id="1" w:name="' + n + '"/><w:r><w:t xml:space="preserve">' + t + '</w:t></w:r><w:bookmarkEnd w:id="1"/>';
+  const t2 = open(tiny('<w:p>' + bm('_Hlk123', 'Marked ') + bm('target', 'place') + '</w:p><w:p><w:hyperlink w:anchor="target"><w:r><w:t>go there</w:t></w:r></w:hyperlink></w:p>')).tex;
+  assert.ok(!t2.includes('_Hlk123') && t2.includes('\\label{target}') && t2.includes('\\hyperref[target]{go there}') && t2.includes('{hyperref}'), t2);
+});
+
+await ok('a document mostly in a script TeX Live has no default font for is set up for XeLaTeX, and says so', () => {
+  const r = open(tiny(wp('研究表明，制度变迁对经济增长具有显著影响。本文利用秘鲁的数据进行了检验，结果稳健。政策含义在最后一节讨论。') + wp('Latin too.')));
+  assert.match(r.tex, /\\usepackage\{fontspec\}/);
+  assert.ok(!/fontenc/.test(r.tex));
+  assert.ok(/^Not kept: a font for \d+ characters \(Chinese or Japanese: /.test(r.warnings[0]), r.warnings[0]);
 });
 
 console.log('word: ' + n + ' groups of checks passed');

@@ -29,7 +29,7 @@ const enc = new TextEncoder();
 export function unzip(bytes, lim = LIMITS) {
   if (!(bytes instanceof Uint8Array)) bytes = new Uint8Array(bytes);
   if (bytes.length > lim.file) throw new Error('The file is larger than ' + Math.round(lim.file / 1e6) + ' MB.');
-  if (bytes.length < 22 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new Error('This is not a Word file (.docx).');
+  if (bytes.length < 22 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new Error(notDocx(bytes));
   let total = 0, n = 0;
   let out;
   try {
@@ -55,7 +55,7 @@ export function unzip(bytes, lim = LIMITS) {
     if (name.split('/').some((p) => p === '..') || name.startsWith('/')) continue;
     m.set(name, v);
   }
-  if (!m.has('[Content_Types].xml') || !m.has('word/document.xml')) throw new Error('This is not a Word file (.docx): it has no word/document.xml.');
+  if (!m.has('[Content_Types].xml') || !m.has('word/document.xml')) throw new Error(notDocx(bytes, m));
   // A DTD has no business in a Word file: it is how XML parsers are made to read other files
   // (XXE) or to expand a few bytes into gigabytes. Refused in every part, here, before pandoc (whose
   // parser would see them too) or this file's own reader gets the parts.
@@ -64,6 +64,29 @@ export function unzip(bytes, lim = LIMITS) {
     if (/<!(DOCTYPE|ENTITY)/i.test(text(b))) throw new Error('The file declares a DTD (in ' + n + '), which a Word file never needs; it is refused.');
   }
   return m;
+}
+
+// What a file that is not a .docx is, where its first bytes or its parts say: a person who
+// renamed a .doc or an .odt needs to hear which program saves it as .docx, not only "no".
+function notDocx(bytes, parts) {
+  const save = ' Open it in Word or LibreOffice, save it as "Word Document (.docx)", and open that file here.';
+  if (!bytes.length) return 'The file is empty.';
+  if (parts) {
+    const mt = parts.has('mimetype') ? text(parts.get('mimetype')).trim() : '';
+    if (/opendocument\.text/.test(mt)) return 'This is an OpenDocument text (.odt), not a Word file (.docx).' + save;
+    if (/opendocument/.test(mt)) return 'This is an OpenDocument file, not a Word file (.docx).';
+    if (parts.has('ppt/presentation.xml')) return 'This is a PowerPoint file, not a Word file (.docx).';
+    if (parts.has('xl/workbook.xml')) return 'This is an Excel file, not a Word file (.docx).';
+    if (parts.has('word/document.xml')) return 'This Word file is damaged: it has lost its list of parts ([Content_Types].xml).' + save;
+    return 'This is a zip archive, not a Word file (.docx): it has no word/document.xml.';
+  }
+  const b = bytes;
+  if (b.length > 8 && b[0] === 0xd0 && b[1] === 0xcf && b[2] === 0x11 && b[3] === 0xe0) return 'This is a file in the old Word format (.doc), or one protected by a password, not a .docx.' + save;
+  const head = text(b.subarray(0, 64));
+  if (/^\s*\{\\rtf/.test(head)) return 'This is a Rich Text file (.rtf), not a Word file (.docx).' + save;
+  if (/^%PDF/.test(head)) return 'This is a PDF, not a Word file (.docx).';
+  if (/^\s*<(\?xml|html|!doctype|w:wordDocument|\?mso)/i.test(head)) return 'This is a web page or an XML document saved from Word, not a .docx.' + save;
+  return 'This is not a Word file (.docx).';
 }
 
 // the parts as a zip again: fixed dates, so the same parts make the same bytes
@@ -103,7 +126,10 @@ export const escText = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&l
 export const escAttr = (s) => escText(s).replace(/"/g, '&quot;');
 
 // A tree of { n: name, a: {attrs}, c: [children] }, text as strings. Not validating; refuses DTDs.
-export function parseXml(src, lim = LIMITS) {
+// strict: a part that ends inside an element, or closes one it never opened, is an error; asked
+// for where the tree is written back (premark), so a part cut short is never mended into a
+// shorter document that reads as whole.
+export function parseXml(src, lim = LIMITS, strict = false) {
   if (src.length > lim.xml) throw new Error('A part of the file is too large.');
   const root = { n: '#doc', a: {}, c: [] };
   const stack = [root];
@@ -126,6 +152,7 @@ export function parseXml(src, lim = LIMITS) {
       const e = src.indexOf('>', lt);
       const name = src.slice(lt + 2, e < 0 ? L : e).trim();
       // close up to the matching element; a stray end tag is ignored
+      if (strict && (e < 0 || stack.length < 2 || stack[stack.length - 1].n !== name)) throw new Error('A part of the file is not well formed XML.');
       for (let k = stack.length - 1; k > 0; k--) if (stack[k].n === name) { stack.length = k; break; }
       i = e < 0 ? L : e + 1;
       continue;
@@ -160,6 +187,7 @@ export function parseXml(src, lim = LIMITS) {
       stack.push(el);
     }
   }
+  if (strict && stack.length > 1) throw new Error('A part of the file is not well formed XML.');
   return root;
 }
 function pushText(stack, s) {
@@ -466,4 +494,333 @@ export function mathFromJson(json, n) {
     if (idx >= 0 && idx < n && tex.length) out[idx] = tex.join(' ');
   }
   return out;
+}
+
+// ---- a stranger's file, made ready for pandoc ---------------------------------------------------
+
+// pandoc reads the text and structure of a Word file and passes over some of what its reader
+// sees: comments, a field written the short way (w:fldSimple: a caption's number, a cross
+// reference), text colour, centred paragraphs, page breaks, and it copies a table of contents as
+// the stale paragraphs Word last stored. premark() rewrites the parts pandoc reads so these
+// survive: short fields in the long form pandoc knows, and marks in the text, which pandoc
+// carries into its LaTeX, where src/wordjobs.js turns each into the command it stands for. A
+// mark is made of private use characters only (U+E000 to U+E01F, taken out of the file's own
+// text first): letters or digits would end up in the labels pandoc makes from headings. It
+// also reports what cannot be kept (headers, charts), for the notes the user is shown.
+const M0 = 0xe010;
+const code = (s) => [...String(s)].map((c) => String.fromCharCode(M0 + parseInt(c, 16))).join('');
+export const decode = (s) => [...s].map((c) => (c.charCodeAt(0) - M0).toString(16)).join('').toUpperCase();
+export const MARKS = /[-]/;
+const MARKS_ALL = /[-]/g;
+export const mark = {
+  comment: (id) => '' + code(id) + '',
+  toc: (k) => '' + code(k) + '',     // 0 contents, 1 figures, 2 tables
+  page: '',
+  color: (hex) => '' + code(hex) + '',
+  colorEnd: '',
+  center: ['', ''],
+  right: ['', '']
+};
+
+const mk = (n, a = {}, c = []) => ({ n, a, c });
+// own: made here; the walk leaves it as it is (it takes private use characters out of the file's text)
+const markRun = (s) => ({ ...mk('w:r', {}, [mk('w:t', { 'xml:space': 'preserve' }, [s])]), own: true });
+const fld = (t) => mk('w:r', {}, [mk('w:fldChar', { 'w:fldCharType': t })]);
+const val = (el, name) => { const k = el && kid(el, name); return k ? k.a['w:val'] || '' : ''; };
+function each(el, fn) {
+  if (typeof el === 'string') return;
+  fn(el);
+  for (const c of el.c) each(c, fn);
+}
+
+// a run's colour when it is one a reader would call coloured: not black or nearly, not white
+function colorOf(rpr) {
+  const v = val(rpr, 'w:color');
+  if (!/^[0-9a-fA-F]{6}$/.test(v)) return null;
+  const n = parseInt(v, 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+  if (Math.max(r, g, b) < 0x40 || Math.min(r, g, b) > 0xf0) return null;
+  return v.toUpperCase();
+}
+
+// style id -> its name as Word files spell it in every language ("heading 1", "toc 2"), the
+// colour of a character style, and the size of the body text in half points
+function styleInfo(parts) {
+  const S = { names: new Map(), colors: new Map(), sz: 0 };
+  if (!parts.has('word/styles.xml')) return S;
+  let st;
+  try { st = find(parseXml(text(parts.get('word/styles.xml'))), 'w:styles'); } catch (e) { return S; }
+  if (!st) return S;
+  const dd = kid(st, 'w:docDefaults');
+  const dsz = dd && find(dd, 'w:sz');
+  if (dsz) S.sz = +dsz.a['w:val'] || 0;
+  for (const s of kids(st, 'w:style')) {
+    const id = s.a['w:styleId'];
+    if (!id) continue;
+    S.names.set(id, (val(s, 'w:name') || id).toLowerCase());
+    const rpr = kid(s, 'w:rPr');
+    if (s.a['w:type'] === 'character') { const c = colorOf(rpr); if (c) S.colors.set(id, c); }
+    if (s.a['w:type'] === 'paragraph' && s.a['w:default'] === '1' && +val(rpr, 'w:sz')) S.sz = +val(rpr, 'w:sz');
+  }
+  return S;
+}
+
+// text of the file's without characters that would read as marks
+const bare = (t) => String(t || '').replace(MARKS_ALL, '');
+
+// Word's comments as threads: head id -> { who, body, quote, replies: [{ who, body }] }
+function threads(parts) {
+  const T = new Map();
+  if (!parts.has('word/comments.xml')) return T;
+  let X;
+  try { X = extract(parts); } catch (e) { return T; }
+  const regs = [X.pre, ...X.orphans, ...[...X.notes.values()].map((n) => n.pre), ...X.regions.values()];
+  const root = (c) => { let k = 0; while (c && c.parent != null && k++ < 50) c = X.comments.get(c.parent); return c; };
+  for (const [id, c] of X.comments) {
+    if (c.parent != null || !c.body || !/^\d{1,9}$/.test(id)) continue;
+    let quote = '';
+    for (const R of regs) {
+      const s = R.cs.find((x) => x[0] === id);
+      if (!s) continue;
+      const e = R.ce.find((x) => x[0] === id);
+      // the words of the first paragraph the comment covers: a Rikuy comment sits under one line
+      quote = R.text.slice(s[1], Math.max(s[1], e ? e[1] : s[1])).split('\n\n')[0].replace(new RegExp(OBJ, 'g'), '').replace(/\s+/g, ' ').trim();
+      break;
+    }
+    T.set(id, { who: bare(c.author), body: bare(c.body) + (c.done ? ' (resolved in Word)' : ''), quote: bare(quote), replies: [] });
+  }
+  for (const c of X.comments.values()) {
+    if (c.parent == null || !c.body) continue;
+    const r = root(c);
+    if (r && T.has(r.id)) T.get(r.id).replies.push({ who: bare(c.author), body: bare(c.body) });
+  }
+  return T;
+}
+
+// what a header or footer says besides the page number
+function headText(root) {
+  let depth = 0, s = '';
+  each(root, (x) => {
+    if (x.n === 'w:fldChar') { const t = x.a['w:fldCharType']; if (t === 'begin') depth++; else if (t === 'end') depth = Math.max(0, depth - 1); }
+    else if (x.n === 'w:fldSimple') x.c = [];
+    else if (x.n === 'w:t' && !depth) s += textContent(x);
+    else if (x.n === 'w:tab' || x.n === 'w:p') s += ' ';
+  });
+  s = s.replace(/\s+/g, ' ').trim();
+  return /[^\W\d_]{2}/u.test(s.replace(/\b(page|of|seite|von|p[áa]gina|de|sur)\b/gi, '')) ? s : '';
+}
+
+// parts: unzip()'s. Returns { parts: the map pandoc should read, info }.
+export function premark(parts) {
+  const info = { threads: threads(parts), toc: 0, breaks: 0, colors: new Map(), chars: 0, aligned: 0, tracked: 0, charts: 0, art: 0, fields: 0, mathcolor: 0, heads: [], cols: [], page: null, sz: 0, endnotes: false, unread: [] };
+  const styles = styleInfo(parts);
+  info.sz = styles.sz;
+  const out = new Map(parts);
+  const C = { info, styles, heads: new Set(info.threads.keys()), pending: [], changed: false };
+  for (const name of ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml']) {
+    if (!parts.has(name)) continue;
+    let root;
+    // a part this reader cannot follow goes to pandoc as it is
+    try { root = parseXml(text(parts.get(name)), LIMITS, true); } catch (e) { info.unread.push(name); continue; }
+    C.changed = false;
+    const main = name === 'word/document.xml';
+    const body = main ? find(root, 'w:body') : root.c.find((x) => typeof x !== 'string');
+    if (!body) continue;
+    if (main) {
+      blocksFix(C, body, true);
+      each(body, (x) => {
+        if (x.n !== 'w:sectPr') return;
+        info.cols.push(+((kid(x, 'w:cols') || { a: {} }).a['w:num']) || 1);
+        const sz = kid(x, 'w:pgSz'), mar = kid(x, 'w:pgMar');
+        const num = (el, k) => { const v = +(el && el.a[k]); return v > 0 && v < 1e5 ? v : 0; };
+        if (sz) info.page = { w: num(sz, 'w:w'), h: num(sz, 'w:h'), top: num(mar, 'w:top'), right: num(mar, 'w:right'), bottom: num(mar, 'w:bottom'), left: num(mar, 'w:left') };
+      });
+    } else {
+      for (const n of body.c) if (typeof n !== 'string') blocksFix(C, n, false);
+      if (name === 'word/endnotes.xml' && kids(body, 'w:endnote').some((n) => !n.a['w:type'] || n.a['w:type'] === 'normal')) info.endnotes = true;
+    }
+    if (C.changed) out.set(name, enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' + serialize(root)));
+  }
+  for (const [n, b] of parts) {
+    if (!/^word\/(header|footer)\d*\.xml$/.test(n)) continue;
+    try { const t = bare(headText(parseXml(text(b)))); if (t && !info.heads.includes(t)) info.heads.push(t); } catch (e) { /* not text a reader saw */ }
+  }
+  return { parts: out, info };
+}
+
+function blocksFix(C, box, top) {
+  tocFields(C, box);
+  const out = [];
+  for (const c of box.c) {
+    if (typeof c === 'string') { out.push(c); continue; }
+    switch (c.n) {
+      case 'w:p': paraFix(C, c, top); break;
+      case 'w:tbl': for (const tr of kids(c, 'w:tr')) for (const tc of kids(tr, 'w:tc')) blocksFix(C, tc, false); break;
+      case 'w:sdt': {
+        const g = find(kid(c, 'w:sdtPr'), 'w:docPartGallery');
+        // the table of contents Word last stored: LaTeX makes its own
+        if (g && /table of contents/i.test(g.a['w:val'] || '')) { out.push(tocPara(C, instrOf(c))); continue; }
+        const sc = kid(c, 'w:sdtContent');
+        if (sc) blocksFix(C, sc, top);
+        break;
+      }
+      case 'w:ins': case 'w:moveTo': case 'w:customXml': blocksFix(C, c, top); break;
+      case 'w:commentRangeStart': if (C.heads.delete(c.a['w:id'])) C.pending.push(c.a['w:id']); break;
+      default: break;
+    }
+    out.push(c);
+  }
+  box.c = out;
+}
+
+const instrOf = (el) => { let s = ''; each(el, (x) => { if (x.n === 'w:instrText') s += textContent(x); }); return s; };
+function tocPara(C, instr) {
+  const m = /\\c\s+"?\s*(\w+)/.exec(instr);
+  C.info.toc++;
+  C.changed = true;
+  return { ...mk('w:p', {}, [markRun(mark.toc(m ? (/^tab/i.test(m[1]) ? 2 : 1) : 0))]), own: true };
+}
+
+// A table of contents outside a content control: the paragraphs from the one where a TOC field
+// begins to the one where it ends. They go only when each reads like an entry (a toc style, a
+// link to a heading, a page reference), so a field that never ends takes no text with it.
+function tocFields(C, box) {
+  const ps = box.c;
+  const cut = [];
+  let depth = 0, start = -1, at = 0, instr = '', wait = false;
+  for (let i = 0; i < ps.length; i++) {
+    const p = ps[i];
+    if (typeof p === 'string' || p.n !== 'w:p') continue;
+    each(p, (x) => {
+      if (x.n === 'w:fldChar') {
+        const t = x.a['w:fldCharType'];
+        if (t === 'begin') { depth++; wait = true; }
+        else if (t === 'end') { if (start >= 0 && depth === at) { cut.push([start, i, instr]); start = -1; } depth = Math.max(0, depth - 1); }
+      } else if (x.n === 'w:instrText' && wait) {
+        const s = textContent(x);
+        if (!s.trim()) return;
+        wait = false;
+        if (start < 0 && /^\s*TOC\b/.test(s)) { start = i; at = depth; instr = s; }
+      }
+    });
+  }
+  const sname = (p) => C.styles.names.get(val(kid(p, 'w:pPr'), 'w:pStyle')) || val(kid(p, 'w:pPr'), 'w:pStyle').toLowerCase();
+  for (const [a, b, ins] of cut.reverse()) {
+    let ok = true;
+    for (let i = a; i <= b && ok; i++) {
+      const p = ps[i];
+      if (typeof p === 'string') continue;
+      if (p.n !== 'w:p') { ok = false; break; }
+      let entry = /^(toc|table of figures)/.test(sname(p)), words = false;
+      each(p, (x) => { if ((x.n === 'w:hyperlink' && x.a['w:anchor']) || (x.n === 'w:instrText' && /PAGEREF/.test(textContent(x)))) entry = true; if (x.n === 'w:t' && textContent(x).trim()) words = true; });
+      if (words && !entry) ok = false;
+    }
+    if (!ok) continue;
+    let from = a;
+    for (let k = a - 1; k >= 0; k--) { const p = ps[k]; if (typeof p === 'string') continue; if (p.n === 'w:p' && sname(p) === 'toc heading') from = k; break; }
+    ps.splice(from, b - from + 1, tocPara(C, ins));
+  }
+}
+
+function paraFix(C, p, top) {
+  if (p.own) return;
+  const ppr = kid(p, 'w:pPr');
+  const sid = val(ppr, 'w:pStyle');
+  const sname = C.styles.names.get(sid) || sid.toLowerCase();
+  // text Rikuy or LaTeX styles itself keeps no colour or alignment of Word's
+  const own = /^(heading|title|subtitle|caption|toc|table of|author|abstract|date|bibliography)/.test(sname);
+  const prpr = kid(ppr, 'w:rPr');
+  if (prpr && (kid(prpr, 'w:ins') || kid(prpr, 'w:del') || kid(prpr, 'w:moveFrom') || kid(prpr, 'w:moveTo'))) C.info.tracked++;
+  const st = { color: !own, link: false, n: 0, hold: false };
+  p.c = inlineFix(C, p.c, st);
+  const at = () => { const i = p.c.indexOf(ppr); return i < 0 ? 0 : i + 1; };
+  if (C.pending.length) { p.c.splice(at(), 0, ...C.pending.map((id) => markRun(mark.comment(id)))); C.pending = []; C.changed = true; }
+  const jc = val(ppr, 'w:jc');
+  const m = jc === 'center' ? mark.center : jc === 'right' || jc === 'end' ? mark.right : null;
+  // a centred or right aligned paragraph of words, in the body (a table sets its own cells; a
+  // display equation and a picture with a caption are centred by LaTeX)
+  if (m && top && !own && st.n && !st.hold && !(ppr && kid(ppr, 'w:numPr'))) {
+    p.c.splice(at(), 0, markRun(m[0]));
+    p.c.push(markRun(m[1]));
+    C.info.aligned++;
+    C.changed = true;
+  }
+}
+
+function inlineFix(C, cs, st) {
+  const out = [];
+  for (const c of cs) {
+    if (typeof c === 'string') { out.push(c); continue; }
+    switch (c.n) {
+      case 'w:r': runFix(C, c, st); break;
+      case 'w:fldSimple': {
+        // the short form of a field, which pandoc drops with the text it shows (a caption's
+        // number, a cross reference), written as the long form it reads
+        out.push(fld('begin'), mk('w:r', {}, [mk('w:instrText', { 'xml:space': 'preserve' }, [c.a['w:instr'] || ''])]), fld('separate'), ...inlineFix(C, c.c, st), fld('end'));
+        C.info.fields++;
+        C.changed = true;
+        continue;
+      }
+      case 'w:hyperlink': { const was = st.link; st.link = true; c.c = inlineFix(C, c.c, st); st.link = was; break; }
+      case 'w:ins': case 'w:moveTo': C.info.tracked++; c.c = inlineFix(C, c.c, st); break;
+      case 'w:del': case 'w:moveFrom': C.info.tracked++; break;
+      case 'w:smartTag': case 'w:customXml': case 'w:dir': case 'w:bdo': c.c = inlineFix(C, c.c, st); break;
+      case 'w:sdt': { const sc = kid(c, 'w:sdtContent'); if (sc) sc.c = inlineFix(C, sc.c, st); break; }
+      case 'w:commentRangeStart':
+        out.push(c);
+        if (C.heads.delete(c.a['w:id'])) { out.push(markRun(mark.comment(c.a['w:id']))); C.changed = true; }
+        continue;
+      case 'm:oMathPara': st.hold = true; mathColor(C, c); break;
+      case 'm:oMath': mathColor(C, c); break;
+      default: break;
+    }
+    out.push(c);
+  }
+  return out;
+}
+
+// colour inside a formula is not carried (texmath has no colour): counted, to say so
+function mathColor(C, m) {
+  let n = 0;
+  each(m, (x) => { if (x.n === 'm:r' && colorOf(kid(x, 'w:rPr'))) n = 1; });
+  C.info.mathcolor += n;
+}
+
+function runFix(C, r, st) {
+  if (r.own) return;
+  const ts = [];
+  for (let i = 0; i < r.c.length; i++) {
+    const c = r.c[i];
+    if (typeof c === 'string') continue;
+    if (c.n === 'w:t') {
+      c.c = c.c.map((s) => (typeof s === 'string' && MARKS.test(s) ? (C.changed = true, s.replace(MARKS_ALL, '')) : s));
+      if (textContent(c).trim()) ts.push(c);
+    } else if (c.n === 'w:br' && c.a['w:type'] === 'page') {
+      r.c[i] = mk('w:t', { 'xml:space': 'preserve' }, [mark.page]);
+      C.info.breaks++;
+      C.changed = true;
+    } else if (c.n === 'w:commentReference') {
+      // a comment with no range: it stands where its mark is
+      if (C.heads.delete(c.a['w:id'])) { r.c.splice(++i, 0, mk('w:t', { 'xml:space': 'preserve' }, [mark.comment(c.a['w:id'])])); C.changed = true; }
+    } else if (c.n === 'w:drawing' || c.n === 'w:pict' || c.n === 'w:object' || c.n === 'mc:AlternateContent') {
+      st.hold = true;
+      // a text box's words are read by pandoc too: no mark of the file's own in them either
+      each(c, (x) => { if (x.n === 'w:t' && MARKS.test(textContent(x))) { x.c = x.c.map((t) => (typeof t === 'string' ? bare(t) : t)); C.changed = true; } });
+      const pick = c.n === 'mc:AlternateContent' ? kid(c, 'mc:Choice') || c : c;
+      if (find(pick, 'c:chart')) C.info.charts++;
+      else if (find(pick, 'dgm:relIds')) C.info.art++;
+    }
+  }
+  const len = ts.reduce((n, t) => n + textContent(t).replace(/\s/g, '').length, 0);
+  st.n += len;
+  C.info.chars += len;
+  if (!len || !st.color || st.link) return;
+  const rpr = kid(r, 'w:rPr');
+  const col = colorOf(rpr) || C.styles.colors.get(val(rpr, 'w:rStyle')) || null;
+  if (!col) return;
+  const first = ts[0], last = ts[ts.length - 1];
+  first.c.unshift(mark.color(col));
+  last.c.push(mark.colorEnd);
+  first.a['xml:space'] = last.a['xml:space'] = 'preserve';
+  C.info.colors.set(col, (C.info.colors.get(col) || 0) + len);
+  C.changed = true;
 }
