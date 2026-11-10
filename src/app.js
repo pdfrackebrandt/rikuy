@@ -1674,6 +1674,9 @@ class App {
     // holds only what the popover made (a first formula) and has no text to put the caret in:
     // the caret goes to the blank paragraph, so typing goes on
     if (!silent && this.ghost && this.root.contains(this.ghost.el) && !this.caretNow()) this.caretToGhost();
+    // Share, Save and Help open from a button of the bar: closed from the keyboard, the focus
+    // goes back to it (it fell to the page's start, and Tab began again from the menu button)
+    if (P.anchor instanceof HTMLButtonElement && P.anchor.offsetParent && (!document.activeElement || document.activeElement === document.body)) P.anchor.focus({ preventScroll: true });
   }
 
   // A few Word symbols need a package beyond amsmath and amssymb (\\llbracket needs stmaryrd).

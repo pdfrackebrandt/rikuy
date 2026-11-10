@@ -563,6 +563,15 @@ def phone_layout(page):
     page.wait_for_timeout(250)
     page.evaluate('window.rikuy.toggleNav(true)')
     check('a wide screen keeps Help in the bar alone', page.is_visible('#b-help') and not page.is_visible('#nav-help'))
+    page.evaluate('window.rikuy.toggleNav(false)')
+    # keyboard alone: a popover opened from a button of the bar gives the focus back to it
+    back = []
+    for b in ('#b-share', '#b-save-more', '#b-help'):
+        page.focus(b); page.keyboard.press('Enter'); page.wait_for_timeout(250)
+        opened = page.evaluate('document.querySelectorAll("body > .pop").length')
+        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+        back.append((b, opened, page.evaluate('document.querySelectorAll("body > .pop").length'), page.evaluate('"#" + document.activeElement.id')))
+    check('Escape closes Share, Save and Help and the focus returns to their buttons', all(o == 1 and c == 0 and a == b for b, o, c, a in back), back)
 
 
 def run():
