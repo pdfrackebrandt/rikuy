@@ -376,11 +376,13 @@ class App {
     this.prefix = 'r0|';
     this.renderVer = 0;
     // A first visit shows the page alone: the source pane, open by default on a wide screen,
-    // put a wall of LaTeX beside the page for someone who has never seen any. zoom 'auto' is
-    // 'fit', except on a phone, where it fits the text's width (see computePx).
+    // put a wall of LaTeX beside the page for someone who has never seen any. zoom stays 'fit'
+    // or a number, the two the version before this one reads (it multiplies anything else, and
+    // after a rollback the page would have no size); what 'fit' fits on a phone is in `phone`.
     const kept = load(PREFS);
     this.newPrefs = !kept;
-    this.prefs = Object.assign({ zoom: 'auto', source: false, style: 'Plain, direct academic prose. No em dashes. No filler, no hedging.' }, kept || {});
+    this.prefs = Object.assign({ zoom: 'fit', source: false, style: 'Plain, direct academic prose. No em dashes. No filler, no hedging.' }, kept || {});
+    if (typeof this.prefs.zoom !== 'number') this.prefs.zoom = 'fit';
     this.pop = null;
     this.ghost = null;
     this.pending = null;
@@ -506,14 +508,15 @@ class App {
     // On a phone the whole sheet across the screen leaves the text about 6px high. Until a zoom
     // is chosen, the text block fills the width there and the margins are off to the sides:
     // half as large again, and a line is read without moving the page.
-    this.textFit = z === 'auto' && window.innerWidth <= 520;
+    // (prefs.phone: 'sheet' once the whole sheet was chosen with the zoom button there)
+    this.textFit = z === 'fit' && this.prefs.phone !== 'sheet' && window.innerWidth <= 520;
     if (this.textFit) px = Math.min(PX_PER_PT * 1.25, Math.max(avail / P.pw, (this.desk.clientWidth - 12) / P.tw));
-    else if (z === 'fit' || z === 'auto') px = Math.min(PX_PER_PT * 1.25, avail / P.pw);
+    else if (z === 'fit') px = Math.min(PX_PER_PT * 1.25, avail / P.pw);
     else px = PX_PER_PT * z;
     px = Math.round(px * 1000) / 1000;
     const changed = px !== this.px;
     this.px = px;
-    $('#zoomv').textContent = this.textFit ? Math.round(px / PX_PER_PT * 100) + '%' : z === 'fit' || z === 'auto' ? 'Fit' : Math.round(z * 100) + '%';
+    $('#zoomv').textContent = this.textFit ? Math.round(px / PX_PER_PT * 100) + '%' : z === 'fit' ? 'Fit' : Math.round(z * 100) + '%';
     // with the text block as wide as the screen, the view starts at the text, not at the margin
     if (this.textFit && changed) requestAnimationFrame(() => { if (this.textFit) this.desk.scrollLeft = Math.max(0, P.ml * px - 6); });
     return changed;
@@ -3742,9 +3745,14 @@ class App {
     // (text a few pixels high) and actual size
     // (and the size the page opens at there, the text block across the screen)
     const z = this.prefs.zoom;
-    if (dir === 0) this.prefs.zoom = window.innerWidth > 520 ? 'fit' : z === 'fit' ? 'auto' : z === 'auto' ? 1 : 'fit';
-    else {
-      const cur = z === 'fit' || z === 'auto' ? this.px / PX_PER_PT : z;
+    // text block, actual size, whole sheet, and round again
+    if (dir === 0) {
+      if (window.innerWidth > 520) this.prefs.zoom = 'fit';
+      else if (z !== 'fit') { this.prefs.zoom = 'fit'; this.prefs.phone = 'sheet'; }
+      else if (this.prefs.phone === 'sheet') this.prefs.phone = 'text';
+      else this.prefs.zoom = 1;
+    } else {
+      const cur = z === 'fit' ? this.px / PX_PER_PT : z;
       let i = steps.findIndex((s) => s >= cur - 0.001);
       if (i < 0) i = steps.length - 1;
       if (dir > 0) i = steps[i] > cur + 0.001 ? i : Math.min(steps.length - 1, i + 1);

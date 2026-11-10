@@ -625,11 +625,20 @@ def first_visit(p):
             page = visit(ctx)
             m = page.evaluate('(() => { const d = document.getElementById("desk"), r = document.querySelector("#pages .it.p").getBoundingClientRect(); return { font: parseFloat(getComputedStyle(document.querySelector("#pages .it.p")).fontSize), left: r.left, right: r.right, w: d.clientWidth, label: document.getElementById("zoomv").textContent, src: ' + on + ' }; })()')
             check('a first visit on a %dpx phone opens with the text block across the screen, not the sheet' % w, m['font'] > 7.5 and m['left'] >= 0 and m['right'] <= m['w'] and m['right'] - m['left'] > m['w'] - 30 and not m['src'], m)
+            # what is stored must be a zoom the version before this one can read (it multiplies
+            # anything but 'fit'): after a rollback its page would have no size
+            z = page.evaluate('JSON.parse(localStorage.getItem("galley.prefs.v1")).zoom')
+            check('the settings kept on a %dpx first visit hold a zoom the previous version reads' % w, z == 'fit' or isinstance(z, (int, float)), z)
             if w == 390:
                 seen = []
                 for _ in range(3):
                     page.tap('#zoomv'); page.wait_for_timeout(300); seen.append(page.inner_text('#zoomv'))
                 check('the zoom button there goes to actual size, the whole sheet, and back', seen[0] == '100%' and seen[1] == 'Fit' and seen[2] == m['label'], seen)
+                page.tap('#zoomv'); page.tap('#zoomv'); page.wait_for_timeout(300)
+                z = page.evaluate('JSON.parse(localStorage.getItem("galley.prefs.v1")).zoom')
+                page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); page.wait_for_timeout(300)
+                check('the whole sheet, once chosen, is kept too, under a zoom the previous version reads', page.inner_text('#zoomv') == 'Fit' and z == 'fit', (page.inner_text('#zoomv'), z))
+                page.tap('#zoomv'); page.wait_for_timeout(300)
                 page.tap('#zoomv'); page.wait_for_timeout(300)
                 page.reload(); page.wait_for_function('window.rikuy && document.getElementById("boot").hidden'); page.wait_for_timeout(300)
                 check('and a zoom that was chosen is the one the next visit opens with', page.inner_text('#zoomv') == '100%', page.inner_text('#zoomv'))
