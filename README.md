@@ -72,7 +72,7 @@ Rikuy is one HTML page plus `dist/tex/` (about 250 MB of engines, TeX packs and 
 any static web server can serve (`dist/index.html` is the page); the page fetches packs as a
 document needs them. Served that way it is an app the browser can install: after one visit it
 opens and works with no network, compiles what this browser has compiled before, and "Make
-available offline" in the status bar keeps what a typical paper needs (about 50 MB with the
+available offline" in the status bar keeps what a typical paper and the open document need (about 62 MB with the
 engine); [docs/HOSTING.md](docs/HOSTING.md) puts it on Cloudflare Pages. Installed from Chrome or Edge on a computer, it opens `.tex`, `.bib` and Overleaf `.zip`
 files from the file manager as Word opens `.docx`; on Android, files can be shared to it. The copy on claude.ai loads KaTeX, CodeMirror, MathLive and JSZip from jsDelivr and
 needs the network; its fonts, the interface's IBM Plex included, are inside the page.

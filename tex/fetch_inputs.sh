@@ -39,13 +39,17 @@ get() {
   # stalled); a file a mirror of Ubuntu's archive will not give is asked of the archive itself.
   # Whatever arrives is checked by hash below.
   dl() { curl -fL --retry 4 --retry-all-errors --retry-delay 5 --connect-timeout 30 --speed-limit 1024 --speed-time 60 -sS -o "$2.part" "$1"; }
-  if ! dl "$1" "$2"; then
-    alt=
-    case "$1" in "${MIRROR:-none}"/*) [ "$MIRROR" = "$ARCHIVE" ] || alt="$ARCHIVE${1#"$MIRROR"}" ;; esac
-    if [ -n "$alt" ]; then echo "downloading $alt (the mirror failed)"; dl "$alt" "$2" || { echo "fetch_inputs: cannot download $1" >&2; exit 1; }
-    else echo "fetch_inputs: cannot download $1" >&2; exit 1; fi
+  alt=
+  case "$1" in "${MIRROR:-none}"/*) [ "$MIRROR" = "$ARCHIVE" ] || alt="$ARCHIVE${1#"$MIRROR"}" ;; esac
+  good() { [ -f "$1.part" ] && echo "$sum  $1.part" | $algo -c --status; }
+  # (a mirror that answers with other bytes counts as one that failed)
+  if dl "$1" "$2"; then got=1; else got=; fi
+  if ! { [ -n "$got" ] && good "$2"; } && [ -n "$alt" ]; then
+    echo "downloading $alt (the mirror failed)"
+    if dl "$alt" "$2"; then got=1; else got=; fi
   fi
-  echo "$sum  $2.part" | $algo -c --status || { echo "fetch_inputs: hash mismatch for $1" >&2; exit 1; }
+  [ -n "$got" ] || { echo "fetch_inputs: cannot download $1" >&2; exit 1; }
+  good "$2" || { echo "fetch_inputs: hash mismatch for $1" >&2; exit 1; }
   mv "$2.part" "$2"
 }
 

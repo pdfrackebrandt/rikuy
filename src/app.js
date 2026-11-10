@@ -4047,19 +4047,23 @@ class App {
 
   // "Make available offline" (src/pwa.js) compiles the open document once: whatever it reads
   // beyond the planned folders is then kept too. Gives the packs it read, [number, folder].
+  // Also whether it went through: {read, unkept, ok, failed}, or null when no compile ended
+  // (another project was opened, or nothing came back in six minutes).
   async compileForOffline() {
-    const idle = async () => { while (this.compiling) await new Promise((r) => setTimeout(r, 150)); };
+    const until = Date.now() + 360000;
+    const idle = async () => { while (this.compiling && Date.now() < until) await new Promise((r) => setTimeout(r, 150)); };
     await idle();
-    this.lastRead = null;
+    if (this.compiling) return null;
     this.pdfPane(); // the viewer too: its scripts are then kept with the rest
-    await this.compilePdf();
+    await Promise.race([this.compilePdf(), new Promise((r) => setTimeout(r, Math.max(0, until - Date.now())))]);
     await idle();
-    return this.lastRead;
+    return this.compiling ? null : this.lastCompile;
   }
 
   async compilePdf(opts = {}) {
     if (this.compiling) { this.compileAgain = opts.clean ? 'clean' : (this.compileAgain || true); return; }
     this.compiling = true;
+    this.lastCompile = null;
     this.pdfStale = false;
     this.stopped = false;
     const gen = this.pdfGen || 0;
@@ -4090,7 +4094,7 @@ class App {
       this.syncEngineMenu();
       const res = await engine.compile({ project: this.name + '|' + this.main, files: await this.compileFiles(), main: this.main, clean: !!opts.clean, bibSig, engine: this.engineChoice(), shellEscape: this.prefs.shellEscape !== false && !untrusted, untrusted });
       if (gen !== (this.pdfGen || 0)) return; // another project was opened meanwhile
-      this.lastRead = res.read || [];
+      this.lastCompile = { read: res.read || [], unkept: res.unkept || [], ok: !!res.ok, failed: '' };
       // TeX stopped where a file's pack could not be loaded (offline, or the network failed)
       if (res.unkept && res.unkept.length) throw Object.assign(new Error('Some TeX files could not be loaded (' + res.unkept.slice(0, 5).join(', ') + (res.unkept.length > 5 ? ' and more' : '') + '); check the network and compile again'), { unkept: res.unkept });
       const issues = parseTeXLog(res.log);
@@ -4128,6 +4132,8 @@ class App {
         warns ? warns + (warns === 1 ? ' warning' : ' warnings') + ' from ' + this.engineLabel + ', such as undefined references. Show them' : '';
       if (errs || warns) msg.firstChild && (msg.title = this.texIssues.slice(0, 3).map((x) => x.msg).join('\n'));
     } catch (e) {
+      const why = this.stopped ? 'stopped' : String((e && e.message) || e || 'failed');
+      if (this.lastCompile) this.lastCompile.failed = why; else this.lastCompile = { read: [], unkept: [], ok: false, failed: why };
       if (this.stopped) {
         this.stopped = false;
         st.innerHTML = '<b>' + (this.engineLabel || 'TeX') + '</b> stopped';

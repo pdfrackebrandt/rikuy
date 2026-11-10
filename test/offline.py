@@ -257,6 +257,9 @@ def main():
             print('kept for offline:', page.inner_text('#toast'), page.evaluate('window.rikuy.offlineKept'))
             # the folders src/pwa.js lists are meant to cover a typical paper; the sample is one
             extra = page.evaluate('window.rikuy.offlineExtra')
+            doc = page.evaluate('window.rikuy.offlineKept.doc')
+            check('Make available offline compiled the open document, with a PDF and every pack loaded',
+                  bool(doc) and doc['ok'] and not doc['failed'] and doc['unkept'] == [] and len(doc['read']) > 5 and page.evaluate('!!window.rikuy.lastPdf'), doc and {k: doc[k] for k in ('ok', 'failed', 'unkept')})
             check('the sample reads no TeX pack outside the ones Make available offline plans to keep', extra == [], extra)
             ctx.set_offline(True)
             srv.shutdown(); srv.server_close()

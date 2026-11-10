@@ -482,21 +482,28 @@ Tests:
     behind a sign-in until the repository is public (docs/HOSTING.md). The build without
     `RIKUY_SHARE` makes `dist/index.html` installable: a service worker (`src/sw.js`) keeps the
     page and every script, one version at a time, checked by hash; "Update ready" in the status
-    bar; "Make available offline" keeps the engine, the 60 packs a typical pdfLaTeX paper reads
-    (39 MB) and Word. TeX packs live once, in the worker's IndexedDB, and the service worker
+    bar; "Make available offline" keeps the engine, the 75 packs a typical pdfLaTeX paper reads
+    (50 MB), whatever else the open document reads (it is compiled once) and Word; a document
+    that needs more while offline is told which folders. TeX packs live once, in the worker's IndexedDB, and the service worker
     answers TeX's synchronous reads from there. The installed app opens `.tex`, `.bib`, Overleaf
     `.zip` and `.docx` from the file manager (Chromium on the desktop) and takes shared files.
     `deploy.yml` uploads what `tex.yml` built, with a pinned wrangler, after
     `dev/pages_check.py` (20,000 files, 25 MiB each, 100 header rules); `_headers` carries the
     page's policy without outside sources. IBM Plex's Latin Extended cut is in. The claude.ai copy
-    is unchanged in kind: no service worker, no manifest. Evidence: `test/offline.py` 31/31,
+    is unchanged in kind: no service worker, no manifest. Evidence: `test/offline.py` 31/31 (33/33 in CI's TeX job, with the compile offline),
     `test/launch.py` 18/18, `test/deploy_check.py` 21/21, browser 93, CI green on the pull request;
     the offline compile runs in CI's TeX job. An independent review found, and this fixes: files
     shared into the user's own project left it unrestricted (a posted `article.cls` would have
     run with full shell escape: the project is now marked as someone else's); a file opened over
     one of the same name left no way back (a version is kept first); the first visit announced
     an update; a run by hand of Deploy took any passing TeX run, a pull request's included; an
-    older TeX run could finish last and be deployed (one run per branch now). Open: Chromium can
+    older TeX run could finish last and be deployed (one run per branch now). The first compile
+    offline in CI then failed with half a PDF: the sample read packs the list did not name
+    (hyperref's own packages, cm-super for the mark of `\thanks`); the list has them, the open
+    document is compiled once, and a second review's findings are fixed with tests (a pack that
+    loaded on a later pass no longer withholds the PDF, bytes that do not unpack are not kept,
+    the button says when the open document did not compile through, and a mirror serving other
+    bytes falls back to Ubuntu's archive). Open: Chromium can
     leave a new version waiting for minutes when "Update ready" is clicked within a second of
     opening a second tab (17 of 60 clicks in a loop; 0 of 18 otherwise): the button says what it
     waits for. Offline in Safari and Firefox is untested. Old packs in IndexedDB are never pruned.

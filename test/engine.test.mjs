@@ -148,12 +148,33 @@ await ok('the offline plan is the core packs and the packs holding files under t
   assert.deepEqual([ctx.packFolder(1), ctx.packFolder(3), ctx.packFolder(2)], ['tex/latex/amsmath', 'fonts/type1/public/lm', 'tex/latex/amsmath2']);
 });
 
+await ok('a pack TeX cannot load is counted as missed until it loads, and bytes that do not unpack are not kept', async () => {
+  blobs.clear(); served.clear(); run('packs.clear(); packMissed.clear();');
+  const f1 = run('INDEX.packs[1].f');
+  assert.throws(() => ctx.loadPackSync(1), /HTTP 404/);
+  assert.deepEqual([...run('[...packMissed]')], [1]);
+  assert.deepEqual([...run('[...new Set([...packMissed].map(packFolder))]')], ['tex/latex/amsmath'], 'what the compile result names (unkept)');
+  // a transfer cut short: not a pack, and not put in the cache under the pack's hash
+  served.set(f1, new Uint8Array(zp[1].subarray(0, zp[1].length - 6)));
+  assert.throws(() => ctx.loadPackSync(1), /does not unpack/);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.ok(!blobs.has(P(1)) && run('packs.has(1)') === false);
+  // a later pass gets it: nothing is missed any more, and it is kept
+  served.set(f1, new Uint8Array(zp[1]));
+  assert.equal(new TextDecoder().decode(ctx.loadPackSync(1)), 'pack 1');
+  assert.deepEqual([...run('[...packMissed]')], []);
+  await new Promise((r) => setTimeout(r, 20));
+  assert.ok(same(blobs.get(P(1)), zp[1]));
+  run('packs.clear();');
+});
+
 await ok('keep fetches what is not kept yet, keeps it packed, and reports its progress', async () => {
   blobs.clear(); served.clear(); posted.length = 0;
   blobs.set(P(0), new Uint8Array(zp[0])); // the core pack: kept by an earlier compile
   for (const i of [1, 3]) served.set(run('INDEX.packs[' + i + '].f'), new Uint8Array(zp[i]));
   const r = await ctx.keep(['tex/latex/amsmath', 'fonts/type1/public/lm']);
   assert.equal(r.packs, 3);
+  assert.deepEqual([...r.plan], [0, 1, 3], 'the plan, by which the page tells what a document read beyond it');
   assert.equal(r.total, zp[0].length + zp[1].length + zp[3].length);
   assert.equal(r.fetched, zp[1].length + zp[3].length, 'the kept core pack is not fetched again');
   assert.ok(same(blobs.get(P(1)), zp[1]) && same(blobs.get(P(3)), zp[3]), 'kept as fetched, still gzipped');

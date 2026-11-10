@@ -20,8 +20,14 @@ grep -v '^#' "$HERE/tl26-packages.txt" | while read -r name pool hash; do
   f="$S/debs/${pool##*/}"
   algo=${hash%%:*}; sum=${hash#*:}
   if ! { [ -f "$f" ] && echo "$sum  $f" | ${algo}sum -c --status; }; then
-    dl "$MIRROR/$pool" "$f.part" || { [ "$MIRROR" != "$ARCHIVE" ] && dl "$ARCHIVE/$pool" "$f.part"; } || { echo "fetch_tl26: cannot download $pool" >&2; exit 1; }
-    echo "$sum  $f.part" | ${algo}sum -c --status || { echo "fetch_tl26: hash mismatch for $pool" >&2; exit 1; }
+    good() { [ -f "$f.part" ] && echo "$sum  $f.part" | ${algo}sum -c --status; }
+    # (a mirror that answers with other bytes counts as one that failed)
+    if dl "$MIRROR/$pool" "$f.part"; then got=1; else got=; fi
+    if ! { [ -n "$got" ] && good; } && [ "$MIRROR" != "$ARCHIVE" ]; then
+      if dl "$ARCHIVE/$pool" "$f.part"; then got=1; else got=; fi
+    fi
+    [ -n "$got" ] || { echo "fetch_tl26: cannot download $pool" >&2; exit 1; }
+    good || { echo "fetch_tl26: hash mismatch for $pool" >&2; exit 1; }
     mv "$f.part" "$f"
   fi
   if [ ! -d "$S/x/$name" ]; then

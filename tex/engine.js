@@ -281,13 +281,17 @@ function loadPackSync(n) {
   x.responseType = 'arraybuffer';
   // Without a network (and the pack not kept) send() throws. TeX stops there, in the middle of
   // a page; the compile says which folders were missing rather than hand over half a PDF.
-  let failed = '';
+  // The same for bytes that do not unpack (a transfer cut short): they are not kept either.
+  let failed = '', z = null, raw = null;
   try { x.send(); if (x.status !== 200) failed = 'HTTP ' + x.status; } catch (e) { failed = 'no network'; }
+  if (!failed) {
+    try { z = unwrap(new Uint8Array(x.response)); raw = fflate.gunzipSync(z); } catch (e) { failed = 'does not unpack'; }
+  }
   if (failed) { packMissed.add(n); throw new Error('pack ' + P.f + ' ' + failed); }
-  const z = unwrap(new Uint8Array(x.response));
+  // a later pass of the same compile that gets the pack after all has what it needs
+  packMissed.delete(n);
   netBytes += z.length;
   cachePut('p:' + P.h, z);
-  const raw = fflate.gunzipSync(z);
   packs.set(n, raw);
   return raw;
 }

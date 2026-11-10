@@ -299,8 +299,14 @@ servers), is unchanged, and the artifact build (`RIKUY_SHARE` set) compiles `src
   (which keeps the engine and the core packs, as for a first PDF) and sends `{keep: {folders}}`;
   `keepPlan()` turns the folders into the packs holding their files and `keep()` fetches those not
   kept yet into IndexedDB without unpacking them, sending `{status: 'keep', got, total}`. The
-  set is a typical paper under pdfLaTeX: 60 packs, 39 MB (version 29's tree), the engine (12 MB)
-  apart; cm-super and biber are left out.
+  set is a typical paper under pdfLaTeX: 75 packs, 50 MB (version 29's tree), the engine (12 MB)
+  apart. Of cm-super (29 MB) only the upright, bold, italic and typewriter families are in it
+  (an entry ending in `*` names a family of a folder's files); its other families and biber are
+  left out. The open document is then compiled once (`compileForOffline()`), so every pack it
+  reads is kept whether listed or not, and the PDF viewer's scripts with it. A compile reports
+  the packs it read (`read`) and, when TeX stopped at a file whose pack could not be loaded,
+  the folders (`unkept`) in place of the half written PDF: offline the page names them.
+  `test/offline.py` holds the list to the sample: it must read no pack outside the plan.
 - **Serving.** `appFiles()` also writes Cloudflare Pages' `_headers` (`headers()`: the policy
   `CSP`, which `test/deploy_check.py` holds to `test/serve.py`'s without outside sources plus
   `frame-ancestors 'none'`; a year's immutable caching for the content addressed files; no-cache

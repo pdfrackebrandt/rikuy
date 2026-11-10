@@ -212,13 +212,17 @@ export async function keepOffline(app) {
     // test/offline.py wants empty for the sample, so the list above stays what it says.)
     keep.textContent = 'Compiling this document once…';
     const plan = new Set(res.plan || []);
-    const read = await app.compileForOffline();
-    app.offlineKept = { packs: res.packs, total: res.total };
-    app.offlineExtra = read ? [...new Set(read.filter(([n]) => !plan.has(n)).map(([, f, first]) => f + ' (the pack from ' + first + ')'))] : null;
+    const doc = await app.compileForOffline();
+    app.offlineKept = { packs: res.packs, total: res.total, doc };
+    app.offlineExtra = doc ? [...new Set(doc.read.filter(([n]) => !plan.has(n)).map(([, f, first]) => f + ' (the pack from ' + first + ')'))] : null;
     if (APP.tree) { app.prefs.offlineTree = APP.tree; app.savePrefs(); }
     keep.textContent = 'Available offline';
+    // the planned packs are kept either way; a compile that did not go through may have left
+    // out files only this document reads, and with the PDF pane closed nothing else says so
+    const through = doc && !doc.failed && !doc.unkept.length;
     const also = wordKept ? ', and Word import and export' : '';
-    app.toast(res.fetched ? 'Rikuy now works offline: the TeX engine and the packages of a typical paper (' + mb(res.total) + ')' + also + ' are kept in this browser.' : 'Rikuy already works offline here: everything a typical paper needs (' + mb(res.total) + ')' + also + ' is kept in this browser.', 9000);
+    const note = through ? '' : ' The open document did not compile through' + (doc && doc.unkept.length ? ' (' + doc.unkept.slice(0, 3).join(', ') + ' could not be loaded)' : '') + ', so files only it reads may be missing: compile it once more before going offline.';
+    app.toast((res.fetched ? 'Rikuy now works offline: the TeX engine and the packages of a typical paper (' + mb(res.total) + ')' + also + ' are kept in this browser.' : 'Rikuy already works offline here: everything a typical paper needs (' + mb(res.total) + ')' + also + ' is kept in this browser.') + note, note ? 15000 : 9000);
   } catch (e) {
     keep.textContent = label;
     app.toast('Could not keep everything for offline use: ' + e.message, 9000);
