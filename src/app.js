@@ -218,47 +218,49 @@ async function copyRich(html, text) {
 const lineOf = (src, p) => { let n = 1; for (let i = 0; i < p && i < src.length; i++) if (src.charCodeAt(i) === 10) n++; return n; };
 const lineStart = (src, line) => { let p = 0; for (let n = 1; n < line; n++) { const i = src.indexOf('\n', p); if (i < 0) return src.length; p = i + 1; } return p; };
 const fmtMB = (b) => (b / 1e6).toFixed(b < 1e7 ? 1 : 0) + ' MB';
-// How the braces of a formula's source stand: 1 when a { is never closed, -1 when a } has no {
-// before it, 0 when they pair up. \\{ and \\} are characters, and % starts a comment.
-function braceGap(tex) {
-  let d = 0;
+// What a formula's source has that would not stay inside the formula once written into the
+// document: braces left open, closing braces with none before them, a backslash at the very end
+// (it would take the formula's closing $ or brace as its name), a comment at the very end (it
+// would hide the closing $). \{ and \} are characters; % starts a comment.
+function mathScan(tex) {
+  let open = 0, extra = 0, slash = false, comment = false;
   for (let i = 0; i < tex.length; i++) {
     const ch = tex[i];
-    if (ch === '\\') { i++; continue; }
-    if (ch === '%') { while (i < tex.length && tex[i] !== '\n') i++; continue; }
-    if (ch === '{') d++;
-    else if (ch === '}' && --d < 0) return -1;
+    if (ch === '\\') { if (i === tex.length - 1) slash = true; i++; continue; }
+    if (ch === '%') { const nl = tex.indexOf('\n', i); if (nl < 0) { comment = true; break; } i = nl; continue; }
+    if (ch === '{') open++;
+    else if (ch === '}') { if (open) open--; else extra++; }
   }
-  return d > 0 ? 1 : 0;
+  return { open, extra, slash, comment };
 }
-// A formula's source that would not stay a formula once written into the document: an unclosed
-// { takes the rest of the paragraph into the formula (the page showed it as red source), a } or
-// a $ too many ends it early. Such a text is not written; this is the reason shown, or ''.
+// Such a text is not written while it is typed: an unclosed { took the rest of the paragraph
+// into the formula (the page showed it as red source), a } or a $ too many ends it early. This
+// is the reason shown in the box, or ''.
 function mathBreaksOut(tex, katexErr) {
-  const gap = braceGap(tex);
-  if (gap > 0) return 'A { is not closed.';
-  if (gap < 0) return 'A } has no { before it.';
+  const s = mathScan(tex);
+  if (s.extra) return 'A } has no { before it.';
+  if (s.open) return 'A { is not closed.';
   if (/^Can't use function '\$'/.test(katexErr || '')) return 'A $ cannot stand inside a formula: write \\$ for the sign.';
+  if (s.slash) return 'A \\ at the end needs a name after it, as in \\alpha.';
+  if (s.comment) return 'A % makes the rest of its line a comment: write \\% for the sign.';
   return '';
 }
-// The same text made whole, with every character that was typed kept: a closing brace at the
-// end for each one left open, an opening one at the start for each } that has none, a stray $
-// as the sign \\$. This is what a formula's box writes when it is closed while mathBreaksOut
-// holds its text back, so nothing typed is lost and undo has a step for it.
+// The same text made whole, with what was typed kept: a closing brace at the end for each one
+// left open, an opening one at the start for each } that has none, a stray $ as the sign \$, a
+// line end after a comment at the very end. A lone backslash at the end is dropped: nothing can
+// follow it but the formula's own end. This is what a formula's box writes when it closes while
+// its text is held back, so the text is not lost and undo has a step for it.
 function mathMadeWhole(tex, katexErr) {
   const dollar = /^Can't use function '\$'/.test(katexErr || '');
-  let out = '', d = 0, pre = 0, comment = false;
+  const s = mathScan(tex);
+  let out = '';
   for (let i = 0; i < tex.length; i++) {
     const ch = tex[i];
-    comment = false;
-    if (ch === '\\') { out += tex.slice(i, i + 2); i++; continue; }
-    if (ch === '%') { const nl = tex.indexOf('\n', i); comment = nl < 0; out += tex.slice(i, nl < 0 ? tex.length : nl); i = (nl < 0 ? tex.length : nl) - 1; continue; }
-    if (ch === '{') d++;
-    else if (ch === '}') { if (d) d--; else pre++; }
+    if (ch === '\\') { if (i < tex.length - 1) out += tex.slice(i, i + 2); i++; continue; }
+    if (ch === '%') { const nl = tex.indexOf('\n', i); out += tex.slice(i, nl < 0 ? tex.length : nl); if (nl < 0) break; i = nl - 1; continue; }
     out += ch === '$' && dollar ? '\\$' : ch;
   }
-  // (closing braces after a comment at the very end would be part of the comment)
-  return '{'.repeat(pre) + out + (d && comment ? '\n' : '') + '}'.repeat(d);
+  return '{'.repeat(s.extra) + out + (s.comment ? '\n' : '') + '}'.repeat(s.open);
 }
 // KaTeX's message for a mistake in a formula, in plain words where there are some ("Expected
 // 'EOF', got '#' at position 3" says little to someone who has never seen TeX). KaTeX's own
@@ -1740,6 +1742,7 @@ class App {
 
   makePop(anchor, cls, title) {
     this.closePop();
+    if (this.pop) this.closePop(false, true);
     const p = document.createElement('div');
     p.className = 'pop ' + (cls || '');
     p.setAttribute('role', 'dialog');
@@ -1807,9 +1810,12 @@ class App {
     }
     return null;
   }
-  closePop(silent) {
+  // force: for a box that would refuse (a formula's text that cannot be written, see
+  // openMath) when another popover is opening over it; its text is then written as it is
+  closePop(silent, force) {
     if (!this.pop) return;
     const P = this.pop;
+    if (!force && P.refuse && P.refuse()) return;
     if (P.onClose) { try { P.onClose(); } catch (e) { console.error(e); } }
     if (P.mathText) { try { this.ensurePackages(P.mathText(), P); } catch (e) { console.error(e); } }
     if (P.wordTyping) P.wordTyping.destroy();
@@ -2116,7 +2122,7 @@ class App {
     const held = () => mathBreaksOut(ta.value, kerr());
     // Enter says the formula is done. With a } or a $ too many there is no telling which one was
     // meant, so the box stays open with its message; an open brace is closed for the writer.
-    const stay = () => { const h = held(); return !!h && !/^A \{/.test(h); };
+    const stay = () => /^A [}$]/.test(held());
     preview();
     const push = debounce(() => { if (this.pop && !held()) this.pop.applyInner(ta.value); }, 140);
     ta.addEventListener('input', () => { preview(); push(); ta.rows = Math.min(10, Math.max(display ? 3 : 1, ta.value.split('\n').length)); });
@@ -2126,7 +2132,11 @@ class App {
     });
     // However the box closes, what was typed is kept: text held back is written made whole
     // (mathMadeWhole), in the box's undo step.
-    this.pop.onClose = () => { push.cancel(); if (!this.pop) return; this.pop.applyInner(held() ? mathMadeWhole(ta.value, kerr()) : ta.value); };
+    const whole = () => mathMadeWhole(ta.value, kerr());
+    this.pop.onClose = () => { push.cancel(); if (!this.pop) return; this.pop.applyInner(held() ? whole() : ta.value); };
+    // what is written must itself pass the box's check; if making it whole could not get it
+    // there, the box stays open with its message (closePop asks) and nothing is lost
+    this.pop.refuse = () => !!held() && !!mathBreaksOut(whole(), this.renderer.katex(this.mathPreviewTex(whole(), display), display).err);
     this.pop.mathText = () => ta.value;
     this.positionPop();
     ta.focus();
@@ -2218,7 +2228,7 @@ class App {
     const ghost = c.ghost ? this.ghost : null;
     const kerr = (v) => this.renderer.katex(this.mathPreviewTex(v, false), false).err;
     const held = (v) => (v ? mathBreaksOut(v, kerr(v)) : '');
-    const stay = () => { const h = held(ta.value); return !!h && !/^A \{/.test(h); };
+    const stay = () => /^A [}$]/.test(held(ta.value));
     const insert = (v) => {
       // not while it would not stay a formula in the document (an unclosed brace); when the box
       // closes it comes here made whole
@@ -2265,7 +2275,9 @@ class App {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
     });
-    this.pop.onClose = () => { push.cancel(); if (this.pop) insert(held(ta.value) ? mathMadeWhole(ta.value, kerr(ta.value)) : ta.value); };
+    const whole = () => mathMadeWhole(ta.value, kerr(ta.value));
+    this.pop.onClose = () => { push.cancel(); if (this.pop) insert(held(ta.value) ? whole() : ta.value); };
+    this.pop.refuse = () => !!held(ta.value) && !!held(whole());
     this.pop.mathText = () => ta.value;
     this.pop.returnCaret = base ? { f: base.f, p: base.a } : null;
     this.positionPop();
@@ -2290,6 +2302,9 @@ class App {
     const c = this.caretNow();
     if (!c || c.ghost) return;
     const t = '\n\\begin{equation}\n  \n\\end{equation}\n';
+    // (the history as it is before the equation: given up empty, it goes back to this)
+    this.closeGroup();
+    const h0 = this.hist.length, redo0 = this.redoStack;
     this.commit([{ f: c.f, s: c.a, e: c.a, t }], { f: c.f, p: c.a + t.length }, 'insert');
     const el = this.findAtomEl({ f: c.f, s: c.a + 1, kind: 'math' });
     if (el) { const info = atomOfEl(el); if (info) this.openMath(el, info); }
@@ -2301,7 +2316,15 @@ class App {
     P.onClose = () => {
       done();
       if (this.src(c.f).slice(c.a, c.a + t.length) !== t) return;
-      this.commit([{ f: c.f, s: c.a, e: c.a + t.length, t: '' }], null, P.session);
+      // Its insertion is taken back and leaves no step, forward or back: with a step of its
+      // own for the removal, the first undo brought the empty equation back.
+      if (this.hist.length === h0 + 1) {
+        const h = this.hist.pop();
+        for (const d of h.files) { const s = this.files.get(d.f) ?? ''; this.files.set(d.f, s.slice(0, d.s) + d.del + s.slice(d.s + d.ins.length)); }
+        this.redoStack = redo0;
+        this.rebuild({ f: c.f, p: c.a });
+        this.pushToSource(); this.saveSoon(); this.updateUndoUI();
+      } else this.commit([{ f: c.f, s: c.a, e: c.a + t.length, t: '' }], null, P.session);
       P.returnCaret = { f: c.f, p: c.a };
     };
   }
