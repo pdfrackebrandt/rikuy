@@ -266,7 +266,8 @@ def main():
                 st = page.evaluate("document.getElementById('pdf-status').textContent")
                 if (' page' in st and not page.evaluate('window.rikuy.compiling')) or 'could not' in st or 'stopped' in st: break
                 time.sleep(0.5)
-            check('offline, after Make available offline, the sample compiles with pdfLaTeX', ' page' in st and page.evaluate("document.querySelectorAll('#pdf-host canvas').length") > 0, st)
+            check('offline, after Make available offline, the sample compiles with pdfLaTeX', ' page' in st and page.evaluate("document.querySelectorAll('#pdf-host canvas').length") > 0,
+                  (st, page.inner_text('#pdf-host')[:600], page.evaluate("(document.getElementById('pdf-msg') || {}).title || ''")[:400]))
             ctx.close()
         b.close()
 
