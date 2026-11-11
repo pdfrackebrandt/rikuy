@@ -12,19 +12,20 @@
 const HAN = /[⺀-⿟々-〇〡-〩㐀-䶿一-鿿豈-﫿]/;
 const ARABIC = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
 const LETTER = /\p{L}/u;
-// India's scripts: [id, name, its characters, babel's language and locale file, the Noto font
+// India's scripts (the danda and double danda, U+0964 and U+0965, stand in Devanagari's block
+// and end sentences in most of the nine: they are no script's own). [id, name, its characters, babel's language and locale file, the Noto font
 // the tree carries, the names babel and polyglossia give languages written in it, and for the
 // two scripts babel's onchar has no character range for (2026), the range to tell it]
 export const INDIC = [
-  ['devanagari', 'Devanagari', /[\u0900-\u097F\uA8E0-\uA8FF]/, 'hindi', 'hi', 'Noto Serif Devanagari', /^(hindi|marathi|sanskrit|nepali|konkani|devanagari)$/],
-  ['bengali', 'Bengali', /[\u0980-\u09FF]/, 'bengali', 'bn', 'Noto Serif Bengali', /^(bengali|bangla|assamese)$/],
+  ['devanagari', 'Devanagari', /[\u0900-\u0963\u0966-\u097F\uA8E0-\uA8FF]/, 'hindi', 'hi', 'Noto Serif Devanagari', /^(hindi|marathi|sanskrit|sanskrit-deva(nagari)?|nepali|konkani|devanagari)$/],
+  ['bengali', 'Bengali', /[\u0980-\u09FF]/, 'bengali', 'bn', 'Noto Serif Bengali', /^(bengali|bangla|assamese|sanskrit-beng(ali)?)$/],
   ['gurmukhi', 'Gurmukhi', /[\u0A00-\u0A7F]/, 'punjabi', 'pa', 'Noto Serif Gurmukhi', /^(punjabi|panjabi|gurmukhi)$/, 'Guru = {{0x0A00, 0x0A7F}}'],
-  ['gujarati', 'Gujarati', /[\u0A80-\u0AFF]/, 'gujarati', 'gu', 'Noto Serif Gujarati', /^gujarati$/, 'Gujr = {{0x0A80, 0x0AFF}}'],
+  ['gujarati', 'Gujarati', /[\u0A80-\u0AFF]/, 'gujarati', 'gu', 'Noto Serif Gujarati', /^(gujarati|sanskrit-gujr|sanskrit-gujarati)$/, 'Gujr = {{0x0A80, 0x0AFF}}'],
   ['odia', 'Odia', /[\u0B00-\u0B7F]/, 'odia', 'or', 'Noto Sans Oriya', /^(odia|oriya)$/],
   ['tamil', 'Tamil', /[\u0B80-\u0BFF]/, 'tamil', 'ta', 'Noto Serif Tamil', /^tamil$/],
-  ['telugu', 'Telugu', /[\u0C00-\u0C7F]/, 'telugu', 'te', 'Noto Serif Telugu', /^telugu$/],
-  ['kannada', 'Kannada', /[\u0C80-\u0CFF]/, 'kannada', 'kn', 'Noto Serif Kannada', /^kannada$/],
-  ['malayalam', 'Malayalam', /[\u0D00-\u0D7F]/, 'malayalam', 'ml', 'Noto Serif Malayalam', /^malayalam$/]
+  ['telugu', 'Telugu', /[\u0C00-\u0C7F]/, 'telugu', 'te', 'Noto Serif Telugu', /^(telugu|sanskrit-telu(gu)?)$/],
+  ['kannada', 'Kannada', /[\u0C80-\u0CFF]/, 'kannada', 'kn', 'Noto Serif Kannada', /^(kannada|sanskrit-knda|sanskrit-kannada)$/],
+  ['malayalam', 'Malayalam', /[\u0D00-\u0D7F]/, 'malayalam', 'ml', 'Noto Serif Malayalam', /^(malayalam|sanskrit-mlym|sanskrit-malayalam)$/]
 ];
 const INDIC_ANY = /[\u0900-\u0D7F\uA8E0-\uA8FF]/;
 // What a person calls the script with that id: 'Chinese', 'Arabic', 'Devanagari', ...
@@ -75,7 +76,9 @@ function count(text) {
     if (HAN.test(ch)) { out.chinese++; out.letters++; } else if (ARABIC.test(ch)) { if (LETTER.test(ch)) { out.arabic++; out.letters++; } } else if (INDIC_ANY.test(ch)) {
       // (a script of India is a key of its own only when the text has it)
       const x = INDIC.find((y) => y[2].test(ch));
-      if (x && LETTER.test(ch)) { out[x[0]] = (out[x[0]] || 0) + 1; out.letters++; }
+      // vowel signs and viramas count with the letters: they are most of what such text is made of
+      // (digits alone are no text of the script, as before)
+      if (x && /[\p{L}\p{M}]/u.test(ch)) { out[x[0]] = (out[x[0]] || 0) + 1; out.letters++; }
     } else if (LETTER.test(ch)) out.letters++;
   }
   return out;
@@ -191,25 +194,35 @@ function plan(needs, tex) {
   const ownCtex = OWN_CTEX.test(pre);
   const babel = pkgs.get('babel') || '';
   const lines = [];
-  const chinese = () => lines.push('\\babelprovide[import, onchar=ids fonts]{chinese}', '\\babelfont[chinese]{rm}{FandolSong}');
+  // A font for each of the three families: with one for rm alone, text in \textsf, in \texttt
+  // and on every beamer slide (sans serif throughout) had no glyph and was gone from the PDF.
+  const fonts = (lang, opt, rm, sf, tt) => [['rm', rm], ['sf', sf || rm], ['tt', tt || rm]].map((f) => '\\babelfont' + (lang ? '[' + lang + ']' : '') + '{' + f[0] + '}' + opt + '{' + f[1] + '}');
+  const chinese = () => lines.push('\\babelprovide[import, onchar=ids fonts]{chinese}', ...fonts('chinese', '', 'FandolSong', 'FandolHei', 'FandolFang'));
+  // a line at the head of the file that names the engine (% !TeX program = ...) holds the
+  // document to it: the lines of another engine would then print nothing, or their own source
+  const magic = ((/^[^\n]{0,200}!TeX\s+(?:TS-)?program\s*=\s*([A-Za-z]+)/m.exec((tex || '').slice(0, 2000)) || [])[1] || '').toLowerCase();
   const indic = INDIC.filter((x) => needs.includes(x[0]));
   if (needs.includes('arabic') || indic.length) {
-    if (has(XE_ONLY) || CJK_CLASS.test(cls.name) || (pkgs.has('ctex') && !ownCtex)) return null;
+    if (has(XE_ONLY) || CJK_CLASS.test(cls.name) || (pkgs.has('ctex') && !ownCtex) || (magic && !magic.includes('lua'))) return null;
     if (needs.includes('arabic')) {
       if (!pkgs.has('babel')) lines.push('\\usepackage[english, bidi=basic]{babel} % LuaLaTeX orders right to left text by itself');
       lines.push(needs.arabicMain ? '\\babelprovide[import, main]{arabic}' : '\\babelprovide[import, onchar=ids fonts]{arabic}');
-      lines.push((needs.arabicMain ? '\\babelfont{rm}' : '\\babelfont[arabic]{rm}') + '[Renderer=Harfbuzz]{Amiri}');
+      lines.push(...fonts(needs.arabicMain ? '' : 'arabic', '[Renderer=Harfbuzz]', 'Amiri'));
     } else if (!pkgs.has('babel')) lines.push('\\usepackage[english]{babel} % LuaLaTeX sets each script in its own font');
     // HarfBuzz shapes India's scripts (conjuncts, vowel signs that stand before their consonant)
     for (const x of indic) if (x[7]) lines.push('\\directlua{Babel.script_blocks.' + x[7] + '} % where ' + x[1] + "'s characters are: babel has no entry");
-    for (const x of indic) lines.push('\\babelprovide[import=' + x[4] + ', onchar=ids fonts]{' + x[3] + '}', '\\babelfont[' + x[3] + ']{rm}[Renderer=Harfbuzz]{' + x[5] + '}');
+    for (const x of indic) lines.push('\\babelprovide[import=' + x[4] + ', onchar=ids fonts]{' + x[3] + '}', ...fonts(x[3], '[Renderer=Harfbuzz]', x[5]));
+    // the danda and the joiners are in no script's range (the danda in Devanagari's alone): each
+    // would fall back to the Latin font, the danda missing and the conjunct around a joiner
+    // broken in two. -2000 is babel's own mark for "as the character before", as for accents.
+    if (indic.length && !pre.includes('Babel.chr_to_loc')) lines.push('\\directlua{for _, c in ipairs({0x964, 0x965, 0x200C, 0x200D}) do Babel.chr_to_loc[c] = -2000 end} % a danda or a joiner belongs to the script before it');
     if (needs.includes('chinese') || ownCtex) chinese();
     return { lines, dropCtex: ownCtex };
   }
   if (needs.includes('chinese')) {
     // a document already on babel's LuaLaTeX route takes its Chinese from babel as well
     if (/\bbidi\s*=\s*basic/.test(babel) || /\\babelprovide\s*\[[^\]]{0,2000}\bonchar\s*=/.test(pre)) chinese();
-    else if (has(LUA_ONLY) || has(PDF_ARABIC) || /\\directlua\b/.test(pre) || /^[^\n]{0,200}!TeX\s+(?:TS-)?program\s*=\s*(?:lua|pdf)/im.test((tex || '').slice(0, 2000)) || options(babel + ',' + cls.options).some((o) => RTL_LANGUAGES.test(o))) return null;
+    else if (has(LUA_ONLY) || has(PDF_ARABIC) || /\\directlua\b/.test(pre) || (magic && !magic.includes('xe')) || options(babel + ',' + cls.options).some((o) => RTL_LANGUAGES.test(o))) return null;
     else lines.push('\\usepackage[scheme=plain]{ctex} % Chinese text, set with XeLaTeX');
   }
   return { lines, dropCtex: false };

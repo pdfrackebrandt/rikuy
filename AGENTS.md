@@ -49,7 +49,7 @@ a command fails, trust the code and fix this file.
 | build the inputs, then the TeX tree and packs | `tex/fetch_inputs.sh`, then `python3 tex/build_tree.py tree && python3 tex/build_tree.py packs` | about 3 GB of downloads |
 | build the page into `dist/` | `npm run build`; the editor and its browser tests need nothing more, the PDF pane and the TeX tests need `dist/tex/` from the step above | 10 s |
 | serve `dist/` as the artifact host does | `npm run serve` (port 8790) | |
-| engines and shell escape in the page | `npm run test:engines` (37 checks) | 8 min |
+| engines and shell escape in the page | `npm run test:engines` (38 checks) | 8 min |
 | typing on the page | `npm run test:browser` | 20 s |
 | the installed app: offline, updates, one version at a time, none in the artifact build (and a compile offline where `dist/tex` exists) | `npm run test:offline` | 1 min |
 | opening `.tex`, `.bib` and `.zip` with the installed app (`launchQueue`), and files shared to it | `cd test && python3 launch.py` | 20 s |

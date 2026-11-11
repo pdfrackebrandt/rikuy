@@ -194,7 +194,7 @@ try:
 
         # India's scripts: Hindi, Gujarati (whose characters babel has to be told about) and
         # Tamil typed into a plain document
-        open_doc(page, [['main.tex', '\\documentclass{article}\n\\begin{document}\nHello to everyone here: नमस्ते क्षत्रिय, નમસ્તે શ્રી and வணக்கம்.\n\\end{document}\n']])
+        open_doc(page, [['main.tex', '\\documentclass{article}\n\\begin{document}\nHello to everyone here: नमस्ते क्षत्रिय, નમસ્તે શ્રી and வணக்கம். বাংলা। শেষ॥ \\texttt{कोड} \\textsf{सैन्स}\n\\end{document}\n']])
         page.wait_for_selector('#script-note:not([hidden])', timeout=8000)
         said = page.inner_text('#script-msg')
         page.click('#script-go')
@@ -203,6 +203,9 @@ try:
         fonts, text = pdf_fonts_text(page)
         check('Hindi, Gujarati and Tamil in a plain document: the notice, one click, and the PDF is set in the three Noto fonts', st.startswith('LuaLaTeX') and 'page' in st and all(any(n in f for f in fonts) for n in ('NotoSerifDevanagari', 'NotoSerifGujarati', 'NotoSerifTamil', 'LMRoman10')), [said, st, sorted(fonts)])
         check('no problems are reported for it', not [x for x in page.evaluate("window.rikuy.texIssues.map(x => x.sev + ' ' + x.msg)") if x.startswith('error')], page.evaluate("window.rikuy.texIssues.map(x => x.msg)")[:4])
+        # a danda after Bengali (it stands in Devanagari's block), and text in \texttt and \textsf:
+        # each was gone from the PDF before the set up gave every family a font
+        check('dandas, typewriter and sans serif text are in the PDF', '।' in text and '॥' in text and any('NotoSerifBengali' in f for f in fonts) and text.count('क') >= 2, [text[:200], sorted(fonts)])
 
         errs = [e for e in errors if 'favicon' not in e]
         check('no page errors', not errs, errs[:5])

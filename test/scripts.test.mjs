@@ -113,17 +113,17 @@ ok('a plain document: ctex for Chinese alone', () => {
 ok('a plain document: babel, Amiri and bidi for Arabic', () => {
   const t = doc('', 'عربي');
   const out = addScriptSetup(t, needs(['arabic']));
-  assert.equal(out, t.replace('\\begin{document}', '\\usepackage[english, bidi=basic]{babel} % LuaLaTeX orders right to left text by itself\n\\babelprovide[import, onchar=ids fonts]{arabic}\n\\babelfont[arabic]{rm}[Renderer=Harfbuzz]{Amiri}\n\\begin{document}'));
+  assert.equal(out, t.replace('\\begin{document}', '\\usepackage[english, bidi=basic]{babel} % LuaLaTeX orders right to left text by itself\n\\babelprovide[import, onchar=ids fonts]{arabic}\n\\babelfont[arabic]{rm}[Renderer=Harfbuzz]{Amiri}\n\\babelfont[arabic]{sf}[Renderer=Harfbuzz]{Amiri}\n\\babelfont[arabic]{tt}[Renderer=Harfbuzz]{Amiri}\n\\begin{document}'));
   assert.equal(rtlDocument(out), false, 'some Arabic in a left to right document');
   const main = addScriptSetup(t, needs(['arabic'], true));
-  assert.ok(main.includes('\\babelprovide[import, main]{arabic}\n\\babelfont{rm}[Renderer=Harfbuzz]{Amiri}\n\\begin{document}'));
+  assert.ok(main.includes('\\babelprovide[import, main]{arabic}\n\\babelfont{rm}[Renderer=Harfbuzz]{Amiri}\n\\babelfont{sf}[Renderer=Harfbuzz]{Amiri}\n\\babelfont{tt}[Renderer=Harfbuzz]{Amiri}\n\\begin{document}'));
   assert.equal(rtlDocument(main), true, 'an Arabic document runs right to left once set up');
   assert.deepEqual(scriptSetup(main), { chinese: false, arabic: true });
 });
 ok('both: Chinese goes through babel too', () => {
   const out = addScriptSetup(doc('', '中 ع'), needs(['chinese', 'arabic']));
   assert.deepEqual(scriptLines(needs(['chinese', 'arabic']), doc('')), ['\\usepackage[english, bidi=basic]{babel} % LuaLaTeX orders right to left text by itself',
-    '\\babelprovide[import, onchar=ids fonts]{arabic}', '\\babelfont[arabic]{rm}[Renderer=Harfbuzz]{Amiri}', '\\babelprovide[import, onchar=ids fonts]{chinese}', '\\babelfont[chinese]{rm}{FandolSong}']);
+    '\\babelprovide[import, onchar=ids fonts]{arabic}', '\\babelfont[arabic]{rm}[Renderer=Harfbuzz]{Amiri}', '\\babelfont[arabic]{sf}[Renderer=Harfbuzz]{Amiri}', '\\babelfont[arabic]{tt}[Renderer=Harfbuzz]{Amiri}', '\\babelprovide[import, onchar=ids fonts]{chinese}', '\\babelfont[chinese]{rm}{FandolSong}', '\\babelfont[chinese]{sf}{FandolHei}', '\\babelfont[chinese]{tt}{FandolFang}']);
   assert.deepEqual(scriptSetup(out), { chinese: true, arabic: true });
   assert.ok(!out.includes('ctex'));
 });
@@ -136,7 +136,7 @@ ok('an existing babel gains bidi=basic and is not loaded twice', () => {
   assert.equal(withOpt.match(/\{babel\}/g).length, 1);
   const has = doc('\\usepackage[english, bidi=basic]{babel}', '中');
   const zh = addScriptSetup(has, needs(['chinese']));
-  assert.ok(zh.includes('\\usepackage[english, bidi=basic]{babel}\n\\babelprovide[import, onchar=ids fonts]{chinese}\n\\babelfont[chinese]{rm}{FandolSong}\n\\begin{document}'), 'babel with bidi is there: Chinese through babel, the line as it was');
+  assert.ok(zh.includes('\\usepackage[english, bidi=basic]{babel}\n\\babelprovide[import, onchar=ids fonts]{chinese}\n\\babelfont[chinese]{rm}{FandolSong}\n\\babelfont[chinese]{sf}{FandolHei}\n\\babelfont[chinese]{tt}{FandolFang}\n\\begin{document}'), 'babel with bidi is there: Chinese through babel, the line as it was');
 });
 ok('babel in a comment is left alone', () => {
   const t = doc('% \\usepackage[english]{babel}\n\\usepackage{amsmath} % not \\usepackage{babel}', 'ع');
@@ -175,7 +175,7 @@ ok('a megabyte of unclosed \\usepackage[ is handled in under a second', () => {
     const ms = performance.now() - t0;
     assert.ok(ms < 1000, Math.round(ms) + ' ms for ' + JSON.stringify(pre.slice(24, 60)));
     assert.deepEqual([...needs], ['chinese', 'arabic']);
-    assert.ok(out.endsWith('\\babelfont[chinese]{rm}{FandolSong}' + tail), 'and the lines still go before \\begin{document}');
+    assert.ok(out.endsWith('\\babelfont[chinese]{tt}{FandolFang}' + tail), 'and the lines still go before \\begin{document}');
   }
   // the body: a megabyte of environments never closed, of dollars, of comment signs
   for (const body of ['\\begin{'.repeat(15e4) + '中', '$'.repeat(1e6) + '中', ('% ' + 'x'.repeat(98) + '\n').repeat(1e4) + '中', '\\begin' + ' '.repeat(1e6) + '中']) {
@@ -387,8 +387,10 @@ ok('each of India\'s nine scripts is counted under its own name', () => {
   assert.deepEqual(INDIC.map((x) => x[0]), Object.keys(WORDS));
   for (const [id, word] of Object.entries(WORDS)) {
     const c = scriptsIn('Latin ' + word + ' text');
-    const letters = [...word].filter((ch) => /\p{L}/u.test(ch)).length;
-    assert.equal(c[id], letters, id + ': its letters, the vowel signs and viramas not among them');
+    // vowel signs and viramas count with the letters (a reviewer's case: 'हिन्दी عربي' is half
+    // Hindi, not mostly Arabic)
+    const letters = [...word].length;
+    assert.equal(c[id], letters, id + ': its letters, vowel signs and viramas');
     assert.deepEqual(Object.keys(c).sort(), ['arabic', 'chinese', id, 'letters'].sort(), id + ' and no other script');
     assert.equal(c.letters, letters + 9);
     // both ends of its block, and the block before and after it are not it
@@ -396,7 +398,10 @@ ok('each of India\'s nine scripts is counted under its own name', () => {
     assert.ok([...word].every((ch) => range.test(ch)), id);
     assert.equal(INDIC.filter((x) => x[2].test(word[0])).length, 1, 'one row per character');
   }
-  assert.equal(scriptsIn('\\textbf{हिन्दी} % टिप्पणी\n$क$').devanagari, 3, 'comments and math do not count');
+  assert.equal(scriptsIn('\\textbf{हिन्दी} % टिप्पणी\n$क$').devanagari, 6, 'comments and math do not count');
+  assert.equal(scriptNeeds('\\begin{document}\nहिन्दी عربي\n').arabicMain, false);
+  // the danda ends sentences in most of the nine and stands in Devanagari's block: no script's own
+  assert.deepEqual([...scriptNeeds('\\begin{document}\nবাংলা। শেষ॥\n')], ['bengali']);
   assert.deepEqual(INDIC.map((x) => scriptName(x[0])), ['Devanagari', 'Bengali', 'Gurmukhi', 'Gujarati', 'Odia', 'Tamil', 'Telugu', 'Kannada', 'Malayalam']);
   assert.deepEqual(['chinese', 'arabic'].map(scriptName), ['Chinese', 'Arabic']);
 });
@@ -419,10 +424,15 @@ ok('needs and lines for a mixed document', () => {
   const t = doc('', 'Hello हिन्दी and தமிழ் and 中文.');
   const needs = scriptNeeds(t, [t]);
   assert.deepEqual([...needs], ['chinese', 'devanagari', 'tamil']);
+  // a font for each of rm, sf and tt (text in \textsf, \texttt and on beamer slides was gone
+  // with rm alone), and after India's scripts the line that gives dandas and joiners to the
+  // script before them
+  const three = (lang, font) => ['rm', 'sf', 'tt'].map((f) => '\\babelfont[' + lang + ']{' + f + '}[Renderer=Harfbuzz]{' + font + '}');
+  const FOLLOW = '\\directlua{for _, c in ipairs({0x964, 0x965, 0x200C, 0x200D}) do Babel.chr_to_loc[c] = -2000 end} % a danda or a joiner belongs to the script before it';
   assert.deepEqual(scriptLines(needs, t), ['\\usepackage[english]{babel} % LuaLaTeX sets each script in its own font',
-    '\\babelprovide[import=hi, onchar=ids fonts]{hindi}', '\\babelfont[hindi]{rm}[Renderer=Harfbuzz]{Noto Serif Devanagari}',
-    '\\babelprovide[import=ta, onchar=ids fonts]{tamil}', '\\babelfont[tamil]{rm}[Renderer=Harfbuzz]{Noto Serif Tamil}',
-    '\\babelprovide[import, onchar=ids fonts]{chinese}', '\\babelfont[chinese]{rm}{FandolSong}']);
+    '\\babelprovide[import=hi, onchar=ids fonts]{hindi}', ...three('hindi', 'Noto Serif Devanagari'),
+    '\\babelprovide[import=ta, onchar=ids fonts]{tamil}', ...three('tamil', 'Noto Serif Tamil'), FOLLOW,
+    '\\babelprovide[import, onchar=ids fonts]{chinese}', '\\babelfont[chinese]{rm}{FandolSong}', '\\babelfont[chinese]{sf}{FandolHei}', '\\babelfont[chinese]{tt}{FandolFang}']);
   // every script alone: its own two lines after babel's, and before them the line that tells
   // babel where Gurmukhi's and Gujarati's characters are (it has no range for the two)
   for (const [id, name, , babel, code, font, , range] of INDIC) {
@@ -432,7 +442,7 @@ ok('needs and lines for a mixed document', () => {
     const own = scriptLines(n1, d).slice(1);
     assert.equal(!!range, id === 'gurmukhi' || id === 'gujarati');
     if (range) assert.equal(own.shift(), '\\directlua{Babel.script_blocks.' + range + "} % where " + name + "'s characters are: babel has no entry");
-    assert.deepEqual(own, ['\\babelprovide[import=' + code + ', onchar=ids fonts]{' + babel + '}', '\\babelfont[' + babel + ']{rm}[Renderer=Harfbuzz]{' + font + '}'], id);
+    assert.deepEqual(own, ['\\babelprovide[import=' + code + ', onchar=ids fonts]{' + babel + '}', ...three(babel, font), FOLLOW], id);
     assert.equal(rtlDocument(addScriptSetup(d, n1)), false);
   }
   // text in another file of the project counts, and Arabic beside it brings its bidi
@@ -440,7 +450,22 @@ ok('needs and lines for a mixed document', () => {
   assert.deepEqual([...scriptNeeds(main, [main, 'বাংলা লেখা'])], ['bengali']);
   const ar = doc('', 'Mostly English text here, with عربي and తెలుగు words.');
   assert.deepEqual(scriptLines(scriptNeeds(ar, [ar]), ar), ['\\usepackage[english, bidi=basic]{babel} % LuaLaTeX orders right to left text by itself', '\\babelprovide[import, onchar=ids fonts]{arabic}',
-    '\\babelfont[arabic]{rm}[Renderer=Harfbuzz]{Amiri}', '\\babelprovide[import=te, onchar=ids fonts]{telugu}', '\\babelfont[telugu]{rm}[Renderer=Harfbuzz]{Noto Serif Telugu}']);
+    ...three('arabic', 'Amiri'), '\\babelprovide[import=te, onchar=ids fonts]{telugu}', ...three('telugu', 'Noto Serif Telugu'), FOLLOW]);
+  // a second script of India later: its lines, and the dandas' line is not written again
+  const once = addScriptSetup(doc('', 'Text বাংলা।'), scriptNeeds(doc('', 'Text বাংলা।')));
+  const more = once.replace('বাংলা।', 'বাংলা। தமிழ்');
+  const twice = addScriptSetup(more, scriptNeeds(more));
+  assert.equal(twice.split('Babel.chr_to_loc').length, 2);
+  assert.ok(twice.includes('{tamil}') && !once.includes('{hindi}'), 'a danda alone asks for no Hindi');
+  // a file that names its engine keeps it
+  assert.equal(addScriptSetup('% !TeX program = xelatex\n' + doc('', 'हिन्दी'), ['devanagari']), null);
+  assert.equal(addScriptSetup('% !TeX program = pdflatex\n' + doc('', 'Hello عربي here'), ['arabic']), null);
+  assert.ok(addScriptSetup('% !TEX TS-program = lualatex\n' + doc('', 'हिन्दी'), ['devanagari']));
+  assert.ok(addScriptSetup('% !TeX program = xelatex\n' + doc('', '中文'), ['chinese']).includes('{ctex}'));
+  assert.equal(addScriptSetup('% !TeX program = pdflatex\n' + doc('', '中文'), ['chinese']), null);
+  // Sanskrit in a named script is that script, set up
+  assert.equal(scriptSetup(doc('\\usepackage[sanskrit-devanagari]{babel}')).devanagari, true);
+  assert.equal(scriptSetup(doc('\\babelprovide[import]{sanskrit-bengali}')).bengali, true);
 });
 ok('set up twice adds nothing', () => {
   for (const body of ['Hello हिन्दी and தமிழ் and 中文.', 'ગુજરાતી', 'ಕನ್ನಡ and മലയാളം and ଓଡ଼ିଆ and ਪੰਜਾਬੀ and বাংলা and తెలుగు', 'English, عربي and हिन्दी in one long enough sentence.']) {
@@ -459,7 +484,7 @@ ok('set up twice adds nothing', () => {
   const more = once.replace('हिन्दी', 'हिन्दी தமிழ்');
   const needs = scriptNeeds(more, [more]);
   assert.deepEqual([...needs], ['tamil']);
-  assert.deepEqual(scriptLines(needs, more), ['\\babelprovide[import=ta, onchar=ids fonts]{tamil}', '\\babelfont[tamil]{rm}[Renderer=Harfbuzz]{Noto Serif Tamil}']);
+  assert.deepEqual(scriptLines(needs, more), ['\\babelprovide[import=ta, onchar=ids fonts]{tamil}', '\\babelfont[tamil]{rm}[Renderer=Harfbuzz]{Noto Serif Tamil}', '\\babelfont[tamil]{sf}[Renderer=Harfbuzz]{Noto Serif Tamil}', '\\babelfont[tamil]{tt}[Renderer=Harfbuzz]{Noto Serif Tamil}']);
   // Rikuy's own ctex line makes way: the document moves to LuaLaTeX, Chinese through babel
   const zh = doc('\\usepackage[scheme=plain]{ctex} % Chinese text, set with XeLaTeX', '中文 हिन्दी');
   const out = addScriptSetup(zh, scriptNeeds(zh, [zh]));

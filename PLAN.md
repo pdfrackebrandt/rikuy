@@ -10,7 +10,7 @@ Read the rules at the end before the first commit.
 | corpus compiles (LaTeX-examples, 716 documents present) | 705 | 706 | 706 | as version 25 | as version 25 | as version 25 | as version 25 | as version 25 |
 | corpus PDFs equal to a desktop TeX Live 2026's | 615 of 704 (87.4 %) | 700 of 705 (99.3 %) | 703 of 705 (99.7 %) | as version 25 | as version 25 | as version 25 | as version 25 | as version 25 |
 | TeX passes over the whole corpus | not counted | 995 (1,471 without latexmk's first-run `.aux`) | 995 | as version 25 | as version 25 | as version 25 | as version 25 | as version 25 |
-| `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) | 22/22 | 23/23 (a check that pygmentize loads no code a document wrote) | 23/23, now run by CI on a tree built there (`tex.yml`) | 23/23 in CI's TeX job | 23/23 in CI's TeX job | 37/37, here and in CI's TeX job (fourteen new: Chinese, Arabic, India's scripts) |
+| `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) | 22/22 | 23/23 (a check that pygmentize loads no code a document wrote) | 23/23, now run by CI on a tree built there (`tex.yml`) | 23/23 in CI's TeX job | 23/23 in CI's TeX job | 38/38 (fifteen new: Chinese, Arabic, India's scripts) |
 | `tex/native/xindy/test.cjs` (against CLISP's xindy) | 11/11 | 11/11 | 11/11 | 11/11 | 11/11 | 11/11 | as version 30 | as version 30 |
 | TeX Live's 220 Asymptote examples as a desktop's asy draws them | not measured | against a native asy 3.09: 216 (196 equal PDFs, 12 equal failures, 7 random by design, 1 equal alone); 4 open | against the desktop's asy 3.11: 218 (201 equal PDFs, the 3D ones rendered as bitmaps; 10 equal failures; 7 random by design); 2 open: 1 numerical, `slope` out of memory | as version 25 | as version 25 | as version 25 | as version 25 | as version 25 |
 | edits on the typeset page landing exactly, undone byte for byte (`test/editor_corpus.py`) | not measured | 780 of 780, in the 222 documents with text, a formula, a cell or a footnote; 211 of 211 edited projects compile | as version 23 (page unchanged) | 781 of 792 land, 11 open as source by design, all 792 undone byte for byte, on the complete corpus; 211 of 211 edited projects compile | as version 28 (model and parser unchanged) | as version 28 (model and parser unchanged) | not run again (the model draws colours and lists in cells now; the 716 document model run passes) | not run again (`test/scripts.py` 133 checks direction and editing in Arabic and Chinese) |
@@ -680,12 +680,24 @@ Tests:
     conjuncts, nukta, joiners, dandas and each script's digits and writes the set up lines;
     export gives each run a complex script font (Nirmala UI) and its language (`hi-IN` and the
     like); a coauthor's edit to one word is one patch.
+    A second independent review found seven things, fixed with tests: dandas (they stand in
+    Devanagari's block alone) and the joiners fell back to the Latin font, so Bengali's sentence
+    ends were missing and conjuncts around a joiner broken (babel's own "as the character
+    before" mark now holds for the four); only the roman family had a font, so beamer slides
+    and `\texttt` had no Hindi (each script, Arabic and babel's Chinese too, now gets `rm`,
+    `sf` and `tt`); a file that names its engine in a `% !TeX program` line keeps it and is
+    offered nothing of another engine; Bold moved a selection's edge over a brace; Sanskrit in
+    a named script; vowel signs count with the letters; a code span with two scripts came back
+    from Word as two. It found nothing in 1,200 random edits beside the earlier build,
+    pagination, the order of Word's run properties or 144 hostile strings.
     Evidence: a document with all nine scripts compiles with no missing character, conjuncts
     shaped (seen as a picture); the Hindi and the eight script Word fixtures open and compile
-    with no error; `test/engines.py` 37/37 (Hindi, Gujarati and Tamil typed into a plain
-    document, the click, a PDF in the three Noto fonts) here and in CI's TeX job, which again
-    found `dist/tex` equal to the manifest; `scripts.py` 192, `scripts.test.mjs` 44,
-    `word.test.mjs` 44 groups, `word.py` 97, `browser.py` 182, `ribbon.py` 146, `offline.py`
+    with no error; a beamer slide in three scripts with dandas, joiners and typewriter text has
+    no missing character (seen as a picture); `test/engines.py` 38/38 (Hindi, Gujarati and
+    Tamil typed into a plain document, the click, a PDF in the Noto fonts, its dandas and
+    `\texttt` there; 37/37 in CI's TeX job before the review, which again found `dist/tex`
+    equal to the manifest); `scripts.py` 196, `scripts.test.mjs` 45,
+    `word.test.mjs` 45 groups, `word.py` 97, `browser.py` 182, `ribbon.py` 146, `offline.py`
     36/36. Open: Devanagari always gets Hindi's hyphenation and `hi-IN`, for Marathi and Nepali
     too; no font for Sinhala, Thai, Hebrew, Japanese or Korean; Urdu is set in Amiri unless the
     author names Noto Nastaliq Urdu; the page was drawn here with FreeSans (no Noto on this

@@ -590,7 +590,7 @@ def india(p, page):
     page.click('#script-go')
     page.wait_for_timeout(350)
     s = src(page)
-    check('Devanagari: babel sets Hindi by its characters, HarfBuzz and the Noto font', '\\usepackage[english]{babel}' in s and '\\babelprovide[import=hi, onchar=ids fonts]{hindi}\n\\babelfont[hindi]{rm}[Renderer=Harfbuzz]{Noto Serif Devanagari}\n\\begin{document}' in s, s[:300])
+    check('Devanagari: babel sets Hindi by its characters, HarfBuzz and the Noto font', '\\usepackage[english]{babel}' in s and '\\babelprovide[import=hi, onchar=ids fonts]{hindi}\n\\babelfont[hindi]{rm}[Renderer=Harfbuzz]{Noto Serif Devanagari}\n\\babelfont[hindi]{sf}[Renderer=Harfbuzz]{Noto Serif Devanagari}\n\\babelfont[hindi]{tt}[Renderer=Harfbuzz]{Noto Serif Devanagari}\n\\directlua{for _, c in ipairs({0x964, 0x965, 0x200C, 0x200D}) do Babel.chr_to_loc[c] = -2000 end}' in s and s.count('Babel.chr_to_loc') == 1, s[:700])
     check('the page stays left to right', page.evaluate('document.querySelectorAll("#pages [dir]").length') == 0)
     for pre in ['\\usepackage{xeCJK}', '\\usepackage{polyglossia}\n\\setmainlanguage{english}']:
         load_doc(page, doc(pre, 'Text with हिन्दी in it.'))
@@ -697,7 +697,7 @@ def notice(p, page):
     page.click('#script-go')
     page.wait_for_timeout(350)
     s = src(page)
-    check('both: babel with bidi, Amiri and Fandol Song', '\\usepackage[english, bidi=basic]{babel}' in s and '\\babelprovide[import, onchar=ids fonts]{arabic}\n\\babelfont[arabic]{rm}[Renderer=Harfbuzz]{Amiri}\n\\babelprovide[import, onchar=ids fonts]{chinese}\n\\babelfont[chinese]{rm}{FandolSong}\n\\begin{document}' in s, s[:400])
+    check('both: babel with bidi, Amiri and Fandol Song', '\\usepackage[english, bidi=basic]{babel}' in s and '\\babelprovide[import, onchar=ids fonts]{arabic}\n\\babelfont[arabic]{rm}[Renderer=Harfbuzz]{Amiri}\n\\babelfont[arabic]{sf}[Renderer=Harfbuzz]{Amiri}\n\\babelfont[arabic]{tt}[Renderer=Harfbuzz]{Amiri}\n\\babelprovide[import, onchar=ids fonts]{chinese}\n\\babelfont[chinese]{rm}{FandolSong}\n\\babelfont[chinese]{sf}{FandolHei}\n\\babelfont[chinese]{tt}{FandolFang}\n\\begin{document}' in s, s[:400])
     check('and the message names LuaLaTeX', page.inner_text('#toast') == 'Added. The PDF is now made with LuaLaTeX.', page.inner_text('#toast'))
     undo(page)
     check('one undo again', 'babel' not in src(page))
@@ -710,7 +710,7 @@ def notice(p, page):
     check('before the set up the page runs left to right, as the PDF would', page.evaluate('document.querySelectorAll("#pages [dir]").length') == 0)
     page.click('#script-go')
     page.wait_for_timeout(400)
-    check('an Arabic document is set up with Arabic as its main language', '\\babelprovide[import, main]{arabic}\n\\babelfont{rm}[Renderer=Harfbuzz]{Amiri}\n\\begin{document}' in src(page), src(page)[:260])
+    check('an Arabic document is set up with Arabic as its main language', '\\babelprovide[import, main]{arabic}\n\\babelfont{rm}[Renderer=Harfbuzz]{Amiri}\n\\babelfont{sf}[Renderer=Harfbuzz]{Amiri}\n\\babelfont{tt}[Renderer=Harfbuzz]{Amiri}\n\\begin{document}' in src(page), src(page)[:260])
     check('and its paragraphs then run right to left', page.evaluate('[...document.querySelectorAll("#pages .it.p")].map((e) => e.getAttribute("dir"))') == ['rtl', 'rtl'])
     # another engine chosen by hand: the message says what to do, not what is not so
     load_doc(page, doc('', 'Text 中文.'))

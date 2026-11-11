@@ -557,14 +557,14 @@ const preambleOf = (tex) => tex.slice(tex.indexOf('\\documentclass'), tex.indexO
 function setUp(tex, lines) {
   const pre = preambleOf(tex);
   for (const l of lines) assert.ok(pre.split('\n').includes(l), l + '\n' + pre);
-  assert.equal(pre.split('\n').filter((l) => /ctex|babel|fontspec|fontenc|inputenc|lmodern|textalpha|setmainfont/.test(l)).length, lines.length, pre);
+  assert.equal(pre.split('\n').filter((l) => /ctex|[bB]abel|fontspec|fontenc|inputenc|lmodern|textalpha|setmainfont/.test(l)).length, lines.length, pre);
   assert.deepEqual([...scriptNeeds(tex, [tex])], []);
   assert.equal(addScriptSetup(tex, scriptNeeds(tex, [tex])), null);
 }
 const BABEL = '\\usepackage[english, bidi=basic]{babel} % LuaLaTeX orders right to left text by itself';
-const AR = ['\\babelprovide[import, onchar=ids fonts]{arabic}', '\\babelfont[arabic]{rm}[Renderer=Harfbuzz]{Amiri}'];
-const AR_MAIN = ['\\babelprovide[import, main]{arabic}', '\\babelfont{rm}[Renderer=Harfbuzz]{Amiri}'];
-const ZH = ['\\babelprovide[import, onchar=ids fonts]{chinese}', '\\babelfont[chinese]{rm}{FandolSong}'];
+const AR = ['\\babelprovide[import, onchar=ids fonts]{arabic}', '\\babelfont[arabic]{rm}[Renderer=Harfbuzz]{Amiri}', '\\babelfont[arabic]{sf}[Renderer=Harfbuzz]{Amiri}', '\\babelfont[arabic]{tt}[Renderer=Harfbuzz]{Amiri}'];
+const AR_MAIN = ['\\babelprovide[import, main]{arabic}', '\\babelfont{rm}[Renderer=Harfbuzz]{Amiri}', '\\babelfont{sf}[Renderer=Harfbuzz]{Amiri}', '\\babelfont{tt}[Renderer=Harfbuzz]{Amiri}'];
+const ZH = ['\\babelprovide[import, onchar=ids fonts]{chinese}', '\\babelfont[chinese]{rm}{FandolSong}', '\\babelfont[chinese]{sf}{FandolHei}', '\\babelfont[chinese]{tt}{FandolFang}'];
 const CTEX = '\\usepackage[scheme=plain]{ctex} % Chinese text, set with XeLaTeX';
 const paras = (d) => d.slice(d.indexOf('<w:body>')).split(/<w:p>|<w:p (?=[^>]*>)/).slice(1).map((x) => x.split('</w:p>')[0]);
 const textOf = (x) => unescape(x.replace(/<w:instrText[^>]*>[^<]*<\/w:instrText>/g, '').replace(/<[^>]+>/g, ''));
@@ -991,7 +991,7 @@ await ok('a coauthor\'s edits to Chinese and Arabic text in Word come back as th
 // the lines src/scripts.js gives for these scripts in a preamble that has none
 const linesFor = (...ids) => scriptLines(Object.assign(ids, { arabicMain: false }), '');
 const INDIC_BABEL = '\\usepackage[english]{babel} % LuaLaTeX sets each script in its own font';
-const HI = ['\\babelprovide[import=hi, onchar=ids fonts]{hindi}', '\\babelfont[hindi]{rm}[Renderer=Harfbuzz]{Noto Serif Devanagari}'];
+const HI = ['\\babelprovide[import=hi, onchar=ids fonts]{hindi}', '\\babelfont[hindi]{rm}[Renderer=Harfbuzz]{Noto Serif Devanagari}', '\\babelfont[hindi]{sf}[Renderer=Harfbuzz]{Noto Serif Devanagari}', '\\babelfont[hindi]{tt}[Renderer=Harfbuzz]{Noto Serif Devanagari}', '\\directlua{for _, c in ipairs({0x964, 0x965, 0x200C, 0x200D}) do Babel.chr_to_loc[c] = -2000 end} % a danda or a joiner belongs to the script before it'];
 // the order Word's schema gives the properties of a run: Word refuses a file that has them in another
 const RPR_ORDER = ['rStyle', 'rFonts', 'b', 'bCs', 'i', 'iCs', 'caps', 'smallCaps', 'strike', 'dstrike', 'outline', 'shadow', 'emboss', 'imprint', 'noProof', 'snapToGrid', 'vanish', 'webHidden', 'color', 'spacing', 'w', 'kern', 'position', 'sz', 'szCs', 'highlight', 'u', 'effect', 'bdr', 'shd', 'fitText', 'vertAlign', 'rtl', 'cs', 'em', 'lang', 'eastAsianLayout', 'specVanish', 'oMath'];
 function rprInOrder(xml) {
@@ -1035,8 +1035,9 @@ await ok('a Word file with a line in each of the other eight scripts of India: a
   const r = fixture('word-indic.docx');
   const t = r.tex, b = bodyOf(t);
   const lines = linesFor(...INDIC.map((x) => x[0]));
-  // babel's line, two lines a script, and the two that tell babel where Gurmukhi and Gujarati are
-  assert.equal(lines.length, 21);
+  // babel's line, four lines a script, the two that tell babel where Gurmukhi and Gujarati are,
+  // and the one for dandas and joiners
+  assert.equal(lines.length, 40);
   setUp(t, lines);
   assert.deepEqual(preambleOf(t).trim().split('\n').map((l) => l.replace(/^\\usepackage\[letterpaper.*$/, 'GEOMETRY')), ['\\documentclass[11pt]{article}', 'GEOMETRY', ...lines, '\\usepackage{amsmath,amssymb}', '\\usepackage{booktabs}']);
   for (const s of ['Bengali: \\textbf{বাংলা:} আমি বাংলায় গান গাই, ক্ষমা করবেন। ১২৩', 'Tamil: \\textbf{தமிழ்:} வணக்கம், மிக்க நன்றி. ௧௨௩', 'Telugu: \\textbf{తెలుగు:} నమస్కారం, ధన్యవాదాలు. ౧౨౩',
