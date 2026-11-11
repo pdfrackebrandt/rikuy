@@ -23,7 +23,7 @@ const PLACEHOLDER_PDF = 'JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXM
 const PLACEHOLDER_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAAAAACRn/EaAAAACXBIWXMAAAAjAAAAIwHV9BZdAAAADklEQVR42mO4CQQMcAIATFkKLSVMoyAAAAAASUVORK5CYII=';
 const PLACEHOLDER_EPS = '%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 320 240\n0.85 setgray 0 0 320 240 rectfill\n0.6 setgray 2 setlinewidth 1 1 318 238 rectstroke\nshowpage\n';
 import { texToPlain, shortAuthors, entryYear } from './bib.js';
-import { kvGet, kvPut, kvSwap, decodeText, encodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
+import { kvGet, kvPut, kvDel, kvSwap, decodeText, encodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
 import { changes, spacingOnly } from './diff.js';
 import { TeXEngine, parseTeXLog } from './tex.js';
 import { PdfView } from './pdfview.js';
@@ -32,6 +32,7 @@ import { word, installWord, isDocx } from './word.js';
 import { ribbon, installRibbon } from './ribbon.js';
 import { shareParam, commentOnly, cleanPath } from './share.js';
 import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
+import { scriptNeeds, scriptLines, addScriptSetup } from './scripts.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const PX_PER_PT = 96 / 72.27;
@@ -448,6 +449,7 @@ class App {
     this.syncSoon = debounce(() => this.revealCaret(), 120);
     this.problemsSoon = debounce(() => this.refreshNav(), 350);
     this.srcRebuild = debounce(() => this.fromSource(), 260);
+    this.scriptsSoon = debounce(() => this.scriptNotice(), 500);
     this.caps = { sample: null, downloads: null };
   }
 
@@ -752,10 +754,95 @@ class App {
     $('#st-pages').textContent = pages + (pages === 1 ? ' page' : ' pages');
     $('#st-words').textContent = m.words.toLocaleString('en-US') + ' words';
     this.problemsSoon();
+    this.scriptsSoon();
     $('#docname').textContent = this.name;
     this.lastMs = ms;
     this.updateFileTabs();
     this.ribbonSoon();
+  }
+
+  // ---- Chinese and Arabic --------------------------------------------------------
+  // LaTeX's own fonts have neither script: a document with such text and no set up for it
+  // (src/scripts.js knows which) fails in the PDF or loses the characters. A slim bar under the
+  // ribbon says so and offers the lines; nothing is added to the source without the click on its
+  // button. The bar is looked at a moment after the page was built again, not at every key, never
+  // while an input method is composing, and not in a copy someone shared, whose set up is its
+  // author's.
+
+  // What the open project's text needs and its main file does not set up: [] or some of
+  // 'chinese' and 'arabic' (scriptNeeds), or null where no set up can be offered now.
+  scriptNeedsNow() {
+    if (this.stale || !this.files.has(this.main) || document.body.classList.contains('guest')) return null;
+    const texts = [];
+    for (const [n, t] of this.files) if (n === this.main || /\.tex$/i.test(n)) texts.push(t);
+    const main = this.src(this.main);
+    // (a project with no Chinese or Arabic character costs one look at each file)
+    const needs = scriptNeeds(main, texts);
+    // no \begin{document} to put the lines before: nothing to offer
+    return needs.length && addScriptSetup(main, needs) != null ? needs : [];
+  }
+
+  async scriptNotice() {
+    const bar = $('#script-note');
+    if (!bar) return;
+    const key = this.name + '|' + this.main;
+    // project -> the needs its notice was dismissed for ('': not dismissed), kept with the
+    // project's other marks in this browser
+    this.scriptSeen = this.scriptSeen || new Map();
+    if (!this.scriptSeen.has(key)) {
+      let v = null;
+      try { v = this.noIdb ? null : await kvGet('scripts:' + key); } catch (e) { v = null; }
+      if (!this.scriptSeen.has(key)) this.scriptSeen.set(key, v && typeof v.dismissed === 'string' ? v.dismissed : '');
+    }
+    // (the store answered later: an input method may be composing now, or another project be open)
+    if (this.composing || key !== this.name + '|' + this.main) { this.scriptsSoon(); return; }
+    const needs = this.scriptNeedsNow();
+    if (!needs) { bar.hidden = true; return; }
+    const sig = needs.join(',');
+    // dismissed for other needs than the document has now: that answer no longer holds
+    if (this.scriptSeen.get(key) && this.scriptSeen.get(key) !== sig) {
+      this.scriptSeen.set(key, '');
+      if (!this.noIdb) kvDel('scripts:' + key).catch(() => {});
+    }
+    const show = !!sig && this.scriptSeen.get(key) !== sig;
+    if (show && bar.dataset.needs !== sig) {
+      const zh = needs.includes('chinese'), ar = needs.includes('arabic');
+      $('#script-msg').textContent = zh && ar ? 'This document has Chinese and Arabic text. LaTeX needs fonts and right to left setup for them.'
+        : ar ? 'This document has Arabic text. LaTeX needs a font and right to left setup for it.'
+          : 'This document has Chinese text. LaTeX needs a font for it.';
+      bar.dataset.needs = sig;
+    }
+    if (bar.hidden === show) bar.hidden = !show;
+  }
+
+  // The bar's button: the lines go into the main file's preamble as one edit, so one undo takes
+  // them out again, and the source pane, the versions and the PDF see them as any other edit.
+  scriptSetUp() {
+    if (this.srcRebuild.pending()) this.srcRebuild.flush();
+    $('#script-note').hidden = true;
+    const needs = this.scriptNeedsNow();
+    const main = this.src(this.main);
+    const next = needs && needs.length ? addScriptSetup(main, needs) : null;
+    const d = next == null ? null : diff(main, next);
+    if (!d) return;
+    // babel's lines are for LuaLaTeX, ctex alone is for XeLaTeX (pickEngine in tex/engine.js)
+    const engine = scriptLines(needs, main).some((l) => /\\babelprovide\b/.test(l)) ? 'lualatex' : 'xelatex';
+    const c = this.caretNow();
+    const caret = c && c.f != null && !c.ghost ? { f: c.f, p: c.f === this.main && c.p >= d.s + d.del.length ? c.p + d.ins.length - d.del.length : c.p } : null;
+    this.closeGroup();
+    this.commit([{ f: this.main, s: d.s, e: d.s + d.del.length, t: d.ins }], caret, 'setup');
+    this.closeGroup();
+    const chosen = this.engineChoice();
+    this.toast(chosen === 'auto' || chosen === engine ? 'Added. The PDF is now made with ' + ENGINE_LABEL[engine] + '.'
+      : 'Added. The PDF needs ' + ENGINE_LABEL[engine] + ': set the engine to Auto in the preview.', 6000);
+  }
+
+  // Hidden for this project until what it needs changes
+  scriptDismiss() {
+    const bar = $('#script-note'), key = this.name + '|' + this.main, sig = bar.dataset.needs || '';
+    bar.hidden = true;
+    (this.scriptSeen = this.scriptSeen || new Map()).set(key, sig);
+    if (!this.noIdb) kvPut('scripts:' + key, { dismissed: sig, t: Date.now() }).catch(() => {});
   }
 
   // ---- caret ------------------------------------------------------------------
@@ -933,7 +1020,9 @@ class App {
     $('#b-copy').addEventListener('click', () => this.copySource());
     $('#b-share').addEventListener('click', () => this.openSharePanel());
     $('#guest-send').addEventListener('click', () => this.openSharePanel());
-    $('#guest-x').addEventListener('click', () => { $('#guest').hidden = true; document.body.classList.remove('guest'); if (this.shareCtx) { this.shareCtx.dismissed = true; kvPut('share:' + this.name + '|' + this.main, this.shareCtx).catch(() => {}); } });
+    $('#guest-x').addEventListener('click', () => { $('#guest').hidden = true; document.body.classList.remove('guest'); if (this.shareCtx) { this.shareCtx.dismissed = true; kvPut('share:' + this.name + '|' + this.main, this.shareCtx).catch(() => {}); } this.scriptsSoon(); });
+    $('#script-go').addEventListener('click', () => this.scriptSetUp());
+    $('#script-x').addEventListener('click', () => this.scriptDismiss());
     $('#b-pdf').addEventListener('click', () => this.togglePdf());
     $('#pdf-x').addEventListener('click', () => this.togglePdf(false));
     $('#pdf-re').addEventListener('click', () => { if (this.compiling && this.passStart && Date.now() - this.passStart > 4000) this.stopPdf(); else this.compilePdf({ clean: true }); });

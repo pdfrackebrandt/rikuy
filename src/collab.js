@@ -298,6 +298,8 @@ export const collab = {
   // and the way back; the source stays one click away
   guestMode(on) {
     document.body.classList.toggle('guest', !!on);
+    // (the Chinese and Arabic set up is offered to a document's owner only: looked at again)
+    if (this.scriptsSoon) this.scriptsSoon();
     const g = $('#guest');
     if (!g) return;
     g.hidden = !on;
