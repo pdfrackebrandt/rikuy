@@ -112,7 +112,21 @@ export function checkData(d) {
 
 // (Chinese and Japanese are written without spaces: each of their characters is a word here,
 // so one changed in a long sentence is one small change, not the sentence written again)
-const TOK = /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}]|[\p{L}\p{N}\p{M}]+|\s+|[\s\S]/gu;
+// (in Arabic script and in India's a word holds marks and joiners, U+200C and U+200D, among
+// its letters: they are part of the word, not its end)
+const TOK = /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}]|[\p{L}\p{N}\p{M}\u200C\u200D]+|\s+|[\s\S]/gu;
+// A mark belongs to the letter before it, and so does a letter a virama or a joiner ties on (a
+// conjunct of India's scripts): a change does not begin or end inside such a cluster, so a vowel
+// sign changed in Word is its syllable changed, not half a letter under Review. Nor inside the
+// two halves of a character beyond the basic plane.
+const EXTENDS = /[\p{M}\u200C\u200D]/u;
+const VIRAMA = /[\u094D\u09CD\u0A4D\u0ACD\u0B4D\u0BCD\u0C4D\u0CCD\u0D4D]/;
+function inside(t, p) {
+  if (p <= 0 || p >= t.length) return false;
+  const c = t[p], b = t[p - 1];
+  if (EXTENDS.test(c) || b === '\u200D' || (c >= '\uDC00' && c <= '\uDFFF' && b >= '\uD800' && b <= '\uDBFF')) return true;
+  return /\p{L}/u.test(c) && (VIRAMA.test(b) || (b === '\u200C' && VIRAMA.test(t[p - 2] || '')));
+}
 const CJK_G = /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}]/gu;
 const toks = (t) => t.match(TOK) || [];
 
@@ -136,13 +150,17 @@ export function textHunks(o, n) {
     const L = merged[merged.length - 1];
     const gap = L ? o.slice(L.b, x.a) : null;
     // (a short word: of Chinese or Japanese, where every character is one, at most two)
-    if (L && gap.length < 12 && /^\s*[\p{L}\p{N}]*\s*$/u.test(gap) && !gap.includes(OBJ) && !/\n\s*\n/.test(gap) && (gap.match(CJK_G) || []).length <= 2) { L.b = x.b; L.B = x.B; continue; }
+    if (L && gap.length < 12 && /^\s*[\p{L}\p{N}\p{M}\u200C\u200D]*\s*$/u.test(gap) && !gap.includes(OBJ) && !/\n\s*\n/.test(gap) && (gap.match(CJK_G) || []).length <= 2) { L.b = x.b; L.B = x.B; continue; }
     merged.push({ ...x });
   }
   // then trimmed to the characters that differ, so café to cafés adds an s after caf\'e
+  // (and then back out to where a cluster begins and ends, never past the words that changed)
   for (const x of merged) {
+    const a0 = x.a, b0 = x.b;
     while (x.a < x.b && x.A < x.B && o[x.a] === n[x.A] && o[x.a] !== OBJ) { x.a++; x.A++; }
     while (x.b > x.a && x.B > x.A && o[x.b - 1] === n[x.B - 1] && o[x.b - 1] !== OBJ) { x.b--; x.B--; }
+    while (x.a > a0 && (inside(o, x.a) || inside(n, x.A))) { x.a--; x.A--; }
+    while (x.b < b0 && (inside(o, x.b) || inside(n, x.B))) { x.b++; x.B++; }
   }
   return merged.filter((x) => x.a < x.b || x.A < x.B);
 }
@@ -350,13 +368,14 @@ export function planImport(data, X, cur, H = {}) {
     } else note(A, A.text.length, 'Added in Word, in a new table cell or row, not brought in: ' + show(t));
   }
   // blocks moved in Word: the order of the bookmarks says which
-  const order = X.order.filter((id) => byId.has(id));
+  // (a footnote's bookmark stands in another part of the file, after all of the body's: left
+  // in, it made the one paragraph after a footnote's read as moved)
+  const order = X.order.filter((id) => byId.has(id) && byId.get(id).k !== 'fn');
   const idx = new Map(data.anchors.map((A, i) => [A.id, i]));
   const keep = lis(order.map((id) => idx.get(id)));
   for (let k = 0; k < order.length; k++) {
     if (keep.has(k)) continue;
     const A = byId.get(order[k]);
-    if (A.k === 'fn') continue;
     stats.moved++;
     note(A, 0, 'In Word this paragraph was moved; Rikuy kept it where it was (move it in the source if you agree).');
   }

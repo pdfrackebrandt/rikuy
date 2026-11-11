@@ -1143,4 +1143,34 @@ await ok('a round trip through Word and back gives the same body for the Hindi f
   }
 });
 
+await ok('a coauthor\'s edit to a word in one of India\'s scripts is one small patch, never half a syllable', async () => {
+  // a word is its letters with their marks and joiners; a change inside one is trimmed to whole syllables
+  assert.deepEqual(textHunks('भारत की अर्थव्यवस्था', 'भारत कि अर्थव्यवस्था'), [{ a: 5, b: 7, A: 5, B: 7 }]);
+  assert.deepEqual(textHunks('एक पक्ष है', 'एक पक्त है'), [{ a: 4, b: 7, A: 4, B: 7 }]);
+  assert.deepEqual(textHunks('क\u094d\u200dष यहाँ', 'क\u094d\u200cष यहाँ'), [{ a: 0, b: 4, A: 0, B: 4 }]);
+  assert.deepEqual(textHunks('நன்றி வணக்கம்', 'நன்றி வணக்கங்கள்'), [{ a: 11, b: 13, A: 11, B: 16 }]);
+  assert.deepEqual(textHunks('می\u200cخواهم بروم', 'می\u200cخواهیم بروم'), [{ a: 7, b: 7, A: 7, B: 8 }]);
+  assert.deepEqual(textHunks('a \ud83d\ude00 b', 'a \ud83d\ude01 b'), [{ a: 2, b: 4, A: 2, B: 4 }]);
+  assert.deepEqual(textHunks('a café b', 'a cafés b'), [{ a: 6, b: 6, A: 6, B: 7 }]);
+  const pre = linesFor('devanagari', 'tamil').join('\n') + '\n';
+  const src = doc('भारत की \\textbf{अर्थव्यवस्था} तेज़ी से बढ़ रही है। इसमें क\u094d\u200dष और २०२४ हैं।\\footnote{स्रोत: विश्व बैंक।}\n\nTamil: நன்றி வணக்கம்.\n', pre);
+  // (one paragraph after a paragraph with a footnote: unchanged, it is not read as moved)
+  await roundTrip(src, (d) => d, src);
+  const p1 = await roundTrip(src, rep('भारत की ', 'भारत कि '), src.replace('भारत की ', 'भारत कि '));
+  assert.deepEqual(p1.applied.map((e) => [src.slice(e.s, e.e), e.t]), [['की', 'कि']]);
+  const p2 = await roundTrip(src, (d) => rep('अर्थव्यवस्था', 'अर्थनीति')(rep('२०२४', '२०२५')(rep('வணக்கம்', 'வணக்கங்கள்')(rep('बढ़ रही', 'घट रही')(d)))),
+    src.replace('अर्थव्यवस्था', 'अर्थनीति').replace('२०२४', '२०२५').replace('வணக்கம்', 'வணக்கங்கள்').replace('बढ़ रही', 'घट रही'));
+  assert.equal(p2.stats.applied, 4);
+  assert.equal(p2.stats.conflicts + p2.stats.skipped, 0);
+  // text typed in Word with a joiner and with characters LaTeX reads: the joiner stays, the rest is escaped
+  await roundTrip(src, rep('हैं।', 'हैं, र\u094d\u200dय भी & 50%।'), src.replace('हैं।\\footnote', 'हैं, र\u094d\u200dय भी \\& 50\\%।\\footnote'));
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  assert.equal(importInto(edit(E.docx, rep('विश्व बैंक', 'रिज़र्व बैंक'), 'word/footnotes.xml'), files).files.get('main.tex'), src.replace('विश्व बैंक', 'रिज़र्व बैंक'));
+  // the owner changed the same word since: not applied, said in a comment
+  const clash = importInto(edit(E.docx, rep('तेज़ी से', 'धीरे से')), new Map([['main.tex', src.replace('तेज़ी', 'जल्दी')]]));
+  assert.equal(clash.stats.conflicts, 1);
+  assert.ok(clash.files.get('main.tex').includes('जल्दी से') && /% comment \(Ana\) on "[^"]*": In Word: /.test(clash.files.get('main.tex')), clash.files.get('main.tex'));
+});
+
 console.log('word: ' + n + ' groups of checks passed');
