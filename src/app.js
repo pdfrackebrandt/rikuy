@@ -5,7 +5,7 @@ import { Renderer, BLOCKS, esc, widgetCss } from './render.js';
 import { Layout, geometry } from './layout.js';
 import {
   posFromDom, CaretIndex, segOfSpan, atomOfEl, styOfEl, visibleRanges, escapeTeX, textToTeX,
-  endsWithControlWord, isBalanced, diff, boundary, clusterEdge, backspaceUnits
+  endsWithControlWord, isBalanced, diff, boundary, clusterEdge, sourceEdge, backspaceUnits
 } from './editor.js';
 import { SAMPLE } from './sample.js';
 import { splitRows } from './parser.js';
@@ -1729,8 +1729,8 @@ class App {
     // A selection that starts or ends inside what a reader takes for one character (क्षि is a
     // consonant, a virama, a consonant and a vowel sign) takes that character whole: a brace
     // between its parts would take the conjunct apart on the page and in the PDF.
-    c.a = clusterEdge(src, c.a, -1);
-    c.b = clusterEdge(src, c.b, 1);
+    c.a = sourceEdge(src, c.a, -1);
+    c.b = sourceEdge(src, c.b, 1);
     if (!isBalanced(src, c.a, c.b)) { this.toast('That selection crosses structure. Select text inside one paragraph or cell.'); return; }
     // A selection over several paragraphs: each paragraph's part gets the command of its own.
     // One command around all of them took the blank lines into its braces, which TeX refuses

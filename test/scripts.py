@@ -620,6 +620,34 @@ def india(p, page):
 
 
 
+def marks_after_syntax(page):
+    """A mark written after a brace has that brace for its base as far as Unicode goes: bold
+    must not move a selection's edge over the brace (it wrapped half a group, or refused)."""
+    def run(body, lefts):
+        load_doc(page, doc('\\usepackage{xcolor}', body))
+        page.wait_for_timeout(200)
+        page.evaluate('''() => { const ts = document.querySelectorAll('#pages span.t'), t = ts[ts.length - 1], r = document.createRange(); r.setStart(t.firstChild, 0); r.collapse(true);
+          document.getElementById('pages').focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); document.getElementById('toast').hidden = true; }''')
+        page.keyboard.press('End')
+        for _ in range(lefts):
+            page.keyboard.press('Shift+ArrowLeft')
+        page.wait_for_timeout(80)
+        page.keyboard.press('Control+b')
+        page.wait_for_timeout(200)
+        s = src(page)
+        return s[s.index('\\begin{document}') + 17:s.index('\n\\end{document}')], (page.inner_text('#toast') if page.is_visible('#toast') else '')
+    haraka = 'x \u0628\\textcolor{red}{\u064E}\u062A'
+    got, toast = run(haraka, 2)
+    check('bold over a coloured vowel mark and the letter after it is refused, the source left whole', got == haraka and 'crosses structure' in toast, [got.encode('unicode_escape').decode(), toast])
+    got, toast = run(haraka, 1)
+    check('bold on the letter after it wraps that letter', got == 'x \u0628\\textcolor{red}{\u064E}\\textbf{\u062A}', got.encode('unicode_escape').decode())
+    accent = 'Start \\emph{cafe}\u0301s end.'
+    got, toast = run(accent, 7)
+    check('bold from an accent written after a closing brace wraps from the accent', got == 'Start \\emph{cafe}\\textbf{\u0301s end.}' and toast == '', [got.encode('unicode_escape').decode(), toast])
+    got, toast = run(accent, 6)
+    check('and from the letter after it', got == 'Start \\emph{cafe}\u0301\\textbf{s end.}' and toast == '', [got.encode('unicode_escape').decode(), toast])
+
+
 def notice(p, page):
     load_doc(page, PLAIN)
     page.wait_for_timeout(900)
@@ -774,6 +802,7 @@ try:
         long_rtl(page)
         fonts(page)
         india(p, page)
+        marks_after_syntax(page)
         notice(p, page)
         check('no console errors', not errors, errors[:5])
         browser.close()

@@ -325,6 +325,16 @@ export function clusterEdge(text, i, dir) {
   const [a, b] = clusterAt(text, i);
   return a === i ? i : dir < 0 ? a : b;
 }
+// The same in LaTeX source, where not every character is text: a mark written after a brace, a
+// dollar or a space (\textcolor{red}{<fatha>}, \emph{cafe}<acute>) has that sign for its base as far
+// as Unicode goes, and an edge moved over it would put half a group inside a command. A place
+// in such a cluster stays where it is.
+const SYNTAX = /[\\{}$%&~^_#\s]/;
+export function sourceEdge(text, i, dir) {
+  if (i <= 0 || i >= text.length) return Math.max(0, Math.min(text.length, i));
+  const [a, b] = clusterAt(text, i);
+  return a === i || SYNTAX.test(text.slice(a, b)) ? i : dir < 0 ? a : b;
+}
 
 // ---------------------------------------------------------------------------
 // Escaping typed text into LaTeX

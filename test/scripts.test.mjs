@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { scriptsIn, scriptSetup, scriptNeeds, rtlDocument, scriptLines, addScriptSetup, languageDir, RTL_LANGUAGES, INDIC, scriptName } from '../src/scripts.js';
 import { buildModel } from '../src/model.js';
-import { clusterAt, clusterEdge, backspaceUnits } from '../src/editor.js';
+import { clusterAt, clusterEdge, sourceEdge, backspaceUnits } from '../src/editor.js';
 
 let n = 0;
 const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
@@ -572,6 +572,29 @@ ok('Backspace takes the last code point, and an emoji whole', () => {
   assert.equal(backspaceUnits('1\uFE0F\u20E3'), 3);
   // what is left is never half a pair
   for (const c of ['क्षि', '𠀀', 'क𑀓', '😀', 'e\u0301']) { const rest = c.slice(0, c.length - backspaceUnits(c)); assert.ok(!/[\uD800-\uDBFF]$/.test(rest), c); }
+});
+
+ok('in LaTeX source an edge never moves over a brace, a dollar or a space', () => {
+  // a mark after a sign of TeX's has that sign for its base, as far as Unicode goes
+  const fatha = String.fromCharCode(0x64E), acute = String.fromCharCode(0x301);
+  const a = 'x ' + String.fromCharCode(0x628) + '\\textcolor{red}{' + fatha + '}' + String.fromCharCode(0x62A);
+  const at = a.indexOf(fatha);
+  assert.equal(clusterEdge(a, at, -1), at - 1, 'the plain edge takes the brace for the base');
+  assert.equal(sourceEdge(a, at, -1), at, 'in source it stays');
+  assert.equal(sourceEdge(a, at, 1), at);
+  const b = 'Start \\emph{cafe}' + acute + 's end.';
+  const bt = b.indexOf(acute);
+  assert.equal(sourceEdge(b, bt, -1), bt);
+  assert.equal(sourceEdge(b, bt, 1), bt);
+  for (const sign of ['$x$', '~', ' ', '%', '&', '^', '_', '#', '\\\\']) { const t = 'a' + sign + acute + 'b', i = t.indexOf(acute); assert.equal(sourceEdge(t, i, -1), i, sign); assert.equal(sourceEdge(t, i, 1), i, sign); }
+  // inside a character of the text it moves as before
+  const c = 'a ' + String.fromCharCode(0x915, 0x94D, 0x937, 0x93F) + ' b';
+  for (let i = 0; i <= c.length; i++) { assert.equal(sourceEdge(c, i, -1), clusterEdge(c, i, -1), 'at ' + i); assert.equal(sourceEdge(c, i, 1), clusterEdge(c, i, 1), 'at ' + i); }
+  assert.equal(sourceEdge(c, 4, -1), 2);
+  assert.equal(sourceEdge(c, 4, 1), 6);
+  assert.equal(sourceEdge('e' + acute + 'x', 1, 1), 2, 'a mark after its own letter is that letter\'s');
+  const latin = 'Plain \\textbf{text} with $x$.';
+  for (let i = 0; i <= latin.length; i++) { assert.equal(sourceEdge(latin, i, -1), i); assert.equal(sourceEdge(latin, i, 1), i); }
 });
 
 console.log(n + '/' + n + ' passed');
