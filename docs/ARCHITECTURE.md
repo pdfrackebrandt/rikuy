@@ -509,6 +509,21 @@ alignment and the import plan. `src/wordast.js` (in the page) walks the model in
   `ar-SA`) of one with Arabic, with `w:themeFontLang` for the headings' theme fonts.
   *Edits back.* Each Chinese or Japanese character is a word to `textHunks`; new text with
   Chinese in it keeps its quotation marks and dash as characters.
+- **India's scripts** (the nine of `INDIC` in `src/scripts.js`) take the same road. *Open:* a
+  script the text has letters of gets its two lines; its characters, the danda and double danda
+  all nine share, and a joiner or non joiner beside its letters are kept and not listed as lost
+  (digits or signs of a script the text has no letter of are, under the script's name, and so
+  is Sinhala). Word keeps these scripts as complex script runs cut at every change of font;
+  pandoc joins them. *Save:* `indicRuns` (`src/wordjobs.js`) gives every run of
+  `word/document.xml`, `footnotes.xml` and `comments.xml` that holds one of the scripts
+  `w:rFonts w:cs="Nirmala UI"` (after the style) and `w:lang w:bidi` with the script's language
+  (`hi-IN`, `bn-IN`, `pa-IN`, `gu-IN`, `or-IN`, `ta-IN`, `te-IN`, `kn-IN`, `ml-IN`, last in the
+  run's properties, as Word's schema orders them), and cuts a run where the script changes; on
+  the run because the defaults hold one font and one language, Arabic's when a file has both.
+  They are left to right: no `w:rtl`. *Edits back:* a word holds its marks and joiners, and
+  `textHunks` moves a change's ends out of a cluster (a mark on its letter, a consonant a
+  virama or a joiner ties on, the halves of an astral character), so a vowel sign changed in
+  Word is its syllable changed.
 
 **Whose edits are merged.** The data a .docx carries says where every edit goes in the source,
 so it is trusted only when this browser wrote it: the worker returns the SHA-256 of the data at

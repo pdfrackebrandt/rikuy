@@ -116,10 +116,11 @@ Pick the checks by what you touched, and run them before you call it done:
   the hosted build; `tex/README.md` says what they hold.
 - The published artifact may hold 256 MB; `PLAN.md` gives the current size. It has no room for
   pandoc: build that copy with `RIKUY_NO_WORD=1` (and `RIKUY_WORD_HOST` naming a copy with Word).
-- `test/fixtures/word-fixture.docx`, `word-rich.docx`, `word-chinese.docx`, `word-arabic.docx`
-  and `word-mixed.docx` are `test/word_fixture.py`'s output (`python3 word_fixture.py out.docx`,
-  and with `rich`, `chinese`, `arabic` or `mixed` after it), kept so `npm test` needs no Python
-  packages; write them again after changing the script.
+- `test/fixtures/word-fixture.docx`, `word-rich.docx`, `word-chinese.docx`, `word-arabic.docx`,
+  `word-mixed.docx`, `word-hindi.docx` and `word-indic.docx` are `test/word_fixture.py`'s output
+  (`python3 word_fixture.py out.docx`, and with `rich`, `chinese`, `arabic`, `mixed`, `hindi` or
+  `indic` after it), kept so `npm test` needs no Python packages; write them again after changing
+  the script.
 - LibreOffice without its Math module (`libreoffice-math`) drops every equation of a .docx it
   saves; `word.py`'s LibreOffice checks need it.
 - The build machine has two cores: corpus runs use a 240 s limit per document and must run alone.

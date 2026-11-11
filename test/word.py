@@ -14,7 +14,8 @@ it opened and saved keeps the bookmarks and the custom XML part, and an edit mad
 with changes tracked comes back. A Word file in Arabic and one in Chinese open set up for their
 script (the preamble's lines of src/scripts.js), the Arabic one right to left; saved as Word again
 they carry Word's own marks for direction and fonts, an Arabic word changed there comes back, and
-LibreOffice opens and saves both with their text. A build without Word (RIKUY_NO_WORD) says where
+LibreOffice opens and saves both with their text. A file in Hindi and one with eight more of
+India's scripts the same: set up on opening, each run's font and language on saving. A build without Word (RIKUY_NO_WORD) says where
 Word support is and fetches nothing of it."""
 import os, sys, io, re, json, base64, zipfile, tempfile, traceback, time, subprocess, shutil, difflib
 sys.path.insert(0, os.path.dirname(__file__))
@@ -398,6 +399,40 @@ try:
                 check('the Chinese file LibreOffice saved opens as it was saved from here', '本文研究\\textbf{制度变迁}对\\emph{经济增长}的影响' in src(page) and '\\usepackage[scheme=plain]{ctex}' in src(page), src(page)[:500])
             else:
                 check('LibreOffice converts the Chinese and Arabic files', False, (r.stdout[-300:], r.stderr[-300:]))
+
+        # ---- India's scripts: set up on opening; on saving, each run's font and language for Word ----
+        fh = os.path.join(TMP, 'Hindi.docx')
+        open(fh, 'wb').write(word_fixture.make_hindi())
+        open_file(page, fh)
+        t = src(page)
+        check('a Hindi Word file opens set up for Devanagari, its runs joined, nothing listed as lost', '\\babelprovide[import=hi, onchar=ids fonts]{hindi}' in t and '\\babelfont[hindi]{rm}[Renderer=Harfbuzz]{Noto Serif Devanagari}' in t and 'fontenc' not in t and 'Not kept' not in t and 'यह दस्तावेज़ \\textbf{हिन्दी} में लिखा गया है। इसमें क्ष, त्र, ज्ञ और श्री जैसे संयुक्ताक्षर हैं॥' in t and 'क्‍ष तथा क्‌ष।' in t, t[:900])
+        out_hi = save_docx(page, os.path.join(TMP, 'hindi-out.docx'))
+        Hd = re.sub(r'<w:bookmark(Start|End)[^>]*>', '', parts(out_hi)['word/document.xml'].decode())
+        check('saved as Word, its runs name a complex script font and Hindi, and none runs right to left', '<w:r><w:rPr><w:rFonts w:cs="Nirmala UI" /><w:b /><w:bCs /><w:lang w:bidi="hi-IN" /></w:rPr><w:t xml:space="preserve">हिन्दी</w:t></w:r>' in Hd and 'w:rtl' not in Hd and 'w:bidi />' not in Hd and 'babelprovide' not in Hd, Hd[Hd.find('हिन्दी') - 300:Hd.find('हिन्दी') + 100])
+        base_hi = src(page)
+        open_file(page, edit_docx(out_hi, os.path.join(TMP, 'hindi-ed.docx'), [('पहला बिंदु', 'पहली बात')]))
+        lh = changed_lines(base_hi, src(page))
+        check('Hindi words changed in Word come back as those words', lh == ['-  पहला बिंदु', '+  पहली बात'], lh)
+        fi = os.path.join(TMP, 'Indic.docx')
+        open(fi, 'wb').write(word_fixture.make_indic())
+        open_file(page, fi)
+        t = src(page)
+        check('a Word file of eight more scripts opens with a font for each', all(('{%s}' % l) in t for l in ['bengali', 'tamil', 'telugu', 'gujarati', 'kannada', 'malayalam', 'punjabi', 'odia']) and 'Not kept' not in t and 'தமிழ்:} வணக்கம், மிக்க நன்றி. ௧௨௩' in t, t[:1500])
+        out_in = save_docx(page, os.path.join(TMP, 'indic-out.docx'))
+        Id = parts(out_in)['word/document.xml'].decode()
+        check('saved as Word, each script has its language', all(('w:bidi="%s-IN"' % l) in Id for l in ['hi', 'bn', 'ta', 'te', 'gu', 'kn', 'ml', 'pa', 'or']) and Id.count('w:cs="Nirmala UI"') > 20, re.findall(r'w:bidi="[^"]*"', Id)[:12])
+        if soffice:
+            lo3 = os.path.join(TMP, 'lo-indic')
+            shutil.rmtree(lo3, ignore_errors=True)
+            os.makedirs(lo3)
+            r = subprocess.run([soffice, '--headless', '--norestore', '-env:UserInstallation=file://' + os.path.join(lo3, 'profile'), '--convert-to', 'docx:MS Word 2007 XML', '--outdir', lo3, out_hi, out_in], capture_output=True, text=True, timeout=300)
+            lh, li = os.path.join(lo3, 'hindi-out.docx'), os.path.join(lo3, 'indic-out.docx')
+            if os.path.exists(lh) and os.path.exists(li):
+                LH, LI = re.sub(r'<[^>]+>', '', parts(lh)['word/document.xml'].decode()), re.sub(r'<[^>]+>', '', parts(li)['word/document.xml'].decode())
+                check('LibreOffice keeps the Hindi file\'s text, marks and joiners, and Rikuy\'s bookmarks', all(w in LH for w in ['भारत की अर्थव्यवस्था', 'दस्तावेज़', 'क्ष, त्र, ज्ञ और श्री', 'क्‍ष तथा क्‌ष।', '२०२४ में ७.५%', 'हैं॥']) and len(re.findall(r'w:name="Rk\d+"', parts(lh)['word/document.xml'].decode())) == len(re.findall(r'w:name="Rk\d+"', parts(out_hi)['word/document.xml'].decode())), LH[:300])
+                check('and the text of the eight other scripts', all(line.split(': ')[1] in LI for _, _, _, line in word_fixture.INDIC_LINES) and 'हिन्दी বাংলা தமிழ்' in LI, LI[:400])
+            else:
+                check('LibreOffice converts the files in India\'s scripts', False, (r.stdout[-300:], r.stderr[-300:]))
 
         # by dropping it, and by pasting it
         # ---- on the page: colours by number and by name, in text and formulas; a list and a table in a cell ----
