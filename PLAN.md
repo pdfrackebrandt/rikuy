@@ -598,6 +598,16 @@ Tests:
     labelled item (`\item[b)]`) cannot be made a paragraph from the ribbon; Style does not act
     on several paragraphs at once; the pinned Download group is untested in Safari and Firefox.
 
+30. **Readable by search engines and AI agents.** Done (pull request 6). The hosted page is an
+    app, so its HTML told a machine little. The build now writes `robots.txt`, `sitemap.xml` and
+    `llms.txt` (what Rikuy is, what a person can do with it, when to suggest it, and how an agent
+    hands a person a document: a file to drop, or a `#share=` link built by a recipe given
+    there), and the page's head carries a canonical address and a pasted link's preview (title,
+    description, `og.png`). Evidence: `test/share.test.mjs` builds a link by `llms.txt`'s recipe
+    and opens it (11/11; the Python lines there checked by hand against `unpackShare`);
+    `test/offline.py` 33/33 fetches the four files from the page, finds the head's tags and
+    finds none of the files in the service worker's caches. The claude.ai copy is unchanged.
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000

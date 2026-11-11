@@ -73,6 +73,11 @@ leaves what people kept behind at the old one: decide it early.
   microphones, location and the like; TeX packs, engine chunks, programs and fonts (named by their
   hash) cached for a year as immutable; the page, `sw.js` and the manifest revalidated on every
   request. `404.html` keeps Pages from answering a missing file with the page.
+- **For crawlers and AI agents**: `robots.txt`, `sitemap.xml`, `llms.txt` (what Rikuy is, what a
+  person can do with it, and how an agent builds a link that opens a document in it), and in the
+  page's head a canonical address and the tags a pasted link's preview reads, with `og.png`
+  (`docs/screenshot.png`). They carry the site's address: `RIKUY_SITE` at build time, by default
+  the hosted copy's. The service worker does not keep them.
 
 ## Updates reach people this way
 
