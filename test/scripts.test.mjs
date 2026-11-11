@@ -1,0 +1,339 @@
+// Chinese and Arabic (src/scripts.js): which scripts a text is written in, what a preamble sets
+// up, whether a document runs right to left and the lines that set it up; then the page's model
+// of the commands and environments that turn text or only name CJK's font (src/model.js).
+import assert from 'node:assert/strict';
+import { scriptsIn, scriptSetup, scriptNeeds, rtlDocument, scriptLines, addScriptSetup, languageDir, RTL_LANGUAGES } from '../src/scripts.js';
+import { buildModel } from '../src/model.js';
+
+let n = 0;
+const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
+const doc = (pre, body = 'Text.') => '\\documentclass{article}\n' + pre + (pre ? '\n' : '') + '\\begin{document}\n' + body + '\n\\end{document}\n';
+
+// ---- scriptsIn ----------------------------------------------------------------------
+ok('letters of each script are counted', () => {
+  assert.deepEqual(scriptsIn('abc 中文 عربي'), { chinese: 2, arabic: 4, letters: 9 });
+  // a text with neither script is not read at all: nothing is counted, its letters neither
+  assert.deepEqual(scriptsIn('plain text, no more'), { chinese: 0, arabic: 0, letters: 0 });
+  // Arabic digits and punctuation are no letters: a year or a comma alone needs no font set up
+  assert.equal(scriptsIn('١٢٣، 2024').arabic, 0);
+  // Persian and Urdu letters are in the Arabic script
+  assert.equal(scriptsIn('پژوهش').arabic, 5);
+});
+ok('comments, commands and math do not count', () => {
+  assert.deepEqual(scriptsIn('text % 中文 in a comment\nmore'), { chinese: 0, arabic: 0, letters: 8 });
+  assert.deepEqual(scriptsIn('text % a comment\nmore'), { chinese: 0, arabic: 0, letters: 0 });
+  assert.equal(scriptsIn('50\\% 中').chinese, 1, 'an escaped percent starts no comment');
+  assert.equal(scriptsIn('$中 + ب$ and $$文$$ x').chinese, 0);
+  assert.equal(scriptsIn('$中 + ب$ and $$文$$ x').arabic, 0);
+  assert.deepEqual(scriptsIn('\\begin{otherlanguage}{arabic}\\textbf{x}\\end{otherlanguage} 中'), { chinese: 1, arabic: 0, letters: 8 }, 'names of commands and environments are not text');
+  assert.equal(scriptsIn('\\textbf{中文}').chinese, 2, 'a command\'s argument is text');
+});
+
+// ---- scriptSetup --------------------------------------------------------------------
+ok('packages and classes that set Chinese up', () => {
+  for (const pre of ['\\usepackage{ctex}', '\\usepackage[UTF8]{ctex}', '\\usepackage{xeCJK}', '\\usepackage{CJKutf8}', '\\usepackage{CJK}', '\\usepackage{luatexja-fontspec}',
+    '\\usepackage{amsmath, xeCJK}', '\\usepackage[chinese]{babel}', '\\usepackage{babel}\n\\babelprovide[import, onchar=ids fonts]{chinese}', '\\RequirePackage{ctex}']) {
+    assert.deepEqual(scriptSetup(doc(pre)), { chinese: true, arabic: false }, pre);
+  }
+  for (const cls of ['ctexart', 'ctexrep', 'ctexbook', 'ctexbeamer', 'ltjsarticle', 'elegantpaper']) {
+    assert.equal(scriptSetup('\\documentclass[12pt]{' + cls + '}\n\\begin{document}x\\end{document}').chinese, true, cls);
+  }
+  assert.deepEqual(scriptSetup(doc('\\usepackage{amsmath}')), { chinese: false, arabic: false });
+});
+ok('packages and classes that set Arabic up', () => {
+  for (const pre of ['\\usepackage{arabtex}', '\\usepackage{arabxetex}', '\\usepackage{bidi}', '\\usepackage{xepersian}', '\\usepackage[arabic]{babel}', '\\usepackage[english, bidi=basic]{babel}',
+    '\\usepackage{babel}\n\\babelprovide[import, main]{arabic}', '\\usepackage{babel}\n\\babelprovide{hebrew}', '\\usepackage{polyglossia}\n\\setmainlanguage{arabic}',
+    '\\usepackage{polyglossia}\n\\setotherlanguage{farsi}', '\\usepackage{polyglossia}\n\\setotherlanguages{english, urdu}', '\\usepackage{polyglossia}\n\\setdefaultlanguage[numerals=maghrib]{arabic}']) {
+    assert.deepEqual(scriptSetup(doc(pre)), { chinese: false, arabic: true }, pre);
+  }
+  assert.equal(scriptSetup('\\documentclass[arabic]{article}\n\\usepackage{babel}\n\\begin{document}x\\end{document}').arabic, true, 'a class option babel reads');
+  assert.equal(scriptSetup('\\documentclass{xepersian-thesis}\n\\begin{document}x\\end{document}').arabic, true);
+});
+ok('a set up in a comment or after \\begin{document} is none', () => {
+  assert.deepEqual(scriptSetup(doc('% \\usepackage{ctex}\n%\\usepackage[arabic]{babel}')), { chinese: false, arabic: false });
+  assert.deepEqual(scriptSetup(doc('', '\\usepackage{ctex}')), { chinese: false, arabic: false });
+  assert.deepEqual(scriptSetup('no document at all \\usepackage{ctex}'), { chinese: false, arabic: false });
+});
+
+// ---- scriptNeeds --------------------------------------------------------------------
+ok('needs: what the text has and the preamble lacks', () => {
+  const plain = doc('', '中文 text');
+  assert.deepEqual([...scriptNeeds(plain, [plain])], ['chinese']);
+  assert.deepEqual([...scriptNeeds(doc('\\usepackage{ctex}', '中文'), null)], [], 'set up: nothing needed');
+  const both = doc('', '中文 and عربي');
+  assert.deepEqual([...scriptNeeds(both, [both])], ['chinese', 'arabic']);
+  assert.deepEqual([...scriptNeeds(doc('\\usepackage{ctex}', '中文 and عربي'))], ['arabic']);
+  assert.deepEqual([...scriptNeeds(doc('', 'Only Latin.'))], []);
+  // the main file's preamble is not its text: a Chinese comment-free \title there still is not body
+  assert.deepEqual([...scriptNeeds(doc('\\newcommand{\\zh}{中文}', 'Latin'))], [], 'the preamble is not counted');
+});
+ok('needs over several files', () => {
+  const main = doc('', '\\input{ch1}\n\\input{ch2}');
+  const n1 = scriptNeeds(main, [main, 'First chapter in English.', '第二章 是中文的。']);
+  assert.deepEqual([...n1], ['chinese']);
+  assert.equal(n1.arabicMain, false);
+  const n2 = scriptNeeds(main, [main, 'هذا فصل باللغة العربية', 'and a longer chapter that is written in English']);
+  assert.deepEqual([...n2], ['arabic']);
+  assert.equal(n2.arabicMain, false, 'not mostly Arabic');
+  const n3 = scriptNeeds(main, [main, 'هذا فصل باللغة العربية وهو طويل', 'ok']);
+  assert.equal(n3.arabicMain, true, 'mostly Arabic: an Arabic document');
+  // a file that sets a script up itself does not count: only the main file's preamble does
+  assert.deepEqual([...scriptNeeds(main, [main, '\\usepackage{ctex} 中文'])], ['chinese']);
+});
+
+// ---- rtlDocument --------------------------------------------------------------------
+ok('right to left by the main language', () => {
+  const yes = ['\\usepackage[arabic]{babel}', '\\usepackage[english, arabic]{babel}', '\\usepackage[main=arabic, english]{babel}', '\\usepackage[english, main=hebrew]{babel}',
+    '\\usepackage[english, bidi=basic]{babel}\n\\babelprovide[import, main]{arabic}', '\\usepackage{babel}\n\\babelprovide[main, import]{farsi}',
+    '\\usepackage{polyglossia}\n\\setmainlanguage{arabic}', '\\usepackage{polyglossia}\n\\setmainlanguage[numerals=maghrib]{arabic}\n\\setotherlanguage{english}',
+    '\\usepackage{xepersian}', '\\usepackage[bidi=basic, english, urdu]{babel}'];
+  const no = ['', '\\usepackage[english]{babel}', '\\usepackage[arabic, english]{babel}', '\\usepackage[main=english, arabic]{babel}', '\\usepackage[english, bidi=basic]{babel}\n\\babelprovide[import, onchar=ids fonts]{arabic}',
+    '\\usepackage{polyglossia}\n\\setmainlanguage{english}\n\\setotherlanguage{arabic}', '% \\usepackage[arabic]{babel}', '\\usepackage{ctex}', '\\usepackage{bidi}'];
+  for (const pre of yes) assert.equal(rtlDocument(doc(pre)), true, pre);
+  for (const pre of no) assert.equal(rtlDocument(doc(pre)), false, pre);
+});
+ok('class options count for babel, before its own', () => {
+  assert.equal(rtlDocument('\\documentclass[12pt, a4paper, arabic]{article}\n\\usepackage{babel}\n\\begin{document}x\\end{document}'), true);
+  assert.equal(rtlDocument('\\documentclass[arabic]{article}\n\\usepackage[english]{babel}\n\\begin{document}x\\end{document}'), false, 'the package\'s last language is the main one');
+  assert.equal(rtlDocument('\\documentclass[arabic]{article}\n\\begin{document}x\\end{document}'), false, 'no babel: the option says nothing');
+  assert.equal(rtlDocument('\\documentclass{xepersian-thesis}\n\\begin{document}x\\end{document}'), true);
+  assert.equal(rtlDocument('\\usepackage[arabic]{babel} and no document'), false);
+});
+
+// ---- addScriptSetup -----------------------------------------------------------------
+const needs = (list, arabicMain = false) => Object.assign([...list], { arabicMain });
+ok('a plain document: ctex for Chinese alone', () => {
+  const t = doc('\\usepackage{amsmath}', '中文');
+  const out = addScriptSetup(t, needs(['chinese']));
+  assert.equal(out, t.replace('\\begin{document}', '\\usepackage[scheme=plain]{ctex} % Chinese text, set with XeLaTeX\n\\begin{document}'));
+  assert.deepEqual(scriptSetup(out), { chinese: true, arabic: false });
+  assert.deepEqual([...scriptNeeds(out, [out])], [], 'set up once, nothing more is needed');
+});
+ok('a plain document: babel, Amiri and bidi for Arabic', () => {
+  const t = doc('', 'عربي');
+  const out = addScriptSetup(t, needs(['arabic']));
+  assert.equal(out, t.replace('\\begin{document}', '\\usepackage[english, bidi=basic]{babel} % LuaLaTeX orders right to left text by itself\n\\babelprovide[import, onchar=ids fonts]{arabic}\n\\babelfont[arabic]{rm}[Renderer=Harfbuzz]{Amiri}\n\\begin{document}'));
+  assert.equal(rtlDocument(out), false, 'some Arabic in a left to right document');
+  const main = addScriptSetup(t, needs(['arabic'], true));
+  assert.ok(main.includes('\\babelprovide[import, main]{arabic}\n\\babelfont{rm}[Renderer=Harfbuzz]{Amiri}\n\\begin{document}'));
+  assert.equal(rtlDocument(main), true, 'an Arabic document runs right to left once set up');
+  assert.deepEqual(scriptSetup(main), { chinese: false, arabic: true });
+});
+ok('both: Chinese goes through babel too', () => {
+  const out = addScriptSetup(doc('', '中 ع'), needs(['chinese', 'arabic']));
+  assert.deepEqual(scriptLines(needs(['chinese', 'arabic']), doc('')), ['\\usepackage[english, bidi=basic]{babel} % LuaLaTeX orders right to left text by itself',
+    '\\babelprovide[import, onchar=ids fonts]{arabic}', '\\babelfont[arabic]{rm}[Renderer=Harfbuzz]{Amiri}', '\\babelprovide[import, onchar=ids fonts]{chinese}', '\\babelfont[chinese]{rm}{FandolSong}']);
+  assert.deepEqual(scriptSetup(out), { chinese: true, arabic: true });
+  assert.ok(!out.includes('ctex'));
+});
+ok('an existing babel gains bidi=basic and is not loaded twice', () => {
+  const noOpt = addScriptSetup(doc('\\usepackage{babel}', 'ع'), needs(['arabic']));
+  assert.ok(noOpt.includes('\\usepackage[bidi=basic]{babel}\n\\babelprovide[import, onchar=ids fonts]{arabic}'), noOpt);
+  assert.equal(noOpt.match(/\{babel\}/g).length, 1);
+  const withOpt = addScriptSetup(doc('\\usepackage[french, english]{babel}', 'ع'), needs(['arabic']));
+  assert.ok(withOpt.includes('\\usepackage[french, english, bidi=basic]{babel}\n'), withOpt);
+  assert.equal(withOpt.match(/\{babel\}/g).length, 1);
+  const has = doc('\\usepackage[english, bidi=basic]{babel}', '中');
+  const zh = addScriptSetup(has, needs(['chinese']));
+  assert.ok(zh.includes('\\usepackage[english, bidi=basic]{babel}\n\\babelprovide[import, onchar=ids fonts]{chinese}\n\\babelfont[chinese]{rm}{FandolSong}\n\\begin{document}'), 'babel with bidi is there: Chinese through babel, the line as it was');
+});
+ok('babel in a comment is left alone', () => {
+  const t = doc('% \\usepackage[english]{babel}\n\\usepackage{amsmath} % not \\usepackage{babel}', 'ع');
+  const out = addScriptSetup(t, needs(['arabic']));
+  assert.ok(out.startsWith('\\documentclass{article}\n% \\usepackage[english]{babel}\n\\usepackage{amsmath} % not \\usepackage{babel}\n\\usepackage[english, bidi=basic]{babel} % LuaLaTeX'), out);
+});
+ok('nothing without \\begin{document}, or without needs', () => {
+  assert.equal(addScriptSetup('A fragment with 中文 and no document.', needs(['chinese'])), null);
+  assert.equal(addScriptSetup(doc('', 'x'), needs([])), null);
+  // the text after \begin{document} comes out as it went in
+  const t = doc('', '中文 % \\begin{document} in a comment');
+  assert.ok(addScriptSetup(t, needs(['chinese'])).endsWith(t.slice(t.indexOf('\\begin{document}'))));
+});
+
+// ---- a document made to be slow -----------------------------------------------------
+// The preamble may be a stranger's (a link, a .zip) and is read on the page at every key. Each
+// of these took minutes before the arguments were bounded and the preamble's length was.
+ok('a megabyte of unclosed \\usepackage[ is handled in under a second', () => {
+  const tail = '\n\\begin{document}\n中文 and عربي\n\\end{document}\n';
+  const hostile = [
+    '\\documentclass{article}\n' + '\\usepackage['.repeat(Math.ceil(1e6 / 12)),
+    '\\documentclass{article}\n' + '\\usepackage{'.repeat(Math.ceil(1e6 / 12)),
+    '\\documentclass{article}\n\\usepackage' + ' '.repeat(1e6) + 'x',
+    '\\documentclass{article}\n\\usepackage{babel}\\babelprovide' + ' '.repeat(5e5) + 'x\\setmainlanguage' + ' '.repeat(5e5) + 'x',
+    '\\documentclass' + ' '.repeat(1e6) + 'x' + '\\babelprovide['.repeat(2e4),
+    '\\documentclass{article}\n' + ('\\usepackage' + ' '.repeat(40) + '\n').repeat(2e4) + ' '.repeat(2e5)
+  ];
+  for (const pre of hostile) {
+    const t = pre + tail;
+    assert.ok(t.length > 1e6);
+    const t0 = performance.now();
+    const needs = scriptNeeds(t, [t]);
+    rtlDocument(t);
+    scriptSetup(t);
+    const out = addScriptSetup(t, needs);
+    const ms = performance.now() - t0;
+    assert.ok(ms < 1000, Math.round(ms) + ' ms for ' + JSON.stringify(pre.slice(24, 60)));
+    assert.deepEqual([...needs], ['chinese', 'arabic']);
+    assert.ok(out.endsWith('\\babelfont[chinese]{rm}{FandolSong}' + tail), 'and the lines still go before \\begin{document}');
+  }
+  // the body: a megabyte of environments never closed, of dollars, of comment signs
+  for (const body of ['\\begin{'.repeat(15e4) + '中', '$'.repeat(1e6) + '中', ('% ' + 'x'.repeat(98) + '\n').repeat(1e4) + '中', '\\begin' + ' '.repeat(1e6) + '中']) {
+    const t0 = performance.now();
+    assert.equal(scriptsIn(body).chinese, 1);
+    assert.ok(performance.now() - t0 < 1000, Math.round(performance.now() - t0) + ' ms for the body ' + JSON.stringify(body.slice(0, 20)));
+  }
+  // and a document with neither script costs one look: no preamble is read
+  const big = '\\documentclass{article}\n' + '\\usepackage['.repeat(1e5) + '\n\\begin{document}\nLatin only.\n\\end{document}\n';
+  const t0 = performance.now();
+  for (let i = 0; i < 20; i++) assert.deepEqual([...scriptNeeds(big, [big])], []);
+  assert.ok(performance.now() - t0 < 500, Math.round(performance.now() - t0) + ' ms for twenty looks');
+});
+ok('a preamble is read up to 200 000 characters', () => {
+  const pad = '% ' + 'x'.repeat(98) + '\n';
+  const near = '\\documentclass{article}\n' + pad.repeat(1900) + '\\usepackage[arabic]{babel}\n\\begin{document}x\\end{document}';
+  const far = '\\documentclass{article}\n' + pad.repeat(2100) + '\\usepackage[arabic]{babel}\n\\begin{document}x\\end{document}';
+  assert.equal(rtlDocument(near), true);
+  assert.equal(rtlDocument(far), false);
+});
+
+// ---- languages ----------------------------------------------------------------------
+ok('the direction of a language by its name', () => {
+  for (const l of ['arabic', 'farsi', 'persian', 'hebrew', 'urdu', 'Arabic', ' hebrew ', 'arabic-dz']) assert.equal(languageDir(l), 'rtl', l);
+  for (const l of ['english', 'ngerman', 'french', 'chinese', 'greek']) assert.equal(languageDir(l), 'ltr', l);
+  for (const l of ['', 'klingon', 'arabicx', null, undefined]) assert.equal(languageDir(l), null, String(l));
+  assert.ok(RTL_LANGUAGES.test('farsi') && !RTL_LANGUAGES.test('english'));
+});
+
+// ---- the page's model ---------------------------------------------------------------
+const build = (tex) => buildModel({ files: new Map([['main.tex', tex]]), main: 'main.tex' });
+const show = (inl) => (inl || []).map((x) => x.k === 'seg' ? x.t.replace(/\u200B/g, '∅') : x.k === 'sty' ? '<' + x.st + (x.dir ? ':' + x.dir : '') + '>' + show(x.kids) + '</>' : x.k === 'chr' ? '[' + x.text + ']' : x.k === 'mac' ? '{' + show(x.kids) + '}' : '<' + x.k + '>').join('');
+const items = (M) => M.blocks.flatMap((b) => b.items);
+const lines = (M) => items(M).map((it) => it.type + (it.dir ? ' ' + it.dir : '') + (it.inl ? ' | ' + show(it.inl) : ''));
+// every character of a wrapper's text points at itself in the source
+const mapsHold = (M, src) => {
+  const walk = (inl) => { for (const x of inl || []) { if (x.k === 'seg' && !x.ph) for (let i = 0; i < x.t.length; i++) { const raw = src.slice(x.map[2 * i], x.map[2 * i + 1]); assert.ok(x.t[i] === ' ' ? /^\s+$/.test(raw) : raw === x.t[i] || raw.length === 2 && raw.includes(x.t[i]), JSON.stringify([x.t[i], raw])); } if (x.kids) walk(x.kids); } };
+  for (const b of M.blocks) { for (const it of b.items) { walk(it.inl); walk(it.title); for (const p of it.parts || []) walk(p.inl); } for (const f of b.fns) walk(f.inl); }
+};
+const AR = '\\usepackage[english, bidi=basic]{babel}\n\\babelprovide[import, main]{arabic}';
+
+ok('an Arabic document: every text block runs right to left', () => {
+  const src = doc(AR + '\n\\title{عنوان}\\author{مؤلف}', '\\maketitle\n\\begin{abstract}ملخص.\\end{abstract}\n\\section{مقدمة}\nنص عربي\\footnote{حاشية} مع English.\n\n\\begin{itemize}\\item واحد\\item اثنان\\end{itemize}\n\\begin{figure}\\caption{شكل}\\end{figure}\n\\begin{tabular}{ll}أ&ب\\\\\\end{tabular}\n\\[x=1\\]');
+  const M = build(src);
+  assert.equal(M.opts.rtl, true);
+  const its = items(M);
+  for (const it of its.filter((x) => ['p', 'h', 'title'].includes(x.type))) assert.equal(it.dir, 'rtl', it.type);
+  assert.equal(its.filter((x) => x.type === 'p' && x.label).length, 2, 'the list items');
+  assert.equal(M.blocks.flatMap((b) => b.fns)[0].dir, 'rtl', 'the footnote');
+  const floats = its.filter((x) => x.type === 'float');
+  assert.equal(floats[0].parts[0].type + floats[0].parts[0].dir, 'captionrtl');
+  assert.equal(floats[0].dir, undefined, 'a float has no direction of its own');
+  assert.equal(floats[1].parts[0].type + floats[1].parts[0].dir, 'tabularrtl', 'cells run right to left, the columns stay');
+  assert.equal(its.find((x) => x.type === 'math').dir, undefined, 'a formula stays left to right');
+  mapsHold(M, src);
+});
+ok('a document with no such language has no direction anywhere', () => {
+  const M = build(doc('\\usepackage[ngerman]{babel}', '\\section{A}\nText with عربي and 中文.\\footnote{n}\n\n\\begin{itemize}\\item x\\end{itemize}'));
+  assert.equal(M.opts.rtl, false);
+  for (const it of items(M)) assert.equal(it.dir, undefined, it.type);
+  assert.equal(M.blocks.flatMap((b) => b.fns)[0].dir, undefined);
+  assert.deepEqual(M.warn, []);
+});
+ok('commands that turn their argument', () => {
+  const src = doc('', 'A \\foreignlanguage{arabic}{عربي} b \\textarabic{نص} c \\RL{يمين} d \\texthebrew{עב} e \\foreignlanguage[date]{farsi}{فا} f.');
+  const M = build(src);
+  assert.deepEqual(lines(M), ['p | A <dir:rtl>عربي</> b <dir:rtl>نص</> c <dir:rtl>يمين</> d <dir:rtl>עב</> e <dir:rtl>فا</> f.']);
+  assert.deepEqual(M.warn, [], 'none is an unknown command');
+  const w = items(M)[0].inl.filter((x) => x.k === 'sty');
+  assert.deepEqual(w.map((x) => src.slice(x.s, x.e)), ['\\foreignlanguage{arabic}{عربي}', '\\textarabic{نص}', '\\RL{يمين}', '\\texthebrew{עב}', '\\foreignlanguage[date]{farsi}{فا}']);
+  assert.deepEqual(w.map((x) => src.slice(x.is, x.ie)), ['عربي', 'نص', 'يمين', 'עב', 'فا'], 'the wrapper knows its text, for Enter and for an empty one');
+  mapsHold(M, src);
+});
+ok('left to right in left to right is plain text; in right to left it turns', () => {
+  const body = 'A \\foreignlanguage{german}{Straße} b \\LR{left} c \\babelsublr{sub} d \\textenglish{eng} e.';
+  const ltr = build(doc('', body));
+  assert.deepEqual(lines(ltr), ['p | A Straße b left c sub d eng e.']);
+  assert.deepEqual(ltr.warn, []);
+  const rtl = build(doc(AR, body));
+  assert.deepEqual(lines(rtl), ['p rtl | A <dir:ltr>Straße</> b <dir:ltr>left</> c <dir:ltr>sub</> d <dir:ltr>eng</> e.']);
+  // nested: English inside Arabic inside English
+  assert.deepEqual(lines(build(doc('', 'x \\foreignlanguage{arabic}{ع \\foreignlanguage{english}{in} ب} y'))), ['p | x <dir:rtl>ع <dir:ltr>in</> ب</> y']);
+});
+ok('a name the document defines itself is its own', () => {
+  const M = build(doc('\\newcommand{\\LR}{likelihood ratio}\\newcommand{\\RL}[1]{(#1)}', 'The \\LR{} test and \\RL{x}.'));
+  assert.ok(!JSON.stringify(items(M)).includes('"st":"dir"'));
+  assert.ok(lines(M)[0].includes('likelihood ratio'));
+  // a language the page does not know changes nothing, as before
+  assert.deepEqual(lines(build(doc('', 'a \\foreignlanguage{klingon}{tlh} b'))), ['p | a tlh b']);
+});
+ok('an empty wrapper keeps a place to type in', () => {
+  const src = doc('', 'a \\foreignlanguage{arabic}{} b');
+  const w = items(build(src))[0].inl.find((x) => x.k === 'sty');
+  assert.equal(w.dir, 'rtl');
+  assert.equal(w.kids.length, 1);
+  assert.ok(w.kids[0].ph && w.kids[0].map[0] === src.indexOf('{} b') + 1);
+});
+ok('environments that turn their paragraphs', () => {
+  for (const [open, close] of [['\\begin{otherlanguage}{arabic}', '\\end{otherlanguage}'], ['\\begin{otherlanguage*}{arabic}', '\\end{otherlanguage*}'], ['\\begin{Arabic}', '\\end{Arabic}'], ['\\begin{arabic}', '\\end{arabic}'],
+    ['\\begin{hebrew}', '\\end{hebrew}'], ['\\begin{farsi}', '\\end{farsi}'], ['\\begin{persian}', '\\end{persian}'], ['\\begin{urdu}', '\\end{urdu}'], ['\\begin{RTL}', '\\end{RTL}'], ['\\begin{Arabic}[numerals=maghrib]', '\\end{Arabic}']]) {
+    const src = doc('', 'Before.\n\n' + open + '\nفقرة أولى.\n\nفقرة ثانية.\n' + close + '\n\nAfter.');
+    const M = build(src);
+    assert.deepEqual(lines(M), ['p | Before.', 'p rtl | فقرة أولى.', 'p rtl | فقرة ثانية.', 'p | After.'], open);
+    assert.deepEqual(M.warn, []);
+    assert.equal(M.blocks.length, 4, 'each paragraph is a block of its own, as in the document');
+    assert.ok(items(M).every((it) => !it.envTag), 'no tag of an unknown environment');
+    mapsHold(M, src);
+  }
+  const ltr = build(doc(AR, 'نص.\n\n\\begin{otherlanguage}{english}\nEnglish.\n\\end{otherlanguage}\n\n\\begin{LTR}\nLeft.\n\\end{LTR}\n\n\\begin{english}\nToo.\n\\end{english}\n\nنص.'));
+  assert.deepEqual(lines(ltr), ['p rtl | نص.', 'p ltr | English.', 'p ltr | Left.', 'p ltr | Too.', 'p rtl | نص.']);
+});
+ok('an environment around words of a line stays in the line', () => {
+  const src = doc('', 'Inline \\begin{otherlanguage*}{arabic}عربي\\end{otherlanguage*} here.\n\n\\begin{RTL}نص\\end{RTL} tail.');
+  const M = build(src);
+  assert.deepEqual(lines(M), ['p | Inline <dir:rtl>عربي</> here.', 'p | <dir:rtl>نص</> tail.']);
+  const w = items(M)[0].inl.find((x) => x.k === 'sty');
+  assert.equal(src.slice(w.s, w.e), '\\begin{otherlanguage*}{arabic}عربي\\end{otherlanguage*}');
+  assert.equal(src.slice(w.is, w.ie), 'عربي');
+  mapsHold(M, src);
+});
+ok('an empty environment has a paragraph to type in, running its way', () => {
+  const src = doc('', '\\begin{otherlanguage}{arabic}\\end{otherlanguage}');
+  const it = items(build(src))[0];
+  assert.equal(it.type + it.dir, 'prtl');
+  assert.ok(it.inl[0].ph && it.inl[0].map[0] === src.indexOf('\\end{otherlanguage}'));
+});
+ok('\\selectlanguage holds until the next one, the end of its group or of its environment', () => {
+  const M = build(doc('', 'One.\n\n\\selectlanguage{arabic}\nاثنان.\n\nثلاثة.\n\n\\selectlanguage{english}\nFour.'));
+  assert.deepEqual(lines(M), ['p | One.', 'p rtl | اثنان.', 'p rtl | ثلاثة.', 'p | Four.']);
+  assert.deepEqual(lines(build(doc('', 'Start \\selectlanguage{arabic}نهاية.\n\nالتالي.'))), ['p | Start <dir:rtl>نهاية.</>', 'p rtl | التالي.'], 'in a line: the rest of it turns');
+  assert.deepEqual(lines(build(doc('', '{\\selectlanguage{hebrew}עב} then.\n\nNext.'))), ['p | <dir:rtl>עב</> then.', 'p | Next.'], 'a group ends it');
+  assert.deepEqual(lines(build(doc('', '\\begin{quote}\n\\selectlanguage{arabic}\nنص.\n\\end{quote}\n\nAfter.'))), ['p rtl | نص.', 'p | After.'], 'an environment ends it');
+  assert.deepEqual(lines(build(doc(AR, 'نص.\n\n\\selectlanguage{english}\nEnglish.\n\n\\section{S}'))), ['p rtl | نص.', 'p ltr | English.', 'h ltr | S']);
+  assert.deepEqual(lines(build(doc('', '\\setRTL\nنص.\n\n\\setLTR\nBack.'))), ['p rtl | نص.', 'p | Back.'], 'bidi\'s switches');
+});
+ok('a block is drawn again when the direction before it changes', () => {
+  const a = build(doc('', '\\selectlanguage{arabic}\n\nنص.'));
+  const b = build(doc('', '\\selectlanguage{english}\n\nنص.'));
+  const key = (M) => M.blocks.find((x) => x.items[0].inl && show(x.items[0].inl) === 'نص.').key;
+  assert.notEqual(key(a), key(b));
+});
+ok('CJK wrappers are transparent', () => {
+  for (const env of ['CJK', 'CJK*']) {
+    const src = doc('\\usepackage{CJKutf8}', 'Before.\n\n\\begin{' + env + '}{UTF8}{gbsn}\n中文段落。\n\n第二段\\CJKfamily{gkai}楷体。\n\\end{' + env + '}\n\nMixed \\begin{' + env + '}{UTF8}{gbsn}中文\\end{' + env + '} inline.');
+    const M = build(src);
+    assert.deepEqual(lines(M), ['p | Before.', 'p | 中文段落。', 'p | 第二段楷体。', 'p | Mixed 中文 inline.'], env);
+    assert.deepEqual(M.warn, []);
+    assert.ok(items(M).every((it) => !it.envTag));
+    mapsHold(M, src);
+  }
+  // the whole body in one CJK environment, as such documents are written: paragraphs are blocks
+  const whole = build(doc('\\usepackage{CJKutf8}', '\\begin{CJK}{UTF8}{gbsn}\n\\section{引言}\n第一段。\n\n第二段。\n\\end{CJK}'));
+  assert.deepEqual(lines(whole), ['h | 引言', 'p | 第一段。', 'p | 第二段。']);
+  assert.equal(whole.blocks.length, 3);
+  assert.deepEqual(lines(build(doc('', '\\begin{CJK}[T1]{UTF8}{gbsn}字\\end{CJK}'))), ['p | 字'], 'the optional font encoding too');
+});
+ok('an environment the document defines under a language\'s name is its own', () => {
+  const M = build(doc('\\newenvironment{hebrew}{\\begin{quote}}{\\end{quote}}', '\\begin{hebrew}\nText.\n\\end{hebrew}'));
+  assert.equal(items(M)[0].dir, undefined);
+});
+
+console.log(n + '/' + n + ' passed');

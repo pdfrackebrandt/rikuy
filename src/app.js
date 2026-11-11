@@ -595,7 +595,7 @@ class App {
     this.computePx();
     const macroChanged = this.renderer.setMacros(model.mathMacros, { opts: model.siOpts, units: model.siUnits, lang: model.opts.lang });
     const O = model.opts;
-    const optSig = JSON.stringify([O.pt, O.lang, O.font, O.citeStyle, O.parskip, O.cleveref, O.spread]);
+    const optSig = JSON.stringify([O.pt, O.lang, O.font, O.citeStyle, O.parskip, O.cleveref, O.spread, !!O.rtl]);
     if (macroChanged || optSig !== this.optSig || this.forceRender) { this.prefix = 'r' + (++this.renderVer) + '|'; this.optSig = optSig; this.forceRender = false; }
     this.renderer.sync(model, this.prefix);
     this.layoutPass();
@@ -707,6 +707,8 @@ class App {
     while (pos > from && /\s/.test(src[pos - 1])) pos--;
     const g = mk('div', 'it p ghostp empty');
     g.dataset.ctx = 'p';
+    // (a document whose main language runs right to left starts at the right)
+    if (this.model.opts.rtl) g.dir = 'rtl';
     g.appendChild(mk('span', 't gh', '\u200B'));
     flow.appendChild(g);
     this.ghost = { el: g, f, pos, sticky: true };
@@ -1443,6 +1445,8 @@ class App {
     const g = document.createElement('div');
     g.className = 'it p ghostp' + (afterEl.classList.contains('ind') || afterEl.classList.contains('p') ? ' ind' : '');
     g.dataset.ctx = 'p';
+    // the new paragraph runs the way the one above it does
+    if (afterEl.dir === 'rtl' || afterEl.dir === 'ltr') g.dir = afterEl.dir;
     const s = document.createElement('span');
     s.className = 't gh';
     s.textContent = '\u200B';

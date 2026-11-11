@@ -12,15 +12,20 @@
 const HAN = /[⺀-⿟々-〇〡-〩㐀-䶿一-鿿豈-﫿]/;
 const ARABIC = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
 const LETTER = /\p{L}/u;
+// a character of either script, anywhere: most documents have none and are then not read at all
+const EITHER = new RegExp(HAN.source + '|' + ARABIC.source);
+// A preamble is read up to here. No real one is longer, and a stranger's document (a link, a
+// .zip) is read on the page at every key: with the bounds on each argument below, even one made
+// to be slow (a megabyte of "\usepackage[" never closed) takes a moment, not minutes.
+const PRE_MAX = 200000;
 
 const stripComments = (t) => t.replace(/(^|[^\\])%.*$/gm, '$1');
 // what the reader sees of a body: commands' names, environments' names and math are not text
-const proseOf = (t) => stripComments(t).replace(/\\(begin|end)\s*\{[^}]*\}/g, ' ').replace(/\\[A-Za-z@]+\*?/g, ' ').replace(/\$\$[^$]*\$\$|\$[^$\n]*\$/g, ' ');
+const proseOf = (t) => stripComments(t).replace(/\\(begin|end)\s*\{[^}]{0,200}\}/g, ' ').replace(/\\[A-Za-z@]+\*?/g, ' ').replace(/\$\$[^$]*\$\$|\$[^$\n]*\$/g, ' ');
 const bodyOf = (tex) => { const i = tex.indexOf('\\begin{document}'); return i < 0 ? tex : tex.slice(i + 16); };
-const preambleOf = (tex) => { const i = tex.indexOf('\\begin{document}'); return i < 0 ? '' : tex.slice(0, i); };
+const preambleOf = (tex) => { const i = tex.indexOf('\\begin{document}'); return i < 0 ? '' : tex.slice(0, Math.min(i, PRE_MAX)); };
 
-// How many letters of each script a text has: {chinese, arabic, letters}.
-export function scriptsIn(text) {
+function count(text) {
   const out = { chinese: 0, arabic: 0, letters: 0 };
   for (const ch of proseOf(text)) {
     if (HAN.test(ch)) { out.chinese++; out.letters++; } else if (ARABIC.test(ch)) { if (LETTER.test(ch)) { out.arabic++; out.letters++; } } else if (LETTER.test(ch)) out.letters++;
@@ -28,15 +33,30 @@ export function scriptsIn(text) {
   return out;
 }
 
+// How many letters of each script a text has: {chinese, arabic, letters}. A text with no
+// character of either script is not read: all three are 0 then.
+export function scriptsIn(text) {
+  if (!EITHER.test(text)) return { chinese: 0, arabic: 0, letters: 0 };
+  return count(text);
+}
+
+// A command's optional [..] and its {..} are read so that no stretch of the preamble is gone over
+// twice: the space before the brace is the bracket's when there is one, and an argument is 2000
+// characters at most. The preamble may be a stranger's (a link, a .zip): one made of 100 000
+// spaces after \usepackage, or of brackets never closed, held the page for minutes at every key.
+// (The last preamble's packages are kept: the three functions below ask for the same ones.)
+let pkgsOf = ['', new Map()];
 const packagesOf = (pre) => {
+  if (pkgsOf[0] === pre) return pkgsOf[1];
   const pkgs = new Map();
-  for (const m of pre.matchAll(/\\(?:usepackage|RequirePackage)\s*(?:\[([^\]]*)\])?\s*\{([^}]*)\}/g)) for (const x of m[2].split(',')) pkgs.set(x.trim(), m[1] || '');
+  pkgsOf = [pre, pkgs];
+  for (const m of pre.matchAll(/\\(?:usepackage|RequirePackage)\s*(?:\[([^\]]{0,2000})\]\s*)?\{([^}]{0,2000})\}/g)) for (const x of m[2].split(',')) pkgs.set(x.trim(), m[1] || '');
   return pkgs;
 };
-const classOf = (pre) => { const m = /\\documentclass\s*(?:\[([^\]]*)\])?\s*\{([^}]*)\}/.exec(pre); return m ? { name: m[2].trim(), options: m[1] || '' } : { name: '', options: '' }; };
+const classOf = (pre) => { const m = /\\documentclass\s*(?:\[([^\]]{0,2000})\]\s*)?\{([^}]{0,2000})\}/.exec(pre); return m ? { name: m[2].trim(), options: m[1] || '' } : { name: '', options: '' }; };
 const options = (s) => s.split(',').map((x) => x.trim()).filter(Boolean);
 
-const RTL_LANGUAGES = /^(arabic|farsi|persian|hebrew|urdu|kurdish|sorani|pashto|syriac|uyghur|sindhi|arabic-[a-z]+)$/;
+export const RTL_LANGUAGES = /^(arabic|farsi|persian|hebrew|urdu|kurdish|sorani|pashto|syriac|uyghur|sindhi|arabic-[a-z]+)$/;
 
 // Which scripts the preamble of a main file already sets up: {chinese, arabic}.
 export function scriptSetup(tex) {
@@ -45,8 +65,8 @@ export function scriptSetup(tex) {
   const cls = classOf(pre);
   const has = (...names) => names.some((n) => pkgs.has(n));
   const babel = options((pkgs.get('babel') || '') + ',' + cls.options);
-  const provided = [...pre.matchAll(/\\babelprovide\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}/g)].map((m) => m[1].trim());
-  const poly = [...pre.matchAll(/\\set(?:main|default|other)languages?\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}/g)].flatMap((m) => options(m[1]));
+  const provided = [...pre.matchAll(/\\babelprovide\s*(?:\[[^\]]{0,2000}\]\s*)?\{([^}]{0,2000})\}/g)].map((m) => m[1].trim());
+  const poly = [...pre.matchAll(/\\set(?:main|default|other)languages?\s*(?:\[[^\]]{0,2000}\]\s*)?\{([^}]{0,2000})\}/g)].flatMap((m) => options(m[1]));
   return {
     chinese: /^(ctex|ctexart|ctexrep|ctexbook|ctexbeamer|ltjs?(article|report|book)|u?jl?(article|report|book)|elegant(paper|book|note))/i.test(cls.name) ||
       has('ctex', 'xeCJK', 'CJK', 'CJKutf8', 'luatexja', 'luatexja-fontspec', 'luatexja-preset', 'zxjatype', 'xeCJKfntef', 'kotex', 'xetexko') ||
@@ -59,13 +79,17 @@ export function scriptSetup(tex) {
 // The scripts a project's text is in that its main file does not set up: [] or some of
 // 'chinese', 'arabic'. texts: every .tex file of the project, the main one included.
 export function scriptNeeds(mainTex, texts) {
+  const list = texts && texts.length ? texts : [mainTex];
+  const out = [];
+  out.arabicMain = false;
+  // no character of either script in any file: nothing to count, and no preamble to read
+  if (!list.some((t) => EITHER.test(t))) return out;
   const n = { chinese: 0, arabic: 0, letters: 0 };
-  for (const t of texts && texts.length ? texts : [mainTex]) {
-    const c = scriptsIn(t === mainTex ? bodyOf(t) : t);
+  for (const t of list) {
+    const c = count(t === mainTex ? bodyOf(t) : t);
     n.chinese += c.chinese; n.arabic += c.arabic; n.letters += c.letters;
   }
   const have = scriptSetup(mainTex);
-  const out = [];
   if (n.chinese && !have.chinese) out.push('chinese');
   if (n.arabic && !have.arabic) out.push('arabic');
   // a document mostly in Arabic is an Arabic document: its paragraphs run from the right
@@ -78,8 +102,8 @@ export function rtlDocument(tex) {
   const pre = stripComments(preambleOf(tex));
   const pkgs = packagesOf(pre);
   const cls = classOf(pre);
-  if (/\\setmainlanguage\s*(?:\[[^\]]*\])?\s*\{\s*([a-z-]+)/.test(pre)) return RTL_LANGUAGES.test(RegExp.$1);
-  for (const m of pre.matchAll(/\\babelprovide\s*\[([^\]]*)\]\s*\{([^}]*)\}/g)) if (options(m[1]).includes('main')) return RTL_LANGUAGES.test(m[2].trim());
+  if (/\\setmainlanguage\s*(?:\[[^\]]{0,2000}\]\s*)?\{\s*([a-z-]+)/.test(pre)) return RTL_LANGUAGES.test(RegExp.$1);
+  for (const m of pre.matchAll(/\\babelprovide\s*\[([^\]]{0,2000})\]\s*\{([^}]{0,2000})\}/g)) if (options(m[1]).includes('main')) return RTL_LANGUAGES.test(m[2].trim());
   if (pkgs.has('babel')) {
     // babel's main language: main=..., else the last language named (class options count first)
     const all = [...options(cls.options), ...options(pkgs.get('babel'))];
@@ -121,14 +145,32 @@ export function addScriptSetup(tex, needs) {
   if (!lines.length) return null;
   let pre = tex.slice(0, at);
   if (lines.some((l) => l.startsWith('\\babelprovide'))) {
-    pre = pre.split('\n').map((line) => {
+    // (babel is looked for in the lines of the part of the preamble that is read at all)
+    const cut = pre.length > PRE_MAX ? pre.lastIndexOf('\n', PRE_MAX) + 1 : pre.length;
+    pre = pre.slice(0, cut).split('\n').map((line) => {
       const code = line.replace(/(^|[^\\])%.*$/, '$1');
-      const m = /\\usepackage\s*(?:\[([^\]]*)\])?\s*\{babel\}/.exec(code);
+      const m = /\\usepackage\s*(?:\[([^\]]{0,2000})\]\s*)?\{babel\}/.exec(code);
       if (!m || /\bbidi\s*=/.test(m[1] || '')) return line;
       const opt = (m[1] || '').trim().replace(/,\s*$/, '');
       return line.slice(0, m.index) + '\\usepackage[' + (opt ? opt + ', ' : '') + 'bidi=basic]{babel}' + line.slice(m.index + m[0].length);
-    }).join('\n');
+    }).join('\n') + pre.slice(cut);
   }
   const block = lines.join('\n') + '\n';
-  return pre.replace(/[ \t]*$/, '') + (pre.endsWith('\n') || !pre ? '' : '\n') + block + tex.slice(at);
+  // (the spaces before \begin{document} go; counted from the end, not looked for by a pattern
+  // that would try every run of spaces in the preamble)
+  let end = pre.length;
+  while (end > 0 && (pre[end - 1] === ' ' || pre[end - 1] === '\t')) end--;
+  return pre.slice(0, end) + (pre.endsWith('\n') || !pre ? '' : '\n') + block + tex.slice(at);
+}
+
+// Languages babel and polyglossia set left to right, by the names documents give them. Not all
+// of them: a name the page does not know leaves the direction as it was.
+const LTR_LANGUAGES = /^(english|american|british|usenglish|ukenglish|canadian|australian|french|francais|canadien|acadian|german|ngerman|austrian|naustrian|swissgerman|nswissgerman|spanish|catalan|galician|basque|portuguese|portuges|brazilian|brazil|italian|latin|romanian|dutch|afrikaans|danish|swedish|norsk|nynorsk|norwegian|icelandic|finnish|estonian|latvian|lithuanian|polish|czech|slovak|slovene|slovenian|croatian|serbian|bulgarian|macedonian|russian|ukrainian|belarusian|greek|polutonikogreek|turkish|hungarian|magyar|albanian|irish|welsh|breton|esperanto|interlingua|indonesian|bahasa|malay|vietnamese|thai|hindi|bengali|tamil|sanskrit|armenian|georgian|mongolian|chinese|japanese|korean|chinese-[a-z-]+|english-[a-z-]+)$/;
+
+// The direction text in that language runs: 'rtl', 'ltr', or null for a name not known here.
+// The page takes it for \foreignlanguage, \selectlanguage, otherlanguage and polyglossia's own
+// commands and environments (model.js).
+export function languageDir(name) {
+  const n = String(name || '').trim().toLowerCase();
+  return RTL_LANGUAGES.test(n) ? 'rtl' : LTR_LANGUAGES.test(n) ? 'ltr' : null;
 }

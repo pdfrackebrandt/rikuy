@@ -5,6 +5,7 @@ import { parse, scanUserSigs, CHARS, ACCENTS, splitRows } from './parser.js';
 import { parseBib, texToPlain, shortAuthors, entryYear, formatEntry } from './bib.js';
 import { siTex, siOptions, siUnitSymbol } from './siunitx.js';
 import { widgetPath, hashText } from './widget.js';
+import { rtlDocument, languageDir } from './scripts.js';
 
 const WIDGET_FILE = /\.html?$/i;
 const STY = {
@@ -60,13 +61,17 @@ const INVIS = new Set([
   'columnbreak', 'twocolumn', 'onecolumn', 'fi', 'else', 'ifpdf', 'newcount', 'newif', 'printglossaries', 'printglossary',
   'usetkzobj', 'psset', 'schemestart', 'schemestop', 'setatomsep', 'setchemfig', 'definesubmol', 'tikzstyle', 'pgfkeys', 'pgfmathsetmacro', 'pgfmathdeclarefunction', 'pgfdeclarelayer', 'pgfsetlayers',
   'usepgfplotslibrary', 'newglossaryentry', 'loadglsentries', 'makeglossaries', 'DTLloaddb', 'DTLloadrawdb', 'lstdefinestyle', 'colorlet',
-  'thispagestyle', 'hline', 'cline', 'rowcolors', 'arrayrulecolor', 'columncolor', 'cellcolor', 'rowcolor', 'toprule', 'midrule', 'bottomrule', 'FloatBarrier', 'balance', 'tightlist'
+  'thispagestyle', 'hline', 'cline', 'rowcolors', 'arrayrulecolor', 'columncolor', 'cellcolor', 'rowcolor', 'toprule', 'midrule', 'bottomrule', 'FloatBarrier', 'balance', 'tightlist',
+  // CJK's font settings, and bidi's switches of direction (Builder.declDir reads those first)
+  'CJKfamily', 'CJKtilde', 'CJKindent', 'setRTL', 'setLTR', 'setRL', 'setLR'
 ]);
 const CITE_CMDS = new Set(['cite', 'citet', 'citep', 'citealt', 'citealp', 'citeauthor', 'citeyear', 'citeyearpar',
   'Citet', 'Citep', 'Citealt', 'Citealp', 'Citeauthor', 'textcite', 'parencite', 'autocite', 'Textcite',
   'Parencite', 'Autocite', 'footcite', 'smartcite', 'citenum']);
 const REF_CMDS = new Set(['ref', 'eqref', 'pageref', 'cref', 'Cref', 'autoref', 'nameref', 'vref', 'Vref', 'labelcref']);
 const SECTIONS = { part: -1, chapter: 0, section: 1, subsection: 2, subsubsection: 3, paragraph: 4, subparagraph: 5 };
+// commands that end a line of text: an environment followed by one stands alone (Builder.flow)
+const BLOCK_CMDS = /^(par|item|maketitle|tableofcontents|listoffigures|listoftables|newpage|clearpage|cleardoublepage|pagebreak|appendix|frontmatter|mainmatter|backmatter|bibliography|printbibliography|bigskip|medskip|smallskip|vspace|input|include|subfile|hrule|caption|captionof)$/;
 const LIST_ENVS = new Set(['itemize', 'enumerate', 'description', 'compactitem', 'compactenum', 'inparaenum', 'asparaenum', 'enumerate*', 'itemize*', 'description*']);
 const DEFAULT_THMS = {
   theorem: 'Theorem', lemma: 'Lemma', proposition: 'Proposition', corollary: 'Corollary', definition: 'Definition',
@@ -203,6 +208,10 @@ class Builder {
       secnumdepth: 3, cleveref: false, twocolumn: false, titlepage: false, sort: true, aysep: ','
     };
     this.included = new Set();
+    // the way text runs where the builder is: 'rtl' or 'ltr'. The main language sets it (run),
+    // \selectlanguage and the language environments change it, a group or an environment ends
+    // the change.
+    this.dir = 'ltr';
   }
 
   // ---- setup ----------------------------------------------------------------
@@ -222,6 +231,9 @@ class Builder {
     if (docEnv) {
       const pre = nodes.slice(0, nodes.indexOf(docEnv));
       this.preamble(pre, ctx);
+      // a document whose main language is Arabic, Hebrew or the like runs right to left as a whole
+      this.opts.rtl = rtlDocument(src);
+      this.dir = this.opts.rtl ? 'rtl' : 'ltr';
       this.collectDefs(docEnv.nodes, ctx);
       // at: where \begin{document} starts; closed: its \end{document} was found
       this.docBody = { s: docEnv.be, e: docEnv.es, at: docEnv.s, closed: docEnv.e > docEnv.es };
@@ -517,6 +529,59 @@ class Builder {
     return null;
   }
 
+  // ---- direction -------------------------------------------------------------
+  // The direction an item, a footnote or a table's cells get on the page: none where nothing
+  // runs right to left, so a document without such text is drawn exactly as it always was.
+  dirOf() { return this.dir === 'rtl' || this.opts.rtl ? this.dir : undefined; }
+
+  // A command that sets the direction of its argument: babel's \foreignlanguage{arabic}{..} and
+  // \babelsublr{..}, polyglossia's \textarabic{..}, bidi's \RL{..} and \LR{..} (xepersian
+  // writes them \rl and \lr). Returns [direction, argument], or null for any other command, a
+  // language the page does not know and a name the document defines itself (\LR for a
+  // likelihood ratio).
+  dirCmd(nd, ctx) {
+    const name = nd.name;
+    if (this.textMacros.has(name)) return null;
+    let d = null, a = null;
+    if (name === 'foreignlanguage') { d = languageDir(this.argText(ctx, nd.args[1])); a = nd.args[2]; }
+    else {
+      const m = /^text([a-z]+)$/.exec(name);
+      d = name === 'RL' || name === 'rl' ? 'rtl' : name === 'LR' || name === 'lr' || name === 'babelsublr' ? 'ltr' : m ? languageDir(m[1]) : null;
+      if (d) a = nd.args.filter((x) => x && !x.o).pop();
+    }
+    return d && a && a.nodes && !a.raw ? [d, a] : null;
+  }
+
+  // A command that sets the direction of what follows it, up to the end of its group or
+  // environment: \selectlanguage{arabic}, bidi's \setRTL and \setLTR. 'rtl', 'ltr' or null.
+  declDir(nd, ctx) {
+    const name = nd.name;
+    if (name === 'selectlanguage') return languageDir(this.argText(ctx, nd.args[0]));
+    if (this.textMacros.has(name)) return null;
+    return name === 'setRTL' || name === 'setRL' ? 'rtl' : name === 'setLTR' || name === 'setLR' ? 'ltr' : null;
+  }
+
+  // An environment that only sets the language, the direction or CJK's font of its text:
+  // babel's otherlanguage, polyglossia's Arabic, hebrew or english, bidi's RTL and LTR, CJK.
+  // Returns { dir } with 'rtl', 'ltr' or null (CJK and a language not known here change no
+  // direction), or null for any other environment.
+  dirEnv(nd, ctx) {
+    const name = nd.name;
+    if (nd.raw || !nd.nodes || this.envDefs.has(name) || this.thms.has(name)) return null;
+    if (name === 'CJK' || name === 'CJK*') return { dir: null };
+    if (name === 'otherlanguage' || name === 'otherlanguage*') return { dir: languageDir(this.argText(ctx, nd.args[0])) };
+    if (name === 'RTL' || name === 'LTR') return { dir: name === 'RTL' ? 'rtl' : 'ltr' };
+    const d = languageDir(name);
+    return d ? { dir: d } : null;
+  }
+
+  // Whether nodes are words of one line: no paragraph break and nothing that stands as a block
+  lineOnly(nodes, ctx) {
+    return nodes.every((n) => n.t === 'comment' || n.t === 'text' || n.t === 'group' || n.t === 'special' || n.t === 'verb' || (n.t === 'math' && !n.display) ||
+      (n.t === 'cmd' && !(n.name in SECTIONS) && !BLOCK_CMDS.test(n.name)) ||
+      (n.t === 'env' && ((n.name === 'math' && n.raw) || (!!this.dirEnv(n, ctx) && this.lineOnly(n.nodes, ctx)))));
+  }
+
   // ---- numbering -------------------------------------------------------------
   secNum(level) {
     const c = this.c;
@@ -593,6 +658,21 @@ class Builder {
     const self = this;
     const startUnit = () => { if (env.top) this.sig = []; };
     let pendingSig = null;
+    // nothing of it shows on the page
+    const blank = (n) => n.t === 'comment' || (n.t === 'text' && !ctx.src.slice(n.s, n.e).trim()) || (n.t === 'cmd' && (INVIS.has(n.name) || n.name === 'label'));
+    // A language, direction or CJK environment around some words of a line (text before it, or
+    // after it before the paragraph ends) stays in that line, as TeX sets it; alone, or holding
+    // paragraphs, it is a block of its own.
+    const inLine = (nd, k) => {
+      if (!this.lineOnly(nd.nodes, ctx)) return false;
+      if (para.some((n) => !blank(n))) return true;
+      for (let j = k + 1; j < nodes.length; j++) {
+        const n = nodes[j];
+        if (n.t === 'par') return false;
+        if (!blank(n)) return this.lineOnly([n], ctx);
+      }
+      return false;
+    };
 
     const flushPara = () => {
       const ns = para;
@@ -606,12 +686,16 @@ class Builder {
       }
       if (env.top) this.sig = [];
       const fns = [];
+      // the paragraph runs the way text ran at its start (a \selectlanguage further on in it
+      // turns the rest of its line, and the paragraphs after it)
+      const dir = this.dirOf();
       const inl = this.inl(ns, ctx, fns);
       trimInl(inl);
       const s = ns[0].s, e = ns[ns.length - 1].e;
       const indent = !(paraNoIndent || afterHeading || cont || env.noIndentFirst);
-      this.use('i' + indent + (align || '') + (env.cls || ''));
+      this.use('i' + indent + (align || '') + (env.cls || '') + (dir || ''));
       const item = { type: 'p', inl, indent, align, cls: env.cls || '', ctx: env.ctxKind || 'p', f: ctx.f, pad: env.pad || null, depth: env.depth || 0 };
+      if (dir) item.dir = dir;
       if (cont) item.cont = true;
       this.countWords(inl);
       env.noIndentFirst = false;
@@ -636,9 +720,15 @@ class Builder {
       }
       if (nd.t === 'env') {
         if (nd.name === 'math' && nd.raw) { para.push(nd); continue; }
+        const wrap = this.dirEnv(nd, ctx);
+        if (wrap && inLine(nd, k)) { para.push(nd); continue; }
         flushPara();
         if (env.top) this.sig = [];
-        const r = this.envBlock(nd, ctx, env);
+        // an environment is a group: a \selectlanguage inside it ends with it
+        const dirWas = this.dir;
+        this.use('d' + dirWas);
+        const r = this.envBlock(nd, ctx, wrap ? { ...env, afterHeading } : env);
+        this.dir = dirWas;
         if (r) {
           const us = Array.isArray(r) ? r : [r];
           for (const u of us) {
@@ -674,6 +764,7 @@ class Builder {
           flushPara();
           if (SECTIONS[name] <= 0 && this.opts.chapters) units.push({ f: ctx.f, s: nd.s, e: nd.s, items: [{ type: 'pagebreak' }], fns: [], sig: 'cb' });
           if (env.top) this.sig = [];
+          this.use('d' + this.dir);
           units.push(this.heading(nd, ctx));
           afterHeading = true;
           continue;
@@ -686,6 +777,7 @@ class Builder {
         if (name === 'maketitle') {
           flushPara();
           if (env.top) this.sig = [];
+          this.use('d' + this.dir);
           const u = this.titleBlock(nd, ctx);
           if (u) units.push(u);
           continue;
@@ -695,7 +787,7 @@ class Builder {
           if (env.top) this.sig = [];
           const entries = (this.prev ? this.prev.headings : []).filter((h) => h.level >= 0 && h.level <= (this.opts.chapters ? 2 : 3));
           this.use(JSON.stringify(entries.map((h) => [h.num, h.text, h.level])));
-          units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'toc', entries, chapters: !!this.opts.chapters }], fns: [], sig: this.sig.join('\u0001'), volatile: false });
+          units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'toc', entries, chapters: !!this.opts.chapters, dir: this.dirOf() }], fns: [], sig: this.sig.join('\u0001'), volatile: false });
           afterHeading = false;
           continue;
         }
@@ -729,6 +821,10 @@ class Builder {
           units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'rule' }], fns: [], sig: 'hr' });
           continue;
         }
+        // \selectlanguage{arabic} before a paragraph's first word: that paragraph and the ones
+        // after it run its way. Further on in a line it turns the rest of the line (Builder.cmd).
+        const dd = this.declDir(nd, ctx);
+        if (dd && !para.some((n) => !blank(n))) this.dir = dd;
         // definitions in the body
         if (nd.def || name === 'newtheorem' || name === 'theoremstyle' || name === 'numberwithin') {
           // already collected; invisible
@@ -770,7 +866,7 @@ class Builder {
     this.headings.push({ level, num, text, parts: this.tocParts(inl), star, f: ctx.f, s: nd.s });
     const de = this.opts.lang === 'de';
     const chapLabel = level === 0 && this.opts.chapters && !front ? (this.appendix ? (de ? 'Anhang' : 'Appendix') : (de ? 'Kapitel' : 'Chapter')) : null;
-    return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'h', level, num, inl, star, f: ctx.f, ctx: 'h', s: nd.s, e: nd.e, chapLabel }], fns, sig: this.sig ? this.sig.join('\u0001') : '' };
+    return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'h', level, num, inl, star, f: ctx.f, ctx: 'h', s: nd.s, e: nd.e, chapLabel, dir: this.dirOf() }], fns, sig: this.sig ? this.sig.join('\u0001') : '' };
   }
 
   tocParts(inl) {
@@ -827,7 +923,7 @@ class Builder {
     this.thanksMode = false;
     const s = Math.min(nd.s, ...ranges.map((r) => r[0]));
     const e = Math.max(nd.e, ...ranges.map((r) => r[1]));
-    return { f: ctx.f, s, e, items: [{ type: 'title', title, authors, date, f: ctx.f }], fns, sig: (this.sig || []).join('\u0001') };
+    return { f: ctx.f, s, e, items: [{ type: 'title', title, authors, date, f: ctx.f, dir: this.dirOf() }], fns, sig: (this.sig || []).join('\u0001') };
   }
 
   refsBlock(nd, ctx) {
@@ -932,6 +1028,15 @@ class Builder {
       return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'raw', f: ctx.f, s: nd.s, e: nd.e, is: nd.be, ie: nd.es, text, verb, name }], fns: [] };
     }
     if (name === 'document') return this.flow(nd.nodes, ctx, env);
+    const wrap = this.dirEnv(nd, ctx);
+    if (wrap) {
+      // Its paragraphs are the document's own, each a block as in `document`, running the
+      // environment's way (flow's caller puts the direction back at its end). An empty one
+      // gets a paragraph to type in.
+      if (wrap.dir) this.dir = wrap.dir;
+      const us = this.flow(nd.nodes, ctx, env);
+      return us.length ? us : { f: ctx.f, s: nd.s, e: nd.e, items: [this.emptyPara(ctx, nd.be, env.cls)], fns: [] };
+    }
     if (name === 'subequations') {
       this.c.equation++;
       this.subeq = { base: this.withinPrefix('equation') + this.c.equation, n: 0 };
@@ -944,7 +1049,7 @@ class Builder {
     }
     if (LIST_ENVS.has(name)) return this.listBlock(nd, ctx, env);
     if (name === 'abstract') {
-      const items = [{ type: 'h', level: 'abs', num: '', inl: [{ k: 'chr', text: 'Abstract' }], star: true, ctx: 'h', f: ctx.f }];
+      const items = [{ type: 'h', level: 'abs', num: '', inl: [{ k: 'chr', text: 'Abstract' }], star: true, ctx: 'h', f: ctx.f, dir: this.dirOf() }];
       const fns = [];
       const us = this.flow(nd.nodes, ctx, { ...env, top: false, cls: 'abs', ctxKind: 'p', noIndentFirst: false });
       for (const u of us) { items.push(...u.items); fns.push(...u.fns); }
@@ -965,7 +1070,7 @@ class Builder {
       for (const u of us) { items.push(...u.items); fns.push(...u.fns); }
       const first = items.find((x) => x.type === 'p');
       if (first && items[0] === first) { first.lead = lead; first.indent = true; }
-      else items.unshift({ type: 'p', inl: [], lead, indent: true, cls: (env.cls || '') + ' prf', ctx: 'p', f: ctx.f });
+      else items.unshift({ type: 'p', inl: [], lead, indent: true, cls: (env.cls || '') + ' prf', ctx: 'p', f: ctx.f, dir: this.dirOf() });
       const last = items[items.length - 1];
       if (last.type === 'p') last.tail = [{ k: 'chr', text: '□', cls: 'qed' }];
       else if (last.type === 'math') last.qed = true;
@@ -991,7 +1096,7 @@ class Builder {
       if (name === 'acknowledgments' || name === 'acknowledgements') {
         const r = this.container(nd, ctx, env, {});
         // the heading is spelt as the environment is: a thesis in British English says Acknowledgements
-        if (r) r.items.unshift({ type: 'h', level: 3, num: '', inl: [{ k: 'chr', text: name === 'acknowledgements' ? 'Acknowledgements' : 'Acknowledgments' }], star: true, ctx: 'h', f: ctx.f });
+        if (r) r.items.unshift({ type: 'h', level: 3, num: '', inl: [{ k: 'chr', text: name === 'acknowledgements' ? 'Acknowledgements' : 'Acknowledgments' }], star: true, ctx: 'h', f: ctx.f, dir: this.dirOf() });
         return r;
       }
       return this.container(nd, ctx, env, ex);
@@ -1004,7 +1109,7 @@ class Builder {
   }
 
   emptyPara(ctx, pos, cls) {
-    return { type: 'p', inl: [{ k: 'seg', f: ctx.f, t: '​', map: [pos, pos], ph: true }], indent: false, cls: cls || '', ctx: 'p', f: ctx.f };
+    return { type: 'p', inl: [{ k: 'seg', f: ctx.f, t: '​', map: [pos, pos], ph: true }], indent: false, cls: cls || '', ctx: 'p', f: ctx.f, dir: this.dirOf() };
   }
 
   container(nd, ctx, env, ex) {
@@ -1046,7 +1151,7 @@ class Builder {
     else {
       let php = nd.be;
       if (ctx.src[php] === '\n') php++;
-      items.unshift({ type: 'p', inl: items.length ? [] : [{ k: 'seg', f: ctx.f, t: '\u200B', map: [php, php], ph: true }], lead, indent: false, cls: (env.cls || '') + ' thm ' + style, ctx: 'p', f: ctx.f, thmFirst: true });
+      items.unshift({ type: 'p', inl: items.length ? [] : [{ k: 'seg', f: ctx.f, t: '\u200B', map: [php, php], ph: true }], lead, indent: false, cls: (env.cls || '') + ' thm ' + style, ctx: 'p', f: ctx.f, thmFirst: true, dir: this.dirOf() });
     }
     items[0].sbThm = true;
     items[items.length - 1].saThm = true;
@@ -1104,7 +1209,7 @@ class Builder {
         let php = optA ? optA.e : it.cmd.ne;
         if (ctx.src[php] === ' ') php++;
         const at = ctx.pm ? ctx.pm[php] : php;
-        its.unshift({ type: 'p', inl: [{ k: 'seg', f: ctx.f, t: '\u200B', map: [at, at], ph: true }], label, labelKind: kind, li: meta, indent: false, depth, cls: env.cls || '', ctx: 'li', f: ctx.f });
+        its.unshift({ type: 'p', inl: [{ k: 'seg', f: ctx.f, t: '\u200B', map: [at, at], ph: true }], label, labelKind: kind, li: meta, indent: false, depth, cls: env.cls || '', ctx: 'li', f: ctx.f, dir: this.dirOf() });
       }
       for (const x of its) { if (x.type === 'p' && x.depth == null) x.depth = depth; if (x.type === 'p' && x !== its[0]) x.li = x.li || { ...meta, cont: true }; if (x.type !== 'p') x.depth = depth; }
       out.push(...its);
@@ -1128,7 +1233,7 @@ class Builder {
       const inl = this.inl(g.nodes.filter((n) => !(n.t === 'cmd' && n.name === 'newblock')), ctx, fns);
       trimInl(inl);
       const numeric = this.opts.citeStyle === 'numeric' || !lab;
-      items.push({ type: 'p', inl, indent: false, cls: 'bibitem' + (numeric ? ' num' : ''), label: numeric ? [{ k: 'chr', text: '[' + (k + 1) + ']' }] : null, labelKind: 'bib', ctx: 'p', f: ctx.f, depth: numeric ? 1 : 0 });
+      items.push({ type: 'p', inl, indent: false, cls: 'bibitem' + (numeric ? ' num' : ''), label: numeric ? [{ k: 'chr', text: '[' + (k + 1) + ']' }] : null, labelKind: 'bib', ctx: 'p', f: ctx.f, depth: numeric ? 1 : 0, dir: this.dirOf() });
     });
     return { f: ctx.f, s: nd.s, e: nd.e, items, fns };
   }
@@ -1150,7 +1255,7 @@ class Builder {
       }
       const inl = this.inl(ns, ctx, fns);
       trimInl(inl);
-      if (inl.length) parts.push({ type: 'p', inl, align: align || 'center', indent: false, ctx: 'p', f: ctx.f });
+      if (inl.length) parts.push({ type: 'p', inl, align: align || 'center', indent: false, ctx: 'p', f: ctx.f, dir: this.dirOf() });
     };
     const walk = (nodes) => {
       for (const n of nodes) {
@@ -1167,11 +1272,13 @@ class Builder {
           const a = n.name === 'captionof' ? n.args[2] : n.args[1];
           const kids = a ? this.inl(a.nodes, ctx, fns) : [];
           if (a && !kids.length) kids.push({ k: 'seg', f: ctx.f, t: '​', map: [a.is, a.is], ph: true });
-          parts.push({ type: 'caption', kind, num, inl: kids, f: ctx.f, ctx: 'cap' });
+          parts.push({ type: 'caption', kind, num, inl: kids, f: ctx.f, ctx: 'cap', dir: this.dirOf() });
           continue;
         }
         if (n.t === 'env' && /^(tabular|tabularx|tabular\*|tabulary|longtable|array)$/.test(n.name)) { flushP(); parts.push(this.tabular(n, ctx, fns)); continue; }
         if (n.t === 'env' && /^(center|minipage|subfigure|subtable|threeparttable|adjustbox|small|footnotesize|scriptsize)$/.test(n.name)) { flushP(); walk(n.nodes); flushP(); continue; }
+        // a language or direction environment around a figure's parts: they run its way
+        if (n.t === 'env' && this.dirEnv(n, ctx)) { flushP(); const was = this.dir; this.dir = this.dirEnv(n, ctx).dir || was; walk(n.nodes); flushP(); this.dir = was; continue; }
         if (n.t === 'env' && n.name === 'tablenotes') { flushP(); const r = this.container(n, ctx, env, { cls: 'z-footnotesize', noIndentFirst: true }); parts.push(...r.items); fns.push(...r.fns); continue; }
         if (n.t === 'cmd' && n.name === 'resizebox' && n.args[2]) { walk(n.args[2].nodes); continue; }
         if (n.t === 'cmd' && n.name === 'label') { this.label(this.argText(ctx, n.args[0]), ctx); continue; }
@@ -1236,7 +1343,8 @@ class Builder {
       empty: r.empty,
       cells: r.empty ? [] : r.cells.map((c, ci) => this.tableCell(c, ctx, fns, ci, cols))
     }));
-    return { type: 'tabular', cols, rows: outRows, f: ctx.f, s: nd.s, e: nd.e, fns };
+    // the columns stay in their order; the words in the cells run the way the text around runs
+    return { type: 'tabular', cols, rows: outRows, f: ctx.f, s: nd.s, e: nd.e, fns, dir: this.dirOf() };
   }
 
   // A list in a table cell, for the page to draw (read only: a cell's words are edited on the
@@ -1392,7 +1500,10 @@ class Builder {
         case 'group': {
           acc.flush();
           if (!nd.nodes.length) break;
+          // (a \selectlanguage inside the group ends with it)
+          const dirWas = this.dir;
           const kids = this.inl(nd.nodes, ctx, fns);
+          this.dir = dirWas;
           out.push(...kids);
           break;
         }
@@ -1409,8 +1520,19 @@ class Builder {
           } else if (this.inCell && /^(itemize|enumerate)$/.test(nd.name) && nd.nodes && this.cellList(nd, ctx)) {
             out.push(this.atom(ctx, { k: 'chip', s: nd.s, e: nd.e, text: 'list', title: 'A list in a table cell. Click to edit its source.', plain: true, list: this.cellList(nd, ctx, true) }));
           } else {
+            // In a line of text. A language or direction environment turns its words (the page
+            // keeps it as a wrapper, so Enter inside it closes and opens it again as for \textbf);
+            // CJK and every other environment show their text as it is.
+            const wrap = nd.nodes ? this.dirEnv(nd, ctx) : null;
+            const dirWas = this.dir;
+            const turn = wrap && wrap.dir && !(wrap.dir === 'ltr' && dirWas === 'ltr');
+            if (turn) this.dir = wrap.dir;
             const kids = nd.nodes ? this.inl(nd.nodes, ctx, fns) : [];
-            out.push(...kids);
+            this.dir = dirWas;
+            if (turn) {
+              if (!kids.length) kids.push(this.ph(ctx, nd.be));
+              out.push(this.styAtom(ctx, { k: 'sty', st: 'dir', dir: wrap.dir, kids, s: nd.s, e: nd.e, is: nd.be, ie: nd.es, cmd: nd.name }));
+            } else out.push(...kids);
           }
           break;
         }
@@ -1497,6 +1619,33 @@ class Builder {
       out.push(this.atom(ctx, { k: 'br', s: nd.s, e: nd.e }));
       return false;
     }
+    const turn = this.dirCmd(nd, ctx);
+    if (turn) {
+      acc.flush();
+      const [d, a] = turn;
+      // left to right inside left to right changes nothing: its words are words of the line
+      if (d === 'ltr' && this.dir === 'ltr') { out.push(...this.inl(a.nodes, ctx, fns)); return false; }
+      const dirWas = this.dir;
+      this.dir = d;
+      const kids = this.inl(a.nodes, ctx, fns);
+      this.dir = dirWas;
+      if (!kids.length) kids.push(this.ph(ctx, a.is));
+      out.push(this.styAtom(ctx, { k: 'sty', st: 'dir', dir: d, kids, s: nd.s, e: nd.e, is: a.is, ie: a.ie, cmd: name }));
+      return false;
+    }
+    const decl = this.declDir(nd, ctx);
+    if (decl) {
+      // \selectlanguage{arabic} in the middle of a line: the rest of the line turns, and the
+      // direction stays for what follows (flow reads it for the next paragraph) until the group
+      // or the environment it is in ends
+      if (decl === this.dir) return false;
+      acc.flush();
+      this.dir = decl;
+      const kids = this.inl(nodes.slice(k + 1), ctx, fns);
+      if (kids.some((x) => x.k !== 'seg' || x.t.trim())) out.push({ k: 'sty', st: 'dir', dir: decl, kids, f: ctx.f, decl: true });
+      else out.push(...kids);
+      return true;
+    }
     if (name in STY && nd.args.some(Boolean)) {
       acc.flush();
       const a = nd.args.filter(Boolean).pop();
@@ -1544,7 +1693,7 @@ class Builder {
       this.lastTarget = saveT;
       const mark = this.atom(ctx, { k: 'fn', s: nd.s, e: nd.e, num, is: a ? a.is : null, ie: a ? a.ie : null });
       out.push(mark);
-      fns.push({ num, inl: kids, f: ctx.f, mark });
+      fns.push({ num, inl: kids, f: ctx.f, mark, dir: this.dirOf() });
       return false;
     }
     if (name === 'footnotemark') { acc.flush(); this.c.footnote++; out.push(this.atom(ctx, { k: 'fn', s: nd.s, e: nd.e, num: String(this.c.footnote) })); return false; }
@@ -1552,7 +1701,7 @@ class Builder {
       acc.flush();
       const a = nd.args[1];
       const kids = a ? this.inl(a.nodes, ctx, fns) : [];
-      fns.push({ num: String(this.c.footnote), inl: kids, f: ctx.f });
+      fns.push({ num: String(this.c.footnote), inl: kids, f: ctx.f, dir: this.dirOf() });
       return false;
     }
     if (CITE_CMDS.has(name)) {

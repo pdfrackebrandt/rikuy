@@ -3,6 +3,8 @@
 
 const EPS = 1.5;
 const IN = 72.27;
+// letters of scripts that are hyphened where a word is cut
+const HYPHENED = /[\p{Script=Latin}\p{Script=Greek}\p{Script=Cyrillic}\p{Script=Armenian}\p{Script=Georgian}]/u;
 
 export function geometry(opts) {
   const P = opts.paper === 'a4' ? { w: 597.5, h: 845.05 } : { w: 614.295, h: 794.97 };
@@ -231,7 +233,9 @@ export class Layout {
         if (sp) sp.dataset.o = (+(sp.dataset.o || 0)) + p.i;
       }
       // hyphen if split inside a word
-      if (p.node && p.i > 0 && /[\p{L}]/u.test(p.node.data[p.i - 1] || '') && /[\p{L}]/u.test((part.querySelector('span.t') || {}).textContent?.[0] || '')) {
+      // (not between Chinese, Japanese or Korean characters, where a line may end anywhere, nor
+      // in Arabic or Hebrew, which take no hyphen)
+      if (p.node && p.i > 0 && HYPHENED.test(p.node.data[p.i - 1] || '') && HYPHENED.test((part.querySelector('span.t') || {}).textContent?.[0] || '')) {
         const h = document.createElement('span');
         h.className = 'chr hy';
         h.contentEditable = 'false';

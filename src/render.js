@@ -137,6 +137,7 @@ export class Renderer {
       const el = document.createElement('div');
       el.className = 'fn';
       el.dataset.ctx = 'fn';
+      setDir(el, fn.dir);
       const sup = chr(fn.num, 'fnn');
       el.appendChild(sup);
       this.inl(fn.inl, el);
@@ -187,6 +188,9 @@ export class Renderer {
     const el = document.createElement('div');
     el.className = 'it';
     const item = { el, kind: it.type, splittable: false, sb: 0, sbEm: 0, keepNext: false };
+    // paragraphs, headings, the title and the contents run the way the model says (floats,
+    // formulas and code have no direction of their own: their parts do, or they stay as they are)
+    if (it.type === 'p' || it.type === 'h' || it.type === 'title' || it.type === 'toc') setDir(el, it.dir);
     switch (it.type) {
       case 'p': {
         el.classList.add('p');
@@ -372,12 +376,14 @@ export class Renderer {
     if (p.type === 'p') {
       const d = div('fp al-' + (p.align || 'center'));
       d.dataset.ctx = 'p';
+      setDir(d, p.dir);
       this.inl(p.inl, d);
       return d;
     }
     if (p.type === 'caption') {
       const d = div('cap');
       d.dataset.ctx = 'cap';
+      setDir(d, p.dir);
       const lab = { figure: 'Figure', table: 'Table' }[p.kind] || p.kind;
       d.appendChild(chr(lab + (p.num ? ' ' + p.num : '') + ': ', 'caplab'));
       this.inl(p.inl, d);
@@ -412,6 +418,8 @@ export class Renderer {
           if (colInfo.align === 'p' && colInfo.w) td.classList.add('pcol');
           for (const pr of partial) if (col + 1 >= pr.range[0] && col + 1 <= pr.range[1]) td.classList.add(pr.kind === 'heavy' ? 'cr-heavy' : 'cr-top');
           td.dataset.ctx = 'cell';
+          // the columns keep their order and their sides; a cell's words run right to left
+          if (p.dir === 'rtl') setDir(td, p.dir);
           if (c.bg) td.style.background = cssColor(c.bg);
           if (c.rowbg) tr.style.background = cssColor(c.rowbg);
           this.inl(c.inl, td);
@@ -463,6 +471,7 @@ export class Renderer {
           const s = document.createElement(tag);
           s.className = 'y y-' + (x.st || 'none') + (x.decl ? ' decl' : '');
           paint(s, x);
+          if (x.st === 'dir') setDir(s, x.dir);
           if (x.title) s.title = x.title;
           if (x.url) s.dataset.url = x.url;
           if (x.s != null && x.s >= 0 && !x.ro) {
@@ -499,7 +508,7 @@ export class Renderer {
       if (x.k === 'seg') { if (!x.ph) parent.appendChild(document.createTextNode(x.t)); }
       else if (x.k === 'sty' || x.k === 'mac') {
         const s = document.createElement(x.st === 'sup' ? 'sup' : x.st === 'sub' ? 'sub' : 'span');
-        if (x.k === 'sty') { s.className = 'y y-' + (x.st || 'none'); paint(s, x); }
+        if (x.k === 'sty') { s.className = 'y y-' + (x.st || 'none'); paint(s, x); if (x.st === 'dir') setDir(s, x.dir); }
         this.ro(x.kids, s);
         parent.appendChild(s);
       } else if (x.k === 'math') {
@@ -675,6 +684,9 @@ function chr(text, cls) {
   return s;
 }
 function div(cls) { const d = document.createElement('div'); d.className = cls; return d; }
+// The direction of an item or a run of words, as its dir attribute. The model's value comes from
+// the document, maybe a stranger's: the attribute takes one of two fixed words, or is not set.
+function setDir(el, d) { if (d === 'rtl' || d === 'ltr') el.dir = d === 'rtl' ? 'rtl' : 'ltr'; }
 export function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
 function logo(name) {

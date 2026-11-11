@@ -182,12 +182,14 @@ body.pdf-on #pdfpane { display: flex; }
 .al-center { text-align: center; }
 .al-left { text-align: left; hyphens: manual; }
 .al-right { text-align: right; }
-.it.deep { padding-left: calc(var(--depth) * 2.5em); }
+/* (sides are named by the way the text runs, inline-start and inline-end: left and right in a
+   left to right paragraph, mirrored in one that carries dir="rtl") */
+.it.deep { padding-inline-start: calc(var(--depth) * 2.5em); }
 .it.split-b .lbl, .it.split-b .envtag { display: none; }
-.lbl { text-align-last: right; position: absolute; top: 0; left: calc((var(--depth, 1) - 1) * 2.5em); width: 2.5em; padding-right: .5em; text-align: right; text-indent: 0; box-sizing: border-box; user-select: none; }
+.lbl { text-align-last: end; position: absolute; top: 0; inset-inline-start: calc((var(--depth, 1) - 1) * 2.5em); width: 2.5em; padding-inline-end: .5em; text-align: end; text-indent: 0; box-sizing: border-box; user-select: none; }
 .lbl-bib { width: 2.2em; }
 .dlbl { font-weight: bold; }
-.it.p[data-ctx="li"] .dlbl { margin-left: -1.6em; }
+.it.p[data-ctx="li"] .dlbl { margin-inline-start: -1.6em; }
 .pad-after { padding-bottom: .8em; }
 .pad-math { padding-bottom: .9em; }
 .pad-flt { padding-bottom: 1.1em; }
@@ -228,13 +230,13 @@ body.pdf-on #pdfpane { display: flex; }
 .it.z-small, .it.z-footnotesize, .it.z-scriptsize { line-height: calc(var(--lhr) * 1em); }
 .chr { user-select: none; }
 .chr.hy { user-select: none; }
-.chr.qed { position: absolute; right: 0; bottom: 0; line-height: var(--lh); text-indent: 0; }
-.it.has-qed { padding-right: 1.2em; }
+.chr.qed { position: absolute; inset-inline-end: 0; bottom: 0; line-height: var(--lh); text-indent: 0; }
+.it.has-qed { padding-inline-end: 1.2em; }
 .envtag { position: absolute; right: 100%; top: .15em; margin-right: .8em; font: 9px/1.2 var(--font-mono); color: #9AA6B2; text-indent: 0; white-space: nowrap; }
 .ph { display: inline-block; min-width: .5em; min-height: 1em; background: rgba(43, 116, 176, .08); border-radius: 2px; }
 
 /* headings */
-.it.h { text-align: left; hyphens: manual; font-weight: bold; line-height: 1.22; text-indent: 0; }
+.it.h { text-align: start; hyphens: manual; font-weight: bold; line-height: 1.22; text-indent: 0; }
 .it.h0 { font-size: calc(var(--z-Huge) * 1em); padding-top: 1.4em; padding-bottom: .9em; line-height: 1.15; }
 .it.h-1 { font-size: calc(var(--z-Huge) * 1em); padding: 3em 0 2em; text-align: center; }
 .chapl { display: block; font-size: .83em; margin-bottom: .8em; }
@@ -243,7 +245,7 @@ body.pdf-on #pdfpane { display: flex; }
 .it.h3 { font-size: 1em; padding-bottom: .6em; }
 .it.h4, .it.h5 { font-size: 1em; padding-bottom: .3em; }
 .it.habs { font-size: calc(var(--z-small) * 1em); text-align: center; padding-bottom: .5em; }
-.secnum { margin-right: 1em; }
+.secnum { margin-inline-end: 1em; }
 .refs-h { user-select: none; }
 
 /* title */
@@ -306,17 +308,17 @@ body.pdf-on #pdfpane { display: flex; }
 .it.ref { padding-left: 1.5em; text-indent: -1.5em; text-align: left; hyphens: manual; overflow-wrap: anywhere; }
 .it.ref.num { padding-left: 2.2em; text-indent: -2.2em; }
 .ref-l { display: inline-block; width: 2.2em; text-indent: 0; }
-.it.bibitem { text-align: left; }
-.it.bibitem.num { padding-left: 2.2em; }
+.it.bibitem { text-align: start; }
+.it.bibitem.num { padding-inline-start: 2.2em; }
 
 /* TOC */
 .toc { text-indent: 0; }
 .toc-head { font-weight: bold; font-size: calc(var(--z-Large) * 1em); margin-bottom: .6em; }
 .toc-e { display: flex; align-items: baseline; gap: .3em; }
 .toc-l1 { font-weight: bold; margin-top: .5em; }
-.toc-l2 { padding-left: 1.5em; }
-.toc-l3 { padding-left: 3.8em; }
-.toc-l4 { padding-left: 7em; }
+.toc-l2 { padding-inline-start: 1.5em; }
+.toc-l3 { padding-inline-start: 3.8em; }
+.toc-l4 { padding-inline-start: 7em; }
 .toc-l3 .toc-n { min-width: 3.2em; }
 .toc-n { min-width: 1.6em; }
 .toc-l2 .toc-n { min-width: 2.3em; }
@@ -327,7 +329,14 @@ body.pdf-on #pdfpane { display: flex; }
 .fns { margin-top: auto; font-size: calc(var(--z-footnotesize) * var(--fs)); line-height: var(--fnlh); text-align: justify; hyphens: auto; -webkit-hyphens: auto; }
 .fnrule { width: calc(var(--pt) * 144.54px); border-top: calc(var(--pt) * .4px) solid #111; margin: calc(var(--pt) * 4px) 0 calc(var(--pt) * 3px); }
 .fn { text-indent: 0; padding-bottom: calc(var(--pt) * .5px); }
-.fnn { display: inline-block; min-width: 1.8em; text-align: right; padding-right: .15em; font-size: .72em; vertical-align: .62em; line-height: 0; }
+.fnn { display: inline-block; min-width: 1.8em; text-align: end; padding-inline-end: .15em; font-size: .72em; vertical-align: .62em; line-height: 0; }
+
+/* right to left: a document in Arabic or Hebrew, or a passage of one. Its paragraphs, headings,
+   captions and footnotes carry dir="rtl" and its turned words sit in span[dir] (src/model.js says
+   which, src/render.js writes the attribute); the rules above follow through the sides they name.
+   A formula, a web address and code keep their own order inside such a line. */
+.sheet .atom.m, .sheet .a-url, .sheet .a-verb, .sheet .a-logo { direction: ltr; unicode-bidi: isolate; }
+.tab td[dir="rtl"] { direction: rtl; }
 
 /* atoms */
 .atom { border-radius: 2px; cursor: pointer; text-indent: 0; }
