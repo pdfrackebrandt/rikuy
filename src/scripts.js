@@ -22,8 +22,35 @@ const PRE_MAX = 200000;
 const stripComments = (t) => t.replace(/(^|[^\\])%.*$/gm, '$1');
 // what the reader sees of a body: commands' names, environments' names and math are not text
 const proseOf = (t) => stripComments(t).replace(/\\(begin|end)\s*\{[^}]{0,200}\}/g, ' ').replace(/\\[A-Za-z@]+\*?/g, ' ').replace(/\$\$[^$]*\$\$|\$[^$\n]*\$/g, ' ');
-const bodyOf = (tex) => { const i = tex.indexOf('\\begin{document}'); return i < 0 ? tex : tex.slice(i + 16); };
-const preambleOf = (tex) => { const i = tex.indexOf('\\begin{document}'); return i < 0 ? '' : tex.slice(0, Math.min(i, PRE_MAX)); };
+// where \begin{document} stands, -1 without one; a commented one (a template's "% \begin{document}")
+// is not it
+const commented = (text, i) => /(^|[^\\])%/.test(text.slice(text.lastIndexOf('\n', i - 1) + 1, i));
+function docStart(tex) {
+  for (let i = -1; ;) {
+    i = tex.indexOf('\\begin{document}', i + 1);
+    if (i < 0 || !commented(tex, i)) return i;
+  }
+}
+const bodyOf = (tex) => { const i = docStart(tex); return i < 0 ? tex : tex.slice(i + 16); };
+const preambleOf = (tex) => { const i = docStart(tex); return i < 0 ? '' : tex.slice(0, Math.min(i, PRE_MAX)); };
+
+// the arguments of \title, \author and \date in a preamble (2000 characters of each at most):
+// the one text a preamble holds; a macro's definition there is not text until the body uses it
+function titlesOf(pre) {
+  let out = '';
+  for (const m of stripComments(pre).matchAll(/\\(?:title|subtitle|author|date|institute)\s*(?:\[[^\]]{0,500}\]\s*)?\{/g)) {
+    const from = m.index + m[0].length;
+    let depth = 1, i = from;
+    for (const end = Math.min(m.input.length, from + 2000); i < end && depth; i++) {
+      const ch = m.input[i];
+      if (ch === '\\') i++; else if (ch === '{') depth++; else if (ch === '}') depth--;
+    }
+    out += m.input.slice(from, i) + '\n';
+    // a preamble has a handful of these; one made of thousands is not read on
+    if (out.length > 20000) break;
+  }
+  return out;
+}
 
 function count(text) {
   const out = { chinese: 0, arabic: 0, letters: 0 };
@@ -91,9 +118,11 @@ export function scriptNeeds(mainTex, texts) {
     const c = count(t === mainTex ? bodyOf(t) : t);
     n.chinese += c.chinese; n.arabic += c.arabic; n.letters += c.letters;
   }
+  // a title or an author's name stands in the preamble: text as well, though not weighed below
+  const head = count(titlesOf(preambleOf(mainTex)));
   const have = scriptSetup(mainTex);
-  if (n.chinese && !have.chinese) out.push('chinese');
-  if (n.arabic && !have.arabic) out.push('arabic');
+  if ((n.chinese || head.chinese) && !have.chinese) out.push('chinese');
+  if ((n.arabic || head.arabic) && !have.arabic) out.push('arabic');
   // a document mostly in Arabic is an Arabic document: its paragraphs run from the right
   out.arabicMain = n.arabic > n.letters / 2;
   return out;
@@ -117,25 +146,49 @@ export function rtlDocument(tex) {
   return pkgs.has('xepersian') || /^xepersian/i.test(cls.name);
 }
 
-// The preamble lines for the scripts in `needs` (scriptNeeds' result), as one block.
-export function scriptLines(needs, tex) {
+// The line Rikuy writes for Chinese alone. When Arabic joins it the document moves to LuaLaTeX,
+// where ctex would need luatexja: the line goes and babel sets the Chinese too.
+const OWN_CTEX = /^[ \t]*\\usepackage\[scheme=plain\]\{ctex\}[^\n]*\n?/m;
+// Packages that hold a document to one engine. The Arabic lines are LuaLaTeX's (bidi=basic) and
+// ctex's line is XeLaTeX's: beside a package of another engine they would break a document that
+// compiles, so nothing is offered there and the document's author sets the script up.
+const XE_ONLY = ['xeCJK', 'polyglossia', 'xltxtra', 'xunicode', 'mathspec', 'xepersian', 'bidi', 'arabxetex', 'pstricks', 'pst-all', 'zxjatype', 'xetexko', 'CJK', 'CJKutf8', 'kotex'];
+const LUA_ONLY = ['luacode', 'luatexja', 'luatexja-fontspec', 'luatexja-preset', 'luatextra', 'luamplib', 'luabidi', 'arabluatex', 'lua-ul', 'luacolor', 'lualatex-math'];
+const PDF_ARABIC = ['arabtex', 'arabi'];
+const CJK_CLASS = /^(ctex|ctexart|ctexrep|ctexbook|ctexbeamer|ltjs?(article|report|book)|u?jl?(article|report|book)|elegant(paper|book|note))/i;
+
+// What to add for `needs`: {lines, dropCtex}, or null when the preamble leaves no sound way.
+function plan(needs, tex) {
   const pre = stripComments(preambleOf(tex || ''));
   const pkgs = packagesOf(pre);
+  const cls = classOf(pre);
+  const has = (names) => names.some((n) => pkgs.has(n));
+  const ownCtex = OWN_CTEX.test(pre);
+  const babel = pkgs.get('babel') || '';
   const lines = [];
-  if (needs.includes('arabic') || (needs.includes('chinese') && (/\bbidi\s*=/.test(pkgs.get('babel') || '') || /\\babelfont\b/.test(pre)))) {
+  const chinese = () => lines.push('\\babelprovide[import, onchar=ids fonts]{chinese}', '\\babelfont[chinese]{rm}{FandolSong}');
+  if (needs.includes('arabic')) {
+    if (has(XE_ONLY) || CJK_CLASS.test(cls.name) || (pkgs.has('ctex') && !ownCtex)) return null;
     if (!pkgs.has('babel')) lines.push('\\usepackage[english, bidi=basic]{babel} % LuaLaTeX orders right to left text by itself');
-    if (needs.includes('arabic')) {
-      lines.push(needs.arabicMain ? '\\babelprovide[import, main]{arabic}' : '\\babelprovide[import, onchar=ids fonts]{arabic}');
-      lines.push((needs.arabicMain ? '\\babelfont{rm}' : '\\babelfont[arabic]{rm}') + '[Renderer=Harfbuzz]{Amiri}');
-    }
-    if (needs.includes('chinese')) {
-      lines.push('\\babelprovide[import, onchar=ids fonts]{chinese}');
-      lines.push('\\babelfont[chinese]{rm}{FandolSong}');
-    }
-  } else if (needs.includes('chinese')) {
-    lines.push('\\usepackage[scheme=plain]{ctex} % Chinese text, set with XeLaTeX');
+    lines.push(needs.arabicMain ? '\\babelprovide[import, main]{arabic}' : '\\babelprovide[import, onchar=ids fonts]{arabic}');
+    lines.push((needs.arabicMain ? '\\babelfont{rm}' : '\\babelfont[arabic]{rm}') + '[Renderer=Harfbuzz]{Amiri}');
+    if (needs.includes('chinese') || ownCtex) chinese();
+    return { lines, dropCtex: ownCtex };
   }
-  return lines;
+  if (needs.includes('chinese')) {
+    // a document already on babel's LuaLaTeX route takes its Chinese from babel as well
+    if (/\bbidi\s*=\s*basic/.test(babel) || /\\babelprovide\s*\[[^\]]{0,2000}\bonchar\s*=/.test(pre)) chinese();
+    else if (has(LUA_ONLY) || has(PDF_ARABIC) || /\\directlua\b/.test(pre) || /^[^\n]{0,200}!TeX\s+(?:TS-)?program\s*=\s*(?:lua|pdf)/im.test((tex || '').slice(0, 2000)) || options(babel + ',' + cls.options).some((o) => RTL_LANGUAGES.test(o))) return null;
+    else lines.push('\\usepackage[scheme=plain]{ctex} % Chinese text, set with XeLaTeX');
+  }
+  return { lines, dropCtex: false };
+}
+
+// The preamble lines for the scripts in `needs` (scriptNeeds' result): [] when there is nothing
+// to add, or when the preamble holds the document to an engine the lines would not run on.
+export function scriptLines(needs, tex) {
+  const p = plan(needs, tex);
+  return p ? p.lines : [];
 }
 
 // What wraps a stretch of text that runs the other way than the document: [begin, end]. The
@@ -143,31 +196,43 @@ export function scriptLines(needs, tex) {
 // the paragraphs' direction as well as the text's (\foreignlanguage would set only the text's).
 export const otherDirection = (rtl) => ['\\begin{otherlanguage}{' + (rtl ? 'arabic' : 'english') + '}', '\\end{otherlanguage}'];
 
-// The main file with those lines in its preamble, or null when it has none to put them in.
-// An existing \usepackage{babel} gains bidi=basic instead of being loaded twice.
+// The main file with those lines in its preamble, or null when it has none to put them in or
+// they would not fit it (scriptLines). An existing \usepackage{babel} gains bidi=basic instead of
+// being loaded twice; Rikuy's own ctex line makes way for babel's Chinese when Arabic joins it.
 export function addScriptSetup(tex, needs) {
-  const at = tex.indexOf('\\begin{document}');
+  const at = docStart(tex);
   if (at < 0 || !needs.length) return null;
-  const lines = scriptLines(needs, tex);
-  if (!lines.length) return null;
+  const p = plan(needs, tex);
+  if (!p || !p.lines.length) return null;
+  const eol = tex.includes('\r\n') ? '\r\n' : '\n';
   let pre = tex.slice(0, at);
-  if (lines.some((l) => l.startsWith('\\babelprovide'))) {
-    // (babel is looked for in the lines of the part of the preamble that is read at all)
-    const cut = pre.length > PRE_MAX ? pre.lastIndexOf('\n', PRE_MAX) + 1 : pre.length;
-    pre = pre.slice(0, cut).split('\n').map((line) => {
-      const code = line.replace(/(^|[^\\])%.*$/, '$1');
-      const m = /\\usepackage\s*(?:\[([^\]]{0,2000})\]\s*)?\{babel\}/.exec(code);
-      if (!m || /\bbidi\s*=/.test(m[1] || '')) return line;
-      const opt = (m[1] || '').trim().replace(/,\s*$/, '');
-      return line.slice(0, m.index) + '\\usepackage[' + (opt ? opt + ', ' : '') + 'bidi=basic]{babel}' + line.slice(m.index + m[0].length);
-    }).join('\n') + pre.slice(cut);
+  if (p.dropCtex) pre = pre.replace(OWN_CTEX, '');
+  if (p.lines.some((l) => l.startsWith('\\babelprovide')) && !p.lines.some((l) => l.includes('{babel}'))) {
+    // babel is loaded already: find where, in the part of the preamble that is read at all and
+    // outside comments, whatever lines its options run over
+    const head = pre.slice(0, PRE_MAX);
+    let found = null;
+    for (const m of head.matchAll(/\\(usepackage|RequirePackage)\s*(?:\[([^\]]{0,2000})\]\s*)?\{([^}]{0,2000})\}/g)) {
+      if (commented(head, m.index)) continue;
+      const names = m[3].split(',').map((x) => x.trim());
+      if (!names.includes('babel')) continue;
+      // options shared with other packages are not Rikuy's to take apart
+      if (names.length > 1) return null;
+      found = m;
+      break;
+    }
+    if (!found) return null;
+    if (!/\bbidi\s*=/.test(found[2] || '')) {
+      const opt = (found[2] || '').replace(/[\s,]+$/, '');
+      pre = pre.slice(0, found.index) + '\\' + found[1] + '[' + (opt.trim() ? opt + ', ' : '') + 'bidi=basic]{babel}' + pre.slice(found.index + found[0].length);
+    }
   }
-  const block = lines.join('\n') + '\n';
+  const block = p.lines.join(eol) + eol;
   // (the spaces before \begin{document} go; counted from the end, not looked for by a pattern
   // that would try every run of spaces in the preamble)
   let end = pre.length;
   while (end > 0 && (pre[end - 1] === ' ' || pre[end - 1] === '\t')) end--;
-  return pre.slice(0, end) + (pre.endsWith('\n') || !pre ? '' : '\n') + block + tex.slice(at);
+  return pre.slice(0, end) + (pre.endsWith('\n') || !pre ? '' : eol) + block + tex.slice(at);
 }
 
 // Languages babel and polyglossia set left to right, by the names documents give them. Not all

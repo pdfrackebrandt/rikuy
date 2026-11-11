@@ -10,7 +10,7 @@ Read the rules at the end before the first commit.
 | corpus compiles (LaTeX-examples, 716 documents present) | 705 | 706 | 706 | as version 25 | as version 25 | as version 25 | as version 25 | as version 25 |
 | corpus PDFs equal to a desktop TeX Live 2026's | 615 of 704 (87.4 %) | 700 of 705 (99.3 %) | 703 of 705 (99.7 %) | as version 25 | as version 25 | as version 25 | as version 25 | as version 25 |
 | TeX passes over the whole corpus | not counted | 995 (1,471 without latexmk's first-run `.aux`) | 995 | as version 25 | as version 25 | as version 25 | as version 25 | as version 25 |
-| `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) | 22/22 | 23/23 (a check that pygmentize loads no code a document wrote) | 23/23, now run by CI on a tree built there (`tex.yml`) | 23/23 in CI's TeX job | 23/23 in CI's TeX job | 33/33 on a tree built here from the pinned inputs (ten new: Chinese and Arabic) |
+| `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) | 22/22 | 23/23 (a check that pygmentize loads no code a document wrote) | 23/23, now run by CI on a tree built there (`tex.yml`) | 23/23 in CI's TeX job | 23/23 in CI's TeX job | 35/35 (twelve new: Chinese and Arabic); 33/33 in CI's TeX job before the review's fixes |
 | `tex/native/xindy/test.cjs` (against CLISP's xindy) | 11/11 | 11/11 | 11/11 | 11/11 | 11/11 | 11/11 | as version 30 | as version 30 |
 | TeX Live's 220 Asymptote examples as a desktop's asy draws them | not measured | against a native asy 3.09: 216 (196 equal PDFs, 12 equal failures, 7 random by design, 1 equal alone); 4 open | against the desktop's asy 3.11: 218 (201 equal PDFs, the 3D ones rendered as bitmaps; 10 equal failures; 7 random by design); 2 open: 1 numerical, `slope` out of memory | as version 25 | as version 25 | as version 25 | as version 25 | as version 25 |
 | edits on the typeset page landing exactly, undone byte for byte (`test/editor_corpus.py`) | not measured | 780 of 780, in the 222 documents with text, a formula, a cell or a footnote; 211 of 211 edited projects compile | as version 23 (page unchanged) | 781 of 792 land, 11 open as source by design, all 792 undone byte for byte, on the complete corpus; 211 of 211 edited projects compile | as version 28 (model and parser unchanged) | as version 28 (model and parser unchanged) | not run again (the model draws colours and lists in cells now; the 716 document model run passes) | not run again (`test/scripts.py` 133 checks direction and editing in Arabic and Chinese) |
@@ -632,16 +632,30 @@ Tests:
     turn their text and are text, not code; CJK wrappers are text. The page's font lists name
     a Song, Kai, Hei, Fang Song and a Naskh after the existing families. A review of the diff
     found the set up patterns quadratic on a crafted preamble (9 s a call); bounded, with a test.
+    An independent reviewer then went through the merged branch and found nine things, all fixed
+    with tests: the Arabic lines broke documents held to XeLaTeX (ctex, xeCJK, polyglossia: now
+    Rikuy's own ctex line makes way for babel's Chinese, and beside another engine's packages
+    nothing is offered); in a copy without the packs an English document with an unknown font
+    name was told it needed Chinese fonts (XeTeX goes through every font: such a pack is now
+    simply absent for a document with no such text); babel loaded over several lines or in a
+    shared list; a commented `\begin{document}`; 550 `\selectlanguage` in one paragraph
+    overflowed the stack and a crafted 203 kB file cost 1.2 s a rebuild; CRLF files; a stale
+    contents direction; an unbounded pattern in `pickEngine`; text only in `\title`. Its other
+    checks found nothing: injection, 1,200 random edits in turned text, the 716 corpus models
+    against main, the order of Word's XML elements, no script file outside an `x` pack.
     *Word.* Both ways: `w:bidi`, `w:rtl`, `w:bidiVisual`, East Asian and complex script fonts
     and languages on export; right to left paragraphs, `w:dir`/`w:bdo` runs (pandoc dropped
     their text), joiners and Arabic digits on import, with the set up lines in the preamble;
     a coauthor's edits to Chinese come back a character at a time.
-    Evidence, all on a tree built here from the pinned inputs: `test/engines.py` 33/33 (ctex on
+    Evidence: CI's TeX job built the tree from the pinned inputs and found `dist/tex` equal to
+    the manifest made here, then `test/engines.py` (35/35 here after the review's fixes: ctex on
     XeLaTeX in Fandol Song, bold and Kai; Arabic on LuaLaTeX in Amiri as a phrase and as the
     main language; CJKutf8 on pdfLaTeX; a plain document with Chinese, the notice's click and
-    a PDF in Fandol; a copy without the 24 packs gets no PDF and says why); the three Word
+    a PDF in Fandol, then Arabic joining it; a copy without the 24 packs gets no PDF for a
+    Chinese document and says why, and fontspec's own error for an unknown font), `pdf.py`
+    20/20, `offline.py` 36/36 and `ribbon.py` 146 there; the three Word
     fixtures open and compile with no error (XeLaTeX, LuaLaTeX, LuaLaTeX); `test/scripts.py`
-    133, `scripts.test.mjs` 31, `word.test.mjs` 38 groups, `word.py` 90, `browser.py` 182,
+    133, `scripts.test.mjs` 34, `scriptplan.test.mjs` 8, `word.test.mjs` 38 groups, `word.py` 90, `browser.py` 182,
     `ribbon.py` 146; LibreOffice 24.2 opens the Arabic and Chinese exports. The manifest is
     that build's (stock zlib 1.3, as CI's Python); its other 263 lines equal main's. Open:
     Japanese and Korean have no fonts; Greek and Cyrillic in a document whose main font is

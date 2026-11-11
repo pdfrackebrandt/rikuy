@@ -179,6 +179,19 @@ try:
         fonts, text = pdf_fonts_text(page)
         check('a plain document with Chinese text: the notice, one click, and the PDF is set in Fandol', 'Chinese' in said and st.startswith('XeLaTeX') and 'page' in st and any('FandolSong-Regular' in f for f in fonts), [said, st, sorted(fonts)])
 
+        # Arabic typed into the document Rikuy set up for Chinese: the second click moves it to
+        # LuaLaTeX and babel sets both (ctex there would ask for luatexja)
+        cur = page.evaluate("window.rikuy.files.get(window.rikuy.main)")
+        open_doc(page, [['main.tex', cur.replace('Hello', 'Hello and good morning to everyone مرحبا') if 'مرحبا' not in cur else cur]])
+        page.wait_for_selector('#script-note:not([hidden])', timeout=8000)
+        said = page.inner_text('#script-msg')
+        page.click('#script-go')
+        page.wait_for_timeout(400)
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        now = page.evaluate("window.rikuy.files.get(window.rikuy.main)")
+        check('Arabic joining it: the notice again, ctex makes way for babel, and the PDF has Amiri and Fandol', 'Arabic' in said and 'ctex' not in now and st.startswith('LuaLaTeX') and 'page' in st and any('Amiri' in f for f in fonts) and any('FandolSong' in f for f in fonts), [said, st, sorted(fonts), now[:300]])
+
         errs = [e for e in errors if 'favicon' not in e]
         check('no page errors', not errs, errs[:5])
         browser.close()
@@ -191,8 +204,16 @@ try:
         xpacks = [p_['f'] for p_ in idx['packs'] if p_.get('x')]
         browser, page, errors = open_page(p, width=1500, height=950)
         page.route(re.compile('/tex/(' + '|'.join(re.escape(f) for f in xpacks) + ')$'), lambda route: route.fulfill(status=404, body='not here'))
-        open_doc(page, [['main.tex', '\\documentclass{article}\n\\usepackage[scheme=plain]{ctex}\n\\begin{document}\n你好\n\\end{document}\n']])
+        # an English document that names a font nobody has: XeTeX then goes through every font
+        # of the tree, the missing packs among them. It must get fontspec's own error, not be
+        # told about Chinese and Arabic fonts
+        open_doc(page, [['main.tex', '\\documentclass{article}\n\\usepackage{fontspec}\n\\setmainfont{No Such Font Anywhere}\n\\begin{document}\nEnglish only.\n\\end{document}\n']])
         page.click('#b-pdf')
+        wait_pdf(page)
+        lc = page.evaluate("window.rikuy.lastCompile")
+        probs = page.evaluate("window.rikuy.texIssues.map(x => x.msg)")
+        check('without them an English document with an unknown font name gets fontspec\'s error, not theirs', bool(lc) and not lc.get('unkeptScripts') and not lc.get('unkept') and any('No Such Font Anywhere' in x or 'cannot be found' in x for x in probs), [lc and {k: lc[k] for k in ('unkept', 'unkeptScripts', 'ok')}, probs[:3]])
+        open_doc(page, [['main.tex', '\\documentclass{article}\n\\usepackage[scheme=plain]{ctex}\n\\begin{document}\n你好\n\\end{document}\n']])
         wait_pdf(page)
         lc = page.evaluate("window.rikuy.lastCompile")
         shown = page.evaluate("document.getElementById('pdf-host').textContent")

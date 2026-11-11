@@ -255,6 +255,9 @@ async function keep(folders) {
 // What one compile read and could not load, by pack number (compile() empties both).
 const jobPacks = new Set();
 const packMissed = new Set();
+// whether the job's own files have Chinese or Arabic text or name those fonts and packages
+let jobScripts = false;
+const SCRIPTS_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u2E80-\u2FDF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]|ctex|xeCJK|CJK|[Aa]miri|[Ff]andol|arphic|\b(?:gbsn|gkai|bsmi|bkai)\b|zhnumber|xpinyin/;
 // The folder of the tree a pack holds, as build_tree.py grouped the files ('core' for the packs
 // loaded at start): what the page shows for a pack, and what src/pwa.js lists.
 function packFolder(n) {
@@ -358,7 +361,15 @@ function populate(Module) {
       enumerable: true,
       get() {
         if (data === null) {
-          const raw = loadPackSync(pack);
+          let raw;
+          try { raw = loadPackSync(pack); } catch (e) {
+            // A Chinese or Arabic pack this copy does not carry (x: the artifact has no room),
+            // asked for by a document with no such text: XeTeX goes through every font of the
+            // tree when a font name is unknown. The file is not there, as before those fonts
+            // were added, and TeX goes on to say which name it did not find.
+            if (packInfo(pack).x && !jobScripts) { packMissed.delete(pack); throw new FS.ErrnoError(44); }
+            throw e;
+          }
           data = kind === 1 ? t1xRestore(raw.subarray(off, off + zlen)) : raw.subarray(off, off + size);
           usedPacks.add(pack);
         }
@@ -1076,7 +1087,8 @@ function pickEngine(job, mainText, allText) {
       /^(ltj|lua)/.test(cls) || /\\(directlua|luaexec|luadirect)\b/.test(t)) return { engine: 'lualatex', why: 'LuaTeX packages' };
   // babel's bidi=basic (the Unicode bidirectional algorithm, for Arabic and Hebrew) and its
   // onchar (a language and font switched by the script of each character) exist on LuaTeX only
-  if (/\\usepackage\s*\[[^\]]*\bbidi\s*=\s*basic\b[^\]]*\]\s*\{babel\}/.test(t) || /\\babelprovide\s*\[[^\]]*\bonchar\s*=/.test(t)) return { engine: 'lualatex', why: 'babel bidi' };
+  const babelOpt = (/\\usepackage\s*\[([^\]]{0,2000})\]\s*\{babel\}/.exec(t) || [])[1] || '';
+  if (/\bbidi\s*=\s*basic\b/.test(babelOpt) || /\\babelprovide\s*\[[^\]]{0,2000}?\bonchar\s*=/.test(t)) return { engine: 'lualatex', why: 'babel bidi' };
   if (has('xeCJK', 'xltxtra', 'xunicode', 'mathspec', 'xetexko', 'bidi', 'xepersian', 'xgreek', 'zhspacing', 'xeindex', 'arabxetex', 'ucharclasses') ||
       /^(xe|ctex|ctexart|ctexrep|ctexbook)/i.test(cls) || has('ctex') || /\\XeTeX\w+/.test(t)) return { engine: 'xelatex', why: 'XeTeX packages' };
   if (has('fontspec', 'unicode-math', 'polyglossia', 'fontsetup', 'realscripts', 'newunicodechar-fontspec') || /\\(setmainfont|setsansfont|setmonofont|newfontfamily|setmathfont)\b/.test(t))
@@ -1286,6 +1298,7 @@ async function compile(job) {
   const t0 = performance.now();
   readLog = new Set();
   jobPacks.clear(); packMissed.clear();
+  jobScripts = false;
   netBytes = 0;
   pipeCache.clear(); pipeCacheSize = 0; pipeSessions.clear();
   const dir = projectDir(job.project || job.id); // stable per project, so its .aux and .bbl carry over
@@ -1305,6 +1318,7 @@ async function compile(job) {
   const mainFile = job.files.find((f) => f.path.replace(/^\/+/, '') === job.main);
   const mainText = mainFile ? textOf(mainFile) : '';
   const allText = texFiles.map(textOf).join('\n');
+  jobScripts = SCRIPTS_RE.test(allText);
   const { engine, why } = pickEngine(job, mainText, allText);
   const E = ENGINES[engine];
   // the packs holding the packages and class this document names: fetched together up front,
