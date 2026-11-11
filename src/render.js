@@ -194,6 +194,8 @@ export class Renderer {
     switch (it.type) {
       case 'p': {
         el.classList.add('p');
+        // (a paragraph to a screen reader and an agent, which can then pick one inside the page)
+        el.setAttribute('role', 'paragraph');
         if (it.cls) for (const c of it.cls.split(/\s+/).filter(Boolean)) el.classList.add(c);
         if (it.indent) el.classList.add('ind');
         if (it.cont) el.classList.add('cont');
@@ -234,6 +236,9 @@ export class Renderer {
       case 'h': {
         el.classList.add('h', 'h' + it.level);
         el.dataset.ctx = 'h';
+        // a heading to a screen reader and an agent too, one level under the title's
+        el.setAttribute('role', 'heading');
+        el.setAttribute('aria-level', String(typeof it.level === 'number' ? Math.min(6, it.level + 1 || 1) : 2));
         if (it.chapLabel) {
           if (it.num) { const l = chr(it.chapLabel + ' ' + it.num, 'chapl'); el.appendChild(l); }
         } else if (it.num) { el.appendChild(chr(it.num, 'secnum')); }
@@ -246,6 +251,8 @@ export class Renderer {
         el.classList.add('ttl');
         el.dataset.ctx = 'ttl';
         const t = div('ttl-t'); this.inl(it.title, t); el.appendChild(t);
+        t.setAttribute('role', 'heading');
+        t.setAttribute('aria-level', '1');
         const a = div('ttl-a');
         for (const au of it.authors) { const s = document.createElement('span'); s.className = 'ttl-au'; this.inl(au, s); a.appendChild(s); }
         el.appendChild(a);

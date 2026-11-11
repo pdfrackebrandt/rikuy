@@ -1095,6 +1095,9 @@ class App {
     for (const id of ['rb-pdf', 'rb-word', 'b-save', 'b-open', 'b-pdf', 'b-copy', 'b-share', 'b-undo', 'b-redo', 'b-zout', 'zoomv', 'b-zin', 'b-src', 'b-help']) {
       const b = $('#' + id), a = mk('button', 'nav-act');
       a.type = 'button'; a.dataset.for = id;
+      // (a menu item under the button's own name: the bar's button of that name is still there)
+      a.setAttribute('role', 'menuitem');
+      a.setAttribute('aria-label', b.getAttribute('aria-label'));
       const svg = b.querySelector('svg'), lab = b.querySelector('span');
       if (svg) a.appendChild(svg.cloneNode(true));
       a.appendChild(mk('span', '', (b.closest('.rb-dl') ? 'Download ' : '') + (lab ? lab.textContent : '')));
@@ -1957,12 +1960,17 @@ class App {
     if (this.pop) this.closePop(false, true);
     const p = document.createElement('div');
     p.className = 'pop ' + (cls || '');
+    // named by its title, so a screen reader and an agent can tell the dialogs apart; a press
+    // outside closes it, so nothing behind it is in reach while it is open
     p.setAttribute('role', 'dialog');
+    p.setAttribute('aria-modal', 'true');
     if (title) {
       const h = document.createElement('div');
       h.className = 'pop-h';
       const t = document.createElement('span');
       t.textContent = title;
+      t.id = 'pop-title';
+      p.setAttribute('aria-labelledby', t.id);
       const x = document.createElement('button');
       x.className = 'pop-x'; x.type = 'button'; x.setAttribute('aria-label', 'Close'); x.innerHTML = '&times;';
       x.addEventListener('click', () => this.closePop());
@@ -2130,10 +2138,22 @@ class App {
     mf.className = 'mfield';
     mf.id = 'pop-field';
     mf.setAttribute('aria-label', 'Equation editor');
+    // The text box MathLive keeps inside the field takes the keys. MathLive writes what it reads
+    // aloud into that box's label and empties it between; empty, it gets the field's name.
+    const nameSink = () => {
+      try {
+        const k = mf.shadowRoot && mf.shadowRoot.querySelector('[part="keyboard-sink"]');
+        if (!k) return;
+        const fill = () => { if (!k.getAttribute('aria-label')) k.setAttribute('aria-label', 'Equation editor'); };
+        fill();
+        new MutationObserver(fill).observe(k, { attributes: true, attributeFilter: ['aria-label'] });
+      } catch (e) { /* unnamed, as before */ }
+    };
     // Inside the artifact viewer the page is framed; keep the on-screen keyboard in this page.
     const framed = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
     try { mf.mathVirtualKeyboardPolicy = framed ? 'sandboxed' : 'auto'; } catch (e) { /* ignore */ }
     holder.replaceWith(mf);
+    nameSink();
     const docMacros = this.mlMacros();
     const { ops, operators, plain } = classifyMacros(docMacros);
     try { mf.macros = { ...mf.macros, ...docMacros, ...FIELD_MACROS }; } catch (e) { /* ignore */ }
@@ -2249,6 +2269,7 @@ class App {
     const ta = document.createElement('textarea');
     ta.className = 'code';
     ta.id = 'pop-tex';
+    ta.setAttribute('aria-label', 'The math, as LaTeX');
     ta.spellcheck = false;
     const lead = display ? inner.match(/^\n?/)[0] : '';
     // the trailing line end is looked for after the leading one: in a new, empty equation
@@ -2270,6 +2291,7 @@ class App {
     if (display) {
       const envSel = document.createElement('select');
       envSel.id = 'pop-env';
+      envSel.setAttribute('aria-label', 'Kind of equation');
       const cur = info.a.env;
       for (const [v, l] of [['equation', 'Numbered equation'], ['equation*', 'Unnumbered equation'], ['align', 'Aligned, numbered rows'], ['align*', 'Aligned, no numbers'], ['gather', 'Gathered, numbered'], ['\\[', '\\[ \\] display']]) {
         const o = document.createElement('option'); o.value = v; o.textContent = l; if (v === cur) o.selected = true; envSel.appendChild(o);
@@ -2422,7 +2444,7 @@ class App {
     this.pop.rect = rect && (rect.width || rect.height) ? rect : (sel.anchorNode && sel.anchorNode.parentElement ? sel.anchorNode.parentElement.getBoundingClientRect() : null);
     const ta = document.createElement('textarea');
     ta.className = 'code'; ta.rows = 1; ta.spellcheck = false; ta.id = 'pop-newtex';
-    ta.placeholder = 'e.g. x^2 + y^2 = r^2';
+    ta.placeholder = 'e.g. x^2 + y^2 = r^2'; ta.setAttribute('aria-label', 'The formula, as LaTeX');
     const prev = document.createElement('div'); prev.className = 'pv';
     const err = document.createElement('div'); err.className = 'pv-err'; err.hidden = true;
     const row = document.createElement('div'); row.className = 'pop-row';
@@ -2552,7 +2574,7 @@ class App {
       row = document.createElement('div');
       row.className = 'ask-row';
       const inp = document.createElement('input');
-      inp.type = 'text'; inp.id = 'pop-describe'; inp.placeholder = 'Describe the math in words';
+      inp.type = 'text'; inp.id = 'pop-describe'; inp.placeholder = 'Describe the math in words'; inp.setAttribute('aria-label', 'Describe the math in words');
       const go = document.createElement('button');
       go.className = 'btn sm'; go.type = 'button'; go.textContent = 'Write it';
       row.append(inp, go);
@@ -2585,6 +2607,7 @@ class App {
     const ta = document.createElement('textarea');
     ta.className = 'code';
     ta.id = 'pop-raw';
+    ta.setAttribute('aria-label', 'LaTeX source');
     ta.spellcheck = false;
     ta.value = src.slice(info.s, info.e);
     ta.rows = Math.min(16, Math.max(2, ta.value.split('\n').length + 1));
@@ -2637,18 +2660,18 @@ class App {
       draw();
     };
     const top = document.createElement('div'); top.className = 'pop-row';
-    const cs = document.createElement('select'); cs.id = 'pop-citecmd';
+    const cs = document.createElement('select'); cs.id = 'pop-citecmd'; cs.setAttribute('aria-label', 'Citation style');
     const choices = this.citeChoices();
     for (const [v, l] of choices) { const o = document.createElement('option'); o.value = v; o.textContent = l; if (v === cmd) o.selected = true; cs.appendChild(o); }
     if (![...cs.options].some((o) => o.selected)) { const o = document.createElement('option'); o.value = cmd; o.textContent = '\\' + cmd; o.selected = true; cs.appendChild(o); }
     cs.addEventListener('change', () => { cmd = cs.value; write(); });
     top.appendChild(cs);
     const chips = document.createElement('div'); chips.className = 'chips';
-    const search = document.createElement('input'); search.type = 'search'; search.id = 'pop-citesearch'; search.placeholder = 'Search the bibliography';
+    const search = document.createElement('input'); search.type = 'search'; search.id = 'pop-citesearch'; search.placeholder = 'Search the bibliography'; search.setAttribute('aria-label', 'Search the bibliography');
     const list = document.createElement('div'); list.className = 'plist';
     const notes = document.createElement('div'); notes.className = 'pop-row notes';
-    const preI = document.createElement('input'); preI.type = 'text'; preI.placeholder = 'Before (see)'; preI.value = pre; preI.id = 'pop-citepre';
-    const postI = document.createElement('input'); postI.type = 'text'; postI.placeholder = 'After (p.~4)'; postI.value = post; postI.id = 'pop-citepost';
+    const preI = document.createElement('input'); preI.type = 'text'; preI.placeholder = 'Before (see)'; preI.value = pre; preI.id = 'pop-citepre'; preI.setAttribute('aria-label', 'Text before the citation');
+    const postI = document.createElement('input'); postI.type = 'text'; postI.placeholder = 'After (p.~4)'; postI.value = post; postI.id = 'pop-citepost'; postI.setAttribute('aria-label', 'Text after the citation');
     const wnotes = debounce(() => { pre = preI.value; post = postI.value; write(); }, 300);
     preI.addEventListener('input', wnotes); postI.addEventListener('input', wnotes);
     notes.append(preI, postI);
@@ -2710,11 +2733,11 @@ class App {
     const apply = this.liveRange(f, info.s, info.e);
     const write = () => { apply('\\' + cmd + '{' + key + '}'); draw(); };
     const top = document.createElement('div'); top.className = 'pop-row';
-    const cs = document.createElement('select'); cs.id = 'pop-refcmd';
+    const cs = document.createElement('select'); cs.id = 'pop-refcmd'; cs.setAttribute('aria-label', 'Kind of reference');
     for (const [v, l] of [['ref', '\\ref  2'], ['eqref', '\\eqref  (2)'], ['cref', '\\cref  eq. (2)'], ['Cref', '\\Cref  Equation (2)'], ['autoref', '\\autoref  Section 2'], ['pageref', '\\pageref']]) { const o = document.createElement('option'); o.value = v; o.textContent = l; if (v === cmd) o.selected = true; cs.appendChild(o); }
     cs.addEventListener('change', () => { cmd = cs.value; write(); });
     top.appendChild(cs);
-    const search = document.createElement('input'); search.type = 'search'; search.placeholder = 'Filter labels'; search.id = 'pop-refsearch';
+    const search = document.createElement('input'); search.type = 'search'; search.placeholder = 'Filter labels'; search.id = 'pop-refsearch'; search.setAttribute('aria-label', 'Filter labels');
     const list = document.createElement('div'); list.className = 'plist';
     p.append(top, search, list);
     const labels = [...this.model.labels.entries()].map(([k, v]) => ({ key: k, num: v.num, kind: v.kind }));
@@ -2781,7 +2804,7 @@ class App {
     this.pop.rect = rect && (rect.width || rect.height) ? rect : (sel.anchorNode && sel.anchorNode.parentElement ? sel.anchorNode.parentElement.getBoundingClientRect() : null);
     this.pop.returnCaret = base ? { f: base.f, p: base.a } : null;
     const inp = document.createElement('input');
-    inp.type = 'text'; inp.id = 'pop-cmd'; inp.className = 'code'; inp.placeholder = 'footnote, cite, section, equation, \u2026';
+    inp.type = 'text'; inp.id = 'pop-cmd'; inp.className = 'code'; inp.placeholder = 'footnote, cite, section, equation, \u2026'; inp.setAttribute('aria-label', 'What to insert');
     inp.autocomplete = 'off'; inp.spellcheck = false;
     const list = document.createElement('div'); list.className = 'plist';
     const hint = document.createElement('div'); hint.className = 'hint pad'; hint.textContent = 'Enter inserts the highlighted item. Anything else you type is inserted as a raw command.';
@@ -2946,6 +2969,7 @@ class App {
       } catch (e) {
         const ta = document.createElement('textarea');
         ta.className = 'cm-fallback';
+        ta.setAttribute('aria-label', 'LaTeX source');
         ta.spellcheck = false;
         host.appendChild(ta);
         ta.addEventListener('input', () => this.srcRebuild());
@@ -3028,7 +3052,7 @@ class App {
     if (tab) this.navTab = tab;
     this.navTab = this.navTab || 'outline';
     document.body.classList.toggle('nav-wide', this.navTab === 'changes' || this.navTab === 'git');
-    for (const [id, t] of [['#nt-outline', 'outline'], ['#nt-problems', 'problems'], ['#nt-changes', 'changes'], ['#nt-git', 'git']]) { $(id).classList.toggle('on', this.navTab === t); $(id).setAttribute('aria-selected', this.navTab === t ? 'true' : 'false'); }
+    for (const [id, t] of [['#nt-outline', 'outline'], ['#nt-problems', 'problems'], ['#nt-changes', 'changes'], ['#nt-git', 'git']]) { $(id).classList.toggle('on', this.navTab === t); $(id).setAttribute('aria-selected', this.navTab === t ? 'true' : 'false'); if (this.navTab === t) $('#nav-body').setAttribute('aria-labelledby', id.slice(1)); }
     this.prefs.nav = on;
     store(PREFS, this.prefs);
     if (on) { this.refreshNav(); this.navActs(); }
@@ -4562,10 +4586,21 @@ class App {
     return this.tex;
   }
 
+  // What TeX is doing and how a run ended, as one line of plain text in the page's "PDF status"
+  // region. The pane shows the same in three places (its status, its bar, its message), which
+  // are gone while it is closed; this line is there for a screen reader and an agent either way.
+  pdfSay(text) {
+    const el = $('#pdf-live');
+    text = String(text || '').replace(/\s+/g, ' ').trim();
+    if (el && el.textContent !== text) el.textContent = text;
+  }
+
   texStatus(s) {
     const st = $('#pdf-status'), bar = $('#pdf-prog');
     const say = (html, frac) => {
       st.innerHTML = html;
+      // (the megabytes change many times a second: said once, without them)
+      this.pdfSay(s.status === 'engine' ? 'Downloading TeX Live, once\u2026' : st.textContent);
       bar.hidden = false;
       bar.classList.toggle('busy', frac == null);
       bar.firstChild.style.width = frac == null ? '' : Math.round(frac * 100) + '%';
@@ -4653,6 +4688,7 @@ class App {
     this.stopped = false;
     const gen = this.pdfGen || 0;
     const st = $('#pdf-status'), bar = $('#pdf-prog'), msg = $('#pdf-msg');
+    let said = ''; // how the run ended, for the "PDF status" line
     const sig = textSig(this.main, [...this.files.entries()]);
     // a long TeX run gets a clock and a Stop button; one that never ends is stopped after
     // 5 minutes of typesetting (downloading the engine does not count)
@@ -4718,6 +4754,8 @@ class App {
       msg.innerHTML = errs ? '<b>' + errs + (errs === 1 ? ' error' : ' errors') + '</b>' + (warns ? ', ' + warns + (warns === 1 ? ' warning' : ' warnings') : '') + ' from ' + this.engineLabel + '. Show them' :
         warns ? warns + (warns === 1 ? ' warning' : ' warnings') + ' from ' + this.engineLabel + ', such as undefined references. Show them' : '';
       if (errs || warns) msg.firstChild && (msg.title = this.texIssues.slice(0, 3).map((x) => x.msg).join('\n'));
+      const first = this.texIssues.find((x) => x.sev === 'error') || this.texIssues.find((x) => x.sev === 'warn');
+      said = st.textContent + (errs || warns ? '. ' + msg.textContent.replace(/\.? ?Show them$/, '') + '. First: ' + first.msg + (first.line ? ' (' + first.f + ', line ' + first.line + ')' : '') : '') + (res.ok ? '' : '. No PDF was made.');
     } catch (e) {
       const why = this.stopped ? 'stopped' : String((e && e.message) || e || 'failed');
       if (this.lastCompile) this.lastCompile.failed = why; else this.lastCompile = { read: [], unkept: [], ok: false, failed: why };
@@ -4726,6 +4764,7 @@ class App {
         st.innerHTML = '<b>' + (this.engineLabel || 'TeX') + '</b> stopped';
         msg.hidden = false; msg.classList.remove('ok');
         msg.innerHTML = '<b>Stopped after ' + Math.round((Date.now() - this.compileStart) / 1000) + ' s.</b> A loop in a macro, or a very long document, keeps TeX busy.';
+        said = st.textContent + '. ' + msg.textContent;
         this.compileAgain = false;
         return;
       }
@@ -4736,6 +4775,7 @@ class App {
       const need = e && e.unkept ? ' (' + e.unkept.slice(0, 5).join(', ') + (e.unkept.length > 5 ? ' and more' : '') + ')' : '';
       const off = __RIKUY_APP__ && APP.on && navigator.onLine === false ? 'You are offline, and this document needs TeX files this browser has not kept yet' + need + '. Compile it once with a network and they stay; Make available offline in the status bar keeps those of a typical paper and of the open document. ' : '';
       d.textContent = e && e.scripts ? e.message + ' The page preview can still be printed.' : off + this.texFailText(e, !!off, !!need) + 'The page preview can still be printed.';
+      said = st.textContent + '. ' + d.textContent;
       const b = document.createElement('button'); b.className = 'btn sm'; b.type = 'button'; b.textContent = 'Print the preview'; b.style.marginTop = '10px';
       b.addEventListener('click', () => this.printPDF());
       d.append(document.createElement('br'), b);
@@ -4744,6 +4784,7 @@ class App {
       clearInterval(this.compileTick);
       $('#pdf-re').textContent = 'Recompile';
       bar.hidden = true;
+      if (said) this.pdfSay(said);
       this.compiling = false;
       const again = this.compileAgain;
       this.compileAgain = false;
@@ -4797,6 +4838,7 @@ class App {
     $('#pdf-dl').disabled = true;
     $('#pdf-msg').hidden = true;
     $('#pdf-status').textContent = 'LaTeX';
+    this.pdfSay('');
     this.syncEngineMenu();
     if (document.body.classList.contains('pdf-on')) this.compilePdf();
     else this.pdfStale = true;

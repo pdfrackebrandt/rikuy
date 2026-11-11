@@ -291,10 +291,13 @@ export const ribbon = {
   // A phone's one Download button: the three downloads by name, each pressing its own button.
   openDownloads() {
     const p = this.makePop($('#rb-dl-menu'), 'pop-dl', 'Download');
+    // a menu named by its title; each item under its button's own name ("Download LaTeX")
     p.setAttribute('role', 'menu');
+    p.removeAttribute('aria-modal');
+    p.querySelector('.pop-x').setAttribute('role', 'menuitem');
     for (const id of ['rb-pdf', 'rb-word', 'b-save']) {
       const b = $('#' + id), a = document.createElement('button');
-      a.type = 'button'; a.className = 'nav-act'; a.setAttribute('role', 'menuitem'); a.title = b.title;
+      a.type = 'button'; a.className = 'nav-act'; a.setAttribute('role', 'menuitem'); a.setAttribute('aria-label', b.getAttribute('aria-label')); a.title = b.title;
       a.append(b.querySelector('svg').cloneNode(true), Object.assign(document.createElement('span'), { textContent: b.querySelector('span').textContent }));
       if (id === 'b-save' && b.classList.contains('live')) a.classList.add('live');
       a.addEventListener('click', () => { this.closePop(true); b.click(); });
