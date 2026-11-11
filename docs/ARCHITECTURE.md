@@ -465,8 +465,10 @@ files and lines; `PdfView.show(pdf, synctex)` draws with PDF.js; past 5 minutes 
 1. **Folder.** `projectDir(job.project)`, stable per project (`touchProject` keeps three); `KEEP`
    files (aux, bbl, toc, idx…) and `ASY_OUT` survive unless `job.clean`. Every file name and the
    main file pass `projectPath()` first (no `..` segment, no NUL), whatever the page cleaned.
-2. **Engine.** `pickEngine()`: the menu, else `% !TeX program = …`, else packages (LuaTeX ones or
-   `\directlua`: lualatex; XeTeX ones, fontspec family, PSTricks: xelatex), else pdflatex.
+2. **Engine.** `pickEngine()`: the menu, else `% !TeX program = …`, else packages (LuaTeX ones,
+   `\directlua` or babel's `bidi=basic` and `onchar`: lualatex; XeTeX ones, ctex, fontspec
+   family, PSTricks: xelatex), else pdflatex. The lines `src/scripts.js` writes for Chinese
+   and Arabic text are read here.
    `ENGINES` holds the command lines: TeX Live's `-progname`, `-synctex=1`, `-recorder`,
    `-shell-escape` or `-shell-restricted`, the format from `FMT`; xelatex `-no-pdf`, latex DVI.
 3. **Prefetch.** Packs that `INDEX.provides` lists for each `\usepackage`, `\documentclass`,

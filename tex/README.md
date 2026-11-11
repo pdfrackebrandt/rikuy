@@ -116,6 +116,30 @@ file in the local tree it asks the mirror (BusyTeX's `kpse_remote_fetch_js` hook
 downloads only what it uses. A page on claude.ai can only reach its own server, so the mirror
 works on a self-hosted Rikuy, not inside the artifact.
 
+## Chinese and Arabic
+
+LaTeX's default fonts have neither script. The tree carries what three common routes need
+(`SCRIPT_PICKS`, `SCRIPT_SETS` and `SCRIPT_LINKED` in `build_tree.py`):
+
+- XeLaTeX with ctex or xeCJK and the Fandol fonts (Song, Hei, Kai, Fang Song: simplified
+  Chinese and the common traditional characters). `\usepackage[scheme=plain]{ctex}` is enough.
+- LuaLaTeX with babel's `bidi=basic` and Amiri, the one route on which TeX orders mixed right to
+  left and left to right text by itself; polyglossia with XeLaTeX works too, with its
+  `\textarabic` and `\textenglish` marks.
+- pdfLaTeX with the CJK package (`CJKutf8`) and the Arphic fonts `gbsn`, `gkai` (simplified),
+  `bsmi`, `bkai` (traditional).
+
+`src/scripts.js` writes the set up lines for the first two when a document has such text and no
+set up, and `pickEngine` reads them. These 47 MB travel in 24 packs of their own, marked `x` in
+the index and written after all others, so that no other pack's bytes depend on them: the hosted
+Rikuy serves them, `publish_batches.py` leaves them out of the artifact (which has 2 MB to
+spare), and a compile that misses only such packs says where the hosted Rikuy is
+(`unkeptScripts`). Fonts are found by family name as well as file name (fontconfig's caches and
+luaotfload's name table in `inputs/generated.tar.gz` know them). As with a desktop TeX Live,
+xdvipdfmx writes no character map for the Fandol fonts (their glyphs are Adobe-GB1's, which PDF
+viewers know), so a viewer without Adobe's CMap data shows the page but cannot copy its Chinese.
+Japanese and Korean have no fonts here.
+
 ## Limits
 
 Fonts that come from the mirror are found by file name, not by family name. Programs outside

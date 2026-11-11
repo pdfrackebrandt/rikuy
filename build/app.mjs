@@ -158,6 +158,8 @@ browser at ${SITE}: documents stay on the person's device, and nothing is sent t
   a row of buttons as in Word. Every edit is the smallest possible change to the .tex source.
 - Compile with real TeX Live 2026 (pdfLaTeX, XeLaTeX, LuaLaTeX, BibTeX, biber, makeindex,
   TikZ, minted, Asymptote, gnuplot) in the browser and download the PDF.
+- Write in Chinese and Arabic as well: Rikuy offers the font and right to left set up when a
+  document has such text, and the page shows right to left documents as the PDF does.
 - Open .tex, .bib, .zip (a project downloaded from Overleaf, for one) and Word .docx files, by
   the Open button or by dropping them on the page.${WORD ? `
 - Save as Word (.docx) with real, editable Word equations. A coauthor's edits to that Word file

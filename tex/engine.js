@@ -1074,6 +1074,9 @@ function pickEngine(job, mainText, allText) {
   const has = (...names) => names.some((n) => pkgs.has(n));
   if (has('luacode', 'luatexbase', 'luaotfload', 'luatexja', 'luatexja-fontspec', 'luatexja-preset', 'lua-ul', 'luamplib', 'lua-visual-debug', 'luacolor', 'selnolig', 'chickenize', 'lualatex-math', 'luatextra', 'luaxml', 'lua-widow-control', 'emoji', 'ctable-lua') ||
       /^(ltj|lua)/.test(cls) || /\\(directlua|luaexec|luadirect)\b/.test(t)) return { engine: 'lualatex', why: 'LuaTeX packages' };
+  // babel's bidi=basic (the Unicode bidirectional algorithm, for Arabic and Hebrew) and its
+  // onchar (a language and font switched by the script of each character) exist on LuaTeX only
+  if (/\\usepackage\s*\[[^\]]*\bbidi\s*=\s*basic\b[^\]]*\]\s*\{babel\}/.test(t) || /\\babelprovide\s*\[[^\]]*\bonchar\s*=/.test(t)) return { engine: 'lualatex', why: 'babel bidi' };
   if (has('xeCJK', 'xltxtra', 'xunicode', 'mathspec', 'xetexko', 'bidi', 'xepersian', 'xgreek', 'zhspacing', 'xeindex', 'arabxetex', 'ucharclasses') ||
       /^(xe|ctex|ctexart|ctexrep|ctexbook)/i.test(cls) || has('ctex') || /\\XeTeX\w+/.test(t)) return { engine: 'xelatex', why: 'XeTeX packages' };
   if (has('fontspec', 'unicode-math', 'polyglossia', 'fontsetup', 'realscripts', 'newunicodechar-fontspec') || /\\(setmainfont|setsansfont|setmonofont|newfontfamily|setmathfont)\b/.test(t))
@@ -1477,6 +1480,9 @@ async function compile(job) {
     // the packs this compile read, [number, folder], and the folders of those it could not load
     read: [...jobPacks].sort((x, y) => x - y).map((n) => [n, packFolder(n), packFirst(n)]),
     unkept: [...new Set([...packMissed].map(packFolder))],
+    // true when every pack that failed is one of the Chinese and Arabic ones (x in the index),
+    // which the artifact on claude.ai has no room for: the page then names the hosted Rikuy
+    unkeptScripts: packMissed.size > 0 && [...packMissed].every((n) => !!(INDEX.packs[n] && INDEX.packs[n].x)),
     ms: Math.round(performance.now() - t0),
     net: netBytes,
     reads: job.trace ? [...readLog] : undefined,

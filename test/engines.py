@@ -130,6 +130,44 @@ try:
         page.check('#pdf-shell')
         wait_pdf(page)
 
+        # Chinese and Arabic: the fonts are packs of their own (build_tree.py, SCRIPT_PICKS), the
+        # engine follows the set up lines src/scripts.js writes
+        def pdf_fonts_text(page):
+            import io, pypdf
+            b64 = page.evaluate("""() => { const b = window.rikuy.lastPdf; if (!b) return ''; let s = ''; const u = new Uint8Array(b);
+              for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return btoa(s); }""")
+            if not b64: return set(), ''
+            r = pypdf.PdfReader(io.BytesIO(base64.b64decode(b64)))
+            fonts = set()
+            for pg in r.pages:
+                for f in (pg['/Resources'].get('/Font') or {}).values():
+                    fonts.add(str(f.get_object().get('/BaseFont')))
+            return fonts, ''.join(pg.extract_text() for pg in r.pages)
+
+        open_doc(page, [['main.tex', '\\documentclass{article}\n\\usepackage[scheme=plain]{ctex}\n\\begin{document}\nHello 你好，世界！\\textbf{粗体} \\textit{楷体} 繁體：臺灣。\n\\end{document}\n']])
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('Chinese with ctex compiles with XeLaTeX on Auto', st.startswith('XeLaTeX') and 'page' in st, st)
+        check('the PDF sets it in Fandol Song, bold and Kai, with the Latin in Latin Modern', all(any(n in f for f in fonts) for n in ('FandolSong-Regular', 'FandolSong-Bold', 'FandolKai-Regular', 'LMRoman10-Regular')), sorted(fonts))
+
+        AR = '\\documentclass{article}\n\\usepackage[english, bidi=basic]{babel}\n\\babelprovide[import, %s]{arabic}\n\\babelfont%s{rm}[Renderer=Harfbuzz]{Amiri}\n\\begin{document}\n%s\n\\end{document}\n'
+        open_doc(page, [['main.tex', AR % ('onchar=ids fonts', '[arabic]', 'Hello مرحبا بالعالم world (مع أقواس) 123.')]])
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('Arabic with babel bidi=basic compiles with LuaLaTeX on Auto', st.startswith('LuaLaTeX') and 'page' in st and 'babel bidi' in page.evaluate("document.getElementById('pdf-engine').title"), st)
+        check('the PDF sets the Arabic in Amiri and the rest in Latin Modern', any('Amiri-Regular' in f for f in fonts) and any('LMRoman10' in f for f in fonts), sorted(fonts))
+        check('no problems are reported', not [x for x in page.evaluate("window.rikuy.texIssues.map(x => x.sev + ' ' + x.msg)") if x.startswith('error')], page.evaluate("window.rikuy.texIssues.map(x => x.msg)")[:4])
+
+        open_doc(page, [['main.tex', AR % ('main', '', '\\section{مقدمة}\nهذه فقرة عربية مع English وسطها. \\textbf{عريض}')]])
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('an Arabic main language document compiles', st.startswith('LuaLaTeX') and 'page' in st and any('Amiri-Bold' in f for f in fonts), [st, sorted(fonts)])
+
+        open_doc(page, [['main.tex', '\\documentclass{article}\n\\usepackage{CJKutf8}\n\\begin{document}\n\\begin{CJK}{UTF8}{gbsn}你好，世界！\\end{CJK}\n\\begin{CJK}{UTF8}{bsmi}繁體中文\\end{CJK}\n\\end{document}\n']])
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('the CJK package compiles with pdfLaTeX (Arphic fonts)', st.startswith('pdfLaTeX') and 'page' in st and any('gbsnu' in f for f in fonts) and any('bsmiu' in f for f in fonts), [st, sorted(fonts)[:6]])
+
         errs = [e for e in errors if 'favicon' not in e]
         check('no page errors', not errs, errs[:5])
         browser.close()
