@@ -6,7 +6,9 @@
 // changed since is a conflict, not applied; hostile files are refused. Chinese and Arabic: a Word
 // file in either opens with the preamble lines of src/scripts.js and its text as it is, right to
 // left paragraphs and all; a document in either goes to Word with its runs, paragraphs, tables
-// and section marked as Word wants them (the XML is checked), and comes back the same.
+// and section marked as Word wants them (the XML is checked), and comes back the same. India's
+// nine scripts the same way: set up on opening with every mark and joiner kept, each run's font
+// and language written for Word on saving, an edit of one word one small patch.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { buildModel, colorValue } from '../src/model.js';
@@ -16,7 +18,7 @@ import { exportDocx, readDocx, docxToLatex } from '../src/wordjobs.js';
 import { checkData, planImport, unpackRead, rebase, textHunks, mathPatch, stripNumbers, safeMath } from '../src/wordsync.js';
 import { unzip, zip, extract, parseXml, readRikuyPart, text } from '../src/docx.js';
 import { isBalanced } from '../src/parser.js';
-import { scriptNeeds, scriptLines, addScriptSetup, rtlDocument } from '../src/scripts.js';
+import { scriptNeeds, scriptLines, addScriptSetup, rtlDocument, INDIC } from '../src/scripts.js';
 import { scanDir, resolve } from '../src/wordbidi.js';
 import { zipSync } from 'fflate';
 
@@ -981,6 +983,164 @@ await ok('a coauthor\'s edits to Chinese and Arabic text in Word come back as th
   const clash = importInto(edit(E.docx, rep('فقرة عربية', 'فقرة فارسية')), mine);
   assert.equal(clash.stats.conflicts, 1);
   assert.ok(clash.files.get('main.tex').includes('فقرة قصيرة') && /% comment \(Ana\) on "[^"]*": In Word: /.test(clash.files.get('main.tex')), clash.files.get('main.tex'));
+});
+
+
+// ---- India's scripts ---------------------------------------------------------------------------
+
+// the lines src/scripts.js gives for these scripts in a preamble that has none
+const linesFor = (...ids) => scriptLines(Object.assign(ids, { arabicMain: false }), '');
+const INDIC_BABEL = '\\usepackage[english]{babel} % LuaLaTeX sets each script in its own font';
+const HI = ['\\babelprovide[import=hi, onchar=ids fonts]{hindi}', '\\babelfont[hindi]{rm}[Renderer=Harfbuzz]{Noto Serif Devanagari}'];
+// the order Word's schema gives the properties of a run: Word refuses a file that has them in another
+const RPR_ORDER = ['rStyle', 'rFonts', 'b', 'bCs', 'i', 'iCs', 'caps', 'smallCaps', 'strike', 'dstrike', 'outline', 'shadow', 'emboss', 'imprint', 'noProof', 'snapToGrid', 'vanish', 'webHidden', 'color', 'spacing', 'w', 'kern', 'position', 'sz', 'szCs', 'highlight', 'u', 'effect', 'bdr', 'shd', 'fitText', 'vertAlign', 'rtl', 'cs', 'em', 'lang', 'eastAsianLayout', 'specVanish', 'oMath'];
+function rprInOrder(xml) {
+  let n = 0;
+  for (const m of xml.matchAll(/<w:rPr>((?:(?!<\/w:rPr>)[\s\S])*)<\/w:rPr>/g)) {
+    const names = [...m[1].matchAll(/<w:([A-Za-z]+)\b[^>]*\/>/g)].map((x) => RPR_ORDER.indexOf(x[1]));
+    assert.ok(names.every((k, i) => k >= 0 && (i === 0 || k > names[i - 1])), m[0]);
+    n++;
+  }
+  return n;
+}
+const NIRMALA = '<w:rFonts w:cs="Nirmala UI" />';
+const langOf = (l) => '<w:lang w:bidi="' + l + '" />';
+const hi = (t, f = '') => run(t, NIRMALA + f + langOf('hi-IN'));
+
+await ok('a Hindi Word file opens set up for Devanagari: conjuncts, nukta, vowel signs, joiners, dandas and digits as they are, its runs joined, nothing listed as lost', () => {
+  const r = fixture('word-hindi.docx');
+  const t = r.tex, b = bodyOf(t);
+  assert.deepEqual(linesFor('devanagari'), [INDIC_BABEL, ...HI]);
+  setUp(t, [INDIC_BABEL, ...HI]);
+  assert.equal(rtlDocument(t), false);
+  assert.match(t, /\\documentclass\[11pt\]\{article\}\n\\usepackage\[letterpaper[^\]]*\]\{geometry\}\n\\usepackage\[english\]\{babel\}/);
+  assert.ok(t.includes('\n\\title{भारत की अर्थव्यवस्था}\n'));
+  for (const s of ['\\section{परिचय}',
+    // six runs of three fonts, one with Word's w:cs mark: one sentence, with its nukta (ज़) and its conjuncts, the comment under it
+    '\nयह दस्ताव\u0947\u091c\u093c \\textbf{हिन्दी} में लिखा गया है। इसमें क्ष, त्र, ज्ञ और श्री जैसे संयुक्ताक्षर हैं॥\\footnote{स्रोत: \\textbf{विश्व बैंक}, २०२४।}\n% comment (अनीता) on "संयुक्ताक्षर": संदर्भ जोड़ें।\n',
+    // anusvara, chandrabindu, visarga; the joiner and the non joiner after the virama; both kinds of digits
+    '\nहि\u0902दी में मा\u0901 और दु\u0903ख; क\u094d\u200dष तथा क\u094d\u200cष। GDP growth २०२४ में ७.५\\% रही, 2025 में ६\\%।\n',
+    '\\begin{itemize}\n\\item\n  पहला बिंदु\n\\item\n  दूसरा बिंदु\n\\end{itemize}', '\\item\n  चरण एक\n\\item\n  चरण दो\n\\end{enumerate}',
+    'देश & वृद्धि \\\\\n\\midrule\nभारत & ७.२ \\\\\nनेपाल & 3.9 \\\\'])
+    assert.ok(b.includes(s), s + '\n' + b);
+  assert.ok(!/\\RL|otherlanguage|fontenc|fontspec|Mangal|Kokila|hi-IN/.test(t), t);
+  assert.deepEqual(r.warnings, ['1 Word comment came in as a comment under its text.']);
+  assert.ok(isBalanced(t, 0, t.length) && !/[\uE000-\uE01F]/.test(t));
+  const m = buildModel({ files: new Map([['main.tex', t]]), main: 'main.tex' });
+  const kinds = m.blocks.flatMap((u) => u.items.map((x) => x.type));
+  assert.ok(kinds.includes('title') && kinds.includes('float') && !kinds.includes('raw'), kinds.join(' '));
+});
+
+await ok('a Word file with a line in each of the other eight scripts of India: all nine set up, every line as it is, nothing of the file\'s in the preamble', () => {
+  const r = fixture('word-indic.docx');
+  const t = r.tex, b = bodyOf(t);
+  const lines = linesFor(...INDIC.map((x) => x[0]));
+  assert.equal(lines.length, 19);
+  setUp(t, lines);
+  assert.deepEqual(preambleOf(t).trim().split('\n').map((l) => l.replace(/^\\usepackage\[letterpaper.*$/, 'GEOMETRY')), ['\\documentclass[11pt]{article}', 'GEOMETRY', ...lines, '\\usepackage{amsmath,amssymb}', '\\usepackage{booktabs}']);
+  for (const s of ['Bengali: \\textbf{বাংলা:} আমি বাংলায় গান গাই, ক্ষমা করবেন। ১২৩', 'Tamil: \\textbf{தமிழ்:} வணக்கம், மிக்க நன்றி. ௧௨௩', 'Telugu: \\textbf{తెలుగు:} నమస్కారం, ధన్యవాదాలు. ౧౨౩',
+    'Gujarati: \\textbf{ગુજરાતી:} નમસ્તે, આભાર. ૧૨૩', 'Kannada: \\textbf{ಕನ್ನಡ:} ನಮಸ್ಕಾರ, ಧನ್ಯವಾದಗಳು. ೧೨೩',
+    // the joiner that makes Malayalam's older chillu stays
+    'Malayalam: \\textbf{മലയാളം:} നമസ്കാരം, നന്ദി, അവന\u0d4d\u200d. ൧൨൩', 'Gurmukhi: \\textbf{ਪੰਜਾਬੀ:} ਸਤਿ ਸ੍ਰੀ ਅਕਾਲ, ਧੰਨਵਾਦ। ੧੨੩', 'Odia: \\textbf{ଓଡ଼ିଆ:} ନମସ୍କାର, ଧନ୍ୟବାଦ। ୧୨୩',
+    'Together: हिन्दी বাংলা தமிழ் in one line.', 'धन्यवाद & நன்றி & ధన్యవాదాలు \\\\\n१ & ௧ & ౧ \\\\', 'Odd names: नाम.'])
+    assert.ok(b.includes('\n' + s + '\n'), s + '\n' + b);
+  // the font and language names its runs carry (w:rFonts, w:lang) are nowhere
+  assert.ok(!/\\input|Evil|passwd|hi-IN|Vrinda|Latha|Mangal/.test(t), t);
+  assert.deepEqual(r.warnings, []);
+});
+
+await ok('India\'s scripts beside others: with Arabic and Chinese, with scripts that have no font, digits alone, joiners, runs cut inside a word, words that read as LaTeX', () => {
+  const R = (t, rpr) => '<w:r><w:rPr>' + rpr + '</w:rPr><w:t xml:space="preserve">' + t + '</w:t></w:r>';
+  // Arabic, Hindi and Chinese in one file: the lines of all three, in the order src/scripts.js gives them
+  const three = open(tiny(wp('English with हिन्दी शब्द, مرحبا بالعالم and 中文 in one paragraph that is mostly English words.')));
+  setUp(three.tex, linesFor('chinese', 'arabic', 'devanagari'));
+  assert.ok(preambleOf(three.tex).includes('bidi=basic') && bodyOf(three.tex).includes('\nEnglish with हिन्दी शब्द, مرحبا بالعالم and 中文 in one paragraph'), three.tex);
+  assert.deepEqual(three.warnings, []);
+  // Sinhala, Thai and Hebrew still have no font: listed as before, beside a script that is set up
+  const mix = open(tiny(wp('हिन्दी සිංහල ไทย עברית')));
+  assert.ok(preambleOf(mix.tex).includes(HI[0]) && /^Not kept: a font for 13 characters \(Sinhala: සිංහල; Thai or Lao: ไทย; Hebrew: עברית\): the fonts the document is set up with have none/.test(mix.warnings[0]), mix.warnings[0]);
+  // and alone, as before
+  const si = open(tiny(wp('Word සිංහල')));
+  assert.ok(!/babel/.test(si.tex) && /^Not kept: 5 characters pdfLaTeX has no font or name for \(Sinhala: සිංහල\)/.test(si.warnings[0]), si.warnings[0]);
+  // digits with no letter of their script are not text in it: nothing is set up, and they are listed
+  const dg = open(tiny(wp('Total १२३ and ৪৫')));
+  assert.ok(!/babel/.test(dg.tex) && /^Not kept: 5 characters pdfLaTeX has no font or name for \(Devanagari: १२३; Bengali: ৪৫\)/.test(dg.warnings[0]), dg.warnings[0]);
+  // a joiner stays between letters of these scripts and goes between Latin ones; the dandas all the scripts share come with Bengali alone
+  const j = open(tiny(wp('क\u094d\u200dष र\u094d\u200dय a\u200db বাংলা। শেষ॥')));
+  assert.ok(bodyOf(j.tex).includes('\nक\u094d\u200dष र\u094d\u200dय ab বাংলা। শেষ॥\n'), JSON.stringify(bodyOf(j.tex)));
+  assert.deepEqual(j.warnings, []);
+  // a word Word cut into runs at each change of font, with bold in the middle and the complex script mark: no space comes between
+  const cut = open(tiny('<w:p>' + R('हि', '<w:rFonts w:cs="Mangal"/><w:lang w:bidi="hi-IN"/>') + R('न्', '<w:rFonts w:cs="Kokila"/><w:cs/>') + R('दी', '<w:rFonts w:cs="Nirmala UI"/><w:lang w:bidi="mr-IN"/>') + R(' की ', '<w:lang w:bidi="hi-IN"/>') + R('भा', '<w:rFonts w:cs="Mangal"/><w:b/><w:bCs/>') + R('षा', '<w:rFonts w:cs="Aparajita"/><w:b/><w:bCs/>') + '<w:r><w:t>।</w:t></w:r></w:p>'));
+  assert.ok(bodyOf(cut.tex).includes('\nहिन्दी की \\textbf{भाषा}।\n'), bodyOf(cut.tex));
+  // words in a Hindi run that read as LaTeX are words
+  const bad = open(tiny(wp('नमस्ते \\input{/etc/passwd} \\babelprovide[main]{hindi} $x$ 50% {}')));
+  assert.ok(bodyOf(bad.tex).includes('\nनमस्ते \\textbackslash input\\{/etc/passwd\\} \\textbackslash babelprovide{[}main{]}\\{hindi\\} \\$x\\$ 50\\% \\{\\}\n'), bodyOf(bad.tex));
+  setUp(bad.tex, [INDIC_BABEL, ...HI]);
+});
+
+await ok('to Word: each run in one of India\'s scripts has its font and its language, left to right, in the order Word wants; Arabic beside it keeps its own', () => {
+  const pre = linesFor('arabic', 'devanagari', 'bengali', 'tamil', 'chinese').join('\n') + '\n\\usepackage[normalem]{ulem}\n\\usepackage{xcolor}\n';
+  const src = '\\documentclass{article}\n' + pre + '\\title{भारत}\n\\begin{document}\n\\maketitle\n\\section{परिचय}\n'
+    + 'English हिन्दी शब्द and বাংলা here, مرحبا too, 中文 and தமிழ்.\\footnote{टिप्पणी: বাংলা।}\n\n'
+    + '\\textbf{हिन्दी} \\emph{தமிழ்} \\texttt{कोड} \\textcolor{red}{लाल} \\uline{রেখা} क\u094d\u200dष।\n\n'
+    + 'पहला वाक्य यहाँ है।\n% comment (अनीता) on "वाक्य": जाँचें।\n\n'
+    + '\\begin{itemize}\n\\item पहला\n\\end{itemize}\n\n\\begin{tabular}{ll}\nदेश & 12 \\\\\n\\end{tabular}\n\\end{document}\n';
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  assert.equal(E.lost, 0);
+  const parts = unzip(E.docx);
+  const { d, st, se, fn } = exported(E);
+  const ps = paras(d).map(bare);
+  const P1 = (t) => ps.find((x) => textOf(x).includes(t));
+  // a run pandoc wrote with two of the scripts is cut where the script changes; the Arabic run is right to left
+  // and has no font of its own (the defaults name Amiri); Chinese keeps its East Asian hint
+  assert.equal(P1('English').replace(/<w:r><w:rPr><w:rStyle w:val="FootnoteReference" \/>[\s\S]*$/, ''), '<w:pPr><w:pStyle w:val="FirstParagraph" /></w:pPr>'
+    + hi('English हिन्दी शब्द and ') + run('বাংলা here, ', NIRMALA + langOf('bn-IN')) + run('مرحبا', RTL) + run(' too, ') + run('中文', EA) + run(' and தமிழ்.', NIRMALA + langOf('ta-IN')));
+  // bold, italic, code, colour and underline: the font after the style, the language last
+  assert.equal(P1('कोड'), '<w:pPr><w:pStyle w:val="BodyText" /></w:pPr>' + hi('हिन्दी', '<w:b /><w:bCs />') + run(' ') + run('தமிழ்', NIRMALA + '<w:i /><w:iCs />' + langOf('ta-IN')) + run(' ')
+    + run('कोड', '<w:rStyle w:val="VerbatimChar" />' + NIRMALA + langOf('hi-IN')) + run(' ') + run('लाल', '<w:rStyle w:val="ColourFF0000" />' + NIRMALA + langOf('hi-IN')) + run(' ')
+    + run('রেখা', NIRMALA + '<w:u w:val="single" />' + langOf('bn-IN')) + hi(' क\u094d\u200dष।'));
+  assert.match(P1('भारत'), /<w:pStyle w:val="Title" \/>\s*<\/w:pPr>\s*<w:r><w:rPr><w:rFonts w:cs="Nirmala UI" \/><w:lang w:bidi="hi-IN" \/><\/w:rPr><w:t xml:space="preserve">भारत<\/w:t><\/w:r>/);
+  assert.equal(P1('परिचय'), '<w:pPr><w:pStyle w:val="Heading1" /></w:pPr>' + hi('1 परिचय'));
+  assert.equal(P1('देश'), '<w:pPr><w:pStyle w:val="Compact" /><w:jc w:val="left" /></w:pPr>' + hi('देश'));
+  // the footnote and the comment are parts of their own: the same there
+  assert.ok(bare(fn).includes(hi('टिप्पणी: ') + run('বাংলা।', NIRMALA + langOf('bn-IN'))), fn.slice(-700));
+  assert.ok(text(parts.get('word/comments.xml')).includes(hi('जाँचें।')), text(parts.get('word/comments.xml')).slice(-500));
+  // left to right: no run of these scripts is w:rtl, no paragraph w:bidi
+  assert.equal((d.match(/<w:rtl \/>/g) || []).length, 1);
+  assert.ok(!/w:bidi \/>|bidiVisual/.test(d));
+  // every run's properties, old and new, stand in the schema's order, and the parts still parse
+  assert.ok(rprInOrder(d) > 12 && rprInOrder(fn) >= 2 && rprInOrder(text(parts.get('word/comments.xml'))) >= 1);
+  for (const part of [d, st, se, fn, text(parts.get('word/comments.xml'))]) parseXml(part, undefined, true);
+  // the defaults are Arabic's and Chinese's; nothing of the preamble is text
+  assert.equal(defaults(st), '<w:rPrDefault> <w:rPr> <w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:eastAsia="SimSun" w:cs="Amiri" /> <w:sz w:val="24" /> <w:szCs w:val="24" /> <w:lang w:bidi="ar-SA" w:eastAsia="zh-CN" w:val="en-US" /> </w:rPr> </w:rPrDefault>');
+  const words = textOf(d);
+  for (const w of ['babelprovide', 'babelfont', 'Noto', 'Harfbuzz', 'onchar', 'hindi', 'bengali', 'import=']) assert.ok(!words.includes(w), w);
+  assert.equal(importInto(E.docx, files).files.size, 0);
+  // a document in Hindi alone: its runs as above, the defaults as pandoc wrote them, nothing right to left
+  const one = '\\documentclass{article}\n' + [INDIC_BABEL, ...HI].join('\n') + '\n\\begin{document}\nयह हिन्दी है। Plain English too.\n\nOnly English here.\n\\end{document}\n';
+  const H = exported(exportFiles(new Map([['main.tex', one]])));
+  assert.deepEqual(paras(H.d).map(bare), ['<w:pPr><w:pStyle w:val="FirstParagraph" /></w:pPr>' + hi('यह हिन्दी है। Plain English too.'), '<w:pPr><w:pStyle w:val="BodyText" /></w:pPr>' + run('Only English here.')]);
+  assert.ok(!/w:rtl|w:bidi \/>/.test(H.d) && !/Amiri|SimSun|Nirmala/.test(H.st) && /w:cstheme="minorBidi"/.test(defaults(H.st)) && /<w:themeFontLang w:val="en-US" \/>/.test(H.se));
+  // each of the nine has its language
+  const all = '\\documentclass{article}\n' + linesFor(...INDIC.map((x) => x[0])).join('\n') + '\n\\begin{document}\nहिन्दी বাংলা ਪੰਜਾਬੀ ગુજરાતી ଓଡ଼ିଆ தமிழ் తెలుగు ಕನ್ನಡ മലയാളം\n\\end{document}\n';
+  const A = exported(exportFiles(new Map([['main.tex', all]])));
+  assert.deepEqual([...A.d.matchAll(/<w:rFonts w:cs="Nirmala UI" \/><w:lang w:bidi="([a-z]+-IN)" \/><\/w:rPr><w:t xml:space="preserve">([^<]*)</g)].map((m) => m[1] + ' ' + m[2].trim()),
+    ['hi-IN हिन्दी', 'bn-IN বাংলা', 'pa-IN ਪੰਜਾਬੀ', 'gu-IN ગુજરાતી', 'or-IN ଓଡ଼ିଆ', 'ta-IN தமிழ்', 'te-IN తెలుగు', 'kn-IN ಕನ್ನಡ', 'ml-IN മലയാളം']);
+});
+
+await ok('a round trip through Word and back gives the same body for the Hindi file and the file of eight scripts', () => {
+  for (const name of ['word-hindi.docx', 'word-indic.docx']) {
+    const t1 = fixture(name).tex;
+    const E1 = exportFiles(new Map([['main.tex', t1]]));
+    assert.equal(E1.lost, 0, name);
+    const r2 = open(E1.docx);
+    assert.equal(bodyOf(r2.tex).replace(/\\tightlist\n/g, ''), bodyOf(t1), name);
+    assert.deepEqual(preambleOf(r2.tex).split('\n').filter((l) => /babel/.test(l)), preambleOf(t1).split('\n').filter((l) => /babel/.test(l)), name);
+    const r3 = open(exportFiles(new Map([['main.tex', r2.tex]])).docx);
+    assert.equal(bodyOf(r3.tex), bodyOf(r2.tex), name);
+    assert.equal(importInto(E1.docx, new Map([['main.tex', t1]])).files.size, 0, name);
+  }
 });
 
 console.log('word: ' + n + ' groups of checks passed');

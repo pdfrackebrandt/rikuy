@@ -6,7 +6,7 @@ import { alignRuns, exportData, allObjs, safeMath } from './wordsync.js';
 import { commentEdit } from './share.js';
 import { isBalanced } from './parser.js';
 import { safeUrl } from './wordast.js';
-import { scriptNeeds, scriptLines, otherDirection } from './scripts.js';
+import { scriptNeeds, scriptLines, otherDirection, INDIC } from './scripts.js';
 
 // pandoc's messages worth telling the user: the ones that say something was lost
 const said = (ws) => (ws || []).filter((w) => w.verbosity && w.verbosity !== 'INFO').map((w) => w.pretty || w.type).slice(0, 20);
@@ -78,6 +78,45 @@ export function exportDocx(P, req) {
 const HAN = /[\u2E80-\u2FDF\u3005-\u3007\u3021-\u3029\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/;
 const ARABIC = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFC]/;
 const EAST_ASIA = { font: 'SimSun', lang: 'zh-CN' }, COMPLEX = { font: 'Amiri', lang: 'ar-SA' };
+// India's scripts (src/scripts.js has the nine) are complex scripts to Word as Arabic is, but
+// set left to right, and a file may hold several: each run of one gets its font and its
+// language on the run itself (w:rFonts w:cs, w:lang w:bidi), since the defaults name one font
+// and one language only, Arabic's when the file has both. Nirmala UI is the one font of
+// Windows with all nine; where it is missing Word takes another that has the script. A run
+// pandoc wrote with two of the scripts in it is cut where the script changes. The danda and
+// double danda, which all of them share, go with the text before them.
+const INDIC_FONT = 'Nirmala UI';
+const INDIC_OWN = /[\u0900-\u0963\u0966-\u0D7F\uA8E0-\uA8FF]/;
+const indicOf = (ch) => (INDIC_OWN.test(ch) && INDIC.find((x) => x[2].test(ch))) || null;
+function indicRuns(xml) {
+  if (!INDIC_OWN.test(xml)) return xml;
+  return xml.replace(/<w:r>(?:<w:rPr>((?:(?!<\/w:rPr>)[\s\S])*)<\/w:rPr>)?<w:t xml:space="preserve">([^<]*)<\/w:t><\/w:r>/g, (run, rpr, t) => {
+    if (!INDIC_OWN.test(t)) return run;
+    const segs = [];
+    let cur = '', sc = null;
+    for (const ch of t) {
+      const x = indicOf(ch);
+      if (x && sc && x !== sc) { segs.push([cur, sc]); cur = ''; }
+      if (x) sc = x;
+      cur += ch;
+    }
+    segs.push([cur, sc]);
+    return segs.map(([seg, x]) => '<w:r><w:rPr>' + indicProps(rpr || '', x) + '</w:rPr><w:t xml:space="preserve">' + seg + '</w:t></w:r>').join('');
+  });
+}
+// a run's properties with the font and the language of one of the scripts, each at its place in
+// the order Word's schema gives a run's properties: the fonts after the style, the language last
+function indicProps(rpr, x) {
+  const lang = x[4] + '-IN';
+  if (/<w:rFonts\b[^>]*\/>/.test(rpr)) rpr = rpr.replace(/<w:rFonts\b[^>]*\/>/, (f) => attrSet(f, 'w:cs', INDIC_FONT));
+  else {
+    const st = /^\s*<w:rStyle\b[^>]*\/>/.exec(rpr);
+    const k = st ? st[0].length : 0;
+    rpr = rpr.slice(0, k) + '<w:rFonts w:cs="' + INDIC_FONT + '" />' + rpr.slice(k);
+  }
+  if (/<w:lang\b[^>]*\/>/.test(rpr)) return rpr.replace(/<w:lang\b[^>]*\/>/, (l) => attrSet(l, 'w:bidi', lang));
+  return rpr + '<w:lang w:bidi="' + lang + '" />';
+}
 const attrSet = (tag, name, v) => (new RegExp(' ' + name + '="[^"]*"').test(tag) ? tag.replace(new RegExp(' ' + name + '="[^"]*"'), ' ' + name + '="' + v + '"') : tag.replace(/\s*\/>$/, ' ' + name + '="' + v + '" />'));
 function styled(docx, rtl) {
   const parts = unzip(docx);
@@ -101,7 +140,13 @@ function styled(docx, rtl) {
     if (k >= 0 && !/<w:bidi\b/.test(d.slice(d.lastIndexOf('<w:sectPr'), k))) d = d.slice(0, k) + '<w:bidi />' + d.slice(k);
   }
   if (d.includes('<w:bidi />') && d.includes('<w:tbl>')) d = bidiTables(d);
+  d = indicRuns(d);
   if (d !== d0) { parts.set(dp, d); n++; }
+  for (const name of ['word/footnotes.xml', 'word/comments.xml']) {
+    if (!parts.has(name)) continue;
+    const was = text(parts.get(name)), now = indicRuns(was);
+    if (now !== was) { parts.set(name, now); n++; }
+  }
   let st = text(parts.get(p));
   if (han || arabic) {
     const s0 = st;
@@ -223,15 +268,19 @@ const SYMBOL = {
 const MATHSYM = { '≔': '\\mathrel{:=}', '≕': '\\mathrel{=:}', '≝': '\\overset{\\mathrm{def}}{=}', '≢': '\\not\\equiv ', '⊄': '\\not\\subset ', '⊅': '\\not\\supset ', '∯': '\\oint\\!\\!\\!\\oint ', '∰': '\\oint\\!\\!\\!\\oint\\!\\!\\!\\oint ', '≉': '\\not\\approx ', '∌': '\\not\\ni ', '⟂': '\\perp ', '⩽': '\\leqslant ', '⩾': '\\geqslant ', '\u2212': '-' };
 // The marks that say which way text runs (U+200E, U+200F, U+061C, the embeddings and isolates)
 // go with the other characters above that print nothing: babel orders the words without them.
-// A zero width joiner goes too, except in Arabic script, where it and the non joiner (which
-// pdfLaTeX knows as well) choose the shape of the letters beside them.
-const JOINS = /[\u0600-\u08FF\uFB50-\uFDFF\uFE70-\uFEFC]/;
+// A zero width joiner goes too, except in Arabic script and in India's scripts, where it and
+// the non joiner (which pdfLaTeX knows as well) choose the shape of the letters beside them (in
+// Devanagari whether two consonants join, in Malayalam a letter's final form).
+const JOINS = /[\u0600-\u08FF\uFB50-\uFDFF\uFE70-\uFEFC\u0900-\u0D7F\uA8E0-\uA8FF]/;
 // Characters the fonts of the hosted Rikuy have once the preamble sets the script up
-// (src/scripts.js): Chinese with its punctuation and full width forms, and Arabic.
-const FONTED = { chinese: /[\u2E80-\u2FDF\u3000-\u303F\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFFEF]/, arabic: /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u200C\u200D]/ };
+// (src/scripts.js): Chinese with its punctuation and full width forms, Arabic, and each of
+// India's scripts with the danda and double danda they share (which stand in Devanagari's block).
+const INDIC_SHARED = /[\u0964\u0965\u200C\u200D]/;
+const FONTED = {
+  ...Object.fromEntries(INDIC.map((x) => [x[0], { test: (ch) => x[2].test(ch) || INDIC_SHARED.test(ch) }])), chinese: /[\u2E80-\u2FDF\u3000-\u303F\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFFEF]/, arabic: /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u200C\u200D]/ };
 const HAN_TEXT = /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/;
 const SCRIPTS = [[/[\u3040-\u30FF\u31F0-\u31FF]/, 'Japanese'], [/[\u1100-\u11FF\uAC00-\uD7AF\u3130-\u318F]/, 'Korean'], [/[\u2E80-\u2FDF\u3000-\u303F\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/, 'Chinese or Japanese'],
-  [/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/, 'Arabic'], [/[\u0590-\u05FF\uFB1D-\uFB4F]/, 'Hebrew'], [/[\u0900-\u0DFF]/, 'Indic'], [/[\u0E00-\u0EFF]/, 'Thai or Lao'],
+  [/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/, 'Arabic'], [/[\u0590-\u05FF\uFB1D-\uFB4F]/, 'Hebrew'], ...INDIC.map((x) => [x[2], x[1]]), [/[\u0D80-\u0DFF]/, 'Sinhala'], [/[\u0E00-\u0EFF]/, 'Thai or Lao'],
   [/[\u1E00-\u1EFF\u0180-\u024F]/, 'accented Latin'], [/[\uD800-\uDFFF\u2600-\u27BF\u2B00-\u2BFF\uFE00-\uFE0F]/, 'emoji and pictographs']];
 
 const MARKS_G = /[\uE000-\uE01F]/g;
@@ -814,8 +863,9 @@ export function docxToLatex(P, bytes, name) {
   // pandoc's names for underlined and struck text are soul's, which the page does not draw; ulem's
   // it does
   tex = tex.replace(/\\ul\{/g, '\\uline{').replace(/\\st\{/g, '\\sout{');
-  // Chinese and Arabic: which of them the text is in, and whether it is mostly Arabic and so
-  // runs right to left as a whole (src/scripts.js, which also has the preamble's lines for them)
+  // Chinese, Arabic and India's scripts: which of them the text is in, and whether it is mostly
+  // Arabic and so runs right to left as a whole (src/scripts.js, which also has the preamble's
+  // lines for them)
   const probe = '\\begin{document}\n' + tex + '\n' + abstract;
   const needs = scriptNeeds(probe, [probe, [title, author, date].join('\n')]);
   const arabic = needs.includes('arabic');
@@ -828,7 +878,7 @@ export function docxToLatex(P, bytes, name) {
   const pre = ['\\documentclass' + (cls ? '[' + cls + ']' : '') + '{article}'];
   const geo = geometry(pg);
   if (geo) pre.push(geo);
-  // with those lines the document is XeLaTeX's or LuaLaTeX's, with fonts for the two scripts:
+  // with those lines the document is XeLaTeX's or LuaLaTeX's, with fonts for those scripts:
   // nothing of pdfLaTeX's font set up goes beside them (T1 would take the text off those fonts)
   const uni = needs.length > 0;
   const fonted = (ch) => needs.some((k) => FONTED[k].test(ch));
@@ -885,7 +935,7 @@ export function docxToLatex(P, bytes, name) {
   const notes = [];
   const lost = [];
   if (!tex.trim() && !title) notes.push('The Word file has no text.');
-  // Chinese and Arabic have fonts once they are set up; what else is beside them does not. The
+  // The scripts src/scripts.js sets up have fonts then; what else is beside them does not. The
   // fonts XeLaTeX and LuaLaTeX start with have no Greek or Cyrillic either (pdfLaTeX's do).
   const by = new Map();
   let n = 0;

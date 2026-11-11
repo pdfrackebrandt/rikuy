@@ -23,7 +23,16 @@ it, vowel marks, a tatweel, a Persian word with a zero width non joiner, a joine
 paragraphs aligned to each edge, lists, a table set from the right (w:bidiVisual), text in a w:dir
 wrapper, one paragraph that runs left to right, a footnote and a comment. make_mixed(): an English
 document with Arabic and Chinese phrases, one whole Arabic paragraph, a table of the three, and
-text and font and language names that try to be LaTeX."""
+text and font and language names that try to be LaTeX.
+
+Two are in India's scripts (`hindi`, `indic`; word-hindi.docx, word-indic.docx), which Word
+keeps as complex script runs (w:rFonts w:cs, w:lang w:bidi="hi-IN", bold as w:bCs) cut wherever the
+font changes. make_hindi(): a title, a heading, a sentence in six runs with conjuncts, a nukta,
+vowel signs, an anusvara, a chandrabindu and a visarga, a joiner and a non joiner after a virama,
+danda and double danda, Devanagari digits and English words, a bulleted and a numbered list, a
+table, a footnote and a comment. make_indic(): an English document with a line each of Bengali,
+Tamil, Telugu, Gujarati, Kannada, Malayalam, Gurmukhi and Odia with its own digits, one run that
+holds three scripts, a table, and font and language names that try to be LaTeX."""
 import io, sys, struct, zlib
 from docx import Document
 from docx.shared import Inches
@@ -331,7 +340,80 @@ def make_mixed():
     d.save(buf)
     return buf.getvalue()
 
-MAKERS = {'rich': make_rich, 'chinese': make_chinese, 'arabic': make_arabic, 'mixed': make_mixed}
+# ---- India's scripts ----
+
+# a run of one of them as Word marks it: the complex script font, the language; f: bold, both ways
+cs = lambda lang='hi-IN', f='', font='Mangal': '<w:rFonts w:ascii="%s" w:hAnsi="%s" w:cs="%s"/>%s<w:lang w:bidi="%s"/>' % (font, font, font, f, lang)
+
+def make_hindi():
+    d = Document()
+    xrun(d.add_paragraph(style='Title'), u'भारत की अर्थव्यवस्था', cs())
+    xrun(d.add_heading(level=1), u'परिचय', cs(font='Kokila'))
+    # one sentence in six runs: a nukta (ज़), conjuncts (क्ष, त्र, ज्ञ, श्री), the two dandas
+    p = d.add_paragraph()
+    xrun(p, u'यह दस्तावेज़ ', cs())
+    xrun(p, u'हिन्दी', cs(f=BOLD))
+    xrun(p, u' में लिखा', cs(font='Nirmala UI'))
+    xrun(p, u' गया है। इसमें क्ष, त्र, ज्ञ और श्री जैसे ', '<w:rFonts w:cs="Mangal"/><w:cs/><w:lang w:bidi="hi-IN"/>')
+    commented(p, 1, lambda: xrun(p, u'संयुक्ताक्षर', cs()))
+    xrun(p, u' हैं॥', cs())
+    note_ref(p, 1)
+    # an anusvara, a chandrabindu, a visarga; a joiner and a non joiner after a virama (क्‍ष
+    # shows a half ka, क्‌ष the virama itself); Devanagari digits beside English words and digits
+    p = d.add_paragraph()
+    xrun(p, u'हिंदी में माँ और दुःख; क्\u200dष तथा क्\u200cष। ', cs())
+    xrun(p, 'GDP growth')
+    xrun(p, u' २०२४ में ७.५% रही, ', cs())
+    xrun(p, '2025')
+    xrun(p, u' में ६%।', cs())
+    for t in [u'पहला बिंदु', u'दूसरा बिंदु']: xrun(d.add_paragraph(style='List Bullet'), t, cs())
+    for t in [u'चरण एक', u'चरण दो']: xrun(d.add_paragraph(style='List Number'), t, cs())
+    t = d.add_table(rows=3, cols=2); t.style = 'Table Grid'
+    for r, row in enumerate([(u'देश', u'वृद्धि'), (u'भारत', u'७.२'), (u'नेपाल', '3.9')]):
+        for c, v in enumerate(row): xrun(t.cell(r, c).paragraphs[0], v, cs() if ord(v[0]) > 255 else '')
+    buf = io.BytesIO()
+    d.save(buf)
+    return add_parts(buf.getvalue(), {
+        'word/footnotes.xml': footnotes([('', u'<w:r><w:rPr>%s</w:rPr><w:t xml:space="preserve"> स्रोत: </w:t></w:r><w:r><w:rPr>%s</w:rPr><w:t>विश्व बैंक</w:t></w:r><w:r><w:rPr>%s</w:rPr><w:t>, २०२४।</w:t></w:r>' % (cs(), cs(f=BOLD), cs()))]),
+        'word/comments.xml': ('comments', u'<w:comments %s><w:comment w:id="1" w:author="अनीता"><w:p><w:r><w:rPr>%s</w:rPr><w:t>संदर्भ जोड़ें।</w:t></w:r></w:p></w:comment></w:comments>' % (W, cs()))})
+
+# a line of each of the other eight scripts, with the language Word names for it and a font
+# Windows has for it: a conjunct or two, the script's vowel signs, its own digits
+INDIC_LINES = [
+    ('Bengali', 'bn-IN', 'Vrinda', u'বাংলা: আমি বাংলায় গান গাই, ক্ষমা করবেন। ১২৩'),
+    ('Tamil', 'ta-IN', 'Latha', u'தமிழ்: வணக்கம், மிக்க நன்றி. ௧௨௩'),
+    ('Telugu', 'te-IN', 'Gautami', u'తెలుగు: నమస్కారం, ధన్యవాదాలు. ౧౨౩'),
+    ('Gujarati', 'gu-IN', 'Shruti', u'ગુજરાતી: નમસ્તે, આભાર. ૧૨૩'),
+    ('Kannada', 'kn-IN', 'Tunga', u'ಕನ್ನಡ: ನಮಸ್ಕಾರ, ಧನ್ಯವಾದಗಳು. ೧೨೩'),
+    # (അവന്‍ ends in the older spelling of a chillu: na, virama, joiner)
+    ('Malayalam', 'ml-IN', 'Kartika', u'മലയാളം: നമസ്കാരം, നന്ദി, അവന്\u200d. ൧൨൩'),
+    ('Gurmukhi', 'pa-IN', 'Raavi', u'ਪੰਜਾਬੀ: ਸਤਿ ਸ੍ਰੀ ਅਕਾਲ, ਧੰਨਵਾਦ। ੧੨੩'),
+    ('Odia', 'or-IN', 'Kalinga', u'ଓଡ଼ିଆ: ନମସ୍କାର, ଧନ୍ୟବାଦ। ୧୨୩')]
+
+def make_indic():
+    d = Document()
+    d.add_heading('Languages of India', level=1)
+    for name, lang, font, line in INDIC_LINES:
+        p = d.add_paragraph(name + ': ')
+        head, rest = line.split(': ')
+        xrun(p, head + ':', cs(lang, BOLD, font))
+        xrun(p, ' ' + rest, cs(lang, '', font))
+    # three scripts in one run, as text pasted into Word may be
+    p = d.add_paragraph('Together: ')
+    xrun(p, u'हिन्दी বাংলা தமிழ்', cs())
+    p.add_run(' in one line.')
+    t = d.add_table(rows=3, cols=3); t.style = 'Table Grid'
+    for r, row in enumerate([('Hindi', 'Tamil', 'Telugu'), (u'धन्यवाद', u'நன்றி', u'ధన్యవాదాలు'), (u'१', u'௧', u'౧')]):
+        for c, v in enumerate(row): xrun(t.cell(r, c).paragraphs[0], v, '' if ord(v[0]) < 256 else cs(['hi-IN', 'ta-IN', 'te-IN'][c]))
+    # a stranger's file: font and language names that try to be LaTeX
+    p = d.add_paragraph('Odd names: ')
+    xrun(p, u'नाम', '<w:rFonts w:cs="}\\input{/etc/passwd}"/><w:lang w:bidi="hi-IN}\\babelfont{rm}{Evil}"/>')
+    p.add_run('.')
+    buf = io.BytesIO()
+    d.save(buf)
+    return buf.getvalue()
+
+MAKERS = {'rich': make_rich, 'chinese': make_chinese, 'arabic': make_arabic, 'mixed': make_mixed, 'hindi': make_hindi, 'indic': make_indic}
 
 if __name__ == '__main__':
     out = sys.argv[1] if len(sys.argv) > 1 else 'fixture.docx'
