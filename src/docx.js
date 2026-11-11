@@ -428,6 +428,8 @@ function run(S, r, out, st) {
       case 'w:br': { const t = c.a['w:type']; if (t !== 'page' && t !== 'column') push('\n'); break; }
       case 'w:cr': push('\n'); break;
       case 'w:noBreakHyphen': push('-'); break;
+      // a word with its reading above it (Japanese ruby): the word
+      case 'w:ruby': { const b = kid(c, 'w:rubyBase'); if (b) inline(S, b, out, st); break; }
       case 'w:sym': { const ch = parseInt(c.a['w:char'] || '', 16); if (ch >= 0x20 && ch < 0xd800 && !(ch >= 0xe000 && ch < 0xf900)) push(String.fromCharCode(ch)); break; }
       case 'w:footnoteReference': out.push({ t: 'o', o: { k: 'note', note: c.a['w:id'] } }); break;
       case 'w:endnoteReference': out.push({ t: 'o', o: { k: 'obj', endnote: c.a['w:id'] } }); break;
@@ -646,7 +648,7 @@ function headText(root) {
 
 // parts: unzip()'s. Returns { parts: the map pandoc should read, info }.
 export function premark(parts) {
-  const info = { threads: threads(parts), toc: 0, breaks: 0, colors: new Map(), chars: 0, aligned: 0, rtl: 0, tracked: 0, charts: 0, art: 0, fields: 0, mathcolor: 0, heads: [], cols: [], page: null, sz: 0, endnotes: false, unread: [] };
+  const info = { threads: threads(parts), toc: 0, breaks: 0, colors: new Map(), chars: 0, aligned: 0, rtl: 0, ruby: 0, tracked: 0, charts: 0, art: 0, fields: 0, mathcolor: 0, heads: [], cols: [], page: null, sz: 0, endnotes: false, unread: [] };
   const styles = styleInfo(parts);
   info.sz = styles.sz;
   const out = new Map(parts);
@@ -803,7 +805,19 @@ function inlineFix(C, cs, st) {
   for (const c of cs) {
     if (typeof c === 'string') { out.push(c); continue; }
     switch (c.n) {
-      case 'w:r': runFix(C, c, st); break;
+      case 'w:r': {
+        // a word with its reading above it (w:ruby, in Japanese): pandoc reads neither, so the
+        // word's own runs take the place of the pair and the reading is told as not kept
+        const ruby = kids(c, 'w:ruby');
+        if (ruby.length) {
+          for (const rb of ruby) { const base = kid(rb, 'w:rubyBase'); if (base) out.push(...inlineFix(C, base.c, st)); }
+          c.c = c.c.filter((x) => typeof x === 'string' || x.n !== 'w:ruby');
+          C.info.ruby += ruby.length;
+          C.changed = true;
+        }
+        runFix(C, c, st);
+        break;
+      }
       case 'w:fldSimple': {
         // the short form of a field, which pandoc drops with the text it shows (a caption's
         // number, a cross reference), written as the long form it reads

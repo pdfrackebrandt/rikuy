@@ -120,15 +120,38 @@ const TOK = /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}]|[\p{L}\p{N}\p{M}\u200C\u
 // sign changed in Word is its syllable changed, not half a letter under Review. Nor inside the
 // two halves of a character beyond the basic plane.
 const EXTENDS = /[\p{M}\u200C\u200D]/u;
-const VIRAMA = /[\u094D\u09CD\u0A4D\u0ACD\u0B4D\u0BCD\u0C4D\u0CCD\u0D4D]/;
+const VIRAMA = /[\u094D\u09CD\u0A4D\u0ACD\u0B4D\u0BCD\u0C4D\u0CCD\u0D4D\u0DCA\u1039\u17D2]/;
 function inside(t, p) {
   if (p <= 0 || p >= t.length) return false;
   const c = t[p], b = t[p - 1];
   if (EXTENDS.test(c) || b === '\u200D' || (c >= '\uDC00' && c <= '\uDFFF' && b >= '\uD800' && b <= '\uDBFF')) return true;
+  // Thai's and Lao's vowel am, written after its consonant; a Korean syllable spelt in its
+  // letters (jamo), or a final letter after a whole syllable
+  if (c === '\u0E33' || c === '\u0EB3' || (c >= '\u1160' && c <= '\u11FF' && ((b >= '\u1100' && b <= '\u11FF') || (c >= '\u11A8' && b >= '\uAC00' && b <= '\uD7A3')))) return true;
   return /\p{L}/u.test(c) && (VIRAMA.test(b) || (b === '\u200C' && VIRAMA.test(t[p - 2] || '')));
 }
 const CJK_G = /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}]/gu;
-const toks = (t) => t.match(TOK) || [];
+// Thai, Lao, Khmer and Burmese are written without spaces as well, in words of several letters:
+// where the browser can tell the words (Intl.Segmenter, with its dictionaries) each is one, so a
+// word changed in a Thai sentence is that word's patch; elsewhere each cluster is one.
+const NO_SPACES = /[\u0E00-\u0EFF\u1000-\u109F\u1780-\u17FF]/;
+let segmenter;
+function toks(t) {
+  const list = t.match(TOK) || [];
+  if (!NO_SPACES.test(t)) return list;
+  if (segmenter === undefined) { try { segmenter = new Intl.Segmenter('th', { granularity: 'word' }); } catch (e) { segmenter = null; } }
+  const out = [];
+  for (const x of list) {
+    if (!NO_SPACES.test(x)) { out.push(x); continue; }
+    // the ends of the words, or of the clusters; an end inside a cluster is none
+    const ends = [];
+    if (segmenter) { let p = 0; for (const g of segmenter.segment(x)) ends.push(p += g.segment.length); }
+    else for (let p = 1; p <= x.length; p++) ends.push(p);
+    let from = 0;
+    for (const p of ends) if (p === x.length || !inside(x, p)) { out.push(x.slice(from, p)); from = p; }
+  }
+  return out;
+}
 
 // old text -> new text as hunks { a, b, A, B } (old [a, b), new [A, B)), word granular. Hunks a
 // space or one short word apart are one change, as the Review tab shows them: "keeps writing" to
@@ -150,7 +173,7 @@ export function textHunks(o, n) {
     const L = merged[merged.length - 1];
     const gap = L ? o.slice(L.b, x.a) : null;
     // (a short word: of Chinese or Japanese, where every character is one, at most two)
-    if (L && gap.length < 12 && /^\s*[\p{L}\p{N}\p{M}\u200C\u200D]*\s*$/u.test(gap) && !gap.includes(OBJ) && !/\n\s*\n/.test(gap) && (gap.match(CJK_G) || []).length <= 2) { L.b = x.b; L.B = x.B; continue; }
+    if (L && gap.length < 12 && /^\s*[\p{L}\p{N}\p{M}\u200C\u200D]*\s*$/u.test(gap) && !gap.includes(OBJ) && !/\n\s*\n/.test(gap) && (gap.match(CJK_G) || []).length <= 2 && (!NO_SPACES.test(gap) || toks(gap).filter((w) => /\S/.test(w)).length <= 1)) { L.b = x.b; L.B = x.B; continue; }
     merged.push({ ...x });
   }
   // then trimmed to the characters that differ, so café to cafés adds an s after caf\'e

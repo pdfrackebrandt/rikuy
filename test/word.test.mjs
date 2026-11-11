@@ -9,6 +9,8 @@
 // and section marked as Word wants them (the XML is checked), and comes back the same. India's
 // nine scripts the same way: set up on opening with every mark and joiner kept, each run's font
 // and language written for Word on saving, an edit of one word one small patch.
+// Japanese, Korean, Hebrew, Thai and Sinhala as well: Hebrew right to left as Arabic is, the East
+// Asian font and language of the defaults the document's own, Thai edited by its words.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { buildModel, colorValue } from '../src/model.js';
@@ -388,9 +390,9 @@ await ok('a Word file of what pandoc alone loses: nothing goes without a word, a
   assert.ok(isBalanced(t, 0, t.length));
   // told: in the result and at the top of the source
   const said = r.warnings.join(' ');
-  for (const s of ['Korean: 안녕', '1 chart', 'the header and footer text (“Draft: do not cite”)', '1 Word comment came in', '2 tracked changes in the file were accepted', 'Endnotes are footnotes', 'table of contents is LaTeX', '2 equations typed with a number'])
+  for (const s of ['Armenian: Հայ', '1 chart', 'the header and footer text (“Draft: do not cite”)', '1 Word comment came in', '2 tracked changes in the file were accepted', 'Endnotes are footnotes', 'table of contents is LaTeX', '2 equations typed with a number'])
     assert.ok(said.includes(s), s + '\n' + said);
-  assert.ok(t.startsWith('% Opened from a Word file by Rikuy.\n% - Not kept: 2 characters pdfLaTeX has no font'));
+  assert.ok(t.startsWith('% Opened from a Word file by Rikuy.\n% - Not kept: 3 characters pdfLaTeX has no font'));
   // and the page reads it: a title, the contents, a page break, three floats, no raw source
   const m = buildModel({ files: new Map([['main.tex', t]]), main: 'main.tex' });
   const kinds = m.blocks.flatMap((u) => u.items.map((x) => x.type));
@@ -462,10 +464,10 @@ await ok('bookmarks nothing refers to are not labels: a Rikuy export opened as a
 });
 
 await ok('a document mostly in a script TeX Live has no default font for is set up for XeLaTeX, and says so', () => {
-  const r = open(tiny(wp('연구에 따르면 제도 변화는 경제 성장에 유의미한 영향을 미친다. 본 논문은 페루의 자료를 이용하여 이를 검증하였으며 결과는 견고하다.') + wp('Latin too.')));
+  const r = open(tiny(wp('ქართული ენა ერთ-ერთი უძველესი ენაა მსოფლიოში. იგი საქართველოს სახელმწიფო ენაა და მას საკუთარი დამწერლობა აქვს.') + wp('Latin too.')));
   assert.match(r.tex, /\\usepackage\{fontspec\}/);
   assert.ok(!/fontenc|ctex|babel/.test(r.tex));
-  assert.ok(/^Not kept: a font for \d+ characters \(Korean: /.test(r.warnings[0]), r.warnings[0]);
+  assert.ok(/^Not kept: a font for \d+ characters \(Georgian: /.test(r.warnings[0]), r.warnings[0]);
 });
 
 await ok('the page\'s model: colours by number and by \\definecolor, in text and in formulas; a list and a table in a table cell', () => {
@@ -557,7 +559,7 @@ const preambleOf = (tex) => tex.slice(tex.indexOf('\\documentclass'), tex.indexO
 function setUp(tex, lines) {
   const pre = preambleOf(tex);
   for (const l of lines) assert.ok(pre.split('\n').includes(l), l + '\n' + pre);
-  assert.equal(pre.split('\n').filter((l) => /ctex|[bB]abel|fontspec|fontenc|inputenc|lmodern|textalpha|setmainfont/.test(l)).length, lines.length, pre);
+  assert.equal(pre.split('\n').filter((l) => /ctex|[bB]abel|labelitemi|fontspec|fontenc|inputenc|lmodern|textalpha|setmainfont/.test(l)).length, lines.length, pre);
   assert.deepEqual([...scriptNeeds(tex, [tex])], []);
   assert.equal(addScriptSetup(tex, scriptNeeds(tex, [tex])), null);
 }
@@ -675,9 +677,9 @@ await ok('right to left paragraphs by style and by default, switched off, in scr
   // mostly Arabic, typed without ever setting a paragraph right to left: the document runs right to left, nothing is wrapped
   const plainAr = open(tiny(wp(AR1) + wp(AR2) + wp('Short.'))).tex;
   assert.ok(preambleOf(plainAr).includes(AR_MAIN[0]) && !plainAr.includes('otherlanguage'), plainAr);
-  // Hebrew has no font here: no set up, so nothing turns its paragraph, and its "right" (the left edge) is not flushright
-  const he = open(tiny(eng + p('<w:bidi/><w:jc w:val="right"/>', R('שלום עולם, זהו טקסט.'))));
-  assert.ok(!/babel|otherlanguage|flushright|\\RL/.test(he.tex) && he.tex.includes('\nשלום עולם, זהו טקסט.\n') && /^Not kept: 15 characters pdfLaTeX has no font or name for \(Hebrew: /.test(he.warnings[0]), he.tex + he.warnings[0]);
+  // Syriac has no font here: no set up, so nothing turns its paragraph, and its "right" (the left edge) is not flushright
+  const he = open(tiny(eng + p('<w:bidi/><w:jc w:val="right"/>', R('ܫܠܡܐ ܥܠܡܐ'))));
+  assert.ok(!/babel|otherlanguage|flushright|\\RL/.test(he.tex) && he.tex.includes('\nܫܠܡܐ ܥܠܡܐ\n') && /^Not kept: 8 characters pdfLaTeX has no font or name for \(Syriac: /.test(he.warnings[0]), he.tex + he.warnings[0]);
   // w:bdo, and runs that are right to left with no paragraph that is: text only, in reading order
   const bdo = bodyOf(open(tiny('<w:p><w:r><w:t xml:space="preserve">See </w:t></w:r><w:bdo w:val="rtl">' + R('كلمة') + '</w:bdo><w:r><w:t xml:space="preserve"> and </w:t></w:r><w:dir w:val="ltr"><w:r><w:t>this</w:t></w:r></w:dir><w:r><w:t>.</w:t></w:r></w:p>')).tex);
   assert.ok(bdo.includes('\nSee كلمة and this.\n'), bdo);
@@ -685,8 +687,8 @@ await ok('right to left paragraphs by style and by default, switched off, in scr
   const j = bodyOf(open(tiny(wp('می\u200cخواهم ه\u200d a\u200db \u200fعربي\u200e \u202bمضمن\u202c \u2067معزول\u2069 \u061cانتهى'))).tex);
   assert.ok(j.includes('\nمی\u200cخواهم ه\u200d ab عربي مضمن معزول انتهى\n'), JSON.stringify(j));
   // Chinese beside scripts that still have no font: set up for Chinese, the others listed as before
-  const ja = open(tiny(wp('日本語のテキストです。漢字とかなが混ざります。') + wp('한국어')));
-  assert.ok(preambleOf(ja.tex).includes(CTEX) && /^Not kept: a font for 18 characters \(Japanese: のテキストですとかながざ; Korean: 한국어\): the fonts the document is set up with have none/.test(ja.warnings[0]), ja.warnings[0]);
+  const ja = open(tiny(wp('中文文本，研究表明。') + wp('ខ្មែរ ລາວ')));
+  assert.ok(preambleOf(ja.tex).includes(CTEX) && /^Not kept: a font for 8 characters \(Khmer: ខ្មែរ; Lao: ລາວ\): the fonts the document is set up with have none/.test(ja.warnings[0]), ja.warnings[0]);
   // Greek and Cyrillic have fonts under pdfLaTeX only: beside Chinese they are listed too, and no pdfLaTeX font line is written
   const gr = open(tiny(wp('中文 Ελληνικά Привет')));
   assert.ok(preambleOf(gr.tex).includes(CTEX) && !/fontenc|textalpha|lmodern|T2A/.test(gr.tex) && /^Not kept: a font for 14 characters \(Greek or Cyrillic\)/.test(gr.warnings[0]), gr.tex);
@@ -1058,12 +1060,12 @@ await ok('India\'s scripts beside others: with Arabic and Chinese, with scripts 
   setUp(three.tex, linesFor('chinese', 'arabic', 'devanagari'));
   assert.ok(preambleOf(three.tex).includes('bidi=basic') && bodyOf(three.tex).includes('\nEnglish with हिन्दी शब्द, مرحبا بالعالم and 中文 in one paragraph'), three.tex);
   assert.deepEqual(three.warnings, []);
-  // Sinhala, Thai and Hebrew still have no font: listed as before, beside a script that is set up
-  const mix = open(tiny(wp('हिन्दी සිංහල ไทย עברית')));
-  assert.ok(preambleOf(mix.tex).includes(HI[0]) && /^Not kept: a font for 13 characters \(Sinhala: සිංහල; Thai or Lao: ไทย; Hebrew: עברית\): the fonts the document is set up with have none/.test(mix.warnings[0]), mix.warnings[0]);
+  // Khmer, Lao and Georgian still have no font: listed as before, beside a script that is set up
+  const mix = open(tiny(wp('हिन्दी ខ្មែរ ລາວ ქართული')));
+  assert.ok(preambleOf(mix.tex).includes(HI[0]) && /^Not kept: a font for 15 characters \(Khmer: ខ្មែរ; Lao: ລາວ; Georgian: ქართული\): the fonts the document is set up with have none/.test(mix.warnings[0]), mix.warnings[0]);
   // and alone, as before
-  const si = open(tiny(wp('Word සිංහල')));
-  assert.ok(!/babel/.test(si.tex) && /^Not kept: 5 characters pdfLaTeX has no font or name for \(Sinhala: සිංහල\)/.test(si.warnings[0]), si.warnings[0]);
+  const si = open(tiny(wp('Word ລາວ')));
+  assert.ok(!/babel/.test(si.tex) && /^Not kept: 3 characters pdfLaTeX has no font or name for \(Lao: ລາວ\)/.test(si.warnings[0]), si.warnings[0]);
   // digits with no letter of their script are not text in it: nothing is set up, and they are listed
   const dg = open(tiny(wp('Total १२३ and ৪৫')));
   assert.ok(!/babel/.test(dg.tex) && /^Not kept: 5 characters pdfLaTeX has no font or name for \(Devanagari: १२३; Bengali: ৪৫\)/.test(dg.warnings[0]), dg.warnings[0]);
@@ -1198,6 +1200,226 @@ await ok('a span with two scripts in it comes back from Word as one span: code, 
   const st = { 'word/styles.xml': '<w:styles ' + NSW + '><w:style w:type="character" w:styleId="VerbatimChar"><w:name w:val="Verbatim Char"/></w:style></w:styles>' };
   const cut = bodyOf(open(tiny('<w:p><w:r><w:t xml:space="preserve">See </w:t></w:r>' + V('print(', '<w:rFonts w:ascii="Consolas"/>') + V('"नमस्ते', '<w:rFonts w:cs="Mangal"/><w:lang w:bidi="hi-IN"/>') + V(' வணக்கம்"', '<w:rFonts w:cs="Latha"/><w:lang w:bidi="ta-IN"/>') + V(')') + V(' end', '<w:b/>') + '<w:r><w:t>.</w:t></w:r></w:p>', st)).tex);
   assert.ok(cut.includes('\nSee \\texttt{print("नमस्ते வணக்கம்") end}.\n'), cut);
+});
+
+// ---- Japanese, Korean, Hebrew, Thai and Sinhala ------------------------------------------------
+
+const needsOf = (ids, flags = {}) => Object.assign(ids, { arabicMain: false, hebrewMain: false }, flags);
+const JA = ['\\babelprovide[import=ja, onchar=ids fonts]{japanese}', '\\babelfont[japanese]{rm}{Harano Aji Mincho}', '\\babelfont[japanese]{sf}{Harano Aji Gothic}', '\\babelfont[japanese]{tt}{Harano Aji Gothic}'];
+// the properties of the run that holds these words
+const propsOf = (xml, words) => { const m = new RegExp('<w:r>(?:<w:rPr>((?:(?!</w:rPr>)[\\s\\S])*)</w:rPr>)?<w:t xml:space="preserve">[^<]*' + words + '[^<]*</w:t></w:r>').exec(bare(xml)); assert.ok(m, words); return m[1] || ''; };
+
+await ok('a Japanese Word file opens set up for Japanese: kana and kanji joined across runs, full width punctuation, a ruby\'s word kept and its reading told', () => {
+  const r = fixture('word-japanese.docx');
+  const t = r.tex, b = bodyOf(t);
+  assert.deepEqual(scriptLines(needsOf(['japanese']), ''), [INDIC_BABEL, ...JA]);
+  setUp(t, [INDIC_BABEL, ...JA]);
+  assert.ok(t.includes('\n\\title{日本の経済成長}\n'));
+  for (const s of ['\\section{はじめに}',
+    // seven runs of three fonts and a ruby: one sentence, no space in it
+    '\n本稿では、\\textbf{制度}が経済成長に与える影響を\\emph{データ}で検証する。\\footnote{出典：\\textbf{世界銀行}。}\n',
+    '\n「引用」と『書名』、コーヒー・ｶﾀｶﾅ…全角\u3000空格！ＡＢＣ１２３。\n',
+    '\\item\n  第一に、データ\n\\item\n  第二に、方法\n\\end{itemize}', '国 & 成長率 \\\\\n\\midrule\n日本 & 1.2 \\\\\nペルー & 3.1 \\\\', '\nThe model (モデル) uses GDP データ from 2020.\n'])
+    assert.ok(b.includes(s), s + '\n' + b);
+  assert.ok(!t.includes('けいざい') && !/ctex|chinese|fontspec|MS Mincho|ja-JP/.test(t), t);
+  assert.deepEqual(r.warnings, ['Not kept: the readings set above 1 word (ruby); the words are kept.']);
+  assert.ok(isBalanced(t, 0, t.length) && !/[\uE000-\uE01F]/.test(t));
+});
+
+await ok('a Korean Word file opens set up for Korean: words with their spaces, a syllable spelt in its letters, hanja', () => {
+  const r = fixture('word-korean.docx');
+  const t = r.tex, b = bodyOf(t);
+  // its hanja are set by the Chinese lines: a Korean font has few thousand of them, and with
+  // two such scripts each keeps to its serif
+  setUp(t, scriptLines(needsOf(['chinese', 'korean']), ''));
+  assert.ok(/Babel\.script_blocks\.Kore/.test(preambleOf(t)) && preambleOf(t).includes('\\babelfont[chinese]{rm}{FandolSong}') && !/FandolHei|NanumGothic/.test(preambleOf(t)));
+  assert.ok(preambleOf(t).includes('\\babelprovide[import=ko, onchar=ids fonts]{korean}\n\\babelfont[korean]{rm}{NanumMyeongjo}\n') && t.includes('\n\\title{한국의 경제 성장}\n'));
+  for (const s of ['\\section{서론}', '\n본 논문은 \\textbf{제도}가 경제 성장(經濟成長)에 미치는 영향을 분석한다. \u1112\u119e\u11ab글 2024년 3.5\\%.\\footnote{출처: 세계은행.}\n',
+    '\\item\n  첫째, 자료\n\\item\n  둘째, 방법\n\\end{enumerate}', '나라 & 성장률 \\\\\n\\midrule\n한국 & 2.6 \\\\\n페루 & 3.1 \\\\', '\nThe model (모형) uses GDP data.\n'])
+    assert.ok(b.includes(s), s + '\n' + b);
+  assert.ok(!/ctex|Batang|ko-KR/.test(t));
+  assert.deepEqual(r.warnings, []);
+});
+
+await ok('a Hebrew Word file opens as a right to left document: points and cantillation marks kept, text in reading order, its English paragraph turned', () => {
+  const r = fixture('word-hebrew.docx');
+  const t = r.tex, b = bodyOf(t);
+  const lines = scriptLines(needsOf(['hebrew'], { hebrewMain: true }), '');
+  assert.deepEqual(lines.slice(0, 3), [BABEL, '\\babelprovide[import=he, main]{hebrew}', '\\babelfont{rm}[Renderer=Harfbuzz]{Hadasim CLM}']);
+  setUp(t, lines);
+  assert.equal(rtlDocument(t), true);
+  assert.ok(t.includes('\n\\title{צמיחה ומוסדות}\n'));
+  for (const s of ['\\section{מבוא}', '\nאנו חוקרים את \\textbf{הצמיחה} במוסדות חלשים, בשיעור של 5\\% בשנת 2024; האם זה נכון?\\footnote{נתוני הבנק העולמי, 2024.}\n',
+    // shin with its dot and qamats, holam; a tipcha and a munach among the points; the maqaf and the geresh; the direction marks gone
+    '\n\u05e9\u05b8\u05c1\u05dc\u05d5\u05b9\u05dd \u05e2\u05d5\u05b9\u05dc\u05b8\u05dd, \u05d1\u05b0\u05bc\u05e8\u05b5\u05d0\u05e9\u05b4\u05c1\u0596\u05d9\u05ea \u05d1\u05b8\u05bc\u05e8\u05b8\u05a3\u05d0 ועוד: בית\u05beספר, ג\u05f3ירפה, World Bank (GDP) גם.\n',
+    // "right" in a right to left paragraph is its far edge, flushright's there
+    '\n\\begin{flushright}\nיישור לקצה.\n\\end{flushright}\n', '\\item\n  התוצאה הראשונה\n\\item\n  התוצאה השנייה\n\\end{itemize}',
+    'מדינה & צמיחה \\\\\n\\midrule\nפרו & 3.1 \\\\\nישראל & 2.4 \\\\', '\n\\begin{otherlanguage}{english}\nAn English paragraph in the Hebrew document.\n\\end{otherlanguage}\n'])
+    assert.ok(b.includes(s), s + '\n' + b);
+  assert.equal((b.match(/otherlanguage/g) || []).length, 2);
+  assert.ok(!/\\RL|arabic|Amiri|David|he-IL|[\u200e\u200f]/.test(t), t);
+  assert.deepEqual(r.warnings, []);
+});
+
+await ok('an English Word file with a line each of Thai, Sinhala, Hebrew, Japanese and Korean: all five set up, the Hebrew paragraph in its own environment, nothing of the file\'s in the preamble', () => {
+  const r = fixture('word-scripts.docx');
+  const t = r.tex, b = bodyOf(t);
+  const lines = scriptLines(needsOf(['japanese', 'korean', 'hebrew', 'thai', 'sinhala']), '');
+  assert.equal(lines.length, 23);  // babel's, four a script, the dandas' and joiners', and Korean giving up Chinese characters
+  setUp(t, lines);
+  assert.equal(rtlDocument(t), false);
+  assert.deepEqual(preambleOf(t).trim().split('\n').map((l) => l.replace(/^\\usepackage\[letterpaper.*$/, 'GEOMETRY')), ['\\documentclass[11pt]{article}', 'GEOMETRY', ...lines, '\\usepackage{amsmath,amssymb}', '\\usepackage{booktabs}']);
+  for (const s of [
+    // Thai has no space between its words and none comes between its runs; tone marks and digits as they are
+    'Thai: \\textbf{ภาษาไทย}เป็นภาษาราชการของประเทศไทย น\u0e49\u0e33ด\u0e37\u0e48ม ๑๒๓',
+    // the joiner in sri stays
+    'Sinhala: \\textbf{සිංහල} ආයුබෝවන්, ස්තුතියි. \u0dc1\u0dca\u200d\u0dbb\u0dd3 ලංකා',
+    'Hebrew: שלום עולם means hello, world.', '\\begin{otherlanguage}{hebrew}\nזוהי פסקה שלמה בעברית בתוך מסמך באנגלית.\n\\end{otherlanguage}',
+    'Japanese: 日本語のテキストです。', 'Korean: 한국어 문장입니다.', 'ขอบคุณ & ස්තුතියි & תודה & ありがとう & 감사합니다 \\\\',
+    'Type \\textbackslash babelprovide{[}main{]}\\{hebrew\\} or \\textbackslash input\\{/etc/passwd\\}: ไทย.'])
+    assert.ok(b.includes('\n' + s + '\n'), s + '\n' + b);
+  assert.ok(!/\\input|\\write|Evil|th-TH|ja-JP|Angsana|Iskoola|David/.test(t.replace(/\\textbackslash input/g, '')), t);
+  assert.deepEqual(r.warnings, []);
+});
+
+await ok('the five scripts beside others: Arabic and Hebrew paragraphs each in their own environment, kana beside Chinese, a ruby in a stranger\'s file, scripts that still have no font', () => {
+  const R = (t, rpr = '<w:rtl/>') => '<w:r><w:rPr>' + rpr + '</w:rPr><w:t xml:space="preserve">' + t + '</w:t></w:r>';
+  const p = (ppr, runs) => '<w:p><w:pPr>' + ppr + '</w:pPr>' + runs + '</w:p>';
+  const eng = wp('An English paragraph that is long enough to make the document one that runs left to right as a whole, whatever else it holds.');
+  // a right to left group is Hebrew's or Arabic's by its letters
+  const two = open(tiny(eng + p('<w:bidi/>', R('זוהי פסקה בעברית.')) + p('<w:bidi/>', R('ועוד אחת, עם كلمة.')) + eng + p('<w:bidi/>', R('هذه فقرة عربية.')) + eng));
+  assert.ok(bodyOf(two.tex).includes('\n\\begin{otherlanguage}{hebrew}\nזוהי פסקה בעברית.\n\nועוד אחת, עם كلمة.\n\\end{otherlanguage}\n') && bodyOf(two.tex).includes('\n\\begin{otherlanguage}{arabic}\nهذه فقرة عربية.\n\\end{otherlanguage}\n'), two.tex);
+  setUp(two.tex, scriptLines(needsOf(['arabic', 'hebrew']), ''));
+  // mostly Hebrew, typed without setting a paragraph right to left: a Hebrew document, nothing wrapped
+  const plainHe = open(tiny(wp('זוהי פסקה ראשונה בעברית במסמך.') + wp('Short.')));
+  assert.ok(preambleOf(plainHe.tex).includes('\\babelprovide[import=he, main]{hebrew}') && !plainHe.tex.includes('otherlanguage'), plainHe.tex);
+  // Chinese characters beside kana are Japan's: one set up, no ctex; beside hangul Korea's
+  const jz = open(tiny(wp('漢字とかなの文章です。') + wp('中文文本')));
+  setUp(jz.tex, [INDIC_BABEL, ...JA]);
+  assert.deepEqual(jz.warnings, []);
+  // a ruby: the word stays in its sentence, the reading is told; with no ruby nothing is said
+  const rb = open(tiny('<w:p><w:r><w:t>東京の</w:t></w:r><w:r><w:ruby><w:rubyPr/><w:rt><w:r><w:t>とうきょう</w:t></w:r></w:rt><w:rubyBase><w:r><w:rPr><w:b/></w:rPr><w:t>東京</w:t></w:r></w:rubyBase></w:ruby></w:r><w:r><w:t>です \\input{x}。</w:t></w:r></w:p>'));
+  assert.ok(bodyOf(rb.tex).includes('\n東京の\\textbf{東京}です \\textbackslash input\\{x\\}。\n') && !rb.tex.includes('とうきょう') && rb.warnings[0] === 'Not kept: the readings set above 1 word (ruby); the words are kept.', rb.tex);
+  // Thai digits alone are no Thai text; Khmer, Lao, Tibetan, Georgian, Armenian and Ethiopic have no font and are named
+  const rest = open(tiny(wp('Total ๑๒๓ ខ្មែរ ລາວ བོད ქართული Հայ አማርኛ')));
+  assert.ok(!/babel/.test(rest.tex) && /^Not kept: 28 characters pdfLaTeX has no font or name for \(Thai: ๑๒๓; Khmer: ខ្មែរ; Lao: ລາວ; Tibetan: བོད; Georgian: ქართული; Armenian: Հայ; Ethiopic: አማርኛ\)/.test(rest.warnings[0]), rest.warnings[0]);
+  // a joiner stays in Sinhala and goes between Latin letters; Thai's zero width space goes as before
+  const j = open(tiny(wp('\u0dc1\u0dca\u200d\u0dbb\u0dd3 a\u200db ภาษา\u200bไทย')));
+  assert.ok(bodyOf(j.tex).includes('\n\u0dc1\u0dca\u200d\u0dbb\u0dd3 ab ภาษาไทย\n'), JSON.stringify(bodyOf(j.tex)));
+});
+
+await ok('to Word: Hebrew runs are right to left with their font and language, Thai and Sinhala have theirs, Japanese and Korean the East Asian ones; the defaults are the document\'s', () => {
+  const pre = scriptLines(needsOf(['arabic', 'japanese', 'korean', 'hebrew', 'thai', 'sinhala']), '').join('\n') + '\n';
+  const src = '\\documentclass{article}\n' + pre + '\\begin{document}\n'
+    + 'English עברית here, مرحبا too, ไทย and සිංහල, 日本語のテキスト and 한국어 문장.\\footnote{הערה ו ไทย.}\n\n'
+    + '\\textbf{עברית} \\texttt{ไทย} \\emph{かなです} \\textbf{한글} \\textbf{සිංහල}.\n\n'
+    + '\\begin{otherlanguage}{hebrew}\nפסקה בעברית עם 12.\n\\end{otherlanguage}\n\\end{document}\n';
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  assert.equal(E.lost, 0);
+  const { d, st, se, fn } = exported(E);
+  // Hebrew beside Arabic: the defaults are Arabic's, so the Hebrew run names its own; both are right to left
+  const HE = '<w:rFonts w:cs="Times New Roman" />', HE_LANG = '<w:lang w:bidi="he-IL" />';
+  assert.equal(propsOf(d, 'עברית'), HE + RTL + HE_LANG);
+  assert.equal(propsOf(d, 'مرحبا'), RTL);
+  assert.equal(propsOf(d, 'פסקה בעברית עם 12'), HE + RTL + HE_LANG);
+  assert.ok(bare(d).includes('<w:pPr><w:pStyle w:val="BodyText" /><w:bidi /></w:pPr>' + run('פסקה בעברית עם 12.', HE + RTL + HE_LANG)), d);
+  // Thai and Sinhala: complex scripts set left to right, each its own font
+  assert.ok(/^<w:rFonts w:cs="Leelawadee UI" \/><w:lang w:bidi="th-TH" \/>$/.test(propsOf(d, 'ไทย and ')), propsOf(d, 'ไทย and '));
+  assert.ok(/^<w:rFonts (w:hint="eastAsia" )?w:cs="Nirmala UI" \/><w:lang w:bidi="si-LK" \/>$/.test(propsOf(d, 'සිංහල, ')), propsOf(d, 'සිංහල, '));
+  // both Japan's and Korea's set up, more kana than hangul: the defaults are Japanese, hangul names Korean on its runs
+  assert.equal(defaults(st), '<w:rPrDefault> <w:rPr> <w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:eastAsia="Yu Mincho" w:cs="Amiri" /> <w:sz w:val="24" /> <w:szCs w:val="24" /> <w:lang w:bidi="ar-SA" w:eastAsia="ja-JP" w:val="en-US" /> </w:rPr> </w:rPrDefault>');
+  assert.match(se, /<w:themeFontLang w:val="en-US" w:eastAsia="ja-JP" w:bidi="ar-SA" \/>/);
+  assert.ok(!/w:eastAsia="/.test(propsOf(d, '日本語のテキスト')) && /w:eastAsia="Malgun Gothic"/.test(propsOf(d, '한국어 문장')) && /<w:lang w:eastAsia="ko-KR" \/>$/.test(propsOf(d, '한국어 문장')), propsOf(d, '한국어 문장'));
+  // bold, code and italic: the font after the style, the direction before the language
+  assert.ok(bare(d).includes(run('עברית', HE + '<w:b /><w:bCs />' + RTL + HE_LANG) + run(' ') + run('ไทย', '<w:rStyle w:val="VerbatimChar" /><w:rFonts w:cs="Leelawadee UI" /><w:lang w:bidi="th-TH" />')), d);
+  assert.ok(/<w:i \/><w:iCs \/><\/w:rPr><w:t xml:space="preserve">かなです</.test(bare(d)) && /w:eastAsia="Malgun Gothic" \/><w:b \/><w:bCs \/><w:lang w:eastAsia="ko-KR" \/><\/w:rPr><w:t xml:space="preserve">한글</.test(bare(d)) && bare(d).includes(run('සිංහල', NIRMALA + '<w:b /><w:bCs />' + langOf('si-LK'))), d);
+  assert.ok(bare(fn).includes(run('הערה ו', HE + RTL + HE_LANG)) && /<w:rFonts w:cs="Leelawadee UI" \/><w:lang w:bidi="th-TH" \/><\/w:rPr><w:t xml:space="preserve">[^<]*ไทย/.test(bare(fn)), fn.slice(-600));
+  assert.ok(rprInOrder(d) > 10 && rprInOrder(fn) >= 2);
+  for (const part of [d, st, se, fn]) parseXml(part, undefined, true);
+  const words = textOf(d);
+  for (const w of ['babelprovide', 'babelfont', 'Noto', 'Harano', 'Nanum', 'Harfbuzz', 'onchar', 'hebrew', 'directlua']) assert.ok(!words.includes(w), w);
+  assert.equal(importInto(E.docx, files).files.size, 0);
+
+  // a Hebrew document: right to left as a whole, the defaults Hebrew's, so its runs need say only their direction
+  const hsrc = '\\documentclass{article}\n' + scriptLines(needsOf(['hebrew'], { hebrewMain: true }), '').join('\n') + '\n\\title{כותרת}\n\\begin{document}\n\\maketitle\n\\section{מבוא}\nזוהי פסקה בעברית with English ו־2024.\n\n'
+    + '\\begin{otherlanguage}{english}\nAn English paragraph.\n\\end{otherlanguage}\n\n\\begin{tabular}{ll}\nא & ב \\\\\n\\end{tabular}\n\\end{document}\n';
+  assert.equal(rtlDocument(hsrc), true);
+  const hfiles = new Map([['main.tex', hsrc]]);
+  const HEx = exportFiles(hfiles);
+  const H = exported(HEx);
+  const hp = paras(H.d).map(bare);
+  assert.deepEqual(hp.filter((x) => !/^\s*<w:pPr>(?:(?!<\/w:pPr>)[\s\S])*<w:bidi \/>/.test(x)).map(textOf), ['An English paragraph.']);
+  assert.ok(hp.includes('<w:pPr><w:pStyle w:val="BodyText" /><w:bidi /></w:pPr>' + run('זוהי פסקה בעברית ', RTL) + run('with English') + run(' ו־2024.', RTL)), H.d);
+  assert.match(H.d, /<w:tblStyle w:val="Table" \/><w:bidiVisual \/>/);
+  assert.match(H.d, /<w:bidi \/><\/w:sectPr>/);
+  assert.equal(defaults(H.st), '<w:rPrDefault> <w:rPr> <w:rFonts w:asciiTheme="minorHAnsi" w:eastAsiaTheme="minorEastAsia" w:hAnsiTheme="minorHAnsi" w:cs="Times New Roman" /> <w:sz w:val="24" /> <w:szCs w:val="24" /> <w:lang w:bidi="he-IL" w:eastAsia="zh-CN" w:val="en-US" /> </w:rPr> </w:rPrDefault>');
+  assert.match(H.se, /<w:themeFontLang w:val="en-US" w:bidi="he-IL" \/>/);
+  assert.ok(!/Amiri|ar-SA|w:cs="Times New Roman" \/><w:rtl/.test(H.d + H.st));
+  assert.equal(importInto(HEx.docx, hfiles).files.size, 0);
+
+  // the East Asian language of the defaults is the one the document sets up
+  const eaOf = (preamble, body) => { const X = exported(exportFiles(new Map([['main.tex', '\\documentclass{article}\n' + preamble + '\n\\begin{document}\n' + body + '\n\\end{document}\n']]))); return [(/w:eastAsia="([^"]*)"/.exec(defaults(X.st).split('<w:lang')[0]) || [])[1], (/<w:lang[^>]* w:eastAsia="([^"]*)"/.exec(defaults(X.st)) || [])[1], X.d]; };
+  const [jf, jl, jd] = eaOf([INDIC_BABEL, ...JA].join('\n'), '日本語のテキストです。漢字だけ：経済成長。');
+  assert.deepEqual([jf, jl], ['Yu Mincho', 'ja-JP']);
+  assert.ok(!/w:eastAsia="/.test(jd) && !/w:rtl|w:bidi \/>/.test(jd));
+  assert.deepEqual(eaOf(scriptLines(needsOf(['korean']), '').join('\n'), '한국어 문장입니다. 經濟成長.').slice(0, 2), ['Malgun Gothic', 'ko-KR']);
+  // set up for Japanese, the text all kanji: still Japanese
+  assert.deepEqual(eaOf([INDIC_BABEL, ...JA].join('\n'), '経済成長').slice(0, 2), ['Yu Mincho', 'ja-JP']);
+  // a Chinese document with a Japanese and a Korean line: the defaults stay Chinese, the two lines name their own
+  const [cf, cl, cd] = eaOf(CTEX, '中文文本，研究表明。\n\n日本語のテキストです。\n\n한국어 문장입니다.');
+  assert.deepEqual([cf, cl], ['SimSun', 'zh-CN']);
+  assert.ok(/w:eastAsia="Yu Mincho" \/><w:lang w:eastAsia="ja-JP" \/>$/.test(propsOf(cd, '日本語のテキスト')) && /w:eastAsia="Malgun Gothic" \/><w:lang w:eastAsia="ko-KR" \/>$/.test(propsOf(cd, '한국어')) && !/w:eastAsia="/.test(propsOf(cd, '中文文本')), cd);
+  assert.ok(rprInOrder(cd) >= 3);
+});
+
+await ok('a round trip through Word and back gives the same body for the Japanese, Korean, Hebrew and five script files', () => {
+  for (const name of ['word-japanese.docx', 'word-korean.docx', 'word-hebrew.docx', 'word-scripts.docx']) {
+    const t1 = fixture(name).tex;
+    const E1 = exportFiles(new Map([['main.tex', t1]]));
+    assert.equal(E1.lost, 0, name);
+    const r2 = open(E1.docx);
+    assert.equal(bodyOf(r2.tex).replace(/\\tightlist\n/g, ''), bodyOf(t1), name);
+    assert.deepEqual(preambleOf(r2.tex).split('\n').filter((l) => /[bB]abel/.test(l)), preambleOf(t1).split('\n').filter((l) => /[bB]abel/.test(l)), name);
+    const r3 = open(exportFiles(new Map([['main.tex', r2.tex]])).docx);
+    assert.equal(bodyOf(r3.tex), bodyOf(r2.tex), name);
+    assert.equal(importInto(E1.docx, new Map([['main.tex', t1]])).files.size, 0, name);
+  }
+});
+
+await ok('a coauthor\'s edit in Japanese, Thai, Korean, Hebrew or Sinhala is a small patch: Thai by its words, kana by character, never half a cluster', async () => {
+  // Thai has no spaces: two words changed at the ends of a sentence are two changes, each its word's
+  assert.deepEqual(textHunks('ภาษาไทยเป็นภาษาราชการของประเทศไทย', 'ภาษาลาวเป็นภาษาราชการของประเทศลาว'), [{ a: 4, b: 7, A: 4, B: 7 }, { a: 30, b: 33, A: 30, B: 33 }]);
+  assert.deepEqual(textHunks('ภาษาไทยเป็นภาษาราชการของประเทศไทย', 'ภาษาไทยเป็นภาษาประจำชาติของประเทศไทย'), [{ a: 15, b: 21, A: 15, B: 24 }]);
+  // a vowel changed under a tone mark is its consonant's cluster changed; sara am stays with its consonant
+  assert.deepEqual(textHunks('น\u0e49\u0e33ด\u0e37\u0e48ม', 'น\u0e49\u0e33ด\u0e34\u0e48ม'), [{ a: 3, b: 6, A: 3, B: 6 }]);
+  assert.deepEqual(textHunks('ทำ', 'ทา'), [{ a: 0, b: 2, A: 0, B: 2 }]);
+  // kana and kanji by character; Korean and Hebrew by their words; a point added is its letter changed
+  assert.deepEqual(textHunks('日本語のテキストです', '日本語の文章です'), [{ a: 4, b: 8, A: 4, B: 6 }]);
+  assert.deepEqual(textHunks('한국어 문장입니다', '한국어 문서입니다'), [{ a: 5, b: 6, A: 5, B: 6 }]);
+  assert.deepEqual(textHunks('\u1112\u119e\u11ab글', '\u1112\u1161\u11ab글'), [{ a: 0, b: 3, A: 0, B: 3 }]);
+  assert.deepEqual(textHunks('שלום עולם', 'שלום עו\u05b9ל\u05b8ם'), [{ a: 6, b: 8, A: 6, B: 10 }]);
+  // Sinhala's conjunct with its joiner is one cluster
+  assert.deepEqual(textHunks('\u0dc1\u0dca\u200d\u0dbb\u0dd3 ලංකා', '\u0dc1\u0dca\u200d\u0dbb\u0dcf ලංකා'), [{ a: 0, b: 5, A: 0, B: 5 }]);
+  const pre = scriptLines(needsOf(['japanese', 'korean', 'hebrew', 'thai', 'sinhala']), '').join('\n') + '\n';
+  const src = doc('ภาษาไทยเป็น\\textbf{ภาษาราชการ}ของประเทศไทย\n\n日本語の\\emph{テキスト}です。한국어 문장입니다.\n\nA phrase, \\foreignlanguage{hebrew}{שלום עולם}, and \u0dc1\u0dca\u200d\u0dbb\u0dd3 ලංකා.\\footnote{出典：世界銀行。}\n\nLast.\n', pre);
+  await roundTrip(src, (d) => d, src);
+  const p1 = await roundTrip(src, rep('ของประเทศไทย', 'ของประเทศลาว'), src.replace('ของประเทศไทย', 'ของประเทศลาว'));
+  assert.deepEqual(p1.applied.map((e) => [src.slice(e.s, e.e), e.t]), [['ไทย', 'ลาว']]);
+  const p2 = await roundTrip(src, (d) => rep('ภาษาราชการ', 'ภาษาทางการ')(rep('テキスト', 'テクスト')(rep('문장입니다', '문서입니다')(rep('שלום עולם', 'שלום רב')(rep('ලංකා', 'ලංකාව')(d))))),
+    src.replace('ภาษาราชการ', 'ภาษาทางการ').replace('テキスト', 'テクスト').replace('문장입니다', '문서입니다').replace('שלום עולם', 'שלום רב').replace('ලංකා', 'ලංකාව'));
+  assert.equal(p2.stats.applied, 5);
+  assert.equal(p2.stats.conflicts + p2.stats.skipped, 0);
+  assert.ok(p2.applied.every((e) => src.slice(e.s, e.e).length <= 4 && e.t.length <= 4), JSON.stringify(p2.applied.map((e) => [src.slice(e.s, e.e), e.t])));
+  // Hebrew typed in Word with a point, a maqaf and characters LaTeX reads
+  await roundTrip(src, rep('שלום עולם', 'שלום עו\u05b9לם, בית\u05beספר & 50%'), src.replace('שלום עולם', 'שלום עו\u05b9לם, בית\u05beספר \\& 50\\%'));
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  assert.equal(importInto(edit(E.docx, rep('世界銀行', '日本銀行'), 'word/footnotes.xml'), files).files.get('main.tex'), src.replace('世界銀行', '日本銀行'));
+  // a word with a ruby added over it in Word reads as the word: nothing changes
+  const withRuby = edit(E.docx, (d) => d.replace(/<w:r>((?:<w:rPr>(?:(?!<\/w:rPr>)[\s\S])*<\/w:rPr>)?)<w:t xml:space="preserve">日本語の<\/w:t><\/w:r>/, (m, rpr) => '<w:r><w:ruby><w:rubyPr/><w:rt><w:r><w:t>にほんご</w:t></w:r></w:rt><w:rubyBase><w:r>' + rpr + '<w:t>日本語</w:t></w:r></w:rubyBase></w:ruby></w:r><w:r>' + rpr + '<w:t>の</w:t></w:r>'));
+  assert.notEqual(withRuby.length, E.docx.length);
+  assert.equal(importInto(withRuby, files).files.size, 0);
 });
 
 console.log('word: ' + n + ' groups of checks passed');

@@ -25,12 +25,34 @@
      are, a Hei for sans serif, a Fang Song for typewriter text. They come after every family the
      stacks had, the generic one too, so no Latin letter, digit or sign is drawn by another font
      than before. */
-  --font-ar: Amiri, "Noto Naskh Arabic", "Traditional Arabic", "Geeza Pro", "Arabic Typesetting", "Scheherazade New", "Sakkal Majalla", "Droid Arabic Naskh", "Times New Roman";
+  --font-ar: Amiri, "Noto Naskh Arabic", "Traditional Arabic", "Geeza Pro", "Arabic Typesetting", "Scheherazade New", "Sakkal Majalla", "Droid Arabic Naskh";
   --font-ar-sf: "Noto Sans Arabic", "Geeza Pro", "Segoe UI", Tahoma, "Droid Arabic Kufi", "DejaVu Sans";
   --font-ar-tt: "Courier New", "DejaVu Sans Mono", "Noto Sans Arabic";
-  --font-cjk: "Paper CJK", FandolSong, "Songti SC", STSong, SimSun, NSimSun, "Noto Serif CJK SC", "Source Han Serif SC", "Source Han Serif CN", "Songti TC", PMingLiU, MingLiU, "Noto Serif CJK TC", "Noto Serif CJK JP", "AR PL UMing CN", "Hiragino Mincho ProN", "Yu Mincho", Batang;
-  --font-cjk-sf: FandolHei, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", "Source Han Sans CN", "Heiti SC", SimHei, "WenQuanYi Micro Hei", "WenQuanYi Zen Hei", "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC";
-  --font-cjk-tt: FandolFang, FangSong, STFangsong, FangSong_GB2312, "Noto Sans Mono CJK SC", "Source Han Mono SC", "Noto Sans CJK SC", SimSun;
+  /* Hebrew, after Arabic's own fonts: Times New Roman has both scripts and is the last resort of
+     both (the first, as the generic serif, on Windows and macOS). */
+  --font-he: "Noto Serif Hebrew", David, "Times New Roman", "Frank Ruehl CLM", "David CLM", "Arial Hebrew", "SBL Hebrew", "Noto Sans Hebrew";
+  --font-he-sf: "Noto Sans Hebrew", "Arial Hebrew", "Segoe UI", Tahoma, "DejaVu Sans", "Noto Serif Hebrew", David;
+  /* Chinese characters are shared by Chinese, Japanese and Korean, each with fonts that draw
+     them its own way, and no character says whose it is. The document does: with kana in it the
+     Japanese fonts come first, with hangul the Korean ones (data-cjk on the root, App.cjkOrder);
+     else the Chinese ones, as before. */
+  --font-zh: "Paper CJK", FandolSong, "Songti SC", STSong, SimSun, NSimSun, "Noto Serif CJK SC", "Source Han Serif SC", "Source Han Serif CN", "Songti TC", PMingLiU, MingLiU, "Noto Serif CJK TC", "AR PL UMing CN";
+  --font-zh-sf: FandolHei, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", "Source Han Sans CN", "Heiti SC", SimHei, "WenQuanYi Micro Hei", "WenQuanYi Zen Hei", "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC";
+  --font-zh-tt: FandolFang, FangSong, STFangsong, FangSong_GB2312, "Noto Sans Mono CJK SC", "Source Han Mono SC", "Noto Sans CJK SC", SimSun;
+  --font-ja: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "MS PMincho", "Noto Serif CJK JP", "Source Han Serif JP", "Source Han Serif", IPAexMincho, "Harano Aji Mincho";
+  --font-ja-sf: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", YuGothic, Meiryo, "Noto Sans CJK JP", "Source Han Sans JP", "Source Han Sans", IPAexGothic, "Harano Aji Gothic";
+  --font-ja-tt: "Noto Sans Mono CJK JP", "MS Gothic", var(--font-ja-sf);
+  --font-ko: AppleMyungjo, Batang, "Nanum Myeongjo", NanumMyeongjo, "Noto Serif CJK KR", "Source Han Serif KR", "Source Han Serif K", UnBatang;
+  --font-ko-sf: "Apple SD Gothic Neo", "Malgun Gothic", "Nanum Gothic", NanumGothic, "Noto Sans CJK KR", "Source Han Sans KR", "Source Han Sans K", Dotum;
+  --font-ko-tt: "Noto Sans Mono CJK KR", "Nanum Gothic Coding", NanumGothicCoding, var(--font-ko-sf);
+  --font-cjk: var(--font-zh), var(--font-ja), var(--font-ko);
+  --font-cjk-sf: var(--font-zh-sf), var(--font-ja-sf), var(--font-ko-sf);
+  --font-cjk-tt: var(--font-zh-tt), var(--font-ja-tt), var(--font-ko-tt);
+  /* Thai and Sinhala: the Noto Serif the PDF is set in, then macOS's, Windows' and the rest */
+  --font-th: "Noto Serif Thai", Thonburi, "Leelawadee UI", Tahoma, "Angsana New", "Noto Sans Thai", "Noto Sans Thai Looped", Loma, Garuda;
+  --font-th-sf: "Noto Sans Thai", Thonburi, "Leelawadee UI", Tahoma, Loma, Garuda, "Noto Serif Thai";
+  --font-si: "Noto Serif Sinhala", "Sinhala MN", "Nirmala UI", "Iskoola Pota", "Noto Sans Sinhala", "Sinhala Sangam MN", LKLUG;
+  --font-si-sf: "Noto Sans Sinhala", "Sinhala Sangam MN", "Nirmala UI", "Iskoola Pota", LKLUG, "Noto Serif Sinhala", "Sinhala MN";
   /* India's scripts (Devanagari, Bengali, Gurmukhi, Gujarati, Odia, Tamil, Telugu, Kannada,
      Malayalam, in that order in each row): the Noto Serif the PDF is set in where the system has
      it (Odia's is a Noto Sans there), then what macOS, Windows, Android and Linux carry. Each
@@ -42,10 +64,14 @@
   --font-in-lohit: "Lohit Devanagari", "Lohit Bengali", "Lohit Gurmukhi", "Lohit Gujarati", "Lohit Odia", "Lohit Tamil", "Lohit Telugu", "Lohit Kannada", "Lohit Malayalam";
   --font-in: var(--font-in-serif), var(--font-in-mac), var(--font-in-win), var(--font-in-sans), var(--font-in-lohit);
   --font-in-sf: var(--font-in-sans), var(--font-in-mac), var(--font-in-win), var(--font-in-lohit), var(--font-in-serif);
-  --font-doc: "Paper Modern Serif", "Latin Modern Roman", "Computer Modern Serif", "Iowan Old Style", Georgia, serif, var(--font-ar), var(--font-cjk), var(--font-in);
-  --font-doc-tt: "Paper Modern Typewriter", "Latin Modern Mono", ui-monospace, monospace, var(--font-ar-tt), var(--font-cjk-tt), var(--font-in-sf);
-  --font-doc-sf: "Paper Modern Sans", "Latin Modern Sans", "Helvetica Neue", Arial, sans-serif, var(--font-ar-sf), var(--font-cjk-sf), var(--font-in-sf);
+  --font-doc: "Paper Modern Serif", "Latin Modern Roman", "Computer Modern Serif", "Iowan Old Style", Georgia, serif, var(--font-ar), var(--font-he), var(--font-cjk), var(--font-in), var(--font-th), var(--font-si);
+  --font-doc-tt: "Paper Modern Typewriter", "Latin Modern Mono", ui-monospace, monospace, var(--font-ar-tt), var(--font-he-sf), var(--font-cjk-tt), var(--font-in-sf), var(--font-th-sf), var(--font-si-sf);
+  --font-doc-sf: "Paper Modern Sans", "Latin Modern Sans", "Helvetica Neue", Arial, sans-serif, var(--font-ar-sf), var(--font-he-sf), var(--font-cjk-sf), var(--font-in-sf), var(--font-th-sf), var(--font-si-sf);
 }
+/* the order of the three in a Japanese and in a Korean document (the stacks above take it,
+   being the root's own) */
+:root[data-cjk="ja"] { --font-cjk: var(--font-ja), var(--font-zh), var(--font-ko); --font-cjk-sf: var(--font-ja-sf), var(--font-zh-sf), var(--font-ko-sf); --font-cjk-tt: var(--font-ja-tt), var(--font-zh-tt), var(--font-ko-tt); }
+:root[data-cjk="ko"] { --font-cjk: var(--font-ko), var(--font-zh), var(--font-ja); --font-cjk-sf: var(--font-ko-sf), var(--font-zh-sf), var(--font-ja-sf); --font-cjk-tt: var(--font-ko-tt), var(--font-zh-tt), var(--font-ja-tt); }
 /* Italic Chinese is set in Kai, as ctex sets it (a Song has no italic), and bold in the Song's
    own bold. These faces only name fonts the system may have (nothing is loaded, and where none
    is found the names in --font-cjk are tried next), and only for Chinese, Japanese and Korean
@@ -187,9 +213,9 @@ body.pdf-on #pdfpane { display: flex; }
 
 /* ---- the sheet: everything typeset ---- */
 .sheet { padding: 28px 0 60px; font-family: var(--font-doc); color: var(--ink); --pt: 1.3; }
-.sheet[data-font="times"] { --font-doc: "Times New Roman", Times, "Nimbus Roman", serif, var(--font-ar), var(--font-cjk), var(--font-in); }
-.sheet[data-font="palatino"] { --font-doc: "Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", serif, var(--font-ar), var(--font-cjk), var(--font-in); }
-.sheet[data-font="sans"] { --font-doc: "Helvetica Neue", Helvetica, Arial, sans-serif, var(--font-ar-sf), var(--font-cjk-sf), var(--font-in-sf); }
+.sheet[data-font="times"] { --font-doc: "Times New Roman", Times, "Nimbus Roman", serif, var(--font-ar), var(--font-he), var(--font-cjk), var(--font-in), var(--font-th), var(--font-si); }
+.sheet[data-font="palatino"] { --font-doc: "Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", serif, var(--font-ar), var(--font-he), var(--font-cjk), var(--font-in), var(--font-th), var(--font-si); }
+.sheet[data-font="sans"] { --font-doc: "Helvetica Neue", Helvetica, Arial, sans-serif, var(--font-ar-sf), var(--font-he-sf), var(--font-cjk-sf), var(--font-in-sf), var(--font-th-sf), var(--font-si-sf); }
 /* pages centre by their auto margins, not align-items: a page zoomed wider than the window then
    overflows to the right, where it scrolls, instead of losing its left side off screen */
 #pages { outline: none; caret-color: #1E6BAA; display: flex; flex-direction: column; align-items: flex-start; gap: 22px; }

@@ -289,7 +289,10 @@ const joins = (text, i) => {
   const c = text[i], p = text[i - 1];
   if (c >= '\uDC00' && c <= '\uDFFF' && p >= '\uD800' && p <= '\uDBFF') return true;
   if (p === '\u200D' || /[\p{M}\u200C\u200D]/u.test(c)) return true;
-  return VIRAMA.test(p) && /\p{L}/u.test(c);
+  if (VIRAMA.test(p) && /\p{L}/u.test(c)) return true;
+  // Thai's and Lao's am vowel, and a hangul syllable written as its jamo
+  if (c === '\u0E33' || c === '\u0EB3') return true;
+  return /[\u1160-\u11FF\uD7B0-\uD7FF]/.test(c) && /[\u1100-\u11FF\uA960-\uA97F\uAC00-\uD7FF]/.test(p);
 };
 // The cluster of text that holds the code unit at i: [start, end). Only the text near i is
 // read (a cluster is a handful of code units), from a place where a cluster surely starts.

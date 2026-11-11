@@ -207,6 +207,18 @@ try:
         # each was gone from the PDF before the set up gave every family a font
         check('dandas, typewriter and sans serif text are in the PDF', '।' in text and '॥' in text and any('NotoSerifBengali' in f for f in fonts) and text.count('क') >= 2, [text[:200], sorted(fonts)])
 
+        # Japanese, Korean, Hebrew, Thai and Sinhala in one plain document. Japanese beside Korean
+        # is the hard pair: babel counts Chinese characters as both's (they came out in the Korean
+        # font, as empty boxes), and four of their fonts at once ran the engine out of memory
+        open_doc(page, [['main.tex', '\\documentclass{article}\n\\begin{document}\nHello to everyone here in this document: 日本語のテキスト。 한국어 문장. שלום עולם. สวัสดีชาวโลก. ආයුබෝවන්.\n\\end{document}\n']])
+        page.wait_for_selector('#script-note:not([hidden])', timeout=8000)
+        page.click('#script-go')
+        page.wait_for_timeout(400)
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('Japanese, Korean, Hebrew, Thai and Sinhala in a plain document: one click, and the PDF has a font for each', st.startswith('LuaLaTeX') and 'page' in st and all(any(n in f for f in fonts) for n in ('HaranoAjiMincho', 'NanumMyeongjo', 'HadasimCLM', 'NotoSerifThai', 'NotoSerifSinhala')), [st, sorted(fonts)])
+        check('the Chinese characters among the Japanese are in the PDF as text', '日本語' in text and '한국어' in text and 'สวัสดี' in text, text[:200])
+
         errs = [e for e in errors if 'favicon' not in e]
         check('no page errors', not errs, errs[:5])
         browser.close()
@@ -232,7 +244,7 @@ try:
         wait_pdf(page)
         lc = page.evaluate("window.rikuy.lastCompile")
         shown = page.evaluate("document.getElementById('pdf-host').textContent")
-        check('26 packs are marked as the Chinese, Arabic and Indian ones', len(xpacks) == 26, len(xpacks))
+        check('36 packs are marked as the ones for other scripts', len(xpacks) == 36, len(xpacks))
         check('without them a Chinese document gets no PDF, and the result names only those packs', bool(lc) and lc.get('unkeptScripts') is True and not lc.get('ok') and not page.evaluate("!!document.querySelector('#pdf-host canvas')") and 'could not be loaded' in shown, [lc and {k: lc[k] for k in ('unkept', 'unkeptScripts', 'ok')}, shown[:160]])
         browser.close()
 except Exception as e:

@@ -86,12 +86,15 @@ submodule's tree in one archive) or as downloaded:
 
 ## The TeX tree
 
-TeX Live 2026.20260711 from Ubuntu 26.10's packages (52 of them, each pinned by SHA-512 in
-`tex/fetch_inputs.sh`), laid over the tree in BusyTeX's release. Eight of the 52 are for Chinese,
-Arabic and India's scripts: twenty Noto fonts (`fonts-noto-core`, OFL-1.1), Amiri (`fonts-hosny-amiri`, OFL-1.1), the CJK package (`latex-cjk-common`,
+TeX Live 2026.20260711 from Ubuntu 26.10's packages (54 of them, each pinned by SHA-512 in
+`tex/fetch_inputs.sh`), laid over the tree in BusyTeX's release. Ten of the 54 are for scripts
+other than Latin, Greek and Cyrillic: twenty six Noto fonts (`fonts-noto-core`, OFL-1.1), Nanum
+for Korean (`fonts-nanum`, OFL-1.1), Hadasim for Hebrew (`fonts-culmus`, GPL-2.0 with the font
+exception), Amiri (`fonts-hosny-amiri`, OFL-1.1), the CJK package (`latex-cjk-common`,
 `latex-cjk-chinese`, GPL-2.0-or-later) and four Arphic fonts as Type 1
 (`latex-cjk-chinese-arphic-*`, the Arphic Public License); the Fandol fonts (GPL-3.0 with the
-font exception) come from `texlive-lang-chinese`. `LICENSES/third-party/chinese-arabic.txt` has
+font exception) come from `texlive-lang-chinese` and Harano Aji for Japanese (OFL-1.1) from
+`texlive-lang-japanese`. `LICENSES/third-party/chinese-arabic.txt` has
 their notices. A TeX tree is mostly its own
 source (macros, font metrics, PostScript and OpenType fonts under their licenses). Ubuntu's
 source packages for them are `texlive-base`, `texlive-extra`, `texlive-lang` and the font

@@ -27,9 +27,24 @@ export const INDIC = [
   ['kannada', 'Kannada', /[\u0C80-\u0CFF]/, 'kannada', 'kn', 'Noto Serif Kannada', /^(kannada|sanskrit-knda|sanskrit-kannada)$/],
   ['malayalam', 'Malayalam', /[\u0D00-\u0D7F]/, 'malayalam', 'ml', 'Noto Serif Malayalam', /^(malayalam|sanskrit-mlym|sanskrit-malayalam)$/]
 ];
-const INDIC_ANY = /[\u0900-\u0D7F\uA8E0-\uA8FF]/;
+// Five more scripts on the same route, rows of the same shape with what differs in a ninth
+// place: other fonts for sans serif and typewriter, no HarfBuzz for the square scripts, and the
+// right to left one. Japanese is told by its kana and Korean by its hangul; the Chinese
+// characters beside them are theirs (scriptNeeds).
+export const MORE = [
+  ['japanese', 'Japanese', /[\u3040-\u30FF\u31F0-\u31FF\uFF66-\uFF9F]/, 'japanese', 'ja', 'Harano Aji Mincho', /^japanese$/, null, { sf: 'Harano Aji Gothic', tt: 'Harano Aji Gothic', opt: '' }],
+  ['korean', 'Korean', /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF]/, 'korean', 'ko', 'NanumMyeongjo', /^korean(-han[i]?)?$/, null, { sf: 'NanumGothic', tt: 'NanumGothic', opt: '' }],
+  ['hebrew', 'Hebrew', /[\u0590-\u05FF\uFB1D-\uFB4F]/, 'hebrew', 'he', 'Hadasim CLM', /^hebrew$/, null, { rtl: true }],
+  ['thai', 'Thai', /[\u0E00-\u0E7F]/, 'thai', 'th', 'Noto Serif Thai', /^thai$/, null, {}],
+  ['sinhala', 'Sinhala', /[\u0D80-\u0DFF]/, 'sinhala', 'si', 'Noto Serif Sinhala', /^sinhala$/, null, { joiners: true }]
+];
+// every script that babel sets by its characters, in the order needs are listed
+const BY_CHAR = [...INDIC, ...MORE];
+const INDIC_ANY = /[\u0590-\u05FF\u0900-\u0E7F\u1100-\u11FF\u3040-\u30FF\u3130-\u318F\u31F0-\u31FF\uA8E0-\uA8FF\uAC00-\uD7AF\uFB1D-\uFB4F\uFF66-\uFF9F]/;
+// languages written in Arabic's script (Hebrew runs right to left too, in a script of its own)
+const ARABIC_LANGUAGES = /^(arabic|farsi|persian|urdu|kurdish|sorani|pashto|uyghur|sindhi|arabic-[a-z]+)$/;
 // What a person calls the script with that id: 'Chinese', 'Arabic', 'Devanagari', ...
-export const scriptName = (id) => (id === 'chinese' ? 'Chinese' : id === 'arabic' ? 'Arabic' : (INDIC.find((x) => x[0] === id) || [0, id])[1]);
+export const scriptName = (id) => (id === 'chinese' ? 'Chinese' : id === 'arabic' ? 'Arabic' : ([...INDIC, ...MORE].find((x) => x[0] === id) || [0, id])[1]);
 // a character of either script, anywhere: most documents have none and are then not read at all
 const EITHER = new RegExp(HAN.source + '|' + ARABIC.source + '|' + INDIC_ANY.source);
 // A preamble is read up to here. No real one is longer, and a stranger's document (a link, a
@@ -75,7 +90,7 @@ function count(text) {
   for (const ch of proseOf(text)) {
     if (HAN.test(ch)) { out.chinese++; out.letters++; } else if (ARABIC.test(ch)) { if (LETTER.test(ch)) { out.arabic++; out.letters++; } } else if (INDIC_ANY.test(ch)) {
       // (a script of India is a key of its own only when the text has it)
-      const x = INDIC.find((y) => y[2].test(ch));
+      const x = BY_CHAR.find((y) => y[2].test(ch));
       // vowel signs and viramas count with the letters: they are most of what such text is made of
       // (digits alone are no text of the script, as before)
       if (x && /[\p{L}\p{M}]/u.test(ch)) { out[x[0]] = (out[x[0]] || 0) + 1; out.letters++; }
@@ -123,11 +138,11 @@ export function scriptSetup(tex) {
   return {
     chinese: /^(ctex|ctexart|ctexrep|ctexbook|ctexbeamer|ltjs?(article|report|book)|u?jl?(article|report|book)|elegant(paper|book|note))/i.test(cls.name) ||
       has('ctex', 'xeCJK', 'CJK', 'CJKutf8', 'luatexja', 'luatexja-fontspec', 'luatexja-preset', 'zxjatype', 'xeCJKfntef', 'kotex', 'xetexko') ||
-      provided.some((l) => /^(chinese|japanese|korean)/.test(l)) || babel.some((l) => /^chinese/.test(l)),
+      provided.some((l) => /^chinese/.test(l)) || babel.some((l) => /^chinese/.test(l)),
     arabic: has('arabtex', 'arabxetex', 'arabi', 'arabluatex', 'bidi', 'xepersian', 'luabidi') || /^(xepersian|arabic)/i.test(cls.name) ||
-      provided.some((l) => RTL_LANGUAGES.test(l)) || babel.some((l) => RTL_LANGUAGES.test(l) || /^bidi\s*=/.test(l)) || poly.some((l) => RTL_LANGUAGES.test(l)),
+      [...provided, ...babel, ...poly].some((l) => ARABIC_LANGUAGES.test(l)),
     // India's scripts, a key each when set up: a language written in the script, however loaded
-    ...Object.fromEntries(INDIC.map((x) => [x[0], [...provided, ...babel, ...poly].some((l) => x[6].test(l)) || (x[0] === 'devanagari' && has('devanagari', 'devnag'))]).filter((e) => e[1]))
+    ...Object.fromEntries(BY_CHAR.map((x) => [x[0], [...provided, ...babel, ...poly].some((l) => x[6].test(l)) || (x[0] === 'devanagari' && has('devanagari', 'devnag'))]).filter((e) => e[1]))
   };
 }
 
@@ -137,22 +152,29 @@ export function scriptNeeds(mainTex, texts) {
   const list = texts && texts.length ? texts : [mainTex];
   const out = [];
   out.arabicMain = false;
+  out.hebrewMain = false;
   // no character of either script in any file: nothing to count, and no preamble to read
   if (!list.some((t) => EITHER.test(t))) return out;
   const n = { chinese: 0, arabic: 0, letters: 0 };
   for (const t of list) {
     const c = count(t === mainTex ? bodyOf(t) : t);
     n.chinese += c.chinese; n.arabic += c.arabic; n.letters += c.letters;
-    for (const x of INDIC) if (c[x[0]]) n[x[0]] = (n[x[0]] || 0) + c[x[0]];
+    for (const x of BY_CHAR) if (c[x[0]]) n[x[0]] = (n[x[0]] || 0) + c[x[0]];
   }
   // a title or an author's name stands in the preamble: text as well, though not weighed below
   const head = count(titlesOf(preambleOf(mainTex)));
   const have = scriptSetup(mainTex);
   if ((n.chinese || head.chinese) && !have.chinese) out.push('chinese');
   if ((n.arabic || head.arabic) && !have.arabic) out.push('arabic');
-  for (const x of INDIC) if ((n[x[0]] || head[x[0]]) && !have[x[0]]) out.push(x[0]);
+  // Japanese and Korean: a document that has a set up for Chinese characters of any kind (ctex,
+  // xeCJK, luatexja, kotex) has theirs. Chinese characters beside kana are Japanese text, set
+  // in the Japanese font and not asked for again as Chinese; beside hangul they stay a need of
+  // their own, because a Korean font has few thousand of them (plan takes them from Korean).
+  for (const x of BY_CHAR) if ((n[x[0]] || head[x[0]]) && !have[x[0]] && !((x[0] === 'japanese' || x[0] === 'korean') && have.chinese)) out.push(x[0]);
+  if ((out.includes('japanese') || have.japanese) && out[0] === 'chinese') out.shift();
   // a document mostly in Arabic is an Arabic document: its paragraphs run from the right
   out.arabicMain = n.arabic > n.letters / 2;
+  out.hebrewMain = (n.hebrew || 0) > n.letters / 2;
   return out;
 }
 
@@ -197,25 +219,48 @@ function plan(needs, tex) {
   // A font for each of the three families: with one for rm alone, text in \textsf, in \texttt
   // and on every beamer slide (sans serif throughout) had no glyph and was gone from the PDF.
   const fonts = (lang, opt, rm, sf, tt) => [['rm', rm], ['sf', sf || rm], ['tt', tt || rm]].map((f) => '\\babelfont' + (lang ? '[' + lang + ']' : '') + '{' + f[0] + '}' + opt + '{' + f[1] + '}');
-  const chinese = () => lines.push('\\babelprovide[import, onchar=ids fonts]{chinese}', ...fonts('chinese', '', 'FandolSong', 'FandolHei', 'FandolFang'));
+  // Each Chinese, Japanese or Korean font is some megabytes that LuaTeX holds whole: with a
+  // Mincho and a Gothic beside a Myeongjo and a Gothic the engine ran out of memory in the
+  // browser and stopped with no message. Where two of the three meet, each keeps to its serif.
+  const square = ['chinese', 'japanese', 'korean'];
+  const crowded = square.filter((k) => needs.includes(k) || new RegExp('\\\\babelprovide\\s*(?:\\[[^\\]]{0,2000}\\]\\s*)?\\{' + k + '\\}').test(pre)).length > 1;
+  const chinese = () => lines.push('\\babelprovide[import, onchar=ids fonts]{chinese}', ...(crowded ? fonts('chinese', '', 'FandolSong') : fonts('chinese', '', 'FandolSong', 'FandolHei', 'FandolFang')));
   // a line at the head of the file that names the engine (% !TeX program = ...) holds the
   // document to it: the lines of another engine would then print nothing, or their own source
   const magic = ((/^[^\n]{0,200}!TeX\s+(?:TS-)?program\s*=\s*([A-Za-z]+)/m.exec((tex || '').slice(0, 2000)) || [])[1] || '').toLowerCase();
-  const indic = INDIC.filter((x) => needs.includes(x[0]));
+  const indic = BY_CHAR.filter((x) => needs.includes(x[0]));
+  const rtl = needs.includes('arabic') || needs.includes('hebrew');
   if (needs.includes('arabic') || indic.length) {
     if (has(XE_ONLY) || CJK_CLASS.test(cls.name) || (pkgs.has('ctex') && !ownCtex) || (magic && !magic.includes('lua'))) return null;
+    if (rtl && !pkgs.has('babel')) lines.push('\\usepackage[english, bidi=basic]{babel} % LuaLaTeX orders right to left text by itself');
     if (needs.includes('arabic')) {
-      if (!pkgs.has('babel')) lines.push('\\usepackage[english, bidi=basic]{babel} % LuaLaTeX orders right to left text by itself');
       lines.push(needs.arabicMain ? '\\babelprovide[import, main]{arabic}' : '\\babelprovide[import, onchar=ids fonts]{arabic}');
       lines.push(...fonts(needs.arabicMain ? '' : 'arabic', '[Renderer=Harfbuzz]', 'Amiri'));
-    } else if (!pkgs.has('babel')) lines.push('\\usepackage[english]{babel} % LuaLaTeX sets each script in its own font');
+    } else if (!rtl && !pkgs.has('babel')) lines.push('\\usepackage[english]{babel} % LuaLaTeX sets each script in its own font');
     // HarfBuzz shapes India's scripts (conjuncts, vowel signs that stand before their consonant)
     for (const x of indic) if (x[7]) lines.push('\\directlua{Babel.script_blocks.' + x[7] + '} % where ' + x[1] + "'s characters are: babel has no entry");
-    for (const x of indic) lines.push('\\babelprovide[import=' + x[4] + ', onchar=ids fonts]{' + x[3] + '}', ...fonts(x[3], '[Renderer=Harfbuzz]', x[5]));
+    for (const x of indic) {
+      const o = crowded && square.includes(x[0]) ? { opt: '' } : x[8] || {};
+      // a document mostly in Hebrew is a Hebrew document, as with Arabic
+      const main = o.rtl && needs.hebrewMain && !needs.arabicMain;
+      lines.push('\\babelprovide[import=' + x[4] + (main ? ', main' : ', onchar=ids fonts') + ']{' + x[3] + '}', ...fonts(main ? '' : x[3], o.opt === undefined ? '[Renderer=Harfbuzz]' : o.opt, x[5], o.sf, o.tt));
+      // a list's bullet is text in the document's own font, and the Hebrew one has none
+      if (main) lines.push('\\renewcommand{\\labelitemi}{$\\bullet$} % the Hebrew font has no bullet of its own');
+      if (x[0] === 'korean' || (x[0] === 'japanese' && /\\babelprovide\s*(?:\[[^\]]{0,2000}\]\s*)?\{korean\}/.test(pre))) {
+        // babel counts Chinese characters as Korean's and as Japanese's and Chinese's alike, and
+        // which of them gets one is then chance: in a document with Japanese they came out in
+        // the Korean font, as empty boxes. Korean keeps its hangul; beside Japanese it gives up
+        // the shared punctuation too. After \babelprovide{korean}, which makes the table anew; the
+        // loop counts down from a fixed number because # is TeX's own character in a preamble.
+        const ja = needs.includes('japanese') || /\\babelprovide\s*(?:\[[^\]]{0,2000}\]\s*)?\{japanese\}/.test(pre);
+        const line = '\\directlua{local k = Babel.script_blocks.Kore for i = 12, 1, -1 do if k[i] and (k[i][1] == 0x4E00' + (ja ? ' or k[i][1] == 0x3000 or k[i][1] == 0xFF00' : '') + ') then table.remove(k, i) end end} % Chinese characters are not Korean\'s to set';
+        if (!pre.includes(line) && !lines.includes(line)) lines.push(line);
+      }
+    }
     // the danda and the joiners are in no script's range (the danda in Devanagari's alone): each
     // would fall back to the Latin font, the danda missing and the conjunct around a joiner
     // broken in two. -2000 is babel's own mark for "as the character before", as for accents.
-    if (indic.length && !pre.includes('Babel.chr_to_loc')) lines.push('\\directlua{for _, c in ipairs({0x964, 0x965, 0x200C, 0x200D}) do Babel.chr_to_loc[c] = -2000 end} % a danda or a joiner belongs to the script before it');
+    if (indic.some((x) => !x[8] || x[8].joiners) && !pre.includes('Babel.chr_to_loc')) lines.push('\\directlua{for _, c in ipairs({0x964, 0x965, 0x200C, 0x200D}) do Babel.chr_to_loc[c] = -2000 end} % a danda or a joiner belongs to the script before it');
     if (needs.includes('chinese') || ownCtex) chinese();
     return { lines, dropCtex: ownCtex };
   }
@@ -236,9 +281,10 @@ export function scriptLines(needs, tex) {
 }
 
 // What wraps a stretch of text that runs the other way than the document: [begin, end]. The
-// languages are the two scriptLines' babel line knows, english and arabic; the environment sets
+// languages are the two scriptLines' babel line knows, english and arabic (or lang: hebrew, where
+// the stretch is Hebrew's); the environment sets
 // the paragraphs' direction as well as the text's (\foreignlanguage would set only the text's).
-export const otherDirection = (rtl) => ['\\begin{otherlanguage}{' + (rtl ? 'arabic' : 'english') + '}', '\\end{otherlanguage}'];
+export const otherDirection = (rtl, lang) => ['\\begin{otherlanguage}{' + (rtl ? lang || 'arabic' : 'english') + '}', '\\end{otherlanguage}'];
 
 // The main file with those lines in its preamble, or null when it has none to put them in or
 // they would not fit it (scriptLines). An existing \usepackage{babel} gains bidi=basic instead of
@@ -251,7 +297,7 @@ export function addScriptSetup(tex, needs) {
   const eol = tex.includes('\r\n') ? '\r\n' : '\n';
   let pre = tex.slice(0, at);
   if (p.dropCtex) pre = pre.replace(OWN_CTEX, '');
-  if (needs.includes('arabic') && !p.lines.some((l) => l.includes('{babel}'))) {
+  if ((needs.includes('arabic') || needs.includes('hebrew')) && !p.lines.some((l) => l.includes('{babel}'))) {
     // babel is loaded already: find where, in the part of the preamble that is read at all and
     // outside comments, whatever lines its options run over
     const head = pre.slice(0, PRE_MAX);

@@ -257,7 +257,7 @@ const jobPacks = new Set();
 const packMissed = new Set();
 // whether the job's own files have Chinese or Arabic text or name those fonts and packages
 let jobScripts = false;
-const SCRIPTS_RE = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u2E80-\u2FDF\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]|ctex|xeCJK|CJK|[Aa]miri|[Ff]andol|arphic|\b(?:gbsn|gkai|bsmi|bkai)\b|zhnumber|xpinyin/;
+const SCRIPTS_RE = /[\u0590-\u05FF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\u0900-\u0DFF\u0E00-\u0E7F\u1100-\u11FF\u2E80-\u2FDF\u3040-\u30FF\u3130-\u318F\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFB1D-\uFDFF\uFE70-\uFEFF]|ctex|xeCJK|CJK|[Aa]miri|[Ff]andol|arphic|\b(?:gbsn|gkai|bsmi|bkai)\b|zhnumber|xpinyin|Noto ?(?:Serif|Sans|Nastaliq)|Harano ?Aji|Nanum/;
 // The folder of the tree a pack holds, as build_tree.py grouped the files ('core' for the packs
 // loaded at start): what the page shows for a pack, and what src/pwa.js lists.
 function packFolder(n) {

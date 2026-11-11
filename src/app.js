@@ -32,7 +32,7 @@ import { word, installWord, isDocx } from './word.js';
 import { ribbon, installRibbon } from './ribbon.js';
 import { shareParam, commentOnly, cleanPath } from './share.js';
 import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
-import { scriptNeeds, scriptLines, addScriptSetup, scriptName } from './scripts.js';
+import { scriptNeeds, scriptLines, addScriptSetup, scriptName, scriptSetup, MORE } from './scripts.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const PX_PER_PT = 96 / 72.27;
@@ -615,9 +615,12 @@ class App {
     const items = [], fns = [];
     for (const B of this.renderer.blocks) { for (const it of B.items) items.push(it); for (const f of B.fns) fns.push(f); }
     const g = geometry(model.opts);
-    const gsig = JSON.stringify(g) + '|' + this.px + '|' + model.opts.spread + '|' + model.opts.parindent + '|' + model.opts.pt + '|' + model.opts.font;
+    // (whose fonts draw the Chinese characters is part of it: other fonts, other widths)
+    const cjk = this.cjkOrder();
+    const gsig = JSON.stringify(g) + '|' + this.px + '|' + model.opts.spread + '|' + model.opts.parindent + '|' + model.opts.pt + '|' + model.opts.font + '|' + cjk;
     if (gsig !== this.gsig || force) {
       this.gsig = gsig;
+      if (cjk) document.documentElement.dataset.cjk = cjk; else delete document.documentElement.dataset.cjk;
       this.layout.setGeometry(g, this.px, this.sheet, model.sizes, model.opts);
       this.sheet.dataset.font = model.opts.font || '';
       this.sheet.lang = { de: 'de', es: 'es', fr: 'fr' }[model.opts.lang] || 'en';
@@ -636,6 +639,33 @@ class App {
     this.commentsSoon();
     this.emptyGhost();
     this.widgets.place();
+  }
+
+  // Chinese characters are shared by Chinese, Japanese and Korean, whose fonts draw them each
+  // their own way, and a character does not say whose it is. The document does, as scripts.js
+  // tells the three apart: kana make it Japanese ('ja'), hangul Korean ('ko'), and with neither
+  // a set up for one of the two languages; else '' and the Chinese fonts come first as before.
+  // Looked at with every build of the page, so by a pattern's one pass over each file.
+  cjkOrder() {
+    const ja = MORE.find((x) => x[0] === 'japanese')[2], ko = MORE.find((x) => x[0] === 'korean')[2];
+    let j = 0, k = 0, han = false;
+    const texts = [];
+    for (const [n, t] of this.files) {
+      if (n !== this.main && !/\.tex$/i.test(n)) continue;
+      texts.push(t);
+      if (!j && ja.test(t)) j = 1;
+      if (!k && ko.test(t)) k = 1;
+      if (!han && /[\u3400-\u9FFF]/.test(t)) han = true;
+    }
+    if (j && k) {
+      // both: the one the text has more of
+      const count = (re) => texts.reduce((sum, t) => sum + (t.match(new RegExp(re.source, 'g')) || []).length, 0);
+      j = count(ja); k = count(ko);
+    } else if (!j && !k && han) {
+      const have = scriptSetup(this.src(this.main));
+      j = have.japanese ? 1 : 0; k = have.korean ? 1 : 0;
+    }
+    return j && j >= k ? 'ja' : k ? 'ko' : '';
   }
 
   // ---- live figures ------------------------------------------------------------
@@ -814,7 +844,7 @@ class App {
       const names = needs.map(scriptName);
       const list = names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : names[0];
       $('#script-msg').textContent = 'This document has ' + list + ' text. LaTeX needs ' + (names.length > 1 ? 'fonts' : 'a font') +
-        (needs.includes('arabic') ? ' and right to left setup' : '') + ' for it.';
+        (needs.includes('arabic') || needs.includes('hebrew') ? ' and right to left setup' : '') + ' for it.';
       bar.dataset.needs = sig;
     }
     if (bar.hidden === show) bar.hidden = !show;
@@ -4849,7 +4879,7 @@ class App {
       } catch (e) { /* leave it */ }
     }
     const sheet = this.sheet;
-    const html = '<!doctype html><html lang="' + (sheet.lang || 'en') + '"><head><meta charset="utf-8"><title>' + esc(this.name || 'paper') + '</title><style>' + css +
+    const html = '<!doctype html><html lang="' + (sheet.lang || 'en') + '"' + (/^(ja|ko)$/.test(document.documentElement.dataset.cjk || '') ? ' data-cjk="' + document.documentElement.dataset.cjk + '"' : '') + '><head><meta charset="utf-8"><title>' + esc(this.name || 'paper') + '</title><style>' + css +
       '\nbody{margin:0;background:#fff;overflow:visible;height:auto}#pages{display:block}.page{box-shadow:none;margin:0 auto;break-after:page;content-visibility:visible;contain:none}.page:last-child{break-after:auto}.has-err,.ghostp{outline:none}.w-live .wfb{visibility:visible}' +
       '@media screen{#pages{display:flex;flex-direction:column;align-items:center;gap:16px;padding:16px 0;background:#DCE1E7}.page{box-shadow:0 1px 2px rgba(0,0,0,.2)}}</style></head><body>' +
       '<div class="sheet" lang="' + (sheet.lang || 'en') + '" style="' + (sheet.getAttribute('style') || '').replace(/"/g, '&quot;') + '"' + (sheet.dataset.font ? ' data-font="' + sheet.dataset.font + '"' : '') + '>' + clone.outerHTML + '</div>' +

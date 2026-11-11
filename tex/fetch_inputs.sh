@@ -5,7 +5,7 @@
 #
 #   busy/busytex/   BusyTeX 1.4.0 release assets (TeX Live 2026 engines, texlive-*.data)
 #   tree-extra/     the TeX Live tree inside those .data packages (unpack_busytex.py)
-#   debs/x/<pkg>/   52 Ubuntu 26.10 packages (TeX Live 2026 and friends), each dpkg-deb -x
+#   debs/x/<pkg>/   54 Ubuntu 26.10 packages (TeX Live 2026 and friends), each dpkg-deb -x
 #   mf/x/           texlive-binaries, texlive-base, libkpathsea6 and libc6 in one folder (METAFONT
 #                   for build_pk.py, started through that libc's own loader)
 #   extra/ fccache/ fmt/ usage.json pdflatex-all.fmt   from inputs/generated*.tar.gz: what Rikuy's
@@ -77,7 +77,9 @@ while read -r name pool sum; do
   touch "$DONE/deb-$name"
 done <<EOF
 asymptote pool/universe/a/asymptote/asymptote_3.11+ds-1_amd64.deb sha512:19a01ebe2cae398b4e16181af416c7105eb0f14af2cc17fa8ba973b14d3f6ed048f996679cec91b18d7192c924a47b703cd6a673c25d054c0e1281092f872eff
+fonts-culmus pool/main/c/culmus/fonts-culmus_0.140-3build1_all.deb sha512:bbdc15019c0e75438dfb8ac68e05fe6dc05e84fd656ab8cd5b8e2591d7db07bdfb72587ad0be6460a441b8e8e526723905c600ff09318a70e10981f0e8aa8328
 fonts-hosny-amiri pool/main/f/fonts-hosny-amiri/fonts-hosny-amiri_1.003-6_all.deb sha512:19077c8a8d60bfe0092f16484e42517f5a16fad396a30e80335d2f0f153c82454c462218919774a93f42526994dcbbf7365f5868599bba33a6b8e05627e106c4
+fonts-nanum pool/universe/f/fonts-nanum/fonts-nanum_20250212-1_all.deb sha512:4297df840fb1f835e2fadd2e7a8ce6976415416c1e9981ed7c81c05e95416bf1a61ada35e5e3880d8e6796bb6c80376c1d5240cd5b6efddaa7ec15f88b363c5f
 fonts-noto-core pool/main/f/fonts-noto/fonts-noto-core_20201225-6_all.deb sha512:bc3ca8bc8eeeb5986e62dfdec4732f81c730bdc59026812fc549a56561c820b101313cc43cce8a44facc754d736a63aefc9c3c664d02aedc832451422b9a2e5d
 cm-super pool/universe/c/cm-super/cm-super_0.3.4-17build1_all.deb sha512:b8a80e2c8854dc37e2b1c11eccfecf214c7d2cc424f93316b5c9cebfab7ce7cb5a96328c1ff9ea0365ec879f057e23bdefbfe29b5cf46ce92c3381078ad6ea19
 latex-cjk-all pool/universe/c/cjk/latex-cjk-all_4.8.5-3_all.deb sha512:209b9ea73a2f6883d8ba930464eea4c6996a224f75613fb2cecbd02d87552798b50089c78b58d7ce5f6ea39c2e00e44c9a980c97a7ebeeab2095bf411a77c415

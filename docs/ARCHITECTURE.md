@@ -42,7 +42,7 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | share links, comments, the copy back, Overleaf | `makeShareLink`, `openSharedLink`, `takeBack`, `commentPop`, `openInOverleaf` (`src/collab.js`); `commentEdit`, `merge3` (`src/share.js`) |
 | the installed app: offline copy, updates, "Make available offline" | `install`, `activate`, the `fetch` listener (`src/sw.js`); `registerApp`, `asset`, `keepOffline`, `OFFLINE_FOLDERS` (`src/pwa.js`); `appPage`, `finishApp` (`build/app.mjs`); `keepPlan`, `keep` (`tex/engine.js`) |
 | Word (.docx in and out, a coauthor's edits back) | `saveDocx`, `openDocx`, `wordEdits` (`src/word.js`); `buildWordDoc` (`src/wordast.js`); `extract` (`src/docx.js`); `planImport`, `mathPatch` (`src/wordsync.js`); `docxToLatex` (`src/wordjobs.js`) |
-| right to left text, Chinese and Arabic fonts, the set up notice | `rtlDocument`, `languageDir`, `scriptNeeds`, `addScriptSetup` (`src/scripts.js`); `Builder.dirOf`, `dirCmd`, `declDir`, `dirEnv` (`src/model.js`); `setDir` (`src/render.js`); `--font-cjk`, `--font-ar` and the `dir` rules (`src/app.css`); `App.scriptNotice`, `scriptSetUp` |
+| right to left text, the fonts of Chinese, Japanese, Korean, Arabic, Hebrew, Thai, Sinhala and India's scripts, the set up notice | `rtlDocument`, `languageDir`, `scriptNeeds`, `addScriptSetup` (`src/scripts.js`); `Builder.dirOf`, `dirCmd`, `declDir`, `dirEnv` (`src/model.js`); `setDir` (`src/render.js`); `--font-cjk`, `--font-ar` and their like, `:root[data-cjk]` and the `dir` rules (`src/app.css`); `App.scriptNotice`, `scriptSetUp`, `cjkOrder` |
 | live figures (`\rikuywidget`) | `WidgetLayer`, `widgetDoc`, `WIDGET_CSP` (`src/widget.js`); `Builder.cmd` (kind `widget`), `Renderer.atomEl`; `App.widgetsAllowed`, `widgetResized` |
 | the ribbon (style of a paragraph, lists, Insert, Download) | `ribbonSync`, `setBlockStyle`, `toggleList`, `insertTable`, `downloadPdfNow`, `installRibbon` (`src/ribbon.js`); `PALETTE`, `runPalette`, `afterBlockPos` (`src/app.js`) |
 | equation editing | `App.openMath`, `attachField`, `toField`, `fromField`; `src/minimal.js`, `wordmath.js`, `fences.js` |
@@ -90,8 +90,13 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
   (`src/render.js`) writes the `dir` attribute, one of two fixed words; the style sheet names
   sides by the way the text runs (`padding-inline-start`), so markers, numbers and indents
   follow. Formulas, code and a table's columns stay left to right. The page's fonts have no
-  Chinese, Arabic or Indian script: `--font-cjk`, `--font-ar` and `--font-in` name the system's,
-  after every family the stacks had, and the `Paper CJK` faces give italic Chinese a Kai.
+  Chinese, Japanese, Korean, Arabic, Hebrew, Thai, Sinhala or Indian script: `--font-cjk`,
+  `--font-ar`, `--font-he`, `--font-in`, `--font-th` and `--font-si` name the system's, after
+  every family the stacks had, and the `Paper CJK` faces give italic Chinese a Kai. Chinese
+  characters are shared by three languages: `App.cjkOrder` reads the document (kana, hangul, or
+  a set up for one of the two, as `scripts.js` tells them) and sets `data-cjk` on the root, where
+  the stacks put the Japanese or the Korean fonts before the Chinese ones. Lines break as the
+  browser breaks them: between Chinese, Japanese and Korean characters, at Thai's words.
 - **Characters of several code points.** क्षि is four (a consonant, a virama, a consonant, a
   vowel sign). `clusterAt`, `clusterEdge` and `backspaceUnits` (`src/editor.js`, on
   `Intl.Segmenter` with a fallback) say where such a character starts and ends: Backspace takes
@@ -140,7 +145,8 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   localStorage fallback) and `noteEdit()`, which schedules `pdfSoon` (1.4 s) and snapshots. The
   CodeMirror pane goes the other way: `srcRebuild` (260 ms) → `fromSource()` → `record` →
   `rebuild`; undo, redo and leaving the pane flush it first.
-- **Chinese and Arabic set up.** A moment after each rebuild `App.scriptNotice` asks
+- **The set up of a script (Chinese, Japanese, Korean, Arabic, Hebrew, Thai, Sinhala, India's
+  nine).** A moment after each rebuild `App.scriptNotice` asks
   `scriptNeeds` (`src/scripts.js`) what the project's text needs that its main file does not
   set up, and shows a bar under the ribbon (never while an input method composes, nor in a
   shared copy). Its button commits `addScriptSetup`'s lines as one edit of kind `setup`; hiding
@@ -512,12 +518,11 @@ alignment and the import plan. `src/wordast.js` (in the page) walks the model in
 - **India's scripts** (the nine of `INDIC` in `src/scripts.js`) take the same road. *Open:* a
   script the text has letters of gets its two lines; its characters, the danda and double danda
   all nine share, and a joiner or non joiner beside its letters are kept and not listed as lost
-  (digits or signs of a script the text has no letter of are, under the script's name, and so
-  is Sinhala). Word keeps these scripts as complex script runs cut at every change of font;
+  (digits or signs of a script the text has no letter of are, under the script's name). Word keeps these scripts as complex script runs cut at every change of font;
   pandoc joins them, bold and italic runs too, but not code: `tidy` makes one code span of
   code runs side by side, and `codeSpaces` writes a single space in `\texttt` as a space (pandoc
   writes `\ `, kept for two together and at a span's ends), so `\texttt{two words}` comes back
-  from Word as it went. *Save:* `indicRuns` (`src/wordjobs.js`) gives every run of
+  from Word as it went. *Save:* `scriptRuns` (`src/wordjobs.js`) gives every run of
   `word/document.xml`, `footnotes.xml` and `comments.xml` that holds one of the scripts
   `w:rFonts w:cs="Nirmala UI"` (after the style) and `w:lang w:bidi` with the script's language
   (`hi-IN`, `bn-IN`, `pa-IN`, `gu-IN`, `or-IN`, `ta-IN`, `te-IN`, `kn-IN`, `ml-IN`, last in the
@@ -527,6 +532,24 @@ alignment and the import plan. `src/wordast.js` (in the page) walks the model in
   `textHunks` moves a change's ends out of a cluster (a mark on its letter, a consonant a
   virama or a joiner ties on, the halves of an astral character), so a vowel sign changed in
   Word is its syllable changed.
+- **Japanese, Korean, Hebrew, Thai and Sinhala** (`MORE` in `src/scripts.js`). *Open:* as
+  above; Chinese characters beside kana or hangul are that language's, not asked for as
+  Chinese. Hebrew is right to left as Arabic is: a group of paragraphs that runs against the
+  document is in `\begin{otherlanguage}{hebrew}` when most of its letters are Hebrew, `{arabic}`
+  otherwise (`otherDirection(rtl, lang)`), and a mostly Hebrew file is a Hebrew document. A
+  word with its reading above it (`w:ruby`, which pandoc reads nothing of) keeps the word;
+  the reading is told as not kept. Named in the note when they have no font: Syriac, Lao,
+  Tibetan, Myanmar, Khmer, Georgian, Armenian, Ethiopic. *Save:* the defaults hold one East
+  Asian font and language and one complex script's, so `styled()` picks them from the
+  document: Japanese (`Yu Mincho`, `ja-JP`), Korean (`Malgun Gothic`, `ko-KR`) or Chinese by
+  what the main file sets up (`scriptSetup`; with both of the first two, by which the text has
+  more of; with none, by the text), and Arabic's or, in a file with Hebrew and no Arabic,
+  Hebrew's (`Times New Roman`, `he-IL`). What the defaults do not speak for is on the run
+  (`scriptRuns`): kana and hangul (`w:rFonts w:eastAsia`, `w:lang w:eastAsia`), Hebrew beside
+  Arabic, Thai (`Leelawadee UI`, `th-TH`), Sinhala (`Nirmala UI`, `si-LK`). Hebrew runs are
+  `w:rtl` by their characters (`src/wordbidi.js`). *Edits back:* Thai, Lao, Khmer and Burmese
+  have no spaces: `Intl.Segmenter` gives their words where the browser has it, else each
+  cluster is one; a Korean syllable spelt in jamo and Thai's vowel am are clusters too.
 
 **Whose edits are merged.** The data a .docx carries says where every edit goes in the source,
 so it is trusted only when this browser wrote it: the worker returns the SHA-256 of the data at

@@ -10,11 +10,11 @@ Read the rules at the end before the first commit.
 | corpus compiles (LaTeX-examples, 716 documents present) | 705 | 706 | 706 | as version 25 | as version 25 | as version 25 | as version 25 | as version 25 |
 | corpus PDFs equal to a desktop TeX Live 2026's | 615 of 704 (87.4 %) | 700 of 705 (99.3 %) | 703 of 705 (99.7 %) | as version 25 | as version 25 | as version 25 | as version 25 | as version 25 |
 | TeX passes over the whole corpus | not counted | 995 (1,471 without latexmk's first-run `.aux`) | 995 | as version 25 | as version 25 | as version 25 | as version 25 | as version 25 |
-| `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) | 22/22 | 23/23 (a check that pygmentize loads no code a document wrote) | 23/23, now run by CI on a tree built there (`tex.yml`) | 23/23 in CI's TeX job | 23/23 in CI's TeX job | 38/38 (fifteen new: Chinese, Arabic, India's scripts) |
+| `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) | 22/22 | 23/23 (a check that pygmentize loads no code a document wrote) | 23/23, now run by CI on a tree built there (`tex.yml`) | 23/23 in CI's TeX job | 23/23 in CI's TeX job | 40/40 (seventeen new: scripts other than Latin) |
 | `tex/native/xindy/test.cjs` (against CLISP's xindy) | 11/11 | 11/11 | 11/11 | 11/11 | 11/11 | 11/11 | as version 30 | as version 30 |
 | TeX Live's 220 Asymptote examples as a desktop's asy draws them | not measured | against a native asy 3.09: 216 (196 equal PDFs, 12 equal failures, 7 random by design, 1 equal alone); 4 open | against the desktop's asy 3.11: 218 (201 equal PDFs, the 3D ones rendered as bitmaps; 10 equal failures; 7 random by design); 2 open: 1 numerical, `slope` out of memory | as version 25 | as version 25 | as version 25 | as version 25 | as version 25 |
 | edits on the typeset page landing exactly, undone byte for byte (`test/editor_corpus.py`) | not measured | 780 of 780, in the 222 documents with text, a formula, a cell or a footnote; 211 of 211 edited projects compile | as version 23 (page unchanged) | 781 of 792 land, 11 open as source by design, all 792 undone byte for byte, on the complete corpus; 211 of 211 edited projects compile | as version 28 (model and parser unchanged) | as version 28 (model and parser unchanged) | not run again (the model draws colours and lists in cells now; the 716 document model run passes) | not run again (`test/scripts.py` 133 checks direction and editing in Arabic and Chinese) |
-| artifact size (limit 256 MB) | 250.0 MB | 249.7 MB | 252.3 MB | 253.1 MB (with the 0.8 MB license bundle) | 253.6 MB (pdf.js shipped, IBM Plex inlined) | about 253.8 MB (version 29 and 154 kB: the page and `engine.js`) | about 253.8 MB (version 30 and 21 kB of page) | not published; about 253.9 MB when it is (the index and four packs change, 0.1 MB; the 48.5 MB of packs for Chinese, Arabic and India's scripts stay out) |
+| artifact size (limit 256 MB) | 250.0 MB | 249.7 MB | 252.3 MB | 253.1 MB (with the 0.8 MB license bundle) | 253.6 MB (pdf.js shipped, IBM Plex inlined) | about 253.8 MB (version 29 and 154 kB: the page and `engine.js`) | about 253.8 MB (version 30 and 21 kB of page) | not published; about 253.9 MB when it is (the index and four packs change, 0.1 MB; the 77.6 MB of packs for other scripts stay out) |
 
 Version 23 changed only the page (task 13): its `dist/tex` is version 22's byte for byte, so the
 TeX rows are version 22's runs. Version 24 changed Asymptote (tasks 17 and 18: `asy.wasm`, the
@@ -56,10 +56,10 @@ page, 0.6 s), the sample compiles (3 pages), Make available offline finishes, He
 the plain sentence.
 
 Version 32 (2026-11-11) adds the ribbon, the files for search engines and agents and the new
-icon (tasks 29 and 30, deployed), and Chinese, Arabic and nine scripts of India (tasks 31 and
-32): 26 packs of fonts and packages that only the hosted build carries, right to left documents
-on the page, a one click set up, and Word files in these scripts. `dist/tex` is 299.4 MB,
-250.9 MB of it in the artifact.
+icon (tasks 29 and 30, deployed), and Chinese, Japanese, Korean, Arabic, Hebrew, nine scripts of India, Thai and Sinhala (tasks 31
+to 33): 36 packs of fonts and packages that only the hosted build carries, right to left
+documents on the page, a one click set up, and Word files in these scripts. `dist/tex` is
+327.1 MB, 250.9 MB of it in the artifact.
 
 Equal means: the same number of pages, the same text on each page (`pdftotext -layout`,
 whitespace collapsed), and no page with more than 0.1 % of its pixels differing by more than
@@ -702,6 +702,34 @@ Tests:
     too; no font for Sinhala, Thai, Hebrew, Japanese or Korean; Urdu is set in Amiri unless the
     author names Noto Nastaliq Urdu; the page was drawn here with FreeSans (no Noto on this
     machine), so its Indian text was not judged by eye; not seen in Microsoft Word.
+
+33. **Japanese, Korean, Hebrew, Thai and Sinhala.** Done in the code (pull request 7), asked for
+    by the owner after task 32. *TeX.* Harano Aji Mincho and Gothic (from
+    `texlive-lang-japanese`), NanumMyeongjo and NanumGothic (`fonts-nanum`), Culmus's Hadasim
+    for Hebrew (`fonts-culmus`; it has the Latin letters and digits Noto Serif Hebrew lacks,
+    and its license lets a document embed it), Noto Serif Thai and Sinhala: 54 pinned packages,
+    36 `x` packs, 77.6 MB; `dist/tex` is 327.1 MB. The set up is babel's on LuaLaTeX as for
+    India's scripts, Hebrew with `bidi=basic` and as the main language when most letters are
+    Hebrew. Three things had to be told to babel, each found by compiling: Chinese characters
+    are not Korean's (in a document with Japanese they came out in the Korean font as empty
+    boxes; beside hangul they are now a need of their own, set by the Chinese lines); two of
+    Chinese, Japanese and Korean in one document keep to one font each (a Mincho, a Gothic, a
+    Myeongjo and a Gothic at once ran LuaTeX out of memory in the browser, with no message);
+    a Hebrew document's bullet comes from the math font. Japanese is told by its kana and
+    Korean by its hangul. *Page.* Font lists for the five, Japanese or Korean families first
+    when the document is theirs; the notice for any mix. *Word.* Both ways, with East Asian
+    and complex script fonts and languages, ruby keeping its base word, Thai edits by the word.
+    Evidence: a document with all five compiles with 0 missing characters, Thai lines broken
+    at words, and a Hebrew document with a list, points, digits and English (both seen as
+    pictures); `test/engines.py` 40/40 (the five typed into a plain document, one click, a font
+    for each in the PDF and the kanji there as text); the Japanese, Korean, Hebrew and five
+    script Word fixtures open and compile with no error; `npm test` green (`scripts.test.mjs`
+    52, `word.test.mjs` 53 groups); `scripts.py` 302, `browser.py` 182, `word.py` 110,
+    `ribbon.py` 146, `share.py` 46, `features.py` 36, `files.py` 68, `offline.py` 36/36. Not
+    reviewed by a second agent as tasks 31 and 32 were; not seen in Microsoft Word or on the
+    page with real fonts for these scripts (the build machine has none). Open: Khmer, Lao,
+    Tibetan, Georgian, Armenian, Ethiopic and others have no fonts; a Japanese document set up
+    with luatexja shows kanji in Chinese fonts on the page.
 
 ## Open tasks
 

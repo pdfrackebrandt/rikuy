@@ -6,7 +6,7 @@ writes it (`-` for standard output).
 
 make_rich() is a second file, of what pandoc alone loses or writes as LaTeX that does not compile
 (test/fixtures/word-rich.docx, `python3 word_fixture.py out.docx rich`): a subtitle, coloured,
-highlighted, underlined and struck text, symbols and Greek and Cyrillic and Korean words, a comment
+highlighted, underlined and struck text, symbols and Greek and Cyrillic and Armenian words, a comment
 with a reply's worth of TeX in it, a tracked change, a table of contents, a caption whose number is
 a short field with the bookmark a cross reference names, a picture wider than the page, a table
 with a caption and merged cells and a table inside it, a page break, a centred paragraph, a formula
@@ -32,7 +32,18 @@ vowel signs, an anusvara, a chandrabindu and a visarga, a joiner and a non joine
 danda and double danda, Devanagari digits and English words, a bulleted and a numbered list, a
 table, a footnote and a comment. make_indic(): an English document with a line each of Bengali,
 Tamil, Telugu, Gujarati, Kannada, Malayalam, Gurmukhi and Odia with its own digits, one run that
-holds three scripts, a table, and font and language names that try to be LaTeX."""
+holds three scripts, a table, and font and language names that try to be LaTeX.
+
+Four are in the five scripts after those (`japanese`, `korean`, `hebrew`, `scripts`;
+word-japanese.docx, word-korean.docx, word-hebrew.docx, word-scripts.docx). make_japanese(): kana
+and kanji in runs cut at every font, full width punctuation, half width katakana, a word with its
+reading above it (w:ruby), a list, a table, English, a footnote. make_korean(): hangul words with
+spaces, a syllable spelt in its letters (jamo), hanja, bold, a list, a table. make_hebrew(): a
+document that runs right to left, with vowel points and cantillation marks, a maqaf, English and
+digits, a right aligned paragraph, a list, a table set from the right, one left to right
+paragraph, a footnote. make_scripts(): an English document with a line each of Thai (no spaces,
+tone marks, Thai digits), Sinhala (a conjunct with a joiner), Hebrew (a phrase, and a whole
+paragraph), Japanese and Korean, and names and words that try to be LaTeX."""
 import io, sys, struct, zlib
 from docx import Document
 from docx.shared import Inches
@@ -130,7 +141,7 @@ def make_rich():
     p.add_run('under').underline = True
     p.add_run(', ')
     p.add_run('struck').font.strike = True
-    p.add_run(u'. If p \u2264 0.05 and \u03b2 \u2260 0 then x \u2192 \u221e, \u2212 5\u202f%. \u0395\u03bb\u03bb\u03b7\u03bd\u03b9\u03ba\u03ac, \u041f\u0440\u0438\u0432\u0435\u0442, \uc548\ub155.')
+    p.add_run(u'. If p \u2264 0.05 and \u03b2 \u2260 0 then x \u2192 \u221e, \u2212 5\u202f%. \u0395\u03bb\u03bb\u03b7\u03bd\u03b9\u03ba\u03ac, \u041f\u0440\u0438\u0432\u0435\u0442, \u0540\u0561\u0575.')
     # a tracked change, and a comment whose text tries to leave its line
     p = d.add_paragraph('The result is ')
     x(p, '<w:del %s w:id="10" w:author="Ana"><w:r><w:delText>weak</w:delText></w:r></w:del>' % W)
@@ -413,7 +424,135 @@ def make_indic():
     d.save(buf)
     return buf.getvalue()
 
-MAKERS = {'rich': make_rich, 'chinese': make_chinese, 'arabic': make_arabic, 'mixed': make_mixed, 'hindi': make_hindi, 'indic': make_indic}
+# ---- Japanese, Korean, Hebrew, Thai and Sinhala ----
+
+ja = lambda f='', font='MS Mincho': '<w:rFonts w:eastAsia="%s" w:hint="eastAsia"/>%s<w:lang w:eastAsia="ja-JP"/>' % (font, f)
+ko = lambda f='', font='Batang': '<w:rFonts w:eastAsia="%s" w:hint="eastAsia"/>%s<w:lang w:eastAsia="ko-KR"/>' % (font, f)
+he = lambda f='', font='David': '<w:rFonts w:cs="%s"/>%s<w:rtl/><w:lang w:bidi="he-IL"/>' % (font, f)
+
+def ruby(p, base, reading):
+    """A word with its reading above it, as Word's phonetic guide writes one."""
+    p._p.append(parse_xml(u'<w:r %s><w:ruby><w:rubyPr><w:rubyAlign w:val="distributeSpace"/><w:hps w:val="10"/><w:hpsRaise w:val="18"/><w:hpsBaseText w:val="21"/><w:lid w:val="ja-JP"/></w:rubyPr>'
+                          u'<w:rt><w:r><w:rPr>%s</w:rPr><w:t>%s</w:t></w:r></w:rt><w:rubyBase><w:r><w:rPr>%s</w:rPr><w:t>%s</w:t></w:r></w:rubyBase></w:ruby></w:r>' % (W, ja(), reading, ja(), base)))
+
+def make_japanese():
+    d = Document()
+    xrun(d.add_paragraph(style='Title'), u'日本の経済成長', ja())
+    xrun(d.add_heading(level=1), u'はじめに', ja(font='MS Gothic'))
+    # one sentence in seven runs of three fonts; a ruby in the middle; half width katakana
+    p = d.add_paragraph()
+    xrun(p, u'本稿では、', ja())
+    xrun(p, u'制度', ja(BOLD))
+    xrun(p, u'が', '<w:rFonts w:hint="eastAsia"/>')
+    ruby(p, u'経済', u'けいざい')
+    xrun(p, u'成長に与える影響を', ja(font='Yu Mincho'))
+    xrun(p, u'データ', ja(ITALIC, 'MS Gothic'))
+    xrun(p, u'で検証する。', ja())
+    note_ref(p, 1)
+    p = d.add_paragraph()
+    xrun(p, u'「引用」と『書名』、コーヒー・ｶﾀｶﾅ…全角　空格！ＡＢＣ１２３。', ja())
+    for t in [u'第一に、データ', u'第二に、方法']: xrun(d.add_paragraph(style='List Bullet'), t, ja())
+    t = d.add_table(rows=3, cols=2); t.style = 'Table Grid'
+    for r, row in enumerate([(u'国', u'成長率'), (u'日本', '1.2'), (u'ペルー', '3.1')]):
+        for c, v in enumerate(row): xrun(t.cell(r, c).paragraphs[0], v, ja() if ord(v[0]) > 255 else '')
+    p = d.add_paragraph('The model (')
+    xrun(p, u'モデル', ja())
+    p.add_run(') uses GDP ')
+    xrun(p, u'データ', ja())
+    p.add_run(' from 2020.')
+    buf = io.BytesIO()
+    d.save(buf)
+    return add_parts(buf.getvalue(), {'word/footnotes.xml': footnotes([('', u'<w:r><w:rPr>%s</w:rPr><w:t xml:space="preserve"> 出典：</w:t></w:r><w:r><w:rPr>%s</w:rPr><w:t>世界銀行</w:t></w:r><w:r><w:t>。</w:t></w:r>' % (ja(), ja(BOLD)))])})
+
+def make_korean():
+    d = Document()
+    xrun(d.add_paragraph(style='Title'), u'한국의 경제 성장', ko())
+    xrun(d.add_heading(level=1), u'서론', ko(font='Malgun Gothic'))
+    # hangul words with spaces between them, hanja, and 한글 in its old spelling: three letters (jamo) that make one syllable
+    p = d.add_paragraph()
+    xrun(p, u'본 논문은 ', ko())
+    xrun(p, u'제도', ko(BOLD))
+    xrun(p, u'가 경제 성장(經濟成長)에 미치는 영향을 ', ko(font='Gulim'))
+    xrun(p, u'분석한다. \u1112\u119e\u11ab글 2024년 3.5%.', ko())
+    note_ref(p, 1)
+    for t in [u'첫째, 자료', u'둘째, 방법']: xrun(d.add_paragraph(style='List Number'), t, ko())
+    t = d.add_table(rows=3, cols=2); t.style = 'Table Grid'
+    for r, row in enumerate([(u'나라', u'성장률'), (u'한국', '2.6'), (u'페루', '3.1')]):
+        for c, v in enumerate(row): xrun(t.cell(r, c).paragraphs[0], v, ko() if ord(v[0]) > 255 else '')
+    p = d.add_paragraph('The model (')
+    xrun(p, u'모형', ko())
+    p.add_run(') uses GDP data.')
+    buf = io.BytesIO()
+    d.save(buf)
+    return add_parts(buf.getvalue(), {'word/footnotes.xml': footnotes([('', u'<w:r><w:rPr>%s</w:rPr><w:t xml:space="preserve"> 출처: 세계은행.</w:t></w:r>' % ko())])})
+
+def make_hebrew():
+    d = Document()
+    para = lambda style=None, jc=None: bidi(d.add_paragraph(style=style), jc)
+    xrun(para('Title'), u'צמיחה ומוסדות', he())
+    xrun(bidi(d.add_heading(level=1)), u'מבוא', he())
+    p = para()
+    xrun(p, u'אנו חוקרים את ', he())
+    xrun(p, u'הצמיחה', he(BOLD))
+    xrun(p, u' במוסדות חלשים, בשיעור של ', he())
+    xrun(p, '5%')
+    xrun(p, u' בשנת ', he())
+    xrun(p, '2024')
+    xrun(p, u'; האם זה נכון?', he())
+    note_ref(p, 1)
+    # vowel points, cantillation marks, a maqaf, a geresh, and a right to left mark before the stop
+    p = para()
+    xrun(p, u'שָׁלוֹם עוֹלָם, בְּרֵאשִׁ\u0596ית בָּרָ\u05a3א ועוד: בית־ספר, ג׳ירפה, ', he())
+    xrun(p, 'World Bank (GDP)\u200e')
+    xrun(p, u' גם\u200f.', he())
+    xrun(para(jc='right'), u'יישור לקצה.', he())
+    for t in [u'התוצאה הראשונה', u'התוצאה השנייה']: xrun(para('List Bullet'), t, he())
+    t = d.add_table(rows=3, cols=2); t.style = 'Table Grid'
+    t._tbl.tblPr.insert(1, parse_xml('<w:bidiVisual %s/>' % W))
+    for r, row in enumerate([(u'מדינה', u'צמיחה'), (u'פרו', '3.1'), (u'ישראל', '2.4')]):
+        for c, v in enumerate(row): xrun(bidi(t.cell(r, c).paragraphs[0]), v, he() if ord(v[0]) > 255 else '')
+    d.add_paragraph('An English paragraph in the Hebrew document.')
+    sect = d.sections[0]._sectPr
+    grid = [c for c in sect if c.tag.endswith('}docGrid')]
+    (grid[0].addprevious if grid else sect.append)(parse_xml('<w:bidi %s/>' % W))
+    buf = io.BytesIO()
+    d.save(buf)
+    return add_parts(buf.getvalue(), {'word/footnotes.xml': footnotes([('<w:pPr><w:bidi/></w:pPr>', u'<w:r><w:rPr>%s</w:rPr><w:t xml:space="preserve"> נתוני הבנק העולמי, 2024.</w:t></w:r>' % he())])})
+
+def make_scripts():
+    d = Document()
+    d.add_heading('Five more scripts', level=1)
+    th = lambda f='': '<w:rFonts w:ascii="Angsana New" w:hAnsi="Angsana New" w:cs="Angsana New"/>%s<w:lang w:bidi="th-TH"/>' % f
+    si = lambda f='': '<w:rFonts w:cs="Iskoola Pota"/>%s<w:lang w:bidi="si-LK"/>' % f
+    # Thai: no space between words, vowels and tone marks above and below, its own digits
+    p = d.add_paragraph('Thai: ')
+    xrun(p, u'ภาษาไทย', th(BOLD))
+    xrun(p, u'เป็นภาษาราชการของประเทศไทย น้ำดื่ม ๑๒๓', th())
+    # Sinhala: sri is sa, virama, joiner, ra, ii
+    p = d.add_paragraph('Sinhala: ')
+    xrun(p, u'සිංහල', si(BOLD))
+    xrun(p, u' ආයුබෝවන්, ස්තුතියි. ශ්\u200dරී ලංකා', si())
+    p = d.add_paragraph('Hebrew: ')
+    xrun(p, u'שלום עולם', he())
+    p.add_run(' means hello, world.')
+    xrun(bidi(d.add_paragraph()), u'זוהי פסקה שלמה בעברית בתוך מסמך באנגלית.', he())
+    p = d.add_paragraph('Japanese: ')
+    xrun(p, u'日本語のテキストです。', ja())
+    p = d.add_paragraph('Korean: ')
+    xrun(p, u'한국어 문장입니다.', ko())
+    t = d.add_table(rows=2, cols=5); t.style = 'Table Grid'
+    for r, row in enumerate([('Thai', 'Sinhala', 'Hebrew', 'Japanese', 'Korean'), (u'ขอบคุณ', u'ස්තුතියි', u'תודה', u'ありがとう', u'감사합니다')]):
+        for c, v in enumerate(row): xrun(t.cell(r, c).paragraphs[0], v, '' if r == 0 else [th(), si(), he(), ja(), ko()][c])
+    # a stranger's file: words that read as LaTeX, and font and language names that try to be
+    p = d.add_paragraph('Type \\babelprovide[main]{hebrew} or \\input{/etc/passwd}: ')
+    xrun(p, u'ไทย', '<w:rFonts w:cs="}\\input{/etc/passwd}" w:eastAsia="\\babelfont{rm}{Evil}"/><w:lang w:bidi="th-TH}\\write18{id}" w:eastAsia="ja-JP}\\input{x}"/>')
+    p.add_run('.')
+    buf = io.BytesIO()
+    d.save(buf)
+    return buf.getvalue()
+
+MAKERS = {'rich': make_rich, 'chinese': make_chinese, 'arabic': make_arabic, 'mixed': make_mixed, 'hindi': make_hindi, 'indic': make_indic,
+          'japanese': make_japanese, 'korean': make_korean, 'hebrew': make_hebrew, 'scripts': make_scripts}
 
 if __name__ == '__main__':
     out = sys.argv[1] if len(sys.argv) > 1 else 'fixture.docx'

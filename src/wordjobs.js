@@ -6,7 +6,7 @@ import { alignRuns, exportData, allObjs, safeMath } from './wordsync.js';
 import { commentEdit } from './share.js';
 import { isBalanced } from './parser.js';
 import { safeUrl } from './wordast.js';
-import { scriptNeeds, scriptLines, otherDirection, INDIC } from './scripts.js';
+import { scriptNeeds, scriptLines, scriptSetup, otherDirection, INDIC, MORE } from './scripts.js';
 
 // pandoc's messages worth telling the user: the ones that say something was lost
 const said = (ws) => (ws || []).filter((w) => w.verbosity && w.verbosity !== 'INFO').map((w) => w.pretty || w.type).slice(0, 20);
@@ -26,7 +26,8 @@ export function exportDocx(P, req) {
   if (req.toc) opts['table-of-contents'] = true;
   const r = P.convert(opts, JSON.stringify(req.doc), req.resources || {});
   if (!r.files['out.docx']) throw new Error('pandoc wrote no Word file: ' + (r.stderr || '').trim().slice(0, 300));
-  const docx = styled(r.files['out.docx'], !!(req.doc.meta && req.doc.meta.dir && req.doc.meta.dir.c === 'rtl'));
+  const mainTex = (req.project.files.find(([f]) => f === req.project.main) || [])[1];
+  const docx = styled(r.files['out.docx'], !!(req.doc.meta && req.doc.meta.dir && req.doc.meta.dir.c === 'rtl'), typeof mainTex === 'string' ? scriptSetup(mainTex) : {});
   // what Word got, block by block, lined up with what the page showed
   const X = extract(unzip(docx));
   const anchors = [];
@@ -77,48 +78,76 @@ export function exportDocx(P, req) {
 // template wrote (the title block, the contents field), which the tree has no say over.
 const HAN = /[\u2E80-\u2FDF\u3005-\u3007\u3021-\u3029\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/;
 const ARABIC = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFC]/;
-const EAST_ASIA = { font: 'SimSun', lang: 'zh-CN' }, COMPLEX = { font: 'Amiri', lang: 'ar-SA' };
-// India's scripts (src/scripts.js has the nine) are complex scripts to Word as Arabic is, but
-// set left to right, and a file may hold several: each run of one gets its font and its
-// language on the run itself (w:rFonts w:cs, w:lang w:bidi), since the defaults name one font
-// and one language only, Arabic's when the file has both. Nirmala UI is the one font of
-// Windows with all nine; where it is missing Word takes another that has the script. A run
-// pandoc wrote with two of the scripts in it is cut where the script changes. The danda and
-// double danda, which all of them share, go with the text before them.
-const INDIC_FONT = 'Nirmala UI';
-const INDIC_OWN = /[\u0900-\u0963\u0966-\u0D7F\uA8E0-\uA8FF]/;
-const indicOf = (ch) => (INDIC_OWN.test(ch) && INDIC.find((x) => x[2].test(ch))) || null;
-function indicRuns(xml) {
-  if (!INDIC_OWN.test(xml)) return xml;
+const more = (id) => MORE.find((x) => x[0] === id)[2];
+const KANA = more('japanese'), HANGUL = more('korean'), HEBREW = more('hebrew');
+// What the defaults can hold: one East Asian font and language, one complex script's. Chinese
+// characters are Japan's and Korea's too, so the East Asian one is the document's by its set
+// up (Yu Mincho and Malgun Gothic are Windows' faces for the two); the complex script one is
+// Arabic's, or Hebrew's in a file with Hebrew and no Arabic (Times New Roman has the letters
+// on every Word).
+const EAST_ASIA = { chinese: { font: 'SimSun', lang: 'zh-CN' }, japanese: { font: 'Yu Mincho', lang: 'ja-JP' }, korean: { font: 'Malgun Gothic', lang: 'ko-KR' } };
+const COMPLEX = { arabic: { font: 'Amiri', lang: 'ar-SA' }, hebrew: { font: 'Times New Roman', lang: 'he-IL' } };
+// which of the three a file's East Asian text is: have: what the main file sets up
+function eastAsian(have, words) {
+  const kana = (words.match(new RegExp(KANA.source, 'g')) || []).length, hangul = (words.match(new RegExp(HANGUL.source, 'g')) || []).length;
+  if (!kana && !hangul && !HAN.test(words)) return null;
+  if (have.japanese !== have.korean) return have.japanese ? 'japanese' : 'korean';
+  if (!have.japanese && have.chinese) return 'chinese';
+  return kana || hangul ? (kana >= hangul ? 'japanese' : 'korean') : 'chinese';
+}
+// Every other script has its font and its language on the run itself (w:rFonts, w:lang: the
+// w:cs and w:bidi places for a complex script, w:eastAsia for an East Asian one), as a file may
+// hold several and the defaults name one of each kind. India's scripts (src/scripts.js has
+// the nine) and Sinhala: Nirmala UI is the one font of Windows with all of them; Thai:
+// Leelawadee UI; where a font is missing Word takes another that has the script. Hebrew where
+// the defaults are Arabic's, kana and hangul where the defaults are another's. A run pandoc
+// wrote with two scripts of one kind in it is cut where the script changes. The danda and
+// double danda, which India's scripts share, go with the text before them.
+const RUN_SCRIPTS = [
+  ...INDIC.map((x) => ({ id: x[0], re: x[2], at: 'cs', font: 'Nirmala UI', lang: x[4] + '-IN' })),
+  { id: 'sinhala', re: more('sinhala'), at: 'cs', font: 'Nirmala UI', lang: 'si-LK' },
+  { id: 'thai', re: more('thai'), at: 'cs', font: 'Leelawadee UI', lang: 'th-TH' },
+  { id: 'hebrew', re: HEBREW, at: 'cs', ...COMPLEX.hebrew },
+  { id: 'japanese', re: KANA, at: 'eastAsia', ...EAST_ASIA.japanese },
+  { id: 'korean', re: HANGUL, at: 'eastAsia', ...EAST_ASIA.korean }
+];
+const RUN_ANY = new RegExp(RUN_SCRIPTS.map((x) => x.re.source).join('|'));
+// skip: the scripts the defaults speak for
+function scriptRuns(xml, skip) {
+  if (!RUN_ANY.test(xml)) return xml;
+  const list = RUN_SCRIPTS.filter((x) => !skip.includes(x.id));
+  const of = (ch) => (RUN_ANY.test(ch) && list.find((x) => x.re.test(ch))) || null;
   return xml.replace(/<w:r>(?:<w:rPr>((?:(?!<\/w:rPr>)[\s\S])*)<\/w:rPr>)?<w:t xml:space="preserve">([^<]*)<\/w:t><\/w:r>/g, (run, rpr, t) => {
-    if (!INDIC_OWN.test(t)) return run;
+    if (!RUN_ANY.test(t)) return run;
     const segs = [];
-    let cur = '', sc = null;
+    let cur = '', sc = {};
     for (const ch of t) {
-      const x = indicOf(ch);
-      if (x && sc && x !== sc) { segs.push([cur, sc]); cur = ''; }
-      if (x) sc = x;
+      const x = of(ch);
+      if (x && sc[x.at] && sc[x.at] !== x) { segs.push([cur, sc]); cur = ''; sc = {}; }
+      if (x) sc[x.at] = x;
       cur += ch;
     }
     segs.push([cur, sc]);
-    return segs.map(([seg, x]) => '<w:r><w:rPr>' + indicProps(rpr || '', x) + '</w:rPr><w:t xml:space="preserve">' + seg + '</w:t></w:r>').join('');
+    if (segs.length === 1 && !sc.cs && !sc.eastAsia) return run;
+    return segs.map(([seg, x]) => '<w:r><w:rPr>' + runProps(runProps(rpr || '', x.cs), x.eastAsia) + '</w:rPr><w:t xml:space="preserve">' + seg + '</w:t></w:r>').join('');
   });
 }
-// a run's properties with the font and the language of one of the scripts, each at its place in
-// the order Word's schema gives a run's properties: the fonts after the style, the language last
-function indicProps(rpr, x) {
-  const lang = x[4] + '-IN';
-  if (/<w:rFonts\b[^>]*\/>/.test(rpr)) rpr = rpr.replace(/<w:rFonts\b[^>]*\/>/, (f) => attrSet(f, 'w:cs', INDIC_FONT));
+// a run's properties with the font and the language of one script, each at its place in the
+// order Word's schema gives a run's properties: the fonts after the style, the language last
+function runProps(rpr, x) {
+  if (!x) return rpr;
+  const font = x.at === 'cs' ? 'w:cs' : 'w:eastAsia', lang = x.at === 'cs' ? 'w:bidi' : 'w:eastAsia';
+  if (/<w:rFonts\b[^>]*\/>/.test(rpr)) rpr = rpr.replace(/<w:rFonts\b[^>]*\/>/, (f) => attrSet(f, font, x.font));
   else {
     const st = /^\s*<w:rStyle\b[^>]*\/>/.exec(rpr);
     const k = st ? st[0].length : 0;
-    rpr = rpr.slice(0, k) + '<w:rFonts w:cs="' + INDIC_FONT + '" />' + rpr.slice(k);
+    rpr = rpr.slice(0, k) + '<w:rFonts ' + font + '="' + x.font + '" />' + rpr.slice(k);
   }
-  if (/<w:lang\b[^>]*\/>/.test(rpr)) return rpr.replace(/<w:lang\b[^>]*\/>/, (l) => attrSet(l, 'w:bidi', lang));
-  return rpr + '<w:lang w:bidi="' + lang + '" />';
+  if (/<w:lang\b[^>]*\/>/.test(rpr)) return rpr.replace(/<w:lang\b[^>]*\/>/, (l) => attrSet(l, lang, x.lang));
+  return rpr + '<w:lang ' + lang + '="' + x.lang + '" />';
 }
 const attrSet = (tag, name, v) => (new RegExp(' ' + name + '="[^"]*"').test(tag) ? tag.replace(new RegExp(' ' + name + '="[^"]*"'), ' ' + name + '="' + v + '"') : tag.replace(/\s*\/>$/, ' ' + name + '="' + v + '" />'));
-function styled(docx, rtl) {
+function styled(docx, rtl, have) {
   const parts = unzip(docx);
   const p = 'word/styles.xml';
   if (!parts.has(p)) return docx;
@@ -126,7 +155,10 @@ function styled(docx, rtl) {
   const dp = 'word/document.xml';
   let d = text(parts.get(dp));
   const words = d + (parts.has('word/footnotes.xml') ? text(parts.get('word/footnotes.xml')) : '');
-  const han = HAN.test(words), arabic = rtl || ARABIC.test(words);
+  const eaId = eastAsian(have || {}, words);
+  const csId = ARABIC.test(words) ? 'arabic' : HEBREW.test(words) ? 'hebrew' : rtl ? 'arabic' : null;
+  const han = eaId && EAST_ASIA[eaId], arabic = csId && COMPLEX[csId];
+  const skip = [eaId, csId].filter(Boolean);
   const d0 = d;
   // pandoc names the body's style only on a paragraph with no other property: one that has
   // its direction and nothing else is a body paragraph all the same
@@ -140,11 +172,11 @@ function styled(docx, rtl) {
     if (k >= 0 && !/<w:bidi\b/.test(d.slice(d.lastIndexOf('<w:sectPr'), k))) d = d.slice(0, k) + '<w:bidi />' + d.slice(k);
   }
   if (d.includes('<w:bidi />') && d.includes('<w:tbl>')) d = bidiTables(d);
-  d = indicRuns(d);
+  d = scriptRuns(d, skip);
   if (d !== d0) { parts.set(dp, d); n++; }
   for (const name of ['word/footnotes.xml', 'word/comments.xml']) {
     if (!parts.has(name)) continue;
-    const was = text(parts.get(name)), now = indicRuns(was);
+    const was = text(parts.get(name)), now = scriptRuns(was, skip);
     if (now !== was) { parts.set(name, now); n++; }
   }
   let st = text(parts.get(p));
@@ -154,8 +186,8 @@ function styled(docx, rtl) {
       let fonts = (/<w:rFonts\b[^>]*\/>/.exec(def) || ['<w:rFonts />'])[0], lang = (/<w:lang\b[^>]*\/>/.exec(def) || ['<w:lang />'])[0];
       const f0 = fonts, l0 = lang;
       // a theme font would win over the one named here
-      if (han) { fonts = attrSet(fonts.replace(/ w:eastAsiaTheme="[^"]*"/, ''), 'w:eastAsia', EAST_ASIA.font); lang = attrSet(lang, 'w:eastAsia', EAST_ASIA.lang); }
-      if (arabic) { fonts = attrSet(fonts.replace(/ w:cstheme="[^"]*"/, ''), 'w:cs', COMPLEX.font); lang = attrSet(lang, 'w:bidi', COMPLEX.lang); }
+      if (han) { fonts = attrSet(fonts.replace(/ w:eastAsiaTheme="[^"]*"/, ''), 'w:eastAsia', han.font); lang = attrSet(lang, 'w:eastAsia', han.lang); }
+      if (arabic) { fonts = attrSet(fonts.replace(/ w:cstheme="[^"]*"/, ''), 'w:cs', arabic.font); lang = attrSet(lang, 'w:bidi', arabic.lang); }
       const put = (x, was, now) => (x.includes(was) ? x.replace(was, now) : x.replace(/<w:rPr>/, '<w:rPr>' + now));
       return /<w:rPr>/.test(def) ? put(put(def, l0, lang), f0, fonts) : def;
     });
@@ -163,7 +195,7 @@ function styled(docx, rtl) {
     // headings take their fonts from the theme, which has one for each script: these say which
     const sp = 'word/settings.xml';
     if (parts.has(sp)) {
-      const se = text(parts.get(sp)).replace(/<w:themeFontLang\b[^>]*\/>/, (t) => { if (han) t = attrSet(t, 'w:eastAsia', EAST_ASIA.lang); if (arabic) t = attrSet(t, 'w:bidi', COMPLEX.lang); return t; });
+      const se = text(parts.get(sp)).replace(/<w:themeFontLang\b[^>]*\/>/, (t) => { if (han) t = attrSet(t, 'w:eastAsia', han.lang); if (arabic) t = attrSet(t, 'w:bidi', arabic.lang); return t; });
       parts.set(sp, se);
     }
   }
@@ -271,16 +303,28 @@ const MATHSYM = { '≔': '\\mathrel{:=}', '≕': '\\mathrel{=:}', '≝': '\\over
 // A zero width joiner goes too, except in Arabic script and in India's scripts, where it and
 // the non joiner (which pdfLaTeX knows as well) choose the shape of the letters beside them (in
 // Devanagari whether two consonants join, in Malayalam a letter's final form).
-const JOINS = /[\u0600-\u08FF\uFB50-\uFDFF\uFE70-\uFEFC\u0900-\u0D7F\uA8E0-\uA8FF]/;
+const JOINS = /[\u0600-\u08FF\uFB50-\uFDFF\uFE70-\uFEFC\u0900-\u0DFF\uA8E0-\uA8FF]/;
 // Characters the fonts of the hosted Rikuy have once the preamble sets the script up
 // (src/scripts.js): Chinese with its punctuation and full width forms, Arabic, and each of
 // India's scripts with the danda and double danda they share (which stand in Devanagari's block).
 const INDIC_SHARED = /[\u0964\u0965\u200C\u200D]/;
+const CJK_SET = /[\u2E80-\u2FDF\u3000-\u303F\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFFEF]/;
 const FONTED = {
-  ...Object.fromEntries(INDIC.map((x) => [x[0], { test: (ch) => x[2].test(ch) || INDIC_SHARED.test(ch) }])), chinese: /[\u2E80-\u2FDF\u3000-\u303F\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFE30-\uFE4F\uFF00-\uFFEF]/, arabic: /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u200C\u200D]/ };
+  ...Object.fromEntries(INDIC.map((x) => [x[0], { test: (ch) => x[2].test(ch) || INDIC_SHARED.test(ch) }])),
+  // the five more: Japan's and Korea's fonts have the Chinese characters and their punctuation
+  // too; Sinhala joins its letters as India's scripts do
+  ...Object.fromEntries(MORE.map((x) => [x[0], { test: (ch) => x[2].test(ch) || ((x[0] === 'japanese' || x[0] === 'korean') && CJK_SET.test(ch)) || (x[0] === 'sinhala' && INDIC_SHARED.test(ch)) }])),
+  chinese: CJK_SET,
+  arabic: /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u200C\u200D]/
+};
+const HEBREW_G = /[\u0590-\u05FF\uFB1D-\uFB4F]/g, ARABIC_G = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFC]/g;
 const HAN_TEXT = /[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF]/;
-const SCRIPTS = [[/[\u3040-\u30FF\u31F0-\u31FF]/, 'Japanese'], [/[\u1100-\u11FF\uAC00-\uD7AF\u3130-\u318F]/, 'Korean'], [/[\u2E80-\u2FDF\u3000-\u303F\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/, 'Chinese or Japanese'],
-  [/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/, 'Arabic'], [/[\u0590-\u05FF\uFB1D-\uFB4F]/, 'Hebrew'], ...INDIC.map((x) => [x[2], x[1]]), [/[\u0D80-\u0DFF]/, 'Sinhala'], [/[\u0E00-\u0EFF]/, 'Thai or Lao'],
+// what a character with no font is called in the note: the scripts above by their names (one
+// is listed when its text has digits or signs only, or the preamble could not take its lines),
+// and scripts that have no font here
+const SCRIPTS = [...MORE.filter((x) => x[0] === 'japanese' || x[0] === 'korean').map((x) => [x[2], x[1]]), [CJK_SET, 'Chinese or Japanese'],
+  [/[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/, 'Arabic'], ...INDIC.map((x) => [x[2], x[1]]), ...MORE.filter((x) => x[0] !== 'japanese' && x[0] !== 'korean').map((x) => [x[2], x[1]]),
+  [/[\u0700-\u074F]/, 'Syriac'], [/[\u0E80-\u0EFF]/, 'Lao'], [/[\u0F00-\u0FFF]/, 'Tibetan'], [/[\u1000-\u109F]/, 'Myanmar'], [/[\u1780-\u17FF]/, 'Khmer'], [/[\u10A0-\u10FF\u2D00-\u2D2F]/, 'Georgian'], [/[\u0530-\u058F]/, 'Armenian'], [/[\u1200-\u139F]/, 'Ethiopic'],
   [/[\u1E00-\u1EFF\u0180-\u024F]/, 'accented Latin'], [/[\uD800-\uDFFF\u2600-\u27BF\u2B00-\u2BFF\uFE00-\uFE0F]/, 'emoji and pictographs']];
 
 const MARKS_G = /[\uE000-\uE01F]/g;
@@ -675,13 +719,14 @@ function codeSpaces(tex) {
 }
 
 // pandoc's marks (premark) in the LaTeX it wrote, each as the command it stands for
-// S: { arabic: the preamble sets Arabic up, rtl: the document itself runs right to left }
+// S: { arabic, hebrew: the preamble sets that script up, rtl: the document itself runs right
+// to left }
 function unmark(tex, info, N, S) {
   const count = (k, n = 1) => { N[k] = (N[k] || 0) + n; };
   tex = uncode(tex);
   // the groups of paragraphs directions() set between marks: one that runs against the
-  // document goes into the environment that turns it. Where Arabic is not set up (another
-  // right to left script, which has no font here) nothing can turn a paragraph, and one that
+  // document goes into the environment that turns it. Where neither Arabic nor Hebrew is set up
+  // (another right to left script, which has no font here) nothing can turn a paragraph, and one that
   // lost its direction keeps no right alignment either: in Word that was its left edge.
   if (/[\uE00C-\uE00F]/.test(tex)) {
     const [RO, RC] = mark.rtlGroup, [LO, LC] = mark.ltrGroup;
@@ -689,14 +734,26 @@ function unmark(tex, info, N, S) {
     // in its own text, and gets no half of an environment for it)
     const seq = tex.split('\n').filter((l) => l === RO || l === RC || l === LO || l === LC).join('');
     const paired = new RegExp('^(?:' + RO + RC + '|' + LO + LC + ')*$').test(seq);
-    const wrapR = paired && S.arabic && !S.rtl ? otherDirection(true) : null, wrapL = paired && S.arabic && S.rtl ? otherDirection(false) : null;
+    // (a group that runs from the right in a left to right document is Hebrew's when most of
+    // its letters are, Arabic's otherwise; each needs its own language set up)
+    const L = tex.split('\n');
+    const langOf = (i) => {
+      let he = 0, ar = 0;
+      for (let k = i + 1; k < L.length && L[k] !== RC; k++) { he += (L[k].match(HEBREW_G) || []).length; ar += (L[k].match(ARABIC_G) || []).length; }
+      return S.hebrew && (he > ar || !S.arabic) ? 'hebrew' : S.arabic ? 'arabic' : null;
+    };
+    const any = S.arabic || S.hebrew;
+    const wrapL = paired && any && S.rtl ? otherDirection(false) : null;
+    let wrapR = null;
     const out = [];
     let inR = false, skip = false;
-    for (const line of tex.split('\n')) {
+    for (let i = 0; i < L.length; i++) {
+      const line = L[i];
       // an environment's first and last lines stand against its text, with no blank line
       if (skip && !line.trim()) { skip = false; continue; }
       skip = false;
       if (line === RO || line === LO) {
+        if (line === RO) { const lang = paired && !S.rtl ? langOf(i) : null; wrapR = lang ? otherDirection(true, lang) : null; }
         const w = line === RO ? wrapR : wrapL;
         inR = line === RO;
         if (w) out.push(w[0]);
@@ -708,7 +765,7 @@ function unmark(tex, info, N, S) {
         if (w) out.push(w[1]);
         out.push('');
         skip = true;
-      } else out.push(inR && !S.arabic ? line.replace(/[\uE009\uE00A]/g, '') : line);
+      } else out.push(inR && !any ? line.replace(/[\uE009\uE00A]/g, '') : line);
     }
     tex = out.join('\n');
   }
@@ -905,8 +962,8 @@ export function docxToLatex(P, bytes, name) {
   // lines for them)
   const probe = '\\begin{document}\n' + tex + '\n' + abstract;
   const needs = scriptNeeds(probe, [probe, [title, author, date].join('\n')]);
-  const arabic = needs.includes('arabic');
-  tex = unmark(tex, info || { chars: 0, colors: new Map() }, N, { arabic, rtl: arabic && !!needs.arabicMain });
+  const arabic = needs.includes('arabic'), hebrew = needs.includes('hebrew');
+  tex = unmark(tex, info || { chars: 0, colors: new Map() }, N, { arabic, hebrew, rtl: (arabic && !!needs.arabicMain) || (hebrew && !!needs.hebrewMain && !needs.arabicMain) });
   const used = (re) => re.test(tex) || re.test(title) || re.test(abstract) || re.test(author);
   // pandoc writes some commands of its own: those used get their definitions
   const size = info && info.sz >= 23 ? '12pt' : info && info.sz >= 21 ? '11pt' : '';
@@ -988,6 +1045,7 @@ export function docxToLatex(P, bytes, name) {
   if (N.nopicture) lost.push(s(N.nopicture, 'picture') + ' the file only links to, or in a format that is not a picture (marked [picture])');
   if (info) {
     if (info.charts || info.art) lost.push([info.charts ? s(info.charts, 'chart') : '', info.art ? s(info.art, 'SmartArt drawing') : ''].filter(Boolean).join(' and ') + ' (Word draws them itself; save each as a picture in Word to keep it)');
+    if (info.ruby) lost.push('the readings set above ' + s(info.ruby, 'word') + ' (ruby); the words are kept');
     if (info.heads.length) lost.push('the header and footer text (“' + info.heads.join('”, “').replace(/\s+/g, ' ').slice(0, 120) + '”)');
     if (N.uncommented) lost.push(s(N.uncommented, 'comment') + ' with no place in the text');
     if (info.cols.some((n) => n > 1) && !two) lost.push('the columns of the part set in columns');

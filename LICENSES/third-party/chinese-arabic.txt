@@ -1,7 +1,31 @@
-Fonts and helper files for Chinese, Arabic and India's scripts in the TeX tree (the hosted Rikuy only)
+Fonts and helper files for Chinese, Japanese, Korean, Arabic, Hebrew, India's scripts, Thai and
+Sinhala in the TeX tree (the hosted Rikuy only)
+
+Harano Aji Mincho and Harano Aji Gothic (regular and bold)
+  Copyright 2019-2025 Masamichi Hosoda, with Reserved Font Name 'Harano Aji'; copyright
+  2017-2025 Adobe (http://www.adobe.com/). SIL Open Font License 1.1 (text as for Noto below).
+  From TeX Live (texlive-lang-japanese).
+
+NanumMyeongjo and NanumGothic (regular and bold)
+  Copyright 2010 NAVER Corporation, with Reserved Font Names Nanum, NanumGothic, NanumMyeongjo
+  and others. SIL Open Font License 1.1 (text as for Noto below). From Ubuntu's fonts-nanum.
+
+Hadasim CLM (regular, bold and their obliques), from the Culmus project
+  Copyright 2010 Yoram Gnat; 2007 Red Hat Inc. GNU General Public License 2
+  (LICENSES/GPL-2.0.txt) with this exception:
+  As a special exception, if you create a document which uses this font, and
+  embed this font or unaltered portions of this font into the document, this
+  font does not by itself cause the resulting document to be covered by the
+  GNU General Public License. This exception does not however invalidate any
+  other reasons why the document might be covered by the GNU General Public
+  License. If you modify this font, you may extend this exception to your
+  version of the font, but you are not obligated to do so. If you do not wish
+  to do so, delete this exception statement from your version.
+  From Ubuntu's fonts-culmus.
 
 Noto Serif Devanagari, Bengali, Tamil, Telugu, Gujarati, Kannada, Malayalam and Gurmukhi, Noto
-Sans Oriya and Noto Nastaliq Urdu (regular and bold)
+Sans Oriya, Noto Nastaliq Urdu, Noto Serif Hebrew, Noto Serif Thai and Noto Serif Sinhala (regular
+and bold)
   Copyright 2012-2020 Google LLC and the Noto Project Authors (https://github.com/notofonts).
   SIL Open Font License 1.1 (its text is build/fonts/OFL.txt in Rikuy's source and stands in
   LICENSES.txt under Paper Modern). From Ubuntu's fonts-noto-core.

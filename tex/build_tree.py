@@ -99,10 +99,11 @@ DEB_SETS = ['texlive-lang-german', 'texlive-lang-spanish', 'texlive-lang-french'
             'texlive-formats-extra', 'asymptote']
 
 
-# Chinese, Arabic and India's scripts. What a document in those scripts needs beyond the sets above: the Fandol
+# Chinese, Arabic, India's scripts, Japanese, Korean, Hebrew, Thai and Sinhala. What a document in those
+# scripts needs beyond the sets above: the Fandol
 # fonts with ctex's and xeCJK's helpers (XeLaTeX), the CJK package with the Arphic fonts
 # (pdfLaTeX: gbsn and gkai simplified, bsmi and bkai traditional), and Amiri, which Ubuntu's
-# texlive-lang-arabic only links to. 48 MB of packs that the artifact has no room for, so these files go
+# texlive-lang-arabic only links to. 78 MB of packs that the artifact has no room for, so these files go
 # into packs of their own (script_only), marked 'x' in the index: the hosted Rikuy serves them,
 # publish_batches.py leaves them out of the artifact, and no other pack's bytes depend on them.
 SCRIPT_PICKS = [('texlive-lang-chinese', ['fandol', 'zhnumber', 'zhmetrics', 'xpinyin', 'zhlineskip', 'zhlipsum', 'zhspacing', 'upzhkinsoku']),
@@ -114,11 +115,25 @@ SCRIPT_LINKED = [('fonts-hosny-amiri/usr/share/fonts/opentype/fonts-hosny-amiri'
                   ['Amiri-Regular.ttf', 'Amiri-Bold.ttf', 'Amiri-Italic.ttf', 'Amiri-BoldItalic.ttf']),
                  # India's scripts: Noto Serif (Sans for Odia, which has no Serif), regular and bold,
                  # and Noto Nastaliq Urdu. TeX Live has no font for most of them. 4 MB.
-                 ('fonts-noto-core/usr/share/fonts/truetype/noto', 'fonts/truetype/public/noto-indic',
+                 # (and Hebrew, Thai and Sinhala from the same package)
+                 ('fonts-noto-core/usr/share/fonts/truetype/noto', 'fonts/truetype/public/noto-scripts',
                   [f + '-' + w + '.ttf' for f in ('NotoSerifDevanagari', 'NotoSerifBengali', 'NotoSerifTamil', 'NotoSerifTelugu',
                                                   'NotoSerifGujarati', 'NotoSerifKannada', 'NotoSerifMalayalam', 'NotoSerifGurmukhi',
-                                                  'NotoSansOriya', 'NotoNastaliqUrdu') for w in ('Regular', 'Bold')])]
-SCRIPT_ONLY = re.compile(r'^(fonts/[^/]+/public/(fandol|amiri|noto-indic)|fonts/([^/]+/)+arphic(/|$)|fonts/tfm/zhmetrics'
+                                                  'NotoSansOriya', 'NotoNastaliqUrdu', 'NotoSerifHebrew', 'NotoSerifThai',
+                                                  'NotoSerifSinhala') for w in ('Regular', 'Bold')]),
+                 # Japanese: Harano Aji, TeX Live's own default since 2020, a Mincho and a Gothic in two
+                 # weights (23 MB of the seven files' 39). Korean: Nanum's Myeongjo and Gothic (17 MB);
+                 # TeX Live's UnFonts are links in Ubuntu's package.
+                 ('texlive-lang-japanese/usr/share/texlive/texmf-dist/fonts/opentype/public/haranoaji', 'fonts/opentype/public/haranoaji',
+                  ['HaranoAjiMincho-Regular.otf', 'HaranoAjiMincho-Bold.otf', 'HaranoAjiGothic-Regular.otf', 'HaranoAjiGothic-Bold.otf']),
+                 ('fonts-nanum/usr/share/fonts/truetype/nanum', 'fonts/truetype/public/nanum',
+                  ['NanumMyeongjo.ttf', 'NanumMyeongjoBold.ttf', 'NanumGothic.ttf', 'NanumGothicBold.ttf']),
+                 # Hebrew: Culmus's Hadasim, which has Latin letters and digits beside the Hebrew (Noto
+                 # Serif Hebrew has neither, and a Hebrew document's numbers were gone from the PDF) and
+                 # whose license lets a document embed it
+                 ('fonts-culmus/usr/share/fonts/truetype/culmus', 'fonts/opentype/public/culmus',
+                  ['HadasimCLM-Regular.otf', 'HadasimCLM-Bold.otf', 'HadasimCLM-RegularOblique.otf', 'HadasimCLM-BoldOblique.otf'])]
+SCRIPT_ONLY = re.compile(r'^(fonts/[^/]+/public/(fandol|amiri|noto-scripts|haranoaji|nanum|culmus)|fonts/([^/]+/)+arphic(/|$)|fonts/tfm/zhmetrics'
                          r'|tex/latex/(CJK|zhnumber|zhmetrics|xpinyin|zhlineskip|zhlipsum|cjkpunct|xcjk2uni)$'
                          r'|tex/generic/(zhmetrics|zhspacing|upzhkinsoku)$|tex/xelatex/zhspacing$)')
 

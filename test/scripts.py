@@ -13,7 +13,12 @@ India's scripts (Devanagari, Bengali, Gurmukhi, Gujarati, Odia, Tamil, Telugu, K
 Malayalam): the notice names any mix of scripts, the font stacks name fonts for the nine, and
 editing goes by characters as a reader sees them: the caret never lands inside one, Backspace
 takes its last code point, Delete the whole of it, bold takes it whole, a page break never
-cuts it."""
+cuts it.
+
+Japanese, Korean, Hebrew, Thai and Sinhala: the notice and the fonts for them, Chinese
+characters drawn by the fonts of the document's own language, kana composed into Chinese
+characters and hangul built from jamo by an input method, Thai lines broken where words
+start, Hebrew right to left with its points."""
 import os, sys, traceback
 sys.path.insert(0, os.path.dirname(__file__))
 from browser import open_page, check, results, src, click_text, select_text, load_doc
@@ -648,6 +653,429 @@ def marks_after_syntax(page):
     check('and from the letter after it', got == 'Start \\emph{cafe}\u0301\\textbf{s end.}' and toast == '', [got.encode('unicode_escape').decode(), toast])
 
 
+CUTS = '''() => { const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' }); const out = [];
+  for (const a of document.querySelectorAll('#pages .it.split-a')) { const b = a.closest('.page').nextElementSibling.querySelector('.it.split-b'); if (!b) continue;
+    const ta = a.textContent.replace(/-$/, ''), tb = b.textContent, whole = ta + tb; let n = 0; const edges = new Set([0, ...[...seg.segment(whole)].map((x) => (n += x.segment.length))]);
+    out.push({ edge: edges.has(ta.length), mark: /^\\p{M}/u.test(tb), whole }); }
+  const t = document.querySelector('#pages .it.p span.t'), R = document.createRange(); R.selectNodeContents(t); const f = t.closest('.pb').getBoundingClientRect();
+  const q = [...R.getClientRects()].filter((x) => x.width > 1);
+  return { out, pages: document.querySelectorAll('.page').length, hy: document.querySelectorAll('#pages .chr.hy').length, lines: new Set(q.map((x) => Math.round(x.top))).size,
+    inside: q.every((x) => x.left >= f.left - 1.5 && x.right <= f.right + 1.5) }; }'''
+# where the lines of the first paragraph start, and whether each start is where a word starts
+LINE_STARTS = '''(lang) => { const t = document.querySelector('#pages .it.p span.t'), text = t.textContent, R = document.createRange(), starts = []; let last = null;
+  for (let i = 0; i < text.length; i++) { R.setStart(t.firstChild, i); R.setEnd(t.firstChild, i + 1); const q = R.getClientRects()[0]; if (!q || !q.width) continue; const top = Math.round(q.top); if (last !== null && top > last + 3) starts.push(i); last = last === null ? top : Math.max(last, top); }
+  let words = null; try { words = new Set(); let n = 0; for (const s of new Intl.Segmenter(lang, { granularity: 'word' }).segment(text)) { words.add(n); n += s.segment.length; } } catch (e) { words = null; }
+  let n = 0; const clusters = new Set([0, ...[...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].map((x) => (n += x.segment.length))]);
+  return { starts, word: words ? starts.every((i) => words.has(i)) : null, cluster: starts.every((i) => clusters.has(i)) }; }'''
+
+
+def five(p, page):
+    """Japanese, Korean, Hebrew, Thai and Sinhala."""
+    cdp = page.context.new_cdp_session(page)
+    cdp.send('DOM.enable')
+    cdp.send('CSS.enable')
+    names = lambda v: [x.strip().strip('"') for x in v.split(',')]
+    stacks = lambda: page.evaluate("""() => { const e = document.createElement('span'); document.getElementById('sheet').append(e); const doc = getComputedStyle(e).fontFamily; e.className = 'y-sf'; const sf = getComputedStyle(e).fontFamily;
+      e.className = 'y-tt'; const tt = getComputedStyle(e).fontFamily; e.remove(); return { doc, sf, tt, cjk: document.documentElement.dataset.cjk || '' }; }""")
+    has = lambda fonts, sample: page.evaluate("""([fonts, sample]) => { const c = document.createElement('canvas').getContext('2d'); const w = (f) => { c.font = '40px ' + f; return c.measureText(sample).width; };
+      return fonts.filter((n) => w('"' + n + '", monospace') !== w('monospace')); }""", [fonts, sample])
+    JA = ['Hiragino Mincho ProN', 'Yu Mincho', 'YuMincho', 'MS PMincho', 'Noto Serif CJK JP', 'Source Han Serif JP', 'IPAexMincho']
+    JA_SF = ['Hiragino Sans', 'Yu Gothic', 'Meiryo', 'Noto Sans CJK JP']
+    KO = ['AppleMyungjo', 'Batang', 'Nanum Myeongjo', 'Noto Serif CJK KR']
+    KO_SF = ['Apple SD Gothic Neo', 'Malgun Gothic', 'Nanum Gothic', 'Noto Sans CJK KR']
+    HE = ['Noto Serif Hebrew', 'David', 'Times New Roman', 'Frank Ruehl CLM', 'Arial Hebrew']
+    TH = ['Noto Serif Thai', 'Thonburi', 'Leelawadee UI', 'Tahoma', 'Noto Sans Thai']
+    SI = ['Noto Serif Sinhala', 'Sinhala MN', 'Nirmala UI', 'Iskoola Pota', 'Noto Sans Sinhala']
+    was = '"Paper Modern Serif", "Latin Modern Roman", "Computer Modern Serif", "Iowan Old Style", Georgia, serif, '
+
+    # ---- fonts, and whose fonts draw the Chinese characters
+    load_doc(page, doc('', '漢字直接 中文。 Latin words too.'))
+    page.wait_for_timeout(400)
+    zh = stacks()
+    d = names(zh['doc'])
+    check('the text stack names a Mincho, a Myeongjo, and fonts for Hebrew, Thai and Sinhala', all(n in d for n in JA + KO + HE + TH + SI) and zh['doc'].startswith(was), [n for n in JA + KO + HE + TH + SI if n not in d])
+    last = lambda n: len(d) - 1 - d[::-1].index(n)  # (Nirmala UI and Tahoma stand in earlier rows too)
+    check('in each script\'s own order', all(all(last(a) < last(b) for a, b in zip(row, row[1:])) for row in [JA, KO, HE, TH, SI]), d[-40:])
+    check('the sans serif and typewriter stacks name a Gothic and a Korean sans', all(n in names(zh['sf']) and n in names(zh['tt']) for n in JA_SF + KO_SF + ['Noto Sans Hebrew', 'Noto Sans Thai', 'Noto Sans Sinhala']) and names(zh['sf']).index('Hiragino Sans') > names(zh['sf']).index('sans-serif'), zh['sf'][-200:])
+    check('a Chinese document: the Chinese fonts first, as before', zh['cjk'] == '' and d.index('Songti SC') < d.index('Hiragino Mincho ProN') < d.index('AppleMyungjo') and d.index('Amiri') < d.index('Noto Serif Hebrew') < d.index('Songti SC'), [zh['cjk'], d[6:40]])
+    used = {'zh': [f for f, c in fonts_of(cdp, '#pages .it.p span.t') if not c]}
+    load_doc(page, doc('', '漢字とかな 直接。 Latin words too.'))
+    page.wait_for_timeout(400)
+    ja = stacks()
+    d = names(ja['doc'])
+    check('a document with kana: the Japanese fonts first', ja['cjk'] == 'ja' and d.index('Hiragino Mincho ProN') < d.index('Songti SC') < d.index('AppleMyungjo') and names(ja['sf']).index('Hiragino Sans') < names(ja['sf']).index('PingFang SC') and
+          names(ja['tt']).index('Noto Sans CJK JP') < names(ja['tt']).index('FangSong') and ja['doc'].startswith(was), [ja['cjk'], d[6:40]])
+    used['ja'] = [f for f, c in fonts_of(cdp, '#pages .it.p span.t') if not c]
+    lat = fonts_of(cdp, '#pages .it.p span.t')
+    check('Latin text in it is still drawn by the page\'s own font', ('Paper Modern Serif', True) in lat and all(c is False for f, c in lat if f != 'Paper Modern Serif'), lat)
+    load_doc(page, doc('', '漢字와 한글 直接。'))
+    page.wait_for_timeout(400)
+    ko = stacks()
+    d = names(ko['doc'])
+    check('a document with hangul: the Korean fonts first', ko['cjk'] == 'ko' and d.index('AppleMyungjo') < d.index('Songti SC') < d.index('Hiragino Mincho ProN') and names(ko['sf']).index('Malgun Gothic') < names(ko['sf']).index('PingFang SC'), [ko['cjk'], d[6:40]])
+    used['ko'] = [f for f, c in fonts_of(cdp, '#pages .it.p span.t') if not c]
+    for k, fam, sample in [('zh', ['Songti SC', 'STSong', 'SimSun', 'Noto Serif CJK SC', 'Source Han Serif SC'], '漢字'), ('ja', JA, '漢字'), ('ko', KO, '漢字')]:
+        got = has(fam, sample)
+        check({'zh': 'Chinese', 'ja': 'Japanese', 'ko': 'Korean'}[k] + ': the Chinese characters are drawn by its own font, where the system has one', (bool(used[k]) and used[k][0] in fam) or not got, [used[k], got])
+    print('     (Chinese characters drawn here by ' + ', '.join(k + ': ' + '/'.join(v) for k, v in used.items()) + ')')
+    load_doc(page, doc('\\usepackage[english]{babel}\n\\babelprovide[import=ja, onchar=ids fonts]{japanese}', '漢字直接'))
+    page.wait_for_timeout(300)
+    check('Chinese characters alone in a document set up for Japanese: Japanese', stacks()['cjk'] == 'ja')
+    load_doc(page, doc('\\usepackage[scheme=plain]{ctex}', '这是中文。'))
+    page.wait_for_timeout(300)
+    click_text(page, '这是中文', 2)
+    page.keyboard.type('かな')
+    page.wait_for_timeout(300)
+    check('kana typed into a Chinese document turn it', stacks()['cjk'] == 'ja' and '这是かな中文' in src(page))
+    undo(page)
+    page.wait_for_timeout(200)
+    check('and undone, it is Chinese again', stacks()['cjk'] == '')
+
+    # ---- Japanese: editing, an input method, a page cut
+    JA_PRE = '\\usepackage[english]{babel}\n\\babelprovide[import=ja, onchar=ids fonts]{japanese}\n\\babelfont[japanese]{rm}{Harano Aji Mincho}'
+    load_doc(page, doc(JA_PRE, 'これは日本語の文です。\n\nが' + chr(0x304B) + chr(0x3099) + 'きの二つ目。'))
+    page.wait_for_timeout(400)
+    base = src(page)
+    at = base.index('日本語')
+    l, r, t, b = char_box(page, '日本語', 1)
+    page.mouse.click(l + 0.5, (t + b) / 2)
+    page.wait_for_timeout(120)
+    check('Japanese: a click between two characters', caret(page) == [at + 1, at + 1], [caret(page), at + 1])
+    page.keyboard.type('の')
+    page.wait_for_timeout(150)
+    check('Japanese: a character typed in the middle', src(page) == base.replace('日本語', '日の本語') and caret(page) == [at + 2, at + 2])
+    page.keyboard.press('Backspace')
+    page.wait_for_timeout(150)
+    page.keyboard.press('Delete')
+    page.wait_for_timeout(150)
+    check('Japanese: Backspace and Delete take one character each', src(page) == base.replace('日本語', '日語'), src(page)[at:at + 4])
+    undo(page, 3)
+    check('Japanese: undo', src(page) == base)
+    kat = base.index(chr(0x304B) + chr(0x3099))
+    click_text(page, chr(0x304B) + chr(0x3099) + 'き', 2)
+    page.keyboard.press('Backspace')
+    page.wait_for_timeout(150)
+    check('Japanese: Backspace after a kana with a combining voiced mark takes the mark', src(page) == base[:kat + 1] + base[kat + 2:], src(page)[kat - 1:kat + 3].encode('unicode_escape').decode())
+    undo(page)
+    click_text(page, chr(0x304B) + chr(0x3099) + 'き', 0)
+    page.keyboard.press('Delete')
+    page.wait_for_timeout(150)
+    check('Japanese: Delete before it takes the kana and its mark', src(page) == base[:kat] + base[kat + 2:], src(page)[kat - 1:kat + 3].encode('unicode_escape').decode())
+    undo(page)
+    select_text(page, '日本語')
+    page.keyboard.press('Control+b')
+    page.wait_for_timeout(180)
+    check('Japanese: bold on a word', src(page) == base.replace('日本語', '\\textbf{日本語}'))
+    undo(page)
+    select_text(page, '日本語')
+    page.keyboard.type('英語')
+    page.wait_for_timeout(180)
+    check('Japanese: typing over a selection', src(page) == base.replace('日本語', '英語'))
+    undo(page, 2)
+    click_text(page, '日本語', 0)
+    page.evaluate(PASTE, 'カタカナと한글 50% ')
+    page.wait_for_timeout(250)
+    check('Japanese: kana and hangul pasted as plain text', src(page) == base.replace('日本語', 'カタカナと한글 50\\% 日本語'), src(page)[at:at + 20])
+    undo(page)
+    # kana typed letter by letter, then turned into Chinese characters: many updates, one edit
+    click_text(page, '日本語', 0)
+    for text in ['k', 'か', 'かn', 'かん', 'かんj', 'かんじ']:
+        cdp.send('Input.imeSetComposition', {'text': text, 'selectionStart': len(text), 'selectionEnd': len(text)})
+        page.wait_for_timeout(30)
+    mid = page.evaluate('() => [window.rikuy.composing, [...document.querySelectorAll("#pages .it.p")][0].textContent]')
+    check('Japanese: while kana are composed the source does not change and the page shows them', src(page) == base and mid == [True, 'これはかんじ日本語の文です。'], mid)
+    cdp.send('Input.imeSetComposition', {'text': '漢字', 'selectionStart': 2, 'selectionEnd': 2})
+    page.wait_for_timeout(40)
+    hist = page.evaluate('window.rikuy.hist.length')
+    cdp.send('Input.insertText', {'text': '漢字'})
+    page.wait_for_timeout(300)
+    check('Japanese: the chosen characters go in as one edit, the kana leave nothing', src(page) == base.replace('日本語', '漢字日本語') and caret(page) == [at + 2, at + 2] and page.evaluate('window.rikuy.hist.length') == hist + 1 and
+          page.evaluate('[...document.querySelectorAll("#pages .it.p")][0].textContent') == 'これは漢字日本語の文です。', src(page)[at - 3:at + 8])
+    cdp.send('Input.imeSetComposition', {'text': 'てすと', 'selectionStart': 3, 'selectionEnd': 3})
+    page.wait_for_timeout(40)
+    cdp.send('Input.imeSetComposition', {'text': '', 'selectionStart': 0, 'selectionEnd': 0})
+    page.wait_for_timeout(250)
+    check('Japanese: a composition given up leaves the source and the page as they were', src(page) == base.replace('日本語', '漢字日本語') and page.evaluate('[...document.querySelectorAll("#pages .it.p")][0].textContent') == 'これは漢字日本語の文です。' and page.evaluate('window.rikuy.composing') is False,
+          page.evaluate('[...document.querySelectorAll("#pages .it.p")][0].textContent'))
+    sent = 'これは日本語の長い段落でありページの終わりで分かれても連字符は付かない文章である'
+    load_doc(page, doc(JA_PRE, '\n\n'.join(sent * (6 + i) for i in range(9))))
+    page.wait_for_timeout(600)
+    cut = page.evaluate(CUTS)
+    check('Japanese: lines break between characters, inside the text block', cut['lines'] >= 3 and cut['inside'], cut['lines'])
+    check('Japanese: a paragraph cut by a page break gets no hyphen', cut['pages'] >= 2 and len(cut['out']) >= 1 and cut['hy'] == 0 and all(c['edge'] for c in cut['out']), [cut['pages'], cut['hy'], len(cut['out'])])
+
+    # ---- Korean: syllables built from jamo by an input method
+    KO_PRE = '\\usepackage[english]{babel}\n\\babelprovide[import=ko, onchar=ids fonts]{korean}\n\\babelfont[korean]{rm}{NanumMyeongjo}'
+    load_doc(page, doc(KO_PRE, '여기 문장 입니다.\n\n둘째 문단.'))
+    page.wait_for_timeout(400)
+    base = src(page)
+    at = base.index('문장')
+    comp = lambda text: cdp.send('Input.imeSetComposition', {'text': text, 'selectionStart': len(text), 'selectionEnd': len(text)})
+    click_text(page, '문장', 0)
+    seen = []
+    for text in ['ㅎ', '하', '한']:
+        comp(text)
+        page.wait_for_timeout(30)
+        seen.append(page.evaluate('[...document.querySelectorAll("#pages .it.p")][0].textContent'))
+    check('Korean: a syllable grows from its jamo on the page, the source untouched', seen == ['여기 ㅎ문장 입니다.', '여기 하문장 입니다.', '여기 한문장 입니다.'] and src(page) == base, seen)
+    # the next consonant ends the syllable and starts another at once, with no pause between
+    cdp.send('Input.insertText', {'text': '한'})
+    for text in ['ㄱ', '그', '글']:
+        comp(text)
+    cdp.send('Input.insertText', {'text': '글'})
+    page.wait_for_timeout(300)
+    check('Korean: two syllables typed one after the other land in order, no jamo left behind', src(page) == base.replace('문장', '한글문장') and caret(page) == [at + 2, at + 2], src(page)[at - 3:at + 6])
+    # 한 and then a vowel: the final consonant moves on to the next syllable (하나)
+    for text in ['ㅎ', '하', '한']:
+        comp(text)
+    cdp.send('Input.insertText', {'text': '하'})
+    comp('나')
+    cdp.send('Input.insertText', {'text': '나'})
+    page.wait_for_timeout(300)
+    check('Korean: a final consonant that moves on to the next syllable', src(page) == base.replace('문장', '한글하나문장') and caret(page) == [at + 4, at + 4] and
+          page.evaluate('[...document.querySelectorAll("#pages .it.p")][0].textContent') == '여기 한글하나문장 입니다.', src(page)[at - 3:at + 9])
+    check('Korean: the source holds whole syllables, no jamo', not any(0x1100 <= ord(c) <= 0x11FF or 0x3130 <= ord(c) <= 0x318F for c in src(page)))
+    page.keyboard.press('Backspace')
+    page.wait_for_timeout(150)
+    check('Korean: Backspace takes a syllable', src(page) == base.replace('문장', '한글하문장'), src(page)[at - 3:at + 9])
+    page.evaluate('window.rikuy.closeGroup()')
+    comp('ㅂ')
+    page.wait_for_timeout(30)
+    comp('')
+    page.wait_for_timeout(250)
+    check('Korean: a jamo taken back before it became a syllable leaves nothing', src(page) == base.replace('문장', '한글하문장') and page.evaluate('window.rikuy.composing') is False)
+    load_doc(page, doc(KO_PRE, '여기 문장 입니다.\n\n둘째 문단.'))
+    page.wait_for_timeout(300)
+    l, r, t, b = char_box(page, '문장', 1)
+    page.mouse.click(l + 0.5, (t + b) / 2)
+    page.wait_for_timeout(120)
+    page.keyboard.press('Delete')
+    page.wait_for_timeout(150)
+    check('Korean: a click between two syllables, and Delete', src(page) == base.replace('문장', '문'), src(page)[at:at + 4])
+    undo(page)
+    select_text(page, '문장')
+    page.keyboard.press('Control+b')
+    page.wait_for_timeout(180)
+    check('Korean: bold on a word', src(page) == base.replace('문장', '\\textbf{문장}'))
+    undo(page)
+    check('Korean: undo', src(page) == base)
+    ksent = '한국어는띄어쓰기없이도글자사이에서줄이바뀔수있는언어입니다'
+    load_doc(page, doc(KO_PRE, '\n\n'.join(ksent * (6 + i) for i in range(9)) + '\n\n' + '띄어 쓰기가 있는 한국어 문장은 빈칸에서도 줄이 바뀝니다 ' * 8))
+    page.wait_for_timeout(600)
+    cut = page.evaluate(CUTS)
+    check('Korean: lines break between syllables, inside the text block, with no hyphen at a page cut', cut['lines'] >= 3 and cut['inside'] and cut['pages'] >= 2 and cut['hy'] == 0 and all(c['edge'] for c in cut['out']), [cut['lines'], cut['inside'], cut['pages'], cut['hy']])
+
+    # ---- Thai: no spaces, marks above and below
+    TH_PRE = '\\usepackage[english]{babel}\n\\babelprovide[import=th, onchar=ids fonts]{thai}\n\\babelfont[thai]{rm}[Renderer=Harfbuzz]{Noto Serif Thai}'
+    thai = 'ภาษาไทยเป็นภาษาที่ไม่มีการเว้นวรรคระหว่างคำในประโยคเดียวกัน'
+    load_doc(page, doc(TH_PRE, thai * 5 + '\n\nสวัสดีครับ น้ำ ที่นี่'))
+    page.wait_for_timeout(500)
+    brk = page.evaluate(LINE_STARTS, 'th')
+    check('Thai: lines break where words start, with no spaces to say where', len(brk['starts']) >= 2 and brk['cluster'] and brk['word'] is not False, brk)
+    base = src(page)
+    at = base.index('น้ำ')
+    edges = page.evaluate(EDGES, 'ที่นี่')
+    click_text(page, 'ที่นี่', 0)
+    seen = []
+    for _ in range(len(edges) - 1):
+        page.keyboard.press('ArrowRight')
+        page.wait_for_timeout(50)
+        seen.append(caret(page)[0] - base.index('ที่นี่'))
+    check('Thai: the arrows step over a consonant with its marks', seen == edges[1:] and edges == [0, 3, 6], [seen, edges])
+    click_text(page, 'น้ำ', 3)
+    steps = []
+    for _ in range(2):
+        page.keyboard.press('Backspace')
+        page.wait_for_timeout(150)
+        steps.append(src(page)[at:at + 3 - len(steps) - 1])
+    check('Thai: Backspace takes the vowel, then the tone mark, the consonant stays', steps == ['น้', 'น'], steps)
+    undo(page, 2)
+    click_text(page, 'ที่นี่', 0)
+    page.keyboard.press('Delete')
+    page.wait_for_timeout(150)
+    check('Thai: Delete takes the consonant with its marks', src(page) == base.replace('ที่นี่', 'นี่'), src(page)[base.index('ที่นี่'):][:4])
+    undo(page)
+    l, r, t, b = char_box(page, 'สวัสดีครับ', 3)
+    page.mouse.click(l + 0.5, (t + b) / 2)
+    page.wait_for_timeout(120)
+    sat = base.index('สวัสดีครับ')
+    page.keyboard.type('า')
+    page.wait_for_timeout(150)
+    check('Thai: a click inside a word and a letter typed there', src(page) == base.replace('สวัสดีครับ', 'สวัาสดีครับ') and caret(page) == [sat + 4, sat + 4], [src(page)[sat:sat + 11], caret(page), sat])
+    undo(page)
+    select_text(page, 'สวัสดีครับ')
+    page.keyboard.press('Control+b')
+    page.wait_for_timeout(180)
+    check('Thai: bold on a word', src(page) == base.replace('สวัสดีครับ', '\\textbf{สวัสดีครับ}'))
+    undo(page)
+    check('Thai: undo', src(page) == base)
+    load_doc(page, doc(TH_PRE, '\n\n'.join(thai * (4 + i) for i in range(10))))
+    page.wait_for_timeout(600)
+    cut = page.evaluate(CUTS)
+    check('Thai: a paragraph cut by a page break is cut between two characters, with no hyphen', cut['pages'] >= 2 and len(cut['out']) >= 1 and all(c['edge'] and not c['mark'] for c in cut['out']) and cut['hy'] == 0 and cut['inside'], [cut['pages'], cut['hy'], [(c['edge'], c['mark']) for c in cut['out']]])
+
+    # ---- Sinhala
+    SI_PRE = '\\usepackage[english]{babel}\n\\babelprovide[import=si, onchar=ids fonts]{sinhala}\n\\babelfont[sinhala]{rm}[Renderer=Harfbuzz]{Noto Serif Sinhala}'
+    load_doc(page, doc(SI_PRE, 'මෙය සිංහල භාෂාව වේ.'))
+    page.wait_for_timeout(400)
+    base = src(page)
+    at = base.index('සිංහල')
+    edges = page.evaluate(EDGES, 'සිංහල')
+    click_text(page, 'සිංහල', edges[1])
+    page.keyboard.press('Backspace')
+    page.wait_for_timeout(150)
+    check('Sinhala: Backspace takes the last sign of a letter with its signs', src(page) == base.replace('සිංහල', 'සිංහල'[:edges[1] - 1] + 'සිංහල'[edges[1]:]) and edges[1] >= 2, [src(page)[at:at + 6], edges])
+    undo(page)
+    click_text(page, 'සිංහල', 0)
+    page.keyboard.press('Delete')
+    page.wait_for_timeout(150)
+    check('Sinhala: Delete takes the letter with its signs', src(page) == base.replace('සිංහල', 'සිංහල'[edges[1]:]), src(page)[at:at + 6])
+    undo(page)
+    click_text(page, 'භාෂාව', 2)
+    page.keyboard.type('ෂ')
+    page.wait_for_timeout(150)
+    check('Sinhala: a letter typed in the middle of a word', src(page) == base.replace('භාෂාව', 'භාෂෂාව'))
+    undo(page)
+    check('Sinhala: undo', src(page) == base)
+
+    # ---- Hebrew: right to left, with points
+    HE_PRE = '\\usepackage[english, bidi=basic]{babel}\n\\babelprovide[import=he, main]{hebrew}\n\\babelfont{rm}[Renderer=Harfbuzz]{Hadasim CLM}'
+    word = 'מִלָּה'
+    load_doc(page, doc(HE_PRE, 'זהו טקסט בעברית עם ' + word + ' מנוקדת וכמה מילים נוספות כדי למלא יותר משורה אחת של טקסט על הדף עם English בתוכו.\n\nפסקה שנייה כאן.'))
+    page.wait_for_timeout(400)
+    its = page.evaluate(ITEMS)
+    check('Hebrew: a Hebrew document runs right to left, its first line from the right edge', all(i['dir'] == 'rtl' and i['cdir'] == 'rtl' for i in its) and abs(its[0]['first'][1] - (its[0]['fr'] - its[0]['indent'])) < 1.6, its)
+    base = src(page)
+    at = base.index(word)
+    edges = page.evaluate(EDGES, word)
+    check('(a Hebrew letter and its points are one character)', edges == [0, 2, 5, 6], edges)
+    l, r, t, b = char_box(page, word, 2)
+    page.mouse.click(r - 0.5, (t + b) / 2)
+    page.wait_for_timeout(120)
+    check('Hebrew: a click between two pointed letters', caret(page) == [at + 2, at + 2], [caret(page), at + 2])
+    page.keyboard.type('ק')
+    page.wait_for_timeout(150)
+    check('Hebrew: a letter typed between them', src(page) == base.replace(word, word[:2] + 'ק' + word[2:]) and caret(page) == [at + 3, at + 3])
+    undo(page)
+    click_text(page, word, 0)
+    seen = []
+    for _ in range(3):
+        page.keyboard.press('ArrowLeft')
+        page.wait_for_timeout(50)
+        seen.append(caret(page)[0] - at)
+    check('Hebrew: the left arrow moves on through the word, a letter with its points at a time', seen == [2, 5, 6], seen)
+    click_text(page, word, 5)
+    steps = []
+    for _ in range(3):
+        page.keyboard.press('Backspace')
+        page.wait_for_timeout(150)
+        steps.append(src(page)[at:at + 6 - len(steps) - 1])
+    check('Hebrew: Backspace takes a point, the other point, then the letter', steps == [word[:4] + word[5], word[:3] + word[5], word[:2] + word[5]], [x.encode('unicode_escape').decode() for x in steps])
+    undo(page, 3)
+    check('Hebrew: undo', src(page) == base)
+    page.keyboard.press('Control+y')
+    page.wait_for_timeout(150)
+    check('Hebrew: redo', src(page) == base.replace(word, word[:2] + word[5]), src(page)[at:at + 6].encode('unicode_escape').decode())
+    undo(page)
+    click_text(page, word, 2)
+    page.keyboard.press('Delete')
+    page.wait_for_timeout(150)
+    check('Hebrew: Delete takes the letter with both its points', src(page) == base.replace(word, word[:2] + word[5]), src(page)[at:at + 6].encode('unicode_escape').decode())
+    undo(page)
+    click_text(page, word, 2)
+    page.keyboard.press('Home')
+    page.wait_for_timeout(80)
+    home = caret(page)
+    page.keyboard.press('End')
+    page.wait_for_timeout(80)
+    check('Hebrew: Home and End go to where the line starts and ends', home == [base.index('זהו'), base.index('זהו')] and caret(page)[0] > at and caret(page)[0] <= base.index('בתוכו.') + 6, [home, caret(page)])
+    l0, r0, t0, b0 = char_box(page, word, 0)
+    l5, r5, t5, b5 = char_box(page, word, 5)
+    page.mouse.move(r0 - 0.2, (t0 + b0) / 2)
+    page.mouse.down()
+    page.mouse.move(l5 + 0.2, (t0 + b0) / 2, steps=6)
+    page.mouse.up()
+    page.wait_for_timeout(120)
+    check('Hebrew: a selection drawn over the pointed word is the word', caret(page) == [at, at + 6], [caret(page), at])
+    page.keyboard.press('Control+b')
+    page.wait_for_timeout(180)
+    check('Hebrew: bold on it', src(page) == base.replace(word, '\\textbf{' + word + '}'))
+    undo(page)
+    page.evaluate('''([w, n]) => { const s = [...document.querySelectorAll('#pages span.t')].find((s) => s.textContent.includes(w)); const i = s.textContent.indexOf(w);
+      const r = document.createRange(); r.setStart(s.firstChild, i); r.setEnd(s.firstChild, i + n); document.getElementById('pages').focus(); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }''', [word, 3])
+    page.keyboard.press('Control+b')
+    page.wait_for_timeout(180)
+    check('Hebrew: bold on a selection ending between a letter\'s points takes the letter whole', src(page) == base.replace(word, '\\textbf{' + word[:5] + '}' + word[5]), src(page)[at:at + 16].encode('unicode_escape').decode())
+    undo(page)
+    select_text(page, 'בעברית')
+    page.keyboard.type('חדש')
+    page.wait_for_timeout(180)
+    check('Hebrew: typing over a selection', src(page) == base.replace('בעברית', 'חדש'))
+    undo(page, 2)
+    click_text(page, word, 0)
+    page.evaluate(PASTE, 'שָׁלוֹם 100% ')
+    page.wait_for_timeout(250)
+    check('Hebrew: pointed text pasted as plain text', src(page) == base.replace(word, 'שָׁלוֹם 100\\% ' + word))
+    undo(page)
+    click_text(page, 'מנוקדת', 0)
+    page.keyboard.press('Enter')
+    page.wait_for_timeout(200)
+    check('Hebrew: Enter splits into two right to left paragraphs', page.evaluate('[...document.querySelectorAll("#pages .it.p")].map((e) => e.getAttribute("dir"))') == ['rtl', 'rtl', 'rtl'] and word + ' \n\nמנוקדת' in src(page))
+    undo(page)
+    check('Hebrew: the source as it was', src(page) == base)
+    hsent = 'זֶהוּ טֶקְסְט אָרֹךְ בְּעִבְרִית מְנֻקֶּדֶת שֶׁנִּמְשָׁךְ עַל פְּנֵי כַּמָּה שׁוּרוֹת וְעַמּוּדִים. '
+    load_doc(page, doc(HE_PRE, '\n\n'.join((hsent * (5 + i)).strip() for i in range(10))))
+    page.wait_for_timeout(600)
+    cut = page.evaluate(CUTS)
+    check('Hebrew: a pointed paragraph cut by a page break is cut between two letters, with no hyphen', cut['pages'] >= 2 and len(cut['out']) >= 1 and all(c['edge'] and not c['mark'] for c in cut['out']) and cut['hy'] == 0, [cut['pages'], cut['hy'], [(c['edge'], c['mark']) for c in cut['out']]])
+
+    # ---- the notice
+    for body, want in [('Text 漢字とかな here.', 'This document has Japanese text. LaTeX needs a font for it.'),
+                       ('Text 한글 here.', 'This document has Korean text. LaTeX needs a font for it.'),
+                       ('漢字 かな 한글', 'This document has Japanese and Korean text. LaTeX needs fonts for it.'),
+                       ('Text ภาษาไทย here.', 'This document has Thai text. LaTeX needs a font for it.'),
+                       ('Text සිංහල here.', 'This document has Sinhala text. LaTeX needs a font for it.'),
+                       ('Some English words around שלום here.', 'This document has Hebrew text. LaTeX needs a font and right to left setup for it.'),
+                       ('Some English words around عربي and שלום here.', 'This document has Arabic and Hebrew text. LaTeX needs fonts and right to left setup for it.'),
+                       ('中文 and हिन्दी and ไทย and සිංහල and עברית in English.', 'This document has Chinese, Devanagari, Hebrew, Thai and Sinhala text. LaTeX needs fonts and right to left setup for it.')]:
+        load_doc(page, doc('', body))
+        page.wait_for_function('!document.getElementById("script-note").hidden', timeout=5000)
+        check('the notice: ' + want[18:want.index(' text')], note(page) == want, note(page))
+        before = src(page)
+        page.click('#script-go')
+        page.wait_for_timeout(350)
+        check('its set up is babel\'s, and names LuaLaTeX', page.inner_text('#toast') == 'Added. The PDF is now made with LuaLaTeX.' and '\\babelprovide[' in src(page) and 'ctex' not in src(page), [page.inner_text('#toast'), src(page)[:160]])
+        page.wait_for_timeout(900)
+        check('and once set up there is no notice', note(page) is None, note(page))
+        undo(page)
+        check('one undo takes the lines out', src(page) == before)
+    load_doc(page, doc('', 'זהו טקסט בעברית עם כמה מילים נוספות כדי למלא יותר משורה אחת של טקסט על הדף.\n\nפסקה שנייה.'))
+    page.wait_for_function('!document.getElementById("script-note").hidden', timeout=5000)
+    check('a Hebrew document before its set up runs left to right, as the PDF would', note(page) == 'This document has Hebrew text. LaTeX needs a font and right to left setup for it.' and page.evaluate('document.querySelectorAll("#pages [dir]").length') == 0)
+    page.click('#script-go')
+    page.wait_for_timeout(450)
+    its = page.evaluate(ITEMS)
+    check('one click sets it up with Hebrew as its main language', '\\usepackage[english, bidi=basic]{babel}' in src(page) and '\\babelprovide[import=he, main]{hebrew}' in src(page), src(page)[:200])
+    check('and the page then runs right to left', len(its) == 2 and all(i['dir'] == 'rtl' for i in its) and all(abs(i['first'][1] - (i['fr'] - i['indent'])) < 1.6 for i in its), its)
+    undo(page)
+    page.wait_for_timeout(200)
+    check('one undo: left to right again', page.evaluate('document.querySelectorAll("#pages [dir]").length') == 0 and 'babel' not in src(page))
+
+    # ---- a phone
+    B, phone, errs = open_page(p, width=390, height=844)
+    load_doc(phone, doc('', thai * 2 + ' ' + 'これは日本語の文です。' * 4 + ' 한국어 문장입니다.\n\n\\begin{itemize}\n\\item සිංහල\n\\item ไทย\n\\end{itemize}'))
+    phone.wait_for_function('!document.getElementById("script-note").hidden', timeout=5000)
+    bar = phone.evaluate('''() => { const b = document.getElementById('script-note'), r = b.getBoundingClientRect(), box = (id) => { const q = document.getElementById(id).getBoundingClientRect(); return [q.left, q.right, q.width]; };
+      return { msg: document.getElementById('script-msg').textContent, h: r.height, go: box('script-go'), x: box('script-x'), m: box('script-msg'), sw: document.documentElement.scrollWidth, iw: innerWidth, barw: b.scrollWidth, clientw: b.clientWidth }; }''')
+    check('a phone: the notice for four scripts fits the screen', bar['msg'] == 'This document has Japanese, Korean, Thai and Sinhala text. LaTeX needs fonts for it.' and bar['sw'] <= bar['iw'] and bar['x'][1] <= bar['iw'] and bar['go'][0] >= bar['m'][1] - 1 and bar['barw'] <= bar['clientw'] and bar['h'] < 110 and bar['m'][2] > 120, bar)
+    fit = phone.evaluate('''() => { const out = []; for (const e of document.querySelectorAll('#pages .it, #pages .it .lbl')) { const r = e.getBoundingClientRect(), q = e.closest('.pb').getBoundingClientRect(); if (r.left < q.left - 1.5 || r.right > q.right + 1.5) out.push(e.className); }
+      const t = document.querySelector('#pages .it.p span.t'), R = document.createRange(); R.selectNodeContents(t); const f = t.closest('.pb').getBoundingClientRect(), q = [...R.getClientRects()].filter((x) => x.width > 1);
+      return { out, sw: document.documentElement.scrollWidth, iw: innerWidth, lines: new Set(q.map((x) => Math.round(x.top))).size, inside: q.every((x) => x.left >= f.left - 1.5 && x.right <= f.right + 1.5), cjk: document.documentElement.dataset.cjk }; }''')
+    check('a phone: Thai, Japanese and Korean wrap inside the text block, the window does not scroll sideways', fit['out'] == [] and fit['sw'] <= fit['iw'] and fit['lines'] >= 4 and fit['inside'] and fit['cjk'] == 'ja', fit)
+    check('a phone: no console errors', not errs, errs[:5])
+    B.close()
+
+
 def notice(p, page):
     load_doc(page, PLAIN)
     page.wait_for_timeout(900)
@@ -803,6 +1231,7 @@ try:
         fonts(page)
         india(p, page)
         marks_after_syntax(page)
+        five(p, page)
         notice(p, page)
         check('no console errors', not errors, errors[:5])
         browser.close()

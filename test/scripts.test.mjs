@@ -2,7 +2,7 @@
 // up, whether a document runs right to left and the lines that set it up; then the page's model
 // of the commands and environments that turn text or only name CJK's font (src/model.js).
 import assert from 'node:assert/strict';
-import { scriptsIn, scriptSetup, scriptNeeds, rtlDocument, scriptLines, addScriptSetup, languageDir, RTL_LANGUAGES, INDIC, scriptName } from '../src/scripts.js';
+import { scriptsIn, scriptSetup, scriptNeeds, rtlDocument, scriptLines, addScriptSetup, languageDir, RTL_LANGUAGES, INDIC, MORE, scriptName } from '../src/scripts.js';
 import { buildModel } from '../src/model.js';
 import { clusterAt, clusterEdge, sourceEdge, backspaceUnits } from '../src/editor.js';
 
@@ -42,12 +42,16 @@ ok('packages and classes that set Chinese up', () => {
   assert.deepEqual(scriptSetup(doc('\\usepackage{amsmath}')), { chinese: false, arabic: false });
 });
 ok('packages and classes that set Arabic up', () => {
-  for (const pre of ['\\usepackage{arabtex}', '\\usepackage{arabxetex}', '\\usepackage{bidi}', '\\usepackage{xepersian}', '\\usepackage[arabic]{babel}', '\\usepackage[english, bidi=basic]{babel}',
-    '\\usepackage{babel}\n\\babelprovide[import, main]{arabic}', '\\usepackage{babel}\n\\babelprovide{hebrew}', '\\usepackage{polyglossia}\n\\setmainlanguage{arabic}',
+  for (const pre of ['\\usepackage{arabtex}', '\\usepackage{arabxetex}', '\\usepackage{bidi}', '\\usepackage{xepersian}', '\\usepackage[arabic]{babel}',
+    '\\usepackage{babel}\n\\babelprovide[import, main]{arabic}', '\\usepackage{polyglossia}\n\\setmainlanguage{arabic}',
     '\\usepackage{polyglossia}\n\\setotherlanguage{farsi}', '\\usepackage{polyglossia}\n\\setotherlanguages{english, urdu}', '\\usepackage{polyglossia}\n\\setdefaultlanguage[numerals=maghrib]{arabic}']) {
     assert.deepEqual(scriptSetup(doc(pre)), { chinese: false, arabic: true }, pre);
   }
   assert.equal(scriptSetup('\\documentclass[arabic]{article}\n\\usepackage{babel}\n\\begin{document}x\\end{document}').arabic, true, 'a class option babel reads');
+  // Hebrew runs right to left in a script of its own: its set up is not Arabic's, nor is
+  // bidi=basic with no Arabic language and font
+  assert.deepEqual(scriptSetup(doc('\\usepackage{babel}\n\\babelprovide{hebrew}')), { chinese: false, arabic: false, hebrew: true });
+  assert.deepEqual(scriptSetup(doc('\\usepackage[english, bidi=basic]{babel}')), { chinese: false, arabic: false });
   assert.equal(scriptSetup('\\documentclass{xepersian-thesis}\n\\begin{document}x\\end{document}').arabic, true);
 });
 ok('a set up in a comment or after \\begin{document} is none', () => {
@@ -595,6 +599,136 @@ ok('in LaTeX source an edge never moves over a brace, a dollar or a space', () =
   assert.equal(sourceEdge('e' + acute + 'x', 1, 1), 2, 'a mark after its own letter is that letter\'s');
   const latin = 'Plain \\textbf{text} with $x$.';
   for (let i = 0; i <= latin.length; i++) { assert.equal(sourceEdge(latin, i, -1), i); assert.equal(sourceEdge(latin, i, 1), i); }
+});
+
+// ---- Japanese, Korean, Hebrew, Thai and Sinhala -----------------------------------------
+const FIVE = { japanese: 'ひらがなとカタカナ', korean: '한국어', hebrew: 'עברית', thai: 'ภาษาไทย', sinhala: 'සිංහල' };
+ok('each of the five is counted under its own name', () => {
+  assert.deepEqual(MORE.map((x) => x[0]), Object.keys(FIVE));
+  assert.deepEqual(MORE.map((x) => scriptName(x[0])), ['Japanese', 'Korean', 'Hebrew', 'Thai', 'Sinhala']);
+  for (const [id, word] of Object.entries(FIVE)) {
+    const c = scriptsIn('Latin ' + word + ' text');
+    assert.equal(c[id], [...word].filter((ch) => /[\p{L}\p{M}]/u.test(ch)).length, id);
+    assert.deepEqual(Object.keys(c).sort(), ['arabic', 'chinese', id, 'letters'].sort(), id + ' and no other script');
+    assert.equal([...INDIC, ...MORE].filter((x) => x[2].test(word[0])).length, 1, 'one row per character: ' + id);
+  }
+  // kana and hangul name the language; the Chinese characters beside them are counted as such
+  assert.deepEqual(scriptsIn('漢字とかな'), { chinese: 2, arabic: 0, letters: 5, japanese: 3 });
+  assert.equal(scriptsIn('% עברית\n$ไทย$ text').hebrew, undefined, 'comments and math do not count');
+});
+ok('needs: Chinese characters beside kana are Japanese; beside hangul they stay a need of their own', () => {
+  const needs = (body, pre = '') => { const t = doc(pre, body); return scriptNeeds(t, [t]); };
+  assert.deepEqual([...needs('漢字とかな')], ['japanese']);
+  // a Korean font has a few thousand of them: they are set by the Chinese lines, and Korean's
+  // range gives them up (a line after \babelprovide{korean}; babel counts them as Korean's too)
+  assert.deepEqual([...needs('한글과 漢字')], ['chinese', 'korean']);
+  const kz = doc('', 'Hello there 한글과 漢字 中文句子.');
+  const kzl = scriptLines(scriptNeeds(kz, [kz]), kz);
+  const at = (re) => kzl.findIndex((l) => re.test(l));
+  assert.ok(at(/Babel\.script_blocks\.Kore/) > at(/\{korean\}$/) && at(/\{chinese\}$/) > 0, kzl.join('\n'));
+  assert.ok(kzl.every((l) => !l.includes('#')), 'no # in a preamble line: it is TeX\'s own character there');
+  // two of Chinese, Japanese and Korean in one document keep to one font each (four at once
+  // ran LuaTeX out of memory in the browser)
+  assert.ok(!kzl.some((l) => /NanumGothic|FandolHei|FandolFang/.test(l)) && kzl.includes('\\babelfont[korean]{sf}{NanumMyeongjo}'), kzl.join('\n'));
+  const jk = doc('', 'Hello 漢字とかな and 한글.');
+  const jkl = scriptLines(scriptNeeds(jk, [jk]), jk);
+  assert.ok(jkl.some((l) => /Kore.*0x4E00 or k\[i\]\[1\] == 0x3000/.test(l)) && !jkl.some((l) => /Gothic/.test(l)), jkl.join('\n'));
+  // alone, each has its Gothic for sans serif
+  const j1 = doc('', 'Hello 漢字とかな.');
+  assert.ok(scriptLines(scriptNeeds(j1, [j1]), j1).includes('\\babelfont[japanese]{sf}{Harano Aji Gothic}'));
+  // a Hebrew document: its font has Latin letters and digits, and the bullet comes from math
+  const hm = doc('', 'שלום עולם, זהו טקסט בעברית.');
+  const hml = scriptLines(scriptNeeds(hm, [hm]), hm);
+  assert.ok(hml.includes('\\babelprovide[import=he, main]{hebrew}') && hml.includes('\\babelfont{rm}[Renderer=Harfbuzz]{Hadasim CLM}') && hml.some((l) => l.startsWith('\\renewcommand{\\labelitemi}{$\\bullet$}')), hml.join('\n'));
+  assert.deepEqual([...needs('漢字 かな 한글 中文')], ['japanese', 'korean']);
+  assert.deepEqual([...needs('只有中文')], ['chinese']);
+  assert.deepEqual([...needs('Text ภาษาไทย and සිංහල and हिन्दी.')], ['devanagari', 'thai', 'sinhala']);
+  const he = needs('שלום עולם, זהו טקסט בעברית.');
+  assert.deepEqual([...he], ['hebrew']);
+  assert.equal(he.hebrewMain, true, 'mostly Hebrew: a Hebrew document');
+  assert.equal(he.arabicMain, false);
+  const some = needs('An English text with one word, שלום, in the middle of it.');
+  assert.deepEqual([[...some], some.hebrewMain], [['hebrew'], false]);
+  // a document set up for Chinese characters of any kind has Japanese's and Korean's
+  assert.deepEqual([...needs('漢字とかな', '\\usepackage{luatexja}')], []);
+  assert.deepEqual([...needs('한글', '\\usepackage{kotex}')], []);
+});
+ok('a preamble that sets one of the five up', () => {
+  for (const [id, , , babel] of MORE) {
+    for (const pre of ['\\usepackage[english, ' + babel + ']{babel}', '\\usepackage{babel}\n\\babelprovide[import, onchar=ids fonts]{' + babel + '}', '\\usepackage{polyglossia}\n\\setotherlanguage{' + babel + '}', '\\usepackage{polyglossia}\n\\setmainlanguage{' + babel + '}']) {
+      assert.equal(scriptSetup(doc(pre))[id], true, pre);
+    }
+    assert.equal(scriptSetup(doc('\\usepackage[english]{babel}'))[id], undefined);
+  }
+  assert.equal(scriptSetup(doc('\\usepackage[hebrew]{babel}')).arabic, false, 'Hebrew is not Arabic\'s script');
+  assert.equal(scriptSetup(doc('\\usepackage[arabic]{babel}')).hebrew, undefined);
+});
+ok('their lines: babel on LuaLaTeX, the row\'s language and fonts, and set up once', () => {
+  for (const [id, , , babel, code, font, , , o] of MORE) {
+    const t = doc('', 'English words around ' + FIVE[id] + ' and after it, enough of them.');
+    const needs = scriptNeeds(t, [t]);
+    assert.deepEqual([...needs], [id]);
+    const lines = scriptLines(needs, t);
+    assert.ok(lines[0].startsWith(o.rtl ? '\\usepackage[english, bidi=basic]{babel}' : '\\usepackage[english]{babel}'), lines[0]);
+    assert.equal(lines[1], '\\babelprovide[import=' + code + ', onchar=ids fonts]{' + babel + '}');
+    assert.ok(lines[2].startsWith('\\babelfont[' + babel + ']{rm}') && lines[2].endsWith('{' + font + '}'), lines[2]);
+    assert.ok(!lines.some((l) => l.includes('ctex')), 'none of them is ctex\'s: LuaLaTeX');
+    const once = addScriptSetup(t, needs);
+    assert.deepEqual([...scriptNeeds(once, [once])], [], id);
+    assert.equal(addScriptSetup(once, scriptNeeds(once, [once])), null);
+    assert.equal(rtlDocument(once), false, 'some words of it leave the document left to right');
+  }
+  const he = doc('', 'שלום עולם, זהו טקסט בעברית.');
+  const out = addScriptSetup(he, scriptNeeds(he, [he]));
+  assert.ok(out.includes('\\usepackage[english, bidi=basic]{babel}') && out.includes('\\babelprovide[import=he, main]{hebrew}'), out);
+  assert.equal(rtlDocument(out), true, 'a Hebrew document runs right to left once set up');
+  assert.deepEqual([...scriptNeeds(out, [out])], []);
+});
+ok('the five languages\' directions, and their wrappers on the page', () => {
+  for (const l of ['japanese', 'korean', 'thai', 'sinhala']) assert.equal(languageDir(l), 'ltr', l);
+  assert.equal(languageDir('hebrew'), 'rtl');
+  const M = build(doc('', 'A \\foreignlanguage{japanese}{日本語} b \\textthai{ไทย} c \\texthebrew{עברית} d.\n\n\\begin{otherlanguage}{korean}\n한국어.\n\\end{otherlanguage}\n\n\\begin{hebrew}\nשלום.\n\\end{hebrew}'));
+  assert.deepEqual(lines(M), ['p | A 日本語 b ไทย c <dir:rtl>עברית</> d.', 'p | 한국어.', 'p rtl | שלום.']);
+  assert.deepEqual(M.warn, []);
+  const he = build(doc('\\usepackage[english, bidi=basic]{babel}\n\\babelprovide[import=he, main]{hebrew}', '\\section{כותרת}\nטקסט עם English בתוכו.'));
+  assert.equal(he.opts.rtl, true);
+  assert.deepEqual(lines(he), ['h rtl | כותרת', 'p rtl | טקסט עם English בתוכו.']);
+});
+ok('clusters of the five scripts, with and without Intl.Segmenter', () => {
+  const C = String.fromCharCode;
+  const cases = {
+    'Thai with a vowel and a tone mark above': ['ที่', 3], 'Thai nam, with its am vowel': ['น้ำ', 3], 'Hebrew with a point': ['מִ', 2], 'Hebrew with two points': ['לָּ', 3],
+    'Sinhala with a vowel sign': ['සි', 2], 'kana with a combining voiced mark': ['か' + C(0x3099), 2], 'hangul written as three jamo': [C(0x1112, 0x1161, 0x11AB), 3]
+  };
+  for (const [name, [cluster, n]] of Object.entries(cases)) {
+    assert.equal(cluster.length, n, name);
+    const t = 'a ' + cluster + 'x' + cluster + ' b';
+    for (const plain of [false, true]) {
+      for (let i = 2; i < 2 + n; i++) assert.deepEqual(clusterAt(t, i, plain), [2, 2 + n], name + ' at ' + i + (plain ? ' (fallback)' : ''));
+      assert.deepEqual(clusterAt(t, 2 + n, plain), [2 + n, 3 + n], 'the Latin letter between stands alone');
+      assert.deepEqual(clusterAt(t, 3 + n, plain), [3 + n, 3 + 2 * n], name + ', the second one');
+    }
+    assert.equal(clusterEdge(t, 3, -1), 2);
+    assert.equal(clusterEdge(t, 3, 1), 2 + n);
+    assert.equal(sourceEdge(t, 3, 1), 2 + n);
+    assert.equal(backspaceUnits(cluster), 1, name + ': Backspace takes the last mark or letter');
+  }
+  // a Sinhala conjunct is written with a joiner: the letter, its al-lakuna and the joiner hold
+  // together everywhere; whether the next letter joins them is the browser's Unicode data's say
+  const conj = 'ක' + C(0xDCA, 0x200D) + 'ෂ';
+  for (const plain of [false, true]) {
+    const [a, b] = clusterAt('a ' + conj + ' b', 3, plain);
+    assert.ok(a === 2 && (b === 5 || b === 6), 'Sinhala conjunct ' + [a, b]);
+    assert.deepEqual(clusterAt('a ' + conj + ' b', 4, plain), [a, b]);
+  }
+  // one syllable, one kana, one Chinese character: each a cluster of its own, taken whole
+  for (const ch of ['한', 'か', 'カ', '漢']) { assert.deepEqual(clusterAt('a' + ch + ch, 1), [1, 2]); assert.equal(backspaceUnits(ch), 1); }
+});
+ok('words of the five scripts are counted with their marks', () => {
+  assert.equal(build(doc('', 'שָׁלוֹם עוֹלָם')).words, 2, 'Hebrew with points');
+  assert.equal(build(doc('', '한국어 문장 입니다')).words, 3);
+  assert.equal(build(doc('', 'සිංහල භාෂාව')).words, 2);
+  assert.equal(build(doc('', 'ที่นี่ น้ำ')).words, 2, 'Thai between spaces (it writes none inside a phrase)');
 });
 
 console.log(n + '/' + n + ' passed');

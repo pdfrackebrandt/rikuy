@@ -15,7 +15,8 @@ with changes tracked comes back. A Word file in Arabic and one in Chinese open s
 script (the preamble's lines of src/scripts.js), the Arabic one right to left; saved as Word again
 they carry Word's own marks for direction and fonts, an Arabic word changed there comes back, and
 LibreOffice opens and saves both with their text. A file in Hindi and one with eight more of
-India's scripts the same: set up on opening, each run's font and language on saving. A build without Word (RIKUY_NO_WORD) says where
+India's scripts the same: set up on opening, each run's font and language on saving; and files
+in Japanese, Korean, Hebrew, and Thai and Sinhala beside them. A build without Word (RIKUY_NO_WORD) says where
 Word support is and fetches nothing of it."""
 import os, sys, io, re, json, base64, zipfile, tempfile, traceback, time, subprocess, shutil, difflib
 sys.path.insert(0, os.path.dirname(__file__))
@@ -433,6 +434,47 @@ try:
                 check('and the text of the eight other scripts', all(line.split(': ')[1] in LI for _, _, _, line in word_fixture.INDIC_LINES) and 'हिन्दी বাংলা தமிழ்' in LI, LI[:400])
             else:
                 check('LibreOffice converts the files in India\'s scripts', False, (r.stdout[-300:], r.stderr[-300:]))
+
+        # ---- Japanese, Korean, Hebrew, Thai and Sinhala ----
+        outs = {}
+        for key, make, want_src, want_doc in [
+                ('hebrew', word_fixture.make_hebrew, ['\\babelprovide[import=he, main]{hebrew}', 'אנו חוקרים את \\textbf{הצמיחה} במוסדות חלשים, בשיעור של 5\\% בשנת 2024;', '\\begin{otherlanguage}{english}\nAn English paragraph in the Hebrew document.\n\\end{otherlanguage}'], ['w:bidiVisual', '<w:bidi /></w:sectPr>']),
+                ('japanese', word_fixture.make_japanese, ['\\babelprovide[import=ja, onchar=ids fonts]{japanese}', '本稿では、\\textbf{制度}が経済成長に与える影響を\\emph{データ}で検証する。'], ['制度']),
+                ('korean', word_fixture.make_korean, ['\\babelprovide[import=ko, onchar=ids fonts]{korean}', '본 논문은 \\textbf{제도}가 경제 성장(經濟成長)에 미치는 영향을 분석한다.'], ['제도']),
+                ('scripts', word_fixture.make_scripts, ['{thai}', '{sinhala}', '{hebrew}', '{japanese}', '{korean}', 'Thai: \\textbf{ภาษาไทย}เป็นภาษาราชการของประเทศไทย', '\\begin{otherlanguage}{hebrew}\nזוהי פסקה שלמה בעברית בתוך מסמך באנגלית.\n\\end{otherlanguage}'], ['w:cs="Leelawadee UI"', 'w:bidi="th-TH"', 'w:bidi="si-LK"', 'w:eastAsia="Yu Mincho"', '<w:rtl />'])]:
+            f = os.path.join(TMP, key.capitalize() + '.docx')
+            open(f, 'wb').write(make())
+            open_file(page, f)
+            t = src(page)
+            check('a Word file in %s opens set up, its text as it is, nothing listed as lost but a ruby' % key, all(w in t for w in want_src) and 'fontenc' not in t and '\\RL{' not in t and ('Not kept' not in t or key == 'japanese'), t[:900])
+            outs[key] = save_docx(page, os.path.join(TMP, key + '-out.docx'))
+            X = parts(outs[key])
+            check('saved as Word, the %s file has what Word needs for it' % key, all(w in X['word/document.xml'].decode() for w in want_doc), [w for w in want_doc if w not in X['word/document.xml'].decode()])
+        D = {k: parts(v) for k, v in outs.items()}
+        st = lambda k: D[k]['word/styles.xml'].decode()
+        check('the defaults name the document\'s own East Asian and complex script: Japanese, Korean, Hebrew', 'w:eastAsia="Yu Mincho"' in st('japanese') and 'w:eastAsia="ja-JP"' in st('japanese') and 'w:eastAsia="Malgun Gothic"' in st('korean') and 'w:eastAsia="ko-KR"' in st('korean') and 'w:cs="Times New Roman"' in st('hebrew') and 'w:bidi="he-IL"' in st('hebrew'))
+        hd = D['hebrew']['word/document.xml'].decode()
+        hp = [x.split('</w:p>')[0] for x in re.split(r'<w:p>|<w:p (?=[^>]*>)', hd[hd.index('<w:body>'):])[1:]]
+        check('the Hebrew file\'s paragraphs all run right to left but the English one', [re.sub(r'<[^>]+>', '', x) for x in hp if '<w:bidi />' not in x] == ['An English paragraph in the Hebrew document.'] and len(hp) > 10)
+        open_file(page, os.path.join(TMP, 'Scripts.docx'))
+        out_sc = save_docx(page, os.path.join(TMP, 'scripts-out2.docx'))
+        base_sc = src(page)
+        open_file(page, edit_docx(out_sc, os.path.join(TMP, 'scripts-ed.docx'), [('ของประเทศไทย', 'ของประเทศลาว')]))
+        ls = changed_lines(base_sc, src(page))
+        check('a Thai word changed in Word comes back as that word', ls == ['-Thai: \\textbf{ภาษาไทย}เป็นภาษาราชการของประเทศไทย น้ำดื่ม ๑๒๓', '+Thai: \\textbf{ภาษาไทย}เป็นภาษาราชการของประเทศลาว น้ำดื่ม ๑๒๓'] and page.evaluate('window.rikuy.lastWordPlan.applied.map(e => e.t)') == ['ลาว'], (ls, page.evaluate('window.rikuy.lastWordPlan.applied.map(e => e.t)')))
+        if soffice:
+            lo4 = os.path.join(TMP, 'lo-more')
+            shutil.rmtree(lo4, ignore_errors=True)
+            os.makedirs(lo4)
+            r = subprocess.run([soffice, '--headless', '--norestore', '-env:UserInstallation=file://' + os.path.join(lo4, 'profile'), '--convert-to', 'docx:MS Word 2007 XML', '--outdir', lo4] + list(outs.values()), capture_output=True, text=True, timeout=400)
+            got = {k: os.path.join(lo4, k + '-out.docx') for k in outs}
+            if all(os.path.exists(v) for v in got.values()):
+                T = {k: re.sub(r'<[^>]+>', '', parts(v)['word/document.xml'].decode()) for k, v in got.items()}
+                check('LibreOffice keeps the text of the Japanese, Korean, Hebrew and five script files', all(w in T['japanese'] for w in ['本稿では、', '経済', 'ｶﾀｶﾅ…全角\u3000空格']) and all(w in T['korean'] for w in ['경제 성장(經濟成長)', '\u1112\u119e\u11ab글']) and all(w in T['hebrew'] for w in ['הצמיחה', 'בית\u05beספר', 'בָּרָ֣א']) and all(w in T['scripts'] for w in ['เป็นภาษาราชการของประเทศไทย น้ำดื่ม ๑๒๓', 'ශ්\u200dරී ලංකා', 'שלום עולם', '日本語のテキストです。', '한국어 문장입니다.']), {k: v[:120] for k, v in T.items()})
+                LHd = parts(got['hebrew'])['word/document.xml'].decode()
+                check('and the Hebrew file\'s direction and Rikuy\'s bookmarks', LHd.count('<w:bidi w:val="1"/>') + LHd.count('<w:bidi/>') > 8 and 'w:bidiVisual' in LHd and len(re.findall(r'w:name="Rk\d+"', LHd)) == len(re.findall(r'w:name="Rk\d+"', hd)), LHd.count('w:bidi'))
+            else:
+                check('LibreOffice converts the files in the five scripts', False, (r.stdout[-300:], r.stderr[-300:]))
 
         # by dropping it, and by pasting it
         # ---- on the page: colours by number and by name, in text and formulas; a list and a table in a cell ----
