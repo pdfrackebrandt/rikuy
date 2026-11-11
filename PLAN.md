@@ -580,6 +580,24 @@ Tests:
     its own references on export (REF and SEQ fields) is not built; editing inside a list or
     table in a table cell is by its source.
 
+29. **A ribbon, as in Word.** Done (pull request 5), after the owner looked at the live page: a
+    second row under the bar in both builds (`src/ribbon.js`). Style (Normal text, Heading 1 to
+    3, both ways), bold, italic and underline, bulleted and numbered lists on and off, Insert
+    (Formula, Equation, Table, Picture, Footnote, Citation, Link) and Download: PDF (compiles if
+    needed, then saves), Word, LaTeX (`.tex`, or `.zip` when the project has more files). A
+    document with live graphs marks LaTeX as the download that keeps them live and says once
+    that a PDF or Word file holds pictures. The downloads stay in sight at the row's right end;
+    a phone has one Download button for the three. Save and Copy source left the top bar. Every
+    action is one undo step back to the same bytes. An independent agent then drove it on the
+    hosted page: Download LaTeX saved twice (the old listener was still attached), the Style
+    list kept the focus and swallowed typing, Equation wrote into table cells, a list item made
+    a paragraph again merged into its neighbour, a comment after `\\` swallowed a heading's
+    brace, and smaller ones; all fixed with checks. Evidence: `test/ribbon.py` 146 (145 on the
+    claude.ai build), in CI's editor job and in the TeX job, where Download PDF compiles and
+    saves; `test/browser.py` 182, `offline.py` 32/32, `files.py` 68, `word.py` 79. Open: a
+    labelled item (`\item[b)]`) cannot be made a paragraph from the ribbon; Style does not act
+    on several paragraphs at once; the pinned Download group is untested in Safari and Firefox.
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000
