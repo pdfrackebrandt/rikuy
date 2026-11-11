@@ -69,6 +69,8 @@ const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 // One of the build's own files (git.js, tex/...): in the installed app, the copy of this page's
 // version (src/pwa.js); elsewhere simply the file next to the page.
 const asset = (p) => (__RIKUY_APP__ ? appAsset(p) : new URL(p, location.href).href);
+// the full Rikuy's address, which the copy on claude.ai names for what it has no room for
+const SCRIPT_HOST = typeof __RIKUY_WORD_HOST__ === 'undefined' ? '' : __RIKUY_WORD_HOST__;
 function loadScript(src) {
   return new Promise((res, rej) => {
     const s = document.createElement('script');
@@ -4619,8 +4621,10 @@ class App {
       this.syncEngineMenu();
       const res = await engine.compile({ project: this.name + '|' + this.main, files: await this.compileFiles(), main: this.main, clean: !!opts.clean, bibSig, engine: this.engineChoice(), shellEscape: this.prefs.shellEscape !== false && !untrusted, untrusted });
       if (gen !== (this.pdfGen || 0)) return; // another project was opened meanwhile
-      this.lastCompile = { read: res.read || [], unkept: res.unkept || [], ok: !!res.ok, failed: '' };
+      this.lastCompile = { read: res.read || [], unkept: res.unkept || [], unkeptScripts: !!res.unkeptScripts, ok: !!res.ok, failed: '' };
       // TeX stopped where a file's pack could not be loaded (offline, or the network failed)
+      // the copy on claude.ai has no room for the Chinese and Arabic fonts: say where they are
+      if (res.unkeptScripts && SCRIPT_HOST && navigator.onLine !== false) throw Object.assign(new Error('This copy of Rikuy has no room for the Chinese and Arabic fonts this document needs. Open the document in the full Rikuy at ' + SCRIPT_HOST + ' (Download, LaTeX saves it; Open there loads it).'), { scripts: true });
       if (res.unkept && res.unkept.length) throw Object.assign(new Error('Some TeX files could not be loaded (' + res.unkept.slice(0, 5).join(', ') + (res.unkept.length > 5 ? ' and more' : '') + '); check the network and compile again'), { unkept: res.unkept });
       const issues = parseTeXLog(res.log);
       this.engineLabel = res.engineLabel || 'LaTeX';
@@ -4673,7 +4677,7 @@ class App {
       // offline, a file TeX has not kept fails to load; say what to do rather than "Failed to fetch"
       const need = e && e.unkept ? ' (' + e.unkept.slice(0, 5).join(', ') + (e.unkept.length > 5 ? ' and more' : '') + ')' : '';
       const off = __RIKUY_APP__ && APP.on && navigator.onLine === false ? 'You are offline, and this document needs TeX files this browser has not kept yet' + need + '. Compile it once with a network and they stay; Make available offline in the status bar keeps those of a typical paper and of the open document. ' : '';
-      d.textContent = off + this.texFailText(e, !!off, !!need) + 'The page preview can still be printed.';
+      d.textContent = e && e.scripts ? e.message + ' The page preview can still be printed.' : off + this.texFailText(e, !!off, !!need) + 'The page preview can still be printed.';
       const b = document.createElement('button'); b.className = 'btn sm'; b.type = 'button'; b.textContent = 'Print the preview'; b.style.marginTop = '10px';
       b.addEventListener('click', () => this.printPDF());
       d.append(document.createElement('br'), b);

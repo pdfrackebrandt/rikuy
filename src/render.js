@@ -393,6 +393,9 @@ export class Renderer {
       const wrap = div('tabw');
       const t = document.createElement('table');
       t.className = 'tab';
+      // in a right to left document TeX sets the first column at the right (babel's bidi=basic
+      // turns alignments with the paragraph direction), and so does a table with dir="rtl"
+      if (p.dir === 'rtl') setDir(t, p.dir);
       const tb = document.createElement('tbody');
       const ncol = p.cols.length;
       p.rows.forEach((r, ri) => {
@@ -418,7 +421,7 @@ export class Renderer {
           if (colInfo.align === 'p' && colInfo.w) td.classList.add('pcol');
           for (const pr of partial) if (col + 1 >= pr.range[0] && col + 1 <= pr.range[1]) td.classList.add(pr.kind === 'heavy' ? 'cr-heavy' : 'cr-top');
           td.dataset.ctx = 'cell';
-          // the columns keep their order and their sides; a cell's words run right to left
+          // a cell's words run right to left
           if (p.dir === 'rtl') setDir(td, p.dir);
           if (c.bg) td.style.background = cssColor(c.bg);
           if (c.rowbg) tr.style.background = cssColor(c.rowbg);

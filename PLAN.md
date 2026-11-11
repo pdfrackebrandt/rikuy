@@ -5,16 +5,16 @@ Read the rules at the end before the first commit.
 
 ## Where it stands
 
-| check | v19 (published 2026-10-12) | version 23 (published 2026-10-26) | version 25 (2026-10-28) | version 28 (2026-10-29) | version 29 (2026-11-09) | version 30 (2026-11-10) | version 31 (2026-11-10) |
-|---|---|---|---|---|---|---|---|
-| corpus compiles (LaTeX-examples, 716 documents present) | 705 | 706 | 706 | as version 25 | as version 25 | as version 25 | as version 25 |
-| corpus PDFs equal to a desktop TeX Live 2026's | 615 of 704 (87.4 %) | 700 of 705 (99.3 %) | 703 of 705 (99.7 %) | as version 25 | as version 25 | as version 25 | as version 25 |
-| TeX passes over the whole corpus | not counted | 995 (1,471 without latexmk's first-run `.aux`) | 995 | as version 25 | as version 25 | as version 25 | as version 25 |
-| `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) | 22/22 | 23/23 (a check that pygmentize loads no code a document wrote) | 23/23, now run by CI on a tree built there (`tex.yml`) | 23/23 in CI's TeX job | 23/23 in CI's TeX job |
-| `tex/native/xindy/test.cjs` (against CLISP's xindy) | 11/11 | 11/11 | 11/11 | 11/11 | 11/11 | 11/11 | as version 30 |
-| TeX Live's 220 Asymptote examples as a desktop's asy draws them | not measured | against a native asy 3.09: 216 (196 equal PDFs, 12 equal failures, 7 random by design, 1 equal alone); 4 open | against the desktop's asy 3.11: 218 (201 equal PDFs, the 3D ones rendered as bitmaps; 10 equal failures; 7 random by design); 2 open: 1 numerical, `slope` out of memory | as version 25 | as version 25 | as version 25 | as version 25 |
-| edits on the typeset page landing exactly, undone byte for byte (`test/editor_corpus.py`) | not measured | 780 of 780, in the 222 documents with text, a formula, a cell or a footnote; 211 of 211 edited projects compile | as version 23 (page unchanged) | 781 of 792 land, 11 open as source by design, all 792 undone byte for byte, on the complete corpus; 211 of 211 edited projects compile | as version 28 (model and parser unchanged) | as version 28 (model and parser unchanged) | not run again (the model draws colours and lists in cells now; the 716 document model run passes) |
-| artifact size (limit 256 MB) | 250.0 MB | 249.7 MB | 252.3 MB | 253.1 MB (with the 0.8 MB license bundle) | 253.6 MB (pdf.js shipped, IBM Plex inlined) | about 253.8 MB (version 29 and 154 kB: the page and `engine.js`) | about 253.8 MB (version 30 and 21 kB of page) |
+| check | v19 (published 2026-10-12) | version 23 (published 2026-10-26) | version 25 (2026-10-28) | version 28 (2026-10-29) | version 29 (2026-11-09) | version 30 (2026-11-10) | version 31 (2026-11-10) | version 32 (2026-11-11, pull request 7) |
+|---|---|---|---|---|---|---|---|---|
+| corpus compiles (LaTeX-examples, 716 documents present) | 705 | 706 | 706 | as version 25 | as version 25 | as version 25 | as version 25 | as version 25 |
+| corpus PDFs equal to a desktop TeX Live 2026's | 615 of 704 (87.4 %) | 700 of 705 (99.3 %) | 703 of 705 (99.7 %) | as version 25 | as version 25 | as version 25 | as version 25 | as version 25 |
+| TeX passes over the whole corpus | not counted | 995 (1,471 without latexmk's first-run `.aux`) | 995 | as version 25 | as version 25 | as version 25 | as version 25 | as version 25 |
+| `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) | 22/22 | 23/23 (a check that pygmentize loads no code a document wrote) | 23/23, now run by CI on a tree built there (`tex.yml`) | 23/23 in CI's TeX job | 23/23 in CI's TeX job | 33/33 on a tree built here from the pinned inputs (ten new: Chinese and Arabic) |
+| `tex/native/xindy/test.cjs` (against CLISP's xindy) | 11/11 | 11/11 | 11/11 | 11/11 | 11/11 | 11/11 | as version 30 | as version 30 |
+| TeX Live's 220 Asymptote examples as a desktop's asy draws them | not measured | against a native asy 3.09: 216 (196 equal PDFs, 12 equal failures, 7 random by design, 1 equal alone); 4 open | against the desktop's asy 3.11: 218 (201 equal PDFs, the 3D ones rendered as bitmaps; 10 equal failures; 7 random by design); 2 open: 1 numerical, `slope` out of memory | as version 25 | as version 25 | as version 25 | as version 25 | as version 25 |
+| edits on the typeset page landing exactly, undone byte for byte (`test/editor_corpus.py`) | not measured | 780 of 780, in the 222 documents with text, a formula, a cell or a footnote; 211 of 211 edited projects compile | as version 23 (page unchanged) | 781 of 792 land, 11 open as source by design, all 792 undone byte for byte, on the complete corpus; 211 of 211 edited projects compile | as version 28 (model and parser unchanged) | as version 28 (model and parser unchanged) | not run again (the model draws colours and lists in cells now; the 716 document model run passes) | not run again (`test/scripts.py` 133 checks direction and editing in Arabic and Chinese) |
+| artifact size (limit 256 MB) | 250.0 MB | 249.7 MB | 252.3 MB | 253.1 MB (with the 0.8 MB license bundle) | 253.6 MB (pdf.js shipped, IBM Plex inlined) | about 253.8 MB (version 29 and 154 kB: the page and `engine.js`) | about 253.8 MB (version 30 and 21 kB of page) | not published; about 253.9 MB when it is (the index and four packs change, 0.1 MB; the 46.7 MB of Chinese and Arabic packs stay out) |
 
 Version 23 changed only the page (task 13): its `dist/tex` is version 22's byte for byte, so the
 TeX rows are version 22's runs. Version 24 changed Asymptote (tasks 17 and 18: `asy.wasm`, the
@@ -54,6 +54,11 @@ names the hosted copy as the place for Word. Checked by hand on the hosted site 
 update notice brings the new version in, a new document takes typing at once and compiles (1
 page, 0.6 s), the sample compiles (3 pages), Make available offline finishes, Help opens with
 the plain sentence.
+
+Version 32 (2026-11-11) adds the ribbon, the files for search engines and agents and the new
+icon (tasks 29 and 30, deployed), and Chinese and Arabic (task 31): 24 packs of fonts and
+packages that only the hosted build carries, right to left documents on the page, a one click
+set up, and Word files in both scripts. `dist/tex` is 297.6 MB, 250.9 MB of it in the artifact.
 
 Equal means: the same number of pages, the same text on each page (`pdftotext -layout`,
 whitespace collapsed), and no page with more than 0.1 % of its pixels differing by more than
@@ -607,6 +612,43 @@ Tests:
     and opens it (11/11; the Python lines there checked by hand against `unpackShare`);
     `test/offline.py` 33/33 fetches the four files from the page, finds the head's tags and
     finds none of the files in the service worker's caches. The claude.ai copy is unchanged.
+
+31. **Chinese and Arabic.** Done in the code (pull request 7), asked for by the owner.
+    *TeX.* The tree had no font for either script. It now carries the Fandol fonts with ctex's
+    and xeCJK's helpers (XeLaTeX), Amiri (LuaLaTeX with babel's `bidi=basic`, the one route on
+    which TeX orders mixed text by itself; polyglossia with XeLaTeX too) and the CJK package with
+    four Arphic fonts (pdfLaTeX): seven more pinned Ubuntu packages, 6,549 files, 46.7 MB in 24
+    packs of their own, marked `x` in the index and written after all others. Against main six
+    files of `dist/tex` change (`engine.js`, the index, two core packs, fontconfig's caches,
+    luaotfload's names); the caches were made again and every older block came out the same.
+    The artifact has no room for these packs: `publish_batches.py` leaves them out and a
+    compile that misses only them names the hosted Rikuy. Auto picks LuaLaTeX for `bidi=basic`.
+    *Page.* `src/scripts.js` tells which script a document's text is in and whether its preamble
+    sets it up; when it does not, a notice offers the lines at one click, as one undo step
+    (ctex for Chinese alone; babel with Amiri when there is Arabic, as the main language when
+    most letters are Arabic). A document whose main language runs right to left shows so on the
+    page: paragraphs, headings, list markers, footnotes, and table columns from the right as
+    babel sets them; `otherlanguage`, `\foreignlanguage`, polyglossia's and bidi's commands
+    turn their text and are text, not code; CJK wrappers are text. The page's font lists name
+    a Song, Kai, Hei, Fang Song and a Naskh after the existing families. A review of the diff
+    found the set up patterns quadratic on a crafted preamble (9 s a call); bounded, with a test.
+    *Word.* Both ways: `w:bidi`, `w:rtl`, `w:bidiVisual`, East Asian and complex script fonts
+    and languages on export; right to left paragraphs, `w:dir`/`w:bdo` runs (pandoc dropped
+    their text), joiners and Arabic digits on import, with the set up lines in the preamble;
+    a coauthor's edits to Chinese come back a character at a time.
+    Evidence, all on a tree built here from the pinned inputs: `test/engines.py` 33/33 (ctex on
+    XeLaTeX in Fandol Song, bold and Kai; Arabic on LuaLaTeX in Amiri as a phrase and as the
+    main language; CJKutf8 on pdfLaTeX; a plain document with Chinese, the notice's click and
+    a PDF in Fandol; a copy without the 24 packs gets no PDF and says why); the three Word
+    fixtures open and compile with no error (XeLaTeX, LuaLaTeX, LuaLaTeX); `test/scripts.py`
+    133, `scripts.test.mjs` 31, `word.test.mjs` 38 groups, `word.py` 90, `browser.py` 182,
+    `ribbon.py` 146; LibreOffice 24.2 opens the Arabic and Chinese exports. The manifest is
+    that build's (stock zlib 1.3, as CI's Python); its other 263 lines equal main's. Open:
+    Japanese and Korean have no fonts; Greek and Cyrillic in a document whose main font is
+    Amiri are not drawn; a viewer without Adobe's CMap data shows Fandol text but cannot copy
+    it (as with a desktop TeX Live); the page names system fonts and ships none for these
+    scripts; babel loaded through `\input` is not seen by the page; generated words (Figure,
+    Abstract) stay English on the page; not seen in Microsoft Word, Safari or on a phone.
 
 ## Open tasks
 

@@ -50,6 +50,11 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   placed (text you changed meanwhile, generated numbers, a new table row) as a comment where it
   was. pandoc, compiled to WebAssembly, does the conversions in the browser; it loads (16 MB, once)
   only when a Word action is used. Not in the copy on claude.ai, which has no room for it.
+- **Chinese and Arabic.** A document in either script compiles: Fandol fonts with ctex or xeCJK
+  (XeLaTeX), Amiri with babel's `bidi=basic` (LuaLaTeX), the CJK package with Arphic fonts
+  (pdfLaTeX). Type such text into a plain document and Rikuy offers the set up lines at one
+  click. A right to left document reads right to left on the page, and Word files in both
+  scripts open and save. On the hosted build; the copy on claude.ai has no room for the fonts.
 - **Live figures.** `\rikuywidget{plot.html}{plot.png}` from `rikuy.sty` (in `sample/widget/`,
   copied beside the document) runs a self contained HTML widget, sliders and all, on the typeset
   page, sandboxed; every TeX, Overleaf's included, prints the PNG. Widgets in a document from

@@ -10,7 +10,7 @@ a command fails, trust the code and fix this file.
 
 | path | what is there |
 |---|---|
-| `src/` | the editor. `app.js` is the entry; `model.js` maps source to page, `parser.js`, `render.js`, `editor.js`, `minimal.js` (smallest source patch), `siunitx.js`, `wordmath.js`; `share.js` (links, comments in the source, the three way merge) and `collab.js` (their UI); `widget.js` (live figures from `rikuy.sty`); `scripts.js` (Chinese and Arabic: which of them a document's text is in, what its preamble sets up, the lines that set them up, which way a document and a language run); `ribbon.js` (the row of style, formatting, insert and download buttons under the bar); `pwa.js` and `sw.js` (the installed app: its service worker, updates, offline copy); Word: `word.js` (its UI and the worker's client), `wordast.js` (the page as pandoc's AST), `wordsync.js` (a coauthor's edits back into the source), and in the Word worker `wordworker.js`, `wordjobs.js`, `docx.js`, `pandoc.js` |
+| `src/` | the editor. `app.js` is the entry; `model.js` maps source to page, `parser.js`, `render.js`, `editor.js`, `minimal.js` (smallest source patch), `siunitx.js`, `wordmath.js`; `share.js` (links, comments in the source, the three way merge) and `collab.js` (their UI); `widget.js` (live figures from `rikuy.sty`); `scripts.js` (Chinese and Arabic: which of them a document's text is in, what its preamble sets up, the lines that set them up, which way a document and a language run); `ribbon.js` (the row of style, formatting, insert and download buttons under the bar); `pwa.js` and `sw.js` (the installed app: its service worker, updates, offline copy); Word: `word.js` (its UI and the worker's client), `wordast.js` (the page as pandoc's AST), `wordsync.js` (a coauthor's edits back into the source), `wordbidi.js` (which way text runs, for Word), and in the Word worker `wordworker.js`, `wordjobs.js`, `docx.js`, `pandoc.js` |
 | `tex/engine.js` | the TeX worker: compile loop, passes, bibtex/biber/makeindex/xindy between them |
 | `tex/shell.js`, `tex/tools.js` | the shell TeX's `\write18` and pipes reach, and the programs behind it (Ghostscript, gnuplot, Python, dvips, asy, xindy) |
 | `tex/build_tree.py` | the TeX tree and its packs (`dist/tex/`) |
@@ -49,7 +49,7 @@ a command fails, trust the code and fix this file.
 | build the inputs, then the TeX tree and packs | `tex/fetch_inputs.sh`, then `python3 tex/build_tree.py tree && python3 tex/build_tree.py packs` | about 3 GB of downloads |
 | build the page into `dist/` | `npm run build`; the editor and its browser tests need nothing more, the PDF pane and the TeX tests need `dist/tex/` from the step above | 10 s |
 | serve `dist/` as the artifact host does | `npm run serve` (port 8790) | |
-| engines and shell escape in the page | `npm run test:engines` (23 checks) | 5 min |
+| engines and shell escape in the page | `npm run test:engines` (33 checks) | 7 min |
 | typing on the page | `npm run test:browser` | 20 s |
 | the installed app: offline, updates, one version at a time, none in the artifact build (and a compile offline where `dist/tex` exists) | `npm run test:offline` | 1 min |
 | opening `.tex`, `.bib` and `.zip` with the installed app (`launchQueue`), and files shared to it | `cd test && python3 launch.py` | 20 s |
@@ -109,6 +109,11 @@ Pick the checks by what you touched, and run them before you call it done:
   `test/offline.py` and `test/pages.py` test it. A service worker answers the requests of the pages
   it controls; a test that changes what a server returns must go through it (or a new context).
 - The page runs under a strict Content Security Policy (`connect-src 'self'`, see `test/serve.py`): the worker can fetch only files next to the page.
+- This machine's Python may be linked with zlib-ng, whose gzip bytes differ from stock zlib's: packs
+  built with it get other names than `dev/dist-manifest.txt` has. To make the manifest here, run
+  `build_tree.py` with Ubuntu 24.04's `libz.so.1.3` in `LD_PRELOAD` (CI's Python uses that one).
+- The Chinese and Arabic packs (`x` in the index) are not in the artifact: build and test them on
+  the hosted build; `tex/README.md` says what they hold.
 - The published artifact may hold 256 MB; `PLAN.md` gives the current size. It has no room for
   pandoc: build that copy with `RIKUY_NO_WORD=1` (and `RIKUY_WORD_HOST` naming a copy with Word).
 - `test/fixtures/word-fixture.docx`, `word-rich.docx`, `word-chinese.docx`, `word-arabic.docx`

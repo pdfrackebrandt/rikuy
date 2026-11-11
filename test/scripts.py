@@ -137,7 +137,7 @@ def rendering(page):
       return { tab: d('#pages .tabw'), table: d('#pages .tab'), cols: tds[0].getBoundingClientRect().left < tds[1].getBoundingClientRect().left, td: tds[0].getAttribute('dir'),
         dm: d('#pages .it.dm'), dmDir: document.querySelector('#pages .it.dm').getAttribute('dir'), raw: d('#pages .it.raw'), math: d('#pages .atom.m'), bidi: getComputedStyle(document.querySelector('#pages .atom.m')).unicodeBidi,
         sub: sub && [sub.getAttribute('dir'), getComputedStyle(sub).direction] }; }''')
-    check('a table keeps its columns left to right', inner['tab'] == 'ltr' and inner['table'] == 'ltr' and inner['cols'] is True, inner)
+    check('a table sets its first column at the right, as the PDF does', inner['table'] == 'rtl' and inner['cols'] is False, inner)
     check('and the words in its cells run right to left', inner['td'] == 'rtl', inner)
     check('a displayed and an inline formula stay left to right', inner['dm'] == 'ltr' and inner['dmDir'] is None and inner['math'] == 'ltr' and inner['bidi'] == 'isolate', inner)
     check('code stays left to right', inner['raw'] == 'ltr', inner)

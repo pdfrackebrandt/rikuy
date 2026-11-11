@@ -168,8 +168,36 @@ try:
         fonts, text = pdf_fonts_text(page)
         check('the CJK package compiles with pdfLaTeX (Arphic fonts)', st.startswith('pdfLaTeX') and 'page' in st and any('gbsnu' in f for f in fonts) and any('bsmiu' in f for f in fonts), [st, sorted(fonts)[:6]])
 
+        # the whole way for a newcomer: Chinese typed into a plain document, the notice's one
+        # click, and a PDF in Fandol
+        open_doc(page, [['main.tex', '\\documentclass{article}\n\\begin{document}\nHello 你好，世界！\n\\end{document}\n']])
+        page.wait_for_selector('#script-note:not([hidden])', timeout=8000)
+        said = page.inner_text('#script-msg')
+        page.click('#script-go')
+        page.wait_for_timeout(400)
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('a plain document with Chinese text: the notice, one click, and the PDF is set in Fandol', 'Chinese' in said and st.startswith('XeLaTeX') and 'page' in st and any('FandolSong-Regular' in f for f in fonts), [said, st, sorted(fonts)])
+
         errs = [e for e in errors if 'favicon' not in e]
         check('no page errors', not errs, errs[:5])
+        browser.close()
+
+        # a copy without the Chinese and Arabic packs (the artifact on claude.ai): the compile
+        # stops, no half made PDF is shown, and the result says that only those packs were missed
+        import gzip, json, re
+        raw = open(os.path.join(os.environ.get('RIKUY_DIST') or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'dist'), 'tex', 'tree.wasm'), 'rb').read()
+        idx = json.loads(gzip.decompress(raw[raw.index(b'galley') + 6:]))
+        xpacks = [p_['f'] for p_ in idx['packs'] if p_.get('x')]
+        browser, page, errors = open_page(p, width=1500, height=950)
+        page.route(re.compile('/tex/(' + '|'.join(re.escape(f) for f in xpacks) + ')$'), lambda route: route.fulfill(status=404, body='not here'))
+        open_doc(page, [['main.tex', '\\documentclass{article}\n\\usepackage[scheme=plain]{ctex}\n\\begin{document}\n你好\n\\end{document}\n']])
+        page.click('#b-pdf')
+        wait_pdf(page)
+        lc = page.evaluate("window.rikuy.lastCompile")
+        shown = page.evaluate("document.getElementById('pdf-host').textContent")
+        check('24 packs are marked as the Chinese and Arabic ones', len(xpacks) == 24, len(xpacks))
+        check('without them a Chinese document gets no PDF, and the result names only those packs', bool(lc) and lc.get('unkeptScripts') is True and not lc.get('ok') and not page.evaluate("!!document.querySelector('#pdf-host canvas')") and 'could not be loaded' in shown, [lc and {k: lc[k] for k in ('unkept', 'unkeptScripts', 'ok')}, shown[:160]])
         browser.close()
 except Exception as e:
     # a run that stops part way has failed, whatever the checks before it said
