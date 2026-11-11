@@ -950,4 +950,37 @@ await ok('a round trip through Word and back as a stranger\'s file gives the sam
   }
 });
 
+await ok('a coauthor\'s edits to Chinese and Arabic text in Word come back as the smallest patches', async () => {
+  const pre = [BABEL, ...AR, ...ZH].join('\n') + '\n';
+  const zh = doc('研究表明，制度变迁对经济增长具有显著影响。本文利用\\textbf{秘鲁}的数据进行了检验，结果稳健。\n', pre);
+  // one character of a sentence with no spaces; two changes a clause apart stay two; one inside \textbf stays inside
+  await roundTrip(zh, rep('显著', '重大'), zh.replace('显著', '重大'));
+  const p2 = await roundTrip(zh, (d) => rep('秘鲁', '智利')(rep('检验', '验证')(rep('研究表明', '研究显示')(d))), zh.replace('秘鲁', '智利').replace('检验', '验证').replace('研究表明', '研究显示'));
+  assert.deepEqual(p2.applied.map((e) => [zh.slice(e.s, e.e), e.t]).sort(), [['检验', '验证'], ['秘鲁', '智利'], ['表明', '显示']].sort());
+  // Chinese quotation marks and the long dash typed in Word stay those characters, as on opening a Word file
+  await roundTrip(zh, rep('结果稳健。', '结果稳健，见“附录”——表1。'), zh.replace('结果稳健。', '结果稳健，见“附录”——表1。'));
+  // each character is a word: changes a clause apart are two, changes two characters apart are one
+  assert.deepEqual(textHunks('制度变迁对经济增长具有显著影响', '体制变迁对经济增长具有重大影响'), [{ a: 0, b: 2, A: 0, B: 2 }, { a: 11, b: 13, A: 11, B: 13 }]);
+  assert.deepEqual(textHunks('制度变迁对经济增长具有显著影响', '制度变迁对经济发展具有重大影响'), [{ a: 7, b: 13, A: 7, B: 13 }]);
+  // Arabic: a word, a word with its vowel marks, a number, text in a wrapper, a paragraph in an environment, a footnote
+  const ar = doc('هذه فقرة عربية مع \\emph{كلمة} مهمة و 50\\% من النص، سنة ٢٠٢٤.\\footnote{حاشية أولى.}\n\nA \\foreignlanguage{arabic}{نص عربي} phrase and \\RL{يمين}.\n\n\\begin{otherlanguage}{arabic}\nفقرة داخل البيئة.\n\\end{otherlanguage}\n', pre);
+  await roundTrip(ar, rep('فقرة عربية', 'جملة عربية'), ar.replace('فقرة عربية', 'جملة عربية'));
+  await roundTrip(ar, rep('كلمة', 'كَلِمَةٌ'), ar.replace('كلمة', 'كَلِمَةٌ'));
+  const p3 = await roundTrip(ar, (d) => rep('٢٠٢٤', '٢٠٢٥')(rep('نص عربي', 'نص فارسی می\u200cخواهم')(rep('يمين', 'يسار')(rep('فقرة داخل البيئة.', 'فقرة داخل البيئة، 100% & أكثر.')(d)))),
+    ar.replace('٢٠٢٤', '٢٠٢٥').replace('نص عربي', 'نص فارسی می\u200cخواهم').replace('يمين', 'يسار').replace('فقرة داخل البيئة.', 'فقرة داخل البيئة، 100\\% \\& أكثر.'));
+  assert.equal(p3.stats.applied, 4);
+  assert.equal(p3.stats.conflicts + p3.stats.skipped, 0);
+  const files = new Map([['main.tex', ar]]);
+  const E = exportFiles(files);
+  assert.equal(importInto(edit(E.docx, rep('حاشية أولى', 'حاشية ثانية'), 'word/footnotes.xml'), files).files.get('main.tex'), ar.replace('حاشية أولى', 'حاشية ثانية'));
+  // a paragraph added in Word under the Arabic one, by a Word that marks it right to left and cuts it into runs
+  const added = edit(E.docx, (d) => d.replace(/(فقرة داخل البيئة\.[\s\S]*?<\/w:p>)/, '$1<w:p><w:pPr><w:bidi/></w:pPr><w:r><w:rPr><w:rtl/></w:rPr><w:t xml:space="preserve">فقرة </w:t></w:r><w:dir w:val="rtl"><w:r><w:rPr><w:rtl/></w:rPr><w:t>جديدة</w:t></w:r></w:dir><w:r><w:t xml:space="preserve"> with {braces}.</w:t></w:r></w:p>'));
+  assert.equal(importInto(added, files).files.get('main.tex'), ar.replace('فقرة داخل البيئة.', 'فقرة داخل البيئة.\n\nفقرة جديدة with \\{braces\\}.'));
+  // the owner changed the same Arabic words since: not applied, said in a comment
+  const mine = new Map([['main.tex', ar.replace('فقرة عربية', 'فقرة قصيرة')]]);
+  const clash = importInto(edit(E.docx, rep('فقرة عربية', 'فقرة فارسية')), mine);
+  assert.equal(clash.stats.conflicts, 1);
+  assert.ok(clash.files.get('main.tex').includes('فقرة قصيرة') && /% comment \(Ana\) on "[^"]*": In Word: /.test(clash.files.get('main.tex')), clash.files.get('main.tex'));
+});
+
 console.log('word: ' + n + ' groups of checks passed');

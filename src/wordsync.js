@@ -110,7 +110,10 @@ export function checkData(d) {
 
 // ---- text changes -> source edits ---------------------------------------------------------------
 
-const TOK = /[\p{L}\p{N}\p{M}]+|\s+|[\s\S]/gu;
+// (Chinese and Japanese are written without spaces: each of their characters is a word here,
+// so one changed in a long sentence is one small change, not the sentence written again)
+const TOK = /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}]|[\p{L}\p{N}\p{M}]+|\s+|[\s\S]/gu;
+const CJK_G = /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}]/gu;
 const toks = (t) => t.match(TOK) || [];
 
 // old text -> new text as hunks { a, b, A, B } (old [a, b), new [A, B)), word granular. Hunks a
@@ -132,7 +135,8 @@ export function textHunks(o, n) {
   for (const x of out) {
     const L = merged[merged.length - 1];
     const gap = L ? o.slice(L.b, x.a) : null;
-    if (L && gap.length < 12 && /^\s*[\p{L}\p{N}]*\s*$/u.test(gap) && !gap.includes(OBJ) && !/\n\s*\n/.test(gap)) { L.b = x.b; L.B = x.B; continue; }
+    // (a short word: of Chinese or Japanese, where every character is one, at most two)
+    if (L && gap.length < 12 && /^\s*[\p{L}\p{N}]*\s*$/u.test(gap) && !gap.includes(OBJ) && !/\n\s*\n/.test(gap) && (gap.match(CJK_G) || []).length <= 2) { L.b = x.b; L.B = x.B; continue; }
     merged.push({ ...x });
   }
   // then trimmed to the characters that differ, so café to cafés adds an s after caf\'e
@@ -159,6 +163,14 @@ function newToOld(hs, p) {
 const PARA_OK = new Set(['p', 'li', 'fn']);
 const ITEM = '\u2023'; // marks, inside new text, a paragraph that is a new list item
 
+// Chinese text has quotation marks and a dash of its own in the characters TeX writes as ``,
+// '' and ---: in text with Chinese in it they stay the characters (as src/wordjobs.js keeps them)
+const CJK_QUOTES = /([\u2018\u2019\u201C\u201D\u2014])/;
+function escapeText(t, prev) {
+  if (!/\p{sc=Han}/u.test(t)) return escapeTeX(t, prev);
+  return t.split(CJK_QUOTES).map((x, i, a) => (i % 2 ? x : escapeTeX(x, i ? a[i - 1] : prev))).join('');
+}
+
 // LaTeX for new text from Word: escaped as typing it on the page would be; objects in it (an
 // equation or a footnote the coauthor inserted) as LaTeX of their own
 function texFor(text, objs, at, ctx) {
@@ -171,7 +183,7 @@ function texFor(text, objs, at, ctx) {
     const paras = t.split('\u2029');
     out += paras.map((p, i) => {
       const item = p.startsWith(ITEM);
-      const body = escapeTeX(item ? p.slice(1) : p, i ? ' ' : prev);
+      const body = escapeText(item ? p.slice(1) : p, i ? ' ' : prev);
       if (!i) return body;
       return (!ctx.paras ? ' ' : item && ctx.list ? '\n\\item ' : '\n\n') + body;
     }).join('');
