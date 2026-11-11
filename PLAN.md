@@ -10,11 +10,11 @@ Read the rules at the end before the first commit.
 | corpus compiles (LaTeX-examples, 716 documents present) | 705 | 706 | 706 | as version 25 | as version 25 | as version 25 | as version 25 | as version 25 |
 | corpus PDFs equal to a desktop TeX Live 2026's | 615 of 704 (87.4 %) | 700 of 705 (99.3 %) | 703 of 705 (99.7 %) | as version 25 | as version 25 | as version 25 | as version 25 | as version 25 |
 | TeX passes over the whole corpus | not counted | 995 (1,471 without latexmk's first-run `.aux`) | 995 | as version 25 | as version 25 | as version 25 | as version 25 | as version 25 |
-| `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) | 22/22 | 23/23 (a check that pygmentize loads no code a document wrote) | 23/23, now run by CI on a tree built there (`tex.yml`) | 23/23 in CI's TeX job | 23/23 in CI's TeX job | 35/35 (twelve new: Chinese and Arabic); 33/33 in CI's TeX job before the review's fixes |
+| `test/engines.py` | 22/22 | 22/22 (its PSTricks check now asks for drawn lines) | 22/22 | 23/23 (a check that pygmentize loads no code a document wrote) | 23/23, now run by CI on a tree built there (`tex.yml`) | 23/23 in CI's TeX job | 23/23 in CI's TeX job | 37/37, here and in CI's TeX job (fourteen new: Chinese, Arabic, India's scripts) |
 | `tex/native/xindy/test.cjs` (against CLISP's xindy) | 11/11 | 11/11 | 11/11 | 11/11 | 11/11 | 11/11 | as version 30 | as version 30 |
 | TeX Live's 220 Asymptote examples as a desktop's asy draws them | not measured | against a native asy 3.09: 216 (196 equal PDFs, 12 equal failures, 7 random by design, 1 equal alone); 4 open | against the desktop's asy 3.11: 218 (201 equal PDFs, the 3D ones rendered as bitmaps; 10 equal failures; 7 random by design); 2 open: 1 numerical, `slope` out of memory | as version 25 | as version 25 | as version 25 | as version 25 | as version 25 |
 | edits on the typeset page landing exactly, undone byte for byte (`test/editor_corpus.py`) | not measured | 780 of 780, in the 222 documents with text, a formula, a cell or a footnote; 211 of 211 edited projects compile | as version 23 (page unchanged) | 781 of 792 land, 11 open as source by design, all 792 undone byte for byte, on the complete corpus; 211 of 211 edited projects compile | as version 28 (model and parser unchanged) | as version 28 (model and parser unchanged) | not run again (the model draws colours and lists in cells now; the 716 document model run passes) | not run again (`test/scripts.py` 133 checks direction and editing in Arabic and Chinese) |
-| artifact size (limit 256 MB) | 250.0 MB | 249.7 MB | 252.3 MB | 253.1 MB (with the 0.8 MB license bundle) | 253.6 MB (pdf.js shipped, IBM Plex inlined) | about 253.8 MB (version 29 and 154 kB: the page and `engine.js`) | about 253.8 MB (version 30 and 21 kB of page) | not published; about 253.9 MB when it is (the index and four packs change, 0.1 MB; the 46.7 MB of Chinese and Arabic packs stay out) |
+| artifact size (limit 256 MB) | 250.0 MB | 249.7 MB | 252.3 MB | 253.1 MB (with the 0.8 MB license bundle) | 253.6 MB (pdf.js shipped, IBM Plex inlined) | about 253.8 MB (version 29 and 154 kB: the page and `engine.js`) | about 253.8 MB (version 30 and 21 kB of page) | not published; about 253.9 MB when it is (the index and four packs change, 0.1 MB; the 48.5 MB of packs for Chinese, Arabic and India's scripts stay out) |
 
 Version 23 changed only the page (task 13): its `dist/tex` is version 22's byte for byte, so the
 TeX rows are version 22's runs. Version 24 changed Asymptote (tasks 17 and 18: `asy.wasm`, the
@@ -56,9 +56,10 @@ page, 0.6 s), the sample compiles (3 pages), Make available offline finishes, He
 the plain sentence.
 
 Version 32 (2026-11-11) adds the ribbon, the files for search engines and agents and the new
-icon (tasks 29 and 30, deployed), and Chinese and Arabic (task 31): 24 packs of fonts and
-packages that only the hosted build carries, right to left documents on the page, a one click
-set up, and Word files in both scripts. `dist/tex` is 297.6 MB, 250.9 MB of it in the artifact.
+icon (tasks 29 and 30, deployed), and Chinese, Arabic and nine scripts of India (tasks 31 and
+32): 26 packs of fonts and packages that only the hosted build carries, right to left documents
+on the page, a one click set up, and Word files in these scripts. `dist/tex` is 299.4 MB,
+250.9 MB of it in the artifact.
 
 Equal means: the same number of pages, the same text on each page (`pdftotext -layout`,
 whitespace collapsed), and no page with more than 0.1 % of its pixels differing by more than
@@ -663,6 +664,32 @@ Tests:
     it (as with a desktop TeX Live); the page names system fonts and ships none for these
     scripts; babel loaded through `\input` is not seen by the page; generated words (Figure,
     Abstract) stay English on the page; not seen in Microsoft Word, Safari or on a phone.
+
+32. **India's scripts.** Done in the code (pull request 7), asked for by the owner after task 31.
+    Devanagari (Hindi, Marathi, Nepali, Sanskrit), Bengali, Gurmukhi, Gujarati, Odia, Tamil,
+    Telugu, Kannada and Malayalam. *TeX.* Twenty Noto fonts from Ubuntu's `fonts-noto-core`
+    (Serif, regular and bold; Sans for Odia, which has no Serif; Noto Nastaliq Urdu by name) in
+    two more `x` packs, 4 MB: 26 such packs and 48.5 MB now, `dist/tex` 299.4 MB. The set up
+    is babel's `onchar` with HarfBuzz on LuaLaTeX, a language and font per script, English
+    staying the main language; Chinese or Arabic in the same document go the same way. babel
+    has no character range for Gurmukhi and Gujarati (their text fell to Latin Modern and was
+    gone from the PDF): the set up tells it in a `\directlua` line. *Page.* The notice names
+    any mix of scripts; font lists for the nine after the existing families; Backspace takes
+    one code point (a vowel sign, a virama) as Indian editors do, Delete and bold a whole
+    character, and no page cut or Latin hyphen falls inside one. *Word.* Import keeps
+    conjuncts, nukta, joiners, dandas and each script's digits and writes the set up lines;
+    export gives each run a complex script font (Nirmala UI) and its language (`hi-IN` and the
+    like); a coauthor's edit to one word is one patch.
+    Evidence: a document with all nine scripts compiles with no missing character, conjuncts
+    shaped (seen as a picture); the Hindi and the eight script Word fixtures open and compile
+    with no error; `test/engines.py` 37/37 (Hindi, Gujarati and Tamil typed into a plain
+    document, the click, a PDF in the three Noto fonts) here and in CI's TeX job, which again
+    found `dist/tex` equal to the manifest; `scripts.py` 192, `scripts.test.mjs` 44,
+    `word.test.mjs` 44 groups, `word.py` 97, `browser.py` 182, `ribbon.py` 146, `offline.py`
+    36/36. Open: Devanagari always gets Hindi's hyphenation and `hi-IN`, for Marathi and Nepali
+    too; no font for Sinhala, Thai, Hebrew, Japanese or Korean; Urdu is set in Amiri unless the
+    author names Noto Nastaliq Urdu; the page was drawn here with FreeSans (no Noto on this
+    machine), so its Indian text was not judged by eye; not seen in Microsoft Word.
 
 ## Open tasks
 

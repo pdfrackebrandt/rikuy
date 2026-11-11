@@ -1035,7 +1035,8 @@ await ok('a Word file with a line in each of the other eight scripts of India: a
   const r = fixture('word-indic.docx');
   const t = r.tex, b = bodyOf(t);
   const lines = linesFor(...INDIC.map((x) => x[0]));
-  assert.equal(lines.length, 19);
+  // babel's line, two lines a script, and the two that tell babel where Gurmukhi and Gujarati are
+  assert.equal(lines.length, 21);
   setUp(t, lines);
   assert.deepEqual(preambleOf(t).trim().split('\n').map((l) => l.replace(/^\\usepackage\[letterpaper.*$/, 'GEOMETRY')), ['\\documentclass[11pt]{article}', 'GEOMETRY', ...lines, '\\usepackage{amsmath,amssymb}', '\\usepackage{booktabs}']);
   for (const s of ['Bengali: \\textbf{বাংলা:} আমি বাংলায় গান গাই, ক্ষমা করবেন। ১২৩', 'Tamil: \\textbf{தமிழ்:} வணக்கம், மிக்க நன்றி. ௧௨௩', 'Telugu: \\textbf{తెలుగు:} నమస్కారం, ధన్యవాదాలు. ౧౨౩',

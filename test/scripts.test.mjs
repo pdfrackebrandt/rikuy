@@ -423,12 +423,16 @@ ok('needs and lines for a mixed document', () => {
     '\\babelprovide[import=hi, onchar=ids fonts]{hindi}', '\\babelfont[hindi]{rm}[Renderer=Harfbuzz]{Noto Serif Devanagari}',
     '\\babelprovide[import=ta, onchar=ids fonts]{tamil}', '\\babelfont[tamil]{rm}[Renderer=Harfbuzz]{Noto Serif Tamil}',
     '\\babelprovide[import, onchar=ids fonts]{chinese}', '\\babelfont[chinese]{rm}{FandolSong}']);
-  // every script alone: its own two lines after babel's
-  for (const [id, , , babel, code, font] of INDIC) {
+  // every script alone: its own two lines after babel's, and before them the line that tells
+  // babel where Gurmukhi's and Gujarati's characters are (it has no range for the two)
+  for (const [id, name, , babel, code, font, , range] of INDIC) {
     const d = doc('', 'Text ' + WORDS[id] + '.');
     const n1 = scriptNeeds(d, [d]);
     assert.deepEqual([...n1], [id]);
-    assert.deepEqual(scriptLines(n1, d).slice(1), ['\\babelprovide[import=' + code + ', onchar=ids fonts]{' + babel + '}', '\\babelfont[' + babel + ']{rm}[Renderer=Harfbuzz]{' + font + '}'], id);
+    const own = scriptLines(n1, d).slice(1);
+    assert.equal(!!range, id === 'gurmukhi' || id === 'gujarati');
+    if (range) assert.equal(own.shift(), '\\directlua{Babel.script_blocks.' + range + "} % where " + name + "'s characters are: babel has no entry");
+    assert.deepEqual(own, ['\\babelprovide[import=' + code + ', onchar=ids fonts]{' + babel + '}', '\\babelfont[' + babel + ']{rm}[Renderer=Harfbuzz]{' + font + '}'], id);
     assert.equal(rtlDocument(addScriptSetup(d, n1)), false);
   }
   // text in another file of the project counts, and Arabic beside it brings its bidi
