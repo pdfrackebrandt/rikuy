@@ -10,7 +10,7 @@ a command fails, trust the code and fix this file.
 
 | path | what is there |
 |---|---|
-| `src/` | the editor. `app.js` is the entry; `model.js` maps source to page, `parser.js`, `render.js`, `editor.js`, `minimal.js` (smallest source patch), `siunitx.js`, `wordmath.js`; `share.js` (links, comments in the source, the three way merge) and `collab.js` (their UI); `widget.js` (live figures from `rikuy.sty`); `ribbon.js` (the row of style, formatting, insert and download buttons under the bar); `pwa.js` and `sw.js` (the installed app: its service worker, updates, offline copy); Word: `word.js` (its UI and the worker's client), `wordast.js` (the page as pandoc's AST), `wordsync.js` (a coauthor's edits back into the source), and in the Word worker `wordworker.js`, `wordjobs.js`, `docx.js`, `pandoc.js` |
+| `src/` | the editor. `app.js` is the entry; `model.js` maps source to page, `parser.js`, `render.js`, `editor.js`, `minimal.js` (smallest source patch), `siunitx.js`, `wordmath.js`; `share.js` (links, comments in the source, the three way merge) and `collab.js` (their UI); `widget.js` (live figures from `rikuy.sty`); `scripts.js` (Chinese and Arabic: which of them a document's text is in, what its preamble sets up, the lines that set them up, which way a document and a language run); `ribbon.js` (the row of style, formatting, insert and download buttons under the bar); `pwa.js` and `sw.js` (the installed app: its service worker, updates, offline copy); Word: `word.js` (its UI and the worker's client), `wordast.js` (the page as pandoc's AST), `wordsync.js` (a coauthor's edits back into the source), and in the Word worker `wordworker.js`, `wordjobs.js`, `docx.js`, `pandoc.js` |
 | `tex/engine.js` | the TeX worker: compile loop, passes, bibtex/biber/makeindex/xindy between them |
 | `tex/shell.js`, `tex/tools.js` | the shell TeX's `\write18` and pipes reach, and the programs behind it (Ghostscript, gnuplot, Python, dvips, asy, xindy) |
 | `tex/build_tree.py` | the TeX tree and its packs (`dist/tex/`) |
@@ -44,7 +44,7 @@ a command fails, trust the code and fix this file.
 
 | to | run | takes |
 |---|---|---|
-| unit tests (editor model, minimal patch, siunitx, share links and merge, Word export and import with the real pandoc (`test/word.test.mjs`), git tokens per host (`test/gitauth.test.mjs`), the worker's pack hashes, path guard and offline plan (`test/engine.test.mjs`), xindy, unpacking arXiv sources (`test/arxiv_unpack.py`) and merging the shards' rows (`test/arxiv_collect.py`), Cloudflare Pages' limits and the hosted headers (`test/deploy_check.py`)) | `npm test` | 1 min |
+| unit tests (editor model, Chinese and Arabic set up and the commands that turn text (`test/scripts.test.mjs`), minimal patch, siunitx, share links and merge, Word export and import with the real pandoc (`test/word.test.mjs`), git tokens per host (`test/gitauth.test.mjs`), the worker's pack hashes, path guard and offline plan (`test/engine.test.mjs`), xindy, unpacking arXiv sources (`test/arxiv_unpack.py`) and merging the shards' rows (`test/arxiv_collect.py`), Cloudflare Pages' limits and the hosted headers (`test/deploy_check.py`)) | `npm test` | 1 min |
 | the model on the 716 document corpus | `npm run test:corpus -- <LaTeX-examples clone at 8bfd313b8d98>` | 2 min |
 | build the inputs, then the TeX tree and packs | `tex/fetch_inputs.sh`, then `python3 tex/build_tree.py tree && python3 tex/build_tree.py packs` | about 3 GB of downloads |
 | build the page into `dist/` | `npm run build`; the editor and its browser tests need nothing more, the PDF pane and the TeX tests need `dist/tex/` from the step above | 10 s |
@@ -56,7 +56,7 @@ a command fails, trust the code and fix this file.
 | serve `dist/` as Cloudflare Pages serves the hosted app (`index.html` as the page, `_headers`) | `npm run serve:app` (port 8791) | |
 | check a built `dist/` against Cloudflare Pages' limits (deploy.yml runs it) | `python3 dev/pages_check.py dist` | 1 s |
 | lint the workflows | `actionlint` (CI: `go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12`) | 2 s |
-| one feature in the page (projects, files, git, history, paste, PDF, math field, Word style math, equation extras, sharing and comments, stress, live figures, the ribbon, Word files) | `cd test && python3 features.py` (or `files.py`, `git.py`, `history.py`, `paste.py`, `pdf.py`, `mathfield.py`, `wordmath.py`, `eqextras.py`, `frontier.py`, `share.py`, `stress.py`, `widgets.py`, `ribbon.py`, `word.py`); each says what it checks at the top | under a minute each; `word.py` 2 min (with LibreOffice and `libreoffice-math` installed it also edits in LibreOffice) |
+| one feature in the page (projects, files, git, history, paste, PDF, math field, Word style math, equation extras, sharing and comments, stress, live figures, the ribbon, Chinese and Arabic, Word files) | `cd test && python3 features.py` (or `files.py`, `git.py`, `history.py`, `paste.py`, `pdf.py`, `mathfield.py`, `wordmath.py`, `eqextras.py`, `frontier.py`, `share.py`, `stress.py`, `widgets.py`, `ribbon.py`, `scripts.py`, `word.py`); each says what it checks at the top | under a minute each; `word.py` 2 min (with LibreOffice and `libreoffice-math` installed it also edits in LibreOffice) |
 | build the page without Word, as for the claude.ai copy | `RIKUY_NO_WORD=1 npm run build` | 5 s |
 | random keystrokes on real documents, then every scripted edit on the corpus | `python3 test/corpus_browser.py <corpus>`, then `CORPUS_REPO=<corpus> python3 test/editor_corpus.py out.jsonl` | 1 min; 1 hour (40 min of edits, 20 of compiles) |
 | compile one folder | `RIKUY_DIST=dist python3 dev/texrun.py DIR main.tex auto 300` | |
@@ -70,7 +70,7 @@ a command fails, trust the code and fix this file.
 
 Pick the checks by what you touched, and run them before you call it done:
 
-- `src/`: `npm test`, `npm run test:browser`, and `npm run test:corpus` for anything in the model or parser; `npm run test:offline` and `test/launch.py` for `pwa.js`, `sw.js`, `tex.js` or `build/app.mjs`
+- `src/`: `npm test`, `npm run test:browser`, and `npm run test:corpus` for anything in the model or parser; `test/scripts.py` for direction, the page's fonts or `scripts.js`; `npm run test:offline` and `test/launch.py` for `pwa.js`, `sw.js`, `tex.js` or `build/app.mjs`
 - `tex/engine.js`, `shell.js`, `tools.js`: `npm run test:engines`; for a fix found on a document, compile it with `dev/texrun.py` before and after
 - the tree or packs: `cd dist/tex && find . -type f | sort | xargs sha256sum | diff ../../dev/dist-manifest.txt -`; any difference must be one you meant
 - a program in `tex/vendor/`: rebuild it from an empty `RIKUY_SRC` (any folder: the builds map their paths away) and compare the hash with the committed file (`vendor.yml` does this on a runner for every pull request that touches `tex/vendor/`, `tex/native/` or `tex/build_tools.sh`); then `dev/asycompare.py` (Asymptote) or `tex/native/xindy/test.cjs` (xindy)

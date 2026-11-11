@@ -42,6 +42,7 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | share links, comments, the copy back, Overleaf | `makeShareLink`, `openSharedLink`, `takeBack`, `commentPop`, `openInOverleaf` (`src/collab.js`); `commentEdit`, `merge3` (`src/share.js`) |
 | the installed app: offline copy, updates, "Make available offline" | `install`, `activate`, the `fetch` listener (`src/sw.js`); `registerApp`, `asset`, `keepOffline`, `OFFLINE_FOLDERS` (`src/pwa.js`); `appPage`, `finishApp` (`build/app.mjs`); `keepPlan`, `keep` (`tex/engine.js`) |
 | Word (.docx in and out, a coauthor's edits back) | `saveDocx`, `openDocx`, `wordEdits` (`src/word.js`); `buildWordDoc` (`src/wordast.js`); `extract` (`src/docx.js`); `planImport`, `mathPatch` (`src/wordsync.js`); `docxToLatex` (`src/wordjobs.js`) |
+| right to left text, Chinese and Arabic fonts, the set up notice | `rtlDocument`, `languageDir`, `scriptNeeds`, `addScriptSetup` (`src/scripts.js`); `Builder.dirOf`, `dirCmd`, `declDir`, `dirEnv` (`src/model.js`); `setDir` (`src/render.js`); `--font-cjk`, `--font-ar` and the `dir` rules (`src/app.css`); `App.scriptNotice`, `scriptSetUp` |
 | live figures (`\rikuywidget`) | `WidgetLayer`, `widgetDoc`, `WIDGET_CSP` (`src/widget.js`); `Builder.cmd` (kind `widget`), `Renderer.atomEl`; `App.widgetsAllowed`, `widgetResized` |
 | the ribbon (style of a paragraph, lists, Insert, Download) | `ribbonSync`, `setBlockStyle`, `toggleList`, `insertTable`, `downloadPdfNow`, `installRibbon` (`src/ribbon.js`); `PALETTE`, `runPalette`, `afterBlockPos` (`src/app.js`) |
 | equation editing | `App.openMath`, `attachField`, `toField`, `fromField`; `src/minimal.js`, `wordmath.js`, `fences.js` |
@@ -75,6 +76,22 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
   maps, so they are read on the page and edited as source. `expandMacro()` expands a
   user macro with a position map `pm`; characters from the macro body get `-1` (read only).
   `test/model.test.mjs` checks every seg map against the source.
+- **Direction.** `Builder.dir` is the way text runs where the builder is: 'rtl' from the start
+  when the main language runs right to left (`rtlDocument`, in `opts.rtl`), changed by
+  `\selectlanguage` and bidi's `\setRTL` (`declDir`) until their group or environment ends, and
+  by the language environments (`dirEnv`: `otherlanguage`, polyglossia's `Arabic` or `hebrew`,
+  bidi's `RTL` and `LTR`), whose paragraphs are blocks of the document as `document`'s are. A
+  paragraph, heading, title, caption, footnote and a table's cells carry it as `dir` ('rtl' or
+  'ltr'; no `dir` at all in a document where nothing runs right to left, which is drawn as it
+  always was), and it is part of the block's `sig`. Words turned inside a line
+  (`\foreignlanguage{arabic}{..}`, `\textarabic`, `\RL`, `\LR`, `otherlanguage*`) are a `sty`
+  wrapper `{st: 'dir', dir}` with its source range, so Enter and an emptied wrapper behave as for
+  `\textbf`. CJK's environments and `\CJKfamily` show their text and nothing else. `setDir`
+  (`src/render.js`) writes the `dir` attribute, one of two fixed words; the style sheet names
+  sides by the way the text runs (`padding-inline-start`), so markers, numbers and indents
+  follow. Formulas, code and a table's columns stay left to right. The page's fonts have no
+  Chinese or Arabic: `--font-cjk` and `--font-ar` name the system's, after every family the
+  stacks had, and the `Paper CJK` faces give italic Chinese a Kai.
 - **Render.** `Builder.result()` keys each block by file, source text, `sig` (each resolved value
   it used, via `Builder.use()`) and item types. `Renderer.sync(model, prefix)` keeps each DOM
   block whose `prefix + key` matches, updating only `base` (its source offset), and renders the
@@ -118,6 +135,13 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   localStorage fallback) and `noteEdit()`, which schedules `pdfSoon` (1.4 s) and snapshots. The
   CodeMirror pane goes the other way: `srcRebuild` (260 ms) → `fromSource()` → `record` →
   `rebuild`; undo, redo and leaving the pane flush it first.
+- **Chinese and Arabic set up.** A moment after each rebuild `App.scriptNotice` asks
+  `scriptNeeds` (`src/scripts.js`) what the project's text needs that its main file does not
+  set up, and shows a bar under the ribbon (never while an input method composes, nor in a
+  shared copy). Its button commits `addScriptSetup`'s lines as one edit of kind `setup`; hiding
+  it is kept per project as `scripts:` in IndexedDB until the needs change. `scripts.js` reads
+  preambles that may be a stranger's at every key: its patterns bound each argument and it
+  reads 200 000 characters of a preamble at most.
 - **Tabs.** All tabs of a browser share one project record. `persist()` writes one at a time and
   first checks the record's time against `savedT`: what another tab saved since goes into the
   versions (`keepOtherTab`). A tab shown again takes that tab's text as one undo step
