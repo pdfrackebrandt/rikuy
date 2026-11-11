@@ -20,10 +20,29 @@
   --shadow: 0 1px 2px rgba(20, 32, 44, .18), 0 8px 28px rgba(20, 32, 44, .12);
   --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  --font-doc: "Paper Modern Serif", "Latin Modern Roman", "Computer Modern Serif", "Iowan Old Style", Georgia, serif;
-  --font-doc-tt: "Paper Modern Typewriter", "Latin Modern Mono", ui-monospace, monospace;
-  --font-doc-sf: "Paper Modern Sans", "Latin Modern Sans", "Helvetica Neue", Arial, sans-serif;
+  /* Chinese and Arabic in the document's text. The page's own fonts have neither, so the reader's
+     system lends them: a Song (Ming) and a Naskh for the text, as the PDF's Fandol Song and Amiri
+     are, a Hei for sans serif, a Fang Song for typewriter text. They come after every family the
+     stacks had, the generic one too, so no Latin letter, digit or sign is drawn by another font
+     than before. */
+  --font-ar: Amiri, "Noto Naskh Arabic", "Traditional Arabic", "Geeza Pro", "Arabic Typesetting", "Scheherazade New", "Sakkal Majalla", "Droid Arabic Naskh", "Times New Roman";
+  --font-ar-sf: "Noto Sans Arabic", "Geeza Pro", "Segoe UI", Tahoma, "Droid Arabic Kufi", "DejaVu Sans";
+  --font-ar-tt: "Courier New", "DejaVu Sans Mono", "Noto Sans Arabic";
+  --font-cjk: "Paper CJK", FandolSong, "Songti SC", STSong, SimSun, NSimSun, "Noto Serif CJK SC", "Source Han Serif SC", "Source Han Serif CN", "Songti TC", PMingLiU, MingLiU, "Noto Serif CJK TC", "Noto Serif CJK JP", "AR PL UMing CN", "Hiragino Mincho ProN", "Yu Mincho", Batang;
+  --font-cjk-sf: FandolHei, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", "Source Han Sans CN", "Heiti SC", SimHei, "WenQuanYi Micro Hei", "WenQuanYi Zen Hei", "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC";
+  --font-cjk-tt: FandolFang, FangSong, STFangsong, FangSong_GB2312, "Noto Sans Mono CJK SC", "Source Han Mono SC", "Noto Sans CJK SC", SimSun;
+  --font-doc: "Paper Modern Serif", "Latin Modern Roman", "Computer Modern Serif", "Iowan Old Style", Georgia, serif, var(--font-ar), var(--font-cjk);
+  --font-doc-tt: "Paper Modern Typewriter", "Latin Modern Mono", ui-monospace, monospace, var(--font-ar-tt), var(--font-cjk-tt);
+  --font-doc-sf: "Paper Modern Sans", "Latin Modern Sans", "Helvetica Neue", Arial, sans-serif, var(--font-ar-sf), var(--font-cjk-sf);
 }
+/* Italic Chinese is set in Kai, as ctex sets it (a Song has no italic), and bold in the Song's
+   own bold. These faces only name fonts the system may have (nothing is loaded, and where none
+   is found the names in --font-cjk are tried next), and only for Chinese, Japanese and Korean
+   characters and their punctuation. */
+@font-face { font-family: "Paper CJK"; font-style: normal; font-weight: 400; src: local("FandolSong-Regular"), local("FandolSong"), local("Songti SC Regular"), local("STSongti-SC-Regular"), local("STSong"), local("SimSun"), local("Noto Serif CJK SC"), local("NotoSerifCJKsc-Regular"), local("Source Han Serif SC"), local("SourceHanSerifSC-Regular"), local("Source Han Serif CN"), local("SourceHanSerifCN-Regular"); unicode-range: U+2E80-2FDF, U+3000-303F, U+31C0-31EF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F; }
+@font-face { font-family: "Paper CJK"; font-style: normal; font-weight: 700; src: local("FandolSong-Bold"), local("Songti SC Bold"), local("STSongti-SC-Bold"), local("Noto Serif CJK SC Bold"), local("NotoSerifCJKsc-Bold"), local("Source Han Serif SC Bold"), local("SourceHanSerifSC-Bold"), local("Source Han Serif CN Bold"), local("SourceHanSerifCN-Bold"); unicode-range: U+2E80-2FDF, U+3000-303F, U+31C0-31EF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F; }
+@font-face { font-family: "Paper CJK"; font-style: italic; font-weight: 400; src: local("FandolKai-Regular"), local("FandolKai"), local("Kaiti SC Regular"), local("STKaitiSC-Regular"), local("KaiTi"), local("STKaiti"), local("KaiTi_GB2312"), local("AR PL UKai CN"), local("AR PL KaitiM GB"), local("TW-Kai"); unicode-range: U+2E80-2FDF, U+3000-303F, U+31C0-31EF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F; }
+@font-face { font-family: "Paper CJK"; font-style: italic; font-weight: 700; src: local("Kaiti SC Bold"), local("STKaitiSC-Bold"), local("FandolKai-Regular"), local("FandolKai"), local("KaiTi"), local("STKaiti"), local("AR PL UKai CN"); unicode-range: U+2E80-2FDF, U+3000-303F, U+31C0-31EF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --desk: #151A20; --desk-2: #0F1318; --chrome: #1B222A; --panel: #1F2730; --line: #2E3843;
@@ -157,9 +176,9 @@ body.pdf-on #pdfpane { display: flex; }
 
 /* ---- the sheet: everything typeset ---- */
 .sheet { padding: 28px 0 60px; font-family: var(--font-doc); color: var(--ink); --pt: 1.3; }
-.sheet[data-font="times"] { --font-doc: "Times New Roman", Times, "Nimbus Roman", serif; }
-.sheet[data-font="palatino"] { --font-doc: "Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", serif; }
-.sheet[data-font="sans"] { --font-doc: "Helvetica Neue", Helvetica, Arial, sans-serif; }
+.sheet[data-font="times"] { --font-doc: "Times New Roman", Times, "Nimbus Roman", serif, var(--font-ar), var(--font-cjk); }
+.sheet[data-font="palatino"] { --font-doc: "Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", serif, var(--font-ar), var(--font-cjk); }
+.sheet[data-font="sans"] { --font-doc: "Helvetica Neue", Helvetica, Arial, sans-serif, var(--font-ar-sf), var(--font-cjk-sf); }
 /* pages centre by their auto margins, not align-items: a page zoomed wider than the window then
    overflows to the right, where it scrolls, instead of losing its left side off screen */
 #pages { outline: none; caret-color: #1E6BAA; display: flex; flex-direction: column; align-items: flex-start; gap: 22px; }
