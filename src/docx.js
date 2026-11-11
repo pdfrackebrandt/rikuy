@@ -503,7 +503,9 @@ export function mathFromJson(json, n) {
 // reference), text colour, centred paragraphs, page breaks, and it copies a table of contents as
 // the stale paragraphs Word last stored. premark() rewrites the parts pandoc reads so these
 // survive: short fields in the long form pandoc knows, and marks in the text, which pandoc
-// carries into its LaTeX, where src/wordjobs.js turns each into the command it stands for. A
+// carries into its LaTeX, where src/wordjobs.js turns each into the command it stands for. It
+// reads the runs of a right to left paragraph but not that the paragraph is one (w:bidi), and
+// passes over text Word wrapped to say which way it runs (w:dir, w:bdo), words and all. A
 // mark is made of private use characters only (U+E000 to U+E01F, taken out of the file's own
 // text first): letters or digits would end up in the labels pandoc makes from headings. It
 // also reports what cannot be kept (headers, charts), for the notes the user is shown.
@@ -519,7 +521,12 @@ export const mark = {
   color: (hex) => '' + code(hex) + '',
   colorEnd: '',
   center: ['', ''],
-  right: ['', '']
+  right: ['', ''],
+  // at the head of a right to left paragraph (w:bidi); src/wordjobs.js groups such paragraphs
+  // and uses the four after it for the groups' ends
+  rtl: '',
+  rtlGroup: ['', ''],
+  ltrGroup: ['', '']
 };
 
 const mk = (n, a = {}, c = []) => ({ n, a, c });
@@ -545,7 +552,7 @@ function colorOf(rpr) {
 // style id -> its name as Word files spell it in every language ("heading 1", "toc 2"), the
 // colour of a character style, and the size of the body text in half points
 function styleInfo(parts) {
-  const S = { names: new Map(), colors: new Map(), sz: 0 };
+  const S = { names: new Map(), colors: new Map(), sz: 0, bidi: new Map(), jc: new Map(), based: new Map(), bidiDefault: false };
   if (!parts.has('word/styles.xml')) return S;
   let st;
   try { st = find(parseXml(text(parts.get('word/styles.xml'))), 'w:styles'); } catch (e) { return S; }
@@ -553,15 +560,43 @@ function styleInfo(parts) {
   const dd = kid(st, 'w:docDefaults');
   const dsz = dd && find(dd, 'w:sz');
   if (dsz) S.sz = +dsz.a['w:val'] || 0;
+  S.bidiDefault = onOff(dd && kid(dd, 'w:pPrDefault') && kid(kid(dd, 'w:pPrDefault'), 'w:pPr'), 'w:bidi') === true;
   for (const s of kids(st, 'w:style')) {
     const id = s.a['w:styleId'];
     if (!id) continue;
     S.names.set(id, (val(s, 'w:name') || id).toLowerCase());
+    if (s.a['w:type'] === 'paragraph') {
+      const b = onOff(kid(s, 'w:pPr'), 'w:bidi');
+      if (b != null) S.bidi.set(id, b);
+      if (val(kid(s, 'w:pPr'), 'w:jc')) S.jc.set(id, val(kid(s, 'w:pPr'), 'w:jc'));
+      if (val(s, 'w:basedOn')) S.based.set(id, val(s, 'w:basedOn'));
+      if (s.a['w:default'] === '1') S.normal = id;
+    }
     const rpr = kid(s, 'w:rPr');
     if (s.a['w:type'] === 'character') { const c = colorOf(rpr); if (c) S.colors.set(id, c); }
     if (s.a['w:type'] === 'paragraph' && s.a['w:default'] === '1' && +val(rpr, 'w:sz')) S.sz = +val(rpr, 'w:sz');
   }
   return S;
+}
+
+// a property Word switches on by naming it and off with w:val="0": true, false, or null when
+// the element does not say
+function onOff(el, name) {
+  const k = el && kid(el, name);
+  if (!k) return null;
+  return !/^(0|false|off)$/.test(k.a['w:val'] || '');
+}
+// what a paragraph's style says (or one that style is based on), where the paragraph does not
+function styled(C, sid, map) {
+  const S = C.styles;
+  for (let id = sid || S.normal, k = 0; id && k < 20; id = S.based.get(id), k++) if (map.has(id)) return map.get(id);
+  return null;
+}
+// whether a paragraph runs right to left: by its own properties, else its style's, else the
+// document's defaults
+function isBidi(C, ppr, sid) {
+  const own = onOff(ppr, 'w:bidi');
+  return own != null ? own : styled(C, sid, C.styles.bidi) ?? C.styles.bidiDefault;
 }
 
 // text of the file's without characters that would read as marks
@@ -611,7 +646,7 @@ function headText(root) {
 
 // parts: unzip()'s. Returns { parts: the map pandoc should read, info }.
 export function premark(parts) {
-  const info = { threads: threads(parts), toc: 0, breaks: 0, colors: new Map(), chars: 0, aligned: 0, tracked: 0, charts: 0, art: 0, fields: 0, mathcolor: 0, heads: [], cols: [], page: null, sz: 0, endnotes: false, unread: [] };
+  const info = { threads: threads(parts), toc: 0, breaks: 0, colors: new Map(), chars: 0, aligned: 0, rtl: 0, tracked: 0, charts: 0, art: 0, fields: 0, mathcolor: 0, heads: [], cols: [], page: null, sz: 0, endnotes: false, unread: [] };
   const styles = styleInfo(parts);
   info.sz = styles.sz;
   const out = new Map(parts);
@@ -623,6 +658,7 @@ export function premark(parts) {
     try { root = parseXml(text(parts.get(name)), LIMITS, true); } catch (e) { info.unread.push(name); continue; }
     C.changed = false;
     const main = name === 'word/document.xml';
+    C.body = main;
     const body = main ? find(root, 'w:body') : root.c.find((x) => typeof x !== 'string');
     if (!body) continue;
     if (main) {
@@ -738,7 +774,12 @@ function paraFix(C, p, top) {
   p.c = inlineFix(C, p.c, st);
   const at = () => { const i = p.c.indexOf(ppr); return i < 0 ? 0 : i + 1; };
   if (C.pending.length) { p.c.splice(at(), 0, ...C.pending.map((id) => markRun(mark.comment(id)))); C.pending = []; C.changed = true; }
-  const jc = val(ppr, 'w:jc');
+  // (a style may align its paragraphs: Rikuy's own Word files centre text that way)
+  const jc = val(ppr, 'w:jc') || styled(C, sid, C.styles.jc) || '';
+  // In a right to left paragraph Word's "left" and "start" are the edge the text starts at (the
+  // right one) and "right" and "end" the other; LaTeX's flushright in a right to left paragraph
+  // is that other edge too, so the same mark serves both ways, and "left", "start" and "both"
+  // ask for nothing in either.
   const m = jc === 'center' ? mark.center : jc === 'right' || jc === 'end' ? mark.right : null;
   // a centred or right aligned paragraph of words, in the body (a table sets its own cells; a
   // display equation and a picture with a caption are centred by LaTeX)
@@ -746,6 +787,13 @@ function paraFix(C, p, top) {
     p.c.splice(at(), 0, markRun(m[0]));
     p.c.push(markRun(m[1]));
     C.info.aligned++;
+    C.changed = true;
+  }
+  // a right to left paragraph of words in the body: headings too, but not what pandoc reads
+  // as the title block or a caption, where a mark would be part of the title
+  if (C.body && st.n && !st.hold && (!own || /^heading/.test(sname)) && isBidi(C, ppr, sid)) {
+    p.c.splice(at(), 0, markRun(mark.rtl));
+    C.info.rtl++;
     C.changed = true;
   }
 }
@@ -767,7 +815,10 @@ function inlineFix(C, cs, st) {
       case 'w:hyperlink': { const was = st.link; st.link = true; c.c = inlineFix(C, c.c, st); st.link = was; break; }
       case 'w:ins': case 'w:moveTo': C.info.tracked++; c.c = inlineFix(C, c.c, st); break;
       case 'w:del': case 'w:moveFrom': C.info.tracked++; break;
-      case 'w:smartTag': case 'w:customXml': case 'w:dir': case 'w:bdo': c.c = inlineFix(C, c.c, st); break;
+      case 'w:smartTag': case 'w:customXml': c.c = inlineFix(C, c.c, st); break;
+      // text Word wrapped to say which way it runs: pandoc reads the runs only without the
+      // wrapper, and TeX finds the direction of the words in them by itself
+      case 'w:dir': case 'w:bdo': out.push(...inlineFix(C, c.c, st)); C.changed = true; continue;
       case 'w:sdt': { const sc = kid(c, 'w:sdtContent'); if (sc) sc.c = inlineFix(C, sc.c, st); break; }
       case 'w:commentRangeStart':
         out.push(c);

@@ -3,7 +3,10 @@
 // read back unchanged gives no edit; each block's bookmark and text survive; text edited in the
 // .docx comes back as the smallest source patch on the tricky cases (escaped %, $ and &, \emph,
 // accents, a change across formatting, footnotes, citations, equations); an edit of text the owner
-// changed since is a conflict, not applied; hostile files are refused.
+// changed since is a conflict, not applied; hostile files are refused. Chinese and Arabic: a Word
+// file in either opens with the preamble lines of src/scripts.js and its text as it is, right to
+// left paragraphs and all; a document in either goes to Word with its runs, paragraphs, tables
+// and section marked as Word wants them (the XML is checked), and comes back the same.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { buildModel, colorValue } from '../src/model.js';
@@ -13,6 +16,8 @@ import { exportDocx, readDocx, docxToLatex } from '../src/wordjobs.js';
 import { checkData, planImport, unpackRead, rebase, textHunks, mathPatch, stripNumbers, safeMath } from '../src/wordsync.js';
 import { unzip, zip, extract, parseXml, readRikuyPart, text } from '../src/docx.js';
 import { isBalanced } from '../src/parser.js';
+import { scriptNeeds, scriptLines, addScriptSetup, rtlDocument } from '../src/scripts.js';
+import { scanDir, resolve } from '../src/wordbidi.js';
 import { zipSync } from 'fflate';
 
 const P = await createPandoc(fs.readFileSync(new URL('../node_modules/pandoc-wasm/src/pandoc.wasm', import.meta.url)));
@@ -26,7 +31,7 @@ function exportFiles(files, main = 'main.tex') {
   const m = buildModel({ files, main });
   const bibs = [...files.keys()].filter((x) => /\.bib$/.test(x));
   const citeproc = bibs.length > 0 && m.cites.length > 0;
-  const W = buildWordDoc(m, files, { citeproc, now: 0 });
+  const W = buildWordDoc(m, files, { citeproc, now: 0, main });
   const resources = {};
   for (const b of bibs) resources[b] = files.get(b);
   return exportDocx(P, { doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources, bibs, citeproc, project: { name: 'Paper', main, files: [...files] } });
@@ -381,7 +386,7 @@ await ok('a Word file of what pandoc alone loses: nothing goes without a word, a
   assert.ok(isBalanced(t, 0, t.length));
   // told: in the result and at the top of the source
   const said = r.warnings.join(' ');
-  for (const s of ['Chinese or Japanese: 你好', '1 chart', 'the header and footer text (“Draft: do not cite”)', '1 Word comment came in', '2 tracked changes in the file were accepted', 'Endnotes are footnotes', 'table of contents is LaTeX', '2 equations typed with a number'])
+  for (const s of ['Korean: 안녕', '1 chart', 'the header and footer text (“Draft: do not cite”)', '1 Word comment came in', '2 tracked changes in the file were accepted', 'Endnotes are footnotes', 'table of contents is LaTeX', '2 equations typed with a number'])
     assert.ok(said.includes(s), s + '\n' + said);
   assert.ok(t.startsWith('% Opened from a Word file by Rikuy.\n% - Not kept: 2 characters pdfLaTeX has no font'));
   // and the page reads it: a title, the contents, a page break, three floats, no raw source
@@ -455,10 +460,10 @@ await ok('bookmarks nothing refers to are not labels: a Rikuy export opened as a
 });
 
 await ok('a document mostly in a script TeX Live has no default font for is set up for XeLaTeX, and says so', () => {
-  const r = open(tiny(wp('研究表明，制度变迁对经济增长具有显著影响。本文利用秘鲁的数据进行了检验，结果稳健。政策含义在最后一节讨论。') + wp('Latin too.')));
+  const r = open(tiny(wp('연구에 따르면 제도 변화는 경제 성장에 유의미한 영향을 미친다. 본 논문은 페루의 자료를 이용하여 이를 검증하였으며 결과는 견고하다.') + wp('Latin too.')));
   assert.match(r.tex, /\\usepackage\{fontspec\}/);
-  assert.ok(!/fontenc/.test(r.tex));
-  assert.ok(/^Not kept: a font for \d+ characters \(Chinese or Japanese: /.test(r.warnings[0]), r.warnings[0]);
+  assert.ok(!/fontenc|ctex|babel/.test(r.tex));
+  assert.ok(/^Not kept: a font for \d+ characters \(Korean: /.test(r.warnings[0]), r.warnings[0]);
 });
 
 await ok('the page\'s model: colours by number and by \\definecolor, in text and in formulas; a list and a table in a table cell', () => {
@@ -539,6 +544,410 @@ await ok('names from the document that every object has (constructor, __proto__)
   // a Word file whose text, styles, bookmarks and comment ids are such names opens like any other
   const odd = open(tiny('<w:p><w:pPr><w:pStyle w:val="constructor"/></w:pPr><w:bookmarkStart w:id="1" w:name="__proto__"/><w:r><w:rPr><w:rStyle w:val="toString"/></w:rPr><w:t>Odd \u2264 names</w:t></w:r><w:bookmarkEnd w:id="1"/><w:commentRangeStart w:id="constructor"/></w:p><w:p><w:hyperlink w:anchor="constructor"><w:r><w:t>link</w:t></w:r></w:hyperlink></w:p>'));
   assert.ok(bodyOf(odd.tex).includes('Odd \\(\\leq\\) names\n\nlink'), odd.tex);
+});
+
+
+// ---- Chinese and Arabic ----------------------------------------------------------------------
+
+const fixture = (name) => open(fs.readFileSync(new URL('./fixtures/' + name, import.meta.url)));
+const preambleOf = (tex) => tex.slice(tex.indexOf('\\documentclass'), tex.indexOf('\\begin{document}'));
+// what a main file must have had added: exactly the lines src/scripts.js gives, nothing more to add
+function setUp(tex, lines) {
+  const pre = preambleOf(tex);
+  for (const l of lines) assert.ok(pre.split('\n').includes(l), l + '\n' + pre);
+  assert.equal(pre.split('\n').filter((l) => /ctex|babel|fontspec|fontenc|inputenc|lmodern|textalpha|setmainfont/.test(l)).length, lines.length, pre);
+  assert.deepEqual([...scriptNeeds(tex, [tex])], []);
+  assert.equal(addScriptSetup(tex, scriptNeeds(tex, [tex])), null);
+}
+const BABEL = '\\usepackage[english, bidi=basic]{babel} % LuaLaTeX orders right to left text by itself';
+const AR = ['\\babelprovide[import, onchar=ids fonts]{arabic}', '\\babelfont[arabic]{rm}[Renderer=Harfbuzz]{Amiri}'];
+const AR_MAIN = ['\\babelprovide[import, main]{arabic}', '\\babelfont{rm}[Renderer=Harfbuzz]{Amiri}'];
+const ZH = ['\\babelprovide[import, onchar=ids fonts]{chinese}', '\\babelfont[chinese]{rm}{FandolSong}'];
+const CTEX = '\\usepackage[scheme=plain]{ctex} % Chinese text, set with XeLaTeX';
+const paras = (d) => d.slice(d.indexOf('<w:body>')).split(/<w:p>|<w:p (?=[^>]*>)/).slice(1).map((x) => x.split('</w:p>')[0]);
+const textOf = (x) => unescape(x.replace(/<w:instrText[^>]*>[^<]*<\/w:instrText>/g, '').replace(/<[^>]+>/g, ''));
+const unescape = (t) => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+const exported = (E) => { const parts = unzip(E.docx); return { d: text(parts.get('word/document.xml')), st: text(parts.get('word/styles.xml')), se: text(parts.get('word/settings.xml')), fn: parts.has('word/footnotes.xml') ? text(parts.get('word/footnotes.xml')) : '' }; };
+const defaults = (st) => /<w:rPrDefault>[\s\S]*?<\/w:rPrDefault>/.exec(st)[0].replace(/\s+/g, ' ');
+
+await ok('a Chinese Word file opens as a ctex document: every character as it is, no space between its runs, nothing listed as lost', () => {
+  const r = fixture('word-chinese.docx');
+  const t = r.tex, b = bodyOf(t);
+  setUp(t, [CTEX]);
+  assert.equal(rtlDocument(t), false);
+  assert.match(t, /\\documentclass\[11pt\]\{article\}\n\\usepackage\[letterpaper[^\]]*\]\{geometry\}\n\\usepackage\[scheme=plain\]\{ctex\}/);
+  // eight runs of four fonts and two languages: one sentence, the comment under it
+  assert.ok(t.includes('\n\\title{制度变迁与经济增长}\n'));
+  for (const s of ['\\section{引言}', '\\subsection{数据与方法}',
+    '\n本文研究\\textbf{制度变迁}对\\emph{经济增长}的影响，数据来自World Bank（2020年），结果稳健。\\footnote{数据来自\\textbf{世界银行}。}\n% comment (王芳) on "稳健": 请引用文献。\n',
+    // Chinese quotation marks, the long dash and the dots stay characters (pandoc alone writes ``, --- and \ldots)
+    '\n他说：\u201c制度\u2018很\u2019重要\u201d\u2014\u2014见《经济学》、〈导论〉\u2026\u2026全角\u3000空格！ＡＢＣ１２３；繁體字：經濟學。\n',
+    '\\begin{itemize}\n\\item\n  第一项：数据\n\\item\n  第二项：方法\n\\end{itemize}', '\\item\n  步骤一\n\\item\n  步骤二\n\\end{enumerate}',
+    '国家 & 增长率 \\\\\n\\midrule\n秘鲁 & 3.1 \\\\\n智利 & 2.4 \\\\', '\nThe model (模型) uses GDP 数据 from 2020 to 2024.\n'])
+    assert.ok(b.includes(s), s + '\n' + b);
+  assert.ok(!/\\ldots|``|---|\\RL|otherlanguage/.test(b), b);
+  assert.deepEqual(r.warnings, ['1 Word comment came in as a comment under its text.']);
+  assert.ok(isBalanced(t, 0, t.length) && !/[\uE000-\uE01F]/.test(t));
+  const m = buildModel({ files: new Map([['main.tex', t]]), main: 'main.tex' });
+  const kinds = m.blocks.flatMap((u) => u.items.map((x) => x.type));
+  assert.ok(kinds.includes('title') && kinds.includes('float') && !kinds.includes('raw'), kinds.join(' '));
+});
+
+await ok('an Arabic Word file opens as a right to left document: text in the order it is read, marks and joiners kept, each alignment at its own edge', () => {
+  const r = fixture('word-arabic.docx');
+  const t = r.tex, b = bodyOf(t);
+  setUp(t, [BABEL, ...AR_MAIN]);
+  assert.equal(rtlDocument(t), true);
+  assert.ok(t.includes('\n\\title{النمو والمؤسسات}\n'));
+  for (const s of ['\\section{مقدمة}', '\\section{النتائج}',
+    // runs of both directions and both kinds of digits, in the order they are read
+    '\nندرس \\textbf{النمو} في ظل مؤسسات ضعيفة، بمعدل 5\\% سنة ٢٠٢٤ و2025؛ هل هذا صحيح؟\\footnote{بيانات البنك الدولي، ٢٠٢٤.}\n% comment (سارة) on "النمو": أضف مرجعًا.\n',
+    // vowel marks, the tatweel, the non joiner in the Persian word and the joiner after the heh stay; the direction marks go
+    '\n\u0645\u064f\u062d\u064e\u0645\u064e\u0651\u062f\u064c \u0642\u0627\u0644 \u0645\u0640\u0640\u0640\u0631\u062d\u0628\u0627\u060c \u0648\u0645\u06cc\u200c\u062e\u0648\u0627\u0647\u0645 \u0647\u200d.\u0642 \u062b\u0645 World Bank (GDP) \u0623\u064a\u0636\u064b\u0627.\n',
+    // in a right to left paragraph Word's "left" and "both" are the edge the text starts at: nothing to say;
+    // "right" is the far edge, which is flushright's in a right to left paragraph of LaTeX's too
+    '\n\nمحاذاة إلى البداية.\n\n\\begin{flushright}\nمحاذاة إلى النهاية.\n\\end{flushright}\n\nنص مضبوط من الجانبين.\n\n\\begin{center}\nفي الوسط.\n\\end{center}\n',
+    '\\begin{itemize}\n\\item\n  النتيجة الأولى\n\\item\n  النتيجة الثانية\n\\end{itemize}', '\\item\n  الخطوة ١\n\\item\n  الخطوة ٢\n\\end{enumerate}',
+    // a table Word sets from the right keeps its cells in the order they are read
+    'البلد & النمو \\\\\n\\midrule\nبيرو & ٣٫١ \\\\\nتشيلي & 2.4 \\\\',
+    // the one paragraph that runs left to right, and the text Word wrapped in w:dir (pandoc alone drops it)
+    '\n\\begin{otherlanguage}{english}\nAn English paragraph in the Arabic document.\n\\end{otherlanguage}\n', '\nقبل نص داخل الغلاف بعد.\n'])
+    assert.ok(b.includes(s), s + '\n' + b);
+  assert.equal((b.match(/otherlanguage/g) || []).length, 2);
+  assert.ok(!/\\RL|\\LR|\{RTL\}|[\u200e\u200f\u061c\u202a-\u202e\u2066-\u2069]/.test(t), 'no command of the bidi package, no direction mark');
+  assert.deepEqual(r.warnings, ['1 Word comment came in as a comment under its text.']);
+  assert.ok(isBalanced(t, 0, t.length) && !/[\uE000-\uE01F]/.test(t));
+  const m = buildModel({ files: new Map([['main.tex', t]]), main: 'main.tex' });
+  assert.ok(!m.blocks.flatMap((u) => u.items.map((x) => x.type)).includes('raw'));
+});
+
+await ok('an English Word file with Arabic and Chinese phrases: both set up, the Arabic paragraph in its environment, nothing of the file\'s in the preamble', () => {
+  const r = fixture('word-mixed.docx');
+  const t = r.tex, b = bodyOf(t);
+  setUp(t, [BABEL, ...AR, ...ZH]);
+  assert.equal(rtlDocument(t), false);
+  // the whole preamble: the class, the page, the script lines, and the packages the body uses
+  assert.deepEqual(preambleOf(t).trim().split('\n').map((l) => l.replace(/^\\usepackage\[letterpaper.*$/, 'GEOMETRY')),
+    ['\\documentclass[11pt]{article}', 'GEOMETRY', BABEL, ...AR, ...ZH, '\\usepackage{amsmath,amssymb}', '\\usepackage{booktabs}']);
+  for (const s of ['\nThe Arabic word مرحبا means hello, and 你好 means the same in Chinese.\n', '\nIn Arabic, \\textbf{السلام عليكم ورحمة الله}, written right to left; numbers such as 2024 stay.\n',
+    '\n\\begin{otherlanguage}{arabic}\nهذه فقرة كاملة بالعربية داخل مستند إنجليزي.\n\\end{otherlanguage}\n', '\nChinese: 北京、上海 and Peking University (北京大学).\n',
+    'hello & مرحبا & 你好 \\\\\nthanks & شكرا & 谢谢 \\\\',
+    // words that read as LaTeX are words
+    '\nType \\textbackslash babelfont\\{rm\\}\\{Evil\\} or \\textbackslash input\\{/etc/passwd\\} at 100\\% \\& more: 字.\n'])
+    assert.ok(b.includes(s), s + '\n' + b);
+  // and the font and language names the file's runs carry (w:rFonts, w:lang) are nowhere
+  assert.ok(!/\\input|\\write|Evil\}|zh-CN|en\}|SimSun|Arial/.test(t.replace(/\\textbackslash input/g, '')), t);
+  assert.deepEqual(r.warnings, []);
+});
+
+await ok('right to left paragraphs by style and by default, switched off, in scripts with no font; start and end; joiners and direction marks; text that tries to be a mark', () => {
+  const R = (t, rpr = '<w:rtl/>') => '<w:r><w:rPr>' + rpr + '</w:rPr><w:t xml:space="preserve">' + t + '</w:t></w:r>';
+  const p = (ppr, runs) => '<w:p><w:pPr>' + ppr + '</w:pPr>' + runs + '</w:p>';
+  const AR1 = 'هذه فقرة عربية أولى في مستند.', AR2 = 'وهذه فقرة ثانية.';
+  const styles = (normal, extra = '', dflt = '') => ({ 'word/styles.xml': '<w:styles ' + NSW + '><w:docDefaults><w:pPrDefault><w:pPr>' + dflt + '</w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:pPr>' + normal + '</w:pPr></w:style><w:style w:type="paragraph" w:styleId="Body"><w:name w:val="Body"/><w:basedOn w:val="Normal"/></w:style>' + extra + '</w:styles>' });
+  const eng = wp('An English paragraph that is long enough to make the document one that runs left to right as a whole.');
+  const wrapped = (x) => '\n\\begin{otherlanguage}{arabic}\n' + x + '\n\\end{otherlanguage}\n';
+  // the direction on the paragraph's style, on the style that one is based on, and in the defaults
+  for (const [st, ppr] of [[styles('<w:bidi/>'), ''], [styles('<w:bidi/>'), '<w:pStyle w:val="Body"/>'], [styles('', '', '<w:bidi/>'), ''], [styles('<w:bidi w:val="0"/>', '<w:style w:type="paragraph" w:styleId="Rtl"><w:name w:val="Rtl"/><w:basedOn w:val="Normal"/><w:pPr><w:bidi w:val="1"/></w:pPr></w:style>'), '<w:pStyle w:val="Rtl"/>']]) {
+    const t = bodyOf(open(tiny(p(ppr, R(AR1)) + p('<w:bidi w:val="0"/>', '<w:r><w:t>' + 'Left to right, said on the paragraph. '.repeat(3) + '</w:t></w:r>'), st)).tex);
+    assert.ok(t.includes(wrapped(AR1) + '\nLeft to right, said'), t);
+  }
+  assert.ok(!bodyOf(open(tiny(p('<w:bidi w:val="false"/>', R(AR1)) + p('<w:bidi w:val="off"/>', '<w:r><w:t>' + 'Left to right as well. '.repeat(4) + '</w:t></w:r>'), styles('<w:bidi/>'))).tex).includes('otherlanguage'));
+  // neighbours share one environment, a list and a formula between them too; headings go in with their text
+  const list = (t) => p('<w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr><w:bidi/>', R(t));
+  const num = { 'word/numbering.xml': '<w:numbering ' + NSW + '><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="bullet"/><w:lvlText w:val="•"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>' };
+  const g = bodyOf(open(tiny(eng + p('<w:pStyle w:val="Heading1"/><w:bidi/>', R('عنوان')) + p('<w:bidi/>', R(AR1)) + '<w:p><m:oMathPara><m:oMath><m:r><m:t>x=1</m:t></m:r></m:oMath></m:oMathPara></w:p>' + list('بند أول') + list('بند ثان') + p('<w:bidi/>', R(AR2)) + eng,
+    { ...num, 'word/styles.xml': '<w:styles ' + NSW + '><w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/></w:style></w:styles>' })).tex);
+  assert.ok(g.includes('\n\\begin{otherlanguage}{arabic}\n\\section{عنوان}') && g.includes(AR1 + '\n\n\\[x = 1\\]\n\n\\begin{itemize}') && g.includes('\\end{itemize}\n\n' + AR2 + '\n\\end{otherlanguage}\n\nAn English'), g);
+  assert.equal((g.match(/begin\{otherlanguage\}/g) || []).length, 1);
+  // Word's start and end, in both directions (strict files write them): only the far edge is said
+  const al = (jc, bidi) => p((bidi ? '<w:bidi/>' : '') + '<w:jc w:val="' + jc + '"/>', bidi ? R(AR2) : '<w:r><w:t>Aligned text.</w:t></w:r>');
+  for (const jc of ['start', 'left', 'both', 'distribute']) {
+    assert.ok(!/flush|ragged/.test(open(tiny(p('<w:bidi/>', R(AR1)) + al(jc, true))).tex), jc);
+    assert.ok(!/flush|ragged/.test(open(tiny(eng + al(jc, false))).tex), jc);
+  }
+  for (const jc of ['end', 'right']) {
+    assert.ok(open(tiny(p('<w:bidi/>', R(AR1)) + al(jc, true))).tex.includes('\n\\begin{flushright}\n' + AR2 + '\n\\end{flushright}\n'), jc);
+    assert.ok(open(tiny(eng + al(jc, false))).tex.includes('\n\\begin{flushright}\nAligned text.\n\\end{flushright}\n'), jc);
+  }
+  // mostly Arabic, typed without ever setting a paragraph right to left: the document runs right to left, nothing is wrapped
+  const plainAr = open(tiny(wp(AR1) + wp(AR2) + wp('Short.'))).tex;
+  assert.ok(preambleOf(plainAr).includes(AR_MAIN[0]) && !plainAr.includes('otherlanguage'), plainAr);
+  // Hebrew has no font here: no set up, so nothing turns its paragraph, and its "right" (the left edge) is not flushright
+  const he = open(tiny(eng + p('<w:bidi/><w:jc w:val="right"/>', R('שלום עולם, זהו טקסט.'))));
+  assert.ok(!/babel|otherlanguage|flushright|\\RL/.test(he.tex) && he.tex.includes('\nשלום עולם, זהו טקסט.\n') && /^Not kept: 15 characters pdfLaTeX has no font or name for \(Hebrew: /.test(he.warnings[0]), he.tex + he.warnings[0]);
+  // w:bdo, and runs that are right to left with no paragraph that is: text only, in reading order
+  const bdo = bodyOf(open(tiny('<w:p><w:r><w:t xml:space="preserve">See </w:t></w:r><w:bdo w:val="rtl">' + R('كلمة') + '</w:bdo><w:r><w:t xml:space="preserve"> and </w:t></w:r><w:dir w:val="ltr"><w:r><w:t>this</w:t></w:r></w:dir><w:r><w:t>.</w:t></w:r></w:p>')).tex);
+  assert.ok(bdo.includes('\nSee كلمة and this.\n'), bdo);
+  // joiners shape Arabic letters and stay there; elsewhere the joiner goes as before, and every mark that only says a direction goes
+  const j = bodyOf(open(tiny(wp('می\u200cخواهم ه\u200d a\u200db \u200fعربي\u200e \u202bمضمن\u202c \u2067معزول\u2069 \u061cانتهى'))).tex);
+  assert.ok(j.includes('\nمی\u200cخواهم ه\u200d ab عربي مضمن معزول انتهى\n'), JSON.stringify(j));
+  // Chinese beside scripts that still have no font: set up for Chinese, the others listed as before
+  const ja = open(tiny(wp('日本語のテキストです。漢字とかなが混ざります。') + wp('한국어')));
+  assert.ok(preambleOf(ja.tex).includes(CTEX) && /^Not kept: a font for 18 characters \(Japanese: のテキストですとかながざ; Korean: 한국어\): the fonts the document is set up with have none/.test(ja.warnings[0]), ja.warnings[0]);
+  // Greek and Cyrillic have fonts under pdfLaTeX only: beside Chinese they are listed too, and no pdfLaTeX font line is written
+  const gr = open(tiny(wp('中文 Ελληνικά Привет')));
+  assert.ok(preambleOf(gr.tex).includes(CTEX) && !/fontenc|textalpha|lmodern|T2A/.test(gr.tex) && /^Not kept: a font for 14 characters \(Greek or Cyrillic\)/.test(gr.warnings[0]), gr.tex);
+  // full width punctuation alone is no Chinese text: nothing is set up, and it is listed as before
+  const fw = open(tiny(wp('Wide，comma')));
+  assert.ok(!/ctex|babel/.test(fw.tex) && /^Not kept: 1 character pdfLaTeX has no font or name for \(Chinese or Japanese: ，\)/.test(fw.warnings[0]), fw.warnings[0]);
+  // a file whose own text holds the marks Rikuy groups paragraphs with, or the words of an environment, gets neither
+  const forged = open(tiny(wp('\uE00C') + wp(AR1 + ' \\begin{otherlanguage}{arabic} \\babelprovide[main]{hebrew} \uE00B') + wp('\uE00D') + wp('\uE00E') + eng));
+  assert.ok(!/\n\\begin\{otherlanguage\}|\n\\babelprovide\[main\]/.test(bodyOf(forged.tex)) && bodyOf(forged.tex).includes('\\textbackslash begin\\{otherlanguage\\}\\{arabic\\} \\textbackslash babelprovide{[}main{]}\\{hebrew\\}'), forged.tex);
+  setUp(forged.tex, [BABEL, ...AR]);
+});
+
+await ok('section numbers typed into headings are LaTeX\'s own when they are the ones it would give; one out of step and all stay', () => {
+  const h = (l, t) => '<w:p><w:pPr><w:pStyle w:val="Heading' + l + '"/></w:pPr><w:r><w:t>' + t + '</w:t></w:r></w:p>';
+  const st = { 'word/styles.xml': '<w:styles ' + NSW + '>' + [1, 2].map((l) => '<w:style w:type="paragraph" w:styleId="Heading' + l + '"><w:name w:val="heading ' + l + '"/></w:style>').join('') + '</w:styles>' };
+  const a = open(tiny(h(1, '1 Introduction') + wp('Text.') + h(2, '1.1 Data') + h(2, '1.2 Method') + h(1, '2 Results') + h(2, '2.1 Main') + h(1, 'References') + wp('Knuth, D. The TeXbook.'), st));
+  for (const s of ['\\section{Introduction}', '\\subsection{Data}', '\\subsection{Method}', '\\section{Results}', '\\subsection{Main}', '\\section*{References}']) assert.ok(a.tex.includes(s), s + a.tex);
+  assert.ok(a.warnings.includes('The section numbers typed in 5 headings are LaTeX\'s own now.'), a.warnings.join('|'));
+  const b = open(tiny(h(1, '1 Introduction') + h(1, '3 Results') + h(1, '2024 in review'), st));
+  // (the last heading of a file is a heading too: pandoc alone leaves one that ends the document out)
+  assert.ok(b.tex.includes('\\section{1 Introduction}') && b.tex.includes('\\section{3 Results}') && b.tex.includes('\\section{2024 in review}\\label{in-review}\n\n\\end{document}'), b.tex);
+});
+
+const AR_DOC = (body, main) => '\\documentclass{article}\n' + [BABEL, ...(main ? AR_MAIN : AR), ...ZH].join('\n') + '\n\\title{' + (main ? 'عنوان الورقة' : 'A Title') + '}\n\\author{Ana}\n\\begin{document}\n\\maketitle\n' + body + '\n\\end{document}\n';
+const run = (t, rpr = '') => '<w:r>' + (rpr ? '<w:rPr>' + rpr + '</w:rPr>' : '') + '<w:t xml:space="preserve">' + t + '</w:t></w:r>';
+const RTL = '<w:rtl />', EA = '<w:rFonts w:hint="eastAsia" />';
+const bare = (x) => x.replace(/<w:bookmark(Start|End)[^>]*>/g, '');
+
+await ok('to Word, a left to right document: Arabic runs are w:rtl, paragraphs follow their wrappers, Chinese has its font, the preamble stays behind', () => {
+  const src = AR_DOC(String.raw`English with مرحبا بالعالم and 你好世界 inside, 12 items (see عربي).
+
+\begin{otherlanguage}{arabic}
+هذه فقرة عربية with English و 2024.
+
+\begin{enumerate}
+\item واحد
+\item اثنان
+\end{enumerate}
+
+\begin{tabular}{ll}
+أ & ب \\
+ج & 12 \\
+\end{tabular}
+\end{otherlanguage}
+
+A \foreignlanguage{arabic}{نص عربي!} phrase, \textarabic{نص (a)} then \RL{يمين 1.} and \LR{left (ع)}.
+
+\begin{RTL}
+فقرة في RTL.
+\end{RTL}
+
+\begin{Arabic}
+فقرة بوليغلوسيا.
+\end{Arabic}
+
+\begin{CJK}{UTF8}{gbsn}
+中文段落。
+\end{CJK}
+
+\begin{CJK*}{UTF8}{gbsn}
+中文段落二。\CJKfamily{gkai}楷体。
+\end{CJK*}
+
+\begin{tabular}{ll}
+a & عربي \\
+\end{tabular}
+
+\selectlanguage{arabic}
+بعد التبديل.
+
+\selectlanguage{english}
+Back to English.
+`);
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  assert.equal(E.lost, 0);
+  const { d, st, se } = exported(E);
+  const ps = paras(d).map(bare);
+  const P1 = (t) => ps.find((x) => textOf(x).includes(t));
+  // an Arabic phrase in a left to right paragraph: its own run, right to left; the paragraph stays as it is
+  assert.equal(P1('English with'), '<w:pPr><w:pStyle w:val="FirstParagraph" /></w:pPr>' + run('English with ') + run('مرحبا بالعالم', RTL) + run(' and ') + run('你好世界', EA) + run(' inside, 12 items (see ') + run('عربي', RTL) + run(').'));
+  // \begin{otherlanguage}{arabic}: right to left paragraphs; the English words and nothing else left to right; the number with the Arabic
+  assert.equal(P1('هذه فقرة'), '<w:pPr><w:pStyle w:val="BodyText" /><w:bidi /></w:pPr>' + run('هذه فقرة عربية ', RTL) + run('with English') + run(' و 2024.', RTL));
+  // its list numbers from the right, its table is set from the right
+  assert.equal(P1('واحد'), '<w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="1001" /></w:numPr><w:bidi /></w:pPr>' + run('واحد', RTL));
+  const tables = d.match(/<w:tbl>[\s\S]*?<\/w:tbl>/g);
+  assert.equal(tables.length, 2);
+  assert.ok(tables[0].startsWith('<w:tbl><w:tblPr><w:tblStyle w:val="Table" /><w:bidiVisual /><w:tblW '), tables[0].slice(0, 120));
+  assert.ok(bare(tables[0]).includes('<w:pPr><w:pStyle w:val="Compact" /><w:bidi /><w:jc w:val="left" /></w:pPr>' + run('12', RTL)), tables[0]);
+  // a table of the left to right text is not, Arabic cell or no
+  assert.ok(!tables[1].includes('bidi') && bare(tables[1]).includes(run('عربي', RTL)));
+  // \foreignlanguage, \textarabic and \RL: what they hold is right to left, punctuation and digits too; a Latin letter stays a
+  // left to right run; \LR the other way round
+  assert.equal(P1('phrase'), '<w:pPr><w:pStyle w:val="BodyText" /></w:pPr>' + run('A ') + run('نص عربي!', RTL) + run(' phrase, ') + run('نص (', RTL) + run('a') + run(')', RTL) + run(' then ') + run('يمين 1.', RTL) + run(' and ') + run('left (') + run('ع', RTL) + run(')') + run('.'));
+  for (const t of ['فقرة في ', 'فقرة بوليغلوسيا.', 'بعد التبديل.']) assert.ok(P1(t).startsWith('<w:pPr><w:pStyle w:val="BodyText" /><w:bidi /></w:pPr>' + run(t, RTL)), t + P1(t));
+  assert.ok(P1('Back to English.').startsWith('<w:pPr><w:pStyle w:val="BodyText" /></w:pPr>'));
+  // the CJK package's wrappers: their text, not their arguments
+  assert.equal(P1('中文段落。'), '<w:pPr><w:pStyle w:val="BodyText" /></w:pPr>' + run('中文段落。', EA));
+  assert.equal(P1('楷体'), '<w:pPr><w:pStyle w:val="BodyText" /></w:pPr>' + run('中文段落二。楷体。', EA));
+  const words = textOf(d);
+  for (const w of ['UTF8', 'gbsn', 'gkai', 'babel', 'bidi=basic', 'Amiri', 'FandolSong', 'onchar', 'otherlanguage', 'arabic', 'selectlanguage']) assert.ok(!words.includes(w), w);
+  // title, section and every other paragraph stay left to right
+  assert.equal(ps.filter((x) => x.includes('<w:bidi />')).length, 10);
+  assert.ok(!/<w:bidi/.test(d.slice(d.lastIndexOf('<w:sectPr'))) && !P1('A Title').includes('bidi'));
+  // the fonts and languages for the two scripts, once, in the document's defaults; the theme's for headings
+  assert.equal(defaults(st), '<w:rPrDefault> <w:rPr> <w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:eastAsia="SimSun" w:cs="Amiri" /> <w:sz w:val="24" /> <w:szCs w:val="24" /> <w:lang w:bidi="ar-SA" w:eastAsia="zh-CN" w:val="en-US" /> </w:rPr> </w:rPrDefault>');
+  assert.match(se, /<w:themeFontLang w:val="en-US" w:eastAsia="zh-CN" w:bidi="ar-SA" \/>/);
+  // what Word got is what the page showed: nothing to bring back
+  const plan = importInto(E.docx, files);
+  assert.equal(plan.files.size, 0);
+  assert.equal(plan.stats.applied + plan.stats.conflicts + plan.stats.skipped, 0);
+});
+
+await ok('to Word, a right to left document: every paragraph, the section and the tables; a wrapper turns its paragraphs back; code reads left to right', () => {
+  const src = AR_DOC(String.raw`\tableofcontents
+\section{مقدمة}
+هذه فقرة عربية with English و 2024.\footnote{حاشية عربية with Latin.}
+
+\begin{enumerate}
+\item واحد
+\item اثنان
+\end{enumerate}
+
+\begin{otherlanguage}{english}
+An English paragraph with عربي inside.
+
+\begin{itemize}
+\item one
+\end{itemize}
+
+\begin{tabular}{ll}
+a & b \\
+\end{tabular}
+\end{otherlanguage}
+
+\begin{LTR}
+Another one.
+\end{LTR}
+
+\begin{flushright}
+محاذاة.
+\end{flushright}
+
+\begin{tabular}{lr}
+\hline
+أ & ب \\
+\hline
+ج & 12 \\
+\hline
+\end{tabular}
+
+بعد الجدول.
+
+\begin{verbatim}
+x <- 1
+\end{verbatim}
+
+\newpage
+نهاية \texttt{code} هنا، 中文 أيضا.
+`, true);
+  const files = new Map([['main.tex', src]]);
+  assert.equal(rtlDocument(src), true);
+  const m = buildModel({ files, main: 'main.tex' });
+  const W = buildWordDoc(m, files, { now: 0, main: 'main.tex' });
+  assert.equal(W.rtl, true);
+  assert.deepEqual(W.doc.meta.dir, { t: 'MetaString', c: 'rtl' });
+  const E = exportDocx(P, { doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources: {}, bibs: [], citeproc: false, toc: true, project: { name: 'Paper', main: 'main.tex', files: [...files] } });
+  const { d, st, se, fn } = exported(E);
+  const ps = paras(d).map(bare);
+  const P1 = (t) => ps.find((x) => textOf(x).includes(t));
+  const BIDI = /^\s*<w:pPr>(?:(?!<\/w:pPr>)[\s\S])*<w:bidi \/>/;
+  // left to right: only what the wrappers hold (a paragraph, a list item, a table cell of two, a second paragraph) and the code
+  const ltr = ps.filter((x) => !BIDI.test(x)).map(textOf);
+  assert.deepEqual(ltr, ['An English paragraph with عربي inside.', 'one', 'a', 'b', 'Another one.', 'x <- 1']);
+  assert.ok(ps.length - ltr.length >= 14, String(ps.length));
+  // the title block and the contents, which pandoc's template writes, and the page break
+  assert.match(P1('عنوان الورقة'), /^\s*<w:pPr>\s*<w:pStyle w:val="Title" \/>\s*<w:bidi \/><\/w:pPr>\s*<w:r><w:rPr><w:rtl \/><\/w:rPr><w:t xml:space="preserve">عنوان الورقة<\/w:t><\/w:r>/);
+  assert.match(P1('Ana'), /^\s*<w:pPr>\s*<w:pStyle w:val="Author" \/>\s*<w:bidi \/><\/w:pPr>\s*<w:r><w:t xml:space="preserve">Ana<\/w:t><\/w:r>/);
+  assert.ok(d.includes('<w:p><w:pPr><w:bidi /></w:pPr><w:r><w:fldChar w:fldCharType="begin" w:dirty="true" />') && d.includes('<w:p><w:pPr><w:bidi /></w:pPr><w:r><w:br w:type="page"/></w:r></w:p>'));
+  assert.equal(P1('مقدمة'), '<w:pPr><w:pStyle w:val="Heading1" /><w:bidi /></w:pPr>' + run('1 مقدمة', RTL));
+  assert.equal(P1('هذه فقرة').replace(/<w:r><w:rPr><w:rStyle w:val="FootnoteReference" \/>[\s\S]*$/, ''), '<w:pPr><w:pStyle w:val="BodyText" /><w:bidi /></w:pPr>' + run('هذه فقرة عربية ', RTL) + run('with English') + run(' و 2024.', RTL));
+  assert.match(bare(fn), /<w:pPr><w:pStyle w:val="FootnoteText" \/><w:bidi \/><\/w:pPr>[\s\S]*<w:r><w:rPr><w:rtl \/><\/w:rPr><w:t xml:space="preserve">حاشية عربية <\/w:t><\/w:r><w:r><w:t xml:space="preserve">with Latin<\/w:t><\/w:r><w:r><w:rPr><w:rtl \/><\/w:rPr><w:t xml:space="preserve">.<\/w:t><\/w:r>/);
+  assert.equal(P1('واحد'), '<w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="1001" /></w:numPr><w:bidi /></w:pPr>' + run('واحد', RTL));
+  assert.equal(P1('An English'), '<w:pPr><w:pStyle w:val="FirstParagraph" /></w:pPr>' + run('An English paragraph with ') + run('عربي', RTL) + run(' inside.'));
+  assert.equal(P1('one'), '<w:pPr><w:pStyle w:val="Compact" /><w:numPr><w:ilvl w:val="0" /><w:numId w:val="1002" /></w:numPr></w:pPr>' + run('one'));
+  // flushright in a right to left paragraph is its far edge in LaTeX and "right" is that edge in Word
+  assert.equal(P1('محاذاة.'), '<w:pPr><w:pStyle w:val="RightAligned" /><w:bidi /></w:pPr>' + run('محاذاة.', RTL));
+  assert.match(st, /w:styleId="RightAligned">(?:(?!<\/w:style>)[\s\S])*<w:pPr><w:jc w:val="right" \/><\/w:pPr><\/w:style>/);
+  const tables = d.match(/<w:tbl>[\s\S]*?<\/w:tbl>/g);
+  assert.ok(!tables[0].includes('bidi') && tables[1].startsWith('<w:tbl><w:tblPr><w:tblStyle w:val="Table" /><w:bidiVisual /><w:tblW '));
+  assert.equal(P1('x <- 1'), '<w:pPr><w:pStyle w:val="SourceCode" /></w:pPr><w:r><w:rPr><w:rStyle w:val="VerbatimChar" /></w:rPr><w:t xml:space="preserve">x &lt;- 1</w:t></w:r>');
+  assert.equal(P1('نهاية'), '<w:pPr><w:pStyle w:val="BodyText" /><w:bidi /></w:pPr>' + run('نهاية ', RTL) + run('code', '<w:rStyle w:val="VerbatimChar" />') + run(' هنا، ', RTL) + run('中文', EA) + run(' أيضا.', RTL));
+  assert.match(d, /<w:sectPr>(?:(?!<\/w:sectPr>)[\s\S])*<w:bidi \/><\/w:sectPr>/);
+  assert.equal(defaults(st), '<w:rPrDefault> <w:rPr> <w:rFonts w:asciiTheme="minorHAnsi" w:hAnsiTheme="minorHAnsi" w:eastAsia="SimSun" w:cs="Amiri" /> <w:sz w:val="24" /> <w:szCs w:val="24" /> <w:lang w:bidi="ar-SA" w:eastAsia="zh-CN" w:val="en-US" /> </w:rPr> </w:rPrDefault>');
+  assert.match(se, /<w:themeFontLang w:val="en-US" w:eastAsia="zh-CN" w:bidi="ar-SA" \/>/);
+  // the parts still parse, and Rikuy reads its own file back with nothing changed
+  for (const part of [d, st, se, fn]) parseXml(part, undefined, true);
+  assert.equal(E.lost, 0);
+  assert.equal(importInto(E.docx, files).files.size, 0);
+});
+
+await ok('to Word: a document with neither script is written as before; one in Chinese alone has its font and no direction; the model\'s own dir is taken', () => {
+  const plain = exported(exportFiles(new Map([['main.tex', doc('Plain \\emph{English} text, with an é and a —.\n\n\\begin{tabular}{l}\na \\\\\n\\end{tabular}\n')]])));
+  assert.ok(!/w:bidi|w:rtl|w:bidiVisual/.test(plain.d) && !/SimSun|Amiri/.test(plain.st) && /w:eastAsiaTheme="minorEastAsia"/.test(defaults(plain.st)) && /<w:themeFontLang w:val="en-US" \/>/.test(plain.se));
+  const zh = '\\documentclass{article}\n' + CTEX + '\n\\begin{document}\n\\section{引言}\n中文\\textbf{粗体}文本，English 混排。\n\\end{document}\n';
+  const Z = exported(exportFiles(new Map([['main.tex', zh]])));
+  assert.equal(defaults(Z.st), '<w:rPrDefault> <w:rPr> <w:rFonts w:asciiTheme="minorHAnsi" w:cstheme="minorBidi" w:hAnsiTheme="minorHAnsi" w:eastAsia="SimSun" /> <w:sz w:val="24" /> <w:szCs w:val="24" /> <w:lang w:bidi="ar-SA" w:eastAsia="zh-CN" w:val="en-US" /> </w:rPr> </w:rPrDefault>');
+  assert.match(Z.se, /<w:themeFontLang w:val="en-US" w:eastAsia="zh-CN" \/>/);
+  assert.ok(!/w:bidi|w:rtl/.test(Z.d) && !textOf(Z.d).includes('ctex') && bare(Z.d).includes(run('中文', EA) + run('粗体', EA + '<w:b /><w:bCs />') + run('文本，English', EA) + run(' ') + run('混排。', EA)), Z.d);
+  // a model that says which way a block and a stretch of text run (dir), and the document (opts.dir)
+  const files = new Map([['main.tex', doc('First paragraph, plain.\n\nSecond paragraph, \\emph{turned}.\n')]]);
+  const m = buildModel({ files, main: 'main.tex' });
+  const items = m.blocks.flatMap((u) => u.items);
+  items[1].dir = 'rtl';
+  items[0].inl = [{ ...items[0].inl[0], dir: 'rtl' }];
+  const W = buildWordDoc(m, files, { now: 0 });
+  const d1 = paras(exported(exportDocx(P, { doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources: {}, bibs: [], project: { name: 'P', main: 'main.tex', files: [...files] } })).d).map(bare);
+  assert.equal(d1[0], '<w:pPr><w:pStyle w:val="FirstParagraph" /></w:pPr>' + run('First paragraph, plain') + run('.', RTL));
+  assert.equal(d1[1], '<w:pPr><w:pStyle w:val="BodyText" /><w:bidi /></w:pPr>' + run('Second paragraph, ') + run('turned', '<w:i /><w:iCs />') + run('.', RTL));
+  const m2 = buildModel({ files, main: 'main.tex' });
+  m2.opts.dir = 'rtl';
+  assert.equal(buildWordDoc(m2, files, { now: 0 }).rtl, true);
+  assert.equal(buildWordDoc(m, files, { now: 0, rtl: true }).doc.meta.dir.c, 'rtl');
+});
+
+await ok('the wrappers of a source that set a direction, and how mixed text divides into runs', () => {
+  // @a to @t stand at twenty places of a source: each has the paragraph's direction where a wrapper sets it, and the text's
+  const src = '@a \\foreignlanguage{arabic}{@b \\LR{@c} @d} @e\n\\begin{otherlanguage}{arabic}\n@f \\textenglish{@g}\n\\begin{verbatim}\n\\begin{RTL}\n\\end{verbatim}\n@h\n\\end{otherlanguage}\n@i \\begin{otherlanguage*}{hebrew}@j\\end{otherlanguage*} % \\begin{RTL}\n@k \\RLE{@l} \\texthebrew[opt]{@m}\n\\begin{quote}\\setRTL @n\\end{quote} @o \\begin{hebrew}[numerals=arabic] @p\\end{hebrew}\n\\begin{CJK*}{UTF8}{bsmi}\n@q\\CJKfamily{bkai}@r\\end{CJK*} \\selectlanguage{farsi} @s \\selectlanguage{french} @t';
+  const S = scanDir(src);
+  const of = (ch) => { const p = src.indexOf('@' + ch); return [S.block(p), S.inline(p), S.hidden(p)]; };
+  for (const hid of ['UTF8', 'bsmi', 'bkai', 'numerals']) assert.equal(S.hidden(src.indexOf(hid)), true, hid);
+  assert.equal(scanDir('Plain \\emph{text} with \\begin{itemize}\\item x\\end{itemize}'), null);
+  // a source built to be read again and again (wrappers that never close, environments never ended, ends never begun) is read once
+  const t0 = Date.now();
+  for (const bad of ['\\RL{'.repeat(60000), '\\texthebrew['.repeat(60000), '\\begin{RTL}'.repeat(40000) + '\\end{x}'.repeat(40000), '\\CJKfamily{a}x'.repeat(40000), '\\foreignlanguage{arabic}{'.repeat(30000) + '}'.repeat(30000)]) {
+    const B = scanDir(bad);
+    if (B) for (let p = 0; p < bad.length; p += 7) { B.block(p); B.inline(p); B.hidden(p); }
+  }
+  assert.ok(Date.now() - t0 < 5000, 'scanned in ' + (Date.now() - t0) + ' ms');
+  // spaces and punctuation go with the text both their sides agree on, else with the paragraph; a number with the text before it
+  const dirs = (cls, base) => resolve(cls.split(''), base).join('');
+  assert.equal(dirs('LLNRRNDDNRRNNLL', 'ltr'), 'LLLRRRRRRRRLLLL');
+  assert.equal(dirs('LLNRRNDDNRRNNLL', 'rtl'), 'LLRRRRRRRRRRRLL');
+  assert.equal(dirs('RRMMNNDDNLLNDDN', 'rtl'), 'RRRRRRRRRLLLLLR');
+  assert.equal(dirs('DDNRRBNLL', 'ltr'), 'LLLRRLLLL');
+  assert.equal(dirs('MNDD', 'rtl'), 'RRRR');
+});
+
+await ok('a round trip through Word and back as a stranger\'s file gives the same body, direction and all, for each of the three files', () => {
+  for (const name of ['word-chinese.docx', 'word-arabic.docx', 'word-mixed.docx']) {
+    const t1 = fixture(name).tex;
+    const E1 = exportFiles(new Map([['main.tex', t1]]));
+    assert.equal(E1.lost, 0, name);
+    const r2 = open(E1.docx);
+    // lists Rikuy writes are tight ones, which the Word file python-docx made had not said
+    assert.equal(bodyOf(r2.tex).replace(/\\tightlist\n/g, ''), bodyOf(t1), name);
+    assert.deepEqual(preambleOf(r2.tex).split('\n').filter((l) => /ctex|babel/.test(l)), preambleOf(t1).split('\n').filter((l) => /ctex|babel/.test(l)), name);
+    // and from then on nothing moves
+    const r3 = open(exportFiles(new Map([['main.tex', r2.tex]])).docx);
+    assert.equal(bodyOf(r3.tex), bodyOf(r2.tex), name);
+    // while the file as Rikuy's own, read for a coauthor's edits, has none
+    assert.equal(importInto(E1.docx, new Map([['main.tex', t1]])).files.size, 0, name);
+  }
 });
 
 console.log('word: ' + n + ' groups of checks passed');

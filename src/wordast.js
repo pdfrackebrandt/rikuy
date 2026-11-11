@@ -12,6 +12,8 @@
 // edits in Word back into the .tex (src/wordsync.js).
 import { findComments } from './share.js';
 import { texToPlain } from './bib.js';
+import { rtlDocument } from './scripts.js';
+import { bidiDoc, dirSpan, hasRtl, scanDir } from './wordbidi.js';
 
 export const API = [1, 23, 1, 2];
 const OBJ = '\uFFFC';
@@ -125,6 +127,7 @@ export function numberRows(tex) {
 //  opts.rasters: Map 'file:offset' -> picture file name, for blocks the page cannot draw
 //  opts.citeproc: citations become pandoc citations (else the page's own text)
 //  opts.comments: Rikuy's comment threads become Word comments
+//  opts.main: the main file's name (its preamble says whether the document runs right to left)
 export function buildWordDoc(model, files, opts = {}) {
   const W = new Walker(model, files, opts);
   W.run();
@@ -138,6 +141,20 @@ class Walker {
     this.n = 0; this.A = null; this.meta = {};
     this.cmarks = null; // source offset -> comment marks to emit (second pass)
     this.ncomments = 0;
+    // Direction. The document's comes from the model when it says one, else from the preamble
+    // (src/scripts.js); a block's or a stretch of text's from the model when the node says one
+    // (dir: 'rtl' or 'ltr'), else from the wrappers around it in the source (src/wordbidi.js).
+    const dir = model.opts && model.opts.dir;
+    const main = opts.main || (files.has('main.tex') ? 'main.tex' : [...files.keys()].find((f) => /\\begin\s*\{document\}/.test(files.get(f) || '')));
+    this.rtl = opts.rtl != null ? !!opts.rtl : dir === 'rtl' || dir === 'ltr' ? dir === 'rtl' : rtlDocument(files.get(main) || '');
+    this.scans = new Map();
+    this.bidi = this.rtl;
+  }
+
+  // the wrappers of a source file that set a direction, or null when it has none
+  scan(f) {
+    if (!this.scans.has(f)) this.scans.set(f, scanDir(this.files.get(f) || ''));
+    return this.scans.get(f);
   }
 
   run() {
@@ -154,9 +171,11 @@ class Walker {
   }
 
   result() {
-    const doc = { 'pandoc-api-version': API, meta: this.metaOut(), blocks: this.blocks };
+    let doc = { 'pandoc-api-version': API, meta: this.metaOut(), blocks: this.blocks };
+    // only a document with right to left text in it, or a wrapper that sets a direction
+    if (this.bidi) doc = bidiDoc(doc, new Map(this.anchors.filter((A) => A.dir).map((A) => [A.id, A.dir])), this.rtl);
     const deg = [...this.degraded.entries()].map(([k, n]) => k + (n > 1 ? ' (' + n + ')' : ''));
-    return { doc, anchors: this.anchors.map(packAnchor), atoms: this.atoms, images: [...this.images], warnings: this.warnings, degraded: deg, comments: this.ncomments };
+    return { doc, anchors: this.anchors.map(packAnchor), atoms: this.atoms, images: [...this.images], warnings: this.warnings, degraded: deg, comments: this.ncomments, rtl: this.rtl };
   }
 
   plainMath(tex) {
@@ -173,9 +192,10 @@ class Walker {
     for (let i = 0; i < units.length; i++) {
       const u = units[i];
       const items = u.items;
-      // a list: its items, flat in the model, become nested Word lists
-      if (items.length && items[0].type === 'p' && items[0].li && !items[0].li.cont) { out.push(...this.list(items, u)); continue; }
       if (items.length && items[0].type === 'h' && items[0].level === 'abs') { this.abstract(items.slice(1), u); continue; }
+      // a list: its items, flat in the model, become nested Word lists; also one that stands
+      // among paragraphs in an environment the model reads as one block (otherlanguage, small)
+      if (items.some((x) => x.type === 'p' && x.li && !x.li.cont)) { out.push(...this.list(items, u)); continue; }
       for (const it of items) out.push(...this.item(it, u));
     }
     return out;
@@ -193,19 +213,28 @@ class Walker {
   }
   ch(t, f, s, e) {
     const A = this.A;
+    if (!this.bidi && hasRtl(t)) this.bidi = true;
     if (!A) return;
     A.text += t;
     for (let i = 0; i < t.length; i++) A.map.push(s, e);
     if (f && A.f && f !== A.f) A.mixed = true;
   }
-  ro(t) { const A = this.A; if (!A) return; A.text += t; for (let i = 0; i < t.length; i++) A.map.push(RO, RO); }
-  atomText(t, ai) { const A = this.A; if (!A) return; A.text += t; for (let i = 0; i < t.length; i++) A.map.push(ATOM, ai); }
+  ro(t) { const A = this.A; if (!this.bidi && hasRtl(t)) this.bidi = true; if (!A) return; A.text += t; for (let i = 0; i < t.length; i++) A.map.push(RO, RO); }
+  atomText(t, ai) { const A = this.A; if (!this.bidi && hasRtl(t)) this.bidi = true; if (!A) return; A.text += t; for (let i = 0; i < t.length; i++) A.map.push(ATOM, ai); }
   atom(a) { this.atoms.push(a); return this.atoms.length - 1; }
 
   wrap(kind, f, s, e, build, extra) {
     const { A, end } = this.begin(kind, f, s, e, extra);
     let inl;
     try { inl = build(A); } finally { end(); }
+    // the block's direction, where it is not the document's: the model's word, else the
+    // environment or language switch its first character stands in
+    if (A.dir !== 'rtl' && A.dir !== 'ltr') {
+      const p = A.ins != null ? A.ins : A.s;
+      const S = p != null && A.f ? this.scan(A.f) : null;
+      A.dir = (S && S.block(p)) || null;
+    }
+    if (A.dir && A.dir !== (this.rtl ? 'rtl' : 'ltr')) this.bidi = true;
     return [{ t: 'Span', c: [attr(A.id), merge(inl)] }];
   }
 
@@ -236,7 +265,7 @@ class Walker {
       out.push(...this.inl(it.inl, fns));
       if (it.tail) { out.push(Str(' ')); this.ro(' '); out.push(...this.inl(it.tail, fns)); }
       return out;
-    }, { top: !!(u && u.items.length === 1 && it === u.items[0] && !it.li && !it.lead), after: u ? u.e : null });
+    }, { top: !!(u && u.items.length === 1 && it === u.items[0] && !it.li && !it.lead), after: u ? u.e : null, dir: it.dir || (u && u.dir) });
     let b = { t: plain ? 'Plain' : 'Para', c: inl };
     // centred and right aligned text keeps its place: a paragraph style of that name, which
     // exportDocx (src/wordjobs.js) gives its alignment
@@ -256,7 +285,7 @@ class Walker {
       if (num) { const t = num + (it.chapLabel ? ': ' : ' '); out.push(Str(t)); this.ro(t); }
       out.push(...this.inl(it.inl, u.fns));
       return out;
-    }, { after: u.e });
+    }, { after: u.e, dir: it.dir || u.dir });
     return [{ t: 'Header', c: [level, attr(), inl] }];
   }
 
@@ -273,7 +302,7 @@ class Walker {
       if (p.type === 'p') out.push(this.para(p, u));
       else if (p.type === 'caption') {
         const lab = ({ figure: 'Figure', table: 'Table' }[p.kind] || p.kind) + (p.num ? ' ' + p.num : '') + ': ';
-        const inl = this.wrap('cap', p.f, null, null, () => { this.ro(lab); return [Str(lab), ...this.inl(p.inl, u.fns)]; }, { after: u.e });
+        const inl = this.wrap('cap', p.f, null, null, () => { this.ro(lab); return [Str(lab), ...this.inl(p.inl, u.fns)]; }, { after: u.e, dir: p.dir || it.dir || u.dir });
         out.push({ t: 'Div', c: [attr('', [], [['custom-style', p.kind === 'table' ? 'Table Caption' : 'Image Caption']]), [{ t: 'Para', c: inl }]] });
       } else if (p.type === 'tabular') out.push(this.table(p, u));
       else if (p.type === 'math') out.push(this.display(p));
@@ -292,7 +321,7 @@ class Walker {
     const after = t.rows[ri + 1];
     const head = rows.length > 1 && after && after.rules.some((x) => x.kind === 'light' || x.kind === 'heavy') && ri === t.rows.findIndex((r) => !r.empty);
     const row = (r) => [attr(), r.cells.map((c) => [attr(), { t: AL[c.align] || 'AlignDefault' }, 1, c.span || 1,
-      [{ t: 'Plain', c: this.wrap('cell', t.f, null, null, () => this.inl(c.inl, u ? u.fns : []), { after: u ? u.e : null }) }]])];
+      [{ t: 'Plain', c: this.wrap('cell', t.f, null, null, () => this.inl(c.inl, u ? u.fns : []), { after: u ? u.e : null, dir: c.dir || t.dir || (u && u.dir) }) }]])];
     const headRows = head ? [row(rows[0])] : [];
     const bodyRows = (head ? rows.slice(1) : rows).map(row);
     return { t: 'Table', c: [attr(), [null, []], specs, [attr(), headRows], [[attr(), 0, [], bodyRows]], [attr(), []]] };
@@ -348,6 +377,8 @@ class Walker {
       const entries = [];
       while (i < items.length) {
         const it = items[i];
+        // what follows the list in its block (a paragraph that is no item's, a table) ends it
+        if (it.type === 'p' ? !it.li : it.depth == null) break;
         const d = it.depth || 1;
         if (d < depth) break;
         if (d === depth && it.type === 'p' && it.li && !it.li.cont) {
@@ -385,23 +416,48 @@ class Walker {
     return out;
   }
 
+  // a node the model gives a direction is a span of that direction (src/wordbidi.js)
   inline(x, fns) {
+    const out = this.inline1(x, fns);
+    if ((x.dir !== 'rtl' && x.dir !== 'ltr') || !out.length) return out;
+    this.bidi = true;
+    return [dirSpan(x.dir, out)];
+  }
+
+  inline1(x, fns) {
     switch (x.k) {
       case 'seg': {
         if (x.ph) { if (this.A && this.A.ins == null && x.map[0] >= 0) this.A.ins = x.map[0]; return []; }
         const out = [];
-        let run = '';
-        const flush = () => { if (run) { out.push(Str(run)); run = ''; } };
+        // what the source says about these characters where the model does not: text inside
+        // \RL{..}, \foreignlanguage{arabic}{..} and the like is a span of that direction, and
+        // the arguments of the CJK package's wrappers, which the model shows as words, are none
+        const S = this.scan(x.f);
+        let run = '', to = out, gd = null;
+        const flush = () => { if (run) { to.push(Str(run)); run = ''; } };
+        const group = (d) => {
+          if (d === gd) return;
+          flush();
+          if (gd && to.length) out.push(dirSpan(gd, to));
+          to = d ? [] : out;
+          gd = d;
+          if (d) this.bidi = true;
+        };
         for (let i = 0; i < x.t.length; i++) {
           const s = x.map[2 * i], e = x.map[2 * i + 1];
+          if (S && s >= 0) {
+            if (S.hidden(s)) continue;
+            group(x.dir ? null : S.inline(s));
+          }
           const marks = this.cmarks && this.cmarks.get(x.f + ':' + s);
-          if (marks && marks.start) { flush(); out.push(...marks.start); marks.start = null; }
+          if (marks && marks.start) { flush(); to.push(...marks.start); marks.start = null; }
           run += x.t[i];
           this.ch(x.t[i], x.f, s, e);
           const endm = this.cmarks && this.cmarks.get(x.f + ':' + e + ':end');
-          if (endm && endm.end) { flush(); out.push(...endm.end); endm.end = null; }
+          if (endm && endm.end) { flush(); to.push(...endm.end); endm.end = null; }
           if (this.A && this.A.ins == null) this.A.ins = s;
         }
+        group(null);
         flush();
         return out;
       }

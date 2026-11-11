@@ -6,11 +6,24 @@ writes it (`-` for standard output).
 
 make_rich() is a second file, of what pandoc alone loses or writes as LaTeX that does not compile
 (test/fixtures/word-rich.docx, `python3 word_fixture.py out.docx rich`): a subtitle, coloured,
-highlighted, underlined and struck text, symbols and Greek and Cyrillic and Chinese words, a comment
+highlighted, underlined and struck text, symbols and Greek and Cyrillic and Korean words, a comment
 with a reply's worth of TeX in it, a tracked change, a table of contents, a caption whose number is
 a short field with the bookmark a cross reference names, a picture wider than the page, a table
 with a caption and merged cells and a table inside it, a page break, a centred paragraph, a formula
-of three lines, two numbered ones, an endnote, a chart, and a header."""
+of three lines, two numbered ones, an endnote, a chart, and a header.
+
+Three more are files in Chinese and Arabic as Word writes them (`chinese`, `arabic`, `mixed` after
+the name; test/fixtures/word-chinese.docx, word-arabic.docx, word-mixed.docx). make_chinese(): a
+title, headings, a paragraph cut into runs wherever the font or the language changes (w:rFonts
+w:eastAsia, w:hint, w:lang), bold and italic, full width punctuation and an ideographic space,
+Chinese quotation marks, a bulleted and a numbered list, a table, English among the Chinese, a
+footnote and a comment. make_arabic(): a document that runs right to left (w:bidi on every
+paragraph and on the section, w:rtl on the runs), with English words and both kinds of digits in
+it, vowel marks, a tatweel, a Persian word with a zero width non joiner, a joiner, direction marks,
+paragraphs aligned to each edge, lists, a table set from the right (w:bidiVisual), text in a w:dir
+wrapper, one paragraph that runs left to right, a footnote and a comment. make_mixed(): an English
+document with Arabic and Chinese phrases, one whole Arabic paragraph, a table of the three, and
+text and font and language names that try to be LaTeX."""
 import io, sys, struct, zlib
 from docx import Document
 from docx.shared import Inches
@@ -108,7 +121,7 @@ def make_rich():
     p.add_run('under').underline = True
     p.add_run(', ')
     p.add_run('struck').font.strike = True
-    p.add_run(u'. If p \u2264 0.05 and \u03b2 \u2260 0 then x \u2192 \u221e, \u2212 5\u202f%. \u0395\u03bb\u03bb\u03b7\u03bd\u03b9\u03ba\u03ac, \u041f\u0440\u0438\u0432\u0435\u0442, \u4f60\u597d.')
+    p.add_run(u'. If p \u2264 0.05 and \u03b2 \u2260 0 then x \u2192 \u221e, \u2212 5\u202f%. \u0395\u03bb\u03bb\u03b7\u03bd\u03b9\u03ba\u03ac, \u041f\u0440\u0438\u0432\u0435\u0442, \uc548\ub155.')
     # a tracked change, and a comment whose text tries to leave its line
     p = d.add_paragraph('The result is ')
     x(p, '<w:del %s w:id="10" w:author="Ana"><w:r><w:delText>weak</w:delText></w:r></w:del>' % W)
@@ -172,8 +185,156 @@ def add_parts(data, new):
     zout.close()
     return out.getvalue()
 
+# ---- Chinese and Arabic ----
+
+from xml.sax.saxutils import escape
+
+def xrun(p, text, props=''):
+    """A run with its properties written out, in the order Word's schema has them."""
+    p._p.append(parse_xml('<w:r %s>%s<w:t xml:space="preserve">%s</w:t></w:r>' % (W, '<w:rPr>%s</w:rPr>' % props if props else '', escape(text))))
+
+# a run of Chinese as Word marks one (the font for East Asian text, the language), and of Arabic
+# (the font for complex scripts, right to left, the language); f: bold or italic, both ways
+zh = lambda f='', font='SimSun': '<w:rFonts w:eastAsia="%s" w:hint="eastAsia"/>%s<w:lang w:eastAsia="zh-CN"/>' % (font, f)
+ar = lambda f='': '<w:rFonts w:cs="Arial"/>%s<w:rtl/><w:lang w:bidi="ar-SA"/>' % f
+BOLD, ITALIC = '<w:b/><w:bCs/>', '<w:i/><w:iCs/>'
+
+def note_ref(p, n):
+    p._p.append(parse_xml('<w:r %s><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="%d"/></w:r>' % (W, n)))
+
+def footnotes(notes):
+    """notes: the inside of each footnote's paragraph after its number, as XML."""
+    fx = ''.join('<w:footnote w:id="%d"><w:p>%s<w:r><w:footnoteRef/></w:r>%s</w:p></w:footnote>' % (i + 1, ppr, runs) for i, (ppr, runs) in enumerate(notes))
+    return ('footnotes', '<w:footnotes %s><w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote>'
+            '<w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>%s</w:footnotes>' % (W, fx))
+
+def commented(p, n, add):
+    """add() writes the runs comment n is on."""
+    p._p.append(parse_xml('<w:commentRangeStart %s w:id="%d"/>' % (W, n)))
+    add()
+    p._p.append(parse_xml('<w:commentRangeEnd %s w:id="%d"/>' % (W, n)))
+    p._p.append(parse_xml('<w:r %s><w:commentReference w:id="%d"/></w:r>' % (W, n)))
+
+def make_chinese():
+    d = Document()
+    p = d.add_paragraph(style='Title'); xrun(p, u'制度变迁与经济增长', zh())
+    p = d.add_heading(level=1); xrun(p, u'引言', zh(font='SimHei'))
+    # one sentence in eight runs, as Word cuts text where the font, the hint or the language changes
+    p = d.add_paragraph()
+    xrun(p, u'本文研究', zh())
+    xrun(p, u'制度变迁', zh(BOLD))
+    xrun(p, u'对', '<w:rFonts w:hint="eastAsia"/>')
+    xrun(p, u'经济增长', zh(ITALIC, 'KaiTi'))
+    xrun(p, u'的影响，数据来自')
+    xrun(p, u'World Bank', '<w:lang w:val="en-US"/>')
+    xrun(p, u'（2020年），结果', zh())
+    commented(p, 1, lambda: xrun(p, u'稳健', zh(font='SimHei')))
+    xrun(p, u'。', zh())
+    note_ref(p, 1)
+    p = d.add_paragraph()
+    xrun(p, u'他说：“制度‘很’重要”——见《经济学》、〈导论〉……全角　空格！ＡＢＣ１２３；繁體字：經濟學。', zh())
+    p = d.add_heading(level=2); xrun(p, u'数据与方法', zh(font='SimHei'))
+    for t in [u'第一项：数据', u'第二项：方法']: xrun(d.add_paragraph(style='List Bullet'), t, zh())
+    for t in [u'步骤一', u'步骤二']: xrun(d.add_paragraph(style='List Number'), t, zh())
+    t = d.add_table(rows=3, cols=2); t.style = 'Table Grid'
+    for r, row in enumerate([(u'国家', u'增长率'), (u'秘鲁', '3.1'), (u'智利', '2.4')]):
+        for c, v in enumerate(row): xrun(t.cell(r, c).paragraphs[0], v, zh() if ord(v[0]) > 255 else '')
+    p = d.add_paragraph('The model (')
+    xrun(p, u'模型', zh())
+    p.add_run(') uses GDP ')
+    xrun(p, u'数据', zh())
+    p.add_run(' from 2020 to 2024.')
+    buf = io.BytesIO()
+    d.save(buf)
+    return add_parts(buf.getvalue(), {
+        'word/footnotes.xml': footnotes([('', '<w:r><w:rPr>%s</w:rPr><w:t xml:space="preserve"> 数据来自</w:t></w:r><w:r><w:rPr>%s</w:rPr><w:t>世界银行</w:t></w:r><w:r><w:t>。</w:t></w:r>' % (zh(), zh(BOLD)))]),
+        'word/comments.xml': ('comments', u'<w:comments %s><w:comment w:id="1" w:author="王芳"><w:p><w:r><w:t>请引用文献。</w:t></w:r></w:p></w:comment></w:comments>' % W)})
+
+def bidi(p, jc=None):
+    """Makes p a right to left paragraph, aligned as jc says."""
+    ppr = p._p.get_or_add_pPr()
+    ppr.append(parse_xml('<w:bidi %s/>' % W))
+    if jc: ppr.append(parse_xml('<w:jc %s w:val="%s"/>' % (W, jc)))
+    return p
+
+def make_arabic():
+    d = Document()
+    para = lambda style=None, jc=None: bidi(d.add_paragraph(style=style), jc)
+    xrun(para('Title'), u'النمو والمؤسسات', ar())
+    xrun(bidi(d.add_heading(level=1)), u'مقدمة', ar())
+    p = para()
+    xrun(p, u'ندرس ', ar())
+    commented(p, 1, lambda: xrun(p, u'النمو', ar(BOLD)))
+    xrun(p, u' في ظل مؤسسات ضعيفة، بمعدل ', ar())
+    xrun(p, '5%')
+    xrun(p, u' سنة ٢٠٢٤ و', ar())
+    xrun(p, '2025')
+    xrun(p, u'؛ هل هذا صحيح؟', ar())
+    note_ref(p, 1)
+    # vowel marks, a tatweel, Persian with a zero width non joiner, a joiner that keeps a letter's
+    # joining shape, a left to right mark after the bracket and a right to left one before the stop
+    p = para()
+    xrun(p, u'مُحَمَّدٌ قال مـــرحبا، و‏می‌خواهم ه‍.ق ثم ', ar())
+    xrun(p, 'World Bank (GDP)‎')
+    xrun(p, u' أيضًا‏.', ar())
+    xrun(para(jc='left'), u'محاذاة إلى البداية.', ar())
+    xrun(para(jc='right'), u'محاذاة إلى النهاية.', ar())
+    xrun(para(jc='both'), u'نص مضبوط من الجانبين.', ar())
+    xrun(para(jc='center'), u'في الوسط.', ar())
+    xrun(bidi(d.add_heading(level=1)), u'النتائج', ar())
+    for t in [u'النتيجة الأولى', u'النتيجة الثانية']: xrun(para('List Bullet'), t, ar())
+    for t in [u'الخطوة ١', u'الخطوة ٢']: xrun(para('List Number'), t, ar())
+    t = d.add_table(rows=3, cols=2); t.style = 'Table Grid'
+    t._tbl.tblPr.insert(1, parse_xml('<w:bidiVisual %s/>' % W))
+    for r, row in enumerate([(u'البلد', u'النمو'), (u'بيرو', u'٣٫١'), (u'تشيلي', '2.4')]):
+        for c, v in enumerate(row): xrun(bidi(t.cell(r, c).paragraphs[0]), v, ar() if ord(v[0]) > 255 else '')
+    d.add_paragraph('An English paragraph in the Arabic document.')
+    # text Word wrapped in a direction of its own
+    p = para()
+    xrun(p, u'قبل ', ar())
+    p._p.append(parse_xml(u'<w:dir %s w:val="rtl"><w:r><w:rPr>%s</w:rPr><w:t xml:space="preserve">نص داخل الغلاف</w:t></w:r></w:dir>' % (W, ar())))
+    xrun(p, u' بعد.', ar())
+    sect = d.sections[0]._sectPr
+    grid = [c for c in sect if c.tag.endswith('}docGrid')]
+    (grid[0].addprevious if grid else sect.append)(parse_xml('<w:bidi %s/>' % W))
+    buf = io.BytesIO()
+    d.save(buf)
+    return add_parts(buf.getvalue(), {
+        'word/footnotes.xml': footnotes([('<w:pPr><w:bidi/></w:pPr>', u'<w:r><w:rPr>%s</w:rPr><w:t xml:space="preserve"> بيانات البنك الدولي، ٢٠٢٤.</w:t></w:r>' % ar())]),
+        'word/comments.xml': ('comments', u'<w:comments %s><w:comment w:id="1" w:author="سارة"><w:p><w:pPr><w:bidi/></w:pPr><w:r><w:rPr><w:rtl/></w:rPr><w:t>أضف مرجعًا.</w:t></w:r></w:p></w:comment></w:comments>' % W)})
+
+def make_mixed():
+    d = Document()
+    d.add_heading('Greetings', level=1)
+    p = d.add_paragraph('The Arabic word ')
+    xrun(p, u'مرحبا', ar())
+    p.add_run(' means hello, and ')
+    xrun(p, u'你好', zh())
+    p.add_run(' means the same in Chinese.')
+    p = d.add_paragraph('In Arabic, ')
+    xrun(p, u'السلام عليكم ورحمة الله', ar(BOLD))
+    p.add_run(', written right to left; numbers such as 2024 stay.')
+    xrun(bidi(d.add_paragraph()), u'هذه فقرة كاملة بالعربية داخل مستند إنجليزي.', ar())
+    p = d.add_paragraph('Chinese: ')
+    xrun(p, u'北京、上海', zh())
+    p.add_run(' and Peking University (')
+    xrun(p, u'北京大学', zh())
+    p.add_run(').')
+    t = d.add_table(rows=3, cols=3); t.style = 'Table Grid'
+    for r, row in enumerate([('Word', 'Arabic', 'Chinese'), ('hello', u'مرحبا', u'你好'), ('thanks', u'شكرا', u'谢谢')]):
+        for c, v in enumerate(row): xrun(t.cell(r, c).paragraphs[0], v, '' if ord(v[0]) < 256 else ar() if ord(v[0]) < 0x800 else zh())
+    # a stranger's file: words that read as LaTeX, and font and language names that try to be
+    p = d.add_paragraph('Type \\babelfont{rm}{Evil} or \\input{/etc/passwd} at 100% & more: ')
+    xrun(p, u'字', '<w:rFonts w:eastAsia="}\\input{/etc/passwd}" w:cs="\\babelfont{rm}{Evil}"/><w:lang w:val="en}\\write18{id}" w:eastAsia="zh-CN}\\input{x}" w:bidi="ar\\input{y}"/>')
+    p.add_run('.')
+    buf = io.BytesIO()
+    d.save(buf)
+    return buf.getvalue()
+
+MAKERS = {'rich': make_rich, 'chinese': make_chinese, 'arabic': make_arabic, 'mixed': make_mixed}
+
 if __name__ == '__main__':
     out = sys.argv[1] if len(sys.argv) > 1 else 'fixture.docx'
-    data = make_rich() if sys.argv[2:] == ['rich'] else make()
+    data = MAKERS[sys.argv[2]]() if len(sys.argv) > 2 else make()
     if out == '-': sys.stdout.buffer.write(data)
     else: open(out, 'wb').write(data)

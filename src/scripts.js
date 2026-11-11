@@ -57,6 +57,8 @@ const classOf = (pre) => { const m = /\\documentclass\s*(?:\[([^\]]{0,2000})\]\s
 const options = (s) => s.split(',').map((x) => x.trim()).filter(Boolean);
 
 export const RTL_LANGUAGES = /^(arabic|farsi|persian|hebrew|urdu|kurdish|sorani|pashto|syriac|uyghur|sindhi|arabic-[a-z]+)$/;
+// True for a babel or polyglossia language name whose text runs right to left.
+export const rtlLanguage = (name) => RTL_LANGUAGES.test(String(name || '').trim().toLowerCase());
 
 // Which scripts the preamble of a main file already sets up: {chinese, arabic}.
 export function scriptSetup(tex) {
@@ -135,6 +137,11 @@ export function scriptLines(needs, tex) {
   }
   return lines;
 }
+
+// What wraps a stretch of text that runs the other way than the document: [begin, end]. The
+// languages are the two scriptLines' babel line knows, english and arabic; the environment sets
+// the paragraphs' direction as well as the text's (\foreignlanguage would set only the text's).
+export const otherDirection = (rtl) => ['\\begin{otherlanguage}{' + (rtl ? 'arabic' : 'english') + '}', '\\end{otherlanguage}'];
 
 // The main file with those lines in its preamble, or null when it has none to put them in.
 // An existing \usepackage{babel} gains bidi=basic instead of being loaded twice.
