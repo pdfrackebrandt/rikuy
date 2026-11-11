@@ -372,7 +372,8 @@ from a blob, as the TeX worker is). In the worker, `src/pandoc.js` runs pandoc 3
 `pandoc-wasm` 1.1.0, the pandoc project's WASI build) on an in-memory file system with folders;
 `src/wordjobs.js` holds the three jobs (`exportDocx`, `readDocx`, `docxToLatex`), `src/docx.js` the
 zip, a small XML reader, Rikuy's custom XML part and `extract()`, and `src/wordsync.js` the
-alignment and the import plan. `src/wordast.js` (in the page) walks the model into pandoc's AST.
+alignment and the import plan. `src/wordast.js` (in the page) walks the model into pandoc's AST;
+`src/wordbidi.js` gives that tree its directions (right to left text, below).
 
 - **Loading.** Nothing loads with the page. The first Word action starts the worker, which reads
   `word/pandoc.json` (pandoc's version, the SHA-256 of `pandoc.wasm` and of its gzip, and of each
@@ -463,6 +464,46 @@ alignment and the import plan. `src/wordast.js` (in the page) walks the model in
   rejected; the project then compiles with restricted shell escape until its owner allows more.
   A file whose project is not open opens that project (its last version here, else the source the
   file carries) first.
+
+- **Chinese and Arabic, and which way text runs.** The TeX side is `src/scripts.js` alone: it
+  says which of the two scripts a text is in, whether the document runs right to left
+  (`rtlDocument`), and gives the preamble's lines; nothing a Word file names (a font, a language)
+  reaches the preamble.
+  *Open.* `docxToLatex` counts the scripts in the body pandoc wrote (`scriptNeeds`) and puts
+  `scriptLines`' lines where pdfLaTeX's font lines would stand (no `fontenc`, `lmodern`,
+  `textalpha` beside them); the characters those fonts have are not listed as lost, those of
+  other scripts are, as before, and so are Greek and Cyrillic there (the fonts XeLaTeX and
+  LuaLaTeX start with have neither). The text stays characters, in the order it is read:
+  pandoc's span around each right to left run (which it would write as `\RL{}`) goes, TeX
+  orders the words; the marks that only say a direction go; a zero width joiner stays in
+  Arabic script; Chinese quotation marks, the long dash and the dots stay characters in a word
+  with Chinese in it. `premark()` unwraps `w:dir` and `w:bdo` (pandoc drops their text) and puts
+  a mark at the head of every right to left paragraph of the body (`w:bidi` on the paragraph,
+  its style, a style that one is based on, or the defaults); `directions()` groups the body's
+  blocks by it between marked lines, and `unmark()`, once the text has said which way the
+  document runs, makes `\begin{otherlanguage}{arabic}` of a right to left group in a left to
+  right document and `\begin{otherlanguage}{english}` of the reverse (`otherDirection`),
+  nothing where Arabic is not set up. Alignment: in a right to left paragraph Word's `left`
+  and `start` are the edge the text starts at and ask for nothing; `right` and `end` are the
+  far edge, which is `flushright` there in LaTeX too (LuaTeX sets `\leftskip` at the side a
+  line starts); alignment is also read from the paragraph's style.
+  *Save.* `scanDir` (`src/wordbidi.js`) finds the wrappers in the source: an environment or a
+  language switch gives its paragraphs a direction (`otherlanguage`, polyglossia's `Arabic`,
+  the bidi package's `RTL` and `LTR`, `\selectlanguage`, `\setRTL`), a command the text in it
+  (`\foreignlanguage`, `\textarabic`, `\RL`, `\LR`, `otherlanguage*`); a node of the model
+  with `dir: 'rtl'` or `'ltr'` (a block, a table cell, an inline) says so itself and wins, as
+  does `opts.dir` for the document. The arguments of the CJK package's wrappers
+  (`\begin{CJK}{UTF8}{gbsn}`, `\CJKfamily{..}`) are not text. `bidiDoc` then resolves each
+  paragraph's characters into runs (`resolve`: a short form of the Unicode algorithm) and spells
+  the directions out as pandoc's Word writer reads them: `dir` on a Span is `w:rtl` on its runs,
+  on a Div `w:bidi` on its paragraphs, in the meta data the whole document. `styled()` writes
+  what pandoc cannot: `w:bidi` on the section and on the paragraphs of pandoc's template (title
+  block, contents field) of a right to left document, `w:bidiVisual` on a table whose
+  paragraphs all run right to left, and in the document's defaults the East Asian font and
+  language (`SimSun`, `zh-CN`) of a file with Chinese text and the complex script ones (`Amiri`,
+  `ar-SA`) of one with Arabic, with `w:themeFontLang` for the headings' theme fonts.
+  *Edits back.* Each Chinese or Japanese character is a word to `textHunks`; new text with
+  Chinese in it keeps its quotation marks and dash as characters.
 
 **Whose edits are merged.** The data a .docx carries says where every edit goes in the source,
 so it is trusted only when this browser wrote it: the worker returns the SHA-256 of the data at
