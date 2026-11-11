@@ -663,9 +663,14 @@ class Builder {
     // A language, direction or CJK environment around some words of a line (text before it, or
     // after it before the paragraph ends) stays in that line, as TeX sets it; alone, or holding
     // paragraphs, it is a block of its own.
+    // Whether the paragraph gathered so far shows anything. Each node is looked at once (seen
+    // counts them; flushPara and \noindent start over): asked anew for every \selectlanguage,
+    // 50 000 comment lines before 4 000 of those took over a second at every key.
+    let seen = 0, shows = false;
+    const paraShows = () => { for (; !shows && seen < para.length; seen++) if (!blank(para[seen])) shows = true; return shows; };
     const inLine = (nd, k) => {
       if (!this.lineOnly(nd.nodes, ctx)) return false;
-      if (para.some((n) => !blank(n))) return true;
+      if (paraShows()) return true;
       for (let j = k + 1; j < nodes.length; j++) {
         const n = nodes[j];
         if (n.t === 'par') return false;
@@ -677,6 +682,7 @@ class Builder {
     const flushPara = () => {
       const ns = para;
       para = [];
+      seen = 0; shows = false;
       if (!ns.length) return;
       // Skip paragraphs with no visible content.
       if (ns.every((n) => n.t === 'comment' || (n.t === 'text' && !ctx.src.slice(n.s, n.e).trim()) || (n.t === 'cmd' && (INVIS.has(n.name) || n.name === 'label')))) {
@@ -770,7 +776,7 @@ class Builder {
           continue;
         }
         if (name === 'par') { flushPara(); continue; }
-        if (name === 'noindent') { if (!para.some((n) => !(n.t === 'text' && !ctx.src.slice(n.s, n.e).trim()) && n.t !== 'comment')) { paraNoIndent = true; para = []; } continue; }
+        if (name === 'noindent') { if (!para.some((n) => !(n.t === 'text' && !ctx.src.slice(n.s, n.e).trim()) && n.t !== 'comment')) { paraNoIndent = true; para = []; seen = 0; shows = false; } continue; }
         if (name === 'centering') { align = 'center'; continue; }
         if (name === 'raggedright') { align = 'left'; continue; }
         if (name === 'raggedleft') { align = 'right'; continue; }
@@ -787,6 +793,8 @@ class Builder {
           if (env.top) this.sig = [];
           const entries = (this.prev ? this.prev.headings : []).filter((h) => h.level >= 0 && h.level <= (this.opts.chapters ? 2 : 3));
           this.use(JSON.stringify(entries.map((h) => [h.num, h.text, h.level])));
+          // (its direction is the text's where it stands: drawn again when a \selectlanguage before it changes)
+          this.use('d' + this.dir);
           units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'toc', entries, chapters: !!this.opts.chapters, dir: this.dirOf() }], fns: [], sig: this.sig.join('\u0001'), volatile: false });
           afterHeading = false;
           continue;
@@ -822,9 +830,9 @@ class Builder {
           continue;
         }
         // \selectlanguage{arabic} before a paragraph's first word: that paragraph and the ones
-        // after it run its way. Further on in a line it turns the rest of the line (Builder.cmd).
+        // after it run its way. Further on in a line it turns the rest of the line (Builder.inl).
         const dd = this.declDir(nd, ctx);
-        if (dd && !para.some((n) => !blank(n))) this.dir = dd;
+        if (dd && !paraShows()) this.dir = dd;
         // definitions in the body
         if (nd.def || name === 'newtheorem' || name === 'theoremstyle' || name === 'numberwithin') {
           // already collected; invisible
@@ -1477,8 +1485,31 @@ class Builder {
   // ---- inline conversion --------------------------------------------------------
   inl(nodes, ctx, fns, out = []) {
     const acc = new Acc(out, ctx);
+    // \selectlanguage{arabic} in the middle of a line (and bidi's \setRTL): the words after it,
+    // up to the next one or the line's end, turn. They are one run beside the others, a wrapper
+    // only where they run another way than the line did at its start (base); `out` is then the
+    // run's own list. The direction stays for what follows (flow reads it for the next
+    // paragraph) until the group or the environment it is in ends. Runs are made here in the
+    // loop, never by a call per switch: 550 switches in one paragraph overflowed the stack.
+    const top = out, base = this.dir;
+    let run = null;
+    const closeRun = () => {
+      if (!run) return;
+      if (run.kids.some((x) => x.k !== 'seg' || x.t.trim())) top.push(run); else top.push(...run.kids);
+      run = null;
+    };
     for (let k = 0; k < nodes.length; k++) {
       const nd = nodes[k];
+      const decl = nd.t === 'cmd' ? this.declDir(nd, ctx) : null;
+      if (decl) {
+        if (decl === this.dir) continue;
+        acc.flush();
+        closeRun();
+        this.dir = decl;
+        if (decl !== base) run = { k: 'sty', st: 'dir', dir: decl, kids: [], f: ctx.f, decl: true };
+        out = acc.out = run ? run.kids : top;
+        continue;
+      }
       switch (nd.t) {
         case 'text': this.text(nd, ctx, acc); break;
         case 'par': acc.ch(' ', nd.s, nd.e); break;
@@ -1538,14 +1569,15 @@ class Builder {
         }
         case 'cmd': {
           const consumed = this.cmd(nd, ctx, fns, acc, out, nodes, k);
-          if (consumed) return out;
+          if (consumed) { closeRun(); return top; }
           break;
         }
         default: break;
       }
     }
     acc.flush();
-    return out;
+    closeRun();
+    return top;
   }
 
   chip(ctx, s, e, text, title, err) { return this.atom(ctx, { k: 'chip', s, e, text, title, err: !!err }); }
@@ -1632,19 +1664,6 @@ class Builder {
       if (!kids.length) kids.push(this.ph(ctx, a.is));
       out.push(this.styAtom(ctx, { k: 'sty', st: 'dir', dir: d, kids, s: nd.s, e: nd.e, is: a.is, ie: a.ie, cmd: name }));
       return false;
-    }
-    const decl = this.declDir(nd, ctx);
-    if (decl) {
-      // \selectlanguage{arabic} in the middle of a line: the rest of the line turns, and the
-      // direction stays for what follows (flow reads it for the next paragraph) until the group
-      // or the environment it is in ends
-      if (decl === this.dir) return false;
-      acc.flush();
-      this.dir = decl;
-      const kids = this.inl(nodes.slice(k + 1), ctx, fns);
-      if (kids.some((x) => x.k !== 'seg' || x.t.trim())) out.push({ k: 'sty', st: 'dir', dir: decl, kids, f: ctx.f, decl: true });
-      else out.push(...kids);
-      return true;
     }
     if (name in STY && nd.args.some(Boolean)) {
       acc.flush();

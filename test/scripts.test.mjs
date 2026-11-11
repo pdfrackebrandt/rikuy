@@ -316,6 +316,50 @@ ok('a block is drawn again when the direction before it changes', () => {
   const key = (M) => M.blocks.find((x) => x.items[0].inl && show(x.items[0].inl) === 'نص.').key;
   assert.notEqual(key(a), key(b));
 });
+ok('many switches in one paragraph are runs side by side, not one inside the other', () => {
+  // 550 pairs in one paragraph overflowed the stack (a call per switch): the page then kept
+  // showing the document before. Each run is a wrapper of its own beside the others.
+  const src = doc('', '\\selectlanguage{arabic} مرحبا \\selectlanguage{english} b '.repeat(550).trim());
+  const M = build(src);
+  const it = items(M)[0];
+  assert.equal(items(M).length, 1);
+  assert.equal(it.dir, 'rtl', 'the paragraph runs the way its first words do');
+  const runs = it.inl.filter((x) => x.k === 'sty');
+  assert.equal(runs.length, 550);
+  assert.ok(runs.every((x) => x.st === 'dir' && x.dir === 'ltr' && x.decl && show(x.kids).trim() === 'b' && x.kids.every((y) => y.k === 'seg')), 'English runs turn, none holds another');
+  assert.equal(it.inl.filter((x) => x.k === 'seg' && x.t.includes('مرحبا')).length, 550, 'Arabic runs are the paragraph\'s own words');
+  mapsHold(M, src);
+  assert.deepEqual(lines(build(doc('', 'a \\selectlanguage{arabic}ب \\selectlanguage{hebrew}ג \\selectlanguage{english}d \\selectlanguage{farsi}ه.\n\nو.'))), ['p | a <dir:rtl>ب ג </>d <dir:rtl>ه.</>', 'p rtl | و.'], 'the same direction again goes on in the same run');
+  assert.deepEqual(lines(build(doc(AR, 'ا \\textbf{ب \\selectlanguage{english}c \\bfseries d} ه'))), ['p rtl | ا <bf>ب <dir:ltr>c <bf>d</></></> ه'], 'inside an argument, with a font switch after it');
+  // deep the other way too: 3000 switches, well past where the stack ended
+  assert.equal(items(build(doc('', 'x \\selectlanguage{arabic} ع \\selectlanguage{english} y '.repeat(3000))))[0].inl.filter((x) => x.k === 'sty').length, 3000);
+});
+ok('a long run of comments before many \\selectlanguage builds in linear time', () => {
+  // 50 000 comment lines, then 4 300 switches to a language that changes nothing (203 kB): the
+  // paragraph so far was looked through again for each of them, 1.2 s at every key
+  const src = doc('', '%\n'.repeat(50000) + '\\selectlanguage{german} '.repeat(4300) + 'Text.');
+  assert.ok(src.length > 200000 && src.length < 206000, String(src.length));
+  build(src);
+  const t0 = performance.now();
+  const M = build(src);
+  const ms = performance.now() - t0;
+  assert.deepEqual(lines(M), ['p | Text.']);
+  assert.ok(ms < 500, Math.round(ms) + ' ms');
+  // and the same for environments in a line after many blank nodes
+  const env = doc('', '%c\n'.repeat(40000) + 'x ' + '\\begin{CJK}{UTF8}{gbsn}中\\end{CJK} '.repeat(4000));
+  const t1 = performance.now();
+  assert.equal(items(build(env)).length, 1);
+  assert.ok(performance.now() - t1 < 1000, Math.round(performance.now() - t1) + ' ms');
+});
+ok('the contents run the way the text does where they stand, and follow a change', () => {
+  const at = (lang) => { const M = build(doc('', '\\selectlanguage{' + lang + '}\n\n\\tableofcontents\n\n\\section{S}\nText.')); return M.blocks.find((b) => b.items[0].type === 'toc'); };
+  const ar = at('arabic'), en = at('english');
+  assert.equal(ar.items[0].dir, 'rtl');
+  assert.equal(en.items[0].dir, undefined);
+  assert.notEqual(ar.key, en.key, 'drawn again when the language before them changes');
+  assert.equal(at('hebrew').key.split('\u0000')[2], ar.key.split('\u0000')[2], 'and not when the direction stays');
+  assert.equal(build(doc(AR, '\\tableofcontents\n\\section{S}')).blocks[0].items[0].dir, 'rtl');
+});
 ok('CJK wrappers are transparent', () => {
   for (const env of ['CJK', 'CJK*']) {
     const src = doc('\\usepackage{CJKutf8}', 'Before.\n\n\\begin{' + env + '}{UTF8}{gbsn}\n中文段落。\n\n第二段\\CJKfamily{gkai}楷体。\n\\end{' + env + '}\n\nMixed \\begin{' + env + '}{UTF8}{gbsn}中文\\end{' + env + '} inline.');
