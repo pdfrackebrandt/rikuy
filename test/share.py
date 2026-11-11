@@ -123,9 +123,9 @@ def run():
 
         # ---- leaving: one .tex, and Overleaf
         page.evaluate('''() => { const g = window.rikuy; g.files = new Map([['paper.tex', '\\\\documentclass{article}\\n\\\\begin{document}\\nHello.\\n% comment (Ana): hi\\n\\\\end{document}\\n']]); g.main = 'paper.tex'; g.name = 'paper'; g.assetBlobs.clear(); g.extra.clear(); g.forceRender = true; g.rebuild(); g.persist(); }''')
-        try: page.wait_for_function('() => document.querySelector("#b-save span").textContent === "Save .tex"', timeout=5000)
+        try: page.wait_for_function('() => document.getElementById("b-save").title.includes("paper.tex")', timeout=5000)
         except Exception: pass
-        check('a one file project saves as .tex', page.inner_text('#b-save').strip() == 'Save .tex', page.inner_text('#b-save'))
+        check('a one file project saves as .tex: the LaTeX download names the file', 'Download the LaTeX source, paper.tex' in page.evaluate('document.getElementById("b-save").title'), page.evaluate('document.getElementById("b-save").title'))
         with page.expect_download() as d:
             page.click('#b-save')
         f = d.value

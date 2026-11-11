@@ -11,7 +11,7 @@ it adds are taken out before they run, document.write brings nothing back and th
 sent to a data: document; no STUN request reaches the test's own server. Typing in the caption and
 around the figure patches only the typed characters, undo gives the source back byte for byte, and
 the widget keeps its state through all of it, through zoom and through being moved to another
-page. The tab on the frame opens its command; Alt+click shows it in the source. Save .zip and a
+page. The tab on the frame opens its command; Alt+click shows it in the source. Download LaTeX and a
 share link carry the widget file; a coauthor's copy runs it and compiles with a gray box for the
 fallback. A widget whose file is missing shows its fallback image, then a quiet placeholder, and
 Problems names both, and a missing rikuy.sty. Five widgets of 60 KB each open, run, share and
@@ -308,7 +308,7 @@ try:
         d.value.save_as(zout)
         with zipfile.ZipFile(zout) as z:
             got = {n: z.read(n) for n in z.namelist()}
-        check('Save .zip carries every file byte for byte', got.get('widgets/clt.html') == CLT.encode() and got.get('figures/clt.png') == PNG and got.get('rikuy.sty') == STY.encode() and got.get('main.tex') == orig.encode(), sorted(got))
+        check('Download LaTeX carries every file byte for byte', got.get('widgets/clt.html') == CLT.encode() and got.get('figures/clt.png') == PNG and got.get('rikuy.sty') == STY.encode() and got.get('main.tex') == orig.encode(), sorted(got))
         url = page.evaluate("async () => (await window.rikuy.makeShareLink('coauthor')).url")
         lf = link_files(url)
         check('a share link carries the widget (and, as for any figure, not the fallback)', lf.get('widgets/clt.html') == CLT and 'figures/clt.png' not in lf, sorted(lf))

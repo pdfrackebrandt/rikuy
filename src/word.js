@@ -114,7 +114,9 @@ export const word = {
   // keeps it in IndexedDB; false where this build has no Word
   async keepWord() {
     if (!WORD) return false;
-    await this.wordEngine().run('ping', {});
+    // the worker reports its start in the status line: put back what the line said
+    const keep = $('#st-save').textContent;
+    try { await this.wordEngine().run('ping', {}); } finally { $('#st-save').textContent = keep; }
     return true;
   },
 
@@ -295,8 +297,6 @@ export const word = {
   }
 };
 
-export function installWord(app) {
-  // the caret beside Save: .zip or .tex as before, Word, the PDF
-  const b = $('#b-save-more');
-  if (b) b.addEventListener('click', () => app.openSaveMenu());
-}
+// Save's menu of .zip, Word and PDF, which this bound, is the ribbon's Download group now
+// (src/ribbon.js): nothing is left to install.
+export function installWord() {}

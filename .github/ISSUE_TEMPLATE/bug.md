@@ -4,8 +4,8 @@ about: Something on the page or in a compile went wrong
 labels: bug
 ---
 
-**The document.** Attach the smallest `.tex` (with its `.bib` or images) that shows it, or a zip
-from Rikuy's Save .zip.
+**The document.** Attach the smallest `.tex` (with its `.bib` or images) that shows it, or the zip
+Rikuy's Download LaTeX gives.
 
 **What I did, what I expected, what happened.**
 

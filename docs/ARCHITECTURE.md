@@ -43,6 +43,7 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | the installed app: offline copy, updates, "Make available offline" | `install`, `activate`, the `fetch` listener (`src/sw.js`); `registerApp`, `asset`, `keepOffline`, `OFFLINE_FOLDERS` (`src/pwa.js`); `appPage`, `finishApp` (`build/app.mjs`); `keepPlan`, `keep` (`tex/engine.js`) |
 | Word (.docx in and out, a coauthor's edits back) | `saveDocx`, `openDocx`, `wordEdits` (`src/word.js`); `buildWordDoc` (`src/wordast.js`); `extract` (`src/docx.js`); `planImport`, `mathPatch` (`src/wordsync.js`); `docxToLatex` (`src/wordjobs.js`) |
 | live figures (`\rikuywidget`) | `WidgetLayer`, `widgetDoc`, `WIDGET_CSP` (`src/widget.js`); `Builder.cmd` (kind `widget`), `Renderer.atomEl`; `App.widgetsAllowed`, `widgetResized` |
+| the ribbon (style of a paragraph, lists, Insert, Download) | `ribbonSync`, `setBlockStyle`, `toggleList`, `insertTable`, `downloadPdfNow`, `installRibbon` (`src/ribbon.js`); `PALETTE`, `runPalette`, `afterBlockPos` (`src/app.js`) |
 | equation editing | `App.openMath`, `attachField`, `toField`, `fromField`; `src/minimal.js`, `wordmath.js`, `fences.js` |
 | engine choice, passes, bibliography, indexes | `pickEngine`, `compile`, `runBiber`, `indexTools` (`tex/engine.js`) |
 | a shell escape program | `exec` (`tex/shell.js`); `loadTool`, `make*` (`tex/tools.js`) |

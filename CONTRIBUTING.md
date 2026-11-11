@@ -8,8 +8,8 @@ instead ([SECURITY.md](SECURITY.md)).
 
 Open an issue with:
 
-- the smallest `.tex` file (and its `.bib` or images) that shows the problem, or a zip from
-  Rikuy's **Save .zip**;
+- the smallest `.tex` file (and its `.bib` or images) that shows the problem, or the zip
+  Rikuy's **Download LaTeX** gives;
 - what you did on the page, what you expected and what happened;
 - your browser and its version.
 

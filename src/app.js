@@ -29,6 +29,7 @@ import { TeXEngine, parseTeXLog } from './tex.js';
 import { PdfView } from './pdfview.js';
 import { collab, installCollab } from './collab.js';
 import { word, installWord, isDocx } from './word.js';
+import { ribbon, installRibbon } from './ribbon.js';
 import { shareParam, commentOnly, cleanPath } from './share.js';
 import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
 
@@ -285,6 +286,33 @@ function plainMathError(msg, tex) {
   if (/^Expected & or/.test(m)) return 'A \\begin{…} is not closed by its \\end{…}.';
   return m;
 }
+// What the insert list (\ or Ctrl+K) offers; the ribbon's Insert buttons run the same items.
+const piece = (open, close) => ({ open, close });
+const PALETTE = [
+  { k: 'footnote', d: 'Footnote', t: piece('\\footnote{', '}') },
+  { k: 'cite', d: 'Citation', act: 'cite' },
+  { k: 'ref', d: 'Cross reference', act: 'ref' },
+  { k: 'eqref', d: 'Equation reference', act: 'eqref' },
+  { k: 'emph', d: 'Emphasis', t: piece('\\emph{', '}') },
+  { k: 'textbf', d: 'Bold', t: piece('\\textbf{', '}') },
+  { k: 'texttt', d: 'Typewriter', t: piece('\\texttt{', '}') },
+  { k: 'equation', d: 'Numbered equation', act: 'equation' },
+  { k: 'math', d: 'Inline math', act: 'math' },
+  { k: 'section', d: 'Section heading', t: piece('\n\n\\section{', '}\n\n'), block: true },
+  { k: 'subsection', d: 'Subsection heading', t: piece('\n\n\\subsection{', '}\n\n'), block: true },
+  { k: 'itemize', d: 'Bulleted list', t: piece('\n\n\\begin{itemize}\n  \\item ', '\n\\end{itemize}\n\n'), block: true },
+  { k: 'enumerate', d: 'Numbered list', t: piece('\n\n\\begin{enumerate}\n  \\item ', '\n\\end{enumerate}\n\n'), block: true },
+  { k: 'proposition', d: 'Proposition', t: piece('\n\n\\begin{proposition}\n', '\n\\end{proposition}\n\n'), block: true },
+  { k: 'lemma', d: 'Lemma', t: piece('\n\n\\begin{lemma}\n', '\n\\end{lemma}\n\n'), block: true },
+  { k: 'theorem', d: 'Theorem', t: piece('\n\n\\begin{theorem}\n', '\n\\end{theorem}\n\n'), block: true },
+  { k: 'definition', d: 'Definition', t: piece('\n\n\\begin{definition}\n', '\n\\end{definition}\n\n'), block: true },
+  { k: 'assumption', d: 'Assumption', t: piece('\n\n\\begin{assumption}\n', '\n\\end{assumption}\n\n'), block: true },
+  { k: 'proof', d: 'Proof', t: piece('\n\n\\begin{proof}\n', '\n\\end{proof}\n\n'), block: true },
+  { k: 'label', d: 'Label', t: piece('\\label{', '}') },
+  { k: 'url', d: 'URL', t: piece('\\url{', '}') },
+  { k: 'ldots', d: 'Ellipsis \u2026', t: piece('\\ldots{}', '') },
+  { k: 'newline', d: 'Line break', t: piece('\\\\\n', '') }
+];
 function debounce(fn, ms) { let t = null; const d = (...a) => { clearTimeout(t); t = setTimeout(() => { t = null; fn(...a); }, ms); }; d.flush = (...a) => { clearTimeout(t); t = null; fn(...a); }; d.cancel = () => { clearTimeout(t); t = null; }; d.pending = () => t !== null; return d; }
 
 // ---------------------------------------------------------------------------
@@ -725,6 +753,7 @@ class App {
     $('#docname').textContent = this.name;
     this.lastMs = ms;
     this.updateFileTabs();
+    this.ribbonSoon();
   }
 
   // ---- caret ------------------------------------------------------------------
@@ -733,10 +762,11 @@ class App {
     if (!sel.rangeCount) return null;
     const r = sel.getRangeAt(0);
     if (!this.root.contains(r.startContainer)) return null;
-    if (this.ghost && this.ghost.el.contains(r.startContainer)) return { ghost: true, f: this.ghost.f, p: this.ghost.pos };
+    // (first: the blank paragraph may be standing for a place inside a link, see restoreCaret)
     if (this.pending && r.collapsed && this.pending.node === r.startContainer && this.pending.offset === r.startOffset) {
       return { f: this.pending.f, p: this.pending.p, a: this.pending.p, b: this.pending.p, collapsed: true };
     }
+    if (this.ghost && this.ghost.el.contains(r.startContainer)) return { ghost: true, f: this.ghost.f, p: this.ghost.pos };
     const A = posFromDom(r.startContainer, r.startOffset, this.root);
     if (!A || A.ghost) return null;
     let Bp = A;
@@ -754,7 +784,16 @@ class App {
       if (x && y) { sel.setBaseAndExtent(x.node, x.offset, y.node, y.offset); this.root.focus({ preventScroll: true }); return; }
     }
     const r = this.index.find(c.f, c.p, c.bias ?? -1);
-    if (!r || !r.node) return;
+    if (!r || !r.node) {
+      // No text on the page to hold the caret, and the place is inside what the page does show
+      // (a document that so far is one link: between its braces). The blank paragraph holds the
+      // caret and stands for that place, so what is typed goes there, not after the link.
+      if (this.ghost && this.ghost.sticky && c.f === this.ghost.f && c.p < this.ghost.pos) {
+        this.caretToGhost();
+        this.pending = { f: c.f, p: c.p, node: this.ghost.el.firstChild.firstChild, offset: 1 };
+      }
+      return;
+    }
     if (document.activeElement !== this.root) this.root.focus({ preventScroll: true });
     sel.collapse(r.node, r.offset);
     const back = posFromDom(r.node, r.offset, this.root);
@@ -888,7 +927,7 @@ class App {
 
     $('#b-open').addEventListener('click', () => $('#fileinput').click());
     $('#fileinput').addEventListener('change', (e) => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) this.openFiles(fs); });
-    $('#b-save').addEventListener('click', () => this.save());
+    // (b-save is the ribbon's LaTeX download: src/ribbon.js answers its click)
     $('#b-copy').addEventListener('click', () => this.copySource());
     $('#b-share').addEventListener('click', () => this.openSharePanel());
     $('#guest-send').addEventListener('click', () => this.openSharePanel());
@@ -923,12 +962,13 @@ class App {
     $('#nav-close').addEventListener('click', () => this.toggleNav(false));
     // Where the bar shows icons alone (a phone hides Help and the zoom steps too), the menu
     // panel lists each of its actions by name: the bar's own buttons, pressed from here.
-    for (const id of ['b-open', 'b-save', 'b-save-more', 'b-pdf', 'b-copy', 'b-share', 'b-undo', 'b-redo', 'b-zout', 'zoomv', 'b-zin', 'b-src', 'b-help']) {
+    // The three downloads come first: on a phone the ribbon's end, where they are, is a swipe away.
+    for (const id of ['rb-pdf', 'rb-word', 'b-save', 'b-open', 'b-pdf', 'b-copy', 'b-share', 'b-undo', 'b-redo', 'b-zout', 'zoomv', 'b-zin', 'b-src', 'b-help']) {
       const b = $('#' + id), a = mk('button', 'nav-act');
       a.type = 'button'; a.dataset.for = id;
       const svg = b.querySelector('svg'), lab = b.querySelector('span');
       if (svg) a.appendChild(svg.cloneNode(true));
-      a.appendChild(mk('span', '', lab ? lab.textContent : ''));
+      a.appendChild(mk('span', '', (b.closest('.rb-dl') ? 'Download ' : '') + (lab ? lab.textContent : '')));
       // the zoom steps leave the panel open, to press again
       a.addEventListener('click', () => { if (!/^b-z/.test(id)) this.toggleNav(false); b.click(); if (/^b-z|zoomv/.test(id)) this.navActs(); });
       $('#nav-acts').appendChild(a);
@@ -1569,6 +1609,25 @@ class App {
       return;
     }
     if (!isBalanced(src, c.a, c.b)) { this.toast('That selection crosses structure. Select text inside one paragraph or cell.'); return; }
+    // A selection over several paragraphs: each paragraph's part gets the command of its own.
+    // One command around all of them took the blank lines into its braces, which TeX refuses
+    // ("Paragraph ended before \textbf was complete") and the page showed as one paragraph.
+    const parts = [];
+    for (let p = c.a, m, re = /\n[ \t]*\n\s*/g; p < c.b;) {
+      re.lastIndex = p;
+      m = re.exec(src);
+      const e = m && m.index < c.b ? m.index : c.b;
+      if (e > p && src.slice(p, e).trim()) parts.push([p, e]);
+      p = m && m.index < c.b ? m.index + m[0].length : c.b;
+    }
+    if (parts.length > 1) {
+      if (parts.some(([s, e]) => !isBalanced(src, s, e))) { this.toast('That selection crosses structure. Select text inside one paragraph or cell.'); return; }
+      const edits = [];
+      for (const [s, e] of parts) edits.push({ f: c.f, s: e, e, t: '}' }, { f: c.f, s, e: s, t: open });
+      const grown = parts.length * (open.length + 1);
+      this.commit(edits.reverse(), { f: c.f, p: c.b + grown, selA: c.a + open.length, selB: c.b + grown - 1 }, 'style');
+      return;
+    }
     this.commit([{ f: c.f, s: c.b, e: c.b, t: '}' }, { f: c.f, s: c.a, e: c.a, t: open }], { f: c.f, p: c.b + open.length, selA: c.a + open.length, selB: c.b + open.length }, 'style');
   }
 
@@ -2299,8 +2358,10 @@ class App {
   }
 
   newDisplayMath() {
-    const c = this.caretNow();
-    if (!c || c.ghost) return;
+    let c = this.caretNow();
+    if (!c) return;
+    // in the blank paragraph of a new document too (the ribbon's Equation is pressed there)
+    if (c.ghost) { c = { f: this.ghost.f, a: this.ghost.pos }; this.removeGhost(); }
     const t = '\n\\begin{equation}\n  \n\\end{equation}\n';
     // (the history as it is before the equation: given up empty, it goes back to this)
     this.closeGroup();
@@ -2523,6 +2584,39 @@ class App {
   }
 
   // ---- command palette -------------------------------------------------------------
+  // one item of the insert list, at a place in the text (base) or in the blank paragraph (ghost)
+  insertPiece(base, ghost, open, close) {
+    if (ghost) {
+      this.ghost = ghost;
+      const src = this.src(ghost.f);
+      let nlB = 0; for (let k = ghost.pos - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
+      const pre = '\n'.repeat(Math.max(0, 2 - nlB));
+      const o = open.replace(/^\n+/, '');
+      this.removeGhost();
+      this.commit([{ f: ghost.f, s: ghost.pos, e: ghost.pos, t: pre + o + close }], { f: ghost.f, p: ghost.pos + pre.length + o.length, bias: 1 }, 'insert');
+      return;
+    }
+    const src = this.src(base.f);
+    const inner = base.a !== base.b && isBalanced(src, base.a, base.b) ? src.slice(base.a, base.b) : '';
+    this.commit([{ f: base.f, s: base.a, e: inner ? base.b : base.a, t: open + inner + close }], { f: base.f, p: base.a + open.length + inner.length, bias: 1 }, 'insert');
+  }
+  runPalette(x, base, ghost) {
+    const insertAt = (open, close) => this.insertPiece(base, ghost, open, close);
+    if (x.act === 'math') { if (base) this.restoreCaret({ f: base.f, p: base.a }); this.newMath(); return; }
+    if (x.act === 'equation') { if (base) this.restoreCaret({ f: base.f, p: base.a }); this.newDisplayMath(); return; }
+    if (x.act === 'cite' || x.act === 'ref' || x.act === 'eqref') {
+      const cmd = x.act === 'cite' ? this.citeChoices()[0][0] : x.act;
+      const t = '\\' + cmd + '{}';
+      if (!base) { insertAt(t, ''); return; }
+      this.commit([{ f: base.f, s: base.a, e: base.a, t }], { f: base.f, p: base.a + t.length, bias: 1 }, 'insert');
+      const el = this.findAtomEl({ f: base.f, s: base.a, kind: x.act === 'eqref' ? 'ref' : x.act });
+      if (el) { const info = atomOfEl(el); if (info) (x.act === 'cite' ? this.openCite(el, info) : this.openRef(el, info)); }
+      return;
+    }
+    if (x.raw) { insertAt('\\' + x.k + (/[A-Za-z]$/.test(x.k) ? ' ' : ''), ''); return; }
+    insertAt(x.t.open, x.t.close);
+  }
+
   openPalette() {
     const c = this.caretNow();
     if (!c) return;
@@ -2539,32 +2633,7 @@ class App {
     const list = document.createElement('div'); list.className = 'plist';
     const hint = document.createElement('div'); hint.className = 'hint pad'; hint.textContent = 'Enter inserts the highlighted item. Anything else you type is inserted as a raw command.';
     p.append(inp, list, hint);
-    const B = (open, close) => ({ open, close });
-    const items = [
-      { k: 'footnote', d: 'Footnote', t: B('\\footnote{', '}') },
-      { k: 'cite', d: 'Citation', act: 'cite' },
-      { k: 'ref', d: 'Cross reference', act: 'ref' },
-      { k: 'eqref', d: 'Equation reference', act: 'eqref' },
-      { k: 'emph', d: 'Emphasis', t: B('\\emph{', '}') },
-      { k: 'textbf', d: 'Bold', t: B('\\textbf{', '}') },
-      { k: 'texttt', d: 'Typewriter', t: B('\\texttt{', '}') },
-      { k: 'equation', d: 'Numbered equation', act: 'equation' },
-      { k: 'math', d: 'Inline math', act: 'math' },
-      { k: 'section', d: 'Section heading', t: B('\n\n\\section{', '}\n\n'), block: true },
-      { k: 'subsection', d: 'Subsection heading', t: B('\n\n\\subsection{', '}\n\n'), block: true },
-      { k: 'itemize', d: 'Bulleted list', t: B('\n\n\\begin{itemize}\n  \\item ', '\n\\end{itemize}\n\n'), block: true },
-      { k: 'enumerate', d: 'Numbered list', t: B('\n\n\\begin{enumerate}\n  \\item ', '\n\\end{enumerate}\n\n'), block: true },
-      { k: 'proposition', d: 'Proposition', t: B('\n\n\\begin{proposition}\n', '\n\\end{proposition}\n\n'), block: true },
-      { k: 'lemma', d: 'Lemma', t: B('\n\n\\begin{lemma}\n', '\n\\end{lemma}\n\n'), block: true },
-      { k: 'theorem', d: 'Theorem', t: B('\n\n\\begin{theorem}\n', '\n\\end{theorem}\n\n'), block: true },
-      { k: 'definition', d: 'Definition', t: B('\n\n\\begin{definition}\n', '\n\\end{definition}\n\n'), block: true },
-      { k: 'assumption', d: 'Assumption', t: B('\n\n\\begin{assumption}\n', '\n\\end{assumption}\n\n'), block: true },
-      { k: 'proof', d: 'Proof', t: B('\n\n\\begin{proof}\n', '\n\\end{proof}\n\n'), block: true },
-      { k: 'label', d: 'Label', t: B('\\label{', '}') },
-      { k: 'url', d: 'URL', t: B('\\url{', '}') },
-      { k: 'ldots', d: 'Ellipsis \u2026', t: B('\\ldots{}', '') },
-      { k: 'newline', d: 'Line break', t: B('\\\\\n', '') }
-    ];
+    const items = PALETTE;
     let hi = 0;
     let shown = items;
     const draw = () => {
@@ -2580,37 +2649,7 @@ class App {
         list.appendChild(b);
       });
     };
-    const insertAt = (open, close) => {
-      if (ghost) {
-        this.ghost = ghost;
-        const src = this.src(ghost.f);
-        let nlB = 0; for (let k = ghost.pos - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
-        const pre = '\n'.repeat(Math.max(0, 2 - nlB));
-        const o = open.replace(/^\n+/, '');
-        this.removeGhost();
-        this.commit([{ f: ghost.f, s: ghost.pos, e: ghost.pos, t: pre + o + close }], { f: ghost.f, p: ghost.pos + pre.length + o.length, bias: 1 }, 'insert');
-        return;
-      }
-      const src = this.src(base.f);
-      const inner = base.a !== base.b && isBalanced(src, base.a, base.b) ? src.slice(base.a, base.b) : '';
-      this.commit([{ f: base.f, s: base.a, e: inner ? base.b : base.a, t: open + inner + close }], { f: base.f, p: base.a + open.length + inner.length, bias: 1 }, 'insert');
-    };
-    const run = (x) => {
-      this.closePop(true);
-      if (x.act === 'math') { if (base) this.restoreCaret({ f: base.f, p: base.a }); this.newMath(); return; }
-      if (x.act === 'equation') { if (base) this.restoreCaret({ f: base.f, p: base.a }); this.newDisplayMath(); return; }
-      if (x.act === 'cite' || x.act === 'ref' || x.act === 'eqref') {
-        const cmd = x.act === 'cite' ? this.citeChoices()[0][0] : x.act;
-        const t = '\\' + cmd + '{}';
-        if (!base) { insertAt(t, ''); return; }
-        this.commit([{ f: base.f, s: base.a, e: base.a, t }], { f: base.f, p: base.a + t.length, bias: 1 }, 'insert');
-        const el = this.findAtomEl({ f: base.f, s: base.a, kind: x.act === 'eqref' ? 'ref' : x.act });
-        if (el) { const info = atomOfEl(el); if (info) (x.act === 'cite' ? this.openCite(el, info) : this.openRef(el, info)); }
-        return;
-      }
-      if (x.raw) { insertAt('\\' + x.k + (/[A-Za-z]$/.test(x.k) ? ' ' : ''), ''); return; }
-      insertAt(x.t.open, x.t.close);
-    };
+    const run = (x) => { this.closePop(true); this.runPalette(x, base, ghost); };
     inp.addEventListener('input', () => { hi = 0; draw(); });
     inp.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowDown') { e.preventDefault(); hi = Math.min(shown.length - 1, hi + 1); draw(); }
@@ -2736,7 +2775,7 @@ class App {
           value: '', mode: 'stex', lineNumbers: true, lineWrapping: true, indentUnit: 2, tabSize: 2,
           extraKeys: {
             'Ctrl-Z': () => this.undo(), 'Cmd-Z': () => this.undo(), 'Shift-Ctrl-Z': () => this.redo(), 'Shift-Cmd-Z': () => this.redo(), 'Ctrl-Y': () => this.redo(),
-            'Ctrl-S': () => this.save(), 'Cmd-S': () => this.save(),
+            // (Ctrl+S is the page's own shortcut, heard here too: a second one saved every file twice)
             // Tab indents in the source, so a keyboard that tabbed in stayed caught here, typing tabs
             // into the file: Escape, then Tab or Shift+Tab, moves on to the next control
             'Esc': () => { this.cmTabOut = true; }
@@ -3202,7 +3241,7 @@ class App {
     const fail = (b, e) => { done(b); this.toast(this.gitError(e), 9000); };
     if (!(await G.isRepo(dir))) {
       if (gen !== this.gitGen) return;
-      out.append(mk('div', 'git-intro', 'This project is not a git repository yet. Starting one keeps every commit of it in this browser; Save .zip then gives a clone you can push from your computer.'));
+      out.append(mk('div', 'git-intro', 'This project is not a git repository yet. Starting one keeps every commit of it in this browser; Download LaTeX then gives a .zip that is a clone you can push from your computer.'));
       const row = mk('div', 'git-row');
       row.append(mkBtn('Start a repository', async (e) => {
         const b = e.currentTarget; busy(b, 'Starting…');
@@ -3397,7 +3436,7 @@ class App {
     const host = remoteHost(remote);
     if (from === 'theirs') rem.append(mk('div', 'git-note git-foreign', 'This remote came in the .git folder of the project you opened, so no token is filled in for it. Give one only if ' + host + ' is yours.'));
     else if (from === 'unknown' && tok.value) rem.append(mk('div', 'git-note git-unknown', 'This repository is older than Rikuy\'s record of where remotes come from, so your token is filled in as before. Check that ' + host + ' is yours before you pull or push.'));
-    rem.append(url, tok, legacy.el, prox, rrow, mk('div', 'git-note', 'GitHub and GitLab need a token with write access and, from a browser, a CORS proxy. Inside claude.ai the page can only reach its own server, so pushing works from Rikuy on its own site; here, Save .zip gives a clone to push from your computer.'));
+    rem.append(url, tok, legacy.el, prox, rrow, mk('div', 'git-note', 'GitHub and GitLab need a token with write access and, from a browser, a CORS proxy. Inside claude.ai the page can only reach its own server, so pushing works from Rikuy on its own site; here, Download LaTeX gives a clone to push from your computer.'));
     out.append(rem);
 
     // history
@@ -3434,7 +3473,7 @@ class App {
       hist.append(it);
     }
     out.append(hist);
-    out.append(mk('div', 'git-note', 'Save .zip includes the .git folder, so the download is a clone: unzip it and git log, git push work as usual. isomorphic-git ' + G.version + '.'));
+    out.append(mk('div', 'git-note', 'Download LaTeX gives a .zip with the .git folder in it, so the download is a clone: unzip it and git log, git push work as usual. isomorphic-git ' + G.version + '.'));
     body.replaceChildren(out);
     body.scrollTop = y;
   }
@@ -3500,7 +3539,7 @@ class App {
 
   gitError(e) {
     const m = String((e && (e.message || e.code)) || e);
-    if (/Failed to fetch|NetworkError|Load failed|Content Security Policy|CORS/i.test(m)) return 'Could not reach the remote. From inside claude.ai the page may only talk to its own server; run Rikuy on its own site, or Save .zip and push from your computer. (' + m + ')';
+    if (/Failed to fetch|NetworkError|Load failed|Content Security Policy|CORS/i.test(m)) return 'Could not reach the remote. From inside claude.ai the page may only talk to its own server; run Rikuy on its own site, or Download LaTeX and push from your computer. (' + m + ')';
     if (/401|403|auth/i.test(m)) return 'The remote refused the credentials. Check the token and that it can write to this repository. (' + m + ')';
     if (/MergeConflict|conflict/i.test(m)) return 'Pull found conflicting edits to the same lines. Commit, then merge on your computer, or restore one side. (' + m + ')';
     return m;
@@ -4091,11 +4130,10 @@ class App {
     this.toast('Opened ' + this.main + (texts.size > 1 ? ' and ' + (texts.size - 1) + ' more file' + (texts.size > 2 ? 's' : '') : '') + '.' + (missing.length ? ' Not found: ' + missing.join(', ') + '.' : '') + gitNote + (prev && prev !== this.name ? ' ' + prev + ' is kept under Review, Versions.' : '') + skipNote, skipNote ? 10000 : 7000);
   }
 
-  // The edits that put these pictures of the project into the text: a centered
-  // \includegraphics after the paragraph, list or table the caret is in (inside one, or inside
-  // a heading's braces, the block would stop TeX), at the end of the text when there is no
-  // caret; and \usepackage{graphicx} when the preamble has none. names are safe (openFiles).
-  figureEdits(names) {
+  // Where a block of its own (a picture, a table) goes: after the paragraph, list or table the
+  // caret is in, at the end of the text when there is no caret; and the blank lines it needs
+  // before and after there.
+  afterBlockPos() {
     const c = this.caretNow();
     let f = this.main, p = -1;
     if (c && c.ghost) { f = this.ghost.f; p = this.ghost.pos; }
@@ -4110,12 +4148,20 @@ class App {
     // where the preamble ends and where the text ends are the parser's (model.docBody): a
     // comment that names \begin{document} is neither
     const d = this.model && !this.stale && this.model.main === this.main ? this.model.docBody : null;
-    const main = this.src(this.main);
-    if (p < 0 || (f === this.main && d && p < d.s)) { f = this.main; p = d ? d.e : main.length; }
+    if (p < 0 || (f === this.main && d && p < d.s)) { f = this.main; p = d ? d.e : this.src(this.main).length; }
     const src = this.src(f);
     let nlB = 0; for (let k = p - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
     let nlA = 0; for (let k = p; k < src.length && /\s/.test(src[k]); k++) if (src[k] === '\n') nlA++;
-    const pre = p === 0 ? '' : '\n'.repeat(Math.max(0, 2 - nlB)), post = '\n'.repeat(Math.max(0, 2 - nlA));
+    return { f, p, d, pre: p === 0 ? '' : '\n'.repeat(Math.max(0, 2 - nlB)), post: '\n'.repeat(Math.max(0, 2 - nlA)) };
+  }
+
+  // The edits that put these pictures of the project into the text: a centered
+  // \includegraphics after the paragraph, list or table the caret is in (inside one, or inside
+  // a heading's braces, the block would stop TeX), at the end of the text when there is no
+  // caret; and \usepackage{graphicx} when the preamble has none. names are safe (openFiles).
+  figureEdits(names) {
+    const { f, p, pre, post, d } = this.afterBlockPos();
+    const main = this.src(this.main);
     const tex = names.map((n) => '\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{' + n + '}\n\\end{center}').join('\n\n');
     const edits = [{ f, s: p, e: p, t: pre + tex + post }];
     let shift = 0;
@@ -4167,8 +4213,7 @@ class App {
       }
       document.body.classList.toggle('zip-dirty', !!this.zipDirty);
       const what = this.singleFile() ? this.main.split('/').pop() : 'the project as .zip';
-      $('#b-save').title = (this.zipDirty ? 'Changes since you last saved. ' : '') + 'Download ' + what + ' (Ctrl+S)';
-      $('#b-save span').textContent = this.singleFile() ? 'Save .tex' : 'Save .zip';
+      this.saveTitle();
     };
     this.unsaved = false;
     const fallback = () => show(store(STORE, meta), this.assetBlobs.size > 0 || this.extra.size > 0);
@@ -4330,7 +4375,8 @@ class App {
   // worker) and shows the result with PDF.js. It recompiles a moment after each edit while
   // open; TeX's errors go to the Problems list with their line; clicking the PDF finds the
   // source line (SyncTeX), and clicking the page finds the spot in the PDF.
-  togglePdf(force) {
+  // shown: the pane already holds what the last run left (Download PDF opens it on an error)
+  togglePdf(force, shown) {
     const on = force ?? !document.body.classList.contains('pdf-on');
     if (on && document.body.classList.contains('src-on') && window.innerWidth < 1500) this.toggleSource(false);
     document.body.classList.toggle('pdf-on', on);
@@ -4339,7 +4385,7 @@ class App {
     store(PREFS, this.prefs);
     if (on) {
       this.pdfPane();
-      if (!this.lastPdf || this.pdfStale) this.compilePdf();
+      if (!shown && (!this.lastPdf || this.pdfStale)) this.compilePdf();
     }
     setTimeout(() => { if (this.computePx()) this.relayout(true); }, 30);
   }
@@ -4734,6 +4780,8 @@ class App {
     const mod = isMac ? 'Cmd' : 'Ctrl';
     p.insertAdjacentHTML('beforeend', `
       <p>Rikuy is a writing app for papers: you type on the finished page, and it keeps a LaTeX file up to date behind it.</p>
+      <p>The row of buttons above the page works as in a word processor. Pick Heading or Normal text for the paragraph you are in, make words bold, italic or underlined, start a list. Insert adds a formula, an equation, a table, a picture, a footnote, a citation or a link where the caret is.</p>
+      <p>Download gives you the paper as a PDF, as a Word file or as LaTeX. Live graphs stay live only in the LaTeX download. Preview shows the PDF beside the page.</p>
       <p>The page is typeset from your LaTeX source. Every edit you make on the page is written back into the source as the smallest possible change.</p>
       <dl class="keys">
         <dt>Type, select, delete</dt><dd>As in any editor</dd>
@@ -4753,8 +4801,8 @@ class App {
         <dt>PDF or ${mod}+P</dt><dd>Compiles with TeX Live 2026, running in this browser, and shows the exact PDF: pdfLaTeX, XeLaTeX or LuaLaTeX (Auto reads a <code>% !TeX program</code> line or the preamble). Shell escape runs Ghostscript, gnuplot, Pygments for minted and makeindex here too. It recompiles after each edit; TeX's errors appear under Problems with their line; click the PDF to find that text, click the page to find it in the PDF</dd>
       </dl>
       <p><b>Review</b> lists the comments, then every edit since you opened the project, or since any saved version, with Accept and Reject; tick Show changes on the pages to see them marked like Word's Track Changes. Versions are kept every few minutes, when you leave, when you save the .zip, and under any name you give.</p>
-      <p><b>Share</b> copies a link that opens this document for anyone, ready to type in, with no account: the document travels inside the link and is not uploaded. Coauthors type and comment on the page and send a link back; their edits arrive here as changes to accept or reject. Share also opens the project in Overleaf, and Save gives a plain .tex (or a .zip with several files), so leaving takes one click. From Overleaf: Menu, Download, Source, and drop the .zip on the page. With Overleaf's Git integration, paste the project's address under Git, Clone, and push and pull keep both in step.</p>
-      <p><b>Git</b> makes the project a real repository in this browser: commit, history, compare or restore any commit, branches, push and pull. Save .zip then includes the .git folder, so the download is a clone; opening a .zip or folder that has one brings its history in.</p>
+      <p><b>Share</b> copies a link that opens this document for anyone, ready to type in, with no account: the document travels inside the link and is not uploaded. Coauthors type and comment on the page and send a link back; their edits arrive here as changes to accept or reject. Share also opens the project in Overleaf, and Download LaTeX gives a plain .tex (or a .zip with several files), so leaving takes one click. From Overleaf: Menu, Download, Source, and drop the .zip on the page. With Overleaf's Git integration, paste the project's address under Git, Clone, and push and pull keep both in step.</p>
+      <p><b>Git</b> makes the project a real repository in this browser: commit, history, compare or restore any commit, branches, push and pull. Download LaTeX then gives a .zip with the .git folder in it, so the download is a clone; opening a .zip or folder that has one brings its history in.</p>
       <p><b>Equations</b> work like Word's equation editor, with every name from Word's Math AutoCorrect list.</p>
       <dl class="keys">
         <dt>\\alpha then Space</dt><dd>&alpha;. Any LaTeX or Word name: \\degree, \\cbrt, \\matrix, \\doubleR</dd>
@@ -4859,7 +4907,13 @@ function commonDir(names) {
 }
 function stripTop(n) { const i = n.indexOf('/'); return i > 0 && n.split('/').length > 1 ? n.slice(i + 1) : n; }
 
-Object.assign(App.prototype, collab, word);
+Object.assign(App.prototype, collab, word, ribbon);
+// one item of the insert list, where the caret is: what the ribbon's Insert buttons press
+App.prototype.insertFromPalette = function (k) {
+  const c = this.caretNow(), x = PALETTE.find((y) => y.k === k);
+  if (c && x) this.runPalette(x, c.ghost ? null : { f: c.f, a: c.a, b: c.b }, c.ghost ? this.ghost : null);
+};
+App.prototype.textSigNow = function () { return textSig(this.main, [...this.files.entries()]); };
 // the Word worker's files, asked for as the page asks for its other files (src/word.js)
 App.prototype.assetUrl = asset;
 
@@ -4867,5 +4921,6 @@ const app = new App();
 window.rikuy = app;
 installCollab(app);
 installWord(app);
+installRibbon(app);
 app.isBalanced = isBalanced;
 app.init().catch((e) => { console.error(e); const b = document.getElementById('boot'); if (b) b.textContent = 'Rikuy could not start: ' + e.message; });

@@ -30,6 +30,8 @@ on:
       - 'dev/dist-manifest.txt'
       - 'test/engines.py'
       - 'test/pdf.py'
+      - 'src/ribbon.js'
+      - 'test/ribbon.py'
       - 'test/serve.py'
       - 'test/browser.py'
       - '.github/workflows/tex.yml'
@@ -94,6 +96,8 @@ jobs:
         run: cd test && python3 pdf.py
       - name: The installed app, Make available offline, then a compile with no network
         run: cd test && python3 offline.py
+      - name: The ribbon, with Download PDF compiling and saving the file
+        run: cd test && python3 ribbon.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rikuy-dist
