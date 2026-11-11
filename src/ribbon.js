@@ -293,8 +293,8 @@ export const ribbon = {
     const p = this.makePop($('#rb-dl-menu'), 'pop-dl', 'Download');
     // a menu named by its title; each item under its button's own name ("Download LaTeX")
     p.setAttribute('role', 'menu');
-    p.removeAttribute('aria-modal');
     p.querySelector('.pop-x').setAttribute('role', 'menuitem');
+    this.menuKeys(p);
     for (const id of ['rb-pdf', 'rb-word', 'b-save']) {
       const b = $('#' + id), a = document.createElement('button');
       a.type = 'button'; a.className = 'nav-act'; a.setAttribute('role', 'menuitem'); a.setAttribute('aria-label', b.getAttribute('aria-label')); a.title = b.title;

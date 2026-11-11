@@ -125,6 +125,9 @@ export function unpackTex(s) {
     text = new TextDecoder('utf-8', { fatal: true }).decode(unb64url(s));
   } catch (e) { throw new Error('The link is damaged or cut short.'); }
   if (!text.trim()) throw new Error('The link does not hold a document.');
+  // base64 cut at a multiple of four still decodes: a link shortened on its way (chat and mail
+  // programs do that) would open as the first part of the document. A whole one ends itself.
+  if (!/\\end\s*\{document\}/.test(text)) throw new Error('The link is cut short, or what it holds is not a whole LaTeX document: it has no \\end{document}.');
   return { v: 1, name: 'main.tex', main: 'main.tex', files: [['main.tex', text]], base: null, by: '', role: 'coauthor', own: true };
 }
 

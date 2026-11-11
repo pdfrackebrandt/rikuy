@@ -153,8 +153,10 @@ export const collab = {
     if (o.role === 'back' && base) { await this.takeBack(o, base, theirs); return; }
     // the same coauthor link opened again (bookmarked, or clicked a second time in the chat): they
     // are already in this document, so keep what they have typed instead of resetting it to the
-    // pristine shared copy, which would silently throw their edits away.
-    if (o.role !== 'back' && this.shareCtx && this.shareCtx.base === o.base && this.name === (o.name || o.main) && this.main === o.main) {
+    // pristine shared copy, which would silently throw their edits away. Only a link Share made
+    // says which version it is (its base): one built by hand has none, and a second such link
+    // under the same name may be a revised document, so it opens (the open one kept as a version).
+    if (o.role !== 'back' && !o.own && o.base && this.shareCtx && this.shareCtx.base === o.base && this.name === (o.name || o.main) && this.main === o.main) {
       this.guestMode(true);
       this.toast('You already have this shared document open, so your edits are kept. Earlier versions are under Review, Versions.', 7000);
       return;
@@ -175,7 +177,9 @@ export const collab = {
     this.loadProject(theirs, o.main, name, by ? 'As ' + by + ' shared it' : 'As the link had it');
     // a link that names no sender: the reader's own document from here on (still marked as
     // from a link, so it compiles restricted until they allow more)
-    if (o.own) { this.toast('The document from the link is open. The one you had is under Review, Versions.', 7000); return; }
+    // (a guest's record kept under this name, from an earlier link, would make them a guest of
+    // that sender in this document at the next start)
+    if (o.own) { kvDel('share:' + this.name + '|' + this.main).catch(() => {}); this.toast('The document from the link is open. The one you had is under Review, Versions.', 7000); return; }
     if (o.role === 'back') {
       this.toast(by + "'s copy is open. This browser does not have the version you shared, so their edits cannot be marked; your earlier text is under Review, Versions.", 10000);
       return;

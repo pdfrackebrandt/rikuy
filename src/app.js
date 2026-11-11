@@ -576,6 +576,8 @@ class App {
     const changed = px !== this.px;
     this.px = px;
     $('#zoomv').textContent = this.textFit ? Math.round(px / PX_PER_PT * 100) + '%' : z === 'fit' ? 'Fit' : Math.round(z * 100) + '%';
+    // (its name stays "Fit width", what a press does; the zoom it shows is its description)
+    $('#zoomv').setAttribute('aria-description', 'Zoom: ' + $('#zoomv').textContent);
     // with the text block as wide as the screen, the view starts at the text, not at the margin
     if (this.textFit && changed) requestAnimationFrame(() => { if (this.textFit) this.desk.scrollLeft = Math.max(0, P.ml * px - 6); });
     return changed;
@@ -1113,6 +1115,7 @@ class App {
       a.addEventListener('click', () => { if (!/^b-z/.test(id)) this.toggleNav(false); b.click(); if (/^b-z|zoomv/.test(id)) this.navActs(); });
       $('#nav-acts').appendChild(a);
     }
+    this.menuKeys($('#nav-acts'));
     $('#nt-outline').addEventListener('click', () => this.toggleNav(true, 'outline'));
     $('#nt-problems').addEventListener('click', () => this.toggleNav(true, 'problems'));
     $('#nt-changes').addEventListener('click', () => this.toggleNav(true, 'changes'));
@@ -1963,15 +1966,27 @@ class App {
     }
   }
 
+  // a menu's keys: the arrows step through its items and wrap, Home and End go to the ends
+  menuKeys(el) {
+    el.addEventListener('keydown', (e) => {
+      if (!/^(ArrowDown|ArrowUp|Home|End)$/.test(e.key)) return;
+      const all = [...el.querySelectorAll('[role=menuitem]')].filter((a) => !a.disabled && a.offsetParent);
+      if (!all.length) return;
+      const i = all.indexOf(document.activeElement), n = all.length;
+      const j = e.key === 'Home' || (i < 0 && e.key === 'ArrowDown') ? 0 : e.key === 'End' || i < 0 ? n - 1 : (i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;
+      all[j].focus();
+      e.preventDefault(); e.stopPropagation();
+    });
+  }
+
   makePop(anchor, cls, title) {
     this.closePop();
     if (this.pop) this.closePop(false, true);
     const p = document.createElement('div');
     p.className = 'pop ' + (cls || '');
-    // named by its title, so a screen reader and an agent can tell the dialogs apart; a press
-    // outside closes it, so nothing behind it is in reach while it is open
+    // named by its title, so a screen reader and an agent can tell the dialogs apart. Not
+    // called modal: the page behind stays in reach of Tab, and a press there closes it
     p.setAttribute('role', 'dialog');
-    p.setAttribute('aria-modal', 'true');
     if (title) {
       const h = document.createElement('div');
       h.className = 'pop-h';

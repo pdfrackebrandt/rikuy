@@ -79,15 +79,23 @@ await ok('a hostile or broken #tex= link is refused, with a reason', () => {
   assert.throws(() => unpackTex(b64([0xff])), /damaged or cut short/);
   // the limit: a million characters of base64 pass, one more does not, and neither takes long
   const t0 = Date.now();
-  assert.equal(unpackTex('YWFh'.repeat(250000)).files[0][1].length, 750000);
+  const full = b64('a'.repeat(750000 - 14) + '\\end{document}');
+  assert.equal(full.length, 1e6);
+  assert.equal(unpackTex(full).files[0][1].length, 750000);
   assert.throws(() => unpackTex('YWFh'.repeat(250000) + 'YWFh'), /too large to open: a #tex= link holds up to 750 kB/);
   assert.throws(() => unpackTex('%41'.repeat(400000)), /too large/);
   assert.throws(() => unpackTex('A'.repeat(64e6)), /too large/);
   assert.ok(Date.now() - t0 < 1500, 'in ' + (Date.now() - t0) + ' ms');
   // what is in it is text and stays text: one file under a fixed name, nothing else settable
-  const o = unpackTex(b64('<img src=x onerror=alert(1)>\\input{../../etc/passwd}\u0000'));
+  const o = unpackTex(b64('<img src=x onerror=alert(1)>\\input{../../etc/passwd}\u0000\\end{document}'));
   assert.deepEqual([o.name, o.main, o.files.length, o.files[0][0], o.by, o.role, o.base], ['main.tex', 'main.tex', 1, 'main.tex', '', 'coauthor', null]);
-  assert.equal(o.files[0][1], '<img src=x onerror=alert(1)>\\input{../../etc/passwd}\u0000');
+  assert.equal(o.files[0][1], '<img src=x onerror=alert(1)>\\input{../../etc/passwd}\u0000\\end{document}');
+  // cut at a multiple of four characters the base64 still decodes: refused all the same, as the
+  // document has lost its end; and so is text that never was a document
+  const whole = b64(DOC);
+  for (const n of [40, 100, whole.length - 20 - (whole.length - 20) % 4]) assert.throws(() => unpackTex(whole.slice(0, n)), /cut short, or what it holds is not a whole LaTeX document/, 'cut at ' + n);
+  assert.throws(() => unpackTex(b64('hello world')), /not a whole LaTeX document: it has no \\end\{document\}/);
+  assert.equal(unpackTex(b64(DOC + '% a comment after the end\n')).files[0][1], DOC + '% a comment after the end\n');
   // a pattern that cannot be made slow: a megabyte with no payload in it
   const t1 = Date.now();
   assert.equal(texParam('#' + 'a&'.repeat(500000) + 'x'), null);

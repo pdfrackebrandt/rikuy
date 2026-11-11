@@ -281,6 +281,14 @@ def names(page, width):
         items = menu.get_by_role('menuitem')
         got = [items.nth(k).get_attribute('aria-label') for k in range(items.count())]
         check('a narrow window\'s panel has every action of the bar as a menu item of the same name' + w, got == ACTIONS and all(menu.get_by_role('menuitem', name=n, exact=True).count() == 1 for n in ACTIONS), got)
+        menu.get_by_role('menuitem', name='Open', exact=True).focus()
+        keys = []
+        for k in ('ArrowDown', 'ArrowUp', 'ArrowUp', 'End', 'ArrowDown', 'Home'):
+            page.keyboard.press(k)
+            keys.append(page.evaluate("document.activeElement.getAttribute('aria-label')"))
+        on = [n for n in ACTIONS if not menu.get_by_role('menuitem', name=n, exact=True).is_disabled()]
+        at = on.index('Open')
+        check('the arrow keys step through the menu\'s items that can be pressed, Home and End go to its ends' + w, keys == [on[at + 1], 'Open', on[at - 1], on[-1], on[0], on[0]], keys)
         menu.get_by_role('menuitem', name='Help', exact=True).click()
         page.wait_for_timeout(250)
         check('Help, which the narrow bar hides, opens from there' + w, page.get_by_role('dialog', name='How Rikuy works', exact=True).is_visible())
@@ -399,7 +407,7 @@ def audit(page, cdp, width):
         d = page.get_by_role('dialog', name=name, exact=True)
         try: d.wait_for(timeout=8000)
         except Exception: pass
-        ok = d.count() == 1 and d.get_attribute('aria-modal') == 'true' and d.get_by_role('button', name='Close', exact=True).count() == 1
+        ok = d.count() == 1 and d.get_attribute('aria-modal') is None and d.get_by_role('button', name='Close', exact=True).count() == 1
         opened.append((name, ok))
         look(state, 900 if 'math' in state else 350)
         close_all(page)
@@ -413,7 +421,7 @@ def audit(page, cdp, width):
     page.evaluate('rikuy.undo()')
     dialog('Insert', 'Insert', lambda: page.keyboard.press('Control+k'))
     dialog('Comment', 'Comment', lambda: (page.keyboard.press('Control+Shift+ArrowLeft'), page.keyboard.press('Control+Alt+m')))
-    check('each dialog is a dialog named by its title, modal, with a Close button' + w, all(ok for _, ok in opened) and len(opened) == 7, opened)
+    check('each dialog is a dialog named by its title, with a Close button, and does not call itself modal' + w, all(ok for _, ok in opened) and len(opened) == 7, opened)
     c = page.get_by_role('dialog', name='Citation', exact=True)
     first(); button('Citation').click(); c.wait_for(timeout=8000)
     check('the citation dialog\'s fields have names: style, search, text before and after' + w, c.get_by_role('combobox', name='Citation style', exact=True).count() == 1 and c.get_by_role('searchbox', name='Search the bibliography', exact=True).count() == 1
@@ -544,6 +552,32 @@ def links(p):
           and page.get_by_role('button', name='Send back', exact=True).is_visible(), s)
     go(page, HOME + '#share=1.' + 'A' * 40)
     check('a broken #share= link says so and keeps the open document', toast(page).startswith('Could not open the link: ') and page.evaluate('rikuy.name') == 'Our paper', toast(page))
+    # a second link under the same name is a revised document, not "the one already open"
+    REV = DOC.replace('Second paragraph here.', 'Second paragraph, revised.')
+    go(page, share({'v': 1, 'name': 'Our paper', 'main': 'main.tex', 'files': [['main.tex', REV]], 'by': 'An agent'}))
+    check('a guest who follows a revised link of the same name gets the revised document', src(page) == REV and page.evaluate('rikuy.name') == 'Our paper' and page.evaluate("document.body.classList.contains('guest')"), toast(page))
+    go(page, share({'v': 1, 'name': 'Our paper', 'main': 'main.tex', 'files': [['main.tex', DOC]]}))
+    check('and one with no "by" under that name opens too, as their own', src(page) == DOC and not page.evaluate("document.body.classList.contains('guest')"), toast(page))
+    page.wait_for_timeout(300)
+    go(page, HOME)
+    check('still their own after a new start: the guest\'s record of that name is gone', src(page) == DOC and page.evaluate('rikuy.name') == 'Our paper' and not page.evaluate("document.body.classList.contains('guest')")
+          and page.evaluate('(t) => window.rikuy.api.setSource(t).then(() => true, () => false)', REV))
+    # the same through #tex=, whose document is always called main.tex
+    go(page, share({'v': 1, 'main': 'main.tex', 'files': [['main.tex', DOC]], 'by': 'Alice'}))
+    was = page.evaluate("document.body.classList.contains('guest')")
+    go(page, HOME + '#tex=' + b64(ZH))
+    page.wait_for_timeout(300)
+    go(page, HOME)
+    check('a #tex= link opened after a sender\'s link of the same name is not that sender\'s after a new start', was and src(page) == ZH and not page.evaluate("document.body.classList.contains('guest')")
+          and page.evaluate("document.getElementById('guest').hidden") and page.evaluate('(t) => window.rikuy.api.setSource(t).then(() => true, () => false)', DOC))
+    # base64 cut at a multiple of four still decodes: a document without its end is refused
+    said = []
+    for h in ('#tex=' + b64(REV)[:40], '#tex=' + b64(REV)[:100], '#tex=' + b64('hello world')):
+        page.evaluate("document.getElementById('toast').hidden = true")
+        page.evaluate('(h) => { location.hash = h; }', h)
+        page.wait_for_function("!document.getElementById('toast').hidden", timeout=5000)
+        said.append((toast(page), src(page) == DOC))
+    check('a #tex= link cut where its base64 still decodes, or holding no LaTeX document, opens nothing', all(t == 'Could not open the link: The link is cut short, or what it holds is not a whole LaTeX document: it has no \\end{document}.' and same for t, same in said), said)
     check('no page errors (links)', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e and 'fetch' not in e], errors[:4])
     del kept
     browser.close()

@@ -232,8 +232,9 @@ let a coauthor who does not know LaTeX edit a paper.
    ${SITE}#tex=<base64url of the LaTeX source as UTF-8>
 
    Plain base64 (with +, / and =) is read too. One file, up to 750 kB of LaTeX (1,000,000
-   characters of base64); a longer one is refused with a message. It opens as the person's own
-   new document, named main.tex. In Python:
+   characters of base64); a longer one is refused with a message. It must be a whole document,
+   up to its \\end{document}: that is how a link cut short on its way is told. It opens as the
+   person's own new document, named main.tex. In Python:
 
    link = "${SITE}#tex=" + base64.urlsafe_b64encode(tex.encode("utf-8")).decode()
 
@@ -313,9 +314,10 @@ and name, not by position.
   paragraph and each heading the role heading with its level: click one and type. Edits change
   the LaTeX source.
 - Buttons in the top bar: "Outline and problems", "Open", "Preview" (the PDF beside the page),
-  "Share", "Undo", "Redo", "Zoom out", "Fit width", "Zoom in", "Source" (the LaTeX beside the
-  page), "Help". A narrow window hides some of them; the side panel that "Outline and problems"
-  opens then has them all as menu items of the same names, in a menu named "Actions".
+  "Share", "Undo", "Redo", "Zoom out", "Fit width" (its description is the zoom now, such as
+  "Zoom: 120%"), "Zoom in", "Source" (the LaTeX beside the page), "Help". A narrow window hides
+  some of them; the side panel that "Outline and problems" opens then has them all as menu
+  items of the same names, in a menu named "Actions".
 - The toolbar under it: a combobox "Style of this paragraph" (Normal text, Title, Heading 1 to
   3), and the buttons "Bold", "Italic", "Underline", "Bulleted list", "Numbered list",
   "Formula" (math in the line), "Equation" (numbered, on a line of its own), "Table",
@@ -327,7 +329,8 @@ and name, not by position.
 - Dialogs have the role dialog and their title as name: "New inline math" (from Formula) and
   "Display math" (from Equation), whose field, a textbox named "Equation editor", has the focus
   when the dialog opens (type LaTeX or plain keys; Enter finishes); "Citation", "Share",
-  "Insert", "How Rikuy works". Each has a "Close" button, and Escape closes it.
+  "Insert", "How Rikuy works". Each has a "Close" button, and Escape closes it. None is modal:
+  a press on the page behind one closes it.
 - What TeX is doing, and how a compile ended, is the text of the status region named "PDF
   status". Short notices appear in a status region without a name.
 - The source pane draws only the lines in view. Read the source with rikuy.api.getSource() or
