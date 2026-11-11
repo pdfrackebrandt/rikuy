@@ -28,6 +28,7 @@ const DESCRIPTION = 'A LaTeX editor where you type on the typeset page. TeX Live
 // a pasted link shows, robots.txt, sitemap.xml and llms.txt. Another site sets RIKUY_SITE.
 const SITE = (process.env.RIKUY_SITE || 'https://rikuy-3dl.pages.dev/').replace(/\/*$/, '/');
 const SOURCE = 'https://github.com/pdfrackebrandt/rikuy';
+const VERSION = JSON.parse(fs.readFileSync(R('package.json'), 'utf8')).version;
 const ZERO = '0000000000000000';
 const META = /(<meta name="rikuy-app" content=")([0-9a-f]{16})(")/;
 const WORD = !process.env.RIKUY_NO_WORD && !process.env.RIKUY_SHARE;
@@ -62,9 +63,46 @@ function treeVersion(OUT) {
   } catch (e) { return ''; }
 }
 
+// What a program that fetches the page reads before any script runs: the app's own markup
+// starts 1.4 MB in, after the fonts. So the head names the language, the title and what the app
+// is as data (schema.org), and the body opens with a few plain lines: what Rikuy is, how it is
+// used, and where the guide for agents and the source are. People with a screen see the app
+// instead (the lines are clipped to a pixel, and their links are out of the Tab order); a screen
+// reader reads them as the page's heading; without JavaScript the last line shows.
+const TITLE = 'Rikuy: a LaTeX editor where you type on the typeset page';
+const HOW = 'Open the page and type: the sample document is there to edit. Open takes .tex, .bib, .zip and Word .docx files, the row of buttons formats and inserts, Preview shows the PDF, and Download gives the PDF, a Word file or the LaTeX source.';
+// text into HTML, and JSON into a script element (no "<" left to end the element with)
+const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+export const jsonScript = (o) => JSON.stringify(o).replace(/</g, '\\' + 'u003c');
+
+export function structured() {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: 'Rikuy',
+    description: DESCRIPTION,
+    url: SITE,
+    applicationCategory: 'EducationalApplication',
+    applicationSubCategory: 'LaTeX editor',
+    operatingSystem: 'Any (web browser)',
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    softwareVersion: VERSION,
+    isAccessibleForFree: true,
+    license: 'https://www.gnu.org/licenses/agpl-3.0.html',
+    sameAs: SOURCE
+  };
+}
+
+function intro() {
+  const links = 'For AI agents and other programs: <a href="llms.txt" tabindex="-1">llms.txt</a> (<a href="llms-full.txt" tabindex="-1">the long form</a>). Source code: <a href="' + esc(SOURCE) + '" tabindex="-1">' + esc(SOURCE) + '</a>.';
+  return '<div class="rk-intro"><h1>Rikuy</h1><p>' + esc(DESCRIPTION) + ' Free, with no account.</p><p>' + esc(HOW) + ' ' + links + '</p></div>'
+    + '<noscript><p style="margin:2em auto;max-width:34em;padding:0 1em;font:16px/1.5 system-ui,sans-serif">Rikuy is an app that runs in your browser, so it needs JavaScript: turn it on for this site and load the page again. ' + esc(DESCRIPTION) + '</p></noscript>';
+}
+
 export function appPage(OUT, html, skeleton) {
   const tree = treeVersion(OUT);
-  const head = '<meta name="rikuy-app" content="' + ZERO + '"' + (/^[0-9a-f]{16}$/.test(tree) ? ' data-tree="' + tree + '"' : '') + '>'
+  const head = '<title>' + esc(TITLE) + '</title>'
+    + '<meta name="rikuy-app" content="' + ZERO + '"' + (/^[0-9a-f]{16}$/.test(tree) ? ' data-tree="' + tree + '"' : '') + '>'
     + '<meta name="description" content="' + DESCRIPTION + '">'
     + '<meta name="theme-color" content="' + THEME.light + '" media="(prefers-color-scheme: light)">'
     + '<meta name="theme-color" content="' + THEME.dark + '" media="(prefers-color-scheme: dark)">'
@@ -78,17 +116,25 @@ export function appPage(OUT, html, skeleton) {
     // machines is (llms.txt, below)
     + '<link rel="canonical" href="' + SITE + '">'
     + '<link rel="alternate" type="text/markdown" href="llms.txt" title="Rikuy for AI agents">'
+    + '<link rel="alternate" type="text/markdown" href="llms-full.txt" title="Rikuy for AI agents, the long form">'
     + '<meta property="og:type" content="website"><meta property="og:site_name" content="Rikuy">'
-    + '<meta property="og:title" content="Rikuy: a LaTeX editor where you type on the typeset page">'
+    + '<meta property="og:title" content="' + esc(TITLE) + '">'
     + '<meta property="og:description" content="' + DESCRIPTION + '">'
     + '<meta property="og:url" content="' + SITE + '"><meta property="og:image" content="' + SITE + 'og.png">'
     + '<meta property="og:image:width" content="1600"><meta property="og:image:height" content="940">'
-    + '<meta name="twitter:card" content="summary_large_image">';
+    + '<meta name="twitter:card" content="summary_large_image">'
+    // data, not a script the page runs: a Content-Security-Policy has no say over it
+    + '<script type="application/ld+json">' + jsonScript(structured()) + '</script>'
+    + '<style>.rk-intro{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}</style>';
   if (!skeleton.includes('<meta charset=utf8>')) throw new Error('build.mjs SKELETON changed: no <meta charset=utf8> to put the app head after');
+  if (!skeleton.includes('<html>') || !skeleton.endsWith('<body>')) throw new Error('build.mjs SKELETON changed: no <html> to name the language on, or it does not end with <body>');
   let page = html;
+  // the title belongs in the head (the template's comes first in the body, after </head>)
+  if (!page.startsWith('<title>Rikuy</title>')) throw new Error('src/template.html no longer starts with its <title>');
+  page = page.slice('<title>Rikuy</title>'.length);
   for (const l of libs()) page = page.split('src="' + l.url + '"').join('src="lib/' + l.name + '"');
   if (/<script src="https:/.test(page)) throw new Error('index.html still loads a script from a CDN');
-  return skeleton.replace('<meta charset=utf8>', '<meta charset=utf8>' + head) + page + '</body></html>';
+  return skeleton.replace('<html>', '<html lang="en">').replace('<meta charset=utf8>', '<meta charset=utf8>' + head) + intro() + page + '</body></html>';
 }
 
 export function manifest() {
@@ -134,15 +180,17 @@ export function appFiles(OUT) {
   fs.writeFileSync(O('manifest.webmanifest'), JSON.stringify(manifest(), null, 1) + '\n');
   fs.writeFileSync(O('_headers'), headers());
   fs.writeFileSync(O('404.html'), NOT_FOUND);
-  fs.writeFileSync(O('robots.txt'), 'User-agent: *\nAllow: /\n\nSitemap: ' + SITE + 'sitemap.xml\n');
-  fs.writeFileSync(O('sitemap.xml'), '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n  <url><loc>' + SITE + '</loc></url>\n</urlset>\n');
+  fs.writeFileSync(O('robots.txt'), robots());
+  fs.writeFileSync(O('sitemap.xml'), sitemap());
   fs.writeFileSync(O('llms.txt'), llms());
+  fs.writeFileSync(O('llms-full.txt'), llmsFull());
   fs.copyFileSync(R('docs/screenshot.png'), O('og.png'));
 }
 
 // llms.txt (llmstxt.org): the page is an app, so its HTML tells a machine little. This says what
 // Rikuy is, what a person can do with it, and how an agent hands a person a document that opens
-// in it. The link recipe is src/share.js's format; test/share.test.mjs builds a link by it.
+// in it. The link recipes are src/share.js's formats; test/share.test.mjs builds links by them.
+// What it says of the page (the names of the controls, rikuy.api) test/agent.py does by it.
 export function llms() {
   return `# Rikuy
 
@@ -159,7 +207,8 @@ browser at ${SITE}: documents stay on the person's device, and nothing is sent t
 - Compile with real TeX Live 2026 (pdfLaTeX, XeLaTeX, LuaLaTeX, BibTeX, biber, makeindex,
   TikZ, minted, Asymptote, gnuplot) in the browser and download the PDF.
 - Write in Chinese, Japanese, Korean, Arabic, Hebrew, Hindi, Bengali, Tamil, Telugu, Gujarati,
-  Kannada, Malayalam, Punjabi, Odia, Thai and Sinhala as well: Rikuy offers the font set up when a document has such text, and the page shows right to left documents as the PDF does.
+  Kannada, Malayalam, Punjabi, Odia, Thai and Sinhala as well: Rikuy offers the font set up when
+  a document has such text, and the page shows right to left documents as the PDF does.
 - Open .tex, .bib, .zip (a project downloaded from Overleaf, for one) and Word .docx files, by
   the Open button or by dropping them on the page.${WORD ? `
 - Save as Word (.docx) with real, editable Word equations. A coauthor's edits to that Word file
@@ -178,8 +227,17 @@ let a coauthor who does not know LaTeX edit a paper.
 
 1. Simplest: give them the .tex file (or a .zip with its pictures and .bib) and the address
    ${SITE}. They drop the file on the page.
-2. A link that opens the document, with nothing uploaded: the document travels in the part of
-   the address after #, which browsers never send to a server.
+2. A link with the LaTeX in it, which needs no compression:
+
+   ${SITE}#tex=<base64url of the LaTeX source as UTF-8>
+
+   Plain base64 (with +, / and =) is read too. One file, up to 750 kB of LaTeX (1,000,000
+   characters of base64); a longer one is refused with a message. It opens as the person's own
+   new document, named main.tex. In Python:
+
+   link = "${SITE}#tex=" + base64.urlsafe_b64encode(tex.encode("utf-8")).decode()
+
+3. A shorter link, or one with several files. The document travels compressed:
 
    ${SITE}#share=1.<payload>
 
@@ -189,32 +247,189 @@ let a coauthor who does not know LaTeX edit a paper.
    {"v":1,"name":"My paper","main":"main.tex","files":[["main.tex","\\\\documentclass{article}..."]],"by":"Your name"}
 
    "files" is a list of [name, text] pairs and must hold "main". Text files only: pictures and
-   other binary files need the .zip route. In Python:
+   other binary files need the .zip route. "name" and "by" are optional: without "name" the
+   document is called by its main file. With "by", the person opens it as that sender's guest: a
+   bar says who shared it, their edits are marked as changes, and Send back makes a link that
+   carries their copy back to the sender. Without "by" it is their own document, as with #tex=.
+   In Python:
 
    c = zlib.compressobj(9, zlib.DEFLATED, -15)
    payload = base64.urlsafe_b64encode(c.compress(data) + c.flush()).rstrip(b"=").decode()
 
-   where data is the JSON as UTF-8 bytes. Long links are cut by some chat and mail programs: for
-   more than a few pages, hand over the file.
+   where data is the JSON as UTF-8 bytes.
 
-   A document opened from a link is treated as someone else's: programs it would start through
-   TeX's shell escape stay off until the person allows them.
+What either link does when opened:
+
+- The document travels in the part of the address after #, which browsers never send to a
+  server: nothing is uploaded, and the host puts no limit on its length.
+- It takes the place of the document that was open. That one is not lost: a version of it is
+  kept first, and Review, Versions in the side panel restores it.
+- It is treated as someone else's: programs it would start through TeX's shell escape stay off,
+  and live figures wait for a click, until the person allows them. TeX runs only when the
+  person has the PDF preview open or presses Download PDF.
+- A link that is cut short or is not a document opens nothing: the page says "Could not open
+  the link" with the reason, and the document that was open stays.
+- Size: a #share= link is about two thirds as long as the LaTeX in it, a #tex= link a third
+  longer than it. Rikuy's sample document (5,800 characters in two files) makes a #share= link
+  of 3,700 characters; its .tex alone (4,700 characters) makes a #tex= link of 6,300. Chrome
+  takes addresses up to 2 MB and Firefox up to 1 MB, but chat and mail programs cut long links:
+  under 2,000 characters is safe everywhere (about 3,000 characters of LaTeX as #share=, 1,400
+  as #tex=). For more than a few pages, hand over the file.
+
+## For agents with JavaScript access
+
+window.rikuy.api is a small frozen object that stays the same from version to version. The rest
+of window.rikuy is the app itself and changes without notice.
+
+- version: the build's version, a string.
+- whenReady(): a Promise that resolves when the app has started and the document is on the page.
+- getSource(): the main file's LaTeX, a string.
+- getFiles(): every file of the project: {name, text} for text, {name, bytes} (its size) for a
+  picture or another binary file.
+- setSource(text): a Promise. Replaces the main file as one edit, which one Undo takes back, and
+  resolves when the page shows it. Rejects, changing nothing, if the page cannot read the text.
+- compile(): a Promise of {ok, engine, pages, problems: [{severity, message, file, line}], pdf}.
+  Runs TeX on the document as it is, without opening the preview. ok says that a PDF was made:
+  pdf is then a Uint8Array, else null. TeX's errors and warnings are in problems either way.
+  The first run downloads TeX Live, once: allow some minutes.
+- needs(): the scripts the text is written in that the preamble does not set up, such as
+  ["chinese", "arabic"]; [] when there are none.
+- setUpScripts(): a Promise. Adds the preamble lines for them, as the button Set it up does;
+  resolves to the engine they need ("xelatex" or "lualatex"), or null when nothing was added.
+
+In a guest's view (a document opened from a link with "by") setSource and setUpScripts reject
+with an Error; the others work.
+
+    await rikuy.api.whenReady();
+    await rikuy.api.setSource(rikuy.api.getSource().replace("draft", "final"));
+    const { ok, pdf, problems } = await rikuy.api.compile();
+
+## For agents that click
+
+Every control has one accessible name, the same at every window width. Find controls by role
+and name, not by position.
+
+- The typeset page is one textbox named "Document". Inside it each paragraph has the role
+  paragraph and each heading the role heading with its level: click one and type. Edits change
+  the LaTeX source.
+- Buttons in the top bar: "Outline and problems", "Open", "Preview" (the PDF beside the page),
+  "Share", "Undo", "Redo", "Zoom out", "Fit width", "Zoom in", "Source" (the LaTeX beside the
+  page), "Help". A narrow window hides some of them; the side panel that "Outline and problems"
+  opens then has them all as menu items of the same names, in a menu named "Actions".
+- The toolbar under it: a combobox "Style of this paragraph" (Normal text, Title, Heading 1 to
+  3), and the buttons "Bold", "Italic", "Underline", "Bulleted list", "Numbered list",
+  "Formula" (math in the line), "Equation" (numbered, on a line of its own), "Table",
+  "Picture", "Footnote", "Citation", "Link".
+- Download offers PDF, Word and LaTeX. A wide window has the buttons "Download PDF", "Download
+  Word" and "Download LaTeX". A narrow one has a button "Download", which opens a menu named
+  "Download" with menu items of those three names. LaTeX gives the .tex, or a .zip when the
+  project has several files.
+- Dialogs have the role dialog and their title as name: "New inline math" (from Formula) and
+  "Display math" (from Equation), whose field, a textbox named "Equation editor", has the focus
+  when the dialog opens (type LaTeX or plain keys; Enter finishes); "Citation", "Share",
+  "Insert", "How Rikuy works". Each has a "Close" button, and Escape closes it.
+- What TeX is doing, and how a compile ended, is the text of the status region named "PDF
+  status". Short notices appear in a status region without a name.
+- The source pane draws only the lines in view. Read the source with rikuy.api.getSource() or
+  with Download LaTeX, not from the pane.
+
+## Where documents are kept
+
+In the browser's own storage on the person's device (IndexedDB), for this browser and this
+address only. Nothing is uploaded: the page may connect only to its own address, which serves
+the app's files and takes no documents. A share link carries the document in the link itself.
+Clearing the site's data deletes the documents; Download LaTeX is the copy to keep.
+
+## What it cannot do
+
+- Two people cannot type in the same document at the same moment: they exchange links, and
+  their edits merge.
+- It has no fonts for scripts beyond those named above: none for Khmer, Lao, Tibetan, Georgian,
+  Armenian or Ethiopic, for example.
+- A link carries text files only. Pictures travel as files or in a .zip.
+- The page breaks lines as the browser does, which can differ a little from TeX; the PDF is
+  TeX's own.
+- Programs a document starts through shell escape run only if Rikuy ships them (Ghostscript,
+  gnuplot, Pygments, Asymptote, makeindex, xindy, dvips); Inkscape or R, for example, do not.
+- From this address there is no push or pull to a git server and no handing a project straight
+  to Overleaf, since the page may connect only to its own address. Commits, history and branches
+  work in the browser, and Download LaTeX gives the files to take elsewhere.
+- There is nothing to call over HTTP: no server keeps or compiles documents. An agent that
+  cannot run a browser can still build a link or hand over a file.
+- TeX runs in the browser: slower than on a desktop, and a run that takes more than five minutes
+  is stopped.
 
 ## Facts
 
 - Address: ${SITE}
+- Version: ${VERSION}
 - Price: free. No account, no sign in, no tracking.
 - Source code: ${SOURCE} (see its README, AGENTS.md for coding agents, and SOURCES.md and
   NOTICE for the licenses of the programs it ships)
+- Questions and problems: ${SOURCE}/issues
 - Browsers: tested in Chrome; made for current Edge, Firefox and Safari too, where it is less
   tested.
-- Limits: Chinese, Japanese, Korean and Arabic text has no fonts yet; two people cannot type in
-  the same document at the same moment (they exchange links and their edits merge).
+- The same guide with the keyboard shortcuts and the sample document's source:
+  ${SITE}llms-full.txt
 `;
 }
 
+// llms-full.txt: the same, then what a longer look needs: the keys, the engines and programs,
+// and the LaTeX of the document the page opens with, as an example of what Rikuy reads well.
+export function llmsFull() {
+  const sample = fs.readFileSync(R('sample/main.tex'), 'utf8').replace(/\s+$/, '');
+  return llms() + `
+## Keyboard
+
+Ctrl is Cmd on a Mac.
+
+- Ctrl+B, Ctrl+I, Ctrl+U: bold, italic, underline
+- $ or Ctrl+M: a formula in the line; Ctrl+Shift+E: a numbered equation
+- \\ or Ctrl+K: the list of things to insert (footnote, citation, section, table and more)
+- Ctrl+Z, Ctrl+Shift+Z: undo, redo
+- Ctrl+O: open files; Ctrl+S: download the LaTeX source
+- Ctrl+P: the PDF preview; Ctrl+\\: the source pane; Ctrl+Shift+O: outline, problems, changes
+- Ctrl+Alt+M: comment on the selected words
+- Tab, Ctrl+Enter: next cell, new row in a table
+- Ctrl+Shift+V: paste as plain text
+- Click math, a citation or a cross reference to edit it; Alt+click shows that spot in the source
+- In an equation: names as in LaTeX or Word (\\alpha then Space), a/b for a fraction, x^2 and
+  x_i, Space to step out, Tab to the next empty slot, Enter to finish
+
+## Engines and programs
+
+- Engines: pdfLaTeX, XeLaTeX, LuaLaTeX, and LaTeX with dvips. Auto reads a "% !TeX program"
+  line, or else the preamble (fontspec, ctex and PSTricks lead to XeLaTeX, LuaTeX packages and
+  babel's bidi to LuaLaTeX, everything else to pdfLaTeX).
+- Between passes: BibTeX, biber, makeindex, xindy.
+- Through shell escape, inside the page: Ghostscript (EPS, PostScript, PSTricks), gnuplot,
+  Pygments for minted, Asymptote, dvips.
+
+## The sample document
+
+The page opens with this document on a first visit (main.tex; a refs.bib comes with it):
+
+\`\`\`latex
+${sample}
+\`\`\`
+`;
+}
+
+// robots.txt: everyone may read everything. The crawlers and agents of AI services are named
+// too, each in its own group: some read only a group that names them, and a site that names
+// none is taken by some as not having said.
+const AI_AGENTS = ['GPTBot', 'ChatGPT-User', 'OAI-SearchBot', 'ClaudeBot', 'Claude-User', 'Claude-SearchBot', 'PerplexityBot', 'Perplexity-User',
+  'Google-Extended', 'Applebot-Extended', 'CCBot', 'Bytespider', 'Amazonbot', 'meta-externalagent'];
+export function robots() {
+  return 'User-agent: *\nAllow: /\n\n' + AI_AGENTS.map((a) => 'User-agent: ' + a + '\nAllow: /\n').join('\n') + '\nSitemap: ' + SITE + 'sitemap.xml\n';
+}
+export function sitemap() {
+  return '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+    + ['', 'llms.txt', 'llms-full.txt'].map((p) => '  <url><loc>' + SITE + p + '</loc></url>\n').join('') + '</urlset>\n';
+}
+
 export function cleanApp(OUT) {
-  for (const p of ['lib', 'icons', 'fonts', 'manifest.webmanifest', 'sw.js', '_headers', '404.html', 'robots.txt', 'sitemap.xml', 'llms.txt', 'og.png']) fs.rmSync(path.join(OUT, p), { recursive: true, force: true });
+  for (const p of ['lib', 'icons', 'fonts', 'manifest.webmanifest', 'sw.js', '_headers', '404.html', 'robots.txt', 'sitemap.xml', 'llms.txt', 'llms-full.txt', 'og.png']) fs.rmSync(path.join(OUT, p), { recursive: true, force: true });
 }
 
 // The hosted page's Content-Security-Policy: test/serve.py's (the artifact host's, under which
@@ -252,6 +467,12 @@ export function headers() {
     + rule('/*', 'Content-Security-Policy: ' + CSP, 'X-Content-Type-Options: nosniff', 'X-Frame-Options: DENY', 'Referrer-Policy: no-referrer',
       'Permissions-Policy: accelerometer=(), browsing-topics=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), hid=(), magnetometer=(), microphone=(), midi=(), payment=(), serial=(), usb=(), xr-spatial-tracking=()')
     + ['/', '/index.html', '/sw.js', '/manifest.webmanifest'].map((p) => rule(p, 'Cache-Control: ' + NO_CACHE)).join('')
+    // What agents and crawlers fetch, and only that: readable from a script on any site (they
+    // hold nothing private), and as UTF-8 text (the guides have characters beyond ASCII's reach
+    // in the sample; a default type without a charset reads them as Latin-1).
+    // (text/plain, which a browser shows; it would save a text/markdown file instead of showing it)
+    + [['/llms.txt', 'text/plain'], ['/llms-full.txt', 'text/plain'], ['/robots.txt', 'text/plain'], ['/sitemap.xml', 'application/xml']]
+      .map(([p, t]) => rule(p, 'Access-Control-Allow-Origin: *', 'Content-Type: ' + t + '; charset=utf-8')).join('')
     + ['/tex/p-*', '/tex/t-*', '/tex/b-*', '/tex/w-*', '/tex/m-*', '/fonts/*', '/word/pandoc-*'].map((p) => rule(p, 'Cache-Control: ' + FOREVER)).join('');
 }
 
@@ -280,10 +501,11 @@ function walk(dir, pre = '') {
 //     because the Word worker keeps pandoc itself in IndexedDB once it has checked it
 //     (src/wordworker.js); kept here too, its 16 MB would be stored twice, 4 of them at install
 //   rikuy.html, LICENSES.txt, 404.html, _headers, and what only crawlers and agents read
-//     (robots.txt, sitemap.xml, llms.txt, og.png): in the version, but not served by the worker
+//     (robots.txt, sitemap.xml, llms.txt, llms-full.txt, og.png): in the version, but not served
+//     by the worker
 const PACK = /^tex\/[pbtwm]-[0-9a-f]{16}\.wasm$/;
 const ADDRESSED = /-([0-9a-f]{16})\.[A-Za-z0-9]+$/;
-const NOT_SERVED = new Set(['rikuy.html', 'LICENSES.txt', '404.html', '_headers', '_redirects', 'robots.txt', 'sitemap.xml', 'llms.txt', 'og.png']);
+const NOT_SERVED = new Set(['rikuy.html', 'LICENSES.txt', '404.html', '_headers', '_redirects', 'robots.txt', 'sitemap.xml', 'llms.txt', 'llms-full.txt', 'og.png']);
 const PRECACHE_MAX = 4 * 1024 * 1024;
 const WORD_PART = /^word\/pandoc-[0-9a-f]+-\d+\.bin$/;
 

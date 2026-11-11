@@ -224,6 +224,19 @@ prototype).
   only after the operation worked; the single token of earlier versions (`prefs.gitToken`) moves
   only to a host that asked for it and took it (`onAuthSuccess`), and is dropped as soon as the
   user replaces it.
+- **Links built by hand, and scripts on the page.** `#tex=` and the base64url of one LaTeX file
+  in UTF-8 (`texParam`, `unpackTex`: at most a million characters, valid UTF-8, one file named
+  `main.tex`) is a link with no compression to write. It and a `#share=` link both end in
+  `openLinked()`: the same trial build, the same mark (`markFromLink`, so restricted shell
+  escape), the same replacement of the open project. A link that names no sender (`own`: no
+  `by`, which Share always sets) opens as the reader's own document, with no guest bar.
+  `window.rikuy.api` (`agentApi` in `src/app.js`) is the part of the app a script may count on:
+  eight frozen members, each a thin way into what a person can do (`setSource` is one `commit`,
+  `compile` is `compileResult()`, the run Download PDF makes; the two that write refuse in a
+  guest's view). The controls have one accessible name each at every width (`aria-label` in
+  `src/template.html`), dialogs are named by their titles (`makePop`), and what TeX says goes to
+  one status line (`pdfSay`). `llms.txt` (`build/app.mjs`) tells agents all of this, and
+  `test/agent.py` does what it says.
 
 ## 5. Live figures
 
@@ -756,7 +769,8 @@ PDF.js is a module `import()`, which takes no hash, so it ships in `dist/tex/` b
   escape), `mathfield.py`, `wordmath.py`, `eqextras.py`, `frontier.py`, `share.py` (two browsers: share, comment,
   send back, merge), `stress.py`, `widgets.py` (live figures, under the host's policy),
   `offline.py` (the installed app offline and its updates, served by `pages.py` as Cloudflare Pages
-  serves it), `launch.py` (files opened with the installed app and shared to it); on a corpus,
+  serves it), `launch.py` (files opened with the installed app and shared to it), `agent.py`
+  (`rikuy.api`, the controls by role and name at two widths, links built by hand); on a corpus,
   `corpus_browser.py` (random keystrokes) and `editor_corpus.py` (six edits per document land
   where made, undo byte for byte, projects compile). Each says at its top what it checks.
 - **dev/** drives the worker through `tex/tex-smoke.html`: `texrun.py`, `shellrun.py`,

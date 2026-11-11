@@ -5,7 +5,7 @@ import { changes } from '../src/diff.js';
 import { TeXEngine } from '../src/tex.js';
 
 import zlib from 'node:zlib';
-import { llms } from '../build/app.mjs';
+import { llms, llmsFull, robots, sitemap, structured } from '../build/app.mjs';
 
 let n = 0;
 const ok = (name, f) => Promise.resolve(f()).then(() => { n++; }, (e) => { console.error('FAIL', name); throw e; });
@@ -61,6 +61,17 @@ await ok('a #tex= link gives its LaTeX back, unicode and all', () => {
   assert.equal(shareParam('#tex=QUJD'), null);
 });
 
+// llms.txt's recipe for it: the link it shows and its line of Python give a link that opens
+await ok('a #tex= link built by llms.txt\'s recipe opens', () => {
+  const guide = llms();
+  const m = /^\s*(https:\/\/\S+)#tex=<base64url of the LaTeX source as UTF-8>$/m.exec(guide);
+  assert.ok(m, 'the guide shows the link');
+  assert.ok(/#tex=" \+ base64\.urlsafe_b64encode\(tex\.encode\("utf-8"\)\)\.decode\(\)/.test(guide), 'the Python line');
+  // what that line gives: base64url with its padding
+  const link = m[1] + '#tex=' + Buffer.from(DOC + ' ü ∑', 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_');
+  assert.equal(unpackTex(texParam(link)).files[0][1], DOC + ' ü ∑');
+});
+
 await ok('a hostile or broken #tex= link is refused, with a reason', () => {
   const b64 = (x) => Buffer.from(x).toString('base64url');
   for (const bad of ['', '!!!!', 'A', 'QUJD*', '%E0%A4%A', b64([0xff, 0xfe, 0x41]), b64([0xc3]), b64('   \n\t ')]) assert.throws(() => unpackTex(bad), /damaged or cut short|does not hold a document/, JSON.stringify(bad));
@@ -95,6 +106,38 @@ await ok('a link that names no sender opens as the reader\'s own document', asyn
   assert.equal('own' in (await unpackShare(await link({ by: 'Ana' }))), false);
   assert.equal('own' in (await unpackShare(await link({ role: 'back' }))), false, 'a copy coming back is never one\'s own');
   assert.equal('own' in (await unpackShare(await link({ by: 'Ana', own: true }))), false, 'the link cannot say so itself');
+});
+
+// what the guide says must be what the page does: the limits and names it gives are checked
+// where they are made (test/agent.py does the clicking)
+await ok('llms.txt says what is so, and llms-full.txt adds to it', () => {
+  const guide = llms(), full = llmsFull();
+  assert.ok(!/no fonts yet/.test(guide), 'the old limit is gone');
+  assert.ok(/no fonts for scripts beyond those named above: none for Khmer, Lao, Tibetan, Georgian,\s+Armenian or Ethiopic/.test(guide));
+  for (const h of ['## Handing a person a document', '## For agents with JavaScript access', '## For agents that click', '## Where documents are kept', '## What it cannot do', '## Facts']) assert.ok(guide.includes('\n' + h + '\n'), h);
+  for (const k of ['version', 'whenReady()', 'getSource()', 'getFiles()', 'setSource(text)', 'compile()', 'needs()', 'setUpScripts()']) assert.ok(guide.includes('\n- ' + k + ':'), k);
+  assert.ok(/- Version: \d+\.\d+\.\d+\n/.test(guide) && /- Questions and problems: https:\/\/\S+\/issues\n/.test(guide));
+  assert.ok(/up to 750 kB of LaTeX \(1,000,000\s+characters of base64\)/.test(guide), 'the limit unpackTex has');
+  // the sizes it gives are the sample's
+  assert.ok(full.startsWith(guide) && full.length > guide.length + 4000);
+  for (const h of ['## Keyboard', '## Engines and programs', '## The sample document']) assert.ok(full.includes('\n' + h + '\n'), h);
+  const sample = /```latex\n([\s\S]*?)\n```/.exec(full)[1];
+  assert.ok(sample.startsWith('\\documentclass') && sample.endsWith('\\end{document}'));
+  const tex = Buffer.from(sample + '\n', 'utf8').toString('base64url').length;
+  assert.ok(Math.abs(tex - 6300) < 100, 'the #tex= link of the sample is ' + tex + ' characters');
+});
+
+await ok('robots.txt, the sitemap and the page\'s data for search engines', () => {
+  const r = robots();
+  assert.ok(r.startsWith('User-agent: *\nAllow: /\n'));
+  for (const a of ['GPTBot', 'ChatGPT-User', 'OAI-SearchBot', 'ClaudeBot', 'Claude-User', 'Claude-SearchBot', 'PerplexityBot', 'Perplexity-User', 'Google-Extended', 'Applebot-Extended', 'CCBot', 'Bytespider', 'Amazonbot', 'meta-externalagent']) assert.ok(r.includes('\nUser-agent: ' + a + '\nAllow: /\n'), a);
+  assert.ok(!/Disallow/i.test(r) && /\nSitemap: https:\/\/\S+\/sitemap\.xml\n$/.test(r));
+  const locs = [...sitemap().matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
+  assert.equal(locs.length, 3);
+  assert.ok(locs[1] === locs[0] + 'llms.txt' && locs[2] === locs[0] + 'llms-full.txt');
+  const s = structured();
+  assert.deepEqual([s['@context'], s['@type'], s.name, s.operatingSystem, s.offers.price, s.url], ['https://schema.org', 'SoftwareApplication', 'Rikuy', 'Any (web browser)', '0', locs[0]]);
+  assert.ok(/^\d+\.\d+\.\d+$/.test(s.softwareVersion) && /^https:\/\/github\.com\//.test(s.sameAs) && s.description.length > 40 && s.applicationCategory);
 });
 
 await ok('a link round trips, unicode and all', async () => {

@@ -73,11 +73,17 @@ leaves what people kept behind at the old one: decide it early.
   microphones, location and the like; TeX packs, engine chunks, programs and fonts (named by their
   hash) cached for a year as immutable; the page, `sw.js` and the manifest revalidated on every
   request. `404.html` keeps Pages from answering a missing file with the page.
-- **For crawlers and AI agents**: `robots.txt`, `sitemap.xml`, `llms.txt` (what Rikuy is, what a
-  person can do with it, and how an agent builds a link that opens a document in it), and in the
-  page's head a canonical address and the tags a pasted link's preview reads, with `og.png`
-  (`docs/screenshot.png`). They carry the site's address: `RIKUY_SITE` at build time, by default
-  the hosted copy's. The service worker does not keep them.
+- **For crawlers and AI agents**: `robots.txt` (everyone allowed, the AI services' crawlers by
+  name too), `sitemap.xml`, `llms.txt` (what Rikuy is, what a person can do with it, how an agent
+  builds a link that opens a document in it, the page's controls by name and `rikuy.api`) and
+  `llms-full.txt` (the same with the keys, the engines and the sample's source); these four are
+  served as UTF-8 text with `Access-Control-Allow-Origin: *`, and no other file is. The page
+  itself says what it is before any script runs: `<html lang="en">`, its title and a schema.org
+  `SoftwareApplication` block in the head, and a few plain lines at the top of the body that a
+  screen does not show. Its head also has a canonical address and the tags a pasted link's
+  preview reads, with `og.png` (`docs/screenshot.png`). All carry the site's address:
+  `RIKUY_SITE` at build time, by default the hosted copy's. The service worker keeps none of the
+  five files.
 
 ## Updates reach people this way
 
