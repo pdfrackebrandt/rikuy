@@ -756,6 +756,7 @@ Tests:
   PDFs against a desktop TeX Live). A plausible output is not the target.
 - Patch original sources with small scripts that assert their anchor text exists, so a version
   bump fails loudly. Comments say why, in plain sentences.
-- Run the corpus before publishing. Rikuy's hosted copy is a claude.ai artifact, published
-  from a Claude session (`tex/publish_batches.py` plans the uploads within its 256 MB);
-  anywhere else, serve `dist/`.
+- Run the corpus before publishing. A merge to `main` deploys the hosted copy to Cloudflare
+  Pages (`docs/HOSTING.md`); the copy on claude.ai is an artifact published from a Claude
+  session (`tex/publish_batches.py` plans the uploads within its 256 MB); anywhere else, serve
+  `dist/`.
