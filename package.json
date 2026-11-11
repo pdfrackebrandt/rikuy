@@ -24,7 +24,8 @@
     "test:engines": "cd test && python3 engines.py",
     "test:browser": "cd test && python3 browser.py",
     "serve:app": "python3 test/pages.py 8791",
-    "test:offline": "cd test && python3 offline.py"
+    "test:offline": "cd test && python3 offline.py",
+    "test:agent": "cd test && python3 agent.py"
   },
   "dependencies": {
     "@fontsource/ibm-plex-mono": "^5.3.0",

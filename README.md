@@ -110,6 +110,14 @@ Rikuy's tests run in Chromium, and that is where it is known to work. The bundle
 Chrome 100, Firefox 100 and Safari 15 and later, but nothing tests Firefox or Safari yet; reports
 from them are welcome.
 
+## For AI agents
+
+An agent that wants to hand someone a document, or to drive the editor, reads
+[llms.txt](https://rikuy-3dl.pages.dev/llms.txt): a link with the LaTeX in it
+(`#tex=<base64url>`), the scripting surface `window.rikuy.api` (read and replace the source,
+compile, get the PDF and TeX's problems), and every control's name for an agent that clicks.
+`npm run test:agent` checks all of it.
+
 ## Contributing
 
 Issues and pull requests are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) says how to check a

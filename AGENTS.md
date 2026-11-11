@@ -52,6 +52,7 @@ a command fails, trust the code and fix this file.
 | serve `dist/` as the artifact host does | `npm run serve` (port 8790) | |
 | engines and shell escape in the page | `npm run test:engines` (40 checks) | 9 min |
 | typing on the page | `npm run test:browser` | 20 s (80 s on a busy machine) |
+| Rikuy as an AI agent meets it: `window.rikuy.api`, every control found by role and name at two widths, `#tex=` links, what llms.txt promises | `npm run test:agent` (116 checks with `dist/tex`, 115 without) | 1 min |
 | the installed app: offline, updates, one version at a time, none in the artifact build (and a compile offline where `dist/tex` exists) | `npm run test:offline` | 1 min |
 | opening `.tex`, `.bib` and `.zip` with the installed app (`launchQueue`), and files shared to it | `cd test && python3 launch.py` | 20 s |
 | serve `dist/` as Cloudflare Pages serves the hosted app (`index.html` as the page, `_headers`) | `npm run serve:app` (port 8791) | |
@@ -71,13 +72,14 @@ a command fails, trust the code and fix this file.
 
 - A new unit test: a `test/<name>.test.mjs` file, added to the `test` chain in `package.json`, or a case in the file that already covers the module. A new browser test: a `test/<name>.py` in the style of `test/browser.py` (its helpers `open_page`, `load_doc`, `click_text`, `src`, `check`), named in the Commands table above and, if CI should run it, in `.github/workflows/ci.yml` (no TeX) or `tex.yml` (needs `dist/tex`).
 - A TeX tree without the 3 GB of downloads: every TeX run on `main` keeps its `dist/` as a workflow artifact. `gh run download $(gh run list --workflow tex.yml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId') --name rikuy-dist --dir dist` gives a full `dist/` with `dist/tex/`; `npm run build` then replaces the page in it and leaves `dist/tex/` alone.
+- What an agent using Rikuy (not changing it) reads: `llms.txt` and `llms-full.txt` on the site, written by `llms()` in `build/app.mjs`; the scripting surface is `window.rikuy.api` (`src/app.js`), and `test/agent.py` checks that an agent finds every control by its name.
 - What ships and deploys: a merge to `main` runs `tex.yml`, and `deploy.yml` puts that run's `dist/` on Cloudflare Pages (`docs/HOSTING.md`). Nothing else publishes.
 
 ## Checking a change
 
 Pick the checks by what you touched, and run them before you call it done:
 
-- `src/`: `npm test`, `npm run test:browser`, and `npm run test:corpus` for anything in the model or parser; `test/scripts.py` for direction, the page's fonts or `scripts.js`; `npm run test:offline` and `test/launch.py` for `pwa.js`, `sw.js`, `tex.js` or `build/app.mjs`
+- `src/`: `npm test`, `npm run test:browser`, `npm run test:agent` for any control, dialog, name or `build/app.mjs`'s guides (an agent finds controls by the names listed in `llms.txt`: renaming one is a change to a public interface), and `npm run test:corpus` for anything in the model or parser; `test/scripts.py` for direction, the page's fonts or `scripts.js`; `npm run test:offline` and `test/launch.py` for `pwa.js`, `sw.js`, `tex.js` or `build/app.mjs`
 - `tex/engine.js`, `shell.js`, `tools.js`: `npm run test:engines`; for a fix found on a document, compile it with `dev/texrun.py` before and after
 - the tree or packs: `cd dist/tex && find . -type f | sort | xargs sha256sum | diff ../../dev/dist-manifest.txt -`; any difference must be one you meant
 - a program in `tex/vendor/`: rebuild it from an empty `RIKUY_SRC` (any folder: the builds map their paths away) and compare the hash with the committed file (`vendor.yml` does this on a runner for every pull request that touches `tex/vendor/`, `tex/native/` or `tex/build_tools.sh`); then `dev/asycompare.py` (Asymptote) or `tex/native/xindy/test.cjs` (xindy)
