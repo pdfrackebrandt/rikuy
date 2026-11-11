@@ -346,6 +346,20 @@ function mathLines(tex) {
 // the document's tree, tidied before pandoc writes it; N collects what the user is told
 function tidy(doc, info, textW, N) {
   directions(doc);
+  // Code that Word holds in two runs side by side is one code span: pandoc joins bold and
+  // italic runs that differ in what it does not read, but not code. Rikuy's own files have such
+  // runs wherever the script changes (each has its font and language, indicRuns), and Word
+  // cuts a run at every change of font.
+  const recode = (a) => {
+    for (let i = a.length - 1; i > 0; i--) {
+      const x = a[i], y = a[i - 1];
+      if (!x || !y || x.t !== 'Code' || y.t !== 'Code' || JSON.stringify(x.c[0]) !== JSON.stringify(y.c[0])) continue;
+      y.c[1] += x.c[1];
+      a.splice(i, 1);
+    }
+  };
+  arrays(doc.blocks, recode);
+  for (const v of Object.values(doc.meta || {})) arrays(v, recode);
   let nfig = 0, ntab = 0, neq = 0;
   const floats = new Map(); // bookmark of a caption LaTeX numbers -> the number
   const count = (k, n = 1) => { N[k] = (N[k] || 0) + n; };
@@ -638,6 +652,28 @@ function uncode(tex) {
   return out + tex.slice(pos);
 }
 
+// pandoc writes every space of a code span as "\ ", which keeps the spaces TeX would drop: one
+// at the span's ends, the second of two. A single space between two words needs no keeping, and
+// \texttt{two words} saved as Word and opened again is \texttt{two words}.
+function codeSpaces(tex) {
+  if (!tex.includes('\\ ')) return tex;
+  let out = '', pos = 0;
+  const re = /\\texttt\{/g;
+  for (let mm; (mm = re.exec(tex));) {
+    let d = 1, k = re.lastIndex;
+    for (; k < tex.length && d; k++) { if (tex[k] === '\\') { k++; continue; } if (tex[k] === '{') d++; else if (tex[k] === '}') d--; }
+    if (d) break;
+    const arg = tex.slice(re.lastIndex, k - 1);
+    // not after a command's name (the space would end the name and be gone), nor after a backslash
+    out += tex.slice(pos, re.lastIndex) + arg.replace(/\\ /g, (m, at) => {
+      const before = arg.slice(Math.max(0, at - 60), at), after = arg.slice(at + 2, at + 4);
+      return !before || !after || /\s$|\\ $|\\[A-Za-z]*$|^[A-Za-z]{60}$/.test(before) || /^\s|^\\ /.test(after) ? m : ' ';
+    });
+    pos = re.lastIndex = k - 1;
+  }
+  return out + tex.slice(pos);
+}
+
 // pandoc's marks (premark) in the LaTeX it wrote, each as the command it stands for
 // S: { arabic: the preamble sets Arabic up, rtl: the document itself runs right to left }
 function unmark(tex, info, N, S) {
@@ -860,6 +896,7 @@ export function docxToLatex(P, bytes, name) {
   // (and so the Word file saved from it) showed the word \noalign in the table's cells
   tex = tex.replace(/(\\(?:toprule|midrule|bottomrule))\\noalign\{\}/g, '$1');
   tex = tables(tex);
+  tex = codeSpaces(tex);
   // pandoc's names for underlined and struck text are soul's, which the page does not draw; ulem's
   // it does
   tex = tex.replace(/\\ul\{/g, '\\uline{').replace(/\\st\{/g, '\\sout{');

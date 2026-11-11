@@ -521,12 +521,12 @@ await ok('code keeps no colour marks: a file pandoc wrote with highlighted code 
   assert.match(text(unzip(made).get('word/document.xml')), /<w:rStyle w:val="ImportTok" \/>/);
   const r = open(made);
   assert.ok(bodyOf(r.tex).includes('\\begin{verbatim}\nimport os\nx = "a string"  # comment\n\\end{verbatim}'), r.tex);
-  assert.ok(bodyOf(r.tex).includes('\\texttt{inline\\ code}') && !/textcolor|xcolor/.test(r.tex), r.tex);
+  assert.ok(bodyOf(r.tex).includes('\\texttt{inline code}') && !/textcolor|xcolor/.test(r.tex), r.tex);
   // and a mark that gets into code all the same (here a page break inside a listing and inside an
   // inline code span) is dropped there, not printed as \newpage
   const br = edit(made, (d) => d.replace('<w:t xml:space="preserve">import</w:t>', '<w:t xml:space="preserve">import</w:t><w:br w:type="page"/>').replace(/(<w:rStyle w:val="VerbatimChar" \/><\/w:rPr>)<w:t/, '$1<w:br w:type="page"/><w:t'));
   const t2 = open(br).tex;
-  assert.ok(!/newpage|[\uE000-\uE01F]/.test(t2) && t2.includes('\\begin{verbatim}\nimport os\n') && /\\texttt\{inline\\ code\}/.test(t2), t2);
+  assert.ok(!/newpage|[\uE000-\uE01F]/.test(t2) && t2.includes('\\begin{verbatim}\nimport os\n') && /\\texttt\{inline code\}/.test(t2), t2);
   // a direct colour on a run of code, and on a run in a code style of Word's own
   const col = edit(made, (d) => d.replace(/<w:rStyle w:val="(NormalTok|VerbatimChar)" \/>/g, '<w:rStyle w:val="$1" /><w:color w:val="FF0000" />'));
   assert.ok(!/textcolor/.test(open(col).tex));
@@ -1173,6 +1173,31 @@ await ok('a coauthor\'s edit to a word in one of India\'s scripts is one small p
   const clash = importInto(edit(E.docx, rep('तेज़ी से', 'धीरे से')), new Map([['main.tex', src.replace('तेज़ी', 'जल्दी')]]));
   assert.equal(clash.stats.conflicts, 1);
   assert.ok(clash.files.get('main.tex').includes('जल्दी से') && /% comment \(Ana\) on "[^"]*": In Word: /.test(clash.files.get('main.tex')), clash.files.get('main.tex'));
+});
+
+await ok('a span with two scripts in it comes back from Word as one span: code, bold, italic and the rest, in India\'s scripts, Chinese and Arabic', () => {
+  // each script's run has its own font and language in the Word file (or its direction, or the East Asian hint)
+  const body = 'A \\texttt{कोड தமிழ்} and \\textbf{हिन्दी বাংলা தமிழ்} and \\emph{हिन्दी தமிழ்} here.\n\n'
+    + '\\uline{हिन्दी தமிழ்} \\sout{हिन्दी தமிழ்} \\textcolor[HTML]{C00000}{हिन्दी தமிழ்} \\textsc{हिन्दी தமிழ்} x\\textsuperscript{हिन्दी தமிழ்}.\n\n'
+    + '\\texttt{中文 code} \\texttt{عربي code كلمة} \\textbf{中文 and عربي here} \\texttt{x\\_y z}.';
+  const src = '\\documentclass{article}\n' + linesFor('chinese', 'arabic', 'devanagari', 'bengali', 'tamil').join('\n') + '\n\\usepackage[normalem]{ulem}\n\\usepackage{xcolor}\n\\begin{document}\n' + body + '\n\\end{document}\n';
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  // in the file the code span is two runs, one for each script
+  assert.ok(bare(exported(E).d).includes(run('कोड ', '<w:rStyle w:val="VerbatimChar" />' + NIRMALA + langOf('hi-IN')) + run('தமிழ்', '<w:rStyle w:val="VerbatimChar" />' + NIRMALA + langOf('ta-IN'))));
+  const back = bodyOf(open(E.docx).tex);
+  assert.equal(back, '\\begin{document}\n\n' + body + '\n\n\\end{document}\n');
+  assert.equal(importInto(E.docx, files).files.size, 0);
+  // the spaces of code TeX would drop keep pandoc's "\ ": two together, one at an end; a space after a backslash's name is none
+  const made = P.convert({ from: 'markdown', to: 'docx', 'output-file': 'out.docx' }, 'Code `two words`, `a  b`, `back\\ slash` and `x_y {z} 50%`.\n', {}).files['out.docx'];
+  assert.ok(bodyOf(open(made).tex).includes('\nCode \\texttt{two words}, \\texttt{a\\ \\ b}, \\texttt{back\\textbackslash{} slash} and \\texttt{x\\_y \\{z\\} 50\\%}.\n'), open(made).tex);
+  const ends = bodyOf(open(edit(made, rep('>two words<', '> two words <'))).tex);
+  assert.ok(ends.includes('\\texttt{\\ two words\\ },'), ends);
+  // code runs side by side in a stranger's file are one span too, whatever fonts cut them (pandoc reads no bold on code)
+  const V = (t, rpr = '') => '<w:r><w:rPr><w:rStyle w:val="VerbatimChar"/>' + rpr + '</w:rPr><w:t xml:space="preserve">' + t + '</w:t></w:r>';
+  const st = { 'word/styles.xml': '<w:styles ' + NSW + '><w:style w:type="character" w:styleId="VerbatimChar"><w:name w:val="Verbatim Char"/></w:style></w:styles>' };
+  const cut = bodyOf(open(tiny('<w:p><w:r><w:t xml:space="preserve">See </w:t></w:r>' + V('print(', '<w:rFonts w:ascii="Consolas"/>') + V('"नमस्ते', '<w:rFonts w:cs="Mangal"/><w:lang w:bidi="hi-IN"/>') + V(' வணக்கம்"', '<w:rFonts w:cs="Latha"/><w:lang w:bidi="ta-IN"/>') + V(')') + V(' end', '<w:b/>') + '<w:r><w:t>.</w:t></w:r></w:p>', st)).tex);
+  assert.ok(cut.includes('\nSee \\texttt{print("नमस्ते வணக்கம்") end}.\n'), cut);
 });
 
 console.log('word: ' + n + ' groups of checks passed');

@@ -514,7 +514,10 @@ alignment and the import plan. `src/wordast.js` (in the page) walks the model in
   all nine share, and a joiner or non joiner beside its letters are kept and not listed as lost
   (digits or signs of a script the text has no letter of are, under the script's name, and so
   is Sinhala). Word keeps these scripts as complex script runs cut at every change of font;
-  pandoc joins them. *Save:* `indicRuns` (`src/wordjobs.js`) gives every run of
+  pandoc joins them, bold and italic runs too, but not code: `tidy` makes one code span of
+  code runs side by side, and `codeSpaces` writes a single space in `\texttt` as a space (pandoc
+  writes `\ `, kept for two together and at a span's ends), so `\texttt{two words}` comes back
+  from Word as it went. *Save:* `indicRuns` (`src/wordjobs.js`) gives every run of
   `word/document.xml`, `footnotes.xml` and `comments.xml` that holds one of the scripts
   `w:rFonts w:cs="Nirmala UI"` (after the style) and `w:lang w:bidi` with the script's language
   (`hi-IN`, `bn-IN`, `pa-IN`, `gu-IN`, `or-IN`, `ta-IN`, `te-IN`, `kn-IN`, `ml-IN`, last in the
