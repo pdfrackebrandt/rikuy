@@ -30,7 +30,8 @@ import { PdfView } from './pdfview.js';
 import { collab, installCollab } from './collab.js';
 import { word, installWord, isDocx } from './word.js';
 import { ribbon, installRibbon } from './ribbon.js';
-import { shareParam, commentOnly, cleanPath } from './share.js';
+import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
+import { version as VERSION } from '../package.json';
 import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
 import { scriptNeeds, scriptLines, addScriptSetup, scriptName, scriptSetup, MORE } from './scripts.js';
 
@@ -453,6 +454,9 @@ class App {
     this.srcRebuild = debounce(() => this.fromSource(), 260);
     this.scriptsSoon = debounce(() => this.scriptNotice(), 500);
     this.caps = { sample: null, downloads: null };
+    // settled when init is through: the document is on the page (rikuy.api.whenReady)
+    this.ready = new Promise((yes, no) => { this.readyDone = yes; this.readyFail = no; });
+    this.ready.catch(() => { /* said on the page */ });
   }
 
   async init() {
@@ -500,10 +504,11 @@ class App {
     await this.loadShareCtx();
     // a link with a document in it (#share=...): open that document; the fragment goes, so a
     // reload keeps what was typed since
-    const shared = shareParam(location.hash);
-    if (shared) {
+    // (#tex=...: the same with plain LaTeX in it, for whoever builds a link without compressing)
+    const shared = shareParam(location.hash), tex = shared ? null : texParam(location.hash);
+    if (shared || tex != null) {
       try { history.replaceState(null, '', location.href.split('#')[0]); } catch (e) { /* framed */ }
-      await this.openSharedLink(shared);
+      if (shared) await this.openSharedLink(shared); else await this.openTexLink(tex);
     }
     // someone a document was shared with sees the page; the source is one click away
     if (this.prefs.source && !document.body.classList.contains('guest')) this.toggleSource(true);
@@ -511,6 +516,7 @@ class App {
     if (this.prefs.pdf && window.innerWidth > 860) this.togglePdf(true);
     setTimeout(() => this.ensureMathLive(), 2500);
     this.placeInitialCaret();
+    this.readyDone();
     // files the system handed the installed app: opened with Rikuy, or shared to it
     if (__RIKUY_APP__ && APP.on) { await takeShared(this); takeLaunches(this); }
   }
@@ -804,8 +810,9 @@ class App {
   // What the open project's text needs and its main file does not set up: [] or some of
   // 'chinese', 'arabic' and India's scripts (scriptNeeds), or null where no set up can be
   // offered now.
-  scriptNeedsNow() {
-    if (this.stale || !this.files.has(this.main) || document.body.classList.contains('guest')) return null;
+  // (guestToo: what a shared copy needs, which rikuy.api.needs() says; the notice is its author's)
+  scriptNeedsNow(guestToo) {
+    if (this.stale || !this.files.has(this.main) || (!guestToo && document.body.classList.contains('guest'))) return null;
     const texts = [];
     for (const [n, t] of this.files) if (n === this.main || /\.tex$/i.test(n)) texts.push(t);
     const main = this.src(this.main);
@@ -859,7 +866,7 @@ class App {
     const main = this.src(this.main);
     const next = needs && needs.length ? addScriptSetup(main, needs) : null;
     const d = next == null ? null : diff(main, next);
-    if (!d) return;
+    if (!d) return null;
     // The engine the lines lead to, read from the lines themselves: ctex alone is XeLaTeX's,
     // anything of babel's (bidi, a script set by its characters) is LuaLaTeX's (pickEngine in
     // tex/engine.js reads the same lines).
@@ -873,6 +880,7 @@ class App {
     const chosen = this.engineChoice();
     this.toast(chosen === 'auto' || chosen === engine ? 'Added. The PDF is now made with ' + ENGINE_LABEL[engine] + '.'
       : 'Added. The PDF needs ' + ENGINE_LABEL[engine] + ': set the engine to Auto in the preview.', 6000);
+    return engine;
   }
 
   // Hidden for this project until what it needs changes
@@ -950,7 +958,7 @@ class App {
   // ---- edits & history ----------------------------------------------------------
   commit(edits, caret, kind) {
     // while the pages are stale (see rebuild) only edits made from the text itself go through
-    if (this.stale && !/^(restore|reject|merge|other-tab)$/.test(kind || '')) { this.toast('The page cannot show the document as it is now. Edit the source, or undo.'); return; }
+    if (this.stale && !/^(restore|reject|merge|other-tab|api)$/.test(kind || '')) { this.toast('The page cannot show the document as it is now. Edit the source, or undo.'); return; }
     edits = edits.filter((ed) => { const n = (this.files.get(ed.f) ?? '').length; return ed.s >= 0 && ed.e >= ed.s && ed.e <= n; });
     if (!edits.length) { if (caret) this.restoreCaret(caret); return; }
     const cb = this.caretNow() || caret;
@@ -4715,7 +4723,7 @@ class App {
       this.syncEngineMenu();
       const res = await engine.compile({ project: this.name + '|' + this.main, files: await this.compileFiles(), main: this.main, clean: !!opts.clean, bibSig, engine: this.engineChoice(), shellEscape: this.prefs.shellEscape !== false && !untrusted, untrusted });
       if (gen !== (this.pdfGen || 0)) return; // another project was opened meanwhile
-      this.lastCompile = { read: res.read || [], unkept: res.unkept || [], unkeptScripts: !!res.unkeptScripts, ok: !!res.ok, failed: '' };
+      this.lastCompile = { read: res.read || [], unkept: res.unkept || [], unkeptScripts: !!res.unkeptScripts, ok: !!res.ok, failed: '', engine: res.engine || null, pages: 0 };
       // TeX stopped where a file's pack could not be loaded (offline, or the network failed)
       // the copy on claude.ai has no room for the Chinese and Arabic fonts: say where they are
       if (res.unkeptScripts && SCRIPT_HOST && navigator.onLine !== false) throw Object.assign(new Error('This copy of Rikuy has no room for the Chinese and Arabic fonts this document needs. Open the document in the full Rikuy at ' + SCRIPT_HOST + ' (Download, LaTeX saves it; Open there loads it).'), { scripts: true });
@@ -4743,6 +4751,7 @@ class App {
         // drawn while the pane is closed, the pages would have no width: draw them on reopening
         if (!document.body.classList.contains('pdf-on')) this.pdfStale = true;
         const n = await this.pdfView.show(new Uint8Array(res.pdf), res.synctex ? new Uint8Array(res.synctex) : null);
+        this.lastCompile.pages = n;
         st.innerHTML = '<b>' + this.engineLabel + '</b> · ' + n + (n === 1 ? ' page' : ' pages') + ' · ' + (res.ms / 1000).toFixed(1) + ' s';
         $('#pdf-dl').disabled = false;
       } else {
@@ -4791,6 +4800,23 @@ class App {
       if (again && document.body.classList.contains('pdf-on')) this.compilePdf({ clean: again === 'clean' });
       else if (textSig(this.main, [...this.files.entries()]) !== sig) this.pdfSoon();
     }
+  }
+
+  // One run of TeX for a script (rikuy.api.compile): the PDF of the text as it is now, or why
+  // there is none. As Download PDF does, it opens nothing: the preview stays open or closed as
+  // it was, and the PDF TeX last made is taken when the text has not changed since.
+  async compileResult() {
+    const idle = async () => { while (this.compiling) await new Promise((r) => setTimeout(r, 100)); };
+    await idle();
+    const fresh = !!this.lastPdf && this.lastPdfSig === this.textSigNow() && !!this.lastCompile && this.lastCompile.ok;
+    if (!fresh) { this.pdfPane(); await this.compilePdf(); await idle(); }
+    const c = this.lastCompile || { ok: false, failed: 'another document was opened while TeX ran' };
+    const ok = !!c.ok && !!this.lastPdf;
+    // TeX's own findings; a run that could not start or was stopped has one problem, saying why
+    const problems = c.failed ? [{ severity: 'error', message: c.failed, file: null, line: null }]
+      : this.texIssues.map((x) => ({ severity: x.sev === 'warn' ? 'warning' : x.sev, message: x.msg, file: x.f || null, line: x.line || null }));
+    if (!ok && !problems.some((x) => x.severity === 'error')) problems.unshift({ severity: 'error', message: 'TeX made no PDF', file: null, line: null });
+    return { ok, engine: c.engine || null, pages: ok ? c.pages || 0 : 0, problems, pdf: ok ? new Uint8Array(this.lastPdf.slice(0)) : null };
   }
 
   // Which engine compiles this project: Auto (a magic comment, else what the preamble loads)
@@ -5104,6 +5130,59 @@ function commonDir(names) {
 }
 function stripTop(n) { const i = n.indexOf('/'); return i > 0 && n.split('/').length > 1 ? n.slice(i + 1) : n; }
 
+// ---- for scripts on the page ------------------------------------------------------------
+// window.rikuy.api: what a script on the page (an AI agent's, a test's) may count on. These
+// eight names stay from version to version; the rest of window.rikuy is the app itself and
+// changes without notice. Nothing here does more than a person at the keyboard can: a new
+// source goes through the edit path typing takes (one undo takes it back), a compile is the
+// one Download PDF runs, and a copy someone shared is read here but not changed.
+function agentApi(app) {
+  const flush = () => { if (app.srcRebuild.pending()) app.srcRebuild.flush(); };
+  const mine = (what) => {
+    if (document.body.classList.contains('guest')) throw new Error('rikuy.api.' + what + '() changes the document, and this one is open in guest view (a copy someone shared): a script can read it, not change it. getSource(), getFiles(), needs() and compile() work here.');
+  };
+  return Object.freeze({
+    // the build: the package's version, and in the installed app the hash of its files too
+    version: VERSION + (__RIKUY_APP__ && appInit().on ? '+' + appInit().v : ''),
+    // resolves once the app has started and the document is on the page
+    whenReady() { return app.ready.then(() => undefined); },
+    // the main file's text, as it is now
+    getSource() { flush(); return app.src(app.main); },
+    // every file of the project: text as { name, text }, anything else as { name, bytes }
+    getFiles() {
+      flush();
+      const out = [...app.files].map(([name, text]) => ({ name, text }));
+      const seen = new Set(app.files.keys());
+      for (const m of [app.assetBlobs, app.extra]) for (const [name, b] of m) if (!seen.has(name)) { seen.add(name); out.push({ name, bytes: b.size ?? b.byteLength ?? 0 }); }
+      return out;
+    },
+    // the main file becomes this text, as one edit; resolves when the page shows it
+    async setSource(text) {
+      if (typeof text !== 'string') throw new TypeError('rikuy.api.setSource(text) takes the LaTeX source as a string.');
+      await app.ready;
+      mine('setSource');
+      // a source the page cannot read would leave it showing the old text: refused, as a link's is
+      try { buildModel({ files: new Map([...app.files, [app.main, text]]), main: app.main }); }
+      catch (e) { throw new Error('The page cannot read this source (' + e.message + '). Nothing was changed.'); }
+      // (an open dialog writes what it holds as it closes: before the two texts are compared)
+      app.closePop(true, true);
+      flush();
+      const main = app.src(app.main), d = diff(main, text);
+      if (!d) return;
+      app.closeGroup();
+      app.commit([{ f: app.main, s: d.s, e: d.s + d.del.length, t: d.ins }], null, 'api');
+      app.closeGroup();
+      if (app.src(app.main) !== text) throw new Error('The source could not be changed.');
+    },
+    // one run of TeX on the project as it is: { ok, engine, pages, problems, pdf }
+    async compile() { await app.ready; flush(); return app.compileResult(); },
+    // the scripts the text is in and the preamble does not set up: ids such as 'chinese'
+    needs() { flush(); return [...(app.scriptNeedsNow(true) || [])]; },
+    // what "Set it up" does; resolves to the engine the lines lead to, or null when none were added
+    async setUpScripts() { await app.ready; mine('setUpScripts'); return app.scriptSetUp() || null; }
+  });
+}
+
 Object.assign(App.prototype, collab, word, ribbon);
 // one item of the insert list, where the caret is: what the ribbon's Insert buttons press
 App.prototype.insertFromPalette = function (k) {
@@ -5115,9 +5194,10 @@ App.prototype.textSigNow = function () { return textSig(this.main, [...this.file
 App.prototype.assetUrl = asset;
 
 const app = new App();
+Object.defineProperty(app, 'api', { value: agentApi(app), enumerable: true });
 window.rikuy = app;
 installCollab(app);
 installWord(app);
 installRibbon(app);
 app.isBalanced = isBalanced;
-app.init().catch((e) => { console.error(e); const b = document.getElementById('boot'); if (b) b.textContent = 'Rikuy could not start: ' + e.message; });
+app.init().catch((e) => { console.error(e); app.readyFail(e); const b = document.getElementById('boot'); if (b) b.textContent = 'Rikuy could not start: ' + e.message; });

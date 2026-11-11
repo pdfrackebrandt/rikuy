@@ -1,6 +1,6 @@
 // Share links, comments in the source and the three way merge (src/share.js).
 import assert from 'node:assert/strict';
-import { packShare, unpackShare, shareParam, findComments, commentEdit, stripComments, merge3, mergeProjects, commentOnly } from '../src/share.js';
+import { packShare, unpackShare, shareParam, texParam, unpackTex, findComments, commentEdit, stripComments, merge3, mergeProjects, commentOnly } from '../src/share.js';
 import { changes } from '../src/diff.js';
 import { TeXEngine } from '../src/tex.js';
 
@@ -32,6 +32,69 @@ await ok('a link built by llms.txt\'s recipe opens', async () => {
   assert.equal(got.files[0][1], DOC + ' ü ∑');
   assert.equal(got.by, 'An agent');
   assert.ok(/compressobj\(9, zlib\.DEFLATED, -15\)/.test(guide), 'the Python lines ask for raw DEFLATE');
+});
+
+// a link with the LaTeX itself as base64url after #tex=, no compression
+await ok('a #tex= link gives its LaTeX back, unicode and all', () => {
+  const text = DOC + ' ü — ∑ 😀 中文 عربي';
+  const want = { v: 1, name: 'main.tex', main: 'main.tex', files: [['main.tex', text]], base: null, by: '', role: 'coauthor', own: true };
+  const url = Buffer.from(text, 'utf8').toString('base64url');
+  assert.match(url, /^[A-Za-z0-9_-]+$/);
+  assert.equal(texParam('https://x.test/rikuy/#tex=' + url), url);
+  assert.deepEqual(unpackTex(texParam('https://x.test/rikuy/#tex=' + url)), want);
+  // Python's urlsafe_b64encode pads with =, and most other tools write + and /: read as well,
+  // also when a program wrote the = as %3D
+  const padded = Buffer.from(text + '!', 'utf8').toString('base64').replace(/\+/g, '-').replace(/\//g, '_');
+  assert.ok(padded.endsWith('='));
+  assert.equal(unpackTex(texParam('https://x.test/#tex=' + padded)).files[0][1], text + '!');
+  assert.equal(unpackTex(texParam('https://x.test/#tex=' + padded.replace(/=/g, '%3D'))).files[0][1], text + '!');
+  const plain = Buffer.from('\\documentclass{article}\\begin{document}>>>???~~~\\end{document}', 'utf8').toString('base64');
+  assert.ok(/[+/]/.test(plain), 'the example has a + or a /');
+  assert.equal(unpackTex(texParam('#tex=' + plain)).files[0][1], '\\documentclass{article}\\begin{document}>>>???~~~\\end{document}');
+  // in the fragment only, alone or after another part of it
+  assert.equal(texParam('#a=1&tex=QUJD'), 'QUJD');
+  assert.equal(texParam('https://x.test/render?tex=QUJD'), null);
+  assert.equal(texParam('https://x.test/#latex=QUJD'), null);
+  assert.equal(texParam('https://x.test/'), null);
+  assert.equal(texParam('#tex='), '');
+  // a share link is still a share link
+  assert.equal(shareParam('#tex=QUJD'), null);
+});
+
+await ok('a hostile or broken #tex= link is refused, with a reason', () => {
+  const b64 = (x) => Buffer.from(x).toString('base64url');
+  for (const bad of ['', '!!!!', 'A', 'QUJD*', '%E0%A4%A', b64([0xff, 0xfe, 0x41]), b64([0xc3]), b64('   \n\t ')]) assert.throws(() => unpackTex(bad), /damaged or cut short|does not hold a document/, JSON.stringify(bad));
+  assert.throws(() => unpackTex(b64('   ')), /does not hold a document/);
+  assert.throws(() => unpackTex(b64([0xff])), /damaged or cut short/);
+  // the limit: a million characters of base64 pass, one more does not, and neither takes long
+  const t0 = Date.now();
+  assert.equal(unpackTex('YWFh'.repeat(250000)).files[0][1].length, 750000);
+  assert.throws(() => unpackTex('YWFh'.repeat(250000) + 'YWFh'), /too large to open: a #tex= link holds up to 750 kB/);
+  assert.throws(() => unpackTex('%41'.repeat(400000)), /too large/);
+  assert.throws(() => unpackTex('A'.repeat(64e6)), /too large/);
+  assert.ok(Date.now() - t0 < 1500, 'in ' + (Date.now() - t0) + ' ms');
+  // what is in it is text and stays text: one file under a fixed name, nothing else settable
+  const o = unpackTex(b64('<img src=x onerror=alert(1)>\\input{../../etc/passwd}\u0000'));
+  assert.deepEqual([o.name, o.main, o.files.length, o.files[0][0], o.by, o.role, o.base], ['main.tex', 'main.tex', 1, 'main.tex', '', 'coauthor', null]);
+  assert.equal(o.files[0][1], '<img src=x onerror=alert(1)>\\input{../../etc/passwd}\u0000');
+  // a pattern that cannot be made slow: a megabyte with no payload in it
+  const t1 = Date.now();
+  assert.equal(texParam('#' + 'a&'.repeat(500000) + 'x'), null);
+  assert.equal(texParam('#'.repeat(1e6)), null);
+  assert.ok(Date.now() - t1 < 1000, 'in ' + (Date.now() - t1) + ' ms');
+});
+
+// "by" is optional in a link built by hand: without it there is nobody to be the guest of
+await ok('a link that names no sender opens as the reader\'s own document', async () => {
+  const link = (o) => packShare({ v: 1, main: 'main.tex', files: [['main.tex', DOC]], ...o });
+  const o = await unpackShare(await link({}));
+  assert.equal(o.own, true);
+  assert.equal(o.name, 'main.tex', 'named by its main file');
+  assert.equal((await unpackShare(await link({ by: '   ' }))).own, true);
+  assert.equal((await unpackShare(await link({ by: 7 }))).own, true);
+  assert.equal('own' in (await unpackShare(await link({ by: 'Ana' }))), false);
+  assert.equal('own' in (await unpackShare(await link({ role: 'back' }))), false, 'a copy coming back is never one\'s own');
+  assert.equal('own' in (await unpackShare(await link({ by: 'Ana', own: true }))), false, 'the link cannot say so itself');
 });
 
 await ok('a link round trips, unicode and all', async () => {
