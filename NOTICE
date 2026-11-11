@@ -33,7 +33,8 @@ Built into the TeX engines and tree
   TeX Live 2026. Each package carries its own license, mostly the LaTeX Project Public
   License (LPPL-1.3c), GPL, the SIL Open Font License and public domain; see the package's
   files in the tree and tlpkg/texlive.tlpdb in TeX Live.  www.tug.org/texlive
-  For Chinese and Arabic (the hosted Rikuy only): Amiri (OFL-1.1), the Fandol fonts (GPL-3.0
+  For Chinese, Arabic and India's scripts (the hosted Rikuy only): Amiri and twenty Noto fonts
+  (OFL-1.1), the Fandol fonts (GPL-3.0
   with the font exception), the CJK package (GPL-2.0-or-later) and the Arphic fonts (Arphic
   Public License); LICENSES/third-party/chinese-arabic.txt.
 

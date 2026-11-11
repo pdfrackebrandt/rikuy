@@ -12,8 +12,25 @@
 const HAN = /[⺀-⿟々-〇〡-〩㐀-䶿一-鿿豈-﫿]/;
 const ARABIC = /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/;
 const LETTER = /\p{L}/u;
+// India's scripts: [id, name, its characters, babel's language and locale file, the Noto font
+// the tree carries, the names babel and polyglossia give languages written in it, and for the
+// two scripts babel's onchar has no character range for (2026), the range to tell it]
+export const INDIC = [
+  ['devanagari', 'Devanagari', /[\u0900-\u097F\uA8E0-\uA8FF]/, 'hindi', 'hi', 'Noto Serif Devanagari', /^(hindi|marathi|sanskrit|nepali|konkani|devanagari)$/],
+  ['bengali', 'Bengali', /[\u0980-\u09FF]/, 'bengali', 'bn', 'Noto Serif Bengali', /^(bengali|bangla|assamese)$/],
+  ['gurmukhi', 'Gurmukhi', /[\u0A00-\u0A7F]/, 'punjabi', 'pa', 'Noto Serif Gurmukhi', /^(punjabi|panjabi|gurmukhi)$/, 'Guru = {{0x0A00, 0x0A7F}}'],
+  ['gujarati', 'Gujarati', /[\u0A80-\u0AFF]/, 'gujarati', 'gu', 'Noto Serif Gujarati', /^gujarati$/, 'Gujr = {{0x0A80, 0x0AFF}}'],
+  ['odia', 'Odia', /[\u0B00-\u0B7F]/, 'odia', 'or', 'Noto Sans Oriya', /^(odia|oriya)$/],
+  ['tamil', 'Tamil', /[\u0B80-\u0BFF]/, 'tamil', 'ta', 'Noto Serif Tamil', /^tamil$/],
+  ['telugu', 'Telugu', /[\u0C00-\u0C7F]/, 'telugu', 'te', 'Noto Serif Telugu', /^telugu$/],
+  ['kannada', 'Kannada', /[\u0C80-\u0CFF]/, 'kannada', 'kn', 'Noto Serif Kannada', /^kannada$/],
+  ['malayalam', 'Malayalam', /[\u0D00-\u0D7F]/, 'malayalam', 'ml', 'Noto Serif Malayalam', /^malayalam$/]
+];
+const INDIC_ANY = /[\u0900-\u0D7F\uA8E0-\uA8FF]/;
+// What a person calls the script with that id: 'Chinese', 'Arabic', 'Devanagari', ...
+export const scriptName = (id) => (id === 'chinese' ? 'Chinese' : id === 'arabic' ? 'Arabic' : (INDIC.find((x) => x[0] === id) || [0, id])[1]);
 // a character of either script, anywhere: most documents have none and are then not read at all
-const EITHER = new RegExp(HAN.source + '|' + ARABIC.source);
+const EITHER = new RegExp(HAN.source + '|' + ARABIC.source + '|' + INDIC_ANY.source);
 // A preamble is read up to here. No real one is longer, and a stranger's document (a link, a
 // .zip) is read on the page at every key: with the bounds on each argument below, even one made
 // to be slow (a megabyte of "\usepackage[" never closed) takes a moment, not minutes.
@@ -55,7 +72,11 @@ function titlesOf(pre) {
 function count(text) {
   const out = { chinese: 0, arabic: 0, letters: 0 };
   for (const ch of proseOf(text)) {
-    if (HAN.test(ch)) { out.chinese++; out.letters++; } else if (ARABIC.test(ch)) { if (LETTER.test(ch)) { out.arabic++; out.letters++; } } else if (LETTER.test(ch)) out.letters++;
+    if (HAN.test(ch)) { out.chinese++; out.letters++; } else if (ARABIC.test(ch)) { if (LETTER.test(ch)) { out.arabic++; out.letters++; } } else if (INDIC_ANY.test(ch)) {
+      // (a script of India is a key of its own only when the text has it)
+      const x = INDIC.find((y) => y[2].test(ch));
+      if (x && LETTER.test(ch)) { out[x[0]] = (out[x[0]] || 0) + 1; out.letters++; }
+    } else if (LETTER.test(ch)) out.letters++;
   }
   return out;
 }
@@ -101,7 +122,9 @@ export function scriptSetup(tex) {
       has('ctex', 'xeCJK', 'CJK', 'CJKutf8', 'luatexja', 'luatexja-fontspec', 'luatexja-preset', 'zxjatype', 'xeCJKfntef', 'kotex', 'xetexko') ||
       provided.some((l) => /^(chinese|japanese|korean)/.test(l)) || babel.some((l) => /^chinese/.test(l)),
     arabic: has('arabtex', 'arabxetex', 'arabi', 'arabluatex', 'bidi', 'xepersian', 'luabidi') || /^(xepersian|arabic)/i.test(cls.name) ||
-      provided.some((l) => RTL_LANGUAGES.test(l)) || babel.some((l) => RTL_LANGUAGES.test(l) || /^bidi\s*=/.test(l)) || poly.some((l) => RTL_LANGUAGES.test(l))
+      provided.some((l) => RTL_LANGUAGES.test(l)) || babel.some((l) => RTL_LANGUAGES.test(l) || /^bidi\s*=/.test(l)) || poly.some((l) => RTL_LANGUAGES.test(l)),
+    // India's scripts, a key each when set up: a language written in the script, however loaded
+    ...Object.fromEntries(INDIC.map((x) => [x[0], [...provided, ...babel, ...poly].some((l) => x[6].test(l)) || (x[0] === 'devanagari' && has('devanagari', 'devnag'))]).filter((e) => e[1]))
   };
 }
 
@@ -117,12 +140,14 @@ export function scriptNeeds(mainTex, texts) {
   for (const t of list) {
     const c = count(t === mainTex ? bodyOf(t) : t);
     n.chinese += c.chinese; n.arabic += c.arabic; n.letters += c.letters;
+    for (const x of INDIC) if (c[x[0]]) n[x[0]] = (n[x[0]] || 0) + c[x[0]];
   }
   // a title or an author's name stands in the preamble: text as well, though not weighed below
   const head = count(titlesOf(preambleOf(mainTex)));
   const have = scriptSetup(mainTex);
   if ((n.chinese || head.chinese) && !have.chinese) out.push('chinese');
   if ((n.arabic || head.arabic) && !have.arabic) out.push('arabic');
+  for (const x of INDIC) if ((n[x[0]] || head[x[0]]) && !have[x[0]]) out.push(x[0]);
   // a document mostly in Arabic is an Arabic document: its paragraphs run from the right
   out.arabicMain = n.arabic > n.letters / 2;
   return out;
@@ -167,11 +192,17 @@ function plan(needs, tex) {
   const babel = pkgs.get('babel') || '';
   const lines = [];
   const chinese = () => lines.push('\\babelprovide[import, onchar=ids fonts]{chinese}', '\\babelfont[chinese]{rm}{FandolSong}');
-  if (needs.includes('arabic')) {
+  const indic = INDIC.filter((x) => needs.includes(x[0]));
+  if (needs.includes('arabic') || indic.length) {
     if (has(XE_ONLY) || CJK_CLASS.test(cls.name) || (pkgs.has('ctex') && !ownCtex)) return null;
-    if (!pkgs.has('babel')) lines.push('\\usepackage[english, bidi=basic]{babel} % LuaLaTeX orders right to left text by itself');
-    lines.push(needs.arabicMain ? '\\babelprovide[import, main]{arabic}' : '\\babelprovide[import, onchar=ids fonts]{arabic}');
-    lines.push((needs.arabicMain ? '\\babelfont{rm}' : '\\babelfont[arabic]{rm}') + '[Renderer=Harfbuzz]{Amiri}');
+    if (needs.includes('arabic')) {
+      if (!pkgs.has('babel')) lines.push('\\usepackage[english, bidi=basic]{babel} % LuaLaTeX orders right to left text by itself');
+      lines.push(needs.arabicMain ? '\\babelprovide[import, main]{arabic}' : '\\babelprovide[import, onchar=ids fonts]{arabic}');
+      lines.push((needs.arabicMain ? '\\babelfont{rm}' : '\\babelfont[arabic]{rm}') + '[Renderer=Harfbuzz]{Amiri}');
+    } else if (!pkgs.has('babel')) lines.push('\\usepackage[english]{babel} % LuaLaTeX sets each script in its own font');
+    // HarfBuzz shapes India's scripts (conjuncts, vowel signs that stand before their consonant)
+    for (const x of indic) if (x[7]) lines.push('\\directlua{Babel.script_blocks.' + x[7] + '} % where ' + x[1] + "'s characters are: babel has no entry");
+    for (const x of indic) lines.push('\\babelprovide[import=' + x[4] + ', onchar=ids fonts]{' + x[3] + '}', '\\babelfont[' + x[3] + ']{rm}[Renderer=Harfbuzz]{' + x[5] + '}');
     if (needs.includes('chinese') || ownCtex) chinese();
     return { lines, dropCtex: ownCtex };
   }
@@ -207,7 +238,7 @@ export function addScriptSetup(tex, needs) {
   const eol = tex.includes('\r\n') ? '\r\n' : '\n';
   let pre = tex.slice(0, at);
   if (p.dropCtex) pre = pre.replace(OWN_CTEX, '');
-  if (p.lines.some((l) => l.startsWith('\\babelprovide')) && !p.lines.some((l) => l.includes('{babel}'))) {
+  if (needs.includes('arabic') && !p.lines.some((l) => l.includes('{babel}'))) {
     // babel is loaded already: find where, in the part of the preamble that is read at all and
     // outside comments, whatever lines its options run over
     const head = pre.slice(0, PRE_MAX);

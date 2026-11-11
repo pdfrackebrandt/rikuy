@@ -116,9 +116,9 @@ file in the local tree it asks the mirror (BusyTeX's `kpse_remote_fetch_js` hook
 downloads only what it uses. A page on claude.ai can only reach its own server, so the mirror
 works on a self-hosted Rikuy, not inside the artifact.
 
-## Chinese and Arabic
+## Chinese, Arabic and India's scripts
 
-LaTeX's default fonts have neither script. The tree carries what three common routes need
+LaTeX's default fonts have none of these scripts. The tree carries what three common routes need
 (`SCRIPT_PICKS`, `SCRIPT_SETS` and `SCRIPT_LINKED` in `build_tree.py`):
 
 - XeLaTeX with ctex or xeCJK and the Fandol fonts (Song, Hei, Kai, Fang Song: simplified
@@ -126,11 +126,16 @@ LaTeX's default fonts have neither script. The tree carries what three common ro
 - LuaLaTeX with babel's `bidi=basic` and Amiri, the one route on which TeX orders mixed right to
   left and left to right text by itself; polyglossia with XeLaTeX works too, with its
   `\textarabic` and `\textenglish` marks.
+- LuaLaTeX with babel's `onchar` and HarfBuzz for nine scripts of India, in Noto Serif
+  Devanagari, Bengali, Gurmukhi, Gujarati, Tamil, Telugu, Kannada and Malayalam and Noto Sans
+  Oriya (regular and bold; Noto Nastaliq Urdu is there by name). babel has no character range
+  for Gurmukhi and Gujarati, so the set up tells it in a `\directlua` line. polyglossia with
+  XeLaTeX finds the same fonts by name.
 - pdfLaTeX with the CJK package (`CJKutf8`) and the Arphic fonts `gbsn`, `gkai` (simplified),
   `bsmi`, `bkai` (traditional).
 
-`src/scripts.js` writes the set up lines for the first two when a document has such text and no
-set up, and `pickEngine` reads them. These 47 MB travel in 24 packs of their own, marked `x` in
+`src/scripts.js` writes the set up lines for the first three when a document has such text and no
+set up, and `pickEngine` reads them. These 48 MB travel in 26 packs of their own, marked `x` in
 the index and written after all others, so that no other pack's bytes depend on them: the hosted
 Rikuy serves them, `publish_batches.py` leaves them out of the artifact (which has 2 MB to
 spare), and a compile that misses only such packs says where the hosted Rikuy is

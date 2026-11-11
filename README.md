@@ -50,11 +50,13 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   placed (text you changed meanwhile, generated numbers, a new table row) as a comment where it
   was. pandoc, compiled to WebAssembly, does the conversions in the browser; it loads (16 MB, once)
   only when a Word action is used. Not in the copy on claude.ai, which has no room for it.
-- **Chinese and Arabic.** A document in either script compiles: Fandol fonts with ctex or xeCJK
-  (XeLaTeX), Amiri with babel's `bidi=basic` (LuaLaTeX), the CJK package with Arphic fonts
-  (pdfLaTeX). Type such text into a plain document and Rikuy offers the set up lines at one
+- **Chinese, Arabic and India's scripts.** Documents in them compile: Fandol fonts with ctex or
+  xeCJK (XeLaTeX), Amiri with babel's `bidi=basic` (LuaLaTeX), the CJK package with Arphic fonts
+  (pdfLaTeX), and Noto fonts with HarfBuzz for Devanagari (Hindi, Marathi), Bengali, Tamil,
+  Telugu, Gujarati, Kannada, Malayalam, Gurmukhi and Odia (LuaLaTeX). Type such text into a
+  plain document and Rikuy offers the set up lines at one
   click. A right to left document reads right to left on the page, and Word files in both
-  scripts open and save. On the hosted build; the copy on claude.ai has no room for the fonts.
+  these scripts open and save. On the hosted build; the copy on claude.ai has no room for the fonts.
 - **Live figures.** `\rikuywidget{plot.html}{plot.png}` from `rikuy.sty` (in `sample/widget/`,
   copied beside the document) runs a self contained HTML widget, sliders and all, on the typeset
   page, sandboxed; every TeX, Overleaf's included, prints the PNG. Widgets in a document from
@@ -74,7 +76,7 @@ mismatch with its cause: [PLAN.md](PLAN.md).
 
 ## Running it
 
-Rikuy is one HTML page plus `dist/tex/` (about 298 MB of engines, TeX packs and programs, 47 MB of it the fonts for Chinese and Arabic), which
+Rikuy is one HTML page plus `dist/tex/` (about 299 MB of engines, TeX packs and programs, 48 MB of it the fonts for Chinese, Arabic and India's scripts), which
 any static web server can serve (`dist/index.html` is the page); the page fetches packs as a
 document needs them. Served that way it is an app the browser can install: after one visit it
 opens and works with no network, compiles what this browser has compiled before, and "Make

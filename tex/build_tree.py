@@ -99,10 +99,10 @@ DEB_SETS = ['texlive-lang-german', 'texlive-lang-spanish', 'texlive-lang-french'
             'texlive-formats-extra', 'asymptote']
 
 
-# Chinese and Arabic. What a document in those scripts needs beyond the sets above: the Fandol
+# Chinese, Arabic and India's scripts. What a document in those scripts needs beyond the sets above: the Fandol
 # fonts with ctex's and xeCJK's helpers (XeLaTeX), the CJK package with the Arphic fonts
 # (pdfLaTeX: gbsn and gkai simplified, bsmi and bkai traditional), and Amiri, which Ubuntu's
-# texlive-lang-arabic only links to. 47 MB of packs that the artifact has no room for, so these files go
+# texlive-lang-arabic only links to. 48 MB of packs that the artifact has no room for, so these files go
 # into packs of their own (script_only), marked 'x' in the index: the hosted Rikuy serves them,
 # publish_batches.py leaves them out of the artifact, and no other pack's bytes depend on them.
 SCRIPT_PICKS = [('texlive-lang-chinese', ['fandol', 'zhnumber', 'zhmetrics', 'xpinyin', 'zhlineskip', 'zhlipsum', 'zhspacing', 'upzhkinsoku']),
@@ -111,8 +111,14 @@ SCRIPT_SETS = ['latex-cjk-common', 'latex-cjk-chinese', 'latex-cjk-chinese-arphi
                'latex-cjk-chinese-arphic-bsmi00lp', 'latex-cjk-chinese-arphic-bkai00mp']
 # files TeX Live has and Ubuntu's packages only link to: (package folder, folder in the tree, names)
 SCRIPT_LINKED = [('fonts-hosny-amiri/usr/share/fonts/opentype/fonts-hosny-amiri', 'fonts/truetype/public/amiri',
-                  ['Amiri-Regular.ttf', 'Amiri-Bold.ttf', 'Amiri-Italic.ttf', 'Amiri-BoldItalic.ttf'])]
-SCRIPT_ONLY = re.compile(r'^(fonts/[^/]+/public/(fandol|amiri)|fonts/([^/]+/)+arphic(/|$)|fonts/tfm/zhmetrics'
+                  ['Amiri-Regular.ttf', 'Amiri-Bold.ttf', 'Amiri-Italic.ttf', 'Amiri-BoldItalic.ttf']),
+                 # India's scripts: Noto Serif (Sans for Odia, which has no Serif), regular and bold,
+                 # and Noto Nastaliq Urdu. TeX Live has no font for most of them. 4 MB.
+                 ('fonts-noto-core/usr/share/fonts/truetype/noto', 'fonts/truetype/public/noto-indic',
+                  [f + '-' + w + '.ttf' for f in ('NotoSerifDevanagari', 'NotoSerifBengali', 'NotoSerifTamil', 'NotoSerifTelugu',
+                                                  'NotoSerifGujarati', 'NotoSerifKannada', 'NotoSerifMalayalam', 'NotoSerifGurmukhi',
+                                                  'NotoSansOriya', 'NotoNastaliqUrdu') for w in ('Regular', 'Bold')])]
+SCRIPT_ONLY = re.compile(r'^(fonts/[^/]+/public/(fandol|amiri|noto-indic)|fonts/([^/]+/)+arphic(/|$)|fonts/tfm/zhmetrics'
                          r'|tex/latex/(CJK|zhnumber|zhmetrics|xpinyin|zhlineskip|zhlipsum|cjkpunct|xcjk2uni)$'
                          r'|tex/generic/(zhmetrics|zhspacing|upzhkinsoku)$|tex/xelatex/zhspacing$)')
 

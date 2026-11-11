@@ -49,7 +49,7 @@ a command fails, trust the code and fix this file.
 | build the inputs, then the TeX tree and packs | `tex/fetch_inputs.sh`, then `python3 tex/build_tree.py tree && python3 tex/build_tree.py packs` | about 3 GB of downloads |
 | build the page into `dist/` | `npm run build`; the editor and its browser tests need nothing more, the PDF pane and the TeX tests need `dist/tex/` from the step above | 10 s |
 | serve `dist/` as the artifact host does | `npm run serve` (port 8790) | |
-| engines and shell escape in the page | `npm run test:engines` (35 checks) | 7 min |
+| engines and shell escape in the page | `npm run test:engines` (37 checks) | 8 min |
 | typing on the page | `npm run test:browser` | 20 s |
 | the installed app: offline, updates, one version at a time, none in the artifact build (and a compile offline where `dist/tex` exists) | `npm run test:offline` | 1 min |
 | opening `.tex`, `.bib` and `.zip` with the installed app (`launchQueue`), and files shared to it | `cd test && python3 launch.py` | 20 s |
@@ -112,7 +112,7 @@ Pick the checks by what you touched, and run them before you call it done:
 - This machine's Python may be linked with zlib-ng, whose gzip bytes differ from stock zlib's: packs
   built with it get other names than `dev/dist-manifest.txt` has. To make the manifest here, run
   `build_tree.py` with Ubuntu 24.04's `libz.so.1.3` in `LD_PRELOAD` (CI's Python uses that one).
-- The Chinese and Arabic packs (`x` in the index) are not in the artifact: build and test them on
+- The packs for Chinese, Arabic and India's scripts (`x` in the index) are not in the artifact: build and test them on
   the hosted build; `tex/README.md` says what they hold.
 - The published artifact may hold 256 MB; `PLAN.md` gives the current size. It has no room for
   pandoc: build that copy with `RIKUY_NO_WORD=1` (and `RIKUY_WORD_HOST` naming a copy with Word).

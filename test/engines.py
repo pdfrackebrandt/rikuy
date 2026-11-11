@@ -192,6 +192,18 @@ try:
         now = page.evaluate("window.rikuy.files.get(window.rikuy.main)")
         check('Arabic joining it: the notice again, ctex makes way for babel, and the PDF has Amiri and Fandol', 'Arabic' in said and 'ctex' not in now and st.startswith('LuaLaTeX') and 'page' in st and any('Amiri' in f for f in fonts) and any('FandolSong' in f for f in fonts), [said, st, sorted(fonts), now[:300]])
 
+        # India's scripts: Hindi, Gujarati (whose characters babel has to be told about) and
+        # Tamil typed into a plain document
+        open_doc(page, [['main.tex', '\\documentclass{article}\n\\begin{document}\nHello to everyone here: नमस्ते क्षत्रिय, નમસ્તે શ્રી and வணக்கம்.\n\\end{document}\n']])
+        page.wait_for_selector('#script-note:not([hidden])', timeout=8000)
+        said = page.inner_text('#script-msg')
+        page.click('#script-go')
+        page.wait_for_timeout(400)
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('Hindi, Gujarati and Tamil in a plain document: the notice, one click, and the PDF is set in the three Noto fonts', st.startswith('LuaLaTeX') and 'page' in st and all(any(n in f for f in fonts) for n in ('NotoSerifDevanagari', 'NotoSerifGujarati', 'NotoSerifTamil', 'LMRoman10')), [said, st, sorted(fonts)])
+        check('no problems are reported for it', not [x for x in page.evaluate("window.rikuy.texIssues.map(x => x.sev + ' ' + x.msg)") if x.startswith('error')], page.evaluate("window.rikuy.texIssues.map(x => x.msg)")[:4])
+
         errs = [e for e in errors if 'favicon' not in e]
         check('no page errors', not errs, errs[:5])
         browser.close()
@@ -217,7 +229,7 @@ try:
         wait_pdf(page)
         lc = page.evaluate("window.rikuy.lastCompile")
         shown = page.evaluate("document.getElementById('pdf-host').textContent")
-        check('24 packs are marked as the Chinese and Arabic ones', len(xpacks) == 24, len(xpacks))
+        check('26 packs are marked as the Chinese, Arabic and Indian ones', len(xpacks) == 26, len(xpacks))
         check('without them a Chinese document gets no PDF, and the result names only those packs', bool(lc) and lc.get('unkeptScripts') is True and not lc.get('ok') and not page.evaluate("!!document.querySelector('#pdf-host canvas')") and 'could not be loaded' in shown, [lc and {k: lc[k] for k in ('unkept', 'unkeptScripts', 'ok')}, shown[:160]])
         browser.close()
 except Exception as e:

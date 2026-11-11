@@ -86,9 +86,9 @@ submodule's tree in one archive) or as downloaded:
 
 ## The TeX tree
 
-TeX Live 2026.20260711 from Ubuntu 26.10's packages (51 of them, each pinned by SHA-512 in
-`tex/fetch_inputs.sh`), laid over the tree in BusyTeX's release. Seven of the 51 are for Chinese
-and Arabic: Amiri (`fonts-hosny-amiri`, OFL-1.1), the CJK package (`latex-cjk-common`,
+TeX Live 2026.20260711 from Ubuntu 26.10's packages (52 of them, each pinned by SHA-512 in
+`tex/fetch_inputs.sh`), laid over the tree in BusyTeX's release. Eight of the 52 are for Chinese,
+Arabic and India's scripts: twenty Noto fonts (`fonts-noto-core`, OFL-1.1), Amiri (`fonts-hosny-amiri`, OFL-1.1), the CJK package (`latex-cjk-common`,
 `latex-cjk-chinese`, GPL-2.0-or-later) and four Arphic fonts as Type 1
 (`latex-cjk-chinese-arphic-*`, the Arphic Public License); the Fandol fonts (GPL-3.0 with the
 font exception) come from `texlive-lang-chinese`. `LICENSES/third-party/chinese-arabic.txt` has
