@@ -4,11 +4,35 @@ import { packShare, unpackShare, shareParam, findComments, commentEdit, stripCom
 import { changes } from '../src/diff.js';
 import { TeXEngine } from '../src/tex.js';
 
+import zlib from 'node:zlib';
+import { llms } from '../build/app.mjs';
+
 let n = 0;
 const ok = (name, f) => Promise.resolve(f()).then(() => { n++; }, (e) => { console.error('FAIL', name); throw e; });
 const apply = (t, e) => t.slice(0, e.s) + e.t + t.slice(e.e);
 
 const DOC = '\\documentclass{article}\n\\begin{document}\nThe source map is exact.\nSecond line here.\n\n\\begin{verbatim}\n50% done\n\\end{verbatim}\nLast.\\end{document}';
+
+// llms.txt tells an agent how to make a link by hand: the recipe there must give a link the
+// page opens, and its example must be the JSON the page reads
+await ok('a link built by llms.txt\'s recipe opens', async () => {
+  const guide = llms();
+  const line = guide.split('\n').map((l) => l.trim()).find((l) => l.startsWith('{"v":1'));
+  assert.ok(line, 'the guide shows the JSON');
+  const example = JSON.parse(line);
+  assert.deepEqual(Object.keys(example), ['v', 'name', 'main', 'files', 'by']);
+  assert.ok(example.files[0][1].startsWith('\\documentclass'), 'the example escapes its backslash as JSON does');
+  const o = { v: 1, name: 'From an agent', main: 'main.tex', files: [['main.tex', DOC + ' ü ∑']], by: 'An agent' };
+  // raw DEFLATE, base64url without padding, after "1."
+  const payload = zlib.deflateRawSync(Buffer.from(JSON.stringify(o), 'utf8'), { level: 9 }).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  const m = /^\s*(https:\/\/\S+)#share=1\.<payload>$/m.exec(guide);
+  assert.ok(m, 'the guide shows the link');
+  const got = await unpackShare(shareParam(m[1] + '#share=1.' + payload));
+  assert.equal(got.main, 'main.tex');
+  assert.equal(got.files[0][1], DOC + ' ü ∑');
+  assert.equal(got.by, 'An agent');
+  assert.ok(/compressobj\(9, zlib\.DEFLATED, -15\)/.test(guide), 'the Python lines ask for raw DEFLATE');
+});
 
 await ok('a link round trips, unicode and all', async () => {
   const o = { v: 1, name: 'Paper', main: 'main.tex', files: [['main.tex', DOC + ' ü — ∑ 😀'], ['refs.bib', '@article{a,}']], base: 'abc', by: 'Ana', role: 'coauthor' };

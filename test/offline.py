@@ -96,6 +96,18 @@ def main():
         imm = page.evaluate('caches.open("rikuy-immutable").then(c => c.keys()).then(k => k.map(r => r.url))')
         check('install kept the Latin Extended fonts, named by their hash, apart from the version', sum('/fonts/ibm-plex-' in u for u in imm) == 5, imm)
 
+        # what crawlers and AI agents read (build/app.mjs): served, named in the page's head, and
+        # not kept by the service worker, which has no use for them
+        agent = page.evaluate('''async () => { const out = {};
+          for (const f of ['llms.txt', 'robots.txt', 'sitemap.xml', 'og.png']) { const r = await fetch(f, { cache: 'no-store' }); out[f] = [r.status, (await r.text()).slice(0, 200)]; }
+          out.head = ['link[rel=canonical]', 'link[rel=alternate][href="llms.txt"]', 'meta[property="og:image"]', 'meta[property="og:title"]'].map((q) => !!document.head.querySelector(q));
+          out.kept = [];
+          for (const k of await caches.keys()) for (const r of await (await caches.open(k)).keys()) if (/(llms\\.txt|robots\\.txt|sitemap\\.xml|og\\.png)$/.test(r.url)) out.kept.push(r.url);
+          return out; }''')
+        check('llms.txt, robots.txt, sitemap.xml and the link picture are served and named in the head, and the service worker keeps none',
+              all(agent[f][0] == 200 for f in ('llms.txt', 'robots.txt', 'sitemap.xml', 'og.png')) and agent['llms.txt'][1].startswith('# Rikuy')
+              and 'Sitemap: http' in agent['robots.txt'][1] and all(agent['head']) and agent['kept'] == [], {k: (v[0] if isinstance(v, list) and k.endswith(('txt', 'xml', 'png')) else v) for k, v in agent.items()})
+
         click_text(page, 'Click anywhere in this paragraph')
         page.keyboard.type('Offline proof. ')
         page.wait_for_function('window.rikuy.files.get("main.tex").includes("Offline proof. Click anywhere")', timeout=5000)
