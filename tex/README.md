@@ -116,6 +116,46 @@ file in the local tree it asks the mirror (BusyTeX's `kpse_remote_fetch_js` hook
 downloads only what it uses. A page on claude.ai can only reach its own server, so the mirror
 works on a self-hosted Rikuy, not inside the artifact.
 
+## Scripts other than Latin, Greek and Cyrillic
+
+Chinese, Japanese, Korean, Arabic, Hebrew, nine scripts of India, Thai and Sinhala. LaTeX's
+default fonts have none of them. The tree carries what three common routes need
+(`SCRIPT_PICKS`, `SCRIPT_SETS` and `SCRIPT_LINKED` in `build_tree.py`):
+
+- XeLaTeX with ctex or xeCJK and the Fandol fonts (Song, Hei, Kai, Fang Song: simplified
+  Chinese and the common traditional characters). `\usepackage[scheme=plain]{ctex}` is enough.
+- LuaLaTeX with babel's `bidi=basic` and Amiri, the one route on which TeX orders mixed right to
+  left and left to right text by itself; polyglossia with XeLaTeX works too, with its
+  `\textarabic` and `\textenglish` marks.
+- LuaLaTeX with babel's `onchar` and HarfBuzz for nine scripts of India, in Noto Serif
+  Devanagari, Bengali, Gurmukhi, Gujarati, Tamil, Telugu, Kannada and Malayalam and Noto Sans
+  Oriya (regular and bold; Noto Nastaliq Urdu is there by name). babel has no character range
+  for Gurmukhi and Gujarati, so the set up tells it in a `\directlua` line. polyglossia with
+  XeLaTeX finds the same fonts by name.
+- The same route for Japanese (Harano Aji Mincho and Gothic), Korean (NanumMyeongjo and
+  NanumGothic), Hebrew (Culmus's Hadasim, which has the Latin letters and digits Noto Serif
+  Hebrew lacks; `bidi=basic` as for Arabic), Thai (babel breaks its lines, which have no
+  spaces) and Sinhala (Noto Serif). Three things the set up has to tell babel: Chinese
+  characters are not Korean's (babel counts them as Korean's, Japanese's and Chinese's alike,
+  and in a document with Japanese they came out in the Korean font as empty boxes); where two
+  of Chinese, Japanese and Korean meet each keeps to one font (four such fonts at once ran
+  LuaTeX out of memory in the browser, with no message); a Hebrew document's list bullet comes
+  from the math font (Hadasim has none).
+- pdfLaTeX with the CJK package (`CJKutf8`) and the Arphic fonts `gbsn`, `gkai` (simplified),
+  `bsmi`, `bkai` (traditional).
+
+`src/scripts.js` writes the set up lines for the first three when a document has such text and no
+set up, and `pickEngine` reads them. These 78 MB travel in 36 packs of their own, marked `x` in
+the index and written after all others, so that no other pack's bytes depend on them: the hosted
+Rikuy serves them, `publish_batches.py` leaves them out of the artifact (which has 2 MB to
+spare), and a compile that misses only such packs says where the hosted Rikuy is
+(`unkeptScripts`). Fonts are found by family name as well as file name (fontconfig's caches and
+luaotfload's name table in `inputs/generated.tar.gz` know them). As with a desktop TeX Live,
+xdvipdfmx writes no character map for the Fandol fonts (their glyphs are Adobe-GB1's, which PDF
+viewers know), so a viewer without Adobe's CMap data shows the page but cannot copy its Chinese.
+Scripts beyond these (Khmer, Lao, Tibetan, Georgian, Armenian, Ethiopic and others) have no
+fonts here.
+
 ## Limits
 
 Fonts that come from the mirror are found by file name, not by family name. Programs outside

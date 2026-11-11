@@ -6,11 +6,44 @@ writes it (`-` for standard output).
 
 make_rich() is a second file, of what pandoc alone loses or writes as LaTeX that does not compile
 (test/fixtures/word-rich.docx, `python3 word_fixture.py out.docx rich`): a subtitle, coloured,
-highlighted, underlined and struck text, symbols and Greek and Cyrillic and Chinese words, a comment
+highlighted, underlined and struck text, symbols and Greek and Cyrillic and Armenian words, a comment
 with a reply's worth of TeX in it, a tracked change, a table of contents, a caption whose number is
 a short field with the bookmark a cross reference names, a picture wider than the page, a table
 with a caption and merged cells and a table inside it, a page break, a centred paragraph, a formula
-of three lines, two numbered ones, an endnote, a chart, and a header."""
+of three lines, two numbered ones, an endnote, a chart, and a header.
+
+Three more are files in Chinese and Arabic as Word writes them (`chinese`, `arabic`, `mixed` after
+the name; test/fixtures/word-chinese.docx, word-arabic.docx, word-mixed.docx). make_chinese(): a
+title, headings, a paragraph cut into runs wherever the font or the language changes (w:rFonts
+w:eastAsia, w:hint, w:lang), bold and italic, full width punctuation and an ideographic space,
+Chinese quotation marks, a bulleted and a numbered list, a table, English among the Chinese, a
+footnote and a comment. make_arabic(): a document that runs right to left (w:bidi on every
+paragraph and on the section, w:rtl on the runs), with English words and both kinds of digits in
+it, vowel marks, a tatweel, a Persian word with a zero width non joiner, a joiner, direction marks,
+paragraphs aligned to each edge, lists, a table set from the right (w:bidiVisual), text in a w:dir
+wrapper, one paragraph that runs left to right, a footnote and a comment. make_mixed(): an English
+document with Arabic and Chinese phrases, one whole Arabic paragraph, a table of the three, and
+text and font and language names that try to be LaTeX.
+
+Two are in India's scripts (`hindi`, `indic`; word-hindi.docx, word-indic.docx), which Word
+keeps as complex script runs (w:rFonts w:cs, w:lang w:bidi="hi-IN", bold as w:bCs) cut wherever the
+font changes. make_hindi(): a title, a heading, a sentence in six runs with conjuncts, a nukta,
+vowel signs, an anusvara, a chandrabindu and a visarga, a joiner and a non joiner after a virama,
+danda and double danda, Devanagari digits and English words, a bulleted and a numbered list, a
+table, a footnote and a comment. make_indic(): an English document with a line each of Bengali,
+Tamil, Telugu, Gujarati, Kannada, Malayalam, Gurmukhi and Odia with its own digits, one run that
+holds three scripts, a table, and font and language names that try to be LaTeX.
+
+Four are in the five scripts after those (`japanese`, `korean`, `hebrew`, `scripts`;
+word-japanese.docx, word-korean.docx, word-hebrew.docx, word-scripts.docx). make_japanese(): kana
+and kanji in runs cut at every font, full width punctuation, half width katakana, a word with its
+reading above it (w:ruby), a list, a table, English, a footnote. make_korean(): hangul words with
+spaces, a syllable spelt in its letters (jamo), hanja, bold, a list, a table. make_hebrew(): a
+document that runs right to left, with vowel points and cantillation marks, a maqaf, English and
+digits, a right aligned paragraph, a list, a table set from the right, one left to right
+paragraph, a footnote. make_scripts(): an English document with a line each of Thai (no spaces,
+tone marks, Thai digits), Sinhala (a conjunct with a joiner), Hebrew (a phrase, and a whole
+paragraph), Japanese and Korean, and names and words that try to be LaTeX."""
 import io, sys, struct, zlib
 from docx import Document
 from docx.shared import Inches
@@ -108,7 +141,7 @@ def make_rich():
     p.add_run('under').underline = True
     p.add_run(', ')
     p.add_run('struck').font.strike = True
-    p.add_run(u'. If p \u2264 0.05 and \u03b2 \u2260 0 then x \u2192 \u221e, \u2212 5\u202f%. \u0395\u03bb\u03bb\u03b7\u03bd\u03b9\u03ba\u03ac, \u041f\u0440\u0438\u0432\u0435\u0442, \u4f60\u597d.')
+    p.add_run(u'. If p \u2264 0.05 and \u03b2 \u2260 0 then x \u2192 \u221e, \u2212 5\u202f%. \u0395\u03bb\u03bb\u03b7\u03bd\u03b9\u03ba\u03ac, \u041f\u0440\u0438\u0432\u0435\u0442, \u0540\u0561\u0575.')
     # a tracked change, and a comment whose text tries to leave its line
     p = d.add_paragraph('The result is ')
     x(p, '<w:del %s w:id="10" w:author="Ana"><w:r><w:delText>weak</w:delText></w:r></w:del>' % W)
@@ -172,8 +205,357 @@ def add_parts(data, new):
     zout.close()
     return out.getvalue()
 
+# ---- Chinese and Arabic ----
+
+from xml.sax.saxutils import escape
+
+def xrun(p, text, props=''):
+    """A run with its properties written out, in the order Word's schema has them."""
+    p._p.append(parse_xml('<w:r %s>%s<w:t xml:space="preserve">%s</w:t></w:r>' % (W, '<w:rPr>%s</w:rPr>' % props if props else '', escape(text))))
+
+# a run of Chinese as Word marks one (the font for East Asian text, the language), and of Arabic
+# (the font for complex scripts, right to left, the language); f: bold or italic, both ways
+zh = lambda f='', font='SimSun': '<w:rFonts w:eastAsia="%s" w:hint="eastAsia"/>%s<w:lang w:eastAsia="zh-CN"/>' % (font, f)
+ar = lambda f='': '<w:rFonts w:cs="Arial"/>%s<w:rtl/><w:lang w:bidi="ar-SA"/>' % f
+BOLD, ITALIC = '<w:b/><w:bCs/>', '<w:i/><w:iCs/>'
+
+def note_ref(p, n):
+    p._p.append(parse_xml('<w:r %s><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="%d"/></w:r>' % (W, n)))
+
+def footnotes(notes):
+    """notes: the inside of each footnote's paragraph after its number, as XML."""
+    fx = ''.join('<w:footnote w:id="%d"><w:p>%s<w:r><w:footnoteRef/></w:r>%s</w:p></w:footnote>' % (i + 1, ppr, runs) for i, (ppr, runs) in enumerate(notes))
+    return ('footnotes', '<w:footnotes %s><w:footnote w:type="separator" w:id="-1"><w:p><w:r><w:separator/></w:r></w:p></w:footnote>'
+            '<w:footnote w:type="continuationSeparator" w:id="0"><w:p><w:r><w:continuationSeparator/></w:r></w:p></w:footnote>%s</w:footnotes>' % (W, fx))
+
+def commented(p, n, add):
+    """add() writes the runs comment n is on."""
+    p._p.append(parse_xml('<w:commentRangeStart %s w:id="%d"/>' % (W, n)))
+    add()
+    p._p.append(parse_xml('<w:commentRangeEnd %s w:id="%d"/>' % (W, n)))
+    p._p.append(parse_xml('<w:r %s><w:commentReference w:id="%d"/></w:r>' % (W, n)))
+
+def make_chinese():
+    d = Document()
+    p = d.add_paragraph(style='Title'); xrun(p, u'制度变迁与经济增长', zh())
+    p = d.add_heading(level=1); xrun(p, u'引言', zh(font='SimHei'))
+    # one sentence in eight runs, as Word cuts text where the font, the hint or the language changes
+    p = d.add_paragraph()
+    xrun(p, u'本文研究', zh())
+    xrun(p, u'制度变迁', zh(BOLD))
+    xrun(p, u'对', '<w:rFonts w:hint="eastAsia"/>')
+    xrun(p, u'经济增长', zh(ITALIC, 'KaiTi'))
+    xrun(p, u'的影响，数据来自')
+    xrun(p, u'World Bank', '<w:lang w:val="en-US"/>')
+    xrun(p, u'（2020年），结果', zh())
+    commented(p, 1, lambda: xrun(p, u'稳健', zh(font='SimHei')))
+    xrun(p, u'。', zh())
+    note_ref(p, 1)
+    p = d.add_paragraph()
+    xrun(p, u'他说：“制度‘很’重要”——见《经济学》、〈导论〉……全角　空格！ＡＢＣ１２３；繁體字：經濟學。', zh())
+    p = d.add_heading(level=2); xrun(p, u'数据与方法', zh(font='SimHei'))
+    for t in [u'第一项：数据', u'第二项：方法']: xrun(d.add_paragraph(style='List Bullet'), t, zh())
+    for t in [u'步骤一', u'步骤二']: xrun(d.add_paragraph(style='List Number'), t, zh())
+    t = d.add_table(rows=3, cols=2); t.style = 'Table Grid'
+    for r, row in enumerate([(u'国家', u'增长率'), (u'秘鲁', '3.1'), (u'智利', '2.4')]):
+        for c, v in enumerate(row): xrun(t.cell(r, c).paragraphs[0], v, zh() if ord(v[0]) > 255 else '')
+    p = d.add_paragraph('The model (')
+    xrun(p, u'模型', zh())
+    p.add_run(') uses GDP ')
+    xrun(p, u'数据', zh())
+    p.add_run(' from 2020 to 2024.')
+    buf = io.BytesIO()
+    d.save(buf)
+    return add_parts(buf.getvalue(), {
+        'word/footnotes.xml': footnotes([('', '<w:r><w:rPr>%s</w:rPr><w:t xml:space="preserve"> 数据来自</w:t></w:r><w:r><w:rPr>%s</w:rPr><w:t>世界银行</w:t></w:r><w:r><w:t>。</w:t></w:r>' % (zh(), zh(BOLD)))]),
+        'word/comments.xml': ('comments', u'<w:comments %s><w:comment w:id="1" w:author="王芳"><w:p><w:r><w:t>请引用文献。</w:t></w:r></w:p></w:comment></w:comments>' % W)})
+
+def bidi(p, jc=None):
+    """Makes p a right to left paragraph, aligned as jc says."""
+    ppr = p._p.get_or_add_pPr()
+    ppr.append(parse_xml('<w:bidi %s/>' % W))
+    if jc: ppr.append(parse_xml('<w:jc %s w:val="%s"/>' % (W, jc)))
+    return p
+
+def make_arabic():
+    d = Document()
+    para = lambda style=None, jc=None: bidi(d.add_paragraph(style=style), jc)
+    xrun(para('Title'), u'النمو والمؤسسات', ar())
+    xrun(bidi(d.add_heading(level=1)), u'مقدمة', ar())
+    p = para()
+    xrun(p, u'ندرس ', ar())
+    commented(p, 1, lambda: xrun(p, u'النمو', ar(BOLD)))
+    xrun(p, u' في ظل مؤسسات ضعيفة، بمعدل ', ar())
+    xrun(p, '5%')
+    xrun(p, u' سنة ٢٠٢٤ و', ar())
+    xrun(p, '2025')
+    xrun(p, u'؛ هل هذا صحيح؟', ar())
+    note_ref(p, 1)
+    # vowel marks, a tatweel, Persian with a zero width non joiner, a joiner that keeps a letter's
+    # joining shape, a left to right mark after the bracket and a right to left one before the stop
+    p = para()
+    xrun(p, u'مُحَمَّدٌ قال مـــرحبا، و‏می‌خواهم ه‍.ق ثم ', ar())
+    xrun(p, 'World Bank (GDP)‎')
+    xrun(p, u' أيضًا‏.', ar())
+    xrun(para(jc='left'), u'محاذاة إلى البداية.', ar())
+    xrun(para(jc='right'), u'محاذاة إلى النهاية.', ar())
+    xrun(para(jc='both'), u'نص مضبوط من الجانبين.', ar())
+    xrun(para(jc='center'), u'في الوسط.', ar())
+    xrun(bidi(d.add_heading(level=1)), u'النتائج', ar())
+    for t in [u'النتيجة الأولى', u'النتيجة الثانية']: xrun(para('List Bullet'), t, ar())
+    for t in [u'الخطوة ١', u'الخطوة ٢']: xrun(para('List Number'), t, ar())
+    t = d.add_table(rows=3, cols=2); t.style = 'Table Grid'
+    t._tbl.tblPr.insert(1, parse_xml('<w:bidiVisual %s/>' % W))
+    for r, row in enumerate([(u'البلد', u'النمو'), (u'بيرو', u'٣٫١'), (u'تشيلي', '2.4')]):
+        for c, v in enumerate(row): xrun(bidi(t.cell(r, c).paragraphs[0]), v, ar() if ord(v[0]) > 255 else '')
+    d.add_paragraph('An English paragraph in the Arabic document.')
+    # text Word wrapped in a direction of its own
+    p = para()
+    xrun(p, u'قبل ', ar())
+    p._p.append(parse_xml(u'<w:dir %s w:val="rtl"><w:r><w:rPr>%s</w:rPr><w:t xml:space="preserve">نص داخل الغلاف</w:t></w:r></w:dir>' % (W, ar())))
+    xrun(p, u' بعد.', ar())
+    sect = d.sections[0]._sectPr
+    grid = [c for c in sect if c.tag.endswith('}docGrid')]
+    (grid[0].addprevious if grid else sect.append)(parse_xml('<w:bidi %s/>' % W))
+    buf = io.BytesIO()
+    d.save(buf)
+    return add_parts(buf.getvalue(), {
+        'word/footnotes.xml': footnotes([('<w:pPr><w:bidi/></w:pPr>', u'<w:r><w:rPr>%s</w:rPr><w:t xml:space="preserve"> بيانات البنك الدولي، ٢٠٢٤.</w:t></w:r>' % ar())]),
+        'word/comments.xml': ('comments', u'<w:comments %s><w:comment w:id="1" w:author="سارة"><w:p><w:pPr><w:bidi/></w:pPr><w:r><w:rPr><w:rtl/></w:rPr><w:t>أضف مرجعًا.</w:t></w:r></w:p></w:comment></w:comments>' % W)})
+
+def make_mixed():
+    d = Document()
+    d.add_heading('Greetings', level=1)
+    p = d.add_paragraph('The Arabic word ')
+    xrun(p, u'مرحبا', ar())
+    p.add_run(' means hello, and ')
+    xrun(p, u'你好', zh())
+    p.add_run(' means the same in Chinese.')
+    p = d.add_paragraph('In Arabic, ')
+    xrun(p, u'السلام عليكم ورحمة الله', ar(BOLD))
+    p.add_run(', written right to left; numbers such as 2024 stay.')
+    xrun(bidi(d.add_paragraph()), u'هذه فقرة كاملة بالعربية داخل مستند إنجليزي.', ar())
+    p = d.add_paragraph('Chinese: ')
+    xrun(p, u'北京、上海', zh())
+    p.add_run(' and Peking University (')
+    xrun(p, u'北京大学', zh())
+    p.add_run(').')
+    t = d.add_table(rows=3, cols=3); t.style = 'Table Grid'
+    for r, row in enumerate([('Word', 'Arabic', 'Chinese'), ('hello', u'مرحبا', u'你好'), ('thanks', u'شكرا', u'谢谢')]):
+        for c, v in enumerate(row): xrun(t.cell(r, c).paragraphs[0], v, '' if ord(v[0]) < 256 else ar() if ord(v[0]) < 0x800 else zh())
+    # a stranger's file: words that read as LaTeX, and font and language names that try to be
+    p = d.add_paragraph('Type \\babelfont{rm}{Evil} or \\input{/etc/passwd} at 100% & more: ')
+    xrun(p, u'字', '<w:rFonts w:eastAsia="}\\input{/etc/passwd}" w:cs="\\babelfont{rm}{Evil}"/><w:lang w:val="en}\\write18{id}" w:eastAsia="zh-CN}\\input{x}" w:bidi="ar\\input{y}"/>')
+    p.add_run('.')
+    buf = io.BytesIO()
+    d.save(buf)
+    return buf.getvalue()
+
+# ---- India's scripts ----
+
+# a run of one of them as Word marks it: the complex script font, the language; f: bold, both ways
+cs = lambda lang='hi-IN', f='', font='Mangal': '<w:rFonts w:ascii="%s" w:hAnsi="%s" w:cs="%s"/>%s<w:lang w:bidi="%s"/>' % (font, font, font, f, lang)
+
+def make_hindi():
+    d = Document()
+    xrun(d.add_paragraph(style='Title'), u'भारत की अर्थव्यवस्था', cs())
+    xrun(d.add_heading(level=1), u'परिचय', cs(font='Kokila'))
+    # one sentence in six runs: a nukta (ज़), conjuncts (क्ष, त्र, ज्ञ, श्री), the two dandas
+    p = d.add_paragraph()
+    xrun(p, u'यह दस्तावेज़ ', cs())
+    xrun(p, u'हिन्दी', cs(f=BOLD))
+    xrun(p, u' में लिखा', cs(font='Nirmala UI'))
+    xrun(p, u' गया है। इसमें क्ष, त्र, ज्ञ और श्री जैसे ', '<w:rFonts w:cs="Mangal"/><w:cs/><w:lang w:bidi="hi-IN"/>')
+    commented(p, 1, lambda: xrun(p, u'संयुक्ताक्षर', cs()))
+    xrun(p, u' हैं॥', cs())
+    note_ref(p, 1)
+    # an anusvara, a chandrabindu, a visarga; a joiner and a non joiner after a virama (क्‍ष
+    # shows a half ka, क्‌ष the virama itself); Devanagari digits beside English words and digits
+    p = d.add_paragraph()
+    xrun(p, u'हिंदी में माँ और दुःख; क्\u200dष तथा क्\u200cष। ', cs())
+    xrun(p, 'GDP growth')
+    xrun(p, u' २०२४ में ७.५% रही, ', cs())
+    xrun(p, '2025')
+    xrun(p, u' में ६%।', cs())
+    for t in [u'पहला बिंदु', u'दूसरा बिंदु']: xrun(d.add_paragraph(style='List Bullet'), t, cs())
+    for t in [u'चरण एक', u'चरण दो']: xrun(d.add_paragraph(style='List Number'), t, cs())
+    t = d.add_table(rows=3, cols=2); t.style = 'Table Grid'
+    for r, row in enumerate([(u'देश', u'वृद्धि'), (u'भारत', u'७.२'), (u'नेपाल', '3.9')]):
+        for c, v in enumerate(row): xrun(t.cell(r, c).paragraphs[0], v, cs() if ord(v[0]) > 255 else '')
+    buf = io.BytesIO()
+    d.save(buf)
+    return add_parts(buf.getvalue(), {
+        'word/footnotes.xml': footnotes([('', u'<w:r><w:rPr>%s</w:rPr><w:t xml:space="preserve"> स्रोत: </w:t></w:r><w:r><w:rPr>%s</w:rPr><w:t>विश्व बैंक</w:t></w:r><w:r><w:rPr>%s</w:rPr><w:t>, २०२४।</w:t></w:r>' % (cs(), cs(f=BOLD), cs()))]),
+        'word/comments.xml': ('comments', u'<w:comments %s><w:comment w:id="1" w:author="अनीता"><w:p><w:r><w:rPr>%s</w:rPr><w:t>संदर्भ जोड़ें।</w:t></w:r></w:p></w:comment></w:comments>' % (W, cs()))})
+
+# a line of each of the other eight scripts, with the language Word names for it and a font
+# Windows has for it: a conjunct or two, the script's vowel signs, its own digits
+INDIC_LINES = [
+    ('Bengali', 'bn-IN', 'Vrinda', u'বাংলা: আমি বাংলায় গান গাই, ক্ষমা করবেন। ১২৩'),
+    ('Tamil', 'ta-IN', 'Latha', u'தமிழ்: வணக்கம், மிக்க நன்றி. ௧௨௩'),
+    ('Telugu', 'te-IN', 'Gautami', u'తెలుగు: నమస్కారం, ధన్యవాదాలు. ౧౨౩'),
+    ('Gujarati', 'gu-IN', 'Shruti', u'ગુજરાતી: નમસ્તે, આભાર. ૧૨૩'),
+    ('Kannada', 'kn-IN', 'Tunga', u'ಕನ್ನಡ: ನಮಸ್ಕಾರ, ಧನ್ಯವಾದಗಳು. ೧೨೩'),
+    # (അവന്‍ ends in the older spelling of a chillu: na, virama, joiner)
+    ('Malayalam', 'ml-IN', 'Kartika', u'മലയാളം: നമസ്കാരം, നന്ദി, അവന്\u200d. ൧൨൩'),
+    ('Gurmukhi', 'pa-IN', 'Raavi', u'ਪੰਜਾਬੀ: ਸਤਿ ਸ੍ਰੀ ਅਕਾਲ, ਧੰਨਵਾਦ। ੧੨੩'),
+    ('Odia', 'or-IN', 'Kalinga', u'ଓଡ଼ିଆ: ନମସ୍କାର, ଧନ୍ୟବାଦ। ୧୨୩')]
+
+def make_indic():
+    d = Document()
+    d.add_heading('Languages of India', level=1)
+    for name, lang, font, line in INDIC_LINES:
+        p = d.add_paragraph(name + ': ')
+        head, rest = line.split(': ')
+        xrun(p, head + ':', cs(lang, BOLD, font))
+        xrun(p, ' ' + rest, cs(lang, '', font))
+    # three scripts in one run, as text pasted into Word may be
+    p = d.add_paragraph('Together: ')
+    xrun(p, u'हिन्दी বাংলা தமிழ்', cs())
+    p.add_run(' in one line.')
+    t = d.add_table(rows=3, cols=3); t.style = 'Table Grid'
+    for r, row in enumerate([('Hindi', 'Tamil', 'Telugu'), (u'धन्यवाद', u'நன்றி', u'ధన్యవాదాలు'), (u'१', u'௧', u'౧')]):
+        for c, v in enumerate(row): xrun(t.cell(r, c).paragraphs[0], v, '' if ord(v[0]) < 256 else cs(['hi-IN', 'ta-IN', 'te-IN'][c]))
+    # a stranger's file: font and language names that try to be LaTeX
+    p = d.add_paragraph('Odd names: ')
+    xrun(p, u'नाम', '<w:rFonts w:cs="}\\input{/etc/passwd}"/><w:lang w:bidi="hi-IN}\\babelfont{rm}{Evil}"/>')
+    p.add_run('.')
+    buf = io.BytesIO()
+    d.save(buf)
+    return buf.getvalue()
+
+# ---- Japanese, Korean, Hebrew, Thai and Sinhala ----
+
+ja = lambda f='', font='MS Mincho': '<w:rFonts w:eastAsia="%s" w:hint="eastAsia"/>%s<w:lang w:eastAsia="ja-JP"/>' % (font, f)
+ko = lambda f='', font='Batang': '<w:rFonts w:eastAsia="%s" w:hint="eastAsia"/>%s<w:lang w:eastAsia="ko-KR"/>' % (font, f)
+he = lambda f='', font='David': '<w:rFonts w:cs="%s"/>%s<w:rtl/><w:lang w:bidi="he-IL"/>' % (font, f)
+
+def ruby(p, base, reading):
+    """A word with its reading above it, as Word's phonetic guide writes one."""
+    p._p.append(parse_xml(u'<w:r %s><w:ruby><w:rubyPr><w:rubyAlign w:val="distributeSpace"/><w:hps w:val="10"/><w:hpsRaise w:val="18"/><w:hpsBaseText w:val="21"/><w:lid w:val="ja-JP"/></w:rubyPr>'
+                          u'<w:rt><w:r><w:rPr>%s</w:rPr><w:t>%s</w:t></w:r></w:rt><w:rubyBase><w:r><w:rPr>%s</w:rPr><w:t>%s</w:t></w:r></w:rubyBase></w:ruby></w:r>' % (W, ja(), reading, ja(), base)))
+
+def make_japanese():
+    d = Document()
+    xrun(d.add_paragraph(style='Title'), u'日本の経済成長', ja())
+    xrun(d.add_heading(level=1), u'はじめに', ja(font='MS Gothic'))
+    # one sentence in seven runs of three fonts; a ruby in the middle; half width katakana
+    p = d.add_paragraph()
+    xrun(p, u'本稿では、', ja())
+    xrun(p, u'制度', ja(BOLD))
+    xrun(p, u'が', '<w:rFonts w:hint="eastAsia"/>')
+    ruby(p, u'経済', u'けいざい')
+    xrun(p, u'成長に与える影響を', ja(font='Yu Mincho'))
+    xrun(p, u'データ', ja(ITALIC, 'MS Gothic'))
+    xrun(p, u'で検証する。', ja())
+    note_ref(p, 1)
+    p = d.add_paragraph()
+    xrun(p, u'「引用」と『書名』、コーヒー・ｶﾀｶﾅ…全角　空格！ＡＢＣ１２３。', ja())
+    for t in [u'第一に、データ', u'第二に、方法']: xrun(d.add_paragraph(style='List Bullet'), t, ja())
+    t = d.add_table(rows=3, cols=2); t.style = 'Table Grid'
+    for r, row in enumerate([(u'国', u'成長率'), (u'日本', '1.2'), (u'ペルー', '3.1')]):
+        for c, v in enumerate(row): xrun(t.cell(r, c).paragraphs[0], v, ja() if ord(v[0]) > 255 else '')
+    p = d.add_paragraph('The model (')
+    xrun(p, u'モデル', ja())
+    p.add_run(') uses GDP ')
+    xrun(p, u'データ', ja())
+    p.add_run(' from 2020.')
+    buf = io.BytesIO()
+    d.save(buf)
+    return add_parts(buf.getvalue(), {'word/footnotes.xml': footnotes([('', u'<w:r><w:rPr>%s</w:rPr><w:t xml:space="preserve"> 出典：</w:t></w:r><w:r><w:rPr>%s</w:rPr><w:t>世界銀行</w:t></w:r><w:r><w:t>。</w:t></w:r>' % (ja(), ja(BOLD)))])})
+
+def make_korean():
+    d = Document()
+    xrun(d.add_paragraph(style='Title'), u'한국의 경제 성장', ko())
+    xrun(d.add_heading(level=1), u'서론', ko(font='Malgun Gothic'))
+    # hangul words with spaces between them, hanja, and 한글 in its old spelling: three letters (jamo) that make one syllable
+    p = d.add_paragraph()
+    xrun(p, u'본 논문은 ', ko())
+    xrun(p, u'제도', ko(BOLD))
+    xrun(p, u'가 경제 성장(經濟成長)에 미치는 영향을 ', ko(font='Gulim'))
+    xrun(p, u'분석한다. \u1112\u119e\u11ab글 2024년 3.5%.', ko())
+    note_ref(p, 1)
+    for t in [u'첫째, 자료', u'둘째, 방법']: xrun(d.add_paragraph(style='List Number'), t, ko())
+    t = d.add_table(rows=3, cols=2); t.style = 'Table Grid'
+    for r, row in enumerate([(u'나라', u'성장률'), (u'한국', '2.6'), (u'페루', '3.1')]):
+        for c, v in enumerate(row): xrun(t.cell(r, c).paragraphs[0], v, ko() if ord(v[0]) > 255 else '')
+    p = d.add_paragraph('The model (')
+    xrun(p, u'모형', ko())
+    p.add_run(') uses GDP data.')
+    buf = io.BytesIO()
+    d.save(buf)
+    return add_parts(buf.getvalue(), {'word/footnotes.xml': footnotes([('', u'<w:r><w:rPr>%s</w:rPr><w:t xml:space="preserve"> 출처: 세계은행.</w:t></w:r>' % ko())])})
+
+def make_hebrew():
+    d = Document()
+    para = lambda style=None, jc=None: bidi(d.add_paragraph(style=style), jc)
+    xrun(para('Title'), u'צמיחה ומוסדות', he())
+    xrun(bidi(d.add_heading(level=1)), u'מבוא', he())
+    p = para()
+    xrun(p, u'אנו חוקרים את ', he())
+    xrun(p, u'הצמיחה', he(BOLD))
+    xrun(p, u' במוסדות חלשים, בשיעור של ', he())
+    xrun(p, '5%')
+    xrun(p, u' בשנת ', he())
+    xrun(p, '2024')
+    xrun(p, u'; האם זה נכון?', he())
+    note_ref(p, 1)
+    # vowel points, cantillation marks, a maqaf, a geresh, and a right to left mark before the stop
+    p = para()
+    xrun(p, u'שָׁלוֹם עוֹלָם, בְּרֵאשִׁ\u0596ית בָּרָ\u05a3א ועוד: בית־ספר, ג׳ירפה, ', he())
+    xrun(p, 'World Bank (GDP)\u200e')
+    xrun(p, u' גם\u200f.', he())
+    xrun(para(jc='right'), u'יישור לקצה.', he())
+    for t in [u'התוצאה הראשונה', u'התוצאה השנייה']: xrun(para('List Bullet'), t, he())
+    t = d.add_table(rows=3, cols=2); t.style = 'Table Grid'
+    t._tbl.tblPr.insert(1, parse_xml('<w:bidiVisual %s/>' % W))
+    for r, row in enumerate([(u'מדינה', u'צמיחה'), (u'פרו', '3.1'), (u'ישראל', '2.4')]):
+        for c, v in enumerate(row): xrun(bidi(t.cell(r, c).paragraphs[0]), v, he() if ord(v[0]) > 255 else '')
+    d.add_paragraph('An English paragraph in the Hebrew document.')
+    sect = d.sections[0]._sectPr
+    grid = [c for c in sect if c.tag.endswith('}docGrid')]
+    (grid[0].addprevious if grid else sect.append)(parse_xml('<w:bidi %s/>' % W))
+    buf = io.BytesIO()
+    d.save(buf)
+    return add_parts(buf.getvalue(), {'word/footnotes.xml': footnotes([('<w:pPr><w:bidi/></w:pPr>', u'<w:r><w:rPr>%s</w:rPr><w:t xml:space="preserve"> נתוני הבנק העולמי, 2024.</w:t></w:r>' % he())])})
+
+def make_scripts():
+    d = Document()
+    d.add_heading('Five more scripts', level=1)
+    th = lambda f='': '<w:rFonts w:ascii="Angsana New" w:hAnsi="Angsana New" w:cs="Angsana New"/>%s<w:lang w:bidi="th-TH"/>' % f
+    si = lambda f='': '<w:rFonts w:cs="Iskoola Pota"/>%s<w:lang w:bidi="si-LK"/>' % f
+    # Thai: no space between words, vowels and tone marks above and below, its own digits
+    p = d.add_paragraph('Thai: ')
+    xrun(p, u'ภาษาไทย', th(BOLD))
+    xrun(p, u'เป็นภาษาราชการของประเทศไทย น้ำดื่ม ๑๒๓', th())
+    # Sinhala: sri is sa, virama, joiner, ra, ii
+    p = d.add_paragraph('Sinhala: ')
+    xrun(p, u'සිංහල', si(BOLD))
+    xrun(p, u' ආයුබෝවන්, ස්තුතියි. ශ්\u200dරී ලංකා', si())
+    p = d.add_paragraph('Hebrew: ')
+    xrun(p, u'שלום עולם', he())
+    p.add_run(' means hello, world.')
+    xrun(bidi(d.add_paragraph()), u'זוהי פסקה שלמה בעברית בתוך מסמך באנגלית.', he())
+    p = d.add_paragraph('Japanese: ')
+    xrun(p, u'日本語のテキストです。', ja())
+    p = d.add_paragraph('Korean: ')
+    xrun(p, u'한국어 문장입니다.', ko())
+    t = d.add_table(rows=2, cols=5); t.style = 'Table Grid'
+    for r, row in enumerate([('Thai', 'Sinhala', 'Hebrew', 'Japanese', 'Korean'), (u'ขอบคุณ', u'ස්තුතියි', u'תודה', u'ありがとう', u'감사합니다')]):
+        for c, v in enumerate(row): xrun(t.cell(r, c).paragraphs[0], v, '' if r == 0 else [th(), si(), he(), ja(), ko()][c])
+    # a stranger's file: words that read as LaTeX, and font and language names that try to be
+    p = d.add_paragraph('Type \\babelprovide[main]{hebrew} or \\input{/etc/passwd}: ')
+    xrun(p, u'ไทย', '<w:rFonts w:cs="}\\input{/etc/passwd}" w:eastAsia="\\babelfont{rm}{Evil}"/><w:lang w:bidi="th-TH}\\write18{id}" w:eastAsia="ja-JP}\\input{x}"/>')
+    p.add_run('.')
+    buf = io.BytesIO()
+    d.save(buf)
+    return buf.getvalue()
+
+MAKERS = {'rich': make_rich, 'chinese': make_chinese, 'arabic': make_arabic, 'mixed': make_mixed, 'hindi': make_hindi, 'indic': make_indic,
+          'japanese': make_japanese, 'korean': make_korean, 'hebrew': make_hebrew, 'scripts': make_scripts}
+
 if __name__ == '__main__':
     out = sys.argv[1] if len(sys.argv) > 1 else 'fixture.docx'
-    data = make_rich() if sys.argv[2:] == ['rich'] else make()
+    data = MAKERS[sys.argv[2]]() if len(sys.argv) > 2 else make()
     if out == '-': sys.stdout.buffer.write(data)
     else: open(out, 'wb').write(data)

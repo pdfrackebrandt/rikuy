@@ -5,7 +5,7 @@ import { Renderer, BLOCKS, esc, widgetCss } from './render.js';
 import { Layout, geometry } from './layout.js';
 import {
   posFromDom, CaretIndex, segOfSpan, atomOfEl, styOfEl, visibleRanges, escapeTeX, textToTeX,
-  endsWithControlWord, isBalanced, diff, boundary
+  endsWithControlWord, isBalanced, diff, boundary, clusterEdge, sourceEdge, backspaceUnits
 } from './editor.js';
 import { SAMPLE } from './sample.js';
 import { splitRows } from './parser.js';
@@ -23,7 +23,7 @@ const PLACEHOLDER_PDF = 'JVBERi0xLjQKMSAwIG9iago8PCAvVHlwZSAvQ2F0YWxvZyAvUGFnZXM
 const PLACEHOLDER_PNG = 'iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAAAAACRn/EaAAAACXBIWXMAAAAjAAAAIwHV9BZdAAAADklEQVR42mO4CQQMcAIATFkKLSVMoyAAAAAASUVORK5CYII=';
 const PLACEHOLDER_EPS = '%!PS-Adobe-3.0 EPSF-3.0\n%%BoundingBox: 0 0 320 240\n0.85 setgray 0 0 320 240 rectfill\n0.6 setgray 2 setlinewidth 1 1 318 238 rectstroke\nshowpage\n';
 import { texToPlain, shortAuthors, entryYear } from './bib.js';
-import { kvGet, kvPut, kvSwap, decodeText, encodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
+import { kvGet, kvPut, kvDel, kvSwap, decodeText, encodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
 import { changes, spacingOnly } from './diff.js';
 import { TeXEngine, parseTeXLog } from './tex.js';
 import { PdfView } from './pdfview.js';
@@ -32,6 +32,7 @@ import { word, installWord, isDocx } from './word.js';
 import { ribbon, installRibbon } from './ribbon.js';
 import { shareParam, commentOnly, cleanPath } from './share.js';
 import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
+import { scriptNeeds, scriptLines, addScriptSetup, scriptName, scriptSetup, MORE } from './scripts.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const PX_PER_PT = 96 / 72.27;
@@ -68,6 +69,8 @@ const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 // One of the build's own files (git.js, tex/...): in the installed app, the copy of this page's
 // version (src/pwa.js); elsewhere simply the file next to the page.
 const asset = (p) => (__RIKUY_APP__ ? appAsset(p) : new URL(p, location.href).href);
+// the full Rikuy's address, which the copy on claude.ai names for what it has no room for
+const SCRIPT_HOST = typeof __RIKUY_WORD_HOST__ === 'undefined' ? '' : __RIKUY_WORD_HOST__;
 function loadScript(src) {
   return new Promise((res, rej) => {
     const s = document.createElement('script');
@@ -448,6 +451,7 @@ class App {
     this.syncSoon = debounce(() => this.revealCaret(), 120);
     this.problemsSoon = debounce(() => this.refreshNav(), 350);
     this.srcRebuild = debounce(() => this.fromSource(), 260);
+    this.scriptsSoon = debounce(() => this.scriptNotice(), 500);
     this.caps = { sample: null, downloads: null };
   }
 
@@ -595,7 +599,7 @@ class App {
     this.computePx();
     const macroChanged = this.renderer.setMacros(model.mathMacros, { opts: model.siOpts, units: model.siUnits, lang: model.opts.lang });
     const O = model.opts;
-    const optSig = JSON.stringify([O.pt, O.lang, O.font, O.citeStyle, O.parskip, O.cleveref, O.spread]);
+    const optSig = JSON.stringify([O.pt, O.lang, O.font, O.citeStyle, O.parskip, O.cleveref, O.spread, !!O.rtl]);
     if (macroChanged || optSig !== this.optSig || this.forceRender) { this.prefix = 'r' + (++this.renderVer) + '|'; this.optSig = optSig; this.forceRender = false; }
     this.renderer.sync(model, this.prefix);
     this.layoutPass();
@@ -611,9 +615,12 @@ class App {
     const items = [], fns = [];
     for (const B of this.renderer.blocks) { for (const it of B.items) items.push(it); for (const f of B.fns) fns.push(f); }
     const g = geometry(model.opts);
-    const gsig = JSON.stringify(g) + '|' + this.px + '|' + model.opts.spread + '|' + model.opts.parindent + '|' + model.opts.pt + '|' + model.opts.font;
+    // (whose fonts draw the Chinese characters is part of it: other fonts, other widths)
+    const cjk = this.cjkOrder();
+    const gsig = JSON.stringify(g) + '|' + this.px + '|' + model.opts.spread + '|' + model.opts.parindent + '|' + model.opts.pt + '|' + model.opts.font + '|' + cjk;
     if (gsig !== this.gsig || force) {
       this.gsig = gsig;
+      if (cjk) document.documentElement.dataset.cjk = cjk; else delete document.documentElement.dataset.cjk;
       this.layout.setGeometry(g, this.px, this.sheet, model.sizes, model.opts);
       this.sheet.dataset.font = model.opts.font || '';
       this.sheet.lang = { de: 'de', es: 'es', fr: 'fr' }[model.opts.lang] || 'en';
@@ -632,6 +639,33 @@ class App {
     this.commentsSoon();
     this.emptyGhost();
     this.widgets.place();
+  }
+
+  // Chinese characters are shared by Chinese, Japanese and Korean, whose fonts draw them each
+  // their own way, and a character does not say whose it is. The document does, as scripts.js
+  // tells the three apart: kana make it Japanese ('ja'), hangul Korean ('ko'), and with neither
+  // a set up for one of the two languages; else '' and the Chinese fonts come first as before.
+  // Looked at with every build of the page, so by a pattern's one pass over each file.
+  cjkOrder() {
+    const ja = MORE.find((x) => x[0] === 'japanese')[2], ko = MORE.find((x) => x[0] === 'korean')[2];
+    let j = 0, k = 0, han = false;
+    const texts = [];
+    for (const [n, t] of this.files) {
+      if (n !== this.main && !/\.tex$/i.test(n)) continue;
+      texts.push(t);
+      if (!j && ja.test(t)) j = 1;
+      if (!k && ko.test(t)) k = 1;
+      if (!han && /[\u3400-\u9FFF]/.test(t)) han = true;
+    }
+    if (j && k) {
+      // both: the one the text has more of
+      const count = (re) => texts.reduce((sum, t) => sum + (t.match(new RegExp(re.source, 'g')) || []).length, 0);
+      j = count(ja); k = count(ko);
+    } else if (!j && !k && han) {
+      const have = scriptSetup(this.src(this.main));
+      j = have.japanese ? 1 : 0; k = have.korean ? 1 : 0;
+    }
+    return j && j >= k ? 'ja' : k ? 'ko' : '';
   }
 
   // ---- live figures ------------------------------------------------------------
@@ -707,6 +741,8 @@ class App {
     while (pos > from && /\s/.test(src[pos - 1])) pos--;
     const g = mk('div', 'it p ghostp empty');
     g.dataset.ctx = 'p';
+    // (a document whose main language runs right to left starts at the right)
+    if (this.model.opts.rtl) g.dir = 'rtl';
     g.appendChild(mk('span', 't gh', '\u200B'));
     flow.appendChild(g);
     this.ghost = { el: g, f, pos, sticky: true };
@@ -750,10 +786,101 @@ class App {
     $('#st-pages').textContent = pages + (pages === 1 ? ' page' : ' pages');
     $('#st-words').textContent = m.words.toLocaleString('en-US') + ' words';
     this.problemsSoon();
+    this.scriptsSoon();
     $('#docname').textContent = this.name;
     this.lastMs = ms;
     this.updateFileTabs();
     this.ribbonSoon();
+  }
+
+  // ---- Chinese, Arabic and India's scripts ---------------------------------------
+  // LaTeX's own fonts have none of these scripts: a document with such text and no set up for it
+  // (src/scripts.js knows which) fails in the PDF or loses the characters. A slim bar under the
+  // ribbon says so and offers the lines; nothing is added to the source without the click on its
+  // button. The bar is looked at a moment after the page was built again, not at every key, never
+  // while an input method is composing, and not in a copy someone shared, whose set up is its
+  // author's.
+
+  // What the open project's text needs and its main file does not set up: [] or some of
+  // 'chinese', 'arabic' and India's scripts (scriptNeeds), or null where no set up can be
+  // offered now.
+  scriptNeedsNow() {
+    if (this.stale || !this.files.has(this.main) || document.body.classList.contains('guest')) return null;
+    const texts = [];
+    for (const [n, t] of this.files) if (n === this.main || /\.tex$/i.test(n)) texts.push(t);
+    const main = this.src(this.main);
+    // (a project with no Chinese or Arabic character costs one look at each file)
+    const needs = scriptNeeds(main, texts);
+    // no \begin{document} to put the lines before: nothing to offer
+    return needs.length && addScriptSetup(main, needs) != null ? needs : [];
+  }
+
+  async scriptNotice() {
+    const bar = $('#script-note');
+    if (!bar) return;
+    const key = this.name + '|' + this.main;
+    // project -> the needs its notice was dismissed for ('': not dismissed), kept with the
+    // project's other marks in this browser
+    this.scriptSeen = this.scriptSeen || new Map();
+    if (!this.scriptSeen.has(key)) {
+      let v = null;
+      try { v = this.noIdb ? null : await kvGet('scripts:' + key); } catch (e) { v = null; }
+      if (!this.scriptSeen.has(key)) this.scriptSeen.set(key, v && typeof v.dismissed === 'string' ? v.dismissed : '');
+    }
+    // (the store answered later: an input method may be composing now, or another project be open)
+    if (this.composing || key !== this.name + '|' + this.main) { this.scriptsSoon(); return; }
+    const needs = this.scriptNeedsNow();
+    if (!needs) { bar.hidden = true; return; }
+    const sig = needs.join(',');
+    // dismissed for other needs than the document has now: that answer no longer holds
+    if (this.scriptSeen.get(key) && this.scriptSeen.get(key) !== sig) {
+      this.scriptSeen.set(key, '');
+      if (!this.noIdb) kvDel('scripts:' + key).catch(() => {});
+    }
+    const show = !!sig && this.scriptSeen.get(key) !== sig;
+    if (show && bar.dataset.needs !== sig) {
+      // the scripts by the names people call them, in the order scriptNeeds gives them:
+      // "Devanagari", "Chinese and Arabic", "Chinese, Tamil and Bengali"
+      const names = needs.map(scriptName);
+      const list = names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : names[0];
+      $('#script-msg').textContent = 'This document has ' + list + ' text. LaTeX needs ' + (names.length > 1 ? 'fonts' : 'a font') +
+        (needs.includes('arabic') || needs.includes('hebrew') ? ' and right to left setup' : '') + ' for it.';
+      bar.dataset.needs = sig;
+    }
+    if (bar.hidden === show) bar.hidden = !show;
+  }
+
+  // The bar's button: the lines go into the main file's preamble as one edit, so one undo takes
+  // them out again, and the source pane, the versions and the PDF see them as any other edit.
+  scriptSetUp() {
+    if (this.srcRebuild.pending()) this.srcRebuild.flush();
+    $('#script-note').hidden = true;
+    const needs = this.scriptNeedsNow();
+    const main = this.src(this.main);
+    const next = needs && needs.length ? addScriptSetup(main, needs) : null;
+    const d = next == null ? null : diff(main, next);
+    if (!d) return;
+    // The engine the lines lead to, read from the lines themselves: ctex alone is XeLaTeX's,
+    // anything of babel's (bidi, a script set by its characters) is LuaLaTeX's (pickEngine in
+    // tex/engine.js reads the same lines).
+    const lines = scriptLines(needs, main);
+    const engine = lines.some((l) => /\\usepackage\b[^{]*\{ctex\}/.test(l)) && !lines.some((l) => /\\babel(provide|font)\b|\{babel\}/.test(l)) ? 'xelatex' : 'lualatex';
+    const c = this.caretNow();
+    const caret = c && c.f != null && !c.ghost ? { f: c.f, p: c.f === this.main && c.p >= d.s + d.del.length ? c.p + d.ins.length - d.del.length : c.p } : null;
+    this.closeGroup();
+    this.commit([{ f: this.main, s: d.s, e: d.s + d.del.length, t: d.ins }], caret, 'setup');
+    this.closeGroup();
+    const chosen = this.engineChoice();
+    this.toast(chosen === 'auto' || chosen === engine ? 'Added. The PDF is now made with ' + ENGINE_LABEL[engine] + '.'
+      : 'Added. The PDF needs ' + ENGINE_LABEL[engine] + ': set the engine to Auto in the preview.', 6000);
+  }
+
+  // Hidden for this project until what it needs changes
+  scriptDismiss() {
+    const bar = $('#script-note'), key = this.name + '|' + this.main, sig = bar.dataset.needs || '';
+    bar.hidden = true;
+    (this.scriptSeen = this.scriptSeen || new Map()).set(key, sig);
+    if (!this.noIdb) kvPut('scripts:' + key, { dismissed: sig, t: Date.now() }).catch(() => {});
   }
 
   // ---- caret ------------------------------------------------------------------
@@ -931,7 +1058,9 @@ class App {
     $('#b-copy').addEventListener('click', () => this.copySource());
     $('#b-share').addEventListener('click', () => this.openSharePanel());
     $('#guest-send').addEventListener('click', () => this.openSharePanel());
-    $('#guest-x').addEventListener('click', () => { $('#guest').hidden = true; document.body.classList.remove('guest'); if (this.shareCtx) { this.shareCtx.dismissed = true; kvPut('share:' + this.name + '|' + this.main, this.shareCtx).catch(() => {}); } });
+    $('#guest-x').addEventListener('click', () => { $('#guest').hidden = true; document.body.classList.remove('guest'); if (this.shareCtx) { this.shareCtx.dismissed = true; kvPut('share:' + this.name + '|' + this.main, this.shareCtx).catch(() => {}); } this.scriptsSoon(); });
+    $('#script-go').addEventListener('click', () => this.scriptSetUp());
+    $('#script-x').addEventListener('click', () => this.scriptDismiss());
     $('#b-pdf').addEventListener('click', () => this.togglePdf());
     $('#pdf-x').addEventListener('click', () => this.togglePdf(false));
     $('#pdf-re').addEventListener('click', () => { if (this.compiling && this.passStart && Date.now() - this.passStart > 4000) this.stopPdf(); else this.compilePdf({ clean: true }); });
@@ -1240,6 +1369,23 @@ class App {
       const tr = ranges && ranges[0];
       let r = tr ? this.rangeToSrc(tr) : null;
       if (r && r.a === r.b) r = null;
+      // A character made of several code points (क्षि: a consonant, a virama, a consonant, a
+      // vowel sign). Backspace takes the code point before the caret, as the browser's own
+      // Backspace does and writers of India's scripts expect: the vowel sign, then the letter,
+      // then the virama. The browser names the whole character as the range, also when the
+      // caret stands inside it (after a virama the next letter has joined). Delete takes the
+      // whole character after the caret, as natively, or what is left of the one the caret is
+      // in. Only where the page shows the source's own characters: a letter written as a
+      // command (\'e) goes whole.
+      if (r && r.f === c.f && tr.startContainer === tr.endContainer && tr.startContainer.nodeType === 3) {
+        const text = this.src(r.f), node = tr.startContainer, sel = getSelection();
+        if (type === 'deleteContentBackward' && r.a < c.a && c.a <= r.b && r.b - r.a > 1 && node.data.slice(tr.startOffset, tr.endOffset) === text.slice(r.a, r.b)) {
+          r = { f: r.f, a: c.a - backspaceUnits(text.slice(r.a, c.a)), b: c.a };
+        } else if (type === 'deleteContentForward' && r.a > c.a && sel.anchorNode === node && sel.anchorOffset < tr.startOffset &&
+          node.data.slice(sel.anchorOffset, tr.startOffset) === text.slice(c.a, r.a) && clusterEdge(text, c.a, 1) === r.a) {
+          r = { f: r.f, a: c.a, b: r.a };
+        }
+      }
       // With nothing selected, Backspace takes only what is before the caret and Delete only
       // what is after it. At the start of a theorem's body the browser names a range that begins
       // past the generated "Theorem 1." label, which maps to the paragraph's end: taken as it
@@ -1443,6 +1589,8 @@ class App {
     const g = document.createElement('div');
     g.className = 'it p ghostp' + (afterEl.classList.contains('ind') || afterEl.classList.contains('p') ? ' ind' : '');
     g.dataset.ctx = 'p';
+    // the new paragraph runs the way the one above it does
+    if (afterEl.dir === 'rtl' || afterEl.dir === 'ltr') g.dir = afterEl.dir;
     const s = document.createElement('span');
     s.className = 't gh';
     s.textContent = '\u200B';
@@ -1608,6 +1756,11 @@ class App {
       this.commit([{ f: c.f, s: c.a, e: c.a, t: open + '}' }], { f: c.f, p: c.a + open.length, bias: 1 }, 'style');
       return;
     }
+    // A selection that starts or ends inside what a reader takes for one character (क्षि is a
+    // consonant, a virama, a consonant and a vowel sign) takes that character whole: a brace
+    // between its parts would take the conjunct apart on the page and in the PDF.
+    c.a = sourceEdge(src, c.a, -1);
+    c.b = sourceEdge(src, c.b, 1);
     if (!isBalanced(src, c.a, c.b)) { this.toast('That selection crosses structure. Select text inside one paragraph or cell.'); return; }
     // A selection over several paragraphs: each paragraph's part gets the command of its own.
     // One command around all of them took the blank lines into its braces, which TeX refuses
@@ -4526,8 +4679,10 @@ class App {
       this.syncEngineMenu();
       const res = await engine.compile({ project: this.name + '|' + this.main, files: await this.compileFiles(), main: this.main, clean: !!opts.clean, bibSig, engine: this.engineChoice(), shellEscape: this.prefs.shellEscape !== false && !untrusted, untrusted });
       if (gen !== (this.pdfGen || 0)) return; // another project was opened meanwhile
-      this.lastCompile = { read: res.read || [], unkept: res.unkept || [], ok: !!res.ok, failed: '' };
+      this.lastCompile = { read: res.read || [], unkept: res.unkept || [], unkeptScripts: !!res.unkeptScripts, ok: !!res.ok, failed: '' };
       // TeX stopped where a file's pack could not be loaded (offline, or the network failed)
+      // the copy on claude.ai has no room for the Chinese and Arabic fonts: say where they are
+      if (res.unkeptScripts && SCRIPT_HOST && navigator.onLine !== false) throw Object.assign(new Error('This copy of Rikuy has no room for the Chinese and Arabic fonts this document needs. Open the document in the full Rikuy at ' + SCRIPT_HOST + ' (Download, LaTeX saves it; Open there loads it).'), { scripts: true });
       if (res.unkept && res.unkept.length) throw Object.assign(new Error('Some TeX files could not be loaded (' + res.unkept.slice(0, 5).join(', ') + (res.unkept.length > 5 ? ' and more' : '') + '); check the network and compile again'), { unkept: res.unkept });
       const issues = parseTeXLog(res.log);
       this.engineLabel = res.engineLabel || 'LaTeX';
@@ -4580,7 +4735,7 @@ class App {
       // offline, a file TeX has not kept fails to load; say what to do rather than "Failed to fetch"
       const need = e && e.unkept ? ' (' + e.unkept.slice(0, 5).join(', ') + (e.unkept.length > 5 ? ' and more' : '') + ')' : '';
       const off = __RIKUY_APP__ && APP.on && navigator.onLine === false ? 'You are offline, and this document needs TeX files this browser has not kept yet' + need + '. Compile it once with a network and they stay; Make available offline in the status bar keeps those of a typical paper and of the open document. ' : '';
-      d.textContent = off + this.texFailText(e, !!off, !!need) + 'The page preview can still be printed.';
+      d.textContent = e && e.scripts ? e.message + ' The page preview can still be printed.' : off + this.texFailText(e, !!off, !!need) + 'The page preview can still be printed.';
       const b = document.createElement('button'); b.className = 'btn sm'; b.type = 'button'; b.textContent = 'Print the preview'; b.style.marginTop = '10px';
       b.addEventListener('click', () => this.printPDF());
       d.append(document.createElement('br'), b);
@@ -4724,7 +4879,7 @@ class App {
       } catch (e) { /* leave it */ }
     }
     const sheet = this.sheet;
-    const html = '<!doctype html><html lang="' + (sheet.lang || 'en') + '"><head><meta charset="utf-8"><title>' + esc(this.name || 'paper') + '</title><style>' + css +
+    const html = '<!doctype html><html lang="' + (sheet.lang || 'en') + '"' + (/^(ja|ko)$/.test(document.documentElement.dataset.cjk || '') ? ' data-cjk="' + document.documentElement.dataset.cjk + '"' : '') + '><head><meta charset="utf-8"><title>' + esc(this.name || 'paper') + '</title><style>' + css +
       '\nbody{margin:0;background:#fff;overflow:visible;height:auto}#pages{display:block}.page{box-shadow:none;margin:0 auto;break-after:page;content-visibility:visible;contain:none}.page:last-child{break-after:auto}.has-err,.ghostp{outline:none}.w-live .wfb{visibility:visible}' +
       '@media screen{#pages{display:flex;flex-direction:column;align-items:center;gap:16px;padding:16px 0;background:#DCE1E7}.page{box-shadow:0 1px 2px rgba(0,0,0,.2)}}</style></head><body>' +
       '<div class="sheet" lang="' + (sheet.lang || 'en') + '" style="' + (sheet.getAttribute('style') || '').replace(/"/g, '&quot;') + '"' + (sheet.dataset.font ? ' data-font="' + sheet.dataset.font + '"' : '') + '>' + clone.outerHTML + '</div>' +

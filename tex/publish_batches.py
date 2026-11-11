@@ -29,7 +29,10 @@ for k, t in idx['tools'].items():
         for a in (v if isinstance(v, list) else [v]):
             if isinstance(a, dict) and 'f' in a:
                 tools.append(a['f'])
-rest = [p['f'] for i, p in enumerate(idx['packs']) if i not in set(idx['core'])]
+# the Chinese and Arabic packs ('x' in the index, 47 MB) stay out: the artifact has no room for
+# them, and the worker tells a document that needs one where the hosted Rikuy is
+rest = [p['f'] for i, p in enumerate(idx['packs']) if i not in set(idx['core']) and not p.get('x')]
+left_out = set(p['f'] for p in idx['packs'] if p.get('x'))
 order = []
 for f in first + tools + rest:
     if f not in order:
@@ -37,7 +40,7 @@ for f in first + tools + rest:
 on_disk = set(os.listdir(D))
 missing = [f for f in order if f not in on_disk]
 assert not missing, missing
-extra = sorted(on_disk - set(order))
+extra = sorted(on_disk - set(order) - left_out)
 assert not [f for f in extra if f.endswith('.wasm')], extra  # a pack the index does not know
 order += extra
 

@@ -130,8 +130,122 @@ try:
         page.check('#pdf-shell')
         wait_pdf(page)
 
+        # Chinese and Arabic: the fonts are packs of their own (build_tree.py, SCRIPT_PICKS), the
+        # engine follows the set up lines src/scripts.js writes
+        def pdf_fonts_text(page):
+            import io, pypdf
+            b64 = page.evaluate("""() => { const b = window.rikuy.lastPdf; if (!b) return ''; let s = ''; const u = new Uint8Array(b);
+              for (let i = 0; i < u.length; i += 32768) s += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return btoa(s); }""")
+            if not b64: return set(), ''
+            r = pypdf.PdfReader(io.BytesIO(base64.b64decode(b64)))
+            fonts = set()
+            for pg in r.pages:
+                for f in (pg['/Resources'].get('/Font') or {}).values():
+                    fonts.add(str(f.get_object().get('/BaseFont')))
+            return fonts, ''.join(pg.extract_text() for pg in r.pages)
+
+        open_doc(page, [['main.tex', '\\documentclass{article}\n\\usepackage[scheme=plain]{ctex}\n\\begin{document}\nHello 你好，世界！\\textbf{粗体} \\textit{楷体} 繁體：臺灣。\n\\end{document}\n']])
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('Chinese with ctex compiles with XeLaTeX on Auto', st.startswith('XeLaTeX') and 'page' in st, st)
+        check('the PDF sets it in Fandol Song, bold and Kai, with the Latin in Latin Modern', all(any(n in f for f in fonts) for n in ('FandolSong-Regular', 'FandolSong-Bold', 'FandolKai-Regular', 'LMRoman10-Regular')), sorted(fonts))
+
+        AR = '\\documentclass{article}\n\\usepackage[english, bidi=basic]{babel}\n\\babelprovide[import, %s]{arabic}\n\\babelfont%s{rm}[Renderer=Harfbuzz]{Amiri}\n\\begin{document}\n%s\n\\end{document}\n'
+        open_doc(page, [['main.tex', AR % ('onchar=ids fonts', '[arabic]', 'Hello مرحبا بالعالم world (مع أقواس) 123.')]])
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('Arabic with babel bidi=basic compiles with LuaLaTeX on Auto', st.startswith('LuaLaTeX') and 'page' in st and 'babel bidi' in page.evaluate("document.getElementById('pdf-engine').title"), st)
+        check('the PDF sets the Arabic in Amiri and the rest in Latin Modern', any('Amiri-Regular' in f for f in fonts) and any('LMRoman10' in f for f in fonts), sorted(fonts))
+        check('no problems are reported', not [x for x in page.evaluate("window.rikuy.texIssues.map(x => x.sev + ' ' + x.msg)") if x.startswith('error')], page.evaluate("window.rikuy.texIssues.map(x => x.msg)")[:4])
+
+        open_doc(page, [['main.tex', AR % ('main', '', '\\section{مقدمة}\nهذه فقرة عربية مع English وسطها. \\textbf{عريض}')]])
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('an Arabic main language document compiles', st.startswith('LuaLaTeX') and 'page' in st and any('Amiri-Bold' in f for f in fonts), [st, sorted(fonts)])
+
+        open_doc(page, [['main.tex', '\\documentclass{article}\n\\usepackage{CJKutf8}\n\\begin{document}\n\\begin{CJK}{UTF8}{gbsn}你好，世界！\\end{CJK}\n\\begin{CJK}{UTF8}{bsmi}繁體中文\\end{CJK}\n\\end{document}\n']])
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('the CJK package compiles with pdfLaTeX (Arphic fonts)', st.startswith('pdfLaTeX') and 'page' in st and any('gbsnu' in f for f in fonts) and any('bsmiu' in f for f in fonts), [st, sorted(fonts)[:6]])
+
+        # the whole way for a newcomer: Chinese typed into a plain document, the notice's one
+        # click, and a PDF in Fandol
+        open_doc(page, [['main.tex', '\\documentclass{article}\n\\begin{document}\nHello 你好，世界！\n\\end{document}\n']])
+        page.wait_for_selector('#script-note:not([hidden])', timeout=8000)
+        said = page.inner_text('#script-msg')
+        page.click('#script-go')
+        page.wait_for_timeout(400)
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('a plain document with Chinese text: the notice, one click, and the PDF is set in Fandol', 'Chinese' in said and st.startswith('XeLaTeX') and 'page' in st and any('FandolSong-Regular' in f for f in fonts), [said, st, sorted(fonts)])
+
+        # Arabic typed into the document Rikuy set up for Chinese: the second click moves it to
+        # LuaLaTeX and babel sets both (ctex there would ask for luatexja)
+        cur = page.evaluate("window.rikuy.files.get(window.rikuy.main)")
+        open_doc(page, [['main.tex', cur.replace('Hello', 'Hello and good morning to everyone مرحبا') if 'مرحبا' not in cur else cur]])
+        page.wait_for_selector('#script-note:not([hidden])', timeout=8000)
+        said = page.inner_text('#script-msg')
+        page.click('#script-go')
+        page.wait_for_timeout(400)
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        now = page.evaluate("window.rikuy.files.get(window.rikuy.main)")
+        check('Arabic joining it: the notice again, ctex makes way for babel, and the PDF has Amiri and Fandol', 'Arabic' in said and 'ctex' not in now and st.startswith('LuaLaTeX') and 'page' in st and any('Amiri' in f for f in fonts) and any('FandolSong' in f for f in fonts), [said, st, sorted(fonts), now[:300]])
+
+        # India's scripts: Hindi, Gujarati (whose characters babel has to be told about) and
+        # Tamil typed into a plain document
+        open_doc(page, [['main.tex', '\\documentclass{article}\n\\begin{document}\nHello to everyone here: नमस्ते क्षत्रिय, નમસ્તે શ્રી and வணக்கம். বাংলা। শেষ॥ \\texttt{कोड} \\textsf{सैन्स}\n\\end{document}\n']])
+        page.wait_for_selector('#script-note:not([hidden])', timeout=8000)
+        said = page.inner_text('#script-msg')
+        page.click('#script-go')
+        page.wait_for_timeout(400)
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('Hindi, Gujarati and Tamil in a plain document: the notice, one click, and the PDF is set in the three Noto fonts', st.startswith('LuaLaTeX') and 'page' in st and all(any(n in f for f in fonts) for n in ('NotoSerifDevanagari', 'NotoSerifGujarati', 'NotoSerifTamil', 'LMRoman10')), [said, st, sorted(fonts)])
+        check('no problems are reported for it', not [x for x in page.evaluate("window.rikuy.texIssues.map(x => x.sev + ' ' + x.msg)") if x.startswith('error')], page.evaluate("window.rikuy.texIssues.map(x => x.msg)")[:4])
+        # a danda after Bengali (it stands in Devanagari's block), and text in \texttt and \textsf:
+        # each was gone from the PDF before the set up gave every family a font
+        check('dandas, typewriter and sans serif text are in the PDF', '।' in text and '॥' in text and any('NotoSerifBengali' in f for f in fonts) and text.count('क') >= 2, [text[:200], sorted(fonts)])
+
+        # Japanese, Korean, Hebrew, Thai and Sinhala in one plain document. Japanese beside Korean
+        # is the hard pair: babel counts Chinese characters as both's (they came out in the Korean
+        # font, as empty boxes), and four of their fonts at once ran the engine out of memory
+        open_doc(page, [['main.tex', '\\documentclass{article}\n\\begin{document}\nHello to everyone here in this document: 日本語のテキスト。 한국어 문장. שלום עולם. สวัสดีชาวโลก. ආයුබෝවන්.\n\\end{document}\n']])
+        page.wait_for_selector('#script-note:not([hidden])', timeout=8000)
+        page.click('#script-go')
+        page.wait_for_timeout(400)
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('Japanese, Korean, Hebrew, Thai and Sinhala in a plain document: one click, and the PDF has a font for each', st.startswith('LuaLaTeX') and 'page' in st and all(any(n in f for f in fonts) for n in ('HaranoAjiMincho', 'NanumMyeongjo', 'HadasimCLM', 'NotoSerifThai', 'NotoSerifSinhala')), [st, sorted(fonts)])
+        check('the Chinese characters among the Japanese are in the PDF as text', '日本語' in text and '한국어' in text and 'สวัสดี' in text, text[:200])
+
         errs = [e for e in errors if 'favicon' not in e]
         check('no page errors', not errs, errs[:5])
+        browser.close()
+
+        # a copy without the Chinese and Arabic packs (the artifact on claude.ai): the compile
+        # stops, no half made PDF is shown, and the result says that only those packs were missed
+        import gzip, json, re
+        raw = open(os.path.join(os.environ.get('RIKUY_DIST') or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'dist'), 'tex', 'tree.wasm'), 'rb').read()
+        idx = json.loads(gzip.decompress(raw[raw.index(b'galley') + 6:]))
+        xpacks = [p_['f'] for p_ in idx['packs'] if p_.get('x')]
+        browser, page, errors = open_page(p, width=1500, height=950)
+        page.route(re.compile('/tex/(' + '|'.join(re.escape(f) for f in xpacks) + ')$'), lambda route: route.fulfill(status=404, body='not here'))
+        # an English document that names a font nobody has: XeTeX then goes through every font
+        # of the tree, the missing packs among them. It must get fontspec's own error, not be
+        # told about Chinese and Arabic fonts
+        open_doc(page, [['main.tex', '\\documentclass{article}\n\\usepackage{fontspec}\n\\setmainfont{No Such Font Anywhere}\n\\begin{document}\nEnglish only.\n\\end{document}\n']])
+        page.click('#b-pdf')
+        wait_pdf(page)
+        lc = page.evaluate("window.rikuy.lastCompile")
+        probs = page.evaluate("window.rikuy.texIssues.map(x => x.msg)")
+        check('without them an English document with an unknown font name gets fontspec\'s error, not theirs', bool(lc) and not lc.get('unkeptScripts') and not lc.get('unkept') and any('No Such Font Anywhere' in x or 'cannot be found' in x for x in probs), [lc and {k: lc[k] for k in ('unkept', 'unkeptScripts', 'ok')}, probs[:3]])
+        open_doc(page, [['main.tex', '\\documentclass{article}\n\\usepackage[scheme=plain]{ctex}\n\\begin{document}\n你好\n\\end{document}\n']])
+        wait_pdf(page)
+        lc = page.evaluate("window.rikuy.lastCompile")
+        shown = page.evaluate("document.getElementById('pdf-host').textContent")
+        check('36 packs are marked as the ones for other scripts', len(xpacks) == 36, len(xpacks))
+        check('without them a Chinese document gets no PDF, and the result names only those packs', bool(lc) and lc.get('unkeptScripts') is True and not lc.get('ok') and not page.evaluate("!!document.querySelector('#pdf-host canvas')") and 'could not be loaded' in shown, [lc and {k: lc[k] for k in ('unkept', 'unkeptScripts', 'ok')}, shown[:160]])
         browser.close()
 except Exception as e:
     # a run that stops part way has failed, whatever the checks before it said

@@ -20,10 +20,66 @@
   --shadow: 0 1px 2px rgba(20, 32, 44, .18), 0 8px 28px rgba(20, 32, 44, .12);
   --font-ui: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
-  --font-doc: "Paper Modern Serif", "Latin Modern Roman", "Computer Modern Serif", "Iowan Old Style", Georgia, serif;
-  --font-doc-tt: "Paper Modern Typewriter", "Latin Modern Mono", ui-monospace, monospace;
-  --font-doc-sf: "Paper Modern Sans", "Latin Modern Sans", "Helvetica Neue", Arial, sans-serif;
+  /* Chinese and Arabic in the document's text. The page's own fonts have neither, so the reader's
+     system lends them: a Song (Ming) and a Naskh for the text, as the PDF's Fandol Song and Amiri
+     are, a Hei for sans serif, a Fang Song for typewriter text. They come after every family the
+     stacks had, the generic one too, so no Latin letter, digit or sign is drawn by another font
+     than before. */
+  --font-ar: Amiri, "Noto Naskh Arabic", "Traditional Arabic", "Geeza Pro", "Arabic Typesetting", "Scheherazade New", "Sakkal Majalla", "Droid Arabic Naskh";
+  --font-ar-sf: "Noto Sans Arabic", "Geeza Pro", "Segoe UI", Tahoma, "Droid Arabic Kufi", "DejaVu Sans";
+  --font-ar-tt: "Courier New", "DejaVu Sans Mono", "Noto Sans Arabic";
+  /* Hebrew, after Arabic's own fonts: Times New Roman has both scripts and is the last resort of
+     both (the first, as the generic serif, on Windows and macOS). */
+  --font-he: "Noto Serif Hebrew", David, "Times New Roman", "Frank Ruehl CLM", "David CLM", "Arial Hebrew", "SBL Hebrew", "Noto Sans Hebrew";
+  --font-he-sf: "Noto Sans Hebrew", "Arial Hebrew", "Segoe UI", Tahoma, "DejaVu Sans", "Noto Serif Hebrew", David;
+  /* Chinese characters are shared by Chinese, Japanese and Korean, each with fonts that draw
+     them its own way, and no character says whose it is. The document does: with kana in it the
+     Japanese fonts come first, with hangul the Korean ones (data-cjk on the root, App.cjkOrder);
+     else the Chinese ones, as before. */
+  --font-zh: "Paper CJK", FandolSong, "Songti SC", STSong, SimSun, NSimSun, "Noto Serif CJK SC", "Source Han Serif SC", "Source Han Serif CN", "Songti TC", PMingLiU, MingLiU, "Noto Serif CJK TC", "AR PL UMing CN";
+  --font-zh-sf: FandolHei, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", "Source Han Sans CN", "Heiti SC", SimHei, "WenQuanYi Micro Hei", "WenQuanYi Zen Hei", "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC";
+  --font-zh-tt: FandolFang, FangSong, STFangsong, FangSong_GB2312, "Noto Sans Mono CJK SC", "Source Han Mono SC", "Noto Sans CJK SC", SimSun;
+  --font-ja: "Hiragino Mincho ProN", "Yu Mincho", YuMincho, "MS PMincho", "Noto Serif CJK JP", "Source Han Serif JP", "Source Han Serif", IPAexMincho, "Harano Aji Mincho";
+  --font-ja-sf: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", YuGothic, Meiryo, "Noto Sans CJK JP", "Source Han Sans JP", "Source Han Sans", IPAexGothic, "Harano Aji Gothic";
+  --font-ja-tt: "Noto Sans Mono CJK JP", "MS Gothic", var(--font-ja-sf);
+  --font-ko: AppleMyungjo, Batang, "Nanum Myeongjo", NanumMyeongjo, "Noto Serif CJK KR", "Source Han Serif KR", "Source Han Serif K", UnBatang;
+  --font-ko-sf: "Apple SD Gothic Neo", "Malgun Gothic", "Nanum Gothic", NanumGothic, "Noto Sans CJK KR", "Source Han Sans KR", "Source Han Sans K", Dotum;
+  --font-ko-tt: "Noto Sans Mono CJK KR", "Nanum Gothic Coding", NanumGothicCoding, var(--font-ko-sf);
+  --font-cjk: var(--font-zh), var(--font-ja), var(--font-ko);
+  --font-cjk-sf: var(--font-zh-sf), var(--font-ja-sf), var(--font-ko-sf);
+  --font-cjk-tt: var(--font-zh-tt), var(--font-ja-tt), var(--font-ko-tt);
+  /* Thai and Sinhala: the Noto Serif the PDF is set in, then macOS's, Windows' and the rest */
+  --font-th: "Noto Serif Thai", Thonburi, "Leelawadee UI", Tahoma, "Angsana New", "Noto Sans Thai", "Noto Sans Thai Looped", Loma, Garuda;
+  --font-th-sf: "Noto Sans Thai", Thonburi, "Leelawadee UI", Tahoma, Loma, Garuda, "Noto Serif Thai";
+  --font-si: "Noto Serif Sinhala", "Sinhala MN", "Nirmala UI", "Iskoola Pota", "Noto Sans Sinhala", "Sinhala Sangam MN", LKLUG;
+  --font-si-sf: "Noto Sans Sinhala", "Sinhala Sangam MN", "Nirmala UI", "Iskoola Pota", LKLUG, "Noto Serif Sinhala", "Sinhala MN";
+  /* India's scripts (Devanagari, Bengali, Gurmukhi, Gujarati, Odia, Tamil, Telugu, Kannada,
+     Malayalam, in that order in each row): the Noto Serif the PDF is set in where the system has
+     it (Odia's is a Noto Sans there), then what macOS, Windows, Android and Linux carry. Each
+     font but Nirmala UI has one script, so a row's order is each script's own order. */
+  --font-in-serif: "Noto Serif Devanagari", "Noto Serif Bengali", "Noto Serif Gurmukhi", "Noto Serif Gujarati", "Noto Sans Oriya", "Noto Serif Oriya", "Noto Serif Tamil", "Noto Serif Telugu", "Noto Serif Kannada", "Noto Serif Malayalam";
+  --font-in-mac: "Kohinoor Devanagari", "Devanagari MT", "Devanagari Sangam MN", "Kohinoor Bangla", "Bangla MN", "Bangla Sangam MN", "Gurmukhi MN", "Gurmukhi Sangam MN", "Gujarati MT", "Kohinoor Gujarati", "Gujarati Sangam MN", "Oriya MN", "Oriya Sangam MN", "Tamil MN", "Tamil Sangam MN", "Kohinoor Telugu", "Telugu MN", "Telugu Sangam MN", "Kannada MN", "Kannada Sangam MN", "Malayalam MN", "Malayalam Sangam MN";
+  --font-in-win: "Nirmala UI", Mangal, Vrinda, "Shonar Bangla", Raavi, Shruti, Kalinga, Latha, Gautami, Tunga, Kartika;
+  --font-in-sans: "Noto Sans Devanagari", "Noto Sans Bengali", "Noto Sans Gurmukhi", "Noto Sans Gujarati", "Noto Sans Oriya", "Noto Sans Tamil", "Noto Sans Telugu", "Noto Sans Kannada", "Noto Sans Malayalam";
+  --font-in-lohit: "Lohit Devanagari", "Lohit Bengali", "Lohit Gurmukhi", "Lohit Gujarati", "Lohit Odia", "Lohit Tamil", "Lohit Telugu", "Lohit Kannada", "Lohit Malayalam";
+  --font-in: var(--font-in-serif), var(--font-in-mac), var(--font-in-win), var(--font-in-sans), var(--font-in-lohit);
+  --font-in-sf: var(--font-in-sans), var(--font-in-mac), var(--font-in-win), var(--font-in-lohit), var(--font-in-serif);
+  --font-doc: "Paper Modern Serif", "Latin Modern Roman", "Computer Modern Serif", "Iowan Old Style", Georgia, serif, var(--font-ar), var(--font-he), var(--font-cjk), var(--font-in), var(--font-th), var(--font-si);
+  --font-doc-tt: "Paper Modern Typewriter", "Latin Modern Mono", ui-monospace, monospace, var(--font-ar-tt), var(--font-he-sf), var(--font-cjk-tt), var(--font-in-sf), var(--font-th-sf), var(--font-si-sf);
+  --font-doc-sf: "Paper Modern Sans", "Latin Modern Sans", "Helvetica Neue", Arial, sans-serif, var(--font-ar-sf), var(--font-he-sf), var(--font-cjk-sf), var(--font-in-sf), var(--font-th-sf), var(--font-si-sf);
 }
+/* the order of the three in a Japanese and in a Korean document (the stacks above take it,
+   being the root's own) */
+:root[data-cjk="ja"] { --font-cjk: var(--font-ja), var(--font-zh), var(--font-ko); --font-cjk-sf: var(--font-ja-sf), var(--font-zh-sf), var(--font-ko-sf); --font-cjk-tt: var(--font-ja-tt), var(--font-zh-tt), var(--font-ko-tt); }
+:root[data-cjk="ko"] { --font-cjk: var(--font-ko), var(--font-zh), var(--font-ja); --font-cjk-sf: var(--font-ko-sf), var(--font-zh-sf), var(--font-ja-sf); --font-cjk-tt: var(--font-ko-tt), var(--font-zh-tt), var(--font-ja-tt); }
+/* Italic Chinese is set in Kai, as ctex sets it (a Song has no italic), and bold in the Song's
+   own bold. These faces only name fonts the system may have (nothing is loaded, and where none
+   is found the names in --font-cjk are tried next), and only for Chinese, Japanese and Korean
+   characters and their punctuation. */
+@font-face { font-family: "Paper CJK"; font-style: normal; font-weight: 400; src: local("FandolSong-Regular"), local("FandolSong"), local("Songti SC Regular"), local("STSongti-SC-Regular"), local("STSong"), local("SimSun"), local("Noto Serif CJK SC"), local("NotoSerifCJKsc-Regular"), local("Source Han Serif SC"), local("SourceHanSerifSC-Regular"), local("Source Han Serif CN"), local("SourceHanSerifCN-Regular"); unicode-range: U+2E80-2FDF, U+3000-303F, U+31C0-31EF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F; }
+@font-face { font-family: "Paper CJK"; font-style: normal; font-weight: 700; src: local("FandolSong-Bold"), local("Songti SC Bold"), local("STSongti-SC-Bold"), local("Noto Serif CJK SC Bold"), local("NotoSerifCJKsc-Bold"), local("Source Han Serif SC Bold"), local("SourceHanSerifSC-Bold"), local("Source Han Serif CN Bold"), local("SourceHanSerifCN-Bold"); unicode-range: U+2E80-2FDF, U+3000-303F, U+31C0-31EF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F; }
+@font-face { font-family: "Paper CJK"; font-style: italic; font-weight: 400; src: local("FandolKai-Regular"), local("FandolKai"), local("Kaiti SC Regular"), local("STKaitiSC-Regular"), local("KaiTi"), local("STKaiti"), local("KaiTi_GB2312"), local("AR PL UKai CN"), local("AR PL KaitiM GB"), local("TW-Kai"); unicode-range: U+2E80-2FDF, U+3000-303F, U+31C0-31EF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F; }
+@font-face { font-family: "Paper CJK"; font-style: italic; font-weight: 700; src: local("Kaiti SC Bold"), local("STKaitiSC-Bold"), local("FandolKai-Regular"), local("FandolKai"), local("KaiTi"), local("STKaiti"), local("AR PL UKai CN"); unicode-range: U+2E80-2FDF, U+3000-303F, U+31C0-31EF, U+3400-4DBF, U+4E00-9FFF, U+F900-FAFF, U+FE30-FE4F, U+FF00-FFEF, U+20000-2FA1F; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --desk: #151A20; --desk-2: #0F1318; --chrome: #1B222A; --panel: #1F2730; --line: #2E3843;
@@ -157,9 +213,9 @@ body.pdf-on #pdfpane { display: flex; }
 
 /* ---- the sheet: everything typeset ---- */
 .sheet { padding: 28px 0 60px; font-family: var(--font-doc); color: var(--ink); --pt: 1.3; }
-.sheet[data-font="times"] { --font-doc: "Times New Roman", Times, "Nimbus Roman", serif; }
-.sheet[data-font="palatino"] { --font-doc: "Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", serif; }
-.sheet[data-font="sans"] { --font-doc: "Helvetica Neue", Helvetica, Arial, sans-serif; }
+.sheet[data-font="times"] { --font-doc: "Times New Roman", Times, "Nimbus Roman", serif, var(--font-ar), var(--font-he), var(--font-cjk), var(--font-in), var(--font-th), var(--font-si); }
+.sheet[data-font="palatino"] { --font-doc: "Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", serif, var(--font-ar), var(--font-he), var(--font-cjk), var(--font-in), var(--font-th), var(--font-si); }
+.sheet[data-font="sans"] { --font-doc: "Helvetica Neue", Helvetica, Arial, sans-serif, var(--font-ar-sf), var(--font-he-sf), var(--font-cjk-sf), var(--font-in-sf), var(--font-th-sf), var(--font-si-sf); }
 /* pages centre by their auto margins, not align-items: a page zoomed wider than the window then
    overflows to the right, where it scrolls, instead of losing its left side off screen */
 #pages { outline: none; caret-color: #1E6BAA; display: flex; flex-direction: column; align-items: flex-start; gap: 22px; }
@@ -182,12 +238,14 @@ body.pdf-on #pdfpane { display: flex; }
 .al-center { text-align: center; }
 .al-left { text-align: left; hyphens: manual; }
 .al-right { text-align: right; }
-.it.deep { padding-left: calc(var(--depth) * 2.5em); }
+/* (sides are named by the way the text runs, inline-start and inline-end: left and right in a
+   left to right paragraph, mirrored in one that carries dir="rtl") */
+.it.deep { padding-inline-start: calc(var(--depth) * 2.5em); }
 .it.split-b .lbl, .it.split-b .envtag { display: none; }
-.lbl { text-align-last: right; position: absolute; top: 0; left: calc((var(--depth, 1) - 1) * 2.5em); width: 2.5em; padding-right: .5em; text-align: right; text-indent: 0; box-sizing: border-box; user-select: none; }
+.lbl { text-align-last: end; position: absolute; top: 0; inset-inline-start: calc((var(--depth, 1) - 1) * 2.5em); width: 2.5em; padding-inline-end: .5em; text-align: end; text-indent: 0; box-sizing: border-box; user-select: none; }
 .lbl-bib { width: 2.2em; }
 .dlbl { font-weight: bold; }
-.it.p[data-ctx="li"] .dlbl { margin-left: -1.6em; }
+.it.p[data-ctx="li"] .dlbl { margin-inline-start: -1.6em; }
 .pad-after { padding-bottom: .8em; }
 .pad-math { padding-bottom: .9em; }
 .pad-flt { padding-bottom: 1.1em; }
@@ -228,13 +286,13 @@ body.pdf-on #pdfpane { display: flex; }
 .it.z-small, .it.z-footnotesize, .it.z-scriptsize { line-height: calc(var(--lhr) * 1em); }
 .chr { user-select: none; }
 .chr.hy { user-select: none; }
-.chr.qed { position: absolute; right: 0; bottom: 0; line-height: var(--lh); text-indent: 0; }
-.it.has-qed { padding-right: 1.2em; }
+.chr.qed { position: absolute; inset-inline-end: 0; bottom: 0; line-height: var(--lh); text-indent: 0; }
+.it.has-qed { padding-inline-end: 1.2em; }
 .envtag { position: absolute; right: 100%; top: .15em; margin-right: .8em; font: 9px/1.2 var(--font-mono); color: #9AA6B2; text-indent: 0; white-space: nowrap; }
 .ph { display: inline-block; min-width: .5em; min-height: 1em; background: rgba(43, 116, 176, .08); border-radius: 2px; }
 
 /* headings */
-.it.h { text-align: left; hyphens: manual; font-weight: bold; line-height: 1.22; text-indent: 0; }
+.it.h { text-align: start; hyphens: manual; font-weight: bold; line-height: 1.22; text-indent: 0; }
 .it.h0 { font-size: calc(var(--z-Huge) * 1em); padding-top: 1.4em; padding-bottom: .9em; line-height: 1.15; }
 .it.h-1 { font-size: calc(var(--z-Huge) * 1em); padding: 3em 0 2em; text-align: center; }
 .chapl { display: block; font-size: .83em; margin-bottom: .8em; }
@@ -243,7 +301,7 @@ body.pdf-on #pdfpane { display: flex; }
 .it.h3 { font-size: 1em; padding-bottom: .6em; }
 .it.h4, .it.h5 { font-size: 1em; padding-bottom: .3em; }
 .it.habs { font-size: calc(var(--z-small) * 1em); text-align: center; padding-bottom: .5em; }
-.secnum { margin-right: 1em; }
+.secnum { margin-inline-end: 1em; }
 .refs-h { user-select: none; }
 
 /* title */
@@ -306,17 +364,17 @@ body.pdf-on #pdfpane { display: flex; }
 .it.ref { padding-left: 1.5em; text-indent: -1.5em; text-align: left; hyphens: manual; overflow-wrap: anywhere; }
 .it.ref.num { padding-left: 2.2em; text-indent: -2.2em; }
 .ref-l { display: inline-block; width: 2.2em; text-indent: 0; }
-.it.bibitem { text-align: left; }
-.it.bibitem.num { padding-left: 2.2em; }
+.it.bibitem { text-align: start; }
+.it.bibitem.num { padding-inline-start: 2.2em; }
 
 /* TOC */
 .toc { text-indent: 0; }
 .toc-head { font-weight: bold; font-size: calc(var(--z-Large) * 1em); margin-bottom: .6em; }
 .toc-e { display: flex; align-items: baseline; gap: .3em; }
 .toc-l1 { font-weight: bold; margin-top: .5em; }
-.toc-l2 { padding-left: 1.5em; }
-.toc-l3 { padding-left: 3.8em; }
-.toc-l4 { padding-left: 7em; }
+.toc-l2 { padding-inline-start: 1.5em; }
+.toc-l3 { padding-inline-start: 3.8em; }
+.toc-l4 { padding-inline-start: 7em; }
 .toc-l3 .toc-n { min-width: 3.2em; }
 .toc-n { min-width: 1.6em; }
 .toc-l2 .toc-n { min-width: 2.3em; }
@@ -327,7 +385,14 @@ body.pdf-on #pdfpane { display: flex; }
 .fns { margin-top: auto; font-size: calc(var(--z-footnotesize) * var(--fs)); line-height: var(--fnlh); text-align: justify; hyphens: auto; -webkit-hyphens: auto; }
 .fnrule { width: calc(var(--pt) * 144.54px); border-top: calc(var(--pt) * .4px) solid #111; margin: calc(var(--pt) * 4px) 0 calc(var(--pt) * 3px); }
 .fn { text-indent: 0; padding-bottom: calc(var(--pt) * .5px); }
-.fnn { display: inline-block; min-width: 1.8em; text-align: right; padding-right: .15em; font-size: .72em; vertical-align: .62em; line-height: 0; }
+.fnn { display: inline-block; min-width: 1.8em; text-align: end; padding-inline-end: .15em; font-size: .72em; vertical-align: .62em; line-height: 0; }
+
+/* right to left: a document in Arabic or Hebrew, or a passage of one. Its paragraphs, headings,
+   captions and footnotes carry dir="rtl" and its turned words sit in span[dir] (src/model.js says
+   which, src/render.js writes the attribute); the rules above follow through the sides they name.
+   A formula, a web address and code keep their own order inside such a line. */
+.sheet .atom.m, .sheet .a-url, .sheet .a-verb, .sheet .a-logo { direction: ltr; unicode-bidi: isolate; }
+.tab td[dir="rtl"] { direction: rtl; }
 
 /* atoms */
 .atom { border-radius: 2px; cursor: pointer; text-indent: 0; }
@@ -693,6 +758,9 @@ body.nav-on.nav-wide #nav { width: 340px; }
 .guest-bar { display: flex; align-items: center; gap: 10px; padding: 7px 12px; background: var(--blue-wash); color: var(--ink-ui); border-bottom: 1px solid var(--line); font-size: 13px; flex: none; }
 .guest-bar[hidden] { display: none; }
 .guest-bar #guest-msg { flex: 1 1 auto; }
+/* the same bar for what a document needs set up (Chinese and Arabic: App.scriptNotice) */
+.note-bar #script-msg { flex: 1 1 auto; min-width: 0; }
+.note-bar .btn { flex: none; }
 /* someone a document was shared with has no use for starting another one */
 body.guest #b-new, body.guest #b-sample { display: none; }
 .pop-share .share-lead, .pop-share .share-or, .pop-share .share-note { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--ink-ui); }

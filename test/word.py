@@ -11,8 +11,13 @@ one's own (python-docx, test/word_fixture.py) opens as a new project by Open, by
 by pasting it, with its equations as LaTeX math, its picture in figures/, its table, list,
 footnote and link, and a javascript: link as plain text. Where LibreOffice is installed, a file
 it opened and saved keeps the bookmarks and the custom XML part, and an edit made in LibreOffice
-with changes tracked comes back. A build without Word (RIKUY_NO_WORD) says where Word support is
-and fetches nothing of it."""
+with changes tracked comes back. A Word file in Arabic and one in Chinese open set up for their
+script (the preamble's lines of src/scripts.js), the Arabic one right to left; saved as Word again
+they carry Word's own marks for direction and fonts, an Arabic word changed there comes back, and
+LibreOffice opens and saves both with their text. A file in Hindi and one with eight more of
+India's scripts the same: set up on opening, each run's font and language on saving; and files
+in Japanese, Korean, Hebrew, and Thai and Sinhala beside them. A build without Word (RIKUY_NO_WORD) says where
+Word support is and fetches nothing of it."""
 import os, sys, io, re, json, base64, zipfile, tempfile, traceback, time, subprocess, shutil, difflib
 sys.path.insert(0, os.path.dirname(__file__))
 import serve
@@ -350,6 +355,126 @@ try:
         check('the cross reference follows the figure (\\ref), and shows its number', 'Figure~\\ref{_Ref7}' in t and 'See Figure 1 and the wide one' in shown.replace('\u00a0', ' '), shown[shown.find('See'):shown.find('See') + 80])
         check('its colour shows on the page (\\textcolor[HTML], set through the style API)', page.evaluate("(() => { const e = [...document.querySelectorAll('#pages .y-color')].find(x => x.textContent === 'red words'); return e ? getComputedStyle(e).color : ''; })()") == 'rgb(192, 0, 0)')
         check('the rich file shows without error chips or page errors', page.evaluate("document.querySelectorAll('#pages .a-chip.err').length") == 0 and not errors, (page.evaluate("[...document.querySelectorAll('#pages .a-chip.err')].map(x => x.textContent)"), errors[:3]))
+
+        # ---- Chinese and Arabic: set up on opening, and Word's own marks for them on saving ----
+        fa = os.path.join(TMP, 'Arabic.docx')
+        open(fa, 'wb').write(word_fixture.make_arabic())
+        open_file(page, fa)
+        t = src(page)
+        check('an Arabic Word file opens set up for Arabic, right to left as a whole', '\\babelprovide[import, main]{arabic}' in t and '\\babelfont{rm}[Renderer=Harfbuzz]{Amiri}' in t and 'fontenc' not in t and '\\RL{' not in t and 'Not kept' not in t, t[:600])
+        check('its text is in reading order, its one left to right paragraph in an environment', 'بمعدل 5\\% سنة ٢٠٢٤ و2025؛' in t and '\\begin{otherlanguage}{english}\nAn English paragraph in the Arabic document.\n\\end{otherlanguage}' in t, t[600:1400])
+        out_ar = save_docx(page, os.path.join(TMP, 'arabic-out.docx'))
+        A = parts(out_ar)
+        da = A['word/document.xml'].decode()
+        pa = [x.split('</w:p>')[0] for x in re.split(r'<w:p>|<w:p (?=[^>]*>)', da[da.index('<w:body>'):])[1:]]
+        ltr = [re.sub(r'<[^>]+>', '', x) for x in pa if '<w:bidi />' not in x]
+        check('saved as Word, every paragraph but the English one runs right to left, and so do the section and the table', ltr == ['An English paragraph in the Arabic document.'] and len(pa) > 15 and re.search(r'<w:bidi /></w:sectPr>', da) is not None and '<w:tblStyle w:val="Table" /><w:bidiVisual />' in da, ltr)
+        check('its Arabic runs are w:rtl, with a complex script font and language in the defaults', '<w:r><w:rPr><w:rtl /></w:rPr><w:t xml:space="preserve">ندرس </w:t></w:r>' in re.sub(r'<w:bookmark(Start|End)[^>]*>', '', da) and 'w:cs="Amiri"' in A['word/styles.xml'].decode() and 'w:bidi="ar-SA"' in A['word/styles.xml'].decode())
+        base_ar = src(page)
+        open_file(page, out_ar)
+        check('the file opened again as saved brings no change', src(page) == base_ar, changed_lines(base_ar, src(page)))
+        open_file(page, edit_docx(out_ar, os.path.join(TMP, 'arabic-ed.docx'), [('محاذاة إلى البداية', 'محاذاة إلى اليمين')]))
+        la = changed_lines(base_ar, src(page))
+        check('an Arabic word changed in Word comes back as that word', la == ['-محاذاة إلى البداية.', '+محاذاة إلى اليمين.'], la)
+        fz = os.path.join(TMP, 'Chinese.docx')
+        open(fz, 'wb').write(word_fixture.make_chinese())
+        open_file(page, fz)
+        t = src(page)
+        check('a Chinese Word file opens set up for Chinese, its runs joined with no space', '\\usepackage[scheme=plain]{ctex}' in t and 'fontspec' not in t and 'Not kept' not in t and '本文研究\\textbf{制度变迁}对\\emph{经济增长}的影响，数据来自World Bank（2020年），结果稳健。' in t, t[:700])
+        out_zh = save_docx(page, os.path.join(TMP, 'chinese-out.docx'))
+        Z = parts(out_zh)
+        check('saved as Word, it names an East Asian font and language and nothing runs right to left', 'w:eastAsia="SimSun"' in Z['word/styles.xml'].decode() and 'w:eastAsia="zh-CN"' in Z['word/styles.xml'].decode() and 'w:bidi' not in Z['word/document.xml'].decode() and 'w:rtl' not in Z['word/document.xml'].decode() and '制度变迁' in Z['word/document.xml'].decode())
+        if soffice:
+            # LibreOffice opens both and writes them again with their text, direction and bookmarks
+            lo2 = os.path.join(TMP, 'lo-scripts')
+            shutil.rmtree(lo2, ignore_errors=True)
+            os.makedirs(lo2)
+            r = subprocess.run([soffice, '--headless', '--norestore', '-env:UserInstallation=file://' + os.path.join(lo2, 'profile'), '--convert-to', 'docx:MS Word 2007 XML', '--outdir', lo2, out_ar, out_zh], capture_output=True, text=True, timeout=300)
+            la, lz = os.path.join(lo2, 'arabic-out.docx'), os.path.join(lo2, 'chinese-out.docx')
+            if os.path.exists(la) and os.path.exists(lz):
+                LA, LZ = parts(la)['word/document.xml'].decode(), parts(lz)['word/document.xml'].decode()
+                words = lambda d: re.sub(r'\s+', '', re.sub(r'<[^>]+>', '', d))
+                check('LibreOffice keeps the Arabic file\'s text, its right to left paragraphs and table, and Rikuy\'s bookmarks', all(w in words(LA) for w in ['ندرس', 'النمو', 'مُحَمَّدٌ', 'می\u200cخواهم', '٢٠٢٤', 'AnEnglishparagraph']) and LA.count('<w:bidi w:val="1"/>') + LA.count('<w:bidi/>') > 12 and 'w:bidiVisual' in LA and len(re.findall(r'w:name="Rk\d+"', LA)) == len(re.findall(r'w:name="Rk\d+"', da)), (LA.count('w:bidi'), words(LA)[:200]))
+                check('and the Chinese file\'s', all(w in words(LZ) for w in ['制度变迁与经济增长', '本文研究制度变迁对经济增长的影响', '經濟學']) and '全角\u3000空格' in re.sub(r'<[^>]+>', '', LZ), words(LZ)[:200])
+                open_file(page, lz)
+                check('the Chinese file LibreOffice saved opens as it was saved from here', '本文研究\\textbf{制度变迁}对\\emph{经济增长}的影响' in src(page) and '\\usepackage[scheme=plain]{ctex}' in src(page), src(page)[:500])
+            else:
+                check('LibreOffice converts the Chinese and Arabic files', False, (r.stdout[-300:], r.stderr[-300:]))
+
+        # ---- India's scripts: set up on opening; on saving, each run's font and language for Word ----
+        fh = os.path.join(TMP, 'Hindi.docx')
+        open(fh, 'wb').write(word_fixture.make_hindi())
+        open_file(page, fh)
+        t = src(page)
+        check('a Hindi Word file opens set up for Devanagari, its runs joined, nothing listed as lost', '\\babelprovide[import=hi, onchar=ids fonts]{hindi}' in t and '\\babelfont[hindi]{rm}[Renderer=Harfbuzz]{Noto Serif Devanagari}' in t and 'fontenc' not in t and 'Not kept' not in t and 'यह दस्तावेज़ \\textbf{हिन्दी} में लिखा गया है। इसमें क्ष, त्र, ज्ञ और श्री जैसे संयुक्ताक्षर हैं॥' in t and 'क्‍ष तथा क्‌ष।' in t, t[:900])
+        out_hi = save_docx(page, os.path.join(TMP, 'hindi-out.docx'))
+        Hd = re.sub(r'<w:bookmark(Start|End)[^>]*>', '', parts(out_hi)['word/document.xml'].decode())
+        check('saved as Word, its runs name a complex script font and Hindi, and none runs right to left', '<w:r><w:rPr><w:rFonts w:cs="Nirmala UI" /><w:b /><w:bCs /><w:lang w:bidi="hi-IN" /></w:rPr><w:t xml:space="preserve">हिन्दी</w:t></w:r>' in Hd and 'w:rtl' not in Hd and 'w:bidi />' not in Hd and 'babelprovide' not in Hd, Hd[Hd.find('हिन्दी') - 300:Hd.find('हिन्दी') + 100])
+        base_hi = src(page)
+        open_file(page, edit_docx(out_hi, os.path.join(TMP, 'hindi-ed.docx'), [('पहला बिंदु', 'पहली बात')]))
+        lh = changed_lines(base_hi, src(page))
+        check('Hindi words changed in Word come back as those words', lh == ['-  पहला बिंदु', '+  पहली बात'], lh)
+        fi = os.path.join(TMP, 'Indic.docx')
+        open(fi, 'wb').write(word_fixture.make_indic())
+        open_file(page, fi)
+        t = src(page)
+        check('a Word file of eight more scripts opens with a font for each', all(('{%s}' % l) in t for l in ['bengali', 'tamil', 'telugu', 'gujarati', 'kannada', 'malayalam', 'punjabi', 'odia']) and 'Not kept' not in t and 'தமிழ்:} வணக்கம், மிக்க நன்றி. ௧௨௩' in t, t[:1500])
+        out_in = save_docx(page, os.path.join(TMP, 'indic-out.docx'))
+        Id = parts(out_in)['word/document.xml'].decode()
+        check('saved as Word, each script has its language', all(('w:bidi="%s-IN"' % l) in Id for l in ['hi', 'bn', 'ta', 'te', 'gu', 'kn', 'ml', 'pa', 'or']) and Id.count('w:cs="Nirmala UI"') > 20, re.findall(r'w:bidi="[^"]*"', Id)[:12])
+        if soffice:
+            lo3 = os.path.join(TMP, 'lo-indic')
+            shutil.rmtree(lo3, ignore_errors=True)
+            os.makedirs(lo3)
+            r = subprocess.run([soffice, '--headless', '--norestore', '-env:UserInstallation=file://' + os.path.join(lo3, 'profile'), '--convert-to', 'docx:MS Word 2007 XML', '--outdir', lo3, out_hi, out_in], capture_output=True, text=True, timeout=300)
+            lh, li = os.path.join(lo3, 'hindi-out.docx'), os.path.join(lo3, 'indic-out.docx')
+            if os.path.exists(lh) and os.path.exists(li):
+                LH, LI = re.sub(r'<[^>]+>', '', parts(lh)['word/document.xml'].decode()), re.sub(r'<[^>]+>', '', parts(li)['word/document.xml'].decode())
+                check('LibreOffice keeps the Hindi file\'s text, marks and joiners, and Rikuy\'s bookmarks', all(w in LH for w in ['भारत की अर्थव्यवस्था', 'दस्तावेज़', 'क्ष, त्र, ज्ञ और श्री', 'क्‍ष तथा क्‌ष।', '२०२४ में ७.५%', 'हैं॥']) and len(re.findall(r'w:name="Rk\d+"', parts(lh)['word/document.xml'].decode())) == len(re.findall(r'w:name="Rk\d+"', parts(out_hi)['word/document.xml'].decode())), LH[:300])
+                check('and the text of the eight other scripts', all(line.split(': ')[1] in LI for _, _, _, line in word_fixture.INDIC_LINES) and 'हिन्दी বাংলা தமிழ்' in LI, LI[:400])
+            else:
+                check('LibreOffice converts the files in India\'s scripts', False, (r.stdout[-300:], r.stderr[-300:]))
+
+        # ---- Japanese, Korean, Hebrew, Thai and Sinhala ----
+        outs = {}
+        for key, make, want_src, want_doc in [
+                ('hebrew', word_fixture.make_hebrew, ['\\babelprovide[import=he, main]{hebrew}', 'אנו חוקרים את \\textbf{הצמיחה} במוסדות חלשים, בשיעור של 5\\% בשנת 2024;', '\\begin{otherlanguage}{english}\nAn English paragraph in the Hebrew document.\n\\end{otherlanguage}'], ['w:bidiVisual', '<w:bidi /></w:sectPr>']),
+                ('japanese', word_fixture.make_japanese, ['\\babelprovide[import=ja, onchar=ids fonts]{japanese}', '本稿では、\\textbf{制度}が経済成長に与える影響を\\emph{データ}で検証する。'], ['制度']),
+                ('korean', word_fixture.make_korean, ['\\babelprovide[import=ko, onchar=ids fonts]{korean}', '본 논문은 \\textbf{제도}가 경제 성장(經濟成長)에 미치는 영향을 분석한다.'], ['제도']),
+                ('scripts', word_fixture.make_scripts, ['{thai}', '{sinhala}', '{hebrew}', '{japanese}', '{korean}', 'Thai: \\textbf{ภาษาไทย}เป็นภาษาราชการของประเทศไทย', '\\begin{otherlanguage}{hebrew}\nזוהי פסקה שלמה בעברית בתוך מסמך באנגלית.\n\\end{otherlanguage}'], ['w:cs="Leelawadee UI"', 'w:bidi="th-TH"', 'w:bidi="si-LK"', 'w:eastAsia="Yu Mincho"', '<w:rtl />'])]:
+            f = os.path.join(TMP, key.capitalize() + '.docx')
+            open(f, 'wb').write(make())
+            open_file(page, f)
+            t = src(page)
+            check('a Word file in %s opens set up, its text as it is, nothing listed as lost but a ruby' % key, all(w in t for w in want_src) and 'fontenc' not in t and '\\RL{' not in t and ('Not kept' not in t or key == 'japanese'), t[:900])
+            outs[key] = save_docx(page, os.path.join(TMP, key + '-out.docx'))
+            X = parts(outs[key])
+            check('saved as Word, the %s file has what Word needs for it' % key, all(w in X['word/document.xml'].decode() for w in want_doc), [w for w in want_doc if w not in X['word/document.xml'].decode()])
+        D = {k: parts(v) for k, v in outs.items()}
+        st = lambda k: D[k]['word/styles.xml'].decode()
+        check('the defaults name the document\'s own East Asian and complex script: Japanese, Korean, Hebrew', 'w:eastAsia="Yu Mincho"' in st('japanese') and 'w:eastAsia="ja-JP"' in st('japanese') and 'w:eastAsia="Malgun Gothic"' in st('korean') and 'w:eastAsia="ko-KR"' in st('korean') and 'w:cs="Times New Roman"' in st('hebrew') and 'w:bidi="he-IL"' in st('hebrew'))
+        hd = D['hebrew']['word/document.xml'].decode()
+        hp = [x.split('</w:p>')[0] for x in re.split(r'<w:p>|<w:p (?=[^>]*>)', hd[hd.index('<w:body>'):])[1:]]
+        check('the Hebrew file\'s paragraphs all run right to left but the English one', [re.sub(r'<[^>]+>', '', x) for x in hp if '<w:bidi />' not in x] == ['An English paragraph in the Hebrew document.'] and len(hp) > 10)
+        open_file(page, os.path.join(TMP, 'Scripts.docx'))
+        out_sc = save_docx(page, os.path.join(TMP, 'scripts-out2.docx'))
+        base_sc = src(page)
+        open_file(page, edit_docx(out_sc, os.path.join(TMP, 'scripts-ed.docx'), [('ของประเทศไทย', 'ของประเทศลาว')]))
+        ls = changed_lines(base_sc, src(page))
+        check('a Thai word changed in Word comes back as that word', ls == ['-Thai: \\textbf{ภาษาไทย}เป็นภาษาราชการของประเทศไทย น้ำดื่ม ๑๒๓', '+Thai: \\textbf{ภาษาไทย}เป็นภาษาราชการของประเทศลาว น้ำดื่ม ๑๒๓'] and page.evaluate('window.rikuy.lastWordPlan.applied.map(e => e.t)') == ['ลาว'], (ls, page.evaluate('window.rikuy.lastWordPlan.applied.map(e => e.t)')))
+        if soffice:
+            lo4 = os.path.join(TMP, 'lo-more')
+            shutil.rmtree(lo4, ignore_errors=True)
+            os.makedirs(lo4)
+            r = subprocess.run([soffice, '--headless', '--norestore', '-env:UserInstallation=file://' + os.path.join(lo4, 'profile'), '--convert-to', 'docx:MS Word 2007 XML', '--outdir', lo4] + list(outs.values()), capture_output=True, text=True, timeout=400)
+            got = {k: os.path.join(lo4, k + '-out.docx') for k in outs}
+            if all(os.path.exists(v) for v in got.values()):
+                T = {k: re.sub(r'<[^>]+>', '', parts(v)['word/document.xml'].decode()) for k, v in got.items()}
+                check('LibreOffice keeps the text of the Japanese, Korean, Hebrew and five script files', all(w in T['japanese'] for w in ['本稿では、', '経済', 'ｶﾀｶﾅ…全角\u3000空格']) and all(w in T['korean'] for w in ['경제 성장(經濟成長)', '\u1112\u119e\u11ab글']) and all(w in T['hebrew'] for w in ['הצמיחה', 'בית\u05beספר', 'בָּרָ֣א']) and all(w in T['scripts'] for w in ['เป็นภาษาราชการของประเทศไทย น้ำดื่ม ๑๒๓', 'ශ්\u200dරී ලංකා', 'שלום עולם', '日本語のテキストです。', '한국어 문장입니다.']), {k: v[:120] for k, v in T.items()})
+                LHd = parts(got['hebrew'])['word/document.xml'].decode()
+                check('and the Hebrew file\'s direction and Rikuy\'s bookmarks', LHd.count('<w:bidi w:val="1"/>') + LHd.count('<w:bidi/>') > 8 and 'w:bidiVisual' in LHd and len(re.findall(r'w:name="Rk\d+"', LHd)) == len(re.findall(r'w:name="Rk\d+"', hd)), LHd.count('w:bidi'))
+            else:
+                check('LibreOffice converts the files in the five scripts', False, (r.stdout[-300:], r.stderr[-300:]))
 
         # by dropping it, and by pasting it
         # ---- on the page: colours by number and by name, in text and formulas; a list and a table in a cell ----

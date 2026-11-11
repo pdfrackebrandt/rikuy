@@ -5,7 +5,7 @@
 #
 #   busy/busytex/   BusyTeX 1.4.0 release assets (TeX Live 2026 engines, texlive-*.data)
 #   tree-extra/     the TeX Live tree inside those .data packages (unpack_busytex.py)
-#   debs/x/<pkg>/   44 Ubuntu 26.10 packages (TeX Live 2026 and friends), each dpkg-deb -x
+#   debs/x/<pkg>/   54 Ubuntu 26.10 packages (TeX Live 2026 and friends), each dpkg-deb -x
 #   mf/x/           texlive-binaries, texlive-base, libkpathsea6 and libc6 in one folder (METAFONT
 #                   for build_pk.py, started through that libc's own loader)
 #   extra/ fccache/ fmt/ usage.json pdflatex-all.fmt   from inputs/generated*.tar.gz: what Rikuy's
@@ -77,8 +77,18 @@ while read -r name pool sum; do
   touch "$DONE/deb-$name"
 done <<EOF
 asymptote pool/universe/a/asymptote/asymptote_3.11+ds-1_amd64.deb sha512:19a01ebe2cae398b4e16181af416c7105eb0f14af2cc17fa8ba973b14d3f6ed048f996679cec91b18d7192c924a47b703cd6a673c25d054c0e1281092f872eff
+fonts-culmus pool/main/c/culmus/fonts-culmus_0.140-3build1_all.deb sha512:bbdc15019c0e75438dfb8ac68e05fe6dc05e84fd656ab8cd5b8e2591d7db07bdfb72587ad0be6460a441b8e8e526723905c600ff09318a70e10981f0e8aa8328
+fonts-hosny-amiri pool/main/f/fonts-hosny-amiri/fonts-hosny-amiri_1.003-6_all.deb sha512:19077c8a8d60bfe0092f16484e42517f5a16fad396a30e80335d2f0f153c82454c462218919774a93f42526994dcbbf7365f5868599bba33a6b8e05627e106c4
+fonts-nanum pool/universe/f/fonts-nanum/fonts-nanum_20250212-1_all.deb sha512:4297df840fb1f835e2fadd2e7a8ce6976415416c1e9981ed7c81c05e95416bf1a61ada35e5e3880d8e6796bb6c80376c1d5240cd5b6efddaa7ec15f88b363c5f
+fonts-noto-core pool/main/f/fonts-noto/fonts-noto-core_20201225-6_all.deb sha512:bc3ca8bc8eeeb5986e62dfdec4732f81c730bdc59026812fc549a56561c820b101313cc43cce8a44facc754d736a63aefc9c3c664d02aedc832451422b9a2e5d
 cm-super pool/universe/c/cm-super/cm-super_0.3.4-17build1_all.deb sha512:b8a80e2c8854dc37e2b1c11eccfecf214c7d2cc424f93316b5c9cebfab7ce7cb5a96328c1ff9ea0365ec879f057e23bdefbfe29b5cf46ce92c3381078ad6ea19
 latex-cjk-all pool/universe/c/cjk/latex-cjk-all_4.8.5-3_all.deb sha512:209b9ea73a2f6883d8ba930464eea4c6996a224f75613fb2cecbd02d87552798b50089c78b58d7ce5f6ea39c2e00e44c9a980c97a7ebeeab2095bf411a77c415
+latex-cjk-chinese pool/universe/c/cjk/latex-cjk-chinese_4.8.5-3_amd64.deb sha512:c26adee3ddb08cc9a139e90c61f97b3eb16a58bec867b203a90c0495d74cb958d47dacaaba6c59967759802c5c62b1432c3ce83891ac1a5310fec7a97903f7bf
+latex-cjk-chinese-arphic-bkai00mp pool/universe/l/latex-cjk-chinese-arphic/latex-cjk-chinese-arphic-bkai00mp_2.2build1_all.deb sha512:b795f69614815d805ba3e450b837561db7e0e7cd2c3bf9ce55f19ec8946c059c170b69785b4c31f7cb2db29a2d59b9d5539ac5a23bca0596cd4741dc070c66e5
+latex-cjk-chinese-arphic-bsmi00lp pool/universe/l/latex-cjk-chinese-arphic/latex-cjk-chinese-arphic-bsmi00lp_2.2build1_all.deb sha512:471569ecc80c2ecd22d1459143b20b32ae7060df60cd6122a97acf1cc3188320279bf29fc69820a85741edc7f456bab57c42e6957d95eb7731e7757a3f7b1218
+latex-cjk-chinese-arphic-gbsn00lp pool/universe/l/latex-cjk-chinese-arphic/latex-cjk-chinese-arphic-gbsn00lp_2.2build1_all.deb sha512:26939595eb0b31242b3eb2c0cad8f5d5bb4fb5b0f9081e06b327c20fa56f50a96accb0893d84a68ca28f423146f78423245145754ef0a3642fa58317bff4585a
+latex-cjk-chinese-arphic-gkai00mp pool/universe/l/latex-cjk-chinese-arphic/latex-cjk-chinese-arphic-gkai00mp_2.2build1_all.deb sha512:f84e38bcb20fe32d61ad9bd29b7153b660b02d90285a39dbb29c4fc7042ed214f5fb58d5e44d9cdfbf84c465eb7600b7dbbda0476b20f8862eccfa52492005d0
+latex-cjk-common pool/universe/c/cjk/latex-cjk-common_4.8.5-3_amd64.deb sha512:45bf64a549c2fbaa625a9df66fc537123e16aec4744440531cc1a3d99b7d8f2a81cd56d4a5c5dbbe8bde65dfc2783ab665e6733e39b8e2f0e0fac946553491f7
 lmodern pool/universe/l/lmodern/lmodern_2.005-2_all.deb sha512:12a834ac993fc7de4c158f5dfae601d9e16179943441ae57c007e9ffb0a68b8b4bf783635f229d3c77ec738dddf67bb7bf558648b5bc13ef62b4dbd5a00c6a0e
 tex-gyre pool/universe/t/tex-gyre/tex-gyre_20180621-8_all.deb sha512:8c953b2e00276fd02c34310747138839ad29bf5077b0f4d258042c731f35b26c648de49156ccbc8f36a6ea82ef46277333f0cb3c78aaab5dc472d06a36aa1c04
 texlive-base pool/universe/t/texlive-base/texlive-base_2026.20260711-2_all.deb sha512:83a4a84b7dc4793e6b60445909259e3e77caeaca29c4ead0c16942cb928b75de1856ee712d0935ebe9a1c81f263cc58136f86373c37a49d4357c1150d8768ef8

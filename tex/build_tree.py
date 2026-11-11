@@ -99,6 +99,63 @@ DEB_SETS = ['texlive-lang-german', 'texlive-lang-spanish', 'texlive-lang-french'
             'texlive-formats-extra', 'asymptote']
 
 
+# Chinese, Arabic, India's scripts, Japanese, Korean, Hebrew, Thai and Sinhala. What a document in those
+# scripts needs beyond the sets above: the Fandol
+# fonts with ctex's and xeCJK's helpers (XeLaTeX), the CJK package with the Arphic fonts
+# (pdfLaTeX: gbsn and gkai simplified, bsmi and bkai traditional), and Amiri, which Ubuntu's
+# texlive-lang-arabic only links to. 78 MB of packs that the artifact has no room for, so these files go
+# into packs of their own (script_only), marked 'x' in the index: the hosted Rikuy serves them,
+# publish_batches.py leaves them out of the artifact, and no other pack's bytes depend on them.
+SCRIPT_PICKS = [('texlive-lang-chinese', ['fandol', 'zhnumber', 'zhmetrics', 'xpinyin', 'zhlineskip', 'zhlipsum', 'zhspacing', 'upzhkinsoku']),
+                ('texlive-lang-cjk', ['cjkpunct', 'xcjk2uni'])]
+SCRIPT_SETS = ['latex-cjk-common', 'latex-cjk-chinese', 'latex-cjk-chinese-arphic-gbsn00lp', 'latex-cjk-chinese-arphic-gkai00mp',
+               'latex-cjk-chinese-arphic-bsmi00lp', 'latex-cjk-chinese-arphic-bkai00mp']
+# files TeX Live has and Ubuntu's packages only link to: (package folder, folder in the tree, names)
+SCRIPT_LINKED = [('fonts-hosny-amiri/usr/share/fonts/opentype/fonts-hosny-amiri', 'fonts/truetype/public/amiri',
+                  ['Amiri-Regular.ttf', 'Amiri-Bold.ttf', 'Amiri-Italic.ttf', 'Amiri-BoldItalic.ttf']),
+                 # India's scripts: Noto Serif (Sans for Odia, which has no Serif), regular and bold,
+                 # and Noto Nastaliq Urdu. TeX Live has no font for most of them. 4 MB.
+                 # (and Hebrew, Thai and Sinhala from the same package)
+                 ('fonts-noto-core/usr/share/fonts/truetype/noto', 'fonts/truetype/public/noto-scripts',
+                  [f + '-' + w + '.ttf' for f in ('NotoSerifDevanagari', 'NotoSerifBengali', 'NotoSerifTamil', 'NotoSerifTelugu',
+                                                  'NotoSerifGujarati', 'NotoSerifKannada', 'NotoSerifMalayalam', 'NotoSerifGurmukhi',
+                                                  'NotoSansOriya', 'NotoNastaliqUrdu', 'NotoSerifHebrew', 'NotoSerifThai',
+                                                  'NotoSerifSinhala') for w in ('Regular', 'Bold')]),
+                 # Japanese: Harano Aji, TeX Live's own default since 2020, a Mincho and a Gothic in two
+                 # weights (23 MB of the seven files' 39). Korean: Nanum's Myeongjo and Gothic (17 MB);
+                 # TeX Live's UnFonts are links in Ubuntu's package.
+                 ('texlive-lang-japanese/usr/share/texlive/texmf-dist/fonts/opentype/public/haranoaji', 'fonts/opentype/public/haranoaji',
+                  ['HaranoAjiMincho-Regular.otf', 'HaranoAjiMincho-Bold.otf', 'HaranoAjiGothic-Regular.otf', 'HaranoAjiGothic-Bold.otf']),
+                 ('fonts-nanum/usr/share/fonts/truetype/nanum', 'fonts/truetype/public/nanum',
+                  ['NanumMyeongjo.ttf', 'NanumMyeongjoBold.ttf', 'NanumGothic.ttf', 'NanumGothicBold.ttf']),
+                 # Hebrew: Culmus's Hadasim, which has Latin letters and digits beside the Hebrew (Noto
+                 # Serif Hebrew has neither, and a Hebrew document's numbers were gone from the PDF) and
+                 # whose license lets a document embed it
+                 ('fonts-culmus/usr/share/fonts/truetype/culmus', 'fonts/opentype/public/culmus',
+                  ['HadasimCLM-Regular.otf', 'HadasimCLM-Bold.otf', 'HadasimCLM-RegularOblique.otf', 'HadasimCLM-BoldOblique.otf'])]
+SCRIPT_ONLY = re.compile(r'^(fonts/[^/]+/public/(fandol|amiri|noto-scripts|haranoaji|nanum|culmus)|fonts/([^/]+/)+arphic(/|$)|fonts/tfm/zhmetrics'
+                         r'|tex/latex/(CJK|zhnumber|zhmetrics|xpinyin|zhlineskip|zhlipsum|cjkpunct|xcjk2uni)$'
+                         r'|tex/generic/(zhmetrics|zhspacing|upzhkinsoku)$|tex/xelatex/zhspacing$)')
+
+
+def group_key(rel):
+    """The package folder a file of the tree lives in: a package travels in one piece."""
+    s = rel.split('/')
+    if '/texmf-dist/' in rel:
+        i = s.index('texmf-dist')
+        t = s[i + 1:]
+        if t[0] == 'fonts':
+            return '/'.join(t[:4])  # fonts/type1/public/cm-super
+        if t[0] == 'tex':
+            return '/'.join(t[:3])  # tex/latex/pgf
+        return '/'.join(t[:2])
+    return s[1]
+
+
+def script_only(rel):
+    return bool(SCRIPT_ONLY.search(group_key(rel)))
+
+
 # the core of TeX Live that BusyTeX's tree also holds; with TL_FIRST these replace its copies
 CORE_SETS = ['texlive-base', 'texlive-latex-base', 'texlive-fonts-recommended', 'texlive-lang-english', 'texlive-lang-polish',
              'texlive-lang-czechslovak']
@@ -201,6 +258,27 @@ def build_tree():
     picks = set(FONT_PICKS)
     if os.path.isdir(fx):
         add_from(fx, 'fonts-extra', lambda sub: any(seg in picks for seg in sub.split('/')[1:-1]))
+
+    # Chinese and Arabic (SCRIPT_PICKS): only into folders of their own, so that every other
+    # pack stays as it was
+    before = set(files)
+    for name, folders in SCRIPT_PICKS:
+        root = os.path.join(DEBS, name, 'usr/share/texlive/texmf-dist')
+        if os.path.isdir(root):
+            add_from(root, 'scripts', lambda sub, folders=set(folders): any(seg in folders for seg in sub.split('/')[1:-1]))
+    for name in SCRIPT_SETS:
+        root = os.path.join(DEBS, name, 'usr/share/texmf')
+        if os.path.isdir(root):
+            add_from(root, 'scripts', lambda sub: sub.startswith('tex/latex/CJK/') or '/arphic/' in sub)
+    for folder, to, names in SCRIPT_LINKED:
+        for n in names:
+            src = os.path.join(DEBS, folder, n)
+            if os.path.isfile(src):
+                files[TD + to + '/' + n] = src
+                added['scripts'] += 1
+                added_bytes['scripts'] += os.path.getsize(src)
+    stray = sorted(r for r in set(files) - before if not script_only('/' + r))
+    assert not stray, 'Chinese and Arabic files outside their own packs: %s' % stray[:5]
 
     if os.path.exists(TREE):
         shutil.rmtree(TREE)
@@ -499,17 +577,6 @@ def build_packs():
     rest = [f for f in allf if not (f[0] in core or must.search(f[0]))]
 
     # group the rest by the package directory it lives in, so a package comes in one piece
-    def group_key(rel):
-        s = rel.split('/')
-        if '/texmf-dist/' in rel:
-            i = s.index('texmf-dist')
-            t = s[i + 1:]
-            if t[0] == 'fonts':
-                return '/'.join(t[:4])  # fonts/type1/public/cm-super
-            if t[0] == 'tex':
-                return '/'.join(t[:3])  # tex/latex/pgf
-            return '/'.join(t[:2])
-        return s[1]
     groups = defaultdict(list)
     for f in rest:
         groups[group_key(f[0])].append(f)
@@ -518,7 +585,7 @@ def build_packs():
     files_out = []
     t1stats = [0, 0]
 
-    def emit(members, label):
+    def emit(members, label, extra=False):
         raw = bytearray()
         n = len(packs)
         for rel, size, p in members:
@@ -535,7 +602,7 @@ def build_packs():
         h = sha(z)
         fname = 'p-%s.wasm' % h
         write_wrapped(fname, z)
-        packs.append({'f': fname, 'z': len(z), 'n': len(raw), 'h': h, 'g': label})
+        packs.append({'f': fname, 'z': len(z), 'n': len(raw), 'h': h, 'g': label, 'x': extra})
 
     # core in chunks of about 6 MB uncompressed, fetched in parallel at start
     chunk, size = [], 0
@@ -547,28 +614,30 @@ def build_packs():
         emit(chunk, 'core')
     ncore = len(packs)
 
-    # the rest: whole groups packed together up to ~3 MB raw; big groups split by file
+    # the rest: whole groups packed together up to ~3 MB raw; big groups split by file. The
+    # Chinese and Arabic groups (script_only) come after all others, in packs of their own.
     LIM = 3_000_000
-    cur, cur_size, cur_labels = [], 0, []
-    for key in sorted(groups):
-        g = groups[key]
-        gsize = sum(x[1] for x in g)
-        if gsize > LIM:
-            if cur:
-                emit(cur, ','.join(cur_labels)); cur, cur_size, cur_labels = [], 0, []
-            part, psz = [], 0
-            for f in g:
-                part.append(f); psz += f[1]
-                if psz > LIM:
-                    emit(part, key); part, psz = [], 0
-            if part:
-                emit(part, key)
-            continue
-        if cur_size + gsize > LIM and cur:
-            emit(cur, ','.join(cur_labels)); cur, cur_size, cur_labels = [], 0, []
-        cur.extend(g); cur_size += gsize; cur_labels.append(key)
-    if cur:
-        emit(cur, ','.join(cur_labels))
+    for extra in (False, True):
+        cur, cur_size, cur_labels = [], 0, []
+        for key in sorted(k for k in groups if bool(SCRIPT_ONLY.search(k)) == extra):
+            g = groups[key]
+            gsize = sum(x[1] for x in g)
+            if gsize > LIM:
+                if cur:
+                    emit(cur, ','.join(cur_labels), extra); cur, cur_size, cur_labels = [], 0, []
+                part, psz = [], 0
+                for f in g:
+                    part.append(f); psz += f[1]
+                    if psz > LIM:
+                        emit(part, key, extra); part, psz = [], 0
+                if part:
+                    emit(part, key, extra)
+                continue
+            if cur_size + gsize > LIM and cur:
+                emit(cur, ','.join(cur_labels), extra); cur, cur_size, cur_labels = [], 0, []
+            cur.extend(g); cur_size += gsize; cur_labels.append(key)
+        if cur:
+            emit(cur, ','.join(cur_labels), extra)
 
     # the engine, gzipped and cut under the per-file limit
     if not os.path.exists(WASM) or os.path.getmtime(WASM) < os.path.getmtime(WASM_SRC):
@@ -604,7 +673,8 @@ def build_packs():
         'v': sha(json.dumps([p['h'] for p in packs]).encode()),
         'wasm': wasm, 'wasmHash': sha(wz), 'wasmSize': os.path.getsize(WASM),
         'core': list(range(ncore)),
-        'packs': [{'f': p['f'], 'z': p['z'], 'n': p['n'], 'h': p['h']} for p in packs],
+        # x: a pack of the Chinese and Arabic files, which only the hosted Rikuy carries
+        'packs': [dict({'f': p['f'], 'z': p['z'], 'n': p['n'], 'h': p['h']}, **({'x': 1} if p['x'] else {})) for p in packs],
         'files': files_out,
         'provides': {k: sorted(v) for k, v in provides.items()},
         'biber': biber,

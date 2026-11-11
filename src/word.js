@@ -183,7 +183,7 @@ export const word = {
       pics.set(k, k);
       return k;
     };
-    const W = buildWordDoc(model, this.files, { citeproc, asset, comments: true });
+    const W = buildWordDoc(model, this.files, { citeproc, asset, comments: true, main: this.main });
     for (const [k, out] of pics) {
       try {
         const bytes = new Uint8Array(await this.assetBlobs.get(k).arrayBuffer());

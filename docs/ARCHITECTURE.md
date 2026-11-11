@@ -42,6 +42,7 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | share links, comments, the copy back, Overleaf | `makeShareLink`, `openSharedLink`, `takeBack`, `commentPop`, `openInOverleaf` (`src/collab.js`); `commentEdit`, `merge3` (`src/share.js`) |
 | the installed app: offline copy, updates, "Make available offline" | `install`, `activate`, the `fetch` listener (`src/sw.js`); `registerApp`, `asset`, `keepOffline`, `OFFLINE_FOLDERS` (`src/pwa.js`); `appPage`, `finishApp` (`build/app.mjs`); `keepPlan`, `keep` (`tex/engine.js`) |
 | Word (.docx in and out, a coauthor's edits back) | `saveDocx`, `openDocx`, `wordEdits` (`src/word.js`); `buildWordDoc` (`src/wordast.js`); `extract` (`src/docx.js`); `planImport`, `mathPatch` (`src/wordsync.js`); `docxToLatex` (`src/wordjobs.js`) |
+| right to left text, the fonts of Chinese, Japanese, Korean, Arabic, Hebrew, Thai, Sinhala and India's scripts, the set up notice | `rtlDocument`, `languageDir`, `scriptNeeds`, `addScriptSetup` (`src/scripts.js`); `Builder.dirOf`, `dirCmd`, `declDir`, `dirEnv` (`src/model.js`); `setDir` (`src/render.js`); `--font-cjk`, `--font-ar` and their like, `:root[data-cjk]` and the `dir` rules (`src/app.css`); `App.scriptNotice`, `scriptSetUp`, `cjkOrder` |
 | live figures (`\rikuywidget`) | `WidgetLayer`, `widgetDoc`, `WIDGET_CSP` (`src/widget.js`); `Builder.cmd` (kind `widget`), `Renderer.atomEl`; `App.widgetsAllowed`, `widgetResized` |
 | the ribbon (style of a paragraph, lists, Insert, Download) | `ribbonSync`, `setBlockStyle`, `toggleList`, `insertTable`, `downloadPdfNow`, `installRibbon` (`src/ribbon.js`); `PALETTE`, `runPalette`, `afterBlockPos` (`src/app.js`) |
 | equation editing | `App.openMath`, `attachField`, `toField`, `fromField`; `src/minimal.js`, `wordmath.js`, `fences.js` |
@@ -75,6 +76,32 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
   maps, so they are read on the page and edited as source. `expandMacro()` expands a
   user macro with a position map `pm`; characters from the macro body get `-1` (read only).
   `test/model.test.mjs` checks every seg map against the source.
+- **Direction.** `Builder.dir` is the way text runs where the builder is: 'rtl' from the start
+  when the main language runs right to left (`rtlDocument`, in `opts.rtl`), changed by
+  `\selectlanguage` and bidi's `\setRTL` (`declDir`) until their group or environment ends, and
+  by the language environments (`dirEnv`: `otherlanguage`, polyglossia's `Arabic` or `hebrew`,
+  bidi's `RTL` and `LTR`), whose paragraphs are blocks of the document as `document`'s are. A
+  paragraph, heading, title, caption, footnote and a table's cells carry it as `dir` ('rtl' or
+  'ltr'; no `dir` at all in a document where nothing runs right to left, which is drawn as it
+  always was), and it is part of the block's `sig`. Words turned inside a line
+  (`\foreignlanguage{arabic}{..}`, `\textarabic`, `\RL`, `\LR`, `otherlanguage*`) are a `sty`
+  wrapper `{st: 'dir', dir}` with its source range, so Enter and an emptied wrapper behave as for
+  `\textbf`. CJK's environments and `\CJKfamily` show their text and nothing else. `setDir`
+  (`src/render.js`) writes the `dir` attribute, one of two fixed words; the style sheet names
+  sides by the way the text runs (`padding-inline-start`), so markers, numbers and indents
+  follow. Formulas, code and a table's columns stay left to right. The page's fonts have no
+  Chinese, Japanese, Korean, Arabic, Hebrew, Thai, Sinhala or Indian script: `--font-cjk`,
+  `--font-ar`, `--font-he`, `--font-in`, `--font-th` and `--font-si` name the system's, after
+  every family the stacks had, and the `Paper CJK` faces give italic Chinese a Kai. Chinese
+  characters are shared by three languages: `App.cjkOrder` reads the document (kana, hangul, or
+  a set up for one of the two, as `scripts.js` tells them) and sets `data-cjk` on the root, where
+  the stacks put the Japanese or the Korean fonts before the Chinese ones. Lines break as the
+  browser breaks them: between Chinese, Japanese and Korean characters, at Thai's words.
+- **Characters of several code points.** क्षि is four (a consonant, a virama, a consonant, a
+  vowel sign). `clusterAt`, `clusterEdge` and `backspaceUnits` (`src/editor.js`, on
+  `Intl.Segmenter` with a fallback) say where such a character starts and ends: Backspace takes
+  its last code point and Delete the whole of it (`App.deleteInput`), bold takes it whole
+  (`toggleStyle`), and a page break is never cut inside it (`Layout.pieces`).
 - **Render.** `Builder.result()` keys each block by file, source text, `sig` (each resolved value
   it used, via `Builder.use()`) and item types. `Renderer.sync(model, prefix)` keeps each DOM
   block whose `prefix + key` matches, updating only `base` (its source offset), and renders the
@@ -118,6 +145,14 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   localStorage fallback) and `noteEdit()`, which schedules `pdfSoon` (1.4 s) and snapshots. The
   CodeMirror pane goes the other way: `srcRebuild` (260 ms) → `fromSource()` → `record` →
   `rebuild`; undo, redo and leaving the pane flush it first.
+- **The set up of a script (Chinese, Japanese, Korean, Arabic, Hebrew, Thai, Sinhala, India's
+  nine).** A moment after each rebuild `App.scriptNotice` asks
+  `scriptNeeds` (`src/scripts.js`) what the project's text needs that its main file does not
+  set up, and shows a bar under the ribbon (never while an input method composes, nor in a
+  shared copy). Its button commits `addScriptSetup`'s lines as one edit of kind `setup`; hiding
+  it is kept per project as `scripts:` in IndexedDB until the needs change. `scripts.js` reads
+  preambles that may be a stranger's at every key: its patterns bound each argument and it
+  reads 200 000 characters of a preamble at most.
 - **Tabs.** All tabs of a browser share one project record. `persist()` writes one at a time and
   first checks the record's time against `savedT`: what another tab saved since goes into the
   versions (`keepOtherTab`). A tab shown again takes that tab's text as one undo step
@@ -348,7 +383,8 @@ from a blob, as the TeX worker is). In the worker, `src/pandoc.js` runs pandoc 3
 `pandoc-wasm` 1.1.0, the pandoc project's WASI build) on an in-memory file system with folders;
 `src/wordjobs.js` holds the three jobs (`exportDocx`, `readDocx`, `docxToLatex`), `src/docx.js` the
 zip, a small XML reader, Rikuy's custom XML part and `extract()`, and `src/wordsync.js` the
-alignment and the import plan. `src/wordast.js` (in the page) walks the model into pandoc's AST.
+alignment and the import plan. `src/wordast.js` (in the page) walks the model into pandoc's AST;
+`src/wordbidi.js` gives that tree its directions (right to left text, below).
 
 - **Loading.** Nothing loads with the page. The first Word action starts the worker, which reads
   `word/pandoc.json` (pandoc's version, the SHA-256 of `pandoc.wasm` and of its gzip, and of each
@@ -440,6 +476,81 @@ alignment and the import plan. `src/wordast.js` (in the page) walks the model in
   A file whose project is not open opens that project (its last version here, else the source the
   file carries) first.
 
+- **Chinese and Arabic, and which way text runs.** The TeX side is `src/scripts.js` alone: it
+  says which of the two scripts a text is in, whether the document runs right to left
+  (`rtlDocument`), and gives the preamble's lines; nothing a Word file names (a font, a language)
+  reaches the preamble.
+  *Open.* `docxToLatex` counts the scripts in the body pandoc wrote (`scriptNeeds`) and puts
+  `scriptLines`' lines where pdfLaTeX's font lines would stand (no `fontenc`, `lmodern`,
+  `textalpha` beside them); the characters those fonts have are not listed as lost, those of
+  other scripts are, as before, and so are Greek and Cyrillic there (the fonts XeLaTeX and
+  LuaLaTeX start with have neither). The text stays characters, in the order it is read:
+  pandoc's span around each right to left run (which it would write as `\RL{}`) goes, TeX
+  orders the words; the marks that only say a direction go; a zero width joiner stays in
+  Arabic script; Chinese quotation marks, the long dash and the dots stay characters in a word
+  with Chinese in it. `premark()` unwraps `w:dir` and `w:bdo` (pandoc drops their text) and puts
+  a mark at the head of every right to left paragraph of the body (`w:bidi` on the paragraph,
+  its style, a style that one is based on, or the defaults); `directions()` groups the body's
+  blocks by it between marked lines, and `unmark()`, once the text has said which way the
+  document runs, makes `\begin{otherlanguage}{arabic}` of a right to left group in a left to
+  right document and `\begin{otherlanguage}{english}` of the reverse (`otherDirection`),
+  nothing where Arabic is not set up. Alignment: in a right to left paragraph Word's `left`
+  and `start` are the edge the text starts at and ask for nothing; `right` and `end` are the
+  far edge, which is `flushright` there in LaTeX too (LuaTeX sets `\leftskip` at the side a
+  line starts); alignment is also read from the paragraph's style.
+  *Save.* `scanDir` (`src/wordbidi.js`) finds the wrappers in the source: an environment or a
+  language switch gives its paragraphs a direction (`otherlanguage`, polyglossia's `Arabic`,
+  the bidi package's `RTL` and `LTR`, `\selectlanguage`, `\setRTL`), a command the text in it
+  (`\foreignlanguage`, `\textarabic`, `\RL`, `\LR`, `otherlanguage*`); a node of the model
+  with `dir: 'rtl'` or `'ltr'` (a block, a table cell, an inline) says so itself and wins, as
+  does `opts.dir` for the document. The arguments of the CJK package's wrappers
+  (`\begin{CJK}{UTF8}{gbsn}`, `\CJKfamily{..}`) are not text. `bidiDoc` then resolves each
+  paragraph's characters into runs (`resolve`: a short form of the Unicode algorithm) and spells
+  the directions out as pandoc's Word writer reads them: `dir` on a Span is `w:rtl` on its runs,
+  on a Div `w:bidi` on its paragraphs, in the meta data the whole document. `styled()` writes
+  what pandoc cannot: `w:bidi` on the section and on the paragraphs of pandoc's template (title
+  block, contents field) of a right to left document, `w:bidiVisual` on a table whose
+  paragraphs all run right to left, and in the document's defaults the East Asian font and
+  language (`SimSun`, `zh-CN`) of a file with Chinese text and the complex script ones (`Amiri`,
+  `ar-SA`) of one with Arabic, with `w:themeFontLang` for the headings' theme fonts.
+  *Edits back.* Each Chinese or Japanese character is a word to `textHunks`; new text with
+  Chinese in it keeps its quotation marks and dash as characters.
+- **India's scripts** (the nine of `INDIC` in `src/scripts.js`) take the same road. *Open:* a
+  script the text has letters of gets its two lines; its characters, the danda and double danda
+  all nine share, and a joiner or non joiner beside its letters are kept and not listed as lost
+  (digits or signs of a script the text has no letter of are, under the script's name). Word keeps these scripts as complex script runs cut at every change of font;
+  pandoc joins them, bold and italic runs too, but not code: `tidy` makes one code span of
+  code runs side by side, and `codeSpaces` writes a single space in `\texttt` as a space (pandoc
+  writes `\ `, kept for two together and at a span's ends), so `\texttt{two words}` comes back
+  from Word as it went. *Save:* `scriptRuns` (`src/wordjobs.js`) gives every run of
+  `word/document.xml`, `footnotes.xml` and `comments.xml` that holds one of the scripts
+  `w:rFonts w:cs="Nirmala UI"` (after the style) and `w:lang w:bidi` with the script's language
+  (`hi-IN`, `bn-IN`, `pa-IN`, `gu-IN`, `or-IN`, `ta-IN`, `te-IN`, `kn-IN`, `ml-IN`, last in the
+  run's properties, as Word's schema orders them), and cuts a run where the script changes; on
+  the run because the defaults hold one font and one language, Arabic's when a file has both.
+  They are left to right: no `w:rtl`. *Edits back:* a word holds its marks and joiners, and
+  `textHunks` moves a change's ends out of a cluster (a mark on its letter, a consonant a
+  virama or a joiner ties on, the halves of an astral character), so a vowel sign changed in
+  Word is its syllable changed.
+- **Japanese, Korean, Hebrew, Thai and Sinhala** (`MORE` in `src/scripts.js`). *Open:* as
+  above; Chinese characters beside kana or hangul are that language's, not asked for as
+  Chinese. Hebrew is right to left as Arabic is: a group of paragraphs that runs against the
+  document is in `\begin{otherlanguage}{hebrew}` when most of its letters are Hebrew, `{arabic}`
+  otherwise (`otherDirection(rtl, lang)`), and a mostly Hebrew file is a Hebrew document. A
+  word with its reading above it (`w:ruby`, which pandoc reads nothing of) keeps the word;
+  the reading is told as not kept. Named in the note when they have no font: Syriac, Lao,
+  Tibetan, Myanmar, Khmer, Georgian, Armenian, Ethiopic. *Save:* the defaults hold one East
+  Asian font and language and one complex script's, so `styled()` picks them from the
+  document: Japanese (`Yu Mincho`, `ja-JP`), Korean (`Malgun Gothic`, `ko-KR`) or Chinese by
+  what the main file sets up (`scriptSetup`; with both of the first two, by which the text has
+  more of; with none, by the text), and Arabic's or, in a file with Hebrew and no Arabic,
+  Hebrew's (`Times New Roman`, `he-IL`). What the defaults do not speak for is on the run
+  (`scriptRuns`): kana and hangul (`w:rFonts w:eastAsia`, `w:lang w:eastAsia`), Hebrew beside
+  Arabic, Thai (`Leelawadee UI`, `th-TH`), Sinhala (`Nirmala UI`, `si-LK`). Hebrew runs are
+  `w:rtl` by their characters (`src/wordbidi.js`). *Edits back:* Thai, Lao, Khmer and Burmese
+  have no spaces: `Intl.Segmenter` gives their words where the browser has it, else each
+  cluster is one; a Korean syllable spelt in jamo and Thai's vowel am are clusters too.
+
 **Whose edits are merged.** The data a .docx carries says where every edit goes in the source,
 so it is trusted only when this browser wrote it: the worker returns the SHA-256 of the data at
 export (`mark`), the page keeps the marks of its newest 300 exports (`wordRemember`, the
@@ -465,8 +576,10 @@ files and lines; `PdfView.show(pdf, synctex)` draws with PDF.js; past 5 minutes 
 1. **Folder.** `projectDir(job.project)`, stable per project (`touchProject` keeps three); `KEEP`
    files (aux, bbl, toc, idx…) and `ASY_OUT` survive unless `job.clean`. Every file name and the
    main file pass `projectPath()` first (no `..` segment, no NUL), whatever the page cleaned.
-2. **Engine.** `pickEngine()`: the menu, else `% !TeX program = …`, else packages (LuaTeX ones or
-   `\directlua`: lualatex; XeTeX ones, fontspec family, PSTricks: xelatex), else pdflatex.
+2. **Engine.** `pickEngine()`: the menu, else `% !TeX program = …`, else packages (LuaTeX ones,
+   `\directlua` or babel's `bidi=basic` and `onchar`: lualatex; XeTeX ones, ctex, fontspec
+   family, PSTricks: xelatex), else pdflatex. The lines `src/scripts.js` writes for Chinese
+   and Arabic text are read here.
    `ENGINES` holds the command lines: TeX Live's `-progname`, `-synctex=1`, `-recorder`,
    `-shell-escape` or `-shell-restricted`, the format from `FMT`; xelatex `-no-pdf`, latex DVI.
 3. **Prefetch.** Packs that `INDEX.provides` lists for each `\usepackage`, `\documentclass`,

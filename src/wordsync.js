@@ -110,8 +110,48 @@ export function checkData(d) {
 
 // ---- text changes -> source edits ---------------------------------------------------------------
 
-const TOK = /[\p{L}\p{N}\p{M}]+|\s+|[\s\S]/gu;
-const toks = (t) => t.match(TOK) || [];
+// (Chinese and Japanese are written without spaces: each of their characters is a word here,
+// so one changed in a long sentence is one small change, not the sentence written again)
+// (in Arabic script and in India's a word holds marks and joiners, U+200C and U+200D, among
+// its letters: they are part of the word, not its end)
+const TOK = /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}]|[\p{L}\p{N}\p{M}\u200C\u200D]+|\s+|[\s\S]/gu;
+// A mark belongs to the letter before it, and so does a letter a virama or a joiner ties on (a
+// conjunct of India's scripts): a change does not begin or end inside such a cluster, so a vowel
+// sign changed in Word is its syllable changed, not half a letter under Review. Nor inside the
+// two halves of a character beyond the basic plane.
+const EXTENDS = /[\p{M}\u200C\u200D]/u;
+const VIRAMA = /[\u094D\u09CD\u0A4D\u0ACD\u0B4D\u0BCD\u0C4D\u0CCD\u0D4D\u0DCA\u1039\u17D2]/;
+function inside(t, p) {
+  if (p <= 0 || p >= t.length) return false;
+  const c = t[p], b = t[p - 1];
+  if (EXTENDS.test(c) || b === '\u200D' || (c >= '\uDC00' && c <= '\uDFFF' && b >= '\uD800' && b <= '\uDBFF')) return true;
+  // Thai's and Lao's vowel am, written after its consonant; a Korean syllable spelt in its
+  // letters (jamo), or a final letter after a whole syllable
+  if (c === '\u0E33' || c === '\u0EB3' || (c >= '\u1160' && c <= '\u11FF' && ((b >= '\u1100' && b <= '\u11FF') || (c >= '\u11A8' && b >= '\uAC00' && b <= '\uD7A3')))) return true;
+  return /\p{L}/u.test(c) && (VIRAMA.test(b) || (b === '\u200C' && VIRAMA.test(t[p - 2] || '')));
+}
+const CJK_G = /[\p{sc=Han}\p{sc=Hiragana}\p{sc=Katakana}]/gu;
+// Thai, Lao, Khmer and Burmese are written without spaces as well, in words of several letters:
+// where the browser can tell the words (Intl.Segmenter, with its dictionaries) each is one, so a
+// word changed in a Thai sentence is that word's patch; elsewhere each cluster is one.
+const NO_SPACES = /[\u0E00-\u0EFF\u1000-\u109F\u1780-\u17FF]/;
+let segmenter;
+function toks(t) {
+  const list = t.match(TOK) || [];
+  if (!NO_SPACES.test(t)) return list;
+  if (segmenter === undefined) { try { segmenter = new Intl.Segmenter('th', { granularity: 'word' }); } catch (e) { segmenter = null; } }
+  const out = [];
+  for (const x of list) {
+    if (!NO_SPACES.test(x)) { out.push(x); continue; }
+    // the ends of the words, or of the clusters; an end inside a cluster is none
+    const ends = [];
+    if (segmenter) { let p = 0; for (const g of segmenter.segment(x)) ends.push(p += g.segment.length); }
+    else for (let p = 1; p <= x.length; p++) ends.push(p);
+    let from = 0;
+    for (const p of ends) if (p === x.length || !inside(x, p)) { out.push(x.slice(from, p)); from = p; }
+  }
+  return out;
+}
 
 // old text -> new text as hunks { a, b, A, B } (old [a, b), new [A, B)), word granular. Hunks a
 // space or one short word apart are one change, as the Review tab shows them: "keeps writing" to
@@ -132,13 +172,18 @@ export function textHunks(o, n) {
   for (const x of out) {
     const L = merged[merged.length - 1];
     const gap = L ? o.slice(L.b, x.a) : null;
-    if (L && gap.length < 12 && /^\s*[\p{L}\p{N}]*\s*$/u.test(gap) && !gap.includes(OBJ) && !/\n\s*\n/.test(gap)) { L.b = x.b; L.B = x.B; continue; }
+    // (a short word: of Chinese or Japanese, where every character is one, at most two)
+    if (L && gap.length < 12 && /^\s*[\p{L}\p{N}\p{M}\u200C\u200D]*\s*$/u.test(gap) && !gap.includes(OBJ) && !/\n\s*\n/.test(gap) && (gap.match(CJK_G) || []).length <= 2 && (!NO_SPACES.test(gap) || toks(gap).filter((w) => /\S/.test(w)).length <= 1)) { L.b = x.b; L.B = x.B; continue; }
     merged.push({ ...x });
   }
   // then trimmed to the characters that differ, so café to cafés adds an s after caf\'e
+  // (and then back out to where a cluster begins and ends, never past the words that changed)
   for (const x of merged) {
+    const a0 = x.a, b0 = x.b;
     while (x.a < x.b && x.A < x.B && o[x.a] === n[x.A] && o[x.a] !== OBJ) { x.a++; x.A++; }
     while (x.b > x.a && x.B > x.A && o[x.b - 1] === n[x.B - 1] && o[x.b - 1] !== OBJ) { x.b--; x.B--; }
+    while (x.a > a0 && (inside(o, x.a) || inside(n, x.A))) { x.a--; x.A--; }
+    while (x.b < b0 && (inside(o, x.b) || inside(n, x.B))) { x.b++; x.B++; }
   }
   return merged.filter((x) => x.a < x.b || x.A < x.B);
 }
@@ -159,6 +204,14 @@ function newToOld(hs, p) {
 const PARA_OK = new Set(['p', 'li', 'fn']);
 const ITEM = '\u2023'; // marks, inside new text, a paragraph that is a new list item
 
+// Chinese text has quotation marks and a dash of its own in the characters TeX writes as ``,
+// '' and ---: in text with Chinese in it they stay the characters (as src/wordjobs.js keeps them)
+const CJK_QUOTES = /([\u2018\u2019\u201C\u201D\u2014])/;
+function escapeText(t, prev) {
+  if (!/\p{sc=Han}/u.test(t)) return escapeTeX(t, prev);
+  return t.split(CJK_QUOTES).map((x, i, a) => (i % 2 ? x : escapeTeX(x, i ? a[i - 1] : prev))).join('');
+}
+
 // LaTeX for new text from Word: escaped as typing it on the page would be; objects in it (an
 // equation or a footnote the coauthor inserted) as LaTeX of their own
 function texFor(text, objs, at, ctx) {
@@ -171,7 +224,7 @@ function texFor(text, objs, at, ctx) {
     const paras = t.split('\u2029');
     out += paras.map((p, i) => {
       const item = p.startsWith(ITEM);
-      const body = escapeTeX(item ? p.slice(1) : p, i ? ' ' : prev);
+      const body = escapeText(item ? p.slice(1) : p, i ? ' ' : prev);
       if (!i) return body;
       return (!ctx.paras ? ' ' : item && ctx.list ? '\n\\item ' : '\n\n') + body;
     }).join('');
@@ -338,13 +391,14 @@ export function planImport(data, X, cur, H = {}) {
     } else note(A, A.text.length, 'Added in Word, in a new table cell or row, not brought in: ' + show(t));
   }
   // blocks moved in Word: the order of the bookmarks says which
-  const order = X.order.filter((id) => byId.has(id));
+  // (a footnote's bookmark stands in another part of the file, after all of the body's: left
+  // in, it made the one paragraph after a footnote's read as moved)
+  const order = X.order.filter((id) => byId.has(id) && byId.get(id).k !== 'fn');
   const idx = new Map(data.anchors.map((A, i) => [A.id, i]));
   const keep = lis(order.map((id) => idx.get(id)));
   for (let k = 0; k < order.length; k++) {
     if (keep.has(k)) continue;
     const A = byId.get(order[k]);
-    if (A.k === 'fn') continue;
     stats.moved++;
     note(A, 0, 'In Word this paragraph was moved; Rikuy kept it where it was (move it in the source if you agree).');
   }

@@ -33,6 +33,11 @@ Built into the TeX engines and tree
   TeX Live 2026. Each package carries its own license, mostly the LaTeX Project Public
   License (LPPL-1.3c), GPL, the SIL Open Font License and public domain; see the package's
   files in the tree and tlpkg/texlive.tlpdb in TeX Live.  www.tug.org/texlive
+  For Chinese, Japanese, Korean, Arabic, Hebrew, India's scripts, Thai and Sinhala (the hosted
+  Rikuy only): Amiri, Harano Aji, Nanum and twenty six Noto fonts (OFL-1.1), Hadasim CLM
+  (GPL-2.0 with the font exception), the Fandol fonts (GPL-3.0
+  with the font exception), the CJK package (GPL-2.0-or-later) and the Arphic fonts (Arphic
+  Public License); LICENSES/third-party/chinese-arabic.txt.
 
 Built for Rikuy from source (tex/build_tools.sh, tex/native/)
   dvips (TeX Live)                    GPL-2.0-or-later
