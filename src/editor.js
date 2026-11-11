@@ -276,6 +276,57 @@ export function visibleRanges(blocks, f, a, b) {
 }
 
 // ---------------------------------------------------------------------------
+// Grapheme clusters. What a reader takes for one character may be several code points: in
+// Devanagari क्षि is four (a consonant, its virama, a consonant, a vowel sign), an emoji two
+// code units. The browser puts a caret only between clusters; a range made otherwise (a cut for
+// a page break, a selection set by a program) is moved to their edges with these.
+
+let graphemes;
+// one cluster's worth of text that goes with what stands before it, where Intl.Segmenter is not
+// to be had: a mark, a joiner, the second half of a pair, a letter after a virama or a joiner
+const VIRAMA = /[\u094D\u09CD\u0A4D\u0ACD\u0B4D\u0BCD\u0C4D\u0CCD\u0D4D]/;
+const joins = (text, i) => {
+  const c = text[i], p = text[i - 1];
+  if (c >= '\uDC00' && c <= '\uDFFF' && p >= '\uD800' && p <= '\uDBFF') return true;
+  if (p === '\u200D' || /[\p{M}\u200C\u200D]/u.test(c)) return true;
+  return VIRAMA.test(p) && /\p{L}/u.test(c);
+};
+// The cluster of text that holds the code unit at i: [start, end). Only the text near i is
+// read (a cluster is a handful of code units), from a place where a cluster surely starts.
+// (plain: without Intl.Segmenter, as where a browser has none)
+export function clusterAt(text, i, plain) {
+  if (i < 0 || i >= text.length) return [i, i];
+  // (an ASCII character starts a cluster of its own, whatever stands before it)
+  let from = i;
+  for (const stop = Math.max(0, i - 64); from > stop && text.charCodeAt(from) > 0x7E; from--);
+  const to = Math.min(text.length, i + 64);
+  if (graphemes === undefined) { try { graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' }); } catch (e) { graphemes = null; } }
+  if (graphemes && !plain) {
+    const s = graphemes.segment(text.slice(from, to)).containing(i - from);
+    if (s) return [from + s.index, from + s.index + s.segment.length];
+  }
+  let a = i, b = i + 1;
+  while (a > from && joins(text, a)) a--;
+  while (b < to && joins(text, b)) b++;
+  return [a, b];
+}
+// How many code units Backspace takes off the end of a cluster: its last code point, as the
+// browser's own Backspace and editors for India's scripts do (the vowel sign of कि, then the
+// letter; an accent typed after its letter), but all of an emoji, a flag or a keycap, whose
+// parts mean nothing alone, and both halves of a pair.
+export function backspaceUnits(cluster) {
+  if (cluster.length < 2 || /[\p{Extended_Pictographic}\p{Regional_Indicator}\uFE0F\u20E3\r]/u.test(cluster)) return cluster.length;
+  const c = cluster.charCodeAt(cluster.length - 1), p = cluster.charCodeAt(cluster.length - 2);
+  return c >= 0xDC00 && c <= 0xDFFF && p >= 0xD800 && p <= 0xDBFF ? 2 : 1;
+}
+// The nearest edge of a cluster at or before i (dir < 0), or at or after it (dir > 0)
+export function clusterEdge(text, i, dir) {
+  if (i <= 0 || i >= text.length) return Math.max(0, Math.min(text.length, i));
+  const [a, b] = clusterAt(text, i);
+  return a === i ? i : dir < 0 ? a : b;
+}
+
+// ---------------------------------------------------------------------------
 // Escaping typed text into LaTeX
 
 const ESC = { '\\': '\\textbackslash{}', '{': '\\{', '}': '\\}', '%': '\\%', '#': '\\#', '&': '\\&', '_': '\\_', '$': '\\$', '^': '\\textasciicircum{}', '~': '\\textasciitilde{}', ' ': '~', '…': '\\ldots{}' };

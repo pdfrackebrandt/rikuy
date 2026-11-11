@@ -848,7 +848,8 @@ class Builder {
 
   countWords(inl) {
     for (const x of inl) {
-      if (x.k === 'seg') this.words += (x.t.match(/[\p{L}\p{N}][\p{L}\p{N}'’-]*/gu) || []).length;
+      // (marks and joiners are part of a word: नमस्ते is one word, not three)
+      if (x.k === 'seg') this.words += (x.t.match(/[\p{L}\p{N}][\p{L}\p{N}\p{M}\u200C\u200D'’-]*/gu) || []).length;
       else if (x.kids) this.countWords(x.kids);
     }
   }

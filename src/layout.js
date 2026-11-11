@@ -1,6 +1,8 @@
 // Rikuy layout: measure flow items once, paginate arithmetically, and
 // touch only the pages whose contents changed.
 
+import { clusterEdge } from './editor.js';
+
 const EPS = 1.5;
 const IN = 72.27;
 // letters of scripts that are hyphened where a word is cut
@@ -216,7 +218,10 @@ export class Layout {
     this.host.flow.appendChild(clone);
     const top = clone.getBoundingClientRect().top;
     const units = it.rowSplit ? [...clone.querySelectorAll('tr')].map((el) => ({ el })) : collectUnits(clone);
-    const pos = cuts.map((k) => findUnit(units, it.lines[k].t, top));
+    // A cut falls where a line starts, so between two characters as a reader sees them; a unit
+    // is a code unit, and the first one of a line whose box can be measured may be the second of
+    // its cluster (a vowel sign, a virama, half a pair). The cut goes to the cluster's start.
+    const pos = cuts.map((k) => { const p = findUnit(units, it.lines[k].t, top); return p && p.node && p.i > 0 ? { node: p.node, i: clusterEdge(p.node.data, p.i, -1) } : p; });
     const map = new Map();
     const parts = [];
     for (let n = pos.length - 1; n >= 0; n--) {
@@ -234,7 +239,7 @@ export class Layout {
       }
       // hyphen if split inside a word
       // (not between Chinese, Japanese or Korean characters, where a line may end anywhere, nor
-      // in Arabic or Hebrew, which take no hyphen)
+      // in Arabic, Hebrew or India's scripts, which take no hyphen)
       if (p.node && p.i > 0 && HYPHENED.test(p.node.data[p.i - 1] || '') && HYPHENED.test((part.querySelector('span.t') || {}).textContent?.[0] || '')) {
         const h = document.createElement('span');
         h.className = 'chr hy';

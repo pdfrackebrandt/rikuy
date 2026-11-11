@@ -90,8 +90,13 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
   (`src/render.js`) writes the `dir` attribute, one of two fixed words; the style sheet names
   sides by the way the text runs (`padding-inline-start`), so markers, numbers and indents
   follow. Formulas, code and a table's columns stay left to right. The page's fonts have no
-  Chinese or Arabic: `--font-cjk` and `--font-ar` name the system's, after every family the
-  stacks had, and the `Paper CJK` faces give italic Chinese a Kai.
+  Chinese, Arabic or Indian script: `--font-cjk`, `--font-ar` and `--font-in` name the system's,
+  after every family the stacks had, and the `Paper CJK` faces give italic Chinese a Kai.
+- **Characters of several code points.** क्षि is four (a consonant, a virama, a consonant, a
+  vowel sign). `clusterAt`, `clusterEdge` and `backspaceUnits` (`src/editor.js`, on
+  `Intl.Segmenter` with a fallback) say where such a character starts and ends: Backspace takes
+  its last code point and Delete the whole of it (`App.deleteInput`), bold takes it whole
+  (`toggleStyle`), and a page break is never cut inside it (`Layout.pieces`).
 - **Render.** `Builder.result()` keys each block by file, source text, `sig` (each resolved value
   it used, via `Builder.use()`) and item types. `Renderer.sync(model, prefix)` keeps each DOM
   block whose `prefix + key` matches, updating only `base` (its source offset), and renders the

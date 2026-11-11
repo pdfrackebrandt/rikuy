@@ -5,7 +5,7 @@ import { Renderer, BLOCKS, esc, widgetCss } from './render.js';
 import { Layout, geometry } from './layout.js';
 import {
   posFromDom, CaretIndex, segOfSpan, atomOfEl, styOfEl, visibleRanges, escapeTeX, textToTeX,
-  endsWithControlWord, isBalanced, diff, boundary
+  endsWithControlWord, isBalanced, diff, boundary, clusterEdge, backspaceUnits
 } from './editor.js';
 import { SAMPLE } from './sample.js';
 import { splitRows } from './parser.js';
@@ -32,7 +32,7 @@ import { word, installWord, isDocx } from './word.js';
 import { ribbon, installRibbon } from './ribbon.js';
 import { shareParam, commentOnly, cleanPath } from './share.js';
 import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
-import { scriptNeeds, scriptLines, addScriptSetup } from './scripts.js';
+import { scriptNeeds, scriptLines, addScriptSetup, scriptName } from './scripts.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const PX_PER_PT = 96 / 72.27;
@@ -763,8 +763,8 @@ class App {
     this.ribbonSoon();
   }
 
-  // ---- Chinese and Arabic --------------------------------------------------------
-  // LaTeX's own fonts have neither script: a document with such text and no set up for it
+  // ---- Chinese, Arabic and India's scripts ---------------------------------------
+  // LaTeX's own fonts have none of these scripts: a document with such text and no set up for it
   // (src/scripts.js knows which) fails in the PDF or loses the characters. A slim bar under the
   // ribbon says so and offers the lines; nothing is added to the source without the click on its
   // button. The bar is looked at a moment after the page was built again, not at every key, never
@@ -772,7 +772,8 @@ class App {
   // author's.
 
   // What the open project's text needs and its main file does not set up: [] or some of
-  // 'chinese' and 'arabic' (scriptNeeds), or null where no set up can be offered now.
+  // 'chinese', 'arabic' and India's scripts (scriptNeeds), or null where no set up can be
+  // offered now.
   scriptNeedsNow() {
     if (this.stale || !this.files.has(this.main) || document.body.classList.contains('guest')) return null;
     const texts = [];
@@ -808,10 +809,12 @@ class App {
     }
     const show = !!sig && this.scriptSeen.get(key) !== sig;
     if (show && bar.dataset.needs !== sig) {
-      const zh = needs.includes('chinese'), ar = needs.includes('arabic');
-      $('#script-msg').textContent = zh && ar ? 'This document has Chinese and Arabic text. LaTeX needs fonts and right to left setup for them.'
-        : ar ? 'This document has Arabic text. LaTeX needs a font and right to left setup for it.'
-          : 'This document has Chinese text. LaTeX needs a font for it.';
+      // the scripts by the names people call them, in the order scriptNeeds gives them:
+      // "Devanagari", "Chinese and Arabic", "Chinese, Tamil and Bengali"
+      const names = needs.map(scriptName);
+      const list = names.length > 1 ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] : names[0];
+      $('#script-msg').textContent = 'This document has ' + list + ' text. LaTeX needs ' + (names.length > 1 ? 'fonts' : 'a font') +
+        (needs.includes('arabic') ? ' and right to left setup' : '') + ' for it.';
       bar.dataset.needs = sig;
     }
     if (bar.hidden === show) bar.hidden = !show;
@@ -827,8 +830,11 @@ class App {
     const next = needs && needs.length ? addScriptSetup(main, needs) : null;
     const d = next == null ? null : diff(main, next);
     if (!d) return;
-    // babel's lines are for LuaLaTeX, ctex alone is for XeLaTeX (pickEngine in tex/engine.js)
-    const engine = scriptLines(needs, main).some((l) => /\\babelprovide\b/.test(l)) ? 'lualatex' : 'xelatex';
+    // The engine the lines lead to, read from the lines themselves: ctex alone is XeLaTeX's,
+    // anything of babel's (bidi, a script set by its characters) is LuaLaTeX's (pickEngine in
+    // tex/engine.js reads the same lines).
+    const lines = scriptLines(needs, main);
+    const engine = lines.some((l) => /\\usepackage\b[^{]*\{ctex\}/.test(l)) && !lines.some((l) => /\\babel(provide|font)\b|\{babel\}/.test(l)) ? 'xelatex' : 'lualatex';
     const c = this.caretNow();
     const caret = c && c.f != null && !c.ghost ? { f: c.f, p: c.f === this.main && c.p >= d.s + d.del.length ? c.p + d.ins.length - d.del.length : c.p } : null;
     this.closeGroup();
@@ -1333,6 +1339,23 @@ class App {
       const tr = ranges && ranges[0];
       let r = tr ? this.rangeToSrc(tr) : null;
       if (r && r.a === r.b) r = null;
+      // A character made of several code points (क्षि: a consonant, a virama, a consonant, a
+      // vowel sign). Backspace takes the code point before the caret, as the browser's own
+      // Backspace does and writers of India's scripts expect: the vowel sign, then the letter,
+      // then the virama. The browser names the whole character as the range, also when the
+      // caret stands inside it (after a virama the next letter has joined). Delete takes the
+      // whole character after the caret, as natively, or what is left of the one the caret is
+      // in. Only where the page shows the source's own characters: a letter written as a
+      // command (\'e) goes whole.
+      if (r && r.f === c.f && tr.startContainer === tr.endContainer && tr.startContainer.nodeType === 3) {
+        const text = this.src(r.f), node = tr.startContainer, sel = getSelection();
+        if (type === 'deleteContentBackward' && r.a < c.a && c.a <= r.b && r.b - r.a > 1 && node.data.slice(tr.startOffset, tr.endOffset) === text.slice(r.a, r.b)) {
+          r = { f: r.f, a: c.a - backspaceUnits(text.slice(r.a, c.a)), b: c.a };
+        } else if (type === 'deleteContentForward' && r.a > c.a && sel.anchorNode === node && sel.anchorOffset < tr.startOffset &&
+          node.data.slice(sel.anchorOffset, tr.startOffset) === text.slice(c.a, r.a) && clusterEdge(text, c.a, 1) === r.a) {
+          r = { f: r.f, a: c.a, b: r.a };
+        }
+      }
       // With nothing selected, Backspace takes only what is before the caret and Delete only
       // what is after it. At the start of a theorem's body the browser names a range that begins
       // past the generated "Theorem 1." label, which maps to the paragraph's end: taken as it
@@ -1703,6 +1726,11 @@ class App {
       this.commit([{ f: c.f, s: c.a, e: c.a, t: open + '}' }], { f: c.f, p: c.a + open.length, bias: 1 }, 'style');
       return;
     }
+    // A selection that starts or ends inside what a reader takes for one character (क्षि is a
+    // consonant, a virama, a consonant and a vowel sign) takes that character whole: a brace
+    // between its parts would take the conjunct apart on the page and in the PDF.
+    c.a = clusterEdge(src, c.a, -1);
+    c.b = clusterEdge(src, c.b, 1);
     if (!isBalanced(src, c.a, c.b)) { this.toast('That selection crosses structure. Select text inside one paragraph or cell.'); return; }
     // A selection over several paragraphs: each paragraph's part gets the command of its own.
     // One command around all of them took the blank lines into its braces, which TeX refuses

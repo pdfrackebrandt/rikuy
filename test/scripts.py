@@ -7,7 +7,13 @@ paste work in right to left and Chinese text. The page's fonts name a Song, a He
 and a Naskh after the families they had. A document with such text and no set up for it gets a
 slim notice whose button adds the lines as one edit; nothing is added without that click, a
 dismissal is remembered, and a copy someone shared has none. Dark mode and a phone do not
-overflow."""
+overflow.
+
+India's scripts (Devanagari, Bengali, Gurmukhi, Gujarati, Odia, Tamil, Telugu, Kannada,
+Malayalam): the notice names any mix of scripts, the font stacks name fonts for the nine, and
+editing goes by characters as a reader sees them: the caret never lands inside one, Backspace
+takes its last code point, Delete the whole of it, bold takes it whole, a page break never
+cuts it."""
 import os, sys, traceback
 sys.path.insert(0, os.path.dirname(__file__))
 from browser import open_page, check, results, src, click_text, select_text, load_doc
@@ -395,6 +401,225 @@ def fonts(page):
           page.evaluate('''() => [...document.styleSheets].some((s) => { try { return [...s.cssRules].some((r) => r.type === 5 && /Paper CJK/.test(r.cssText) && /italic/.test(r.cssText) && /KaiTi/.test(r.cssText) && /Kaiti SC/.test(r.cssText)); } catch (e) { return false; } })'''), kai)
 
 
+HI_PRE = '\\usepackage[english]{babel}\n\\babelprovide[import=hi, onchar=ids fonts]{hindi}\n\\babelfont[hindi]{rm}[Renderer=Harfbuzz]{Noto Serif Devanagari}'
+HI_DOC = doc(HI_PRE, 'यह हिन्दी क्षितिज नमस्ते का वाक्य है।\n\nदूसरा अनुच्छेद क𠀀ख और தமிழ் भी।')
+# the edges between the characters of a word as this browser's own Unicode data has them
+EDGES = '''(w) => { let n = 0; return [0, ...[...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(w)].map((x) => (n += x.segment.length))]; }'''
+
+
+def india(p, page):
+    load_doc(page, HI_DOC)
+    page.wait_for_timeout(400)
+    fam = page.evaluate("""() => ({ doc: getComputedStyle(document.getElementById('sheet')).fontFamily, sf: getComputedStyle(document.documentElement).getPropertyValue('--font-doc-sf'),
+      probe: (() => { const e = document.createElement('span'); e.className = 'y-sf'; document.getElementById('sheet').append(e); const sf = getComputedStyle(e).fontFamily; e.className = 'y-tt'; const tt = getComputedStyle(e).fontFamily; e.remove(); return { sf, tt }; })() })""")
+    names = lambda v: [x.strip().strip('"') for x in v.split(',')]
+    docn, sfn, ttn = names(fam['doc']), names(fam['probe']['sf']), names(fam['probe']['tt'])
+    nine = ['Devanagari', 'Bengali', 'Gurmukhi', 'Gujarati', 'Oriya', 'Tamil', 'Telugu', 'Kannada', 'Malayalam']
+    serif = ['Noto Serif ' + x for x in nine if x != 'Oriya'] + ['Noto Sans Oriya']
+    mac = ['Kohinoor Devanagari', 'Devanagari MT', 'Kohinoor Bangla', 'Bangla MN', 'Gurmukhi MN', 'Gujarati MT', 'Oriya MN', 'Tamil MN', 'Kohinoor Telugu', 'Kannada MN', 'Malayalam MN']
+    rest = ['Nirmala UI', 'Mangal'] + ['Noto Sans ' + x for x in nine] + ['Lohit ' + x for x in nine if x != 'Oriya'] + ['Lohit Odia']
+    check('the text stack names fonts for India\'s nine scripts', all(n in docn for n in serif + mac + rest), [n for n in serif + mac + rest if n not in docn])
+    check('after every family it had and after the Chinese and Arabic ones, the PDF\'s serif first', docn.index('Noto Serif Devanagari') > docn.index('serif') and docn.index('Noto Serif Devanagari') > docn.index('Songti SC') and docn.index('Noto Serif Devanagari') > docn.index('Amiri') and
+          docn.index('Noto Serif Tamil') < docn.index('Tamil MN') < docn.index('Nirmala UI') < docn.index('Noto Sans Tamil') < docn.index('Lohit Tamil'), docn[-80:])
+    check('the sans serif and typewriter stacks name them too, a sans first', all(n in sfn and n in ttn for n in serif + mac + rest) and sfn.index('Noto Sans Devanagari') < sfn.index('Noto Serif Devanagari') and sfn.index('Noto Sans Devanagari') > sfn.index('sans-serif') and ttn.index('Noto Sans Bengali') > ttn.index('monospace'), [sfn[-60:], ttn[-60:]])
+    cdp = page.context.new_cdp_session(page)
+    cdp.send('DOM.enable')
+    cdp.send('CSS.enable')
+    used = [f for f, custom in fonts_of(cdp, '#pages .it.p span.t') if not custom]
+    have = page.evaluate("""(stack) => { const c = document.createElement('canvas').getContext('2d'); const w = (f) => { c.font = '40px ' + f; return c.measureText('हिन्दी क्षितिज').width; };
+      return stack.filter((n) => w('"' + n + '", monospace') !== w('monospace')); }""", serif + mac + rest)
+    check('Devanagari is drawn by a font the stack names, where the system has one', any(u in docn for u in used) or not have, [used, have])
+    print('     (Devanagari drawn here by ' + '/'.join(used) + ')')
+
+    # ---- editing by characters as a reader sees them
+    base = src(page)
+    at = base.index('क्षितिज')
+    edges = page.evaluate(EDGES, 'क्षितिज')
+    e1 = edges[1]
+    check('(the browser takes a conjunct with its vowel sign for one character, or ends it at the virama)', edges in ([0, 4, 6, 7], [0, 2, 4, 6, 7]), edges)
+    l, r, t, b = char_box(page, 'क्षितिज', e1)
+    page.mouse.click(l + 0.5, (t + b) / 2)
+    page.wait_for_timeout(120)
+    check('a click between two characters of a Hindi word puts the caret there', caret(page) == [at + e1, at + e1], [caret(page), at + e1])
+    l0, r0, t0, b0 = char_box(page, 'क्षितिज', 0)
+    page.mouse.click((l0 + r0) / 2 + 1, (t0 + b0) / 2)
+    page.wait_for_timeout(120)
+    check('a click on a character puts the caret at one of its edges, never inside it', caret(page) and caret(page)[0] - at in edges, [caret(page), at, edges])
+    click_text(page, 'क्षितिज', 0)
+    seen = []
+    for _ in range(len(edges) - 1):
+        page.keyboard.press('ArrowRight')
+        page.wait_for_timeout(50)
+        seen.append(caret(page)[0] - at)
+    check('the right arrow steps over a conjunct whole', seen == edges[1:], [seen, edges])
+    back = []
+    for _ in range(len(edges) - 1):
+        page.keyboard.press('ArrowLeft')
+        page.wait_for_timeout(50)
+        back.append(caret(page)[0] - at)
+    check('and the left arrow back', back == edges[-2::-1], [back, edges])
+    click_text(page, 'क्षितिज', 4)
+    page.keyboard.type('म')
+    page.wait_for_timeout(150)
+    check('a letter typed in the middle of a word goes there', src(page) == base.replace('क्षितिज', 'क्षिमतिज') and caret(page) == [at + 5, at + 5], src(page)[at:at + 10])
+    page.keyboard.press('Backspace')
+    page.wait_for_timeout(150)
+    check('Backspace takes it', src(page) == base and caret(page) == [at + 4, at + 4])
+    # क्षि: the vowel sign, the letter, the virama, the first letter, one at each Backspace
+    steps = []
+    for _ in range(4):
+        page.keyboard.press('Backspace')
+        page.wait_for_timeout(160)
+        steps.append(src(page)[at:at + 7 - len(steps) - 1])
+    check('Backspace takes one code point of a conjunct at a time: vowel sign, letter, virama, letter', steps == ['क्षतिज', 'क्तिज', 'कतिज', 'तिज'], steps)
+    check('the page shows what the source has', page.evaluate('''() => [...document.querySelectorAll('#pages .it.p')][0].textContent''') == 'यह हिन्दी तिज नमस्ते का वाक्य है।', page.evaluate('''() => [...document.querySelectorAll('#pages .it.p')][0].textContent'''))
+    undo(page, 2)
+    check('undo brings the conjunct back', src(page) == base, src(page)[at:at + 8])
+    for _ in range(2):
+        page.keyboard.press('Control+y')
+        page.wait_for_timeout(140)
+    check('and redo takes it again', src(page) != base and 'तिज नमस्ते' in src(page) and 'क्षितिज' not in src(page), src(page)[at - 2:at + 8])
+    undo(page, 2)
+    click_text(page, 'क्षितिज', 0)
+    page.keyboard.press('Delete')
+    page.wait_for_timeout(160)
+    check('Delete takes the whole character after the caret', src(page) == base.replace('क्षितिज', 'क्षितिज'[e1:]), src(page)[at:at + 8])
+    undo(page)
+    # a virama typed between two letters joins them: what is typed next goes after the virama,
+    # and Backspace then takes the letter, then the virama
+    nat = base.index('नमस्ते')
+    click_text(page, 'नमस्ते', 1)
+    page.keyboard.type('्')
+    page.wait_for_timeout(140)
+    page.keyboard.type('य')
+    page.wait_for_timeout(160)
+    check('a virama and a letter typed inside a word land in that order', src(page) == base.replace('नमस्ते', 'न्यमस्ते') and caret(page) == [nat + 3, nat + 3], src(page)[nat:nat + 9])
+    page.keyboard.press('Backspace')
+    page.wait_for_timeout(160)
+    one = src(page)[nat:nat + 7]
+    page.keyboard.press('Backspace')
+    page.wait_for_timeout(160)
+    check('Backspace after them takes the letter, then the virama that had joined the next one', one == 'न्मस्ते' and src(page) == base, [one, src(page)[nat:nat + 7]])
+    load_doc(page, HI_DOC)
+    page.wait_for_timeout(300)
+    # a character outside the basic plane beside Devanagari: never half of it
+    click_text(page, 'क𠀀ख', 3)
+    page.keyboard.press('Backspace')
+    page.wait_for_timeout(160)
+    check('Backspace takes both halves of a pair', src(page) == base.replace('क𠀀ख', 'कख'), src(page)[base.index('क𠀀ख'):][:6])
+    undo(page)
+    click_text(page, 'தமிழ்', 5)
+    page.keyboard.press('Backspace')
+    page.wait_for_timeout(160)
+    check('Tamil: Backspace takes the pulli, the letter stays', src(page) == base.replace('தமிழ்', 'தமிழ'), src(page)[base.index('தமிழ்'):][:7])
+    undo(page)
+    lone = page.evaluate('''() => /[\\uD800-\\uDBFF](?![\\uDC00-\\uDFFF])|(?<![\\uD800-\\uDBFF])[\\uDC00-\\uDFFF]/.test(window.rikuy.files.get('main.tex'))''')
+    check('the source holds no half of a pair', lone is False and src(page) == base)
+    select_text(page, 'नमस्ते')
+    page.keyboard.type('धन्यवाद')
+    page.wait_for_timeout(200)
+    check('typing over a selected word replaces it', src(page) == base.replace('नमस्ते', 'धन्यवाद'), src(page)[nat:nat + 10])
+    undo(page, 2)
+    # a selection ending inside a character (only a program can set one): bold takes it whole
+    page.evaluate('''(n) => { const s = [...document.querySelectorAll('#pages span.t')].find((s) => s.textContent.includes('क्षितिज')); const i = s.textContent.indexOf('क्षितिज');
+      const r = document.createRange(); r.setStart(s.firstChild, i); r.setEnd(s.firstChild, i + n); document.getElementById('pages').focus(); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }''', e1 + 1)
+    page.keyboard.press('Control+b')
+    page.wait_for_timeout(180)
+    check('bold on a selection ending inside a character takes the character whole', src(page) == base.replace('क्षितिज', '\\textbf{' + 'क्षितिज'[:edges[2]] + '}' + 'क्षितिज'[edges[2]:]), src(page)[at:at + 20])
+    undo(page)
+    select_text(page, 'हिन्दी')
+    page.keyboard.press('Control+b')
+    page.wait_for_timeout(180)
+    check('bold on a word', src(page) == base.replace('हिन्दी', '\\textbf{हिन्दी}'), src(page)[at - 20:at])
+    undo(page)
+    click_text(page, 'नमस्ते', 0)
+    page.keyboard.press('Enter')
+    page.wait_for_timeout(200)
+    check('Enter splits the paragraph', src(page) == base.replace('क्षितिज नमस्ते', 'क्षितिज \n\nनमस्ते'), src(page)[at:at + 20])
+    undo(page)
+    click_text(page, 'नमस्ते', 0)
+    page.evaluate(PASTE, 'বাংলা ও தமிழ் 50% ')
+    page.wait_for_timeout(250)
+    check('Bengali and Tamil pasted as plain text', src(page) == base.replace('नमस्ते', 'বাংলা ও தமிழ் 50\\% नमस्ते'), src(page)[nat:nat + 24])
+    undo(page)
+    click_text(page, 'नमस्ते', 6)
+    cdp.send('Input.imeSetComposition', {'text': 'dost', 'selectionStart': 4, 'selectionEnd': 4})
+    page.wait_for_timeout(100)
+    check('while an input method composes Hindi the source does not change', page.evaluate('window.rikuy.composing') is True and src(page) == base)
+    cdp.send('Input.imeSetComposition', {'text': ' दोस्', 'selectionStart': 5, 'selectionEnd': 5})
+    page.wait_for_timeout(80)
+    cdp.send('Input.insertText', {'text': ' दोस्त'})
+    page.wait_for_timeout(300)
+    check('what it composed goes in at the caret', src(page) == base.replace('नमस्ते', 'नमस्ते दोस्त') and caret(page) == [nat + 12, nat + 12], src(page)[nat:nat + 14])
+    undo(page)
+    check('undo: the source as it was', src(page) == base)
+    check('a word with its marks counts as one word', page.inner_text('#st-words') == '13 words', page.inner_text('#st-words'))
+
+    # ---- a paragraph cut by a page break
+    sent = 'यह एक लम्बा हिन्दी अनुच्छेद है जिसमें क्षत्रिय विद्यार्थी श्रृंखला प्रस्तुत करते हैं और पंक्तियाँ स्वाभाविक रूप से टूटती हैं। '
+    paras = [(sent * (5 + i)).strip() for i in range(10)]
+    load_doc(page, doc(HI_PRE, '\n\n'.join(paras)))
+    page.wait_for_timeout(600)
+    cut = page.evaluate('''() => { const seg = new Intl.Segmenter(undefined, { granularity: 'grapheme' }); const out = [];
+      for (const a of document.querySelectorAll('#pages .it.split-a')) { const b = a.closest('.page').nextElementSibling.querySelector('.it.split-b'); if (!b) continue;
+        const ta = a.textContent.replace(/-$/, ''), tb = b.textContent, whole = ta + tb; let n = 0; const edges = new Set([0, ...[...seg.segment(whole)].map((x) => (n += x.segment.length))]);
+        out.push({ edge: edges.has(ta.length), first: tb.slice(0, 3), mark: /^[\\p{M}\\u200C\\u200D]/u.test(tb), whole }); }
+      return { out, pages: document.querySelectorAll('.page').length, hy: document.querySelectorAll('#pages .chr.hy').length }; }''')
+    check('a Hindi paragraph cut by a page break is cut between two characters, with no hyphen', cut['pages'] >= 2 and len(cut['out']) >= 1 and all(c['edge'] and not c['mark'] and c['whole'] in paras for c in cut['out']) and cut['hy'] == 0,
+          [cut['pages'], cut['hy'], [(c['edge'], c['mark'], c['first']) for c in cut['out']]])
+
+    # ---- the notice for any mix of scripts
+    for body, want, engine in [('Text with हिन्दी in it.', 'This document has Devanagari text. LaTeX needs a font for it.', 'LuaLaTeX'),
+                               ('Hello हिन्दी and தமிழ் and 中文.', 'This document has Chinese, Devanagari and Tamil text. LaTeX needs fonts for it.', 'LuaLaTeX'),
+                               ('Mostly English words here, with عربي and বাংলা in them.', 'This document has Arabic and Bengali text. LaTeX needs fonts and right to left setup for it.', 'LuaLaTeX'),
+                               ('ગુજરાતી ଓଡ଼ିଆ ਪੰਜਾਬੀ తెలుగు ಕನ್ನಡ മലയാളം', 'This document has Gurmukhi, Gujarati, Odia, Telugu, Kannada and Malayalam text. LaTeX needs fonts for it.', 'LuaLaTeX'),
+                               ('Only 中文 here.', 'This document has Chinese text. LaTeX needs a font for it.', 'XeLaTeX')]:
+        load_doc(page, doc('', body))
+        page.wait_for_function('!document.getElementById("script-note").hidden', timeout=5000)
+        check('the notice: ' + want[18:want.index(' text')], note(page) == want, note(page))
+        before = src(page)
+        page.click('#script-go')
+        page.wait_for_timeout(350)
+        check('its set up names ' + engine, page.inner_text('#toast') == 'Added. The PDF is now made with ' + engine + '.' and ('{ctex}' in src(page)) == (engine == 'XeLaTeX') and src(page) != before, [page.inner_text('#toast'), src(page)[:200]])
+        page.wait_for_timeout(900)
+        check('and once set up there is no notice', note(page) is None, note(page))
+        undo(page)
+        check('one undo takes the lines out', src(page) == before)
+    load_doc(page, doc('', 'Text with हिन्दी in it.'))
+    page.wait_for_function('!document.getElementById("script-note").hidden', timeout=5000)
+    page.click('#script-go')
+    page.wait_for_timeout(350)
+    s = src(page)
+    check('Devanagari: babel sets Hindi by its characters, HarfBuzz and the Noto font', '\\usepackage[english]{babel}' in s and '\\babelprovide[import=hi, onchar=ids fonts]{hindi}\n\\babelfont[hindi]{rm}[Renderer=Harfbuzz]{Noto Serif Devanagari}\n\\begin{document}' in s, s[:300])
+    check('the page stays left to right', page.evaluate('document.querySelectorAll("#pages [dir]").length') == 0)
+    for pre in ['\\usepackage{xeCJK}', '\\usepackage{polyglossia}\n\\setmainlanguage{english}']:
+        load_doc(page, doc(pre, 'Text with हिन्दी in it.'))
+        page.wait_for_timeout(1000)
+        check('beside ' + pre.split('\n')[0][12:-1] + ' nothing is offered', note(page) is None and 'babel' not in src(page), note(page))
+
+    # ---- a phone
+    B, phone, errs = open_page(p, width=390, height=844)
+    load_doc(phone, doc('', 'यह हिन्दी क्षितिज का एक लम्बा वाक्य है जो एक से अधिक पंक्तियों में जाता है। তারপর বাংলা লেখা এবং தமிழ் உரை.\n\n\\begin{itemize}\n\\item पहला\n\\item दूसरा\n\\end{itemize}'))
+    phone.wait_for_function('!document.getElementById("script-note").hidden', timeout=5000)
+    bar = phone.evaluate('''() => { const b = document.getElementById('script-note'), r = b.getBoundingClientRect(), box = (id) => { const q = document.getElementById(id).getBoundingClientRect(); return [q.left, q.right, q.width]; };
+      return { msg: document.getElementById('script-msg').textContent, r: [r.left, r.right, r.height], go: box('script-go'), x: box('script-x'), m: box('script-msg'), sw: document.documentElement.scrollWidth, iw: innerWidth, barw: b.scrollWidth, clientw: b.clientWidth }; }''')
+    check('a phone: the notice for three scripts fits the screen', bar['msg'] == 'This document has Devanagari, Bengali and Tamil text. LaTeX needs fonts for it.' and bar['sw'] <= bar['iw'] and bar['x'][1] <= bar['iw'] and bar['go'][0] >= bar['m'][1] - 1 and bar['barw'] <= bar['clientw'] and bar['r'][2] < 90 and bar['m'][2] > 120, bar)
+    fit = phone.evaluate('''() => { const out = []; for (const e of document.querySelectorAll('#pages .it, #pages .it .lbl, #pages .it span.t')) { const r = e.getBoundingClientRect(), q = e.closest('.pb').getBoundingClientRect();
+        if (r.left < q.left - 1.5 || r.right > q.right + 1.5) out.push([e.className, Math.round(r.left - q.left), Math.round(q.right - r.right)]); }
+      const f = document.querySelector('.page .pb').getBoundingClientRect(), t = document.querySelector('#pages .it.p span.t'), R = document.createRange(); R.selectNodeContents(t);
+      return { out, sw: document.documentElement.scrollWidth, iw: innerWidth, on: f.left >= -1 && f.right <= innerWidth + 1, lines: new Set([...R.getClientRects()].map((x) => Math.round(x.top))).size }; }''')
+    check('a phone: the text wraps inside the text block and the window does not scroll sideways', fit['out'] == [] and fit['sw'] <= fit['iw'] and fit['on'] and fit['lines'] >= 2, fit)
+    l, r, t, b = char_box(phone, 'क्षितिज', 0)
+    phone.mouse.click(l + 0.5, (t + b) / 2)
+    phone.wait_for_timeout(120)
+    phone.keyboard.type('अ')
+    phone.wait_for_timeout(180)
+    check('a phone: typing where a tap put the caret', 'हिन्दी अक्षितिज का' in src(phone), src(phone)[40:80])
+    check('a phone: no console errors', not errs, errs[:5])
+    B.close()
+
+
+
 def notice(p, page):
     load_doc(page, PLAIN)
     page.wait_for_timeout(900)
@@ -468,7 +693,7 @@ def notice(p, page):
     click_text(page, 'Second', 0)
     page.keyboard.type('عربي ')
     page.wait_for_function('!document.getElementById("script-note").hidden', timeout=4000)
-    check('it comes back when the document needs something else', note(page) == 'This document has Chinese and Arabic text. LaTeX needs fonts and right to left setup for them.', note(page))
+    check('it comes back when the document needs something else', note(page) == 'This document has Chinese and Arabic text. LaTeX needs fonts and right to left setup for it.', note(page))
     page.click('#script-go')
     page.wait_for_timeout(350)
     s = src(page)
@@ -548,6 +773,7 @@ try:
         editing(page)
         long_rtl(page)
         fonts(page)
+        india(p, page)
         notice(p, page)
         check('no console errors', not errors, errors[:5])
         browser.close()

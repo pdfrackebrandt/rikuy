@@ -31,9 +31,20 @@
   --font-cjk: "Paper CJK", FandolSong, "Songti SC", STSong, SimSun, NSimSun, "Noto Serif CJK SC", "Source Han Serif SC", "Source Han Serif CN", "Songti TC", PMingLiU, MingLiU, "Noto Serif CJK TC", "Noto Serif CJK JP", "AR PL UMing CN", "Hiragino Mincho ProN", "Yu Mincho", Batang;
   --font-cjk-sf: FandolHei, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", "Source Han Sans SC", "Source Han Sans CN", "Heiti SC", SimHei, "WenQuanYi Micro Hei", "WenQuanYi Zen Hei", "PingFang TC", "Microsoft JhengHei", "Noto Sans CJK TC";
   --font-cjk-tt: FandolFang, FangSong, STFangsong, FangSong_GB2312, "Noto Sans Mono CJK SC", "Source Han Mono SC", "Noto Sans CJK SC", SimSun;
-  --font-doc: "Paper Modern Serif", "Latin Modern Roman", "Computer Modern Serif", "Iowan Old Style", Georgia, serif, var(--font-ar), var(--font-cjk);
-  --font-doc-tt: "Paper Modern Typewriter", "Latin Modern Mono", ui-monospace, monospace, var(--font-ar-tt), var(--font-cjk-tt);
-  --font-doc-sf: "Paper Modern Sans", "Latin Modern Sans", "Helvetica Neue", Arial, sans-serif, var(--font-ar-sf), var(--font-cjk-sf);
+  /* India's scripts (Devanagari, Bengali, Gurmukhi, Gujarati, Odia, Tamil, Telugu, Kannada,
+     Malayalam, in that order in each row): the Noto Serif the PDF is set in where the system has
+     it (Odia's is a Noto Sans there), then what macOS, Windows, Android and Linux carry. Each
+     font but Nirmala UI has one script, so a row's order is each script's own order. */
+  --font-in-serif: "Noto Serif Devanagari", "Noto Serif Bengali", "Noto Serif Gurmukhi", "Noto Serif Gujarati", "Noto Sans Oriya", "Noto Serif Oriya", "Noto Serif Tamil", "Noto Serif Telugu", "Noto Serif Kannada", "Noto Serif Malayalam";
+  --font-in-mac: "Kohinoor Devanagari", "Devanagari MT", "Devanagari Sangam MN", "Kohinoor Bangla", "Bangla MN", "Bangla Sangam MN", "Gurmukhi MN", "Gurmukhi Sangam MN", "Gujarati MT", "Kohinoor Gujarati", "Gujarati Sangam MN", "Oriya MN", "Oriya Sangam MN", "Tamil MN", "Tamil Sangam MN", "Kohinoor Telugu", "Telugu MN", "Telugu Sangam MN", "Kannada MN", "Kannada Sangam MN", "Malayalam MN", "Malayalam Sangam MN";
+  --font-in-win: "Nirmala UI", Mangal, Vrinda, "Shonar Bangla", Raavi, Shruti, Kalinga, Latha, Gautami, Tunga, Kartika;
+  --font-in-sans: "Noto Sans Devanagari", "Noto Sans Bengali", "Noto Sans Gurmukhi", "Noto Sans Gujarati", "Noto Sans Oriya", "Noto Sans Tamil", "Noto Sans Telugu", "Noto Sans Kannada", "Noto Sans Malayalam";
+  --font-in-lohit: "Lohit Devanagari", "Lohit Bengali", "Lohit Gurmukhi", "Lohit Gujarati", "Lohit Odia", "Lohit Tamil", "Lohit Telugu", "Lohit Kannada", "Lohit Malayalam";
+  --font-in: var(--font-in-serif), var(--font-in-mac), var(--font-in-win), var(--font-in-sans), var(--font-in-lohit);
+  --font-in-sf: var(--font-in-sans), var(--font-in-mac), var(--font-in-win), var(--font-in-lohit), var(--font-in-serif);
+  --font-doc: "Paper Modern Serif", "Latin Modern Roman", "Computer Modern Serif", "Iowan Old Style", Georgia, serif, var(--font-ar), var(--font-cjk), var(--font-in);
+  --font-doc-tt: "Paper Modern Typewriter", "Latin Modern Mono", ui-monospace, monospace, var(--font-ar-tt), var(--font-cjk-tt), var(--font-in-sf);
+  --font-doc-sf: "Paper Modern Sans", "Latin Modern Sans", "Helvetica Neue", Arial, sans-serif, var(--font-ar-sf), var(--font-cjk-sf), var(--font-in-sf);
 }
 /* Italic Chinese is set in Kai, as ctex sets it (a Song has no italic), and bold in the Song's
    own bold. These faces only name fonts the system may have (nothing is loaded, and where none
@@ -176,9 +187,9 @@ body.pdf-on #pdfpane { display: flex; }
 
 /* ---- the sheet: everything typeset ---- */
 .sheet { padding: 28px 0 60px; font-family: var(--font-doc); color: var(--ink); --pt: 1.3; }
-.sheet[data-font="times"] { --font-doc: "Times New Roman", Times, "Nimbus Roman", serif, var(--font-ar), var(--font-cjk); }
-.sheet[data-font="palatino"] { --font-doc: "Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", serif, var(--font-ar), var(--font-cjk); }
-.sheet[data-font="sans"] { --font-doc: "Helvetica Neue", Helvetica, Arial, sans-serif, var(--font-ar-sf), var(--font-cjk-sf); }
+.sheet[data-font="times"] { --font-doc: "Times New Roman", Times, "Nimbus Roman", serif, var(--font-ar), var(--font-cjk), var(--font-in); }
+.sheet[data-font="palatino"] { --font-doc: "Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", serif, var(--font-ar), var(--font-cjk), var(--font-in); }
+.sheet[data-font="sans"] { --font-doc: "Helvetica Neue", Helvetica, Arial, sans-serif, var(--font-ar-sf), var(--font-cjk-sf), var(--font-in-sf); }
 /* pages centre by their auto margins, not align-items: a page zoomed wider than the window then
    overflows to the right, where it scrolls, instead of losing its left side off screen */
 #pages { outline: none; caret-color: #1E6BAA; display: flex; flex-direction: column; align-items: flex-start; gap: 22px; }

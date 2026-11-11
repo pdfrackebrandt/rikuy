@@ -2,8 +2,9 @@
 // up, whether a document runs right to left and the lines that set it up; then the page's model
 // of the commands and environments that turn text or only name CJK's font (src/model.js).
 import assert from 'node:assert/strict';
-import { scriptsIn, scriptSetup, scriptNeeds, rtlDocument, scriptLines, addScriptSetup, languageDir, RTL_LANGUAGES } from '../src/scripts.js';
+import { scriptsIn, scriptSetup, scriptNeeds, rtlDocument, scriptLines, addScriptSetup, languageDir, RTL_LANGUAGES, INDIC, scriptName } from '../src/scripts.js';
 import { buildModel } from '../src/model.js';
+import { clusterAt, clusterEdge, backspaceUnits } from '../src/editor.js';
 
 let n = 0;
 const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
@@ -378,6 +379,170 @@ ok('CJK wrappers are transparent', () => {
 ok('an environment the document defines under a language\'s name is its own', () => {
   const M = build(doc('\\newenvironment{hebrew}{\\begin{quote}}{\\end{quote}}', '\\begin{hebrew}\nText.\n\\end{hebrew}'));
   assert.equal(items(M)[0].dir, undefined);
+});
+
+// ---- India's scripts ----------------------------------------------------------------
+const WORDS = { devanagari: 'हिन्दी', bengali: 'বাংলা', gurmukhi: 'ਪੰਜਾਬੀ', gujarati: 'ગુજરાતી', odia: 'ଓଡ଼ିଆ', tamil: 'தமிழ்', telugu: 'తెలుగు', kannada: 'ಕನ್ನಡ', malayalam: 'മലയാളം' };
+ok('each of India\'s nine scripts is counted under its own name', () => {
+  assert.deepEqual(INDIC.map((x) => x[0]), Object.keys(WORDS));
+  for (const [id, word] of Object.entries(WORDS)) {
+    const c = scriptsIn('Latin ' + word + ' text');
+    const letters = [...word].filter((ch) => /\p{L}/u.test(ch)).length;
+    assert.equal(c[id], letters, id + ': its letters, the vowel signs and viramas not among them');
+    assert.deepEqual(Object.keys(c).sort(), ['arabic', 'chinese', id, 'letters'].sort(), id + ' and no other script');
+    assert.equal(c.letters, letters + 9);
+    // both ends of its block, and the block before and after it are not it
+    const range = INDIC.find((x) => x[0] === id)[2];
+    assert.ok([...word].every((ch) => range.test(ch)), id);
+    assert.equal(INDIC.filter((x) => x[2].test(word[0])).length, 1, 'one row per character');
+  }
+  assert.equal(scriptsIn('\\textbf{हिन्दी} % टिप्पणी\n$क$').devanagari, 3, 'comments and math do not count');
+  assert.deepEqual(INDIC.map((x) => scriptName(x[0])), ['Devanagari', 'Bengali', 'Gurmukhi', 'Gujarati', 'Odia', 'Tamil', 'Telugu', 'Kannada', 'Malayalam']);
+  assert.deepEqual(['chinese', 'arabic'].map(scriptName), ['Chinese', 'Arabic']);
+});
+ok('a preamble that sets one of them up, by babel, \\babelprovide or polyglossia', () => {
+  for (const [id, , , babel, , , names] of INDIC) {
+    for (const pre of ['\\usepackage[english, ' + babel + ']{babel}', '\\usepackage{babel}\n\\babelprovide[import, onchar=ids fonts]{' + babel + '}', '\\usepackage{babel}\n\\babelprovide{' + babel + '}',
+      '\\usepackage{polyglossia}\n\\setmainlanguage{english}\n\\setotherlanguage{' + babel + '}', '\\usepackage{polyglossia}\n\\setmainlanguage[numerals=western]{' + babel + '}', '\\usepackage{polyglossia}\n\\setotherlanguages{english, ' + babel + '}']) {
+      const have = scriptSetup(doc(pre));
+      assert.equal(have[id], true, pre);
+      assert.deepEqual(Object.keys(have).sort(), ['arabic', 'chinese', id].sort(), 'and only it: ' + pre);
+    }
+    assert.ok(names.test(babel));
+  }
+  for (const lang of ['marathi', 'sanskrit', 'nepali']) assert.equal(scriptSetup(doc('\\usepackage[' + lang + ']{babel}')).devanagari, true, lang);
+  assert.equal(scriptSetup(doc('\\usepackage{babel}\n\\babelprovide{bangla}')).bengali, true);
+  assert.equal(scriptSetup(doc('\\usepackage[english]{babel}')).devanagari, undefined);
+  assert.equal(scriptSetup(doc('% \\usepackage[hindi]{babel}')).devanagari, undefined, 'not in a comment');
+});
+ok('needs and lines for a mixed document', () => {
+  const t = doc('', 'Hello हिन्दी and தமிழ் and 中文.');
+  const needs = scriptNeeds(t, [t]);
+  assert.deepEqual([...needs], ['chinese', 'devanagari', 'tamil']);
+  assert.deepEqual(scriptLines(needs, t), ['\\usepackage[english]{babel} % LuaLaTeX sets each script in its own font',
+    '\\babelprovide[import=hi, onchar=ids fonts]{hindi}', '\\babelfont[hindi]{rm}[Renderer=Harfbuzz]{Noto Serif Devanagari}',
+    '\\babelprovide[import=ta, onchar=ids fonts]{tamil}', '\\babelfont[tamil]{rm}[Renderer=Harfbuzz]{Noto Serif Tamil}',
+    '\\babelprovide[import, onchar=ids fonts]{chinese}', '\\babelfont[chinese]{rm}{FandolSong}']);
+  // every script alone: its own two lines after babel's
+  for (const [id, , , babel, code, font] of INDIC) {
+    const d = doc('', 'Text ' + WORDS[id] + '.');
+    const n1 = scriptNeeds(d, [d]);
+    assert.deepEqual([...n1], [id]);
+    assert.deepEqual(scriptLines(n1, d).slice(1), ['\\babelprovide[import=' + code + ', onchar=ids fonts]{' + babel + '}', '\\babelfont[' + babel + ']{rm}[Renderer=Harfbuzz]{' + font + '}'], id);
+    assert.equal(rtlDocument(addScriptSetup(d, n1)), false);
+  }
+  // text in another file of the project counts, and Arabic beside it brings its bidi
+  const main = doc('', '\\input{ch}');
+  assert.deepEqual([...scriptNeeds(main, [main, 'বাংলা লেখা'])], ['bengali']);
+  const ar = doc('', 'Mostly English text here, with عربي and తెలుగు words.');
+  assert.deepEqual(scriptLines(scriptNeeds(ar, [ar]), ar), ['\\usepackage[english, bidi=basic]{babel} % LuaLaTeX orders right to left text by itself', '\\babelprovide[import, onchar=ids fonts]{arabic}',
+    '\\babelfont[arabic]{rm}[Renderer=Harfbuzz]{Amiri}', '\\babelprovide[import=te, onchar=ids fonts]{telugu}', '\\babelfont[telugu]{rm}[Renderer=Harfbuzz]{Noto Serif Telugu}']);
+});
+ok('set up twice adds nothing', () => {
+  for (const body of ['Hello हिन्दी and தமிழ் and 中文.', 'ગુજરાતી', 'ಕನ್ನಡ and മലയാളം and ଓଡ଼ିଆ and ਪੰਜਾਬੀ and বাংলা and తెలుగు', 'English, عربي and हिन्दी in one long enough sentence.']) {
+    const t = doc('\\usepackage{amsmath}', body);
+    const once = addScriptSetup(t, scriptNeeds(t, [t]));
+    assert.ok(once && once !== t, body);
+    const again = scriptNeeds(once, [once]);
+    assert.deepEqual([...again], [], body);
+    assert.equal(addScriptSetup(once, again), null);
+    assert.equal(once.match(/\{babel\}/g).length, 1);
+    assert.ok(once.endsWith(t.slice(t.indexOf('\\begin{document}'))), 'the body as it was');
+  }
+  // one more script later: its lines alone, babel not loaded again
+  const t = doc('', 'हिन्दी');
+  const once = addScriptSetup(t, scriptNeeds(t, [t]));
+  const more = once.replace('हिन्दी', 'हिन्दी தமிழ்');
+  const needs = scriptNeeds(more, [more]);
+  assert.deepEqual([...needs], ['tamil']);
+  assert.deepEqual(scriptLines(needs, more), ['\\babelprovide[import=ta, onchar=ids fonts]{tamil}', '\\babelfont[tamil]{rm}[Renderer=Harfbuzz]{Noto Serif Tamil}']);
+  // Rikuy's own ctex line makes way: the document moves to LuaLaTeX, Chinese through babel
+  const zh = doc('\\usepackage[scheme=plain]{ctex} % Chinese text, set with XeLaTeX', '中文 हिन्दी');
+  const out = addScriptSetup(zh, scriptNeeds(zh, [zh]));
+  assert.ok(!out.includes('ctex') && out.includes('\\babelfont[chinese]{rm}{FandolSong}') && out.includes('{hindi}'), out);
+  assert.deepEqual([...scriptNeeds(out, [out])], []);
+});
+ok('beside xeCJK, polyglossia or a CJK class nothing is offered', () => {
+  for (const pre of ['\\usepackage{xeCJK}', '\\usepackage{polyglossia}\n\\setmainlanguage{english}', '\\usepackage{ctex}', '\\usepackage{CJKutf8}', '\\usepackage{xepersian}']) {
+    for (const id of ['devanagari', 'tamil', 'malayalam']) {
+      const t = doc(pre, 'Text ' + WORDS[id] + '.');
+      const needs = scriptNeeds(t, [t]);
+      assert.ok(needs.includes(id), pre);
+      assert.deepEqual(scriptLines(needs, t), [], pre + ' ' + id);
+      assert.equal(addScriptSetup(t, needs), null, pre + ' ' + id);
+    }
+  }
+  const cls = '\\documentclass{ctexart}\n\\begin{document}\n中文 हिन्दी\n\\end{document}\n';
+  assert.equal(addScriptSetup(cls, scriptNeeds(cls, [cls])), null);
+});
+ok('India\'s languages run left to right, and their wrappers are text', () => {
+  for (const l of ['hindi', 'marathi', 'bengali', 'punjabi', 'gujarati', 'odia', 'tamil', 'telugu', 'kannada', 'malayalam']) assert.equal(languageDir(l), 'ltr', l);
+  const M = build(doc('\\usepackage{polyglossia}', 'A \\texthindi{हिन्दी} b \\foreignlanguage{telugu}{తెలుగు} c.\n\n\\begin{hindi}\nनमस्ते।\n\\end{hindi}\n\n\\begin{otherlanguage}{tamil}\nதமிழ்.\n\\end{otherlanguage}'));
+  assert.deepEqual(lines(M), ['p | A हिन्दी b తెలుగు c.', 'p | नमस्ते।', 'p | தமிழ்.']);
+  assert.deepEqual(M.warn, []);
+  assert.ok(items(M).every((it) => !it.envTag && it.dir === undefined));
+  assert.deepEqual(lines(build(doc(AR, 'نص \\texthindi{हिन्दी} نص'))), ['p rtl | نص <dir:ltr>हिन्दी</> نص'], 'left to right inside a right to left line');
+});
+ok('a word is counted once, whatever marks it carries', () => {
+  assert.equal(build(doc('', 'यह हिन्दी क्षितिज नमस्ते का वाक्य है।')).words, 7);
+  assert.equal(build(doc('', 'தமிழ் மொழி. বাংলা ভাষা। ಕನ್ನಡ')).words, 5);
+  assert.equal(build(doc('', 'Plain words, as before: it\'s twenty-one.')).words, 6);
+  assert.equal(build(doc('', 'مَرْحَبًا بِكُمْ')).words, 2, 'Arabic with its vowel marks');
+});
+
+// ---- characters of several code points (src/editor.js) --------------------------------
+ok('the cluster a code unit belongs to', () => {
+  const t = 'a क्षि नमस्ते 😀x e\u0301 👨‍👩‍👧 🇮🇳.';
+  const want = (plain) => {
+    const out = [];
+    for (let i = 0; i < t.length;) { const [a, b] = clusterAt(t, i, plain); assert.equal(a, i, 'starts at ' + i); for (let k = a; k < b; k++) assert.deepEqual(clusterAt(t, k, plain), [a, b], 'unit ' + k); out.push(t.slice(a, b)); i = b; }
+    return out;
+  };
+  const seg = want(false);
+  assert.ok(seg.includes('😀') && seg.includes('e\u0301') && seg.includes('👨‍👩‍👧') && seg.includes('🇮🇳') && seg.includes('स्ते'), JSON.stringify(seg));
+  // a conjunct is one cluster where the browser's Unicode data joins it, else it ends at the
+  // virama: either way no cluster ends before a vowel sign or inside a pair
+  assert.ok(seg.includes('क्षि') || (seg.includes('क्') && seg.includes('षि')), JSON.stringify(seg));
+  for (const c of seg) assert.ok(!/^[\p{M}\u200D\uDC00-\uDFFF]/u.test(c), JSON.stringify(c));
+  // without Intl.Segmenter: marks, viramas, joiners and pairs still hold together
+  const plain = want(true);
+  assert.ok(plain.includes('क्षि') && plain.includes('स्ते') && plain.includes('😀') && plain.includes('e\u0301') && plain.includes('👨‍👩‍👧'), JSON.stringify(plain));
+  for (const c of plain) assert.ok(!/^[\p{M}\u200D\uDC00-\uDFFF]/u.test(c), JSON.stringify(c));
+  for (const [id, word] of Object.entries(WORDS)) for (const p of [false, true]) {
+    for (let i = 0; i < word.length; i++) { const [a, b] = clusterAt(word, i, p); assert.ok(a <= i && i < b && !/^\p{M}/u.test(word.slice(a, b)), id + ' ' + i); }
+  }
+  assert.deepEqual(clusterAt('abc', 5), [5, 5]);
+});
+ok('the edge of a cluster before and after a place', () => {
+  const t = 'a क्षि b';
+  const [a, b] = clusterAt(t, 3);
+  assert.equal(clusterEdge(t, 3, -1), a);
+  assert.equal(clusterEdge(t, 3, 1), b);
+  assert.equal(clusterEdge(t, a, 1), a, 'an edge stays');
+  assert.equal(clusterEdge(t, b, -1), b);
+  assert.equal(clusterEdge(t, 0, -1), 0);
+  assert.equal(clusterEdge(t, t.length, 1), t.length);
+  assert.equal(clusterEdge('😀', 1, -1), 0);
+  assert.equal(clusterEdge('😀', 1, 1), 2);
+  assert.equal(clusterEdge('कि', 1, 1), 2);
+  // Latin text has an edge at every place: nothing ever moves there
+  const latin = 'Plain \\textbf{text} with $x$.';
+  for (let i = 0; i <= latin.length; i++) { assert.equal(clusterEdge(latin, i, -1), i); assert.equal(clusterEdge(latin, i, 1), i); }
+});
+ok('Backspace takes the last code point, and an emoji whole', () => {
+  assert.equal(backspaceUnits('क्षि'), 1);
+  assert.equal(backspaceUnits('क्'), 1);
+  assert.equal(backspaceUnits('கி'), 1);
+  assert.equal(backspaceUnits('e\u0301'), 1);
+  assert.equal(backspaceUnits('x'), 1);
+  assert.equal(backspaceUnits('𠀀'), 2, 'both halves of a pair');
+  assert.equal(backspaceUnits('क𑀓'), 2);
+  assert.equal(backspaceUnits('😀'), 2);
+  assert.equal(backspaceUnits('👨‍👩‍👧'), 8);
+  assert.equal(backspaceUnits('🇮🇳'), 4);
+  assert.equal(backspaceUnits('1\uFE0F\u20E3'), 3);
+  // what is left is never half a pair
+  for (const c of ['क्षि', '𠀀', 'क𑀓', '😀', 'e\u0301']) { const rest = c.slice(0, c.length - backspaceUnits(c)); assert.ok(!/[\uD800-\uDBFF]$/.test(rest), c); }
 });
 
 console.log(n + '/' + n + ' passed');
