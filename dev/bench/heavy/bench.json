@@ -1,0 +1,11 @@
+{
+ "main": "main.tex",
+ "word": [
+  "More text here",
+  "Some text here"
+ ],
+ "ref": [
+  "\\section{Two} More",
+  "\\section{Two}\\label{bench:new} See \\ref{bench:new}. More"
+ ]
+}

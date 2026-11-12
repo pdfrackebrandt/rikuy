@@ -1,0 +1,11 @@
+{
+ "main": "main.tex",
+ "word": [
+  "Korean: ",
+  "Hangul: "
+ ],
+ "ref": [
+  "\\section{Scripts 日本語}",
+  "\\section{Scripts 日本語}\\label{bench:new}\nSection \\ref{bench:new}.\n"
+ ]
+}

@@ -1,0 +1,15 @@
+{
+ "main": "main.tex",
+ "word": [
+  "reports the estimates.",
+  "reports our estimates."
+ ],
+ "ref": [
+  "Table~\\ref{tab:est} reports",
+  "Table~\\ref{tab:est}\\label{bench:new} (Section~\\ref{bench:new}) reports"
+ ],
+ "cite": [
+  "reports the estimates.",
+  "reports the estimates \\citep{benchmark2026}."
+ ]
+}

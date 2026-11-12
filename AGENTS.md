@@ -63,6 +63,7 @@ a command fails, trust the code and fix this file.
 | build the page without Word, as for the claude.ai copy | `RIKUY_NO_WORD=1 npm run build` | 5 s |
 | random keystrokes on real documents, then every scripted edit on the corpus | `python3 test/corpus_browser.py <corpus>`, then `CORPUS_REPO=<corpus> python3 test/editor_corpus.py out.jsonl` | 1 min; 1 hour (40 min of edits, 20 of compiles) |
 | compile one folder | `RIKUY_DIST=dist python3 dev/texrun.py DIR main.tex auto 300` | |
+| how long the PDF takes in the page, per document of `dev/bench/` and situation (first compile, unchanged, one word changed, a reference or a citation added): medians of N sessions, the worker's time and the passes | `python3 dev/bench_compile.py -n 5 --json after.json --against before.json` (one core for it: `taskset -c 0`) | 4 min a document, LuaLaTeX's 9 |
 | run one program through the shell | `python3 dev/shellrun.py DIR asy asy -f pdf fig.asy` | |
 | rebuild a program | `RIKUY_SRC=/tmp/src sh tex/build_tools.sh asy` (also `dvips`, `xindy`, `gnuplot`, `mesa`) | asy 10 min |
 | refresh the tools in `dist/tex` after a program changed | `python3 tex/build_tree.py tools && npm run build` | 1 min |
