@@ -612,7 +612,9 @@ env}`, `{compile}`, `{prefetch}`, `{keep}` (section 6), `{exec}` (one program, f
 `{shell}` (one program through the shell: tests) and sends `{status}`, `{ready}`, `{result}`,
 `{execResult}`, `{shellResult}`, `{error}`. `App.compilePdf` sends all project files
 (`compileFiles`), the engine choice and the shell escape box; `parseTeXLog()` maps the log to
-files and lines; `PdfView.show(pdf, synctex)` draws with PDF.js; past 5 minutes of typesetting,
+files and lines; `PdfView.show(pdf, synctex)` draws with PDF.js (one PDF.js worker for all PDFs, the pages in
+view first and one at a time, SyncTeX read once they are drawn or when a click asks: `open`,
+`pump`, `whenSync`); past 5 minutes of typesetting,
 `stopPdf` ends the worker. `boot()` fetches `tree.wasm`, the mirror index, the engine chunks
 `w-*.wasm` and the core packs; `newTeX(true)` makes `MAIN`; `restoreFontCaches()` follows.
 

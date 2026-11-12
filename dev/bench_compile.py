@@ -42,7 +42,9 @@ HOOK = """() => {
   const start = e.start.bind(e), t0 = performance.now();
   e.start = () => { const p = start(); if (!window.__bench.readyP) window.__bench.readyP = p.then(() => { window.__bench.ready = performance.now() - t0; }, () => {}); return p; };
   const v = g.pdfPane(), draw = v.draw.bind(v);
-  v.draw = (p) => { const fresh = p && !p.drawn, d = draw(p); if (fresh) { window.__bench.drawn++; window.__bench.draws.add(d); d.finally(() => window.__bench.draws.delete(d)); } return d; };
+  // (the pane also draws the page after those in view; the wait that is timed ends with the ones in view)
+  const seen = (p) => { const a = p.box.getBoundingClientRect(), b = v.host.getBoundingClientRect(); return a.bottom > b.top && a.top < b.bottom; };
+  v.draw = (p) => { const fresh = p && !p.drawn && seen(p), d = draw(p); if (fresh) { window.__bench.drawn++; window.__bench.draws.add(d); Promise.resolve(d).finally(() => window.__bench.draws.delete(d)); } return d; };
 }"""
 # One compile, timed in the page: the text set (or not), the wait after typing skipped, the
 # compile, then the pages the pane shows drawn.
@@ -50,6 +52,10 @@ RUN = """async ([text, open]) => {
   const g = window.rikuy, B = window.__bench, sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   while (g.compiling) await sleep(20);
   g.pdfSoon.cancel();
+  // A person's next compile comes 1.4 s after a keystroke at the soonest: what the page still
+  // does after the pages in view are drawn (the next page, SyncTeX) is over by then, so here too
+  await sleep(400);
+  await new Promise((r) => (window.requestIdleCallback ? requestIdleCallback(r, { timeout: 3000 }) : setTimeout(r, 200)));
   B.done = [];
   const drawn0 = B.drawn, t0 = performance.now();
   if (text != null) { await g.api.setSource(text); g.pdfSoon.cancel(); }

@@ -25,9 +25,31 @@ export class PdfView {
     this.doc = null;
     this.pages = [];
     this.sync = null;
+    this.syncGz = null; // SyncTeX as TeX wrote it, until something asks where a line is
+    this.syncP = null;
     this.scale = 1;
     this.renderSeq = 0;
     this.io = null;
+    this.worker = null; // PDF.js's worker, kept from one PDF to the next
+    this.queue = []; // pages waiting to be drawn, those in view first
+    this.drawing = false;
+  }
+
+  // PDF.js starts a worker of its own for every document it opens: 80 ms of each compile's
+  // wait, for a worker that does the same work as the last. One is kept; a PDF it cannot open
+  // is tried once more on a new one, so a worker that broke does not stay.
+  async open(lib, bytes) {
+    for (let k = 0; ; k++) {
+      let own = null;
+      try { if (!this.worker || this.worker.destroyed) this.worker = new lib.PDFWorker(); own = this.worker; } catch (e) { this.worker = null; }
+      try {
+        // PDF.js takes ownership of the buffer it is given (it moves it to its worker): give it a copy
+        return await lib.getDocument(Object.assign({ data: bytes.slice(), isEvalSupported: false }, own ? { worker: own } : {})).promise;
+      } catch (e) {
+        if (own) { try { own.destroy(); } catch (e2) { /* gone */ } if (this.worker === own) this.worker = null; }
+        if (k > 0 || !own) throw e;
+      }
+    }
   }
 
   // pdf.js and its worker's script ahead of the first PDF, while TeX typesets and the line is
@@ -42,18 +64,22 @@ export class PdfView {
     const lib = await loadPdfjs(this.opts.workerUrl);
     const seq = ++this.renderSeq;
     const keepTop = this.host.scrollTop, keepH = this.host.scrollHeight || 1;
-    // PDF.js takes ownership of the buffer it is given (it moves it to its worker): give it a copy
-    const doc = await lib.getDocument({ data: bytes.slice(), isEvalSupported: false }).promise;
+    const doc = await this.open(lib, bytes);
     if (seq !== this.renderSeq) { doc.destroy(); return; }
     if (this.doc) this.doc.destroy();
     this.doc = doc;
-    this.sync = synctexGz ? await parseSynctex(synctexGz).catch(() => null) : null;
+    // SyncTeX is read after the pages in view are drawn, or when a click asks for it before
+    // that (whenSync): unpacking and reading it took 50 to 300 ms before any page showed
+    this.sync = null; this.syncP = null;
+    this.syncGz = synctexGz || null;
     const wrap = document.createElement('div');
     wrap.className = 'pdf-pages';
     const width = Math.max(200, (this.host.clientWidth || 640) - 24);
     this.pages = [];
+    this.queue = [];
     for (let n = 1; n <= doc.numPages; n++) {
       const page = await doc.getPage(n);
+      if (seq !== this.renderSeq) return;
       const vp1 = page.getViewport({ scale: 1 });
       const scale = width / vp1.width;
       const vp = page.getViewport({ scale });
@@ -72,15 +98,46 @@ export class PdfView {
     this.host.scrollTop = keepTop * (this.host.scrollHeight / keepH);
     if (this.io) this.io.disconnect();
     this.io = new IntersectionObserver((ents) => {
-      for (const en of ents) if (en.isIntersecting) this.draw(this.pages[+en.target.dataset.page - 1]);
+      const pages = this.pages;
+      for (const en of ents) if (en.isIntersecting) this.draw(pages[+en.target.dataset.page - 1]);
     }, { root: this.host, rootMargin: '600px 0px' });
     for (const p of this.pages) this.io.observe(p.box);
     return doc.numPages;
   }
 
-  async draw(p) {
-    if (!p || p.drawn) return;
+  // Pages are drawn one at a time, a page in view before one near it: two drawn at once (the
+  // one in view and the next, which the 600 px margin takes in) each waited for the other.
+  draw(p) {
+    if (!p || p.drawn) return p ? p.done : undefined;
     p.drawn = true;
+    p.done = new Promise((resolve) => { p.resolve = resolve; });
+    this.queue.push(p);
+    this.pump();
+    return p.done;
+  }
+
+  inView(p) {
+    const a = p.box.getBoundingClientRect(), b = this.host.getBoundingClientRect();
+    return a.bottom > b.top && a.top < b.bottom;
+  }
+
+  async pump() {
+    if (this.drawing) return;
+    this.drawing = true;
+    try {
+      while (this.queue.length) {
+        let i = this.queue.findIndex((p) => this.pages.includes(p) && this.inView(p));
+        if (i < 0) i = 0;
+        const p = this.queue.splice(i, 1)[0];
+        if (this.pages.includes(p)) await this.paint(p); // (a page of a PDF since replaced is not drawn)
+        p.resolve();
+      }
+    } finally { this.drawing = false; }
+    // nothing left to draw: now the SyncTeX of this PDF, so the first click finds it read
+    if (this.syncGz && !this.syncP) setTimeout(() => { if (!this.queue.length) this.whenSync(); }, 0);
+  }
+
+  async paint(p) {
     const dpr = Math.min(3, window.devicePixelRatio || 1);
     const vp = p.page.getViewport({ scale: p.scale * dpr });
     p.canvas.width = Math.floor(vp.width);
@@ -90,19 +147,36 @@ export class PdfView {
     try { await p.page.render({ canvasContext: p.canvas.getContext('2d'), viewport: vp }).promise; } catch (e) { p.drawn = false; }
   }
 
-  clickAt(n, e) {
-    if (!this.sync || !this.opts.onClickSource) return;
+  // The SyncTeX of the PDF shown, read the first time it is asked for (null when TeX wrote none).
+  whenSync() {
+    if (!this.syncP) {
+      const gz = this.syncGz;
+      this.syncP = (gz ? parseSynctex(gz).catch(() => null) : Promise.resolve(null)).then((s) => { if (this.syncGz === gz) this.sync = s; return s; });
+    }
+    return this.syncP;
+  }
+
+  async clickAt(n, e) {
+    if (!this.opts.onClickSource) return;
     const p = this.pages[n - 1];
     const r = p.box.getBoundingClientRect();
     const x = ((e.clientX - r.left) / r.width) * p.w1;
     const y = ((e.clientY - r.top) / r.height) * p.h1;
-    const hit = this.sync.at(n, x, y);
+    const sync = await this.whenSync();
+    if (!sync || this.pages[n - 1] !== p) return; // (another PDF came meanwhile)
+    const hit = sync.at(n, x, y);
     if (hit) this.opts.onClickSource(hit.file, hit.line);
   }
 
-  // Scroll to where file:line was typeset and mark it briefly.
+  // Scroll to where file:line was typeset and mark it briefly. False when this PDF has no
+  // SyncTeX; with it still unread, the mark comes once it is read.
   reveal(file, line) {
-    if (!this.sync) return false;
+    if (!this.sync) {
+      if (!this.syncGz) return false;
+      const doc = this.doc;
+      this.whenSync().then((s) => { if (s && this.doc === doc && this.sync === s) this.reveal(file, line); });
+      return true;
+    }
     const hit = this.sync.where(file, line);
     if (!hit) return false;
     const p = this.pages[hit.page - 1];
@@ -121,7 +195,7 @@ export class PdfView {
 
   clear() {
     if (this.doc) this.doc.destroy();
-    this.doc = null; this.pages = []; this.sync = null;
+    this.doc = null; this.pages = []; this.sync = null; this.syncGz = null; this.syncP = null; this.queue = [];
     if (this.io) this.io.disconnect();
     this.host.replaceChildren();
   }
