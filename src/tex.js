@@ -77,7 +77,9 @@ export class TeXEngine {
     await this.start();
     if (untrusted) this.tainted = p;
     const id = ++this.seq;
-    const job = { id: p + '#' + id, project: p, files, main, clean: !!clean, prefetch: prefetch || [], bibSig: bibSig || '', engine: engine || 'auto', shellEscape: shellEscape !== false, untrusted: !!untrusted };
+    // (prefetch may be a function of what the worker said when it was ready: pack numbers mean
+    // something only for one build of the TeX tree, and which one is known only now)
+    const job = { id: p + '#' + id, project: p, files, main, clean: !!clean, prefetch: (typeof prefetch === 'function' ? prefetch(this.info) : prefetch) || [], bibSig: bibSig || '', engine: engine || 'auto', shellEscape: shellEscape !== false, untrusted: !!untrusted };
     return new Promise((resolve, reject) => {
       this.jobs.set(job.id, { resolve, reject });
       this.worker.postMessage({ compile: job });
