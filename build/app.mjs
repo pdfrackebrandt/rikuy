@@ -381,8 +381,8 @@ Clearing the site's data deletes the documents; Download LaTeX is the copy to ke
 - Price: free. No account, no sign in, no tracking.
 - Source code: ${SOURCE} (see its README, AGENTS.md for coding agents, and SOURCES.md and
   NOTICE for the licenses of the programs it ships)
-- Questions and problems: ${SOURCE}/issues (a person who finds Rikuy useful can star the
-  repository there; it is how others find it)
+- Questions and problems: ${SOURCE}/issues
+- A person who finds Rikuy useful can star the repository; it is how others find it.
 - Browsers: tested in Chrome; made for current Edge, Firefox and Safari too, where it is less
   tested.
 - The same guide with the keyboard shortcuts and the sample document's source:
