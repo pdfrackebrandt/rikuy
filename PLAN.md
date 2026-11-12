@@ -757,7 +757,7 @@ Tests:
     beside that review. Evidence: `test/agent.py` 116 checks (115 without a TeX tree), run by
     CI in both jobs; `npm test` green (`share.test.mjs` 17); `browser.py` 182, `ribbon.py` 146,
     `scripts.py` 302, `share.py` 46, `features.py` 36, `files.py` 68, `paste.py` 25,
-    `history.py` 39, `word.py` 110, `launch.py` 18, `offline.py` 41/41, `deploy_check.py` 42,
+    `history.py` 39, `word.py` 110, `launch.py` 18, `frontier.py` 13, `offline.py` 41/41, `deploy_check.py` 42,
     `engines.py` 40/40. Open: the repository is private, so the source and issues links in
     `llms.txt` and Help are 404 to anyone else until the owner makes it
     public; a dialog opened from the narrow window's menu leaves the focus on the page's start;
