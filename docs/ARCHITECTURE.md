@@ -653,6 +653,29 @@ view first and one at a time, SyncTeX read once they are drawn or when a click a
 10. **Driver**: `.xdv` → `xdvipdfmx`; `.dvi` → `dvips`, then `ps2pdf` via `SHELL.dispatch`. The
     result holds `pdf` (null when empty), `synctex`, `log`, `runs`, `passes`, `missing`, `packs`.
 
+**The preamble's format (pdfLaTeX).** A pass is mostly its preamble. After a project's second
+compile with one preamble, when that compile ended settled, without errors and without a program
+run, `preStep` (a timer after the result is posted, never while a job runs: `BUSY`) dumps the
+preamble as a format, `preDump`: INITEX on top of `pdflatex.fmt` reads the main file cut before
+`\begin{document}`, in a copy of the project's folder under the folder's own path (`inCopy`; the
+folder waits in `PRE_KEEP` and comes back untouched). `PRE_FIN` then asks TeX what a format cannot
+hold: nodes on the main vertical list (`\showlists`), colour stacks, open read streams, an open
+group or `\if`; the recorder and the shell's log say whether the preamble wrote a file or ran a
+program; the files it read are searched for the clock and font maps (`PRE_CLOCK`). An empty
+`\write`, a colour push, `\prevdepth`, `\deadcycles` and pgf's random seed are put back at the
+start of every pass; anything else refuses the preamble (`preBad`, for the session). `preVerify`
+then makes one pass from the format and compares it with the last ordinary pass: PDF (but for
+dates and ID), every file written, SyncTeX, the log's problems. Only then is it `PRE.ready`.
+`texRun` asks `preLookup` before each pass (`preKey`: preamble bytes, folder, main file, shell
+escape mode, a stranger's document or not, the names of the project's files; then the SHA-256
+of each project file the preamble read; the day). `preRun` runs `pdflatex --fmt` with a first
+line that takes the preamble's text as characters up to `\begin{document}` (the file is read
+from line 1: lines in errors and SyncTeX are the file's), writes the log and the recorder file
+with the preamble's part from the dump run (`preSplice`), and on an error or a program run puts
+the folder back (`snapFolder`) for an ordinary pass. Formats live in the worker's memory only,
+at most four and 48 MB. The result says `fromFormat` (passes) and `formatNote`; `{status:
+'format'}` follows when one is made or refused. `test/preamble.py`, `dev/bench_same.py`.
+
 ## 10. Shell escape: finding and running programs
 
 `newTeX()` sets `imports.env.shell_escape_dispatch_js(a, b)`: `SHELL.dispatch(cmd, cwd)` for

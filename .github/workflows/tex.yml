@@ -33,6 +33,7 @@ on:
       - 'src/ribbon.js'
       - 'test/ribbon.py'
       - 'test/agent.py'
+      - 'test/preamble.py'
       - 'test/serve.py'
       - 'test/browser.py'
       - '.github/workflows/tex.yml'
@@ -101,6 +102,8 @@ jobs:
         run: cd test && python3 ribbon.py
       - name: Rikuy as an agent meets it, with rikuy.api.compile making a real PDF
         run: cd test && python3 agent.py
+      - name: The preamble's format gives the pass an ordinary compile gives
+        run: cd test && python3 preamble.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rikuy-dist

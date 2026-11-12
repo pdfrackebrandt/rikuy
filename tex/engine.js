@@ -15,6 +15,7 @@
 //               {exec: {args, files, read, list}} (build scripts and tests), {shell} (one program
 //               through the shell, for tests)
 // Messages out: {status}, {ready}, {result}, {kept}, {execResult}, {shellResult}, {error}
+//               ({status: 'format', note}: a preamble's format was made or refused, see PRE)
 
 /* global busytex, fflate */
 // The page starts this worker from a small blob script (blob workers take the page's own
@@ -49,7 +50,7 @@ const MEM_HEADER = 2 ** 26;
 const KEEP = /\.(aux|bbl|blg|toc|lof|lot|out|nav|snm|vrb|bcf|run\.xml|idx|ind|ilg|glo|gls|glg|acn|acr|alg|nlo|nls|loa|thm|brf|fls|synctex\.gz|mw|pygtex|pygstyle|minted|table|gnuplot)$/i;
 
 const post = (m, t) => postMessage(m, t || []);
-const status = (s, extra) => post({ status: s, ...(extra || {}) });
+const status = (s, extra) => { if (!QUIET) post({ status: s, ...(extra || {}) }); };
 
 let INDEX = null;
 let INDEX_PATHS = new Set();
@@ -1313,6 +1314,397 @@ async function asyFigures(base, dir, runs) {
   return true;
 }
 
+// ---- a compiled preamble (pdfLaTeX) ---------------------------------------------------
+// Most of a pass is the preamble: the class and the packages read and run again, the same
+// every time (1.1 s of 1.3 s for a TikZ, pgfplots and hyperref preamble; half of a plain
+// paper's). Once a document has compiled twice with one preamble, TeX's state at
+// \begin{document} is dumped as a format (INITEX, \dump: mylatexformat's method) while the
+// worker has nothing to do, and later passes start from it and read only the body.
+//
+// What makes that the same pass, and what is done where it is not:
+// - A format holds TeX's memory, not everything a preamble can leave behind. What it lacks
+//   is looked for in the dump run itself, with TeX's own eyes (PRE_FIN): nodes waiting on the
+//   main vertical list (\showlists: article's \clearpage leaves an empty \write there, xcolor
+//   a colour push; those two kinds, \prevdepth and \deadcycles are put back at the start of
+//   every pass, anything else rules the preamble out), colour stacks made (\pdfcolorstackinit
+//   answers with the next number), read streams left open (\ifeof), an open group or \if,
+//   files written (the recorder), programs run (the shell's log).
+// - Then one pass is made from the format on the files the last ordinary pass left, in a copy
+//   of the project's folder, and compared with that pass: the PDF byte for byte but for its
+//   dates and ID, every file written (.aux, .toc, .out ..) byte for byte, SyncTeX record for
+//   record, the log's errors and warnings. Only a format that passed is used. \pdfinfo,
+//   \pdfcatalog and the like given in a preamble are lost by a dump and always show in the
+//   PDF, so they fail here.
+// - A pass from the format that ends with an error, or during which the shell ran, is thrown
+//   away with what it wrote and made again the ordinary way; if the error was the format's
+//   alone, that format is never used again (PRE.bad).
+// - The format is found by an exact key (preKey): the preamble's bytes, the folder, the main
+//   file, the shell escape mode, whether the document is a stranger's, the names of all files
+//   of the project (a file a package looks for may appear), and the bytes of every file of
+//   the project the preamble read (SHA-256 each). It never leaves this worker's memory, so
+//   the tree and the engine are the session's. A project's format is used for that project
+//   only, under the mode it was dumped in.
+// - The user's file is read from its first line as always (the preamble's text is skipped by
+//   a macro that takes everything up to \begin{document} as characters), so lines in errors
+//   and in SyncTeX are the file's.
+// - TeX cannot be asked whether a preamble kept a clock value or a random number in a macro, so
+//   the files it read are (PRE_CLOCK), and a format is used on the day it was made only.
+const PRE = { ready: new Map(), bad: new Set(), seen: new Map(), hold: new Set(), bytes: 0, pending: null, half: null, timer: 0, notes: new Map(), why: '' };
+const PRE_MAX_BYTES = 48 << 20, PRE_MAX_FORMATS = 4, PRE_MAX_PREAMBLE = 256 << 10, PRE_MAX_PROJECT = 64 << 20;
+const PRE_DIR = '/home/web_user/rikuy-fmt', PRE_KEEP = '/home/web_user/rikuy-keep';
+let BUSY = 0, QUIET = false;
+// catcodes the lines below are written in, whatever the preamble left ({ } # space @ return % \)
+const PRE_NORM = '\\catcode123=1\\catcode125=2\\catcode35=6\\catcode32=10\\catcode64=11\\catcode13=5\\catcode37=14\\catcode92=0 ';
+// pgf seeds its random numbers from the clock when it is loaded (pgfmathfunctions.random.code.tex:
+// \time times \year, 1 at midnight). t: the seed is still that one, and every pass sets it again
+// by pgf's own lines (PRE_RESEED); s: the document set its own, which stays; n: no pgf.
+const PRE_SEED = '\\ifdefined\\pgfmath@rnd@z\\ifnum\\pgfmath@rnd@z=\\numexpr\\ifnum\\numexpr\\time*\\year\\relax=0 1\\else\\time*\\year\\fi\\relax t\\else s\\fi\\else n\\fi';
+const PRE_RESEED = '\\begingroup\\c@pgfmath@counta=\\time\\multiply\\c@pgfmath@counta by\\year\\ifnum\\c@pgfmath@counta=0 \\c@pgfmath@counta=1 \\fi\\xdef\\pgfmath@rnd@z{\\the\\c@pgfmath@counta}\\endgroup ';
+// A clock value or a random number a preamble keeps in a macro would stay the dump's. TeX cannot
+// be asked for that, so the files the preamble read are: one that names the clock or TeX's random
+// numbers rules the preamble out, but for the files read here line by line and found to use them
+// only when a macro runs later (PRE_CLOCK_OK; pgf's seed is the one put back, above). Also
+// ruled out: font map lines and \pdftrailerid given in a preamble, which a format does not hold
+// and which do not always show in the PDF.
+const PRE_CLOCK = /\\(?:time|pdfcreationdate|pdfelapsedtime|pdfresettimer|pdfuniformdeviate|pdfnormaldeviate|pdfrandomseed|pdfsetrandomseed|currenttime|pdfmapfile|pdfmapline|pdftrailerid)(?![A-Za-z@])|\\c_sys_(?:minute|hour|timestamp)_|\\tex_(?:time|creationdate|elapsedtime|uniformdeviate|randomseed|normaldeviate|setrandomseed|resettimer|mapfile|mapline|trailerid):D|\\(?:int|fp)_g?(?:set_)?rand|\\sys_gset_rand_seed/;
+const PRE_CLOCK_OK = /\/(?:pgfmathfunctions\.random\.code\.tex|pdftexcmds\.sty|tabu\.sty|xintkernel\.sty|memoir\.cls|zref-clever\.sty|scrtime\.sty|luatex85\.sty)$/; // (luatex85 ends at its top under pdfTeX)
+const preDay = () => { const d = new Date(); return d.toDateString() + '|' + d.toISOString().slice(0, 10); };
+const PRE_FIN = '\\begingroup' + PRE_NORM + '\\immediate\\write-1{RIKUY-PROBE group=\\the\\currentgrouplevel\\space if=\\the\\currentiflevel\\space dead=\\the\\deadcycles\\space stacks=\\pdfcolorstackinit page direct{}\\space seed=' + PRE_SEED + '\\space open=' +
+  Array.from({ length: 16 }, (x, k) => '\\ifeof' + k + ' \\else' + k + ',\\fi').join('') + '.}\\showboxbreadth=10000 \\showboxdepth=10000 \\tracingonline=0 \\showlists\\endgroup\\dump';
+const BEGIN_DOC = new TextEncoder().encode('\\begin{document}');
+const ERR_LINE = /^(?:! |[^\s:()][^:()\n]*:\d+: )/m;
+const sameBytes = (a, b) => { if (!a || !b || a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; };
+const latin1 = (b) => new TextDecoder('latin1').decode(b);
+// A log's lines as the page joins them (src/tex.js parseTeXLog: a line of 79 characters goes on
+// in the next), each with where its pieces start in the log.
+function pageLines(log) {
+  const raw = log.split('\n'), out = [];
+  for (let i = 0, at = 0; i < raw.length; i++) {
+    const line = { t: raw[i], at: [at] };
+    at += raw[i].length + 1;
+    while (raw[i].length === 79 && i + 1 < raw.length) { i++; line.at.push(at); line.t += raw[i]; at += raw[i].length + 1; }
+    out.push(line);
+  }
+  return out;
+}
+// errors, warnings and bad boxes of a log, in order: what the page lists as problems
+function logSig(log) {
+  return pageLines(log).map((l) => l.t).filter((l) => /^(?:! |[^\s:()][^:()]*:\d+: |(?:LaTeX|Package|Class|pdfTeX) .*?(?:Warning|Error|warning|error)|\(\S+\)\s|Overfull|Underfull|Missing character)/.test(l)).join('\n');
+}
+// a PDF without what differs between two runs of one document: its dates and its ID
+const pdfCore = (b) => latin1(b).replace(/\/(CreationDate|ModDate) ?\(D:[^)]*\)/g, '/$1 ()').replace(/\/ID ?\[ ?<[0-9A-Fa-f]*> ?<[0-9A-Fa-f]*> ?\]/, '/ID []');
+// SyncTeX with each record's file by name (a pass from the format numbers the files otherwise)
+function synctexCore(gz) {
+  const tags = new Map(), out = [];
+  for (const l of latin1(fflate.gunzipSync(gz)).split('\n')) {
+    const m = /^Input:(\d+):(.*)$/.exec(l);
+    if (m) { tags.set(m[1], m[2]); continue; }
+    if (/^(?:!|Count:|Postamble:|Post scriptum:)/.test(l)) continue;
+    out.push(l.replace(/^([[(hvxkgr$])(\d+),/, (a, c, t) => c + (tags.get(t) || t) + ','));
+  }
+  return out.join('\n');
+}
+function listFiles(dir, out = [], rel = '') {
+  for (const n of M.FS.readdir(dir)) {
+    if (n === '.' || n === '..') continue;
+    const st = M.FS.stat(dir + '/' + n);
+    if (M.FS.isDir(st.mode)) listFiles(dir + '/' + n, out, rel + n + '/'); else out.push(rel + n);
+  }
+  return out;
+}
+// Where the preamble ends: the first \begin{document} of the main file, not after a % on its line.
+function preSplit(bytes) {
+  let at = -1;
+  outer: for (let i = bytes.indexOf(92); i >= 0 && i + BEGIN_DOC.length <= bytes.length; i = bytes.indexOf(92, i + 1)) {
+    for (let k = 1; k < BEGIN_DOC.length; k++) if (bytes[i + k] !== BEGIN_DOC[k]) continue outer;
+    at = i; break;
+  }
+  if (at < 1 || at > PRE_MAX_PREAMBLE) return -1;
+  for (let i = at - 1; i >= 0 && bytes[i] !== 10; i--) if (bytes[i] === 37) return -1;
+  return at;
+}
+// What a pass of this job could start from: null when the document is not one for a format.
+function preContext(job, o) {
+  if (job.preamble === false || !/^[A-Za-z0-9_.-]+$/.test(o.base) || o.mainName !== o.base + '.tex' || !o.mainFile) return null;
+  const d = o.mainFile.data, bytes = typeof d === 'string' ? new TextEncoder().encode(d) : d;
+  const at = preSplit(bytes);
+  if (at < 0) return null;
+  const head = bytes.subarray(0, at);
+  if (!latin1(head).includes('\\documentclass')) return null;
+  const c = { dir: o.dir, cwd: o.cwd, base: o.base, mainName: o.mainName, se: o.se, untrusted: !!job.untrusted, head, tex: o.tex, files: new Set(job.files.map((f) => o.dir + '/' + projectPath(f.path))) };
+  c.pre = sha256hex(new TextEncoder().encode(JSON.stringify([1, c.dir, c.cwd, c.mainName, c.se, c.untrusted, sha256hex(head)])));
+  return c;
+}
+// The files a preamble can find when a pass starts, by name. Not the PDF, the log and the
+// recorder's file of the document itself: TeX makes the last two before the preamble runs,
+// and the PDF is there from a compile's second pass on (a preamble that asks whether its own
+// PDF exists is the one thing this key does not tell apart). next: as the next compile's first
+// pass will find the folder, which a compile's start clears of all but KEEP's kinds.
+const preStays = (c, p) => c.files.has(p) || ((KEEP.test(p) || ASY_OUT.test(p)) && p !== c.cwd + '/' + c.base + '.bcf'); // (the kept .bcf goes too)
+function preKey(c, next) {
+  const own = new Set(['.pdf', '.log', '.fls'].map((x) => c.cwd + '/' + c.base + x));
+  const names = listFiles(c.dir).filter((rel) => !own.has(c.dir + '/' + rel) && (!next || preStays(c, c.dir + '/' + rel)));
+  return sha256hex(new TextEncoder().encode(c.pre + '\n' + names.sort().join('\n')));
+}
+// how the last try to make or use a key's format ended, for the result (tests read it)
+function preNote(key, text) {
+  PRE.notes.delete(key); PRE.notes.set(key, text);
+  if (PRE.notes.size > 200) PRE.notes.delete(PRE.notes.keys().next().value);
+}
+function preBad(key, why) {
+  preNote(key, 'refused: ' + (why || 'the pass from it could not stand'));
+  const e = PRE.ready.get(key);
+  if (e) { PRE.ready.delete(key); PRE.bytes -= e.fmt.length; }
+  PRE.bad.add(key);
+  if (PRE.bad.size > 500) PRE.bad.delete(PRE.bad.values().next().value);
+}
+// The format for the pass about to start, when one passed its check and the files of the
+// project the preamble read are byte for byte the ones it was dumped with.
+function preLookup(c) {
+  if (PRE.hold.has(c.dir)) return null;
+  const key = preKey(c), e = PRE.ready.get(key);
+  if (!e) return null;
+  // (a date a preamble kept is the dump's: a format is for the day it was made on)
+  if (e.day !== preDay()) { PRE.ready.delete(key); PRE.bytes -= e.fmt.length; return null; }
+  for (const [p, h] of e.inputs) { const b = readBytes(p); if (!b || sha256hex(b) !== h) return null; }
+  PRE.ready.delete(key); PRE.ready.set(key, e); // the one used last is dropped last
+  return e;
+}
+// Everything a pass can change in the project's folder, to put back if the pass is thrown away.
+function snapFolder(dir) {
+  const snap = new Map();
+  for (const rel of listFiles(dir)) { const n = M.FS.lookupPath(dir + '/' + rel).node; snap.set(rel, { b: n.usedBytes > (4 << 20) ? n.contents.subarray(0, n.usedBytes) : M.FS.readFile(dir + '/' + rel), t: n.mtime }); }
+  return snap;
+}
+function restoreFolder(dir, snap) {
+  for (const rel of listFiles(dir)) if (!snap.has(rel)) { try { M.FS.unlink(dir + '/' + rel); } catch (e) { /* gone */ } }
+  for (const [rel, { b, t }] of snap) {
+    const p = dir + '/' + rel, now = readBytes(p);
+    if (now && sameBytes(now, b)) continue;
+    mkdirp(p.slice(0, p.lastIndexOf('/')));
+    M.FS.writeFile(p, b);
+    M.FS.lookupPath(p).node.mtime = t;
+  }
+}
+const preArgs = (c, e) => ['pdflatex', '-jobname=' + c.base, ...c.tex.slice(1, -3), '--fmt', PRE_DIR + '/' + e.n + '.fmt', e.line];
+// One pass from the format. Its log and recorder file are made the ordinary pass's: the
+// preamble's part of each comes from the dump run. Null when the pass cannot stand (the
+// folder is then as it was before it), and the caller makes the ordinary pass.
+function preRun(c, e) {
+  const snap = snapFolder(c.dir), shell0 = SHELL.state.log.length;
+  mkdirp(PRE_DIR);
+  M.FS.writeFile(PRE_DIR + '/' + e.n + '.fmt', e.fmt, { canOwn: true });
+  const r = run(preArgs(c, e));
+  try { M.FS.unlink(PRE_DIR + '/' + e.n + '.fmt'); } catch (err) { /* gone */ } // (in the worker's files only while TeX reads it)
+  const log = readText(c.base + '.log'), fls = readText(c.base + '.fls');
+  const shell = SHELL.state.log.length !== shell0 || SHELL.state.deferred.length || SHELL.state.need.size || SHELL.state.missing.size || SHELL.state.rerun;
+  if (r.code || ERR_LINE.test(log) || shell || packMissed.size) {
+    restoreFolder(c.dir, snap);
+    if (shell) { SHELL.state.log.length = shell0; SHELL.state.deferred = []; SHELL.state.need.clear(); SHELL.state.missing.clear(); SHELL.state.rerun = false; preBad(e.key); return null; }
+    // an error: the ordinary pass says whether it is the document's (then the format stays)
+    PRE.hold.add(c.dir);
+    e.doubt = logSig(preSplice(c, e, log, fls).log);
+    return null;
+  }
+  const out = preSplice(c, e, log, fls);
+  M.FS.writeFile(c.base + '.log', out.log);
+  M.FS.writeFile(c.base + '.fls', out.fls);
+  return { code: r.code, stdout: r.stdout, stderr: r.stderr, log: out.log, fls: out.fls };
+}
+function preSplice(c, e, log, fls) {
+  const open = '(./' + c.mainName;
+  const h = log.indexOf('\n**'), o = log.indexOf(open, h);
+  let outLog = log;
+  if (h >= 0 && o >= 0) {
+    const b = log.lastIndexOf('\nLaTeX2e <', o);
+    const banner = b > h ? log.slice(b + 1, o).replace(/\s+$/, '') + '\n' : '';
+    const rest = log.slice(o + open.length).replace(/^[ \t]*\n?/, '');
+    outLog = log.slice(0, h + 1).replace(/\(preloaded format=[^)]*\)/, e.ident) + '**' + c.mainName + '\n' + open + '\n' + banner + e.log + (e.log.endsWith('\n') ? '' : '\n') + rest;
+  }
+  const lines = fls.split('\n').filter((l) => !l.startsWith('INPUT ' + PRE_DIR + '/'));
+  return { log: outLog, fls: [lines[0], ...e.read, ...lines.slice(1)].join('\n') };
+}
+// The preamble's part of the dump run's log without the ")" that closed the main file there
+// (in a pass the body follows): the first ")" that closes no file opened after it, counted
+// as the page counts a log's files (words in parentheses left out). The text stays as TeX
+// broke it into lines, so the page reads it as it reads the log of an ordinary pass.
+function preLogPart(part) {
+  let depth = 0;
+  for (const line of pageLines(part)) {
+    const t = line.t.replace(/\((?!\.{0,2}\/)[^()]*\)/g, (m) => ' '.repeat(m.length));
+    const re = /\((?=\.{0,2}\/)|\)/g;
+    for (let m; (m = re.exec(t));) {
+      if (m[0] === '(') { depth++; continue; }
+      if (depth-- > 0) continue;
+      // where that character is in the text: the pieces of a joined line have no "\n" between them
+      let k = 0, left = m.index;
+      const piece = part.slice(line.at[0]).split('\n');
+      while (k < line.at.length - 1 && left >= piece[k].length) left -= piece[k++].length;
+      const i = line.at[k] + left;
+      return part.slice(0, i) + part.slice(i + 1);
+    }
+  }
+  return null;
+}
+function copyTree(from, to, budget) {
+  mkdirp(to);
+  for (const n of M.FS.readdir(from)) {
+    if (n === '.' || n === '..') continue;
+    const st = M.FS.stat(from + '/' + n);
+    if (M.FS.isDir(st.mode)) { copyTree(from + '/' + n, to + '/' + n, budget); continue; }
+    if ((budget.left -= st.size) < 0) throw new Error('too large a project for a copy');
+    M.FS.writeFile(to + '/' + n, M.FS.readFile(from + '/' + n));
+    M.FS.lookupPath(to + '/' + n).node.mtime = M.FS.lookupPath(from + '/' + n).node.mtime;
+  }
+}
+// fn runs in a copy of the project's folder under the folder's own path; the folder itself
+// waits elsewhere and comes back untouched, whatever fn's TeX wrote or removed.
+function inCopy(c, fn) {
+  const FS = M.FS, keep = PRE_KEEP + '/k';
+  mkdirp(PRE_KEEP);
+  FS.chdir('/'); // (a folder that is the working directory cannot be moved)
+  try { rmTree(keep, null); FS.rmdir(keep); } catch (e) { /* none left */ }
+  FS.rename(c.dir, keep);
+  try {
+    copyTree(keep, c.dir, { left: PRE_MAX_PROJECT });
+    rmTree(c.dir, (p) => preStays(c, p)); // what a compile's start removes
+    FS.chdir(c.cwd);
+    return fn(keep);
+  } finally {
+    try { FS.chdir('/'); rmTree(c.dir, null); FS.rmdir(c.dir); } catch (e) { /* as far as it went */ }
+    FS.rename(keep, c.dir);
+  }
+}
+// The dump: the preamble alone, read as the main file, in INITEX on top of pdflatex.fmt.
+function preDump(c, key) {
+  let why = '';
+  const no = (w) => { why = w; return null; };
+  const e = inCopy(c, () => {
+    M.FS.writeFile(c.mainName, c.head);
+    for (const x of ['.fmt', '.log', '.fls']) { try { M.FS.unlink(c.base + x); } catch (err) { /* none */ } }
+    const r = run(['pdflatex', '-ini', '-jobname=' + c.base, ...c.tex.slice(1, -3).filter((a) => !/^-synctex/.test(a)), '&pdflatex', '\\csname @@input\\endcsname ' + c.mainName + ' ' + PRE_FIN]);
+    const fmt = readBytes(c.base + '.fmt'), log = readText(c.base + '.log'), fls = readText(c.base + '.fls');
+    if (!fmt || !fmt.length || fmt.length > PRE_MAX_BYTES / 2 || SHELL.state.log.length || SHELL.state.deferred.length || SHELL.state.need.size || SHELL.state.missing.size || packMissed.size) return no(fmt ? 'a program ran in the preamble, or a file could not be loaded' : 'no format was written: ' + (log.match(/^(?:! .*|.*:\d+: .*)$/m) || [''])[0].slice(0, 120));
+    // no error but \showlists' own "! OK.", nothing written but the format and the log
+    if ((log.match(/^! .*$/gm) || []).join() !== '! OK.' || /^[^\s:()][^:()\n]*:\d+: /m.test(log)) return no('an error in the preamble');
+    const { abs } = flsFiles(fls);
+    for (const m of fls.matchAll(/^OUTPUT (.*)$/gm)) if (abs(m[1]) !== abs(c.base + '.log') && abs(m[1]) !== abs(c.base + '.fmt')) return no('the preamble writes ' + m[1]);
+    const probe = /RIKUY-PROBE group=(\d+) if=(\d+) dead=(\d+) stacks=(\d+) seed=([tsn]) open=([\d,]*)\./.exec(log.replace(/\n/g, ''));
+    if (!probe || probe[1] !== '1' || probe[2] !== '0' || probe[4] !== '1' || probe[6] !== '') return no(!probe ? 'no answer from the dump run' : probe[4] !== '1' ? 'the preamble makes a colour stack' : probe[6] ? 'the preamble leaves a file open for reading' : 'the preamble ends inside a group or a conditional');
+    // the lists: only an outer vertical list, on it only what can be put back as it was
+    const a = log.indexOf('\n### '), z = log.indexOf('\n! OK.');
+    if (a < 0 || z < a) return no('no lists in the dump run');
+    const lists = log.slice(a + 1, z).split('\n');
+    if (lists.shift() !== '### vertical mode entered at line 0') return no('the preamble ends inside a box or a paragraph');
+    let replay = '';
+    for (const l of lists) {
+      let m;
+      if (!l.trim() || l === '### current page:' || l === '### recent contributions:') continue;
+      if (l === '\\write-{}') replay += '\\write-1{}';
+      else if ((m = /^\\pdfcolorstack (\d+) push \{([0-9a-zA-Z. ]*)\}$/.exec(l))) replay += '\\pdfcolorstack ' + m[1] + ' push{' + m[2] + '}';
+      else if ((m = /^prevdepth (ignored|-?\d+\.\d+)$/.exec(l))) replay += m[1] === 'ignored' ? '' : '\\prevdepth=' + m[1] + 'pt ';
+      else return no('the preamble leaves on the page: ' + l.slice(0, 80));
+    }
+    if (probe[3] !== '0') replay += '\\deadcycles=' + probe[3] + ' ';
+    if (probe[5] === 't') replay += PRE_RESEED;
+    // the preamble's part of the log: after the main file's "(", up to the ")" at its end
+    const open = '(./' + c.mainName, o = log.indexOf(open), end = log.search(/^RIKUY-PROBE group=\d/m);
+    const part = o < 0 || end < o ? null : preLogPart(log.slice(o + open.length, end));
+    if (part == null) return no('the dump run did not read the main file to its end');
+    if (PRE_CLOCK.test(latin1(c.head))) return no('the preamble uses the clock, random numbers or a font map');
+    const inputs = [], read = [], scanned = new Set();
+    for (const m of fls.matchAll(/^INPUT (.*)$/gm)) {
+      const p = abs(m[1]);
+      if (/\.fmt$/.test(p)) continue;
+      read.push(m[0]);
+      if (p !== abs(c.mainName) && !scanned.has(p) && !/\.(?:tfm|vf|pfb|enc|map)$/.test(p)) {
+        scanned.add(p);
+        const b = readBytes(p);
+        if (b && !(p.startsWith('/texlive/') && PRE_CLOCK_OK.test(p)) && PRE_CLOCK.test(latin1(b))) return no('the preamble reads a file that uses the clock, random numbers or a font map: ' + p.slice(p.lastIndexOf('/') + 1));
+      }
+      if (!p.startsWith('/texlive/') && p !== abs(c.mainName) && !inputs.some((x) => x[0] === p)) { const b = readBytes(p); if (!b) return no('a file the preamble read is gone'); inputs.push([p, sha256hex(b)]); }
+    }
+    // the pass's first line: what the format cannot hold put back, then the file from its
+    // first line, its preamble taken as characters up to \begin{document} and dropped
+    const line = '\\begingroup' + PRE_NORM + replay + '\\edef\\rikuy@g{\\def\\noexpand\\rikuy@g##1\\string\\begin\\string{\\detokenize{document}\\string}{\\endgroup\\noexpand\\begin{document}}}\\rikuy@g' +
+      '\\def\\rikuy@i{\\count@=0 \\loop\\catcode\\count@=12 \\advance\\count@ 1 \\ifnum\\count@<256 \\repeat\\expandafter\\rikuy@g\\@@input ' + c.mainName + ' }\\rikuy@i';
+    return { key, n: ++preSeq, fmt: fmt.slice(), line, inputs, read, log: part.replace(/^[ \t]*\n?/, ''), ident: '', day: preDay() };
+  });
+  if (!e) PRE.why = why;
+  return e;
+}
+let preSeq = 0;
+// The format a job before this one dumped and had no time to check, when it is still this
+// preamble's: someone who goes on typing has a compile every other second, and each one
+// drops the job that was waiting. Without this the dump was made again after every compile,
+// each time in the next compile's way, and no format was ever ready.
+function preHalf(key) {
+  const h = PRE.half;
+  if (!h || h.key !== key || h.e.day !== preDay()) return null;
+  for (const [p, hash] of h.e.inputs) { const b = readBytes(p); if (!b || sha256hex(b) !== hash) return null; }
+  return h.e;
+}
+// One pass from the format on the files the last ordinary pass left, against that pass.
+function preVerify(c, e, normal) {
+  return inCopy(c, (keep) => {
+    const r = preRun(c, e);
+    if (!r) { PRE.why = 'the pass from it ended with an error, or ran a program'; return false; }
+    const own = (x) => c.cwd + '/' + c.base + x;
+    const wrote = flsFiles(normal.fls).written;
+    const real = (p) => readBytes(keep + p.slice(c.dir.length));
+    const now = new Set(listFiles(c.dir).map((rel) => c.dir + '/' + rel));
+    // what that pass wrote, this one wrote too
+    for (const p of [...wrote, own('.pdf'), own('.synctex.gz')]) if (p.startsWith(c.dir + '/') && real(p) && !now.has(p)) { PRE.why = 'not written: ' + p.slice(c.dir.length + 1); return false; }
+    for (const p of now) {
+      const a = real(p), b = M.FS.readFile(p);
+      if (!a) { PRE.why = 'written only from the format: ' + p.slice(c.dir.length + 1); return false; }
+      if (p === own('.log') || p === own('.fls')) continue;
+      if (p === own('.pdf')) { if (pdfCore(a) !== pdfCore(b)) { PRE.why = 'the PDF differs'; return false; } continue; }
+      if (p === own('.synctex.gz')) { if (synctexCore(a) !== synctexCore(b)) { PRE.why = 'SyncTeX differs'; return false; } continue; }
+      if (!sameBytes(a, b)) { PRE.why = 'differs: ' + p.slice(c.dir.length + 1); return false; }
+    }
+    const w = (fls) => [...flsFiles(fls).written].sort().join('\n');
+    if (logSig(r.log) !== logSig(normal.log)) { PRE.why = 'the log\'s errors and warnings differ'; return false; }
+    if (w(r.fls) !== w(normal.fls)) { PRE.why = 'other files written'; return false; }
+    return true;
+  });
+}
+// After a compile, when nothing else is asked of the worker: the dump, then (the worker let
+// go in between, so a compile that came meanwhile runs first) the check.
+function preStep() {
+  PRE.timer = 0;
+  const job = PRE.pending;
+  if (!job || BUSY) return;
+  PRE.why = '';
+  const c = job.c;
+  QUIET = true;
+  SHELL.reset();
+  KPSE_VARS.shell_escape = c.se === '-shell-escape' ? 't' : 'p';
+  let again = false;
+  try {
+    if (!job.e) {
+      job.e = preDump(c, job.key);
+      if (job.e) { job.e.ident = (/\(preloaded format=[^)]*\)/.exec(job.normal.log) || [''])[0]; again = !!job.e.ident; }
+      if (!again) preBad(job.key, PRE.why || 'no format');
+      // (kept until its check is done: a compile that comes before the check starts a new
+      // job, which takes this format up instead of dumping the preamble again; see preHalf)
+      else PRE.half = { key: job.key, e: job.e };
+    } else if ((PRE.half = null, preVerify(c, job.e, job.normal))) {
+      PRE.ready.set(job.key, job.e);
+      PRE.bytes += job.e.fmt.length;
+      while (PRE.ready.size > PRE_MAX_FORMATS || PRE.bytes > PRE_MAX_BYTES) { const [k, old] = PRE.ready.entries().next().value; PRE.ready.delete(k); PRE.bytes -= old.fmt.length; }
+      preNote(job.key, 'ready');
+    } else preBad(job.key, PRE.why || 'a pass from it differs from the ordinary pass');
+  } catch (err) { preBad(job.key, String((err && err.message) || err)); } finally {
+    QUIET = false;
+    SHELL.reset();
+    packMissed.clear();
+    PRE.hold.delete(c.dir);
+    try { M.FS.unlink(PRE_DIR + '/' + (job.e ? job.e.n : 0) + '.fmt'); } catch (err) { /* none */ }
+    if (again) PRE.timer = setTimeout(preStep, 0); else { PRE.pending = null; status('format', { note: PRE.notes.get(job.key) || '' }); }
+  }
+}
+
 async function compile(job) {
   // every name is checked before anything is written or cleaned
   for (const f of job.files) projectPath(f.path);
@@ -1384,14 +1776,28 @@ async function compile(job) {
   if (E.out === 'dvi') for (const k of ['dvips', 'gs']) if (!TOOLS[k]) { status('tool-fetch', { tool: TOOL_NAMES[k] }); await loadTool(k).catch(() => {}); }
   const runs = [];
   let reread = rereadState(readText(base + '.fls'));
+  // a pass of pdfLaTeX starts from this preamble's format when there is one (see PRE)
+  PRE.pending = null;
+  const pre = engine === 'pdflatex' ? preContext(job, { dir, cwd, base, mainName: mainPath.slice(mainPath.lastIndexOf('/') + 1), mainFile, se: tex[4], tex }) : null;
+  let fromFormat = 0, lastFls = '';
   const texRun = () => {
     status('pass', { n: runs.filter((x) => x.cmd === 'tex').length + 1, engine });
     const before = reread;
-    const r = run(tex);
-    const log = readText(base + '.log');
-    const fls = readText(base + '.fls');
+    const e = pre ? preLookup(pre) : null;
+    let r = e ? preRun(pre, e) : null;
+    const quick = !!r;
+    if (!r) r = run(tex);
+    const log = quick ? r.log : readText(base + '.log');
+    const fls = quick ? r.fls : readText(base + '.fls');
+    if (quick) fromFormat++;
+    else if (pre) {
+      // the pass from the format ended with an error: the document's own if this pass has it too
+      if (e && e.doubt != null) { if (e.doubt !== logSig(log)) preBad(e.key); e.doubt = null; }
+      if (!r.code && !ERR_LINE.test(log)) PRE.hold.delete(dir);
+    }
+    lastFls = fls;
     reread = rereadState(fls);
-    runs.push({ cmd: 'tex', engine, code: r.code, log, err: (r.stderr || '').slice(-3000), rewrote: rewrote(fls, log, before) });
+    runs.push({ cmd: 'tex', engine, code: r.code, log, err: (r.stderr || '').slice(-3000), rewrote: rewrote(fls, log, before), quick });
     return runs[runs.length - 1];
   };
   const texPasses = () => runs.filter((x) => x.cmd === 'tex').length;
@@ -1495,6 +1901,17 @@ async function compile(job) {
   // a document from a link may have written into the cache folder itself (Lua can write
   // anywhere), and what is kept is loaded by every later LuaLaTeX run: keep nothing of its runs
   if (engine === 'lualatex' && !job.untrusted) saveFontCaches().catch(() => {});
+  // A preamble compiled twice gets its format, made once the result is out (preStep): when
+  // this compile ended settled and clean with an ordinary pass, and no program ran in it.
+  if (pre) {
+    const n = (PRE.seen.get(pre.pre) || 0) + 1;
+    PRE.seen.delete(pre.pre); PRE.seen.set(pre.pre, n);
+    if (PRE.seen.size > 64) PRE.seen.delete(PRE.seen.keys().next().value);
+    const last = runs.filter((x) => x.cmd === 'tex').pop();
+    const key = preKey(pre, true);
+    if (n >= 2 && last === r && !r.quick && !r.code && !ERR_LINE.test(r.log) && !needsRerun(r.log) && !pendingRerun && !SHELL.state.log.length && !SHELL.state.missing.size &&
+        !packMissed.size && exists(base + '.pdf') && !PRE.ready.has(key) && !PRE.bad.has(key)) PRE.pending = { c: pre, key, e: preHalf(key), normal: { log: r.log, fls: lastFls } };
+  }
   // pdfTeX leaves an empty .pdf behind when a run had "No pages of output": that is no PDF
   const pdfFile = readBytes(base + '.pdf');
   // (nor is what TeX had written when a file it needed could not be loaded)
@@ -1511,6 +1928,9 @@ async function compile(job) {
     log,
     runs: runs.map((x) => ({ cmd: x.cmd, code: x.code, log: x.cmd === 'tex' ? (x.code && !/\(see the transcript file/.test(x.log) ? x.err : '') : x.log })),
     passes: texPasses(),
+    // how many of them started from the preamble's format, and how the last try to make one ended
+    fromFormat,
+    formatNote: pre ? PRE.notes.get(preKey(pre, true)) || '' : '',
     shell: SHELL.state.log.slice(0, 200),
     missing: [...SHELL.state.missing],
     // the packs this compile read, [number, folder], and the folders of those it could not load
@@ -1572,6 +1992,7 @@ function dumpFcCaches(out) {
 
 let booting = null;
 onmessage = async ({ data }) => {
+  BUSY++;
   try {
     if (data.init) {
       // tests fix the clock (SOURCE_DATE_EPOCH, FORCE_SOURCE_DATE) so a PDF can be compared with a
@@ -1594,6 +2015,7 @@ onmessage = async ({ data }) => {
       await booting;
       const res = await compile(data.compile);
       post({ result: res }, [res.pdf, res.synctex].filter(Boolean));
+      if (PRE.pending && !PRE.timer) PRE.timer = setTimeout(preStep, 150);
     } else if (data.exec) {
       await booting;
       if (data.exec.packs) await Promise.all(data.exec.packs.map((n) => loadPackAsync(n)));
@@ -1624,5 +2046,5 @@ onmessage = async ({ data }) => {
     }
   } catch (e) {
     post({ error: String((e && e.message) || e), stack: e && e.stack, id: data.compile && data.compile.id });
-  }
+  } finally { BUSY--; }
 };
