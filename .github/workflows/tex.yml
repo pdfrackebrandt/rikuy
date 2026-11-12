@@ -108,6 +108,9 @@ jobs:
         with:
           name: rikuy-dist
           path: dist
-          retention-days: 7
+          # (main's run is what Deploy takes, and what an agent fetches for a TeX tree: a week; a
+          # pull request's only shows its checks passed, and each one is 330 MB of the account's
+          # artifact storage, which ran full on 2026-11-12)
+          retention-days: ${{ github.ref == 'refs/heads/main' && 7 || 1 }}
           # the packs are compressed already
           compression-level: 0
