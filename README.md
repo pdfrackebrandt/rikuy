@@ -10,7 +10,7 @@ the document itself, a file, or a git push.
 
 ![Rikuy with its sample document: the typeset page you type on, and the LaTeX source beside it](docs/screenshot.png)
 
-Open it at <https://rikuy-3dl.pages.dev/> (also reached as <https://rackebrandt.pe/rikuy/>): the
+Open it at <https://rikuy.rackebrandt.pe/> (also reached as <https://rackebrandt.pe/rikuy/>): the
 page installs as an app, works offline after one visit and reads and writes Word files. To build
 the editor on your own machine you need node 22 and Python 3: `npm ci && npm run build && npm run serve`, then open http://127.0.0.1:8790. The PDF
 pane also needs the TeX tree, which takes the longer build under [Running it](#running-it).
@@ -113,7 +113,7 @@ from them are welcome.
 ## For AI agents
 
 An agent that wants to hand someone a document, or to drive the editor, reads
-[llms.txt](https://rikuy-3dl.pages.dev/llms.txt): a link with the LaTeX in it
+[llms.txt](https://rikuy.rackebrandt.pe/llms.txt): a link with the LaTeX in it
 (`#tex=<base64url>`), the scripting surface `window.rikuy.api` (read and replace the source,
 compile, get the PDF and TeX's problems), and every control's name for an agent that clicks.
 `npm run test:agent` checks all of it.

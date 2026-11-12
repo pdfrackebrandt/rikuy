@@ -6,11 +6,14 @@ serves it as static files, free: static requests are unlimited, and a deployment
 files of at most 25 MiB each (Rikuy has about 300; its largest is 12 MB). GitHub Actions builds
 and deploys it on every push to `main`; nothing is deployed from a laptop.
 
-Since 2026-11-10 it runs at <https://rikuy-3dl.pages.dev/> (the name `rikuy` was taken on
-pages.dev), in the open: the repository is public with it, which is how the source of the GPL and
-AGPL programs it ships is offered. `rackebrandt.pe/rikuy/` forwards there (a page of the
-maintainer's site). Browsers keep documents by address, so a move to another address (step 7)
-leaves what people kept behind at the old one: decide it early.
+It runs at <https://rikuy.rackebrandt.pe/> (since 2026-11-13; step 7), in the open: the
+repository is public with it, which is how the source of the GPL and AGPL programs it ships is
+offered. `rackebrandt.pe/rikuy/` forwards there (a page of the maintainer's site). The project's
+own address, <https://rikuy-3dl.pages.dev/> (the name `rikuy` was taken on pages.dev), where it
+ran from 2026-11-10, serves the same deployment and is not redirected: browsers keep documents by
+address, so what someone kept there is still there, in that browser, and a redirect would hide it
+from them. Every page names the new address as its canonical one, so search engines and agents
+move over by themselves.
 
 ## Once, by hand
 
@@ -48,7 +51,8 @@ leaves what people kept behind at the old one: decide it early.
    **rikuy.rackebrandt.pe.** First in Cloudflare: Workers & Pages, the `rikuy`
    project, Custom domains, Set up a custom domain, `rikuy.rackebrandt.pe`, Continue. Cloudflare
    then shows a CNAME to add. Then in Punto.pe's DNS panel for `rackebrandt.pe`, add a record:
-   type **CNAME**, name (host) **`rikuy`**, value (target) **`rikuy.pages.dev`**, TTL as offered.
+   type **CNAME**, name (host) **`rikuy`**, value (target) the project's own address
+   (**`rikuy-3dl.pages.dev`** here), TTL as offered.
    Cloudflare checks it and issues the certificate, usually within minutes, sometimes an hour or
    two while the record spreads; the project's Custom domains page says Active when done. (Adding
    the CNAME before the domain is set up in Cloudflare gives errors until it is.)
