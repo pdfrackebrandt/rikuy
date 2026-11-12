@@ -731,6 +731,41 @@ Tests:
     Tibetan, Georgian, Armenian, Ethiopic and others have no fonts; a Japanese document set up
     with luatexja shows kanji in Chinese fonts on the page.
 
+34. **Rikuy as an AI agent meets it.** Done in the code (pull request 8), asked for by the
+    owner. An audit by a fresh agent, playing an agent that fetches, one that clicks and one
+    that scripts, found: buttons whose names changed with the window's width or were missing,
+    dialogs and menus without names, no way to hand over a document without writing DEFLATE,
+    no way to read the source or the result of a compile, a first page of markup with no words
+    for a fetcher, and guides that said less than the page can do. *What changed.* Every
+    control has one name at every width, dialogs and menus are named, TeX's state is a status
+    region, the page is a textbox "Document" with headings and paragraphs. `window.rikuy.api`
+    (frozen: `version`, `whenReady`, `getSource`, `getFiles`, `setSource`, `compile`, `needs`,
+    `setUpScripts`) is the scripting surface that stays the same. `#tex=<base64url>` opens
+    plain LaTeX as one's own document, and a `#share=` link that names no sender does too;
+    both stay marked as from a link, so shell escape is restricted and the open document is
+    kept as a version. The page's first lines say what Rikuy is, with JSON-LD; `llms.txt` and
+    `llms-full.txt` (plain text, readable from any origin) say how to hand over a document, how
+    to script and click it, where documents live and what it cannot do; `robots.txt` names the
+    AI crawlers as welcome. *Review.* A second fresh agent attacked the new ways in and found
+    no hole (the Content Security Policy is unchanged, markup in a link stays text, a widget's
+    frame cannot reach the api, writers reject in a guest's view) and five faults, fixed here
+    with tests: a document from a link without a sender became a guest's after a new start when
+    an earlier sender's link had the same name; a guest's second link of the same name was
+    dropped as already open; a `#tex=` link cut where its base64 still decodes opened the first
+    part of the document (it must now reach `\end{document}`); popovers called themselves
+    modal; the menus had no arrow keys. The security audit skill's own workflow was not run
+    beside that review. Evidence: `test/agent.py` 116 checks (115 without a TeX tree), run by
+    CI in both jobs; `npm test` green (`share.test.mjs` 17); `browser.py` 182, `ribbon.py` 146,
+    `scripts.py` 302, `share.py` 46, `features.py` 36, `files.py` 68, `paste.py` 25,
+    `history.py` 39, `word.py` 110, `launch.py` 18, `frontier.py` 13, `offline.py` 41/41, `deploy_check.py` 42,
+    `engines.py` 40/40. Open: the repository is private, so the source and issues links in
+    `llms.txt` and Help are 404 to anyone else until the owner makes it
+    public; a dialog opened from the narrow window's menu leaves the focus on the page's start;
+    without IndexedDB (some private windows) the document a link replaced is not kept; the
+    source pane's text is not reachable by its role (use `getSource()`); Equation pressed with
+    the caret inside a macro's argument inserts there; not tried with a real screen reader, nor
+    in Safari or Firefox; the link sizes browsers take are from their documentation.
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000
@@ -756,6 +791,7 @@ Tests:
   PDFs against a desktop TeX Live). A plausible output is not the target.
 - Patch original sources with small scripts that assert their anchor text exists, so a version
   bump fails loudly. Comments say why, in plain sentences.
-- Run the corpus before publishing. Rikuy's hosted copy is a claude.ai artifact, published
-  from a Claude session (`tex/publish_batches.py` plans the uploads within its 256 MB);
-  anywhere else, serve `dist/`.
+- Run the corpus before publishing. A merge to `main` deploys the hosted copy to Cloudflare
+  Pages (`docs/HOSTING.md`); the copy on claude.ai is an artifact published from a Claude
+  session (`tex/publish_batches.py` plans the uploads within its 256 MB); anywhere else, serve
+  `dist/`.

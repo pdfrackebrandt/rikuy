@@ -13,7 +13,7 @@ import serve
 
 TYPES = {'.js': 'application/javascript', '.mjs': 'application/javascript', '.wasm': 'application/wasm', '.html': 'text/html; charset=utf-8',
          '.json': 'application/json', '.webmanifest': 'application/manifest+json', '.png': 'image/png', '.svg': 'image/svg+xml',
-         '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.css': 'text/css'}
+         '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8', '.css': 'text/css', '.xml': 'application/xml'}
 
 
 def parse_headers(text):
@@ -61,9 +61,12 @@ class H(http.server.BaseHTTPRequestHandler):
 
     def send(self, code, body, ctype, path, extra=()):
         self.send_response(code)
-        self.send_header('Content-Type', ctype)
+        hs = headers_for(self.server.root, path)
+        # a rule's Content-Type takes the place of the one Pages works out from the name
+        if not any(k.lower() == 'content-type' for k, v in hs):
+            self.send_header('Content-Type', ctype)
         self.send_header('Content-Length', str(len(body)))
-        for k, v in headers_for(self.server.root, path):
+        for k, v in hs:
             self.send_header(k, v)
         for k, v in extra:
             self.send_header(k, v)

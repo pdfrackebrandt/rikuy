@@ -98,7 +98,37 @@ export async function unpackShare(s) {
     by: label(o.by, 'A coauthor'), role: o.role === 'back' ? 'back' : 'coauthor'
   };
   if (typeof o.t === 'number') out.t = o.t;
+  // no sender named (Share always names one; a link built by hand may not): the reader's own
+  // document, with nobody to mark edits for or send them back to
+  if (out.role !== 'back' && !label(o.by, '')) out.own = true;
   return out;
+}
+
+// A link anyone can build with no compression code: "#tex=" and the base64url of one LaTeX
+// file in UTF-8 (plain base64 with + / and = is read too, as most tools write that). What
+// comes out has the shape unpackShare gives, and is opened by the same steps.
+const MAX_TEX = 1e6; // characters: 750 kB of source, about the longest address every browser takes
+
+// the payload of such a link, or null (in the fragment only: ?tex= is other sites' to use)
+export function texParam(text) {
+  const m = /#(?:[^#\s]*&)?tex=([A-Za-z0-9._%+/=-]*)/.exec(String(text || ''));
+  return m ? m[1] : null;
+}
+
+export function unpackTex(s) {
+  s = String(s).trim();
+  if (s.length > MAX_TEX) throw new Error('The document in this link is too large to open: a #tex= link holds up to 750 kB of LaTeX. A #share= link is compressed and holds more, and Open takes a .tex file of any size.');
+  let text;
+  try {
+    s = decodeURIComponent(s).replace(/=+$/, '');
+    if (!/^[A-Za-z0-9_+/-]*$/.test(s) || s.length % 4 === 1) throw new Error('not base64');
+    text = new TextDecoder('utf-8', { fatal: true }).decode(unb64url(s));
+  } catch (e) { throw new Error('The link is damaged or cut short.'); }
+  if (!text.trim()) throw new Error('The link does not hold a document.');
+  // base64 cut at a multiple of four still decodes: a link shortened on its way (chat and mail
+  // programs do that) would open as the first part of the document. A whole one ends itself.
+  if (!/\\end\s*\{document\}/.test(text)) throw new Error('The link is cut short, or what it holds is not a whole LaTeX document: it has no \\end{document}.');
+  return { v: 1, name: 'main.tex', main: 'main.tex', files: [['main.tex', text]], base: null, by: '', role: 'coauthor', own: true };
 }
 
 // the payload of a link or of a pasted URL, or null

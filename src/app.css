@@ -745,6 +745,8 @@ body.nav-on.nav-wide #nav { width: 340px; }
 @media print {
   html, body, #app, #main, #desk { height: auto !important; overflow: visible !important; display: block !important; background: #fff !important; }
   #bar, #ribbon, #status, #nav, #srcpane, #gutter, .pop, #bubble, #toast, #ask, .boot, .dropzone, .wm-chip, #mhost, .wlayer { display: none !important; }
+  /* (words for screen readers only: one pixel of them under the last page was a sheet more) */
+  #pdf-live, #pages-how { display: none !important; }
   .w-live .wfb { visibility: visible !important; }
   .sheet { padding: 0 !important; }
   #pages { display: block !important; gap: 0 !important; caret-color: transparent; }

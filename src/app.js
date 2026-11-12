@@ -30,7 +30,8 @@ import { PdfView } from './pdfview.js';
 import { collab, installCollab } from './collab.js';
 import { word, installWord, isDocx } from './word.js';
 import { ribbon, installRibbon } from './ribbon.js';
-import { shareParam, commentOnly, cleanPath } from './share.js';
+import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
+import { version as VERSION } from '../package.json';
 import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
 import { scriptNeeds, scriptLines, addScriptSetup, scriptName, scriptSetup, MORE } from './scripts.js';
 
@@ -453,6 +454,9 @@ class App {
     this.srcRebuild = debounce(() => this.fromSource(), 260);
     this.scriptsSoon = debounce(() => this.scriptNotice(), 500);
     this.caps = { sample: null, downloads: null };
+    // settled when init is through: the document is on the page (rikuy.api.whenReady)
+    this.ready = new Promise((yes, no) => { this.readyDone = yes; this.readyFail = no; });
+    this.ready.catch(() => { /* said on the page */ });
   }
 
   async init() {
@@ -500,10 +504,11 @@ class App {
     await this.loadShareCtx();
     // a link with a document in it (#share=...): open that document; the fragment goes, so a
     // reload keeps what was typed since
-    const shared = shareParam(location.hash);
-    if (shared) {
+    // (#tex=...: the same with plain LaTeX in it, for whoever builds a link without compressing)
+    const shared = shareParam(location.hash), tex = shared ? null : texParam(location.hash);
+    if (shared || tex != null) {
       try { history.replaceState(null, '', location.href.split('#')[0]); } catch (e) { /* framed */ }
-      await this.openSharedLink(shared);
+      if (shared) await this.openSharedLink(shared); else await this.openTexLink(tex);
     }
     // someone a document was shared with sees the page; the source is one click away
     if (this.prefs.source && !document.body.classList.contains('guest')) this.toggleSource(true);
@@ -511,6 +516,7 @@ class App {
     if (this.prefs.pdf && window.innerWidth > 860) this.togglePdf(true);
     setTimeout(() => this.ensureMathLive(), 2500);
     this.placeInitialCaret();
+    this.readyDone();
     // files the system handed the installed app: opened with Rikuy, or shared to it
     if (__RIKUY_APP__ && APP.on) { await takeShared(this); takeLaunches(this); }
   }
@@ -570,6 +576,8 @@ class App {
     const changed = px !== this.px;
     this.px = px;
     $('#zoomv').textContent = this.textFit ? Math.round(px / PX_PER_PT * 100) + '%' : z === 'fit' ? 'Fit' : Math.round(z * 100) + '%';
+    // (its name stays "Fit width", what a press does; the zoom it shows is its description)
+    $('#zoomv').setAttribute('aria-description', 'Zoom: ' + $('#zoomv').textContent);
     // with the text block as wide as the screen, the view starts at the text, not at the margin
     if (this.textFit && changed) requestAnimationFrame(() => { if (this.textFit) this.desk.scrollLeft = Math.max(0, P.ml * px - 6); });
     return changed;
@@ -804,8 +812,9 @@ class App {
   // What the open project's text needs and its main file does not set up: [] or some of
   // 'chinese', 'arabic' and India's scripts (scriptNeeds), or null where no set up can be
   // offered now.
-  scriptNeedsNow() {
-    if (this.stale || !this.files.has(this.main) || document.body.classList.contains('guest')) return null;
+  // (guestToo: what a shared copy needs, which rikuy.api.needs() says; the notice is its author's)
+  scriptNeedsNow(guestToo) {
+    if (this.stale || !this.files.has(this.main) || (!guestToo && document.body.classList.contains('guest'))) return null;
     const texts = [];
     for (const [n, t] of this.files) if (n === this.main || /\.tex$/i.test(n)) texts.push(t);
     const main = this.src(this.main);
@@ -859,7 +868,7 @@ class App {
     const main = this.src(this.main);
     const next = needs && needs.length ? addScriptSetup(main, needs) : null;
     const d = next == null ? null : diff(main, next);
-    if (!d) return;
+    if (!d) return null;
     // The engine the lines lead to, read from the lines themselves: ctex alone is XeLaTeX's,
     // anything of babel's (bidi, a script set by its characters) is LuaLaTeX's (pickEngine in
     // tex/engine.js reads the same lines).
@@ -873,6 +882,7 @@ class App {
     const chosen = this.engineChoice();
     this.toast(chosen === 'auto' || chosen === engine ? 'Added. The PDF is now made with ' + ENGINE_LABEL[engine] + '.'
       : 'Added. The PDF needs ' + ENGINE_LABEL[engine] + ': set the engine to Auto in the preview.', 6000);
+    return engine;
   }
 
   // Hidden for this project until what it needs changes
@@ -950,7 +960,7 @@ class App {
   // ---- edits & history ----------------------------------------------------------
   commit(edits, caret, kind) {
     // while the pages are stale (see rebuild) only edits made from the text itself go through
-    if (this.stale && !/^(restore|reject|merge|other-tab)$/.test(kind || '')) { this.toast('The page cannot show the document as it is now. Edit the source, or undo.'); return; }
+    if (this.stale && !/^(restore|reject|merge|other-tab|api)$/.test(kind || '')) { this.toast('The page cannot show the document as it is now. Edit the source, or undo.'); return; }
     edits = edits.filter((ed) => { const n = (this.files.get(ed.f) ?? '').length; return ed.s >= 0 && ed.e >= ed.s && ed.e <= n; });
     if (!edits.length) { if (caret) this.restoreCaret(caret); return; }
     const cb = this.caretNow() || caret;
@@ -1095,6 +1105,9 @@ class App {
     for (const id of ['rb-pdf', 'rb-word', 'b-save', 'b-open', 'b-pdf', 'b-copy', 'b-share', 'b-undo', 'b-redo', 'b-zout', 'zoomv', 'b-zin', 'b-src', 'b-help']) {
       const b = $('#' + id), a = mk('button', 'nav-act');
       a.type = 'button'; a.dataset.for = id;
+      // (a menu item under the button's own name: the bar's button of that name is still there)
+      a.setAttribute('role', 'menuitem');
+      a.setAttribute('aria-label', b.getAttribute('aria-label'));
       const svg = b.querySelector('svg'), lab = b.querySelector('span');
       if (svg) a.appendChild(svg.cloneNode(true));
       a.appendChild(mk('span', '', (b.closest('.rb-dl') ? 'Download ' : '') + (lab ? lab.textContent : '')));
@@ -1102,6 +1115,7 @@ class App {
       a.addEventListener('click', () => { if (!/^b-z/.test(id)) this.toggleNav(false); b.click(); if (/^b-z|zoomv/.test(id)) this.navActs(); });
       $('#nav-acts').appendChild(a);
     }
+    this.menuKeys($('#nav-acts'));
     $('#nt-outline').addEventListener('click', () => this.toggleNav(true, 'outline'));
     $('#nt-problems').addEventListener('click', () => this.toggleNav(true, 'problems'));
     $('#nt-changes').addEventListener('click', () => this.toggleNav(true, 'changes'));
@@ -1952,17 +1966,34 @@ class App {
     }
   }
 
+  // a menu's keys: the arrows step through its items and wrap, Home and End go to the ends
+  menuKeys(el) {
+    el.addEventListener('keydown', (e) => {
+      if (!/^(ArrowDown|ArrowUp|Home|End)$/.test(e.key)) return;
+      const all = [...el.querySelectorAll('[role=menuitem]')].filter((a) => !a.disabled && a.offsetParent);
+      if (!all.length) return;
+      const i = all.indexOf(document.activeElement), n = all.length;
+      const j = e.key === 'Home' || (i < 0 && e.key === 'ArrowDown') ? 0 : e.key === 'End' || i < 0 ? n - 1 : (i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;
+      all[j].focus();
+      e.preventDefault(); e.stopPropagation();
+    });
+  }
+
   makePop(anchor, cls, title) {
     this.closePop();
     if (this.pop) this.closePop(false, true);
     const p = document.createElement('div');
     p.className = 'pop ' + (cls || '');
+    // named by its title, so a screen reader and an agent can tell the dialogs apart. Not
+    // called modal: the page behind stays in reach of Tab, and a press there closes it
     p.setAttribute('role', 'dialog');
     if (title) {
       const h = document.createElement('div');
       h.className = 'pop-h';
       const t = document.createElement('span');
       t.textContent = title;
+      t.id = 'pop-title';
+      p.setAttribute('aria-labelledby', t.id);
       const x = document.createElement('button');
       x.className = 'pop-x'; x.type = 'button'; x.setAttribute('aria-label', 'Close'); x.innerHTML = '&times;';
       x.addEventListener('click', () => this.closePop());
@@ -2130,10 +2161,22 @@ class App {
     mf.className = 'mfield';
     mf.id = 'pop-field';
     mf.setAttribute('aria-label', 'Equation editor');
+    // The text box MathLive keeps inside the field takes the keys. MathLive writes what it reads
+    // aloud into that box's label and empties it between; empty, it gets the field's name.
+    const nameSink = () => {
+      try {
+        const k = mf.shadowRoot && mf.shadowRoot.querySelector('[part="keyboard-sink"]');
+        if (!k) return;
+        const fill = () => { if (!k.getAttribute('aria-label')) k.setAttribute('aria-label', 'Equation editor'); };
+        fill();
+        new MutationObserver(fill).observe(k, { attributes: true, attributeFilter: ['aria-label'] });
+      } catch (e) { /* unnamed, as before */ }
+    };
     // Inside the artifact viewer the page is framed; keep the on-screen keyboard in this page.
     const framed = (() => { try { return window.self !== window.top; } catch (e) { return true; } })();
     try { mf.mathVirtualKeyboardPolicy = framed ? 'sandboxed' : 'auto'; } catch (e) { /* ignore */ }
     holder.replaceWith(mf);
+    nameSink();
     const docMacros = this.mlMacros();
     const { ops, operators, plain } = classifyMacros(docMacros);
     try { mf.macros = { ...mf.macros, ...docMacros, ...FIELD_MACROS }; } catch (e) { /* ignore */ }
@@ -2249,6 +2292,7 @@ class App {
     const ta = document.createElement('textarea');
     ta.className = 'code';
     ta.id = 'pop-tex';
+    ta.setAttribute('aria-label', 'The math, as LaTeX');
     ta.spellcheck = false;
     const lead = display ? inner.match(/^\n?/)[0] : '';
     // the trailing line end is looked for after the leading one: in a new, empty equation
@@ -2270,6 +2314,7 @@ class App {
     if (display) {
       const envSel = document.createElement('select');
       envSel.id = 'pop-env';
+      envSel.setAttribute('aria-label', 'Kind of equation');
       const cur = info.a.env;
       for (const [v, l] of [['equation', 'Numbered equation'], ['equation*', 'Unnumbered equation'], ['align', 'Aligned, numbered rows'], ['align*', 'Aligned, no numbers'], ['gather', 'Gathered, numbered'], ['\\[', '\\[ \\] display']]) {
         const o = document.createElement('option'); o.value = v; o.textContent = l; if (v === cur) o.selected = true; envSel.appendChild(o);
@@ -2422,7 +2467,7 @@ class App {
     this.pop.rect = rect && (rect.width || rect.height) ? rect : (sel.anchorNode && sel.anchorNode.parentElement ? sel.anchorNode.parentElement.getBoundingClientRect() : null);
     const ta = document.createElement('textarea');
     ta.className = 'code'; ta.rows = 1; ta.spellcheck = false; ta.id = 'pop-newtex';
-    ta.placeholder = 'e.g. x^2 + y^2 = r^2';
+    ta.placeholder = 'e.g. x^2 + y^2 = r^2'; ta.setAttribute('aria-label', 'The formula, as LaTeX');
     const prev = document.createElement('div'); prev.className = 'pv';
     const err = document.createElement('div'); err.className = 'pv-err'; err.hidden = true;
     const row = document.createElement('div'); row.className = 'pop-row';
@@ -2552,7 +2597,7 @@ class App {
       row = document.createElement('div');
       row.className = 'ask-row';
       const inp = document.createElement('input');
-      inp.type = 'text'; inp.id = 'pop-describe'; inp.placeholder = 'Describe the math in words';
+      inp.type = 'text'; inp.id = 'pop-describe'; inp.placeholder = 'Describe the math in words'; inp.setAttribute('aria-label', 'Describe the math in words');
       const go = document.createElement('button');
       go.className = 'btn sm'; go.type = 'button'; go.textContent = 'Write it';
       row.append(inp, go);
@@ -2585,6 +2630,7 @@ class App {
     const ta = document.createElement('textarea');
     ta.className = 'code';
     ta.id = 'pop-raw';
+    ta.setAttribute('aria-label', 'LaTeX source');
     ta.spellcheck = false;
     ta.value = src.slice(info.s, info.e);
     ta.rows = Math.min(16, Math.max(2, ta.value.split('\n').length + 1));
@@ -2637,18 +2683,18 @@ class App {
       draw();
     };
     const top = document.createElement('div'); top.className = 'pop-row';
-    const cs = document.createElement('select'); cs.id = 'pop-citecmd';
+    const cs = document.createElement('select'); cs.id = 'pop-citecmd'; cs.setAttribute('aria-label', 'Citation style');
     const choices = this.citeChoices();
     for (const [v, l] of choices) { const o = document.createElement('option'); o.value = v; o.textContent = l; if (v === cmd) o.selected = true; cs.appendChild(o); }
     if (![...cs.options].some((o) => o.selected)) { const o = document.createElement('option'); o.value = cmd; o.textContent = '\\' + cmd; o.selected = true; cs.appendChild(o); }
     cs.addEventListener('change', () => { cmd = cs.value; write(); });
     top.appendChild(cs);
     const chips = document.createElement('div'); chips.className = 'chips';
-    const search = document.createElement('input'); search.type = 'search'; search.id = 'pop-citesearch'; search.placeholder = 'Search the bibliography';
+    const search = document.createElement('input'); search.type = 'search'; search.id = 'pop-citesearch'; search.placeholder = 'Search the bibliography'; search.setAttribute('aria-label', 'Search the bibliography');
     const list = document.createElement('div'); list.className = 'plist';
     const notes = document.createElement('div'); notes.className = 'pop-row notes';
-    const preI = document.createElement('input'); preI.type = 'text'; preI.placeholder = 'Before (see)'; preI.value = pre; preI.id = 'pop-citepre';
-    const postI = document.createElement('input'); postI.type = 'text'; postI.placeholder = 'After (p.~4)'; postI.value = post; postI.id = 'pop-citepost';
+    const preI = document.createElement('input'); preI.type = 'text'; preI.placeholder = 'Before (see)'; preI.value = pre; preI.id = 'pop-citepre'; preI.setAttribute('aria-label', 'Text before the citation');
+    const postI = document.createElement('input'); postI.type = 'text'; postI.placeholder = 'After (p.~4)'; postI.value = post; postI.id = 'pop-citepost'; postI.setAttribute('aria-label', 'Text after the citation');
     const wnotes = debounce(() => { pre = preI.value; post = postI.value; write(); }, 300);
     preI.addEventListener('input', wnotes); postI.addEventListener('input', wnotes);
     notes.append(preI, postI);
@@ -2710,11 +2756,11 @@ class App {
     const apply = this.liveRange(f, info.s, info.e);
     const write = () => { apply('\\' + cmd + '{' + key + '}'); draw(); };
     const top = document.createElement('div'); top.className = 'pop-row';
-    const cs = document.createElement('select'); cs.id = 'pop-refcmd';
+    const cs = document.createElement('select'); cs.id = 'pop-refcmd'; cs.setAttribute('aria-label', 'Kind of reference');
     for (const [v, l] of [['ref', '\\ref  2'], ['eqref', '\\eqref  (2)'], ['cref', '\\cref  eq. (2)'], ['Cref', '\\Cref  Equation (2)'], ['autoref', '\\autoref  Section 2'], ['pageref', '\\pageref']]) { const o = document.createElement('option'); o.value = v; o.textContent = l; if (v === cmd) o.selected = true; cs.appendChild(o); }
     cs.addEventListener('change', () => { cmd = cs.value; write(); });
     top.appendChild(cs);
-    const search = document.createElement('input'); search.type = 'search'; search.placeholder = 'Filter labels'; search.id = 'pop-refsearch';
+    const search = document.createElement('input'); search.type = 'search'; search.placeholder = 'Filter labels'; search.id = 'pop-refsearch'; search.setAttribute('aria-label', 'Filter labels');
     const list = document.createElement('div'); list.className = 'plist';
     p.append(top, search, list);
     const labels = [...this.model.labels.entries()].map(([k, v]) => ({ key: k, num: v.num, kind: v.kind }));
@@ -2781,7 +2827,7 @@ class App {
     this.pop.rect = rect && (rect.width || rect.height) ? rect : (sel.anchorNode && sel.anchorNode.parentElement ? sel.anchorNode.parentElement.getBoundingClientRect() : null);
     this.pop.returnCaret = base ? { f: base.f, p: base.a } : null;
     const inp = document.createElement('input');
-    inp.type = 'text'; inp.id = 'pop-cmd'; inp.className = 'code'; inp.placeholder = 'footnote, cite, section, equation, \u2026';
+    inp.type = 'text'; inp.id = 'pop-cmd'; inp.className = 'code'; inp.placeholder = 'footnote, cite, section, equation, \u2026'; inp.setAttribute('aria-label', 'What to insert');
     inp.autocomplete = 'off'; inp.spellcheck = false;
     const list = document.createElement('div'); list.className = 'plist';
     const hint = document.createElement('div'); hint.className = 'hint pad'; hint.textContent = 'Enter inserts the highlighted item. Anything else you type is inserted as a raw command.';
@@ -2946,6 +2992,7 @@ class App {
       } catch (e) {
         const ta = document.createElement('textarea');
         ta.className = 'cm-fallback';
+        ta.setAttribute('aria-label', 'LaTeX source');
         ta.spellcheck = false;
         host.appendChild(ta);
         ta.addEventListener('input', () => this.srcRebuild());
@@ -3028,7 +3075,7 @@ class App {
     if (tab) this.navTab = tab;
     this.navTab = this.navTab || 'outline';
     document.body.classList.toggle('nav-wide', this.navTab === 'changes' || this.navTab === 'git');
-    for (const [id, t] of [['#nt-outline', 'outline'], ['#nt-problems', 'problems'], ['#nt-changes', 'changes'], ['#nt-git', 'git']]) { $(id).classList.toggle('on', this.navTab === t); $(id).setAttribute('aria-selected', this.navTab === t ? 'true' : 'false'); }
+    for (const [id, t] of [['#nt-outline', 'outline'], ['#nt-problems', 'problems'], ['#nt-changes', 'changes'], ['#nt-git', 'git']]) { $(id).classList.toggle('on', this.navTab === t); $(id).setAttribute('aria-selected', this.navTab === t ? 'true' : 'false'); if (this.navTab === t) $('#nav-body').setAttribute('aria-labelledby', id.slice(1)); }
     this.prefs.nav = on;
     store(PREFS, this.prefs);
     if (on) { this.refreshNav(); this.navActs(); }
@@ -4562,10 +4609,21 @@ class App {
     return this.tex;
   }
 
+  // What TeX is doing and how a run ended, as one line of plain text in the page's "PDF status"
+  // region. The pane shows the same in three places (its status, its bar, its message), which
+  // are gone while it is closed; this line is there for a screen reader and an agent either way.
+  pdfSay(text) {
+    const el = $('#pdf-live');
+    text = String(text || '').replace(/\s+/g, ' ').trim();
+    if (el && el.textContent !== text) el.textContent = text;
+  }
+
   texStatus(s) {
     const st = $('#pdf-status'), bar = $('#pdf-prog');
     const say = (html, frac) => {
       st.innerHTML = html;
+      // (the megabytes change many times a second: said once, without them)
+      this.pdfSay(s.status === 'engine' ? 'Downloading TeX Live, once\u2026' : st.textContent);
       bar.hidden = false;
       bar.classList.toggle('busy', frac == null);
       bar.firstChild.style.width = frac == null ? '' : Math.round(frac * 100) + '%';
@@ -4653,6 +4711,7 @@ class App {
     this.stopped = false;
     const gen = this.pdfGen || 0;
     const st = $('#pdf-status'), bar = $('#pdf-prog'), msg = $('#pdf-msg');
+    let said = ''; // how the run ended, for the "PDF status" line
     const sig = textSig(this.main, [...this.files.entries()]);
     // a long TeX run gets a clock and a Stop button; one that never ends is stopped after
     // 5 minutes of typesetting (downloading the engine does not count)
@@ -4679,7 +4738,7 @@ class App {
       this.syncEngineMenu();
       const res = await engine.compile({ project: this.name + '|' + this.main, files: await this.compileFiles(), main: this.main, clean: !!opts.clean, bibSig, engine: this.engineChoice(), shellEscape: this.prefs.shellEscape !== false && !untrusted, untrusted });
       if (gen !== (this.pdfGen || 0)) return; // another project was opened meanwhile
-      this.lastCompile = { read: res.read || [], unkept: res.unkept || [], unkeptScripts: !!res.unkeptScripts, ok: !!res.ok, failed: '' };
+      this.lastCompile = { read: res.read || [], unkept: res.unkept || [], unkeptScripts: !!res.unkeptScripts, ok: !!res.ok, failed: '', engine: res.engine || null, pages: 0 };
       // TeX stopped where a file's pack could not be loaded (offline, or the network failed)
       // the copy on claude.ai has no room for the Chinese and Arabic fonts: say where they are
       if (res.unkeptScripts && SCRIPT_HOST && navigator.onLine !== false) throw Object.assign(new Error('This copy of Rikuy has no room for the Chinese and Arabic fonts this document needs. Open the document in the full Rikuy at ' + SCRIPT_HOST + ' (Download, LaTeX saves it; Open there loads it).'), { scripts: true });
@@ -4707,6 +4766,7 @@ class App {
         // drawn while the pane is closed, the pages would have no width: draw them on reopening
         if (!document.body.classList.contains('pdf-on')) this.pdfStale = true;
         const n = await this.pdfView.show(new Uint8Array(res.pdf), res.synctex ? new Uint8Array(res.synctex) : null);
+        this.lastCompile.pages = n;
         st.innerHTML = '<b>' + this.engineLabel + '</b> · ' + n + (n === 1 ? ' page' : ' pages') + ' · ' + (res.ms / 1000).toFixed(1) + ' s';
         $('#pdf-dl').disabled = false;
       } else {
@@ -4718,6 +4778,8 @@ class App {
       msg.innerHTML = errs ? '<b>' + errs + (errs === 1 ? ' error' : ' errors') + '</b>' + (warns ? ', ' + warns + (warns === 1 ? ' warning' : ' warnings') : '') + ' from ' + this.engineLabel + '. Show them' :
         warns ? warns + (warns === 1 ? ' warning' : ' warnings') + ' from ' + this.engineLabel + ', such as undefined references. Show them' : '';
       if (errs || warns) msg.firstChild && (msg.title = this.texIssues.slice(0, 3).map((x) => x.msg).join('\n'));
+      const first = this.texIssues.find((x) => x.sev === 'error') || this.texIssues.find((x) => x.sev === 'warn');
+      said = st.textContent + (errs || warns ? '. ' + msg.textContent.replace(/\.? ?Show them$/, '') + '. First: ' + first.msg + (first.line ? ' (' + first.f + ', line ' + first.line + ')' : '') : '') + (res.ok ? '' : '. No PDF was made.');
     } catch (e) {
       const why = this.stopped ? 'stopped' : String((e && e.message) || e || 'failed');
       if (this.lastCompile) this.lastCompile.failed = why; else this.lastCompile = { read: [], unkept: [], ok: false, failed: why };
@@ -4726,6 +4788,7 @@ class App {
         st.innerHTML = '<b>' + (this.engineLabel || 'TeX') + '</b> stopped';
         msg.hidden = false; msg.classList.remove('ok');
         msg.innerHTML = '<b>Stopped after ' + Math.round((Date.now() - this.compileStart) / 1000) + ' s.</b> A loop in a macro, or a very long document, keeps TeX busy.';
+        said = st.textContent + '. ' + msg.textContent;
         this.compileAgain = false;
         return;
       }
@@ -4736,6 +4799,7 @@ class App {
       const need = e && e.unkept ? ' (' + e.unkept.slice(0, 5).join(', ') + (e.unkept.length > 5 ? ' and more' : '') + ')' : '';
       const off = __RIKUY_APP__ && APP.on && navigator.onLine === false ? 'You are offline, and this document needs TeX files this browser has not kept yet' + need + '. Compile it once with a network and they stay; Make available offline in the status bar keeps those of a typical paper and of the open document. ' : '';
       d.textContent = e && e.scripts ? e.message + ' The page preview can still be printed.' : off + this.texFailText(e, !!off, !!need) + 'The page preview can still be printed.';
+      said = st.textContent + '. ' + d.textContent;
       const b = document.createElement('button'); b.className = 'btn sm'; b.type = 'button'; b.textContent = 'Print the preview'; b.style.marginTop = '10px';
       b.addEventListener('click', () => this.printPDF());
       d.append(document.createElement('br'), b);
@@ -4744,12 +4808,30 @@ class App {
       clearInterval(this.compileTick);
       $('#pdf-re').textContent = 'Recompile';
       bar.hidden = true;
+      if (said) this.pdfSay(said);
       this.compiling = false;
       const again = this.compileAgain;
       this.compileAgain = false;
       if (again && document.body.classList.contains('pdf-on')) this.compilePdf({ clean: again === 'clean' });
       else if (textSig(this.main, [...this.files.entries()]) !== sig) this.pdfSoon();
     }
+  }
+
+  // One run of TeX for a script (rikuy.api.compile): the PDF of the text as it is now, or why
+  // there is none. As Download PDF does, it opens nothing: the preview stays open or closed as
+  // it was, and the PDF TeX last made is taken when the text has not changed since.
+  async compileResult() {
+    const idle = async () => { while (this.compiling) await new Promise((r) => setTimeout(r, 100)); };
+    await idle();
+    const fresh = !!this.lastPdf && this.lastPdfSig === this.textSigNow() && !!this.lastCompile && this.lastCompile.ok;
+    if (!fresh) { this.pdfPane(); await this.compilePdf(); await idle(); }
+    const c = this.lastCompile || { ok: false, failed: 'another document was opened while TeX ran' };
+    const ok = !!c.ok && !!this.lastPdf;
+    // TeX's own findings; a run that could not start or was stopped has one problem, saying why
+    const problems = c.failed ? [{ severity: 'error', message: c.failed, file: null, line: null }]
+      : this.texIssues.map((x) => ({ severity: x.sev === 'warn' ? 'warning' : x.sev, message: x.msg, file: x.f || null, line: x.line || null }));
+    if (!ok && !problems.some((x) => x.severity === 'error')) problems.unshift({ severity: 'error', message: 'TeX made no PDF', file: null, line: null });
+    return { ok, engine: c.engine || null, pages: ok ? c.pages || 0 : 0, problems, pdf: ok ? new Uint8Array(this.lastPdf.slice(0)) : null };
   }
 
   // Which engine compiles this project: Auto (a magic comment, else what the preamble loads)
@@ -4797,6 +4879,7 @@ class App {
     $('#pdf-dl').disabled = true;
     $('#pdf-msg').hidden = true;
     $('#pdf-status').textContent = 'LaTeX';
+    this.pdfSay('');
     this.syncEngineMenu();
     if (document.body.classList.contains('pdf-on')) this.compilePdf();
     else this.pdfStale = true;
@@ -5062,6 +5145,59 @@ function commonDir(names) {
 }
 function stripTop(n) { const i = n.indexOf('/'); return i > 0 && n.split('/').length > 1 ? n.slice(i + 1) : n; }
 
+// ---- for scripts on the page ------------------------------------------------------------
+// window.rikuy.api: what a script on the page (an AI agent's, a test's) may count on. These
+// eight names stay from version to version; the rest of window.rikuy is the app itself and
+// changes without notice. Nothing here does more than a person at the keyboard can: a new
+// source goes through the edit path typing takes (one undo takes it back), a compile is the
+// one Download PDF runs, and a copy someone shared is read here but not changed.
+function agentApi(app) {
+  const flush = () => { if (app.srcRebuild.pending()) app.srcRebuild.flush(); };
+  const mine = (what) => {
+    if (document.body.classList.contains('guest')) throw new Error('rikuy.api.' + what + '() changes the document, and this one is open in guest view (a copy someone shared): a script can read it, not change it. getSource(), getFiles(), needs() and compile() work here.');
+  };
+  return Object.freeze({
+    // the build: the package's version, and in the installed app the hash of its files too
+    version: VERSION + (__RIKUY_APP__ && appInit().on ? '+' + appInit().v : ''),
+    // resolves once the app has started and the document is on the page
+    whenReady() { return app.ready.then(() => undefined); },
+    // the main file's text, as it is now
+    getSource() { flush(); return app.src(app.main); },
+    // every file of the project: text as { name, text }, anything else as { name, bytes }
+    getFiles() {
+      flush();
+      const out = [...app.files].map(([name, text]) => ({ name, text }));
+      const seen = new Set(app.files.keys());
+      for (const m of [app.assetBlobs, app.extra]) for (const [name, b] of m) if (!seen.has(name)) { seen.add(name); out.push({ name, bytes: b.size ?? b.byteLength ?? 0 }); }
+      return out;
+    },
+    // the main file becomes this text, as one edit; resolves when the page shows it
+    async setSource(text) {
+      if (typeof text !== 'string') throw new TypeError('rikuy.api.setSource(text) takes the LaTeX source as a string.');
+      await app.ready;
+      mine('setSource');
+      // a source the page cannot read would leave it showing the old text: refused, as a link's is
+      try { buildModel({ files: new Map([...app.files, [app.main, text]]), main: app.main }); }
+      catch (e) { throw new Error('The page cannot read this source (' + e.message + '). Nothing was changed.'); }
+      // (an open dialog writes what it holds as it closes: before the two texts are compared)
+      app.closePop(true, true);
+      flush();
+      const main = app.src(app.main), d = diff(main, text);
+      if (!d) return;
+      app.closeGroup();
+      app.commit([{ f: app.main, s: d.s, e: d.s + d.del.length, t: d.ins }], null, 'api');
+      app.closeGroup();
+      if (app.src(app.main) !== text) throw new Error('The source could not be changed.');
+    },
+    // one run of TeX on the project as it is: { ok, engine, pages, problems, pdf }
+    async compile() { await app.ready; flush(); return app.compileResult(); },
+    // the scripts the text is in and the preamble does not set up: ids such as 'chinese'
+    needs() { flush(); return [...(app.scriptNeedsNow(true) || [])]; },
+    // what "Set it up" does; resolves to the engine the lines lead to, or null when none were added
+    async setUpScripts() { await app.ready; mine('setUpScripts'); return app.scriptSetUp() || null; }
+  });
+}
+
 Object.assign(App.prototype, collab, word, ribbon);
 // one item of the insert list, where the caret is: what the ribbon's Insert buttons press
 App.prototype.insertFromPalette = function (k) {
@@ -5073,9 +5209,10 @@ App.prototype.textSigNow = function () { return textSig(this.main, [...this.file
 App.prototype.assetUrl = asset;
 
 const app = new App();
+Object.defineProperty(app, 'api', { value: agentApi(app), enumerable: true });
 window.rikuy = app;
 installCollab(app);
 installWord(app);
 installRibbon(app);
 app.isBalanced = isBalanced;
-app.init().catch((e) => { console.error(e); const b = document.getElementById('boot'); if (b) b.textContent = 'Rikuy could not start: ' + e.message; });
+app.init().catch((e) => { console.error(e); app.readyFail(e); const b = document.getElementById('boot'); if (b) b.textContent = 'Rikuy could not start: ' + e.message; });

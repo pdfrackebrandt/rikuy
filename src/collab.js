@@ -3,7 +3,7 @@
 // that are LaTeX comments in the source, a copy sent back that arrives as tracked changes, and
 // one click out to Overleaf or a plain .tex. The methods join App's prototype (app.js).
 
-import { packShare, unpackShare, shareParam, findComments, commentEdit, stripComments, mergeProjects, commentOnly } from './share.js';
+import { packShare, unpackShare, shareParam, texParam, unpackTex, findComments, commentEdit, stripComments, mergeProjects, commentOnly } from './share.js';
 import { kvGet, kvPut, kvDel } from './store.js';
 import { buildModel } from './model.js';
 
@@ -133,8 +133,19 @@ export const collab = {
   async openSharedLink(s) {
     let o;
     try { o = await unpackShare(s); } catch (e) { this.toast('Could not open the link: ' + e.message, 8000); return; }
+    await this.openLinked(o);
+  },
+  // a link with plain LaTeX in it (#tex=...): one file, opened as a shared link's document is
+  async openTexLink(s) {
+    let o;
+    try { o = unpackTex(s); } catch (e) { this.toast('Could not open the link: ' + e.message, 8000); return; }
+    await this.openLinked(o);
+  },
+  // what a link held, checked (unpackShare, unpackTex), becomes the open document
+  async openLinked(o) {
     const theirs = new Map(o.files);
-    const by = String(o.by || 'A coauthor');
+    // (own: no sender was named, so there is nobody to be a guest of)
+    const by = o.own ? '' : String(o.by || 'A coauthor');
     // a document the page cannot read (nesting deeper than the parser's stack) would replace
     // the open project with one whose page and panels fail on every start: refused instead
     try { buildModel({ files: theirs, main: o.main }); } catch (e) { this.toast('Could not open the link: the editor cannot read the document in it (' + e.message + ').', 8000); return; }
@@ -142,8 +153,10 @@ export const collab = {
     if (o.role === 'back' && base) { await this.takeBack(o, base, theirs); return; }
     // the same coauthor link opened again (bookmarked, or clicked a second time in the chat): they
     // are already in this document, so keep what they have typed instead of resetting it to the
-    // pristine shared copy, which would silently throw their edits away.
-    if (o.role !== 'back' && this.shareCtx && this.shareCtx.base === o.base && this.name === (o.name || o.main) && this.main === o.main) {
+    // pristine shared copy, which would silently throw their edits away. Only a link Share made
+    // says which version it is (its base): one built by hand has none, and a second such link
+    // under the same name may be a revised document, so it opens (the open one kept as a version).
+    if (o.role !== 'back' && !o.own && o.base && this.shareCtx && this.shareCtx.base === o.base && this.name === (o.name || o.main) && this.main === o.main) {
       this.guestMode(true);
       this.toast('You already have this shared document open, so your edits are kept. Earlier versions are under Review, Versions.', 7000);
       return;
@@ -158,10 +171,15 @@ export const collab = {
       try { const b = await kvGet('bin:' + n + '|' + o.main); return !!(b && ((b.assets || []).length || (b.extra || []).length || (b.orig || []).length)); } catch (e) { return false; }
     };
     let name = o.name || o.main;
-    for (let k = 1; await keeps(name); k++) name = (o.name || o.main) + ' (' + by + (k > 1 ? ' ' + k : '') + ')';
+    for (let k = 1; await keeps(name); k++) name = (o.name || o.main) + ' (' + (by || 'from a link') + (k > 1 ? ' ' + k : '') + ')';
     // marked before it loads: loading may start a compile, which must already see the mark
     this.markFromLink(by, name, o.main);
-    this.loadProject(theirs, o.main, name, 'As ' + by + ' shared it');
+    this.loadProject(theirs, o.main, name, by ? 'As ' + by + ' shared it' : 'As the link had it');
+    // a link that names no sender: the reader's own document from here on (still marked as
+    // from a link, so it compiles restricted until they allow more)
+    // (a guest's record kept under this name, from an earlier link, would make them a guest of
+    // that sender in this document at the next start)
+    if (o.own) { kvDel('share:' + this.name + '|' + this.main).catch(() => {}); this.toast('The document from the link is open. The one you had is under Review, Versions.', 7000); return; }
     if (o.role === 'back') {
       this.toast(by + "'s copy is open. This browser does not have the version you shared, so their edits cannot be marked; your earlier text is under Review, Versions.", 10000);
       return;
@@ -311,9 +329,9 @@ export const collab = {
 
   // a shared link pasted into the page opens it, after asking
   maybeOpenPasted(text) {
-    const s = shareParam(text);
-    if (!s || text.trim().split(/\s+/).length > 1) return false;
-    this.toast('That is a link to a shared document.', 8000, { label: 'Open it', fn: () => this.openSharedLink(s) });
+    const s = shareParam(text), t = s ? null : texParam(text);
+    if ((!s && t == null) || text.trim().split(/\s+/).length > 1) return false;
+    this.toast('That is a link to a shared document.', 8000, { label: 'Open it', fn: () => (s ? this.openSharedLink(s) : this.openTexLink(t)) });
     return true;
   },
 
@@ -546,10 +564,10 @@ export function installCollab(app) {
   });
   // a link opened in a tab that already shows the editor changes only the fragment
   window.addEventListener('hashchange', () => {
-    const s = shareParam(location.hash);
-    if (!s) return;
+    const s = shareParam(location.hash), t = s ? null : texParam(location.hash);
+    if (!s && t == null) return;
     try { history.replaceState(null, '', location.href.split('#')[0]); } catch (e) { /* framed */ }
-    app.openSharedLink(s);
+    if (s) app.openSharedLink(s); else app.openTexLink(t);
   });
   document.addEventListener('paste', (e) => {
     const t = e.target;

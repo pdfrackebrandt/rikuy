@@ -3,8 +3,11 @@ that fits passes; one file over 25 MiB, more than 20,000 files, a _headers file 
 rules or a line over 2,000 characters, or a build without the app's files fails. And the hosted
 build's own _headers (build/app.mjs): its policy is test/serve.py's (the one the browser tests
 run under) without the outside sources it never uses, plus frame-ancestors 'none' and
-manifest-src; and the caching, nosniff, Referrer-Policy and Permissions-Policy rules are there.
-Run by npm test; needs node (to write the headers) and no browser."""
+manifest-src; and the caching, nosniff, Referrer-Policy and Permissions-Policy rules are there;
+llms.txt, llms-full.txt, robots.txt and sitemap.xml, and no other file, are open to every site as
+UTF-8 text. And the hosted page as a program reads it before any script runs (appPage): its
+language, its title in the head, its schema.org data, the plain lines its body opens with.
+Run by npm test; needs node (to write the headers and the page) and no browser."""
 import atexit, os, shutil, subprocess, sys, tempfile
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
@@ -65,6 +68,36 @@ ok('scripts bound to the version keep Pages\' default caching', 'cache-control' 
 h = H('/git.js')
 ok('nosniff, no framing, no referrer and no device access on every file', h.get('x-content-type-options') == 'nosniff' and h.get('x-frame-options') == 'DENY'
    and h.get('referrer-policy') == 'no-referrer' and 'camera=()' in h.get('permissions-policy', '') and 'geolocation=()' in h.get('permissions-policy', ''), h)
+# what agents and crawlers fetch: readable from a script on any site, as UTF-8 text, and nothing else is
+for p in ('/llms.txt', '/llms-full.txt', '/robots.txt'):
+    h = H(p)
+    ok('open to every site, as UTF-8 plain text: ' + p, h.get('access-control-allow-origin') == '*' and h.get('content-type') == 'text/plain; charset=utf-8'
+       and 'cache-control' not in h and h.get('x-content-type-options') == 'nosniff' and 'content-security-policy' in h, h)
+h = H('/sitemap.xml')
+ok('the sitemap likewise, as XML', h.get('access-control-allow-origin') == '*' and h.get('content-type') == 'application/xml; charset=utf-8', h)
+for p in ('/', '/index.html', '/sw.js', '/git.js', '/tex/engine.js', '/tex/p-0123456789abcdef.wasm', '/manifest.webmanifest', '/og.png', '/LICENSES.txt', '/x/llms.txt', '/llms.txt.bak', '/word/llms-full.txt'):
+    ok('no other file is opened to other sites or given a type: ' + p, 'access-control-allow-origin' not in H(p) and 'content-type' not in H(p), H(p))
 probs, _, _ = pages_check.check(dist(dict(APP, _headers=text)))
 ok('and they fit Pages\' limits', probs == [], probs)
+
+# the hosted page as a program reads it before any script runs (appPage): the language, one title
+# in the head, what the app is as schema.org data, and plain lines at the top of the body
+import json, re
+JS = ("import { appPage, jsonScript } from './build/app.mjs';"
+      "const sk = '<!doctype html><html><head><meta charset=utf8><meta name=viewport content=x><style>s</style></head><body>';"
+      "process.stdout.write(JSON.stringify([appPage('/nowhere', '<title>Rikuy</title>\\n<style>f</style><div id=\"app\"></div>', sk), jsonScript({ a: '</script><script>alert(1)</script><!--' })]))")
+html, hostile = json.loads(subprocess.run(['node', '--input-type=module', '-e', JS], cwd=ROOT, capture_output=True, text=True, check=True).stdout)
+ok('the page names its language and has its one title in the head', html.startswith('<!doctype html><html lang="en"><head><meta charset=utf8><title>Rikuy: ')
+   and html.count('<title>') == 1 and html.index('</title>') < html.index('</head>'), html[:200])
+body = html[html.index('<body>') + 6:]
+ok('the body opens with what Rikuy is, then says what a browser without JavaScript needs, then the app',
+   body.startswith('<div class="rk-intro"><h1>Rikuy</h1><p>') and 0 < body.index('href="llms.txt"') < body.index('href="llms-full.txt"') < body.index('github.com/') < body.index('</div><noscript>')
+   < body.index('needs JavaScript') < body.index('</noscript>') < body.index('<div id="app">') and html.index('</noscript>') < 6000 and '.rk-intro{position:absolute;width:1px;height:1px' in html, body[:300])
+m = re.search(r'<script type="application/ld\+json">(.*?)</script>', html, re.S)
+data = json.loads(m.group(1))
+ok('schema.org data in the head: a free web application, its version and its source', html.index(m.group(0)) < html.index('</head>') and data['@context'] == 'https://schema.org' and data['@type'] == 'SoftwareApplication'
+   and data['name'] == 'Rikuy' and data['url'].startswith('https://') and data['applicationCategory'] and data['operatingSystem'] == 'Any (web browser)' and data['offers'] == {'@type': 'Offer', 'price': '0', 'priceCurrency': 'USD'}
+   and re.match(r'^\d+\.\d+\.\d+$', data['softwareVersion']) and data['sameAs'].startswith('https://github.com/') and len(data['description']) > 40, data)
+ok('text in that data cannot end its script element or start a comment', '<' not in hostile and json.loads(hostile) == {'a': '</script><script>alert(1)</script><!--'}, hostile)
+ok('the policy is not loosened for it: it is data, which no policy runs', "'unsafe-hashes'" not in H('/')['content-security-policy'] and 'sha256-' not in H('/')['content-security-policy'])
 print('%d/%d passed' % (n, n))

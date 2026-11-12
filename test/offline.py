@@ -80,6 +80,9 @@ def main():
         page = ctx.new_page()
         errors = []
         page.on('pageerror', lambda e: errors.append(str(e)))
+        # (what the page's policy refused, which the console says)
+        refused = []
+        page.on('console', lambda m: refused.append(m.text) if 'Content Security Policy' in m.text else None)
         page.goto(URL)
         ready(page)
         page.wait_for_timeout(500)
@@ -99,14 +102,40 @@ def main():
         # what crawlers and AI agents read (build/app.mjs): served, named in the page's head, and
         # not kept by the service worker, which has no use for them
         agent = page.evaluate('''async () => { const out = {};
-          for (const f of ['llms.txt', 'robots.txt', 'sitemap.xml', 'og.png']) { const r = await fetch(f, { cache: 'no-store' }); out[f] = [r.status, (await r.text()).slice(0, 200)]; }
-          out.head = ['link[rel=canonical]', 'link[rel=alternate][href="llms.txt"]', 'meta[property="og:image"]', 'meta[property="og:title"]'].map((q) => !!document.head.querySelector(q));
+          for (const f of ['llms.txt', 'llms-full.txt', 'robots.txt', 'sitemap.xml', 'og.png']) { const r = await fetch(f, { cache: 'no-store' }); const t = await r.text(); out[f] = [r.status, t.slice(0, 200), t.slice(-200), r.headers.get('content-type'), r.headers.get('access-control-allow-origin')]; }
+          const r = await fetch('git.js', { cache: 'no-store' }); out.other = [r.headers.get('access-control-allow-origin'), (await fetch('./', { cache: 'no-store' })).headers.get('access-control-allow-origin')];
+          out.head = ['link[rel=canonical]', 'link[rel=alternate][href="llms.txt"]', 'link[rel=alternate][href="llms-full.txt"]', 'meta[property="og:image"]', 'meta[property="og:title"]', 'title', 'meta[name=description]'].map((q) => !!document.head.querySelector(q));
           out.kept = [];
-          for (const k of await caches.keys()) for (const r of await (await caches.open(k)).keys()) if (/(llms\\.txt|robots\\.txt|sitemap\\.xml|og\\.png)$/.test(r.url)) out.kept.push(r.url);
+          for (const k of await caches.keys()) for (const r of await (await caches.open(k)).keys()) if (/(llms(-full)?\\.txt|robots\\.txt|sitemap\\.xml|og\\.png)$/.test(r.url)) out.kept.push(r.url);
           return out; }''')
-        check('llms.txt, robots.txt, sitemap.xml and the link picture are served and named in the head, and the service worker keeps none',
-              all(agent[f][0] == 200 for f in ('llms.txt', 'robots.txt', 'sitemap.xml', 'og.png')) and agent['llms.txt'][1].startswith('# Rikuy')
-              and 'Sitemap: http' in agent['robots.txt'][1] and all(agent['head']) and agent['kept'] == [], {k: (v[0] if isinstance(v, list) and k.endswith(('txt', 'xml', 'png')) else v) for k, v in agent.items()})
+        check('llms.txt, llms-full.txt, robots.txt, sitemap.xml and the link picture are served and named in the head, and the service worker keeps none',
+              all(agent[f][0] == 200 for f in ('llms.txt', 'llms-full.txt', 'robots.txt', 'sitemap.xml', 'og.png')) and agent['llms.txt'][1].startswith('# Rikuy') and agent['llms-full.txt'][1].startswith('# Rikuy')
+              and '\\end{document}' in agent['llms-full.txt'][2] and 'User-agent: ClaudeBot' in agent['robots.txt'][2] + agent['robots.txt'][1] and 'Sitemap: http' in agent['robots.txt'][2]
+              and 'llms-full.txt</loc>' in agent['sitemap.xml'][2] and all(agent['head']) and agent['kept'] == [], {k: (v[0] if isinstance(v, list) and k.endswith(('txt', 'xml', 'png')) else v) for k, v in agent.items()})
+        check('the three texts are UTF-8 plain text and the sitemap XML, readable from a script on any site; no other file is',
+              all(agent[f][3] == 'text/plain; charset=utf-8' and agent[f][4] == '*' for f in ('llms.txt', 'llms-full.txt', 'robots.txt'))
+              and agent['sitemap.xml'][3] == 'application/xml; charset=utf-8' and agent['sitemap.xml'][4] == '*' and agent['og.png'][4] is None and agent['other'] == [None, None],
+              {k: v[3:] if k != 'other' and isinstance(v, list) and len(v) == 5 else v for k, v in agent.items() if k not in ('head', 'kept')})
+        # what a program that fetches the page reads before any script runs: the language, the
+        # title, what the app is as data (which the policy lets be: it is no script to run), and
+        # a few plain lines at the top of the body that a screen shows nobody
+        first = page.evaluate('''() => { const j = document.head.querySelector('script[type="application/ld+json"]'), i = document.querySelector('.rk-intro'), r = i.getBoundingClientRect();
+          return { lang: document.documentElement.lang, title: document.title, titles: document.querySelectorAll('head > title').length, stray: document.querySelectorAll('body title').length,
+            data: JSON.parse(j.textContent), top: document.body.firstElementChild === i, h1: [...document.querySelectorAll('h1')].map((h) => h.textContent), text: i.textContent,
+            links: [...i.querySelectorAll('a')].map((a) => [a.getAttribute('href'), a.tabIndex]), box: [Math.round(r.width), Math.round(r.height)], next: i.nextElementSibling.tagName,
+            overflow: document.documentElement.scrollWidth <= innerWidth }; }''')
+        raw = open(os.path.join(DIST, 'index.html'), 'rb').read()
+        check('the page says its language, has its one title in the head and opens its body with what Rikuy is',
+              first['lang'] == 'en' and first['title'].startswith('Rikuy: a LaTeX editor') and first['titles'] == 1 and first['stray'] == 0 and first['top'] and first['h1'] == ['Rikuy']
+              and 'type on the typeset page' in first['text'] and [l[0] for l in first['links']][:2] == ['llms.txt', 'llms-full.txt'] and first['links'][2][0].startswith('https://github.com/')
+              and raw.index(b'<title>') < raw.index(b'</head>') < raw.index(b'<h1>Rikuy</h1>') < 4096 and raw.index(b'<noscript>') < 6000, first)
+        check('those lines take no room on the screen and no stop of the Tab key', first['box'] == [1, 1] and all(l[1] == -1 for l in first['links']) and first['next'] == 'NOSCRIPT' and first['overflow'], first)
+        d = first['data']
+        check('schema.org data names the app, its price and its source, and the policy raised nothing over it',
+              d.get('@type') == 'SoftwareApplication' and d.get('name') == 'Rikuy' and d.get('operatingSystem') == 'Any (web browser)' and d.get('offers', {}).get('price') == '0'
+              and d.get('url', '').startswith('http') and re.match(r'^\d+\.\d+\.\d+$', d.get('softwareVersion', '')) and d.get('sameAs', '').startswith('https://github.com/')
+              and not refused, (d, refused))
+        check('rikuy.api names the build: the package version and the installed app\'s', page.evaluate('rikuy.api.version') == d['softwareVersion'] + '+' + va, page.evaluate('rikuy.api.version'))
 
         click_text(page, 'Click anywhere in this paragraph')
         page.keyboard.type('Offline proof. ')
