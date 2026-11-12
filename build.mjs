@@ -25,7 +25,6 @@ const R = (p) => path.join(root, p);
 // where the built page goes (RIKUY_OUT lets tests build next to a separate set of packs)
 const OUT = process.env.RIKUY_OUT || R('dist');
 const O = (p) => path.join(OUT, p);
-const b64 = (p) => fs.readFileSync(p).toString('base64');
 // the installed app (service worker, manifest, offline copy): every build but the artifact's
 const APP = !process.env.RIKUY_SHARE;
 // (the artifact's copy, built with RIKUY_SHARE, has no room for it either way)
@@ -48,7 +47,20 @@ const gitOut = await build({ entryPoints: [R('src/git.js')], bundle: true, forma
 const gitJs = gitOut.outputFiles[0].text;
 
 // 3. fonts
-const F = (family, file, weight, style) => `@font-face{font-family:"${family}";src:url(data:font/woff2;base64,${b64(R('build/fonts/' + file))}) format("woff2");font-weight:${weight};font-style:${style};font-display:block}`;
+// Every font is in rikuy.html as data: (the artifact host lets a page take fonts no other way).
+// The hosted page (index.html) takes them as files in fonts/ instead, named by their hash and
+// cached for good: as data: they were two thirds of the page (1.3 of 1.9 MB), in front of the
+// script, and all of them came with every visit, the nine faces a document rarely uses too
+// (Paper Modern Sans, fifteen of KaTeX's twenty). FONT_FILES maps each data: address to its file.
+const FONT_FILES = new Map();
+const fontFile = (stem, bytes) => {
+  // the first 16 hex digits of its SHA-256 in the name: build/app.mjs keeps such a file across versions
+  const name = 'fonts/' + stem + '-' + crypto.createHash('sha256').update(bytes).digest('hex').slice(0, 16) + '.woff2';
+  const data = 'data:font/woff2;base64,' + bytes.toString('base64');
+  FONT_FILES.set(data, { name, bytes });
+  return { data, name, bytes };
+};
+const F = (family, file, weight, style) => `@font-face{font-family:"${family}";src:url(${fontFile(file.replace(/\.woff2$/, ''), fs.readFileSync(R('build/fonts/' + file))).data}) format("woff2");font-weight:${weight};font-style:${style};font-display:block}`;
 const fonts = [
   F('Paper Modern Serif', 'cmu-serif-500-roman.woff2', 400, 'normal'),
   F('Paper Modern Serif', 'cmu-serif-500-italic.woff2', 400, 'italic'),
@@ -68,9 +80,8 @@ const fonts = [
 // so the browser uses the extended cut only for text that needs it, and characters past both fall
 // back to the next font, as they did when Google served the same cuts.
 // The Latin Extended faces add 101 KB to the page as data: (75 KB of fonts), under the 200 KB the
-// artifact can spare, so rikuy.html carries them; the hosted page (index.html) takes them as files
-// in fonts/ instead, named by their hash and cached for good, fetched only when a character needs
-// them (fontFiles, below).
+// artifact can spare, so rikuy.html carries them; in the hosted page they are files like every
+// other font, fetched only when a character needs them.
 const plexFace = (pkg, weight, cut) => {
   const file = `${pkg}-${cut}-${weight}-normal.woff2`;
   const dir = R('node_modules/@fontsource/' + pkg);
@@ -78,20 +89,16 @@ const plexFace = (pkg, weight, cut) => {
   const family = face && (face.match(/font-family:\s*'([^']+)'/) || [])[1];
   const range = face && (face.match(/unicode-range:\s*([^;]+);/) || [])[1];
   if (!family || !range) throw new Error('@fontsource/' + pkg + ': no ' + cut + ' face for weight ' + weight + ' in ' + weight + '.css');
-  const bytes = fs.readFileSync(path.join(dir, 'files', file));
-  const css = (src) => `@font-face{font-family:"${family}";src:url(${src}) format("woff2");font-weight:${weight};font-style:normal;font-display:${cut === 'latin' ? 'block' : 'swap'};unicode-range:${range}}`;
-  // the hosted page's file: its name carries the first 16 hex digits of its SHA-256 (build/app.mjs)
-  const name = 'fonts/' + file.replace(/\.woff2$/, '') + '-' + crypto.createHash('sha256').update(bytes).digest('hex').slice(0, 16) + '.woff2';
-  return { inline: css('data:font/woff2;base64,' + bytes.toString('base64')), asFile: css(name), name, bytes };
+  const f = fontFile(file.replace(/\.woff2$/, ''), fs.readFileSync(path.join(dir, 'files', file)));
+  return `@font-face{font-family:"${family}";src:url(${f.data}) format("woff2");font-weight:${weight};font-style:normal;font-display:${cut === 'latin' ? 'block' : 'swap'};unicode-range:${range}}`;
 };
 const PLEX = [['ibm-plex-sans', 400], ['ibm-plex-sans', 500], ['ibm-plex-sans', 600], ['ibm-plex-mono', 400], ['ibm-plex-mono', 500]];
-const uiFonts = PLEX.map(([p, w]) => plexFace(p, w, 'latin').inline).join('\n');
-const extFaces = PLEX.map(([p, w]) => plexFace(p, w, 'latin-ext'));
-const extInline = extFaces.map((f) => f.inline).join('\n');
+const uiFonts = PLEX.map(([p, w]) => plexFace(p, w, 'latin')).join('\n');
+const extInline = PLEX.map(([p, w]) => plexFace(p, w, 'latin-ext')).join('\n');
 
 // 4. KaTeX css with embedded woff2
 let katexCss = fs.readFileSync(R('node_modules/katex/dist/katex.min.css'), 'utf8');
-katexCss = katexCss.replace(/src:url\(fonts\/([A-Za-z0-9_-]+)\.woff2\) format\("woff2"\)(,url\([^)]*\) format\("[^"]*"\))*/g, (m, name) => `src:url(data:font/woff2;base64,${b64(R('node_modules/katex/dist/fonts/' + name + '.woff2'))}) format("woff2")`);
+katexCss = katexCss.replace(/src:url\(fonts\/([A-Za-z0-9_-]+)\.woff2\) format\("woff2"\)(,url\([^)]*\) format\("[^"]*"\))*/g, (m, name) => `src:url(${fontFile(name, fs.readFileSync(R('node_modules/katex/dist/fonts/' + name + '.woff2'))).data}) format("woff2")`);
 if (/url\(fonts\//.test(katexCss)) throw new Error('KaTeX font url left behind');
 
 // 5. CodeMirror css
@@ -116,13 +123,32 @@ const SKELETON = '<!doctype html><html><head><meta charset=utf8><meta name=viewp
   + 'body{margin:0;font:14px system-ui,sans-serif;background:#fafafa}img{max-width:100%}[hidden]{display:none!important}</style></head><body>';
 // the hosted build's index.html is the installed app: its head names the version, the manifest and
 // the icons, and it takes KaTeX from lib/ (build/app.mjs); finishApp stamps the version at the end
-// it also takes the Latin Extended faces from fonts/ rather than inside the page
+// it also takes every font from fonts/ rather than inside the page
+let appHtml = html;
 if (APP) {
   fs.rmSync(O('fonts'), { recursive: true, force: true });
   fs.mkdirSync(O('fonts'), { recursive: true });
-  for (const f of extFaces) fs.writeFileSync(O(f.name), f.bytes);
+  for (const [data, f] of FONT_FILES) {
+    fs.writeFileSync(O(f.name), f.bytes);
+    if (!appHtml.includes('url(' + data + ')')) throw new Error(f.name + ': its data: address is not in the page');
+    appHtml = appHtml.split('url(' + data + ')').join('url(' + f.name + ')');
+  }
+  if (/url\(data:font\//.test(appHtml)) throw new Error('index.html still carries a font as data:');
 }
-fs.writeFileSync(O('index.html'), APP ? appPage(OUT, html.replace(extInline, () => extFaces.map((f) => f.asFile).join('\n')), SKELETON) : SKELETON + html + '</body></html>');
+// The faces the page waits for before it lays the document out (loadFonts in src/app.js: the text
+// faces, KaTeX's five, the interface's five), in the order a first paint wants them: asked for
+// from the head, they travel beside the page instead of after its styles are read.
+const FIRST_FONTS = ['ibm-plex-sans-latin-400-normal', 'ibm-plex-sans-latin-500-normal', 'ibm-plex-sans-latin-600-normal', 'cmu-serif-500-roman', 'cmu-serif-700-roman',
+  'cmu-serif-500-italic', 'KaTeX_Main-Regular', 'KaTeX_Math-Italic', 'cmu-typewriter-text-500-roman', 'cmu-serif-700-italic', 'KaTeX_AMS-Regular', 'KaTeX_Size1-Regular',
+  'KaTeX_Size2-Regular', 'ibm-plex-mono-latin-400-normal', 'ibm-plex-mono-latin-500-normal'];
+const firstFonts = FIRST_FONTS.map((stem) => {
+  const f = [...FONT_FILES.values()].find((x) => x.name.startsWith('fonts/' + stem + '-') && x.name.length === ('fonts/' + stem).length + 23);
+  if (!f) throw new Error('no font ' + stem + ' to preload');
+  return f.name;
+});
+const indexHtml = APP ? appPage(OUT, appHtml, SKELETON, firstFonts) : SKELETON + html + '</body></html>';
+if (APP && !indexHtml.includes('<link rel="preload" as="script" href="lib/katex.min.js" integrity="sha384-')) throw new Error('src/template.html: no KaTeX script tag with its hash for index.html to ask for ahead');
+fs.writeFileSync(O('index.html'), indexHtml);
 fs.writeFileSync(O('git.js'), gitJs);
 console.log(O('rikuy.html'), (html.length / 1024).toFixed(0) + ' KB', 'js', (js.length / 1024).toFixed(0) + ' KB');
 

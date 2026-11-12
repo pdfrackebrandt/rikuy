@@ -766,6 +766,57 @@ Tests:
     the caret inside a macro's argument inserts there; not tried with a real screen reader, nor
     in Safari or Firefox; the link sizes browsers take are from their documentation.
 
+35. **Faster, measured.** Done in the code (pull request 9), asked for by the owner ("make
+    everything more efficient", Rust or C where it pays). *What was measured first.* A
+    keystroke on a 21 page document takes 20 ms in the page's JavaScript; a PDF takes 1.2 s
+    (the sample), 1.7 s (a TikZ, pgfplots and hyperref preamble) and 4.6 s (LuaLaTeX, five
+    scripts), in TeX's own C as WebAssembly; a first PDF on a first visit takes 17 s at
+    20 Mbit/s, the time of 28 MB. So nothing was rewritten in another language: the time is in
+    code that already is C, and in bytes. Two benchmarks now say what a person waits for:
+    `dev/bench_compile.py` (from an edit to the drawn page) and `dev/bench_load.py` (a first
+    and a later visit over a shaped line). *Compiling.* A preamble's format (`PRE` in
+    `tex/engine.js`): after two compiles the worker dumps TeX's state at `\begin{document}`,
+    checks one pass from it against the ordinary pass byte for byte, and later pdfLaTeX passes
+    read only the body: the heavy preamble 1758 ms, then 493 to 626 ms, in the page; of 63
+    documents (`dev/bench/` and 59 of the corpus) 30 get one and compile 2.1 times faster from
+    their third compile on, and all 63 give the PDF, pages, text and problems of main's worker
+    at every step (`dev/bench_same.py`). The worker starts 0.9 s sooner (the tree's 44,000
+    nodes made directly: 2532 to 1629 ms). The PDF shows 0.3 s sooner once TeX is done (one
+    PDF.js worker kept, SyncTeX read after the pages in view, pages drawn one at a time).
+    *Loading.* The hosted page's fonts are files beside it: `index.html` 1.93 MB to 0.63 MB,
+    first paint 500 to 148 ms on the cable line and 2196 to 276 ms on the phone line, the editor
+    usable 989 to 721 ms (cable, runs taken in turn). On a first visit to a desktop on an
+    unmetered line the page fetches and starts TeX while the visitor reads (`warmTeX`): Preview
+    pressed 15 s in shows the PDF after 3.6 s, was 15.4 s. The price is 28 MB instead of 3.5 MB
+    for a visit that never asks for a PDF, and about 330 MB of memory for up to three minutes;
+    it does not happen with Save-Data, on a cellular or slow line, on a touch device that says
+    nothing about its line, or under 4 GB. A project's next first compile gets its packs
+    together. A hang is gone: TeX's synchronous read of a pack waited for ever behind the
+    worker's own write to the pack store (the heavy document, 4 of 4 runs on an unshaped line).
+    `build/app.mjs` writes `data-tree` again, so "Available offline" stays across visits.
+    *Review.* A fresh agent attacked the result and found that a format could be wrong or
+    stuck in cases one pass's check does not see; fixed with tests: a stranger's document is
+    never dumped (its preamble could loop in the dump run alone, and nothing stopped the
+    worker), the page lets a worker go that does not come back from a step within 30 s and
+    sends the waiting compile to a new one, and a preamble is refused that sets `\everyjob`,
+    keeps a file's date or size or an l3fp random number, or looks for its own PDF. A format
+    dumped but not yet checked survives a compile that comes in between (before, someone typing
+    paid for the dump after every compile and never got a format). Evidence: `npm test` green;
+    `test/preamble.py` 31 (new, in the TeX workflow), `pdf.py` 23/23, `engines.py` 40/40,
+    `agent.py` 116, `offline.py` 54/54, `browser.py` 182, `ribbon.py` 146, `scripts.py` 302,
+    `word.py` 110, `share.py` 46, `files.py` 68, `features.py` 36, `launch.py` 18,
+    `deploy_check.py` 43/43; `dist/tex` as the manifest lists it (one line moved: `engine.js`).
+    Open: a first PDF asked for at once is as slow as before (the engine is 12.3 MB and a plain
+    article reads 16 MB of packs: a smaller start needs a change to the tree); LuaLaTeX and
+    XeLaTeX passes are untouched (fonts loaded in a preamble do not survive a dump); common
+    preambles get no format (`\makeindex`, beamer, minted, `\hypersetup{pdftitle=}`); a tree
+    package that keeps a file's date at load time would not be seen; 2.7 MB of ICU data and
+    font caches are read at every start, also for pdfLaTeX; typing on documents of a hundred
+    pages and Word export were not profiled; the warm up's conditions were read for Safari and
+    Firefox, not run; Cloudflare's own compression and HTTP/2 ordering were not measured (the
+    benchmark's server speaks HTTP/1.1 with Brotli); the security audit skill's own workflow
+    was not run beside the review.
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000

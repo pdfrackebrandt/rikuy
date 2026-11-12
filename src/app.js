@@ -15,7 +15,7 @@ import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath } from './paste.js';
 import { findProblems, missingFigures } from './problems.js';
 import { WidgetLayer } from './widget.js';
-import { APP, appInit, asset as appAsset, registerApp, takeLaunches, takeShared } from './pwa.js';
+import { APP, appInit, asset as appAsset, registerApp, takeLaunches, takeShared, warmTeX } from './pwa.js';
 
 // Gray boxes of 320 by 240 points that stand in, in a coauthor's PDF, for figures a link does
 // not carry: a PDF, a PNG whose resolution makes it that size, and EPS for latex with dvips.
@@ -42,6 +42,8 @@ const PX_PER_PT = 96 / 72.27;
 const STORE = 'galley.project.v1';
 const ENGINE_LABEL = { pdflatex: 'pdfLaTeX', xelatex: 'XeLaTeX', lualatex: 'LuaLaTeX', latex: 'LaTeX (dvips)' };
 const PREFS = 'galley.prefs.v1';
+// the TeX packs the last compile of a project read: {p: project, v: the tree's version, n: [packs]}
+const TEXREAD = 'galley.texread.v1';
 const CDN = {
   cm: 'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.js',
   cmTex: 'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/stex/stex.js',
@@ -491,7 +493,9 @@ class App {
     // the installed app (hosted build only): its service worker, updates, the offline marks
     if (__RIKUY_APP__ && appInit().on) registerApp(this);
     await this.waitForKaTeX();
-    await Promise.race([this.loadFonts(), new Promise((r) => setTimeout(r, 2500))]);
+    // (the hosted page's fonts are files, asked for from its head: on a slow line they can come
+    // seconds after the page, and a layout made before them would only be made again)
+    await Promise.race([this.loadFonts(), new Promise((r) => setTimeout(r, __RIKUY_APP__ && APP.on ? 20000 : 2500))]);
     this.computePx();
     // whether this project came from someone else, before its live figures are drawn
     await this.linkInfo();
@@ -519,6 +523,8 @@ class App {
     this.readyDone();
     // files the system handed the installed app: opened with Rikuy, or shared to it
     if (__RIKUY_APP__ && APP.on) { await takeShared(this); takeLaunches(this); }
+    // TeX fetched and started ahead of the first press of Preview, where the line allows it
+    if (__RIKUY_APP__ && APP.on) warmTeX(this);
   }
 
   loadSample() {
@@ -543,7 +549,8 @@ class App {
 
   async loadFonts() {
     if (!document.fonts || !document.fonts.load) return;
-    // the interface's faces as well: they are in the page, so they load in no time, and any face
+    // the interface's faces as well: they are in the page, or asked for from its head (the hosted
+    // page: build.mjs's FIRST_FONTS is this list), so they cost no time, and any face
     // that finishes loading after boot lays the pages out again (the loadingdone listener in
     // init), which drops a selection; a weight first used by a toast or the selection bubble did
     const faces = ['400 16px "Paper Modern Serif"', 'italic 400 16px "Paper Modern Serif"', 'bold 16px "Paper Modern Serif"', 'italic bold 16px "Paper Modern Serif"', '16px "Paper Modern Typewriter"', '16px KaTeX_Main', 'italic 16px KaTeX_Math', '16px KaTeX_Size1', '16px KaTeX_Size2', '16px KaTeX_AMS',
@@ -4604,7 +4611,14 @@ class App {
       // with ?texlive= pointing elsewhere would fill their browser's TeX cache from a stranger
       try { if (mirror && new URLSearchParams(location.search).get('texlive') === mirror && new URL(mirror, location.href).origin !== location.origin) mirror = null; } catch (e) { mirror = null; }
       this.tex = new TeXEngine(new URL('tex/', location.href).href, mirror ? new URL(mirror, location.href).href : null, asset('tex/'));
-      this.tex.onStatus = (s) => this.texStatus(s);
+      // (a TeX started ahead of any press says nothing in the PDF pane; what it said last is
+      // shown when a compile joins it)
+      this.tex.onStatus = (s) => {
+        this.texLast = s;
+        if (!this.texQuiet) this.texStatus(s);
+        // TeX begins to typeset: the PDF viewer's scripts come meanwhile
+        if (s.status === 'pass' && !this.pdfWarmed) { this.pdfWarmed = true; this.pdfPane().warm(); }
+      };
     }
     return this.tex;
   }
@@ -4731,13 +4745,24 @@ class App {
     const bibSig = textSig('', [...this.files].filter(([n]) => /\.(bib|bibtex)$/i.test(n)));
     try {
       const engine = this.texEngine();
+      if (this.texQuiet) { this.texQuiet = false; if (!engine.info && this.texLast) this.texStatus(this.texLast); }
+      if (__RIKUY_APP__ && !this.prefs.texUsed) { this.prefs.texUsed = true; this.savePrefs(); }
       if (!engine.info) bar.hidden = false;
       // a document that came in a link compiles restricted, and the worker keeps nothing of it
       const li = await this.linkInfo();
       const untrusted = !!(li && !li.allowed);
       this.syncEngineMenu();
-      const res = await engine.compile({ project: this.name + '|' + this.main, files: await this.compileFiles(), main: this.main, clean: !!opts.clean, bibSig, engine: this.engineChoice(), shellEscape: this.prefs.shellEscape !== false && !untrusted, untrusted });
+      // The packs this project's last compile read, handed to the worker to load together before
+      // TeX starts. Without them TeX asks for each when it first opens a file from it, one after
+      // another and with everything else waiting; in a later session they come from what the
+      // browser kept (a repeat visit's first PDF came 0.4 s sooner of 5.6), and where nothing
+      // was kept they are the downloads this document needs anyway.
+      const project = this.name + '|' + this.main;
+      const prefetch = (info) => { const h = load(TEXREAD); return h && info && h.p === project && h.v === info.v && Array.isArray(h.n) ? h.n.filter((n) => Number.isInteger(n) && n >= 0 && n < info.packs).slice(0, 400) : []; };
+      const res = await engine.compile({ project, files: await this.compileFiles(), main: this.main, clean: !!opts.clean, prefetch, bibSig, engine: this.engineChoice(), shellEscape: this.prefs.shellEscape !== false && !untrusted, untrusted });
       if (gen !== (this.pdfGen || 0)) return; // another project was opened meanwhile
+      // (a pass from the preamble's format opens no class or package: its list is short of them)
+      if (res.ok && engine.info && !res.fromFormat && !(res.unkept && res.unkept.length)) store(TEXREAD, { p: project, v: engine.info.v, n: (res.read || []).map((x) => x[0]) });
       this.lastCompile = { read: res.read || [], unkept: res.unkept || [], unkeptScripts: !!res.unkeptScripts, ok: !!res.ok, failed: '', engine: res.engine || null, pages: 0 };
       // TeX stopped where a file's pack could not be loaded (offline, or the network failed)
       // the copy on claude.ai has no room for the Chinese and Arabic fonts: say where they are

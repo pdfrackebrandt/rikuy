@@ -45,6 +45,24 @@ def variant(name, mark):
     return d
 
 
+def tree_version(d):
+    """The v of the TeX tree's index (tex/tree.wasm: a WebAssembly wrapper around gzipped JSON), '' without a tree."""
+    import gzip
+    try: b = open(os.path.join(d, 'tex', 'tree.wasm'), 'rb').read()
+    except OSError: return ''
+    i = 9
+    def leb():
+        nonlocal i
+        n = s = 0
+        while True:
+            x = b[i]; i += 1; n += (x & 0x7f) << s; s += 7
+            if not x & 0x80: return n
+    leb()
+    name = leb()
+    i += name
+    return json.loads(gzip.decompress(b[i:])).get('v') or ''
+
+
 def ready(page, timeout=30000):
     page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=timeout)
 
@@ -83,11 +101,16 @@ def main():
         # (what the page's policy refused, which the console says)
         refused = []
         page.on('console', lambda m: refused.append(m.text) if 'Content Security Policy' in m.text else None)
+        # (and a file the head asked for ahead that the page then did not use)
+        unused = []
+        page.on('console', lambda m: unused.append(m.text) if 'preloaded using link preload but not used' in m.text else None)
         page.goto(URL)
         ready(page)
         page.wait_for_timeout(500)
         nmath = page.evaluate("document.querySelectorAll('#pages .katex').length")
         check('the hosted page names its version and its manifest', version(page) == va and page.evaluate("!!document.querySelector('link[rel=manifest]')"), version(page))
+        named = page.evaluate("document.querySelector('meta[name=\"rikuy-app\"]').dataset.tree || ''")
+        check('and the version of the TeX tree beside it, as the tree\'s index has it (none where there is no tree)', named == tree_version(DIST), (named, tree_version(DIST)))
         wait_sw(page)
         check('the service worker controls the page on the first visit (claimed)', page.evaluate('navigator.serviceWorker.controller.scriptURL').endswith('/sw.js'))
         page.wait_for_timeout(300)
@@ -97,7 +120,23 @@ def main():
         both = page.evaluate(ENGINE_BOTH)
         check('the TeX worker\'s scripts are asked for under the page\'s version', ('/_v/' + va + '/tex/') in both['base'], both['base'])
         imm = page.evaluate('caches.open("rikuy-immutable").then(c => c.keys()).then(k => k.map(r => r.url))')
-        check('install kept the Latin Extended fonts, named by their hash, apart from the version', sum('/fonts/ibm-plex-' in u for u in imm) == 5, imm)
+        nfonts = len(os.listdir(os.path.join(DIST, 'fonts')))
+        check('install kept the fonts (%d, 5 of them the Latin Extended cut), named by their hash, apart from the version' % nfonts,
+              nfonts > 30 and sum('/fonts/' in u for u in imm) == nfonts and sum('/fonts/ibm-plex-' in u and '-latin-ext-' in u for u in imm) == 5, imm)
+        # the hosted page's fonts are files: none inside the page, the faces the first layout waits
+        # for asked for from the head (with KaTeX's script), each of them then used, and no face
+        # beyond the ones the document and the interface drew with fetched by the page
+        # (the service worker fetches all of them to keep, once it is registered: after that layout)
+        head = page.evaluate('''() => ({ data: /url\\(data:font/.test(document.documentElement.innerHTML),
+          pre: [...document.querySelectorAll('link[rel=preload]')].map((l) => [l.as, new URL(l.href).pathname]),
+          got: performance.getEntriesByType('resource').filter((e) => /\\/fonts\\//.test(e.name) && e.initiatorType !== 'fetch').map((e) => new URL(e.name).pathname),
+          ready: performance.getEntriesByType('resource').filter((e) => /\\/sw\\.js$/.test(e.name)).length })''')
+        fpre = [u for a, u in head['pre'] if a == 'font']
+        page.wait_for_timeout(3500)
+        check('the hosted page carries no font as data:; its head asks for KaTeX and the 15 faces the first layout waits for, and each is used',
+              not head['data'] and len(fpre) == 15 and ['script', '/lib/katex.min.js'] in head['pre'] and len(head['pre']) == 16 and not unused, (head['pre'], unused))
+        check('the page fetches the faces it draws with and no others (Paper Modern Sans, most of KaTeX\'s)', set(fpre) <= set(head['got']) and len(set(head['got'])) < nfonts - 10
+              and not any('sans-serif' in u for u in head['got']), sorted(set(head['got']) - set(fpre)))
 
         # what crawlers and AI agents read (build/app.mjs): served, named in the page's head, and
         # not kept by the service worker, which has no use for them
@@ -152,6 +191,26 @@ def main():
             o.put(new TextEncoder().encode('kept pack bytes'), 'p:' + good); o.put(new TextEncoder().encode('planted bytes'), 'p:00112233aabbccdd');
             t.oncomplete = () => res(); t.onerror = rej; };
         })''', [good])
+
+        # TeX reads a pack from inside a run while its worker still has a write to the pack store
+        # open (packs fetched ahead, being kept): the read cannot be answered from that store until
+        # the worker runs again, which it does only once it has the pack. Here the page holds a
+        # write open; the pack asked for is kept nowhere and not on this server, so the answer that
+        # ends the wait for the store is the server's 404.
+        held = page.evaluate('''([good]) => new Promise((res) => {
+          const r = indexedDB.open('galley-tex', 1);
+          r.onsuccess = () => {
+            const o = r.result.transaction('blobs', 'readwrite').objectStore('blobs');
+            window.__hold = true;
+            (function spin() { if (window.__hold) o.get('none').onsuccess = spin; })();
+            const src = 'const t = Date.now(); let r; try { const x = new XMLHttpRequest(); x.open("GET", self.B + "p-' + good + '.wasm", false); x.send(); r = x.status; } catch (e) { r = "ERR " + e.name; } postMessage([r, Date.now() - t]);';
+            const w = new Worker(URL.createObjectURL(new Blob(['self.B=' + JSON.stringify(new URL('tex/', location.href).href) + ';' + src], { type: 'text/javascript' })));
+            const end = (v) => { window.__hold = false; w.terminate(); res(v); };
+            w.onmessage = (e) => end(e.data); w.onerror = (e) => end(['ERR ' + e.message, 0]);
+            setTimeout(() => end(['no answer', 15000]), 15000);
+          };
+        })''', ['ffeeddccbbaa9988'])
+        check('a pack read while the TeX worker holds a write on its store open is answered from the network, not waited for without end', held[0] == 404 and held[1] < 8000, held)
 
         # Word once while online: its worker fetches pandoc's parts, checks them and keeps pandoc
         word = os.path.isfile(os.path.join(DIST, 'word', 'pandoc.json'))
@@ -290,6 +349,42 @@ def main():
             print('SKIP compile offline: no TeX tree in %s (tex/tree.wasm); it runs where dist/tex is built (CI\'s TeX job)' % DIST)
         else:
             srv = pages.start(PORT, DIST)
+            # TeX fetched and started ahead of the first press of Preview (src/pwa.js, warmTeX): on
+            # a device with 8 GB the started TeX stays for the press, with 4 GB it is let go once
+            # its files are kept and the press starts it from the kept copy
+            for mem in (8, 4):
+                ctx = b.new_context(viewport={'width': 1500, 'height': 950})
+                page = ctx.new_page()
+                page.add_init_script("Object.defineProperty(Navigator.prototype, 'deviceMemory', { get() { return %d; } })" % mem)
+                page.goto(URL)
+                ready(page)
+                wait_sw(page)
+                page.wait_for_function('window.rikuy.prefs.texWarm', timeout=300000)
+                page.wait_for_timeout(300)
+                said = page.evaluate('[document.getElementById("pdf-live").textContent, document.getElementById("pdf-status").textContent, !!(window.rikuy.tex && window.rikuy.tex.info), document.body.classList.contains("pdf-on"), !!window.rikuy.prefs.texUsed]')
+                check('%d GB: a first visit fetches TeX ahead of any press of Preview%s, and says nothing of it in the PDF pane or its status line' % (mem, ' and keeps it started' if mem == 8 else ', then lets the started TeX go'),
+                      said == ['', 'LaTeX', mem == 8, False, False], said)
+                n = len(srv.hits)
+                page.click('#b-pdf')
+                page.wait_for_function('window.rikuy.lastCompile && !window.rikuy.compiling', timeout=180000)
+                asked = [h for h in srv.hits[n:] if h.startswith('/tex/')]
+                done = page.evaluate('({ ok: window.rikuy.lastCompile.ok, pages: window.rikuy.lastCompile.pages, read: window.rikuy.lastCompile.read.map((x) => x[0]), used: window.rikuy.prefs.texUsed, tree: window.rikuy.tex.info.v, hint: JSON.parse(localStorage.getItem("galley.texread.v1")) })')
+                check('%d GB: the sample\'s first PDF then asks the server for no TeX file: the engine and every pack it reads were kept ahead' % mem, done['ok'] and done['pages'] == 3 and asked == [], (done['ok'], asked))
+                check('%d GB: the press is remembered, and the packs the compile read are noted for the project\'s next first compile' % mem, done['used'] is True and done['hint']['v'] == done['tree'] and done['hint']['n'] == done['read'] and len(done['read']) > 5, done)
+                ctx.close()
+            # no megabytes ahead for someone who asked to save data, or on a mobile or a slow line
+            for line in ('saveData: true, effectiveType: "4g"', 'saveData: false, effectiveType: "4g", type: "cellular"', 'saveData: false, effectiveType: "3g"'):
+                ctx = b.new_context()
+                page = ctx.new_page()
+                page.add_init_script("Object.defineProperty(Navigator.prototype, 'connection', { get() { return { %s }; } })" % line)
+                page.goto(URL)
+                ready(page)
+                wait_sw(page)
+                n = len(srv.hits)
+                page.wait_for_timeout(5000)
+                ahead = [h for h in srv.hits[n:] if re.match(r'/tex/[pwt]-|/tex/tree', h)]
+                check('nothing of TeX is fetched ahead where the browser says {%s}' % line, ahead == [] and page.evaluate('!window.rikuy.tex'), ahead)
+                ctx.close()
             ctx = b.new_context(viewport={'width': 1500, 'height': 950})
             page = ctx.new_page()
             page.goto(URL)

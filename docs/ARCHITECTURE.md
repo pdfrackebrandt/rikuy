@@ -337,7 +337,8 @@ servers), is unchanged, and the artifact build (`RIKUY_SHARE` set) compiles `src
   `sw.js` as `const RIKUY = {v, files}` (path → SHA-256, size, kind) followed by `src/sw.js`.
   `_headers` is in the version, so a change of policy reaches the kept page too.
 - **Service worker** (`src/sw.js`). `install` fetches every file of kind `p` (all the page and
-  the TeX worker load, about 7 MB; `l` for any over 4 MiB, fetched on first use) into
+  the TeX worker load, about 7 MB; `l` for any over 4 MiB, fetched on first use; and the fonts,
+  kind `i`, into `rikuy-immutable`) into
   `rikuy-v-<version>`, each checked against its hash (the page by its version tag), so a version
   is kept whole or not at all. `activate` keeps that version and the one before, drops older
   caches and claims the open pages. `fetch` answers the page (navigations to the scope) from the
@@ -352,8 +353,39 @@ servers), is unchanged, and the artifact build (`RIKUY_SHARE` set) compiles `src
 - **Packs.** The service worker does not keep TeX packs: the TeX worker keeps them in IndexedDB
   by hash (section 13), and the service worker answers `tex/p-<hash>.wasm` from there when it is
   kept. That is what lets TeX's synchronous XHR (`loadPackSync`) work offline: a blob worker is
-  controlled by the page's service worker in Chromium. Keeping them in Cache Storage as well
-  would double the largest part of what Rikuy keeps.
+  controlled by the page's service worker in Chromium (one started before the service worker
+  claimed the page too). Keeping them in Cache Storage as well
+  would double the largest part of what Rikuy keeps. The read of the store is waited for one
+  second at most (`pack()`): while TeX waits for its synchronous answer the TeX worker runs
+  nothing, a write to the store it began before stays open, and a read behind that write would
+  never come back; the pack then comes from the network or the HTTP cache.
+- **Loading.** `index.html` has its fonts as files (`fonts/`, 37 of them, named by hash, cached
+  for good and kept by the service worker), not as `data:` like `rikuy.html`: the page is 0.6 MB
+  instead of 1.9 (0.2 instead of 1.2 compressed), and a visit fetches the faces it draws with.
+  The fifteen that `loadFonts()` waits for before the first layout (`FIRST_FONTS` in `build.mjs`:
+  the two lists are one) and KaTeX's script are asked for by `<link rel="preload">` at the top
+  of the body, so they travel beside the page. The service worker is registered once the
+  document is on the page (`app.ready`), so that its install, some seventy files, does not
+  share the line with them; on a first visit a second later, and not while a compile begun by
+  then runs, so that it is not in the way of the engine either. The PDF viewer's scripts are
+  fetched when TeX begins to typeset (`PdfView.warm()`), not when it is done.
+  `dev/bench_load.py` measures all of it over a shaped line.
+- **TeX ahead of the first press** (`warmTeX()` in `src/pwa.js`, `TeXEngine.warm()`). On a first
+  visit, once the service worker is in charge and the page is idle, the TeX worker is started:
+  it fetches and keeps the engine and the packs every document reads (20 MB), and then the five
+  packs of `WARM_FILES`, what a plain article reads beyond them (4 MB). A press of Preview then
+  finds TeX running, or further along. Not where `mayFetchAhead()` says no: without a network,
+  with Save-Data on, on a mobile or slow line (`navigator.connection`), on a phone or tablet
+  whose browser says nothing about its line, with less than 4 GB of memory. What the worker
+  says meanwhile is not shown (`texQuiet`) until a compile joins it. If no press comes, the
+  started TeX (330 MB) is let go after three minutes (at once where the browser does not say
+  the device has 8 GB); what it fetched stays kept. Later visits start TeX ahead only for
+  someone who has compiled here before (`prefs.texUsed`) on such a device, from this browser's
+  copy. Nothing of the document runs before a press.
+- **The packs of the last compile.** `compilePdf()` notes the packs a project's compile read
+  (`galley.texread.v1`: project, the tree's version, pack numbers) and hands them to the next
+  session's first compile of that project as `prefetch`: the worker loads them together before
+  TeX starts, not one by one from inside TeX.
 - **Make available offline** (`#b-offline`): `TeXEngine.keep(OFFLINE_FOLDERS)` boots the worker
   (which keeps the engine and the core packs, as for a first PDF) and sends `{keep: {folders}}`;
   `keepPlan()` turns the folders into the packs holding their files and `keep()` fetches those not
@@ -580,7 +612,9 @@ env}`, `{compile}`, `{prefetch}`, `{keep}` (section 6), `{exec}` (one program, f
 `{shell}` (one program through the shell: tests) and sends `{status}`, `{ready}`, `{result}`,
 `{execResult}`, `{shellResult}`, `{error}`. `App.compilePdf` sends all project files
 (`compileFiles`), the engine choice and the shell escape box; `parseTeXLog()` maps the log to
-files and lines; `PdfView.show(pdf, synctex)` draws with PDF.js; past 5 minutes of typesetting,
+files and lines; `PdfView.show(pdf, synctex)` draws with PDF.js (one PDF.js worker for all PDFs, the pages in
+view first and one at a time, SyncTeX read once they are drawn or when a click asks: `open`,
+`pump`, `whenSync`); past 5 minutes of typesetting,
 `stopPdf` ends the worker. `boot()` fetches `tree.wasm`, the mirror index, the engine chunks
 `w-*.wasm` and the core packs; `newTeX(true)` makes `MAIN`; `restoreFontCaches()` follows.
 
@@ -618,6 +652,38 @@ files and lines; `PdfView.show(pdf, synctex)` draws with PDF.js; past 5 minutes 
    `pendingRerun`, up to five TeX passes; indexes are checked after each.
 10. **Driver**: `.xdv` → `xdvipdfmx`; `.dvi` → `dvips`, then `ps2pdf` via `SHELL.dispatch`. The
     result holds `pdf` (null when empty), `synctex`, `log`, `runs`, `passes`, `missing`, `packs`.
+
+**The preamble's format (pdfLaTeX).** A pass is mostly its preamble. After a project's second
+compile with one preamble, when that compile ended settled, without errors and without a program
+run, `preStep` (a timer after the result is posted, never while a job runs: `BUSY`) dumps the
+preamble as a format, `preDump`: INITEX on top of `pdflatex.fmt` reads the main file cut before
+`\begin{document}`, in a copy of the project's folder under the folder's own path (`inCopy`; the
+folder waits in `PRE_KEEP` and comes back untouched). `PRE_FIN` then asks TeX what a format cannot
+hold: nodes on the main vertical list (`\showlists`), colour stacks, open read streams, an open
+group or `\if`; the recorder and the shell's log say whether the preamble wrote a file or ran a
+program; the files it read are searched for the clock and font maps (`PRE_CLOCK`). An empty
+`\write`, a colour push, `\prevdepth`, `\deadcycles` and pgf's random seed are put back at the
+start of every pass; anything else refuses the preamble (`preBad`, for the session). `preVerify`
+then makes one pass from the format and compares it with the last ordinary pass: PDF (but for
+dates and ID), every file written, SyncTeX, the log's problems. Only then is it `PRE.ready`.
+`texRun` asks `preLookup` before each pass (`preKey`: preamble bytes, folder, main file, shell
+escape mode, a stranger's document or not, the names of the project's files; then the SHA-256
+of each project file the preamble read; the day). `preRun` runs `pdflatex --fmt` with a first
+line that takes the preamble's text as characters up to `\begin{document}` (the file is read
+from line 1: lines in errors and SyncTeX are the file's), writes the log and the recorder file
+with the preamble's part from the dump run (`preSplice`), and on an error or a program run puts
+the folder back (`snapFolder`) for an ordinary pass. Formats live in the worker's memory only,
+at most four and 48 MB. The result says `fromFormat` (passes) and `formatNote`; `{status:
+'format'}` follows when one is made or refused. `test/preamble.py`, `dev/bench_same.py`.
+What one pass's check cannot see is ruled out before it: a stranger's document is never dumped
+(its preamble could tell the dump run from a pass and loop there); `\everyjob` must be after the
+preamble what it was before it (`PRE_EJ`); the preamble's text and the project's files must not
+name a file's date, size or checksum or l3fp's random numbers (`PRE_OWN`); and the dump run must
+not have looked for the document's own PDF (`preAsked`). A format is made only where a pass
+takes under ten seconds (`PRE_MAX_PASS`). TeX cannot be interrupted, so the page times each
+step (`{status: 'format-work'}` to `'format'` or `'format-rest'`): after 30 s `TeXEngine.
+formatStuck` lets the worker go, sends the compiles that waited to a new one and asks for no
+format again in that session (`job.preamble = false`).
 
 ## 10. Shell escape: finding and running programs
 
@@ -732,7 +798,8 @@ under a real one's name. A page on claude.ai reaches only its own server: self h
    by `build/fonts/subset.py`), the interface's IBM Plex Sans and Mono (Google Fonts' Latin and Latin
    Extended cuts, unchanged, from npm's `@fontsource` packages, each with its unicode-range) and
    the CSS go into `src/template.html` as `dist/rikuy.html`, every font as `data:` (the installed
-   app's `index.html` takes the Latin Extended faces from `fonts/<file>-<hash>.woff2` instead);
+   app's `index.html` takes every font from `fonts/<file>-<hash>.woff2` instead, and asks for the
+   fifteen faces its first layout waits for, and for KaTeX's script, at the top of its body);
    worker scripts, `busytex.js`, `biber.js`, `fflate.js`, `pyodide.js`, PDF.js and its worker and
    vendor tool scripts go to `dist/tex/`, npm's Ghostscript module made a classic script (`self.GalleyGs`; the build
    fails if its stack exports moved), control bytes escaped. `dist/index.html` is the page as a

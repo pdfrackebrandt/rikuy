@@ -1,0 +1,11 @@
+{
+ "main": "main.tex",
+ "word": [
+  "Click anywhere in this paragraph",
+  "Click wherever in this paragraph"
+ ],
+ "ref": [
+  "The page and the source never disagree,",
+  "The page and the source never disagree\\label{bench:new} (Section~\\ref{bench:new}),"
+ ]
+}
