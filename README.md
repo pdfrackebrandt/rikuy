@@ -1,5 +1,14 @@
 # Rikuy
 
+[![Open Rikuy](https://img.shields.io/badge/open-rikuy.rackebrandt.pe-0B3D25)](https://rikuy.rackebrandt.pe/)
+[![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/pdfrackebrandt/rikuy?style=social)](https://github.com/pdfrackebrandt/rikuy/stargazers)
+
+**Word, PDF and LaTeX in one.** Type on the typeset page as in Word, get the PDF from real TeX
+Live, keep a clean `.tex` that Overleaf, Git and any TeX open. **Try it now at
+<https://rikuy.rackebrandt.pe/>**: no install, no account. If it helps you, a star here is how
+other people find it.
+
 *Rikuy* is Quechua for "to see". It is a LaTeX editor in the browser where you type on the
 typeset page. Click into a paragraph, a formula, a table cell or a footnote on the rendered page
 and edit it there: Rikuy patches the `.tex` source in the smallest way that makes the change,
@@ -117,6 +126,18 @@ An agent that wants to hand someone a document, or to drive the editor, reads
 (`#tex=<base64url>`), the scripting surface `window.rikuy.api` (read and replace the source,
 compile, get the PDF and TeX's problems), and every control's name for an agent that clicks.
 `npm run test:agent` checks all of it.
+
+## Help Rikuy grow
+
+- **Star the repository** (the button at the top right): it is how people searching GitHub
+  find Rikuy, and it tells me what to keep working on.
+- **Share it** with a coauthor, a lab or a course: send <https://rikuy.rackebrandt.pe/>, or a
+  share link from inside Rikuy with your document in it.
+- **Report what breaks.** [Open an issue](https://github.com/pdfrackebrandt/rikuy/issues/new/choose)
+  with the document (or the smallest part of it that shows the problem), what you did and what you
+  expected. A document that compiles on a desktop TeX Live and not here is the most useful report
+  there is.
+- **Ask for what is missing** with the idea form on the same page.
 
 ## Contributing
 
