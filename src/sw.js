@@ -215,10 +215,37 @@ async function packKept(h) {
 // passes them through as they are. They are answered only if they still hash to the pack's name
 // (build_tree.py names a pack by the SHA-256 of these bytes): TeX's synchronous reads never took
 // a pack from the cache before, and a damaged or planted entry must not become a file TeX reads.
+//
+// TeX asks from inside a run, with a synchronous request, and its worker does nothing else until
+// the answer is there. A write to the store that the worker began just before (packs fetched
+// ahead of the run, being kept) cannot finish meanwhile, and a read of the store waits for that
+// write: waiting here for the read would be waiting for ever, with the page saying "Typesetting"
+// until TeX is stopped after five minutes (a document with TikZ and pgfplots did that on its
+// first compile). So a read that has not come back after PACK_WAIT is left, and the pack comes
+// from the network, or from the HTTP cache, where a pack fetched ahead already is; for the next
+// PACK_STUCK no read is waited for at all. Without a network, or where the network has no such
+// pack, the kept bytes are still the answer, whenever they come.
+const PACK_WAIT = 1000, PACK_STUCK = 20000;
+let packStuck = 0;
 async function pack(h, href) {
-  const z = await packKept(h);
-  if (z && (await sha256(z)).startsWith(h)) return new Response(z, { headers: { 'Content-Type': 'application/octet-stream' } });
-  return fetch(href, { credentials: 'same-origin' });
+  const kept = packKept(h).then(async (z) => (z && (await sha256(z)).startsWith(h) ? z : null)).catch(() => null);
+  const answer = (z) => new Response(z, { headers: { 'Content-Type': 'application/octet-stream' } });
+  const net = () => fetch(href, { credentials: 'same-origin' });
+  let timer;
+  const late = new Promise((yes) => { timer = setTimeout(() => yes(undefined), Date.now() < packStuck ? 0 : PACK_WAIT); });
+  const z = await Promise.race([kept, late]);
+  clearTimeout(timer);
+  if (z) return answer(z);
+  if (z === null) return net();
+  packStuck = Date.now() + PACK_STUCK;
+  let res = null, err = null;
+  try { res = await net(); } catch (e) { err = e; }
+  if (res && res.ok) return res;
+  // (an answer that is no pack, a 404 say, waits for the store once more, but not for ever)
+  const k = await (res ? Promise.race([kept, new Promise((yes) => setTimeout(() => yes(null), PACK_WAIT))]) : kept);
+  if (k) return answer(k);
+  if (res) return res;
+  throw err;
 }
 
 // ---- files shared to the installed app (manifest share_target) -----------------------------

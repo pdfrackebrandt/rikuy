@@ -153,6 +153,26 @@ def main():
             t.oncomplete = () => res(); t.onerror = rej; };
         })''', [good])
 
+        # TeX reads a pack from inside a run while its worker still has a write to the pack store
+        # open (packs fetched ahead, being kept): the read cannot be answered from that store until
+        # the worker runs again, which it does only once it has the pack. Here the page holds a
+        # write open; the pack asked for is kept nowhere and not on this server, so the answer that
+        # ends the wait for the store is the server's 404.
+        held = page.evaluate('''([good]) => new Promise((res) => {
+          const r = indexedDB.open('galley-tex', 1);
+          r.onsuccess = () => {
+            const o = r.result.transaction('blobs', 'readwrite').objectStore('blobs');
+            window.__hold = true;
+            (function spin() { if (window.__hold) o.get('none').onsuccess = spin; })();
+            const src = 'const t = Date.now(); let r; try { const x = new XMLHttpRequest(); x.open("GET", self.B + "p-' + good + '.wasm", false); x.send(); r = x.status; } catch (e) { r = "ERR " + e.name; } postMessage([r, Date.now() - t]);';
+            const w = new Worker(URL.createObjectURL(new Blob(['self.B=' + JSON.stringify(new URL('tex/', location.href).href) + ';' + src], { type: 'text/javascript' })));
+            const end = (v) => { window.__hold = false; w.terminate(); res(v); };
+            w.onmessage = (e) => end(e.data); w.onerror = (e) => end(['ERR ' + e.message, 0]);
+            setTimeout(() => end(['no answer', 15000]), 15000);
+          };
+        })''', ['ffeeddccbbaa9988'])
+        check('a pack read while the TeX worker holds a write on its store open is answered from the network, not waited for without end', held[0] == 404 and held[1] < 8000, held)
+
         # Word once while online: its worker fetches pandoc's parts, checks them and keeps pandoc
         word = os.path.isfile(os.path.join(DIST, 'word', 'pandoc.json'))
         if word:
