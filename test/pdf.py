@@ -139,6 +139,30 @@ with sync_playwright() as p:
     check('no page errors', not errors, errors[:5])
     b.close()
 
+    # A preamble's format is made between compiles, in a run of TeX that cannot be stopped. A
+    # preamble that loops in that run alone (it can tell it by a folder that is there only then)
+    # must not take the worker with it: the page lets it go after half a minute and the compile
+    # that waited is made by a new one. (For one's own document: a stranger's is never dumped.)
+    b, page, errors = open_app(p)
+    page.evaluate('window.rikuy.api.whenReady()')
+    LOOP = ('\\documentclass{article}\n\\IfFileExists{/home/web_user/rikuy-keep/k/main.tex}{\\count255=0 \\loop\\advance\\count255 1 \\ifnum\\count255>0 \\repeat}{}\n'
+            '\\begin{document}\nA word here.\n\\end{document}\n')
+    for k in range(3):  # (a compile of unchanged text may be answered without TeX: three texts)
+        page.evaluate('(t) => window.rikuy.api.setSource(t)', LOOP.replace('A word', 'A word ' + 'more ' * k))
+        page.evaluate('window.rikuy.api.compile()')
+        page.wait_for_timeout(300)
+        if page.evaluate('!!window.rikuy.texEngine().fmtSince'): break
+    page.wait_for_timeout(1500)  # the dump run has begun, and loops
+    page.evaluate('(t) => window.rikuy.api.setSource(t)', LOOP.replace('A word here.', 'Another word here.'))
+    t0 = time.time()
+    r = page.evaluate('window.rikuy.api.compile().then((r) => ({ ok: r.ok, pages: r.pages, pdf: !!r.pdf }), (e) => ({ error: String(e) }))')
+    took = time.time() - t0
+    check('a preamble that loops while its format is made: the compile that waited is made by a new worker', r.get('ok') and 5 < took < 60 and page.evaluate('window.rikuy.texEngine().noFormat === true'), (r, round(took)))
+    r2 = page.evaluate('window.rikuy.api.compile().then((r) => ({ ok: r.ok }), (e) => ({ error: String(e) }))')
+    check('and no format is tried again in that session', r2.get('ok') and page.evaluate('!window.rikuy.texEngine().fmtSince'), r2)
+    check('no page errors (format)', not errors, errors[:5])
+    b.close()
+
     # mobile: the PDF covers the screen and closes again
     b, page, errors = open_app(p, 390, 844, dark=True)
     page.click('#b-pdf')

@@ -3,6 +3,10 @@
 // the document asks for files. The first PDF downloads the engine (about 13 MB) and the core
 // of LaTeX (about 6 MB); both stay in the browser afterwards.
 
+// how long one step of a format's making may take (the worker makes none for a document whose
+// pass takes more than a third of this: PRE_MAX_PASS in tex/engine.js)
+const FORMAT_MAX = 30000;
+
 export class TeXEngine {
   constructor(base, mirror, scripts) {
     this.base = base; // URL of the folder holding the packs (tex/)
@@ -18,6 +22,11 @@ export class TeXEngine {
     this.jobs = new Map();
     this.seq = 0;
     this.onStatus = () => {};
+    // a preamble's format in the making (tex/engine.js, PRE): since when, and whether this
+    // session still makes them
+    this.fmtSince = 0;
+    this.fmtTimer = 0;
+    this.noFormat = false;
   }
 
   start() {
@@ -41,6 +50,10 @@ export class TeXEngine {
           if (k) { if (data.kept.error) k.reject(new Error(data.kept.error)); else k.resolve(data.kept); }
           return;
         }
+        // between compiles the worker may make a preamble's format, in steps it cannot be
+        // stopped in; it says when one begins and when the format is made or refused
+        if (data.status === 'format-work') { this.formatBegan(w); return; }
+        if (data.status === 'format' || data.status === 'format-rest') { this.fmtSince = 0; clearTimeout(this.fmtTimer); return; }
         if (data.status) { this.onStatus(data); return; }
         if (data.ready) { this.info = data; this.rejectReady = null; resolve(data); return; }
         if (data.result) {
@@ -79,9 +92,9 @@ export class TeXEngine {
     const id = ++this.seq;
     // (prefetch may be a function of what the worker said when it was ready: pack numbers mean
     // something only for one build of the TeX tree, and which one is known only now)
-    const job = { id: p + '#' + id, project: p, files, main, clean: !!clean, prefetch: (typeof prefetch === 'function' ? prefetch(this.info) : prefetch) || [], bibSig: bibSig || '', engine: engine || 'auto', shellEscape: shellEscape !== false, untrusted: !!untrusted };
+    const job = { id: p + '#' + id, project: p, preamble: this.noFormat ? false : undefined, files, main, clean: !!clean, prefetch: (typeof prefetch === 'function' ? prefetch(this.info) : prefetch) || [], bibSig: bibSig || '', engine: engine || 'auto', shellEscape: shellEscape !== false, untrusted: !!untrusted };
     return new Promise((resolve, reject) => {
-      this.jobs.set(job.id, { resolve, reject });
+      this.jobs.set(job.id, { resolve, reject, job });
       this.worker.postMessage({ compile: job });
     });
   }
@@ -112,6 +125,32 @@ export class TeXEngine {
     return this.warmP;
   }
 
+  // A step of a format's making is a run of TeX on the preamble, or one pass: seconds. One that
+  // has not come back after FORMAT_MAX never will (a preamble can tell that run from a pass and
+  // loop in it), and TeX cannot be interrupted, so the worker is let go. No more formats are
+  // made in this session, and the compiles that were waiting go to a new worker.
+  formatBegan(w) {
+    this.fmtSince = Date.now();
+    clearTimeout(this.fmtTimer);
+    this.fmtTimer = setTimeout(() => { if (w === this.worker && this.fmtSince) this.formatStuck(); }, FORMAT_MAX);
+  }
+
+  formatStuck() {
+    this.noFormat = true;
+    const waiting = [...this.jobs.values()];
+    this.jobs.clear();
+    this.reset();
+    if (!waiting.length) return;
+    this.start().then(() => {
+      for (const j of waiting) {
+        j.job.preamble = false;
+        if (j.job.untrusted) this.tainted = j.job.project;
+        this.jobs.set(j.job.id, j);
+        this.worker.postMessage({ compile: j.job });
+      }
+    }, (e) => { for (const j of waiting) j.reject(e); });
+  }
+
   // the worker died after it was ready: everything waiting on it fails, and the next
   // compile starts a fresh one
   crash(msg) {
@@ -124,6 +163,7 @@ export class TeXEngine {
     if (this.keeping) { this.keeping.reject(new Error('The TeX engine stopped')); this.keeping = null; }
     if (this.worker) this.worker.terminate();
     this.worker = null; this.readyP = null; this.info = null; this.rejectReady = null; this.tainted = null; this.warmP = null;
+    this.fmtSince = 0; clearTimeout(this.fmtTimer);
   }
 
   stop() {

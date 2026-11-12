@@ -4761,7 +4761,8 @@ class App {
       const prefetch = (info) => { const h = load(TEXREAD); return h && info && h.p === project && h.v === info.v && Array.isArray(h.n) ? h.n.filter((n) => Number.isInteger(n) && n >= 0 && n < info.packs).slice(0, 400) : []; };
       const res = await engine.compile({ project, files: await this.compileFiles(), main: this.main, clean: !!opts.clean, prefetch, bibSig, engine: this.engineChoice(), shellEscape: this.prefs.shellEscape !== false && !untrusted, untrusted });
       if (gen !== (this.pdfGen || 0)) return; // another project was opened meanwhile
-      if (res.ok && engine.info && !(res.unkept && res.unkept.length)) store(TEXREAD, { p: project, v: engine.info.v, n: (res.read || []).map((x) => x[0]) });
+      // (a pass from the preamble's format opens no class or package: its list is short of them)
+      if (res.ok && engine.info && !res.fromFormat && !(res.unkept && res.unkept.length)) store(TEXREAD, { p: project, v: engine.info.v, n: (res.read || []).map((x) => x[0]) });
       this.lastCompile = { read: res.read || [], unkept: res.unkept || [], unkeptScripts: !!res.unkeptScripts, ok: !!res.ok, failed: '', engine: res.engine || null, pages: 0 };
       // TeX stopped where a file's pack could not be loaded (offline, or the network failed)
       // the copy on claude.ai has no room for the Chinese and Arabic fonts: say where they are

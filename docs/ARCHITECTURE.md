@@ -675,6 +675,15 @@ with the preamble's part from the dump run (`preSplice`), and on an error or a p
 the folder back (`snapFolder`) for an ordinary pass. Formats live in the worker's memory only,
 at most four and 48 MB. The result says `fromFormat` (passes) and `formatNote`; `{status:
 'format'}` follows when one is made or refused. `test/preamble.py`, `dev/bench_same.py`.
+What one pass's check cannot see is ruled out before it: a stranger's document is never dumped
+(its preamble could tell the dump run from a pass and loop there); `\everyjob` must be after the
+preamble what it was before it (`PRE_EJ`); the preamble's text and the project's files must not
+name a file's date, size or checksum or l3fp's random numbers (`PRE_OWN`); and the dump run must
+not have looked for the document's own PDF (`preAsked`). A format is made only where a pass
+takes under ten seconds (`PRE_MAX_PASS`). TeX cannot be interrupted, so the page times each
+step (`{status: 'format-work'}` to `'format'` or `'format-rest'`): after 30 s `TeXEngine.
+formatStuck` lets the worker go, sends the compiles that waited to a new one and asks for no
+format again in that session (`job.preamble = false`).
 
 ## 10. Shell escape: finding and running programs
 

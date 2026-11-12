@@ -136,6 +136,23 @@ with sync_playwright() as pw:
         n = warm(d, 'd-' + name)
         q = compile(d, 'd-' + name)
         check('%s in the preamble: no format (%s), the same PDF as before' % (name, why or 'not tried'), q['ok'] and q['fromFormat'] == 0 and why in (q['note'] or '') and core(q) == core(n), (q['fromFormat'], q['note']))
+    # ---- what one pass's check cannot see: the same at that moment, another later ----
+    for name, pre, body, why in [
+            ('a file\'s date kept in a macro', '\\edef\\md{\\pdffilemoddate{\\jobname.tex}}', 'Mod \\md.', 'date or size'),
+            ('\\everyjob', '\\everyjob{\\gdef\\mk{EVERYJOB}}\\def\\mk{PREAMBLE}', 'Hello.', 'everyjob'),
+            ('a random number of l3fp kept in a macro', '\\edef\\rr{\\fpeval{randint(1,1000000)}}', 'Text.', 'date or size'),
+            ('a look for the document\'s own PDF', '\\IfFileExists{\\jobname.pdf}{\\def\\st{THERE}}{\\def\\st{NONE}}', 'Text.', 'own PDF')]:
+        d = {'main.tex': '\\documentclass{article}\n%s\n\\begin{document}\n%s\n\\end{document}\n' % (pre, body)}
+        warm(d, 'e-' + name)
+        q = compile(d, 'e-' + name)
+        check('%s in the preamble: no format (%s)' % (name, why), q['ok'] and q['fromFormat'] == 0 and why in (q['note'] or ''), (q['fromFormat'], q['note']))
+    # ---- a stranger's document gets no format: its preamble could loop in the dump run alone ----
+    loop = {'main.tex': '\\documentclass{article}\n\\IfFileExists{/home/web_user/rikuy-keep/k/main.tex}{\\count255=0 \\loop\\advance\\count255 1 \\ifnum\\count255>0 \\repeat}{}\n\\begin{document}\nText.\n\\end{document}\n'}
+    st = {'shellEscape': False, 'untrusted': True}
+    compile(loop, 'stranger', st); compile(loop, 'stranger', st)
+    page.wait_for_timeout(1500)
+    q = compile(loop, 'stranger', st)
+    check('a stranger\'s preamble that would loop in a dump run is never dumped: the third compile answers', q.get('ok') and q['fromFormat'] == 0 and not q['note'], (q.get('fromFormat'), q.get('note'), q.get('error')))
     # ---- someone who goes on typing: a compile comes while the format is being made ----
     # (each compile drops the job that was waiting; the format dumped so far must be kept for
     # the next one, or it is dumped again after every compile and never used)
