@@ -349,6 +349,42 @@ def main():
             print('SKIP compile offline: no TeX tree in %s (tex/tree.wasm); it runs where dist/tex is built (CI\'s TeX job)' % DIST)
         else:
             srv = pages.start(PORT, DIST)
+            # TeX fetched and started ahead of the first press of Preview (src/pwa.js, warmTeX): on
+            # a device with 8 GB the started TeX stays for the press, with 4 GB it is let go once
+            # its files are kept and the press starts it from the kept copy
+            for mem in (8, 4):
+                ctx = b.new_context(viewport={'width': 1500, 'height': 950})
+                page = ctx.new_page()
+                page.add_init_script("Object.defineProperty(Navigator.prototype, 'deviceMemory', { get() { return %d; } })" % mem)
+                page.goto(URL)
+                ready(page)
+                wait_sw(page)
+                page.wait_for_function('window.rikuy.prefs.texWarm', timeout=300000)
+                page.wait_for_timeout(300)
+                said = page.evaluate('[document.getElementById("pdf-live").textContent, document.getElementById("pdf-status").textContent, !!(window.rikuy.tex && window.rikuy.tex.info), document.body.classList.contains("pdf-on"), !!window.rikuy.prefs.texUsed]')
+                check('%d GB: a first visit fetches TeX ahead of any press of Preview%s, and says nothing of it in the PDF pane or its status line' % (mem, ' and keeps it started' if mem == 8 else ', then lets the started TeX go'),
+                      said == ['', 'LaTeX', mem == 8, False, False], said)
+                n = len(srv.hits)
+                page.click('#b-pdf')
+                page.wait_for_function('window.rikuy.lastCompile && !window.rikuy.compiling', timeout=180000)
+                asked = [h for h in srv.hits[n:] if h.startswith('/tex/')]
+                done = page.evaluate('({ ok: window.rikuy.lastCompile.ok, pages: window.rikuy.lastCompile.pages, read: window.rikuy.lastCompile.read.map((x) => x[0]), used: window.rikuy.prefs.texUsed, tree: window.rikuy.tex.info.v, hint: JSON.parse(localStorage.getItem("galley.texread.v1")) })')
+                check('%d GB: the sample\'s first PDF then asks the server for no TeX file: the engine and every pack it reads were kept ahead' % mem, done['ok'] and done['pages'] == 3 and asked == [], (done['ok'], asked))
+                check('%d GB: the press is remembered, and the packs the compile read are noted for the project\'s next first compile' % mem, done['used'] is True and done['hint']['v'] == done['tree'] and done['hint']['n'] == done['read'] and len(done['read']) > 5, done)
+                ctx.close()
+            # no megabytes ahead for someone who asked to save data, or on a mobile or a slow line
+            for line in ('saveData: true, effectiveType: "4g"', 'saveData: false, effectiveType: "4g", type: "cellular"', 'saveData: false, effectiveType: "3g"'):
+                ctx = b.new_context()
+                page = ctx.new_page()
+                page.add_init_script("Object.defineProperty(Navigator.prototype, 'connection', { get() { return { %s }; } })" % line)
+                page.goto(URL)
+                ready(page)
+                wait_sw(page)
+                n = len(srv.hits)
+                page.wait_for_timeout(5000)
+                ahead = [h for h in srv.hits[n:] if re.match(r'/tex/[pwt]-|/tex/tree', h)]
+                check('nothing of TeX is fetched ahead where the browser says {%s}' % line, ahead == [] and page.evaluate('!window.rikuy.tex'), ahead)
+                ctx.close()
             ctx = b.new_context(viewport={'width': 1500, 'height': 950})
             page = ctx.new_page()
             page.goto(URL)

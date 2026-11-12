@@ -69,6 +69,76 @@ export const OFFLINE_FOLDERS = [
   'fonts/type1/public/cm-super/sfrm*', 'fonts/type1/public/cm-super/sfbx*', 'fonts/type1/public/cm-super/sfti*', 'fonts/type1/public/cm-super/sftt*'
 ];
 
+// What a plain article reads beyond what the TeX worker loads when it starts, one file for each
+// pack: Computer Modern's italic, typewriter and small math sizes (metrics and outlines), and
+// the TS1 symbols of \thanks and textcomp (the encoding, its metrics, cm-super's outlines).
+// warmTeX keeps the packs holding them (4.4 MB), so the first PDF of the sample, or of a
+// document like it, waits for no download. test/offline.py holds the list to what the sample reads.
+export const WARM_FILES = [
+  'tex/latex/base/ts1enc.def*', 'fonts/tfm/public/cm/cmti10.tfm*', 'fonts/type1/public/amsfonts/cm/cmti10.pfb*',
+  'fonts/tfm/jknappen/ec/tcrm1000.tfm*', 'fonts/type1/public/cm-super/sfrm1000.pfb*'
+];
+
+// Whether megabytes may be fetched before anyone asked for them: not without a network, not for
+// someone who asked the browser to save data, not on a mobile network or a slow one, and not
+// on a device with little memory (the TeX worker takes some hundred megabytes of it). Where the
+// browser says nothing about the line (Safari, Firefox), a phone or tablet is taken to be on a
+// metered one.
+export function mayFetchAhead() {
+  if (navigator.onLine === false) return false;
+  if (navigator.deviceMemory && navigator.deviceMemory < 4) return false;
+  const c = navigator.connection;
+  if (!c) return !(navigator.maxTouchPoints > 0 && window.matchMedia && !window.matchMedia('(any-pointer: fine)').matches);
+  if (c.saveData) return false;
+  if (c.type && c.type !== 'wifi' && c.type !== 'ethernet') return false;
+  if (c.effectiveType && c.effectiveType !== '4g') return false;
+  return true;
+}
+
+// TeX before Preview is pressed. The first PDF needs the engine and the packs every document
+// reads, some 20 MB, and a plain article 4 MB more: a minute on a slow line, during which
+// nothing shows. A first visit fetches them once the editor is in use and the line is free (the
+// service worker has kept its files, which then also answer the TeX worker's scripts without
+// the network), so a press finds TeX started or well on its way. Nothing of the document is
+// run: TeX starts, and compiles when asked, as before.
+// A started TeX holds some 330 MB. Where memory is plenty (8 GB, as far as the browser says) it
+// stays for three minutes and is let go if no press came; elsewhere it is let go as soon as the
+// files are kept, and a press starts it from this browser's copy. Later visits start it ahead
+// only for someone who has made a PDF here before, and only where it may stay those minutes.
+const WARM_HOLD = 180000;
+export function warmTeX(app) {
+  // (APP.tree: a build of the page alone has no TeX tree beside it, and nothing to fetch)
+  if (!APP.on || !APP.tree || !window.Worker) return;
+  const roomy = navigator.deviceMemory >= 8;
+  if (app.prefs.texWarm && !(app.prefs.texUsed && roomy)) return;
+  let begun = false;
+  const go = () => {
+    if (begun || (app.tex && app.tex.readyP)) return; // begun, or Preview got there first
+    if (document.visibilityState !== 'visible') return; // waits for the tab to be looked at
+    begun = true;
+    document.removeEventListener('visibilitychange', go);
+    if (!mayFetchAhead()) return;
+    app.texQuiet = true; // what it downloads is not said in the PDF pane, which nobody opened
+    const tex = app.texEngine();
+    tex.warm(WARM_FILES).then((r) => {
+      if (!r) return;
+      if (!app.prefs.texWarm) { app.prefs.texWarm = APP.tree; app.savePrefs(); }
+      // (texQuiet: no compile, and no Make available offline, has joined it since)
+      setTimeout(() => { if (app.texQuiet && !app.compiling && !tex.jobs.size && !tex.keeping) tex.reset(); }, roomy ? WARM_HOLD : 0);
+    });
+  };
+  const idle = () => {
+    document.addEventListener('visibilitychange', go);
+    if (window.requestIdleCallback) window.requestIdleCallback(go, { timeout: 3000 }); else setTimeout(go, 1000);
+  };
+  const sw = navigator.serviceWorker;
+  if (!sw || !window.isSecureContext || window.top !== window || sw.controller) { setTimeout(idle, 500); return; }
+  let waited = false;
+  const once = () => { if (!waited) { waited = true; idle(); } };
+  sw.addEventListener('controllerchange', once);
+  setTimeout(once, 20000); // no service worker after all (a browser that refuses it)
+}
+
 const $ = (s) => document.querySelector(s);
 const mb = (n) => (n / 1048576).toFixed(n < 10485760 ? 1 : 0) + ' MB';
 
@@ -207,6 +277,7 @@ export async function keepOffline(app) {
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
     keep.textContent = 'Starting TeX…';
     const tex = app.texEngine();
+    app.texQuiet = false;
     const res = await tex.keep(OFFLINE_FOLDERS, (s) => { keep.textContent = 'Keeping for offline: ' + mb(s.got) + ' of ' + mb(s.total); });
     // Word too (pandoc, 16 MB, kept by its own worker), where this build has it
     keep.textContent = 'Keeping Word support…';

@@ -15,7 +15,7 @@ import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath } from './paste.js';
 import { findProblems, missingFigures } from './problems.js';
 import { WidgetLayer } from './widget.js';
-import { APP, appInit, asset as appAsset, registerApp, takeLaunches, takeShared } from './pwa.js';
+import { APP, appInit, asset as appAsset, registerApp, takeLaunches, takeShared, warmTeX } from './pwa.js';
 
 // Gray boxes of 320 by 240 points that stand in, in a coauthor's PDF, for figures a link does
 // not carry: a PDF, a PNG whose resolution makes it that size, and EPS for latex with dvips.
@@ -523,6 +523,8 @@ class App {
     this.readyDone();
     // files the system handed the installed app: opened with Rikuy, or shared to it
     if (__RIKUY_APP__ && APP.on) { await takeShared(this); takeLaunches(this); }
+    // TeX fetched and started ahead of the first press of Preview, where the line allows it
+    if (__RIKUY_APP__ && APP.on) warmTeX(this);
   }
 
   loadSample() {
@@ -4609,7 +4611,9 @@ class App {
       // with ?texlive= pointing elsewhere would fill their browser's TeX cache from a stranger
       try { if (mirror && new URLSearchParams(location.search).get('texlive') === mirror && new URL(mirror, location.href).origin !== location.origin) mirror = null; } catch (e) { mirror = null; }
       this.tex = new TeXEngine(new URL('tex/', location.href).href, mirror ? new URL(mirror, location.href).href : null, asset('tex/'));
-      this.tex.onStatus = (s) => this.texStatus(s);
+      // (a TeX started ahead of any press says nothing in the PDF pane; what it said last is
+      // shown when a compile joins it)
+      this.tex.onStatus = (s) => { this.texLast = s; if (!this.texQuiet) this.texStatus(s); };
     }
     return this.tex;
   }
@@ -4736,6 +4740,8 @@ class App {
     const bibSig = textSig('', [...this.files].filter(([n]) => /\.(bib|bibtex)$/i.test(n)));
     try {
       const engine = this.texEngine();
+      if (this.texQuiet) { this.texQuiet = false; if (!engine.info && this.texLast) this.texStatus(this.texLast); }
+      if (__RIKUY_APP__ && !this.prefs.texUsed) { this.prefs.texUsed = true; this.savePrefs(); }
       if (!engine.info) bar.hidden = false;
       // a document that came in a link compiles restricted, and the worker keeps nothing of it
       const li = await this.linkInfo();

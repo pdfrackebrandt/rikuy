@@ -353,8 +353,36 @@ servers), is unchanged, and the artifact build (`RIKUY_SHARE` set) compiles `src
 - **Packs.** The service worker does not keep TeX packs: the TeX worker keeps them in IndexedDB
   by hash (section 13), and the service worker answers `tex/p-<hash>.wasm` from there when it is
   kept. That is what lets TeX's synchronous XHR (`loadPackSync`) work offline: a blob worker is
-  controlled by the page's service worker in Chromium. Keeping them in Cache Storage as well
-  would double the largest part of what Rikuy keeps.
+  controlled by the page's service worker in Chromium (one started before the service worker
+  claimed the page too). Keeping them in Cache Storage as well
+  would double the largest part of what Rikuy keeps. The read of the store is waited for one
+  second at most (`pack()`): while TeX waits for its synchronous answer the TeX worker runs
+  nothing, a write to the store it began before stays open, and a read behind that write would
+  never come back; the pack then comes from the network or the HTTP cache.
+- **Loading.** `index.html` has its fonts as files (`fonts/`, 37 of them, named by hash, cached
+  for good and kept by the service worker), not as `data:` like `rikuy.html`: the page is 0.6 MB
+  instead of 1.9 (0.2 instead of 1.2 compressed), and a visit fetches the faces it draws with.
+  The fifteen that `loadFonts()` waits for before the first layout (`FIRST_FONTS` in `build.mjs`:
+  the two lists are one) and KaTeX's script are asked for by `<link rel="preload">` at the top
+  of the body, so they travel beside the page. The service worker is registered once the
+  document is on the page (`app.ready`), so that its install, some forty files, does not share
+  the line with them. `dev/bench_load.py` measures all of it over a shaped line.
+- **TeX ahead of the first press** (`warmTeX()` in `src/pwa.js`, `TeXEngine.warm()`). On a first
+  visit, once the service worker is in charge and the page is idle, the TeX worker is started:
+  it fetches and keeps the engine and the packs every document reads (20 MB), and then the five
+  packs of `WARM_FILES`, what a plain article reads beyond them (4 MB). A press of Preview then
+  finds TeX running, or further along. Not where `mayFetchAhead()` says no: without a network,
+  with Save-Data on, on a mobile or slow line (`navigator.connection`), on a phone or tablet
+  whose browser says nothing about its line, with less than 4 GB of memory. What the worker
+  says meanwhile is not shown (`texQuiet`) until a compile joins it. If no press comes, the
+  started TeX (330 MB) is let go after three minutes (at once where the browser does not say
+  the device has 8 GB); what it fetched stays kept. Later visits start TeX ahead only for
+  someone who has compiled here before (`prefs.texUsed`) on such a device, from this browser's
+  copy. Nothing of the document runs before a press.
+- **The packs of the last compile.** `compilePdf()` notes the packs a project's compile read
+  (`galley.texread.v1`: project, the tree's version, pack numbers) and hands them to the next
+  session's first compile of that project as `prefetch`: the worker loads them together before
+  TeX starts, not one by one from inside TeX.
 - **Make available offline** (`#b-offline`): `TeXEngine.keep(OFFLINE_FOLDERS)` boots the worker
   (which keeps the engine and the core packs, as for a first PDF) and sends `{keep: {folders}}`;
   `keepPlan()` turns the folders into the packs holding their files and `keep()` fetches those not

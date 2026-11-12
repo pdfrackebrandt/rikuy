@@ -89,12 +89,27 @@ export class TeXEngine {
   // Keep the packs holding the given folders of the tree (and the core packs and the engine) in
   // the worker's cache, for working offline (src/pwa.js). progress gets {got, total} in bytes.
   async keep(folders, progress) {
-    await this.start();
-    if (this.keeping) throw new Error('already keeping files');
-    return new Promise((resolve, reject) => {
+    // one at a time: a keep begun before (the warm up's, below) ends first
+    for (;;) {
+      await this.start();
+      if (!this.keeping) break;
+      await this.keeping.done;
+    }
+    const p = new Promise((resolve, reject) => {
       this.keeping = { resolve, reject, progress: progress || (() => {}) };
       this.worker.postMessage({ keep: { folders } });
     });
+    this.keeping.done = p.then(() => {}, () => {});
+    return p;
+  }
+
+  // TeX before anyone asked for it (src/pwa.js, warmTeX): the worker started, which fetches the
+  // engine and the packs every document reads and keeps them, then the packs of the given
+  // folders kept too. A compile asked for meanwhile simply finds the worker further along.
+  // Gives what keep() gives, or null when it did not go through; it never rejects.
+  warm(folders) {
+    if (!this.warmP) this.warmP = this.start().then(() => this.keep(folders)).catch(() => null);
+    return this.warmP;
   }
 
   // the worker died after it was ready: everything waiting on it fails, and the next
@@ -108,7 +123,7 @@ export class TeXEngine {
   reset() {
     if (this.keeping) { this.keeping.reject(new Error('The TeX engine stopped')); this.keeping = null; }
     if (this.worker) this.worker.terminate();
-    this.worker = null; this.readyP = null; this.info = null; this.rejectReady = null; this.tainted = null;
+    this.worker = null; this.readyP = null; this.info = null; this.rejectReady = null; this.tainted = null; this.warmP = null;
   }
 
   stop() {

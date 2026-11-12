@@ -50,9 +50,11 @@ server at the moment they were sent; requests are counted when they arrive.
 
 Usage: python3 dev/bench_load.py [--dist dist] [--profiles local,cable,phone] [--scenarios cold,warm,dwell,heavy,lua,idle]
                                  [--runs 5] [--out FILE.json] [--waterfall] [--codec br|gzip|none] [--shape server|cdp]
-                                 [--dwell 15] [--limit 420] [--quiet 4]
+                                 [--dwell 15] [--limit 420] [--quiet 4] [--save-data]
   --profiles   local (no shaping: what the CPU alone takes), cable (20 Mbit/s down, 5 up, 40 ms
                round trip), phone (4 Mbit/s down, 1 up, 120 ms)
+  --save-data  the browser says Save-Data is on (navigator.connection.saveData): what a visit is
+               where nothing is fetched ahead
   --limit      seconds after the press (or the start, on a repeat visit) after which a visit
                without a PDF counts as failed, with what the PDF pane said last
   --waterfall  print, for the first run of each scenario, every request in order: when it
@@ -275,6 +277,7 @@ def one(p, srv, url, prof, scenario, profile_dir, args, doc=None):
         errors = []
         page.on('pageerror', lambda e: errors.append(str(e)))
         page.add_init_script(INIT)
+        if args.save_data: page.add_init_script("Object.defineProperty(Navigator.prototype, 'connection', { get() { return { saveData: true, effectiveType: '4g' }; } })")
         if args.shape == 'cdp' and PROFILES[prof]:
             c = ctx.new_cdp_session(page)
             c.send('Network.enable')
@@ -362,6 +365,7 @@ def main():
     ap.add_argument('--port', type=int, default=int(os.environ.get('PORT', '8793')))
     ap.add_argument('--codec', default='br' if brotli else 'gzip', choices=['br', 'gzip', 'none'])
     ap.add_argument('--shape', default='server', choices=['server', 'cdp'])
+    ap.add_argument('--save-data', action='store_true')
     ap.add_argument('--out')
     ap.add_argument('--waterfall', action='store_true')
     args = ap.parse_args()
