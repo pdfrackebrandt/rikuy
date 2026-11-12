@@ -340,20 +340,42 @@ function t1xRestore(x) {
 // ---- the TeX tree as lazy MEMFS files ------------------------------------------------
 function populate(Module) {
   const FS = Module.FS;
-  const made = new Set(['/']);
-  const mkdirs = (d) => {
-    if (made.has(d)) return;
-    const parent = d.slice(0, d.lastIndexOf('/')) || '/';
-    mkdirs(parent);
-    try { FS.mkdir(d); } catch (e) { /* exists */ }
-    made.add(d);
+  // FS.createFile and FS.mkdir resolve the whole path again for every name and, to learn that
+  // the name is free, have the lookup fail, which builds an error with its stack: 1.4 s of a
+  // session's start for the tree. The file system's own createNode, given the folder's node,
+  // makes the same nodes (a folder with mode 0777 as mkdir gives it, a regular file with 0777
+  // as createFile(.., true, true) does).
+  const MEMFS = FS.root && FS.root.mount && FS.root.mount.type;
+  const direct = !!(MEMFS && typeof MEMFS.createNode === 'function' && FS.root.contents);
+  const has = Object.prototype.hasOwnProperty;
+  const dirs = new Map([['/', FS.root]]); // folder -> its node
+  const dirNode = (d) => {
+    let n = dirs.get(d);
+    if (n !== undefined) return n;
+    const cut = d.lastIndexOf('/');
+    const parent = dirNode(d.slice(0, cut) || '/'), name = d.slice(cut + 1);
+    if (direct && cut >= 0 && parent && !parent.mounted) {
+      n = has.call(parent.contents, name) ? parent.contents[name] : MEMFS.createNode(parent, name, 16895, 0);
+      if (!FS.isDir(n.mode)) n = null; // a file of that name: nothing goes under it
+    } else {
+      try { FS.mkdir(d); } catch (e) { /* exists */ }
+      try { n = FS.lookupPath(d).node; } catch (e) { n = null; }
+    }
+    dirs.set(d, n);
+    return n;
   };
   for (const [path, size, pack, off, zlen, kind] of INDEX.files) {
     const cut = path.lastIndexOf('/');
     const dir = path.slice(0, cut) || '/';
-    mkdirs(dir);
+    const parent = dirNode(dir);
     let node;
-    try { node = FS.createFile(dir, path.slice(cut + 1), {}, true, true); } catch (e) { continue; }
+    if (direct && cut >= 0 && parent && !parent.mounted) {
+      const name = path.slice(cut + 1);
+      if (!name || has.call(parent.contents, name)) continue; // there already
+      node = MEMFS.createNode(parent, name, 33279, 0);
+    } else {
+      try { node = FS.createFile(dir, path.slice(cut + 1), {}, true, true); } catch (e) { continue; }
+    }
     node.atime = node.mtime = node.ctime = TREE_MTIME; // stable across sessions, so caches keyed on it stay valid
     let data = null;
     Object.defineProperty(node, 'contents', {
@@ -386,7 +408,7 @@ function populate(Module) {
       set(v) { /* a lazy file is never resized */ }
     });
   }
-  for (const d of made) { try { const n = FS.lookupPath(d).node; n.atime = n.mtime = n.ctime = TREE_MTIME; n.timestamp = TREE_MTIME; } catch (e) { /* not there */ } }
+  for (const n of dirs.values()) if (n) { n.atime = n.mtime = n.ctime = TREE_MTIME; n.timestamp = TREE_MTIME; }
   FS.mkdirTree(PROJECT);
   try { FS.mkdirTree('/texlive/fontconfig-cache'); } catch (e) { /* exists */ }
   if (MIRROR) mirrorPopulate(Module);
