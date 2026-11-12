@@ -68,6 +68,8 @@ const MAX_ZIP = 1.5e9;
 const TEXT_EXT = /\.(tex|bib|sty|cls|bst|bbl|txt|ltx|dtx|clo|cfg|def|md|html?)$/i;
 const IMG_EXT = /\.(png|jpe?g|gif|svg|webp)$/i;
 const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+// how far the document zooms out and in: a quarter, and four times actual size
+const ZOOM_MIN = 0.25, ZOOM_MAX = 4;
 
 // One of the build's own files (git.js, tex/...): in the installed app, the copy of this page's
 // version (src/pwa.js); elsewhere simply the file next to the page.
@@ -1099,6 +1101,7 @@ class App {
     $('#b-zin').addEventListener('click', () => this.setZoom(+1));
     $('#b-zout').addEventListener('click', () => this.setZoom(-1));
     $('#zoomv').addEventListener('click', () => this.setZoom(0));
+    this.zoomGestures();
     $('#b-ai').addEventListener('click', () => this.openAsk());
     $('#b-help').addEventListener('click', () => this.openHelp());
     $('#b-sample').addEventListener('click', () => this.resetToSample());
@@ -1168,6 +1171,15 @@ class App {
     if (mod && e.key === '\\') { e.preventDefault(); this.toggleSource(); }
     if (mod && e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); this.toggleNav(); }
     if (e.key === 'Escape') { if (this.pop) { this.closePop(); e.preventDefault(); } this.disarm(); }
+    // Ctrl and + / - / 0 zoom the document where the document is what is being read: on the
+    // page, or with nothing in particular in focus. In a field, the source or the PDF the
+    // browser zooms as it always does.
+    if (mod && !e.altKey && /^(=|\+|-|_|0)$/.test(e.key) && !e.defaultPrevented
+      && (e.target === document.body || e.target === this.root || (e.target.closest && e.target.closest('#desk') && !e.target.closest('input, textarea, select, math-field, [contenteditable="true"]:not(#pages)')))) {
+      e.preventDefault();
+      if (e.key === '0') this.zoomTo(1, null);
+      else this.setZoom(e.key === '-' || e.key === '_' ? -1 : +1);
+    }
     // Ctrl+Z where no field takes it, after a click on Reject, a zoom button or the bubble, undoes
     // in the document as on the page; it did nothing until a click back on the page
     const k = e.key.toLowerCase();
@@ -4048,8 +4060,70 @@ class App {
     if (this.prefs.srcW) $('#srcpane').style.width = this.prefs.srcW + 'px';
   }
 
+  // Zoom as people zoom elsewhere: a pinch on a trackpad, Ctrl with the mouse wheel, Ctrl and
+  // + / - / 0. Over the pages these zoom the document, as in Word, and the number in the bar
+  // follows; the browser's own zoom would have enlarged the bar too and left that number
+  // where it was. The point under the pointer stays under it. Elsewhere (the source, the PDF,
+  // a field) the keys keep the browser's zoom.
+  zoomGestures() {
+    const desk = this.desk;
+    let pend = 1, at = null, raf = 0;
+    const flush = () => {
+      raf = 0;
+      const z = (this.prefs.zoom === 'fit' ? this.px / PX_PER_PT : this.prefs.zoom) * pend;
+      pend = 1;
+      this.zoomTo(z, at);
+    };
+    // a pinch arrives as wheel events with ctrlKey set (Chrome, Edge, Firefox); a mouse wheel
+    // with Ctrl held too. Every event of a frame makes one zoom: a layout per frame at most.
+    desk.addEventListener('wheel', (e) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      const dy = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1);
+      pend *= Math.min(2, Math.max(0.5, Math.exp(-dy * 0.0022)));
+      at = { x: e.clientX, y: e.clientY };
+      if (!raf) raf = requestAnimationFrame(flush);
+    }, { passive: false });
+    // Safari tells a pinch apart, as a gesture with a scale from where it began
+    let base = 1;
+    desk.addEventListener('gesturestart', (e) => { e.preventDefault(); base = this.prefs.zoom === 'fit' ? this.px / PX_PER_PT : this.prefs.zoom; });
+    desk.addEventListener('gesturechange', (e) => {
+      e.preventDefault();
+      pend = 1;
+      at = { x: e.clientX, y: e.clientY };
+      const z = base * e.scale;
+      if (!raf) raf = requestAnimationFrame(() => { raf = 0; this.zoomTo(z, at); });
+    });
+  }
+
+  // The zoom set to z (a scale, 1 is actual size), with the point at (x, y) of the window kept
+  // where it is: the page under it and the place on that page.
+  zoomTo(z, at) {
+    z = Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)) * 100) / 100;
+    const cur = this.prefs.zoom === 'fit' ? this.px / PX_PER_PT : this.prefs.zoom;
+    if (Math.abs(z - cur) < 0.005 && this.prefs.zoom !== 'fit') return;
+    const desk = this.desk, r = desk.getBoundingClientRect();
+    const x = at ? at.x : r.left + desk.clientWidth / 2, y = at ? at.y : r.top + desk.clientHeight / 2;
+    const pages = [...this.root.querySelectorAll('.page')];
+    let k = -1, fx = 0, fy = 0;
+    for (let i = 0; i < pages.length; i++) {
+      const q = pages[i].getBoundingClientRect();
+      if (y < q.bottom || i === pages.length - 1) { k = i; fx = (x - q.left) / q.width; fy = (y - q.top) / q.height; break; }
+    }
+    this.prefs.zoom = z;
+    clearTimeout(this.zoomSave);
+    this.zoomSave = setTimeout(() => store(PREFS, this.prefs), 400);
+    if (!this.computePx()) return;
+    this.relayout(true);
+    const pg = k >= 0 && this.root.querySelectorAll('.page')[k];
+    if (!pg) return;
+    const q = pg.getBoundingClientRect();
+    desk.scrollLeft += q.left + fx * q.width - x;
+    desk.scrollTop += q.top + fy * q.height - y;
+  }
+
   setZoom(dir) {
-    const steps = [0.5, 0.6, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2];
+    const steps = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4];
     // on a phone, where − and + are hidden, the Fit button switches between fitting the width
     // (text a few pixels high) and actual size
     // (and the size the page opens at there, the text block across the screen)

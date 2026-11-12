@@ -1173,9 +1173,47 @@ def run():
         latin_ext_fonts(page)
         browser.close()
 
+        browser, page, errors = open_page(p, width=1400, height=900)
+        zoom_gestures(page)
+        check('no console errors (zoom gestures)', not errors, errors[:5])
+        browser.close()
+
     bad = [r for r in results if not r[1]]
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     return 1 if bad else 0
+
+def zoom_gestures(page):
+    """A pinch, Ctrl with the wheel and Ctrl with + - 0 zoom the document, and the number in the bar follows."""
+    lab = lambda: page.inner_text('#zoomv')
+    at = page.evaluate("(() => { const r = document.querySelector('.page').getBoundingClientRect(); return [r.left + r.width * 0.3, r.top + 220]; })()")
+    under = "(([x, y]) => { const n = document.elementFromPoint(x, y); return n ? (n.textContent || '').slice(0, 60) : '' })"
+    page.mouse.move(*at)
+    was, text = lab(), page.evaluate(under, at)
+    page.keyboard.down('Control'); page.mouse.wheel(0, -100); page.keyboard.up('Control')
+    page.wait_for_timeout(300)
+    check('Ctrl with the mouse wheel over the page zooms the document, and the zoom number follows', lab() != was and lab().endswith('%'), (was, lab()))
+    check('and what was under the pointer is still under it', page.evaluate(under, at) == text, (text, page.evaluate(under, at)))
+    one = lab()
+    for _ in range(6):
+        page.keyboard.down('Control'); page.mouse.wheel(0, -6); page.keyboard.up('Control'); page.wait_for_timeout(20)
+    page.wait_for_timeout(300)
+    check('a pinch (small steps, as a trackpad sends them) zooms by small amounts, not button steps', 0 < int(lab()[:-1]) - int(one[:-1]) < 25, (one, lab()))
+    page.mouse.click(*at)
+    page.keyboard.press('Control+0'); page.wait_for_timeout(200)
+    z0 = lab()
+    page.keyboard.press('Control+Equal'); page.wait_for_timeout(200)
+    z1 = lab()
+    page.keyboard.press('Control+Minus'); page.wait_for_timeout(200)
+    check('on the page Ctrl+0 is actual size, Ctrl+= and Ctrl+- step in and out', (z0, z1, lab()) == ('100%', '110%', '100%'), (z0, z1, lab()))
+    page.keyboard.down('Control'); page.mouse.wheel(0, -300); page.keyboard.up('Control'); page.wait_for_timeout(500)
+    kept = lab()
+    page.reload(); page.wait_for_function('window.rikuy && window.rikuy.model', timeout=30000); page.wait_for_timeout(500)
+    check('a zoom made with the wheel is the one the next visit opens with', lab() == kept, (kept, lab()))
+    page.click('#b-src'); page.wait_for_timeout(500)
+    box = page.evaluate("(() => { const r = document.getElementById('srcpane').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()")
+    page.mouse.move(*box)
+    page.keyboard.down('Control'); page.mouse.wheel(0, -100); page.keyboard.up('Control'); page.wait_for_timeout(300)
+    check('over the source the wheel is the browser\'s again: the document\'s zoom stays', lab() == kept, (kept, lab()))
 
 if __name__ == '__main__':
     sys.exit(run())
