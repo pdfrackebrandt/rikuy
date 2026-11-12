@@ -365,8 +365,11 @@ servers), is unchanged, and the artifact build (`RIKUY_SHARE` set) compiles `src
   The fifteen that `loadFonts()` waits for before the first layout (`FIRST_FONTS` in `build.mjs`:
   the two lists are one) and KaTeX's script are asked for by `<link rel="preload">` at the top
   of the body, so they travel beside the page. The service worker is registered once the
-  document is on the page (`app.ready`), so that its install, some forty files, does not share
-  the line with them. `dev/bench_load.py` measures all of it over a shaped line.
+  document is on the page (`app.ready`), so that its install, some seventy files, does not
+  share the line with them; on a first visit a second later, and not while a compile begun by
+  then runs, so that it is not in the way of the engine either. The PDF viewer's scripts are
+  fetched when TeX begins to typeset (`PdfView.warm()`), not when it is done.
+  `dev/bench_load.py` measures all of it over a shaped line.
 - **TeX ahead of the first press** (`warmTeX()` in `src/pwa.js`, `TeXEngine.warm()`). On a first
   visit, once the service worker is in charge and the page is idle, the TeX worker is started:
   it fetches and keeps the engine and the packs every document reads (20 MB), and then the five

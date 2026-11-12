@@ -4613,7 +4613,12 @@ class App {
       this.tex = new TeXEngine(new URL('tex/', location.href).href, mirror ? new URL(mirror, location.href).href : null, asset('tex/'));
       // (a TeX started ahead of any press says nothing in the PDF pane; what it said last is
       // shown when a compile joins it)
-      this.tex.onStatus = (s) => { this.texLast = s; if (!this.texQuiet) this.texStatus(s); };
+      this.tex.onStatus = (s) => {
+        this.texLast = s;
+        if (!this.texQuiet) this.texStatus(s);
+        // TeX begins to typeset: the PDF viewer's scripts come meanwhile
+        if (s.status === 'pass' && !this.pdfWarmed) { this.pdfWarmed = true; this.pdfPane().warm(); }
+      };
     }
     return this.tex;
   }

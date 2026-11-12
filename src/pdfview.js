@@ -30,6 +30,14 @@ export class PdfView {
     this.io = null;
   }
 
+  // pdf.js and its worker's script ahead of the first PDF, while TeX typesets and the line is
+  // free: fetched only once TeX was done, they were half a megabyte and three round trips that
+  // the first PDF still waited for. (Where a service worker keeps them, this costs nothing.)
+  warm() {
+    loadPdfjs(this.opts.workerUrl).catch(() => {});
+    fetch(this.opts.workerUrl).then((r) => r.arrayBuffer()).catch(() => {});
+  }
+
   async show(bytes, synctexGz) {
     const lib = await loadPdfjs(this.opts.workerUrl);
     const seq = ++this.renderSeq;

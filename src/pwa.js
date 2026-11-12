@@ -199,10 +199,16 @@ export function registerApp(app) {
     upd.hidden = false;
   };
   // Once the document is on the page (or the page has said why it is not): a first visit's worker
-  // fetches some forty files to keep, and begun earlier they would share the line with the fonts
-  // and the script the page is waiting for.
-  const settled = app.ready || Promise.resolve();
-  settled.catch(() => {}).then(() => sw.register(new URL('sw.js', location.href).href, { scope: './', updateViaCache: 'none' })).then((reg) => {
+  // fetches some seventy files to keep, and begun earlier they would share the line with the fonts
+  // and the script the page is waiting for. A first visit waits a second longer, and for a
+  // compile begun by then (a link that opens with the PDF, a script, a quick hand): those
+  // 2.6 MB would be in the way of the engine the first PDF waits for.
+  const settled = (app.ready || Promise.resolve()).catch(() => {}).then(() => (sw.controller ? null : new Promise((go) => {
+    const until = Date.now() + 120000;
+    const look = () => { if (app.compiling && Date.now() < until) setTimeout(look, 500); else go(); };
+    setTimeout(look, 1000);
+  })));
+  settled.then(() => sw.register(new URL('sw.js', location.href).href, { scope: './', updateViaCache: 'none' })).then((reg) => {
     APP.reg = reg;
     // a version installing now may have begun before this page listened (the browser looks for
     // one on every navigation): follow it as well as any found later
