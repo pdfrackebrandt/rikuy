@@ -491,7 +491,9 @@ class App {
     // the installed app (hosted build only): its service worker, updates, the offline marks
     if (__RIKUY_APP__ && appInit().on) registerApp(this);
     await this.waitForKaTeX();
-    await Promise.race([this.loadFonts(), new Promise((r) => setTimeout(r, 2500))]);
+    // (the hosted page's fonts are files, asked for from its head: on a slow line they can come
+    // seconds after the page, and a layout made before them would only be made again)
+    await Promise.race([this.loadFonts(), new Promise((r) => setTimeout(r, __RIKUY_APP__ && APP.on ? 20000 : 2500))]);
     this.computePx();
     // whether this project came from someone else, before its live figures are drawn
     await this.linkInfo();
@@ -543,7 +545,8 @@ class App {
 
   async loadFonts() {
     if (!document.fonts || !document.fonts.load) return;
-    // the interface's faces as well: they are in the page, so they load in no time, and any face
+    // the interface's faces as well: they are in the page, or asked for from its head (the hosted
+    // page: build.mjs's FIRST_FONTS is this list), so they cost no time, and any face
     // that finishes loading after boot lays the pages out again (the loadingdone listener in
     // init), which drops a selection; a weight first used by a toast or the selection bubble did
     const faces = ['400 16px "Paper Modern Serif"', 'italic 400 16px "Paper Modern Serif"', 'bold 16px "Paper Modern Serif"', 'italic bold 16px "Paper Modern Serif"', '16px "Paper Modern Typewriter"', '16px KaTeX_Main', 'italic 16px KaTeX_Math', '16px KaTeX_Size1', '16px KaTeX_Size2', '16px KaTeX_AMS',

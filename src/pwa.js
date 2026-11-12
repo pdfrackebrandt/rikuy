@@ -128,7 +128,11 @@ export function registerApp(app) {
     delete upd.dataset.reload;
     upd.hidden = false;
   };
-  sw.register(new URL('sw.js', location.href).href, { scope: './', updateViaCache: 'none' }).then((reg) => {
+  // Once the document is on the page (or the page has said why it is not): a first visit's worker
+  // fetches some forty files to keep, and begun earlier they would share the line with the fonts
+  // and the script the page is waiting for.
+  const settled = app.ready || Promise.resolve();
+  settled.catch(() => {}).then(() => sw.register(new URL('sw.js', location.href).href, { scope: './', updateViaCache: 'none' })).then((reg) => {
     APP.reg = reg;
     // a version installing now may have begun before this page listened (the browser looks for
     // one on every navigation): follow it as well as any found later

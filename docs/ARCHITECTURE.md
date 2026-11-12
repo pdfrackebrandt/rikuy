@@ -337,7 +337,8 @@ servers), is unchanged, and the artifact build (`RIKUY_SHARE` set) compiles `src
   `sw.js` as `const RIKUY = {v, files}` (path → SHA-256, size, kind) followed by `src/sw.js`.
   `_headers` is in the version, so a change of policy reaches the kept page too.
 - **Service worker** (`src/sw.js`). `install` fetches every file of kind `p` (all the page and
-  the TeX worker load, about 7 MB; `l` for any over 4 MiB, fetched on first use) into
+  the TeX worker load, about 7 MB; `l` for any over 4 MiB, fetched on first use; and the fonts,
+  kind `i`, into `rikuy-immutable`) into
   `rikuy-v-<version>`, each checked against its hash (the page by its version tag), so a version
   is kept whole or not at all. `activate` keeps that version and the one before, drops older
   caches and claims the open pages. `fetch` answers the page (navigations to the scope) from the
@@ -732,7 +733,8 @@ under a real one's name. A page on claude.ai reaches only its own server: self h
    by `build/fonts/subset.py`), the interface's IBM Plex Sans and Mono (Google Fonts' Latin and Latin
    Extended cuts, unchanged, from npm's `@fontsource` packages, each with its unicode-range) and
    the CSS go into `src/template.html` as `dist/rikuy.html`, every font as `data:` (the installed
-   app's `index.html` takes the Latin Extended faces from `fonts/<file>-<hash>.woff2` instead);
+   app's `index.html` takes every font from `fonts/<file>-<hash>.woff2` instead, and asks for the
+   fifteen faces its first layout waits for, and for KaTeX's script, at the top of its body);
    worker scripts, `busytex.js`, `biber.js`, `fflate.js`, `pyodide.js`, PDF.js and its worker and
    vendor tool scripts go to `dist/tex/`, npm's Ghostscript module made a classic script (`self.GalleyGs`; the build
    fails if its stack exports moved), control bytes escaped. `dist/index.html` is the page as a

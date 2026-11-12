@@ -83,6 +83,9 @@ def main():
         # (what the page's policy refused, which the console says)
         refused = []
         page.on('console', lambda m: refused.append(m.text) if 'Content Security Policy' in m.text else None)
+        # (and a file the head asked for ahead that the page then did not use)
+        unused = []
+        page.on('console', lambda m: unused.append(m.text) if 'preloaded using link preload but not used' in m.text else None)
         page.goto(URL)
         ready(page)
         page.wait_for_timeout(500)
@@ -97,7 +100,23 @@ def main():
         both = page.evaluate(ENGINE_BOTH)
         check('the TeX worker\'s scripts are asked for under the page\'s version', ('/_v/' + va + '/tex/') in both['base'], both['base'])
         imm = page.evaluate('caches.open("rikuy-immutable").then(c => c.keys()).then(k => k.map(r => r.url))')
-        check('install kept the Latin Extended fonts, named by their hash, apart from the version', sum('/fonts/ibm-plex-' in u for u in imm) == 5, imm)
+        nfonts = len(os.listdir(os.path.join(DIST, 'fonts')))
+        check('install kept the fonts (%d, 5 of them the Latin Extended cut), named by their hash, apart from the version' % nfonts,
+              nfonts > 30 and sum('/fonts/' in u for u in imm) == nfonts and sum('/fonts/ibm-plex-' in u and '-latin-ext-' in u for u in imm) == 5, imm)
+        # the hosted page's fonts are files: none inside the page, the faces the first layout waits
+        # for asked for from the head (with KaTeX's script), each of them then used, and no face
+        # beyond the ones the document and the interface drew with fetched by the page
+        # (the service worker fetches all of them to keep, once it is registered: after that layout)
+        head = page.evaluate('''() => ({ data: /url\\(data:font/.test(document.documentElement.innerHTML),
+          pre: [...document.querySelectorAll('link[rel=preload]')].map((l) => [l.as, new URL(l.href).pathname]),
+          got: performance.getEntriesByType('resource').filter((e) => /\\/fonts\\//.test(e.name) && e.initiatorType !== 'fetch').map((e) => new URL(e.name).pathname),
+          ready: performance.getEntriesByType('resource').filter((e) => /\\/sw\\.js$/.test(e.name)).length })''')
+        fpre = [u for a, u in head['pre'] if a == 'font']
+        page.wait_for_timeout(3500)
+        check('the hosted page carries no font as data:; its head asks for KaTeX and the 15 faces the first layout waits for, and each is used',
+              not head['data'] and len(fpre) == 15 and ['script', '/lib/katex.min.js'] in head['pre'] and len(head['pre']) == 16 and not unused, (head['pre'], unused))
+        check('the page fetches the faces it draws with and no others (Paper Modern Sans, most of KaTeX\'s)', set(fpre) <= set(head['got']) and len(set(head['got'])) < nfonts - 10
+              and not any('sans-serif' in u for u in head['got']), sorted(set(head['got']) - set(fpre)))
 
         # what crawlers and AI agents read (build/app.mjs): served, named in the page's head, and
         # not kept by the service worker, which has no use for them

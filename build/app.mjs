@@ -2,8 +2,8 @@
 // dist/index.html served as a whole page). build.mjs calls it; RIKUY_SHARE (the copy inside the
 // claude.ai artifact, whose host refuses service workers and installation) builds none of it.
 //
-//   appPage(html)    dist/index.html: the page with the app's head (version, manifest, icons) and
-//                    KaTeX from lib/ instead of jsDelivr
+//   appPage(html)    dist/index.html: the page with the app's head (version, manifest, icons,
+//                    the fonts and the script it needs first) and KaTeX from lib/ instead of jsDelivr
 //   appFiles(OUT)    lib/ (KaTeX, mhchem, CodeMirror, JSZip, MathLive: the npm files the page
 //                    otherwise takes from jsDelivr, each checked against the hash the page pins),
 //                    icons/, manifest.webmanifest, and for Cloudflare Pages _headers and 404.html
@@ -99,8 +99,17 @@ function intro() {
     + '<noscript><p style="margin:2em auto;max-width:34em;padding:0 1em;font:16px/1.5 system-ui,sans-serif">Rikuy is an app that runs in your browser, so it needs JavaScript: turn it on for this site and load the page again. ' + esc(DESCRIPTION) + '</p></noscript>';
 }
 
-export function appPage(OUT, html, skeleton) {
+export function appPage(OUT, html, skeleton, firstFonts = []) {
   const tree = treeVersion(OUT);
+  // KaTeX's script stands at the end of the page, after the app's markup, and the browser learned
+  // of it only there: named at the top (with the hash its tag checks it by), it is fetched
+  // beside the page. The same for the fonts the first layout waits for (build.mjs lists them).
+  // A font is always fetched without credentials, so its link says crossorigin. The links stand
+  // at the top of the body, after the lines for programs that read the page (2 kB of file
+  // names would push those out of the first 4 kB), which is as early for a browser.
+  const katex = /<script src="(https:\/\/cdn\.jsdelivr\.net\/npm\/katex@[^"]+\/katex\.min\.js)" integrity="([^"]+)" crossorigin="anonymous">/.exec(html);
+  const first = (katex ? '<link rel="preload" as="script" href="lib/katex.min.js" integrity="' + katex[2] + '" crossorigin="anonymous">' : '')
+    + firstFonts.map((f) => '<link rel="preload" as="font" type="font/woff2" href="' + f + '" crossorigin>').join('');
   const head = '<title>' + esc(TITLE) + '</title>'
     + '<meta name="rikuy-app" content="' + ZERO + '"' + (/^[0-9a-f]{16}$/.test(tree) ? ' data-tree="' + tree + '"' : '') + '>'
     + '<meta name="description" content="' + DESCRIPTION + '">'
@@ -134,7 +143,7 @@ export function appPage(OUT, html, skeleton) {
   page = page.slice('<title>Rikuy</title>'.length);
   for (const l of libs()) page = page.split('src="' + l.url + '"').join('src="lib/' + l.name + '"');
   if (/<script src="https:/.test(page)) throw new Error('index.html still loads a script from a CDN');
-  return skeleton.replace('<html>', '<html lang="en">').replace('<meta charset=utf8>', '<meta charset=utf8>' + head) + intro() + page + '</body></html>';
+  return skeleton.replace('<html>', '<html lang="en">').replace('<meta charset=utf8>', '<meta charset=utf8>' + head) + intro() + first + page + '</body></html>';
 }
 
 export function manifest() {
