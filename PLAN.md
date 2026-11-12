@@ -817,6 +817,14 @@ Tests:
     benchmark's server speaks HTTP/1.1 with Brotli); the security audit skill's own workflow
     was not run beside the review.
 
+36. **Its own address: rikuy.rackebrandt.pe.** Done (pull request 10), asked for by the owner. A
+    CNAME at Punto.pe (`rikuy` to `rikuy-3dl.pages.dev`) and the Pages project's custom domain;
+    `build/app.mjs`'s `SITE` (the canonical address, the preview tags, `robots.txt`,
+    `sitemap.xml`, `llms.txt`) and the README, `SECURITY.md` and `docs/HOSTING.md` name it. The
+    old address keeps serving the same deployment and is not redirected, because browsers keep
+    documents by address: what anyone kept at `rikuy-3dl.pages.dev` stays reachable there.
+    Evidence: `deploy_check.py` 43/43, `agent.py` as before; the live check is in the pull request.
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000

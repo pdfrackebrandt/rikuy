@@ -26,7 +26,7 @@ const THEME = { light: '#F5F7F9', dark: '#1B222A', background: '#DCE1E7' };
 const DESCRIPTION = 'A LaTeX editor where you type on the typeset page. TeX Live 2026 runs in the browser; nothing is uploaded.';
 // where the hosted copy answers (docs/HOSTING.md): for the page's canonical address, the picture
 // a pasted link shows, robots.txt, sitemap.xml and llms.txt. Another site sets RIKUY_SITE.
-const SITE = (process.env.RIKUY_SITE || 'https://rikuy-3dl.pages.dev/').replace(/\/*$/, '/');
+const SITE = (process.env.RIKUY_SITE || 'https://rikuy.rackebrandt.pe/').replace(/\/*$/, '/');
 const SOURCE = 'https://github.com/pdfrackebrandt/rikuy';
 const VERSION = JSON.parse(fs.readFileSync(R('package.json'), 'utf8')).version;
 const ZERO = '0000000000000000';

@@ -12,6 +12,6 @@ files; a way out of them counts too. A document that came in a link, a .zip or a
 with restricted shell escape until its owner allows more, so a way for such a document to run a
 program anyway counts as well.
 
-Fixes go into `main`, and a merge to `main` deploys the hosted copy (https://rikuy-3dl.pages.dev,
+Fixes go into `main`, and a merge to `main` deploys the hosted copy (https://rikuy.rackebrandt.pe,
 on Cloudflare Pages; `docs/HOSTING.md`). The maintainer also publishes a copy as a claude.ai
 artifact: a problem in claude.ai itself is Anthropic's to fix, report it to them.
