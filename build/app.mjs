@@ -58,7 +58,10 @@ function treeVersion(OUT) {
     const b = fs.readFileSync(path.join(OUT, 'tex/tree.wasm'));
     let i = 9;
     const leb = () => { let n = 0, s = 0, x; do { x = b[i++]; n += (x & 0x7f) * 2 ** s; s += 7; } while (x & 0x80); return n; };
-    leb(); i += leb();
+    leb();
+    // (not i += leb(): that adds to the i read before leb() moved it, and the index never unpacked)
+    const name = leb();
+    i += name;
     return JSON.parse(zlib.gunzipSync(b.subarray(i))).v || '';
   } catch (e) { return ''; }
 }

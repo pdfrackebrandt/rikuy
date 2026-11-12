@@ -45,6 +45,24 @@ def variant(name, mark):
     return d
 
 
+def tree_version(d):
+    """The v of the TeX tree's index (tex/tree.wasm: a WebAssembly wrapper around gzipped JSON), '' without a tree."""
+    import gzip
+    try: b = open(os.path.join(d, 'tex', 'tree.wasm'), 'rb').read()
+    except OSError: return ''
+    i = 9
+    def leb():
+        nonlocal i
+        n = s = 0
+        while True:
+            x = b[i]; i += 1; n += (x & 0x7f) << s; s += 7
+            if not x & 0x80: return n
+    leb()
+    name = leb()
+    i += name
+    return json.loads(gzip.decompress(b[i:])).get('v') or ''
+
+
 def ready(page, timeout=30000):
     page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=timeout)
 
@@ -91,6 +109,8 @@ def main():
         page.wait_for_timeout(500)
         nmath = page.evaluate("document.querySelectorAll('#pages .katex').length")
         check('the hosted page names its version and its manifest', version(page) == va and page.evaluate("!!document.querySelector('link[rel=manifest]')"), version(page))
+        named = page.evaluate("document.querySelector('meta[name=\"rikuy-app\"]').dataset.tree || ''")
+        check('and the version of the TeX tree beside it, as the tree\'s index has it (none where there is no tree)', named == tree_version(DIST), (named, tree_version(DIST)))
         wait_sw(page)
         check('the service worker controls the page on the first visit (claimed)', page.evaluate('navigator.serviceWorker.controller.scriptURL').endswith('/sw.js'))
         page.wait_for_timeout(300)
