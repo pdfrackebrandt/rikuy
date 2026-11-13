@@ -622,11 +622,15 @@ def reach(page, width):
         by_tab.setdefault((x['tab'], x['tabName'], x['contextual']), []).append(x)
     bad, opened = [], []
     for (tab, name, ctx), xs in by_tab.items():
-        if ctx and not tab.startswith('table') and tab != 'headfoot':
+        if ctx and not tab.startswith('table') and tab not in ('headfoot', 'equation'):
             continue  # (no command lives there yet: test/tabs.py brings one in for each)
         if ctx and tab == 'headfoot':
             # (the header open on the page, as a double click in its margin opens it)
             load_doc(page, DOC); page.evaluate('rikuy.pageHFOpen("head")'); page.wait_for_timeout(250)
+        elif ctx and tab == 'equation':
+            # (the Equation tab shows while an equation's field is open: the button Formula opens one)
+            load_doc(page, DOC); click_text(page, 'First paragraph', 5)
+            page.evaluate('window.rikuy.runCommand("formula")'); page.wait_for_selector('.pop-math'); page.wait_for_timeout(250)
         elif ctx:
             load_doc(page, TABLE); click_text(page, 'cell', 2); page.wait_for_timeout(250)
         open_tab(page, width, name)
@@ -646,9 +650,10 @@ def reach(page, width):
                 bad.append((name, x['name'], n))
         if ctx:
             if page.evaluate('!!rikuy.hf'): page.evaluate('rikuy.pageHFClose()')
+            page.evaluate('window.rikuy.closePop(true)'); page.wait_for_timeout(100)
             load_doc(page, DOC)
     open_tab(page, width, 'Home')
-    check('every control of every tab is found by its role and name once its tab is open: ' + ', '.join(opened) + w, not bad and 'Insert' in opened and 'Table Layout' in opened, bad)
+    check('every control of every tab is found by its role and name once its tab is open: ' + ', '.join(opened) + w, not bad and 'Insert' in opened and 'Table Layout' in opened and 'Equation' in opened, bad)
     tabs = page.get_by_role('tablist', name='Ribbon', exact=True).get_by_role('tab')
     if width > 1000:
         check('the tablist "Ribbon" has Word\'s tabs in Word\'s order, Home open' + w, tabs.all_inner_texts() == [n for n in ('File', 'Home', 'Insert', 'Design', 'Layout', 'References', 'Review', 'View', 'Help') if n in tabs.all_inner_texts()]
@@ -779,11 +784,39 @@ def links(p):
     browser.close()
 
 
+def equations(p):
+    """An equation as llms-full.txt says an agent makes one: Alt+= on an empty line, the dialog
+    "Display math" and its "Equation editor", the contextual tab "Equation" in front, its button
+    "Fraction" and the menu item "stacked fraction"; Escape on the tab back to the field."""
+    full = open(os.path.join(DIST, 'llms-full.txt'), encoding='utf8').read()
+    check('llms-full.txt says Alt+= makes an equation, Ctrl+Shift+E no longer, and names the Equation tab\'s controls',
+          'Alt+= (Mac: Control+=)' in full and 'Ctrl+Shift+E no longer' in full and all('"%s"' % n in full for n in ('Equation gallery', 'Numbered', 'Display', 'Fraction', 'Matrix', 'Change to inline', 'Copy as LaTeX')), full[:0])
+    browser, page, errors = open_page(p, width=1400, height=900)
+    from browser import click_text
+    load_doc(page, DOC); click_text(page, 'Second paragraph here.', 22); page.keyboard.press('Enter'); page.wait_for_timeout(150)
+    page.keyboard.press('Alt+=')
+    field = page.get_by_role('dialog', name='Display math', exact=True).get_by_role('textbox', name='Equation editor', exact=True)
+    field.wait_for(state='attached', timeout=10000); page.wait_for_timeout(300)
+    front = page.get_by_role('tab', name='Equation', exact=True).get_attribute('aria-selected')
+    panel = page.get_by_role('tabpanel', name='Equation', exact=True)
+    panel.get_by_role('button', name='Fraction', exact=True).click()
+    page.get_by_role('menu', name='Fraction', exact=True).get_by_role('menuitem', name='stacked fraction', exact=True).click()
+    page.keyboard.type('a'); page.keyboard.press('Tab'); page.keyboard.type('b'); page.wait_for_timeout(400)
+    panel.get_by_role('button', name='Matrix', exact=True).focus(); page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    back = page.evaluate('document.activeElement && document.activeElement.id')
+    page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    check('Alt+= on an empty line, the tab "Equation" (in front), "Fraction", "stacked fraction": a numbered \\frac{a}{b}; Escape on the tab gives the field back',
+          front == 'true' and re.search(r'\\begin\{equation\}\n\s*\\frac\{a\}\{b\}\n\\end\{equation\}', src(page)) and back == 'pop-field' and page.get_by_role('dialog').count() == 0, (back, src(page)[-120:]))
+    check('no page errors (equations)', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e and 'fetch' not in e], errors[:4])
+    browser.close()
+
+
 if __name__ == '__main__':
     with sync_playwright() as p:
         api(p)
         controls(p)
         links(p)
+        equations(p)
     bad = [r for r in results if not r[1]]
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     sys.exit(1 if bad else 0)

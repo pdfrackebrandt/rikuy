@@ -131,6 +131,8 @@ jobs:
         run: cd test && python3 font.py compiles
       - name: Lists, then every kind Rikuy writes compiles with pdfLaTeX, XeLaTeX and LuaLaTeX and prints the page's labels
         run: cd test && python3 lists.py
+      - name: The Equation tab (what it writes compiled on the three engines)
+        run: cd test && python3 eqtab.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rikuy-dist
