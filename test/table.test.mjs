@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as X from '../src/table.js';
 import { buildModel } from '../src/model.js';
+import { buildWordDoc } from '../src/wordast.js';
 
 let n = 0;
 const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
@@ -421,6 +422,247 @@ ok('the security audit\'s cases: nested and unclosed tabulars, a star of million
   assert.ok(Date.now() - t0 < 1500, 'a turned cell: ' + (Date.now() - t0) + ' ms');
 });
 
+// The hostile review's cases (/tmp/B7-REVIEW.md), one check or more for each finding
+const rev = (name, f) => ok('review ' + name, f);
+rev('H1: Rikuy\'s own booktabs table is no grid: a row goes above \\bottomrule, rules stay single', () => {
+  const src = X.newTableText(2, 2, {}).replace(' &  \\\\', 'h1 & h2 \\\\').replace(' &  \\\\', 'v1 & v2 \\\\');
+  const T = at(src);
+  assert.equal(X.gridRules(src, T), null);
+  assert.equal(X.lookOf(src, T), 'booktabs');
+  assert.ok(X.headerOn(src, T, false), 'Header Row pressed');
+  const below = run(src, X.insertRow(src, T, 1, true));
+  assert.ok(/v1 & v2 \\\\\n &  \\\\\n\\bottomrule\n\\end\{tabular\}/.test(below), below);
+  const above = run(src, X.insertRow(src, T, 1, false));
+  assert.equal((above.match(/\\midrule/g) || []).length, 1, above);
+  assert.ok(/\\midrule\n &  \\\\\nv1 & v2/.test(above), above);
+  // deleting the last row of a two row booktabs table keeps \bottomrule (probe11)
+  const del = run(src, X.deleteRows(src, T, 1, 1));
+  assert.ok(/\\toprule\nh1 & h2 \\\\\n\\bottomrule\n\\end\{tabular\}/.test(del), del);
+  // a \cline{2-3} and \hline table: rows not all ruled the same, no grid
+  const cl = '\\begin{tabular}{lll}\n\\hline\na & b & c \\\\ \\cline{2-3}\nd & e & f \\\\\n\\hline\n\\end{tabular}';
+  const C = at(cl);
+  assert.equal(X.gridRules(cl, C), null);
+  assert.ok(/d & e & f \\\\\n &  &  \\\\\n\\hline/.test(run(cl, X.insertRow(cl, C, 1, true))));
+  // a real grid still brings its rule; one double rule under the header is allowed
+  assert.equal(X.gridRules(GRID, at(GRID)), ' \\hline');
+  const dbl = '\\begin{tabular}{|l|l|}\n\\hline\nA & B \\\\ \\hline\\hline\n1 & 2 \\\\ \\hline\n3 & 4 \\\\ \\hline\n\\end{tabular}';
+  assert.equal(X.gridRules(dbl, at(dbl)), ' \\hline');
+});
+rev('H2: Insert above copies no comment, a review comment or a commented row', () => {
+  const src = '\\begin{tabular}{ll}\na & b \\\\\n% comment (Ana) on "gamma": check this\ngamma & delta \\\\\n\\end{tabular}';
+  const out = run(src, X.insertRow(src, at(src), 1, false));
+  assert.equal((out.match(/comment \(Ana\)/g) || []).length, 1, out);
+  const s2 = '\\begin{tabular}{ll}\n% x & y \\\\\na & b \\\\\nc & d \\\\\n\\end{tabular}';
+  const o2 = run(s2, X.insertRow(s2, at(s2), 0, false));
+  assert.equal((o2.match(/% x & y/g) || []).length, 1, o2);
+  // below a last row without \\, and indented rows keep their indent
+  const s3 = '\\begin{tabular}{ll}\n  a & b \\\\ % one\n  c & d % two\n\\end{tabular}';
+  const o3 = run(s3, X.insertRow(s3, at(s3), 1, true));
+  assert.equal((o3.match(/% two/g) || []).length, 1, o3);
+  assert.equal((o3.match(/% one/g) || []).length, 1, o3);
+  const o4 = run(s3, X.insertRow(s3, at(s3), 1, false));
+  assert.ok(o4.includes('% one\n  &  \\\\\n  c & d'), o4);
+  assert.equal(run(o4, X.deleteRows(o4, at(o4), 1, 1)), s3);
+});
+rev('L1, L6: deleting the header of a booktabs table, a row with a comment', () => {
+  const del = run(BOOK, X.deleteRows(BOOK, at(BOOK), 0, 0));
+  assert.ok(!/\\toprule\s*\\midrule/.test(del), del);
+  assert.ok(/\\toprule\n1 & 2/.test(del), del);
+  const c = '\\begin{tabular}{ll}\na & b \\\\ % first\nc & d \\\\ % second\n\\end{tabular}';
+  const d0 = run(c, X.deleteRows(c, at(c), 0, 0));
+  assert.equal(d0, '\\begin{tabular}{ll}\nc & d \\\\ % second\n\\end{tabular}');
+  const d1 = run(c, X.deleteRows(c, at(c), 1, 1));
+  assert.equal(d1, '\\begin{tabular}{ll}\na & b \\\\ % first\n\\end{tabular}');
+});
+rev('H12: column operations on *{n}{…} keep its bars and @{}', () => {
+  const src = '\\begin{tabular}{|*{3}{c|}}\n\\hline\na & b & c \\\\\n\\hline\n\\end{tabular}';
+  const T = at(src);
+  const spec = (r) => { const t = run(src, r); return t.slice(t.indexOf('}{') + 2, t.indexOf('}\n')); };
+  assert.deepEqual(X.barsOf(src, T).places, [true, true, true, true]);
+  assert.equal(spec(X.insertCol(src, T, 2, true)), '|c|c|c|c|');
+  assert.equal(spec(X.insertCol(src, T, 0, false)), '|c|c|c|c|');
+  assert.equal(spec(X.deleteCols(src, T, 1, 1)), '|c|c|');
+  assert.equal(spec(X.alignCols(src, T, 1, 1, 'r', 't')), '|c|r|c|');
+  assert.equal(spec(X.setColBold(src, T, 0, true)), '|>{\\bfseries}c|c|c|');
+  assert.equal(spec(X.setBandedCols(src, T, true)), '|c|>{\\columncolor{gray!10}}c|c|');
+  assert.equal(spec({ edits: X.setBars(src, T, [true, false, false, true]) }), '|ccc|');
+  assert.equal(spec(X.applyLook(src, T, 'booktabs')), 'ccc');
+  assert.equal(X.lookOf(src, T), 'grid');
+  // a star the change does not touch stays a star; @{} and a command at the end of a star body
+  const s2 = '\\begin{tabular}{@{}*{2}{l@{\\quad}}r@{}}\na & b & c \\\\\n\\end{tabular}';
+  const o2 = run(s2, X.insertCol(s2, at(s2), 2, true));
+  assert.ok(o2.startsWith('\\begin{tabular}{@{}*{2}{l@{\\quad}}r@{\\quad}r@{}}'), o2);
+  const s3 = '\\begin{tabular}{*{2}{c}|*{2}{c\\vline}l}\na & b & c & d & e \\\\\n\\end{tabular}';
+  const o3 = run(s3, X.alignCols(s3, at(s3), 0, 0, 'r', 't'));
+  assert.ok(o3.startsWith('\\begin{tabular}{rc|*{2}{c\\vline}l}'), o3);
+  const o4 = run(s3, X.alignCols(s3, at(s3), 4, 4, 'r', 't'));
+  assert.ok(o4.startsWith('\\begin{tabular}{*{2}{c}|*{2}{c\\vline}r}'), o4);
+  const o5 = run(s3, X.alignCols(s3, at(s3), 3, 3, 'r', 't'));
+  assert.ok(o5.startsWith('\\begin{tabular}{*{2}{c}|c\\vline r\\vline l}'), o5);
+  // a width in a star: this column only
+  const s5 = '\\begin{tabular}{*{2}{p{1cm}|}}\na & b \\\\\n\\end{tabular}';
+  assert.ok(run(s5, X.setColWidth(s5, at(s5), 1, '2cm')).startsWith('\\begin{tabular}{p{1cm}|p{2cm}|}'));
+});
+
+rev('H3: a merged cell\'s \\cellcolor goes in its \\multicolumn, never before it', () => {
+  const s1 = '\\begin{tabular}{lll}\n\\toprule\n\\multicolumn{2}{c}{Head} & x \\\\\n\\midrule\na & b & c \\\\\n\\bottomrule\n\\end{tabular}';
+  const T1 = at(s1);
+  const o1 = run(s1, X.shade(s1, T1, { r0: 0, r1: 0, c0: 0, c1: 1 }, { value: 'yellow' }));
+  assert.ok(o1.includes('\\multicolumn{2}{c}{\\cellcolor{yellow} Head} & x'), o1);
+  // read back: the colour is the cell's, changed and taken off in place; its words without it
+  const U = at(o1), mc = U.rows[0].cells[0];
+  assert.deepEqual(X.shadeOf(o1, U, 0, mc), { model: null, value: 'yellow', row: false });
+  assert.equal(X.cellText(o1, mc), 'Head');
+  assert.ok(run(o1, X.shade(o1, U, { r0: 0, r1: 0, c0: 0, c1: 1 }, { value: 'red' })).includes('{\\cellcolor{red} Head}'));
+  assert.equal(run(o1, X.shade(o1, U, { r0: 0, r1: 0, c0: 0, c1: 1 }, null)), s1);
+  // merging cells the first of which is shaded; aligning one shaded cell, and back
+  const s2 = '\\begin{tabular}{lll}\n\\toprule\n\\cellcolor{red} a & b & c \\\\\n\\midrule\nd & e & f \\\\\n\\bottomrule\n\\end{tabular}';
+  const T2 = at(s2);
+  const m = run(s2, X.mergeCells(s2, T2, { r0: 0, r1: 0, c0: 0, c1: 1 }));
+  assert.ok(m.includes('\\multicolumn{2}{c}{\\cellcolor{red} a b} & c'), m);
+  const a = run(s2, X.alignCells(s2, T2, [T2.rows[0].cells[0]], 'c'));
+  assert.ok(a.includes('\\multicolumn{1}{c}{\\cellcolor{red} a} & b'), a);
+  const A = at(a);
+  assert.equal(run(a, X.alignCells(a, A, [A.rows[0].cells[0]], 'l')), s2);
+  // merged down and across with colours in both rows' first cells
+  const s3 = '\\begin{tabular}{lll}\n\\cellcolor{red} a & b & c \\\\\n\\cellcolor{blue} d & e & f \\\\\n\\end{tabular}';
+  const m3 = run(s3, X.mergeCells(s3, at(s3), { r0: 0, r1: 1, c0: 0, c1: 1 }));
+  assert.ok(m3.includes('\\multicolumn{2}{c}{\\cellcolor{red} \\multirow{2}{*}{a b d e}} & c') && m3.includes('\\multicolumn{2}{c}{\\cellcolor{blue}} & f'), m3);
+});
+rev('H4, L4: one cell aligned in a p{}, m{} or >{\\bfseries} column, and number columns', () => {
+  const s1 = '\\begin{tabular}{p{2cm}l}\na & b \\\\\n\\end{tabular}';
+  const r1 = X.alignCells(s1, at(s1), [at(s1).rows[0].cells[0]], 'c');
+  assert.ok(run(s1, r1).includes('\\multicolumn{1}{>{\\centering\\arraybackslash}p{2cm}}{a}'));
+  assert.deepEqual(r1.packages, ['array']);
+  const s2 = '\\begin{tabular}{>{\\bfseries}ll}\na & b \\\\\n\\end{tabular}';
+  const r2 = run(s2, X.alignCells(s2, at(s2), [at(s2).rows[0].cells[0]], 'r'));
+  assert.ok(r2.includes('\\multicolumn{1}{>{\\bfseries}r}{a}'), r2);
+  // siunitx's S: one cell (a header) a plain c, the whole column refused; w{}{} its argument
+  const s3 = '\\begin{tabular}{lS}\na & 1.5 \\\\\n\\end{tabular}';
+  assert.ok(run(s3, X.alignCells(s3, at(s3), [at(s3).rows[0].cells[1]], 'c')).includes('\\multicolumn{1}{c}{1.5}'));
+  assert.ok(X.alignCols(s3, at(s3), 1, 1, 'r', null).error);
+  const s4 = '\\begin{tabular}{w{l}{2cm}l}\na & b \\\\\n\\end{tabular}';
+  assert.equal(X.colH(s4, at(s4).spec.cols[0]), 'l');
+  const o4 = run(s4, X.alignCols(s4, at(s4), 0, 0, 'c', null));
+  assert.ok(o4.startsWith('\\begin{tabular}{w{c}{2cm}l}'), o4);
+  assert.equal(X.colH(o4, at(o4).spec.cols[0]), 'c');
+});
+rev('H5: AutoFit Window and Distribute Columns on tabular* and tabulary make a tabularx as wide', () => {
+  const s1 = '\\begin{tabular*}{\\textwidth}{@{\\extracolsep{\\fill}}lr}\na & b \\\\\n\\end{tabular*}';
+  for (const r of [X.autofit(s1, at(s1), 'window'), X.distributeCols(s1, at(s1), ['3cm', '3cm'])]) {
+    const o = run(s1, r);
+    assert.ok(o.startsWith('\\begin{tabularx}{\\textwidth}{X>{\\raggedleft\\arraybackslash}X}') && o.endsWith('\\end{tabularx}'), o);
+    assert.ok(r.packages.includes('tabularx'));
+  }
+  const s2 = '\\begin{tabulary}{\\linewidth}{LC}\na & b \\\\\n\\end{tabulary}';
+  const o2 = run(s2, X.autofit(s2, at(s2), 'window'));
+  assert.ok(o2.startsWith('\\begin{tabularx}{\\linewidth}{X>{\\centering\\arraybackslash}X}') && o2.endsWith('\\end{tabularx}'), o2);
+  // contents from tabular*: a tabular, \extracolsep gone
+  assert.ok(run(s1, X.autofit(s1, at(s1), 'contents')).startsWith('\\begin{tabular}{lr}'));
+});
+rev('H6, H7: Repeat Header Rows on and off carry the float, its settings, label and placement', () => {
+  const flt = 'Before.\n\n\\begin{table}[!htbp]\n\\centering\n\\small\n\\rowcolors{2}{gray!10}{}\n\\renewcommand{\\arraystretch}{1.3}\n\\begin{tabular}{ll}\n\\toprule\nA & B \\\\\n\\midrule\na & b \\\\\nc & d \\\\\n\\bottomrule\n\\end{tabular}\n\\caption{Results}\n\\label{tab:r}\n\\end{table}\n\nAfter.';
+  const on = run(flt, X.repeatHeader(flt, at(flt), 0, true));
+  assert.ok(on.includes('{\\small\n\\rowcolors{2}{gray!10}{}\n\\renewcommand{\\arraystretch}{1.3}\n\\begin{longtable}{ll} % rikuy: \\begin{table}[!htbp]\n'), on);
+  assert.ok(on.includes('\\midrule\n\\endhead\n') && on.includes('\\caption{Results}\n\\label{tab:r}\n\\end{longtable}}'), on);
+  const L = at(on);
+  assert.ok(X.repeats(L));
+  assert.equal(X.settingsOf(on, L).rowcolors.value, '{2}{gray!10}{}');
+  assert.equal(run(on, X.repeatHeader(on, L, 0, false)), flt);
+  // with a cell changed since (no memo): the float as it was, the cell as it is
+  const ed = on.replace('c & d', 'c & e');
+  assert.equal(run(ed, X.repeatHeader(ed, at(ed), 0, false)), flt.replace('c & d', 'c & e'));
+  // Rikuy's own table, and a label alone, a left aligned float, a table alone
+  const own = X.newTableText(3, 2, {}).replace('\\caption{}', '\\caption{Mine}');
+  const o2 = run(own, X.repeatHeader(own, at(own), 0, true));
+  assert.ok(!o2.includes('rikuy:'), o2);
+  const o2b = o2.replace('\\endhead\n &', '\\endhead\nx &');
+  assert.equal(run(o2b, X.repeatHeader(o2b, at(o2b), 0, false)), own.replace('\\midrule\n &', '\\midrule\nx &'));
+  const lab = '\\begin{table}[h]\n\\begin{tabular}{ll}\nA & B \\\\\na & b \\\\\n\\end{tabular}\n\\label{tab:x}\n\\end{table}';
+  const o3 = run(lab, X.repeatHeader(lab, at(lab), 0, true));
+  assert.ok(o3.startsWith('\\begin{longtable}[l]{ll}') && o3.endsWith('\\end{longtable}\n\\label{tab:x}'), o3);
+  const o3b = o3.replace('a & b', 'a & c');
+  assert.equal(run(o3b, X.repeatHeader(o3b, at(o3b), 0, false)), lab.replace('a & b', 'a & c'));
+  const alone = 'x\n\\begin{tabular}{ll}\nA & B \\\\\na & b \\\\\n\\end{tabular}\ny';
+  const o4 = run(alone, X.repeatHeader(alone, at(alone), 0, true)).replace('a & b', 'a & c');
+  assert.equal(run(o4, X.repeatHeader(o4, at(o4), 0, false)), alone.replace('a & b', 'a & c'));
+  // two columns: refused
+  assert.ok(X.repeatHeader(flt, at(flt), 0, true, { twocolumn: true }).error);
+  // pandoc's longtable (Word import): head once at the top, the last foot at the end
+  const pd = '\\begin{longtable}[]{@{}ll@{}}\n\\toprule\\noalign{}\nHead A & Head B \\\\\n\\midrule\\noalign{}\n\\endhead\n\\bottomrule\\noalign{}\n\\endlastfoot\none & two \\\\\nthree & four \\\\\n\\end{longtable}';
+  const off = run(pd, X.repeatHeader(pd, at(pd), 0, false));
+  assert.equal(off, '\\begin{table}[h]\n\\centering\n\\begin{tabular}{@{}ll@{}}\n\\toprule\\noalign{}\nHead A & Head B \\\\\n\\midrule\\noalign{}\none & two \\\\\nthree & four \\\\\n\\bottomrule\\noalign{}\n\\end{tabular}\n\\end{table}');
+  const lt = '\\begin{longtable}{ll}\n\\caption{Long one}\\label{tab:l}\\\\\n\\toprule\nA & B \\\\\n\\midrule\n\\endfirsthead\n\\toprule\nA & B \\\\\n\\midrule\n\\endhead\n\\midrule\n\\multicolumn{2}{r}{continued} \\\\\n\\endfoot\n\\bottomrule\n\\endlastfoot\na & b \\\\\n\\end{longtable}';
+  const off2 = run(lt, X.repeatHeader(lt, at(lt), 0, false));
+  assert.equal(off2, '\\begin{table}[h]\n\\centering\n\\caption{Long one}\\label{tab:l}\n\\begin{tabular}{ll}\n\\toprule\nA & B \\\\\n\\midrule\na & b \\\\\n\\bottomrule\n\\end{tabular}\n\\end{table}');
+});
+rev('H8: a caption for a table in a minipage or subtable goes in it, never a float in it', () => {
+  const mp = '\\begin{table}[h]\n\\begin{minipage}{0.5\\linewidth}\n\\centering\n\\begin{tabular}{ll}\na & b \\\\\n\\end{tabular}\n\\end{minipage}\n\\end{table}';
+  const r1 = X.captionEdits(mp, at(mp));
+  assert.equal(run(mp, r1), mp.replace('\\end{tabular}\n', '\\end{tabular}\n\\caption{}\n'));
+  assert.deepEqual(r1.packages, []);
+  const sub = mp.replace(/minipage\}\{0\.5\\linewidth\}/, 'subtable}{0.5\\linewidth}').replace('\\end{minipage}', '\\end{subtable}');
+  assert.ok(!run(sub, X.captionEdits(sub, at(sub))).includes('\\begin{table}[h]\n\\centering'));
+  const free = 'x\n\\begin{minipage}{5cm}\n\\begin{tabular}{l}\na \\\\\n\\end{tabular}\n\\end{minipage}';
+  const r3 = X.captionEdits(free, at(free));
+  assert.ok(run(free, r3).includes('\\end{tabular}\n\\captionof{table}{}\n\\end{minipage}'));
+  assert.deepEqual(r3.packages, ['caption']);
+});
+rev('H10, M6: settings of a table in \\resizebox{…}{!}{…} stay in it, the braces too', () => {
+  const s1 = 'T\n\\resizebox{\\linewidth}{!}{\\begin{tabular}{ll}\na & b \\\\\n\\end{tabular}}';
+  const on = run(s1, X.setSetting(s1, at(s1), 'rowcolors', '{2}{gray!10}{}'));
+  assert.ok(on.includes('\\resizebox{\\linewidth}{!}{\\rowcolors{2}{gray!10}{}\n\\begin{tabular}'), on);
+  assert.ok(X.settingsOf(on, at(on)).rowcolors, 'read again: Banded Rows pressed');
+  assert.equal(run(on, X.setSetting(on, at(on), 'rowcolors', null)), s1);
+  const s2 = '\\resizebox{\\linewidth}{!}{\n\\rowcolors{2}{gray!10}{}\n\\begin{tabular}{ll}\na & b \\\\\n\\end{tabular}}';
+  assert.equal(run(s2, X.setSetting(s2, at(s2), 'rowcolors', null)), '\\resizebox{\\linewidth}{!}{\n\\begin{tabular}{ll}\na & b \\\\\n\\end{tabular}}');
+  const s3 = '\\resizebox{\\linewidth}{!}{\\setlength{\\tabcolsep}{2pt}\n\\begin{tabular}{ll}\na & b \\\\\n\\end{tabular}}';
+  assert.equal(run(s3, X.setSetting(s3, at(s3), 'tabcolsep', null)), '\\resizebox{\\linewidth}{!}{\\begin{tabular}{ll}\na & b \\\\\n\\end{tabular}}');
+  // a group of its own still goes with its last setting; one holding \small stays
+  const g = 'x\n{\\setlength{\\tabcolsep}{2pt}\n\\begin{tabular}{l}\na \\\\\n\\end{tabular}}\ny';
+  assert.equal(run(g, X.setSetting(g, at(g), 'tabcolsep', null)), 'x\n\\begin{tabular}{l}\na \\\\\n\\end{tabular}\ny');
+  const g2 = 'x\n{\\small\n\\setlength{\\tabcolsep}{2pt}\n\\begin{tabular}{l}\na \\\\\n\\end{tabular}}\ny';
+  assert.equal(run(g2, X.setSetting(g2, at(g2), 'tabcolsep', null)), 'x\n{\\small\n\\begin{tabular}{l}\na \\\\\n\\end{tabular}}\ny');
+});
+rev('H11: Convert Text to Table cuts outside braces and math, keeps comments after the row', () => {
+  const rows = X.splitRows('\\textbf{x, y}, b\n$f(x,y)$, c % note\nd\\, e, f');
+  assert.deepEqual(rows.map((r) => [...r]), [['\\textbf{x, y}', 'b'], ['$f(x,y)$', 'c'], ['d\\, e', 'f']]);
+  assert.equal(rows[1].comment, '% note');
+  assert.deepEqual(X.splitRows('a & b \\\\ c & \\{d\\} \\\\[2pt] e & f').map((r) => [...r]), [['a', 'b'], ['c', '\\{d\\}'], ['e', 'f']]);
+  assert.deepEqual(X.splitRows('x, \\(a,b\\), \\[c,d\\], {p,q}').map((r) => [...r]), [['x', '\\(a,b\\)', '\\[c,d\\]', '{p,q}']]);
+  const t = X.newTableText(3, 2, { cells: rows, float: false });
+  assert.ok(t.includes('$f(x,y)$ & c \\\\ % note\n'), t);
+});
+rev('M5: one big CSV in many tables: read once, values cut, a budget of cells', () => {
+  const big = 'a,'.repeat(20) + 'x'.repeat(1900000);
+  const fl = '\\begin{table}[h]\n\\centering\n\\csvautotabular{big.csv}\n\\end{table}\n\n';
+  const t0 = Date.now();
+  const M = buildModel({ files: new Map([['main.tex', '\\documentclass{article}\n\\usepackage{csvsimple}\n\\begin{document}\n' + fl.repeat(200) + '\\end{document}\n'], ['big.csv', big]]), main: 'main.tex' });
+  assert.ok(Date.now() - t0 < 3000, (Date.now() - t0) + ' ms');
+  const tabs = M.blocks.flatMap((B) => B.items).flatMap((it) => it.parts || []).filter((p) => p.type === 'tabular');
+  assert.ok(tabs.length > 0);
+  const longest = Math.max(...tabs.flatMap((t) => t.rows.flatMap((r) => r.cells.flatMap((c) => c.inl.map((x) => (x.text || '').length)))));
+  assert.ok(longest <= 201, longest);
+});
+
+rev('M1: under a cell merged both ways, a row of empty cells keeps every cell (Word)', () => {
+  const tex = '\\documentclass{article}\n\\usepackage{multirow}\n\\begin{document}\n\\begin{tabular}{lll}\n\\multicolumn{2}{c}{\\multirow{2}{*}{zz}} & z3 \\\\\n\\multicolumn{2}{c}{} & y3 \\\\\n & & n3 \\\\\n\\end{tabular}\n\\end{document}\n';
+  const files = new Map([['main.tex', tex]]);
+  const W = buildWordDoc(buildModel({ files, main: 'main.tex' }), files, { now: 0, main: 'main.tex' });
+  const find = (x) => { if (!x || typeof x !== 'object') return null; if (x.t === 'Table') return x; for (const v of Object.values(x)) { const r = find(v); if (r) return r; } return null; };
+  const rows = find(W.doc).c[4][0][3].map((r) => r[1].map((c) => c[2] + 'x' + c[3]));
+  assert.deepEqual(rows, [['2x2', '1x1'], ['1x1'], ['1x1', '1x1', '1x1']]);
+});
+
+rev('audit: a stranger\'s *{n}{…} written out in bounded time, each look', () => {
+  for (const body of ['\\' + 'a'.repeat(62) + 'c', '|'.repeat(60) + 'c', 'c\\vline']) {
+    const src = '\\begin{tabular}{*{999}{' + body + '}}\na \\\\\n\\end{tabular}';
+    const t0 = Date.now();
+    for (let k = 0; k < 20; k++) { const U = X.parseTable(src, 0); X.barsOf(src, U); X.lookOf(src, U); X.insertCol(src, U, 0, true); }
+    assert.ok(Date.now() - t0 < 1500, body.slice(0, 10) + ': ' + (Date.now() - t0) + ' ms');
+  }
+});
+
 // the corpus: every table put back together, a row and a column in and out again
 const root = process.argv[2] || process.env.CORPUS_DIR || (fs.existsSync('/tmp/corpus-le/le') ? '/tmp/corpus-le/le' : null);
 if (root && fs.existsSync(root)) {
@@ -446,8 +688,9 @@ if (root && fs.existsSync(root)) {
         }
         for (let c = 0; c < T.ncols; c++) for (const right of [false, true]) {
           const b = X.apply(t, X.insertCol(t, T, c, right).edits), B = X.parseTable(b, x.s), k = right ? c + 1 : c;
-          // (a *{n}{…} stays written out)
-          assert.equal(X.apply(b, X.deleteCols(b, B, k, k).edits), X.writtenOut(t, T), 'column ' + c + ' in ' + f + ' at ' + x.s);
+          // (a *{n}{…} the column was in stays written out)
+          const back = X.apply(b, X.deleteCols(b, B, k, k).edits);
+          if (back !== t) assert.equal(X.writtenOut(back, X.parseTable(back, x.s)), X.writtenOut(t, T), 'column ' + c + ' in ' + f + ' at ' + x.s);
           ops++;
         }
       }

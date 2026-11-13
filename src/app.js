@@ -960,6 +960,8 @@ class App {
     const before = new Map();
     const byFile = new Map();
     for (const ed of edits) { if (!byFile.has(ed.f)) byFile.set(ed.f, []); byFile.get(ed.f).push(ed); }
+    // (a file the step makes, as Table from Data File's .csv: undone, it goes again)
+    const made = [...byFile.keys()].filter((f) => !this.files.has(f));
     for (const [f, list] of byFile) {
       let text = this.files.get(f) ?? '';
       before.set(f, text);
@@ -968,6 +970,7 @@ class App {
       this.files.set(f, text);
     }
     this.record(before, kind, cb && cb.f != null ? { f: cb.f, p: cb.p } : caret, caret);
+    if (made.length) { const top = this.hist[this.hist.length - 1]; if (top) for (const d of top.files) if (made.includes(d.f)) d.made = true; }
     this.zipDirty = true;
     this.rebuild(caret);
     this.pushToSource();
@@ -1005,7 +1008,7 @@ class App {
     const h = this.hist.pop();
     if (!h) { this.toast('Nothing to undo'); return; }
     h.open = false; h.before = null;
-    for (const d of h.files) { const t = this.files.get(d.f) ?? ''; this.files.set(d.f, t.slice(0, d.s) + d.del + t.slice(d.s + d.ins.length)); }
+    for (const d of h.files) { const t = this.files.get(d.f) ?? ''; this.files.set(d.f, t.slice(0, d.s) + d.del + t.slice(d.s + d.ins.length)); if (d.made && !this.files.get(d.f)) this.files.delete(d.f); }
     this.redoStack.push(h);
     const c = h.caretBefore || (h.files[0] ? { f: h.files[0].f, p: h.files[0].s + h.files[0].del.length } : null);
     this.rebuild(c);

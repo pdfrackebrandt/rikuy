@@ -1113,6 +1113,33 @@ Tests:
     get); T14's Height and Width boxes are in Properties…, not on the row (the one row of the
     ribbon has no room); shading and turned text do not go to Word (pandoc's table has no field
     for them); Safari and Firefox, by hand.
+    *Review* (a fresh hostile reviewer: 13 high, 7 medium, 6 low; each fixed with its case as a
+    test, and where TeX had stopped, compiled in the page): Rikuy's own booktabs table is no
+    grid (a grid has the same rules under every row and never booktabs' rules), so Tab in its
+    last cell, Insert below and Delete Rows keep `\bottomrule` and one `\midrule`; a new row
+    copies no comment, only the line's indent; a merged cell's `\cellcolor` stands in its
+    `\multicolumn`'s text (shading it, merging a shaded cell, aligning one); one cell aligned in
+    a `p{}` column loads array, keeps a `>{\bfseries}`, and a number column (S, D) keeps its
+    letter; AutoFit Window and Distribute Columns make tabular* and tabulary a tabularx as wide;
+    Repeat Header Rows off takes `\endfirsthead`'s head once at the top and `\endlastfoot`'s
+    foot (else `\endfoot`'s) at the end (pandoc's tables from Word), on carries the float's
+    settings into a group, its label, its alignment as `[l]`/`[r]`, a head other than
+    `\begin{table}[h]` into a comment, gives the float back byte for byte, works only from the
+    first rows (Word's rule) and says why in two columns; a caption in a minipage or subtable
+    goes in it (`\captionof` and caption outside a float); xcolor is loaded where only its
+    options were passed (listings, colortbl, tabularray alone); settings in `\resizebox{…}{!}{…}`
+    stay in its argument and its braces stay; Convert Text to Table cuts outside braces and
+    math and puts a comment after the row's `\\`; column operations on `*{n}{…}` keep its bars
+    and `@{}` and keep a star they do not touch; Table from Data File writes `[respect all]`
+    and T1 where the document names no encoding (OT1 prints `_` as a dot accent), and its file
+    joins the project only with Insert, in the same step; the page and Word under a cell merged
+    both ways, Tab, Select and the painted block across a table's pages, Sort on a longtable,
+    Split right after Merge byte for byte, one CSV in many tables read once (69 s to 68 ms), the
+    look named Box. Kept: a new row's leading space (` &  \\`) is the first cell's place, which
+    typing replaces (`Name &  \\`). The audit's quick profile on the changed files (notes
+    outside the repository) found one stall, a star written out with a pattern over its whole
+    text each repetition (156 ms a look), fixed with a bounded-time test. Evidence:
+    `table.test.mjs` 41 groups, `test/table.py` 150 (20 new, two compiles in the page).
 
 ## Open tasks
 

@@ -152,7 +152,8 @@ export function parseSpec(src, s, e, depth = 0) {
       const known = c === 'w' || c === 'W' || c === 'p' || c === 'm' || c === 'b';
       const wArg = c === 'w' || c === 'W' ? a.args[1] : known ? a.args[0] : COL_ARGS[c] == null ? a.args.find((x) => x && x.kind === 'm') || null : null;
       if (cols.length >= MAX_COLS) return null;
-      cols.push({ s: pre ? pre.s : i, e: a.e, ls: i, le: a.e, letter: c, w: wArg ? src.slice(wArg.is, wArg.ie) : null, ws: wArg ? wArg.is : null, we: wArg ? wArg.ie : null, pre, post: null, star: -1 });
+      const wa = (c === 'w' || c === 'W') && a.args[0] ? a.args[0] : null;
+      cols.push({ s: pre ? pre.s : i, e: a.e, ls: i, le: a.e, letter: c, w: wArg ? src.slice(wArg.is, wArg.ie) : null, ws: wArg ? wArg.is : null, we: wArg ? wArg.ie : null, wa: wa ? src.slice(wa.is, wa.ie).trim() : null, was: wa ? wa.is : null, wae: wa ? wa.ie : null, pre, post: null, star: -1 });
       pre = null;
       i = a.e;
       continue;
@@ -169,7 +170,7 @@ export function colAlign(col) {
   const L = col.letter;
   if ((L === 'c' || L === 'C' || L === 'S') && col.w == null) return 'c';
   if ((L === 'r' || L === 'R') && col.w == null) return 'r';
-  if (L === 'w' || L === 'W') return 'l';
+  if (L === 'w' || L === 'W') return col.wa === 'c' || col.wa === 'r' ? col.wa : 'l';
   if (L === 'l' || L === 'L') return col.w == null ? 'l' : 'p';
   return 'p';
 }
@@ -350,9 +351,21 @@ function readCell(src, T, s, e) {
       const r = argsAt(src, j, 'mmm', ce + 1);
       if (r && r.e === ce) {
         const [n, sp, tx] = r.args;
-        cell.mc = { s: k, e: r.e, n: parseInt(src.slice(n.is, n.ie), 10) || 1, nS: n.is, nE: n.ie, specS: sp.is, specE: sp.ie, textS: tx.is, textE: tx.ie };
+        cell.mc = { s: k, e: r.e, n: parseInt(src.slice(n.is, n.ie), 10) || 1, nS: n.is, nE: n.ie, specS: sp.is, specE: sp.ie, bodyS: tx.is, textS: tx.is, textE: tx.ie };
         cell.span = Math.max(1, Math.min(1000, cell.mc.n));
-        const inner = skipWs(src, tx.is, tx.ie, T.comStart);
+        // a merged cell's colour stands in its text (\cellcolor before \multicolumn is TeX's
+        // "Misplaced \omit"): read like the colours before a cell's words, its words after it
+        let q = skipWs(src, tx.is, tx.ie, T.comStart);
+        for (let guard = 0; guard < 4 && src.startsWith('\\cellcolor', q); guard++) {
+          const [nm, j2] = csAt(src, q);
+          if (nm !== 'cellcolor') break;
+          const r2 = argsAt(src, j2, 'om', tx.ie);
+          if (!r2) break;
+          cell.pre.push({ name: nm, s: q, e: r2.e, inner: true, model: r2.args[0] ? src.slice(r2.args[0].is, r2.args[0].ie) : null, color: src.slice(r2.args[1].is, r2.args[1].ie) });
+          q = skipWs(src, r2.e, tx.ie, T.comStart);
+          cell.mc.textS = q;
+        }
+        const inner = skipWs(src, cell.mc.textS, tx.ie, T.comStart);
         if (src.startsWith('\\multirow', inner)) cell.mr = readMultirow(src, inner, tx.ie, T);
       }
     } else if (nm === 'multirow') cell.mr = readMultirow(src, k, ce, T);
@@ -470,12 +483,13 @@ export function lookOf(src, T) {
 // The bars of the specification: which of the n + 1 places (before column 0 … after column n-1)
 // hold one; all: every place does
 export function barsOf(src, T) {
-  const cols = T.spec.cols, places = [];
-  const between = (a, b) => src.slice(a, b);
-  if (!cols.length || T.spec.stars.length) return { places: [], all: false };
-  places.push(between(T.spec.s, cols[0].s).includes('|'));
+  const f = flatSpec(src, T), places = [];
+  if (!f || !f.sp.cols.length) return { places: [], all: false };
+  const { t, sp } = f, cols = sp.cols;
+  const between = (a, b) => t.slice(a, b);
+  places.push(between(sp.s, cols[0].s).includes('|'));
   for (let k = 0; k + 1 < cols.length; k++) places.push(between(cols[k].e, cols[k + 1].s).includes('|'));
-  places.push(between(cols[cols.length - 1].e, T.spec.e).includes('|'));
+  places.push(between(cols[cols.length - 1].e, sp.e).includes('|'));
   return { places, all: places.every(Boolean), none: !places.some(Boolean) };
 }
 
@@ -495,7 +509,7 @@ export function newTableText(r, c, o = {}) {
   const spec = letter.repeat ? Array(c).fill(letter).join('') : letter;
   const env = fit === 'window' ? 'tabularx' : 'tabular';
   const open = '\\begin{' + env + '}' + (fit === 'window' ? '{\\linewidth}' : '') + '{' + spec + '}';
-  const row = (k) => Array.from({ length: c }, (_, j) => (o.cells && o.cells[k] && o.cells[k][j] != null ? o.cells[k][j] : '')).join(' & ') + ' \\\\';
+  const row = (k) => Array.from({ length: c }, (_, j) => (o.cells && o.cells[k] && o.cells[k][j] != null ? o.cells[k][j] : '')).join(' & ') + ' \\\\' + (o.cells && o.cells[k] && o.cells[k].comment ? ' ' + o.cells[k].comment : '');
   const lines = [open, '\\toprule'];
   for (let k = 0; k < r; k++) { lines.push(row(k)); if (k === 0 && r > 1 && o.header !== false) lines.push('\\midrule'); }
   lines.push('\\bottomrule', '\\end{' + env + '}');
@@ -514,30 +528,70 @@ export function newTableText(r, c, o = {}) {
 // an empty row of n columns, as Rikuy writes one
 export const emptyRow = (n) => Array(Math.max(1, n)).fill('').join(' & ') + ' \\\\';
 
-// In a grid of rules (every row has one under it): the rules as most rows have them after
-// their \\, as written (" \hline" or "\n\hline"); else null
+// In a grid of rules: the same rules under every row (spaces aside; from three rows one may
+// differ, as \hline\hline under a header), never booktabs. Then
+// a new row brings them too: the rules as written after its \\ (" \hline" or "\n\hline"); else null.
+const BOOK_RULES = new Set(['toprule', 'midrule', 'bottomrule', 'cmidrule', 'specialrule', 'addlinespace', 'morecmidrules']);
 export function gridRules(src, T) {
-  const rows = T.rows.filter((r) => r.kind === 'row');
-  if (!rows.length) return null;
-  const leads = [...T.rows.slice(1).map((r) => r.lead), T.tail.lead];
-  if (!leads.every((l) => l.some((x) => RULES.has(x.name)))) return null;
-  const count = new Map();
-  for (let k = 0; k < T.rows.length; k++) {
+  const n = T.rows.length;
+  if (!n || T.rows.some((r) => r.kind !== 'row')) return null;
+  if ([...T.rows.map((r) => r.lead), T.tail.lead].some((l) => l.some((x) => BOOK_RULES.has(x.name)))) return null;
+  const under = [];
+  for (let k = 0; k < n; k++) {
+    const lead = k + 1 < n ? T.rows[k + 1].lead : T.tail.lead;
+    if (!lead.some((x) => RULES.has(x.name))) return null;
     const t = src.slice(T.rows[k].e, unitEnd(src, T, k, true));
-    count.set(t, (count.get(t) || 0) + 1);
+    under.push({ t, norm: t.replace(/\s+/g, '') });
   }
-  return [...count].sort((x, y) => y[1] - x[1])[0][0];
+  // (all alike; from three rows one may differ, a header's \hline\hline wherever it now is)
+  const count = new Map();
+  for (const x of under) count.set(x.norm, (count.get(x.norm) || 0) + 1);
+  const [norm, c] = [...count].sort((x, y) => y[1] - x[1])[0];
+  if (n <= 2 ? c !== n : c < n - 1 || c < 2) return null;
+  return under.find((x) => x.norm === norm).t;
 }
 // where row k's unit ends: its \\, or in a grid the end of the rules under it
 function unitEnd(src, T, k, grid) {
   const row = T.rows[k];
-  if (!grid) return row.e;
-  const nx = T.rows[k + 1];
-  if (nx) return nx.leadE;
-  return T.tail.lead.length ? T.tail.lead[T.tail.lead.length - 1].e : row.e;
+  let e = row.e;
+  if (grid) {
+    const nx = T.rows[k + 1];
+    e = nx ? nx.leadE : T.tail.lead.length ? T.tail.lead[T.tail.lead.length - 1].e : row.e;
+  }
+  // (a comment after it on its line is the row's: it goes and comes with it)
+  return pastComment(src, T, e);
 }
-// the space a row's words start after (a line end and its indent, or a space)
-function wsBefore(src, row) { return src.slice(row.leadE, row.cs); }
+// p, or the end of a comment that follows p on its line
+function pastComment(src, T, p) {
+  let q = p;
+  while (q < src.length && (src[q] === ' ' || src[q] === '\t')) q++;
+  return src[q] === '%' && T.comStart.has(q) ? T.comStart.get(q) : p;
+}
+// where row k's unit starts: after the rules before it, and after a comment that ends the row
+// before it (that comment is the row before's)
+function unitStart(src, T, k, grid) {
+  const row = T.rows[k];
+  // (and a comment on the line of the rules before it is theirs: \hline% stays whole)
+  // (as is one on the \begin line before the first row)
+  const p = row.leadE > row.s || k === 0 ? pastComment(src, T, row.leadE) : row.leadE;
+  return k > 0 ? Math.max(p, unitEnd(src, T, k - 1, grid)) : p;
+}
+// the edits that take rules out: a rule alone on its line with its line
+function removeRules(src, rules) {
+  const out = [];
+  for (const x of rules) {
+    const ls = src.lastIndexOf('\n', x.s - 1) + 1, le = src.indexOf('\n', x.e);
+    if (/^[ \t]*$/.test(src.slice(ls, x.s)) && le >= 0 && /^[ \t\r]*$/.test(src.slice(x.e, le))) out.push({ s: ls, e: le + 1, t: '' });
+    else { let s = x.s; while (s > 0 && (src[s - 1] === ' ' || src[s - 1] === '\t')) s--; out.push({ s, e: x.e, t: '' }); }
+  }
+  return out;
+}
+// a row's indent: the spaces before its words on their line, when nothing else stands there
+function indentOf(src, row) {
+  const ls = src.lastIndexOf('\n', row.cs - 1) + 1;
+  const pre = src.slice(ls, row.cs);
+  return /^[ \t]*$/.test(pre) ? pre : '';
+}
 
 // the multirows a change of rows reaches: their count edits
 function spanRowEdits(T, delta, inside) {
@@ -557,9 +611,8 @@ export function insertRow(src, T, r, below, o = {}) {
   if (!row) return null;
   const grid = gridRules(src, T);
   const text = o.text != null ? o.text : emptyRow(T.ncols);
-  let W = wsBefore(src, row);
-  if (!/\S/.test(W) && !W) W = r > 0 ? wsBefore(src, T.rows[r - 1]) : '';
-  if (!W) W = T.eol;
+  // (a line end and the row's indent: never the comments before it, which stay where they are)
+  const W = T.eol + indentOf(src, row);
   const lead = W.endsWith(' ') || W.endsWith('\t') ? text.replace(/^ /, '') : text;
   const span = spanRowEdits(T, 1, below ? (m) => m.top <= r && r < m.bottom : (m) => m.top < r && r <= m.bottom);
   if (below && row.sepS == null) {
@@ -571,7 +624,7 @@ export function insertRow(src, T, r, below, o = {}) {
     const t = ' \\\\' + W + words;
     return { edits: [{ s: end, e: end, t }, ...span], p: end + 3 + W.length };
   }
-  const at = below ? unitEnd(src, T, r, !!grid) : row.leadE;
+  const at = below ? unitEnd(src, T, r, !!grid) : unitStart(src, T, r, !!grid);
   const t = W + lead + (grid || '');
   return { edits: [{ s: at, e: at, t }, ...span], p: at + W.length };
 }
@@ -598,8 +651,16 @@ export function deleteRows(src, T, r0, r1) {
     let s = prev.sepS;
     while (s > 0 && (src[s - 1] === ' ' || src[s - 1] === '\t')) s--;
     edits.push({ s, e: rowEnd(src, last), t: '' });
-  } else edits.push({ s: T.rows[r0].leadE, e: unitEnd(src, T, r1, grid), t: '' });
+  } else edits.push({ s: unitStart(src, T, r0, grid), e: unitEnd(src, T, r1, grid), t: '' });
   const p = edits[0].s;
+  // In booktabs two rules that come together lose the middle one: the header deleted leaves no
+  // \midrule under \toprule, the body deleted none over \bottomrule
+  if (!grid && lookOf(src, T) === 'booktabs') {
+    const before = T.rows[r0].lead.filter((x) => RULES.has(x.name));
+    const after = (r1 + 1 < T.rows.length ? T.rows[r1 + 1].lead : T.tail.lead).filter((x) => RULES.has(x.name));
+    const mid = (l) => l.length && l.every((x) => x.name === 'midrule' || x.name === 'cmidrule');
+    if (before.length && after.length) edits.push(...removeRules(src, mid(after) ? after : mid(before) ? before : []));
+  }
   for (const m of multirows(T)) {
     const lost = Math.max(0, Math.min(m.bottom, r1) - Math.max(m.top, r0) + 1);
     if (!lost) continue;
@@ -618,26 +679,97 @@ export function deleteRows(src, T, r0, r1) {
 
 // ---- edits on columns ---------------------------------------------------------------------------
 // The specification's text with column k's piece changed (or a piece added at a place): the
-// edits to get there, one replacement of the part that differs. A *{n}{…} is written out first.
-function specPieces(src, T) {
-  const sp = T.spec, cols = sp.cols;
-  if (!sp.stars.length) {
-    const pieces = [src.slice(sp.s, cols.length ? cols[0].s : sp.e)];
-    cols.forEach((c, k) => { pieces.push(src.slice(c.s, c.e)); pieces.push(src.slice(c.e, k + 1 < cols.length ? cols[k + 1].s : sp.e)); });
-    return pieces;
+// edits to get there, one replacement of the part that differs. Pieces are read from the
+// specification with every *{n}{…} written out, so the bars and @{} inside a star stay; the
+// edit then puts back every star whose columns it did not touch.
+// (a star written out longer than this is too long to edit column by column: 1000 columns of ten
+// characters are 10 000; and each look at a stranger's star costs at most this much)
+const MAX_FLAT = 1 << 14;
+// text a after text b as TeX reads them: a space between a command's name and a letter after it
+// (TeX writes a star out in tokens, \vline then c, where the letters would run together). Only
+// a's last 80 characters are looked at: a pattern over all of a, once a repetition, went
+// quadratic on a stranger's *{999}{\aaa…}.
+function glue(a, b) {
+  if (!b || !isLetter(b[0])) return a + b;
+  let i = a.length - 1;
+  const stop = Math.max(0, a.length - 80);
+  while (i >= stop && isLetter(a[i])) i--;
+  return i >= 0 && i < a.length - 1 && a[i] === '\\' ? a + ' ' + b : a + b;
+}
+// src.slice(s, e) with its *{n}{…} written out, or null past room characters
+function expandSpec(src, s, e, depth, room) {
+  const sp = parseSpec(src, s, e, depth);
+  if (!sp) return null;
+  let out = '', p = s;
+  for (const st of sp.stars) {
+    out = glue(out, src.slice(p, st.s));
+    const body = expandSpec(src, st.is, st.ie, depth + 1, room);
+    if (body == null || out.length + (body.length + 1) * st.n > room) return null;
+    for (let r = 0; r < st.n; r++) out = glue(out, body);
+    p = st.e;
   }
-  // (written out: each column's own text, the bars and spaces of its star between)
-  const pieces = [''];
-  cols.forEach((c) => { pieces.push(src.slice(c.s, c.e)); pieces.push(''); });
+  out = glue(out, src.slice(p, e));
+  return out.length > room ? null : out;
+}
+// { t, sp }: the text the specification is read from and its columns (src and T.spec without stars)
+// (written out once for each T: the ribbon asks about one table many times)
+function flatSpec(src, T) {
+  const sp = T.spec;
+  if (!sp.stars.length) return { t: src, sp };
+  if (T.flat !== undefined) return T.flat;
+  const t = expandSpec(src, sp.s, sp.e, 0, MAX_FLAT);
+  const fs = t == null ? null : parseSpec(t, 0, t.length);
+  return (T.flat = fs && fs.cols.length === sp.cols.length ? { t, sp: fs } : null);
+}
+// [lead, column 0, after it, column 1, …, after the last]; null for a star too long to write out
+function specPieces(src, T) {
+  const f = flatSpec(src, T);
+  if (!f) return null;
+  const { t, sp } = f, cols = sp.cols;
+  const pieces = [t.slice(sp.s, cols.length ? cols[0].s : sp.e)];
+  cols.forEach((c, k) => { pieces.push(t.slice(c.s, c.e)); pieces.push(t.slice(c.e, k + 1 < cols.length ? cols[k + 1].s : sp.e)); });
   return pieces;
 }
-// the text with T's *{n}{…} written out (what an edit of its columns leaves)
+// the text with T's *{n}{…} written out
 export function writtenOut(src, T) {
   if (!T.spec.stars.length) return src;
-  return src.slice(0, T.spec.s) + specPieces(src, T).join('') + src.slice(T.spec.e);
+  const f = flatSpec(src, T);
+  return f ? src.slice(0, T.spec.s) + f.t + src.slice(T.spec.e) : src;
 }
 function specEdit(src, T, pieces) {
-  const before = src.slice(T.spec.s, T.spec.e), after = pieces.join('');
+  if (!pieces) return [];
+  const before = src.slice(T.spec.s, T.spec.e);
+  let after = pieces.join('');
+  if (T.spec.stars.length) {
+    // the top level stretches: text as written, and each star with its written-out text
+    const segs = [];
+    let p = T.spec.s;
+    for (const st of T.spec.stars) {
+      if (st.s > p) segs.push({ o: src.slice(p, st.s), x: src.slice(p, st.s) });
+      segs.push({ o: src.slice(st.s, st.e), x: expandSpec(src, st.s, st.e, 0, MAX_FLAT) || '', star: true });
+      p = st.e;
+    }
+    if (T.spec.e > p) segs.push({ o: src.slice(p, T.spec.e), x: src.slice(p, T.spec.e) });
+    // (written out as flatSpec does, a space glued in where a command's name meets a letter)
+    let B = '';
+    const ends = segs.map((g) => { B = glue(B, g.x); return [B.length - g.x.length, B.length]; });
+    let a = 0;
+    while (a < B.length && a < after.length && B[a] === after[a]) a++;
+    let z = 0;
+    while (z < B.length - a && z < after.length - a && B[B.length - 1 - z] === after[after.length - 1 - z]) z++;
+    // the stretches clear of the part that changed stay as written (not one that touches it: a
+    // >{} written before a star's first column belongs in the star), the rest is the new text
+    let head = '', tail = '', i0 = 0, i1 = B.length;
+    let k0 = 0;
+    while (k0 < segs.length && ends[k0][1] < a) { head += segs[k0].o; i0 = ends[k0][1]; k0++; }
+    let k1 = segs.length - 1;
+    while (k1 >= k0 && ends[k1][0] > B.length - z) { tail = segs[k1].o + tail; i1 = ends[k1][0]; k1--; }
+    // (a space glued in beside a star kept as written is not needed: its braces end the name)
+    const glued = (k) => k > 0 && k < segs.length && ends[k][0] > ends[k - 1][1];
+    if (k0 > 0 && glued(k0) && segs[k0 - 1].star && i0 < i1) i0++;
+    if (k1 + 1 < segs.length && glued(k1 + 1) && segs[k1 + 1].star && i1 > i0) i1--;
+    after = head + after.slice(i0, after.length - (B.length - i1)) + tail;
+  }
   if (before === after) return [];
   let s = 0;
   while (s < before.length && s < after.length && before[s] === after[s]) s++;
@@ -646,10 +778,11 @@ function specEdit(src, T, pieces) {
   return [{ s: T.spec.s + s, e: T.spec.e - z, t: after.slice(s, after.length - z) }];
 }
 // the separator new columns get between them: what stands between every two columns, if the same
-function innerSep(src, T) {
-  const cols = T.spec.cols;
-  if (T.spec.stars.length) return '';
-  if (cols.length < 2) { const a = src.slice(T.spec.s, cols[0] ? cols[0].s : T.spec.e), b = cols[0] ? src.slice(cols[0].e, T.spec.e) : ''; return a === b && a.includes('|') ? '|' : ''; }
+function innerSep(src0, T) {
+  const f = flatSpec(src0, T);
+  if (!f) return '';
+  const { t: src, sp } = f, cols = sp.cols;
+  if (cols.length < 2) { const a = src.slice(sp.s, cols[0] ? cols[0].s : sp.e), b = cols[0] ? src.slice(cols[0].e, sp.e) : ''; return a === b && a.includes('|') ? '|' : ''; }
   const seps = new Set();
   for (let k = 0; k + 1 < cols.length; k++) seps.add(src.slice(cols[k].e, cols[k + 1].s).replace(/\s+/g, ''));
   return seps.size === 1 ? [...seps][0] : '';
@@ -682,6 +815,7 @@ export function insertCol(src, T, col, right, o = {}) {
   // the specification: a copy of the column's own piece beside it
   if (cols.length) {
     const pieces = specPieces(src, T), k = Math.min(col, cols.length - 1), sep = innerSep(src, T);
+    if (!pieces) return null;
     const copy = o.letter != null ? o.letter : pieces[2 * k + 1];
     // (the new column goes after the separator before it: deleting a column takes the separator
     // before it, so the specification comes back as it was; left of the first, the one after it)
@@ -747,6 +881,7 @@ export function deleteCols(src, T, c0, c1) {
   const cols = T.spec.cols;
   if (cols.length) {
     const pieces = specPieces(src, T);
+    if (!pieces) return { edits: [] };
     // the columns with the separator before them; from the first column, with the one after them
     const z = Math.min(c1, cols.length - 1);
     if (c0 > 0) pieces.splice(2 * c0, 2 * (z - c0 + 1));
@@ -854,13 +989,14 @@ export function floatOf(src, T) {
 // ---- merging and splitting cells ----------------------------------------------------------------
 // the bars a \multicolumn over columns c0..c1 keeps: the first column's left bar (only at the
 // table's left edge: inside, the bar belongs to the column before) and the bars after c1
-function mcSpec(src, T, c0, c1, letter) {
-  const cols = T.spec.cols;
-  if (!cols.length || T.spec.stars.length) return letter;
+function mcSpec(src0, T, c0, c1, letter) {
+  const f = flatSpec(src0, T);
+  if (!f || !f.sp.cols.length) return letter;
+  const { t: src, sp } = f, cols = sp.cols;
   const bars = (a, b) => src.slice(a, b).replace(/[^|]/g, '');
-  const left = c0 === 0 ? bars(T.spec.s, cols[0].s) : '';
+  const left = c0 === 0 ? bars(sp.s, cols[0].s) : '';
   const k = Math.min(c1, cols.length - 1);
-  const right = bars(cols[k].e, k + 1 < cols.length ? cols[k + 1].s : T.spec.e);
+  const right = bars(cols[k].e, k + 1 < cols.length ? cols[k + 1].s : sp.e);
   return left + letter + right;
 }
 // the rectangle of cells a selection covers grown to the merged cells it cuts: { r0, r1, c0, c1 }
@@ -898,14 +1034,16 @@ export function mergeCells(src, T, rect) {
   const spec = mcSpec(src, T, c0, c1, letter);
   const body = words.join(' ');
   const inner = n > 1 ? '\\multirow{' + n + '}{*}{' + body + '}' : body;
-  const top = k > 1 ? '\\multicolumn{' + k + '}{' + spec + '}{' + inner + '}' : inner;
-  const span = (x) => ({ s: x.first.ks, e: x.last.empty ? (x.last === x.first ? x.last.ks : x.last.s) : x.last.ce });
+  // (a \cellcolor of a row's first cell goes into the \multicolumn's text: before it TeX stops)
+  const color = (x) => outerColor(src, x.first) + innerColor(src, x.first);
+  const top = k > 1 ? '\\multicolumn{' + k + '}{' + spec + '}{' + color(ranges[0]) + inner + '}' : color(ranges[0]) + inner;
+  const span = (x) => ({ s: outerStart(x.first), e: x.last.empty ? (x.last === x.first ? x.last.ks : x.last.s) : x.last.ce });
   const t0 = span(ranges[0]);
   edits.push({ s: t0.s, e: t0.e, t: top });
-  const p = t0.s + top.indexOf(body) + body.length;
+  const p = t0.s + top.length - (k > 1 ? 1 : 0) - (n > 1 ? 1 : 0);
   for (const x of ranges.slice(1)) {
     const g = span(x);
-    const t = k > 1 ? '\\multicolumn{' + k + '}{' + spec + '}{}' : '';
+    const t = k > 1 ? '\\multicolumn{' + k + '}{' + spec + '}{' + color(x).trim() + '}' : color(x).trim();
     if (g.s !== g.e || t) edits.push({ s: g.s, e: g.e, t });
   }
   // the rules between the merged rows: around the merged columns only
@@ -1023,8 +1161,13 @@ export function cellH(src, T, cell) {
 // The specification's piece for a column with a new alignment: l c r for a plain column; for a
 // paragraph column \centering, \raggedleft or \raggedright before it (array) and p, m or b for
 // the vertical. h: 'l' | 'c' | 'r' | null (unchanged); v: 't' | 'm' | 'b' | null.
+const NUMBER_COLS = new Set(['S', 's', 'D']);
 function realign(src, col, h, v) {
   const a = colAlign(col);
+  // (a number column aligns at its decimal sign, set by its own options: it stays)
+  if (NUMBER_COLS.has(col.letter)) return null;
+  // (w{align}{width}: its first argument)
+  if (col.letter === 'w' || col.letter === 'W') return h && col.was != null ? src.slice(col.s, col.was) + h + src.slice(col.wae, col.e) : null;
   if (a !== 'p') return h ? (col.pre ? src.slice(col.s, col.ls) : '') + h + src.slice(col.le, col.e) : null;
   let letter = src.slice(col.ls, col.le);
   if (v && 'pmb'.includes(col.letter)) letter = { t: 'p', m: 'm', b: 'b' }[v] + letter.slice(1);
@@ -1040,6 +1183,9 @@ function realign(src, col, h, v) {
 // Align whole columns c0..c1: { edits, packages }
 export function alignCols(src, T, c0, c1, h, v) {
   const pieces = specPieces(src, T), cols = T.spec.cols, pk = new Set();
+  if (!pieces) return { edits: [], packages: [] };
+  const some = cols.slice(c0, c1 + 1);
+  if (h && some.length && some.every((col) => NUMBER_COLS.has(col.letter)) && !v) return { error: 'A number column (siunitx\'s S, dcolumn\'s D) lines its numbers up at the decimal sign; its own options set that. One cell, as a header, can be aligned.', edits: [], packages: [] };
   for (let c = c0; c <= Math.min(c1, cols.length - 1); c++) {
     const t = realign(src, cols[c], h, v);
     if (t == null) continue;
@@ -1052,28 +1198,40 @@ export function alignCols(src, T, c0, c1, h, v) {
 // Align some cells: each as \multicolumn{1}{c}{…} with its column's bars, the \multicolumn going
 // again when the alignment is its column's. { edits }
 export function alignCells(src, T, cells, h) {
-  const edits = [];
+  const edits = [], pk = new Set();
   for (const cell of cells) {
     const col = T.spec.cols[cell.col];
-    const own = colH(src, col);
+    // (a number column's own alignment is at the decimal sign: any other is a cell's own)
+    const own = col && NUMBER_COLS.has(col.letter) ? null : colH(src, col);
     if (cell.mc) {
       const sp = parseSpec(src, cell.mc.specS, cell.mc.specE), c0 = sp && sp.cols[0];
       if (!c0) continue;
-      // back to its column's alignment: a \multicolumn{1}{…} that only aligned goes
+      // back to its column's alignment: a \multicolumn{1}{…} that only aligned goes (its colour
+      // kept before its words)
       if (cell.mc.n === 1 && h === own && !cell.mr && src.slice(cell.mc.specS, cell.mc.specE).replace(/[|\s]/g, '').length === 1) {
-        edits.push({ s: cell.ks, e: cell.ce, t: src.slice(cell.mc.textS, cell.mc.textE) });
+        edits.push({ s: cell.ks, e: cell.ce, t: src.slice(cell.mc.bodyS, cell.mc.textE) });
         continue;
       }
-      const t = realign(src, c0, h === 'j' ? 'l' : h, null);
-      if (t != null) edits.push({ s: c0.s, e: c0.e, t });
+      const t = cellLetter(src, c0, h);
+      if (t != null) { edits.push({ s: c0.s, e: c0.e, t }); if (/^>\{|^[mb]\s*\{/.test(t)) pk.add('array'); }
       continue;
     }
     if (h === own) continue;
-    const letter = colAlign(col) === 'p' ? realign(src, col, h === 'j' ? null : h, null) : h;
+    // the column's own piece realigned: its >{\bfseries} and <{} stay
+    const letter = cellLetter(src, col, h) || h;
+    if (/^>\{|^[mb]\s*\{/.test(letter)) pk.add('array');
     const words = cell.empty ? '' : src.slice(cell.ks, cell.ce);
-    edits.push({ s: cell.ks, e: cell.empty ? cell.ks : cell.ce, t: '\\multicolumn{1}{' + mcSpec(src, T, cell.col, cell.col, letter) + '}{' + words + '}' });
+    const s0 = outerStart(cell);
+    edits.push({ s: s0, e: cell.empty ? cell.ks : cell.ce, t: '\\multicolumn{1}{' + mcSpec(src, T, cell.col, cell.col, letter) + '}{' + outerColor(src, cell) + words + '}' });
   }
-  return { edits: edits.sort((a, b) => a.s - b.s) };
+  return { edits: edits.sort((a, b) => a.s - b.s), packages: [...pk] };
+}
+// one cell's column letter aligned h: a paragraph column keeps its width and gets \centering or
+// \raggedleft; a number column (siunitx's S, dcolumn's D) a plain l, c or r, as for its header
+function cellLetter(src, col, h) {
+  if (!col) return h === 'j' ? 'l' : h;
+  if (NUMBER_COLS.has(col.letter)) return (h === 'j' ? 'l' : h);
+  return realign(src, col, colAlign(col) === 'p' ? (h === 'j' ? null : h) : h === 'j' ? 'l' : h, null);
 }
 
 // ---- sorting -------------------------------------------------------------------------------------
@@ -1120,25 +1278,80 @@ export function tableToText(src, T, sep) {
 }
 
 // The rows of plain text as a table's cells: each paragraph (or each line, in one paragraph) a
-// row, cut at sep: 'tab', ',', ';', '&', or auto (tabs, then &, then ;, then commas)
+// row, cut at sep: 'tab', ',', ';', '&', or auto (tabs, then &, then ;, then commas). A cut is
+// made only outside braces and math ($…$, \(…\), \[…\]) and never at an escaped \& \% \, ; a
+// comment is no cell's: each row's comments are its .comment, to stand after its \\.
+// (one pass over each line, no pattern: a pattern with \s* on both sides of a separator went
+// quadratic on a stranger's run of spaces)
+function cutOutside(x, at) {
+  const out = [];
+  let cur = 0, d = 0, math = false;
+  for (let i = 0; i < x.length; i++) {
+    const ch = x[i];
+    const n = d === 0 && !math ? at(x, i) : 0;
+    if (n) { out.push(x.slice(cur, i)); i += n - 1; cur = i + 1; continue; }
+    if (ch === '\\') {
+      const nx = x[i + 1];
+      if (nx === '(' || nx === '[') math = true;
+      else if (nx === ')' || nx === ']') math = false;
+      i++;
+      continue;
+    }
+    if (ch === '{') d++;
+    else if (ch === '}') d = Math.max(0, d - 1);
+    else if (ch === '$') math = !math;
+  }
+  out.push(x.slice(cur));
+  return out;
+}
+// a line without its comment: [words, comment ('' when none)]
+function uncomment(line) {
+  for (let i = 0; i < line.length; i++) {
+    if (line[i] === '\\') { i++; continue; }
+    if (line[i] === '%') return [line.slice(0, i), line.slice(i)];
+  }
+  return [line, ''];
+}
 export function splitRows(text, sep = 'auto') {
-  // (splits and trims only: a pattern with \s* on both sides of a separator went quadratic on a
-  // stranger's run of spaces)
   const t = text.replace(/\r\n/g, '\n').trim();
   const paras = [];
   let cur = [];
-  for (const line of t.split('\n')) { if (line.trim()) cur.push(line.trim()); else if (cur.length) { paras.push(cur); cur = []; } }
-  if (cur.length) paras.push(cur);
-  let lines = paras.length > 1 ? paras.map((x) => x.join(' ')) : (paras[0] || []).flatMap((x) => x.split('\\\\'));
-  lines = lines.map((x) => x.trim()).filter(Boolean);
-  // an & that is no \&
-  const amps = (x) => { const out = []; let c = ''; for (let i = 0; i < x.length; i++) { if (x[i] === '\\') { c += x.slice(i, i + 2); i++; continue; } if (x[i] === '&') { out.push(c); c = ''; } else c += x[i]; } out.push(c); return out; };
-  if (sep === 'auto') {
-    const has = (ch) => lines.length && lines.every((x) => x.includes(ch));
-    sep = has('\t') ? 'tab' : lines.some((x) => amps(x).length > 1) ? '&' : has(';') ? ';' : ',';
+  for (const raw of t.split('\n')) {
+    const [line, com] = uncomment(raw);
+    if (line.trim() || com) cur.push({ line: line.trim(), com: com.trim() });
+    else if (cur.length) { paras.push(cur); cur = []; }
   }
-  const cut = (x) => (sep === 'tab' ? x.split('\t').filter((c, k, a) => c !== '' || k === 0 || k === a.length - 1) : sep === '&' ? amps(x) : x.split(sep === ';' ? ';' : ','));
-  return lines.map((x) => cut(x).map((c) => c.trim()));
+  if (cur.length) paras.push(cur);
+  const rowSep = (x, i) => (x[i] === '\\' && x[i + 1] === '\\' ? 2 : 0);
+  let lines;
+  if (paras.length > 1) lines = paras.map((p) => ({ text: p.map((x) => x.line).filter(Boolean).join(' '), com: p.map((x) => x.com).filter(Boolean).join(' ') }));
+  else {
+    lines = [];
+    for (const x of paras[0] || []) {
+      // (the length after a \\, as \\[2pt], is no cell's)
+      const parts = cutOutside(x.line, rowSep).map((y, k) => (k ? y.replace(/^\s*\[[^\]\n]{0,40}\]/, '') : y));
+      parts.forEach((y, k) => lines.push({ text: y, com: k === parts.length - 1 ? x.com : '' }));
+    }
+  }
+  // (a line of only a comment joins the row before it)
+  const rows = [];
+  for (const x of lines) {
+    if (x.text.trim()) rows.push({ text: x.text.trim(), com: x.com });
+    else if (x.com && rows.length) rows[rows.length - 1].com = (rows[rows.length - 1].com + ' ' + x.com).trim();
+  }
+  const ch = { tab: '\t', ',': ',', ';': ';', '&': '&' };
+  const cells = (x, s2) => cutOutside(x, (y, i) => (y[i] === ch[s2] ? 1 : 0));
+  if (sep === 'auto') {
+    const has = (s2) => rows.length && rows.every((x) => cells(x.text, s2).length > 1);
+    sep = has('tab') ? 'tab' : rows.some((x) => cells(x.text, '&').length > 1) ? '&' : has(';') ? ';' : ',';
+  }
+  return rows.map((x) => {
+    let cs = cells(x.text, sep).map((c) => c.trim());
+    // (tabs in a row: a run of them is one cut)
+    if (sep === 'tab') cs = cs.filter((c, k, a) => c !== '' || k === 0 || k === a.length - 1);
+    if (x.com) cs.comment = x.com;
+    return cs;
+  });
 }
 
 // ---- the look: rules and bars -----------------------------------------------------------------------
@@ -1187,6 +1400,7 @@ export function setBars(src, T, want) {
   const cols = T.spec.cols;
   if (!cols.length) return [];
   const pieces = specPieces(src, T);
+  if (!pieces) return [];
   const n = cols.length;
   for (let k = 0; k <= n; k++) {
     const i = 2 * k;
@@ -1205,7 +1419,7 @@ export const LOOKS = {
   grid: { name: 'Table Grid', rules: () => ['hline'], bars: () => true },
   booktabs: { name: 'Booktabs', rules: (g, n, head) => (g === 0 ? ['toprule'] : g === n ? ['bottomrule'] : g === 1 && head ? ['midrule'] : []), bars: () => false, packages: ['booktabs'] },
   rows: { name: 'Horizontal Lines', rules: () => ['hline'], bars: () => false },
-  frame: { name: 'Outside Borders', rules: (g, n) => (g === 0 || g === n ? ['hline'] : []), bars: (k, n) => k === 0 || k === n }
+  frame: { name: 'Box', rules: (g, n) => (g === 0 || g === n ? ['hline'] : []), bars: (k, n) => k === 0 || k === n }
 };
 // The edits that give T a look: { edits, packages }
 export function applyLook(src, T, look) {
@@ -1325,6 +1539,7 @@ export function shade(src, T, rect, color) {
       if (c.col + c.span - 1 < c0 || c.col > c1) continue;
       const cc = c.pre.find((x) => x.name === 'cellcolor');
       if (cc) edits.push(arg ? { s: cc.s, e: cc.e, t: '\\cellcolor' + arg } : removePre(src, cc, c));
+      else if (arg && c.mc) edits.push({ s: c.mc.bodyS, e: c.mc.bodyS, t: '\\cellcolor' + arg + (src.slice(c.mc.bodyS, c.mc.textE).trim() ? ' ' : '') });
       else if (arg) edits.push({ s: c.ks, e: c.ks, t: '\\cellcolor' + arg + (c.empty ? '' : ' ') });
     }
   }
@@ -1335,6 +1550,11 @@ function removePre(src, x, c) {
   while (e < c.e && (src[e] === ' ' || src[e] === '\t')) e++;
   return { s: x.s, e, t: '' };
 }
+// a cell's own \cellcolor as written before its words ('' when none): a \multicolumn made of the
+// cell takes it into its text
+const outerColor = (src, c) => c.pre.filter((x) => x.name === 'cellcolor' && !x.inner).map((x) => src.slice(x.s, x.e) + ' ').join('');
+const outerStart = (c) => { const x = c.pre.find((y) => y.name === 'cellcolor' && !y.inner); return x ? x.s : c.ks; };
+const innerColor = (src, c) => (c.mc ? c.pre.filter((x) => x.inner).map((x) => src.slice(x.s, x.e) + ' ').join('') : '');
 // the colour of a cell as written: { name, model, value } or null
 export function shadeOf(src, T, r, cell) {
   const own = cell.pre.find((x) => x.name === 'cellcolor');
@@ -1404,8 +1624,8 @@ export function setHeader(src, T, last, on) {
 export function colBold(src, T, c) { const col = T.spec.cols[c]; return !!col && /\\bfseries/.test(preDecl(src, col)); }
 export function setColBold(src, T, c, on) {
   const col = T.spec.cols[c];
-  if (!col || T.spec.stars.length) return { edits: [] };
   const pieces = specPieces(src, T);
+  if (!col || !pieces) return { edits: [] };
   const pre = preDecl(src, col).replace(/\\bfseries\b\s*/g, '');
   const own = (on ? '\\bfseries' : '') + pre;
   pieces[2 * c + 1] = (own ? '>{' + own + '}' : '') + src.slice(col.ls, col.e);
@@ -1415,8 +1635,8 @@ export function setColBold(src, T, c, on) {
 export const BAND = 'gray!10';
 export function bandedCols(src, T) { return T.spec.cols.some((col) => /\\columncolor/.test(preDecl(src, col))); }
 export function setBandedCols(src, T, on) {
-  if (T.spec.stars.length) return { edits: [] };
   const pieces = specPieces(src, T);
+  if (!pieces) return { edits: [] };
   T.spec.cols.forEach((col, c) => {
     const pre = preDecl(src, col).replace(/\\columncolor(\[[^\]]*\])?\{[^{}]*\}\s*/g, '');
     const own = (on && c % 2 === 1 ? '\\columncolor{' + BAND + '}' : '') + pre;
@@ -1437,26 +1657,59 @@ export const SETTING_KEYS = {
   extrarowheight: { re: /^\\setlength\s*\{?\\extrarowheight\}?\s*\{([^{}]*)\}/, text: (v) => '\\setlength{\\extrarowheight}{' + v + '}' },
   arrayrulecolor: { re: /^\\arrayrulecolor\s*(\[[^\]]*\])?\s*\{([^{}]*)\}/, text: (v) => '\\arrayrulecolor' + v }
 };
-// where the settings of T are: { from, to (the place they may stand in), group: { s, e } | null }
+// where the settings of T are: { from, to (the place they may stand in), F (its float) | group:
+// { s, e } (a group made for them: "{" settings, the table, "}") | arg (the table alone in a
+// command's argument, \resizebox{…}{!}{…}: settings go in it, its braces stay), items }
+// the commands from a to z when they are settings alone (spaces and comments between): [{ name,
+// s, e }], or null when anything else stands there
+const SET_ARGS = { caption: 'om', label: 'm', setlength: 'mm', renewcommand: 'mm', rowcolors: 'ommm', arrayrulecolor: 'om' };
+function settingsOnly(src, a, z) {
+  const out = [];
+  for (let p = a, n = 0; p < z && n < 40; n++) {
+    p = skipWs(src, p, z, new Map());
+    if (p >= z) break;
+    if (src[p] === '%') { const q = src.indexOf('\n', p); p = q < 0 || q > z ? z : q + 1; continue; }
+    if (src[p] !== '\\') return null;
+    const [nm, j] = csAt(src, p);
+    if (!SETTINGS.has(nm)) return null;
+    const r = argsAt(src, j, SET_ARGS[nm] || '', z);
+    if (!r) return null;
+    out.push({ name: nm, s: p, e: r.e });
+    p = r.e;
+  }
+  return out;
+}
 function settingsPlace(src, T) {
   const F = floatOf(src, T);
   if (F) return { from: F.headE, to: T.s, F };
-  // a group around the table alone: "{" then settings then the table, "}" right after it
-  const close = () => { let z = T.e; while (z < src.length && (src[z] === ' ' || src[z] === '\t')) z++; return src[z] === '}' ? z + 1 : -1; };
-  let k = T.s;
-  for (let n = 0; n < 12; n++) {
+  // the brace before the table, past the settings before it (on its line or the lines above)
+  let b = -1;
+  for (let k = T.s, n = 0; n < 12 && b < 0; n++) {
     let j = k;
     while (j > 0 && isSp(src[j - 1])) j--;
-    if (src[j - 1] === '{' && src[j - 2] !== '\\') { const z = close(); return z > 0 ? { from: j, to: T.s, group: { s: j - 1, e: z } } : null; }
-    // back over one setting line, which may start with the group's brace
-    const ls = src.lastIndexOf('\n', j - 1) + 1, raw = src.slice(ls, j), line = raw.trim();
-    const brace = line[0] === '{' && line[1] === '\\';
-    const body = brace ? line.slice(1) : line;
-    if (!body || !Object.values(SETTING_KEYS).some((x) => x.re.test(body))) return null;
-    if (brace) { const z = close(); const b = ls + raw.indexOf('{'); return z > 0 ? { from: b + 1, to: T.s, group: { s: b, e: z } } : null; }
+    if (src[j - 1] === '{' && src[j - 2] !== '\\') { b = j - 1; break; }
+    const ls = src.lastIndexOf('\n', j - 1) + 1;
+    if (j - ls > 400) return null;
+    // ("{\small" or "\resizebox{…}{!}{\rowcolors…": the brace after which settings alone stand)
+    for (let q = src.lastIndexOf('{', j - 1); q >= ls; q = q > 0 ? src.lastIndexOf('{', q - 1) : -1) {
+      if (src[q - 1] !== '\\' && settingsOnly(src, q + 1, T.s)) { b = q; break; }
+    }
+    if (b >= 0) break;
+    if (!settingsOnly(src, ls, j)) return null;
     k = ls;
   }
-  return null;
+  if (b < 0) return null;
+  const items = settingsOnly(src, b + 1, T.s);
+  if (!items) return null;
+  let z = T.e;
+  while (z < src.length && z - T.e < 200 && isSp(src[z])) z++;
+  if (src[z] !== '}') return null;
+  // a brace right after an argument (}, ] or a command's name before it) is an argument's: the
+  // settings go in it and its braces stay; else it is a group of its own
+  let q = b;
+  while (q > 0 && (src[q - 1] === ' ' || src[q - 1] === '\t' || src[q - 1] === '\n' || src[q - 1] === '\r')) q--;
+  const arg = src[q - 1] === '}' || src[q - 1] === ']' || /\\[A-Za-z@]+\*?$/.test(src.slice(Math.max(0, q - 40), q));
+  return arg ? { from: b + 1, to: T.s, arg: true, items } : { from: b + 1, to: T.s, group: { s: b, e: z + 1 }, items };
 }
 export function settingsOf(src, T) {
   const P = settingsPlace(src, T);
@@ -1492,8 +1745,9 @@ export function setSetting(src, T, key, value) {
     // its line goes; the group made for it goes when it was the last
     const ls = src.lastIndexOf('\n', x.s - 1) + 1, le = src.indexOf('\n', x.e);
     const alone = /^[ \t]*$/.test(src.slice(ls, x.s)) && le >= 0 && /^[ \t\r]*$/.test(src.slice(x.e, le));
-    const edit = alone ? { s: ls, e: le + 1, t: '' } : { s: x.s, e: x.e, t: '' };
-    if (P && P.group && Object.keys(have).length === 1) {
+    // (one Rikuy wrote right before the table, "\\rowcolors{…}" and a line end: both go)
+    const edit = alone ? { s: ls, e: le + 1, t: '' } : src.slice(x.e, T.s) === nl ? { s: x.s, e: T.s, t: '' } : { s: x.s, e: x.e, t: '' };
+    if (P && P.group && P.items.length === 1) {
       // "{" setting lines, the table, "}": back to the table alone
       return { edits: [{ s: P.group.s, e: T.s, t: '' }, { s: T.e, e: P.group.e, t: '' }] };
     }
@@ -1506,7 +1760,7 @@ export function setSetting(src, T, key, value) {
     if (ls > P.from && /^[ \t]*$/.test(src.slice(ls, T.s))) return { edits: [{ s: ls, e: ls, t: src.slice(ls, T.s) + text + nl }] };
     return { edits: [{ s: T.s, e: T.s, t: text + nl }] };
   }
-  if (P && P.group) return { edits: [{ s: T.s, e: T.s, t: text + nl }] };
+  if (P && (P.group || P.arg)) return { edits: [{ s: T.s, e: T.s, t: text + nl }] };
   return { edits: [{ s: T.s, e: T.s, t: '{' + text + nl }, { s: T.e, e: T.e, t: '}' }] };
 }
 
@@ -1537,6 +1791,7 @@ export function autofit(src, T, kind, widths) {
   const cols = T.spec.cols, pieces = specPieces(src, T), pk = new Set();
   if (T.name === 'longtable' && kind === 'window') return { error: 'A table that repeats its header rows breaks across pages as longtable; it fits its contents. Turn Repeat Header Rows off first.' };
   if (T.name === 'array') return { error: 'A table in a formula (array) fits its contents.' };
+  if (!pieces) return { edits: [], packages: [] };
   const edits = [];
   cols.forEach((col, c) => {
     const h = colH(src, col), v = colV(col);
@@ -1554,15 +1809,23 @@ export function autofit(src, T, kind, widths) {
     if (/^>\{/.test(t)) pk.add('array');
     pieces[2 * c + 1] = t;
   });
+  // X columns only in tabularx: tabular, tabular* and tabulary become one, as wide as they were
+  // (tabular*'s \extracolsep{\fill} goes: the X columns take the room)
+  const toX = kind === 'window' && !X_ENVS.has(T.name);
+  if (T.name === 'tabular*' && (toX || kind !== 'window')) for (let i = 0; i < pieces.length; i += 2) pieces[i] = pieces[i].replace(/@\{\s*\\extracolsep\s*\{\\fill\}\s*\}/g, '').replace(/\\extracolsep\s*\{\\fill\}\s*/g, '');
   edits.push(...specEdit(src, T, pieces));
-  if (kind === 'window' && T.name === 'tabular') { edits.push(...renameEnv(src, T, 'tabularx', '\\linewidth')); pk.add('tabularx'); }
+  if (toX) { edits.push(...renameEnv(src, T, 'tabularx', T.width ? T.width.text : '\\linewidth')); pk.add('tabularx'); }
   if (kind !== 'window' && (T.name === 'tabularx' || T.name === 'tabular*' || T.name === 'tabulary')) edits.push(...renameEnv(src, T, 'tabular', null));
   return { edits: dedupe(edits), packages: [...pk] };
 }
+const X_ENVS = new Set(['tabularx', 'xltabular']);
 // Distribute Columns: the same width for every column (X in tabularx, else the average of widths)
 export function distributeCols(src, T, widths) {
+  // (a tabular* as wide as the text becomes a tabularx of X columns: X only works there)
+  if (fitOf(src, T) === 'window' && !X_ENVS.has(T.name)) return autofit(src, T, 'window');
   if (fitOf(src, T) === 'window') {
     const pieces = specPieces(src, T);
+    if (!pieces) return { edits: [], packages: [] };
     T.spec.cols.forEach((col, c) => { if (col.letter !== 'X') pieces[2 * c + 1] = (col.pre ? src.slice(col.pre.s, col.pre.e) : '') + 'X' + (col.post ? src.slice(col.post.s, col.post.e) : ''); });
     return { edits: specEdit(src, T, pieces), packages: [] };
   }
@@ -1585,12 +1848,16 @@ export function setColWidth(src, T, c, width) {
   const col = T.spec.cols[c];
   if (!col) return { edits: [] };
   const pieces = specPieces(src, T), h = colH(src, col), v = colV(col);
+  if (!pieces) return { edits: [] };
   const post = col.post ? src.slice(col.post.s, col.post.e) : '';
   let pre = preDecl(src, col).replace(/\\(centering|raggedleft|raggedright)\b\s*(\\arraybackslash\b\s*)?/g, '');
   const pk = [];
   if (width) {
+    // (in a *{n}{…} the width written once is every one of its columns': this one is written out)
     if (col.w != null && (col.letter === 'p' || col.letter === 'm' || col.letter === 'b')) {
-      return { edits: [{ s: col.ws, e: col.we, t: width }] };
+      if (col.star < 0) return { edits: [{ s: col.ws, e: col.we, t: width }] };
+      pieces[2 * c + 1] = src.slice(col.s, col.ws) + width + src.slice(col.we, col.e);
+      return { edits: specEdit(src, T, pieces), packages: [] };
     }
     const hd = h === 'c' || h === 'r' ? H_DECL[h] + '\\arraybackslash' : '';
     pieces[2 * c + 1] = (hd + pre ? '>{' + hd + pre + '}' : '') + { t: 'p', m: 'm', b: 'b' }[v] + '{' + width + '}' + post;
@@ -1650,10 +1917,21 @@ export function turnCells(src, cells, angle) {
 // ---- repeat header rows: longtable --------------------------------------------------------------------------
 // Repeat Header Rows on: the table becomes a longtable with \endhead after row r (and the rules
 // under it); a table float around it goes, its caption and label going into the longtable (a
-// longtable is its own float: it breaks across pages). Off: back to a tabular in a table float.
-export function repeatHeader(src, T, r, on) {
+// longtable is its own float: it breaks across pages), its settings (\small, \rowcolors,
+// \arraystretch …) into a group around it, its alignment into longtable's [l] or [r], and a float
+// head other than \begin{table}[h] into a comment after \begin{longtable}, so that off gives it
+// back. Off: back to a tabular in a table float, the head of every page (\endfirsthead's) once at
+// the top and the foot of the last (\endlastfoot's, else \endfoot's) once at the end. A longtable
+// Rikuy wrote and nobody changed since comes back byte for byte (REPEAT_MEMO), and a float Rikuy
+// wrote comes back as it was in any case.
+const LT_MARKS = new Set(['endhead', 'endfirsthead', 'endfoot', 'endlastfoot']);
+const MARK = '% rikuy: ';
+const REPEAT_MEMO = new Map();
+const memo = (made, was) => { REPEAT_MEMO.set(made, was); if (REPEAT_MEMO.size > 50) REPEAT_MEMO.delete(REPEAT_MEMO.keys().next().value); };
+export function repeatHeader(src, T, r, on, o = {}) {
   const nl = T.eol;
   if (on) {
+    if (o.twocolumn) return { error: 'In two columns a table cannot run over pages (longtable needs one column): Repeat Header Rows works where the text is in one column.' };
     if (T.name === 'longtable') {
       if (T.headEnd >= 0) return { edits: [] };
       return { edits: endheadEdits(src, T, r, nl) };
@@ -1661,44 +1939,93 @@ export function repeatHeader(src, T, r, on) {
     if (T.name !== 'tabular') return { error: 'Repeat Header Rows makes the table a longtable: AutoFit it to its contents first.' };
     const F = floatOf(src, T);
     if (F && !F.only) return { error: 'The float holds more than this table: Repeat Header Rows needs the table on its own.' };
-    // the longtable: \begin{longtable}{spec}, the caption on top when it was there, the rows
-    // with \endhead after row r, the caption at the end when it was under the table
     const spec = src.slice(T.specS, T.specE);
     const [eh] = endheadEdits(src, T, r, nl);
     const body = src.slice(T.bodyS, eh.s) + eh.t + src.slice(eh.s, T.bodyE);
-    const cap = F && F.caption ? src.slice(F.caption.s, F.caption.e) + (F.label && F.label.above === F.caption.above ? src.slice(F.label.s, F.label.e) : '') : '';
-    let text = '\\begin{longtable}{' + spec + '}';
+    if (!F) {
+      // a table alone: only its environment changes (a comment says it stood alone)
+      const text = '\\begin{longtable}{' + spec + '} ' + MARK + 'tabular' + body + '\\end{longtable}';
+      memo(text, src.slice(T.s, T.e));
+      return { edits: [{ s: T.s, e: T.e, t: text }], packages: ['longtable'], p: T.s };
+    }
+    // what the float holds besides the table, in order
+    const items = [...(settingsOnly(src, F.headE, T.s) || []).map((x) => ({ ...x, above: true })), ...(settingsOnly(src, T.e, F.endS) || []).map((x) => ({ ...x, above: false }))];
+    const settings = items.filter((x) => !['centering', 'raggedleft', 'raggedright', 'caption', 'label'].includes(x.name)).map((x) => src.slice(x.s, x.e));
+    const align = F.centering ? (src.slice(F.centering.s, F.centering.e).includes('raggedleft') ? '[r]' : '') : '[l]';
+    const head = src.slice(F.s, F.headE);
+    // the caption with the label right after it (the text between kept); a label alone after the table
+    let cap = '', label = '';
+    if (F.caption) {
+      cap = src.slice(F.caption.s, F.caption.e);
+      if (F.label && F.label.above === F.caption.above && F.label.s >= F.caption.e && /^\s*$/.test(src.slice(F.caption.e, F.label.s))) cap = src.slice(F.caption.s, F.label.e);
+      else if (F.label) label = src.slice(F.label.s, F.label.e);
+    } else if (F.label) label = src.slice(F.label.s, F.label.e);
+    let text = '\\begin{longtable}' + align + '{' + spec + '}' + (head !== '\\begin{table}[h]' ? ' ' + MARK + head : '');
     if (cap && F.caption.above) text += nl + cap + '\\\\';
     let inner = body;
     if (cap && !F.caption.above) inner = inner.replace(/\s*$/, '') + nl + cap + nl;
     text += inner + '\\end{longtable}';
-    const s = F ? F.s : T.s, e = F ? F.e : T.e;
-    return { edits: [{ s, e, t: text }], packages: ['longtable'], p: s };
+    if (settings.length) text = '{' + settings.join(nl) + nl + text + '}';
+    if (label) text += nl + label;
+    memo(text, src.slice(F.s, F.e));
+    return { edits: [{ s: F.s, e: F.e, t: text }], packages: ['longtable'], p: F.s };
   }
   if (T.name !== 'longtable') return { edits: [] };
-  // off: \endhead goes; the longtable becomes a tabular in a table float, its caption with it
+  // off: the longtable's place (with the group of settings around it and a label after it)
+  const P = settingsPlace(src, T);
+  const G = P && P.group ? P.group : null;
+  let s = G ? G.s : T.s, e = G ? G.e : T.e;
+  const lab = /^[ \t]*\r?\n?[ \t]*(\\label\s*\{[^{}\n]{0,400}\})/.exec(src.slice(e, e + 500));
+  if (lab) e += lab[0].length;
+  const was = REPEAT_MEMO.get(src.slice(s, e));
+  if (was != null) return { edits: [{ s, e, t: was }], packages: [], p: s };
+  // the comment after \begin{longtable}{…}: how it stood before
+  const mk = new RegExp('^[ \\t]*' + MARK.replace(/ /g, '[ \\t]*') + '([^\\r\\n]*)').exec(src.slice(T.specE + 1, T.specE + 400));
+  const before = mk ? mk[1].trim() : null;
+  const markEnd = mk ? T.specE + 1 + mk[0].length : -1;
+  // the caption out of its row, then the parts: the head of the first page, the body, the foot of the last
   const edits = [];
-  for (const lead of [...T.rows.map((x) => x.lead), T.tail.lead]) for (const x of lead) if (x.name === 'endhead') {
-    const ls = src.lastIndexOf('\n', x.s - 1) + 1, le = src.indexOf('\n', x.e);
-    if (/^[ \t]*$/.test(src.slice(ls, x.s)) && le >= 0 && /^[ \t\r]*$/.test(src.slice(x.e, le))) edits.push({ s: ls, e: le + 1, t: '' });
-    else edits.push({ s: x.s, e: x.e, t: '' });
-  }
+  if (mk) edits.push({ s: T.specE + 1, e: markEnd, t: '' });
   const capRow = T.rows.findIndex((x) => x.kind === 'caption');
   let cap = '', above = false;
   if (capRow >= 0) {
     const row = T.rows[capRow];
     cap = src.slice(row.cells[0].cs, row.cells[0].ce);
-    above = capRow === 0;
+    above = T.rows.slice(0, capRow).every((x) => x.kind !== 'row');
     // (the rules before it stay: \bottomrule before a caption at the end)
-    let e = row.e;
-    if (above) { const le = src.indexOf('\n', e); if (le >= 0 && /^[ \t\r]*$/.test(src.slice(e, le))) e = le; }
-    edits.push({ s: row.leadE, e, t: '' });
+    let ce = row.e;
+    const le = src.indexOf('\n', ce);
+    if (le >= 0 && /^[ \t\r]*$/.test(src.slice(ce, le)) && (above || row.sepS != null)) ce = le;
+    edits.push({ s: row.leadE, e: ce, t: '' });
   }
-  const inner = apply(src, edits).slice(T.bodyS, T.bodyE - (src.length - apply(src, edits).length));
+  const marks = [];
+  for (const lead of [...T.rows.map((x) => x.lead), T.tail.lead]) for (const x of lead) if (LT_MARKS.has(x.name)) marks.push(x);
+  marks.sort((x, y) => x.s - y.s);
+  // each part: the text from the end of the mark before to its own mark
+  const parts = {};
+  let from = T.bodyS;
+  for (const x of marks) { parts[x.name] = [from, x.s]; from = x.e; }
+  const bodyPart = [from, T.bodyE];
+  const textOf = ([a, z]) => {
+    // (the caption and the comment cut out of the part's text)
+    const cut = edits.filter((x) => x.s >= a && x.e <= z).sort((x, y) => x.s - y.s);
+    let t = '', p = a;
+    for (const x of cut) { t += src.slice(p, x.s); p = x.e; }
+    return t + src.slice(p, z);
+  };
+  const pick = [parts.endfirsthead || parts.endhead, bodyPart, parts.endlastfoot || parts.endfoot].filter(Boolean).map(textOf).filter((t) => t.trim());
+  let inner = '';
+  for (const t of pick) inner += inner ? nl + t.replace(/^[ \t]*\r?\n/, '').replace(/\s+$/, '') : t.replace(/\s+$/, '');
   const spec = src.slice(T.specS, T.specE);
-  const tab = '\\begin{tabular}{' + spec + '}' + inner.replace(/^\r?\n?/, nl).replace(/\s*$/, '') + nl + '\\end{tabular}';
-  const text = ['\\begin{table}[h]', '\\centering', ...(cap && above ? [cap] : []), tab, ...(cap && !above ? [cap] : []), '\\end{table}'].join(nl);
-  return { edits: [{ s: T.s, e: T.e, t: text }], packages: [], p: T.s };
+  const tab = '\\begin{tabular}{' + spec + '}' + inner.replace(/^(?![ \t]*\r?\n)/, nl) + nl + '\\end{tabular}';
+  if (before === 'tabular') return { edits: [{ s: T.s, e: T.e, t: tab }], packages: [], p: T.s };
+  // the float: its head, the alignment, the settings of the group, the caption and the label
+  const pos = T.args[0] && T.args[0].kind === 'o' ? src.slice(T.args[0].is, T.args[0].ie).trim() : '';
+  const alignLine = pos === 'l' ? [] : pos === 'r' ? ['\\raggedleft'] : ['\\centering'];
+  const sets = G ? (settingsOnly(src, G.s + 1, T.s) || []).map((x) => src.slice(x.s, x.e)) : [];
+  const head = before && /^\\begin\s*\{(table\*?|sidewaystable)\}/.test(before) ? before : '\\begin{table}[h]';
+  const lines = [head, ...alignLine, ...sets, ...(cap && above ? [cap] : []), tab, ...(cap && !above ? [cap] : []), ...(lab ? [lab[1]] : []), '\\end{' + /^\\begin\s*\{([^}]*)\}/.exec(head)[1] + '}'];
+  return { edits: [{ s, e, t: lines.join(nl) }], packages: [], p: s };
 }
 function endheadEdits(src, T, r, nl) {
   // after the rules under row r: \endhead on a line of its own
@@ -1724,8 +2051,33 @@ export function captionEdits(src, T) {
   if (F && F.caption) return { p: F.caption.is };
   if (F) { const t = nl + '\\caption{}'; return { edits: [{ s: T.e, e: T.e, t }], p: T.e + t.length - 1 }; }
   if (T.name === 'array') return { error: 'A table in a formula has no caption.' };
+  // in a minipage or a subtable: the caption goes in it (\caption in a float's, \captionof{table}
+  // outside one, caption's), never a float in it: a float in a minipage is "Not in outer par mode"
+  const box = boxAround(src, T);
+  if (box) {
+    const inFloat = box.inFloat || box.name === 'subtable';
+    const t = nl + (inFloat ? '\\caption{}' : '\\captionof{table}{}');
+    return { edits: [{ s: T.e, e: T.e, t }], p: T.e + t.length - 1, packages: inFloat ? [] : ['caption'] };
+  }
   const open = '\\begin{table}[h]' + nl + '\\centering' + nl, close = nl + '\\caption{}' + nl + '\\end{table}';
   return { edits: [{ s: T.s, e: T.s, t: open }, { s: T.e, e: T.e, t: close }], p: T.e + open.length + nl.length + 9 };
+}
+
+// The minipage or subtable (subcaption's) the table stands in, past a center around it: { name,
+// inFloat (a table or figure float around that) } or null. The \begin and \end before the table
+// are counted, at most 20 000 characters back.
+function boxAround(src, T) {
+  const from = Math.max(0, T.s - 20000), re = /\\(begin|end)\s*\{([A-Za-z]+\*?)\}/g;
+  re.lastIndex = from;
+  const open = [];
+  for (let m, n = 0; (m = re.exec(src)) && m.index < T.s && n < 4000; n++) {
+    if (m[1] === 'begin') open.push(m[2]);
+    else { const k = open.lastIndexOf(m[2]); if (k >= 0) open.length = k; }
+  }
+  let i = open.length - 1;
+  while (i >= 0 && ['center', 'adjustbox', 'threeparttable', 'small', 'footnotesize'].includes(open[i])) i--;
+  if (i < 0 || !['minipage', 'subtable', 'subfigure'].includes(open[i])) return null;
+  return { name: open[i], inFloat: open.slice(0, i).some((x) => /^(table|figure|sidewaystable|sidewaysfigure|wraptable|wrapfigure)\*?$/.test(x)) };
 }
 
 // ---- deleting cells ----------------------------------------------------------------------------------------------

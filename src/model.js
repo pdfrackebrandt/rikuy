@@ -140,6 +140,36 @@ export function colorValue(model, spec) {
   return null;
 }
 
+// The values of a .csv for the page (B7): its first 200 lines of words, 40 values a line, a value
+// cut at 200 characters and a line read to 4000; each file read once per separator (a file
+// unchanged is the same string, found again in the cache without reading it)
+const CSV_CACHE = new Map(), CSV_BUDGET = 40000;
+function csvRows(text, sep) {
+  let bySep = CSV_CACHE.get(sep);
+  if (!bySep) CSV_CACHE.set(sep, (bySep = new Map()));
+  const hit = bySep.get(text);
+  if (hit) return hit;
+  const rows = [];
+  for (let p = 0; p < text.length && rows.length < 200;) {
+    let e = text.indexOf('\n', p);
+    if (e < 0) e = text.length;
+    const l = text.slice(p, Math.min(e, p + 4000)).replace(/\r$/, '');
+    p = e + 1;
+    if (!l.trim()) continue;
+    const out = [];
+    let cur = '', q = false;
+    for (let i = 0; i < l.length && out.length < 40; i++) {
+      const c = l[i];
+      if (c === '"') { if (q && l[i + 1] === '"') { cur += '"'; i++; } else q = !q; } else if (c === sep && !q) { out.push(cur); cur = ''; } else cur += c;
+    }
+    out.push(cur);
+    rows.push(out.slice(0, 40).map((x) => { x = x.trim(); return x.length > 200 ? x.slice(0, 200) + '…' : x; }));
+  }
+  if (bySep.size >= 8) bySep.delete(bySep.keys().next().value);
+  bySep.set(text, rows);
+  return rows;
+}
+
 export function buildModel(project, hint) {
   if (hint && hint.labels) {
     const b = new Builder(project, hint);
@@ -1350,7 +1380,9 @@ class Builder {
     const flushP = () => {
       if (!para.length) return;
       const ns = para; para = [];
-      if (ns.every((n) => n.t === 'comment' || (n.t === 'text' && !ctx.src.slice(n.s, n.e).trim()) || (n.t === 'cmd' && INVIS.has(n.name)))) {
+      // (nothing to draw: comments, spaces, invisible commands, and a size before the table, as
+      // \small, which alone would be an empty line the caret falls into)
+      if (ns.every((n) => n.t === 'comment' || (n.t === 'text' && !ctx.src.slice(n.s, n.e).trim()) || (n.t === 'cmd' && INVIS.has(n.name)) || (n.t === 'cmd' && /^(tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge)$/.test(n.name) && !n.args.some(Boolean)))) {
         for (const n of ns) if (n.t === 'cmd' && n.name === 'label') this.label(this.argText(ctx, n.args[0]), ctx);
         return;
       }
@@ -1438,6 +1470,12 @@ class Builder {
           continue;
         }
       }
+      // (\noalign{…} between rows, as pandoc writes after each rule, and longtable's markers: no cell's)
+      if (n.t === 'cmd' && /^(noalign|endhead|endfirsthead|endfoot|endlastfoot)$/.test(n.name) && row.cells.length === 0 && cell.every((x) => x.t === 'comment' || (x.t === 'text' && !ctx.src.slice(x.s, x.e).trim()))) {
+        cell = [];
+        at = n.e;
+        continue;
+      }
       if (row.s == null) row.s = n.s;
       cell.push(n);
     }
@@ -1467,10 +1505,12 @@ class Builder {
     if (text == null || text.length > 2000000) return null;
     const opt = nd.args[0] ? this.argText(ctx, nd.args[0]) : '';
     const sep = /separator\s*=\s*semicolon/.test(opt) ? ';' : /separator\s*=\s*tab/.test(opt) ? '\t' : /separator\s*=\s*space/.test(opt) ? ' ' : ',';
-    const lines = text.split(/\r?\n/, 201).filter((l) => l.trim()).slice(0, 200);
-    if (!lines.length) return null;
-    const split = (l) => { const out = []; let cur = '', q = false; for (let i = 0; i < l.length && out.length < 40; i++) { const c = l[i]; if (c === '"') { if (q && l[i + 1] === '"') { cur += '"'; i++; } else q = !q; } else if (c === sep && !q) { out.push(cur); cur = ''; } else cur += c; } out.push(cur); return out.map((x) => x.trim()); };
-    const rows = lines.map(split);
+    const rows = csvRows(text, sep);
+    if (!rows.length) return null;
+    // (a stranger's project may set one big file in many tables: past a budget of cells for the
+    // whole document the command stays a command)
+    this.csvBudget = (this.csvBudget ?? CSV_BUDGET) - rows.length * Math.max(...rows.map((r) => r.length));
+    if (this.csvBudget < 0) return null;
     const n = Math.max(...rows.map((r) => r.length));
     const book = nd.name === 'csvautobooktabular';
     const cols = Array.from({ length: n }, (_, k) => ({ align: 'c', vl: !book && k === 0 ? 1 : 0, vr: book ? 0 : 1 }));

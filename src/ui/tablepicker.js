@@ -317,17 +317,19 @@ export function dataFileDialog(app) {
     let name = (f.name.replace(/[^\w.\-]+/g, '_').replace(/^[.\-]+/, '').slice(0, 80) || 'data').replace(/(\.(csv|tsv|dat|txt))?$/i, (m) => m || '.csv');
     const text = await f.text();
     for (let k = 2; app.files.has(name) && app.files.get(name) !== text && k < 100; k++) name = name.replace(/(-\d+)?(\.\w+)$/, '-' + k + '$2');
-    app.files.set(name, text);
-    app.zipDirty = true;
-    if (app.saveSoon) app.saveSoon();
+    // (the file joins the project only with Insert, in the same step as the table: Cancel
+    // leaves the project as it was, and Undo takes both away)
+    pending.set(name, text);
     if (![...pick.options].some((o) => o.value === name)) pick.add(new Option(name, name));
     pick.value = name;
   });
+  const pending = new Map();
   const sep = radios('Separated by', [[',', 'Commas'], [';', 'Semicolons'], ['\t', 'Tabs']], ',');
   const book = check('Booktabs rules', true);
   const ok = () => {
     if (!pick.value) { up.focus(); return; }
     const v = { file: pick.value, sep: sep.value(), booktabs: book.input.checked };
+    if (pending.has(pick.value) && !app.files.has(pick.value)) v.text = pending.get(pick.value);
     back(app); app.runCommand('table-from-data', v);
   };
   p.append(row('tb-sec', field('Data file', pick), up, inp), row('tb-sec', sep, book),

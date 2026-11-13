@@ -360,8 +360,9 @@ with width "3cm"); run("table-sort", {col: 1, desc: true, header: true}); run("t
 stretch: 1.3, fixed: true, width: "3cm", v: "m"}); run("cell-margins", {side: "8pt", top:
 "2pt"}); run("table-shading", {pick: {name: "yellow"}}) ({html: "C00000"}, or null for none);
 run("table-borders", {id: "border-all"}); run("pen-weight", {w: "1pt"}); run("table-from-data",
-{file: "data.csv"}). New tables are booktabs (\toprule, \midrule, \bottomrule); a table written
-with \hline is edited with \hline.
+{file: "data.csv"}) (with text: "a,b\\n1,2", a new file of that name joins the project in
+the same step). New tables are booktabs (\\toprule, \\midrule, \\bottomrule); a table written
+with \\hline is edited with \\hline.
 
 In a guest's view (a document opened from a link with "by") setSource, setUpScripts and run
 reject with an Error; the others work.

@@ -129,7 +129,7 @@ def inserting(page):
     load_doc(page, {'main.tex': plain, 'data.csv': 'a,b\n1,2\n'}); click_text(page, 'First', 2)
     run_cmd(page, 'table-from-data', {'file': 'data.csv'}); page.wait_for_timeout(200)
     s = src(page)
-    check('Table from Data File: \\csvautobooktabular{data.csv} in a float, csvsimple and booktabs loaded', '\\csvautobooktabular{data.csv}' in s and '\\usepackage{csvsimple}' in s and '\\usepackage{booktabs}' in s, s[:400])
+    check('Table from Data File: \\csvautobooktabular[respect all]{data.csv} in a float, csvsimple, booktabs and T1 loaded', '\\csvautobooktabular[respect all]{data.csv}' in s and '\\usepackage{csvsimple}' in s and '\\usepackage{booktabs}' in s and '\\usepackage[T1]{fontenc}' in s, s[:400])
 
 
 # ---- the tabs, the round trips ----------------------------------------------------------------
@@ -166,8 +166,11 @@ def tabs_and_trips(page):
     check('Merge Cells down a column: \\multirow{2}{*}{one three}, the cell under it emptied, \\usepackage{multirow} added', '\\multirow{2}{*}{one three} & two \\\\\n & four' in s and '\\usepackage{multirow}' in s, s[:500])
     td = page.evaluate("() => { const t = [...document.querySelectorAll('#pages td')].find((x) => x.textContent.includes('one three')); return t ? [t.rowSpan, t.closest('tr').nextElementSibling.querySelectorAll('td').length] : null; }")
     check('the page draws it merged: the cell spans two rows, the row under it has one cell of its own', td == [2, 1], td)
+    merged = s
     at_src(page, 'one three'); run_cmd(page, 'split-cells'); page.wait_for_timeout(150)
-    check('Split Cells on it: the words in the first cell, the \\multirow gone', 'one three & two \\\\\n & four' in src(page), src(page)[100:400])
+    check('Split Cells right after the merge: the table as it was, byte for byte (the package stays)', src(page) == WRAP(FLOAT(BOOK), PRE + '\\usepackage{multirow}\n'), src(page)[100:400])
+    load_doc(page, merged); at_src(page, 'one three'); run_cmd(page, 'split-cells'); page.wait_for_timeout(150)
+    check('Split Cells on a merged cell read from the source: the words in the first cell, the \\multirow gone', 'one three & two \\\\\n & four' in src(page), src(page)[100:400])
     # the style options, toggles with their hand written forms
     roundtrip(page, S(PLAIN), ('two', 1), 'header-row', S(PLAIN.replace('Head & Other \\\\', '\\textbf{Head} & \\textbf{Other} \\\\ \\hline')),
               forms=[S(PLAIN.replace('Head & Other \\\\', 'Head & Other \\\\ \\hline'))], label='Header Row')
@@ -345,6 +348,191 @@ def drawing(page):
     check('a cell with nothing in it (&&) holds a place for the caret', n == 3, n)
 
 
+# ---- the hostile review's cases (each finding's case, done in the page) --------------------------
+
+def sel_words(page, a, z):
+    """A selection from the cell whose words are a to the one whose words are z."""
+    page.evaluate('''([a, z]) => { const sp = [...document.querySelectorAll('#pages td span.t')]; const A = sp.find((x) => x.textContent === a), Z = sp.find((x) => x.textContent === z);
+      const r = document.createRange(); r.setStart(A.firstChild, 0); r.setEnd(Z.firstChild, Z.firstChild.length); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''', [a, z])
+    page.wait_for_timeout(150)
+
+
+def files_of(page):
+    return page.evaluate('[...window.rikuy.files.keys()]')
+
+
+def review(page):
+    # H1: Rikuy's own table, filled by Tab: the new row above \bottomrule, \midrule once
+    load_doc(page, WRAP('First paragraph here.\n\nSecond.', '')); click_text(page, 'First paragraph', 3)
+    run_cmd(page, 'table'); page.wait_for_timeout(200)
+    for w in ('h1', 'h2', 'v1', 'v2', 'n1'):
+        page.keyboard.type(w); page.wait_for_timeout(80)
+        if w != 'n1': page.keyboard.press('Tab'); page.wait_for_timeout(150)
+    s = src(page)
+    check('H1: Rikuy\'s new table filled with Tab: Tab in its last cell writes the row above \\bottomrule, \\midrule once',
+          '\\toprule\nh1 & h2 \\\\\n\\midrule\nv1 & v2 \\\\\nn1 &  \\\\\n\\bottomrule\n\\end{tabular}' in s and s.count('\\midrule') == 1, s[60:400])
+    at_src(page, 'h1')
+    check('H1: and its Header Row shows pressed', pressed(page, 'header-row') is True)
+    # H2: Insert above never copies a comment
+    c = WRAP('\\begin{tabular}{ll}\na & b \\\\\n% comment (Ana) on "gamma": check this\ngamma & delta \\\\\n\\end{tabular}', '')
+    load_doc(page, c); at_src(page, 'gamma'); run_cmd(page, 'table-row-above'); page.wait_for_timeout(150)
+    check('H2: Insert above a row under a review comment: the comment once, the new row above it', src(page) == c.replace('a & b \\\\\n', 'a & b \\\\\n &  \\\\\n'), src(page)[40:260])
+    # H7: two columns: Repeat Header Rows says why, writes nothing
+    two = DOC.replace('\\documentclass{article}', '\\documentclass[twocolumn]{article}')
+    load_doc(page, two); at_src(page, 'Head'); run_cmd(page, 'repeat-header'); page.wait_for_timeout(150)
+    check('H7: Repeat Header Rows in a two column document: refused, nothing written', src(page) == two)
+    # M4: only from the first rows
+    load_doc(page, DOC); at_src(page, 'three'); run_cmd(page, 'repeat-header'); page.wait_for_timeout(150)
+    check('M4: Repeat Header Rows with the caret in a body row: refused, nothing written', src(page) == DOC)
+    at_src(page, 'Head'); run_cmd(page, 'repeat-header'); page.wait_for_timeout(150)
+    s = src(page)
+    check('M4: from the first row: that row repeats (\\endhead under it)', '\\midrule\n\\endhead\none & two' in s, s[60:400])
+    # M3: Sort on a longtable with its head, "Header row" as the dialog has it
+    lt = '\\begin{longtable}{ll}\n\\toprule\nName & N \\\\\n\\midrule\n\\endhead\nzeta & 3 \\\\\nalpha & 1 \\\\\nbeta & 2 \\\\\n\\bottomrule\n\\end{longtable}'
+    load_doc(page, WRAP(lt, PRE + '\\usepackage{longtable}\n')); at_src(page, 'zeta'); run_cmd(page, 'table-sort', {'col': 0, 'header': True}); page.wait_for_timeout(200)
+    s = src(page)
+    check('M3: Sort on a longtable with \\endhead: every body row sorted, the head stays', '\\endhead\nalpha & 1 \\\\\nbeta & 2 \\\\\nzeta & 3 \\\\' in s and 'Name & N' in s, s[60:400])
+    # M7: Merge down a grid, then Split: byte for byte back
+    g = '\\begin{tabular}{|l|l|l|}\n\\hline\na &  &  \\\\ \\hline\nd &  & f \\\\ \\hline\ng & h & i \\\\ \\hline\n\\end{tabular}'
+    gd = WRAP(g, '\\usepackage{multirow}\n')
+    load_doc(page, gd); sel_words(page, 'a', 'f'); run_cmd(page, 'merge-cells'); page.wait_for_timeout(200)
+    merged = src(page)
+    at_src(page, 'a d f'); run_cmd(page, 'split-cells'); page.wait_for_timeout(200)
+    check('M7: Merge over two ruled rows then Split: the source as it was, \\hline and spaces included', '\\multirow{2}' in merged and src(page) == gd, [merged[40:300], src(page)[40:300]])
+    # M1: merged both ways, then a row inserted under it: three cells drawn, each reachable
+    t3 = WRAP('\\begin{tabular}{lll}\nq1 & q2 & q3 \\\\\nq4 & q5 & q6 \\\\\nq7 & q8 & q9 \\\\\n\\end{tabular}', '\\usepackage{multirow}\n')
+    load_doc(page, t3); sel_words(page, 'q1', 'q5'); run_cmd(page, 'merge-cells'); page.wait_for_timeout(200)
+    at_src(page, 'q6'); run_cmd(page, 'table-row-below'); page.wait_for_timeout(200)
+    n = page.evaluate("() => { const td = [...document.querySelectorAll('#pages td')].find((x) => x.textContent.trim() === 'q6'); const tr = td && td.closest('tr').nextElementSibling; return tr ? [...tr.querySelectorAll('td')].filter((x) => x.querySelector('span.t')).length : -1; }")
+    check('M1: under a cell merged two by two, a new row draws its three cells', n == 3, [n, src(page)[40:300]])
+    # M2: a table over two pages: Tab, Select Table and the painted block go across
+    long = '\\begin{tabular}{ll}\n' + ''.join('r%da & r%db \\\\\n' % (k, k) for k in range(90)) + '\\end{tabular}'
+    load_doc(page, WRAP('Before.\n\n' + long + '\n\nAfter.', '')); page.wait_for_timeout(400)
+    pieces = page.evaluate("() => { const t = document.querySelector('#pages table[data-tab]'); return t ? document.querySelectorAll('#pages table[data-tab=\"' + CSS.escape(t.dataset.tab) + '\"]').length : 0; }")
+    last = page.evaluate("() => { const t = document.querySelector('#pages table[data-tab]'); const sp = [...t.querySelectorAll('td span.t')]; return sp[sp.length - 1].textContent; }")
+    at_src(page, last, len(last))
+    before = src(page)
+    page.keyboard.press('Tab'); page.wait_for_timeout(200)
+    k = int(re.match(r'r(\d+)b', last).group(1)) if re.match(r'r(\d+)b', last) else -1
+    check('M2: a table over pages: Tab in the last cell of a page goes to the next page\'s first cell, no row written',
+          pieces >= 2 and src(page) == before and page.evaluate('getSelection().toString()') == 'r%da' % (k + 1), [pieces, last, page.evaluate('getSelection().toString()')])
+    at_src(page, 'r0a'); ok = run_cmd(page, 'select-table'); page.wait_for_timeout(400)
+    got = page.evaluate("() => [getSelection().toString().trim().slice(0, 3), getSelection().toString().trim().slice(-4), document.querySelectorAll('#pages table.tsel-on').length]")
+    check('M2: Select Table selects every cell on every page, the block painted on each piece', ok and got[0] == 'r0a' and got[1] == 'r89b' and got[2] == pieces, [ok, got, pieces])
+    # L2: one command named Outside Borders
+    n = page.evaluate("window.rikuy.cmds.commands().filter((c) => c.name === 'Outside Borders').length")
+    check('L2: one command named Outside Borders (the look is Box)', n == 1, n)
+    # L3: a file picked in Table from Data File joins the project only with Insert, undone with it
+    plain = WRAP('First paragraph here.\n\nSecond.', '')
+    for button in ('Cancel', 'Insert'):
+        load_doc(page, plain); click_text(page, 'First paragraph', 3); run_cmd(page, 'table-from-data'); page.wait_for_timeout(200)
+        dlg = page.get_by_role('dialog', name='Table from Data File', exact=True)
+        dlg.locator('input[type=file]').set_input_files({'name': 'my data.csv', 'mimeType': 'text/csv', 'buffer': b'user_id,share\nu_1,50%\n'}); page.wait_for_timeout(250)
+        early = 'my_data.csv' in files_of(page)
+        dlg.get_by_role('button', name=button, exact=True).click(); page.wait_for_timeout(250)
+        if button == 'Cancel':
+            check('L3: a file picked, then Cancel: the project as it was, no file added', not early and 'my_data.csv' not in files_of(page) and src(page) == plain, files_of(page))
+        else:
+            s = src(page)
+            ok = 'my_data.csv' in files_of(page) and '\\csvautobooktabular[respect all]{my_data.csv}' in s and page.evaluate('window.rikuy.hist.length') == 1
+            page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+            check('L3: Insert adds the file and the table as one step; Undo takes both away', ok and 'my_data.csv' not in files_of(page) and src(page) == plain, [ok, files_of(page)])
+    # M6, H10: Banded Rows on a table in \resizebox{…}{!}{…} in its float: in the argument, read again, off again
+    rb = WRAP(FLOAT('\\resizebox{\\linewidth}{!}{' + BOOK + '}'), PRE + '\\usepackage{graphicx}\n\\usepackage[table]{xcolor}\n')
+    load_doc(page, rb); at_src(page, 'two'); run_cmd(page, 'banded-rows'); page.wait_for_timeout(200)
+    s = src(page)
+    at_src(page, 'two')
+    on = pressed(page, 'banded-rows')
+    run_cmd(page, 'banded-rows'); page.wait_for_timeout(200)
+    check('M6, H10: Banded Rows on a table in \\resizebox: \\rowcolors in its argument, pressed, and off gives the source back, braces and all',
+          '\\resizebox{\\linewidth}{!}{\\rowcolors{2}{gray!10}{}\n\\begin{tabular}' in s and on is True and src(page) == rb, [s[60:300], on, src(page)[60:300]])
+    # H9: listings and colortbl, no xcolor: shading and banded rows load xcolor too
+    lst = WRAP(FLOAT(BOOK), PRE + '\\usepackage{listings}\n\\usepackage{colortbl}\n')
+    load_doc(page, lst); at_src(page, 'two'); run_cmd(page, 'table-shading', {'pick': {'name': 'yellow'}}); page.wait_for_timeout(200)
+    at_src(page, 'two'); run_cmd(page, 'banded-rows'); page.wait_for_timeout(200)
+    s = src(page)
+    check('H9: where only listings and colortbl stand, Shading and Banded Rows write xcolor\'s table option and load xcolor',
+          '\\PassOptionsToPackage{table}{xcolor}' in s and '\\usepackage{xcolor}' in s and '\\cellcolor{yellow}' in s and '\\rowcolors' in s, s[:400])
+    return s
+
+
+def review_compiled(page, listings_doc):
+    """The cases where TeX stopped, done in the page on one document, then compiled there."""
+    if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        print('SKIP the review\'s cases compiled in the page: no TeX tree in %s' % DIST)
+        return
+    tabs = [
+        ('H3a', '\\begin{tabular}{lll}\n\\toprule\n\\multicolumn{2}{c}{QMhead} & Qx1 \\\\\n\\midrule\nQx2 & Qx3 & Qx4 \\\\\n\\bottomrule\n\\end{tabular}'),
+        ('H3b', '\\begin{tabular}{lll}\n\\toprule\n\\cellcolor{red} Qma & Qmb & Qmc \\\\\n\\midrule\nQmd & Qme & Qmf \\\\\n\\bottomrule\n\\end{tabular}'),
+        ('H3c', '\\begin{tabular}{lll}\n\\toprule\n\\cellcolor{red} Qpa & Qpb & Qpc \\\\\n\\midrule\nQpd & Qpe & Qpf \\\\\n\\bottomrule\n\\end{tabular}'),
+        ('H4', '\\begin{tabular}{p{2cm}l}\n\\toprule\nQwa & Qwb \\\\\nQwc & Qwd \\\\\n\\bottomrule\n\\end{tabular}'),
+        ('H5a', '\\begin{tabular*}{\\textwidth}{@{\\extracolsep{\\fill}}lr}\n\\toprule\nQsa & Qsb \\\\\n\\bottomrule\n\\end{tabular*}'),
+        ('H5b', '\\begin{tabulary}{\\linewidth}{LC}\n\\toprule\nQya & Qyb \\\\\n\\bottomrule\n\\end{tabulary}'),
+        ('H6', '\\begin{longtable}[]{@{}ll@{}}\n\\toprule\\noalign{}\nQPa & QPb \\\\\n\\midrule\\noalign{}\n\\endhead\n\\bottomrule\\noalign{}\n\\endlastfoot\nQHc & QHd \\\\\n\\end{longtable}'),
+        ('H7', '\\begin{table}[!htbp]\n\\centering\n\\small\n\\rowcolors{2}{gray!10}{}\n\\renewcommand{\\arraystretch}{1.3}\n\\begin{tabular}{ll}\n\\toprule\nQLa & QLb \\\\\n\\midrule\nQlc & Qld \\\\\n\\bottomrule\n\\end{tabular}\n\\caption{Longer}\n\\label{tab:long}\n\\end{table}'),
+        ('H8a', '\\begin{table}[h]\n\\begin{minipage}{0.45\\linewidth}\n\\centering\n\\begin{tabular}{ll}\nQka & Qkb \\\\\n\\end{tabular}\n\\end{minipage}\n\\end{table}'),
+        ('H8b', '\\begin{minipage}{5cm}\n\\centering\n\\begin{tabular}{l}\nQfa \\\\\n\\end{tabular}\n\\end{minipage}'),
+        ('H10', '\\begin{table}[h]\n\\centering\n\\resizebox{0.5\\linewidth}{!}{\n\\rowcolors{2}{gray!10}{}\n\\begin{tabular}{ll}\nQra & Qrb \\\\\nQrc & Qrd \\\\\n\\end{tabular}}\n\\end{table}'),
+        ('H12', '\\begin{tabular}{|*{3}{c|}}\n\\hline\nQsta & Qstb & Qstc \\\\\n\\hline\n\\end{tabular}'),
+        ('H11', '\\textbf{Qtx, Qty}, Qtz\n$f(x,y)$, Qtw % a note'),
+    ]
+    body = '\n\n'.join(t for _, t in tabs) + '\n\nEnd.'
+    pre = PRE + '\\usepackage{multirow}\n\\usepackage{graphicx}\n\\usepackage{longtable}\n\\usepackage{tabulary}\n'
+    load_doc(page, {'main.tex': WRAP(body, pre), 'data.csv': 'user_id,share,note\nu_1,50%,a&b $5\n#x,~y,^z\n'})
+    page.wait_for_timeout(300)
+    at_src(page, 'QMhead'); run_cmd(page, 'table-shading', {'pick': {'name': 'yellow'}}); page.wait_for_timeout(150)
+    sel_words(page, 'Qma', 'Qmb'); run_cmd(page, 'merge-cells'); page.wait_for_timeout(150)
+    at_src(page, 'Qpa'); run_cmd(page, 'align-top-center'); page.wait_for_timeout(150)
+    at_src(page, 'Qwc'); run_cmd(page, 'align-top-center'); page.wait_for_timeout(150)
+    at_src(page, 'Qsa'); run_cmd(page, 'autofit-window'); page.wait_for_timeout(150)
+    at_src(page, 'Qya'); run_cmd(page, 'autofit-window'); page.wait_for_timeout(150)
+    at_src(page, 'QHc'); run_cmd(page, 'repeat-header'); page.wait_for_timeout(150)
+    at_src(page, 'QLa'); run_cmd(page, 'repeat-header'); page.wait_for_timeout(150)
+    at_src(page, 'Qka'); run_cmd(page, 'table-caption'); page.wait_for_timeout(150)
+    at_src(page, 'Qfa'); run_cmd(page, 'table-caption'); page.wait_for_timeout(150)
+    at_src(page, 'Qra'); run_cmd(page, 'banded-rows'); page.wait_for_timeout(150)
+    at_src(page, 'Qstb'); run_cmd(page, 'table-col-right'); page.wait_for_timeout(150)
+    page.evaluate('''() => { const sp = [...document.querySelectorAll('#pages span.t')]; const a = sp.find((x) => x.textContent.includes('Qtx')), z = sp.find((x) => x.textContent.includes('Qtw'));
+      const r = document.createRange(); r.setStart(a.firstChild, 0); r.setEnd(z.firstChild, z.textContent.indexOf('Qtw') + 3); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''')
+    page.wait_for_timeout(150)
+    run_cmd(page, 'text-to-table', {'sep': ','}); page.wait_for_timeout(200)
+    click_text(page, 'End', 1); run_cmd(page, 'table-from-data', {'file': 'data.csv'}); page.wait_for_timeout(200)
+    s = src(page)
+    wrote = {
+        'H3 shading a merged cell': '\\multicolumn{2}{c}{\\cellcolor{yellow} QMhead}' in s,
+        'H3 merging a shaded cell': '\\multicolumn{2}{c}{\\cellcolor{red} Qma Qmb}' in s,
+        'H3 aligning a shaded cell': '\\multicolumn{1}{c}{\\cellcolor{red} Qpa}' in s,
+        'H4 one cell of a p{} column, array loaded': '>{\\centering\\arraybackslash}p{2cm}}{Qwc}' in s and '\\usepackage{array}' in s,
+        'H5 tabular* to tabularx as wide': '\\begin{tabularx}{\\textwidth}{X>{\\raggedleft\\arraybackslash}X}' in s,
+        'H5 tabulary to tabularx as wide': '\\begin{tabularx}{\\linewidth}{X>{\\centering\\arraybackslash}X}' in s,
+        'H6 pandoc\'s longtable off: \\bottomrule at the end': 'QPa & QPb \\\\\n\\midrule\\noalign{}\nQHc & QHd \\\\\n\\bottomrule\\noalign{}\n\\end{tabular}' in s,
+        'H7 on: settings in a group, placement in a comment, the label in the longtable': '{\\small\n\\rowcolors{2}{gray!10}{}\n\\renewcommand{\\arraystretch}{1.3}\n\\begin{longtable}{ll} % rikuy: \\begin{table}[!htbp]' in s and '\\caption{Longer}\n\\label{tab:long}\n\\end{longtable}}' in s,
+        'H8 caption in the minipage': '\\end{tabular}\n\\caption{}\n\\end{minipage}' in s,
+        'H8 captionof outside a float, caption loaded': '\\end{tabular}\n\\captionof{table}{}\n\\end{minipage}' in s and '\\usepackage{caption}' in s,
+        'H10 banded rows off in \\resizebox: its braces stay': '\\resizebox{0.5\\linewidth}{!}{\n\\begin{tabular}{ll}' in s,
+        'H12 a column in |*{3}{c|}: bars kept': '\\begin{tabular}{|c|c|c|c|}' in s,
+        'H11 text to table: braces and math whole, the comment after \\\\': '\\textbf{Qtx, Qty} & Qtz \\\\' in s and '$f(x,y)$ & Qtw \\\\ % a note' in s,
+        'H13 respect all, T1 for its characters': '\\csvautobooktabular[respect all]{data.csv}' in s and '\\usepackage[T1]{fontenc}' in s,
+    }
+    check('the review\'s cases written in the page: ' + ', '.join(wrote), all(wrote.values()), [k for k, v in wrote.items() if not v] + [s[s.find('\\begin{document}'):][:2500]])
+    for name, doc, words in (('every case above', s, ['QMhead', 'Qma Qmb', 'Qpa', 'Qwc', 'Qsa', 'Qya', 'QPa', 'QHd', 'QLa', 'Longer', 'Qka', 'Qfa', 'Qra', 'Qstc', 'Qtx, Qty', 'Qtw', '50%', 'a&b', '#x', 'u_1']),
+                             ('H9: Shading and Banded Rows with listings and colortbl, xcolor loaded by Rikuy', listings_doc, ['Head', 'two', 'four'])):
+        page.set_default_timeout(600000)
+        r = page.evaluate('''async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile();
+          let b = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) b += String.fromCharCode(...r.pdf.subarray(i, i + 8192));
+          return { ok: r.ok, pages: r.pages, pdf: btoa(b), problems: (r.problems || []).filter((x) => x.severity === 'error').map((x) => x.message).slice(0, 4) }; }''', doc)
+        page.set_default_timeout(30000)
+        import base64, io
+        from pypdf import PdfReader
+        text = ' '.join(p.extract_text() or '' for p in PdfReader(io.BytesIO(base64.b64decode(r['pdf']))).pages) if r['pdf'] else ''
+        miss = [w for w in words if w.replace(' ', '') not in text.replace(' ', '')]
+        check('compiled in the page, no error, every word in the PDF: ' + name, r['ok'] and not r['problems'] and not miss, {'ok': r['ok'], 'problems': r['problems'], 'missing': miss})
+
+
+def reviewed(page):
+    review_compiled(page, review(page))
+
+
 # ---- compiled -------------------------------------------------------------------------------------
 
 def compiled(page):
@@ -372,7 +560,7 @@ def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         names = sys.argv[1:]
-        for f in (inserting, tabs_and_trips, keys_and_select, the_rest, drawing, compiled):
+        for f in (inserting, tabs_and_trips, keys_and_select, the_rest, drawing, reviewed, compiled):
             if names and f.__name__ not in names:
                 continue
             try: f(page)

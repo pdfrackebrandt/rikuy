@@ -417,6 +417,9 @@ export class Renderer {
       const wrap = div('tabw');
       const t = document.createElement('table');
       t.className = 'tab';
+      // (which table it is: a table that runs over pages is cut into one <table> a page, each
+      // with this, so Tab, Select and the selection's block go on across them)
+      if (p.f != null && p.s != null) t.dataset.tab = p.f + ':' + p.s;
       // in a right to left document TeX sets the first column at the right (babel's bidi=basic
       // turns alignments with the paragraph direction), and so does a table with dir="rtl"
       if (p.dir === 'rtl') setDir(t, p.dir);
@@ -453,7 +456,9 @@ export class Renderer {
           // (a cell under one merged down, empty: the merged one stands there)
           const cov = covered.get(col);
           if (cov && cov.left > 0 && c.inl.every((x) => x.ph)) {
-            cov.left--;
+            // (each column it covers counts the row: a \multicolumn{2}{c}{} under a cell merged
+            // both ways uses up both)
+            for (let q = col; q < col + c.span; q++) { const v = covered.get(q); if (v && v.left > 0) v.left--; }
             // its place stays reachable: the caret goes into the merged cell's words
             col += c.span;
             return;

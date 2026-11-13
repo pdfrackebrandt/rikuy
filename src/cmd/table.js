@@ -21,6 +21,9 @@ import { openMenu, colorPicker, colorArg, colorNeeds } from '../ui/kit.js';
 import { openTablePicker, insertTableDialog, textToTableDialog, tableToTextDialog, sortDialog, propertiesDialog, marginsDialog, deleteCellsDialog, dataFileDialog } from '../ui/tablepicker.js';
 
 const WHY = 'Put the caret in a table cell first.';
+// the table's first row of cells (after a caption row of a longtable)
+const LT_MARKS = ['endhead', 'endfirsthead', 'endfoot', 'endlastfoot'];
+const firstRow = (T) => Math.max(0, T.rows.findIndex((x) => x.kind === 'row'));
 // the table the caret is in, read once for each look at the ribbon (every button asks)
 const here = (app, at) => {
   if (!at || !at.cell || !at.c || at.c.ghost) return null;
@@ -166,7 +169,10 @@ register(
   T('table-sort', 'Sort', { title: 'Sort…: the rows by a column, as text or numbers, up or down; the header row stays', tab: 'table-layout', group: 'data', order: 10, icon: ICON.sort, label: 'Sort',
     synonyms: ['Sort rows', 'Sort table', 'Order'], run: (app, args) => (args ? app.tableSort(args) : sortDialog(app)) }),
   T('repeat-header', 'Repeat Header Rows', { title: 'Repeat Header Rows: the header rows again on every page the table runs over (a longtable with \\endhead)', tab: 'table-layout', group: 'data', order: 20, icon: ICON.repeat,  kind: 'toggle',
-    synonyms: ['longtable', 'endhead', 'Header on every page'], on: (app, at) => { const h = here(app, at); return !!h && X.repeats(h.T); }, run: (app) => app.tableRepeatHeader() }),
+    synonyms: ['longtable', 'endhead', 'Header on every page'], on: (app, at) => { const h = here(app, at); return !!h && X.repeats(h.T); },
+    // (as in Word: the rows that repeat are the table's first ones, down to the selection's last)
+    when: (app, at) => { const h = here(app, at); return !!h && (X.repeats(h.T) || h.rect.r0 <= firstRow(h.T)); },
+    whyNot: () => 'Put the caret in the table\'s first row (or select its first rows): those rows repeat on every page.', run: (app) => app.tableRepeatHeader() }),
   T('table-to-text', 'Convert to Text', { title: 'Convert to Text…: each row a paragraph, its cells joined by commas, tabs (\\quad) or semicolons, or each cell a paragraph', tab: 'table-layout', group: 'data', order: 30, icon: ICON.toText, 
     synonyms: ['Table to text', 'Remove table keep text'], run: (app, args) => (args && args.sep ? app.tableToText(args.sep) : tableToTextDialog(app)) }),
 
@@ -255,12 +261,14 @@ export const methods = {
     for (const n of new Set(names)) {
       if (n === 'xcolor-table') xc.table = true;
       else if (n === 'xcolor-dvips') xc.dvipsnames = true;
+      else if (n === 'fontenc-T1') want.fontenc = { T1: true };
       else want[n] = null;
     }
     // (xcolor in the same run as the others where it is a \usepackage line, new or merged: the
     // lines come in the order asked; else its \PassOptionsToPackage)
     const x = Object.keys(xc).length ? this.xcolorEdits(xc) : null;
     if (x && x.pkg) want.xcolor = x.pkg;
+    else if (x && x.plain) want.xcolor = null;
     const out = Object.keys(want).length ? this.packageEdits(want) : [];
     return [...out, ...(x && x.edits ? x.edits : [])];
   },
@@ -290,7 +298,9 @@ export const methods = {
     let at = 0;
     if (!beamer && D) { const z = src.indexOf('\n', D.e); at = z < 0 ? src.length : z + 1; }
     else if (D) at = src.lastIndexOf('\n', D.s - 1) + 1;
-    return { edits: [{ f, s: at, e: at, t: line }] };
+    // (and xcolor itself where no line loads it: listings, tabularray and colortbl alone do not,
+    // and \rowcolors, \cellcolor and yellow!20 are xcolor's; after a package that did, it does nothing)
+    return { edits: [{ f, s: at, e: at, t: line }], plain: xi < 0 && !beamer };
   },
 
   // The caret in the cell that holds p (its first words, or its empty place)
@@ -382,13 +392,22 @@ export const methods = {
     const { f, p, pre, post } = this.afterBlockPos();
     const nl = '\n';
     const name = String(file).replace(/[{}\\%#]/g, '');
-    const cmd = (o.booktabs === false ? '\\csvautotabular' : '\\csvautobooktabular') + (o.sep && o.sep !== ',' ? '[separator=' + { ';': 'semicolon', '\t': 'tab', ' ': 'space' }[o.sep] + ']' : '') + '{' + name + '}';
+    // (respect all: a value's _ % & $ # are its own characters, as the page shows them, not TeX's)
+    const cmd = (o.booktabs === false ? '\\csvautotabular' : '\\csvautobooktabular') + '[respect all' + (o.sep && o.sep !== ',' ? ',separator=' + { ';': 'semicolon', '\t': 'tab', ' ': 'space' }[o.sep] : '') + ']{' + name + '}';
     const text = ['\\begin{table}[h]', '\\centering', cmd, '\\caption{}', '\\end{table}'].join(nl);
-    const pk = this.tablePackages(['csvsimple', ...(o.booktabs === false ? [] : ['booktabs'])]);
+    // (respect all prints a value's _ { } \\ ~ ^ as the characters themselves: in LaTeX's first
+    // encoding, OT1, those places hold other glyphs (_ is a dot accent), so T1 comes where the
+    // document names no encoding and no fontspec)
+    const main = this.src(this.main) || '', end = preambleEnd(main);
+    const have = end < 0 ? [] : pkgLines(main, end).flatMap((x) => x.names.map((n) => n.name));
+    const t1 = end >= 0 && !have.includes('fontenc') && !have.includes('fontspec');
+    const pk = this.tablePackages(['csvsimple', ...(o.booktabs === false ? [] : ['booktabs']), ...(t1 ? ['fontenc-T1'] : [])]);
     let at = p + pre.length + text.indexOf('\\caption{') + 9;
     for (const x of pk) if (x.f === f && x.s <= p) at += x.t.length - (x.e - x.s);
+    // (a file picked in the dialog comes in the same step: o.text, under the name it was given)
+    const add = typeof o.text === 'string' && !this.files.has(name) && /\.(csv|tsv|dat|txt)$/i.test(name) ? [{ f: name, s: 0, e: 0, t: o.text }] : [];
     this.closeGroup();
-    this.commit([{ f, s: p, e: p, t: pre + text + post }, ...pk], { f, p: at, bias: 1 }, 'insert');
+    this.commit([{ f, s: p, e: p, t: pre + text + post }, ...pk, ...add], { f, p: at, bias: 1 }, 'insert');
     this.closeGroup();
   },
 
@@ -433,7 +452,7 @@ export const methods = {
     const el = n && (n.nodeType === 1 ? n : n.parentElement);
     const td = el && el.closest('td');
     if (!td) return;
-    const cells = [...td.closest('table').querySelectorAll('td:not(.rule-cell)')].filter((x) => x.querySelector('span.t'));
+    const cells = this.tablePieces(td.closest('table')).flatMap((t) => [...t.querySelectorAll('td:not(.rule-cell)')].filter((x) => x.closest('table') === t && x.querySelector('span.t')));
     const i = cells.indexOf(td);
     const next = cells[i + (back ? -1 : 1)];
     if (!next) { if (!back) this.tableRow(); return; }
@@ -441,6 +460,14 @@ export const methods = {
     const r = document.createRange();
     r.selectNodeContents(sp);
     sel.removeAllRanges(); sel.addRange(r);
+  },
+
+  // the <table> pieces of the table tbl is one of: a table that runs over pages is one a page
+  tablePieces(tbl) {
+    const key = tbl && tbl.dataset.tab;
+    if (!key) return tbl ? [tbl] : [];
+    const all = [...this.root.querySelectorAll('table[data-tab="' + CSS.escape(key) + '"]')];
+    return all.includes(tbl) ? all : [tbl];
   },
 
   // ---- selecting ------------------------------------------------------------------------------------
@@ -459,7 +486,7 @@ export const methods = {
     else if (what === 'column') { a = pick(data[0], h.cell.col); z = pick(data[data.length - 1], h.cell.col); }
     else { const first = T.rows[data[0]], last = T.rows[data[data.length - 1]]; a = first.cells[0]; z = last.cells[last.cells.length - 1]; }
     if (!a || !z) return false;
-    const spans = [...tbl.querySelectorAll('td span.t')];
+    const spans = this.tablePieces(tbl).flatMap((t) => [...t.querySelectorAll('td span.t')]);
     const pos = (sp) => { const i = segOfSpan(sp); return i ? boundary(i.B, i.seg, i.o) : -1; };
     const inA = spans.filter((sp) => { const q = pos(sp); return q >= a.s && q <= a.e; });
     const inZ = spans.filter((sp) => { const q = pos(sp); return q >= z.s && q <= z.e; });
@@ -482,9 +509,10 @@ export const methods = {
     if (!h || !h.multi) return;
     const tbl = at.el && at.el.closest('table');
     if (!tbl) return;
-    tbl.classList.add('tsel-on');
+    const all = this.tablePieces(tbl);
+    for (const t of all) t.classList.add('tsel-on');
     const { r0, r1, c0, c1 } = h.rect;
-    for (const td of tbl.querySelectorAll('td')) {
+    for (const td of all.flatMap((t) => [...t.querySelectorAll('td')])) {
       const sp = td.querySelector('span.t'), info = sp && segOfSpan(sp);
       if (!info) continue;
       const hit = X.cellAt(h.T, boundary(info.B, info.seg, info.o));
@@ -493,8 +521,30 @@ export const methods = {
   },
 
   // ---- merging and splitting --------------------------------------------------------------------------
-  tableMerge() { return this.tableOp((src, T, h) => X.mergeCells(src, T, h.rect)); },
-  tableSplitCell() { return this.tableOp((src, T, h) => X.splitCell(src, T, h.r, h.k)); },
+  // Merge, and Split right after it (the merge the last step, the table as it made it): the table
+  // as it was before, byte for byte, rules a merge down clipped and spaces included
+  tableMerge() {
+    let memo = null;
+    const ok = this.tableOp((src, T, h) => {
+      const r = X.mergeCells(src, T, h.rect);
+      if (r.error || !r.edits) return r;
+      const after = X.apply(src, r.edits), d = after.length - src.length;
+      memo = { f: h.f, was: src.slice(T.s, T.e), made: after.slice(T.s, T.e + d), cell: r.p - T.s };
+      return r;
+    });
+    this.tableMergeMemo = ok && memo ? { ...memo, step: this.hist[this.hist.length - 1] } : null;
+    return ok;
+  },
+  tableSplitCell() {
+    return this.tableOp((src, T, h) => {
+      const m = this.tableMergeMemo;
+      this.tableMergeMemo = null;
+      if (m && m.step && m.step === this.hist[this.hist.length - 1] && m.f === h.f && src.slice(T.s, T.e) === m.made && h.cell.s - T.s <= m.cell && m.cell <= h.cell.e - T.s) {
+        return { edits: [{ s: T.s, e: T.e, t: m.was }], p: T.s + Math.min(m.cell, m.was.length) };
+      }
+      return X.splitCell(src, T, h.r, h.k);
+    });
+  },
 
   // ---- size ------------------------------------------------------------------------------------------------
   // the columns' widths as the page draws them, in cm of the page (for Fixed Column Width)
@@ -555,17 +605,19 @@ export const methods = {
         }
         const r = X.alignCells(src, T, [h.cell], hz);
         edits.push(...r.edits);
-        return { edits };
+        return { edits, packages: r.packages };
       }
       if (whole) {
         const r = X.alignCols(src, T, h.rect.c0, h.rect.c1, hz, vert);
+        if (r.error) return r;
         r.packages.forEach((x) => pk.add(x));
         edits.push(...r.edits);
         return { edits, packages: [...pk] };
       }
       const cells = [];
       for (let r = h.rect.r0; r <= h.rect.r1; r++) for (const c of (T.rows[r] || { cells: [] }).cells) if (c.col >= h.rect.c0 && c.col + c.span - 1 <= h.rect.c1) cells.push(c);
-      edits.push(...X.alignCells(src, T, cells, hz).edits);
+      const rc = X.alignCells(src, T, cells, hz);
+      edits.push(...rc.edits); rc.packages.forEach((x) => pk.add(x));
       if (vert && vert !== X.colV(T.spec.cols[h.cell.col])) {
         const r = X.alignCols(src, T, h.cell.col, h.cell.col, null, vert);
         edits.push(...r.edits); r.packages.forEach((x) => pk.add(x));
@@ -587,10 +639,12 @@ export const methods = {
   // Sort: o { col, desc, type, header }
   tableSort(o) {
     return this.tableOp((src, T, h) => {
-      const data = T.rows.map((x, k) => k).filter((k) => T.rows[k].kind === 'row' && (T.headEnd < 0 || k >= T.headEnd));
+      // (a longtable's body: the rows after its last \endhead, \endfoot …; its head is the header)
+      const mark = T.rows.reduce((m, x, k) => (x.lead.some((l) => LT_MARKS.includes(l.name)) ? k : m), -1);
+      const data = T.rows.map((x, k) => k).filter((k) => T.rows[k].kind === 'row' && k >= mark);
       let r0 = data[0], r1 = data[data.length - 1];
       if (h.rect.r1 > h.rect.r0) { r0 = h.rect.r0; r1 = h.rect.r1; }
-      else if (o.header && data.length > 1) r0 = data[1];
+      else if (o.header && data.length > 1 && mark < 0) r0 = data[1];
       return X.sortRows(src, T, r0, r1, o.col ?? h.cell.col, o);
     });
   },
@@ -606,7 +660,27 @@ export const methods = {
     ]));
   },
   tableRepeatHeader() {
-    return this.tableOp((src, T, h) => X.repeatHeader(src, T, Math.max(0, h.rect.r1), !X.repeats(T)));
+    return this.tableOp((src, T, h) => {
+      const on = !X.repeats(T);
+      if (on && h.rect.r0 > firstRow(T)) return { error: 'Only the table\'s first rows repeat: put the caret in its first row, or select its first rows.' };
+      return X.repeatHeader(src, T, Math.max(0, h.rect.r1), on, { twocolumn: this.twoColumns(h) });
+    });
+  },
+  // whether the table stands where text runs in two columns: a two column class or option,
+  // \twocolumn before it, or a multicols around it (longtable stops there)
+  twoColumns(h) {
+    const main = this.src(this.main) || '', cls = docClass(main);
+    const opts = cls ? Object.keys(cls.options || {}) : [], has = (x) => opts.includes(x);
+    if (has('twocolumn')) return true;
+    // (classes in two columns unless told otherwise)
+    if (cls && /^IEEE(tran|conf)$/.test(cls.name) && !has('onecolumn') && !has('draftcls') && !has('draftclsnofoot')) return true;
+    if (cls && cls.name === 'acmart' && (has('sigconf') || has('sigplan'))) return true;
+    if (cls && cls.name === 'elsarticle' && has('5p')) return true;
+    const before = stripComments(h.src.slice(Math.max(0, h.T.s - 400000), h.T.s));
+    const open = (before.match(/\\begin\s*\{multicols\*?\}/g) || []).length - (before.match(/\\end\s*\{multicols\*?\}/g) || []).length;
+    if (open > 0) return true;
+    const tw = before.lastIndexOf('\\twocolumn'), one = before.lastIndexOf('\\onecolumn');
+    return tw >= 0 && tw > one && !/^\\twocolumn[A-Za-z@]/.test(before.slice(tw));
   },
   tableCaption() {
     const at = this.ribbonAt(), h = at && this.tableHere(at);
@@ -614,8 +688,12 @@ export const methods = {
     const r = X.captionEdits(h.src, h.T);
     if (r.error) { this.toast(r.error); return false; }
     if (!r.edits) { this.closeGroup(); this.restoreCaret({ f: h.f, p: r.p }); return true; }
+    // (\captionof needs caption's package: its line in the same step)
+    const pk = this.tablePackages(r.packages || []);
+    let p = r.p;
+    for (const x of pk) if (x.f === h.f && x.s <= p) p += x.t.length - (x.e - x.s);
     this.closeGroup();
-    this.commit(r.edits.map((x) => ({ f: h.f, ...x })), { f: h.f, p: r.p, bias: 1 }, 'table');
+    this.commit([...r.edits.map((x) => ({ f: h.f, ...x })), ...pk], { f: h.f, p, bias: 1 }, 'table');
     this.closeGroup();
     return true;
   },
