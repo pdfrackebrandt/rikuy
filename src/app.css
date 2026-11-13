@@ -137,6 +137,48 @@ body.has-ai .ai-only { display: inline-flex !important; }
 .rb-style { font: 13px var(--font-ui); color: var(--ink-ui); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; height: 28px; padding: 0 4px; width: 128px; }
 .rb-style:disabled { opacity: .55; }
 .rb-style:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+/* The Styles gallery, as Word's: one bordered box of tiles, each the style's name drawn in that
+   style's own look (the page's fonts), the current one checked; a strip at its right edge pages
+   through the tiles and opens them all; its name under it. ribbonFit (src/ribbon.js) sets how
+   many tiles show (rb-fold folds the insert buttons' names first, rb-narrow puts the style
+   list in its place); a phone has the list. */
+.rb-gw { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 2px 0 1px; }
+.rb-gal { display: flex; align-items: stretch; height: 33px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
+.rb-tiles { display: flex; gap: 2px; padding: 2px; }
+.rb-tile { flex: none; width: 78px; display: flex; align-items: center; padding: 0 4px 0 5px; box-sizing: border-box; border: 1px solid transparent; border-radius: 3px; background: transparent; color: var(--ink-ui); cursor: pointer; overflow: hidden; white-space: nowrap; line-height: 1; }
+.rb-tile > span { overflow: hidden; text-overflow: ellipsis; }
+.rb-tile:hover { background: var(--blue-wash); }
+.rb-tile[aria-pressed="true"] { background: color-mix(in srgb, var(--blue-wash) 60%, var(--panel)); border-color: var(--blue); }
+.rb-tile:disabled { opacity: .38; cursor: default; pointer-events: none; }
+.rb-tile:focus-visible, .rb-sb:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.rb-strip { display: flex; flex-direction: column; width: 16px; border-left: 1px solid var(--line); }
+.rb-sb { flex: 1 1 0; display: flex; align-items: center; justify-content: center; min-height: 0; padding: 0; border: 0; background: transparent; color: var(--ink-ui); cursor: pointer; }
+.rb-sb:last-child { border-top: 1px solid var(--line); }
+.rb-sb:first-child { border-top-right-radius: 4px; } .rb-sb:last-child { border-bottom-right-radius: 4px; }
+.rb-sb:hover { background: var(--blue-wash); }
+.rb-sb:disabled { color: var(--mute); opacity: .45; cursor: default; pointer-events: none; }
+.rb-sb svg { width: 9px; height: 7px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.rb-cap { font: 10px/1 var(--font-ui); color: var(--mute); letter-spacing: .02em; }
+/* each style's look: the page's body, title and heading faces; LaTeX in its logo's letters */
+.st-p > span { font: 13.5px var(--font-doc); }
+.st-title > span { font: 16.5px var(--font-doc); }
+.st-section > span { font: bold 13px var(--font-doc); }
+.st-subsection > span { font: bold 12.5px var(--font-doc); }
+.st-subsubsection > span { font: bold 12px var(--font-doc); }
+.st-quote > span { font: italic 13.5px var(--font-doc); padding-left: 7px; box-shadow: inset 2px 0 0 color-mix(in srgb, var(--ink-ui) 30%, transparent); }
+.st-latex > span { font: 14.5px var(--font-doc); overflow: visible; }
+/* the logo as TeX sets it: a small capital A raised, an E lowered by half an ex, each kerned in */
+.tex-logo .tl-a { text-transform: uppercase; font-size: .75em; vertical-align: .27em; margin: 0 -.15em 0 -.36em; }
+.tex-logo .tl-e { text-transform: uppercase; vertical-align: -.5ex; margin: 0 -.125em 0 -.1667em; }
+.rb.rb-narrow .rb-gw { display: none; }
+.rb:not(.rb-narrow) > .rb-style { display: none; }
+.rb.rb-fold > .btn:not(.icon) span:not(.sr) { display: none; }
+.rb.rb-fold > .btn:not(.icon) { width: 32px; padding: 0; justify-content: center; }
+/* the list behind More: the styles in their looks, one to a line */
+.pop-styles .rb-mi { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 4px 12px 4px 26px; border: 0; background: transparent; color: var(--ink-ui); text-align: left; cursor: pointer; position: relative; }
+.pop-styles .rb-mi:hover, .pop-styles .rb-mi:focus-visible { background: var(--blue-wash); outline: none; }
+.pop-styles .rb-mi:disabled { opacity: .4; cursor: default; }
+.pop-styles .rb-mi[aria-checked="true"]::before { content: ""; position: absolute; left: 10px; top: 50%; width: 7px; height: 4px; margin-top: -4px; border: solid var(--blue); border-width: 0 0 2px 2px; transform: rotate(-45deg); }
 .rb .btn.icon b, .rb .btn.icon i, .rb .btn.icon u { font: 15px var(--font-doc); }
 .rb .btn.icon b { font-weight: 700; }
 /* a press on a disabled button reaches the row, which keeps the caret on the page */
@@ -357,6 +399,22 @@ body.pdf-on #pdfpane { display: flex; }
 .it.raw.verb { background: transparent; padding: 0; font-size: .95em; }
 .raw-h { font: 600 9px/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: .08em; color: #8693A0; margin-bottom: .3em; }
 .it.raw pre { margin: 0; white-space: pre-wrap; font: inherit; }
+/* A LaTeX paragraph (src/styles.js): its source in a quiet box, typed in as text. The header is
+   drawn here, not in the page's text, so it is never selected or copied; its spoken form is
+   empty, the paragraph says "LaTeX paragraph" itself. The box keeps its look when the PDF view's
+   colours or the dark theme change: it sits on the paper. */
+.it.tex { white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; hyphens: manual; -webkit-hyphens: manual; text-align: left; text-indent: 0 !important; text-wrap: wrap; font-family: var(--font-doc-tt); font-size: .86em; line-height: 1.42; font-variant-ligatures: none; tab-size: 4; color: #1F2933; background: #F4F6F8; border-radius: 4px; box-shadow: inset 2px 0 0 #C6D0DA; padding: .4em .75em .5em .85em; caret-color: #2B74B0; }
+.it.tex::before { content: "LaTeX" / ""; display: block; font: 600 9px/1.2 var(--font-ui); letter-spacing: .06em; color: #8693A0; margin-bottom: .35em; white-space: normal; user-select: none; pointer-events: none; }
+.it.tex.split-b::before { content: none; }
+.it.tex.split-a { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.it.tex.split-b { border-top-left-radius: 0; border-top-right-radius: 0; }
+/* the box the caret is in */
+.it.tex.cur { box-shadow: inset 2px 0 0 #2B74B0; background: #F0F5FA; }
+.it.tex.cur::before { color: #2B74B0; }
+/* a paragraph to come that is set to LaTeX, and a line to come in one */
+.ghostp.tex { min-height: 0; outline-offset: 0; }
+.ghostp.tex.empty .gh::after { content: 'Type LaTeX here.'; font-family: var(--font-ui); }
+.it.tex .tex-gh { color: transparent; }
 .it.hrule { border-top: calc(var(--pt) * .4px) solid #111; margin: .4em 0; }
 .it.vs { }
 
@@ -572,6 +630,8 @@ body.dropping .dropzone { display: grid; }
   body.has-ai #bar .btn:not(.icon):not(.sm):not(.zv) { width: 32px; padding: 0; justify-content: center; }
 }
 @media (max-width: 860px) {
+  .rb .rb-gw { display: none; }
+  #ribbon > .rb-style { display: inline-block; }
   .btn span:not(.sr) { display: none; }
   .btn:not(.icon):not(.sm) { width: 32px; padding: 0; justify-content: center; }
   .zv { width: auto !important; padding: 0 4px !important; }

@@ -329,6 +329,24 @@ await ok('a paragraph deleted in Word before a code listing: the listing is not 
   assert.ok(importInto(edit(E.docx, add), files).files.get('main.tex').includes('Typed in Word.'));
 });
 
+await ok('a LaTeX paragraph goes to Word as plain code, its source as it is, and a coauthor\'s edits keep it and its mark', async () => {
+  const src = doc('First paragraph.\n\n% rikuy: latex\nRaw \\textbf{bold} 50\\% & $x^2$\n  second line\n\nLast paragraph.\n');
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  assert.equal(E.lost, 0);
+  const xml = text(unzip(E.docx).get('word/document.xml'));
+  // as source, in the code paragraph style, one Word line for each of its lines; the mark is not in it
+  assert.ok(/SourceCode/.test(xml) && xml.includes('Raw \\textbf{bold} 50\\% &amp; $x^2$') && xml.includes('second line') && !xml.includes('rikuy'), xml.slice(xml.indexOf('Raw') - 300, xml.indexOf('Raw') + 200));
+  // unchanged, nothing changes; a word changed in the paragraph after it arrives, the LaTeX paragraph stays as it was
+  assert.equal(importInto(E.docx, files).files.size, 0);
+  await roundTrip(src, rep('Last paragraph.', 'Last words.'), src.replace('Last paragraph.', 'Last words.'));
+  // an edit made in Word inside the code is not applied, as in a verbatim listing: a comment says
+  // so, on a line of its own before the blank line, so the mark still marks the same paragraph
+  const got = importInto(edit(E.docx, rep('second line', 'other line')), files).files.get('main.tex');
+  assert.ok(/^% comment \(Ana\) on "second": .*Not applied\.$/m.test(got) && got.replace(/^% comment \(Ana\).*\n/m, '') === src, got);
+  assert.deepEqual(buildModel({ files: new Map([['main.tex', got]]), main: 'main.tex' }).blocks.flatMap((x) => x.items).filter((x) => x.type === 'tex').map((x) => x.text), ['Raw \\textbf{bold} 50\\% & $x^2$\n  second line']);
+});
+
 await ok('to Word: colour, highlight, centred text and a list\'s own labels are kept, and still round trip', async () => {
   const src = doc('\\textcolor{red}{Red words} and \\hl{marked ones} and \\textcolor[HTML]{0F9ED5}{blue}.\n\n\\begin{center}\nA centred line.\n\\end{center}\n\n\\begin{enumerate}[label=(\\alph*)]\n  \\item Alpha\n  \\item Beta\n\\end{enumerate}\n', '\\usepackage{xcolor,soul,enumitem}\n');
   const files = new Map([['main.tex', src]]);

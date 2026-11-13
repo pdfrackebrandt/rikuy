@@ -249,6 +249,9 @@ class Walker {
       case 'title': this.title(it, u); return [];
       case 'refs': return this.refs(it);
       case 'raw': return this.raw(it);
+      // A LaTeX paragraph goes as the page shows it, its source as code (src/styles.js), plain as
+      // a verbatim's: with the language named, pandoc colours its commands token by token
+      case 'tex': return [{ t: 'CodeBlock', c: [attr(), it.text] }];
       case 'toc': this.toc = true; return [];
       case 'pagebreak': return [{ t: 'RawBlock', c: ['openxml', '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'] }];
       case 'rule': return [{ t: 'HorizontalRule' }];

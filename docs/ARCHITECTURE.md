@@ -44,7 +44,8 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | Word (.docx in and out, a coauthor's edits back) | `saveDocx`, `openDocx`, `wordEdits` (`src/word.js`); `buildWordDoc` (`src/wordast.js`); `extract` (`src/docx.js`); `planImport`, `mathPatch` (`src/wordsync.js`); `docxToLatex` (`src/wordjobs.js`) |
 | right to left text, the fonts of Chinese, Japanese, Korean, Arabic, Hebrew, Thai, Sinhala and India's scripts, the set up notice | `rtlDocument`, `languageDir`, `scriptNeeds`, `addScriptSetup` (`src/scripts.js`); `Builder.dirOf`, `dirCmd`, `declDir`, `dirEnv` (`src/model.js`); `setDir` (`src/render.js`); `--font-cjk`, `--font-ar` and their like, `:root[data-cjk]` and the `dir` rules (`src/app.css`); `App.scriptNotice`, `scriptSetUp`, `cjkOrder` |
 | live figures (`\rikuywidget`) | `WidgetLayer`, `widgetDoc`, `WIDGET_CSP` (`src/widget.js`); `Builder.cmd` (kind `widget`), `Renderer.atomEl`; `App.widgetsAllowed`, `widgetResized` |
-| the ribbon (style of a paragraph, lists, Insert, Download) | `ribbonSync`, `setBlockStyle`, `toggleList`, `insertTable`, `downloadPdfNow`, `installRibbon` (`src/ribbon.js`); `PALETTE`, `runPalette`, `afterBlockPos` (`src/app.js`) |
+| the ribbon (the Styles gallery, lists, Insert, Download) | `ribbonSync`, `blockStyle`, `setBlockStyle`, `paintGallery`, `ribbonFit`, `openStyles`, `toggleList`, `insertTable`, `downloadPdfNow`, `installRibbon` (`src/ribbon.js`); `restyle`, `latexSpot` (`src/styles.js`); `PALETTE`, `runPalette`, `afterBlockPos` (`src/app.js`) |
+| LaTeX paragraphs (`% rikuy: latex`) | `isLatexMark` (`src/styles.js`); `Builder.texBlock`, `cutOpen` (`src/model.js`); `Renderer.item` case `tex`; `App.texBox`, `texEdit`, `texEnter`, `texDelete`, `showTexGhost` (`src/app.js`) |
 | equation editing | `App.openMath`, `attachField`, `toField`, `fromField`; `src/minimal.js`, `wordmath.js`, `fences.js` |
 | engine choice, passes, bibliography, indexes | `pickEngine`, `compile`, `runBiber`, `indexTools` (`tex/engine.js`) |
 | a shell escape program | `exec` (`tex/shell.js`); `loadTool`, `make*` (`tex/tools.js`) |
@@ -157,6 +158,42 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   first checks the record's time against `savedT`: what another tab saved since goes into the
   versions (`keepOtherTab`). A tab shown again takes that tab's text as one undo step
   (`adoptOtherTab`), and a tab with nothing unsaved writes nothing when it is hidden or closed.
+
+- **LaTeX paragraphs.** A paragraph can be kept as its source: a comment line of its own just
+  before it, `% rikuy: latex` (`LATEX_MARK`, recognised by `isLatexMark`: `%`, `rikuy:`,
+  `latex`, spaces and tabs between them as one likes, small letters, nothing else on the line,
+  and a line with something on it after), marks the text from the next line to the next blank
+  line, or to the end of the text it is in. It is the one convention Rikuy adds to a `.tex` file.
+  TeX skips a comment line, so the file compiles anywhere to the same PDF (`test/ribbon.py`
+  compiles a document with and without its marks and compares), and no package or editor writes
+  that line by chance: the 716 documents of the corpus have none. `Builder.flow` recognises the
+  mark only in the document's own text (`env.top`: the body and `\input` files, not inside an
+  environment or a macro's text) and hands the nodes up to the next `par` to `Builder.texBlock`,
+  which builds them as usual and drops the result (counters, labels, headings and footnote
+  numbers stay as TeX will have them) and makes one item `{type: 'tex'}` whose one seg maps every
+  character to itself. A brace, a bracket or an environment opened and not closed (one being
+  typed) would hold the rest of the file as the parser reads it; `cutOpen` ends it at its first
+  blank line, as TeX ends the paragraph there. The renderer draws the item as a box headed LaTeX
+  (the header is CSS, so it is never selected or copied) and records `B.tex`. In the box
+  `insertText`, paste, cut, composition and `deleteInput` go through `texEdit`, which writes
+  exactly what was typed. A line left empty would be a blank line, which ends the paragraph for
+  TeX and with it the mark's reach, so it is never written: Enter at a line's edge, or a deletion
+  that empties a line, shows a line to come (`showTexGhost`, a ghost inside the box's text) that
+  the first character typed fills. Enter on it is a blank line asked for: at the box's end or
+  start a paragraph of text begins outside it, in its middle the rest becomes a second LaTeX
+  paragraph with a mark of its own. Backspace at the box's start takes the mark away (the
+  paragraph stays, typeset); deleting all of it takes the mark with it and leaves a blank
+  paragraph set to LaTeX. Word gets the box's source as a plain code block (`wordast.js`); an
+  edit made there in Word is not applied, as for a verbatim listing.
+- **Styles.** `blockStyle` reads the caret's block into `{v, to, b}`: its style now, the styles it
+  may take, and where its words are; `restyle` (`src/styles.js`, tested on strings in
+  `test/styles.test.mjs`) turns that into the smallest edits: Normal to LaTeX writes the mark's
+  line alone, LaTeX to Normal takes it alone away, Quote puts `\begin{quote}` and `\end{quote}`
+  on lines around the words, a heading its command and braces; each way back restores the bytes.
+  A heading or a quote is offered for a LaTeX paragraph only where its source is one paragraph
+  of text. The gallery (`paintGallery`) shows six tiles where the row has room, else five, four
+  or three (`ribbonFit` folds the insert buttons' names before it drops tiles; with fewer than
+  six LaTeX moves up to fourth), and the style list where three do not fit and on phones.
 
 ## 3. Undo and redo
 

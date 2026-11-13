@@ -43,7 +43,11 @@ NAMES = {'b-nav': 'Outline and problems', 'b-open': 'Open', 'b-pdf': 'Preview', 
          'zoomv': 'Fit width', 'b-zin': 'Zoom in', 'b-src': 'Source', 'b-help': 'Help', 'rb-style': 'Style of this paragraph', 'rb-b': 'Bold', 'rb-i': 'Italic',
          'rb-u': 'Underline', 'rb-ul': 'Bulleted list', 'rb-ol': 'Numbered list', 'rb-math': 'Formula', 'rb-eq': 'Equation', 'rb-table': 'Table',
          'rb-pic': 'Picture', 'rb-fn': 'Footnote', 'rb-cite': 'Citation', 'rb-link': 'Link', 'rb-dl-menu': 'Download', 'rb-pdf': 'Download PDF',
-         'rb-word': 'Download Word', 'b-save': 'Download LaTeX', 'b-new': 'New document', 'b-sample': 'Load the sample'}
+         'rb-word': 'Download Word', 'b-save': 'Download LaTeX', 'b-new': 'New document', 'b-sample': 'Load the sample',
+         # the Styles gallery a wide window has in the place of the style list
+         'rb-st-p': 'Normal', 'rb-st-section': 'Heading 1', 'rb-st-subsection': 'Heading 2', 'rb-st-subsubsection': 'Heading 3', 'rb-st-latex': 'LaTeX',
+         'rb-st-quote': 'Quote', 'rb-st-up': 'Previous styles', 'rb-st-down': 'Next styles', 'rb-st-more': 'More styles'}
+GALLERY = {i for i in NAMES if i.startswith('rb-st-')}
 ACTIONS = ['Download PDF', 'Download Word', 'Download LaTeX', 'Open', 'Preview', 'Copy source', 'Share', 'Undo', 'Redo', 'Zoom out', 'Fit width', 'Zoom in', 'Source', 'Help']
 # roles a person or an agent acts on, and the containers they look for them in
 ACTED = {'button', 'link', 'textbox', 'searchbox', 'combobox', 'listbox', 'checkbox', 'radio', 'switch', 'slider', 'spinbutton', 'menuitem', 'menuitemcheckbox',
@@ -255,8 +259,8 @@ def names(page, width):
         role = 'combobox' if i == 'rb-style' else 'button'
         if page.get_by_role(role, name=name, exact=True).count() != 1:
             twice.append((name, page.get_by_role(role, name=name, exact=True).count()))
-    wide = set(NAMES) - {'rb-dl-menu'}
-    narrow = set(NAMES) - {'b-zout', 'b-zin', 'b-help', 'rb-pdf', 'rb-word', 'b-save'}
+    wide = set(NAMES) - {'rb-dl-menu', 'rb-style'}
+    narrow = set(NAMES) - {'b-zout', 'b-zin', 'b-help', 'rb-pdf', 'rb-word', 'b-save'} - GALLERY
     check('every control in view has its one name, and no other control has it' + w, not wrong and not twice and set(seen) == (wide if width > 1000 else narrow), (wrong, twice, sorted(set(seen) ^ (wide if width > 1000 else narrow))))
     check('each keeps its longer hint as a title' + w, page.evaluate('(ids) => ids.every((i) => { const b = document.getElementById(i); return b.title.length > 3 && b.getAttribute("aria-label").length <= b.title.length + 12; })', [i for i in NAMES if i not in ('b-new', 'b-sample')]))
     check('no glyph is read as part of a name' + w, page.evaluate('''() => [...document.querySelectorAll('#bar svg, #ribbon svg, #ribbon b, #ribbon i, #ribbon u, #bubble b, #bubble i')].every((x) => x.getAttribute('aria-hidden') === 'true')'''))
@@ -323,11 +327,19 @@ def five(page, width):
     page.wait_for_timeout(250)
     check('2. a word made bold with the button named Bold' + w, word.strip() == 'Third' and '\\textbf{Third} paragraph here.' in src(page) and button('Bold').get_attribute('aria-pressed') == 'true', (word, src(page)[-90:]))
     check('   (the bubble over a selection has names of its own, so "Bold" stays one button)' + w, page.get_by_role('toolbar', name='Selection', exact=True).get_by_role('button', name='Bold selection', exact=True).count() == 1 and button('Bold').count() == 1)
-    # a heading from the style list, by its label
+    # a heading by the style buttons of the group "Styles" (wide), or the style list (narrow)
     paras.nth(pick('First paragraph')).click()
-    page.get_by_label('Style of this paragraph', exact=True).select_option(label='Heading 2')
+    if width > 1000:
+        page.wait_for_timeout(150)
+        page.get_by_role('group', name='Styles', exact=True).get_by_role('button', name='Heading 2', exact=True).click()
+        how = 'the button "Heading 2" of the group "Styles"'
+    else:
+        page.get_by_label('Style of this paragraph', exact=True).select_option(label='Heading 2')
+        how = 'the list labelled "Style of this paragraph"'
     page.wait_for_timeout(250)
-    check('   a paragraph made a heading with the list labelled "Style of this paragraph"' + w, '\\subsection{First paragraph here.}' in src(page) and doc.get_by_role('heading', name='First paragraph here.').count() == 1, src(page)[60:140])
+    check('   a paragraph made a heading with ' + how + w, '\\subsection{First paragraph here.}' in src(page) and doc.get_by_role('heading', name='First paragraph here.').count() == 1, src(page)[60:140])
+    if width > 1000:
+        check('   and that button is then pressed' + w, page.get_by_role('button', name='Heading 2', exact=True).get_attribute('aria-pressed') == 'true')
     doc.get_by_role('heading', name='First paragraph here.').click()
     page.keyboard.press('End')
     page.keyboard.type(' Still typed')

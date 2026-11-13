@@ -1,36 +1,23 @@
-// The ribbon: the row under the bar with what a word processor keeps at hand. The style of the
-// paragraph the caret is in, bold, italic and underline, lists, the things to insert, and the
-// three downloads. Every button runs an edit the editor already has, or one small patch of the
-// source made here (a paragraph to a heading and back, paragraphs to a list and back): one
-// commit, so one undo step restores the source byte for byte. The methods join App's prototype.
+// The ribbon: the row under the bar with what a word processor keeps at hand. The Styles gallery
+// (the style of the paragraph the caret is in, as Word's: Normal, the headings, LaTeX, Quote),
+// bold, italic and underline, lists, the things to insert, and the three downloads. Every button
+// runs an edit the editor already has, or one small patch of the source (a paragraph to a heading
+// or a quote and back, to a LaTeX paragraph and back by src/styles.js, paragraphs to a list and
+// back): one commit, so one undo step restores the source byte for byte. The methods join App's
+// prototype.
 
 import { BLOCKS } from './render.js';
 import { styOfEl } from './editor.js';
+import { NOT_PLAIN, latexSpot, restyle, blankPads, quoteWords } from './styles.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const HEAD = /^\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)(\*?)\s*(\[[^\]]*\])?\s*\{/;
 const STYLES = { textbf: ['textbf', 'bf', 'bfseries'], emph: ['emph', 'textit', 'it', 'itshape'], underline: ['underline', 'uline'] };
-// what cannot go inside a heading's braces or one list item without changing what TeX does
-const NOT_PLAIN = /\\begin\s*\{|\\end\s*\{|\\\[|\$\$|\\footnote\b|\\item\b|\n[ \t]*\n/;
-// where a % starts a comment in this line, or -1: \% is the sign, \\% a line break and then a comment
-function commentIn(line) {
-  for (let i = 0; i < line.length; i++) { if (line[i] === '\\') i++; else if (line[i] === '%') return i; }
-  return -1;
-}
-// The blank lines a paragraph needs before s and after e to stay a paragraph of its own: without
-// one TeX runs it into the words beside it. None where one is there, where the text starts or
-// ends, or where the neighbour is no paragraph (a heading, the end or the start of a block).
-const HEADING_LINE = /^\s*\\(?:part|chapter|(?:sub){0,2}section|(?:sub)?paragraph)\b.*\}\s*$/;
-function blankPads(src, s, e) {
-  const before = src.slice(0, s), after = src.slice(e);
-  const prev = before.trimEnd().split('\n').pop(), next = after.trimStart().split('\n')[0];
-  const closed = /\\(?:(?:begin|end)\s*\{[^}]*\}|maketitle|\]|par)\s*$/.test(prev) || HEADING_LINE.test(prev);
-  const opens = /^\\(?:(?:begin|end)\s*\{|\[|item\b|bibliography)/.test(next) || HEADING_LINE.test(next);
-  return {
-    b: !before.trim() || closed || /(^|\n)[ \t]*\n[ \t]*$/.test(before) ? '' : /\n[ \t]*$/.test(before) ? '\n' : '\n\n',
-    a: !after.trim() || opens || /^[ \t]*\n[ \t]*\n/.test(after) ? '' : /^[ \t]*\n/.test(after) ? '\n' : '\n\n'
-  };
-}
+const HEADS = ['section', 'subsection', 'subsubsection'];
+// The Styles gallery's order. With fewer than six tiles in view LaTeX moves up to the fourth, so
+// it stays in sight on a desktop's screen; the list behind More keeps the first order.
+const ORDER = ['p', 'title', 'section', 'subsection', 'subsubsection', 'latex', 'quote'];
+const SHORT = ['p', 'title', 'section', 'subsection', 'latex', 'subsubsection', 'quote'];
 const LIVE_NOTE = 'Graphs are pictures in a PDF or Word file. Download LaTeX to keep them live.';
 
 export const ribbon = {
@@ -65,55 +52,94 @@ export const ribbon = {
     return e > s && src[s] !== '%' && !NOT_PLAIN.test(src.slice(s, e)) ? { s, e } : null;
   },
 
-  // the style of the caret's block: v is 'p', 'title', a heading's command or '' (something
-  // else: a list, a table, a theorem); can says whether the ribbon may change it
-  blockStyle(at) {
-    const { c, it, B } = at;
-    if (c.ghost) return { v: 'p', can: true };
-    if (!it || !B) return { v: '', can: false };
-    // a selection that runs over several paragraphs: the list would change only the first
-    if (at.multi) return { v: it.dataset.ctx === 'p' ? 'p' : '', can: false };
-    if (it.dataset.ctx === 'ttl') return { v: 'title', can: false };
-    if (it.dataset.ctx === 'h') {
-      const src = this.src(B.f), m = HEAD.exec(src.slice(B.s, B.e));
-      const known = !!m && /^(sub){0,2}section$/.test(m[1]);
-      return { v: known ? m[1] : '', can: known && src[B.e - 1] === '}' };
-    }
-    return this.plainPara(B, it) ? { v: 'p', can: true } : { v: it.dataset.ctx === 'p' && B.items.length === 1 ? 'p' : '', can: false };
+  // a quote or quotation environment as a block of its own: where its words are, whether they
+  // are one paragraph (the only kind made a paragraph again) and whether a heading could hold them
+  quoteOf(B) {
+    const src = this.src(B.f), q = quoteWords(src, B.s, B.e);
+    if (!q) return null;
+    const { ws, we } = q, words = src.slice(ws, we);
+    const one = B.items.length === 1 && we > ws && !/\\begin\s*\{|\\\[|\$\$|\n[ \t]*\n/.test(words);
+    return { ws, we, one, plain: one && !NOT_PLAIN.test(words) && words[0] !== '%' };
   },
 
-  // Normal text, Heading 1 to 3: the caret's paragraph becomes that heading, a heading becomes a
-  // paragraph or another level. The words are not touched: the command and its braces go around
-  // them or away, and a heading turned into a paragraph keeps a blank line on each side, or
-  // TeX would run it into its neighbours.
+  // The style of the caret's block: v is 'p', 'title', a heading's command, 'latex', 'quote' or
+  // '' (something else: a list, a table, a theorem); to, the styles the ribbon may change it to;
+  // b, where its words are for restyle (src/styles.js).
+  blockStyle(at) {
+    const { c, it, B } = at, none = new Set();
+    if (c.ghost) {
+      // a line to come in a LaTeX paragraph keeps its paragraph's style
+      if (this.ghost.tex) return { v: 'latex', to: none };
+      return { v: this.ghost.style || 'p', to: new Set(['p', ...HEADS, 'latex', 'quote']) };
+    }
+    if (!it || !B) return { v: '', to: none };
+    const ctx = it.dataset.ctx;
+    // a selection that runs over several paragraphs: the list would change only the first
+    if (at.multi) return { v: ctx === 'p' ? 'p' : ctx === 'tex' ? 'latex' : '', to: none };
+    if (ctx === 'ttl') return { v: 'title', to: none };
+    const src = this.src(B.f);
+    if (ctx === 'tex') {
+      // back to what its source makes; a heading or a quote only of what is one paragraph of text
+      const T = this.texBox(it);
+      if (!T) return { v: 'latex', to: none };
+      const words = src.slice(T.is, T.ie), to = new Set(['p']);
+      if (T.para) { to.add('quote'); if (!NOT_PLAIN.test(words) && words[0] !== '%') HEADS.forEach((h) => to.add(h)); }
+      return { v: 'latex', to, b: { v: 'latex', s: T.ms, ws: T.is, we: T.ie, e: T.ie } };
+    }
+    const spot = latexSpot(src, B.s, B.e);
+    const latex = (to) => { if (spot >= 0) to.add('latex'); return to; };
+    if (ctx === 'h') {
+      const m = HEAD.exec(src.slice(B.s, B.e));
+      const v = m && HEADS.includes(m[1]) ? m[1] : '';
+      if (!v || src[B.e - 1] !== '}') return { v, to: latex(new Set()), b: { spot } };
+      // the \label on the heading's next line stays with it: a paragraph made of it ends after the label
+      const lab = /^[ \t]*\\label\s*\{[^}]*\}/.exec(src.slice(B.e, B.e + 400));
+      return { v, to: latex(new Set(['p', 'quote', ...HEADS.filter((h) => h !== v)])), b: { v, s: B.s, ws: B.s + m[0].length, we: B.e - 1, e: B.e, after: lab ? B.e + lab[0].length : null, spot } };
+    }
+    const q = this.quoteOf(B);
+    if (q) return { v: 'quote', to: latex(new Set(q.one ? ['p', ...(q.plain ? HEADS : [])] : [])), b: { v: 'quote', s: B.s, ws: q.ws, we: q.we, e: B.e, spot } };
+    const r = this.plainPara(B, it);
+    if (r) return { v: 'p', to: latex(new Set([...HEADS, 'quote'])), b: { v: 'p', s: r.s, ws: r.s, we: r.e, e: r.e, spot } };
+    if (ctx === 'p' && B.items.length === 1 && !/\bthm\b/.test(it.className)) {
+      // a paragraph with a footnote or a display in it: no heading can hold it, a quote can
+      let s = B.s, e = B.e;
+      while (s < e && /\s/.test(src[s])) s++;
+      while (e > s && /\s/.test(src[e - 1])) e--;
+      const words = src.slice(s, e), quote = e > s && !/^\\begin\s*\{/.test(words) && !/\n[ \t]*\n/.test(words);
+      return { v: 'p', to: latex(new Set(quote ? ['quote'] : [])), b: { v: 'p', s, ws: s, we: e, e, spot } };
+    }
+    return { v: '', to: latex(new Set()), b: { spot } };
+  },
+
+  // Normal, Heading 1 to 3, LaTeX and Quote: the caret's block takes the style by the smallest
+  // edit (restyle in src/styles.js): the words are not touched, the command, the environment or
+  // the mark's line goes around them or away. One commit, so one undo restores the source byte for
+  // byte. A blank paragraph (after Enter, a new document) set to LaTeX or Quote shows so, and
+  // the mark or the environment goes in with its first character.
   setBlockStyle(to) {
     const at = this.ribbonAt();
     if (!at) return;
-    const { c, it, B } = at, cur = this.blockStyle(at);
-    if (!cur.can || cur.v === to || !(to === 'p' || /^(sub){0,2}section$/.test(to))) return;
+    const { c } = at, cur = this.blockStyle(at);
+    if (cur.v === to || !cur.to.has(to)) return;
     this.closeGroup();
-    if (c.ghost) { this.insertPiece(null, this.ghost, '\\' + to + '{', '}'); this.closeGroup(); return; }
-    const f = B.f, src = this.src(f);
-    let edits, p = c.a;
-    if (cur.v === 'p') {
-      const r = this.plainPara(B, it), open = '\\' + to + '{';
-      // a comment on the last line would take the closing brace with it
-      const last = src.slice(src.lastIndexOf('\n', r.e - 1) + 1, r.e);
-      edits = [{ f, s: r.e, e: r.e, t: commentIn(last) >= 0 ? '\n}' : '}' }, { f, s: r.s, e: r.s, t: open }];
-      p = Math.max(c.a, r.s) + open.length;
-    } else {
-      const m = HEAD.exec(src.slice(B.s, B.e));
-      if (to === 'p') {
-        const lab = /^[ \t]*\\label\s*\{[^}]*\}/.exec(src.slice(B.e)), q = B.e + (lab ? lab[0].length : 0);
-        const { b: padB, a: padA } = blankPads(src, B.s, q);
-        edits = [{ f, s: q, e: q, t: padA }, { f, s: B.e - 1, e: B.e, t: '' }, { f, s: B.s, e: B.s + m[0].length, t: padB }].filter((x) => x.s !== x.e || x.t);
-        p = Math.min(Math.max(c.a, B.s + m[0].length), B.e - 1) - m[0].length + padB.length;
-      } else {
-        edits = [{ f, s: B.s + 1, e: B.s + 1 + m[1].length, t: to }];
-        p = c.a + (c.a > B.s ? to.length - m[1].length : 0);
+    if (c.ghost) {
+      const g = this.ghost;
+      if (to === 'p' || to === 'latex' || to === 'quote') {
+        g.style = to === 'p' ? null : to;
+        g.pend = '';
+        g.el.classList.toggle('tex', to === 'latex');
+        g.el.classList.toggle('quote', to === 'quote');
+        this.paintGhost();
+        return;
       }
+      g.style = null;
+      this.insertPiece(null, g, '\\' + to + '{', '}');
+      this.closeGroup();
+      return;
     }
-    this.commit(edits, { f, p, bias: -1 }, 'block');
+    const f = at.B.f, r = restyle(this.src(f), cur.b, to, c.a);
+    if (!r) return;
+    this.commit(r.edits.map((x) => ({ f, ...x })), { f, p: r.p, bias: -1 }, 'block');
     this.closeGroup();
   },
 
@@ -318,6 +344,8 @@ export const ribbon = {
     else if (act === 'url') this.insertEmpty('\\url{', '}');
     else if (act === 'cite') this.insertCite();
     else if (act === 'dl-menu') this.openDownloads();
+    else if (act === 'st-up' || act === 'st-down') { this.rbStart = Math.max(0, (this.rbStart || 0) + (act === 'st-up' ? -1 : 1) * (this.rbTiles || 6)); this.paintGallery(); }
+    else if (act === 'st-more') { this.openStyles(); return; }
     else if (act === 'dl-tex') await this.save();
     // (the note only once a file was made: on a copy without Word the notice about that stays)
     else if (act === 'dl-word') { const had = this.lastDocx; await this.saveDocx(); if (this.lastDocx !== had) this.liveNote(); }
@@ -331,26 +359,33 @@ export const ribbon = {
     const rb = $('#ribbon');
     if (!rb) return;
     this.dropEmpty();
-    const at = this.ribbonAt(), st = at ? this.blockStyle(at) : { v: 'p', can: false };
+    const at = this.ribbonAt(), st = at ? this.blockStyle(at) : { v: 'p', to: new Set() };
+    this.rbStyle = { ...st, on: !!at };
     const sel = $('#rb-style');
     for (const o of sel.options) {
       if (o.value === 'title') o.hidden = o.disabled = st.v !== 'title';
       else if (o.value === '') o.hidden = o.disabled = st.v !== '';
-      else o.disabled = !st.can;
+      else o.disabled = o.value !== st.v && !st.to.has(o.value);
     }
     sel.value = st.v;
-    sel.disabled = !at || !st.can;
+    sel.disabled = !at || !st.to.size;
+    this.paintGallery();
+    // the LaTeX paragraph the caret is in shows so
+    const box = at && at.ctx === 'tex' && at.it ? at.it : this.ghost && this.ghost.tex ? this.ghost.el.closest('.it.tex') : null;
+    for (const x of this.root.querySelectorAll('.it.tex.cur')) if (!box || x.dataset.b !== box.dataset.b) x.classList.remove('cur');
+    if (box) for (const x of this.root.querySelectorAll('.it.tex[data-b="' + box.dataset.b + '"]')) x.classList.add('cur');
     const inside = (names) => { for (let n = at && at.el; n && n !== this.root; n = n.parentElement) if (n.dataset && n.dataset.y) { const y = styOfEl(n); if (y && names.includes(y.cmd)) return true; } return false; };
     const L = at && this.listAt(at);
     const tight = !!at && (/^(h|ttl|cell|cap|fn)$/.test(at.ctx) || at.cell);
     for (const b of rb.querySelectorAll('button[data-rb]')) {
       const act = b.dataset.rb;
-      if (act.startsWith('dl-')) continue;
+      if (act.startsWith('dl-') || act.startsWith('st-')) continue;
       let off = !at, on = null;
-      if (act in STYLES) { off = !at || !!at.c.ghost; on = !off && inside(STYLES[act]); }
+      // (in a LaTeX paragraph bold is written as \textbf by hand: the box shows source, not bold words)
+      if (act in STYLES) { off = !at || !!at.c.ghost || at.ctx === 'tex'; on = !off && inside(STYLES[act]); }
       else if (act === 'itemize' || act === 'enumerate') { on = !!L && L.kind === act; off = !L || (on && L.labelled); }
       // Table and Picture go after the caret's block wherever the caret is, so they stay on
-      else if (act === 'equation') off = !at || tight || at.sty;
+      else if (act === 'equation') off = !at || tight || at.sty || at.ctx === 'tex' || !!(at.c.ghost && this.ghost.tex);
       else if (act === 'footnote') off = !at || tight;
       b.disabled = off;
       if (on !== null) b.setAttribute('aria-pressed', on ? 'true' : 'false');
@@ -359,6 +394,93 @@ export const ribbon = {
     if (this.rbModel !== this.model) { this.rbModel = this.model; this.saveTitle(); }
     this.ribbonRove();
   },
+
+  // The Styles gallery: the tiles of the styles there are here (Title only in the title), as
+  // many as the row has room for (ribbonFit), from the one the arrows paged to; the current
+  // style's tile pressed, those that cannot apply here disabled.
+  paintGallery() {
+    const gal = $('#rb-gallery');
+    if (!gal) return;
+    const st = this.rbStyle || { v: 'p', to: new Set(), on: false }, n = this.rbTiles || 6;
+    const list = (n < 6 ? SHORT : ORDER).filter((v) => v !== 'title' || st.v === 'title');
+    // (fourth also with the title's tile among them)
+    if (n < 6 && list.indexOf('latex') > 3) list.splice(3, 0, ...list.splice(list.indexOf('latex'), 1));
+    const start = this.rbStart = Math.max(0, Math.min(this.rbStart || 0, Math.ceil(list.length / n) * n - n));
+    const view = list.slice(start, start + n), row = gal.querySelector('.rb-tiles');
+    // the tiles stand in the order they are seen in, which the arrow keys follow
+    const now = [...row.children].map((b) => b.dataset.style).join();
+    if (now !== list.join() + (list.includes('title') ? '' : ',title')) { for (const v of list) row.append($('#rb-st-' + v)); if (!list.includes('title')) row.append($('#rb-st-title')); }
+    for (const b of row.children) {
+      const v = b.dataset.style;
+      b.hidden = !view.includes(v);
+      b.setAttribute('aria-pressed', v === st.v ? 'true' : 'false');
+      b.disabled = !st.on || !(st.to.has(v) || (v === st.v && st.to.size));
+    }
+    $('#rb-st-up').disabled = start === 0;
+    $('#rb-st-down').disabled = start + n >= list.length;
+  },
+
+  // The row's room: six tiles with the insert buttons' names, else six with their icons alone
+  // (the names take more room than three tiles), then five, four and three tiles; where three do
+  // not fit, the style list takes the gallery's place. Narrower is never more.
+  ribbonFit() {
+    const rb = $('#ribbon'), gw = $('#rb-gw');
+    if (!rb || !gw) return;
+    const set = (narrow, fold, n) => {
+      rb.classList.toggle('rb-narrow', narrow); rb.classList.toggle('rb-fold', fold);
+      if (n !== this.rbTiles) { this.rbTiles = n; this.rbStart = 0; }
+      this.paintGallery();
+    };
+    rb.classList.remove('rb-narrow');
+    // (a phone's width has the list whatever the room: the style sheet hides the gallery there)
+    if (getComputedStyle(gw).display !== 'none') {
+      for (const [fold, n] of [[false, 6], [true, 6], [true, 5], [true, 4], [true, 3]]) {
+        set(false, fold, n);
+        if (rb.scrollWidth <= rb.clientWidth + 1) { this.ribbonRove(); return; }
+      }
+    }
+    set(true, true, 6);
+    this.ribbonRove();
+  },
+
+  // All the styles, from the strip's More button: a menu of them, each drawn in its own look
+  openStyles() {
+    const more = $('#rb-st-more'), st = this.rbStyle || { v: 'p', to: new Set(), on: false };
+    const s = getSelection();
+    if (s.rangeCount && this.root.contains(s.anchorNode)) this.rbRange = s.getRangeAt(0).cloneRange();
+    const p = this.makePop(more, 'pop-dl pop-styles', 'Styles');
+    p.setAttribute('role', 'menu');
+    p.querySelector('.pop-x').setAttribute('role', 'menuitem');
+    this.menuKeys(p);
+    more.setAttribute('aria-expanded', 'true');
+    this.pop.onClose = () => more.setAttribute('aria-expanded', 'false');
+    for (const v of ORDER) {
+      if (v === 'title' && st.v !== 'title') continue;
+      const tile = $('#rb-st-' + v), a = document.createElement('button');
+      a.type = 'button'; a.className = 'rb-mi st-' + v; a.setAttribute('role', 'menuitemradio');
+      a.setAttribute('aria-checked', v === st.v ? 'true' : 'false'); a.setAttribute('aria-label', tile.getAttribute('aria-label')); a.title = tile.title;
+      a.disabled = !st.on || !(st.to.has(v) || (v === st.v && st.to.size));
+      a.append(tile.firstElementChild.cloneNode(true));
+      // (a press keeps the caret on the page; the keyboard's Enter comes as a click)
+      a.addEventListener('mousedown', (e) => e.preventDefault());
+      a.addEventListener('click', () => { this.closePop(true); this.ribbonBack(); this.setBlockStyle(v); this.ribbonSync(); });
+      p.append(a);
+    }
+    this.positionPop();
+    const first = p.querySelector('[aria-checked="true"]:not(:disabled)') || p.querySelector('[role=menuitemradio]:not(:disabled)');
+    if (first) first.focus();
+  },
+
+  // The focus back on the page after a list or a menu took it: the place as it is now if the
+  // page still has it; the kept one only when it is still a place in a text of the page (a range
+  // whose text was drawn again has collapsed to the page's start)
+  ribbonBack() {
+    const r = this.rbRange, s = getSelection();
+    this.root.focus({ preventScroll: true });
+    if (s.rangeCount && this.root.contains(s.anchorNode)) return;
+    if (r && r.startContainer.nodeType === 3 && this.root.contains(r.startContainer)) { s.removeAllRanges(); s.addRange(r); }
+  },
+
   // one tab stop for the whole ribbon: the control the arrows last reached, or the first that works
   ribbonRove(to) {
     // (of the controls this width shows: a phone has one Download button, a wider screen the three)
@@ -381,17 +503,15 @@ export function installRibbon(app) {
   // a disabled one (which lets the press through to the row, see .rb .btn:disabled), the
   // Download label or the empty part of the row either. Only the style list takes the focus.
   rb.addEventListener('mousedown', (e) => { if (!e.target.closest('select')) e.preventDefault(); });
-  rb.addEventListener('click', (e) => { const b = e.target.closest('button[data-rb]'); if (b && !b.disabled) app.ribbonDo(b.dataset.rb); });
+  rb.addEventListener('click', (e) => {
+    const t = e.target.closest('button[data-style]');
+    if (t && !t.disabled) { app.setBlockStyle(t.dataset.style); app.ribbonSync(); return; }
+    const b = e.target.closest('button[data-rb]');
+    if (b && !b.disabled) app.ribbonDo(b.dataset.rb);
+  });
   // the list takes the focus while it is open: the place on the page is kept and put back
   const keep = () => { const s = getSelection(); if (s.rangeCount && app.root.contains(s.anchorNode)) app.rbRange = s.getRangeAt(0).cloneRange(); };
-  // (the place as it is now if the page still has it; the kept one only when it is still a place
-  // in a text of the page: a range whose text was drawn again has collapsed to the page's start)
-  const back = () => {
-    const r = app.rbRange, s = getSelection();
-    app.root.focus({ preventScroll: true });
-    if (s.rangeCount && app.root.contains(s.anchorNode)) return;
-    if (r && r.startContainer.nodeType === 3 && app.root.contains(r.startContainer)) { s.removeAllRanges(); s.addRange(r); }
-  };
+  const back = () => app.ribbonBack();
   sel.addEventListener('pointerdown', keep);
   sel.addEventListener('focus', keep);
   sel.addEventListener('change', () => { const v = sel.value; back(); app.setBlockStyle(v); app.ribbonSync(); });
@@ -426,5 +546,11 @@ export function installRibbon(app) {
   });
   document.addEventListener('selectionchange', app.ribbonSoon);
   document.addEventListener('focusin', app.ribbonSoon);
+  // the gallery's room is measured again when the window's width changes and once the fonts the
+  // tiles and the buttons' names are drawn in have come
+  let fit = 0, w = innerWidth;
+  addEventListener('resize', () => { if (innerWidth === w) return; w = innerWidth; cancelAnimationFrame(fit); fit = requestAnimationFrame(() => app.ribbonFit()); });
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => app.ribbonFit());
   app.ribbonSync();
+  app.ribbonFit();
 }

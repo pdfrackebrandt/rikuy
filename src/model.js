@@ -6,6 +6,7 @@ import { parseBib, texToPlain, shortAuthors, entryYear, formatEntry } from './bi
 import { siTex, siOptions, siUnitSymbol } from './siunitx.js';
 import { widgetPath, hashText } from './widget.js';
 import { rtlDocument, languageDir } from './scripts.js';
+import { isLatexMark } from './styles.js';
 
 const WIDGET_FILE = /\.html?$/i;
 const STY = {
@@ -715,6 +716,28 @@ class Builder {
       const nd = nodes[k];
       if (nd.t === 'par') { flushPara(); continue; }
       if (nd.t === 'include') continue;
+      // A LaTeX paragraph (src/styles.js): the mark's line, then everything to the next blank
+      // line, shown as its source. In the document's own text only (not inside an environment
+      // or a macro's text), and only with something after the mark before that blank line.
+      if (nd.t === 'comment' && env.top && !ctx.pm && k + 1 < nodes.length && nodes[k + 1].t !== 'par' && isLatexMark(ctx.src, nd.s, nd.e)) {
+        flushPara();
+        let j = k + 1;
+        while (j < nodes.length && nodes[j].t !== 'par') j++;
+        // A brace or an environment opened in it and not closed (a \textbf{ being typed) takes
+        // the rest of the text as the parser reads it: the paragraph ends at its first blank
+        // line all the same, and what follows is the document's as before.
+        const body = nodes.slice(k + 1, j), cut = cutOpen(ctx.src, body[body.length - 1]);
+        if (cut) body[body.length - 1] = cut.node;
+        const u = this.texBlock(nd, body, ctx, env);
+        units.push(u);
+        afterHeading = u.items[0].endsHeading; cont = false; paraNoIndent = false;
+        if (cut) {
+          for (const v of this.flow([...cut.rest, ...nodes.slice(j)], ctx, { ...env, afterHeading })) units.push(v);
+          return units;
+        }
+        k = j - 1;
+        continue;
+      }
       if (nd.t === 'math' && nd.display) {
         flushPara();
         if (env.top) this.sig = [];
@@ -844,6 +867,36 @@ class Builder {
     }
     flushPara();
     return units;
+  }
+
+  // A LaTeX paragraph: one item that shows the source from the line after the mark to the last
+  // character of its nodes, each character mapped to itself, so the box is edited as text. The
+  // nodes still go through the builder, and what it makes of them is dropped: counters,
+  // labels, headings for the outline and the contents, footnote numbers and words stay as TeX
+  // will have them for everything after it.
+  texBlock(mark, nodes, ctx, env) {
+    const src = ctx.src, is = src.indexOf('\n', mark.s) + 1, end = nodes[nodes.length - 1].e;
+    let ie = end;
+    while (ie > is && /\s/.test(src[ie - 1])) ie--;
+    // (spaces at the end of its last line are its own: the one just typed there stays in the box)
+    while (src[ie] === ' ' || src[ie] === '\t') ie++;
+    if (env.top) this.sig = [];
+    const us = this.flow(nodes, ctx, { ...env, top: false });
+    const one = us.length === 1 && us[0].items.length === 1 ? us[0].items[0] : null;
+    const last = us.length ? us[us.length - 1].items : [];
+    const map = new Array(2 * (ie - is));
+    for (let i = 0; i < ie - is; i++) { map[2 * i] = is + i; map[2 * i + 1] = is + i + 1; }
+    const text = src.slice(is, ie);
+    // where a blank line typed in it stays inside an environment or a group, and does not end it
+    const nest = nodes.filter((n) => !n.cut && ((n.t === 'env' && (n.raw || n.e > n.es)) || (n.t === 'group' && src[n.e - 1] === '}'))).map((n) => [n.s, n.e]);
+    const item = {
+      type: 'tex', f: ctx.f, s: mark.s, e: ie, is, ie, text, nest,
+      inl: [{ k: 'seg', f: ctx.f, t: text, map }],
+      // what it would be without the mark: one paragraph of text, which a heading or a quote may hold
+      para: !!one && one.type === 'p' && (one.ctx || 'p') === 'p' && !one.li && !one.lead && !nodes.some((n) => (n.t === 'env' && !(n.name === 'math' && n.raw)) || (n.t === 'math' && n.display)),
+      endsHeading: !!last.length && last[last.length - 1].type === 'h'
+    };
+    return { f: ctx.f, s: mark.s, e: ie, items: [item], fns: [], sig: 'tex' };
   }
 
   countWords(inl) {
@@ -2009,6 +2062,32 @@ class Builder {
       docBody: this.docBody || null
     };
   }
+}
+
+// A node opened and never closed (a group, an optional argument, an environment, or a command
+// whose last argument is one of those) holds the rest of its text as the parser reads it, blank
+// lines and all. Cut at its first blank line: { node: the part before it, rest: the nodes after
+// it }, or null where n is closed or holds no blank line of its own.
+function cutOpen(src, n) {
+  if (!n) return null;
+  if (n.t === 'cmd') {
+    const args = n.args || [];
+    let k = args.length - 1;
+    while (k >= 0 && !args[k]) k--;
+    const a = args[k];
+    if (!a || !a.nodes || a.raw) return null;
+    const r = cutOpen(src, { ...a, t: a.o ? 'opt' : 'group' });
+    if (!r) return null;
+    const next = [...args];
+    next[k] = { ...a, e: r.node.e, ie: r.node.e, nodes: r.node.nodes };
+    return { node: { ...n, e: r.node.e, args: next, cut: true }, rest: r.rest };
+  }
+  const closed = n.t === 'group' ? src[n.e - 1] === '}' : n.t === 'opt' ? src[n.e - 1] === ']' : n.t === 'env' ? !!n.raw || n.e > n.es : true;
+  if (closed || !n.nodes || !n.nodes.length) return null;
+  const kids = n.nodes, q = kids.findIndex((x) => x.t === 'par');
+  if (q >= 0) { const at = kids[q].s; return { node: { ...n, e: at, ie: at, es: at, nodes: kids.slice(0, q), cut: true }, rest: kids.slice(q) }; }
+  const r = cutOpen(src, kids[kids.length - 1]);
+  return r && { node: { ...n, e: r.node.e, ie: r.node.e, es: r.node.e, nodes: [...kids.slice(0, -1), r.node], cut: true }, rest: r.rest };
 }
 
 // Accumulates characters into editable segments.

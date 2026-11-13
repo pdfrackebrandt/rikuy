@@ -30,6 +30,7 @@ import { PdfView } from './pdfview.js';
 import { collab, installCollab } from './collab.js';
 import { word, installWord, isDocx } from './word.js';
 import { ribbon, installRibbon } from './ribbon.js';
+import { LATEX_MARK, lineStart as lineAt } from './styles.js';
 import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
 import { version as VERSION } from '../package.json';
 import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
@@ -1291,7 +1292,8 @@ class App {
     // break left before them keeps a space between the two paragraphs' words.
     if (/^(?:\s|%[^\n]*\n)+$/.test(slice) && /\n[ \t]*\n/.test(slice)) {
       const lines = slice.split('\n');
-      const kept = lines.filter((l, i) => i === 0 || i === lines.length - 1 || l.trim() !== '');
+      // (a LaTeX paragraph's mark goes too: the paragraph it marked joins the one before, as text)
+      const kept = lines.filter((l, i) => i === 0 || (i === lines.length - 1 ? !/^[ \t]*%[ \t]*rikuy:[ \t]*latex[ \t]*$/.test(l) : l.trim() !== '' && !/^[ \t]*%[ \t]*rikuy:[ \t]*latex[ \t]*$/.test(l)));
       return [{ f, s: a, e: b, t: kept.join('\n') }];
     }
     if (isBalanced(src, a, b) && !/\\(begin|end)\s*\{(document)\}/.test(slice) && !/\\(section|subsection|subsubsection|chapter|part|maketitle|item|bibliography)\b/.test(slice)) {
@@ -1334,11 +1336,15 @@ class App {
     if (whole) { this.replaceBody(whole, escapeTeX(data, ' '), 'replace'); return; }
     const c = this.caretNow();
     if (!c) return;
+    // in a LaTeX paragraph, or a line or a paragraph to come in LaTeX, what is typed is the source
+    const T = c.ghost ? null : this.texHere();
+    if (T && c.f === T.f) { const r = range && range.f === T.f ? range : c; this.texEdit(T, r.a, r.b, data, c.collapsed && !range ? 'type' : 'replace'); return; }
+    const raw = c.ghost && this.ghostRaw();
     // in a blank paragraph too (a new document, the line after Enter): there they were typed
     // as the characters, though that is where an equation or a heading most often starts
-    if (data === '$' && !range && (c.collapsed || c.ghost)) { this.newMath(); return; }
-    if (data === '\\' && !range && (c.collapsed || c.ghost)) { this.openPalette(); return; }
-    if (c.ghost) { this.ghostInsert(escapeTeX(data, ' ')); return; }
+    if (data === '$' && !range && !raw && (c.collapsed || c.ghost)) { this.newMath(); return; }
+    if (data === '\\' && !range && !raw && (c.collapsed || c.ghost)) { this.openPalette(); return; }
+    if (c.ghost) { this.ghostInsert(raw ? data : escapeTeX(data, ' ')); return; }
     const f = range ? range.f : c.f;
     let a = range ? range.a : c.a, b = range ? range.b : c.b;
     const src = this.src(f);
@@ -1366,12 +1372,16 @@ class App {
   deleteInput(type, ranges) {
     const c = this.caretNow();
     if (c && c.ghost) {
-      if (/Backward/.test(type) && !this.ghost.sticky) { const g = this.ghost; this.removeGhost(); this.restoreCaret({ f: g.f, p: g.pos }); }
+      // the spaces typed so far in a line or a paragraph to come in LaTeX go one by one
+      if (/Backward/.test(type) && this.ghost.pend) { this.ghost.pend = this.ghost.pend.slice(0, -1); this.paintGhost(); return; }
+      if (/Backward/.test(type) && !this.ghost.sticky) { const g = this.ghost; this.removeGhost(); this.restoreCaret({ f: g.f, p: g.pos, bias: g.tex === 'before' ? 1 : -1 }); }
       return;
     }
     const whole = this.wholeDoc();
     if (whole) { this.replaceBody(whole, '', 'del'); return; }
     if (!c) return;
+    const T = this.texHere();
+    if (T && c.f === T.f && this.texDelete(T, c, type, ranges)) return;
     let f = c.f, a = c.a, b = c.b;
     if (c.collapsed) {
       // Caret in an empty placeholder: remove the empty wrapper it belongs to.
@@ -1518,7 +1528,9 @@ class App {
   enter(soft) {
     const c = this.caretNow();
     if (!c) return;
-    if (c.ghost) return;
+    if (c.ghost) { if (this.ghost.tex) this.texGhostEnter(); return; }
+    const T = this.texHere();
+    if (T && c.f === T.f) { this.texEnter(T, c); return; }
     const sel = getSelection();
     const node = sel.anchorNode;
     const el = node && (node.nodeType === 1 ? node : node.parentElement);
@@ -1617,10 +1629,12 @@ class App {
     return !txt && !atoms && !lead;
   }
 
-  showGhost(afterEl, f, pos) {
+  // o.before: the blank paragraph goes before el (the text it stands for goes in at pos, before
+  // what is there); o.style: 'latex' or 'quote', which its first character will be written in
+  showGhost(afterEl, f, pos, o = {}) {
     this.removeGhost();
     const g = document.createElement('div');
-    g.className = 'it p ghostp' + (afterEl.classList.contains('ind') || afterEl.classList.contains('p') ? ' ind' : '');
+    g.className = 'it p ghostp' + (afterEl.classList.contains('ind') || afterEl.classList.contains('p') || afterEl.classList.contains('tex') ? ' ind' : '') + (o.style === 'latex' ? ' tex' : o.style === 'quote' ? ' quote' : '');
     g.dataset.ctx = 'p';
     // the new paragraph runs the way the one above it does
     if (afterEl.dir === 'rtl' || afterEl.dir === 'ltr') g.dir = afterEl.dir;
@@ -1628,33 +1642,214 @@ class App {
     s.className = 't gh';
     s.textContent = '\u200B';
     g.appendChild(s);
-    afterEl.after(g);
-    this.ghost = { el: g, f, pos };
+    if (o.before) afterEl.before(g); else afterEl.after(g);
+    this.ghost = { el: g, f, pos, before: !!o.before, style: o.style || null, pend: '' };
     const sel = getSelection();
     this.ourSel = true;
     sel.collapse(s.firstChild, 1);
     this.scrollToCaret();
   }
-  removeGhost() { if (this.ghost) { this.ghost.el.remove(); this.ghost = null; } }
+  removeGhost() { if (this.ghost) { const g = this.ghost; this.ghost = null; g.el.remove(); if (g.restore) g.restore(); } }
+  // what is typed in the blank paragraph or line is LaTeX source, written as it is
+  ghostRaw() { return !!this.ghost && (!!this.ghost.tex || this.ghost.style === 'latex'); }
   ghostInsert(tex) {
     const g = this.ghost;
+    if (g.tex) { this.texGhostInsert(tex); return; }
+    // Spaces alone after the mark would make a blank line, which marks nothing: they wait in
+    // the blank paragraph for the first character that is not one
+    if (g.style === 'latex') {
+      tex = g.pend + tex;
+      if (!tex.trim()) { g.pend = tex; this.paintGhost(); return; }
+    }
+    const open = g.style === 'latex' ? LATEX_MARK + '\n' : g.style === 'quote' ? '\\begin{quote}\n' : '';
+    const close = g.style === 'quote' ? '\n\\end{quote}' : '';
     const src = this.src(g.f);
     // comment lines right under the paragraph belong to it (a review comment is about the line
-    // above it): the new paragraph goes after them
+    // above it): the new paragraph goes after them (not for one before a block: those are its own)
     const cm = /^[ \t]*(?:%[^\n]*)?(?:\r?\n[ \t]*%[^\n]*)*/.exec(src.slice(g.pos));
-    if (cm[0].includes('%')) g.pos += cm[0].length;
+    if (!g.before && cm[0].includes('%')) g.pos += cm[0].length;
     let nlB = 0; for (let k = g.pos - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
     let nlA = 0; for (let k = g.pos; k < src.length && /\s/.test(src[k]); k++) if (src[k] === '\n') nlA++;
     // no blank lines at the very start or end of a file: there is no paragraph to keep apart
     const pre = g.pos === 0 ? '' : '\n'.repeat(Math.max(0, 2 - nlB));
     const post = g.pos >= src.length ? '' : '\n'.repeat(Math.max(0, 2 - nlA));
     this.removeGhost();
-    this.commit([{ f: g.f, s: g.pos, e: g.pos, t: pre + tex + post }], { f: g.f, p: g.pos + pre.length + tex.length, bias: -1 }, 'type');
+    this.commit([{ f: g.f, s: g.pos, e: g.pos, t: pre + open + tex + close + post }], { f: g.f, p: g.pos + pre.length + open.length + tex.length, bias: -1 }, 'type');
+  }
+
+  // ---- LaTeX paragraphs (src/styles.js) ----------------------------------------------
+  // A LaTeX paragraph's box on the page is its source, character for character: what is typed,
+  // pasted or deleted there is written as it is, never escaped. What needs care is the blank
+  // line: TeX ends a paragraph there, and with it the mark's reach, so what came after it would
+  // leave the box and be typeset. A line left empty is therefore never written: Enter where it
+  // would leave one, or a deletion that empties a line, shows a line to come (a ghost, as the
+  // blank paragraph after Enter is) that the next character typed fills. A second Enter on it
+  // is a blank line asked for: at the box's end or start it leaves the box for a paragraph of
+  // text, in its middle it ends the paragraph there and starts a second LaTeX one with the rest.
+
+  // the LaTeX paragraph a node of the page is in: its block, where its source runs (is, ie),
+  // where its mark's line starts (ms), whether it is one paragraph of text without the mark
+  texBox(node) {
+    const el = node && (node.nodeType === 1 ? node : node.parentElement);
+    const it = el && el.closest ? el.closest('.it.tex:not(.ghostp)') : null;
+    const B = it && BLOCKS.get(+it.dataset.b);
+    if (!B || !B.tex || !this.root.contains(it)) return null;
+    const b = B.base, T = B.tex;
+    return { it, B, f: B.f, is: T.is + b, ie: T.ie + b, ms: lineAt(this.src(B.f), b), para: T.para, nest: T.nest.map(([s, e]) => [s + b, e + b]) };
+  }
+  // the one the caret, and all of the selection, is in
+  texHere() {
+    const s = getSelection();
+    if (!s.rangeCount || (this.ghost && this.ghost.el.contains(s.anchorNode))) return null;
+    const a = this.texBox(s.anchorNode);
+    if (!a || s.isCollapsed) return a;
+    const z = this.texBox(s.focusNode);
+    return z && z.B === a.B ? a : null;
+  }
+
+  // [a, b) of the paragraph's source becomes t
+  texEdit(T, a, b, t, kind) {
+    const f = T.f, src = this.src(f);
+    a = Math.max(T.is, Math.min(a, T.ie)); b = Math.max(a, Math.min(b, T.ie));
+    const out = src.slice(0, a) + t + src.slice(b), q = a + t.length, ie = T.ie + t.length - (b - a);
+    const ls = Math.max(T.is, out.lastIndexOf('\n', q - 1) + 1);
+    let le = out.indexOf('\n', q);
+    if (le < 0 || le > ie) le = ie;
+    const line = out.slice(ls, le);
+    // (inside an environment or a group a blank line ends nothing; one pasted is meant)
+    if (line.trim() || T.nest.some(([x, y]) => x < a && b < y) || /\n[ \t]*\n/.test(t)) { this.commit([{ f, s: a, e: b, t }], { f, p: q, bias: -1 }, kind); return; }
+    if (!out.slice(T.is, ie).trim()) {
+      // Nothing left: the mark goes too, with the blank lines it stood between (one stays where
+      // it kept two paragraphs apart), and a blank paragraph set to LaTeX takes the caret.
+      const w = /^\s*/.exec(src.slice(T.ie))[0];
+      const keep = /\n[ \t]*\n/.test(w) && !/\n[ \t]*\n[ \t]*$/.test(src.slice(0, T.ms)) && src.slice(0, T.ms).trim() ? '\n' : '';
+      this.commit([{ f, s: T.ms, e: T.ie + w.length, t: keep }], { f, p: T.ms, bias: -1 }, kind);
+      this.ghostAt(f, T.ms, 'latex');
+      return;
+    }
+    // the empty line goes with the line break before it (after it, for the first line), and a
+    // line to come stands in its place with the spaces it had
+    const first = ls === T.is, cut = first ? [ls, le + 1] : [ls - 1, le], pos = first ? T.is : ls - 1;
+    this.commit([{ f, s: T.is, e: T.ie, t: out.slice(T.is, cut[0]) + out.slice(cut[1], ie) }], { f, p: pos, bias: first ? 1 : -1 }, kind);
+    this.showTexGhost(f, pos, first ? 'before' : 'after', line);
+  }
+
+  // Enter in a LaTeX paragraph: a line break, with the line's indent; where it would leave an
+  // empty line, a line to come instead
+  texEnter(T, c) {
+    if (!c.collapsed) { this.texEdit(T, c.a, c.b, '\n', 'enter'); return; }
+    const src = this.src(T.f), p = Math.max(T.is, Math.min(c.a, T.ie));
+    const ls = Math.max(T.is, src.lastIndexOf('\n', p - 1) + 1);
+    let le = src.indexOf('\n', p);
+    if (le < 0 || le > T.ie) le = T.ie;
+    const left = src.slice(ls, p), right = src.slice(p, le);
+    if ((left.trim() && right.trim()) || T.nest.some(([x, y]) => x < p && p < y)) {
+      const ind = /^[ \t]*/.exec(left)[0];
+      this.commit([{ f: T.f, s: p, e: p, t: '\n' + ind }], { f: T.f, p: p + 1 + ind.length, bias: 1 }, 'enter');
+      return;
+    }
+    if (!right.trim()) this.showTexGhost(T.f, le, 'after');
+    else this.showTexGhost(T.f, ls, 'before');
+  }
+
+  // Backspace and Delete in a LaTeX paragraph; false where the paragraph's edge leaves it to the
+  // page's own deleting
+  texDelete(T, c, type, ranges) {
+    const back = /Backward/.test(type), src = this.src(T.f);
+    if (!c.collapsed) { this.texEdit(T, c.a, c.b, '', 'del'); return true; }
+    // Backspace at its start takes the LaTeX style off, as at a list item's start the bullet
+    // goes: the source stays, now typeset. A second one joins it to the paragraph before.
+    if (back && c.a <= T.is) { this.commit([{ f: T.f, s: T.ms, e: T.is, t: '' }], { f: T.f, p: T.ms, bias: 1 }, 'block'); return true; }
+    if (!back && c.a >= T.ie) {
+      // Delete at its end brings the next paragraph's source in, on a line of its own
+      const r = this.fallbackDeleteRange(c, false);
+      if (!r || !/^\s+$/.test(src.slice(r.a, r.b))) return false;
+      this.commit([{ f: T.f, s: r.a, e: r.b, t: '\n' }], { f: T.f, p: T.ie, bias: -1 }, 'del');
+      return true;
+    }
+    const tr = ranges && ranges[0];
+    let r = tr ? this.rangeToSrc(tr) : null;
+    if (r && (r.f !== T.f || r.a === r.b || (back ? r.b > c.a : r.a < c.a))) r = null;
+    if (!r) {
+      // one character: both halves of a pair
+      const pair = (i) => /[\uDC00-\uDFFF]/.test(src[i] || '') && /[\uD800-\uDBFF]/.test(src[i - 1] || '');
+      r = back ? { a: c.a - (pair(c.a - 1) ? 2 : 1), b: c.a } : { a: c.a, b: c.a + (pair(c.a + 1) ? 2 : 1) };
+    }
+    this.texEdit(T, Math.max(r.a, T.is), Math.min(r.b, T.ie), '', 'del');
+    return true;
+  }
+
+  // A line to come in a LaTeX paragraph, at pos: 'after' the line that ends there, or 'before'
+  // the line that starts there. Drawn in the box's text, which is split around it and put
+  // together again when it goes (removeGhost).
+  showTexGhost(f, pos, mode, pend = '') {
+    this.removeGhost();
+    const r = this.index.find(f, pos, mode === 'after' ? -1 : 1);
+    if (!r || !r.node || r.inexact || !r.node.parentNode.closest('.it.tex')) return false;
+    const node = r.node, span = node.parentNode, k = r.offset, g = mk('span', 't gh tex-gh');
+    let restore = null;
+    if (k >= node.data.length) span.after(g);
+    else if (k <= 0) span.before(g);
+    else {
+      const rest = span.cloneNode(false);
+      rest.dataset.o = String(+(span.dataset.o || 0) + k);
+      rest.textContent = node.data.slice(k);
+      node.data = node.data.slice(0, k);
+      span.after(g); g.after(rest);
+      restore = () => { if (node.isConnected && rest.isConnected) { node.data += rest.textContent; rest.remove(); } };
+    }
+    this.ghost = { el: g, f, pos, tex: mode, pend, restore };
+    this.paintGhost();
+    this.ribbonSoon();
+    return true;
+  }
+  // the blank line or paragraph to come, with the spaces typed in it so far, the caret at its end
+  paintGhost() {
+    const g = this.ghost, z = '​', pend = g.pend || '';
+    const span = g.tex ? g.el : g.el.firstChild;
+    span.textContent = g.tex === 'after' ? '\n' + pend + z : g.tex === 'before' ? pend + z + '\n' : z + pend;
+    if (document.activeElement !== this.root) this.root.focus({ preventScroll: true });
+    this.ourSel = true;
+    getSelection().collapse(span.firstChild, (g.tex === 'after' ? 1 : 0) + pend.length + 1);
+    this.scrollToCaret();
+  }
+  // the first character that is not a space, typed on a line to come, writes the line
+  texGhostInsert(t) {
+    const g = this.ghost, text = (g.pend || '') + t;
+    if (!text.trim()) { g.pend = text; this.paintGhost(); return; }
+    this.removeGhost();
+    const ins = g.tex === 'after' ? '\n' + text : text + '\n';
+    this.commit([{ f: g.f, s: g.pos, e: g.pos, t: ins }], { f: g.f, p: g.pos + (g.tex === 'after' ? 1 : 0) + text.length, bias: -1 }, 'type');
+  }
+  // Enter on a line to come: a blank line asked for
+  texGhostEnter() {
+    const g = this.ghost, T = this.texBox(g.el);
+    if (!T) return;
+    const els = [...this.root.querySelectorAll('.it[data-b="' + T.B.id + '"]')];
+    this.removeGhost();
+    if (g.tex === 'after' && g.pos >= T.ie) { this.showGhost(els[els.length - 1], T.f, T.ie); return; }
+    if (g.tex === 'before' && g.pos <= T.is) { this.showGhost(els[0], T.f, T.ms, { before: true }); return; }
+    const t = g.tex === 'after' ? '\n\n' + LATEX_MARK : '\n' + LATEX_MARK + '\n';
+    this.commit([{ f: T.f, s: g.pos, e: g.pos, t }], { f: T.f, p: g.pos + t.length + (g.tex === 'after' ? 1 : 0), bias: 1 }, 'enter');
+  }
+  // a blank paragraph for pos, after the block of the page that ends before it (before the one
+  // that starts after it, where none does)
+  ghostAt(f, pos, style) {
+    let prev = null, next = null;
+    for (const B of this.renderer.blocks) {
+      if (B.f !== f || !B.items.length) continue;
+      if (B.e <= pos && (!prev || B.e >= prev.e)) prev = B;
+      if (B.s >= pos && (!next || B.s < next.s)) next = B;
+    }
+    const els = (B) => [...this.root.querySelectorAll('.it[data-b="' + B.id + '"]')];
+    const at = prev ? els(prev).pop() : next ? els(next)[0] : null;
+    if (at) this.showGhost(at, f, pos, { before: !prev, style });
   }
 
   onCompStart() {
     this.composing = true;
     this.compCaret = this.caretNow();
+    this.compTex = this.compCaret && !this.compCaret.ghost ? this.texHere() : null;
   }
   onCompEnd(e) {
     this.composing = false;
@@ -1662,10 +1857,13 @@ class App {
     this.compCaret = null;
     const data = e.data || '';
     if (!c) { this.forceRender = true; this.rebuild(); return; }
-    if (c.ghost) { if (data) this.ghostInsert(escapeTeX(data, ' ')); else this.relayout(true); return; }
+    if (c.ghost) { if (data && this.ghost) this.ghostInsert(this.ghostRaw() ? data : escapeTeX(data, ' ')); else this.relayout(true); return; }
     // The browser mutated the DOM; rebuild from source regardless.
     this.forceRender = true;
     if (!data) { this.rebuild({ f: c.f, p: c.a }); return; }
+    const T = this.compTex;
+    this.compTex = null;
+    if (T && T.f === c.f) { this.texEdit(T, c.a, c.b, data, 'type'); return; }
     const src = this.src(c.f);
     const edits = c.collapsed ? [] : this.deletionEdits(c.f, c.a, c.b);
     let t = escapeTeX(data, src[c.a - 1] || ' ');
@@ -1702,6 +1900,8 @@ class App {
     if (cut) {
       const whole = this.wholeDoc();
       if (whole) { this.replaceBody(whole, '', 'cut'); return; }
+      const T = this.texHere();
+      if (T && T.f === c.f) { this.texEdit(T, c.a, c.b, '', 'cut'); return; }
       const edits = this.deletionEdits(c.f, c.a, c.b);
       this.commit(edits, { f: c.f, p: c.a }, 'cut');
     }
@@ -1726,6 +1926,10 @@ class App {
     if (!latex && this.lastCopy && plain === this.lastCopy.plain) latex = this.lastCopy.latex;
     const c = this.caretNow();
     if (!c) return;
+    // in LaTeX the source goes in as it is: the source of what was copied on the page, else the text
+    const T = c.ghost ? null : this.texHere();
+    if (T && T.f === c.f && !this.wholeDoc()) { this.texEdit(T, c.a, c.b, (latex || plain).replace(/\r\n?/g, '\n'), 'paste'); return; }
+    if (c.ghost && this.ghostRaw()) { this.ghostInsert((latex || plain).replace(/\r\n?/g, '\n')); return; }
     const src = this.src(c.ghost ? this.ghost.f : c.f);
     const at0 = c.ghost ? this.ghost.pos : c.a;
     // inside a command argument (a heading, a cell, a caption) a paste stays one paragraph
@@ -1767,7 +1971,8 @@ class App {
   // ---- styles ---------------------------------------------------------------------
   toggleStyle(cmd) {
     const c = this.caretNow();
-    if (!c || c.ghost) return;
+    // (a LaTeX paragraph shows source: bold there is \textbf, written by hand)
+    if (!c || c.ghost || this.texHere()) return;
     const groups = { textbf: ['textbf', 'bf', 'bfseries'], emph: ['emph', 'textit', 'it', 'itshape'], underline: ['underline', 'uline'], texttt: ['texttt', 'tt', 'ttfamily'] };
     const names = groups[cmd] || [cmd];
     const sel = getSelection();
@@ -1989,7 +2194,7 @@ class App {
   menuKeys(el) {
     el.addEventListener('keydown', (e) => {
       if (!/^(ArrowDown|ArrowUp|Home|End)$/.test(e.key)) return;
-      const all = [...el.querySelectorAll('[role=menuitem]')].filter((a) => !a.disabled && a.offsetParent);
+      const all = [...el.querySelectorAll('[role=menuitem], [role=menuitemradio]')].filter((a) => !a.disabled && a.offsetParent);
       if (!all.length) return;
       const i = all.indexOf(document.activeElement), n = all.length;
       const j = e.key === 'Home' || (i < 0 && e.key === 'ArrowDown') ? 0 : e.key === 'End' || i < 0 ? n - 1 : (i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;
@@ -5117,7 +5322,7 @@ class App {
     const mod = isMac ? 'Cmd' : 'Ctrl';
     p.insertAdjacentHTML('beforeend', `
       <p>Rikuy is a writing app for papers: you type on the finished page, and it keeps a LaTeX file up to date behind it.</p>
-      <p>The row of buttons above the page works as in a word processor. Pick Heading or Normal text for the paragraph you are in, make words bold, italic or underlined, start a list. Insert adds a formula, an equation, a table, a picture, a footnote, a citation or a link where the caret is.</p>
+      <p>The row of buttons above the page works as in a word processor. Styles sets the paragraph you are in as Normal, a Heading, a Quote, or LaTeX, which shows it as its LaTeX source to type in directly. Make words bold, italic or underlined, start a list. Insert adds a formula, an equation, a table, a picture, a footnote, a citation or a link where the caret is.</p>
       <p>Download gives you the paper as a PDF, as a Word file or as LaTeX. Live graphs stay live only in the LaTeX download. Preview shows the PDF beside the page.</p>
       <p>The page is typeset from your LaTeX source. Every edit you make on the page is written back into the source as the smallest possible change.</p>
       <dl class="keys">
