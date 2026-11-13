@@ -1148,12 +1148,18 @@ Tests:
     Word's two rows above 860 px and, below 861 px, Bold, Italic and Underline first in the row
     beside the group's button, whose menu has the rest (one row of all of it was 640 px), also
     when the group is folded; B5's sweep (every tab, 390 to 1920 px, with and without extra
-    commands) passes with no new exception. The two rows take 182 px more than B0's three
-    buttons, so B5's Home targets move: nothing folds from 1100 to 1920 px, Editing alone at
-    1024 px, one group at 860 px (Insert), the insert buttons' names go at 1920 px, the tiles
-    from 1440 px and the style list from 1180 px; `tabs.py`, `ribbon.py` and `find.py` say so.
+    commands) passes with no new exception. Home's Insert group, whose commands the Insert tab
+    has too, is `spare` (`src/ribbon/order.js`): it folds first, into one icon button whose menu
+    has its commands by their names, before any name drops or tile goes, and the names come after
+    the tiles (in their chain, so a tile given back never costs them). So from 1440 to 1920 px Home
+    shows every other name and all six tiles, at 1366 px four, at 1280 px three with the names, and
+    the gallery stays, three tiles, down to 1024 px; the style list from 1000 px; Editing folds
+    from 700 px. The two rows take 182 px more than B0's three buttons; at 1920 px the Insert
+    group with its names (559 px) does not fit beside them (123 px over) and stays folded, leaving
+    438 px empty. `tabs.py`, `ribbon.py`, `find.py` and `agent.py` reach its commands through its
+    menu.
     Evidence on main 49e49eb with B5: `npm test` green (`font` 25 groups, `word` 57), `font.py`
-    199 (with `dist/tex`), `tabs.py` 116, `ribbon.py` 268, `agent.py` 138, `browser.py` 189,
+    199 (with `dist/tex`), `tabs.py` 115, `ribbon.py` 268, `agent.py` 138, `browser.py` 189,
     `word.py` 110, `scripts.py` 302, `find.py` 76, `outline.py` 59, `offline.py` 54/54,
     `launch.py` 18/18, `deploy_check.py` 43/43, `pages_check.py` fits, actionlint clean, the
     corpus model run 716 of 716 with the same unknown commands.

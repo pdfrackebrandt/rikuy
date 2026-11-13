@@ -32,6 +32,17 @@ ACTED = {'button', 'link', 'textbox', 'searchbox', 'combobox', 'listbox', 'check
          'menuitemradio', 'tab', 'dialog', 'menu', 'toolbar', 'tablist', 'tabpanel'}
 
 
+
+def named(page, name):
+    """A ribbon button by its name: the button, or where its group is folded (Home's Insert, which
+    the Insert tab has too, folds first), the item of that name in the group's menu."""
+    b = page.get_by_role('button', name=name, exact=True)
+    if b.count() == 1 and b.is_visible():
+        return b.click()
+    gb = page.evaluate("""(name) => { for (const e of document.querySelectorAll('.rb-panel:not([hidden]) .rb-grp [aria-label]')) { const g = e.closest('.rb-grp').querySelector('.rb-gbtn'); if (e.getAttribute('aria-label') === name && !e.offsetParent && g.offsetParent) return g.id; } return null; }""", name)
+    page.click('#' + gb); page.wait_for_timeout(150)
+    page.locator('.pop [role^=menuitem][aria-label="%s"]' % name).click()
+
 def ax_names(page):
     """(role, name) of everything acted on in Chromium's accessibility tree, as it is now."""
     cdp = page.context.new_cdp_session(page)
@@ -127,7 +138,7 @@ def contextual(page):
         R.register({ id, name: 'Test ' + id, tab, group, label: 'Test', when: () => true, run: () => { window.__ran = id; } }); window.rikuy.ribbonBuild(); }''')
     load_doc(page, DOC)
     click_text(page, 'Second paragraph', 3)
-    page.get_by_role('button', name='Formula', exact=True).click()
+    named(page, 'Formula')
     page.wait_for_selector('.pop-math'); page.wait_for_timeout(300)
     eq = shown_tabs(page)
     page.keyboard.press('Escape'); page.wait_for_timeout(300)
@@ -154,11 +165,10 @@ def widths(page):
             folded: [...document.querySelectorAll('.rb-grp.folded')].map((g) => g.dataset.group), ico: [...document.querySelectorAll('.rb-grp.ico')].map((g) => g.dataset.group), page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
             dl: [...document.querySelectorAll('.rb-dl button')].filter((x) => x.offsetParent).map((x) => x.id) }; }''')
     print('     widths:', seen)
-    # (Home's Font group in Word's two rows, task 39, takes 182 px more than B0's three buttons:
-    # at 1024 px Home's least needed group, Editing, folds, into one icon button, as Word's)
-    check('at 1400 and 1024 px the tabs are a row above the toolbar and the row does not scroll; nothing folds at 1400 px, Editing alone at 1024 px', all(seen[w]['tabs'] and not seen[w]['sel'] and not seen[w]['over'] for w in (1400, 1024)) and not seen[1400]['folded'] and seen[1024]['folded'] == ['editing'], seen)
-    # (below 861 px the Font group is Bold, Italic, Underline and its button: Insert folds there, alone)
-    check('at 860 px one group of Home is folded, into one icon button named after it', len(seen[860]['folded']) == 1 and seen[860]['ico'] == seen[860]['folded'], seen[860])
+    # (Home's Insert, which the Insert tab has too, is spare: it folds first, into one icon button
+    # named Insert, so Home's other groups keep their buttons and names; src/ribbon/order.js)
+    check('at 1400, 1024 and 860 px the row does not scroll and Home folds its spare Insert alone, into one icon button named Insert; the tabs a row above the toolbar at 1400 and 1024 px', all(seen[w]['tabs'] and not seen[w]['sel'] for w in (1400, 1024))
+          and all(not seen[w]['over'] and seen[w]['folded'] == ['insert'] and seen[w]['ico'] == ['insert'] for w in (1400, 1024, 860)), seen)
     check('at 860 and 390 px the tabs are the combobox "Ribbon tab" at the row\'s start, in one row that scrolls sideways on a phone', all(not seen[w]['tabs'] and seen[w]['sel'] and seen[w]['h'] <= 44 and seen[w]['page'] <= 0 for w in (860, 390)) and seen[390]['over'], seen)
     # (the three go before any group folds: they take two controls, Editing three)
     check('the downloads: three at 1400 px; one Download menu where the row has no room for three (1024 px, beside Editing, and 860 px), and on a phone', seen[1400]['dl'] == ['rb-pdf', 'rb-word', 'b-save'] and all(seen[w]['dl'] == ['rb-dl-menu'] for w in (1024, 860, 390)) and not seen[860]['over'], {w: seen[w]['dl'] for w in seen})
@@ -176,7 +186,7 @@ def widths(page):
         page.set_viewport_size({'width': w, 'height': 900}); page.wait_for_timeout(300)
         click_text(page, 'Second paragraph', 3); page.wait_for_timeout(150)
         f[w] = page.evaluate('''() => ({ folded: [...document.querySelectorAll('#rp-home .rb-grp.folded')].map((g) => g.dataset.group), over: document.getElementById('ribbon').scrollWidth > document.getElementById('ribbon').clientWidth + 1 })''')
-    check('with more than fits, groups fold, the lowest rank first: Editing and Clipboard at 1024 px, Insert with them at 900 px (the Font group\'s two rows), and the row fits', sorted(f[1024]['folded']) == ['clipboard', 'editing'] and sorted(f[900]['folded']) == ['clipboard', 'editing', 'insert'] and not f[900]['over'] and not f[1024]['over'], f)
+    check('with more than fits, groups fold, the spare Insert first and then the lowest rank: Editing with it at 1024 px, Clipboard too at 900 px, and the row fits', sorted(f[1024]['folded']) == ['editing', 'insert'] and sorted(f[900]['folded']) == ['clipboard', 'editing', 'insert'] and not f[900]['over'] and not f[1024]['over'], f)
     gb = page.get_by_role('button', name='Editing', exact=True)
     check('a folded group is one button named after it; its own buttons are out of the accessibility tree', gb.count() == 1 and page.get_by_role('button', name='Editing test 0', exact=True).count() == 0 and not twice(page), twice(page))
     gb.click(); page.wait_for_timeout(200)
@@ -187,7 +197,7 @@ def widths(page):
     menu.get_by_role('menuitem', name='Editing test 3', exact=True).click(); page.wait_for_timeout(150)
     check('and an item runs its command, the menu closed, the caret on the page', page.evaluate('window.__ran') == 't-ed3' and page.get_by_role('menu').count() == 0 and page.evaluate('document.activeElement.id') == 'pages')
     page.set_viewport_size({'width': 1920, 'height': 900}); page.wait_for_timeout(300)
-    check('with room again (1920 px) every group is open', page.evaluate("[...document.querySelectorAll('.rb-grp.folded')].map((g) => g.dataset.group)") == [], page.evaluate("[...document.querySelectorAll('.rb-grp.folded')].map((g) => g.dataset.group)"))
+    check('with room again (1920 px) every group is open but the spare Insert', page.evaluate("[...document.querySelectorAll('.rb-grp.folded')].map((g) => g.dataset.group)") in ([], ['insert']), page.evaluate("[...document.querySelectorAll('.rb-grp.folded')].map((g) => g.dataset.group)"))
     page.evaluate('''() => { for (const c of window.rikuy.cmds.commands()) if (/^t-(ed|cl)/.test(c.id)) window.rikuy.cmds.unregister(c.id); window.rikuy.ribbonBuild(); }''')
     page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
 
@@ -221,7 +231,16 @@ def every_command(page):
         open_tab(page, tabs[x['tab']])
         loc = page.get_by_role(x['role'], name=x['name'], exact=True)
         n += 1
-        if loc.count() != 1 or not page.locator('#' + x['id']).is_visible(): bad.append((x['tabName'] if 'tabName' in x else x['tab'], x['name'], loc.count()))
+        if loc.count() != 1 or not page.locator('#' + x['id']).is_visible():
+            # (in a folded group, Home's spare Insert: its button's menu has it by the same name)
+            gb = page.evaluate("(id) => { const e = document.getElementById(id), g = e && e.closest('.rb-grp.folded'); return g && !e.offsetParent ? g.querySelector('.rb-gbtn').id : null; }", x['id'])
+            if gb and loc.count() == 0:
+                page.click('#' + gb); page.wait_for_timeout(150)
+                m = page.locator('.pop [role^=menuitem][aria-label="%s"]' % x['name']).count()
+                page.keyboard.press('Escape'); page.wait_for_timeout(100)
+                if m == 1:
+                    continue
+            bad.append((x['tabName'] if 'tabName' in x else x['tab'], x['name'], loc.count()))
     open_tab(page, 'Home')
     check('every command placed on the ribbon (%d) is found by its role and name, once, with its tab open' % n, not bad and n > 20, bad)
 
@@ -514,7 +533,7 @@ def fold_sweep(page):
     """The one fold rule (ribbonFit): from 390 to 1920 px in steps of 10 px, on every tab, with the
     real commands and with more registered: a wider window never shows fewer controls, the row fits
     from 521 px up (below, a phone's row scrolls), no group is folded where it would fit open, Home
-    folds nothing but Editing down to 1024 px and at most one group at 900 px."""
+    folds nothing but its spare Insert down to 1024 px and at most one group at 900 px."""
     load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
     page.evaluate("""() => { const app = window.rikuy, f = window.__rf = app.ribbonFit; window.__fits = 0; app.ribbonFit = function () { window.__fits++; return f.apply(this, arguments); }; }""")
     for k in ('ArrowRight', 'ArrowRight', 'ArrowDown', 'End', 'Home'):
@@ -558,7 +577,7 @@ def fold_sweep(page):
         check('%s: no group is folded where it would fit open' % tag, not wasted, wasted[:6])
         if extra == []:
             home = {w: seen[w]['home'] for w in widths}
-            check('Home from 1920 to 1024 px folds nothing but Editing (the group this batch added); at 900 px one group at most', all(set(home[w]['folded']) <= {'editing'} for w in widths if w >= 1024) and len(home[900]['folded']) <= 1, {w: home[w]['folded'] for w in (900, 1030, 1360)})
+            check('Home from 1920 to 1024 px folds nothing but its spare Insert; at 900 px one group at most', all(set(home[w]['folded']) <= {'insert'} for w in widths if w >= 1024) and len(home[900]['folded']) <= 1, {w: home[w]['folded'] for w in (900, 1030, 1360)})
     page.evaluate("""() => { for (const c of window.rikuy.cmds.commands()) if (/^t-sw/.test(c.id)) window.rikuy.cmds.unregister(c.id); window.rikuy.ribbonBuild(); window.rikuy.ribbonFit = window.__rf; }""")
     page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
     open_tab(page, 'Home')

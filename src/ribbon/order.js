@@ -3,12 +3,14 @@
 // group), and a tab once one of its groups shows, so a batch fills a group without touching the
 // layout. rank: which groups fold first into one button named after the group when the row is
 // too short (the lowest first; the Styles gallery shrinks on its own before any group folds).
+// spare: a group whose commands are on a tab of their own as well (Home's Insert, all of it on
+// the Insert tab): it folds first, before any name or tile goes (src/ribbon/tabs.js ribbonFit).
 // A contextual tab (ctx) shows while its object has the caret: at() says so from where the caret
 // is (app.ribbonAt()) and from the app's state (an open equation, an armed picture).
 
 export const TABS = [
   { id: 'file', name: 'File', groups: [['new', 'New'], ['open', 'Open'], ['info', 'Info'], ['save', 'Save a copy'], ['print', 'Print'], ['share', 'Share'], ['options', 'Options']] },
-  { id: 'home', name: 'Home', groups: [['clipboard', 'Clipboard', 2], ['font', 'Font', 5], ['paragraph', 'Paragraph', 4], ['styles', 'Styles', 9], ['insert', 'Insert', 3], ['editing', 'Editing', 1]] },
+  { id: 'home', name: 'Home', groups: [['clipboard', 'Clipboard', 2], ['font', 'Font', 5], ['paragraph', 'Paragraph', 4], ['styles', 'Styles', 9], ['insert', 'Insert', 3, { spare: true }], ['editing', 'Editing', 1]] },
   { id: 'insert', name: 'Insert', groups: [['pages', 'Pages', 1], ['tables', 'Tables', 6], ['illustrations', 'Illustrations', 5], ['links', 'Links', 4], ['comments', 'Comments', 3], ['headfoot', 'Header & Footer', 2], ['text', 'Text', 2], ['symbols', 'Symbols', 7], ['latex', 'LaTeX', 8]] },
   { id: 'design', name: 'Design', groups: [['formatting', 'Document formatting', 2], ['background', 'Page background', 1]] },
   { id: 'layout', name: 'Layout', groups: [['setup', 'Page setup', 4], ['paragraph', 'Paragraph', 3], ['arrange', 'Arrange', 1], ['document', 'Document', 2]] },
@@ -22,7 +24,7 @@ export const TABS = [
   { id: 'picture-format', name: 'Picture Format', ctx: 'picture', groups: [['size', 'Size', 4], ['arrange', 'Arrange', 3], ['accessibility', 'Accessibility', 2], ['picture', 'Picture', 1]] },
   { id: 'equation', name: 'Equation', ctx: 'equation', groups: [['tools', 'Tools', 3], ['symbols', 'Symbols', 1], ['structures', 'Structures', 2]] },
   { id: 'headfoot', name: 'Header & Footer', ctx: 'headfoot', groups: [['headfoot', 'Header & Footer', 3], ['insert', 'Insert', 2], ['options', 'Options', 1], ['close', 'Close', 4]] }
-].map((t) => ({ ...t, groups: t.groups.map(([id, name, rank = 1]) => ({ id, name, rank })) }));
+].map((t) => ({ ...t, groups: t.groups.map(([id, name, rank = 1, more = {}]) => ({ id, name, rank, spare: !!more.spare })) }));
 
 export const tabById = (id) => TABS.find((t) => t.id === id) || null;
 export const groupOf = (tab, group) => { const t = tabById(tab); return t ? t.groups.find((g) => g.id === group) || null : null; };
