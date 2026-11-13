@@ -15,7 +15,11 @@ Numbering; List spacing; Multilevel list (\\setlist lines, checked, LaTeX's own 
 List Level; the description list; Sort, of a list's items and of paragraphs; Word's automatic
 lists ("- ", "1. ", "a) "), joined to the list before, Undo giving back the typed text, Options'
 switch. The page draws each as TeX prints it. Where dist/tex exists, a document with every kind of
-list Rikuy writes compiles with pdfLaTeX, XeLaTeX and LuaLaTeX and prints those labels.
+list Rikuy writes compiles with pdfLaTeX, XeLaTeX and LuaLaTeX and prints those labels. review()
+holds each finding of the hostile review of PR 22 as its case: never enumitem beside the enumerate
+package or paralist, one undo for a format with a start, levels and labels left as written when
+OK changes nothing, a bullet pdfLaTeX's fonts lack, Tab going on where it can do nothing, and the
+labels and references TeX prints, each compiled in the page.
 
 RIKUY_DIST names another dist/."""
 import os, sys, base64, io, re
@@ -82,7 +86,7 @@ def levels(page):
     check('Tab joins the list that ends the item before', src(page) == WRAP('\\begin{itemize}\n  \\item One\n    \\begin{itemize}\n      \\item Two\n      \\item Three\n    \\end{itemize}\n\\end{itemize}'), src(page)[40:])
     load_doc(page, L3); click_text(page, 'One', 1); key(page, 'Tab')
     focused = page.evaluate("document.activeElement && document.activeElement.id")
-    check('Tab on the first item writes nothing, keeps the focus on the page, says why', src(page) == L3 and focused == 'pages' and 'first item' in page.evaluate("document.getElementById('toast').textContent"), (focused, page.evaluate("document.getElementById('toast').textContent")))
+    check('Tab on the first item writes nothing, says why, and goes on as Tab does (off the page)', src(page) == L3 and focused != 'pages' and 'first item' in page.evaluate("document.getElementById('toast').textContent"), (focused, page.evaluate("document.getElementById('toast').textContent")))
     st = state(page, 'indent-increase')
     check('Increase Indent is disabled there and says why', st[0] is False and 'first item' in st[2], st)
     load_doc(page, L3); click_text(page, 'Two', 1); key(page, 'Shift+Tab')
@@ -190,9 +194,9 @@ def libraries(page):
     d.get_by_label('Character or LaTeX', exact=True).fill('{\\bf x')
     d.get_by_role('button', name='OK').click(); page.wait_for_timeout(200)
     check('LaTeX that does not balance is refused with a word, nothing written', src(page) == L3 and 'balance' in d.get_by_role('alert').text_content(), d.get_by_role('alert').text_content())
-    d.get_by_label('Character or LaTeX', exact=True).fill('»&')
+    d.get_by_label('Character or LaTeX', exact=True).fill('+&')
     d.get_by_role('button', name='OK').click(); page.wait_for_timeout(250)
-    check('a character typed is written as text, escaped', 'label=»\\&' in src(page) or 'label={»\\&}' in src(page), src(page)[:200])
+    check('a character typed is written as text, escaped', 'label=+\\&' in src(page) or 'label={+\\&}' in src(page), src(page)[:200])
     load_doc(page, E3); click_text(page, 'Two', 1); run(page, 'number-define')
     d = page.get_by_role('dialog', name='Define New Number Format')
     d.get_by_label('Number style', exact=True).select_option('Roman')
@@ -201,7 +205,7 @@ def libraries(page):
     d.get_by_role('spinbutton', name='Start at').fill('3')
     d.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
     check('Define New Number Format: its style, text and start', '\\begin{enumerate}[label=Part \\Roman*:,start=3]' in src(page) and labels(page)[:2] == ['Part III:', 'Part IV:'], (src(page)[:200], labels(page)))
-    check('as one undo... and its start as another (Word\'s dialog does both)', hist(page) == 2)
+    check('both in one step, one undo (the review of PR 22: it was two)', hist(page) == 1, hist(page))
 
 
 def numbering(page):
@@ -332,6 +336,166 @@ def menus(page):
     check('the search box finds Restart at 1, Multilevel list, Increase Indent, Sort by Word\'s words', [g[0].split('\n')[0] if g else '' for g in got] == ['Restart at 1', 'Multilevel list', 'Increase Indent', 'Sort'], got)
 
 
+def toast(page):
+    return page.evaluate("document.getElementById('toast').textContent")
+
+
+def compiled(page):
+    """The PDF of the page's document, compiled in the page: (ok, its text without spaces, errors)"""
+    from pypdf import PdfReader
+    r = page.evaluate("""async () => { const r = await window.rikuy.api.compile(); let s = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) s += String.fromCharCode(...r.pdf.subarray(i, i + 8192)); return { ok: r.ok, errs: (r.problems || []).filter((p) => p.severity === 'error').map((p) => p.message).slice(0, 3), pdf: s ? btoa(s) : '' }; }""")
+    text = ' '.join(pg.extract_text() for pg in PdfReader(io.BytesIO(base64.b64decode(r['pdf']))).pages) if r['pdf'] else ''
+    return r['ok'], re.sub(r'\s+', '', text), r['errs']
+
+
+def page_flat(page):
+    return re.sub(r'\s+', '', page.evaluate("document.querySelector('#pages').innerText").replace('\u200b', ''))
+
+
+def select_spans(page, a, b, b_end):
+    """Select from the start of the span holding a to b_end characters into the one holding b"""
+    page.evaluate('''([a, b, z]) => { const sp = [...document.querySelectorAll('#pages span.t')]; const x = sp.find((s) => s.textContent.includes(a)), y = sp.find((s) => s.textContent.includes(b));
+      const r = document.createRange(); r.setStart(x.firstChild, 0); r.setEnd(y.firstChild, z); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''', [a, b, b_end])
+    page.wait_for_timeout(150)
+
+
+def review(page):
+    """The hostile review of PR 22, each finding's case (compiled in the page where TeX erred)"""
+    tex = os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')) and not os.environ.get('LISTS_NO_PDF')
+    if tex:
+        try: import pypdf  # noqa: F401
+        except ImportError: tex = False
+    page.set_default_timeout(900000)
+    # H1: beside the enumerate package or paralist, never enumitem (it breaks their "(a)" lists)
+    D = WRAP('\\begin{enumerate}[(a)]\n  \\item First\n  \\item Second\n\\end{enumerate}\n\n\\begin{itemize}\n  \\item Bul\n  \\item Bul2\n\\end{itemize}', '\\usepackage{enumerate}\n')
+    load_doc(page, D); click_text(page, 'Bul2', 1)
+    run(page, 'list-spacing', {'sep': 'noitemsep'})
+    want = D.replace('\\begin{itemize}\n', '\\begin{itemize}\n  \\setlength{\\itemsep}{0pt}\n')
+    check('H1 List spacing beside the enumerate package: LaTeX\'s own \\setlength{\\itemsep}, no enumitem', src(page) == want, src(page)[40:])
+    load_doc(page, D); click_text(page, 'Bul2', 1)
+    r = run(page, 'list-spacing', {'sep': 'nosep'})
+    check('H1 Compact (enumitem\'s nosep) refused there, the source unchanged', r is False and src(page) == D, (r, src(page)[40:]))
+    if tex:
+        load_doc(page, want); ok, flat, errs = compiled(page)
+        check('H1 that document compiles in the page and prints (a) (b)', ok and '(a)First' in flat and '(b)Second' in flat, (errs, flat[:120]))
+    P = WRAP('\\begin{enumerate}[(a)]\n  \\item First\n  \\item Second\n\\end{enumerate}\n\nPara.', '\\usepackage{paralist}\n')
+    load_doc(page, P); click_text(page, 'Para', 1)
+    run(page, 'multilevel-define', {'kind': 'enum', 'labels': ['\\arabic*.', '\\alph*)', '\\roman*.', '\\Alph*.']})
+    s1 = src(page)
+    check('H1 Multilevel list beside paralist: \\renewcommand{\\labelenumii} lines, no enumitem', '\\renewcommand{\\labelenumii}{\\alph{enumii})}' in s1 and 'enumitem' not in s1 and 'setlist' not in s1, s1[:300])
+    if tex:
+        ok, flat, errs = compiled(page)
+        check('H1 that document compiles in the page: (a) First, 1. Para.', ok and '(a)First' in flat and '1.Para.' in flat, (errs, flat[:120]))
+    # H2: Define New Number Format with a start: one step, one undo
+    D = WRAP('Para one.\n\nPara two.')
+    load_doc(page, D); click_text(page, 'one', 1); h0 = hist(page)
+    run(page, 'number-define'); page.wait_for_timeout(200)
+    page.get_by_label('Text before').fill('Q'); page.get_by_label('Start at').first.fill('4')
+    page.get_by_role('button', name='OK').click(); page.wait_for_timeout(400)
+    check('H2 Define New Number Format with a start: one step', hist(page) == h0 + 1 and labels(page) == ['Q4.'], (hist(page) - h0, labels(page)))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('H2 and one undo gives the bytes back', src(page) == D, src(page)[40:])
+    # (letters stop at z: Start at 27 with a, b, c is refused in the dialog)
+    load_doc(page, E3); click_text(page, 'One', 1)
+    run(page, 'number-define'); page.wait_for_timeout(200)
+    page.get_by_label('Number style').select_option('alph'); page.get_by_label('Start at').first.fill('27')
+    page.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    msg = page.evaluate("(document.querySelector('.pop-list .ld-msg') || {}).textContent || ''")
+    check('M1 Start at 27 with letters is refused, saying why (TeX: Counter too large)', src(page) == E3 and '26' in msg, msg)
+    page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    A = WRAP('\\begin{enumerate}[label=\\alph*)]\n  \\item One\n\\end{enumerate}', EI)
+    load_doc(page, A); click_text(page, 'One', 1)
+    r = run(page, 'list-value', {'value': 27})
+    check('M1 and Set Numbering Value 27 on a list of letters too', r is False and src(page) == A, (r, src(page)[60:]))
+    # M4: OK with nothing changed keeps Step~\arabic*. (the ~ a no-break space in the field)
+    D = WRAP('\\begin{enumerate}[label=Step~\\arabic*.]\n  \\item One\n\\end{enumerate}', EI)
+    load_doc(page, D); click_text(page, 'One', 1)
+    run(page, 'number-define'); page.wait_for_timeout(200)
+    before = page.get_by_label('Text before').input_value()
+    page.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    check('M4 Define New Number Format, OK unchanged: the label as written, ~ shown as a no-break space', src(page) == D and before == 'Step\u00a0', (before, src(page)[60:]))
+    # H3: Define New Multilevel List, OK unchanged: hand written levels kept, no levels added
+    D = WRAP('\\begin{enumerate}\n  \\item One\n\\end{enumerate}', EI + '\\setlist[enumerate,2]{label=\\textbf{\\alph*}, leftmargin=2em}\n\\setlist[enumerate,3]{label=\\S\\roman*}\n')
+    load_doc(page, D); click_text(page, 'One', 1)
+    run(page, 'multilevel-define'); page.wait_for_timeout(200)
+    opt = page.get_by_label('Level 2 number style').evaluate('(s) => s.options[s.selectedIndex].text')
+    page.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    check('H3 Define New Multilevel List, OK unchanged: \\textbf{\\alph*} and \\S\\roman* kept, shown as Custom (kept)', src(page) == D and 'Custom (kept)' in opt, (opt, src(page)[:260]))
+    load_doc(page, D); click_text(page, 'One', 1)
+    run(page, 'multilevel-define'); page.wait_for_timeout(200)
+    page.get_by_label('Level 1 number style').select_option('Roman')
+    page.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    s1 = src(page)
+    check('H3 one level changed: only its line written', '\\setlist[enumerate,1]{label=\\Roman*.}' in s1 and '\\textbf{\\alph*}' in s1 and '\\S\\roman*' in s1 and 'enumerate,4' not in s1, s1[:320])
+    B = WRAP('\\begin{itemize}\n  \\item One\n\\end{itemize}', EI + '\\usepackage{pifont}\n\\setlist[itemize,1]{label=\\ding{43}}\n')
+    load_doc(page, B); click_text(page, 'One', 1)
+    run(page, 'multilevel-define'); page.wait_for_timeout(200)
+    l3 = page.get_by_label('Level 3 bullet').evaluate('(s) => s.options[s.selectedIndex].text')
+    page.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    check('H3 bullets: \\ding{43} kept, level 3 LaTeX\'s own ∗', src(page) == B and '∗' in l3, (l3, src(page)[:200]))
+    # M3: a typed » refused on pdfLaTeX (its fonts have none), → written as its symbol
+    D = WRAP('\\begin{itemize}\n  \\item One\n  \\item Two\n\\end{itemize}')
+    load_doc(page, D); click_text(page, 'Two', 1)
+    r = run(page, 'bullet-define', {'code': '»'})
+    check('M3 Define New Bullet » on pdfLaTeX: refused, saying why', r is False and src(page) == D and '»' in toast(page), toast(page))
+    run(page, 'bullet-define', {'code': '→'})
+    check('M3 → written as $\\rightarrow$', '\\begin{itemize}[label=$\\rightarrow$]' in src(page), src(page)[40:])
+    if tex:
+        ok, flat, errs = compiled(page)
+        check('M3 that compiles in the page with pdfLaTeX', ok and not errs, errs)
+    load_doc(page, D); click_text(page, 'Two', 1)
+    run(page, 'bullet-define'); page.wait_for_timeout(200)
+    page.get_by_label('Character or LaTeX').fill('»'); page.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    msg = page.evaluate("(document.querySelector('.pop-list .ld-msg') || {}).textContent || ''")
+    check('M3 the dialog refuses a typed » too, keeping itself open with why', src(page) == D and 'pdfLaTeX' in msg, msg)
+    page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    X = '% !TeX program = xelatex\n' + D
+    load_doc(page, X); click_text(page, 'Two', 1); run(page, 'bullet-define', {'code': '»'})
+    check('M3 on XeLaTeX » is taken as it is', '\\begin{itemize}[label=»]' in src(page), src(page)[60:])
+    # M5: where nothing can be done Tab and Shift+Tab go on (the keyboard's way off the page)
+    # (in the center, Tab can do something: Inner2 under Inner; Shift+Tab cannot leave the center)
+    for name, D, keys in (('a paralist compactitem in an itemize', WRAP('\\begin{itemize}\n  \\item One\n    \\begin{compactitem}\n      \\item Inner\n      \\item Inner2\n    \\end{compactitem}\n  \\item Two\n\\end{itemize}', '\\usepackage{paralist}\n'), ('Tab', 'Shift+Tab')),
+                          ('a list nested in a center', WRAP('\\begin{itemize}\n  \\item One\n    \\begin{center}\n    \\begin{itemize}\n      \\item Inner\n      \\item Inner2\n    \\end{itemize}\n    \\end{center}\n  \\item Two\n\\end{itemize}'), ('Shift+Tab',))):
+        for k in keys:
+            load_doc(page, D); click_text(page, 'Inner2', 2)
+            prevented = page.evaluate("(k) => { const e = new KeyboardEvent('keydown', { key: 'Tab', shiftKey: k === 'Shift+Tab', bubbles: true, cancelable: true }); document.getElementById('pages').dispatchEvent(e); return e.defaultPrevented; }", k)
+            check('M5 ' + k + ' in ' + name + ': the key goes on, the source unchanged', not prevented and src(page) == D, prevented)
+    # lows: an automatic list takes the \noindent with it; Sort takes paragraphs with comments
+    D = WRAP('\\noindent Words here.')
+    load_doc(page, D); click_text(page, 'Words', 0); page.keyboard.type('1. '); page.wait_for_timeout(300)
+    check('L1 "1. " after \\noindent: the list without an orphaned \\noindent', '\\noindent' not in src(page) and '\\item Words here.' in src(page), src(page)[40:])
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('L1 and Undo gives back what was typed', src(page) == WRAP('\\noindent 1. Words here.'), src(page)[40:])
+    D = WRAP('Gamma para.\n\nalpha para.\n\n% comment (X) on "Beta": hi\nBeta para.\n\nLast.')
+    load_doc(page, D); select_spans(page, 'Gamma', 'Beta para', 3)
+    run(page, 'sort', {'order': 'ascending'})
+    check('L7 Sort of paragraphs, one with a coauthor\'s comment above it: the comment goes with it', src(page) == WRAP('alpha para.\n\n% comment (X) on "Beta": hi\nBeta para.\n\nGamma para.\n\nLast.'), src(page)[40:])
+    # M1: the page draws the labels and references TeX prints (each compiled where TeX is here)
+    docs = [
+        ('resume*, series, resume across levels, a labelled item, start=0, ref=', WRAP(
+            '\\begin{enumerate}[label=\\alph*),start=3]\\item RA\\end{enumerate}\n\nx\n\n\\begin{enumerate}[resume*]\\item RB\\end{enumerate}\n\n'
+            '\\begin{enumerate}[series=foo]\\item SA\\item SB\\end{enumerate}\n\n\\begin{enumerate}\\item SC\\end{enumerate}\n\n\\begin{enumerate}[resume=foo]\\item SD\\end{enumerate}\n\n'
+            '\\begin{itemize}\\item IA \\begin{enumerate}\\item IX\\item IY\\end{enumerate}\\end{itemize}\n\n\\begin{enumerate}[resume]\\item IZ\\end{enumerate}\n\n'
+            '\\begin{enumerate}\\item[(x)] LA\\item LB\\end{enumerate}\n\n\\begin{enumerate}[start=0,label=\\alph*)]\\item ZA\\item ZB\\end{enumerate}\n\n'
+            '\\begin{enumerate}[label=\\alph*),ref=\\alph*]\\item KA\\label{k}\\end{enumerate} See \\ref{k}.', EI),
+         ['c)RA', 'd)RB', '1.SA', '2.SB', '1.SC', '3.SD', '1.IX', '2.IY', '4.IZ', '(x)LA', '1.LB', ')ZA', 'a)ZB', 'a)KA', 'Seea.']),
+        ('the enumerate package\'s (i) nested, LaTeX\'s own references', WRAP(
+            '\\begin{enumerate}\\item EA\\begin{enumerate}[(i)]\\item EB\\label{b}\\end{enumerate}\\end{enumerate} See \\ref{b}.\n\n'
+            '\\begin{enumerate}\\item A\\label{a} \\begin{enumerate}\\item B\\label{bb} \\begin{enumerate}\\item C\\label{c}\\end{enumerate}\\end{enumerate}\\end{enumerate}\nRefs: \\ref{a}, \\ref{bb}, \\ref{c}.', '\\usepackage{enumerate}\n'),
+         ['1.EA', '(i)EB', 'See1i.', 'Refs:1,1a,1(a)i.']),
+        ('\\theenumi as letters', WRAP('\\begin{enumerate}\\item One\\label{o}\\item Two\\end{enumerate} See \\ref{o}.', '\\renewcommand{\\theenumi}{\\alph{enumi}}\n'),
+         ['a.One', 'b.Two', 'Seea.']),
+    ]
+    for name, D, want in docs:
+        load_doc(page, D); page.wait_for_timeout(300)
+        flat = page_flat(page)
+        check('M1 the page draws ' + name + ' as TeX prints them', all(w in flat for w in want), [w for w in want if w not in flat])
+        if tex:
+            ok, pdf, errs = compiled(page)
+            check('M1 and pdfLaTeX in the page prints the same', ok and all(w in pdf for w in want), (errs, [w for w in want if w not in pdf]))
+    page.set_default_timeout(30000)
+
+
 def pdf_check(page):
     if os.environ.get('LISTS_NO_PDF'):
         return
@@ -365,7 +529,7 @@ def pdf_check(page):
 def run_all():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, pdf_check):
+        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check):
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])

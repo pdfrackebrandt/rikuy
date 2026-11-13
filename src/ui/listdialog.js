@@ -8,7 +8,7 @@ import { dialog, numberField } from './kit.js';
 import { enabled } from '../commands.js';
 import { mk } from './dom.js';
 import { escapeTeX } from '../editor.js';
-import { SYMBOLS, BULLETS, STYLES, MULTI, numText, bulletGlyph, multilevelOf, DEFAULT, MAX_LEVEL } from '../lists.js';
+import { SYMBOLS, BULLETS, STYLES, numText, bulletGlyph, bulletCode, numberParts, maxStart, multilevelOf, DEFAULT, MAX_LEVEL } from '../lists.js';
 
 const button = (label, cls) => { const b = mk('button', 'btn ' + (cls || 'ghost sm'), label); b.type = 'button'; b.setAttribute('aria-label', label); return b; };
 function field(label, value = '', o = {}) {
@@ -131,29 +131,49 @@ export function openBulletDialog(app) {
       b.addEventListener('click', () => { code = s.code; own.i.value = ''; for (const x of buttons) x.setAttribute('aria-checked', x === b ? 'true' : 'false'); show(); });
       buttons.push(b); grid.append(b);
     }
-    own.i.addEventListener('input', () => { const t = own.i.value.trim(); if (t) { code = /[\\$]/.test(t) ? t : asText(t); for (const x of buttons) x.setAttribute('aria-checked', 'false'); } show(); });
+    // (a character typed: its symbol's LaTeX where it is one, else escaped as typing escapes it;
+    // one that pdfLaTeX's fonts here do not have is refused: bulletCode)
+    const eng = app.textEngine ? app.textEngine() : { unicode: true };
+    const typed = (t) => bulletCode(t, { ...eng, esc: asText });
+    own.i.addEventListener('input', () => { const t = own.i.value.trim(); if (t) { const r = typed(t); code = r.error ? '' : r.code; for (const x of buttons) x.setAttribute('aria-checked', 'false'); } show(); });
     body.append(grid, own.l, pv);
     show();
     return {
-      check: () => { const t = own.i.value.trim(); return t && /[\\$]/.test(t) && !safeLatex(t) ? 'That LaTeX does not stand on its own: its braces or dollars do not balance, or it holds a command a label cannot.' : null; },
-      ok: () => { const t = own.i.value.trim(); app.runCommand('bullet-define', { code: t ? (/[\\$]/.test(t) ? safeLatex(t) : asText(t)) : code }); }
+      check: () => {
+        const t = own.i.value.trim();
+        if (!t) return null;
+        if (/[\\$]/.test(t) && !safeLatex(t)) return 'That LaTeX does not stand on its own: its braces or dollars do not balance, or it holds a command a label cannot.';
+        return typed(t).error || null;
+      },
+      ok: () => { const t = own.i.value.trim(); app.runCommand('bullet-define', { code: t ? typed(/[\\$]/.test(t) ? safeLatex(t) : t).code : code }); }
     };
   });
 }
 
 // ---- Define New Number Format -------------------------------------------------------------------------
+// The list's label shown as its style and the text around it; a label written some other way
+// (\textbf{\alph*}) shows as Custom (kept). OK changes only what was changed: the label where the
+// style or its text was, the start where it was, both in one step (one undo).
 export function openNumberDialog(app) {
   const at = app.ribbonAt(), I = at && app.listAt(at), f = I && I.L && I.L.kind === 'enum' ? I.fmt : null;
-  const cur = f && /^([^\\]*)\\(arabic|alph|Alph|roman|Roman)\*([^\\]*)$/.exec(f.label || '');
+  const cur = f ? numberParts(f.label || '\\arabic*.') : null;
+  const kept = !!f && f.label && !cur;
   return form(app, 'Define New Number Format', (body) => {
-    const st = select('Number style', STYLES, cur ? cur[2] : 'arabic');
-    const before = field('Text before', cur ? cur[1].replace(/[{}]/g, '') : '', { size: 8 });
-    const after = field('Text after', cur ? cur[3].replace(/[{}]/g, '') : '.', { size: 8 });
+    const st = select('Number style', kept ? [['', 'Custom (kept)'], ...STYLES] : STYLES, kept ? '' : cur ? cur.style : 'arabic');
+    const before = field('Text before', cur ? cur.before : '', { size: 8 });
+    const after = field('Text after', cur ? cur.after : '.', { size: 8 });
     const start = countField('ld-start', 'Start at', f ? f.start : 1);
     const sl = mk('label', 'ld-f'); sl.append(mk('span', 'ld-l', 'Start at'), start);
     const pv = preview();
-    const star = () => asText(before.i.value) + '\\' + st.s.value + '*' + asText(after.i.value);
-    const show = () => { const n = Math.max(0, Math.round(start.get().value)); pv.textContent = [0, 1, 2].map((k) => numText(star(), n + k) + '  Item').join('\n'); };
+    const init = { st: st.s.value, before: before.i.value, after: after.i.value };
+    const up = cur && cur.up.length ? cur.up.map((x, j) => '\\' + x + '{enum' + ['i', 'ii', 'iii'][j] + '}.').join('') : '';
+    const changed = () => st.s.value !== init.st || before.i.value !== init.before || after.i.value !== init.after;
+    const star = () => !st.s.value ? f.label : asText(before.i.value) + up + '\\' + st.s.value + '*' + asText(after.i.value);
+    const num = () => Math.max(0, Math.round(start.get().value));
+    const show = () => {
+      for (const x of [before.i, after.i]) x.disabled = !st.s.value;
+      pv.textContent = [0, 1, 2].map((k) => numText(star(), num() + k) + '  Item').join('\n');
+    };
     for (const x of [before.i, after.i]) x.addEventListener('input', show);
     st.s.addEventListener('change', show);
     start.querySelector('input').addEventListener('input', () => setTimeout(show, 0));
@@ -161,10 +181,14 @@ export function openNumberDialog(app) {
     body.append(st.l, before.l, after.l, sl, pv);
     show();
     return {
+      // (letters stop at z: \alph of 27 is TeX's "Counter too large")
+      check: () => (num() > maxStart({ label: star() }) ? 'Letters go from a to z: a list numbered with them starts at 26 at most.' : null),
       ok: () => {
-        const n = Math.max(0, Math.round(start.get().value));
-        app.runCommand('number-define', { label: star() });
-        if (n !== (f ? f.start : 1) || !f) { const a = app.ribbonAt(); if (a) a.memo = {}; if (n !== 1 || f) app.runCommand('list-value', { value: n }); }
+        const n = num();
+        const label = changed() ? star() : f ? undefined : null;
+        const s0 = n !== (f ? f.start : 1) ? n : undefined;
+        if (f && label === undefined && s0 === undefined) return;
+        app.runCommand('number-define', { label, start: s0 });
       }
     };
   });
@@ -186,6 +210,7 @@ export function openValueDialog(app) {
     body.append(how.g, sl, pv);
     show();
     return {
+      check: () => (how.get() !== 'continue' && Math.round(start.get().value) > maxStart(f) ? 'Letters go from a to z: a list numbered with them starts at 26 at most.' : null),
       ok: () => {
         if (how.get() === 'continue') app.runCommand('list-continue');
         else app.runCommand('list-value', { value: Math.max(0, Math.round(start.get().value)) });
@@ -195,6 +220,9 @@ export function openValueDialog(app) {
 }
 
 // ---- Define New Multilevel List -------------------------------------------------------------------------
+// Each level as the preamble gives it: a number label as its style and the text around it, a
+// bullet as its symbol; one written some other way (\textbf{\alph*}, \S\roman*, \ding{43}) as
+// Custom (kept), a level with no label of its own as LaTeX's. OK writes only the levels changed.
 export function openMultilevelDialog(app) {
   const cfg = app.listCfg();
   const at = app.ribbonAt(), I = at && app.listAt(at);
@@ -202,51 +230,70 @@ export function openMultilevelDialog(app) {
     const kind = select('List', [['enum', 'Numbered lists'], ['item', 'Bulleted lists']], I && I.L && I.L.kind === 'item' ? 'item' : 'enum');
     const rows = mk('div', 'ld-levels');
     const pv = preview();
-    let get = () => [];
+    let get = () => [], code = () => [];
     const build = () => {
       rows.replaceChildren();
       const k = kind.s.value, have = multilevelOf(cfg, k);
+      // per level: its label as written now (or LaTeX's), whether it was changed, its new label
       const R = [];
       for (let n = 1; n <= MAX_LEVEL; n++) {
         const row = mk('div', 'ld-level');
         row.setAttribute('role', 'group'); row.setAttribute('aria-label', 'Level ' + n);
         row.append(mk('span', 'ld-lv', String(n)));
-        const code = have[n - 1] || DEFAULT[k][n - 1];
+        const was = have[n - 1] || DEFAULT[k][n - 1];
+        const L = { was, dirty: false, value: () => was };
+        const touch = () => { L.dirty = true; show(); };
         if (k === 'enum') {
-          const m = /^([^\\]*)((?:\\(?:arabic|alph|Alph|roman|Roman)\{enum[iv]+\}[^\\]*)*)\\(arabic|alph|Alph|roman|Roman)\*([^\\]*)$/.exec(code) || [];
-          const st = select('Level ' + n + ' number style', STYLES, m[3] || 'arabic');
-          const before = field('Level ' + n + ' text before', (m[1] || '').replace(/[{}]/g, ''), { size: 4 });
-          const after = field('Level ' + n + ' text after', m[4] != null ? m[4].replace(/[{}]/g, '') : '.', { size: 4 });
-          const up = check('Level ' + n + ' includes the levels above', !!m[2]);
+          const p = numberParts(was);
+          const st = select('Level ' + n + ' number style', p ? STYLES : [['', 'Custom (kept): ' + was], ...STYLES], p ? p.style : '');
+          const before = field('Level ' + n + ' text before', p ? p.before : '', { size: 4 });
+          const after = field('Level ' + n + ' text after', p ? p.after : '.', { size: 4 });
+          const up = check('Level ' + n + ' includes the levels above', !!(p && p.up.length));
           if (n === 1) up.l.hidden = true;
           row.append(before.l, st.l, after.l, up.l);
-          R.push(() => {
+          const able = () => { for (const x of [before.i, after.i, up.c]) x.disabled = !st.s.value; };
+          able();
+          L.style = () => st.s.value || (p && p.style) || 'arabic';
+          L.value = () => {
+            if (!st.s.value) return was;
             const parts = [];
-            if (up.c.checked) for (let j = 1; j < n; j++) parts.push('\\' + R.styles[j - 1] + '{enum' + ['', 'i', 'ii', 'iii', 'iv'][j] + '}.');
-            R.styles[n - 1] = st.s.value;
+            if (up.c.checked) for (let j = 1; j < n; j++) parts.push('\\' + R[j - 1].style() + '{enum' + ['', 'i', 'ii', 'iii', 'iv'][j] + '}.');
             return asText(before.i.value) + parts.join('') + '\\' + st.s.value + '*' + asText(after.i.value);
-          });
-          for (const x of [st.s, before.i, after.i, up.c]) x.addEventListener(x.tagName === 'SELECT' || x.type === 'checkbox' ? 'change' : 'input', show);
+          };
+          st.s.addEventListener('change', () => { able(); touch(); });
+          for (const x of [before.i, after.i]) x.addEventListener('input', touch);
+          up.c.addEventListener('change', touch);
         } else {
-          const sym = select('Level ' + n + ' bullet', BULLETS.map((b) => [b.code, b.glyph + '  ' + b.name]), (BULLETS.find((b) => bulletGlyph(b.code) === bulletGlyph(code)) || BULLETS[0]).code);
+          const own = have[n - 1];
+          const lib = BULLETS.find((b) => b.code === own);
+          const opts = [['', 'LaTeX\'s own ' + bulletGlyph(DEFAULT.item[n - 1])], ...(own && !lib ? [['=', (bulletGlyph(own) || '?') + '  Custom (kept): ' + own]] : []), ...BULLETS.map((b) => [b.code, b.glyph + '  ' + b.name])];
+          const sym = select('Level ' + n + ' bullet', opts, !own ? '' : lib ? lib.code : '=');
           row.append(sym.l);
-          R.push(() => sym.s.value);
-          sym.s.addEventListener('change', show);
+          L.value = () => (sym.s.value === '' ? null : sym.s.value === '=' ? own : sym.s.value);
+          sym.s.addEventListener('change', touch);
         }
+        R.push(L);
         rows.append(row);
       }
-      R.styles = [];
-      get = () => R.map((f) => f());
+      // (a level left as it was: undefined, which multilevelEdits leaves alone)
+      get = () => R.map((L) => (L.dirty ? L.value() : undefined));
+      code = () => R.map((L, i) => { const v = L.value(); return v == null ? DEFAULT[k][i] : v; });
       show();
     };
     function show() {
-      const labels = get(), k = kind.s.value;
-      pv.textContent = labels.map((c, i) => '   '.repeat(i) + (k === 'enum' ? numText(c, 1, [1, 1, 1]) : bulletGlyph(c) || '•') + '  Level ' + (i + 1)).join('\n');
+      const labels = code(), k = kind.s.value;
+      pv.textContent = labels.map((c, i) => '   '.repeat(i) + (k === 'enum' ? numText(c, 1, [1, 1, 1]) : bulletGlyph(c) || '?') + '  Level ' + (i + 1)).join('\n');
     }
     kind.s.addEventListener('change', build);
     body.append(kind.l, rows, pv);
     build();
-    return { ok: () => app.runCommand('multilevel-define', { kind: kind.s.value, labels: get() }) };
+    return {
+      ok: () => {
+        const labels = get();
+        if (labels.every((x) => x === undefined)) return;
+        app.runCommand('multilevel-define', { kind: kind.s.value, labels });
+      }
+    };
   });
 }
 
