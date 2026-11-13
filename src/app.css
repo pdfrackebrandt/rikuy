@@ -1261,3 +1261,20 @@ body.nav-on.nav-outline #nav { width: 460px; }
 .ld-msg:empty { display: none; }
 .ld-btns { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
 @media (max-width: 640px) { .ld-f { grid-template-columns: 1fr; gap: 3px; } }
+/* a finger, not a mouse: the list buttons and their arrows, the libraries' tiles, the dialogs'
+   fields, symbols and buttons 44 px each way */
+@media (pointer: coarse) {
+  .rb .btn:is([data-cmd="bullets"], [data-cmd="numbering"], [data-cmd="multilevel"], [data-cmd="indent-decrease"], [data-cmd="indent-increase"], [data-cmd="sort"]) { min-width: 44px; min-height: 44px; }
+  .rb-split:has(> :is([data-cmd="bullets"], [data-cmd="numbering"])) > .rb-x { width: 44px; min-height: 44px; }
+  .pop-menu:has(> .li-tile) { grid-template-columns: repeat(3, 76px); justify-content: center; }
+  .pop-menu:has(> .li-c5) { grid-template-columns: repeat(5, 48px); }
+  .pop-menu:has(> .li-c4) { grid-template-columns: repeat(3, 84px); }
+  .pop-menu .nav-act.li-tile, .pop-menu .li-c5.li-tile { min-height: 48px; }
+  .pop-menu:has(> .li-tile) > .nav-act:not(.li-tile) { min-height: 44px; }
+  .ld input[type="text"], .ld select, .ld .nf { min-height: 44px; }
+  .ld-syms { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); }
+  .ld-sym { height: 44px; }
+  .ld-c, .ld-r label { min-height: 44px; }
+  .ld-btns .btn { min-height: 44px; min-width: 72px; }
+  .ld-level input[type="text"] { width: 56px; }
+}

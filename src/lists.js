@@ -1026,7 +1026,8 @@ export function noindentBefore(src, s) {
 // bulleted list; "1. ", "1) ", "(1) ", "a) ", "a. ", "A. ", "(a) ", "i. ", "I. " a numbered one in
 // that format, from that number. The marker without its space; null for none.
 export function autoMarker(t) {
-  if (t === '-' || t === '*') return { name: 'itemize', star: null, start: 1 };
+  // (- and *, a dash a phone's keyboard made of "-", written as -- or ---, and a typed bullet)
+  if (/^(?:-{1,3}|\*|•|–|—)$/.test(t)) return { name: 'itemize', star: null, start: 1 };
   const m = /^(\()?(\d{1,4}|[a-zA-Z]|[ivxIVX]{2,5})([.)])$/.exec(t);
   if (!m || (m[1] && m[3] !== ')')) return null;
   const x = m[2];

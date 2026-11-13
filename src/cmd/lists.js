@@ -15,6 +15,7 @@ import { BLOCKS } from '../render.js';
 import { diffEdit } from '../wrap.js';
 import { docClass, hasPackage, preambleEnd } from '../preamble.js';
 import { NOT_PLAIN } from '../styles.js';
+import { escapeTeX } from '../editor.js';
 import { openMenu } from '../ui/kit.js';
 import { $ } from '../ui/dom.js';
 import { bulletCode, textEngine, readLists, allLists, selectedItems, restartEdit, crlf, noindentBefore, maxStart, SYMBOLS, formatOf, labelEdits, startEdits, resumeEdits, sepEdits, kindEdits, demote, promote, unlist, listFrom, autoMarker, sortEdit,
@@ -95,17 +96,41 @@ register(
 
 // Word's automatic lists: "- " or "1. " typed at a paragraph's start (A3; Options can switch it off:
 // app.prefs.autoLists === false)
+// app.prefs.autoLists === false). A phone's keyboard may send the marker and its space at once
+// ("- ", "1. "), a no-break space, or its autocorrect's replacement of what was typed ("– " for
+// "- ", a target range ending at the caret): each counts as typed there.
 onInsertText((app, text, range) => {
-  if (text !== ' ' || range || (app.prefs && app.prefs.autoLists === false)) return;
+  if (app.prefs && app.prefs.autoLists === false) return;
+  const w = /^(\S{0,6})[ \u00A0]$/.exec(text);
+  if (!w) return;
   const c = app.caretNow();
   if (!c || c.ghost || !c.collapsed) return;
+  if (range && (range.f !== c.f || range.b !== c.a || range.a > c.a)) return;
   const at = app.ribbonAt();
   if (!at || at.cell || !at.it || at.it.dataset.li || !at.B || at.B.f !== c.f) return;
-  const pp = app.plainPara(at.B, at.it);
-  if (!pp || c.a <= pp.s || c.a - pp.s > 6) return;
-  const M = autoMarker(app.src(c.f).slice(pp.s, c.a));
+  const pp = app.plainPara(at.B, at.it), from = range ? range.a : c.a;
+  if (!pp || from < pp.s || c.a - pp.s > 6) return;
+  const typed = escapeTeX(w[1], ' ');
+  const M = autoMarker(app.src(c.f).slice(pp.s, from) + typed);
   if (!M) return;
-  return app.autoList(at, pp, M) ? true : undefined;
+  return app.autoList(at, pp, M, { s: from, e: c.a, t: typed + ' ' }) ? true : undefined;
+});
+// The same where the keyboard composed the marker and its space (an IME's word committed with it):
+// the composition is already written, one step; the list is the next
+onInstall((app) => {
+  app.root.addEventListener('compositionend', (e) => {
+    if (!/[ \u00A0]$/.test(e.data || '') || (app.prefs && app.prefs.autoLists === false)) return;
+    setTimeout(() => {
+      const c = app.caretNow();
+      if (!c || c.ghost || !c.collapsed) return;
+      const at = app.ribbonAt();
+      if (!at || at.cell || !at.it || at.it.dataset.li || !at.B || at.B.f !== c.f) return;
+      const src = app.src(c.f), pp = app.plainPara(at.B, at.it);
+      if (!pp || src[c.a - 1] !== ' ' || c.a - 1 <= pp.s || c.a - pp.s > 7) return;
+      const M = autoMarker(src.slice(pp.s, c.a - 1));
+      if (M) app.autoList(at, pp, M, null);
+    }, 0);
+  });
 });
 
 // Tab and Shift+Tab in a list item change its level (not in a table cell: those keys are the
@@ -493,13 +518,18 @@ export const methods = {
   // The space after "- " or "1. " at a paragraph's start: first the space as typed (its own step),
   // then the paragraph made a list (a step of its own, so Undo gives the typed text back), joined to
   // the list right before it where that one goes on the same way
-  autoList(at, pp, M) {
-    const f = at.B.f, c = at.c, B = at.B;
-    this.commit([{ f, s: c.a, e: c.a, t: ' ' }], { f, p: c.a + 1, bias: -1 }, 'type');
+  // T: what was typed, written first as typed ({ s, e, t }: the space, or the marker and its space
+  // from a phone's keyboard), so Undo gives it back; null where it is written already
+  autoList(at, pp, M, T = { s: at.c.a, e: at.c.a, t: ' ' }) {
+    const f = at.B.f, B = at.B;
+    let rs = at.c.a, e = pp.e;
+    if (T) {
+      this.commit([{ f, s: T.s, e: T.e, t: T.t }], { f, p: T.s + T.t.length, bias: -1 }, 'type');
+      rs = T.s + T.t.length; e = pp.e + T.t.length - (T.e - T.s);
+    }
     this.closeGroup();
     // (the paragraph's own \noindent goes with it: left before \begin it would stand alone)
-    const src = this.src(f), s = noindentBefore(this.src(f), pp.s), e = pp.e + 1;
-    let rs = c.a + 1;
+    const src = this.src(f), s = noindentBefore(this.src(f), pp.s);
     while (rs < e && (src[rs] === ' ' || src[rs] === '\t')) rs++;
     const rest = src.slice(rs, e), guard = rest[0] === '[' ? '{}' : '';
     const cfg = this.listCfg();

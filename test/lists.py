@@ -19,7 +19,11 @@ list Rikuy writes compiles with pdfLaTeX, XeLaTeX and LuaLaTeX and prints those 
 holds each finding of the hostile review of PR 22 as its case: never enumitem beside the enumerate
 package or paralist, one undo for a format with a start, levels and labels left as written when
 OK changes nothing, a bullet pdfLaTeX's fonts lack, Tab going on where it can do nothing, and the
-labels and references TeX prints, each compiled in the page.
+labels and references TeX prints, each compiled in the page. phone_run(), at 390x844 and 360x740
+with touch: list levels by tapped Increase and Decrease Indent (a phone has no Tab), every list
+control a 44 px target, the libraries and the dialogs inside the screen and scrolling in
+themselves, no side scroll, and automatic lists from an on-screen keyboard (the marker and its
+space at once, an autocorrected dash, an IME's composition).
 
 RIKUY_DIST names another dist/."""
 import os, sys, base64, io, re
@@ -496,6 +500,105 @@ def review(page):
     page.set_default_timeout(30000)
 
 
+def tap_text(page, text, off=0):
+    """A finger's tap on the page's text: offset characters into the first span holding text"""
+    xy = page.evaluate('''([t, o]) => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(t)); const n = s.firstChild, i = n.textContent.indexOf(t) + o;
+      const r = document.createRange(); r.setStart(n, i); r.setEnd(n, Math.min(n.length, i + 1)); const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }''', [text, off])
+    page.touchscreen.tap(xy[0], xy[1]); page.wait_for_timeout(300)
+
+
+def tap(page, loc):
+    """A tap on a control, the ribbon's row swiped to it first (a phone shows part of the row)"""
+    loc.evaluate('(e) => e.scrollIntoView({ block: "nearest", inline: "center" })'); page.wait_for_timeout(150)
+    loc.tap(); page.wait_for_timeout(300)
+
+
+def no_side_scroll(page):
+    return page.evaluate('document.documentElement.scrollWidth <= innerWidth && document.body.scrollWidth <= innerWidth')
+
+
+def fits(page, sel):
+    """The open pop up inside the screen across, and inside it down or scrolling within itself"""
+    return page.evaluate('''(sel) => { const p = [...document.querySelectorAll(sel)].pop(); if (!p) return null; const r = p.getBoundingClientRect();
+      return { across: r.left >= 0 && r.right <= innerWidth, down: r.top >= 0 && (r.bottom <= innerHeight || (p.scrollHeight > p.clientHeight && /auto|scroll/.test(getComputedStyle(p).overflowY))), r: [r.left, r.top, r.right, r.bottom], vw: innerWidth, vh: innerHeight }; }''', sel)
+
+
+def phone_run(p, w, h, dark=False):
+    """Lists on a phone: no Tab key, a finger, an on-screen keyboard (the owner's ask: everything
+    works on a phone)"""
+    browser, page, errors = open_page(p, w, h, dark=dark, touch=True)
+    tag = ' (%dx%d)' % (w, h)
+    try:
+        check('the phone is a phone: a coarse pointer' + tag, page.evaluate("matchMedia('(pointer: coarse)').matches"))
+        # list level without Tab: Increase Indent and Decrease Indent, tapped
+        load_doc(page, L3); tap_text(page, 'Two', 1)
+        c = page.evaluate("(() => { const c = window.rikuy.caretNow(); return c && window.rikuy.src('main.tex').slice(c.a - 1, c.a + 2); })()")
+        check('a tap puts the caret in the item' + tag, c is not None and 'w' in c, c)
+        h0 = hist(page)
+        tap(page, page.get_by_role('button', name='Increase Indent', exact=True))
+        check('Increase Indent tapped: the item one level down, one step' + tag, src(page) == L3N and hist(page) == h0 + 1, src(page)[40:])
+        page.keyboard.insert_text('Z'); page.wait_for_timeout(300)
+        check('the caret still types in the item\'s words after it' + tag, 'Z' in src(page)[src(page).find('\\item T'):src(page).find('\\item T') + 14], src(page)[40:])
+        page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+        tap(page, page.get_by_role('button', name='Decrease Indent', exact=True))
+        check('Decrease Indent tapped: back to the bytes of before' + tag, src(page) == L3, src(page)[40:])
+        sizes = page.evaluate('''["Bulleted list", "Bulleted list options", "Numbered list", "Numbered list options", "Multilevel list", "Decrease Indent", "Increase Indent", "Sort"].map((n) => { const b = document.querySelector('.rb [aria-label="' + n + '"]'); const r = b.getBoundingClientRect(); return [n, Math.round(r.width), Math.round(r.height)]; })''')
+        check('every list control is a 44 px target for a finger' + tag, all(x[1] >= 44 and x[2] >= 44 for x in sizes), [x for x in sizes if x[1] < 44 or x[2] < 44])
+        # the bullet library: it fits, its tiles take a finger, a tap applies one
+        load_doc(page, L3); tap_text(page, 'Two', 1)
+        tap(page, page.get_by_role('button', name='Bulleted list options', exact=True))
+        f = fits(page, '.pop-menu')
+        tiles = page.evaluate("[...document.querySelectorAll('.pop-menu .li-tile')].map((t) => Math.round(t.getBoundingClientRect().height))")
+        check('the bullet library fits the screen (or scrolls in itself), no side scroll' + tag, f and f['across'] and f['down'] and no_side_scroll(page), f)
+        check('its tiles are 44 px or more tall' + tag, tiles and min(tiles) >= 44, tiles)
+        tap(page, page.get_by_role('menuitemradio', name='Hollow round bullet', exact=True))
+        check('a tile tapped gives the list its bullet' + tag, '\\begin{itemize}[label=$\\circ$]' in src(page) and labels(page)[:1] == ['◦'], src(page)[40:120])
+        # the dialogs: Define New Number Format typed into with the phone's keyboard, Define New
+        # Multilevel List (the tallest) scrolled to its OK
+        load_doc(page, E3); tap_text(page, 'Two', 1)
+        tap(page, page.get_by_role('button', name='Numbered list options', exact=True))
+        tap(page, page.get_by_role('menuitem', name='Define New Number Format', exact=False).first)
+        f = fits(page, '.pop-list')
+        hs = page.evaluate("[...document.querySelectorAll('.pop-list input[type=text], .pop-list select, .pop-list .nf, .pop-list .ld-btns .btn')].filter((x) => x.offsetParent).map((x) => Math.round(x.getBoundingClientRect().height))")
+        check('Define New Number Format fits the screen, no side scroll' + tag, f and f['across'] and f['down'] and no_side_scroll(page), f)
+        check('its fields and buttons are 44 px tall' + tag, hs and min(hs) >= 44, hs)
+        tap(page, page.get_by_label('Text before', exact=True)); page.keyboard.insert_text('Q')
+        tap(page, page.get_by_role('button', name='OK', exact=True))
+        check('typed on the phone\'s keyboard, OK tapped: the label written' + tag, '[label=Q\\arabic*.]' in src(page), src(page)[40:140])
+        load_doc(page, E3); tap_text(page, 'Two', 1)
+        tap(page, page.get_by_role('button', name='Multilevel list', exact=True))
+        tap(page, page.get_by_role('menuitem', name='Define New Multilevel List', exact=False).first)
+        f = fits(page, '.pop-list')
+        check('Define New Multilevel List fits across and scrolls in itself, no side scroll' + tag, f and f['across'] and f['down'] and no_side_scroll(page), f)
+        tap(page, page.get_by_role('button', name='OK', exact=True))
+        check('scrolled to OK and tapped with nothing changed: the source as it was' + tag, src(page) == E3, src(page)[40:])
+        # automatic lists from the on-screen keyboard: the marker and space at once, a dash its
+        # autocorrect made of "-", the space alone, an IME composing "a) "
+        D = WRAP('Words here.\n\nMore words.')
+        load_doc(page, D); tap_text(page, 'Words', 0)
+        page.keyboard.insert_text('- '); page.wait_for_timeout(400)
+        check('"- " from the phone\'s keyboard at a paragraph\'s start: a bulleted list' + tag, src(page) == WRAP('\\begin{itemize}\n  \\item Words here.\n\\end{itemize}\n\nMore words.'), src(page)[40:])
+        page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+        check('and Undo gives back what was typed' + tag, src(page) == WRAP('- Words here.\n\nMore words.'), src(page)[40:])
+        load_doc(page, D); tap_text(page, 'Words', 0)
+        page.keyboard.insert_text('– '); page.wait_for_timeout(400)
+        check('"– ", the dash a phone\'s autocorrect makes of "-": a bulleted list too' + tag, '\\begin{itemize}\n  \\item Words here.' in src(page), src(page)[40:])
+        load_doc(page, D); tap_text(page, 'More', 0)
+        page.keyboard.insert_text('1.'); page.wait_for_timeout(200); page.keyboard.insert_text(' '); page.wait_for_timeout(400)
+        check('"1." then the space: a numbered list' + tag, '\\begin{enumerate}\n  \\item More words.' in src(page), src(page)[40:])
+        load_doc(page, D); tap_text(page, 'Words', 0)
+        cdp = page.context.new_cdp_session(page)
+        cdp.send('Input.imeSetComposition', {'text': 'a)', 'selectionStart': 2, 'selectionEnd': 2}); page.wait_for_timeout(100)
+        cdp.send('Input.imeSetComposition', {'text': 'a) ', 'selectionStart': 3, 'selectionEnd': 3}); page.wait_for_timeout(100)
+        cdp.send('Input.insertText', {'text': 'a) '}); page.wait_for_timeout(500)
+        check('"a) " composed by an IME and committed with its space: a list a), b)' + tag, '\\begin{enumerate}[label=\\alph*)]\n  \\item Words here.' in src(page) and labels(page)[:1] == ['a)'], src(page)[40:])
+        page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+        check('and Undo gives back the composed text' + tag, src(page) == WRAP('a) Words here.\n\nMore words.'), src(page)[40:])
+        check('no page errors on the phone' + tag, not errors, errors[:3])
+    finally:
+        browser.close()
+
+
 def pdf_check(page):
     if os.environ.get('LISTS_NO_PDF'):
         return
@@ -534,6 +637,9 @@ def run_all():
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
         browser.close()
+        for w, h, dark in ((390, 844, False), (360, 740, True)):
+            try: phone_run(p, w, h, dark)
+            except Exception as e: check('the phone run at %dx%d runs to its end' % (w, h), False, str(e)[:400])
     bad = [r for r in results if not r[1]]
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     sys.exit(1 if bad else 0)

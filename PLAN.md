@@ -1048,11 +1048,24 @@ Tests:
     a stranger's text, both fixed before commit with a bounded time test: the dialogs' reading of
     a label (ten `\q` runs took 15 s) and the check that a list ends an item (30 percent signs
     after an `\end`: 16 s, at every move of the caret); `textEngine`'s patterns bounded. Evidence:
-    `npm test` green with `lists.test.mjs` 24 groups; `lists.py` 142 (with `dist/tex`: nine
-    compiles in the page); `tabs.py` 116; `ribbon.py` 268; `browser.py` 189; `agent.py` 138;
-    `find.py` 76; `outline.py` 59; `word.py` 110; `history.py` 39/39; `paste.py` 25;
-    `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43; `pages_check.py` fits; the
-    model on the corpus 716 of 716.
+    *Phones (the owner's ask):* a phone has no Tab key, so Increase Indent and Decrease Indent are
+    the way, tapped (the ribbon's row swiped to them); under a coarse pointer the list buttons and
+    their arrows, the libraries' tiles and the dialogs' fields, symbols and buttons are 44 px each
+    way, the libraries' grids centred in the bottom sheet; the libraries and dialogs stay inside
+    the screen and scroll in themselves, with no side scroll, at 390 and 360 px; automatic lists
+    take what an on-screen keyboard sends: the marker and its space at once ("- ", "1. "), a no
+    break space, its autocorrect's replacement (a target range ending at the caret), the dash it
+    makes of "-" (the source holds `--` or `---`), and an IME's composition committed with its
+    space (the composition one step, the list the next, so Undo gives the typed text back).
+    `test/lists.py` checks each at 390x844 (light) and 360x740 (dark) with touch, tapping;
+    `open_page` in `test/browser.py` takes `touch=True`. The rest of the ribbon's buttons are still
+    30 px on a phone (B0's row: one rule for it all belongs there). Evidence:
+    `npm test` green with `lists.test.mjs` 24 groups (on main with task 45's tables merged:
+    `table` 46, `word` 57); `lists.py` 184 (142 on a desktop, nine compiles in the page; 42 on
+    the two phones); `table.py` 161; `tabs.py` 116; `ribbon.py` 268; `browser.py` 189;
+    `agent.py` 138; `find.py` 76; `outline.py` 59; `word.py` 110; `history.py` 39/39;
+    `paste.py` 25; `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43;
+    `pages_check.py` fits; actionlint clean; the model on the corpus 716 of 716.
 
 43. **B5, Find, Replace, Go To and the outline, as in Word.** Done in the code (branch
     `wordgap-b5-find`, on task 38's frame; GAP rows H75 to H81, V4, V10, S1, C5). *Find*

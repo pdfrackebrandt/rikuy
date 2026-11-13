@@ -171,7 +171,9 @@ ok('Word\'s automatic list markers', () => {
   assert.deepEqual(m('a)'), ['enumerate', '\\alph*)', 1]); assert.deepEqual(m('(b)'), ['enumerate', '(\\alph*)', 2]);
   assert.deepEqual(m('i.'), ['enumerate', '\\roman*.', 1]); assert.deepEqual(m('IV.'), ['enumerate', '\\Roman*.', 4]);
   assert.deepEqual(m('A.'), ['enumerate', '\\Alph*.', 1]);
-  for (const t of ['1', 'ab.', '(a.', '--', '1.2', '', 'iiii.']) assert.equal(X.autoMarker(t), null, t);
+  // (a phone's keyboard turns "-" into a dash, which the source holds as -- or ---)
+  for (const t of ['--', '---', '–', '—', '•']) assert.deepEqual(m(t), ['itemize', null, 1], t);
+  for (const t of ['1', 'ab.', '(a.', '----', '1.2', '', 'iiii.']) assert.equal(X.autoMarker(t), null, t);
 });
 
 ok('numbers and bullets as the page shows them', () => {
