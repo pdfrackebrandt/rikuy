@@ -825,6 +825,23 @@ Tests:
     documents by address: what anyone kept at `rikuy-3dl.pages.dev` stays reachable there.
     Evidence: `deploy_check.py` 43/43, `agent.py` as before; the live check is in the pull request.
 
+37. **Styles as in Word, with LaTeX among them.** Done in the code (pull request 13), asked for by
+    the owner ("Word + PDF + LaTeX in one, so one of the styles that appear right off should be
+    LaTeX"). A Styles gallery in the ribbon after Word's and WordCraft's (design only, no code
+    taken): Normal, Title in the title, Heading 1 to 3, LaTeX and Quote, each name drawn in its
+    own look, paging arrows and a More menu, the select below 1024 px. LaTeX marks a paragraph
+    with the comment line `% rikuy: latex` (`src/styles.js`): the page shows that paragraph as
+    its source and takes typing as LaTeX, TeX ignores the line, so the PDF is unchanged. Quote
+    wraps the paragraph in a `quote` environment and takes it off byte for byte. Two fresh
+    hostile reviewers (Claude agents, not the free models `docs/REVIEW_PROCESS.md` names): one on
+    use, access and agents (13 findings, the worst the toolbar moving under the pointer while
+    paging), one on the source (12 findings, two high: the caret after a line to come, and words
+    a coauthor added in Word inside a LaTeX paragraph landing in the one before); every finding
+    fixed with a regression test but one, decided and written down: the mark counts only at a
+    paragraph's start. Evidence: `ribbon.py` 265 (146 before), `agent.py` 118, `browser.py` 189,
+    `word.py` 110 with LibreOffice, the corpus's 716 models unchanged. Not done: the right click
+    menu on tiles; typing in a box through an input method; Safari and Firefox.
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000
