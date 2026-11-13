@@ -44,8 +44,12 @@ export const nav = {
     $('#b-nav').setAttribute('aria-pressed', on ? 'true' : 'false');
     if (tab) this.navTab = tab;
     this.navTab = this.navTab || 'outline';
-    // (the Outline view is the panel's Outline tab, wide; leaving the tab or closing the panel ends it)
-    if (!on || this.navTab !== 'outline') this.outlineView = false;
+    // (the Outline view is the panel's Outline tab, wide; leaving the tab or closing the panel ends
+    // it, and the pane's search with it, unless the Find and Replace dialog still shows it)
+    if (!on || this.navTab !== 'outline') {
+      this.outlineView = false;
+      if (this.fs && this.fs.on && !(this.fr && !this.fr.d.hidden)) this.findClear();
+    }
     document.body.classList.toggle('nav-wide', this.navTab === 'changes' || this.navTab === 'git' || !!this.outlineView);
     document.body.classList.toggle('nav-outline', !!this.outlineView);
     for (const [id, t] of [['#nt-outline', 'outline'], ['#nt-problems', 'problems'], ['#nt-changes', 'changes'], ['#nt-git', 'git']]) { $(id).classList.toggle('on', this.navTab === t); $(id).setAttribute('aria-selected', this.navTab === t ? 'true' : 'false'); if (this.navTab === t) $('#nav-body').setAttribute('aria-labelledby', id.slice(1)); }
@@ -205,7 +209,7 @@ export const nav = {
       up: tool('Move up', ICON.mup, 'Move the section, or the paragraph, before the one above it (Alt+Shift+↑)', () => this.navAct('up')),
       down: tool('Move down', ICON.mdown, 'Move the section, or the paragraph, after the one below it (Alt+Shift+↓)', () => this.navAct('down')),
       expand: tool('Expand all', ICON.plus, 'Show every heading under every heading', () => { this.navCollapsed = new Set(); this.paintHeadings(); }),
-      collapse: tool('Collapse all', ICON.minus, 'Show the top headings alone', () => { this.navCollapsed = new Set((this.model.headings || []).map((h) => h.f + ':' + h.s)); this.paintHeadings(); })
+      collapse: tool('Collapse all', ICON.minus, 'Show the top headings alone', () => { this.navCollapsed = new Set(this.renderer.blocks.filter((B) => B.items[0] && B.items[0].kind === 'h').map((B) => 'h' + B.id)); this.paintHeadings(); })
     };
     const lv = mk('select', 'nv-lv');
     lv.setAttribute('aria-label', 'Show levels'); lv.title = 'How many levels of headings the list shows';
@@ -381,23 +385,64 @@ export const nav = {
     }
     const top = hs.length ? Math.min(...hs.map((x) => x.h.level)) : 1;
     // the rows in the document's order: a heading, or a block of text under the heading before it
+    // (not the contents or the bibliography). Each knows its block: its key and the signature of
+    // the rows are the blocks' ids, which an edit elsewhere leaves as they are, so typing in a
+    // long document does not draw every row again.
+    const byPos = new Map();
+    for (const B of this.renderer.blocks) if (B.items[0] && B.items[0].kind === 'h') byPos.set(B.f + ':' + B.s, B);
     const rows = [];
     if (withText) {
-      const byPos = new Map(H.map((h, k) => [h.f + ':' + h.s, k]));
+      const headAt = new Map(H.map((h, k) => [h.f + ':' + h.s, k]));
       for (const B of this.renderer.blocks) {
-        const k = byPos.get(B.f + ':' + B.s);
-        if (k != null && B.items[0] && B.items[0].kind === 'h') { if (H[k].level <= levels) rows.push({ k, h: H[k], B }); }
-        else if (B.items.length && B.items.some((it) => it.el.textContent.trim())) rows.push({ B });
+        const k = B.items[0] && B.items[0].kind === 'h' ? headAt.get(B.f + ':' + B.s) : null;
+        if (k != null) { if (H[k].level <= levels) rows.push({ k, h: H[k], B }); continue; }
+        if (!B.items.length || B.items.some((it) => it.kind === 'refs' || it.kind === 'toc')) continue;
+        if (/[^\s\n￼]/.test(blockText(B).text) || B.atoms.length) rows.push({ B });
       }
-    } else for (const x of hs) rows.push({ k: x.k, h: x.h });
-    // the same rows as drawn now: kept as they are (the focus, a drag, the scroll stay)
-    const sig = JSON.stringify([levels, withText, this.navFirst, [...this.navCollapsed], rows.map((r) => r.h ? [r.k, r.h.f, r.h.s, r.h.level, r.h.num, r.h.text] : [r.B.f, r.B.s, r.B.e, r.B.id])]);
-    if (sig === this.navSig && view.querySelector('.nv-row')) { this.markCurrentHeading(); this.navTools(); return; }
-    this.navSig = sig;
+    } else for (const x of hs) rows.push({ k: x.k, h: x.h, B: byPos.get(x.h.f + ':' + x.h.s) || null });
+    const keyOf = (r) => (r.h ? 'h' : 'b') + (r.B ? r.B.id : 'k' + r.k);
+    const sig = JSON.stringify([levels, withText, this.navFirst, [...this.navCollapsed], rows.map((r) => r.h ? [keyOf(r), r.h.level, r.h.num, r.h.text] : keyOf(r))]);
+    // (one paragraph typed in, in the Outline view: its block was drawn again, so its row alone
+    // takes its new block and words; nothing else is drawn again)
+    const keys = rows.map(keyOf);
+    if (sig !== this.navSig && this.navKeys && this.navRows && view.querySelector('.nv-row') && this.navSet === JSON.stringify([levels, withText, this.navFirst, [...this.navCollapsed]])
+      && keys.length === this.navKeys.length && this.navRows.length === rows.length) {
+      const diffAt = [];
+      for (let i = 0; i < keys.length && diffAt.length < 8; i++) if (keys[i] !== this.navKeys[i]) diffAt.push(i);
+      if (diffAt.length && diffAt.length < 8 && diffAt.every((i) => !rows[i].h && !this.navRows[i].h)) {
+        for (const i of diffAt) {
+          const x = this.navRows[i], r = rows[i], key = keys[i], b = x.row.querySelector('.nv-txt');
+          if (this.navSel === x.key) this.navSel = key;
+          x.B = r.B; x.key = key; x.row.dataset.key = key;
+          if (b) { b.dataset.key = key; const words = blockText(r.B).text.replace(/[\n\uFFFC\s]+/g, ' ').trim(); b.textContent = words.slice(0, this.navFirst ? 200 : 2000); }
+        }
+        const byKey = new Map(rows.map((r) => [keyOf(r), r]));
+        for (const x of this.navRows) { const r = byKey.get(x.key); if (r) { x.h = r.h; x.k = r.k; } }
+        for (const x of this.navHeads || []) { const r = byKey.get(x.key); if (r) x.h = r.h; }
+        this.navSig = sig; this.navKeys = keys;
+        this.markCurrentHeading(); this.navTools();
+        return;
+      }
+    }
+    if (sig === this.navSig && view.querySelector('.nv-row') && this.navRows) {
+      // the same rows: each takes the model's heading and place as they are now
+      const byKey = new Map(rows.map((r) => [keyOf(r), r]));
+      for (const x of this.navRows) { const r = byKey.get(x.key); if (r) { x.h = r.h; x.k = r.k; x.B = r.B; } }
+      for (const x of this.navHeads || []) { const r = byKey.get(x.key); if (r) x.h = r.h; }
+      this.markCurrentHeading(); this.navTools();
+      return;
+    }
+    this.navSig = sig; this.navKeys = keys;
+    this.navSet = JSON.stringify([levels, withText, this.navFirst, [...this.navCollapsed]]);
     view.replaceChildren();
+    // a tree, as Word's: its rows are tree items with their level; the arrows move, Left and Right
+    // collapse and expand (the triangles are the mouse's way to the same)
+    const tree = mk('div', 'nv-tree');
+    tree.setAttribute('role', 'tree'); tree.setAttribute('aria-label', withText ? 'Outline' : 'Headings');
+    view.append(tree);
     // what is hidden under a collapsed heading: the rows after it until one of its level or higher
     let hideTo = null, depth = 0;
-    const kids = (i) => { const r = rows[i]; for (let j = i + 1; j < rows.length; j++) { const x = rows[j]; if (x.h && x.h.level <= r.h.level) return false; return true; } return false; };
+    const kids = (i) => { const r = rows[i], x = rows[i + 1]; return !!x && !(x.h && x.h.level <= r.h.level); };
     this.navHeads = [];
     this.navRows = [];
     rows.forEach((r, i) => {
@@ -408,42 +453,46 @@ export const nav = {
       if (hideTo != null) return;
       const row = mk('div', 'nv-row' + (r.h ? '' : ' nv-b'));
       row.style.setProperty('--d', String(r.h ? depth : depth + 1));
-      const key = r.h ? 'h' + r.k : 'b' + r.B.f + ':' + r.B.s;
+      const key = keyOf(r);
+      const x = { ...r, key, row };
       if (r.h) {
-        const ck = r.h.f + ':' + r.h.s, has = kids(i), shut = has && this.navCollapsed.has(ck);
+        const ck = key, has = kids(i), shut = has && this.navCollapsed.has(ck);
         if (has) {
           const tg = mk('button', 'nv-tog');
           tg.type = 'button'; tg.tabIndex = -1;
-          tg.setAttribute('aria-expanded', shut ? 'false' : 'true');
-          tg.setAttribute('aria-label', (shut ? 'Expand ' : 'Collapse ') + (r.h.text || 'heading'));
+          tg.setAttribute('aria-hidden', 'true');
+          tg.title = (shut ? 'Expand ' : 'Collapse ') + (r.h.text || 'heading');
           tg.insertAdjacentHTML('beforeend', SVG(ICON.tog));
           tg.addEventListener('click', () => this.navToggle(ck));
           row.append(tg);
         } else row.append(mk('span', 'nv-tog none'));
         const b = mk('button', 'nav-item l' + Math.min(3, r.h.level - top));
         b.type = 'button'; b.dataset.key = key; b.draggable = true;
+        b.setAttribute('role', 'treeitem'); b.setAttribute('aria-level', String(depth + 1));
+        b.setAttribute('aria-label', ((r.h.star ? '' : (r.h.num || '')) + ' ' + (r.h.text || '')).trim());
         const n = mk('span', 'num', r.h.star ? '' : (r.h.num || ''));
         const t = mk('span', '', r.h.text || '');
         b.append(n, t);
         if (has) b.setAttribute('aria-expanded', shut ? 'false' : 'true');
-        b.addEventListener('click', () => { this.navSel = key; this.goTo(r.h.f, r.h.s, true); if (window.innerWidth <= 860) this.toggleNav(false); });
+        b.addEventListener('click', () => { this.navSel = key; this.goTo(x.h.f, x.h.s, true); if (window.innerWidth <= 860) this.toggleNav(false); });
         row.append(b);
-        this.navHeads.push({ h: r.h, b });
+        this.navHeads.push({ h: r.h, b, key });
         if (shut) hideTo = r.h.level;
       } else {
         row.append(mk('span', 'nv-tog none'));
         const b = mk('button', 'nv-txt' + (this.navFirst ? ' one' : ''));
         b.type = 'button'; b.dataset.key = key; b.draggable = true;
+        b.setAttribute('role', 'treeitem'); b.setAttribute('aria-level', String(depth + 2));
         // (the page's own words, as text: the first line, or all of it; a formula or a figure by
         // what the page draws for it)
-        const words = blockText(r.B).text.replace(/[\n\uFFFC\s]+/g, ' ').trim();
+        const words = blockText(r.B).text.replace(/[\n￼\s]+/g, ' ').trim();
         b.textContent = (words || r.B.items.map((it) => it.el.textContent.replace(/\s+/g, ' ').trim()).filter(Boolean).join(' ')).slice(0, this.navFirst ? 200 : 2000);
-        b.addEventListener('click', () => { this.navSel = key; this.goTo(r.B.f, r.B.s); });
+        b.addEventListener('click', () => { this.navSel = key; this.goTo(x.B.f, x.B.s); });
         row.append(b);
       }
       row.dataset.key = key;
-      this.navRows.push({ ...r, key, row });
-      view.append(row);
+      this.navRows.push(x);
+      tree.append(row);
     });
     if (had) { const b = view.querySelector('button[data-key="' + CSS.escape(had) + '"]'); if (b) b.focus({ preventScroll: true }); }
     this.navTreeEvents(view);
@@ -484,18 +533,25 @@ export const nav = {
   navAct(what) {
     const r = this.navRow();
     if (!r) return;
-    const key = r.key;
-    if (what === 'promote' || what === 'demote') { if (r.h) this.promoteAt(r.k, what === 'promote' ? -1 : 1); }
-    else {
+    // where the heading or paragraph will be, for the row chosen to follow it
+    let f = null, p = 0;
+    if (what === 'promote' || what === 'demote') {
+      if (!r.h) return;
+      f = r.h.f; p = r.h.s;
+      this.promoteAt(r.k, what === 'promote' ? -1 : 1);
+    } else {
       const at = this.navAt(r), dir = what === 'up' ? -1 : 1, mv = at && this.moveEditsAt(at, dir);
       if (!mv) return;
       this.commitMove(mv, null, dir);
-      // the row chosen follows its heading or paragraph to where it went
       const c = this.caretNow();
-      if (c && r.h) { const k = (this.model.headings || []).findIndex((h) => h.f === c.f && h.s >= c.a - 1); this.navSel = k >= 0 ? 'h' + k : key; }
-      else if (c) this.navSel = 'b' + c.f + ':' + (this.renderer.blocks.find((B) => B.f === c.f && B.s <= c.p && c.p <= B.e) || { s: c.p }).s;
+      if (c) { f = c.f; p = c.a; }
     }
-    if (this.navOpen('outline')) { this.refreshNav(); const b = this.nv && this.nv.view.querySelector('button[data-key="' + CSS.escape(this.navSel || key) + '"]'); if (b) b.focus({ preventScroll: true }); }
+    if (!this.navOpen('outline')) return;
+    this.refreshNav();
+    const x = f != null && (this.navRows || []).find((y) => y.B && y.B.f === f && y.B.s <= p && p <= y.B.e);
+    if (x) this.navSel = x.key;
+    const b = this.nv && this.nv.view.querySelector('button[data-key="' + CSS.escape(this.navSel || r.key) + '"]');
+    if (b) b.focus({ preventScroll: true });
   },
 
   // the tree's keys and dragging, set once on its view
@@ -521,7 +577,7 @@ export const nav = {
       else if (e.key === 'Home') to(0);
       else if (e.key === 'End') to(all.length - 1);
       else if ((e.key === 'ArrowLeft' || e.key === 'ArrowRight') && r.h) {
-        const ck = r.h.f + ':' + r.h.s, shut = (this.navCollapsed || new Set()).has(ck), tg = r.row.querySelector('button.nv-tog');
+        const ck = r.key, shut = (this.navCollapsed || new Set()).has(ck), tg = r.row.querySelector('button.nv-tog');
         if (tg && (e.key === 'ArrowLeft') !== shut) { e.preventDefault(); this.navSel = r.key; this.navToggle(ck); }
       }
     });
@@ -563,23 +619,24 @@ export const nav = {
       this.navDrop(d, t.r, t.after);
     });
   },
-  // where a dragged row lands: before row r, or (after) past it
+  // where a dragged row lands: before row r, or (after) past it. Past the last row is the end of
+  // its section or its paragraph, never past \appendix or the bibliography (sectionRange stops
+  // before them; the Outline view lists neither the contents nor the bibliography as rows).
   navDrop(d, r, after) {
     const H = this.model.headings || [];
     if (d.h) {
-      // before heading r.k, or before the next heading of r's level or higher (its section's end)
-      let t = r.k;
-      if (after) { t = -1; for (let j = r.k + 1; j < H.length; j++) if (H[j].level <= r.h.level) { t = j; break; } }
-      if (t === d.k) return false;
-      this.navSel = d.key;
-      return this.moveSectionTo(d.k, t);
+      if (!after) return r.k === d.k ? false : this.moveSectionTo(d.k, r.k);
+      for (let j = r.k + 1; j < H.length; j++) if (H[j].level <= r.h.level) return j === d.k ? false : this.moveSectionTo(d.k, j);
+      return this.moveSectionTo(d.k, r.k, true);
     }
-    const rows = this.navRows || [], i = rows.indexOf(r);
-    let to;
-    if (!after) to = r.h ? r.h.s : r.B.s;
-    else { const n = rows[i + 1]; to = n ? (n.h ? n.h.s : n.B.s) : this.bodyEnd(d.B.f); if (n && (n.h ? n.h.f : n.B.f) !== d.B.f) return false; }
-    if ((r.h ? r.h.f : r.B.f) !== d.B.f) { this.toast('Paragraphs move within their file.'); return false; }
-    return this.moveBlockTo(d.B, d.B.f, to);
+    const rows = this.navRows || [], i = rows.indexOf(r), f = d.B.f;
+    const fileOf = (x) => x.h ? x.h.f : x.B.f;
+    if (fileOf(r) !== f) { this.toast('Paragraphs move within their file.'); return false; }
+    if (!after) return this.moveBlockTo(d.B, f, r.h ? r.h.s : r.B.s);
+    const n = rows[i + 1];
+    if (n && fileOf(n) === f) return this.moveBlockTo(d.B, f, n.h ? n.h.s : n.B.s);
+    const end = r.h ? this.sectionOf(r.k) : { e: r.B.e };
+    return !!end && this.moveBlockTo(d.B, f, end.e, true);
   },
 
   // Ctrl+Alt+O: Word's Outline view, here the side panel's headings with the paragraphs under

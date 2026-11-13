@@ -73,7 +73,10 @@ function build(app) {
   const st = el('div', 'fr-st');
   st.setAttribute('role', 'status'); st.setAttribute('aria-live', 'polite');
   const btns = el('div', 'fr-btns');
+  // (named "Replace one": Home's Replace, which opens this dialog, keeps the name "Replace", so an
+  // agent finds each by its name alone; the visible word is Word's)
   const bRep = button('Replace', 'ghost sm fr-rep', 'Replace the result shown, then show the next (Enter in Replace with)');
+  bRep.setAttribute('aria-label', 'Replace one');
   const bAll = button('Replace All', 'ghost sm fr-rep', 'Replace every result at once: one undo takes it all back');
   const bPrev = button('Find Previous', 'ghost sm', 'The result before (Shift+Enter)');
   const bNext = button('Find Next', 'sm', 'The next result (Enter)');
@@ -230,12 +233,13 @@ export function openFindDialog(app, tab = 'find') {
   if (s.rangeCount && app.root.contains(s.anchorNode)) app.rbRange = s.getRangeAt(0).cloneRange();
   if (c && !c.collapsed && !c.ghost && c.f != null && tab !== 'goto') {
     // (a few words are what to find; more, a sentence or a paragraph, are where to look; either
-    // way the selection can be ticked as the place)
+    // way the selection can be ticked as the place, and it follows the edits made in it)
     const words = String(s).trim();
     fs.sel = { f: c.f, a: c.a, b: c.b };
+    (fs.snap = fs.snap || new Map()).set(c.f, app.src(c.f));
     if (words && words.length <= 32 && !/\n/.test(words) && words.split(/\s+/).length <= 4) { D.q.value = words; fs.q = words; fs.o.insel = false; }
     else fs.o.insel = true;
-  } else if (!fs.o.insel) fs.sel = null;
+  } else if (tab !== 'goto') { fs.sel = null; fs.o.insel = false; }
   D.q.value = fs.q;
   D.r.value = fs.rep;
   D.d.hidden = false;

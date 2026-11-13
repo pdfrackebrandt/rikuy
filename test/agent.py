@@ -300,7 +300,8 @@ def names(page, width):
     check('the registry keeps every name these tests began with, on the same element' + w, all(NAMES.get(i) == n for i, n in KEPT.items()), [(i, NAMES.get(i)) for i, n in KEPT.items() if NAMES.get(i) != n])
     check('every control in view has its one name, and no other control has it' + w, not wrong and not twice and set(seen) == (wide if width > 1000 else narrow), (wrong, twice, sorted(set(seen) ^ (wide if width > 1000 else narrow))))
     if width > 1000:
-        loose = {NAMES[i]: page.get_by_role('button', name=NAMES[i]).count() for i in GALLERY if page.locator('#' + i).is_visible()}
+        # (the gallery's tiles: Home's Find is found loosely with its arrow, Find options, as Word's)
+        loose = {NAMES[i]: page.get_by_role('button', name=NAMES[i]).count() for i in GALLERY if i.startswith('rb-st-') and page.locator('#' + i).is_visible()}
         check('each style button in view is found by its name also without exact matching ("LaTeX source", not "Download LaTeX")' + w, loose and all(v == 1 for v in loose.values()), loose)
     check('each keeps its longer hint as a title' + w, page.evaluate('(ids) => ids.every((i) => { const b = document.getElementById(i); return b.title.length > 3 && b.getAttribute("aria-label").length <= b.title.length + 12; })', [i for i in NAMES if i not in ('b-new', 'b-sample') and ROLE[i] != 'group']))
     check('no glyph is read as part of a name' + w, page.evaluate('''() => [...document.querySelectorAll('#bar svg, #ribbon svg, #ribbon b, #ribbon i, #ribbon u, #bubble b, #bubble i')].every((x) => x.getAttribute('aria-hidden') === 'true')'''))
@@ -487,7 +488,8 @@ def audit(page, cdp, width):
     fr.wait_for(timeout=4000)
     check('the Find and Replace dialog\'s tabs, fields, options and buttons have names' + w, all(fr.get_by_role('tab', name=n, exact=True).count() == 1 for n in ('Find', 'Replace', 'Go To'))
           and all(fr.get_by_label(n, exact=True).count() == 1 for n in ('Find what', 'Replace with', 'Match case', 'Find whole words only', 'Use wildcards', 'Use regular expressions', 'In LaTeX source', 'In selection'))
-          and all(fr.get_by_role('button', name=n, exact=True).count() == 1 for n in ('Find Next', 'Find Previous', 'Replace', 'Replace All', 'Close')))
+          and all(fr.get_by_role('button', name=n, exact=True).count() == 1 for n in ('Find Next', 'Find Previous', 'Replace one', 'Replace All', 'Close'))
+          and page.get_by_role('button', name='Replace', exact=True).count() <= 1)
     page.keyboard.press('Escape'); page.wait_for_timeout(150)
     check('Escape closes it' + w, fr.count() == 0 or not fr.is_visible())
     first(); page.keyboard.press('Control+f'); page.wait_for_timeout(250)

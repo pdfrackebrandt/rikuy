@@ -220,12 +220,18 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   the accessibility tree; the Download group is one element, moved into the open toolbar.
   `ribbonSync` (60 ms after the caret moves) shows the contextual tabs, disables what cannot run
   (`when`) and presses what is on (`on`), with `at.memo` so two commands asking the same
-  (`listAt`, `blockStyle`) compute it once. `ribbonFit` gives way as Home always has (fewer
-  tiles, no Download label, no names, the style list) and then folds whole groups, the lowest
-  `rank` first, into a button named after the group whose menu has the same commands by the
-  same names; below 861 px the tabs are the combobox "Ribbon tab" (a contextual tab's option
-  hidden with its tab), the three downloads become the phone's one Download button where the row
-  has no room for them, and a phone's row scrolls. Ctrl+F1 (from a field too) folds the ribbon
+  (`listAt`, `blockStyle`) compute it once. `ribbonFit` is one rule for every tab and width:
+  everything open, then one step at a time while the row is too long, the cheapest loss first
+  counted in controls (the Download label and the buttons' names, which take none; a tile of the
+  gallery, down to three; the three downloads as one Download button; the style list for the
+  gallery; then groups, rank 1 and then the lowest `rank` first, of equal ranks the rightmost,
+  each into one button named after the group, its first command's icon, whose menu has the same
+  commands by the same names); then each step tried back, the last first, kept undone where the
+  row still fits. So no group stays folded where it would fit open, and a narrower window never
+  shows more controls than a wider one but where the tries back open a group of lower rank that
+  a later, smaller one made room for (`test/tabs.py` sweeps 390 to 1920 px on every tab). Below
+  861 px the tabs are the combobox "Ribbon tab" (a contextual tab's option hidden with its tab)
+  and the style sheet has the list; below 521 px no group folds and a phone's row scrolls. Ctrl+F1 (from a field too) folds the ribbon
   to its tabs and keeps that for the next visit; a tab pressed then shows it for a moment
   (`peekRibbon`), as Word's "Show tabs only" does, until the page is pressed or a button ran.
   `src/keys.js` binds each command's `keys` (Ctrl is Cmd on a Mac; `mac` gives a Mac's own or
@@ -267,9 +273,9 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   on lines around the words, a heading its command and braces; each way back restores the bytes.
   A heading or a quote is offered for a LaTeX paragraph only where its source is one paragraph
   of text. The gallery (`paintGallery`) shows as many tiles as the row has room for, each as wide
-  as its name: `ribbonFit` drops tiles (six to three) before the insert buttons lose their names,
-  then the Download label, then the names, and puts the style list in its place where three do
-  not fit and on phones. LaTeX is always on the first page (`tileOrder`: Normal, Heading 1, LaTeX
+  as its name: `ribbonFit` takes the Download label and the insert buttons' names first (they
+  lose no control), then tiles (six to three), and puts the style list in its place where three
+  do not fit and on phones. LaTeX is always on the first page (`tileOrder`: Normal, Heading 1, LaTeX
   for three). Pages of n tiles start every n and the last one is full (`pageStarts`); the row
   keeps the width of its widest page, so the arrows do not move under the pointer, and it pages
   to the caret's style when the caret moves to another block. A tile that cannot apply is
@@ -302,8 +308,9 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   neighbours with the space between kept (Move up and Move down: sections, paragraphs, list
   items), `moveEdits` takes one elsewhere (a heading dragged in the Navigation pane).
   Where Home's row is short its least needed group, Editing (rank 1), folds first into one icon
-  button "Editing" (`ribbonFit`, both the gallery's row and the list's), and `chordText`
-  (`src/keys.js`) writes the outline's keys in menus and tooltips as Alt+Shift+←.
+  button "Editing" (`ribbonFit`; from 860 px down, where the names, tiles and downloads have no
+  more to give), and `chordText` (`src/keys.js`) writes the outline's keys in menus and tooltips
+  as Alt+Shift+←.
   `src/nav.js` draws the Navigation pane in the side panel's Outline tab: the box, Headings (a
   tree with collapse, Show levels, the Outlining toolbar, Alt+Shift and the arrows, dragging; in
   the Outline view the paragraphs too, by their first line), Pages (each page cloned small,

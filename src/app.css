@@ -274,11 +274,6 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
 .src-head { display: flex; align-items: flex-end; border-bottom: 1px solid var(--line); background: var(--chrome); flex: none; }
 .src-head .ftabs { flex: 1 1 auto; min-width: 0; border-bottom: 0; }
 .src-head .btn { flex: none; margin: 0 6px 4px; }
-/* the names of the things to insert need about 1280px beside the rest; narrower, their icons alone */
-@media (max-width: 1280px) {
-  .rb-grp > .btn:not(.icon):not(.rb-gbtn) span:not(.sr) { display: none; }
-  .rb-grp > .btn:not(.icon):not(.rb-gbtn) { width: 32px; padding: 0; justify-content: center; }
-}
 /* menus: a folded group's, a split button's, the right click menu; their items' keys at the right */
 .pop.pop-menu { width: auto; min-width: 200px; max-width: min(380px, calc(100vw - 16px)); padding: 5px; gap: 0; }
 .pop-menu .nav-act { width: 100%; min-height: 32px; font-weight: 400; position: relative; padding: 0 10px 0 26px; }
@@ -1012,13 +1007,20 @@ body.guest #b-new, body.guest #b-sample { display: none; }
 .fr-btns .btn.ghost { border: 1px solid var(--line); }
 .fr .hint { margin: -2px 0 0; }
 #fr-p-goto .fr-f { grid-template-columns: 1fr; gap: 3px; }
-/* a group folded early (ribbonFit: rank 1, Editing on Home) is one icon button, its first
-   command's icon, with no line before it; its name stays its accessible name and its tooltip */
+/* a folded group (ribbonFit) is one button, 24 px: its first command's icon, with no line before
+   it; its name stays its accessible name and its tooltip. One with no icon shows its name, below
+   861 px too, where the style sheet takes the other buttons' names. */
 .rb-gbtn .rb-gico { display: none; }
-.rb-grp.early > .rb-gbtn { width: 24px; padding: 0; justify-content: center; }
-.rb-grp.early > .rb-gbtn .rb-gico { display: inline; width: 17px; height: 17px; }
-.rb-grp.early > .rb-gbtn > span, .rb-grp.early > .rb-gbtn > svg:not(.rb-gico) { display: none; }
-.sep:has(+ .rb-grp.early) { display: none; }
+.rb-grp.ico > .rb-gbtn { width: 24px; padding: 0; justify-content: center; }
+.rb-grp.ico > .rb-gbtn .rb-gico { display: inline; width: 17px; height: 17px; }
+.rb-grp.ico > .rb-gbtn > span, .rb-grp.ico > .rb-gbtn > svg:not(.rb-gico) { display: none; }
+.sep:has(+ .rb-grp.ico) { display: none; }
+.rb .rb-grp.folded:not(.ico) > .rb-gbtn > span { display: inline; }
+.rb .rb-grp.folded:not(.ico) > .rb-gbtn { width: auto; padding: 0 4px 0 8px; }
+/* (and it takes the room it needs from the space before the downloads, which keep their own
+   padding: Home keeps the gallery down to 900 px with Editing folded) */
+.rb-tb > .rb-grp.ico { margin-left: -2px; }
+.rb-tb > .rb-grp.ico ~ .grow { flex-basis: 0; min-width: 0; }
 /* Find is a split button: with the row folded its name goes as the other buttons' names do */
 .rb.rb-fold .rb-grp .rb-split > #rb-find { width: 32px; padding: 0; justify-content: center; }
 .rb.rb-fold .rb-grp .rb-split > #rb-find > span { display: none; }

@@ -118,9 +118,15 @@ def pane(page):
     check('its box, its tabs and its toolbar by name', page.get_by_role('searchbox', name='Search document', exact=True).count() == 1 and page.get_by_role('tablist', name='Navigation', exact=True).count() == 1
           and all(page.get_by_role('toolbar', name='Outlining', exact=True).get_by_role('button', name=n, exact=True).count() == 1 for n in ('Promote', 'Demote', 'Move up', 'Move down', 'Expand all', 'Collapse all'))
           and page.get_by_role('combobox', name='Show levels', exact=True).count() == 1)
-    page.get_by_role('button', name='Collapse Alpha', exact=True).click(); page.wait_for_timeout(200)
+    tree = page.get_by_role('tree', name='Headings', exact=True)
+    check('Headings is a tree: its rows tree items named by number and title, with their level', tree.count() == 1 and tree.get_by_role('treeitem', name='1.1 Alpha one', exact=True).get_attribute('aria-level') == '2'
+          and tree.get_by_role('treeitem', name='1 Alpha', exact=True).get_attribute('aria-expanded') == 'true')
+    tree.get_by_role('treeitem', name='1 Alpha', exact=True).focus(); page.keyboard.press('ArrowLeft'); page.wait_for_timeout(200)
     rows = page.evaluate("[...document.querySelectorAll('#nv-view .nav-item')].map((b) => b.textContent)")
-    check('a heading collapsed hides those under it, its button now Expand', rows == ['1Alpha', '2Beta', '3Gamma'] and page.get_by_role('button', name='Expand Alpha', exact=True).get_attribute('aria-expanded') == 'false', rows)
+    check('Left on a heading collapses it: those under it hidden, the item says so', rows == ['1Alpha', '2Beta', '3Gamma'] and tree.get_by_role('treeitem', name='1 Alpha', exact=True).get_attribute('aria-expanded') == 'false', rows)
+    page.locator('#nv-view .nv-row', has=page.locator('.nav-item', has_text='Alpha')).first.locator('.nv-tog').click(); page.wait_for_timeout(200)
+    check('and its triangle expands it again', page.evaluate("document.querySelectorAll('#nv-view .nav-item').length") == 4)
+    page.locator('#nv-view .nav-item', has_text='Alpha').first.focus(); page.keyboard.press('ArrowLeft'); page.wait_for_timeout(150)
     page.get_by_role('button', name='Expand all', exact=True).click(); page.wait_for_timeout(200)
     page.get_by_role('combobox', name='Show levels', exact=True).select_option('1'); page.wait_for_timeout(200)
     rows = page.evaluate("[...document.querySelectorAll('#nv-view .nav-item')].map((b) => b.textContent)")
@@ -181,6 +187,62 @@ def outline_view(page):
     page.get_by_role('tablist', name='Ribbon', exact=True).get_by_role('tab', name='Home', exact=True).click()
 
 
+def review(page):
+    """The cases of the hostile review of fa621a4 and 054a1f2, each as the reader wrote it."""
+    # 3. a paragraph moved past a heading never runs into the paragraph beyond it
+    d1 = WRAP('Para one.\n\n\\section{A}\nPara two.')
+    load_doc(page, d1); click_text(page, 'Para one', 2); key(page, 'Alt+Shift+ArrowDown')
+    check('review 3: Alt+Shift+Down on a paragraph before a heading: after it, a paragraph of its own (a blank line before Para two)', src(page) == WRAP('\\section{A}\n\nPara one.\n\nPara two.'), src(page))
+    d2 = WRAP('Text a.\n\\section{B}\nPara b.')
+    load_doc(page, d2); click_text(page, 'Para b', 2); key(page, 'Alt+Shift+ArrowUp')
+    check('and Alt+Shift+Up on one under a heading: before it, apart from the text before (Text a.)', src(page) == WRAP('Text a.\n\nPara b.\n\n\\section{B}'), src(page))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    check('one undo, the bytes back', src(page) == d2)
+    # 5. dragged below the last heading: before the bibliography, not after it
+    bib = ('\\documentclass{article}\n\\begin{document}\n\\section{One}\nText one.\n\n\\section{Two}\nText two.\n\\subsection{Two A}\nMore.\n\n'
+           '\\bibliographystyle{plain}\n\\bibliography{refs}\n\\end{document}\n')
+    load_doc(page, bib)
+    page.evaluate('window.rikuy.toggleNav(true, "outline"); window.rikuy.setNavView("headings")'); page.wait_for_timeout(400)
+    rows = page.locator('#nv-view .nav-item')
+    bb = rows.nth(2).bounding_box()
+    rows.nth(0).drag_to(rows.nth(2), target_position={'x': 10, 'y': bb['height'] - 2}); page.wait_for_timeout(500)
+    want = bib.replace('\\section{One}\nText one.\n\n', '').replace('More.\n\n', 'More.\n\n\\section{One}\nText one.\n\n')
+    check('review 5: a section dropped under the last heading goes to the end of that section, before \\bibliographystyle', src(page) == want, src(page))
+    load_doc(page, bib)
+    r = page.evaluate('window.rikuy.moveSectionTo(0, -1)'); page.wait_for_timeout(200)
+    check('and moveSectionTo(k, -1), "to the end", stops before the bibliography too', r and src(page) == want, src(page))
+    load_doc(page, bib)
+    page.evaluate('window.rikuy.setOutlineView(true)'); page.wait_for_timeout(400)
+    t = page.evaluate("[...document.querySelectorAll('#nv-view .nv-row')].map((r) => r.textContent)")
+    txt = page.locator('#nv-view .nv-txt', has_text='Text one')
+    last = page.locator('#nv-view .nv-txt').last
+    bb = last.bounding_box()
+    txt.drag_to(last, target_position={'x': 10, 'y': bb['height'] - 2}); page.wait_for_timeout(500)
+    check('a paragraph dropped under the Outline view\'s last row lands after it, before the bibliography (which is no row)', src(page) == bib.replace('Text one.\n\n', '').replace('More.\n\n', 'More.\n\nText one.\n\n') and not any('References' in x for x in t), (src(page), t))
+    page.evaluate('window.rikuy.setOutlineView(false)')
+    # 8. typing in the Outline view draws one row again, not all of them
+    big = WRAP('\n\n'.join(('\\section{S%d}\n' % k if k % 10 == 0 else '') + 'Paragraph number %d with some words in it.' % k for k in range(300)))
+    load_doc(page, big); page.wait_for_timeout(300)
+    page.evaluate('window.rikuy.setOutlineView(true)'); page.wait_for_timeout(600)
+    page.evaluate("[...document.querySelectorAll('#nv-view .nv-row')].forEach((r) => { r.__kept = 1; })")
+    click_text(page, 'Paragraph number 5 ', 3); page.keyboard.type('xyz'); page.wait_for_timeout(600)
+    st = page.evaluate("(() => { const rs = [...document.querySelectorAll('#nv-view .nv-row')]; return [rs.length, rs.filter((r) => r.__kept).length, rs.filter((r) => r.textContent.includes('Parxyzagraph number 5 ')).length]; })()")
+    check('review 8: typing in a paragraph in the Outline view keeps every row element but its own, whose words follow', st[0] > 300 and st[1] == st[0] and st[2] == 1, st)
+    page.evaluate('window.rikuy.setOutlineView(false)')
+    # low: a file with Windows line breaks keeps them
+    crlf = '\\documentclass{article}\r\n\\begin{document}\r\n\\section{A}\r\nText a.\r\n\r\n\\section{B}\r\nText b.\r\n\\end{document}\r\n'
+    load_doc(page, crlf); click_text(page, 'B', 0); key(page, 'Alt+Shift+ArrowUp')
+    got = src(page)
+    check('low: sections moved in a file with Windows line breaks: they stay \\r\\n', got == '\\documentclass{article}\r\n\\begin{document}\r\n\\section{B}\r\nText b.\r\n\r\n\\section{A}\r\nText a.\r\n\\end{document}\r\n', repr(got))
+    # low: a theorem's paragraph stays in its theorem; a \noindent paragraph moves with its \noindent
+    thm = WRAP('Before.\n\n\\begin{proof}\nFirst of proof.\n\nSecond of proof.\n\\end{proof}\n\nAfter.')
+    load_doc(page, thm); click_text(page, 'Second of', 2); key(page, 'Alt+Shift+ArrowUp')
+    check('low: Move up in a paragraph of a proof of two paragraphs moves nothing (not the whole proof)', src(page) == thm, src(page))
+    ni = WRAP('First para.\n\n\\noindent Second para.')
+    load_doc(page, ni); click_text(page, 'Second para', 2); key(page, 'Alt+Shift+ArrowUp')
+    check('low: a paragraph that starts with \\noindent moves, its \\noindent with it', src(page) == WRAP('\\noindent Second para.\n\nFirst para.'), src(page))
+
+
 def pdf_check(page):
     if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
         print('SKIP the PDF of a promoted heading: no TeX tree in %s' % DIST)
@@ -201,7 +263,7 @@ def pdf_check(page):
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (promote_demote, moves, heading_menu, pane, outline_view, pdf_check):
+        for f in (promote_demote, moves, heading_menu, pane, outline_view, review, pdf_check):
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])

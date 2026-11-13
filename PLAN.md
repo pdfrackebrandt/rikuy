@@ -965,13 +965,10 @@ Tests:
     only for the thumbnails in sight); Results also lists figures, tables, equations, footnotes
     or comments (Search options). *Outline view* (View ▸ Outline, Ctrl+Alt+O): the panel wide,
     the paragraphs under their headings by their first line, movable as the headings are. *The
-    frame:* where Home's row is short, its least needed group (rank 1, Editing) folds first, into
-    one icon button "Editing" whose menu has Find, Replace and Select, before the gallery
-    shrinks or a button loses its name, as Word folds it (`ribbonFit`), and in the style list's row
-    below 1025 px before the Download label or the three downloads give way; so Home keeps task
-    38's look at every width it is tested at (whole at 860 px, the three downloads to 1024), and
-    Find, Replace and Select are `fit` controls (shown as the row has room, as the gallery's
-    tiles). Menus, the search box and tooltips write arrow keys as arrows (`chordText`:
+    frame:* `ribbonFit` is one rule for every tab and width (below), Home's Editing group folding
+    first, into one icon button "Editing" whose menu has Find, Advanced Find, Go To, Replace and
+    Select, and Find, Replace and Select are `fit` controls (shown as the row has room, as the
+    gallery's tiles). Menus, the search box and tooltips write arrow keys as arrows (`chordText`:
     Alt+Shift+←); controls.json and llms.txt keep the names an agent presses. *For agents:* llms-full.txt says the keys, the
     dialog's and the pane's names; the Help dialog lists Ctrl+F, H, G, Alt+Shift and the arrows,
     Ctrl+Alt+O. *Security:* the audit skill's quick profile on the new files (one agent; notes
@@ -992,11 +989,62 @@ Tests:
     `share.py` 46; `features.py` 36; `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py`
     43/43; `pages_check.py` fits; actionlint clean; the model and parser untouched. Not done:
     collapsing a heading's text on the page itself (the page shows what TeX prints; collapse is
-    the Navigation pane's), Word's ^p (a hit stops at a paragraph's end; In LaTeX source finds
-    blank lines with a regular expression), finding by environment beyond footnote, caption and
+    the Navigation pane's), Word's ^p on the page's text (a hit stops at a paragraph's end: ^p
+    says to tick In LaTeX source, where it is a blank line), finding by environment beyond footnote, caption and
     LaTeX paragraph, "Select text with similar formatting" as one multiple selection (Chromium
     has one range: the places are marked and listed instead), text a macro draws (shown, not
     found); Safari and Firefox, by hand.
+    *Review* (a fresh hostile reader of fa621a4 and 054a1f2; every finding has the reader's case
+    as a test). High: a query with a hyphen ("well-known") was an unreadable pattern (`\-` under
+    the u flag): fixed; Replace and Replace All wrote at the places of a search the typing since
+    had moved (`The cat sat.` became `doge cat sat.`): the search is brought up to date first, the
+    shown hit followed through the edit, and a hit whose text changed is shown, not replaced;
+    Move up or down of a paragraph past a heading ran it into the next paragraph: the single line
+    break just outside becomes a blank line (`swapEdit`). Medium: a replacement across a `%`
+    comment ran words together: each hit is edited as typing over it is (`deletionEdits` then
+    `escapeAt`); a section or paragraph dropped below the last row went after the bibliography: it
+    goes to the end of the last section; In selection kept a frozen range (two elephants of
+    four): the selection is followed through each replacement and forgotten when the dialog opens
+    with a caret; the fold rule (below); the Outline view drew every row again at each key (2.3 s
+    for 18 characters in 250 kB): rows are keyed by block and only those whose text changed are
+    written. Low: marks go with the pane; the shown result stays itself when text before it
+    changes; Replace All skips a LaTeX paragraph where the replacement's `%`, `$`, `&` or braces
+    would be LaTeX and says how many; Windows line breaks kept by moves; a paragraph of a proof of
+    two is not moved out of it, one starting with `\noindent` moves with it; the selection's words
+    are counted as the total is (no "55,380 of 55,200"); the dialog's Replace is "Replace one" to
+    an agent (Replace stays the ribbon's); the Headings view is a tree with levels; the folded
+    Editing menu has Advanced Find and Go To; ^p in LaTeX source; Replace steps in the list's
+    order (a footnote's hit was skipped); wildcards bounded and a regular expression run per
+    paragraph (no hit across a paragraph's end, `a*b` linear). Not done, as meant: a short title
+    `\section[Short cat]{Long cat}` keeps its text (Find searches the page's text, which shows the
+    long title; In LaTeX source finds and replaces both). *One fold rule*, shared with B1:
+    everything open, then one step at a time while the row is too long, the cheapest loss first
+    counted in controls (the Download label and the buttons' names, which take none; a gallery
+    tile, down to three; the three downloads as one button; the style list for the gallery; then
+    groups, rank 1 and then the lowest rank first, of equal ranks the rightmost, each one icon
+    button named after it), then each step tried back, the last first, kept undone where the row
+    fits. The names go before any group: they take no control away, so a group folded before them
+    opened again at a narrower width once they went (the reader's case: with 21 commands on File
+    all seven of its groups folded at once at 1366 px and were open at 1180), and below 861 px the
+    list is not a step but the style sheet's. Home
+    folds nothing at all from 1920 to 861 px (task 38 folded nothing to 1024 with no Editing
+    group); the Download label goes below 1810 px and the names below 1750, the three downloads
+    are one below 1140 px, the list takes the gallery's place below 1020 px; Editing folds from
+    860 px; no group folds below 521 px (a phone's row scrolls). `test/tabs.py` sweeps 390 to 1920 px in 10 px steps on every tab with
+    the real commands, the reader's (seven groups of three on File, Speech and Accessibility of
+    four) and three more in every group: never fewer controls at a wider width (but 530 against
+    520 px, where folding starts), the row fitting from 521 px, no group folded where it would fit
+    open, the caret's moves measuring nothing. With three more in every group Home at 580 px shows
+    more than at 590: Styles (rank 9, then four controls) folds there and Font (rank 5, six) opens
+    again for its room; the rank, not the count, decides which goes first, and the test names
+    that case. Also fixed on the way: the tiles measured while the ribbon was folded to its tabs
+    (no width; they are measured again), a relayout while a ribbon menu was open (Select sentence
+    selected nothing) or with words selected (the selection became a caret), and a line of
+    40 000 `\begin{a` beside a move (10 s per check; now read in its last 200 characters).
+    Evidence: `npm test` green (`find.test.mjs` 25 groups); `find.py` 76; `outline.py` 59;
+    `tabs.py` 116; `ribbon.py` 268; `agent.py` 138; `browser.py` 189; `history.py` 39/39;
+    `git.py` 44/44; `share.py` 46; `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43;
+    `pages_check.py` fits; actionlint clean.
 
 ## Open tasks
 

@@ -749,7 +749,19 @@ class App {
     if (!this.model) return;
     const c = this.caretNow();
     this.layoutPass(force);
-    if (c && document.activeElement === this.root) this.restoreCaret(c, true);
+    // (a selection stays one: a relayout, for the window's width or fonts that came, put it back as
+    // a caret at its start, and the status bar's "3 of 12 words" went back to "12 words")
+    if (c && document.activeElement === this.root) this.restoreCaret(c.collapsed || c.crossFile ? c : { ...c, selA: c.a, selB: c.b }, true);
+    // With a ribbon button or its menu holding the focus the page keeps its selection, for the
+    // button to act on; the pass's new nodes left it at a page's start. It goes back where it was,
+    // the focus left where it is (Select sentence from Home's Select menu selected nothing).
+    else if (c && !c.crossFile && document.activeElement && document.activeElement.closest('#ribbon, .pop') && !/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) {
+      const x = this.index.find(c.f, c.collapsed ? c.p : c.a, c.collapsed ? -1 : 1), y = c.collapsed ? x : this.index.find(c.f, c.b, -1);
+      if (x && x.node && y && y.node) {
+        getSelection().setBaseAndExtent(x.node, x.offset, y.node, y.offset);
+        if (this.rbRange) this.rbRange = getSelection().getRangeAt(0).cloneRange();
+      }
+    }
   }
 
   tocPages(plan) {

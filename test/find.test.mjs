@@ -8,7 +8,7 @@
 // a new heading's edit; and a person's own pattern bounded in time.
 import assert from 'node:assert/strict';
 import { compile, expand, hitsIn, runsWith, context, hitsInSource, joinRanges, labelsIn, SEP, PARA, FMT } from '../src/find.js';
-import { headingAt, sectionRange, under, promoteEdits, swapEdit, moveEdits, newHeading } from '../src/outline.js';
+import { headingAt, sectionRange, under, promoteEdits, swapEdit, moveEdits, newHeading, eolOf } from '../src/outline.js';
 import { applyEdits } from '../src/styles.js';
 
 let n = 0;
@@ -137,6 +137,39 @@ ok('a file\'s labels for Go To: keys, not the commented ones; a stranger\'s thou
   assert.ok(Date.now() - t0 < 1000, 'took ' + (Date.now() - t0) + ' ms');
 });
 
+ok('review: a hyphen is a hyphen (well-known, state-of-the-art, 2024-11, e-mail), in every mode', () => {
+  const t = 'A well-known, state-of-the-art e-mail of 2024-11.';
+  for (const q of ['well-known', 'state-of-the-art', '2024-11', 'e-mail']) {
+    assert.deepEqual(find(t, q), [q], q);
+    assert.deepEqual(find(t, q, { wholeWord: true }), [q], q + ' whole');
+    assert.deepEqual(find(t, q, { wildcards: true, matchCase: true }), [q], q + ' wildcards');
+  }
+  assert.deepEqual(find('a-b a_b', '[a-z]-[a-z]', { wildcards: true }), ['a-b']);
+  assert.deepEqual(find('x-y', '[-]', { wildcards: true }), ['-']);
+});
+
+ok('review: a pattern runs on each paragraph apart; [^x]+ finds each paragraph\'s run', () => {
+  const t = 'abc' + PARA + 'def' + SEP + 'gh';
+  assert.deepEqual(find(t, '[^x]+', { regex: true }), ['abc', 'def', 'gh']);
+  assert.deepEqual(find(t, '^\\w', { regex: true }), ['a', 'd', 'g']);
+});
+
+ok('review: Word\'s * and @ are bounded, so a long paragraph without the end of the pattern costs little', () => {
+  const t0 = Date.now();
+  assert.deepEqual(find('a'.repeat(200000), 'a*b', { wildcards: true }), []);
+  assert.deepEqual(find('a'.repeat(200000), 'a@b', { wildcards: true }), []);
+  assert.ok(Date.now() - t0 < 1500, 'took ' + (Date.now() - t0) + ' ms');
+  assert.deepEqual(find('cat cart', 'c*t', { wildcards: true }), ['cat', 'cart']);
+});
+
+ok('review: ^p is a blank line in the LaTeX source, and in the page\'s text says where it works', () => {
+  const c = compile('end.^p', {});
+  assert.ok(c.error && /In LaTeX source/.test(c.error), c.error);
+  const src = 'One end.\n\nTwo end.\r\n\r\nThree.';
+  assert.deepEqual(hitsInSource(src, compile('end.^p', { source: true }).re).hits.map((h) => JSON.stringify(src.slice(h.i, h.j))), ['"end.\\n\\n"', '"end.\\r\\n\\r\\n"']);
+  assert.equal(expand('^p', ['x'], {}), '\n\n');
+});
+
 // ---- the outline ------------------------------------------------------------------------------
 const BOOK = '\\documentclass{book}\n\\begin{document}\n\\chapter{One}\nText one.\n\n\\section*{Starred}\nA.\n\n\\subsection[Short]{Long title}\nB.\n\n\\chapter{Two}\nText two.\n\\end{document}\n';
 const heads = (src, f = 'main.tex') => {
@@ -197,6 +230,12 @@ ok('two sections swapped: one edit, the space between kept; never across other t
   const items = '  \\item one\n  \\item two\n';
   const a2 = { s: 2, e: items.indexOf('\n') }, b2 = { s: items.indexOf('\\item two'), e: items.length };
   assert.equal(applyEdits(items, [swapEdit(items, 'f', a2, b2, true)]), '  \\item two\n  \\item one\n');
+  // (the line before or after read in linear time: one of 40 000 "\\begin{a" took 10 s per test)
+  const long = 'x ' + '\\begin{a'.repeat(40000) + '\nPara one.\n\nPara two.', t0 = Date.now();
+  const k = long.indexOf('Para');
+  assert.ok(swapEdit(long, 'f', { s: k, e: k + 9 }, { s: k + 11, e: long.length }) && Date.now() - t0 < 1000, 'a long hostile line next to the move: ' + (Date.now() - t0) + ' ms');
+  const it = 'x \\begin{itemize}\nPara.\n\\section{H}';
+  assert.deepEqual(swapEdit(it, 'f', { s: 18, e: 23 }, { s: 24, e: it.length }), { f: 'f', s: 18, e: it.length, t: '\\section{H}\n\nPara.' });
 });
 
 ok('a section dragged before another, or to the end: two edits, one step, blank lines as they were', () => {
@@ -229,6 +268,43 @@ ok('a stranger\'s long source: a heading looked at in a bounded slice, a section
   const r = sectionRange(big, H, 0);
   assert.ok(r.e > 100000 && Date.now() - t0 < 1000, Date.now() - t0);
   assert.equal(headingAt('\\section' + ' '.repeat(100000) + '*{x}', 0).star, false);
+});
+
+ok('review: a paragraph moved past a heading never runs into the text beyond it', () => {
+  const d1 = '\\begin{document}\nPara one.\n\n\\section{A}\nPara two.\n\\end{document}';
+  const one = { s: d1.indexOf('Para one'), e: d1.indexOf('Para one') + 9 }, h = { s: d1.indexOf('\\section'), e: d1.indexOf('\\section') + 11 };
+  assert.equal(applyEdits(d1, [swapEdit(d1, 'f', one, h)]), '\\begin{document}\n\\section{A}\n\nPara one.\n\nPara two.\n\\end{document}');
+  const d2 = '\\begin{document}\nText a.\n\\section{B}\nPara b.\n\\end{document}';
+  const hb = { s: d2.indexOf('\\section'), e: d2.indexOf('\\section') + 11 }, pb = { s: d2.indexOf('Para b'), e: d2.indexOf('Para b') + 7 };
+  assert.equal(applyEdits(d2, [swapEdit(d2, 'f', hb, pb)]), '\\begin{document}\nText a.\n\nPara b.\n\n\\section{B}\n\\end{document}');
+  // two paragraphs apart by a blank line: the bytes around them stay
+  const d3 = 'x\n\nA.\n\nB.\n\ny';
+  assert.equal(applyEdits(d3, [swapEdit(d3, 'f', { s: 3, e: 5 }, { s: 7, e: 9 })]), 'x\n\nB.\n\nA.\n\ny');
+});
+
+ok('review: a file with Windows line breaks keeps them when sections move', () => {
+  const src = '\\begin{document}\r\n\\section{A}\r\nText a.\r\n\r\n\\section{B}\r\nText b.\r\n\\end{document}\r\n';
+  assert.equal(eolOf(src), '\r\n');
+  const H = heads(src), end = src.indexOf('\\end{document}');
+  const a = sectionRange(src, H, 0, end), b = sectionRange(src, H, 1, end);
+  const out = applyEdits(src, [swapEdit(src, 'f', a, b)]);
+  assert.equal(out, '\\begin{document}\r\n\\section{B}\r\nText b.\r\n\r\n\\section{A}\r\nText a.\r\n\\end{document}\r\n');
+  assert.ok(!/[^\r]\n/.test(out));
+  const d = src.replace('Text a.\r\n\r\n', 'Text a.\r\n');
+  const out2 = applyEdits(d, [swapEdit(d, 'f', sectionRange(d, heads(d), 0, d.indexOf('\\end{')), sectionRange(d, heads(d), 1, d.indexOf('\\end{')))]);
+  assert.ok(!/[^\r]\n/.test(out2) && out2.includes('Text b.\r\n\r\n\\section{A}'), JSON.stringify(out2));
+  const m = moveEdits(src, 'f', a.s, a.e, a.e === 0 ? 0 : sectionRange(src, H, 1, end).e, true);
+  assert.ok(!/[^\r]\n/.test(applyEdits(src, m)), JSON.stringify(applyEdits(src, m)));
+});
+
+ok('review: a section moved after the last one goes before the bibliography, not after it', () => {
+  const src = '\\begin{document}\n\\section{A}\nText a.\n\n\\section{B}\nText b.\n\n\\bibliographystyle{plain}\n\\bibliography{refs}\n\\end{document}\n';
+  const H = heads(src), end = src.indexOf('\\end{document}');
+  const A = sectionRange(src, H, 0, end), B = sectionRange(src, H, 1, end);
+  assert.equal(applyEdits(src, moveEdits(src, 'f', A.s, A.e, B.e, true)),
+    '\\begin{document}\n\\section{B}\nText b.\n\n\\section{A}\nText a.\n\n\\bibliographystyle{plain}\n\\bibliography{refs}\n\\end{document}\n');
+  // after the section just before it: where it is already, nothing
+  assert.equal(moveEdits(src, 'f', B.s, B.e, A.e, true), null);
 });
 
 console.log('find: ' + n + ' groups of checks passed');

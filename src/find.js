@@ -48,7 +48,9 @@ const CLASS_FMT = { 'y-bf': FMT.bold, 'y-it': FMT.italic, 'y-em': FMT.italic, 'y
 
 const WORD = '[\\p{L}\\p{N}\\p{M}_]';
 const ANY = '[^\\n\\uFFFC]';
-const esc = (c) => c.replace(/[.*+?^${}()|[\]\\/-]/g, '\\$&');
+// (a sign of a pattern, escaped; not the hyphen: with Unicode's rules \- is an error outside a
+// set, and well-known would not be found. A set escapes its own hyphen.)
+const esc = (c) => c.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
 // Word's ^ codes in the find box: any character, digit, letter, white space, a nonbreaking
 // space, the dashes, a caret
 const CARET = { '?': ANY, '#': '\\p{Nd}', $: '\\p{L}', w: '[ \\t\\u00A0]+', s: '\\u00A0', '^': '\\^', t: '\\t', '+': '—', '=': '–', '~': '‑', '-': '\\u00AD' };
@@ -69,10 +71,13 @@ function wildcards(q) {
   for (let i = 0; i < q.length; i++) {
     const c = q[i];
     if (c === '\\' && i + 1 < q.length) { out += esc(q[++i]); continue; }
+    if (c === '^' && q[i + 1] === 'p') { out += PARA_MARK; i++; continue; }
     if (c === '^' && i + 1 < q.length && CARET[q[i + 1]]) { out += CARET[q[++i]]; continue; }
     if (c === '?') out += ANY;
-    else if (c === '*') out += ANY + '*?';
-    else if (c === '@') out += '+';
+    // (* and @ reach at most 255 characters, as Word's counts do: a search that starts at every
+    // character of a long paragraph cannot then cost the square of its length)
+    else if (c === '*') out += ANY + '{0,255}?';
+    else if (c === '@') out += '{1,255}';
     else if (c === '<') out += '(?<!' + WORD + ')(?=' + WORD + ')';
     else if (c === '>') out += '(?<=' + WORD + ')(?!' + WORD + ')';
     else if (c === '(') { out += '('; groups++; }
@@ -101,11 +106,21 @@ function wildcards(q) {
   return { src: out, groups };
 }
 
+// Word's ^p, a paragraph's end: in the LaTeX source a blank line; the page's text has no hit
+// across a paragraph's end, so there it is refused with a sentence that says where it works
+const PARA_MARK = '\\r?\\n[ \\t]*\\r?\\n';
+function paraMarks(q, o) {
+  if (!/\^p/.test(q)) return null;
+  if (!o.source) return { error: '^p (a paragraph\'s end) is found In LaTeX source, where a blank line ends a paragraph: tick In LaTeX source.' };
+  return null;
+}
+
 // The query as a RegExp, or { error } with a sentence saying what is wrong.
-// o: { matchCase, wholeWord, wildcards, regex }
+// o: { matchCase, wholeWord, wildcards, regex, source }
 export function compile(q, o = {}) {
   if (!q) return { error: '' };
   if (q.length > 2000) return { error: 'The text to find is longer than 2000 characters.' };
+  if (!o.regex) { const pm = paraMarks(q, o); if (pm) return pm; }
   let src;
   try {
     if (o.regex) src = q;
@@ -113,6 +128,7 @@ export function compile(q, o = {}) {
     else {
       src = '';
       for (let i = 0; i < q.length; i++) {
+        if (q[i] === '^' && q[i + 1] === 'p') { src += PARA_MARK; i++; continue; }
         if (q[i] === '^' && i + 1 < q.length && CARET[q[i + 1]]) { src += CARET[q[++i]]; continue; }
         src += lit(q[i]);
       }
@@ -136,6 +152,7 @@ export function expand(rep, m, o = {}) {
     const c = rep[i], d = rep[i + 1];
     if (c === '^' && d === '&') { out += m[0]; i++; continue; }
     if (c === '^' && d === '^') { out += '^'; i++; continue; }
+    if (c === '^' && d === 'p') { out += '\n\n'; i++; continue; }
     if (c === '^' && d && CARET[d] && d !== '?' && d !== '#' && d !== '$' && d !== 'w') { const t = { s: ' ', t: '\t', '+': '—', '=': '–', '~': '‑', '-': '­' }[d]; if (t != null) { out += t; i++; continue; } }
     if ((o.wildcards || o.regex) && c === '\\' && /[1-9]/.test(d || '')) { out += m[+d] ?? ''; i++; continue; }
     if (o.regex && c === '$') {
@@ -155,17 +172,29 @@ export function expand(rep, m, o = {}) {
 }
 
 // Every hit of re in text: [{ i, j, m }], no empty ones, none across an atom or a paragraph's
-// end (a pattern of one's own may reach over them: \s, [^x]). Stops at max hits or when the
-// time is up (stopped: true).
+// end. The pattern runs on each stretch between them alone (a pattern of one's own, [^x]+ or
+// \s, would otherwise reach over them and find nothing; ^ and $ then mean a stretch's ends).
+// Stops at max hits or when the time is up (stopped: true).
 export function hitsIn(text, re, o = {}) {
-  const out = [], max = o.max ?? MAX_HITS, t0 = o.t0 ?? Date.now();
-  re.lastIndex = 0;
-  let m, n = 0;
-  while ((m = re.exec(text))) {
-    if (m[0] === '') { re.lastIndex = m.index + 1 + (text.codePointAt(m.index) > 0xFFFF ? 1 : 0); if (re.lastIndex > text.length) break; continue; }
-    if (m[0].indexOf(PARA) < 0 && m[0].indexOf(SEP) < 0) out.push({ i: m.index, j: m.index + m[0].length, m });
-    if (out.length >= max) return { hits: out, more: true };
-    if ((++n & 255) === 0 && Date.now() - t0 > (o.budget ?? BUDGET_MS)) return { hits: out, stopped: true };
+  const out = [], max = o.max ?? MAX_HITS, t0 = o.t0 ?? Date.now(), budget = o.budget ?? BUDGET_MS;
+  let n = 0;
+  for (let a = 0; a <= text.length;) {
+    let b = a;
+    while (b < text.length && text[b] !== PARA && text[b] !== SEP) b++;
+    if (b > a) {
+      const part = text.slice(a, b);
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(part))) {
+        if (m[0] === '') { re.lastIndex = m.index + 1 + (part.codePointAt(m.index) > 0xFFFF ? 1 : 0); if (re.lastIndex > part.length) break; continue; }
+        m.index += a;
+        out.push({ i: m.index, j: m.index + m[0].length, m });
+        if (out.length >= max) return { hits: out, more: true };
+        if ((++n & 255) === 0 && Date.now() - t0 > budget) return { hits: out, stopped: true };
+      }
+      if (Date.now() - t0 > budget) return { hits: out, stopped: true };
+    }
+    a = b + 1;
   }
   return { hits: out };
 }

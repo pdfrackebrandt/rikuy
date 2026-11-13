@@ -14,8 +14,8 @@
 import { register, command, enabled, onInstall } from '../commands.js';
 import { chordText } from '../keys.js';
 import { compile, expand, hitsIn, hitsInSource, runsWith, blockText, charSrc, hitSource, joinRanges, labelsIn, PARA, FMT, FORMATS, MAX_HITS } from '../find.js';
-import { headingAt, sectionRange, promoteEdits, swapEdit, moveEdits, newHeading, NAME } from '../outline.js';
-import { absAtom, posFromDom } from '../editor.js';
+import { headingAt, sectionRange, promoteEdits, swapEdit, moveEdits, newHeading, eolOf, NAME } from '../outline.js';
+import { absAtom, posFromDom, diff } from '../editor.js';
 import { $ } from '../ui/dom.js';
 import { openMenu } from '../ui/kit.js';
 import { openFindDialog, closeFindDialog, findDialogSync } from '../ui/finddialog.js';
@@ -124,9 +124,12 @@ export const methods = {
   // In LaTeX source: each file's text. A hit keeps its block (bi), its place in the block's text,
   // its file and source range, the ranges of its characters (parts) and ro when it cannot be
   // replaced (a character with no source of its own).
-  findRun() {
+  findRun(o = {}) {
     const fs = this.findState();
-    fs.hits = []; fs.msg = ''; fs.more = false; fs.stopped = false;
+    this.findMap();
+    const was = o.keep ? fs.was : null;
+    fs.hits = []; fs.msg = ''; fs.more = false; fs.stopped = false; fs.cur = -1;
+    fs.model = this.model;
     if (!this.model || (!fs.q && !fs.o.fmt)) { this.findPaint(); this.findViews(); return; }
     let re = null;
     if (fs.q) {
@@ -141,7 +144,7 @@ export const methods = {
       const order = [this.main, ...this.renderer.blocks.map((B) => B.f), ...this.files.keys()].filter((f, i, a) => a.indexOf(f) === i && this.files.has(f) && !/\.(png|jpe?g|pdf|gif|svg)$/i.test(f));
       for (const f of order) {
         const r = hitsInSource(this.src(f), re, { max: MAX_HITS - fs.hits.length });
-        for (const x of r.hits) { const h = { f, s: x.i, e: x.j, m: x.m, parts: [[x.i, x.j]], src: true, text: x.m[0] }; if (inSel(h)) fs.hits.push(h); }
+        for (const x of r.hits) { const h = { f, s: x.i, e: x.j, m: x.m, parts: [[x.i, x.j]], src: true, text: x.m[0], st: x.m[0] }; if (inSel(h)) fs.hits.push(h); }
         if (r.more) fs.more = true;
         if (r.stopped || Date.now() - t0 > 1500) { fs.stopped = true; break; }
         if (fs.hits.length >= MAX_HITS) { fs.more = true; break; }
@@ -163,14 +166,58 @@ export const methods = {
           const s = hitSource(B, T, x.i, x.j);
           if (!s) continue;
           const h = { bi, B, T, i: x.i, j: x.j, m: x.m, ...s, text: T.text.slice(x.i, x.j) };
+          h.st = this.src(h.f).slice(h.s, h.e);
           if (inSel(h)) fs.hits.push(h);
         }
       });
     }
     if (fs.stopped) fs.msg = 'Stopped after 1.5 s: the pattern takes too long on this document.';
     else if (fs.more) fs.msg = 'More than ' + plural(MAX_HITS, 'result', 'results') + ': only the first are shown.';
+    // (the result shown before, where the edits since have taken it: the same one, or the next)
+    fs.exact = false;
+    if (was) {
+      let k = fs.hits.findIndex((h) => h.f === was.f && h.s === was.s);
+      fs.exact = k >= 0;
+      if (k < 0) k = fs.hits.findIndex((h) => h.f === was.f && h.s >= was.s);
+      fs.cur = k;
+    }
+    this.snapFiles();
     this.findPaint();
     this.findViews();
+  },
+  // The selection to look in, and the result shown, follow the edits made since the last search:
+  // each file's text then is kept (only the files they are in), and a place moves by the
+  // difference between that text and today's (typing, Replace, Undo, the source pane alike)
+  findMap() {
+    const fs = this.fs, snap = fs.snap || new Map();
+    const map = (f, p, end) => {
+      const old = snap.get(f), now = this.src(f);
+      if (old == null || old === now) return p;
+      const d = diff(old, now);
+      if (!d) return p;
+      const a = d.s, b = d.s + d.del.length;
+      if (p < a || (p === a && !end)) return p;
+      if (p >= b && !(p === a && end)) return p + d.ins.length - d.del.length;
+      return end ? a + d.ins.length : a;
+    };
+    if (fs.sel) { fs.sel.a = map(fs.sel.f, fs.sel.a, false); fs.sel.b = Math.max(fs.sel.a, map(fs.sel.f, fs.sel.b, true)); }
+    const cur = fs.hits[fs.cur];
+    fs.was = cur ? { f: cur.f, s: map(cur.f, cur.s, false) } : null;
+  },
+  snapFiles() {
+    const fs = this.fs, cur = fs.hits[fs.cur];
+    fs.snap = new Map();
+    for (const f of [fs.sel && fs.o.insel ? fs.sel.f : null, cur ? cur.f : null]) if (f && !fs.snap.has(f)) fs.snap.set(f, this.src(f));
+  },
+  // Before Replace or Replace All acts: the hits are those of the text as it is now (an edit made
+  // since, by typing, Undo or the source pane, may have moved or changed them)
+  findFresh() {
+    const fs = this.findState();
+    if (this.srcRebuild && this.srcRebuild.pending && this.srcRebuild.pending()) this.srcRebuild.flush();
+    if (fs.on && fs.model === this.model && !this.findT) return false;
+    clearTimeout(this.findT); this.findT = 0;
+    this.findRun({ keep: true });
+    return true;
   },
 
   // where a hit stands in the document: its block's index, then its place
@@ -225,9 +272,8 @@ export const methods = {
     if (this.navOpen && this.navOpen('outline') && this.nv) { clearTimeout(this.navT); this.navT = setTimeout(() => { if (this.navOpen('outline') && this.navView === 'headings') this.paintHeadings(); }, 60); }
     if (!this.findActive()) return;
     this.findT = setTimeout(() => {
-      const fs = this.fs, was = fs.hits[fs.cur];
-      this.findRun();
-      if (was) { const k = fs.hits.findIndex((h) => h.f === was.f && h.s >= was.s); fs.cur = k; this.findPaint(); this.findViews(); }
+      this.findT = 0;
+      this.findRun({ keep: true });
       if (this.navOpen('outline') && this.navView === 'pages') this.paintPages();
     }, 220);
   },
@@ -264,6 +310,7 @@ export const methods = {
     }
     fs.wrapped = k < 0 || k >= fs.hits.length;
     fs.cur = (k + fs.hits.length) % fs.hits.length;
+    this.snapFiles();
     this.findPaint();
     this.findShow(fs.hits[fs.cur]);
     this.findViews();
@@ -273,6 +320,7 @@ export const methods = {
     const fs = this.findState();
     if (!fs.hits[k]) return;
     fs.cur = k;
+    this.snapFiles();
     this.findPaint();
     this.findShow(fs.hits[k]);
     this.findViews();
@@ -315,52 +363,85 @@ export const methods = {
   },
 
   // ---- replacing ----------------------------------------------------------------------------
-  // The edits that write rep in hit h's place: the first of its characters' ranges takes the
-  // replacement, the others go; what lies between them (a closing brace, a comment) stays. The
-  // text is escaped as typing escapes it, unless the search is in the LaTeX source.
+  // The edits that write rep in hit h's place, as typing it over the hit would write it
+  // (deletionEdits, then escapeAt: what lies between its characters goes where typing takes it
+  // away, and words never run together over a comment). In the LaTeX source the replacement is
+  // written as it is. null where the source there is no longer what was found, or where a LaTeX
+  // paragraph would take a replacement with LaTeX's special characters as source (skip).
   hitEdits(h, rep) {
-    const fs = this.findState();
+    const fs = this.findState(), src = this.src(h.f);
+    if (h.st != null && src.slice(h.s, h.e) !== h.st) return null;
     const groups = fs.o.wildcards || fs.o.regex;
-    let t = /[\\^$]/.test(rep) ? expandRep(rep, h, fs.o, groups) : rep;
-    if (!h.src) t = t ? this.escapeAt(h.f, h.parts[0][0], t) : '';
-    return h.parts.map(([s, e], k) => ({ f: h.f, s, e, t: k ? '' : t }));
+    const text = /[\\^$]/.test(rep) ? expandRep(rep, h, fs.o, groups) : rep;
+    if (h.src) return [{ f: h.f, s: h.s, e: h.e, t: text }];
+    const a = h.parts[0][0], b = h.parts[h.parts.length - 1][1];
+    const del = this.deletionEdits(h.f, a, b);
+    let at = a;
+    if (del.length && del[0].s > a && del[0].t === '') at = del[0].s;
+    if (text && this.texAt(h.f, at) && /[\\{}%$&#^_~]/.test(text)) return { skip: 'latex' };
+    const t = text ? this.escapeAt(h.f, at, text) : '';
+    const out = [];
+    let put = !t;
+    for (const ed of del) { if (!put && ed.s === at) { out.push({ ...ed, t: ed.t + t }); put = true; } else out.push(ed); }
+    if (!put) out.push({ f: h.f, s: at, e: at, t });
+    return out;
   },
-  // Replace: the hit shown, if it is still where it was; then the next one is shown
+  // Replace: the hit shown, if it is still what was found (an edit since may have moved it: it is
+  // looked for again where the edit took it); then the next one in the list is shown
   replaceOne() {
     const fs = this.findState();
-    if (!fs.on || fs.cur < 0) { this.findGo(1); return; }
+    const before = fs.hits[fs.cur], stale = this.findFresh();
+    if (!fs.on || fs.cur < 0) {
+      this.findGo(1);
+      if (stale && before) { fs.note = 'The text changed since: this is the next result; Replace again to replace it.'; this.findViews(); }
+      return;
+    }
     const h = fs.hits[fs.cur];
     if (!h) return;
+    // (the one shown is gone or changed: the next is shown, and the next press replaces it)
+    if (stale && !fs.exact) { this.snapFiles(); this.findPaint(); this.findShow(h); fs.note = 'The text changed since: this is the next result; Replace again to replace it.'; this.findViews(); return; }
     if (h.ro) { this.findGo(1); fs.note = 'That one is drawn by a macro and cannot be replaced here: "In LaTeX source" finds its definition.'; this.findViews(); return; }
     const edits = this.hitEdits(h, fs.rep);
-    const at = { f: h.f, p: h.parts[0][0] + edits[0].t.length };
+    if (!edits) { this.findGo(1); return; }
+    if (edits.skip) { this.findGo(1); fs.note = 'That one is in a LaTeX paragraph, where the replacement\'s %, $, & or braces would be LaTeX: tick In LaTeX source to write it there as source.'; this.findViews(); return; }
+    const shown = (fs.o.wildcards || fs.o.regex || /\^/.test(fs.rep) ? expandRep(fs.rep, h, fs.o, true) : fs.rep).length;
+    const was = { bi: h.bi, i: h.i, f: h.f, s: h.s, src: !!h.src, len: shown };
     this.closeGroup();
     this.commit(edits, null, 'replace');
     this.closeGroup();
     this.findRun();
-    const k = fs.hits.findIndex((x) => { const xk = this.findKey(x), ak = [this.blockIndexOf(at.f, at.p), at.p]; return x.f === at.f ? x.s >= at.p : xk[0] > ak[0]; });
-    fs.cur = -1;
-    if (k >= 0) { fs.cur = k; this.findPaint(); this.findShow(fs.hits[k]); }
-    else this.findPaint();
+    // (the next in the list's order, the order Enter goes in: past the words just written)
+    const k = was.src ? fs.hits.findIndex((x) => x.f === was.f && x.s >= was.s + was.len) : fs.hits.findIndex((x) => x.bi > was.bi || (x.bi === was.bi && x.i >= was.i + was.len));
+    fs.cur = k;
+    if (k >= 0) this.findShow(fs.hits[k]);
+    this.snapFiles();
+    this.findPaint();
     fs.note = k >= 0 ? '' : 'Replaced.';
     this.findViews();
   },
   // Replace All: every hit at once, one commit, so one undo takes it all back
   replaceAll() {
     const fs = this.findState();
+    this.findFresh();
     if (!fs.on) this.findRun();
-    const ok = fs.hits.filter((h) => !h.ro), ro = fs.hits.length - ok.length;
-    if (!ok.length) { fs.note = fs.hits.length ? 'None of these can be replaced here: a macro draws them.' : ''; this.findViews(); return 0; }
-    const edits = [];
-    for (const h of ok) edits.push(...this.hitEdits(h, fs.rep));
+    const ok = [], edits = [];
+    let ro = 0, tex = 0;
+    for (const h of fs.hits) {
+      if (h.ro) { ro++; continue; }
+      const e = this.hitEdits(h, fs.rep);
+      if (!e) continue;
+      if (e.skip) { tex++; continue; }
+      ok.push(h); edits.push(...e);
+    }
+    const left = (ro ? '; ' + plural(ro, 'other is', 'others are') + ' drawn by a macro and stayed' : '') + (tex ? '; ' + plural(tex, 'is', 'are') + ' in a LaTeX paragraph, where the replacement\'s %, $, & or braces would be LaTeX: tick In LaTeX source to write it there' : '');
+    if (!ok.length) { fs.note = fs.hits.length ? 'None replaced' + left + '.' : ''; this.findViews(); return 0; }
     const c = this.caretNow();
     this.closeGroup();
     this.commit(edits, c && c.f != null ? { f: c.f, p: c.a } : null, 'replace-all');
     this.closeGroup();
     const n = ok.length;
     this.findRun();
-    fs.cur = -1;
-    fs.note = 'Replaced ' + plural(n, 'place', 'places') + (ro ? '; ' + plural(ro, 'other is', 'others are') + ' drawn by a macro and stayed.' : '.');
+    fs.note = 'Replaced ' + plural(n, 'place', 'places') + left + '.';
     this.findPaint();
     this.findViews();
     return n;
@@ -468,8 +549,9 @@ export const methods = {
     if (s.rangeCount && !s.isCollapsed && this.root.contains(s.anchorNode)) {
       // the words of the page's text inside the selection, counted as the model counts them
       const r = s.getRangeAt(0), parts = [];
-      for (const span of this.root.querySelectorAll('span.t')) {
-        if (!r.intersectsNode(span) || span.classList.contains('ph')) continue;
+      // (the words the total counts: a paragraph's, not a heading's, a caption's or a cell's)
+      for (const span of this.root.querySelectorAll('.it.p span.t')) {
+        if (!r.intersectsNode(span) || span.classList.contains('ph') || span.closest('td, [data-ctx="cap"]')) continue;
         const node = span.firstChild;
         if (!node) continue;
         const a = node === r.startContainer ? r.startOffset : 0, b = node === r.endContainer ? r.endOffset : node.length;
@@ -604,12 +686,20 @@ export const methods = {
       const e = dir < 0 ? swapEdit(src, B.f, o, me, true) : swapEdit(src, B.f, me, o, true);
       return e && { edit: e, me };
     }
-    if (B.items.length !== 1 && !(B.items.every((it) => it.el.dataset.ctx === 'p'))) return null;
+    // (a paragraph of a theorem or of another environment of several paragraphs would take the
+    // whole environment with it: it stays; one paragraph with a formula in it moves whole)
+    if (B.items.length > 1 && (/^\s*\\begin\s*\{/.test(src.slice(B.s, B.s + 40)) || !B.items.every((it) => it.el.dataset.ctx === 'p' || it.kind === 'math'))) return null;
     const bs = this.renderer.blocks, i = bs.indexOf(B), o = bs[i + dir];
     if (i < 0 || !o || o.f !== B.f) return null;
-    // a heading beside it moves alone (the paragraph goes into the section before)
-    const e = dir < 0 ? swapEdit(src, B.f, { s: o.s, e: o.e }, { s: B.s, e: B.e }) : swapEdit(src, B.f, { s: B.s, e: B.e }, { s: o.s, e: o.e });
-    return e && { edit: e, me: { s: B.s, e: B.e } };
+    // A paragraph's own \noindent, \medskip or \vspace before it goes with it (the model's block
+    // starts after them). A heading beside it moves alone (the paragraph goes into the section before).
+    const LEAD = /(?:\\(?:noindent|indent|medskip|smallskip|bigskip|par)(?![A-Za-z@])\s*|\\vspace\*?\{[^{}]{0,40}\}\s*)+$/;
+    const lead = (p, floor) => { const g = src.slice(Math.max(floor, p - 200), p), m = LEAD.exec(g); return m ? p - m[0].length : p; };
+    const prev = bs[i - 1 + (dir < 0 ? -1 : 0)];
+    const me = { s: lead(B.s, dir < 0 ? o.e : prev && prev.f === B.f ? prev.e : 0), e: B.e };
+    const it = { s: lead(o.s, dir < 0 ? (prev && prev.f === B.f ? prev.e : 0) : B.e), e: o.e };
+    const e = dir < 0 ? swapEdit(src, B.f, it, me) : swapEdit(src, B.f, me, it);
+    return e && { edit: e, me };
   },
   sectionMove(k, dir) {
     const H = this.headsList(), h = H[k];
@@ -634,34 +724,40 @@ export const methods = {
   },
   commitMove(r, c, dir) {
     const e = r.edit, src = this.src(e.f);
-    // the piece that moved and where it now starts
-    const text = e.t, me = src.slice(Math.max(e.s, r.me.s), r.me.e).trim();
-    const at = dir < 0 ? e.s : e.s + text.lastIndexOf(me);
-    const off = c && c.f === e.f ? Math.max(0, c.a - Math.max(e.s, r.me.s) - (src.slice(Math.max(e.s, r.me.s)).length - src.slice(Math.max(e.s, r.me.s)).trimStart().length)) : 0;
+    // the piece that moved, where it now starts, and the caret's place in it
+    let ps = r.me.s;
+    while (ps < r.me.e && /\s/.test(src[ps])) ps++;
+    const me = src.slice(ps, r.me.e).trim();
+    const k = dir < 0 ? e.t.indexOf(me) : e.t.lastIndexOf(me);
+    const off = c && c.f === e.f && c.a >= ps && c.a <= ps + me.length ? c.a - ps : 0;
     this.closeGroup();
-    this.commit([e], { f: e.f, p: (dir < 0 ? e.s : at) + off, bias: 1 }, 'outline');
+    this.commit([e], { f: e.f, p: e.s + Math.max(0, k) + off, bias: 1 }, 'outline');
     this.closeGroup();
   },
-  // A section dragged in the Navigation pane to before heading t (or to the end, t = -1)
-  moveSectionTo(k, t) {
+  // A section dragged in the Navigation pane to before heading t; with after, to after heading t's
+  // section; t = -1, after the last section of its file. A section's end stops before \appendix
+  // and the bibliography (sectionRange), so nothing lands after them.
+  moveSectionTo(k, t, after) {
     const H = this.headsList(), h = H[k];
     if (!h) return false;
     const r = this.sectionOf(k);
     if (!r) { this.toast('This section has text in more than one file: move it in the source.'); return false; }
-    let to;
-    if (t < 0) to = this.bodyEnd(h.f);
-    else { if (!H[t] || H[t].f !== h.f) { this.toast('Sections move within their file.'); return false; } to = H[t].s; }
-    const edits = moveEdits(this.src(h.f), h.f, r.s, r.e, to);
+    if (t < 0) { after = true; t = -1; for (let j = H.length - 1; j >= 0; j--) if (H[j].f === h.f) { t = j; break; } }
+    if (!H[t] || H[t].f !== h.f) { this.toast('Sections move within their file.'); return false; }
+    let to = H[t].s;
+    if (after) { const x = this.sectionOf(t); if (!x) return false; to = x.e; }
+    const edits = moveEdits(this.src(h.f), h.f, r.s, r.e, to, after);
     if (!edits) return false;
     this.closeGroup();
     this.commit(edits, null, 'outline');
     this.closeGroup();
     return true;
   },
-  // a block (a paragraph, a list, a formula) dragged in the Outline view to before position t
-  moveBlockTo(B, f, t) {
+  // a block (a paragraph, a list, a formula) dragged in the Outline view to before position t,
+  // or with after, right after it (the end of a paragraph or of a section)
+  moveBlockTo(B, f, t, after) {
     if (B.f !== f) return false;
-    const edits = moveEdits(this.src(f), f, B.s, B.e, t);
+    const edits = moveEdits(this.src(f), f, B.s, B.e, t, after);
     if (!edits) return false;
     this.closeGroup();
     this.commit(edits, null, 'outline');
@@ -675,8 +771,9 @@ export const methods = {
     if (!at) return;
     const name = where === 'sub' ? NAME[Math.min(5, at.level + 1)] : at.name;
     let n;
-    if (where === 'before') n = newHeading(name, 'before', h.s);
-    else { const r = this.sectionOf(k); if (!r) return; n = newHeading(name, 'after', r.e); }
+    const nl = eolOf(this.src(h.f));
+    if (where === 'before') n = newHeading(name, 'before', h.s, nl);
+    else { const r = this.sectionOf(k); if (!r) return; n = newHeading(name, 'after', r.e, nl); }
     this.closeGroup();
     this.commit([{ f: h.f, s: n.s, e: n.s, t: n.t }], { f: h.f, p: n.caret, bias: -1 }, 'outline');
     this.closeGroup();

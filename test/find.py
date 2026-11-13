@@ -92,12 +92,13 @@ def dialog(page):
     check('Ctrl+H opens the dialog "Find and Replace" on its Replace tab: a Close button, not modal', d.count() == 1 and d.get_attribute('aria-modal') is None and d.get_by_role('button', name='Close', exact=True).count() == 1
           and d.get_by_role('tab', name='Replace', exact=True).get_attribute('aria-selected') == 'true')
     check('its fields and options by name', all(d.get_by_label(n, exact=True).count() == 1 for n in ('Find what', 'Replace with', 'Match case', 'Find whole words only', 'Use wildcards', 'Use regular expressions', 'In LaTeX source', 'In selection'))
-          and all(d.get_by_role('button', name=n, exact=True).count() == 1 for n in ('Replace', 'Replace All', 'Find Next', 'Find Previous', 'Format', 'Special', 'No formatting')))
+          and all(d.get_by_role('button', name=n, exact=True).count() == 1 for n in ('Replace one', 'Replace All', 'Find Next', 'Find Previous', 'Format', 'Special', 'No formatting'))
+          and page.get_by_role('button', name='Replace', exact=True).count() <= 1)
     d.get_by_label('Find what', exact=True).fill('50%'); page.wait_for_timeout(350)
     d.get_by_label('Replace with', exact=True).fill('75% & more')
     h0 = page.evaluate('window.rikuy.hist.length')
     d.get_by_role('button', name='Find Next', exact=True).click(); page.wait_for_timeout(150)
-    d.get_by_role('button', name='Replace', exact=True).click(); page.wait_for_timeout(300)
+    d.get_by_role('button', name='Replace one', exact=True).click(); page.wait_for_timeout(300)
     want = DOC.replace('50\\% of', '75\\% \\& more of')
     check('Replace writes the replacement escaped as typing escapes it, inside the bold it lands in, as one step', src(page) == want and page.evaluate('window.rikuy.hist.length') == h0 + 1, src(page)[60:160])
     page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
@@ -201,11 +202,127 @@ def in_selection_and_source(page):
     # a LaTeX paragraph: its text is its source, a replacement goes in as it is written
     load_doc(page, WRAP('Plain foo here.\n\n% rikuy: latex\nBoxed foo here.'))
     d.get_by_label('Find what', exact=True).fill('foo'); page.wait_for_timeout(300)
+    d.get_by_label('Replace with', exact=True).fill('bar')
+    d.get_by_role('button', name='Replace All', exact=True).click(); page.wait_for_timeout(300)
+    check('a plain replacement is written in the text and in a LaTeX paragraph alike', src(page) == WRAP('Plain bar here.\n\n% rikuy: latex\nBoxed bar here.'), src(page))
+    load_doc(page, WRAP('Plain foo here.\n\n% rikuy: latex\nBoxed foo here.'))
+    d.get_by_label('Find what', exact=True).fill('foo'); page.wait_for_timeout(300)
     d.get_by_label('Replace with', exact=True).fill('\\emph{x}')
     d.get_by_role('button', name='Replace All', exact=True).click(); page.wait_for_timeout(300)
-    check('in text a replacement with a backslash is escaped; in a LaTeX paragraph it is written as source', src(page) == WRAP('Plain \\textbackslash{}emph\\{x\\} here.\n\n% rikuy: latex\nBoxed \\emph{x} here.'), src(page))
+    st = d.get_by_role('status').first.inner_text()
+    check('one with LaTeX\'s signs is escaped in the text, and a LaTeX paragraph is left, the status says why', src(page) == WRAP('Plain \\textbackslash{}emph\\{x\\} here.\n\n% rikuy: latex\nBoxed foo here.') and 'LaTeX paragraph' in st, (src(page), st))
     d.get_by_role('button', name='Close', exact=True).click(); page.wait_for_timeout(150)
     check('Close closes it; the marks go with it', not d.is_visible() and page.evaluate("!CSS.highlights.get('rk-find') || CSS.highlights.get('rk-find').size === 0"))
+
+
+def review(page):
+    """The cases of the hostile review of fa621a4 and 054a1f2, each as the reader wrote it."""
+    page.evaluate('window.rikuy.closeFind && window.rikuy.closeFind()')
+    # 1. a hyphen in what is looked for
+    load_doc(page, WRAP('A well-known, state-of-the-art e-mail of 2024-11.'))
+    click_text(page, 'A well', 0)
+    page.keyboard.press('Control+h'); page.wait_for_timeout(250)
+    d = page.get_by_role('dialog', name='Find and Replace', exact=True)
+    found = []
+    for q in ('well-known', 'state-of-the-art', '2024-11', 'e-mail'):
+        d.get_by_label('Find what', exact=True).fill(q); page.wait_for_timeout(300)
+        found.append((q, hits(page), d.get_by_role('status').first.inner_text()))
+    check('review 1: well-known, state-of-the-art, 2024-11 and e-mail are found (no "pattern cannot be read")', all(h == [q] for q, h, _ in found), found)
+    d.get_by_label('Find what', exact=True).fill('well-known'); page.wait_for_timeout(300)
+    d.get_by_label('Replace with', exact=True).fill('famous')
+    d.get_by_role('button', name='Replace All', exact=True).click(); page.wait_for_timeout(300)
+    check('and replaced', src(page) == WRAP('A famous, state-of-the-art e-mail of 2024-11.'), src(page))
+    # 2. an edit between Find Next and Replace: the hit is looked for where the edit took it
+    doc = '\\documentclass{article}\n\\begin{document}\nIntro words.\n\nThe cat sat.\n\\end{document}\n'
+    load_doc(page, doc); click_text(page, 'Intro', 0)
+    d.get_by_label('Find what', exact=True).fill('cat'); page.wait_for_timeout(350)
+    d.get_by_label('Replace with', exact=True).fill('dog')
+    d.get_by_role('button', name='Find Next', exact=True).click(); page.wait_for_timeout(200)
+    click_text(page, 'Intro', 0); page.keyboard.type('Very ')
+    d.get_by_role('button', name='Replace one', exact=True).click(); page.wait_for_timeout(400)
+    check('review 2: typing before the hit shown, then Replace at once: the hit is replaced where it now is', src(page) == doc.replace('Intro', 'Very Intro').replace('The cat', 'The dog'), src(page))
+    load_doc(page, doc)
+    r = page.evaluate("""() => { const g = window.rikuy; g.findSet({ q: 'cat', rep: 'dog', o: { insel: false, fmt: 0, source: false, regex: false, wildcards: false } }); g.findGo(1);
+      g.commit([{ f: 'main.tex', s: g.src('main.tex').indexOf('Intro'), e: g.src('main.tex').indexOf('Intro'), t: 'Very ' }], null, 'type');
+      g.replaceOne(); const a = g.src('main.tex');
+      g.findSet({ q: 'dog', rep: 'cat' });
+      g.commit([{ f: 'main.tex', s: g.src('main.tex').indexOf('Very'), e: g.src('main.tex').indexOf('Very') + 5, t: '' }], null, 'type');
+      g.replaceAll(); return [a, g.src('main.tex')]; }""")
+    check('and through rikuy\'s methods with no pause: replaceOne and replaceAll after an edit write at today\'s places', r[0] == doc.replace('Intro', 'Very Intro').replace('The cat', 'The dog') and r[1] == doc, r)
+    load_doc(page, doc)
+    r = page.evaluate("""() => { const g = window.rikuy; g.findSet({ q: 'cat', rep: 'dog' }); g.findGo(1); const s = g.src('main.tex'), k = s.indexOf('cat');
+      g.commit([{ f: 'main.tex', s: k, e: k + 3, t: 'cow' }], null, 'type'); g.replaceOne(); return [g.src('main.tex'), g.findSummary()]; }""")
+    check('the hit shown was edited away: Replace writes nothing, and says so', r[0] == doc.replace('cat', 'cow'), r)
+    # 4. a comment between the words found: replaced as typing over them replaces them
+    load_doc(page, WRAP('one % note\ntwo here.'))
+    d.get_by_label('Find what', exact=True).fill('one two'); page.wait_for_timeout(350)
+    d.get_by_label('Replace with', exact=True).fill('x')
+    d.get_by_role('button', name='Replace All', exact=True).click(); page.wait_for_timeout(300)
+    check('review 4: across a % comment the words never run together (as typing over them: x here.)', src(page) == WRAP('x here.'), src(page))
+    # 6. In selection follows its edits, and goes when the dialog opens without a selection
+    W = WRAP('Out cat. The cat and the cat and the cat end here now. Out cat.')
+    load_doc(page, W); page.evaluate('window.rikuy.closeFind()')
+    page.evaluate("""() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('The cat and')); const t = s.textContent; const a = t.indexOf('The cat'), z = t.indexOf('end here') + 8;
+      const r = document.createRange(); r.setStart(s.firstChild, a); r.setEnd(s.firstChild, z); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }""")
+    page.keyboard.press('Control+h'); page.wait_for_timeout(300)
+    d.get_by_label('Find what', exact=True).fill('cat'); page.wait_for_timeout(350)
+    d.get_by_label('Replace with', exact=True).fill('elephant')
+    d.get_by_role('button', name='Find Next', exact=True).click(); page.wait_for_timeout(150)
+    for _ in range(4):
+        d.get_by_role('button', name='Replace one', exact=True).click(); page.wait_for_timeout(300)
+    check('review 6: Replace one at a time in the selection replaces its three, the selection growing with them, and none outside', src(page) == W.replace('The cat and the cat and the cat', 'The elephant and the elephant and the elephant'), src(page))
+    page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    load_doc(page, WRAP('Some cat words. ' * 3)); click_text(page, 'Some', 1)
+    page.keyboard.press('Control+h'); page.wait_for_timeout(300)
+    d.get_by_label('Find what', exact=True).fill('cat'); page.wait_for_timeout(350)
+    check('and opened again with only a caret: In selection is off, every cat found', not d.get_by_label('In selection', exact=True).is_checked() and page.evaluate('window.rikuy.fs.sel') is None and hits(page) == ['cat'] * 3)
+    # low: a shown result stays the same one when the text before it changes
+    load_doc(page, WRAP('xx cat one, cat two.'))
+    d.get_by_label('Find what', exact=True).fill('cat'); page.wait_for_timeout(350)
+    d.get_by_role('button', name='Find Next', exact=True).click(); page.wait_for_timeout(150)
+    a = summary(page)
+    page.evaluate("() => { const g = window.rikuy; g.commit([{ f: 'main.tex', s: g.src('main.tex').indexOf('xx'), e: g.src('main.tex').indexOf('xx') + 2, t: '' }], null, 'del'); }")
+    page.wait_for_timeout(500)
+    check('low: two characters deleted before the result shown: it is still the one shown (Result 1 of 2)', a == 'Result 1 of 2' and summary(page) == 'Result 1 of 2', (a, summary(page)))
+    # low: a LaTeX paragraph and LaTeX's signs: skipped, said
+    load_doc(page, WRAP('% rikuy: latex\n\\textbf{cat} 50\\% cat\n\nPlain cat.'))
+    d.get_by_label('Find what', exact=True).fill('cat'); page.wait_for_timeout(350)
+    d.get_by_label('Replace with', exact=True).fill('d%g')
+    d.get_by_role('button', name='Replace All', exact=True).click(); page.wait_for_timeout(300)
+    st = d.get_by_role('status').first.inner_text()
+    check('low: Replace All with d%g leaves the LaTeX paragraph\'s two and says so; the text\'s one is escaped', src(page) == WRAP('% rikuy: latex\n\\textbf{cat} 50\\% cat\n\nPlain d\\%g.') and '2 are in a LaTeX paragraph' in st, (src(page), st))
+    # low: Replace one goes through a footnote's hit in the list's order, skipping none
+    load_doc(page, WRAP('A cat here.\\footnote{A cat note.} Then cat.'))
+    d.get_by_label('Find what', exact=True).fill('cat'); page.wait_for_timeout(350)
+    d.get_by_label('Replace with', exact=True).fill('dog')
+    click_text(page, 'A cat', 0)
+    d.get_by_role('button', name='Find Next', exact=True).click(); page.wait_for_timeout(150)
+    for _ in range(3):
+        d.get_by_role('button', name='Replace one', exact=True).click(); page.wait_for_timeout(300)
+    check('low: three Replace one presses replace the text\'s two and the footnote\'s one, none skipped', 'cat' not in src(page).split('begin{document}')[1], src(page))
+    page.evaluate('window.rikuy.closeFind()')
+    # low: the marks go when the pane closes (and the search stops)
+    load_doc(page, WRAP('A cat and a cat.'))
+    click_text(page, 'A cat', 0)
+    page.keyboard.press('Control+f'); page.wait_for_timeout(250)
+    page.keyboard.type('cat'); page.wait_for_timeout(500)
+    a = len(marked(page)['all'])
+    page.get_by_role('button', name='Close the panel', exact=True).click(); page.wait_for_timeout(300)
+    check('low: closing the Navigation pane takes the marks away and ends the search', a == 2 and marked(page)['all'] == [] and not page.evaluate('window.rikuy.fs.on'), (a, marked(page)))
+    # low: the selection's words never more than the document's
+    load_doc(page, WRAP('\\section{A heading}\nFirst words here.\n\nSecond words.'))
+    click_text(page, 'First', 1); page.keyboard.press('Control+a'); page.wait_for_timeout(350)
+    w = page.inner_text('#st-words')
+    check('low: Ctrl+A counts as many words as the document has, headings left out as the total leaves them (5 of 5 words)', w == '5 of 5 words', w)
+    # low: the folded group Editing's menu has Find's other choices too (it folds at 860 px)
+    page.set_viewport_size({'width': 860, 'height': 1000}); page.wait_for_timeout(300)
+    click_text(page, 'First', 1)
+    page.get_by_role('button', name='Editing', exact=True).click(); page.wait_for_timeout(200)
+    m = page.get_by_role('menu', name='Editing', exact=True)
+    names = [m.get_by_role('menuitem').nth(k).get_attribute('aria-label') for k in range(m.get_by_role('menuitem').count())]
+    check('low: the folded Editing group\'s menu: Find, Advanced Find, Go To, Replace, Select', names == ['Find', 'Advanced Find', 'Go To', 'Replace', 'Select'], names)
+    page.keyboard.press('Escape')
+    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
 
 
 LONG = WRAP('\\section{Alpha}\\label{s:a}\n' + ('Text of alpha. ' * 120) + '\n\n\\section{Beta}\\label{s:b}\nBeta words.\\footnote{One.} More.\\footnote{Two.}\n\n'
@@ -273,6 +390,16 @@ def select_and_words(page):
     check('the status bar counts the words selected: 3 of 12 words', page.inner_text('#st-words') == '3 of 12 words', page.inner_text('#st-words'))
     page.evaluate("window.rikuy.runCommand('select-paragraph')"); page.wait_for_timeout(100)
     check('Select paragraph: the caret\'s paragraph', page.evaluate('String(getSelection())') == 'First sentence here. Second one now! Third.', page.evaluate('String(getSelection())'))
+    # a relayout (the window's width, fonts that came) keeps a selection, and the place a ribbon
+    # menu that is open acts on: the pass's new nodes left the one at a caret, the other at the
+    # start of the page
+    page.evaluate('window.rikuy.relayout(true)'); page.wait_for_timeout(200)
+    check('a relayout keeps the selection whole', page.evaluate('String(getSelection())') == 'First sentence here. Second one now! Third.', page.evaluate('String(getSelection())'))
+    click_text(page, 'Second one', 3)
+    page.get_by_role('button', name='Select', exact=True).click(); page.wait_for_timeout(200)
+    page.evaluate('window.rikuy.relayout(true)'); page.wait_for_timeout(100)
+    page.get_by_role('menu', name='Select', exact=True).get_by_role('menuitem', name='Select sentence', exact=True).click(); page.wait_for_timeout(200)
+    check('and with the Select menu open, Select sentence after a relayout still selects the caret\'s sentence', page.evaluate('String(getSelection())') == 'Second one now!', page.evaluate('String(getSelection())'))
     click_text(page, 'bold', 1)
     page.evaluate("window.rikuy.runCommand('select-similar')"); page.wait_for_timeout(300)
     check('Select text with similar formatting: every bold run marked and listed under Results', hits(page) == ['bold', 'more'] and page.get_by_role('tabpanel', name='Results', exact=True).get_by_role('button').count() == 2, hits(page))
@@ -305,7 +432,7 @@ def pdf_check(page):
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (ctrl_f, dialog, in_selection_and_source, go_to, select_and_words, pdf_check):
+        for f in (ctrl_f, dialog, in_selection_and_source, review, go_to, select_and_words, pdf_check):
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])

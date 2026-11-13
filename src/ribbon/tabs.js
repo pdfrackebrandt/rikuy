@@ -10,8 +10,9 @@
 // As the window narrows the open tab's row gives way as Home's always has: the Styles gallery
 // shows fewer tiles, the Download label goes, the buttons' names go, the style list takes the
 // gallery's place; then, generalised, groups fold into one button each, named after the group,
-// that opens a menu of the same commands by the same names (the lowest rank first). Below 861 px
-// the tabs are a list, "Ribbon tab", at the start of one row that scrolls sideways.
+// that opens a menu of the same commands by the same names (the lowest rank first; ribbonFit has
+// the rule). Below 861 px the tabs are a list, "Ribbon tab", at the start of the row, which on a
+// phone scrolls sideways.
 //
 // The toolbar has one tab stop, the control the arrows last reached; the tabs have one more (the
 // open tab), and the arrows move between them. Ctrl+F1 folds the ribbon to its tabs and back.
@@ -29,6 +30,8 @@ const SVG = (paths) => '<svg viewBox="0 0 20 20" aria-hidden="true">' + paths + 
 // a control the toolbar's arrows skip: disabled, or a tile that cannot apply here
 const isOff = (x) => x.disabled || x.getAttribute('aria-disabled') === 'true';
 const wideScreen = () => !window.matchMedia || window.matchMedia('(min-width: 861px)').matches;
+// where groups fold to fit the row (on a phone's width the row scrolls instead)
+const foldsGroups = () => !window.matchMedia || window.matchMedia('(min-width: 521px)').matches;
 
 export const tabs = {
   // The tabs, panels, groups and controls, from the registry. The controls written in the
@@ -74,7 +77,7 @@ export const tabs = {
         const gb = mk('button', 'btn ghost rb-gbtn');
         gb.type = 'button'; gb.id = 'rg-' + T.id + '-' + g.id;
         gb.setAttribute('aria-label', g.name); gb.title = g.name; gb.setAttribute('aria-haspopup', 'menu'); gb.setAttribute('aria-expanded', 'false');
-        // (its first command's icon, which it shows when it folds early, small: see ribbonFit)
+        // (its first command's icon, which it shows folded: see ribbonFit)
         const first = items.find(({ c }) => c.icon);
         if (first) gb.insertAdjacentHTML('beforeend', SVG(first.c.icon).replace('<svg ', '<svg class="rb-gico" '));
         gb.append(mk('span', '', g.name));
@@ -123,10 +126,14 @@ export const tabs = {
   openGroupMenu(tab, g, gb) {
     const at = this.ribbonAt();
     if (at) at.memo = {};
-    const items = inGroup(tab, g.id).filter(({ c }) => c.run && c.searchable !== false).map(({ c, p }) => {
+    const items = [];
+    for (const { c, p } of inGroup(tab, g.id).filter(({ c }) => c.run && c.searchable !== false)) {
       const on = pressed(this, c, at);
-      return { name: p.name, title: c.title, keys: chordText((c.keys || [])[0]), checked: on === null ? undefined : on, radio: !!c.static, disabled: !enabled(this, c, at), run: () => { this.ribbonBack(); this.runCommand(c.id); } };
-    });
+      items.push({ name: p.name, title: c.title, keys: chordText((c.keys || [])[0]), checked: on === null ? undefined : on, radio: !!c.static, disabled: !enabled(this, c, at), run: () => { this.ribbonBack(); this.runCommand(c.id); } });
+      // (a split button's other choices too, as Word's folded group lists them: Find's Advanced
+      // Find and Go To)
+      if (c.kind === 'split') for (const it of this.commandMenu(c)) if (it && it.name !== p.name && it.command !== c.id) items.push({ ...it, run: () => { this.ribbonBack(); if (it.run) it.run(); } });
+    }
     openMenu(this, gb, items, { label: g.name });
   },
 
@@ -209,8 +216,22 @@ export const tabs = {
     this.ribbonRove();
   },
 
-  // The open tab's room (see the top of this file). Each tile is as wide as its name, measured
-  // here once its fonts are drawn.
+  // The open tab's room (see the top of this file), one rule for every tab and width: everything
+  // open first, then while the row is longer than the window one step at a time, the cheapest loss
+  // first, counted in controls: what takes none (the Download caption, the buttons' names, which
+  // stay their accessible names); then a tile of the Styles gallery at a time, down to three; the
+  // three downloads as one Download button; the style list in the gallery's place; then the
+  // groups, the least needed (rank 1, Editing on Home) and then the lowest rank first, of equal
+  // ranks the rightmost. A folded group is one button, its first command's icon (or its name where
+  // none has one), named after the group, that opens a menu of its commands. Below 861 px the
+  // style sheet has the list and takes the names; below 521 px no group folds (a phone's row
+  // scrolls). Then the steps are tried back, the last first, each kept undone where the row still
+  // fits, so no room is left empty while something is folded. What takes no control goes before
+  // any group folds, so a narrower window never shows more controls than a wider one for the names
+  // or the tiles having gone (a group folded before them opened again once they had). Only where a
+  // later group that takes fewer controls folds and an earlier one opens again for it does it
+  // show more: the rank, not the count, says which goes first. Each step is one write and one
+  // read. Each tile is as wide as its name, measured once its fonts are drawn.
   ribbonFit() {
     const rb = $('#ribbon');
     if (!rb || !this.rbBuilt) return;
@@ -218,48 +239,34 @@ export const tabs = {
     const panel = $('#rp-' + this.rbTab), gw = $('#rb-gw'), gal = !!panel && panel.contains(gw);
     const groups = panel ? [...panel.querySelectorAll('.rb-grp')] : [];
     const fits = () => rb.scrollWidth <= rb.clientWidth + 1;
-    const set = (narrow, fold, n, nolab) => {
-      rb.classList.toggle('rb-narrow', narrow); rb.classList.toggle('rb-fold', fold); rb.classList.toggle('rb-nolab', !!nolab);
-      if (gal && n !== this.rbTiles) { this.rbTiles = n; this.rbFollow = true; }
-      this.paintGallery();
-    };
-    for (const g of groups) g.classList.remove('folded', 'early');
-    rb.classList.remove('rb-narrow', 'rb-dl1');
+    const tiles = (n) => { if (gal && n !== this.rbTiles) { this.rbTiles = n; this.rbFollow = true; this.paintGallery(); } };
+    const flag = (c) => ({ do: () => rb.classList.add(c), undo: () => rb.classList.remove(c) });
+    for (const g of groups) g.classList.remove('folded', 'ico');
+    rb.classList.remove('rb-narrow', 'rb-fold', 'rb-nolab', 'rb-dl1');
     // (a phone's width has the list whatever the room: the style sheet hides the gallery there)
     const wide = gal ? getComputedStyle(gw).display !== 'none' : wideScreen();
-    const done = () => { this.rbFitting = false; this.ribbonRove(); };
-    const foldEarly = () => { for (const g of groups) if (+g.dataset.rank === 1 && g.querySelector('.rb-gico')) g.classList.add('folded', 'early'); };
-    if (wide) {
-      if (gal) measureTiles(this);
-      // Word's way with a tab's least needed groups (rank 1: Editing on Home): where the row is
-      // too short for everything at its widest, they fold first, each into one small button
-      // with its first command's icon, before the gallery shrinks or a button loses its name
-      set(false, false, gal ? 6 : this.rbTiles || 6);
-      if (!fits()) foldEarly();
-      const steps = gal ? [[false, 6], [false, 5], [false, 4], [false, 3], [false, 4, 1], [false, 3, 1], [true, 6], [true, 5], [true, 4], [true, 3]] : [[false, this.rbTiles || 6], [false, this.rbTiles || 6, 1], [true, this.rbTiles || 6], [true, this.rbTiles || 6, 1]];
-      for (const [fold, n, nolab] of steps) {
-        set(false, fold, n, nolab);
-        if (fits()) return done();
-      }
+    rb.classList.toggle('rb-narrow', !wide);
+    // (once: again only where the fonts came since, or the ribbon was folded to its tabs and had no width)
+    if (gal && wide && !(this.rbW && this.rbW.p > 0)) measureTiles(this);
+    if (gal) { tiles(6); this.paintGallery(); }
+    const steps = [flag('rb-nolab'), flag('rb-fold')];
+    // (the tiles one at a time: each undone only after the one after it, chain)
+    if (gal && wide) for (const n of [5, 4, 3]) steps.push({ do: () => tiles(n), undo: () => tiles(n + 1), chain: true });
+    steps.push(flag('rb-dl1'));
+    if (gal && wide) steps.push(flag('rb-narrow'));
+    const order = foldsGroups() ? [...groups].sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
+    for (const g of order) steps.push({ do: () => g.classList.add('folded', ...(g.querySelector('.rb-gico') ? ['ico'] : [])), undo: () => g.classList.remove('folded', 'ico') });
+    let k = 0;
+    while (k < steps.length && !fits()) steps[k++].do();
+    let chain = true;
+    for (let i = k - 1; i >= 0; i--) {
+      const st = steps[i];
+      if (st.chain && !chain) continue;
+      st.undo();
+      if (!fits()) { st.do(); if (st.chain) chain = false; }
     }
-    set(true, true, gal ? 6 : this.rbTiles || 6);
-    // (the list's row folds its least needed groups first too, as the gallery's did)
-    if (!fits()) foldEarly();
-    // (the list's row too goes without the Download label where it is longer than the window, as
-    // between 861 and 900 px, and below them before a button goes out of sight; a phone's one
-    // Download button has no label)
-    if (!fits()) set(true, true, gal ? 6 : this.rbTiles || 6, 1);
-    // (and below 861 px the three downloads are the phone's one Download button before the row's
-    // own buttons go under them: at 860 px Footnote, Citation and Link did)
-    if (!wideScreen() && !fits()) rb.classList.add('rb-dl1');
-    // then whole groups fold into their buttons, the lowest rank first (not on a phone: its row scrolls)
-    if (wide && wideScreen() && !fits()) {
-      for (const g of [...groups].sort((a, b) => a.dataset.rank - b.dataset.rank || groups.indexOf(b) - groups.indexOf(a))) {
-        g.classList.add('folded');
-        if (fits()) break;
-      }
-    }
-    done();
+    this.rbFitting = false;
+    this.ribbonRove();
   },
 
   // one tab stop for the whole toolbar: the control the arrows last reached, or the first that works
@@ -373,7 +380,7 @@ export function installRibbon(app) {
   // tiles and the buttons' names are drawn in have come
   let fit = 0, w = innerWidth;
   addEventListener('resize', () => { if (innerWidth === w) return; w = innerWidth; cancelAnimationFrame(fit); fit = requestAnimationFrame(() => app.ribbonFit()); });
-  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => app.ribbonFit());
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { app.rbW = null; app.ribbonFit(); });
   app.ribbonSync();
   app.ribbonFit();
 }

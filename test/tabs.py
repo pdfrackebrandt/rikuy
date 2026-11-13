@@ -20,7 +20,7 @@ the menu (no Ask Claude outside Claude, Shift+F10 again, a long press), a contex
 on a phone, Page width on a phone, and Home whole at 860 px.
 
 RIKUY_DIST names another dist/."""
-import os, sys
+import os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from browser import open_page, check, results, src, load_doc, click_text, select_text, roundtrip, place, pressed
 from playwright.sync_api import sync_playwright
@@ -151,14 +151,15 @@ def widths(page):
         click_text(page, 'Second paragraph', 3); page.wait_for_timeout(150)
         seen[w] = page.evaluate('''() => { const r = document.getElementById('ribbon'), b = r.getBoundingClientRect(), top = document.getElementById('rb-top');
           return { tabs: !!top.offsetParent, sel: !!document.getElementById('rb-tabsel').offsetParent, over: r.scrollWidth > r.clientWidth + 1, h: Math.round(b.height),
-            folded: [...document.querySelectorAll('.rb-grp.folded:not(.early)')].length, early: [...document.querySelectorAll('.rb-grp.early')].map((g) => g.dataset.group), page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            folded: [...document.querySelectorAll('.rb-grp.folded')].map((g) => g.dataset.group), ico: [...document.querySelectorAll('.rb-grp.ico')].map((g) => g.dataset.group), page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
             dl: [...document.querySelectorAll('.rb-dl button')].filter((x) => x.offsetParent).map((x) => x.id) }; }''')
     print('     widths:', seen)
     check('at 1400 and 1024 px the tabs are a row above the toolbar, nothing folds and the row does not scroll', all(seen[w]['tabs'] and not seen[w]['sel'] and not seen[w]['over'] and not seen[w]['folded'] for w in (1400, 1024)), seen)
-    # (but Home's least needed group, Editing, which folds first into one icon button, as Word's)
-    check('below 1920 px Home\'s Editing group is one icon button named Editing, its commands in its menu', all(seen[w]['early'] == ['editing'] for w in (1400, 1024)), seen)
+    # (Home's least needed group, Editing, folds first, into one icon button, as Word's)
+    check('at 860 px Home\'s Editing group is one icon button named Editing, the only group folded', seen[860]['folded'] == ['editing'] and seen[860]['ico'] == ['editing'], seen[860])
     check('at 860 and 390 px the tabs are the combobox "Ribbon tab" at the row\'s start, in one row that scrolls sideways on a phone', all(not seen[w]['tabs'] and seen[w]['sel'] and seen[w]['h'] <= 44 and seen[w]['page'] <= 0 for w in (860, 390)) and seen[390]['over'], seen)
-    check('the downloads: three at 1400 and 1024 px; one Download menu at 860 px, where the row has no room for three, and on a phone', all(seen[w]['dl'] == ['rb-pdf', 'rb-word', 'b-save'] for w in (1400, 1024)) and seen[860]['dl'] == ['rb-dl-menu'] and not seen[860]['over'] and seen[390]['dl'] == ['rb-dl-menu'], {w: seen[w]['dl'] for w in seen})
+    # (the three go before any group folds: they take two controls, Editing three)
+    check('the downloads: three at 1400 px; one Download menu where the row has no room for three (1024 px, beside Editing, and 860 px), and on a phone', seen[1400]['dl'] == ['rb-pdf', 'rb-word', 'b-save'] and all(seen[w]['dl'] == ['rb-dl-menu'] for w in (1024, 860, 390)) and not seen[860]['over'], {w: seen[w]['dl'] for w in seen})
     page.set_viewport_size({'width': 390, 'height': 900}); page.wait_for_timeout(300)
     page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label='Insert'); page.wait_for_timeout(200)
     check('on a phone the combobox opens a tab: Insert\'s Picture is there by its name', page.get_by_role('tabpanel', name='Insert', exact=True).get_by_role('button', name='Picture', exact=True).is_visible())
@@ -168,21 +169,23 @@ def widths(page):
       for (let k = 0; k < 6; k++) R.register({ id: 't-ed' + k, name: 'Editing test ' + k, tab: 'home', group: 'editing', label: 'Editing test ' + k, icon: '<path d="M4 4h12"/>', when: () => true, run: () => { window.__ran = 't-ed' + k; } });
       for (let k = 0; k < 8; k++) R.register({ id: 't-cl' + k, name: 'Clipboard test ' + k, tab: 'home', group: 'clipboard', label: 'Clipboard test ' + k, icon: '<path d="M4 4h12"/>', when: () => true, run: () => {} });
       window.rikuy.ribbonBuild(); }''')
-    page.set_viewport_size({'width': 1024, 'height': 900}); page.wait_for_timeout(300)
-    click_text(page, 'Second paragraph', 3); page.wait_for_timeout(150)
-    f = page.evaluate('''() => ({ folded: [...document.querySelectorAll('#rp-home .rb-grp.folded')].map((g) => g.dataset.group), over: document.getElementById('ribbon').scrollWidth > document.getElementById('ribbon').clientWidth + 1 })''')
-    check('at 1024 px with more than fits, groups fold, the lowest rank first (Editing, then Clipboard), and the row fits', {'editing', 'clipboard'} <= set(f['folded']) and not f['over'] and 'styles' not in f['folded'] and 'font' not in f['folded'], f)
+    f = {}
+    for w in (900, 1024):
+        page.set_viewport_size({'width': w, 'height': 900}); page.wait_for_timeout(300)
+        click_text(page, 'Second paragraph', 3); page.wait_for_timeout(150)
+        f[w] = page.evaluate('''() => ({ folded: [...document.querySelectorAll('#rp-home .rb-grp.folded')].map((g) => g.dataset.group), over: document.getElementById('ribbon').scrollWidth > document.getElementById('ribbon').clientWidth + 1 })''')
+    check('with more than fits, groups fold, the lowest rank first: Editing at 1024 px, Editing and Clipboard at 900 px, and the row fits', f[1024]['folded'] == ['editing'] and sorted(f[900]['folded']) == ['clipboard', 'editing'] and not f[900]['over'] and not f[1024]['over'], f)
     gb = page.get_by_role('button', name='Editing', exact=True)
     check('a folded group is one button named after it; its own buttons are out of the accessibility tree', gb.count() == 1 and page.get_by_role('button', name='Editing test 0', exact=True).count() == 0 and not twice(page), twice(page))
     gb.click(); page.wait_for_timeout(200)
     menu = page.get_by_role('menu', name='Editing', exact=True)
     names = [menu.get_by_role('menuitem').nth(k).get_attribute('aria-label') for k in range(menu.get_by_role('menuitem').count())]
-    # (Home's own Editing commands, Find, Replace and Select, come first: B5's)
-    check('it opens a menu "Editing" of its commands by their names', names[-6:] == ['Editing test %d' % k for k in range(6)] and names[:-6] == ['Find', 'Replace', 'Select'] and gb.get_attribute('aria-expanded') == 'true', names)
+    # (Home's own Editing commands, Find (with its menu's Advanced Find and Go To), Replace and Select, come first: B5's)
+    check('it opens a menu "Editing" of its commands by their names', names[-6:] == ['Editing test %d' % k for k in range(6)] and names[:-6] == ['Find', 'Advanced Find', 'Go To', 'Replace', 'Select'] and gb.get_attribute('aria-expanded') == 'true', names)
     menu.get_by_role('menuitem', name='Editing test 3', exact=True).click(); page.wait_for_timeout(150)
     check('and an item runs its command, the menu closed, the caret on the page', page.evaluate('window.__ran') == 't-ed3' and page.get_by_role('menu').count() == 0 and page.evaluate('document.activeElement.id') == 'pages')
     page.set_viewport_size({'width': 1920, 'height': 900}); page.wait_for_timeout(300)
-    check('with room again (1920 px) every group is open but the least needed one, Editing, as one icon button', page.evaluate("[...document.querySelectorAll('.rb-grp.folded')].map((g) => g.dataset.group + (g.classList.contains('early') ? '*' : ''))") in ([], ['editing*']))
+    check('with room again (1920 px) every group is open', page.evaluate("[...document.querySelectorAll('.rb-grp.folded')].map((g) => g.dataset.group)") == [], page.evaluate("[...document.querySelectorAll('.rb-grp.folded')].map((g) => g.dataset.group)"))
     page.evaluate('''() => { for (const c of window.rikuy.cmds.commands()) if (/^t-(ed|cl)/.test(c.id)) window.rikuy.cmds.unregister(c.id); window.rikuy.ribbonBuild(); }''')
     page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
 
@@ -483,10 +486,84 @@ def review_fixes(page):
     page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
 
 
+SWEEP = """() => { const app = window.rikuy, rb = document.getElementById('ribbon'), gal = document.getElementById('rb-gallery'), out = {};
+  const fits = () => rb.scrollWidth <= rb.clientWidth + 1;
+  for (const id of app.rbTabs) {
+    // (a contextual tab too, shown as selectTab shows a tab, without the caret in its object)
+    app.rbTab = id;
+    for (const p of rb.querySelectorAll('.rb-panel')) p.hidden = p.dataset.tab !== id;
+    const P = document.getElementById('rp-' + id);
+    P.querySelector('.rb-tb').append(document.querySelector('.rb-dl'));
+    app.ribbonFit(); rb.scrollLeft = 0;
+    let n = 0;
+    // (the gallery's tiles count, its paging arrows and More do not: they are its own way about)
+    for (const x of P.querySelectorAll('button, select')) if (x.offsetParent && (!gal.contains(x) || x.dataset.style) && x.getBoundingClientRect().right <= innerWidth + 1) n++;
+    const folded = [...P.querySelectorAll('.rb-grp.folded')], wasted = [];
+    for (const g of folded) { const c = [...g.classList]; g.classList.remove('folded', 'ico'); if (fits()) wasted.push(g.dataset.group); g.className = c.join(' '); }
+    out[id] = { n, over: !fits(), folded: folded.map((g) => g.dataset.group), wasted };
+  }
+  app.rbTab = null; app.selectTab('home');
+  return out; }"""
+
+
+def fold_sweep(page):
+    """The one fold rule (ribbonFit): from 390 to 1920 px in steps of 10 px, on every tab, with the
+    real commands and with more registered: a wider window never shows fewer controls, the row fits
+    from 521 px up (below, a phone's row scrolls), no group is folded where it would fit open, Home
+    folds nothing but Editing down to 1024 px and at most one group at 900 px."""
+    load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
+    page.evaluate("""() => { const app = window.rikuy, f = window.__rf = app.ribbonFit; window.__fits = 0; app.ribbonFit = function () { window.__fits++; return f.apply(this, arguments); }; }""")
+    for k in ('ArrowRight', 'ArrowRight', 'ArrowDown', 'End', 'Home'):
+        page.keyboard.press(k); page.wait_for_timeout(60)
+    page.wait_for_timeout(200)
+    check('the caret\'s moves measure nothing: no fit of the ribbon', page.evaluate('window.__fits') == 0, page.evaluate('window.__fits'))
+    order = open(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src', 'ribbon', 'order.js')).read()
+    every = [(t, g, name, int(r or 1)) for t, body in re.findall(r"\{ id: '([\w-]+)', name: '[^']*',(?: ctx: '\w+',)? groups: \[(.*?)\] \}", order) for g, name, r in re.findall(r"\['([\w-]+)', '([^']+)'(?:, (\d+))?\]", body)]
+    rank = {(t, g): r for t, g, _, r in every}
+    # (the review's: seven groups of three on File, four in Speech and four in Accessibility; then
+    # three more in every group of every tab, the empty ones too)
+    review = [('file', g, g, 3) for g in ('new', 'open', 'info', 'save', 'print', 'share', 'options')] + [('review', 'speech', 'Speech', 4), ('review', 'accessibility', 'Accessibility', 4)]
+    widths = list(range(390, 1921, 10))
+    for tag, extra in (('with the real commands', []), ('with the review\'s', review), ('with three more in every group', [(t, g, name, 3) for t, g, name, _ in every])):
+        page.evaluate("""(extra) => { const R = window.rikuy.cmds; let k = 0;
+          for (const c of R.commands()) if (/^t-sw/.test(c.id)) R.unregister(c.id);
+          for (const [t, g, name, n] of extra) for (let i = 0; i < n; i++)
+            R.register({ id: 't-sw' + k++, name: 'Sweep ' + t + ' ' + g + ' ' + i, tab: t, group: g, label: 'Sweep ' + name + ' ' + i, icon: '<path d="M4 4h12"/>', when: () => true, run: () => {} });
+          window.rikuy.ribbonBuild(); }""", extra)
+        seen = {}
+        for w in widths:
+            page.set_viewport_size({'width': w, 'height': 900}); page.wait_for_timeout(40)
+            seen[w] = page.evaluate(SWEEP)
+        tabs = list(seen[widths[0]])
+        fewer = [(t, a, b) for t in tabs for a, b in zip(widths, widths[1:]) if seen[b][t]['n'] < seen[a][t]['n'] and b != 530]
+        # (where a narrower window shows more, a group of higher rank folded there and let one of
+        # lower rank open: the rank says which folds first, and the tries back open what has room)
+        def inverted(t, a, b):
+            fa, fb = set(seen[a][t]['folded']), set(seen[b][t]['folded'])
+            return any(rank[(t, x)] > rank[(t, y)] for x in fa - fb for y in fb - fa)
+        flips = [x for x in fewer if inverted(*x)]
+        over = [(t, w) for t in tabs for w in widths if w >= 521 and seen[w][t]['over']]
+        wasted = [(t, w, seen[w][t]['wasted']) for t in tabs for w in widths if seen[w][t]['wasted']]
+        print('     sweep %s: %d tabs; at 530, 860, 870, 1020, 1360 px (controls, folded): %s; where a group of higher rank folded for one of lower rank: %s' % (
+            tag, len(tabs), {t: [(seen[w][t]['n'], len(seen[w][t]['folded'])) for w in (530, 860, 870, 1020, 1360)] for t in tabs}, [(t, a, b, seen[a][t]['folded'], seen[b][t]['folded']) for t, a, b in flips]))
+        if extra == [] or extra == review:
+            check('%s, on all %d tabs from 390 to 1920 px in 10 px steps: a wider window never shows fewer controls (but 530 px against 520, where a phone\'s row scrolls)' % (tag, len(tabs)), not fewer, fewer[:6])
+        else:
+            check('%s, on all %d tabs: a wider window shows fewer controls only where a group of higher rank folded and let one of lower rank open' % (tag, len(tabs)), all(inverted(*x) for x in fewer), [x for x in fewer if not inverted(*x)][:6])
+        check('%s: from 521 px up the row fits on every tab' % tag, not over, over[:6])
+        check('%s: no group is folded where it would fit open' % tag, not wasted, wasted[:6])
+        if extra == []:
+            home = {w: seen[w]['home'] for w in widths}
+            check('Home from 1920 to 1024 px folds nothing but Editing (the group this batch added); at 900 px one group at most', all(set(home[w]['folded']) <= {'editing'} for w in widths if w >= 1024) and len(home[900]['folded']) <= 1, {w: home[w]['folded'] for w in (900, 1030, 1360)})
+    page.evaluate("""() => { for (const c of window.rikuy.cmds.commands()) if (/^t-sw/.test(c.id)) window.rikuy.cmds.unregister(c.id); window.rikuy.ribbonBuild(); window.rikuy.ribbonFit = window.__rf; }""")
+    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
+    open_tab(page, 'Home')
+
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (mouse_and_keys, contextual, widths, collapse, every_command, keys, search_box, context_menu, kit, round_trips, kept_braces, review_fixes):
+        for f in (mouse_and_keys, contextual, widths, collapse, every_command, keys, search_box, context_menu, kit, round_trips, kept_braces, review_fixes, fold_sweep):
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])

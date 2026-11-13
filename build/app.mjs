@@ -474,7 +474,7 @@ Ctrl is Cmd on a Mac.
   hits); Replace opens the dialog "Find and Replace" (fields "Find what" and "Replace with";
   checkboxes Match case, Find whole words only, Use wildcards (Word's: ? * @ {n,m} [a-z] [!a-z] <
   > and \\1), Use regular expressions ($1), In LaTeX source, In selection; buttons Find Next, Find
-  Previous, Replace, Replace All, Format, Special; Escape closes it); Go To opens its tab Go To
+  Previous, "Replace one" (it shows Replace), Replace All, Format, Special; Escape closes it); Go To opens its tab Go To
   (combobox "Go to what": page, section, footnote, equation, figure, table, comment, label; the
   field takes a number, a section number like 2.1, a label's key, or +n and -n). On a Mac: Cmd+F,
   Control+H (Cmd+H hides the app), Cmd+Option+G. What is found is the text the page shows: 50%
