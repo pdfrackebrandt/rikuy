@@ -14,9 +14,10 @@ import { register, onInsertText, onInstall, command, enabled, run as runCmd } fr
 import { BLOCKS } from '../render.js';
 import { diffEdit } from '../wrap.js';
 import { docClass, hasPackage, preambleEnd } from '../preamble.js';
+import { NOT_PLAIN } from '../styles.js';
 import { openMenu } from '../ui/kit.js';
 import { $ } from '../ui/dom.js';
-import { readLists, allLists, selectedItems, restartEdit, crlf, formatOf, labelEdits, startEdits, resumeEdits, sepEdits, kindEdits, demote, promote, unlist, listFrom, autoMarker, sortEdit,
+import { bulletCode, textEngine, readLists, allLists, selectedItems, restartEdit, crlf, noindentBefore, maxStart, SYMBOLS, formatOf, labelEdits, startEdits, resumeEdits, sepEdits, kindEdits, demote, promote, unlist, listFrom, autoMarker, sortEdit,
   multilevelEdits, multilevelOf, listSetup, mechOf, levelOf, BULLETS, NUMBERS, MULTI, OWN_SYMBOLS, bulletGlyph, numText, sameBullet, sameNumber, DEFAULT, indentAt, MAX_LEVEL } from '../lists.js';
 import { openBulletDialog, openNumberDialog, openValueDialog, openMultilevelDialog, openSortDialog, openSpacingDialog } from '../ui/listdialog.js';
 
@@ -75,12 +76,14 @@ register(
   { id: 'list-value', name: 'Set Numbering Value', title: 'Set Numbering Value: the number this list starts at, or continue the one before', synonyms: ['Start at', 'Starting number', 'Numbering value'], menu: { list: 42 },
     when: (app, at) => !!numbered(app, at), whyNot: () => 'Put the caret in a numbered list.', run: (app, args) => (args && args.value != null ? app.listStart(+args.value) : openValueDialog(app)) },
   { id: 'list-spacing', name: 'List spacing', title: 'The space between the list\'s items: LaTeX\'s own, none between them, none at all, or your own', synonyms: ['Space between items', 'Compact list', 'nosep', 'itemsep'], menu: { list: 50 },
-    when: (app, at) => !!inList(app, at) && inList(app, at).L.editable && app.listMech() !== 'beamer', whyNot: () => 'Put the caret in a list.',
+    when: (app, at) => !!inList(app, at) && inList(app, at).L.editable, whyNot: () => 'Put the caret in a list.',
     run: (app, args) => (args && 'sep' in args ? app.listSpacing(args.sep) : app.openListMenu('spacing')) },
   { id: 'bullet-define', name: 'Define New Bullet', title: 'Define New Bullet: any symbol, character or LaTeX as the list\'s bullet', synonyms: ['Custom bullet', 'Bullet symbol'],
-    when: (app, at) => { const I = listOf(app, at); return !!I && (!I.L || I.L.kind !== 'desc') && app.listMech() !== 'beamer'; }, whyNot: (app, at) => app.listMech() === 'beamer' ? 'Beamer sets bullets in its theme.' : why(app, at), run: (app, args) => (args && args.code != null ? app.listLabel('itemize', args.code) : openBulletDialog(app)) },
+    when: (app, at) => { const I = listOf(app, at); return !!I && (!I.L || I.L.kind !== 'desc') && app.listMech() !== 'beamer'; }, whyNot: (app, at) => app.listMech() === 'beamer' ? 'Beamer sets bullets in its theme.' : why(app, at), run: (app, args) => (args && args.code != null ? app.bulletDefine(args.code) : openBulletDialog(app)) },
   { id: 'number-define', name: 'Define New Number Format', title: 'Define New Number Format: the number style, the text around it and where it starts', synonyms: ['Custom numbering', 'Number format'],
-    when: (app, at) => { const I = listOf(app, at); return !!I && (!I.L || I.L.kind !== 'desc'); }, whyNot: why, run: (app, args) => (args && args.label != null ? app.listLabel('enumerate', args.label) : openNumberDialog(app)) },
+    when: (app, at) => { const I = listOf(app, at); return !!I && (!I.L || I.L.kind !== 'desc'); }, whyNot: why,
+    // ({ label, start }: either may be left out, which leaves it as it is; both are one undo)
+    run: (app, args) => (args && (args.label !== undefined || args.start !== undefined) ? app.listFormat('enumerate', args) : openNumberDialog(app)) },
   { id: 'multilevel-define', name: 'Define New Multilevel List', title: 'Define New Multilevel List: the label of each level of every numbered or bulleted list', synonyms: ['Custom multilevel list'],
     when: (app, at) => !!at && app.listMech() !== 'beamer', whyNot: () => 'Beamer sets every list\'s labels in its theme.', run: (app, args) => (args && args.kind ? app.listMultilevel(args.kind, args.labels || null) : openMultilevelDialog(app)) },
   { id: 'description-list', name: 'Description list', title: 'Description list: each item a term in bold and its description', synonyms: ['Definition list', 'Glossary list', 'description'], kind: 'toggle', menu: { list: 15 },
@@ -117,15 +120,18 @@ onInstall((app) => {
     if (!I || !I.L) return;
     if (e.key === 'Enter') {
       const it = I.L.items[I.k];
-      if (!at.c.collapsed || I.chain.length < 2 || !I.L.editable || /\S/.test(I.src.slice(it.cmdE, it.e)) || it.lab || it.lists.length) return;
+      if (!at.c.collapsed || I.chain.length < 2 || !I.L.editable || /\S/.test(I.src.slice(it.cmdE, it.e)) || it.lab || it.lists.length || !app.levelCan(at, -1)) return;
       e.preventDefault(); e.stopImmediatePropagation();
       app.listLevel(-1);
       return;
     }
-    // (at the first level Shift+Tab leaves the page, as everywhere: the keyboard's way out)
-    if (e.shiftKey && I.chain.length < 2) return;
+    // Where nothing can be done (the first level for Shift+Tab, the first item, a fifth level, a
+    // list Rikuy does not edit, a nested list inside another environment) the key goes on as it
+    // goes everywhere, the keyboard's way off the page; Tab says why it did nothing
+    const d = e.shiftKey ? -1 : 1;
+    if (!app.levelCan(at, d)) { if (d > 0 && I.L.editable && (I.k === 0 || app.levelWhy(at).includes('deep'))) app.toast(app.levelWhy(at)); return; }
     e.preventDefault(); e.stopImmediatePropagation();
-    if (!app.listLevel(e.shiftKey ? -1 : 1)) app.toast(e.shiftKey ? 'This item cannot go a level up here.' : app.levelWhy(at));
+    app.listLevel(d);
   }, true);
   // the libraries' tiles: the arrow keys move in two directions
   document.addEventListener('keydown', (e) => {
@@ -200,7 +206,9 @@ export const methods = {
     const src = this.src(this.main), others = this.preambleOthers(), out = [];
     for (const p of new Set(pkgs)) {
       if (p === 'amssymb' && OWN_SYMBOLS.some((q) => hasPackage(src, q, undefined, others))) continue;
-      if (p === 'enumitem' && ['beamer'].includes(this.listMech())) continue;
+      // (never beside the enumerate package or paralist, whose "(a)" lists it breaks, nor in beamer:
+      // the edits are written in their forms there)
+      if (p === 'enumitem' && this.listMech() !== 'enumitem') continue;
       out.push(p);
     }
     return out;
@@ -237,14 +245,9 @@ export const methods = {
     if (!I) return false;
     const c = at.c;
     if (!I.L) {
-      const src = this.src(I.f), mech = this.listMech();
-      let open = '', pkgs = [];
-      if (opts.label != null) {
-        const fake = { name: env, kind: env === 'enumerate' ? 'enum' : 'item', s: 0, be: 0, es: 0, setupE: 0, opt: null, parent: null, items: [] };
-        // ([label=...], or a \renewcommand line where the document labels lists without enumitem)
-        const r = labelEdits('', fake, opts.label, this.listCfg(), mech);
-        if (r && r.edits.length) { open = r.edits[0].t; pkgs = r.pkgs; }
-      }
+      const src = this.src(I.f);
+      // ([label=...], or a \renewcommand line where the document labels lists without enumitem)
+      const { open, pkgs } = this.openFor(env, opts.label) || { open: '', pkgs: [] };
       const { edits, p } = listFrom(src, I.paras, env, open, c.a);
       return this.listCommit(I.f, edits.reverse(), [...pkgs, ...(opts.pkgs || [])], { f: I.f, p, bias: -1 });
     }
@@ -319,7 +322,7 @@ export const methods = {
   listLabel(env, code) {
     const at = this.ribbonAt(), I = at && this.listAt(at);
     if (!I) return false;
-    const pk = env === 'itemize' ? (BULLETS.concat([]).find((x) => x.code === code) || {}).pkg : null;
+    const pk = env === 'itemize' ? (SYMBOLS.find((x) => x.code === code) || {}).pkg : null;
     const pkgs = pk ? [pk] : env === 'itemize' && /\\(checkmark|blacksquare|blacktriangleright|square|blacklozenge|lozenge|bigstar)\b/.test(code || '') ? ['amssymb'] : [];
     if (!I.L || I.L.name !== env) return this.toggleList(env, { label: code, pkgs });
     const r = labelEdits(I.src, I.L, code, this.listCfg(), this.listMech());
@@ -327,14 +330,85 @@ export const methods = {
     if (!r.edits.length) return true;
     return this.listCommit(I.f, r.edits, [...r.pkgs, ...(code != null ? pkgs : [])], this.listCaret(I.f, r.edits, at.c.a, at.c.b));
   },
+  // Define New Bullet's: a character as its symbol's LaTeX where it is one of them; one pdfLaTeX's
+  // fonts do not have (», →) refused, as XeLaTeX and LuaLaTeX would print it (src/lists.js bulletCode)
+  bulletDefine(code) {
+    const r = bulletCode(code, { ...this.textEngine(), esc: (t) => t });
+    if (r.error) { this.toast(r.error, 6000); return false; }
+    return this.listLabel('itemize', r.code);
+  },
+  textEngine() { return textEngine(this.src(this.main), this.engineChoice ? this.engineChoice() : 'auto'); },
   // the number the list starts at
   listStart(n) {
     const at = this.ribbonAt(), I = at && numbered(this, at);
     if (!I) return false;
+    if (n > maxStart(I.fmt)) { this.toast('A list numbered with letters stops at z: it can start at 26 at most.'); return false; }
     const r = startEdits(I.src, I.L, n, this.listCfg(), this.listMech());
     if (!r) return false;
     if (!r.edits.length) return true;
     return this.listCommit(I.f, r.edits, r.pkgs, this.listCaret(I.f, r.edits, at.c.a, at.c.b));
+  },
+  // Define New Number Format's OK: the label and the start (either undefined: as it is) in one
+  // step; on paragraphs the list made with them, on the other kind of list that list changed
+  listFormat(env, o) {
+    const at = this.ribbonAt(), I = at && this.listAt(at);
+    if (!I) return false;
+    const cfg = this.listCfg(), mech = this.listMech();
+    if (!I.L) {
+      const h = this.openFor(env, o.label, o.start);
+      if (!h) return false;
+      const { edits, p } = listFrom(this.src(I.f), I.paras, env, h.open, at.c.a);
+      return this.listCommit(I.f, edits.reverse(), h.pkgs, { f: I.f, p, bias: -1 });
+    }
+    if (!I.L.editable) return false;
+    const steps = [];
+    if (I.L.name !== env) steps.push((src, L) => { const e = kindEdits(src, L, env); return e && { edits: e, pkgs: [] }; });
+    if (o.label !== undefined) steps.push((src, L) => labelEdits(src, L, o.label, cfg, mech));
+    if (o.start !== undefined && env === 'enumerate') steps.push((src, L) => { const f = formatOf(src, L, cfg); if (o.start > maxStart(f)) return null; return startEdits(src, L, o.start, cfg, mech); });
+    const r = this.listSteps(I, steps);
+    if (!r) { this.toast('This list\'s number is written in a way Rikuy cannot change here; the source can.'); return false; }
+    if (!r.edits.length) return true;
+    return this.listCommit(I.f, r.edits, r.pkgs, this.listCaret(I.f, r.edits, at.c.a, at.c.b));
+  },
+  // Edits made one after another on the list, each reading the list as the one before left it,
+  // given back as one edit (one undo) and the packages they need; null where one cannot be made
+  listSteps(I, steps) {
+    const sigs = this.model && this.model.userSigs;
+    let src = I.src, re = I.B.e, L = I.L;
+    const pkgs = [];
+    for (const step of steps) {
+      const r = step(src, L);
+      if (!r) return null;
+      if (r.edits && r.edits.length) { const next = applyAll(src, r.edits); re += next.length - src.length; src = next; }
+      pkgs.push(...(r.pkgs || []));
+      // (every edit is at the list's name or after it: the list starts where it did)
+      L = allLists(readLists(src, I.B.s, re, sigs)).find((x) => x.s === I.L.s) || L;
+    }
+    const d = diffEdit(I.src, src);
+    return { edits: d ? [d] : [], pkgs };
+  },
+  // what \begin{...} of a new list gets for a label and a start, the document's way: { open, pkgs }
+  openFor(env, label, start) {
+    const cfg = this.listCfg(), mech = this.listMech();
+    const fake = { name: env, kind: env === 'enumerate' ? 'enum' : env === 'itemize' ? 'item' : 'desc', s: 0, be: 0, es: 0, setupE: 0, opt: null, parent: null, items: [] };
+    let open = '';
+    const pkgs = [];
+    if (label != null) {
+      const r = labelEdits('', fake, label, cfg, mech);
+      if (r && r.edits.length) { open = r.edits[0].t; pkgs.push(...r.pkgs); }
+    }
+    if (start != null && start !== 1 && env === 'enumerate') {
+      if (start > maxStart({ label })) return null;
+      const r = startEdits('', fake, start, cfg, mech);
+      if (r && r.edits.length) {
+        const t = r.edits[0].t;
+        if (t.startsWith('[') && open.startsWith('[')) open = open.slice(0, -1) + ',' + t.slice(1);
+        else if (t.startsWith('[')) open = t + open;
+        else open += t;
+        pkgs.push(...r.pkgs);
+      }
+    }
+    return { open, pkgs };
   },
   listResume(on) {
     const at = this.ribbonAt(), I = at && numbered(this, at);
@@ -362,21 +436,27 @@ export const methods = {
   listSpacing(sep) {
     const at = this.ribbonAt(), I = at && inList(this, at);
     if (!I || !I.L.editable) return false;
-    const r = sepEdits(I.src, I.L, sep, this.listCfg());
-    if (!r || !r.edits.length) return false;
+    const r = sepEdits(I.src, I.L, sep, this.listCfg(), this.listMech());
+    if (!r) { this.toast('Compact needs enumitem, which the enumerate package or paralist here would not take: No space between items is LaTeX\'s own.'); return false; }
+    if (!r.edits.length) return false;
     return this.listCommit(I.f, r.edits, r.pkgs, this.listCaret(I.f, r.edits, at.c.a, at.c.b));
   },
   // Multilevel list: the labels of levels 1 to 4 of every list of a kind (null: LaTeX's own); the
   // caret's list, and the lists in it, become that kind
+  // labels: four labels (a preset: the caret's list and the lists in it become that kind, their own
+  // labels giving way), or per level a label, null (LaTeX's own) or undefined (as it is: Define New
+  // Multilevel List writes only the levels it changed), or null for LaTeX's own at every level
   listMultilevel(kind, labels) {
     const src = this.src(this.main), end = this.model && this.model.docBody ? this.model.docBody.at : preambleEnd(src);
-    const r = multilevelEdits(src, kind, labels, end);
+    const mech = this.listMech();
+    const r = multilevelEdits(src, kind, labels, end, mech);
     if (!r) { this.toast('The document has no preamble to write the levels in.'); return false; }
     const at = this.ribbonAt(), I = at && this.listAt(at), env = ENVS[kind];
     const pre = r.edits.map((x) => ({ f: this.main, ...x }));
     const body = [];
     let caret = null;
-    if (I && I.L) {
+    const preset = !!labels && labels.length === 4 && labels.every((x) => typeof x === 'string');
+    if (I && I.L && preset) {
       // the caret's whole list, every level of it, of this kind; their own labels give way to the levels'
       const all = [];
       const walk = (L) => { all.push(L); for (const it of L.items) for (const C of it.lists) if (C.direct) walk(C); };
@@ -384,16 +464,17 @@ export const methods = {
       for (const L of all) {
         if (!L.editable || L.kind === 'desc') continue;
         if (L.kind !== kind) { const e = kindEdits(I.src, L, env); if (e) body.push(...e); }
-        else if (labels && L.opt && (optHas(I.src, L, 'label') || optHas(I.src, L, 'label*'))) { const o = labelEdits(I.src, L, null, { ...this.listCfg(), setlist: [] }, 'enumitem'); if (o) body.push(...o.edits); }
+        else { const F = formatOf(I.src, L, this.listCfg()); if (['opt', 'short', 'def'].includes(F.from)) { const o = labelEdits(I.src, L, null, { ...this.listCfg(), setlist: [], labelenum: {}, labelitem: {}, theenum: {} }, mech); if (o) body.push(...o.edits); } }
       }
       caret = { f: I.f, a: at.c.a, b: at.c.b };
-    } else if (I && I.paras && labels) {
+    } else if (I && I.paras && preset) {
       const { edits, p } = listFrom(this.src(I.f), I.paras, env, '', at.c.a);
       body.push(...edits);
       caret = { f: I.f, a: p, b: p, after: true };
     } else if (at && at.c && !at.c.ghost) caret = { f: at.c.f, a: at.c.a, b: at.c.b };
     const f = I ? I.f : null;
-    const pe = r.pkgs.length ? this.packageEdits(this.listPkgs([...r.pkgs, ...((labels || []).some((x) => /blacksquare|checkmark|blacktriangle/.test(x)) ? ['amssymb'] : [])])) : [];
+    const want = this.listPkgs([...r.pkgs, ...((labels || []).some((x) => typeof x === 'string' && /blacksquare|checkmark|blacktriangle/.test(x)) ? ['amssymb'] : [])]);
+    const pe = want.length ? this.packageEdits(want) : [];
     // (the \setlist lines before the package's line in the array: where both go at the preamble's
     // end, the one applied first ends up last, and \setlist must come after \usepackage{enumitem})
     const all = [...pre, ...body.map((x) => ({ f, ...x })), ...pe];
@@ -416,11 +497,12 @@ export const methods = {
     const f = at.B.f, c = at.c, B = at.B;
     this.commit([{ f, s: c.a, e: c.a, t: ' ' }], { f, p: c.a + 1, bias: -1 }, 'type');
     this.closeGroup();
-    const src = this.src(f), s = pp.s, e = pp.e + 1;
+    // (the paragraph's own \noindent goes with it: left before \begin it would stand alone)
+    const src = this.src(f), s = noindentBefore(this.src(f), pp.s), e = pp.e + 1;
     let rs = c.a + 1;
     while (rs < e && (src[rs] === ' ' || src[rs] === '\t')) rs++;
     const rest = src.slice(rs, e), guard = rest[0] === '[' ? '{}' : '';
-    const cfg = this.listCfg(), mech = this.listMech();
+    const cfg = this.listCfg();
     // the list just before, if this item goes on with it
     const bs = this.renderer.blocks, i = bs.findIndex((x) => x.f === f && x.s === B.s);
     const P = i > 0 ? bs[i - 1] : null;
@@ -439,21 +521,9 @@ export const methods = {
         }
       }
     }
-    let open = '', pkgs = [];
-    if (M.name === 'enumerate') {
-      const fake = { name: 'enumerate', kind: 'enum', s: 0, be: 0, es: 0, setupE: 0, opt: null, parent: null, items: [] };
-      const lab = labelEdits('', fake, M.star, cfg, mech);
-      if (lab && lab.edits.length) { open = lab.edits[0].t; pkgs.push(...lab.pkgs); }
-      if (M.start !== 1) {
-        const st = startEdits('', fake, M.start, cfg, mech);
-        if (st && st.edits.length) {
-          const t = st.edits[0].t;
-          if (t.startsWith('[') && open.startsWith('[')) open = open.slice(0, -1) + ',' + t.slice(1);
-          else open += t;
-          pkgs.push(...st.pkgs);
-        }
-      }
-    }
+    const h = M.name === 'enumerate' ? this.openFor('enumerate', M.star, M.start) : { open: '', pkgs: [] };
+    if (!h) return true;
+    const { open, pkgs } = h;
     // (a label written in the list's set up starts on a line of its own: the edit gave its line break)
     const head = crlf(src, '\\begin{' + M.name + '}' + open + '\n  \\item ' + guard);
     const t = head + rest + crlf(src, '\n\\end{' + M.name + '}');
@@ -480,10 +550,46 @@ export const methods = {
       const k = all ? 0 : I.k, n = all ? L.items.length - 1 : I.m;
       if (n - k < 1) return null;
       m.sort = { kind: 'items', f: I.f, B: I.B, src: I.src, items: L.items.slice(k, n + 1), pieces: L.items.slice(k, n + 1).map((it) => ({ s: it.s, e: it.e })) };
-    } else if (I && I.paras && I.paras.length > 1) {
-      m.sort = { kind: 'paragraphs', f: I.f, pieces: I.paras.map((p) => ({ s: p.s, e: p.e })) };
+    } else if (!I || !I.L) {
+      const P = I && I.paras && I.paras.length > 1 ? I.paras : this.sortParas(at);
+      if (P && P.length > 1) m.sort = { kind: 'paragraphs', f: P.f || I.f, pieces: P.map((p) => ({ s: p.s, e: p.e })) };
     }
     return m.sort;
+  },
+  // The selected paragraphs, each with the comment lines just above it (a coauthor's comment, a
+  // note), which go where it goes; a LaTeX paragraph's mark does not count as a comment: such a
+  // paragraph is not sorted. null where the selection covers anything but paragraphs.
+  sortParas(at) {
+    if (!at || !at.c || at.c.ghost || at.c.collapsed || at.cell) return null;
+    const r = getSelection().rangeCount ? getSelection().getRangeAt(0) : null;
+    if (!r) return null;
+    const of = (n) => { const el = n.nodeType === 1 ? n : n.parentElement, i = el && el.closest('.it'); return i ? BLOCKS.get(+i.dataset.b) : null; };
+    const A = of(r.startContainer), Z = of(r.endContainer);
+    if (!A || !Z || A.f !== Z.f) return null;
+    const src = this.src(A.f), out = [];
+    for (const X of this.renderer.blocks) {
+      if (X.f !== A.f || X.s < A.s || X.e > Z.e) continue;
+      const el = X.items.length === 1 && X.items[0].el;
+      if (!el || el.dataset.ctx !== 'p' || /\bthm\b/.test(el.className)) return null;
+      let s = X.s, e = X.e;
+      while (s < e && /\s/.test(src[s])) s++;
+      while (e > s && /\s/.test(src[e - 1])) e--;
+      // the comment lines it starts with, then its words
+      let w = s;
+      for (let g = 0; g < 50 && src[w] === '%'; g++) {
+        if (/^%[ \t]*rikuy:/i.test(src.slice(w, w + 20))) return null;
+        const n = src.indexOf('\n', w);
+        if (n < 0 || n >= e) return null;
+        w = n + 1;
+        while (w < e && /[ \t\r]/.test(src[w])) w++;
+      }
+      if (w >= e || src[w] === '%' || NOT_PLAIN.test(src.slice(s, e))) return null;
+      out.push({ s, e });
+    }
+    if (out.length < 2) return null;
+    out.sort((x, y) => x.s - y.s);
+    out.f = A.f;
+    return out;
   },
   // the words of what Sort sorts, as the page shows them: an item's first paragraph without its
   // label, a paragraph's text (one walk over the page's items, not one per piece)
@@ -498,7 +604,7 @@ export const methods = {
         if (v[6] === '1') continue;
         let t = '';
         for (const n of el.childNodes) if (!(n.classList && (n.classList.contains('lbl') || n.classList.contains('dlbl')))) t += n.textContent;
-        byStart.set(+v[0] + T.B.base, t.replace(/​/g, '').trim());
+        byStart.set(+v[0] + T.B.base, t.replace(/\u200B/g, '').trim());
       }
       return T.items.map((it) => byStart.get(it.s) ?? src.slice(it.cmdE, it.e).replace(/\\[A-Za-z]+\*?|[{}$]/g, '').trim());
     }
@@ -597,7 +703,7 @@ export const methods = {
       const items = [
         { name: 'LaTeX\'s spacing', title: 'The space LaTeX puts between items', checked: !sep, radio: true, run: () => { this.ribbonBack(); this.listSpacing(null); } },
         { name: 'No space between items', title: 'enumitem\'s noitemsep', checked: sep === 'noitemsep', radio: true, run: () => { this.ribbonBack(); this.listSpacing('noitemsep'); } },
-        { name: 'Compact', title: 'No space between items, nor around the list: enumitem\'s nosep', checked: sep === 'nosep', radio: true, run: () => { this.ribbonBack(); this.listSpacing('nosep'); } },
+        { name: 'Compact', title: this.listMech() === 'enumitem' || I.fmt.sepFrom === 'opt' ? 'No space between items, nor around the list: enumitem\'s nosep' : 'Needs enumitem, which the enumerate package or paralist here would not take', checked: sep === 'nosep', radio: true, disabled: this.listMech() !== 'enumitem' && I.fmt.sepFrom !== 'opt', run: () => { this.ribbonBack(); this.listSpacing('nosep'); } },
         null,
         { name: 'Custom spacing…', title: 'A space of your own between items: enumitem\'s itemsep', checked: !!sep && !['nosep', 'noitemsep'].includes(sep), radio: true, run: () => openSpacingDialog(this) }
       ];
@@ -607,5 +713,4 @@ export const methods = {
   }
 };
 
-const optHas = (src, L, key) => !!L.opt && new RegExp('(^|[,\\s\\[])' + key.replace('*', '\\*') + '\\s*=').test(src.slice(L.opt.s, L.opt.e));
 const applyAll = (t, edits) => { for (const x of [...edits].sort((a, b) => b.s - a.s)) t = t.slice(0, x.s) + x.t + t.slice(x.e); return t; };

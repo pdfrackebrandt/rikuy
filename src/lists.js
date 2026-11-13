@@ -235,7 +235,8 @@ export const DEFAULT = { enum: ['\\arabic*.', '(\\alph*)', '\\roman*.', '\\Alph*
 const THE = ['arabic', 'alph', 'roman', 'Alph'];
 
 const tidy = (s) => String(s).replace(/\s+/g, '').replace(/^\{(.*)\}$/, '$1');
-const val = (n, k) => k === 'arabic' ? String(n) : k === 'alph' ? alph(n) : k === 'Alph' ? alph(n).toUpperCase() : k === 'roman' ? roman(n) : roman(n).toUpperCase();
+// (TeX prints nothing for a letter or a roman numeral of 0 or less: start=0 with \alph* is ")")
+const val = (n, k) => k === 'arabic' ? String(n) : n <= 0 ? '' : k === 'alph' ? alph(n) : k === 'Alph' ? alph(n).toUpperCase() : k === 'roman' ? roman(n) : roman(n).toUpperCase();
 function roman(n) {
   if (!(n > 0) || n > 3999) return String(n);
   let s = '';
@@ -246,11 +247,35 @@ const alph = (n) => (n >= 1 && n <= 26 ? String.fromCharCode(96 + n) : String(n)
 
 // A label in LaTeX 2e's own terms (\alph{enumii}, \theenumi) at level ℓ, made enumitem's
 // (\alph*); the counters of the levels above stay as they are
-export function starOf(code, level, the = {}) {
-  let t = String(code);
+// (kept per set of \theenum definitions, the preamble's object, which a build reads once: then by
+// level and code, the strings themselves as keys, so a stranger's 2000 lists with a 2000 character
+// \theenumi cost one expansion, not one each nor a key of that length built each time)
+const starCache = new WeakMap();
+const NO_THE = {};
+export function starOf(code, level, the = NO_THE) {
+  let A = starCache.get(the);
+  if (!A) starCache.set(the, (A = new Map()));
+  let B = A.get(level);
+  if (!B) A.set(level, (B = new Map()));
+  const hit = B.get(code);
+  if (hit != null) return hit;
+  const v = starOf0(String(code), level, the);
+  if (B.size > 500) B.clear();
+  B.set(code, v);
+  return v;
+}
+function starOf0(t, level, the) {
   // (a definition that names itself, \renewcommand{\theenumi}{\theenumi\theenumi...}, would grow
-  // fourfold exponentially: the expansion stops at 2000 characters)
-  for (let k = 0; k < 4 && t.length < 2000; k++) t = t.replace(/\\theenum(iv|i{1,3})(?![A-Za-z])/g, (m, r) => '{' + (the[ROMAN.indexOf(r)] || '\\' + THE[ROMAN.indexOf(r) - 1] + '{enum' + r + '}') + '}');
+  // fourfold exponentially: the expansion stops at 2000 characters, within a pass too)
+  for (let k = 0; k < 4 && t.length < 2000; k++) {
+    let grown = t.length;
+    t = t.replace(/\\theenum(iv|i{1,3})(?![A-Za-z])/g, (m, r) => {
+      if (grown > 2000) return m;
+      const x = '{' + (the[ROMAN.indexOf(r)] || '\\' + THE[ROMAN.indexOf(r) - 1] + '{enum' + r + '}') + '}';
+      grown += x.length - m.length;
+      return x;
+    });
+  }
   if (t.length > 2000) t = t.slice(0, 2000);
   return t.replace(/\\(arabic|alph|Alph|roman|Roman)\s*\{\s*enum(iv|i{1,3})\s*\}/g, (m, k, r) => ROMAN.indexOf(r) === level ? '\\' + k + '*' : '\\' + k + '{enum' + r + '}').replace(/\{(\\(?:arabic|alph|Alph|roman|Roman)\*)\}/g, '$1');
 }
@@ -280,7 +305,19 @@ export function shortOf(star) {
 }
 // The text a numbered item's label shows: star with n for its counter, vals for the levels above
 // (vals[0] the first level's number); braces, \textbf and the like gone
+const numCache = new Map();
 export function numText(star, n, vals = []) {
+  // (the same label and numbers for every one-item list of a long document: worked out once)
+  const key = n + ',' + vals.join(',');
+  let A = numCache.get(star);
+  if (A && A.has(key)) return A.get(key);
+  if (!A) { if (numCache.size > 200) numCache.clear(); numCache.set(star, (A = new Map())); }
+  if (A.size > 200) A.clear();
+  const v = numText0(star, n, vals);
+  A.set(key, v);
+  return v;
+}
+function numText0(star, n, vals) {
   return String(star)
     .replace(/\\(arabic|alph|Alph|roman|Roman)\*/g, (m, k) => val(n, k))
     .replace(/\\(arabic|alph|Alph|roman|Roman)\s*\{\s*enum(iv|i{1,3})\s*\}/g, (m, k, r) => val(vals[ROMAN.indexOf(r) - 1] || 0, k))
@@ -292,6 +329,89 @@ export function numText(star, n, vals = []) {
 const GLYPHS = { textbullet: '•', bullet: '•', circ: '◦', textendash: '–', textemdash: '—', blacksquare: '▪', square: '□', blacktriangleright: '▸', triangleright: '▹', checkmark: '✓', star: '⋆', bigstar: '★',
   diamond: '⋄', rightarrow: '→', to: '→', Rightarrow: '⇒', hookrightarrow: '↪', ast: '∗', textasteriskcentered: '∗', textperiodcentered: '·', cdot: '·', times: '×', blacklozenge: '⧫', lozenge: '◊',
   S: '§', textparagraph: '¶', P: '¶', dag: '†', ddag: '‡', textdagger: '†', rhd: '▹', triangleright_: '▹', minus: '−', ding: null, textgreater: '>', textless: '<', diamondsuit: '♢', clubsuit: '♣', heartsuit: '♡', spadesuit: '♠', checkmark_: '✓' };
+// The text of a number label around its counter as a field shows it: ~ a no-break space (typing's
+// escape gives it back as ~), \% and the like their character, {} nothing; null where it holds
+// anything else (a command, a group), which the dialogs keep as written
+export function labelText(t) {
+  let out = '';
+  const ch = { textasciitilde: '~', textasciicircum: '^', textbackslash: '\\' };
+  for (let i = 0; i < t.length;) {
+    const r = t.slice(i, i + 20);
+    let m;
+    if ((m = /^\\(textasciitilde|textasciicircum|textbackslash)\{\}/.exec(r))) { out += ch[m[1]]; i += m[0].length; }
+    else if ((m = /^\\([#$%&_{}])/.exec(r))) { out += m[1]; i += 2; }
+    else if (r.startsWith('{}')) i += 2;
+    else if (r[0] === '~') { out += ' '; i++; }
+    else if (r.startsWith('---')) { out += '—'; i += 3; }
+    else if (r.startsWith('--')) { out += '–'; i += 2; }
+    else if (r.startsWith('``')) { out += '“'; i += 2; }
+    else if (r.startsWith("''")) { out += '”'; i += 2; }
+    else if (/[\\{}$^_#&%]/.test(r[0])) return null;
+    else { out += r[0]; i++; }
+  }
+  return out;
+}
+// A number label (enumitem's form) as Define New Number Format and Define New Multilevel List
+// show it: { before, style, after, up } (up: the levels above written before it, as
+// \arabic{enumi}.), or null where it is written some other way (\textbf{\alph*}, \S\roman*)
+export function numberParts(code) {
+  const t = String(code || '');
+  // (one counter of its own, found by a plain search: no pattern that could backtrack over a
+  // stranger's label; a label that long is kept as written)
+  if (t.length > 200) return null;
+  const all = [...t.matchAll(/\\(arabic|alph|Alph|roman|Roman)\*/g)];
+  if (all.length !== 1) return null;
+  const m = all[0];
+  let head = t.slice(0, m.index);
+  const after = labelText(t.slice(m.index + m[0].length));
+  // the levels above written before it, as \arabic{enumi}. (each with what follows it up to the next)
+  const up = [];
+  const ups = /\\(arabic|alph|Alph|roman|Roman)\{enum(?:iv|i{1,3})\}[^\\]*/g;
+  let first = -1;
+  for (const u of head.matchAll(ups)) { if (first < 0) first = u.index; up.push(u[1]); }
+  if (first >= 0) {
+    // (only where they run on to the counter, one after another)
+    if (head.slice(first).replace(ups, '') !== '') return null;
+    head = head.slice(0, first);
+  }
+  const before = labelText(head);
+  if (before == null || after == null) return null;
+  return { before, style: m[1], after, up };
+}
+// A character typed as a bullet (Define New Bullet), as LaTeX: one of the symbols' glyphs is that
+// symbol's code; ASCII as typing escapes it (esc); anything else as it is where the engine reads
+// Unicode (XeLaTeX, LuaLaTeX) or, on pdfLaTeX, where the T1 fonts have it (Latin-1). pdfLaTeX's
+// default fonts have no »: "Command \guillemetright unavailable in encoding OT1", and nothing has
+// →: "Unicode character → not set up". { code, pkg } or { error }.
+export function bulletCode(text, o = {}) {
+  const t = String(text).trim();
+  if (!t) return { error: 'Type a character, or pick a symbol.' };
+  const latex = o.latex != null ? o.latex : /[\\$]/.test(t);
+  const sym = !latex && SYMBOLS.find((x) => x.glyph === t);
+  if (sym) return { code: sym.code, pkg: sym.pkg || null };
+  const code = latex || !o.esc ? t : o.esc(t);
+  // (one character of the text that pdfLaTeX could not print)
+  const bad = o.unicode ? null : [...t].find((c) => c.codePointAt(0) > 0x7e && !(o.t1 && c.codePointAt(0) >= 0xa1 && c.codePointAt(0) <= 0xff));
+  if (!bad) return { code, pkg: null };
+  return { error: 'pdfLaTeX\'s fonts here have no ' + bad + ': pick a symbol, write it in LaTeX (such as $\\gg$), or compile with XeLaTeX or LuaLaTeX.' };
+}
+// Whether a document is compiled by an engine that reads Unicode (the engine chosen, else what
+// the worker's pickEngine would choose from the same lines), and whether pdfLaTeX's fonts are T1
+export function textEngine(src, chosen = 'auto') {
+  // (every pattern bounded: a stranger's preamble of "\usepackage[" without "]" read in a line's time)
+  const pre = stripComments(String(src).slice(0, Math.min(200000, Math.max(0, preambleEnd(src)))));
+  const t1 = [...pre.matchAll(/\\usepackage\s*\[([^\]]{0,500})\]\s*\{fontenc\}/g)].some((m) => /\bT1\b/.test(m[1]));
+  if (chosen === 'xelatex' || chosen === 'lualatex') return { unicode: true, t1 };
+  if (chosen === 'pdflatex') return { unicode: false, t1 };
+  const magic = /^[ \t]*%+[ \t]*!\s*TEX\s+(?:TS-)?program\s*=\s*([\w-]+)/im.exec(String(src).slice(0, 8000));
+  if (magic) return { unicode: /^(xe|lua)/i.test(magic[1]), t1 };
+  const cls = (/\\documentclass\s*(?:\[[^\]]{0,500}\])?\s*\{([^}]{0,100})\}/.exec(pre) || [])[1] || '';
+  const pkgs = new Set();
+  for (const m of pre.matchAll(/\\(?:usepackage|RequirePackage)\s*(?:\[[^\]]{0,500}\])?\s*\{([^}]{0,500})\}/g)) for (const x of m[1].split(',')) pkgs.add(x.trim());
+  const unicode = /^(xe|lua|ltj|ctex)/i.test(cls) || [...pkgs].some((x) => /^(fontspec|unicode-math|polyglossia|xeCJK|ctex|luatexja[\w-]*|luacode|luaotfload|fontsetup|mathspec|bidi)$/.test(x)) ||
+    /\\(setmainfont|setsansfont|newfontfamily|setmathfont|directlua)\b/.test(pre);
+  return { unicode, t1 };
+}
 export function bulletGlyph(code) {
   let t = String(code).trim();
   if (t.length > 200) return null;
@@ -312,7 +432,7 @@ export function bulletGlyph(code) {
 // \labelenumi and \theenumi; { setlist: [{ names, levels, kv, s, e, arg }], labelitem: { 1: code },
 // labelenum: { 1: code }, theenum: { 1: code } } (names, levels: null for all). end: where it ends.
 export function listSetup(src, end) {
-  const out = { setlist: [], labelitem: {}, labelenum: {}, theenum: {} };
+  const out = { setlist: [], labelitem: {}, labelenum: {}, theenum: {}, pos: { labelitem: {}, labelenum: {}, theenum: {} } };
   if (end == null) end = preambleEnd(src);
   if (end < 0) return out;
   const pre = stripComments(src.slice(0, Math.min(end, PRE)));
@@ -350,6 +470,9 @@ export function listSetup(src, end) {
     const z = groupEnd(pre, i, 2000);
     if (z < 0) continue;
     out[w[1]][ROMAN.indexOf(w[2])] = src.slice(i + 1, z - 1).trim();
+    // (where it is written: Multilevel list rewrites it in place where enumitem cannot be added)
+    const ls = pre.lastIndexOf('\n', m.index - 1) + 1, nl = pre.indexOf('\n', z);
+    out.pos[w[1]][ROMAN.indexOf(w[2])] = { s: m.index, e: z, vs: i + 1, ve: z - 1, line: /^[ \t]*$/.test(pre.slice(ls, m.index)) && /^[ \t]*$/.test(pre.slice(z, nl < 0 ? pre.length : nl)) ? [ls, nl < 0 ? pre.length : nl + 1] : null };
     re.lastIndex = z;
   }
   return out;
@@ -428,9 +551,9 @@ export function formatOf(src, L, cfg, lv) {
   const f = { kind, level, depth, label: null, from: 'default', at: null, star: false, start: 1, startFrom: null, startAt: null, resume: false, sep: null, sepFrom: null, opts: o };
   const sets = cfg ? cfg.setlist.filter((x) => (!x.names || x.names.has(L.name) || (x.names.has(kind === 'enum' ? 'enumerate' : kind === 'item' ? 'itemize' : 'description'))) && (!x.levels || x.levels.has(depth) || x.levels.has(level))) : [];
   const fromKV = (get) => { for (let i = sets.length - 1; i >= 0; i--) { const v = get(sets[i].kv); if (v !== undefined) return v; } return undefined; };
-  const the = {};
-  if (cfg) Object.assign(the, cfg.theenum);
-  for (const x of su) if (x.what === 'theenum') the[x.level] = x.value;
+  // (the preamble's own object where the list sets none: starOf's results are kept by it)
+  let the = cfg ? cfg.theenum : NO_THE;
+  if (su.some((x) => x.what === 'theenum')) { the = { ...the }; for (const x of su) if (x.what === 'theenum') the[x.level] = x.value; }
   // the label
   const own = o.kv['label'] || o.kv['label*'];
   if (own) { f.label = own.value.replace(/^\{([\s\S]*)\}$/, '$1'); f.from = 'opt'; f.star = !!o.kv['label*'] && !o.kv['label']; f.at = { s: own.s + own.key.length + 1, e: own.e }; }
@@ -460,6 +583,18 @@ export function formatOf(src, L, cfg, lv) {
     else if (c && /^-?\d+$/.test(c.value)) { f.start = +c.value + 1; f.startFrom = 'counter'; f.startAt = { s: c.vs, e: c.ve, line: [c.s, c.e] }; }
     else { const v = fromKV((kv) => { const x = kv.find((y) => y.key === 'start'); return x ? x.value : undefined; }); if (v && /^-?\d+$/.test(v)) f.start = +v; }
     f.resume = o.kv['resume*'] ? 'resume*' : o.kv.resume ? (o.kv.resume.value ? o.kv.resume.value : true) : false;
+    // enumitem's series: series=foo names this list's count; resume=foo and resume*=foo go on from it
+    const name = (x) => (x && x.value ? x.value.replace(/^\{([\s\S]*)\}$/, '$1').trim().slice(0, 60) : null);
+    f.series = name(o.kv.series);
+    f.resumeName = typeof f.resume === 'string' && f.resume !== 'resume*' ? f.resume.replace(/^\{([\s\S]*)\}$/, '$1').trim().slice(0, 60) : name(o.kv['resume*']);
+    if (f.resumeName) { f.resume = o.kv['resume*'] ? 'resume*' : true; f.series = f.series || f.resumeName; }
+    // what \ref gives: enumitem's ref= (else its label, as written); LaTeX's own lists \theenumi
+    // with the levels above it (\theenumi in this level's terms: a \renewcommand, the enumerate
+    // package's style, LaTeX's arabic, alph, roman, Alph)
+    const ref = o.kv.ref || (() => { const v = fromKV((kv) => { const x = kv.find((y) => y.key === 'ref'); return x ? x : undefined; }); return v; })();
+    f.ref = ref ? ref.value.replace(/^\{([\s\S]*)\}$/, '$1').slice(0, 400) : null;
+    const counter = (star) => { const m = /\\(arabic|alph|Alph|roman|Roman)\*/.exec(star || ''); return m ? '\\' + m[1] + '*' : null; };
+    f.theStar = the[level] ? starOf(the[level], level, the) : f.from === 'short' || f.from === 'opt' || f.from === 'setlist' ? counter(f.label) || '\\' + THE[level - 1] + '*' : '\\' + THE[Math.min(3, level - 1)] + '*';
   }
   // the space between items
   for (const k of ['nosep', 'noitemsep', 'itemsep']) if (o.kv[k]) { f.sep = k === 'itemsep' ? o.kv[k].value : k; f.sepFrom = 'opt'; break; }
@@ -552,7 +687,7 @@ function startEdits0(src, L, n, cfg, mech) {
   const f = formatOf(src, L, cfg);
   if (L.kind !== 'enum') return null;
   n = Math.round(n);
-  if (!(n >= 0 && n < 100000)) return null;
+  if (!(n >= 0 && n <= maxStart(f))) return null;
   const edits = [], pkgs = [];
   const drop = { resume: null, 'resume*': null };
   if (f.startFrom === 'counter') {
@@ -572,6 +707,8 @@ function startEdits0(src, L, n, cfg, mech) {
   const ind = itemInd(src, L);
   return { edits: [{ s: L.be, e: L.be, t: '\n' + ind + '\\setcounter{enum' + ROMAN[f.level] + '}{' + (n - 1) + '}' }], pkgs };
 }
+// The highest number a list can start at: TeX stops at a letter past z ("Counter too large")
+export const maxStart = (f) => (/\\(alph|Alph)\s*(\*|\{\s*enum)/.test((f && f.label) || '') ? 26 : 99999);
 // option edits that leave no empty brackets
 function optDrop(src, L, ch) {
   const e = kvEdits(src, L.opt.is, L.opt.ie, ch);
@@ -604,12 +741,24 @@ export function restartEdit(src, L, k) {
 }
 // The space between a list's items: 'nosep' (none, nor around the list), 'noitemsep' (none
 // between items), a length (itemsep=), null (LaTeX's own)
-export function sepEdits(src, L, sep, cfg) {
+export function sepEdits(src, L, sep, cfg, mech = 'enumitem') {
   const f = formatOf(src, L, cfg), edits = [];
-  if (f.sepFrom === 'def') {
-    // a hand written \setlength{\itemsep}{0pt} or \tightlist goes: the option says it now
-    for (const x of setupOf(src, L)) if (x.what === 'itemsep' || x.what === 'tight') edits.push(lineCut(src, x.s, x.e));
+  const own = setupOf(src, L).filter((x) => x.what === 'itemsep' || x.what === 'tight');
+  // Beside the enumerate package or paralist enumitem would break their "(a)" lists: the space
+  // is LaTeX's own \setlength{\itemsep} in the list then (none around a list has no such form)
+  if (mech !== 'enumitem' && f.sepFrom !== 'opt') {
+    if (sep === 'nosep') return null;
+    const len = sep === 'noitemsep' ? '0pt' : sep;
+    if (!len) return { edits: own.map((x) => lineCut(src, x.s, x.e)), pkgs: [] };
+    const x = own[0];
+    if (x && x.what === 'itemsep' && x.vs != null) edits.push({ s: x.vs, e: x.ve, t: len });
+    else if (x) edits.push({ s: x.s, e: x.e, t: '\\setlength{\\itemsep}{' + len + '}' });
+    else edits.push({ s: L.be, e: L.be, t: crlf(src, '\n' + itemInd(src, L) + '\\setlength{\\itemsep}{' + len + '}') });
+    for (const y of own.slice(1)) edits.push(lineCut(src, y.s, y.e));
+    return { edits, pkgs: [] };
   }
+  // a hand written \setlength{\itemsep}{0pt} or \tightlist goes: the option says it now
+  if (f.sepFrom === 'def') for (const x of own) edits.push(lineCut(src, x.s, x.e));
   const ch = { nosep: sep === 'nosep' ? true : null, noitemsep: sep === 'noitemsep' ? true : null, itemsep: sep && sep !== 'nosep' && sep !== 'noitemsep' ? sep : null };
   if (L.opt) edits.push(...optDrop(src, L, ch));
   else if (sep) edits.push({ s: L.be, e: L.be, t: '[' + (sep === 'nosep' || sep === 'noitemsep' ? sep : 'itemsep=' + sep) + ']' });
@@ -679,7 +828,8 @@ export function demote(src, rs, re, a, b, sigs) {
   const { L, k, m } = sel;
   const P = L.items[k - 1], raw = rawRanges(src, L.s, L.e);
   const N = P.lists.length ? P.lists[P.lists.length - 1] : null;
-  const into = N && N.direct && N.editable && N.closed && N.e === P.e && N.items.length ? N : null;
+  // (a comment after its \end, "\end{itemize} % sub", still ends the item with that list)
+  const into = N && N.direct && N.editable && N.closed && endsWith(src, N, P) && N.items.length ? N : null;
   // how deep it goes: LaTeX nests four lists of a kind, six in all
   const kind = into ? into.kind : L.kind;
   const { level, depth } = levelOf(into || L);
@@ -690,7 +840,7 @@ export function demote(src, rs, re, a, b, sigs) {
   if (into) {
     const last = into.items[into.items.length - 1], to = itemInd(src, into);
     s = last.e;
-    o.lit('\n' + to).copy(L.items[k].s, L.items[m].e, from, to, raw).copy(last.e, into.e);
+    o.lit('\n' + to).copy(L.items[k].s, L.items[m].e, from, to, raw).copy(last.e, P.e);
   } else {
     const step = stepOf(src, L), bi = (indentAt(src, P.s) ?? from) + step, to = bi + step;
     s = P.e;
@@ -724,18 +874,19 @@ export function promote(src, rs, re, a, b, sigs) {
   o.lit('\n' + indP);
   const M = N.items[m], after = m + 1 < N.items.length;
   const C = M.lists.length ? M.lists[M.lists.length - 1] : null;
-  const join = after && C && C.direct && C.closed && C.e === M.e && C.name === N.name;
+  const join = after && C && C.direct && C.closed && endsWith(src, C, M) && C.name === N.name;
   if (join) {
     // the items after them join the list that ends the last of them
     const last = C.items[C.items.length - 1], to = shiftInd(itemInd(src, C), indN, indP);
-    o.copy(N.items[k].s, last.e, indN, indP, raw).lit('\n' + to).copy(N.items[m + 1].s, N.items[N.items.length - 1].e, indN, to, raw).copy(last.e, C.e, indN, indP, raw);
+    o.copy(N.items[k].s, last.e, indN, indP, raw).lit('\n' + to).copy(N.items[m + 1].s, N.items[N.items.length - 1].e, indN, to, raw).copy(last.e, C.e, indN, indP, raw).copy(C.e, M.e);
   } else {
     o.copy(N.items[k].s, M.e, indN, indP, raw);
     if (after) {
-      // a list of their own, as theirs was (its options and set up, not its start)
-      const bi = indP + step, to = bi + step;
-      o.lit('\n' + bi + '\\begin{' + N.name + '}' + keepOpts(src, N));
-      if (N.setupE > N.be && /\S/.test(src.slice(N.be, N.setupE))) o.lit('\n' + to + src.slice(N.be, N.setupE).trim());
+      // a list of their own, as theirs was: its options and set up, its numbers going on where the
+      // list had set them itself (the items that came up no longer count)
+      const bi = indP + step, to = bi + step, h = splitHead(src, N, k);
+      o.lit('\n' + bi + '\\begin{' + N.name + '}' + h.open);
+      if (h.setup) o.lit('\n' + to + h.setup);
       o.lit('\n' + to).copy(N.items[m + 1].s, N.items[N.items.length - 1].e, indN, to, raw).lit('\n' + bi + '\\end{' + N.name + '}');
     }
   }
@@ -744,12 +895,34 @@ export function promote(src, rs, re, a, b, sigs) {
   return done(src, P.s, P.e, o, a, b);
 }
 const shiftInd = (ind, from, to) => (ind.startsWith(from) ? to + ind.slice(from.length) : ind);
+// whether list C ends item I's text: nothing after its \end but spaces and comments
+function endsWith(src, C, I) {
+  if (C.e === I.e) return true;
+  if (C.e > I.e || I.e - C.e > 2000) return false;
+  // (a comment runs to its line's end: written so, "%%%%…" cannot be split two ways, which made
+  // a stranger's line of percent signs after an \end take seconds at each move of the caret)
+  const t = src.slice(C.e, I.e);
+  return /^(?:[ \t\r\n]|%[^\n]*(?:\n|$))*$/.test(t);
+}
+// The options and set up of a list split off list L after its first k items: its own, with its
+// start going on from where those k leave off where the list set its start itself (start=,
+// \setcounter), and no continuation of another list
+function splitHead(src, L, k) {
+  const f = L.kind === 'enum' ? formatOf(src, L, null) : null;
+  let setup = L.setupE > L.be ? src.slice(L.be, L.setupE).trim() : '';
+  if (!f) return { open: keepOpts(src, L), setup };
+  const n = f.start + k, level = f.level;
+  setup = setup.replace(/\\setcounter\s*\{\s*enum(?:iv|i{1,3})\s*\}\s*\{[^{}\n]{0,20}\}[ \t]*(?:\r?\n[ \t]*)?/, f.startFrom === 'counter' && n !== 1 ? '\\setcounter{enum' + ROMAN[level] + '}{' + (n - 1) + '}\n' : '').trim();
+  const open = f.startFrom === 'opt' ? optWith(src, L, { start: n === 1 ? null : String(n), resume: null, 'resume*': null }) : keepOpts(src, L);
+  return { open, setup };
+}
 // a list's options without its start and continuation, as a list split off it takes them
-function keepOpts(src, L) {
+function keepOpts(src, L) { return optWith(src, L, { start: null, resume: null, 'resume*': null }); }
+// a list's options in brackets with keys changed (none left: no brackets)
+function optWith(src, L, ch) {
   if (!L.opt) return '';
-  const e = optDrop(src, L, { start: null, resume: null, 'resume*': null });
-  const t = apply(src.slice(L.opt.s, L.opt.e), e.map((x) => ({ s: x.s - L.opt.s, e: x.e - L.opt.s, t: x.t })));
-  return t;
+  const e = optDrop(src, L, ch);
+  return apply(src.slice(L.opt.s, L.opt.e), e.map((x) => ({ s: x.s - L.opt.s, e: x.e - L.opt.s, t: x.t })));
 }
 // the change as the smallest edit, the caret and the selection followed into it
 function done(src, s, e, o, a, b) {
@@ -790,7 +963,7 @@ export function unlist(src, rs, re, a, b, sigs) {
     if (k > 0) head(L.items[0].s).lit('\n\n');
     else o.lit(pad.b);
     paragraphs(o, src, L, k, m, '', iind, raw);
-    if (m + 1 < L.items.length) o.lit('\n\n' + begin + '\n' + (setup ? '  ' + setup + '\n' : '') + '  ').copy(L.items[m + 1].s, L.items[L.items.length - 1].e).lit('\n\\end{' + L.name + '}');
+    if (m + 1 < L.items.length) { const h = splitHead(src, L, k); o.lit('\n\n\\begin{' + L.name + '}' + h.open + '\n' + (h.setup ? '  ' + h.setup + '\n' : '') + '  ').copy(L.items[m + 1].s, L.items[L.items.length - 1].e).lit('\n\\end{' + L.name + '}'); }
     else o.lit(pad.a);
   } else {
     if (k > 0) head(L.items[0].s).lit('\n\n' + ind);
@@ -803,7 +976,7 @@ export function unlist(src, rs, re, a, b, sigs) {
       if (s > it.cmdE) o.lit('\n\n' + ind);
     }
     paragraphs(o, src, L, k, m, ind, iind, raw);
-    if (m + 1 < L.items.length) o.lit('\n\n' + ind + begin + '\n' + (setup ? iind + setup + '\n' : '') + iind).copy(L.items[m + 1].s, L.items[L.items.length - 1].e).lit('\n' + ind + '\\end{' + L.name + '}');
+    if (m + 1 < L.items.length) { const h = splitHead(src, L, k); o.lit('\n\n' + ind + '\\begin{' + L.name + '}' + h.open + '\n' + (h.setup ? iind + h.setup + '\n' : '') + iind).copy(L.items[m + 1].s, L.items[L.items.length - 1].e).lit('\n' + ind + '\\end{' + L.name + '}'); }
   }
   return done(src, s, e, o, a, b);
 }
@@ -832,12 +1005,21 @@ export function listFrom(src, paras, name, open = '', a) {
   let p = a, add = 0;
   paras.forEach((r, k) => {
     const t = crlf(src, (k ? '' : '\\begin{' + name + '}' + open + '\n') + '  \\item ' + (src[r.s] === '[' ? '{}' : ''));
-    if (r.s <= a) add += t.length;
-    edits.push({ s: r.s, e: r.s, t });
+    // (a paragraph's own \noindent goes: before \begin it would be left alone, before \item it
+    // would start a paragraph where the list wants its first item)
+    const ni = noindentBefore(src, r.s);
+    if (r.s <= a) add += t.length - (r.s - ni);
+    edits.push({ s: ni, e: r.s, t });
     if (k === paras.length - 1) edits.push({ s: r.e, e: r.e, t: crlf(src, '\n\\end{' + name + '}') });
   });
   p = Math.max(a, paras[0].s) + add;
   return { edits, p };
+}
+
+// where a \noindent (with \indent, \par, spaces) right before s starts, or s
+export function noindentBefore(src, s) {
+  const back = src.slice(Math.max(0, s - 60), s), m = /\\(?:no)?indent(?![A-Za-z@])[ \t]*(?:\r?\n[ \t]*)?$/.exec(back);
+  return m ? s - (back.length - m.index) : s;
 }
 
 // What a paragraph's first characters ask for as Word's automatic lists read them: "- ", "* " a
@@ -885,7 +1067,7 @@ export function sortEdit(src, pieces, keys, o = {}) {
     let piece = src.slice(pieces[j].s, pieces[j].e);
     const gap = i + 1 < pieces.length ? src.slice(pieces[i].e, pieces[i + 1].s) : '';
     // (a piece whose last line is a comment would comment out what comes after it on its line)
-    if (endsInComment(piece) && (i + 1 < pieces.length ? !gap.includes('\n') : !/^[ \t]*(\r?\n|$)/.test(src.slice(e, e + 200)))) piece += '\n';
+    if (endsInComment(piece) && (i + 1 < pieces.length ? !gap.includes('\n') : !/^[ \t]*(\r?\n|$)/.test(src.slice(e, e + 200)))) piece += CRLF(src) ? '\r\n' : '\n';
     t += piece + gap;
   });
   return { s, e, t };
@@ -926,33 +1108,54 @@ export function setlistCalls(src, end) {
 // The edits that give every list of a kind the labels of levels 1 to 4 (null: LaTeX's own again):
 // an existing \setlist[enumerate,k]{...} gets its label changed, else a line is added (at the
 // preamble's end, after the packages). Returns { edits, pkgs }.
-export const multilevelEdits = (src, kind, labels, end) => crlfAll(src, multilevelEdits0(src, kind, labels, end));
-function multilevelEdits0(src, kind, labels, end) {
+export const multilevelEdits = (src, kind, labels, end, mech) => crlfAll(src, multilevelEdits0(src, kind, labels, end, mech));
+// labels: one entry a level, 1 to 4: a label to give it, null for LaTeX's own again, undefined to
+// leave it as it is (null for the whole array: LaTeX's own at every level). mech: where enumitem is
+// not the document's way (the enumerate package, paralist) the levels are LaTeX's own
+// \renewcommand{\labelenumii}{...} lines, rewritten where the preamble has them.
+function multilevelEdits0(src, kind, labels, end, mech = 'enumitem') {
   if (end == null) end = preambleEnd(src);
   if (end < 0) return null;
+  if (!labels) labels = [null, null, null, null];
   const name = kind === 'enum' ? 'enumerate' : 'itemize';
-  const calls = setlistCalls(src, end), edits = [], lines = [];
-  for (let k = 1; k <= 4; k++) {
-    const own = calls.filter((c) => c.names.length === 1 && c.names[0] === name && c.levels.length === 1 && c.levels[0] === k).pop();
-    const want = labels ? labels[k - 1] : null;
-    if (own) {
-      const e = kvEdits(src, own.arg[0], own.arg[1], { label: want == null ? null : braced(want), 'label*': null });
-      if (want == null && e.length && !/\S/.test(stripComments(apply(src.slice(own.arg[0], own.arg[1]), e.map((x) => ({ s: x.s - own.arg[0], e: x.e - own.arg[0], t: x.t })))))) edits.push({ s: own.line[0], e: own.line[1], t: '' });
+  const edits = [], lines = [];
+  let pkgs = [];
+  if (mech !== 'enumitem') {
+    const cfg = listSetup(src, end), what = kind === 'enum' ? 'labelenum' : 'labelitem';
+    for (let k = 1; k <= 4; k++) {
+      const want = labels[k - 1];
+      if (want === undefined) continue;
+      const v = want == null ? null : kind === 'enum' ? l2eOf(want, k) : want;
+      const at = cfg.pos[what][k];
+      if (at) { if (v == null) edits.push(at.line ? { s: at.line[0], e: at.line[1], t: '' } : { s: at.s, e: at.e, t: '' }); else edits.push({ s: at.vs, e: at.ve, t: v }); }
+      else if (v != null) lines.push('\\renewcommand{\\' + what + ROMAN[k] + '}{' + v + '}');
+    }
+  } else {
+    const calls = setlistCalls(src, end);
+    for (let k = 1; k <= 4; k++) {
+      const want = labels[k - 1];
+      if (want === undefined) continue;
+      const own = calls.filter((c) => c.names.length === 1 && c.names[0] === name && c.levels.length === 1 && c.levels[0] === k).pop();
+      if (own) {
+        const e = kvEdits(src, own.arg[0], own.arg[1], { label: want == null ? null : braced(want), 'label*': null });
+        if (want == null && e.length && !/\S/.test(stripComments(apply(src.slice(own.arg[0], own.arg[1]), e.map((x) => ({ s: x.s - own.arg[0], e: x.e - own.arg[0], t: x.t })))))) edits.push({ s: own.line[0], e: own.line[1], t: '' });
+        else edits.push(...e);
+      } else if (want != null) lines.push('\\setlist[' + name + ',' + k + ']{label=' + braced(want) + '}');
+    }
+    // labels a \setlist for every level of the kind gives: they go when LaTeX's own are asked for
+    if (labels.every((x) => x === null)) for (const c of calls) if (c.names.length === 1 && c.names[0] === name && !c.levels.length) {
+      const e = kvEdits(src, c.arg[0], c.arg[1], { label: null, 'label*': null });
+      if (e.length && !/\S/.test(stripComments(apply(src.slice(c.arg[0], c.arg[1]), e.map((x) => ({ s: x.s - c.arg[0], e: x.e - c.arg[0], t: x.t })))))) edits.push({ s: c.line[0], e: c.line[1], t: '' });
       else edits.push(...e);
-    } else if (want != null) lines.push('\\setlist[' + name + ',' + k + ']{label=' + braced(want) + '}');
-  }
-  // labels a \setlist for every level of the kind gives: they go when LaTeX's own are asked for
-  if (!labels) for (const c of calls) if (c.names.length === 1 && c.names[0] === name && !c.levels.length) {
-    const e = kvEdits(src, c.arg[0], c.arg[1], { label: null, 'label*': null });
-    if (e.length && !/\S/.test(stripComments(apply(src.slice(c.arg[0], c.arg[1]), e.map((x) => ({ s: x.s - c.arg[0], e: x.e - c.arg[0], t: x.t })))))) edits.push({ s: c.line[0], e: c.line[1], t: '' });
-    else edits.push(...e);
+    }
+    if (labels.some((x) => typeof x === 'string')) pkgs = ['enumitem'];
   }
   if (lines.length) {
     const at = src.lastIndexOf('\n', end - 1) + 1;
     const pre = at < end && /\S/.test(src.slice(at, end)) ? '\n' : '';
     edits.push({ s: pre ? end : at, e: pre ? end : at, t: pre + lines.join('\n') + '\n' });
   }
-  return { edits: merge(edits), pkgs: labels ? ['enumitem'] : [] };
+  return { edits: merge(edits), pkgs };
 }
 const braced = (v) => (/[,=\]\[]/.test(v) ? '{' + v + '}' : v);
 // the labels the preamble gives each level of a kind (null where it gives none of its own)
@@ -961,6 +1164,8 @@ export function multilevelOf(cfg, kind) {
   for (let k = 1; k <= 4; k++) {
     let v = null;
     for (const x of cfg.setlist) if ((!x.names || x.names.has(name)) && (!x.levels || x.levels.has(k))) { const y = x.kv.find((z) => z.key === 'label'); if (y) v = y.value.replace(/^\{([\s\S]*)\}$/, '$1'); }
+    // (the preamble's own \renewcommand{\labelenumii}, where no \setlist says otherwise)
+    if (v == null) { const d = (kind === 'enum' ? cfg.labelenum : cfg.labelitem)[k]; if (d) v = kind === 'enum' ? starOf(d, k, cfg.theenum) : d; }
     out.push(v);
   }
   return out;

@@ -1011,6 +1011,48 @@ Tests:
     Indents" (enumitem's `leftmargin`), numbering a heading as a list (LaTeX numbers headings
     itself), a nested list's bullet in Word (pandoc's AST has no bullet character); Safari and
     Firefox, by hand.
+    *Review (a fresh hostile reviewer on f5bba2e: 3 high, 5 medium, 8 low; each fixed with its
+    case as a test, compiled in the page where TeX erred).* H1: List spacing, Multilevel list and
+    Define New Multilevel List added enumitem beside the enumerate package or paralist, and every
+    `[(a)]` list then failed ("(a) undefined"): there they now write LaTeX's own forms
+    (`\setlength{\itemsep}{0pt}` in the list, `\renewcommand{\labelenumii}{...}` in the preamble,
+    rewritten where written), Compact (`nosep`) is off with why, and `listPkgs` never adds
+    enumitem where the document labels lists another way. H2: Define New Number Format with a
+    start took two undo steps; one now (`listFormat`: each change re-reads the list the one
+    before left, one edit). H3: OK in Define New Multilevel List without a change rewrote
+    `\textbf{\alph*}`, `\S\roman*`, `\ding{43}` and added levels: only rows changed are written,
+    a label the dialog cannot show is "Custom (kept)", a level without its own label is LaTeX's
+    (∗ and · at levels 3 and 4). M1: the page drew labels TeX does not print; now enumitem's
+    `resume` keeps to the group it is in (a list's end saves into the list around it, lost with an
+    itemize's group), `series=`/`resume=` name their own counts, `resume*` takes the options too,
+    a labelled `\item[x]` steps no number, `\alph` of 0 prints nothing, `ref=` is used, `\ref`
+    follows `\theenumi` and the enumerate package's nested "(i)" refers as 1i; Set Numbering Value
+    and the dialogs stop at 26 for letters (TeX: "Counter too large"); each against pdfLaTeX in
+    the page. M2: a stranger's self naming `\theenumi` under 2000 lists cost 1.4 s a keystroke;
+    expansion stops within its pass and `starOf` and `numText` are kept per build (49 ms, the
+    same document without that line 34). M3: a typed » or → broke pdfLaTeX's OT1 fonts: a
+    symbol's glyph is written as its LaTeX (→ `$\rightarrow$`), another character outside ASCII
+    is refused with why on pdfLaTeX unless T1 fonts have it (Latin-1), taken as typed on XeLaTeX
+    and LuaLaTeX. M4: OK with nothing changed turned `Step~\arabic*.` into
+    `Step\textasciitilde{}\arabic*.`: unchanged fields keep the code, `~` shows as a no-break
+    space. M5: Tab and Shift+Tab were swallowed where nothing could be done (a paralist
+    `compactitem` in an itemize, a list inside a `center`): the key goes on now, as on the first
+    level; the first item and a fifth level still say why. Lows: an automatic list takes the
+    `\noindent` before it; a list split by Restart, None or Shift+Tab goes on with the numbers
+    (`start=` and `\setcounter` moved on by the items before, as Word renumbers); Tab joins the
+    list before when its `\end` line has a comment; Sort writes CRLF in CRLF files and sorts
+    paragraphs with a coauthor's comment above them (it goes with its paragraph); no literal
+    U+200B left in the code this task wrote (six older ones in `src/model.js` are other tasks').
+    `.rb .btn { position: relative }` stays: B2's ribbon relies on it. *Security, again:* the
+    quick profile on the changed files found two patterns in the fix itself that backtracked over
+    a stranger's text, both fixed before commit with a bounded time test: the dialogs' reading of
+    a label (ten `\q` runs took 15 s) and the check that a list ends an item (30 percent signs
+    after an `\end`: 16 s, at every move of the caret); `textEngine`'s patterns bounded. Evidence:
+    `npm test` green with `lists.test.mjs` 24 groups; `lists.py` 142 (with `dist/tex`: nine
+    compiles in the page); `tabs.py` 116; `ribbon.py` 268; `browser.py` 189; `agent.py` 138;
+    `find.py` 76; `outline.py` 59; `word.py` 110; `history.py` 39/39; `paste.py` 25;
+    `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43; `pages_check.py` fits; the
+    model on the corpus 716 of 716.
 
 43. **B5, Find, Replace, Go To and the outline, as in Word.** Done in the code (branch
     `wordgap-b5-find`, on task 38's frame; GAP rows H75 to H81, V4, V10, S1, C5). *Find*

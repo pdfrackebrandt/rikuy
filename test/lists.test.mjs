@@ -67,7 +67,7 @@ ok('Shift+Tab: the item goes up after the item it stood in; the items after it s
   // what the item above held after its list goes with the last item that came up
   const tail = '\\begin{itemize}\n  \\item P\n    \\begin{enumerate}[label=(\\roman*),start=2]\n      \\item a\n      \\item b\n      \\item c\n    \\end{enumerate}\n    More of P.\n\\end{itemize}';
   assert.equal(ap(tail, X.promote(tail, 0, tail.length, at(tail, 'item b', 6), at(tail, 'item b', 6))),
-    '\\begin{itemize}\n  \\item P\n    \\begin{enumerate}[label=(\\roman*),start=2]\n      \\item a\n    \\end{enumerate}\n  \\item b\n    \\begin{enumerate}[label=(\\roman*)]\n      \\item c\n    \\end{enumerate}\n    More of P.\n\\end{itemize}');
+    '\\begin{itemize}\n  \\item P\n    \\begin{enumerate}[label=(\\roman*),start=2]\n      \\item a\n    \\end{enumerate}\n  \\item b\n    \\begin{enumerate}[label=(\\roman*),start=3]\n      \\item c\n    \\end{enumerate}\n    More of P.\n\\end{itemize}');
 });
 
 ok('LaTeX nests lists four deep of a kind: a fifth is refused, not written', () => {
@@ -288,6 +288,149 @@ ok('a stranger\'s source: long, unclosed, nested deep, read in bounded time', ()
   assert.ok(lab.label[0].text.length <= 400 && Date.now() - t0 < 3000, 'long label ' + lab.label[0].text.length + ', ' + (Date.now() - t0) + ' ms');
   // a region larger than the bound is not read at all
   assert.deepEqual(X.readLists('x'.repeat(500000)), []);
+});
+
+// ---- the hostile review of PR 22: each finding's case ------------------------------------------
+const doc = (pre, body) => '\\documentclass{article}\n' + pre + '\\begin{document}\n' + body + '\n\\end{document}\n';
+
+ok('review H1: beside the enumerate package or paralist, spacing and levels in LaTeX\'s own forms, never enumitem', () => {
+  const L = (s) => X.readLists(s)[0];
+  const e = '\\begin{enumerate}[(a)]\n  \\item a\n\\end{enumerate}';
+  const r = X.sepEdits(e, L(e), '0pt', cfg0, 'short');
+  assert.deepEqual(r.pkgs, []);
+  assert.equal(apE(e, r.edits), '\\begin{enumerate}[(a)]\n  \\setlength{\\itemsep}{0pt}\n  \\item a\n\\end{enumerate}');
+  // (rewritten where it is, and enumitem's nosep refused)
+  const w = apE(e, r.edits);
+  assert.equal(apE(w, X.sepEdits(w, L(w), '2pt', cfg0, 'short').edits), w.replace('{0pt}', '{2pt}'));
+  assert.equal(X.sepEdits(e, L(e), 'nosep', cfg0, 'paralist'), null);
+  const pre = doc('\\usepackage{enumerate}\n', 'x');
+  const m = X.multilevelEdits(pre, 'enum', ['\\arabic*.', '\\alph*)', undefined, undefined], undefined, 'short');
+  assert.deepEqual(m.pkgs, []);
+  const out = apE(pre, m.edits);
+  assert.ok(out.includes('\\renewcommand{\\labelenumi}{\\arabic{enumi}.}\n\\renewcommand{\\labelenumii}{\\alph{enumii})}\n'), out);
+  assert.ok(!/enumitem|setlist/.test(out));
+  // (the line written is the one rewritten the next time, and LaTeX's own again takes it away)
+  const again = apE(out, X.multilevelEdits(out, 'enum', [undefined, '\\roman*.', undefined, undefined], undefined, 'short').edits);
+  assert.ok(again.includes('\\renewcommand{\\labelenumii}{\\roman{enumii}.}') && !again.includes('\\alph{enumii})'), again);
+  const back = apE(again, X.multilevelEdits(again, 'enum', [null, null, null, null], undefined, 'short').edits);
+  assert.ok(!back.includes('renewcommand'), back);
+});
+
+ok('review H3: levels left as they were are not written; a hand written label is kept', () => {
+  const pre = doc('\\usepackage{enumitem}\n\\setlist[enumerate,1]{label=\\textbf{\\alph*}}\n\\setlist[enumerate,2]{label=\\S\\roman*}\n\\setlist[itemize,1]{label=\\ding{43}}\n', 'x');
+  assert.deepEqual(X.multilevelEdits(pre, 'enum', [undefined, undefined, undefined, undefined]).edits, []);
+  const one = apE(pre, X.multilevelEdits(pre, 'enum', [undefined, '\\roman*)', undefined, undefined]).edits);
+  assert.ok(one.includes('\\setlist[enumerate,1]{label=\\textbf{\\alph*}}') && one.includes('\\setlist[enumerate,2]{label=\\roman*)}'), one);
+  assert.ok(!one.includes('enumerate,3') && !one.includes('enumerate,4'), one);
+  assert.deepEqual(X.multilevelEdits(pre, 'item', [undefined, undefined, undefined, undefined]).edits, []);
+  // (what the dialog reads back as a style and its text, and what it cannot, kept as Custom)
+  assert.equal(X.numberParts('\\textbf{\\alph*}'), null);
+  assert.equal(X.numberParts('\\S\\roman*'), null);
+  assert.deepEqual(X.numberParts('\\arabic{enumi}.\\alph*)'), { before: '', style: 'alph', after: ')', up: ['arabic'] });
+  // (a stranger's label read by the dialogs in bounded time: a pattern that let the text after
+  // each command split two ways took 15 s for ten of these)
+  const evil = ('\\q' + 'a'.repeat(6)).repeat(30) + '\\';
+  const t = performance.now();
+  assert.equal(X.numberParts(evil), null);
+  assert.equal(X.numberParts(evil.slice(0, 190) + '\\alph*'), null);
+  X.labelText(evil.repeat(50));
+  assert.ok(performance.now() - t < 200);
+});
+
+ok('review M4: a label\'s ~ is a no-break space in the field and ~ again when written back', () => {
+  const p = X.numberParts('Step~\\arabic*.');
+  assert.deepEqual(p, { before: 'Step\u00A0', style: 'arabic', after: '.', up: [] });
+  assert.equal(X.labelText('\\#\\%{}'), '#%');
+  assert.equal(X.labelText('\\emph{x}'), null);
+});
+
+ok('review M3: a typed bullet pdfLaTeX\'s fonts lack is a symbol\'s LaTeX or refused; XeLaTeX and LuaLaTeX take it', () => {
+  assert.ok(X.bulletCode('»', { unicode: false }).error);
+  assert.deepEqual(X.bulletCode('→', { unicode: false }), { code: '$\\rightarrow$', pkg: null });
+  assert.deepEqual(X.bulletCode('✓', { unicode: false }), { code: '\\checkmark', pkg: 'amssymb' });
+  assert.deepEqual(X.bulletCode('»', { unicode: true }), { code: '»', pkg: null });
+  assert.deepEqual(X.bulletCode('»', { unicode: false, t1: true }), { code: '»', pkg: null });
+  assert.ok(X.bulletCode('\\textbf{→}', { unicode: false }).error);
+  assert.deepEqual(X.textEngine(doc('\\usepackage{fontspec}\n', 'x')), { unicode: true, t1: false });
+  assert.deepEqual(X.textEngine(doc('\\usepackage[T1]{fontenc}\n', 'x')), { unicode: false, t1: true });
+  assert.deepEqual(X.textEngine('% !TeX program = lualatex\n' + doc('', 'x')), { unicode: true, t1: false });
+  assert.deepEqual(X.textEngine(doc('', 'x'), 'xelatex'), { unicode: true, t1: false });
+  // (a stranger's preamble read in bounded time)
+  const t = performance.now();
+  for (const w of ['\\usepackage[T1 ', '\\documentclass[', '\\usepackage{']) X.textEngine(doc(w.repeat(20000), 'x'));
+  assert.ok(performance.now() - t < 1000);
+});
+
+ok('review M1: the page\'s labels and references are the ones TeX prints', () => {
+  const labels = (src) => {
+    const M = buildModel({ files: new Map([['main.tex', src]]), main: 'main.tex' });
+    const txt = (inl) => inl.map((x) => (x.text != null ? x.text : x.t != null ? x.t : x.kids ? txt(x.kids) : '')).join('');
+    const out = [];
+    for (const b of M.blocks) for (const it of b.items) { if (it.label) out.push(txt(it.label)); if (it.inl) out.push(txt(it.inl)); }
+    return out.join(' ').replace(/\u200B/g, '').replace(/\s+/g, ' ').trim();
+  };
+  const ei = '\\usepackage{enumitem}\n';
+  // (each checked against pdfLaTeX: test/lists.py compiles them in the page)
+  assert.equal(labels(doc(ei, '\\begin{enumerate}[label=\\alph*),start=3]\\item A\\end{enumerate}\n\n\\begin{enumerate}[resume*]\\item B\\end{enumerate}')), 'c) A d) B');
+  assert.equal(labels(doc(ei, '\\begin{enumerate}[series=foo]\\item A\\item B\\end{enumerate}\n\n\\begin{enumerate}\\item C\\end{enumerate}\n\n\\begin{enumerate}[resume=foo]\\item D\\end{enumerate}')), '1. A 2. B 1. C 3. D');
+  assert.equal(labels(doc(ei, '\\begin{itemize}\\item a \\begin{enumerate}\\item x\\item y\\end{enumerate}\\end{itemize}\n\n\\begin{enumerate}[resume]\\item zz\\end{enumerate}')), '• a 1. x 2. y 1. zz');
+  assert.equal(labels(doc('', '\\begin{enumerate}\\item One\\label{o}\\item Two\\end{enumerate} See \\ref{o}.').replace('\\begin{document}', '\\renewcommand{\\theenumi}{\\alph{enumi}}\n\\begin{document}')), 'a. One b. Two See a.');
+  assert.equal(labels(doc(ei, '\\begin{enumerate}[label=\\alph*),ref=\\alph*]\\item One\\label{o}\\end{enumerate} See \\ref{o}.')), 'a) One See a.');
+  assert.equal(labels(doc('\\usepackage{enumerate}\n', '\\begin{enumerate}\\item A\\begin{enumerate}[(i)]\\item B\\label{b}\\end{enumerate}\\end{enumerate} See \\ref{b}.')), '1. A (i) B See 1i.');
+  assert.equal(labels(doc('', '\\begin{enumerate}\\item A\\label{a} \\begin{enumerate}\\item B\\label{b} \\begin{enumerate}\\item C\\label{c}\\end{enumerate}\\end{enumerate}\\end{enumerate}\nRefs: \\ref{a}, \\ref{b}, \\ref{c}.')), '1. A (a) B i. C Refs: 1, 1a, 1(a)i.');
+  // (a labelled item steps no number; \alph of 0 prints nothing)
+  assert.equal(labels(doc('', '\\begin{enumerate}\\item[(x)] A\\item B\\end{enumerate}')), '(x) A 1. B');
+  assert.equal(labels(doc(ei, '\\begin{enumerate}[start=0,label=\\alph*)]\\item A\\item B\\end{enumerate}')), ') A a) B');
+  // (letters stop at z: start=27 would be TeX's "Counter too large")
+  assert.equal(X.maxStart({ label: '\\alph*)' }), 26);
+  assert.equal(X.maxStart({ label: '\\arabic*.' }), 99999);
+});
+
+ok('review M2: a \\theenumi that names itself, under 2000 lists, costs a keystroke little', () => {
+  let many = '';
+  for (let i = 0; i < 2000; i++) many += '\\begin{enumerate}\\item a' + i + '\\end{enumerate}\n';
+  const src = doc('\\renewcommand{\\theenumi}{' + '\\theenumi'.repeat(220) + '}\n', many);
+  const m = buildModel({ files: new Map([['main.tex', src]]), main: 'main.tex' });
+  let best = Infinity;
+  for (let k = 0; k < 3; k++) {
+    const t = performance.now();
+    buildModel({ files: new Map([['main.tex', src.replace('a1000', 'a1000' + 'x'.repeat(k + 1))]]), main: 'main.tex' }, m);
+    best = Math.min(best, performance.now() - t);
+  }
+  // (1.4 s before; about 50 ms here, the same document without the line about 35)
+  assert.ok(best < 400, 'rebuild ' + best.toFixed(0) + ' ms');
+  assert.ok(X.starOf('\\theenumi'.repeat(220), 1, { 1: '\\theenumi'.repeat(220) }).length <= 2000);
+});
+
+ok('review lows: \\noindent, joins past a comment, split numbers going on, CRLF in Sort', () => {
+  // (an automatic list's \noindent goes with the paragraph it was for)
+  const p = 'x\n\n\\noindent 1. Item';
+  assert.equal(X.noindentBefore(p, p.indexOf('1.')), p.indexOf('\\noindent'));
+  assert.equal(X.noindentBefore('x\n\n1. Item', 3), 3);
+  const { edits } = X.listFrom(p, [{ s: p.indexOf('1.'), e: p.length }], 'enumerate', '', p.length);
+  assert.ok(!apE(p, edits).includes('\\noindent'), apE(p, edits));
+  // (Tab joins the list before even where its \end line has a comment; a line of percent signs
+  // there, from a stranger, read in a line's time: a pattern that split them took 16 s for 30)
+  const pc = '\\begin{itemize}\n  \\item One\n    \\begin{itemize}\n      \\item Sub\n    \\end{itemize}' + '%'.repeat(1500) + '\nx\n  \\item Two\n\\end{itemize}';
+  const t0 = performance.now();
+  X.demote(pc, 0, pc.length, at(pc, 'Two'), at(pc, 'Two'));
+  X.promote(pc, 0, pc.length, at(pc, 'Sub'), at(pc, 'Sub'));
+  assert.ok(performance.now() - t0 < 500, (performance.now() - t0) + ' ms');
+  // (Tab joins the list before even where its \end line has a comment)
+  const s = '\\begin{itemize}\n  \\item One\n    \\begin{itemize}\n      \\item Sub\n    \\end{itemize} % end sub\n  \\item Two\n\\end{itemize}';
+  assert.equal(ap(s, X.demote(s, 0, s.length, at(s, 'Two'), at(s, 'Two'))), '\\begin{itemize}\n  \\item One\n    \\begin{itemize}\n      \\item Sub\n      \\item Two\n    \\end{itemize} % end sub\n\\end{itemize}');
+  // (a list split in two: the second goes on with the numbers, as Word's does, start= or \setcounter)
+  const u = '\\begin{enumerate}[label=\\alph*), start=2]\n    \\item One\n    \\item Two\n    \\item Three\n\\end{enumerate}';
+  assert.ok(ap(u, X.unlist(u, 0, u.length, at(u, 'Two'), at(u, 'Two'))).includes('\\begin{enumerate}[label=\\alph*), start=3]\n  \\item Three'));
+  const c = '\\begin{enumerate}\n  \\setcounter{enumi}{4}\n  \\item Five\n  \\item Six\n  \\item Seven\n\\end{enumerate}';
+  assert.ok(ap(c, X.unlist(c, 0, c.length, at(c, 'Six'), at(c, 'Six'))).includes('\\setcounter{enumi}{5}\n  \\item Seven'));
+  const q = '\\begin{enumerate}\n  \\item One\n    \\begin{enumerate}[label=\\alph*), start=3]\n      \\item Two\n      \\item Three\n    \\end{enumerate}\n\\end{enumerate}';
+  assert.ok(ap(q, X.promote(q, 0, q.length, at(q, 'Two'), at(q, 'Two'))).includes('[label=\\alph*), start=3]\n      \\item Three'));
+  // (Sort writes the line breaks the file has)
+  const w = '\\begin{itemize}\r\n  \\item b\r\n  \\item a\r\n\\end{itemize}';
+  const [W] = X.readLists(w);
+  const r = X.sortEdit(w, W.items.map((x) => ({ s: x.s, e: x.e })), ['b', 'a']);
+  assert.ok(!/[^\r]\n/.test(ap(w, r)), JSON.stringify(ap(w, r)));
 });
 
 console.log('lists: ' + n + ' groups of checks passed');
