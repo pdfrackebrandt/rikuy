@@ -40,6 +40,10 @@ on:
       - 'test/find.py'
       - 'test/outline.py'
       - 'test/table.py'
+      - 'test/styles.py'
+      - 'src/styles.js'
+      - 'src/looks.js'
+      - 'src/cmd/styles.js'
       - 'src/table.js'
       - 'src/cmd/table.js'
       - 'test/page.py'
@@ -138,6 +142,8 @@ jobs:
         run: cd test && python3 eqtab.py
       - name: Paragraphs, then the PDF sets each word where the page draws it
         run: cd test && python3 para.py
+      - name: Styles, every heading, environment, look and style Rikuy writes compiled in the page with pdfLaTeX and LuaLaTeX
+        run: cd test && python3 styles.py compile_all
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rikuy-dist

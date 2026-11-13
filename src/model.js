@@ -6,7 +6,8 @@ import { parseBib, texToPlain, shortAuthors, entryYear, formatEntry } from './bi
 import { siTex, siOptions, siUnitSymbol } from './siunitx.js';
 import { widgetPath, hashText } from './widget.js';
 import { rtlDocument, languageDir } from './scripts.js';
-import { isLatexMark } from './styles.js';
+import { isLatexMark, readEnvBegin } from './styles.js';
+import { readHeadLooks, defaultLook } from './looks.js';
 import { readPage, paperName, NO_MEDIA_CLASSES, setsMedia, KOMA_CLASS } from './pagesrc.js';
 import { DVIPS_COLORS, BASE_COLORS } from './ui/kit.js';
 
@@ -446,6 +447,9 @@ class Builder {
         /\\(?:g@addto@macro|apptocmd|appto)\s*(?:\{\s*)?\\@floatboxreset\s*(?:\}\s*)?(?:\{\s*)?\\centering(?![A-Za-z])/.test(head) ||
         /\\(?:def|gdef)\s*\\@floatboxreset\s*\{[^{}]{0,300}\\centering(?![A-Za-z])/.test(head) ? 'center' : 'left';
     }
+    // how the headings look: titlesec's lines, KOMA-Script's fonts (src/looks.js)
+    O.koma = /^scr(artcl|reprt|book)$/.test(O.cls);
+    O.heads = ctx.f === this.project.main ? readHeadLooks(ctx.src, O.cls) : {};
     if (O.chapters) {
       if (!O.secnumdepthSet) O.secnumdepth = 2;
       for (const k of ['equation', 'figure', 'table']) if (!this.within[k]) this.within[k] = 'chapter';
@@ -1042,6 +1046,7 @@ class Builder {
         afterHeading = u.items[0].endsHeading; cont = false; paraNoIndent = false;
         if (cut) {
           for (const v of this.flow(cut.whole ? cut.rest : [...cut.rest, ...nodes.slice(j)], ctx, { ...env, afterHeading })) units.push(v);
+          this.runIns(units);
           return units;
         }
         k = j - 1;
@@ -1269,7 +1274,24 @@ class Builder {
       para.push(nd);
     }
     flushPara();
+    this.runIns(units);
     return units;
+  }
+
+  // \paragraph and \subparagraph run into the paragraph after them, as TeX sets them (a blank
+  // line between them too): the heading is drawn over the start of that paragraph's first line,
+  // which keeps its room (render.js); one followed by anything else stands on its own line.
+  runIns(units) {
+    for (let i = 0; i + 1 < units.length; i++) {
+      const u = units[i], h = u.items.length === 1 ? u.items[0] : null;
+      if (!h || h.type !== 'h' || !h.runInto || h.runIn) continue;
+      const n = units[i + 1], p = n.items[0];
+      if (!p || p.type !== 'p' || p.runIn || n.f !== u.f || p.ctx !== 'p') continue;
+      h.runIn = true;
+      p.runIn = { num: h.num, text: this.plain(h.inl), level: h.level, look: h.look || null };
+      u.sig += '\u0001ri';
+      n.sig += '\u0001ri' + h.num + '\u0002' + p.runIn.text + (h.look ? JSON.stringify(h.look) : '');
+    }
   }
 
   // The nodes after position at of the file, at the depth of the environment that holds it,
@@ -1335,6 +1357,8 @@ class Builder {
       this.stepSection(level);
       if (numbered) num = this.secNum(level);
     }
+    // \part: Part I, II, … above its title (TeX numbers parts whatever secnumdepth says, down to -1)
+    if (level === -1 && !star && this.opts.secnumdepth >= -1) { this.c.part++; num = roman(this.c.part).toUpperCase(); }
     this.use('h' + num + (this.appendix ? 'A' : ''));
     if (!star && !front) this.lastTarget = { num, kind: { '-1': 'part', 0: 'chapter', 1: 'section', 2: 'subsection', 3: 'subsubsection', 4: 'paragraph', 5: 'subparagraph' }[level] || 'section', name: this.appendix && level === minLevel ? 'appendix' : null };
     const fns = [];
@@ -1343,8 +1367,24 @@ class Builder {
     const text = this.plain(inl);
     this.headings.push({ level, num, text, parts: this.tocParts(inl), star, f: ctx.f, s: nd.s });
     const de = this.opts.lang === 'de';
-    const chapLabel = level === 0 && this.opts.chapters && !front ? (this.appendix ? (de ? 'Anhang' : 'Appendix') : (de ? 'Kapitel' : 'Chapter')) : null;
-    return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'h', level, num, inl, star, f: ctx.f, ctx: 'h', s: nd.s, e: nd.e, chapLabel, dir: this.dirOf() }], fns, sig: this.sig ? this.sig.join('\u0001') : '' };
+    const chapLabel = level === 0 && this.opts.chapters && !front ? (this.appendix ? (de ? 'Anhang' : 'Appendix') : (de ? 'Kapitel' : 'Chapter')) : level === -1 && num ? (de ? 'Teil' : 'Part') : null;
+    // the look the preamble gives this heading (titlesec, KOMA-Script), where it is not LaTeX's own
+    const look = this.headLook(nd.name);
+    if (look) this.use('L' + JSON.stringify(look));
+    const it = { type: 'h', level, num, inl, star, f: ctx.f, ctx: 'h', s: nd.s, e: nd.e, chapLabel, dir: this.dirOf() };
+    if (look) it.look = look;
+    if (look ? look.shape === 'runin' : level >= 4) it.runInto = true;
+    return { f: ctx.f, s: nd.s, e: nd.e, items: [it], fns, sig: this.sig ? this.sig.join('\u0001') : '' };
+  }
+
+  // a heading's look for the page: { size, bf, it, sc, sf, tt, color (as CSS takes it), align,
+  // rule, shape } from the preamble, or null where it is LaTeX's own
+  headLook(cmd) {
+    const O = this.opts, L = (O.heads && O.heads[cmd]) || (O.koma ? defaultLook(cmd, true) : null);
+    if (!L) return null;
+    const out = { size: L.size, bf: L.bf, it: L.it, sc: L.sc, sf: L.sf, tt: L.tt, align: L.align, rule: !!L.rule, shape: L.shape };
+    if (L.color) out.color = this.named(L.color) || L.color;
+    return out;
   }
 
   tocParts(inl) {
@@ -1627,6 +1667,16 @@ class Builder {
         for (const it of r.items) if (!it.mc) it.mc = { n, key: ctx.f + ':' + nd.s, star: name.endsWith('*') };
       }
       return r;
+    }
+    // An environment of the document's own that only formats its paragraphs (a paragraph style:
+    // \newenvironment{note}{\par\itshape\color{accent}}{\par}): its paragraphs in that look
+    const ud = this.envDefs.get(name), F = ud && !ud.nargs ? readEnvBegin(ud.begin) : null;
+    if (F) {
+      const r = this.container(nd, ctx, env, { align: F.align || env.align || null, noIndentFirst: false });
+      const look = { size: F.size || null, bf: !!F.bf, it: !!F.it, sc: !!F.sc, sf: !!F.sf, tt: !!F.tt, color: F.color ? this.named(F.color) || F.color : null };
+      this.use('E' + JSON.stringify(look));
+      if (r) for (const it of r.items) if (it.type === 'p') it.look = look;
+      if (r) return r;
     }
     // Unknown environment: render content with a small tag.
     const r = this.container(nd, ctx, env, { cls: (env.cls || '') + ' unk' });
@@ -2736,6 +2786,9 @@ class Builder {
       fragment: !!this.fragment,
       sizes: SIZE_SETS[this.opts.pt] || (this.opts.pt > 12 ? SIZE_SETS[14] : this.opts.pt < 10 ? SIZE_SETS[9] : SIZE_SETS[10]),
       thms: this.thms,
+      // (the document's own environments and colours, for the Styles pane and Modify Style)
+      envDefs: this.envDefs,
+      colors: this.colors,
       docBody: this.docBody || null
     };
   }

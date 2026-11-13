@@ -402,7 +402,21 @@ ${ribbonList()}
   caret is in; one that cannot apply there is disabled (aria-disabled; its title says why).
   Where not all fit, "Previous styles" and "Next styles" page through them; "More styles" opens
   a menu "Styles" with all of them as menu items of the same names. A narrow window has instead
-  a combobox "Style of this paragraph" (Normal text, Title, Heading 1 to 3, LaTeX, Quote).
+  a combobox "Style of this paragraph" with every style, and at its end "Styles pane…" and
+  "Create a Style…". "Heading 4" shows once a Heading 3 is in
+  the document. Heading 1 is \\section, or \\chapter in a report or a book; Heading 4 and 5 are
+  \\paragraph and \\subparagraph, which TeX runs into the paragraph after them.
+- More styles also lists Part, Quotation, Verse, Abstract and the theorem like environments
+  (Theorem, Lemma, Proposition, Corollary, Definition, Example, Remark, Proof: the \\newtheorem
+  is written once where the preamble has none), the document's own environments, and then
+  "Create a Style…", "Apply Styles…" (Ctrl+Shift+S, a dialog "Apply Styles" with a box "Style
+  name") and "Styles pane…" (Ctrl+Alt+Shift+S, a region "Styles pane" with a listbox of every
+  style, each with a button "<name> options": Update to Match Selection, Modify…, Select All
+  Instances). A selection over several paragraphs takes a heading on each, or one environment
+  around them all. Modify Style writes titlesec's \\titleformat once in the preamble; Create a
+  Style writes \\newcommand{\\name}[1]{…} or \\newenvironment.
+- The Design tab: "Themes", "Style Set", "Colors" and "Fonts" (the headings' look, colour and
+  font for the whole document; "LaTeX" and "Black" take the lines away again).
 - Home also has the buttons "Bold", "Italic", "Underline", "Bulleted list", "Numbered list",
   "Formula" (math in the line), "Equation" (numbered, on a line of its own), "Table",
   "Picture", "Footnote", "Citation", "Link".
@@ -491,7 +505,10 @@ Ctrl is Cmd on a Mac.
 - Ctrl+= and Ctrl+-, Ctrl+0: zoom the document in and out, actual size (on the page; a pinch
   or Ctrl with the mouse wheel over the page zooms too, about the point under the pointer)
 - Ctrl+Alt+M: comment on the selected words; Ctrl+Alt+F: a footnote
-- Ctrl+Alt+1, 2, 3: Heading 1, 2, 3; Ctrl+Alt+0: Normal; Ctrl+Shift+L: a bulleted list
+- Ctrl+Alt+1, 2, 3, 4: Heading 1 to 4; Ctrl+Alt+0: Normal; Ctrl+Shift+S: Apply Styles;
+  Ctrl+Alt+Shift+S: the Styles pane; Ctrl+Shift+L: a bulleted list
+- "# " typed at a paragraph's start makes it Heading 1 ("## " Heading 2, up to "#### "); the
+  command "AutoFormat headings" turns that off
 - Alt+Q: the search box, for any command by its name; Ctrl+F1: the ribbon folded to its tabs
   and back; Shift+F10 or the menu key: the right click menu at the caret
 - In a table: Tab the next cell (in the last cell a new row under it), Shift+Tab the cell

@@ -39,14 +39,16 @@ export const ribbon = {
     return e > s && src[s] !== '%' && !NOT_PLAIN.test(src.slice(s, e)) ? { s, e } : null;
   },
 
-  // a quote or quotation environment as a block of its own: where its words are, whether they
-  // are one paragraph (the only kind made a paragraph again) and whether a heading could hold them
+  // an environment of a paragraph style (quote, quotation, verse, a theorem, the document's own) as
+  // a block of its own: its name, where its words are, whether it has an [option] (a theorem's
+  // title), whether they are one paragraph and whether a heading could hold them
   quoteOf(B) {
-    const src = this.src(B.f), q = quoteWords(src, B.s, B.e);
+    const src = this.src(B.f), q = quoteWords(src, B.s, B.e, this.styleEnvNames ? this.styleEnvNames() : undefined);
     if (!q) return null;
     const { ws, we } = q, words = src.slice(ws, we);
-    const one = B.items.length === 1 && we > ws && !/\\begin\s*\{|\\\[|\$\$|\n[ \t]*\n/.test(words);
-    return { ws, we, one, plain: one && !NOT_PLAIN.test(words) && words[0] !== '%' };
+    const opt = /^\\begin\s*\{[^{}]*\}\s*\[/.test(src.slice(B.s, Math.min(ws, B.s + 300)));
+    const one = we > ws && !/\\begin\s*\{|\\\[|\$\$|\n[ \t]*\n/.test(words);
+    return { name: q.name, ws, we, opt, one, plain: one && !NOT_PLAIN.test(words) && words[0] !== '%' };
   },
 
   // Footnote and Link: the empty command at the caret, after any selected words (which stay as
