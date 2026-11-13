@@ -33,6 +33,9 @@ on:
       - 'src/ribbon.js'
       - 'test/ribbon.py'
       - 'test/agent.py'
+      - 'test/font.py'
+      - 'src/cmd/font.js'
+      - 'src/charfmt.js'
       - 'test/preamble.py'
       - 'test/find.py'
       - 'test/outline.py'
@@ -122,6 +125,8 @@ jobs:
         run: cd test && python3 table.py reviewed verified compiled
       - name: The page's set up in TeX's PDF (paper size, header, line numbers) and Print
         run: cd test && python3 page.py compile_pdf
+      - name: Every format of the Font group compiles in the page
+        run: cd test && python3 font.py compiles
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rikuy-dist

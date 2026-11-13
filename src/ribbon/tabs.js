@@ -272,7 +272,8 @@ export const tabs = {
   // one tab stop for the whole toolbar: the control the arrows last reached, or the first that works
   ribbonRove(to) {
     // (of the controls this width shows: a phone has one Download button, a wider screen the three)
-    const every = [...$('#ribbon').querySelectorAll('select, button')], all = every.filter((x) => x.offsetParent !== null);
+    // (and the boxes a toolbar may hold, the font's and the size's)
+    const every = [...$('#ribbon').querySelectorAll('select, button, input')], all = every.filter((x) => x.offsetParent !== null);
     if (to) this.rbStop = to;
     const cur = this.rbStop && !isOff(this.rbStop) && all.includes(this.rbStop) ? this.rbStop : all.find((x) => !isOff(x));
     for (const x of every) x.tabIndex = x === cur ? 0 : -1;
@@ -307,7 +308,8 @@ export function installRibbon(app) {
   const rb = $('#ribbon');
   if (!rb) return;
   // (not while the search box has the focus: the ribbon keeps showing the place on the page)
-  app.ribbonSoon = (() => { let t = 0; return () => { clearTimeout(t); t = setTimeout(() => { if (!(document.activeElement && document.activeElement.id === 'rk-search')) app.ribbonSync(); }, 60); }; })();
+  // (nor while a box of the ribbon has it, the font's or the size's: typing there is no move on the page)
+  app.ribbonSoon = (() => { let t = 0; return () => { clearTimeout(t); t = setTimeout(() => { const a = document.activeElement; if (!(a && (a.id === 'rk-search' || (a.matches && a.matches('#ribbon input'))))) app.ribbonSync(); }, 60); }; })();
   app.ribbonBuild();
   installGallery(app);
   // A press must not take the caret or the selection off the page: not on a button, and not on
@@ -328,6 +330,9 @@ export function installRibbon(app) {
     // a menu button opens its menu with the down arrow too
     if (e.key === 'ArrowDown' && e.target.matches('.rb-gbtn, [data-cmd][aria-haspopup]')) { e.preventDefault(); e.target.click(); return; }
     if (!/^(ArrowLeft|ArrowRight|Home|End)$/.test(e.key) || e.altKey || e.ctrlKey || e.metaKey) return;
+    // in a box the keys move in its text; past its first or last character they go on to the controls beside it
+    const t = e.target;
+    if (t.matches && t.matches('input') && (/^(Home|End)$/.test(e.key) || t.selectionStart !== t.selectionEnd || (e.key === 'ArrowLeft' ? t.selectionStart > 0 : t.selectionEnd < t.value.length))) return;
     const all = app.ribbonRove().filter((x) => !isOff(x)), i = all.indexOf(document.activeElement);
     if (i < 0) return;
     e.preventDefault();

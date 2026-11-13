@@ -95,6 +95,9 @@ jobs:
       # its compile in the page needs dist/tex and runs in tex.yml; here it says it skips that part
       - name: Tables (the grid of sizes, Table Design and Table Layout, round trips, the page's drawing)
         run: cd test && python3 table.py
+      # its PDF of every format needs dist/tex and runs in tex.yml; here it says it skips that part
+      - name: Home's Font group, the Format Painter and the Font dialog
+        run: cd test && python3 font.py
       # its compile offline needs dist/tex and runs in tex.yml; here it says it skips that part
       - name: The installed app offline, its updates, and none in the artifact build
         run: cd test && python3 offline.py

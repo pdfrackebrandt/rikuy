@@ -68,9 +68,11 @@ export function sheetSize(opts) {
 }
 
 export function geometry(opts) {
-  const pt = opts.pt || 10;
-  const bs = { 10: 12, 11: 13.6, 12: 14.5 }[pt] || 12;
-  const tw0 = { 10: 345, 11: 360, 12: 390 }[pt] || 345;
+  // (a base size beyond 10, 11 and 12pt, extarticle's or KOMA's: src/model.js gives its measures)
+  const X = opts.ext;
+  const pt = X ? X.fs : opts.pt || 10;
+  const bs = X ? X.bs : { 10: 12, 11: 13.6, 12: 14.5 }[pt] || 12;
+  const tw0 = X ? X.tw : { 10: 345, 11: 360, 12: 390 }[pt] || 345;
   const P = paperSize(opts);
   const geo = (!opts.geoPass && opts.geo) || {};
   const cols = opts.twocolumn ? 2 : 1;
@@ -186,7 +188,7 @@ export class Layout {
     S.setProperty('--parindent', ((opts.parindent ?? 15) * px) + 'px');
     for (const [k, v] of Object.entries(sizes)) S.setProperty('--z-' + k, v);
     const fnRatio = sizes.footnotesize;
-    S.setProperty('--fnlh', ({ 10: 9.5, 11: 11, 12: 12 }[g.pt] || 9.5) / (g.pt * fnRatio));
+    S.setProperty('--fnlh', ((opts.ext && opts.ext.fnbs) || { 10: 9.5, 11: 11, 12: 12 }[g.pt] || 9.5) / (g.pt * fnRatio));
     // \usepackage[none]{hyphenat}: the page breaks no word either
     sheet.classList.toggle('nohyph', this.page.hyph === 'none');
     for (const h of this.hosts.values()) h.remove();

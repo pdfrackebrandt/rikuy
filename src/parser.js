@@ -17,7 +17,7 @@ const SIG = {
   part: 'om', chapter: 'om', section: 'om', subsection: 'om', subsubsection: 'om', paragraph: 'om', subparagraph: 'om',
   textbf: 'm', textit: 'm', emph: 'm', texttt: 'm', textsc: 'm', textsf: 'm', textrm: 'm', textup: 'm',
   textsl: 'm', textmd: 'm', textnormal: 'm', underline: 'm', uline: 'm', uuline: 'm', uwave: 'm', sout: 'm', xout: 'm',
-  hl: 'm', mbox: 'm', fbox: 'm', text: 'm', textsuperscript: 'm', textsubscript: 'm', ensuremath: 'm',
+  hl: 'om', mbox: 'm', fbox: 'm', text: 'm', textsuperscript: 'm', textsubscript: 'm', ensuremath: 'm',
   footnote: 'om', footnotetext: 'om', footnotemark: 'o', thanks: 'm', marginpar: 'om', todo: 'om',
   cite: 'oom', citet: 'oom', citep: 'oom', citealt: 'oom', citealp: 'oom', citeauthor: 'oom', citeyear: 'oom',
   citeyearpar: 'oom', Citet: 'oom', Citep: 'oom', Citealt: 'oom', Citealp: 'oom', Citeauthor: 'oom',
@@ -61,7 +61,10 @@ const SIG = {
   protect: '', relax: '', makeatletter: '', makeatother: '', phantomsection: '', clubpenalty: '', widowpenalty: '',
   addcontentsline: 'mmm', index: 'm', glossary: 'm', setkeys: 'mm', allowdisplaybreaks: 'o',
   selectlanguage: 'm', foreignlanguage: 'omm', babelsublr: 'm', CJKfamily: 'm', ensure: 'm', textls: 'om', lowercase: 'm', uppercase: 'm',
-  MakeUppercase: 'm', MakeLowercase: 'm', textcircled: 'm'
+  MakeUppercase: 'm', MakeLowercase: 'm', textcircled: 'm',
+  // character formats Rikuy's Font group writes (src/cmd/font.js): ulem's other lines, its double
+  // strikethrough, a size and a family for a run of text, ruby
+  dashuline: 'm', dotuline: 'm', culine: 'mm', dsout: 'm', fontsize: 'mm', fontfamily: 'm', fontspec: 'om', ruby: 'omm'
 };
 
 // Commands that take no arguments but print characters, keyed by name.
