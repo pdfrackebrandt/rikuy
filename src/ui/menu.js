@@ -7,6 +7,7 @@
 // paste). Only the registry's names are shown, never the document's text.
 
 import { menuItems, enabled } from '../commands.js';
+import { chordText } from '../keys.js';
 import { openMenu } from './kit.js';
 
 export const methods = {
@@ -31,7 +32,7 @@ export const methods = {
     if (s.rangeCount && this.root.contains(s.anchorNode)) this.rbRange = s.getRangeAt(0).cloneRange();
     // (Ask Claude only inside Claude)
     const items = menuItems(this.menuContexts(at)).filter((c) => !c || c.only !== 'claude' || document.body.classList.contains('has-ai')).map((c) => c && {
-      name: c.name, title: c.title, keys: (c.keys || c.keysElsewhere || [])[0], disabled: !enabled(this, c, at),
+      name: c.name, title: c.title, keys: chordText((c.keys || c.keysElsewhere || [])[0]), disabled: !enabled(this, c, at),
       run: () => { this.ribbonBack(); this.runCommand(c.id); }
     });
     if (!items.length) return false;

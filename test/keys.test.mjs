@@ -3,7 +3,7 @@
 // Ctrl+Alt chord; nothing while an input method composes; a Mac's own chords; the command a chord
 // runs where two claim it.
 import assert from 'node:assert/strict';
-import { parseChord, matches, chordFor, lookup, bindings } from '../src/keys.js';
+import { parseChord, matches, chordFor, lookup, bindings, chordText } from '../src/keys.js';
 import { register, unregister } from '../src/commands.js';
 
 let n = 0;
@@ -104,6 +104,15 @@ ok('two commands on one chord: the one that can run here, the higher rank first;
     // matched but nothing can run: the chord is held back from the browser all the same
     assert.deepEqual(lookup(e, { mac: false, scope: 'page', can: () => false }), { hit: true, id: null });
   } finally { ['t-a', 't-b', 't-c'].forEach(unregister); }
+});
+
+ok('a chord as people read it: arrow keys as arrows, everything else as the registry has it', () => {
+  assert.equal(chordText('Alt+Shift+ArrowLeft'), 'Alt+Shift+\u2190');
+  assert.equal(chordText('Control+Shift+ArrowDown'), 'Control+Shift+\u2193');
+  assert.equal(chordText('Ctrl+B'), 'Ctrl+B');
+  assert.equal(chordText('ArrowUp'), '\u2191');
+  assert.equal(chordText(undefined), undefined);
+  assert.equal(chordText('Ctrl+Alt+O'), 'Ctrl+Alt+O');
 });
 
 console.log('keys: ' + n + ' groups of checks passed');

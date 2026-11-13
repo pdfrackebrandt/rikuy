@@ -364,6 +364,8 @@ def where_it_applies(page):
       const r = document.createRange(); r.setStart(a.firstChild, 2); r.setEnd(z.firstChild, 5); document.getElementById('pages').focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }""")
     check('with a selection over two paragraphs the style cannot be changed', state(page)['rb-style'][0])
     # the row keeps the caret: a click on a disabled button, on the Download label, on empty space
+    # (at 1600 px, where the label shows whatever Home holds)
+    page.set_viewport_size({'width': 1600, 'height': 1000}); page.wait_for_timeout(300)
     click_text(page, 'cell', 2); state(page)
     for what, sel in (('a disabled button', '#rb-eq'), ('the Download label', '.rb-lab'), ('the empty part of the row', '#ribbon .rb-panel:not([hidden]) .grow')):
         r = page.evaluate('(s) => { const r = document.querySelector(s).getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }', sel)
@@ -373,6 +375,7 @@ def where_it_applies(page):
         page.keyboard.press('Control+z'); page.wait_for_timeout(120)
         check('a click on %s leaves the caret on the page' % what, ok and page.evaluate('document.activeElement.id') == 'pages')
         click_text(page, 'cell', 2); state(page)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
     # the style list gives the focus back: typing after it goes to the page, not into the list
     # (the list is what a narrower window has in the gallery's place)
     page.set_viewport_size({'width': 820, 'height': 900}); page.wait_for_timeout(300)
@@ -612,8 +615,9 @@ def gallery(page):
 
 
 def gallery_widths(page):
-    """As many tiles as the row has room for, the insert buttons keeping their names from 1366 px;
-    LaTeX always in sight; the list where three tiles do not fit and on phones; one row height."""
+    """As many tiles as the row has room for, once the insert buttons' names have gone (they take no
+    control away, a tile does: ribbonFit); LaTeX always in sight; the list where three tiles do
+    not fit and on phones; one row height."""
     load_doc(page, DOC)
     seen = {}
     for w in (1920, 1600, 1536, 1440, 1366, 1300, 1280, 1180, 1100, 1024, 1000, 900, 820, 390):
@@ -626,12 +630,17 @@ def gallery_widths(page):
             arrows: !!document.getElementById('rb-st-up').offsetParent }; }""")
     print('     widths:', {w: (len(v['tiles']), 'list' if v['list'] else '', 'names' if v['names'] else '', v['h']) for w, v in seen.items()})
     six = ['p', 'section', 'subsection', 'subsubsection', 'latex', 'quote']
-    check('at 1600 and 1920 px all six tiles with the insert buttons\' names, no paging arrows, a row that does not scroll', all(seen[w]['tiles'] == six and seen[w]['names'] and not seen[w]['arrows'] and not seen[w]['over'] for w in (1600, 1920)), {w: seen[w] for w in (1600, 1920)})
-    check('at 1366, 1440 and 1536 px the insert buttons keep their names: the gallery has fewer tiles instead, LaTeX among them', all(seen[w]['names'] and 'latex' in seen[w]['tiles'] and len(seen[w]['tiles']) >= 3 and seen[w]['arrows'] and not seen[w]['over'] for w in (1366, 1440, 1536)), {w: seen[w]['tiles'] for w in (1366, 1440, 1536)})
+    check('at 1920 px all six tiles with the insert buttons\' names, no paging arrows, a row that does not scroll', seen[1920]['tiles'] == six and seen[1920]['names'] and not seen[1920]['arrows'] and not seen[1920]['over'], seen[1920])
+    check('from 1600 to 1366 px the insert buttons\' names go first and the gallery keeps its six tiles, no paging arrows, no scroll', all(seen[w]['tiles'] == six and not seen[w]['names'] and not seen[w]['arrows'] and not seen[w]['over'] for w in (1366, 1440, 1536, 1600)), {w: (seen[w]['tiles'], seen[w]['names']) for w in (1366, 1440, 1536, 1600)})
+    check('then fewer tiles, LaTeX among them, with the paging arrows (1300 to 1024 px)', all('latex' in seen[w]['tiles'] and 3 <= len(seen[w]['tiles']) < 6 and seen[w]['arrows'] and not seen[w]['over'] for w in (1300, 1280, 1180, 1100, 1024)), {w: seen[w]['tiles'] for w in (1300, 1280, 1180, 1100, 1024)})
     order = {3: ['p', 'section', 'latex'], 4: ['p', 'section', 'subsection', 'latex'], 5: ['p', 'section', 'subsection', 'subsubsection', 'latex'], 6: six}
     tiled = [w for w in seen if seen[w]['tiles']]
     check('wherever the gallery shows, its first page is Normal and Heading 1 with LaTeX in sight (Normal, Heading 1, LaTeX for three), and the row does not scroll', all(seen[w]['tiles'] == order[len(seen[w]['tiles'])] and not seen[w]['over'] for w in tiled), {w: seen[w]['tiles'] for w in tiled})
-    check('the row is as tall with the list as with the gallery (no jump between 1024 and 1000 px)', seen[1024]['tiles'] and seen[1000]['list'] and seen[1024]['h'] == seen[1000]['h'], (seen[1024]['h'], seen[1000]['h']))
+    # (where the gallery gives way to the list: between 1100 and 1024 px since Home has its Editing
+    # group, between 1024 and 1000 px before)
+    g = min(w for w in seen if seen[w]['tiles'])
+    l = max(w for w in seen if seen[w]['list'] and w < g)
+    check('the row is as tall with the list as with the gallery (no jump where the one gives way to the other, %d and %d px)' % (g, l), g >= 1024 and l >= 1000 and seen[g]['h'] == seen[l]['h'], (g, l, seen[g]['h'], seen[l]['h']))
     check('narrower, the style list takes the gallery\'s place, with LaTeX and Quote', all(seen[w]['list'] and not seen[w]['tiles'] and seen[w]['opts'] == six for w in (900, 820, 390)) and seen[390]['page'] <= 0 and seen[390]['h'] <= 44, {w: seen[w] for w in (820, 390)})
     page.set_viewport_size({'width': 390, 'height': 800}); page.wait_for_timeout(300)
     click_text(page, 'Second paragraph', 3); state(page)
@@ -645,14 +654,14 @@ def gallery_paging(page):
     the arrows hand the focus on at their ends; the gallery pages to the caret's style; the strip's
     targets are 24 px or more; a tile that cannot apply keeps its tooltip, which says why."""
     load_doc(page, WRAP('Text here.\n\n\\subsubsection{Deep}\nUnder it.'))
-    page.set_viewport_size({'width': 1180, 'height': 900}); page.wait_for_timeout(300)
+    page.set_viewport_size({'width': 1100, 'height': 900}); page.wait_for_timeout(300)
     click_text(page, 'Text here', 2); state(page)
     POS = """() => { const r = (id) => { const b = document.getElementById(id).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.width), Math.round(b.height)]; };
       return { up: r('rb-st-up'), down: r('rb-st-down'), more: r('rb-st-more'), bold: r('rb-b'), gal: r('rb-gallery'), tiles: [...document.querySelectorAll('#rb-gallery [data-style]')].filter((b) => !b.hidden).map((b) => b.dataset.style) }; }"""
     a = page.evaluate(POS)
     page.click('#rb-st-down'); page.wait_for_timeout(120)
     b = page.evaluate(POS)
-    check('at 1180 px Next shows the last four styles (a full page) and the gallery, the arrows and Bold stay where they were', len(a['tiles']) == 4 and b['tiles'] == ['subsection', 'latex', 'subsubsection', 'quote'] and all(a[k] == b[k] for k in ('up', 'down', 'more', 'bold', 'gal')), (a, b))
+    check('at 1100 px Next shows the last four styles (a full page) and the gallery, the arrows and Bold stay where they were', len(a['tiles']) == 4 and b['tiles'] == ['subsection', 'latex', 'subsubsection', 'quote'] and all(a[k] == b[k] for k in ('up', 'down', 'more', 'bold', 'gal')), (a, b))
     check('the arrows and More are 24 px wide or more and as tall as the box', all(a[k][1] >= 24 and a[k][2] >= 24 for k in ('up', 'down', 'more')), a)
     page.click('#rb-st-up'); page.wait_for_timeout(120)
     # by keyboard: an arrow that reaches its end gives the focus to the other one

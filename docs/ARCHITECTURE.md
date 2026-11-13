@@ -50,6 +50,8 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | keys, the search box, the right click menu, the kit | `matches`, `lookup`, `installKeys` (`src/keys.js`); `installSearch` (`src/ui/search.js`); `openContextMenu`, `installMenu` (`src/ui/menu.js`); `openMenu`, `openGallery`, `splitButton`, `colorPicker`, `numberField`, `dialog` (`src/ui/kit.js`) |
 | an edit of the preamble, an inline wrapper, an environment around paragraphs | `usePackages`, `kvEdits`, `classOptions`, `setPackageKeys`, `defineOnce` (`src/preamble.js`); `App.packageEdits`, `preambleOthers`; `wrapEdits`, `unwrapEdits`, `standsFree`, `rewrapEdits`, `enclosing`, `clearText`, `GROUPS` (`src/wrap.js`); `envWords`, `wrapBlockEdits`, `unwrapBlockEdits` (`src/blockenv.js`) |
 | the side panel: outline and problems; versions and changes | `toggleNav`, `refreshNav`, `goTo` (`src/nav.js`); `snapshot`, `currentChanges`, `renderChanges`, `paintChanges` (`src/review.js`) |
+| Find, Replace, Go To; the Navigation pane (its box, Headings, Pages, Results) and the Outline view | `compile`, `hitsIn`, `blockText`, `hitSource`, `expand`, `labelsIn` (`src/find.js`); `findRun`, `findPaint`, `findGo`, `hitEdits`, `replaceOne`, `replaceAll`, `goToTargets`, `goToTarget`, `countStatus` (`src/cmd/find.js`); `openFindDialog`, `findDialogSync` (`src/ui/finddialog.js`); `renderOutline`, `navShell`, `paintHeadings`, `navDrop`, `paintPages`, `paintResults`, `setOutlineView` (`src/nav.js`) |
+| promote, demote, move a section or a paragraph, a new heading | `headingAt`, `sectionRange`, `promoteEdits`, `swapEdit`, `moveEdits`, `newHeading` (`src/outline.js`); `promoteAt`, `moveEditsAt`, `sectionMove`, `moveSectionTo`, `newHeadingAt` (`src/cmd/find.js`) |
 | LaTeX paragraphs (`% rikuy: latex`) | `isLatexMark` (`src/styles.js`); `Builder.texBlock`, `cutOpen` (`src/model.js`); `Renderer.item` case `tex`; `App.texBox`, `texEdit`, `texEnter`, `texDelete`, `showTexGhost` (`src/app.js`) |
 | equation editing | `App.openMath`, `attachField`, `toField`, `fromField`; `src/minimal.js`, `wordmath.js`, `fences.js` |
 | engine choice, passes, bibliography, indexes | `pickEngine`, `compile`, `runBiber`, `indexTools` (`tex/engine.js`) |
@@ -218,12 +220,18 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   the accessibility tree; the Download group is one element, moved into the open toolbar.
   `ribbonSync` (60 ms after the caret moves) shows the contextual tabs, disables what cannot run
   (`when`) and presses what is on (`on`), with `at.memo` so two commands asking the same
-  (`listAt`, `blockStyle`) compute it once. `ribbonFit` gives way as Home always has (fewer
-  tiles, no Download label, no names, the style list) and then folds whole groups, the lowest
-  `rank` first, into a button named after the group whose menu has the same commands by the
-  same names; below 861 px the tabs are the combobox "Ribbon tab" (a contextual tab's option
-  hidden with its tab), the three downloads become the phone's one Download button where the row
-  has no room for them, and a phone's row scrolls. Ctrl+F1 (from a field too) folds the ribbon
+  (`listAt`, `blockStyle`) compute it once. `ribbonFit` is one rule for every tab and width:
+  everything open, then one step at a time while the row is too long, the cheapest loss first
+  counted in controls (the Download label and the buttons' names, which take none; a tile of the
+  gallery, down to three; the three downloads as one Download button; the style list for the
+  gallery; then groups, rank 1 and then the lowest `rank` first, of equal ranks the rightmost,
+  each into one button named after the group, its first command's icon, whose menu has the same
+  commands by the same names); then each step tried back, the last first, kept undone where the
+  row still fits. So no group stays folded where it would fit open, and a narrower window never
+  shows more controls than a wider one but where the tries back open a group of lower rank that
+  a later, smaller one made room for (`test/tabs.py` sweeps 390 to 1920 px on every tab). Below
+  861 px the tabs are the combobox "Ribbon tab" (a contextual tab's option hidden with its tab)
+  and the style sheet has the list; below 521 px no group folds and a phone's row scrolls. Ctrl+F1 (from a field too) folds the ribbon
   to its tabs and keeps that for the next visit; a tab pressed then shows it for a moment
   (`peekRibbon`), as Word's "Show tabs only" does, until the page is pressed or a button ran.
   `src/keys.js` binds each command's `keys` (Ctrl is Cmd on a Mac; `mac` gives a Mac's own or
@@ -265,13 +273,48 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   on lines around the words, a heading its command and braces; each way back restores the bytes.
   A heading or a quote is offered for a LaTeX paragraph only where its source is one paragraph
   of text. The gallery (`paintGallery`) shows as many tiles as the row has room for, each as wide
-  as its name: `ribbonFit` drops tiles (six to three) before the insert buttons lose their names,
-  then the Download label, then the names, and puts the style list in its place where three do
-  not fit and on phones. LaTeX is always on the first page (`tileOrder`: Normal, Heading 1, LaTeX
+  as its name: `ribbonFit` takes the Download label and the insert buttons' names first (they
+  lose no control), then tiles (six to three), and puts the style list in its place where three
+  do not fit and on phones. LaTeX is always on the first page (`tileOrder`: Normal, Heading 1, LaTeX
   for three). Pages of n tiles start every n and the last one is full (`pageStarts`); the row
   keeps the width of its widest page, so the arrows do not move under the pointer, and it pages
   to the caret's style when the caret moves to another block. A tile that cannot apply is
   `aria-disabled` and keeps its tooltip, which says why (`WHY`).
+- **Find and Replace.** What is searched is the page's text: `blockText(B)` (`src/find.js`) reads a
+  drawn block's items and footnotes once (cached per block; its seg maps are relative to `B.base`,
+  so a block that only moved keeps it) into one string with, per character, its seg and place
+  (`charSrc` gives its source range) and the formatting it is drawn with (the `y-*` classes, the
+  heading level, footnote, caption, LaTeX paragraph). An atom (a formula, a citation, a footnote
+  mark) is `SEP` and the end of a paragraph, a cell or an item `PARA`; no hit runs across either,
+  so nothing inside math, a command or a label is found. The query becomes a RegExp in
+  `compile`: plain text (a space finds `~`, a straight quote the curly ones), Word's ^ codes,
+  Word's wildcards translated, or a regular expression; Match case, whole words. `hitSource`
+  maps a hit to its file, range and the joined ranges of its characters (`parts`); the page marks
+  them with CSS highlights (`rk-find`, `rk-find-cur`) over `CaretIndex.domRanges`. `hitEdits`
+  writes the replacement into the first part's place, through `App.escapeAt` (the escaping
+  typing uses, moved out of `insertText` for this), and deletes the other parts, so the markup
+  between them stays (`\textbf{bold} text` found as "bold text" becomes `\textbf{new}`). Replace
+  All is one commit. "In LaTeX source" searches the files' own text (`hitsInSource`) and writes
+  the replacement as typed. The state (`App.fs`) is shared by the Navigation pane's box and the
+  Find and Replace dialog (`src/ui/finddialog.js`, kept open beside the page, not a popover);
+  `layoutPass` calls `findSoon`, which searches again and marks the pages as they are now.
+  Go To (`goToTargets`, `goToTarget`) lists pages, headings, footnotes, display formulas,
+  figures, tables, comments and labels (`labelsIn`, one pass) in the document's order
+  (`blockIndexOf`, a binary search per file).
+- **The outline.** `src/outline.js` edits on strings: `promoteEdits` renames the heading's command
+  and those under it (star and short title kept), `sectionRange` is a heading to the next of its
+  level or higher in its file (stopping before `\appendix`, the bibliography and
+  `\end{document}`; none when a heading under it is in another file), `swapEdit` exchanges two
+  neighbours with the space between kept (Move up and Move down: sections, paragraphs, list
+  items), `moveEdits` takes one elsewhere (a heading dragged in the Navigation pane).
+  Where Home's row is short its least needed group, Editing (rank 1), folds first into one icon
+  button "Editing" (`ribbonFit`; from 860 px down, where the names, tiles and downloads have no
+  more to give), and `chordText` (`src/keys.js`) writes the outline's keys in menus and tooltips
+  as Alt+Shift+←.
+  `src/nav.js` draws the Navigation pane in the side panel's Outline tab: the box, Headings (a
+  tree with collapse, Show levels, the Outlining toolbar, Alt+Shift and the arrows, dragging; in
+  the Outline view the paragraphs too, by their first line), Pages (each page cloned small,
+  inert, only those in sight) and Results.
 
 ## 3. Undo and redo
 
