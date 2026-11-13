@@ -434,16 +434,21 @@ export function tableAt(src, p, lo = 0, hi = src.length) {
 }
 
 // The cell that holds p: { r, k (its index in the row), cell } or the nearest one
+// (the cells in order, made once a table: painting a selection asks once a cell, and a scan of
+// every row each time took a second at 3000 rows)
 export function cellAt(T, p) {
-  let best = null;
-  for (const [r, row] of T.rows.entries()) {
-    if (row.kind !== 'row') continue;
-    for (const [k, c] of row.cells.entries()) {
-      if (c.s <= p && p <= c.e) return { r, k, cell: c };
-      if (c.s <= p || !best) best = { r, k, cell: c };
-    }
+  let ix = T.cellIx;
+  if (!ix) {
+    ix = T.cellIx = [];
+    for (const [r, row] of T.rows.entries()) if (row.kind === 'row') for (const [k, c] of row.cells.entries()) ix.push({ r, k, cell: c });
   }
-  return best;
+  if (!ix.length) return null;
+  // the last cell that starts at or before p: it, or the one before it where both touch p
+  let lo = 0, hi = ix.length - 1, i = -1;
+  while (lo <= hi) { const m = (lo + hi) >> 1; if (ix[m].cell.s <= p) { i = m; lo = m + 1; } else hi = m - 1; }
+  if (i < 0) return ix[0];
+  if (i > 0 && ix[i - 1].cell.e >= p) return ix[i - 1];
+  return ix[i];
 }
 
 // the cell of row r that covers column col (a \multicolumn covers several): { k, cell } or null
@@ -540,15 +545,21 @@ export function gridRules(src, T) {
   for (let k = 0; k < n; k++) {
     const lead = k + 1 < n ? T.rows[k + 1].lead : T.tail.lead;
     if (!lead.some((x) => RULES.has(x.name))) return null;
-    const t = src.slice(T.rows[k].e, unitEnd(src, T, k, true));
+    // (the rule's text without its comment: a new row brings the rule, never "% ok" again)
+    const t = src.slice(T.rows[k].e, unitEnd(src, T, k, true)).split('\n').map((l) => uncomment(l)[0].replace(/[ \t\r]+$/, '')).join('\n');
     under.push({ t, norm: t.replace(/\s+/g, '') });
   }
-  // (all alike; from three rows one may differ, a header's \hline\hline wherever it now is)
-  const count = new Map();
-  for (const x of under) count.set(x.norm, (count.get(x.norm) || 0) + 1);
-  const [norm, c] = [...count].sort((x, y) => y[1] - x[1])[0];
-  if (n <= 2 ? c !== n : c < n - 1 || c < 2) return null;
-  return under.find((x) => x.norm === norm).t;
+  // the same rules under every row, one row's aside where it holds them and more (a double
+  // \hline under a header, wherever a row inserted has put it); comments do not count
+  const kinds = [...new Set(under.map((x) => x.norm))];
+  if (kinds.length > 2) return null;
+  let base = kinds[0];
+  if (kinds.length === 2) {
+    const [a, b] = kinds;
+    base = b.startsWith(a) ? a : a.startsWith(b) ? b : null;
+    if (base == null || under.filter((x) => x.norm !== base).length !== 1) return null;
+  }
+  return under.filter((x) => x.norm === base).pop().t;
 }
 // where row k's unit ends: its \\, or in a grid the end of the rules under it
 function unitEnd(src, T, k, grid) {
@@ -655,11 +666,14 @@ export function deleteRows(src, T, r0, r1) {
   const p = edits[0].s;
   // In booktabs two rules that come together lose the middle one: the header deleted leaves no
   // \midrule under \toprule, the body deleted none over \bottomrule
-  if (!grid && lookOf(src, T) === 'booktabs') {
+  // (in other tables the rules on both sides of the rows deleted would come together, \hline
+  // over \cline{2-3}: the table's top or bottom rule stays, else the one above)
+  if (!grid) {
     const before = T.rows[r0].lead.filter((x) => RULES.has(x.name));
     const after = (r1 + 1 < T.rows.length ? T.rows[r1 + 1].lead : T.tail.lead).filter((x) => RULES.has(x.name));
     const mid = (l) => l.length && l.every((x) => x.name === 'midrule' || x.name === 'cmidrule');
-    if (before.length && after.length) edits.push(...removeRules(src, mid(after) ? after : mid(before) ? before : []));
+    const lastData = data[data.length - 1];
+    if (before.length && after.length) edits.push(...removeRules(src, lookOf(src, T) === 'booktabs' ? (mid(after) ? after : mid(before) ? before : []) : r1 >= lastData ? before : after));
   }
   for (const m of multirows(T)) {
     const lost = Math.max(0, Math.min(m.bottom, r1) - Math.max(m.top, r0) + 1);
@@ -947,6 +961,8 @@ const SETTINGS = new Set(['centering', 'caption', 'label', 'small', 'footnotesiz
 export function floatOf(src, T) {
   const from = Math.max(0, T.s - 8000);
   for (let i = src.lastIndexOf('\\begin', T.s - 1); i >= from; i = src.lastIndexOf('\\begin', i - 1)) {
+    // (a \begin in a comment opens nothing)
+    { const ls = src.lastIndexOf('\n', i - 1) + 1; if (i - ls < 2000 && uncomment(src.slice(ls, i))[1]) { if (i === 0) break; continue; } }
     const m = /^\\begin\s*\{(table\*?|sidewaystable|wraptable)\}/.exec(src.slice(i, i + 30));
     if (!m) { if (/^\\begin\s*\{/.test(src.slice(i, i + 8))) { const g = /^\\begin\s*\{([A-Za-z*]+)\}/.exec(src.slice(i, i + 40)); if (g && !TABLE_ENVS.includes(g[1]) && g[1] !== 'center' && g[1] !== 'adjustbox' && g[1] !== 'threeparttable') return null; } if (i === 0) break; continue; }
     const name = m[1];
@@ -970,7 +986,7 @@ export function floatOf(src, T) {
         const [nm, j] = csAt(src, p);
         const spec = nm === 'caption' ? 'om' : nm === 'label' ? 'm' : nm === 'setlength' ? 'mm' : nm === 'renewcommand' ? 'mm' : nm === 'rowcolors' ? 'omm' + 'm' : nm === 'arrayrulecolor' ? 'om' : '';
         if (!SETTINGS.has(nm)) {
-          if (nm === 'begin' || nm === 'end') { const g = argsAt(src, j, 'm', z); if (g && ['center', 'adjustbox'].includes(src.slice(g.args[0].is, g.args[0].ie))) { p = g.e; continue; } }
+          if (nm === 'begin' || nm === 'end') { const g = argsAt(src, j, 'm', z); if (g && ['center', 'adjustbox'].includes(src.slice(g.args[0].is, g.args[0].ie))) { if (src.slice(g.args[0].is, g.args[0].ie) === 'center') F.center = true; p = g.e; continue; } }
           F.only = false; break;
         }
         const r = argsAt(src, j, nm === 'rowcolors' ? 'ommm' : spec, z);
@@ -1951,8 +1967,15 @@ export function repeatHeader(src, T, r, on, o = {}) {
     // what the float holds besides the table, in order
     const items = [...(settingsOnly(src, F.headE, T.s) || []).map((x) => ({ ...x, above: true })), ...(settingsOnly(src, T.e, F.endS) || []).map((x) => ({ ...x, above: false }))];
     const settings = items.filter((x) => !['centering', 'raggedleft', 'raggedright', 'caption', 'label'].includes(x.name)).map((x) => src.slice(x.s, x.e));
-    const align = F.centering ? (src.slice(F.centering.s, F.centering.e).includes('raggedleft') ? '[r]' : '') : '[l]';
-    const head = src.slice(F.s, F.headE);
+    // (centred by \centering or a center environment: longtable's own; \raggedleft [r]; else [l])
+    const align = F.centering ? (src.slice(F.centering.s, F.centering.e).includes('raggedleft') ? '[r]' : '') : F.center ? '' : '[l]';
+    // (the head on one line, without its comments: \begin{table} and [htbp] on two lines would
+    // put [htbp] in the first cell)
+    const head = src.slice(F.s, F.headE).split('\n').map((l) => uncomment(l)[0].trim()).join('');
+    // (the float's comments, Rikuy's review comments among them, go with the table: those before
+    // it at the start of its body, those after it at the end)
+    const comments = (a, z) => { const out = []; for (let p = src.indexOf('%', a); p >= 0 && p < z && out.length < 200; p = src.indexOf('%', p + 1)) { if (src[p - 1] === '\\') continue; const le = src.indexOf('\n', p); const q = le < 0 || le > z ? z : le; out.push(src.slice(p, q).replace(/\r$/, '')); p = q; } return out; };
+    const comBefore = comments(F.headE, T.s), comAfter = comments(T.e, F.endS);
     // the caption with the label right after it (the text between kept); a label alone after the table
     let cap = '', label = '';
     if (F.caption) {
@@ -1962,8 +1985,10 @@ export function repeatHeader(src, T, r, on, o = {}) {
     } else if (F.label) label = src.slice(F.label.s, F.label.e);
     let text = '\\begin{longtable}' + align + '{' + spec + '}' + (head !== '\\begin{table}[h]' ? ' ' + MARK + head : '');
     if (cap && F.caption.above) text += nl + cap + '\\\\';
+    if (comBefore.length) text += nl + comBefore.join(nl);
     let inner = body;
     if (cap && !F.caption.above) inner = inner.replace(/\s*$/, '') + nl + cap + nl;
+    if (comAfter.length) inner = inner.replace(/\s*$/, '') + nl + comAfter.join(nl) + nl;
     text += inner + '\\end{longtable}';
     if (settings.length) text = '{' + settings.join(nl) + nl + text + '}';
     if (label) text += nl + label;
@@ -1992,8 +2017,8 @@ export function repeatHeader(src, T, r, on, o = {}) {
     const row = T.rows[capRow];
     cap = src.slice(row.cells[0].cs, row.cells[0].ce);
     above = T.rows.slice(0, capRow).every((x) => x.kind !== 'row');
-    // (the rules before it stay: \bottomrule before a caption at the end)
-    let ce = row.e;
+    // (the rules before it stay: \bottomrule before a caption at the end; and a comment after it)
+    let ce = row.sepE != null ? row.sepE : row.cells[0].ce;
     const le = src.indexOf('\n', ce);
     if (le >= 0 && /^[ \t\r]*$/.test(src.slice(ce, le)) && (above || row.sepS != null)) ce = le;
     edits.push({ s: row.leadE, e: ce, t: '' });
@@ -2023,7 +2048,7 @@ export function repeatHeader(src, T, r, on, o = {}) {
   const pos = T.args[0] && T.args[0].kind === 'o' ? src.slice(T.args[0].is, T.args[0].ie).trim() : '';
   const alignLine = pos === 'l' ? [] : pos === 'r' ? ['\\raggedleft'] : ['\\centering'];
   const sets = G ? (settingsOnly(src, G.s + 1, T.s) || []).map((x) => src.slice(x.s, x.e)) : [];
-  const head = before && /^\\begin\s*\{(table\*?|sidewaystable)\}/.test(before) ? before : '\\begin{table}[h]';
+  const head = before && /^\\begin\s*\{(table\*?|sidewaystable|wraptable)\}/.test(before) ? before : '\\begin{table}[h]';
   const lines = [head, ...alignLine, ...sets, ...(cap && above ? [cap] : []), tab, ...(cap && !above ? [cap] : []), ...(lab ? [lab[1]] : []), '\\end{' + /^\\begin\s*\{([^}]*)\}/.exec(head)[1] + '}'];
   return { edits: [{ s, e, t: lines.join(nl) }], packages: [], p: s };
 }
@@ -2054,6 +2079,7 @@ export function captionEdits(src, T) {
   // in a minipage or a subtable: the caption goes in it (\caption in a float's, \captionof{table}
   // outside one, caption's), never a float in it: a float in a minipage is "Not in outer par mode"
   const box = boxAround(src, T);
+  if (box && box.caption) return { p: box.caption.is };
   if (box) {
     const inFloat = box.inFloat || box.name === 'subtable';
     const t = nl + (inFloat ? '\\caption{}' : '\\captionof{table}{}');
@@ -2064,20 +2090,32 @@ export function captionEdits(src, T) {
 }
 
 // The minipage or subtable (subcaption's) the table stands in, past a center around it: { name,
-// inFloat (a table or figure float around that) } or null. The \begin and \end before the table
-// are counted, at most 20 000 characters back.
+// inFloat (a table or figure float around that), caption: { is } (one it holds already) } or
+// null. The \begin and \end before the table are counted, at most 20 000 characters back,
+// comments blanked first (a "% \begin{minipage}" opens nothing).
+const blankComments = (t) => t.replace(/(^|[^\\])(%[^\n]*)/g, (m, a, c) => a + ' '.repeat(c.length));
 function boxAround(src, T) {
-  const from = Math.max(0, T.s - 20000), re = /\\(begin|end)\s*\{([A-Za-z]+\*?)\}/g;
-  re.lastIndex = from;
+  const from = Math.max(0, T.s - 20000), text = blankComments(src.slice(from, T.s)), re = /\\(begin|end)\s*\{([A-Za-z]+\*?)\}/g;
   const open = [];
-  for (let m, n = 0; (m = re.exec(src)) && m.index < T.s && n < 4000; n++) {
-    if (m[1] === 'begin') open.push(m[2]);
-    else { const k = open.lastIndexOf(m[2]); if (k >= 0) open.length = k; }
+  for (let m, n = 0; (m = re.exec(text)) && n < 4000; n++) {
+    if (m[1] === 'begin') open.push({ name: m[2], at: from + m.index + m[0].length });
+    else { let k = -1; for (let j = open.length - 1; j >= 0; j--) if (open[j].name === m[2]) { k = j; break; } if (k >= 0) open.length = k; }
   }
   let i = open.length - 1;
-  while (i >= 0 && ['center', 'adjustbox', 'threeparttable', 'small', 'footnotesize'].includes(open[i])) i--;
-  if (i < 0 || !['minipage', 'subtable', 'subfigure'].includes(open[i])) return null;
-  return { name: open[i], inFloat: open.slice(0, i).some((x) => /^(table|figure|sidewaystable|sidewaysfigure|wraptable|wrapfigure)\*?$/.test(x)) };
+  while (i >= 0 && ['center', 'adjustbox', 'threeparttable', 'small', 'footnotesize'].includes(open[i].name)) i--;
+  if (i < 0 || !['minipage', 'subtable', 'subfigure'].includes(open[i].name)) return null;
+  const box = open[i];
+  // (its own \end, past the table, and a caption already in it)
+  const after = blankComments(src.slice(T.e, Math.min(src.length, T.e + 20000)));
+  const endRe = new RegExp('\\\\(begin|end)\\s*\\{' + box.name + '\\}', 'g');
+  let d = 0, endAt = -1;
+  for (let m, n = 0; (m = endRe.exec(after)) && n < 200; n++) { if (m[1] === 'begin') d++; else if (d-- === 0) { endAt = T.e + m.index; break; } }
+  let caption = null;
+  for (const [a0, z0, t0] of [[box.at, T.s, blankComments(src.slice(box.at, T.s))], [T.e, endAt, endAt < 0 ? '' : after.slice(0, endAt - T.e)]]) {
+    const m = /\\caption(?:of\s*\{[^{}]*\})?\s*(\[[^\]]*\])?\s*\{/.exec(t0);
+    if (m && !caption) caption = { is: a0 + m.index + m[0].length };
+  }
+  return { name: box.name, inFloat: open.slice(0, i).some((x) => /^(table|figure|sidewaystable|sidewaysfigure|wraptable|wrapfigure)\*?$/.test(x.name)), caption };
 }
 
 // ---- deleting cells ----------------------------------------------------------------------------------------------

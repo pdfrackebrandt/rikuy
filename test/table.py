@@ -533,6 +533,86 @@ def reviewed(page):
     review_compiled(page, review(page))
 
 
+# ---- the verifier's cases on the review fixes ----------------------------------------------------
+
+def pdf_of(page, doc, files=None):
+    """Compile doc in the page (with files beside it): ok, the error problems, the PDF's text."""
+    if files:
+        page.evaluate('(fs) => { for (const [n, t] of Object.entries(fs)) window.rikuy.files.set(n, t); }', files)
+    page.set_default_timeout(600000)
+    r = page.evaluate('''async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile();
+      let b = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) b += String.fromCharCode(...r.pdf.subarray(i, i + 8192));
+      return { ok: r.ok, engine: r.engine, pdf: btoa(b), problems: (r.problems || []).filter((x) => x.severity === 'error').map((x) => x.message).slice(0, 4) }; }''', doc)
+    page.set_default_timeout(30000)
+    import base64, io
+    from pypdf import PdfReader
+    r['text'] = ' '.join(p.extract_text() or '' for p in PdfReader(io.BytesIO(base64.b64decode(r['pdf']))).pages) if r['pdf'] else ''
+    return r
+
+
+def verified(page):
+    has_tex = os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm'))
+    # R1: Repeat Header Rows on a float with settings: the page still draws a table, off gives it back
+    flt = WRAP('Intro.\n\n\\begin{table}[!htbp]\n\\centering\n\\small\n\\rowcolors{2}{gray!10}{}\n\\setlength{\\tabcolsep}{3pt}\n\\begin{tabular}{ll}\n\\toprule\nHead & Other \\\\\n\\midrule\nbanana & 2 \\\\\napple & 10 \\\\\n\\bottomrule\n\\end{tabular}\n\\caption{Results}\n\\label{tab:r}\n\\end{table}\n\nAfter.',
+               PRE + '\\usepackage[table]{xcolor}\n')
+    load_doc(page, flt); at_src(page, 'Head'); run_cmd(page, 'repeat-header'); page.wait_for_timeout(300)
+    on = src(page)
+    drawn = page.evaluate("() => [...document.querySelectorAll('#pages td')].map((t) => t.textContent.trim()).filter(Boolean)")
+    small = page.evaluate("() => { const t = [...document.querySelectorAll('#pages td')].find((x) => x.textContent.trim() === 'banana'); return !!t && !!t.closest('table.z-small'); }")
+    check('R1: Repeat Header Rows on a float with \\small, \\rowcolors, \\tabcolsep: a longtable in a group of them, which the page draws as a table, small',
+          '{\\small\n\\rowcolors{2}{gray!10}{}\n\\setlength{\\tabcolsep}{3pt}\n\\begin{longtable}{ll}' in on and 'banana' in drawn and 'Head' in drawn and small, [on[60:400], drawn[:6], small])
+    at_src(page, 'banana')
+    check('R1: and the caret goes into its cells, Repeat Header Rows pressed', pressed(page, 'repeat-header') is True)
+    run_cmd(page, 'repeat-header'); page.wait_for_timeout(300)
+    check('R1: off again: the float as it was, byte for byte (longtable stays loaded)', src(page).split('\\begin{document}')[1] == flt.split('\\begin{document}')[1] and '\\usepackage{longtable}' in src(page), src(page)[60:400])
+    if has_tex:
+        r = pdf_of(page, on)
+        miss = [w for w in ('Head', 'banana', 'apple', 'Results') if w not in r['text']]
+        check('R1: the longtable in its group compiles in the page, every word in the PDF', r['ok'] and not r['problems'] and not miss, {'ok': r['ok'], 'problems': r['problems'], 'missing': miss})
+    # R2: Table from Data File adds T1 only for pdfLaTeX, and reads the files the preamble reads
+    csv = 'user_id,score %\nab_c,5\nx&y,$3\n'
+    body = 'Intro words, ä ö ü, “quoted” — dash.\n\nAfter.'
+    docs = {
+        'xelatex': '% !TEX program = xelatex\n' + WRAP(body, ''),
+        'lualatex': '% !TEX program = lualatex\n' + WRAP(body, ''),
+        'polyglossia': WRAP(body, '\\usepackage{polyglossia}\n\\setmainlanguage{english}\n'),
+        'unicode-math': WRAP(body, '\\usepackage{unicode-math}\n'),
+        'babel onchar': WRAP(body, '\\usepackage[english]{babel}\n\\babelprovide[import=hi, onchar=ids fonts]{hindi}\n'),
+        'fontenc in an \\input file': WRAP(body, '\\input{settings}\n'),
+    }
+    got = {}
+    for k, d in docs.items():
+        load_doc(page, {'main.tex': d, 'data.csv': csv, 'settings.tex': '\\usepackage[T1]{fontenc}\n'}); click_text(page, 'Intro', 2)
+        run_cmd(page, 'table-from-data', {'file': 'data.csv'}); page.wait_for_timeout(250)
+        got[k] = src(page)
+    check('R2: Table from Data File writes no T1 for XeLaTeX, LuaLaTeX (magic comment, polyglossia, unicode-math, babel\'s onchar), nor where an \\input file loads fontenc',
+          all('\\csvautobooktabular[respect all]{data.csv}' in s and '{fontenc}' not in s.split('\\begin{document}')[0] for s in got.values()), {k: s[:160] for k, s in got.items() if '{fontenc}' in s.split('\\begin{document}')[0]})
+    load_doc(page, {'main.tex': WRAP(body, ''), 'data.csv': csv}); click_text(page, 'Intro', 2)
+    run_cmd(page, 'table-from-data', {'file': 'data.csv'}); page.wait_for_timeout(250)
+    pdfdoc = src(page)
+    check('R2: in a pdfLaTeX document T1 still comes (its _ prints as _)', '\\usepackage[T1]{fontenc}' in pdfdoc, pdfdoc[:200])
+    if has_tex:
+        page.evaluate("() => window.rikuy.files.set('data.csv', 'user_id,score %\\nab_c,5\\nx&y,$3\\n')")
+        r = pdf_of(page, got['xelatex'])
+        miss = [w for w in ('ä', 'ö', 'ü', '“quoted”', '—', 'ab_c', 'x&y', '$3') if w not in r['text']]
+        check('R2: the XeLaTeX document with its data table compiles in the page, every character in the PDF', r['ok'] and not r['problems'] and r['engine'] == 'xelatex' and not miss, {'ok': r['ok'], 'engine': r['engine'], 'problems': r['problems'], 'missing': miss})
+    # H7: two columns set by a project's .sty in \maketitle, or by an \input file before the table
+    sty = '\\NeedsTeXFormat{LaTeX2e}\n\\ProvidesPackage{acl}\n\\renewcommand\\maketitle{\\twocolumn[\\centering\\@title]}\n'
+    for name, files in (('a project .sty (acl.sty\'s \\maketitle)', {'main.tex': DOC.replace(PRE, PRE + '\\usepackage{acl}\n'), 'acl.sty': sty}),
+                        ('an \\input file before the table', {'main.tex': DOC.replace('Before it.', '\\input{cols}\nBefore it.'), 'cols.tex': '\\twocolumn\n'})):
+        load_doc(page, files); at_src(page, 'Head'); run_cmd(page, 'repeat-header'); page.wait_for_timeout(200)
+        check('H7: Repeat Header Rows refused where two columns come from ' + name, src(page) == files['main.tex'], src(page)[60:300])
+    # R5: painting a selection on a table of 3000 rows takes one look at each cell
+    big = WRAP('\\begin{tabular}{ll}\n' + ''.join('a%d & b%d \\\\\n' % (k, k) for k in range(3000)) + '\\end{tabular}', '')
+    load_doc(page, big); page.wait_for_timeout(2500); sel_words(page, 'a0', 'b1')
+    ms = page.evaluate('() => { const at = window.rikuy.ribbonAt(); const t = performance.now(); window.rikuy.tablePaintSelection(at); return performance.now() - t; }')
+    check('R5: the block of a selection painted on a table of 3000 rows in under 300 ms (it took a second)', ms < 300, ms)
+    # R6: Insert Caption in a subtable that has one: the caret goes to it, nothing written
+    sub = WRAP('\\begin{table}[h]\n\\begin{subtable}{0.5\\linewidth}\n\\centering\n\\begin{tabular}{ll}\nka & kb \\\\\n\\end{tabular}\n\\caption{Sub one}\n\\end{subtable}\n\\end{table}', PRE + '\\usepackage{subcaption}\n')
+    load_doc(page, sub); at_src(page, 'ka'); run_cmd(page, 'table-caption'); page.wait_for_timeout(200)
+    check('R6: Insert Caption where the subtable has a caption: nothing written, a second caption never', src(page) == sub, src(page)[60:300])
+
+
 # ---- compiled -------------------------------------------------------------------------------------
 
 def compiled(page):
@@ -560,7 +640,7 @@ def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         names = sys.argv[1:]
-        for f in (inserting, tabs_and_trips, keys_and_select, the_rest, drawing, reviewed, compiled):
+        for f in (inserting, tabs_and_trips, keys_and_select, the_rest, drawing, reviewed, verified, compiled):
             if names and f.__name__ not in names:
                 continue
             try: f(page)

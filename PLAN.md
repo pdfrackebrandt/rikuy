@@ -1140,6 +1140,24 @@ Tests:
     outside the repository) found one stall, a star written out with a pattern over its whole
     text each repetition (156 ms a look), fixed with a bounded-time test. Evidence:
     `table.test.mjs` 41 groups, `test/table.py` 150 (20 new, two compiles in the page).
+    *Verification* (a fresh verifier of the review round: 25 of 26 fixed, H7 partial, and new
+    faults): Repeat Header Rows on a float with settings writes them in a group the page now
+    reads as the table (`\small` and its kin a table's setting, drawn at that size; a label
+    beside the group); Table from Data File adds T1 for pdfLaTeX only (the engine read as
+    tex/engine.js's pickEngine reads it: the preview's choice, a magic comment, fontspec,
+    polyglossia, unicode-math, babel's onchar, `\babelfont`, Lua's packages), and not where a
+    file the preamble reads loads fontenc or fontspec; two columns are found in the project's
+    .sty and .cls (acl.sty's `\maketitle`), the files the preamble reads and an `\input` before
+    the table; a float's head on two lines becomes one in the comment, a center environment is
+    centring, its comments (review comments among them) go with the table both ways, wraptable
+    comes back; the cells are indexed once a table (a selection painted at 3000 rows: a second
+    before, milliseconds now); Insert Caption goes to a subtable's or minipage's caption, and a
+    commented `\begin` opens nothing; a grid may have one richer rule anywhere (a double one
+    under a header, two rows too) and rule lines' comments do not count or get copied; deleting
+    rows where two rules would meet keeps the table's top or bottom rule. Evidence:
+    `table.test.mjs` 46 groups, `test/table.py` 161 (11 new: the page's drawing, Off, the
+    engines, the .sty, the timing; two more compiles in the page, the grouped longtable and a
+    XeLaTeX document with its data table, every character in the PDF).
 
 ## Open tasks
 

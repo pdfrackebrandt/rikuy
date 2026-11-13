@@ -663,6 +663,80 @@ rev('audit: a stranger\'s *{n}{…} written out in bounded time, each look', () 
   }
 });
 
+// The verifier's cases on the review fixes (R1 to R8, H7's rest)
+const ver = (name, f) => ok('verify ' + name, f);
+ver('R1: a longtable in a group of settings, as Repeat Header Rows writes it, is drawn as a table', () => {
+  const flt = 'Intro.\n\n\\begin{table}[!htbp]\n\\centering\n\\small\n\\rowcolors{2}{gray!10}{}\n\\setlength{\\tabcolsep}{3pt}\n\\begin{tabular}{ll}\n\\toprule\nHead & Other \\\\\n\\midrule\nalpha & beta \\\\\n\\bottomrule\n\\end{tabular}\n\\caption{Results}\n\\end{table}\n\nSee.';
+  const on = run(flt, X.repeatHeader(flt, at(flt), 0, true));
+  const doc = (b) => '\\documentclass{article}\n\\usepackage{booktabs}\n\\usepackage{longtable}\n\\usepackage[table]{xcolor}\n\\begin{document}\n' + b + '\n\\end{document}\n';
+  const label = on.replace('\\caption{Results}\n', '').replace('\\end{longtable}}', '\\end{longtable}}\n\\label{tab:x}');
+  for (const b of [on, label, '{\\small\n\\begin{longtable}{ll}\nA & B \\\\\n\\endhead\na & b \\\\\n\\end{longtable}}']) {
+    const M = buildModel({ files: new Map([['main.tex', doc(b)]]), main: 'main.tex' });
+    const t = M.blocks.flatMap((B) => B.items).flatMap((it) => it.parts || []).filter((p) => p.type === 'tabular');
+    assert.equal(t.length, 1, b);
+    if (b === on) assert.ok(t[0].size === 'small' && t[0].band && t[0].tabcolsep === '3pt', JSON.stringify({ size: t[0].size, band: t[0].band, sep: t[0].tabcolsep }));
+  }
+  // a \small in a figure's text stays the text's
+  const fig = '\\documentclass{article}\n\\begin{document}\n\\begin{figure}[h]\n\\small\nNote here.\n\\caption{F}\n\\end{figure}\n\\end{document}\n';
+  const F = buildModel({ files: new Map([['main.tex', fig]]), main: 'main.tex' });
+  assert.ok(JSON.stringify(F.blocks).includes('z-small'));
+});
+ver('R3, R4: the float\'s head on two lines, a center environment, comments, wraptable', () => {
+  const cell = (t) => t.replace('a & b', 'a2 & b');
+  const cycle = (src) => { const on = run(src, X.repeatHeader(src, at(src), 0, true)); const e = cell(on); return { on, off: run(e, X.repeatHeader(e, at(e), 0, false)) }; };
+  const two = 'X\n\n\\begin{table}\n[htbp]\n\\centering\n\\begin{tabular}{ll}\nA & B \\\\\na & b \\\\\n\\end{tabular}\n\\caption{Cap}\n\\end{table}\n';
+  let c = cycle(two);
+  assert.ok(c.on.includes('\\begin{longtable}{ll} % rikuy: \\begin{table}[htbp]\nA & B'), c.on);
+  assert.equal(c.off, cell(two).replace('\\begin{table}\n[htbp]', '\\begin{table}[htbp]'));
+  const ctr = 'X\n\n\\begin{table}[h]\n\\begin{center}\n\\begin{tabular}{ll}\nA & B \\\\\na & b \\\\\n\\end{tabular}\n\\end{center}\n\\caption{Cap}\n\\end{table}\n';
+  c = cycle(ctr);
+  assert.ok(c.on.includes('\\begin{longtable}{ll}\n'), c.on);
+  assert.ok(c.off.includes('\\begin{table}[h]\n\\centering\n'), c.off);
+  const com = 'X\n\n\\begin{table}[h]\n\\centering % keep centred\n% comment (Ana) on "a": check this\n\\begin{tabular}{ll}\nA & B \\\\\na & b \\\\\n\\end{tabular}\n\\caption{Cap} % cap\n\\end{table}\n';
+  c = cycle(com);
+  for (const x of ['% keep centred', '% comment (Ana) on "a": check this', '% cap']) { assert.ok(c.on.includes(x), x + ' on'); assert.ok(c.off.includes(x), x + ' off'); }
+  const wrap = 'X\n\n\\begin{wraptable}{r}{0.4\\textwidth}\n\\centering\n\\begin{tabular}{ll}\nA & B \\\\\na & b \\\\\n\\end{tabular}\n\\caption{Cap}\n\\end{wraptable}\n';
+  c = cycle(wrap);
+  assert.equal(c.off, cell(wrap));
+});
+ver('R5: cellAt on a table of 3000 rows, once a cell, in bounded time', () => {
+  const big = '\\begin{tabular}{ll}\n' + Array.from({ length: 3000 }, (_, k) => 'a' + k + ' & b' + k + ' \\\\\n').join('') + '\\end{tabular}';
+  const T = at(big);
+  const t0 = Date.now();
+  for (const row of T.rows) for (const c of row.cells) assert.equal(X.cellAt(T, c.cs).cell, c);
+  assert.ok(Date.now() - t0 < 500, (Date.now() - t0) + ' ms');
+  assert.equal(X.cellAt(T, 0).cell, T.rows[0].cells[0]);
+});
+ver('R6, R7: a caption already in the subtable or minipage is gone to; a commented \\begin opens nothing', () => {
+  const a = '\\begin{table}[h]\n\\begin{subtable}{0.5\\linewidth}\n\\centering\n\\begin{tabular}{ll}\nka & kb \\\\\n\\end{tabular}\n\\caption{Sub one}\n\\end{subtable}\n\\end{table}';
+  const r = X.captionEdits(a, at(a));
+  assert.ok(!r.edits && a.startsWith('Sub one', r.p), JSON.stringify(r));
+  const b = '\\begin{table}[h]\n\\begin{minipage}{0.5\\linewidth}\n\\caption{Above}\n\\begin{tabular}{ll}\nka & kb \\\\\n\\end{tabular}\n\\end{minipage}\n\\end{table}';
+  assert.ok(b.startsWith('Above', X.captionEdits(b, at(b)).p));
+  const c = 'x\n% \\begin{minipage}{5cm}\n\\begin{tabular}{l}\nfa \\\\\n\\end{tabular}';
+  assert.ok(run(c, X.captionEdits(c, at(c))).includes('\\begin{table}[h]\n\\centering\n\\begin{tabular}'));
+  const d = '\\begin{table}[h]\n\\centering\n% \\begin{minipage}{5cm}\n\\begin{tabular}{l}\nfa \\\\\n\\end{tabular}\n\\end{table}';
+  assert.equal(run(d, X.captionEdits(d, at(d))), d.replace('\\end{tabular}\n', '\\end{tabular}\n\\caption{}\n'));
+});
+ver('R8: grids with a double rule in two rows, comments on rule lines; rows next to a \\cline', () => {
+  const dbl2 = '\\begin{tabular}{|l|l|}\n\\hline\nH & K \\\\ \\hline\\hline\na & b \\\\ \\hline\n\\end{tabular}';
+  const o1 = run(dbl2, X.insertRow(dbl2, at(dbl2), 1, true));
+  assert.ok(o1.includes('a & b \\\\ \\hline\n &  \\\\ \\hline\n\\end'), o1);
+  assert.equal(run(o1, X.deleteRows(o1, at(o1), 2, 2)), dbl2);
+  for (const [k, com] of [['different', ['% head', '% first', '% second']], ['same', ['% ok', '% ok', '% ok']]]) {
+    const g = '\\begin{tabular}{|l|l|}\n\\hline\nH & K \\\\ \\hline ' + com[0] + '\na & b \\\\ \\hline ' + com[1] + '\nc & d \\\\ \\hline ' + com[2] + '\n\\end{tabular}';
+    const o = run(g, X.insertRow(g, at(g), 2, true));
+    assert.ok(o.includes('c & d \\\\ \\hline ' + com[2] + '\n &  \\\\ \\hline\n\\end'), k + ': ' + o);
+    assert.equal(run(o, X.deleteRows(o, at(o), 3, 3)), g);
+  }
+  const cl = '\\begin{tabular}{|l|l|l|}\n\\hline\nH & K & L \\\\ \\cline{2-3}\na & b & c \\\\ \\hline\nd & e & f \\\\ \\hline\n\\end{tabular}';
+  assert.equal(X.gridRules(cl, at(cl)), null);
+  assert.equal(run(cl, X.deleteRows(cl, at(cl), 0, 0)), '\\begin{tabular}{|l|l|l|}\n\\hline\na & b & c \\\\ \\hline\nd & e & f \\\\ \\hline\n\\end{tabular}');
+  const cl2 = '\\begin{tabular}{|l|l|l|}\n\\hline\nH & K & L \\\\ \\hline\na & b & c \\\\ \\cline{2-3}\nd & e & f \\\\ \\hline\n\\end{tabular}';
+  assert.ok(!run(cl2, X.deleteRows(cl2, at(cl2), 2, 2)).includes('\\cline'));
+  assert.ok(!run(cl2, X.deleteRows(cl2, at(cl2), 1, 1)).includes('\\cline'));
+});
+
 // the corpus: every table put back together, a row and a column in and out again
 const root = process.argv[2] || process.env.CORPUS_DIR || (fs.existsSync('/tmp/corpus-le/le') ? '/tmp/corpus-le/le' : null);
 if (root && fs.existsSync(root)) {

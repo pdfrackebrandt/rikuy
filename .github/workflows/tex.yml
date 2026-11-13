@@ -114,7 +114,7 @@ jobs:
       - name: The outline, then the PDF has the heading at the level it was given
         run: cd test && python3 outline.py
       - name: Tables, every construct the table commands write compiled in the page
-        run: cd test && python3 table.py reviewed compiled
+        run: cd test && python3 table.py reviewed verified compiled
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rikuy-dist

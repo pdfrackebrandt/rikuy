@@ -725,7 +725,8 @@ class Builder {
       // (B7) a table in a group with the settings before it, {\renewcommand{\arraystretch}{1.5}
       // \begin{tabular}…\end{tabular}}: drawn as the table it is, not as a box of source
       {
-        const vis = ns.filter((n) => !blank(n));
+        // (a label after the group, where Repeat Header Rows puts a float's label without a caption)
+        const vis = ns.filter((n) => !blank(n) && !(n.t === 'cmd' && n.name === 'label'));
         if (vis.length === 1 && vis[0].t === 'group' && ctx.src[vis[0].e - 1] === '}') {
           const inner = vis[0].nodes.filter((n) => !(n.t === 'comment' || (n.t === 'text' && !ctx.src.slice(n.s, n.e).trim())));
           const tabs = inner.filter((n) => n.t === 'env' && /^(tabular|tabularx|tabular\*|tabulary|longtable)$/.test(n.name));
@@ -733,6 +734,7 @@ class Builder {
             const set = {};
             for (const n of inner) { const x = n !== tabs[0] && this.tableSetting(n, ctx); if (x) set[x.key] = x.value; }
             const t = this.tabular(tabs[0], ctx, [], set);
+            for (const n of ns) if (n.t === 'cmd' && n.name === 'label') this.label(this.argText(ctx, n.args[0]), ctx);
             units.push({ f: ctx.f, s: ns[0].s, e: ns[ns.length - 1].e, items: [{ type: 'float', kind: 'inline', parts: [t], f: ctx.f }], fns: t.fns || [], sig: env.top ? this.sig.join('\u0001') : '' });
             return;
           }
@@ -1380,9 +1382,7 @@ class Builder {
     const flushP = () => {
       if (!para.length) return;
       const ns = para; para = [];
-      // (nothing to draw: comments, spaces, invisible commands, and a size before the table, as
-      // \small, which alone would be an empty line the caret falls into)
-      if (ns.every((n) => n.t === 'comment' || (n.t === 'text' && !ctx.src.slice(n.s, n.e).trim()) || (n.t === 'cmd' && INVIS.has(n.name)) || (n.t === 'cmd' && /^(tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge)$/.test(n.name) && !n.args.some(Boolean)))) {
+      if (ns.every((n) => n.t === 'comment' || (n.t === 'text' && !ctx.src.slice(n.s, n.e).trim()) || (n.t === 'cmd' && INVIS.has(n.name)))) {
         for (const n of ns) if (n.t === 'cmd' && n.name === 'label') this.label(this.argText(ctx, n.args[0]), ctx);
         return;
       }
@@ -1391,7 +1391,7 @@ class Builder {
       if (inl.length) parts.push({ type: 'p', inl, align: align || 'center', indent: false, ctx: 'p', f: ctx.f, dir: this.dirOf() });
     };
     const walk = (nodes) => {
-      for (const n of nodes) {
+      for (const [i, n] of nodes.entries()) {
         if (n.t === 'par') { flushP(); continue; }
         if (n.t === 'cmd' && n.name === 'centering') { align = 'center'; continue; }
         if (n.t === 'cmd' && (n.name === 'caption' || n.name === 'captionof')) {
@@ -1409,7 +1409,8 @@ class Builder {
           continue;
         }
         if (n.t === 'env' && /^(tabular|tabularx|tabular\*|tabulary|longtable|array)$/.test(n.name)) { flushP(); parts.push(this.tabular(n, ctx, fns, tset)); continue; }
-        { const st = this.tableSetting(n, ctx); if (st) { (tset = tset || {})[st.key] = st.value; continue; } }
+        // (a size is the table's only where a table follows it in the float: else it is the text's)
+        { const st = this.tableSetting(n, ctx); if (st && (st.key !== 'size' || nodes.slice(i + 1, i + 40).some((x) => x.t === 'env' && /^(tabular|tabularx|tabular\*|tabulary|longtable)$/.test(x.name)))) { (tset = tset || {})[st.key] = st.value; continue; } }
         // (B7) a table csvsimple sets from a data file of the project: drawn from the file
         if (n.t === 'cmd' && /^csvauto(book)?tabular$/.test(n.name) && n.args[1]) { const t = this.csvTable(n, ctx); if (t) { flushP(); parts.push(t); continue; } }
         if (n.t === 'env' && /^(center|minipage|subfigure|subtable|threeparttable|adjustbox|small|footnotesize|scriptsize)$/.test(n.name)) { flushP(); walk(n.nodes); flushP(); continue; }
@@ -1524,6 +1525,8 @@ class Builder {
   // A setting written before a table (B7): { key, value } or null
   tableSetting(n, ctx) {
     if (n.t !== 'cmd') return null;
+    // (a size for the table's words: \small before it, as Repeat Header Rows carries a float's)
+    if (/^(tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge)$/.test(n.name) && !n.args.some(Boolean)) return { key: 'size', value: n.name };
     const a = (k) => (n.args[k] ? this.argText(ctx, n.args[k]).trim() : '');
     if (n.name === 'rowcolors' && n.args.length >= 3) {
       const [st, odd, even] = n.args.filter(Boolean).slice(-3).map((x) => this.argText(ctx, x).trim());

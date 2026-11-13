@@ -436,6 +436,8 @@ export class Renderer {
       if (len(p.extrarowheight) != null) t.style.setProperty('--tb-xr', String(len(p.extrarowheight)));
       if (p.rulecolor) { t.style.setProperty('--tb-rc', cssColor(p.rulecolor)); t.classList.add('tb-rc'); }
       if (p.stretch || p.tabcolsep || p.arrayrulewidth || p.extrarowheight) t.classList.add('tb-set');
+      // (\small and its kin before the table: its words in that size)
+      if (p.size && /^(tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge)$/.test(p.size)) t.classList.add('z-' + p.size);
       const covered = new Map();
       let rowNo = 0;
       p.rows.forEach((r, ri) => {

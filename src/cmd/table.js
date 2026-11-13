@@ -398,9 +398,12 @@ export const methods = {
     // (respect all prints a value's _ { } \\ ~ ^ as the characters themselves: in LaTeX's first
     // encoding, OT1, those places hold other glyphs (_ is a dot accent), so T1 comes where the
     // document names no encoding and no fontspec)
+    // (and only for pdfLaTeX: XeLaTeX and LuaLaTeX set Unicode fonts, where T1 would lose every
+    // character beyond it; the files the preamble reads count too)
     const main = this.src(this.main) || '', end = preambleEnd(main);
-    const have = end < 0 ? [] : pkgLines(main, end).flatMap((x) => x.names.map((n) => n.name));
-    const t1 = end >= 0 && !have.includes('fontenc') && !have.includes('fontspec');
+    const texts = end < 0 ? [] : [main, ...this.preambleOthers()];
+    const have = texts.flatMap((t) => pkgLines(t, preambleEnd(t)).flatMap((x) => x.names.map((n) => n.name)));
+    const t1 = end >= 0 && !have.includes('fontenc') && !have.includes('fontspec') && /^(pdflatex|latex)$/.test(this.tableEngine());
     const pk = this.tablePackages(['csvsimple', ...(o.booktabs === false ? [] : ['booktabs']), ...(t1 ? ['fontenc-T1'] : [])]);
     let at = p + pre.length + text.indexOf('\\caption{') + 9;
     for (const x of pk) if (x.f === f && x.s <= p) at += x.t.length - (x.e - x.s);
@@ -668,6 +671,28 @@ export const methods = {
   },
   // whether the table stands where text runs in two columns: a two column class or option,
   // \twocolumn before it, or a multicols around it (longtable stops there)
+  // The engine the PDF is made with: the one chosen in the preview, else what pickEngine in
+  // tex/engine.js reads from the document (its magic comment, then Lua's and XeTeX's packages,
+  // classes and commands, in the main file and the files its preamble reads)
+  tableEngine() {
+    const chosen = this.engineChoice ? this.engineChoice() : 'auto';
+    const name = (n) => (/^xe/.test(n) ? 'xelatex' : /^lua/.test(n) ? 'lualatex' : /^(latex|dvips)/.test(n) ? 'latex' : 'pdflatex');
+    if (chosen && chosen !== 'auto') return name(String(chosen).toLowerCase());
+    const main = this.src(this.main) || '';
+    const magic = /^[ \t]*%+[ \t]*!\s*TEX\s+(?:TS-)?program\s*=\s*([\w-]+)/im.exec(main.slice(0, 8000));
+    if (magic) return name(magic[1].toLowerCase());
+    const texts = [main, ...this.preambleOthers()].map((t) => stripComments(t.slice(0, 400000)));
+    const pk = new Set(texts.flatMap((t) => pkgLines(t, preambleEnd(t)).flatMap((x) => x.names.map((n) => n.name))));
+    const has = (...ns) => ns.some((n) => pk.has(n));
+    const cls = (docClass(main) || {}).name || '';
+    const all = texts.join('\n');
+    if (has('luacode', 'luatexbase', 'luaotfload', 'luatexja', 'luatexja-fontspec', 'luatexja-preset', 'lua-ul', 'luamplib', 'luacolor', 'selnolig', 'lualatex-math', 'luatextra', 'lua-widow-control', 'emoji') || /^(ltj|lua)/.test(cls) || /\\(directlua|luaexec)\b/.test(all)) return 'lualatex';
+    if ((/\bbidi\s*=\s*basic\b/.test(all) && has('babel')) || /\\babelprovide\s*\[[^\]]{0,2000}?\bonchar\s*=/.test(all)) return 'lualatex';
+    // (\babelfont loads fontspec: a Unicode engine, whichever)
+    if (/\\babelfont\b/.test(all)) return 'xelatex';
+    if (has('xeCJK', 'xltxtra', 'xunicode', 'mathspec', 'xetexko', 'bidi', 'xepersian', 'xgreek', 'ctex', 'fontspec', 'unicode-math', 'polyglossia', 'fontsetup', 'realscripts') || /^(xe|ctex)/i.test(cls) || /\\(XeTeX\w+|setmainfont|setsansfont|newfontfamily|setmathfont)\b/.test(all)) return 'xelatex';
+    return 'pdflatex';
+  },
   twoColumns(h) {
     const main = this.src(this.main) || '', cls = docClass(main);
     const opts = cls ? Object.keys(cls.options || {}) : [], has = (x) => opts.includes(x);
@@ -676,11 +701,22 @@ export const methods = {
     if (cls && /^IEEE(tran|conf)$/.test(cls.name) && !has('onecolumn') && !has('draftcls') && !has('draftclsnofoot')) return true;
     if (cls && cls.name === 'acmart' && (has('sigconf') || has('sigplan'))) return true;
     if (cls && cls.name === 'elsarticle' && has('5p')) return true;
+    // (a project's .sty or .cls, or a file the preamble reads, that sets two columns: acl.sty and
+    // aaai.sty switch to them in \maketitle)
+    // (bounded runs: a stranger's file of a thousand unclosed \LoadClass[ is read in linear time)
+    const twoIn = (t) => /\\twocolumn(?![A-Za-z@])|\\@twocolumntrue|\\(LoadClass|PassOptionsToClass)\s*(\[[^\]]{0,300}\btwocolumn\b[^\]]{0,300}\]|\{[^{}]{0,300}\btwocolumn\b[^{}]{0,300}\})/.test(stripComments(t.slice(0, 100000)));
+    if (this.preambleOthers().some(twoIn)) return true;
     const before = stripComments(h.src.slice(Math.max(0, h.T.s - 400000), h.T.s));
     const open = (before.match(/\\begin\s*\{multicols\*?\}/g) || []).length - (before.match(/\\end\s*\{multicols\*?\}/g) || []).length;
     if (open > 0) return true;
     const tw = before.lastIndexOf('\\twocolumn'), one = before.lastIndexOf('\\onecolumn');
-    return tw >= 0 && tw > one && !/^\\twocolumn[A-Za-z@]/.test(before.slice(tw));
+    if (tw >= 0 && tw > one && !/^\\twocolumn[A-Za-z@]/.test(before.slice(tw))) return true;
+    // (a file \input before the table that sets them)
+    for (let k = 0, re = /\\(?:input|include)\s*\{([^{}\n]{1,200})\}/g, m; (m = re.exec(before)) && k < 50; k++) {
+      const n = m[1].trim(), t = this.files.get(n) ?? this.files.get(n + '.tex');
+      if (t != null && /\\twocolumn(?![A-Za-z@])/.test(stripComments(t.slice(0, 400000)))) return true;
+    }
+    return false;
   },
   tableCaption() {
     const at = this.ribbonAt(), h = at && this.tableHere(at);
