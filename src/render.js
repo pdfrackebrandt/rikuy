@@ -245,6 +245,9 @@ export class Renderer {
         this.inl(it.inl, el);
         item.keepNext = true;
         item.level = it.level;
+        // (its number and label apart from its words: a running head's mark, src/layout.js)
+        item.hnum = it.num || '';
+        item.hlabel = it.chapLabel || '';
         item.sbEm = { 0: 2.5, 1: 1.5, 2: 1.35, 3: 1.35, 4: 1.1, 5: 1.1, abs: 0.6 }[it.level] ?? 1.2;
         break;
       }
@@ -383,7 +386,7 @@ export class Renderer {
         el.contentEditable = 'false';
         item.kind = 'break';
         // (to an odd page, a column's end, or one that ends a column alone: src/layout.js)
-        item.odd = !!it.odd; item.column = !!it.column; item.only = !!it.only;
+        item.odd = !!it.odd; item.column = !!it.column; item.only = !!it.only; item.parity = it.parity || null;
         break;
       }
       case 'pagemark': {

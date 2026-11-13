@@ -191,6 +191,9 @@ class Builder {
     this.c = { part: 0, section: 0, subsection: 0, subsubsection: 0, paragraph: 0, subparagraph: 0, equation: 0, figure: 0, table: 0, footnote: 0, thanks: 0 };
     this.thmc = new Map();
     this.appendix = false;
+    // multicols environments met so far, by file: each one's paragraphs share its number as their
+    // region (one that does not move as text is typed before it)
+    this.mcCount = new Map();
     this.subeq = null;
     this.targets = [];
     this.lastTarget = null;
@@ -320,7 +323,12 @@ class Builder {
       else if (!own) this.preCmd(nd, c);
       else if (nd.name === 'definecolor') this.defColor(nd, c);
       else if (nd.name === 'usepackage' || nd.name === 'RequirePackage') {
-        for (const p of this.argText(c, nd.args[1]).split(',')) if (this.files.has(p.trim() + '.sty')) this.preFile(p.trim() + '.sty', true);
+        for (const p of this.argText(c, nd.args[1]).split(',')) {
+          if (this.files.has(p.trim() + '.sty')) this.preFile(p.trim() + '.sty', true);
+          // (the project's own class or package may load what lays out the page or sets its sheet)
+          if (p.trim() === 'geometry') this.geometry(this.argText(c, nd.args[0]));
+          if (p.trim() === 'hyperref' || p.trim() === 'typearea') this.opts.media = true;
+        }
       } else if (/^(newcommand|providecommand|newenvironment|DeclareMathOperator|newtheorem|theoremstyle|numberwithin)$/.test(nd.name) &&
         !(nd.def && (nd.def.bs < 0 || /@/.test(c.src.slice(nd.s, nd.def.bs > 0 ? nd.def.bs : nd.e))))) this.defCmd(nd, c);
     }
@@ -371,6 +379,14 @@ class Builder {
           this.classOpts(m[1] || '');
         }
         if (/^(amsart|amsbook)$/.test(O.cls)) O.ams = true;
+        // KOMA's classes (typearea), memoir, beamer, IEEEtran, elsarticle and acmart set the PDF's
+        // sheet themselves (src/pagesrc.js pageMode)
+        if (/^(scrartcl|scrreprt|scrbook|scrlttr2|memoir|beamer|IEEEtran|elsarticle|acmart)$/.test(O.cls)) O.media = true;
+        // (KOMA's paper=a5 and paper=landscape)
+        for (const x of (/(?:^|,)\s*paper\s*=\s*([A-Za-z0-9:]+)/.exec(A(0)) || ['', ''])[1].split(':')) {
+          if (paperName(x + 'paper')) O.paper = paperName(x + 'paper');
+          if (x === 'landscape') O.landscape = true;
+        }
         break;
       }
       case 'usepackage': case 'RequirePackage': {
@@ -395,7 +411,11 @@ class Builder {
           if (p === 'parskip') { O.parskip = 0.6; O.parindent = 0; }
           if (p === 'cleveref') { O.cleveref = true; O.crefCap = /capitali[sz]e/.test(op); }
           if (p === 'fullpage') O.margins = { l: 72.27, r: 72.27, t: 72.27, b: 72.27 };
-          if (p === 'geometry' && op) this.geometry(op);
+          // (geometry with no options lays the page out by its own defaults; with pass it leaves
+          // the class's layout and only sets the PDF's sheet)
+          if (p === 'geometry') this.geometry(op);
+          // what sets the PDF's sheet to LaTeX's paper: without any of it TeX Live's sheet is A4
+          if ((p === 'hyperref' && !/setpagesize\s*=\s*false/.test(op)) || p === 'typearea') O.media = true;
           if (p === 'babel') {
             const langs = op.split(',').map((x) => x.trim()).filter(Boolean);
             const last = langs[langs.length - 1] || 'english';
@@ -408,6 +428,8 @@ class Builder {
         break;
       }
       case 'geometry': this.geometry(A(0)); break;
+      // (the numbers' format from the first page: \pagenumbering{gobble} in the preamble prints none)
+      case 'pagenumbering': O.numbering = A(0).trim(); break;
       case 'onehalfspacing': O.spread = { 10: 1.25, 11: 1.213, 12: 1.241 }[O.pt] || 1.25; break;
       case 'doublespacing': O.spread = { 10: 1.667, 11: 1.618, 12: 1.655 }[O.pt] || 1.65; break;
       case 'singlespacing': O.spread = 1; break;
@@ -435,6 +457,8 @@ class Builder {
   geometry(op) {
     const O = this.opts;
     O.geometry = true;
+    O.media = true;
+    op = op || '';
     const kv = O.geo || (O.geo = {});
     // (commas inside braces stay in their value: hmargin={1cm,2cm})
     let depth = 0, start = 0;
@@ -455,6 +479,8 @@ class Builder {
       if (k === 'portrait') delete kv.landscape;
       kv[k] = v;
     }
+    // pass: geometry leaves the class's text block and every key alone (src/layout.js)
+    O.geoPass = kv.pass === true;
   }
 
   // The page's set up beyond its size, read once for each preamble (it is the same at most keys)
@@ -867,6 +893,30 @@ class Builder {
           continue;
         }
         if (name === 'listoffigures' || name === 'listoftables') { flushPara(); continue; }
+        // \ifodd\value{page}\hbox{}\clearpage\fi (and with \else before \hbox): on to an even (an
+        // odd) page, a blank one before it where the page it is on is not (src/pagesrc.js BREAKS)
+        if (name === 'ifodd' && !paraShows()) {
+          const at = (j) => { while (j < nodes.length && nodes[j].t === 'text' && !ctx.src.slice(nodes[j].s, nodes[j].e).trim()) j++; return j; };
+          const is = (j, n) => nodes[j] && nodes[j].t === 'cmd' && nodes[j].name === n;
+          let j = at(k + 1);
+          if (is(j, 'value') && this.argText(ctx, nodes[j].args[0]).trim() === 'page') {
+            j = at(j + 1);
+            const odd = is(j, 'else');
+            if (odd) j = at(j + 1);
+            if (is(j, 'hbox') || is(j, 'null')) {
+              j = at(j + 1);
+              if (is(j, 'clearpage') || is(j, 'newpage')) {
+                j = at(j + 1);
+                if (is(j, 'fi')) {
+                  flushPara();
+                  units.push({ f: ctx.f, s: nd.s, e: nodes[j].e, items: [{ type: 'pagebreak', parity: odd ? 'odd' : 'even' }], fns: [], sig: 'par' + (odd ? 'o' : 'e') });
+                  k = j;
+                  continue;
+                }
+              }
+            }
+          }
+        }
         if (name === 'newpage' || name === 'clearpage' || name === 'cleardoublepage' || name === 'pagebreak') {
           flushPara();
           // (\cleardoublepage goes on to an odd page in a two sided document; \newpage in two
@@ -880,11 +930,13 @@ class Builder {
           units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'pagebreak', column: true, only: true }], fns: [], sig: '' });
           continue;
         }
-        if (name === 'thispagestyle' || name === 'pagestyle' || name === 'pagenumbering' || (name === 'setcounter' && this.argText(ctx, nd.args[0]).trim() === 'page')) {
-          const a = this.argText(ctx, nd.args[name === 'setcounter' ? 1 : 0]).trim();
-          const mark = name === 'setcounter' ? { page: parseInt(a, 10) } : name === 'pagenumbering' ? { numbering: a } : name === 'pagestyle' ? { style: a } : { thisStyle: a };
+        const pageCounter = (name === 'setcounter' || name === 'addtocounter') && this.argText(ctx, nd.args[0]).trim() === 'page';
+        if (name === 'thispagestyle' || name === 'pagestyle' || name === 'pagenumbering' || pageCounter) {
+          const a = this.argText(ctx, nd.args[pageCounter ? 1 : 0]).trim();
+          // (\addtocounter{page}{-1}: the page it is on takes the number less one, and those after)
+          const mark = name === 'setcounter' ? { page: parseInt(a, 10) } : name === 'addtocounter' ? { pageAdd: parseInt(a, 10) } : name === 'pagenumbering' ? { numbering: a } : name === 'pagestyle' ? { style: a } : { thisStyle: a };
           // (one inside a paragraph's words is left to TeX: the paragraph stays whole)
-          if (paraShows() || (name === 'setcounter' && !Number.isFinite(mark.page))) { para.push(nd); continue; }
+          if (paraShows() || (name === 'setcounter' && !Number.isFinite(mark.page)) || (name === 'addtocounter' && !Number.isFinite(mark.pageAdd))) { para.push(nd); continue; }
           flushPara();
           units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'pagemark', mark }], fns: [], sig: 'pm' + JSON.stringify(mark) });
           continue;
@@ -1239,12 +1291,35 @@ class Builder {
     if (['center', 'flushleft', 'flushright'].includes(name)) {
       return this.container(nd, ctx, env, { align: { center: 'center', flushleft: 'left', flushright: 'right' }[name], noIndentFirst: true });
     }
-    if (/^(figure|table|wrapfigure|wraptable|SCfigure|sidewaysfigure|sidewaystable)\*?$/.test(name)) return this.floatBlock(nd, ctx, env);
+    if (/^(figure|table|wrapfigure|wraptable|SCfigure|SCtable|sidewaysfigure|sidewaystable)$/.test(name) && env.inMc) {
+      // TeX sets a float inside multicols and throws it away (multicol's warning: Floats and
+      // marginpars not allowed): numbered, not in the PDF. The page says so where it stands.
+      this.floatBlock(nd, ctx, env);
+      const first = ctx.src.slice(nd.s, Math.min(nd.e, nd.s + 200)).split('\n')[0];
+      return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'raw', f: ctx.f, s: nd.s, e: nd.e, is: nd.be, ie: nd.es, text: first + (nd.e - nd.s > first.length ? ' …' : ''), verb: false, name: name + ' left out of the PDF: TeX takes no float inside multicols', lost: true }], fns: [] };
+    }
+    if (/^(figure|table|wrapfigure|wraptable|SCfigure|SCtable|sidewaysfigure|sidewaystable)\*?$/.test(name)) return this.floatBlock(nd, ctx, env);
     if (/^(tabular|tabularx|tabular\*|tabulary|longtable|array)$/.test(name)) {
       const t = this.tabular(nd, ctx);
       return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'float', kind: 'inline', parts: [t], f: ctx.f }], fns: t.fns || [] };
     }
     if (name === 'thebibliography') return this.theBib(nd, ctx);
+    if (/^multicols\*?$/.test(name) && !nd.raw && nd.nodes) {
+      // multicols: its paragraphs set in columns on the page (src/layout.js), balanced unless
+      // starred. Each is a block of its own, as the document's are, so that typing in one draws
+      // that one again and not the whole environment.
+      const n = Math.max(1, Math.min(10, parseInt(this.argText(ctx, nd.args && nd.args[0]), 10) || 2));
+      const ord = (this.mcCount.get(ctx.f) || 0) + 1;
+      this.mcCount.set(ctx.f, ord);
+      const mc = { n, key: ctx.f + ':mc' + ord, star: name.endsWith('*') };
+      const us = this.flow(nd.nodes, ctx, { ...env, inMc: true });
+      const list = us.length ? us : [{ f: ctx.f, s: nd.s, e: nd.e, items: [this.emptyPara(ctx, nd.be, env.cls)], fns: [] }];
+      for (const u of list) {
+        for (const it of u.items) if (!it.mc) it.mc = mc;
+        u.sig = (u.sig || '') + '\u0001mc' + n + ':' + ord + (mc.star ? '*' : '');
+      }
+      return list;
+    }
     if (/^(small|footnotesize|scriptsize|large|Large|singlespace|onehalfspace|doublespace|spacing|minipage|landscape|appendices|otherlanguage\*?|titlepage|multicols\*?|adjustbox|threeparttable|tablenotes|acknowledgments|acknowledgements)$/.test(name)) {
       const ex = /^(small|footnotesize|scriptsize|large|Large)$/.test(name) ? { cls: (env.cls || '') + ' z-' + name } : {};
       if (name === 'appendices') { this.appendix = true; if (this.opts.chapters) this.c.chapter = 0; else this.c.section = 0; }
@@ -1255,7 +1330,7 @@ class Builder {
         return r;
       }
       const r = this.container(nd, ctx, env, ex);
-      // multicols: its paragraphs set in columns on the page (src/layout.js), balanced unless starred
+      // (a multicols read raw, or nested where a block cannot be cut: one block in columns)
       if (/^multicols\*?$/.test(name) && r) {
         const n = Math.max(1, Math.min(10, parseInt(this.argText(ctx, nd.args && nd.args[0]), 10) || 2));
         for (const it of r.items) if (!it.mc) it.mc = { n, key: ctx.f + ':' + nd.s, star: name.endsWith('*') };

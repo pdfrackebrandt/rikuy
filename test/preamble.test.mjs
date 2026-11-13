@@ -67,7 +67,13 @@ ok('options merged into the line that loads the package, a key replaced, a flag 
   assert.equal(twice(doc(''), (t) => usePackage(t, 'hyperref', { hidelinks: true })), doc('\\usepackage[hidelinks]{hyperref}\n'));
   // a key taken out, and one that another replaces (letterpaper for a4paper)
   assert.equal(twice(m, (t) => usePackage(t, 'geometry', { margin: null })), doc('\\usepackage[a4paper]{geometry}\n'));
-  assert.equal(twice(m, (t) => usePackages(t, { geometry: { letterpaper: true } }, { drop: (k) => /paper$/.test(k) && k !== 'letterpaper' })), doc('\\usepackage[margin=1in,letterpaper]{geometry}\n'));
+  // (in the place of the one it replaces, the text around that one kept: task 44)
+  assert.equal(twice(m, (t) => usePackages(t, { geometry: { letterpaper: true } }, { drop: (k) => /paper$/.test(k) && k !== 'letterpaper' })), doc('\\usepackage[margin=1in, letterpaper]{geometry}\n'));
+  const ml = '\\documentclass[%\n  11pt,% size\n  a4paper%\n]{article}\n\\begin{document}\nA\n\\end{document}\n';
+  assert.equal(twice(ml, (t) => classOptions(t, { letterpaper: true }, (k) => /paper$/.test(k))), ml.replace('a4paper', 'letterpaper'));
+  // a file written with CRLF gets CRLF in the lines added
+  const cr = doc('\\usepackage{x}\n').replace(/\n/g, '\r\n');
+  assert.equal(twice(cr, (t) => usePackage(t, 'fancyhdr')), cr.replace('{x}\r\n', '{x}\r\n\\usepackage{fancyhdr}\r\n'));
 });
 
 ok('a line that loads several packages: their options are every one\'s, so \\PassOptionsToPackage goes before it', () => {
@@ -148,7 +154,8 @@ ok('options going together: the list is written again in one edit, never overlap
   const two = doc2('\\documentclass[a4paper,11pt,twoside]{article}');
   assert.equal(twice(two, (t) => classOptions(t, { a4paper: null, '11pt': null })), doc2('\\documentclass[twoside]{article}'));
   const sizes = doc2('\\documentclass[10pt,11pt,a4paper]{article}');
-  assert.equal(twice(sizes, (t) => classOptions(t, { '12pt': true }, size)), doc2('\\documentclass[a4paper,12pt]{article}'));
+  // (12pt in the place of the first size it replaces)
+  assert.equal(twice(sizes, (t) => classOptions(t, { '12pt': true }, size)), doc2('\\documentclass[12pt,a4paper]{article}'));
   const only = doc2('\\documentclass[10pt]{article}');
   assert.equal(twice(only, (t) => classOptions(t, { '12pt': true }, size)), doc2('\\documentclass[12pt]{article}'));
   for (const e of [classOptions(all, { a: null, b: null, c: null }), classOptions(sizes, { '12pt': true }, size)]) assert.equal(e.length, 1);
@@ -160,7 +167,7 @@ ok('options going together: the list is written again in one edit, never overlap
 ok('comments in an option list are comments: items read without them, nothing written into one', () => {
   const c = doc2('\\documentclass[%\n  11pt,%\n  a4paper%\n]{article}');
   assert.deepEqual(docClass(c).options, { '11pt': true, a4paper: true });
-  assert.equal(twice(c, (t) => classOptions(t, { '12pt': true }, size)), doc2('\\documentclass[%\n  a4paper,12pt%\n]{article}'));
+  assert.equal(twice(c, (t) => classOptions(t, { '12pt': true }, size)), doc2('\\documentclass[%\n  12pt,%\n  a4paper%\n]{article}'));
   const t1 = doc2('\\documentclass[11pt % size\n]{article}');
   assert.equal(twice(t1, (t) => classOptions(t, { twoside: true })), doc2('\\documentclass[11pt,twoside % size\n]{article}'));
   const g = doc2('\\documentclass{article}\n\\usepackage[margin=1in, % wide\n  top=2cm]{geometry}');

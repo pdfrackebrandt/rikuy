@@ -8,8 +8,8 @@
 
 import { register, command, onInstall } from '../commands.js';
 import { openMenu, colorPicker, colorNeeds } from '../ui/kit.js';
-import { geometry, paperSize, fmtNum } from '../layout.js';
-import { preambleEnd, usePackages } from '../preamble.js';
+import { geometry, fmtNum } from '../layout.js';
+import { preambleEnd, usePackages, setClass } from '../preamble.js';
 import { mapPos } from '../wrap.js';
 import * as PS from '../pagesrc.js';
 import { openPageSetup, openColumns, openWatermark, openBorders, openLineNumbering, openHyphenation, openPageNumberFormat } from '../ui/pagesetup.js';
@@ -20,9 +20,17 @@ const CM = 72.27 / 2.54;
 const doc = (app) => !!(app.model && !app.stale && app.files && app.files.has(app.main) && preambleEnd(app.src(app.main)) >= 0);
 const NO_PRE = 'The page is set up in the preamble of the main file, and it has none (no \\begin{document} line)';
 const anyWhy = (app) => (doc(app) ? '' : NO_PRE);
+// beamer sets its slides' size and their frames itself (geometry or fancyhdr there clash with it)
+const beamer = (app) => !!(app.model && app.model.opts && app.model.opts.cls === 'beamer');
+const sheet = (app) => doc(app) && !beamer(app);
+const sheetWhy = (app) => anyWhy(app) || (beamer(app) ? 'Beamer sets its slides\' size and frames itself (\\documentclass[aspectratio=169]{beamer}, its themes)' : '');
 // the caret on the page, outside a table's cell, a formula or a picture
 const inText = (app, at) => doc(app) && !!at && !at.cell && !app.armed;
 const twoSided = (app) => !!(app.model && app.model.opts && geometry(app.model.opts).twoside);
+// a page break can go at the caret: in the text, outside a footnote, a box or a minipage (TeX
+// makes no page there: src/pagesrc.js breakAt)
+const breakable = (app, at) => inText(app, at) && !app.pageBreakPlan(at).blocked;
+const breakWhy = (app, at) => anyWhy(app) || (at && at.cell ? 'In a table Ctrl+Enter adds a row; a page break goes outside the table' : inText(app, at) ? app.pageBreakPlan(at).blocked || '' : 'Put the caret in the text');
 const inColumns = (app, at) => !!at && !!at.c && !at.c.ghost && (!!PS.multicolsAt(app.src(at.c.f), at.c.a) || (app.model && app.model.opts.twocolumn));
 
 const I = {
@@ -69,17 +77,17 @@ const SIZE_ITEMS = (app) => {
 register(
   // ---- Layout › Page setup ----
   { id: 'margins', name: 'Margins', label: 'Margins', title: 'Margins: Normal, Narrow, Moderate, Wide, Mirrored, or your own', icon: I.margins, kind: 'menu', tab: 'layout', group: 'setup', order: 10,
-    synonyms: ['Page margins', 'geometry', 'Normal margins', 'Narrow margins', 'Wide margins', 'Mirrored margins'], when: doc, whyNot: anyWhy, menuItems: MARGIN_ITEMS,
+    synonyms: ['Page margins', 'geometry', 'Normal margins', 'Narrow margins', 'Wide margins', 'Mirrored margins'], when: sheet, whyNot: sheetWhy, menuItems: MARGIN_ITEMS,
     run: (app, args) => (typeof args === 'string' ? app.pageMarginsSet(args) : app.pageMenu('margins', MARGIN_ITEMS(app), 'Margins')) },
   { id: 'orientation', name: 'Orientation', label: 'Orientation', title: 'Portrait or landscape pages', icon: I.orientation, kind: 'menu', tab: 'layout', group: 'setup', order: 20,
-    synonyms: ['Landscape', 'Portrait', 'Page orientation', 'Rotate page'], when: doc, whyNot: anyWhy,
+    synonyms: ['Landscape', 'Portrait', 'Page orientation', 'Rotate page'], when: sheet, whyNot: sheetWhy,
     menuItems: (app) => ['portrait', 'landscape'].map((w) => ({ name: w === 'portrait' ? 'Portrait' : 'Landscape', checked: app.pageLand() === (w === 'landscape'), radio: true, run: () => app.runCommand('orientation', w) })),
-    run: (app, args) => (typeof args === 'string' ? app.pageEdit(PS.orientationEdits(app.src(app.main), args, { others: app.preambleOthers() }), 'page-orient') : app.pageMenu('orientation', app.pageCmdItems('orientation'), 'Orientation')) },
+    run: (app, args) => (typeof args === 'string' ? app.pageEdit(PS.orientationEdits(app.src(app.main), args, { others: app.preambleOthers(), pin: app.pagePin() }), 'page-orient') : app.pageMenu('orientation', app.pageCmdItems('orientation'), 'Orientation')) },
   { id: 'size', name: 'Size', label: 'Size', title: 'The paper: Letter, Legal, A4, A5, B5, Executive or any size', icon: I.size, kind: 'menu', tab: 'layout', group: 'setup', order: 30,
-    synonyms: ['Paper size', 'A4', 'Letter', 'Page size', 'Legal', 'A5'], when: doc, whyNot: anyWhy, menuItems: SIZE_ITEMS,
-    run: (app, args) => (args ? app.pageEdit(PS.paperEdits(app.src(app.main), args, { others: app.preambleOthers() }), 'page-size') : app.pageMenu('size', SIZE_ITEMS(app), 'Size')) },
+    synonyms: ['Paper size', 'A4', 'Letter', 'Page size', 'Legal', 'A5'], when: sheet, whyNot: sheetWhy, menuItems: SIZE_ITEMS,
+    run: (app, args) => (args ? app.pageEdit(PS.paperEdits(app.src(app.main), args, { others: app.preambleOthers(), pin: app.pagePin() }), 'page-size') : app.pageMenu('size', SIZE_ITEMS(app), 'Size')) },
   { id: 'columns', name: 'Columns', label: 'Columns', title: 'Text in one, two or three columns: the whole document, or the selected paragraphs', icon: I.columns, kind: 'menu', tab: 'layout', group: 'setup', order: 40,
-    synonyms: ['Two columns', 'Three columns', 'multicols', 'twocolumn'], when: doc, whyNot: anyWhy,
+    synonyms: ['Two columns', 'Three columns', 'multicols', 'twocolumn'], when: sheet, whyNot: sheetWhy,
     menuItems: (app) => {
       const cur = app.pageColumns();
       return [...[[1, 'One'], [2, 'Two'], [3, 'Three']].map(([n, name]) => ({ name, title: n === 1 ? 'One column' : n + ' columns' + (n === 2 ? ' (the class\'s twocolumn, or multicols around the selection)' : ' (multicols)'), checked: cur === n, radio: true, run: () => app.runCommand('columns', n) })),
@@ -89,7 +97,7 @@ register(
   { id: 'breaks', name: 'Breaks', label: 'Breaks', title: 'A page, column or section break at the caret', icon: I.breaks, kind: 'menu', tab: 'layout', group: 'setup', order: 50,
     synonyms: ['Section break', 'Column break', 'Next page', 'Odd page', 'Even page'], when: inText, whyNot: (app) => anyWhy(app) || 'Put the caret in the text, outside a table',
     menuItems: (app) => {
-      const at = app.ribbonAt(), two = twoSided(app), cols = inColumns(app, at), mc = at && at.c && !at.c.ghost && PS.multicolsAt(app.src(at.c.f), at.c.a);
+      const at = app.ribbonAt(), cols = inColumns(app, at), mc = at && at.c && !at.c.ghost && PS.multicolsAt(app.src(at.c.f), at.c.a);
       return [
         { name: 'Page', title: 'Where one page ends and the next begins (\\newpage, Ctrl+Enter)', keys: 'Ctrl+Enter', run: () => app.runCommand('page-break') },
         { name: 'Column', title: 'The text after the caret starts the next column (\\columnbreak in multicols, \\newpage in two columns) (Ctrl+Shift+Enter)', keys: 'Ctrl+Shift+Enter', disabled: !cols, run: () => app.runCommand('column-break') },
@@ -97,13 +105,13 @@ register(
         null,
         { name: 'Next page', title: 'A new page, the floats waiting before it set first (\\clearpage)', run: () => app.pageBreakAt('next') },
         { name: 'Continuous', title: mc ? 'The columns end here and start again after the caret, so either part can have its own number (\\end{multicols} … \\begin{multicols})' : 'In LaTeX the page goes on as it is: a section break that keeps the page is only needed in columns (multicols)', disabled: !mc, run: () => app.pageContinuous() },
-        { name: 'Even page', title: two ? 'The next even page (\\cleardoublepage, an empty page, \\newpage)' : 'Odd and even pages are told apart in a two sided document (Layout › Two sided)', disabled: !two, run: () => app.pageBreakAt('even') },
-        { name: 'Odd page', title: two ? 'The next odd page (\\cleardoublepage)' : 'Odd and even pages are told apart in a two sided document (Layout › Two sided)', disabled: !two, run: () => app.pageBreakAt('odd') }
+        { name: 'Even page', title: 'The next even page, an empty page before it only where needed (\\clearpage, then \\ifodd\\value{page}\\hbox{}\\clearpage\\fi)', run: () => app.pageBreakAt('even') },
+        { name: 'Odd page', title: 'The next odd page, an empty page before it only where needed (\\clearpage, then \\ifodd\\value{page}\\else\\hbox{}\\clearpage\\fi)', run: () => app.pageBreakAt('odd') }
       ];
     },
     run: (app) => app.pageMenu('breaks', app.pageCmdItems('breaks'), 'Breaks') },
   { id: 'line-numbers', name: 'Line numbers', label: 'Line numbers', title: 'Number the lines in the margin (lineno): continuous, on each page, in each section', icon: I.lineno, kind: 'menu', tab: 'layout', group: 'setup', order: 60,
-    synonyms: ['Line Numbers', 'lineno', 'Number lines'], when: doc, whyNot: anyWhy,
+    synonyms: ['Line Numbers', 'lineno', 'Number lines'], when: sheet, whyNot: sheetWhy,
     menuItems: (app) => {
       const L = app.pageLineNumbers();
       const mode = L && L.on ? L.mode : 'none';
@@ -124,7 +132,7 @@ register(
     run: (app, args) => (typeof args === 'string' ? app.pageEdit(PS.hyphenationEdits(app.src(app.main), args, { others: app.preambleOthers() }), 'page-hyph') : app.pageMenu('hyphenation', app.pageCmdItems('hyphenation'), 'Hyphenation')) },
   // (the group's launcher, as Word's: the group is Page setup, whose folded button has that name)
   { id: 'page-setup', name: 'Page setup dialog', label: 'Page setup', title: 'Margins, gutter, paper, orientation, header and footer distances, vertical alignment', icon: I.setup, tab: 'layout', group: 'setup', order: 80,
-    synonyms: ['Page setup', 'Page Setup', 'Paper', 'Gutter', 'Vertical alignment'], when: doc, whyNot: anyWhy, run: (app, args) => openPageSetup(app, typeof args === 'string' ? args : null) },
+    synonyms: ['Page setup', 'Page Setup', 'Paper', 'Gutter', 'Vertical alignment'], when: sheet, whyNot: sheetWhy, run: (app, args) => openPageSetup(app, typeof args === 'string' ? args : null) },
   // ---- Layout › Document ----
   { id: 'doc-class', name: 'Document class', label: 'Class', title: 'The document\'s class: article, report, book, KOMA-Script, memoir, AMS', icon: I.cls, kind: 'menu', tab: 'layout', group: 'document', order: 10,
     synonyms: ['documentclass', 'Class', 'Report', 'Book', 'Article'], when: doc, whyNot: anyWhy,
@@ -135,14 +143,14 @@ register(
     menuItems: (app) => { const c = PS.classPage(app.src(app.main)); return [10, 11, 12].map((n) => ({ name: n + ' pt', title: '\\documentclass[' + n + 'pt]', checked: !!c && c.pt === n, radio: true, run: () => app.runCommand('base-size', n) })); },
     run: (app, args) => (typeof args === 'number' ? app.pageEdit(PS.sizeEdits(app.src(app.main), args), 'page-pt') : app.pageMenu('base-size', app.pageCmdItems('base-size'), 'Base font size')) },
   { id: 'two-sided', name: 'Two sided', label: 'Two sided', title: 'Pages printed on both sides: margins and headers mirrored on even pages (twoside)', icon: I.sides, kind: 'toggle', tab: 'layout', group: 'document', order: 30,
-    synonyms: ['twoside', 'oneside', 'Double sided', 'Different odd and even'], when: doc, whyNot: anyWhy,
+    synonyms: ['twoside', 'oneside', 'Double sided', 'Different odd and even'], when: sheet, whyNot: sheetWhy,
     on: (app) => { const c = doc(app) && PS.classPage(app.src(app.main)); return !!c && c.twoside; },
     run: (app) => { const c = PS.classPage(app.src(app.main)); return app.pageEdit(PS.sidesEdits(app.src(app.main), !(c && c.twoside)), 'page-sides'); } },
   // ---- Insert › Pages ----
   { id: 'blank-page', name: 'Blank page', label: 'Blank page', title: 'An empty page at the caret (\\newpage \\null \\newpage)', icon: I.blank, tab: 'insert', group: 'pages', order: 20,
-    synonyms: ['Blank Page', 'Empty page', 'New page'], when: inText, whyNot: (app) => anyWhy(app) || 'Put the caret in the text, outside a table', run: (app) => app.pageBreakAt('blank') },
+    synonyms: ['Blank Page', 'Empty page', 'New page'], when: breakable, whyNot: breakWhy, run: (app) => app.pageBreakAt('blank') },
   { id: 'page-break', name: 'Page break', label: 'Page break', title: 'Where one page ends and the next begins (\\newpage) (Ctrl+Enter)', icon: I.pbreak, tab: 'insert', group: 'pages', order: 30,
-    keys: ['Ctrl+Enter'], keyRank: 0, synonyms: ['Page Break', 'newpage', 'Insert page break', 'Ctrl+Enter'], when: inText, whyNot: (app, at) => anyWhy(app) || (at && at.cell ? 'In a table Ctrl+Enter adds a row; a page break goes outside the table' : 'Put the caret in the text'),
+    keys: ['Ctrl+Enter'], keyRank: 0, synonyms: ['Page Break', 'newpage', 'Insert page break', 'Ctrl+Enter'], when: breakable, whyNot: breakWhy,
     run: (app) => app.pageBreakAt('page') },
   { id: 'column-break', name: 'Column break', title: 'The text after the caret starts the next column (Ctrl+Shift+Enter)', keys: ['Ctrl+Shift+Enter'], synonyms: ['columnbreak', 'Next column'],
     when: (app, at) => inText(app, at) && inColumns(app, at), whyNot: (app) => anyWhy(app) || 'A column break is for text in columns (Layout › Columns)', run: (app) => app.pageBreakAt('column') },
@@ -150,13 +158,13 @@ register(
     when: (app, at) => inText(app, at) && !!at.c && !at.c.ghost && at.c.a === at.c.b, whyNot: () => 'Put the caret inside a word', run: (app, args, at) => app.commit([{ f: at.c.f, s: at.c.a, e: at.c.a, t: '\\-' }], { f: at.c.f, p: at.c.a + 2, bias: 1 }, 'page-hy') },
   // ---- Insert › Header & Footer ----
   { id: 'header', name: 'Header', label: 'Header', title: 'The text at the top of every page: edit it on the page (double click the top margin)', icon: I.header, kind: 'menu', tab: 'insert', group: 'headfoot', order: 10,
-    also: [{ tab: 'headfoot', group: 'headfoot', order: 10 }], synonyms: ['Edit header', 'Running head', 'fancyhdr', 'fancyhead'], when: doc, whyNot: anyWhy, menuItems: (app) => app.pageHFItems('head'),
+    also: [{ tab: 'headfoot', group: 'headfoot', order: 10 }], synonyms: ['Edit header', 'Running head', 'fancyhdr', 'fancyhead'], when: sheet, whyNot: sheetWhy, menuItems: (app) => app.pageHFItems('head'),
     run: (app) => app.pageMenu('header', app.pageHFItems('head'), 'Header') },
   { id: 'footer', name: 'Footer', label: 'Footer', title: 'The text at the foot of every page: edit it on the page (double click the bottom margin)', icon: I.footer, kind: 'menu', tab: 'insert', group: 'headfoot', order: 20,
-    also: [{ tab: 'headfoot', group: 'headfoot', order: 20 }], synonyms: ['Edit footer', 'fancyfoot'], when: doc, whyNot: anyWhy, menuItems: (app) => app.pageHFItems('foot'),
+    also: [{ tab: 'headfoot', group: 'headfoot', order: 20 }], synonyms: ['Edit footer', 'fancyfoot'], when: sheet, whyNot: sheetWhy, menuItems: (app) => app.pageHFItems('foot'),
     run: (app) => app.pageMenu('footer', app.pageHFItems('foot'), 'Footer') },
   { id: 'page-number', name: 'Page number', label: 'Page number', title: 'Page numbers: at the top or the foot, Page X of Y, here, their format', icon: I.pnum, kind: 'menu', tab: 'insert', group: 'headfoot', order: 30,
-    also: [{ tab: 'headfoot', group: 'headfoot', order: 30 }], synonyms: ['Page Number', 'Page numbers', 'thepage', 'Page X of Y', 'Number pages'], when: doc, whyNot: anyWhy, menuItems: (app) => app.pagePNItems(),
+    also: [{ tab: 'headfoot', group: 'headfoot', order: 30 }], synonyms: ['Page Number', 'Page numbers', 'thepage', 'Page X of Y', 'Number pages'], when: sheet, whyNot: sheetWhy, menuItems: (app) => app.pagePNItems(),
     run: (app, args) => (typeof args === 'string' ? app.pagePageNumber(args) : app.pageMenu('page-number', app.pagePNItems(), 'Page number')) },
   // ---- Design › Page background ----
   { id: 'watermark', name: 'Watermark', label: 'Watermark', title: 'DRAFT, CONFIDENTIAL or your own text across every page (draftwatermark)', icon: I.wm, kind: 'menu', tab: 'design', group: 'background', order: 10,
@@ -197,23 +205,17 @@ register(
   { id: 'hf-oddeven', name: 'Different odd & even pages', label: 'Odd & even pages', title: 'Even pages with headers and footers of their own: the document two sided (twoside)', icon: I.oddeven, kind: 'toggle', tab: 'headfoot', group: 'options', order: 20,
     synonyms: ['Different Odd & Even Pages', 'twoside'], when: doc, whyNot: anyWhy, on: (app) => doc(app) && twoSided(app), run: (app) => app.runCommand('two-sided') },
   { id: 'hf-position', name: 'Header and footer position', label: 'Position', title: 'How far the header stands above the text and the footer below it (geometry\'s headsep and footskip)', icon: I.setup, tab: 'headfoot', group: 'options', order: 30,
-    synonyms: ['Header from top', 'Footer from bottom', 'headsep', 'footskip'], when: doc, whyNot: anyWhy, run: (app) => { if (app.hf) hfClose(app, false); return openPageSetup(app, 'layout'); } },
+    synonyms: ['Header from top', 'Footer from bottom', 'headsep', 'footskip'], when: sheet, whyNot: sheetWhy, run: (app) => { if (app.hf) hfClose(app, false); return openPageSetup(app, 'layout'); } },
   { id: 'hf-close', name: 'Close header and footer', label: 'Close', title: 'Back to the text (Escape)', icon: I.close, tab: 'headfoot', group: 'close', order: 10,
     synonyms: ['Close Header and Footer'], when: (app) => !!app.hf, run: (app) => hfClose(app, true) }
 );
 
-// \documentclass{name}: KOMA and memoir take the sizes the standard classes take
+// \documentclass{name}: KOMA and memoir take the sizes the standard classes take (the class as
+// TeX reads it: a commented line before it is no class, src/preamble.js setClass)
 function classEdits(app, name) {
   const src = app.src(app.main);
-  return PS.classPage(src) ? (src.match(/\\documentclass/) ? setClassName(src, name) : []) : [];
-}
-function setClassName(src, name) {
   const c = PS.classPage(src);
-  if (!c || c.name === name) return [];
-  const m = /\\documentclass\s*(\[[^\]]*\])?\s*\{([^}]*)\}/.exec(src.slice(0, 2000));
-  if (!m) return [];
-  const at = m.index + m[0].lastIndexOf('{') + 1;
-  return [{ s: at, e: at + m[2].length, t: name }];
+  return c && c.name !== name ? setClass(src, name) : [];
 }
 
 onInstall((app) => installHeaderFooter(app));
@@ -222,6 +224,7 @@ export const methods = {
   // Edits of the main file as one step of history, the caret kept on its words (edits before it
   // move it). False when there was nothing to change.
   pageEdit(edits, kind) {
+    if (edits === null) { this.toast('Not written: the source has a comment there. Change it in the source.', 6000); return false; }
     edits = PS.joinEdits((edits || []).filter(Boolean));
     if (!edits.length) { this.toast('The page is set up that way already.'); return false; }
     const f = this.main;
@@ -248,13 +251,8 @@ export const methods = {
   pageMenu(id, items, label) { openMenu(this, this.pageAnchor(id), items, { label }); return true; },
   pageCmdItems(id) { return this.commandMenu(command(id)); },
   // Several edits of the main file, each made on the text the one before left (fns: functions of
-  // the text giving edits), as the edits of one step on the text as it is
-  pageSteps(fns) {
-    const src = this.src(this.main);
-    let cur = src;
-    for (const fn of fns) { const e = fn(cur) || []; if (e.length) cur = applyAll(cur, e); }
-    return diffAsEdits(src, cur);
-  },
+  // the text giving edits), as the edits of one step on the text as it is, one for each place
+  pageSteps(fns) { return PS.stepEdits(this.src(this.main), fns); },
 
   // ---- what the page is now ----
   pageGeom() { return geometry(this.model.opts); },
@@ -272,18 +270,25 @@ export const methods = {
     if (m.gutter) m.l -= m.gutter;
     return m;
   },
+  // the paper as the PDF's sheet has it (A4 where nothing sets it: src/layout.js sheetSize)
   pagePaper() {
     if (!this.model) return null;
-    const P = paperSize(this.model.opts), w = Math.min(P.w, P.h), h = Math.max(P.w, P.h);
+    const g = this.pageGeom(), w = Math.min(g.pw, g.ph), h = Math.max(g.pw, g.ph);
     const hit = Object.entries(PS.PAPERS).find(([, d]) => Math.abs(d.w - w) < 1 && Math.abs(d.h - h) < 1);
     return hit ? hit[0] : null;
   },
-  pageLand() { return !!(this.model && paperSize(this.model.opts).land); },
+  pageLand() { return !!(this.model && this.pageGeom().land); },
+  // the page as it is, for src/pagesrc.js to keep where geometry comes to lay it out: the margins
+  // (a new paper keeps them), or the text block (o.block: the header's distances change alone)
+  pagePin(o = {}) {
+    if (!this.model) return null;
+    const g = this.pageGeom();
+    return o.block ? { l: g.ml, tw: g.tw, t: g.mt, th: g.th } : { l: g.ml, r: g.pw - g.ml - g.tw, t: g.mt, b: g.ph - g.mt - g.th };
+  },
   pageColumns() {
     if (!this.model) return 1;
-    const src = this.src(this.main), body = PS.bodyRange(src);
-    const M = body && PS.multicolsAt(src, body.s + 1);
-    if (M && M.s <= body.s && M.e >= body.e) return M.n;
+    const BC = PS.bodyColumns(this.src(this.main));
+    if (BC) return BC.n;
     return this.model.opts.twocolumn ? 2 : 1;
   },
   pageLineNumbers() { return doc(this) ? PS.lineNumbers(this.src(this.main), { others: this.preambleOthers() }) : null; },
@@ -307,7 +312,8 @@ export const methods = {
     const src = this.src(this.main);
     const M = at && at.c && !at.c.ghost && at.c.f === this.main ? PS.multicolsAt(src, at.c.a) : null;
     const body = PS.bodyRange(src);
-    const whole = M && body && M.s <= body.s && M.e >= body.e;
+    const BC = PS.bodyColumns(src);
+    const whole = M && body && BC && BC.segs.some((x) => x.s === M.s);
     if (M && !whole && o.scope !== 'document') {
       // (the multicols the caret is in: its number, or gone for one column)
       // (first, on the text as the caret knows it)
@@ -339,29 +345,41 @@ export const methods = {
   },
 
   // A break of a kind (src/pagesrc.js's BREAKS) at the caret: inside a paragraph between its two
-  // halves, at a block that is no paragraph (a heading, a display) before or after it
+  // halves (out of the groups of its words' style, src/pagesrc.js breakAt), at a block that is no
+  // paragraph (a heading, a display) before or after it; none in a footnote or a box. In a two
+  // column document a page break is \clearpage (\newpage ends a column there), in multicols
+  // \newpage (it ends the page).
+  pageBreakPlan(at, kind = 'page') {
+    if (!at || at.cell || !at.c) return { blocked: 'Put the caret in the text' };
+    let text = PS.BREAKS[kind];
+    const f = at.c.ghost ? this.ghost.f : at.c.f;
+    const src = this.src(f);
+    const mc = !at.c.ghost && PS.multicolsAt(src, at.c.a);
+    if (kind === 'column' && !mc) text = '\\newpage';
+    if ((kind === 'page' || kind === 'blank') && this.model && this.model.opts.twocolumn && !mc) text = PS.BREAKS[kind + '2'];
+    if (at.c.ghost) return PS.breakEdits(src, this.ghost.pos, this.ghost.pos, text);
+    let p = at.c.a, q = at.c.b;
+    const ctx = at.ctx || (at.it && at.it.dataset.ctx) || 'p';
+    if (ctx === 'fn') return { blocked: 'TeX makes no new page inside a footnote: put the caret in the text' };
+    const B = at.B;
+    if (!/^(p|li|tex)$/.test(ctx) && B) {
+      // a heading, a title, a caption, a formula: the break goes before it or after it
+      let s = B.s; while (s < B.e && /\s/.test(src[s])) s++;
+      let e = B.e; while (e > s && /\s/.test(src[e - 1])) e--;
+      p = q = at.c.a <= s + 1 ? s : e;
+      return PS.breakEdits(src, p, q, text);
+    }
+    // (the paragraph from its block's start: what is open at the caret)
+    const start = B && B.f === f && B.s <= p ? B.s : Math.max(0, src.lastIndexOf('\n\n', p) + 1);
+    return PS.breakAt(src, start, p, q, text);
+  },
   pageBreakAt(kind) {
     const at = this.ribbonAt();
     if (!at || at.cell) return false;
     this.ribbonBack && this.ribbonBack();
-    let text = PS.BREAKS[kind];
-    if (kind === 'column' && !(at.c && !at.c.ghost && PS.multicolsAt(this.src(at.c.f), at.c.a))) text = '\\newpage';
-    let f, p, q;
-    if (at.c.ghost) { f = this.ghost.f; p = q = this.ghost.pos; }
-    else {
-      f = at.c.f; p = at.c.a; q = at.c.b;
-      const ctx = at.ctx || (at.it && at.it.dataset.ctx) || 'p';
-      if (!/^(p|li|tex)$/.test(ctx) && at.B) {
-        // a heading, a title, a caption, a formula: the break goes before it or after it
-        const B = at.B;
-        const src = this.src(f);
-        let s = B.s; while (s < B.e && /\s/.test(src[s])) s++;
-        let e = B.e; while (e > s && /\s/.test(src[e - 1])) e--;
-        p = q = at.c.a <= s + 1 ? s : e;
-      }
-    }
-    const src = this.src(f);
-    const r = PS.breakEdits(src, p, q, text);
+    const r = this.pageBreakPlan(at, kind);
+    if (r.blocked) { this.toast(r.blocked, 5000); return false; }
+    const f = at.c.ghost ? this.ghost.f : at.c.f;
     this.closeGroup();
     this.commit(r.edits.map((x) => ({ f, ...x })), { f, p: r.caret, bias: 1 }, 'page-break');
     this.closeGroup();
@@ -451,12 +469,18 @@ export const methods = {
     for (const p of places) steps.push(set(p, text));
     return this.pageSteps(steps);
   },
-  // what the plain style showed, to keep when fancyhdr comes in
+  // what LaTeX's own style shows (plain's number at the foot, a book's running head), to keep when
+  // fancyhdr or scrlayer-scrpage comes in
   pageKeep() {
     const s = this.model && this.model.opts.page;
     if (s && s.fancy) return null;
-    if (s && s.style === 'empty') return {};
-    return { FOC: '\\thepage', FEC: '\\thepage' };
+    if (!s) return { FOC: '\\thepage', FEC: '\\thepage' };
+    return Object.fromEntries(Object.entries(s.slots || {}).filter(([, t]) => t));
+  },
+  // what pageKeep keeps but the page numbers
+  pageKeepText() {
+    const k = this.pageKeep();
+    return k && Object.fromEntries(Object.entries(k).filter(([, t]) => !PAGE_NUM.test(t)));
   },
   pagePNItems() {
     const at = this.ribbonAt();
@@ -489,56 +513,78 @@ export const methods = {
     }
     const s = this.model.opts.page || {};
     if (where === 'remove') {
-      if (!s.fancy) return this.pageEdit(PS.pageStyleEdits(src, 'empty'), 'page-num');
+      // (LaTeX's plain style: empty; a running head stays where the number goes)
+      if (!s.fancy && s.style === 'plain') return this.pageEdit(PS.pageStyleEdits(src, 'empty'), 'page-num');
       const S = s.slots || {};
-      const places = Object.keys(S).filter((k) => /\\thepage/.test(S[k])).map((k) => k[0] + k[2]);
+      const places = Object.keys(S).filter((k) => PAGE_NUM.test(S[k])).map((k) => k[0] + k[2]);
       return places.length ? this.pageSlot([...new Set(places)], '') : false;
     }
     if (where === 'XofY') {
       const others = this.preambleOthers();
-      return this.pageEdit(this.pageSlotSteps(['FC'], 'Page \\thepage\\ of \\pageref{LastPage}', { before: [(t) => usePackages(t, ['lastpage'], { others })], empty: thepageIn(s, 'FC'), keep: {} }), 'page-num');
+      return this.pageEdit(this.pageSlotSteps(['FC'], 'Page \\thepage\\ of \\pageref{LastPage}', { before: [(t) => usePackages(t, ['lastpage'], { others })], empty: thepageIn(s, 'FC'), keep: this.pageKeepText() }), 'page-num');
     }
     // (a plain page has its number at the foot's centre already)
-    if (where === 'FC' && !s.fancy && s.style !== 'empty' && s.style !== 'headings') return false;
-    // (the number moves there: the plain style's at the foot is not kept)
-    return this.pageEdit(this.pageSlotSteps([where], '\\thepage', { empty: thepageIn(s, where), keep: {} }), 'page-num');
+    if (where === 'FC' && !s.fancy && s.style === 'plain') return false;
+    // (the number moves there: the one the style had is not kept, a running head is)
+    return this.pageEdit(this.pageSlotSteps([where], '\\thepage', { empty: thepageIn(s, where), keep: this.pageKeepText() }), 'page-num');
   },
 
   // ---- print: TeX's PDF ----
-  // The PDF of the document as it is now, drawn page by page into a sheet only the printer sees,
-  // and the browser's print dialog (printer, pages, copies). A frame that may not print gets the
+  // The PDF of the document as it is now, printed: its pages drawn into a sheet only the printer
+  // sees, as pdf.js's own viewer prints, each at the PDF's size for that page, one picture at a
+  // time, kept as a blob each (a long document says how far it got, and Escape stops it there),
+  // then the browser's print dialog. (The PDF itself in a frame would be sharper, but the page
+  // allows no blob: frame: src/widget.js framesOnlySrcdoc.) A frame that may not print gets the
   // PDF itself to download instead.
   async pagePrint() {
     this.togglePdf(true);
     const fresh = () => this.lastPdf && this.lastPdfSig === this.textSigNow();
     if (!fresh()) { try { await this.compilePdf(); } catch (e) { /* the PDF pane says why */ } }
     if (!this.lastPdf) { this.toast('No PDF to print yet: TeX stopped at an error, which the PDF pane shows. The page itself prints with the browser\'s Print (its menu).', 7000); return false; }
+    return this.printPdfImages();
+  },
+  async printPdfImages() {
     const { loadPdfjs } = await import('../pdfview.js');
     const lib = await loadPdfjs(new URL('tex/pdf.worker.min.mjs', location.href).href);
     const pdf = await lib.getDocument({ data: new Uint8Array(this.lastPdf.slice(0)), isEvalSupported: false }).promise;
     const box = document.createElement('div');
     box.id = 'print-pdf';
     box.setAttribute('aria-hidden', 'true');
-    let size = null;
+    const urls = [], sizes = new Map(), rules = [];
+    let stopped = false;
+    const stop = (e) => { if (e.key === 'Escape') stopped = true; };
+    window.addEventListener('keydown', stop, true);
     try {
-      for (let k = 1; k <= Math.min(pdf.numPages, 500); k++) {
+      for (let k = 1; k <= pdf.numPages && !stopped; k++) {
+        if (pdf.numPages > 20 && k % 10 === 1) this.toast('Drawing page ' + k + ' of ' + pdf.numPages + ' for the printer (Escape stops)…', 4000);
         const pg = await pdf.getPage(k);
-        const vp = pg.getViewport({ scale: 2 });
-        if (!size) { const v1 = pg.getViewport({ scale: 1 }); size = [v1.width, v1.height]; }
+        const v1 = pg.getViewport({ scale: 1 });
+        // (two device pixels to the point, but no picture over 16 million pixels)
+        const scale = Math.min(2, Math.sqrt(16e6 / (v1.width * v1.height)));
+        const vp = pg.getViewport({ scale });
         const c = document.createElement('canvas');
-        c.width = Math.min(5000, Math.ceil(vp.width)); c.height = Math.min(7000, Math.ceil(vp.height));
+        c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
         await pg.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+        pg.cleanup();
+        const blob = await new Promise((r) => c.toBlob(r, 'image/png'));
+        c.width = c.height = 0;
+        const url = URL.createObjectURL(blob);
+        urls.push(url);
+        // each page at its own size: a named page for each size the PDF has
+        const key = v1.width.toFixed(2) + ' ' + v1.height.toFixed(2);
+        if (!sizes.has(key)) { const name = 'pp' + sizes.size; sizes.set(key, name); rules.push('@page ' + name + ' { size: ' + v1.width.toFixed(2) + 'pt ' + v1.height.toFixed(2) + 'pt; margin: 0; }'); }
         const img = document.createElement('img');
-        img.src = c.toDataURL('image/png');
+        img.src = url;
         img.alt = '';
+        img.style.cssText = 'width:' + v1.width.toFixed(2) + 'pt;height:' + v1.height.toFixed(2) + 'pt;page:' + sizes.get(key);
         box.appendChild(img);
       }
-    } finally { pdf.destroy(); }
+    } finally { pdf.destroy(); window.removeEventListener('keydown', stop, true); }
+    if (stopped) this.toast('Printing ' + box.children.length + ' of the PDF\'s pages: stopped there (Escape).', 6000);
     document.getElementById('print-pdf')?.remove();
     document.body.appendChild(box);
     const st = document.getElementById('print-pdf-page') || document.head.appendChild(Object.assign(document.createElement('style'), { id: 'print-pdf-page' }));
-    // (the sheet the printer gets is the PDF's own, in PostScript points)
-    st.textContent = '@media print { @page { size: ' + size[0] + 'pt ' + size[1] + 'pt; margin: 0; } body > *:not(#print-pdf) { display: none !important; } #print-pdf { display: block !important; } #print-pdf img { display: block; width: ' + size[0] + 'pt; height: ' + size[1] + 'pt; break-after: page; } }';
+    st.textContent = '@media print { ' + rules.join(' ') + ' body > *:not(#print-pdf) { display: none !important; } #print-pdf { display: block !important; } #print-pdf img { display: block; break-after: page; } }';
     this.printing = true; this.printSeen = false;
     await new Promise((r) => setTimeout(r, 60));
     try { window.print(); } catch (e) { /* a frame that may not print */ }
@@ -546,25 +592,15 @@ export const methods = {
     const blocked = !this.printSeen;
     this.printing = false;
     this.printedPages = box.children.length;
+    this.printedSizes = [...sizes.keys()];
     box.remove();
     st.textContent = '';
+    for (const u of urls) URL.revokeObjectURL(u);
     if (blocked && !this.noPrintFallback) { this.toast('This window may not print: here is the PDF to print from your PDF reader.', 6000); await this.downloadPdf(); }
     return true;
   }
 };
 
 // the places of the header and footer that hold \thepage now, but one
-const thepageIn = (s, but) => (s.fancy && s.slots ? [...new Set(Object.keys(s.slots).filter((k) => /\\thepage/.test(s.slots[k])).map((k) => k[0] + k[2]))].filter((p) => p !== but) : []);
-// edits on a text, then more on what they made, as edits on the text: the whole changed span
-function applyAll(t, edits) { for (const x of [...edits].sort((u, v) => v.s - u.s || v.e - u.e)) t = t.slice(0, x.s) + x.t + t.slice(x.e); return t; }
-function diffAsEdits(a, b) {
-  let s = 0;
-  while (s < a.length && s < b.length && a[s] === b[s]) s++;
-  let z = 0;
-  while (z < a.length - s && z < b.length - s && a[a.length - 1 - z] === b[b.length - 1 - z]) z++;
-  return s === a.length && s === b.length ? [] : [{ s, e: a.length - z, t: b.slice(s, b.length - z) }];
-}
-function composeEdits(src, first, then) {
-  const mid = applyAll(src, first), end = applyAll(mid, then);
-  return diffAsEdits(src, end);
-}
+const PAGE_NUM = /\\(?:thepage|pagemark)(?![A-Za-z@])/;
+const thepageIn = (s, but) => (s.slots ? [...new Set(Object.keys(s.slots).filter((k) => PAGE_NUM.test(s.slots[k])).map((k) => k[0] + k[2]))].filter((p) => p !== but) : []);

@@ -56,25 +56,23 @@ export function pageForWord(model, src) {
   };
   // columns of the whole document
   const body = PS.bodyRange(src || '');
-  const M = body && PS.multicolsAt(src, body.s + 1);
+  const BC = body && PS.bodyColumns(src);
   if (g.cols > 1) P.cols = { num: g.cols, space: (g.colsep ?? 10) * TW, sep: (page.colrule || 0) > 0 };
-  else if (M && M.s <= body.s && M.e >= body.e) P.cols = { num: M.n, space: (g.colsep ?? 10) * TW, sep: (page.colrule || 0) > 0 };
-  // headers and footers
-  const style = page.style || 'plain';
+  else if (BC) P.cols = { num: BC.n, space: (g.colsep ?? 10) * TW, sep: (page.colrule || 0) > 0 };
+  // headers and footers: the style the pages take (fancyhdr's, KOMA's, or LaTeX's own: plain's
+  // number at the foot, a book's running head and number at the top)
   const three = (S, W, side) => ['L', 'C', 'R'].map((c) => runsOf(S[W + side + c] || ''));
   const plainFoot = [[], [{ field: 'PAGE' }], []];
-  if (page.fancy && page.slots) {
-    const S = page.slots;
-    P.head = { odd: three(S, 'H', 'O'), even: three(S, 'H', 'E') };
-    P.foot = { odd: three(S, 'F', 'O'), even: three(S, 'F', 'E') };
-    P.evenOdd = !!g.twoside && ['HL', 'HC', 'HR', 'FL', 'FC', 'FR'].some((k) => (S[k[0] + 'O' + k[1]] || '') !== (S[k[0] + 'E' + k[1]] || ''));
-  } else if (style === 'plain' || style === 'headings' || style === 'myheadings') {
-    P.foot = { odd: plainFoot, even: plainFoot };
-  }
-  // the first page: \thispagestyle{empty} at the body's start, or the title's plain page under fancy headers
+  const S = page.slots || (page.style === 'empty' ? {} : { FOC: '\\thepage', FEC: '\\thepage' });
+  const any = (W) => PS.SLOTS.some((k) => k[0] === W && S[k]);
+  if (any('H')) P.head = { odd: three(S, 'H', 'O'), even: three(S, 'H', 'E') };
+  if (any('F')) P.foot = { odd: three(S, 'F', 'O'), even: three(S, 'F', 'E') };
+  P.evenOdd = !!g.twoside && ['HL', 'HC', 'HR', 'FL', 'FC', 'FR'].some((k) => (S[k[0] + 'O' + k[1]] || '') !== (S[k[0] + 'E' + k[1]] || ''));
+  // the first page: \thispagestyle{empty} at the body's start, or the title's plain page under
+  // another style
   const first = PS.firstPageStyle(src || '');
   if (first && first.style === 'empty' && (P.head || P.foot)) { P.titlePg = true; }
-  else if (page.fancy && /\\maketitle\b/.test(src || '') && !/^(report|book)$/.test(O.cls)) {
+  else if (page.style !== 'plain' && page.style !== 'empty' && /\\maketitle\b/.test(src || '') && !/^(report|book|scrreprt|scrbook)$/.test(O.cls)) {
     P.titlePg = true;
     if (P.head) P.head.first = [[], [], []];
     if (P.foot) P.foot.first = plainFoot;

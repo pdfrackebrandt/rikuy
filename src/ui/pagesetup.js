@@ -7,7 +7,7 @@
 import { dialog, numberField } from './kit.js';
 import { mk } from './dom.js';
 import * as PS from '../pagesrc.js';
-import { geometry, paperSize } from '../layout.js';
+import { geometry } from '../layout.js';
 
 const CM = 72.27 / 2.54;
 const cm = (pt) => ({ value: Math.round(pt / CM * 100) / 100, unit: 'cm' });
@@ -57,7 +57,8 @@ const anchorOf = (app, id) => app.pageAnchor(id);
 
 // ---- Page setup ------------------------------------------------------------------------------------
 export function openPageSetup(app, focus) {
-  const O = app.model.opts, g = geometry(O), m = app.pageMargins(), P = paperSize(O);
+  // (the paper and its orientation as the PDF's sheet has them: src/layout.js sheetSize)
+  const O = app.model.opts, g = geometry(O), m = app.pageMargins(), P = { w: g.pw, h: g.ph, land: g.land };
   const p = dialog(app, { title: 'Page setup', anchor: anchorOf(app, 'page-setup'), cls: 'pop-ps' });
   // Margins
   const mar = section('Margins');
@@ -100,26 +101,28 @@ export function openPageSetup(app, focus) {
   sync();
   const before = { m: [m.t, m.b, m.l, m.r, m.gutter || 0, mirror.c.checked], land: P.land, paper: pSel.value, w: P.w, h: P.h, hs: g.headsep, fs: g.footskip };
   buttons(app, p, () => {
-    const others = app.preambleOthers();
+    const others = app.preambleOthers(), pin = app.pagePin();
     const steps = [];
     const near = (a, b) => Math.abs(a - b) < 0.02 * CM;
     const now = [toPt(top.get()), toPt(bottom.get()), toPt(left.get()), toPt(right.get()), toPt(gutter.get()), mirror.c.checked];
     // (the vertical alignment is the text's: written first, on the text the caret knows)
     if (va && vSel.value !== va.now) steps.push((t) => app.pageVAlignEdits(t, vSel.value, va));
+    const h1 = toPt(hs.get()), f1 = toPt(fs.get());
+    const hf = {};
+    if (!near(h1, before.hs)) hf.headsep = h1;
+    if (!near(f1, before.fs)) hf.footskip = f1;
+    // (the header's distances before the rest: where the class lays the page out the text block is
+    // pinned as it is, so the text stays line for line and only the header or the footer moves)
+    if (Object.keys(hf).length) steps.push((t) => PS.headFootEdits(t, hf, { others, pin: app.pagePin({ block: true }) }));
     if (!now.slice(0, 5).every((v, k) => near(v, before.m[k])) || now[5] !== before.m[5]) {
       steps.push((t) => PS.marginEdits(t, { t: now[0], b: now[1], l: now[2], r: now[3], gutter: now[4] > 0.01 ? now[4] : 0, mirrored: now[5] }, { others }));
     }
     const land = oSel.value === 'landscape';
     if (pSel.value === 'custom') {
       const w = toPt(pw.get()), h = toPt(ph.get());
-      if (!near(w, Math.min(before.w, before.h)) || !near(h, Math.max(before.w, before.h)) || before.paper !== 'custom') steps.push((t) => PS.paperEdits(t, { w, h, unit: 'cm' }, { others }));
-    } else if (pSel.value !== before.paper) steps.push((t) => PS.paperEdits(t, pSel.value, { others }));
-    if (land !== before.land) steps.push((t) => PS.orientationEdits(t, land ? 'landscape' : 'portrait', { others }));
-    const h1 = toPt(hs.get()), f1 = toPt(fs.get());
-    const hf = {};
-    if (!near(h1, before.hs)) hf.headsep = PS.fmtLen(h1, 'cm');
-    if (!near(f1, before.fs)) hf.footskip = PS.fmtLen(f1, 'cm');
-    if (Object.keys(hf).length) steps.push((t) => PS.geometryEdits(t, hf, null, { others }));
+      if (!near(w, Math.min(before.w, before.h)) || !near(h, Math.max(before.w, before.h)) || before.paper !== 'custom') steps.push((t) => PS.paperEdits(t, { w, h, unit: 'cm' }, { others, pin }));
+    } else if (pSel.value !== before.paper) steps.push((t) => PS.paperEdits(t, pSel.value, { others, pin }));
+    if (land !== before.land) steps.push((t) => PS.orientationEdits(t, land ? 'landscape' : 'portrait', { others, pin }));
     if (!steps.length) return null;
     return () => app.pageEdit(app.pageSteps(steps), 'page-setup');
   });

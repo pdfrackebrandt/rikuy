@@ -37,16 +37,16 @@ function pageInView(app) {
   return Math.max(0, k);
 }
 
-// The places' text for a page: the document's fancyhdr places (the fancy style, wherever it is
-// used), else what the plain style shows (the page number at the foot's centre), else nothing
+// The places' text for a page: those of the style the document's pages take (fancyhdr's or a
+// \fancypagestyle of its own, KOMA's scrheadings, or LaTeX's: plain's number at the foot, a
+// book's running head), on the page's side
 function slotsOf(app, k, where) {
   const L = app.layout, pg = app.plan && app.plan[k];
   const page = app.model.opts.page || {};
   const side = L.g.twoside && pg && pg.num % 2 === 0 ? 'E' : 'O';
   const W = where === 'head' ? 'H' : 'F';
-  if (page.fancy && page.slots) return { side, texts: POS.map((p) => page.slots[W + side + p] || '') };
-  const st = page.style || 'plain';
-  return { side, texts: POS.map((p) => (st !== 'empty' && W === 'F' && p === 'C' ? '\\thepage' : '')) };
+  const S = page.slots || (page.style === 'empty' ? {} : { FOC: '\\thepage', FEC: '\\thepage' });
+  return { side, texts: POS.map((p) => S[W + side + p] || '') };
 }
 
 export function hfOpen(app, where, o = {}) {
@@ -69,9 +69,11 @@ export function hfOpen(app, where, o = {}) {
     inp.spellcheck = false;
     inp.setAttribute('aria-label', (where === 'head' ? 'Header ' : 'Footer ') + NAMES[i]);
     inp.placeholder = i === 1 ? (where === 'head' ? 'Header' : 'Footer') : '';
-    inp.title = 'LaTeX: \\thepage is the page number, \\today the date';
+    inp.title = TITLE;
     let t = 0;
-    const write = () => { clearTimeout(t); t = 0; hfWrite(app, where, i, inp.value); };
+    // (base: the place's text as the source has it, which typing is told apart from)
+    inp.base = texts[i];
+    const write = () => { clearTimeout(t); t = 0; hfWrite(app, where, i, inp); };
     inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(write, 350); });
     inp.addEventListener('change', write);
     inp.addEventListener('focus', () => { if (app.hf) app.hf.last = inp; });
@@ -79,7 +81,7 @@ export function hfOpen(app, where, o = {}) {
       if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); write(); hfClose(app, true); }
       else if (e.key === 'Enter') { e.preventDefault(); write(); }
     });
-    inp.flush = () => { if (t) write(); };
+    inp.flush = () => { if (t || inp.value !== inp.base) write(); };
     return inp;
   });
   box.append(...inputs);
@@ -121,25 +123,77 @@ export function hfPlace(app) {
   H.el.style.visibility = top < d.top - 4 || top > d.bottom - 10 ? 'hidden' : '';
 }
 
-// What one place holds, written: on this side's pages in a two sided document, else on both
-function hfWrite(app, where, i, value) {
+// What one place holds, written: on this side's pages in a two sided document, else on both.
+// What was typed since the source's text (the field's base) has TeX's signs written as text
+// (escapeTyped); a field whose braces do not pair, or that ends in a lone backslash, is not
+// written (it would stop TeX, and the next keystroke may well finish it): it is marked, and says
+// why, until it is whole again.
+function hfWrite(app, where, i, inp) {
   const H = app.hf;
-  if (!H) return;
-  const text = escapeText(value);
+  if (!H) return false;
+  const text = escapeTyped(inp.base, inp.value);
+  const bad = unbalanced(text);
+  inp.setAttribute('aria-invalid', bad ? 'true' : 'false');
+  inp.title = bad || TITLE;
+  if (bad) return false;
   const place = (where === 'head' ? 'H' : 'F') + POS[i];
   const edits = app.pageSlotSteps([place], text, { side: H.side });
-  if (!edits.length) return;
+  if (edits === null) {
+    inp.setAttribute('aria-invalid', 'true');
+    inp.title = 'Not written: the source has a comment where this changes. Change it in the source.';
+    return false;
+  }
+  // (the field shows what the source now has: a typed % reads \%)
+  if (text !== inp.value) { const a = inp.selectionStart, grow = text.length - inp.value.length; inp.value = text; if (a != null) inp.setSelectionRange(a + grow, a + grow); }
+  inp.base = text;
+  if (!edits.length) return true;
   // (each run of typing in one place is one step of history: record joins them)
   app.commit(edits.map((x) => ({ f: app.main, ...x })), null, 'hf-' + place);
   hfPlace(app);
+  return true;
 }
-// & % # typed as words, not as TeX's own signs
-export const escapeText = (v) => String(v).replace(/(^|[^\\])([&%#])/g, '$1\\$2').replace(/(^|[^\\])([&%#])/g, '$1\\$2').slice(0, 400);
+const TITLE = 'LaTeX: \\thepage is the page number, \\today the date';
+// TeX's signs typed as words: in what changed from base to value, & % # $ _ as \& \% \# \$ \_,
+// ^ and ~ as \textasciicircum{} and \textasciitilde{}, unless a backslash before makes them a
+// command already; the rest of the text, the source's, stays as it is (its $x$ is maths)
+export function escapeTyped(base, value) {
+  base = String(base || ''); value = String(value || '').slice(0, 400);
+  let p = 0;
+  while (p < base.length && p < value.length && base[p] === value[p]) p++;
+  let z = 0;
+  while (z < base.length - p && z < value.length - p && base[base.length - 1 - z] === value[value.length - 1 - z]) z++;
+  const mid = value.slice(p, value.length - z);
+  let out = '';
+  for (let k = 0; k < mid.length; k++) {
+    const c = mid[k];
+    // (the backslashes right before it: an odd number makes it a command, \$)
+    let n = 0;
+    for (let j = k - 1 + p; j >= 0 && (j >= p ? mid[j - p] : value[j]) === '\\'; j--) n++;
+    if (n % 2) { out += c; continue; }
+    out += c === '^' ? '\\textasciicircum{}' : c === '~' ? '\\textasciitilde{}' : '&%#$_'.includes(c) ? '\\' + c : c;
+  }
+  return value.slice(0, p) + out + value.slice(value.length - z);
+}
+// why a place's text cannot be written as it is, or ''
+export function unbalanced(t) {
+  let d = 0;
+  for (let k = 0; k < t.length; k++) {
+    if (t[k] === '\\') { if (k === t.length - 1) return 'A backslash ends this: finish the command (\\thepage) before it is written.'; k++; continue; }
+    if (t[k] === '{') d++;
+    else if (t[k] === '}' && --d < 0) return 'A } here closes nothing: braces must pair before it is written.';
+  }
+  return d > 0 ? 'A { here is not closed yet: braces must pair before it is written.' : '';
+}
+// & % # typed as words, not as TeX's own signs (the whole text typed anew)
+export const escapeText = (v) => escapeTyped('', v);
 
 export function hfClose(app, back) {
   const H = app.hf;
   if (!H) return false;
   for (const inp of H.inputs) inp.flush();
+  // (a place left with braces that do not pair keeps what the source had, and says so)
+  const left = H.inputs.filter((inp) => inp.getAttribute('aria-invalid') === 'true');
+  if (left.length && app.toast) app.toast('Not written: ' + left.map((x) => x.getAttribute('aria-label')).join(', ') + ' (' + (left[0].title || 'its braces do not pair') + ')', 7000);
   app.hf = null;
   H.el.remove();
   app.desk.removeEventListener('scroll', H.place);
@@ -159,7 +213,10 @@ export function hfInsert(app, tex) {
   if (!H) return false;
   const inp = H.last || H.inputs[0];
   const a = inp.selectionStart ?? inp.value.length, b = inp.selectionEnd ?? a;
-  inp.value = inp.value.slice(0, a) + tex + inp.value.slice(b);
+  // (a command put in: the base moves with it, so it is not escaped as typing would be)
+  const v = inp.value.slice(0, a) + tex + inp.value.slice(b);
+  if (inp.value === inp.base) inp.base = v;
+  inp.value = v;
   inp.focus();
   inp.setSelectionRange(a + tex.length, a + tex.length);
   inp.dispatchEvent(new Event('change'));

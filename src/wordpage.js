@@ -179,7 +179,10 @@ export function pageLatex(parts, sect, rels) {
     if (D) for (const [s, t] of sel(D, E ? 'O' : '')) cmds.push(cmd + '[' + s + ']{' + t + '}');
     if (E) for (const [s, t] of sel(E, 'E')) cmds.push(cmd + '[' + s + ']{' + t + '}');
   }
-  if (cmds.length) {
+  // (a footer of the page number at its centre and nothing else is LaTeX's own plain page: no
+  // package and no lines for it, as the document had none before it went to Word)
+  const plainOnly = cmds.length === 1 && /^\\fancyfoot\[C\]\{\\thepage(?:\{\})?\}$/.test(cmds[0]) && !titlePg;
+  if (plainOnly) { /* LaTeX's plain style */ } else if (cmds.length) {
     out.heads = true;
     out.packages.push('fancyhdr');
     out.lines.push('\\pagestyle{fancy}', '\\fancyhf{}', '\\renewcommand{\\headrulewidth}{0pt}', ...cmds);
