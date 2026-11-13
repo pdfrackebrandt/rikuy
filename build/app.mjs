@@ -511,12 +511,16 @@ highlighter Word import defines: one \\DeclareRobustCommand{\\hl}[1][yellow] lin
 {\\large ...} or {\\fontsize{13}{15.6}\\selectfont ...}, families \\textsf, \\textrm, \\texttt or
 {\\fontfamily{ppl}\\selectfont ...} ({\\fontspec{TeX Gyre Pagella} ...} under XeLaTeX and
 LuaLaTeX), \\textls[100]{...}, \\scalebox{1.5}[1]{...}, \\raisebox{3pt}{...} and \\ruby{base}{reading}.
-The font box and the size box act on the selected text, or on a run the caret is in; with a bare
-caret elsewhere they set the document's font (its package line: newtx for Times, newpx for
-Palatino, tgheros with \\familydefault for Helvetica, XCharter, tgschola, tgbonum, kpfonts; or
-\\setmainfont under fontspec) and its base size (the class option; extarticle and its kin for 8, 9,
-14, 17 and 20pt; KOMA's fontsize=). Each action is one step of undo. Typing *words* or _words_
-makes them \\textbf or \\emph (one undo gives the marks back).
+The font box, the size box, Increase and Decrease Font Size act on the selected text, or, at a
+caret inside a word, on that word (as Word's do); a selection over several paragraphs, cells or
+list items gets a wrapper on each, a LaTeX paragraph in it none, and ulem's lines close around a
+\\footnote. The Font dialog's Set As Default sets the document's font (its package line: newtx
+for Times, newpx for Palatino, tgheros with \\familydefault for Helvetica, XCharter, tgschola,
+tgbonum, kpfonts; or \\setmainfont under fontspec; a font package Rikuy does not list is shown by
+its name and replaced) and its base size (the class option; extarticle and its kin for 8, 9, 14,
+17 and 20pt; KOMA's fontsize=). Change Case changes only the letters the page draws: math, keys,
+labels and LaTeX paragraphs keep theirs. Each action is one step of undo. Typing *words* or
+_words_ makes them \\textbf or \\emph (one undo gives the marks back).
 
 ## LaTeX paragraphs
 

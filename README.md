@@ -56,8 +56,9 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   footnote, equation, figure, table, comment or label. The Navigation pane has the headings
   (drag one to move its section), thumbnails of the pages and the results; Alt+Shift and the
   arrows promote, demote and move headings with their sections, and paragraphs.
-- **Word's Font group.** The font and size boxes (the document's font package and class size, or
-  the selection's), bigger and smaller, Change Case, Clear All Formatting, underline styles,
+- **Word's Font group.** The font and size boxes (the selection's or the word's; the document's
+  font package and class size from the Font dialog's Set As Default), bigger and smaller, Change
+  Case on the words alone, Clear All Formatting, underline styles,
   strikethrough, sub- and superscript, highlighter and font colours, small and all caps, the
   Font dialog and the Format Painter; each writes the LaTeX you would (`\uline`, `\hl[green]`,
   `{\large …}`) and takes off what you wrote by hand.

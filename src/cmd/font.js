@@ -16,6 +16,7 @@ import * as F from '../charfmt.js';
 import { openMenu, colorPicker, BASE_COLORS, CARET } from '../ui/kit.js';
 import { $, mk } from '../ui/dom.js';
 import { docClass } from '../preamble.js';
+import { segOfSpan, charRange } from '../editor.js';
 import { openFontDialog, openRubyDialog } from '../ui/fontdialog.js';
 
 const SVG = (paths) => '<svg viewBox="0 0 20 20" aria-hidden="true">' + paths + '</svg>';
@@ -108,8 +109,9 @@ register(
   { id: 'all-caps', name: 'All Caps', title: 'All Caps (Ctrl+Shift+A): \\MakeUppercase, the letters stay as typed', keys: ['Ctrl+Shift+A'], synonyms: ['MakeUppercase', 'Capitals'], when: can, on: on('allcaps'), run: (app) => app.fmtToggle('allcaps') },
   { id: 'double-strikethrough', name: 'Double Strikethrough', title: 'Double Strikethrough: two lines through (\\dsout, defined once in the preamble with ulem)', synonyms: ['dsout', 'Double strike'], when: can, on: on('dstrike'), run: (app) => app.fmtToggle('dstrike') },
   { id: 'char-border', name: 'Character Border', title: 'Character Border: a frame round the words (\\fbox)', synonyms: ['Border', 'fbox', 'Box'], when: can, on: on('border'), run: (app) => app.fmtToggle('border') },
-  { id: 'char-shading', name: 'Character Shading', title: 'Character Shading: grey behind the words (\\colorbox{lightgray})', synonyms: ['Shading', 'colorbox', 'Background'], when: can, on: on('shading'),
-    run: (app, args) => app.fmtSetToggle('shading', { cmd: 'colorbox', args: [(args && args.color) || 'lightgray'] }) },
+  { id: 'char-shading', name: 'Character Shading', title: 'Character Shading: grey behind the words (\\colorbox{lightgray} on a word; \\hl[lightgray] on words, which can break across lines)', synonyms: ['Shading', 'colorbox', 'Background'], when: can,
+    on: (app, at) => on('shading')(app, at) || (can(app, at) && chainAt(app, at).some((x) => x.W.cmd === 'hl' && x.W.opt === 'lightgray')),
+    run: (app, args) => app.charShading(args && args.color) },
   { id: 'enclose-chars', name: 'Enclose Characters', title: 'Enclose Characters: a circle round a character (\\textcircled)', synonyms: ['Circled', 'textcircled', 'Enclosed'], when: can, on: on('enclose'), run: (app) => app.fmtToggle('enclose') },
   { id: 'phonetic-guide', name: 'Phonetic Guide', title: 'Phonetic Guide: a reading over the selected characters (ruby: \\ruby{base}{reading})', synonyms: ['Ruby', 'Furigana', 'Pinyin', 'ruby'],
     when: (app, at) => can(app, at) && !at.c.collapsed, whyNot: () => 'Select the characters the reading goes over.', run: (app) => openRubyDialog(app) },
@@ -131,7 +133,12 @@ export const methods = {
     if (!c || c.ghost || this.texHere()) return false;
     const f = c.f, src0 = this.src(f);
     let st = { text: src0, a: c.a, b: c.b };
-    if (o.word && c.collapsed) { const w = F.wordAt(src0, c.a); if (w) st = { text: src0, a: w[0], b: w[1], word: true }; }
+    // (Select all: the document's body, not the page's last drawn character, which may be a footnote's)
+    const whole = !c.collapsed && f === this.main && this.wholeDoc ? this.wholeDoc() : null;
+    if (whole) st = { text: src0, a: whole.s, b: whole.e };
+    // (a caret in a word: the word, as Word formats it; o.word 'inside' wants the caret inside it,
+    // not at its ends, where what is typed next takes the format)
+    if (o.word && c.collapsed) { const w = F.wordAt(src0, c.a); if (w && (o.word !== 'inside' || (w[0] < c.a && c.a < w[1]))) st = { text: src0, a: w[0], b: w[1], word: c.a - w[0] }; }
     const needs = [];
     let r = null;
     for (const step of steps) {
@@ -161,7 +168,7 @@ export const methods = {
     const a = st.a + shift, b = st.b + shift;
     // the selection stays selected; a caret stays a caret (in an empty wrapper: between its braces)
     const caret = a !== b && (!c.collapsed || o.keepWord) ? { f, p: b, selA: a, selB: b }
-      : st.word ? { f, p: Math.min(c.a + shift, b), bias: -1 } : { f, p: a === b ? a : b, bias: a === b && r && r.on ? 1 : -1 };
+      : st.word != null ? { f, p: Math.min(a + st.word, b), bias: -1 } : { f, p: a === b ? a : b, bias: a === b && r && r.on ? 1 : -1 };
     this.closeGroup();
     this.commit(edits, caret, 'format');
     this.closeGroup();
@@ -195,18 +202,35 @@ export const methods = {
     return this.fmtSet(group, w);
   },
 
+  // Character Shading: a box behind one word (\colorbox cannot break), the highlighter's grey
+  // behind words that may run over a line's end (GAP H27); again takes it off
+  charShading(color) {
+    const at = this.ribbonAt(), c = at && at.c;
+    if (!c || c.ghost) return false;
+    const src = this.src(c.f), grey = color || 'lightgray';
+    const holds = (W) => W && (c.collapsed || (c.a >= W.is && c.b <= W.ie));
+    const S = F.around(src, c.a, c.b, 'shading'), H = F.around(src, c.a, c.b, 'highlight');
+    if (holds(S) && S.cmd === 'colorbox' && (S.args || [])[0] === grey) return this.fmtSet('shading', null);
+    if (holds(H) && H.opt === grey) return this.fmtSet('highlight', null);
+    const words = !c.collapsed && /\s/.test(src.slice(c.a, c.b).trim());
+    if (words && F.hlTakesColor(this.src(this.main), this.preambleOthers ? this.preambleOthers() : [])) return this.fmtSet('highlight', { cmd: 'hl', opt: grey });
+    return this.fmtSet('shading', { cmd: 'colorbox', args: [grey] });
+  },
+
   // ---- Increase and Decrease Font Size ---------------------------------------------------------
+  // (at a caret inside a word: that word, as Word grows it; the step from the size the words have,
+  // a size around a part of them included)
   growFont(dir) {
     const at = this.ribbonAt(), c = at && at.c;
     if (!c || c.ghost) return false;
     const src = this.src(c.f), base = this.baseSize();
-    const W = F.around(src, c.a, c.b, 'size');
-    const exact = W && (c.collapsed || (c.a >= W.is && c.b <= W.ie && !src.slice(W.is, c.a).trim() && !src.slice(c.b, W.ie).trim()));
-    if (c.collapsed && !W) return this.setDocSize(this.docSizeStep(dir));
-    const from = exact ? (W.cmd === 'fontsize' ? F.nearestSize(base, F.sizeOf(base, W)) : W.cmd) : 'normalsize';
+    let a = c.a, b = c.b;
+    if (c.collapsed) { const w = F.wordAt(src, c.a); if (w && w[0] < c.a && c.a < w[1]) [a, b] = w; }
+    const W = F.around(src, a, b, 'size');
+    const from = W ? (W.cmd === 'fontsize' ? F.nearestSize(base, F.sizeOf(base, W)) : W.cmd) : 'normalsize';
     const to = F.stepSize(from, dir);
     if (!to) return false;
-    return this.fmtSet('size', to === 'normalsize' ? null : { cmd: to, decl: true });
+    return this.fmtSet('size', to === 'normalsize' ? null : { cmd: to, decl: true }, { word: 'inside' });
   },
   // the document's next base size up or down, of those its class has
   docSizeStep(dir) {
@@ -246,24 +270,24 @@ export const methods = {
     this.closeGroup();
     return true;
   },
-  // A size for the selection (points), or for the document at a caret outside any size
+  // A size for the selection (points), or for the word at the caret (or what is typed there next):
+  // the document's own size is the Font dialog's Set As Default
   setFontSize(pt, at = this.ribbonAt()) {
     if (!(pt > 0) || pt > 400) return false;
     const st = this.fontState(at);
     if (!st) return false;
-    if (!st.selMode) return this.setDocSize(pt);
     const w = F.sizeWrapper(st.base, pt);
-    return this.fmtSet('size', w.cmd === 'normalsize' ? null : w);
+    return this.fmtSet('size', w.cmd === 'normalsize' ? null : w, { word: 'inside', at });
   },
-  // A font for the selection (an id of GENERIC or FONTS), or the document's at a caret outside any
+  // A font for the selection or the word at the caret (an id of GENERIC or FONTS); the document's
+  // font is the Font dialog's Set As Default
   setFontName(id, at = this.ribbonAt()) {
     const st = this.fontState(at);
     if (!st) return false;
-    if (!st.fontSel) return this.setDocFont(id);
-    if (id === st.docFont.id && !F.GENERIC.some((g) => g.id === id)) return this.fmtSet('family', null);
+    if (id === st.docFont.id && !F.GENERIC.some((g) => g.id === id)) return this.fmtSet('family', null, { word: 'inside', at });
     const w = F.familyWrapper(id, st.fontspec);
     if (!w) { this.toast('That font has no form for ' + (st.fontspec ? 'fontspec' : 'pdfLaTeX') + ' here.'); return false; }
-    return this.fmtSet('family', w);
+    return this.fmtSet('family', w, { word: 'inside', at });
   },
 
   // What the boxes show where the caret is: the base size and the size there, the document's font
@@ -282,7 +306,7 @@ export const methods = {
     const D = this.fontDoc;
     const size = SW ? F.sizeOf(base, SW) : base;
     const fam = FW ? F.familyOf(FW) : null;
-    return (m.font = { base, size, sizeW: SW, selMode: !c.collapsed || !!SW, fontSel: !c.collapsed || !!FW, family: fam, familyW: FW, docFont: D.font, fontspec: D.fontspec, cls: D.cls, docSizes: F.docSizes(D.cls) });
+    return (m.font = { base, size, sizeW: SW, selMode: true, fontSel: true, family: fam, familyW: FW, docFont: D.font, fontspec: D.fontspec, cls: D.cls, docSizes: F.docSizes(D.cls) });
   },
 
   // ---- the boxes ----------------------------------------------------------------------------
@@ -325,7 +349,17 @@ export const methods = {
       if (e.key === 'Enter') { e.preventDefault(); this.fontBoxCommit(kind, inp.value); }
       else if (e.key === 'Escape') { e.preventDefault(); this.fbxAt = null; this.fbxBack(); }
       else if (e.key === 'ArrowDown' || (e.key === 'ArrowDown' && e.altKey)) { e.preventDefault(); this.fontBoxOpen(kind, true); }
-      else if (e.key === 'Tab') { this.fbxAt = null; }
+      else if (e.key === 'Tab') {
+        // (what was typed is applied, as Word's box does, and the focus goes on to the next control)
+        if (inp.value.trim() && inp.value !== inp.dataset.shown) {
+          e.preventDefault();
+          const all = [...document.querySelectorAll('#ribbon button, #ribbon input')].filter((x) => x.offsetParent && !x.disabled);
+          const next = all[all.indexOf(inp) + (e.shiftKey ? -1 : 1)];
+          this.fontBoxCommit(kind, inp.value);
+          if (next) next.focus();
+        }
+        this.fbxAt = null;
+      }
     });
     x.addEventListener('mousedown', (e) => { e.preventDefault(); keep(); this.fontBoxOpen(kind, true); });
     box.append(inp, x);
@@ -342,12 +376,12 @@ export const methods = {
     if (kind === 'font') {
       const id = st.fontSel && st.family ? st.family : st.docFont.id;
       const name = (F.GENERIC.find((g) => g.id === id) || F.FONTS.find((f) => f.id === id) || st.docFont).name;
-      inp.value = name;
-      inp.title = (st.fontSel ? 'Font of the selected text: ' : 'Font of the document: ') + name + ' (Ctrl+Shift+F)';
+      inp.value = inp.dataset.shown = name;
+      inp.title = 'Font: ' + name + (st.familyW ? '' : ' (the document\'s)') + ' (Ctrl+Shift+F)';
     } else {
-      const v = Math.round((st.selMode ? st.size : st.base) * 100) / 100;
-      inp.value = Number.isFinite(v) ? String(v) : '';
-      inp.title = (st.selMode ? 'Font Size of the selected text: ' + v + 'pt' + (st.sizeW && st.sizeW.cmd !== 'fontsize' ? ' (\\' + st.sizeW.cmd + ')' : '') : 'Font Size of the document: ' + v + 'pt (the class\'s base size)');
+      const v = Math.round(st.size * 100) / 100;
+      inp.value = inp.dataset.shown = Number.isFinite(v) ? String(v) : '';
+      inp.title = 'Font Size: ' + v + 'pt' + (st.sizeW && st.sizeW.cmd !== 'fontsize' ? ' (\\' + st.sizeW.cmd + ')' : st.sizeW ? '' : ' (the document\'s)');
     }
   },
   // back to the page from a box: the selection it had (a box's text took the document's selection)
@@ -396,22 +430,23 @@ export const methods = {
       const cur = st.fontSel && st.family ? st.family : st.docFont.id;
       const fonts = F.FONTS.filter((x) => (st.fontSel ? (st.fontspec ? x.spec : x.family) : st.fontspec ? x.spec : x.pkgs));
       items = [];
+      // (a document font Rikuy does not list: first, as the font the words have now)
+      if (!st.docFont.id) items.push({ name: st.docFont.name, checked: !st.family, radio: true, cls: 'fbx-mi', title: 'The document\'s font', run: back(() => this.setFontName('')) });
       if (st.fontSel) items.push(...F.GENERIC.map((g) => ({ name: g.name, checked: cur === g.id, radio: true, cls: 'fbx-mi y-ff-' + g.look, title: '\\' + g.cmd, run: back(() => this.setFontName(g.id)) })), null);
       items.push(...fonts.map((x) => ({ name: x.name, checked: cur === x.id, radio: true, cls: 'fbx-mi' + (x.look ? ' y-ff-' + x.look : ''),
         title: st.fontSel ? (st.fontspec ? '{\\fontspec{' + x.spec + '} ...}' : '{\\fontfamily{' + x.family + '}\\selectfont ...}') : st.fontspec ? '\\setmainfont{' + x.spec + '}' : (x.pkgs.length ? '\\usepackage{' + x.pkgs.join(',') + '}' : 'no font package: LaTeX\'s own') + (x.sans ? ' with \\familydefault in sans serif' : ''),
         run: back(() => this.setFontName(x.id)) })));
-    } else if (st.selMode) {
+    } else {
       const cur = st.size;
       items = F.sizeList(st.base).filter((x, k, L) => !k || x.pt !== L[k - 1].pt).map((x) => ({ name: String(x.pt) + ' ' + x.name, label: String(x.pt), keys: '\\' + x.name, checked: Math.abs(cur - x.pt) < 0.06, radio: true, title: '{\\' + x.name + ' ...}',
         run: back(() => this.setFontSize(x.pt)) }));
-    } else {
-      const L = st.docSizes === 'any' ? [8, 9, 10, 11, 12, 13, 14, 16, 18, 20, 24] : st.docSizes || [];
-      if (!L.length) { this.toast('The class ' + (st.cls || '') + ' sets its own sizes.'); return false; }
-      items = L.map((pt) => ({ name: String(pt), checked: Math.abs(st.base - pt) < 0.06, radio: true, title: 'The document in ' + pt + 'pt' + ([10, 11, 12].includes(pt) || st.docSizes === 'any' ? '' : ' (extsizes\' ' + (st.cls.replace(/^ext/, '') ? 'ext' + st.cls.replace(/^ext/, '') : 'class') + ')'), run: back(() => this.setDocSize(pt)) }));
     }
     const anchor = visible ? inp.closest('.fbx') : ($('#rg-home-font') && $('#rg-home-font').offsetParent ? $('#rg-home-font') : this.root);
     if (inp) inp.setAttribute('aria-expanded', 'true');
-    openMenu(this, anchor, items, { label: kind === 'font' ? 'Font' : 'Font Size', cls: 'pop-fbx pop-fbx-' + kind, onClose: () => { if (inp) inp.setAttribute('aria-expanded', 'false'); } });
+    const menu = openMenu(this, anchor, items, { label: kind === 'font' ? 'Font' : 'Font Size', cls: 'pop-fbx pop-fbx-' + kind, onClose: () => { if (inp) inp.setAttribute('aria-expanded', 'false'); } });
+    // (the list opens on what there is now, as Word's does)
+    const on = menu && menu.querySelector && menu.querySelector('[aria-checked="true"]');
+    if (on) { on.focus(); on.scrollIntoView({ block: 'nearest' }); }
     return true;
   },
 
@@ -423,8 +458,50 @@ export const methods = {
     openMenu(this, b && b.offsetParent ? b : ($('#rg-home-font') && $('#rg-home-font').offsetParent ? $('#rg-home-font') : this.root), items, { label: 'Change Case' });
     return true;
   },
+  // (only what the page draws changes: its characters of the selection, with their places in the
+  // source; a file the page does not draw is read from its source alone)
   changeCase(mode) {
-    return this.fmtCommit([(t, a, b) => (a === b ? null : F.changeCase(t, a, b, mode))], { word: true, keepWord: false });
+    const at = this.ribbonAt(), c = at && at.c;
+    if (!c || c.ghost) return false;
+    return this.fmtCommit([(t, a, b) => {
+      if (a === b) return null;
+      const D = this.drawnChars(c.f, a, b);
+      return D ? F.changeDrawn(t, a, b, D, mode) : F.changeCase(t, a, b, mode);
+    }], { word: true, keepWord: false, at });
+  },
+  // The characters the page draws for [a, b) of file f in reading order, each with its place in the
+  // source: { chars: [{ s, e, ch, gap }], before }, gap 'par' where a paragraph starts and 'word'
+  // where something drawn of its own (a formula, a reference) stands between; before, the drawn
+  // text of the first one's paragraph before it. Footnotes' text (not the selection's: Word keeps
+  // it apart too) and LaTeX paragraphs are left out. null when the page draws none of [a, b).
+  drawnChars(f, a, b) {
+    const root = this.root;
+    if (!root) return null;
+    const chars = [];
+    let seen = false, item = null, pend = null, before = '', firstItem = null;
+    const walk = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, { acceptNode: (n) => {
+      if (n.matches('.fn, .it.tex, [data-ctx="tex"]')) return NodeFilter.FILTER_REJECT;
+      if (n.matches('span.t') || (n.dataset && (n.dataset.a || n.dataset.m)) || n.matches('.it')) return NodeFilter.FILTER_ACCEPT;
+      return NodeFilter.FILTER_SKIP;
+    } });
+    for (let n = walk.nextNode(), k = 0; n && k < 400000; n = walk.nextNode(), k++) {
+      if (n.matches('.it')) { item = n; if (chars.length) pend = 'par'; else before = ''; continue; }
+      if (!n.matches('span.t')) { if (chars.length && pend !== 'par') pend = 'word'; else if (!chars.length) before += ' '; continue; }
+      if (n.classList.contains('ph')) continue;
+      const g = segOfSpan(n);
+      if (!g || (g.seg.f || g.B.f) !== f) continue;
+      const text = n.firstChild ? n.firstChild.data : '';
+      for (let j = 0; j < text.length; j++) {
+        const [cs, ce] = charRange(g.B, g.seg, g.o + j);
+        if (ce <= a && !chars.length) { before = (before + text[j]).slice(-80); continue; }
+        if (cs < a || ce > b || ce <= cs) continue;
+        seen = true;
+        if (!chars.length) firstItem = item;
+        chars.push({ s: cs, e: ce, ch: text[j], gap: chars.length ? pend || undefined : undefined });
+        pend = null;
+      }
+    }
+    return seen ? { chars, before: firstItem ? before : '' } : null;
   },
 
   // ---- Clear All Formatting -------------------------------------------------------------------
@@ -476,7 +553,7 @@ export const methods = {
     const pick = color === undefined ? this.hlLast || 'yellow' : color;
     if (color !== undefined && color) this.hlLast = color;
     const src = this.src(this.main);
-    if (pick && pick !== 'yellow' && !F.hlTakesColor(src)) { this.toast('This document defines \\hl itself; Rikuy\'s highlighter takes a colour only where it defines \\hl.'); return false; }
+    if (pick && pick !== 'yellow' && !F.hlTakesColor(src, this.preambleOthers ? this.preambleOthers() : [])) { this.toast('This document defines \\hl itself; Rikuy\'s highlighter takes a colour only where it defines \\hl.'); return false; }
     const w = { cmd: 'hl', opt: pick === 'yellow' ? null : pick };
     if (!pick) return this.fmtSet('highlight', null);
     if (color === undefined) return this.fmtSetToggle('highlight', w);

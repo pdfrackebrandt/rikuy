@@ -274,12 +274,20 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   them, so the Font dialog's changes chain into one commit. It reads itself the forms
   `src/wrap.js` leaves out: a declaration with arguments (`{\color{red} …}`,
   `{\fontsize{14}{17}\selectfont …}`, `{\fontfamily{ppl}\selectfont …}`) and an option after the
-  arguments (`\scalebox{1.5}[1]{…}`). `needsOf` says what a written command needs and
+  arguments (`\scalebox{1.5}[1]{…}`). Everything is taken off a part as Word takes it
+  (`clearKinds`: a group of declarations split keeps its other declarations and, where it is an
+  argument, its braces; an end of the selection inside another format splits that one too,
+  `wholePart`), and put on in whole pieces (`segmentsOf` cuts a selection at braces it crosses,
+  cells, rows, items, environments and paragraphs, and leaves out LaTeX paragraphs and displays;
+  ulem's lines close around a `\footnote`, `\marginpar` or `\todo`). `needsOf` says what a written command needs and
   `preambleFor` writes it once (ulem, xcolor with dvipsnames, or `\PassOptionsToPackage` before
   tikz; the highlighter's and the double strikethrough's one line definitions); `docSizeEdits` and
   `docFontEdits` are the document's size and font (the class's option, extarticle, KOMA's
-  fontsize; a font package's line in place of the last one's, or `\setmainfont`); `changeCase`
-  and `autoFormat` the rest. `src/cmd/font.js` registers the commands and commits each action
+  fontsize; a font package's line in place of the last one's, a package Rikuy does not list
+  named and replaced, or `\setmainfont`). Change Case changes only the letters the page draws
+  (`drawnChars` in `src/cmd/font.js` reads the page's text runs and their places in the source)
+  that the source also gives as letters of words (`caseChars`: no math, keys, labels, column
+  specs, code or pictures); `changeCase` is the same on the source alone. `autoFormat` the rest. `src/cmd/font.js` registers the commands and commits each action
   (`fmtCommit`: the caret's file, then the main file's preamble); `chainAt` reads the wrappers
   around the caret once for each look at the ribbon, for every toggle's pressed state and the
   boxes. `src/ui/fontdialog.js` is the Font dialog and the Phonetic Guide. On the page

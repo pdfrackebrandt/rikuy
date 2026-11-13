@@ -1094,15 +1094,13 @@ Tests:
     double, wave, dashed and dotted underlines, double strike, caps, a border, sizes in half points,
     fonts, spacing, position, scale); Word import's highlighter takes a colour. *Frame changes*
     (`src/ribbon/tabs.js`, small): the boxes join the toolbar's arrow keys and keep the ribbon as
-    it was while typed in; groups fold between a phone and 861 px too (the Font group's one row
-    there left Home longer than the window); every ribbon button holds its screen reader name
+    it was while typed in; every ribbon button holds its screen reader name
     (`position: relative`: absolute names past a phone's edge widened the page by the row's
     length). The preamble's lines go through `usePackages` with the files the preamble reads
     (`App.preambleOthers`), as B0's review asked. B0's tests changed
     only where B1 changes what they saw: `\uline` for `\underline`, the Format Painter as Home's
     first control, the right click menu's Font Settings, and the widths at which the Styles
-    gallery has room (six tiles with the insert buttons' names from 1800 px, the list below
-    1280 px; at 1024 px Clipboard and Insert fold, at 860 px four groups). *Security* (the audit skill's quick profile on
+    gallery has room (see the review's paragraph below for the widths on B5's fold rule). *Security* (the audit skill's quick profile on
     the changed files, notes outside the repository): a stranger's `\setmainfont{constructor}`
     stopped the page from drawing the document, and two patterns backtracked on a stranger's
     preamble (spaces after `\renewcommand`, an option list without its brace); fixed with tests,
@@ -1118,6 +1116,47 @@ Tests:
     exists); the Format Painter copies character formats, not a paragraph's style; an underline
     colour takes a named colour only; Word import keeps no highlighter colour (pandoc reads none);
     Safari and Firefox, by hand.
+    *The hostile review of a20db3f* (6 high, 7 medium, 8 low; each fixed with the reader's case
+    as a test, `test/font.test.mjs`'s "review" groups and `test/font.py`'s `review`). A format comes off a part as Word takes it off: a group of declarations split
+    keeps its other declarations and, where it is an argument (`\footnote{\color{red} ..}`,
+    `\section{..}`, `\textbf{..}`), its braces, so no word leaves its command (H1, L8); Automatic,
+    No Color and a toggle off take the kind off the selection alone, `\textbf` included (M6); an
+    end of the selection inside another format splits that one too. A format goes on in whole
+    pieces: a selection over a brace, cells, items, environments or paragraphs gets a wrapper on
+    each, LaTeX paragraphs and displays none, the mark kept on its line (M3, M4); ulem's lines
+    close around a `\footnote`, `\marginpar` or `\todo` (H4: the document that stopped TeX with
+    seven errors compiles in the page). A family on a declaration that is an argument stays one
+    (`\textbf{\rmfamily ..}`, H2). Change Case changes only letters the page draws that the
+    source gives as letters of words: no math, label, column spec, reference, glossary or
+    language key, code, picture, footnote behind its mark or LaTeX paragraph; `\ss` becomes
+    `\SS`, an accent's letter its capital (H3). The Font dialog keeps a main font Rikuy does not
+    list (H5); a font package it does not list (fourier, libertine, stix2, mathdesign, ...) is shown
+    by its name and replaced by the font chosen, helvet and courier stay with another roman (H6,
+    L5). Increase and Decrease Font Size step from the run's size (M2); at a caret inside a word the
+    size box, the font box and both steps act on that word, never the class: the document's font
+    and size are the Font dialog's Set As Default (M7). An ulem the document loads keeps its
+    options, soul's `\hl` or one an `\input` file defines is never redefined and takes no
+    colour (M5); CR LF files get CR LF lines (L4); the class's size changes only its option's text,
+    comments kept, an explicit `[10pt]` kept, beamer's own 11pt (L3). Clear All and a toggle over
+    a whole document clear every wrapper, 2000 at a time in one pass each (300 KB: 0.1 s, L1).
+    Character Shading writes `\hl[lightgray]` over words, which breaks across lines (L2); Word
+    gets its own highlight on the run for its sixteen colours and the reading of a phonetic guide
+    in brackets, said among what it loses (L6; a .docx from Word without Rikuy's data still comes
+    in without highlight, sizes and shading: pandoc's reader has none); the boxes keep the
+    selection on Enter, apply on Tab and open their list on the current value (L7). M1: the
+    ribbon's one fold rule is B5's (task 43, rebased onto 49e49eb); B1 keeps for its Font group
+    Word's two rows above 860 px and, below 861 px, Bold, Italic and Underline first in the row
+    beside the group's button, whose menu has the rest (one row of all of it was 640 px), also
+    when the group is folded; B5's sweep (every tab, 390 to 1920 px, with and without extra
+    commands) passes with no new exception. The two rows take 182 px more than B0's three
+    buttons, so B5's Home targets move: nothing folds from 1100 to 1920 px, Editing alone at
+    1024 px, one group at 860 px (Insert), the insert buttons' names go at 1920 px, the tiles
+    from 1440 px and the style list from 1180 px; `tabs.py`, `ribbon.py` and `find.py` say so.
+    Evidence on main 49e49eb with B5: `npm test` green (`font` 25 groups, `word` 57), `font.py`
+    199 (with `dist/tex`), `tabs.py` 116, `ribbon.py` 268, `agent.py` 138, `browser.py` 189,
+    `word.py` 110, `scripts.py` 302, `find.py` 76, `outline.py` 59, `offline.py` 54/54,
+    `launch.py` 18/18, `deploy_check.py` 43/43, `pages_check.py` fits, actionlint clean, the
+    corpus model run 716 of 716 with the same unknown commands.
 
 ## Open tasks
 

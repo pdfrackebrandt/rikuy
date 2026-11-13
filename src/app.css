@@ -1159,8 +1159,24 @@ body.nav-on.nav-outline #nav { width: 460px; }
   .rb-grp[data-group="font"] .fg-bar { width: 13px; height: 3px; }
 }
 @media (max-width: 860px) {
-  .rb-grp[data-group="font"] > .btn.icon, .rb-grp[data-group="font"] .rb-split > .btn.icon:not(.rb-x) { width: 30px; }
+  /* (a little narrower than the row's other buttons: Home fits from 521 px with them) */
+  .rb-grp[data-group="font"] { gap: 1px; }
+  .rb-grp[data-group="font"] > .btn.icon, .rb-grp[data-group="font"] .rb-split > .btn.icon:not(.rb-x) { width: 28px; }
+  .rb-grp[data-group="font"] .rb-split > .rb-x { width: 12px; }
+  /* Bold, Italic and Underline first in the row, then the rest of the Font group, then the
+     Clipboard's Format Painter: on a phone they are what a thumb wants in sight */
+  .rb-grp[data-group="font"] { order: -2; }
+  .rb-grp[data-group="clipboard"] + .sep { order: -1; }
+  .rb-grp[data-group="font"] > [data-cmd="bold"], .rb-grp[data-group="font"] > [data-cmd="italic"], .rb-grp[data-group="font"] > .rb-split:has([data-cmd="underline"]) { order: -1; }
+  /* the rest of the group is its button's menu here, as folded (one row of all of it was 640 px):
+     Word's narrow ribbon keeps Bold, Italic and Underline and puts the rest behind "Font" */
+  .rb-grp[data-group="font"] > :not(.rb-gbtn):not([data-cmd="bold"]):not([data-cmd="italic"]):not(.rb-split:has([data-cmd="underline"])) { display: none !important; }
+  .rb-grp[data-group="font"] > .rb-gbtn { display: inline-flex; width: auto; padding: 0 4px 0 8px; }
+  .rb-grp[data-group="font"]:not(.ico) > .rb-gbtn > span { display: inline; }
 }
+/* folded, the Font group keeps Bold, Italic and Underline beside its button, one press away */
+.rb-grp[data-group="font"].folded > [data-cmd="bold"], .rb-grp[data-group="font"].folded > [data-cmd="italic"] { display: inline-flex !important; order: -1; }
+.rb-grp[data-group="font"].folded > .rb-split:has([data-cmd="underline"]) { display: inline-flex !important; order: -1; }
 /* (each button holds its screen reader name: absolute in the row's buttons without position, that
    name widened a phone's page by the row's scrolled length, once the Font group pushed the
    lists past the screen's edge) */

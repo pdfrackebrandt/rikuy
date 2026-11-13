@@ -47,6 +47,11 @@ def style(page, value):
         page.select_option('#rb-style', value)
     elif page.is_visible('#rb-st-' + value):
         page.click('#rb-st-' + value)
+    elif page.is_visible('#rg-home-styles'):
+        # (the Styles group folded into its button where the row is short: its menu names each style)
+        page.click('#rg-home-styles'); page.wait_for_timeout(150)
+        name = {'p': 'Normal', 'title': 'Title', 'section': 'Heading 1', 'subsection': 'Heading 2', 'subsubsection': 'Heading 3', 'latex': 'LaTeX source', 'quote': 'Quote'}[value]
+        page.locator('.pop [role^=menuitem][aria-label="%s"]' % name).click()
     else:
         page.click('#rb-st-more'); page.wait_for_timeout(150)
         page.click('.pop-styles .rb-mi.st-' + value)
@@ -484,10 +489,13 @@ def downloads_in_sight(page):
       const top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return b.width > 0 && b.left >= rr.left - 1 && b.right <= innerWidth + 1 && !!top && (top === e || e.contains(top)); }); }"""
     for w in (820, 860, 1000):
         page.set_viewport_size({'width': w, 'height': 800}); page.wait_for_timeout(300)
-        seen = page.evaluate(IN, ['rb-pdf', 'rb-word', 'b-save'] if w > 860 else ['rb-dl-menu'])
+        # (above 860 px the three where the row has room for them, else the one button: Home's Font
+        # group in Word's two rows leaves 1000 px without room for three)
+        three = w > 860 and page.evaluate("!!document.getElementById('rb-pdf').offsetParent")
+        seen = page.evaluate(IN, ['rb-pdf', 'rb-word', 'b-save'] if three else ['rb-dl-menu'])
         over = page.evaluate('(() => { const r = document.getElementById("ribbon"); return r.scrollWidth > r.clientWidth + 1; })()')
         if w > 860:
-            check('at %dpx PDF, Word and LaTeX are in sight with the row not scrolled' % w, all(seen), (seen, over))
+            check('at %dpx the downloads (PDF, Word and LaTeX, or the one Download button) are in sight with the row not scrolled' % w, all(seen) and not over, (seen, over))
         else:
             # (the tabs' list at the row's start left no room for the three: Footnote, Citation and Link went under them)
             check('at %dpx, with no room for the three, one Download button is in sight and the row does not scroll: every button to insert is on the screen' % w, all(seen) and not over, (seen, over))
@@ -633,9 +641,11 @@ def gallery_widths(page):
             arrows: !!document.getElementById('rb-st-up').offsetParent }; }""")
     print('     widths:', {w: (len(v['tiles']), 'list' if v['list'] else '', 'names' if v['names'] else '', v['h']) for w, v in seen.items()})
     six = ['p', 'section', 'subsection', 'subsubsection', 'latex', 'quote']
-    check('at 1920 px all six tiles with the insert buttons\' names, no paging arrows, a row that does not scroll', seen[1920]['tiles'] == six and seen[1920]['names'] and not seen[1920]['arrows'] and not seen[1920]['over'], seen[1920])
-    check('from 1600 to 1366 px the insert buttons\' names go first and the gallery keeps its six tiles, no paging arrows, no scroll', all(seen[w]['tiles'] == six and not seen[w]['names'] and not seen[w]['arrows'] and not seen[w]['over'] for w in (1366, 1440, 1536, 1600)), {w: (seen[w]['tiles'], seen[w]['names']) for w in (1366, 1440, 1536, 1600)})
-    check('then fewer tiles, LaTeX among them, with the paging arrows (1300 to 1024 px)', all('latex' in seen[w]['tiles'] and 3 <= len(seen[w]['tiles']) < 6 and seen[w]['arrows'] and not seen[w]['over'] for w in (1300, 1280, 1180, 1100, 1024)), {w: seen[w]['tiles'] for w in (1300, 1280, 1180, 1100, 1024)})
+    # (Home's Font group in Word's two rows, task 39, takes 182 px more than B0's three buttons: the
+    # insert buttons' names go at 1920 px already, the tiles from 1440 px, the list from 1180 px)
+    check('at 1920 px all six tiles, no paging arrows, a row that does not scroll', seen[1920]['tiles'] == six and not seen[1920]['arrows'] and not seen[1920]['over'], seen[1920])
+    check('from 1600 to 1536 px the insert buttons\' names go first and the gallery keeps its six tiles, no paging arrows, no scroll', all(seen[w]['tiles'] == six and not seen[w]['names'] and not seen[w]['arrows'] and not seen[w]['over'] for w in (1536, 1600)), {w: (seen[w]['tiles'], seen[w]['names']) for w in (1536, 1600)})
+    check('then fewer tiles, LaTeX among them, with the paging arrows (1440 to 1280 px)', all('latex' in seen[w]['tiles'] and 3 <= len(seen[w]['tiles']) < 6 and seen[w]['arrows'] and not seen[w]['over'] for w in (1440, 1366, 1300, 1280)), {w: seen[w]['tiles'] for w in (1440, 1366, 1300, 1280)})
     order = {3: ['p', 'section', 'latex'], 4: ['p', 'section', 'subsection', 'latex'], 5: ['p', 'section', 'subsection', 'subsubsection', 'latex'], 6: six}
     tiled = [w for w in seen if seen[w]['tiles']]
     check('wherever the gallery shows, its first page is Normal and Heading 1 with LaTeX in sight (Normal, Heading 1, LaTeX for three), and the row does not scroll', all(seen[w]['tiles'] == order[len(seen[w]['tiles'])] and not seen[w]['over'] for w in tiled), {w: seen[w]['tiles'] for w in tiled})
@@ -657,14 +667,14 @@ def gallery_paging(page):
     the arrows hand the focus on at their ends; the gallery pages to the caret's style; the strip's
     targets are 24 px or more; a tile that cannot apply keeps its tooltip, which says why."""
     load_doc(page, WRAP('Text here.\n\n\\subsubsection{Deep}\nUnder it.'))
-    page.set_viewport_size({'width': 1100, 'height': 900}); page.wait_for_timeout(300)
+    page.set_viewport_size({'width': 1366, 'height': 900}); page.wait_for_timeout(300)
     click_text(page, 'Text here', 2); state(page)
     POS = """() => { const r = (id) => { const b = document.getElementById(id).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.width), Math.round(b.height)]; };
       return { up: r('rb-st-up'), down: r('rb-st-down'), more: r('rb-st-more'), bold: r('rb-b'), gal: r('rb-gallery'), tiles: [...document.querySelectorAll('#rb-gallery [data-style]')].filter((b) => !b.hidden).map((b) => b.dataset.style) }; }"""
     a = page.evaluate(POS)
     page.click('#rb-st-down'); page.wait_for_timeout(120)
     b = page.evaluate(POS)
-    check('at 1100 px Next shows the last four styles (a full page) and the gallery, the arrows and Bold stay where they were', len(a['tiles']) == 4 and b['tiles'] == ['subsection', 'latex', 'subsubsection', 'quote'] and all(a[k] == b[k] for k in ('up', 'down', 'more', 'bold', 'gal')), (a, b))
+    check('at 1366 px Next shows the last four styles (a full page) and the gallery, the arrows and Bold stay where they were', len(a['tiles']) == 4 and b['tiles'] == ['subsection', 'latex', 'subsubsection', 'quote'] and all(a[k] == b[k] for k in ('up', 'down', 'more', 'bold', 'gal')), (a, b))
     check('the arrows and More are 24 px wide or more and as tall as the box', all(a[k][1] >= 24 and a[k][2] >= 24 for k in ('up', 'down', 'more')), a)
     page.click('#rb-st-up'); page.wait_for_timeout(120)
     # by keyboard: an arrow that reaches its end gives the focus to the other one
