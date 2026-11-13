@@ -11,7 +11,7 @@
 // commit for each action, the preamble's lines (ulem, xcolor, the highlighter's definition) in it.
 
 import { register, command, onInstall, onInsertText } from '../commands.js';
-import { groupNames } from '../wrap.js';
+import { groupNames, mapPos } from '../wrap.js';
 import * as F from '../charfmt.js';
 import { openMenu, colorPicker, BASE_COLORS, CARET } from '../ui/kit.js';
 import { $, mk } from '../ui/dom.js';
@@ -26,8 +26,26 @@ const WHY = 'Click in the text of the page first (a LaTeX paragraph is formatted
 // the wrappers around the caret or the selection, read from the source once for each look at the
 // ribbon (every toggle asks): one walk back for all the kinds, the forms written by hand among them
 const chainAt = (app, at) => { const m = at.memo || (at.memo = {}); if (!m.chain) m.chain = F.chainAt(app.src(at.c.f), at.c.a, at.c.b); return m.chain; };
-// on with the caret in words that have a wrapper of the group
-const on = (group) => (app, at) => { if (!can(app, at)) return false; const names = groupNames(group); return chainAt(app, at).some((x) => names.includes(x.W.cmd)); };
+// a block of cells selected (methods.blockCells), read once for each look at the ribbon
+const blockOf = (app, at) => { const m = at.memo || (at.memo = {}); if (!('block' in m)) m.block = app.blockCells(at); return m.block; };
+// (a block of more cells than this is not read cell by cell for a button's look, which says off
+// past them: allOn's own limit of parts for a look; a toggle reads every cell)
+const BLOCK_MAX = 400;
+// whether a cell's words [a, b) have the kind, read in the cell alone (s, e: between its &), as
+// the cell is formatted (fmtCommit): a cell is a group of its own, and a read of the whole text
+// went back 20 000 characters from each cell
+const cellOn = (t, [a, b, s, e], group, max) => F.allOn(t.slice(s, e), a - s, b - s, group, max);
+// (a block of more cells than this is not formatted: each cell is a run of its own, about a
+// third of a millisecond, and a stranger's table may hold a hundred thousand)
+const BLOCK_CELLS = 5000;
+// on with the caret in words that have a wrapper of the group; a block of cells: all its cells
+const on = (group) => (app, at) => {
+  if (!can(app, at)) return false;
+  const cells = blockOf(app, at);
+  if (cells && cells.length > 1) { const t = app.src(at.c.f); return cells.length <= BLOCK_MAX && cells.every((x) => cellOn(t, x, group)); }
+  const names = groupNames(group);
+  return chainAt(app, at).some((x) => names.includes(x.W.cmd));
+};
 // (the forms of each kind are src/wrap.js's GROUPS, extended in src/charfmt.js: a button and its pressed state agree)
 const STYLE_GROUP = { textbf: 'bold', emph: 'italic', underline: 'underline', uline: 'underline', texttt: 'mono' };
 
@@ -145,6 +163,11 @@ export const methods = {
     // (a caret in a word: the word, as Word formats it; o.word 'inside' wants the caret inside it,
     // not at its ends, where what is typed next takes the format)
     if (o.word && c.collapsed && !whole) { const w = F.wordAt(src0, c.a); if (w && (o.word !== 'inside' || (w[0] < c.a && c.a < w[1]))) st = { text: src0, a: w[0], b: w[1], word: c.a - w[0], f }; }
+    // (a block of cells: each cell's words; the steps see the block as it was, block.cells in
+    // block.text, to choose once for all of them; o.one: one run over the selection that reads it)
+    const cells = whole ? null : this.blockCells(at);
+    if (cells && cells.length > BLOCK_CELLS) { this.toast('That block has more than ' + BLOCK_CELLS + ' cells: select fewer rows to format them.'); return false; }
+    if (cells) st = { ...st, a: cells[0][0], b: cells[cells.length - 1][1], block: { text: src0, cells, memo: {} } };
     const needs = [];
     let r = null;
     const run = (s0) => {
@@ -158,7 +181,28 @@ export const methods = {
       }
       return x;
     };
-    st = run(st);
+    if (cells && cells.length > 1 && !o.one) {
+      // each cell on its own text, the last first: a cell is a group of its own in TeX (its &
+      // closes what it opened), so its words and every wrapper of them are inside it; and a
+      // column of 3000 cells read the whole text back from each cell (6 s)
+      const T0 = st.text, out = [];
+      let x = st, a0 = 0, b0 = 0;
+      for (let k = cells.length - 1; k >= 0; k--) {
+        const [a, b, s, e] = cells[k];
+        const y = run({ ...x, text: T0.slice(s, e), a: a - s, b: b - s });
+        if (!y) return false;
+        out.push({ s, e, t: y.text });
+        // (the last cell's end, then moved by each edit before it)
+        b0 = k === cells.length - 1 ? s + y.b : b0 + y.text.length - (e - s);
+        if (!k) a0 = s + y.a;
+        x = y;
+      }
+      const parts = [];
+      let p = 0;
+      for (const z of out.reverse()) { parts.push(T0.slice(p, z.s), z.t); p = z.e; }
+      parts.push(T0.slice(p));
+      st = { ...x, text: parts.join(''), a: a0, b: b0 };
+    } else st = run(st);
     if (!st) return false;
     const main = this.main, edits = [];
     for (const x of more) {
@@ -197,8 +241,11 @@ export const methods = {
 
   // Bold, Italic, Underline and the rest: on or off where the caret is
   fmtToggle(group, o = {}) {
-    return this.fmtCommit([(t, a, b) => {
-      const r = F.toggle(t, a, b, group, o);
+    return this.fmtCommit([(t, a, b, x) => {
+      // (a block of cells: on in every cell takes it off all of them, else all of them get it,
+      // as Word chooses for the block as a whole)
+      const B = x && x.block;
+      const r = F.toggle(t, a, b, group, B && !o.force ? { ...o, force: (B.memo[group] ??= B.cells.every((x) => cellOn(B.text, x, group, F.ALL_ON_MAX)) ? 'off' : 'on') } : o);
       return r.error ? r : { ...r, need: r.on ? F.needsOf(group, r.w || { cmd: '' }) : null };
     }]);
   },
@@ -485,9 +532,48 @@ export const methods = {
     if (!c || c.ghost) return false;
     return this.fmtCommit([(t, a, b, st) => {
       if (a === b) return null;
-      const D = this.drawnChars((st && st.f) || c.f, a, b);
+      let D = this.drawnChars((st && st.f) || c.f, a, b);
+      // (a block of cells: their characters alone, read as one text, so Shift+F3 chooses once)
+      const B = st && st.block;
+      if (D && B) {
+        let gone = false;
+        const chars = [];
+        // (the cells in source order: the last that starts at or before a character holds it or none)
+        const holds = (ch) => { let lo = 0, hi = B.cells.length - 1, k = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (B.cells[m][0] <= ch.s) { k = m; lo = m + 1; } else hi = m - 1; } return k >= 0 && ch.e <= B.cells[k][1]; };
+        for (const ch of D.chars) {
+          if (!holds(ch)) { gone = true; continue; }
+          chars.push(gone && chars.length ? { ...ch, gap: 'par' } : ch);
+          gone = false;
+        }
+        D = chars.length ? { chars, before: '' } : null;
+        if (!D) return null;
+      }
       return D ? F.changeDrawn(t, a, b, D, mode) : F.changeCase(t, a, b, mode);
-    }], { word: true, keepWord: false, at });
+    }], { word: true, keepWord: false, at, one: true });
+  },
+  // The cells of a block of cells selected (Table Layout's Select Column, a drag from one cell to
+  // another; src/cmd/table.js shows it as a block): [[a, b, s, e]] in source order, a and b its
+  // words, s and e the cell between its &; null where the selection is not over two cells or
+  // more. The browser's own selection runs through the cells between them row by row, so a format
+  // over it reached cells the block leaves out.
+  blockCells(at) {
+    const c = at && at.c;
+    if (!c || c.ghost || c.collapsed || !at.cell || !this.tableHere) return null;
+    const h = this.tableHere(at);
+    if (!h || !h.multi) return null;
+    const { r0, r1, c0, c1 } = h.rect, t = h.src, out = [];
+    // (a cell's words: \multicolumn's and \multirow's text, else after the colours before them)
+    const words = (x) => { const [s, e] = x.mr ? [x.mr.textS, x.mr.textE] : x.mc ? [x.mc.textS, x.mc.textE] : [x.ks, x.ce]; let a = s, b = e; while (a < b && /\s/.test(t[a])) a++; while (b > a && /\s/.test(t[b - 1])) b--; return [a, b]; };
+    for (let r = r0; r <= r1; r++) {
+      const row = h.T.rows[r];
+      if (!row || row.kind !== 'row') continue;
+      for (const x of row.cells) {
+        if (x.empty || x.col < c0 || x.col + x.span - 1 > c1) continue;
+        const [a, b] = words(x);
+        if (b > a) out.push([a, b, x.s, x.e]);
+      }
+    }
+    return out.length ? out : null;
   },
   // The characters the page draws for [a, b) of file f in reading order, each with its place in the
   // source: { chars: [{ s, e, ch, gap }], before }, gap 'par' where a paragraph starts and 'word'
@@ -621,7 +707,8 @@ export const methods = {
   moreMenu() {
     const at = this.ribbonAt();
     if (at) at.memo = {};
-    const ids = ['small-caps', 'all-caps', 'double-strikethrough', 'char-border', 'char-shading', 'enclose-chars', null, 'phonetic-guide', 'font-dialog'];
+    // (Clear Character Formatting here too: Ctrl+Space's control on a touch screen, which has no keys)
+    const ids = ['small-caps', 'all-caps', 'double-strikethrough', 'char-border', 'char-shading', 'enclose-chars', null, 'clear-char-formatting', null, 'phonetic-guide', 'font-dialog'];
     const items = ids.map((id) => {
       if (!id) return null;
       const c = this.cmdById(id);
@@ -643,7 +730,9 @@ export const methods = {
     const at = this.ribbonAt(), c = at && at.c;
     if (!c || c.ghost) return false;
     const fmts = F.formatsAt(this.src(c.f), c.a, c.b);
-    this.fpaint = { fmts, sticky: !!sticky };
+    const sel = getSelection();
+    // (where it was armed: the selection there is no place to paint, see the touch screen's rest below)
+    this.fpaint = { fmts, sticky: !!sticky, from: sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null };
     document.body.classList.add('fpainting');
     if (!fmts.length) this.toast('The caret is in plain text: the next selection is made plain.', 2400);
     return true;
@@ -673,6 +762,33 @@ onInstall((app) => {
   const fp = $('#rc-format-painter');
   if (fp) fp.addEventListener('dblclick', () => { if (app.fpaint) app.fpaint.sticky = true; else app.formatPainter(true); app.ribbonSync(); });
   app.root.addEventListener('mouseup', () => { if (app.fpaint) setTimeout(() => { if (app.fpaint) app.paintFormat(); }, 0); });
+  // (on a touch screen a tap ends with a mouseup as a click does; a long press that selects words,
+  // and the handles moved after it, send none: the selection paints once it has rested a moment)
+  let touched = 0, rest = null;
+  document.addEventListener('pointerdown', (e) => { touched = e.pointerType === 'touch' ? Date.now() : 0; }, true);
+  document.addEventListener('selectionchange', () => {
+    if (!app.fpaint || !touched) return;
+    clearTimeout(rest);
+    rest = setTimeout(() => {
+      const s = getSelection(), P = app.fpaint;
+      if (!P || !s.rangeCount || s.isCollapsed || !app.root.contains(s.anchorNode)) return;
+      const r = s.getRangeAt(0), w = P.from;
+      try { if (w && r.compareBoundaryPoints(Range.START_TO_START, w) === 0 && r.compareBoundaryPoints(Range.END_TO_END, w) === 0) return; } catch (e) { /* the page drawn again since */ }
+      app.paintFormat();
+    }, 900);
+  });
+  // the on-screen keyboard: what it covers of the window, for a menu or a list to open above it
+  // (.pop.sheet-mode in app.css). The visual viewport shrinks by it; a pinch zoom shrinks it too,
+  // by its scale, which is taken out.
+  const vv = window.visualViewport;
+  if (vv) {
+    const kb = () => {
+      const h = Math.max(0, Math.round(window.innerHeight - vv.height * (vv.scale || 1)));
+      document.documentElement.style.setProperty('--vk-h', (h > 80 ? h : 0) + 'px');
+      if (app.pop && app.positionPop) app.positionPop();
+    };
+    vv.addEventListener('resize', kb);
+  }
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && app.fpaint) { app.fpaint = null; document.body.classList.remove('fpainting'); app.ribbonSync(); } });
   // the bars under the colour buttons show the colour the button writes
   const paint = () => {

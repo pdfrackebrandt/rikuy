@@ -331,9 +331,14 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   (`drawnChars` in `src/cmd/font.js` reads the page's text runs and their places in the source)
   that the source also gives as letters of words (`caseChars`: no math, keys, labels, column
   specs, code or pictures); `changeCase` is the same on the source alone. `autoFormat` the rest. `src/cmd/font.js` registers the commands and commits each action
-  (`fmtCommit`: the caret's file, then the main file's preamble); `chainAt` reads the wrappers
+  (`fmtCommit`: the caret's file, then the main file's preamble; a block of table cells, from
+  `blockCells` over `tableHere` of `src/cmd/table.js`, cell by cell on each cell's own text);
+  `chainAt` reads the wrappers
   around the caret once for each look at the ribbon, for every toggle's pressed state and the
-  boxes. `src/ui/fontdialog.js` is the Font dialog and the Phonetic Guide. On the page
+  boxes. `src/ui/fontdialog.js` is the Font dialog and the Phonetic Guide. On a touch screen
+  (`pointer: coarse` in `src/app.css`) the group's controls, a menu's items and the dialog's
+  fields are 44 px each way, and a phone's sheet opens above the on-screen keyboard (`--vk-h`,
+  set from the visual viewport in `src/cmd/font.js`). On the page
   `src/model.js` draws what they write (its inline table, `fontLook`, extsizes' base sizes) and
   `paint` in `src/render.js` sets sizes, tracking, shifts and the highlighter's colour as numbers
   and checked colours only.

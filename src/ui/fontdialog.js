@@ -234,8 +234,11 @@ function applyFont(app, S, W) {
     if (!S.sizeSel) doc.push((t) => F.docSizeEdits(t, W.size) || []);
     else { const w = F.sizeWrapper(S.st.base, W.size); set('size', w.cmd === 'normalsize' ? null : w); }
   }
-  if (W.bold !== S.bold) tog('bold');
-  if (W.italic !== S.italic) tog('italic');
+  // (a checkbox says what the words should have: a toggle forced to it, not one that reads them
+  // again, which took bold off words all bold in wrappers of their own, and decided cell by cell)
+  const want = (k) => (W[k] ? 'on' : 'off');
+  if (W.bold !== S.bold) tog('bold', { force: want('bold') });
+  if (W.italic !== S.italic) tog('italic', { force: want('italic') });
   if (W.color !== S.color) {
     if (!W.color) set('color', null);
     else { const w = { cmd: 'textcolor', args: [W.color] }; w.declAlt = { cmd: 'color', args: w.args, decl: true }; set('color', w); }
@@ -245,7 +248,7 @@ function applyFont(app, S, W) {
     else if (W.ulColor && W.underline === 'uline') set('underline', { cmd: 'culine', args: [W.ulColor] });
     else set('underline', { cmd: W.underline });
   }
-  for (const [k] of EFFECTS) if (W[k] !== S[k]) tog(k, k === 'sup' ? { other: 'sub' } : k === 'sub' ? { other: 'sup' } : k === 'strike' ? { other: 'dstrike' } : k === 'dstrike' ? { other: 'strike' } : {});
+  for (const [k] of EFFECTS) if (W[k] !== S[k]) tog(k, { force: want(k), ...(k === 'sup' ? { other: 'sub' } : k === 'sub' ? { other: 'sup' } : k === 'strike' ? { other: 'dstrike' } : k === 'dstrike' ? { other: 'strike' } : {}) });
   if (W.spacing !== S.spacing) set('spacing', W.spacing ? { cmd: 'textls', opt: String(W.spacing) } : null);
   if (W.scale !== S.scale) set('scale', W.scale !== 100 ? { cmd: 'scalebox', args: [String(W.scale / 100)], opt2: '1' } : null);
   if (W.position !== S.position) set('position', W.position ? { cmd: 'raisebox', args: [W.position + 'pt'] } : null);

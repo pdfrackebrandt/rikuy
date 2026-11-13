@@ -1292,6 +1292,31 @@ body.nav-on.nav-outline #nav { width: 460px; }
 /* folded, the Font group keeps Bold, Italic and Underline beside its button, one press away */
 .rb-grp[data-group="font"].folded > [data-cmd="bold"], .rb-grp[data-group="font"].folded > [data-cmd="italic"] { display: inline-flex !important; order: -1; }
 .rb-grp[data-group="font"].folded > .rb-split:has([data-cmd="underline"]) { display: inline-flex !important; order: -1; }
+/* A touch screen (pointer: coarse: a phone, a tablet): the Font group's controls, the Format
+   Painter, the boxes, a menu's items, the colours and the Font dialog's fields at least 44 px each
+   way, as a finger needs (in one row: the two rows of small buttons are for a mouse) */
+@media (pointer: coarse) {
+  .rb-grp[data-group="font"]:not(.folded) { flex-wrap: nowrap; width: auto; align-self: auto; }
+  .rb-grp[data-group="font"] .btn, #rc-format-painter { min-width: 44px; min-height: 44px; }
+  .rb-grp[data-group="font"] .fbx { height: 44px; }
+  .rb-grp[data-group="font"] .fbx-x { width: 44px; }
+  .pop-menu .nav-act { min-height: 44px; }
+  .pop.pop-colors.pop-gal { grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); }
+  .pop-gal .gal-tile { min-width: 44px; min-height: 44px; }
+  .pop-font .fd-tab, .pop-font select, .pop-font input:not([type="checkbox"]), .pop-font .btn, .pop-font .fd-ck, .pop-ruby input, .pop-ruby .btn { min-height: 44px; }
+  .pop-font .btn, .pop-ruby .btn, .pop-font .pop-x, .pop-ruby .pop-x { min-width: 44px; }
+  .pop-font .pop-x, .pop-ruby .pop-x { min-height: 44px; }
+}
+/* on a phone the boxes stay in the row after Bold, Italic and Underline, so a size or a font can be
+   typed with the on-screen keyboard (:not(#_) outweighs the rule above that puts the rest of the
+   group in its menu) */
+@media (pointer: coarse) and (max-width: 860px) {
+  .rb-grp[data-group="font"] > .fbx:not(#_) { display: inline-flex !important; }
+}
+/* a sheet (a menu, a list, a dialog on a phone) above the on-screen keyboard: --vk-h is what the
+   keyboard covers of the window, read from the visual viewport (src/cmd/font.js); --kb-h is the
+   math field's own keyboard */
+.pop.sheet-mode { bottom: calc(8px + var(--kb-h, 0px) + var(--vk-h, 0px) + env(safe-area-inset-bottom, 0px)); max-height: calc(100vh - var(--kb-h, 0px) - var(--vk-h, 0px) - 60px) !important; max-height: calc(100dvh - var(--kb-h, 0px) - var(--vk-h, 0px) - 60px) !important; }
 /* (each button holds its screen reader name: absolute in the row's buttons without position, that
    name widened a phone's page by the row's scrolled length, once the Font group pushed the
    lists past the screen's edge) */

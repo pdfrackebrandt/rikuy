@@ -603,10 +603,225 @@ def review2(page):
     page.set_viewport_size({'width': 1400, 'height': 900})
 
 
+def cells(page):
+    """A block of cells (src/cmd/table.js: Select Column, a drag from cell to cell) takes a format
+    in its cells alone, as Word's does; the browser's selection runs through the cells between."""
+    T = '\\begin{tabular}{lll}\naa & bb & cc \\\\\ndd & ee & ff \\\\\ngg & hh & ii\n\\end{tabular}'
+    col = lambda w: T.replace('bb', w % 'bb').replace('ee', w % 'ee').replace('hh', w % 'hh')
+    def column(doc):
+        load_doc(page, WRAP(doc)); page.wait_for_timeout(250); click_text(page, 'bb', 1); run_cmd(page, 'select-column'); page.wait_for_timeout(150)
+    column(T); run_cmd(page, 'bold')
+    check('cells: Select Column, Bold: the column\'s cells alone (not the cells the selection runs through)', body(page) == col('\\textbf{%s}'), body(page))
+    check('cells: the block stays selected and Bold shows pressed', page.evaluate("[...document.querySelectorAll('td.tsel')].map((x) => x.textContent).join()") == 'bb,ee,hh' and pressed(page, 'bold') is True,
+          [page.evaluate("[...document.querySelectorAll('td.tsel')].map((x) => x.textContent).join()"), pressed(page, 'bold')])
+    run_cmd(page, 'bold')
+    check('cells: Bold again takes it off the three, and nothing else changed', body(page) == T, body(page))
+    page.keyboard.press('Control+u'); page.wait_for_timeout(250)
+    check('cells: Ctrl+U on the block: \\uline in its cells', body(page) == col('\\uline{%s}'), body(page))
+    column(T.replace('bb', '\\textbf{bb}')); run_cmd(page, 'bold')
+    check('cells: Bold where one cell of the block is bold already: all three bold, as Word chooses for the block', body(page) == col('\\textbf{%s}'), body(page))
+    column(T); run_cmd(page, 'change-case', {'mode': 'upper'})
+    check('cells: UPPERCASE on the block: its cells alone', body(page) == T.replace('bb', 'BB').replace('ee', 'EE').replace('hh', 'HH'), body(page))
+    column(T); run_cmd(page, 'font-color', {'pick': {'name': 'blue'}})
+    check('cells: Font Color on the block: its cells alone', body(page) == col('\\textcolor{blue}{%s}'), body(page))
+    # a drag from the middle of bb to the middle of ff: the block bb, cc, ee, ff, whole cells
+    load_doc(page, WRAP(T)); page.wait_for_timeout(250)
+    page.evaluate("""() => { const sp = [...document.querySelectorAll('#pages span.t')]; const s = sp.find((x) => x.textContent === 'bb'), e = sp.find((x) => x.textContent === 'ff');
+      const r = document.createRange(); r.setStart(s.firstChild, 1); r.setEnd(e.firstChild, 1); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }""")
+    page.wait_for_timeout(150); run_cmd(page, 'italic')
+    drag = T.replace('bb', '\\emph{bb}').replace('cc', '\\emph{cc}').replace('dd & ee & ff', 'dd & \\emph{ee} & \\emph{ff}')
+    check('cells: a drag from bb into ff, Italic: the four cells of its block, whole', body(page) == drag, body(page))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('cells: one undo gives the table back byte for byte', body(page) == T, body(page))
+    # Clear All Formatting on a column of a centred table: the cells' formats; the table stays centred
+    C = '\\begin{center}\n' + T.replace('bb', '\\textbf{bb}').replace('ee', '\\emph{ee}').replace('cc', '\\textbf{cc}') + '\n\\end{center}'
+    column(C); run_cmd(page, 'clear-formatting')
+    check('cells: Clear All Formatting on the column: its cells\' formats go, cc keeps its bold and the table its center', body(page) == '\\begin{center}\n' + T.replace('cc', '\\textbf{cc}') + '\n\\end{center}', body(page))
+    # the Font dialog's Bold on the block: what the box says, in every cell
+    column(T.replace('bb', '\\textbf{bb}')); run_cmd(page, 'font-dialog')
+    d = page.get_by_role('dialog', name='Font')
+    d.get_by_role('combobox', name='Font style').select_option(label='Bold')
+    d.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    check('cells: the Font dialog\'s Bold on the block: every cell bold, the bold one too', body(page) == col('\\textbf{%s}'), body(page))
+    # the dialog's box says what the words get: bold in two wrappers of their own stays bold
+    load_doc(page, WRAP('x \\textbf{one} \\textbf{two} y')); page.wait_for_timeout(200); place(page, ('one', 'two'))
+    run_cmd(page, 'font-dialog'); d = page.get_by_role('dialog', name='Font')
+    d.get_by_role('combobox', name='Font style').select_option(label='Bold')
+    d.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    check('the Font dialog: Bold ticked over words bold in wrappers of their own keeps them bold (one wrapper)', body(page) == 'x \\textbf{one two} y', body(page))
+    # a column of 3000 rows: each cell is read on its own (the whole text read back from each took 6 s)
+    big = '\\begin{tabular}{lll}\n' + ''.join('a%d & b%d & c%d \\\\\n' % (k, k, k) for k in range(3000)) + '\\end{tabular}'
+    load_doc(page, WRAP(big)); page.wait_for_timeout(1500); click_text(page, 'b0', 1); run_cmd(page, 'select-column'); page.wait_for_timeout(1000)
+    ms = page.evaluate("() => { const t0 = performance.now(); window.rikuy.runCommand('bold'); return performance.now() - t0; }")
+    page.wait_for_timeout(1000)
+    check('cells: Bold on a column of 3000 rows in under 4 s, every cell of it and no other', ms < 4000 and src(page).count('\\textbf{b') == 3000 and src(page).count('\\textbf{') == 3000, round(ms))
+    # a stranger's table of more than 5000 cells in the block: refused, said, nothing written
+    huge = '\\begin{tabular}{ll}\n' + ''.join('a%d & b%d \\\\\n' % (k, k) for k in range(5100)) + '\\end{tabular}'
+    load_doc(page, WRAP(huge)); page.wait_for_timeout(2000); click_text(page, 'b0', 1); run_cmd(page, 'select-column'); page.wait_for_timeout(1000)
+    page.evaluate('document.getElementById("toast").hidden = true')
+    run_cmd(page, 'bold'); page.wait_for_timeout(300)
+    check('cells: a block of more than 5000 cells is not formatted, and the toast says why', '\\textbf' not in src(page) and '5000 cells' in page.inner_text('#toast'), page.inner_text('#toast'))
+
+
+PHONES = ((390, 844), (360, 740))
+SHOTS = os.environ.get('RIKUY_SHOTS', '/tmp/B1-shots')
+
+
+def phone_box(page, sel):
+    """The rect of the last element sel matches, the smallest of its controls, and the page's sideways overflow."""
+    return page.evaluate("""(sel) => { const all = [...document.querySelectorAll(sel)].filter((x) => x.offsetParent || getComputedStyle(x).position === 'fixed'); const p = all[all.length - 1];
+      if (!p) return null; const r = p.getBoundingClientRect();
+      const its = [...p.querySelectorAll('[role^="menuitem"], button, select, input:not([type="checkbox"]), .fd-ck')].filter((x) => x.offsetParent).map((x) => x.getBoundingClientRect());
+      return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, sh: p.scrollHeight, ch: p.clientHeight, minH: its.length ? Math.min(...its.map((q) => q.height)) : 0, minW: its.length ? Math.min(...its.map((q) => q.width)) : 0,
+        vw: innerWidth, vh: innerHeight, side: document.documentElement.scrollWidth - innerWidth }; }""", sel)
+
+
+def inside(b, bottom=None):
+    return bool(b) and b['top'] >= 0 and b['left'] >= 0 and b['right'] <= b['vw'] + 0.5 and b['bottom'] <= (bottom if bottom is not None else b['vh']) + 0.5 and b['side'] <= 0
+
+
+def tap_item(page, name):
+    page.locator('.pop-menu [aria-label="%s"]' % name).first.tap(); page.wait_for_timeout(300)
+
+
+def tap_text(page, text):
+    """A finger's tap in the middle of the first drawn words text."""
+    r = page.evaluate("""(t) => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(t)); const i = s.textContent.indexOf(t);
+      const g = document.createRange(); g.setStart(s.firstChild, i); g.setEnd(s.firstChild, i + t.length); const q = g.getBoundingClientRect(); return [q.left + q.width / 2, q.top + q.height / 2]; }""", text)
+    page.touchscreen.tap(r[0], r[1]); page.wait_for_timeout(400)
+
+
+def phone(page, w, h):
+    """One phone's checks: the Font group a finger can use."""
+    tag = 'phone %dx%d: ' % (w, h)
+    side = lambda: page.evaluate('document.documentElement.scrollWidth - innerWidth')
+    load_doc(page, DOC); page.wait_for_timeout(300); select_text(page, 'plain words')
+    # in sight and big enough for a finger
+    seen = page.evaluate("""() => ['rb-b', 'rb-i', 'rb-u', 'rb-u-x', 'rb-font', 'rb-size', 'rg-home-font', 'rc-format-painter'].map((id) => { const e = document.getElementById(id); const b = e && (e.closest('.fbx') || e); const r = b && b.getBoundingClientRect();
+      return [id, !!(e && e.offsetParent), r ? Math.round(r.width) : 0, r ? Math.round(r.height) : 0]; })""")
+    check(tag + 'Bold, Italic, Underline and its arrow, the font and size boxes, the Font menu and the Format Painter in the row, each at least 44 by 44 px, and no sideways scroll', all(v and a >= 44 and b >= 44 for _, v, a, b in seen) and side() <= 0, seen)
+    # Bold by a tap: the words stay selected, and typing goes on in them
+    page.tap('#rb-b'); page.wait_for_timeout(300)
+    st = page.evaluate("[String(getSelection()), document.activeElement && document.activeElement.id]")
+    check(tag + 'Bold by a tap: \\textbf round the selection, which stays selected on the page', body(page) == BODY.replace('plain words', '\\textbf{plain words}') and st == ['plain words', 'pages'], (body(page), st))
+    page.keyboard.type('new'); page.wait_for_timeout(300)
+    check(tag + 'and typing replaces the selected words inside the bold (the selection and the caret still work)', body(page) == BODY.replace('plain words', '\\textbf{new}'), body(page))
+    # the Font menu
+    load_doc(page, DOC); page.wait_for_timeout(200); select_text(page, 'plain words')
+    page.tap('#rg-home-font'); page.wait_for_timeout(300)
+    m = phone_box(page, '.pop-menu')
+    check(tag + 'the Font menu opens on the screen (scrolling what does not fit), its items 44 px tall', inside(m) and m['minH'] >= 44, m)
+    tap_item(page, 'Strikethrough')
+    check(tag + 'Strikethrough from the Font menu by a tap', body(page) == BODY.replace('plain words', '\\sout{plain words}'), body(page))
+    # the size box with the on-screen keyboard (a phone's browser reports it as a shorter visual viewport)
+    load_doc(page, DOC); page.wait_for_timeout(200); select_text(page, 'plain words')
+    page.tap('#rb-size'); page.wait_for_timeout(250)
+    focus = page.evaluate('document.activeElement && document.activeElement.id')
+    page.evaluate("""() => { const vv = visualViewport, H = innerHeight - 300; Object.defineProperty(vv, 'height', { configurable: true, get: () => H }); vv.dispatchEvent(new Event('resize')); }""")
+    page.locator('.fbx-size .fbx-x').tap(); page.wait_for_timeout(300)
+    m = phone_box(page, '.pop-fbx-size')
+    check(tag + 'the size box takes the focus by a tap; its list opens above the on-screen keyboard, items 44 px tall', focus == 'rb-size' and inside(m, h - 300) and m['minH'] >= 44, (focus, m))
+    tap_item(page, '12 large')
+    check(tag + 'a size picked from it by a tap', body(page) == BODY.replace('plain words', '{\\large plain words}'), body(page))
+    load_doc(page, DOC); page.wait_for_timeout(200); select_text(page, 'plain words')
+    page.tap('#rb-size'); page.wait_for_timeout(200); page.keyboard.type('13'); page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    check(tag + 'a size typed in the box with the keyboard and its Enter', body(page) == BODY.replace('plain words', '{\\fontsize{13}{15.6}\\selectfont plain words}'), body(page))
+    page.tap('#rb-font'); page.wait_for_timeout(200); page.locator('.fbx-font .fbx-x').tap(); page.wait_for_timeout(300)
+    m = phone_box(page, '.pop-fbx-font')
+    check(tag + 'the font box\'s list above the keyboard too', inside(m, h - 300) and m['minH'] >= 44, m)
+    page.keyboard.press('Escape')
+    page.evaluate("() => { delete visualViewport.height; visualViewport.dispatchEvent(new Event('resize')); }")
+    # the colours
+    load_doc(page, DOC); page.wait_for_timeout(200); select_text(page, 'plain words')
+    page.tap('#rg-home-font'); page.wait_for_timeout(300); tap_item(page, 'Font Colors…')
+    m = phone_box(page, '.pop-colors')
+    check(tag + 'Font Colors… opens its picker inside the screen, every colour at least 44 px each way, nothing sideways', inside(m) and m['minH'] >= 44 and m['minW'] >= 44, m)
+    page.locator('.pop-colors [aria-label="blue"]').first.tap(); page.wait_for_timeout(300)
+    check(tag + 'a colour picked by a tap', body(page) == BODY.replace('plain words', '\\textcolor{blue}{plain words}'), body(page))
+    load_doc(page, DOC); page.wait_for_timeout(200); select_text(page, 'plain words')
+    page.tap('#rg-home-font'); page.wait_for_timeout(300)
+    page.locator('.pop-menu [aria-label="Bright Green"]').first.scroll_into_view_if_needed()
+    m = phone_box(page, '.pop-menu')
+    tap_item(page, 'Bright Green')
+    check(tag + 'the highlighter\'s colours in the Font menu, on the screen, one by a tap', inside(m) and m['minH'] >= 44 and body(page) == BODY.replace('plain words', '\\hl[green]{plain words}'), (m, body(page)))
+    # the Font dialog
+    load_doc(page, DOC); page.wait_for_timeout(200); select_text(page, 'plain words')
+    page.tap('#rg-home-font'); page.wait_for_timeout(300); tap_item(page, 'More Font Effects'); tap_item(page, 'Font Settings…')
+    m = phone_box(page, '.pop-font')
+    check(tag + 'the Font dialog fits the screen and scrolls what does not fit, its fields 44 px tall, nothing sideways', inside(m) and m['minH'] >= 44 and (m['sh'] <= m['ch'] + 1 or page.evaluate("getComputedStyle(document.querySelector('.pop-font')).overflowY") in ('auto', 'scroll')), m)
+    d = page.get_by_role('dialog', name='Font')
+    d.get_by_role('combobox', name='Font style').select_option(label='Bold')
+    d.get_by_role('checkbox', name='Small caps').tap()
+    ok = d.get_by_role('button', name='OK'); ok.scroll_into_view_if_needed(); ok.tap(); page.wait_for_timeout(400)
+    check(tag + 'its OK, scrolled to and tapped, writes what it says', body(page) == BODY.replace('plain words', '\\textsc{\\textbf{plain words}}') or body(page) == BODY.replace('plain words', '\\textbf{\\textsc{plain words}}'), body(page))
+    # the Format Painter by taps
+    P = WRAP('Some \\textbf{bold} and plain words here.')
+    load_doc(page, P); page.wait_for_timeout(200); select_text(page, 'bold')
+    page.tap('#rc-format-painter'); page.wait_for_timeout(250)
+    armed = page.evaluate("document.body.classList.contains('fpainting')")
+    tap_text(page, 'plain')
+    check(tag + 'the Format Painter armed by a tap paints the word tapped next', armed and body(page) == 'Some \\textbf{bold} and \\textbf{plain} words here.', (armed, body(page)))
+    select_text(page, 'bold'); page.tap('#rc-format-painter'); page.wait_for_timeout(250)
+    select_text(page, 'words here'); page.wait_for_timeout(1400)
+    check(tag + 'and words selected by a long press (no click) once the selection rests', body(page) == 'Some \\textbf{bold} and \\textbf{plain} \\textbf{words here}.', body(page))
+    # every key's command has a control a finger reaches
+    load_doc(page, WRAP('Some \\textbf{\\emph{plain}} words.')); page.wait_for_timeout(200); select_text(page, 'plain')
+    page.tap('#rg-home-font'); page.wait_for_timeout(300)
+    names = set(page.evaluate("[...document.querySelectorAll('.pop-menu [role^=menuitem]')].map((x) => x.getAttribute('aria-label'))"))
+    tap_item(page, 'More Font Effects')
+    names |= set(page.evaluate("[...document.querySelectorAll('.pop-menu [role^=menuitem]')].map((x) => x.getAttribute('aria-label'))"))
+    keyed = page.evaluate("""() => window.rikuy.cmds.commands().filter((c) => (c.keys || []).length && (c.group === 'font' || ['small-caps', 'all-caps', 'clear-char-formatting', 'change-case-cycle', 'font-dialog'].includes(c.id))).map((c) => [c.id, c.name, c.el || ('rc-' + c.id)])""")
+    vis = set(page.evaluate("[...document.querySelectorAll('#ribbon [data-cmd]')].filter((x) => x.offsetParent).map((x) => x.dataset.cmd)"))
+    # (Shift+F3 turns the case in turn: Change Case's menu, in the Font menu, has each case)
+    lost = [i for i, n, e in keyed if i not in vis and n not in names and n + '…' not in names and not (i == 'change-case-cycle' and 'Change Case' in names)]
+    check(tag + 'every command of the Font group with a key has a control a finger reaches: the row, the Font menu or More Font Effects', not lost and len(keyed) >= 14, (lost, len(keyed)))
+    tap_item(page, 'Clear Character Formatting')
+    check(tag + 'Clear Character Formatting (Ctrl+Space) by a tap in More Font Effects', body(page) == 'Some plain words.', body(page))
+    # the right click menu's Font group commands are on the row or in its menus too (a long press keeps the system's menu)
+    ctx = page.evaluate("() => window.rikuy.cmds.commands().filter((c) => c.menu && (c.group === 'font' || c.id === 'font-dialog')).map((c) => c.name)")
+    check(tag + 'the right click menu\'s Font commands (Bold, Italic, Font Settings) are also a tap away', all(n in names or n + '…' in names or n in ('Bold', 'Italic') for n in ctx) and 'Font Settings…' in names, ctx)
+    check(tag + 'no sideways scroll at the end', side() <= 0, side())
+
+
+def phones(p):
+    """On a phone, 390 by 844 and 360 by 740 px, a touch screen and taps (no hover, no right click):
+    the Font group's controls in the row 44 px each way, the Font menu, the boxes with the
+    on-screen keyboard, the colours and the highlighter, the Font dialog scrolling, the Format
+    Painter by taps, every key's command a tap away, no sideways scroll; screenshots at 390 px,
+    light and dark, in SHOTS."""
+    for w, h in PHONES:
+        browser, page, errors = open_page(p, width=w, height=h, touch=True)
+        try:
+            phone(page, w, h)
+        except Exception as e:
+            check('phone %dx%d: runs to its end' % (w, h), False, str(e)[:400])
+        check('phone %dx%d: no console errors' % (w, h), not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
+        browser.close()
+    os.makedirs(SHOTS, exist_ok=True)
+    for dark in (False, True):
+        browser, page, errors = open_page(p, width=390, height=844, touch=True, dark=dark)
+        try:
+            k = 'dark' if dark else 'light'
+            load_doc(page, DOC); page.wait_for_timeout(300); tap_text(page, 'plain'); select_text(page, 'plain words'); page.wait_for_timeout(500)
+            page.screenshot(path=os.path.join(SHOTS, 'phone-390-%s-home.png' % k))
+            page.tap('#rg-home-font'); page.wait_for_timeout(300); page.screenshot(path=os.path.join(SHOTS, 'phone-390-%s-font-menu.png' % k))
+            tap_item(page, 'Font Colors…'); page.screenshot(path=os.path.join(SHOTS, 'phone-390-%s-colors.png' % k))
+            page.keyboard.press('Escape'); page.wait_for_timeout(200); select_text(page, 'plain words')
+            page.tap('#rg-home-font'); page.wait_for_timeout(300); tap_item(page, 'More Font Effects'); tap_item(page, 'Font Settings…')
+            page.screenshot(path=os.path.join(SHOTS, 'phone-390-%s-font-dialog.png' % k))
+            check('phone 390 %s: the screenshots taken' % k, os.path.isfile(os.path.join(SHOTS, 'phone-390-%s-font-dialog.png' % k)))
+        except Exception as e:
+            check('phone 390 screenshots run to their end', False, str(e)[:400])
+        browser.close()
+
+
 def run():
     with sync_playwright() as p:
-        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, compiles)
+        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, phones, compiles)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
+            if fn is phones:
+                phones(p)
+                continue
             browser, page, errors = open_page(p, width=1400, height=900)
             try:
                 fn(page)

@@ -567,4 +567,14 @@ ok('verify: headings and the files read in stay out of a wrapper; a split letter
   assert.ok(r.error && /accent or vowel sign/.test(r.error), JSON.stringify(r));
 });
 
+ok('with tables: Bold again over more than 400 parts takes the bold off (a button\'s look reads 400)', () => {
+  const rows = Array.from({ length: 500 }, (_, k) => '\\textbf{a' + k + '} & \\textbf{b' + k + '} \\\\').join('\n');
+  const r = F.toggle(rows, 0, rows.length, 'bold');
+  assert.ok(!r.error && !r.on && !r.text.includes('\\textbf'), r.text && r.text.slice(0, 80));
+  assert.equal(F.allOn(rows, 0, rows.length, 'bold'), false);
+  assert.equal(F.allOn(rows, 0, rows.length, 'bold', F.ALL_ON_MAX), true);
+  const paras = Array.from({ length: 450 }, (_, k) => '\\textbf{Paragraph ' + k + '.}').join('\n\n');
+  assert.ok(!F.toggle(paras, 0, paras.length, 'bold').text.includes('\\textbf'));
+});
+
 console.log('font: ' + n + ' groups of checks passed');

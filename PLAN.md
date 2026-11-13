@@ -1455,6 +1455,38 @@ Tests:
     stays selected. Increase and Decrease Font Size at `\Huge` and `\tiny` say so; Home fits at
     521 px with every group folded; a selection that would part a letter from its accent or vowel
     sign says that.
+    *With B7's tables and B6's page set up* (rebased on main a941302; extsizes' measures, `ext`,
+    kept inside B6's geometry in `src/layout.js` and its class options in `src/model.js`): a block of cells (Select Column, Row or Table,
+    a drag from one cell into another, which B7 shows as a block) takes a format in its cells
+    alone, whole, as Word's does; before, Bold after Select Column reached the cells the browser's
+    selection runs through (seven of a three by three table, not three). `blockCells` reads the
+    block's cells from B7's `tableHere`; each cell is formatted on its own text (a cell is a group
+    of its own in TeX), the last first, all in one step of undo; a toggle chooses once for the
+    block (on in every cell takes it off), Change Case reads the block's characters as one text,
+    and Bold shows pressed when every cell is bold. Clear All Formatting on cells leaves the
+    `center` around the table. A column of 3000 rows takes Bold in about a second (the whole text
+    read back from each cell took 6.5 s); each cell's state is read in the cell alone, and a block
+    of more than 5000 cells is refused with a toast (a stranger's table may hold 100 000). A toggle now reads every part of its selection to choose
+    (a button's look still reads 400), so Bold again over a table or a document of more than 400
+    parts takes the bold off; the Font dialog's boxes force what they say (Bold ticked over
+    `\textbf{one} \textbf{two}` took their bold off). Each with a test: `font.py`'s `cells`,
+    `font.test.mjs`'s "with tables" group.
+    *On a phone* (asked for by the owner; `font.py`'s `phones`, at 390 by 844 and 360 by 740 px
+    with a touch screen and taps): under `pointer: coarse` every control of the Font group, the
+    Format Painter, the boxes, a menu's items, the colours and the Font dialog's fields are at
+    least 44 px each way (the colours in as many columns of 44 px as the screen holds); on a phone
+    the font and size boxes stay in the row after Bold, Italic and Underline, so a size is typed
+    with the on-screen keyboard; a sheet (a menu, a list, a dialog) opens above that keyboard,
+    whose height the visual viewport gives (`--vk-h`); the Font dialog scrolls; the Format
+    Painter paints the word tapped, or words selected by a long press once the selection rests;
+    Clear Character Formatting (Ctrl+Space) is in More Font Effects, so every key of the group has
+    a control a finger reaches; Bold by a tap leaves the words selected and typing goes on in
+    them; no sideways scroll. Screenshots at 390 px, light and dark, outside the repository.
+    Evidence on main a941302: `npm test` green (`font` 28 groups, `word` 59, `page` 26),
+    `font.py` 272 (with `dist/tex`), `tabs.py` 115, `ribbon.py` 268, `agent.py` 138, `browser.py`
+    189, `table.py` 161, `page.py` 139, `find.py` 76, `outline.py` 59, `scripts.py` 302, `word.py`
+    111, `offline.py` 54/54, `launch.py` 18/18, `deploy_check.py` 43/43, `pages_check.py` fits,
+    actionlint clean, the corpus model run 716 of 716 with main's unknown commands.
 
 ## Open tasks
 

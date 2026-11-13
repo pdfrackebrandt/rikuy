@@ -507,7 +507,7 @@ export function isOn(src, a, b, group) {
 // o.other: the kind that excludes this one (Subscript and Superscript), which becomes this one in
 // place. Returns { text, a, b, on, w } or { error }.
 export function toggle(src, a, b, group, o = {}) {
-  const has = o.force ? o.force === 'off' : allOn(src, a, b, group);
+  const has = o.force ? o.force === 'off' : allOn(src, a, b, group, ALL_ON_MAX);
   if (has) {
     const r = clearKinds(src, a, b, [group]);
     return r.error ? { error: 'split' } : { ...r, on: false };
@@ -528,11 +528,15 @@ export function toggle(src, a, b, group, o = {}) {
   return wrapIn(c.text, c.a, c.b, group, w);
 }
 // whether every part of the selection has the kind (a caret: whether it is in a wrapper of it)
-export function allOn(src, a, b, group) {
+// (max: the parts read at most. A button's look reads 400, and says off past them; a toggle, which
+// reads once, reads 4000 (half a second), so Bold again over a long document or table takes its
+// bold off: past them clearKinds could not take off every wrapper anyway, 2000 at most)
+export const ALL_ON_MAX = 4000;
+export function allOn(src, a, b, group, max = 400) {
   if (a === b) return isOn(src, a, b, group);
   // (a footnote's text is no part of what the selection's words have: ulem's lines skip it)
   const segs = segmentsOf(src, a, b).flatMap(([s, e]) => elsewhereParts(src, s, e) || [[s, e]]).filter(([s, e]) => src.slice(s, e).trim());
-  return segs.length > 0 && segs.length < 400 && segs.every(([s, e]) => isOn(src, s, e, group) || covered(src, s, e, group));
+  return segs.length > 0 && segs.length < max && segs.every(([s, e]) => isOn(src, s, e, group) || covered(src, s, e, group));
 }
 // whether the kind's wrappers inside [s, e) hold all its words (a whole paragraph of \textbf{..})
 function covered(src, s, e, group) {
