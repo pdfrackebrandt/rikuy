@@ -1,0 +1,20 @@
+cff-version: 1.2.0
+message: "If you use Rikuy in your work, please cite it as below."
+title: "Rikuy: a LaTeX editor where you type on the typeset page"
+abstract: "A LaTeX editor in the browser: edits made on the typeset page patch the .tex source in the smallest way, and TeX Live 2026 compiled to WebAssembly makes the PDF. It reads and writes Word files."
+type: software
+authors:
+  - given-names: "Pedro F."
+    family-names: "Rackebrandt"
+    affiliation: "University of Oxford"
+repository-code: "https://github.com/pdfrackebrandt/rikuy"
+url: "https://rikuy.rackebrandt.pe/"
+license: AGPL-3.0-or-later
+version: "0.25.0"
+keywords:
+  - LaTeX
+  - TeX Live
+  - WYSIWYG
+  - WebAssembly
+  - Word
+  - PDF

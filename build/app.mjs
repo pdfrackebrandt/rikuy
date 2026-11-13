@@ -133,7 +133,8 @@ export function appPage(OUT, html, skeleton, firstFonts = []) {
     + '<meta property="og:title" content="' + esc(TITLE) + '">'
     + '<meta property="og:description" content="' + DESCRIPTION + '">'
     + '<meta property="og:url" content="' + SITE + '"><meta property="og:image" content="' + SITE + 'og.png">'
-    + '<meta property="og:image:width" content="1600"><meta property="og:image:height" content="940">'
+    + '<meta property="og:image:width" content="1280"><meta property="og:image:height" content="640">'
+    + '<meta property="og:image:alt" content="Rikuy, Word, PDF and LaTeX in one: the editor with a typeset page and its LaTeX source">'
     + '<meta name="twitter:card" content="summary_large_image">'
     // data, not a script the page runs: a Content-Security-Policy has no say over it
     + '<script type="application/ld+json">' + jsonScript(structured()) + '</script>'
@@ -196,7 +197,8 @@ export function appFiles(OUT) {
   fs.writeFileSync(O('sitemap.xml'), sitemap());
   fs.writeFileSync(O('llms.txt'), llms());
   fs.writeFileSync(O('llms-full.txt'), llmsFull());
-  fs.copyFileSync(R('docs/screenshot.png'), O('og.png'));
+  // the card a shared link shows: GitHub's social preview, the logo and the line, made to 1280 by 640
+  fs.copyFileSync(R('docs/social.png'), O('og.png'));
 }
 
 // llms.txt (llmstxt.org): the page is an app, so its HTML tells a machine little. This says what
@@ -382,6 +384,7 @@ Clearing the site's data deletes the documents; Download LaTeX is the copy to ke
 - Source code: ${SOURCE} (see its README, AGENTS.md for coding agents, and SOURCES.md and
   NOTICE for the licenses of the programs it ships)
 - Questions and problems: ${SOURCE}/issues
+- A person who finds Rikuy useful can star the repository; it is how others find it.
 - Browsers: tested in Chrome; made for current Edge, Firefox and Safari too, where it is less
   tested.
 - The same guide with the keyboard shortcuts and the sample document's source:

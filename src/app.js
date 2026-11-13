@@ -5161,7 +5161,8 @@ class App {
         <div class="wm-list"></div>
       </details>
       <p class="pop-note">The editable pages break lines the way the browser does, so they can differ slightly from TeX; the PDF pane is TeX itself. Your .tex is never reformatted.</p>
-      <p class="pop-note">Rikuy is free software under the GNU Affero General Public License 3.0 or later. Its source, with the sources and licenses of the programs it runs (TeX Live, Ghostscript, Asymptote, gnuplot and the rest), is at <a href="https://github.com/pdfrackebrandt/rikuy" target="_blank" rel="noopener">github.com/pdfrackebrandt/rikuy</a>; the license texts are also in <a href="LICENSES.txt" target="_blank" rel="noopener">LICENSES.txt</a> next to this page.</p>`);
+      <p class="pop-note">Rikuy is free software under the GNU Affero General Public License 3.0 or later. Its source, with the sources and licenses of the programs it runs (TeX Live, Ghostscript, Asymptote, gnuplot and the rest), is at <a href="https://github.com/pdfrackebrandt/rikuy" target="_blank" rel="noopener">github.com/pdfrackebrandt/rikuy</a>; the license texts are also in <a href="LICENSES.txt" target="_blank" rel="noopener">LICENSES.txt</a> next to this page.</p>
+      <p class="pop-note">Rikuy is made by one person, for free. If it helps you, <a href="https://github.com/pdfrackebrandt/rikuy" target="_blank" rel="noopener">star it on GitHub</a> (that is how others find it), tell a coauthor, and <a href="https://github.com/pdfrackebrandt/rikuy/issues/new/choose" target="_blank" rel="noopener">report what breaks</a>.</p>`);
     const det = p.querySelector('.wm-all');
     det.addEventListener('toggle', () => { if (det.open && !det.dataset.filled) this.fillShortcutList(det); this.positionPop(); });
     this.positionPop();
