@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import * as P from '../src/parasrc.js';
 import { buildModel } from '../src/model.js';
 import { applyEdits } from '../src/styles.js';
+import { methods } from '../src/cmd/para.js';
 
 let n = 0;
 const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
@@ -258,7 +259,15 @@ ok('the document\'s paragraph spacing: parskip, its skip, KOMA\'s option, memoir
   const k = D('X', '', '\\documentclass{scrartcl}');
   assert.equal(ed(k, P.docParskipEdits(k, 6).edits), D('X', '', '\\documentclass[parskip=half]{scrartcl}'));
   const kh = D('X', '', '\\documentclass[parskip=half]{scrartcl}');
-  assert.equal(P.docParskip(kh).skip, 6);
+  // (review: KOMA-Script's half is half a line, parskip's own, Open; full is a whole line, and a
+  // space in points goes to the nearer of the two)
+  assert.equal(P.docParskip(kh).skip, 'open');
+  assert.equal(ed(k, P.docParskipEdits(k, 'open').edits), kh);
+  assert.equal(ed(k, P.docParskipEdits(k, 4).edits), kh);
+  assert.equal(ed(k, P.docParskipEdits(k, 12).edits), D('X', '', '\\documentclass[parskip=full]{scrartcl}'));
+  assert.equal(P.docParskip(D('X', '', '\\documentclass[parskip=full]{scrartcl}')).skip, 12);
+  assert.equal(P.docParskip(D('X', '', '\\documentclass[12pt,parskip=full]{scrartcl}')).skip, 14.5);
+  assert.deepEqual(P.docParskipEdits(kh, 'open').edits, [], 'Open on a document of parskip=half: nothing to write');
   assert.equal(model(kh).opts.parskip > 0, true, 'the model reads KOMA\'s option');
   const m = D('X', '', '\\documentclass{memoir}');
   assert.equal(ed(m, P.docParskipEdits(m, 6).edits), D('X', '\\abnormalparskip{6pt}\n', '\\documentclass{memoir}'));
@@ -320,6 +329,264 @@ ok('a stranger\'s text: long lines and many lines read in bounded time', () => {
   const ud = P.unitOf(deep, 0, deep.length, 0, deep.length);
   assert.ok(!ud || ud.inArg || ud.levels.length === 1);
   assert.ok(Date.now() - t0 < 2500, 'took ' + (Date.now() - t0) + ' ms');
+});
+
+
+// ---- the hostile review of b265b6f (PR 24): each case as the reviewer gave it, run through the
+// commands' own methods (paraUnits, paraRun, the dialog's paraDialogApply) on a page without a page
+function App(text) {
+  const files = new Map([['main.tex', text]]);
+  const app = Object.assign(Object.create(null), methods, {
+    main: 'main.tex', files, toasts: [], c: null, model: model(text),
+    src: (f) => files.get(f), caretNow() { return this.c; }, toast(m) { this.toasts.push(m); }, preambleOthers: () => [], closeGroup() {},
+    commit(edits, caret) {
+      for (const f of new Set(edits.map((x) => x.f))) files.set(f, applyEdits(files.get(f), edits.filter((x) => x.f === f)));
+      if (caret) this.c = caret.selA != null ? { f: caret.f, a: caret.selA, b: caret.selB, collapsed: false } : { f: caret.f, a: caret.p, b: caret.p, collapsed: true };
+    }
+  });
+  return app;
+}
+// the caret at word w, or a selection from w to the end of w2; f(app, at) is the command's method
+function run(text, w, w2, f) {
+  const app = App(text), from = text.indexOf('\\begin{document}'), a = text.indexOf(w, from);
+  app.c = w2 == null ? { f: 'main.tex', a, b: a, collapsed: true } : { f: 'main.tex', a, b: text.indexOf(w2, a) + w2.length, collapsed: false };
+  f(app, { c: app.c, ctx: 'p', memo: {}, multi: w2 != null });
+  const out = app.src('main.tex');
+  return Object.assign(new String(out), { app, why: app.toasts.join(' | ') });
+}
+const al = (to) => (app, at) => app.paraAlign(to, at);
+const RUN = (text, w, to, w2) => String(run(text, w, w2, al(to)));
+// every environment balanced: what TeX would refuse first
+const balanced = (t) => { const st = []; for (const m of t.matchAll(/\\(begin|end)\{([^}]+)\}/g)) { if (m[1] === 'begin') st.push(m[2]); else if (st.pop() !== m[2]) return false; } return !st.length; };
+
+ok('review 1: several paragraphs of one environment selected: the environment edited once, every environment closed', () => {
+  const s = D('\\begin{center}\nA\n\nB\n\\end{center}\n\nC\n\nD');
+  const cases = [
+    ['B', 'C', 'right', '\\begin{center}\nA\n\\end{center}\n\n\\begin{flushright}\nB\n\nC\n\\end{flushright}\n\nD'],
+    ['A', 'D', 'center', '\\begin{center}\nA\n\nB\n\nC\n\nD\n\\end{center}'],
+    ['B', 'D', 'justify', '\\begin{center}\nA\n\\end{center}\n\nB\n\nC\n\nD'],
+    ['A', 'B', 'justify', 'A\n\nB\n\nC\n\nD'],
+    ['A', 'B', 'right', '\\begin{flushright}\nA\n\nB\n\\end{flushright}\n\nC\n\nD'],
+    ['A', 'C', 'left', '\\begin{flushleft}\nA\n\nB\n\nC\n\\end{flushleft}\n\nD']];
+  for (const [w, w2, to, want] of cases) {
+    const r = RUN(s, w, to, w2);
+    assert.equal(body(r), want, w + '..' + w2 + ' ' + to);
+    assert.ok(balanced(r));
+  }
+  // and back where the selection is one setting again
+  assert.equal(RUN(RUN(s, 'A', 'right', 'B'), 'A', 'center', 'B'), s);
+  const two = D('\\begin{center}\nA\n\\end{center}\n\nB\n\n\\begin{flushright}\nC\n\\end{flushright}');
+  assert.equal(body(RUN(two, 'A', 'left', 'C')), '\\begin{flushleft}\nA\n\nB\n\nC\n\\end{flushleft}');
+  assert.equal(body(RUN(two, 'A', 'center', 'C')), '\\begin{center}\nA\n\nB\n\nC\n\\end{center}');
+  // a paragraph with a line of its own split out and back: the line goes back where it was
+  const v = D('\\begin{center}\nA\n\n\\vspace{12pt}\nB\n\nC\n\\end{center}');
+  assert.equal(RUN(RUN(v, 'B', 'justify'), 'B', 'center'), v);
+});
+
+ok('review 2 and 3: the dialog over several paragraphs edits each where it is now, and the caret stays on its words', () => {
+  const s = D('\\begin{center}\nAlpha words here.\n\\end{center}\n\nBeta words here.\n\nGamma.');
+  const K = P.spacingKind('setspace');
+  const dlg = (ops) => run(s, 'Alpha', 'Beta', (app, at) => app.paraDialogApply(app.paraUnits(at), ops, []));
+  const sp = dlg([(t, V) => P.layerEdits(t, V, K, { lines: 1.5 }, { inherit: { lines: 1 } })]);
+  assert.ok(balanced(String(sp)), String(sp));
+  assert.equal(body(sp), '\\begin{onehalfspace}\n\\begin{center}\nAlpha words here.\n\\end{center}\n\nBeta words here.\n\\end{onehalfspace}\n\nGamma.');
+  const before = dlg([(t, V) => P.spaceEdits(t, V, 'before', 12)]);
+  assert.equal(body(before), '\\vspace{12pt}\n\\begin{center}\nAlpha words here.\n\\end{center}\n\n\\vspace{12pt}\nBeta words here.\n\nGamma.');
+  // two settings at once: the second sees what the first wrote, in both paragraphs
+  const both = dlg([(t, V) => P.alignEdits(t, V, 'right', {}), (t, V) => P.spaceEdits(t, V, 'before', 6)]);
+  assert.ok(balanced(String(both)));
+  assert.equal(body(both), '\\vspace{6pt}\n\\begin{flushright}\nAlpha words here.\n\n\\vspace{6pt}\nBeta words here.\n\\end{flushright}\n\nGamma.');
+  // the selection after OK: the same words (the next key typed lands in them, not in a \begin)
+  for (const r of [sp, before, both]) {
+    const t = String(r), c = r.app.c;
+    assert.ok(t.slice(c.a).startsWith('Alpha') && t.slice(0, c.b).endsWith('Beta'), JSON.stringify([t.slice(c.a, c.a + 12), t.slice(c.b - 8, c.b)]));
+  }
+  // a caret alone: after Center it is still at its word
+  const one = run(PLAIN, 'Second', null, al('center'));
+  assert.ok(String(one).slice(one.app.c.a).startsWith('Second'));
+});
+
+ok('review 4 and 5: no join with a commented out environment, a verbatim one, or a LaTeX paragraph\'s', () => {
+  for (const s of [D('Intro.\n\n% \\begin{center}\n% Old text\n% \\end{center}\n\nC words here.\n\nAfter.'),
+    D('Intro.\n\n\\begin{center}\nX\n\\end{center}\n% \\end{center}\n\nC words here.'),
+    D('Intro.\n\n\\begin{verbatim}\n\\begin{center}\nX\n\\end{center}\n\\end{verbatim}\n\nC words here.'),
+    D('C words here.\n\n%\\begin{center}\nX\n\\end{center}'),
+    D('Intro.\n\n% rikuy: latex\n\\begin{center}\nRaw stuff \\LaTeX\n\\end{center}\n\nC words here.\n\nAfter.'),
+    D('Intro.\n\nC words here.\n\n% rikuy: latex\n\\begin{center}\nRaw stuff\n\\end{center}\n\nAfter.')]) {
+    const r = RUN(s, 'C words', 'center');
+    assert.ok(r.includes('\\begin{center}\nC words here.\n\\end{center}'), body(r));
+    assert.equal(RUN(r, 'C words', 'justify'), s);
+  }
+  // a real neighbour still joins
+  assert.equal(body(RUN(D('\\begin{center}\nX\n\\end{center}\n\nC words here.'), 'C words', 'center')), '\\begin{center}\nX\n\nC words here.\n\\end{center}');
+});
+
+ok('review 6: Tabs over a selection writes its fill at the selection\'s end and takes nothing away', () => {
+  const s = D('\\begin{center}\nName\n\\end{center}\n\nSome \\textbf{bold} words.');
+  const r = run(s, 'Some', 'bold', (app, at) => app.paraLeader('dots', at));
+  assert.equal(body(r), '\\begin{center}\nName\n\\end{center}\n\nSome \\textbf{bold\\dotfill} words.');
+  assert.ok(String(r).slice(r.app.c.a).startsWith('} words'));
+});
+
+ok('review 7: the group forms as written ({ \\centering, a line break, a comment) and a group over two paragraphs', () => {
+  const g = (x) => D('Intro.\n\n' + x + '\n\nAfter.');
+  for (const [x, right] of [['{ \\centering Words here.\\par}', '{ \\raggedleft Words here.\\par}'], ['{\\centering Words here.\\par }', '{\\raggedleft Words here.\\par }'],
+    ['{\\centering\nWords here.\\par}', '{\\raggedleft\nWords here.\\par}'], ['{\\centering % c\nWords here.\\par}', '{\\raggedleft % c\nWords here.\\par}']]) {
+    assert.equal(at(g(x), 'Words').it.align, 'center');
+    assert.equal(body(RUN(g(x), 'Words', 'right')), 'Intro.\n\n' + right + '\n\nAfter.');
+    assert.equal(body(RUN(g(x), 'Words', 'justify')), 'Intro.\n\nWords here.\n\nAfter.');
+  }
+  // the words' first line inside a group that starts on the line before: the group is the unit
+  for (const x of ['{\\large\nWords here.\\par}', '\\textbf{%\nWords here.}', '\\noindent{\\small\nWords here.}']) {
+    const r = RUN(g(x), 'Words', 'center');
+    assert.equal(body(r), 'Intro.\n\n\\begin{center}\n' + x + '\n\\end{center}\n\nAfter.');
+    assert.equal(RUN(r, 'Words', 'justify'), g(x));
+  }
+  // a unit whose range cuts a group is none: the parse refuses it, nothing is written
+  const cut = D('A ' + '{\\bfseries x\n\nY} z');
+  assert.equal(P.unitOf(cut, cut.indexOf('Y'), cut.indexOf('z') + 1, 0, cut.length).inArg, true);
+});
+
+ok('review 8: a list\'s or a box\'s paragraphs: the alignment goes inside, the page draws none from around it', () => {
+  for (const env of ['quote', 'quotation', 'verse', 'abstract']) {
+    const s = D('Intro.\n\n\\begin{' + env + '}\nWords of the env here.\n\\end{' + env + '}\n\nAfter.');
+    const r = RUN(s, 'Words', 'center');
+    assert.equal(body(r), 'Intro.\n\n\\begin{' + env + '}\n\\begin{center}\nWords of the env here.\n\\end{center}\n\\end{' + env + '}\n\nAfter.');
+    assert.equal(at(r, 'Words').it.align, 'center');
+    assert.equal(RUN(r, 'Words', 'justify'), s);
+    // written outside by hand: TeX sets the words flush, the page too, the button says so
+    const out = D('\\begin{center}\n\\begin{' + env + '}\nWords here.\n\\end{' + env + '}\n\\end{center}');
+    assert.equal(at(out, 'Words').it.align, null, env);
+    const u = P.unitOf(out, at(out, 'Words').it.ps, at(out, 'Words').it.pe, 0, out.length);
+    assert.equal(P.alignOf(out, u).v, null);
+  }
+  const box = D('\\begin{center}\n\\begin{tcolorbox}\nWords here.\n\\end{tcolorbox}\n\\end{center}\n\n\\begin{center}\n\\begin{minipage}{5cm}\nMini words.\n\\end{minipage}\n\\end{center}\n\n\\begin{center}\n\\begin{itemize}\n\\item Item words.\n\\end{itemize}\n\\end{center}', '\\usepackage{tcolorbox}\n');
+  for (const w of ['Words here', 'Mini words', 'Item words']) assert.equal(at(box, w).it.align, null, w);
+  // B2's own layers in any order: indent, then Center, then shading, then Center: the alignment
+  // inside adjustwidth and tcolorbox, where TeX centres
+  let t = D('Intro body.\n\nCI words.\n\nCS words.\n\nAfter.', '\\usepackage{changepage}\n\\usepackage{tcolorbox}\n');
+  t = String(run(t, 'CI', null, (app, at) => app.paraIndentStep(1, at)));
+  t = RUN(t, 'CI', 'center');
+  t = String(run(t, 'CS', null, (app, at) => app.paraShade('yellow!20', at)));
+  t = RUN(t, 'CS', 'center');
+  assert.ok(t.includes('\\begin{adjustwidth}{1.27cm}{}\n\\begin{center}\nCI words.\n\\end{center}\n\\end{adjustwidth}'), body(t));
+  assert.ok(t.includes(']\n\\begin{center}\nCS words.\n\\end{center}\n\\end{tcolorbox}'), body(t));
+  assert.equal(at(t, 'CI').it.align, 'center');
+  assert.equal(at(t, 'CS').it.align, 'center');
+});
+
+ok('review 9: a figure without \\centering where the class or the preamble centres it, \\centerline, the centering environment', () => {
+  const fig = '\\begin{figure}\n\\rule{1cm}{1cm} XX\n\\caption{c}\n\\end{figure}';
+  const parts = (s) => model(s).blocks.flatMap((b) => b.items).filter((x) => x.type === 'float').flatMap((x) => x.parts.filter((q) => q.type === 'p').map((q) => q.align));
+  for (const [cls, pre, want] of [['article', '', 'left'], ['memoir', '', 'left'], ['IEEEtran', '', 'left'], ['scrartcl', '', 'left'], ['amsart', '', 'center'], ['amsbook', '', 'center'], ['revtex4-2', '', 'center'], ['acmart', '', 'center'],
+    ['article', '\\usepackage{floatrow}\n', 'center'], ['article', '\\makeatletter\n\\g@addto@macro\\@floatboxreset\\centering\n\\makeatother\n', 'center'], ['article', '%\\g@addto@macro\\@floatboxreset\\centering\n', 'left']]) {
+    assert.deepEqual(parts(D(fig, pre, '\\documentclass{' + cls + '}')), [want], cls + ' ' + pre);
+  }
+  assert.deepEqual(parts(D('\\begin{frame}\n' + fig + '\n\\end{frame}', '', '\\documentclass{beamer}')), ['center']);
+  assert.deepEqual(parts(D('\\begin{figure}\n\\centerline{\\rule{1cm}{1cm} XX}\n\\caption{c}\n\\end{figure}')), ['center']);
+  assert.deepEqual(parts(D('\\begin{figure}\n\\begin{centering}\n\\rule{1cm}{1cm} XX\n\\end{centering}\n\\caption{c}\n\\end{figure}')), ['center']);
+  // the ribbon's state and its edits: the class's own is no declaration; another is one
+  const am = D(fig, '', '\\documentclass{amsart}');
+  const app = App(am), B = app.model.blocks.find((b) => b.items.some((x) => x.type === 'float'));
+  assert.equal(app.floatAlign(B).v, 'center');
+  assert.deepEqual(app.floatAlignEdits(am, B, 'center'), []);
+  assert.equal(body(applyEdits(am, app.floatAlignEdits(am, B, 'left'))), fig.replace('}\n\\rule', '}\n\\raggedright\n\\rule'));
+  const ce = D('\\begin{figure}\n\\begin{centering}\nX\n\\end{centering}\n\\caption{c}\n\\end{figure}');
+  const a2 = App(ce);
+  assert.equal(a2.floatAlign(a2.model.blocks.find((b) => b.items.some((x) => x.type === 'float'))).v, 'center');
+});
+
+ok('review 10: an environment taken off leaves the paragraph\'s own lines on it, no blank line between', () => {
+  for (const [label, f] of [['before', (a, at) => a.paraSpace('before', 12, at)], ['after', (a, at) => a.paraSpace('after', 12, at)], ['keep', (a, at) => a.paraToggle('keep', true, at)],
+    ['break', (a, at) => a.paraToggle('break', true, at)], ['rule', (a, at) => a.paraBorder('bottom', at)]]) {
+    const s1 = String(run(D('Intro.\n\nWords here.\n\nAfter.'), 'Words', null, f));
+    const s3 = RUN(RUN(s1, 'Words', 'center'), 'Words', 'justify');
+    assert.equal(s3, s1, label);
+  }
+  // a comment after \begin stays when the environment goes
+  assert.equal(body(RUN(D('A\n\n\\begin{center}% c\nWords here.\n\\end{center}\n\nC'), 'Words', 'justify')), 'A\n\n% c\nWords here.\n\nC');
+  // \noindent on its line, \par at the words' end: theirs
+  for (const s of [D('A\n\n\\noindent\nWords here.\n\nC'), D('A\n\nWords here.\\par\n\nC')]) assert.equal(RUN(RUN(s, 'Words', 'center'), 'Words', 'justify'), s);
+});
+
+ok('review 11: the dialog in a figure shows its alignment and sets it, the rest of the dialog with it', () => {
+  const fig = D('Text.\n\n\\begin{figure}\n\\centering\n\\rule{1cm}{1cm}\n\\caption{c}\n\\end{figure}');
+  const app = App(fig), B = app.model.blocks.find((b) => b.items.some((x) => x.type === 'float'));
+  app.c = { f: 'main.tex', a: B.s + 20, b: B.s + 20, collapsed: true };
+  const p = app.paraUnits({ c: app.c, ctx: 'p', memo: {} });
+  assert.ok(p.float);
+  assert.equal(app.paraAlignNow(p), 'center', 'shown Centered, not Justified');
+  // Centered chosen again: nothing toggled; Right: \raggedleft; with the widows box in the same step
+  app.paraDialogApply(p, [], [(t) => P.widowEdits(t, true)], 'center');
+  assert.equal(app.src('main.tex'), applyEdits(fig, P.widowEdits(fig, true)));
+  const a2 = App(fig), p2 = a2.paraUnits({ c: { f: 'main.tex', a: B.s + 20, b: B.s + 20, collapsed: true }, ctx: 'p', memo: {} });
+  a2.c = { f: 'main.tex', a: B.s + 20, b: B.s + 20, collapsed: true };
+  a2.paraDialogApply(p2, [], [(t) => P.widowEdits(t, true)], 'right');
+  const t2 = a2.src('main.tex');
+  assert.ok(t2.includes('\\begin{figure}\n\\raggedleft\n\\rule') && P.widowControl(t2).on, t2);
+});
+
+ok('review 12 and 13: an HTML colour as shading; {\\centering ...} without \\par is not centred', () => {
+  const hex = P.htmlColor('E75480');
+  assert.equal(hex, 'rgb,255:red,231;green,84;blue,128');
+  const s = D('Intro.\n\nWords here.\n\nAfter.', '\\usepackage{tcolorbox}\n');
+  const r = String(run(s, 'Words', null, (app, at) => app.paraShade(hex, at)));
+  assert.ok(r.includes('\\begin{tcolorbox}[colback={rgb,255:red,231;green,84;blue,128},colframe={rgb,255:red,231;green,84;blue,128},boxrule=0pt,sharp corners]'), body(r));
+  assert.equal(at(r, 'Words').it.box.bg, '#E75480', 'the page draws the colour');
+  const u = P.unitOf(r, at(r, 'Words').it.ps, at(r, 'Words').it.pe, 0, r.length);
+  assert.equal(P.boxOf(r, u).shading, hex);
+  assert.equal(String(run(r, 'Words', null, (app, at) => app.paraShade(null, at))), s);
+  const g = D('Intro.\n\n{\\centering Words here.}\n\nAfter.');
+  assert.equal(at(g, 'Words').it.align, null);
+  assert.equal(P.alignOf(g, P.unitOf(g, at(g, 'Words').it.ps, at(g, 'Words').it.pe, 0, g.length)).v, null);
+  assert.equal(body(RUN(g, 'Words', 'center')), 'Intro.\n\n\\begin{center}\n{\\centering Words here.}\n\\end{center}\n\nAfter.');
+});
+
+ok('review 15 and 17: an indented environment split and joined keeps its spaces; display math in a paragraph goes with it', () => {
+  const s = D('  \\begin{center}\n  A\n\n  B\n\n  C\n  \\end{center}');
+  assert.equal(body(RUN(s, 'B', 'right')), '  \\begin{center}\n  A\n  \\end{center}\n\n  \\begin{flushright}\n  B\n  \\end{flushright}\n\n  \\begin{center}\n  C\n  \\end{center}');
+  for (const [w, to] of [['A', 'justify'], ['B', 'right'], ['C', 'justify'], ['B', 'justify']]) assert.equal(RUN(RUN(s, w, to), w, 'center'), s, w + ' ' + to);
+  const crlf = D('\\begin{center}\nA\n\nB\n\nC\n\\end{center}').replace(/\n/g, '\r\n');
+  assert.equal(RUN(RUN(crlf, 'B', 'left'), 'B', 'center'), crlf);
+  const m = D('A\n\nB starts\n\\[ x^2 \\]\nand B continues.\n\nC');
+  const want = 'A\n\n\\begin{center}\nB starts\n\\[ x^2 \\]\nand B continues.\n\\end{center}\n\nC';
+  assert.equal(body(RUN(m, 'B starts', 'center')), want);
+  assert.equal(body(RUN(m, 'and B', 'center')), want);
+  assert.equal(RUN(RUN(m, 'and B', 'center'), 'B starts', 'justify'), m);
+});
+
+ok('review, lows: a theorem\'s first paragraph says why; every paragraph of a long text at once; the parse not made again per caret move', () => {
+  const th = D('\\newtheorem{thm}{Theorem}\n\\begin{thm}\nFirst of thm\n\nSecond of thm\n\\end{thm}');
+  assert.match(run(th, 'First of', null, al('center')).why, /first paragraph of a theorem/);
+  assert.ok(RUN(th, 'Second of', 'center').includes('\\begin{center}\nSecond of thm\n\\end{center}\n\\end{thm}'));
+  let b = '';
+  for (let i = 0; i < 1500; i++) b += 'Paragraph ' + i + ' with some \\textbf{bold} words and $x^2$ math, more words to fill.\n\n';
+  const big = D('\\begin{spacing}{1.5}\n' + b + '\\end{spacing}', '\\usepackage{setspace}\n');
+  const t0 = Date.now();
+  const r = run(big, 'Paragraph 0 ', 'to fill.\n\n\\end', al('center'));
+  assert.ok(!r.why && String(r).includes('\\begin{spacing}{1.5}\n\\begin{center}\nParagraph 0 ') && String(r).includes('to fill.\n\\end{center}\n\n\\end{spacing}'), r.why);
+  let h = '';
+  for (let i = 0; i < 400; i++) h += (i % 8 === 0 ? '\\section{S' + i + '}\n' : '') + 'Para ' + i + ' words.\n\n';
+  const hd = D(h);
+  const r2 = run(hd, '\\section', 'Para 399 words.', al('right'));
+  assert.equal((String(r2).match(/\\begin\{flushright\}/g) || []).length, 50);
+  assert.ok(balanced(String(r2)));
+  assert.ok(Date.now() - t0 < 6000, 'took ' + (Date.now() - t0) + ' ms');
+  // nowidow's all option read as preamble.js reads options: a hostile preamble in bounded time
+  const t1 = Date.now();
+  P.widowControl(D('X', '\\usepackage[' + 'all '.repeat(20000)));
+  P.widowControl(D('X', '\\usepackage' + ' '.repeat(50000) + '['));
+  assert.ok(Date.now() - t1 < 300, 'took ' + (Date.now() - t1) + ' ms');
+  assert.equal(P.widowControl(D('X', '\\usepackage[all]{nowidow}\n')).on, true);
+  // the review's new reads, on a stranger's text: a \noindent and 100 000 spaces before the words;
+  // 5000 \begin{center} on one long line before an \end{center} that a join looks back from
+  const t2 = Date.now();
+  const sp = D('\\noindent' + ' '.repeat(100000) + 'x\nWords here.');
+  P.unitOf(sp, sp.indexOf('\\noindent'), sp.indexOf('\n\\end{document}'), 0, sp.length, { vs: sp.indexOf('Words'), ve: sp.indexOf('here.') + 5 });
+  const many = D('\\begin{verbatim}\n' + '\\begin{center}'.repeat(5000) + '\n\\end{verbatim}\n\n\\begin{center}\nX\n\\end{center}\n\nC words here.');
+  // (past what a join reads back, the paragraph gets an environment of its own: nothing is joined unseen)
+  assert.ok(RUN(many, 'C words', 'center').endsWith('C words here.\n\\end{center}\n\\end{document}\n'));
+  assert.ok(Date.now() - t2 < 1500, 'took ' + (Date.now() - t2) + ' ms');
 });
 
 console.log('para: ' + n + ' groups of checks passed');

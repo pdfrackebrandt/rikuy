@@ -1381,9 +1381,9 @@ body.fpainting #pages { cursor: copy; }
 /* Show marks: drawn over the page, taking no room (nothing moves when they show) */
 body.marks-on #pages .it.p:not(.split-a)::after, body.marks-on #pages .it.h::after { content: "¶" / ""; display: inline-block; width: 0; white-space: nowrap; text-indent: 0; padding-inline-start: .12em; color: #3E7BC4; font: normal normal 400 1em/1 var(--font-doc, serif); pointer-events: none; user-select: none; }
 body.marks-on #pages .a-br::before { content: "↵" / ""; display: inline-block; width: 0; color: #3E7BC4; font-weight: 400; pointer-events: none; }
-body.marks-on #pages .a-sp.fill::before, body.marks-on #pages .a-sp::before { content: "→" / ""; display: inline-block; width: 0; color: #3E7BC4; font-weight: 400; pointer-events: none; }
+body.marks-on #pages .a-sp.fill::before { content: "→" / ""; display: inline-block; width: 0; color: #3E7BC4; font-weight: 400; pointer-events: none; }
 body.marks-on #pages .it.vs { outline: 1px dashed rgba(62, 123, 196, .55); outline-offset: -1px; }
-@media print { body.marks-on #pages .it.p::after, body.marks-on #pages .it.h::after, body.marks-on #pages .a-br::before, body.marks-on #pages .a-sp::before { content: none; } body.marks-on #pages .it.vs { outline: 0; } }
+@media print { body.marks-on #pages .it.p::after, body.marks-on #pages .it.h::after, body.marks-on #pages .a-br::before, body.marks-on #pages .a-sp.fill::before { content: none; } body.marks-on #pages .it.vs { outline: 0; } }
 /* \dotfill and \hrulefill: their leader in the gap they fill */
 .a-sp.fill.dots { background: radial-gradient(circle, currentColor .06em, transparent .07em) 0 85% / .44em .44em repeat-x; }
 .a-sp.fill.rulefill { box-shadow: inset 0 -.08em 0 currentColor; }
@@ -1428,3 +1428,28 @@ body.marks-on #pages .it.vs { outline: 1px dashed rgba(62, 123, 196, .55); outli
 /* (the Paragraph group's icon buttons hold their hidden names: on a phone's scrolling row the names
    of buttons past the window's edge widened the page; B3's .rb .btn rule does it for every button) */
 .rb-grp[data-group="paragraph"] .btn { position: relative; }
+/* The Paragraph group in Word's two rows of small buttons, as tall as the row: the lists, Show
+   marks and the dialog above, the alignments, line spacing, shading and borders below. A break
+   (the group's ::after, a whole line wide) ends the first row; the second row's buttons are put
+   after it by order. One row of all of them took 382 px of Home, which the Styles gallery and the
+   three downloads need at 1366 px (and the room Editing alone folds for at 860 px). A phone's row,
+   which scrolls, keeps one row of buttons a finger can press. */
+@media (min-width: 861px), (min-width: 521px) and (pointer: fine) {
+  .rb-grp[data-group="paragraph"]:not(.folded) { flex-wrap: wrap; width: 204px; gap: 1px; align-content: center; align-self: center; }
+  .rb-grp[data-group="paragraph"]:not(.folded)::after { content: ""; order: 1; flex-basis: 100%; height: 0; }
+  .rb-grp[data-group="paragraph"] > [data-cmd^="align-"], .rb-grp[data-group="paragraph"] > [data-cmd="justify"], .rb-grp[data-group="paragraph"] > [data-cmd="line-spacing"],
+  .rb-grp[data-group="paragraph"] > .rb-split:has([data-cmd="shading"]), .rb-grp[data-group="paragraph"] > .rb-split:has([data-cmd="borders"]) { order: 2; }
+  .rb-grp[data-group="paragraph"] > .btn.icon, .rb-grp[data-group="paragraph"] .rb-split > .btn.icon:not(.rb-x) { width: 24px; height: 21px; border-radius: 4px; }
+  .rb-grp[data-group="paragraph"] .rb-split > .btn.icon:not(.rb-x) { border-radius: 4px 0 0 4px; }
+  .rb-grp[data-group="paragraph"] .rb-split > .rb-x { width: 12px; height: 21px; border-radius: 0 4px 4px 0; }
+  .rb-grp[data-group="paragraph"] .btn svg { width: 15px; height: 15px; }
+}
+/* (a narrow window's row is lower: the two rows as low as it, a mouse's pointer on them) */
+@media (min-width: 521px) and (max-width: 860px) and (pointer: fine) {
+  .rb-grp[data-group="paragraph"] > .btn.icon, .rb-grp[data-group="paragraph"] .rb-split > .btn.icon:not(.rb-x), .rb-grp[data-group="paragraph"] .rb-split > .rb-x { height: 19px; }
+}
+/* a finger on a phone's row: 44 px targets (the row grows to hold them) */
+@media (pointer: coarse) and (max-width: 860px) {
+  .rb-grp[data-group="paragraph"] > .btn.icon, .rb-grp[data-group="paragraph"] .rb-split > .btn.icon { min-width: 44px; height: 44px; }
+  .rb-grp[data-group="paragraph"] .rb-split > .rb-x { min-width: 28px; height: 44px; }
+}

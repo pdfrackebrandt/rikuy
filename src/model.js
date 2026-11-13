@@ -175,7 +175,34 @@ function visEdges(inl) {
   return a != null && z != null && z >= a ? [a, z] : null;
 }
 
+// (B2) a list of options split at its commas outside braces, and a value's braces taken off
+function splitTop(t) {
+  const out = [];
+  let d = 0, a = 0;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (c === '\\') { i++; continue; }
+    if (c === '{') d++;
+    else if (c === '}') d = Math.max(0, d - 1);
+    else if (c === ',' && d === 0) { out.push(t.slice(a, i)); a = i + 1; }
+  }
+  out.push(t.slice(a));
+  return out;
+}
+const unbrace = (t) => (t[0] === '{' && t[t.length - 1] === '}' ? t.slice(1, -1).trim() : t);
+// (B2) xcolor's mix of red, green and blue in 255ths, as More colors writes an HTML colour:
+// rgb,255:red,231;green,84;blue,128 -> #E75480
+function mixColor(t) {
+  const m = /^rgb\s*,\s*255\s*:\s*red\s*,\s*(\d{1,3})\s*;\s*green\s*,\s*(\d{1,3})\s*;\s*blue\s*,\s*(\d{1,3})$/.exec(String(t).trim());
+  if (!m || [m[1], m[2], m[3]].some((x) => +x > 255)) return null;
+  return '#' + [m[1], m[2], m[3]].map((x) => (+x).toString(16).padStart(2, '0').toUpperCase()).join('');
+}
+
 // (B2) line spacing declared in the body, and TeX's register assignments that are no text
+// (B2) what a list's environment (quote, adjustwidth, itemize, a theorem) and a box's (tcolorbox,
+// minipage) set for their paragraphs: no alignment from around them, as TeX's \list and
+// \@parboxrestore set none (a center around a quote centres nothing in it)
+const FLUSH = { align: null, flushAll: false };
 const SPACING_ENV = { singlespace: 1, 'singlespace*': 1, SingleSpace: 1, onehalfspace: 'h', OnehalfSpace: 'h', doublespace: 'd', DoubleSpace: 'd', spacing: 'x', Spacing: 'x' };
 const SPACING_DECL = new Set(['onehalfspacing', 'doublespacing', 'singlespacing', 'OnehalfSpacing', 'DoubleSpacing', 'SingleSpacing']);
 const ASSIGN = new Set(['hangindent', 'hangafter', 'parindent', 'parskip', 'widowpenalty', 'clubpenalty', 'displaywidowpenalty', 'interlinepenalty', 'linepenalty',
@@ -279,6 +306,9 @@ function sameRefs(a, b) {
 }
 
 const PARSE_CACHE = new Map();
+// (B2) the parse the model made of a file's text, for the paragraph commands (src/parasrc.js
+// unitOf): read again at every move of the caret, a long text would be parsed each time
+export function parsedText(t) { for (const v of PARSE_CACHE.values()) if (v.text === t) return v.nodes; return null; }
 
 class Builder {
   constructor(project, prev) {
@@ -405,6 +435,16 @@ class Builder {
     if (O.openright == null) O.openright = /^(book|scrbook|memoir)$/.test(O.cls) && O.twoside;
     O.page = this.pageSetup(ctx);
     O.chapters = /^(report|book|scrbook|scrreprt|memoir|amsbook|thesis|ociamthesis)$/.test(O.cls);
+    // (B2) where a figure's or a table's parts stand when it says nothing: centred by beamer, the
+    // AMS classes, revtex and acmart, by floatrow, and by \centering added to \@floatboxreset in
+    // the preamble; at the left margin otherwise (a float's \parindent is 0)
+    if (O.floatAlign !== 'center') {
+      const pre = ctx.src.slice(0, Math.min(ctx.src.length, 400000)), k = pre.search(/\\begin\s*\{document\}/);
+      const head = (k < 0 ? pre : pre.slice(0, k)).replace(/(^|[^\\])%[^\n]*/g, '$1');
+      O.floatAlign = /^(beamer|amsart|amsbook|amsproc|revtex4|revtex4-1|revtex4-2|acmart)$/.test(O.cls) ||
+        /\\(?:g@addto@macro|apptocmd|appto)\s*(?:\{\s*)?\\@floatboxreset\s*(?:\}\s*)?(?:\{\s*)?\\centering(?![A-Za-z])/.test(head) ||
+        /\\(?:def|gdef)\s*\\@floatboxreset\s*\{[^{}]{0,300}\\centering(?![A-Za-z])/.test(head) ? 'center' : 'left';
+    }
     if (O.chapters) {
       if (!O.secnumdepthSet) O.secnumdepth = 2;
       for (const k of ['equation', 'figure', 'table']) if (!this.within[k]) this.within[k] = 'chapter';
@@ -528,6 +568,7 @@ class Builder {
           if (this.files.has(p + '.sty')) this.preFile(p + '.sty', true);
           if (p === 'apacite' || p === 'harvard' || p === 'chicago') { O.natbib = true; O.forceAY = true; }
           if (p === 'setspace') { /* spacing commands handled separately */ }
+          if (p === 'floatrow') O.floatAlign = 'center';
           if (p === 'parskip') {
             // (B2) its skip option: \usepackage[skip=6pt]{parskip}
             const sk = /(?:^|,)\s*skip\s*=\s*([^,]{1,40})/.exec(op), v = sk ? parseLen(sk[1].replace(/\s+(?:plus|minus).*$/, ''), O.pt) : null;
@@ -1487,7 +1528,7 @@ class Builder {
     if (name === 'abstract') {
       const items = [{ type: 'h', level: 'abs', num: '', inl: [{ k: 'chr', text: 'Abstract' }], star: true, ctx: 'h', f: ctx.f, dir: this.dirOf() }];
       const fns = [];
-      const us = this.flow(nd.nodes, ctx, { ...env, top: false, cls: 'abs', ctxKind: 'p', noIndentFirst: false });
+      const us = this.flow(nd.nodes, ctx, { ...env, top: false, cls: 'abs', ctxKind: 'p', noIndentFirst: false, ...FLUSH });
       for (const u of us) { items.push(...u.items); fns.push(...u.fns); }
       if (items.length === 1) items.push(this.emptyPara(ctx, nd.be, 'abs'));
       return { f: ctx.f, s: nd.s, e: nd.e, items, fns };
@@ -1501,7 +1542,7 @@ class Builder {
         lead.push({ k: 'chr', text: '.', cls: 'it' });
       } else lead.push({ k: 'chr', text: this.opts.lang === 'de' ? 'Beweis.' : 'Proof.', cls: 'it' });
       lead.push({ k: 'chr', text: ' ', cls: 'sp' });
-      const us = this.flow(nd.nodes, ctx, { ...env, top: false, cls: (env.cls || '') + ' prf', noIndentFirst: true });
+      const us = this.flow(nd.nodes, ctx, { ...env, top: false, cls: (env.cls || '') + ' prf', noIndentFirst: true, ...FLUSH });
       const items = [];
       for (const u of us) { items.push(...u.items); fns.push(...u.fns); }
       const first = items.find((x) => x.type === 'p');
@@ -1515,7 +1556,7 @@ class Builder {
     const thm = this.thms.get(name) || this.thms.get(base) || (DEFAULT_THMS[base] ? { title: DEFAULT_THMS[base], counter: base, style: /definition|assumption|example|remark|notation|condition|problem|exercise|question/.test(base) ? 'definition' : 'plain', auto: true } : null);
     if (thm) return this.theorem(nd, ctx, env, thm, name);
     if (['quote', 'quotation', 'verse'].includes(name)) {
-      return this.container(nd, ctx, env, { cls: (env.cls || '') + ' quote', noIndentFirst: name !== 'quotation' });
+      return this.container(nd, ctx, env, { cls: (env.cls || '') + ' quote', noIndentFirst: name !== 'quotation', ...FLUSH });
     }
     if (['center', 'flushleft', 'flushright'].includes(name)) {
       // (\centering and its like set \parindent to 0: no paragraph of it is indented)
@@ -1539,7 +1580,7 @@ class Builder {
     if (name === 'adjustwidth' || name === 'adjustwidth*') {
       const L = (a) => { const t = this.argText(ctx, a).trim(); if (!t) return 0; const v = parseLen(t, this.opts.pt); return typeof v === 'number' ? v : 0; };
       const m = env.mx || [0, 0];
-      return this.container(nd, ctx, env, { mx: [m[0] + L(nd.args[0]), m[1] + L(nd.args[1])], noIndentFirst: true });
+      return this.container(nd, ctx, env, { mx: [m[0] + L(nd.args[0]), m[1] + L(nd.args[1])], noIndentFirst: true, ...FLUSH });
     }
     if (name === 'tcolorbox') return this.boxEnv(nd, ctx, env);
     if (name === 'samepage') return this.container(nd, ctx, env, { keepLines: true });
@@ -1570,7 +1611,7 @@ class Builder {
       return [...pre, ...list];
     }
     if (/^(small|footnotesize|scriptsize|large|Large|minipage|landscape|appendices|otherlanguage\*?|titlepage|multicols\*?|adjustbox|threeparttable|tablenotes|acknowledgments|acknowledgements)$/.test(name)) {
-      const ex = /^(small|footnotesize|scriptsize|large|Large)$/.test(name) ? { cls: (env.cls || '') + ' z-' + name } : {};
+      const ex = /^(small|footnotesize|scriptsize|large|Large)$/.test(name) ? { cls: (env.cls || '') + ' z-' + name } : name === 'minipage' ? { ...FLUSH, flushAll: true } : {};
       if (name === 'appendices') { this.appendix = true; if (this.opts.chapters) this.c.chapter = 0; else this.c.section = 0; }
       if (name === 'acknowledgments' || name === 'acknowledgements') {
         const r = this.container(nd, ctx, env, {});
@@ -1598,18 +1639,19 @@ class Builder {
   boxEnv(nd, ctx, env) {
     const kv = {};
     const opt = nd.args[0] ? this.argText(ctx, nd.args[0]) : '';
-    for (const part of opt.slice(0, 2000).split(',')) { const k = part.indexOf('='); const key = (k < 0 ? part : part.slice(0, k)).trim(); if (key) kv[key] = k < 0 ? true : part.slice(k + 1).trim(); }
+    // (braces keep a value's commas: colback={rgb,255:red,231;green,84;blue,128})
+    for (const part of splitTop(opt.slice(0, 2000))) { const k = part.indexOf('='); const key = (k < 0 ? part : part.slice(0, k)).trim(); if (key) kv[key] = k < 0 ? true : unbrace(part.slice(k + 1).trim()); }
     const rule = kv.boxrule != null ? parseLen(String(kv.boxrule), this.opts.pt) : 1.42;
     const L = (x, d) => { const v = x != null ? parseLen(String(x), this.opts.pt) : null; return typeof v === 'number' ? v : d; };
     const box = { bg: kv.colback ? this.colorText(String(kv.colback)) : '#F2F2F2', fr: kv.colframe ? this.colorText(String(kv.colframe)) : '#404040', rule: typeof rule === 'number' ? rule : 1.42,
       l: L(kv.left, 11.38) + L(kv.boxsep, 2.85), r: L(kv.right, 11.38) + L(kv.boxsep, 2.85), t: L(kv.top, 5.69) + L(kv.boxsep, 2.85), b: L(kv.bottom, 5.69) + L(kv.boxsep, 2.85), sharp: !!kv['sharp corners'] || kv.arc === '0pt' };
-    const r = this.container(nd, ctx, env, { box, noIndentFirst: true, flushAll: true });
+    const r = this.container(nd, ctx, env, { box, noIndentFirst: true, ...FLUSH, flushAll: true });
     const ps = r.items.filter((it) => it.type === 'p');
     if (ps.length) { ps[0].boxFirst = true; ps[ps.length - 1].boxLast = true; }
     return r;
   }
   // a colour as tcolorbox's options write it (a name, red!20): the document's own name resolved
-  colorText(t) { return this.named(t) || t; }
+  colorText(t) { return this.named(t) || mixColor(t) || t; }
 
   // (B2) the stretch a spacing declaration sets: \onehalfspacing, \setstretch{1.15}
   spacingOf(name, nd, ctx) {
@@ -1656,7 +1698,7 @@ class Builder {
     lead.push({ k: 'chr', text: '.', cls: thm.style === 'remark' ? 'it' : 'bf' });
     lead.push({ k: 'chr', text: ' ', cls: 'sp' });
     const style = thm.style === 'definition' ? 'thm-def' : thm.style === 'remark' ? 'thm-rem' : 'thm-plain';
-    const us = this.flow(nd.nodes, ctx, { ...env, top: false, cls: (env.cls || '') + ' thm ' + style, noIndentFirst: true });
+    const us = this.flow(nd.nodes, ctx, { ...env, top: false, cls: (env.cls || '') + ' thm ' + style, noIndentFirst: true, ...FLUSH });
     const items = [];
     for (const u of us) { items.push(...u.items); fns.push(...u.fns); }
     const first = items[0];
@@ -1710,7 +1752,7 @@ class Builder {
         label = [{ k: 'sty', st: kind === 'desc' ? 'bf' : '', kids, f: ctx.f, s: optA.s, e: optA.e, is: optA.is, ie: optA.ie }];
       }
       this.use('L' + count + level);
-      const sub = { ...env, top: false, listDepth: depth, list: true, enumDepth: kind === 'enum' ? level : (env.enumDepth || 0), itemDepth: kind === 'item' ? level : (env.itemDepth || 0), ctxKind: 'li', noIndentFirst: true, depth: depth, cls: (env.cls || '') };
+      const sub = { ...env, ...FLUSH, top: false, listDepth: depth, list: true, enumDepth: kind === 'enum' ? level : (env.enumDepth || 0), itemDepth: kind === 'item' ? level : (env.itemDepth || 0), ctxKind: 'li', noIndentFirst: true, depth: depth, cls: (env.cls || '') };
       const us = this.flow(it.nodes, ctx, sub);
       const its = [];
       for (const u of us) { its.push(...u.items); fns.push(...u.fns); }
@@ -1770,15 +1812,19 @@ class Builder {
       }
       const inl = this.inl(ns, ctx, fns);
       trimInl(inl);
-      if (inl.length) parts.push({ type: 'p', inl, align: align || 'left', indent: false, ctx: 'p', f: ctx.f, dir: this.dirOf() });
+      if (inl.length) parts.push({ type: 'p', inl, align: align || dflt, indent: false, ctx: 'p', f: ctx.f, dir: this.dirOf() });
     };
+    // (with no declaration: the class's own, src/model.js preamble)
+    const dflt = this.opts.floatAlign || 'left';
     const walk = (nodes) => {
       for (const [i, n] of nodes.entries()) {
         if (n.t === 'par') { flushP(); continue; }
         // (B2) \centering, \raggedleft, \raggedright; with none TeX sets a float's parts at the left
         // margin (a float's \parindent is 0)
         if (n.t === 'cmd' && (n.name === 'centering' || n.name === 'raggedleft' || n.name === 'raggedright')) { align = n.name === 'centering' ? 'center' : n.name === 'raggedleft' ? 'right' : 'left'; continue; }
-        if (n.t === 'env' && (n.name === 'center' || n.name === 'flushleft' || n.name === 'flushright')) { flushP(); const was = align; align = n.name === 'center' ? 'center' : n.name === 'flushleft' ? 'left' : 'right'; walk(n.nodes); flushP(); align = was; continue; }
+        if (n.t === 'env' && (n.name === 'center' || n.name === 'centering' || n.name === 'flushleft' || n.name === 'flushright')) { flushP(); const was = align; align = n.name === 'center' || n.name === 'centering' ? 'center' : n.name === 'flushleft' ? 'left' : 'right'; walk(n.nodes); flushP(); align = was; continue; }
+        // (\centerline{...}: its words a centred line of their own)
+        if (n.t === 'cmd' && n.name === 'centerline' && n.args && n.args[0] && n.args[0].nodes) { flushP(); const was = align; align = 'center'; para = [...n.args[0].nodes]; flushP(); align = was; continue; }
         if (n.t === 'cmd' && (n.name === 'caption' || n.name === 'captionof')) {
           flushP();
           if (!num) {
@@ -1793,11 +1839,11 @@ class Builder {
           parts.push({ type: 'caption', kind, num, inl: kids, f: ctx.f, ctx: 'cap', dir: this.dirOf() });
           continue;
         }
-        if (n.t === 'env' && /^(tabular|tabularx|tabular\*|tabulary|longtable|array)$/.test(n.name)) { flushP(); const t = this.tabular(n, ctx, fns, tset); if (align !== 'center') t.falign = align || 'left'; parts.push(t); continue; }
+        if (n.t === 'env' && /^(tabular|tabularx|tabular\*|tabulary|longtable|array)$/.test(n.name)) { flushP(); const t = this.tabular(n, ctx, fns, tset); if ((align || dflt) !== 'center') t.falign = align || dflt; parts.push(t); continue; }
         // (a size is the table's only where a table follows it in the float: else it is the text's)
         { const st = this.tableSetting(n, ctx); if (st && (st.key !== 'size' || nodes.slice(i + 1, i + 40).some((x) => x.t === 'env' && /^(tabular|tabularx|tabular\*|tabulary|longtable)$/.test(x.name)))) { (tset = tset || {})[st.key] = st.value; continue; } }
         // (B7) a table csvsimple sets from a data file of the project: drawn from the file
-        if (n.t === 'cmd' && /^csvauto(book)?tabular$/.test(n.name) && n.args[1]) { const t = this.csvTable(n, ctx); if (t) { flushP(); if (align !== 'center') t.falign = align || 'left'; parts.push(t); continue; } }
+        if (n.t === 'cmd' && /^csvauto(book)?tabular$/.test(n.name) && n.args[1]) { const t = this.csvTable(n, ctx); if (t) { flushP(); if ((align || dflt) !== 'center') t.falign = align || dflt; parts.push(t); continue; } }
         if (n.t === 'env' && /^(minipage|subfigure|subtable|threeparttable|adjustbox|small|footnotesize|scriptsize)$/.test(n.name)) { flushP(); walk(n.nodes); flushP(); continue; }
         // a language or direction environment around a figure's parts: they run its way
         if (n.t === 'env' && this.dirEnv(n, ctx)) { flushP(); const was = this.dir; this.dir = this.dirEnv(n, ctx).dir || was; walk(n.nodes); flushP(); this.dir = was; continue; }
