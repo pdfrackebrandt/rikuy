@@ -37,6 +37,10 @@ on:
       - 'test/find.py'
       - 'test/outline.py'
       - 'test/table.py'
+      - 'test/styles.py'
+      - 'src/styles.js'
+      - 'src/looks.js'
+      - 'src/cmd/styles.js'
       - 'src/table.js'
       - 'src/cmd/table.js'
       - 'test/page.py'
@@ -122,6 +126,8 @@ jobs:
         run: cd test && python3 table.py reviewed verified compiled
       - name: The page's set up in TeX's PDF (paper size, header, line numbers) and Print
         run: cd test && python3 page.py compile_pdf
+      - name: Styles, every heading, environment, look and style Rikuy writes compiled in the page with pdfLaTeX and LuaLaTeX
+        run: cd test && python3 styles.py compile_all
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rikuy-dist

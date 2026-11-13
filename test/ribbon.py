@@ -6,13 +6,10 @@ message for a document with live graphs (sample/widget/); the toolbar by keyboar
 360px screen. Download PDF runs where dist/tex holds a TeX tree (CI's TeX job) and says why it is
 skipped elsewhere; here it checks that a run that cannot start opens the preview with its error.
 
-The Styles gallery: its tiles in their order, the current style checked, the ones that cannot apply
-disabled; as many tiles as the row has room for at each width, LaTeX among them on a desktop, the
-style list in its place on a phone; the strip's arrows and its More list; the gallery by keyboard;
-a click that leaves the caret where it was. Quote and LaTeX there and back, byte for byte. A LaTeX
-paragraph (src/styles.js): its box, what typing, Enter, Backspace, Delete, paste and cut write in
-it, the lines to come, a blank line that ends it, undo, an unclosed brace that ends at the blank
-line, and the same PDF with its marks as without them where dist/tex holds a TeX tree.
+A LaTeX paragraph (src/styles.js): its box, what typing, Enter, Backspace, Delete, paste and cut
+write in it, the lines to come, a blank line that ends it, undo, an unclosed brace that ends at the
+blank line, and the same PDF with its marks as without them where dist/tex holds a TeX tree. The
+Styles gallery itself (its tiles, widths, paging, keys, More, Quote) is test/styles.py's.
 
 RIKUY_DIST names another dist/ (the claude.ai copy, built with RIKUY_SHARE, has the same ribbon)."""
 import os, re, sys, zipfile
@@ -56,49 +53,6 @@ def style(page, value):
 def undo_is(page, before):
     page.keyboard.press('Control+z'); page.wait_for_timeout(150)
     return src(page) == before
-
-
-def styles(page):
-    load_doc(page, DOC)
-    click_text(page, 'First paragraph', 6)
-    check('with the caret in a paragraph the style shows Normal text', state(page)['style'] == 'p')
-    for value, cmd in (('section', '\\section'), ('subsection', '\\subsection'), ('subsubsection', '\\subsubsection')):
-        load_doc(page, DOC); click_text(page, 'First paragraph', 6)
-        style(page, value)
-        got = src(page)
-        check('Heading: the paragraph becomes %s{...}, its words untouched' % cmd, got == DOC.replace('First paragraph here.', cmd + '{First paragraph here.}') and state(page)['style'] == value, got[got.find('Opening'):][:70])
-        page.keyboard.type('X'); wait_src(page, 'First X')
-        check('and the caret stays where it was in the words', cmd + '{First Xparagraph here.}' in src(page), src(page)[src(page).find('First'):][:40])
-        page.keyboard.press('Control+z'); page.wait_for_timeout(150)
-        check('one undo takes the heading back, byte for byte', undo_is(page, DOC))
-    # a heading to another level and to a paragraph
-    load_doc(page, DOC); click_text(page, 'Opening', 3)
-    check('with the caret in a heading the style shows its level', state(page)['style'] == 'section')
-    style(page, 'subsection')
-    check('Heading 2 on a Heading 1 changes the command alone', src(page) == DOC.replace('\\section{Opening}', '\\subsection{Opening}'), src(page)[60:110])
-    check('undo restores it', undo_is(page, DOC))
-    click_text(page, 'Opening', 3); style(page, 'p')
-    check('Normal text on a heading leaves its words as a paragraph of their own', src(page) == DOC.replace('\\section{Opening}\nFirst', 'Opening\n\nFirst') and state(page)['style'] == 'p', src(page)[60:110])
-    check('undo restores the heading byte for byte', undo_is(page, DOC))
-    # where a conversion is not safe it is not offered: a list or a table can be shown as its
-    # LaTeX source as a whole, and nothing else
-    for where, text in (('a list item', 'two'), ('a table cell', 'cell')):
-        click_text(page, text, 1); state(page)
-        offered = page.evaluate('[...document.getElementById("rb-style").options].filter((o) => !o.hidden && !o.disabled).map((o) => o.value)')
-        check('in %s only LaTeX is offered, for the whole of it' % where, sorted(offered) == ['', 'latex'] and page.evaluate('document.getElementById("rb-style").value') == '', offered)
-    load_doc(page, '\\documentclass{article}\n\\title{A title}\n\\begin{document}\n\\maketitle\nWords.\n\\end{document}\n')
-    click_text(page, 'A title', 2)
-    st = state(page)
-    check('in the title the style shows Title and stays as it is', st['style'] == 'title' and st['rb-style'][0], st['style'])
-    click_text(page, 'Words', 2)
-    state(page)
-    check('and Title is not offered for a paragraph', page.evaluate('[...document.getElementById("rb-style").options].filter((o) => !o.hidden && !o.disabled).map((o) => o.value)') == ['p', 'section', 'subsection', 'subsubsection', 'latex', 'quote']
-          and page.evaluate('[...document.querySelectorAll("#rb-gallery [data-style]")].filter((b) => !b.hidden).map((b) => b.dataset.style)') == ['p', 'section', 'subsection', 'subsubsection', 'latex', 'quote'])
-    # a new document: a heading as the first thing
-    page.click('#b-new'); page.wait_for_function('window.rikuy.name.startsWith("Untitled") && window.rikuy.ghost', timeout=5000); page.wait_for_timeout(200)
-    style(page, 'section'); page.keyboard.type('Intro')
-    wait_src(page, '\\section{Intro}')
-    check('in a new document Heading 1 starts a heading to type into', '\\section{Intro}' in src(page), src(page))
 
 
 def letters(page):
@@ -363,7 +317,8 @@ def where_it_applies(page):
         check('in %s: %s' % (where, ', '.join([b[3:] + ' off' for b in off] + [b[3:] + ' on' for b in on])), all(st[b][0] for b in off) and not any(st[b][0] for b in on), {b: st[b][0] for b in off + on})
     page.evaluate("""() => { const sp = [...document.querySelectorAll('#pages span.t')]; const a = sp.find((s) => s.textContent.includes('Plain words')), z = sp.find((s) => s.textContent.includes('Second paragraph'));
       const r = document.createRange(); r.setStart(a.firstChild, 2); r.setEnd(z.firstChild, 5); document.getElementById('pages').focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }""")
-    check('with a selection over two paragraphs the style cannot be changed', state(page)['rb-style'][0])
+    st = state(page)
+    check('with a selection over two paragraphs the style applies to both (test/styles.py, many): the list is there, at Normal', not st['rb-style'][0] and st['style'] == 'p', st['rb-style'])
     # the row keeps the caret: a click on a disabled button, on the Download label, on empty space
     # (at 1600 px, where the label shows whatever Home holds)
     page.set_viewport_size({'width': 1600, 'height': 1000}); page.wait_for_timeout(300)
@@ -539,209 +494,6 @@ def body(page):
 def boxes(page):
     """The LaTeX paragraphs on the page, by their text (a box split over two pages counts once)."""
     return page.evaluate('[...new Set([...document.querySelectorAll("#pages .it.tex:not(.ghostp)")].map((e) => e.dataset.b))].map((b) => [...document.querySelectorAll(`#pages .it.tex[data-b="${b}"]`)].map((e) => e.textContent).join(""))')
-
-
-def gallery(page):
-    """The Styles gallery: Word's look and behaviour, with Rikuy's styles."""
-    load_doc(page, DOC); click_text(page, 'First paragraph', 6)
-    st = state(page)
-    tiles = page.evaluate(TILES)
-    check('the gallery shows Normal, Heading 1 to 3, LaTeX and Quote in that order, Normal checked', tiles == ['p*', 'section', 'subsection', 'subsubsection', 'latex', 'quote'], tiles)
-    look = page.evaluate("""() => { const g = document.getElementById('rb-gallery'), f = (id) => getComputedStyle(document.querySelector('#' + id + ' > span'));
-      const cap = document.querySelector('.rb-cap'), cr = cap.getBoundingClientRect(), gr = g.getBoundingClientRect();
-      return { role: g.getAttribute('role'), name: g.getAttribute('aria-label'), border: getComputedStyle(g).borderTopStyle, cap: cap.textContent, under: cr.top >= gr.bottom - 1 && cr.left >= gr.left && cr.right <= gr.right,
-        normal: f('rb-st-p').fontFamily.includes('Paper Modern Serif') && f('rb-st-p').fontWeight === '400', h1: f('rb-st-section').fontWeight === '700', h1big: parseFloat(f('rb-st-section').fontSize) > parseFloat(f('rb-st-subsubsection').fontSize),
-        quote: f('rb-st-quote').fontStyle === 'italic', a: getComputedStyle(document.querySelector('#rb-st-latex .tl-a')).textTransform, e: getComputedStyle(document.querySelector('#rb-st-latex .tl-e')).top,
-        clip: [...document.querySelectorAll('#rb-gallery [data-style]:not([hidden]) > span')].filter((x) => x.scrollWidth > x.clientWidth + 1).map((x) => x.textContent),
-        pressed: getComputedStyle(document.getElementById('rb-st-p')).borderTopColor !== getComputedStyle(document.getElementById('rb-st-section')).borderTopColor }; }""")
-    check('one bordered group named Styles, its name under it, each tile its name in its own look, the LaTeX logo in its letters, nothing cut off', look['role'] == 'group' and look['name'] == 'Styles' and look['border'] == 'solid'
-          and look['cap'] == 'Styles' and look['under'] and look['normal'] and look['h1'] and look['h1big'] and look['quote'] and look['a'] == 'uppercase' and look['e'] not in ('0px', 'auto') and not look['clip'] and look['pressed'], look)
-    check('all six apply to a paragraph, the strip\'s arrows have nothing to page to, More is there', not any(t.endswith('-') for t in tiles) and st['rb-st-up'][0] and st['rb-st-down'][0] and not st['rb-st-more'][0], st)
-    # a click on a tile: the caret stays where it was in the words
-    page.click('#rb-st-section'); page.wait_for_timeout(150)
-    check('Heading 1 by its tile: the paragraph becomes \\section{...}, the tile checked', src(page) == DOC.replace('First paragraph here.', '\\section{First paragraph here.}') and page.evaluate(TILES)[1] == 'section*', page.evaluate(TILES))
-    page.keyboard.type('X'); page.wait_for_timeout(150)
-    check('the click left the caret on the page, where it was', page.evaluate('document.activeElement.id') == 'pages' and '\\section{First Xparagraph here.}' in src(page), src(page)[60:120])
-    page.keyboard.press('Control+z'); page.wait_for_timeout(150)
-    page.click('#rb-st-p'); page.wait_for_timeout(150)
-    check('Normal on it: the paragraph again, byte for byte', src(page) == DOC and page.evaluate(TILES)[0] == 'p*', src(page)[60:120])
-    page.keyboard.press('Control+z'); page.wait_for_timeout(150)
-    check('one undo for each click', src(page) == DOC.replace('First paragraph here.', '\\section{First paragraph here.}'))
-    page.keyboard.press('Control+z'); page.wait_for_timeout(150)
-    check('and the next one back to the start', src(page) == DOC)
-    # where the caret is decides what is checked and what applies
-    click_text(page, 'Opening', 2); state(page)
-    check('in a heading its level is checked', page.evaluate(TILES)[1] == 'section*', page.evaluate(TILES))
-    click_text(page, 'two', 1); state(page)
-    t = page.evaluate(TILES)
-    check('in a list nothing is checked and only LaTeX applies (the list as its source)', t == ['p-', 'section-', 'subsection-', 'subsubsection-', 'latex', 'quote-'], t)
-    click_text(page, 'cell', 1); state(page)
-    t = page.evaluate(TILES)
-    check('in a table the same', t == ['p-', 'section-', 'subsection-', 'subsubsection-', 'latex', 'quote-'], t)
-    # More: the whole list, in its looks
-    click_text(page, 'Second paragraph', 3); state(page)
-    page.click('#rb-st-more'); page.wait_for_timeout(200)
-    menu = page.evaluate("""() => { const m = document.querySelector('body > .pop.pop-styles'); if (!m) return null;
-      return { role: m.getAttribute('role'), name: m.getAttribute('aria-label'), text: [...m.childNodes].filter((x) => x.nodeType === 3 || !x.matches('[role=menuitemradio]')).length, items: [...m.querySelectorAll('[role=menuitemradio]')].map((x) => x.getAttribute('aria-label') + (x.getAttribute('aria-checked') === 'true' ? '*' : '')),
-        focus: document.activeElement.getAttribute('aria-label'), expanded: document.getElementById('rb-st-more').getAttribute('aria-expanded'), looks: [...m.querySelectorAll('.rb-mi > span')].map((x) => getComputedStyle(x).fontWeight) }; }""")
-    check('More opens a menu "Styles" of every style in order and nothing else, the current one checked and focused', menu and menu['role'] == 'menu' and menu['name'] == 'Styles' and menu['text'] == 0 and menu['items'] == ['Normal*', 'Heading 1', 'Heading 2', 'Heading 3', 'LaTeX source', 'Quote']
-          and menu['focus'] == 'Normal' and menu['expanded'] == 'true' and menu['looks'][1] == '700', menu)
-    page.keyboard.press('ArrowDown'); page.keyboard.press('ArrowDown'); page.keyboard.press('Enter'); page.wait_for_timeout(200)
-    check('the arrows and Enter pick Heading 2 there, and the menu closes', src(page) == DOC.replace('Second paragraph here.', '\\subsection{Second paragraph here.}') and page.evaluate('document.querySelectorAll("body > .pop").length') == 0
-          and page.evaluate('document.getElementById("rb-st-more").getAttribute("aria-expanded")') == 'false', src(page)[60:160])
-    page.keyboard.type('Y'); page.wait_for_timeout(150)
-    check('with the caret back in the words', '\\subsection{SecYond paragraph here.}' in src(page), src(page)[60:160])
-    page.click('#rb-st-more'); page.wait_for_timeout(150); page.keyboard.press('Escape'); page.wait_for_timeout(150)
-    check('Escape closes it and gives the focus back to More', page.evaluate('document.querySelectorAll("body > .pop").length') == 0 and page.evaluate('document.activeElement.id') == 'rb-st-more')
-    # the title: a seventh style, and the arrows page
-    load_doc(page, '\\documentclass{article}\n\\title{A title}\n\\begin{document}\n\\maketitle\nWords.\n\\end{document}\n')
-    click_text(page, 'A title', 2)
-    st = state(page)
-    t = page.evaluate(TILES)
-    check('in the title the Title tile shows, checked, and nothing applies there', t == ['p-', 'title*-', 'section-', 'subsection-', 'subsubsection-', 'latex-'] and not st['rb-st-down'][0], (t, st['rb-st-down']))
-    page.click('#rb-st-down'); page.wait_for_timeout(100)
-    t2 = page.evaluate(TILES)
-    page.click('#rb-st-up'); page.wait_for_timeout(100)
-    check('the next arrow pages to the last six (a full page, with Quote), the previous one back', t2 == ['title*-', 'section-', 'subsection-', 'subsubsection-', 'latex-', 'quote-'] and page.evaluate(TILES) == t and page.evaluate('getSelection().anchorNode.parentNode.closest(".ttl") !== null'), t2)
-    look = page.evaluate('(() => { const b = document.getElementById("rb-st-title"), s = getComputedStyle(b.firstElementChild); return [b.getAttribute("aria-pressed"), b.getAttribute("aria-disabled"), s.opacity, getComputedStyle(b).backgroundColor !== "rgba(0, 0, 0, 0)"]; })()')
-    check('the pressed Title tile, which cannot change here, looks pressed and not faded', look == ['true', 'true', '1', True], look)
-    # a new document: LaTeX and Quote wait for the first character
-    for v, want in (('latex', '% rikuy: latex\n\\alpha$x'), ('quote', '\\begin{quote}\nSaid.\n\\end{quote}')):
-        page.click('#b-new'); page.wait_for_function('window.rikuy.name.startsWith("Untitled") && window.rikuy.ghost', timeout=5000); page.wait_for_timeout(200)
-        page.click('#rb-st-' + v); page.wait_for_timeout(100)
-        looks = page.evaluate('[...window.rikuy.ghost.el.classList]')
-        page.keyboard.type('\\alpha$x' if v == 'latex' else 'Said.'); page.wait_for_timeout(250)
-        check('in a new document %s sets the blank paragraph, and what is typed goes in %s' % (v, 'as LaTeX, \\ and $ as they are' if v == 'latex' else 'a quote'), want in src(page) and (v == 'latex') == ('tex' in looks)
-              and page.evaluate('document.querySelectorAll("body > .pop").length') == 0, (src(page)[-80:], looks))
-
-
-def gallery_widths(page):
-    """As many tiles as the row has room for, once the insert buttons' names have gone (they take no
-    control away, a tile does: ribbonFit); LaTeX always in sight; the list where three tiles do
-    not fit and on phones; one row height."""
-    load_doc(page, DOC)
-    seen = {}
-    for w in (1920, 1600, 1536, 1440, 1366, 1300, 1280, 1180, 1100, 1024, 1000, 900, 820, 390):
-        page.set_viewport_size({'width': w, 'height': 900}); page.wait_for_timeout(250)
-        click_text(page, 'First paragraph', 2); page.wait_for_timeout(120)
-        seen[w] = page.evaluate("""() => { const r = document.getElementById('ribbon'), sel = document.getElementById('rb-style');
-          const tiles = [...document.querySelectorAll('#rb-gallery [data-style]')].filter((b) => !b.hidden && b.offsetParent).map((b) => b.dataset.style);
-          const lab = document.querySelector('#rb-math span'); return { tiles, list: !!sel.offsetParent, opts: [...sel.options].filter((o) => !o.hidden).map((o) => o.value), over: r.scrollWidth > r.clientWidth + 1,
-            names: !!lab && getComputedStyle(lab).display !== 'none', h: Math.round(r.getBoundingClientRect().height), page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-            arrows: !!document.getElementById('rb-st-up').offsetParent }; }""")
-    print('     widths:', {w: (len(v['tiles']), 'list' if v['list'] else '', 'names' if v['names'] else '', v['h']) for w, v in seen.items()})
-    six = ['p', 'section', 'subsection', 'subsubsection', 'latex', 'quote']
-    check('at 1920 px all six tiles with the insert buttons\' names, no paging arrows, a row that does not scroll', seen[1920]['tiles'] == six and seen[1920]['names'] and not seen[1920]['arrows'] and not seen[1920]['over'], seen[1920])
-    check('from 1600 to 1366 px the insert buttons\' names go first and the gallery keeps its six tiles, no paging arrows, no scroll', all(seen[w]['tiles'] == six and not seen[w]['names'] and not seen[w]['arrows'] and not seen[w]['over'] for w in (1366, 1440, 1536, 1600)), {w: (seen[w]['tiles'], seen[w]['names']) for w in (1366, 1440, 1536, 1600)})
-    check('then fewer tiles, LaTeX among them, with the paging arrows (1300 to 1024 px)', all('latex' in seen[w]['tiles'] and 3 <= len(seen[w]['tiles']) < 6 and seen[w]['arrows'] and not seen[w]['over'] for w in (1300, 1280, 1180, 1100, 1024)), {w: seen[w]['tiles'] for w in (1300, 1280, 1180, 1100, 1024)})
-    order = {3: ['p', 'section', 'latex'], 4: ['p', 'section', 'subsection', 'latex'], 5: ['p', 'section', 'subsection', 'subsubsection', 'latex'], 6: six}
-    tiled = [w for w in seen if seen[w]['tiles']]
-    check('wherever the gallery shows, its first page is Normal and Heading 1 with LaTeX in sight (Normal, Heading 1, LaTeX for three), and the row does not scroll', all(seen[w]['tiles'] == order[len(seen[w]['tiles'])] and not seen[w]['over'] for w in tiled), {w: seen[w]['tiles'] for w in tiled})
-    # (where the gallery gives way to the list: between 1100 and 1024 px since Home has its Editing
-    # group, between 1024 and 1000 px before)
-    g = min(w for w in seen if seen[w]['tiles'])
-    l = max(w for w in seen if seen[w]['list'] and w < g)
-    check('the row is as tall with the list as with the gallery (no jump where the one gives way to the other, %d and %d px)' % (g, l), g >= 1024 and l >= 1000 and seen[g]['h'] == seen[l]['h'], (g, l, seen[g]['h'], seen[l]['h']))
-    check('narrower, the style list takes the gallery\'s place, with LaTeX and Quote', all(seen[w]['list'] and not seen[w]['tiles'] and seen[w]['opts'] == six for w in (900, 820, 390)) and seen[390]['page'] <= 0 and seen[390]['h'] <= 44, {w: seen[w] for w in (820, 390)})
-    page.set_viewport_size({'width': 390, 'height': 800}); page.wait_for_timeout(300)
-    click_text(page, 'Second paragraph', 3); state(page)
-    style(page, 'latex')
-    check('on a phone the list makes a LaTeX paragraph too', body(page).count('% rikuy: latex\nSecond paragraph here.') == 1 and boxes(page) == ['Second paragraph here.'], body(page)[:120])
-    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
-
-
-def gallery_paging(page):
-    """Paging keeps the gallery's width, so nothing moves under the mouse; the last page is full;
-    the arrows hand the focus on at their ends; the gallery pages to the caret's style; the strip's
-    targets are 24 px or more; a tile that cannot apply keeps its tooltip, which says why."""
-    load_doc(page, WRAP('Text here.\n\n\\subsubsection{Deep}\nUnder it.'))
-    page.set_viewport_size({'width': 1100, 'height': 900}); page.wait_for_timeout(300)
-    click_text(page, 'Text here', 2); state(page)
-    POS = """() => { const r = (id) => { const b = document.getElementById(id).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.width), Math.round(b.height)]; };
-      return { up: r('rb-st-up'), down: r('rb-st-down'), more: r('rb-st-more'), bold: r('rb-b'), gal: r('rb-gallery'), tiles: [...document.querySelectorAll('#rb-gallery [data-style]')].filter((b) => !b.hidden).map((b) => b.dataset.style) }; }"""
-    a = page.evaluate(POS)
-    page.click('#rb-st-down'); page.wait_for_timeout(120)
-    b = page.evaluate(POS)
-    check('at 1100 px Next shows the last four styles (a full page) and the gallery, the arrows and Bold stay where they were', len(a['tiles']) == 4 and b['tiles'] == ['subsection', 'latex', 'subsubsection', 'quote'] and all(a[k] == b[k] for k in ('up', 'down', 'more', 'bold', 'gal')), (a, b))
-    check('the arrows and More are 24 px wide or more and as tall as the box', all(a[k][1] >= 24 and a[k][2] >= 24 for k in ('up', 'down', 'more')), a)
-    page.click('#rb-st-up'); page.wait_for_timeout(120)
-    # by keyboard: an arrow that reaches its end gives the focus to the other one
-    page.focus('#rb-st-down'); page.keyboard.press('Enter'); page.wait_for_timeout(120)
-    f1 = page.evaluate('document.activeElement.id')
-    page.keyboard.press(' '); page.wait_for_timeout(120)
-    f2 = page.evaluate('document.activeElement.id')
-    stops = page.evaluate('[...document.querySelectorAll("#ribbon button, #ribbon select")].filter((x) => x.tabIndex === 0).map((x) => x.id)')
-    check('Enter on Next at the last page hands the focus to Previous, Space there back to Next, and the one tab stop follows', f1 == 'rb-st-up' and f2 == 'rb-st-down' and stops == ['rb-st-down'], (f1, f2, stops))
-    page.keyboard.press('Escape'); page.wait_for_timeout(120)
-    check('Escape on a button of the gallery goes back to the caret on the page', page.evaluate('document.activeElement.id') == 'pages')
-    # the caret in a Heading 3: its tile comes into view, pressed
-    click_text(page, 'Deep', 2); state(page)
-    t = page.evaluate(TILES)
-    check('with the caret in a Heading 3 the gallery pages to its tile', 'subsubsection*' in t, t)
-    click_text(page, 'Text here', 2); state(page)
-    check('and back in a paragraph to Normal\'s', page.evaluate(TILES)[0] == 'p*', page.evaluate(TILES))
-    # a tile that cannot apply: no click goes through, the pointer still reaches it, its title says why
-    click_text(page, 'Under it', 2); state(page)
-    load_doc(page, WRAP('Words with a note\\footnote{n}.')); click_text(page, 'Words', 2); state(page)
-    info = page.evaluate('(() => { const b = document.getElementById("rb-st-section"); return [b.getAttribute("aria-disabled"), getComputedStyle(b).pointerEvents, b.title]; })()')
-    before = src(page)
-    page.set_viewport_size({'width': 1920, 'height': 900}); page.wait_for_timeout(300); click_text(page, 'Words', 2); state(page)
-    page.click('#rb-st-section', force=True); page.wait_for_timeout(150)
-    check('a heading cannot hold a footnote: Heading 1 is marked so, its tooltip says why, and a click on it changes nothing', info[0] == 'true' and info[1] != 'none' and 'footnote' in info[2] and src(page) == before, info)
-    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
-
-
-def gallery_keys(page):
-    """The gallery from the keyboard: its tiles and the strip are members of the toolbar."""
-    load_doc(page, DOC); click_text(page, 'Third paragraph', 3); state(page)
-    page.focus('#rb-st-p')
-    seen = []
-    for key in ('ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight'):
-        page.keyboard.press(key); seen.append(page.evaluate('document.activeElement.id'))
-    check('the arrow keys go along the tiles, past the strip\'s disabled arrows to More, and on to Formula', seen == ['rb-st-section', 'rb-st-subsection', 'rb-st-subsubsection', 'rb-st-latex', 'rb-st-quote', 'rb-st-more', 'rb-math'], seen)
-    page.focus('#rb-st-latex'); page.keyboard.press('Enter'); page.wait_for_timeout(200)
-    check('Enter on LaTeX makes the caret\'s paragraph a LaTeX paragraph', body(page).count('% rikuy: latex\nThird paragraph here.') == 1 and boxes(page) == ['Third paragraph here.'], body(page))
-    page.focus('#rb-st-quote'); page.keyboard.press(' '); page.wait_for_timeout(200)
-    check('and Space on Quote a quote of what it holds (one paragraph of text)', '\\begin{quote}\nThird paragraph here.\n\\end{quote}' in src(page) and 'rikuy: latex' not in src(page), body(page))
-    page.focus('#rb-st-quote')
-    check('the ring shows on the focused tile', page.evaluate('(() => { const c = getComputedStyle(document.activeElement); return c.outlineStyle !== "none" && parseFloat(c.outlineWidth) > 0; })()'))
-    page.keyboard.press('Enter'); page.wait_for_timeout(150)
-    check('Enter on the tile that is already pressed changes nothing and gives the focus back to the page', page.evaluate('document.activeElement.id') == 'pages' and '\\begin{quote}\nThird' in src(page))
-    page.focus('#rb-st-more'); page.keyboard.press('ArrowDown'); page.wait_for_timeout(200)
-    opened = page.evaluate('[!!document.querySelector("body > .pop.pop-styles"), document.activeElement.getAttribute("aria-label")]')
-    page.keyboard.press('Home'); page.keyboard.press('ArrowUp'); page.wait_for_timeout(80)
-    up = page.evaluate('document.activeElement.getAttribute("aria-label")')
-    page.keyboard.press('Escape'); page.wait_for_timeout(120)
-    check('ArrowDown on More opens the menu at the current style; ArrowUp from its first item goes round to Quote, not to a Close item', opened == [True, 'Quote'] and up == 'Quote', (opened, up))
-
-
-def quote_style(page):
-    """Quote: a quote environment around the paragraph and away again, byte for byte."""
-    for text, para in (('a plain paragraph', 'Second paragraph here.'),):
-        load_doc(page, DOC); click_text(page, 'Second paragraph', 6)
-        style(page, 'quote')
-        q = DOC.replace(para, '\\begin{quote}\n' + para + '\n\\end{quote}')
-        check('Quote on %s puts a quote environment around it, its words untouched, the tile checked' % text, src(page) == q and page.evaluate(TILES)[-1] == 'quote*', src(page)[60:170])
-        page.keyboard.type('Q'); page.wait_for_timeout(150)
-        check('with the caret still in its words', 'SecondQ paragraph' in src(page))
-        page.keyboard.press('Control+z'); page.wait_for_timeout(150)
-        style(page, 'p')
-        check('Normal takes it away, back to the source as it was', src(page) == DOC, src(page)[60:170])
-        page.keyboard.press('Control+z'); page.wait_for_timeout(150)
-        check('one undo for each', src(page) == q)
-        style(page, 'subsection')
-        check('Heading 2 on a quote: the environment goes, the heading comes, in one step', src(page) == DOC.replace(para, '\\subsection{' + para + '}'), src(page)[60:170])
-        style(page, 'quote')
-        check('and a quote again from the heading', src(page) == q, src(page)[60:170])
-    # one written by hand, with no blank line around it: Normal keeps its paragraph apart
-    tight = WRAP('Before.\n\\begin{quotation}\n  Said here.\n\\end{quotation}\nAfter.')
-    load_doc(page, tight); click_text(page, 'Said', 2); state(page)
-    check('a quotation shows as Quote', page.evaluate(TILES)[-1] == 'quote*', page.evaluate(TILES))
-    style(page, 'p')
-    check('Normal on one with no blank line around it leaves a paragraph of its own', src(page) == WRAP('Before.\n\nSaid here.\n\nAfter.'), body(page))
-    load_doc(page, WRAP('\\begin{quote}\nOne.\n\nTwo.\n\\end{quote}')); click_text(page, 'Two', 1); state(page)
-    t = page.evaluate(TILES)
-    check('a quote of two paragraphs shows as Quote and is changed only as a whole (LaTeX)', t == ['p-', 'section-', 'subsection-', 'subsubsection-', 'latex', 'quote*'], t)
 
 
 def latex_style(page):
@@ -993,10 +745,10 @@ def latex_pdf(page):
 
 def run():
     with sync_playwright() as p:
-        fns = (top_bar, styles, letters, lists, inserts, keyboard, narrow, downloads, one_save, where_it_applies, list_edges, insert_edges, downloads_in_sight, bold_across, live_graphs,
-               gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, latex_style, latex_typing, latex_after_ghost, latex_edges, latex_clipboard, latex_pdf)
+        fns = (top_bar, letters, lists, inserts, keyboard, narrow, downloads, one_save, where_it_applies, list_edges, insert_edges, downloads_in_sight, bold_across, live_graphs,
+               latex_style, latex_typing, latex_after_ghost, latex_edges, latex_clipboard, latex_pdf)
         # (the tests that read the tiles see all six: from 1600 px the gallery has room for them)
-        wide = (styles, gallery, gallery_keys, quote_style, latex_style, latex_edges)
+        wide = (latex_style, latex_edges)
         # (names given on the command line run those alone)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             browser, page, errors = open_page(p, width=1920 if fn in wide else 1400)

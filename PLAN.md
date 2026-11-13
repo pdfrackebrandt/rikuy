@@ -928,6 +928,72 @@ Tests:
     `offline.py` 54/54, `launch.py` 18/18, `deploy_check.py` 43/43, `pages_check.py` fits; the
     security audit's quick profile on the changed files (notes outside the repository) found
     three more stalls of the same kind, fixed above with tests.
+42. **B4, Word's styles over LaTeX's own.** Done in the code (branch `wordgap-b4-styles`, on task
+    38's frame; GAP rows H59 to H74, A8, D1 to D4). *The gallery's tiles are slots* (`SLOT_EL`,
+    `gallerySlots`): Heading 1 is `\section`, or `\chapter` in a report, book, scrbook or memoir,
+    and so on down; Heading 4 shows once Heading 3 is in use, as in Word; a tile's right click (or
+    the Styles pane's "<name> options") gives Update to Match Selection, Modify…, Select All
+    Instances, Remove from Style Gallery and Reset. *Every style LaTeX has* (`styleCatalog`):
+    Normal, Title, Heading 1 to 6 (`\paragraph`, `\subparagraph`), Part, LaTeX, Quote,
+    Quotation, Verse, Abstract, Theorem, Lemma, Proposition, Corollary, Definition, Example,
+    Remark, Proof, the document's own theorem environments and its `\newenvironment` of
+    formatting alone; `restyle` takes any to any other by the smallest edit, an environment
+    renamed at both ends (a theorem's `[title]` kept, and then only another theorem offered); a
+    theorem's `\newtheorem` (with `\theoremstyle{plain}` where another style is in force, and
+    amsthm for a style or proof) goes in the same commit unless the preamble, a file it reads, the
+    model or the class (llncs, svjour) has it; ntheorem gets its own `\newtheorem` alone. *On
+    several paragraphs* a heading, Normal or LaTeX goes on each (from the last back, one edit
+    per file, one undo), an environment once around all of them where they follow one another.
+    *Numbers:* Unnumbered heading (`\section*`) and Heading numbers off
+    (`\setcounter{secnumdepth}{0}`, -1 in a class with chapters; a line of that kind is changed
+    where it stands, Rikuy's own goes again whole). *Keys:* Ctrl+Alt+4 Heading 4, Ctrl+Shift+S
+    Apply Styles, Ctrl+Alt+Shift+S the Styles pane (no dialog: it stays beside the page and follows
+    the caret, a sheet on a phone; on narrow windows the style list's last choices open it and
+    Create a Style). "# "
+    to "#### " at a paragraph's start make it a heading as a step of its own (AutoFormat headings
+    turns it off). *Modify Style* writes titlesec's `\titleformat*` (the format alone) or
+    `\titleformat` (shape, rule, number) and `\titlespacing*`, each heading's lines replaced
+    where they stand (`src/looks.js`, every scan bounded); LaTeX's own takes them away; a style of
+    the document's own gets its `\newcommand` body or `\newenvironment` start rewritten; Normal
+    hands over to B1's Font dialog (`font-dialog`) or B2's paragraph dialog by id. *Create a
+    Style:* `\newcommand{\name}[1]{\textcolor{…}{\textbf{#1}}}` or
+    `\newenvironment{name}{\par\itshape…}{\par}` once, applied to the selection or the paragraph
+    in the same step. *Update to Match Selection:* `\section{\textsf{\textcolor{teal}{X}}}` gives
+    its formatting to every Heading 1 and loses the wrappers; inside `\keyterm{…}` the same into
+    the macro. *The Design tab* (group Document formatting): Themes (five), Style Set (seven
+    titlesec sets, "LaTeX" none), Colors (`\definecolor{accent}`; every colour picker that lists
+    the document's colours lists it first), Fonts (the headings'; "Text font…" opens B1's Font box
+    by id); KOMA-Script by `\setkomafont{disposition}`, memoir and beamer refused with the reason.
+    *The page draws it as TeX prints it:* the model reads the looks (`headLook`, KOMA's sans
+    serif headings too) and an own environment's look; `\paragraph` and `\subparagraph` run into
+    the paragraph after them (a blank line between or not: `runIns`), drawn over the start of its
+    first line, which keeps their words' room unseen; `\part` shows "Part I". Word: Heading 4 and 5
+    go out as Word's and come back as `\paragraph` and `\subparagraph`, Quotation as a quote.
+    The gallery tests moved from `ribbon.py` to `test/styles.py`, every check kept (those whose
+    expectation the new styles change rewritten: Heading 4 in the paging, every style in the
+    list and More, a quotation shown as Quotation, two quoted paragraphs back to Normal). Not done
+    or changed: H63 (Subtitle, Author, Date as styles) not done, the title is still edited where it
+    stands; H65's Code (verbatim) left out, a verbatim block is an atom the caret cannot enter, so
+    it could not be taken off again from the gallery; H74's Rename not done; D1 writes no
+    `\hypersetup` link colour; D2 never changes the class; Set as default is F22 (B12's). The
+    security audit's quick profile (notes outside the repository) found three stalls on a
+    stranger's long document: six commands' `when` scanning the preamble at every caret move
+    (cached per model), Select All Instances querying the page once per block (one walk), and
+    "# " reading the whole paragraph at every space (nine characters first); fixed with a timing
+    test. Phones: the style list (with the pane and Create a Style at its end), the pane as a sheet
+    with 44 px rows and its options always in sight (a heading's Unnumbered heading among them,
+    since a phone has no right click), Modify Style and Create a Style fitting and scrolling, the
+    Design tab's gallery, all by taps at 390 by 844 and 360 by 740 with no sideways scroll.
+    Evidence (on main at a941302, after B6): `npm test` green (`styles.test.mjs` 24 groups, `looks.test.mjs` 6, `word` 58);
+    `test/styles.py` 263 (the 76 gallery checks moved from `ribbon.py`, the round trips, the
+    phones at two sizes, the long document's timings, and every style compiled in the page with
+    pdfLaTeX and LuaLaTeX, the PDF's text read back); `ribbon.py` 193 (268 less the 76 moved,
+    one rewritten: a selection over two paragraphs now takes a style); `tabs.py` 116 (Design is
+    a tab now); `agent.py` 138; `browser.py` 189; `find.py` 76; `page.py` 139; `outline.py` 59 (the styles'
+    heading menu items after the outline's); `offline.py` 54/54; `launch.py` 18/18;
+    `deploy_check.py` 43/43; `pages_check.py` fits; the corpus model run 716 of 716 with the same
+    unknown commands as before; actionlint clean.
+
 43. **B5, Find, Replace, Go To and the outline, as in Word.** Done in the code (branch
     `wordgap-b5-find`, on task 38's frame; GAP rows H75 to H81, V4, V10, S1, C5). *Find*
     (Ctrl+F on the page, Home's Find): the side panel's Outline tab is now Word's Navigation

@@ -778,6 +778,17 @@ await ok('section numbers typed into headings are LaTeX\'s own when they are the
   assert.ok(b.tex.includes('\\section{1 Introduction}') && b.tex.includes('\\section{3 Results}') && b.tex.includes('\\section{2024 in review}\\label{in-review}\n\n\\end{document}'), b.tex);
 });
 
+await ok('Heading 4 and 5 (\\paragraph, \\subparagraph) and Quotation go to Word as its Heading 4, Heading 5 and a quote, and Word\'s Heading 4 and 5 come back as \\paragraph and \\subparagraph', () => {
+  const E = exportFiles(new Map([['main.tex', doc('\\section{A}\nText.\n\n\\paragraph{Lead}\n\nRuns in.\n\n\\subparagraph{Sub}\nAlso.\n\n\\begin{quotation}\nSaid.\n\\end{quotation}')]]));
+  const x = text(unzip(E.docx).get('word/document.xml'));
+  assert.ok(/w:pStyle w:val="Heading4"/.test(x) && /w:pStyle w:val="Heading5"/.test(x) && /Lead/.test(x) && /Runs in/.test(x), 'Heading 4 and 5 in the docx');
+  assert.ok(/w:pStyle w:val="(BlockText|Quote|BlockQuote)"/.test(x), 'the quotation as a quote');
+  const h = (l, t) => '<w:p><w:pPr><w:pStyle w:val="Heading' + l + '"/></w:pPr><w:r><w:t>' + t + '</w:t></w:r></w:p>';
+  const st = { 'word/styles.xml': '<w:styles ' + NSW + '>' + [1, 4, 5].map((l) => '<w:style w:type="paragraph" w:styleId="Heading' + l + '"><w:name w:val="heading ' + l + '"/></w:style>').join('') + '</w:styles>' };
+  const a = open(tiny(h(1, 'Top') + wp('Text.') + h(4, 'Lead') + wp('Runs in.') + h(5, 'Sub') + wp('Also.'), st));
+  assert.ok(/\\paragraph\{Lead\}/.test(a.tex) && /\\subparagraph\{Sub\}/.test(a.tex), a.tex);
+});
+
 const AR_DOC = (body, main) => '\\documentclass{article}\n' + [BABEL, ...(main ? AR_MAIN : AR), ...ZH].join('\n') + '\n\\title{' + (main ? 'عنوان الورقة' : 'A Title') + '}\n\\author{Ana}\n\\begin{document}\n\\maketitle\n' + body + '\n\\end{document}\n';
 const run = (t, rpr = '') => '<w:r>' + (rpr ? '<w:rPr>' + rpr + '</w:rPr>' : '') + '<w:t xml:space="preserve">' + t + '</w:t></w:r>';
 const RTL = '<w:rtl />', EA = '<w:rFonts w:hint="eastAsia" />';

@@ -5,7 +5,7 @@
 // ends, and every style change there and back, byte for byte.
 import assert from 'node:assert/strict';
 import { buildModel } from '../src/model.js';
-import { LATEX_MARK, isLatexMark, latexSpot, restyle, applyEdits, quoteWords, startsLine } from '../src/styles.js';
+import { LATEX_MARK, isLatexMark, latexSpot, restyle, applyEdits, quoteWords, startsLine, headLevels, headName, isEnvStyle, envOf, thmLine, starEdits, numberingEdits, charStyleBody, formatOnlyBegin, readCharBody, charBodyOf, readEnvBegin, envBeginOf, charDef, envDef, defRange } from '../src/styles.js';
 
 let n = 0;
 const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
@@ -246,6 +246,121 @@ ok('where the mark counts, as llms-full.txt and docs/ARCHITECTURE.md say', () =>
     assert.deepEqual(texts(model(wrap(body))), [], body);
   // in the preamble it is a comment like any other
   assert.deepEqual(texts(model('\\documentclass{article}\n% rikuy: latex\n\\usepackage{x}\n\\begin{document}\nA\n\\end{document}\n')), []);
+});
+
+
+// ---- B4: every heading, the environments, numbering, the document's own styles ----------------
+const B = (src, words, ws, we, v) => ({ v, s: ws, ws, we, e: we, spot: -1 });
+ok('heading levels by class, and Word\'s names for them', () => {
+  assert.deepEqual(headLevels(false), ['section', 'subsection', 'subsubsection', 'paragraph', 'subparagraph']);
+  assert.deepEqual(headLevels(true), ['chapter', 'section', 'subsection', 'subsubsection', 'paragraph', 'subparagraph']);
+  assert.equal(headName('section', true), 'Heading 2');
+  assert.equal(headName('paragraph', false), 'Heading 4');
+  assert.equal(headName('part', false), 'Part');
+  assert.ok(isEnvStyle('quotation') && isEnvStyle('theorem') && isEnvStyle('env:claim') && !isEnvStyle('section') && !isEnvStyle('p'));
+  assert.equal(envOf('env:claim'), 'claim');
+});
+
+ok('every heading and environment there and back, byte for byte, the words untouched', () => {
+  const t = wrap('Before.\n\nWords here.\n\nAfter.'), s = t.indexOf('Words'), e = s + 'Words here.'.length;
+  for (const to of ['paragraph', 'subparagraph', 'chapter', 'part', 'quotation', 'verse', 'abstract', 'theorem', 'proof', 'env:aside']) {
+    const r = restyle(t, { v: 'p', s, ws: s, we: e, e, spot: -1 }, to, s + 2);
+    const u = applyEdits(t, r.edits);
+    assert.ok(u.includes('Words here.'), to);
+    const name = envOf(to);
+    if (isEnvStyle(to)) {
+      assert.ok(u.includes('\\begin{' + name + '}\nWords here.\n\\end{' + name + '}'), u);
+      const q = quoteWords(u, u.indexOf('\\begin{' + name), u.indexOf('\\end{' + name) + ('\\end{' + name + '}').length, new Set([name]));
+      const back = applyEdits(u, restyle(u, { v: to, s: u.indexOf('\\begin{' + name), ws: q.ws, we: q.we, e: u.indexOf('\\end{' + name) + ('\\end{' + name + '}').length }, 'p', q.ws).edits);
+      assert.equal(back, t, to);
+    } else {
+      assert.ok(u.includes('\\' + to + '{Words here.}'), u);
+      const hs = u.indexOf('\\' + to + '{'), he = u.indexOf('}', hs) + 1;
+      assert.equal(applyEdits(u, restyle(u, { v: to, s: hs, ws: hs + to.length + 2, we: he - 1, e: he }, 'p', hs + 3).edits), t, to);
+    }
+    assert.ok(r.p >= s && r.p <= u.length);
+  }
+  // one environment to another: its name alone at both ends, a theorem's [title] kept
+  const th = wrap('\\begin{theorem}[Euclid]\nWords.\n\\end{theorem}'), a = th.indexOf('\\begin{theorem}'), z = th.indexOf('\\end{theorem}') + 13, q = quoteWords(th, a, z, new Set(['theorem']));
+  assert.equal(th.slice(q.ws, q.we), 'Words.');
+  assert.equal(applyEdits(th, restyle(th, { v: 'theorem', s: a, ws: q.ws, we: q.we, e: z }, 'lemma', q.ws).edits), wrap('\\begin{lemma}[Euclid]\nWords.\n\\end{lemma}'));
+  // a quote's text that starts with a bracket is its text, not an option
+  const qb = wrap('\\begin{quote}[t] said\n\\end{quote}'), qa = qb.indexOf('\\begin{quote}');
+  assert.equal(qb.slice(quoteWords(qb, qa, qb.indexOf('\\end{quote}') + 11).ws).slice(0, 3), '[t]');
+  // a heading to a deeper one keeps its star and short title
+  const h = wrap('\\subsubsection*{Deep}\nText.'), hs = h.indexOf('\\sub'), he = h.indexOf('}', hs) + 1;
+  assert.ok(applyEdits(h, restyle(h, { v: 'subsubsection', s: hs, ws: hs + 16, we: he - 1, e: he }, 'paragraph', hs + 17).edits).includes('\\paragraph*{Deep}'));
+});
+
+ok('numbered and unnumbered: the star after the name, and secnumdepth in the preamble once', () => {
+  const t = wrap('\\section{A}\nText.'), s = t.indexOf('\\section');
+  const u = applyEdits(t, starEdits(t, { s }));
+  assert.ok(u.includes('\\section*{A}'));
+  assert.equal(applyEdits(u, starEdits(u, { s })), t);
+  const off = applyEdits(t, numberingEdits(t, true, false));
+  assert.ok(off.includes('\\setcounter{secnumdepth}{0}\n\\begin{document}'));
+  assert.equal(applyEdits(off, numberingEdits(off, false, false)), t);
+  assert.deepEqual(numberingEdits(off, true, false), []);
+  assert.ok(applyEdits(t, numberingEdits(t, true, true)).includes('{secnumdepth}{-1}'));
+  // a hand written one with another number is changed where it stands; one inside a comment is none
+  const hand = wrap('x', '\\setcounter{secnumdepth}{2} % deeper\n');
+  assert.ok(applyEdits(hand, numberingEdits(hand, true, false)).includes('\\setcounter{secnumdepth}{0} % deeper'));
+  const com = wrap('x', '% \\setcounter{secnumdepth}{0}\n');
+  assert.ok(applyEdits(com, numberingEdits(com, true, false)).includes('% \\setcounter{secnumdepth}{0}\n\\setcounter{secnumdepth}{0}\n'));
+  assert.equal(numberingEdits('no preamble', true, false), null);
+});
+
+ok('a theorem\'s \\newtheorem, with its style where it has one', () => {
+  assert.equal(thmLine('theorem', false), '\\newtheorem{theorem}{Theorem}');
+  assert.equal(thmLine('definition', false), '\\theoremstyle{definition}\n\\newtheorem{definition}{Definition}');
+  assert.equal(thmLine('proof', false), '');
+  assert.equal(thmLine('lemma', true), '');
+});
+
+ok('the document\'s own styles: a \\newcommand that only formats its argument, an environment of declarations', () => {
+  for (const yes of ['\\textbf{#1}', '\\textcolor{accent}{\\textbf{\\textit{#1}}}', '{\\bfseries #1}', '{\\color{red}\\itshape #1}', '\\emph{\\textsc{#1}}'])
+    assert.ok(charStyleBody(yes), yes);
+  for (const no of ['#1 and #2', '\\textbf{#1} x', '\\section{#1}', '\\href{#1}{x}', '#1#1', '\\textcolor{a}b{#1}', 'x'.repeat(400) + '#1'])
+    assert.ok(!charStyleBody(no), no);
+  assert.ok(formatOnlyBegin('\\par\\itshape\\color{accent}\\centering') && !formatOnlyBegin('\\begin{center}') && !formatOnlyBegin(''));
+  const F = { bf: true, it: true, color: 'accent' };
+  assert.deepEqual(readCharBody(charBodyOf(F)), F);
+  assert.equal(charDef('keyterm', F), '\\newcommand{\\keyterm}[1]{\\textcolor{accent}{\\textbf{\\textit{#1}}}}');
+  const G = { it: true, align: 'center', size: 'small' };
+  assert.deepEqual(readEnvBegin(envBeginOf(G)), G);
+  assert.equal(envDef('aside', G), '\\newenvironment{aside}{\\par\\small\\itshape\\centering}{\\par}');
+  const t = wrap('x', '\\newcommand{\\keyterm}[1]{\\textbf{#1}}\n\\newcommand\\other[1]{#1}\n\\newenvironment{aside}{\\par\\itshape}{\\par}\n');
+  const r = defRange(t, 'keyterm', 'cmd'), r2 = defRange(t, 'aside', 'env');
+  assert.equal(t.slice(r.s, r.e), '\\textbf{#1}');
+  assert.equal(t.slice(r2.s, r2.e), '\\par\\itshape');
+  assert.equal(t.slice(defRange(t, 'other', 'cmd').s, defRange(t, 'other', 'cmd').e), '#1');
+  assert.equal(defRange(t, 'missing', 'cmd'), null);
+  assert.equal(defRange(wrap('x', '% \\newcommand{\\keyterm}[1]{#1}\n'), 'keyterm', 'cmd'), null);
+});
+
+ok('the model: \\paragraph runs into the paragraph after it (a blank line between or not), \\part is numbered I, titlesec\'s look is read', () => {
+  const M = model(wrap('\\part{Whole}\n\\section{A}\nText.\n\n\\paragraph{Lead}\n\nRuns in.\n\n\\subparagraph{Sub} Also.\n\n\\paragraph{Alone}\n\\begin{itemize}\\item x\\end{itemize}',
+    '\\usepackage{titlesec}\n\\titleformat{\\section}[hang]{\\normalfont\\Large\\bfseries\\sffamily\\filcenter}{\\thesection}{1em}{}[\\titlerule]\n'));
+  const its = items(M).map((x) => x.it);
+  const part = its.find((x) => x.type === 'h' && x.level === -1), sec = its.find((x) => x.type === 'h' && x.level === 1);
+  assert.equal(part.num, 'I');
+  assert.equal(part.chapLabel, 'Part');
+  assert.deepEqual([sec.look.sf, sec.look.align, sec.look.rule, sec.look.size], [true, 'center', true, 'Large']);
+  const lead = its.find((x) => x.type === 'h' && x.level === 4 && texts.length >= 0 && x.inl.some((y) => y.t === 'Lead'));
+  const after = its[its.indexOf(lead) + 1];
+  assert.ok(lead.runIn && after.runIn && after.runIn.text === 'Lead');
+  const sub = its.find((x) => x.type === 'h' && x.level === 5);
+  assert.ok(sub.runIn && its[its.indexOf(sub) + 1].runIn.level === 5);
+  // before a list it stands on its own line
+  const alone = its.find((x) => x.type === 'h' && x.inl.some((y) => y.t === 'Alone'));
+  assert.ok(alone.runInto && !alone.runIn);
+  // a \titleformat with shape hang for \paragraph sets it on its own line
+  const M2 = model(wrap('\\paragraph{Lead}\nText.', '\\usepackage{titlesec}\n\\titleformat{\\paragraph}[hang]{\\normalfont\\bfseries}{}{0pt}{}\n'));
+  assert.ok(!items(M2).find((x) => x.it.type === 'h').it.runIn);
+  // an environment of the document's own that only formats: its paragraphs in that look
+  const M3 = model(wrap('\\begin{aside}\nSet apart.\n\\end{aside}', '\\newenvironment{aside}{\\par\\itshape\\color{red}}{\\par}\n'));
+  const p = items(M3).find((x) => x.it.type === 'p').it;
+  assert.ok(p.look && p.look.it && p.look.color && !p.envTag);
 });
 
 console.log('styles: ' + n + ' groups of checks passed');
