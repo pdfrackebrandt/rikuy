@@ -322,8 +322,26 @@ class Walker {
     const ri = t.rows.indexOf(rows[0]);
     const after = t.rows[ri + 1];
     const head = rows.length > 1 && after && after.rules.some((x) => x.kind === 'light' || x.kind === 'heavy') && ri === t.rows.findIndex((r) => !r.empty);
-    const row = (r) => [attr(), r.cells.map((c) => [attr(), { t: AL[c.align] || 'AlignDefault' }, 1, c.span || 1,
-      [{ t: 'Plain', c: this.wrap('cell', t.f, null, null, () => this.inl(c.inl, u ? u.fns : []), { after: u ? u.e : null, dir: c.dir || t.dir || (u && u.dir) }) }]])];
+    // (B7) a cell merged down (\multirow) spans its rows in Word too: the empty cells under it,
+    // which LaTeX needs and Word has not, are left out
+    const covered = new Map();
+    const row = (r) => {
+      const out = [];
+      let col = 0;
+      for (const c of r.cells) {
+        const cov = covered.get(col);
+        if (cov && cov.left > 0 && c.inl.every((x) => x.ph)) {
+          for (let q = col; q < col + (c.span || 1); q++) { const v = covered.get(q); if (v && v.left > 0) v.left--; }
+          col += c.span || 1;
+          continue;
+        }
+        if (c.rows > 1) for (let q = col; q < col + (c.span || 1); q++) covered.set(q, { left: c.rows - 1 });
+        out.push([attr(), { t: AL[c.palign || c.align] || 'AlignDefault' }, c.rows > 1 ? c.rows : 1, c.span || 1,
+          [{ t: 'Plain', c: this.wrap('cell', t.f, null, null, () => this.inl(c.inl, u ? u.fns : []), { after: u ? u.e : null, dir: c.dir || t.dir || (u && u.dir) }) }]]);
+        col += c.span || 1;
+      }
+      return [attr(), out];
+    };
     const headRows = head ? [row(rows[0])] : [];
     const bodyRows = (head ? rows.slice(1) : rows).map(row);
     return { t: 'Table', c: [attr(), [null, []], specs, [attr(), headRows], [[attr(), 0, [], bodyRows]], [attr(), []]] };

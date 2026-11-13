@@ -1046,6 +1046,119 @@ Tests:
     `git.py` 44/44; `share.py` 46; `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43;
     `pages_check.py` fits; actionlint clean.
 
+45. **B7, tables as in Word.** Done in the code (branch `wordgap-b7-table`), rows I4, I5, I7, I8,
+    T1 to T5, T7 to T20 and C2 of the gap list (task 38). *One reading of a table.*
+    `src/table.js` reads tabular, tabular*, tabularx, tabulary, longtable, array and xltabular
+    once: the specification as pieces (l c r, p m b, X, S, w, D, letters `\newcolumntype` made
+    with their arguments, `@{}`, `!{}`, `>{}`, `<{}`, `*{n}{…}`), each row as its rules, its
+    cells between their `&` (not one in braces, a nested environment, a comment or `\verb`), its
+    `\\` with a star or `[2pt]`, `\tabularnewline`, longtable's `\kill` and `\endhead`;
+    `\multicolumn`, `\multirow`, `\rowcolor`, `\cellcolor` at a cell's start; CRLF kept. Every
+    piece is a range, so the table put back together is the same bytes (all 222 readable tables
+    of the corpus; the 223rd is half of a macro), and every operation is small edits there, in
+    the table's own style: a row inserted is one unit like its neighbours' (in an `\hline` grid
+    with its own `\hline`; in booktabs above `\midrule` from the header, under it from the first
+    body row, above `\bottomrule` from the last), a column is one letter and one `&` a row
+    (`\cline` ranges and `\multicolumn` counts follow). *The commands* (`src/cmd/table.js`, all
+    from the registry): Insert › Table with Word's grid of ten by eight (mouse and keys) and
+    Insert Table…, Convert Text to Table…, Table from Data File… (`\csvautobooktabular`, drawn
+    on the page from the project's .csv); Table on Home inserts a two by two table as before, now
+    booktabs with a header row (booktabs loaded once). Table Design: Header Row, Total Row,
+    Banded Rows (`\rowcolors`), First and Last Column (`>{\bfseries}`), Banded Columns
+    (`>{\columncolor}`); the looks Plain, Table Grid, Booktabs, Horizontal Lines, Outside Borders
+    (the one a table has shown pressed, hand written ones too); Shading (`\cellcolor`, whole rows
+    `\rowcolor`; xcolor's table option, by `\PassOptionsToPackage` where TikZ loads xcolor
+    first, dvipsnames with a colour of its names); Borders (ten, as rules `\hline`, `\cline`,
+    booktabs' rules and bars; the caret alone means the whole table, a selection its cells),
+    Pen Weight (`\arrayrulewidth`), Pen Color (`\arrayrulecolor`). Table Layout: Select Cell,
+    Column, Row, Table (shown as a block of cells), Properties… (full width, alignment, rows'
+    height, the column's width, vertical alignment), Insert Caption (a float made around a table
+    alone), Delete (Cells… shifting left or up, Columns, Rows, Table), Insert above, below, left,
+    right, Merge Cells (`\multicolumn`, `\multirow`, both; the rules between merged rows cut to
+    `\cline`/`\cmidrule`), Split Cells (and the whole rule back), Split Table, AutoFit
+    (contents, window as tabularx, fixed `p{}` at the widths the page draws), Distribute Rows and
+    Columns, Word's nine alignments (a column's letter when all of it is selected, else
+    `\multicolumn{1}{c}{…}` with the column's bars, gone again at the column's own; `m{}`, `b{}`,
+    `\multirow[t]`), Text Direction (`\rotatebox{90}`, `{270}`, level), Cell Margins…
+    (`\tabcolsep`, `\extrarowheight`), Sort… (text or numbers, the header row kept, the rules and
+    `\\[…]` where they were), Repeat Header Rows (a longtable with `\endhead`, the float's
+    caption into it, and back), Convert to Text… The settings go in the table's float, or in a
+    group made around a table alone, which the page draws as the table. Tab in the last cell
+    adds a row; Ctrl+Enter in a cell adds one under it (the command's key, rank 1: outside a
+    table it is B6's page break). The right click menu in a cell: Insert below, above, left,
+    right, Delete and AutoFit (their menus), Merge, Split, Distribute Columns, Text Direction,
+    Properties, Insert Caption. Every dialog command takes its fields as arguments too
+    (`rikuy.api.run("table", {rows: 3, cols: 4})`, llms-full.txt). *The page* draws merged rows
+    (rowspan), turned words, banded rows, bold and coloured columns, `m{}` and `b{}`, a cell of
+    nothing (`&&`) with a place for the caret, and puts what is typed in an empty cell after its
+    line's end (`\nx &`, `& x &`). *Word:* a `\multirow` goes out as Word's merged cell
+    (vMerge), and comes back as `\multirow`. *Security:* the audit skill's quick profile on the
+    changed files (notes outside the repository) found five ways a stranger's document stalled
+    the tab, all fixed with a bounded-time test: the model's `*{3000000}{c}` (pre-existing, 2 s
+    a build; columns now stop at 1000), a thousand nested or unclosed tabulars around the caret
+    (3.6 s a look; now the nearest first, 4 M characters of work in all), lengths, text to table
+    and turned cells read with patterns that went quadratic on runs of spaces. Evidence: `npm
+    test` green (`table.test.mjs` new, 27 groups: every operation and its inverse, the corpus's
+    tables put back and 4814 rows and columns in and out again byte for byte; `commands` 12,
+    `word` 56, one new: merged cells both ways), `test/table.py` 130 (new; the round trip rule
+    on 17 commands with their hand written forms; the compile in the page of booktabs,
+    `\multicolumn`, `\multirow`, `\rotatebox`, `\cellcolor`, `\rowcolors`, tabularx, `m{}` and
+    longtable with `\endhead`, every word in the PDF), `tabs.py` 104, `ribbon.py` 267 (Table's
+    expected source now booktabs), `browser.py` 189, `agent.py` 132, `scripts.py` 302, `word.py`
+    110, `offline.py` 54/54, `launch.py` 18/18, `deploy_check.py` 43/43, `pages_check.py` fits,
+    the corpus model run 716 of 716 with the same unknown commands, actionlint clean; screenshots
+    at 1920, 1366 and 390 px, light and dark, looked at. Not done: T4's border painter (it is
+    Word's Draw Table pen, which the gap list skips as I6: borders come from the Borders menu);
+    T7's alt text (a table has no LaTeX field for one; its caption is what a reader and tagging
+    get); T14's Height and Width boxes are in Properties…, not on the row (the one row of the
+    ribbon has no room); shading and turned text do not go to Word (pandoc's table has no field
+    for them); Safari and Firefox, by hand.
+    *Review* (a fresh hostile reviewer: 13 high, 7 medium, 6 low; each fixed with its case as a
+    test, and where TeX had stopped, compiled in the page): Rikuy's own booktabs table is no
+    grid (a grid has the same rules under every row and never booktabs' rules), so Tab in its
+    last cell, Insert below and Delete Rows keep `\bottomrule` and one `\midrule`; a new row
+    copies no comment, only the line's indent; a merged cell's `\cellcolor` stands in its
+    `\multicolumn`'s text (shading it, merging a shaded cell, aligning one); one cell aligned in
+    a `p{}` column loads array, keeps a `>{\bfseries}`, and a number column (S, D) keeps its
+    letter; AutoFit Window and Distribute Columns make tabular* and tabulary a tabularx as wide;
+    Repeat Header Rows off takes `\endfirsthead`'s head once at the top and `\endlastfoot`'s
+    foot (else `\endfoot`'s) at the end (pandoc's tables from Word), on carries the float's
+    settings into a group, its label, its alignment as `[l]`/`[r]`, a head other than
+    `\begin{table}[h]` into a comment, gives the float back byte for byte, works only from the
+    first rows (Word's rule) and says why in two columns; a caption in a minipage or subtable
+    goes in it (`\captionof` and caption outside a float); xcolor is loaded where only its
+    options were passed (listings, colortbl, tabularray alone); settings in `\resizebox{…}{!}{…}`
+    stay in its argument and its braces stay; Convert Text to Table cuts outside braces and
+    math and puts a comment after the row's `\\`; column operations on `*{n}{…}` keep its bars
+    and `@{}` and keep a star they do not touch; Table from Data File writes `[respect all]`
+    and T1 where the document names no encoding (OT1 prints `_` as a dot accent), and its file
+    joins the project only with Insert, in the same step; the page and Word under a cell merged
+    both ways, Tab, Select and the painted block across a table's pages, Sort on a longtable,
+    Split right after Merge byte for byte, one CSV in many tables read once (69 s to 68 ms), the
+    look named Box. Kept: a new row's leading space (` &  \\`) is the first cell's place, which
+    typing replaces (`Name &  \\`). The audit's quick profile on the changed files (notes
+    outside the repository) found one stall, a star written out with a pattern over its whole
+    text each repetition (156 ms a look), fixed with a bounded-time test. Evidence:
+    `table.test.mjs` 41 groups, `test/table.py` 150 (20 new, two compiles in the page).
+    *Verification* (a fresh verifier of the review round: 25 of 26 fixed, H7 partial, and new
+    faults): Repeat Header Rows on a float with settings writes them in a group the page now
+    reads as the table (`\small` and its kin a table's setting, drawn at that size; a label
+    beside the group); Table from Data File adds T1 for pdfLaTeX only (the engine read as
+    tex/engine.js's pickEngine reads it: the preview's choice, a magic comment, fontspec,
+    polyglossia, unicode-math, babel's onchar, `\babelfont`, Lua's packages), and not where a
+    file the preamble reads loads fontenc or fontspec; two columns are found in the project's
+    .sty and .cls (acl.sty's `\maketitle`), the files the preamble reads and an `\input` before
+    the table; a float's head on two lines becomes one in the comment, a center environment is
+    centring, its comments (review comments among them) go with the table both ways, wraptable
+    comes back; the cells are indexed once a table (a selection painted at 3000 rows: a second
+    before, milliseconds now); Insert Caption goes to a subtable's or minipage's caption, and a
+    commented `\begin` opens nothing; a grid may have one richer rule anywhere (a double one
+    under a header, two rows too) and rule lines' comments do not count or get copied; deleting
+    rows where two rules would meet keeps the table's top or bottom rule. Evidence:
+    `table.test.mjs` 46 groups, `test/table.py` 161 (11 new: the page's drawing, Off, the
+    engines, the .sty, the timing; two more compiles in the page, the grouped longtable and a
+    XeLaTeX document with its data table, every character in the PDF).
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000

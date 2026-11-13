@@ -140,6 +140,36 @@ export function colorValue(model, spec) {
   return null;
 }
 
+// The values of a .csv for the page (B7): its first 200 lines of words, 40 values a line, a value
+// cut at 200 characters and a line read to 4000; each file read once per separator (a file
+// unchanged is the same string, found again in the cache without reading it)
+const CSV_CACHE = new Map(), CSV_BUDGET = 40000;
+function csvRows(text, sep) {
+  let bySep = CSV_CACHE.get(sep);
+  if (!bySep) CSV_CACHE.set(sep, (bySep = new Map()));
+  const hit = bySep.get(text);
+  if (hit) return hit;
+  const rows = [];
+  for (let p = 0; p < text.length && rows.length < 200;) {
+    let e = text.indexOf('\n', p);
+    if (e < 0) e = text.length;
+    const l = text.slice(p, Math.min(e, p + 4000)).replace(/\r$/, '');
+    p = e + 1;
+    if (!l.trim()) continue;
+    const out = [];
+    let cur = '', q = false;
+    for (let i = 0; i < l.length && out.length < 40; i++) {
+      const c = l[i];
+      if (c === '"') { if (q && l[i + 1] === '"') { cur += '"'; i++; } else q = !q; } else if (c === sep && !q) { out.push(cur); cur = ''; } else cur += c;
+    }
+    out.push(cur);
+    rows.push(out.slice(0, 40).map((x) => { x = x.trim(); return x.length > 200 ? x.slice(0, 200) + '…' : x; }));
+  }
+  if (bySep.size >= 8) bySep.delete(bySep.keys().next().value);
+  bySep.set(text, rows);
+  return rows;
+}
+
 export function buildModel(project, hint) {
   if (hint && hint.labels) {
     const b = new Builder(project, hint);
@@ -692,6 +722,24 @@ class Builder {
         return;
       }
       if (env.top) this.sig = [];
+      // (B7) a table in a group with the settings before it, {\renewcommand{\arraystretch}{1.5}
+      // \begin{tabular}…\end{tabular}}: drawn as the table it is, not as a box of source
+      {
+        // (a label after the group, where Repeat Header Rows puts a float's label without a caption)
+        const vis = ns.filter((n) => !blank(n) && !(n.t === 'cmd' && n.name === 'label'));
+        if (vis.length === 1 && vis[0].t === 'group' && ctx.src[vis[0].e - 1] === '}') {
+          const inner = vis[0].nodes.filter((n) => !(n.t === 'comment' || (n.t === 'text' && !ctx.src.slice(n.s, n.e).trim())));
+          const tabs = inner.filter((n) => n.t === 'env' && /^(tabular|tabularx|tabular\*|tabulary|longtable)$/.test(n.name));
+          if (tabs.length === 1 && inner.every((n) => n === tabs[0] || this.tableSetting(n, ctx))) {
+            const set = {};
+            for (const n of inner) { const x = n !== tabs[0] && this.tableSetting(n, ctx); if (x) set[x.key] = x.value; }
+            const t = this.tabular(tabs[0], ctx, [], set);
+            for (const n of ns) if (n.t === 'cmd' && n.name === 'label') this.label(this.argText(ctx, n.args[0]), ctx);
+            units.push({ f: ctx.f, s: ns[0].s, e: ns[ns.length - 1].e, items: [{ type: 'float', kind: 'inline', parts: [t], f: ctx.f }], fns: t.fns || [], sig: env.top ? this.sig.join('\u0001') : '' });
+            return;
+          }
+        }
+      }
       const fns = [];
       // the paragraph runs the way text ran at its start (a \selectlanguage further on in it
       // turns the rest of its line, and the paragraphs after it)
@@ -1329,6 +1377,8 @@ class Builder {
     const saveT = this.lastTarget;
     let align = null;
     let para = [];
+    // (B7) the settings before a table in the float, drawn with it
+    let tset = null;
     const flushP = () => {
       if (!para.length) return;
       const ns = para; para = [];
@@ -1341,7 +1391,7 @@ class Builder {
       if (inl.length) parts.push({ type: 'p', inl, align: align || 'center', indent: false, ctx: 'p', f: ctx.f, dir: this.dirOf() });
     };
     const walk = (nodes) => {
-      for (const n of nodes) {
+      for (const [i, n] of nodes.entries()) {
         if (n.t === 'par') { flushP(); continue; }
         if (n.t === 'cmd' && n.name === 'centering') { align = 'center'; continue; }
         if (n.t === 'cmd' && (n.name === 'caption' || n.name === 'captionof')) {
@@ -1358,7 +1408,11 @@ class Builder {
           parts.push({ type: 'caption', kind, num, inl: kids, f: ctx.f, ctx: 'cap', dir: this.dirOf() });
           continue;
         }
-        if (n.t === 'env' && /^(tabular|tabularx|tabular\*|tabulary|longtable|array)$/.test(n.name)) { flushP(); parts.push(this.tabular(n, ctx, fns)); continue; }
+        if (n.t === 'env' && /^(tabular|tabularx|tabular\*|tabulary|longtable|array)$/.test(n.name)) { flushP(); parts.push(this.tabular(n, ctx, fns, tset)); continue; }
+        // (a size is the table's only where a table follows it in the float: else it is the text's)
+        { const st = this.tableSetting(n, ctx); if (st && (st.key !== 'size' || nodes.slice(i + 1, i + 40).some((x) => x.t === 'env' && /^(tabular|tabularx|tabular\*|tabulary|longtable)$/.test(x.name)))) { (tset = tset || {})[st.key] = st.value; continue; } }
+        // (B7) a table csvsimple sets from a data file of the project: drawn from the file
+        if (n.t === 'cmd' && /^csvauto(book)?tabular$/.test(n.name) && n.args[1]) { const t = this.csvTable(n, ctx); if (t) { flushP(); parts.push(t); continue; } }
         if (n.t === 'env' && /^(center|minipage|subfigure|subtable|threeparttable|adjustbox|small|footnotesize|scriptsize)$/.test(n.name)) { flushP(); walk(n.nodes); flushP(); continue; }
         // a language or direction environment around a figure's parts: they run its way
         if (n.t === 'env' && this.dirEnv(n, ctx)) { flushP(); const was = this.dir; this.dir = this.dirEnv(n, ctx).dir || was; walk(n.nodes); flushP(); this.dir = was; continue; }
@@ -1378,7 +1432,9 @@ class Builder {
     return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'float', kind, num, parts, f: ctx.f, placement, wide: /\*$/.test(nd.name) }], fns };
   }
 
-  tabular(nd, ctx, fnsOut) {
+  // set: what stands before the table in its float or group (B7: \rowcolors, \arraystretch,
+  // \tabcolsep, \arrayrulewidth, \arrayrulecolor), drawn with it
+  tabular(nd, ctx, fnsOut, set) {
     const fns = fnsOut || [];
     const specArg = nd.name === 'tabular*' || nd.name === 'tabularx' || nd.name === 'tabulary' ? nd.args[nd.args.length - 1] : nd.args[1] || nd.args[0];
     const spec = specArg ? this.argText(ctx, specArg) : 'l';
@@ -1387,7 +1443,9 @@ class Builder {
     let row = { cells: [], top: [], s: null };
     let cell = [];
     let pendingRules = [];
-    const pushCell = () => { row.cells.push(cell); cell = []; };
+    // (where each cell starts: an empty cell, && or & \\, has no node to hold the caret)
+    let at = specArg ? specArg.e : nd.s;
+    const pushCell = () => { cell.p0 = at; row.cells.push(cell); cell = []; };
     const pushRow = (sepEnd) => {
       pushCell();
       const empty = row.cells.length === 1 && row.cells[0].every((n) => n.t === 'comment' || (n.t === 'text' && !ctx.src.slice(n.s, n.e).trim()));
@@ -1397,8 +1455,8 @@ class Builder {
       row = { cells: [], top: [], s: sepEnd };
     };
     for (const n of nd.nodes) {
-      if (n.t === 'special' && n.ch === '&') { pushCell(); continue; }
-      if (n.t === 'cmd' && (n.name === '\\' || n.name === 'tabularnewline')) { pushRow(n.e); continue; }
+      if (n.t === 'special' && n.ch === '&') { pushCell(); at = n.e; continue; }
+      if (n.t === 'cmd' && (n.name === '\\' || n.name === 'tabularnewline')) { pushRow(n.e); at = n.e; continue; }
       if (n.t === 'cmd' && /^(hline|toprule|midrule|bottomrule|cline|cmidrule|specialrule|addlinespace|morecmidrules|hhline)$/.test(n.name)) {
         if (cell.every((x) => x.t === 'comment' || (x.t === 'text' && !ctx.src.slice(x.s, x.e).trim())) && row.cells.length === 0) {
           const kindR = n.name === 'toprule' || n.name === 'bottomrule' ? 'heavy' : n.name === 'addlinespace' ? 'space' : 'light';
@@ -1409,8 +1467,15 @@ class Builder {
           }
           pendingRules.push({ kind: kindR, range });
           cell = [];
+          at = n.e;
           continue;
         }
+      }
+      // (\noalign{…} between rows, as pandoc writes after each rule, and longtable's markers: no cell's)
+      if (n.t === 'cmd' && /^(noalign|endhead|endfirsthead|endfoot|endlastfoot)$/.test(n.name) && row.cells.length === 0 && cell.every((x) => x.t === 'comment' || (x.t === 'text' && !ctx.src.slice(x.s, x.e).trim()))) {
+        cell = [];
+        at = n.e;
+        continue;
       }
       if (row.s == null) row.s = n.s;
       cell.push(n);
@@ -1421,13 +1486,59 @@ class Builder {
       const empty = row.cells.every((c) => c.every((n) => n.t === 'comment' || (n.t === 'text' && !ctx.src.slice(n.s, n.e).trim())));
       if (!empty || pendingRules.length) rows.push({ ...row, empty });
     }
-    const outRows = rows.map((r) => ({
-      rules: r.rulesAbove,
-      empty: r.empty,
-      cells: r.empty ? [] : r.cells.map((c, ci) => this.tableCell(c, ctx, fns, ci, cols))
-    }));
+    const outRows = rows.map((r) => {
+      // (each cell knows its column, for the column's own bold, colour and alignment)
+      let col = 0;
+      return { rules: r.rulesAbove, empty: r.empty, cells: r.empty ? [] : r.cells.map((c) => { const x = this.tableCell(c, ctx, fns, col, cols); col += x.span; return x; }) };
+    });
     // the columns stay in their order; the words in the cells run the way the text around runs
-    return { type: 'tabular', cols, rows: outRows, f: ctx.f, s: nd.s, e: nd.e, fns, dir: this.dirOf() };
+    const t = { type: 'tabular', cols, rows: outRows, f: ctx.f, s: nd.s, e: nd.e, fns, dir: this.dirOf() };
+    if (set) Object.assign(t, set);
+    return t;
+  }
+  // \csvautotabular{file} and \csvautobooktabular{file} (B7), as csvsimple sets them: the file's
+  // first line the header, every value centred, rules round the header (booktabs' or \hline and
+  // bars). Read only on the page (each cell stands for the command): the data is the file's. At
+  // most 200 rows of 40 values; null where the file is not in the project.
+  csvTable(nd, ctx) {
+    const name = this.argText(ctx, nd.args[1]).trim();
+    const text = this.files.get(name) ?? this.files.get(name + '.csv');
+    if (text == null || text.length > 2000000) return null;
+    const opt = nd.args[0] ? this.argText(ctx, nd.args[0]) : '';
+    const sep = /separator\s*=\s*semicolon/.test(opt) ? ';' : /separator\s*=\s*tab/.test(opt) ? '\t' : /separator\s*=\s*space/.test(opt) ? ' ' : ',';
+    const rows = csvRows(text, sep);
+    if (!rows.length) return null;
+    // (a stranger's project may set one big file in many tables: past a budget of cells for the
+    // whole document the command stays a command)
+    this.csvBudget = (this.csvBudget ?? CSV_BUDGET) - rows.length * Math.max(...rows.map((r) => r.length));
+    if (this.csvBudget < 0) return null;
+    const n = Math.max(...rows.map((r) => r.length));
+    const book = nd.name === 'csvautobooktabular';
+    const cols = Array.from({ length: n }, (_, k) => ({ align: 'c', vl: !book && k === 0 ? 1 : 0, vr: book ? 0 : 1 }));
+    const cell = (t) => ({ inl: t ? [this.atom(ctx, { k: 'chip', s: nd.s, e: nd.e, text: t, plain: true, title: '\\' + nd.name + '{' + name + '}: from the file' })] : [], span: 1, align: 'c', bg: null, rowbg: null });
+    const rule = (kind) => ({ kind, range: null });
+    const out = rows.map((r, k) => ({ rules: k === 0 ? [rule(book ? 'heavy' : 'light')] : k === 1 ? [rule('light')] : [], empty: false, cells: Array.from({ length: n }, (_, j) => cell(r[j] || '')) }));
+    out.push({ rules: [rule(book ? 'heavy' : 'light')], empty: true, cells: [] });
+    this.use('csv' + name + text.length);
+    return { type: 'tabular', cols, rows: out, f: ctx.f, s: nd.s, e: nd.e, fns: [], dir: this.dirOf() };
+  }
+  // A setting written before a table (B7): { key, value } or null
+  tableSetting(n, ctx) {
+    if (n.t !== 'cmd') return null;
+    // (a size for the table's words: \small before it, as Repeat Header Rows carries a float's)
+    if (/^(tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge)$/.test(n.name) && !n.args.some(Boolean)) return { key: 'size', value: n.name };
+    const a = (k) => (n.args[k] ? this.argText(ctx, n.args[k]).trim() : '');
+    if (n.name === 'rowcolors' && n.args.length >= 3) {
+      const [st, odd, even] = n.args.filter(Boolean).slice(-3).map((x) => this.argText(ctx, x).trim());
+      return { key: 'band', value: { start: parseInt(st, 10) || 1, odd: odd ? this.colorArg(ctx, null, n.args.filter(Boolean).slice(-2)[0]) : null, even: even ? this.colorArg(ctx, null, n.args.filter(Boolean).slice(-1)[0]) : null } };
+    }
+    if (n.name === 'renewcommand' && n.def && n.def.name === 'arraystretch') return { key: 'stretch', value: parseFloat(n.def.body) || 1 };
+    if (n.name === 'setlength') {
+      const k = a(0).replace(/^\\/, '');
+      if (k === 'tabcolsep' || k === 'arrayrulewidth' || k === 'extrarowheight') return { key: k, value: a(1) };
+    }
+    if (n.name === 'arrayrulecolor' && n.args.length) return { key: 'rulecolor', value: this.colorArg(ctx, n.args.length > 1 ? n.args[0] : null, n.args[n.args.length - 1]) };
+    return null;
   }
 
   // A list in a table cell, for the page to draw (read only: a cell's words are edited on the
@@ -1448,6 +1559,8 @@ class Builder {
   }
 
   tableCell(nodes, ctx, fns, ci, cols) {
+    // (where the cell starts, kept before the filter below makes another array)
+    const p0 = nodes.p0;
     let bg = null, rowbg = null;
     nodes = nodes.filter((n) => {
       if (n.t === 'cmd' && (n.name === 'cellcolor' || n.name === 'rowcolor') && n.args.length) {
@@ -1459,7 +1572,7 @@ class Builder {
     });
     // detect \multicolumn / \multirow
     const vis = nodes.filter((n) => !(n.t === 'comment' || (n.t === 'text' && !ctx.src.slice(n.s, n.e).trim())));
-    let span = 1, align = (cols[ci] && cols[ci].align) || 'l', inner = nodes, pos = null;
+    let span = 1, align = (cols[ci] && cols[ci].align) || 'l', inner = nodes, pos = null, rowsN = 1, rot = 0, vpos = null;
     if (vis.length === 1 && vis[0].t === 'cmd' && vis[0].name === 'multicolumn' && vis[0].args[2]) {
       const mc = vis[0];
       span = parseInt(this.argText(ctx, mc.args[0]), 10) || 1;
@@ -1471,15 +1584,47 @@ class Builder {
       const a = vis[0].args.filter(Boolean).pop();
       inner = a.nodes; pos = a.is;
     }
+    // (B7) a \multirow inside the \multicolumn too, and how many rows it covers
+    // (\multirow[vpos]{n}[struts]{width}[move]{text}); words turned whole by \rotatebox{90} or {270}
+    const own = (ns) => ns.filter((n) => !(n.t === 'comment' || (n.t === 'text' && !ctx.src.slice(n.s, n.e).trim())));
+    let iv = own(inner), mr = vis.length === 1 && vis[0].t === 'cmd' && vis[0].name === 'multirow' ? vis[0] : null;
+    if (!mr && iv.length === 1 && iv[0].t === 'cmd' && iv[0].name === 'multirow' && iv[0].args[5]) { mr = iv[0]; inner = mr.args[5].nodes; pos = mr.args[5].is; iv = own(inner); }
+    if (mr && mr.args[1]) {
+      rowsN = parseInt(this.argText(ctx, mr.args[1]), 10) || 1;
+      if (mr.args[0]) vpos = this.argText(ctx, mr.args[0]).trim();
+    }
+    if (iv.length === 1 && iv[0].t === 'cmd' && iv[0].name === 'rotatebox' && iv[0].args[2]) {
+      const ang = ((parseInt(this.argText(ctx, iv[0].args[1]), 10) % 360) + 360) % 360;
+      if (ang === 90 || ang === 270) { rot = ang; inner = iv[0].args[2].nodes; pos = iv[0].args[2].is; }
+    }
     this.inCell++;
     let inl;
     try { inl = this.inl(inner, ctx, fns); } finally { this.inCell--; }
     trimInl(inl);
     if (!inl.length) {
-      const p = pos != null ? pos : (nodes.length ? nodes[0].s : null);
+      // (a cell of spaces only: what is typed there goes after its line's end, or after the
+      // space after its &, so "& x &" and a new row's "\nx &" come out as a person writes them)
+      let p = pos != null ? pos : (nodes.length ? nodes[0].s : p0 != null ? p0 : null);
+      // (the spaces around it, the ones a command before it took in too, at most 200 each way)
+      if (pos == null && p != null && nodes.every((n) => n.t === 'text' && !ctx.src.slice(n.s, n.e).trim())) {
+        const src = ctx.src;
+        let a = p, z = nodes.length ? nodes[nodes.length - 1].e : p;
+        while (a > 0 && a > p - 200 && /[ \t\r\n]/.test(src[a - 1])) a--;
+        while (z < src.length && z < p + 200 && /[ \t\r\n]/.test(src[z])) z++;
+        const t = src.slice(a, z), nl = t.lastIndexOf('\n');
+        p = a + (nl >= 0 ? nl + 1 : t[0] === ' ' ? 1 : 0);
+      }
       if (p != null) inl.push({ k: 'seg', f: ctx.f, t: '​', map: [p, p], ph: true });
     }
-    return { inl, span, align, bg, rowbg };
+    const col = cols[ci] || {};
+    const out = { inl, span, align, bg: bg || (col.bg ? (col.bg.model ? colorValue(col.bg.model, col.bg.value) || col.bg.value : this.named(col.bg.value) || col.bg.value) : null), rowbg };
+    if (rowsN > 1) out.rows = Math.min(rowsN, 200);
+    if (rot) out.rot = rot;
+    if (vpos) out.vpos = vpos;
+    if (col.bold) out.bold = true;
+    if (span === 1 && col.palign) out.palign = col.palign;
+    if (col.valign) out.valign = col.valign;
+    return out;
   }
 
   // ---- display math -----------------------------------------------------------
@@ -2216,26 +2361,41 @@ function enumLabel(n, level, fmt) {
 function parseColSpec(spec) {
   const cols = [];
   let k = 0;
-  let pendingLeft = 0;
+  let pendingLeft = 0, pre = '';
+  // (what >{…} sets in a column: bold, a background, a paragraph column's alignment; B7)
+  const take = (col) => {
+    if (pre) {
+      if (/\\(bfseries|bf)(?![A-Za-z])/.test(pre)) col.bold = true;
+      const cc = /\\columncolor(\[[^\]]*\])?\{([^{}]*)\}/.exec(pre);
+      if (cc) col.bg = { model: cc[1] ? cc[1].slice(1, -1) : null, value: cc[2] };
+      if (col.align === 'p' || col.x) col.palign = /\\centering/.test(pre) ? 'c' : /\\raggedleft/.test(pre) ? 'r' : /\\raggedright/.test(pre) ? 'l' : null;
+    }
+    pre = '';
+    return col;
+  };
   const s = spec.replace(/\s+/g, '');
   while (k < s.length) {
     const c = s[k];
     if (c === '|') { if (cols.length) cols[cols.length - 1].vr = (cols[cols.length - 1].vr || 0) + 1; else pendingLeft++; k++; continue; }
-    if (c === '@' || c === '!' || c === '>' || c === '<') { k++; if (s[k] === '{') k = skipBrace(s, k); continue; }
+    if (c === '>') { k++; if (s[k] === '{') { const e = skipBrace(s, k); pre += s.slice(k + 1, e - 1); k = e; } continue; }
+    if (c === '@' || c === '!' || c === '<') { k++; if (s[k] === '{') k = skipBrace(s, k); continue; }
     if (c === '*') {
       k++;
       let n = 1, sub = '';
       if (s[k] === '{') { const e = skipBrace(s, k); n = parseInt(s.slice(k + 1, e - 1), 10) || 1; k = e; }
       if (s[k] === '{') { const e = skipBrace(s, k); sub = s.slice(k + 1, e - 1); k = e; }
-      for (let r = 0; r < n; r++) cols.push(...parseColSpec(sub));
+      // (B7: a stranger's *{3000000}{c} took seconds and *{100}{*{100}{*{100}{c}}} more: the
+      // columns stop at 1000, as a page could never show more)
+      const one = parseColSpec(sub);
+      for (let r = 0; r < n && cols.length < 1000; r++) cols.push(...one.slice(0, 1000 - cols.length).map((x) => ({ ...x })));
       continue;
     }
-    if ('lcrXLCRJS'.includes(c)) { cols.push({ align: c === 'c' || c === 'C' || c === 'S' ? 'c' : c === 'r' || c === 'R' ? 'r' : 'l', vl: cols.length === 0 ? pendingLeft : 0, x: c === 'X' }); k++; continue; }
+    if ('lcrXLCRJS'.includes(c)) { cols.push(take({ align: c === 'c' || c === 'C' || c === 'S' ? 'c' : c === 'r' || c === 'R' ? 'r' : 'l', vl: cols.length === 0 ? pendingLeft : 0, x: c === 'X' })); k++; continue; }
     if ('pmb'.includes(c)) {
       k++;
       let w = null;
       if (s[k] === '{') { const e = skipBrace(s, k); w = s.slice(k + 1, e - 1); k = e; }
-      cols.push({ align: 'p', w, vl: cols.length === 0 ? pendingLeft : 0 });
+      cols.push(take({ align: 'p', w, vl: cols.length === 0 ? pendingLeft : 0, valign: c === 'm' ? 'm' : c === 'b' ? 'b' : null }));
       continue;
     }
     k++;

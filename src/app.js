@@ -960,6 +960,8 @@ class App {
     const before = new Map();
     const byFile = new Map();
     for (const ed of edits) { if (!byFile.has(ed.f)) byFile.set(ed.f, []); byFile.get(ed.f).push(ed); }
+    // (a file the step makes, as Table from Data File's .csv: undone, it goes again)
+    const made = [...byFile.keys()].filter((f) => !this.files.has(f));
     for (const [f, list] of byFile) {
       let text = this.files.get(f) ?? '';
       before.set(f, text);
@@ -968,6 +970,7 @@ class App {
       this.files.set(f, text);
     }
     this.record(before, kind, cb && cb.f != null ? { f: cb.f, p: cb.p } : caret, caret);
+    if (made.length) { const top = this.hist[this.hist.length - 1]; if (top) for (const d of top.files) if (made.includes(d.f)) d.made = true; }
     this.zipDirty = true;
     this.rebuild(caret);
     this.pushToSource();
@@ -1005,7 +1008,7 @@ class App {
     const h = this.hist.pop();
     if (!h) { this.toast('Nothing to undo'); return; }
     h.open = false; h.before = null;
-    for (const d of h.files) { const t = this.files.get(d.f) ?? ''; this.files.set(d.f, t.slice(0, d.s) + d.del + t.slice(d.s + d.ins.length)); }
+    for (const d of h.files) { const t = this.files.get(d.f) ?? ''; this.files.set(d.f, t.slice(0, d.s) + d.del + t.slice(d.s + d.ins.length)); if (d.made && !this.files.get(d.f)) this.files.delete(d.f); }
     this.redoStack.push(h);
     const c = h.caretBefore || (h.files[0] ? { f: h.files[0].f, p: h.files[0].s + h.files[0].del.length } : null);
     this.rebuild(c);
@@ -1178,8 +1181,8 @@ class App {
     if (mod && !e.altKey) {
       if (k === 'z') { e.preventDefault(); if (e.shiftKey) this.redo(); else this.undo(); return; }
       if (k === 'y') { e.preventDefault(); this.redo(); return; }
-      // (Ctrl+B, I, U, M, K and Shift+E are the commands' keys: src/keys.js catches them first)
-      if (k === 'enter') { e.preventDefault(); this.tableRow(); return; }
+      // (Ctrl+B, I, U, M, K, Shift+E and Enter are the commands' keys: src/keys.js catches them first;
+      // Ctrl+Enter in a table cell is Insert below, src/cmd/table.js)
       // the browser's own select-all ends on a page number, which cannot be selected, and
       // collapses to the top of the page: Ctrl+A then Ctrl+C copied nothing and Delete did nothing
       if (k === 'a' && !e.shiftKey) { e.preventDefault(); this.selectAllText(); return; }
@@ -2033,48 +2036,6 @@ class App {
     const r = wrapEdits(src, c.a, c.b, '\\' + cmd + '{');
     if (r.error) { this.toast('That selection crosses structure. Select text inside one paragraph or cell.'); return; }
     this.commit(r.edits.map((x) => ({ f: c.f, ...x })), r.sel ? { f: c.f, p: r.p, selA: r.sel.a, selB: r.sel.b } : { f: c.f, p: r.p, bias: r.bias }, 'style');
-  }
-
-  // ---- tables --------------------------------------------------------------------
-  tabCell(back) {
-    const sel = getSelection();
-    const n = sel.anchorNode;
-    const el = n && (n.nodeType === 1 ? n : n.parentElement);
-    const td = el && el.closest('td');
-    if (!td) return;
-    const cells = [...td.closest('table').querySelectorAll('td:not(.rule-cell)')];
-    const i = cells.indexOf(td);
-    const next = cells[i + (back ? -1 : 1)];
-    if (!next) return;
-    const sp = next.querySelector('span.t');
-    if (!sp) return;
-    const r = document.createRange();
-    r.selectNodeContents(sp);
-    sel.removeAllRanges(); sel.addRange(r);
-  }
-  tableRow() {
-    const sel = getSelection();
-    const n = sel.anchorNode;
-    const el = n && (n.nodeType === 1 ? n : n.parentElement);
-    const td = el && el.closest('td');
-    if (!td) { this.toast('Ctrl+Enter adds a table row when the caret is in a table cell.'); return; }
-    const tr = td.closest('tr');
-    const ncol = [...tr.children].reduce((s, x) => s + (x.colSpan || 1), 0);
-    // find the end of this row in source: last visible position in the row, then the next \\
-    const spans = tr.querySelectorAll('span.t');
-    const last = spans[spans.length - 1];
-    const info = last && segOfSpan(last);
-    if (!info) return;
-    const f = info.seg.f;
-    const src = this.src(f);
-    const p = boundary(info.B, info.seg, info.o + info.len);
-    const m = /\\\\(\s*\[[^\]]*\])?/g;
-    m.lastIndex = p;
-    const hit = m.exec(src);
-    if (!hit) return;
-    const at = hit.index + hit[0].length;
-    const ins = '\n' + Array(ncol).fill(' ').join('&') + '\\\\';
-    this.commit([{ f, s: at, e: at, t: ins }], { f, p: at + 2, bias: 1 }, 'table');
   }
 
   // ---- mouse ---------------------------------------------------------------------
@@ -4880,7 +4841,7 @@ class App {
         <dt>\\ or ${mod}+K</dt><dd>Insert a command</dd>
         <dt>Click math, a citation or a reference</dt><dd>Edit it in place</dd>
         <dt>Alt+click</dt><dd>Show that spot in the source</dd>
-        <dt>Tab, ${mod}+Enter</dt><dd>Next cell, new row in tables</dd>
+        <dt>Tab, ${mod}+Enter</dt><dd>Next cell (from the last, a new row), new row in tables</dd>
         <dt>${mod}+Z, ${mod}+Shift+Z</dt><dd>Undo, redo</dd>
         <dt>${mod}+Alt+M</dt><dd>Comment on the selected words. A comment is a LaTeX comment line in the source, so Overleaf, Git and TeX keep it and print nothing</dd>
         <dt>Paste</dt><dd>From Word, Google Docs or the web: bold, italics, lists, links, tables and equations become LaTeX. ${mod}+Shift+V pastes plain text</dd>
