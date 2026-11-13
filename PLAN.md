@@ -982,10 +982,7 @@ Tests:
     the page draws them; screenshots at 1920, 1366 and 390 px, light and dark); desktop pdfLaTeX,
     XeLaTeX and LuaLaTeX compile every construct; `tabs.py` 116; `ribbon.py` 268; `agent.py` 139;
     `browser.py` 189; `word.py` 110; `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py`
-    43/43; `pages_check.py` fits; the corpus model run 716 of 716. Home is wider by its Paragraph
-    group: at 1400 px its row has one Download button, the gallery gives way to the list below
-    about 1366 px, Insert folds at 1024 px and Paragraph at 860 px, by the one fold rule
-    (`tabs.py`, `ribbon.py` and `agent.py` check the order and the room, not those widths). The
+    43/43; `pages_check.py` fits; the corpus model run 716 of 716. The
     security audit's quick profile (notes outside the repository) found five stalls a stranger's
     document could cause, fixed with tests: runs of spaces after `\renewcommand`, `\setlength`,
     `\parindent` or `\widowpenalty` made four patterns quadratic (20 000 spaces, 0.8 s at each move
@@ -998,6 +995,36 @@ Tests:
     page breaks beyond `\nopagebreak` and samepage; spaces shown as dots by Show marks, and
     `\label` and `%` lines as marks (they draw nothing on the page to hang a mark on); Distributed
     (H43, SKIP); Move paragraph up and down (H58) is B5's Alt+Shift+Up and Down, already done.
+    *Review (PR 24, b265b6f), every finding fixed with its case as a test:* the commands run their
+    paragraphs one after another (App.paraRun), each read again in the text the ones before left and
+    the caret and the selection mapped through every edit, so a selection over a centred group and
+    the paragraph after it gets one environment, every one closed, and the dialog over several
+    paragraphs writes each at its place and leaves the caret on its words (1 to 3); a join looks for
+    its neighbour as TeX reads it, never into a comment, a verbatim or a LaTeX paragraph (4, 5); Tabs
+    writes its fill at the selection's end (6); the group forms take spaces, a line break and a
+    comment, and a range that cuts a group, an environment, a command or a formula is no unit (7);
+    in a quote, quotation, verse, the abstract, adjustwidth, a list, a theorem, tcolorbox or a
+    minipage the alignment goes inside, and the page draws nothing centred there from around them,
+    as TeX sets it (8); a figure without `\centering` is centred where beamer, the AMS classes,
+    revtex, acmart, floatrow or `\@floatboxreset` centre it, `\centerline` and the `centering`
+    environment read (9; the corpus's beamer decks draw as before); an environment taken off leaves
+    the paragraph's own `\vspace`, `\clearpage`, `\nopagebreak` and rule lines on it, a comment after
+    `\begin` kept (10); the dialog in a figure shows and sets its alignment without toggling, the
+    rest of the dialog in the same step (11); More colors' HTML colour is a shading
+    (`colback={rgb,255:red,231;green,84;blue,128}`, drawn) (12); `{\centering ...}` without `\par`
+    is not centred (13); Home's Paragraph group is two rows of small buttons, as Word's, so Home is
+    as wide as before it: at 1366 px four tiles and PDF, Word and LaTeX, the gallery at 1280 px,
+    nothing folded at 1400 and 1024 px, Editing alone at 860 px (`tabs.py` and `ribbon.py` check
+    those widths again) (14); an indented environment split and joined keeps its spaces (15);
+    KOMA-Script's `parskip=half` is Open, `full` a whole line (16); a paragraph with display math is
+    aligned whole (17); and the low ones: nowidow read as options, the model's parse reused at each
+    move of the caret (a paragraph of a 190 KB environment: 3 ms), every paragraph of a long text
+    at once (1500 in 0.6 s), a theorem's first paragraph says why, Show marks' arrow only at fills.
+    On a phone (390 and 360 px, touch): Center, Justify, Line and Paragraph Spacing and Show marks
+    by a tap, 44 px targets, the dialog fitting and scrolling, no sideways scroll. Evidence:
+    `para.test.mjs` 28 groups (the reviewer's cases through paraUnits and paraRun on the real
+    model); `para.py` 203 with `dist/tex` (the cases TeX refused compile, and where the page
+    and TeX disagreed TeX's PDF now sets the words where the page draws them); `tabs.py`, `ribbon.py` 271 and `agent.py` 138 with the strict widths back; `browser.py` 189; `word.py` 110; `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43; `pages_check.py` fits; the corpus model run 716 of 716; `npm test` green.
 41. **B3, lists as in Word.** Done in the code (branch `wordgap-b3-lists`, on task 38's frame and
     B5's fold rule; GAP rows H32 to H38, H39 in lists, H40, A3, and task 29's labelled item).
     *Levels.* Tab and Shift+Tab in a list item (not in a table cell, whose keys they stay), and

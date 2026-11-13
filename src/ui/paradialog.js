@@ -148,10 +148,14 @@ const LS_OPTIONS = [['single', 'Single'], ['onehalf', '1.5 lines'], ['double', '
 export function openParagraphDialog(app, at, p, args = {}) {
   if (args.tab === 'tabs') return openTabs(app, at);
   const ok = !!p && !p.why && !p.float;
+  // (the caret on the page as the dialog opens: OK maps it through what it writes, the dialog
+  // having had the focus since)
+  const c0 = app.caretNow();
   const src = app.src(app.main), others = app.preambleOthers(), O = app.model.opts, ptSize = O.pt;
   const u0 = ok ? p.units[0] : null, U = u0 ? u0.U : null;
   // what is there now
-  const alignNow = ok ? (P.alignOf(p.src, U, u0.it.align || null).v || 'justify') : 'justify';
+  // (a figure's: as the page draws it, the class's own where nothing is written)
+  const alignNow = ok ? (app.paraAlignNow(p) || 'justify') : p && p.float ? app.floatAlign(p.float).v : 'justify';
   const ind = ok ? P.indentOf(p.src, U) : { l: 0, r: 0 };
   const first = ok ? P.firstLineOf(U, !!u0.it.indent) : { special: 'first', by: null };
   const parindent = P.docParindent(src);
@@ -194,7 +198,8 @@ export function openParagraphDialog(app, at, p, args = {}) {
 
   // Indents and Spacing
   const gen = section('General');
-  const alignSel = select('pd-align', 'Alignment', [['left', 'Left'], ['center', 'Centered'], ['right', 'Right'], ['justify', 'Justified']], alignNow === 'mixed' ? 'justify' : alignNow);
+  // (paragraphs of several alignments: none shown, as Word shows none, and none written unless one is picked)
+  const alignSel = select('pd-align', 'Alignment', [...(alignNow === 'mixed' ? [['mixed', '']] : []), ['left', 'Left'], ['center', 'Centered'], ['right', 'Right'], ['justify', 'Justified']], alignNow);
   let dirSel = null;
   if (dirs.rtl) dirSel = select('pd-dir', 'Direction', [['ltr', 'Left-to-right'], ['rtl', 'Right-to-left']], dirNow || 'ltr');
   gen.append(grid(row('Alignment', alignSel), dirSel ? row('Direction', dirSel) : mk('span')));
@@ -261,7 +266,7 @@ export function openParagraphDialog(app, at, p, args = {}) {
     const near = (a, b, tol = 0.02 * P.PT.cm) => a != null && b != null && Math.abs(a - b) < tol;
     if (ok) {
       const inherit = u0.it.align || null;
-      if (alignSel.value !== alignNow) ops.push((text, V) => P.alignEdits(text, V, alignSel.value, { inherit }));
+      if (alignSel.value !== alignNow && alignSel.value !== 'mixed') ops.push((text, V, u) => P.alignEdits(text, V, alignSel.value, { inherit: u ? u.it.align || null : inherit }));
       const l1 = fieldPt(left.input.value, 'cm'), r1 = fieldPt(right.input.value, 'cm');
       if (l1 != null && r1 != null && (!near(l1, ind.l) || !near(r1, ind.r))) ops.push((text, V) => P.indentEdits(text, V, Math.max(-50 * P.PT.cm, l1), Math.max(-50 * P.PT.cm, r1)));
       const by1 = fieldPt(by.input.value, 'cm');
@@ -290,7 +295,8 @@ export function openParagraphDialog(app, at, p, args = {}) {
         if (lang) ops.push((text, V) => { const own = V.levels.find((L) => L.W && P.DIRECTION.names.includes(L.W.name)); return P.layerEdits(text, V, P.DIRECTION, own && dirSel.value === dirs.doc ? null : lang); });
       }
     }
-    if (p && p.float && alignSel.value !== alignNow) return void app.paraAlign(alignSel.value, at);
+    // (a figure's alignment set as chosen, not toggled; the rest of the dialog with it)
+    const floatTo = p && p.float && alignSel.value !== alignNow ? alignSel.value : null;
     // the whole document
     if (cW.c.checked !== widow) docOps.push((text) => P.widowEdits(text, cW.c.checked));
     const dv = spacingFrom(dls.value, dlsAt.input.value, ptSize);
@@ -311,7 +317,8 @@ export function openParagraphDialog(app, at, p, args = {}) {
     const di = fieldPt(dInd.input.value, 'cm');
     if (di != null && !near(di, parindent && parindent.pt != null ? parindent.pt : (O.parindent ?? 15)) && !(special.value === 'first' && by1Same(by, di))) docOps.push((text) => P.docParindentEdits(text, di));
     app.closePop(true);
-    if (ops.length || docOps.length) app.paraDialogApply(p, ops, docOps);
+    if (ops.length || docOps.length || floatTo) app.paraDialogApply(p, ops, docOps, floatTo, c0);
+    else if (c0 && !c0.ghost) app.restoreCaret(c0.collapsed ? { f: c0.f, p: c0.a, bias: -1 } : { f: c0.f, p: c0.a, selA: c0.a, selB: c0.b }, true);
   });
   pick(panels[args.tab === 'breaks' ? 1 : 0][0]);
   app.positionPop();

@@ -540,8 +540,11 @@ Ctrl is Cmd on a Mac.
 - Ctrl+L, Ctrl+E, Ctrl+R, Ctrl+J, on the page only: Align Left (flushleft), Center (center),
   Align Right (flushright), Justify (LaTeX's own: the environment comes off); pressed again an
   alignment goes back to justified. On selected paragraphs one environment goes around them all; a
-  paragraph in a centred group is split out of it and joined back. In a figure or a table they
-  write \\centering (\\raggedleft, \\raggedright) at its start. Ctrl+Shift+8: Show marks (¶ at each
+  paragraph in a centred group is split out of it and joined back. In a quote, a theorem,
+  adjustwidth, tcolorbox or a minipage the environment goes inside it (TeX centres nothing in them
+  from around them). In a figure or a table they write \\centering (\\raggedleft, \\raggedright)
+  at its start; beamer, the AMS classes, revtex, acmart and floatrow centre a figure by
+  themselves, so there Center writes nothing. A paragraph with display math in it is aligned whole. Ctrl+Shift+8: Show marks (¶ at each
   paragraph's end, ↵ at each \\\\, nothing written). Ctrl+M stays Formula; outside a list the buttons
   Increase Indent and Decrease Indent step a paragraph's left indent by Word's 1.27 cm (adjustwidth;
   commands paragraph-indent and paragraph-outdent). The button "Line

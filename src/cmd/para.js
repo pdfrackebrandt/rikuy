@@ -19,6 +19,7 @@ import * as P from '../parasrc.js';
 import { usePackages, preambleEnd, hasPackage, docClass, packageOptions } from '../preamble.js';
 import { envWords, declAtStart, startsLine, eolAt } from '../blockenv.js';
 import { mapPos } from '../wrap.js';
+import { parsedText } from '../model.js';
 import { scriptSetup, rtlDocument, RTL_LANGUAGES } from '../scripts.js';
 import { openParagraphDialog, paraField } from '../ui/paradialog.js';
 
@@ -152,53 +153,119 @@ export const methods = {
     if (ctx === 'cap') return { why: 'A caption is set by its figure or table.' };
     if (ctx === 'ttl') return { why: 'The title is \\maketitle\'s.' };
     const f = c.f, src = this.src(f), a = c.a, b = c.collapsed ? c.a : c.b;
-    const found = [];
-    let float = null;
-    for (const B of M.blocks) {
-      if (B.f !== f || B.e < a || B.s > b) continue;
-      for (const it of B.items) {
-        if (it.type === 'float' && B.s <= a && a <= B.e && c.collapsed) float = B;
-        if (it.type !== 'p' || it.ps == null || (it.f && it.f !== f)) continue;
-        if (it.pe < a || it.ps > b || (!c.collapsed && (it.pe <= a || it.ps >= b))) continue;
-        if (it.ctx !== 'p' || it.thmFirst || it.lead) continue;
-        found.push({ it, B });
-      }
+    const found = [], seen = new Set();
+    let float = null, thm = false;
+    // (the blocks the caret or the selection is in, and a few on either side: a paragraph with
+    // display math in it is several blocks of the page and one paragraph to TeX)
+    const BS = M.blocks;
+    let k0 = -1, k1 = -1;
+    for (let k = 0; k < BS.length; k++) { const B = BS[k]; if (B.f !== f || B.e < a || B.s > b) continue; if (k0 < 0) k0 = k; k1 = k; }
+    const flat = [];
+    if (k0 >= 0) for (let k = Math.max(0, k0 - 20); k <= Math.min(BS.length - 1, k1 + 20); k++) if (BS[k].f === f) for (const it of BS[k].items) flat.push({ it, B: BS[k], k });
+    const para = (x) => !!x && x.it.type === 'p' && x.it.ps != null && x.it.ctx === 'p' && !x.it.lead && !x.it.thmFirst && (!x.it.f || x.it.f === f);
+    const back = (i) => { let j = i - 1; while (j >= 0 && flat[j].it.type === 'math') j--; return j < i - 1 && para(flat[j]) ? j : -1; };
+    const fwd = (i) => { let j = i + 1; while (j < flat.length && flat[j].it.type === 'math') j++; return j > i + 1 && para(flat[j]) && flat[j].it.cont ? j : -1; };
+    for (let i = 0; i < flat.length; i++) {
+      const { it, B, k } = flat[i];
+      if (k < k0 || k > k1 || B.e < a || B.s > b) continue;
+      if (it.type === 'float' && B.s <= a && a <= B.e && c.collapsed) float = B;
+      if (it.type !== 'p' || it.ps == null || (it.f && it.f !== f)) continue;
+      if (it.pe < a || it.ps > b || (!c.collapsed && (it.pe <= a || it.ps >= b))) continue;
+      if (it.thmFirst) { thm = true; continue; }
+      if (it.ctx !== 'p' || it.lead || seen.has(it)) continue;
+      // (a paragraph with display math in it is one paragraph to TeX: the words before the formula,
+      // the formula and the words after it go together)
+      let i0 = i, i1 = i;
+      for (let n = 0; n < 50 && flat[i0].it.cont && back(i0) >= 0; n++) i0 = back(i0);
+      for (let n = 0; n < 50 && fwd(i1) >= 0; n++) i1 = fwd(i1);
+      const parts = flat.slice(i0, i1 + 1).filter((x) => x.it.type === 'p');
+      for (const x of parts) seen.add(x.it);
+      const first = parts[0], z = parts[parts.length - 1];
+      found.push({ it: first.it, last: z.it, B: first.B, lo: first.B.s, hi: z.B.e });
     }
-    if (found.length > 400) return { why: 'Select fewer paragraphs (at most 400) for a paragraph setting, or set it for the whole document.' };
+    if (found.length > 5000) return { why: 'Select fewer paragraphs (at most 5000) for a paragraph setting, or set it for the whole document.' };
     if (!found.length) {
       if (float) return { f, src, units: [], float };
+      if (thm) return { why: 'The first paragraph of a theorem starts with its heading (Theorem 1.) and is set as the theorem is; its other paragraphs take paragraph settings.' };
       return { why: at.multi ? 'Select whole paragraphs of the text.' : 'Click in a paragraph of the text.' };
     }
-    const vis = (x) => (x.it.vs != null ? { vs: x.it.vs, ve: x.it.ve } : null);
+    // (the parse the page's model made of this text: a long text is not parsed again at every move
+    // of the caret)
+    const whole = parsedText(src);
+    const vis = (x, y) => (x.vs != null && y.ve != null ? { vs: x.vs, ve: y.ve } : null);
     const units = [];
     for (const x of found) {
-      const U = P.unitOf(src, x.it.ps, x.it.pe, x.B.s, x.B.e, vis(x));
+      const U = P.unitOf(src, x.it.ps, x.last.pe, x.lo, x.hi, vis(x.it, x.last), whole);
       if (!U) continue;
       // (a plain paragraph right after a plain one, in the same place: one unit with it)
       const last = units[units.length - 1];
-      if (last && last.plain && U.levels.length === 1 && !U.group && sameScope(last.U, U) && !/\S/.test(src.slice(last.U.te, U.ts).replace(/%[^\n]*/g, ''))) {
-        const lo = Math.min(last.lo, x.B.s), hi = Math.max(last.hi, x.B.e);
-        const M2 = P.unitOf(src, last.ps, x.it.pe, lo, hi, last.vs != null && x.it.ve != null ? { vs: last.vs, ve: x.it.ve } : null);
-        if (M2 && M2.levels.length === 1) { Object.assign(last, { U: M2, hi, its: [...last.its, x.it] }); continue; }
+      if (last && last.plain && U.levels.length === 1 && !U.group && !U.inArg && sameScope(last.U, U) && !/\S/.test(src.slice(last.U.te, U.ts).replace(/%[^\n]*/g, ''))) {
+        const lo = Math.min(last.lo, x.lo), hi = Math.max(last.hi, x.hi);
+        const M2 = P.unitOf(src, last.ps, x.last.pe, lo, hi, last.vs != null && x.last.ve != null ? { vs: last.vs, ve: x.last.ve } : null, whole);
+        if (M2 && M2.levels.length === 1 && !M2.inArg) { Object.assign(last, { U: M2, hi, its: [...last.its, x.last] }); continue; }
       }
-      units.push({ U, it: x.it, its: [x.it], B: x.B, ps: x.it.ps, vs: x.it.vs, lo: x.B.s, hi: x.B.e, plain: U.levels.length === 1 && !U.group });
+      units.push({ U, it: x.it, its: [x.last], B: x.B, ps: x.it.ps, vs: x.it.vs, lo: x.lo, hi: x.hi, plain: U.levels.length === 1 && !U.group && !U.inArg });
     }
     if (!units.length) return { why: 'Click in a paragraph of the text.' };
-    if (units.some((u) => u.U.inArg)) return { why: 'This paragraph is inside a group or an argument of a command: change it in the source.' };
+    if (units.some((u) => u.U.inArg)) return { why: 'This paragraph is inside a group or an argument of a command, or a group runs from it into another paragraph: change it in the source.' };
     return { f, src, units };
   },
 
-  // the edits of every unit, one commit: the caret or the selection kept where its words are
-  paraCommit(p, per, kind = 'para') {
-    const edits = [];
-    for (const u of p.units) {
-      const r = per(u);
+  // The edits of every unit made one after another on the text, each unit read again in the text
+  // the ones before it left (an environment one of them split or joined is the one the next sees),
+  // then everything as one step of history, the caret and the selection mapped through each edit.
+  // ops: [(text, U, u) => edits | { why } | null], each run on every unit in turn (the dialog's
+  // several settings); fileOps: [{ f, op: (text, others) => edits | { text } | { why } }] after
+  // them (the document's settings, a figure's alignment). The packages what was written needs go
+  // in the main file in the same step. caret0: the caret to keep, where the page no longer has it
+  // (the dialog had the focus).
+  paraRun(p, ops, fileOps = [], kind = 'para', caret0 = null) {
+    const texts = new Map(), get = (f) => (texts.has(f) ? texts.get(f) : this.src(f));
+    const c = caret0 || this.caretNow(), car = c && !c.ghost ? { f: c.f, a: c.a, b: c.collapsed ? c.a : c.b, one: !!c.collapsed } : null;
+    const wrote = [];
+    const pf = p && !p.why && !p.float ? p.f : null;
+    const items = pf ? p.units.map((u) => { const z = u.its[u.its.length - 1]; return { u, ps: u.ps, pe: z.pe, vs: u.vs, ve: z.ve, lo: u.lo, hi: u.hi }; }) : [];
+    const step = (f, ed) => {
+      const o = [...ed].sort((x, y) => x.s - y.s || x.e - y.e);
+      for (let i = 1; i < o.length; i++) if (o[i].s < o[i - 1].e) { this.toast('These paragraph settings overlap in the source: change one at a time.'); return false; }
+      texts.set(f, applyEdits(get(f), ed));
+      for (const x of ed) wrote.push(x.t);
+      const m = (x, bias) => (x == null ? x : mapPos(ed, x, bias));
+      if (f === pf) for (const it of items) { it.ps = m(it.ps, 1); it.pe = m(it.pe, -1); it.vs = m(it.vs, 1); it.ve = m(it.ve, -1); it.lo = m(it.lo, -1); it.hi = m(it.hi, 1); }
+      if (car && car.f === f) { car.a = mapCaret(ed, car.a); car.b = mapCaret(ed, car.b); }
+      return true;
+    };
+    for (const it of items) {
+      for (const op of ops) {
+        const text = get(pf);
+        const U = P.unitOf(text, it.ps, it.pe, it.lo, it.hi, it.vs != null && it.ve != null ? { vs: it.vs, ve: it.ve } : null, texts.has(pf) ? null : parsedText(text));
+        if (!U) break;
+        const ed = op(text, U, it.u);
+        if (!ed) continue;
+        if (ed.why) { this.toast(ed.why); return false; }
+        if (ed.length && !step(pf, ed)) return false;
+      }
+    }
+    for (const { f, op } of fileOps) {
+      const text = get(f), r = op(text, this.preambleOthers());
       if (!r) continue;
       if (r.why) { this.toast(r.why); return false; }
-      edits.push(...r);
+      const ed = typeof r.text === 'string' ? diffEdits(text, r.text) : r;
+      if (ed.length && !step(f, ed)) return false;
     }
-    return this.paraApply(p.f, edits, kind, this.paraNeeds(edits.map((x) => x.t).join('\n')));
+    // (the packages what was written needs, in the main file's text)
+    const need = this.paraNeeds(wrote.join('\n'), get(this.main));
+    if (need.length && !step(this.main, need.map(({ s, e, t }) => ({ s, e, t })))) return false;
+    const all = [];
+    for (const [f, t] of texts) for (const x of diffEdits(this.src(f), t)) all.push({ f, ...x });
+    if (!all.length) return false;
+    const caret = !car ? null : car.one ? { f: car.f, p: car.a, bias: -1 } : { f: car.f, p: car.a, selA: car.a, selB: car.b };
+    this.closeGroup();
+    this.commit(all, caret, kind);
+    this.closeGroup();
+    return true;
   },
+
   // The packages what is written needs, in the main file, in the same commit: changepage for
   // adjustwidth and setspace for its environments (memoir has both), tcolorbox, and xcolor's
   // dvipsnames for a colour of that list (passed to xcolor where another package loads it)
@@ -233,8 +300,8 @@ export const methods = {
     }
     const c = this.caretNow();
     const mine = all.filter((x) => c && x.f === c.f);
-    const map = (p, bias) => mapPos(mine.map((x) => ({ s: x.s, e: x.e, t: x.t })), p, bias);
-    const caret = !c || c.ghost ? null : c.collapsed ? { f: c.f, p: map(c.a, 1), bias: -1 } : { f: c.f, p: map(c.a, 1), selA: map(c.a, 1), selB: map(c.b, -1) };
+    const map = (p) => mapCaret(mine, p);
+    const caret = !c || c.ghost ? null : c.collapsed ? { f: c.f, p: map(c.a), bias: -1 } : { f: c.f, p: map(c.a), selA: map(c.a), selB: map(c.b) };
     this.closeGroup();
     this.commit(all, caret, kind);
     this.closeGroup();
@@ -243,7 +310,7 @@ export const methods = {
 
   // ---- alignment ------------------------------------------------------------------------------
   paraAlignNow(p) {
-    if (p.float) return this.floatAlign(p.float).v || 'left';
+    if (p.float) return this.floatAlign(p.float).v;
     const vs = p.units.map((u) => P.alignOf(p.src, u.U, u.it.align || null).v || null);
     return vs.every((v) => v === vs[0]) ? vs[0] : 'mixed';
   },
@@ -251,34 +318,53 @@ export const methods = {
     const p = paraOf(this, at);
     if (!p || p.why) { if (p && p.why) this.toast(p.why); return false; }
     // (pressed again it goes back to LaTeX's own, justified, as Word's Ctrl+E goes back to its own)
-    if (to !== 'justify' && this.paraAlignNow(p) === to && !(p.float && to === 'left')) to = 'justify';
+    // (in a figure: back to the class's own)
+    if (to !== 'justify' && this.paraAlignNow(p) === to) to = 'justify';
     if (p.float) return this.floatAlignSet(p.f, p.float, to);
-    return this.paraCommit(p, (u) => P.alignEdits(p.src, u.U, to, { inherit: u.it.align || null, lo: u.lo, hi: u.hi }));
+    return this.paraRun(p, [(text, U, u) => P.alignEdits(text, U, to, { inherit: u.it.align || null })]);
   },
   // A figure's or a table's alignment: \centering (\raggedleft, \raggedright) at the start of its
-  // body, or a center environment around the whole of it; none: TeX's own, at the left margin
+  // body, \centerline around its one line, or a center (or centering) environment around the whole
+  // of it; none: the class's own (src/model.js, opts.floatAlign: centred in beamer, the AMS
+  // classes, revtex, acmart and with floatrow; else at the left margin). { v (as the page draws
+  // it), own (written in it), dflt, d, inner, W }
   floatAlign(B) {
-    const src = this.src(B.f);
+    const src = this.src(B.f), dflt = (this.model && this.model.opts.floatAlign) || 'left';
     const m = /^\\begin\s*\{([A-Za-z*]+)\}/.exec(src.slice(B.s, B.s + 60));
     const W = m && envWords(src, B.s, B.e, [m[1]], {}, new Set([m[1]]));
-    if (!W) return { v: null, W: null };
+    if (!W) return { v: dflt, own: null, dflt, W: null };
     const d = declAtStart(src, W.ws, W.we, ['centering', 'raggedleft', 'raggedright']);
-    if (d) return { v: P.DECL_ALIGN[d.name], d, W };
-    const inner = envWords(src, W.ws, W.we, ['center', 'flushleft', 'flushright']);
-    if (inner) return { v: P.ENV_ALIGN[inner.name], inner, W };
-    return { v: null, W };
+    if (d) return { v: P.DECL_ALIGN[d.name], own: P.DECL_ALIGN[d.name], dflt, d, W };
+    // (an environment at the body's start: around all of it, or around its first part, a caption after it)
+    const im = /^\\begin\s*\{(center|flushleft|flushright|centering)\}/.exec(src.slice(W.ws, W.ws + 40));
+    const iz = im ? src.indexOf('\\end{' + im[1] + '}', W.ws) : -1;
+    const inner = iz > 0 && iz < W.we ? envWords(src, W.ws, iz + im[1].length + 6, [im[1]]) : null;
+    if (inner) { const v = inner.name === 'centering' ? 'center' : P.ENV_ALIGN[inner.name]; return { v, own: v, dflt, inner, W }; }
+    if (/^\\centerline\s*\{/.test(src.slice(W.ws, W.ws + 20))) return { v: 'center', own: 'center', dflt, W, line: true };
+    return { v: dflt, own: null, dflt, W };
+  },
+  // The edits that give the float B (as the model has it in src) the alignment to ('justify': the
+  // class's own), or { why }
+  floatAlignEdits(src, B, to) {
+    const cur = this.floatAlign(B), v = to === 'justify' ? cur.dflt : to;
+    if (!cur.W) return { why: 'Rikuy cannot read this figure\'s environment: change it in the source.' };
+    if (cur.v === v && (cur.own == null || cur.own === v)) return [];
+    if (cur.line) return { why: 'This figure is centred by \\centerline: change it in the source.' };
+    // (the class's own: the declaration or the environment goes)
+    if (v === cur.dflt && cur.own != null) {
+      if (cur.d) return [{ s: cur.d.s, e: cur.d.e, t: '' }];
+      return [{ s: cur.inner.we, e: cur.inner.e, t: '' }, { s: cur.inner.s, e: cur.inner.ws, t: '' }];
+    }
+    if (v === cur.dflt) return [];
+    if (cur.d) return [{ s: cur.d.s, e: cur.d.s + cur.d.name.length + 1, t: '\\' + P.ALIGN_DECL[v] }];
+    if (cur.inner) return [{ s: cur.inner.head[0], e: cur.inner.head[1], t: '\\begin{' + P.ALIGN_ENV[v] + '}' }, { s: cur.inner.tail[0], e: cur.inner.tail[1], t: '\\end{' + P.ALIGN_ENV[v] + '}' }];
+    if (!startsLine(src, cur.W.ws)) return { why: 'The figure\'s first line shares its line with \\begin: change it in the source.' };
+    return [{ s: cur.W.ws, e: cur.W.ws, t: '\\' + P.ALIGN_DECL[v] + eolAt(src, cur.W.ws) }];
   },
   floatAlignSet(f, B, to) {
-    const src = this.src(f), cur = this.floatAlign(B), v = to === 'justify' ? null : to;
-    if (!cur.W || cur.v === v) return false;
-    let edits;
-    if (cur.d) edits = [v ? { s: cur.d.s, e: cur.d.s + cur.d.name.length + 1, t: '\\' + P.ALIGN_DECL[v] } : { s: cur.d.s, e: cur.d.e, t: '' }];
-    else if (cur.inner) edits = v ? [{ s: cur.inner.head[0], e: cur.inner.head[1], t: '\\begin{' + P.ALIGN_ENV[v] + '}' }, { s: cur.inner.tail[0], e: cur.inner.tail[1], t: '\\end{' + P.ALIGN_ENV[v] + '}' }] : [{ s: cur.inner.we, e: cur.inner.e, t: '' }, { s: cur.inner.s, e: cur.inner.ws, t: '' }];
-    else {
-      if (!startsLine(src, cur.W.ws)) { this.toast('The figure\'s first line shares its line with \\begin: change it in the source.'); return false; }
-      edits = [{ s: cur.W.ws, e: cur.W.ws, t: '\\' + P.ALIGN_DECL[v] + eolAt(src, cur.W.ws) }];
-    }
-    return this.paraApply(f, edits);
+    const r = this.floatAlignEdits(this.src(f), B, to);
+    if (r.why) { this.toast(r.why); return false; }
+    return r.length ? this.paraApply(f, r) : false;
   },
 
   // ---- indents ----------------------------------------------------------------------------------
@@ -297,11 +383,11 @@ export const methods = {
   paraIndentStep(dir, at) {
     const p = paraOf(this, at);
     if (!p || p.why || p.float) return false;
-    return this.paraCommit(p, (u) => {
-      const cur = P.indentOf(p.src, u.U);
+    return this.paraRun(p, [(text, U) => {
+      const cur = P.indentOf(text, U);
       if (cur.l == null || cur.r == null) return { why: 'This paragraph\'s indent is written as a length Rikuy does not reckon with: change it in the source.' };
-      return P.indentEdits(p.src, u.U, P.stepIndent(cur.l, dir), cur.r, { lo: u.lo, hi: u.hi });
-    });
+      return P.indentEdits(text, U, P.stepIndent(cur.l, dir), cur.r);
+    }]);
   },
 
   // ---- line and paragraph spacing ------------------------------------------------------------------
@@ -329,7 +415,7 @@ export const methods = {
     if (!dialect) { this.toast('A beamer presentation spaces its lines itself.'); return false; }
     const K = P.spacingKind(dialect), doc = P.docSpacing(main, { others: this.preambleOthers() });
     const pt = this.model.opts.pt;
-    return this.paraCommit(p, (u) => P.layerEdits(p.src, u.U, { ...K, same: (a, b) => P.sameSpacing(a, b, pt) }, v, { inherit: doc ? doc.v : { lines: 1 }, lo: u.lo, hi: u.hi, whyInherit: 'This paragraph\'s spacing comes from further out: choose it for the whole document, or set another for this paragraph.' }));
+    return this.paraRun(p, [(text, U) => P.layerEdits(text, U, { ...K, same: (a, b) => P.sameSpacing(a, b, pt) }, v, { inherit: doc ? doc.v : { lines: 1 }, whyInherit: 'This paragraph\'s spacing comes from further out: choose it for the whole document, or set another for this paragraph.' })]);
   },
   docSpacingSet(v) {
     const src = this.src(this.main);
@@ -367,11 +453,10 @@ export const methods = {
   paraSpace(side, args, at) {
     const p = paraOf(this, at);
     if (!p || p.why) return false;
-    return this.paraCommit(p, (u) => {
-      const cur = P.spaceOf(u.U, side).pt;
-      const pt = typeof args === 'number' ? args : args && args.pt != null ? +args.pt : cur > 0 ? 0 : 12;
-      return P.spaceEdits(p.src, u.U, side, pt);
-    });
+    // (toggled as the first paragraph has it: every paragraph of the selection gets the same)
+    const cur = P.spaceOf(p.units[0].U, side).pt;
+    const pt = typeof args === 'number' ? args : args && args.pt != null ? +args.pt : cur > 0 ? 0 : 12;
+    return this.paraRun(p, [(text, U) => P.spaceEdits(text, U, side, pt)]);
   },
 
   // ---- flags: keep with next, keep lines together, page break before, no hyphenation, no numbers ----
@@ -387,9 +472,9 @@ export const methods = {
     const p = paraOf(this, at);
     if (!p || p.why || p.float) return false;
     const on = args != null && typeof args === 'boolean' ? args : !this.paraFlag(at, kind);
-    if (kind === 'keep' || kind === 'break') return this.paraCommit(p, (u) => P.flagEdits(p.src, u.U, kind, on));
+    if (kind === 'keep' || kind === 'break') return this.paraRun(p, [(text, U) => P.flagEdits(text, U, kind, on)]);
     const K = this.paraFlagKind(kind);
-    return this.paraCommit(p, (u) => (P.flagEnvOf(p.src, u.U, K) === 'container' && on ? [] : P.layerEdits(p.src, u.U, K, on ? true : null, { lo: u.lo, hi: u.hi })));
+    return this.paraRun(p, [(text, U) => (P.flagEnvOf(text, U, K) === 'container' && on ? [] : P.layerEdits(text, U, K, on ? true : null))]);
   },
   // whether the document numbers its lines: lineno loaded, and \linenumbers (or an option of
   // lineno's that numbers them) in the main file. (Read once for each text: the ribbon asks at
@@ -416,14 +501,14 @@ export const methods = {
     if (!p || p.why || p.float) return false;
     const pick = color === undefined ? this.paraShadeLast || 'yellow!20' : color;
     if (color) this.paraShadeLast = color;
-    return this.paraCommit(p, (u) => { const b = P.boxOf(p.src, u.U); return P.boxEdits(p.src, u.U, pick, !!b.border, { lo: u.lo, hi: u.hi }); });
+    return this.paraRun(p, [(text, U) => P.boxEdits(text, U, pick, !!P.boxOf(text, U).border)]);
   },
   paraShadePicker(at) {
     const p = paraOf(this, at);
     const b = p && !p.why ? P.boxOf(p.src, p.units[0].U) : null;
     const anchor = $('#rc-shading') && $('#rc-shading').offsetParent ? $('#rc-shading') : this.paraAnchor();
     const el = colorPicker(this, anchor, { label: 'Shading', auto: 'No Color', current: b && b.shading ? b.shading : null, theme: this.paraDocColors(),
-      onPick: (v) => { this.ribbonBack(); this.paraShade(v ? (v.name || null) : null, at); } });
+      onPick: (v) => { this.ribbonBack(); this.paraShade(!v ? null : v.html ? P.htmlColor(v.html) : v.name || null, at); } });
     if (el) { el.classList.add('pop-gal'); this.positionPop(); }
     return el;
   },
@@ -445,16 +530,12 @@ export const methods = {
     const p = paraOf(this, at);
     if (!p || p.why || p.float) return false;
     if (kind !== 'none') this.paraBorderLast = kind;
-    const ok = this.paraCommit(p, (u) => {
-      const U = u.U, box = P.boxOf(p.src, U);
-      if (kind === 'bottom' || kind === 'top') return P.ruleEdits(p.src, U, kind === 'bottom' ? 'after' : 'before', !P.ruleOf(U, kind === 'bottom' ? 'after' : 'before'));
-      if (kind === 'box') return P.boxEdits(p.src, U, box.shading || null, !box.border, { lo: u.lo, hi: u.hi });
-      // none: the rules and the frame go (the shading stays)
-      const out = [...P.ruleEdits(p.src, U, 'after', false), ...P.ruleEdits(p.src, U, 'before', false)];
-      if (box.border) { const r = P.boxEdits(p.src, U, box.shading || null, false, { lo: u.lo, hi: u.hi }); if (r.why) return r; out.push(...r); }
-      return out;
-    });
-    return ok;
+    // (on or off as the first paragraph has it: every paragraph of the selection gets the same)
+    const U0 = p.units[0].U, side = kind === 'bottom' ? 'after' : 'before', on = kind === 'box' ? !P.boxOf(p.src, U0).border : !P.ruleOf(U0, side);
+    // none: the rules go, then the frame (the shading stays): each read again after the other
+    if (kind === 'none') return this.paraRun(p, [(text, U) => [...P.ruleEdits(text, U, 'after', false), ...P.ruleEdits(text, U, 'before', false)], (text, U) => { const box = P.boxOf(text, U); return box.border ? P.boxEdits(text, U, box.shading || null, false) : []; }]);
+    if (kind === 'box') return this.paraRun(p, [(text, U) => P.boxEdits(text, U, P.boxOf(text, U).shading || null, on)]);
+    return this.paraRun(p, [(text, U) => P.ruleEdits(text, U, side, on)]);
   },
   paraHR(at) {
     const p = paraOf(this, at);
@@ -490,13 +571,13 @@ export const methods = {
     if (!p || p.why || p.float || !D.rtl) return false;
     const lang = to === 'rtl' ? D.rtl : D.ltr;
     if (!lang) { this.toast('The document sets up no left to right language beside its right to left one.'); return false; }
-    return this.paraCommit(p, (u) => {
-      const own = u.U.levels.find((L) => L.W && P.DIRECTION.names.includes(L.W.name));
+    return this.paraRun(p, [(text, U, u) => {
+      const own = U.levels.find((L) => L.W && P.DIRECTION.names.includes(L.W.name));
       const now = u.it.dir || D.doc;
-      if (own) return P.layerEdits(p.src, u.U, P.DIRECTION, (to === D.doc ? null : lang), { lo: u.lo, hi: u.hi });
+      if (own) return P.layerEdits(text, U, P.DIRECTION, (to === D.doc ? null : lang));
       if (now === to) return [];
-      return P.layerEdits(p.src, u.U, P.DIRECTION, lang, { lo: u.lo, hi: u.hi });
-    });
+      return P.layerEdits(text, U, P.DIRECTION, lang);
+    }]);
   },
 
   // ---- tab stops with a leader: \hfill, \dotfill, \hrulefill at the caret ----------------------------
@@ -504,8 +585,14 @@ export const methods = {
     const c = at && at.c;
     if (!c || c.ghost) return false;
     const t = kind === 'dots' ? '\\dotfill' : kind === 'line' ? '\\hrulefill' : '\\hfill';
-    const src = this.src(c.f), next = src[c.b] || '';
-    return this.paraApply(c.f, [{ s: c.a, e: c.b, t: t + (/[A-Za-z]/.test(next) ? '{}' : '') }], 'insert');
+    // (at the caret, or at the end of a selection: what is selected stays, as the source has it,
+    // where a selection may run over an \end or into a command's braces)
+    const at0 = c.collapsed ? c.a : Math.max(c.a, c.b), src = this.src(c.f), next = src[at0] || '';
+    const text = t + (/[A-Za-z]/.test(next) ? '{}' : '');
+    this.closeGroup();
+    this.commit([{ f: c.f, s: at0, e: at0, t: text }], { f: c.f, p: at0 + text.length, bias: -1 }, 'insert');
+    this.closeGroup();
+    return true;
   },
 
   // ---- the document's paragraph spacing (Design) ------------------------------------------------------
@@ -576,11 +663,11 @@ export const methods = {
     const L = typeof len === 'number' ? { value: len, unit: id.startsWith('indent') ? 'cm' : 'pt' } : len;
     const pt = L.value * (P.PT[L.unit] || 1);
     if (id === 'spacing-before' || id === 'spacing-after') return this.paraSpace(id === 'spacing-before' ? 'before' : 'after', Math.max(0, pt), at);
-    return this.paraCommit(p, (u) => {
-      const cur = P.indentOf(p.src, u.U);
+    return this.paraRun(p, [(text, U) => {
+      const cur = P.indentOf(text, U);
       if (cur.l == null || cur.r == null) return { why: 'This paragraph\'s indent is written as a length Rikuy does not reckon with: change it in the source.' };
-      return P.indentEdits(p.src, u.U, id === 'indent-left' ? pt : cur.l, id === 'indent-right' ? pt : cur.r, { lo: u.lo, hi: u.hi });
-    });
+      return P.indentEdits(text, U, id === 'indent-left' ? pt : cur.l, id === 'indent-right' ? pt : cur.r);
+    }]);
   },
 
   // ---- the Paragraph dialog -------------------------------------------------------------------------
@@ -588,57 +675,31 @@ export const methods = {
     if (at === undefined) at = this.ribbonAt();
     return openParagraphDialog(this, at, paraOf(this, at), args || {});
   },
-  // Everything the dialog changed, one step of history: the paragraph's settings applied one after
-  // another on the text (each sees what the one before wrote), the document's in the preamble;
-  // the source changed by the edits between the two texts. ops: [(text, unit) => edits]; doc:
-  // [(text) => edits]
-  paraDialogApply(p, ops, docOps) {
-    const main = this.main, others = this.preambleOthers();
-    const texts = new Map();
-    const get = (f) => texts.has(f) ? texts.get(f) : this.src(f);
-    if (p && !p.why && !p.float && ops.length) {
-      const f = p.f;
-      for (const u0 of p.units) {
-        let pos = { ps: u0.ps, pe: u0.its[u0.its.length - 1].pe, vs: u0.vs, ve: u0.its[u0.its.length - 1].ve, lo: u0.lo, hi: u0.hi };
-        for (const op of ops) {
-          const text = get(f);
-          const U = P.unitOf(text, pos.ps, pos.pe, pos.lo, pos.hi, pos.vs != null && pos.ve != null ? { vs: pos.vs, ve: pos.ve } : null);
-          if (!U) break;
-          const ed = op(text, U, u0, pos);
-          if (!ed || !ed.length) continue;
-          if (ed.why) { this.toast(ed.why); return false; }
-          texts.set(f, applyEdits(text, ed));
-          const m = (x, b) => mapPos(ed, x, b);
-          pos = { ps: m(pos.ps, 1), pe: m(pos.pe, -1), vs: pos.vs != null ? m(pos.vs, 1) : null, ve: pos.ve != null ? m(pos.ve, -1) : null, lo: m(pos.lo, -1), hi: m(pos.hi, 1) };
-        }
-      }
-    }
-    for (const op of docOps) {
-      const text = get(main);
-      const r = op(text, others);
-      if (!r) continue;
-      if (r.why) { this.toast(r.why); return false; }
-      if (typeof r.text === 'string') { if (r.text !== text) texts.set(main, r.text); }
-      else if (r.length) texts.set(main, applyEdits(text, r));
-    }
-    // (the packages what was written needs, in the main file's text)
-    const wrote = [...texts].map(([f, t]) => diffEdits(this.src(f), t).map((x) => x.t).join('\n')).join('\n');
-    const need = this.paraNeeds(wrote, get(main));
-    if (need.length) texts.set(main, applyEdits(get(main), need.map(({ s, e, t }) => ({ s, e, t }))));
-    const all = [];
-    for (const [f, t] of texts) for (const x of diffEdits(this.src(f), t)) all.push({ f, ...x });
-    if (!all.length) return false;
-    const c = this.caretNow();
-    this.closeGroup();
-    this.commit(all, c && !c.ghost ? { f: c.f, p: c.a, bias: -1 } : null, 'para');
-    this.closeGroup();
-    return true;
+  // Everything the dialog changed, one step of history (paraRun): the paragraph's settings applied
+  // one after another, each unit read again after the edits before it; the document's in the
+  // preamble; a figure's alignment. ops: [(text, U, u) => edits]; docOps: [(text, others) =>
+  // edits | { text }]; float: the alignment for the figure the caret is in
+  paraDialogApply(p, ops, docOps, float = null, caret = null) {
+    const fileOps = [];
+    if (float && p && p.float) { const B = p.float, f = p.f; fileOps.push({ f, op: (text) => this.floatAlignEdits(text, B, float) }); }
+    for (const op of docOps) fileOps.push({ f: this.main, op });
+    return this.paraRun(p, ops, fileOps, 'para', caret);
   }
 };
 
 const setTitle = (x) => (x.skip == null ? 'No space between paragraphs, first lines indented (LaTeX\'s own)' : (x.skip === 'open' ? 'Half a line' : x.skip + ' pt') + ' between paragraphs (parskip), no first line indent') + '; line spacing ' + P.spacingName(x.sp || { lines: 1 });
 // two units in one place: the same container, or none
 const sameScope = (a, b) => (a.container ? a.container.s : -1) === (b.container ? b.container.s : -1);
+// The caret's place after edits: text put in at the caret goes after it when it ends a line of its
+// own (a \begin{center} line before the words), before it otherwise (\end{center} after them)
+export function mapCaret(edits, p) {
+  let q = p;
+  for (const x of edits) {
+    if (x.e < p || (x.e === p && (x.s < p || /\n$/.test(x.t)))) q += x.t.length - (x.e - x.s);
+    else if (x.s < p && x.e > p) q += x.s + x.t.length - p;
+  }
+  return q;
+}
 
 // edits applied to a text, from the end backwards (as App.commit applies them)
 export function applyEdits(src, edits) {

@@ -307,8 +307,8 @@ def keyboard(page):
     seen = []
     for key in ('ArrowRight', 'ArrowLeft', 'ArrowLeft', 'End', 'Home', 'ArrowRight'):
         page.keyboard.press(key); seen.append(page.evaluate('document.activeElement.id'))
-    # (left of the gallery, Paragraph's last control that applies to a paragraph: Multilevel list, B3)
-    check('arrows, Home and End move between its controls (the strip\'s disabled arrows skipped), the font box among them', seen == ['rb-st-section', 'rb-st-p', 'rb-ml', 'b-save', 'rc-format-painter', 'rb-font'], seen)
+    # (left of the gallery, Paragraph's last control that applies to a paragraph: Multilevel list, B3; then B2's buttons, Paragraph Settings last)
+    check('arrows, Home and End move between its controls (the strip\'s disabled arrows skipped), the font box among them', seen == ['rb-st-section', 'rb-st-p', 'rc-paragraph-settings', 'b-save', 'rc-format-painter', 'rb-font'], seen)
     page.focus('#rb-i'); page.keyboard.press('ArrowLeft')
     ring = page.evaluate('(() => { const c = getComputedStyle(document.activeElement); return c.outlineStyle !== "none" && parseFloat(c.outlineWidth) > 0; })()')
     # (what each half saw, printed where it fails: the focus, its ring, Bold's state, the selection)
@@ -503,7 +503,7 @@ def downloads_in_sight(page):
     load_doc(page, DOC)
     IN = """(ids) => { const r = document.getElementById('ribbon'); r.scrollLeft = 0; return ids.map((id) => { const e = document.getElementById(id), b = e.getBoundingClientRect(), rr = r.getBoundingClientRect();
       const top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return b.width > 0 && b.left >= rr.left - 1 && b.right <= innerWidth + 1 && !!top && (top === e || e.contains(top)); }); }"""
-    for w in (820, 860, 1000):
+    for w in (820, 860, 1000, 1366):
         page.set_viewport_size({'width': w, 'height': 800}); page.wait_for_timeout(300)
         # (above 860 px the three where the row has room for them, else the one button: Home's Font
         # group in Word's two rows and the Paragraph group's list commands leave 1000 px without room for three)
@@ -532,9 +532,8 @@ def downloads_in_sight(page):
     page.on('download', lambda d: got.append(d.suggested_filename))
     page.click('body > .pop.pop-dl button.nav-act >> nth=2'); page.wait_for_timeout(1200)
     check('and LaTeX there saves the file, once', got == ['main.tex'] and page.evaluate('document.querySelectorAll("body > .pop").length') == 0, got)
-    page.set_viewport_size({'width': 1920, 'height': 1000}); page.wait_for_timeout(200)
-    check('a wide screen shows the three buttons and no Download button', not page.is_visible('#rb-dl-menu') and page.is_visible('#rb-pdf') and page.is_visible('#b-save'))
     page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(200)
+    check('a wide screen shows the three buttons and no Download button', not page.is_visible('#rb-dl-menu') and page.is_visible('#rb-pdf') and page.is_visible('#b-save'))
 
 
 def bold_across(page):
@@ -1030,8 +1029,6 @@ def run():
                gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, latex_style, latex_typing, latex_after_ghost, latex_edges, latex_clipboard, latex_pdf)
         # (the tests that read the tiles see all six: from 1600 px the gallery has room for them)
         wide = (styles, gallery, gallery_keys, quote_style, latex_style, latex_edges)
-        # (and those that press PDF, Word or LaTeX: Home's row has room for the three at 1920 px)
-        wide += (downloads, one_save, live_graphs)
         # (names given on the command line run those alone)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             browser, page, errors = open_page(p, width=1920 if fn in wide else 1400)

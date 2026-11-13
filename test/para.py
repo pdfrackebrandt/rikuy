@@ -331,6 +331,247 @@ def compile_pdf(page):
     check('onehalfspace\'s lines 15 pt apart in TeX\'s PDF (1.25 times 12 pt), as the page spaces them', abs(gap - 15 * BP) < 0.6, sp[:4])
 
 
+
+def select_words(page, a, b):
+    """A selection from the start of word a to the end of word b on the page"""
+    page.evaluate('''([a, b]) => { const sp = [...document.querySelectorAll('#pages span.t')]; const x = sp.find((s) => s.textContent.includes(a)), z = sp.find((s) => s.textContent.includes(b));
+      const r = document.createRange(); r.setStart(x.firstChild, x.textContent.indexOf(a)); r.setEnd(z.firstChild, z.textContent.indexOf(b) + b.length);
+      document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''', [a, b])
+    page.wait_for_timeout(150)
+
+def balanced(t):
+    st = []
+    for m in re.finditer(r'\\(begin|end)\{([^}]+)\}', t):
+        if m.group(1) == 'begin': st.append(m.group(2))
+        elif not st or st.pop() != m.group(2): return False
+    return not st
+
+def tex_ok(page, text, label):
+    """Where dist/tex has a tree: the text compiles in the page; its words and TeX's boxes"""
+    if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')): return None
+    c = compile_doc(page, text)
+    check(label + ': compiles in the page (pdfLaTeX)', c['ok'] and c['words'], c['log'][-300:])
+    return c if c['ok'] and c['words'] else None
+
+# a line from margin to margin in a test's text: TeX's text block measured by it
+EDGES = '\\noindent Leftedge\\hfill Rightedge\n\n'
+def centred_in_pdf(c, word):
+    """Whether TeX's PDF centres the line of the word: the line's middle at the text block's, which
+    EDGES marks (within 3 bp)"""
+    W = [w for pg in c['words'][:1] for w in pg]
+    t = next((w for w in W if w[4].startswith(word)), None)
+    l, r = next((w for w in W if w[4] == 'Leftedge'), None), next((w for w in W if w[4] == 'Rightedge'), None)
+    if not t or not l or not r: return None
+    line = [w for w in W if abs(w[1] - t[1]) < 1]
+    return abs((min(w[0] for w in line) + max(w[2] for w in line)) / 2 - (l[0] + r[2]) / 2) < 3
+
+def caret_at(page, sel):
+    page.evaluate('''(sel) => { const r = document.createRange(), el = document.querySelector(sel); r.setStart(el, 0); r.collapse(true); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''', sel)
+    page.wait_for_timeout(150)
+
+
+def reviewed(page):
+    """The hostile review of b265b6f, each case as the reviewer gave it (b1 to b8 and t2 to t17 of
+    the review), compiled where TeX refused what was written or set it elsewhere than the page drew it"""
+    # b1: two paragraphs of a centred group and one after it selected, Align Right: every environment closed
+    s = D('\\begin{center}\nAlpha words.\n\nBeta words.\n\\end{center}\n\nGamma words.\n\nDelta words.')
+    load_doc(page, s); select_words(page, 'Beta', 'Gamma')
+    cmd(page, 'align-right'); page.wait_for_timeout(250)
+    t = src(page)
+    check('review 1: Align Right over the end of a centred group and the paragraph after it: one flushright, every environment closed', t == D('\\begin{center}\nAlpha words.\n\\end{center}\n\n\\begin{flushright}\nBeta words.\n\nGamma words.\n\\end{flushright}\n\nDelta words.'), t[40:300])
+    check('and the page draws Beta and Gamma at the right, Alpha centred', [(item_of(page, w) or {}).get('align') for w in ('Alpha', 'Beta', 'Gamma')] == ['center', 'right', 'right'])
+    select_words(page, 'Alpha', 'Beta'); cmd(page, 'justify'); page.wait_for_timeout(250)
+    check('Justify over the first two: the environments fit around what is left', src(page) == D('Alpha words.\n\nBeta words.\n\n\\begin{flushright}\nGamma words.\n\\end{flushright}\n\nDelta words.'), src(page)[40:300])
+    tex_ok(page, t, 'review 1')
+    # b2: the dialog over two paragraphs (a centred one and a plain one): Space Before for both, at their places
+    s = D('\\begin{center}\nBravo words here.\n\\end{center}\n\nSpace words here.\n\nAfter.')
+    load_doc(page, s); select_words(page, 'Bravo', 'Space')
+    cmd(page, 'paragraph-settings'); page.wait_for_timeout(300)
+    dlg = page.get_by_role('dialog', name='Paragraph')
+    dlg.get_by_label('Before (pt)').fill('12')
+    dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    t = src(page)
+    check('review 2: the dialog over two paragraphs writes each one\'s \\vspace before it, nothing inside a word', t == D('\\vspace{12pt}\n\\begin{center}\nBravo words here.\n\\end{center}\n\n\\vspace{12pt}\nSpace words here.\n\nAfter.'), t[40:300])
+    tex_ok(page, t, 'review 2')
+    # b5, b6: the caret after OK: the next key goes into the words, not into \begin{document}
+    load_doc(page, D('Intro.\n\nTarget words here.\n\nAfter.')); click_text(page, 'Target', 3)
+    cmd(page, 'paragraph-settings'); page.wait_for_timeout(300)
+    dlg = page.get_by_role('dialog', name='Paragraph')
+    dlg.get_by_role('combobox', name='Alignment').select_option('right')
+    dlg.get_by_label('Before (pt)').fill('6')
+    dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    page.keyboard.type('Z'); page.wait_for_timeout(250)
+    check('review 3: after OK the next key lands where the caret was, in "Target" (the caret mapped through every edit)', src(page) == D('Intro.\n\n\\vspace{6pt}\n\\begin{flushright}\nTarZget words here.\n\\end{flushright}\n\nAfter.'), src(page)[40:260])
+    # t14: a commented out \end{center} before the paragraph: no join (joined, it compiled to an error)
+    s = D('Intro.\n\n\\begin{center}\nX\n\\end{center}\n% \\end{center}\n\nC words here.\n\nAfter.')
+    load_doc(page, s); click_text(page, 'C words', 2); cmd(page, 'align-center'); page.wait_for_timeout(250)
+    t = src(page)
+    check('review 4: Center beside a commented out \\end{center}: an environment of its own, the comment untouched', t == s.replace('C words here.', '\\begin{center}\nC words here.\n\\end{center}'), t[40:300])
+    tex_ok(page, t, 'review 4')
+    # t13: beside a LaTeX paragraph
+    s = D('Intro.\n\n% rikuy: latex\n\\begin{center}\nRaw stuff\n\\end{center}\n\nC words here.\n\nAfter.')
+    load_doc(page, s); click_text(page, 'C words', 2); cmd(page, 'align-center'); page.wait_for_timeout(250)
+    check('review 5: Center beside a LaTeX paragraph\'s center: not joined into it', src(page) == s.replace('C words here.', '\\begin{center}\nC words here.\n\\end{center}'), src(page)[40:300])
+    # b4: Tabs over a selection into \textbf{: the fill at the selection's end, nothing taken
+    load_doc(page, D('Some \\textbf{bold} words here.')); select_words(page, 'Some', 'bold')
+    cmd(page, 'tab-leader', 'dots'); page.wait_for_timeout(250)
+    check('review 6: Tabs over a selection writes \\dotfill at its end and takes nothing away', src(page) == D('Some \\textbf{bold\\dotfill} words here.'), src(page)[40:200])
+    # t17: { \centering ...} and {\centering<newline>...}
+    for g, r in (('{ \\centering Words here.\\par}', '{ \\raggedleft Words here.\\par}'), ('{\\centering\nWords here.\\par}', '{\\raggedleft\nWords here.\\par}')):
+        load_doc(page, D('Intro.\n\n' + g + '\n\nAfter.')); click_text(page, 'Words', 2)
+        check('review 7: %s shows Center pressed' % g.replace('\n', ' (line break) '), pressed(page, 'align-center') is True)
+        cmd(page, 'align-right'); page.wait_for_timeout(200)
+        check('and Align Right changes its declaration in place', src(page) == D('Intro.\n\n' + r + '\n\nAfter.'), src(page)[40:200])
+        tex_ok(page, src(page), 'review 7')
+        click_text(page, 'Words', 2); cmd(page, 'justify'); page.wait_for_timeout(200)
+        check('and Justify takes the group off', src(page) == D('Intro.\n\nWords here.\n\nAfter.'), src(page)[40:200])
+    # t7, q.tex: a quote's paragraph centred: inside the quote, where TeX centres it; written outside, not centred
+    s = D(EDGES + 'Intro words.\n\n\\begin{quote}\nQuoted words.\n\\end{quote}\n\nAfter.')
+    load_doc(page, s); click_text(page, 'Quoted', 2); cmd(page, 'align-center'); page.wait_for_timeout(250)
+    t = src(page)
+    check('review 8: Center in a quote writes center inside the quote', t == s.replace('Quoted words.', '\\begin{center}\nQuoted words.\n\\end{center}'), t[40:300])
+    out = D(EDGES + 'Intro words.\n\n\\begin{center}\n\\begin{quote}\nOutside words.\n\\end{quote}\n\\end{center}\n\nAfter.')
+    load_doc(page, out); click_text(page, 'Outside', 2)
+    check('and a center written around a quote: the page draws the words flush, as TeX sets them, and the ribbon says Justify', (item_of(page, 'Outside') or {}).get('align') != 'center' and pressed(page, 'justify') is True, (item_of(page, 'Outside'), pressed(page, 'justify')))
+    c = tex_ok(page, t, 'review 8, center inside the quote')
+    if c: check('TeX centres the quote\'s words when center is inside it', centred_in_pdf(c, 'Quoted') is True)
+    c = tex_ok(page, out, 'review 8, center around the quote')
+    if c: check('and does not centre them when center is around it, as the page draws them', centred_in_pdf(c, 'Outside') is False)
+    # t12: a figure in amsart without \centering: TeX centres it, so does the page
+    # (words, not a rule, in it: pdftotext's boxes are words)
+    am = D(EDGES + 'Text.\n\n\\begin{figure}[h]\nFigword in a figure\n\\caption{c}\n\\end{figure}', '', '\\documentclass{amsart}')
+    load_doc(page, am)
+    fa = page.evaluate('''() => { const el = [...document.querySelectorAll('#pages .fp *')].filter((x) => x.textContent.includes('Figword')).pop(); let e = el; while (e && getComputedStyle(e).display === 'inline') e = e.parentElement; return e ? getComputedStyle(e).textAlign : null; }''')
+    check('review 9: a figure in amsart without \\centering is drawn centred, as the class sets it', fa == 'center', fa)
+    caret_at(page, '#pages .fp')
+    check('and the ribbon shows Center pressed', pressed(page, 'align-center') is True)
+    c = tex_ok(page, am, 'review 9')
+    if c: check('and TeX\'s PDF centres it', centred_in_pdf(c, 'Figword') is True)
+    # b4: Shading's More colors: an HTML colour stays a shading, compiles, drawn
+    load_doc(page, D('Intro.\n\nShade words here.\n\nAfter.')); click_text(page, 'Shade', 2)
+    cmd(page, 'shading', {'color': 'rgb,255:red,231;green,84;blue,128'}); page.wait_for_timeout(300)
+    t = src(page)
+    check('review 12: More colors\' E75480 as shading: colback={rgb,255:red,231;green,84;blue,128}, tcolorbox loaded', 'colback={rgb,255:red,231;green,84;blue,128}' in t and '\\usepackage{tcolorbox}' in t, t[:400])
+    check('and the page draws it on that colour', (item_of(page, 'Shade words') or {}).get('bg') == 'rgb(231, 84, 128)', item_of(page, 'Shade words'))
+    tex_ok(page, t, 'review 12')
+    # b4: {\centering ...} without \par: not centred by TeX, nor by the page
+    g = D(EDGES + 'Intro words here.\n\n{\\centering Grouped words.}\n\nAfter.')
+    load_doc(page, g); click_text(page, 'Grouped', 2)
+    check('review 13: {\\centering ...} without \\par: drawn justified, Justify pressed', pressed(page, 'justify') is True and (item_of(page, 'Grouped') or {}).get('align') != 'center')
+    c = tex_ok(page, g, 'review 13')
+    if c: check('and TeX does not centre it', centred_in_pdf(c, 'Grouped') is False)
+    # t2: a paragraph with display math centred whole
+    m = D(EDGES + 'Before.\n\nMath starts\n\\[ x^2 + y^2 \\]\nand continues.\n\nAfter.')
+    load_doc(page, m); click_text(page, 'continues', 2); cmd(page, 'align-center'); page.wait_for_timeout(250)
+    t = src(page)
+    check('review 17: Center in a paragraph with display math centres the whole paragraph', t == D(EDGES + 'Before.\n\n\\begin{center}\nMath starts\n\\[ x^2 + y^2 \\]\nand continues.\n\\end{center}\n\nAfter.'), t[40:300])
+    check('and the page draws its words before and after the formula centred', [(item_of(page, w) or {}).get('align') for w in ('Math starts', 'continues')] == ['center', 'center'])
+    c = tex_ok(page, t, 'review 17')
+    if c: check('as TeX\'s PDF sets them', centred_in_pdf(c, 'Math') is True and centred_in_pdf(c, 'and') is True)
+    # b2: the dialog in a figure: Centered shown for \centering, Right sets \raggedleft, the widows box in the same step
+    fig = D('Text.\n\n\\begin{figure}[h]\n\\centering\n\\rule{2cm}{1cm}\n\\caption{A box}\n\\end{figure}')
+    load_doc(page, fig); caret_at(page, '#pages .fp')
+    cmd(page, 'paragraph-settings'); page.wait_for_timeout(300)
+    dlg = page.get_by_role('dialog', name='Paragraph')
+    check('review 11: the dialog in a figure with \\centering shows Centered', page.evaluate('document.getElementById("pd-align").value') == 'center')
+    dlg.get_by_role('combobox', name='Alignment').select_option('right')
+    dlg.get_by_role('tab', name='Line and Page Breaks').click(); dlg.get_by_label('Widow/Orphan control').check()
+    h0 = page.evaluate('rikuy.hist.length')
+    dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    t = src(page)
+    check('and Right writes \\raggedleft in its place, the widows set in the same step', '\\begin{figure}[h]\n\\raggedleft\n\\rule' in t and '\\widowpenalty=10000' in t and page.evaluate('rikuy.hist.length') == h0 + 1, t[:300])
+
+
+def open_phone(p, width, height, dark=False):
+    """The page on a phone: a touch screen (taps, no hover, no right click), Chromium's mobile viewport"""
+    import browser as B
+    br = p.chromium.launch(args=[a for a in os.environ.get('CHROME_ARGS', '').split() if a])
+    ctx = br.new_context(viewport={'width': width, 'height': height}, color_scheme='dark' if dark else 'light', device_scale_factor=2, has_touch=True, is_mobile=True)
+    page = ctx.new_page()
+    errors = []
+    page.on('pageerror', lambda e: errors.append('PAGEERROR ' + str(e)))
+    html = open(os.path.join(DIST, 'rikuy.html'), encoding='utf8').read()
+    doc = B.SKELETON_HEAD + html + '</body></html>'
+    def handler(route):
+        url = route.request.url
+        if url.startswith('https://rikuy.test/'):
+            path = url[len('https://rikuy.test/'):].split('?')[0]
+            f = os.path.join(DIST, path)
+            if path and os.path.isfile(f):
+                ct = 'text/javascript' if path.endswith(('.js', '.mjs')) else 'application/wasm' if path.endswith('.wasm') else 'application/octet-stream'
+                return route.fulfill(status=200, content_type=ct, body=open(f, 'rb').read())
+            return route.fulfill(status=200, content_type='text/html; charset=utf-8', body=doc)
+        if url in B.ROUTES:
+            return route.fulfill(status=200, content_type='application/javascript', headers={'Access-Control-Allow-Origin': '*'}, body=open(B.ROUTES[url], 'rb').read())
+        return route.abort()
+    ctx.route('**/*', handler)
+    page.goto('https://rikuy.test/')
+    page.evaluate('localStorage.clear()'); page.reload()
+    page.wait_for_function('window.rikuy && document.getElementById("boot").hidden', timeout=60000)
+    return br, page, errors
+
+def tap_word(page, word, off=2):
+    """A finger on the page at a word: the caret goes there"""
+    b = page.evaluate('''([w, off]) => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(w)); if (!s) return null; s.scrollIntoView({ block: 'center' });
+      const r = document.createRange(), i = s.textContent.indexOf(w) + off; r.setStart(s.firstChild, i); r.setEnd(s.firstChild, i + 1); const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }''', [word, off])
+    page.wait_for_timeout(150)
+    page.touchscreen.tap(b[0], b[1]); page.wait_for_timeout(250)
+
+def sideways(page):
+    return page.evaluate('document.documentElement.scrollWidth - document.documentElement.clientWidth')
+
+def phone(p):
+    """On a phone (390 x 844 and 360 x 740, touch): alignment, line spacing and Show marks by a tap,
+    no key needed; the Paragraph dialog fits the screen and scrolls; 44 px targets; the page never
+    scrolls sideways; screenshots at 390 px, light and dark"""
+    for w, h in ((390, 844), (360, 740)):
+        br, page, errors = open_phone(p, w, h)
+        load_doc(page, PLAIN); page.wait_for_timeout(300)
+        tap_word(page, 'Second', 3)
+        page.locator('#rc-align-center').tap(); page.wait_for_timeout(300)
+        check('%d px: a tap on Center writes the center environment, no key needed' % w, src(page) == ENV('center'), src(page)[40:200])
+        check('%d px: and the page draws it centred' % w, (item_of(page, 'Second paragraph') or {}).get('align') == 'center')
+        tap_word(page, 'Second', 3)
+        page.locator('#rc-justify').tap(); page.wait_for_timeout(300)
+        check('%d px: a tap on Justify gives the bytes back' % w, src(page) == PLAIN, src(page)[40:200])
+        tap_word(page, 'Second', 3)
+        page.locator('#rc-line-spacing').tap(); page.wait_for_timeout(300)
+        menu = page.get_by_role('menu')
+        fits = page.evaluate('(() => { const m = [...document.querySelectorAll("body > .pop")].pop(); if (!m) return null; const r = m.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth + 1 && r.top >= 0; })()')
+        check('%d px: a tap on Line and Paragraph Spacing opens its menu inside the screen' % w, menu.count() == 1 and fits, fits)
+        menu.get_by_role('menuitemradio', name='1.5', exact=True).first.tap(); page.wait_for_timeout(300)
+        check('%d px: a tap on 1.5 writes setspace\'s onehalfspace around the paragraph' % w, '\\begin{onehalfspace}\nSecond paragraph of the text.\n\\end{onehalfspace}' in src(page), src(page)[:300])
+        page.evaluate('rikuy.undo()'); page.wait_for_timeout(200)
+        page.locator('#rc-show-marks').tap(); page.wait_for_timeout(200)
+        check('%d px: a tap on Show marks shows them, nothing written' % w, page.evaluate('document.body.classList.contains("marks-on")') and src(page) == PLAIN)
+        page.locator('#rc-show-marks').tap(); page.wait_for_timeout(200)
+        check('%d px: and a second tap hides them' % w, not page.evaluate('document.body.classList.contains("marks-on")'))
+        big = page.evaluate('''() => [...document.querySelectorAll('.rb-grp[data-group="paragraph"] button')].filter((b) => b.offsetParent).map((b) => { const r = b.getBoundingClientRect(); return [b.id || b.dataset.cmd || '', Math.round(r.width), Math.round(r.height)]; })''')
+        check('%d px: the Paragraph group\'s targets are 44 px for a finger (a split button\'s arrow 28 px wide beside its 44 px button)' % w, big and all(x[2] >= 44 and (x[1] >= 44 or (x[0].endswith('-x') and x[1] >= 28)) for x in big), big)
+        tap_word(page, 'Second', 3)
+        page.locator('#rc-paragraph-settings').tap(); page.wait_for_timeout(400)
+        box = page.evaluate('''() => { const d = document.querySelector('.pop-pd'); if (!d) return null; const r = d.getBoundingClientRect(), s = getComputedStyle(d);
+          return { l: r.left, r: r.right, t: r.top, b: r.bottom, sh: d.scrollHeight, ch: d.clientHeight, oy: s.overflowY, iw: innerWidth, ih: innerHeight }; }''')
+        check('%d px: the Paragraph dialog opens by a tap and fits the screen\'s width and height' % w, box and box['l'] >= 0 and box['r'] <= box['iw'] + 1 and box['t'] >= 0 and box['b'] <= box['ih'] + 1, box)
+        check('%d px: what it holds past the screen scrolls inside it' % w, box and (box['sh'] <= box['ch'] + 1 or box['oy'] in ('auto', 'scroll')), box)
+        dlg = page.get_by_role('dialog', name='Paragraph')
+        dlg.get_by_role('combobox', name='Alignment').select_option('right')
+        dlg.get_by_role('button', name='OK').tap(); page.wait_for_timeout(300)
+        check('%d px: OK by a tap writes it' % w, src(page) == ENV('flushright'), src(page)[40:200])
+        check('%d px: the page never scrolled sideways' % w, sideways(page) <= 0, sideways(page))
+        check('%d px: no page errors' % w, not errors, errors[:3])
+        br.close()
+    for dark in (False, True):
+        br, pg, er = open_phone(p, 390, 844, dark)
+        load_doc(pg, D('First paragraph here with words that run on.\n\n\\begin{center}\nA centred paragraph.\n\\end{center}\n\nThird one.'))
+        tap_word(pg, 'centred', 2)
+        pg.evaluate('document.getElementById("rc-align-center").scrollIntoView({ inline: "center" })'); pg.wait_for_timeout(200)
+        tag = 'phone-' + ('dark' if dark else 'light') + '-390'
+        pg.screenshot(path='/tmp/B2-shots/' + tag + '.png')
+        pg.locator('#rc-paragraph-settings').tap(); pg.wait_for_timeout(400)
+        pg.screenshot(path='/tmp/B2-shots/' + tag + '-dialog.png')
+        br.close()
+
 def screenshots(p):
     out = '/tmp/B2-shots'
     os.makedirs(out, exist_ok=True)
@@ -370,12 +611,15 @@ def run():
     names = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (alignment, spacing, indents, flags, boxes, marks, dialog, layout_and_design, agents, compile_pdf):
+        for f in (alignment, spacing, indents, flags, boxes, marks, dialog, layout_and_design, agents, compile_pdf, reviewed):
             if names and f.__name__ not in names: continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
         browser.close()
+        if not names or 'phone' in names:
+            try: phone(p)
+            except Exception as e: check('phone runs to its end', False, str(e)[:400])
         if not names or 'screenshots' in names:
             try: screenshots(p)
             except Exception as e: check('screenshots run to their end', False, str(e)[:400])

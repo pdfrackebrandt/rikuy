@@ -29,6 +29,16 @@ const SCOPE = 2e6;    // the most of a block parsed
 const isWs = (c) => c === ' ' || c === '\t' || c === '\n' || c === '\r';
 export const skipWs = (src, p, end = src.length) => { while (p < end && isWs(src[p])) p++; return p; };
 export const skipWsBack = (src, p, start = 0) => { while (p > start && isWs(src[p - 1])) p--; return p; };
+// past spaces, line breaks and comments (to their line's end)
+function skipBlank(src, p, end = src.length) {
+  for (;;) {
+    p = skipWs(src, p, end);
+    if (src[p] !== '%' || p >= end) return p;
+    const k = src.indexOf('\n', p);
+    if (k < 0 || k >= end) return end;
+    p = k + 1;
+  }
+}
 const lineEnd = (src, p) => { const k = src.indexOf('\n', p); return k < 0 ? src.length : k; };
 // the text of the line [ls, le) without its \r and the spaces around it, at most LINE characters
 const lineText = (src, ls, le) => (le - ls > LINE ? null : src.slice(ls, le).replace(/\r$/, '').trim());
@@ -66,6 +76,8 @@ export function leadOf(src, s) {
   let i = 0, hang = null, after = null, noindent = false, indent = false;
   const sp = () => { while (i < t.length && (t[i] === ' ' || t[i] === '\t')) i++; };
   sp();
+  // (spaces alone are the line's indent, no lead)
+  if (i >= t.length) return null;
   while (i < t.length) {
     LEAD_TOKEN.lastIndex = i;
     const m = LEAD_TOKEN.exec(t);
@@ -133,21 +145,25 @@ function linesAfter(src, p, hi) {
 }
 
 // The environments, groups and arguments around [a, z) in the parse of src[lo, hi), outermost
-// first: { t: 'env', n } | { t: 'group', n } | { t: 'arg', n }, offsets in src
-function pathTo(src, lo, hi, a, z) {
-  if (hi - lo > SCOPE) return null;
+// first: { t: 'env', n } | { t: 'group', n } | { t: 'arg', n }, offsets in src; null where the
+// range is no unit of the structure (it holds part of a group, an environment, a command or a
+// formula and not all of it: {\centering A.\n\nB.\par} is two paragraphs of one group). whole:
+// the parse of all of src, where the page's model has it (src/model.js parsedText): no parse then.
+function pathTo(src, lo, hi, a, z, whole) {
   let nodes;
-  // (kept for the next look at the same text: the ribbon asks at every move of the caret; a
-  // stranger's text nested past what the parser takes: nothing is known about it)
-  if (PARSED.src === src && PARSED.lo === lo && PARSED.hi === hi) nodes = PARSED.nodes;
+  if (whole) { nodes = whole; lo = 0; }
   else {
-    try { nodes = parse(src.slice(lo, hi)); } catch (e) { return null; }
-    Object.assign(PARSED, { src, lo, hi, nodes });
+    nodes = parsedRange(src, lo, hi);
+    // (a block whose environments do not close in it: an edit just made joined an environment
+    // across its edge, src/cmd/para.js paraRun; read in the whole text, where that is not long:
+    // a stranger's text of such blocks is not parsed whole again for each of its paragraphs)
+    if (nodes && (lo > 0 || hi < src.length) && nodes.some(open)) { lo = 0; nodes = src.length <= SCOPE / 5 ? parsedRange(src, 0, src.length) : null; }
+    if (!nodes) return null;
   }
   const out = [];
   let list = nodes;
   for (let depth = 0; depth < 64 && list; depth++) {
-    let next = null;
+    let next = null, part = false;
     for (const n of list) {
       const s = n.s + lo, e = n.e + lo;
       if (e <= a) continue;
@@ -158,18 +174,36 @@ function pathTo(src, lo, hi, a, z) {
         const g = n.args.find((x) => x && x.nodes && x.is + lo <= a && z <= x.ie + lo);
         if (g) { out.push({ t: 'arg', n: shift(n, lo) }); next = g.nodes; break; }
       }
-      // (a node that holds part of the range and not all of it: the range is no unit of it)
-      if (s < a || e > z) return out;
+      // (a node that holds part of the range and not all of it: text and comments may, the range's
+      // ends lie in them, and a command without arguments, which takes the spaces after it; structure
+      // may not)
+      if (s < a || e > z) { if (!LOOSE.has(n.t) && !(n.t === 'cmd' && !(n.args && n.args.some(Boolean)))) return null; part = true; }
     }
+    if (part && next) return null;
     list = next;
   }
   return out;
 }
-const PARSED = { src: null, lo: -1, hi: -1, nodes: null };
+const LOOSE = new Set(['text', 'comment', 'par', 'special']);
+// an environment the parse left open, or an \end with no \begin
+const open = (n) => n.err || (n.t === 'env' && !n.raw && n.e === n.es);
+// (kept for the next looks at the same text: the ribbon asks at every move of the caret; a
+// stranger's text nested past what the parser takes: nothing is known about it)
+const PARSED = [];
+function parsedRange(src, lo, hi) {
+  if (hi - lo > SCOPE) return null;
+  const hit = PARSED.find((x) => x.src === src && x.lo === lo && x.hi === hi);
+  if (hit) return hit.nodes;
+  let nodes;
+  try { nodes = parse(src.slice(lo, hi)); } catch (e) { return null; }
+  PARSED.unshift({ src, lo, hi, nodes });
+  if (PARSED.length > 4) PARSED.pop();
+  return nodes;
+}
 const shift = (n, lo) => ({ name: n.name, s: n.s + lo, e: n.e + lo, be: n.be != null ? n.be + lo : null, es: n.es != null ? n.es + lo : null, args: n.args });
 
 // the environments this batch reads and writes, and how many braced arguments each takes
-export const NARGS = { spacing: 1, Spacing: 1, adjustwidth: 2, 'adjustwidth*': 2, hyphenrules: 1, otherlanguage: 1 };
+export const NARGS = { spacing: 1, Spacing: 1, adjustwidth: 2, 'adjustwidth*': 2, hyphenrules: 1, otherlanguage: 1, minipage: 1 };
 const OPTS = new Set(['tcolorbox', 'mdframed', 'minipage', 'figure', 'figure*', 'table', 'table*']);
 const W = (src, n) => envWords(src, n.s, n.e, [n.name], NARGS, OPTS);
 
@@ -181,24 +215,43 @@ const W = (src, n) => envWords(src, n.s, n.e, [n.name], NARGS, OPTS);
 // group or a command's argument: nothing goes around it), group (the words are one group
 // {\centering ...\par}: { decl, s, e, ds, de })}. lo, hi: the block of the page that holds it
 // (what is parsed).
-export function unitOf(src, s, e, lo = 0, hi = src.length, vis = null) {
+export function unitOf(src, s, e, lo = 0, hi = src.length, vis = null, whole = null) {
   s = skipWs(src, s, e); e = skipWsBack(src, e, s);
   if (e <= s) return null;
   // Where the page's first and last characters come from (vis: { vs, ve }, the model's): lines
   // before the first one's line are no part of the unit (a declaration on a line of its own,
   // \onehalfspacing or \selectlanguage{german}, keeps its reach over the paragraphs after it),
-  // and after the last one's line only \label, \index and comment lines are
+  // and after the last one's line only \label, \index and comment lines are. (Not where that
+  // would cut a group or a command: {\large on the line before the words is part of them.)
   if (vis && vis.vs >= s && vis.ve <= e) {
+    let s1 = s, e1 = e;
+    // (from the first character of that line: its spaces before it are the line's indent)
     const ls = lineStart(src, vis.vs);
-    if (ls > s) s = ls;
-    let z = Math.min(e, lineEnd(src, vis.ve));
-    for (let n = 0; n < ATTACH * 4 && z < e; n++) {
-      const ns = z + 1, ne = Math.min(e, lineEnd(src, ns)), t = lineText(src, ns, ne);
+    if (ls > s1) { s1 = ls; while (s1 < vis.vs && (src[s1] === ' ' || src[s1] === '\t')) s1++; }
+    let z = Math.min(e1, lineEnd(src, vis.ve));
+    for (let n = 0; n < ATTACH * 4 && z < e1; n++) {
+      const ns = z + 1, ne = Math.min(e1, lineEnd(src, ns)), t = lineText(src, ns, ne);
       if (t == null || !/^(?:\\(?:label|index)\{[^{}]{0,200}\}[ \t]*)*(?:%.*)?$/.test(t)) break;
       z = ne;
     }
-    e = skipWsBack(src, z, s);
+    e1 = skipWsBack(src, z, s1);
+    // (a \noindent on a line of its own before the words is theirs: an environment between the
+    // two would leave it an empty paragraph)
+    if (s1 > s && s1 - s <= LINE && /^(?:\\(?:no)?indent(?![A-Za-z])\s*)+$/.test(src.slice(s, s1))) s1 = s;
+    if ((s1 !== s || e1 !== e) && e1 > s1 && pathTo(src, lo, hi, s1, e1, whole)) { s = s1; e = e1; }
   }
+  // (as a \noindent on a line of its own just before them, where the page's model starts the
+  // paragraph after it)
+  for (let n = 0; n < 2 && startsLine(src, s); n++) {
+    const ls = lineStart(src, s);
+    if (ls === 0) break;
+    const pl = lineStart(src, ls - 1), m = /^([ \t]*)\\(?:no)?indent(?![A-Za-z])[ \t]*\r?$/.exec(src.slice(pl, Math.min(ls - 1, pl + LINE)));
+    if (!m) break;
+    s = pl + m[1].length;
+    if (s < lo) lo = lineStart(src, s);
+  }
+  // (a \par right after the words on their line ends their paragraph: it goes with them)
+  { const m = /^[ \t]*\\par(?![A-Za-z])[ \t]*(?=\r?\n|$)/.exec(src.slice(e, e + 40)); if (m && pathTo(src, lo, hi, s, e + m[0].trimEnd().length, whole)) e += m[0].trimEnd().length; }
   // (\nopagebreak at the end of a paragraph is part of it as TeX reads it: a line of its own)
   let tailLines = [];
   for (let n = 0; n < ATTACH; n++) {
@@ -222,19 +275,26 @@ export function unitOf(src, s, e, lo = 0, hi = src.length, vis = null) {
   const { b, a } = level0(ws, e);
   const after = [...tailLines.reverse(), ...a.lines].sort((x, y) => x.s - y.s);
   const levels = [{ W: null, cs: ws, ce: e, xs: b.top, xe: a.bot, before: b.lines, after }];
-  // the group {\centering ...\par}: the words are one balanced group that starts with the declaration
+  // the group {\centering ...\par}: the words are one balanced group that starts with the
+  // declaration (spaces, a line break or a comment around it as written); ds: where the
+  // declaration is, de: where the words start; par: where its \par is, the group's paragraph
+  // ending inside it (without one TeX ends the paragraph after the group, the declaration gone)
   let group = null;
   if (src[s] === '{' && src[e - 1] === '}') {
-    const m = /^\{[ \t]*\\(centering|raggedright|raggedleft)(?![A-Za-z])[ \t]*/.exec(src.slice(s, s + 40));
-    if (m && closes(src, s, e)) group = { decl: m[1], s, e, ds: s, de: s + m[0].length, par: src.slice(e - 5, e) === '\\par}' };
+    const m = GROUP_HEAD.exec(src.slice(s, s + 80));
+    if (m && closes(src, s, e)) {
+      const t = /\\par[ \t\r\n]*\}$/.exec(src.slice(Math.max(s, e - 24), e));
+      group = { decl: m[2], s, e, ds: s + 1 + m[1].length, de: s + m[0].length, par: t ? e - t[0].length : null };
+    }
   }
-  const path = pathTo(src, lo, hi, s, e);
+  const path = pathTo(src, lo, hi, s, e, whole);
   let container = null, inArg = !path;
   for (let k = (path || []).length - 1; k >= 0; k--) {
     const p = path[k], L = levels[levels.length - 1];
     if (p.t !== 'env') { inArg = true; break; }
-    const n = p.n, bs = skipWs(src, n.be, n.es), be = skipWsBack(src, n.es, n.be);
-    const xs = skipWs(src, L.xs, L.xe);
+    // (a comment after \begin, or before \end, is no text: \begin{center}% c)
+    const n = p.n, bs = skipBlank(src, n.be, n.es), be = skipWsBack(src, n.es, n.be);
+    const xs = skipBlank(src, L.xs, L.xe);
     if (bs === xs && be === L.xe) {
       const w = W(src, n);
       if (!w) { container = n; break; }
@@ -246,6 +306,7 @@ export function unitOf(src, s, e, lo = 0, hi = src.length, vis = null) {
   const top = levels[levels.length - 1];
   return { s, e, lead, levels, ts: top.xs, te: top.xe, cs: top.cs, ce: top.ce, container, inArg, group };
 }
+const GROUP_HEAD = /^\{([ \t\r\n]*)\\(centering|raggedright|raggedleft)(?![A-Za-z])[ \t]*(?:%[^\n]*)?(?:\r?\n[ \t]*)?/;
 // whether the group that opens at s closes at e - 1
 function closes(src, s, e) {
   let d = 0;
@@ -279,58 +340,94 @@ const wrappers = (U, names) => U.levels.filter((L) => L.W && names.includes(L.W.
 
 function headOf(o) { return envOpen(o.name, { opt: o.opt, args: o.args }); }
 const plainHead = (src, W) => src.slice(W.head[0], W.head[1]);
+const newlines = (src, a, b) => (src.slice(a, b).match(/\n/g) || []).length;
+// the spaces before p on its line (p starts its line), else ''
+const indentAt = (src, p) => (startsLine(src, p) ? src.slice(lineStart(src, p), p) : '');
 
-// The environment just before position p (only blank space between) whose head is head: the
-// edits that take its end away so that the text at p joins it, or null
-function joinBefore(src, p, name, head, lo) {
-  const q = skipWsBack(src, p, lo);
+// Whether position p is in a comment: a % before it on its line that no backslash escapes. (A line
+// longer than LINE * 16 is taken for one: nothing is joined across what is not read.)
+function inComment(src, p) {
+  const ls = lineStart(src, p);
+  if (p - ls > LINE * 16) return true;
+  for (let i = ls; i < p; i++) { if (src[i] === '\\') { i++; continue; } if (src[i] === '%') return true; }
+  return false;
+}
+// whether [s, e) is one environment of this name as TeX reads it: closed at e, no verbatim or
+// comment between that would hide its \end
+function oneEnv(src, s, e, name) {
+  if (e - s > SCOPE) return false;
+  let ns;
+  try { ns = parse(src.slice(s, e)); } catch (x) { return false; }
+  ns = ns.filter((n) => !(n.t === 'text' && !src.slice(s + n.s, s + n.e).trim()));
+  return ns.length === 1 && ns[0].t === 'env' && ns[0].name === name && !ns[0].raw && ns[0].s === 0 && ns[0].e === e - s && ns[0].es < ns[0].e;
+}
+// whether p is in a LaTeX paragraph (src/styles.js): a mark line in the lines above it up to the
+// blank line before them (taken for one past 400 lines: nothing joins into what is not read)
+const MARK = /^[ \t]*%[ \t]*rikuy:[ \t]*latex[ \t]*\r?$/;
+function inLatex(src, p) {
+  let ls = lineStart(src, p);
+  for (let n = 0; n < 400; n++) {
+    const le = lineEnd(src, ls), t = src.slice(ls, Math.min(le, ls + LINE));
+    if (n > 0 && !t.trim()) return false;
+    if (MARK.test(t)) return true;
+    if (ls === 0) return false;
+    ls = lineStart(src, ls - 1);
+  }
+  return true;
+}
+
+// The environment that ends just before position p (only blank space between, a paragraph's break
+// at most) and has the head given, found as TeX reads it (not in a comment, not a LaTeX
+// paragraph's): { edits that take its \end away, so that the text at p joins it; ind, the spaces
+// before its \end }, or null
+function joinBefore(src, p, name, head) {
+  const q = skipWsBack(src, p, 0);
   const close = envClose(name);
-  if (q < close.length || src.slice(q - close.length, q) !== close) return null;
-  // (its environment: its head must be exactly head; found by the parse of what is before)
-  const k = q - close.length, r = skipWsBack(src, k, lo);
-  // the blank space between it and p: a paragraph's break at most (two line breaks)
-  if ((src.slice(q, p).match(/\n/g) || []).length > 2) return null;
-  const hs = findOpen(src, k, name, lo);
+  if (q < close.length || src.slice(q - close.length, q) !== close || newlines(src, q, p) > 2) return null;
+  const k = q - close.length;
+  if (inComment(src, k)) return null;
+  const hs = findOpen(src, k, name);
   if (hs < 0) return null;
   const W = envWords(src, hs, q, [name], NARGS, OPTS);
-  if (!W || plainHead(src, W) !== head) return null;
-  return [{ s: r, e: q, t: '' }];
+  if (!W || plainHead(src, W) !== head || !oneEnv(src, hs, q, name) || inLatex(src, hs)) return null;
+  return { edits: [{ s: skipWsBack(src, k, W.ws), e: q, t: '' }], ind: indentAt(src, k) };
 }
-// The environment just after position p whose head is head: the edits that take its head away
-function joinAfter(src, p, name, head, hi) {
-  const r = skipWs(src, p, hi);
-  if (!src.startsWith(head, r)) return null;
-  if ((src.slice(p, r).match(/\n/g) || []).length > 2) return null;
-  const he = r + head.length;
-  // the head alone on its line, and its environment closed further on
-  const nl = src[he] === '\r' && src[he + 1] === '\n' ? 2 : src[he] === '\n' ? 1 : 0;
-  if (!nl) return null;
-  const end = findClose(src, he, name, hi);
-  if (end < 0) return null;
-  return [{ s: r, e: he + nl, t: '' }];
+// The environment that starts just after position p with the head given, alone on its line: { the
+// edits that take its head's line away; ind, the spaces before its \begin } or null
+function joinAfter(src, p, name, head) {
+  const r = skipWs(src, p);
+  if (!src.startsWith(head, r) || !startsLine(src, r) || newlines(src, p, r) > 2 || inComment(src, r)) return null;
+  const he = r + head.length, m = /^[ \t]*\r?\n/.exec(src.slice(he, he + LINE));
+  if (!m) return null;
+  const end = findClose(src, he, name);
+  if (end < 0 || !oneEnv(src, r, end, name)) return null;
+  return { edits: [{ s: lineStart(src, r), e: he + m[0].length, t: '' }], ind: indentAt(src, r) };
 }
-// where the \begin{name} that the \end{name} at k closes starts, or -1 (balanced, bounded)
-function findOpen(src, k, name, lo) {
+// where the \begin{name} that the \end{name} at k closes starts, or -1 (balanced, bounded; what
+// stands in a comment is not counted)
+function findOpen(src, k, name) {
   const re = new RegExp('\\\\(begin|end)\\s*\\{' + esc(name) + '\\}', 'g');
-  const from = Math.max(lo, k - 200000), text = src.slice(from, k);
+  const from = Math.max(0, k - 200000), text = src.slice(from, k);
   const hits = [];
-  for (let m, n = 0; (m = re.exec(text)) && n < 5000; n++) hits.push([m.index + from, m[1]]);
+  for (let m, n = 0; (m = re.exec(text)) && n < 5000; n++) if (!inComment(src, m.index + from)) hits.push([m.index + from, m[1]]);
   let d = 0;
   for (let i = hits.length - 1; i >= 0; i--) { if (hits[i][1] === 'end') d++; else if (d === 0) return hits[i][0]; else d--; }
   return -1;
 }
-function findClose(src, p, name, hi) {
+function findClose(src, p, name) {
   const re = new RegExp('\\\\(begin|end)\\s*\\{' + esc(name) + '\\}', 'g');
   re.lastIndex = p;
   let d = 0;
-  for (let m, n = 0; (m = re.exec(src)) && n < 5000 && m.index < hi; n++) { if (m[1] === 'begin') d++; else if (d === 0) return m.index + m[0].length; else d--; }
+  for (let m, n = 0; (m = re.exec(src)) && n < 5000 && m.index < p + 200000; n++) {
+    if (inComment(src, m.index)) continue;
+    if (m[1] === 'begin') d++; else if (d === 0) return m.index + m[0].length; else d--;
+  }
   return -1;
 }
 
 // The edits that put the unit under value v of kind K (see above). Returns edits or { why }.
 export function layerEdits(src, U, K, v, o = {}) {
   if (U.inArg) return { why: 'This paragraph is inside a group or an argument of a command: an environment cannot go around it there.' };
-  const lo = o.lo ?? 0, hi = o.hi ?? src.length;
   const mine = wrappers(U, K.names);
   const W0 = mine[0] ? mine[0].W : null;
   const same = (a, b) => a == null ? b == null : b != null && K.same(a, b);
@@ -340,41 +437,51 @@ export function layerEdits(src, U, K, v, o = {}) {
   // an environment of the kind is the unit's own: changed, joined with its neighbours, or taken off
   if (W0) {
     if (mine.length > 1) return { why: 'This paragraph has two environments of this kind around it: change the source.' };
-    if (want == null) return unwrapBlockEditsKeep(src, W0);
-    return replaceWrapper(src, W0, K.open(want), lo, hi);
+    if (want == null) return unwrapEditsKeep(src, W0, mine[0]);
+    return replaceWrapper(src, W0, K.open(want));
   }
-  // in an environment of the kind that holds other paragraphs too: split it around the unit
+  // in an environment of the kind that holds other paragraphs too: split it around the unit (a
+  // half with nothing in it goes, and the unit's new environment may join the one beyond it)
   const C = U.container && K.names.includes(U.container.name) ? U.container : null;
   if (C) {
-    const out = splitEdits(src, C, U);
-    if (out.why) return out;
-    if (want != null) out.push(...wrapEdits(src, U, K.open(want), lo, hi, true));
-    return out;
+    const sp = splitEdits(src, C, U);
+    if (sp.why) return sp;
+    if (want == null) return sp.edits;
+    const r = wrapEdits(src, U, K.open(want), sp.bEmpty ? lineStart(src, sp.w.s) : null, sp.aEmpty ? sp.w.e : null);
+    return r.why ? r : [...sp.edits, ...r];
   }
   if (want == null) return { why: o.whyInherit || 'This comes from further out in the document, not from this paragraph.' };
-  return wrapEdits(src, U, K.open(want), lo, hi);
+  return wrapEdits(src, U, K.open(want), lineStart(src, U.ts), U.te);
 }
 
-// the environment W off its words (blockenv's, with the blank lines a paragraph needs)
-function unwrapBlockEditsKeep(src, W) {
-  const nl = '\r?\n';
-  const head = src.slice(W.head[0], W.head[1]);
-  const asWritten = new RegExp('^' + esc(head) + nl + '$').test(src.slice(W.head[0], W.ws)) && new RegExp('^' + nl + esc(src.slice(W.tail[0], W.tail[1])) + '$').test(src.slice(W.we, W.e));
-  const pad = blankPads(src, W.s, W.e);
-  if (asWritten && !pad.b && !pad.a) return [{ s: W.we, e: W.e, t: '' }, { s: W.s, e: W.ws, t: '' }];
-  return [{ s: W.we, e: W.e, t: pad.a }, { s: W.s, e: W.ws, t: pad.b }];
+// The environment W off its words, its \begin's and \end's lines going whole where they stand
+// alone (a comment after \begin stays), and the blank lines the words need to stay a paragraph
+// of their own, counted outside the lines of its level L (a \vspace line of the unit's own stays
+// on the words, not cut off by a blank line)
+function unwrapEditsKeep(src, W, L) {
+  const mid = src.slice(W.head[1], W.ws), alone = startsLine(src, W.s) && /\n/.test(mid);
+  const c = mid.indexOf('%');
+  const hs = alone ? lineStart(src, W.s) : W.s;
+  const he = alone ? (c >= 0 && !/\\$/.test(src.slice(W.head[1], W.head[1] + c)) ? W.head[1] + c : lineStart(src, W.ws)) : W.ws;
+  const xs = L && L.xs != null && L.xs < hs ? L.xs : hs, xe = L && L.xe != null && L.xe > W.e ? L.xe : W.e;
+  const pad = blankPads(src, xs, xe);
+  const out = [];
+  if (xs < hs) { if (pad.b) out.push({ s: xs, e: xs, t: pad.b }); out.push({ s: hs, e: he, t: '' }); }
+  else out.push({ s: hs, e: he, t: pad.b });
+  if (xe > W.e) { out.push({ s: W.we, e: W.e, t: '' }); if (pad.a) out.push({ s: xe, e: xe, t: pad.a }); }
+  else out.push({ s: W.we, e: W.e, t: pad.a });
+  return out;
 }
 
 // W given another head; where the same environment stands right before or after it, the two join
 // (the neighbours are looked for past the block: an environment beside this one is a block of its own)
 function replaceWrapper(src, W, o) {
-  const lo = 0, hi = src.length;
   const head = headOf(o), close = envClose(o.name);
-  const jb = joinBefore(src, W.s, o.name, head, lo), ja = joinAfter(src, W.e, o.name, head, hi);
+  const jb = joinBefore(src, startsLine(src, W.s) ? lineStart(src, W.s) : W.s, o.name, head), ja = joinAfter(src, W.e, o.name, head);
   const out = [];
-  if (jb) { out.push(...jb, { s: W.s, e: lineBreakAfter(src, W.head[1]), t: '' }); }
+  if (jb) out.push(...jb.edits, { s: startsLine(src, W.s) ? lineStart(src, W.s) : W.s, e: lineBreakAfter(src, W.head[1]), t: '' });
   else if (plainHead(src, W) !== head) out.push({ s: W.head[0], e: W.head[1], t: head });
-  if (ja) { out.push(...ja, { s: lineBreakBefore(src, W.tail[0]), e: W.tail[1], t: '' }); }
+  if (ja) out.push(...ja.edits, { s: lineBreakBefore(src, W.tail[0]), e: W.tail[1], t: '' });
   else if (src.slice(W.tail[0], W.tail[1]) !== close) out.push({ s: W.tail[0], e: W.tail[1], t: close });
   return out;
 }
@@ -392,36 +499,38 @@ function lineBreakBefore(src, p) {
   return p;
 }
 
-// A new environment around the unit's outermost level (inside its lines of their own), joined
-// with the same environment right before or after it. split: the unit was just split out of a
-// container (no join: its neighbours are the container's halves)
-function wrapEdits(src, U, o, lo0, hi0, split) {
-  const s = U.cs, e = U.ce, lo = 0, hi = src.length;
+// A new environment around the unit's outermost level (inside its lines of their own), its
+// \begin and \end on lines of their own with the spaces the unit's first line has; joined with the
+// same environment that ends just before jb or starts just after ja (positions; null: no join)
+function wrapEdits(src, U, o, jb, ja) {
+  const s = U.cs, e = U.ce;
   if (!startsLine(src, s)) return { why: 'This paragraph shares its line with what comes before it in the source.' };
-  const head = headOf(o), close = envClose(o.name), nl = eolAt(src, s);
-  const jb = !split && !U.levels[U.levels.length - 1].before.length ? joinBefore(src, s, o.name, head, lo) : null;
-  const ja = !split && !U.levels[U.levels.length - 1].after.length ? joinAfter(src, e, o.name, head, hi) : null;
-  const out = [];
-  out.push(jb ? jb[0] : { s, e: s, t: head + nl });
-  out.push(ja ? ja[0] : { s: e, e, t: nl + close });
-  return out;
+  const head = headOf(o), close = envClose(o.name), nl = eolAt(src, s), ls = lineStart(src, s), ind = src.slice(ls, s);
+  const b = jb != null ? joinBefore(src, jb, o.name, head) : null;
+  const a = ja != null ? joinAfter(src, ja, o.name, head) : null;
+  return [...(b ? b.edits : [{ s: ls, e: ls, t: (a ? a.ind : ind) + head + nl }]), ...(a ? a.edits : [{ s: e, e, t: nl + (b ? b.ind : ind) + close }])];
 }
 
-// The edits that close the container C before the unit and open it again after it (its head
-// as written), so that the unit stands between the two halves; a half with nothing in it goes
+// The edits that close the container C before the unit and open it again after it (its head as
+// written, with the spaces its \begin has), so that the unit stands between the two halves; a half
+// with nothing in it goes: { edits, bEmpty, aEmpty, w } or { why }
 function splitEdits(src, C, U) {
   const w = W(src, C);
   if (!w) return { why: 'The environment around this paragraph is not one Rikuy can split.' };
-  const head = plainHead(src, w), close = src.slice(w.tail[0], w.tail[1]), nl = eolAt(src, U.ts);
   if (!startsLine(src, U.ts)) return { why: 'This paragraph shares its line with what comes before it in the source.' };
+  const head = plainHead(src, w), close = src.slice(w.tail[0], w.tail[1]), nl = eolAt(src, U.ts), cind = indentAt(src, w.s);
   const out = [];
-  const bEnd = skipWsBack(src, U.ts, w.ws);
-  if (bEnd > w.ws) out.push({ s: bEnd, e: bEnd, t: nl + close });
-  else out.push({ s: w.s, e: U.ts, t: '' });
-  const aStart = skipWs(src, U.te, w.we);
-  if (aStart < w.we) out.push({ s: aStart, e: aStart, t: head + nl });
+  const bEnd = skipWsBack(src, U.ts, w.ws), aStart = skipBlank(src, U.te, w.we);
+  const bEmpty = bEnd <= w.ws || skipBlank(src, w.ws, U.ts) >= U.ts, aEmpty = aStart >= w.we;
+  if (!bEmpty) out.push({ s: bEnd, e: bEnd, t: nl + indentAt(src, w.tail[0]) + close });
+  else {
+    // (the \begin's line whole, where it stands alone; the unit's first line keeps its spaces)
+    const uls = lineStart(src, U.ts), alone = startsLine(src, w.s) && !/\S/.test(src.slice(w.head[1], uls)) && uls > w.head[1];
+    out.push(alone ? { s: lineStart(src, w.s), e: uls, t: '' } : { s: w.s, e: U.ts, t: '' });
+  }
+  if (!aEmpty) { const at = startsLine(src, aStart) ? lineStart(src, aStart) : aStart; out.push({ s: at, e: at, t: (at < aStart ? cind : '') + head + nl }); }
   else out.push({ s: U.te, e: w.e, t: '' });
-  return out;
+  return { edits: out, bEmpty, aEmpty, w };
 }
 
 // ---- alignment ----------------------------------------------------------------------------------
@@ -436,18 +545,39 @@ export const ALIGN = {
   open: (v) => ({ name: ALIGN_ENV[v] })
 };
 
+// Environments that set their paragraphs as they will, whatever is around them: a list's
+// (quote, quotation, verse, the abstract, adjustwidth, itemize: their paragraphs take the list's
+// margins, flush) and a box's (tcolorbox, minipage: \@parboxrestore). TeX centres nothing in them
+// for a center around them: an alignment of a paragraph in one goes inside it.
+export const RESETS = new Set(['quote', 'quotation', 'verse', 'abstract', 'adjustwidth', 'adjustwidth*', 'tcolorbox', 'minipage', 'mdframed', 'framed', 'itemize', 'enumerate', 'description', 'proof', 'trivlist', 'list', 'thebibliography']);
+// The unit as far as an alignment reaches it: its levels inside the innermost of those
+// environments, which is then its container
+export function alignScope(U) {
+  for (let k = 1; k < U.levels.length; k++) {
+    const L = U.levels[k];
+    if (!RESETS.has(L.W.name)) continue;
+    const top = U.levels[k - 1];
+    return { ...U, levels: U.levels.slice(0, k), ts: top.xs, te: top.xe, cs: top.cs, ce: top.ce, container: { name: L.W.name, s: L.cs, e: L.ce }, whole: true };
+  }
+  return U;
+}
+
 // The unit's alignment and where it comes from: { v: 'left' | 'center' | 'right' | null (justified),
 // from: 'env' | 'decl' | 'group' | 'container' | 'outside' | null }. inherit: the alignment the
 // page's model gives it (from a declaration further up, which this function does not see).
 export function alignOf(src, U, inherit = null) {
+  U = alignScope(U);
   const w = wrappers(U, ALIGN.names);
   if (w.length) return { v: ENV_ALIGN[w[0].W.name], from: 'env', W: w[0].W };
-  if (U.group) return { v: DECL_ALIGN[U.group.decl], from: 'group' };
+  // (a group's declaration counts where the group ends the paragraph with \par: else TeX ends it
+  // after the group, the declaration gone)
+  if (U.group && U.group.par != null) return { v: DECL_ALIGN[U.group.decl], from: 'group' };
   // a declaration of its own: on a line before the words, scoped to this unit (an environment
   // or a group whose whole body the unit is)
   const d = declOf(U);
   if (d) return { v: DECL_ALIGN[d.arg], from: 'decl', line: d };
   if (U.container && ALIGN.names.includes(U.container.name)) return { v: ENV_ALIGN[U.container.name], from: 'container' };
+  if (U.container && RESETS.has(U.container.name)) return { v: null, from: null };
   return { v: inherit, from: inherit ? 'outside' : null };
 }
 // the \centering line of the unit, if its scope is the unit alone (an environment ends it)
@@ -455,8 +585,9 @@ function declOf(U) {
   for (let k = 0; k < U.levels.length; k++) {
     const d = U.levels[k].before.find((x) => x.kind === 'decl');
     if (!d) continue;
-    // (scoped: a level above it is an environment of the unit's own, which ends the declaration)
-    if (U.levels.length > k + 1) return d;
+    // (scoped: a level above it is an environment of the unit's own, or the environment the unit
+    // is the whole of (a minipage), which ends the declaration)
+    if (U.levels.length > k + 1 || (U.whole && k === U.levels.length - 1)) return d;
   }
   return null;
 }
@@ -464,19 +595,19 @@ function declOf(U) {
 // The edits that align the unit: 'left', 'center', 'right' or 'justify' (LaTeX's own: no
 // environment). inherit as for alignOf.
 export function alignEdits(src, U, to, o = {}) {
+  U = alignScope(U);
   const v = to === 'justify' ? null : to;
   const cur = alignOf(src, U, o.inherit ?? null);
   if (cur.v === v) return [];
   // a declaration of the unit's own: changed in place, or taken off
   if (cur.from === 'group') {
     const g = U.group;
-    if (v) return [{ s: g.ds + 1, e: g.ds + 1 + ('\\' + g.decl).length, t: '\\' + ALIGN_DECL[v] }];
-    if (!g.par) return { why: 'This group ends without \\par, so TeX sets the paragraph after it ends: change it in the source.' };
-    return [{ s: g.e - 5, e: g.e, t: '' }, { s: g.ds, e: g.de, t: '' }];
+    if (v) return [{ s: g.ds, e: g.ds + 1 + g.decl.length, t: '\\' + ALIGN_DECL[v] }];
+    return [{ s: g.par, e: g.e, t: '' }, { s: g.s, e: g.de, t: '' }];
   }
   if (cur.from === 'decl') {
     const d = cur.line;
-    if (v) return [{ s: d.s + d.text.length - d.text.trimStart().length + srcIndent(src, d.s), e: d.s + srcIndent(src, d.s) + d.text.length, t: '\\' + ALIGN_DECL[v] }];
+    if (v) return [{ s: d.s + srcIndent(src, d.s), e: d.s + srcIndent(src, d.s) + d.text.length, t: '\\' + ALIGN_DECL[v] }];
     return [{ s: d.s, e: d.e, t: '' }];
   }
   if (cur.from === 'outside' && !v) return { why: 'This paragraph takes its alignment from a declaration further up (\\centering, \\raggedright): change that one in the source.' };
@@ -741,12 +872,19 @@ export function boxOf(src, U) {
   if (w.length) {
     const kv = BOX.value(w[0].W).kv;
     const rule = kv.boxrule != null ? lenPt(kv.boxrule) : 0.5;
-    return { from: 'env', W: w[0].W, shading: kv.colback && kv.colback !== 'white' ? kv.colback : null, border: rule == null || rule > 0, kv };
+    const back = kv.colback ? unbrace(String(kv.colback)) : null;
+    return { from: 'env', W: w[0].W, L: w[0], shading: back && back !== 'white' ? back : null, border: rule == null || rule > 0, kv };
   }
   if (U.container && BOX.names.includes(U.container.name)) return { from: 'container' };
   return { from: null, shading: null, border: false };
 }
-const boxOpt = (shade, border) => (shade ? 'colback=' + shade + ',' : 'colback=white,') + (border ? 'colframe=black,boxrule=0.4pt' : 'colframe=' + shade + ',boxrule=0pt') + ',sharp corners';
+// A colour as an option's value: a name, red!20, or an expression with commas in braces
+// ({rgb,255:red,231;green,84;blue,128}, More colors' HTML colour as xcolor mixes it)
+export const colorOpt = (c) => (/[,;:=]/.test(c) ? '{' + c + '}' : c);
+const unbrace = (t) => { t = t.trim(); return t[0] === '{' && t[t.length - 1] === '}' ? t.slice(1, -1).trim() : t; };
+// an HTML colour (E75480) as that expression
+export const htmlColor = (hex) => { const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(String(hex || '')); return m ? 'rgb,255:red,' + parseInt(m[1], 16) + ';green,' + parseInt(m[2], 16) + ';blue,' + parseInt(m[3], 16) : null; };
+const boxOpt = (shade, border) => 'colback=' + (shade ? colorOpt(shade) : 'white') + ',' + (border ? 'colframe=black,boxrule=0.4pt' : 'colframe=' + colorOpt(shade) + ',boxrule=0pt') + ',sharp corners';
 // The edits that give the unit shading (an xcolor colour, null for none) and a box (true, false)
 export function boxEdits(src, U, shade, border, o = {}) {
   const cur = boxOf(src, U);
@@ -757,10 +895,10 @@ export function boxEdits(src, U, shade, border, o = {}) {
       // Rikuy's own options (or none): the box goes; a box with options of a person's own keeps
       // them and loses what was asked
       const own = Object.keys(cur.kv).every((k) => ['colback', 'colframe', 'boxrule', 'sharp corners', 'arc'].includes(k));
-      if (own) return unwrapBlockEditsKeep(src, W0);
+      if (own) return unwrapEditsKeep(src, W0, cur.L);
     }
     if (W0.opt == null) { const at = W0.head[1]; return [{ s: at, e: at, t: '[' + boxOpt(shade, border) + ']' }]; }
-    const ch = { colback: shade || 'white', colframe: border ? 'black' : shade || 'white', boxrule: border ? '0.4pt' : '0pt' };
+    const ch = { colback: shade ? colorOpt(shade) : 'white', colframe: border ? 'black' : shade ? colorOpt(shade) : 'white', boxrule: border ? '0.4pt' : '0pt' };
     const os = W0.head[0] + src.slice(W0.head[0], W0.head[1]).indexOf('[') + 1;
     return kvEdits(src, os, os + W0.opt.length, ch);
   }
@@ -781,6 +919,13 @@ export const PARA_SETS = [
   { id: 'double', name: 'Double', skip: 8, sp: { lines: 2 } }
 ];
 const KOMA = /^scr(?:artcl|reprt|book|lttr2)$/;
+// a line at the class's size (TeX's baselineskip at 10, 11 and 12 pt), in points
+const LINE_AT = { 10: 12, 11: 13.6, 12: 14.5 };
+function lineOf(d) {
+  let pt = 10;
+  for (const [k, v] of Object.entries((d && d.options) || {})) { const m = /^(\d+(?:\.\d+)?)pt$/.exec(v === true ? k : k === 'fontsize' ? String(v) : ''); if (m) pt = +m[1]; }
+  return LINE_AT[pt] || pt * 1.2;
+}
 // The document's space between paragraphs: { skip: points | 'open' | null, form: 'package' |
 // 'setlength' | 'koma' | 'memoir', s, e (what to change), line } or { skip: null }
 export function docParskip(src, o = {}) {
@@ -788,8 +933,9 @@ export function docParskip(src, o = {}) {
   if (end < 0) return { skip: null };
   const d = docClass(src);
   if (d && KOMA.test(d.name)) {
+    // (KOMA-Script's half is half a line, parskip's own: Open; full, a whole line)
     const v = d.options.parskip;
-    if (v && v !== true && !/^(false|off|never|no)$/.test(v)) return { skip: /^full/.test(v) ? 'open' : 6, form: 'koma', key: v };
+    if (v && v !== true && !/^(false|off|never|no)$/.test(v)) return { skip: /^full/.test(v) ? lineOf(d) : 'open', form: 'koma', key: v };
     return { skip: null, form: 'koma' };
   }
   const p = packageLine(src, 'parskip', end);
@@ -820,8 +966,9 @@ export function docParskipEdits(src, skip, o = {}) {
   const same = (a, b) => (a == null && b == null) || a === b || (typeof a === 'number' && typeof b === 'number' && Math.abs(a - b) < 0.05);
   if (same(cur.skip, skip)) return { edits: [], needs: null };
   if (cur.form === 'koma') {
-    // KOMA-Script's own option: parskip=half or full, or none
-    return { edits: classOptionEdits(src, d, 'parskip', skip == null ? null : skip === 'open' ? 'full' : 'half'), needs: null };
+    // KOMA-Script's own option: parskip=half or full, or none; a space in points the nearer of
+    // the two (half a line or less: half)
+    return { edits: classOptionEdits(src, d, 'parskip', skip == null ? null : skip === 'open' || skip <= 0.75 * lineOf(d) ? 'half' : 'full'), needs: null };
   }
   if (cur.form === 'elsewhere') return { why: 'parskip is loaded by another file of the project: change it there.' };
   if (cur.form === 'package') {
@@ -893,7 +1040,8 @@ export function widowControl(src) {
   for (let m, n = 0; (m = PENALTY.exec(clean)) && n < 200; n++) hits.push({ name: m[1], v: +m[2], s: m.index, e: m.index + m[0].length });
   const last = (k) => hits.filter((h) => h.name === k).pop();
   const w = last('widowpenalty'), c = last('clubpenalty');
-  const nowidow = /\\usepackage\s*\[[^\]]*\ball\b[^\]]*\]\s*\{nowidow\}/.test(clean);
+  // (nowidow's all option, as preamble.js reads a package's options: no pattern over the text)
+  const nw = packageOptions(src, 'nowidow', end), nowidow = !!nw && !!nw.all;
   return { on: nowidow || (!!w && !!c && w.v >= 10000 && c.v >= 10000), nowidow, hits };
 }
 export function widowEdits(src, on) {
