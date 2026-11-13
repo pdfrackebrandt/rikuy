@@ -200,10 +200,10 @@ export const nav = {
     tools.setAttribute('role', 'toolbar'); tools.setAttribute('aria-label', 'Outlining');
     const tool = (name, icon, title, fn) => { const b = mk('button', 'nv-ib'); b.type = 'button'; b.setAttribute('aria-label', name); b.title = title; b.insertAdjacentHTML('beforeend', SVG(icon)); b.addEventListener('click', fn); tools.append(b); return b; };
     const T = {
-      promote: tool('Promote', ICON.promote, 'Promote the heading and those under it (Alt+Shift+Left)', () => this.navAct('promote')),
-      demote: tool('Demote', ICON.demote, 'Demote the heading and those under it (Alt+Shift+Right)', () => this.navAct('demote')),
-      up: tool('Move up', ICON.mup, 'Move the section, or the paragraph, before the one above it (Alt+Shift+Up)', () => this.navAct('up')),
-      down: tool('Move down', ICON.mdown, 'Move the section, or the paragraph, after the one below it (Alt+Shift+Down)', () => this.navAct('down')),
+      promote: tool('Promote', ICON.promote, 'Promote the heading and those under it (Alt+Shift+←)', () => this.navAct('promote')),
+      demote: tool('Demote', ICON.demote, 'Demote the heading and those under it (Alt+Shift+→)', () => this.navAct('demote')),
+      up: tool('Move up', ICON.mup, 'Move the section, or the paragraph, before the one above it (Alt+Shift+↑)', () => this.navAct('up')),
+      down: tool('Move down', ICON.mdown, 'Move the section, or the paragraph, after the one below it (Alt+Shift+↓)', () => this.navAct('down')),
       expand: tool('Expand all', ICON.plus, 'Show every heading under every heading', () => { this.navCollapsed = new Set(); this.paintHeadings(); }),
       collapse: tool('Collapse all', ICON.minus, 'Show the top headings alone', () => { this.navCollapsed = new Set((this.model.headings || []).map((h) => h.f + ':' + h.s)); this.paintHeadings(); })
     };

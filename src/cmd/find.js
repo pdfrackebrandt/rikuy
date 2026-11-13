@@ -12,6 +12,7 @@
 // and replaces the files' own text, commands, labels and math included, the replacement as it is.
 
 import { register, command, enabled, onInstall } from '../commands.js';
+import { chordText } from '../keys.js';
 import { compile, expand, hitsIn, hitsInSource, runsWith, blockText, charSrc, hitSource, joinRanges, labelsIn, PARA, FMT, FORMATS, MAX_HITS } from '../find.js';
 import { headingAt, sectionRange, promoteEdits, swapEdit, moveEdits, newHeading, NAME } from '../outline.js';
 import { absAtom, posFromDom } from '../editor.js';
@@ -59,13 +60,13 @@ register(
     when: (app, at) => !!app.fmtAt(at), whyNot: () => 'The caret is in text without formatting of its own.', run: (app, args, at) => app.selectSimilar(at) },
 
   // ---- the outline: the page's caret in a heading (and the Navigation pane's toolbar)
-  { id: 'promote', name: 'Promote', title: 'Promote: the heading, and every heading under it, one level up (Alt+Shift+Left)', synonyms: ['Promote heading', 'Outline promote'], keys: ['Alt+Shift+ArrowLeft'], mac: { 'Alt+Shift+ArrowLeft': 'Control+Shift+ArrowLeft' },
+  { id: 'promote', name: 'Promote', title: 'Promote: the heading, and every heading under it, one level up (Alt+Shift+←)', synonyms: ['Promote heading', 'Outline promote'], keys: ['Alt+Shift+ArrowLeft'], mac: { 'Alt+Shift+ArrowLeft': 'Control+Shift+ArrowLeft' },
     menu: { heading: 10 }, when: promoteOK(-1), whyNot: (app, at) => headAt(app, at) < 0 ? 'Put the caret in a heading first.' : 'It is the top level this document has.', run: (app, args, at) => app.promoteAt(headAt(app, at), -1) },
-  { id: 'demote', name: 'Demote', title: 'Demote: the heading, and every heading under it, one level down (Alt+Shift+Right)', synonyms: ['Demote heading', 'Outline demote'], keys: ['Alt+Shift+ArrowRight'], mac: { 'Alt+Shift+ArrowRight': 'Control+Shift+ArrowRight' },
+  { id: 'demote', name: 'Demote', title: 'Demote: the heading, and every heading under it, one level down (Alt+Shift+→)', synonyms: ['Demote heading', 'Outline demote'], keys: ['Alt+Shift+ArrowRight'], mac: { 'Alt+Shift+ArrowRight': 'Control+Shift+ArrowRight' },
     menu: { heading: 20 }, when: promoteOK(1), whyNot: (app, at) => headAt(app, at) < 0 ? 'Put the caret in a heading first.' : 'A heading under it is at the lowest level, \\subparagraph.', run: (app, args, at) => app.promoteAt(headAt(app, at), 1) },
-  { id: 'move-up', name: 'Move up', title: 'Move the paragraph above the one before it; on a heading, its whole section (Alt+Shift+Up)', synonyms: ['Move paragraph up', 'Move section up'], keys: ['Alt+Shift+ArrowUp'], mac: { 'Alt+Shift+ArrowUp': 'Control+Shift+ArrowUp' },
+  { id: 'move-up', name: 'Move up', title: 'Move the paragraph above the one before it; on a heading, its whole section (Alt+Shift+↑)', synonyms: ['Move paragraph up', 'Move section up'], keys: ['Alt+Shift+ArrowUp'], mac: { 'Alt+Shift+ArrowUp': 'Control+Shift+ArrowUp' },
     when: moveOK(-1), whyNot: () => 'Nothing of the same kind stands before it here.', run: (app, args, at) => app.moveAt(at, -1) },
-  { id: 'move-down', name: 'Move down', title: 'Move the paragraph below the one after it; on a heading, its whole section (Alt+Shift+Down)', synonyms: ['Move paragraph down', 'Move section down'], keys: ['Alt+Shift+ArrowDown'], mac: { 'Alt+Shift+ArrowDown': 'Control+Shift+ArrowDown' },
+  { id: 'move-down', name: 'Move down', title: 'Move the paragraph below the one after it; on a heading, its whole section (Alt+Shift+↓)', synonyms: ['Move paragraph down', 'Move section down'], keys: ['Alt+Shift+ArrowDown'], mac: { 'Alt+Shift+ArrowDown': 'Control+Shift+ArrowDown' },
     when: moveOK(1), whyNot: () => 'Nothing of the same kind stands after it here.', run: (app, args, at) => app.moveAt(at, 1) },
   { id: 'heading-before', name: 'New heading before', title: 'A new heading of the same level before this one', menu: { heading: 40 }, when: (app, at) => headAt(app, at) >= 0, run: (app, args, at) => app.newHeadingAt(headAt(app, at), 'before') },
   { id: 'heading-after', name: 'New heading after', title: 'A new heading of the same level after this section', menu: { heading: 50 }, when: (app, at) => headAt(app, at) >= 0 && !!app.sectionOf(headAt(app, at)), run: (app, args, at) => app.newHeadingAt(headAt(app, at), 'after') },
@@ -697,7 +698,7 @@ function regItems(app, ids) {
   if (at) at.memo = {};
   return ids.map((id) => {
     const c = command(id);
-    return c && { name: c.name, title: c.title, keys: (c.keys || c.keysElsewhere || [])[0], disabled: !enabled(app, c, at), run: () => { app.ribbonBack(); app.runCommand(id); } };
+    return c && { name: c.name, title: c.title, keys: chordText((c.keys || c.keysElsewhere || [])[0]), disabled: !enabled(app, c, at), run: () => { app.ribbonBack(); app.runCommand(id); } };
   });
 }
 const SELECT = ['select-all', 'select-paragraph', 'select-sentence', 'select-similar'];

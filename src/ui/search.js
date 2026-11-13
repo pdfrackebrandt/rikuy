@@ -4,6 +4,7 @@
 // registry's names and the text typed into the box are shown here, never the document's text.
 
 import { search, enabled } from '../commands.js';
+import { chordText } from '../keys.js';
 import { tabById } from '../ribbon/order.js';
 import { $, mk } from './dom.js';
 
@@ -70,7 +71,7 @@ export function installSearch(app) {
       o.setAttribute('aria-selected', i === hi ? 'true' : 'false');
       if (!enabled(app, c, at)) { o.classList.add('off'); o.setAttribute('aria-disabled', 'true'); }
       o.append(mk('span', 'srch-n', c.name));
-      const w = where(c), k = (c.keys || c.keysElsewhere || [])[0];
+      const w = where(c), k = chordText((c.keys || c.keysElsewhere || [])[0]);
       if (w) o.append(mk('span', 'srch-w', w));
       if (k) { const kk = mk('span', 'srch-k', k); kk.setAttribute('aria-hidden', 'true'); o.append(kk); }
       if (c.title && c.title !== c.name) o.title = c.title;

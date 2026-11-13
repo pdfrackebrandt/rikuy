@@ -301,6 +301,9 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   `\end{document}`; none when a heading under it is in another file), `swapEdit` exchanges two
   neighbours with the space between kept (Move up and Move down: sections, paragraphs, list
   items), `moveEdits` takes one elsewhere (a heading dragged in the Navigation pane).
+  Where Home's row is short its least needed group, Editing (rank 1), folds first into one icon
+  button "Editing" (`ribbonFit`, both the gallery's row and the list's), and `chordText`
+  (`src/keys.js`) writes the outline's keys in menus and tooltips as Alt+Shift+←.
   `src/nav.js` draws the Navigation pane in the side panel's Outline tab: the box, Headings (a
   tree with collapse, Show levels, the Outlining toolbar, Alt+Shift and the arrows, dragging; in
   the Outline view the paragraphs too, by their first line), Pages (each page cloned small,

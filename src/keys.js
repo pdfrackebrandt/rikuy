@@ -73,9 +73,11 @@ export function matches(k, e, mac) {
   return key === k.key && (k.shift || !e.shiftKey || !/^[a-z0-9]$/i.test(key));
 }
 
-// How a chord is written in a tooltip: as the registry has it (Ctrl is Cmd on a Mac, which
-// Help says once)
-export const chordText = (s) => String(s);
+// How a chord is written in a tooltip, a menu or the search box: as the registry has it, its
+// arrow keys as arrows, as Word writes them (Alt+Shift+←). Ctrl is Cmd on a Mac, which Help says
+// once. (controls.json and llms.txt keep the registry's own names: an agent presses them.)
+const SHOWN = { ArrowLeft: '\u2190', ArrowRight: '\u2192', ArrowUp: '\u2191', ArrowDown: '\u2193' };
+export const chordText = (s) => s == null ? s : String(s).replace(/(^|\+)(ArrowLeft|ArrowRight|ArrowUp|ArrowDown)$/, (m, a, k) => a + SHOWN[k]);
 
 // The bindings of every registered command: [{ chord, k, id, scope, rank }]
 export function bindings(mac) {

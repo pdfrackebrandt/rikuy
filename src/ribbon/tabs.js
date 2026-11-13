@@ -22,6 +22,7 @@ import { $, mk, store, PREFS } from '../ui/dom.js';
 import { openMenu, splitButton, CARET } from '../ui/kit.js';
 import { measureTiles, installGallery } from '../ui/gallery.js';
 import { styOfEl } from '../editor.js';
+import { chordText } from '../keys.js';
 import { enclosing } from '../wrap.js';
 
 const SVG = (paths) => '<svg viewBox="0 0 20 20" aria-hidden="true">' + paths + '</svg>';
@@ -124,7 +125,7 @@ export const tabs = {
     if (at) at.memo = {};
     const items = inGroup(tab, g.id).filter(({ c }) => c.run && c.searchable !== false).map(({ c, p }) => {
       const on = pressed(this, c, at);
-      return { name: p.name, title: c.title, keys: (c.keys || [])[0], checked: on === null ? undefined : on, radio: !!c.static, disabled: !enabled(this, c, at), run: () => { this.ribbonBack(); this.runCommand(c.id); } };
+      return { name: p.name, title: c.title, keys: chordText((c.keys || [])[0]), checked: on === null ? undefined : on, radio: !!c.static, disabled: !enabled(this, c, at), run: () => { this.ribbonBack(); this.runCommand(c.id); } };
     });
     openMenu(this, gb, items, { label: g.name });
   },
@@ -227,13 +228,14 @@ export const tabs = {
     // (a phone's width has the list whatever the room: the style sheet hides the gallery there)
     const wide = gal ? getComputedStyle(gw).display !== 'none' : wideScreen();
     const done = () => { this.rbFitting = false; this.ribbonRove(); };
+    const foldEarly = () => { for (const g of groups) if (+g.dataset.rank === 1 && g.querySelector('.rb-gico')) g.classList.add('folded', 'early'); };
     if (wide) {
       if (gal) measureTiles(this);
       // Word's way with a tab's least needed groups (rank 1: Editing on Home): where the row is
       // too short for everything at its widest, they fold first, each into one small button
       // with its first command's icon, before the gallery shrinks or a button loses its name
       set(false, false, gal ? 6 : this.rbTiles || 6);
-      if (!fits()) for (const g of groups) if (+g.dataset.rank === 1 && g.querySelector('.rb-gico')) g.classList.add('folded', 'early');
+      if (!fits()) foldEarly();
       const steps = gal ? [[false, 6], [false, 5], [false, 4], [false, 3], [false, 4, 1], [false, 3, 1], [true, 6], [true, 5], [true, 4], [true, 3]] : [[false, this.rbTiles || 6], [false, this.rbTiles || 6, 1], [true, this.rbTiles || 6], [true, this.rbTiles || 6, 1]];
       for (const [fold, n, nolab] of steps) {
         set(false, fold, n, nolab);
@@ -241,6 +243,8 @@ export const tabs = {
       }
     }
     set(true, true, gal ? 6 : this.rbTiles || 6);
+    // (the list's row folds its least needed groups first too, as the gallery's did)
+    if (!fits()) foldEarly();
     // (the list's row too goes without the Download label where it is longer than the window, as
     // between 861 and 900 px, and below them before a button goes out of sight; a phone's one
     // Download button has no label)

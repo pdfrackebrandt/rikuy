@@ -967,9 +967,12 @@ Tests:
     the paragraphs under their headings by their first line, movable as the headings are. *The
     frame:* where Home's row is short, its least needed group (rank 1, Editing) folds first, into
     one icon button "Editing" whose menu has Find, Replace and Select, before the gallery
-    shrinks or a button loses its name, as Word folds it (`ribbonFit`); so Home keeps task 38's
-    look at every width it was tested at, and Find, Replace and Select are `fit` controls (shown
-    as the row has room, as the gallery's tiles). *For agents:* llms-full.txt says the keys, the
+    shrinks or a button loses its name, as Word folds it (`ribbonFit`), and in the style list's row
+    below 1025 px before the Download label or the three downloads give way; so Home keeps task
+    38's look at every width it is tested at (whole at 860 px, the three downloads to 1024), and
+    Find, Replace and Select are `fit` controls (shown as the row has room, as the gallery's
+    tiles). Menus, the search box and tooltips write arrow keys as arrows (`chordText`:
+    Alt+Shift+←); controls.json and llms.txt keep the names an agent presses. *For agents:* llms-full.txt says the keys, the
     dialog's and the pane's names; the Help dialog lists Ctrl+F, H, G, Alt+Shift and the arrows,
     Ctrl+Alt+O. *Security:* the audit skill's quick profile on the new files (one agent; notes
     outside the repository) found one way a stranger's document stalled the tab, fixed with a
@@ -981,9 +984,10 @@ Tests:
     command, promote and demote bounds, section ranges, swaps, moves, new headings, a stranger's
     long source); `find.py` 59 (with `dist/tex`: the replaced document compiles and prints
     "75% & more"); `outline.py` 47 (with `dist/tex`: a promoted heading prints as section 2);
-    `agent.py` 138 (132 before: the dialog by its names, Escape, Ctrl+F's box); `tabs.py` 85 (84;
-    the early fold); `ribbon.py` 265 (two of its checks now run where their premise holds: the
+    `agent.py` 138 (132 before: the dialog by its names, Escape, Ctrl+F's box); `tabs.py` 105 (104;
+    the early fold); `ribbon.py` 267 (two of its checks now run where their premise holds: the
     Download label at 1600 px, the row's height where the gallery gives way to the list);
+    `keys.test.mjs` 12 groups (11; chords as people read them);
     `browser.py` 189; `frontier.py` 13; `scripts.py` 302; `history.py` 39/39; `git.py` 44/44;
     `share.py` 46; `features.py` 36; `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py`
     43/43; `pages_check.py` fits; actionlint clean; the model and parser untouched. Not done:
