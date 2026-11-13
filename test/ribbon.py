@@ -174,10 +174,11 @@ def inserts(page):
     check('given up empty it leaves the source as it was', src(page) == DOC)
     click_text(page, 'Second paragraph', 7)
     press(page, 'rb-table'); page.wait_for_timeout(200)
-    table = '\\begin{table}[h]\n\\centering\n\\begin{tabular}{ll}\n\\hline\n &  \\\\\n &  \\\\\n\\hline\n\\end{tabular}\n\\caption{}\n\\end{table}'
-    check('Table puts a two by two table after the paragraph, not inside it', src(page) == DOC.replace('Second paragraph here.\n\n', 'Second paragraph here.\n\n' + table + '\n\n'), src(page)[src(page).find('Second'):][:160])
+    # (booktabs' rules and a header row, booktabs loaded with it: B7, test/table.py)
+    table = '\\begin{table}[h]\n\\centering\n\\begin{tabular}{ll}\n\\toprule\n &  \\\\\n\\midrule\n &  \\\\\n\\bottomrule\n\\end{tabular}\n\\caption{}\n\\end{table}'
+    check('Table puts a two by two table after the paragraph, not inside it', src(page) == DOC.replace('\\usepackage{amsmath}\n', '\\usepackage{amsmath}\n\\usepackage{booktabs}\n').replace('Second paragraph here.\n\n', 'Second paragraph here.\n\n' + table + '\n\n'), src(page)[src(page).find('Second'):][:160])
     page.keyboard.type('A'); page.wait_for_timeout(200)
-    check('with the caret in its first cell', '\\hline\nA &  \\\\' in src(page), src(page)[src(page).find('hline'):][:30])
+    check('with the caret in its first cell', '\\toprule\nA &  \\\\' in src(page), src(page)[src(page).find('toprule'):][:30])
     page.keyboard.press('Control+z'); page.wait_for_timeout(120)
     check('undo takes the table out', undo_is(page, DOC))
     click_text(page, 'Second paragraph', 7)

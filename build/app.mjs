@@ -347,6 +347,22 @@ of window.rikuy is the app itself and changes without notice.
   "bold", the selection on the page becomes bold, one Undo takes it back); resolves to true when
   it ran, false when it cannot run there.
 
+Tables: put the caret in a cell (click it) and run the commands of the tabs Table Layout and
+Table Design by id: "table-row-below", "table-row-above", "table-col-left", "table-col-right",
+"delete-rows", "delete-columns", "delete-table", "merge-cells" (over a selection of cells),
+"split-cells", "split-table", "header-row", "banded-rows", "table-look-booktabs",
+"table-look-grid", "autofit-window", "repeat-header" and the rest (commands() lists them). Those
+with a dialog take its fields as arguments instead: run("table", {rows: 3, cols: 4, fit:
+"window"}) a table of that size after the caret's paragraph (fit "contents", "window" or "fixed"
+with width "3cm"); run("table-sort", {col: 1, desc: true, header: true}); run("table-to-text",
+{sep: ", "}) (or "para"); run("text-to-table", {sep: ","}) on selected lines; run("delete-cells",
+{how: "left"}) ("up", "row", "column"); run("table-properties", {full: true, align: "c",
+stretch: 1.3, fixed: true, width: "3cm", v: "m"}); run("cell-margins", {side: "8pt", top:
+"2pt"}); run("table-shading", {pick: {name: "yellow"}}) ({html: "C00000"}, or null for none);
+run("table-borders", {id: "border-all"}); run("pen-weight", {w: "1pt"}); run("table-from-data",
+{file: "data.csv"}). New tables are booktabs (\toprule, \midrule, \bottomrule); a table written
+with \hline is edited with \hline.
+
 In a guest's view (a document opened from a link with "by") setSource, setUpScripts and run
 reject with an Error; the others work.
 
@@ -466,7 +482,8 @@ Ctrl is Cmd on a Mac.
 - Ctrl+Alt+1, 2, 3: Heading 1, 2, 3; Ctrl+Alt+0: Normal; Ctrl+Shift+L: a bulleted list
 - Alt+Q: the search box, for any command by its name; Ctrl+F1: the ribbon folded to its tabs
   and back; Shift+F10 or the menu key: the right click menu at the caret
-- Tab, Ctrl+Enter: next cell, new row in a table
+- In a table: Tab the next cell (in the last cell a new row under it), Shift+Tab the cell
+  before; Ctrl+Enter a new row under the caret's
 - Ctrl+Shift+V: paste as plain text
 - Click math, a citation or a cross reference to edit it; Alt+click shows that spot in the source
 - In an equation: names as in LaTeX or Word (\\alpha then Space), a/b for a fraction, x^2 and

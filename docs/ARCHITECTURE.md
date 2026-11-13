@@ -48,6 +48,7 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | the ribbon: tabs, contextual tabs, groups folding, the keyboard | `ribbonBuild`, `makeControl`, `selectTab`, `ribbonContexts`, `ribbonSync`, `ribbonFit`, `ribbonRove`, `runCommand`, `toggleRibbon`, `peekRibbon`, `installRibbon` (`src/ribbon/tabs.js`); `ribbonAt`, `insertEmpty`, `dropEmpty`, `ribbonBack` (`src/ribbon.js`) |
 | the Styles gallery and the paragraph's style | `styleSync`, `paintGallery`, `pageGallery`, `openStyles`, `tileOrder`, `installGallery` (`src/ui/gallery.js`); `blockStyle`, `setBlockStyle` (`src/cmd/styles.js`); `restyle`, `latexSpot` (`src/styles.js`) |
 | keys, the search box, the right click menu, the kit | `matches`, `lookup`, `installKeys` (`src/keys.js`); `installSearch` (`src/ui/search.js`); `openContextMenu`, `installMenu` (`src/ui/menu.js`); `openMenu`, `openGallery`, `splitButton`, `colorPicker`, `numberField`, `dialog` (`src/ui/kit.js`) |
+| a table: where the caret is in it, and every operation on it | `parseTable`, `tableAt`, `cellAt`, `emit`, `insertRow`, `deleteRows`, `insertCol`, `deleteCols`, `mergeCells`, `splitCell`, `applyLook`, `setBorders`, `shade`, `setSetting`, `autofit`, `repeatHeader` (`src/table.js`); `tableHere`, `tableOp`, `tableApply`, `tablePackages`, `caretToCell` (`src/cmd/table.js`); `openTablePicker` and the dialogs (`src/ui/tablepicker.js`); `tabular`, `tableCell`, `tableSetting`, `csvTable` (`src/model.js`) |
 | an edit of the preamble, an inline wrapper, an environment around paragraphs | `usePackages`, `kvEdits`, `classOptions`, `setPackageKeys`, `defineOnce` (`src/preamble.js`); `App.packageEdits`, `preambleOthers`; `wrapEdits`, `unwrapEdits`, `standsFree`, `rewrapEdits`, `enclosing`, `clearText`, `GROUPS` (`src/wrap.js`); `envWords`, `wrapBlockEdits`, `unwrapBlockEdits` (`src/blockenv.js`) |
 | the side panel: outline and problems; versions and changes | `toggleNav`, `refreshNav`, `goTo` (`src/nav.js`); `snapshot`, `currentChanges`, `renderChanges`, `paintChanges` (`src/review.js`) |
 | LaTeX paragraphs (`% rikuy: latex`) | `isLatexMark` (`src/styles.js`); `Builder.texBlock`, `cutOpen` (`src/model.js`); `Renderer.item` case `tex`; `App.texBox`, `texEdit`, `texEnter`, `texDelete`, `showTexGhost` (`src/app.js`) |
@@ -258,6 +259,24 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   and out again byte for byte). `ensurePackages` and the picture's `graphicx` use the first,
   `toggleStyle` the second (so `{\bfseries …}`, which the page draws without a range of its own,
   is found in the source and comes off exactly), Quote the third.
+- **Tables.** `src/table.js` reads a table once (`parseTable`: the environment and its
+  arguments, the column specification as pieces, each row as its lead of rules, its cells
+  between their `&` with the words' range inside, its `\\[…]`, and the tail), every piece a
+  range of the source, so `emit` puts it back byte for byte (tested on every table of the
+  corpus); every operation is a function of the text and that reading giving small edits: a row
+  is a *unit* (from the rules before it to its `\\`, in a grid with the rule under it), so
+  inserting and deleting one undo each other byte for byte; a column is a piece of the
+  specification and an `&` per row; merged cells are `\multicolumn` and `\multirow` with the
+  rules between merged rows cut to `\cline`; looks, borders, shading, header rows and the
+  settings before a table (`\rowcolors`, `\arraystretch`, `\tabcolsep` in its float or a group)
+  write in the table's own style (`\hline` for an `\hline` table, booktabs for a booktabs one).
+  `src/cmd/table.js` finds the table at the caret (`tableHere`: the innermost whose body holds
+  the caret, the selected cells as a rectangle), runs one operation as one commit with the
+  packages it needs (`tablePackages`; xcolor's table option by `\PassOptionsToPackage` where
+  TikZ loads xcolor first), and puts the caret in the cell the operation names (`caretToCell`);
+  the page draws merged rows, turned words, banded rows, bold and coloured columns and a csvsimple
+  table from its file (`tabular`, `tableCell`, `csvTable` in `src/model.js`, the tabular branch of
+  `src/render.js`), and Word gets merged cells as Word's (`table` in `src/wordast.js`).
 - **Styles.** `blockStyle` reads the caret's block into `{v, to, b}`: its style now, the styles it
   may take, and where its words are; `restyle` (`src/styles.js`, tested on strings in
   `test/styles.test.mjs`) turns that into the smallest edits: Normal to LaTeX writes the mark's
@@ -941,7 +960,9 @@ PDF.js is a module `import()`, which takes no hash, so it ships in `dist/tex/` b
 - **Node, in CI** (`.github/workflows/ci.yml`, `npm test`): `test/model.test.mjs` (sample model,
   seg maps checked), `edge.test.mjs` (malformed input must not throw), `fences.test.mjs`,
   `minimal.test.mjs`, `siunitx.test.mjs`, `share.test.mjs`, `preamble.test.mjs`, `wrap.test.mjs`,
-  `blockenv.test.mjs` (the three edit modules, on strings), `keys.test.mjs` (chords against the
+  `blockenv.test.mjs` (the three edit modules, on strings), `table.test.mjs` (every table
+  operation and its inverse, the corpus's tables put back byte for byte, hostile tables in
+  bounded time), `keys.test.mjs` (chords against the
   events browsers send, AltGr, input methods), `commands.test.mjs` (the registry: ids, places,
   names once per tab, chords, the insert list's order, the search), `kit.test.mjs` (lengths,
   colours), `engine.test.mjs` (the worker's

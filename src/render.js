@@ -422,6 +422,19 @@ export class Renderer {
       if (p.dir === 'rtl') setDir(t, p.dir);
       const tb = document.createElement('tbody');
       const ncol = p.cols.length;
+      // (B7) the settings before the table: rows' height, the cells' side space, the rules' width
+      // and colour; a cell merged down covers the cells under it; \rowcolors bands the rows
+      if (p.stretch && p.stretch !== 1) t.style.setProperty('--tb-st', String(Math.max(0.3, Math.min(5, p.stretch))));
+      // (a length as the source writes it, trimmed and short first: no pattern backtracks over a
+      // stranger's run of spaces)
+      const len = (v) => { const m = /^([\d.]{1,12})(pt|mm|cm|em|ex|in|bp)?$/.exec(String(v || '').slice(0, 60).replace(/[ \t\n]/g, '')); if (!m) return null; return +m[1] * ({ pt: 1, mm: 2.845, cm: 28.45, em: 10, ex: 4.3, in: 72.27, bp: 1.004 }[m[2] || 'pt']); };
+      if (len(p.tabcolsep) != null) t.style.setProperty('--tb-sep', String(len(p.tabcolsep) / 6));
+      if (len(p.arrayrulewidth) != null) t.style.setProperty('--tb-rw', String(len(p.arrayrulewidth) / 0.4));
+      if (len(p.extrarowheight) != null) t.style.setProperty('--tb-xr', String(len(p.extrarowheight)));
+      if (p.rulecolor) { t.style.setProperty('--tb-rc', cssColor(p.rulecolor)); t.classList.add('tb-rc'); }
+      if (p.stretch || p.tabcolsep || p.arrayrulewidth || p.extrarowheight) t.classList.add('tb-set');
+      const covered = new Map();
+      let rowNo = 0;
       p.rows.forEach((r, ri) => {
         const tr = document.createElement('tr');
         for (const rule of r.rules) {
@@ -433,8 +446,18 @@ export class Renderer {
         }
         if (r.empty) { tr.classList.add('r-empty'); const td = document.createElement('td'); td.colSpan = ncol; td.className = 'rule-cell'; td.contentEditable = 'false'; tr.appendChild(td); tb.appendChild(tr); return; }
         const partial = r.rules.filter((x) => x.range);
+        rowNo++;
+        if (p.band && rowNo >= p.band.start) { const bc = rowNo % 2 ? p.band.odd : p.band.even; if (bc) tr.style.background = cssColor(bc); }
         let col = 0;
         r.cells.forEach((c) => {
+          // (a cell under one merged down, empty: the merged one stands there)
+          const cov = covered.get(col);
+          if (cov && cov.left > 0 && c.inl.every((x) => x.ph)) {
+            cov.left--;
+            // its place stays reachable: the caret goes into the merged cell's words
+            col += c.span;
+            return;
+          }
           const td = document.createElement('td');
           const colInfo = p.cols[col] || {};
           td.className = 'al-' + (c.align === 'p' ? 'l' : c.align);
@@ -449,7 +472,12 @@ export class Renderer {
           if (p.dir === 'rtl') setDir(td, p.dir);
           if (c.bg) td.style.background = cssColor(c.bg);
           if (c.rowbg) tr.style.background = cssColor(c.rowbg);
-          this.inl(c.inl, td);
+          if (c.bold) td.classList.add('tb-b');
+          if (c.palign) { td.classList.remove('pcol', 'al-l', 'al-c', 'al-r'); td.classList.add('al-' + c.palign); }
+          if (c.valign) td.classList.add('tb-v' + c.valign);
+          if (c.rows > 1) { td.rowSpan = c.rows; td.classList.add(c.vpos === 't' ? 'tb-vt' : c.vpos === 'b' ? 'tb-vb' : 'tb-vm'); for (let q = col; q < col + c.span; q++) covered.set(q, { left: c.rows - 1 }); }
+          if (c.rot) { const w = document.createElement('span'); w.className = 'tb-rot tb-rot' + c.rot; this.inl(c.inl, w); td.appendChild(w); td.classList.add('tb-turned'); }
+          else this.inl(c.inl, td);
           tr.appendChild(td);
           col += c.span;
         });

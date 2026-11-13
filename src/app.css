@@ -969,3 +969,57 @@ body.guest #b-new, body.guest #b-sample { display: none; }
   ::highlight(g-cmt), ::highlight(g-cmt-on) { background-color: transparent; }
 }
 /* Save, and the caret beside it for the other ways out (.zip or .tex, Word, PDF) */
+
+/* ---- B7 tables: the page's tables (settings, merged rows, turned words, a block of cells
+   selected), the grid of sizes under Insert › Table, and the tables' dialogs ---- */
+.tab.tb-set td { padding: calc(.18em + (var(--tb-st, 1) - 1) * .35em + var(--tb-xr, 0) * .1em) calc(.6em * var(--tb-sep, 1)) calc(.18em + (var(--tb-st, 1) - 1) * .35em) calc(.6em * var(--tb-sep, 1)); }
+.tab.tb-set td.vl { border-left-width: calc(var(--pt) * .4px * var(--tb-rw, 1)); }
+.tab.tb-set td.vr { border-right-width: calc(var(--pt) * .4px * var(--tb-rw, 1)); }
+.tab.tb-set tr.r-light, .tab.tb-set td.cr-top { border-top-width: calc(var(--pt) * .5px * var(--tb-rw, 1)); }
+.tab.tb-rc td, .tab.tb-rc tr { border-color: var(--tb-rc) !important; }
+.tab td.tb-b { font-weight: bold; }
+.tab td.tb-vm { vertical-align: middle; }
+.tab td.tb-vb { vertical-align: bottom; }
+.tab td.tb-vt { vertical-align: top; }
+.tab td.tb-turned { text-align: center; vertical-align: bottom; }
+.tb-rot { display: inline-block; writing-mode: vertical-rl; white-space: nowrap; }
+.tb-rot90 { transform: rotate(180deg); }
+/* a selection over several cells: the cells as a block, the text's own highlight hidden */
+.tab.tsel-on ::selection { background: transparent; }
+.tab td.tsel { background-image: linear-gradient(color-mix(in srgb, var(--blue) 22%, transparent), color-mix(in srgb, var(--blue) 22%, transparent)); }
+/* the Table button's arrow: the grid of sizes */
+.pop.pop-tpick { width: auto; padding: 6px; gap: 2px; }
+.tp-head { font: 600 12px var(--font-ui); color: var(--ink-ui); padding: 4px 4px 6px; min-height: 16px; }
+.tp-grid { display: grid; gap: 3px; padding: 2px 4px 6px; outline: none; border-radius: 6px; }
+.tp-grid:focus-visible { box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 45%, transparent); }
+.tp-row { display: grid; grid-template-columns: repeat(10, 18px); gap: 3px; }
+.tp-cell { width: 18px; height: 18px; box-sizing: border-box; border: 1px solid var(--line); background: var(--panel); border-radius: 2px; cursor: pointer; }
+.tp-cell.on { border-color: var(--blue); background: var(--blue-wash); }
+.pop-tpick .nav-act { width: 100%; min-height: 32px; font-weight: 400; padding: 0 8px; }
+.pop-tpick .nav-act svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.pop-tpick .nav-act:hover, .pop-tpick .nav-act:focus-visible { background: var(--blue-wash); outline: none; }
+.pop-tpick .nav-act[aria-disabled="true"] { opacity: .45; cursor: default; }
+/* the dialogs */
+.pop.pop-tb { width: min(360px, calc(100vw - 16px)); gap: 10px; }
+.pop.pop-tb.tb-props { width: min(400px, calc(100vw - 16px)); }
+.tb-sec { display: flex; flex-direction: column; gap: 6px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.tb-sec:last-of-type { border-bottom: 0; }
+.tb-gl { font: 600 12px var(--font-ui); color: var(--ink-ui); }
+.tb-f { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+.tb-l { color: var(--ink-ui); }
+.tb-num, .tb-sel { height: 28px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink-ui); font: 13px var(--font-ui); padding: 0 6px; }
+.tb-num { width: 72px; text-align: right; }
+.tb-sel { max-width: 220px; }
+.tb-num:focus, .tb-sel:focus { outline: 2px solid var(--blue); outline-offset: 1px; }
+.tb-radios { display: flex; flex-direction: column; gap: 4px; border: 0; }
+.tb-r, .tb-ck { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+.tb-r input, .tb-ck input { margin: 0; accent-color: var(--blue); }
+.tb-out { font-size: 13px; color: var(--mute); }
+.tb-note { margin: 0; font-size: 12px; line-height: 1.45; color: var(--mute); }
+.tb-btns { display: flex; justify-content: flex-end; gap: 8px; }
+.tb-btns .btn.ghost { border-color: var(--line); }
+.pop-tb .nf { flex: none; height: 28px; }
+.pop-tb .nf .nf-v { width: 64px; padding: 0 6px; border: 0; background: transparent; line-height: normal; }
+.pop-tb .nf .nf-u { width: auto; padding: 0 4px; border: 0; border-left: 1px solid var(--line); border-radius: 0; background: var(--chrome); line-height: normal; }
+.pop-tb select.tb-sel { width: auto; padding: 0 6px; line-height: normal; }
+.pop-tb .tb-f.off, .pop-tb .tb-r.off { opacity: .5; }
