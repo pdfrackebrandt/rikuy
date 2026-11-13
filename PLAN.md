@@ -1046,6 +1046,79 @@ Tests:
     `git.py` 44/44; `share.py` 46; `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43;
     `pages_check.py` fits; actionlint clean.
 
+39. **B1, character formatting: Home's Font group as Word's.** Done in the code (branch
+    `wordgap-b1-font`, from `ribbon-tabs`), GAP rows H4, H6 to H12, H15 to H19, H21, H22, H24 to
+    H31 and A4 (H20 and H23 stay SKIP). *What it writes* (`src/charfmt.js`, pure, over
+    `src/wrap.js`, which it does not change): Underline is ulem's `\uline` now, which breaks across
+    lines, as Word import writes it (`\underline` by hand is still read and taken off), with its
+    styles (`\uuline`, `\uwave`, `\dashuline`, `\dotuline`) and a colour (`\culine{red}`, ulem's
+    line coloured, defined once); Strikethrough `\sout`, Double Strikethrough `\dsout` (two of
+    `\sout`'s lines, one `\DeclareRobustCommand` line); Subscript and Superscript
+    (`\textsubscript`, `\textsuperscript`, each turning the other in place); Small Caps, All Caps,
+    Character Border (`\fbox`), Character Shading (`\colorbox{lightgray}`), Enclose Characters
+    (`\textcircled`); Font Color `\textcolor{name}` or `[HTML]{..}` (Word's standard colours are
+    dvipsnames: the option is merged into xcolor's line, or `\PassOptionsToPackage` goes before a
+    tikz that loads xcolor, or beamer's class option; `{\color{red} ..}` by hand keeps its form);
+    Text Highlight Color `\hl` and `\hl[green]` with the definition Word import writes, which takes
+    a colour now (`\DeclareRobustCommand{\hl}[1][yellow]{...}`; the import's line of before is
+    upgraded in place; a document's own `\hl` is never overwritten); the size box and Increase and
+    Decrease Font Size: `{\large ..}` at the size's points, `{\fontsize{13}{15.6}\selectfont ..}`
+    for any other, the switch gone at `\normalsize`; at a bare caret the document's base size (the
+    class's option; extsizes' `extarticle` and its kin for 8, 9, 14, 17, 20pt, back to no option at
+    10pt; KOMA's `fontsize=`; a class with sizes of its own is left and says so); the font box: the
+    document's font as a package line in the place of the last one's (newtx, newpx, tgheros with
+    `\familydefault`, XCharter, tgschola, tgbonum, kpfonts; Computer Modern takes them away) or
+    fontspec's `\setmainfont`, and a selection's Serif, Sans Serif, Monospace or
+    `{\fontfamily{ppl}\selectfont ..}` (`{\fontspec{..} ..}` under XeLaTeX and LuaLaTeX), only
+    fonts the tree has; Change Case on the letters only (commands, keys, math, comments, a colour's
+    name, `\href`'s address keep theirs; Shift+F3 in turn); Clear All Formatting (every format in
+    and around the selection, those holding an end of it taken off that part, and a center,
+    flushleft, flushright or setspace environment holding the paragraph alone; Ctrl+Space the
+    characters only); the Font dialog (Ctrl+D: every field, a preview, its Advanced tab with
+    `\textls`, `\scalebox{..}[1]`, `\raisebox`, microtype and `\DisableLigatures`; OK writes only
+    what changed, as one commit; Set As Default gives the document the font and size); the
+    Phonetic Guide (`\ruby{base}{reading}`: luatexja-ruby where luatexja is loaded, else a one line
+    `\providecommand`); the Format Painter (the formats around the caret onto the next selection or
+    the word clicked, a double click until Escape); `*words*` and `_words_` typed become `\textbf`
+    and `\emph` (one undo gives the marks back). Each action is one commit and one undo; the
+    preamble's lines are written once (`preambleFor`). *Where.* Home's Font group in Word's two
+    rows of small buttons (one row on a phone), the Format Painter in Clipboard, More Font Effects
+    for the rest; Font Settings in the right click menu. *Keys:* Ctrl+Shift+X, Ctrl+, and Ctrl+.
+    (Google Docs' keys: Ctrl+= stays zoom), Ctrl+Shift+A and K, Ctrl+Alt+H (AltGr left alone),
+    Ctrl+D, Ctrl+Shift+F, Ctrl+Shift+> and <, Ctrl+] and [ (not on a Mac), Shift+F3, Ctrl+Space (not
+    on a Mac); in llms-full.txt and Help. *The page* draws all of it (`src/model.js`: ulem's lines,
+    the double strike, an enclosed character, ruby, a run's size, family, tracking, shift and
+    scale, the highlighter's colour exactly, dvipsnames as their values, extsizes' base sizes,
+    the document's fonts by their looks; `paint` in `src/render.js` takes numbers and checked
+    colours only). *Word:* each format a character style Word fills in (a highlighter's colour,
+    double, wave, dashed and dotted underlines, double strike, caps, a border, sizes in half points,
+    fonts, spacing, position, scale); Word import's highlighter takes a colour. *Frame changes*
+    (`src/ribbon/tabs.js`, small): the boxes join the toolbar's arrow keys and keep the ribbon as
+    it was while typed in; groups fold between a phone and 861 px too (the Font group's one row
+    there left Home longer than the window); every ribbon button holds its screen reader name
+    (`position: relative`: absolute names past a phone's edge widened the page by the row's
+    length). The preamble's lines go through `usePackages` with the files the preamble reads
+    (`App.preambleOthers`), as B0's review asked. B0's tests changed
+    only where B1 changes what they saw: `\uline` for `\underline`, the Format Painter as Home's
+    first control, the right click menu's Font Settings, and the widths at which the Styles
+    gallery has room (six tiles with the insert buttons' names from 1800 px, the list below
+    1280 px; at 1024 px Clipboard and Insert fold, at 860 px four groups). *Security* (the audit skill's quick profile on
+    the changed files, notes outside the repository): a stranger's `\setmainfont{constructor}`
+    stopped the page from drawing the document, and two patterns backtracked on a stranger's
+    preamble (spaces after `\renewcommand`, an option list without its brace); fixed with tests,
+    and Clear All over thousands of unclosed declarations bounded. Evidence: `npm test` green
+    (new `font` 16 groups; `word` 57, two new), on main with B0's review fixes, `font.py` 175 (with `dist/tex`: a compile in the
+    page of every format, extarticle 14pt and Times, no error, every word in the PDF),
+    `tabs.py` 104, `ribbon.py` 267, `agent.py` 132, `browser.py` 189 (its math popover check
+    failed twice under the machine's load and passed on the next two runs), `word.py` 110,
+    `scripts.py` 302, `offline.py` 54/54, `launch.py` 18/18, `deploy_check.py` 43/43,
+    `pages_check.py` fits, actionlint clean, the corpus model run 716 of 716 with the same unknown
+    commands as before. Not done: Clear All Formatting's paragraph part covers alignment and
+    setspace environments, not B2's other paragraph formats (it should call B2's reset once that
+    exists); the Format Painter copies character formats, not a paragraph's style; an underline
+    colour takes a named colour only; Word import keeps no highlighter colour (pandoc reads none);
+    Safari and Firefox, by hand.
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000

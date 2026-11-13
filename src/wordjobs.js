@@ -202,12 +202,25 @@ function styled(docx, rtl, have) {
   st = st.replace(/(<w:style [^>]*w:styleId="(Colour|Shade|Highlight|Centred|RightAligned)([0-9A-F]{6})?"[^>]*>(?:(?!<\/w:style>)[\s\S])*?)(<\/w:style>)/g, (s, head, kind, hex, end) => {
     const add = kind === 'Colour' && hex ? '<w:rPr><w:color w:val="' + hex + '" /></w:rPr>'
       : kind === 'Shade' && hex ? '<w:rPr><w:shd w:val="clear" w:color="auto" w:fill="' + hex + '" /></w:rPr>'
-        : kind === 'Highlight' && !hex ? '<w:rPr><w:shd w:val="clear" w:color="auto" w:fill="FFFF00" /></w:rPr>'
+        : kind === 'Highlight' ? '<w:rPr><w:shd w:val="clear" w:color="auto" w:fill="' + (hex || 'FFFF00') + '" /></w:rPr>'
           : kind === 'Centred' && !hex ? '<w:pPr><w:jc w:val="center" /></w:pPr>'
             : kind === 'RightAligned' && !hex ? '<w:pPr><w:jc w:val="right" /></w:pPr>' : '';
     if (!add || /<w:[pr]Pr>/.test(head)) return s;
     n++;
     return head + add + end;
+  });
+  // the Font group's other formats (src/wordast.js): what each style's name says
+  st = st.replace(/(<w:style [^>]*w:styleId="(UnderlineDouble|UnderlineWave|UnderlineDash|UnderlineDotted|DoubleStrikethrough|AllCaps|CharacterBorder|FontSans|Font(?:Times|Palatino|Charter|Schola|Bookman|Mono)|Size(\d{1,4})|Spacing(m?\d{1,5})|Position(m?\d{1,4})|Scale(\d{1,3}))"[^>]*>(?:(?!<\/w:style>)[\s\S])*?)(<\/w:style>)/g, (s, head, kind, sz, sp, pos, sc, end) => {
+    if (/<w:[pr]Pr>/.test(head)) return s;
+    const fonts = { FontSans: 'Arial', FontTimes: 'Times New Roman', FontPalatino: 'Palatino Linotype', FontCharter: 'Charter', FontSchola: 'Century Schoolbook', FontBookman: 'Bookman Old Style', FontMono: 'Courier New' };
+    const signed = (v) => (v[0] === 'm' ? '-' + v.slice(1) : v);
+    const r = sz ? '<w:sz w:val="' + sz + '" /><w:szCs w:val="' + sz + '" />' : sp ? '<w:spacing w:val="' + signed(sp) + '" />' : pos ? '<w:position w:val="' + signed(pos) + '" />' : sc ? '<w:w w:val="' + sc + '" />'
+      : fonts[kind] ? '<w:rFonts w:ascii="' + fonts[kind] + '" w:hAnsi="' + fonts[kind] + '" />'
+        : { UnderlineDouble: '<w:u w:val="double" />', UnderlineWave: '<w:u w:val="wave" />', UnderlineDash: '<w:u w:val="dash" />', UnderlineDotted: '<w:u w:val="dotted" />',
+          DoubleStrikethrough: '<w:dstrike />', AllCaps: '<w:caps />', CharacterBorder: '<w:bdr w:val="single" w:sz="4" w:space="0" w:color="auto" />' }[kind];
+    if (!r) return s;
+    n++;
+    return head + '<w:rPr>' + r + '</w:rPr>' + end;
   });
   if (!n) return docx;
   parts.set(p, st);
@@ -1005,7 +1018,8 @@ export function docxToLatex(P, bytes, name) {
   if (used(/\\(sout|uline|hl)\{/)) pre.push('\\usepackage[normalem]{ulem}');
   // Word's highlighter: pandoc writes soul's \hl, which stops at a formula inside it and, before
   // 2023, at an accented letter; this one (ulem's) takes both and breaks across lines
-  if (used(/\\hl\{/)) pre.push('\\DeclareRobustCommand{\\hl}{\\bgroup\\markoverwith{\\textcolor{yellow}{\\rule[-.5ex]{2pt}{2.5ex}}}\\ULon}');
+  // (with a colour, [yellow] unless one is named: the line Rikuy's highlighter writes, src/charfmt.js)
+  if (used(/\\hl\{/)) pre.push('\\DeclareRobustCommand{\\hl}[1][yellow]{\\bgroup\\markoverwith{\\textcolor{#1}{\\rule[-.5ex]{2pt}{2.5ex}}}\\ULon}');
   if (used(/\\(cite[tp]?|citeauthor|citeyear)\{/) || bib) pre.push('\\usepackage[authoryear,round]{natbib}');
   if (used(/\\(texttt|verb)|\\begin\{verbatim\}/)) { /* the class has them */ }
   if (used(/\\(href|url|hyperlink|hypertarget|hyperref|phantomsection|nolinkurl)\b/)) pre.push('\\usepackage[hidelinks]{hyperref}');

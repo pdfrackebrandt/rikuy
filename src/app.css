@@ -1098,3 +1098,117 @@ body.guest #b-new, body.guest #b-sample { display: none; }
 /* the Outline view: the panel wide enough for the text under the headings */
 body.nav-on.nav-outline #nav { width: 460px; }
 @media (max-width: 860px) { body.nav-on.nav-outline #nav { width: min(94vw, 460px); } }
+/* ---- B1, character formatting (src/cmd/font.js, src/ui/fontdialog.js) ---- */
+/* what the Font group writes, on the page: ulem's lines, the double strikethrough, an enclosed
+   character, ruby's reading over its base */
+.y-ul2 { text-decoration: underline double; text-underline-offset: .15em; text-decoration-thickness: .05em; }
+.y-ulw { text-decoration: underline wavy; text-underline-offset: .2em; text-decoration-thickness: .05em; }
+.y-uld { text-decoration: underline dashed; text-underline-offset: .15em; text-decoration-thickness: .06em; }
+.y-ulo { text-decoration: underline dotted; text-underline-offset: .15em; text-decoration-thickness: .08em; }
+.y-so2 { text-decoration: line-through double; text-decoration-thickness: .05em; }
+.y-circ { border: .05em solid currentColor; border-radius: 50%; padding: 0 .16em; }
+.y-ls, .y-raise { white-space: nowrap; }
+.y-ruby { position: relative; display: inline-block; padding-top: .55em; line-height: 1; }
+.y-ruby::before { content: attr(title); position: absolute; left: -1em; right: -1em; top: 0; font-size: .5em; line-height: 1; text-align: center; white-space: nowrap; pointer-events: none; user-select: none; }
+/* a font named for a run (\fontfamily, \fontspec) and the document's font (.sheet[data-font]) */
+.y-ff-times, .sheet .y-ff-times { font-family: "TeX Gyre Termes", "Times New Roman", Times, "Nimbus Roman", serif; }
+.y-ff-palatino, .sheet .y-ff-palatino { font-family: "TeX Gyre Pagella", "Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", serif; }
+.y-ff-sans, .sheet .y-ff-sans { font-family: "TeX Gyre Heros", "Helvetica Neue", Helvetica, Arial, sans-serif; }
+.y-ff-charter, .sheet .y-ff-charter { font-family: XCharter, Charter, "Bitstream Charter", "Charis SIL", Georgia, serif; }
+.y-ff-schola, .sheet .y-ff-schola { font-family: "TeX Gyre Schola", "Century Schoolbook", "New Century Schoolbook", "C059", serif; }
+.y-ff-bookman, .sheet .y-ff-bookman { font-family: "TeX Gyre Bonum", "Bookman Old Style", Bookman, "URW Bookman", serif; }
+.y-ff-kp, .sheet .y-ff-kp { font-family: "KpRoman", "Palatino Linotype", Palatino, serif; }
+.y-ff-mono, .sheet .y-ff-mono { font-family: var(--font-doc-tt); }
+.y-ff-serif, .sheet .y-ff-serif { font-family: var(--font-doc); }
+.sheet[data-font="charter"] { --font-doc: XCharter, Charter, "Bitstream Charter", "Charis SIL", Georgia, serif, var(--font-ar), var(--font-he), var(--font-cjk), var(--font-in), var(--font-th), var(--font-si); }
+.sheet[data-font="schola"] { --font-doc: "TeX Gyre Schola", "Century Schoolbook", "New Century Schoolbook", "C059", serif, var(--font-ar), var(--font-he), var(--font-cjk), var(--font-in), var(--font-th), var(--font-si); }
+.sheet[data-font="bookman"] { --font-doc: "TeX Gyre Bonum", "Bookman Old Style", Bookman, "URW Bookman", serif, var(--font-ar), var(--font-he), var(--font-cjk), var(--font-in), var(--font-th), var(--font-si); }
+.sheet[data-font="kp"] { --font-doc: "KpRoman", "Palatino Linotype", Palatino, serif, var(--font-ar), var(--font-he), var(--font-cjk), var(--font-in), var(--font-th), var(--font-si); }
+.sheet[data-font="mono"] { --font-doc: var(--font-doc-tt); }
+
+/* the font and size boxes: Word's editable boxes with their arrow */
+.fbx { display: inline-flex; align-items: center; height: 28px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); margin: 0 1px; }
+.fbx:focus-within { outline: 2px solid var(--blue); outline-offset: 1px; }
+.fbx.off { opacity: .55; }
+.fbx-v { box-sizing: border-box; height: 100%; border: 0; background: transparent; color: var(--ink-ui); font: 13px var(--font-ui); padding: 0 2px 0 7px; min-width: 0; }
+.fbx-v:focus { outline: none; }
+.fbx-font .fbx-v { width: 108px; text-overflow: ellipsis; }
+.fbx-size .fbx-v { width: 26px; text-align: right; padding-left: 4px; }
+.fbx-x { width: 16px; height: 100%; display: inline-flex; align-items: center; justify-content: center; color: var(--mute); cursor: pointer; border-radius: 0 6px 6px 0; }
+.fbx-x:hover { background: var(--blue-wash); color: var(--ink-ui); }
+.fbx-x svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.pop-fbx .fbx-mi .mi-n { font-size: 15px; }
+.pop.pop-fbx-size { min-width: 150px; }
+/* The Font group in Word's two rows of small buttons (the boxes, sizes, case and Clear above;
+   the letters' formats and colours below), as tall as the row: it then takes half the room and
+   the Styles gallery keeps its place beside it. A phone's row, which scrolls, keeps one row of
+   buttons a finger can press. */
+@media (min-width: 861px) {
+  .rb-grp[data-group="font"]:not(.folded) { flex-wrap: wrap; width: 276px; gap: 1px; align-content: center; align-self: center; }
+  .rb-grp[data-group="font"] > .btn.icon, .rb-grp[data-group="font"] .rb-split > .btn.icon:not(.rb-x) { width: 24px; height: 21px; border-radius: 4px; }
+  .rb-grp[data-group="font"] .rb-split > .btn.icon:not(.rb-x) { border-radius: 4px 0 0 4px; }
+  .rb-grp[data-group="font"] .rb-split > .rb-x { width: 12px; height: 21px; border-radius: 0 4px 4px 0; }
+  .rb-grp[data-group="font"] .btn svg { width: 15px; height: 15px; }
+  .rb-grp[data-group="font"] .btn.icon b, .rb-grp[data-group="font"] .btn.icon i, .rb-grp[data-group="font"] .btn.icon u { font-size: 14px; }
+  .rb-grp[data-group="font"] .fbx { height: 21px; border-radius: 4px; }
+  .rb-grp[data-group="font"] .fbx-v { font-size: 12.5px; }
+  .rb-grp[data-group="font"] .fbx-font .fbx-v { width: 106px; }
+  .rb-grp[data-group="font"] .fg { font-size: 14px; height: 16px; }
+  .rb-grp[data-group="font"] .fg-color, .rb-grp[data-group="font"] .fg-hl { height: 19px; }
+  .rb-grp[data-group="font"] .fg-hl svg { width: 13px; height: 13px; }
+  .rb-grp[data-group="font"] .fg-bar { width: 13px; height: 3px; }
+}
+@media (max-width: 860px) {
+  .rb-grp[data-group="font"] > .btn.icon, .rb-grp[data-group="font"] .rb-split > .btn.icon:not(.rb-x) { width: 30px; }
+}
+/* (each button holds its screen reader name: absolute in the row's buttons without position, that
+   name widened a phone's page by the row's scrolled length, once the Font group pushed the
+   lists past the screen's edge) */
+#ribbon .btn { position: relative; }
+/* the Font group's glyphs: letters drawn as Word draws its buttons */
+.rb .btn .fg { display: inline-flex; align-items: center; justify-content: center; position: relative; font: 15px var(--font-doc); line-height: 1; height: 18px; }
+.fg-strike { text-decoration: line-through; text-decoration-thickness: 1.3px; }
+.fg sub, .fg sup { font-size: 9px; line-height: 0; }
+.fg-sub sub { position: relative; top: 4px; margin-left: .5px; } .fg-sup sup { position: relative; top: -5px; margin-left: .5px; }
+.fg-grow i, .fg-shrink i { width: 0; height: 0; border: 3px solid transparent; margin-left: 1px; align-self: flex-start; margin-top: 1px; }
+.fg-grow i { border-bottom: 4px solid currentColor; border-top: 0; }
+.fg-shrink i { border-top: 4px solid currentColor; border-bottom: 0; }
+.fg-case { font-size: 14px; letter-spacing: -.02em; }
+.fg-color, .fg-hl { flex-direction: column; height: 20px; }
+.fg-color { font-weight: 600; }
+.fg-hl svg { width: 15px; height: 15px; margin-bottom: -1px; }
+.fg-bar { display: block; width: 15px; height: 3.5px; border-radius: 1px; margin-top: 1px; background: #FF0000; box-shadow: inset 0 0 0 .5px rgba(0, 0, 0, .25); }
+.fg-hl .fg-bar { background: #FFFF00; }
+.ul-demo { font: 14px var(--font-doc); }
+/* the Format Painter armed: a brush over the page */
+body.fpainting #pages { cursor: copy; }
+#rc-format-painter[aria-pressed="true"] { background: var(--blue-wash); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 45%, transparent); }
+
+/* the Font dialog */
+.pop.pop-font { width: min(560px, calc(100vw - 16px)); }
+.pop.pop-hl { min-width: 0; }
+.fd-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); }
+.fd-tab { border: 0; background: none; color: var(--mute); font: 500 13px var(--font-ui); padding: 6px 10px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.fd-tab[aria-selected="true"] { color: var(--ink-ui); border-bottom-color: var(--blue); }
+.fd-tab:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; border-radius: 4px; }
+.fd-panel { display: flex; flex-direction: column; gap: 10px; padding-top: 8px; }
+.fd-panel[hidden] { display: none; }
+.fd-grid { display: grid; grid-template-columns: 1.5fr 1fr .8fr; gap: 8px 10px; }
+.fd-f { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--mute); min-width: 0; }
+.fd-f .fd-l { font-weight: 500; }
+.pop .fd-f select, .pop .fd-f input { padding: 5px 7px; font-size: 13px; min-width: 0; }
+.pop .fd-num, .pop .fd-size { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; background: var(--chrome); color: var(--ink-ui); font: 13px var(--font-ui); }
+.fd-eff { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px 8px; margin: 0; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px 10px; }
+.fd-eff legend { font-size: 12px; font-weight: 500; color: var(--mute); padding: 0 4px; }
+.fd-ck { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-ui); cursor: pointer; }
+.fd-ck input { margin: 0; accent-color: var(--blue); }
+.fd-pv { border: 1px solid var(--line); border-radius: 8px; background: #FFFFFF; color: #111; min-height: 64px; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 6px 12px; font-family: var(--font-doc); font-size: 20px; }
+.fd-pvt { white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+.fd-note { margin: 0; font-size: 12px; line-height: 1.45; color: var(--mute); }
+.fd-btns { display: flex; align-items: center; gap: 6px; padding-top: 4px; }
+.fd-btns .grow { flex: 1; }
+.fd-btns .btn.ghost { border: 1px solid var(--line); }
+.pop.pop-ruby { width: min(400px, calc(100vw - 16px)); }
+@media (max-width: 640px) {
+  .fd-grid, .fd-eff { grid-template-columns: 1fr 1fr; }
+}

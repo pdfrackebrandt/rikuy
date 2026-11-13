@@ -7,15 +7,42 @@ import { siTex, siOptions, siUnitSymbol } from './siunitx.js';
 import { widgetPath, hashText } from './widget.js';
 import { rtlDocument, languageDir } from './scripts.js';
 import { isLatexMark } from './styles.js';
+import { DVIPS_COLORS, BASE_COLORS } from './ui/kit.js';
+
+const DVIPS = Object.fromEntries(DVIPS_COLORS), XC = Object.fromEntries(BASE_COLORS);
 
 const WIDGET_FILE = /\.html?$/i;
 const STY = {
   textbf: 'bf', textit: 'it', emph: 'em', texttt: 'tt', textsc: 'sc', textsf: 'sf', textrm: 'rm', textup: 'up',
-  textsl: 'sl', textmd: 'md', textnormal: 'rm', underline: 'ul', uline: 'ul', uuline: 'ul', uwave: 'ul',
+  textsl: 'sl', textmd: 'md', textnormal: 'rm', underline: 'ul', uline: 'ul', uuline: 'ul2', uwave: 'ulw',
   sout: 'so', xout: 'so', hl: 'hl', textsuperscript: 'sup', textsubscript: 'sub', mbox: 'nb', text: 'rm',
   fbox: 'fbox', MakeUppercase: 'upper', uppercase: 'upper', MakeLowercase: 'lower', lowercase: 'lower',
-  textcircled: 'rm', centerline: 'rm', foreignlanguage: '', textls: '', ensure: '', phantom: 'ph', hphantom: 'ph'
+  textcircled: 'circ', centerline: 'rm', foreignlanguage: '', textls: 'ls', ensure: '', phantom: 'ph', hphantom: 'ph',
+  // ulem's dashed and dotted lines; the double strikethrough the Font group defines (src/cmd/font.js)
+  dashuline: 'uld', dotuline: 'ulo', culine: 'ul', dsout: 'so2', ruby: 'ruby'
 };
+// the looks the page has for a family of type (\fontfamily{ppl}, fontspec's names, the document's
+// font packages): a class y-ff-<look>, a face of app.css
+const FAMILY_LOOK = {
+  ptm: 'times', qtm: 'times', ntxtlf: 'times', ntxrm: 'times', ppl: 'palatino', qpl: 'palatino', pplx: 'palatino', pplj: 'palatino', zpltlf: 'palatino',
+  phv: 'sans', qhv: 'sans', lmss: 'sans', cmss: 'sans', pag: 'sans', bch: 'charter', xch: 'charter', 'XCharter-TLF': 'charter', pnc: 'schola', qcs: 'schola',
+  pbk: 'bookman', qbk: 'bookman', jkp: 'kp', lmtt: 'mono', cmtt: 'mono', pcr: 'mono', qcr: 'mono', lmr: 'serif', cmr: 'serif'
+};
+export function fontLook(name) {
+  const n = String(name || '').trim();
+  // (the document's text: "constructor" names no family, though every object has one)
+  if (Object.hasOwn(FAMILY_LOOK, n)) return FAMILY_LOOK[n];
+  const l = n.toLowerCase().replace(/[^a-z]/g, '');
+  if (/termes|times/.test(l)) return 'times';
+  if (/pagella|palatino|palladio/.test(l)) return 'palatino';
+  if (/heros|helvetica|arial|biolinum|sans/.test(l)) return 'sans';
+  if (/charter/.test(l)) return 'charter';
+  if (/schola|schoolbook/.test(l)) return 'schola';
+  if (/bonum|bookman/.test(l)) return 'bookman';
+  if (/cursor|courier|mono|typewriter/.test(l)) return 'mono';
+  if (/latinmodern|computermodern|^lm/.test(l)) return 'serif';
+  return '';
+}
 const DECL = {
   bf: 'bf', bfseries: 'bf', it: 'it', itshape: 'it', em: 'em', tt: 'tt', ttfamily: 'tt', sc: 'sc', scshape: 'sc',
   sf: 'sf', sffamily: 'sf', rm: 'rm', rmfamily: 'rm', normalfont: 'rm', sl: 'sl', slshape: 'sl', upshape: 'up',
@@ -85,8 +112,20 @@ const DEFAULT_THMS = {
 const SIZE_SETS = {
   10: { tiny: 0.5, scriptsize: 0.7, footnotesize: 0.8, small: 0.9, normalsize: 1, large: 1.2, Large: 1.44, LARGE: 1.728, huge: 2.074, Huge: 2.488 },
   11: { tiny: 0.548, scriptsize: 0.731, footnotesize: 0.822, small: 0.913, normalsize: 1, large: 1.096, Large: 1.315, LARGE: 1.578, huge: 1.894, Huge: 2.272 },
-  12: { tiny: 0.5, scriptsize: 0.667, footnotesize: 0.833, small: 0.9125, normalsize: 1, large: 1.2, Large: 1.44, LARGE: 1.728, huge: 2.074, Huge: 2.074 }
+  12: { tiny: 0.5, scriptsize: 0.667, footnotesize: 0.833, small: 0.9125, normalsize: 1, large: 1.2, Large: 1.44, LARGE: 1.728, huge: 2.074, Huge: 2.074 },
+  // extsizes' (extarticle, extreport, extbook: size8.clo to size20.clo)
+  8: { tiny: 0.625, scriptsize: 0.625, footnotesize: 0.75, small: 0.875, normalsize: 1, large: 1.25, Large: 1.369, LARGE: 1.5, huge: 1.8, Huge: 2.16 },
+  9: { tiny: 0.556, scriptsize: 0.667, footnotesize: 0.778, small: 0.889, normalsize: 1, large: 1.111, Large: 1.217, LARGE: 1.333, huge: 1.6, Huge: 1.92 },
+  14: { tiny: 0.417, scriptsize: 0.556, footnotesize: 0.694, small: 0.833, normalsize: 1, large: 1.2, Large: 1.44, LARGE: 1.728, huge: 2.074, Huge: 2.488 },
+  17: { tiny: 0.463, scriptsize: 0.579, footnotesize: 0.694, small: 0.833, normalsize: 1, large: 1.2, Large: 1.44, LARGE: 1.728, huge: 2.074, Huge: 2.488 },
+  20: { tiny: 0.482, scriptsize: 0.579, footnotesize: 0.694, small: 0.833, normalsize: 1, large: 1.2, Large: 1.44, LARGE: 1.728, huge: 2.073, Huge: 2.487 }
 };
+// a base size other than 10, 11 and 12pt: the size of its \normalsize, its \baselineskip, the
+// widest text, the paragraph indent and a footnote's \baselineskip, as extsizes sets them (KOMA's
+// fontsize=13pt and the like: in proportion to 12pt)
+const EXT = { 8: { fs: 8, bs: 9.5, tw: 330, pi: 12, fnbs: 7 }, 9: { fs: 9, bs: 11, tw: 330, pi: 14, fnbs: 8 }, 14: { fs: 14.4, bs: 17, tw: 430, pi: 21.6, fnbs: 12 },
+  17: { fs: 17.28, bs: 22, tw: 480, pi: 25.9, fnbs: 14 }, 20: { fs: 20.74, bs: 25, tw: 480, pi: 31.1, fnbs: 17 } };
+export const extSize = (pt) => EXT[pt] || (pt > 0 && !SIZE_SETS[pt] ? { fs: pt, bs: Math.round(pt * 1.2 * 10) / 10, tw: Math.min(480, Math.round(390 * pt / 12)), pi: 1.5 * pt, fnbs: Math.round(pt * 0.85 * 1.2) } : null);
 const FN_SYMS = ['*', '†', '‡', '§', '¶', '‖', '**', '††', '‡‡'];
 const isWS = (c) => c === ' ' || c === '\t' || c === '\n' || c === '\r';
 
@@ -290,7 +329,8 @@ class Builder {
       if (!O.secnumdepthSet) O.secnumdepth = 2;
       for (const k of ['equation', 'figure', 'table']) if (!this.within[k]) this.within[k] = 'chapter';
     }
-    if (O.parindent == null) O.parindent = O.parskip ? 0 : ({ 10: 15, 11: 17, 12: 18 }[O.pt] || 15);
+    O.ext = extSize(O.pt);
+    if (O.parindent == null) O.parindent = O.parskip ? 0 : ({ 10: 15, 11: 17, 12: 18 }[O.pt] || (O.ext ? O.ext.pi : 15));
     if (O.natbib && !O.forceNumeric) O.citeStyle = 'authoryear';
     if (O.biblatex) O.citeStyle = O.biblatexStyle === 'authoryear' ? 'authoryear' : 'numeric';
     if (['unsrt', 'unsrtnat', 'ieeetr', 'unsrt_abbrv'].includes(O.bibstyle)) O.sort = false;
@@ -328,6 +368,9 @@ class Builder {
     const O = this.opts;
     for (const o of list.split(',').map((x) => x.trim())) {
       if (/^(10|11|12)pt$/.test(o)) O.pt = parseInt(o, 10);
+      // extarticle and its kin (and memoir, beamer) take more sizes; KOMA's fontsize= any
+      else if (/^(8|9|14|17|20)pt$/.test(o) && /^(ext(article|report|book|letter|proc)|memoir|beamer)$/.test(O.cls)) O.pt = parseInt(o, 10);
+      else if (/^fontsize\s*=\s*\d+(\.\d+)?pt$/.test(o) && /^scr/.test(O.cls)) O.pt = parseFloat(o.split('=')[1]);
       if (o === 'a4paper') O.paper = 'a4';
       if (o === 'letterpaper') O.paper = 'letter';
       if (o === 'twocolumn') O.twocolumn = true;
@@ -387,9 +430,15 @@ class Builder {
             const last = langs[langs.length - 1] || 'english';
             O.lang = /german|ngerman|austrian/.test(last) ? 'de' : /spanish/.test(last) ? 'es' : /french/.test(last) ? 'fr' : 'en';
           }
-          if (p === 'times' || p === 'mathptmx' || p === 'newtxtext') O.font = 'times';
-          if (p === 'palatino' || p === 'mathpazo' || p === 'newpxtext') O.font = 'palatino';
-          if (p === 'helvet') O.font = 'sans';
+          if (p === 'times' || p === 'mathptmx' || p === 'newtxtext' || p === 'tgtermes' || p === 'txfonts') O.font = 'times';
+          if (p === 'palatino' || p === 'mathpazo' || p === 'newpxtext' || p === 'tgpagella' || p === 'pxfonts') O.font = 'palatino';
+          // (Helvetica as the sans serif only: the text stays in the serif without \familydefault)
+          if (p === 'helvet' || p === 'tgheros') O.sans = 'helvetica';
+          if (p === 'XCharter' || p === 'charter' || p === 'charterbt') O.font = 'charter';
+          if (p === 'tgschola' || p === 'newcent') O.font = 'schola';
+          if (p === 'tgbonum' || p === 'bookman') O.font = 'bookman';
+          if (p === 'kpfonts') O.font = 'kp';
+          if (p === 'lmodern') O.font = '';
         }
         break;
       }
@@ -412,7 +461,12 @@ class Builder {
       case 'author': this.meta.author = { nd, ctx, a: nd.args[1] }; break;
       case 'date': this.meta.date = { nd, ctx, a: nd.args[0] }; break;
       case 'setcounter': if (A(0).trim() === 'secnumdepth') { O.secnumdepth = parseInt(A(1), 10); O.secnumdepthSet = true; } break;
-      default: this.defCmd(nd, ctx);
+      // fontspec's main font, by its name (the page has a look for the common ones)
+      case 'setmainfont': { const a = nd.args.filter((x) => x && !x.o).pop(); if (a) O.font = (fontLook(this.argText(ctx, a)) || '').replace('serif', ''); break; }
+      default:
+        // \renewcommand{\familydefault}{\sfdefault}: the document in its sans serif
+        if (nd.def && nd.def.name === 'familydefault') O.font = /\\sfdefault\b/.test(nd.def.body) ? 'sans' : /\\ttdefault\b/.test(nd.def.body) ? 'mono' : O.font;
+        this.defCmd(nd, ctx);
     }
   }
 
@@ -469,7 +523,9 @@ class Builder {
   colorArg(ctx, opt, val) {
     const spec = this.argText(ctx, val).trim();
     if (opt) return colorValue(this.argText(ctx, opt), spec) || spec;
-    return this.named(spec) || spec;
+    // (xcolor's dvipsnames, BrickRed and the like, which the Font Color picker writes: as the
+    // values they print in, for the page and for Word)
+    return this.named(spec) || (Object.hasOwn(DVIPS, spec) ? '#' + DVIPS[spec] : spec);
   }
 
   // a name of the document's own; used, so the block is drawn again when its \definecolor changes
@@ -1740,13 +1796,48 @@ class Builder {
       out.push(this.styAtom(ctx, { k: 'sty', st: 'dir', dir: d, kids, s: nd.s, e: nd.e, is: a.is, ie: a.ie, cmd: name }));
       return false;
     }
+    // a size or a family for the rest of the group, as the Font group writes them:
+    // {\fontsize{14}{17}\selectfont ...}, {\fontfamily{ppl}\selectfont ...}, {\fontspec{TeX Gyre Pagella} ...}
+    if ((name === 'fontsize' && nd.args[1]) || (name === 'fontfamily' && nd.args[0]) || (name === 'fontspec' && nd.args[1])) {
+      acc.flush();
+      const kids = this.inl(nodes.slice(k + 1), ctx, fns);
+      if (name === 'fontsize') { const pt = parseFloat(A(0)); out.push({ k: 'sty', st: 'fs', fs: pt > 0 && pt < 400 ? pt : null, kids, f: ctx.f, decl: true }); }
+      else { const look = fontLook(A(name === 'fontspec' ? 1 : 0)); out.push({ k: 'sty', st: look ? 'ff-' + look : 'ff', kids, f: ctx.f, decl: true }); }
+      return true;
+    }
+    // ruby (luatexja-ruby, the ruby package): the reading above its base, as the title the page shows
+    if (name === 'ruby' && nd.args[1] && nd.args[2]) {
+      acc.flush();
+      const a = nd.args[1], kids = this.inl(a.nodes, ctx, fns);
+      if (!kids.length) kids.push(this.ph(ctx, a.is));
+      out.push(this.styAtom(ctx, { k: 'sty', st: 'ruby', kids, s: nd.s, e: nd.e, is: a.is, ie: a.ie, cmd: name, title: texToPlain(A(2)).replace(/\|/g, '') }));
+      return false;
+    }
+    // a run moved up or down, or scaled across: \raisebox{2pt}{..}, \scalebox{1.2}[1]{..}
+    if ((name === 'raisebox' || name === 'scalebox') && nd.args[0] && nd.args[nd.args.length - 1]) {
+      acc.flush();
+      const a = nd.args[nd.args.length - 1], kids = this.inl(a.nodes, ctx, fns);
+      if (!kids.length) kids.push(this.ph(ctx, a.is));
+      const v = name === 'raisebox' ? parseLen(A(0), this.opts.pt) : parseFloat(A(0));
+      const x = { k: 'sty', st: name === 'raisebox' ? 'raise' : 'scale', kids, s: nd.s, e: nd.e, is: a.is, ie: a.ie, cmd: name };
+      if (typeof v === 'number' && Number.isFinite(v)) x[name === 'raisebox' ? 'raise' : 'scale'] = v;
+      out.push(this.styAtom(ctx, x));
+      return false;
+    }
     if (name in STY && nd.args.some(Boolean)) {
       acc.flush();
       const a = nd.args.filter(Boolean).pop();
-      if (name === 'foreignlanguage' || name === 'textls') { out.push(...this.inl(a.nodes, ctx, fns)); return false; }
+      if (name === 'foreignlanguage') { out.push(...this.inl(a.nodes, ctx, fns)); return false; }
       const kids = this.inl(a.nodes, ctx, fns);
       if (!kids.length) kids.push(this.ph(ctx, a.is));
-      out.push(this.styAtom(ctx, { k: 'sty', st: STY[name], kids, s: nd.s, e: nd.e, is: a.is, ie: a.ie, cmd: name }));
+      const x = { k: 'sty', st: STY[name], kids, s: nd.s, e: nd.e, is: a.is, ie: a.ie, cmd: name };
+      // the highlighter's colour (\hl[green]{..}, the Font group's \hl); microtype's tracking
+      // (xcolor's own names as their values: the highlighter is drawn in the colour TeX prints)
+      if (name === 'hl' && nd.args[0] && nd.args[0] !== a) { const c = this.colorArg(ctx, null, nd.args[0]); x.color = Object.hasOwn(XC, c) ? '#' + XC[c] : c; }
+      // (an underline in a colour of its own, \culine{red}{..}: the line's colour, not the words')
+      if (name === 'culine' && nd.args[0] && nd.args[0] !== a) x.color = this.colorArg(ctx, null, nd.args[0]);
+      if (name === 'textls') { const t = nd.args[0] && nd.args[0] !== a ? parseFloat(A(0)) : 100; if (Number.isFinite(t)) x.ls = t; }
+      out.push(this.styAtom(ctx, x));
       return false;
     }
     if (name in DECL) {
@@ -2078,7 +2169,7 @@ class Builder {
       cites: this.cites,
       nociteAll: this.nociteAll,
       fragment: !!this.fragment,
-      sizes: SIZE_SETS[this.opts.pt] || SIZE_SETS[10],
+      sizes: SIZE_SETS[this.opts.pt] || (this.opts.pt > 12 ? SIZE_SETS[14] : this.opts.pt < 10 ? SIZE_SETS[9] : SIZE_SETS[10]),
       thms: this.thms,
       docBody: this.docBody || null
     };

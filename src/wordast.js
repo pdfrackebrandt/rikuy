@@ -34,6 +34,8 @@ export function safeUrl(u) {
 
 // A colour as Word writes one (RRGGBB): a hex value, one of xcolor's base names, or "red!40"
 // (mixed with white, as xcolor does); null for a name only the document's preamble knows.
+// the fonts Word has for the page's looks (src/charfmt.js FONTS), by the name of their style
+export const WORD_FONTS = { times: 'Times New Roman', palatino: 'Palatino Linotype', sans: 'Arial', charter: 'Charter', schola: 'Century Schoolbook', bookman: 'Bookman Old Style', mono: 'Courier New' };
 const XCOLOR = { red: 'FF0000', green: '00FF00', blue: '0000FF', cyan: '00FFFF', magenta: 'FF00FF', yellow: 'FFFF00', black: '000000', white: 'FFFFFF', gray: '808080', grey: '808080', darkgray: '404040', lightgray: 'BFBFBF', brown: 'BF8040', lime: 'BFFF00', olive: '808000', orange: 'FF8000', pink: 'FFBFBF', purple: 'BF0040', teal: '008080', violet: '800080' };
 export function wordColor(c) {
   c = String(c || '').trim();
@@ -502,8 +504,30 @@ class Walker {
             if (!hex) { this.degrade('text in a colour the preamble defines, without the colour'); return kids; }
             return [{ t: 'Span', c: [attr('', [], [['custom-style', (x.st === 'bg' ? 'Shade ' : 'Colour ') + hex]]), kids] }];
           }
-          case 'hl': return [{ t: 'Span', c: [attr('', [], [['custom-style', 'Highlight']]), kids] }];
-          default: return kids;
+          case 'hl': {
+            // (a highlighter in a colour of its own, \hl[green]: a style of that colour)
+            const hex = x.color ? wordColor(x.color) : null;
+            return [{ t: 'Span', c: [attr('', [], [['custom-style', hex && hex !== 'FFFF00' ? 'Highlight ' + hex : 'Highlight']]), kids] }];
+          }
+          // the Font group's other formats (src/cmd/font.js), each a character style named after
+          // what it does, which exportDocx fills in (src/wordjobs.js): ulem's lines, the double
+          // strikethrough, all caps, a border, a size, a font, spacing, position and scale
+          case 'ul2': case 'ulw': case 'uld': case 'ulo': return [{ t: 'Underline', c: [{ t: 'Span', c: [attr('', [], [['custom-style', { ul2: 'Underline Double', ulw: 'Underline Wave', uld: 'Underline Dash', ulo: 'Underline Dotted' }[x.st]]]), kids] }] }];
+          case 'so2': return [{ t: 'Span', c: [attr('', [], [['custom-style', 'Double Strikethrough']]), kids] }];
+          case 'upper': return [{ t: 'Span', c: [attr('', [], [['custom-style', 'All Caps']]), kids] }];
+          case 'fbox': return [{ t: 'Span', c: [attr('', [], [['custom-style', 'Character Border']]), kids] }];
+          case 'sf': return [{ t: 'Span', c: [attr('', [], [['custom-style', 'Font Sans']]), kids] }];
+          case 'fs': { const hp = Math.round((x.fs || 0) * 2); return hp >= 2 && hp <= 3276 ? [{ t: 'Span', c: [attr('', [], [['custom-style', 'Size ' + hp]]), kids] }] : kids; }
+          case 'ls': { const tw = Math.round((x.ls || 0) / 1000 * (this.m.opts.pt || 10) * 20); return tw ? [{ t: 'Span', c: [attr('', [], [['custom-style', 'Spacing ' + (tw < 0 ? 'm' : '') + Math.abs(tw)]]), kids] }] : kids; }
+          case 'raise': { const hp = Math.round((x.raise || 0) * 2); return hp ? [{ t: 'Span', c: [attr('', [], [['custom-style', 'Position ' + (hp < 0 ? 'm' : '') + Math.abs(hp)]]), kids] }] : kids; }
+          case 'scale': { const pc = Math.round((x.scale || 1) * 100); return pc > 0 && pc !== 100 && pc <= 600 ? [{ t: 'Span', c: [attr('', [], [['custom-style', 'Scale ' + pc]]), kids] }] : kids; }
+          default: {
+            // a size of LaTeX ({\large ..}): its points at the document's size; a font by its look
+            const z = /^z-(\w+)$/.exec(x.st || ''), ff = /^ff-(\w+)$/.exec(x.st || '');
+            if (z && this.m.sizes && this.m.sizes[z[1]]) { const hp = Math.round(this.m.sizes[z[1]] * ((this.m.opts.ext && this.m.opts.ext.fs) || this.m.opts.pt || 10) * 2); if (hp !== Math.round(((this.m.opts.ext && this.m.opts.ext.fs) || this.m.opts.pt || 10) * 2)) return [{ t: 'Span', c: [attr('', [], [['custom-style', 'Size ' + hp]]), kids] }]; }
+            if (ff && Object.hasOwn(WORD_FONTS, ff[1])) return [{ t: 'Span', c: [attr('', [], [['custom-style', 'Font ' + ff[1][0].toUpperCase() + ff[1].slice(1)]]), kids] }];
+            return kids;
+          }
         }
       }
       case 'mac': return this.inl(x.kids, fns);

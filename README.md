@@ -56,6 +56,11 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   footnote, equation, figure, table, comment or label. The Navigation pane has the headings
   (drag one to move its section), thumbnails of the pages and the results; Alt+Shift and the
   arrows promote, demote and move headings with their sections, and paragraphs.
+- **Word's Font group.** The font and size boxes (the document's font package and class size, or
+  the selection's), bigger and smaller, Change Case, Clear All Formatting, underline styles,
+  strikethrough, sub- and superscript, highlighter and font colours, small and all caps, the
+  Font dialog and the Format Painter; each writes the LaTeX you would (`\uline`, `\hl[green]`,
+  `{\large …}`) and takes off what you wrote by hand.
 - **The whole TeX Live 2026 toolchain.** The three engines, latexmk's reruns, bibtex and biber,
   makeindex and xindy, glossaries, and shell escape: Ghostscript, gnuplot, Python with Pygments
   (minted), dvips, Asymptote with 3D rendering, and TeX starting TeX (TikZ externalize,

@@ -112,9 +112,11 @@ def letters(page):
     before = src(page)
     select_text(page, 'words')
     press(page, 'rb-u')
-    check('U underlines the selection and keeps it selected', '\\underline{words}' in src(page) and page.evaluate('getSelection().toString()') == 'words' and state(page)['rb-u'][1], src(page)[src(page).find('slanted'):][:40])
+    # (\uline, ulem's, which breaks across lines: Home's Font group, src/cmd/font.js)
+    check('U underlines the selection and keeps it selected', '\\uline{words}' in src(page) and page.evaluate('getSelection().toString()') == 'words' and state(page)['rb-u'][1], src(page)[src(page).find('slanted'):][:40])
     press(page, 'rb-u')
-    check('U again takes the underline off', src(page) == before and not state(page)['rb-u'][1])
+    # (the line that loads ulem stays: other words may use it)
+    check('U again takes the underline off', src(page).replace('\\usepackage[normalem]{ulem}\n', '') == before and not state(page)['rb-u'][1])
     select_text(page, 'First')
     press(page, 'rb-b'); press(page, 'rb-i')
     check('B and I on a selection', '\\emph{\\textbf{First}}' in src(page) or '\\textbf{\\emph{First}}' in src(page), src(page)[src(page).find('Opening'):][:60])
@@ -285,12 +287,13 @@ def keyboard(page):
     stops = page.evaluate('[...document.querySelectorAll("#ribbon select, #ribbon button")].filter((x) => x.tabIndex === 0).map((x) => x.id)')
     # (the ribbon is the tablist "Ribbon" over one toolbar per tab, named after it; Home's groups in Word's order: Font, Paragraph, Styles, Insert)
     bar = page.evaluate('(() => { const t = document.querySelector("#rp-home > [role=toolbar]"); return [document.getElementById("rb-tabs").getAttribute("role"), document.getElementById("rb-tabs").getAttribute("aria-label"), t && t.getAttribute("aria-label")]; })()')
-    check('the ribbon\'s open tab is a toolbar with one tab stop', bar == ['tablist', 'Ribbon', 'Home'] and stops == ['rb-b'], (bar, stops))
+    # (its first control is the Clipboard group's Format Painter, in Word's order)
+    check('the ribbon\'s open tab is a toolbar with one tab stop', bar == ['tablist', 'Ribbon', 'Home'] and stops == ['rc-format-painter'], (bar, stops))
     page.focus('#rb-st-p')
     seen = []
     for key in ('ArrowRight', 'ArrowLeft', 'ArrowLeft', 'End', 'Home', 'ArrowRight'):
         page.keyboard.press(key); seen.append(page.evaluate('document.activeElement.id'))
-    check('arrows, Home and End move between its controls (the strip\'s disabled arrows skipped)', seen == ['rb-st-section', 'rb-st-p', 'rb-ol', 'b-save', 'rb-b', 'rb-i'], seen)
+    check('arrows, Home and End move between its controls (the strip\'s disabled arrows skipped), the font box among them', seen == ['rb-st-section', 'rb-st-p', 'rb-ol', 'b-save', 'rc-format-painter', 'rb-font'], seen)
     page.focus('#rb-i'); page.keyboard.press('ArrowLeft')
     ring = page.evaluate('(() => { const c = getComputedStyle(document.activeElement); return c.outlineStyle !== "none" && parseFloat(c.outlineWidth) > 0; })()')
     page.keyboard.press('Enter'); page.wait_for_timeout(200)
@@ -620,7 +623,7 @@ def gallery_widths(page):
     not fit and on phones; one row height."""
     load_doc(page, DOC)
     seen = {}
-    for w in (1920, 1600, 1536, 1440, 1366, 1300, 1280, 1180, 1100, 1024, 1000, 900, 820, 390):
+    for w in (1920, 1840, 1800, 1760, 1700, 1600, 1536, 1440, 1366, 1300, 1280, 1180, 1100, 1024, 1000, 900, 820, 390):
         page.set_viewport_size({'width': w, 'height': 900}); page.wait_for_timeout(250)
         click_text(page, 'First paragraph', 2); page.wait_for_timeout(120)
         seen[w] = page.evaluate("""() => { const r = document.getElementById('ribbon'), sel = document.getElementById('rb-style');
