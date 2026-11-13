@@ -175,11 +175,11 @@ function styled(docx, rtl, have) {
     if (k >= 0 && !/<w:bidi\b/.test(d.slice(d.lastIndexOf('<w:sectPr'), k))) d = d.slice(0, k) + '<w:bidi />' + d.slice(k);
   }
   if (d.includes('<w:bidi />') && d.includes('<w:tbl>')) d = bidiTables(d);
-  d = scriptRuns(d, skip);
+  d = highlights(scriptRuns(d, skip));
   if (d !== d0) { parts.set(dp, d); n++; }
   for (const name of ['word/footnotes.xml', 'word/comments.xml']) {
     if (!parts.has(name)) continue;
-    const was = text(parts.get(name)), now = scriptRuns(was, skip);
+    const was = text(parts.get(name)), now = highlights(scriptRuns(was, skip));
     if (now !== was) { parts.set(name, now); n++; }
   }
   let st = text(parts.get(p));
@@ -205,7 +205,7 @@ function styled(docx, rtl, have) {
   st = st.replace(/(<w:style [^>]*w:styleId="(Colour|Shade|Highlight|Centred|RightAligned)([0-9A-F]{6})?"[^>]*>(?:(?!<\/w:style>)[\s\S])*?)(<\/w:style>)/g, (s, head, kind, hex, end) => {
     const add = kind === 'Colour' && hex ? '<w:rPr><w:color w:val="' + hex + '" /></w:rPr>'
       : kind === 'Shade' && hex ? '<w:rPr><w:shd w:val="clear" w:color="auto" w:fill="' + hex + '" /></w:rPr>'
-        : kind === 'Highlight' ? '<w:rPr><w:shd w:val="clear" w:color="auto" w:fill="' + (hex || 'FFFF00') + '" /></w:rPr>'
+        : kind === 'Highlight' && !HL_WORD[hex || 'FFFF00'] ? '<w:rPr><w:shd w:val="clear" w:color="auto" w:fill="' + hex + '" /></w:rPr>'
           : kind === 'Centred' && !hex ? '<w:pPr><w:jc w:val="center" /></w:pPr>'
             : kind === 'RightAligned' && !hex ? '<w:pPr><w:jc w:val="right" /></w:pPr>' : '';
     if (!add || /<w:[pr]Pr>/.test(head)) return s;
@@ -228,6 +228,24 @@ function styled(docx, rtl, have) {
   if (!n) return docx;
   parts.set(p, st);
   return zip(parts);
+}
+
+// Word's highlighter has sixteen colours, set on each run (a style cannot carry one): a run of
+// the Highlight style in one of them gets Word's own highlight, so Text Highlight Color shows and
+// takes it off; any other colour is the style's shading. (w:highlight goes where Word's order of
+// run properties puts it: before the underline, the border, the shading and the language.)
+const HL_WORD = { FFFF00: 'yellow', '00FF00': 'green', '00FFFF': 'cyan', FF00FF: 'magenta', '0000FF': 'blue', FF0000: 'red', '000080': 'darkBlue', '008080': 'darkCyan',
+  '008000': 'darkGreen', '800080': 'darkMagenta', '800000': 'darkRed', '808000': 'darkYellow', '808080': 'darkGray', BFBFBF: 'lightGray', C0C0C0: 'lightGray', '000000': 'black', FFFFFF: 'white' };
+function highlights(xml) {
+  if (!xml.includes('w:val="Highlight')) return xml;
+  return xml.replace(/<w:rPr>((?:(?!<\/w:rPr>)[\s\S])*?)<\/w:rPr>/g, (all, inner) => {
+    const m = /<w:rStyle w:val="Highlight([0-9A-F]{6})?"\s*\/>/.exec(inner);
+    const name = m && HL_WORD[m[1] || 'FFFF00'];
+    if (!name || /<w:highlight\b/.test(inner)) return all;
+    const k = inner.search(/<w:(?:u|effect|bdr|shd|fitText|vertAlign|rtl|cs|em|lang|eastAsianLayout|specVanish|oMath)\b/);
+    const at = k < 0 ? inner.length : k;
+    return '<w:rPr>' + inner.slice(0, at) + '<w:highlight w:val="' + name + '" />' + inner.slice(at) + '</w:rPr>';
+  });
 }
 
 // w:bidiVisual on each table of document.xml whose paragraphs all carry w:bidi

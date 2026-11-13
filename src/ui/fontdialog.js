@@ -104,6 +104,8 @@ export function openFontDialog(app) {
   // ---- Font
   const famOpts = [];
   if (S.fontSel) famOpts.push(['', S.st.docFont.name + ' (the document\'s)'], ...F.GENERIC.map((x) => [x.id, x.name]));
+  // (a document font Rikuy does not list is there as it is: OK with it chosen changes nothing)
+  else if (!S.st.docFont.id) famOpts.push(['', S.st.docFont.name]);
   for (const x of F.FONTS) if (S.fontSel ? (S.st.fontspec ? x.spec : x.family) : S.st.fontspec ? x.spec : x.pkgs) famOpts.push([x.id, x.name]);
   const fam = select(famOpts, famOpts.some(([v]) => v === S.family) ? S.family : famOpts[0][0]);
   const style = select([['', 'Regular'], ['i', 'Italic'], ['b', 'Bold'], ['bi', 'Bold Italic']], (S.bold ? 'b' : '') + (S.italic ? 'i' : ''));
@@ -122,7 +124,7 @@ export function openFontDialog(app) {
   const grid = mk('div', 'fd-grid');
   grid.append(field('Font name', fam), field('Font style', style), field('Size', size, 'fd-sz'), field('Font color', color), field('Underline style', under), field('Underline color', ulc));
   grid.append(dl);
-  const scope = mk('p', 'fd-note', S.fontSel ? 'Font and size apply to the selected text.' : 'No text is selected: the font and size apply to the whole document, the effects to what you type next.');
+  const scope = mk('p', 'fd-note', S.sel ? 'OK formats the selected text; Set As Default makes the font and size the document\'s.' : 'OK formats the word at the caret (or what you type there next); Set As Default makes the font and size the document\'s.');
   const eff = mk('fieldset', 'fd-eff');
   eff.append(mk('legend', '', 'Effects'));
   const boxes = {};
@@ -256,7 +258,7 @@ function applyFont(app, S, W) {
   if (W.ligs === 'none' && !noLig) { steps.push((t, a, b) => ({ text: t, a, b, need: { pkgs: { microtype: null } } })); doc.push((t) => addLine(t, LIGS)); }
   if (W.ligs === 'std' && noLig) doc.push((t) => dropLine(t, new RegExp('^' + LIGS.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '[ \\t]*\\r?\\n', 'm')));
   if (!steps.length && !doc.length) return false;
-  return app.fmtCommit(steps, { doc });
+  return app.fmtCommit(steps, { doc, word: 'inside' });
 }
 // a line of the preamble taken out, or put in after the packages
 function dropLine(t, re) {

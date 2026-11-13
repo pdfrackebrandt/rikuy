@@ -379,11 +379,12 @@ await ok('to Word: colour, highlight, centred text and a list\'s own labels are 
   const parts = unzip(E.docx);
   const d = text(parts.get('word/document.xml')), st = text(parts.get('word/styles.xml')), nu = text(parts.get('word/numbering.xml'));
   assert.match(d, /<w:rStyle w:val="ColourFF0000" \/><\/w:rPr><w:t[^>]*>Red words/);
-  assert.match(d, /<w:rStyle w:val="Highlight" \/><\/w:rPr><w:t[^>]*>marked ones/);
+  // (Word's own highlight on the run, which Text Highlight Color shows and takes off; review L6)
+  assert.match(d, /<w:rStyle w:val="Highlight" \/><w:highlight w:val="yellow" \/><\/w:rPr><w:t[^>]*>marked ones/);
   assert.match(d, /<w:pStyle w:val="Centred" \/>/);
   assert.match(st, /w:styleId="ColourFF0000">(?:(?!<\/w:style>)[\s\S])*<w:rPr><w:color w:val="FF0000" \/><\/w:rPr><\/w:style>/);
   assert.match(st, /w:styleId="Colour0F9ED5">(?:(?!<\/w:style>)[\s\S])*<w:color w:val="0F9ED5" \/>/);
-  assert.match(st, /w:styleId="Highlight">(?:(?!<\/w:style>)[\s\S])*<w:shd [^>]*w:fill="FFFF00" \/>/);
+  assert.doesNotMatch(st, /w:styleId="Highlight">(?:(?!<\/w:style>)[\s\S])*<w:shd [^>]*w:fill="FFFF00" \/>/);
   assert.match(st, /w:styleId="Centred">(?:(?!<\/w:style>)[\s\S])*<w:pPr><w:jc w:val="center" \/><\/w:pPr><\/w:style>/);
   assert.match(nu, /<w:numFmt w:val="lowerLetter" \/><w:lvlText w:val="\(%1\)" \/>/);
   assert.equal(importInto(E.docx, files).files.size, 0);
@@ -405,8 +406,10 @@ await ok('to Word: the Font group\'s formats as Word\'s own (a highlighter\'s co
   const d = text(parts.get('word/document.xml')), st = text(parts.get('word/styles.xml'));
   const styled = (id, words) => assert.match(d, new RegExp('<w:rStyle w:val="' + id + '" />(?:(?!</w:r>)[\\s\\S])*<w:t[^>]*>' + words), id + ' on ' + words);
   const fills = (id, xml) => assert.match(st, new RegExp('w:styleId="' + id + '">(?:(?!</w:style>)[\\s\\S])*' + xml.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), id);
-  styled('Highlight00FF00', 'green marked'); fills('Highlight00FF00', '<w:shd w:val="clear" w:color="auto" w:fill="00FF00" />');
-  styled('Highlight', 'yellow marked'); fills('Highlight', 'w:fill="FFFF00"');
+  styled('Highlight00FF00', 'green marked'); styled('Highlight00FF00" /><w:highlight w:val="green', 'green marked');
+  styled('Highlight', 'yellow marked'); styled('Highlight" /><w:highlight w:val="yellow', 'yellow marked');
+  // (a colour Word's highlighter does not have: the style's shading)
+  assert.match(exportFiles(new Map([['main.tex', src.replace('\\hl[green]', '\\hl[orange]')]])).docx ? text(unzip(exportFiles(new Map([['main.tex', src.replace('\\hl[green]', '\\hl[orange]')]])).docx).get('word/styles.xml')) : '', /w:styleId="HighlightFF8000">(?:(?!<\/w:style>)[\s\S])*<w:shd [^>]*w:fill="FF8000" \/>/);
   styled('UnderlineDouble', 'twice under'); fills('UnderlineDouble', '<w:u w:val="double" />');
   styled('UnderlineWave', 'wavy'); fills('UnderlineWave', '<w:u w:val="wave" />');
   fills('UnderlineDash', '<w:u w:val="dash" />'); fills('UnderlineDotted', '<w:u w:val="dotted" />');

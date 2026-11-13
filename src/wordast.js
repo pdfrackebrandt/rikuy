@@ -32,10 +32,10 @@ export function safeUrl(u) {
   try { const x = new URL(s); return /^(https?|mailto|ftp):$/.test(x.protocol) ? x.href : null; } catch (e) { return null; }
 }
 
-// A colour as Word writes one (RRGGBB): a hex value, one of xcolor's base names, or "red!40"
-// (mixed with white, as xcolor does); null for a name only the document's preamble knows.
 // the fonts Word has for the page's looks (src/charfmt.js FONTS), by the name of their style
 export const WORD_FONTS = { times: 'Times New Roman', palatino: 'Palatino Linotype', sans: 'Arial', charter: 'Charter', schola: 'Century Schoolbook', bookman: 'Bookman Old Style', mono: 'Courier New' };
+// A colour as Word writes one (RRGGBB): a hex value, one of xcolor's base names, or "red!40"
+// (mixed with white, as xcolor does); null for a name only the document's preamble knows.
 const XCOLOR = { red: 'FF0000', green: '00FF00', blue: '0000FF', cyan: '00FFFF', magenta: 'FF00FF', yellow: 'FFFF00', black: '000000', white: 'FFFFFF', gray: '808080', grey: '808080', darkgray: '404040', lightgray: 'BFBFBF', brown: 'BF8040', lime: 'BFFF00', olive: '808000', orange: 'FF8000', pink: 'FFBFBF', purple: 'BF0040', teal: '008080', violet: '800080' };
 export function wordColor(c) {
   c = String(c || '').trim();
@@ -532,6 +532,14 @@ class Walker {
           // strikethrough, all caps, a border, a size, a font, spacing, position and scale
           case 'ul2': case 'ulw': case 'uld': case 'ulo': return [{ t: 'Underline', c: [{ t: 'Span', c: [attr('', [], [['custom-style', { ul2: 'Underline Double', ulw: 'Underline Wave', uld: 'Underline Dash', ulo: 'Underline Dotted' }[x.st]]]), kids] }] }];
           case 'so2': return [{ t: 'Span', c: [attr('', [], [['custom-style', 'Double Strikethrough']]), kids] }];
+          // (Word's phonetic guide is a field pandoc cannot write: the reading in brackets after
+          // its text, said among what Word gets otherwise)
+          case 'ruby': {
+            if (!x.title) return kids;
+            this.degrade('a phonetic guide, as its reading in brackets after the text');
+            const wide = /[\u3040-\u30FF\u3400-\u9FFF\uAC00-\uD7AF]/.test(x.title);
+            return [...kids, { t: 'Str', c: (wide ? '\uFF08' : '(') + x.title + (wide ? '\uFF09' : ')') }];
+          }
           case 'upper': return [{ t: 'Span', c: [attr('', [], [['custom-style', 'All Caps']]), kids] }];
           case 'fbox': return [{ t: 'Span', c: [attr('', [], [['custom-style', 'Character Border']]), kids] }];
           case 'sf': return [{ t: 'Span', c: [attr('', [], [['custom-style', 'Font Sans']]), kids] }];

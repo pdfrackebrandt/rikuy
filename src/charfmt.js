@@ -11,7 +11,7 @@
 // Text from a stranger's document passes through here: every scan is bounded (src/wrap.js's own
 // limits, and the ones below), and no pattern can backtrack over unbounded text.
 
-import { GROUPS, defineGroup, groupNames, groupOf, enclosing, wrappersIn, unwrapEdits, wrapEdits, opener, diffEdit, closeOf, splitText, LEAD } from './wrap.js';
+import { GROUPS, defineGroup, groupNames, groupOf, enclosing, wrappersIn, unwrapEdits, wrapEdits, opener, diffEdit, closeOf, splitText, mapPos, LEAD } from './wrap.js';
 import { usePackages, packages, preambleEnd, defines, defineOnce, docClass, kvEdits, parseKV, stripComments, lastCall } from './preamble.js';
 import { envWords, unwrapBlockEdits } from './blockenv.js';
 
@@ -211,42 +211,62 @@ function parseAt1(src, s, names) {
   const W = enclosing(src, k + 1, k + 1, [m[1]]);
   return W && W.s === s ? W : null;
 }
-// Every wrapper of these names lying wholly inside [a, b), outermost first
+// Every wrapper of these names lying wholly inside [a, b), outermost first. Each look stops at 2000
+// (the list's stop says where: every wrapper that starts before it is in the list)
 function allInside(src, a, b, names) {
   const plain = names.filter((n) => !isExtra(n)), want = new Set(names.filter(isExtra));
-  const out = plain.length ? wrappersIn(src, a, b, plain).filter((W) => !W.decl || (groupOf(W.cmd) && GROUPS[groupOf(W.cmd)].decls.includes(W.cmd))) : [];
+  let stop = b;
+  const found = plain.length ? wrappersIn(src, a, b, plain) : [];
+  if (found.length >= 2000) stop = found[found.length - 1].s + 1;
+  const out = found.filter((W) => !W.decl || (groupOf(W.cmd) && GROUPS[groupOf(W.cmd)].decls.includes(W.cmd)));
   if (want.size) {
     // (a look at most at 4000 places: each may read 20 000 characters for its closing brace)
-    for (let k = a, n = 0, tries = 0; k < b && n < 2000 && tries < 4000; k++) {
+    let k = a, n = 0, tries = 0;
+    for (; k < b && n < 2000 && tries < 4000; k++) {
       const c = src[k];
-      if (c === '%' && src[k - 1] !== '\\') { const z = src.indexOf('\n', k); if (z < 0) break; k = z; continue; }
+      if (c === '%' && src[k - 1] !== '\\') { const z = src.indexOf('\n', k); if (z < 0) { k = b; break; } k = z; continue; }
       if ((c !== '{' && c !== '\\') || src[k - 1] === '\\') continue;
       if (!(c === '{' ? src[k + 1] === '\\' : /^\\(?:scalebox|raisebox)(?![A-Za-z])/.test(src.slice(k, k + 10)))) continue;
       tries++;
       const W = parseExtra(src, k, want);
       if (W && W.e <= b) { out.push(W); n++; }
     }
+    if (k < b) stop = Math.min(stop, k);
   }
   // (nested ones inside an extra one are found by both scans once each; outermost first)
-  return out.sort((x, y) => x.s - y.s || y.e - x.e);
+  out.sort((x, y) => x.s - y.s || y.e - x.e);
+  const list = stop < b ? out.filter((W) => W.s < stop) : out;
+  list.stop = stop;
+  return list;
 }
 
-// The edits that take a wrapper off. src/wrap.js's own forms by its unwrapEdits; the extra
-// forms here: a declaration's command and arguments go, and its braces too where they hold
-// nothing else and stand where no argument of a command does (after a space or a line's start;
-// {\color{red} \bf x} keeps them, as \textcolor{red}{\color{blue} x} does); a command's opener
-// and closing brace go (with a space for the word after a control word: \noindent\scalebox{2}{Proof})
+// ---- taking a wrapper off, whole or from part of it ------------------------------------------------
+// Whether a declaration's group may lose its braces (src/wrap.js's rule, for every form): it
+// stands after a space or a line's start (not as a command's argument, \footnote{\color{red} ..},
+// nor after a control word) and holds no other declaration of its own level that would leak out.
+function free(src, W) {
+  if (!W.decl) return true;
+  if (W.ie - W.is > 4000) return false;
+  let k = W.s - 1;
+  if (k >= 0 && !/\s/.test(src[k])) return false;
+  while (k >= 0 && /\s/.test(src[k])) k--;
+  if (k >= 0 && /\\(?:[A-Za-z@]+|[^A-Za-z@\s])$/.test(src.slice(Math.max(0, k - 60), k + 1))) return false;
+  return !declInside(src.slice(W.is, W.ie));
+}
+// what goes between words that come together where a wrapper was (\noindent\textbf{Proof}:
+// \noindent Proof; \textbf{\LaTeX}ing: \LaTeX{}ing)
+function seams(src, s, is, ie, e) {
+  const cw = (p) => /\\[A-Za-z@]+$/.test(src.slice(Math.max(0, p - 60), p)) && !/\\\\[A-Za-z@]+$/.test(src.slice(Math.max(0, p - 61), p));
+  const first = src[is] || '', next = src[e] || '';
+  return { pre: cw(s) ? (/[A-Za-z]/.test(first) ? ' ' : /[[*]/.test(first) ? '{}' : '') : '', post: cw(ie) && /[A-Za-z]/.test(next) ? '{}' : '' };
+}
+// The edits that take a wrapper off: src/wrap.js's own forms by its unwrapEdits (which keeps a
+// declaration's braces where they are an argument); the extra forms by the same rule here
 export function unwrapAny(src, W) {
   if (!W.extra) return unwrapEdits(src, W);
-  if (W.decl) {
-    const prev = W.s > 0 ? src[W.s - 1] : '\n', body = src.slice(W.is, W.ie);
-    const free = /[\s(]/.test(prev) || W.s === 0;
-    const inner = declInside(body);
-    if (free && !inner) return [{ s: W.ie, e: W.e, t: '' }, { s: W.s, e: W.is, t: '' }];
-    return [{ s: W.s + 1, e: W.is, t: '' }];
-  }
-  const glue = /\\[A-Za-z]+$/.test(src.slice(Math.max(0, W.s - 40), W.s)) && /^[A-Za-z]/.test(src.slice(W.is, W.ie));
-  return [{ s: W.ie, e: W.e, t: '' }, { s: W.s, e: W.is, t: glue ? ' ' : '' }];
+  if (W.decl && !free(src, W)) return [{ s: W.s + 1, e: W.is, t: '' }];
+  const { pre, post } = seams(src, W.s, W.is, W.ie, W.e);
+  return [{ s: W.ie, e: W.e, t: post }, { s: W.s, e: W.is, t: pre }];
 }
 // whether a text has a declaration at its own level (\bf x, \large x): a control word with no
 // argument after it, as a group's braces keep from reaching what follows
@@ -254,10 +274,11 @@ function declInside(t) {
   let d = 0;
   for (let i = 0; i < t.length && i < 20000; i++) {
     const c = t[i];
+    if (c === '%') return true;
     if (c === '{') { d++; continue; }
     if (c === '}') { d--; continue; }
     if (c !== '\\') continue;
-    const m = /^\\([A-Za-z]+)/.exec(t.slice(i, i + 40));
+    const m = /^\\([A-Za-z@]+)/.exec(t.slice(i, i + 40));
     if (!m) { i++; continue; }
     i += m[0].length - 1;
     if (d) continue;
@@ -266,6 +287,114 @@ function declInside(t) {
     if (t[k] !== '{' && t[k] !== '[') return true;
   }
   return false;
+}
+// The declarations a group opens with, one after another ({\bfseries\large ..}, {\color{red}
+// \itshape ..}): [{ name, text }] and where its words start, or null for no group of declarations
+let declSet = null, declOf = 0;
+const isDecl = (n) => {
+  // (the groups' declarations in one set, made again when a group is added)
+  const k = Object.keys(GROUPS).length;
+  if (!declSet || declOf !== k) { declSet = new Set(Object.values(GROUPS).flatMap((g) => g.decls)); declOf = k; }
+  return !!DECL_LEAD[n] || declSet.has(n);
+};
+// the brace or bracket matching the one at q, looked for before lim alone; -1 when it is not there
+function closeBy(src, q, lim) {
+  const o = src[q], c = o === '[' ? ']' : '}';
+  for (let k = q + 1, d = 0; k < lim; k++) {
+    const x = src[k];
+    if (x === '\\') { k++; continue; }
+    if (x === o) d++;
+    else if (x === c) { if (d === 0) return k + 1; d--; }
+  }
+  return -1;
+}
+function declRun(src, W) {
+  if (!W.decl) return null;
+  const out = [];
+  let i = W.s + 1;
+  for (let n = 0; n < 8; n++) {
+    const m = /^\\([A-Za-z]+)(?![A-Za-z])/.exec(src.slice(i, i + 40));
+    if (!m || !isDecl(m[1])) break;
+    let k = i + m[0].length;
+    if (DECL_LEAD[m[1]]) {
+      const X = parseExtra(src, W.s, null);
+      // (a declaration with arguments: read as parseExtra reads the group's first)
+      if (n === 0 && X) k = X.is;
+      else {
+        k = sp(src, k);
+        if (src[k] === '[') { const z = closeOf(src, k); if (z < 0) return null; k = sp(src, z); }
+        for (let a = 0; a < DECL_LEAD[m[1]]; a++) { if (src[k] !== '{') return null; const z = closeOf(src, k); if (z < 0) return null; k = sp(src, z); }
+        if (src.startsWith('\\selectfont', k) && !/[A-Za-z]/.test(src[k + 11] || '')) k = sp(src, k + 11);
+      }
+    }
+    out.push({ name: m[1], text: src.slice(i, k).replace(/\s+$/, '') });
+    i = k;
+    while (src[i] === ' ' || src[i] === '\t' || (src[i] === '\n' && src[i + 1] !== '\n')) i++;
+  }
+  return out.length ? { decls: out, body: Math.min(i, W.ie) } : null;
+}
+// The wrapper W taken off the part [a, b) of what it holds, the parts before and after keeping it.
+// A group of declarations keeps its other declarations on the part (clear names those taken
+// off), and stays one group where its braces are an argument (\footnote{{\color{red} a}b{..}}).
+// null where the parts would not be whole groups, or a declaration further in would leak.
+function splitAny(src, W, a, b, clear) {
+  a = Math.max(a, W.is); b = Math.min(b, W.ie);
+  if (!balanced(src.slice(W.is, a)) || !balanced(src.slice(b, W.ie))) return null;
+  if (!W.decl) {
+    if (!W.extra) return splitText(src, W, a, b);
+    if (a === W.is && b === W.ie) { const ed = unwrapAny(src, W); return { text: applyAll(src, ed), a: mapPos(ed, a, 1), b: mapPos(ed, b, -1) }; }
+    const open = src.slice(W.s, W.is), close = src.slice(W.ie, W.e);
+    const left = src.slice(W.is, a), mid = src.slice(a, b), right = src.slice(b, W.ie);
+    const out = (left ? open + left + close : '') + mid + (right ? open + right + close : '');
+    const a2 = W.s + (left ? open.length + left.length + close.length : 0);
+    return { text: src.slice(0, W.s) + out + src.slice(W.e), a: a2, b: a2 + mid.length };
+  }
+  const R = declRun(src, W);
+  if (!R || W.ie - W.is > 4000 || declInside(src.slice(R.body, W.ie))) return null;
+  a = Math.max(a, R.body);
+  const keep = !free(src, { ...W, is: R.body });
+  const open = src.slice(W.s, R.body), close = '}';
+  const stay = R.decls.filter((x) => !clear.includes(x.name));
+  const midOpen = stay.length ? '{' + stay.map((x) => x.text).join('') + ' ' : '';
+  const left = src.slice(R.body, a), mid = src.slice(a, b), right = src.slice(b, W.ie);
+  // (the space the opening ends with, once: {\large abc }def{\large ghi})
+  const op = (t) => (/^\s/.test(t) ? open.replace(/\s+$/, '') : open);
+  const L = left.trim() ? open + left + close : left, M = midOpen ? midOpen + mid + '}' : mid, Rt = right.trim() ? op(right) + right + close : right;
+  const seam = seams(src, W.s, a, b, W.e);
+  const pre = keep || L ? '' : midOpen ? '' : seam.pre, post = keep || Rt ? '' : midOpen ? '' : seam.post;
+  const out = (keep ? '{' : '') + L + pre + M + post + Rt + (keep ? '}' : '');
+  const a2 = W.s + (keep ? 1 : 0) + L.length + pre.length + (midOpen ? midOpen.length : 0);
+  return { text: src.slice(0, W.s) + out + src.slice(W.e), a: a2, b: a2 + mid.length };
+}
+// The selection [a, b) made whole within W: where an end falls in another format inside W's words
+// (\textbf{\emph{Sec|ond}}), that format is split at it (\emph{Sec}\emph{ond}), or where the
+// selection has all of that format's words, the end moves past it. { text, a, b } or null.
+function wholePart(src, W, a, b) {
+  const all = CHAR_KINDS.flatMap((g) => groupNames(g));
+  let t = src;
+  for (let n = 0; n < 8; n++) {
+    const p = Math.max(a, W.is), q = Math.min(b, W.ie + (t.length - src.length));
+    const ie = W.ie + (t.length - src.length);
+    const endOk = balanced(t.slice(q, ie)), startOk = balanced(t.slice(W.is, p));
+    if (endOk && startOk) return { text: t, a, b };
+    const at = endOk ? p : q;
+    const X = around(t, at, at, null, { names: all });
+    if (!X || X.s <= W.s || X.e > ie + 1) return null;
+    const open = t.slice(X.s, X.is), close = t.slice(X.ie, X.e);
+    if (!endOk) {
+      if (q >= X.ie && a <= X.is) { b = Math.max(b, X.e); continue; }
+      if (q <= X.is) return null;
+      t = t.slice(0, q) + close + open + t.slice(q);
+      b = q + close.length;
+    } else {
+      if (p <= X.is && b >= X.ie) { a = Math.min(a, X.s); continue; }
+      if (p >= X.ie) return null;
+      t = t.slice(0, p) + close + open + t.slice(p);
+      if (b >= p) b += close.length + open.length;
+      a = p + close.length + open.length;
+    }
+  }
+  return null;
 }
 // what opens a wrapper to write: src/wrap.js's opener, and the extra forms
 export function openerAny(w) {
@@ -276,33 +405,112 @@ export function openerAny(w) {
 }
 
 // ---- acting on the text -------------------------------------------------------------------
-// the text with edits applied, and a position mapped through them
-function apply(src, edits) {
-  let t = src;
-  for (const x of [...edits].sort((p, q) => q.s - p.s || q.e - p.e)) t = t.slice(0, x.s) + x.t + t.slice(x.e);
-  return t;
+// the text with edits applied in one pass (src/wrap.js's way: a copy of the text for each edit
+// froze a large document), and a position mapped through them
+function applyAll(t, edits) {
+  const xs = edits.map((x, i) => [x, i]).sort(([u, i], [v, j]) => u.s - v.s || j - i);
+  let out = '', at = 0;
+  for (const [x] of xs) { out += t.slice(at, Math.max(at, x.s)) + x.t; at = Math.max(at, x.e); }
+  return out + t.slice(at);
 }
+export const applyEdits = applyAll;
 const shiftBy = (edits, p) => edits.reduce((n, x) => n + (x.e <= p ? x.t.length - (x.e - x.s) : 0), 0);
 
 // Every wrapper of a kind taken off what lies wholly inside [a, b): { text, a, b }
 export function clearInside(src, a, b, names) {
-  const inside = allInside(src, a, b, names);
-  if (!inside.length) return { text: src, a, b };
-  // (none of them overlaps another but by holding it: their edits are taken off all at once)
-  const edits = inside.flatMap((W) => unwrapAny(src, W));
-  return { text: apply(src, edits), a: a + shiftBy(edits, a), b: b + shiftBy(edits, b) };
+  let t = src, p = a, a0 = a;
+  // (2000 at a time, from where the last look stopped: Ctrl+A on a thesis has tens of thousands)
+  for (let round = 0; round < 200 && p < b; round++) {
+    const inside = allInside(t, p, b, names), st = inside.stop, end = b;
+    if (inside.length) {
+      // (none of them overlaps another but by holding it: their edits are taken off all at once)
+      const edits = inside.flatMap((W) => unwrapAny(t, W));
+      t = applyAll(t, edits);
+      if (round === 0) a0 = a + shiftBy(edits, a);
+      p = st + shiftBy(edits, st);
+      b += shiftBy(edits, b);
+    } else break;
+    // (a look that found none in its 4000 tries ends it: a stranger's text of unclosed groups)
+    if (st >= end) break;
+  }
+  return { text: t, a: a0, b };
 }
 
-// A toggle (Bold, Strikethrough, Small Caps, ...): in or on a wrapper of its kind, that wrapper
-// comes off whole; else what is selected gets the kind's own command (the same kind inside it
-// taken off first: bold in bold says nothing more, and \emph in \emph turns upright). other: the
-// kind that excludes this one (Subscript and Superscript), which becomes this one in place.
-// Returns { text, a, b, on (whether it is on now), w (what was written) } or { error }.
+// Formats of these kinds taken off [a, b), as Word takes them off: those inside it go, one around
+// it all or around one of its ends is taken off the part the selection has (the parts beyond keep
+// it). A caret takes off the wrappers it is in. Returns { text, a, b } (the same text when there was
+// none) or { error } when a wrapper cannot be split there.
+export function clearKinds(src, a, b, kinds) {
+  const runs = a === b ? [[a, b]] : textRuns(src, a, b);
+  if (!runs.length) return { text: src, a, b };
+  // (the last run first, so the runs before keep their places; the selection's end moves by what
+  // the runs before it changed)
+  let t = src, first = null, last = null, grown = 0;
+  for (let k = runs.length - 1; k >= 0; k--) {
+    const r = clearKindsIn(t, runs[k][0], runs[k][1], kinds);
+    if (r.error) return r;
+    if (k === runs.length - 1) last = r; else grown += r.text.length - t.length;
+    if (k === 0) first = r;
+    t = r.text;
+  }
+  return { text: t, a: runs[0][0] === a ? first.a : a, b: runs[runs.length - 1][1] === b ? last.b + grown : b + (t.length - src.length) };
+}
+function clearKindsIn(src, a, b, kinds) {
+  const names = [...new Set(kinds.flatMap((g) => groupNames(g)))];
+  let t = src;
+  if (a !== b) { const r = clearInside(t, a, b, names); t = r.text; a = r.a; b = r.b; }
+  for (let n = 0; n < 60; n++) {
+    let hit = aroundAny(t, a, b, kinds), part = false;
+    if (!hit && a !== b) {
+      // (a wrapper at an end of the selection that holds some of it: the end's caret is in it)
+      for (const p of [b, a]) { const h = aroundAny(t, p, p, kinds); if (h && !(h.W.is <= a && h.W.ie >= b) && h.W.is < b && h.W.ie > a) { hit = h; part = true; break; } }
+    }
+    if (!hit) break;
+    const W = hit.W;
+    if (a === b) {
+      const ed = unwrapAny(t, W);
+      t = applyAll(t, ed); a = b = mapPos(ed, a, -1);
+      continue;
+    }
+    const p0 = Math.max(a, W.is), p1 = Math.min(b, W.ie);
+    const r = splitAny(t, W, p0, p1, names);
+    if (!r) {
+      // (an end of the selection inside a format within this one: that format is split there,
+      // or taken whole where the selection has all its words, and this one is tried again)
+      const w = wholePart(t, W, a, b);
+      if (w && (w.text !== t || w.a !== a || w.b !== b)) { t = w.text; a = w.a; b = w.b; continue; }
+    }
+    if (!r || r.text === t) return n === 0 && t === src ? { error: 'split' } : { text: t, a, b };
+    const d = r.text.length - t.length;
+    if (part) { a = a < W.is ? a : r.a; b = b > W.ie ? b + d : r.b; } else { a = r.a; b = r.b; }
+    t = r.text;
+  }
+  return { text: t, a, b };
+}
+export const CHAR_KINDS = ['bold', 'italic', 'underline', 'strike', 'dstrike', 'sub', 'sup', 'smallcaps', 'allcaps', 'border', 'enclose', 'color', 'highlight', 'shading', 'size', 'family', 'mono', 'spacing', 'scale', 'position'];
+// Clear All Formatting: every kind; null when nothing changes
+export function clearFormats(src, a, b, kinds = CHAR_KINDS) {
+  const r = clearKinds(src, a, b, kinds);
+  return r.error || r.text === src ? null : r;
+}
+
+// Whether the kind is on over all of [a, b) (a caret: in a wrapper of it)
+export function isOn(src, a, b, group) {
+  const W = around(src, a, b, group);
+  return !!W && W.is <= a && W.ie >= b;
+}
+
+// A toggle (Bold, Strikethrough, Small Caps, ...), as Word's: where the whole selection has it, it
+// is taken off the selection (off the whole wrapper at a caret); else the selection gets the kind's
+// own command, its parts that had it first taken off (bold in bold says nothing more, \emph in
+// \emph turns upright). o.force 'on' or 'off' decides for a selection over several paragraphs;
+// o.other: the kind that excludes this one (Subscript and Superscript), which becomes this one in
+// place. Returns { text, a, b, on, w } or { error }.
 export function toggle(src, a, b, group, o = {}) {
-  const W = o.W !== undefined ? o.W : around(src, a, b, group);
-  if (W && (a === b || (a >= W.is && b <= W.ie))) {
-    const edits = unwrapAny(src, W);
-    return { text: apply(src, edits), a: a + shiftBy(edits, a), b: b + shiftBy(edits, b), on: false };
+  const has = o.force ? o.force === 'off' : allOn(src, a, b, group);
+  if (has) {
+    const r = clearKinds(src, a, b, [group]);
+    return r.error ? { error: 'split' } : { ...r, on: false };
   }
   const w = o.w || { cmd: GROUPS[group].write };
   if (o.other) {
@@ -312,54 +520,298 @@ export function toggle(src, a, b, group, o = {}) {
       return { text: src.slice(0, X.s) + open + src.slice(X.is), a: a + d, b: b + d, on: true, w };
     }
   }
-  return wrapIn(src, a, b, group, w);
+  if (a === b) return wrapIn(src, a, b, group, w);
+  // (the parts that had it lose it first, so the selection gets one wrapper: a word of bold in it
+  // says nothing more, and \emph in \emph would turn it upright)
+  const c = clearKinds(src, a, b, [group]);
+  if (c.error) return { error: 'split' };
+  return wrapIn(c.text, c.a, c.b, group, w);
+}
+// whether every part of the selection has the kind (a caret: whether it is in a wrapper of it)
+export function allOn(src, a, b, group) {
+  if (a === b) return isOn(src, a, b, group);
+  // (a footnote's text is no part of what the selection's words have: ulem's lines skip it)
+  const segs = segmentsOf(src, a, b).flatMap(([s, e]) => elsewhereParts(src, s, e) || [[s, e]]).filter(([s, e]) => src.slice(s, e).trim());
+  return segs.length > 0 && segs.length < 400 && segs.every(([s, e]) => isOn(src, s, e, group) || covered(src, s, e, group));
+}
+// whether the kind's wrappers inside [s, e) hold all its words (a whole paragraph of \textbf{..})
+function covered(src, s, e, group) {
+  const inside = allInside(src, s, e, groupNames(group));
+  if (!inside.length || inside.stop < e) return false;
+  let rest = '', p = s;
+  for (const W of inside) { if (W.s < p) continue; rest += src.slice(p, W.s); p = W.e; }
+  return !(rest + src.slice(p, e)).trim();
 }
 
-// The selection in a wrapper w of a kind, the kind's wrappers inside it taken off first
+// Commands whose text is set somewhere else (a footnote's at the page's foot): a line that ulem
+// draws cannot run through them, so a wrapper of ulem closes before each and opens after it
+const ELSEWHERE = /\\(?:footnote|footnotetext|marginpar|todo|thanks|endnote|sidenote)\b/;
+const ULEM_KINDS = new Set(['underline', 'strike', 'dstrike', 'highlight']);
+function elsewhereParts(src, a, b) {
+  const parts = [];
+  let p = a;
+  for (let k = a, n = 0; k < b && n < 200; k++) {
+    if (src[k] === '%' && src[k - 1] !== '\\') { const z = src.indexOf('\n', k); k = z < 0 || z > b ? b : z; continue; }
+    if (src[k] !== '\\' || src[k - 1] === '\\') continue;
+    const m = ELSEWHERE.exec(src.slice(k, k + 14));
+    if (!m || m.index !== 0) continue;
+    // the command and its arguments ([..] and {..}) stay out of the wrapper
+    let e = k + m[0].length;
+    for (let g = 0; g < 3; g++) {
+      let q = e;
+      while (src[q] === ' ' || src[q] === '\t') q++;
+      if (src[q] !== '{' && src[q] !== '[') break;
+      const z = closeOf(src, q);
+      if (z < 0 || z > b) return null;
+      e = z;
+    }
+    if (k > p) parts.push([p, k]);
+    p = e; k = e - 1; n++;
+  }
+  if (p < b) parts.push([p, b]);
+  return parts;
+}
+
+// The selection in a wrapper w of a kind, the kind's wrappers inside it taken off first. A selection
+// that crosses a brace (from a bold word into plain text, over two paragraphs, into a cell) gets a
+// wrapper on each whole part (segmentsOf); LaTeX paragraphs in it get none. ulem's kinds close
+// before a footnote and open again after it (\uline{words}\footnote{..}\uline{ and}), as the line
+// cannot run through text set elsewhere. A wrapper the same as one just before or after it joins it
+// (\textbf{a}\textbf{bc} is \textbf{abc}).
 export function wrapIn(src, a, b, group, w) {
-  const c = a === b ? { text: src, a, b } : clearInside(src, a, b, groupNames(group));
-  const r = wrapEdits(c.text, c.a, c.b, openerAny(w));
-  if (r.error) return { error: r.error };
-  const text = apply(c.text, r.edits);
-  if (!r.sel) return { text, a: r.p, b: r.p, on: true, w };
-  return { text, a: r.sel.a, b: r.sel.b, on: true, w };
+  const open = openerAny(w);
+  if (a === b) {
+    const r = wrapEdits(src, a, a, open);
+    return { text: applyAll(src, r.edits), a: r.p, b: r.p, on: true, w };
+  }
+  const c = clearRuns(src, a, b, groupNames(group));
+  let segs = segmentsOf(c.text, c.a, c.b);
+  if (ULEM_KINDS.has(group)) {
+    const out = [];
+    for (const [s, e] of segs) { const P = elsewhereParts(c.text, s, e); if (!P) return { error: 'crosses' }; out.push(...P); }
+    segs = out;
+  }
+  segs = segs.filter(([s, e]) => c.text.slice(s, e).trim());
+  if (!segs.length) return { error: 'Nothing here takes that format: select text of the page.' };
+  if (segs.length > 2000) return { error: 'That selection is too long to format at once.' };
+  // (a part that starts or ends at a mark that goes with a letter outside it, a vowel sign or an
+  // accent written apart, would part the two: refused, as src/wrap.js refuses a cluster cut)
+  if (segs.length > 1 && segs.some(([s, e]) => /^\p{M}/u.test(c.text[s] || '') || /^\p{M}/u.test(c.text[e] || ''))) return { error: 'crosses' };
+  const edits = [];
+  for (const [s, e] of segs) {
+    const r = wrapEdits(c.text, s, e, open);
+    if (r.error) return { error: r.error };
+    edits.push(...joinLike(c.text, r.edits, open, group));
+  }
+  const text = applyAll(c.text, edits);
+  return { text, a: mapPos(edits, c.a, 1), b: mapPos(edits, c.b, -1), on: true, w };
+}
+// a wrapper's edits ({ s: e, t: '}' } and { s, t: open }) changed to join a wrapper with the same
+// opening that ends just before it or starts just after it
+function joinLike(src, edits, open, group) {
+  const close = edits.find((x) => x.t === '}' && x.s === x.e), start = edits.find((x) => x.t === open && x.s === x.e);
+  if (!close || !start || edits.length !== 2) return edits;
+  const out = [];
+  const X = start.s > 0 && src[start.s - 1] === '}' ? around(src, start.s - 1, start.s - 1, group) : null;
+  if (X && X.ie === start.s - 1 && X.e === start.s && src.slice(X.s, X.is) === open) out.push({ s: X.ie, e: X.e, t: '' });
+  else out.push(start);
+  const Y = src.startsWith(open, close.s) ? around(src, close.s + open.length, close.s + open.length, group) : null;
+  if (Y && Y.s === close.s && Y.is === close.s + open.length && src[Y.ie] === '}' && Y.e === Y.ie + 1) out.push({ s: Y.s, e: Y.is, t: '' });
+  else out.push(close);
+  return out;
+}
+// a kind's wrappers taken off what lies inside each run of the selection outside LaTeX paragraphs
+function clearRuns(src, a, b, names) {
+  const runs = textRuns(src, a, b);
+  let t = src, grown = 0, first = null;
+  for (let k = runs.length - 1; k >= 0; k--) {
+    const r = clearInside(t, runs[k][0], runs[k][1], names);
+    if (k < runs.length - 1) grown += r.text.length - t.length;
+    if (k === 0) first = r;
+    t = r.text;
+  }
+  if (!runs.length) return { text: src, a, b };
+  return { text: t, a: runs[0][0] === a ? first.a : a, b: b + (t.length - src.length) };
 }
 
-// A value for a kind (a colour, a size, a family, an underline's style), or null to take it off:
-// on a wrapper of the kind that holds exactly the selection (or the caret) the wrapper gets the
-// new command or argument; elsewhere the selection gets a wrapper of its own.
+// The parts of [a, b) a wrapper can go round whole: the selection cut where a brace opened before
+// it closes (the end of a bold word it starts in), where a brace it opens closes after it (with the
+// command or declarations the brace belongs to), and at each paragraph's end; the paragraphs kept
+// as LaTeX source left out. [[s, e]]
+export function segmentsOf(src, a, b) {
+  const cuts = [];
+  const open = [];
+  for (let i = a; i < b; i++) {
+    const c = src[i];
+    if (c === '\\' && !open.length) {
+      // (what no wrapper may hold at the selection's own level: a cell's or a row's end, an item,
+      // a rule between rows, an environment's begin or end; all of a display or a verbatim)
+      const z = breakAt(src, i, b);
+      if (z > i) { cuts.push([i, z]); i = z - 1; continue; }
+    }
+    if (c === '\\') { i++; continue; }
+    if (c === '&' && !open.length) { cuts.push([i, i + 1]); continue; }
+    if (c === '%') { const z = src.indexOf('\n', i); if (z < 0 || z >= b) break; i = z; continue; }
+    if (c === '{') open.push(i);
+    else if (c === '}') { if (open.length) open.pop(); else cuts.push([i, i + 1]); }
+  }
+  // (a stranger's thousands of braces never closed: no parts, the selection is refused)
+  if (open.length + cuts.length > 2000) return [];
+  for (const p of open) cuts.push([openerStart(src, p, a), bodyStart(src, p, b)]);
+  cuts.sort((x, y) => x[0] - y[0]);
+  const out = [];
+  // (the spaces next to a cut stay outside: \item \textbf{one}, not \item\textbf{ one\n})
+  const part = (s, e) => {
+    if (s !== a) while (s < e && /\s/.test(src[s])) s++;
+    if (e !== b) while (e > s && /\s/.test(src[e - 1])) e--;
+    if (e > s) out.push(...paragraphParts(src, s, e));
+  };
+  let p = a;
+  for (const [s, e] of cuts) {
+    if (s > p) part(p, s);
+    p = Math.max(p, e);
+  }
+  if (p < b) part(p, b);
+  return out;
+}
+// The end of what at i no wrapper may hold (see segmentsOf), or i
+const ROW = /^\\(?:\\\*?|item\b|hline\b|cline\b|toprule\b|midrule\b|bottomrule\b|cmidrule\b|addlinespace\b|rowcolor\b|noalign\b|tabularnewline\b|newline\b|linebreak\b|par\b)/;
+const WHOLE = /^(?:equation|align|gather|multline|eqnarray|flalign|alignat|math|displaymath|dmath|verbatim|Verbatim|lstlisting|minted|tikzpicture|comment)\*?$/;
+function breakAt(src, i, b) {
+  const head = src.slice(i, i + 40);
+  if (head.startsWith('\\[') || head.startsWith('$$')) {
+    const close = head.startsWith('$$') ? '$$' : '\\]', z = src.indexOf(close, i + 2);
+    return z < 0 ? b : Math.min(b, z + 2);
+  }
+  const env = /^\\(begin|end)\s*\{([^{}]{1,40})\}/.exec(head);
+  if (env) {
+    if (env[1] === 'begin' && WHOLE.test(env[2])) {
+      const z = src.indexOf('\\end{' + env[2] + '}', i);
+      return z < 0 ? b : Math.min(b, z + 6 + env[2].length);
+    }
+    return Math.min(b, args(src, i + env[0].length, b));
+  }
+  const m = ROW.exec(head);
+  if (!m) return i;
+  return Math.min(b, m[0] === '\\par' || m[0] === '\\newline' ? i + m[0].length : args(src, i + m[0].length, b));
+}
+// past the optional and brace arguments right after k (and a cmidrule's (lr))
+function args(src, k, b) {
+  for (let n = 0; n < 4 && k < b; n++) {
+    const q = src[k] === ' ' && src[k + 1] === '[' ? k + 1 : k;
+    if (src[q] === '(') { const z = src.indexOf(')', q); if (z < 0 || z > q + 20) break; k = z + 1; continue; }
+    if (src[q] !== '[' && src[q] !== '{') break;
+    const z = closeBy(src, q, b);
+    if (z < 0) break;
+    k = z;
+  }
+  return k;
+}
+// where the command a brace at p belongs to starts (\textcolor{red}{ for the last brace), not before a
+function openerStart(src, p, a) {
+  let k = p;
+  for (let n = 0; n < 6 && k > a; n++) {
+    const prev = src[k - 1];
+    if (prev === '}' || prev === ']') {
+      const o = openBefore(src, k - 1, prev === '}' ? '{' : '[');
+      if (o < a) break;
+      k = o;
+      continue;
+    }
+    const m = /\\[A-Za-z@]+\*?$/.exec(src.slice(Math.max(a, k - 40), k));
+    if (m) k -= m[0].length;
+    break;
+  }
+  return k;
+}
+// the brace's matching opening before it, or -1
+function openBefore(src, z, want) {
+  const close = src[z];
+  for (let k = z - 1, d = 0; k >= 0 && z - k < 2000; k--) {
+    if (src[k - 1] === '\\') continue;
+    if (src[k] === close) d++;
+    else if (src[k] === want) { if (d === 0) return k; d--; }
+  }
+  return -1;
+}
+// where the words after a brace at p start: past the declarations a group opens with ({\bfseries\large
+// abc), not past a command with text of its own
+function bodyStart(src, p, b) {
+  let i = p + 1;
+  for (let n = 0; n < 8 && i < b; n++) {
+    const m = /^\s*\\([A-Za-z]+)(?![A-Za-z])/.exec(src.slice(i, i + 60));
+    if (!m || !(isDecl(m[1]) || m[1] === 'selectfont')) break;
+    let k = i + m[0].length;
+    for (let g = 0; g < (DECL_LEAD[m[1]] || 0) + 1; g++) {
+      const q = sp(src, k);
+      if (src[q] !== '{' && !(src[q] === '[' && g === 0)) break;
+      const z = closeBy(src, q, b);
+      if (z < 0) break;
+      k = z;
+      if (src[q] === '[') g--;
+    }
+    i = k;
+  }
+  while (i < b && /\s/.test(src[i])) i++;
+  return Math.min(i, b);
+}
+// The runs of [a, b) outside paragraphs kept as LaTeX source: [[s, e]]
+export function textRuns(src, a, b) {
+  const parts = paragraphParts(src, a, b), out = [];
+  if (!parts.length) return out;
+  // (paragraphs next to each other with only blank lines between are one run)
+  let [s, e] = parts[0];
+  if (s - a >= 0 && !src.slice(a, s).trim()) s = a;
+  for (let k = 1; k < parts.length; k++) {
+    if (!src.slice(e, parts[k][0]).trim()) { e = parts[k][1]; continue; }
+    out.push([s, e]);
+    [s, e] = parts[k];
+  }
+  if (!src.slice(e, b).trim()) e = b;
+  out.push([s, e]);
+  return out;
+}
+
+// A value for a kind (a colour, a size, a family, an underline's style), or null to take it off,
+// as Word's: on a wrapper of the kind that holds exactly the selection (or the caret) the wrapper
+// gets the new command or argument, a group of declarations keeping its braces and its form
+// (w.declAlt: {\sffamily ..} for \textsf, {\color{..} ..} for \textcolor); elsewhere the kind is taken
+// off the selection and the selection gets a wrapper of its own.
 export function setValue(src, a, b, group, w, o = {}) {
   const W = o.W !== undefined ? o.W : around(src, a, b, group);
-  const exact = W && (a === b || (W.is === a && W.ie === b) || (a >= W.is && b <= W.ie && src.slice(W.is, a).trim() === '' && src.slice(b, W.ie).trim() === ''));
+  const exact = W && (a === b || (a >= W.is && b <= W.ie && src.slice(W.is, a).trim() === '' && src.slice(b, W.ie).trim() === ''));
   if (!w) {
-    // off: those inside the selection, and the one around it
-    let r = { text: src, a, b };
-    if (a !== b) r = clearInside(src, a, b, groupNames(group));
-    const X = around(r.text, r.a, r.b, group);
-    if (X && (r.a === r.b || (r.a >= X.is && r.b <= X.ie))) {
-      const edits = unwrapAny(r.text, X);
-      return { text: apply(r.text, edits), a: r.a + shiftBy(edits, r.a), b: r.b + shiftBy(edits, r.b), on: false };
-    }
+    const r = clearKinds(src, a, b, [group]);
+    if (r.error) return { error: 'split' };
     return r.text === src ? null : { ...r, on: false };
   }
   if (exact) {
-    // (a declaration stays one: {\large x} becomes {\Large x}, {\color{red} x} {\color{blue} x})
     const want = W.decl && w.declAlt ? w.declAlt : w;
     const open = openerAny(want);
     if (!W.decl === !want.decl && src.slice(W.s, W.is) === open) return { text: src, a, b, on: true, w: want, same: true };
-    // (the form may change, \textcolor to {\color} or back: the closing brace stays where it is;
-    // inside it, the same kind taken off first, a colour in the colour)
+    // (inside it, the same kind taken off first: a colour in the colour)
     const inner = a === b ? { text: src, a, b } : clearInside(src, W.is, W.ie, groupNames(group));
-    const t = inner.text, d = open.length - (W.is - W.s), lost = src.length - t.length;
+    const t = inner.text, lost = src.length - t.length;
+    if (W.decl && !want.decl && free(t, { ...W, ie: W.ie - lost, e: W.e - lost })) {
+      // (a group that stands free becomes the command: {\sffamily x} to \textrm{x})
+      const d = open.length - (W.is - W.s);
+      return { text: t.slice(0, W.s) + open + t.slice(W.is), a: a + d, b: b + d - lost, on: true, w: want };
+    }
+    if (W.decl && !want.decl) {
+      // (a group of declarations that is an argument, or holds one: its braces stay, the command inside them)
+      const body = t.slice(W.is, W.ie - lost);
+      const out = '{' + open + body + '}}';
+      const d = 1 + open.length - (W.is - W.s);
+      return { text: t.slice(0, W.s) + out + t.slice(W.e - lost), a: a + d, b: b + d - lost, on: true, w: want };
+    }
+    const d = open.length - (W.is - W.s);
     return { text: t.slice(0, W.s) + open + t.slice(W.is), a: a + d, b: b + d - lost, on: true, w: want };
   }
-  return wrapIn(src, a, b, group, w);
+  const c = a === b ? { text: src, a, b } : clearKinds(src, a, b, [group]);
+  if (c.error) return { error: 'split' };
+  return wrapIn(c.text, c.a, c.b, group, w);
 }
 
-// Character formatting taken off [a, b) and around it: the kinds given (all of them for Clear
-// All Formatting). A caret clears the wrappers it is in.
-export const CHAR_KINDS = ['bold', 'italic', 'underline', 'strike', 'dstrike', 'sub', 'sup', 'smallcaps', 'allcaps', 'border', 'enclose', 'color', 'highlight', 'shading', 'size', 'family', 'mono', 'spacing', 'scale', 'position'];
-// the innermost wrapper of any of these kinds holding [a, b), with its kind
 function aroundAny(src, a, b, kinds) {
   // (one look for all the kinds' names, not one for each kind)
   const names = [...new Set(kinds.flatMap((g) => groupNames(g)))];
@@ -367,46 +819,6 @@ function aroundAny(src, a, b, kinds) {
   if (!W) return null;
   const group = kinds.find((g) => groupNames(g).includes(W.cmd));
   return group ? { W, group } : null;
-}
-export function clearFormats(src, a, b, kinds = CHAR_KINDS) {
-  const names = [...new Set(kinds.flatMap((g) => groupNames(g)))];
-  let t = src;
-  if (a !== b) { const r = clearInside(t, a, b, names); t = r.text; a = r.a; b = r.b; }
-  // those around it, innermost first: a caret's go whole; a selection's are taken off it alone
-  // (the parts before and after keep them); one around an end of the selection only, off the
-  // part of it the selection has
-  for (let n = 0; n < 60; n++) {
-    let hit = aroundAny(t, a, b, kinds), part = false;
-    if (!hit && a !== b) {
-      for (const p of [b, a]) { const h = aroundAny(t, p, p, kinds); if (h && !(h.W.is <= a && h.W.ie >= b)) { hit = h; part = true; break; } }
-    }
-    if (!hit) break;
-    const W = hit.W;
-    if (a === b || (a <= W.is && b >= W.ie)) {
-      const edits = unwrapAny(t, W);
-      const was = a === b;
-      t = apply(t, edits); a += shiftBy(edits, a); b = was ? a : b + shiftBy(edits, b);
-      continue;
-    }
-    const p0 = Math.max(a, W.is), p1 = Math.min(b, W.ie);
-    const r = W.extra ? splitExtra(t, W, p0, p1) : splitText(t, W, p0, p1);
-    if (!r || r.text === t) break;
-    // (the selection's ends move with what came out before them)
-    const d0 = r.a - p0, d1 = r.b - p1;
-    if (part) { a = a < W.is ? a : a + d0; b = b > W.ie ? b + (r.text.length - t.length) : b + d1; }
-    else { a = r.a; b = r.b; }
-    t = r.text;
-  }
-  return t === src ? null : { text: t, a, b };
-}
-function splitExtra(src, W, a, b) {
-  a = Math.max(a, W.is); b = Math.min(b, W.ie);
-  const open = src.slice(W.s, W.is), close = src.slice(W.ie, W.e);
-  const left = src.slice(W.is, a), mid = src.slice(a, b), right = src.slice(b, W.ie);
-  if (!balanced(left) || !balanced(right)) return null;
-  const out = (left ? open + left + close : '') + mid + (right ? open + right + close : '');
-  const a2 = W.s + (left ? open.length + left.length + close.length : 0);
-  return { text: src.slice(0, W.s) + out + src.slice(W.e), a: a2, b: a2 + mid.length };
 }
 function balanced(s) {
   let d = 0;
@@ -430,7 +842,7 @@ export function clearAlignment(src, a, b) {
   const W = envWords(src, s, z + close.length, PARA_ENVS, { spacing: 1 });
   if (!W || a < W.ws || b > W.we || /\n[ \t]*\n/.test(src.slice(W.ws, W.we))) return null;
   const edits = unwrapBlockEdits(src, W);
-  return { text: apply(src, edits), a: a + shiftBy(edits, a), b: b + shiftBy(edits, a) };
+  return { text: applyAll(src, edits), a: a + shiftBy(edits, a), b: b + shiftBy(edits, a) };
 }
 
 // The wrappers the selection (or caret) lies in, outermost first, of these kinds: what the Format
@@ -450,6 +862,46 @@ export function chainAt(src, a, b, kinds = CHAR_KINDS) {
     p = hit.W.s; q = hit.W.e;
   }
   return out;
+}
+
+// The paragraphs of [a, b): one part for each paragraph's text (a selection over several), the
+// paragraphs kept as LaTeX source (% rikuy: latex) left out: [[s, e]]
+export function paragraphParts(src, a, b) {
+  const out = [];
+  for (let p = a, m, re = /\n[ \t]*\n\s*/g, n = 0; p < b && n < 2000; n++) {
+    re.lastIndex = p;
+    m = re.exec(src);
+    const e = m && m.index < b ? m.index : b;
+    if (e > p && src.slice(p, e).trim()) {
+      // (a LaTeX paragraph runs from its mark to the blank line: what is before the mark is text)
+      const k = markIn(src, paraStart(src, p), e);
+      if (k < 0) out.push([p, e]);
+      else if (k > p && src.slice(p, k).trim()) out.push([p, p + src.slice(p, k).trimEnd().length]);
+    }
+    p = m && m.index < b ? m.index + m[0].length : b;
+  }
+  return out;
+}
+const MARK = /^[ \t]*%[ \t]*rikuy:[ \t]*latex[ \t]*\r?$/;
+// where the paragraph p is in starts: the line after a blank line (400 lines back at most)
+function paraStart(src, p) {
+  let ls = src.lastIndexOf('\n', p - 1) + 1;
+  for (let n = 0; n < 400 && ls > 0; n++) {
+    const prev = src.lastIndexOf('\n', ls - 2) + 1;
+    if (!src.slice(prev, ls - 1).trim()) break;
+    ls = prev;
+  }
+  return ls;
+}
+// the start of a mark's line in [s, e), or -1
+function markIn(src, s, e) {
+  for (let k = s, n = 0; k < e && n < 400; n++) {
+    const z = src.indexOf('\n', k), end = z < 0 ? src.length : z;
+    if (MARK.test(src.slice(k, end))) return k;
+    if (z < 0) break;
+    k = z + 1;
+  }
+  return -1;
 }
 
 // ---- sizes --------------------------------------------------------------------------------
@@ -522,8 +974,10 @@ export function docSize(src) {
     if (m && v === true) return parseFloat(m[1]);
     if (k === 'fontsize' && typeof v === 'string' && /^\d+(\.\d+)?pt$/.test(v)) return parseFloat(v);
   }
-  return /^scr/.test(d.name) ? 11 : 10;
+  return classDefault(d.name);
 }
+// the size a class takes with none asked for
+const classDefault = (cls) => (/^scr/.test(cls) || cls === 'beamer' ? 11 : 10);
 // The edits that set the class's base size: the option (KOMA's fontsize=), and article's ext
 // class for sizes the standard ones lack (8, 9, 14, 17, 20pt). null: the class cannot.
 export function docSizeEdits(src, pt) {
@@ -535,21 +989,22 @@ export function docSizeEdits(src, pt) {
   const isSize = (k) => /^\d+(\.\d+)?pt$/.test(k);
   const items = d.opts ? parseKV(src, d.opts[0], d.opts[1]) : [];
   if (sizes === 'any') {
+    if (docSize(src) === pt) return edits;
     const want = pt === 11 && !items.some((x) => x.key === 'fontsize') ? null : { fontsize: pt + 'pt' };
     if (want) edits.push(...optEdits(src, d, items, want, isSize));
     return edits;
   }
+  // the size it has already: nothing changes (an explicit [10pt] stays)
+  if (docSize(src) === pt) return edits;
   // article <-> extarticle where the size needs it (a document already in ext keeps its class)
-  const std = d.name.replace(/^ext/, ''), needExt = ![10, 11, 12].includes(pt);
+  const std = d.name.replace(/^ext/, ''), needExt = d.name !== 'beamer' && ![10, 11, 12].includes(pt);
   if (needExt && STD.test(d.name)) edits.push({ s: d.nameAt[0], e: d.nameAt[1], t: 'ext' + std });
-  // 10pt is the default: the option goes (and its brackets, when it was the only one)
-  if (pt === 10 && !EXT.test(d.name) && d.name !== 'memoir') {
-    const sz = items.filter((x) => isSize(x.key));
-    if (!sz.length) return edits;
-    if (items.length === sz.length) { edits.push({ s: d.opts[0] - 1, e: d.opts[1] + 1, t: '' }); return edits; }
-    edits.push(...kvEdits(src, d.opts[0], d.opts[1], {}, isSize));
-    return edits;
-  }
+  // (the class's own size with no size option there: nothing to write; anywhere else the option
+  // that was there becomes the new one, the rest of the list as it was)
+  if (pt === classDefault(d.name) && !items.some((x) => isSize(x.key))) return edits;
+  // (one size there: its text alone changes, comments around it kept)
+  const one = items.filter((x) => isSize(x.key) && x.value == null);
+  if (one.length === 1) { edits.push({ s: one[0].s, e: one[0].e, t: pt + 'pt' }); return edits; }
   edits.push(...optEdits(src, d, items, { [pt + 'pt']: true }, isSize));
   return edits;
 }
@@ -577,15 +1032,24 @@ export const FONTS = [
 ];
 // the generic families a selection can take, before the fonts by name
 export const GENERIC = [
-  { id: 'serif', name: 'Serif', cmd: 'textrm', look: 'serif' },
-  { id: 'sans', name: 'Sans Serif', cmd: 'textsf', look: 'sans' },
-  { id: 'mono', name: 'Monospace', cmd: 'texttt', look: 'mono' }
+  { id: 'serif', name: 'Serif', cmd: 'textrm', decl: 'rmfamily', look: 'serif' },
+  { id: 'sans', name: 'Sans Serif', cmd: 'textsf', decl: 'sffamily', look: 'sans' },
+  { id: 'mono', name: 'Monospace', cmd: 'texttt', decl: 'ttfamily', look: 'mono' }
 ];
-// every package a document's font comes from, to know which lines are the font's
-const FONT_PKGS = new Set(['lmodern', 'newtxtext', 'newtxmath', 'newpxtext', 'newpxmath', 'mathptmx', 'times', 'txfonts', 'palatino', 'mathpazo', 'pxfonts', 'tgtermes', 'tgpagella',
-  'tgheros', 'helvet', 'XCharter', 'charter', 'tgschola', 'newcent', 'tgbonum', 'bookman', 'kpfonts', 'libertine', 'tgcursor', 'courier']);
-const BY_PKG = { lmodern: 'lm', newtxtext: 'times', mathptmx: 'times', times: 'times', txfonts: 'times', tgtermes: 'times', newpxtext: 'palatino', palatino: 'palatino', mathpazo: 'palatino',
-  pxfonts: 'palatino', tgpagella: 'palatino', XCharter: 'charter', charter: 'charter', tgschola: 'schola', newcent: 'schola', tgbonum: 'bookman', bookman: 'bookman', kpfonts: 'kp' };
+// The packages that set a document's text font (with its math, often): the font chosen replaces
+// them. Each gives the font's id in FONTS, a name of its own (a font Rikuy does not list, shown in
+// the box as it is), or '' (math to go with a text font). helvet and tgheros set the sans serif
+// alone, courier and tgcursor the typewriter: they stay, but where the document is in its sans
+// serif (Helvetica's \familydefault).
+const MAIN_PKGS = { lmodern: 'lm', newtxtext: 'times', newtxmath: '', mathptmx: 'times', times: 'times', txfonts: 'times', tgtermes: 'times', newpxtext: 'palatino', newpxmath: '',
+  palatino: 'palatino', mathpazo: 'palatino', pxfonts: 'palatino', tgpagella: 'palatino', XCharter: 'charter', charter: 'charter', tgschola: 'schola', newcent: 'schola', tgbonum: 'bookman',
+  bookman: 'bookman', kpfonts: 'kp', libertine: 'Linux Libertine', libertinus: 'Libertinus', 'libertinus-type1': 'Libertinus', libertinust1math: '', fourier: 'Utopia (Fourier)',
+  fouriernc: 'New Century (Fourier)', utopia: 'Utopia', stix: 'STIX', stix2: 'STIX Two', mathdesign: 'Mathdesign', ebgaramond: 'EB Garamond', garamondx: 'Garamond', cochineal: 'Cochineal',
+  crimson: 'Crimson', crimsonpro: 'Crimson Pro', sourceserifpro: 'Source Serif', baskervillef: 'Baskerville', erewhon: 'Erewhon', heuristica: 'Heuristica', gentium: 'Gentium',
+  mlmodern: 'MLModern', cmbright: 'CM Bright', ccfonts: 'Concrete', concrete: 'Concrete', eulervm: '', newtxsf: '', mathastext: '', 'notomath': '', 'Alegreya': 'Alegreya', 'plex-serif': 'Plex Serif' };
+const SANS_PKGS = new Set(['helvet', 'tgheros']);
+const FONT_PKGS = new Set(Object.keys(MAIN_PKGS));
+const BY_PKG = Object.fromEntries(Object.entries(MAIN_PKGS).filter(([, v]) => v && FONTS.some((f) => f.id === v)));
 
 // Whether the document is set with fontspec (XeLaTeX or LuaLaTeX): engine is the PDF pane's
 // choice ('auto', 'xelatex', ...)
@@ -610,9 +1074,16 @@ export function docFont(src, engine) {
     return f ? { id: f.id, name: f.name } : { id: '', name: name.slice(0, 60) };
   }
   const pre = stripComments(src.slice(0, end));
-  let id = 'cm';
-  for (const p of packages(src, end)) for (const n of p.names) if (BY_PKG[n.name]) id = BY_PKG[n.name];
+  let id = 'cm', other = '';
+  for (const p of packages(src, end)) {
+    for (const n of p.names) {
+      const v = Object.hasOwn(MAIN_PKGS, n.name) ? MAIN_PKGS[n.name] : null;
+      if (v == null || v === '') continue;
+      if (BY_PKG[n.name]) { id = BY_PKG[n.name]; other = ''; } else { id = ''; other = v; }
+    }
+  }
   if (familyDefault(pre)) id = 'helvetica';
+  if (!id) return { id: '', name: other };
   const f = FONTS.find((x) => x.id === id);
   return { id, name: f.name };
 }
@@ -637,8 +1108,10 @@ export function docFontEdits(src, id, engine) {
   if (!F.pkgs) return null;
   const edits = [], ps = packages(src, end);
   let place = -1;
+  // (the sans serif's own packages go where the document is in its sans serif, or becomes so)
+  const pre0 = stripComments(src.slice(0, end)), sansNow = !!familyDefault(pre0);
   for (const p of ps) {
-    const mine = p.names.filter((n) => FONT_PKGS.has(n.name));
+    const mine = p.names.filter((n) => FONT_PKGS.has(n.name) || ((sansNow || F.sans) && SANS_PKGS.has(n.name)));
     if (!mine.length) continue;
     if (mine.length === p.names.length) {
       // the whole line is the font's: it goes, and the new one comes where the first was
@@ -672,7 +1145,7 @@ export function docFontEdits(src, id, engine) {
     if (same) same.t = pre2 + lines.join('\n') + '\n';
     else edits.push({ s: place, e: place, t: pre2 + lines.join('\n') + '\n' });
   }
-  return edits;
+  return eolLike(src, edits);
 }
 // \renewcommand{\familydefault}{\sfdefault} (or \renewcommand*\familydefault{\sfdefault}) in a preamble
 // whose comments are spaces: { index, 0: its text with the spaces and line break after it }, or
@@ -712,7 +1185,8 @@ function lineAfterPackages(src, end) {
 // ({\fontfamily{ppl}\selectfont ...} for pdfLaTeX, {\fontspec{TeX Gyre Pagella} ...} for fontspec)
 export function familyWrapper(id, fontspec) {
   const G = GENERIC.find((x) => x.id === id);
-  if (G) return { cmd: G.cmd };
+  // (in a group of declarations: {\sffamily ..} for \textsf, so an argument's braces stay one group)
+  if (G) return { cmd: G.cmd, declAlt: { cmd: G.decl, decl: true } };
   const F = FONTS.find((x) => x.id === id);
   if (!F) return null;
   if (fontspec) return F.spec ? { cmd: 'fontspec', args: [F.spec], decl: true } : null;
@@ -742,7 +1216,10 @@ export function preambleFor(src, needs, o = {}) {
   if (end < 0) return [];
   const pkgs = {}, defs = [];
   let dvips = false;
+  // (the highlighter's packages are its definition's: none where the document has an \hl of its own)
+  const hlOwn = needs.some((n) => n && (n.defs || []).includes('hl')) && !src.slice(0, end).includes(OLD_HL) && hlElsewhere(src, end, o.others || []);
   for (const n of needs.filter(Boolean)) {
+    if (hlOwn && (n.defs || []).includes('hl')) continue;
     for (const [k, v] of Object.entries(n.pkgs || {})) pkgs[k] = v && pkgs[k] ? { ...pkgs[k], ...v } : v || pkgs[k] || null;
     for (const d of n.defs || []) if (!defs.includes(d)) defs.push(d);
     if (n.dvips) dvips = true;
@@ -767,12 +1244,18 @@ export function preambleFor(src, needs, o = {}) {
       if (!xc) delete pkgs.xcolor;
     } else pkgs.xcolor = { ...(pkgs.xcolor || {}), dvipsnames: true };
   }
-  if (Object.keys(pkgs).length) edits.push(...usePackages(src, pkgs, { end, others: o.others }));
+  // (a package the document loads already gets no option from here: ulem without normalem
+  // underlines every \emph, and normalem added would change all of them)
+  const others = o.others || [];
+  for (const k of Object.keys(pkgs)) if (k !== 'xcolor' && pkgs[k] && loads(src, end, others, k)) pkgs[k] = null;
+  if (Object.keys(pkgs).length) edits.push(...usePackages(src, pkgs, { end, others }));
   for (const name of defs) {
     if (name === 'hl') {
       // Word import's highlighter without a colour: the same line with one
       const at = src.indexOf(OLD_HL);
       if (at >= 0 && at < end) { edits.push({ s: at, e: at + OLD_HL.length, t: DEFS.hl }); continue; }
+      // (soul's \hl, or one an \input file of the preamble defines, stays the document's)
+      if (hlElsewhere(src, end, others)) continue;
     }
     if (name === 'ruby' && /luatexja-ruby|\bruby\b/.test(packages(src, end).map((p) => p.names.map((n) => n.name).join(',')).join(','))) continue;
     edits.push(...defineOnce(src, name, DEFS[name], { end }));
@@ -783,161 +1266,232 @@ export function preambleFor(src, needs, o = {}) {
     const same = x.s === x.e && out.find((y) => y.s === x.s && y.e === x.s);
     if (same) same.t += x.t; else out.push({ ...x });
   }
-  return out;
+  return eolLike(src, out);
 }
-// Whether the document's \hl takes a colour: Rikuy's, or none yet (Rikuy writes its own)
-export function hlTakesColor(src) {
+// whether the preamble (or one of the preamble's \input files, others) loads a package
+function loads(src, end, others, name) {
+  if (packages(src, end).some((p) => p.names.some((n) => n.name === name))) return true;
+  return others.some((t) => packages(t, t.length).some((p) => p.names.some((n) => n.name === name)));
+}
+// soul's \hl, or an \hl of the document's own in an \input file of its preamble
+function hlElsewhere(src, end, others) {
+  if (['soul', 'soulutf8', 'soulpos'].some((n) => loads(src, end, others, n))) return true;
+  return others.some((t) => defines(t, 'hl', 'command', t.length));
+}
+// Lines written into a file whose lines end in CR LF end so too
+export function eolLike(src, edits) {
+  const nl = src.indexOf('\n');
+  if (nl <= 0 || src[nl - 1] !== '\r') return edits;
+  return edits.map((x) => ({ ...x, t: x.t.replace(/\r?\n/g, '\r\n') }));
+}
+export function hlTakesColor(src, others = []) {
   const end = preambleEnd(src);
   if (end < 0) return true;
   if (src.slice(0, end).includes(DEFS.hl)) return true;
   if (src.indexOf(OLD_HL) >= 0 && src.indexOf(OLD_HL) < end) return true;
+  if (hlElsewhere(src, end, others)) return false;
   return !defines(src, 'hl', 'command', end);
 }
 
 // ---- change case ------------------------------------------------------------------------------
-// Commands whose arguments are no words (keys, names, colours, sizes, addresses): their letters
-// keep their case
-const NOT_WORDS = new Set(['label', 'ref', 'eqref', 'pageref', 'cref', 'Cref', 'autoref', 'nameref', 'vref', 'Vref', 'labelcref', 'cite', 'citep', 'citet', 'citealt', 'citealp',
-  'citeauthor', 'citeyear', 'citeyearpar', 'Citet', 'Citep', 'Citealt', 'Citealp', 'Citeauthor', 'textcite', 'parencite', 'autocite', 'Textcite', 'Parencite', 'Autocite', 'footcite',
-  'smartcite', 'citenum', 'nocite', 'url', 'href', 'hyperref', 'hyperlink', 'hypertarget', 'includegraphics', 'input', 'include', 'begin', 'end', 'textcolor', 'color', 'colorbox',
-  'fcolorbox', 'hl', 'fontsize', 'fontfamily', 'fontspec', 'usepackage', 'documentclass', 'bibliography', 'bibliographystyle', 'index', 'gls', 'Gls', 'glspl', 'acrshort', 'acrlong',
-  'ac', 'acp', 'textls', 'scalebox', 'raisebox', 'culine', 'vspace', 'hspace', 'rule', 'setlength', 'num', 'SI', 'si', 'qty', 'unit', 'ang', 'newcommand', 'renewcommand']);
-// how many arguments of each come before the words (\href{url}{words}: one; \textcolor{red}{words}: one)
-const NOT_WORDS_LEAD = { href: 1, hyperref: 0, textcolor: 1, colorbox: 1, fcolorbox: 2, hl: 0, culine: 1, textls: 0, scalebox: 1, raisebox: 1, hyperlink: 1 };
-const LETTER_CMDS = { ss: 'SS', SS: 'ss', o: 'O', O: 'o', ae: 'AE', AE: 'ae', oe: 'OE', OE: 'oe', aa: 'AA', AA: 'aa', l: 'L', L: 'l' };
+// Change Case rewrites only letters the page draws: the page gives the characters of the selection
+// it shows (drawnChars in src/cmd/font.js: its text runs, each character with its place in the
+// source), so math, keys, column specs, labels, a footnote's text behind its mark and LaTeX
+// paragraphs never reach here. A letter's source is the letter itself, a letter written as a
+// command (\ss, \o, \ae, \i) or an accent on one (\'e, \"{o}, \c{c}); anything else drawn (a macro's
+// text) keeps its case.
+const LETTER_CMDS = { ss: 'SS', SS: 'ss', o: 'O', O: 'o', ae: 'AE', AE: 'ae', oe: 'OE', OE: 'oe', aa: 'AA', AA: 'aa', l: 'L', L: 'l', dh: 'DH', DH: 'dh', th: 'TH', TH: 'th', ng: 'NG', NG: 'ng', dj: 'DJ', DJ: 'dj' };
+const ACCENT = /^\\(?:[^A-Za-z\s]|[A-Za-z]+(?![A-Za-z]))\s*(\{\s*)?(?:([A-Za-z])|\\([ij])(?![A-Za-z])(?:\{\})?)\s*\}?$/;
 
-// The words of [a, b) in another case: 'lower', 'upper', 'title' (Capitalize Each Word),
-// 'sentence' (Sentence case.), 'toggle' (tOGGLE cASE), or 'cycle' (Shift+F3: lower, then each word
-// capitalised, then upper). Commands, their keys, math and comments keep their letters.
-// Returns { text, a, b } or null when nothing changes.
-export function changeCase(src, a, b, mode) {
-  b = Math.min(b, a + 200000);
-  const spans = letterSpans(src, a, b);
+// The case each drawn character should take: chars [{ s, e, ch, gap }] in reading order (gap: a
+// word or a paragraph lies between it and the one before, 'word' or 'par'); mode 'lower', 'upper',
+// 'title' (Capitalize Each Word), 'sentence', 'toggle' or 'cycle' (Shift+F3: lower, each word
+// capitalised, upper); before: the drawn text before the first in its paragraph. The edits of the
+// source, or null when no letter changes: { edits, mode }.
+export function caseEdits(src, chars, mode, before = '', ok = null) {
+  if (!chars.length) return null;
+  // the drawn text, with a space where something undrawn stands between two words
+  let D = '';
+  const at = [];
+  for (const c of chars) {
+    if (c.gap === 'par') D += '\n\n'; else if (c.gap === 'word') D += ' ';
+    at.push(D.length);
+    D += c.ch;
+  }
   if (mode === 'cycle') {
-    const letters = spans.map(([s, e]) => src.slice(s, e)).join('');
-    const lo = letters.toLowerCase(), up = letters.toUpperCase();
-    const title = titleOf(spans, src);
-    mode = letters === up && letters !== lo ? 'lower' : letters === lo ? 'title' : letters === title ? 'upper' : 'upper';
+    const L = D.replace(/[^\p{L}]/gu, ''), lo = L.toLowerCase(), up = L.toUpperCase();
+    mode = L === up && L !== lo ? 'lower' : L === lo ? 'title' : L === titleCase(D, before).replace(/[^\p{L}]/gu, '') ? 'upper' : 'upper';
   }
-  let out = '', last = a, startWord = true, startSentence = true;
-  // (whether the selection starts a sentence: what comes before it on its paragraph ends one, or nothing does)
-  // (what stands before it in its paragraph, after the last \begin, \item or heading there)
-  const raw = src.slice(Math.max(0, a - 200), a).split(/\n[ \t]*\n/).pop();
-  const seg = raw.replace(/%[^\n]*/g, '').replace(/\\(?:begin|end)\s*\{[^{}]*\}|\\(?:item|par|noindent|maketitle)\b|\\(?:part|chapter|(?:sub)*section|paragraph)\*?\s*\{[^{}]*\}/g, '\u0001');
-  const before = seg.slice(seg.lastIndexOf('\u0001') + 1).replace(/\\[A-Za-z]+\s*|[{}]/g, '');
-  const tail = before.trimEnd();
-  startSentence = !tail || /[.!?:]$/.test(tail);
-  startWord = !before || /[\s~(\[{"'`-]$/.test(before);
-  for (const [s, e, kind] of spans) {
-    out += src.slice(last, s);
-    // what lies between the letters says whether a word or a sentence starts
-    const gap = src.slice(last, s).replace(/\\[A-Za-z]+\s*|[{}]/g, '');
-    if (last !== a || s !== a) {
-      if (/[.!?]\s*$/.test(gap) && /\s/.test(gap)) startSentence = true;
-      if (/[\s~(\[-]/.test(gap) || /[.!?,;:]/.test(gap)) startWord = true;
-    }
-    let t = src.slice(s, e);
-    if (kind === 'cmd') {
-      const name = t.slice(1);
-      const up = mode === 'upper' || (mode === 'title' && startWord) || (mode === 'sentence' && startSentence);
-      const lo = mode === 'lower' || (mode === 'title' && !startWord) || (mode === 'sentence' && !startSentence);
-      const isUp = name === name.toUpperCase();
-      if (mode === 'toggle') t = '\\' + LETTER_CMDS[name];
-      else if (up && !isUp) t = '\\' + LETTER_CMDS[name];
-      else if (lo && isUp) t = '\\' + LETTER_CMDS[name];
-      startWord = false; startSentence = false;
-      out += t; last = e; continue;
-    }
-    let r = '';
-    for (const ch of t) {
-      let c = ch;
-      if (mode === 'upper') c = one(ch.toUpperCase(), ch);
-      else if (mode === 'lower') c = one(ch.toLowerCase(), ch);
-      else if (mode === 'toggle') c = ch === ch.toUpperCase() ? one(ch.toLowerCase(), ch) : one(ch.toUpperCase(), ch);
-      else if (mode === 'title') c = startWord ? one(ch.toUpperCase(), ch) : one(ch.toLowerCase(), ch);
-      else if (mode === 'sentence') c = startSentence ? one(ch.toUpperCase(), ch) : one(ch.toLowerCase(), ch);
-      r += c;
-      startWord = false; startSentence = false;
-    }
-    out += r; last = e;
+  const want = targetCase(D, mode, before);
+  const edits = [];
+  for (let k = 0; k < chars.length; k++) {
+    const { s, e, ch } = chars[k], dir = want[at[k]];
+    if (!dir || !/\p{L}/u.test(ch) || (ok && !ok.has(s))) continue;
+    // (already in that case: nothing to do; ß is a small letter whose capital is \SS)
+    const isUp = ch !== ch.toLowerCase() && ch === ch.toUpperCase(), isLo = ch !== ch.toUpperCase() && ch === ch.toLowerCase();
+    if ((dir > 0 && !isLo) || (dir < 0 && !isUp)) continue;
+    const x = letterEdit(src, s, e, dir > 0);
+    if (x) edits.push(x);
   }
-  out += src.slice(last, b);
-  const text = src.slice(0, a) + out + src.slice(b);
-  return text === src ? null : { text, a, b: a + out.length };
+  return edits.length ? { edits, mode } : null;
 }
-// (a letter whose other case is two letters, ß to SS, keeps its case: the source stays as long)
-const one = (c, ch) => (c.length === ch.length ? c : ch);
-function titleOf(spans, src) {
-  let s = '', prevEnd = -1;
-  for (const [a, b] of spans) {
-    const t = src.slice(a, b);
-    const gap = prevEnd < 0 || /[\s~(]/.test(src.slice(prevEnd, a));
-    s += gap ? t[0].toUpperCase() + t.slice(1).toLowerCase() : t.toLowerCase();
-    prevEnd = b;
-  }
-  return s;
-}
-// The runs of letters of [a, b) a case change may touch: [s, e, kind] with kind 'text' or 'cmd'
-// (a letter written as a command: \ss, \o, \ae)
-export function letterSpans(src, a, b) {
+// for each character of the drawn text, the case the mode asks of it: 1 capital, -1 small, 0 none
+function targetCase(D, mode, before) {
   const out = [];
-  let i = a, run = -1;
-  // (the arguments skipped are looked for in two million characters at most in all: a stranger's
-  // thousands of unclosed \cite{ would each scan to the end)
-  const budget = { n: 2e6 };
-  const groupClose = (t, k, z) => groupCloseB(t, k, z, budget);
-  const end = () => { if (run >= 0) { out.push([run, i, 'text']); run = -1; } };
-  for (let n = 0; i < b && n < 400000; n++) {
-    const c = src[i];
-    if (c === '%') { end(); const z = src.indexOf('\n', i); i = z < 0 || z > b ? b : z; continue; }
-    if (c === '$' || (c === '\\' && (src[i + 1] === '(' || src[i + 1] === '['))) { end(); i = skipMath(src, i, b); continue; }
-    if (c === '\\') {
-      end();
-      const m = /^\\([A-Za-z]+)\*?/.exec(src.slice(i, i + 60));
-      if (!m) { i += 2; continue; }
-      if (LETTER_CMDS[m[1]] && !/[A-Za-z]/.test(src[i + m[0].length] || '')) { out.push([i, i + m[0].length, 'cmd']); i += m[0].length; continue; }
-      i += m[0].length;
-      if (m[1] === 'begin' || m[1] === 'end' || NOT_WORDS.has(m[1])) {
-        // its keys: every argument but the words after the lead ones (\href's text, \textcolor's)
-        let lead = m[1] in NOT_WORDS_LEAD ? NOT_WORDS_LEAD[m[1]] : 99;
-        for (let k = 0; k < 6 && i < b; k++) {
-          let j = i;
-          while (j < b && (src[j] === ' ' || src[j] === '\t')) j++;
-          if (src[j] === '[') { const z = groupClose(src, j, b); if (z < 0) break; i = z; continue; }
-          if (src[j] !== '{' || lead <= 0) break;
-          const z = groupClose(src, j, b);
-          if (z < 0) break;
-          i = z; lead--;
-        }
-      }
-      continue;
+  let word = !before || /[\s~(\[{"'`‘“-]$/.test(before), sentence = !before.trim() || /[.!?:]\s*$/.test(before);
+  for (let i = 0; i < D.length; i++) {
+    const ch = D[i];
+    let c = 0;
+    if (/\p{L}/u.test(ch)) {
+      if (mode === 'upper') c = 1;
+      else if (mode === 'lower') c = -1;
+      else if (mode === 'toggle') c = ch !== ch.toLowerCase() ? -1 : 1;
+      else if (mode === 'title') c = word ? 1 : -1;
+      else if (mode === 'sentence') c = sentence ? 1 : -1;
+      word = false; sentence = false;
+    } else {
+      if (/[\s~(\[{"'`‘“/-]/.test(ch)) word = true;
+      if (/\n/.test(ch)) sentence = true;
+      if (/[.!?]/.test(ch)) sentence = 'next';
+      else if (/\s/.test(ch) && sentence === 'next') sentence = true;
+      else if (sentence === 'next' && !/["'’”)]/.test(ch)) sentence = false;
     }
-    if (/\p{L}/u.test(c)) { if (run < 0) run = i; i++; continue; }
-    end(); i++;
+    out.push(c);
   }
-  end();
   return out;
 }
-function groupCloseB(t, i, b, budget) {
-  const open = t[i], close = open === '[' ? ']' : '}';
-  let d = 0;
-  if (budget.n <= 0) return -1;
-  for (let k = i; k < b && k < i + 20000; k++) {
-    if (--budget.n <= 0) return -1;
-    const c = t[k];
-    if (c === '\\') { k++; continue; }
-    if (c === open) d++;
-    else if (c === close && --d === 0) return k + 1;
+// the drawn text with each word capitalised
+const titleCase = (D, before) => { const t = targetCase(D, 'title', before); return D.split('').map((ch, i) => (t[i] > 0 ? ch.toUpperCase() : t[i] < 0 ? ch.toLowerCase() : ch)).join(''); };
+// The edit that gives the letter drawn from [s, e) the other case (up: to capitals), or null
+function letterEdit(src, s, e, up) {
+  const R = src.slice(s, e);
+  const flip = (c) => { const t = up ? c.toUpperCase() : c.toLowerCase(); return t.length === c.length ? t : c; };
+  if ([...R].length === 1) { const t = flip(R); return t === R ? null : { s, e, t }; }
+  const m = /^\\([A-Za-z]+)(?![A-Za-z])/.exec(R);
+  if (m && LETTER_CMDS[m[1]] && /^\s*(?:\{\})?$/.test(R.slice(m[0].length))) {
+    const isUp = m[1] === m[1].toUpperCase();
+    return isUp === up ? null : { s: s + 1, e: s + 1 + m[1].length, t: LETTER_CMDS[m[1]] };
   }
-  return -1;
+  if (m && (m[1] === 'i' || m[1] === 'j') && up && /^\s*(?:\{\})?$/.test(R.slice(2))) return { s, e: s + 2, t: m[1].toUpperCase() };
+  const A = ACCENT.exec(R);
+  if (A) {
+    if (A[2]) {
+      const k = s + R.lastIndexOf(A[2]), t = flip(A[2]);
+      return t === A[2] ? null : { s: k, e: k + 1, t };
+    }
+    if (up) { const k = s + R.lastIndexOf('\\' + A[3]); return { s: k, e: k + 2 + (src.startsWith('{}', k + 2) ? 2 : 0), t: A[3].toUpperCase() }; }
+  }
+  return null;
+}
+// The characters of [a, b) whose letters Change Case may touch, read from the source: plain text
+// and the words of commands, as [{ s, e, ch, gap }] (a letter written as a command or an accent on
+// one is one character). Passed over: comments, math, environments of math, code and pictures,
+// \tikz, \verb, options in brackets, and the keys of commands (labels, references, citations,
+// glossary and acronym keys, colours, languages, addresses, files, lengths): what Change Case does
+// on the page is also kept to these, as the page draws some keys of commands it does not know.
+const KEY_CMD = /ref$|^[cC]?ref|cite|^[gG]ls|^[aA]cr|^[aA]c[slp]?$|label|url|color|language|^input$|^include|graphics|^bibliograph|^new|^renew|^provide|^set|^def|^use|^add|^hyper|^pdf|inline$|^index|^ensuremath$|^font(?:size|family|spec)$|^[vh]space|^rule$|^SI$|^si$|^qty$|^unit$|^num$|^ang$|^printbibliography$|^cline$|^cmidrule$|^documentclass$|^geometry$|^pagestyle$|^thispagestyle$|^numberwithin$|^counterwithin/;
+const CASE_LEAD = { href: 1, textcolor: 1, colorbox: 1, fcolorbox: 2, foreignlanguage: 1, multicolumn: 2, multirow: 2, hyperlink: 1, hyperref: 0, culine: 1, textls: 0, scalebox: 1, raisebox: 1,
+  rotatebox: 1, hl: 0, makebox: 0, framebox: 0, parbox: 1, foreignquote: 1, textlang: 1, resizebox: 2 };
+export function caseChars(src, a, b) {
+  b = Math.min(b, a + 200000, src.length);
+  const chars = [];
+  let last = a, gapNext = false;
+  // (the arguments passed over are read in two million characters at most in all: a stranger's
+  // thousands of unclosed \cite{ would each be read to the end)
+  let budget = 2e6;
+  const close = (q) => {
+    const o = src[q], c = o === '[' ? ']' : '}';
+    for (let k = q + 1, d = 0; k < b && k < q + 20000; k++) {
+      if (--budget <= 0) return -1;
+      const x = src[k];
+      if (x === '\\') { k++; continue; }
+      if (x === o) d++; else if (x === c) { if (d === 0) return k + 1; d--; }
+    }
+    return -1;
+  };
+  // past every argument right after k ([..] and {..}), or past the options and lead ones alone
+  const pass = (k, lead) => {
+    for (let g = 0; g < 8 && k < b; g++) {
+      const q = sp(src, k);
+      if (src[q] === '[') { const z = close(q); if (z < 0) return b; k = z; continue; }
+      if (src[q] !== '{' || lead <= 0) break;
+      const z = close(q); if (z < 0) return b; k = z; lead--;
+    }
+    return k;
+  };
+  const push = (s, e, ch) => {
+    chars.push({ s, e, ch, gap: chars.length && (gapNext || (last < s && /\s/.test(src.slice(last, s)))) ? 'word' : undefined });
+    last = e; gapNext = false;
+  };
+  for (let i = a, n = 0; i < b && n < 400000; n++) {
+    const c = src[i];
+    if (c === '%') { const z = src.indexOf('\n', i); i = z < 0 || z > b ? b : z; continue; }
+    if (c === '$' || (c === '\\' && (src[i + 1] === '(' || src[i + 1] === '['))) { i = skipMath(src, i, b); gapNext = true; continue; }
+    if (c === '\\') {
+      const m = /^\\(?:([A-Za-z]+)\*?|.)/s.exec(src.slice(i, i + 60));
+      const name = m[1];
+      const acc = /^\\(?:['`^"~=.]|[cvuHkdbrt](?![A-Za-z]))\s*(?:\{\s*)?(?:[A-Za-z]|\\[ij](?![A-Za-z]))\s*\}?/.exec(src.slice(i, i + 20));
+      if (acc && (!acc[0].includes('{') || acc[0].endsWith('}'))) {
+        const L = acc[0].replace(/^\\./, '').match(/[A-Za-z]/g);
+        push(i, i + acc[0].length, L ? L[L.length - 1] : 'a');
+        i += acc[0].length; continue;
+      }
+      if (name && (LETTER_CMDS[name] || name === 'i' || name === 'j') && !/[A-Za-z]/.test(src[i + m[0].length] || '')) {
+        // (a stand-in letter of the command's case)
+        push(i, i + m[0].length, name === name.toUpperCase() ? 'A' : 'a');
+        i += m[0].length; continue;
+      }
+      let k = i + m[0].length;
+      if (!name) { i = m[0] === '\\\\' ? pass(k, 0) : k; continue; }
+      if (name === 'begin' || name === 'end') {
+        const env = /^\\(?:begin|end)\s*\{([^{}]{1,40})\}/.exec(src.slice(i, i + 60));
+        if (!env) { i = k; continue; }
+        if (name === 'begin' && WHOLE.test(env[1])) { const z = src.indexOf('\\end{' + env[1] + '}', i); i = z < 0 ? b : z + 6 + env[1].length; gapNext = true; continue; }
+        i = name === 'begin' ? args(src, i + env[0].length, b) : i + env[0].length; gapNext = true; continue;
+      }
+      if (name === 'verb') { const y = src.indexOf(src[k], k + 1); i = y < 0 ? b : y + 1; gapNext = true; continue; }
+      if (name === 'tikz') { const y = src.indexOf(';', k), q = sp(src, k); i = src[q] === '{' ? pass(q, 1) : y < 0 ? b : y + 1; gapNext = true; continue; }
+      if (name in CASE_LEAD) { i = pass(k, CASE_LEAD[name]); continue; }
+      if (KEY_CMD.test(name)) { i = pass(k, 99); gapNext = true; continue; }
+      // (any other command: its options passed over, its braces read)
+      i = pass(k, 0);
+      continue;
+    }
+    if (c === '{' || c === '}') { i++; continue; }
+    push(i, i + 1, c);
+    i++;
+  }
+  return chars;
+}
+// what comes before a in its paragraph, as words: whether a sentence or a word starts there
+function caseBefore(src, a) {
+  const raw = src.slice(Math.max(0, a - 200), a).split(/\n[ \t]*\n/).pop().replace(/%[^\n]*/g, '')
+    .replace(/\\(?:begin|end)\s*\{[^{}]*\}|\\(?:item|par|noindent|maketitle)\b|\\(?:part|chapter|(?:sub)*section|paragraph)\*?\s*\{[^{}]*\}/g, '\u0001');
+  return raw.slice(raw.lastIndexOf('\u0001') + 1).replace(/\\[A-Za-z]+\s*|[{}]/g, '');
+}
+// Change Case on the source alone, for a selection the page does not draw (and the tests).
+// Returns { text, a, b } or null.
+export function changeCase(src, a, b, mode) {
+  const r = caseEdits(src, caseChars(src, a, b), mode, caseBefore(src, a));
+  if (!r) return null;
+  const text = applyAll(src, r.edits);
+  return { text, a, b: Math.min(b, src.length) + text.length - src.length };
+}
+// The page's characters of [a, b) (from src/cmd/font.js's drawnChars) as Change Case takes them:
+// only those the source also gives as letters of words may change. { text, a, b } or null.
+export function changeDrawn(src, a, b, drawn, mode) {
+  const ok = new Set(caseChars(src, a, b).map((c) => c.s));
+  const r = caseEdits(src, drawn.chars, mode, drawn.before, ok);
+  if (!r) return null;
+  const text = applyAll(src, r.edits);
+  return { text, a, b: b + text.length - src.length };
 }
 function skipMath(src, i, b) {
   const close = src[i] === '$' ? (src[i + 1] === '$' ? '$$' : '$') : src[i + 1] === '(' ? '\\)' : '\\]';
   let k = i + (close === '$' ? 1 : 2);
   for (; k < b && k < i + 20000; k++) {
-    if (src[k] === '\\' && src.startsWith(close, k)) return k + close.length;
-    if (src[k] === '\\') { k++; continue; }
     if (src.startsWith(close, k)) return k + close.length;
+    if (src[k] === '\\') k++;
   }
   return b;
 }

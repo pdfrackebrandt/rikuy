@@ -64,7 +64,8 @@ def round_trips(page):
     roundtrip(page, DOC, 'plain words', 'all-caps', rep('\\MakeUppercase{plain words}'), forms=[rep('\\uppercase{plain words}')], label='All Caps')
     roundtrip(page, DOC, 'plain words', 'char-border', rep('\\fbox{plain words}'), label='Character Border')
     roundtrip(page, DOC, 'plain', 'enclose-chars', WRAP(BODY.replace('plain', '\\textcircled{plain}')), label='Enclose Characters')
-    roundtrip(page, DOC, 'plain words', 'char-shading', rep('\\colorbox{lightgray}{plain words}', XCOLOR), off=WRAP(BODY, XCOLOR), label='Character Shading')
+    # (a word gets a box; words, which may run over a line's end, the highlighter's grey: review L2)
+    roundtrip(page, DOC, 'plain', 'char-shading', WRAP(BODY.replace('plain', '\\colorbox{lightgray}{plain}'), XCOLOR), off=WRAP(BODY, XCOLOR), label='Character Shading')
     roundtrip(page, DOC, 'plain words', 'highlight', rep('\\hl{plain words}', ULEM + XCOLOR + HL), off=WRAP(BODY, ULEM + XCOLOR + HL), label='Text Highlight Color')
     roundtrip(page, DOC, 'plain words', 'typewriter', rep('\\texttt{plain words}'), forms=[rep('{\\ttfamily plain words}')], label='Typewriter')
     # Subscript on superscript text: one becomes the other, the words still selected
@@ -210,43 +211,52 @@ def sizes(page):
     check('the size list names each size with its points: 5 tiny … 24.88 Huge', len(items) == 10 and items[0].startswith('5') and 'tiny' in items[0] and 'Huge' in items[-1], items)
     page.get_by_role('menuitemradio', name='14.4 Large').click(); page.wait_for_timeout(250)
     check('a size from the list: {\\Large ..}', body(page).startswith('Some {\\Large plain words}'), body(page))
-    # at a caret outside any size: the document's base size
+    # at a caret in a word: that word, as Word does; the class line stays (review M7)
     load_doc(page, DOC); click_text(page, 'plain', 2)
-    page.fill('#rb-size', '11'); page.press('#rb-size', 'Enter'); page.wait_for_timeout(300)
-    check('the size box at a caret sets the document\'s size: \\documentclass[11pt]{article}', src(page).startswith('\\documentclass[11pt]{article}') and body(page) == BODY, src(page)[:40])
+    page.fill('#rb-size', '12'); page.press('#rb-size', 'Enter'); page.wait_for_timeout(300)
+    check('the size box at a caret in a word sizes the word: {\\large plain}, the class line as it was', body(page).startswith('Some {\\large plain} words') and src(page).startswith('\\documentclass{article}'), body(page)[:60])
     run_cmd(page, 'grow-font')
-    check('Increase Font Size at a caret: 12pt', src(page).startswith('\\documentclass[12pt]{article}'), src(page)[:40])
-    run_cmd(page, 'grow-font')
-    check('and 14pt, through extsizes\' extarticle', src(page).startswith('\\documentclass[14pt]{extarticle}'), src(page)[:40])
+    check('Increase Font Size at a caret in it: {\\Large plain}', body(page).startswith('Some {\\Large plain} words') and src(page).startswith('\\documentclass{article}'), body(page)[:60])
+    load_doc(page, DOC); click_text(page, 'plain', 2)
+    for _ in range(3): run_cmd(page, 'grow-font')
+    check('Ctrl+] three times at a caret: the word three sizes up, never the class (\\documentclass{article} kept)', body(page).startswith('Some {\\LARGE plain} words') and src(page).startswith('\\documentclass{article}\n'), src(page)[:200])
+    # the document's size: the Font dialog's Set As Default
+    load_doc(page, DOC); click_text(page, 'plain', 2)
+    page.keyboard.press('Control+d'); page.wait_for_timeout(300)
+    dlg = page.get_by_role('dialog', name='Font')
+    dlg.get_by_label('Size', exact=True).fill('14'); dlg.get_by_role('button', name='Set As Default').click(); page.wait_for_timeout(300)
+    check('the document\'s size from Set As Default: 14pt, through extsizes\' extarticle', src(page).startswith('\\documentclass[14pt]{extarticle}') and body(page) == BODY, src(page)[:40])
     fs14 = page.evaluate('getComputedStyle(document.querySelector("#pages .it")).fontSize')
     page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
-    fs12 = page.evaluate('getComputedStyle(document.querySelector("#pages .it")).fontSize')
-    check('the page sets the text 14.4 / 12 times as large', abs(float(fs14[:-2]) / float(fs12[:-2]) - 1.2) < 0.02, (fs14, fs12))
-    page.evaluate('window.rikuy.undo()'); page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
-    check('three undos: the class line of before, byte for byte', src(page) == DOC, src(page)[:40])
-    # a class with sizes of its own
+    fs10 = page.evaluate('getComputedStyle(document.querySelector("#pages .it")).fontSize')
+    check('the page sets the text 14.4 / 10 times as large (size14.clo\'s \\normalsize), and one undo gives the class line of before byte for byte', abs(float(fs14[:-2]) / float(fs10[:-2]) - 1.44) < 0.02 and src(page) == DOC, (fs14, fs10))
+    # a class with sizes of its own: Set As Default leaves it alone, and says so
     rev = DOC.replace('{article}', '{revtex4-2}')
     load_doc(page, rev); click_text(page, 'plain', 2)
-    page.fill('#rb-size', '12'); page.press('#rb-size', 'Enter'); page.wait_for_timeout(250)
-    check('a class that sets its own sizes is left alone, and says so', src(page) == rev and 'sets its own sizes' in page.inner_text('#toast'), page.inner_text('#toast'))
+    page.keyboard.press('Control+d'); page.wait_for_timeout(300)
+    dlg = page.get_by_role('dialog', name='Font')
+    dlg.get_by_label('Size', exact=True).fill('12'); dlg.get_by_role('button', name='Set As Default').click(); page.wait_for_timeout(300)
+    check('a class that sets its own sizes is left alone by Set As Default', src(page) == rev, src(page)[:60])
 
 
 def fonts(page):
-    """The font box: the document's font, a selection's family, fontspec."""
+    """The font box: a word's or a selection's family; the document's font from Set As Default; fontspec."""
     load_doc(page, DOC); click_text(page, 'plain', 2); page.wait_for_timeout(200)
     check('the font box shows the document\'s font, Computer Modern', page.input_value('#rb-font') == 'Computer Modern', page.input_value('#rb-font'))
     page.fill('#rb-font', 'Times'); page.press('#rb-font', 'Enter'); page.wait_for_timeout(300)
-    check('Times at a caret: the document\'s font, \\usepackage{newtxtext,newtxmath} after the packages', '\\usepackage{amsmath}\n\\usepackage{newtxtext,newtxmath}\n' in pre(page) and body(page) == BODY, pre(page))
+    check('Times at a caret in a word: that word, {\\fontfamily{ptm}\\selectfont plain}; the preamble as it was (review M7)', body(page).startswith('Some {\\fontfamily{ptm}\\selectfont plain} words') and pre(page) == DOC[:DOC.index('\\begin{document}')], body(page)[:60])
+    # the document's font: the Font dialog's Set As Default
+    load_doc(page, DOC); click_text(page, 'plain', 2); page.wait_for_timeout(150)
+    page.keyboard.press('Control+d'); page.wait_for_timeout(300)
+    dlg = page.get_by_role('dialog', name='Font')
+    dlg.get_by_label('Font name', exact=True).select_option(label='Times'); dlg.get_by_role('button', name='Set As Default').click(); page.wait_for_timeout(300)
+    check('Times from Set As Default: the document\'s font, \\usepackage{newtxtext,newtxmath} after the packages', '\\usepackage{amsmath}\n\\usepackage{newtxtext,newtxmath}\n' in pre(page) and body(page) == BODY, pre(page))
     ff = page.evaluate('getComputedStyle(document.querySelector("#pages .it")).fontFamily')
     check('the page sets the text in a Times', 'Times' in ff or 'Termes' in ff, ff)
-    page.wait_for_timeout(150)
+    page.wait_for_timeout(150); click_text(page, 'plain', 2); page.wait_for_timeout(150)
     check('and the box says Times', page.input_value('#rb-font') == 'Times', page.input_value('#rb-font'))
-    page.focus('#rb-font'); page.keyboard.press('ArrowDown'); page.wait_for_timeout(250)
-    page.get_by_role('menuitemradio', name='Helvetica').click(); page.wait_for_timeout(300)
-    check('Helvetica from the list: tgheros and \\familydefault in the place of newtx', '\\usepackage{tgheros}\n\\renewcommand{\\familydefault}{\\sfdefault}\n' in pre(page) and 'newtx' not in pre(page), pre(page))
-    page.focus('#rb-font'); page.keyboard.press('ArrowDown'); page.wait_for_timeout(250)
-    page.get_by_role('menuitemradio', name='Computer Modern').click(); page.wait_for_timeout(300)
-    check('Computer Modern: the font\'s lines go, the source as it was', src(page) == DOC, pre(page))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('one undo: the preamble of before', src(page) == DOC, pre(page))
     # a selection's family
     select_text(page, 'plain words')
     page.focus('#rb-font'); page.keyboard.press('ArrowDown'); page.wait_for_timeout(250)
@@ -263,8 +273,11 @@ def fonts(page):
     # fontspec
     xe = '% !TeX program = xelatex\n' + DOC
     load_doc(page, xe); click_text(page, 'plain', 2)
-    page.fill('#rb-font', 'Palatino'); page.press('#rb-font', 'Enter'); page.wait_for_timeout(300)
+    page.keyboard.press('Control+d'); page.wait_for_timeout(300)
+    dlg = page.get_by_role('dialog', name='Font')
+    dlg.get_by_label('Font name', exact=True).select_option(label='Palatino'); dlg.get_by_role('button', name='Set As Default').click(); page.wait_for_timeout(300)
     check('a XeLaTeX document: fontspec and \\setmainfont{TeX Gyre Pagella}', '\\usepackage{fontspec}\n\\setmainfont{TeX Gyre Pagella}\n' in src(page), pre(page))
+    click_text(page, 'plain', 2)
     page.fill('#rb-font', 'Nonesuch'); page.press('#rb-font', 'Enter'); page.wait_for_timeout(200)
     check('a font Rikuy\'s TeX has not: nothing written, the fonts there are named', 'TeX Gyre Pagella' in src(page) and 'Times' in page.inner_text('#toast'), page.inner_text('#toast'))
 
@@ -437,9 +450,109 @@ def compiles(page):
         print('SKIP the words of the PDF: no pypdf')
 
 
+def review(page):
+    """The hostile review of a20db3f: each finding's case on the page."""
+    # H3: Change Case on everything: only the words the page draws
+    B = ('He said \\foreignlanguage{french}{bonjour} to me.\n\n\\begin{equation}\n  x = y + z \\label{eq:a}\n\\end{equation}\n\n'
+         '\\begin{tabular}{lc}\nName & \\multicolumn{1}{c}{Total} \\\\\nab & cd\n\\end{tabular}\n\nSee \\cpageref{eq:a} words\\footnote{the note} more.\n\n% rikuy: latex\n\\textbf{raw} kept\n\nLast \\emph{words} stra\\ss e.')
+    D = WRAP(B, '\\usepackage[french,english]{babel}\n\\usepackage{cleveref}\n')
+    load_doc(page, D); page.wait_for_timeout(300); click_text(page, 'He said', 2)
+    page.keyboard.press('Control+a'); page.wait_for_timeout(150)
+    run_cmd(page, 'change-case', {'mode': 'upper'})
+    want = B.replace('He said', 'HE SAID').replace('{bonjour} to me', '{BONJOUR} TO ME').replace('Name &', 'NAME &').replace('{Total}', '{TOTAL}').replace('ab & cd', 'AB & CD') \
+        .replace('See \\cpageref', 'SEE \\cpageref').replace('words\\footnote', 'WORDS\\footnote').replace('more.', 'MORE.').replace('Last \\emph{words} stra\\ss e.', 'LAST \\emph{WORDS} STRA\\SS E.')
+    check('review H3: Ctrl+A, UPPERCASE changes only the words the page draws (no math, label, column spec, reference key, footnote behind its mark or LaTeX paragraph)', body(page) == want, body(page))
+    # H4: Underline over a footnote mark: the line closes around it, and the document compiles
+    U = WRAP('Some words\\footnote{A note.} and more words here.')
+    load_doc(page, U); page.wait_for_timeout(200)
+    page.evaluate("""() => { const sp = [...document.querySelectorAll('#pages span.t')]; const s = sp.find((x) => x.textContent.includes('words')), e = sp.find((x) => x.textContent.includes('and more'));
+      const r = document.createRange(); r.setStart(s.firstChild, s.textContent.indexOf('words')); r.setEnd(e.firstChild, e.textContent.indexOf('and more') + 3); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }""")
+    page.keyboard.press('Control+u'); page.wait_for_timeout(300)
+    check('review H4: Ctrl+U over a footnote mark: \\uline{words}\\footnote{A note.}\\uline{ and}', body(page) == 'Some \\uline{words}\\footnote{A note.}\\uline{ and} more words here.', body(page))
+    for cmd in ('strikethrough', 'highlight', 'double-strikethrough'):
+        run_cmd(page, cmd)
+    h4 = src(page)
+    check('and Strikethrough, Highlight, Double Strikethrough on it too, each around the footnote', '\\sout{' in h4 and '\\footnote{A note.}' in h4 and h4.count('\\footnote') == 1 and 'A note.}}' not in h4, body(page))
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        page.set_default_timeout(600000)
+        r = page.evaluate("""async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile(); return { ok: r.ok, pages: r.pages, problems: (window.rikuy.api.problems ? window.rikuy.api.problems() : []) }; }""", h4)
+        page.set_default_timeout(30000)
+        errs = [x for x in (r.get('problems') or []) if isinstance(x, dict) and x.get('severity') == 'error']
+        check('review H4: that document compiles in the page with no error (it stopped TeX with 7)', r['ok'] and not errs, (r, h4[-300:]))
+    else:
+        print('SKIP the compile of review H4: no TeX tree in %s' % DIST)
+    # H5: the Font dialog at a caret keeps a main font Rikuy does not list
+    X = '% !TeX program = xelatex\n\\documentclass{article}\n\\usepackage{fontspec}\n\\setmainfont{Libertinus Serif}\n\\begin{document}\nSome plain words here.\n\\end{document}\n'
+    load_doc(page, X); click_text(page, 'plain', 2); page.wait_for_timeout(200)
+    check('review H5: the font box shows the document\'s own font, Libertinus Serif', page.input_value('#rb-font') == 'Libertinus Serif', page.input_value('#rb-font'))
+    page.keyboard.press('Control+d'); page.wait_for_timeout(300)
+    dlg = page.get_by_role('dialog', name='Font')
+    dlg.get_by_label('Font style', exact=True).select_option(label='Bold'); dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    check('review H5: Bold and OK at a caret: the word bold, \\setmainfont{Libertinus Serif} kept', '\\setmainfont{Libertinus Serif}' in src(page) and 'Latin Modern' not in src(page) and '\\textbf{plain}' in src(page), src(page)[:200])
+    click_text(page, 'here', 2); page.keyboard.press('Control+d'); page.wait_for_timeout(300)
+    page.get_by_role('dialog', name='Font').get_by_role('button', name='Set As Default').click(); page.wait_for_timeout(300)
+    check('and Set As Default with nothing changed keeps it too', '\\setmainfont{Libertinus Serif}' in src(page) and 'Latin Modern' not in src(page), src(page)[:200])
+    # H6: a font package Rikuy does not list: its name in the box, replaced by the font chosen
+    F6 = WRAP('Some plain words here.', '\\usepackage{fourier}\n')
+    load_doc(page, F6); click_text(page, 'plain', 2); page.wait_for_timeout(200)
+    check('review H6: \\usepackage{fourier}: the box says Utopia (Fourier)', page.input_value('#rb-font') == 'Utopia (Fourier)', page.input_value('#rb-font'))
+    page.keyboard.press('Control+d'); page.wait_for_timeout(300)
+    dlg = page.get_by_role('dialog', name='Font')
+    dlg.get_by_label('Font name', exact=True).select_option(label='Times'); dlg.get_by_role('button', name='Set As Default').click(); page.wait_for_timeout(300)
+    check('review H6: Times as the default replaces fourier (no two font setups)', 'fourier' not in pre(page) and '\\usepackage{newtxtext,newtxmath}' in pre(page), pre(page))
+    # M2: Increase and Decrease Font Size on part of a sized run step from its size
+    load_doc(page, WRAP('A {\\large abc def ghi} z.')); select_text(page, 'def')
+    page.keyboard.press('Control+]'); page.wait_for_timeout(250)
+    check('review M2: Ctrl+] on a word of {\\large ..}: that word \\Large, the rest still \\large', body(page) == 'A {\\large abc }{\\Large def}{\\large ghi} z.', body(page))
+    load_doc(page, WRAP('A {\\Huge abc def ghi} z.')); select_text(page, 'def')
+    page.keyboard.press('Control+['); page.wait_for_timeout(250)
+    check('review M2: Ctrl+[ on a word of {\\Huge ..}: \\huge, never a size below', body(page) == 'A {\\Huge abc }{\\huge def}{\\Huge ghi} z.', body(page))
+    # M3: the Format Painter and the Font dialog over two paragraphs
+    P = WRAP('Source \\textcolor{red}{\\textbf{styled}} word.\n\nFirst target para.\n\nSecond target para.')
+    load_doc(page, P); click_text(page, 'styled', 2); run_cmd(page, 'format-painter')
+    place(page, ('First', 'Second target'))
+    page.evaluate('document.getElementById("pages").dispatchEvent(new MouseEvent("mouseup", { bubbles: true }))'); page.wait_for_timeout(400)
+    check('review M3: the Format Painter over two paragraphs paints each', '\\textcolor{red}{\\textbf{First target para.}}\n\n\\textcolor{red}{\\textbf{Second target}} para.' in body(page), body(page))
+    load_doc(page, WRAP('First para words.\n\nSecond para words.')); place(page, ('para', 'Second'))
+    page.keyboard.press('Control+d'); page.wait_for_timeout(300)
+    dlg = page.get_by_role('dialog', name='Font')
+    dlg.get_by_label('Font style', exact=True).select_option(label='Bold Italic'); dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    check('review M3: the Font dialog over two paragraphs: bold and italic on each part', 'First \\textbf{\\emph{para words.}}' in body(page) and '\\textbf{\\emph{Second}} para words.' in body(page), body(page))
+    run_cmd(page, 'bold')
+    check('and Bold again on it all: off on each', 'First \\emph{para words.}' in body(page) and '\\emph{Second} para' in body(page) and 'textbf' not in body(page), body(page))
+    # M4: Clear All over a LaTeX paragraph leaves its source
+    L = WRAP('First \\textbf{bold words} here.\n\n% rikuy: latex\n\\textbf{Raw} code \\emph{kept} as is.\n\nLast \\emph{words} end.')
+    load_doc(page, L); place(page, ('First', 'end.'))
+    run_cmd(page, 'clear-formatting')
+    check('review M4: Clear All over a LaTeX paragraph: the text around plain, its source as it was', body(page) == 'First bold words here.\n\n% rikuy: latex\n\\textbf{Raw} code \\emph{kept} as is.\n\nLast words end.', body(page))
+    load_doc(page, L); place(page, ('First', 'end.')); run_cmd(page, 'italic')
+    check('review M4: Italic over it: the mark stays on its own line, outside \\emph', '\n\n% rikuy: latex\n\\textbf{Raw}' in body(page) and '\\emph{% rikuy' not in body(page), body(page))
+    # M6: Automatic on one word of a coloured run
+    load_doc(page, WRAP('A \\textcolor{red}{abc def ghi} z.')); select_text(page, 'def')
+    page.evaluate('window.rikuy.fmtSet("color", null)'); page.wait_for_timeout(200)
+    check('review M6: Automatic on one word of a red run: that word alone', body(page) == 'A \\textcolor{red}{abc }def\\textcolor{red}{ ghi} z.', body(page))
+    # L2: Character Shading: a box on a word, the highlighter's grey on words
+    load_doc(page, DOC); select_text(page, 'plain'); run_cmd(page, 'char-shading')
+    check('review L2: Character Shading on a word: \\colorbox{lightgray}', '\\colorbox{lightgray}{plain}' in body(page), body(page))
+    load_doc(page, DOC); select_text(page, 'plain words'); run_cmd(page, 'char-shading')
+    check('review L2: on words: \\hl[lightgray], which breaks across lines', '\\hl[lightgray]{plain words}' in body(page), body(page))
+    run_cmd(page, 'char-shading')
+    check('and again takes it off', 'plain words' in body(page) and 'lightgray' not in body(page), body(page))
+    # L7: the boxes: Enter keeps the selection, Tab applies, the list opens on the size there is
+    load_doc(page, DOC); select_text(page, 'plain words')
+    page.keyboard.press('Control+Shift+F'); page.wait_for_timeout(200); page.keyboard.type('Palatino'); page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    check('review L7: Ctrl+Shift+F, a font, Enter: applied and the words still selected', '{\\fontfamily{ppl}\\selectfont plain words}' in body(page) and page.evaluate('String(getSelection())') == 'plain words', (body(page), page.evaluate('String(getSelection())')))
+    load_doc(page, DOC); select_text(page, 'plain words')
+    page.focus('#rb-size'); page.keyboard.type('14.4'); page.keyboard.press('Tab'); page.wait_for_timeout(300)
+    check('review L7: a size typed and Tab: applied, the focus on the next control', '{\\Large plain words}' in body(page) and page.evaluate('document.activeElement.id') != 'rb-size', (body(page), page.evaluate('document.activeElement.id')))
+    load_doc(page, DOC); select_text(page, 'plain words'); page.focus('#rb-size'); page.keyboard.press('ArrowDown'); page.wait_for_timeout(250)
+    check('review L7: the size list opens on the size there is (10)', page.evaluate("document.activeElement.getAttribute('aria-checked') === 'true' && document.activeElement.textContent.trim().startsWith('10')"), page.evaluate('document.activeElement.textContent'))
+    page.keyboard.press('Escape')
+
+
 def run():
     with sync_playwright() as p:
-        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, compiles)
+        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, compiles)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             browser, page, errors = open_page(p, width=1400, height=900)
             try:

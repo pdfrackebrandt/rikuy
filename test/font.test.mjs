@@ -113,10 +113,14 @@ ok('sizes: a name at its points, any other as \\fontsize; hand written {\\large 
 });
 
 ok('extra forms: a declaration that is an argument keeps its braces, a command after a control word keeps a space', () => {
-  // {\color{blue} w} as \textcolor's text: only the declaration goes
-  const t = 'x \\textcolor{red}{\\color{blue} w} y';
+  // {\color{blue} w} as \textbf's text: only the declaration goes
+  const t = 'x \\textbf{\\color{blue} w} y';
   const [a] = sel(t, 'w}');
-  assert.equal(F.setValue(t, a, a + 1, 'color', null).text, 'x \\textcolor{red}{w} y');
+  assert.equal(F.setValue(t, a, a + 1, 'color', null).text, 'x \\textbf{w} y');
+  // Automatic takes every colour off the selection, as Word's does
+  const t2 = 'x \\textcolor{red}{\\color{blue} w} y';
+  const [a2] = sel(t2, 'w}');
+  assert.equal(F.setValue(t2, a2, a2 + 1, 'color', null).text, 'x w y');
   // its braces stay where a declaration inside would leak out
   assert.equal(F.clearFormats('x {\\color{red} a \\bf b} y', 2, 24).text, 'x {a \\bf b} y');
   // \scalebox{..}[..]{..} read whole; no \noindentWide
@@ -171,19 +175,20 @@ ok('the Format Painter reads the formats around the caret, outermost first, and 
   assert.deepEqual(F.formatsAt('{\\large\\bfseries x}', 9, 9).map((x) => x.group), ['size']);
 });
 
-ok('the document\'s size: the class\'s option, extsizes for 8, 9, 14, 17, 20pt, KOMA\'s fontsize, 10pt back to none', () => {
+ok('the document\'s size: the class\'s option, extsizes for 8, 9, 14, 17, 20pt, KOMA\'s fontsize', () => {
   const art = '\\documentclass{article}\n\\begin{document}x\\end{document}';
   const app = (t, e) => { let s = t; for (const x of [...e].sort((p, q) => q.s - p.s)) s = s.slice(0, x.s) + x.t + s.slice(x.e); return s; };
   const s11 = app(art, F.docSizeEdits(art, 11));
   assert.ok(s11.startsWith('\\documentclass[11pt]{article}'));
-  assert.equal(app(s11, F.docSizeEdits(s11, 10)), art);
+  // (back to 10pt: the option's text changes, as any other size; review L3)
+  assert.equal(app(s11, F.docSizeEdits(s11, 10)), art.replace('{article}', '[10pt]{article}'));
   const s14 = app(art, F.docSizeEdits(art, 14));
   assert.ok(s14.startsWith('\\documentclass[14pt]{extarticle}'));
   assert.equal(F.docSize(s14), 14);
   assert.ok(app(s14, F.docSizeEdits(s14, 12)).startsWith('\\documentclass[12pt]{extarticle}'));
   const many = '\\documentclass[a4paper,11pt,twoside]{report}\n\\begin{document}x\\end{document}';
   assert.ok(app(many, F.docSizeEdits(many, 12)).startsWith('\\documentclass[a4paper,twoside,12pt]{report}') || app(many, F.docSizeEdits(many, 12)).startsWith('\\documentclass[a4paper,12pt,twoside]{report}'));
-  assert.ok(app(many, F.docSizeEdits(many, 10)).startsWith('\\documentclass[a4paper,twoside]{report}'));
+  assert.ok(app(many, F.docSizeEdits(many, 10)).startsWith('\\documentclass[a4paper,10pt,twoside]{report}'));
   const koma = '\\documentclass{scrartcl}\n\\begin{document}x\\end{document}';
   assert.ok(app(koma, F.docSizeEdits(koma, 13)).startsWith('\\documentclass[fontsize=13pt]{scrartcl}'));
   assert.equal(F.docSizeEdits('\\documentclass{revtex4-2}\n\\begin{document}x\\end{document}', 12), null);
@@ -217,7 +222,7 @@ ok('the document\'s font: its package lines in the place of the one before, Helv
   assert.equal(F.usesFontspec(doc('x', '\\usepackage{fontspec}\n')), true);
   assert.equal(F.usesFontspec(doc('x'), 'lualatex'), true);
   // a selection's family
-  assert.deepEqual(F.familyWrapper('sans'), { cmd: 'textsf' });
+  assert.deepEqual(F.familyWrapper('sans'), { cmd: 'textsf', declAlt: { cmd: 'sffamily', decl: true } });
   assert.deepEqual(F.familyWrapper('palatino', false), { cmd: 'fontfamily', args: ['ppl'], decl: true, select: true });
   assert.deepEqual(F.familyWrapper('palatino', true), { cmd: 'fontspec', args: ['TeX Gyre Pagella'], decl: true });
   assert.equal(F.familyOf({ cmd: 'fontfamily', args: ['ppl'] }), 'palatino');
@@ -233,7 +238,8 @@ ok('the preamble: each package once with its options merged, definitions once, d
   // options merged into a line that loads the package
   const has = doc('x', '\\usepackage{xcolor}\n\\usepackage{ulem}\n');
   const merged = app(has, F.preambleFor(has, needs.slice(0, 3)));
-  assert.ok(merged.includes('\\usepackage[dvipsnames]{xcolor}\n\\usepackage[normalem]{ulem}\n'), merged);
+  // (an ulem the document loads keeps its options: normalem would change every \emph; review M5)
+  assert.ok(merged.includes('\\usepackage[dvipsnames]{xcolor}\n\\usepackage{ulem}\n'), merged);
   // tikz loads xcolor before: the option reaches it first
   const tk = doc('x', '\\usepackage{tikz}\n');
   const tz = app(tk, F.preambleFor(tk, [F.needsOf('color', { cmd: 'textcolor', args: ['BrickRed'] })]));
@@ -347,6 +353,174 @@ ok('a stranger\'s text costs little: unbalanced braces, long runs, many marks', 
   const pre = '\\documentclass{article}\n' + '\\usepackage{x}\n'.repeat(3000) + '\\begin{document}x\\end{document}';
   F.docFont(pre); F.docFontEdits(pre, 'times'); F.preambleFor(pre, [F.needsOf('highlight', { cmd: 'hl' })]); F.usesFontspec(pre);
   assert.ok(performance.now() - t0 < 3000, 'preamble: ' + (performance.now() - t0));
+});
+
+// ---- the hostile review of a20db3f (/tmp/B1-REVIEW.md): each finding's case ----------------------
+const clr = (t, w, k = 0) => { const [a, b] = sel(t, w, k); return F.clearFormats(t, a, b); };
+
+ok('review H1, L8: Clear All on part of a group of declarations keeps the words where they were', () => {
+  // (a footnote's, a heading's, \textbf's own group: its braces stay one argument)
+  assert.equal(clr('Text\\footnote{\\color{red} abc def ghi} more.', 'def').text, 'Text\\footnote{{\\color{red} abc }def{\\color{red} ghi}} more.');
+  assert.equal(clr('\\section{\\color{red} Intro duction}', 'duction').text, '\\section{{\\color{red} Intro }duction}');
+  assert.equal(clr('\\textbf{\\color{red} abc def ghi} more.', 'def').text, '\\textbf{{\\color{red} abc }}def\\textbf{{\\color{red} ghi}} more.');
+  assert.equal(clr('\\item[{\\color{red} abc def}] x', 'def').text, '\\item[{{\\color{red} abc }def}] x');
+  // (every declaration of the group goes on with the parts it keeps)
+  assert.equal(clr('A {\\color{red}\\bfseries abc def ghi} z.', 'def').text, 'A {\\color{red}\\bfseries abc }def{\\color{red}\\bfseries ghi} z.');
+  assert.equal(clr('A {\\color{red} \\large abc def ghi} z.', 'def').text, 'A {\\color{red} \\large abc }def{\\color{red} \\large ghi} z.');
+  assert.equal(clr('A {\\bfseries\\large abc def ghi} z.', 'def').text, 'A {\\bfseries\\large abc }def{\\bfseries\\large ghi} z.');
+  assert.equal(clr('A {\\fontsize{14}{17}\\selectfont abc def ghi} z.', 'def').text, 'A {\\fontsize{14}{17}\\selectfont abc }def{\\fontsize{14}{17}\\selectfont ghi} z.');
+  // one kind off the part: the others stay on it (Automatic on {\color{red}\bfseries ..})
+  const [a, b] = sel('A {\\color{red}\\bfseries abc def ghi} z.', 'def');
+  assert.equal(F.setValue('A {\\color{red}\\bfseries abc def ghi} z.', a, b, 'color', null).text, 'A {\\color{red}\\bfseries abc }{\\bfseries def}{\\color{red}\\bfseries ghi} z.');
+  // a declaration further in that would leak: nothing is split
+  assert.equal(F.clearFormats('x {\\color{red} a \\bf b} y', 2, 24).text, 'x {a \\bf b} y');
+});
+
+ok('review H2: a family on a group of declarations that is an argument stays a declaration in it', () => {
+  const fam = (t, w, id) => { const [a, b] = sel(t, w); return F.setValue(t, a, b, 'family', F.familyWrapper(id)).text; };
+  assert.equal(fam('A \\textbf{\\sffamily abc} z.', 'abc', 'serif'), 'A \\textbf{\\rmfamily abc} z.');
+  assert.equal(fam('\\section{\\ttfamily Intro}', 'Intro', 'sans'), '\\section{\\sffamily Intro}');
+  assert.equal(fam('A \\emph{\\fontfamily{ppl}\\selectfont abc} z.', 'abc', 'mono'), 'A \\emph{\\ttfamily abc} z.');
+  // (a command with no declaration of its own in a group that is an argument: its braces stay)
+  const [a, b] = sel('A \\textbf{\\color{red} abc} z.', 'abc');
+  assert.equal(F.setValue('A \\textbf{\\color{red} abc} z.', a, b, 'family', { cmd: 'textsf' }, { W: F.around('A \\textbf{\\color{red} abc} z.', a, b, 'color') }).text.includes('\\textbf{'), true);
+  // free, a declaration's group becomes the command
+  const t = 'A {\\fontfamily{ppl}\\selectfont abc} z.', [p, q] = sel(t, 'abc');
+  assert.equal(F.setValue(t, p, q, 'family', { cmd: 'textsf' }).text, 'A \\textsf{abc} z.');
+});
+
+ok('review H3: Change Case changes the letters of words alone (math, keys, specs, code and pictures keep theirs)', () => {
+  const up = (t) => (F.changeCase(t, 0, t.length, 'upper') || { text: t }).text;
+  assert.equal(up('Some text \\begin{equation} x = y \\label{eq:a} \\end{equation} more.'), 'SOME TEXT \\begin{equation} x = y \\label{eq:a} \\end{equation} MORE.');
+  assert.equal(up('Then \\begin{align} a &= b \\end{align} done.'), 'THEN \\begin{align} a &= b \\end{align} DONE.');
+  assert.equal(up('Row & \\multicolumn{2}{c}{Total} \\\\'), 'ROW & \\multicolumn{2}{c}{TOTAL} \\\\');
+  assert.equal(up('He said \\foreignlanguage{french}{bonjour}.'), 'HE SAID \\foreignlanguage{french}{BONJOUR}.');
+  assert.equal(up('Code \\mintinline{python}{print(x)} and \\lstinline[language=Python]{x=1}.'), 'CODE \\mintinline{python}{print(x)} AND \\lstinline[language=Python]{x=1}.');
+  assert.equal(up('Use \\ensuremath{x} and \\(y\\) and \\verb|ab|.'), 'USE \\ensuremath{x} AND \\(y\\) AND \\verb|ab|.');
+  assert.equal(up('a \\tikz \\draw (0,0) node[above] {lbl}; b'), 'A \\tikz \\draw (0,0) node[above] {lbl}; B');
+  assert.equal(up('see \\cpageref{eq:a} \\subref{f:b} \\Glspl{key} \\acrfull{abc} \\citetitle{key} \\pagecolor{white}'), 'SEE \\cpageref{eq:a} \\subref{f:b} \\Glspl{key} \\acrfull{abc} \\citetitle{key} \\pagecolor{white}');
+  assert.equal(up('an \\href{http://x.org/A}{link} \\url{http://x.org/B}'), 'AN \\href{http://x.org/A}{LINK} \\url{http://x.org/B}');
+  assert.equal(up('accent \\\'e \\"{o} \\c{c} \\ss{} \\aa{}'), 'ACCENT \\\'E \\"{O} \\c{C} \\SS{} \\AA{}');
+  // the page's drawn characters: a key the page draws (a command it does not know) keeps its case,
+  // a letter only the page draws (a macro's text) is not the source's
+  const t = 'see \\cpageref{eq:a} now';
+  const drawn = { before: '', chars: [...'see '].map((ch, k) => ({ s: k, e: k + 1, ch })).concat([...'eq:a'].map((ch, k) => ({ s: 14 + k, e: 15 + k, ch }))).concat([...' now'].map((ch, k) => ({ s: 19 + k, e: 20 + k, ch }))) };
+  assert.equal(F.changeDrawn(t, 0, t.length, drawn, 'upper').text, 'SEE \\cpageref{eq:a} NOW');
+  // Shift+F3 on a sentence; a new paragraph starts one
+  assert.equal(F.changeCase('one two.\n\nthree', 0, 15, 'sentence').text, 'One two.\n\nThree');
+});
+
+ok('review H4: ulem\'s lines close before a footnote, a margin note and a to-do, and open again after it', () => {
+  const t = 'Some words\\footnote{A note.} and more.', [a] = sel(t, 'words'), [, b] = sel(t, ' and');
+  for (const [g, cmd] of [['underline', 'uline'], ['strike', 'sout'], ['dstrike', 'dsout'], ['highlight', 'hl']]) {
+    assert.equal(F.toggle(t, a, b, g, { w: { cmd } }).text, 'Some \\' + cmd + '{words}\\footnote{A note.}\\' + cmd + '{ and} more.', g);
+  }
+  assert.equal(F.setValue(t, a, b, 'underline', { cmd: 'culine', args: ['red'] }).text, 'Some \\culine{red}{words}\\footnote{A note.}\\culine{red}{ and} more.');
+  const mp = 'A b\\marginpar{m} c\\todo[inline]{t} d.';
+  assert.equal(F.toggle(mp, 2, mp.length - 1, 'strike').text, 'A \\sout{b}\\marginpar{m}\\sout{ c}\\todo[inline]{t}\\sout{ d}.');
+  // (Bold is no line: it holds the footnote as before)
+  assert.equal(F.toggle(t, a, b, 'bold').text, 'Some \\textbf{words\\footnote{A note.} and} more.');
+  // and off again over the parts
+  const on = F.toggle(t, a, b, 'underline', { w: { cmd: 'uline' } });
+  assert.equal(F.toggle(on.text, on.a, on.b, 'underline').text, t);
+});
+
+ok('review H6, L5: a font package Rikuy does not list is the document\'s font by its name, and a font chosen replaces it', () => {
+  const app = (t, e) => F.applyEdits(t, e);
+  for (const [pre, name] of [['\\usepackage{fourier}\n', 'Utopia (Fourier)'], ['\\usepackage[osf]{libertine}\n', 'Linux Libertine'], ['\\usepackage{stix2}\n', 'STIX Two'], ['\\usepackage[charter]{mathdesign}\n', 'Mathdesign']]) {
+    const t = doc('x', pre);
+    assert.deepEqual(F.docFont(t), { id: '', name });
+    assert.equal(app(t, F.docFontEdits(t, 'times')).split('\\begin')[0], '\\documentclass{article}\n\\usepackage{newtxtext,newtxmath}\n', pre);
+  }
+  // helvet and courier set the sans serif and the typewriter alone: they stay
+  const m = doc('x', '\\usepackage{mathptmx,helvet,courier}\n');
+  assert.equal(app(m, F.docFontEdits(m, 'palatino')).split('\\begin')[0], '\\documentclass{article}\n\\usepackage{helvet,courier}\n\\usepackage{newpxtext,newpxmath}\n');
+  // (but go with a document in its sans serif)
+  const h = doc('x', '\\usepackage{helvet}\n\\renewcommand{\\familydefault}{\\sfdefault}\n');
+  assert.ok(!app(h, F.docFontEdits(h, 'palatino')).includes('helvet'));
+});
+
+ok('review M3, M4, M6: several paragraphs, LaTeX paragraphs, and a part of a run each as Word does', () => {
+  // a format over two paragraphs, then another over what it left selected
+  const t = 'First para words.\n\nSecond para words.', a = t.indexOf('para'), b = t.indexOf('Second') + 6;
+  const r = F.toggle(t, a, b, 'bold');
+  assert.equal(r.text, 'First \\textbf{para words.}\n\n\\textbf{Second} para words.');
+  assert.equal(F.toggle(r.text, r.a, r.b, 'italic').text, 'First \\textbf{\\emph{para words.}}\n\n\\textbf{\\emph{Second}} para words.');
+  assert.equal(F.setValue(r.text, r.a, r.b, 'color', { cmd: 'textcolor', args: ['red'] }).text, 'First \\textbf{\\textcolor{red}{para words.}}\n\n\\textbf{\\textcolor{red}{Second}} para words.');
+  // Bold again on all of it bold: off
+  const w = F.toggle(t, 0, t.length, 'bold');
+  assert.equal(F.toggle(w.text, w.a, w.b, 'bold').text, t);
+  // a toggle from a bold word into plain text: on for all, one wrapper
+  const u = 'A \\textbf{abc} def z.';
+  assert.equal(F.toggle(u, u.indexOf('bc'), u.indexOf(' z'), 'bold').text, 'A \\textbf{abc def} z.');
+  assert.equal(F.toggle(u, u.indexOf('bc'), u.indexOf(' z'), 'italic').text, 'A \\textbf{a\\emph{bc}} \\emph{def} z.');
+  // cells, items and displays keep their structure
+  const tab = '\\begin{tabular}{ll}\nab & cd \\\\\nef & gh\n\\end{tabular}';
+  assert.equal(F.toggle(tab, tab.indexOf('\nab') + 1, tab.indexOf('gh') + 2, 'bold').text, '\\begin{tabular}{ll}\n\\textbf{ab} & \\textbf{cd} \\\\\n\\textbf{ef} & \\textbf{gh}\n\\end{tabular}');
+  const list = 'Intro.\n\\begin{itemize}\n\\item one\n\\end{itemize}';
+  assert.equal(F.toggle(list, 0, list.length, 'bold').text, '\\textbf{Intro.}\n\\begin{itemize}\n\\item \\textbf{one}\n\\end{itemize}');
+  // LaTeX paragraphs in a selection are left as they are, their mark on its line
+  const lp = 'Text \\textbf{one}.\n\n% rikuy: latex\n\\foo{\\textbf{x}}\n\nText \\emph{two}.';
+  assert.equal(F.clearFormats(lp, 0, lp.length).text, 'Text one.\n\n% rikuy: latex\n\\foo{\\textbf{x}}\n\nText two.');
+  assert.equal(F.toggle(lp, 0, lp.length, 'italic').text, '\\emph{Text \\textbf{one}.}\n\n% rikuy: latex\n\\foo{\\textbf{x}}\n\n\\emph{Text two.}');
+  const lp2 = 'Text one\n% rikuy: latex\n\\foo\n\nTwo.';
+  assert.equal(F.toggle(lp2, 0, lp2.length, 'bold').text, '\\textbf{Text one}\n% rikuy: latex\n\\foo\n\n\\textbf{Two.}');
+  // Automatic, No Color and a toggle off on one word of a run: that word alone
+  const c = 'A \\textcolor{red}{abc def ghi} z.', [p, q] = sel(c, 'def');
+  assert.equal(F.setValue(c, p, q, 'color', null).text, 'A \\textcolor{red}{abc }def\\textcolor{red}{ ghi} z.');
+  const h = 'A \\hl{abc def ghi} z.', [p2, q2] = sel(h, 'def');
+  assert.equal(F.setValue(h, p2, q2, 'highlight', null).text, 'A \\hl{abc }def\\hl{ ghi} z.');
+  const bb = 'A \\textbf{abc def ghi} z.', [p3, q3] = sel(bb, 'def');
+  assert.equal(F.toggle(bb, p3, q3, 'bold').text, 'A \\textbf{abc }def\\textbf{ ghi} z.');
+});
+
+ok('review M5, L4: the preamble keeps what the document has (ulem\'s options, soul\'s \\hl, an \\input\'s \\hl) and its line ends', () => {
+  const app = (t, e) => F.applyEdits(t, e);
+  const ul = F.needsOf('underline', { cmd: 'uline' }), hl = F.needsOf('highlight', { cmd: 'hl', opt: 'green' });
+  // ulem without normalem underlines \emph: normalem would change every one
+  for (const pre of ['\\usepackage{ulem}\n', '\\usepackage[ULforem]{ulem}\n']) { const t = doc('x', pre); assert.deepEqual(F.preambleFor(t, [ul]), [], pre); }
+  // soul's \hl, with its \sethlcolor: not defined again, no colour for it
+  const so = doc('x', '\\usepackage{xcolor}\n\\usepackage{soul}\n\\sethlcolor{green}\n');
+  assert.ok(!app(so, F.preambleFor(so, [hl])).includes('DeclareRobustCommand{\\hl}'));
+  assert.equal(F.hlTakesColor(so), false);
+  // an \hl the preamble's \input file defines
+  const inp = doc('x', '\\input{preamble}\n'), others = ['\\usepackage{xcolor}\n\\newcommand{\\hl}[1]{\\colorbox{yellow}{#1}}\n'];
+  assert.deepEqual(F.preambleFor(inp, [hl], { others }), []);
+  assert.equal(F.hlTakesColor(inp, others), false);
+  assert.equal(F.hlTakesColor(inp), true);
+  // CR LF in, CR LF out
+  const crlf = doc('x', '\\usepackage{amsmath}\n').replace(/\n/g, '\r\n');
+  assert.ok(!/[^\r]\n/.test(app(crlf, F.preambleFor(crlf, [ul, hl]))));
+  assert.ok(!/[^\r]\n/.test(app(crlf, F.docFontEdits(crlf, 'times'))));
+});
+
+ok('review L1: Clear All and a toggle on a large document are quick and complete', () => {
+  const unit = 'Some \\textbf{a} and \\emph{b} words {\\color{red} c} here. ';
+  let big = ''; while (big.length < 300000) big += unit + (big.length % 2000 < 60 ? '\n\n' : '');
+  let t0 = performance.now();
+  const r = F.clearFormats(big, 0, big.length);
+  assert.ok(performance.now() - t0 < 1500, 'clear: ' + (performance.now() - t0));
+  assert.ok(!/\\textbf|\\emph|\\color/.test(r.text), 'every wrapper off');
+  t0 = performance.now();
+  const on = F.toggle(big, 0, big.length, 'bold');
+  F.toggle(on.text, on.a, on.b, 'bold');
+  assert.ok(performance.now() - t0 < 1500, 'bold: ' + (performance.now() - t0));
+  const two = 'x'.repeat(1000000) + '\n\n' + '\\textbf{a} {\\color{red} b} '.repeat(3000) + '\n\n' + 'y'.repeat(1000000);
+  t0 = performance.now();
+  F.clearFormats(two, 1000002, 1000002 + 27 * 3000);
+  assert.ok(performance.now() - t0 < 2000, '2 MB: ' + (performance.now() - t0));
+});
+
+ok('review L3: the class\'s size: comments kept, an explicit size kept, beamer\'s own 11pt', () => {
+  const app = (t, e) => F.applyEdits(t, e || []);
+  const c = '\\documentclass[%\n  12pt, % size\n  a4paper\n]{article}\n\\begin{document}x\\end{document}';
+  assert.equal(app(c, F.docSizeEdits(c, 14)).split('\\begin')[0], '\\documentclass[%\n  14pt, % size\n  a4paper\n]{extarticle}\n');
+  const ten = '\\documentclass[10pt]{article}\n\\begin{document}x\\end{document}';
+  assert.deepEqual(F.docSizeEdits(ten, 10), []);
+  assert.equal(F.docSize('\\documentclass{beamer}\n\\begin{document}x\\end{document}'), 11);
+  const bm = '\\documentclass[12pt]{beamer}\n\\begin{document}x\\end{document}';
+  assert.equal(app(bm, F.docSizeEdits(bm, 10)).split('\\begin')[0], '\\documentclass[10pt]{beamer}\n');
+  assert.deepEqual(F.docSizeEdits('\\documentclass{beamer}\n\\begin{document}x\\end{document}', 11), []);
 });
 
 console.log('font: ' + n + ' groups of checks passed');
