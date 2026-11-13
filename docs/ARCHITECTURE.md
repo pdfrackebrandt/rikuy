@@ -53,6 +53,7 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | the side panel: outline and problems; versions and changes | `toggleNav`, `refreshNav`, `goTo` (`src/nav.js`); `snapshot`, `currentChanges`, `renderChanges`, `paintChanges` (`src/review.js`) |
 | Find, Replace, Go To; the Navigation pane (its box, Headings, Pages, Results) and the Outline view | `compile`, `hitsIn`, `blockText`, `hitSource`, `expand`, `labelsIn` (`src/find.js`); `findRun`, `findPaint`, `findGo`, `hitEdits`, `replaceOne`, `replaceAll`, `goToTargets`, `goToTarget`, `countStatus` (`src/cmd/find.js`); `openFindDialog`, `findDialogSync` (`src/ui/finddialog.js`); `renderOutline`, `navShell`, `paintHeadings`, `navDrop`, `paintPages`, `paintResults`, `setOutlineView` (`src/nav.js`) |
 | promote, demote, move a section or a paragraph, a new heading | `headingAt`, `sectionRange`, `promoteEdits`, `swapEdit`, `moveEdits`, `newHeading` (`src/outline.js`); `promoteAt`, `moveEditsAt`, `sectionMove`, `moveSectionTo`, `newHeadingAt` (`src/cmd/find.js`) |
+| lists: levels, labels and numbers, multilevel lists, sorting, automatic lists | `readLists`, `chainAt`, `formatOf`, `listSetup`, `labelEdits`, `startEdits`, `demote`, `promote`, `unlist`, `restartEdit`, `multilevelEdits`, `sortEdit`, `autoMarker`, `numText`, `bulletGlyph` (`src/lists.js`); `listAt`, `toggleList`, `listLevel`, `listLabel`, `listCommit`, `autoList`, `sortTarget` (`src/cmd/lists.js`); the dialogs (`src/ui/listdialog.js`); `Builder.listBlock` (`src/model.js`) |
 | LaTeX paragraphs (`% rikuy: latex`) | `isLatexMark` (`src/styles.js`); `Builder.texBlock`, `cutOpen` (`src/model.js`); `Renderer.item` case `tex`; `App.texBox`, `texEdit`, `texEnter`, `texDelete`, `showTexGhost` (`src/app.js`) |
 | equation editing | `App.openMath`, `attachField`, `toField`, `fromField`; `src/minimal.js`, `wordmath.js`, `fences.js` |
 | engine choice, passes, bibliography, indexes | `pickEngine`, `compile`, `runBiber`, `indexTools` (`tex/engine.js`) |
@@ -352,6 +353,24 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   button "Editing" (`ribbonFit`; from 860 px down, where the names, tiles and downloads have no
   more to give), and `chordText` (`src/keys.js`) writes the outline's keys in menus and tooltips
   as Alt+Shift+←.
+- **Lists.** `src/lists.js` reads the lists of a block once (`readLists`, on the parser's nodes:
+  each list's items with their ranges, labels and nested lists) and writes every change as the
+  new text of the stretch that holds it, the smallest edit of it returned with the caret followed
+  into it: `demote` (Tab) puts items under the item before them, into the list that ends it or a
+  new one; `promote` (Shift+Tab) takes them out after the item they stood in, the items after them
+  and that item's remaining words going under the last; `unlist` makes items paragraphs, at any
+  level, a label of their own kept as words. `formatOf` says what labels and numbers a list as TeX
+  reads it: its enumitem options, its own set up (a pandoc list's `\def\labelenumi` and
+  `\setcounter`), the enumerate package's short label, the preamble's `\setlist` and
+  `\renewcommand{\labelitemi}`, LaTeX's default for its level; `labelEdits`, `startEdits` and
+  the others change each where it is written, else as the document writes labels (`mechOf`:
+  enumitem, the enumerate package, paralist, beamer). The model draws with the same reading
+  (`Builder.listBlock`: `numText`, `bulletGlyph`, resume per level as enumitem counts it, `\ref`
+  as enumitem or LaTeX gives it, the space between items), and Word export takes a numbered
+  list's style and start from it. `src/cmd/lists.js` commits the edits with the packages they need
+  (`App.packageEdits`; amssymb only where no math font package gives its symbols), catches Tab,
+  Shift+Tab and Enter in an empty nested item on the page (not in a table cell), and turns "- "
+  or "1. " typed at a paragraph's start into a list as a step of its own after the typed space.
   `src/nav.js` draws the Navigation pane in the side panel's Outline tab: the box, Headings (a
   tree with collapse, Show levels, the Outlining toolbar, Alt+Shift and the arrows, dragging; in
   the Outline view the paragraphs too, by their first line), Pages (each page cloned small,

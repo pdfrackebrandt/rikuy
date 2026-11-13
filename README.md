@@ -67,6 +67,11 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   on the page with their page numbers: written as geometry, multicol, fancyhdr, lineno, edited
   where a hand written line has them, drawn on the page as TeX prints them, and carried to Word
   and back.
+- **Lists as in Word.** Tab and Shift+Tab change an item's level; Word's bullet, numbering and
+  multilevel libraries, Define New Bullet and Number Format, Set Numbering Value, Restart at 1,
+  Continue Numbering, the space between items, Sort, description lists, and "- " or "1. " typed at a
+  paragraph's start making a list; written as enumitem's options, a list's own hand written labels
+  changed where they are.
 - **The whole TeX Live 2026 toolchain.** The three engines, latexmk's reruns, bibtex and biber,
   makeindex and xindy, glossaries, and shell escape: Ghostscript, gnuplot, Python with Pygments
   (minted), dvips, Asymptote with 3D rendering, and TeX starting TeX (TikZ externalize,
