@@ -8,9 +8,10 @@ import {
   endsWithControlWord, isBalanced, diff, boundary, clusterEdge, sourceEdge, backspaceUnits
 } from './editor.js';
 import { SAMPLE } from './sample.js';
-import { splitRows } from './parser.js';
+import { splitRows, parseJS, scanUserSigs, setNativeParse } from './parser.js';
 import { installWordTyping, wordShortcuts, makeDialect, classifyMacros, resolveCommand, PACKAGES, WORD_GROUPS, FIELD_MACROS, fieldValue, modelValue } from './wordmath.js';
 import { isTallDef, fitBrackets, tallTest } from './fences.js';
+import { loadCore, coreReady, coreStats, nativeParse } from './native.js';
 import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath } from './paste.js';
 import { findProblems, missingFigures } from './problems.js';
@@ -491,6 +492,7 @@ class App {
     setTimeout(() => this.ensureMathLive(), 2500);
     this.placeInitialCaret();
     this.readyDone();
+    loadCoreLater();
     // files the system handed the installed app: opened with Rikuy, or shared to it
     if (__RIKUY_APP__ && APP.on) { await takeShared(this); takeLaunches(this); }
     // TeX fetched and started ahead of the first press of Preview, where the line allows it
@@ -5040,7 +5042,43 @@ App.prototype.textSigNow = function () { return textSig(this.main, [...this.file
 // the Word worker's files, asked for as the page asks for its other files (src/word.js)
 App.prototype.assetUrl = asset;
 
+// The native core (src/native.js), a file beside the page (build.mjs: its name and SHA-256 are in
+// the bundle). It is fetched once the page is in use, when the browser is idle: the first visit
+// on a slow phone line waits for none of its bytes, and the document's first build is
+// JavaScript's (the core gains little there). The bytes must have the hash the bundle names. If
+// it cannot run (an old browser, a policy without WebAssembly, no network), the editor stays
+// JavaScript, as it was before the core.
+let coreLoading = null;
+function loadCoreLater() {
+  if (coreLoading) return coreLoading;
+  coreLoading = new Promise((done) => {
+    const go = async () => {
+      try {
+        const C = __RIKUY_CORE__;
+        const r = await fetch(asset(C.file), { credentials: 'same-origin' });
+        if (!r.ok) return done(false);
+        const bytes = new Uint8Array(await r.arrayBuffer());
+        if (crypto.subtle) {
+          const h = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((b) => b.toString(16).padStart(2, '0')).join('');
+          if (h !== C.sha256) return done(false);
+        }
+        done(await loadCore(bytes));
+      } catch (e) { done(false); }
+    };
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(go, { timeout: 4000 }); else setTimeout(go, 1500);
+  });
+  return coreLoading;
+}
+
 const app = new App();
+// (for the tests and a look in the console: whether the core runs, what it has parsed, and
+// whether its tree of a text is JavaScript's)
+app.core = {
+  ready: coreReady, stats: coreStats, load: loadCoreLater,
+  same: (t) => { const u = scanUserSigs(t, {}), c = nativeParse(t, u, true); return !!c && JSON.stringify(c) === JSON.stringify(parseJS(t, u)); },
+  // off and on again, for a comparison in the page (dev/bench_native_page.py)
+  use: (on) => { setNativeParse(on && coreReady() ? nativeParse : null); }
+};
 Object.defineProperty(app, 'api', { value: agentApi(app), enumerable: true });
 window.rikuy = app;
 installCollab(app);

@@ -3,6 +3,10 @@
 import fs from 'fs';
 import path from 'path';
 import { buildModel } from '../src/model.js';
+import { loadCore } from '../src/native.js';
+// the model as the page builds it: with the native core (test/native.test.mjs CORPUS_DIR builds
+// every document both ways and compares)
+const core = await loadCore(fs.readFileSync(new URL('../tex/vendor/core/rikuy-core.wasm', import.meta.url)));
 const root = process.argv[2];
 if (!root) {
   console.error('usage: node test/corpus.test.mjs CORPUS_DIR   (e.g. a clone of MartinThoma/LaTeX-examples at 8bfd313b8d98)');
@@ -30,7 +34,8 @@ for (const f of files) {
     ok++;
   } catch (e) { fail++; failures.push([f, e.stack.split('\n').slice(0, 3).join(' | ')]); }
 }
-console.log('docs', docs, 'ok', ok, 'fail', fail);
+console.log('docs', docs, 'ok', ok, 'fail', fail, 'native core', core ? 'on' : 'OFF');
+if (!core) process.exitCode = 1;
 if (fail) process.exitCode = 1;
 for (const x of failures.slice(0, 15)) console.log('FAIL', x[0].replace(root, ''), x[1]);
 console.log('slow', slow.slice(0, 10));
