@@ -7,7 +7,7 @@ import { register } from '../commands.js';
 register(
   { id: 'table', name: 'Table', order: 30, title: 'Table, two by two to start with', synonyms: ['Insert table', 'tabular'], tab: 'home', group: 'insert', el: 'rb-table', label: 'Table',
     icon: '<path d="M3.5 4.5h13v11h-13zM3.5 8.5h13M10 4.5v11"/>', also: [{ tab: 'insert', group: 'tables', el: 'ri-table' }], run: (app) => app.insertTable() },
-  { id: 'table-row-below', name: 'Insert below', title: 'A row below the caret\'s (Ctrl+Enter)', synonyms: ['Insert row below', 'New row', 'Add row'], tab: 'table-layout', group: 'rows', label: 'Insert below',
+  { id: 'table-row-below', name: 'Insert below', title: 'A row below the caret\'s (Ctrl+Enter)', keys: ['Ctrl+Enter'], keyRank: 1, synonyms: ['Insert row below', 'New row', 'Add row'], tab: 'table-layout', group: 'rows', label: 'Insert below',
     icon: '<path d="M3.5 4.5h13v6h-13zM3.5 7.5h13M10 4.5v6M10 13v4M8 15h4"/>', menu: { table: 10 }, when: (app, at) => !!(at && at.cell), run: (app) => app.tableRow() }
 );
 

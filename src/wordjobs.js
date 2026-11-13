@@ -7,6 +7,7 @@ import { commentEdit } from './share.js';
 import { isBalanced } from './parser.js';
 import { safeUrl } from './wordast.js';
 import { scriptNeeds, scriptLines, scriptSetup, otherDirection, INDIC, MORE } from './scripts.js';
+import { pageDocx, pageLatex, relsMap } from './wordpage.js';
 
 // pandoc's messages worth telling the user: the ones that say something was lost
 const said = (ws) => (ws || []).filter((w) => w.verbosity && w.verbosity !== 'INFO').map((w) => w.pretty || w.type).slice(0, 20);
@@ -27,7 +28,9 @@ export function exportDocx(P, req) {
   const r = P.convert(opts, JSON.stringify(req.doc), req.resources || {});
   if (!r.files['out.docx']) throw new Error('pandoc wrote no Word file: ' + (r.stderr || '').trim().slice(0, 300));
   const mainTex = (req.project.files.find(([f]) => f === req.project.main) || [])[1];
-  const docx = styled(r.files['out.docx'], !!(req.doc.meta && req.doc.meta.dir && req.doc.meta.dir.c === 'rtl'), typeof mainTex === 'string' ? scriptSetup(mainTex) : {});
+  const made = styled(r.files['out.docx'], !!(req.doc.meta && req.doc.meta.dir && req.doc.meta.dir.c === 'rtl'), typeof mainTex === 'string' ? scriptSetup(mainTex) : {});
+  // the page's set up: paper, margins, columns, headers and footers (src/wordpage.js)
+  const docx = req.page ? zip(pageDocx(unzip(made), req.page)) : made;
   // what Word got, block by block, lined up with what the page showed
   const X = extract(unzip(docx));
   const anchors = [];
@@ -853,7 +856,7 @@ function comments(tex, info, N) {
 
 const cm = (twips) => (twips / 1440 * 2.54).toFixed(2).replace(/\.?0+$/, '') + 'cm';
 // the page as Word had it: paper and margins for the geometry package
-function geometry(pg) {
+function geometry(pg, PG = {}) {
   if (!pg || !pg.w || !pg.h) return '';
   const near = (a, b) => Math.abs(a - b) < 30;
   const W = Math.min(pg.w, pg.h), H = Math.max(pg.w, pg.h);
@@ -864,9 +867,12 @@ function geometry(pg) {
   if (pg.w > pg.h && o[0].endsWith('paper')) o.push('landscape');
   const { top, right, bottom, left } = pg;
   if (top && right && bottom && left) {
-    if (near(top, bottom) && near(left, right) && near(top, left)) o.push('margin=' + cm(top));
+    // (mirrored margins: Word's left is the inside, its right the outside)
+    if (PG.mirror) o.push('top=' + cm(top), 'bottom=' + cm(bottom), 'inner=' + cm(left), 'outer=' + cm(right));
+    else if (near(top, bottom) && near(left, right) && near(top, left)) o.push('margin=' + cm(top));
     else o.push('top=' + cm(top), 'bottom=' + cm(bottom), 'left=' + cm(left), 'right=' + cm(right));
   }
+  if (pg.gutter > 0) o.push('bindingoffset=' + cm(pg.gutter));
   return '\\usepackage[' + o.join(',') + ']{geometry}';
 }
 
@@ -968,9 +974,13 @@ export function docxToLatex(P, bytes, name) {
   // pandoc writes some commands of its own: those used get their definitions
   const size = info && info.sz >= 23 ? '12pt' : info && info.sz >= 21 ? '11pt' : '';
   const two = info && info.cols.length && info.cols.every((n) => n === 2);
-  const cls = [size, two ? 'twocolumn' : ''].filter(Boolean).join(',');
+  // the page beyond its paper and margins: headers and footers, line numbers, its colour, border,
+  // the numbers' format, more columns (src/wordpage.js)
+  const PG = info && info.sect ? pageLatex(parts, info.sect, relsMap(parts)) : { lines: [], body: [], packages: [], notes: [] };
+  const many = info && info.cols.length && info.cols.every((n) => n > 2 && n === info.cols[0]) ? info.cols[0] : 0;
+  const cls = [size, two ? 'twocolumn' : '', PG.twoside || PG.mirror ? 'twoside' : ''].filter(Boolean).join(',');
   const pre = ['\\documentclass' + (cls ? '[' + cls + ']' : '') + '{article}'];
-  const geo = geometry(pg);
+  const geo = geometry(pg, PG);
   if (geo) pre.push(geo);
   // with those lines the document is XeLaTeX's or LuaLaTeX's, with fonts for those scripts:
   // nothing of pdfLaTeX's font set up goes beside them (T1 would take the text off those fonts)
@@ -1009,6 +1019,9 @@ export function docxToLatex(P, bytes, name) {
   if (used(/\\(cite[tp]?|citeauthor|citeyear)\{/) || bib) pre.push('\\usepackage[authoryear,round]{natbib}');
   if (used(/\\(texttt|verb)|\\begin\{verbatim\}/)) { /* the class has them */ }
   if (used(/\\(href|url|hyperlink|hypertarget|hyperref|phantomsection|nolinkurl)\b/)) pre.push('\\usepackage[hidelinks]{hyperref}');
+  for (const p of PG.packages) pre.push(Array.isArray(p) ? '\\usepackage[' + p[1] + ']{' + p[0] + '}' : '\\usepackage{' + p + '}');
+  if (many) pre.push('\\usepackage{multicol}');
+  pre.push(...PG.lines);
   if (used(/\\tightlist/)) pre.push('\\providecommand{\\tightlist}{\\setlength{\\itemsep}{0pt}\\setlength{\\parskip}{0pt}}');
   if (used(/\\pandocbounded/)) pre.push('% pictures at their own size, no wider than the text', '\\newcommand{\\pandocbounded}[1]{\\resizebox{\\ifdim\\width>\\linewidth\\linewidth\\else\\width\\fi}{!}{#1}}');
   if (used(/\\begin\{CSLReferences\}/)) pre.push('\\newenvironment{CSLReferences}[2]{}{}', '\\newcommand{\\CSLLeftMargin}[1]{#1}', '\\newcommand{\\CSLRightInline}[1]{#1}', '\\newcommand{\\CSLBlock}[1]{#1}');
@@ -1018,9 +1031,10 @@ export function docxToLatex(P, bytes, name) {
   if (author) lines.push('\\author{' + author + '}');
   if (title || author) lines.push('\\date{' + (date || '') + '}');
   lines.push('', '\\begin{document}');
+  if (PG.body.length) lines.push(...PG.body);
   if (title || author) lines.push('\\maketitle');
   if (abstract) lines.push('', '\\begin{abstract}', abstract, '\\end{abstract}');
-  lines.push('', tex.trim(), '');
+  lines.push('', many ? '\\begin{multicols}{' + many + '}\n' + tex.trim() + '\n\\end{multicols}' : tex.trim(), '');
   if (bib) lines.push('\\bibliographystyle{plainnat}', '\\bibliography{references}', '');
   lines.push('\\end{document}', '');
   let out = comments(lines.join('\n'), info, N);
@@ -1046,9 +1060,10 @@ export function docxToLatex(P, bytes, name) {
   if (info) {
     if (info.charts || info.art) lost.push([info.charts ? s(info.charts, 'chart') : '', info.art ? s(info.art, 'SmartArt drawing') : ''].filter(Boolean).join(' and ') + ' (Word draws them itself; save each as a picture in Word to keep it)');
     if (info.ruby) lost.push('the readings set above ' + s(info.ruby, 'word') + ' (ruby); the words are kept');
-    if (info.heads.length) lost.push('the header and footer text (“' + info.heads.join('”, “').replace(/\s+/g, ' ').slice(0, 120) + '”)');
+    if (info.heads.length && !PG.heads) lost.push('the header and footer text (“' + info.heads.join('”, “').replace(/\s+/g, ' ').slice(0, 120) + '”)');
     if (N.uncommented) lost.push(s(N.uncommented, 'comment') + ' with no place in the text');
-    if (info.cols.some((n) => n > 1) && !two) lost.push('the columns of the part set in columns');
+    if (info.cols.some((n) => n > 1) && !two && !many) lost.push('the columns of the part set in columns');
+    for (const x of PG.notes) notes.push(x);
     if (info.colors.size && !N.colors && !ink(info).size) lost.push('text colour');
     if (info.mathcolor) lost.push('colour inside ' + s(info.mathcolor, 'formula'));
     if (info.unread.length) lost.push('comments, colours and page breaks (' + info.unread.join(', ') + ' is not well formed, so only its text was read)');

@@ -54,6 +54,8 @@ export function findProblems(o) {
       else labels.set(k, { f, p: m.index });
     }
   }
+  // (a label a package defines: lastpage's LastPage, of Page X of Y)
+  if ([...scrubbed.values()].some((s) => /\\usepackage\s*(?:\[[^\]]*\])?\s*\{[^}]*\blastpage\b/.test(s))) labels.set('LastPage', { f: null, p: 0 });
   // references
   for (const [f, s] of scrubbed) {
     const re = /\\(ref|eqref|pageref|autoref|cref|Cref|nameref|vref|labelcref)\*?\s*\{([^}]*)\}/g;

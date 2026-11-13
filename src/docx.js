@@ -670,7 +670,9 @@ export function premark(parts) {
         info.cols.push(+((kid(x, 'w:cols') || { a: {} }).a['w:num']) || 1);
         const sz = kid(x, 'w:pgSz'), mar = kid(x, 'w:pgMar');
         const num = (el, k) => { const v = +(el && el.a[k]); return v > 0 && v < 1e5 ? v : 0; };
-        if (sz) info.page = { w: num(sz, 'w:w'), h: num(sz, 'w:h'), top: num(mar, 'w:top'), right: num(mar, 'w:right'), bottom: num(mar, 'w:bottom'), left: num(mar, 'w:left') };
+        if (sz) info.page = { w: num(sz, 'w:w'), h: num(sz, 'w:h'), top: num(mar, 'w:top'), right: num(mar, 'w:right'), bottom: num(mar, 'w:bottom'), left: num(mar, 'w:left'), gutter: num(mar, 'w:gutter') };
+        // (the body's last section: its headers, footers, numbers and the rest, src/wordpage.js)
+        info.sect = x;
       });
     } else {
       for (const n of body.c) if (typeof n !== 'string') blocksFix(C, n, false);

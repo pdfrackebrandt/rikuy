@@ -121,6 +121,28 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
   one whose picture had not loaded is measured again when it has: `it.late`, `Layout.invalidate`),
   `Layout.plan` (pure pagination, footnotes, line splits), `Layout.apply` (rewrites only pages
   whose signature changed). Also on this path: `src/bib.js`, `src/siunitx.js`, `src/problems.js`.
+- **The page's set up.** `geometry(opts)` (`src/layout.js`) works out the paper (`paperSize`:
+  by name, given, turned for landscape) and the text block as geometry does when the preamble
+  loads it (`opts.geo`, its keys merged by `Builder.geometry`) or as the standard classes do,
+  with the even pages' left margin (`mlE`) of a two sided document, the head's and foot's
+  distances and the columns. `Builder.pageSetup` reads the rest once for each preamble through
+  `readPage` (`src/pagesrc.js`): fancyhdr's places (`readHF`, `slotTexts`), line numbers,
+  hyphenation, the watermark, the page's colour and border, `\columnsep`; the body's
+  `\thispagestyle`, `\pagestyle`, `\pagenumbering`, `\setcounter{page}` are `pagemark` items,
+  `\columnbreak` and `\cleardoublepage` breaks with their flags, a multicols paragraph carries
+  `mc` (render.js passes these to the layout's items). `Layout.plan` numbers the pages from the
+  marks, adds `\cleardoublepage`'s blank page, and sets runs of items in columns as bands
+  (`placeBand`: filled, or balanced by halving the column height where multicols ends);
+  `Layout.apply` draws each page's chrome apart from its text (`drawChrome`: the header and
+  footer by `slotsFor` and `hfRuns`, the watermark, the colour, the border; `lineNumbers`), each
+  redrawn only when its own signature changed. The controls (`src/cmd/page.js`) write through
+  `src/pagesrc.js`'s pure edits: `geometryEdits` (keys where their family stands), `paperEdits`,
+  `marginEdits`, `columnsEdits`, `slotEdits` (fancyhdr turned on once, a place in place),
+  `breakEdits`, `lineNumberEdits` and the rest; the dialogs are `src/ui/pagesetup.js`, the
+  header and footer typed on the page `src/ui/headerfooter.js` (fields over the page, outside
+  its editable text). Word: `pageForWord` (`src/pageword.js`, the page's thread) describes the
+  page in twips, `pageDocx` and `pageLatex` (`src/wordpage.js`, the Word worker) write it into
+  the .docx and read a Word file's back.
 
 ## 2. Page to source
 

@@ -459,7 +459,8 @@ Ctrl is Cmd on a Mac.
 - \\ or Ctrl+K: the list of things to insert (footnote, citation, section, table and more)
 - Ctrl+Z, Ctrl+Shift+Z: undo, redo
 - Ctrl+O: open files; Ctrl+S: download the LaTeX source
-- Ctrl+P: the PDF preview; Ctrl+\\: the source pane; Ctrl+Shift+O: outline, problems, changes
+- Ctrl+P: Print, the PDF as TeX makes it (the Preview button shows it beside the page);
+  Ctrl+\\: the source pane; Ctrl+Shift+O: outline, problems, changes
 - Ctrl+= and Ctrl+-, Ctrl+0: zoom the document in and out, actual size (on the page; a pinch
   or Ctrl with the mouse wheel over the page zooms too, about the point under the pointer)
 - Ctrl+Alt+M: comment on the selected words; Ctrl+Alt+F: a footnote
@@ -467,6 +468,13 @@ Ctrl is Cmd on a Mac.
 - Alt+Q: the search box, for any command by its name; Ctrl+F1: the ribbon folded to its tabs
   and back; Shift+F10 or the menu key: the right click menu at the caret
 - Tab, Ctrl+Enter: next cell, new row in a table
+- Ctrl+Enter outside a table: a page break (\\newpage on a line of its own, the paragraph cut
+  there); Ctrl+Shift+Enter: a column break (\\columnbreak in multicols, \\newpage in a two
+  column document)
+- A double click in a page's top or bottom margin opens its header or footer: three fields
+  (left, center, right), each the LaTeX of fancyhdr's \\fancyhead or \\fancyfoot
+  (\\thepage is the page number); Escape closes them. The Layout tab sets margins, size,
+  orientation and columns through geometry, the class's options and multicol
 - Ctrl+Shift+V: paste as plain text
 - Ctrl+F, Ctrl+H, Ctrl+G, on the page only (with the focus anywhere else Ctrl+F is the browser's
   own find): Find puts the focus in the Navigation pane's searchbox "Search document" (the side

@@ -82,6 +82,9 @@ jobs:
         run: cd test && python3 ribbon.py
       - name: The ribbon's frame (tabs, contextual tabs, folding, keys, search, the right click menu, the kit)
         run: cd test && python3 tabs.py
+      # its PDF checks (page size, header, line numbers, Print) need dist/tex and run in tex.yml
+      - name: The page's set up (margins, size, breaks, columns, headers and footers, line numbers, background)
+        run: cd test && python3 page.py
       - name: Rikuy as an agent meets it (the scripting surface, every control by its name)
         run: cd test && python3 agent.py
       # their PDF checks need dist/tex and run in tex.yml; here they say they skip that part

@@ -614,6 +614,9 @@ class App {
       for (const f of fns) f.measured = false;
     }
     this.removeGhost();
+    // (headers, footers, line numbers, the watermark: drawn from the model's page set up, src/layout.js)
+    this.layout.page = model.opts.page || {};
+    this.layout.opts = model.opts;
     this.layout.measure(items, fns);
     const plan = this.layout.plan(items);
     this.layout.apply(plan);
@@ -1150,7 +1153,8 @@ class App {
     this.plainPaste = !!(mod && e.shiftKey && e.key.toLowerCase() === 'v');
     if (mod && !e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); this.save(); }
     if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); $('#fileinput').click(); }
-    if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'p') { e.preventDefault(); if (document.body.classList.contains('pdf-on')) this.compilePdf(); else this.togglePdf(true); }
+    // (Ctrl+P is Print, src/cmd/page.js: from a field or the source too)
+    if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'p' && !e.defaultPrevented) { e.preventDefault(); this.runCommand('print'); }
     if (mod && e.key === '\\') { e.preventDefault(); this.toggleSource(); }
     if (mod && e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); this.toggleNav(); }
     if (e.key === 'Escape') { if (this.pop) { this.closePop(); e.preventDefault(); } this.disarm(); }
@@ -1178,8 +1182,8 @@ class App {
     if (mod && !e.altKey) {
       if (k === 'z') { e.preventDefault(); if (e.shiftKey) this.redo(); else this.undo(); return; }
       if (k === 'y') { e.preventDefault(); this.redo(); return; }
-      // (Ctrl+B, I, U, M, K and Shift+E are the commands' keys: src/keys.js catches them first)
-      if (k === 'enter') { e.preventDefault(); this.tableRow(); return; }
+      // (Ctrl+B, I, U, M, K, Shift+E and Enter are the commands' keys: src/keys.js catches them
+      // first; Ctrl+Enter is a new row in a table and a page break elsewhere)
       // the browser's own select-all ends on a page number, which cannot be selected, and
       // collapses to the top of the page: Ctrl+A then Ctrl+C copied nothing and Delete did nothing
       if (k === 'a' && !e.shiftKey) { e.preventDefault(); this.selectAllText(); return; }
@@ -4881,6 +4885,8 @@ class App {
         <dt>Click math, a citation or a reference</dt><dd>Edit it in place</dd>
         <dt>Alt+click</dt><dd>Show that spot in the source</dd>
         <dt>Tab, ${mod}+Enter</dt><dd>Next cell, new row in tables</dd>
+        <dt>${mod}+Enter</dt><dd>A page break (\\newpage) outside a table; in a table's cell it still adds a row. ${mod}+Shift+Enter: a column break</dd>
+        <dt>Double click a page's top or bottom margin</dt><dd>Type its header or footer (fancyhdr); \\thepage is the page's number</dd>
         <dt>${mod}+Z, ${mod}+Shift+Z</dt><dd>Undo, redo</dd>
         <dt>${mod}+Alt+M</dt><dd>Comment on the selected words. A comment is a LaTeX comment line in the source, so Overleaf, Git and TeX keep it and print nothing</dd>
         <dt>Paste</dt><dd>From Word, Google Docs or the web: bold, italics, lists, links, tables and equations become LaTeX. ${mod}+Shift+V pastes plain text</dd>
@@ -4889,7 +4895,8 @@ class App {
         <dt>${mod}+F, ${mod}+H, ${mod}+G</dt><dd>On the page: Find (in the Navigation pane), Replace, Go To. What is found is the text the page shows, never a command or math; elsewhere ${mod}+F is the browser's own find</dd>
         <dt>Alt+Shift+arrows, ${mod}+Alt+O</dt><dd>Promote or demote a heading with those under it; move a paragraph, an item, or a heading's whole section up or down; the Outline view</dd>
         <dt>Esc, then Tab</dt><dd>Leave the source pane, where Tab indents</dd>
-        <dt>PDF or ${mod}+P</dt><dd>Compiles with TeX Live 2026, running in this browser, and shows the exact PDF: pdfLaTeX, XeLaTeX or LuaLaTeX (Auto reads a <code>% !TeX program</code> line or the preamble). Shell escape runs Ghostscript, gnuplot, Pygments for minted and makeindex here too. It recompiles after each edit; TeX's errors appear under Problems with their line; click the PDF to find that text, click the page to find it in the PDF</dd>
+        <dt>${mod}+P</dt><dd>Print: the PDF as TeX makes it, shown beside the page, then the browser's print dialog</dd>
+        <dt>Preview</dt><dd>Compiles with TeX Live 2026, running in this browser, and shows the exact PDF: pdfLaTeX, XeLaTeX or LuaLaTeX (Auto reads a <code>% !TeX program</code> line or the preamble). Shell escape runs Ghostscript, gnuplot, Pygments for minted and makeindex here too. It recompiles after each edit; TeX's errors appear under Problems with their line; click the PDF to find that text, click the page to find it in the PDF</dd>
       </dl>
       <p><b>Review</b> lists the comments, then every edit since you opened the project, or since any saved version, with Accept and Reject; tick Show changes on the pages to see them marked like Word's Track Changes. Versions are kept every few minutes, when you leave, when you save the .zip, and under any name you give.</p>
       <p><b>Share</b> copies a link that opens this document for anyone, ready to type in, with no account: the document travels inside the link and is not uploaded. Coauthors type and comment on the page and send a link back; their edits arrive here as changes to accept or reject. Share also opens the project in Overleaf, and Download LaTeX gives a plain .tex (or a .zip with several files), so leaving takes one click. From Overleaf: Menu, Download, Source, and drop the .zip on the page. With Overleaf's Git integration, paste the project's address under Git, Clone, and push and pull keep both in step.</p>
