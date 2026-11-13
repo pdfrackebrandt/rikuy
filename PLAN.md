@@ -1745,6 +1745,81 @@ Tests:
     `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43; `pages_check.py` fits;
     actionlint clean.
 
+52. **The native core: the editor's heavy text work in C++.** Done in the code (branch
+    `native-core`), asked for by the owner ("most things in C/C++", the fastest editor, phones).
+    *Measured first* (Chromium's profiler, `dev/bench_native.mjs`, `dev/bench_native_page.py`;
+    `dev/bench/long`, a 141 KB paper, and a generated document of 3000 paragraphs, 401 KB, 18,700
+    nodes). A keystroke on the paper takes 32 ms: the model 16 to 17 (its parse 4.4), layout 8.7
+    (5.8 of it the DOM's measuring), the caret 2.4, rendering 1.0, the undo record's scan of the
+    file 1.8; on the generated one 71 ms (model 47, layout 10.5, caret 8.5). A first load: the paper
+    133 ms; the generated document 3.4 s, 87 % of it layout in the DOM, the model 3 %. A share
+    link's three way merge: 0.9 ms (the paper, 1 % of its lines changed on each side), 6.8 ms (the
+    generated one), 57 ms at worst (1648 lines on each side). Review's marks: the diff is 1.5 of
+    8.4 ms (the paper, 36 changes) and 16 of 198 ms (443 changes); the rest is painting. Find:
+    5 to 8 ms, V8's own regular expressions over the model's text. Line cuts are the browser's:
+    there is no JavaScript line breaker to port (`Layout.plan` is arithmetic, under 1 ms).
+    `minimalRow` works on one formula row and asks KaTeX about every candidate.
+    *Ported: `parse()`*, the one pure function on every keystroke that is long and crosses once
+    (`tex/native/core/parse.cc`, `src/native.js`; ARCHITECTURE.md section 17). The C++ is parseJS
+    function for function; parser.js keeps the tables and sends them at load; the tree comes back
+    as numbers and becomes parseJS's objects key for key. `sh tex/build_tools.sh core` makes
+    `tex/vendor/core/rikuy-core.wasm` (56,480 bytes, 12.5 KB with Brotli; SHA-256 `06eedda7...`;
+    rebuilt byte for byte from another folder and a moved copy of the sources, and by `vendor.yml`,
+    whose matrix now has `core`); the page fetches it as `core/rikuy-core-<hash>.wasm` once it is
+    in use and idle and checks its hash, so a first visit on a slow phone line waits for none of it
+    (the bundle grew 2 KB, not the 76 KB of the module in base64 tried first); the service worker
+    keeps it (offline it loads from the kept copy), the hosted headers cache it for good, and the
+    artifact's upload plan takes it. Where it cannot answer (no core, under 600 code units, nesting
+    past 200, memory, a trap) parseJS does the work. *Gain* (node, one core, medians of 41):
+    `parse()` 4.33 times faster on the paper (4.50 to 1.04 ms), 2.45 on the generated document
+    (7.63 to 3.11), 2.44 on the sample, 2.05 on `lua`, 1.58 on the 766 character `heavy`; the
+    corpus's 716 models 3.02 to 2.06 s in all. The model then builds about 3 % slower from the
+    core's objects than from parseJS's (16.07 against 16.50 ms on the paper, parse excluded), so
+    a keystroke gains less: in the page (1400 px, keystrokes alternating core and JavaScript)
+    the paper's keystroke went from 29.7 to 29.3 ms and from 33.3 to 30.3 ms in two runs (the model
+    alone 1.1 to 1.2 times faster), the generated one's from 70.8 to 65.5 ms; at a phone's speed
+    (Chromium's CPU throttling, 390 px) the paper's from 131 to 112 and 140 to 121 ms at 4 times
+    and from 170 to 149 and 191 to 173 ms at 6 times (18 to 21 ms, 1.11 to 1.17 times), the
+    generated one's from 247 to 240 ms (4 times) and 368 to 365 and 450 to 400 ms (6 times). The core goes from bytes to running in 3 ms (compiling is off the main
+    thread, which the throttling does not slow; a real phone takes longer, after the page is in use).
+    *Not ported, with the reason:* the diff and the three way merge (off the keystroke path; in
+    their situations they are 8 % or less of the time, so even an infinitely fast port gains under
+    1.1 times there), Find (already native code in V8), `minimalRow` (inputs of one row and a call
+    to KaTeX per candidate), line breaking (the browser's), the model's build (it makes the
+    objects the renderer reads; see next), the undo record's scan (copying both strings into the
+    core costs more than the scan; a chunked comparison in JavaScript is the fix).
+    *Found while porting and fixed in both parsers, each with a test:* `\newenvironment{x}[` with
+    no later `]` made the parse run for ever (a frozen tab, from a stranger's document);
+    `\constructor{a}`, `\hasOwnProperty{x}` and `\begin{toString}` read Object.prototype from the
+    tables and threw, and the page took no more typing; searches that leave the position where it
+    was (`\(` without `\)`, an unknown command's `[`, a raw environment without its end) ran to the
+    end for every occurrence: 7.0 s (JavaScript) and 5.9 s (the core) on crafted files of 120 to
+    320 KB, now 30 to 70 ms, both remembering each search; and in `diff.js` a `push(...list)` of
+    160,000 entries overflowed the stack, which stopped the Review tab on a long rewritten line.
+    *Evidence:* `test/native.test.mjs` 28 checks in `npm test` (30 with the corpus): the same tree
+    for all 11 documents of the repository and a generated one, 3000 random TeX-like texts, 2000
+    random edits of real documents and 998 of 998 corpus files, every one of the 716 corpus models
+    the same with and without the core, 400 texts through the core and back unchanged, the stalled
+    searches under 1.5 s, the fallbacks; four bugs planted in the C++ (a backtracking order,
+    `fil` before `fill`, a carriage return, a surrogate's bit) each fail it (661, 924, 373 and 157
+    checks). `npm test` green; corpus model run 716 of 716; `browser.py` 192 (3 new),
+    `agent.py` 138, `tabs.py` 116, `ribbon.py` 268, `find.py` 76, `outline.py` 59, `share.py` 46,
+    `history.py` 39/39, `offline.py` 55/55 (1 new), `launch.py` 18/18, `deploy_check.py` 44/44 (1
+    new), `pages_check.py` fits; the artifact build (`RIKUY_SHARE`, `RIKUY_NO_WORD`) has the core
+    beside its page. The security audit's quick profile ran on the changed files (one reviewer).
+    *Next, to move the heavy work into C++ with JavaScript as the reference:* (1) the model's build
+    is 50 to 70 % of a keystroke on long documents and phones: first build only the blocks whose
+    source changed (the renderer already keeps unchanged blocks by key), then move its per
+    character work (the source maps of `Acc.ch`, `text`, `inl`, `countWords` with Unicode tables)
+    into the core with the maps as typed arrays, held equal by the corpus's serialised models as
+    now; (2) parse only the changed region, splicing the tree, so a keystroke parses a paragraph;
+    (3) the diff and merge, once Review's painting is incremental (it is 92 % of that situation);
+    (4) Knuth and Plass line breaking from measured widths, which would spare layout the DOM's
+    line measuring and give the page TeX's lines (needs Paper Modern's glyph widths and KaTeX's
+    boxes: a task of its own). Find stays on V8's regular expressions.
+    Open: the `{$` nesting case (1.8 s in JavaScript on 80 KB nested 40,000 deep; the core declines
+    past its depth) is left as it was: its search depends on the depth it starts at.
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000

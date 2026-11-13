@@ -256,6 +256,16 @@ await ok('a change that only adds a comment is told apart from a change to the t
   assert.ok(changes(DOC, t2, 'main.tex').some((c) => !commentOnly(c)));
 });
 
+await ok('the changes of a whole long line rewritten: one change, no stack overflow', () => {
+  // the words of a line of 40 000 words, every one changed: past MAXD the diff is one replacement
+  // of 160 000 words, which push(...list) once spread onto the stack ("Maximum call stack size
+  // exceeded", and the Review tab and its marks stopped)
+  const cs = changes('a '.repeat(40000), 'b '.repeat(40000), 'main.tex');
+  assert.equal(cs.length, 1);
+  assert.equal(cs[0].a.length, 79999);
+  assert.equal(cs[0].b.length, 79999);
+});
+
 await ok('the worker that compiled a document from a link is let go before anything else', async () => {
   const e = new TeXEngine('https://x.test/tex/');
   let workers = 0, resets = 0;

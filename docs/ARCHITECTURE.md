@@ -61,12 +61,15 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | a shell escape program | `exec` (`tex/shell.js`); `loadTool`, `make*` (`tex/tools.js`) |
 | which TeX Live files ship | `build_tree`, `build_packs` (`tex/build_tree.py`) |
 | a program compiled for Rikuy | `tex/build_tools.sh`, `tex/native/` |
+| the editor's native core (C++ in the page): a port, its loading, its fallback | `loadCore`, `nativeParse`, `readTree`, `put` (`src/native.js`); `loadCoreLater` (`src/app.js`); `Parser` (`tex/native/core/parse.cc`); section 17 |
 
 ## 1. Source to page
 
 `App.rebuild(caret)` (`src/app.js`) runs model, render, layout and caret in that order.
 
 - **Parse.** `parse()` (`src/parser.js`) builds a forgiving tree whose nodes keep exact offsets
+  (with the native core loaded, a text of 600 code units or more is parsed by its C++ copy, the
+  same tree; `parseJS` is the reference and the fallback: section 17)
   (`s`, `e`, inner `is`/`ie`, environment body `be`/`es`). `scanUserSigs()` first reads
   `\newcommand`/`\def` arities from all files and marks environments whose definition opens a
   TikZ picture as raw. See also `SIG`, `MATH_ENVS`, `RAW_ENVS`, `PARSE_CACHE`.
@@ -997,6 +1000,7 @@ argv)` (`tex/native/galley_main.c`; `galley_main_cxx.cc` for asy; for xindy `nat
 choosing tex2xindy or xindy by `argv[0]`), because that toolchain exports no `main(int, char **)`.
 The links (`LINK`; xindy has its own flags) make MODULARIZE factories `GalleyDvips`, `GalleyAsy`,
 `GalleyGnuplot`, `GalleyXindy` exporting `_galley_main`, `_malloc`, `_fflush` (and `_xindy_boot`).
+The same script's `core` target builds the editor's native core, which is no program (section 17).
 
 `emProgram()` (`tools.js`): with `_galley_main`, `enter` mallocs the whole argv (name first) into
 the heap and calls it, then `_fflush(0)`; without (npm's Ghostscript), `callMain(argv.slice(1))`.
@@ -1069,7 +1073,8 @@ under a real one's name. A page on claude.ai reaches only its own server: self h
    fails if its stack exports moved), control bytes escaped. `dist/index.html` is the page as a
    whole document, for any static server: without `RIKUY_SHARE` the installed app (section 6,
    with `lib/`, `icons/`, `manifest.webmanifest` and, last, `sw.js` and the version), with it the
-   page inside the skeleton the artifact host wraps it in; `dist/LICENSES.txt` holds
+   page inside the skeleton the artifact host wraps it in; `dist/core/rikuy-core-<hash>.wasm` is the
+   native core (section 17), fetched by the page once it is in use; `dist/LICENSES.txt` holds
    `NOTICE`, the license texts of what `dist/` ships and the notices of the libraries compiled into
    its programs (`LICENSES/third-party/`). `RIKUY_OUT` moves the output.
 4. Unless `RIKUY_NO_WORD` is set, `build.mjs` also writes `dist/word/`: `word.js` (esbuild's
@@ -1126,3 +1131,57 @@ Which check covers which change, and how long each takes: `AGENTS.md`. The numbe
   It was made from the files a corpus run read (`job.trace` returns them), but the script that
   turned those reads into the list is not in the repository; `build_tree.py` uses the list as
   given.
+
+## 17. The editor's native core (C++)
+
+The editor's pure computation over long texts can run as C++ compiled to WebAssembly, in the page.
+WebAssembly reaches no DOM and every string crossing into it is copied (here as UTF-8, read back
+as UTF-16 by the core), so only work that is pure, long and called with few crossings belongs
+there. So far one function is ported: `parse()`.
+
+- **Sources and build.** `tex/native/core/` (`core.h`: the result list `Out`, the text buffer
+  `Text`, a string map, JavaScript's white space; `parse.cc`: `parseJS` function for function, in
+  parser.js's order). `sh tex/build_tools.sh core` compiles `CORE_SOURCES` with Ubuntu's
+  Emscripten 3.1.6 (C++17, no exceptions or RTTI, `-O3`, emmalloc, `STANDALONE_WASM`: one empty
+  import, no JavaScript glue) into `tex/vendor/core/rikuy-core.wasm` (57 KB), committed and
+  rebuilt byte for byte by `vendor.yml`. The sources live with the programs' native layer because
+  that is where the toolchain, the path mapping of `EMCC_CFLAGS` and the reproducibility check are;
+  `src/` holds only what esbuild bundles.
+- **Loading.** `build.mjs` copies it to `dist/core/rikuy-core-<16 hex digits of its SHA-256>.wasm`
+  and puts its name and full hash in the bundle (`__RIKUY_CORE__`). `loadCoreLater` (`src/app.js`)
+  fetches it once init is through, when the browser is idle, checks the hash, and calls
+  `loadCore`: a first visit waits for none of its bytes and the first build is JavaScript's. The
+  hosted headers cache `/core/*` for good; the service worker keeps it as content addressed (kind
+  `i`, precached at install); `tex/publish_batches.py` uploads it to the artifact. WebAssembly
+  compiles under both policies' `'unsafe-eval'`.
+- **The parse port.** `loadCore` sends parser.js's tables once (`PARSE_TABLES`: parse.cc keeps no
+  copy of them) and installs `nativeParse` with `setNativeParse`. `parse()` then asks
+  `nativeParse(src, userSigs)` first: below `PARSE_MIN` (600 code units: macro bodies, .bib
+  fields) it answers null at once. Otherwise the document's signatures go over when they change,
+  the text goes over (`put`: `TextEncoder.encodeInto` for a well formed string, code unit by code
+  unit for one with a lone surrogate), `core_parse` writes the tree as 32-bit numbers (a node's
+  fields before its children, lengths patched when known) and `readTree` makes parseJS's objects
+  from them, key for key, names sliced from the source. Null, and parseJS, where the core cannot
+  answer: not loaded, memory refused, nesting past 200 levels (`DEPTH`: the wasm stack is the
+  page's JavaScript stack), or a trap (the wasm stack pointer is restored).
+- **Searches remembered.** Both parsers remember each "first place of this string at or after p"
+  (`nextAt` in parser.js, `Seen` in parse.cc): a search that leaves the position where it was
+  (`\(` without `\)`, an unknown command's `[`, a raw environment without its end) once ran to the
+  end for every occurrence, seconds on a crafted file.
+- **Measured** (`dev/bench_native.mjs`, `dev/bench_native_page.py`; PLAN.md task 52): `parse()` 4.3
+  times faster on the 141 KB paper, 2.45 times on a 400 KB generated document of 18,700 nodes
+  (making the objects is the floor there); a keystroke in the page 0.5 to 3 ms faster on the paper
+  at a desktop's speed and 18 to 21 ms at a phone's (6 times throttled, 390 px: 170 to 149 ms).
+  The rest of a keystroke is the model's objects (built about 3 % slower from the core's objects
+  than from parseJS's), layout and the caret, in the DOM's reach.
+
+To add a port: measure the function's share of the situation it serves first (the two
+benchmarks, `--cpu 4` and `--cpu 6` for a phone), and port only what is pure, long and crosses
+once. Write `tex/native/core/<name>.cc` beside parse.cc (exports with `CORE_EXPORT`, results as an
+`Out` list, every read bounded, every loop advancing, a depth cap that answers "no" rather than
+overflowing), add it to `CORE_SOURCES` (the order is the module's bytes), give the JavaScript
+function a hook like `setNativeParse` and keep it as the reference, read the result back in
+`src/native.js` into exactly the objects JavaScript makes, and add to `test/native.test.mjs` the
+corpus, random input, random edits and a planted bug that must fail it. Keep it only if it is
+identical everywhere and at least twice as fast as a call, crossings included. Then
+`sh tex/build_tools.sh core` and commit the module; its new hash names the new file.

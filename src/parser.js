@@ -11,9 +11,14 @@ export const RAW_ENVS = new Set([
   'filecontents', 'filecontents*', 'algorithmic', 'algorithmicx', 'pgfpicture', 'forest', 'spverbatim'
 ]);
 
+// The tables below have no prototype: a document's \constructor or \begin{toString} is a name
+// like any other, not Object.prototype's (looked up in a plain object, it threw "sig is not
+// iterable" and the page took no more typing).
+const own = (o) => Object.assign(Object.create(null), o);
+
 // Argument signatures. o = optional [..], m = mandatory, v = verbatim braces,
 // p = optional (..) as used by \cmidrule.
-const SIG = {
+const SIG = own({
   part: 'om', chapter: 'om', section: 'om', subsection: 'om', subsubsection: 'om', paragraph: 'om', subparagraph: 'om',
   textbf: 'm', textit: 'm', emph: 'm', texttt: 'm', textsc: 'm', textsf: 'm', textrm: 'm', textup: 'm',
   textsl: 'm', textmd: 'm', textnormal: 'm', underline: 'm', uline: 'm', uuline: 'm', uwave: 'm', sout: 'm', xout: 'm',
@@ -65,10 +70,10 @@ const SIG = {
   // character formats Rikuy's Font group writes (src/cmd/font.js): ulem's other lines, its double
   // strikethrough, a size and a family for a run of text, ruby
   dashuline: 'm', dotuline: 'm', culine: 'mm', dsout: 'm', fontsize: 'mm', fontfamily: 'm', fontspec: 'om', ruby: 'omm'
-};
+});
 
 // Commands that take no arguments but print characters, keyed by name.
-export const CHARS = {
+export const CHARS = own({
   '%': '%', '&': '&', '$': '$', '#': '#', '_': '_', '{': '{', '}': '}', ' ': ' ', ',': ' ',
   ';': ' ', ':': ' ', '>': ' ', '!': '', '/': '', '@': '', '-': '­', '|': '‖',
   textbackslash: '\\', textasciitilde: '~', textasciicircum: '^', ldots: '…', dots: '…',
@@ -92,21 +97,21 @@ export const CHARS = {
   NG: 'Ŋ', ng: 'ŋ', TH: 'Þ', th: 'þ', DH: 'Ð', dh: 'ð', i_: 'i',
   '\n': ' ', '\t': ' ', glqq: '\u201E', grqq: '\u201C', glq: '\u201A', grq: '\u2018', flqq: '\u00AB', frqq: '\u00BB',
   flq: '\u2039', frq: '\u203A', percent: '%', textasteriskcentered: '*', textnumero: '\u2116'
-};
+});
 
 // Accent commands -> combining marks.
-export const ACCENTS = {
+export const ACCENTS = own({
   "'": '́', '`': '̀', '^': '̂', '"': '̈', '~': '̃', '=': '̄', '.': '̇',
   u: '̆', v: '̌', H: '̋', c: '̧', k: '̨', r: '̊', d: '̣', b: '̱',
   t: '͡'
-};
+});
 
 const DEF_CMDS = new Set(['newcommand', 'renewcommand', 'providecommand', 'DeclareRobustCommand', 'newcommandx']);
 const ENV_DEF = new Set(['newenvironment', 'renewenvironment']);
 const DIM_CMDS = new Set(['vskip', 'hskip', 'kern', 'vspace_', 'mskip']);
 
 // Environment argument signatures (after \begin{name}).
-const ENV_SIG = {
+const ENV_SIG = own({
   tabular: 'om', 'tabular*': 'mom', tabularx: 'mm', tabulary: 'mm', longtable: 'om', array: 'om',
   figure: 'o', 'figure*': 'o', table: 'o', 'table*': 'o', wrapfigure: 'omom', wraptable: 'omom',
   itemize: 'o', enumerate: 'o', description: 'o', minipage: 'ooom', thebibliography: 'm',
@@ -116,7 +121,12 @@ const ENV_SIG = {
   landscape: '', appendices: '', resizebox_env: '',
   // CJK's encoding and font family are settings, not text: \begin{CJK*}[T1]{UTF8}{gbsn}
   CJK: 'omm', 'CJK*': 'omm'
-};
+});
+// environments whose body is text and that take no optional title (any other unknown one does)
+const PLAIN_ENVS = new Set(['document', 'abstract', 'center', 'quote', 'quotation', 'verse', 'flushleft', 'flushright', 'small', 'footnotesize', 'scriptsize', 'large', 'Large', 'appendix', 'appendices', 'singlespace', 'onehalfspace', 'doublespace', 'titlepage', 'landscape', 'acknowledgments', 'acknowledgements', 'RTL', 'LTR']);
+
+// What the C++ parser (tex/native/core/parse.cc) reads at load: the tables are kept here only.
+export const PARSE_TABLES = { SIG, CHARS, ACCENTS, ENV_SIG, MATH_ENVS, RAW_ENVS, DEF_CMDS, ENV_DEF, DIM_CMDS, PLAIN_ENVS };
 
 const isLetter = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 const isWS = (c) => c === ' ' || c === '\t' || c === '\n' || c === '\r';
@@ -145,9 +155,23 @@ export function scanUserSigs(src, into = {}) {
   return into;
 }
 
+// The C++ parser, once src/native.js has loaded it (setNativeParse): the same tree, made several
+// times faster on a long file. It answers null where it cannot (no core, a short text, nesting
+// past its depth), and parseJS, which it is tested against, does the work.
+let nativeParse = null;
+export function setNativeParse(f) { nativeParse = f; }
+
 export function parse(src, opts = {}) {
-  const n = src.length;
   const userSigs = opts.userSigs || scanUserSigs(src);
+  if (nativeParse) { const r = nativeParse(src, userSigs); if (r) return r; }
+  return parseJS(src, userSigs);
+}
+
+// (a user's signature is an own entry: \constructor is no member of Object.prototype here)
+const userSig = (sigs, name) => (Object.prototype.hasOwnProperty.call(sigs, name) ? sigs[name] : undefined);
+
+export function parseJS(src, userSigs) {
+  const n = src.length;
   const envStack = [];
   let i = 0;
 
@@ -263,15 +287,32 @@ export function parse(src, opts = {}) {
     return { t: 'math', s, e: i, is: from, ie: close, display: dbl, delim: dbl ? '$$' : '$' };
   }
 
-  function findText(needle, from) {
-    // Find needle not escaped; respects nothing else (used for \) \] and \end{raw}).
-    let j = from;
-    while (j < n) {
-      const k = src.indexOf(needle, j);
-      if (k < 0) return -1;
-      return k;
+  // The first place of a string at or after p (src.indexOf), remembered per string: nothing found
+  // from p is nothing from any later place, and k found from p is k from every place up to k.
+  // Searches that do not move i past what they find (\( without \), the [ after an unknown
+  // command, \begin{equation} without its end) once ran to the end of the text for every
+  // occurrence: seconds on a crafted file of 100 KB, a stranger's through a share link, again at
+  // every keystroke. (parse.cc remembers the same way.)
+  const seen = new Map();
+  function nextAt(pat, p) {
+    const c = seen.get(pat);
+    if (c && p >= c[0] && (c[1] < 0 || p <= c[1])) return c[1];
+    const k = src.indexOf(pat, p);
+    seen.set(pat, [p, k]);
+    return k;
+  }
+  // the same for \end { name } with spaces in it: [from, start of the match, its length]
+  const seenLoose = new Map();
+  function looseEnd(name, p) {
+    let c = seenLoose.get(name);
+    if (!(c && p >= c[0] && (c[1] < 0 || p <= c[1]))) {
+      const re = new RegExp('\\\\end\\s*\\{\\s*' + name.replace(/[*]/g, '\\*') + '\\s*\\}', 'g');
+      re.lastIndex = p;
+      const mm = re.exec(src);
+      c = [p, mm ? mm.index : -1, mm ? mm[0].length : 0];
+      seenLoose.set(name, c);
     }
-    return -1;
+    return c;
   }
 
   function parseArgs(sig) {
@@ -357,7 +398,7 @@ export function parse(src, opts = {}) {
     }
     if (name === '(' || name === '[') {
       const closer = name === '(' ? '\\)' : '\\]';
-      const k = findText(closer, ne);
+      const k = nextAt(closer, ne);
       if (k < 0) { i = ne; return { t: 'special', ch: '\\' + name, s, e: ne, err: true }; }
       i = k + 2;
       return { t: 'math', s, e: i, is: ne, ie: k, display: name === '[', delim: name === '(' ? '\\(' : '\\[' };
@@ -415,7 +456,7 @@ export function parse(src, opts = {}) {
       return node;
     }
     let sig = SIG[name];
-    if (sig === undefined) sig = userSigs[name];
+    if (sig === undefined) sig = userSig(userSigs, name);
     if (name === '\\') sig = 'o';
     if (sig === undefined && name in CHARS) {
       // A character command takes no argument: an empty {} after it only ends its name, and a
@@ -432,7 +473,7 @@ export function parse(src, opts = {}) {
       // Unknown: attach directly adjacent {..} groups (no whitespace) only.
       const args = [];
       i = ne;
-      while (src[i] === '{' || (src[i] === '[' && args.length === 0 && src.indexOf(']', i) > 0 && src[src.indexOf(']', i) + 1] === '{')) {
+      while (src[i] === '{' || (src[i] === '[' && args.length === 0 && nextAt(']', i) > 0 && src[nextAt(']', i) + 1] === '{')) {
         if (src[i] === '[') { const a = parseArgs('o')[0]; args.push(a); continue; }
         const g = parseGroup();
         args.push({ o: false, s: g.s, e: g.e, is: g.is, ie: g.ie, nodes: g.nodes });
@@ -474,7 +515,7 @@ export function parse(src, opts = {}) {
     let nargs = 0, dflt = null;
     let j = peekAfterSpaces();
     if (j >= 0 && src[j] === '[') {
-      const k = src.indexOf(']', j);
+      const k = nextAt(']', j);
       if (k > 0) { nargs = parseInt(src.slice(j + 1, k), 10) || 0; i = k + 1; }
     }
     j = peekAfterSpaces();
@@ -496,7 +537,8 @@ export function parse(src, opts = {}) {
     i = node.ne + m[0].length;
     let nargs = 0;
     let j = peekAfterSpaces();
-    if (j >= 0 && src[j] === '[') { const k = src.indexOf(']', j); nargs = parseInt(src.slice(j + 1, k), 10) || 0; i = k + 1; }
+    // (no ] after the [: indexOf's -1 once put i back to 0, and the parse ran for ever)
+    if (j >= 0 && src[j] === '[') { const k = nextAt(']', j); if (k > 0) { nargs = parseInt(src.slice(j + 1, k), 10) || 0; i = k + 1; } }
     j = peekAfterSpaces();
     if (j >= 0 && src[j] === '[') { const k = matchBracket(j); i = k + 1; }
     const parts = [];
@@ -550,7 +592,7 @@ export function parse(src, opts = {}) {
     i += m[0].length;
     const nameEnd = i;
     let sig = ENV_SIG[name] || '';
-    if (MATH_ENVS.has(name) || RAW_ENVS.has(name) || userSigs[' rawenv:' + name]) {
+    if (MATH_ENVS.has(name) || RAW_ENVS.has(name) || userSig(userSigs, ' rawenv:' + name)) {
       let args = [];
       if (name === 'alignat' || name === 'alignat*') { args = parseArgs('m'); }
       else if (name === 'minted') { args = parseArgs('om'); }
@@ -560,17 +602,16 @@ export function parse(src, opts = {}) {
       }
       const be = i;
       const closer = '\\end{' + name + '}';
-      let k = src.indexOf(closer, be);
+      let k = nextAt(closer, be);
       // tolerate whitespace inside \end { name }
       if (k < 0) {
-        const re = new RegExp('\\\\end\\s*\\{\\s*' + name.replace(/[*]/g, '\\*') + '\\s*\\}', 'g');
-        re.lastIndex = be; const mm = re.exec(src);
-        if (mm) { k = mm.index; i = k + mm[0].length; } else { i = be; return { t: 'stray', name: 'begin{' + name + '}', s, e: be, err: true }; }
+        const mm = looseEnd(name, be);
+        if (mm[1] >= 0) { k = mm[1]; i = k + mm[2]; } else { i = be; return { t: 'stray', name: 'begin{' + name + '}', s, e: be, err: true }; }
       } else i = k + closer.length;
       return { t: 'env', name, s, e: i, bs: s, be, es: k, args, raw: true, math: MATH_ENVS.has(name), nameEnd };
     }
     // Args for theorem-like envs: optional title.
-    if (!sig && !['document', 'abstract', 'center', 'quote', 'quotation', 'verse', 'flushleft', 'flushright', 'small', 'footnotesize', 'scriptsize', 'large', 'Large', 'appendix', 'appendices', 'singlespace', 'onehalfspace', 'doublespace', 'titlepage', 'landscape', 'acknowledgments', 'acknowledgements', 'RTL', 'LTR'].includes(name)) sig = 'o';
+    if (!sig && !PLAIN_ENVS.has(name)) sig = 'o';
     let args = [];
     if (sig) {
       // optional args of envs must not swallow text on the next line: only if '[' or '{' follows.

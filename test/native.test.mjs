@@ -1,0 +1,223 @@
+// The native core (src/native.js, tex/native/core/) against the JavaScript it replaces: for
+// every ported function the same result, value for value and key for key, on the repository's
+// documents, a long generated one, random TeX-like text and thousands of random edits of real
+// documents; and the fallbacks (no core, nesting past its depth, a lone surrogate).
+//   node test/native.test.mjs [CORPUS_DIR]   with a LaTeX-examples clone: every .tex, .sty, .cls
+//   and .bib of it too, and every document's model built both ways (buildModel) compared whole.
+import fs from 'fs';
+import path from 'path';
+import { parse, parseJS, scanUserSigs } from '../src/parser.js';
+import { loadCore, nativeParse, coreReady, coreStats, coreText, PARSE_MIN } from '../src/native.js';
+
+const root = new URL('..', import.meta.url).pathname;
+let pass = 0, fail = 0;
+const check = (name, ok, detail) => { if (ok) pass++; else { fail++; console.log('FAIL', name, detail === undefined ? '' : String(detail).slice(0, 600)); } };
+
+// before the core loads, parse is parseJS
+check('no core: parse is JavaScript', !coreReady() && JSON.stringify(parse('\\textbf{a} b')) === JSON.stringify(parseJS('\\textbf{a} b', {})));
+
+const wasm = path.join(root, 'tex/vendor/core/rikuy-core.wasm');
+check('the core loads', await loadCore(fs.readFileSync(wasm)));
+
+// a seeded generator: the same cases on every run, so a failure can be repeated
+let seed = 20261113;
+const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
+const pick = (a) => a[Math.floor(rnd() * a.length)];
+
+let firstDiff = null;
+const same = (name, src, sigs) => {
+  const a = JSON.stringify(parseJS(src, sigs));
+  const r = nativeParse(src, sigs, true);
+  if (!r) { check(name + ': the core answers', false, 'null for ' + JSON.stringify(src.slice(0, 200))); return false; }
+  const b = JSON.stringify(r);
+  if (a !== b) {
+    let k = 0;
+    while (a[k] === b[k]) k++;
+    if (!firstDiff) firstDiff = { name, src };
+    check(name, false, 'source ' + JSON.stringify(src.slice(0, 300)) + '\n   JS ' + a.slice(Math.max(0, k - 120), k + 120) + '\n   C++ ' + b.slice(Math.max(0, k - 120), k + 120));
+    return false;
+  }
+  return true;
+};
+
+// ---- documents --------------------------------------------------------------------------------
+const docs = [];
+const walk = (d, out) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { if (e.name.startsWith('.') || e.name === 'node_modules') continue; const p = path.join(d, e.name); if (e.isDirectory()) walk(p, out); else if (/\.(tex|sty|cls|bib)$/.test(e.name)) out.push(p); } };
+walk(path.join(root, 'sample'), docs);
+walk(path.join(root, 'dev/bench'), docs);
+walk(path.join(root, 'test/fixtures'), docs);
+const texts = docs.map((f) => fs.readFileSync(f, 'utf8'));
+
+// a long generated document: sections, math, citations, references, styles, macros
+function longDoc(paras) {
+  const words = 'the model of capital and trade is identified from a shock to demand when commitment absent regulator estimator regions price index'.split(' ');
+  const out = ['\\documentclass{article}', '\\usepackage{amsmath}', '\\newcommand{\\E}[1]{\\mathbb{E}\\left[#1\\right]}', '\\newcommand\\R{\\mathbb{R}}', '\\def\\foo#1#2{#1 and #2}', '\\begin{document}'];
+  for (let p = 0; p < paras; p++) {
+    if (p % 40 === 0) out.push('\\section{Part ' + p + '}\\label{sec:' + p + '}', '');
+    const w = [];
+    for (let k = 0; k < 14; k++) {
+      const r = rnd();
+      w.push(r < 0.05 ? '$x_{' + k + '} = \\alpha$' : r < 0.08 ? '\\textbf{' + pick(words) + '}' : r < 0.1 ? '\\cite[p.~3]{ref' + k + '}' : r < 0.11 ? '\\E{x}' : r < 0.12 ? '\\foo{a}{b}' : r < 0.13 ? '% a comment\n' : pick(words));
+    }
+    out.push(w.join(' ') + '.', p % 17 === 3 ? '\\begin{equation}\\label{eq:' + p + '} y = \\E{x}\\end{equation}' : '', '');
+  }
+  out.push('\\end{document}');
+  return out.join('\n');
+}
+texts.push(longDoc(1500));
+let ok = 0;
+texts.forEach((t, k) => { if (same('document ' + (docs[k] || 'generated'), t, scanUserSigs(t, {}))) ok++; });
+check('every document of the repository and a generated one the same (' + ok + ' of ' + texts.length + ')', ok === texts.length);
+
+// ---- random TeX-like text ----------------------------------------------------------------------
+// the pieces parser.js treats specially, and some it must take as text
+const PIECES = ['\\begin{', '\\end{', '\\begin {', '\\end {', '}', '{', '[', ']', '(', ')', '$', '$$', '\\(', '\\)', '\\[', '\\]', '%', '% c\n', '\n', '\n\n', '\n \n', ' ', '  ', '\t', '\r\n',
+  '\\verb|x|', '\\verb', '\\verb*+a+', '|', '\\newcommand', '\\renewcommand*', '\\providecommand', '\\newcommand{\\x}[2][d]{#1#2}', '\\def', '\\def\\a#1#2{', '\\gdef', '\\let', '\\let\\a=\\b', '\\let\\a=', '\\let\\ab',
+  '\\vskip', '\\hskip -1.5pt plus 1fil minus 2pt', ' 3pt', '-', '.', '1', 'fill', 'plus', 'minus', '\\kern\\x', '\\vspace_', '#1', '#',
+  '\\textbf', '\\section', '\\section*', '\\item', '\\item[', '\\', '\\\\', '\\\\*', '\\\\[2pt]', '*', '\\*', '\\%', '\\{}', '\\ldots{}', '\\S', '\\%{b}',
+  'a', 'b', 'text', 'é', '😀', '\u2028', '\u00a0', '\u3000', '\ufeff', "\\'", "\\'e", '\\"{o}', '\\c c', '\\u{g}', '\\H', '\\^', '\\~', '~', '&', '^', '_',
+  'equation', 'equation*', 'align', 'alignat', 'verbatim', 'Verbatim', 'lstlisting', 'minted', 'itemize', 'tikzpicture', 'document', 'center', 'tabular', 'figure', 'myenv', 'constructor', 'toString',
+  '\\tikzstyle{s}=[a]', '\\tikzstyle', '=', '+=', '\\newenvironment', '\\newenvironment{e}[1]{\\begin{tikzpicture}}{\\end{tikzpicture}}', '\\renewenvironment{', '\\DeclareMathOperator', '\\DeclareMathOperator*{\\argmax}{arg\\,max}',
+  '\\newtheorem{thm}{Theorem}', '\\newtheorem*', '\\url', '\\url{a%b}', '\\href{x}{y}', '\\cite', '\\citep[a][b]{k}', '\\constructor', '\\hasOwnProperty{x}', '\\toString', '\\unknown', '\\unknown[x]{y}', '\\cmidrule(lr){1-2}',
+  '\\input{f}', '\\label{x}', '\\ref', '\\frac{1}{2}', '\\mbox{', '\\cline', '\\multicolumn{2}{c}{x}',
+  // glue as \\vskip reads it (fill before fil, units the first part has and plus or minus lack),
+  // carriage returns where a blank line is looked for
+  '\\vskip 1pt plus 2fill', '\\hskip 0pt plus 1filll minus 3pt', '\\vspace_ 2em plus 1fil', '\\kern-.5em', '\\vskip\\baselineskip plus 1fill minus 1fil',
+  '\\mskip 3mu plus 2bp', '\\hskip 2cc minus 1sp', '\\vskip -0.5dd plus -1fil', '\r', '\n\r\n', '\n\t\r\n', '$a\n\r\nb$',
+  // names that differ in one bit of a character past the BMP (U+1F600 and U+1F400 share a high
+  // surrogate), and in a character of three bytes
+  '\\begin{😀}', '\\end{🐀}', '\\end{😀}', '\\begin{ü}', '\\end{ű}', '\\verb😀x😀', '\\verb🐀x😀'];
+let fuzzOk = 0;
+const FUZZ = 3000;
+for (let k = 0; k < FUZZ; k++) {
+  let s = '';
+  const n = 1 + Math.floor(rnd() * 60);
+  for (let q = 0; q < n; q++) s += pick(PIECES);
+  // the document's own signatures: the ones in it, and now and then odd ones
+  const sigs = scanUserSigs(s, {});
+  if (rnd() < 0.3) { sigs[pick(['a', 'b', 'x', 'textbf', 'myenv', 'constructor'])] = pick(['', 'm', 'om', 'mm', 'oom', 'p', 'v', 'raw']); sigs[' rawenv:' + pick(['myenv', 'center', 'e'])] = 'raw'; }
+  if (same('random text ' + k, s, sigs)) fuzzOk++;
+}
+check('random TeX-like text the same (' + fuzzOk + ' of ' + FUZZ + ')', fuzzOk === FUZZ);
+console.log('random texts: ' + fuzzOk + ' of ' + FUZZ + ' the same tree');
+
+// ---- random edits of real documents ------------------------------------------------------------
+const EDITS = 2000;
+let editOk = 0;
+const pool = texts.filter((t) => t.length > 200);
+for (let k = 0; k < EDITS; k++) {
+  let t = pick(pool);
+  const at = Math.floor(rnd() * t.length);
+  const del = rnd() < 0.5 ? Math.floor(rnd() * 30) : 0;
+  let ins = '';
+  const m = Math.floor(rnd() * 4);
+  for (let q = 0; q < m; q++) ins += pick(PIECES);
+  t = t.slice(0, at) + ins + t.slice(at + del);
+  if (same('edit ' + k, t, scanUserSigs(t, {}))) editOk++;
+}
+check('random edits of the documents the same (' + editOk + ' of ' + EDITS + ')', editOk === EDITS);
+console.log('random edits: ' + editOk + ' of ' + EDITS + ' the same tree; documents: ' + ok + ' of ' + texts.length);
+
+// ---- the text as the core holds it --------------------------------------------------------------
+// every way a code unit travels: ASCII, two and three bytes of UTF-8, a pair of surrogates, a lone
+// surrogate (no UTF-8 at all: code unit by code unit), at the ends and in long runs
+const UNITS = [0x41, 0x0a, 0x7f, 0x80, 0xe9, 0x7ff, 0x800, 0x3b1, 0x4e2d, 0xfffd, 0xfeff, 0xffff];
+let textOk = 0;
+const TEXTS = 400;
+for (let k = 0; k < TEXTS; k++) {
+  let s = '';
+  const n = Math.floor(rnd() * (k < 200 ? 40 : 3000));
+  for (let q = 0; q < n; q++) {
+    const r = rnd();
+    if (r < 0.6) s += String.fromCharCode(pick(UNITS));
+    else if (r < 0.9) s += String.fromCodePoint(0x10000 + Math.floor(rnd() * 0xfffff));
+    else if (r < 0.95 && k % 3 === 0) s += String.fromCharCode(0xd800 + Math.floor(rnd() * 0x800));
+    else s += String.fromCharCode(32 + Math.floor(rnd() * 95));
+  }
+  if (coreText(s) === s) textOk++;
+  else check('text through the core ' + k, false, JSON.stringify(s.slice(0, 80)));
+}
+check('every text through the core and back unchanged (' + textOk + ' of ' + TEXTS + ')', textOk === TEXTS);
+
+// ---- what used to hang or throw, either way ----------------------------------------------------
+for (const [name, s] of [['\\newenvironment{x}[ with no ] (parsed for ever)', 'a \\newenvironment{x}[2 {b'], ['\\constructor{a} (threw)', '\\constructor{a} \\hasOwnProperty{b}'], ['\\begin{toString} (threw)', '\\begin{toString}x\\end{toString}'], ['\\valueOf', '\\valueOf x \\isPrototypeOf{y}']]) {
+  let js = null, nat = null;
+  try { js = JSON.stringify(parseJS(s, scanUserSigs(s, {}))); } catch (e) { js = 'throws ' + e.message; }
+  try { nat = JSON.stringify(nativeParse(s, scanUserSigs(s, {}), true)); } catch (e) { nat = 'throws ' + e.message; }
+  check(name + ': JavaScript parses it', !js.startsWith('throws'), js);
+  check(name + ': the core parses it the same', js === nat, nat);
+}
+check('\\constructor{a} is an unknown command with its argument', parseJS('\\constructor{a}', {})[0].unknown === true && parseJS('\\constructor{a}', {})[0].args.length === 1);
+
+// ---- searches that once ran to the end for every occurrence -------------------------------------
+// (each of these took 2 to 7 seconds, in JavaScript, in the core or both, before the searches
+// were remembered: a crafted file a stranger can send, parsed again at every keystroke)
+for (const [name, s] of [['\\( without \\)', 'a\\('.repeat(40000)], ['\\[ without \\]', 'a\\['.repeat(40000)], ['an unknown command\'s [ without ]', 'a\\x['.repeat(40000)],
+  ['\\begin{equation} without its end', '\\begin{equation}'.repeat(20000)], ['\\begin{verbatim} without its end, \\end { verbatim } spaced', '\\begin{verbatim}x\\end { verbatim }'.repeat(2) + '\\begin{verbatim}'.repeat(20000)],
+  ['\\newcommand{\\a}[ without ]', '\\newcommand{\\a}['.repeat(20000)]]) {
+  const sigs = scanUserSigs(s, {});
+  let t = performance.now();
+  const js = JSON.stringify(parseJS(s, sigs));
+  const tJS = performance.now() - t;
+  t = performance.now();
+  const c = JSON.stringify(nativeParse(s, sigs, true));
+  const tC = performance.now() - t;
+  check(name + ': JavaScript in ' + tJS.toFixed(0) + ' ms, the core in ' + tC.toFixed(0) + ' ms (under 1500 each), the same tree', tJS < 1500 && tC < 1500 && js === c, [tJS, tC, js === c]);
+}
+
+// ---- fallbacks ---------------------------------------------------------------------------------
+const deep = '{'.repeat(400) + 'x' + '}'.repeat(400);
+check('nesting past the core\'s depth: the core says no', nativeParse(deep, {}, true) === null);
+check('...and parse() gives JavaScript\'s tree', JSON.stringify(parse(deep, { userSigs: {} })) === JSON.stringify(parseJS(deep, {})));
+const lone = 'a \\textbf{\ud800} b'.repeat(80) + '\udc00 \\emph{x}';
+check('a lone surrogate (no UTF-8 for it): the same tree', same('lone surrogate', lone, {}));
+const astral = '😀 \\textbf{𝔸} \\verb😀a😀 ' + 'x'.repeat(700);
+check('characters past the BMP: the same tree', same('astral', astral, {}));
+check('a short text goes to JavaScript (under ' + PARSE_MIN + ')', nativeParse('\\textbf{a}', {}) === null);
+const before = coreStats.parsed;
+const longT = texts[texts.length - 1];
+check('a long text goes to the core through parse()', JSON.stringify(parse(longT)) === JSON.stringify(parseJS(longT, scanUserSigs(longT, {}))) && coreStats.parsed === before + 1);
+// the document's signatures change between calls: the core reads them again
+const sA = '\\newcommand{\\x}[1]{#1}\\x{a}' + ' y'.repeat(400), sB = '\\newcommand{\\x}{X}\\x{a}' + ' y'.repeat(400);
+check('signatures that change between parses', same('sigs A', sA, scanUserSigs(sA, {})) && same('sigs B', sB, scanUserSigs(sB, {})) && same('sigs A again', sA, scanUserSigs(sA, {})));
+
+// ---- a corpus, and the models built on it ------------------------------------------------------
+const corpus = process.argv[2];
+if (corpus) {
+  const { buildModel } = await import('../src/model.js');
+  const { setNativeParse } = await import('../src/parser.js');
+  const files = [];
+  walk(corpus, files);
+  let cOk = 0;
+  for (const f of files) { const t = fs.readFileSync(f, 'utf8'); if (same('corpus ' + f.replace(corpus, ''), t, scanUserSigs(t, {}))) cOk++; }
+  check('every .tex, .sty, .cls and .bib of the corpus the same (' + cOk + ' of ' + files.length + ')', cOk === files.length);
+  console.log('corpus files: ' + cOk + ' of ' + files.length + ' the same tree');
+  // the model as the page builds it, once with the core and once without
+  const ser = (m) => JSON.stringify(m, (k, v) => (v instanceof Map ? [...v] : v instanceof Set ? [...v] : typeof v === 'function' ? 'fn' : v));
+  let mOk = 0, mDocs = 0;
+  const tJS = [], tC = [];
+  for (const f of files.filter((x) => x.endsWith('.tex'))) {
+    const t = fs.readFileSync(f, 'utf8');
+    if (!/\\documentclass/.test(t)) continue;
+    mDocs++;
+    const dir = path.dirname(f), proj = new Map();
+    for (const n of fs.readdirSync(dir)) if (/\.(tex|bib)$/.test(n)) proj.set(n, fs.readFileSync(path.join(dir, n), 'utf8'));
+    let a, b;
+    // a fresh copy of the files each time: the parse cache keys on the text, and must miss
+    setNativeParse(null);
+    let t0 = performance.now();
+    try { a = ser(buildModel({ files: new Map([...proj].map(([k, v]) => [k, v + ' '])), main: path.basename(f) })); } catch (e) { a = 'throws ' + e.message; }
+    tJS.push(performance.now() - t0);
+    setNativeParse(nativeParse);
+    t0 = performance.now();
+    try { b = ser(buildModel({ files: new Map([...proj].map(([k, v]) => [k, v + ' '])), main: path.basename(f) })); } catch (e) { b = 'throws ' + e.message; }
+    tC.push(performance.now() - t0);
+    if (a === b) mOk++; else check('model of ' + f.replace(corpus, ''), false, 'differs');
+  }
+  const sum = (x) => x.reduce((s, v) => s + v, 0);
+  check('every document\'s model the same with and without the core (' + mOk + ' of ' + mDocs + ')', mOk === mDocs);
+  console.log('corpus models: ' + mOk + ' of ' + mDocs + ' the same; JavaScript ' + sum(tJS).toFixed(0) + ' ms, with the core ' + sum(tC).toFixed(0) + ' ms in all');
+}
+
+console.log('native core:', pass, 'passed,', fail, 'failed');
+if (fail) process.exitCode = 1;
