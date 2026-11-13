@@ -246,8 +246,10 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   (`when`) and presses what is on (`on`), with `at.memo` so two commands asking the same
   (`listAt`, `blockStyle`) compute it once. `ribbonFit` is one rule for every tab and width:
   everything open, then one step at a time while the row is too long, the cheapest loss first
-  counted in controls (the Download label and the buttons' names, which take none; a tile of the
-  gallery, down to three; the three downloads as one Download button; the style list for the
+  counted in controls (a spare group first, one whose commands have a tab of their own as well,
+  `spare` in `src/ribbon/order.js`: Home's Insert; the Download label; a tile of the gallery,
+  down to three; the buttons' names, which take none but come after the tiles, in their chain,
+  so a desktop keeps them; the three downloads as one Download button; the style list for the
   gallery; then groups, rank 1 and then the lowest `rank` first, of equal ranks the rightmost,
   each into one button named after the group, its first command's icon, whose menu has the same
   commands by the same names); then each step tried back, the last first, kept undone where the
@@ -342,8 +344,8 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   on lines around the words, a heading its command and braces; each way back restores the bytes.
   A heading or a quote is offered for a LaTeX paragraph only where its source is one paragraph
   of text. The gallery (`paintGallery`) shows as many tiles as the row has room for, each as wide
-  as its name: `ribbonFit` takes the Download label and the insert buttons' names first (they
-  lose no control), then tiles (six to three), and puts the style list in its place where three
+  as its name: `ribbonFit` folds Home's spare Insert and takes the Download label first, then
+  tiles (six to three), then the buttons' names, and puts the style list in its place where three
   do not fit and on phones. LaTeX is always on the first page (`tileOrder`: Normal, Heading 1, LaTeX
   for three). Pages of n tiles start every n and the last one is full (`pageStarts`); the row
   keeps the width of its widest page, so the arrows do not move under the pointer, and it pages
@@ -376,9 +378,9 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   `\end{document}`; none when a heading under it is in another file), `swapEdit` exchanges two
   neighbours with the space between kept (Move up and Move down: sections, paragraphs, list
   items), `moveEdits` takes one elsewhere (a heading dragged in the Navigation pane).
-  Where Home's row is short its least needed group, Editing (rank 1), folds first into one icon
-  button "Editing" (`ribbonFit`; from 860 px down, where the names, tiles and downloads have no
-  more to give), and `chordText` (`src/keys.js`) writes the outline's keys in menus and tooltips
+  Where Home's row is short, after its spare Insert, its least needed group, Editing (rank 1),
+  folds first into one icon button "Editing" (`ribbonFit`; at 700 px beside the Font group's
+  Bold, Italic and Underline), and `chordText` (`src/keys.js`) writes the outline's keys in menus and tooltips
   as Alt+Shift+←.
   `src/nav.js` draws the Navigation pane in the side panel's Outline tab: the box, Headings (a
   tree with collapse, Show levels, the Outlining toolbar, Alt+Shift and the arrows, dragging; in

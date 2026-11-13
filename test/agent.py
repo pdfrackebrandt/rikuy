@@ -180,7 +180,7 @@ def api(p):
     page.evaluate('(t) => window.rikuy.api.setSource(t)', DOC)
     # with a dialog open that writes into the source as it closes
     page.get_by_role('textbox', name='Document', exact=True).get_by_role('paragraph').nth(1).click()
-    page.get_by_role('button', name='Equation', exact=True).click()
+    Control(page, 'Equation').click()
     field = page.get_by_role('dialog', name='Display math', exact=True).get_by_role('textbox', name='Equation editor', exact=True)
     field.wait_for(state='attached', timeout=8000)
     page.wait_for_timeout(500)

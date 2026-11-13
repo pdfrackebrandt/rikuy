@@ -70,6 +70,7 @@ export const tabs = {
         if (k) tb.append(mk('span', 'sep'));
         const box = mk('div', 'rb-grp');
         box.dataset.group = g.id; box.dataset.rank = g.rank;
+        if (g.spare) box.dataset.spare = '1';
         // a group by its name, as Word's are; not where a control in it has that name already (the
         // Styles gallery is the group "Styles")
         if (!items.some(({ c }) => c.role === 'group' && c.name === g.name)) { box.setAttribute('role', 'group'); box.setAttribute('aria-label', g.name); }
@@ -249,13 +250,18 @@ export const tabs = {
     // (once: again only where the fonts came since, or the ribbon was folded to its tabs and had no width)
     if (gal && wide && !(this.rbW && this.rbW.p > 0)) measureTiles(this);
     if (gal) { tiles(6); this.paintGallery(); }
-    const steps = [flag('rb-nolab'), flag('rb-fold')];
-    // (the tiles one at a time: each undone only after the one after it, chain)
+    // (a spare group first, as one step each: its commands have a tab of their own)
+    const fold = (g) => ({ do: () => g.classList.add('folded', ...(g.querySelector('.rb-gico') ? ['ico'] : [])), undo: () => g.classList.remove('folded', 'ico') });
+    const spare = foldsGroups() ? groups.filter((g) => g.dataset.spare).sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
+    const steps = [...spare.map(fold), flag('rb-nolab')];
+    // (the tiles one at a time: each undone only after the one after it, chain; down to three
+    // before the buttons' names go, so a desktop keeps them; and the names in the chain too: a
+    // tile given back for names lost showed more controls than a wider window)
     if (gal && wide) for (const n of [5, 4, 3]) steps.push({ do: () => tiles(n), undo: () => tiles(n + 1), chain: true });
-    steps.push(flag('rb-dl1'));
+    steps.push({ ...flag('rb-fold'), chain: true }, flag('rb-dl1'));
     if (gal && wide) steps.push(flag('rb-narrow'));
-    const order = foldsGroups() ? [...groups].sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
-    for (const g of order) steps.push({ do: () => g.classList.add('folded', ...(g.querySelector('.rb-gico') ? ['ico'] : [])), undo: () => g.classList.remove('folded', 'ico') });
+    const order = foldsGroups() ? [...groups].filter((g) => !g.dataset.spare).sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
+    for (const g of order) steps.push(fold(g));
     let k = 0;
     while (k < steps.length && !fits()) steps[k++].do();
     let chain = true;

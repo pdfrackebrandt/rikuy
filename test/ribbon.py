@@ -35,8 +35,16 @@ def state(page):
 
 
 def press(page, bid):
-    """A real click on a ribbon button: it must leave the caret on the page."""
-    page.click('#' + bid)
+    """A real click on a ribbon button: it must leave the caret on the page. Where its group is
+    folded (Home's Insert, which the Insert tab has too, folds first), the item of its name in the
+    group's menu, as a person would press it."""
+    gb = page.evaluate("(id) => { const e = document.getElementById(id), g = e && e.closest('.rb-grp.folded'); return g && !e.offsetParent ? g.querySelector('.rb-gbtn').id : null; }", bid)
+    if gb:
+        name = page.get_attribute('#' + bid, 'aria-label')
+        page.click('#' + gb); page.wait_for_timeout(120)
+        page.locator('.pop [role^=menuitem][aria-label="%s"]' % name).click()
+    else:
+        page.click('#' + bid)
     page.wait_for_timeout(120)
 
 
@@ -376,7 +384,9 @@ def where_it_applies(page):
     # (at 1600 px, where the label shows whatever Home holds)
     page.set_viewport_size({'width': 1600, 'height': 1000}); page.wait_for_timeout(300)
     click_text(page, 'cell', 2); state(page)
-    for what, sel in (('a disabled button', '#rb-eq'), ('the Download label', '.rb-lab'), ('the empty part of the row', '#ribbon .rb-panel:not([hidden]) .grow')):
+    # (a disabled button in sight: Equation and Footnote can be in the folded Insert's menu)
+    page.evaluate("() => { for (const b of document.querySelectorAll('#rp-home button:disabled')) if (b.offsetParent) { b.dataset.testOff = '1'; return; } }")
+    for what, sel in (('a disabled button', '[data-test-off]'), ('the Download label', '.rb-lab'), ('the empty part of the row', '#ribbon .rb-panel:not([hidden]) .grow')):
         r = page.evaluate('(s) => { const r = document.querySelector(s).getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }', sel)
         page.mouse.click(*r); page.wait_for_timeout(100)
         page.keyboard.type('Q'); page.wait_for_timeout(150)
@@ -637,21 +647,21 @@ def gallery_widths(page):
         click_text(page, 'First paragraph', 2); page.wait_for_timeout(120)
         seen[w] = page.evaluate("""() => { const r = document.getElementById('ribbon'), sel = document.getElementById('rb-style');
           const tiles = [...document.querySelectorAll('#rb-gallery [data-style]')].filter((b) => !b.hidden && b.offsetParent).map((b) => b.dataset.style);
-          const lab = document.querySelector('#rb-math span'); return { tiles, list: !!sel.offsetParent, opts: [...sel.options].filter((o) => !o.hidden).map((o) => o.value), over: r.scrollWidth > r.clientWidth + 1,
-            names: !!lab && getComputedStyle(lab).display !== 'none', h: Math.round(r.getBoundingClientRect().height), page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          const labs = [...document.querySelectorAll('#rp-home .rb-grp > .btn:not(.icon):not(.rb-gbtn)')].filter((b) => b.offsetParent).map((b) => b.querySelector('span:not(.sr)'));
+          return { tiles, list: !!sel.offsetParent, opts: [...sel.options].filter((o) => !o.hidden).map((o) => o.value), over: r.scrollWidth > r.clientWidth + 1,
+            names: labs.length > 0 && labs.every((x) => x && getComputedStyle(x).display !== 'none'), insert: !!document.querySelector('#rp-home .rb-grp[data-group=insert].folded'), h: Math.round(r.getBoundingClientRect().height), page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
             arrows: !!document.getElementById('rb-st-up').offsetParent }; }""")
     print('     widths:', {w: (len(v['tiles']), 'list' if v['list'] else '', 'names' if v['names'] else '', v['h']) for w, v in seen.items()})
     six = ['p', 'section', 'subsection', 'subsubsection', 'latex', 'quote']
-    # (Home's Font group in Word's two rows, task 39, takes 182 px more than B0's three buttons: the
-    # insert buttons' names go at 1920 px already, the tiles from 1440 px, the list from 1180 px)
-    check('at 1920 px all six tiles, no paging arrows, a row that does not scroll', seen[1920]['tiles'] == six and not seen[1920]['arrows'] and not seen[1920]['over'], seen[1920])
-    check('from 1600 to 1536 px the insert buttons\' names go first and the gallery keeps its six tiles, no paging arrows, no scroll', all(seen[w]['tiles'] == six and not seen[w]['names'] and not seen[w]['arrows'] and not seen[w]['over'] for w in (1536, 1600)), {w: (seen[w]['tiles'], seen[w]['names']) for w in (1536, 1600)})
-    check('then fewer tiles, LaTeX among them, with the paging arrows (1440 to 1280 px)', all('latex' in seen[w]['tiles'] and 3 <= len(seen[w]['tiles']) < 6 and seen[w]['arrows'] and not seen[w]['over'] for w in (1440, 1366, 1300, 1280)), {w: seen[w]['tiles'] for w in (1440, 1366, 1300, 1280)})
+    # (Home's Insert, which the Insert tab has too, is spare: it folds first, so Home's other
+    # groups keep their names, and the gallery its tiles, on a desktop; src/ribbon/order.js)
+    check('from 1440 to 1920 px Home\'s Insert is folded, the other buttons keep their names, the gallery all six tiles, no paging arrows, no scroll', all(seen[w]['insert'] and seen[w]['names'] and seen[w]['tiles'] == six and not seen[w]['arrows'] and not seen[w]['over'] for w in (1440, 1536, 1600, 1700, 1760, 1800, 1840, 1920)), {w: (seen[w]['tiles'], seen[w]['names']) for w in (1440, 1600, 1920)})
+    check('from 1280 to 1366 px the names stay and the gallery has fewer tiles, three or more, LaTeX among them, with the paging arrows', all(seen[w]['names'] and 'latex' in seen[w]['tiles'] and 3 <= len(seen[w]['tiles']) < 6 and seen[w]['arrows'] and not seen[w]['over'] for w in (1280, 1300, 1366)), {w: (seen[w]['tiles'], seen[w]['names']) for w in (1280, 1300, 1366)})
+    check('the gallery stays, three tiles, down to 1024 px', all(len(seen[w]['tiles']) >= 3 for w in (1024, 1100, 1180)), {w: seen[w]['tiles'] for w in (1024, 1100, 1180)})
     order = {3: ['p', 'section', 'latex'], 4: ['p', 'section', 'subsection', 'latex'], 5: ['p', 'section', 'subsection', 'subsubsection', 'latex'], 6: six}
     tiled = [w for w in seen if seen[w]['tiles']]
     check('wherever the gallery shows, its first page is Normal and Heading 1 with LaTeX in sight (Normal, Heading 1, LaTeX for three), and the row does not scroll', all(seen[w]['tiles'] == order[len(seen[w]['tiles'])] and not seen[w]['over'] for w in tiled), {w: seen[w]['tiles'] for w in tiled})
-    # (where the gallery gives way to the list: between 1100 and 1024 px since Home has its Editing
-    # group, between 1024 and 1000 px before)
+    # (where the gallery gives way to the list: between 1024 and 1000 px)
     g = min(w for w in seen if seen[w]['tiles'])
     l = max(w for w in seen if seen[w]['list'] and w < g)
     check('the row is as tall with the list as with the gallery (no jump where the one gives way to the other, %d and %d px)' % (g, l), g >= 1024 and l >= 1000 and seen[g]['h'] == seen[l]['h'], (g, l, seen[g]['h'], seen[l]['h']))
@@ -711,7 +721,8 @@ def gallery_keys(page):
     seen = []
     for key in ('ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight'):
         page.keyboard.press(key); seen.append(page.evaluate('document.activeElement.id'))
-    check('the arrow keys go along the tiles, past the strip\'s disabled arrows to More, and on to Formula', seen == ['rb-st-section', 'rb-st-subsection', 'rb-st-subsubsection', 'rb-st-latex', 'rb-st-quote', 'rb-st-more', 'rb-math'], seen)
+    # (after the gallery Home's Insert, folded: it is spare, the Insert tab has its commands)
+    check('the arrow keys go along the tiles, past the strip\'s disabled arrows to More, and on to the folded Insert', seen == ['rb-st-section', 'rb-st-subsection', 'rb-st-subsubsection', 'rb-st-latex', 'rb-st-quote', 'rb-st-more', 'rg-home-insert'], seen)
     page.focus('#rb-st-latex'); page.keyboard.press('Enter'); page.wait_for_timeout(200)
     check('Enter on LaTeX makes the caret\'s paragraph a LaTeX paragraph', body(page).count('% rikuy: latex\nThird paragraph here.') == 1 and boxes(page) == ['Third paragraph here.'], body(page))
     page.focus('#rb-st-quote'); page.keyboard.press(' '); page.wait_for_timeout(200)
