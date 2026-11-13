@@ -310,8 +310,11 @@ def keyboard(page):
     check('arrows, Home and End move between its controls (the strip\'s disabled arrows skipped), the font box among them', seen == ['rb-st-section', 'rb-st-p', 'rb-ol', 'b-save', 'rc-format-painter', 'rb-font'], seen)
     page.focus('#rb-i'); page.keyboard.press('ArrowLeft')
     ring = page.evaluate('(() => { const c = getComputedStyle(document.activeElement); return c.outlineStyle !== "none" && parseFloat(c.outlineWidth) > 0; })()')
+    # (what each half saw, printed where it fails: the focus, its ring, Bold's state, the selection)
+    look = '(() => { const b = document.getElementById("rb-b"), s = getSelection(); return { active: document.activeElement.id || document.activeElement.tagName, pressed: b.getAttribute("aria-pressed"), disabled: b.disabled, sel: String(s), onPage: !!(s.anchorNode && document.getElementById("pages").contains(s.anchorNode)) }; })()'
+    before = page.evaluate(look)
     page.keyboard.press('Enter'); page.wait_for_timeout(200)
-    check('the focus shows, and Enter on Bold makes the words selected on the page bold', ring and '\\textbf{Second}' in src(page), src(page)[src(page).find('Second') - 8:][:30])
+    check('the focus shows, and Enter on Bold makes the words selected on the page bold', ring and '\\textbf{Second}' in src(page), {'ring': ring, 'before': before, 'after': page.evaluate(look), 'src': src(page)[src(page).find('Second') - 8:][:30]})
     check('every control names itself and its shortcut in a title', page.evaluate('[...document.querySelectorAll("#ribbon select, #ribbon button")].every((x) => x.title.length > 3)') and 'Ctrl+B' in page.evaluate('document.getElementById("rb-b").title') and 'Ctrl+Shift+E' in page.evaluate('document.getElementById("rb-eq").title'))
 
 

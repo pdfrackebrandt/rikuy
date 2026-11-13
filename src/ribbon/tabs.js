@@ -141,6 +141,9 @@ export const tabs = {
   // One command run where the caret is, from a button, a key, the search box or a menu: nothing
   // when it cannot run there. The ribbon then shows the new state.
   runCommand(id, args, at, from) {
+    // (the font box gives the page's selection back as it loses the focus; a key pressed before
+    // that is done must find it on the page, see fbxFlush)
+    if (this.fbxFlush && this.fbxFlush() && at !== undefined) at = this.ribbonAt();
     const c = command(id);
     if (!c || !c.run) return false;
     if (at === undefined) at = this.ribbonAt();
@@ -324,6 +327,9 @@ export function installRibbon(app) {
   rb.addEventListener('mousedown', (e) => { if (!e.target.closest('select, input')) e.preventDefault(); });
   rb.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-cmd]');
+    // (Enter on a button the arrows reached from the font box, before the box gave the page's
+    // selection back: given back now, and the buttons' states read again from it)
+    if (b && app.fbxFlush && app.fbxFlush()) app.ribbonSync();
     if (b && !b.disabled && rb.contains(b)) {
       app.runCommand(b.dataset.cmd, null, undefined, b);
       if (!b.hasAttribute('aria-haspopup')) app.peekRibbon(false);
@@ -392,6 +398,10 @@ export function installRibbon(app) {
   let fit = 0, w = innerWidth;
   addEventListener('resize', () => { if (innerWidth === w) return; w = innerWidth; cancelAnimationFrame(fit); fit = requestAnimationFrame(() => app.ribbonFit()); });
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { app.rbW = null; app.ribbonFit(); });
+  // (and whenever a face comes later: the page's serif in bold and italic, drawn on B, I and the
+  // tiles, loads when first used, after fonts.ready on a slow line or machine, and the fold
+  // measured before it was wrong: the tiles' names fell off at 1920 px, Save hid behind the fold)
+  if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', () => { cancelAnimationFrame(fit); fit = requestAnimationFrame(() => { app.rbW = null; app.ribbonFit(); }); });
   app.ribbonSync();
   app.ribbonFit();
 }

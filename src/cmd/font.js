@@ -377,6 +377,9 @@ export const methods = {
   },
 
   // ---- the boxes ----------------------------------------------------------------------------
+  // The page's selection given back now, where a box that lost the focus has not done it yet (a
+  // key pressed at once, on a slow machine, came before it): true when it was given back
+  fbxFlush() { const f = this.fbxBackLater; if (!f) return false; f(); return true; },
   // An editable box (Word's font and size boxes): type a name or a number and Enter, or the
   // arrow (or Alt+Down, Down) for the list. The page's selection is kept while it has the focus.
   fontBox(kind) {
@@ -400,7 +403,9 @@ export const methods = {
     inp.addEventListener('pointerdown', keep);
     inp.addEventListener('focus', () => { if (!this.fbxAt) keep(); inp.select(); });
     inp.addEventListener('blur', () => {
-      setTimeout(() => {
+      // (after the focus has gone on, or at once when a press needs it first: fbxFlush)
+      const back = () => {
+        this.fbxBackLater = null;
         const to = document.activeElement;
         if (to === inp || (this.pop && this.pop.el.classList.contains('pop-fbx'))) return;
         // (on to another control of the ribbon by the arrows: the page's selection is given back
@@ -410,7 +415,9 @@ export const methods = {
         if (to && to.closest && to.closest('#ribbon') && !to.matches('input') && r && r.startContainer.isConnected && this.root.contains(r.startContainer)) { const s = getSelection(); s.removeAllRanges(); s.addRange(r); to.focus({ preventScroll: true }); }
         this.fbxAt = null;
         this.fontBoxSync(kind, this.ribbonAt(), true);
-      }, 0);
+      };
+      this.fbxBackLater = back;
+      setTimeout(() => { if (this.fbxBackLater === back) back(); }, 0);
     });
     inp.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { e.preventDefault(); this.fontBoxCommit(kind, inp.value); }
