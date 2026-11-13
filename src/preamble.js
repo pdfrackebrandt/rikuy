@@ -223,6 +223,53 @@ function newLineAt(src, end) {
   return { at, pre: at > 0 && src[at - 1] !== '\n' ? '\n' : '' };
 }
 
+// ---- which packages give another's commands, and which must come first --------------------------
+// Packages whose commands a class or another package gives already: a second load is useless, and
+// amssymb after newtxmath, newpxmath, unicode-math or acmart stops TeX ("\Bbbk already defined",
+// checked in the page's TeX Live). mathabx, MnSymbol and stix give no \mathbb of amssymb's: not here.
+const PROVIDED = {
+  amsmath: { pkgs: ['mathtools', 'empheq', 'unicode-math', 'fontsetup', 'newtxmath', 'newpxmath', 'newtx', 'libertinust1math', 'libertinus'], classes: ['amsart', 'amsbook', 'amsproc', 'acmart', 'beamer'] },
+  amssymb: { pkgs: ['newtxmath', 'newpxmath', 'newtx', 'unicode-math', 'fontsetup', 'libertinust1math', 'libertinus', 'mathdesign', 'kpfonts', 'fdsymbol', 'txfonts', 'pxfonts', 'boisik', 'lucidabr', 'mtpro2'], classes: ['acmart', 'beamer'] }
+};
+PROVIDED.amsfonts = { pkgs: ['amssymb', ...PROVIDED.amssymb.pkgs], classes: [...PROVIDED.amssymb.classes] };
+// A package that must be loaded before others: its new line goes above the first of them that the
+// preamble loads. amsmath after cleveref stops TeX ("cleveref must be loaded after amsmath"); after
+// esint, wasysym, txfonts, pxfonts or mathabx it defines \iint a second time; hyperref goes before
+// cleveref and bookmark, which need it first.
+const AMS_FIRST = ['cleveref', 'hyperref', 'esint', 'wasysym', 'txfonts', 'pxfonts', 'mathabx', 'MnSymbol', 'varioref', 'unicode-math', 'fontsetup'];
+const BEFORE = { amsmath: AMS_FIRST, amssymb: AMS_FIRST, amsfonts: AMS_FIRST, mathtools: AMS_FIRST, hyperref: ['cleveref', 'bookmark', 'hypcap'] };
+export const packageOrder = (name) => BEFORE[name] || null;
+
+// Whether the document has a package's commands: loaded itself (the preamble, or a file it
+// reads), or given by a package it loads or by its class (PROVIDED)
+export function provides(src, name, others, end, memo = new Map()) {
+  if (end == null) end = preambleEnd(src);
+  if (findPackage(src, end, name, others, memo)) return true;
+  const P = PROVIDED[name];
+  if (!P) return false;
+  const d = docClass(src);
+  if (d && P.classes.includes(d.name)) return true;
+  return P.pkgs.some((x) => !!findPackage(src, end, x, others, memo));
+}
+
+// Where a new line for this package goes when it must come before others the preamble loads:
+// above the first of them (where that line stands free, outside braces and conditionals), else
+// right after \documentclass (one of them loaded in a file the preamble reads, or inside a
+// conditional); null where none of them is loaded (the usual place, after the last package)
+function placeBefore(src, end, name, others, memo = new Map()) {
+  const first = BEFORE[name];
+  if (!first) return null;
+  // (each text's list of packages read once: memo, as findPackage keeps it)
+  if (!memo.has(src)) memo.set(src, packages(src, end));
+  const ps = memo.get(src).filter((p) => p.names.some((n) => first.includes(n.name)));
+  if (ps.length) {
+    const p = ps[0], lv = levels(stripComments(src.slice(0, end)), [p.s]).get(p.s);
+    if (lv && !lv[0] && !lv[1]) return { at: p.line[0], pre: '' };
+  } else if (!first.some((x) => !!findPackage(src, end, x, others, memo))) return null;
+  const at = afterClass(src, end);
+  return at < 0 ? null : { at, pre: at > 0 && src[at - 1] !== '\n' ? '\n' : '' };
+}
+
 // The line of a package in the main preamble or in one of the others (the text of files it
 // reads: \input{preamble}, a .sty of the project), with the text it was found in
 // (memo: the lists of a call that looks for several names, each text read once)
@@ -250,10 +297,19 @@ export function usePackages(src, names, o = {}) {
   if (end < 0) return [];
   const want = Array.isArray(names) ? names.map((n) => [n, null]) : Object.entries(names);
   const lines = [], edits = [], memo = new Map();
+  // (a line for a package that must come before others the preamble loads goes above them)
+  const early = new Map();
   for (const [name, opts] of want) {
     const found = findPackage(src, end, name, o.others, memo);
     const ch = opts == null ? {} : typeof opts === 'string' ? Object.fromEntries(parseKV(opts).map((x) => [x.key, x.value == null ? true : x.value])) : opts;
-    if (!found) { lines.push('\\usepackage' + (Object.keys(ch).length ? '[' + Object.entries(ch).filter(([, v]) => v !== null).map(([k, v]) => kvText(k, v)).join(',') + ']' : '') + '{' + name + '}'); continue; }
+    // (asked for without options and given by the class or another package: nothing to add)
+    if (!found && !Object.keys(ch).length && PROVIDED[name] && provides(src, name, o.others, end, memo)) continue;
+    if (!found) {
+      const line = '\\usepackage' + (Object.keys(ch).length ? '[' + Object.entries(ch).filter(([, v]) => v !== null).map(([k, v]) => kvText(k, v)).join(',') + ']' : '') + '{' + name + '}';
+      const pb = placeBefore(src, end, name, o.others, memo);
+      if (pb) { const k = pb.at; if (!early.has(k)) early.set(k, { ...pb, lines: [] }); early.get(k).lines.push(line); } else lines.push(line);
+      continue;
+    }
     if (!Object.keys(ch).length) continue;
     const { p, text, main } = found;
     if (p.names.length > 1 || !main) {
@@ -274,6 +330,12 @@ export function usePackages(src, names, o = {}) {
     }
   }
   if (lines.length) { const { at, pre } = newLineAt(src, end); edits.push({ s: at, e: at, t: pre + lines.join('\n') + '\n' }); }
+  for (const { at, pre, lines: ls } of early.values()) {
+    // (two insertions at one place make one edit: the early lines before the usual ones)
+    const same = edits.find((x) => x.s === at && x.e === at);
+    if (same) same.t = pre + ls.join('\n') + '\n' + same.t.replace(/^\n/, '');
+    else edits.push({ s: at, e: at, t: pre + ls.join('\n') + '\n' });
+  }
   // (a file written with CRLF gets its own line ends)
   const nl = eolOf(src);
   return nl === '\n' ? edits : edits.map((x) => ({ ...x, t: x.t.replace(/\r?\n/g, nl) }));

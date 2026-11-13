@@ -7,6 +7,8 @@
 // first slot takes them, as Word does. Nothing here touches the page as it loads (build/app.mjs
 // and the unit tests import it under node).
 
+import { wrapSlot } from '../wordmath.js';
+
 // ---- symbols: [LaTeX, what it is called] ---------------------------------------------------------
 const S = (list) => list.map(([t, n]) => ({ tex: t, name: n }));
 export const SYMBOLS = [
@@ -195,12 +197,6 @@ const AMSSYMB = new Set(('mathbb varnothing nexists therefore because complement
   'subsetneq supsetneq nsubseteq nsupseteq dotplus boxplus boxminus boxtimes boxdot ltimes rtimes intercal leftleftarrows rightrightarrows leftrightarrows rightleftarrows twoheadleftarrow ' +
   'twoheadrightarrow leftarrowtail rightarrowtail curvearrowleft curvearrowright circlearrowleft circlearrowright rightsquigarrow dashrightarrow dashleftarrow Lleftarrow Rrightarrow Lsh Rsh ' +
   'multimap nleftarrow nrightarrow nLeftarrow nRightarrow nleftrightarrow nLeftrightarrow upharpoonleft upharpoonright downharpoonleft downharpoonright leftrightharpoons checkmark').split(' '));
-// packages that load amsmath, or give every symbol of amssymb (and stop with an error when
-// amssymb comes after them: \Bbbk already defined)
-const HAS_AMSMATH = ['amsmath', 'mathtools', 'unicode-math', 'empheq'];
-const AMS_CLASSES = /^(amsart|amsbook|amsproc)$/;
-const HAS_AMSSYMB = ['amssymb', 'newtxmath', 'newpxmath', 'mathabx', 'MnSymbol', 'fdsymbol', 'stix', 'stix2', 'unicode-math', 'txfonts', 'pxfonts', 'mathdesign', 'libertinust1math', 'kpfonts', 'boisik', 'lucidabr'];
-
 // The packages these formulas need, as a set ('amsmath', 'amssymb'). Bounded: a formula's text
 // may be a stranger's (an equation of a shared document); only its first 20000 characters are read.
 export function mathNeeds(tex, env) {
@@ -214,42 +210,47 @@ export function mathNeeds(tex, env) {
   if (env && AMSMATH_ENVS.has(env)) out.add('amsmath');
   return out;
 }
-// whether the document has a package's commands already: (has(name) reads the preamble and the
-// files it inputs; cls is the document's class)
-export function provided(pkg, has, cls) {
-  if (pkg === 'amsmath') return HAS_AMSMATH.some(has) || AMS_CLASSES.test(cls || '');
-  if (pkg === 'amssymb') return HAS_AMSSYMB.some(has);
-  return has(pkg);
-}
-
 // A template as it shows in its tile: each empty slot a grey square
 export const tileTex = (tex) => String(tex).replace(/#\?/g, '{\\color{#9a9a9a}\\square}');
 
-// A template written as plain LaTeX into a text box: the selection in the first slot, the other
-// slots empty; the caret goes to the first slot left empty (or after it all). A symbol (no slot)
-// takes the selection's place, as Word's does. { text, caret }
+// A template written as plain LaTeX into a text box: the selection in the slot Word's typing puts
+// it in (wrapSlot: the base, the radicand of a root with a degree, the words over an arrow), the
+// other slots empty; the caret goes to the first slot left empty (or after it all). A symbol (no
+// slot) takes the selection's place, as Word's does. { text, caret }
 export function fillSlots(tex, sel) {
-  let text = '', caret = -1, used = !sel || !String(tex).includes('#?');
-  const parts = String(tex).split('#?');
-  parts.forEach((p, i) => {
-    text += p;
-    if (i === parts.length - 1) return;
-    if (!used) { text += sel; used = true; } else if (caret < 0) caret = text.length;
-  });
-  if (!used) text += sel;
+  const tpl = sel && String(tex).includes('#?') ? wrapSlot(String(tex)) : String(tex);
+  let text = '', caret = -1;
+  const parts = tpl.split(/(#\?|#@)/);
+  for (const p of parts) {
+    if (p === '#@') text += sel;
+    else if (p === '#?') { if (caret < 0) caret = text.length; }
+    else text += p;
+  }
   return { text, caret: caret < 0 ? text.length : caret };
 }
 
 // Why a formula's text cannot be written between $ and $ (or in an equation) as it is, or '': a
-// brace left open or closed too often, a $ or a % that is no sign, a backslash at the end, a blank
-// line, a display's own delimiters, an environment begun and not ended (or the other way), the
-// document's own \begin{document}. A saved equation may come from a stranger's document: written
-// as it is, it could close the formula early and put the rest of its text in the paper. Bounded.
+// brace left open or closed too often, a $ or a % that is no sign, a backslash at the end, ^^ (TeX's
+// way to write any character, a $ or a brace among them), a blank line, a display's own
+// delimiters, an environment no formula holds or one ended that is not the one begun, and the
+// commands that act beyond the formula (a definition, \global, a file read or written, \csname, a
+// conditional, a catcode...). A saved equation may come from a stranger's document: written as
+// it is, it could close the formula early or change the rest of the paper. Bounded.
+const MATH_ENVS = new Set(['matrix', 'pmatrix', 'bmatrix', 'Bmatrix', 'vmatrix', 'Vmatrix', 'smallmatrix', 'cases', 'dcases', 'rcases', 'array', 'subarray',
+  'aligned', 'alignedat', 'gathered', 'split', 'multlined', 'CD']);
+const DENY = new Set(('def edef gdef xdef let futurelet global long outer protected catcode lccode uccode sfcode mathcode delcode chardef mathchardef countdef dimendef skipdef ' +
+  'toksdef read readline openin openout closein closeout write immediate message special csname endcsname expandafter noexpand aftergroup afterassignment endinput input ' +
+  'include includeonly InputIfFileExists makeatletter makeatother newcommand renewcommand providecommand DeclareRobustCommand DeclareMathOperator newenvironment ' +
+  'renewenvironment string scantokens detokenize unexpanded fi else or par bye end usepackage documentclass directlua luaexec latelua pdfprimitive shipout ' +
+  'output newif loop').split(' '));
+const DENY_START = /^(if(?!f$)|every)/;
 export function mathSafe(tex) {
   const t = String(tex);
   if (t.length > 4000) return 'It is too long.';
   if (/\n[ \t]*\n/.test(t)) return 'It has a blank line.';
-  let depth = 0, env = 0;
+  if (t.includes('^^')) return 'It has ^^, TeX\'s way to write another character.';
+  let depth = 0;
+  const envs = [];
   for (let i = 0; i < t.length; i++) {
     const c = t[i];
     if (c === '\\') {
@@ -258,14 +259,15 @@ export function mathSafe(tex) {
       if (n === '[' || n === ']' || n === '(' || n === ')') return 'It has a display\'s own delimiters.';
       if (/[A-Za-z]/.test(n)) {
         let j = i + 1;
-        while (j < t.length && /[A-Za-z]/.test(t[j])) j++;
+        while (j < t.length && j - i < 60 && /[A-Za-z]/.test(t[j])) j++;
         const w = t.slice(i + 1, j);
         if (w === 'begin' || w === 'end') {
-          const m = /^\s*\{([^{}]{0,40})\}/.exec(t.slice(j, j + 60));
-          if (!m || m[1] === 'document') return 'It has a \\' + w + ' that is no environment of its own.';
-          env += w === 'begin' ? 1 : -1;
-          if (env < 0) return 'It ends an environment it did not begin.';
-        }
+          const m = /^\s*\{([A-Za-z]{1,30}\*?)\}/.exec(t.slice(j, j + 60));
+          if (!m) return 'It has a \\' + w + ' that is no environment of its own.';
+          if (!MATH_ENVS.has(m[1])) return 'It has \\' + w + '{' + m[1] + '}, which no formula holds.';
+          if (w === 'begin') envs.push(m[1]);
+          else if (envs.pop() !== m[1]) return 'It ends an environment it did not begin.';
+        } else if (DENY.has(w) || DENY_START.test(w)) return 'It has \\' + w + ', which acts beyond the formula.';
         i = j - 1;
       } else i++;
       continue;
@@ -276,7 +278,7 @@ export function mathSafe(tex) {
     else if (c === '}' && --depth < 0) return 'A } has no { before it.';
   }
   if (depth) return 'A { is not closed.';
-  if (env) return 'An environment is not ended.';
+  if (envs.length) return 'An environment is not ended.';
   return '';
 }
 
@@ -311,6 +313,10 @@ export function closeEqMenu(back) {
   document.removeEventListener('mousedown', m.outside, true);
   document.removeEventListener('keydown', m.esc, true);
   removeEventListener('resize', m.close);
+  if (m.refit) {
+    try { if (window.mathVirtualKeyboard) window.mathVirtualKeyboard.removeEventListener('geometrychange', m.refit); } catch (e) { /* no keyboard */ }
+    if (window.visualViewport) window.visualViewport.removeEventListener('resize', m.refit);
+  }
   // (one in the app's popover goes with it: silent, the caller puts the caret back)
   if (m.app && m.app.pop && m.app.pop.el === m.el) m.app.closePop(true);
   m.el.remove();
@@ -394,18 +400,27 @@ export function eqMenu(app, anchor, sections, o = {}) {
     best.focus();
   });
   if (!o.pop) document.body.append(p);
-  // under the button, kept on the screen; taller than the room, it scrolls
+  // under the button, kept on the screen and above the on-screen keyboard (the field's, whose
+  // height the app keeps in kbH, and a phone's own, which the visual viewport leaves out); taller
+  // than the room, it scrolls
   const R = anchor && anchor.isConnected && anchor.offsetParent ? anchor.getBoundingClientRect() : (o.rect || new DOMRect(innerWidth / 2 - 150, 60, 0, 0));
-  const w = p.offsetWidth;
-  p.style.maxHeight = Math.max(160, innerHeight - R.bottom - 12) + 'px';
-  p.style.left = Math.max(8, Math.min(innerWidth - w - 8, R.left)) + 'px';
-  p.style.top = (R.bottom + 4) + 'px';
+  const fit = () => {
+    const vv = window.visualViewport, VH = Math.min(innerHeight, vv ? vv.height + vv.offsetTop : innerHeight) - (app.kbH || 0);
+    p.style.maxHeight = Math.max(96, VH - R.bottom - 10) + 'px';
+    p.style.left = Math.max(8, Math.min(innerWidth - p.offsetWidth - 8, R.left)) + 'px';
+    p.style.top = (R.bottom + 4) + 'px';
+  };
+  fit();
   if (anchor && anchor.hasAttribute('aria-expanded')) anchor.setAttribute('aria-expanded', 'true');
   const m = { el: p, anchor, app, back: o.back || (() => { if (anchor && anchor.isConnected) anchor.focus(); }) };
   // (the app's popover closed by its own means, a press elsewhere: the menu is gone too)
   if (o.pop) app.pop.onClose = () => { if (OPEN === m) { OPEN = null; document.removeEventListener('mousedown', m.outside, true); document.removeEventListener('keydown', m.esc, true); removeEventListener('resize', m.close); if (anchor && anchor.hasAttribute('aria-expanded')) anchor.setAttribute('aria-expanded', 'false'); } };
   m.outside = (e) => { if (!p.contains(e.target) && !(anchor && anchor.contains(e.target))) closeEqMenu(false); };
   m.close = () => closeEqMenu(false);
+  // (the keyboard coming or going while it is open: the room is measured again)
+  m.refit = () => { if (OPEN === m) fit(); };
+  try { if (window.mathVirtualKeyboard) window.mathVirtualKeyboard.addEventListener('geometrychange', m.refit); } catch (e) { /* no keyboard */ }
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', m.refit);
   // (opened by a press, the focus stayed in the field: Escape there closes the menu, not the field)
   m.esc = (e) => { if (e.key === 'Escape' && !p.contains(e.target)) { e.preventDefault(); e.stopImmediatePropagation(); closeEqMenu(true); } };
   document.addEventListener('mousedown', m.outside, true);

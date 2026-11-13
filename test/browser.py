@@ -964,10 +964,16 @@ def run():
         # 6. display math popover + env switch
         page.click('.it.dm >> nth=0')
         page.wait_for_selector('.pop-math textarea')
+        # (the sample's equation has a label: unnumbered, \eqref to it would print ??, so that kind
+        # is refused with the reason and the list goes back; a numbered kind is a rename)
         page.select_option('#pop-env', 'equation*')
         page.wait_for_timeout(300)
+        check('display env switch to unnumbered refused for a labelled equation', src(page) == base and page.input_value('#pop-env') == 'equation' and 'label' in page.evaluate('document.getElementById("toast").textContent'),
+              (page.input_value('#pop-env'), page.evaluate('document.getElementById("toast").textContent')))
+        page.select_option('#pop-env', 'align')
+        page.wait_for_timeout(300)
         s9 = src(page)
-        check('display env switch', '\\begin{equation*}' in s9 and '\\end{equation*}' in s9, s9[s9.find('\\begin{equation'):][:40])
+        check('display env switch', '\\begin{align}' in s9 and '\\end{align}' in s9 and s9.replace('{align}', '{equation}', 2) == base, s9[s9.find('\\begin{align'):][:40])
         page.keyboard.press('Escape')
         page.keyboard.press('Control+z')
         check('undo env switch', src(page) == base)

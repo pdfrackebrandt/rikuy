@@ -7,7 +7,10 @@ by hand too; Add label, Copy reference, Copy as LaTeX; Alt+= numbered on an empt
 text; the equation gallery from Insert and from the tab, saved equations kept as text; the packages
 what the tab writes needs, added once, in the same undo step, never where the document has them;
 and, where dist/tex holds a TeX tree, what the tab writes compiles with pdfLaTeX, XeLaTeX and
-LuaLaTeX. Screenshots at 1920, 1366 and 390 px, light and dark, in $SHOTS/eqtab-*."""
+LuaLaTeX. On a phone (390 by 844 and 360 by 740, touch, taps): Insert's Equation is Alt+=, the
+tab's menus open above the field's on-screen keyboard with 44 px tiles, a long press on an
+equation opens its menu, nothing scrolls sideways. Screenshots at 1920, 1366 and 390 px, light
+and dark, in $SHOTS/eqtab-*."""
 import os, sys, re, json
 sys.path.insert(0, os.path.dirname(__file__))
 from browser import open_page, check, results, src, load_doc, click_text, select_text, roundtrip, SHOTS, ROOT
@@ -419,13 +422,17 @@ def packages(page):
     pick(page, 'Sets and logic', '\\mathbb{R} real numbers'); pick(page, 'Relations', '\\nleq neither less nor equal'); page.wait_for_timeout(300)
     page.keyboard.press('Enter'); page.wait_for_timeout(300)
     s = src(page)
-    check('symbols of amssymb put in by the tab: \\usepackage{amssymb} once, when the field closes', s.count('\\usepackage{amssymb}') == 1 and '$\\mathbb{R}\\nleq$' in s.replace(' ', ''), s)
+    check('symbols of amssymb put in by the tab: \\usepackage{amssymb} once, with them', s.count('\\usepackage{amssymb}') == 1 and '$\\mathbb{R}\\nleq$' in s.replace(' ', ''), s)
     page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
     check('one undo: the formula and the line both go', src(page) == bare, src(page))
     load_doc(page, bare); click_text(page, 'Some text', 4); new_formula(page)
     pick(page, 'Sets and logic', '\\mathbb{R} real numbers'); page.wait_for_timeout(200)
     page.keyboard.press('Backspace'); page.keyboard.press('Backspace'); page.keyboard.type('x'); page.wait_for_timeout(300); page.keyboard.press('Enter'); page.wait_for_timeout(300)
-    check('taken out again before the field closed: no package', 'amssymb' not in src(page), src(page))
+    # (the line came with the symbol, in its undo step: taken out again, the line stays, as any
+    # line Rikuy added does; undo takes both)
+    check('taken out again before the field closed: the line stays, and undo takes the formula and it', src(page).count('amssymb') == 1 and '$x$' in src(page), src(page))
+    while page.evaluate('window.rikuy.hist.length'): page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(100)
+    check('and undo step by step gives the document back', src(page) == bare, src(page))
     tx = WRAP('Some text here.', '\\usepackage{newtxmath}\n')
     load_doc(page, tx); click_text(page, 'Some text', 4); new_formula(page)
     pick(page, 'Sets and logic', '\\varnothing empty set, variant'); page.wait_for_timeout(300); page.keyboard.press('Enter'); page.wait_for_timeout(300)
@@ -465,6 +472,111 @@ def folded(page):
     check('picking another tab in the list and Equation again leaves the field open', page.evaluate('!!document.querySelector(".pop-math")') and page.evaluate(TAB) == 'Equation')
     close(page)
     page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
+
+
+def compiles(page, text):
+    """The source compiled in the page with pdfLaTeX: (ok, errors); None where dist/tex has no TeX tree."""
+    if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        return None
+    page.set_default_timeout(600000)
+    r = page.evaluate("""async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile();
+      return { ok: r.ok, errors: r.problems.filter((p) => p.severity === 'error').map((p) => p.message).slice(0, 3) }; }""", text)
+    page.set_default_timeout(30000)
+    return r
+
+
+def reviewed(page):
+    """The hostile review of 5a28506, each case as it found it, compiled in the page where dist/tex is."""
+    tree = os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm'))
+    ok_tex = lambda r: r is None or (r['ok'] and not r['errors'])
+    # H1: amssymb after a class or an umbrella that gives its symbols stopped TeX (\Bbbk already defined)
+    for name, doc in (('acmart', '\\documentclass[sigconf]{acmart}\n\\begin{document}\n\\title{T}\n\\maketitle\nSome text here.\n\\end{document}\n'),
+                      ('newtx', WRAP('Some text here.', '\\usepackage{newtx}\n'))):
+        load_doc(page, doc); click_text(page, 'Some text', 4); new_formula(page)
+        pick(page, 'Sets and logic', '\\mathbb{R} real numbers'); pick(page, 'Relations', '\\nleq neither less nor equal'); page.wait_for_timeout(300)
+        page.keyboard.press('Enter'); page.wait_for_timeout(300)
+        out = src(page); r = compiles(page, out)
+        check('H1 %s: \\mathbb and \\nleq from the tab add no amssymb (the %s has its symbols), and it compiles' % (name, 'class' if name == 'acmart' else 'package'), 'amssymb' not in out and '\\mathbb{R}' in out and ok_tex(r), (out[:160], r))
+    # cleveref then amsmath stopped TeX ("cleveref must be loaded after amsmath")
+    cref = WRAP('Before.\n\\begin{equation}\n  a=b\n\\end{equation}\nAfter.', '\\usepackage{hyperref}\n\\usepackage{cleveref}\n')
+    load_doc(page, cref); FIRST_EQ(page); page.evaluate('window.rikuy.eqSetKind("gather")'); page.wait_for_timeout(200)
+    out = src(page); r = compiles(page, out)
+    check('H1 cleveref: gather on a document with hyperref and cleveref puts amsmath above them, and it compiles', '\\usepackage{amsmath}\n\\usepackage{hyperref}\n\\usepackage{cleveref}' in out and ok_tex(r), (out[:200], r))
+    # Rikuy's own additions in turn: \oiint (esint, when the field closes), then align (amsmath)
+    bare = WRAP('Some text here.', '')
+    load_doc(page, bare); click_text(page, 'Some text', 4); new_formula(page)
+    pick(page, 'Integral', 'surface integral'); page.keyboard.type('S'); page.wait_for_timeout(300); page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    FIRST_EQ(page); page.evaluate('window.rikuy.eqSetKind("align")'); page.wait_for_timeout(300)
+    out = src(page); r = compiles(page, out)
+    check('H1 esint, then amsmath from Rikuy itself: amsmath above esint (\\iint was defined twice), and it compiles', '\\usepackage{amsmath}\n\\usepackage{esint}' in out and '\\begin{align}' in out and ok_tex(r), (out[:200], r))
+    # H2: a kind change with the field open: no undo step lands on a formula without its package
+    load_doc(page, WRAP('Some text $x$ here.', '')); page.click('.a-math >> nth=0')
+    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000); page.wait_for_timeout(200)
+    page.evaluate('document.getElementById("pop-field").executeCommand("moveToMathfieldEnd")')
+    page.get_by_role('tab', name='Equation', exact=True).click(); page.wait_for_timeout(100)
+    pick(page, 'Bracket', 'binomial coefficient'); page.keyboard.type('n'); page.keyboard.press('Tab'); page.keyboard.type('k'); page.wait_for_timeout(400)
+    page.get_by_role('tabpanel', name='Equation', exact=True).get_by_role('button', name='Display', exact=True).click(); page.wait_for_timeout(400)
+    page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    states = [src(page)]
+    while page.evaluate('window.rikuy.hist.length') and len(states) < 8:
+        page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150); states.append(src(page))
+    bad = [t for t in states if '\\binom' in t and 'amsmath' not in t]
+    check('H2: \\binom from the tab, then Display with the field open, then undo step by step: never \\binom without amsmath, and back to the start', not bad and states[0].count('\\usepackage{amsmath}') == 1 and '\\begin{equation}' in states[0] and states[-1] == WRAP('Some text $x$ here.', ''), (len(states), bad[:1], states[-1][-60:]))
+    # H3: labels keep their numbers
+    for body, cmd, why in (('\\begin{equation}\\label{e}\n  a\n\\end{equation}', 'eq-to-unnumbered', 'label'), ('\\begin{align}\n  a &= b \\label{r1}\\\\\n  c &= d \\label{r2}\n\\end{align}', 'eq-to-unnumbered', 'label'),
+                           ('\\begin{equation}\n  \\begin{aligned} a &= b \\label{n}\\end{aligned}\n\\end{equation}', 'eq-to-inline', 'label')):
+        d = WRAP('Before.\n' + body + '\nAfter.'); load_doc(page, d); FIRST_EQ(page)
+        w = page.evaluate('(id) => { const c = window.rikuy.cmds.command(id); return [window.rikuy.cmds.enabled(window.rikuy, c, null), c.whyNot(window.rikuy)]; }', cmd)
+        page.evaluate('(id) => window.rikuy.runCommand(id)', cmd); page.wait_for_timeout(150)
+        check('H3: %s is off on %s, saying why, and writes nothing' % (cmd, body.split('\n')[0][:40]), w[0] is False and why in w[1] and src(page) == d, w)
+    # M4: saved equations that act beyond the formula are not offered, nor put in
+    hostile = ['E=mc^2\\gdef\\maketitle{}', 'x\\global\\let\\section\\relax', 'x\\iffalse', 'x\\immediate\\write18{touch /tmp/pwn}', 'x^^24', 'x\\csname iffalse\\endcsname']
+    page.evaluate('(l) => localStorage.setItem("rikuy.equations.v1", JSON.stringify(l.map((t, k) => ({ name: "H" + k, tex: t })).concat([{ name: "Fine", tex: "a+b" }])))', hostile)
+    load_doc(page, DOC); click_text(page, 'Some text', 4)
+    offered = page.evaluate('window.rikuy.eqSavedList().map((x) => x.name)')
+    before = src(page)
+    page.evaluate('(l) => l.forEach((t) => window.rikuy.eqInsertNew(t))', hostile); page.wait_for_timeout(200)
+    new_formula(page)
+    put = page.evaluate('(l) => l.map((t) => window.rikuy.eqInsert(t))', hostile); page.wait_for_timeout(300)
+    field = page.evaluate(FIELD_TEX); close(page)
+    check('M4: \\gdef, \\global\\let, \\iffalse, \\write18, ^^, \\csname: not offered from the store, refused new and into the field', offered == ['Fine'] and src(page) == before and put == [False] * len(hostile) and field == '', (offered, put, field))
+    page.evaluate('localStorage.removeItem("rikuy.equations.v1")')
+    # M5: no display in tabbing or an lrbox
+    for body in ('\\begin{tabbing}\nA \\= $x$ \\\\\n\\end{tabbing}', '\\newsavebox{\\bx}\n\\begin{lrbox}{\\bx}text $x$ more\\end{lrbox}\\usebox{\\bx}'):
+        d = WRAP(body); load_doc(page, d)
+        if not page.evaluate('!!document.querySelector("#pages .a-math")'):
+            check('M5: %s draws its formula (to right click it)' % body[:16], False, 'no atom'); continue
+        FIRST_EQ(page)
+        off = page.evaluate('() => !window.rikuy.cmds.enabled(window.rikuy, window.rikuy.cmds.command("eq-to-display"), null) && window.rikuy.eqWhySwitch()')
+        page.evaluate('window.rikuy.runCommand("eq-to-display")'); page.wait_for_timeout(150)
+        check('M5: Change to display is off in %s, saying why, and writes nothing' % body[:16].replace('\n', ' '), off and 'tabbing' in off and src(page) == d, (off, src(page)[-80:]))
+    # M6: the gallery open while a coauthor's merge lands: no write at the old place
+    load_doc(page, DOC); click_text(page, 'Some text', 4)
+    page.get_by_role('tab', name='Insert', exact=True).click(); page.wait_for_timeout(120)
+    page.get_by_role('button', name='Equation options', exact=True).click(); page.wait_for_timeout(200)
+    page.evaluate('() => { const R = window.rikuy, s = R.src("main.tex"), i = s.indexOf("Some"); R.commit([{ f: "main.tex", s: i, e: i, t: "INSERTED BY A COAUTHOR. " }], null, "merge"); }'); page.wait_for_timeout(200)
+    merged = src(page)
+    m = page.get_by_role('menu', name='Equation gallery', exact=True)
+    if m.count(): m.get_by_role('menuitem', name='Area of circle', exact=True).click(); page.wait_for_timeout(300)
+    check('M6: the gallery open while a merge changed the file: nothing written at the stale place, and it says so', src(page) == merged and 'changed' in page.evaluate('document.getElementById("toast").textContent'), src(page)[-90:])
+    close(page); page.get_by_role('tab', name='Home', exact=True).click()
+    # LOW: CRLF kept both ways; an empty new equation's label; the right click target forgotten
+    crlf = WRAP('Some text $x+1$ more.').replace('\n', '\r\n')
+    load_doc(page, crlf); FIRST_EQ(page); page.evaluate('window.rikuy.runCommand("eq-to-display")'); page.wait_for_timeout(200)
+    disp = src(page); FIRST_EQ(page); page.evaluate('window.rikuy.runCommand("eq-to-inline")'); page.wait_for_timeout(200)
+    check('L: a CRLF file: the display written with CRLF, and back byte for byte', '\\begin{equation}\r\n  x+1\r\n\\end{equation}' in disp and '\n' not in disp.replace('\r\n', '') and src(page) == crlf, repr(disp[-80:]))
+    load_doc(page, DOC); click_text(page, 'Some text', 4); new_formula(page, 'equation')
+    w = page.evaluate('window.rikuy.eqWhyLabel()')
+    page.evaluate('window.rikuy.runCommand("eq-label")'); page.wait_for_timeout(200)
+    check('L: Add label on a new equation still empty is off, saying why (it would go with the equation)', 'Type the equation first' in w and page.evaluate('!!document.querySelector(".pop-math")'), w)
+    page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    load_doc(page, WRAP('Some text $x$ here.'))
+    box = page.locator('.a-math').first.bounding_box()
+    page.mouse.click(box['x'] + 3, box['y'] + 5, button='right'); page.wait_for_timeout(200); page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    page.evaluate('window.rikuy.runCommand("eq-to-display")'); page.wait_for_timeout(150)
+    check('L: the right click menu closed with Escape forgets its equation: a command run later changes nothing', src(page) == WRAP('Some text $x$ here.') and page.evaluate('window.rikuy.eqCtx') is None)
+    help_text = page.evaluate('() => { window.rikuy.openHelp(); const t = document.querySelector(".pop-help").textContent; window.rikuy.closePop(); return t; }')
+    check('L: Help says Ctrl+Shift+E is free until Track Changes comes (nothing binds it yet)', 'free until Track Changes' in help_text and not page.evaluate('window.rikuy.cmds.commands().some((c) => (c.keys || []).includes("Ctrl+Shift+E"))'))
 
 
 def compile_check(page):
@@ -523,10 +635,144 @@ def shots(page):
     print('     screenshots in %s/eqtab-*' % SHOTS)
 
 
+def tap_text(page, text, off=0, after=False):
+    """A finger's tap in the text of the page: at the left edge of the character off chars into the
+    first span holding text (or at its right edge, after=True)."""
+    pt = page.evaluate('''([text, off, after]) => {
+      const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(text)); if (!s) return null;
+      s.scrollIntoView({ block: 'center' });
+      const i = s.textContent.indexOf(text) + off, r = document.createRange(); r.setStart(s.firstChild, i); r.setEnd(s.firstChild, i + 1);
+      const b = r.getBoundingClientRect(); return [after ? b.right - 0.5 : b.left + 0.5, b.top + b.height / 2]; }''', [text, off, after])
+    page.touchscreen.tap(pt[0], pt[1]); page.wait_for_timeout(200)
+
+
+def long_press(page, x, y, ms=750):
+    """A finger held still on a point: touch events through the browser's own input, as a phone's."""
+    cdp = page.context.new_cdp_session(page)
+    cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': x, 'y': y}]})
+    page.wait_for_timeout(ms)
+    cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []})
+    cdp.detach(); page.wait_for_timeout(250)
+
+
+SIDEWAYS = 'document.documentElement.scrollWidth - document.documentElement.clientWidth + (document.scrollingElement.scrollLeft || 0)'
+CARET_ON_PAGE = '''() => { const s = getSelection(); return document.activeElement && document.activeElement.id === "pages" && s.rangeCount > 0 && document.getElementById("pages").contains(s.anchorNode); }'''
+MENU_GEO = '''(sel) => { const m = document.querySelector(sel); if (!m || !m.getClientRects().length) return null; const r = m.getBoundingClientRect();
+  const items = [...m.querySelectorAll("[role^=menuitem]")].filter((x) => x.getClientRects().length && x.getAttribute("aria-disabled") !== "true").map((x) => x.getBoundingClientRect());
+  return { l: Math.round(r.left), r: Math.round(r.right), t: Math.round(r.top), b: Math.round(r.bottom), w: innerWidth, h: innerHeight, kb: Math.round(window.rikuy.kbH || 0),
+    vv: window.visualViewport ? Math.round(window.visualViewport.height + window.visualViewport.offsetTop) : innerHeight,
+    small: items.filter((t) => t.width < 44 || t.height < 44).length, n: items.length, scrolls: m.scrollHeight > m.clientHeight + 1 }; }'''
+FITS = lambda g: bool(g) and g['l'] >= 0 and g['r'] <= g['w'] and g['t'] >= 0 and g['b'] <= min(g['h'], g['vv']) - g['kb'] + 1
+
+
+def phone(p):
+    """A phone (390 by 844 and 360 by 740, touch, is_mobile; taps, no hover, no right click):
+    Insert's Equation by a tap is Alt+=; with the field open and its on-screen keyboard up the
+    Equation tab's symbol and structure menus open by a tap above the keyboard, their tiles 44 px,
+    and put LaTeX in with the field kept; a long press on an equation opens its menu (the field does
+    not open), a tap opens the field; the gallery fits the screen; no page scrolls sideways; the
+    caret is back on the page after the field closes. Screenshots at 390 px, light and dark."""
+    for (w, h, dark) in ((390, 844, False), (390, 844, True), (360, 740, False)):
+        browser, page, errors = open_page(p, width=w, height=h, dark=dark, touch=True)
+        tag = '%d%s' % (w, '-dark' if dark else '')
+        shot = lambda name: page.screenshot(path=os.path.join(SHOTS, 'eqtab-phone-%s-%s.png' % (tag, name))) if w == 390 else None
+        sel = page.get_by_role('combobox', name='Ribbon tab', exact=True)
+        insert = lambda: (sel.select_option(label='Insert'), page.wait_for_timeout(200))
+        eqb = lambda: page.get_by_role('tabpanel', name='Insert', exact=True).get_by_role('button', name='Equation', exact=True)
+        head = lambda: page.evaluate('document.querySelector(".pop-math .pop-h span").textContent')
+        side = []
+        # Alt+= by a tap: Insert's Equation, numbered on an empty line, in the line in text
+        load_doc(page, DOC); tap_text(page, 'Second paragraph.', 16, after=True)
+        page.keyboard.press('Enter'); page.wait_for_timeout(150)
+        insert(); eqb().tap()
+        page.wait_for_selector('.pop-math', timeout=10000); page.wait_for_timeout(250)
+        d = head(); page.keyboard.type('E=mc^2'); page.wait_for_timeout(400); page.keyboard.press('Enter'); page.wait_for_timeout(300)
+        s1 = src(page)
+        load_doc(page, DOC); tap_text(page, 'Some text', 4)
+        insert(); eqb().tap()
+        page.wait_for_selector('.pop-math', timeout=10000); page.wait_for_timeout(250)
+        i = head(); tab = sel.evaluate('(s) => s.value')
+        check('%s: a tap on Insert\'s Equation is Alt+=: numbered on an empty line, in the line in text, the Equation tab chosen' % tag,
+              d == 'Display math' and i == 'New inline math' and tab == 'equation' and 'Second paragraph.\n\\begin{equation}\n  E=mc^2\n\\end{equation}' in s1, (d, i, tab, s1[-80:]))
+        small = page.evaluate('''() => [...document.querySelectorAll("#rp-equation .btn, #ri-eq, #ri-eq-x")].filter((x) => x.getClientRects().length).map((x) => [x.id, Math.round(x.getBoundingClientRect().width), Math.round(x.getBoundingClientRect().height)]).filter(([, a, b]) => a < 44 || b < 44)''')
+        check('%s: the Equation tab\'s buttons, and Insert\'s Equation and its arrow, are 44 px each way' % tag, not small, small)
+        # the field open, its on-screen keyboard up: the tab's menus by taps, above the keyboard
+        auto = page.evaluate('window.rikuy.kbH || 0')
+        page.evaluate('() => { try { window.mathVirtualKeyboard.show(); } catch (e) {} }')
+        try: page.wait_for_function('(window.rikuy.kbH || 0) > 0', timeout=5000)
+        except Exception: pass
+        page.wait_for_timeout(300)
+        kb = page.evaluate('window.rikuy.kbH || 0')
+        tp = page.get_by_role('tabpanel', name='Equation', exact=True)
+        got = []
+        for menu, item, shotname in (('Fraction', 'stacked fraction', 'structure'), ('Greek letters', '\\alpha alpha', 'symbols'), ('Large operator', None, None)):
+            b = tp.get_by_role('button', name=menu, exact=True)
+            if not b.count(): got.append((menu, 'no button')); continue
+            b.tap(); page.wait_for_timeout(300)
+            g = page.evaluate(MENU_GEO, '.eq-menu')
+            if shotname: shot(shotname)
+            m = page.get_by_role('menu', name=menu, exact=True)
+            if item: m.get_by_role('menuitem', name=item, exact=True).tap()
+            else: m.get_by_role('menuitem').first.tap()
+            page.wait_for_timeout(300)
+            got.append((menu, g, page.evaluate(ACTIVE), page.evaluate('window.rikuy.kbH || 0') > 0))
+            side.append(page.evaluate(SIDEWAYS))
+        field = page.evaluate(FIELD_TEX)
+        good = [x for x in got if len(x) == 4 and FITS(x[1]) and x[1]['small'] == 0 and x[2] == 'pop-field' and x[3]]
+        check('%s: the field\'s keyboard up (%d px%s): Fraction, Greek letters and Large operator open by a tap above it, in the screen, every tile 44 px; their items put \\frac, \\alpha and an operator in, the focus and the keyboard kept'
+              % (tag, kb, ', up by itself' if auto else ''), kb > 0 and len(good) == 3 and '\\frac' in field and '\\alpha' in field, (kb, got, field))
+        # the tab's gallery by a tap (through its folded group's menu where the group folds)
+        tp.get_by_role('button', name='Equation gallery', exact=True).tap() if tp.get_by_role('button', name='Equation gallery', exact=True).is_visible() else (tp.get_by_role('button', name='Tools', exact=True).tap(), page.wait_for_timeout(250), page.get_by_role('menu', name='Tools', exact=True).get_by_role('menuitem', name='Equation gallery', exact=True).tap())
+        page.wait_for_timeout(300)
+        gg = page.evaluate(MENU_GEO, '.eq-menu')
+        page.get_by_role('menu', name='Equation gallery', exact=True).get_by_role('menuitem', name='Area of circle', exact=True).tap(); page.wait_for_timeout(300)
+        check('%s: the tab\'s Equation gallery by taps, in the screen above the keyboard; its formula goes into the field' % tag, FITS(gg) and gg['small'] == 0 and 'A=\\pi' in page.evaluate(FIELD_TEX) and page.evaluate(ACTIVE) == 'pop-field', (gg, page.evaluate(FIELD_TEX)))
+        page.keyboard.press('Enter'); page.wait_for_timeout(350)
+        s2 = src(page)
+        check('%s: closed with the keyboard\'s Enter, the formula is in the text and the caret back on the page' % tag, '\\frac' in s2 and '\\alpha' in s2 and page.evaluate(CARET_ON_PAGE) and not page.evaluate('!!document.querySelector(".eq-menu")'), (s2[-120:], page.evaluate(ACTIVE)))
+        # a long press on a formula: its menu (no right click on a phone); a tap opens the field
+        load_doc(page, WRAP('Some text $x+1$ here.\n\\begin{equation}\n  a=b\n\\end{equation}\nAfter.'))
+        bx = page.locator('.a-math').first.bounding_box(); x, y = bx['x'] + bx['width'] / 2, bx['y'] + bx['height'] / 2
+        long_press(page, x, y)
+        m = page.get_by_role('menu', name='Context menu', exact=True)
+        names = m.get_by_role('menuitem').evaluate_all('(xs) => xs.map((x) => x.getAttribute("aria-label"))') if m.count() else []
+        g = page.evaluate(MENU_GEO, '.eq-ctx')
+        shot('longpress')
+        nofield = not page.evaluate('!!document.querySelector(".pop-math")')
+        if m.count(): m.get_by_role('menuitem', name='Change to display', exact=True).tap(); page.wait_for_timeout(350)
+        check('%s: a long press on a formula opens its menu, in the screen, 44 px items, no field and no "right click again" line; its Change to display works by a tap' % tag,
+              names == ['Edit equation', 'Change to display', 'Copy as LaTeX', 'Copy for Word', 'Save as new equation'] and nofield and FITS(g) and g['small'] == 0
+              and 'Some text \\begin{equation}\n  x+1\n\\end{equation} here.' in src(page), (names, nofield, g, src(page)[-100:]))
+        page.evaluate('window.rikuy.closePop(true)'); page.wait_for_timeout(100)
+        bx = page.locator('.it.dm').last.bounding_box()
+        long_press(page, bx['x'] + bx['width'] / 2, bx['y'] + 8)
+        names = m.get_by_role('menuitem').evaluate_all('(xs) => xs.map((x) => x.getAttribute("aria-label"))') if m.count() else []
+        check('%s: and on a numbered display: Change to inline, Change to unnumbered, Add label' % tag, all(n in names for n in ('Change to inline', 'Change to unnumbered', 'Add label')), names)
+        page.evaluate('window.rikuy.closePop(true)'); page.wait_for_timeout(150)
+        load_doc(page, WRAP('Some text $x+1$ here.'))
+        page.locator('.a-math').first.tap(); page.wait_for_timeout(500)
+        check('%s: a short tap on a formula opens its field, no menu' % tag, page.evaluate('!!document.querySelector(".pop-math")') and m.count() == 0)
+        page.evaluate('window.rikuy.closePop(true)'); page.wait_for_timeout(150)
+        # Insert, Equation options: the gallery in the screen; a tap puts one in
+        load_doc(page, DOC); tap_text(page, 'Second paragraph.', 16, after=True); page.keyboard.press('Enter'); page.wait_for_timeout(150)
+        insert(); page.get_by_role('button', name='Equation options', exact=True).tap(); page.wait_for_timeout(350)
+        g = page.evaluate(MENU_GEO, '.eq-menu')
+        shot('gallery')
+        page.get_by_role('menu', name='Equation gallery', exact=True).get_by_role('menuitem', name='Pythagorean theorem', exact=True).tap(); page.wait_for_timeout(450)
+        check('%s: Insert\'s Equation options by a tap: the gallery in the screen, 44 px items, and its formula a numbered equation on the empty line' % tag,
+              FITS(g) and g['small'] == 0 and 'Second paragraph.\n\\begin{equation}\n  a^2+b^2=c^2\n\\end{equation}' in src(page), (g, src(page)[-80:]))
+        page.evaluate('window.rikuy.closePop(true)'); page.wait_for_timeout(150)
+        side.append(page.evaluate(SIDEWAYS))
+        check('%s: the page never scrolls sideways' % tag, max(side) <= 0, side)
+        check('%s: no page errors' % tag, not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
+        browser.close()
+    print('     phone screenshots in %s/eqtab-phone-*' % SHOTS)
+
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        fns = (tab_comes, structures, keyboard, kinds, round_trips, context_menu, alt_equals, gallery, saved, packages, folded, compile_check, shots)
+        fns = (tab_comes, structures, keyboard, kinds, round_trips, context_menu, alt_equals, gallery, saved, packages, folded, reviewed, compile_check, shots)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             try: fn(page)
             except Exception as e:
@@ -535,6 +781,10 @@ def run():
                 except Exception: pass
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
         browser.close()
+        # (a phone is a context of its own: touch, is_mobile)
+        if len(sys.argv) < 2 or 'phone' in sys.argv[1:]:
+            try: phone(p)
+            except Exception as e: check('phone runs to its end', False, str(e)[:400])
     bad = [r for r in results if not r[1]]
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     sys.exit(1 if bad else 0)

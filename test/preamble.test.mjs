@@ -3,7 +3,7 @@
 // enumitem, a definition written once; comments read as comments; a stranger's preamble read in
 // bounded time. Every edit applied, then the same call again: nothing more to do.
 import assert from 'node:assert/strict';
-import { stripComments, preambleEnd, packages, hasPackage, packageOptions, parseKV, kvEdits, usePackage, usePackages, docClass, classOptions, setClass, lastCall, setPackageKeys, defines, defineOnce } from '../src/preamble.js';
+import { stripComments, preambleEnd, packages, hasPackage, packageOptions, parseKV, kvEdits, usePackage, usePackages, docClass, classOptions, setClass, lastCall, setPackageKeys, defines, defineOnce, provides } from '../src/preamble.js';
 import { applyEdits } from '../src/styles.js';
 
 let n = 0;
@@ -204,6 +204,48 @@ ok('a stranger\'s thousands of unclosed \\usepackage[{ are read in bounded time'
   const others = Array.from({ length: 50 }, (_, k) => '%' + k + '\n' + '\\usepackage[{'.repeat(15000));
   assert.equal(usePackages(doc2('\\documentclass{article}\n\\input{a}\n'), ['xcolor', 'graphicx', 'amsmath'], { others }).length, 1);
   assert.ok(Date.now() - t0 < 1500, 'took ' + (Date.now() - t0) + ' ms');
+});
+
+ok('load order: amsmath and amssymb above cleveref, hyperref, esint, wasysym, txfonts, pxfonts, mathabx (each stopped TeX after them); hyperref above cleveref', () => {
+  // (the review's cases, compiled in the page: cleveref then amsmath, "cleveref must be loaded after
+  // amsmath"; esint then amsmath, "\\iint already defined")
+  for (const first of ['cleveref', 'hyperref', 'esint', 'wasysym', 'txfonts', 'pxfonts', 'mathabx']) {
+    const src = doc('\\usepackage{graphicx}\n\\usepackage{' + first + '}\n\\usepackage{xcolor}\n');
+    assert.equal(twice(src, (t) => usePackage(t, 'amsmath')), doc('\\usepackage{graphicx}\n\\usepackage{amsmath}\n\\usepackage{' + first + '}\n\\usepackage{xcolor}\n'), first);
+  }
+  const cref = doc('\\usepackage{hyperref}\n\\usepackage{cleveref}\n');
+  assert.equal(twice(cref, (t) => usePackages(t, ['amsmath', 'amssymb', 'xcolor'])), doc('\\usepackage{amsmath}\n\\usepackage{amssymb}\n\\usepackage{hyperref}\n\\usepackage{cleveref}\n\\usepackage{xcolor}\n'));
+  assert.equal(twice(doc('\\usepackage{graphicx}\n\\usepackage{cleveref}\n'), (t) => usePackage(t, 'hyperref')), doc('\\usepackage{graphicx}\n\\usepackage{hyperref}\n\\usepackage{cleveref}\n'));
+  // the first of them inside a conditional, or in a file the preamble reads: right after \documentclass
+  const cond = doc('\\usepackage{graphicx}\n\\ifdefined\\x\n\\usepackage{esint}\n\\fi\n');
+  assert.equal(twice(cond, (t) => usePackage(t, 'amsmath')), cond.replace('\\documentclass{article}\n', '\\documentclass{article}\n\\usepackage{amsmath}\n'));
+  const others = ['\\usepackage{cleveref}\n'];
+  const inp = doc('\\usepackage{graphicx}\n\\input{pre}\n');
+  assert.equal(applyEdits(inp, usePackage(inp, 'amsmath', null, { others })), inp.replace('\\documentclass{article}\n', '\\documentclass{article}\n\\usepackage{amsmath}\n'));
+  // none of them: after the last package, as before
+  assert.equal(twice(doc('\\usepackage{graphicx}\n'), (t) => usePackage(t, 'amsmath')), doc('\\usepackage{graphicx}\n\\usepackage{amsmath}\n'));
+  // Rikuy's own additions in turn: esint (a symbol of the field), then amsmath (a kind of display)
+  let t = applyEdits(doc(''), usePackage(doc(''), 'esint'));
+  t = applyEdits(t, usePackage(t, 'amsmath'));
+  assert.equal(t, doc('\\usepackage{amsmath}\n\\usepackage{esint}\n'));
+});
+
+ok('a package the class or another package gives is not added (amssymb after newtxmath or acmart stopped TeX: \\Bbbk already defined)', () => {
+  for (const [pre, cls] of [['\\usepackage{newtx}\n', 'article'], ['\\usepackage{newtxmath}\n', 'article'], ['\\usepackage{newpxmath}\n', 'article'], ['\\usepackage{unicode-math}\n', 'article'], ['\\usepackage{fontsetup}\n', 'article'],
+    ['\\usepackage{libertinus}\n', 'article'], ['', 'acmart'], ['', 'beamer']]) {
+    const src = doc(pre).replace('{article}', '{' + cls + '}');
+    assert.deepEqual(usePackages(src, ['amssymb', 'amsmath']), [], pre + cls);
+    assert.ok(provides(src, 'amssymb') && provides(src, 'amsfonts'), pre + cls);
+  }
+  assert.deepEqual(usePackage(doc('\\usepackage{mathtools}\n'), 'amsmath'), []);
+  assert.deepEqual(usePackage(doc('').replace('{article}', '{amsart}'), 'amsmath'), []);
+  // mathabx, MnSymbol and stix give no \\mathbb of amssymb's: it is added (above mathabx)
+  for (const x of ['mathabx', 'MnSymbol', 'stix', 'stix2']) assert.equal(usePackage(doc('\\usepackage{' + x + '}\n'), 'amssymb').length, 1, x);
+  assert.ok(!provides(doc('\\usepackage{mathabx}\n'), 'amssymb') && !provides(doc(''), 'amsmath'));
+  // asked for with options, it is written (the options are what is asked)
+  assert.equal(usePackage(doc('\\usepackage{mathtools}\n'), 'amsmath', 'fleqn').length, 1);
+  // a provider in a file the preamble reads counts too
+  assert.deepEqual(usePackage(doc('\\input{pre}\n'), 'amssymb', null, { others: ['\\usepackage{newtxmath}\n'] }), []);
 });
 
 console.log('preamble: ' + n + ' groups of checks passed');
