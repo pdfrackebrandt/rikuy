@@ -928,6 +928,76 @@ Tests:
     `offline.py` 54/54, `launch.py` 18/18, `deploy_check.py` 43/43, `pages_check.py` fits; the
     security audit's quick profile on the changed files (notes outside the repository) found
     three more stalls of the same kind, fixed above with tests.
+40. **B2, paragraphs as in Word.** Done in the code (branch `wordgap-b2-para`, on task 38's frame;
+    GAP rows H39, H42 to H55, H58, L11, D5, and Show marks of H41). *Alignment:* Home's Align Left,
+    Center, Align Right and Justify (Ctrl+L, E, R, J on the page) write `flushleft`, `center` and
+    `flushright` around the paragraph; Justify, LaTeX's own, takes it off; pressed again an alignment
+    goes back to justified. Selected paragraphs share one environment; a paragraph in a group of
+    centred ones is split out of it (the halves keep their head as written) and joined back when
+    centred again, the bytes of before; in a figure or a table `\centering`, `\raggedleft`,
+    `\raggedright` at its body's start. Hand written forms read and taken off exactly: the three
+    environments indented or not, `{\centering ...\par}`, a declaration a minipage scopes. What
+    belongs to the paragraph moves with it (`\noindent` on its line, `\label` and comment lines after
+    it, its `\vspace` lines); what reaches further stays outside (`\onehalfspacing` or
+    `\selectlanguage` on a line before it). *Line and Paragraph Spacing* (a menu): 1.0, 1.15, 1.5,
+    2.0, 2.5, 3.0 for the paragraph (setspace's `singlespace`, `spacing{1.15}`, `onehalfspace`,
+    `doublespace`; memoir's own), "Whole document" in the preamble (`\onehalfspacing`,
+    `\setstretch{1.15}`; a hand written `\linespread`, `\setstretch`, `\baselinestretch` or setspace
+    option changed in its own form; single takes it off), Add or Remove Space Before or After
+    Paragraph (`\vspace{12pt}` on a line of its own). 1.5 and 2.0 are setspace's one and a half and
+    double spacing, as LaTeX users mean them; Exactly and At least in the dialog are the nearest
+    `\setstretch` (GAP H51). *Indents:* B3's Increase and Decrease Indent run `paragraph-indent` and
+    `paragraph-outdent` outside a list: changepage's `adjustwidth`, Word's steps of 1.27 cm (memoir
+    has it built in). *The Paragraph dialog* (Paragraph Settings, the right click menu, Line Spacing
+    Options…): Indents and Spacing (alignment, direction where a right to left language is set up,
+    left and right, first line or hanging by `\noindent\hangindent=`, before and after, line
+    spacing Single to Multiple) and Line and Page Breaks (Widow/Orphan control as
+    `\widowpenalty=10000` and `\clubpenalty=10000`, Keep with next `\nopagebreak`, Keep lines
+    together `samepage`, Page break before `\clearpage`, Suppress line numbers lineno's
+    `nolinenumbers`, Don't hyphenate babel's `hyphenrules{nohyphenation}`), and the whole
+    document's line spacing, space between paragraphs and first line indent; OK writes what changed
+    as one step (each change applied to the text the one before wrote, the edits the difference of
+    the preamble and of the body). Tabs… puts a stop at the right margin with its leader at the
+    caret (`\hfill`, `\dotfill`, `\hrulefill`). *Shading* (tcolorbox, the colour picked last, the
+    picker for every colour; Word's standard colours are dvipsnames, given to xcolor before
+    tcolorbox loads it) and *Borders* (Bottom and Top as rules, Outside as a framed tcolorbox, No
+    Border, Horizontal Line as a paragraph of its own). *Show marks* (Ctrl+Shift+8, also View ›
+    Formatting marks): ¶ at each paragraph's and heading's end, ↵ at `\\`, → at a fill, the space of
+    a `\vspace`, drawn without taking room; kept as it was left. *Layout › Paragraph:* the spinbuttons
+    Indent Left, Indent Right (cm), Spacing Before, Spacing After (pt); folded, each opens the dialog
+    there. *Design › Paragraph Spacing:* Word's sets No Paragraph Space, Compact, Tight, Open, Relaxed,
+    Double as parskip (`skip=`) or the class's own (KOMA's `parskip=`, memoir's `\abnormalparskip`)
+    and setspace. Beamer: the document's spacing and parskip disabled with a reason. *The page* draws
+    it as TeX prints it (model rows: the spacing environments' stretch, adjustwidth's margins and
+    unindented first paragraph, tcolorbox's colour, padding and frame, samepage and `\nopagebreak` to
+    the page breaks, `\hangindent` and TeX's register assignments read and not shown as text, no
+    indent under an alignment declaration, parskip's `skip`, KOMA's option, memoir's commands, a
+    figure without `\centering` at the left margin, `\dotfill`'s dots). *Word:* a paragraph's style
+    named after its settings (Left Aligned, Line Spacing 1.5, Indent, Hanging, Keep With Next, Keep
+    Lines Together) and given their formatting; the document's line spacing in the defaults; a
+    Rikuy file comes back through its own source. Evidence: `npm test` green with
+    `para.test.mjs` (16 groups, on the real model) and a Word export case (`word.test.mjs` 56);
+    `para.py` 136 (with `dist/tex`: everything written compiles in the page, and TeX's PDF sets the
+    centred, right, adjustwidth, tcolorbox, leader, hanging and one and a half spaced words where
+    the page draws them; screenshots at 1920, 1366 and 390 px, light and dark); desktop pdfLaTeX,
+    XeLaTeX and LuaLaTeX compile every construct; `tabs.py` 116; `ribbon.py` 268; `agent.py` 139;
+    `browser.py` 189; `word.py` 110; `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py`
+    43/43; `pages_check.py` fits; the corpus model run 716 of 716. Home is wider by its Paragraph
+    group: at 1400 px its row has one Download button, the gallery gives way to the list below
+    about 1366 px, Insert folds at 1024 px and Paragraph at 860 px, by the one fold rule
+    (`tabs.py`, `ribbon.py` and `agent.py` check the order and the room, not those widths). The
+    security audit's quick profile (notes outside the repository) found five stalls a stranger's
+    document could cause, fixed with tests: runs of spaces after `\renewcommand`, `\setlength`,
+    `\parindent` or `\widowpenalty` made four patterns quadratic (20 000 spaces, 0.8 s at each move
+    of the caret; now linear), a pattern over the whole source for line numbers, a slice taken
+    again at each match, the block parsed again at each move, and `\nopagebreak` read quadratically
+    by the model. Not done: Word import of a foreign `.docx`'s left alignment, line spacing and
+    indents (they come in as plain paragraphs; center and right did and do); tab stops at a
+    position (`tabbing`) beyond the right margin's leader; the page drawing `\hfill` to the
+    margin (TeX does; the page leaves a gap); keep with next and widows weighed by the page's own
+    page breaks beyond `\nopagebreak` and samepage; spaces shown as dots by Show marks, and
+    `\label` and `%` lines as marks (they draw nothing on the page to hang a mark on); Distributed
+    (H43, SKIP); Move paragraph up and down (H58) is B5's Alt+Shift+Up and Down, already done.
 41. **B3, lists as in Word.** Done in the code (branch `wordgap-b3-lists`, on task 38's frame and
     B5's fold rule; GAP rows H32 to H38, H39 in lists, H40, A3, and task 29's labelled item).
     *Levels.* Tab and Shift+Tab in a list item (not in a table cell, whose keys they stay), and

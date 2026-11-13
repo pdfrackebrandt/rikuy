@@ -178,7 +178,12 @@ def widths(page):
           and all(not seen[w]['over'] and seen[w]['folded'] == ['insert'] and seen[w]['ico'] == ['insert'] for w in (1400, 1024)) and not seen[860]['over'] and seen[860]['folded'] == ['insert', 'editing'] and seen[860]['ico'] == ['insert', 'editing'], seen)
     check('at 860 and 390 px the tabs are the combobox "Ribbon tab" at the row\'s start, in one row that scrolls sideways on a phone', all(not seen[w]['tabs'] and seen[w]['sel'] and seen[w]['h'] <= 44 and seen[w]['page'] <= 0 for w in (860, 390)) and seen[390]['over'], seen)
     # (the three go before any group folds: they take two controls, Editing three)
-    check('the downloads: three at 1400 px; one Download menu where the row has no room for three (1024 px, beside Editing, and 860 px), and on a phone', seen[1400]['dl'] == ['rb-pdf', 'rb-word', 'b-save'] and all(seen[w]['dl'] == ['rb-dl-menu'] for w in (1024, 860, 390)) and not seen[860]['over'], {w: seen[w]['dl'] for w in seen})
+    # (B2: Home's row at 1400 px has no room for the three, Insert's has)
+    page.set_viewport_size({'width': 1400, 'height': 900}); page.wait_for_timeout(300)
+    open_tab(page, 'Insert'); page.wait_for_timeout(200)
+    ins = page.evaluate('[...document.querySelectorAll(".rb-dl button")].filter((x) => x.offsetParent).map((x) => x.id)')
+    open_tab(page, 'Home'); page.set_viewport_size({'width': 390, 'height': 900}); page.wait_for_timeout(300)
+    check('the downloads: three where the row has room (Insert at 1400 px); one Download menu where it has not (Home at 1400, 1024 and 860 px), and on a phone', ins == ['rb-pdf', 'rb-word', 'b-save'] and all(seen[w]['dl'] == ['rb-dl-menu'] for w in (1400, 1024, 860, 390)) and not seen[860]['over'], (ins, {w: seen[w]['dl'] for w in seen}))
     page.set_viewport_size({'width': 390, 'height': 900}); page.wait_for_timeout(300)
     page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label='Insert'); page.wait_for_timeout(200)
     check('on a phone the combobox opens a tab: Insert\'s Picture is there by its name', page.get_by_role('tabpanel', name='Insert', exact=True).get_by_role('button', name='Picture', exact=True).is_visible())
@@ -538,7 +543,7 @@ SWEEP = """() => { const app = window.rikuy, rb = document.getElementById('ribbo
     app.ribbonFit(); rb.scrollLeft = 0;
     let n = 0;
     // (the gallery's tiles count, its paging arrows and More do not: they are its own way about)
-    for (const x of P.querySelectorAll('button, select')) if (x.offsetParent && (!gal.contains(x) || x.dataset.style) && x.getBoundingClientRect().right <= innerWidth + 1) n++;
+    for (const x of P.querySelectorAll('button, select, input')) if (x.offsetParent && (!gal.contains(x) || x.dataset.style) && x.getBoundingClientRect().right <= innerWidth + 1) n++;
     const folded = [...P.querySelectorAll('.rb-grp.folded')], wasted = [];
     for (const g of folded) { const c = [...g.classList]; g.classList.remove('folded', 'ico'); if (fits()) wasted.push(g.dataset.group); g.className = c.join(' '); }
     out[id] = { n, over: !fits(), folded: folded.map((g) => g.dataset.group), wasted };

@@ -8,6 +8,7 @@ import { isBalanced } from './parser.js';
 import { safeUrl } from './wordast.js';
 import { scriptNeeds, scriptLines, scriptSetup, otherDirection, INDIC, MORE } from './scripts.js';
 import { pageDocx, pageLatex, relsMap } from './wordpage.js';
+import { docSpacing } from './parasrc.js';
 
 // pandoc's messages worth telling the user: the ones that say something was lost
 const said = (ws) => (ws || []).filter((w) => w.verbosity && w.verbosity !== 'INFO').map((w) => w.pretty || w.type).slice(0, 20);
@@ -28,7 +29,7 @@ export function exportDocx(P, req) {
   const r = P.convert(opts, JSON.stringify(req.doc), req.resources || {});
   if (!r.files['out.docx']) throw new Error('pandoc wrote no Word file: ' + (r.stderr || '').trim().slice(0, 300));
   const mainTex = (req.project.files.find(([f]) => f === req.project.main) || [])[1];
-  const made = styled(r.files['out.docx'], !!(req.doc.meta && req.doc.meta.dir && req.doc.meta.dir.c === 'rtl'), typeof mainTex === 'string' ? scriptSetup(mainTex) : {});
+  const made = styled(r.files['out.docx'], !!(req.doc.meta && req.doc.meta.dir && req.doc.meta.dir.c === 'rtl'), typeof mainTex === 'string' ? { ...scriptSetup(mainTex), mainTex } : {});
   // the page's set up: paper, margins, columns, headers and footers (src/wordpage.js)
   const docx = req.page ? zip(pageDocx(unzip(made), req.page)) : made;
   // what Word got, block by block, lined up with what the page showed
@@ -225,6 +226,10 @@ function styled(docx, rtl, have) {
     n++;
     return head + '<w:rPr>' + r + '</w:rPr>' + end;
   });
+  // (B2) the paragraph styles named after their settings (src/wordast.js, paraStyle), and the
+  // document's line spacing (setspace's or memoir's, in the main file's preamble) as Word's default
+  const s1 = paraStyles(st, lineOf(mainTexOf(have)));
+  if (s1 !== st) { st = s1; n++; }
   if (!n) return docx;
   parts.set(p, st);
   return zip(parts);
@@ -246,6 +251,53 @@ function highlights(xml) {
     const at = k < 0 ? inner.length : k;
     return '<w:rPr>' + inner.slice(0, at) + '<w:highlight w:val="' + name + '" />' + inner.slice(at) + '</w:rPr>';
   });
+}
+// the w:spacing of a line spacing: { lines: 1.5 } is Word's 1.5 lines (360), a multiple x is 240 x
+const lineXml = (x) => '<w:spacing w:line="' + Math.round(240 * x) + '" w:lineRule="auto" />';
+function lineOf(tex) {
+  if (!tex) return null;
+  const d = docSpacing(tex);
+  if (!d) return null;
+  return d.v.lines ? (d.v.lines === 1 ? null : d.v.lines) : d.v.multiple;
+}
+const mainTexOf = (have) => (have && have.mainTex) || null;
+// Each style whose name is made of paraStyle's parts gets the formatting the parts say; the
+// document's line spacing goes in its paragraphs' defaults
+export function paraStyles(st, line) {
+  const TW = (cm) => Math.round(parseFloat(cm) * 567);
+  st = st.replace(/(<w:style [^>]*>)((?:(?!<\/w:style>)[\s\S])*?)(<\/w:style>)/g, (all, head, inner, end) => {
+    const nm = /<w:name w:val="([^"]{1,200})"/.exec(inner);
+    if (!nm || /<w:pPr>/.test(inner)) return all;
+    const parts = nm[1].split(', ');
+    const known = /^(Centred|Right Aligned|Left Aligned|Line Spacing [\d.]{1,6}|Indent -?[\d.]{1,6}cm -?[\d.]{1,6}cm|Hanging [\d.]{1,6}cm|Keep With Next|Keep Lines Together)$/;
+    // (Centred and Right Aligned alone have theirs already, by their ids)
+    if (parts.length < 2 && !/^(Left Aligned|Line Spacing|Indent|Hanging|Keep)/.test(parts[0])) return all;
+    if (!parts.every((x) => known.test(x))) return all;
+    let p = '';
+    if (parts.includes('Keep With Next')) p += '<w:keepNext />';
+    if (parts.includes('Keep Lines Together')) p += '<w:keepLines />';
+    const ls = parts.find((x) => x.startsWith('Line Spacing '));
+    if (ls) p += lineXml(parseFloat(ls.slice(13)));
+    const ind = parts.find((x) => x.startsWith('Indent ')), hg = parts.find((x) => x.startsWith('Hanging '));
+    if (ind || hg) {
+      const [l, r] = ind ? ind.slice(7).split(' ') : ['0cm', '0cm'];
+      const h = hg ? TW(hg.slice(8)) : 0;
+      p += '<w:ind w:left="' + (TW(l) + h) + '" w:right="' + TW(r) + '"' + (h ? ' w:hanging="' + h + '"' : '') + ' />';
+    }
+    const jc = parts.includes('Centred') ? 'center' : parts.includes('Right Aligned') ? 'right' : parts.includes('Left Aligned') ? 'left' : null;
+    if (jc) p += '<w:jc w:val="' + jc + '" />';
+    return p ? head + inner + '<w:pPr>' + p + '</w:pPr>' + end : all;
+  });
+  if (line) {
+    // (the defaults' paragraph properties: their spacing gains the line, or one is added)
+    st = st.replace(/<w:pPrDefault>\s*<w:pPr>([\s\S]{0,2000}?)<\/w:pPr>/, (all, inner) => {
+      const sp = /<w:spacing\b[^>]*\/>/.exec(inner);
+      const now = sp ? attrSet(attrSet(sp[0], 'w:line', String(Math.round(240 * line))), 'w:lineRule', 'auto') : lineXml(line);
+      return '<w:pPrDefault><w:pPr>' + (sp ? inner.replace(sp[0], now) : now + inner) + '</w:pPr>';
+    });
+    if (!/<w:pPrDefault>/.test(st)) st = st.replace(/<w:docDefaults>/, '<w:docDefaults><w:pPrDefault><w:pPr>' + lineXml(line) + '</w:pPr></w:pPrDefault>');
+  }
+  return st;
 }
 
 // w:bidiVisual on each table of document.xml whose paragraphs all carry w:bidi
