@@ -1169,12 +1169,15 @@ Tests:
     `frame-src blob:`, which the page refuses on purpose (`src/widget.js`), so it is not used;
     columns leave room for their footnotes. *Security:* the quick profile on the changed files
     found two more stalls of the same kind (the caret's paragraph read for Ctrl+Enter, a preamble
-    of thousands of `\fancypagestyle` lines), bounded, with tests. Evidence: `npm test` green
-    (`page` 25 groups, `preamble` 18, `word` 56), `test/page.py` 115 (19 of them compiled in the
-    page), `tabs.py` 104, `agent.py` 132, `ribbon.py` 267, `browser.py` 189, `word.py` 111,
-    `scripts.py` 302, `widgets.py` 60, `stress.py` 9, `features.py` 36, `share.py` 46,
-    `history.py` 39/39, `paste.py` 25, `files.py` 68, `offline.py` 54/54, `launch.py` 18/18,
-    `deploy_check.py` 43/43, `pages_check.py` fits, actionlint clean, the corpus 716 of 716.
+    of thousands of `\fancypagestyle` lines), bounded, with tests. Evidence, on main with task
+    43 (B5) merged: `npm test` green (`page` 25 groups, `preamble` 18, `word` 56, `find` 25),
+    `test/page.py` 115 (19 of them compiled in the page), `tabs.py` 116 (B5's fold sweep from 390
+    to 1920 px on every tab, Layout, Design, File and Header & Footer with B6's commands among
+    them), `agent.py` 138, `ribbon.py` 268, `browser.py` 189, `word.py` 111, `scripts.py` 302,
+    `widgets.py` 60, `stress.py` 9, `features.py` 36, `find.py` 76, `outline.py` 59, `share.py`
+    46, `history.py` 39/39, `paste.py` 25, `files.py` 68, `offline.py` 54/54, `launch.py`
+    18/18, `deploy_check.py` 43/43, `pages_check.py` fits, actionlint clean, the corpus 716 of
+    716.
 
 ## Open tasks
 
