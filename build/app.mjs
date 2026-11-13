@@ -332,8 +332,15 @@ and name, not by position.
   "Zoom: 120%"), "Zoom in", "Source" (the LaTeX beside the page), "Help". A narrow window hides
   some of them; the side panel that "Outline and problems" opens then has them all as menu
   items of the same names, in a menu named "Actions".
-- The toolbar under it: a combobox "Style of this paragraph" (Normal text, Title, Heading 1 to
-  3), and the buttons "Bold", "Italic", "Underline", "Bulleted list", "Numbered list",
+- The toolbar under it starts with the paragraph's style. A wide window has a group "Styles"
+  of buttons, one for each style: "Normal", "Heading 1", "Heading 2", "Heading 3", "LaTeX
+  source" (the paragraph shown and typed as its LaTeX source, see llms-full.txt), "Quote", and
+  "Title" while the caret is in the title. The pressed one is the style of the paragraph the
+  caret is in; one that cannot apply there is disabled (aria-disabled; its title says why).
+  Where not all fit, "Previous styles" and "Next styles" page through them; "More styles" opens
+  a menu "Styles" with all of them as menu items of the same names. A narrow window has instead
+  a combobox "Style of this paragraph" (Normal text, Title, Heading 1 to 3, LaTeX, Quote).
+- Then the buttons "Bold", "Italic", "Underline", "Bulleted list", "Numbered list",
   "Formula" (math in the line), "Equation" (numbered, on a line of its own), "Table",
   "Picture", "Footnote", "Citation", "Link".
 - Download offers PDF, Word and LaTeX. A wide window has the buttons "Download PDF", "Download
@@ -415,6 +422,33 @@ Ctrl is Cmd on a Mac.
 - Click math, a citation or a cross reference to edit it; Alt+click shows that spot in the source
 - In an equation: names as in LaTeX or Word (\\alpha then Space), a/b for a fraction, x^2 and
   x_i, Space to step out, Tab to the next empty slot, Enter to finish
+
+## LaTeX paragraphs
+
+A paragraph can be kept as LaTeX: the page shows it as its own source, in a box headed LaTeX,
+and what is typed there goes into the .tex as it is, with nothing escaped. The style "LaTeX
+source" makes one; "Normal" makes it a typeset paragraph again. In the file, such a paragraph has a
+comment line of its own just before it, exactly
+
+    % rikuy: latex
+
+(spaces around the words may vary; small letters), and runs from the next line to the next
+blank line, or to the end of the text it is in (\\end{document}, the end of an \\input file). The
+line after the mark must not be blank, and the mark must start a paragraph: after a blank line,
+a heading, an environment, or at the start of the text. Under a line of text it is a comment
+inside that paragraph, as TeX reads it, and marks nothing. It counts in the document's body, in
+files it \\inputs, and in the environments whose paragraphs are the body's own: language and
+direction ones (otherlanguage, RTL, LTR, polyglossia's language environments, CJK) and
+subequations; not inside any other environment, nor in a macro. TeX reads the line as a
+comment, so the file compiles anywhere, and to the same PDF, with or without it; an agent may
+add or remove the line with rikuy.api.setSource. Inside the box Enter starts a new line of the
+same paragraph; Enter twice is the blank line that ends it. A Word file shows the paragraph as
+code; what a coauthor changes there comes back as a comment, not as an edit.
+
+    % rikuy: latex
+    \\begin{tabular}{ll}
+      a & b \\\\
+    \\end{tabular}
 
 ## Engines and programs
 

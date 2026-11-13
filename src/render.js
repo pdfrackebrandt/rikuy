@@ -300,6 +300,23 @@ export class Renderer {
         item.sbEm = 0.6;
         break;
       }
+      case 'tex': {
+        // A LaTeX paragraph (src/styles.js): its source as text to type in, each character
+        // mapped to itself (App.texEdit writes what is typed as it is). Code runs left to right
+        // and is not spell checked, whatever the document's language; the box's "LaTeX" header
+        // is drawn by the style sheet, so it is never selected, copied or typed into.
+        el.classList.add('tex');
+        el.dataset.ctx = 'tex';
+        el.dir = 'ltr';
+        el.spellcheck = false;
+        el.setAttribute('role', 'paragraph');
+        el.setAttribute('aria-roledescription', 'LaTeX paragraph');
+        this.inl(it.inl, el);
+        B.tex = { is: this.rel(it.is), ie: this.rel(it.ie), para: !!it.para, nest: it.nest.map(([s, e]) => [this.rel(s), this.rel(e)]) };
+        item.splittable = true;
+        item.sbEm = 0.6;
+        break;
+      }
       case 'toc': {
         el.classList.add('toc');
         el.contentEditable = 'false';

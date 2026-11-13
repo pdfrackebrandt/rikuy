@@ -249,6 +249,8 @@ class Walker {
       case 'title': this.title(it, u); return [];
       case 'refs': return this.refs(it);
       case 'raw': return this.raw(it);
+      // a LaTeX paragraph goes as the page shows it, its source as code (src/styles.js)
+      case 'tex': return this.code(it, 'tex', it.ie);
       case 'toc': this.toc = true; return [];
       case 'pagebreak': return [{ t: 'RawBlock', c: ['openxml', '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'] }];
       case 'rule': return [{ t: 'HorizontalRule' }];
@@ -354,8 +356,25 @@ class Walker {
     return out;
   }
 
+  // Code (a LaTeX paragraph, a verbatim listing) as Word's Source Code paragraph, plain: a block
+  // of its own with a bookmark whose every character is read only, so what a coauthor changes in
+  // it comes back as a comment that says it was not applied, under its last line (at), and not
+  // as words written into the paragraph before it, which a code block without a bookmark of its
+  // own belongs to in Word.
+  code(it, kind, at) {
+    const inl = this.wrap(kind, it.f, null, null, () => {
+      const out = [];
+      it.text.split('\n').forEach((line, k) => {
+        if (k) { out.push({ t: 'LineBreak' }); this.ro('\n'); }
+        if (line) { out.push({ t: 'Code', c: [attr(), line] }); this.ro(line); }
+      });
+      return out;
+    }, { ins: at, dir: 'ltr' });
+    return [{ t: 'Div', c: [attr('', [], [['custom-style', 'Source Code']]), [{ t: 'Para', c: inl }]] }];
+  }
+
   raw(it) {
-    if (it.verb) return [{ t: 'CodeBlock', c: [attr(), it.text] }];
+    if (it.verb) return this.code(it, 'code', it.e);
     const pic = this.o.rasters && this.o.rasters.get(it.f + ':' + it.s);
     if (pic) {
       this.images.add(pic);

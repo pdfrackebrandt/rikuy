@@ -239,8 +239,9 @@ export class Layout {
       }
       // hyphen if split inside a word
       // (not between Chinese, Japanese or Korean characters, where a line may end anywhere, nor
-      // in Arabic, Hebrew or India's scripts, which take no hyphen)
-      if (p.node && p.i > 0 && HYPHENED.test(p.node.data[p.i - 1] || '') && HYPHENED.test((part.querySelector('span.t') || {}).textContent?.[0] || '')) {
+      // in Arabic, Hebrew or India's scripts, which take no hyphen, nor in a LaTeX paragraph's
+      // source, where a hyphen would read as a character of it)
+      if (p.node && p.i > 0 && !clone.classList.contains('tex') && HYPHENED.test(p.node.data[p.i - 1] || '') && HYPHENED.test((part.querySelector('span.t') || {}).textContent?.[0] || '')) {
         const h = document.createElement('span');
         h.className = 'chr hy';
         h.contentEditable = 'false';
