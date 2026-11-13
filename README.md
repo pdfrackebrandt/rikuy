@@ -1,10 +1,25 @@
-# Rikuy
+<div align="center">
+
+<p><picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.png">
+  <img src="docs/logo-light.png" alt="Rikuy" width="343">
+</picture></p>
+
+**Word, PDF and LaTeX in one.**
 
 [![Open Rikuy](https://img.shields.io/badge/open-rikuy.rackebrandt.pe-0B3D25)](https://rikuy.rackebrandt.pe/)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/pdfrackebrandt/rikuy?style=social)](https://github.com/pdfrackebrandt/rikuy/stargazers)
 
-**Word, PDF and LaTeX in one.** Type on the typeset page as in Word, get the PDF from real TeX
+[Open Rikuy](https://rikuy.rackebrandt.pe/) ·
+[How it works](docs/ARCHITECTURE.md) ·
+[Report a bug](https://github.com/pdfrackebrandt/rikuy/issues/new/choose) ·
+[Discussions](https://github.com/pdfrackebrandt/rikuy/discussions) ·
+[For AI agents](https://rikuy.rackebrandt.pe/llms.txt)
+
+</div>
+
+Type on the typeset page as in Word, get the PDF from real TeX
 Live, keep a clean `.tex` that Overleaf, Git and any TeX open. **Try it now at
 <https://rikuy.rackebrandt.pe/>**: no install, no account. If it helps you, a star here is how
 other people find it.

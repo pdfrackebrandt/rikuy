@@ -4,6 +4,9 @@ Thanks for taking the time. Bug reports with a document attached are the most us
 can send; pull requests are welcome too. A security problem goes by email or private report
 instead ([SECURITY.md](SECURITY.md)).
 
+Everyone who takes part, in issues, pull requests or discussions, keeps to the
+[code of conduct](CODE_OF_CONDUCT.md).
+
 ## Reporting a bug
 
 Open an issue with:

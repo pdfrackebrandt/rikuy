@@ -69,6 +69,7 @@ a command fails, trust the code and fix this file.
 | rebuild a program | `RIKUY_SRC=/tmp/src sh tex/build_tools.sh asy` (also `dvips`, `xindy`, `gnuplot`, `mesa`) | asy 10 min |
 | refresh the tools in `dist/tex` after a program changed | `python3 tex/build_tree.py tools && npm run build` | 1 min |
 | remake the page's fonts | `python3 build/fonts/subset.py` (fontTools) | 10 s |
+| redraw the app's icons; the README's logo, screenshot and GitHub's social preview (`docs/*.png`, after `npm run build`, and whenever the bar or the ribbon changes) | `python3 build/icons/make.py`; `python3 dev/readme_images.py` (Pillow) | 5 s each |
 | the corpus, and its PDFs against the desktop | `PLAN.md`, Building | 100 min |
 
 ## Where things go
