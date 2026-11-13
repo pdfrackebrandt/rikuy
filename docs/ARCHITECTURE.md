@@ -191,9 +191,14 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   line alone, LaTeX to Normal takes it alone away, Quote puts `\begin{quote}` and `\end{quote}`
   on lines around the words, a heading its command and braces; each way back restores the bytes.
   A heading or a quote is offered for a LaTeX paragraph only where its source is one paragraph
-  of text. The gallery (`paintGallery`) shows six tiles where the row has room, else five, four
-  or three (`ribbonFit` folds the insert buttons' names before it drops tiles; with fewer than
-  six LaTeX moves up to fourth), and the style list where three do not fit and on phones.
+  of text. The gallery (`paintGallery`) shows as many tiles as the row has room for, each as wide
+  as its name: `ribbonFit` drops tiles (six to three) before the insert buttons lose their names,
+  then the Download label, then the names, and puts the style list in its place where three do
+  not fit and on phones. LaTeX is always on the first page (`tileOrder`: Normal, Heading 1, LaTeX
+  for three). Pages of n tiles start every n and the last one is full (`pageStarts`); the row
+  keeps the width of its widest page, so the arrows do not move under the pointer, and it pages
+  to the caret's style when the caret moves to another block. A tile that cannot apply is
+  `aria-disabled` and keeps its tooltip, which says why (`WHY`).
 
 ## 3. Undo and redo
 

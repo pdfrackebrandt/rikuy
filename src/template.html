@@ -29,20 +29,18 @@
   <div id="ribbon" class="rb" role="toolbar" aria-label="Formatting, inserting and downloading">
     <div id="rb-gw" class="rb-gw">
       <div id="rb-gallery" class="rb-gal" role="group" aria-label="Styles">
+        <button id="rb-st-up" class="rb-sb rb-pg" type="button" data-rb="st-up" aria-label="Previous styles" title="Previous styles"><svg viewBox="0 0 8 12" aria-hidden="true"><path d="M5.5 2 1.5 6l4 4"/></svg></button>
         <div class="rb-tiles">
-          <button id="rb-st-p" class="rb-tile st-p" type="button" data-style="p" aria-pressed="false" aria-label="Normal" title="Normal: a paragraph of text"><span aria-hidden="true">Normal</span></button>
-          <button id="rb-st-title" class="rb-tile st-title" type="button" data-style="title" aria-pressed="false" aria-label="Title" title="Title: the document's title, from \title" hidden><span aria-hidden="true">Title</span></button>
-          <button id="rb-st-section" class="rb-tile st-section" type="button" data-style="section" aria-pressed="false" aria-label="Heading 1" title="Heading 1: a section"><span aria-hidden="true">Heading 1</span></button>
-          <button id="rb-st-subsection" class="rb-tile st-subsection" type="button" data-style="subsection" aria-pressed="false" aria-label="Heading 2" title="Heading 2: a subsection"><span aria-hidden="true">Heading 2</span></button>
-          <button id="rb-st-subsubsection" class="rb-tile st-subsubsection" type="button" data-style="subsubsection" aria-pressed="false" aria-label="Heading 3" title="Heading 3: a subsubsection"><span aria-hidden="true">Heading 3</span></button>
-          <button id="rb-st-latex" class="rb-tile st-latex" type="button" data-style="latex" aria-pressed="false" aria-label="LaTeX" title="LaTeX: the paragraph shown as its LaTeX source, and typed as it"><span class="tex-logo" aria-hidden="true">L<span class="tl-a">a</span>T<span class="tl-e">e</span>X</span></button>
-          <button id="rb-st-quote" class="rb-tile st-quote" type="button" data-style="quote" aria-pressed="false" aria-label="Quote" title="Quote: the paragraph set in from both sides"><span aria-hidden="true">Quote</span></button>
+          <button id="rb-st-p" class="rb-tile st-p" type="button" data-style="p" aria-pressed="false" aria-label="Normal" data-tip="Normal: a paragraph of text"><span aria-hidden="true">Normal</span></button>
+          <button id="rb-st-title" class="rb-tile st-title" type="button" data-style="title" aria-pressed="false" aria-label="Title" data-tip="Title: the document's title, from \title" hidden><span aria-hidden="true">Title</span></button>
+          <button id="rb-st-section" class="rb-tile st-section" type="button" data-style="section" aria-pressed="false" aria-label="Heading 1" data-tip="Heading 1: a section"><span aria-hidden="true">Heading 1</span></button>
+          <button id="rb-st-subsection" class="rb-tile st-subsection" type="button" data-style="subsection" aria-pressed="false" aria-label="Heading 2" data-tip="Heading 2: a subsection"><span aria-hidden="true">Heading 2</span></button>
+          <button id="rb-st-subsubsection" class="rb-tile st-subsubsection" type="button" data-style="subsubsection" aria-pressed="false" aria-label="Heading 3" data-tip="Heading 3: a subsubsection"><span aria-hidden="true">Heading 3</span></button>
+          <button id="rb-st-latex" class="rb-tile st-latex" type="button" data-style="latex" aria-pressed="false" aria-label="LaTeX source" data-tip="LaTeX source: shows the paragraph as LaTeX that you type directly, and puts the line % rikuy: latex before it in the file (TeX ignores it)"><span class="tex-logo" aria-hidden="true">L<span class="tl-a">a</span>T<span class="tl-e">e</span>X</span></button>
+          <button id="rb-st-quote" class="rb-tile st-quote" type="button" data-style="quote" aria-pressed="false" aria-label="Quote" data-tip="Quote: the paragraph set in from both sides"><span aria-hidden="true">Quote</span></button>
         </div>
-        <div class="rb-strip">
-          <button id="rb-st-up" class="rb-sb" type="button" data-rb="st-up" aria-label="Previous styles" title="Previous styles"><svg viewBox="0 0 10 6" aria-hidden="true"><path d="M1.5 4.8 5 1.3l3.5 3.5"/></svg></button>
-          <button id="rb-st-down" class="rb-sb" type="button" data-rb="st-down" aria-label="Next styles" title="Next styles"><svg viewBox="0 0 10 6" aria-hidden="true"><path d="M1.5 1.2 5 4.7l3.5-3.5"/></svg></button>
-          <button id="rb-st-more" class="rb-sb" type="button" data-rb="st-more" aria-haspopup="menu" aria-expanded="false" aria-label="More styles" title="All the styles"><svg viewBox="0 0 10 8" aria-hidden="true"><path d="M1.5 1.2h7M1.5 3.7 5 7.2l3.5-3.5"/></svg></button>
-        </div>
+        <button id="rb-st-down" class="rb-sb rb-pg" type="button" data-rb="st-down" aria-label="Next styles" title="Next styles"><svg viewBox="0 0 8 12" aria-hidden="true"><path d="M2.5 2l4 4-4 4"/></svg></button>
+        <button id="rb-st-more" class="rb-sb rb-more" type="button" data-rb="st-more" aria-haspopup="menu" aria-expanded="false" aria-label="More styles" title="All the styles"><svg viewBox="0 0 10 8" aria-hidden="true"><path d="M1.5 1.2h7M1.5 3.7 5 7.2l3.5-3.5"/></svg></button>
       </div>
       <span class="rb-cap" aria-hidden="true">Styles</span>
     </div>

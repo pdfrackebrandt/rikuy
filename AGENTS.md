@@ -52,7 +52,7 @@ a command fails, trust the code and fix this file.
 | serve `dist/` as the artifact host does | `npm run serve` (port 8790) | |
 | engines and shell escape in the page | `npm run test:engines` (40 checks) | 9 min |
 | typing on the page | `npm run test:browser` | 20 s (80 s on a busy machine) |
-| Rikuy as an AI agent meets it: `window.rikuy.api`, every control found by role and name at two widths, `#tex=` links, what llms.txt promises | `npm run test:agent` (117 checks with `dist/tex`, 116 without) | 1 min |
+| Rikuy as an AI agent meets it: `window.rikuy.api`, every control found by role and name at two widths, `#tex=` links, what llms.txt promises | `npm run test:agent` (118 checks with `dist/tex`, 117 without) | 1 min |
 | the installed app: offline, updates, one version at a time, none in the artifact build (and a compile offline where `dist/tex` exists) | `npm run test:offline` | 1 min |
 | opening `.tex`, `.bib` and `.zip` with the installed app (`launchQueue`), and files shared to it | `cd test && python3 launch.py` | 20 s |
 | serve `dist/` as Cloudflare Pages serves the hosted app (`index.html` as the page, `_headers`) | `npm run serve:app` (port 8791) | |

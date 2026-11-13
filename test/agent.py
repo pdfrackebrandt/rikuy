@@ -45,7 +45,7 @@ NAMES = {'b-nav': 'Outline and problems', 'b-open': 'Open', 'b-pdf': 'Preview', 
          'rb-pic': 'Picture', 'rb-fn': 'Footnote', 'rb-cite': 'Citation', 'rb-link': 'Link', 'rb-dl-menu': 'Download', 'rb-pdf': 'Download PDF',
          'rb-word': 'Download Word', 'b-save': 'Download LaTeX', 'b-new': 'New document', 'b-sample': 'Load the sample',
          # the Styles gallery a wide window has in the place of the style list
-         'rb-st-p': 'Normal', 'rb-st-section': 'Heading 1', 'rb-st-subsection': 'Heading 2', 'rb-st-subsubsection': 'Heading 3', 'rb-st-latex': 'LaTeX',
+         'rb-st-p': 'Normal', 'rb-st-section': 'Heading 1', 'rb-st-subsection': 'Heading 2', 'rb-st-subsubsection': 'Heading 3', 'rb-st-latex': 'LaTeX source',
          'rb-st-quote': 'Quote', 'rb-st-up': 'Previous styles', 'rb-st-down': 'Next styles', 'rb-st-more': 'More styles'}
 GALLERY = {i for i in NAMES if i.startswith('rb-st-')}
 ACTIONS = ['Download PDF', 'Download Word', 'Download LaTeX', 'Open', 'Preview', 'Copy source', 'Share', 'Undo', 'Redo', 'Zoom out', 'Fit width', 'Zoom in', 'Source', 'Help']
@@ -259,9 +259,14 @@ def names(page, width):
         role = 'combobox' if i == 'rb-style' else 'button'
         if page.get_by_role(role, name=name, exact=True).count() != 1:
             twice.append((name, page.get_by_role(role, name=name, exact=True).count()))
-    wide = set(NAMES) - {'rb-dl-menu', 'rb-style'}
+    # (the gallery shows as many of its tiles as the window has room for, and its paging arrows
+    # only where not all fit: Normal, LaTeX source and More styles are always there)
+    wide = set(NAMES) - {'rb-dl-menu', 'rb-style'} - GALLERY | ({i for i in GALLERY if i in seen} if {'rb-st-p', 'rb-st-latex', 'rb-st-more'} <= set(seen) else set())
     narrow = set(NAMES) - {'b-zout', 'b-zin', 'b-help', 'rb-pdf', 'rb-word', 'b-save'} - GALLERY
     check('every control in view has its one name, and no other control has it' + w, not wrong and not twice and set(seen) == (wide if width > 1000 else narrow), (wrong, twice, sorted(set(seen) ^ (wide if width > 1000 else narrow))))
+    if width > 1000:
+        loose = {NAMES[i]: page.get_by_role('button', name=NAMES[i]).count() for i in GALLERY if page.locator('#' + i).is_visible()}
+        check('each style button in view is found by its name also without exact matching ("LaTeX source", not "Download LaTeX")' + w, loose and all(v == 1 for v in loose.values()), loose)
     check('each keeps its longer hint as a title' + w, page.evaluate('(ids) => ids.every((i) => { const b = document.getElementById(i); return b.title.length > 3 && b.getAttribute("aria-label").length <= b.title.length + 12; })', [i for i in NAMES if i not in ('b-new', 'b-sample')]))
     check('no glyph is read as part of a name' + w, page.evaluate('''() => [...document.querySelectorAll('#bar svg, #ribbon svg, #ribbon b, #ribbon i, #ribbon u, #bubble b, #bubble i')].every((x) => x.getAttribute('aria-hidden') === 'true')'''))
     doc = page.get_by_role('textbox', name='Document', exact=True)
@@ -331,8 +336,15 @@ def five(page, width):
     paras.nth(pick('First paragraph')).click()
     if width > 1000:
         page.wait_for_timeout(150)
-        page.get_by_role('group', name='Styles', exact=True).get_by_role('button', name='Heading 2', exact=True).click()
-        how = 'the button "Heading 2" of the group "Styles"'
+        tile = page.get_by_role('group', name='Styles', exact=True).get_by_role('button', name='Heading 2', exact=True)
+        if tile.is_visible():
+            tile.click()
+            how = 'the button "Heading 2" of the group "Styles"'
+        else:
+            # (not among the tiles this width shows: the menu has every style)
+            page.get_by_role('button', name='More styles', exact=True).click()
+            page.get_by_role('menu', name='Styles', exact=True).get_by_role('menuitemradio', name='Heading 2', exact=True).click()
+            how = 'the menu item "Heading 2" of the menu "Styles" ("More styles")'
     else:
         page.get_by_label('Style of this paragraph', exact=True).select_option(label='Heading 2')
         how = 'the list labelled "Style of this paragraph"'

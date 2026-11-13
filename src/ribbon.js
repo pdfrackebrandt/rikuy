@@ -14,10 +14,37 @@ const $ = (s, r = document) => r.querySelector(s);
 const HEAD = /^\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)(\*?)\s*(\[[^\]]*\])?\s*\{/;
 const STYLES = { textbf: ['textbf', 'bf', 'bfseries'], emph: ['emph', 'textit', 'it', 'itshape'], underline: ['underline', 'uline'] };
 const HEADS = ['section', 'subsection', 'subsubsection'];
-// The Styles gallery's order. With fewer than six tiles in view LaTeX moves up to the fourth, so
-// it stays in sight on a desktop's screen; the list behind More keeps the first order.
+// The Styles gallery's order, the one the list behind More keeps
 const ORDER = ['p', 'title', 'section', 'subsection', 'subsubsection', 'latex', 'quote'];
-const SHORT = ['p', 'title', 'section', 'subsection', 'latex', 'subsubsection', 'quote'];
+// The tiles in their order for n in view: LaTeX moves up to the last place of the first page
+// where it would not be on it (Normal, Heading 1, LaTeX for three)
+function tileOrder(n, title) {
+  const list = ORDER.filter((v) => v !== 'title' || title), i = list.indexOf('latex');
+  if (i >= n) list.splice(n - 1, 0, ...list.splice(i, 1));
+  return list;
+}
+// where the pages of n tiles start: every n, the last one full (it shows the last n styles), so
+// paging never changes how many tiles there are
+function pageStarts(len, n) {
+  const out = [];
+  for (let k = 0; k < len - n; k += n) out.push(k);
+  out.push(Math.max(0, len - n));
+  return out;
+}
+// a control the toolbar's arrows skip: disabled, or a tile that cannot apply here (those keep
+// their tooltip, which says why)
+const isOff = (x) => x.disabled || x.getAttribute('aria-disabled') === 'true';
+// why a tile cannot apply where the caret is (its tooltip says so)
+const WHY = {
+  none: 'Click in the text of the page first.',
+  multi: 'Not for a selection over several paragraphs.',
+  title: 'The title is the one \\title sets: edit its words where they stand.',
+  part: 'Not for one part of a list, a table or a theorem: LaTeX takes it as a whole.',
+  latex: 'Not here: a LaTeX paragraph stands on lines of its own and ends at a blank line, and this one has text right before or after it.',
+  head: 'Not here: a heading holds one paragraph of plain text, with no footnote, display, list or environment.',
+  quote: 'Not here: a quote holds one paragraph of text.',
+  line: 'Not on a line to come in a LaTeX paragraph: type it first.'
+};
 const LIVE_NOTE = 'Graphs are pictures in a PDF or Word file. Download LaTeX to keep them live.';
 
 export const ribbon = {
@@ -69,14 +96,14 @@ export const ribbon = {
     const { c, it, B } = at, none = new Set();
     if (c.ghost) {
       // a line to come in a LaTeX paragraph keeps its paragraph's style
-      if (this.ghost.tex) return { v: 'latex', to: none };
+      if (this.ghost.tex) return { v: 'latex', to: none, why: WHY.line };
       return { v: this.ghost.style || 'p', to: new Set(['p', ...HEADS, 'latex', 'quote']) };
     }
     if (!it || !B) return { v: '', to: none };
     const ctx = it.dataset.ctx;
     // a selection that runs over several paragraphs: the list would change only the first
-    if (at.multi) return { v: ctx === 'p' ? 'p' : ctx === 'tex' ? 'latex' : '', to: none };
-    if (ctx === 'ttl') return { v: 'title', to: none };
+    if (at.multi) return { v: ctx === 'p' ? 'p' : ctx === 'tex' ? 'latex' : '', to: none, why: WHY.multi };
+    if (ctx === 'ttl') return { v: 'title', to: none, why: WHY.title };
     const src = this.src(B.f);
     if (ctx === 'tex') {
       // back to what its source makes; a heading or a quote only of what is one paragraph of text
@@ -344,7 +371,7 @@ export const ribbon = {
     else if (act === 'url') this.insertEmpty('\\url{', '}');
     else if (act === 'cite') this.insertCite();
     else if (act === 'dl-menu') this.openDownloads();
-    else if (act === 'st-up' || act === 'st-down') { this.rbStart = Math.max(0, (this.rbStart || 0) + (act === 'st-up' ? -1 : 1) * (this.rbTiles || 6)); this.paintGallery(); }
+    else if (act === 'st-up' || act === 'st-down') { this.pageGallery(act === 'st-up' ? -1 : 1); return; }
     else if (act === 'st-more') { this.openStyles(); return; }
     else if (act === 'dl-tex') await this.save();
     // (the note only once a file was made: on a copy without Word the notice about that stays)
@@ -361,6 +388,9 @@ export const ribbon = {
     this.dropEmpty();
     const at = this.ribbonAt(), st = at ? this.blockStyle(at) : { v: 'p', to: new Set() };
     this.rbStyle = { ...st, on: !!at };
+    // a caret in another block (or the block's style changed): the gallery pages to its style
+    const key = at ? (at.B ? at.B.id : at.c.ghost ? 'ghost' : '') + '|' + st.v : '';
+    if (key !== this.rbKey) { this.rbKey = key; this.rbFollow = true; }
     const sel = $('#rb-style');
     for (const o of sel.options) {
       if (o.value === 'title') o.hidden = o.disabled = st.v !== 'title';
@@ -396,50 +426,94 @@ export const ribbon = {
   },
 
   // The Styles gallery: the tiles of the styles there are here (Title only in the title), as
-  // many as the row has room for (ribbonFit), from the one the arrows paged to; the current
-  // style's tile pressed, those that cannot apply here disabled.
+  // many as the row has room for (ribbonFit), from the page the arrows paged to or the one with
+  // the caret's style; the current style's tile pressed, those that cannot apply here marked so,
+  // with the reason in their tooltip. The row keeps one width while it pages, the width of its
+  // widest page: a toolbar that moved under the mouse sent a second click to another button.
   paintGallery() {
     const gal = $('#rb-gallery');
     if (!gal) return;
     const st = this.rbStyle || { v: 'p', to: new Set(), on: false }, n = this.rbTiles || 6;
-    const list = (n < 6 ? SHORT : ORDER).filter((v) => v !== 'title' || st.v === 'title');
-    // (fourth also with the title's tile among them)
-    if (n < 6 && list.indexOf('latex') > 3) list.splice(3, 0, ...list.splice(list.indexOf('latex'), 1));
-    const start = this.rbStart = Math.max(0, Math.min(this.rbStart || 0, Math.ceil(list.length / n) * n - n));
+    const list = tileOrder(n, st.v === 'title'), starts = pageStarts(list.length, n);
+    let start = Math.min(this.rbStart || 0, starts[starts.length - 1]);
+    if (!starts.includes(start)) start = starts.filter((x) => x <= start).pop();
+    const at = list.indexOf(st.v);
+    if (this.rbFollow && at >= 0 && (at < start || at >= start + n)) start = starts.filter((x) => x <= at).pop();
+    this.rbFollow = false;
+    this.rbStart = start;
     const view = list.slice(start, start + n), row = gal.querySelector('.rb-tiles');
     // the tiles stand in the order they are seen in, which the arrow keys follow
-    const now = [...row.children].map((b) => b.dataset.style).join();
-    if (now !== list.join() + (list.includes('title') ? '' : ',title')) { for (const v of list) row.append($('#rb-st-' + v)); if (!list.includes('title')) row.append($('#rb-st-title')); }
+    const order = list.join() + (list.includes('title') ? '' : ',title');
+    if ([...row.children].map((b) => b.dataset.style).join() !== order) { for (const v of list) row.append($('#rb-st-' + v)); if (!list.includes('title')) row.append($('#rb-st-title')); }
     for (const b of row.children) {
-      const v = b.dataset.style;
+      const v = b.dataset.style, can = st.on && (st.to.has(v) || (v === st.v && st.to.size > 0));
       b.hidden = !view.includes(v);
       b.setAttribute('aria-pressed', v === st.v ? 'true' : 'false');
-      b.disabled = !st.on || !(st.to.has(v) || (v === st.v && st.to.size));
+      if (can) b.removeAttribute('aria-disabled'); else b.setAttribute('aria-disabled', 'true');
+      b.title = b.dataset.tip + (can || v === st.v ? '' : '\n' + this.whyNot(st, v));
     }
-    $('#rb-st-up').disabled = start === 0;
-    $('#rb-st-down').disabled = start + n >= list.length;
+    const W = this.rbW;
+    if (W) row.style.width = Math.max(...starts.map((k) => list.slice(k, k + n).reduce((sum, v) => sum + W[v], 0))) + 2 * (n - 1) + 'px';
+    // the arrows only where there is more than one page
+    const paged = starts.length > 1;
+    if (gal.classList.contains('paged') !== paged) { gal.classList.toggle('paged', paged); if (!this.rbFitting) requestAnimationFrame(() => this.ribbonFit()); }
+    $('#rb-st-up').disabled = !paged || start === starts[0];
+    $('#rb-st-down').disabled = !paged || start === starts[starts.length - 1];
+  },
+  whyNot(st, v) {
+    if (!st.on) return WHY.none;
+    if (st.why) return st.why;
+    if (st.v === '') return v === 'latex' ? WHY.latex : WHY.part;
+    return v === 'latex' ? WHY.latex : v === 'quote' ? WHY.quote : HEADS.includes(v) ? WHY.head : WHY.part;
+  },
+  // the arrows page by n tiles; from the keyboard the focus stays on the strip: an arrow that has
+  // reached its end hands it to the other one (it fell to the page's body)
+  pageGallery(dir) {
+    const st = this.rbStyle || { v: 'p' }, n = this.rbTiles || 6, starts = pageStarts(tileOrder(n, st.v === 'title').length, n);
+    const cur = this.rbStart || 0;
+    this.rbStart = dir < 0 ? starts.filter((x) => x < cur).pop() ?? starts[0] : starts.find((x) => x > cur) ?? starts[starts.length - 1];
+    this.paintGallery();
+    const a = document.activeElement;
+    if (a && a.closest && a.closest('.rb-gal') && isOff(a)) {
+      const to = [$(dir < 0 ? '#rb-st-down' : '#rb-st-up'), ...$('#rb-gallery').querySelectorAll('[data-style]:not([hidden])')].find((x) => x.offsetParent && !isOff(x)) || $('#rb-st-more');
+      this.ribbonRove(to);
+      to.focus();
+    } else this.ribbonRove();
   },
 
-  // The row's room: six tiles with the insert buttons' names, else six with their icons alone
-  // (the names take more room than three tiles), then five, four and three tiles; where three do
-  // not fit, the style list takes the gallery's place. Narrower is never more.
+  // The row's room. As Word's gallery does, it shrinks before the other groups fold: six tiles
+  // with the insert buttons' names, else five, four or three (LaTeX still in sight), then the same
+  // without the Download label; then the names fold and the gallery has six again, down to three;
+  // where three do not fit, the style list takes its place. Each tile is as wide as its name,
+  // measured here once its fonts are drawn.
   ribbonFit() {
     const rb = $('#ribbon'), gw = $('#rb-gw');
     if (!rb || !gw) return;
-    const set = (narrow, fold, n) => {
-      rb.classList.toggle('rb-narrow', narrow); rb.classList.toggle('rb-fold', fold);
-      if (n !== this.rbTiles) { this.rbTiles = n; this.rbStart = 0; }
+    this.rbFitting = true;
+    const set = (narrow, fold, n, nolab) => {
+      rb.classList.toggle('rb-narrow', narrow); rb.classList.toggle('rb-fold', fold); rb.classList.toggle('rb-nolab', !!nolab);
+      if (n !== this.rbTiles) { this.rbTiles = n; this.rbFollow = true; }
       this.paintGallery();
     };
     rb.classList.remove('rb-narrow');
     // (a phone's width has the list whatever the room: the style sheet hides the gallery there)
-    if (getComputedStyle(gw).display !== 'none') {
-      for (const [fold, n] of [[false, 6], [true, 6], [true, 5], [true, 4], [true, 3]]) {
-        set(false, fold, n);
-        if (rb.scrollWidth <= rb.clientWidth + 1) { this.ribbonRove(); return; }
+    const wide = getComputedStyle(gw).display !== 'none';
+    if (wide) {
+      const row = $('#rb-gallery .rb-tiles'), tiles = [...row.children], was = tiles.map((b) => b.hidden);
+      row.style.width = '';
+      for (const b of tiles) b.hidden = false;
+      this.rbW = Object.fromEntries(tiles.map((b) => [b.dataset.style, b.getBoundingClientRect().width]));
+      tiles.forEach((b, k) => { b.hidden = was[k]; });
+      for (const [fold, n, nolab] of [[false, 6], [false, 5], [false, 4], [false, 3], [false, 4, 1], [false, 3, 1], [true, 6], [true, 5], [true, 4], [true, 3]]) {
+        set(false, fold, n, nolab);
+        if (rb.scrollWidth <= rb.clientWidth + 1) { this.rbFitting = false; this.ribbonRove(); return; }
       }
     }
     set(true, true, 6);
+    // (the list's row too goes without the Download label where it is longer than the window, as
+    // between 861 and 900 px; a phone's row scrolls as it did)
+    if (wide && rb.scrollWidth > rb.clientWidth + 1) set(true, true, 6, 1);
+    this.rbFitting = false;
     this.ribbonRove();
   },
 
@@ -448,9 +522,11 @@ export const ribbon = {
     const more = $('#rb-st-more'), st = this.rbStyle || { v: 'p', to: new Set(), on: false };
     const s = getSelection();
     if (s.rangeCount && this.root.contains(s.anchorNode)) this.rbRange = s.getRangeAt(0).cloneRange();
-    const p = this.makePop(more, 'pop-dl pop-styles', 'Styles');
+    // a menu named Styles, of the styles alone (no heading or close button among its items:
+    // Escape and a press elsewhere close it)
+    const p = this.makePop(more, 'pop-dl pop-styles', null);
     p.setAttribute('role', 'menu');
-    p.querySelector('.pop-x').setAttribute('role', 'menuitem');
+    p.setAttribute('aria-label', 'Styles');
     this.menuKeys(p);
     more.setAttribute('aria-expanded', 'true');
     this.pop.onClose = () => more.setAttribute('aria-expanded', 'false');
@@ -459,15 +535,15 @@ export const ribbon = {
       const tile = $('#rb-st-' + v), a = document.createElement('button');
       a.type = 'button'; a.className = 'rb-mi st-' + v; a.setAttribute('role', 'menuitemradio');
       a.setAttribute('aria-checked', v === st.v ? 'true' : 'false'); a.setAttribute('aria-label', tile.getAttribute('aria-label')); a.title = tile.title;
-      a.disabled = !st.on || !(st.to.has(v) || (v === st.v && st.to.size));
+      if (tile.getAttribute('aria-disabled') === 'true') a.setAttribute('aria-disabled', 'true');
       a.append(tile.firstElementChild.cloneNode(true));
       // (a press keeps the caret on the page; the keyboard's Enter comes as a click)
       a.addEventListener('mousedown', (e) => e.preventDefault());
-      a.addEventListener('click', () => { this.closePop(true); this.ribbonBack(); this.setBlockStyle(v); this.ribbonSync(); });
+      a.addEventListener('click', () => { if (isOff(a)) return; this.closePop(true); this.ribbonBack(); this.setBlockStyle(v); this.ribbonSync(); });
       p.append(a);
     }
     this.positionPop();
-    const first = p.querySelector('[aria-checked="true"]:not(:disabled)') || p.querySelector('[role=menuitemradio]:not(:disabled)');
+    const first = p.querySelector('[aria-checked="true"]:not([aria-disabled])') || p.querySelector('[role=menuitemradio]:not([aria-disabled])');
     if (first) first.focus();
   },
 
@@ -486,7 +562,7 @@ export const ribbon = {
     // (of the controls this width shows: a phone has one Download button, a wider screen the three)
     const every = [...$('#ribbon').querySelectorAll('select, button')], all = every.filter((x) => x.offsetParent !== null);
     if (to) this.rbStop = to;
-    const cur = this.rbStop && !this.rbStop.disabled && all.includes(this.rbStop) ? this.rbStop : all.find((x) => !x.disabled);
+    const cur = this.rbStop && !isOff(this.rbStop) && all.includes(this.rbStop) ? this.rbStop : all.find((x) => !isOff(x));
     for (const x of every) x.tabIndex = x === cur ? 0 : -1;
     return all;
   }
@@ -505,7 +581,13 @@ export function installRibbon(app) {
   rb.addEventListener('mousedown', (e) => { if (!e.target.closest('select')) e.preventDefault(); });
   rb.addEventListener('click', (e) => {
     const t = e.target.closest('button[data-style]');
-    if (t && !t.disabled) { app.setBlockStyle(t.dataset.style); app.ribbonSync(); return; }
+    if (t) {
+      // (one that cannot apply here does nothing: it stays in reach of the pointer for its tooltip)
+      if (!isOff(t)) { app.setBlockStyle(t.dataset.style); app.ribbonSync(); }
+      // from the keyboard the focus goes back to the caret, also where nothing changed
+      if (document.activeElement === t) app.ribbonBack();
+      return;
+    }
     const b = e.target.closest('button[data-rb]');
     if (b && !b.disabled) app.ribbonDo(b.dataset.rb);
   });
@@ -536,8 +618,12 @@ export function installRibbon(app) {
   });
   // a toolbar: arrows move between its controls (in the style list, up and down pick a style)
   rb.addEventListener('keydown', (e) => {
+    // Escape on a button of the row goes back to the caret on the page (the list has its own)
+    if (e.key === 'Escape' && e.target.closest('button')) { e.preventDefault(); app.ribbonBack(); return; }
+    // (a menu button opens its menu with the down arrow too)
+    if (e.key === 'ArrowDown' && e.target.id === 'rb-st-more') { e.preventDefault(); app.openStyles(); return; }
     if (!/^(ArrowLeft|ArrowRight|Home|End)$/.test(e.key) || e.altKey || e.ctrlKey || e.metaKey) return;
-    const all = app.ribbonRove().filter((x) => !x.disabled), i = all.indexOf(document.activeElement);
+    const all = app.ribbonRove().filter((x) => !isOff(x)), i = all.indexOf(document.activeElement);
     if (i < 0) return;
     e.preventDefault();
     const to = all[e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + all.length) % all.length];

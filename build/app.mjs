@@ -333,13 +333,13 @@ and name, not by position.
   some of them; the side panel that "Outline and problems" opens then has them all as menu
   items of the same names, in a menu named "Actions".
 - The toolbar under it starts with the paragraph's style. A wide window has a group "Styles"
-  of buttons, one for each style: "Normal", "Heading 1", "Heading 2", "Heading 3", "LaTeX" (the
-  paragraph shown and typed as its LaTeX source, see llms-full.txt), "Quote", and "Title" while
-  the caret is in the title. The pressed one is the style of the paragraph the caret is in; a
-  disabled one cannot apply there. Where fewer fit, "Previous styles" and "Next styles" page
-  through them; "More styles" opens a menu "Styles" with all of them as menu items of the same
-  names. A narrow window has instead a combobox "Style of this paragraph" (Normal text, Title,
-  Heading 1 to 3, LaTeX, Quote).
+  of buttons, one for each style: "Normal", "Heading 1", "Heading 2", "Heading 3", "LaTeX
+  source" (the paragraph shown and typed as its LaTeX source, see llms-full.txt), "Quote", and
+  "Title" while the caret is in the title. The pressed one is the style of the paragraph the
+  caret is in; one that cannot apply there is disabled (aria-disabled; its title says why).
+  Where not all fit, "Previous styles" and "Next styles" page through them; "More styles" opens
+  a menu "Styles" with all of them as menu items of the same names. A narrow window has instead
+  a combobox "Style of this paragraph" (Normal text, Title, Heading 1 to 3, LaTeX, Quote).
 - Then the buttons "Bold", "Italic", "Underline", "Bulleted list", "Numbered list",
   "Formula" (math in the line), "Equation" (numbered, on a line of its own), "Table",
   "Picture", "Footnote", "Citation", "Link".
@@ -426,8 +426,8 @@ Ctrl is Cmd on a Mac.
 ## LaTeX paragraphs
 
 A paragraph can be kept as LaTeX: the page shows it as its own source, in a box headed LaTeX,
-and what is typed there goes into the .tex as it is, with nothing escaped. The style "LaTeX"
-makes one; "Normal" makes it a typeset paragraph again. In the file, such a paragraph has a
+and what is typed there goes into the .tex as it is, with nothing escaped. The style "LaTeX
+source" makes one; "Normal" makes it a typeset paragraph again. In the file, such a paragraph has a
 comment line of its own just before it, exactly
 
     % rikuy: latex

@@ -2194,7 +2194,7 @@ class App {
   menuKeys(el) {
     el.addEventListener('keydown', (e) => {
       if (!/^(ArrowDown|ArrowUp|Home|End)$/.test(e.key)) return;
-      const all = [...el.querySelectorAll('[role=menuitem], [role=menuitemradio]')].filter((a) => !a.disabled && a.offsetParent);
+      const all = [...el.querySelectorAll('[role=menuitem], [role=menuitemradio]')].filter((a) => !a.disabled && a.getAttribute('aria-disabled') !== 'true' && a.offsetParent);
       if (!all.length) return;
       const i = all.indexOf(document.activeElement), n = all.length;
       const j = e.key === 'Home' || (i < 0 && e.key === 'ArrowDown') ? 0 : e.key === 'End' || i < 0 ? n - 1 : (i + (e.key === 'ArrowDown' ? 1 : n - 1)) % n;

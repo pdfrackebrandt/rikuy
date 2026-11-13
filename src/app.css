@@ -138,46 +138,65 @@ body.has-ai .ai-only { display: inline-flex !important; }
 .rb-style:disabled { opacity: .55; }
 .rb-style:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 /* The Styles gallery, as Word's: one bordered box of tiles, each the style's name drawn in that
-   style's own look (the page's fonts), the current one checked; a strip at its right edge pages
-   through the tiles and opens them all; its name under it. ribbonFit (src/ribbon.js) sets how
-   many tiles show (rb-fold folds the insert buttons' names first, rb-narrow puts the style
-   list in its place); a phone has the list. */
+   style's own look (the page's fonts) and as wide as its name, the current one filled; arrows at
+   its ends page through the tiles where they do not all fit, a button at its right edge opens
+   them all; its name under it. ribbonFit (src/ribbon.js) sets how many tiles show (rb-fold folds
+   the insert buttons' names, rb-narrow puts the style list in its place); a phone has the list. */
 .rb-gw { display: flex; flex-direction: column; align-items: center; gap: 1px; padding: 2px 0 1px; }
 .rb-gal { display: flex; align-items: stretch; height: 33px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 5px; background: var(--panel); }
-.rb-tiles { display: flex; gap: 2px; padding: 2px; }
-.rb-tile { flex: none; width: 78px; display: flex; align-items: center; padding: 0 4px 0 5px; box-sizing: border-box; border: 1px solid transparent; border-radius: 3px; background: transparent; color: var(--ink-ui); cursor: pointer; overflow: hidden; white-space: nowrap; line-height: 1; }
-.rb-tile > span { overflow: hidden; text-overflow: ellipsis; }
-.rb-tile:hover { background: var(--blue-wash); }
-.rb-tile[aria-pressed="true"] { background: color-mix(in srgb, var(--blue-wash) 60%, var(--panel)); border-color: var(--blue); }
-.rb-tile:disabled { opacity: .38; cursor: default; pointer-events: none; }
+.rb-tiles { display: flex; flex: none; gap: 2px; padding: 2px; }
+.rb-tile { flex: none; min-width: 46px; display: flex; align-items: center; justify-content: center; padding: 0 6px; box-sizing: border-box; border: 1px solid transparent; border-radius: 3px; background: transparent; color: var(--ink-ui); cursor: pointer; white-space: nowrap; line-height: 1; }
+.rb-tile:hover { background: color-mix(in srgb, var(--blue-wash) 55%, transparent); }
+/* the current style: a fill and a quiet line, as Word marks it (the focus ring is the 2px outline) */
+.rb-tile[aria-pressed="true"], .rb-tile[aria-pressed="true"]:hover { background: var(--blue-wash); border-color: color-mix(in srgb, var(--blue) 30%, var(--line)); }
+/* one that cannot apply here is faded, keeps its tooltip (it says why) and does nothing; the
+   current one never looks faded */
+.rb-tile[aria-disabled="true"] { cursor: default; }
+.rb-tile[aria-disabled="true"]:not([aria-pressed="true"]) > span { opacity: .38; }
+.rb-tile[aria-disabled="true"]:not([aria-pressed="true"]):hover { background: transparent; }
 .rb-tile:focus-visible, .rb-sb:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
-.rb-strip { display: flex; flex-direction: column; width: 16px; border-left: 1px solid var(--line); }
-.rb-sb { flex: 1 1 0; display: flex; align-items: center; justify-content: center; min-height: 0; padding: 0; border: 0; background: transparent; color: var(--ink-ui); cursor: pointer; }
-.rb-sb:last-child { border-top: 1px solid var(--line); }
-.rb-sb:first-child { border-top-right-radius: 4px; } .rb-sb:last-child { border-bottom-right-radius: 4px; }
+/* the arrows and More: 24 px wide, the box's height tall; wider for a finger */
+.rb-sb { flex: none; width: 24px; display: flex; align-items: center; justify-content: center; padding: 0; border: 0; background: transparent; color: var(--ink-ui); cursor: pointer; }
+.rb-gal:not(.paged) .rb-pg { display: none; }
+.rb-pg:first-child { border-radius: 4px 0 0 4px; }
+.rb-more { border-left: 1px solid var(--line); border-radius: 0 4px 4px 0; }
 .rb-sb:hover { background: var(--blue-wash); }
-.rb-sb:disabled { color: var(--mute); opacity: .45; cursor: default; pointer-events: none; }
-.rb-sb svg { width: 9px; height: 7px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+.rb-sb:disabled { color: var(--mute); opacity: .4; cursor: default; pointer-events: none; }
+.rb-sb svg { width: 9px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.rb-more svg { height: 8px; }
+@media (pointer: coarse) { .rb-sb { width: 32px; } }
 .rb-cap { font: 10px/1 var(--font-ui); color: var(--mute); letter-spacing: .02em; }
-/* each style's look: the page's body, title and heading faces; LaTeX in its logo's letters */
+/* each style's look: the page's body, title and heading faces (the headings in the accent colour,
+   as Word draws them); LaTeX in its logo's letters */
 .st-p > span { font: 13.5px var(--font-doc); }
 .st-title > span { font: 16.5px var(--font-doc); }
-.st-section > span { font: bold 13px var(--font-doc); }
-.st-subsection > span { font: bold 12.5px var(--font-doc); }
+.st-section > span { font: bold 15.5px var(--font-doc); color: var(--blue-ink); }
+.st-subsection > span { font: bold 13.5px var(--font-doc); color: var(--blue-ink); }
 .st-subsubsection > span { font: bold 12px var(--font-doc); }
-.st-quote > span { font: italic 13.5px var(--font-doc); padding-left: 7px; box-shadow: inset 2px 0 0 color-mix(in srgb, var(--ink-ui) 30%, transparent); }
-.st-latex > span { font: 14.5px var(--font-doc); overflow: visible; }
-/* the logo as TeX sets it: a small capital A raised, an E lowered by half an ex, each kerned in */
-.tex-logo .tl-a { text-transform: uppercase; font-size: .75em; vertical-align: .27em; margin: 0 -.15em 0 -.36em; }
-.tex-logo .tl-e { text-transform: uppercase; vertical-align: -.5ex; margin: 0 -.125em 0 -.1667em; }
+.st-quote > span { font: italic 13.5px var(--font-doc); }
+.st-latex > span { font: 14.5px var(--font-doc); }
+/* The logo as TeX sets it: a small capital A raised, an E lowered by half an ex, each kerned in.
+   Moved by position, not vertical-align, so the name keeps the others' baseline. */
+.tex-logo .tl-a { position: relative; top: -.24em; text-transform: uppercase; font-size: .75em; margin: 0 -.15em 0 -.36em; }
+.tex-logo .tl-e { position: relative; top: .5ex; text-transform: uppercase; margin: 0 -.125em 0 -.1667em; }
 .rb.rb-narrow .rb-gw { display: none; }
 .rb:not(.rb-narrow) > .rb-style { display: none; }
 .rb.rb-fold > .btn:not(.icon) span:not(.sr) { display: none; }
 .rb.rb-fold > .btn:not(.icon) { width: 32px; padding: 0; justify-content: center; }
+/* the insert buttons' names a little closer to their icons, so they keep them beside the gallery
+   on a 1366 px screen; where that is still not enough the Download label goes first (rb-nolab:
+   the buttons' arrows say download, and their names say it to a screen reader) */
+.rb > .btn:not(.icon) { padding: 0 6px; gap: 4px; }
+.rb.rb-nolab .rb-lab { display: none; }
+/* the row is as tall with the style list as with the gallery: no jump where one gives way to the
+   other (a phone's row stays low) */
+@media (min-width: 861px) { .rb { min-height: 48px; } }
 /* the list behind More: the styles in their looks, one to a line */
+.pop-styles { padding-top: 6px; }
 .pop-styles .rb-mi { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 32px; padding: 4px 12px 4px 26px; border: 0; background: transparent; color: var(--ink-ui); text-align: left; cursor: pointer; position: relative; }
 .pop-styles .rb-mi:hover, .pop-styles .rb-mi:focus-visible { background: var(--blue-wash); outline: none; }
-.pop-styles .rb-mi:disabled { opacity: .4; cursor: default; }
+.pop-styles .rb-mi[aria-disabled="true"] > span { opacity: .4; }
+.pop-styles .rb-mi[aria-disabled="true"] { cursor: default; }
 .pop-styles .rb-mi[aria-checked="true"]::before { content: ""; position: absolute; left: 10px; top: 50%; width: 7px; height: 4px; margin-top: -4px; border: solid var(--blue); border-width: 0 0 2px 2px; transform: rotate(-45deg); }
 .rb .btn.icon b, .rb .btn.icon i, .rb .btn.icon u { font: 15px var(--font-doc); }
 .rb .btn.icon b { font-weight: 700; }
@@ -404,13 +423,18 @@ body.pdf-on #pdfpane { display: flex; }
    empty, the paragraph says "LaTeX paragraph" itself. The box keeps its look when the PDF view's
    colours or the dark theme change: it sits on the paper. */
 .it.tex { white-space: pre-wrap; overflow-wrap: anywhere; word-break: normal; hyphens: manual; -webkit-hyphens: manual; text-align: left; text-indent: 0 !important; text-wrap: wrap; font-family: var(--font-doc-tt); font-size: .86em; line-height: 1.42; font-variant-ligatures: none; tab-size: 4; color: #1F2933; background: #F4F6F8; border-radius: 4px; box-shadow: inset 2px 0 0 #C6D0DA; padding: .4em .75em .5em .85em; caret-color: #2B74B0; }
-.it.tex::before { content: "LaTeX" / ""; display: block; font: 600 9px/1.2 var(--font-ui); letter-spacing: .06em; color: #8693A0; margin-bottom: .35em; white-space: normal; user-select: none; pointer-events: none; }
+.it.tex::before { content: "LaTeX" / ""; display: block; font: 600 10px/1.2 var(--font-ui); letter-spacing: .05em; color: #56626E; margin-bottom: .35em; white-space: normal; user-select: none; pointer-events: none; }
 .it.tex.split-b::before { content: none; }
 .it.tex.split-a { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .it.tex.split-b { border-top-left-radius: 0; border-top-right-radius: 0; }
 /* the box the caret is in */
 .it.tex.cur { box-shadow: inset 2px 0 0 #2B74B0; background: #F0F5FA; }
-.it.tex.cur::before { color: #2B74B0; }
+.it.tex.cur::before { color: #1D5C91; }
+/* on paper the source prints plain, in a light frame: no label, no mark of where the caret was */
+@media print {
+  .it.tex, .it.tex.cur { background: none; box-shadow: inset 0 0 0 .5px #B8C0C8; }
+  .it.tex::before { content: none; }
+}
 /* a paragraph to come that is set to LaTeX, and a line to come in one */
 .ghostp.tex { min-height: 0; outline-offset: 0; }
 .ghostp.tex.empty .gh::after { content: 'Type LaTeX here.'; font-family: var(--font-ui); }
