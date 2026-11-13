@@ -29,20 +29,33 @@ import { TeXEngine, parseTeXLog } from './tex.js';
 import { PdfView } from './pdfview.js';
 import { collab, installCollab } from './collab.js';
 import { word, installWord, isDocx } from './word.js';
-import { ribbon, installRibbon } from './ribbon.js';
+import { ribbon } from './ribbon.js';
+import { nav } from './nav.js';
+import { review } from './review.js';
+import { $, mk, mkBtn, store, load, PREFS, textSig, when } from './ui/dom.js';
+// the command registry and everything drawn from it: the ribbon's tabs, the keys, the search box,
+// the right click menu, the insert list (src/commands.js, src/cmd/*.js)
+import { paletteItems, insertTextHooks, command, commands, describe, enabled, register, unregister, run as runCmd, joinMethods } from './commands.js';
+import { methods as cmdMethods } from './cmd/index.js';
+import { tabs, installRibbon } from './ribbon/tabs.js';
+import { methods as galleryMethods } from './ui/gallery.js';
+import { methods as searchMethods, installSearch } from './ui/search.js';
+import { methods as menuMethods, installMenu } from './ui/menu.js';
+import { installKeys } from './keys.js';
+import * as kit from './ui/kit.js';
+import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass } from './preamble.js';
+import { groupNames, enclosing, wrapEdits, unwrapEdits, mapPos } from './wrap.js';
 import { LATEX_MARK, lineStart as lineAt } from './styles.js';
 import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
 import { version as VERSION } from '../package.json';
 import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
 import { scriptNeeds, scriptLines, addScriptSetup, scriptName, scriptSetup, MORE } from './scripts.js';
 
-const $ = (s, r = document) => r.querySelector(s);
 const PX_PER_PT = 96 / 72.27;
 // Rikuy was called Galley at first; the keys of what a browser keeps keep that name, so
 // nobody's documents or settings are lost
 const STORE = 'galley.project.v1';
 const ENGINE_LABEL = { pdflatex: 'pdfLaTeX', xelatex: 'XeLaTeX', lualatex: 'LuaLaTeX', latex: 'LaTeX (dvips)' };
-const PREFS = 'galley.prefs.v1';
 // the TeX packs the last compile of a project read: {p: project, v: the tree's version, n: [packs]}
 const TEXREAD = 'galley.texread.v1';
 const CDN = {
@@ -99,8 +112,6 @@ function openLink(u) {
   window.open(url.href, '_blank', 'noopener');
   return true;
 }
-function store(key, val) { try { localStorage.setItem(key, JSON.stringify(val)); return true; } catch (e) { return false; } }
-function load(key) { try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
 // Focus a MathLive field, working around its guard that sometimes ignores focus().
 function focusField(mf) {
   try { mf.focus({ preventScroll: true }); } catch (e) { /* ignore */ }
@@ -193,24 +204,6 @@ function grabsBracket(src, p, ch) {
   return ch === '[' && !star && endsWithControlWord(src, k);
 }
 const crlfOnly = (t) => t.includes('\r\n') && !/(^|[^\r])\n/.test(t);
-function mk(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
-function mkBtn(label, fn, title, type) { const b = mk('button', 'btn ghost sm', label); b.type = type || 'button'; if (title) b.title = title; if (fn) b.addEventListener('click', fn); return b; }
-function textSig(main, files) {
-  let h = 0x811c9dc5;
-  const add = (s) => { for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } h ^= 0xff; };
-  add(main);
-  for (const [n, t] of files) { add(n); add(t); }
-  return (h >>> 0).toString(36) + ':' + files.reduce((s, x) => s + x[1].length, 0);
-}
-function when(t) {
-  const d = new Date(t), now = new Date();
-  const hm = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  const day = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
-  const dd = Math.round((day(now) - day(d)) / 864e5);
-  if (dd === 0) return 'today ' + hm;
-  if (dd === 1) return 'yesterday ' + hm;
-  return d.toLocaleDateString([], { month: 'short', day: 'numeric', year: d.getFullYear() === now.getFullYear() ? undefined : 'numeric' }) + ', ' + hm;
-}
 async function copyRich(html, text) {
   try {
     if (navigator.clipboard && window.ClipboardItem) {
@@ -295,33 +288,8 @@ function plainMathError(msg, tex) {
   if (/^Expected & or/.test(m)) return 'A \\begin{…} is not closed by its \\end{…}.';
   return m;
 }
-// What the insert list (\ or Ctrl+K) offers; the ribbon's Insert buttons run the same items.
-const piece = (open, close) => ({ open, close });
-const PALETTE = [
-  { k: 'footnote', d: 'Footnote', t: piece('\\footnote{', '}') },
-  { k: 'cite', d: 'Citation', act: 'cite' },
-  { k: 'ref', d: 'Cross reference', act: 'ref' },
-  { k: 'eqref', d: 'Equation reference', act: 'eqref' },
-  { k: 'emph', d: 'Emphasis', t: piece('\\emph{', '}') },
-  { k: 'textbf', d: 'Bold', t: piece('\\textbf{', '}') },
-  { k: 'texttt', d: 'Typewriter', t: piece('\\texttt{', '}') },
-  { k: 'equation', d: 'Numbered equation', act: 'equation' },
-  { k: 'math', d: 'Inline math', act: 'math' },
-  { k: 'section', d: 'Section heading', t: piece('\n\n\\section{', '}\n\n'), block: true },
-  { k: 'subsection', d: 'Subsection heading', t: piece('\n\n\\subsection{', '}\n\n'), block: true },
-  { k: 'itemize', d: 'Bulleted list', t: piece('\n\n\\begin{itemize}\n  \\item ', '\n\\end{itemize}\n\n'), block: true },
-  { k: 'enumerate', d: 'Numbered list', t: piece('\n\n\\begin{enumerate}\n  \\item ', '\n\\end{enumerate}\n\n'), block: true },
-  { k: 'proposition', d: 'Proposition', t: piece('\n\n\\begin{proposition}\n', '\n\\end{proposition}\n\n'), block: true },
-  { k: 'lemma', d: 'Lemma', t: piece('\n\n\\begin{lemma}\n', '\n\\end{lemma}\n\n'), block: true },
-  { k: 'theorem', d: 'Theorem', t: piece('\n\n\\begin{theorem}\n', '\n\\end{theorem}\n\n'), block: true },
-  { k: 'definition', d: 'Definition', t: piece('\n\n\\begin{definition}\n', '\n\\end{definition}\n\n'), block: true },
-  { k: 'assumption', d: 'Assumption', t: piece('\n\n\\begin{assumption}\n', '\n\\end{assumption}\n\n'), block: true },
-  { k: 'proof', d: 'Proof', t: piece('\n\n\\begin{proof}\n', '\n\\end{proof}\n\n'), block: true },
-  { k: 'label', d: 'Label', t: piece('\\label{', '}') },
-  { k: 'url', d: 'URL', t: piece('\\url{', '}') },
-  { k: 'ldots', d: 'Ellipsis \u2026', t: piece('\\ldots{}', '') },
-  { k: 'newline', d: 'Line break', t: piece('\\\\\n', '') }
-];
+// What the insert list (\ or Ctrl+K) offers comes from the command registry (src/commands.js,
+// each command's palette field; src/cmd/*.js), in the list's own order.
 function debounce(fn, ms) { let t = null; const d = (...a) => { clearTimeout(t); t = setTimeout(() => { t = null; fn(...a); }, ms); }; d.flush = (...a) => { clearTimeout(t); t = null; fn(...a); }; d.cancel = () => { clearTimeout(t); t = null; }; d.pending = () => t !== null; return d; }
 
 // ---------------------------------------------------------------------------
@@ -1196,13 +1164,8 @@ class App {
     if (mod && !e.altKey) {
       if (k === 'z') { e.preventDefault(); if (e.shiftKey) this.redo(); else this.undo(); return; }
       if (k === 'y') { e.preventDefault(); this.redo(); return; }
-      if (k === 'b') { e.preventDefault(); this.toggleStyle('textbf'); return; }
-      if (k === 'i') { e.preventDefault(); this.toggleStyle('emph'); return; }
-      if (k === 'u') { e.preventDefault(); this.toggleStyle('underline'); return; }
-      if (k === 'm') { e.preventDefault(); this.newMath(); return; }
-      if (k === 'e' && e.shiftKey) { e.preventDefault(); this.newDisplayMath(); return; }
+      // (Ctrl+B, I, U, M, K and Shift+E are the commands' keys: src/keys.js catches them first)
       if (k === 'enter') { e.preventDefault(); this.tableRow(); return; }
-      if (k === 'k') { e.preventDefault(); this.openPalette(); return; }
       // the browser's own select-all ends on a page number, which cannot be selected, and
       // collapses to the top of the page: Ctrl+A then Ctrl+C copied nothing and Delete did nothing
       if (k === 'a' && !e.shiftKey) { e.preventDefault(); this.selectAllText(); return; }
@@ -1341,6 +1304,16 @@ class App {
     const T = c.ghost ? null : this.texHere();
     if (T && c.f === T.f) { const r = range && range.f === T.f ? range : c; this.texEdit(T, r.a, r.b, data, c.collapsed && !range ? 'type' : 'replace'); return; }
     const raw = c.ghost && this.ghostRaw();
+    // What typing passes through (AutoCorrect's place): a hook may write it itself or change it.
+    // Not in a LaTeX paragraph or a line to come in one (above and here): typed there is source.
+    if (!raw && !(!c.ghost && this.texAt(c.f, c.a))) {
+      for (const h of insertTextHooks) {
+        const r = h(this, data, range);
+        if (r === true) return;
+        if (typeof r === 'string') data = r;
+      }
+      if (!data) return;
+    }
     // in a blank paragraph too (a new document, the line after Enter): there they were typed
     // as the characters, though that is where an equation or a heading most often starts
     if (data === '$' && !range && !raw && (c.collapsed || c.ghost)) { this.newMath(); return; }
@@ -2015,53 +1988,32 @@ class App {
     const c = this.caretNow();
     // (a LaTeX paragraph shows source: bold there is \textbf, written by hand)
     if (!c || c.ghost || this.texHere()) return;
-    const groups = { textbf: ['textbf', 'bf', 'bfseries'], emph: ['emph', 'textit', 'it', 'itshape'], underline: ['underline', 'uline'], texttt: ['texttt', 'tt', 'ttfamily'] };
-    const names = groups[cmd] || [cmd];
+    // every form of the kind counts: \textbf, \bf, \bfseries are bold (src/wrap.js)
+    const names = groupNames({ textbf: 'bold', emph: 'italic', underline: 'underline', texttt: 'mono' }[cmd] || cmd);
     const sel = getSelection();
-    // Are we inside a matching style wrapper?
+    // Are we inside a matching style wrapper? The page's own (the model's) first
     let wrapper = null;
     const anc = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
     for (let n = anc; n && n !== this.root; n = n.parentElement) {
       if (n.dataset && n.dataset.y) { const y = styOfEl(n); if (y && names.includes(y.cmd)) { wrapper = y; break; } }
     }
     const src = this.src(c.f);
+    // a group the page draws without a range of its own ({\bfseries ...}, {\bf ...}): from the source
+    if (!wrapper) wrapper = enclosing(src, c.a, c.b, names);
     if (wrapper && (c.collapsed || (c.a >= wrapper.is && c.b <= wrapper.ie))) {
-      const inner = src.slice(wrapper.is, wrapper.ie);
-      const shift = wrapper.is - wrapper.s;
-      this.commit([{ f: c.f, s: wrapper.s, e: wrapper.e, t: inner }], c.collapsed ? { f: c.f, p: c.a - shift } : { f: c.f, p: c.a - shift, selA: c.a - shift, selB: c.b - shift }, 'style');
+      // (src/wrap.js: a group's braces stay where it is an argument or follows a command, and the
+      // words never run into a command before them)
+      const edits = unwrapEdits(src, wrapper), at = (p) => mapPos(edits, p);
+      this.commit(edits.map((x) => ({ f: c.f, ...x })), c.collapsed ? { f: c.f, p: at(c.a) } : { f: c.f, p: at(c.a), selA: at(c.a), selB: at(c.b) }, 'style');
       return;
     }
-    const open = '\\' + cmd + '{';
-    if (c.collapsed) {
-      this.commit([{ f: c.f, s: c.a, e: c.a, t: open + '}' }], { f: c.f, p: c.a + open.length, bias: 1 }, 'style');
-      return;
-    }
-    // A selection that starts or ends inside what a reader takes for one character (क्षि is a
-    // consonant, a virama, a consonant and a vowel sign) takes that character whole: a brace
-    // between its parts would take the conjunct apart on the page and in the PDF.
-    c.a = sourceEdge(src, c.a, -1);
-    c.b = sourceEdge(src, c.b, 1);
-    if (!isBalanced(src, c.a, c.b)) { this.toast('That selection crosses structure. Select text inside one paragraph or cell.'); return; }
-    // A selection over several paragraphs: each paragraph's part gets the command of its own.
-    // One command around all of them took the blank lines into its braces, which TeX refuses
-    // ("Paragraph ended before \textbf was complete") and the page showed as one paragraph.
-    const parts = [];
-    for (let p = c.a, m, re = /\n[ \t]*\n\s*/g; p < c.b;) {
-      re.lastIndex = p;
-      m = re.exec(src);
-      const e = m && m.index < c.b ? m.index : c.b;
-      if (e > p && src.slice(p, e).trim()) parts.push([p, e]);
-      p = m && m.index < c.b ? m.index + m[0].length : c.b;
-    }
-    if (parts.length > 1) {
-      if (parts.some(([s, e]) => !isBalanced(src, s, e))) { this.toast('That selection crosses structure. Select text inside one paragraph or cell.'); return; }
-      const edits = [];
-      for (const [s, e] of parts) edits.push({ f: c.f, s: e, e, t: '}' }, { f: c.f, s, e: s, t: open });
-      const grown = parts.length * (open.length + 1);
-      this.commit(edits.reverse(), { f: c.f, p: c.b + grown, selA: c.a + open.length, selB: c.b + grown - 1 }, 'style');
-      return;
-    }
-    this.commit([{ f: c.f, s: c.b, e: c.b, t: '}' }, { f: c.f, s: c.a, e: c.a, t: open }], { f: c.f, p: c.b + open.length, selA: c.a + open.length, selB: c.b + open.length }, 'style');
+    // The wrapper around the selection (src/wrap.js): an empty one at a caret, the caret between
+    // its braces; a character of several code points taken whole; one for each paragraph's part
+    // of a selection over several (one around all of them took the blank lines into its braces,
+    // which TeX refuses: "Paragraph ended before \textbf was complete"); none over structure.
+    const r = wrapEdits(src, c.a, c.b, '\\' + cmd + '{');
+    if (r.error) { this.toast('That selection crosses structure. Select text inside one paragraph or cell.'); return; }
+    this.commit(r.edits.map((x) => ({ f: c.f, ...x })), r.sel ? { f: c.f, p: r.p, selA: r.sel.a, selB: r.sel.b } : { f: c.f, p: r.p, bias: r.bias }, 'style');
   }
 
   // ---- tables --------------------------------------------------------------------
@@ -2343,6 +2295,38 @@ class App {
     if (P.anchor instanceof HTMLButtonElement && P.anchor.offsetParent && (!document.activeElement || document.activeElement === document.body)) P.anchor.focus({ preventScroll: true });
   }
 
+  // The text of the project's files the main file's preamble reads: \input and \include files,
+  // and its own .sty and .cls files, two levels deep, 20 at most. A package one of them loads is
+  // loaded (src/preamble.js, others): a second \usepackage with other options stopped TeX
+  // (option clash).
+  preambleOthers() {
+    const out = [], seen = new Set([this.main]);
+    const visit = (text, depth) => {
+      if (depth > 2 || out.length >= 20) return;
+      const end = preambleEnd(text), pre = stripComments(text.slice(0, end < 0 ? Math.min(text.length, 200000) : end));
+      const names = [];
+      for (let k = 0, re = /\\(?:input|include)\s*\{([^{}\n]{1,200})\}/g, m; (m = re.exec(pre)) && k < 200; k++) names.push(m[1].trim());
+      for (const p of packages(text, end).slice(0, 200)) for (const n of p.names) names.push(n.name + '.sty');
+      const d = docClass(text);
+      if (d) names.push(d.name + '.cls');
+      for (const n of names) {
+        const f = [n, n + '.tex'].find((x) => this.files.has(x) && !seen.has(x));
+        if (!f || out.length >= 20) continue;
+        seen.add(f);
+        out.push(this.files.get(f));
+        visit(this.files.get(f), depth + 1);
+      }
+    };
+    visit(this.src(this.main), 0);
+    return out;
+  }
+
+  // The edits that load these packages in the main file (src/preamble.js's usePackages, with the
+  // files its preamble reads): [{ f, s, e, t }]
+  packageEdits(names, o = {}) {
+    return usePackages(this.src(this.main), names, { ...o, others: this.preambleOthers() }).map((x) => ({ f: this.main, ...x }));
+  }
+
   // A few Word symbols need a package beyond amsmath and amssymb (\\llbracket needs stmaryrd).
   // Add the \\usepackage line once, in the same undo step as the equation edit.
   ensurePackages(tex, P) {
@@ -2351,23 +2335,16 @@ class App {
     if (!need.size) return;
     const f = this.main;
     const src = this.src(f);
-    const docAt = src.search(/\\begin\s*\{document\}/);
-    if (docAt < 0) return;
-    const pre = src.slice(0, docAt);
-    const have = new Set();
-    pre.replace(/(^|[^\\])%.*$/gm, '$1').replace(/\\(?:usepackage|RequirePackage)\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}/g, (m, l) => { l.split(',').forEach((x) => have.add(x.trim())); return m; });
-    const add = [...need].filter((x) => !have.has(x));
-    if (!add.length) return;
-    let at = -1;
-    const re = /^[ \t]*\\usepackage\s*(?:\[[^\]]*\])?\s*\{[^}]*\}[^\n]*\n/gm;
-    let m;
-    while ((m = re.exec(pre))) at = m.index + m[0].length;
-    if (at < 0) { const d = /\\documentclass\s*(?:\[[^\]]*\])?\s*\{[^}]*\}[^\n]*\n/.exec(pre); if (!d) return; at = d.index + d[0].length; }
-    const text = add.map((x) => '\\usepackage{' + x + '}\n').join('');
+    // (src/preamble.js: once, after the last \usepackage line; commented lines load nothing)
+    const others = this.preambleOthers();
+    const add = [...need].filter((x) => !hasPackage(src, x, undefined, others));
+    const edits = usePackages(src, add, { others });
+    if (!edits.length) return;
     const top = this.hist[this.hist.length - 1];
     if (top && top.open && top.kind === P.session) top.time = Date.now();
-    this.commit([{ f, s: at, e: at, t: text }], null, P.session);
-    if (P.returnCaret && P.returnCaret.f === f && P.returnCaret.p >= at) P.returnCaret = { ...P.returnCaret, p: P.returnCaret.p + text.length };
+    this.commit(edits.map((x) => ({ f, ...x })), null, P.session);
+    const at = edits[0].s, grew = edits.reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
+    if (P.returnCaret && P.returnCaret.f === f && P.returnCaret.p >= at) P.returnCaret = { ...P.returnCaret, p: P.returnCaret.p + grew };
     this.toast('Added ' + add.map((x) => '\\usepackage{' + x + '}').join(', ') + ' for a symbol in this equation.');
   }
 
@@ -3104,7 +3081,7 @@ class App {
     const list = document.createElement('div'); list.className = 'plist';
     const hint = document.createElement('div'); hint.className = 'hint pad'; hint.textContent = 'Enter inserts the highlighted item. Anything else you type is inserted as a raw command.';
     p.append(inp, list, hint);
-    const items = PALETTE;
+    const items = paletteItems();
     let hi = 0;
     let shown = items;
     const draw = () => {
@@ -3328,311 +3305,6 @@ class App {
     const c = this.caretNow();
     this.rebuild(document.activeElement === this.root ? c : null);
     this.saveSoon();
-  }
-
-  // ---- outline and problems -------------------------------------------------------------
-  // the list of actions in the menu panel shows what the bar shows now: Undo and Redo greyed
-  // when there is nothing to undo, the zoom by its value
-  navActs() {
-    for (const a of $('#nav-acts').children) {
-      const b = $('#' + a.dataset.for);
-      a.disabled = b.disabled;
-      if (a.dataset.for === 'zoomv') a.lastChild.textContent = 'Zoom: ' + b.textContent;
-    }
-  }
-  toggleNav(force, tab) {
-    const on = force ?? !document.body.classList.contains('nav-on');
-    document.body.classList.toggle('nav-on', on);
-    $('#b-nav').setAttribute('aria-pressed', on ? 'true' : 'false');
-    if (tab) this.navTab = tab;
-    this.navTab = this.navTab || 'outline';
-    document.body.classList.toggle('nav-wide', this.navTab === 'changes' || this.navTab === 'git');
-    for (const [id, t] of [['#nt-outline', 'outline'], ['#nt-problems', 'problems'], ['#nt-changes', 'changes'], ['#nt-git', 'git']]) { $(id).classList.toggle('on', this.navTab === t); $(id).setAttribute('aria-selected', this.navTab === t ? 'true' : 'false'); if (this.navTab === t) $('#nav-body').setAttribute('aria-labelledby', id.slice(1)); }
-    this.prefs.nav = on;
-    store(PREFS, this.prefs);
-    if (on) { this.refreshNav(); this.navActs(); }
-    if (window.innerWidth > 860) setTimeout(() => { if (this.computePx()) this.relayout(true); }, 30);
-  }
-
-  computeProblems() {
-    const m = this.model;
-    if (!m) return [];
-    const mathErrors = [];
-    for (const el of this.root.querySelectorAll('.has-err')) {
-      const info = atomOfEl(el) || atomOfEl(el.closest('[data-a],[data-m]'));
-      if (info && info.f != null && info.s != null) mathErrors.push({ f: info.f, p: info.s, msg: el.title || 'cannot be typeset' });
-    }
-    const pre = this.src(this.main).split(/\\begin\s*\{document\}/)[0];
-    const gp = /\\graphicspath\s*\{((?:\{[^}]*\})+)\}/.exec(pre);
-    const found = findProblems({
-      files: this.files, main: this.main, bibKeys: new Set(m.bibEntries ? m.bibEntries.keys() : []), unknown: m.warn,
-      mathErrors, assets: [...this.assetBlobs.keys(), ...this.extra.keys()], graphicsPath: gp ? [...gp[1].matchAll(/\{([^}]*)\}/g)].map((x) => x[1]) : [],
-      figuresWith: this.figuresWith()
-    });
-    // what pdfLaTeX itself reported on the last compile comes first: it is the real verdict
-    const tex = this.texIssues.filter((x) => x.sev !== 'info' || x.msg.startsWith('Overfull'));
-    return [...tex, ...found.filter((x) => x.sev !== 'info' || !tex.length)];
-  }
-
-  refreshNav() {
-    const probs = this.computeProblems();
-    this.problems = probs;
-    const serious = probs.filter((x) => x.sev !== 'info').length;
-    const wb = $('#st-warn');
-    wb.hidden = !probs.length;
-    wb.textContent = serious ? serious + (serious === 1 ? ' problem' : ' problems') : probs.length + (probs.length === 1 ? ' command shown as source' : ' commands shown as source');
-    $('#nt-count').textContent = probs.length ? String(probs.length) : '';
-    $('#nav-dot').hidden = !probs.some((x) => x.sev === 'error');
-    if (this.base && (document.body.classList.contains('nav-on') || this.prefs.marks)) {
-      const n = this.currentChanges().filter((c) => !spacingOnly(c) && !commentOnly(c)).length + this.allComments().length;
-      $('#nt-ccount').textContent = n ? String(n) : '';
-    }
-    if (!document.body.classList.contains('nav-on')) return;
-    const body = $('#nav-body');
-    if (this.navTab === 'git') {
-      if (body.contains(document.activeElement) && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) { this.navStale = true; return; }
-      this.navStale = false;
-      // the panel writes the project into the repository to show its status: not on every
-      // keystroke, at most about once a second while typing
-      const now = Date.now();
-      clearTimeout(this.gitTimer);
-      if (this.gitRendering || now - (this.gitLast || 0) < 1200) { this.gitTimer = setTimeout(() => this.refreshNav(), 1250); return; }
-      this.gitLast = now;
-      this.gitRendering = true;
-      this.renderGit(body).finally(() => { this.gitRendering = false; });
-      return;
-    }
-    if (this.navTab === 'changes') {
-      // do not pull the panel out from under someone typing a version name
-      if (body.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') { this.navStale = true; return; }
-      this.navStale = false;
-      const y = body.scrollTop;
-      body.replaceChildren();
-      // Review, as in Word: the comments, then the changes and versions
-      this.renderComments(body);
-      this.renderChanges(body);
-      body.scrollTop = y;
-      return;
-    }
-    body.replaceChildren();
-    if (this.navTab === 'problems') {
-      if (!probs.length) { const e = document.createElement('div'); e.className = 'nav-empty'; e.textContent = 'No problems found. References, citations, labels, environments and math all resolve.'; body.appendChild(e); return; }
-      for (const x of probs) {
-        const b = document.createElement('button');
-        b.type = 'button'; b.className = 'prob ' + x.sev + (x.tex ? ' tex' : '');
-        const dot = document.createElement('span'); dot.className = 'sev';
-        const msg = document.createElement('span'); msg.textContent = x.msg;
-        const where = document.createElement('span'); where.className = 'where'; where.textContent = x.f + (x.line ? ':' + x.line : '');
-        b.append(dot, msg, where);
-        b.addEventListener('click', () => { this.goTo(x.f, x.p); if (window.innerWidth <= 860) this.toggleNav(false); });
-        body.appendChild(b);
-      }
-      return;
-    }
-    const hs = (this.model.headings || []).filter((h) => h.level <= 3);
-    if (!hs.length) { const e = document.createElement('div'); e.className = 'nav-empty'; e.textContent = 'No sections yet. Headings appear here as you add \\section{...}.'; body.appendChild(e); return; }
-    const top = Math.min(...hs.map((h) => h.level));
-    this.navHeads = hs.map((h) => {
-      const b = document.createElement('button');
-      b.type = 'button'; b.className = 'nav-item l' + Math.min(3, h.level - top);
-      const n = document.createElement('span'); n.className = 'num'; n.textContent = h.star ? '' : (h.num || '');
-      const t = document.createElement('span'); t.textContent = h.text || '';
-      b.append(n, t);
-      b.addEventListener('click', () => { this.goTo(h.f, h.s, true); if (window.innerWidth <= 860) this.toggleNav(false); });
-      body.appendChild(b);
-      return { h, b };
-    });
-    this.markCurrentHeading();
-  }
-
-  // ---- versions and changes ---------------------------------------------------------
-  // The project's text is kept as a version every few minutes of editing, when the tab is
-  // left, when a .zip is saved, and before anything replaces the text. The Changes tab
-  // compares the text with one version (at first, how it was when opened) and lists each
-  // change with Accept (keep it) and Reject (put the old text back); "Show on pages" marks
-  // the same changes on the typeset pages, like Word's Track Changes.
-  isMine(v) { return v.main === this.main && v.name === this.name; }
-
-  async loadReview() {
-    let r = null;
-    try { r = this.noIdb ? null : await kvGet('review'); } catch (e) { r = null; }
-    if (r && r.main === this.main && r.name === this.name && r.files) this.base = { t: r.t, label: r.label, id: r.id, files: new Map(r.files) };
-    else this.setBase({ t: Date.now(), label: 'When opened', files: this.files });
-    const mine = (await this.allSnaps()).filter((v) => this.isMine(v));
-    if (mine.length) { this.lastSig = mine[0].sig; this.lastSnapT = mine[0].t; }
-    await this.snapshot('Session start');
-    this.refreshNav();
-    if (this.prefs.marks) this.marksSoon();
-  }
-
-  // Images and other binary files are kept per project, so opening a version of another
-  // project brings its figures back with its text.
-  async stashBinary() {
-    if (this.noIdb) return;
-    try {
-      await kvPut('bin:' + this.name + '|' + this.main, {
-        assets: [...this.assetBlobs.entries()], extra: [...this.extra.entries()],
-        orig: [...this.orig.entries()].map(([n, o]) => [n, { bytes: o.bytes, enc: o.enc, bom: o.bom }])
-      });
-    } catch (e) { /* text versions still work */ }
-  }
-  async loadBinary(name, main) {
-    for (const u of this.assets.values()) URL.revokeObjectURL(u);
-    this.assets.clear(); this.assetBlobs.clear(); this.extra.clear(); this.orig.clear();
-    this.binaryDirty = true;
-    if (this.noIdb) return;
-    try {
-      const bin = await kvGet('bin:' + name + '|' + main);
-      if (!bin) return;
-      for (const [n, b] of bin.assets || []) this.addAsset(n, b);
-      for (const [n, b] of bin.extra || []) this.extra.set(n, b);
-      for (const [n, o] of bin.orig || []) this.orig.set(n, { ...o, text: decodeText(o.bytes).text });
-    } catch (e) { /* none kept */ }
-  }
-
-  setBase(b) {
-    this.base = { t: b.t, label: b.label || '', id: b.id, files: new Map(b.files) };
-    this.chg = null;
-    if (!this.noIdb) kvPut('review', { t: b.t, label: this.base.label, id: b.id, main: this.main, name: this.name, files: [...this.base.files.entries()] }).catch(() => {});
-  }
-
-  noteEdit() {
-    this.pdfStale = true;
-    this.pdfSoon();
-    this.snapDirty = true;
-    this.chg = null;
-    const since = Date.now() - (this.lastSnapT || 0);
-    if (since > 15 * 60e3) { this.snapshot(''); return; }
-    clearTimeout(this.snapTimer);
-    this.snapTimer = setTimeout(() => { if (this.snapDirty) this.snapshot(''); }, Math.max(30e3, 5 * 60e3 - since));
-  }
-
-  async snapshot(label, o = {}) {
-    const files = [...this.files.entries()];
-    const sig = textSig(this.main, files);
-    if (!o.force && sig === this.lastSig) { this.snapDirty = false; return null; }
-    const v = { t: Date.now(), label: label || '', named: !!o.named, name: this.name, main: this.main, sig, files };
-    this.lastSig = sig; this.lastSnapT = v.t; this.snapDirty = false;
-    clearTimeout(this.snapTimer);
-    try {
-      if (this.noIdb) throw new Error('no storage');
-      v.id = await snapAdd(v);
-      snapPrune(80).then((n) => { if (n) this.snapList = null; }).catch(() => {});
-    } catch (e) {
-      v.id = 'm' + v.t;
-      this.memSnaps.push(v);
-      const old = this.memSnaps.findIndex((x) => !x.named);
-      if (this.memSnaps.length > 30 && old >= 0) this.memSnaps.splice(old, 1);
-    }
-    this.snapList = null;
-    if (document.body.classList.contains('nav-on') && this.navTab === 'changes') this.refreshNav();
-    return v;
-  }
-
-  async allSnaps() {
-    if (this.snapList) return this.snapList;
-    let list = [];
-    if (!this.noIdb) { try { list = await snapAll(); } catch (e) { list = []; } }
-    this.snapList = [...list, ...this.memSnaps.map(({ files, ...m }) => m)].sort((a, b) => b.t - a.t);
-    return this.snapList;
-  }
-
-  async versionFiles(v) {
-    const m = this.memSnaps.find((x) => x.id === v.id);
-    if (m) return m.files;
-    try { return await snapFiles(v.id); } catch (e) { return null; }
-  }
-
-  currentChanges() {
-    if (!this.base) return [];
-    const C = this.chg;
-    if (C && C.base === this.base && C.files.size === this.files.size && [...this.files].every(([n, t]) => C.files.get(n) === t)) return C.list;
-    const list = [];
-    for (const [n, t] of this.files) {
-      const a = this.base.files.get(n) ?? '';
-      if (a !== t) list.push(...changes(a, t, n));
-    }
-    this.chg = { base: this.base, files: new Map(this.files), list };
-    return list;
-  }
-
-  acceptChanges(cs) {
-    cs = cs.filter((c) => (this.base.files.get(c.f) ?? '').slice(c.as, c.ae) === c.a && this.src(c.f).slice(c.bs, c.be) === c.b);
-    if (!cs.length) { this.refreshNav(); return; }
-    const files = new Map(this.base.files);
-    const byF = new Map();
-    for (const c of cs) { if (!byF.has(c.f)) byF.set(c.f, []); byF.get(c.f).push(c); }
-    for (const [f, list] of byF) {
-      let t = files.get(f) ?? '';
-      for (const c of list.sort((x, y) => y.as - x.as)) t = t.slice(0, c.as) + c.b + t.slice(c.ae);
-      files.set(f, t);
-    }
-    this.setBase({ ...this.base, files });
-    this.refreshNav();
-    if (this.prefs.marks) this.marksSoon();
-  }
-
-  rejectChanges(cs, label) {
-    // the list may be a moment behind the text: act only on changes still exactly there
-    cs = cs.filter((c) => this.src(c.f).slice(c.bs, c.be) === c.b);
-    if (!cs.length) { this.refreshNav(); return; }
-    if (cs.length > 1) this.snapshot(label || 'Before rejecting changes', { force: true });
-    this.closeGroup();
-    this.commit(cs.map((c) => ({ f: c.f, s: c.bs, e: c.be, t: c.a })), null, 'reject');
-    this.closeGroup();
-    this.refreshNav();
-    if (cs.length === 1) this.goTo(cs[0].f, cs[0].bs);
-  }
-
-  setMarks(on) {
-    this.prefs.marks = !!on;
-    store(PREFS, this.prefs);
-    this.paintChanges();
-    const cb = $('#chg-show');
-    if (cb) cb.checked = !!on;
-  }
-
-  async compareWith(v) {
-    const files = await this.versionFiles(v);
-    if (!files) { this.toast('That version could not be read.'); return; }
-    this.setBase({ t: v.t, label: v.label || 'Automatic version', id: v.id, files });
-    this.refreshNav();
-    if (this.prefs.marks) this.marksSoon();
-  }
-
-  async restoreVersion(v) {
-    const files = await this.versionFiles(v);
-    if (!files) { this.toast('That version could not be read.'); return; }
-    if (!this.isMine(v)) { await this.openVersion(v, files); return; }
-    const edits = [];
-    for (const [n, t] of files) { const cur = this.files.get(n); if (cur !== t) edits.push({ f: n, s: 0, e: cur == null ? 0 : cur.length, t }); }
-    if (!edits.length) { this.toast('That version is the same as the text now.'); return; }
-    await this.snapshot('Before restoring a version');
-    this.closeGroup();
-    this.commit(edits, null, 'restore');
-    this.closeGroup();
-    this.toast('Restored the version from ' + when(v.t) + '.', 6000, { label: 'Undo', fn: () => this.undo() });
-  }
-
-  async openVersion(v, files) {
-    await this.snapshot('Before opening ' + v.name, { force: !this.lastSig });
-    await this.stashBinary();
-    await this.loadBinary(v.name, v.main);
-    this.files = new Map(files);
-    this.main = v.main;
-    this.name = v.name;
-    this.hist = []; this.redoStack = []; this.updateUndoUI();
-    this.binaryDirty = true; this.zipDirty = true; this.forceRender = true;
-    this.srcFile = this.main;
-    this.desk.scrollTop = 0;
-    this.rebuild();
-    if (this.cm || this.cmFallback) this.showSrcFile(this.main);
-    this.updateFileTabs();
-    this.persist();
-    this.lastSig = v.sig;
-    this.setBase({ t: v.t, label: v.label || 'Automatic version', id: v.id, files });
-    this.resetPdf();
-    this.toast('Opened the version of ' + v.name + ' from ' + when(v.t) + '.', 6000);
   }
 
   // ---- git ---------------------------------------------------------------------------------
@@ -4062,201 +3734,6 @@ class App {
     this.main = '';
     await this.loadGitFiles(files, 'Cloned', 'git');
     this.toast('Cloned ' + name + '.');
-  }
-
-  renderChanges(body) {
-    const all = this.currentChanges();
-    // comment lines are listed above, as comments; Accept all takes them along
-    const real = all.filter((c) => !spacingOnly(c) && !commentOnly(c)), space = all.filter(spacingOnly);
-    const top = mk('div', 'chg-top');
-    const cmp = mk('div', 'chg-base');
-    cmp.append('Changes since ', mk('b', '', this.base ? when(this.base.t) : ''), this.base && this.base.label ? ' · ' + this.base.label : '');
-    const lab = mk('label', 'chg-show');
-    const cb = mk('input');
-    cb.type = 'checkbox'; cb.id = 'chg-show'; cb.checked = !!this.prefs.marks;
-    cb.addEventListener('change', () => this.setMarks(cb.checked));
-    lab.append(cb, 'Show changes on the pages');
-    top.append(cmp, lab);
-    if (all.length) {
-      const row = mk('div', 'chg-bulk');
-      row.append(mk('span', 'chg-n', real.length + (real.length === 1 ? ' change' : ' changes')), mk('span', 'grow'),
-        mkBtn('Accept all', () => this.acceptChanges(this.currentChanges()), 'Keep every change and compare from here on'),
-        mkBtn('Reject all', () => this.rejectChanges(this.currentChanges(), 'Before rejecting all changes'), 'Put back the text of the compared version (Ctrl+Z undoes)'));
-      top.append(row);
-    }
-    body.append(top);
-    if (!all.length) body.append(mk('div', 'nav-empty', 'No changes since then. Each edit you make shows up here with Accept and Reject.'));
-    const MAX = 250;
-    for (const c of real.slice(0, MAX)) body.append(this.changeItem(c));
-    if (real.length > MAX) body.append(mk('div', 'nav-empty', (real.length - MAX) + ' more. Accept or reject some to see the rest.'));
-    if (space.length) {
-      const it = mk('div', 'chg spacing');
-      const row = mk('div', 'chg-row');
-      row.append(mk('span', 'where', space.length + (space.length === 1 ? ' line break or spacing change' : ' line break or spacing changes') + ' (same on the page)'), mk('span', 'grow'),
-        mkBtn('Accept', () => this.acceptChanges(space)), mkBtn('Reject', () => this.rejectChanges(space)));
-      it.append(row);
-      body.append(it);
-    }
-    const vh = mk('div', 'ver-h', 'Versions');
-    const form = mk('form', 'ver-form');
-    const inp = mk('input');
-    inp.type = 'text'; inp.placeholder = 'Name this version'; inp.maxLength = 80; inp.setAttribute('aria-label', 'Name this version');
-    form.append(inp, mkBtn('Save', null, 'Keep the text as it is now under this name', 'submit'));
-    form.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const name = inp.value.trim();
-      if (!name) { inp.focus(); return; }
-      inp.value = '';
-      inp.blur();
-      this.snapshot(name, { force: true, named: true }).then(() => this.toast('Saved the version “' + name + '”.'));
-    });
-    const list = mk('div', 'ver-list');
-    body.append(vh, form, list);
-    this.allSnaps().then((vs) => this.fillVersions(list, vs));
-  }
-
-  changeItem(c) {
-    const it = mk('div', 'chg');
-    const txt = mk('button', 'chg-txt');
-    txt.type = 'button';
-    txt.title = 'Show it on the page';
-    const src = this.src(c.f);
-    let pre = src.slice(Math.max(0, c.bs - 36), c.bs), post = src.slice(c.be, c.be + 36);
-    if (c.bs > 36) pre = '…' + pre.replace(/^\S*\s/, '');
-    if (c.be + 36 < src.length) post = post.replace(/\s\S*$/, '') + '…';
-    const flat = (t) => t.replace(/\s+/g, ' ');
-    const clip = (t) => (t.length > 160 ? t.slice(0, 70) + ' … ' + t.slice(-70) : t);
-    txt.append(mk('span', 'ctx', flat(pre)));
-    for (const [op, v] of c.parts) txt.append(op === ' ' ? document.createTextNode(flat(clip(v))) : mk(op === '-' ? 'del' : 'ins', '', flat(clip(v)) || '¶'));
-    txt.append(mk('span', 'ctx', flat(post)));
-    txt.addEventListener('click', () => { this.goTo(c.f, c.bs); if (window.innerWidth <= 860) this.toggleNav(false); });
-    const row = mk('div', 'chg-row');
-    const kind = !c.a ? 'Added' : !c.b ? 'Deleted' : 'Changed';
-    row.append(mk('span', 'where', kind + ' · ' + c.f + ':' + c.line), mk('span', 'grow'),
-      mkBtn('Accept', () => this.acceptChanges([c]), 'Keep this change'),
-      mkBtn('Reject', () => this.rejectChanges([c]), 'Put the old text back'));
-    it.append(txt, row);
-    return it;
-  }
-
-  fillVersions(list, vs) {
-    list.replaceChildren();
-    if (!vs.length) { list.append(mk('div', 'nav-empty', 'Versions are kept as you work: every few minutes, when you leave, and when you save the .zip.')); return; }
-    for (const v of vs.slice(0, 120)) {
-      const mine = this.isMine(v);
-      const row = mk('div', 'ver' + (this.base && this.base.id != null && this.base.id === v.id ? ' on' : ''));
-      const l = mk('div', 'ver-l');
-      const w = when(v.t);
-      l.append(mk('span', 'ver-t', w[0].toUpperCase() + w.slice(1)), mk('span', 'ver-n' + (v.named ? ' named' : ''), v.label || 'Automatic'));
-      if (!mine) l.append(mk('span', 'ver-p', v.name));
-      const acts = mk('div', 'ver-a');
-      if (mine) acts.append(mkBtn('Compare', () => this.compareWith(v), 'List and mark the changes made since this version'), mkBtn('Restore', () => this.restoreVersion(v), 'Bring back the text of this version (Ctrl+Z undoes)'));
-      else acts.append(mkBtn('Open', () => this.restoreVersion(v), 'Open this version of ' + v.name + ' (the current project is kept as a version)'));
-      if (v.named) acts.append(mkBtn('×', () => { snapDel(v.id).catch(() => {}); this.memSnaps = this.memSnaps.filter((x) => x.id !== v.id); this.snapList = null; this.lastSig = null; this.refreshNav(); }, 'Delete this named version'));
-      row.append(l, acts);
-      list.append(row);
-    }
-  }
-
-  // Track-changes marks on the pages: inserted text underlined, deletions as a small red
-  // wedge (hover shows what was deleted), changed equations outlined, and a bar in the
-  // margin beside each changed line.
-  paintChanges() {
-    for (const x of this.root.querySelectorAll('.mk-layer')) x.remove();
-    for (const x of this.root.querySelectorAll('.chg-atom')) x.classList.remove('chg-atom');
-    const HL = window.CSS && CSS.highlights;
-    if (HL) HL.delete('g-ins');
-    if (!this.prefs.marks || !this.base || !this.model) return;
-    const list = this.currentChanges().filter((c) => !spacingOnly(c) && !commentOnly(c));
-    if (!list.length) return;
-    const ins = new Map(), dels = [];
-    for (const c of list) {
-      for (const [op, v, p] of c.parts) {
-        if (op === '+' && v.trim()) { if (!ins.has(c.f)) ins.set(c.f, []); ins.get(c.f).push([p, p + v.length]); }
-        else if (op === '-' && v.trim()) dels.push({ f: c.f, p, text: v });
-      }
-    }
-    for (const rs of ins.values()) rs.sort((a, b) => a[0] - b[0]);
-    const ranges = [];
-    for (const [f, rs] of ins) ranges.push(...this.index.domRanges(f, rs));
-    const atomHit = [];
-    for (const el of this.root.querySelectorAll('[data-a]')) {
-      const A = atomOfEl(el);
-      if (!A || A.s == null || A.e == null) continue;
-      const rs = ins.get(A.f) || [];
-      const hit = rs.some(([s, e]) => s < A.e && e > A.s) || dels.some((d) => d.f === A.f && d.p > A.s && d.p < A.e);
-      if (hit && !el.parentElement.closest('.chg-atom')) { el.classList.add('chg-atom'); atomHit.push(A); }
-    }
-    if (HL && window.Highlight) HL.set('g-ins', new window.Highlight(...ranges));
-    const layers = new Map();
-    const layer = (page) => {
-      let L = layers.get(page);
-      if (!L) { L = mk('div', 'mk-layer'); L.contentEditable = 'false'; L.setAttribute('aria-hidden', 'true'); page.append(L); L.bars = []; layers.set(page, L); }
-      return L;
-    };
-    const pageOf = (n) => (n.nodeType === 1 ? n : n.parentElement).closest('.page');
-    const bar = (page, q) => { const P = page.getBoundingClientRect(); layer(page).bars.push([q.top - P.top, q.bottom - P.top]); };
-    for (const r of ranges) { const page = pageOf(r.startContainer); if (page) for (const q of r.getClientRects()) if (q.height) bar(page, q); }
-    for (const el of this.root.querySelectorAll('.chg-atom')) { const page = pageOf(el); if (page) for (const q of el.getClientRects()) if (q.height) bar(page, q); }
-    for (const d of dels) {
-      if (atomHit.some((A) => A.f === d.f && d.p > A.s && d.p < A.e)) continue;
-      const r = this.index.find(d.f, d.p, -1);
-      if (!r || !r.node) continue;
-      const R = document.createRange();
-      try { R.setStart(r.node, Math.min(r.offset, r.node.length ?? 0)); } catch (e) { continue; }
-      R.collapse(true);
-      const q = R.getClientRects()[0] || R.getBoundingClientRect();
-      const page = pageOf(r.node);
-      if (!q || !q.height || !page) continue;
-      const P = page.getBoundingClientRect();
-      const m = mk('span', 'del-mk');
-      m.style.left = (q.left - P.left) + 'px'; m.style.top = (q.top - P.top) + 'px'; m.style.height = q.height + 'px';
-      m.title = 'Deleted: ' + (d.text.length > 300 ? d.text.slice(0, 300) + '…' : d.text);
-      layer(page).append(m);
-      bar(page, q);
-    }
-    for (const [page, L] of layers) {
-      const flow = page.querySelector('.flow');
-      const x = flow ? flow.getBoundingClientRect().left - page.getBoundingClientRect().left - 14 : 24;
-      const bs = L.bars.sort((a, b) => a[0] - b[0]);
-      const merged = [];
-      for (const b of bs) { const last = merged[merged.length - 1]; if (last && b[0] <= last[1] + 2) last[1] = Math.max(last[1], b[1]); else merged.push([b[0], b[1]]); }
-      for (const [t, b] of merged) { const e = mk('span', 'chg-bar'); e.style.left = x + 'px'; e.style.top = t + 'px'; e.style.height = (b - t) + 'px'; L.append(e); }
-    }
-  }
-
-  headingEl(f, s) {
-    for (const B of this.renderer.blocks) if (B.f === f && B.s <= s && B.e > s) return B.items[0] && B.items[0].el;
-    return null;
-  }
-
-  markCurrentHeading() {
-    if (!this.navHeads || !document.body.classList.contains('nav-on') || this.navTab !== 'outline') return;
-    const D = this.desk.getBoundingClientRect();
-    let cur = null;
-    for (const x of this.navHeads) {
-      const el = this.headingEl(x.h.f, x.h.s);
-      if (el && el.isConnected && el.getBoundingClientRect().top < D.top + 120) cur = x;
-    }
-    for (const x of this.navHeads) x.b.classList.toggle('cur', x === cur);
-  }
-
-  // Show a source position on the page (and in the source pane if it is open).
-  goTo(f, p, heading) {
-    let el = heading ? this.headingEl(f, p) : null;
-    if (!el) {
-      const r = this.index.find(f, p, 1);
-      if (r && r.node) el = r.node.nodeType === 1 ? r.node : r.node.parentElement;
-    }
-    if (!el || !el.isConnected) el = this.headingEl(f, p);
-    if (el && el.isConnected) {
-      const it = el.closest('.it') || el;
-      const R = it.getBoundingClientRect(), D = this.desk.getBoundingClientRect();
-      this.desk.scrollTop += R.top - D.top - (heading ? 24 : D.height / 3);
-      it.classList.remove('flash'); void it.offsetWidth; it.classList.add('flash');
-      setTimeout(() => it.classList.remove('flash'), 900);
-    }
-    if (document.body.classList.contains('src-on') || !el) this.reveal(f, p, false);
   }
 
   revealCaret(focusSrc) {
@@ -4699,15 +4176,13 @@ class App {
     const tex = names.map((n) => '\\begin{center}\n\\includegraphics[width=0.8\\linewidth]{' + n + '}\n\\end{center}').join('\n\n');
     const edits = [{ f, s: p, e: p, t: pre + tex + post }];
     let shift = 0;
-    const docAt = d ? d.at : -1;
-    if (d && !/\\(?:usepackage|RequirePackage)\s*(?:\[[^\]]*\])?\s*\{[^}]*\bgraphic[sx]\b[^}]*\}/.test(main.slice(0, docAt).replace(/(^|[^\\])%.*$/gm, '$1'))) {
-      // after the last \usepackage line, as a package for an equation's symbol is added
-      let at = docAt, m;
-      const re = /^[ \t]*\\usepackage\s*(?:\[[^\]]*\])?\s*\{[^}]*\}[^\n]*\n/gm;
-      while ((m = re.exec(main.slice(0, docAt)))) at = m.index + m[0].length;
-      const line = (at && main[at - 1] !== '\n' ? '\n' : '') + '\\usepackage{graphicx}\n';
-      edits.push({ f: this.main, s: at, e: at, t: line });
-      if (f === this.main) shift = line.length;
+    // graphicx once, after the last \usepackage line, as a package for an equation's symbol is
+    // added (src/preamble.js); graphics, loaded by hand, does as well
+    const others = d ? this.preambleOthers() : [];
+    if (d && !hasPackage(main, 'graphics', d.at, others)) {
+      const add = usePackage(main, 'graphicx', null, { end: d.at, others });
+      for (const x of add) edits.push({ f: this.main, ...x });
+      if (f === this.main) shift = add.reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
     }
     return { edits, caret: { f, p: p + shift + pre.length + tex.length, bias: -1 } };
   }
@@ -5370,12 +4845,17 @@ class App {
     const mod = isMac ? 'Cmd' : 'Ctrl';
     p.insertAdjacentHTML('beforeend', `
       <p>Rikuy is a writing app for papers: you type on the finished page, and it keeps a LaTeX file up to date behind it.</p>
-      <p>The row of buttons above the page works as in a word processor. Styles sets the paragraph you are in as Normal, a Heading, a Quote, or LaTeX, which shows it as its LaTeX source to type in directly. Make words bold, italic or underlined, start a list. Insert adds a formula, an equation, a table, a picture, a footnote, a citation or a link where the caret is.</p>
+      <p>The ribbon above the page works as in Word. Its tabs (Home, Insert, References, Review, View, Help, and Table Layout while the caret is in a table) each hold a row of buttons; Home has what you need most. Styles sets the paragraph you are in as Normal, a Heading, a Quote, or LaTeX, which shows it as its LaTeX source to type in directly. Make words bold, italic or underlined, start a list. Insert adds a formula, an equation, a table, a picture, a footnote, a citation or a link where the caret is. Search in the bar (Alt+Q) finds any command by its name, and a right click on the page lists what applies there.</p>
       <p>Download gives you the paper as a PDF, as a Word file or as LaTeX. Live graphs stay live only in the LaTeX download. Preview shows the PDF beside the page.</p>
       <p>The page is typeset from your LaTeX source. Every edit you make on the page is written back into the source as the smallest possible change.</p>
       <dl class="keys">
         <dt>Type, select, delete</dt><dd>As in any editor</dd>
         <dt>${mod}+B, ${mod}+I</dt><dd>Bold, italic (\\textbf, \\emph)</dd>
+        <dt>${mod}+Alt+1, 2, 3, ${mod}+Alt+0</dt><dd>Heading 1, 2, 3; Normal</dd>
+        <dt>${mod}+Shift+L</dt><dd>Bulleted list</dd>
+        <dt>Alt+Q</dt><dd>Search for a command by its name</dd>
+        <dt>Shift+F10, right click</dt><dd>The menu of what applies here; a second right click gives the browser's (spelling)</dd>
+        <dt>${mod}+F1</dt><dd>Fold the ribbon to its tabs, and back</dd>
         <dt>$ or ${mod}+M</dt><dd>New inline math</dd>
         <dt>${mod}+Shift+E</dt><dd>New numbered equation</dd>
         <dt>\\ or ${mod}+K</dt><dd>Insert a command</dd>
@@ -5500,7 +4980,7 @@ function stripTop(n) { const i = n.indexOf('/'); return i > 0 && n.split('/').le
 
 // ---- for scripts on the page ------------------------------------------------------------
 // window.rikuy.api: what a script on the page (an AI agent's, a test's) may count on. These
-// eight names stay from version to version; the rest of window.rikuy is the app itself and
+// ten names stay from version to version (commands and run came in 0.26.0, the others before); the rest of window.rikuy is the app itself and
 // changes without notice. Nothing here does more than a person at the keyboard can: a new
 // source goes through the edit path typing takes (one undo takes it back), a compile is the
 // one Download PDF runs, and a copy someone shared is read here but not changed.
@@ -5547,16 +5027,38 @@ function agentApi(app) {
     // the scripts the text is in and the preamble does not set up: ids such as 'chinese'
     needs() { flush(); return [...(app.scriptNeedsNow(true) || [])]; },
     // what "Set it up" does; resolves to the engine the lines lead to, or null when none were added
-    async setUpScripts() { await app.ready; mine('setUpScripts'); return app.scriptSetUp() || null; }
+    async setUpScripts() { await app.ready; mine('setUpScripts'); return app.scriptSetUp() || null; },
+    // every command of the interface, as the ribbon, the keys and the search box have them:
+    // [{ id, name, tab, group, keys, enabled }], enabled where the caret is now
+    commands() {
+      flush();
+      const at = app.ribbonAt();
+      if (at) at.memo = {};
+      return commands().filter((c) => c.run && c.searchable !== false).map((c) => ({ id: c.id, name: c.name, tab: c.tab || null, group: c.group || null, keys: [...(c.keys || []), ...(c.keysElsewhere || [])], enabled: enabled(app, c, at) }));
+    },
+    // one command by its id where the caret is, as its button does: resolves to true when it ran,
+    // false when it cannot run there (commands() says which can)
+    async run(id, args) {
+      await app.ready;
+      mine('run');
+      if (typeof id !== 'string' || !command(id) || !command(id).run) throw new TypeError('rikuy.api.run(id) takes the id of a command: rikuy.api.commands() lists them.');
+      flush();
+      const r = await app.runCommand(id, args);
+      return r !== false;
+    }
   });
 }
 
-Object.assign(App.prototype, collab, word, ribbon);
+// (joined so that no module takes a name another or the app has: joinMethods throws, naming both)
+joinMethods(App.prototype, { 'src/collab.js': collab, 'src/word.js': word, 'src/ribbon.js': ribbon, 'src/nav.js': nav, 'src/review.js': review, 'src/ribbon/tabs.js': tabs,
+  'src/ui/gallery.js': galleryMethods, 'src/ui/search.js': searchMethods, 'src/ui/menu.js': menuMethods, 'src/cmd/*.js': cmdMethods });
 // one item of the insert list, where the caret is: what the ribbon's Insert buttons press
 App.prototype.insertFromPalette = function (k) {
-  const c = this.caretNow(), x = PALETTE.find((y) => y.k === k);
+  const c = this.caretNow(), x = paletteItems().find((y) => y.k === k);
   if (c && x) this.runPalette(x, c.ghost ? null : { f: c.f, a: c.a, b: c.b }, c.ghost ? this.ghost : null);
 };
+// a link opened from a command (Help's) as one in a document is: web and mail addresses only
+App.prototype.openLink = openLink;
 App.prototype.textSigNow = function () { return textSig(this.main, [...this.files.entries()]); };
 // the Word worker's files, asked for as the page asks for its other files (src/word.js)
 App.prototype.assetUrl = asset;
@@ -5567,5 +5069,11 @@ window.rikuy = app;
 installCollab(app);
 installWord(app);
 installRibbon(app);
+installKeys(app, isMac, (id, at) => app.runCommand(id, null, at));
+installSearch(app);
+installMenu(app);
 app.isBalanced = isBalanced;
+// for tests and the batches' own checks: the registry and the parts controls are made of
+app.cmds = { command, commands, describe, enabled, register, unregister, run: (id, args) => runCmd(app, id, args) };
+app.kit = kit;
 app.init().catch((e) => { console.error(e); app.readyFail(e); const b = document.getElementById('boot'); if (b) b.textContent = 'Rikuy could not start: ' + e.message; });

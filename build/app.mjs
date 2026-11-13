@@ -16,6 +16,10 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import zlib from 'zlib';
+// the command registry, every control of the page: llms.txt's list and dist/controls.json
+import { describe } from '../src/commands.js';
+import '../src/cmd/index.js';
+import { TABS } from '../src/ribbon/order.js';
 
 const root = path.join(path.dirname(new URL(import.meta.url).pathname), '..');
 const R = (p) => path.join(root, p);
@@ -201,6 +205,32 @@ export function appFiles(OUT) {
   fs.copyFileSync(R('docs/social.png'), O('og.png'));
 }
 
+// Every control of the page, from the command registry (src/commands.js): its element's id, its
+// role and accessible name, where it is (the bar, the status line, a tab and group of the ribbon,
+// the downloads pinned at the ribbon's end, or nowhere on screen: the search box and the right
+// click menu reach it), its keys and its tooltip. test/agent.py finds each by role and name.
+export function controls() {
+  const tabs = Object.fromEntries(TABS.map((t) => [t.id, t]));
+  return describe().map((x) => ({ ...x, tabName: x.tab ? tabs[x.tab].name : null, contextual: x.tab ? !!tabs[x.tab].ctx : false, groupName: x.tab && x.group ? (tabs[x.tab].groups.find((g) => g.id === x.group) || {}).name || null : null }));
+}
+export const controlsJson = () => JSON.stringify({ version: VERSION, controls: controls() }, null, 1) + '\n';
+
+// The ribbon's tabs as llms.txt lists them: each tab that has controls, the names of its controls
+// in the order the screen has them (its groups' order, then each control's), the contextual ones
+// said so
+function ribbonList() {
+  const all = controls().filter((x) => x.place === 'ribbon' && x.tab && !x.fit && x.role !== 'group');
+  const out = [];
+  for (const t of TABS) {
+    const g = (x) => t.groups.findIndex((y) => y.id === x.group);
+    const here = all.filter((x) => x.tab === t.id).sort((x, y) => g(x) - g(y) || x.order - y.order);
+    if (!here.length) continue;
+    const names = [...new Set(here.map((x) => '"' + x.name + '"'))];
+    out.push('  - ' + t.name + (t.ctx ? ' (shown while the caret is in a ' + ({ table: 'table', picture: 'picture', equation: 'equation', headfoot: 'header or footer' })[t.ctx] + ')' : '') + ': ' + names.join(', '));
+  }
+  return out.join('\n');
+}
+
 // llms.txt (llmstxt.org): the page is an app, so its HTML tells a machine little. This says what
 // Rikuy is, what a person can do with it, and how an agent hands a person a document that opens
 // in it. The link recipes are src/share.js's formats; test/share.test.mjs builds links by them.
@@ -311,9 +341,14 @@ of window.rikuy is the app itself and changes without notice.
   ["chinese", "arabic"]; [] when there are none.
 - setUpScripts(): a Promise. Adds the preamble lines for them, as the button Set it up does;
   resolves to the engine they need ("xelatex" or "lualatex"), or null when nothing was added.
+- commands(): every command of the interface, as the ribbon, the keys and the search box have
+  them: [{id, name, tab, group, keys, enabled}], enabled where the caret is now.
+- run(id): a Promise. Runs one command by its id where the caret is, as its button does (for
+  "bold", the selection on the page becomes bold, one Undo takes it back); resolves to true when
+  it ran, false when it cannot run there.
 
-In a guest's view (a document opened from a link with "by") setSource and setUpScripts reject
-with an Error; the others work.
+In a guest's view (a document opened from a link with "by") setSource, setUpScripts and run
+reject with an Error; the others work.
 
     await rikuy.api.whenReady();
     await rikuy.api.setSource(rikuy.api.getSource().replace("draft", "final"));
@@ -332,7 +367,18 @@ and name, not by position.
   "Zoom: 120%"), "Zoom in", "Source" (the LaTeX beside the page), "Help". A narrow window hides
   some of them; the side panel that "Outline and problems" opens then has them all as menu
   items of the same names, in a menu named "Actions".
-- The toolbar under it starts with the paragraph's style. A wide window has a group "Styles"
+- Under the bar is the ribbon, as in Word: a tablist named "Ribbon" with a tab for each of
+  its panels, and in the open panel a toolbar named after the tab. Home is open when the page
+  starts. A narrow window has a combobox "Ribbon tab" in the place of the tabs. A tab's controls
+  are in the accessibility tree only while its panel is open: open the tab first, by its role and
+  name. Where the row is short, a group of controls folds into one button named after the group
+  (such as "Paragraph"), which opens a menu with the same names. The tabs and their controls:
+${ribbonList()}
+  Every control, with its role, name, tab, group and keys, is in ${SITE}controls.json.
+- A search box, the combobox "Search" in the bar (Alt+Q), finds any command by its name and
+  runs it where the caret is. A right click on the page, Shift+F10 or the menu key opens a menu
+  named "Context menu" of what applies there.
+- Home starts with the paragraph's style. A wide window has a group "Styles"
   of buttons, one for each style: "Normal", "Heading 1", "Heading 2", "Heading 3", "LaTeX
   source" (the paragraph shown and typed as its LaTeX source, see llms-full.txt), "Quote", and
   "Title" while the caret is in the title. The pressed one is the style of the paragraph the
@@ -340,10 +386,10 @@ and name, not by position.
   Where not all fit, "Previous styles" and "Next styles" page through them; "More styles" opens
   a menu "Styles" with all of them as menu items of the same names. A narrow window has instead
   a combobox "Style of this paragraph" (Normal text, Title, Heading 1 to 3, LaTeX, Quote).
-- Then the buttons "Bold", "Italic", "Underline", "Bulleted list", "Numbered list",
+- Home also has the buttons "Bold", "Italic", "Underline", "Bulleted list", "Numbered list",
   "Formula" (math in the line), "Equation" (numbered, on a line of its own), "Table",
   "Picture", "Footnote", "Citation", "Link".
-- Download offers PDF, Word and LaTeX. A wide window has the buttons "Download PDF", "Download
+- Download offers PDF, Word and LaTeX, at the right end of the ribbon in every tab. A wide window has the buttons "Download PDF", "Download
   Word" and "Download LaTeX". A narrow one has a button "Download", which opens a menu named
   "Download" with menu items of those three names. LaTeX gives the .tex, or a .zip when the
   project has several files.
@@ -416,7 +462,10 @@ Ctrl is Cmd on a Mac.
 - Ctrl+P: the PDF preview; Ctrl+\\: the source pane; Ctrl+Shift+O: outline, problems, changes
 - Ctrl+= and Ctrl+-, Ctrl+0: zoom the document in and out, actual size (on the page; a pinch
   or Ctrl with the mouse wheel over the page zooms too, about the point under the pointer)
-- Ctrl+Alt+M: comment on the selected words
+- Ctrl+Alt+M: comment on the selected words; Ctrl+Alt+F: a footnote
+- Ctrl+Alt+1, 2, 3: Heading 1, 2, 3; Ctrl+Alt+0: Normal; Ctrl+Shift+L: a bulleted list
+- Alt+Q: the search box, for any command by its name; Ctrl+F1: the ribbon folded to its tabs
+  and back; Shift+F10 or the menu key: the right click menu at the caret
 - Tab, Ctrl+Enter: next cell, new row in a table
 - Ctrl+Shift+V: paste as plain text
 - Click math, a citation or a cross reference to edit it; Alt+click shows that spot in the source
@@ -559,7 +608,7 @@ function walk(dir, pre = '') {
 //     by the worker
 const PACK = /^tex\/[pbtwm]-[0-9a-f]{16}\.wasm$/;
 const ADDRESSED = /-([0-9a-f]{16})\.[A-Za-z0-9]+$/;
-const NOT_SERVED = new Set(['rikuy.html', 'LICENSES.txt', '404.html', '_headers', '_redirects', 'robots.txt', 'sitemap.xml', 'llms.txt', 'llms-full.txt', 'og.png']);
+const NOT_SERVED = new Set(['rikuy.html', 'LICENSES.txt', '404.html', '_headers', '_redirects', 'robots.txt', 'sitemap.xml', 'llms.txt', 'llms-full.txt', 'og.png', 'controls.json']);
 const PRECACHE_MAX = 4 * 1024 * 1024;
 const WORD_PART = /^word\/pandoc-[0-9a-f]+-\d+\.bin$/;
 

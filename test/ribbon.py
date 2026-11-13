@@ -283,13 +283,15 @@ def keyboard(page):
     load_doc(page, DOC); select_text(page, 'Second')
     state(page)
     stops = page.evaluate('[...document.querySelectorAll("#ribbon select, #ribbon button")].filter((x) => x.tabIndex === 0).map((x) => x.id)')
-    check('the ribbon is a toolbar with one tab stop', page.evaluate('document.getElementById("ribbon").getAttribute("role")') == 'toolbar' and stops == ['rb-st-p'], stops)
+    # (the ribbon is the tablist "Ribbon" over one toolbar per tab, named after it; Home's groups in Word's order: Font, Paragraph, Styles, Insert)
+    bar = page.evaluate('(() => { const t = document.querySelector("#rp-home > [role=toolbar]"); return [document.getElementById("rb-tabs").getAttribute("role"), document.getElementById("rb-tabs").getAttribute("aria-label"), t && t.getAttribute("aria-label")]; })()')
+    check('the ribbon\'s open tab is a toolbar with one tab stop', bar == ['tablist', 'Ribbon', 'Home'] and stops == ['rb-b'], (bar, stops))
     page.focus('#rb-st-p')
     seen = []
     for key in ('ArrowRight', 'ArrowLeft', 'ArrowLeft', 'End', 'Home', 'ArrowRight'):
         page.keyboard.press(key); seen.append(page.evaluate('document.activeElement.id'))
-    check('arrows, Home and End move between its controls (the strip\'s disabled arrows skipped)', seen == ['rb-st-section', 'rb-st-p', 'b-save', 'b-save', 'rb-st-p', 'rb-st-section'], seen)
-    page.focus('#rb-st-more'); page.keyboard.press('ArrowRight')
+    check('arrows, Home and End move between its controls (the strip\'s disabled arrows skipped)', seen == ['rb-st-section', 'rb-st-p', 'rb-ol', 'b-save', 'rb-b', 'rb-i'], seen)
+    page.focus('#rb-i'); page.keyboard.press('ArrowLeft')
     ring = page.evaluate('(() => { const c = getComputedStyle(document.activeElement); return c.outlineStyle !== "none" && parseFloat(c.outlineWidth) > 0; })()')
     page.keyboard.press('Enter'); page.wait_for_timeout(200)
     check('the focus shows, and Enter on Bold makes the words selected on the page bold', ring and '\\textbf{Second}' in src(page), src(page)[src(page).find('Second') - 8:][:30])
@@ -363,7 +365,7 @@ def where_it_applies(page):
     check('with a selection over two paragraphs the style cannot be changed', state(page)['rb-style'][0])
     # the row keeps the caret: a click on a disabled button, on the Download label, on empty space
     click_text(page, 'cell', 2); state(page)
-    for what, sel in (('a disabled button', '#rb-eq'), ('the Download label', '.rb-lab'), ('the empty part of the row', '#ribbon > .grow')):
+    for what, sel in (('a disabled button', '#rb-eq'), ('the Download label', '.rb-lab'), ('the empty part of the row', '#ribbon .rb-panel:not([hidden]) .grow')):
         r = page.evaluate('(s) => { const r = document.querySelector(s).getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }', sel)
         page.mouse.click(*r); page.wait_for_timeout(100)
         page.keyboard.type('Q'); page.wait_for_timeout(150)
@@ -469,15 +471,20 @@ def insert_edges(page):
 
 def downloads_in_sight(page):
     """The downloads stay at the right end of the row at every width, the other buttons scrolling
-    under a soft edge beside them; on a phone they are one Download button with the three choices."""
+    under a soft edge beside them; below 861 px where the row has no room for the three, and on a
+    phone, they are one Download button with the three choices."""
     load_doc(page, DOC)
     IN = """(ids) => { const r = document.getElementById('ribbon'); r.scrollLeft = 0; return ids.map((id) => { const e = document.getElementById(id), b = e.getBoundingClientRect(), rr = r.getBoundingClientRect();
       const top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return b.width > 0 && b.left >= rr.left - 1 && b.right <= innerWidth + 1 && !!top && (top === e || e.contains(top)); }); }"""
-    for w in (820, 1000):
+    for w in (820, 860, 1000):
         page.set_viewport_size({'width': w, 'height': 800}); page.wait_for_timeout(300)
-        seen = page.evaluate(IN, ['rb-pdf', 'rb-word', 'b-save'])
-        over = page.evaluate('(() => { const r = document.getElementById("ribbon"); return r.scrollWidth > r.clientWidth; })()')
-        check('at %dpx PDF, Word and LaTeX are in sight with the row not scrolled' % w, all(seen) and (over or w > 900), (seen, over))
+        seen = page.evaluate(IN, ['rb-pdf', 'rb-word', 'b-save'] if w > 860 else ['rb-dl-menu'])
+        over = page.evaluate('(() => { const r = document.getElementById("ribbon"); return r.scrollWidth > r.clientWidth + 1; })()')
+        if w > 860:
+            check('at %dpx PDF, Word and LaTeX are in sight with the row not scrolled' % w, all(seen), (seen, over))
+        else:
+            # (the tabs' list at the row's start left no room for the three: Footnote, Citation and Link went under them)
+            check('at %dpx, with no room for the three, one Download button is in sight and the row does not scroll: every button to insert is on the screen' % w, all(seen) and not over, (seen, over))
         clear = page.evaluate("""() => { const r = document.getElementById('ribbon'); r.scrollLeft = r.scrollWidth; const a = document.getElementById('rb-link').getBoundingClientRect(), d = document.querySelector('.rb-dl').getBoundingClientRect(); r.scrollLeft = 0; return a.right <= d.left + 1; }""")
         check('and scrolled to its end, the last button to insert is clear of them', clear)
     for w in (360, 390, 430):
@@ -681,7 +688,7 @@ def gallery_keys(page):
     seen = []
     for key in ('ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight'):
         page.keyboard.press(key); seen.append(page.evaluate('document.activeElement.id'))
-    check('the arrow keys go along the tiles, past the strip\'s disabled arrows to More, and on to Bold', seen == ['rb-st-section', 'rb-st-subsection', 'rb-st-subsubsection', 'rb-st-latex', 'rb-st-quote', 'rb-st-more', 'rb-b'], seen)
+    check('the arrow keys go along the tiles, past the strip\'s disabled arrows to More, and on to Formula', seen == ['rb-st-section', 'rb-st-subsection', 'rb-st-subsubsection', 'rb-st-latex', 'rb-st-quote', 'rb-st-more', 'rb-math'], seen)
     page.focus('#rb-st-latex'); page.keyboard.press('Enter'); page.wait_for_timeout(200)
     check('Enter on LaTeX makes the caret\'s paragraph a LaTeX paragraph', body(page).count('% rikuy: latex\nThird paragraph here.') == 1 and boxes(page) == ['Third paragraph here.'], body(page))
     page.focus('#rb-st-quote'); page.keyboard.press(' '); page.wait_for_timeout(200)

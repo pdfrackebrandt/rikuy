@@ -44,6 +44,11 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
 - **Typing on the page.** Text, bold and italic, formulas (in a MathLive field, written back
   as LaTeX), table cells, footnotes, `siunitx` quantities. The source pane shows every
   change as it lands.
+- **Word's ribbon over the page.** Tabs as in Word (Home, Insert, References, Review, View, Help,
+  and Table Layout while the caret is in a table), Word's keys for headings, Normal and bullets,
+  a search box for any command by its name (Alt+Q), a right click menu of what applies where you
+  are. Every button is a command of one registry, which agents find by name
+  (`controls.json`, llms.txt) and run (`rikuy.api.run`).
 - **The whole TeX Live 2026 toolchain.** The three engines, latexmk's reruns, bibtex and biber,
   makeindex and xindy, glossaries, and shell escape: Ghostscript, gnuplot, Python with Pygments
   (minted), dvips, Asymptote with 3D rendering, and TeX starting TeX (TikZ externalize,

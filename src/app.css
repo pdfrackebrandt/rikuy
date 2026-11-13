@@ -129,11 +129,67 @@ button { font: inherit; color: inherit; }
 body.has-ai .ai-only { display: inline-flex !important; }
 .linkish { background: none; border: 0; padding: 0; color: var(--blue-ink); cursor: pointer; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 35%, transparent); text-underline-offset: 2px; font-size: 12.5px; }
 
-/* ---- the ribbon: style, formatting, inserting and downloading, in a row under the bar ---- */
+/* ---- the search box in the bar (Alt+Q): any command by its name ---- */
+#bar { position: relative; }
+.srch { position: relative; flex: 0 1 280px; min-width: 140px; display: flex; align-items: center; }
+.srch > svg { position: absolute; left: 9px; top: 50%; width: 15px; height: 15px; margin-top: -7.5px; fill: none; stroke: var(--mute); stroke-width: 1.6; stroke-linecap: round; pointer-events: none; }
+.srch input { width: 100%; height: 30px; box-sizing: border-box; padding: 0 10px 0 30px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink-ui); font: 13px var(--font-ui); }
+.srch input::placeholder { color: var(--mute); }
+.srch input:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-color: transparent; }
+.srch-list { position: absolute; top: calc(100% + 4px); left: 0; z-index: 45; min-width: 100%; width: max-content; max-width: min(440px, calc(100vw - 16px)); max-height: 60vh; overflow: auto; box-sizing: border-box; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 12px 40px rgba(10, 20, 30, .22); }
+.srch-opt { display: flex; align-items: baseline; gap: 10px; padding: 6px 10px; border-radius: 5px; cursor: pointer; white-space: nowrap; }
+.srch-opt.on { background: var(--blue-wash); }
+.srch-opt.off .srch-n { opacity: .5; }
+.srch-w { color: var(--mute); font-size: 12px; }
+.srch-k { margin-left: auto; padding-left: 16px; color: var(--mute); font: 11.5px var(--font-mono); }
+.srch-none { padding: 8px 10px; color: var(--mute); font-size: 12.5px; white-space: normal; max-width: 300px; }
+
+/* ---- the ribbon: Word's tabs, and under them the open tab's row of groups ---- */
+/* the tabs' row; contextual tabs (a table's, an equation's) in their own colour, after Help */
+.rb-top { display: flex; align-items: flex-end; gap: 2px; height: 28px; padding: 0 8px 0 8px; background: var(--chrome); flex: none; }
+:root { --ctx: #7A3FA8; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ctx: #C59BE8; } }
+:root[data-theme="dark"] { --ctx: #C59BE8; }
+.rb-tabs { display: flex; align-items: flex-end; gap: 1px; min-width: 0; }
+.rb-tab { position: relative; flex: none; height: 26px; padding: 0 11px; border: 0; border-radius: 6px 6px 0 0; background: transparent; color: var(--mute); font: 500 13px var(--font-ui); cursor: pointer; white-space: nowrap; }
+.rb-tab:hover { color: var(--ink-ui); background: color-mix(in srgb, var(--blue-wash) 50%, transparent); }
+.rb-tab.on { color: var(--blue-ink); }
+.rb-tab.on::after { content: ""; position: absolute; left: 9px; right: 9px; bottom: 0; height: 3px; border-radius: 2px 2px 0 0; background: var(--blue); }
+.rb-tab.ctx { color: var(--ctx); }
+.rb-tab.ctx.on::after { background: var(--ctx); }
+.rb-tab:not(.ctx) + .rb-tab.ctx { margin-left: 10px; }
+.rb-tab:not(.ctx) + .rb-tab.ctx::before { content: ""; position: absolute; left: -6px; top: 7px; bottom: 7px; width: 1px; background: var(--line); }
+.rb-tab:focus-visible, .rb-coll:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
+.rb-coll { flex: none; width: 28px; height: 24px; margin-bottom: 2px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: var(--mute); cursor: pointer; }
+.rb-coll:hover { background: var(--blue-wash); color: var(--ink-ui); }
+.rb-coll svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+body.rb-collapsed .rb-coll svg { transform: rotate(180deg); }
+body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
+@media (min-width: 861px) { body.rb-collapsed:not(.rb-peek) #ribbon { display: none; } }
+/* a phone's tabs: one list at the start of the row */
+.rb-tabsel { display: none; font: 13px var(--font-ui); color: var(--ink-ui); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; height: 28px; padding: 0 2px; width: 86px; margin-right: 2px; }
+.rb-tabsel:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+/* the open tab's panel: one toolbar of groups, the downloads at its end */
+.rb-panel { flex: 1 0 auto; display: flex; align-self: stretch; }
+.rb-tb { flex: 1 0 auto; display: flex; align-items: center; gap: 2px; }
+.rb-tb > * { flex: none; }
+.rb-tb > .grow { flex: 1 1 10px; min-width: 10px; }
+.rb-grp { display: flex; align-items: center; gap: 2px; }
+/* a group folded into one button named after it, which opens its commands as a menu */
+.rb-grp > .rb-gbtn { display: none; }
+.rb-grp.folded > :not(.rb-gbtn) { display: none !important; }
+.rb-grp.folded > .rb-gbtn { display: inline-flex; padding: 0 4px 0 8px; gap: 2px; }
+.rb-gbtn svg { width: 14px; height: 14px; }
+.rb-split { display: inline-flex; align-items: center; }
+.rb-split > .btn:first-child { border-radius: 6px 0 0 6px; }
+.rb-split > .rb-x { width: 16px; border-radius: 0 6px 6px 0; }
+.rb-split > .rb-x svg { width: 12px; height: 12px; }
+.rb-split:hover > .btn:not(:disabled) { background: color-mix(in srgb, var(--blue-wash) 60%, transparent); }
+.rb-split > .btn:hover:not(:disabled) { background: var(--blue-wash); }
 .rb { display: flex; align-items: center; gap: 2px; padding: 0 0 0 12px; min-height: 40px; background: var(--chrome); border-bottom: 1px solid var(--line); flex: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; white-space: nowrap; }
 .rb::-webkit-scrollbar { display: none; }
 .rb > * { flex: none; }
-.rb > .grow { flex: 1 1 10px; min-width: 10px; }
+.rb > .rb-panel { flex: 1 0 auto; }
 .rb-style { font: 13px var(--font-ui); color: var(--ink-ui); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; height: 28px; padding: 0 4px; width: 128px; }
 .rb-style:disabled { opacity: .55; }
 .rb-style:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
@@ -180,13 +236,13 @@ body.has-ai .ai-only { display: inline-flex !important; }
 .tex-logo .tl-a { position: relative; top: -.24em; text-transform: uppercase; font-size: .75em; margin: 0 -.15em 0 -.36em; }
 .tex-logo .tl-e { position: relative; top: .5ex; text-transform: uppercase; margin: 0 -.125em 0 -.1667em; }
 .rb.rb-narrow .rb-gw { display: none; }
-.rb:not(.rb-narrow) > .rb-style { display: none; }
-.rb.rb-fold > .btn:not(.icon) span:not(.sr) { display: none; }
-.rb.rb-fold > .btn:not(.icon) { width: 32px; padding: 0; justify-content: center; }
+.rb:not(.rb-narrow) .rb-style { display: none; }
+.rb.rb-fold .rb-grp > .btn:not(.icon):not(.rb-gbtn) span:not(.sr) { display: none; }
+.rb.rb-fold .rb-grp > .btn:not(.icon):not(.rb-gbtn) { width: 32px; padding: 0; justify-content: center; }
 /* the insert buttons' names a little closer to their icons, so they keep them beside the gallery
    on a 1366 px screen; where that is still not enough the Download label goes first (rb-nolab:
    the buttons' arrows say download, and their names say it to a screen reader) */
-.rb > .btn:not(.icon) { padding: 0 6px; gap: 4px; }
+.rb-grp > .btn:not(.icon) { padding: 0 6px; gap: 4px; }
 .rb.rb-nolab .rb-lab { display: none; }
 /* the row is as tall with the style list as with the gallery: no jump where one gives way to the
    other (a phone's row stays low) */
@@ -208,6 +264,9 @@ body.has-ai .ai-only { display: inline-flex !important; }
 .rb-dl::before { content: ""; position: absolute; top: 0; bottom: 0; right: 100%; width: 18px; background: linear-gradient(to right, transparent, var(--chrome)); pointer-events: none; }
 /* on a phone the three are one button that opens them (see the 520px rule) */
 #rb-dl-menu { display: none; }
+/* and so below 861 px where the row has no room for the three (rb-dl1, src/ribbon/tabs.js) */
+.rb.rb-dl1 .rb-dl #rb-pdf, .rb.rb-dl1 .rb-dl #rb-word, .rb.rb-dl1 .rb-dl #b-save, .rb.rb-dl1 .rb-dl .rb-lab { display: none; }
+.rb.rb-dl1 .rb-dl #rb-dl-menu { display: inline-flex; }
 .rb-lab { font-size: 12px; color: var(--mute); margin-right: 4px; }
 /* the LaTeX download keeps live graphs live: a mark says so when the document has some */
 #b-save.live { padding-left: 13px; }
@@ -217,9 +276,34 @@ body.has-ai .ai-only { display: inline-flex !important; }
 .src-head .btn { flex: none; margin: 0 6px 4px; }
 /* the names of the things to insert need about 1280px beside the rest; narrower, their icons alone */
 @media (max-width: 1280px) {
-  .rb > .btn:not(.icon) span:not(.sr) { display: none; }
-  .rb > .btn:not(.icon) { width: 32px; padding: 0; justify-content: center; }
+  .rb-grp > .btn:not(.icon):not(.rb-gbtn) span:not(.sr) { display: none; }
+  .rb-grp > .btn:not(.icon):not(.rb-gbtn) { width: 32px; padding: 0; justify-content: center; }
 }
+/* menus: a folded group's, a split button's, the right click menu; their items' keys at the right */
+.pop.pop-menu { width: auto; min-width: 200px; max-width: min(380px, calc(100vw - 16px)); padding: 5px; gap: 0; }
+.pop-menu .nav-act { width: 100%; min-height: 32px; font-weight: 400; position: relative; padding: 0 10px 0 26px; }
+.pop-menu .nav-act svg { margin-left: -18px; }
+.pop-menu .nav-act:focus-visible { outline: none; background: var(--blue-wash); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 45%, transparent); }
+.pop-menu .nav-act[aria-disabled="true"] { opacity: .45; cursor: default; }
+.pop-menu .nav-act[aria-disabled="true"]:hover { background: transparent; }
+.pop-menu .nav-act[aria-checked="true"]::before { content: ""; position: absolute; left: 10px; top: 50%; width: 7px; height: 4px; margin-top: -4px; border: solid var(--blue); border-width: 0 0 2px 2px; transform: rotate(-45deg); }
+.pop-menu .mi-k { margin-left: auto; padding-left: 18px; color: var(--mute); font: 11.5px var(--font-mono); }
+.pop-menu .mi-hint { font-size: 12px; min-height: 28px; }
+.pop-menu .mi-hint[aria-disabled="true"] { opacity: .75; color: var(--mute); }
+.pop-sep { height: 1px; margin: 4px 6px; background: var(--line); flex: none; }
+/* a gallery in a menu: a grid of tiles; colours as swatches */
+.pop.pop-gal { display: grid; grid-template-columns: repeat(var(--cols, 4), auto); gap: 2px; }
+.pop-gal .pop-sep, .pop-gal .nav-act:not(.gal-tile) { grid-column: 1 / -1; }
+.pop-gal .gal-tile { padding: 4px; justify-content: center; min-height: 28px; }
+.pop-gal .gal-tile[aria-checked="true"] { background: var(--blue-wash); }
+.pop-gal .gal-tile[aria-checked="true"]::before { display: none; }
+.mi-sw { display: block; width: 18px; height: 18px; border-radius: 3px; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .18); }
+/* a number field with its unit */
+.nf { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); height: 28px; overflow: hidden; }
+.nf-v { width: 52px; height: 100%; border: 0; background: transparent; color: var(--ink-ui); font: 13px var(--font-ui); padding: 0 6px; text-align: right; }
+.nf-u { height: 100%; border: 0; border-left: 1px solid var(--line); background: var(--chrome); color: var(--ink-ui); font: 12px var(--font-ui); }
+.nf:focus-within { outline: 2px solid var(--blue); outline-offset: 1px; }
+.nf-v:focus, .nf-u:focus { outline: none; }
 
 /* ---- main split ---- */
 #main { flex: 1 1 auto; display: flex; min-height: 0; position: relative; }
@@ -655,7 +739,15 @@ body.dropping .dropzone { display: grid; }
 }
 @media (max-width: 860px) {
   .rb .rb-gw { display: none; }
-  #ribbon > .rb-style { display: inline-block; }
+  #ribbon .rb-style { display: inline-block; }
+  .rb-top { display: none; }
+  .rb-tabsel { display: inline-block; }
+  /* the search box is its magnifier until it has the focus; then it covers the bar */
+  .srch { flex: none; width: 34px; min-width: 34px; }
+  .srch input { padding: 0; color: transparent; cursor: pointer; }
+  .srch input::placeholder { color: transparent; }
+  .srch:focus-within { position: absolute; left: 6px; right: 6px; top: 7px; width: auto; z-index: 30; }
+  .srch:focus-within input { padding: 0 10px 0 30px; color: var(--ink-ui); cursor: text; }
   .btn span:not(.sr) { display: none; }
   .btn:not(.icon):not(.sm) { width: 32px; padding: 0; justify-content: center; }
   .zv { width: auto !important; padding: 0 4px !important; }

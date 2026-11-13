@@ -30,6 +30,7 @@ results = []
 def check(name, cond, detail=''):
     results.append((name, bool(cond), detail))
     print(('PASS ' if cond else 'FAIL ') + name + ('' if cond else '  :: ' + str(detail)[:300]))
+    return bool(cond)
 
 
 def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None):
@@ -116,6 +117,68 @@ def load_doc(page, files, main='main.tex'):
     page.evaluate('''([files, main]) => { const g = window.rikuy; g.files = new Map(Object.entries(files)); g.main = main; g.hist = []; g.redoStack = []; g.forceRender = true; g.rebuild(); if (g.cm) g.showSrcFile(main); }''', [files, main])
     page.wait_for_timeout(50)
 
+
+
+def place(page, select):
+    """The caret or the selection the way a round trip names it: 'words' selects those words (the
+    first place they are drawn), ('words', k) puts the caret k characters into them, ('from', 'to')
+    selects from the start of one to the end of the other, a function does it itself."""
+    if callable(select):
+        select(page)
+    elif isinstance(select, str):
+        select_text(page, select)
+    elif isinstance(select[1], int):
+        click_text(page, select[0], select[1])
+    else:
+        page.evaluate('''([a, z]) => { const sp = [...document.querySelectorAll('#pages span.t')]; const s = sp.find((x) => x.textContent.includes(a)), e = sp.find((x) => x.textContent.includes(z));
+          const r = document.createRange(); r.setStart(s.firstChild, s.textContent.indexOf(a)); r.setEnd(e.firstChild, e.textContent.indexOf(z) + z.length);
+          document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''', list(select))
+    page.wait_for_timeout(120)
+
+
+def pressed(page, command):
+    """What the command's control shows where the caret is: pressed (True), not (False), or None for a command that is no toggle."""
+    return page.evaluate('''(id) => { const c = window.rikuy.cmds.command(id), at = window.rikuy.ribbonAt(); if (at) at.memo = {}; if (!c.on) return null; const v = c.on(window.rikuy, at); return v == null ? null : !!v; }''', command)
+
+
+def roundtrip(page, doc, select, command, expected, forms=(), off=None, label=None, off_command=None):
+    """The round trip rule of GAP section 0 as one call, for a command of the registry:
+    1. on the document doc, with select placed (see place()), the command writes exactly expected,
+       as one step of history; 2. one Undo gives doc back byte for byte; 3. the page rebuilt from
+       expected shows the command's state (its control pressed) with the same words selected;
+    4. each hand written form (a source with the same construct written another way) shows the
+       state, and the command takes exactly that form off: doc again; 5. the command on expected
+       restores doc (or off, when the command leaves a preamble line it added). command is an id
+       (run as its button runs it) or a function of the page; off_command the command that turns it
+       off where that is another (Normal for a heading); expected a string or a test of the source.
+       Returns whether every step held; each is a check() of its own."""
+    name = label or (command if isinstance(command, str) else command.__name__)
+    runner = lambda cmd: (lambda: page.evaluate('(id) => window.rikuy.runCommand(id)', cmd)) if isinstance(cmd, str) else (lambda: cmd(page))
+    run, undo_run = runner(command), runner(off_command or command)
+    want = (lambda t: t == expected) if isinstance(expected, str) else expected
+    back = doc if off is None else off
+    ok = []
+    load_doc(page, doc); place(page, select)
+    h0 = page.evaluate('window.rikuy.hist.length')
+    run(); page.wait_for_timeout(200)
+    got = src(page)
+    ok.append(check(name + ': writes exactly the LaTeX expected, as one step', want(got) and page.evaluate('window.rikuy.hist.length') == h0 + 1, got[-160:]))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    ok.append(check(name + ': one undo gives the source back byte for byte', src(page) == doc, src(page)[-160:]))
+    toggle = pressed(page, command) is not None if isinstance(command, str) else False
+    if isinstance(expected, str):
+        load_doc(page, expected); place(page, select)
+        if toggle:
+            ok.append(check(name + ': read back from that source, the control shows it', pressed(page, command) is True))
+        undo_run(); page.wait_for_timeout(200)
+        ok.append(check(name + ': again on it, the bytes of before (off restores)', src(page) == back, src(page)[-160:]))
+    for form in forms:
+        load_doc(page, form); place(page, select)
+        if toggle:
+            ok.append(check(name + ': a hand written form shows as it: ' + form[form.find('\\begin{document}') + 16:][:40].strip(), pressed(page, command) is True))
+        undo_run(); page.wait_for_timeout(200)
+        ok.append(check(name + ': and takes off exactly that form', src(page) == back, src(page)[-160:]))
+    return all(ok)
 
 
 def tiny_pdf():

@@ -8,6 +8,11 @@
 // (\end{document}, the end of an \input file). TeX skips a comment line, so the file compiles
 // anywhere to the same PDF, and the mark cannot appear by chance: no package writes it.
 
+// (the line helpers and the blank lines a paragraph needs live with the environments in
+// src/blockenv.js, which Quote's edits come from too)
+import { lineStart, startsLine, eolAt, blankPads, HEADING_LINE, envOpen, envClose } from './blockenv.js';
+export { lineStart, startsLine, eolAt, blankPads, HEADING_LINE };
+
 export const LATEX_MARK = '% rikuy: latex';
 
 // what cannot go inside a heading's braces or one list item without changing what TeX does
@@ -21,15 +26,6 @@ export function isLatexMark(src, s, e) {
   if (e >= src.length || src[e] === '\n' || src[e] === '\r' || !MARK_LINE.test(src.slice(s, e))) return false;
   for (let k = s - 1; k >= 0 && src[k] !== '\n'; k--) if (src[k] !== ' ' && src[k] !== '\t') return false;
   return true;
-}
-
-export const lineStart = (src, p) => src.lastIndexOf('\n', p - 1) + 1;
-// whether nothing but spaces stands before p on its line
-export const startsLine = (src, p) => !/\S/.test(src.slice(lineStart(src, p), p));
-// the line ending of the line that holds p: a file written with CRLF keeps them
-export function eolAt(src, p) {
-  const k = src.indexOf('\n', p);
-  return k > 0 && src[k - 1] === '\r' ? '\r\n' : '\n';
 }
 
 // After a block that the mark alone may turn into a LaTeX paragraph: the rest of its last line,
@@ -51,24 +47,6 @@ export function latexSpot(src, s, e) {
 export function commentIn(line) {
   for (let i = 0; i < line.length; i++) { if (line[i] === '\\') i++; else if (line[i] === '%') return i; }
   return -1;
-}
-
-// The blank lines a paragraph needs before s and after e to stay a paragraph of its own: without
-// one TeX runs it into the words beside it. None where one is there, where the text starts or
-// ends, or where the neighbour is no paragraph (a heading, the end or the start of a block).
-export const HEADING_LINE = /^\s*\\(?:part|chapter|(?:sub){0,2}section|(?:sub)?paragraph)\b.*\}\s*$/;
-export function blankPads(src, s, e) {
-  const before = src.slice(0, s), after = src.slice(e);
-  const prev = before.trimEnd().split('\n').pop(), next = after.trimStart().split('\n')[0];
-  // (an environment's opening line ends a paragraph also with its arguments after it: \begin{otherlanguage}{german})
-  const closed = /\\(?:(?:begin|end)\s*\{[^}]*\}(?:\s*[[{][^\]{}]*[\]}])*|maketitle|\]|par)\s*$/.test(prev) || HEADING_LINE.test(prev);
-  const opens = /^\\(?:(?:begin|end)\s*\{|\[|item\b|bibliography)/.test(next) || HEADING_LINE.test(next);
-  // (a file written with CRLF: its \r is a space here, and the lines added end as its own do)
-  const nl = eolAt(src, s);
-  return {
-    b: !before.trim() || closed || /(^|\n)[ \t\r]*\n[ \t\r]*$/.test(before) ? '' : /\n[ \t\r]*$/.test(before) ? nl : nl + nl,
-    a: !after.trim() || opens || /^[ \t\r]*\n[ \t\r]*\n/.test(after) ? '' : /^[ \t\r]*\n/.test(after) ? nl : nl + nl
-  };
 }
 
 const HEADINGS = /^(sub){0,2}section$/;
@@ -128,7 +106,7 @@ export function restyle(src, b, to, p) {
       const last = src.slice(lineStart(src, b.we), b.we);
       A = '\\' + to + '{'; Z = commentIn(last) >= 0 ? '\n}' : '}';
     }
-  } else if (to === 'quote') { const nl = eolAt(src, b.s); A = '\\begin{quote}' + nl; Z = nl + '\\end{quote}'; }
+  } else if (to === 'quote') { const nl = eolAt(src, b.s); A = envOpen('quote') + nl; Z = nl + envClose('quote'); }
   else return null;
   const edits = [...extra, { s: b.we, e: b.e, t: Z }, { s: b.s, e: b.ws, t: A }].filter((x) => x.s !== x.e || x.t);
   return { edits, p: b.s + A.length + Math.min(Math.max(p, b.ws), b.we) - b.ws };
