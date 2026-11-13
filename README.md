@@ -56,6 +56,12 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   footnote, equation, figure, table, comment or label. The Navigation pane has the headings
   (drag one to move its section), thumbnails of the pages and the results; Alt+Shift and the
   arrows promote, demote and move headings with their sections, and paragraphs.
+- **Paragraphs as in Word.** Ctrl+L, E, R, J align (flushleft, center, flushright, LaTeX's own
+  justified), line spacing 1.0 to 3.0 for a paragraph or the whole document (setspace), indents
+  (adjustwidth), space before and after, keep with next, keep lines together, page break before,
+  shading and borders (tcolorbox), Show marks, Word's Paragraph dialog, Layout's fields and Design's
+  Paragraph Spacing; each one small edit of the source, read back from LaTeX written by hand and
+  drawn on the page as TeX prints it.
 - **The whole TeX Live 2026 toolchain.** The three engines, latexmk's reruns, bibtex and biber,
   makeindex and xindy, glossaries, and shell escape: Ghostscript, gnuplot, Python with Pygments
   (minted), dvips, Asymptote with 3D rendering, and TeX starting TeX (TikZ externalize,

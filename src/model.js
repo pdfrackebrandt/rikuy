@@ -64,7 +64,10 @@ const INVIS = new Set([
   'usepgfplotslibrary', 'newglossaryentry', 'loadglsentries', 'makeglossaries', 'DTLloaddb', 'DTLloadrawdb', 'lstdefinestyle', 'colorlet',
   'thispagestyle', 'hline', 'cline', 'rowcolors', 'arrayrulecolor', 'columncolor', 'cellcolor', 'rowcolor', 'toprule', 'midrule', 'bottomrule', 'FloatBarrier', 'balance', 'tightlist',
   // CJK's font settings, and bidi's switches of direction (Builder.declDir reads those first)
-  'CJKfamily', 'CJKtilde', 'CJKindent', 'setRTL', 'setLTR', 'setRL', 'setLR'
+  'CJKfamily', 'CJKtilde', 'CJKindent', 'setRTL', 'setLTR', 'setRL', 'setLR',
+  // TeX's paragraph registers and setspace's and memoir's spacing (B2: Builder.flow reads them)
+  'hangindent', 'hangafter', 'displaywidowpenalty', 'interlinepenalty', 'linepenalty', 'hyphenpenalty', 'exhyphenpenalty',
+  'tolerance', 'pretolerance', 'emergencystretch', 'looseness', 'leftskip', 'rightskip', 'OnehalfSpacing', 'DoubleSpacing', 'SingleSpacing', 'setSpacing'
 ]);
 const CITE_CMDS = new Set(['cite', 'citet', 'citep', 'citealt', 'citealp', 'citeauthor', 'citeyear', 'citeyearpar',
   'Citet', 'Citep', 'Citealt', 'Citealp', 'Citeauthor', 'textcite', 'parencite', 'autocite', 'Textcite',
@@ -111,6 +114,40 @@ function parseLen(s, em = 10) {
   const rest = (s || '').slice(m[0].length);
   if (/^\s*\\(text|line|column)width/.test(rest)) return { rel: v };
   return v * k;
+}
+
+// (B2) where a paragraph's first and last characters on the page come from in the source: the
+// first and last of its items that has a place there (a macro's own text has none)
+function visEdges(inl) {
+  const at = (x, end) => {
+    if (!x) return null;
+    if (x.k === 'seg') { if (x.ph || !x.map || !x.map.length) return null; const v = end ? x.map[x.map.length - 1] : x.map[0]; return v >= 0 ? v : null; }
+    const v = end ? x.e : x.s;
+    return typeof v === 'number' && v >= 0 ? v : null;
+  };
+  let a = null, z = null;
+  for (let i = 0; i < inl.length && a == null; i++) a = at(inl[i], false);
+  for (let i = inl.length - 1; i >= 0 && z == null; i--) z = at(inl[i], true);
+  return a != null && z != null && z >= a ? [a, z] : null;
+}
+
+// (B2) line spacing declared in the body, and TeX's register assignments that are no text
+const SPACING_ENV = { singlespace: 1, 'singlespace*': 1, SingleSpace: 1, onehalfspace: 'h', OnehalfSpace: 'h', doublespace: 'd', DoubleSpace: 'd', spacing: 'x', Spacing: 'x' };
+const SPACING_DECL = new Set(['onehalfspacing', 'doublespacing', 'singlespacing', 'OnehalfSpacing', 'DoubleSpacing', 'SingleSpacing']);
+const ASSIGN = new Set(['hangindent', 'hangafter', 'parindent', 'parskip', 'widowpenalty', 'clubpenalty', 'displaywidowpenalty', 'interlinepenalty', 'linepenalty',
+  'hyphenpenalty', 'exhyphenpenalty', 'tolerance', 'pretolerance', 'emergencystretch', 'looseness', 'leftskip', 'rightskip']);
+const ASSIGN_VALUE = /^[ \t]*=?[ \t]*([+-]?(?:\d+(?:\.\d*)?|\.\d+)[ \t]*(?:pt|bp|mm|cm|in|pc|dd|cc|sp|em|ex)?) ?/;
+// setspace's stretch for one and a half and double spacing at 10, 11 and 12 pt (memoir's too)
+const ONEHALF = { 10: 1.25, 11: 1.213, 12: 1.241 }, DOUBLE = { 10: 1.667, 11: 1.618, 12: 1.655 };
+// the alignment a group {\centering ...\par} gives its paragraph: the declaration first in it,
+// and a \par before it closes (else the paragraph ends after the group, without it)
+function groupDecl(g, ctx) {
+  const ns = g.nodes || [];
+  const first = ns.find((n) => !(n.t === 'text' && !ctx.src.slice(n.s, n.e).trim()) && n.t !== 'comment');
+  if (!first || first.t !== 'cmd' || !['centering', 'raggedright', 'raggedleft'].includes(first.name)) return null;
+  const last = [...ns].reverse().find((n) => !(n.t === 'text' && !ctx.src.slice(n.s, n.e).trim()) && n.t !== 'comment');
+  if (!last || !(last.t === 'par' || (last.t === 'cmd' && last.name === 'par'))) return null;
+  return first.name === 'centering' ? 'center' : first.name === 'raggedright' ? 'left' : 'right';
 }
 
 // ---------------------------------------------------------------------------
@@ -357,6 +394,11 @@ class Builder {
           this.classOpts(m[1] || '');
         }
         if (/^(amsart|amsbook)$/.test(O.cls)) O.ams = true;
+        // (B2) KOMA-Script's own space between paragraphs: half a line or a whole one, no indent
+        if (/^scr(?:artcl|reprt|book)$/.test(O.cls)) {
+          const m = /(?:^|,)\s*parskip\s*=\s*(full|half)/.exec(A(0));
+          if (m) { O.parskip = m[1] === 'full' ? 1.2 : 0.6; O.parindent = 0; }
+        }
         break;
       }
       case 'usepackage': case 'RequirePackage': {
@@ -378,7 +420,11 @@ class Builder {
           if (this.files.has(p + '.sty')) this.preFile(p + '.sty', true);
           if (p === 'apacite' || p === 'harvard' || p === 'chicago') { O.natbib = true; O.forceAY = true; }
           if (p === 'setspace') { /* spacing commands handled separately */ }
-          if (p === 'parskip') { O.parskip = 0.6; O.parindent = 0; }
+          if (p === 'parskip') {
+            // (B2) its skip option: \usepackage[skip=6pt]{parskip}
+            const sk = /(?:^|,)\s*skip\s*=\s*([^,]{1,40})/.exec(op), v = sk ? parseLen(sk[1].replace(/\s+(?:plus|minus).*$/, ''), O.pt) : null;
+            O.parskip = typeof v === 'number' ? v / O.pt : 0.6; O.parindent = 0;
+          }
           if (p === 'cleveref') { O.cleveref = true; O.crefCap = /capitali[sz]e/.test(op); }
           if (p === 'fullpage') O.margins = { l: 72.27, r: 72.27, t: 72.27, b: 72.27 };
           if (p === 'geometry' && op) this.geometry(op);
@@ -397,6 +443,14 @@ class Builder {
       case 'onehalfspacing': O.spread = { 10: 1.25, 11: 1.213, 12: 1.241 }[O.pt] || 1.25; break;
       case 'doublespacing': O.spread = { 10: 1.667, 11: 1.618, 12: 1.655 }[O.pt] || 1.65; break;
       case 'singlespacing': O.spread = 1; break;
+      case 'OnehalfSpacing': O.spread = ONEHALF[O.pt] || 1.25; break;
+      case 'DoubleSpacing': O.spread = DOUBLE[O.pt] || 1.667; break;
+      case 'SingleSpacing': O.spread = 1; break;
+      case 'setSpacing': O.spread = parseFloat(A(0)) || 1; break;
+      // (B2) \renewcommand{\baselinestretch}{1.5}: the stretch, and the macro as any other
+      case 'renewcommand': if (nd.def && nd.def.name === 'baselinestretch' && parseFloat(nd.def.body) > 0) O.spread = parseFloat(nd.def.body); this.defCmd(nd, ctx); break;
+      case 'abnormalparskip': { const v = parseLen(A(0), O.pt); if (typeof v === 'number') O.parskip = v / O.pt; break; }
+      case 'nonzeroparskip': O.parskip = 0.6; break;
       case 'linespread': O.spread = parseFloat(A(0)) || 1; break;
       case 'setstretch': O.spread = parseFloat(A(0)) || 1; break;
       case 'setlength': {
@@ -655,6 +709,13 @@ class Builder {
     let paraNoIndent = env.noindent || false;
     let align = env.align || null;
     let cont = false; // continuing after display math
+    // (B2) what declarations in this flow set for the paragraphs after them: the line spacing
+    // (setspace's \onehalfspacing in the body), whether the first lines lose their indent (an
+    // alignment declaration sets \parindent to 0), and what the next paragraph's own start sets
+    // (\hangindent=1cm)
+    let spread = env.spread ?? null;
+    let flushStart = !!align;
+    let hang = null;
     let afterHeading = env.afterHeading || false;
     const self = this;
     const startUnit = () => { if (env.top) this.sig = []; };
@@ -699,9 +760,27 @@ class Builder {
       const inl = this.inl(ns, ctx, fns);
       trimInl(inl);
       const s = ns[0].s, e = ns[ns.length - 1].e;
-      const indent = !(paraNoIndent || afterHeading || cont || env.noIndentFirst);
-      this.use('i' + indent + (align || '') + (env.cls || '') + (dir || ''));
-      const item = { type: 'p', inl, indent, align, cls: env.cls || '', ctx: env.ctxKind || 'p', f: ctx.f, pad: env.pad || null, depth: env.depth || 0 };
+      // a paragraph that is one group {\centering ...\par}: its alignment is the group's
+      let pAlign = align;
+      const g0 = ns.find((n) => !blank(n));
+      if (g0 && g0.t === 'group' && ns.slice(ns.indexOf(g0) + 1).every(blank)) { const d = groupDecl(g0, ctx); if (d) pAlign = d; }
+      const indent = !(paraNoIndent || afterHeading || cont || env.noIndentFirst || flushStart || env.flushAll || (pAlign && pAlign !== align));
+      // (a \nopagebreak with nothing to show after it: read from the end, once)
+      let kn = ns.length - 1;
+      while (kn >= 0 && blank(ns[kn]) && !(ns[kn].t === 'cmd' && ns[kn].name === 'nopagebreak')) kn--;
+      const keepNext = kn >= 0 && ns[kn].t === 'cmd' && ns[kn].name === 'nopagebreak';
+      this.use('i' + indent + (pAlign || '') + (env.cls || '') + (dir || '') + '|' + [spread, env.mx, hang, env.box && JSON.stringify(env.box), env.keepLines, env.nohy, keepNext].join(','));
+      const item = { type: 'p', inl, indent, align: pAlign, cls: env.cls || '', ctx: env.ctxKind || 'p', f: ctx.f, pad: env.pad || null, depth: env.depth || 0 };
+      if (spread != null) item.spread = spread;
+      if (env.mx) item.mx = env.mx;
+      if (hang != null) item.hang = hang;
+      if (env.box) item.box = env.box;
+      if (env.keepLines) item.keepLines = true;
+      if (env.nohy) item.nohy = true;
+      if (keepNext) item.keepNext = true;
+      // (where its words are in the source: the paragraph commands of src/cmd/para.js start there;
+      // not for a macro's text, whose nodes are the macro's)
+      if (!ctx.pm) { item.ps = s; item.pe = e; const v = visEdges(inl); if (v) { item.vs = v[0]; item.ve = v[1]; } }
       if (dir) item.dir = dir;
       if (cont) item.cont = true;
       this.countWords(inl);
@@ -709,11 +788,15 @@ class Builder {
       paraNoIndent = false;
       afterHeading = false;
       cont = false;
+      hang = null;
+      flushStart = !!align;
       units.push({ f: ctx.f, s, e, items: [item], fns, sig: env.top ? this.sig.join('\u0001') : '' });
     };
 
+    // (a text node whose start an assignment took, \hangindent=1cm: what is left of it)
+    let over = null;
     for (let k = 0; k < nodes.length; k++) {
-      const nd = nodes[k];
+      const nd = over && over.has(k) ? over.get(k) : nodes[k];
       if (nd.t === 'par') { flushPara(); continue; }
       if (nd.t === 'include') continue;
       // A LaTeX paragraph (src/styles.js): the mark's line, then everything to the next blank
@@ -764,7 +847,7 @@ class Builder {
         // an environment is a group: a \selectlanguage inside it ends with it
         const dirWas = this.dir;
         this.use('d' + dirWas);
-        const r = this.envBlock(nd, ctx, wrap ? { ...env, afterHeading } : env);
+        const r = this.envBlock(nd, ctx, wrap ? { ...env, afterHeading, spread } : spread !== (env.spread ?? null) ? { ...env, spread } : env);
         this.dir = dirWas;
         if (r) {
           const us = Array.isArray(r) ? r : [r];
@@ -808,9 +891,33 @@ class Builder {
         }
         if (name === 'par') { flushPara(); continue; }
         if (name === 'noindent') { if (!para.some((n) => !(n.t === 'text' && !ctx.src.slice(n.s, n.e).trim()) && n.t !== 'comment')) { paraNoIndent = true; para = []; seen = 0; shows = false; } continue; }
-        if (name === 'centering') { align = 'center'; continue; }
-        if (name === 'raggedright') { align = 'left'; continue; }
-        if (name === 'raggedleft') { align = 'right'; continue; }
+        if (name === 'centering' || name === 'raggedright' || name === 'raggedleft') {
+          align = name === 'centering' ? 'center' : name === 'raggedright' ? 'left' : 'right';
+          // (\parindent is 0 from here on: for this paragraph too when it has not started)
+          if (!paraShows()) flushStart = true;
+          continue;
+        }
+        // line spacing declared in the body (setspace's, memoir's): the paragraphs after it
+        if (SPACING_DECL.has(name) || ((name === 'setstretch' || name === 'setSpacing' || name === 'linespread') && nd.args[0])) {
+          const v = this.spacingOf(name, nd, ctx);
+          if (v != null) spread = v;
+          para.push(nd);
+          continue;
+        }
+        // TeX's assignments to a paragraph's registers at its start (\hangindent=1cm\hangafter=1)
+        // and to the document's (\parindent=0pt): read, and the value is no text of the page
+        if (ASSIGN.has(name)) {
+          const nx = nodes[k + 1], m = nx && nx.t === 'text' ? ASSIGN_VALUE.exec(ctx.src.slice(nx.s, Math.min(nx.e, nx.s + 60))) : null;
+          if (m) {
+            // (TeX reads \hangindent when the paragraph ends: set anywhere in it, it holds for it)
+            if (name === 'hangindent') { const v = parseLen(m[1], this.opts.pt); if (typeof v === 'number') hang = v; }
+            if (nx.s + m[0].length < nx.e) (over || (over = new Map())).set(k + 1, { ...nx, s: nx.s + m[0].length });
+            else k++;
+            if (name === 'hangindent' || name === 'hangafter') continue;
+          }
+          para.push(nd);
+          continue;
+        }
         if (name === 'maketitle') {
           flushPara();
           if (env.top) this.sig = [];
@@ -1165,15 +1272,33 @@ class Builder {
       return this.container(nd, ctx, env, { cls: (env.cls || '') + ' quote', noIndentFirst: name !== 'quotation' });
     }
     if (['center', 'flushleft', 'flushright'].includes(name)) {
-      return this.container(nd, ctx, env, { align: { center: 'center', flushleft: 'left', flushright: 'right' }[name], noIndentFirst: true });
+      // (\centering and its like set \parindent to 0: no paragraph of it is indented)
+      return this.container(nd, ctx, env, { align: { center: 'center', flushleft: 'left', flushright: 'right' }[name], noIndentFirst: true, flushAll: true });
     }
+    // (B2) the paragraph's settings as environments: setspace's and memoir's line spacing,
+    // changepage's adjustwidth (a list: its first paragraph unindented), tcolorbox's shading and
+    // frame (its paragraphs unindented, as in a minipage), samepage, babel's hyphenrules
+    if (name in SPACING_ENV) {
+      const k = SPACING_ENV[name], pt = this.opts.pt;
+      const v = k === 1 ? 1 : k === 'h' ? ONEHALF[pt] || 1.25 : k === 'd' ? DOUBLE[pt] || 1.667 : parseFloat(this.argText(ctx, nd.args[0]));
+      return this.container(nd, ctx, env, v > 0 && v < 10 ? { spread: v } : {});
+    }
+    if (name === 'adjustwidth' || name === 'adjustwidth*') {
+      const L = (a) => { const t = this.argText(ctx, a).trim(); if (!t) return 0; const v = parseLen(t, this.opts.pt); return typeof v === 'number' ? v : 0; };
+      const m = env.mx || [0, 0];
+      return this.container(nd, ctx, env, { mx: [m[0] + L(nd.args[0]), m[1] + L(nd.args[1])], noIndentFirst: true });
+    }
+    if (name === 'tcolorbox') return this.boxEnv(nd, ctx, env);
+    if (name === 'samepage') return this.container(nd, ctx, env, { keepLines: true });
+    if (name === 'hyphenrules') return this.container(nd, ctx, env, this.argText(ctx, nd.args[0]).trim() === 'nohyphenation' ? { nohy: true } : {});
+    if (name === 'nolinenumbers') return this.container(nd, ctx, env, {});
     if (/^(figure|table|wrapfigure|wraptable|SCfigure|sidewaysfigure|sidewaystable)\*?$/.test(name)) return this.floatBlock(nd, ctx, env);
     if (/^(tabular|tabularx|tabular\*|tabulary|longtable|array)$/.test(name)) {
       const t = this.tabular(nd, ctx);
       return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'float', kind: 'inline', parts: [t], f: ctx.f }], fns: t.fns || [] };
     }
     if (name === 'thebibliography') return this.theBib(nd, ctx);
-    if (/^(small|footnotesize|scriptsize|large|Large|singlespace|onehalfspace|doublespace|spacing|minipage|landscape|appendices|otherlanguage\*?|titlepage|multicols\*?|adjustbox|threeparttable|tablenotes|acknowledgments|acknowledgements)$/.test(name)) {
+    if (/^(small|footnotesize|scriptsize|large|Large|minipage|landscape|appendices|otherlanguage\*?|titlepage|multicols\*?|adjustbox|threeparttable|tablenotes|acknowledgments|acknowledgements)$/.test(name)) {
       const ex = /^(small|footnotesize|scriptsize|large|Large)$/.test(name) ? { cls: (env.cls || '') + ' z-' + name } : {};
       if (name === 'appendices') { this.appendix = true; if (this.opts.chapters) this.c.chapter = 0; else this.c.section = 0; }
       if (name === 'acknowledgments' || name === 'acknowledgements') {
@@ -1189,6 +1314,34 @@ class Builder {
     if (r && r.items.length) r.items[0].envTag = name;
     else return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'raw', f: ctx.f, s: nd.s, e: nd.e, is: nd.be, ie: nd.es, text: '\\begin{' + name + '}', verb: false, name }], fns: [] };
     return r;
+  }
+
+  // (B2) tcolorbox: its paragraphs on its colback, in its frame; first and last carry the box's
+  // padding (Rikuy draws the box as its paragraphs' background and borders)
+  boxEnv(nd, ctx, env) {
+    const kv = {};
+    const opt = nd.args[0] ? this.argText(ctx, nd.args[0]) : '';
+    for (const part of opt.slice(0, 2000).split(',')) { const k = part.indexOf('='); const key = (k < 0 ? part : part.slice(0, k)).trim(); if (key) kv[key] = k < 0 ? true : part.slice(k + 1).trim(); }
+    const rule = kv.boxrule != null ? parseLen(String(kv.boxrule), this.opts.pt) : 1.42;
+    const L = (x, d) => { const v = x != null ? parseLen(String(x), this.opts.pt) : null; return typeof v === 'number' ? v : d; };
+    const box = { bg: kv.colback ? this.colorText(String(kv.colback)) : '#F2F2F2', fr: kv.colframe ? this.colorText(String(kv.colframe)) : '#404040', rule: typeof rule === 'number' ? rule : 1.42,
+      l: L(kv.left, 11.38) + L(kv.boxsep, 2.85), r: L(kv.right, 11.38) + L(kv.boxsep, 2.85), t: L(kv.top, 5.69) + L(kv.boxsep, 2.85), b: L(kv.bottom, 5.69) + L(kv.boxsep, 2.85), sharp: !!kv['sharp corners'] || kv.arc === '0pt' };
+    const r = this.container(nd, ctx, env, { box, noIndentFirst: true, flushAll: true });
+    const ps = r.items.filter((it) => it.type === 'p');
+    if (ps.length) { ps[0].boxFirst = true; ps[ps.length - 1].boxLast = true; }
+    return r;
+  }
+  // a colour as tcolorbox's options write it (a name, red!20): the document's own name resolved
+  colorText(t) { return this.named(t) || t; }
+
+  // (B2) the stretch a spacing declaration sets: \onehalfspacing, \setstretch{1.15}
+  spacingOf(name, nd, ctx) {
+    const pt = this.opts.pt;
+    if (name === 'onehalfspacing' || name === 'OnehalfSpacing') return ONEHALF[pt] || 1.25;
+    if (name === 'doublespacing' || name === 'DoubleSpacing') return DOUBLE[pt] || 1.667;
+    if (name === 'singlespacing' || name === 'SingleSpacing') return 1;
+    const v = parseFloat(this.argText(ctx, nd.args[0]));
+    return v > 0 && v < 10 ? v : null;
   }
 
   emptyPara(ctx, pos, cls) {
@@ -1338,12 +1491,15 @@ class Builder {
       }
       const inl = this.inl(ns, ctx, fns);
       trimInl(inl);
-      if (inl.length) parts.push({ type: 'p', inl, align: align || 'center', indent: false, ctx: 'p', f: ctx.f, dir: this.dirOf() });
+      if (inl.length) parts.push({ type: 'p', inl, align: align || 'left', indent: false, ctx: 'p', f: ctx.f, dir: this.dirOf() });
     };
     const walk = (nodes) => {
       for (const n of nodes) {
         if (n.t === 'par') { flushP(); continue; }
-        if (n.t === 'cmd' && n.name === 'centering') { align = 'center'; continue; }
+        // (B2) \centering, \raggedleft, \raggedright; with none TeX sets a float's parts at the left
+        // margin (a float's \parindent is 0)
+        if (n.t === 'cmd' && (n.name === 'centering' || n.name === 'raggedleft' || n.name === 'raggedright')) { align = n.name === 'centering' ? 'center' : n.name === 'raggedleft' ? 'right' : 'left'; continue; }
+        if (n.t === 'env' && (n.name === 'center' || n.name === 'flushleft' || n.name === 'flushright')) { flushP(); const was = align; align = n.name === 'center' ? 'center' : n.name === 'flushleft' ? 'left' : 'right'; walk(n.nodes); flushP(); align = was; continue; }
         if (n.t === 'cmd' && (n.name === 'caption' || n.name === 'captionof')) {
           flushP();
           if (!num) {
@@ -1358,8 +1514,8 @@ class Builder {
           parts.push({ type: 'caption', kind, num, inl: kids, f: ctx.f, ctx: 'cap', dir: this.dirOf() });
           continue;
         }
-        if (n.t === 'env' && /^(tabular|tabularx|tabular\*|tabulary|longtable|array)$/.test(n.name)) { flushP(); parts.push(this.tabular(n, ctx, fns)); continue; }
-        if (n.t === 'env' && /^(center|minipage|subfigure|subtable|threeparttable|adjustbox|small|footnotesize|scriptsize)$/.test(n.name)) { flushP(); walk(n.nodes); flushP(); continue; }
+        if (n.t === 'env' && /^(tabular|tabularx|tabular\*|tabulary|longtable|array)$/.test(n.name)) { flushP(); const t = this.tabular(n, ctx, fns); if (align !== 'center') t.falign = align || 'left'; parts.push(t); continue; }
+        if (n.t === 'env' && /^(minipage|subfigure|subtable|threeparttable|adjustbox|small|footnotesize|scriptsize)$/.test(n.name)) { flushP(); walk(n.nodes); flushP(); continue; }
         // a language or direction environment around a figure's parts: they run its way
         if (n.t === 'env' && this.dirEnv(n, ctx)) { flushP(); const was = this.dir; this.dir = this.dirEnv(n, ctx).dir || was; walk(n.nodes); flushP(); this.dir = was; continue; }
         if (n.t === 'env' && n.name === 'tablenotes') { flushP(); const r = this.container(n, ctx, env, { cls: 'z-footnotesize', noIndentFirst: true }); parts.push(...r.items); fns.push(...r.fns); continue; }
@@ -1893,7 +2049,7 @@ class Builder {
     }
     if (name === 'hrulefill' || name === 'dotfill') {
       acc.flush();
-      out.push(this.atom(ctx, { k: 'sp', s: nd.s, e: nd.e, w: 'fill', rule: name === 'hrulefill' }));
+      out.push(this.atom(ctx, { k: 'sp', s: nd.s, e: nd.e, w: 'fill', rule: name === 'hrulefill', dots: name === 'dotfill' }));
       return false;
     }
     if (name === 'rule') {

@@ -36,6 +36,9 @@ on:
       - 'test/preamble.py'
       - 'test/find.py'
       - 'test/outline.py'
+      - 'test/para.py'
+      - 'src/cmd/para.js'
+      - 'src/parasrc.js'
       - 'test/serve.py'
       - 'test/browser.py'
       - '.github/workflows/tex.yml'
@@ -110,6 +113,8 @@ jobs:
         run: cd test && python3 find.py
       - name: The outline, then the PDF has the heading at the level it was given
         run: cd test && python3 outline.py
+      - name: Paragraphs, then the PDF sets each word where the page draws it
+        run: cd test && python3 para.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rikuy-dist

@@ -128,6 +128,30 @@ export function numberRows(tex) {
 //  opts.citeproc: citations become pandoc citations (else the page's own text)
 //  opts.comments: Rikuy's comment threads become Word comments
 //  opts.main: the main file's name (its preamble says whether the document runs right to left)
+// (B2) A paragraph's own settings as the name of a paragraph style, Word's way of giving one its
+// formatting through pandoc: "Centred", "Right Aligned", "Left Aligned", then ", Line Spacing 1.5",
+// ", Indent 1cm 0cm", ", Hanging 1cm", ", Keep With Next", ", Keep Lines Together". exportDocx
+// (src/wordjobs.js, paraStyles) gives each such style its formatting from its name. Line spacing:
+// setspace's one and a half and double spacing are Word's 1.5 lines and Double, any other stretch
+// its multiple.
+const ONEHALF_AT = { 10: 1.25, 11: 1.213, 12: 1.241 }, DOUBLE_AT = { 10: 1.667, 11: 1.618, 12: 1.655 };
+export function paraStyle(it, O = {}) {
+  const parts = [];
+  if (it.align === 'center') parts.push('Centred');
+  else if (it.align === 'right') parts.push('Right Aligned');
+  else if (it.align === 'left') parts.push('Left Aligned');
+  if (it.spread) {
+    const pt = O.pt || 10, x = Math.abs(it.spread - (ONEHALF_AT[pt] || 1.25)) < 0.005 ? 1.5 : Math.abs(it.spread - (DOUBLE_AT[pt] || 1.667)) < 0.005 ? 2 : Math.round(it.spread * 100) / 100;
+    parts.push('Line Spacing ' + x);
+  }
+  const cm = (v) => Math.round(v / 28.4528 * 100) / 100 + 'cm';
+  if (it.mx && (it.mx[0] || it.mx[1])) parts.push('Indent ' + cm(it.mx[0]) + ' ' + cm(it.mx[1]));
+  if (it.hang) parts.push('Hanging ' + cm(it.hang));
+  if (it.keepNext) parts.push('Keep With Next');
+  if (it.keepLines) parts.push('Keep Lines Together');
+  return parts.join(', ');
+}
+
 export function buildWordDoc(model, files, opts = {}) {
   const W = new Walker(model, files, opts);
   W.run();
@@ -271,7 +295,7 @@ class Walker {
     let b = { t: plain ? 'Plain' : 'Para', c: inl };
     // centred and right aligned text keeps its place: a paragraph style of that name, which
     // exportDocx (src/wordjobs.js) gives its alignment
-    if (!plain && (it.align === 'center' || it.align === 'right')) b = { t: 'Div', c: [attr('', [], [['custom-style', it.align === 'center' ? 'Centred' : 'Right Aligned']]), [b]] };
+    if (!plain) { const st = paraStyle(it, this.m.opts); if (st) b = { t: 'Div', c: [attr('', [], [['custom-style', st]]), [b]] }; }
     if (/\bquote\b/.test(it.cls || '')) b = { t: 'BlockQuote', c: [b] };
     return b;
   }

@@ -125,7 +125,8 @@ def make_zip(path, files):
 
 def open_app(p, url=URL):
     b = p.chromium.launch()
-    ctx = b.new_context(viewport={'width': 1400, 'height': 1000}, accept_downloads=True, device_scale_factor=1)
+    # (1920 px: Home's row has room for the three downloads there since its Paragraph group, B2)
+    ctx = b.new_context(viewport={'width': 1920, 'height': 1000}, accept_downloads=True, device_scale_factor=1)
     page = ctx.new_page()
     errors, reqs = [], []
     page.on('console', lambda m: errors.append(m.text) if m.type == 'error' and 'Failed to load resource' not in m.text else None)

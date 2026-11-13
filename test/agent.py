@@ -298,6 +298,9 @@ def names(page, width):
     # (a control shown as the row has room, Home's Find, Replace and Select, may be in view or in its group's menu)
     narrow = {i for i in NAMES if ONLY[i] != 'wide'} - GALLERY | {i for i in GALLERY if i in seen and ONLY[i] != 'wide'}
     check('the registry keeps every name these tests began with, on the same element' + w, all(NAMES.get(i) == n for i, n in KEPT.items()), [(i, NAMES.get(i)) for i, n in KEPT.items() if NAMES.get(i) != n])
+    # (the downloads: three, or one Download button where the open tab's row has no room for three,
+    # as Home's has not at 1400 px since its Paragraph group, B2)
+    if width > 1000 and 'rb-dl-menu' in seen and 'rb-pdf' not in seen: wide = (wide - {'rb-pdf', 'rb-word', 'b-save'}) | {'rb-dl-menu'}
     check('every control in view has its one name, and no other control has it' + w, not wrong and not twice and set(seen) == (wide if width > 1000 else narrow), (wrong, twice, sorted(set(seen) ^ (wide if width > 1000 else narrow))))
     if width > 1000:
         # (the gallery's tiles: Home's Find is found loosely with its arrow, Find options, as Word's)
@@ -420,7 +423,8 @@ def five(page, width):
     check('   a formula in the line by the button Formula and the dialog "New inline math", typed where the focus is' + w, 'paragraph here.$x^2+1$\n' in src(page) and page.get_by_role('dialog').count() == 0, src(page)[-80:])
     # 4. the LaTeX source, downloaded
     with page.expect_download() as dl:
-        if width > 1000:
+        # (three buttons where the row has room for them; else one Download button and its menu)
+        if page.locator('#b-save').is_visible():
             button('Download LaTeX').click()
         else:
             button('Download').click()
