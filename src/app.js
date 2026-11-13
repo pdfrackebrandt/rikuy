@@ -1178,7 +1178,7 @@ class App {
     if (mod && !e.altKey) {
       if (k === 'z') { e.preventDefault(); if (e.shiftKey) this.redo(); else this.undo(); return; }
       if (k === 'y') { e.preventDefault(); this.redo(); return; }
-      // (Ctrl+B, I, U, M, K and Shift+E are the commands' keys: src/keys.js catches them first)
+      // (Ctrl+B, I, U, M and K are the commands' keys: src/keys.js catches them first)
       if (k === 'enter') { e.preventDefault(); this.tableRow(); return; }
       // the browser's own select-all ends on a page number, which cannot be selected, and
       // collapses to the top of the page: Ctrl+A then Ctrl+C copied nothing and Delete did nothing
@@ -2243,6 +2243,8 @@ class App {
     setTimeout(() => {
       this.popOutside = (e) => {
         if (!this.pop || this.pop.el.contains(e.target) || (e.target.closest && e.target.closest('.atom'))) return;
+        // (what the popover keeps as its own: the Equation tab of an equation's field, its menus)
+        if (this.pop.inside && this.pop.inside(e.target)) return;
         const path = e.composedPath ? e.composedPath() : [];
         if (path.some((n) => n && n.classList && [...n.classList].some((c) => c.startsWith('ML__') || c.startsWith('MLK__') || c.startsWith('ui-menu') || c === 'wm-chip')) || path.some((n) => n && n.tagName && /^MATH-VIRTUAL-KEYBOARD|^UI-MENU/i.test(n.tagName))) return;
         this.closePop();
@@ -2534,6 +2536,7 @@ class App {
     }, true);
     P.wordTyping = wt;
     P.field = mf;
+    if (P.insertTex) this.eqWireField(P, mf, D, ta, () => focusField(mf));
     if (!opts.keepFocus || document.activeElement !== ta || ta.value === opts.initial) {
       focusField(mf);
       try { mf.executeCommand('moveToMathfieldEnd'); if (st.multi) mf.position = Math.max(0, mf.lastOffset - 1); } catch (e) { /* ignore */ }
@@ -2549,6 +2552,7 @@ class App {
     const inner = src.slice(info.is, info.ie);
     const p = this.makePop(el, 'pop-math', display ? 'Display math' : 'Inline math');
     this.pop.env = info.a.env;
+    this.pop.display = display;
     this.pop.anchorPos = { f, s: info.s, kind: 'math' };
     this.pop.returnCaret = { f, p: info.e, bias: 1 };
     const ta = document.createElement('textarea');
@@ -2578,11 +2582,12 @@ class App {
       envSel.id = 'pop-env';
       envSel.setAttribute('aria-label', 'Kind of equation');
       const cur = info.a.env;
-      for (const [v, l] of [['equation', 'Numbered equation'], ['equation*', 'Unnumbered equation'], ['align', 'Aligned, numbered rows'], ['align*', 'Aligned, no numbers'], ['gather', 'Gathered, numbered'], ['\\[', '\\[ \\] display']]) {
+      for (const [v, l] of [['equation', 'Numbered equation'], ['equation*', 'Unnumbered equation'], ['align', 'Aligned, numbered rows'], ['align*', 'Aligned, no numbers'], ['gather', 'Gathered, numbered'], ['gather*', 'Gathered, no numbers'], ['multline', 'Multline, numbered'], ['multline*', 'Multline, no number'], ['\\[', '\\[ \\] display']]) {
         const o = document.createElement('option'); o.value = v; o.textContent = l; if (v === cur) o.selected = true; envSel.appendChild(o);
       }
       if (![...envSel.options].some((o) => o.selected)) { const o = document.createElement('option'); o.value = cur; o.textContent = cur; o.selected = true; envSel.appendChild(o); }
-      envSel.addEventListener('change', () => this.changeEnv(envSel.value));
+      // (the Equation tab's Numbered does the same: \begin and \end renamed, nothing inside moved)
+      envSel.addEventListener('change', () => { if (!this.eqSetKind(envSel.value)) envSel.value = (this.pop && this.pop.env) || cur; });
       row.appendChild(envSel);
     }
     const hint = document.createElement('span');
@@ -2652,11 +2657,15 @@ class App {
     // However the box closes, what was typed is kept: text held back is written made whole
     // (mathMadeWhole), in the box's undo step.
     const whole = () => mathMadeWhole(ta.value, kerr());
-    this.pop.onClose = () => { push.cancel(); if (!this.pop) return; this.pop.applyInner(held() ? whole() : ta.value); };
+    this.pop.onClose = () => { push.cancel(); if (!this.pop) return; const v = held() ? whole() : ta.value; this.pop.applyInner(v); this.eqClosed(this.pop, v); };
     // what is written must itself pass the box's check; if making it whole could not get it
     // there, the box stays open with its message (closePop asks) and nothing is lost
     this.pop.refuse = () => !!held() && !!mathBreaksOut(whole(), this.renderer.katex(this.mathPreviewTex(whole(), display), display).err);
     this.pop.mathText = () => ta.value;
+    // (for the Equation tab, src/cmd/equation.js: what is typed written now, whether it can be)
+    this.pop.flush = () => push.flush();
+    this.pop.held = () => !!held();
+    this.eqWire(this.pop, ta);
     this.positionPop();
     ta.focus();
     ta.setSelectionRange(ta.value.length, ta.value.length);
@@ -2725,7 +2734,11 @@ class App {
     if (!c) return;
     const sel = getSelection();
     const rect = sel.rangeCount ? sel.getRangeAt(0).getBoundingClientRect() : null;
+    // (where a display could stand instead, for the Equation tab's Display)
+    const canDisplay = this.eqCanDisplayHere(this.ribbonAt());
     const p = this.makePop(null, 'pop-math', 'New inline math');
+    this.pop.display = false;
+    this.pop.eqWhere = { display: canDisplay };
     this.pop.rect = rect && (rect.width || rect.height) ? rect : (sel.anchorNode && sel.anchorNode.parentElement ? sel.anchorNode.parentElement.getBoundingClientRect() : null);
     const ta = document.createElement('textarea');
     ta.className = 'code'; ta.rows = 1; ta.spellcheck = false; ta.id = 'pop-newtex';
@@ -2797,12 +2810,16 @@ class App {
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
     });
     const whole = () => mathMadeWhole(ta.value, kerr(ta.value));
-    this.pop.onClose = () => { push.cancel(); if (this.pop) insert(held(ta.value) ? whole() : ta.value); };
+    this.pop.onClose = () => { push.cancel(); if (!this.pop) return; const v = held(ta.value) ? whole() : ta.value; insert(v); this.eqClosed(this.pop, v); };
     this.pop.refuse = () => !!held(ta.value) && !!held(whole());
     this.pop.mathText = () => ta.value;
     this.pop.returnCaret = base ? { f: base.f, p: base.a } : null;
+    this.pop.flush = () => push.flush();
+    this.pop.held = () => !!held(ta.value);
+    this.eqWire(this.pop, ta);
     this.positionPop();
     ta.focus();
+    this.eqTab();
     this.attachField(prev, ta, {
       display: false, initial: '', keepFocus: true,
       env: () => '$',
@@ -2819,24 +2836,26 @@ class App {
     });
   }
 
-  newDisplayMath() {
+  // env: the Equation tab's Numbered on a new equation still empty makes it again of that kind
+  newDisplayMath(env = 'equation') {
     let c = this.caretNow();
     if (!c) return;
     // (not in a LaTeX paragraph or a line to come in one: an equation there is typed as its source)
     if (c.ghost ? this.ghostRaw() : this.texHere()) return;
     // in the blank paragraph of a new document too (the ribbon's Equation is pressed there)
     if (c.ghost) { c = { f: this.ghost.f, a: this.ghost.pos }; this.removeGhost(); }
-    const t = '\n\\begin{equation}\n  \n\\end{equation}\n';
+    const t = env === '\\[' ? '\n\\[\n  \n\\]\n' : '\n\\begin{' + env + '}\n  \n\\end{' + env + '}\n';
     // (the history as it is before the equation: given up empty, it goes back to this)
     this.closeGroup();
     const h0 = this.hist.length, redo0 = this.redoStack;
     this.commit([{ f: c.f, s: c.a, e: c.a, t }], { f: c.f, p: c.a + t.length }, 'insert');
     const el = this.findAtomEl({ f: c.f, s: c.a + 1, kind: 'math' });
-    if (el) { const info = atomOfEl(el); if (info) this.openMath(el, info); }
+    if (el) { const info = atomOfEl(el); if (info) { this.openMath(el, info); this.eqTab(); } }
     // closed with nothing typed, the equation goes again: it stayed as an empty environment,
     // which prints a number beside nothing
     const P = this.pop;
     if (!P || !P.onClose) return;
+    P.eqNew = true;
     const done = P.onClose;
     P.onClose = () => {
       done();
@@ -4864,7 +4883,7 @@ class App {
     const mod = isMac ? 'Cmd' : 'Ctrl';
     p.insertAdjacentHTML('beforeend', `
       <p>Rikuy is a writing app for papers: you type on the finished page, and it keeps a LaTeX file up to date behind it.</p>
-      <p>The ribbon above the page works as in Word. Its tabs (Home, Insert, References, Review, View, Help, and Table Layout while the caret is in a table) each hold a row of buttons; Home has what you need most. Styles sets the paragraph you are in as Normal, a Heading, a Quote, or LaTeX, which shows it as its LaTeX source to type in directly. Make words bold, italic or underlined, start a list. Insert adds a formula, an equation, a table, a picture, a footnote, a citation or a link where the caret is. Search in the bar (Alt+Q) finds any command by its name, and a right click on the page lists what applies there.</p>
+      <p>The ribbon above the page works as in Word. Its tabs (Home, Insert, References, Review, View, Help, Table Layout while the caret is in a table, and Equation while an equation is open) each hold a row of buttons; Home has what you need most. Styles sets the paragraph you are in as Normal, a Heading, a Quote, or LaTeX, which shows it as its LaTeX source to type in directly. Make words bold, italic or underlined, start a list. Insert adds a formula, an equation, a table, a picture, a footnote, a citation or a link where the caret is. Search in the bar (Alt+Q) finds any command by its name, and a right click on the page lists what applies there.</p>
       <p>Download gives you the paper as a PDF, as a Word file or as LaTeX. Live graphs stay live only in the LaTeX download. Preview shows the PDF beside the page.</p>
       <p>The page is typeset from your LaTeX source. Every edit you make on the page is written back into the source as the smallest possible change.</p>
       <dl class="keys">
@@ -4876,7 +4895,7 @@ class App {
         <dt>Shift+F10, right click</dt><dd>The menu of what applies here; a second right click gives the browser's (spelling)</dd>
         <dt>${mod}+F1</dt><dd>Fold the ribbon to its tabs, and back</dd>
         <dt>$ or ${mod}+M</dt><dd>New inline math</dd>
-        <dt>${mod}+Shift+E</dt><dd>New numbered equation</dd>
+        <dt>Alt+= (Mac: Control+=)</dt><dd>New equation: numbered on an empty line, in the line in text. (${mod}+Shift+E is Track Changes now, as in Word)</dd>
         <dt>\\ or ${mod}+K</dt><dd>Insert a command</dd>
         <dt>Click math, a citation or a reference</dt><dd>Edit it in place</dd>
         <dt>Alt+click</dt><dd>Show that spot in the source</dd>
@@ -4894,7 +4913,7 @@ class App {
       <p><b>Review</b> lists the comments, then every edit since you opened the project, or since any saved version, with Accept and Reject; tick Show changes on the pages to see them marked like Word's Track Changes. Versions are kept every few minutes, when you leave, when you save the .zip, and under any name you give.</p>
       <p><b>Share</b> copies a link that opens this document for anyone, ready to type in, with no account: the document travels inside the link and is not uploaded. Coauthors type and comment on the page and send a link back; their edits arrive here as changes to accept or reject. Share also opens the project in Overleaf, and Download LaTeX gives a plain .tex (or a .zip with several files), so leaving takes one click. From Overleaf: Menu, Download, Source, and drop the .zip on the page. With Overleaf's Git integration, paste the project's address under Git, Clone, and push and pull keep both in step.</p>
       <p><b>Git</b> makes the project a real repository in this browser: commit, history, compare or restore any commit, branches, push and pull. Download LaTeX then gives a .zip with the .git folder in it, so the download is a clone; opening a .zip or folder that has one brings its history in.</p>
-      <p><b>Equations</b> work like Word's equation editor, with every name from Word's Math AutoCorrect list.</p>
+      <p><b>Equations</b> work like Word's equation editor, with every name from Word's Math AutoCorrect list. While one is open, the Equation tab has Word's symbols and structures (fraction, script, radical, integral, large operator, bracket, function, accent, limit and log, operator, matrix), the equation gallery, Numbered and Display; each puts LaTeX in at the field's caret. A right click on an equation changes it to inline or display, numbered or not, copies it as LaTeX or for Word, or labels it.</p>
       <dl class="keys">
         <dt>\\alpha then Space</dt><dd>&alpha;. Any LaTeX or Word name: \\degree, \\cbrt, \\matrix, \\doubleR</dd>
         <dt>sin x, max_x, lim_n</dt><dd>Function names turn upright on their own. In display math, max_x puts x below</dd>

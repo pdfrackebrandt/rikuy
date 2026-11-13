@@ -295,7 +295,7 @@ def keyboard(page):
     ring = page.evaluate('(() => { const c = getComputedStyle(document.activeElement); return c.outlineStyle !== "none" && parseFloat(c.outlineWidth) > 0; })()')
     page.keyboard.press('Enter'); page.wait_for_timeout(200)
     check('the focus shows, and Enter on Bold makes the words selected on the page bold', ring and '\\textbf{Second}' in src(page), src(page)[src(page).find('Second') - 8:][:30])
-    check('every control names itself and its shortcut in a title', page.evaluate('[...document.querySelectorAll("#ribbon select, #ribbon button")].every((x) => x.title.length > 3)') and 'Ctrl+B' in page.evaluate('document.getElementById("rb-b").title') and 'Ctrl+Shift+E' in page.evaluate('document.getElementById("rb-eq").title'))
+    check('every control names itself and its shortcut in a title', page.evaluate('[...document.querySelectorAll("#ribbon select, #ribbon button")].every((x) => x.title.length > 3)') and 'Ctrl+B' in page.evaluate('document.getElementById("rb-b").title') and 'Alt+=' in page.evaluate('document.getElementById("rb-eq").title'))
 
 
 def narrow(page):
@@ -888,7 +888,7 @@ def latex_after_ghost(page):
 def latex_edges(page):
     """What would leave a blank line in a LaTeX paragraph by accident does not: line breaks at the
     ends of what is pasted; a mark under a line of text stays where it is when Enter starts a
-    paragraph after that line. Ctrl+Shift+E writes nothing in a box; a blank paragraph set to Quote
+    paragraph after that line. Equation writes nothing in a box; a blank paragraph set to Quote
     keeps the quote for a formula and for the insert list; text typed over a selection that ends in
     a box lands there as source."""
     doc = WRAP('Before it.\n\n% rikuy: latex\nalpha line\n  beta line\n\nAfter it.')
@@ -918,9 +918,9 @@ def latex_edges(page):
     under = WRAP('\\section{A}\n% rikuy: latex\nalpha \\x\n\nAfter it.')
     load_doc(page, under); click_text(page, 'A', 1); page.keyboard.press('Enter'); page.wait_for_timeout(120); page.keyboard.type('New'); page.wait_for_timeout(250)
     check('Enter at the end of a heading with a LaTeX paragraph right under it: the new paragraph goes before the mark', src(page) == under.replace('\\section{A}\n', '\\section{A}\n\nNew\n\n') and boxes(page) == ['alpha \\x'], body(page))
-    # Ctrl+Shift+E in a box
-    load_doc(page, doc); click_text(page, 'alpha', 3); page.keyboard.press('Control+Shift+E'); page.wait_for_timeout(300)
-    check('Ctrl+Shift+E in a LaTeX paragraph writes nothing (Equation is off there)', src(page) == doc and page.evaluate('document.querySelectorAll("body > .pop").length') == 0, body(page))
+    # Equation in a box (Ctrl+Shift+E made one before it was Track Changes)
+    load_doc(page, doc); click_text(page, 'alpha', 3); page.evaluate('rikuy.runCommand("equation")'); page.wait_for_timeout(300)
+    check('Equation in a LaTeX paragraph writes nothing (it is off there)', src(page) == doc and page.evaluate('document.querySelectorAll("body > .pop").length') == 0, body(page))
     page.keyboard.press('Escape')
     # a blank paragraph set to Quote: $ and the insert list
     load_doc(page, WRAP('Before it.')); click_text(page, 'Before it.', 10); page.keyboard.press('Enter'); page.wait_for_timeout(120)

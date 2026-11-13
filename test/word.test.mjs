@@ -149,6 +149,25 @@ await ok('an equation edited in Word: only the changed token, macros and label k
   assert.ok(d0.replace(/<[^>]+>/g, '').includes('(1)'), 'the equation number is in the Word file');
 });
 
+// what the Equation tab writes (src/cmd/equation.js): a display in the middle of a sentence, \[ \]
+// and the starred kinds unnumbered, multline numbered, \middle|, cases and a matrix; each display is
+// a Word display equation, the numbered ones with their numbers; unchanged it comes back byte for byte
+await ok('the Equation tab\'s kinds of display go to Word as display equations, numbered where LaTeX numbers them, and come back unchanged', async () => {
+  const src = doc('Some text \\begin{equation}\n  x+1\n\\end{equation} more.\n\n\\[\n  \\left\\{x\\middle|x>0\\right\\}\n\\]\n\n\\begin{equation*}\n  f(x)=\\begin{cases}1 & x>0\\\\ 0 & x\\le0\\end{cases}\n\\end{equation*}\n\n' +
+    '\\begin{multline}\n  a+b \\\\\n  +c\n\\end{multline}\n\n\\begin{gather*}\n  \\begin{pmatrix}a & b\\\\ c & d\\end{pmatrix}\n\\end{gather*}\n\nEnd $\\binom{n}{k}$.\n');
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  const d0 = text(unzip(E.docx).get('word/document.xml'));
+  assert.equal((d0.match(/<m:oMathPara>/g) || []).length, 5, 'five display equations');
+  const words = d0.replace(/<[^>]+>/g, '');
+  assert.ok(words.includes('(1)') && words.includes('(2)') && !words.includes('(3)'), 'equation and multline numbered, the others not');
+  const plan = importInto(E.docx, files);
+  assert.equal(plan.files.get('main.tex') ?? src, src);
+  // x+1 -> x+2 in Word: only that token, the display in the sentence kept as it is
+  const plan2 = importInto(edit(E.docx, (d) => { const i = d.indexOf('<m:oMathPara>'); const j = d.indexOf('<m:t>1</m:t>', i); return d.slice(0, j) + '<m:t>2</m:t>' + d.slice(j + 12); }), files);
+  assert.equal(plan2.files.get('main.tex'), src.replace('x+1', 'x+2'));
+});
+
 await ok('paragraphs: deleted, added, joined; tracked changes count as accepted', async () => {
   const src = doc('First paragraph.\n\nSecond paragraph.\n\nThird paragraph.\n');
   const files = new Map([['main.tex', src]]);

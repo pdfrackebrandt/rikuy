@@ -71,6 +71,8 @@ jobs:
         run: cd test && python3 wordmath.py
       - name: Equation extras
         run: cd test && python3 eqextras.py
+      - name: The Equation tab
+        run: cd test && python3 eqtab.py
       - name: Print, outline, problems and rich copy
         run: cd test && python3 frontier.py
       - name: Share links, comments, the copy back, Overleaf and .tex out

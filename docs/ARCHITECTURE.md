@@ -53,7 +53,7 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | Find, Replace, Go To; the Navigation pane (its box, Headings, Pages, Results) and the Outline view | `compile`, `hitsIn`, `blockText`, `hitSource`, `expand`, `labelsIn` (`src/find.js`); `findRun`, `findPaint`, `findGo`, `hitEdits`, `replaceOne`, `replaceAll`, `goToTargets`, `goToTarget`, `countStatus` (`src/cmd/find.js`); `openFindDialog`, `findDialogSync` (`src/ui/finddialog.js`); `renderOutline`, `navShell`, `paintHeadings`, `navDrop`, `paintPages`, `paintResults`, `setOutlineView` (`src/nav.js`) |
 | promote, demote, move a section or a paragraph, a new heading | `headingAt`, `sectionRange`, `promoteEdits`, `swapEdit`, `moveEdits`, `newHeading` (`src/outline.js`); `promoteAt`, `moveEditsAt`, `sectionMove`, `moveSectionTo`, `newHeadingAt` (`src/cmd/find.js`) |
 | LaTeX paragraphs (`% rikuy: latex`) | `isLatexMark` (`src/styles.js`); `Builder.texBlock`, `cutOpen` (`src/model.js`); `Renderer.item` case `tex`; `App.texBox`, `texEdit`, `texEnter`, `texDelete`, `showTexGhost` (`src/app.js`) |
-| equation editing | `App.openMath`, `attachField`, `toField`, `fromField`; `src/minimal.js`, `wordmath.js`, `fences.js` |
+| equation editing | `App.openMath`, `attachField`, `toField`, `fromField`; `src/minimal.js`, `wordmath.js`, `fences.js`; the Equation tab, Alt+=, the gallery and an equation's right click menu: `src/cmd/equation.js` (`eqTarget`, `eqApply`, `eqInsert`, `eqInsertNew`), `src/ui/eqtab.js` (the tables and `eqMenu`) |
 | engine choice, passes, bibliography, indexes | `pickEngine`, `compile`, `runBiber`, `indexTools` (`tex/engine.js`) |
 | a shell escape program | `exec` (`tex/shell.js`); `loadTool`, `make*` (`tex/tools.js`) |
 | which TeX Live files ship | `build_tree`, `build_packs` (`tex/build_tree.py`) |
@@ -146,7 +146,18 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
 - **Atoms** open popovers (`onMouseDown` → `openAtom`): `openMath` (MathLive field from
   `attachField`, mirrored by a textarea; `toField`/`fromField` lift `\label`, `\tag` out and back;
   `minimalRow()` writes the smallest change; `faithful()` keeps a formula the field cannot hold as
-  source), `openCite`, `openRef`, `openRaw`, all writing through `liveRange()`.
+  source), `openCite`, `openRef`, `openRaw`, all writing through `liveRange()`. While a math
+  popover is open the contextual tab Equation shows (`src/cmd/equation.js`, B13): what its
+  structures, symbols and gallery put in goes to `P.insertTex` (`eqWireField`: MathLive's
+  `insert` at the field's caret in the field's dialect, a template's first slot taking the
+  selection; the LaTeX box as text where it has the focus), so the field keeps the focus; its
+  menus (`src/ui/eqtab.js` `eqMenu`) float beside the ribbon and are no popover of the app's
+  (`makePop` keeps one), and `P.inside` keeps a press on the tab from closing the field. Display,
+  Numbered and an equation's right click menu change the source by `eqApply`: the field closes
+  (its text written), the smallest edit is made on the source as it then is (`$…$` for the
+  whole, or the names in `\begin` and `\end`, or `\[ \]`), and the field opens again on what
+  the equation became. Packages what the tab put in needs are added when the field closes
+  (`eqClosed`), only if the formula still needs them and the document lacks them.
 - **`App.commit(edits, caret, kind)`** drops out of range edits, applies each file's edits from the
   end backwards, then `record()`, `rebuild(caret)`, `pushToSource()` (CodeMirror patched with the
   minimal `diff()`, origin `galley`) and `saveSoon()`: `persist()` to IndexedDB (`src/store.js`;
@@ -997,6 +1008,8 @@ PDF.js is a module `import()`, which takes no hash, so it ships in `dist/tex/` b
   the host's policy; with LibreOffice installed, an edit made there), `engines.py` (engines, shell
   escape), `mathfield.py`, `wordmath.py`, `eqextras.py`, `frontier.py`, `share.py` (two browsers: share, comment,
   send back, merge), `stress.py`, `widgets.py` (live figures, under the host's policy),
+  `eqtab.py` (the Equation tab, Alt+=, the gallery, an equation's menu; compiles what it writes
+  where `dist/tex` exists),
   `offline.py` (the installed app offline and its updates, served by `pages.py` as Cloudflare Pages
   serves it), `launch.py` (files opened with the installed app and shared to it), `agent.py`
   (`rikuy.api`, the controls of `dist/controls.json` by role and name at two widths on every tab,
