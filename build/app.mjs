@@ -404,6 +404,8 @@ Ctrl is Cmd on a Mac.
 - Ctrl+Z, Ctrl+Shift+Z: undo, redo
 - Ctrl+O: open files; Ctrl+S: download the LaTeX source
 - Ctrl+P: the PDF preview; Ctrl+\\: the source pane; Ctrl+Shift+O: outline, problems, changes
+- Ctrl+= and Ctrl+-, Ctrl+0: zoom the document in and out, actual size (on the page; a pinch
+  or Ctrl with the mouse wheel over the page zooms too, about the point under the pointer)
 - Ctrl+Alt+M: comment on the selected words
 - Tab, Ctrl+Enter: next cell, new row in a table
 - Ctrl+Shift+V: paste as plain text
