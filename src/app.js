@@ -623,6 +623,8 @@ class App {
     this.tocPages(plan);
     if (this.prefs.marks) this.marksSoon();
     this.commentsSoon();
+    // (what Find found, marked again on the pages as they are now: src/cmd/find.js)
+    this.findSoon();
     this.emptyGhost();
     this.widgets.place();
   }
@@ -769,8 +771,8 @@ class App {
   status(ms) {
     const m = this.model;
     const pages = this.layout.pages.length;
-    $('#st-pages').textContent = pages + (pages === 1 ? ' page' : ' pages');
-    $('#st-words').textContent = m.words.toLocaleString('en-US') + ' words';
+    // (page x of y and the words, of the selection too: src/cmd/find.js)
+    this.countStatus(pages, m.words);
     this.problemsSoon();
     this.scriptsSoon();
     $('#docname').textContent = this.name;
@@ -1321,18 +1323,11 @@ class App {
     if (c.ghost) { this.ghostInsert(raw ? data : escapeTeX(data, ' ')); return; }
     const f = range ? range.f : c.f;
     let a = range ? range.a : c.a, b = range ? range.b : c.b;
-    const src = this.src(f);
     const edits = this.deletionEdits(f, a, b);
     let at = a;
     // If deletion collapsed to visible ranges, insertion goes where the first visible char was
     if (edits.length && edits[0].s > a && edits.length > 0 && edits[0].t === '') at = edits[0].s;
-    const prev = src[at - 1] || ' ';
-    // (a selection from a paragraph into a LaTeX paragraph or back: the text is written as the
-    // place it lands in takes it, as source in the box, escaped in the text)
-    const lands = this.texAt(f, at);
-    let t = lands ? data : escapeTeX(data, prev);
-    if (!lands && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
-    if (!lands && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
+    const t = this.escapeAt(f, at, data);
     // merge if insertion point coincides with a deletion start
     const merged = [];
     let inserted = false;
@@ -1344,6 +1339,18 @@ class App {
     const removedBefore = edits.filter((ed) => ed.e <= at).reduce((s, ed) => s + (ed.e - ed.s) - ed.t.length, 0);
     const caret = { f, p: at - removedBefore + t.length, bias: -1 };
     this.commit(merged, caret, edits.length ? 'replace' : 'type');
+  }
+
+  // Text typed, or written by Replace, at p of file f as the source takes it there. A selection
+  // from a paragraph into a LaTeX paragraph or back: the text is written as the place it lands in
+  // takes it, as source in the box, escaped in the text; {} after a control word, a bracket kept
+  // from being read as the optional argument of the command before it.
+  escapeAt(f, at, data) {
+    const src = this.src(f), lands = this.texAt(f, at);
+    let t = lands ? data : escapeTeX(data, src[at - 1] || ' ');
+    if (!lands && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
+    if (!lands && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
+    return t;
   }
 
   deleteInput(type, ranges) {
@@ -4867,6 +4874,8 @@ class App {
         <dt>Paste</dt><dd>From Word, Google Docs or the web: bold, italics, lists, links, tables and equations become LaTeX. ${mod}+Shift+V pastes plain text</dd>
         <dt>Copy</dt><dd>Keeps formatting; equations paste into Word as equations</dd>
         <dt>${mod}+Shift+O</dt><dd>Outline, problems (undefined references, missing citations, unclosed environments) and changes</dd>
+        <dt>${mod}+F, ${mod}+H, ${mod}+G</dt><dd>On the page: Find (in the Navigation pane), Replace, Go To. What is found is the text the page shows, never a command or math; elsewhere ${mod}+F is the browser's own find</dd>
+        <dt>Alt+Shift+arrows, ${mod}+Alt+O</dt><dd>Promote or demote a heading with those under it; move a paragraph, an item, or a heading's whole section up or down; the Outline view</dd>
         <dt>Esc, then Tab</dt><dd>Leave the source pane, where Tab indents</dd>
         <dt>PDF or ${mod}+P</dt><dd>Compiles with TeX Live 2026, running in this browser, and shows the exact PDF: pdfLaTeX, XeLaTeX or LuaLaTeX (Auto reads a <code>% !TeX program</code> line or the preamble). Shell escape runs Ghostscript, gnuplot, Pygments for minted and makeindex here too. It recompiles after each edit; TeX's errors appear under Problems with their line; click the PDF to find that text, click the page to find it in the PDF</dd>
       </dl>

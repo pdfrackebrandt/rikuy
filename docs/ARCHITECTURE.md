@@ -50,6 +50,8 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | keys, the search box, the right click menu, the kit | `matches`, `lookup`, `installKeys` (`src/keys.js`); `installSearch` (`src/ui/search.js`); `openContextMenu`, `installMenu` (`src/ui/menu.js`); `openMenu`, `openGallery`, `splitButton`, `colorPicker`, `numberField`, `dialog` (`src/ui/kit.js`) |
 | an edit of the preamble, an inline wrapper, an environment around paragraphs | `usePackages`, `kvEdits`, `classOptions`, `setPackageKeys`, `defineOnce` (`src/preamble.js`); `App.packageEdits`, `preambleOthers`; `wrapEdits`, `unwrapEdits`, `standsFree`, `rewrapEdits`, `enclosing`, `clearText`, `GROUPS` (`src/wrap.js`); `envWords`, `wrapBlockEdits`, `unwrapBlockEdits` (`src/blockenv.js`) |
 | the side panel: outline and problems; versions and changes | `toggleNav`, `refreshNav`, `goTo` (`src/nav.js`); `snapshot`, `currentChanges`, `renderChanges`, `paintChanges` (`src/review.js`) |
+| Find, Replace, Go To; the Navigation pane (its box, Headings, Pages, Results) and the Outline view | `compile`, `hitsIn`, `blockText`, `hitSource`, `expand`, `labelsIn` (`src/find.js`); `findRun`, `findPaint`, `findGo`, `hitEdits`, `replaceOne`, `replaceAll`, `goToTargets`, `goToTarget`, `countStatus` (`src/cmd/find.js`); `openFindDialog`, `findDialogSync` (`src/ui/finddialog.js`); `renderOutline`, `navShell`, `paintHeadings`, `navDrop`, `paintPages`, `paintResults`, `setOutlineView` (`src/nav.js`) |
+| promote, demote, move a section or a paragraph, a new heading | `headingAt`, `sectionRange`, `promoteEdits`, `swapEdit`, `moveEdits`, `newHeading` (`src/outline.js`); `promoteAt`, `moveEditsAt`, `sectionMove`, `moveSectionTo`, `newHeadingAt` (`src/cmd/find.js`) |
 | LaTeX paragraphs (`% rikuy: latex`) | `isLatexMark` (`src/styles.js`); `Builder.texBlock`, `cutOpen` (`src/model.js`); `Renderer.item` case `tex`; `App.texBox`, `texEdit`, `texEnter`, `texDelete`, `showTexGhost` (`src/app.js`) |
 | equation editing | `App.openMath`, `attachField`, `toField`, `fromField`; `src/minimal.js`, `wordmath.js`, `fences.js` |
 | engine choice, passes, bibliography, indexes | `pickEngine`, `compile`, `runBiber`, `indexTools` (`tex/engine.js`) |
@@ -272,6 +274,37 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   keeps the width of its widest page, so the arrows do not move under the pointer, and it pages
   to the caret's style when the caret moves to another block. A tile that cannot apply is
   `aria-disabled` and keeps its tooltip, which says why (`WHY`).
+- **Find and Replace.** What is searched is the page's text: `blockText(B)` (`src/find.js`) reads a
+  drawn block's items and footnotes once (cached per block; its seg maps are relative to `B.base`,
+  so a block that only moved keeps it) into one string with, per character, its seg and place
+  (`charSrc` gives its source range) and the formatting it is drawn with (the `y-*` classes, the
+  heading level, footnote, caption, LaTeX paragraph). An atom (a formula, a citation, a footnote
+  mark) is `SEP` and the end of a paragraph, a cell or an item `PARA`; no hit runs across either,
+  so nothing inside math, a command or a label is found. The query becomes a RegExp in
+  `compile`: plain text (a space finds `~`, a straight quote the curly ones), Word's ^ codes,
+  Word's wildcards translated, or a regular expression; Match case, whole words. `hitSource`
+  maps a hit to its file, range and the joined ranges of its characters (`parts`); the page marks
+  them with CSS highlights (`rk-find`, `rk-find-cur`) over `CaretIndex.domRanges`. `hitEdits`
+  writes the replacement into the first part's place, through `App.escapeAt` (the escaping
+  typing uses, moved out of `insertText` for this), and deletes the other parts, so the markup
+  between them stays (`\textbf{bold} text` found as "bold text" becomes `\textbf{new}`). Replace
+  All is one commit. "In LaTeX source" searches the files' own text (`hitsInSource`) and writes
+  the replacement as typed. The state (`App.fs`) is shared by the Navigation pane's box and the
+  Find and Replace dialog (`src/ui/finddialog.js`, kept open beside the page, not a popover);
+  `layoutPass` calls `findSoon`, which searches again and marks the pages as they are now.
+  Go To (`goToTargets`, `goToTarget`) lists pages, headings, footnotes, display formulas,
+  figures, tables, comments and labels (`labelsIn`, one pass) in the document's order
+  (`blockIndexOf`, a binary search per file).
+- **The outline.** `src/outline.js` edits on strings: `promoteEdits` renames the heading's command
+  and those under it (star and short title kept), `sectionRange` is a heading to the next of its
+  level or higher in its file (stopping before `\appendix`, the bibliography and
+  `\end{document}`; none when a heading under it is in another file), `swapEdit` exchanges two
+  neighbours with the space between kept (Move up and Move down: sections, paragraphs, list
+  items), `moveEdits` takes one elsewhere (a heading dragged in the Navigation pane).
+  `src/nav.js` draws the Navigation pane in the side panel's Outline tab: the box, Headings (a
+  tree with collapse, Show levels, the Outlining toolbar, Alt+Shift and the arrows, dragging; in
+  the Outline view the paragraphs too, by their first line), Pages (each page cloned small,
+  inert, only those in sight) and Results.
 
 ## 3. Undo and redo
 

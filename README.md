@@ -49,6 +49,13 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   a search box for any command by its name (Alt+Q), a right click menu of what applies where you
   are. Every button is a command of one registry, which agents find by name
   (`controls.json`, llms.txt) and run (`rikuy.api.run`).
+- **Find, Replace, Go To and the outline, as in Word.** Ctrl+F searches the text the page shows
+  (50% finds `\%`), every hit marked and listed with its context in the Navigation pane; Ctrl+H
+  replaces through the same escaping as typing, Replace All as one undo, with Word's wildcards,
+  regular expressions, a format, or in the LaTeX source itself; Ctrl+G goes to a page, heading,
+  footnote, equation, figure, table, comment or label. The Navigation pane has the headings
+  (drag one to move its section), thumbnails of the pages and the results; Alt+Shift and the
+  arrows promote, demote and move headings with their sections, and paragraphs.
 - **The whole TeX Live 2026 toolchain.** The three engines, latexmk's reruns, bibtex and biber,
   makeindex and xindy, glossaries, and shell escape: Ghostscript, gnuplot, Python with Pygments
   (minted), dvips, Asymptote with 3D rendering, and TeX starting TeX (TikZ externalize,

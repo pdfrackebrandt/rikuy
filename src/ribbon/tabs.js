@@ -73,6 +73,9 @@ export const tabs = {
         const gb = mk('button', 'btn ghost rb-gbtn');
         gb.type = 'button'; gb.id = 'rg-' + T.id + '-' + g.id;
         gb.setAttribute('aria-label', g.name); gb.title = g.name; gb.setAttribute('aria-haspopup', 'menu'); gb.setAttribute('aria-expanded', 'false');
+        // (its first command's icon, which it shows when it folds early, small: see ribbonFit)
+        const first = items.find(({ c }) => c.icon);
+        if (first) gb.insertAdjacentHTML('beforeend', SVG(first.c.icon).replace('<svg ', '<svg class="rb-gico" '));
         gb.append(mk('span', '', g.name));
         gb.insertAdjacentHTML('beforeend', SVG(CARET));
         gb.addEventListener('click', () => this.openGroupMenu(T.id, g, gb));
@@ -219,13 +222,18 @@ export const tabs = {
       if (gal && n !== this.rbTiles) { this.rbTiles = n; this.rbFollow = true; }
       this.paintGallery();
     };
-    for (const g of groups) g.classList.remove('folded');
+    for (const g of groups) g.classList.remove('folded', 'early');
     rb.classList.remove('rb-narrow', 'rb-dl1');
     // (a phone's width has the list whatever the room: the style sheet hides the gallery there)
     const wide = gal ? getComputedStyle(gw).display !== 'none' : wideScreen();
     const done = () => { this.rbFitting = false; this.ribbonRove(); };
     if (wide) {
       if (gal) measureTiles(this);
+      // Word's way with a tab's least needed groups (rank 1: Editing on Home): where the row is
+      // too short for everything at its widest, they fold first, each into one small button
+      // with its first command's icon, before the gallery shrinks or a button loses its name
+      set(false, false, gal ? 6 : this.rbTiles || 6);
+      if (!fits()) for (const g of groups) if (+g.dataset.rank === 1 && g.querySelector('.rb-gico')) g.classList.add('folded', 'early');
       const steps = gal ? [[false, 6], [false, 5], [false, 4], [false, 3], [false, 4, 1], [false, 3, 1], [true, 6], [true, 5], [true, 4], [true, 3]] : [[false, this.rbTiles || 6], [false, this.rbTiles || 6, 1], [true, this.rbTiles || 6], [true, this.rbTiles || 6, 1]];
       for (const [fold, n, nolab] of steps) {
         set(false, fold, n, nolab);

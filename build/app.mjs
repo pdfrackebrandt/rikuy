@@ -468,6 +468,25 @@ Ctrl is Cmd on a Mac.
   and back; Shift+F10 or the menu key: the right click menu at the caret
 - Tab, Ctrl+Enter: next cell, new row in a table
 - Ctrl+Shift+V: paste as plain text
+- Ctrl+F, Ctrl+H, Ctrl+G, on the page only (with the focus anywhere else Ctrl+F is the browser's
+  own find): Find puts the focus in the Navigation pane's searchbox "Search document" (the side
+  panel's tab Outline; its tablist "Navigation" has Headings, Pages and Results, which lists the
+  hits); Replace opens the dialog "Find and Replace" (fields "Find what" and "Replace with";
+  checkboxes Match case, Find whole words only, Use wildcards (Word's: ? * @ {n,m} [a-z] [!a-z] <
+  > and \\1), Use regular expressions ($1), In LaTeX source, In selection; buttons Find Next, Find
+  Previous, Replace, Replace All, Format, Special; Escape closes it); Go To opens its tab Go To
+  (combobox "Go to what": page, section, footnote, equation, figure, table, comment, label; the
+  field takes a number, a section number like 2.1, a label's key, or +n and -n). On a Mac: Cmd+F,
+  Control+H (Cmd+H hides the app), Cmd+Option+G. What is found is the text the page shows: 50%
+  finds \\%, a straight quote finds \`\` and ''; commands, labels and math are found only with In
+  LaTeX source, where the replacement is written as it is; elsewhere it is escaped as typing is.
+  Replace All is one undo. The status bar's "Page x of y" opens Go To.
+- Alt+Shift+Left and Right (Mac: Control+Shift): promote or demote the heading at the caret and
+  every heading under it (\\subsection to \\section; an article's \\section is the top);
+  Alt+Shift+Up and Down: move the paragraph, the list item, or the heading's whole section past
+  the one beside it. Ctrl+Alt+O: the Outline view (the side panel's headings with the paragraphs
+  under them; its toolbar "Outlining" has Promote, Demote, Move up, Move down, Expand all,
+  Collapse all and the combobox "Show levels"; a heading dragged onto another moves its section)
 - Click math, a citation or a cross reference to edit it; Alt+click shows that spot in the source
 - In an equation: names as in LaTeX or Word (\\alpha then Space), a/b for a fraction, x^2 and
   x_i, Space to step out, Tab to the next empty slot, Enter to finish

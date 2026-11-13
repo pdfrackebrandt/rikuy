@@ -118,7 +118,7 @@ def toast(page):
 
 
 def close_all(page):
-    page.evaluate("rikuy.closePop(true, true); rikuy.toggleNav(false); if (document.body.classList.contains('src-on')) rikuy.toggleSource(false); if (document.body.classList.contains('pdf-on')) rikuy.togglePdf(false)")
+    page.evaluate("rikuy.closePop(true, true); rikuy.closeFind(); rikuy.toggleNav(false); if (document.body.classList.contains('src-on')) rikuy.toggleSource(false); if (document.body.classList.contains('pdf-on')) rikuy.togglePdf(false)")
     page.wait_for_timeout(120)
 
 
@@ -295,7 +295,8 @@ def names(page, width):
     # (the gallery shows as many of its tiles as the window has room for, and its paging arrows
     # only where not all fit: Normal, LaTeX source and More styles are always there)
     wide = {i for i in NAMES if ONLY[i] != 'narrow'} - GALLERY | ({i for i in GALLERY if i in seen} if {'rb-st-p', 'rb-st-latex', 'rb-st-more'} <= set(seen) else set())
-    narrow = {i for i in NAMES if ONLY[i] != 'wide'} - GALLERY
+    # (a control shown as the row has room, Home's Find, Replace and Select, may be in view or in its group's menu)
+    narrow = {i for i in NAMES if ONLY[i] != 'wide'} - GALLERY | {i for i in GALLERY if i in seen and ONLY[i] != 'wide'}
     check('the registry keeps every name these tests began with, on the same element' + w, all(NAMES.get(i) == n for i, n in KEPT.items()), [(i, NAMES.get(i)) for i, n in KEPT.items() if NAMES.get(i) != n])
     check('every control in view has its one name, and no other control has it' + w, not wrong and not twice and set(seen) == (wide if width > 1000 else narrow), (wrong, twice, sorted(set(seen) ^ (wide if width > 1000 else narrow))))
     if width > 1000:
@@ -479,7 +480,20 @@ def audit(page, cdp, width):
     page.evaluate('rikuy.undo()')
     dialog('Insert', 'Insert', lambda: page.keyboard.press('Control+k'))
     dialog('Comment', 'Comment', lambda: (page.keyboard.press('Control+Shift+ArrowLeft'), page.keyboard.press('Control+Alt+m')))
-    check('each dialog is a dialog named by its title, with a Close button, and does not call itself modal' + w, all(ok for _, ok in opened) and len(opened) == 7, opened)
+    dialog('Find and Replace', 'Find and Replace', lambda: page.keyboard.press('Control+h'))
+    check('each dialog is a dialog named by its title, with a Close button, and does not call itself modal' + w, all(ok for _, ok in opened) and len(opened) == 8, opened)
+    first(); page.keyboard.press('Control+h')
+    fr = page.get_by_role('dialog', name='Find and Replace', exact=True)
+    fr.wait_for(timeout=4000)
+    check('the Find and Replace dialog\'s tabs, fields, options and buttons have names' + w, all(fr.get_by_role('tab', name=n, exact=True).count() == 1 for n in ('Find', 'Replace', 'Go To'))
+          and all(fr.get_by_label(n, exact=True).count() == 1 for n in ('Find what', 'Replace with', 'Match case', 'Find whole words only', 'Use wildcards', 'Use regular expressions', 'In LaTeX source', 'In selection'))
+          and all(fr.get_by_role('button', name=n, exact=True).count() == 1 for n in ('Find Next', 'Find Previous', 'Replace', 'Replace All', 'Close')))
+    page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    check('Escape closes it' + w, fr.count() == 0 or not fr.is_visible())
+    first(); page.keyboard.press('Control+f'); page.wait_for_timeout(250)
+    check('Ctrl+F on the page puts the focus in the Navigation pane\'s box "Search document"' + w, page.evaluate('document.activeElement.getAttribute("aria-label")') == 'Search document'
+          and page.get_by_role('tablist', name='Navigation', exact=True).count() == 1)
+    close_all(page)
     c = page.get_by_role('dialog', name='Citation', exact=True)
     first(); button('Citation').click(); c.wait_for(timeout=8000)
     check('the citation dialog\'s fields have names: style, search, text before and after' + w, c.get_by_role('combobox', name='Citation style', exact=True).count() == 1 and c.get_by_role('searchbox', name='Search the bibliography', exact=True).count() == 1
@@ -542,7 +556,7 @@ def audit(page, cdp, width):
     look('the script notice')
     check('the notice\'s buttons: Set it up, Not now' + w, button('Set it up').is_visible() and button('Not now').is_visible())
     page.evaluate('rikuy.undo()')
-    check('no interactive element is without a name, in any of %d states' % len(looked) + w, not found and len(looked) == (23 if width > 1000 else 24), found or looked)
+    check('no interactive element is without a name, in any of %d states' % len(looked) + w, not found and len(looked) == (24 if width > 1000 else 25), found or looked)
 
 
 TABLE = ('\\documentclass{article}\n\\begin{document}\nA paragraph.\n\n\\begin{tabular}{ll}\ncell & other \\\\\nmore & last \\\\\n\\end{tabular}\n\n'

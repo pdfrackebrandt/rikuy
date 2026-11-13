@@ -151,10 +151,12 @@ def widths(page):
         click_text(page, 'Second paragraph', 3); page.wait_for_timeout(150)
         seen[w] = page.evaluate('''() => { const r = document.getElementById('ribbon'), b = r.getBoundingClientRect(), top = document.getElementById('rb-top');
           return { tabs: !!top.offsetParent, sel: !!document.getElementById('rb-tabsel').offsetParent, over: r.scrollWidth > r.clientWidth + 1, h: Math.round(b.height),
-            folded: [...document.querySelectorAll('.rb-grp.folded')].length, page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+            folded: [...document.querySelectorAll('.rb-grp.folded:not(.early)')].length, early: [...document.querySelectorAll('.rb-grp.early')].map((g) => g.dataset.group), page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
             dl: [...document.querySelectorAll('.rb-dl button')].filter((x) => x.offsetParent).map((x) => x.id) }; }''')
     print('     widths:', seen)
     check('at 1400 and 1024 px the tabs are a row above the toolbar, nothing folds and the row does not scroll', all(seen[w]['tabs'] and not seen[w]['sel'] and not seen[w]['over'] and not seen[w]['folded'] for w in (1400, 1024)), seen)
+    # (but Home's least needed group, Editing, which folds first into one icon button, as Word's)
+    check('below 1920 px Home\'s Editing group is one icon button named Editing, its commands in its menu', all(seen[w]['early'] == ['editing'] for w in (1400, 1024)), seen)
     check('at 860 and 390 px the tabs are the combobox "Ribbon tab" at the row\'s start, in one row that scrolls sideways on a phone', all(not seen[w]['tabs'] and seen[w]['sel'] and seen[w]['h'] <= 44 and seen[w]['page'] <= 0 for w in (860, 390)) and seen[390]['over'], seen)
     check('the downloads: three at 1400 and 1024 px; one Download menu at 860 px, where the row has no room for three, and on a phone', all(seen[w]['dl'] == ['rb-pdf', 'rb-word', 'b-save'] for w in (1400, 1024)) and seen[860]['dl'] == ['rb-dl-menu'] and not seen[860]['over'] and seen[390]['dl'] == ['rb-dl-menu'], {w: seen[w]['dl'] for w in seen})
     page.set_viewport_size({'width': 390, 'height': 900}); page.wait_for_timeout(300)
@@ -164,7 +166,7 @@ def widths(page):
     # groups fold, the lowest rank first, into a button named after the group
     page.evaluate('''() => { const R = window.rikuy.cmds;
       for (let k = 0; k < 6; k++) R.register({ id: 't-ed' + k, name: 'Editing test ' + k, tab: 'home', group: 'editing', label: 'Editing test ' + k, icon: '<path d="M4 4h12"/>', when: () => true, run: () => { window.__ran = 't-ed' + k; } });
-      for (let k = 0; k < 4; k++) R.register({ id: 't-cl' + k, name: 'Clipboard test ' + k, tab: 'home', group: 'clipboard', label: 'Clipboard test ' + k, icon: '<path d="M4 4h12"/>', when: () => true, run: () => {} });
+      for (let k = 0; k < 8; k++) R.register({ id: 't-cl' + k, name: 'Clipboard test ' + k, tab: 'home', group: 'clipboard', label: 'Clipboard test ' + k, icon: '<path d="M4 4h12"/>', when: () => true, run: () => {} });
       window.rikuy.ribbonBuild(); }''')
     page.set_viewport_size({'width': 1024, 'height': 900}); page.wait_for_timeout(300)
     click_text(page, 'Second paragraph', 3); page.wait_for_timeout(150)
@@ -175,11 +177,12 @@ def widths(page):
     gb.click(); page.wait_for_timeout(200)
     menu = page.get_by_role('menu', name='Editing', exact=True)
     names = [menu.get_by_role('menuitem').nth(k).get_attribute('aria-label') for k in range(menu.get_by_role('menuitem').count())]
-    check('it opens a menu "Editing" of its commands by their names', names == ['Editing test %d' % k for k in range(6)] and gb.get_attribute('aria-expanded') == 'true', names)
+    # (Home's own Editing commands, Find, Replace and Select, come first: B5's)
+    check('it opens a menu "Editing" of its commands by their names', names[-6:] == ['Editing test %d' % k for k in range(6)] and names[:-6] == ['Find', 'Replace', 'Select'] and gb.get_attribute('aria-expanded') == 'true', names)
     menu.get_by_role('menuitem', name='Editing test 3', exact=True).click(); page.wait_for_timeout(150)
     check('and an item runs its command, the menu closed, the caret on the page', page.evaluate('window.__ran') == 't-ed3' and page.get_by_role('menu').count() == 0 and page.evaluate('document.activeElement.id') == 'pages')
     page.set_viewport_size({'width': 1920, 'height': 900}); page.wait_for_timeout(300)
-    check('with room again (1920 px) every group is open', page.evaluate("document.querySelectorAll('.rb-grp.folded').length") == 0)
+    check('with room again (1920 px) every group is open but the least needed one, Editing, as one icon button', page.evaluate("[...document.querySelectorAll('.rb-grp.folded')].map((g) => g.dataset.group + (g.classList.contains('early') ? '*' : ''))") in ([], ['editing*']))
     page.evaluate('''() => { for (const c of window.rikuy.cmds.commands()) if (/^t-(ed|cl)/.test(c.id)) window.rikuy.cmds.unregister(c.id); window.rikuy.ribbonBuild(); }''')
     page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
 

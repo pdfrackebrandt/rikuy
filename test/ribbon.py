@@ -364,6 +364,8 @@ def where_it_applies(page):
       const r = document.createRange(); r.setStart(a.firstChild, 2); r.setEnd(z.firstChild, 5); document.getElementById('pages').focus(); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }""")
     check('with a selection over two paragraphs the style cannot be changed', state(page)['rb-style'][0])
     # the row keeps the caret: a click on a disabled button, on the Download label, on empty space
+    # (at 1600 px, where the label shows whatever Home holds)
+    page.set_viewport_size({'width': 1600, 'height': 1000}); page.wait_for_timeout(300)
     click_text(page, 'cell', 2); state(page)
     for what, sel in (('a disabled button', '#rb-eq'), ('the Download label', '.rb-lab'), ('the empty part of the row', '#ribbon .rb-panel:not([hidden]) .grow')):
         r = page.evaluate('(s) => { const r = document.querySelector(s).getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }', sel)
@@ -373,6 +375,7 @@ def where_it_applies(page):
         page.keyboard.press('Control+z'); page.wait_for_timeout(120)
         check('a click on %s leaves the caret on the page' % what, ok and page.evaluate('document.activeElement.id') == 'pages')
         click_text(page, 'cell', 2); state(page)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
     # the style list gives the focus back: typing after it goes to the page, not into the list
     # (the list is what a narrower window has in the gallery's place)
     page.set_viewport_size({'width': 820, 'height': 900}); page.wait_for_timeout(300)
@@ -631,7 +634,11 @@ def gallery_widths(page):
     order = {3: ['p', 'section', 'latex'], 4: ['p', 'section', 'subsection', 'latex'], 5: ['p', 'section', 'subsection', 'subsubsection', 'latex'], 6: six}
     tiled = [w for w in seen if seen[w]['tiles']]
     check('wherever the gallery shows, its first page is Normal and Heading 1 with LaTeX in sight (Normal, Heading 1, LaTeX for three), and the row does not scroll', all(seen[w]['tiles'] == order[len(seen[w]['tiles'])] and not seen[w]['over'] for w in tiled), {w: seen[w]['tiles'] for w in tiled})
-    check('the row is as tall with the list as with the gallery (no jump between 1024 and 1000 px)', seen[1024]['tiles'] and seen[1000]['list'] and seen[1024]['h'] == seen[1000]['h'], (seen[1024]['h'], seen[1000]['h']))
+    # (where the gallery gives way to the list: between 1100 and 1024 px since Home has its Editing
+    # group, between 1024 and 1000 px before)
+    g = min(w for w in seen if seen[w]['tiles'])
+    l = max(w for w in seen if seen[w]['list'] and w < g)
+    check('the row is as tall with the list as with the gallery (no jump where the one gives way to the other, %d and %d px)' % (g, l), g >= 1024 and l >= 1000 and seen[g]['h'] == seen[l]['h'], (g, l, seen[g]['h'], seen[l]['h']))
     check('narrower, the style list takes the gallery\'s place, with LaTeX and Quote', all(seen[w]['list'] and not seen[w]['tiles'] and seen[w]['opts'] == six for w in (900, 820, 390)) and seen[390]['page'] <= 0 and seen[390]['h'] <= 44, {w: seen[w] for w in (820, 390)})
     page.set_viewport_size({'width': 390, 'height': 800}); page.wait_for_timeout(300)
     click_text(page, 'Second paragraph', 3); state(page)
