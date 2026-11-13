@@ -1368,3 +1368,42 @@ body.fpainting #pages { cursor: copy; }
 @media (max-width: 640px) {
   .fd-grid, .fd-eff { grid-template-columns: 1fr 1fr; }
 }
+
+/* ---- B13: the Equation tab's menus (symbols, structures, the gallery), beside the ribbon ---- */
+/* not the app's popover (that is the equation's field, which stays open under them) */
+.pop.eq-menu { z-index: 45; width: auto; max-width: min(560px, calc(100vw - 16px)); padding: 6px; gap: 2px; overscroll-behavior: contain; }
+.eq-h { font: 600 11.5px var(--font-ui); color: var(--mute); letter-spacing: .02em; padding: 6px 6px 2px; }
+.eq-h:first-child { padding-top: 2px; }
+.eq-grid .eq-sec { display: grid; grid-template-columns: repeat(var(--cols, 8), minmax(34px, auto)); gap: 2px; }
+.eq-mi { display: flex; align-items: center; justify-content: center; gap: 10px; min-width: 34px; min-height: 34px; padding: 3px 5px; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--ink-ui); font: 13px var(--font-ui); cursor: pointer; text-align: left; }
+.eq-mi:hover { background: var(--blue-wash); }
+.eq-mi:focus-visible { outline: none; background: var(--blue-wash); border-color: color-mix(in srgb, var(--blue) 45%, transparent); }
+.eq-mi[aria-disabled="true"] { opacity: .45; cursor: default; }
+.eq-mi[aria-disabled="true"]:hover { background: transparent; }
+.eq-mx { font-size: 15px; line-height: 1; pointer-events: none; }
+.eq-mx .katex { font-size: 1em; }
+.eq-syms .eq-mx { font-size: 17px; }
+/* the structures' tiles: a template drawn as TeX draws it, its slots grey squares */
+.eq-structs .eq-sec { grid-template-columns: repeat(var(--cols, 5), minmax(64px, auto)); }
+.eq-structs .eq-mi { min-height: 52px; padding: 4px 8px; }
+.eq-structs .eq-mx { font-size: 16px; }
+/* the gallery and the plain menus: one item to a row, its name over its formula */
+.eq-list .eq-sec { display: flex; flex-direction: column; gap: 1px; }
+.eq-list .eq-mi { justify-content: flex-start; min-height: 32px; padding: 4px 10px; }
+.eq-list .eq-mi[role="menuitemradio"] { padding-left: 26px; position: relative; }
+.eq-list .eq-mi[aria-checked="true"]::before { content: ""; position: absolute; left: 10px; top: 50%; width: 7px; height: 4px; margin-top: -4px; border: solid var(--blue); border-width: 0 0 2px 2px; transform: rotate(-45deg); }
+.eq-gal { min-width: 300px; }
+.eq-gal .eq-mi { flex-direction: column; align-items: flex-start; gap: 4px; padding: 6px 10px 8px; }
+.eq-gal .eq-ml { font: 600 12px var(--font-ui); color: var(--mute); }
+.eq-gal .eq-mx { font-size: 15px; max-width: 100%; overflow: hidden; }
+.eq-gal .eq-sec + .eq-sec, .eq-gal .eq-h + .eq-sec { border-top: 0; }
+/* the name of an equation to keep */
+.pop.eq-ask { width: min(320px, calc(100vw - 16px)); padding: 10px; gap: 8px; }
+.eq-ask .pop-row { justify-content: flex-end; }
+@media (pointer: coarse) { .eq-mi { min-width: 40px; min-height: 40px; } }
+.eq-gal .eq-mi.eq-act { flex-direction: row; min-height: 32px; padding: 4px 10px; }
+.eq-gal .eq-act .eq-ml { font: 400 13px var(--font-ui); color: var(--ink-ui); }
+.eq-gal .eq-sec + .eq-sec:last-child { border-top: 1px solid var(--line); margin-top: 4px; padding-top: 4px; }
+/* the split buttons of B13 (Insert's Equation, Numbered) lose their names with the other buttons' */
+.rb.rb-fold .rb-grp > .rb-split > #ri-eq span:not(.sr), .rb.rb-fold .rb-grp > .rb-split > #rc-eq-numbered span:not(.sr) { display: none; }
+.rb.rb-fold .rb-grp > .rb-split > #ri-eq, .rb.rb-fold .rb-grp > .rb-split > #rc-eq-numbered { width: 32px; padding: 0; justify-content: center; }
