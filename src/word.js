@@ -5,6 +5,7 @@
 // collab.js's do. A build without Word (RIKUY_NO_WORD, the claude.ai copy, which has no room for
 // pandoc) keeps the buttons and says where Word support is.
 import { buildWordDoc } from './wordast.js';
+import { pageForWord } from './pageword.js';
 import { checkData, planImport, unpackRead } from './wordsync.js';
 import { loadPdfjs } from './pdfview.js';
 import { kvGet, kvPut } from './store.js';
@@ -193,7 +194,9 @@ export const word = {
     return {
       doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources, bibs: citeproc ? bibs : [], csl: citeproc ? cslName : null, citeproc,
       toc: W.doc.blocks && model.blocks.some((u) => u.items.some((x) => x.type === 'toc')),
-      degraded: W.degraded,
+      // the page's set up (task 44): paper, margins, columns, headers and footers, in Word's terms
+      page: pageForWord(model, this.src(this.main)),
+      degraded: model.opts.page && model.opts.page.wm && model.opts.page.wm.on ? [...W.degraded, 'the watermark (Word draws one as a shape of its own: Design › Watermark there)'] : W.degraded,
       project: { name: this.name, main: this.main, files: [...this.files.entries()] },
       app: 'Rikuy'
     };

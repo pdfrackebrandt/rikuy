@@ -600,6 +600,9 @@ class App {
     const model = this.model;
     const items = [], fns = [];
     for (const B of this.renderer.blocks) { for (const it of B.items) items.push(it); for (const f of B.fns) fns.push(f); }
+    // (the sheet of the PDF TeX made of this set up, where there is one: src/layout.js sheetSize)
+    const ps = this.pdfSheet, mk = model.opts.page && model.opts.page.mediaKey;
+    model.opts.pdfSheet = ps && mk && ps.key === mk ? ps : null;
     const g = geometry(model.opts);
     // (whose fonts draw the Chinese characters is part of it: other fonts, other widths)
     const cjk = this.cjkOrder();
@@ -614,6 +617,9 @@ class App {
       for (const f of fns) f.measured = false;
     }
     this.removeGhost();
+    // (headers, footers, line numbers, the watermark: drawn from the model's page set up, src/layout.js)
+    this.layout.page = model.opts.page || {};
+    this.layout.opts = model.opts;
     this.layout.measure(items, fns);
     const plan = this.layout.plan(items);
     this.layout.apply(plan);
@@ -1153,7 +1159,8 @@ class App {
     this.plainPaste = !!(mod && e.shiftKey && e.key.toLowerCase() === 'v');
     if (mod && !e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); this.save(); }
     if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); $('#fileinput').click(); }
-    if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'p') { e.preventDefault(); if (document.body.classList.contains('pdf-on')) this.compilePdf(); else this.togglePdf(true); }
+    // (Ctrl+P is Print, src/cmd/page.js: from a field or the source too)
+    if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'p' && !e.defaultPrevented) { e.preventDefault(); this.runCommand('print'); }
     if (mod && e.key === '\\') { e.preventDefault(); this.toggleSource(); }
     if (mod && e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); this.toggleNav(); }
     if (e.key === 'Escape') { if (this.pop) { this.closePop(); e.preventDefault(); } this.disarm(); }
@@ -1182,7 +1189,7 @@ class App {
       if (k === 'z') { e.preventDefault(); if (e.shiftKey) this.redo(); else this.undo(); return; }
       if (k === 'y') { e.preventDefault(); this.redo(); return; }
       // (Ctrl+B, I, U, M, K, Shift+E and Enter are the commands' keys: src/keys.js catches them first;
-      // Ctrl+Enter in a table cell is Insert below, src/cmd/table.js)
+      // Ctrl+Enter in a table cell is Insert below, src/cmd/table.js, and a page break elsewhere)
       // the browser's own select-all ends on a page number, which cannot be selected, and
       // collapses to the top of the page: Ctrl+A then Ctrl+C copied nothing and Delete did nothing
       if (k === 'a' && !e.shiftKey) { e.preventDefault(); this.selectAllText(); return; }
@@ -4499,6 +4506,17 @@ class App {
     return this.compiling ? null : this.lastCompile;
   }
 
+  // The PDF's first page as the page's sheet, for documents of this set up (mediaKey): what TeX
+  // made is what the page draws, whatever class or package set it (src/pagesrc.js mediaSet
+  // knows the common ones before any PDF is made)
+  takePdfSheet(key) {
+    const p0 = this.pdfView && this.pdfView.pages && this.pdfView.pages[0];
+    if (!key || !p0 || !(p0.w1 > 0)) return;
+    const w = p0.w1 * 72.27 / 72, h = p0.h1 * 72.27 / 72, old = this.pdfSheet;
+    this.pdfSheet = { key, w, h };
+    if (this.model && (!old || old.key !== key || Math.abs(old.w - w) > 0.5 || Math.abs(old.h - h) > 0.5)) this.layoutPass();
+  }
+
   async compilePdf(opts = {}) {
     if (this.compiling) { this.compileAgain = opts.clean ? 'clean' : (this.compileAgain || true); return; }
     this.compiling = true;
@@ -4509,6 +4527,8 @@ class App {
     const st = $('#pdf-status'), bar = $('#pdf-prog'), msg = $('#pdf-msg');
     let said = ''; // how the run ended, for the "PDF status" line
     const sig = textSig(this.main, [...this.files.entries()]);
+    // (what decides the PDF's sheet in the source compiled: the sheet TeX gives it is the page's)
+    const mediaKey = this.model && this.model.opts.page ? this.model.opts.page.mediaKey : null;
     // a long TeX run gets a clock and a Stop button; one that never ends is stopped after
     // 5 minutes of typesetting (downloading the engine does not count)
     this.compileStart = Date.now();
@@ -4574,6 +4594,7 @@ class App {
         if (!document.body.classList.contains('pdf-on')) this.pdfStale = true;
         const n = await this.pdfView.show(new Uint8Array(res.pdf), res.synctex ? new Uint8Array(res.synctex) : null);
         this.lastCompile.pages = n;
+        this.takePdfSheet(mediaKey);
         st.innerHTML = '<b>' + this.engineLabel + '</b> · ' + n + (n === 1 ? ' page' : ' pages') + ' · ' + (res.ms / 1000).toFixed(1) + ' s';
         $('#pdf-dl').disabled = false;
       } else {
@@ -4842,6 +4863,8 @@ class App {
         <dt>Click math, a citation or a reference</dt><dd>Edit it in place</dd>
         <dt>Alt+click</dt><dd>Show that spot in the source</dd>
         <dt>Tab, ${mod}+Enter</dt><dd>Next cell (from the last, a new row), new row in tables</dd>
+        <dt>${mod}+Enter</dt><dd>A page break (\\newpage) outside a table; in a table's cell it still adds a row. ${mod}+Shift+Enter: a column break</dd>
+        <dt>Double click a page's top or bottom margin</dt><dd>Type its header or footer (fancyhdr); \\thepage is the page's number</dd>
         <dt>${mod}+Z, ${mod}+Shift+Z</dt><dd>Undo, redo</dd>
         <dt>${mod}+Alt+M</dt><dd>Comment on the selected words. A comment is a LaTeX comment line in the source, so Overleaf, Git and TeX keep it and print nothing</dd>
         <dt>Paste</dt><dd>From Word, Google Docs or the web: bold, italics, lists, links, tables and equations become LaTeX. ${mod}+Shift+V pastes plain text</dd>
@@ -4850,7 +4873,8 @@ class App {
         <dt>${mod}+F, ${mod}+H, ${mod}+G</dt><dd>On the page: Find (in the Navigation pane), Replace, Go To. What is found is the text the page shows, never a command or math; elsewhere ${mod}+F is the browser's own find</dd>
         <dt>Alt+Shift+arrows, ${mod}+Alt+O</dt><dd>Promote or demote a heading with those under it; move a paragraph, an item, or a heading's whole section up or down; the Outline view</dd>
         <dt>Esc, then Tab</dt><dd>Leave the source pane, where Tab indents</dd>
-        <dt>PDF or ${mod}+P</dt><dd>Compiles with TeX Live 2026, running in this browser, and shows the exact PDF: pdfLaTeX, XeLaTeX or LuaLaTeX (Auto reads a <code>% !TeX program</code> line or the preamble). Shell escape runs Ghostscript, gnuplot, Pygments for minted and makeindex here too. It recompiles after each edit; TeX's errors appear under Problems with their line; click the PDF to find that text, click the page to find it in the PDF</dd>
+        <dt>${mod}+P</dt><dd>Print: the PDF as TeX makes it, shown beside the page, then the browser's print dialog</dd>
+        <dt>Preview</dt><dd>Compiles with TeX Live 2026, running in this browser, and shows the exact PDF: pdfLaTeX, XeLaTeX or LuaLaTeX (Auto reads a <code>% !TeX program</code> line or the preamble). Shell escape runs Ghostscript, gnuplot, Pygments for minted and makeindex here too. It recompiles after each edit; TeX's errors appear under Problems with their line; click the PDF to find that text, click the page to find it in the PDF</dd>
       </dl>
       <p><b>Review</b> lists the comments, then every edit since you opened the project, or since any saved version, with Accept and Reject; tick Show changes on the pages to see them marked like Word's Track Changes. Versions are kept every few minutes, when you leave, when you save the .zip, and under any name you give.</p>
       <p><b>Share</b> copies a link that opens this document for anyone, ready to type in, with no account: the document travels inside the link and is not uploaded. Coauthors type and comment on the page and send a link back; their edits arrive here as changes to accept or reject. Share also opens the project in Overleaf, and Download LaTeX gives a plain .tex (or a .zip with several files), so leaving takes one click. From Overleaf: Menu, Download, Source, and drop the .zip on the page. With Overleaf's Git integration, paste the project's address under Git, Clone, and push and pull keep both in step.</p>

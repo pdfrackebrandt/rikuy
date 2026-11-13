@@ -106,7 +106,7 @@ const ENV_SIG = {
   tabular: 'om', 'tabular*': 'mom', tabularx: 'mm', tabulary: 'mm', longtable: 'om', array: 'om',
   figure: 'o', 'figure*': 'o', table: 'o', 'table*': 'o', wrapfigure: 'omom', wraptable: 'omom',
   itemize: 'o', enumerate: 'o', description: 'o', minipage: 'ooom', thebibliography: 'm',
-  multicols: 'm', 'multicols*': 'm', subfigure: 'om', subtable: 'om', threeparttable: 'o',
+  multicols: 'moo', 'multicols*': 'moo', subfigure: 'om', subtable: 'om', threeparttable: 'o',
   alignat: 'm', 'alignat*': 'm', proof: 'o', adjustbox: 'm', center: '', tcolorbox: 'o', mdframed: 'o',
   minted: 'om', lstlisting: 'o', Verbatim: 'o', spacing: 'm', otherlanguage: 'm', 'otherlanguage*': 'm',
   landscape: '', appendices: '', resizebox_env: '',

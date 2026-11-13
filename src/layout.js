@@ -2,41 +2,150 @@
 // touch only the pages whose contents changed.
 
 import { clusterEdge } from './editor.js';
+import { BASE_COLORS, DVIPS_COLORS } from './ui/kit.js';
+import { builtinSlots } from './pagesrc.js';
 
 const EPS = 1.5;
 const IN = 72.27;
 // letters of scripts that are hyphened where a word is cut
 const HYPHENED = /[\p{Script=Latin}\p{Script=Greek}\p{Script=Cyrillic}\p{Script=Armenian}\p{Script=Georgian}]/u;
 
+// The page as LaTeX lays it out (pt): the paper (its size by name or given, turned for
+// landscape), the text block and where it sits, the head and the foot, the columns. With geometry
+// loaded its keys decide as geometry does (a margin given alone keeps the other at its default,
+// the text block is 0.7 of the paper where nothing says otherwise, the rest split 1:1 across and
+// 2:3 down, 2:3 inside to outside on two sided pages); without it the standard classes' own
+// sums (size10.clo and its like). test/page.test.mjs holds these against TeX's own numbers.
+const PAPERS = { a0: [2383.94, 3370.39], a1: [1683.78, 2383.94], a2: [1193.48, 1683.78], a3: [845.05, 1193.48], a4: [597.51, 845.05], a5: [421.10, 597.51], a6: [298.75, 421.10],
+  b0: [2845.28, 4023.21], b1: [2011.61, 2845.28], b2: [1422.64, 2011.61], b3: [1004.38, 1422.64], b4: [711.32, 1004.38], b5: [500.77, 711.32], b6: [355.66, 500.77],
+  letter: [614.295, 794.97], legal: [614.295, 1011.78], executive: [523.96, 758.84] };
+const UNITS = { pt: 1, bp: 72.27 / 72, mm: 72.27 / 25.4, cm: 72.27 / 2.54, in: 72.27, pc: 12, dd: 1238 / 1157, cc: 12 * 1238 / 1157, sp: 1 / 65536 };
+function len(v, rel) {
+  if (v == null || v === true) return null;
+  const m = /^\s*\{?\s*(-?(?:\d+(?:\.\d*)?|\.\d+))\s*(pt|bp|mm|cm|in|pc|dd|cc|sp|\\paperwidth|\\paperheight)?\s*\}?\s*$/.exec(String(v).slice(0, 60));
+  if (!m) return null;
+  const x = parseFloat(m[1]), u = m[2] || 'pt';
+  if (u[0] === '\\') return rel ? x * (u === '\\paperheight' ? rel.h : rel.w) : null;
+  return x * UNITS[u];
+}
+// {a,b} or a: the two of a pair (hmargin={1cm,2cm})
+function pair(v) {
+  if (v == null || v === true) return [null, null];
+  const t = String(v).trim().replace(/^\{|\}$/g, '');
+  const k = t.indexOf(',');
+  return k < 0 ? [t, t] : [t.slice(0, k), t.slice(k + 1)];
+}
+const ratioOf = (v, d) => { const m = /^\{?(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)/.exec(String(v || '').slice(0, 40).replace(/\s+/g, '')); return m && +m[1] + +m[2] > 0 ? +m[1] / (+m[1] + +m[2]) : d; };
+const trunc = (x) => (x < 0 ? Math.ceil(x) : Math.floor(x));
+export function paperSize(opts) {
+  // (geometry's pass ignores its keys: the class's paper stands)
+  const geo = (!opts.geoPass && opts.geo) || {};
+  let w, h;
+  const named = Object.keys(geo).map((k) => /^([a-c][0-6]|letter|legal|executive)paper$/.exec(k)).filter(Boolean).pop();
+  const pn = geo.paper || geo.papername;
+  const name = named ? named[1] : pn ? String(pn).replace(/paper$/, '') : opts.paper;
+  [w, h] = PAPERS[name] || PAPERS.letter;
+  const pw = len(geo.paperwidth), ph = len(geo.paperheight);
+  if (geo.papersize) { const [a, b] = pair(geo.papersize); if (len(a) && len(b)) { w = len(a); h = len(b); } }
+  if (pw) w = pw;
+  if (ph) h = ph;
+  const land = geo.landscape === true || (opts.landscape && geo.portrait !== true);
+  if (land && h > w) [w, h] = [h, w];
+  return { w, h, land: !!land };
+}
+
+// The sheet the PDF has: LaTeX's paper where something sets the PDF's size from it (geometry, with
+// or without pass, hyperref, KOMA's typearea, memoir, beamer: opts.media), else A4 upright,
+// whatever the class's paper: TeX Live's engines start every PDF on A4 (pdfTeX, XeTeX and LuaTeX
+// measured), and the class's text block then sits on it from the top left as TeX puts it.
+const A4 = { w: PAPERS.a4[0], h: PAPERS.a4[1], land: false };
+export function sheetSize(opts) {
+  // (the PDF itself, where one was made of this set up: its first page; beamer's slides are not
+  // laid out as slides here, so they keep the paper the class sums are made for)
+  const P = opts.pdfSheet;
+  if (P && opts.cls !== 'beamer' && P.w > 50 && P.h > 50) return { w: P.w, h: P.h, land: P.w > P.h, pdf: true };
+  return opts.media || opts.geometry ? paperSize(opts) : A4;
+}
+
 export function geometry(opts) {
-  const P = opts.paper === 'a4' ? { w: 597.5, h: 845.05 } : { w: 614.295, h: 794.97 };
   const pt = opts.pt || 10;
   const bs = { 10: 12, 11: 13.6, 12: 14.5 }[pt] || 12;
   const tw0 = { 10: 345, 11: 360, 12: 390 }[pt] || 345;
-  let tw = Math.min(P.w - 2 * IN, tw0);
-  let th = Math.floor((P.h - 3.5 * IN) / bs) * bs + pt;
-  const footskip = 30;
-  let ml = (P.w - tw) / 2;
-  const headheight = 12, headsep = 25;
-  let topmargin = (P.h - 2 * IN - headheight - headsep - th - footskip) / 2;
-  let mt = IN + topmargin + headheight + headsep;
-  const M = opts.margins;
-  if (M) {
-    if (M.l != null || M.r != null || M.tw != null) {
-      const l = M.l ?? M.r ?? ml;
-      const r = M.r ?? M.l ?? ml;
-      tw = M.tw ?? (P.w - l - r);
-      ml = M.l != null ? M.l : (P.w - tw) / 2;
-    }
-    if (M.t != null || M.b != null || M.th != null) {
-      const t = M.t ?? M.b ?? mt;
-      const b = M.b ?? M.t ?? (P.h - mt - th);
-      th = M.th ?? (P.h - t - b);
-      mt = t;
-    }
-    if (M.scale) { tw = P.w * M.scale; th = P.h * M.scale; ml = (P.w - tw) / 2; mt = (P.h - th) / 2; }
+  const P = paperSize(opts);
+  const geo = (!opts.geoPass && opts.geo) || {};
+  const cols = opts.twocolumn ? 2 : 1;
+  const two = geo.twoside === true || (!!opts.twoside && geo.asymmetric !== true);
+  let hh = 12, hs = 25, fs = 30;
+  if (len(geo.headheight) != null) hh = len(geo.headheight);
+  if (len(geo.headsep) != null) hs = len(geo.headsep);
+  if (len(geo.footskip) != null) fs = len(geo.footskip);
+  if (geo.nohead || geo.noheadfoot) { hh = 0; hs = 0; }
+  if (geo.nofoot || geo.noheadfoot) fs = 0;
+  let tw, th, ml, mlE, mt;
+  if (opts.geometry && !opts.geoPass) {
+    const rel = { w: P.w, h: P.h };
+    const L = (v) => len(v, rel);
+    const b = L(geo.bindingoffset) || 0;
+    const [mh, mv] = pair(geo.margin);
+    const [hl, hr] = pair(geo.hmargin), [vt, vb] = pair(geo.vmargin);
+    const first = (...v) => { for (const x of v) { const y = L(x); if (y != null) return y; } return null; };
+    let left = first(geo.left, geo.lmargin, geo.inner, hl, mh), right = first(geo.right, geo.rmargin, geo.outer, hr, mh);
+    let top = first(geo.top, geo.tmargin, vt, mv), bottom = first(geo.bottom, geo.bmargin, vb, mv);
+    const [bw, bh] = pair(geo.body || geo.text);
+    let width = first(geo.textwidth, geo.width, bw);
+    let height = first(geo.textheight, geo.height, bh);
+    if (height == null && geo.lines && /^\d+$/.test(String(geo.lines).trim())) height = (+geo.lines - 1) * bs * (opts.spread || 1) + pt;
+    const [sh, sv] = pair(geo.scale);
+    const hscale = parseFloat(geo.hscale) || parseFloat(sh) || 0.7, vscale = parseFloat(geo.vscale) || parseFloat(sv) || 0.7;
+    const hr0 = geo.centering || geo.hcentering ? 0.5 : ratioOf(geo.hmarginratio || pair(geo.marginratio)[0] || pair(geo.ratio)[0], two ? 0.4 : 0.5);
+    const vr0 = geo.centering || geo.vcentering ? 0.5 : ratioOf(geo.vmarginratio || pair(geo.marginratio)[1] || pair(geo.ratio)[1], 0.4);
+    // across
+    const W = P.w - b;
+    const solve = (A, a, z, size, scale, r, base, given) => {
+      if (size != null && a != null) return [a, size, A - a - size];
+      if (size != null && z != null) return [A - z - size, size, z];
+      if (a != null && z != null) return [a, A - a - z, z];
+      if (size != null) return [(A - size) * r, size, (A - size) * (1 - r)];
+      const s0 = scale * base, d = [(A - s0) * r, s0, (A - s0) * (1 - r)];
+      // (one margin alone: the other by the ratio where one is given, else the first of the
+      // defaults, as geometry 5 does)
+      if (a != null) { const o = given ? a * (1 - r) / r : d[0]; return [a, A - a - o, o]; }
+      if (z != null) { const o = given ? z * r / (1 - r) : d[0]; return [o, A - o - z, z]; }
+      return d;
+    };
+    const [l, w, r] = solve(W, left, right, width, hscale, hr0, P.w, !!(geo.hmarginratio || geo.marginratio || geo.ratio));
+    tw = w; ml = b + l; mlE = two ? r : b + l;
+    // down: the body holds the head and the foot where geometry is told to include them
+    const incH = geo.includehead || geo.includeheadfoot || geo.includeall, incF = geo.includefoot || geo.includeheadfoot || geo.includeall;
+    const extra = (incH ? hh + hs : 0) + (incF ? fs : 0);
+    const [t, bd] = solve(P.h, top, bottom, height != null ? height + extra : null, vscale, vr0, P.h, !!(geo.vmarginratio || geo.marginratio || geo.ratio));
+    th = bd - extra; mt = t + (incH ? hh + hs : 0);
+  } else if (opts.margins) {
+    const M = opts.margins;
+    tw = P.w - M.l - M.r; th = P.h - M.t - M.b; ml = mlE = M.l; mt = M.t;
+  } else {
+    // the standard classes: the text block from the base size, the margins from the paper
+    tw = Math.min(P.w - 2 * IN, tw0 * cols);
+    tw = trunc(tw);
+    th = Math.floor((P.h - 3.5 * IN) / bs) * bs + pt;
+    if (two) { ml = IN + trunc(0.4 * (P.w - tw) - IN); mlE = IN + trunc(0.6 * (P.w - tw) - IN); }
+    else ml = mlE = IN + trunc((P.w - tw) / 2 - IN);
+    const topmargin = trunc((P.h - 2 * IN - hh - hs - th - fs) / 2);
+    mt = IN + topmargin + hh + hs;
   }
-  return { pw: P.w, ph: P.h, ml, mt, tw, th, footskip, bs, pt };
+  const pg = opts.page || {};
+  // \headsep and \footskip set in the preamble where the class lays the page out: the header and
+  // the footer move; the text too, unless \topmargin moved the other way (src/pagesrc.js
+  // headFootEdits writes it so)
+  const HL = (!opts.geometry || opts.geoPass) && pg.lengths;
+  if (HL && HL.headsep) { if (!HL.headsep.keep) mt += HL.headsep.pt - hs; hs = HL.headsep.pt; }
+  if (HL && HL.footskip) fs = HL.footskip.pt;
+  const colsep = pg.colsep != null ? pg.colsep : len(geo.columnsep) != null ? len(geo.columnsep) : pt === 10 ? 10 : 10;
+  // (hyphenation rides along: a change of it measures the lines again, src/app.js layoutPass)
+  // pw, ph: the sheet; paperW, paperH: LaTeX's \paperwidth and \paperheight, which the class's
+  // margins are worked out from (they differ where nothing sets the PDF's size)
+  const S = sheetSize(opts);
+  return { pw: S.w, ph: S.h, paperW: P.w, paperH: P.h, media: S !== A4, ml, mlE, mt, tw, th, footskip: fs, headsep: hs, headheight: hh, bs, pt, cols, twoside: two, colsep, colrule: pg.colrule || 0, land: S.land, hyph: pg.hyph || 'auto' };
 }
 
 export class Layout {
@@ -47,11 +156,15 @@ export class Layout {
     this.px = 1.33;
     this.g = null;
     this.planCache = null;
+    this.hosts = new Map(); // measuring flows as wide as a column, by the number of columns
+    this.page = {};       // the page's set up beyond its size (model.opts.page: src/pagesrc.js)
   }
 
   setGeometry(g, px, sheet, sizes, opts) {
     this.g = g;
     this.px = px;
+    this.opts = opts;
+    this.page = opts.page || {};
     const S = sheet.style;
     const lh = g.bs * (opts.spread || 1);
     S.setProperty('--pt', px);
@@ -61,15 +174,46 @@ export class Layout {
     S.setProperty('--pw', (g.pw * px) + 'px');
     S.setProperty('--ph', (g.ph * px) + 'px');
     S.setProperty('--ml', (g.ml * px) + 'px');
+    // (a two sided document's even pages have the outer margin on the left)
+    S.setProperty('--mle', ((g.mlE ?? g.ml) * px) + 'px');
     S.setProperty('--mt', (g.mt * px) + 'px');
     S.setProperty('--tw', (g.tw * px) + 'px');
     S.setProperty('--th', (g.th * px) + 'px');
     S.setProperty('--footskip', (g.footskip * px) + 'px');
+    S.setProperty('--headsep', ((g.headsep ?? 25) * px) + 'px');
+    S.setProperty('--colsep', ((g.colsep ?? 10) * px) + 'px');
+    S.setProperty('--colrule', ((g.colrule || 0) * px) + 'px');
     S.setProperty('--parindent', ((opts.parindent ?? 15) * px) + 'px');
     for (const [k, v] of Object.entries(sizes)) S.setProperty('--z-' + k, v);
     const fnRatio = sizes.footnotesize;
     S.setProperty('--fnlh', ({ 10: 9.5, 11: 11, 12: 12 }[g.pt] || 9.5) / (g.pt * fnRatio));
+    // \usepackage[none]{hyphenat}: the page breaks no word either
+    sheet.classList.toggle('nohyph', this.page.hyph === 'none');
+    for (const h of this.hosts.values()) h.remove();
+    this.hosts.clear();
     for (const p of this.pages) p.sig = null;
+  }
+
+  // ---- columns ----------------------------------------------------------------------------
+  // How many columns an item is set in: its multicols', else the document's (twocolumn), but the
+  // title and a float of the page's width (figure*) run across
+  colsOf(it) {
+    if (it.cols > 1) return it.cols;
+    if (this.g && this.g.cols > 1 && !spans(it)) return this.g.cols;
+    return 1;
+  }
+  colW(k) { return (this.g.tw - (k - 1) * (this.g.colsep ?? 10)) / k; }
+  hostFor(k) {
+    if (k <= 1) return this.host.flow;
+    let h = this.hosts.get(k);
+    if (!h || !h.isConnected) {
+      h = document.createElement('div');
+      h.className = 'flow mcol';
+      h.style.width = (this.colW(k) * this.px) + 'px';
+      this.host.flow.parentNode.appendChild(h);
+      this.hosts.set(k, h);
+    }
+    return h;
   }
 
   // Measure items (and their footnotes) that lack metrics.
@@ -78,9 +222,14 @@ export class Layout {
     const todo = items.filter((it) => !it.measured);
     const fnTodo = fns.filter((f) => !f.measured);
     if (!todo.length && !fnTodo.length) return;
-    const frag = document.createDocumentFragment();
-    for (const it of todo) { it.el.style.marginTop = ''; frag.appendChild(it.el); }
-    host.flow.appendChild(frag);
+    const frags = new Map();
+    for (const it of todo) {
+      it.el.style.marginTop = '';
+      const k = this.colsOf(it);
+      if (!frags.has(k)) frags.set(k, document.createDocumentFragment());
+      frags.get(k).appendChild(it.el);
+    }
+    for (const [k, f] of frags) this.hostFor(k).appendChild(f);
     const ffrag = document.createDocumentFragment();
     for (const f of fnTodo) ffrag.appendChild(f.el);
     host.fns.appendChild(ffrag);
@@ -119,14 +268,19 @@ export class Layout {
     for (const P of this.pages) if (P.entries && P.entries.some((e) => its.includes(e.it))) P.sig = null;
   }
 
-  // Pure pagination over measured items.
+  // Pure pagination over measured items. A page: { entries, fns, used, fnH, marks, bands } and,
+  // once closed, its number (num, fmt) and style. Paragraphs in columns (a two column document,
+  // multicols) are set in bands of columns: filled one after another and, in multicols, balanced
+  // where the environment ends on the page.
   plan(items) {
     const H = this.g.th * this.px;
     const fnSep = this.g.pt * 1.1 * this.px;
+    const two = !!this.g.twoside;
     const pages = [];
     let page = null;
     const deferred = [];
-    const newPage = () => { page = { entries: [], fns: [], used: 0, fnH: 0 }; };
+    const cnt = { num: 1, fmt: (this.opts && this.opts.numbering) || 'arabic', style: this.page.style || 'plain' };
+    const newPage = () => { page = { entries: [], fns: [], used: 0, fnH: 0, marks: [] }; };
     const avail = () => H - page.used - page.fnH;
     const fnCost = (list) => (list.length ? (page.fns.length ? 0 : fnSep) + list.reduce((s, f) => s + f.h, 0) : 0);
     const pieceH = (it, a, b) => {
@@ -143,6 +297,14 @@ export class Layout {
       });
       return out;
     };
+    // (the title on a page of its own, as report and book set it and titlepage asks, is empty)
+    const titleStyle = this.opts && (this.opts.titlepage || /^(report|book|scrreprt|scrbook)$/.test(this.opts.cls || '')) ? 'empty' : 'plain';
+    const markOf = (it) => {
+      // the title's page and a chapter's first page take the plain style, as \maketitle and
+      // \chapter say
+      if (it.kind === 'title') page.marks.push({ thisStyle: titleStyle });
+      else if (it.kind === 'h' && it.level === 0 && this.opts && this.opts.chapters) page.marks.push({ thisStyle: 'plain' });
+    };
     const put = (it, a, b, sb) => {
       const fl = fnsOf(it, a, b);
       const cost = fnCost(fl);
@@ -150,8 +312,22 @@ export class Layout {
       page.used += sb + pieceH(it, a, b);
       page.fns.push(...fl);
       page.fnH += cost;
+      if (a === 0) markOf(it);
+    };
+    // its number and style, from the marks on it (\pagenumbering starts again at 1)
+    const number = (pg) => {
+      for (const m of pg.marks) {
+        if (m.numbering) { cnt.fmt = m.numbering; cnt.num = 1; }
+        if (m.page != null) cnt.num = m.page;
+        if (m.pageAdd) cnt.num += m.pageAdd;
+        if (m.style) cnt.style = m.style;
+        if (m.thisStyle) pg.thisStyle = m.thisStyle;
+      }
+      pg.num = cnt.num; pg.fmt = cnt.fmt; pg.style = cnt.style;
+      cnt.num++;
     };
     const close = () => {
+      number(page);
       pages.push(page);
       newPage();
       while (deferred.length) {
@@ -161,10 +337,144 @@ export class Layout {
         else break;
       }
     };
+    // \cleardoublepage in a two sided document: the next page is odd, with a blank one before it
+    const blankPage = () => {
+      const b = { entries: [], fns: [], used: 0, fnH: 0, marks: [], blank: true };
+      number(b);
+      pages.push(b);
+    };
+    const toOdd = () => { if (two && !(cnt.num % 2)) blankPage(); };
+    // \ifodd\value{page}\hbox{}\clearpage\fi: on a page of the other parity, that page ends (an
+    // empty one is left blank), so the text goes on on the next
+    const parity = (want) => {
+      const odd = cnt.num % 2 === 1;
+      if (want === 'even' ? !odd : odd) return;
+      if (page.entries.length || deferred.length) close(); else blankPage();
+    };
+    // ---- bands of columns ----
+    // the run of items set in k columns from items[i]: [i, j)
+    const runEnd = (i, k, region) => {
+      let j = i + 1, last = i;
+      for (; j < items.length; j++) {
+        const x = items[j];
+        if (x.kind === 'break' || x.kind === 'mark') continue;
+        if (this.colsOf(x) !== k || (x.region || null) !== region) break;
+        last = j;
+      }
+      return last + 1;
+    };
+    // Fill k columns of height T from pos ({ i, a } in run): { cols, hs, end, done, page (a page break ended it) }
+    const fill = (run, pos, k, T) => {
+      const cols = [], hs = [];
+      let i = pos.i, a = pos.a, pageBreak = false, par = null;
+      for (let c = 0; c < k; c++) {
+        const col = [];
+        let used = 0;
+        while (i < run.length) {
+          const it = run[i];
+          if (it.kind === 'mark') { col.push({ mark: it.mark }); i++; continue; }
+          if (it.kind === 'break') {
+            i++;
+            // (\columnbreak ends a column; \newpage ends a column of a two column page, but the
+            // page in multicols, as TeX does; Even and Odd page end the band, placeBand decides)
+            if (it.only || (it.column && !it.region)) break;
+            if (it.parity) { par = it.parity; break; }
+            pageBreak = true;
+            break;
+          }
+          const sb = used > 0 && a === 0 ? it.sb : 0;
+          const need = sb + pieceH(it, a, null);
+          if (used + need <= T + EPS || (!col.length && !(it.lines && it.lines.length - a >= 2))) { col.push({ it, a, b: null, sb }); used += need; i++; a = 0; continue; }
+          if (it.lines && it.lines.length - a >= 2) {
+            let best = -1;
+            for (let b = a + 1; b < it.lines.length; b++) { if (used + sb + pieceH(it, a, b) <= T + EPS) best = b; else break; }
+            if (best >= 0 && col.length && best - a < 2) best = -1;
+            if (best < 0 && !col.length) best = a + 1;
+            if (best > a) { col.push({ it, a, b: best, sb }); used += sb + pieceH(it, a, best); a = best; }
+          }
+          break;
+        }
+        cols.push(col); hs.push(used);
+        if (pageBreak || par) break;
+      }
+      while (cols.length < k) { cols.push([]); hs.push(0); }
+      return { cols, hs, end: { i, a }, done: i >= run.length, page: pageBreak, parity: par };
+    };
+    const placeBand = (run, k, balance) => {
+      const sep = (it) => (it.region ? 12 * this.px : 0);
+      let pos = { i: 0, a: 0 };
+      let first = true;
+      while (pos.i < run.length) {
+        // (the multicols environment has \multicolsep above it and below it)
+        const gapTop = first && page.entries.length ? sep(run[0]) : 0;
+        let A = avail() - gapTop;
+        if (A < this.g.bs * this.px * 1.5 && page.entries.length) { close(); continue; }
+        let F = fill(run, pos, k, A);
+        // (the band's footnotes go under it on the page: the columns are as much shorter, filled
+        // again until what they hold and its footnotes fit)
+        let cap = A;
+        for (let n = 0; n < 4; n++) {
+          const f = fnCost(F.cols.flat().filter((e) => e.it).flatMap((e) => fnsOf(e.it, e.a, e.b)));
+          if (Math.max(0, ...F.hs) <= A - f + EPS || A - f <= this.g.bs * this.px) { cap = Math.min(cap, A - f); break; }
+          cap = A - f;
+          F = fill(run, pos, k, cap);
+        }
+        if (F.done && balance && !F.page) {
+          let lo = 0, hi = cap;
+          for (let n = 0; n < 16 && hi - lo > 0.5; n++) {
+            const mid = (lo + hi) / 2;
+            const G = fill(run, pos, k, mid);
+            if (G.done) { hi = mid; } else lo = mid;
+          }
+          F = fill(run, pos, k, hi);
+        }
+        // (a band that holds nothing, as after \clearpage where Even page starts: none drawn)
+        if (F.parity && !F.cols.some((c) => c.length)) { pos = F.end; parity(F.parity); first = false; continue; }
+        const h = (F.done && (balance || F.page)) || F.parity ? Math.max(...F.hs) : Math.max(cap, ...F.hs);
+        const band = { k, cols: [] };
+        page.used += gapTop;
+        F.cols.forEach((col, c) => {
+          const list = [];
+          for (const e of col) {
+            if (e.mark) { page.marks.push(e.mark); continue; }
+            const en = { it: e.it, a: e.a, b: e.b, sb: e.sb, band, col: c };
+            page.entries.push(en);
+            list.push(en);
+            const fl = fnsOf(e.it, e.a, e.b);
+            page.fnH += fnCost(fl);
+            page.fns.push(...fl);
+            if (e.a === 0) markOf(e.it);
+          }
+          band.cols.push(list);
+        });
+        band.h = h; band.top = page.used;
+        page.used += h;
+        (page.bands || (page.bands = [])).push(band);
+        pos = F.end;
+        first = false;
+        if (F.parity) parity(F.parity);
+        else if (!F.done || F.page) close();
+        else if (run[0].region) page.used += 12 * this.px;
+      }
+    };
     newPage();
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
-      if (it.kind === 'break') { if (page.entries.length || deferred.length) close(); continue; }
+      if (it.kind === 'mark') { page.marks.push(it.mark); continue; }
+      if (it.kind === 'break') {
+        if (it.only) continue;
+        if (it.parity) { parity(it.parity); continue; }
+        if (page.entries.length || deferred.length) close();
+        if (it.odd) toOdd();
+        continue;
+      }
+      const k = this.colsOf(it);
+      if (k > 1) {
+        const j = runEnd(i, k, it.region || null);
+        placeBand(items.slice(i, j), k, it.region ? it.balance !== false : false);
+        i = j - 1;
+        continue;
+      }
       if (it.isFloat && !/H/.test(it.placement)) {
         if (deferred.length) { deferred.push(it); continue; }
         const sb = page.entries.length ? it.sb : 0;
@@ -181,7 +491,7 @@ export class Layout {
         if (need <= avail() + EPS) {
           if (it.keepNext && !empty) {
             const nx = items[i + 1];
-            if (nx && nx.kind !== 'break') {
+            if (nx && nx.kind !== 'break' && nx.kind !== 'mark') {
               const nmin = nx.lines && nx.lines.length > 1 ? nx.lines[Math.min(2, nx.lines.length - 1)].t : nx.isFloat ? 0 : Math.min(nx.h, H * 0.9);
               if (need + nx.sb + nmin > avail() + EPS) { close(); continue; }
             }
@@ -205,7 +515,7 @@ export class Layout {
       }
     }
     while (deferred.length) { if (page.entries.length) close(); else { const f = deferred.shift(); put(f, 0, null, 0); } }
-    if (page.entries.length || !pages.length) pages.push(page);
+    if (page.entries.length || !pages.length) { number(page); pages.push(page); }
     return pages;
   }
 
@@ -215,7 +525,7 @@ export class Layout {
     if (it.pieces && it.pieces.key === key) return it.pieces.map;
     const clone = it.el.cloneNode(true);
     clone.style.marginTop = '';
-    this.host.flow.appendChild(clone);
+    this.hostFor(this.colsOf(it)).appendChild(clone);
     const top = clone.getBoundingClientRect().top;
     const units = it.rowSplit ? [...clone.querySelectorAll('tr')].map((el) => ({ el })) : collectUnits(clone);
     // A cut falls where a line starts, so between two characters as a reader sees them; a unit
@@ -274,25 +584,257 @@ export class Layout {
       return map.get(e.a) || e.it.el;
     };
     const changed = [];
+    // (marks only where a header shows one: a plain page's number needs none)
+    const marks = this.needsMarks() ? this.marks(plan) : null;
+    const ln = this.page.lineno && this.page.lineno.on ? this.lineStarts(plan) : null;
+    const total = plan.length ? fmtNum(plan[plan.length - 1].num, plan[plan.length - 1].fmt) : '1';
+    const base = this.chromeBase();
     plan.forEach((pg, k) => {
-      const sig = pg.entries.map((e) => e.it.uid + ':' + e.a + ':' + (e.b ?? '') + ':' + e.sb.toFixed(1)).join(',') + '|' + pg.fns.map((f) => f.uid).join(',') + '|' + (k + 1);
+      const fill = this.fillOf(pg);
+      const sig = pg.entries.map((e) => e.it.uid + ':' + e.a + ':' + (e.b ?? '') + ':' + e.sb.toFixed(1) + (e.band ? ':' + e.col + ':' + e.band.h.toFixed(1) : '')).join(',') + '|' + pg.fns.map((f) => f.uid).join(',') + '|' + (k + 1) + '|' + fill.toFixed(1);
       let P = this.pages[k];
       if (!P) { P = this.makePage(); this.pages.push(P); this.root.appendChild(P.el); }
-      if (P.sig === sig) return;
+      // (the header, the footer and the page's numbers are drawn again on their own)
+      const mk = marks ? marks[k] : NO_MARKS;
+      const chrome = this.chromeSig(pg, mk, total, base) + '|' + k;
+      if (P.chrome !== chrome) { P.chrome = chrome; this.drawChrome(P, pg, mk, total, k); }
+      if (P.sig === sig) { if (ln && P.lnSig !== ln[k] + '|' + chrome + sig) this.lineNumbers(P, pg, ln[k]); else if (!ln && P.ln) { P.ln.remove(); P.ln = null; } return; }
       P.sig = sig;
       changed.push(k);
-      const els = pg.entries.map((e) => { const el = pieceEl(e); el.style.marginTop = e.sb ? e.sb.toFixed(2) + 'px' : ''; return el; });
+      const els = [];
+      let band = null;
+      for (const e of pg.entries) {
+        const el = pieceEl(e);
+        el.style.marginTop = e.sb ? e.sb.toFixed(2) + 'px' : '';
+        el.style.height = e.it.fill && fill ? fill.toFixed(2) + 'px' : e.it.fill ? '' : el.style.height;
+        if (!e.band) { els.push(el); band = null; continue; }
+        if (band !== e.band) {
+          band = e.band;
+          const b = document.createElement('div');
+          b.className = 'mcb';
+          b.contentEditable = 'inherit';
+          b.style.setProperty('--n', band.k);
+          b.style.height = band.h.toFixed(2) + 'px';
+          if (band.top && els.length) b.style.marginTop = '';
+          band.el = b;
+          band.colEls = band.cols.map(() => { const c = document.createElement('div'); c.className = 'mcc'; b.appendChild(c); return c; });
+          els.push(b);
+        }
+        band.colEls[e.col].appendChild(el);
+      }
+      // (the space above a multicols band, and below it before what follows)
+      this.bandGaps(pg, els);
       P.flow.replaceChildren(...els);
       if (pg.fns.length) { P.fns.hidden = false; P.fns.replaceChildren(P.rule, ...pg.fns.map((f) => f.el)); }
       else { P.fns.hidden = true; P.fns.replaceChildren(); }
-      P.folio.textContent = String(k + 1);
       P.entries = pg.entries;
+      if (ln) this.lineNumbers(P, pg, ln[k]);
+      else if (P.ln) { P.ln.remove(); P.ln = null; }
     });
     while (this.pages.length > plan.length) { const P = this.pages.pop(); P.el.remove(); }
     this.host.flow.replaceChildren();
     this.host.fns.replaceChildren();
+    for (const h of this.hosts.values()) h.replaceChildren();
     this.lastPlan = plan;
     return changed;
+  }
+
+  // what \vspace*{\fill} gets on a page: what the page has left, shared among its fills
+  fillOf(pg) {
+    const n = pg.entries.filter((e) => e.it.fill).length;
+    if (!n) return 0;
+    return Math.max(0, (this.g.th * this.px - pg.used - pg.fnH) / n);
+  }
+  // the space between bands and the paragraphs beside them (pg.used counted it)
+  bandGaps(pg, els) {
+    if (!pg.bands) return;
+    for (const b of pg.bands) {
+      const k = els.indexOf(b.el);
+      if (k < 0) continue;
+      const first = b.cols.flat()[0];
+      const region = first && first.it.region;
+      if (region && k > 0) b.el.style.marginTop = (12 * this.px).toFixed(2) + 'px';
+      if (region && els[k + 1]) els[k + 1].style.marginTop = ((parseFloat(els[k + 1].style.marginTop) || 0) + 12 * this.px).toFixed(2) + 'px';
+    }
+  }
+
+  // ---- the page's chrome: header, footer, numbers, watermark, colour, border, line numbers ----
+  // Each page's marks for headers: \leftmark (the last chapter's or section's by the page's end)
+  // and \rightmark (the first lower heading's on the page, else the one before; a higher heading
+  // empties it), as the marks are made: fancyhdr's and the standard classes' headings put the
+  // number and the title in capitals (CHAPTER 1. TITLE, 1.2. SECTION in a book, 2 SECTION and
+  // 2.1 Subsection in an article, an em between), a one sided headings page has the top level's
+  // alone as its right mark, KOMA-Script's keep the title's case; a heading without a number
+  // (\section*) makes none
+  marks(plan) {
+    const chap = !!(this.opts && this.opts.chapters), top = chap ? 0 : 1, two = !!this.g.twoside;
+    const P = this.page || {};
+    const kind = P.kind === 'koma' && P.style !== 'headings' ? 'koma' : P.kind === 'fancy' && !/^(my)?headings$/.test(P.style || '') ? 'fancy' : 'headings';
+    const oneRight = kind === 'headings' && !two;
+    const fmt = (h, lvl) => {
+      if (!h.num) return null;
+      if (kind === 'koma') return h.num + '\u2002' + h.title;
+      if (chap) return (lvl === 0 ? (h.label ? h.label + ' ' : '') + h.num + '.\u2002' + h.title : h.num + '.\u2002' + h.title).toUpperCase();
+      return lvl === 0 ? (h.num + '\u2003' + h.title).toUpperCase() : h.num + '\u2003' + h.title;
+    };
+    let left = '', right = '';
+    return plan.map((pg) => {
+      let firstRight = null;
+      for (const e of pg.entries) {
+        if (e.it.kind !== 'h' || e.a !== 0 || typeof e.it.level !== 'number') continue;
+        const lvl = e.it.level - top;
+        if (lvl !== 0 && lvl !== 1) continue;
+        const m = fmt(headParts(e.it), lvl);
+        if (m == null) continue;
+        if (lvl === 0 && !oneRight) { left = m; right = ''; if (firstRight === null) firstRight = ''; }
+        else if (lvl === 0 || !oneRight) { right = m; if (firstRight === null) firstRight = m; }
+      }
+      return { left, right: firstRight !== null ? firstRight : right };
+    });
+  }
+  // whether any style the pages may take shows a mark (\leftmark, \rightmark, KOMA's \headmark)
+  needsMarks() {
+    const P = this.page || {};
+    if (/headings$/.test(P.style || '')) return true;
+    if (P.marksKey !== P.styles) { P.marksKey = P.styles; P.marksNeed = /(?:left|right|head)mark/.test(JSON.stringify(P.styles || {})); }
+    return P.marksNeed;
+  }
+  // the style a page takes: \thispagestyle's, else the one in force; one neither the source nor
+  // LaTeX defines is plain
+  styleOf(pg) {
+    const s = pg.thisStyle || pg.style || this.page.style || 'plain';
+    return (this.page.styles && this.page.styles[s]) || /^(plain|empty|headings|myheadings)$/.test(s) ? s : 'plain';
+  }
+  chromeSig(pg, mk, total, base) {
+    return [pg.num, pg.fmt, this.styleOf(pg), mk.left, mk.right, total, pg.blank ? 1 : 0, base].join('|');
+  }
+  // what every page's chrome depends on beyond its own numbers and marks, once per pass
+  chromeBase() {
+    const P = this.page;
+    return [JSON.stringify(P.styles || null), P.style, JSON.stringify(P.wm || null), JSON.stringify(P.color || null), JSON.stringify(P.border || null), this.g.twoside ? 1 : 0, this.px].join('|');
+  }
+  // the slots of a page by its style: [left, centre, right] of the head and of the foot, as TeX
+  // text, and the rules under the head and over the foot; null for the empty style
+  slotsFor(pg) {
+    const st = this.styleOf(pg), two = !!this.g.twoside, side = two && pg.num % 2 === 0 ? 'E' : 'O';
+    const S = this.page.styles && this.page.styles[st];
+    if (!S && st === 'empty') return null;
+    const slots = S ? S.slots : builtinSlots(st, two);
+    const of = (w) => ['L', 'C', 'R'].map((c) => slots[w + side + c] || '');
+    return { head: of('H'), foot: of('F'), headrule: S ? S.headrule || 0 : 0, footrule: S ? S.footrule || 0 : 0 };
+  }
+  drawChrome(P, pg, mk, total, k) {
+    const S = this.slotsFor(pg);
+    const even = this.g.twoside && pg.num % 2 === 0;
+    // (KOMA's \headmark: the left mark on even pages, the right one on odd)
+    const ctx = { page: fmtNum(pg.num, pg.fmt), total, left: mk.left, right: mk.right, headmark: even ? mk.left : mk.right };
+    const fill = (box, list) => {
+      box.replaceChildren();
+      let any = false;
+      list.forEach((t, k) => {
+        const sp = document.createElement('span');
+        sp.className = ['l', 'c', 'r'][k];
+        hfInto(sp, t, ctx);
+        if (sp.textContent) any = true;
+        box.appendChild(sp);
+      });
+      return any;
+    };
+    P.el.classList.toggle('even', !!even);
+    P.el.dataset.n = ctx.page;
+    const head = S ? fill(P.hd, S.head) : (P.hd.replaceChildren(), false);
+    const foot = S ? fill(P.ft, S.foot) : (P.ft.replaceChildren(), false);
+    const hr = S ? S.headrule : 0, fr = S ? S.footrule : 0;
+    P.hd.classList.toggle('rule', hr > 0);
+    P.ft.classList.toggle('rule', fr > 0);
+    P.hd.style.setProperty('--rule', (hr * this.px) + 'px');
+    P.ft.style.setProperty('--rule', (fr * this.px) + 'px');
+    P.hd.hidden = !head && !(hr > 0);
+    P.ft.hidden = !foot && !(fr > 0);
+    // (the footer's centre is what the folio was: a page number the reader sees at its foot)
+    P.folio.textContent = ctx.page;
+    // the watermark, the page's colour and its border
+    const W = this.page.wm;
+    if (W && W.on && !(W.firstpage && k > 0)) {
+      if (!P.wm) { P.wm = document.createElement('div'); P.wm.className = 'wmk'; P.wm.contentEditable = 'false'; P.wm.setAttribute('aria-hidden', 'true'); P.el.prepend(P.wm); }
+      P.wm.textContent = plainTex(W.text || 'DRAFT').slice(0, 200);
+      P.wm.style.fontSize = (0.25 * this.g.pw * (W.scale || 1) * this.px).toFixed(1) + 'px';
+      P.wm.style.transform = 'translate(-50%, -50%) rotate(' + (-(Number.isFinite(W.angle) ? W.angle : 45)) + 'deg)';
+      P.wm.style.color = cssColor(W.color) || '#CCCCCC';
+    } else if (P.wm) { P.wm.remove(); P.wm = null; }
+    const C = this.page.color;
+    P.el.style.background = C ? cssColor(C.css || C.color) : '';
+    const B = this.page.border;
+    if (B) {
+      if (!P.bd) { P.bd = document.createElement('div'); P.bd.className = 'pbd'; P.bd.contentEditable = 'false'; P.bd.setAttribute('aria-hidden', 'true'); P.el.prepend(P.bd); }
+      P.bd.style.inset = (B.inset * this.px).toFixed(2) + 'px';
+      P.bd.style.borderWidth = Math.max(1, B.width * this.px).toFixed(2) + 'px';
+      P.bd.style.borderColor = cssColor(B.color) || '#000';
+    } else if (P.bd) { P.bd.remove(); P.bd = null; }
+  }
+
+  // lineno: the lines of the page's paragraphs and headings numbered in the margin, from the plan
+  // (where each piece sits, and where its lines are), running on from the page before, or from 1
+  // on each page or at each section
+  lineNumbers(P, pg, start) {
+    const L = this.page.lineno || {};
+    if (!P.ln) { P.ln = document.createElement('div'); P.ln.className = 'lnum'; P.ln.contentEditable = 'false'; P.ln.setAttribute('aria-hidden', 'true'); P.el.querySelector('.pb').appendChild(P.ln); }
+    P.lnSig = start + '|' + P.chrome + P.sig;
+    let n = start;
+    const out = document.createDocumentFragment();
+    const mod = Math.max(1, L.modulo || 1);
+    const colX = (band, c) => (band ? c * (this.colW(band.k) + (this.g.colsep ?? 10)) * this.px : 0);
+    this.eachLine(pg, (e, y, reset) => {
+      if (reset) n = 1;
+      if (n % mod === 0) {
+        const d = document.createElement('span');
+        d.textContent = String(n);
+        d.style.top = y.toFixed(1) + 'px';
+        // (the last of several columns has its numbers in the right margin, as lineno sets a
+        // two column page's: in the gap they would stand on the other column's words)
+        if (e.band && e.col === e.band.k - 1 && e.col > 0) { d.className = 'r'; d.style.left = (colX(e.band, e.col) + this.colW(e.band.k) * this.px).toFixed(1) + 'px'; }
+        else if (e.band) d.style.left = colX(e.band, e.col).toFixed(1) + 'px';
+        out.appendChild(d);
+      }
+      n++;
+    });
+    P.ln.replaceChildren(out);
+  }
+  // the lines a page's numbers go beside: fn(entry, y of the line's middle, whether a section
+  // starts the count again there)
+  eachLine(pg, fn) {
+    const L = this.page.lineno || {};
+    let y = 0, band = null;
+    const colY = [];
+    for (const e of pg.entries) {
+      let top;
+      if (e.band) {
+        if (band !== e.band) { band = e.band; colY.length = 0; }
+        top = (colY[e.col] ?? e.band.top) + e.sb;
+        colY[e.col] = top + pieceHOf(e);
+      } else {
+        if (band) { y = band.top + band.h + (band.cols.flat()[0] && band.cols.flat()[0].it.region ? 12 * this.px : 0); band = null; }
+        top = y + e.sb;
+        y = top + pieceHOf(e);
+      }
+      const it = e.it;
+      if (!(it.kind === 'p' || it.kind === 'h' || it.kind === 'title')) continue;
+      const lines = it.lines ? it.lines.slice(e.a, e.b == null ? it.lines.length : e.b) : [{ t: 0, b: it.h }];
+      const base = it.lines ? it.lines[e.a].t : 0;
+      lines.forEach((l, j) => fn(e, top + (l.t + l.b) / 2 - base, j === 0 && L.mode === 'section' && it.kind === 'h' && e.a === 0));
+    }
+  }
+  // the number each page's lines start at
+  lineStarts(plan) {
+    const L = this.page.lineno || {};
+    const out = [];
+    let n = 1;
+    for (const pg of plan) {
+      if (L.mode === 'page') n = 1;
+      out.push(n);
+      this.eachLine(pg, (e, y, reset) => { if (reset) n = 1; n++; });
+    }
+    return out;
   }
 
   makePage() {
@@ -311,10 +853,138 @@ export class Layout {
     const folio = document.createElement('div');
     folio.className = 'folio';
     folio.contentEditable = 'false';
+    // the header and the footer: three places each (src/ui/headerfooter.js edits them)
+    const hd = document.createElement('div');
+    hd.className = 'hd';
+    hd.contentEditable = 'false';
+    hd.hidden = true;
+    const ft = document.createElement('div');
+    ft.className = 'ft';
+    ft.contentEditable = 'false';
+    ft.hidden = true;
     pb.append(flow, fns);
-    el.append(pb, folio);
-    return { el, flow, fns, rule, folio, sig: null };
+    el.append(pb, hd, ft, folio);
+    return { el, flow, fns, rule, folio, hd, ft, sig: null };
   }
+}
+
+const NO_MARKS = { left: '', right: '' };
+// the height of a piece of an item, as the plan counts it
+function pieceHOf(e) {
+  const it = e.it;
+  const top = e.a === 0 || !it.lines ? 0 : it.lines[e.a].t;
+  const bot = e.b == null || !it.lines ? it.h : it.lines[e.b].t;
+  return bot - top;
+}
+// the title and a float as wide as the page (figure*) run across a two column page
+const spans = (it) => it.kind === 'title' || (it.isFloat && it.el.classList.contains('wide'));
+// a heading's number, its label (Chapter) and its words, as a running head's mark takes them
+function headParts(it) {
+  let title = '';
+  for (const n of it.el.childNodes) if (!(n.nodeType === 1 && (n.classList.contains('secnum') || n.classList.contains('chapl')))) title += n.textContent;
+  return { num: it.hnum || '', label: it.hlabel || '', title: title.replace(/\s+/g, ' ').trim() };
+}
+
+// ---- numbers and the text of headers ------------------------------------------------------------
+const ROMAN = [[1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'], [100, 'c'], [90, 'xc'], [50, 'l'], [40, 'xl'], [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i']];
+export function fmtNum(n, fmt) {
+  // (\pagenumbering{gobble}: no number at all, as TeX prints none)
+  if (!Number.isFinite(n) || fmt === 'gobble') return '';
+  if (fmt === 'roman' || fmt === 'Roman') {
+    if (n <= 0 || n > 4999) return String(n);
+    let s = '', x = n;
+    for (const [v, r] of ROMAN) while (x >= v) { s += r; x -= v; }
+    return fmt === 'Roman' ? s.toUpperCase() : s;
+  }
+  if (fmt === 'alph' || fmt === 'Alph') {
+    if (n < 1 || n > 26) return String(n);
+    const c = String.fromCharCode(96 + n);
+    return fmt === 'Alph' ? c.toUpperCase() : c;
+  }
+  return String(n);
+}
+// A header's TeX as text with its weight and shape, the page's numbers in: \thepage, LastPage,
+// \leftmark and \rightmark, \today; \textbf, \textit, \emph and their declarations; other
+// commands drop, their arguments stay. The text is the document's (maybe a stranger's): it is
+// read in bounded steps and goes into the page as text only.
+export function hfRuns(tex, ctx = {}) {
+  const t = String(tex || '').slice(0, 600);
+  const out = [];
+  let cur = { b: false, i: false, sc: false, sf: false, tt: false, up: false };
+  const stack = [];
+  const push = (s) => { if (!s) return; const st = { ...cur }; const last = out[out.length - 1]; if (last && JSON.stringify(last.st) === JSON.stringify(st)) last.t += s; else out.push({ t: s, st }); };
+  const WRAP = { textbf: 'b', textit: 'i', emph: 'i', textsl: 'i', textsc: 'sc', textsf: 'sf', texttt: 'tt', MakeUppercase: 'up', uppercase: 'up' };
+  const DECL = { bfseries: 'b', bf: 'b', itshape: 'i', it: 'i', slshape: 'i', sl: 'i', em: 'i', scshape: 'sc', sc: 'sc', sffamily: 'sf', ttfamily: 'tt' };
+  const today = () => { const d = new Date(); return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }); };
+  for (let i = 0, n = 0; i < t.length && n < 2000; n++) {
+    const c = t[i];
+    if (c === '\\') {
+      const m = /^\\([A-Za-z@]+)\*?|^\\(.)/.exec(t.slice(i, i + 40));
+      if (!m) { i++; continue; }
+      i += m[0].length;
+      const name = m[1];
+      if (!name) { const ch = m[2]; push(ch === '\\' ? ' ' : ch === ' ' ? ' ' : '&%$#_{}'.includes(ch) ? ch : ''); continue; }
+      // (TeX reads no space after a command's name: \thepage of prints 1of)
+      while (t[i] === ' ' || t[i] === '\t' || t[i] === '\n') i++;
+      const arg = () => { let j = i; while (t[j] === ' ') j++; if (t[j] !== '{') return null; let d = 0; for (let k = j; k < t.length; k++) { if (t[k] === '\\') { k++; continue; } if (t[k] === '{') d++; else if (t[k] === '}' && --d === 0) { i = k + 1; return t.slice(j + 1, k); } } i = t.length; return t.slice(j + 1); };
+      if (name === 'thepage' || name === 'pagemark') push(ctx.page || '');
+      else if (name === 'headmark') push(ctx.headmark != null ? ctx.headmark : ctx.right || '');
+      else if (name === 'textasciitilde') push('~');
+      else if (name === 'textasciicircum') push('^');
+      else if (name === 'textbackslash') push('\\');
+      else if (name === 'pageref') { const a = arg(); push(a != null && a.trim() === 'LastPage' ? ctx.total || '' : '??'); }
+      else if (name === 'leftmark') push(ctx.left || '');
+      else if (name === 'rightmark') push(ctx.right || '');
+      else if (name === 'today') push(today());
+      else if (name === 'LaTeX') push('LaTeX');
+      else if (name === 'TeX') push('TeX');
+      else if (name === 'ldots' || name === 'dots') push('…');
+      else if (name === 'quad' || name === 'qquad' || name === 'hfill') push('  ');
+      else if (WRAP[name]) { const a = arg(); if (a != null) { stack.push(cur); cur = { ...cur, [WRAP[name]]: true }; for (const r of hfRuns(a, ctx)) { cur = { ...cur, ...Object.fromEntries(Object.entries(r.st).filter(([, v]) => v)) }; push(r.t); cur = { ...stack[stack.length - 1], [WRAP[name]]: true }; } cur = stack.pop(); } }
+      else if (DECL[name]) cur = { ...cur, [DECL[name]]: true };
+      else if (/^(fancyplain|ifthenelse)$/.test(name)) { arg(); }
+      continue;
+    }
+    if (c === '{') { stack.push(cur); i++; continue; }
+    if (c === '}') { if (stack.length) cur = stack.pop(); i++; continue; }
+    if (c === '~') { push(' '); i++; continue; }
+    if (c === '-' && t[i + 1] === '-') { if (t[i + 2] === '-') { push('—'); i += 3; } else { push('–'); i += 2; } continue; }
+    if (c === '`' && t[i + 1] === '`') { push('“'); i += 2; continue; }
+    if (c === "'" && t[i + 1] === "'") { push('”'); i += 2; continue; }
+    // (a comment to its line's end, as TeX reads it)
+    if (c === '%') { const nl = t.indexOf('\n', i); i = nl < 0 ? t.length : nl + 1; while (t[i] === ' ' || t[i] === '\t') i++; continue; }
+    if (c === '$') { i++; continue; }
+    push(/\s/.test(c) ? ' ' : c);
+    i++;
+  }
+  return out;
+}
+function hfInto(el, tex, ctx) {
+  for (const r of hfRuns(tex, ctx)) {
+    const s = document.createElement('span');
+    s.textContent = r.st.up ? r.t.toUpperCase() : r.t;
+    if (r.st.b) s.style.fontWeight = 'bold';
+    if (r.st.i) s.style.fontStyle = 'italic';
+    if (r.st.sc) s.style.fontVariant = 'small-caps';
+    if (r.st.tt) s.className = 'y-tt';
+    if (r.st.sf) s.className = 'y-sf';
+    el.appendChild(s);
+  }
+}
+const plainTex = (t) => hfRuns(t, {}).map((r) => r.t).join('').trim();
+
+// a colour as xcolor names it (red, gray!30, a dvipsnames name) or #RRGGBB, for the page's style;
+// anything else gives nothing
+const NAMED = Object.fromEntries([...BASE_COLORS, ...DVIPS_COLORS].map(([n, h]) => [n, '#' + h]));
+export function cssColor(c) {
+  c = String(c || '').trim();
+  if (/^#[0-9A-Fa-f]{6}$/.test(c)) return c;
+  const mix = /^([A-Za-z]+)!(\d{1,3})(?:!([A-Za-z]+))?$/.exec(c);
+  if (mix) {
+    const a = NAMED[mix[1]], b = mix[3] ? NAMED[mix[3]] : '#FFFFFF';
+    return a && b ? 'color-mix(in srgb, ' + a + ' ' + Math.min(100, +mix[2]) + '%, ' + b + ')' : '';
+  }
+  return NAMED[c] || '';
 }
 
 // Table rows as split units.

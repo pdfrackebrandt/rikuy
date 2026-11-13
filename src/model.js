@@ -7,8 +7,11 @@ import { siTex, siOptions, siUnitSymbol } from './siunitx.js';
 import { widgetPath, hashText } from './widget.js';
 import { rtlDocument, languageDir } from './scripts.js';
 import { isLatexMark } from './styles.js';
+import { readPage, paperName, NO_MEDIA_CLASSES, setsMedia, KOMA_CLASS } from './pagesrc.js';
 
 const WIDGET_FILE = /\.html?$/i;
+// the page's set up of the last preamble read (Builder.pageSetup)
+const PAGE_CACHE = { key: null, lineAt: -1, value: null };
 const STY = {
   textbf: 'bf', textit: 'it', emph: 'em', texttt: 'tt', textsc: 'sc', textsf: 'sf', textrm: 'rm', textup: 'up',
   textsl: 'sl', textmd: 'md', textnormal: 'rm', underline: 'ul', uline: 'ul', uuline: 'ul', uwave: 'ul',
@@ -35,6 +38,8 @@ const FILE_CMDS = {
   chemfig: ['molecule', -1], chemname: ['molecule', -1], arrow: ['arrow', -1],
 };
 const SI_CMDS = new Set(['num', 'SI', 'si', 'qty', 'unit', 'numrange', 'SIrange', 'qtyrange', 'numlist', 'SIlist', 'qtylist', 'numproduct', 'SIproduct', 'qtyproduct', 'ang', 'tablenum']);
+// a package's options as { key: value or true }, for src/pagesrc.js setsMedia
+const optsOf = (op) => Object.fromEntries(String(op || '').split(',').map((x) => x.trim()).filter(Boolean).map((x) => { const q = x.indexOf('='); return q < 0 ? [x, true] : [x.slice(0, q).trim(), x.slice(q + 1).trim()]; }));
 const INVIS = new Set([
   'label', 'index', 'glossary', 'nocite', 'phantomsection', 'protect', 'relax', 'indent', 'sloppy', 'fussy',
   'frenchspacing', 'makeatletter', 'makeatother', 'raggedright', 'raggedleft', 'addcontentsline', 'setlength',
@@ -218,6 +223,9 @@ class Builder {
     this.c = { part: 0, section: 0, subsection: 0, subsubsection: 0, paragraph: 0, subparagraph: 0, equation: 0, figure: 0, table: 0, footnote: 0, thanks: 0 };
     this.thmc = new Map();
     this.appendix = false;
+    // multicols environments met so far, by file: each one's paragraphs share its number as their
+    // region (one that does not move as text is typed before it)
+    this.mcCount = new Map();
     this.subeq = null;
     this.targets = [];
     this.lastTarget = null;
@@ -315,6 +323,11 @@ class Builder {
   preamble(nodes, ctx) {
     const O = this.opts;
     this.preWalk(nodes, ctx, false);
+    // the page: two sided by the class (a book is), its headers and footers, line numbers,
+    // watermark, colour and border (src/pagesrc.js reads them; src/layout.js draws them)
+    if (O.twoside == null) O.twoside = /^(book|scrbook|memoir)$/.test(O.cls);
+    if (O.openright == null) O.openright = /^(book|scrbook|memoir)$/.test(O.cls) && O.twoside;
+    O.page = this.pageSetup(ctx);
     O.chapters = /^(report|book|scrbook|scrreprt|memoir|amsbook|thesis|ociamthesis)$/.test(O.cls);
     if (O.chapters) {
       if (!O.secnumdepthSet) O.secnumdepth = 2;
@@ -342,7 +355,12 @@ class Builder {
       else if (!own) this.preCmd(nd, c);
       else if (nd.name === 'definecolor') this.defColor(nd, c);
       else if (nd.name === 'usepackage' || nd.name === 'RequirePackage') {
-        for (const p of this.argText(c, nd.args[1]).split(',')) if (this.files.has(p.trim() + '.sty')) this.preFile(p.trim() + '.sty', true);
+        for (const p of this.argText(c, nd.args[1]).split(',')) {
+          if (this.files.has(p.trim() + '.sty')) this.preFile(p.trim() + '.sty', true);
+          // (the project's own class or package may load what lays out the page or sets its sheet)
+          if (p.trim() === 'geometry') this.geometry(this.argText(c, nd.args[0]));
+          if (!this.files.has(p.trim() + '.sty') && setsMedia(p.trim(), optsOf(this.argText(c, nd.args[0])))) this.opts.media = true;
+        }
       } else if (/^(newcommand|providecommand|newenvironment|DeclareMathOperator|newtheorem|theoremstyle|numberwithin)$/.test(nd.name) &&
         !(nd.def && (nd.def.bs < 0 || /@/.test(c.src.slice(nd.s, nd.def.bs > 0 ? nd.def.bs : nd.e))))) this.defCmd(nd, c);
     }
@@ -358,10 +376,17 @@ class Builder {
     const O = this.opts;
     for (const o of list.split(',').map((x) => x.trim())) {
       if (/^(10|11|12)pt$/.test(o)) O.pt = parseInt(o, 10);
-      if (o === 'a4paper') O.paper = 'a4';
-      if (o === 'letterpaper') O.paper = 'letter';
+      if (paperName(o)) { O.paper = paperName(o); O.paperByClass = true; }
       if (o === 'twocolumn') O.twocolumn = true;
+      if (o === 'onecolumn') O.twocolumn = false;
+      // the page's sides and its orientation (src/layout.js lays the page out from them)
+      if (o === 'landscape') O.landscape = true;
+      if (o === 'twoside') O.twoside = true;
+      if (o === 'oneside') O.twoside = false;
+      if (o === 'openright') O.openright = true;
+      if (o === 'openany') O.openright = false;
       if (o === 'titlepage') O.titlepage = true;
+      if (o === 'notitlepage') O.notitlepage = true;
       if (/^(ngerman|german|austrian|naustrian)$/.test(o)) O.lang = 'de';
       if (/^spanish$/.test(o)) O.lang = 'es';
       if (/^(french|francais)$/.test(o)) O.lang = 'fr';
@@ -387,6 +412,16 @@ class Builder {
           this.classOpts(m[1] || '');
         }
         if (/^(amsart|amsbook)$/.test(O.cls)) O.ams = true;
+        // KOMA's classes (typearea), memoir, beamer, IEEEtran, elsarticle and acmart set the PDF's
+        // sheet themselves (src/pagesrc.js pageMode)
+        if (!NO_MEDIA_CLASSES.has(O.cls)) O.media = true;
+        // (KOMA's paper=a5 and paper=landscape)
+        for (const x of (/(?:^|,)\s*paper\s*=\s*([A-Za-z0-9:]+)/.exec(A(0)) || ['', ''])[1].split(':')) {
+          if (paperName(x + 'paper')) { O.paper = paperName(x + 'paper'); O.paperByClass = true; }
+          if (x === 'landscape') O.landscape = true;
+        }
+        // (KOMA-Script's paper where none is given: A4)
+        if (KOMA_CLASS.test(O.cls) && !O.paperByClass) O.paper = 'a4';
         break;
       }
       case 'usepackage': case 'RequirePackage': {
@@ -411,7 +446,14 @@ class Builder {
           if (p === 'parskip') { O.parskip = 0.6; O.parindent = 0; }
           if (p === 'cleveref') { O.cleveref = true; O.crefCap = /capitali[sz]e/.test(op); }
           if (p === 'fullpage') O.margins = { l: 72.27, r: 72.27, t: 72.27, b: 72.27 };
-          if (p === 'geometry' && op) this.geometry(op);
+          // (geometry with no options lays the page out by its own defaults; with pass it leaves
+          // the class's layout and only sets the PDF's sheet)
+          if (p === 'geometry') this.geometry(op);
+          // what sets the PDF's sheet to LaTeX's paper: without any of it TeX Live's sheet is A4
+          // (src/pagesrc.js mediaSet)
+          if (!this.files.has(p + '.sty') && setsMedia(p, optsOf(op))) O.media = true;
+          // (typearea's paper is A4 where the class's options give none)
+          if (p === 'typearea' && !O.paperByClass) O.paper = 'a4';
           if (p === 'babel') {
             const langs = op.split(',').map((x) => x.trim()).filter(Boolean);
             const last = langs[langs.length - 1] || 'english';
@@ -424,6 +466,10 @@ class Builder {
         break;
       }
       case 'geometry': this.geometry(A(0)); break;
+      // (the kernel's PDF management sets the PDF's sheet from the paper)
+      case 'DocumentMetadata': O.media = true; break;
+      // (the numbers' format from the first page: \pagenumbering{gobble} in the preamble prints none)
+      case 'pagenumbering': O.numbering = A(0).trim(); break;
       case 'onehalfspacing': O.spread = { 10: 1.25, 11: 1.213, 12: 1.241 }[O.pt] || 1.25; break;
       case 'doublespacing': O.spread = { 10: 1.667, 11: 1.618, 12: 1.655 }[O.pt] || 1.65; break;
       case 'singlespacing': O.spread = 1; break;
@@ -446,26 +492,52 @@ class Builder {
     }
   }
 
+  // geometry's keys, as \usepackage[...]{geometry} and each \geometry{...} give them, the later
+  // winning: src/layout.js works the page out from them as geometry does
   geometry(op) {
     const O = this.opts;
-    const kv = {};
-    for (const part of op.split(',')) {
-      const [k, v] = part.split('=').map((x) => (x || '').trim());
-      if (k) kv[k] = v ?? true;
+    O.geometry = true;
+    O.media = true;
+    op = op || '';
+    const kv = O.geo || (O.geo = {});
+    // (commas inside braces stay in their value: hmargin={1cm,2cm})
+    let depth = 0, start = 0;
+    const parts = [];
+    for (let i = 0; i < op.length && i < 4000; i++) {
+      const c = op[i];
+      if (c === '{') depth++; else if (c === '}') depth = Math.max(0, depth - 1);
+      else if (c === ',' && !depth) { parts.push(op.slice(start, i)); start = i + 1; }
     }
-    if (kv.a4paper) O.paper = 'a4';
-    if (kv.letterpaper) O.paper = 'letter';
-    if (kv.paper) O.paper = /a4/.test(kv.paper) ? 'a4' : 'letter';
-    const L = (x) => { const v = parseLen(x, O.pt); return typeof v === 'number' ? v : null; };
-    const m = { l: null, r: null, t: null, b: null };
-    if (kv.margin) m.l = m.r = m.t = m.b = L(kv.margin);
-    if (kv.hmargin) m.l = m.r = L(kv.hmargin);
-    if (kv.vmargin) m.t = m.b = L(kv.vmargin);
-    for (const [k, key] of [['left', 'l'], ['lmargin', 'l'], ['inner', 'l'], ['right', 'r'], ['rmargin', 'r'], ['outer', 'r'], ['top', 't'], ['tmargin', 't'], ['bottom', 'b'], ['bmargin', 'b']]) if (kv[k]) m[key] = L(kv[k]);
-    if (kv.textwidth || kv.width) m.tw = L(kv.textwidth || kv.width);
-    if (kv.textheight || kv.height) m.th = L(kv.textheight || kv.height);
-    if (kv.scale) m.scale = parseFloat(kv.scale);
-    if (Object.values(m).some((v) => v != null)) O.margins = { ...(O.margins || {}), ...Object.fromEntries(Object.entries(m).filter(([, v]) => v != null)) };
+    parts.push(op.slice(start, 4000));
+    for (const part of parts.slice(0, 200)) {
+      const q = part.indexOf('=');
+      const k = (q < 0 ? part : part.slice(0, q)).replace(/%[^\n]*/g, '').trim(), v = q < 0 ? true : part.slice(q + 1).trim();
+      if (!k) continue;
+      // another paper size takes the place of the one before
+      if (paperName(k) || k === 'paper' || k === 'papername') for (const x of Object.keys(kv)) if (paperName(x) || /^paper(name|width|height)?$/.test(x)) delete kv[x];
+      if (k === 'landscape') delete kv.portrait;
+      if (k === 'portrait') delete kv.landscape;
+      kv[k] = v;
+    }
+    // pass: geometry leaves the class's text block and every key alone (src/layout.js)
+    O.geoPass = kv.pass === true;
+  }
+
+  // The page's set up beyond its size, read once for each preamble (it is the same at most keys)
+  pageSetup(ctx) {
+    const others = [];
+    for (const k of this.included) if (k.startsWith('pre:')) others.push(this.files.get(k.slice(4)) || '');
+    const end = this.files.get(ctx.f) === ctx.src ? ctx.src.search(/\\begin\s*\{document\}/) : -1;
+    const key = (end < 0 ? ctx.src.slice(0, 200000) : ctx.src.slice(0, end)) + '\u0000' + others.join('\u0000');
+    if (PAGE_CACHE.key === key && PAGE_CACHE.lineAt === ctx.src.indexOf('\\linenumbers')) return PAGE_CACHE.value;
+    let value = null;
+    try { value = readPage(ctx.src, others); } catch (e) { value = null; }
+    if (value && value.color) {
+      // a colour of the document's own, or one given by its numbers, as #RRGGBB
+      value.color.css = value.color.model ? colorValue(value.color.model, value.color.color) : this.colors.get(value.color.color) || value.color.color;
+    }
+    PAGE_CACHE.key = key; PAGE_CACHE.lineAt = ctx.src.indexOf('\\linenumbers'); PAGE_CACHE.value = value;
+    return value;
   }
 
   collectDefs(nodes, ctx) {
@@ -847,7 +919,7 @@ class Builder {
         }
         if (name in SECTIONS) {
           flushPara();
-          if (SECTIONS[name] <= 0 && this.opts.chapters) units.push({ f: ctx.f, s: nd.s, e: nd.s, items: [{ type: 'pagebreak' }], fns: [], sig: 'cb' });
+          if (SECTIONS[name] <= 0 && this.opts.chapters) units.push({ f: ctx.f, s: nd.s, e: nd.s, items: [{ type: 'pagebreak', odd: !!this.opts.openright, chapter: true }], fns: [], sig: 'cb' });
           if (env.top) this.sig = [];
           this.use('d' + this.dir);
           units.push(this.heading(nd, ctx));
@@ -865,6 +937,14 @@ class Builder {
           this.use('d' + this.dir);
           const u = this.titleBlock(nd, ctx);
           if (u) units.push(u);
+          // a title page of its own (report, book and KOMA's, or the titlepage option): the text
+          // starts on the next page, numbered 1 again in a one sided document, as the titlepage
+          // environment does
+          const O = this.opts;
+          if (u && (O.titlepage || (!O.notitlepage && /^(report|book|scrreprt|scrbook)$/.test(O.cls)))) {
+            units.push({ f: ctx.f, s: nd.e, e: nd.e, items: [{ type: 'pagebreak', column: false }], fns: [], sig: 'tp' });
+            if (!O.twoside) units.push({ f: ctx.f, s: nd.e, e: nd.e, items: [{ type: 'pagemark', mark: { page: 1 } }], fns: [], sig: 'tp1' });
+          }
           continue;
         }
         if (name === 'tableofcontents') {
@@ -879,9 +959,68 @@ class Builder {
           continue;
         }
         if (name === 'listoffigures' || name === 'listoftables') { flushPara(); continue; }
+        // \ifodd\value{page}\hbox{}\clearpage\fi (and with \else before \hbox): on to an even (an
+        // odd) page, a blank one before it where the page it is on is not (src/pagesrc.js BREAKS)
+        if (name === 'ifodd' && !paraShows()) {
+          const at = (j) => { while (j < nodes.length && nodes[j].t === 'text' && !ctx.src.slice(nodes[j].s, nodes[j].e).trim()) j++; return j; };
+          const is = (j, n) => nodes[j] && nodes[j].t === 'cmd' && nodes[j].name === n;
+          let j = at(k + 1);
+          if (is(j, 'value') && this.argText(ctx, nodes[j].args[0]).trim() === 'page') {
+            j = at(j + 1);
+            const odd = is(j, 'else');
+            if (odd) j = at(j + 1);
+            if (is(j, 'hbox') || is(j, 'null')) {
+              j = at(j + 1);
+              if (is(j, 'clearpage') || is(j, 'newpage')) {
+                j = at(j + 1);
+                if (is(j, 'fi')) {
+                  flushPara();
+                  units.push({ f: ctx.f, s: nd.s, e: nodes[j].e, items: [{ type: 'pagebreak', parity: odd ? 'odd' : 'even' }], fns: [], sig: 'par' + (odd ? 'o' : 'e') });
+                  k = j;
+                  continue;
+                }
+              }
+            }
+          }
+        }
         if (name === 'newpage' || name === 'clearpage' || name === 'cleardoublepage' || name === 'pagebreak') {
           flushPara();
-          units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'pagebreak' }], fns: [], sig: '' });
+          // (\cleardoublepage goes on to an odd page in a two sided document; \newpage in two
+          // columns ends the column, \clearpage the page)
+          units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'pagebreak', odd: name === 'cleardoublepage', column: name === 'newpage' || name === 'pagebreak' }], fns: [], sig: '' });
+          continue;
+        }
+        // the page's own commands in the text: a column ends, the page's style, its numbers
+        if (name === 'columnbreak') {
+          flushPara();
+          units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'pagebreak', column: true, only: true }], fns: [], sig: '' });
+          continue;
+        }
+        const pageCounter = (name === 'setcounter' || name === 'addtocounter') && this.argText(ctx, nd.args[0]).trim() === 'page';
+        if (name === 'thispagestyle' || name === 'pagestyle' || name === 'pagenumbering' || pageCounter) {
+          const a = this.argText(ctx, nd.args[pageCounter ? 1 : 0]).trim();
+          // (\addtocounter{page}{-1}: the page it is on takes the number less one, and those after)
+          const mark = name === 'setcounter' ? { page: parseInt(a, 10) } : name === 'addtocounter' ? { pageAdd: parseInt(a, 10) } : name === 'pagenumbering' ? { numbering: a } : name === 'pagestyle' ? { style: a } : { thisStyle: a };
+          // (one inside a paragraph's words is left to TeX: the paragraph stays whole)
+          if (paraShows() || (name === 'setcounter' && !Number.isFinite(mark.page)) || (name === 'addtocounter' && !Number.isFinite(mark.pageAdd))) { para.push(nd); continue; }
+          flushPara();
+          units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'pagemark', mark }], fns: [], sig: 'pm' + JSON.stringify(mark) });
+          continue;
+        }
+        // \null between two page breaks: an empty page, as TeX gives it
+        if (name === 'null' && !paraShows()) {
+          let j = k + 1;
+          while (j < nodes.length && blank(nodes[j])) j++;
+          const nx = nodes[j];
+          if (!nx || nx.t === 'par' || (nx.t === 'cmd' && /^(newpage|clearpage|cleardoublepage|pagebreak)$/.test(nx.name))) {
+            flushPara();
+            units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'space', pt: 0 }], fns: [], sig: 'null' });
+            continue;
+          }
+        }
+        if (name === 'vfill' && !paraShows()) {
+          flushPara();
+          units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'space', pt: 0, fill: true }], fns: [], sig: 'fill' });
           continue;
         }
         if (name === 'appendix') { flushPara(); this.appendix = true; if (this.opts.chapters) this.c.chapter = 0; else this.c.section = 0; continue; }
@@ -897,8 +1036,11 @@ class Builder {
         if (name === 'bigskip' || name === 'medskip' || name === 'smallskip' || name === 'vspace') {
           flushPara();
           let h = { bigskip: 12, medskip: 6, smallskip: 3 }[name];
-          if (name === 'vspace') { const v = parseLen(this.argText(ctx, nd.args[0]), this.opts.pt); h = typeof v === 'number' ? v : 0; }
-          units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'space', pt: h }], fns: [], sig: 'sp' + h });
+          const arg = name === 'vspace' ? this.argText(ctx, nd.args[0]) : '';
+          if (name === 'vspace') { const v = parseLen(arg, this.opts.pt); h = typeof v === 'number' ? v : 0; }
+          // (\vspace*{\fill} takes what the page has left: a title page centred, a line at its foot)
+          const fill = name === 'vspace' && /\\(?:fill|vfill|stretch)\b/.test(arg);
+          units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'space', pt: h, fill }], fns: [], sig: 'sp' + h + (fill ? 'f' : '') });
           continue;
         }
         if (name === 'item' && env.list) { para.push(nd); continue; }
@@ -1215,12 +1357,37 @@ class Builder {
     if (['center', 'flushleft', 'flushright'].includes(name)) {
       return this.container(nd, ctx, env, { align: { center: 'center', flushleft: 'left', flushright: 'right' }[name], noIndentFirst: true });
     }
-    if (/^(figure|table|wrapfigure|wraptable|SCfigure|sidewaysfigure|sidewaystable)\*?$/.test(name)) return this.floatBlock(nd, ctx, env);
+    if (/^(figure|table|wrapfigure|wraptable|SCfigure|SCtable|sidewaysfigure|sidewaystable)$/.test(name) && env.inMc) {
+      // TeX sets a float inside multicols and throws it away (multicol's warning: Floats and
+      // marginpars not allowed): numbered, not in the PDF. The page says so where it stands.
+      this.floatBlock(nd, ctx, env);
+      const first = ctx.src.slice(nd.s, Math.min(nd.e, nd.s + 200)).split('\n')[0];
+      return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'raw', f: ctx.f, s: nd.s, e: nd.e, is: nd.be, ie: nd.es, text: first + (nd.e - nd.s > first.length ? ' …' : ''), verb: false, name: name + ' left out of the PDF: TeX takes no float inside multicols', lost: true }], fns: [] };
+    }
+    if (/^(figure|table|wrapfigure|wraptable|SCfigure|SCtable|sidewaysfigure|sidewaystable)\*?$/.test(name)) return this.floatBlock(nd, ctx, env);
     if (/^(tabular|tabularx|tabular\*|tabulary|longtable|array)$/.test(name)) {
       const t = this.tabular(nd, ctx);
       return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'float', kind: 'inline', parts: [t], f: ctx.f }], fns: t.fns || [] };
     }
     if (name === 'thebibliography') return this.theBib(nd, ctx);
+    if (/^multicols\*?$/.test(name) && !nd.raw && nd.nodes) {
+      // multicols: its paragraphs set in columns on the page (src/layout.js), balanced unless
+      // starred. Each is a block of its own, as the document's are, so that typing in one draws
+      // that one again and not the whole environment.
+      const n = Math.max(1, Math.min(10, parseInt(this.argText(ctx, nd.args && nd.args[0]), 10) || 2));
+      const ord = (this.mcCount.get(ctx.f) || 0) + 1;
+      this.mcCount.set(ctx.f, ord);
+      const mc = { n, key: ctx.f + ':mc' + ord, star: name.endsWith('*') };
+      // (its optional argument, \begin{multicols}{2}[\section{...}], is set across, before them)
+      const pre = nd.args && nd.args[1] && nd.args[1].nodes ? this.flow(nd.args[1].nodes, ctx, env) : [];
+      const us = this.flow(nd.nodes, ctx, { ...env, inMc: true });
+      const list = us.length ? us : [{ f: ctx.f, s: nd.s, e: nd.e, items: [this.emptyPara(ctx, nd.be, env.cls)], fns: [] }];
+      for (const u of list) {
+        for (const it of u.items) if (!it.mc) it.mc = mc;
+        u.sig = (u.sig || '') + '\u0001mc' + n + ':' + ord + (mc.star ? '*' : '');
+      }
+      return [...pre, ...list];
+    }
     if (/^(small|footnotesize|scriptsize|large|Large|singlespace|onehalfspace|doublespace|spacing|minipage|landscape|appendices|otherlanguage\*?|titlepage|multicols\*?|adjustbox|threeparttable|tablenotes|acknowledgments|acknowledgements)$/.test(name)) {
       const ex = /^(small|footnotesize|scriptsize|large|Large)$/.test(name) ? { cls: (env.cls || '') + ' z-' + name } : {};
       if (name === 'appendices') { this.appendix = true; if (this.opts.chapters) this.c.chapter = 0; else this.c.section = 0; }
@@ -1230,7 +1397,13 @@ class Builder {
         if (r) r.items.unshift({ type: 'h', level: 3, num: '', inl: [{ k: 'chr', text: name === 'acknowledgements' ? 'Acknowledgements' : 'Acknowledgments' }], star: true, ctx: 'h', f: ctx.f, dir: this.dirOf() });
         return r;
       }
-      return this.container(nd, ctx, env, ex);
+      const r = this.container(nd, ctx, env, ex);
+      // (a multicols read raw, or nested where a block cannot be cut: one block in columns)
+      if (/^multicols\*?$/.test(name) && r) {
+        const n = Math.max(1, Math.min(10, parseInt(this.argText(ctx, nd.args && nd.args[0]), 10) || 2));
+        for (const it of r.items) if (!it.mc) it.mc = { n, key: ctx.f + ':' + nd.s, star: name.endsWith('*') };
+      }
+      return r;
     }
     // Unknown environment: render content with a small tag.
     const r = this.container(nd, ctx, env, { cls: (env.cls || '') + ' unk' });

@@ -586,9 +586,12 @@ def reach(page, width):
         by_tab.setdefault((x['tab'], x['tabName'], x['contextual']), []).append(x)
     bad, opened = [], []
     for (tab, name, ctx), xs in by_tab.items():
-        if ctx and not tab.startswith('table'):
-            continue  # (no command of B0's lives there yet: test/tabs.py brings one in for each)
-        if ctx:
+        if ctx and not tab.startswith('table') and tab != 'headfoot':
+            continue  # (no command lives there yet: test/tabs.py brings one in for each)
+        if ctx and tab == 'headfoot':
+            # (the header open on the page, as a double click in its margin opens it)
+            load_doc(page, DOC); page.evaluate('rikuy.pageHFOpen("head")'); page.wait_for_timeout(250)
+        elif ctx:
             load_doc(page, TABLE); click_text(page, 'cell', 2); page.wait_for_timeout(250)
         open_tab(page, width, name)
         opened.append(name)
@@ -597,17 +600,18 @@ def reach(page, width):
             if n != 1 or not page.locator('#' + x['id']).is_visible():
                 bad.append((name, x['name'], n))
         if ctx:
+            if page.evaluate('!!rikuy.hf'): page.evaluate('rikuy.pageHFClose()')
             load_doc(page, DOC)
     open_tab(page, width, 'Home')
     check('every control of every tab is found by its role and name once its tab is open: ' + ', '.join(opened) + w, not bad and 'Insert' in opened and 'Table Layout' in opened, bad)
     tabs = page.get_by_role('tablist', name='Ribbon', exact=True).get_by_role('tab')
     if width > 1000:
         check('the tablist "Ribbon" has Word\'s tabs in Word\'s order, Home open' + w, tabs.all_inner_texts() == [n for n in ('File', 'Home', 'Insert', 'Design', 'Layout', 'References', 'Review', 'View', 'Help') if n in tabs.all_inner_texts()]
-              and tabs.all_inner_texts()[:2] == ['Home', 'Insert'] and page.get_by_role('tab', name='Home', exact=True).get_attribute('aria-selected') == 'true'
+              and 'Home' in tabs.all_inner_texts() and tabs.all_inner_texts()[tabs.all_inner_texts().index('Home') + 1] == 'Insert' and page.get_by_role('tab', name='Home', exact=True).get_attribute('aria-selected') == 'true'
               and page.get_by_role('tabpanel', name='Home', exact=True).get_by_role('toolbar', name='Home', exact=True).count() == 1, tabs.all_inner_texts())
     else:
         opts = page.get_by_role('combobox', name='Ribbon tab', exact=True).evaluate('(s) => [...s.options].filter((o) => !o.hidden).map((o) => o.textContent)')
-        check('a narrow window has the tabs as the combobox "Ribbon tab", Home chosen' + w, opts[:2] == ['Home', 'Insert'] and page.get_by_role('combobox', name='Ribbon tab', exact=True).input_value() == 'home'
+        check('a narrow window has the tabs as the combobox "Ribbon tab", Home chosen' + w, 'Home' in opts and opts[opts.index('Home') + 1] == 'Insert' and page.get_by_role('combobox', name='Ribbon tab', exact=True).input_value() == 'home'
               and page.get_by_role('tabpanel', name='Home', exact=True).count() == 1, opts)
     box = page.get_by_role('combobox', name='Search', exact=True)
     box.click(); box.fill('bullets'); page.wait_for_timeout(150)

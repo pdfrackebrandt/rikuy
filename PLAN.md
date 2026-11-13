@@ -1045,7 +1045,173 @@ Tests:
     `tabs.py` 116; `ribbon.py` 268; `agent.py` 138; `browser.py` 189; `history.py` 39/39;
     `git.py` 44/44; `share.py` 46; `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43;
     `pages_check.py` fits; actionlint clean.
+44. **B6, the page: Word's Layout and page background, headers and footers, as LaTeX.** Done in
+    the code (branch `wordgap-b6-page`), GAP.md's rows I3, I24 to I29, L1 to L9, L16, L18, D7 to
+    D9 and F13. *Layout.* Margins (Normal, Narrow, Moderate, Wide, Mirrored, Custom), Orientation,
+    Size (Letter, Legal, A4, A5, B5, Executive, A3, any size), Columns (one, two, three, More
+    columns: the number, the space, a line between; the whole document, the selected paragraphs
+    or the caret's multicols), Breaks (page, column, text wrapping; next page, continuous in
+    multicols, even and odd page), Line numbers (continuous, each page, each section, count by),
+    Hyphenation (automatic, none, manual `\-`, the exceptions), the Page setup dialog (margins,
+    gutter, mirrored margins, orientation, paper, the header's and footer's distances, the
+    vertical alignment of the caret's page), and the Document setup group (class, base size, two
+    sided). Everything is written once and where it stands (`src/pagesrc.js`, on strings): a
+    hand written `\geometry{...}`, the `\usepackage[...]{geometry}` options or the class's
+    `a4paper` are edited in place, geometry loaded in a file the preamble reads gets a
+    `\geometry` line of its own; a paper size in the class's options changes there with geometry
+    loaded beside it, since pdfTeX takes the PDF's sheet from geometry or hyperref (a class option
+    alone leaves TeX Live's A4: measured). *Insert.* Blank page and Page break (Ctrl+Enter; in a
+    table's cell Ctrl+Enter still adds a row, the table's command takes the key there), Header,
+    Footer and Page number (top or bottom, left, centre, right; Page X of Y with lastpage; in the
+    text; their format and first number; removed). The header and footer are typed on the page:
+    a double click in a page's top or bottom margin opens their three places as fields and the
+    Header & Footer tab (Date, Page number here, Different first page, Different odd & even
+    pages, Position, Close); fancyhdr is turned on once (`\fancyhf{}`, no rule under the header,
+    the plain style's page number kept at the foot), a place written in place, `& % #` escaped,
+    one step of history for each run of typing. *Design.* Watermark (DRAFT, CONFIDENTIAL, ...,
+    your own text, size, angle, colour; draftwatermark, `\SetWatermark...` read too), Page color
+    (`\pagecolor`, the colour picker's names), Page borders (a TikZ rectangle on the shipout
+    hook, read back from that form). *File.* Print PDF (Ctrl+P, from anywhere): TeX's PDF drawn
+    page by page for the printer at its own size, the browser's print dialog for printer, pages
+    and copies; a frame that may not print downloads the PDF. *The page shows it as TeX prints
+    it* (`src/layout.js`, B6's alone): the paper by name or size, turned for landscape; the text
+    block worked out as geometry does (a margin alone keeps the other at its default, 0.7 of the
+    paper where nothing says, 1:1 across and 2:3 down, 2:3 inside to outside two sided;
+    includehead, includefoot, bindingoffset, headsep, footskip) or as the standard classes do
+    (their size files' sums, two sided margins 0.4 and 0.6 of what the text leaves),
+    `test/page.test.mjs` holding 25 cases to TeX's own numbers; even pages with the outer margin
+    left; two columns and multicols drawn as columns (filled one after another, multicols
+    balanced where it ends, the title and `figure*` across, `\columnbreak`, the rule between);
+    headers and footers in their three places with `\thepage`, LastPage, `\leftmark` and
+    `\rightmark` as fancyhdr sets them, the title's and a chapter's page plain, `\pagestyle`,
+    `\thispagestyle`, `\pagenumbering` (i, ii, iii) and `\setcounter{page}` where they stand;
+    `\cleardoublepage` with its blank page; `\null` between breaks an empty page;
+    `\vspace*{\fill}` what the page has left; line numbers beside each line (the last column's
+    in the right margin); the watermark under the text; the page's colour and border; no word
+    broken under hyphenat's none. *Word, both ways* (`src/pageword.js`, `src/wordpage.js`):
+    paper, orientation, margins, gutter, mirrored margins, the whole document's columns, the
+    header and footer in three places (tab stops) with PAGE, NUMPAGES as fields, odd and even
+    ones, a first page of its own, the numbers' format and start, line numbers, the page's
+    colour and border go into the .docx's section and settings in Word's order; a Word file's
+    come back as the same LaTeX (its header was "not kept" before). The watermark does not go to
+    Word (a shape there): the export says so. *Keys and names that changed:* Ctrl+Enter outside a
+    table is a page break; Ctrl+P prints TeX's PDF (the Preview button shows it, as before);
+    Ctrl+Shift+Enter is a column break: in Help and llms-full.txt. The File, Design and Layout
+    tabs show now; the Layout tab's last group is "Document setup" (a group "Document" took the
+    page's own name "Document" from agents), the Page setup group's launcher "Page setup dialog"
+    and File's Print "Print PDF" (each group folds into a button of its name). *Security:* the
+    audit skill's quick profile on the changed files (notes outside the repository) found one
+    stall a stranger's preamble could cause: `\setlength` followed by 200 000 spaces backtracked
+    for about 40 s in the reader of `\columnsep`; now a scan (18 ms), with a test. Evidence: `npm
+    test` green (`page` 14 groups, new; `word` 56 groups, one new: the page's set up to Word and
+    back, the rich fixture's header kept), `test/page.py` 82 (new: every control by its menu, the
+    round trip rule on Size, Margins, Blank page, Two sided, Different first page with hand
+    written forms, the page drawn as written; with `dist/tex` the PDF compiled in the page has A5
+    landscape's MediaBox by pypdf, the running head and line numbers by pdftotext, as many pages
+    as the page, and Ctrl+P draws its pages for the printer), `tabs.py` 104, `agent.py` 132 (the
+    Header & Footer tab's controls now reached too), `ribbon.py` 267, `browser.py` 189,
+    `word.py` 111, `scripts.py` 302, `widgets.py` 60, `stress.py` 9, `features.py` 36,
+    `offline.py` 54/54, `launch.py` 18/18, `deploy_check.py` 43/43, `pages_check.py` fits,
+    actionlint clean, the model on the 716 document corpus 716 built. Not done, and why: Columns'
+    Left and Right (no standard package flows text into columns of unequal widths; paracol's do
+    not flow), landscape for some pages only (pdflscape), a picture as watermark, art borders
+    (pgfornament), Word's columns for part of a document (sections), suppressing line numbers
+    for one paragraph, Document info in the header. One commit, not four: the steps share
+    `src/layout.js`'s plan and chrome.
 
+    *After the hostile review of b1ccf0f* (5 High, 7 Medium, 9 Low; each fixed with the reader's
+    case as a test, compiled in the page and held against what the page draws wherever it is
+    about TeX: `test/page.py` compile_pdf). H1: the header's field writes only text whose braces
+    pair and that does not end in a lone backslash (marked invalid and saying why meanwhile, kept
+    as the source had it if closed so); what is typed has `& % # $ _` escaped and `^ ~` as
+    `\textasciicircum{}` and `\textasciitilde{}`, the source's own text (its `$x$`) left alone.
+    H2: a header argument is read as TeX reads it (comments with their line end, line ends as
+    spaces) for the page and the field, and written back as the smallest edit around its
+    comments; a change that would take a comment away is refused, saying so. H3: the style the
+    pages take is drawn, `\fancypagestyle{name}[base]{...}` over fancy's own (fancyhdr's
+    defaults as `\f@nch@initialise` sets them, one and two sided), and a header typed goes inside
+    that style's definition; KOMA-Script's scrlayer-scrpage is read and written in its own
+    commands (`\ihead` ... `\ofoot`, `\lohead` ..., the plain style's optional arguments, the
+    clear commands), and a KOMA class gets scrlayer-scrpage rather than fancyhdr. H4, M7: where
+    the class lays the page out, Size writes the class's option and `\usepackage[pass]{geometry}`
+    beside it only where nothing else sets the PDF's sheet (A4 needs none); orientation the
+    class's `landscape` the same way; geometry's pass ignores every key, so the header's
+    distances, a paper the class does not know (A3, any size) and margins turn the layout to
+    geometry's with the text block (or, for a new paper, the margins) pinned in points, so
+    nothing else moves; the model reads bare geometry (its 0.7 defaults) and pass (the class's
+    layout). M1: the sheet drawn is the PDF's: A4 upright unless geometry, hyperref (not
+    `setpagesize=false`), typearea, a KOMA class, memoir, beamer, IEEEtran, elsarticle or acmart
+    sets it (amsart, revtex, llncs measured A4), the class's text block on it from the top left;
+    margins written on such a page keep that sheet (`a4paper` beside them). H5: Columns never put
+    a float inside multicols: the environment ends before each figure or table and begins again
+    after it, the parts read back as the body's columns and taken out again to the byte; a float
+    a document has inside multicols is drawn as left out of the PDF. M2: `\newpage` in multicols
+    ends the page; in a two column document Page break and Blank page write `\clearpage`. M3:
+    Ctrl+Enter inside `\textbf{...}`, `{\bfseries ...}` or `\textcolor{red}{...}` closes the
+    groups and opens them again around the break (at a group's edge it goes outside); none in a
+    footnote, a box, a caption or a minipage (disabled, saying why). M4: a book, scrbook and
+    memoir take the headings style: the running head at the top, nothing at the foot, blank
+    pages with their head, the title page empty in report and book; the marks as the classes and
+    fancyhdr make them (CHAPTER 1. ONE, 1.2. SECTION, 2 SECTION with an em between, subsections in
+    their case); Word gets the head. M5: a multicols environment's paragraphs are blocks of their
+    own, so typing redraws one paragraph: 300 KB in two columns, the layout's median per key 32
+    ms early and 15 to 18 late against main's 616 to 740; a plain document 22 to 31 against
+    main's 20 to 28, within its noise (marks are worked out only where a header shows one). M6:
+    Even and Odd page are `\clearpage` and `\ifodd\value{page}\hbox{}\clearpage\fi` (with
+    `\else` for odd), drawn so, in one and two sided documents. Lows: `\pagenumbering{gobble}`
+    (in the body or the preamble) prints no number, `\addtocounter{page}{n}` counts; the class
+    menu edits the class TeX reads, not a commented line before it; beamer's Margins, Size,
+    Orientation, Columns, Page setup, header and footer are off, saying why; CRLF files get CRLF
+    lines; a dialog's steps are as many edits as places changed, each the smallest; a plain page's
+    footer comes back from Word as LaTeX's plain style, no fancyhdr; Print draws each page at the
+    PDF's own size, one picture at a time as a blob (a long document says how far it got, Escape
+    stops it, nothing stops silently at 500); a blob: frame of the PDF itself would need
+    `frame-src blob:`, which the page refuses on purpose (`src/widget.js`), so it is not used;
+    columns leave room for their footnotes. *Security:* the quick profile on the changed files
+    found two more stalls of the same kind (the caret's paragraph read for Ctrl+Enter, a preamble
+    of thousands of `\fancypagestyle` lines), bounded, with tests. Evidence, on main with task
+    43 (B5) merged: `npm test` green (`page` 25 groups, `preamble` 18, `word` 56, `find` 25),
+    `test/page.py` 115 (19 of them compiled in the page), `tabs.py` 116 (B5's fold sweep from 390
+    to 1920 px on every tab, Layout, Design, File and Header & Footer with B6's commands among
+    them), `agent.py` 138, `ribbon.py` 268, `browser.py` 189, `word.py` 111, `scripts.py` 302,
+    `widgets.py` 60, `stress.py` 9, `features.py` 36, `find.py` 76, `outline.py` 59, `share.py`
+    46, `history.py` 39/39, `paste.py` 25, `files.py` 68, `offline.py` 54/54, `launch.py`
+    18/18, `deploy_check.py` 43/43, `pages_check.py` fits, actionlint clean, the corpus 716 of
+    716.
+
+    *After the verifier of PR 19 (c08fc02)*, each case compiled in the page against what it draws
+    (`test/page.py` verifier_pdf). The PDF's sheet: TeX Live's PDF is A4 only where nothing loaded
+    sets `\pdfpagewidth`, and far more does than the review knew: the graphics and colour drivers
+    set it (graphics, graphicx, color, xcolor, so TikZ and most of what draws), as do hyperref,
+    geometry, typearea, crop, memoir and `\DocumentMetadata`. `dev/media_probe.py` measured 290
+    classes and packages in this TeX Live (25 classes, the corpus's packages and the common ones);
+    the sheet stays A4 only where every class and package loaded is among the classes and the 195
+    packages measured to leave it alone (`NO_MEDIA_CLASSES`, `NO_MEDIA_PACKAGES`), any other being
+    taken to set it, and the document's PDF, once made, gives the page its own first page's sheet
+    for that set up (the class, the packages and their options: `mediaKey`), so a package nobody
+    measured is drawn right after the first compile. KOMA's classes and typearea take A4 as their paper where none is
+    given. Header to text and Text to footer, where the class lays the page out, write `\headsep`
+    (with `\topmargin` moved the other way) and `\footskip` themselves, so amsart, revtex,
+    KOMA's and llncs's own text block stays put (geometry with article's numbers moved them). Even
+    and Odd page in two columns: no band of nothing, no extra blank page. A two sided book's Page
+    number: the number goes where asked on the side where that place is free and on the other
+    side of the page where a running head holds it, so the heads stay; Remove takes out the
+    numbers' own slots only. Print: Escape is heard from the moment Print is asked for and sends
+    nothing to the printer; the pages' pictures share a budget of 150 million pixels, and a PDF
+    that would get under 96 dpi is downloaded to print from a PDF reader, saying so. Ctrl+Enter
+    never cuts a macro of the document's own (`\pair{Key}{value}` printed Key twice): the break
+    goes to the paragraph's nearer end; in a group cut, the declarations in force (`\bfseries`,
+    `\color{red}`, `\large`) open its other half too. A space right after a header argument's
+    brace, which TeX prints, is kept, and the page draws no space after a command's name, as TeX
+    reads none (`\thepage of` prints 1of). Opening the header scrolls its field into sight (one
+    out of sight took no keys). Also: a report's or book's title (and the titlepage option) on a
+    page of its own, the next numbered 1 again in a one sided document; multicols' optional
+    argument set across before the columns (and kept when One takes the columns out). Not done:
+    `\markright` and `\markboth` written by hand (myheadings) are not drawn. Evidence: `npm
+    test` green (`page` 26 groups), `test/page.py` 139 (25 new, compiled in the page),
+    `tabs.py` 116, `ribbon.py` 268, `browser.py` 189, `agent.py` 138, `word.py` 111,
+    `scripts.py` 302, `offline.py` 54/54, `launch.py` 18/18, `deploy_check.py` 43/43,
+    `pages_check.py` fits, actionlint clean, the corpus 716 of 716.
 45. **B7, tables as in Word.** Done in the code (branch `wordgap-b7-table`), rows I4, I5, I7, I8,
     T1 to T5, T7 to T20 and C2 of the gap list (task 38). *One reading of a table.*
     `src/table.js` reads tabular, tabular*, tabularx, tabulary, longtable, array and xltabular

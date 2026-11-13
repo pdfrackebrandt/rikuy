@@ -39,6 +39,9 @@ on:
       - 'test/table.py'
       - 'src/table.js'
       - 'src/cmd/table.js'
+      - 'test/page.py'
+      - 'src/layout.js'
+      - 'src/pagesrc.js'
       - 'test/serve.py'
       - 'test/browser.py'
       - '.github/workflows/tex.yml'
@@ -83,6 +86,8 @@ jobs:
           npm ci --omit=dev
           python3 -m pip install lz4==4.4.4 playwright==1.56.0 pypdf==5.9.0 numpy==2.3.4
           python3 -m playwright install --with-deps chromium
+          # page.py reads the PDF's words and their positions with pdftotext -bbox
+          sudo apt-get install -y --no-install-recommends poppler-utils
           # the work folder holds about 10 GB; the runner's second disk has room
           sudo mkdir -p /mnt/eng && sudo chown "$USER" /mnt/eng
           df -h / /mnt
@@ -115,6 +120,8 @@ jobs:
         run: cd test && python3 outline.py
       - name: Tables, every construct the table commands write compiled in the page
         run: cd test && python3 table.py reviewed verified compiled
+      - name: The page's set up in TeX's PDF (paper size, header, line numbers) and Print
+        run: cd test && python3 page.py compile_pdf
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rikuy-dist
