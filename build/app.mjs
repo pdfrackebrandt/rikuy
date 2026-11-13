@@ -467,6 +467,17 @@ Ctrl is Cmd on a Mac.
 - Alt+Q: the search box, for any command by its name; Ctrl+F1: the ribbon folded to its tabs
   and back; Shift+F10 or the menu key: the right click menu at the caret
 - Tab, Ctrl+Enter: next cell, new row in a table
+- Lists (Home, group Paragraph): Tab and Shift+Tab in a list item, or the buttons Increase
+  Indent and Decrease Indent, move the item (with any selected after it) one level down under the
+  item before it, or one up; Enter in an empty nested item takes it a level up. Shift+Tab at a
+  list's first level leaves the page as anywhere. Bulleted list and Numbered list are split
+  buttons: their arrows "Bulleted list options" and "Numbered list options" open the libraries
+  (menu items such as "Hollow round bullet", "Letters a) b) c)", "None") and Change List Level,
+  Define New Bullet, Define New Number Format, Set Numbering Value, Restart at 1, Continue
+  Numbering, List spacing; "Multilevel list" sets every list's levels (\setlist). Typing "- ",
+  "* ", "1. ", "a) " or "(i) " at a paragraph's start makes it a list (Undo gives the typed
+  text back). The labels are written as enumitem's options (\begin{enumerate}[label=\alph*),start=3]);
+  a list's own \def\labelenumi, \setcounter{enumi} or "(a)" is changed where it is written.
 - Ctrl+Shift+V: paste as plain text
 - Ctrl+F, Ctrl+H, Ctrl+G, on the page only (with the focus anywhere else Ctrl+F is the browser's
   own find): Find puts the focus in the Navigation pane's searchbox "Search document" (the side

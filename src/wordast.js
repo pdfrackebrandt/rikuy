@@ -413,7 +413,9 @@ class Walker {
         entries[entries.length - 1].blocks.push(...(it.type === 'p' ? [this.para({ ...it, label: null }, u)] : this.item(it, u)));
         i++;
       }
-      if (kind === 'enum') return [{ t: 'OrderedList', c: [listStyle((first.label || []).map((x) => x.text || '').join('')), entries.map((x) => x.blocks)] }];
+      // (the style and start the model read from the list's own format: a list that starts at iv. is
+      // roman from 4; else as the first label reads)
+      if (kind === 'enum') return [{ t: 'OrderedList', c: [first.listFmt || listStyle((first.label || []).map((x) => x.text || '').join('')), entries.map((x) => x.blocks)] }];
       if (kind === 'desc') return [{ t: 'DefinitionList', c: entries.map((x) => [x.term || [], [x.blocks]]) }];
       return [{ t: 'BulletList', c: entries.map((x) => x.blocks) }];
     };

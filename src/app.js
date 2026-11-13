@@ -4881,6 +4881,7 @@ class App {
         <dt>Click math, a citation or a reference</dt><dd>Edit it in place</dd>
         <dt>Alt+click</dt><dd>Show that spot in the source</dd>
         <dt>Tab, ${mod}+Enter</dt><dd>Next cell, new row in tables</dd>
+        <dt>Tab, Shift+Tab in a list</dt><dd>The item one level down, under the item before it, or one up. Typing "- ", "1. " or "a) " at a paragraph's start makes it a list (Undo gives back what you typed)</dd>
         <dt>${mod}+Z, ${mod}+Shift+Z</dt><dd>Undo, redo</dd>
         <dt>${mod}+Alt+M</dt><dd>Comment on the selected words. A comment is a LaTeX comment line in the source, so Overleaf, Git and TeX keep it and print nothing</dd>
         <dt>Paste</dt><dd>From Word, Google Docs or the web: bold, italics, lists, links, tables and equations become LaTeX. ${mod}+Shift+V pastes plain text</dd>

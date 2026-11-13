@@ -226,6 +226,8 @@ export class Renderer {
         else if (it.ctx === 'li') sbEm = 0.4;
         if (it.sbThm) sbEm = Math.max(sbEm, 0.8);
         if (it.sbList && it.ctx === 'li') sbEm = 0.8;
+        // (a list's own space between items, and none around it for nosep: src/model.js listBlock)
+        if (it.liSep != null && it.ctx === 'li' && it.label) sbEm = it.sbList ? (it.liTop ?? 0.8) : it.liSep;
         if (/\bbibitem\b/.test(it.cls || '')) sbEm = 0.3;
         if (/\babs\b/.test(it.cls || '') && !it.indent) sbEm = 0;
         item.sbEm = sbEm || (this.model.opts.parskip || 0);
