@@ -80,6 +80,8 @@ jobs:
       # its Download PDF needs dist/tex and runs where that exists; here it says it skips that part
       - name: The ribbon (styles, lists, inserting, the three downloads)
         run: cd test && python3 ribbon.py
+      - name: The ribbon's frame (tabs, contextual tabs, folding, keys, search, the right click menu, the kit)
+        run: cd test && python3 tabs.py
       - name: Rikuy as an agent meets it (the scripting surface, every control by its name)
         run: cd test && python3 agent.py
       # its compile offline needs dist/tex and runs in tex.yml; here it says it skips that part

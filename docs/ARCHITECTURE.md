@@ -44,7 +44,12 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | Word (.docx in and out, a coauthor's edits back) | `saveDocx`, `openDocx`, `wordEdits` (`src/word.js`); `buildWordDoc` (`src/wordast.js`); `extract` (`src/docx.js`); `planImport`, `mathPatch` (`src/wordsync.js`); `docxToLatex` (`src/wordjobs.js`) |
 | right to left text, the fonts of Chinese, Japanese, Korean, Arabic, Hebrew, Thai, Sinhala and India's scripts, the set up notice | `rtlDocument`, `languageDir`, `scriptNeeds`, `addScriptSetup` (`src/scripts.js`); `Builder.dirOf`, `dirCmd`, `declDir`, `dirEnv` (`src/model.js`); `setDir` (`src/render.js`); `--font-cjk`, `--font-ar` and their like, `:root[data-cjk]` and the `dir` rules (`src/app.css`); `App.scriptNotice`, `scriptSetUp`, `cjkOrder` |
 | live figures (`\rikuywidget`) | `WidgetLayer`, `widgetDoc`, `WIDGET_CSP` (`src/widget.js`); `Builder.cmd` (kind `widget`), `Renderer.atomEl`; `App.widgetsAllowed`, `widgetResized` |
-| the ribbon (the Styles gallery, lists, Insert, Download) | `ribbonSync`, `blockStyle`, `setBlockStyle`, `paintGallery`, `ribbonFit`, `openStyles`, `toggleList`, `insertTable`, `downloadPdfNow`, `installRibbon` (`src/ribbon.js`); `restyle`, `latexSpot` (`src/styles.js`); `PALETTE`, `runPalette`, `afterBlockPos` (`src/app.js`) |
+| a command (a button, a key, a menu item, an item of the insert list or of the search box) | `register`, `run`, `enabled`, `inGroup`, `paletteItems`, `menuItems`, `search`, `describe` (`src/commands.js`); one module per batch in `src/cmd/` (`index.js` imports them); `TABS`, `CONTEXTS` (`src/ribbon/order.js`) |
+| the ribbon: tabs, contextual tabs, groups folding, the keyboard | `ribbonBuild`, `makeControl`, `selectTab`, `ribbonContexts`, `ribbonSync`, `ribbonFit`, `ribbonRove`, `runCommand`, `toggleRibbon`, `installRibbon` (`src/ribbon/tabs.js`); `ribbonAt`, `insertEmpty`, `dropEmpty`, `ribbonBack` (`src/ribbon.js`) |
+| the Styles gallery and the paragraph's style | `styleSync`, `paintGallery`, `pageGallery`, `openStyles`, `tileOrder`, `installGallery` (`src/ui/gallery.js`); `blockStyle`, `setBlockStyle` (`src/cmd/styles.js`); `restyle`, `latexSpot` (`src/styles.js`) |
+| keys, the search box, the right click menu, the kit | `matches`, `lookup`, `installKeys` (`src/keys.js`); `installSearch` (`src/ui/search.js`); `openContextMenu`, `installMenu` (`src/ui/menu.js`); `openMenu`, `openGallery`, `splitButton`, `colorPicker`, `numberField`, `dialog` (`src/ui/kit.js`) |
+| an edit of the preamble, an inline wrapper, an environment around paragraphs | `usePackages`, `kvEdits`, `classOptions`, `setPackageKeys`, `defineOnce` (`src/preamble.js`); `wrapEdits`, `unwrapEdits`, `rewrapEdits`, `enclosing`, `clearText`, `GROUPS` (`src/wrap.js`); `envWords`, `wrapBlockEdits`, `unwrapBlockEdits` (`src/blockenv.js`) |
+| the side panel: outline and problems; versions and changes | `toggleNav`, `refreshNav`, `goTo` (`src/nav.js`); `snapshot`, `currentChanges`, `renderChanges`, `paintChanges` (`src/review.js`) |
 | LaTeX paragraphs (`% rikuy: latex`) | `isLatexMark` (`src/styles.js`); `Builder.texBlock`, `cutOpen` (`src/model.js`); `Renderer.item` case `tex`; `App.texBox`, `texEdit`, `texEnter`, `texDelete`, `showTexGhost` (`src/app.js`) |
 | equation editing | `App.openMath`, `attachField`, `toField`, `fromField`; `src/minimal.js`, `wordmath.js`, `fences.js` |
 | engine choice, passes, bibliography, indexes | `pickEngine`, `compile`, `runBiber`, `indexTools` (`tex/engine.js`) |
@@ -196,6 +201,49 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   every character is read only (`Walker.code` in `wordast.js`, also for verbatim listings): what
   a coauthor changes there comes back as a comment under it (`textEdits` in `wordsync.js`), and a
   paragraph deleted in Word just before a mark leaves the mark on a line of its own (`delBlock`).
+- **Commands.** Every action of the interface is one entry of the command registry
+  (`src/commands.js`): `{id, name, tab, group, keys, when, on, run}` and what else a control,
+  the right click menu, the search box or the insert list needs (its header lists the fields).
+  Each batch of work registers its commands in its own module, `src/cmd/<area>.js`, which
+  `src/cmd/index.js` imports; their methods join App's prototype through it, so a batch does not
+  edit `src/app.js` to add one. A command calls another by its id (`run(app, id)`), never by
+  importing it. `src/ribbon/order.js` declares every tab and group of Word's ribbon (GAP section
+  2): a group shows once a command is placed in it, a tab once one of its groups shows, and a
+  contextual tab (Table Design, Table Layout, Picture Format, Equation, Header & Footer) while
+  its `CONTEXTS` test says its object has the caret. `ribbonBuild` (`src/ribbon/tabs.js`) draws
+  the tablist "Ribbon", one tabpanel per tab with a toolbar named after it, the groups in order
+  and each command's control (`makeControl`: a button, a toggle, a split button with an arrow
+  "<name> options"); the controls written in `src/template.html` (the Styles gallery, the style
+  list, the downloads, the bar) are moved in, never made again. Only the open tab's panel is in
+  the accessibility tree; the Download group is one element, moved into the open toolbar.
+  `ribbonSync` (60 ms after the caret moves) shows the contextual tabs, disables what cannot run
+  (`when`) and presses what is on (`on`), with `at.memo` so two commands asking the same
+  (`listAt`, `blockStyle`) compute it once. `ribbonFit` gives way as Home always has (fewer
+  tiles, no Download label, no names, the style list) and then folds whole groups, the lowest
+  `rank` first, into a button named after the group whose menu has the same commands by the
+  same names; below 861 px the tabs are the combobox "Ribbon tab" and the row scrolls.
+  `src/keys.js` binds each command's `keys` (Ctrl is Cmd on a Mac; `mac` gives a Mac's own or
+  none; `keyScope` page or app; `keyRank` for two on one chord), refuses AltGr (Windows reports
+  it as Ctrl+Alt) and anything while an input method composes, and catches a chord before
+  `App.onKeyDown`. The search box (`src/ui/search.js`, Alt+Q) finds commands by name, synonym,
+  insert list name or start of a word (`search`) and runs one at the place on the page it kept;
+  the right click menu (`src/ui/menu.js`; Shift+F10, the menu key) lists `menuItems` of the
+  caret's contexts, and a second right click, or one with Shift, is the browser's. Typed text
+  passes through `insertTextHooks` first (AutoCorrect's place). `build/app.mjs` writes
+  `dist/controls.json` (`describe`: every control's id, role, name, place, tab, group, keys) and
+  llms.txt's list of tabs from the registry; `test/agent.py` reads the first, `test/tabs.py`
+  checks the frame, and `test/browser.py`'s `roundtrip()` turns GAP section 0's round trip rule
+  into one call per case.
+- **Edits of a document's structure** go through three pure modules, each tested on strings:
+  `src/preamble.js` (a package once after the last `\usepackage` line, options merged into its
+  line or a `\PassOptionsToPackage` before a line of several, the class's options, key=value
+  lists of `\geometry`, `\hypersetup` and their like, a definition once at the preamble's end;
+  comments read as comments, every scan bounded, as the preamble may be a stranger's),
+  `src/wrap.js` (inline wrappers with their leading arguments and options, the hand written
+  forms of a kind as one, split and cleared) and `src/blockenv.js` (paragraphs in an environment
+  and out again byte for byte). `ensurePackages` and the picture's `graphicx` use the first,
+  `toggleStyle` the second (so `{\bfseries …}`, which the page draws without a range of its own,
+  is found in the source and comes off exactly), Quote the third.
 - **Styles.** `blockStyle` reads the caret's block into `{v, to, b}`: its style now, the styles it
   may take, and where its words are; `restyle` (`src/styles.js`, tested on strings in
   `test/styles.test.mjs`) turns that into the smallest edits: Normal to LaTeX writes the mark's
@@ -878,7 +926,11 @@ PDF.js is a module `import()`, which takes no hash, so it ships in `dist/tex/` b
 
 - **Node, in CI** (`.github/workflows/ci.yml`, `npm test`): `test/model.test.mjs` (sample model,
   seg maps checked), `edge.test.mjs` (malformed input must not throw), `fences.test.mjs`,
-  `minimal.test.mjs`, `siunitx.test.mjs`, `share.test.mjs`, `engine.test.mjs` (the worker's
+  `minimal.test.mjs`, `siunitx.test.mjs`, `share.test.mjs`, `preamble.test.mjs`, `wrap.test.mjs`,
+  `blockenv.test.mjs` (the three edit modules, on strings), `keys.test.mjs` (chords against the
+  events browsers send, AltGr, input methods), `commands.test.mjs` (the registry: ids, places,
+  names once per tab, chords, the insert list's order, the search), `kit.test.mjs` (lengths,
+  colours), `engine.test.mjs` (the worker's
   pack hashes, path guard and offline plan), `word.test.mjs` (export, read back and import with
   the real pandoc; hostile files), `tex/native/xindy/test.cjs` (against CLISP), and
   `corpus.test.mjs DIR` (`buildModel` over `MartinThoma/LaTeX-examples` at `8bfd313b8d98`).
@@ -890,7 +942,9 @@ PDF.js is a module `import()`, which takes no hash, so it ships in `dist/tex/` b
   send back, merge), `stress.py`, `widgets.py` (live figures, under the host's policy),
   `offline.py` (the installed app offline and its updates, served by `pages.py` as Cloudflare Pages
   serves it), `launch.py` (files opened with the installed app and shared to it), `agent.py`
-  (`rikuy.api`, the controls by role and name at two widths, links built by hand); on a corpus,
+  (`rikuy.api`, the controls of `dist/controls.json` by role and name at two widths on every tab,
+  links built by hand), `tabs.py` (the ribbon's tabs, contextual tabs, folding, keys, search,
+  the right click menu, the kit, round trips); on a corpus,
   `corpus_browser.py` (random keystrokes) and `editor_corpus.py` (six edits per document land
   where made, undo byte for byte, projects compile). Each says at its top what it checks.
 - **dev/** drives the worker through `tex/tex-smoke.html`: `texrun.py`, `shellrun.py`,

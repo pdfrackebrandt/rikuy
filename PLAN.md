@@ -842,6 +842,67 @@ Tests:
     `word.py` 110 with LibreOffice, the corpus's 716 models unchanged. Not done: the right click
     menu on tiles; typing in a box through an input method; Safari and Firefox.
 
+38. **B0, the frame for every Word feature Rikuy lacks.** Done in the code (branch
+    `ribbon-tabs`), asked for by the owner ("the whole options that Word or WordCraft has but we
+    don't, strictly better"); the plan is the gap list agreed with the owner (`GAP.md`, kept
+    outside this repository: 229 features to build in 13 batches, tasks 39 to 51), and this is
+    its first step, the frame the batches build on in parallel.
+    *The registry.* Every action of the interface is one command (`src/commands.js`: id, name,
+    tab, group, keys, when, on, run, menu contexts, synonyms, its insert list item); each batch
+    registers its own in `src/cmd/<area>.js` (stubs for B1 to B13, the existing commands already
+    moved into the batch that owns them) and calls another's by id. *The ribbon, as Word's.*
+    `src/ribbon/tabs.js` draws from the registry and `src/ribbon/order.js` (every tab and group
+    of GAP section 2 declared, shown once a command is in it) the tablist "Ribbon": Home, Insert,
+    References, Review, View, Help today, Table Layout while the caret is in a table, Picture
+    Format, Equation and Header & Footer with their objects; one tab panel and one toolbar named
+    after its tab in the accessibility tree at a time; Download at the end of every tab; the
+    width rules of Home kept, then groups folding into a button named after the group whose
+    menu has the same commands; the tabs as the combobox "Ribbon tab" below 861 px; Ctrl+F1 and
+    a button fold it to its tabs. Home's groups are in Word's order now (Font, Paragraph,
+    Styles, Insert); every control kept its id and name. *Around it.* The search box "Search"
+    (Alt+Q, Word's names and others: "Bullets" finds Bulleted list); the right click menu on the
+    page by context (Shift+F10, the menu key; a second right click is the browser's, for its
+    spelling); the chord table (`src/keys.js`: Ctrl+Alt+1 to 3 and 0 for the headings and
+    Normal, Ctrl+Shift+L, Ctrl+Alt+F, Alt+Q, Ctrl+F1, Shift+F10; AltGr and input methods never
+    taken); the kit every batch builds with (`src/ui/kit.js`: split button, menu, gallery, colour
+    picker with the document's colours and xcolor's names, number field with units, dialog
+    shell). *Edits as pure functions,* each tested on strings: `src/preamble.js` (a package once,
+    options merged, class options, key=value lists, a definition once; now behind
+    `ensurePackages` and the picture's `graphicx`), `src/wrap.js` (inline wrappers with their
+    arguments, hand written forms as one, split, cleared; now behind Bold, Italic and Underline,
+    which so recognise and take off `{\bfseries ...}` and `{\bf ...}` too, drawn by the page
+    without a range of their own) and `src/blockenv.js` (paragraphs in an environment and out,
+    byte for byte; Quote's edits). Typed text passes through `insertTextHooks` (AutoCorrect's
+    place). *Moved, unchanged:* the side panel's outline and problems (`src/nav.js`), versions
+    and changes (`src/review.js`), the lists (`src/cmd/lists.js`), the gallery
+    (`src/ui/gallery.js`), the insert list's items (into the registry). *For agents:*
+    `dist/controls.json` and llms.txt's list of tabs are written from the registry;
+    `rikuy.api` gains `commands()` and `run(id)` (0.26.0; additions only). The side panel's tab
+    "Review" and the ribbon's tab "Review" share a name, so llms.txt and `test/agent.py` find the
+    panel's within its tablist "Panel". *Keys that changed:* Ctrl+B, I, U, M, K and Shift+E are
+    the commands' keys now, so they take no Shift they were not written with (Ctrl+Shift+B no
+    longer bolds) and do nothing where their button is off (Ctrl+Shift+E in a cell). Ctrl+K,
+    Ctrl+Shift+E, Ctrl+Enter and Ctrl+P are as before: their batches move them. *Security:* the
+    audit skill's quick profile on the new modules (one agent; notes kept outside the repository)
+    found two ways a stranger's document could stall the reader's tab, both fixed with a test:
+    `defines()` backtracked cubically on a `\newcommand` followed by spaces (8000 spaces, 76 s;
+    now a scan, 90 000 spaces in 18 ms), and the look for a wrapper around the caret ran 0.3 s
+    on 4000 unclosed `{\bf` groups and Clear All 4.4 s on a thousand wrappers (now 3 ms and
+    57 ms). Evidence: `npm test` green with six new unit files (`preamble` 13 groups, `wrap` 15,
+    `blockenv` 9, `keys` 11, `commands` 10, `kit` 3), `tabs.py` 84 (new: tabs by mouse and
+    keys, contextual tabs come and go, folding at 1400, 1024, 860 and 390 px, every command by
+    role and name, no name twice in the accessibility tree with any tab open, keys, search, the
+    menu, the kit, and `roundtrip()` of `test/browser.py`, GAP section 0's rule as one call, on
+    Bold, Italic, Underline with their hand written forms, Heading 1 and Numbered list),
+    `agent.py` 132 (118 before), `ribbon.py` 265, `browser.py` 189, `scripts.py` 302,
+    `word.py` 110, `offline.py` 54/54, `launch.py` 18/18, `files.py` 68, `wordmath.py` 83,
+    `widgets.py` 60, `share.py` 46, `git.py` 44/44, `history.py` 39/39, `features.py` 36,
+    `paste.py` 25, `mathfield.py` 19, `eqextras.py` 18/18, `frontier.py` 13, `stress.py` 9,
+    `deploy_check.py` 43/43, `pages_check.py` fits, actionlint clean; the model and parser are
+    untouched. Not done: no command of its own yet on File, Design and Layout, which stay hidden
+    until B12, B4 and B6 fill them; the review `docs/REVIEW_PROCESS.md` asks for; Safari and
+    Firefox, by hand.
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000

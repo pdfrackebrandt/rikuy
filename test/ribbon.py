@@ -283,13 +283,15 @@ def keyboard(page):
     load_doc(page, DOC); select_text(page, 'Second')
     state(page)
     stops = page.evaluate('[...document.querySelectorAll("#ribbon select, #ribbon button")].filter((x) => x.tabIndex === 0).map((x) => x.id)')
-    check('the ribbon is a toolbar with one tab stop', page.evaluate('document.getElementById("ribbon").getAttribute("role")') == 'toolbar' and stops == ['rb-st-p'], stops)
+    # (the ribbon is the tablist "Ribbon" over one toolbar per tab, named after it; Home's groups in Word's order: Font, Paragraph, Styles, Insert)
+    bar = page.evaluate('(() => { const t = document.querySelector("#rp-home > [role=toolbar]"); return [document.getElementById("rb-tabs").getAttribute("role"), document.getElementById("rb-tabs").getAttribute("aria-label"), t && t.getAttribute("aria-label")]; })()')
+    check('the ribbon\'s open tab is a toolbar with one tab stop', bar == ['tablist', 'Ribbon', 'Home'] and stops == ['rb-b'], (bar, stops))
     page.focus('#rb-st-p')
     seen = []
     for key in ('ArrowRight', 'ArrowLeft', 'ArrowLeft', 'End', 'Home', 'ArrowRight'):
         page.keyboard.press(key); seen.append(page.evaluate('document.activeElement.id'))
-    check('arrows, Home and End move between its controls (the strip\'s disabled arrows skipped)', seen == ['rb-st-section', 'rb-st-p', 'b-save', 'b-save', 'rb-st-p', 'rb-st-section'], seen)
-    page.focus('#rb-st-more'); page.keyboard.press('ArrowRight')
+    check('arrows, Home and End move between its controls (the strip\'s disabled arrows skipped)', seen == ['rb-st-section', 'rb-st-p', 'rb-ol', 'b-save', 'rb-b', 'rb-i'], seen)
+    page.focus('#rb-i'); page.keyboard.press('ArrowLeft')
     ring = page.evaluate('(() => { const c = getComputedStyle(document.activeElement); return c.outlineStyle !== "none" && parseFloat(c.outlineWidth) > 0; })()')
     page.keyboard.press('Enter'); page.wait_for_timeout(200)
     check('the focus shows, and Enter on Bold makes the words selected on the page bold', ring and '\\textbf{Second}' in src(page), src(page)[src(page).find('Second') - 8:][:30])
@@ -363,7 +365,7 @@ def where_it_applies(page):
     check('with a selection over two paragraphs the style cannot be changed', state(page)['rb-style'][0])
     # the row keeps the caret: a click on a disabled button, on the Download label, on empty space
     click_text(page, 'cell', 2); state(page)
-    for what, sel in (('a disabled button', '#rb-eq'), ('the Download label', '.rb-lab'), ('the empty part of the row', '#ribbon > .grow')):
+    for what, sel in (('a disabled button', '#rb-eq'), ('the Download label', '.rb-lab'), ('the empty part of the row', '#ribbon .rb-panel:not([hidden]) .grow')):
         r = page.evaluate('(s) => { const r = document.querySelector(s).getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }', sel)
         page.mouse.click(*r); page.wait_for_timeout(100)
         page.keyboard.type('Q'); page.wait_for_timeout(150)
@@ -681,7 +683,7 @@ def gallery_keys(page):
     seen = []
     for key in ('ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight'):
         page.keyboard.press(key); seen.append(page.evaluate('document.activeElement.id'))
-    check('the arrow keys go along the tiles, past the strip\'s disabled arrows to More, and on to Bold', seen == ['rb-st-section', 'rb-st-subsection', 'rb-st-subsubsection', 'rb-st-latex', 'rb-st-quote', 'rb-st-more', 'rb-b'], seen)
+    check('the arrow keys go along the tiles, past the strip\'s disabled arrows to More, and on to Formula', seen == ['rb-st-section', 'rb-st-subsection', 'rb-st-subsubsection', 'rb-st-latex', 'rb-st-quote', 'rb-st-more', 'rb-math'], seen)
     page.focus('#rb-st-latex'); page.keyboard.press('Enter'); page.wait_for_timeout(200)
     check('Enter on LaTeX makes the caret\'s paragraph a LaTeX paragraph', body(page).count('% rikuy: latex\nThird paragraph here.') == 1 and boxes(page) == ['Third paragraph here.'], body(page))
     page.focus('#rb-st-quote'); page.keyboard.press(' '); page.wait_for_timeout(200)

@@ -18,7 +18,7 @@ import path from 'path';
 import zlib from 'zlib';
 import crypto from 'crypto';
 import { build } from 'esbuild';
-import { appPage, appFiles, finishApp, cleanApp } from './build/app.mjs';
+import { appPage, appFiles, finishApp, cleanApp, controlsJson } from './build/app.mjs';
 
 const root = path.dirname(new URL(import.meta.url).pathname);
 const R = (p) => path.join(root, p);
@@ -150,6 +150,8 @@ const indexHtml = APP ? appPage(OUT, appHtml, SKELETON, firstFonts) : SKELETON +
 if (APP && !indexHtml.includes('<link rel="preload" as="script" href="lib/katex.min.js" integrity="sha384-')) throw new Error('src/template.html: no KaTeX script tag with its hash for index.html to ask for ahead');
 fs.writeFileSync(O('index.html'), indexHtml);
 fs.writeFileSync(O('git.js'), gitJs);
+// every control of the page, from the command registry (agents and test/agent.py read it)
+fs.writeFileSync(O('controls.json'), controlsJson());
 console.log(O('rikuy.html'), (html.length / 1024).toFixed(0) + ' KB', 'js', (js.length / 1024).toFixed(0) + ' KB');
 
 // 7. the TeX engine's own files (the packs and wasm chunks come from tex/build_tree.py)
