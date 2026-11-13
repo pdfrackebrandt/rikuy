@@ -1118,75 +1118,6 @@ Tests:
     (pgfornament), Word's columns for part of a document (sections), suppressing line numbers
     for one paragraph, Document info in the header. One commit, not four: the steps share
     `src/layout.js`'s plan and chrome.
-51. **B13, Word's equation tools.** Done in the code (branch `wordgap-b13-equation`, on task
-    38's frame; GAP rows E1, E2, E4, E5, E6, I42, C4). *The Equation tab* comes with an equation's
-    field (in front for a new one, as Word brings it; shown, not brought forward, for one clicked)
-    and goes with it: Tools (Equation gallery; Numbered, whose arrow has numbered, unnumbered,
-    aligned, gathered and multline, each numbered or not; Display), Word's symbol groups (Basic math,
-    Greek letters, Operators, Arrows, Relations with their negations, Sets and logic, Geometry; 336
-    symbols, each item named by its LaTeX and what it is called, "\pm plus or minus") and Word's
-    eleven structures (Fraction, Script, Radical, Integral, Large operator, Bracket, Function,
-    Accent, Limit and log, Operator, Matrix; 158 templates drawn by KaTeX, their slots grey
-    squares). What is picked goes into the field at its caret (MathLive's `insert` in the field's
-    dialect; a template's first slot takes the selection, as Word's typing does; in the LaTeX box,
-    where it has the focus, as text with the caret in the next slot), so into the source, and the
-    field keeps the focus: the menus float beside the ribbon and are no popover of the app's (the
-    field is that one), a press on the tab, its row of tabs or a menu does not close the field,
-    Escape on the tab or in a menu goes back to it, a folded group of the tab opens the tab's own
-    menu. *Display, Numbered and the right click menu* (a right click on an equation, or Backspace
-    beside it and Shift+F10: Edit equation, Change to inline or display, Change to numbered or
-    unnumbered, Add label, Copy reference, Copy as LaTeX, Copy for Word, Save as new equation; only
-    what applies to its kind) make the smallest edit: `$x$` becomes `\begin{equation}`, its text on
-    a line of its own, `\end{equation}` in the place of `$x$` alone (the sentence keeps its bytes),
-    and back exactly; `\(…\)`, `\[…\]`, `$$…$$`, `displaymath` and `equation*` written by hand are
-    recognised and come off; a kind is changed by renaming `\begin{…}` and `\end{…}` alone (the
-    field's own list of kinds does the same now; it rewrote the inner text), `\[ \]` for and from
-    `equation`; unnumbered is `equation*` or `\[ \]` as the document writes them more, `\[ \]`
-    where amsmath is not loaded; amsmath's kinds bring `\usepackage{amsmath}` in the same undo step
-    where the document lacks it (mathtools, unicode-math, empheq and the ams classes count as having
-    it). What cannot be done says why: rows or `&` where a kind has one line, a label, a tag or a
-    comment for a formula in the line, a display in a heading, a caption, a cell, a footnote or in
-    braces. Add label writes `\label{eq:N}` (the first number free) after `\begin{…}`; Copy reference
-    gives `\eqref{eq:N}` (`(\ref{…})` without amsmath). A new equation still empty turns into a
-    new one of the other kind, and goes when closed empty. *Alt+=* (Control+= on a Mac, where
-    Option+= types ≠): numbered on an empty line, in the line in text, as Word's; it takes over from
-    Ctrl+Shift+E, which made a numbered equation and is Track Changes now (B10); Help and
-    llms-full.txt say so, and the browser and ribbon tests that pressed it use the Equation button.
-    *The gallery* (Insert's Equation is Word's split button, its arrow "Equation options"; the
-    tab's Equation gallery; the search box finds it by an equation's name): Word's nine built in
-    equations drawn in display style, put in at the caret (a numbered equation on an empty line, in
-    the line in text, opened in its field) or into the open field; *Save as new equation* keeps
-    the field's equation, or the part selected in it, in this browser (`rikuy.equations.v1`, 40 at
-    most, named, listed under "Saved in this browser", removable). *Packages:* what the tab puts in
-    that needs amsmath (`\binom`, `\tfrac`, `cases`, `pmatrix`, `\iint`, `\xrightarrow`, `\boxed`)
-    or amssymb (`\mathbb`, `\nleq`, `\varnothing`) adds the line when the field closes, once, in
-    the field's undo step, only if the formula still holds it and the document lacks it (never
-    amssymb after newtxmath, newpxmath, unicode-math and the other fonts that have its symbols and
-    stop TeX with it). The field wrote `\middle{|}`, which TeX stops at: it writes `\middle|` now.
-    Home's Equation stays one button (the row's room is measured for it). *Not done, as GAP has
-    it:* Ink equation (I43, SKIP: handwriting recognition); Word's Equation Options dialog (math
-    autocorrect settings: Rikuy's typing has no switches to set); Professional and Linear (E3,
-    already better). *Security:* the audit skill's quick profile on the changed files (one pass by
-    this batch's agent, no separate verifier; notes outside the repository) found one way a
-    stranger's document reached the source: an equation saved from it was later written between
-    `$` and `$` as it was, so `x$ \input{…} $`, a stray `}`, a `%` or `\end{equation}` closed the
-    formula early in the person's other papers; saving, the store and putting one in now check that
-    it stays a formula (`mathSafe`), with tests. Every scan of an equation's text is bounded.
-    Evidence: `npm test` green with `equation.test.mjs` (11 groups: inline and display both ways
-    byte for byte, kinds by names, `\[ \]` both ways, the document's unnumbered form, what each kind
-    takes, labels, braces around a formula, packages and where they are there already, slots,
-    saved equations bounded, `mathSafe`, the tables well formed) and a `word.test.mjs` case (the
-    displays the tab writes go to Word as display equations, numbered where LaTeX numbers them, and
-    come back unchanged; 56 groups); `eqtab.py` 106 (105 without `dist/tex`: what the tab and the
-    gallery write, on a document with neither amsmath nor amssymb, compiles with pdfLaTeX, XeLaTeX
-    and LuaLaTeX with the lines they brought); `agent.py` 141 (138; the Equation tab's controls by
-    role and name at both widths, an equation made as llms-full.txt says); `tabs.py` 116 (its every
-    command check opens a field for the Equation tab; the fold sweep passes with the tab's 22
-    controls); `ribbon.py` 268; `browser.py` 189; `mathfield.py` 19; `eqextras.py` 18/18;
-    `wordmath.py` 83; `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43;
-    `pages_check.py` fits; actionlint clean; the model and parser untouched. Screenshots of the tab,
-    its menus and the right click menu at 1920, 1366 and 390 px, light and dark, looked at. Safari
-    and Firefox, by hand: not done.
 
     *After the hostile review of b1ccf0f* (5 High, 7 Medium, 9 Low; each fixed with the reader's
     case as a test, compiled in the page and held against what the page draws wherever it is
@@ -1556,6 +1487,109 @@ Tests:
     189, `table.py` 161, `page.py` 139, `find.py` 76, `outline.py` 59, `scripts.py` 302, `word.py`
     111, `offline.py` 54/54, `launch.py` 18/18, `deploy_check.py` 43/43, `pages_check.py` fits,
     actionlint clean, the corpus model run 716 of 716 with main's unknown commands.
+51. **B13, Word's equation tools.** Done in the code (branch `wordgap-b13-equation`, on task
+    38's frame; GAP rows E1, E2, E4, E5, E6, I42, C4). *The Equation tab* comes with an equation's
+    field (in front for a new one, as Word brings it; shown, not brought forward, for one clicked)
+    and goes with it: Tools (Equation gallery; Numbered, whose arrow has numbered, unnumbered,
+    aligned, gathered and multline, each numbered or not; Display), Word's symbol groups (Basic math,
+    Greek letters, Operators, Arrows, Relations with their negations, Sets and logic, Geometry; 336
+    symbols, each item named by its LaTeX and what it is called, "\pm plus or minus") and Word's
+    eleven structures (Fraction, Script, Radical, Integral, Large operator, Bracket, Function,
+    Accent, Limit and log, Operator, Matrix; 158 templates drawn by KaTeX, their slots grey
+    squares). What is picked goes into the field at its caret (MathLive's `insert` in the field's
+    dialect; a template's first slot takes the selection, as Word's typing does; in the LaTeX box,
+    where it has the focus, as text with the caret in the next slot), so into the source, and the
+    field keeps the focus: the menus float beside the ribbon and are no popover of the app's (the
+    field is that one), a press on the tab, its row of tabs or a menu does not close the field,
+    Escape on the tab or in a menu goes back to it, a folded group of the tab opens the tab's own
+    menu. *Display, Numbered and the right click menu* (a right click on an equation, or Backspace
+    beside it and Shift+F10: Edit equation, Change to inline or display, Change to numbered or
+    unnumbered, Add label, Copy reference, Copy as LaTeX, Copy for Word, Save as new equation; only
+    what applies to its kind) make the smallest edit: `$x$` becomes `\begin{equation}`, its text on
+    a line of its own, `\end{equation}` in the place of `$x$` alone (the sentence keeps its bytes),
+    and back exactly; `\(…\)`, `\[…\]`, `$$…$$`, `displaymath` and `equation*` written by hand are
+    recognised and come off; a kind is changed by renaming `\begin{…}` and `\end{…}` alone (the
+    field's own list of kinds does the same now; it rewrote the inner text), `\[ \]` for and from
+    `equation`; unnumbered is `equation*` or `\[ \]` as the document writes them more, `\[ \]`
+    where amsmath is not loaded; amsmath's kinds bring `\usepackage{amsmath}` in the same undo step
+    where the document lacks it (mathtools, unicode-math, empheq and the ams classes count as having
+    it). What cannot be done says why: rows or `&` where a kind has one line, a label, a tag or a
+    comment for a formula in the line, a display in a heading, a caption, a cell, a footnote or in
+    braces. Add label writes `\label{eq:N}` (the first number free) after `\begin{…}`; Copy reference
+    gives `\eqref{eq:N}` (`(\ref{…})` without amsmath). A new equation still empty turns into a
+    new one of the other kind, and goes when closed empty. *Alt+=* (Control+= on a Mac, where
+    Option+= types ≠): numbered on an empty line, in the line in text, as Word's; it takes over from
+    Ctrl+Shift+E, which made a numbered equation and is Track Changes now (B10); Help and
+    llms-full.txt say so, and the browser and ribbon tests that pressed it use the Equation button.
+    *The gallery* (Insert's Equation is Word's split button, its arrow "Equation options"; the
+    tab's Equation gallery; the search box finds it by an equation's name): Word's nine built in
+    equations drawn in display style, put in at the caret (a numbered equation on an empty line, in
+    the line in text, opened in its field) or into the open field; *Save as new equation* keeps
+    the field's equation, or the part selected in it, in this browser (`rikuy.equations.v1`, 40 at
+    most, named, listed under "Saved in this browser", removable). *Packages:* what the tab puts in
+    that needs amsmath (`\binom`, `\tfrac`, `cases`, `pmatrix`, `\iint`, `\xrightarrow`, `\boxed`)
+    or amssymb (`\mathbb`, `\nleq`, `\varnothing`) adds the line when the field closes, once, in
+    the field's undo step, only if the formula still holds it and the document lacks it (never
+    amssymb after newtxmath, newpxmath, unicode-math and the other fonts that have its symbols and
+    stop TeX with it). The field wrote `\middle{|}`, which TeX stops at: it writes `\middle|` now.
+    Home's Equation stays one button (the row's room is measured for it). *Not done, as GAP has
+    it:* Ink equation (I43, SKIP: handwriting recognition); Word's Equation Options dialog (math
+    autocorrect settings: Rikuy's typing has no switches to set); Professional and Linear (E3,
+    already better). *Security:* the audit skill's quick profile on the changed files (one pass by
+    this batch's agent, no separate verifier; notes outside the repository) found one way a
+    stranger's document reached the source: an equation saved from it was later written between
+    `$` and `$` as it was, so `x$ \input{…} $`, a stray `}`, a `%` or `\end{equation}` closed the
+    formula early in the person's other papers; saving, the store and putting one in now check that
+    it stays a formula (`mathSafe`), with tests. Every scan of an equation's text is bounded.
+    Evidence: `npm test` green with `equation.test.mjs` (11 groups: inline and display both ways
+    byte for byte, kinds by names, `\[ \]` both ways, the document's unnumbered form, what each kind
+    takes, labels, braces around a formula, packages and where they are there already, slots,
+    saved equations bounded, `mathSafe`, the tables well formed) and a `word.test.mjs` case (the
+    displays the tab writes go to Word as display equations, numbered where LaTeX numbers them, and
+    come back unchanged; 56 groups); `eqtab.py` 106 (105 without `dist/tex`: what the tab and the
+    gallery write, on a document with neither amsmath nor amssymb, compiles with pdfLaTeX, XeLaTeX
+    and LuaLaTeX with the lines they brought); `agent.py` 141 (138; the Equation tab's controls by
+    role and name at both widths, an equation made as llms-full.txt says); `tabs.py` 116 (its every
+    command check opens a field for the Equation tab; the fold sweep passes with the tab's 22
+    controls); `ribbon.py` 268; `browser.py` 189; `mathfield.py` 19; `eqextras.py` 18/18;
+    `wordmath.py` 83; `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43;
+    `pages_check.py` fits; actionlint clean; the model and parser untouched. Screenshots of the tab,
+    its menus and the right click menu at 1920, 1366 and 390 px, light and dark, looked at. Safari
+    and Firefox, by hand: not done.
+    *The review round* (a hostile reader of the first commit: 3 high, 3 medium, 6 low, all fixed,
+    each case a test in `eqtab.py` `reviewed` and the unit files, compiled in the page where
+    `dist/tex` is). Package order: `preamble.js` puts amsmath, amssymb, amsfonts and mathtools above
+    cleveref, hyperref, esint, wasysym, txfonts, pxfonts, mathabx, MnSymbol, varioref, unicode-math
+    and fontsetup where those are loaded, hyperref above cleveref, bookmark and hypcap; newtx,
+    acmart and beamer count as having amssymb, mathabx and MnSymbol do not (`provides`,
+    `packageOrder`; each rule found by compiling in the page). The packages a formula needs come in
+    the undo step that put it in, and a change of kind with the field open is one step with its
+    packages: no undo lands on a formula without its package. Change to unnumbered refuses a
+    labelled equation (the field's list of kinds too), Change to inline one with a label anywhere
+    inside. `mathSafe` also refuses `^^`, the defining, file and condition primitives (`\def`,
+    `\let`, `\catcode`, `\input`, `\write`, `\csname`, `\every…`, `\if…` and the rest) and
+    what KaTeX cannot draw, on saving, reading the store and putting one in. No display inside
+    `tabbing` or `lrbox`; the Insert gallery's place is checked again after a share merge; CRLF
+    documents keep their line ends; Add label on a new, empty equation says why not; a template's
+    first slot takes the selection as `wrapSlot` does; a right click's equation is forgotten after
+    Escape; Help and llms-full.txt say Ctrl+Shift+E is free until the review tools come.
+    *Phones* (390 by 844 and 360 by 740, touch, taps, in `eqtab.py` `phone`): Insert's Equation is
+    Alt+= by a tap (numbered on an empty line, in the line in text), its arrow the gallery, which
+    fits the screen and scrolls; with the field open and its on-screen keyboard up, the tab's
+    menus open above the keyboard (MathLive's, which the app measures, and the phone's own, which
+    shrinks the visual viewport), their tiles, the tab's buttons and Insert's Equation 44 px each
+    way under a coarse pointer; a long press on an equation opens its menu (without the right click
+    line), a tap opens its field; the caret is back on the page when the field closes; nothing
+    scrolls sideways (the hidden names of the ribbon's icon buttons past the screen's edge, placed
+    from the page, made the whole page 384 px wider: the tab's panel holds them now; other tabs
+    with icon buttons past the edge would do the same). Screenshots at 390 px, light and dark,
+    looked at. Evidence after both: `npm test` green (`preamble.test.mjs` 20 groups,
+    `equation.test.mjs` 11, `word.test.mjs` 57); `eqtab.py` 156 (34 of them on phones; the compiles
+    need `dist/tex`); `browser.py` 190 (its kind switch on the sample's labelled equation now
+    expects unnumbered refused and Aligned renamed); `mathfield.py` 19; `eqextras.py` 18/18;
+    `wordmath.py` 83; `ribbon.py` 268; `tabs.py` 116; `agent.py` 141; `table.py` 161; `page.py` 139;
+    `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43; `pages_check.py` fits;
+    actionlint clean.
 
 ## Open tasks
 

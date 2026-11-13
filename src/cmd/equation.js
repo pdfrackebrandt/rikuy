@@ -13,12 +13,13 @@
 // are exported for test/equation.test.mjs.
 
 import { register, menuItems, enabled, onInstall, inGroup, command } from '../commands.js';
-import { SYMBOLS, STRUCTURES, GALLERY, SAVED_KEY, readSaved, addSaved, mathNeeds, mathSafe, provided, fillSlots, eqMenu, eqAsk, closeEqMenu, eqMenuOpen } from '../ui/eqtab.js';
-import { hasPackage, docClass } from '../preamble.js';
+import { SYMBOLS, STRUCTURES, GALLERY, SAVED_KEY, readSaved, addSaved, mathNeeds, mathSafe, fillSlots, eqMenu, eqAsk, closeEqMenu, eqMenuOpen } from '../ui/eqtab.js';
+import { provides, preambleEnd } from '../preamble.js';
 import { atomOfEl } from '../editor.js';
 import { openMenu } from '../ui/kit.js';
 import { chordText } from '../keys.js';
 import { wrapSlot } from '../wordmath.js';
+import { eolAt } from '../blockenv.js';
 
 // ---- the source, as pure functions --------------------------------------------------------------
 const CAP = 20000; // the most of an equation's text read (it may be a stranger's)
@@ -90,8 +91,11 @@ export function flipNumber(env, unnumbered) {
   return null;
 }
 // Why a display's text cannot be of this kind, or '' (rows in an equation, & in a gathered one)
-export function kindWhyNot(env, from, top) {
+// (labels: how many \label the display holds; a kind without a number would leave them pointing
+// at nothing, the references printing ??)
+export function kindWhyNot(env, from, top, labels = 0) {
   if (top.big) return 'This equation is too long to change here; edit its source.';
+  if (labels && !isNumbered(env) && env !== from) return 'It has a label that references point to: without a number they would print ??. Take the label off first.';
   if (/^(alignat|eqnarray)\*?$/.test(from) && from.replace(/\*$/, '') !== env.replace(/\*$/, '')) return 'This ' + from + ' keeps its kind; only its numbers go on and off here.';
   if (ONE_LINE.test(env) && top.rows) return 'It has rows (\\\\): pick aligned, gathered or multline.';
   if (NO_AMP.test(env) && top.amp) return 'It has alignment marks (&): pick aligned rows.';
@@ -125,9 +129,10 @@ export function unnumbered(src, ams) {
 // place of $x$ alone (the sentence around it keeps its bytes). null where it is no $…$ formula.
 export function toDisplayEdits(src, a, env = 'equation') {
   if (!inlineDelims(src, a)) return null;
-  const x = src.slice(a.is, a.ie);
+  const x = src.slice(a.is, a.ie), nl = eolAt(src, a.s);
   const [o, c] = env === '\\[' ? ['\\[', '\\]'] : ['\\begin{' + env + '}', '\\end{' + env + '}'];
-  return [{ s: a.s, e: a.e, t: o + '\n  ' + x + '\n' + c }];
+  // (a file written with CRLF keeps them)
+  return [{ s: a.s, e: a.e, t: o + nl + '  ' + x + nl + c }];
 }
 // Display to inline: the formula's text between $ and $ (the layout toDisplayEdits writes comes off
 // exactly; any other, its spaces at the ends). { edits } or { why }.
@@ -139,10 +144,12 @@ export function toInlineEdits(src, a) {
   if (top.big) return { why: 'This equation is too long to change here; edit its source.' };
   if (top.rows) return { why: 'It has rows (\\\\): a formula in the line has one.' };
   if (top.amp) return { why: 'It has alignment marks (&), which a formula in the line cannot take.' };
-  if (top.label) return { why: 'It has a label that references point to: they would lose their number.' };
+  // (a label at any depth: one in an aligned block inside the display counts as much)
+  if (labelsIn(inner).length) return { why: 'It has a label that references point to: they would lose their number.' };
   if (top.tag || top.nonumber) return { why: 'It has a \\tag or \\nonumber, which a formula in the line cannot take.' };
   if (top.comment) return { why: 'It holds a comment (%), which would hide the closing $.' };
-  const x = inner.startsWith('\n  ') && inner.endsWith('\n') && inner.length >= 4 ? inner.slice(3, -1) : inner.trim();
+  const lead = inner.startsWith('\r\n  ') ? 4 : inner.startsWith('\n  ') ? 3 : 0, tail = inner.endsWith('\r\n') ? 2 : inner.endsWith('\n') ? 1 : 0;
+  const x = lead && tail && inner.length >= lead + tail ? inner.slice(lead, inner.length - tail) : inner.trim();
   if (!x.trim()) return { why: 'The equation is empty.' };
   return { edits: [{ s: a.s, e: a.e, t: '$' + x + '$' }] };
 }
@@ -172,6 +179,27 @@ export function braceDepth(src, s, p) {
   return d;
 }
 
+// The environments open at p, read from s (the body's start, or 20000 characters back): their
+// names, the innermost last; comments skipped; bounded. A display cannot stand in some of them
+// (tabbing, lrbox, a tabular, a picture), where TeX has no paragraph to break.
+export function envsAt(src, s, p) {
+  s = Math.max(s, p - CAP);
+  const out = [];
+  for (let i = s; i < p; i++) {
+    const c = src[i];
+    if (c === '%') { const j = src.indexOf('\n', i); if (j < 0 || j >= p) break; i = j; continue; }
+    if (c !== '\\') continue;
+    const m = /^\\(begin|end)\s*\{([A-Za-z]{1,30}\*?)\}/.exec(src.slice(i, i + 50));
+    if (!m) { i++; continue; }
+    if (m[1] === 'begin') { if (out.length < 200) out.push(m[2]); }
+    else { const k = out.lastIndexOf(m[2]); if (k >= 0) out.length = k; }
+    i += m[0].length - 1;
+  }
+  return out;
+}
+export const NO_DISPLAY = new Set(['tabbing', 'lrbox', 'tabular', 'tabular*', 'tabularx', 'tabulary', 'longtable', 'array', 'picture', 'tikzpicture', 'pspicture', 'minipage*',
+  'math', 'displaymath', 'equation', 'equation*', 'verbatim', 'comment']);
+
 // a position after edits (each { s, e, t } on the text before them, in one file)
 const shiftPos = (p, edits) => edits.reduce((q, x) => (x.e <= p ? q + x.t.length - (x.e - x.s) : q), p);
 
@@ -194,14 +222,16 @@ register(
     tab: 'home', group: 'insert', el: 'rb-eq', label: 'Equation', icon: EQ_ICON,
     when: (app, at) => !!at && !tight(at) && !at.sty && at.ctx !== 'tex' && !(at.c.ghost && app.ghost.tex), run: (app) => app.newDisplayMath(),
     palette: { k: 'equation', d: 'Numbered equation', order: 80, act: 'equation' } },
-  // Insert's Equation, Word's split button: the same, and its arrow ("Equation options") the
-  // equation gallery with its formulas drawn (src/ui/eqtab.js; see the ribbon's click below). Home's
-  // Equation stays one button (the row's room is measured for it), and the search box lists that one.
-  { id: 'equation-insert', name: 'Equation', order: 20, kind: 'split', title: 'Numbered equation on a line of its own (Alt+= on an empty line); the arrow: the equation gallery',
-    tab: 'insert', group: 'symbols', el: 'ri-eq', label: 'Equation', icon: EQ_ICON, searchable: false,
-    when: (app, at) => enabled(app, 'equation', at), run: (app) => app.newDisplayMath(), menuItems: (app) => app.eqGalleryItems() },
+  // Insert's Equation, Word's split button: as Word's Insert Equation and Alt+= (its control, for a
+  // phone or a mouse), numbered on an empty line, in the line in text; its arrow ("Equation
+  // options") the equation gallery with its formulas drawn (src/ui/eqtab.js; see the ribbon's click
+  // below). Home's Equation stays one button that makes a numbered one (the row's room is measured
+  // for it, and agents know it so), and the search box lists that one.
+  { id: 'equation-insert', name: 'Equation', order: 20, kind: 'split', title: 'Insert new equation (Alt+=): numbered on an empty line, in the line in text; the arrow: the equation gallery',
+    tab: 'insert', group: 'symbols', el: 'ri-eq', label: 'Equation', icon: EQ_ICON, searchable: false, keysElsewhere: ['Alt+='],
+    when: (app, at) => enabled(app, 'insert-equation', at), run: (app, args, at) => app.eqAltEquals(at), menuItems: (app) => app.eqGalleryItems() },
   // Word's Alt+= (Option+= types ≠ on a Mac: Control+= there). It takes over the numbered
-  // equation from Ctrl+Shift+E, which is Track Changes now (B10).
+  // equation from Ctrl+Shift+E, which is free until Track Changes (B10) takes it.
   { id: 'insert-equation', name: 'Insert new equation', title: 'Insert new equation (Alt+=): numbered, on a line of its own, on an empty line; in the line in text', synonyms: ['New equation', 'Equation', 'Math', 'Alt+='],
     keys: ['Alt+='], mac: { 'Alt+=': 'Control+=' }, when: (app, at) => !!at && !(at.c.ghost && app.ghost && app.ghost.tex), run: (app, args, at) => app.eqAltEquals(at) },
 
@@ -284,11 +314,8 @@ export const methods = {
     return { pop: null, el, info, f: info.f, s: info.s, e: info.e, is: info.is, ie: info.ie, inner: info.is == null ? '' : src.slice(info.is, info.ie), display, env, ro: !!info.a.ro };
   },
 
-  // whether amsmath's commands are there (the preamble, its \input files, the class)
-  eqHas(pkg) {
-    const src = this.src(this.main), others = this.preambleOthers(), cls = (docClass(src) || {}).name;
-    return provided(pkg, (x) => hasPackage(src, x, undefined, others), cls);
-  },
+  // whether a package's commands are there (the preamble, its \input files, the class: src/preamble.js)
+  eqHas(pkg) { return provides(this.src(this.main), pkg, this.preambleOthers()); },
   // the \usepackage edits for these packages, those the document lacks (src/preamble.js through packageEdits)
   eqPkgEdits(names) {
     const need = [...names].filter((n) => !this.eqHas(n));
@@ -305,7 +332,7 @@ export const methods = {
     if (T.display && this.eqBlankNew(T)) return '';
     if (T.display) { const r = toInlineEdits(src, T); return r.why || ''; }
     if (!inlineDelims(src, T)) return 'Only $…$ math changes to a display here';
-    return this.eqDisplayFits(T) ? '' : 'A display cannot go here (a heading, a caption, a cell, a footnote, a LaTeX paragraph or inside braces)';
+    return this.eqDisplayFits(T) ? '' : 'A display cannot go here (a heading, a caption, a cell, a footnote, a LaTeX paragraph, inside braces, or in tabbing, a box or a picture)';
   },
   // whether a display can stand where this inline formula is (T), or where a new one is typed (null)
   eqDisplayFits(T) {
@@ -314,8 +341,15 @@ export const methods = {
     if (!el) return !!(P && P.eqWhere && P.eqWhere.display);
     const near = el.closest('[data-ctx]'), ctx = near ? near.dataset.ctx : '';
     if (/^(h|ttl|cell|cap|fn)$/.test(ctx) || el.closest('td, th, [data-y], .it.tex, .fn')) return false;
+    // (and the reason said for it covers these: see eqWhySwitch)
     const B = T.info.B;
-    return !!B && braceDepth(this.src(T.f), B.s, T.s) === 0;
+    if (!B) return false;
+    const src = this.src(T.f);
+    if (braceDepth(src, B.s, T.s) !== 0) return false;
+    // (in tabbing, an lrbox, a tabular, a picture: no paragraph for a display to break; the review's
+    // \begin{tabbing} A \= $x$ \\ written as a display gave a TeX error)
+    const body = T.f === this.main ? Math.max(0, preambleEnd(src)) : 0;
+    return !envsAt(src, body, T.s).some((x) => NO_DISPLAY.has(x));
   },
   eqWhyNumber() {
     const T = this.eqTarget();
@@ -326,7 +360,7 @@ export const methods = {
     if (!d) return 'This display cannot be changed here; edit its source';
     const to = flipNumber(d.kind === 'env' ? d.name : d.kind, this.eqUnnumbered());
     if (!to) return 'A ' + (d.name || d.kind) + ' has no numbered form here';
-    return kindWhyNot(to, d.name || d.kind, topLevel(T.inner)) || '';
+    return kindWhyNot(to, d.name || d.kind, topLevel(T.inner), labelsIn(T.inner).length) || '';
   },
   eqWhyLabel() {
     const T = this.eqTarget();
@@ -335,6 +369,8 @@ export const methods = {
     if (!T.display) return 'A formula in the line has no number to refer to: change it to display';
     if (!isNumbered(T.env)) return 'It has no number: change it to numbered first';
     if (labelsIn(T.inner).length) return 'It has a label already: Copy reference';
+    // (an empty new equation goes when its field closes, and its label with it)
+    if (this.eqBlankNew(T)) return 'Type the equation first: an empty new one goes when its field closes';
     const top = topLevel(T.inner);
     if (top.rows) return 'Each row has its own number: put \\label{…} in its row';
     if (!displayDelims(this.src(T.f), T)) return 'This display cannot be changed here; edit its source';
@@ -351,10 +387,7 @@ export const methods = {
     const P = this.eqPop();
     let T = this.eqTarget();
     if (!T || !T.info) return false;
-    let needs = null;
     if (P) {
-      // (what the tab put in waits for the field that opens again)
-      needs = P.eqNeeds || null; P.eqNeeds = null;
       const f = T.f, before = this.src(f);
       this.closePop(true, true);
       const after = this.src(f);
@@ -370,13 +403,13 @@ export const methods = {
       const info = el && atomOfEl(el);
       if (!info) return;
       this.openMath(el, info);
-      const Q = this.eqPop();
-      if (Q && needs) Q.eqNeeds = needs;
       this.eqTab();
     };
     const r = build(this.src(T.f), T);
     if (!r || !r.edits || !r.edits.length) { if (r && r.why) this.toast(r.why); if (P) reopen(T.s); return false; }
-    const pk = this.eqPkgEdits(pkgs || []);
+    // (and what the formula itself needs, in the same step: undo never lands on a formula without
+    // the package it uses)
+    const pk = this.eqPkgEdits(new Set([...(pkgs || []), ...mathNeeds(T.inner)]));
     const all = [...r.edits.map((x) => ({ f: T.f, ...x })), ...pk];
     const mine = all.filter((x) => x.f === T.f);
     const s2 = shiftPos(T.s, mine), e2 = shiftPos(T.e, mine);
@@ -427,8 +460,6 @@ export const methods = {
       if (T.env === env) return false;
       this.closePop();
       this.newDisplayMath(env);
-      const Q = this.eqPop();
-      if (Q) for (const n of mathNeeds('', env)) (Q.eqNeeds || (Q.eqNeeds = new Set())).add(n);
       return true;
     }
     if (!T.info || !T.display) {
@@ -441,7 +472,7 @@ export const methods = {
     if (d0 && (d0.kind === 'env' ? d0.name : d0.kind) === env) return false;
     return this.eqApply((src, X) => {
       const d = displayDelims(src, X);
-      const no = d ? kindWhyNot(env, d.kind === 'env' ? d.name : d.kind, topLevel(X.inner)) : 'This display cannot be changed here; edit its source.';
+      const no = d ? kindWhyNot(env, d.kind === 'env' ? d.name : d.kind, topLevel(X.inner), labelsIn(X.inner).length) : 'This display cannot be changed here; edit its source.';
       return no ? { why: no } : { edits: kindEdits(src, X, d, env) };
     }, mathNeeds('', env), 'eq-kind');
   },
@@ -465,7 +496,7 @@ export const methods = {
       let no;
       if (!T) no = NOT_HERE;
       else if (!T.info || !T.display) no = this.eqWhySwitch() || kindWhyNot(real, '$', top);
-      else no = d ? kindWhyNot(real, cur, top) : 'This display cannot be changed here';
+      else no = d ? kindWhyNot(real, cur, top, labelsIn(T.inner).length) : 'This display cannot be changed here';
       const on = !!cur && (cur === real || (env === 'unnumbered' && /^(equation\*|\\\[|\$\$|displaymath)$/.test(cur)));
       return { name, title: no || (real === '\\[' ? 'Written \\[ … \\]' : 'Written \\begin{' + real + '}'), checked: on, radio: true, disabled: !!no, run: () => this.eqSetKind(env) };
     });
@@ -477,6 +508,7 @@ export const methods = {
     if (no) { this.toast(no + '.'); return false; }
     const P = this.eqPop();
     if (P && P.flush) P.flush();
+    if (P && P.held && P.held()) { this.toast('Finish the formula first: it cannot be written as it is.'); return false; }
     const key = freeLabel(new Set(this.model && this.model.labels ? this.model.labels.keys() : []));
     const ok = this.eqApply((src, X) => { const d = displayDelims(src, X); return d && d.kind === 'env' ? { edits: [{ s: d.be, e: d.be, t: '\\label{' + key + '}' }] } : { why: 'This display cannot be changed here; edit its source.' }; }, [], 'eq-label');
     if (ok) this.toast('Labelled ' + key + '. Copy reference gives \\eqref{' + key + '}.');
@@ -517,29 +549,53 @@ export const methods = {
   eqInsert(tex) {
     const P = this.eqPop();
     if (!P || !P.insertTex) return false;
-    for (const n of mathNeeds(tex)) (P.eqNeeds || (P.eqNeeds = new Set())).add(n);
+    const bad = this.eqSafe(tex);
+    if (bad) { this.toast('This equation cannot be put in as it is. ' + bad); return false; }
+    this.eqAddNeeds(P, mathNeeds(tex));
     P.insertTex(tex);
     return true;
   },
+  // The packages what the tab puts in needs, added now in the field's undo step, which the text
+  // needing them joins a moment later: no undo lands on a formula without the package it uses
+  // (an unused line, the formula taken out again, stays: other text may use it). The field's
+  // places in the source move with the new line (P.shiftBy).
+  eqAddNeeds(P, names) {
+    const pk = this.eqPkgEdits(names);
+    if (!pk.length) return;
+    if (P.flush) P.flush();
+    const top = this.hist[this.hist.length - 1];
+    if (top && top.open && top.kind === P.session) top.time = Date.now();
+    const keep = document.activeElement;
+    this.commit(pk, null, P.session);
+    if (P.shiftBy) P.shiftBy(pk);
+    if (keep && keep.isConnected && keep !== document.activeElement) keep.focus({ preventScroll: true });
+    this.positionPop();
+    this.toast('Added ' + pk.map((x) => x.t.trim()).join(', ') + ' for this equation.');
+  },
+  // the \usepackage edits a kind of display needs (equation*, align, gather, multline: amsmath)
+  eqKindPkgs(env) { return env === 'equation' || env === '\\[' ? [] : this.eqPkgEdits(mathNeeds('', env)); },
   // Where a new equation from the gallery goes, taken when its menu opens (a font the menu's
   // formulas bring makes the page lay out again, which drops the blank paragraph): the blank
   // paragraph's place, or the caret's or selection's, and whether a display can stand there
   eqPlace() {
     const at = this.ribbonAt(), c = at && this.caretNow();
     if (!c || c.crossFile) return null;
+    // (and the file's text as it is then: a share's merge or the source pane may change it while
+    // the menu is open, and the place would be stale)
     if (c.ghost) {
       const g = this.ghost;
-      return { ghost: { f: g.f, pos: g.pos, style: g.style, raw: this.ghostRaw() }, display: !this.ghostRaw() && !tight(at) && !at.sty && at.ctx !== 'tex' };
+      return { ghost: { f: g.f, pos: g.pos, style: g.style, raw: this.ghostRaw() }, display: !this.ghostRaw() && !tight(at) && !at.sty && at.ctx !== 'tex', text: this.src(g.f) };
     }
-    return { f: c.f, a: c.a, b: c.b, display: false };
+    return { f: c.f, a: c.a, b: c.b, display: false, text: this.src(c.f) };
   },
   // Word's gallery from Insert (no field open): a new equation holding it, opened in its field:
   // numbered on an empty line, in the line in text
   eqInsertNew(tex, place) {
     place = place || this.eqPlace();
     if (!place || this.stale) return false;
+    if (place.text != null && this.src(place.ghost ? place.ghost.f : place.f) !== place.text) { this.toast('The document changed while the gallery was open: click where the equation goes and pick it again.'); return false; }
     // (a saved equation is written as it is: it must stay a formula, src/ui/eqtab.js's mathSafe)
-    const top = topLevel(String(tex)), bad = mathSafe(tex) || (top.rows || top.amp ? 'It has rows or alignment marks (\\\\, &).' : '');
+    const top = topLevel(String(tex)), bad = (top.rows || top.amp ? 'It has rows or alignment marks (\\\\, &).' : '') || this.eqSafe(tex);
     if (bad) { this.toast('This equation cannot be put in as it is. ' + bad); return false; }
     const g = place.ghost;
     // (a blank line of a LaTeX paragraph: the formula is its source, typed as such)
@@ -550,9 +606,11 @@ export const methods = {
     this.closeGroup();
     if (g && place.display) {
       f = g.f;
-      const t = '\n\\begin{equation}\n  ' + tex + '\n\\end{equation}\n';
+      // (a file written with CRLF keeps them)
+      const nl = eolAt(this.src(f), g.pos);
+      const t = nl + '\\begin{equation}' + nl + '  ' + tex + nl + '\\end{equation}' + nl;
       this.commit([{ f, s: g.pos, e: g.pos, t }, ...pk], { f, p: shiftPos(g.pos, pk.filter((x) => x.f === f)) + t.length }, 'insert');
-      s = g.pos + 1;
+      s = g.pos + nl.length;
     } else if (g) {
       const src = this.src(g.f);
       let nlB = 0; for (let k = g.pos - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
@@ -591,28 +649,28 @@ export const methods = {
   // the focus back in the open field (or its LaTeX box)
   eqFocus() { const P = this.eqPop(); if (P && P.focusIn) P.focusIn(); },
 
-  // The field closing (its onClose, after its text is written): its menus go, the packages what
-  // the tab put in needs are added (the formula as it is now: what was taken out again needs
-  // nothing), in the field's undo step; the ribbon then drops the Equation tab.
-  eqClosed(P, text) {
+  // The field closing (its onClose, after its text is written): its menus go, and the ribbon then
+  // drops the Equation tab. (Packages came with what needed them: eqAddNeeds.)
+  eqClosed() {
     closeEqMenu();
     this.ribbonSoon();
-    // (an empty formula needs nothing; a new equation left empty is about to go)
-    if (!P.eqNeeds || !P.eqNeeds.size || !String(text || '').trim()) return;
-    const want = [...mathNeeds(text, P.env)].filter((n) => P.eqNeeds.has(n));
-    P.eqNeeds = null;
-    const pk = this.eqPkgEdits(want);
-    if (!pk.length) return;
-    const top = this.hist[this.hist.length - 1];
-    if (top && top.open && top.kind === P.session) top.time = Date.now();
-    this.commit(pk, null, P.session);
-    const rc = P.returnCaret;
-    if (rc && rc.f === this.main) P.returnCaret = { ...rc, p: shiftPos(rc.p, pk) };
-    this.toast('Added ' + pk.map((x) => x.t.trim()).join(', ') + ' for this equation.');
   },
 
   // ---- saved equations (E5) -------------------------------------------------------------------
-  eqSavedList() { try { return readSaved(localStorage.getItem(SAVED_KEY)); } catch (e) { return []; } },
+  // (only those that stay a formula and that KaTeX draws: one kept by an older version, or written
+  // into the store by hand, is left out)
+  eqSavedList() { let l = []; try { l = readSaved(localStorage.getItem(SAVED_KEY)); } catch (e) { l = []; } return l.filter((x) => !this.eqSafe(x.tex)); },
+  // Why this LaTeX cannot go into a formula as it is (src/ui/eqtab.js's mathSafe), or that KaTeX
+  // cannot draw it; '' where it can
+  eqSafe(tex) {
+    // (a template's slots are empty groups as far as TeX and KaTeX go)
+    const t = String(tex).replace(/#[?@]/g, '{}');
+    const bad = mathSafe(t);
+    if (bad) return bad;
+    let r = null;
+    try { r = this.renderer.katex(t, false); } catch (e) { r = { err: String(e) }; }
+    return r && r.err && !r.loading ? 'The page cannot draw it: ' + String(r.err).slice(0, 120) : '';
+  },
   eqSave() {
     const T = this.eqTarget();
     if (!T) return false;
@@ -621,7 +679,7 @@ export const methods = {
     if (!tex) tex = P && P.mathText ? P.mathText() : T.inner;
     tex = String(tex || '').replace(/\\label\s*\{[^{}\n]{0,200}\}/g, '').replace(/\\(nonumber|notag)(?![A-Za-z])/g, '').trim();
     if (!tex) { this.toast('The equation is empty.'); return false; }
-    const top = topLevel(tex), bad = mathSafe(tex) || (top.rows || top.amp ? 'It has rows or alignment marks (\\\\, &): select one row in it and save that.' : '');
+    const top = topLevel(tex), bad = (top.rows || top.amp ? 'It has rows or alignment marks (\\\\, &): select one row in it and save that.' : '') || this.eqSafe(tex);
     if (bad) { this.toast('This equation cannot be kept as it is. ' + bad); return false; }
     const anchor = this.eqAnchor('eq-gallery');
     eqAsk(this, anchor, {
@@ -686,7 +744,7 @@ export const methods = {
     const P = this.eqPop(), place = P ? null : this.eqPlace();
     const put = (tex) => () => (P ? this.eqInsert(tex) : this.eqInsertNew(tex, place));
     return [...GALLERY.map((g) => ({ name: g.name, title: g.tex, run: put(g.tex) })), ...this.eqSavedList().map((g) => ({ name: g.name, title: g.tex, run: put(g.tex) })),
-      null, { name: 'Insert new equation', keys: 'Alt+=', run: () => this.runCommand('equation') }];
+      null, { name: 'Insert new equation', keys: 'Alt+=', run: () => this.runCommand('insert-equation') }];
   },
   // where a menu of the tab opens: its button where it shows, else the button its group folded into
   eqAnchor(id) {
@@ -719,7 +777,7 @@ export const methods = {
       if (saved.length) sections.push({ name: 'Saved in this browser', items: saved.map((g) => ({ name: g.name, label: g.name, tex: g.tex, display: true, title: g.tex, run: put(g.tex) })) });
       const more = [];
       if (P) more.push({ name: 'Save as new equation', label: 'Save as new equation…', title: 'Keeps this equation (or the part selected in it) here, for every document', cls: 'eq-act', run: () => this.eqSave() });
-      else more.push({ name: 'Insert new equation', label: 'Insert new equation', title: 'Alt+= (Mac: Control+=)', cls: 'eq-act', run: () => this.runCommand('equation') });
+      else more.push({ name: 'Insert new equation', label: 'Insert new equation', title: 'Alt+= (Mac: Control+=)', cls: 'eq-act', run: () => { this.ribbonBack(); this.runCommand('insert-equation'); } });
       if (saved.length) more.push({ name: 'Remove a saved equation', label: 'Remove a saved equation…', title: 'Takes one out of this browser\'s gallery', cls: 'eq-act', run: () => this.eqForgetMenu(anchor) });
       sections.push({ name: '', items: more });
       o = { label: 'Equation gallery', list: true, cls: 'eq-gal' };
@@ -767,7 +825,7 @@ export const methods = {
   // The right click menu of an equation on the page: the registry's equation items
   // (only what applies to its kind: an inline formula has no number, a display is no inline formula;
   // a line between edit, kind, label, and copy and save, as the ranks' tens go)
-  eqContextMenu(el, x, y) {
+  eqContextMenu(el, x, y, touch = false) {
     this.eqCtx = el;
     const at = this.ribbonAt(), T = this.eqTarget();
     const items = [];
@@ -780,10 +838,13 @@ export const methods = {
       const off = !enabled(this, c, at);
       let title = c.title;
       if (off && c.whyNot) { try { title = c.whyNot(this, at) || c.title; } catch (e) { title = c.title; } }
-      items.push({ name: c.name, title, keys: chordText((c.keys || [])[0]), disabled: off, run: () => { this.ribbonBack(); this.runCommand(c.id); } });
+      // (the equation is the one right clicked, given to the command as it runs; closed with
+      // nothing picked, none is: a command from the search box later must not act on it)
+      items.push({ name: c.name, title, keys: chordText((c.keys || [])[0]), disabled: off, run: () => { this.ribbonBack(); this.eqCtx = el; try { this.runCommand(c.id); } finally { if (this.eqCtx === el) this.eqCtx = null; } } });
     }
-    items.push(null, { name: 'Right click again for the browser\'s menu', title: 'Or hold Shift as you right click', disabled: true, cls: 'mi-hint' });
-    openMenu(this, new DOMRect(x, y, 0, 0), items, { label: 'Context menu', cls: 'pop-ctx eq-ctx' });
+    // (a finger has no right click to give again: no such line under a long press)
+    if (!touch) items.push(null, { name: 'Right click again for the browser\'s menu', title: 'Or hold Shift as you right click', disabled: true, cls: 'mi-hint' });
+    openMenu(this, new DOMRect(x, y, 0, 0), items, { label: 'Context menu', cls: 'pop-ctx eq-ctx', onClose: () => { if (this.eqCtx === el) this.eqCtx = null; } });
     return true;
   }
 };
@@ -819,8 +880,10 @@ onInstall((app) => {
     const el = e.target.closest && e.target.closest('.atom');
     const info = el && atomOfEl(el);
     if (!info || info.a.kind !== 'math') return;
-    if (e.shiftKey || wasOpen || (touch && Date.now() - touch < 2000)) return;
+    if (e.shiftKey || wasOpen) return;
     e.preventDefault(); e.stopPropagation();
+    // (a long press of a finger opened it already, or will: see below)
+    if (touch && Date.now() - touch < 2000) { if (!app.pop || !app.pop.el.classList.contains('eq-ctx')) { app.eqHeld = true; app.eqContextMenu(el, e.clientX, e.clientY, true); } return; }
     if (app.pop) app.closePop(true);
     app.eqContextMenu(el, e.clientX, e.clientY);
   }, true);
@@ -836,6 +899,33 @@ onInstall((app) => {
     const first = app.pop && app.pop.el.querySelector('[role^=menuitem]:not([aria-disabled])');
     if (first) first.focus();
   }, true);
+  // A long press on an equation (a phone has no right click): its menu, as Word's on a touch
+  // screen; the system's menu and the tap that would open the field are left out. A finger
+  // that moves (a scroll) or lifts first is a tap or a scroll as before.
+  let lp = null;
+  const endLong = () => { if (lp) { clearTimeout(lp.t); lp = null; } };
+  app.root.addEventListener('pointerdown', (e) => {
+    endLong();
+    if (e.pointerType !== 'touch' || !e.isPrimary) return;
+    const el = e.target.closest && e.target.closest('.atom');
+    const info = el && atomOfEl(el);
+    if (!info || info.a.kind !== 'math') return;
+    const x = e.clientX, y = e.clientY;
+    lp = { x, y, t: setTimeout(() => {
+      lp = null; app.eqHeld = true;
+      if (app.pop && app.pop.el.classList.contains('eq-ctx')) return;
+      if (app.pop) app.closePop(true);
+      app.eqContextMenu(el, x, y, true);
+    }, 500) };
+  }, true);
+  app.root.addEventListener('pointermove', (e) => { if (lp && Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 10) endLong(); }, true);
+  for (const k of ['pointerup', 'pointercancel']) app.root.addEventListener(k, endLong, true);
+  // (the touch that ended in a long press is no tap: it opens no field, and the system's own menu
+  // after it does not come; the next touch is one of its own)
+  document.addEventListener('pointerdown', () => { app.eqHeld = false; }, true);
+  const heldOn = (e) => app.eqHeld && e.target.closest && e.target.closest('#pages .atom');
+  for (const k of ['mousedown', 'mouseup', 'click']) document.addEventListener(k, (e) => { if (heldOn(e)) { e.preventDefault(); e.stopImmediatePropagation(); } }, true);
+  document.addEventListener('contextmenu', (e) => { if (heldOn(e)) e.preventDefault(); }, true);
   // what a right click chose lasts until the page is pressed or typed on again
   app.root.addEventListener('mousedown', (e) => { if (e.button !== 2) app.eqCtx = null; }, true);
   app.root.addEventListener('keydown', () => { app.eqCtx = null; }, true);

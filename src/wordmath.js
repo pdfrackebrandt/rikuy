@@ -6,6 +6,8 @@ import { fenceSource, unfence, tallTest, OPEN_KEY, CLOSE_KEY, MATCH, isBar, same
 export function wrapSlot(tex) {
   if (/^\\(overset|underset|stackrel)\{#\?\}\{#\?\}$/.test(tex)) return tex.replace(/\{#\?\}$/, '{#@}');
   if (/^\\sqrt\[#\?\]/.test(tex)) return tex.replace('{#?}', '{#@}');
+  // (an arrow with words below and above: the selection is the words above, as with no words below)
+  if (/^\\x(right|left)arrow\[#\?\]\{#\?\}$/.test(tex)) return tex.replace('{#?}', '{#@}');
   return tex.replace('#?', '#@');
 }
 

@@ -481,8 +481,8 @@ Ctrl is Cmd on a Mac.
   Mac): clear the character formatting; Ctrl+D: the Font dialog; Ctrl+Shift+F: the font box
 - $ or Ctrl+M: a formula in the line; Alt+= (Mac: Control+=): a new equation, numbered on a
   line of its own when the caret is on an empty line, in the line in text. Ctrl+Shift+E no longer
-  makes an equation: it is Word's Track Changes. The Equation button (Home, Insert) still makes a
-  numbered one.
+  makes an equation: it is free until Word's Track Changes comes with the review tools. The
+  Equation button (Home, Insert) still makes a numbered one.
 - \\ or Ctrl+K: the list of things to insert (footnote, citation, section, table and more)
 - Ctrl+Z, Ctrl+Shift+Z: undo, redo
 - Ctrl+O: open files; Ctrl+S: download the LaTeX source

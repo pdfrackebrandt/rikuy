@@ -45,6 +45,7 @@ import { installKeys } from './keys.js';
 import * as kit from './ui/kit.js';
 import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass } from './preamble.js';
 import { LATEX_MARK, lineStart as lineAt } from './styles.js';
+import { eolAt } from './blockenv.js';
 import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
 import { version as VERSION } from '../package.json';
 import { savedToken, keepToken, dropReplaced, canonicalRemote, remoteHost, legacyChoice } from './gitauth.js';
@@ -2598,9 +2599,17 @@ class App {
     // there, the box stays open with its message (closePop asks) and nothing is lost
     this.pop.refuse = () => !!held() && !!mathBreaksOut(whole(), this.renderer.katex(this.mathPreviewTex(whole(), display), display).err);
     this.pop.mathText = () => ta.value;
-    // (for the Equation tab, src/cmd/equation.js: what is typed written now, whether it can be)
+    // (for the Equation tab, src/cmd/equation.js: what is typed written now, whether it can be;
+    // its places in the source moved by a package line the tab added before them)
     this.pop.flush = () => push.flush();
     this.pop.held = () => !!held();
+    this.pop.shiftBy = (edits) => {
+      const P = this.pop, sh = (g, p) => edits.reduce((q, x) => (x.f === g && x.e <= p ? q + x.t.length - (x.e - x.s) : q), p);
+      if (!P) return;
+      if (P.range) { const R = P.range; R.e = sh(R.f, R.e); R.s = sh(R.f, R.s); }
+      if (P.anchorPos) P.anchorPos = { ...P.anchorPos, s: sh(P.anchorPos.f, P.anchorPos.s) };
+      if (P.returnCaret) P.returnCaret = { ...P.returnCaret, p: sh(P.returnCaret.f, P.returnCaret.p) };
+    };
     this.eqWire(this.pop, ta);
     this.positionPop();
     ta.focus();
@@ -2752,6 +2761,15 @@ class App {
     this.pop.returnCaret = base ? { f: base.f, p: base.a } : null;
     this.pop.flush = () => push.flush();
     this.pop.held = () => !!held(ta.value);
+    this.pop.shiftBy = (edits) => {
+      const P = this.pop, sh = (g, p) => edits.reduce((q, x) => (x.f === g && x.e <= p ? q + x.t.length - (x.e - x.s) : q), p);
+      if (!P) return;
+      if (ins) { ins.e = sh(ins.f, ins.e); ins.s = sh(ins.f, ins.s); }
+      if (base) { base.b = sh(base.f, base.b); base.a = sh(base.f, base.a); }
+      if (ghost) ghost.pos = sh(ghost.f, ghost.pos);
+      if (P.anchorPos) P.anchorPos = { ...P.anchorPos, s: sh(P.anchorPos.f, P.anchorPos.s) };
+      if (P.returnCaret) P.returnCaret = { ...P.returnCaret, p: sh(P.returnCaret.f, P.returnCaret.p) };
+    };
     this.eqWire(this.pop, ta);
     this.positionPop();
     ta.focus();
@@ -2780,12 +2798,17 @@ class App {
     if (c.ghost ? this.ghostRaw() : this.texHere()) return;
     // in the blank paragraph of a new document too (the ribbon's Equation is pressed there)
     if (c.ghost) { c = { f: this.ghost.f, a: this.ghost.pos }; this.removeGhost(); }
-    const t = env === '\\[' ? '\n\\[\n  \n\\]\n' : '\n\\begin{' + env + '}\n  \n\\end{' + env + '}\n';
+    // (a file written with CRLF keeps them; a kind of amsmath's brings it, in the same step)
+    const nl = eolAt(this.src(c.f), c.a);
+    const t = (env === '\\[' ? nl + '\\[' + nl + '  ' + nl + '\\]' : nl + '\\begin{' + env + '}' + nl + '  ' + nl + '\\end{' + env + '}') + nl;
+    const pk = this.eqKindPkgs(env);
     // (the history as it is before the equation: given up empty, it goes back to this)
     this.closeGroup();
     const h0 = this.hist.length, redo0 = this.redoStack;
-    this.commit([{ f: c.f, s: c.a, e: c.a, t }], { f: c.f, p: c.a + t.length }, 'insert');
-    const el = this.findAtomEl({ f: c.f, s: c.a + 1, kind: 'math' });
+    const a0 = c.a;
+    c = { f: c.f, a: c.a + pk.filter((x) => x.f === c.f && x.e <= c.a).reduce((n, x) => n + x.t.length - (x.e - x.s), 0) };
+    this.commit([{ f: c.f, s: a0, e: a0, t }, ...pk], { f: c.f, p: c.a + t.length }, 'insert');
+    const el = this.findAtomEl({ f: c.f, s: c.a + nl.length, kind: 'math' });
     if (el) { const info = atomOfEl(el); if (info) { this.openMath(el, info); this.eqTab(); } }
     // closed with nothing typed, the equation goes again: it stayed as an empty environment,
     // which prints a number beside nothing
@@ -4847,7 +4870,7 @@ class App {
         <dt>Shift+F10, right click</dt><dd>The menu of what applies here; a second right click gives the browser's (spelling)</dd>
         <dt>${mod}+F1</dt><dd>Fold the ribbon to its tabs, and back</dd>
         <dt>$ or ${mod}+M</dt><dd>New inline math</dd>
-        <dt>Alt+= (Mac: Control+=)</dt><dd>New equation: numbered on an empty line, in the line in text. (${mod}+Shift+E is Track Changes now, as in Word)</dd>
+        <dt>Alt+= (Mac: Control+=)</dt><dd>New equation: numbered on an empty line, in the line in text. (${mod}+Shift+E no longer makes one: it is free until Track Changes comes with the review tools, as in Word)</dd>
         <dt>\\ or ${mod}+K</dt><dd>Insert a command</dd>
         <dt>Click math, a citation or a reference</dt><dd>Edit it in place</dd>
         <dt>Alt+click</dt><dd>Show that spot in the source</dd>
