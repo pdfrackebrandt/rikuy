@@ -25,6 +25,9 @@ export function stripComments(t) {
   return out + t.slice(n);
 }
 
+// the line end a text is written with: CRLF where its first line ends so, else LF
+export function eolOf(t) { const k = String(t).indexOf('\n'); return k > 0 && t[k - 1] === '\r' ? '\r\n' : '\n'; }
+
 // where the preamble ends: the first \begin{document} that is no comment's, or -1
 export function preambleEnd(src) {
   const m = /\\begin\s*\{document\}/.exec(stripComments(src.slice(0, MAX)));
@@ -121,9 +124,18 @@ const kvText = (key, value) => (value === true || value == null ? key : key + '=
 // overlapped where two neighbours went ([a=1,b=2,c=3] without all three left "[{").
 export function kvEdits(src, s, e, changes, drop) {
   const items = parseKV(src, s, e), want = Object.entries(changes), done = new Set(), kept = [];
+  // keys set anew that the list does not hold take the place of the first item that goes for
+  // them: those of its family together (a4paper becomes letterpaper, or paperwidth and
+  // paperheight, where it stood, its comments around it kept), else the first of them
+  const fresh = want.filter(([key, v]) => v !== null && !items.some((it) => it.key === key));
   items.forEach((it, k) => {
     const ch = want.find(([key]) => key === it.key);
     if (ch) done.add(ch[0]);
+    if (!ch && drop && drop(it.key) && fresh.length) {
+      const kin = fresh.filter(([key]) => drop(key)), take = kin.length ? kin : [fresh[0]];
+      for (const [key, v] of take) { done.add(key); kept.push({ k: kept.some((x) => x.k === k) ? -2 : k, text: kvText(key, v) }); fresh.splice(fresh.findIndex(([x]) => x === key), 1); }
+      return;
+    }
     if ((ch && ch[1] === null) || (!ch && drop && drop(it.key))) return;
     const same = !ch || (ch[1] === true && it.value == null) || (it.value != null && String(ch[1]) === it.value);
     kept.push({ k, text: same ? src.slice(it.s, it.e) : kvText(it.key, ch[1]) });
@@ -133,7 +145,7 @@ export function kvEdits(src, s, e, changes, drop) {
   let out = '';
   kept.forEach((x, n) => {
     // (between two items that both stay, what stood before the later one; else a comma)
-    if (n) out += x.k > 0 && kept[n - 1].k >= 0 ? src.slice(items[x.k - 1].e, items[x.k].s) : ',';
+    if (n) out += x.k > 0 && kept[n - 1].k >= 0 && kept[n - 1].k !== x.k ? src.slice(items[x.k - 1].e, items[x.k].s) : ',';
     out += x.text;
   });
   const d = diffText(src.slice(first, last), out);
@@ -262,7 +274,9 @@ export function usePackages(src, names, o = {}) {
     }
   }
   if (lines.length) { const { at, pre } = newLineAt(src, end); edits.push({ s: at, e: at, t: pre + lines.join('\n') + '\n' }); }
-  return edits;
+  // (a file written with CRLF gets its own line ends)
+  const nl = eolOf(src);
+  return nl === '\n' ? edits : edits.map((x) => ({ ...x, t: x.t.replace(/\r?\n/g, nl) }));
 }
 export const usePackage = (src, name, opts, o) => usePackages(src, { [name]: opts == null ? null : opts }, o);
 
@@ -377,5 +391,6 @@ export function defineOnce(src, name, text, o = {}) {
   const at = src.lastIndexOf('\n', end - 1) + 1;
   const pre = at < end && /\S/.test(src.slice(at, end)) ? '\n' : '';
   const s = pre ? end : at;
-  return [{ s, e: s, t: pre + text + '\n' }];
+  const nl = eolOf(src);
+  return [{ s, e: s, t: (pre + text + '\n').replace(/\r?\n/g, nl) }];
 }

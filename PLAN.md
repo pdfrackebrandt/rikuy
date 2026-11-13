@@ -1116,9 +1116,65 @@ Tests:
     Left and Right (no standard package flows text into columns of unequal widths; paracol's do
     not flow), landscape for some pages only (pdflscape), a picture as watermark, art borders
     (pgfornament), Word's columns for part of a document (sections), suppressing line numbers
-    for one paragraph, Document info in the header; a document with no paper option is drawn on
-    Letter as LaTeX lays it out while pdfTeX's PDF is A4 unless geometry or hyperref is loaded (as
-    before). One commit, not four: the steps share `src/layout.js`'s plan and chrome.
+    for one paragraph, Document info in the header. One commit, not four: the steps share
+    `src/layout.js`'s plan and chrome.
+
+    *After the hostile review of b1ccf0f* (5 High, 7 Medium, 9 Low; each fixed with the reader's
+    case as a test, compiled in the page and held against what the page draws wherever it is
+    about TeX: `test/page.py` compile_pdf). H1: the header's field writes only text whose braces
+    pair and that does not end in a lone backslash (marked invalid and saying why meanwhile, kept
+    as the source had it if closed so); what is typed has `& % # $ _` escaped and `^ ~` as
+    `\textasciicircum{}` and `\textasciitilde{}`, the source's own text (its `$x$`) left alone.
+    H2: a header argument is read as TeX reads it (comments with their line end, line ends as
+    spaces) for the page and the field, and written back as the smallest edit around its
+    comments; a change that would take a comment away is refused, saying so. H3: the style the
+    pages take is drawn, `\fancypagestyle{name}[base]{...}` over fancy's own (fancyhdr's
+    defaults as `\f@nch@initialise` sets them, one and two sided), and a header typed goes inside
+    that style's definition; KOMA-Script's scrlayer-scrpage is read and written in its own
+    commands (`\ihead` ... `\ofoot`, `\lohead` ..., the plain style's optional arguments, the
+    clear commands), and a KOMA class gets scrlayer-scrpage rather than fancyhdr. H4, M7: where
+    the class lays the page out, Size writes the class's option and `\usepackage[pass]{geometry}`
+    beside it only where nothing else sets the PDF's sheet (A4 needs none); orientation the
+    class's `landscape` the same way; geometry's pass ignores every key, so the header's
+    distances, a paper the class does not know (A3, any size) and margins turn the layout to
+    geometry's with the text block (or, for a new paper, the margins) pinned in points, so
+    nothing else moves; the model reads bare geometry (its 0.7 defaults) and pass (the class's
+    layout). M1: the sheet drawn is the PDF's: A4 upright unless geometry, hyperref (not
+    `setpagesize=false`), typearea, a KOMA class, memoir, beamer, IEEEtran, elsarticle or acmart
+    sets it (amsart, revtex, llncs measured A4), the class's text block on it from the top left;
+    margins written on such a page keep that sheet (`a4paper` beside them). H5: Columns never put
+    a float inside multicols: the environment ends before each figure or table and begins again
+    after it, the parts read back as the body's columns and taken out again to the byte; a float
+    a document has inside multicols is drawn as left out of the PDF. M2: `\newpage` in multicols
+    ends the page; in a two column document Page break and Blank page write `\clearpage`. M3:
+    Ctrl+Enter inside `\textbf{...}`, `{\bfseries ...}` or `\textcolor{red}{...}` closes the
+    groups and opens them again around the break (at a group's edge it goes outside); none in a
+    footnote, a box, a caption or a minipage (disabled, saying why). M4: a book, scrbook and
+    memoir take the headings style: the running head at the top, nothing at the foot, blank
+    pages with their head, the title page empty in report and book; the marks as the classes and
+    fancyhdr make them (CHAPTER 1. ONE, 1.2. SECTION, 2 SECTION with an em between, subsections in
+    their case); Word gets the head. M5: a multicols environment's paragraphs are blocks of their
+    own, so typing redraws one paragraph: 300 KB in two columns, the layout's median per key 32
+    ms early and 15 to 18 late against main's 616 to 740; a plain document 22 to 31 against
+    main's 20 to 28, within its noise (marks are worked out only where a header shows one). M6:
+    Even and Odd page are `\clearpage` and `\ifodd\value{page}\hbox{}\clearpage\fi` (with
+    `\else` for odd), drawn so, in one and two sided documents. Lows: `\pagenumbering{gobble}`
+    (in the body or the preamble) prints no number, `\addtocounter{page}{n}` counts; the class
+    menu edits the class TeX reads, not a commented line before it; beamer's Margins, Size,
+    Orientation, Columns, Page setup, header and footer are off, saying why; CRLF files get CRLF
+    lines; a dialog's steps are as many edits as places changed, each the smallest; a plain page's
+    footer comes back from Word as LaTeX's plain style, no fancyhdr; Print draws each page at the
+    PDF's own size, one picture at a time as a blob (a long document says how far it got, Escape
+    stops it, nothing stops silently at 500); a blob: frame of the PDF itself would need
+    `frame-src blob:`, which the page refuses on purpose (`src/widget.js`), so it is not used;
+    columns leave room for their footnotes. *Security:* the quick profile on the changed files
+    found two more stalls of the same kind (the caret's paragraph read for Ctrl+Enter, a preamble
+    of thousands of `\fancypagestyle` lines), bounded, with tests. Evidence: `npm test` green
+    (`page` 25 groups, `preamble` 18, `word` 56), `test/page.py` 115 (19 of them compiled in the
+    page), `tabs.py` 104, `agent.py` 132, `ribbon.py` 267, `browser.py` 189, `word.py` 111,
+    `scripts.py` 302, `widgets.py` 60, `stress.py` 9, `features.py` 36, `share.py` 46,
+    `history.py` 39/39, `paste.py` 25, `files.py` 68, `offline.py` 54/54, `launch.py` 18/18,
+    `deploy_check.py` 43/43, `pages_check.py` fits, actionlint clean, the corpus 716 of 716.
 
 45. **B7, tables as in Word.** Done in the code (branch `wordgap-b7-table`), rows I4, I5, I7, I8,
     T1 to T5, T7 to T20 and C2 of the gap list (task 38). *One reading of a table.*

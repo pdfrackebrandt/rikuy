@@ -3,6 +3,7 @@
 
 import { clusterEdge } from './editor.js';
 import { BASE_COLORS, DVIPS_COLORS } from './ui/kit.js';
+import { builtinSlots } from './pagesrc.js';
 
 const EPS = 1.5;
 const IN = 72.27;
@@ -37,7 +38,8 @@ function pair(v) {
 const ratioOf = (v, d) => { const m = /^\{?(\d+(?:\.\d+)?)\s*:\s*(\d+(?:\.\d+)?)/.exec(String(v || '').slice(0, 40).replace(/\s+/g, '')); return m && +m[1] + +m[2] > 0 ? +m[1] / (+m[1] + +m[2]) : d; };
 const trunc = (x) => (x < 0 ? Math.ceil(x) : Math.floor(x));
 export function paperSize(opts) {
-  const geo = opts.geo || {};
+  // (geometry's pass ignores its keys: the class's paper stands)
+  const geo = (!opts.geoPass && opts.geo) || {};
   let w, h;
   const named = Object.keys(geo).map((k) => /^([a-c][0-6]|letter|legal|executive)paper$/.exec(k)).filter(Boolean).pop();
   const pn = geo.paper || geo.papername;
@@ -52,12 +54,21 @@ export function paperSize(opts) {
   return { w, h, land: !!land };
 }
 
+// The sheet the PDF has: LaTeX's paper where something sets the PDF's size from it (geometry, with
+// or without pass, hyperref, KOMA's typearea, memoir, beamer: opts.media), else A4 upright,
+// whatever the class's paper: TeX Live's engines start every PDF on A4 (pdfTeX, XeTeX and LuaTeX
+// measured), and the class's text block then sits on it from the top left as TeX puts it.
+const A4 = { w: PAPERS.a4[0], h: PAPERS.a4[1], land: false };
+export function sheetSize(opts) {
+  return opts.media || opts.geometry ? paperSize(opts) : A4;
+}
+
 export function geometry(opts) {
   const pt = opts.pt || 10;
   const bs = { 10: 12, 11: 13.6, 12: 14.5 }[pt] || 12;
   const tw0 = { 10: 345, 11: 360, 12: 390 }[pt] || 345;
   const P = paperSize(opts);
-  const geo = opts.geo || {};
+  const geo = (!opts.geoPass && opts.geo) || {};
   const cols = opts.twocolumn ? 2 : 1;
   const two = geo.twoside === true || (!!opts.twoside && geo.asymmetric !== true);
   let hh = 12, hs = 25, fs = 30;
@@ -67,7 +78,7 @@ export function geometry(opts) {
   if (geo.nohead || geo.noheadfoot) { hh = 0; hs = 0; }
   if (geo.nofoot || geo.noheadfoot) fs = 0;
   let tw, th, ml, mlE, mt;
-  if (opts.geometry) {
+  if (opts.geometry && !opts.geoPass) {
     const rel = { w: P.w, h: P.h };
     const L = (v) => len(v, rel);
     const b = L(geo.bindingoffset) || 0;
@@ -121,7 +132,10 @@ export function geometry(opts) {
   const pg = opts.page || {};
   const colsep = pg.colsep != null ? pg.colsep : len(geo.columnsep) != null ? len(geo.columnsep) : pt === 10 ? 10 : 10;
   // (hyphenation rides along: a change of it measures the lines again, src/app.js layoutPass)
-  return { pw: P.w, ph: P.h, ml, mlE, mt, tw, th, footskip: fs, headsep: hs, headheight: hh, bs, pt, cols, twoside: two, colsep, colrule: pg.colrule || 0, land: P.land, hyph: pg.hyph || 'auto' };
+  // pw, ph: the sheet; paperW, paperH: LaTeX's \paperwidth and \paperheight, which the class's
+  // margins are worked out from (they differ where nothing sets the PDF's size)
+  const S = sheetSize(opts);
+  return { pw: S.w, ph: S.h, paperW: P.w, paperH: P.h, media: S !== A4, ml, mlE, mt, tw, th, footskip: fs, headsep: hs, headheight: hh, bs, pt, cols, twoside: two, colsep, colrule: pg.colrule || 0, land: S.land, hyph: pg.hyph || 'auto' };
 }
 
 export class Layout {
@@ -255,7 +269,7 @@ export class Layout {
     const pages = [];
     let page = null;
     const deferred = [];
-    const cnt = { num: 1, fmt: 'arabic', style: this.page.style || 'plain' };
+    const cnt = { num: 1, fmt: (this.opts && this.opts.numbering) || 'arabic', style: this.page.style || 'plain' };
     const newPage = () => { page = { entries: [], fns: [], used: 0, fnH: 0, marks: [] }; };
     const avail = () => H - page.used - page.fnH;
     const fnCost = (list) => (list.length ? (page.fns.length ? 0 : fnSep) + list.reduce((s, f) => s + f.h, 0) : 0);
@@ -273,10 +287,13 @@ export class Layout {
       });
       return out;
     };
+    // (the title on a page of its own, as report and book set it and titlepage asks, is empty)
+    const titleStyle = this.opts && (this.opts.titlepage || /^(report|book|scrreprt|scrbook)$/.test(this.opts.cls || '')) ? 'empty' : 'plain';
     const markOf = (it) => {
       // the title's page and a chapter's first page take the plain style, as \maketitle and
       // \chapter say
-      if (it.kind === 'title' || (it.kind === 'h' && it.level === 0)) page.marks.push({ thisStyle: 'plain' });
+      if (it.kind === 'title') page.marks.push({ thisStyle: titleStyle });
+      else if (it.kind === 'h' && it.level === 0 && this.opts && this.opts.chapters) page.marks.push({ thisStyle: 'plain' });
     };
     const put = (it, a, b, sb) => {
       const fl = fnsOf(it, a, b);
@@ -292,6 +309,7 @@ export class Layout {
       for (const m of pg.marks) {
         if (m.numbering) { cnt.fmt = m.numbering; cnt.num = 1; }
         if (m.page != null) cnt.num = m.page;
+        if (m.pageAdd) cnt.num += m.pageAdd;
         if (m.style) cnt.style = m.style;
         if (m.thisStyle) pg.thisStyle = m.thisStyle;
       }
@@ -310,11 +328,18 @@ export class Layout {
       }
     };
     // \cleardoublepage in a two sided document: the next page is odd, with a blank one before it
-    const toOdd = () => {
-      if (!two || cnt.num % 2) return;
+    const blankPage = () => {
       const b = { entries: [], fns: [], used: 0, fnH: 0, marks: [], blank: true };
       number(b);
       pages.push(b);
+    };
+    const toOdd = () => { if (two && !(cnt.num % 2)) blankPage(); };
+    // \ifodd\value{page}\hbox{}\clearpage\fi: on a page of the other parity, that page ends (an
+    // empty one is left blank), so the text goes on on the next
+    const parity = (want) => {
+      const odd = cnt.num % 2 === 1;
+      if (want === 'even' ? !odd : odd) return;
+      if (page.entries.length || deferred.length) close(); else blankPage();
     };
     // ---- bands of columns ----
     // the run of items set in k columns from items[i]: [i, j)
@@ -340,7 +365,9 @@ export class Layout {
           if (it.kind === 'mark') { col.push({ mark: it.mark }); i++; continue; }
           if (it.kind === 'break') {
             i++;
-            if (it.column || it.only) break;
+            // (\columnbreak ends a column; \newpage ends a column of a two column page, but the
+            // page in multicols, as TeX does)
+            if (it.only || (it.column && !it.region)) break;
             pageBreak = true;
             break;
           }
@@ -372,8 +399,17 @@ export class Layout {
         let A = avail() - gapTop;
         if (A < this.g.bs * this.px * 1.5 && page.entries.length) { close(); continue; }
         let F = fill(run, pos, k, A);
+        // (the band's footnotes go under it on the page: the columns are as much shorter, filled
+        // again until what they hold and its footnotes fit)
+        let cap = A;
+        for (let n = 0; n < 4; n++) {
+          const f = fnCost(F.cols.flat().filter((e) => e.it).flatMap((e) => fnsOf(e.it, e.a, e.b)));
+          if (Math.max(0, ...F.hs) <= A - f + EPS || A - f <= this.g.bs * this.px) { cap = Math.min(cap, A - f); break; }
+          cap = A - f;
+          F = fill(run, pos, k, cap);
+        }
         if (F.done && balance && !F.page) {
-          let lo = 0, hi = A;
+          let lo = 0, hi = cap;
           for (let n = 0; n < 16 && hi - lo > 0.5; n++) {
             const mid = (lo + hi) / 2;
             const G = fill(run, pos, k, mid);
@@ -381,7 +417,7 @@ export class Layout {
           }
           F = fill(run, pos, k, hi);
         }
-        const h = F.done && (balance || F.page) ? Math.max(...F.hs) : A;
+        const h = F.done && (balance || F.page) ? Math.max(...F.hs) : Math.max(cap, ...F.hs);
         const band = { k, cols: [] };
         page.used += gapTop;
         F.cols.forEach((col, c) => {
@@ -413,6 +449,7 @@ export class Layout {
       if (it.kind === 'mark') { page.marks.push(it.mark); continue; }
       if (it.kind === 'break') {
         if (it.only) continue;
+        if (it.parity) { parity(it.parity); continue; }
         if (page.entries.length || deferred.length) close();
         if (it.odd) toOdd();
         continue;
@@ -533,17 +570,20 @@ export class Layout {
       return map.get(e.a) || e.it.el;
     };
     const changed = [];
-    const marks = this.marks(plan);
+    // (marks only where a header shows one: a plain page's number needs none)
+    const marks = this.needsMarks() ? this.marks(plan) : null;
     const ln = this.page.lineno && this.page.lineno.on ? this.lineStarts(plan) : null;
     const total = plan.length ? fmtNum(plan[plan.length - 1].num, plan[plan.length - 1].fmt) : '1';
+    const base = this.chromeBase();
     plan.forEach((pg, k) => {
       const fill = this.fillOf(pg);
       const sig = pg.entries.map((e) => e.it.uid + ':' + e.a + ':' + (e.b ?? '') + ':' + e.sb.toFixed(1) + (e.band ? ':' + e.col + ':' + e.band.h.toFixed(1) : '')).join(',') + '|' + pg.fns.map((f) => f.uid).join(',') + '|' + (k + 1) + '|' + fill.toFixed(1);
       let P = this.pages[k];
       if (!P) { P = this.makePage(); this.pages.push(P); this.root.appendChild(P.el); }
       // (the header, the footer and the page's numbers are drawn again on their own)
-      const chrome = this.chromeSig(pg, marks[k], total) + '|' + k;
-      if (P.chrome !== chrome) { P.chrome = chrome; this.drawChrome(P, pg, marks[k], total, k); }
+      const mk = marks ? marks[k] : NO_MARKS;
+      const chrome = this.chromeSig(pg, mk, total, base) + '|' + k;
+      if (P.chrome !== chrome) { P.chrome = chrome; this.drawChrome(P, pg, mk, total, k); }
       if (P.sig === sig) { if (ln && P.lnSig !== ln[k] + '|' + chrome + sig) this.lineNumbers(P, pg, ln[k]); else if (!ln && P.ln) { P.ln.remove(); P.ln = null; } return; }
       P.sig = sig;
       changed.push(k);
@@ -605,49 +645,75 @@ export class Layout {
   }
 
   // ---- the page's chrome: header, footer, numbers, watermark, colour, border, line numbers ----
-  // Each page's marks for headers: \leftmark (the last section or chapter by the page's end) and
-  // \rightmark (the first lower heading on the page, else the one before), as fancyhdr sets them
+  // Each page's marks for headers: \leftmark (the last chapter's or section's by the page's end)
+  // and \rightmark (the first lower heading's on the page, else the one before; a higher heading
+  // empties it), as the marks are made: fancyhdr's and the standard classes' headings put the
+  // number and the title in capitals (CHAPTER 1. TITLE, 1.2. SECTION in a book, 2 SECTION and
+  // 2.1 Subsection in an article, an em between), a one sided headings page has the top level's
+  // alone as its right mark, KOMA-Script's keep the title's case; a heading without a number
+  // (\section*) makes none
   marks(plan) {
-    const top = this.opts && this.opts.chapters ? 0 : 1;
+    const chap = !!(this.opts && this.opts.chapters), top = chap ? 0 : 1, two = !!this.g.twoside;
+    const P = this.page || {};
+    const kind = P.kind === 'koma' && P.style !== 'headings' ? 'koma' : P.kind === 'fancy' && !/^(my)?headings$/.test(P.style || '') ? 'fancy' : 'headings';
+    const oneRight = kind === 'headings' && !two;
+    const fmt = (h, lvl) => {
+      if (!h.num) return null;
+      if (kind === 'koma') return h.num + '\u2002' + h.title;
+      if (chap) return (lvl === 0 ? (h.label ? h.label + ' ' : '') + h.num + '.\u2002' + h.title : h.num + '.\u2002' + h.title).toUpperCase();
+      return lvl === 0 ? (h.num + '\u2003' + h.title).toUpperCase() : h.num + '\u2003' + h.title;
+    };
     let left = '', right = '';
     return plan.map((pg) => {
       let firstRight = null;
       for (const e of pg.entries) {
         if (e.it.kind !== 'h' || e.a !== 0 || typeof e.it.level !== 'number') continue;
-        const t = headText(e.it.el);
-        if (e.it.level === top) { left = t.toUpperCase(); if (firstRight === null) firstRight = ''; right = ''; }
-        else if (e.it.level === top + 1) { if (firstRight === null) firstRight = t; right = t; }
+        const lvl = e.it.level - top;
+        if (lvl !== 0 && lvl !== 1) continue;
+        const m = fmt(headParts(e.it), lvl);
+        if (m == null) continue;
+        if (lvl === 0 && !oneRight) { left = m; right = ''; if (firstRight === null) firstRight = ''; }
+        else if (lvl === 0 || !oneRight) { right = m; if (firstRight === null) firstRight = m; }
       }
-      return { left, right: firstRight !== null ? firstRight : right, lastRight: right };
+      return { left, right: firstRight !== null ? firstRight : right };
     });
   }
+  // whether any style the pages may take shows a mark (\leftmark, \rightmark, KOMA's \headmark)
+  needsMarks() {
+    const P = this.page || {};
+    if (/headings$/.test(P.style || '')) return true;
+    if (P.marksKey !== P.styles) { P.marksKey = P.styles; P.marksNeed = /(?:left|right|head)mark/.test(JSON.stringify(P.styles || {})); }
+    return P.marksNeed;
+  }
+  // the style a page takes: \thispagestyle's, else the one in force; one neither the source nor
+  // LaTeX defines is plain
   styleOf(pg) {
-    const s = pg.thisStyle || pg.style || 'plain';
-    return /^(plain|empty|fancy|headings|myheadings)$/.test(s) ? s : this.page.fancy && this.page.style === s ? 'fancy' : 'plain';
+    const s = pg.thisStyle || pg.style || this.page.style || 'plain';
+    return (this.page.styles && this.page.styles[s]) || /^(plain|empty|headings|myheadings)$/.test(s) ? s : 'plain';
   }
-  chromeSig(pg, mk, total) {
+  chromeSig(pg, mk, total, base) {
+    return [pg.num, pg.fmt, this.styleOf(pg), mk.left, mk.right, total, pg.blank ? 1 : 0, base].join('|');
+  }
+  // what every page's chrome depends on beyond its own numbers and marks, once per pass
+  chromeBase() {
     const P = this.page;
-    return [pg.num, pg.fmt, this.styleOf(pg), mk.left, mk.right, total, pg.blank ? 1 : 0, JSON.stringify(P.slots || null), JSON.stringify(P.plainSlots || null), P.headrule, P.footrule,
-      JSON.stringify(P.wm || null), JSON.stringify(P.color || null), JSON.stringify(P.border || null), this.g.twoside ? 1 : 0, this.px].join('|');
+    return [JSON.stringify(P.styles || null), P.style, JSON.stringify(P.wm || null), JSON.stringify(P.color || null), JSON.stringify(P.border || null), this.g.twoside ? 1 : 0, this.px].join('|');
   }
-  // the slots of a page by its style: [left, centre, right] of the head and of the foot, as TeX text
+  // the slots of a page by its style: [left, centre, right] of the head and of the foot, as TeX
+  // text, and the rules under the head and over the foot; null for the empty style
   slotsFor(pg) {
-    const st = this.styleOf(pg), side = this.g.twoside && pg.num % 2 === 0 ? 'E' : 'O';
-    const P = this.page;
-    const of = (S) => ({ head: ['L', 'C', 'R'].map((c) => S['H' + side + c] || ''), foot: ['L', 'C', 'R'].map((c) => S['F' + side + c] || ''), rules: true });
-    if (st === 'empty') return null;
-    if (st === 'plain') return P.plainSlots ? { ...of(P.plainSlots), rules: false } : { head: ['', '', ''], foot: ['', '\\thepage', ''], rules: false };
-    if (st === 'fancy' && P.slots) return of(P.slots);
-    if (st === 'headings' || st === 'myheadings') {
-      // the standard classes' running heads: the section's mark and the page number, outside
-      const mark = st === 'headings' ? '\\slshape\\rightmark' : '';
-      return side === 'E' ? { head: ['\\thepage', '', mark], foot: ['', '', ''] } : { head: [mark, '', '\\thepage'], foot: ['', '', ''] };
-    }
-    return { head: ['', '', ''], foot: ['', '\\thepage', ''], rules: false };
+    const st = this.styleOf(pg), two = !!this.g.twoside, side = two && pg.num % 2 === 0 ? 'E' : 'O';
+    const S = this.page.styles && this.page.styles[st];
+    if (!S && st === 'empty') return null;
+    const slots = S ? S.slots : builtinSlots(st, two);
+    const of = (w) => ['L', 'C', 'R'].map((c) => slots[w + side + c] || '');
+    return { head: of('H'), foot: of('F'), headrule: S ? S.headrule || 0 : 0, footrule: S ? S.footrule || 0 : 0 };
   }
   drawChrome(P, pg, mk, total, k) {
     const S = this.slotsFor(pg);
-    const ctx = { page: fmtNum(pg.num, pg.fmt), total, left: mk.left, right: mk.right };
+    const even = this.g.twoside && pg.num % 2 === 0;
+    // (KOMA's \headmark: the left mark on even pages, the right one on odd)
+    const ctx = { page: fmtNum(pg.num, pg.fmt), total, left: mk.left, right: mk.right, headmark: even ? mk.left : mk.right };
     const fill = (box, list) => {
       box.replaceChildren();
       let any = false;
@@ -660,18 +726,17 @@ export class Layout {
       });
       return any;
     };
-    const even = this.g.twoside && pg.num % 2 === 0;
     P.el.classList.toggle('even', !!even);
     P.el.dataset.n = ctx.page;
     const head = S ? fill(P.hd, S.head) : (P.hd.replaceChildren(), false);
     const foot = S ? fill(P.ft, S.foot) : (P.ft.replaceChildren(), false);
-    const fancy = S && S.rules !== false;
-    P.hd.classList.toggle('rule', !!(fancy && this.page.headrule > 0));
-    P.ft.classList.toggle('rule', !!(fancy && this.page.footrule > 0));
-    P.hd.style.setProperty('--rule', ((this.page.headrule || 0) * this.px) + 'px');
-    P.ft.style.setProperty('--rule', ((this.page.footrule || 0) * this.px) + 'px');
-    P.hd.hidden = !head && !(fancy && this.page.headrule > 0);
-    P.ft.hidden = !foot && !(fancy && this.page.footrule > 0);
+    const hr = S ? S.headrule : 0, fr = S ? S.footrule : 0;
+    P.hd.classList.toggle('rule', hr > 0);
+    P.ft.classList.toggle('rule', fr > 0);
+    P.hd.style.setProperty('--rule', (hr * this.px) + 'px');
+    P.ft.style.setProperty('--rule', (fr * this.px) + 'px');
+    P.hd.hidden = !head && !(hr > 0);
+    P.ft.hidden = !foot && !(fr > 0);
     // (the footer's centre is what the folio was: a page number the reader sees at its foot)
     P.folio.textContent = ctx.page;
     // the watermark, the page's colour and its border
@@ -789,6 +854,7 @@ export class Layout {
   }
 }
 
+const NO_MARKS = { left: '', right: '' };
 // the height of a piece of an item, as the plan counts it
 function pieceHOf(e) {
   const it = e.it;
@@ -798,13 +864,18 @@ function pieceHOf(e) {
 }
 // the title and a float as wide as the page (figure*) run across a two column page
 const spans = (it) => it.kind === 'title' || (it.isFloat && it.el.classList.contains('wide'));
-// a heading's number and words, as a running head shows them
-const headText = (el) => el.textContent.replace(/\s+/g, ' ').trim();
+// a heading's number, its label (Chapter) and its words, as a running head's mark takes them
+function headParts(it) {
+  let title = '';
+  for (const n of it.el.childNodes) if (!(n.nodeType === 1 && (n.classList.contains('secnum') || n.classList.contains('chapl')))) title += n.textContent;
+  return { num: it.hnum || '', label: it.hlabel || '', title: title.replace(/\s+/g, ' ').trim() };
+}
 
 // ---- numbers and the text of headers ------------------------------------------------------------
 const ROMAN = [[1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'], [100, 'c'], [90, 'xc'], [50, 'l'], [40, 'xl'], [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i']];
 export function fmtNum(n, fmt) {
-  if (!Number.isFinite(n)) return '';
+  // (\pagenumbering{gobble}: no number at all, as TeX prints none)
+  if (!Number.isFinite(n) || fmt === 'gobble') return '';
   if (fmt === 'roman' || fmt === 'Roman') {
     if (n <= 0 || n > 4999) return String(n);
     let s = '', x = n;
@@ -840,7 +911,11 @@ export function hfRuns(tex, ctx = {}) {
       const name = m[1];
       if (!name) { const ch = m[2]; push(ch === '\\' ? ' ' : ch === ' ' ? ' ' : '&%$#_{}'.includes(ch) ? ch : ''); continue; }
       const arg = () => { let j = i; while (t[j] === ' ') j++; if (t[j] !== '{') return null; let d = 0; for (let k = j; k < t.length; k++) { if (t[k] === '\\') { k++; continue; } if (t[k] === '{') d++; else if (t[k] === '}' && --d === 0) { i = k + 1; return t.slice(j + 1, k); } } i = t.length; return t.slice(j + 1); };
-      if (name === 'thepage') push(ctx.page || '');
+      if (name === 'thepage' || name === 'pagemark') push(ctx.page || '');
+      else if (name === 'headmark') push(ctx.headmark != null ? ctx.headmark : ctx.right || '');
+      else if (name === 'textasciitilde') push('~');
+      else if (name === 'textasciicircum') push('^');
+      else if (name === 'textbackslash') push('\\');
       else if (name === 'pageref') { const a = arg(); push(a != null && a.trim() === 'LastPage' ? ctx.total || '' : '??'); }
       else if (name === 'leftmark') push(ctx.left || '');
       else if (name === 'rightmark') push(ctx.right || '');
@@ -860,7 +935,9 @@ export function hfRuns(tex, ctx = {}) {
     if (c === '-' && t[i + 1] === '-') { if (t[i + 2] === '-') { push('—'); i += 3; } else { push('–'); i += 2; } continue; }
     if (c === '`' && t[i + 1] === '`') { push('“'); i += 2; continue; }
     if (c === "'" && t[i + 1] === "'") { push('”'); i += 2; continue; }
-    if (c === '$' || c === '%') { i++; continue; }
+    // (a comment to its line's end, as TeX reads it)
+    if (c === '%') { const nl = t.indexOf('\n', i); i = nl < 0 ? t.length : nl + 1; while (t[i] === ' ' || t[i] === '\t') i++; continue; }
+    if (c === '$') { i++; continue; }
     push(/\s/.test(c) ? ' ' : c);
     i++;
   }

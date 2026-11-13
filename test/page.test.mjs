@@ -5,9 +5,11 @@
 // A stranger's preamble is read in bounded time. test/page.py drives the same through the page.
 import assert from 'node:assert/strict';
 import * as PS from '../src/pagesrc.js';
-import { geometry, hfRuns, fmtNum, cssColor } from '../src/layout.js';
+import { geometry, hfRuns, fmtNum, cssColor, Layout } from '../src/layout.js';
 import { applyEdits } from '../src/styles.js';
 import { buildModel } from '../src/model.js';
+import { escapeTyped, unbalanced } from '../src/ui/headerfooter.js';
+import { pageForWord } from '../src/pageword.js';
 
 let n = 0;
 const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
@@ -81,41 +83,108 @@ ok('geometry\'s keys: merged into the place that has them, a family taken out to
   assert.equal(apply(g, PS.geometryEdits(g, { margin: '2cm' })), doc('\\usepackage[margin=2cm]{geometry}\n%\\usepackage[margin=1cm]{geometry}\n'));
 });
 
-ok('paper: where it is written (geometry, the class), else geometry; the PDF then takes its size', () => {
+ok('paper: the class\'s option and geometry\'s pass where the class lays the page out (its text block stays), geometry\'s key where geometry does', () => {
+  // (TeX Live's PDF is A4 where nothing sets its size: A4 asked there is the class's option alone)
   const a = doc('');
-  assert.equal(twice(a, (t) => PS.paperEdits(t, 'a5')), doc('\\usepackage[a5paper]{geometry}\n'));
-  // the class's option changes in place, with geometry beside it so the PDF's sheet follows
+  assert.equal(twice(a, (t) => PS.paperEdits(t, 'a4')), doc('', 'Text.', '\\documentclass[a4paper]{article}'));
+  // the review's: [letterpaper] and A4: the class's option, the class's A4 text block, no geometry
+  const lp = doc('', 'Text.', '\\documentclass[letterpaper]{article}');
+  assert.equal(twice(lp, (t) => PS.paperEdits(t, 'a4')), doc('', 'Text.', '\\documentclass[a4paper]{article}'));
+  assert.equal(twice(a, (t) => PS.paperEdits(t, 'a5')), doc('\\usepackage[pass]{geometry}\n', 'Text.', '\\documentclass[a5paper]{article}'));
+  // Letter is the class's paper already: pass alone makes the PDF's sheet Letter
+  assert.equal(twice(a, (t) => PS.paperEdits(t, 'letter')), doc('\\usepackage[pass]{geometry}\n'));
+  // the class's option changes in place, with pass beside it so the PDF's sheet follows
   const b = doc('', 'Text.', '\\documentclass[11pt,a4paper]{article}');
-  assert.equal(twice(b, (t) => PS.paperEdits(t, 'letter')), doc('\\usepackage{geometry}\n', 'Text.', '\\documentclass[11pt,letterpaper]{article}'));
+  assert.equal(twice(b, (t) => PS.paperEdits(t, 'letter')), doc('\\usepackage[pass]{geometry}\n', 'Text.', '\\documentclass[11pt,letterpaper]{article}'));
   // with hyperref loaded the class's option is enough (hyperref sets the PDF's size)
   const c = doc('\\usepackage{hyperref}\n', 'Text.', '\\documentclass[a4paper]{article}');
   assert.equal(apply(c, PS.paperEdits(c, 'a5')), doc('\\usepackage{hyperref}\n', 'Text.', '\\documentclass[a5paper]{article}'));
-  // in geometry: the other size goes
+  // memoir and KOMA set the sheet themselves; KOMA's paper= is changed as KOMA writes it
+  const k = doc('', 'Text.', '\\documentclass[paper=a5]{scrartcl}');
+  assert.equal(twice(k, (t) => PS.paperEdits(t, 'a4')), doc('', 'Text.', '\\documentclass[paper=a4]{scrartcl}'));
+  const mm = doc('', 'Text.', '\\documentclass{memoir}');
+  assert.equal(twice(mm, (t) => PS.paperEdits(t, 'a4')), doc('', 'Text.', '\\documentclass[a4paper]{memoir}'));
+  // in geometry: the other size goes, in its place
   const d = doc('\\usepackage[a4paper,margin=2cm]{geometry}\n');
-  assert.equal(twice(d, (t) => PS.paperEdits(t, 'legal')), doc('\\usepackage[margin=2cm,legalpaper]{geometry}\n'));
+  assert.equal(twice(d, (t) => PS.paperEdits(t, 'legal')), doc('\\usepackage[legalpaper,margin=2cm]{geometry}\n'));
   // any size
-  assert.equal(apply(d, PS.paperEdits(d, { w: 20 * 72.27 / 2.54, h: 25 * 72.27 / 2.54 })), doc('\\usepackage[margin=2cm,paperwidth=20cm,paperheight=25cm]{geometry}\n'));
+  assert.equal(apply(d, PS.paperEdits(d, { w: 20 * 72.27 / 2.54, h: 25 * 72.27 / 2.54 })), doc('\\usepackage[paperwidth=20cm,paperheight=25cm,margin=2cm]{geometry}\n'));
+  // a size the class does not know: geometry's layout, the margins pinned as they are (pass goes)
+  const e = doc('\\usepackage[pass]{geometry}\n');
+  const pin = { l: 134.27, r: 134.73, t: 125.27, b: 119.7 };
+  assert.equal(apply(e, PS.paperEdits(e, 'a3', { pin })), doc('\\usepackage[left=134.27pt,right=134.73pt,top=125.27pt,bottom=119.7pt,a3paper]{geometry}\n'));
+  // bare geometry (no options) lays the page out by its own defaults: that is geometry's layout
+  const f = doc('\\usepackage{geometry}\n');
+  assert.equal(apply(f, PS.paperEdits(f, 'a5')), doc('\\usepackage[a5paper]{geometry}\n'));
+  // beamer: none of it (Layout's page controls are off there)
+  assert.equal(PS.pageMode(doc('', 'Text.', '\\documentclass{beamer}')).cls.beamer, true);
 });
 
-ok('orientation: landscape in geometry; portrait takes it out where it is', () => {
+ok('orientation: the class\'s landscape (and pass) where the class lays the page out, geometry\'s key where geometry does; portrait takes it out where it is', () => {
   const a = doc('\\usepackage[margin=2cm]{geometry}\n');
   const l = twice(a, (t) => PS.orientationEdits(t, 'landscape'));
   assert.equal(l, doc('\\usepackage[margin=2cm,landscape]{geometry}\n'));
   assert.equal(apply(l, PS.orientationEdits(l, 'portrait')), a);
+  // the class's landscape with nothing that sets the sheet: the PDF is A4 upright, so landscape
+  // is asked again: pass makes the sheet turn, A4 as it was
   const b = doc('', 'Text.', '\\documentclass[landscape]{article}');
-  assert.deepEqual(PS.orientationEdits(b, 'landscape'), []);
+  assert.equal(PS.sheetLandscape(b), false);
+  assert.equal(twice(b, (t) => PS.orientationEdits(t, 'landscape')), doc('\\usepackage[pass]{geometry}\n', 'Text.', '\\documentclass[landscape,a4paper]{article}'));
   assert.equal(apply(b, PS.orientationEdits(b, 'portrait')), doc('', 'Text.', '\\documentclass{article}'));
+  const c = doc('\\usepackage{hyperref}\n', 'Text.', '\\documentclass[a4paper]{article}');
+  assert.equal(twice(c, (t) => PS.orientationEdits(t, 'landscape')), doc('\\usepackage{hyperref}\n', 'Text.', '\\documentclass[a4paper,landscape]{article}'));
+});
+
+ok('header and footer distances: geometry\'s keys, the text block pinned where the class lays it out', () => {
+  const a = doc('', 'Text.', '\\documentclass[a4paper]{article}');
+  const pin = { l: 125.27, tw: 345, t: 125.27, th: 598 };
+  assert.equal(apply(a, PS.headFootEdits(a, { headsep: 40 }, { pin })), doc('\\usepackage[left=125.27pt,textwidth=345pt,top=125.27pt,textheight=598pt,headsep=40pt]{geometry}\n', 'Text.', '\\documentclass[a4paper]{article}'));
+  const b = doc('\\usepackage[margin=2cm]{geometry}\n');
+  assert.equal(twice(b, (t) => PS.headFootEdits(t, { footskip: 30 })), doc('\\usepackage[margin=2cm,footskip=30pt]{geometry}\n'));
+  // nothing sets the sheet (A4 shown, Letter the class's paper): A4 kept
+  const c = doc('');
+  assert.equal(apply(c, PS.headFootEdits(c, { headsep: 40 }, { pin })), doc('\\usepackage[a4paper,left=125.27pt,textwidth=345pt,top=125.27pt,textheight=598pt,headsep=40pt]{geometry}\n'));
+});
+
+ok('the sheet and the text block as TeX makes them: A4 where nothing sets the PDF\'s size, geometry bare or with pass (review H4, M1)', () => {
+  const G = (src) => geometry(buildModel({ files: new Map([['main.tex', src]]), main: 'main.tex' }).opts);
+  const near = (g, want, what) => { for (const [k, v] of Object.entries(want)) assert.ok(Math.abs(g[k] - v) < 0.05, what + ' ' + k + ': ' + g[k] + ' against TeX\'s ' + v); };
+  // \documentclass{article}: the class's Letter text block on TeX Live's A4 sheet (595 x 842 bp)
+  near(G(doc('')), { pw: 597.51, ph: 845.05, paperW: 614.295, tw: 345, ml: 134.27, th: 550, mt: 125.27 }, 'article');
+  // a5paper alone: the PDF is still A4 upright; with hyperref it is A5
+  near(G(doc('', 'Text.', '\\documentclass[a5paper]{article}')), { pw: 597.51, ph: 845.05, tw: 276 }, 'a5');
+  near(G(doc('\\usepackage{hyperref}\n', 'Text.', '\\documentclass[a5paper]{article}')), { pw: 421.1, ph: 597.51, tw: 276 }, 'a5 hyperref');
+  assert.equal(G(doc('', 'Text.', '\\documentclass[landscape]{article}')).land, false);
+  // geometry with no options: its own layout (0.7 of the paper), TeX's \textwidth 418.25pt on A4
+  near(G(doc('\\usepackage{geometry}\n', 'Text.', '\\documentclass[a4paper]{article}')), { pw: 597.51, tw: 418.25 }, 'bare geometry');
+  // pass: the class's text block (TeX: 345pt, \oddsidemargin 53pt, 598pt), the sheet the class's paper
+  near(G(doc('\\usepackage[pass]{geometry}\n', 'Text.', '\\documentclass[a4paper]{article}')), { pw: 597.51, tw: 345, ml: 125.27, th: 598 }, 'pass a4');
+  near(G(doc('\\usepackage[pass]{geometry}\n', 'Text.', '\\documentclass[letterpaper]{article}')), { pw: 614.295, ph: 794.97, tw: 345, ml: 134.27 }, 'pass letter');
+  near(G(doc('\\usepackage[pass,margin=1cm]{geometry}\n', 'Text.', '\\documentclass[letterpaper]{article}')), { tw: 345 }, 'pass ignores keys');
+  // memoir and KOMA set the sheet
+  near(G(doc('', 'Text.', '\\documentclass[a5paper]{memoir}')), { pw: 421.1 }, 'memoir');
+  near(G(doc('', 'Text.', '\\documentclass[paper=a5]{scrartcl}')), { pw: 421.1 }, 'KOMA');
+  // the paper written by Size makes the drawn sheet what the PDF has
+  const a = doc('');
+  near(G(apply(a, PS.paperEdits(a, 'letter'))), { pw: 614.295, ph: 794.97, tw: 345, ml: 134.27 }, 'Size letter');
+  near(G(apply(a, PS.paperEdits(a, 'a5'))), { pw: 421.1, tw: 276 }, 'Size a5');
+  // margins on a page whose sheet nothing set: the sheet stays A4
+  near(G(apply(a, PS.marginEdits(a, { t: 72.27, b: 72.27, l: 72.27, r: 72.27 }))), { pw: 597.51, tw: 597.51 - 144.54 }, 'margins');
 });
 
 ok('margins: Word\'s presets as the fewest keys; the same again changes nothing; mirrored is two sided', () => {
   const CM = 72.27 / 2.54;
   const a = doc('');
+  // (the sheet shown, A4 where nothing set it, stays: a4paper beside them)
   const N = twice(a, (t) => PS.marginEdits(t, { t: 2.54 * CM, b: 2.54 * CM, l: 2.54 * CM, r: 2.54 * CM }));
-  assert.equal(N, doc('\\usepackage[margin=2.54cm]{geometry}\n'));
+  assert.equal(N, doc('\\usepackage[a4paper,margin=2.54cm]{geometry}\n'));
   const M = twice(N, (t) => PS.marginEdits(t, { t: 2.54 * CM, b: 2.54 * CM, l: 1.91 * CM, r: 1.91 * CM }));
-  assert.equal(M, doc('\\usepackage[vmargin=2.54cm,hmargin=1.91cm]{geometry}\n'));
+  assert.equal(M, doc('\\usepackage[a4paper,vmargin=2.54cm,hmargin=1.91cm]{geometry}\n'));
   const R = PS.marginEdits(N, { t: 2.54 * CM, b: 2.54 * CM, l: 3.18 * CM, r: 2.54 * CM, mirrored: true });
-  assert.equal(apply(N, R), doc('\\usepackage[twoside,vmargin=2.54cm,inner=3.18cm,outer=2.54cm]{geometry}\n'));
+  assert.equal(apply(N, R), doc('\\usepackage[a4paper,twoside,vmargin=2.54cm,inner=3.18cm,outer=2.54cm]{geometry}\n'));
+  // a class paper and pass: pass goes (it would ignore the margins), the paper is the class's
+  const P = doc('\\usepackage[pass]{geometry}\n', 'Text.', '\\documentclass[letterpaper]{article}');
+  assert.equal(twice(P, (t) => PS.marginEdits(t, { t: 72.27, b: 72.27, l: 72.27, r: 72.27 })), doc('\\usepackage[margin=2.54cm]{geometry}\n', 'Text.', '\\documentclass[letterpaper]{article}'));
   assert.deepEqual(PS.marginKeys({ t: 72.27, b: 72.27, l: 72.27, r: 72.27, gutter: CM }), { margin: '2.54cm', bindingoffset: '1cm' });
   // the page reads what was written: Normal is an inch all round
   const m = buildModel({ files: new Map([['main.tex', N]]), main: 'main.tex' });
@@ -159,6 +228,88 @@ ok('columns: two as the class\'s twocolumn, three as multicols around the body, 
   assert.equal(apply(s1, PS.lengthEdits(s1, 'columnseprule', null)), src);
 });
 
+ok('a page break in formatted words: the groups closed and opened again, or the break moved out of them; none in a footnote or a box (review M3)', () => {
+  const at = (src, word, q) => { const p = src.indexOf(word); const r = PS.breakAt(src, 0, p, q == null ? p : q, '\\newpage'); return r.blocked ? { blocked: r.blocked } : { text: apply(src, r.edits), caret: r.caret }; };
+  // the reviewer's: Ctrl+Enter between "bold" and "words"
+  const b = at('Some \\textbf{bold words} here.', 'words');
+  assert.equal(b.text, 'Some \\textbf{bold}\n\\newpage\n\\textbf{words} here.');
+  assert.equal(b.text.slice(b.caret, b.caret + 5), 'words');
+  // at a group's start or end: the break before it, after it
+  assert.equal(at('Some \\textbf{bold words} here.', 'bold').text, 'Some\n\\newpage\n\\textbf{bold words} here.');
+  assert.equal(at('Some \\textbf{bold words} here.', '} here').text, 'Some \\textbf{bold words}\n\\newpage\nhere.');
+  // declarations and arguments kept
+  assert.equal(at('A {\\bfseries bold words} b.', 'words').text, 'A {\\bfseries bold}\n\\newpage\n{\\bfseries words} b.');
+  assert.equal(at('A \\textcolor{red}{red \\emph{deep words} x} b.', 'words').text, 'A \\textcolor{red}{red \\emph{deep}}\n\\newpage\n\\textcolor{red}{\\emph{words} x} b.');
+  // footnotes, boxes, minipages: no page there
+  assert.match(at('A\\footnote{note words} b.', 'words').blocked, /footnote/);
+  assert.match(at('A \\parbox{3cm}{box words} b.', 'words').blocked, /parbox/);
+  assert.match(at('\\begin{minipage}{3cm}\nmini words\n\\end{minipage}', 'words').blocked, /minipage/);
+  // a comment or maths before it changes nothing
+  assert.equal(at('$a{b}$ then words % {\n', 'words').text, '$a{b}$ then\n\\newpage\nwords % {\n');
+});
+
+ok('breaks as TeX makes them: \\newpage ends the page in multicols and a column in two columns; Even and Odd page land on the next page of that parity (review M2, M6)', () => {
+  const L = new Layout(null, null);
+  L.g = { th: 100, pt: 10, bs: 12, cols: 1, twoside: false, colsep: 10, tw: 300 };
+  L.px = 1; L.page = {};
+  const P = (h = 30, o = {}) => ({ kind: 'p', h, sb: 0, lines: null, ...o });
+  const BR = (o = {}) => ({ kind: 'break', ...o });
+  const where = (items) => L.plan(items).map((pg) => pg.entries.map((e) => items.indexOf(e.it)));
+  // Even page from page 1: page 2 is even, no blank page (the reviewer: the old break gave page 4)
+  assert.deepEqual(where([P(), BR(), BR({ parity: 'even' }), P()]), [[0], [3]]);
+  // from page 2: a blank page 3, the text on page 4
+  assert.deepEqual(where([P(), BR(), P(), BR(), BR({ parity: 'even' }), P()]), [[0], [2], [], [5]]);
+  // Odd page from page 1: page 2 blank, the text on 3; from page 2: page 3 at once
+  assert.deepEqual(where([P(), BR(), BR({ parity: 'odd' }), P()]), [[0], [], [3]]);
+  assert.deepEqual(where([P(), BR(), P(), BR(), BR({ parity: 'odd' }), P()]), [[0], [2], [5]]);
+  // \newpage inside multicols (a region): the page ends, not the column
+  const mc = (o = {}) => P(30, { cols: 2, region: 'r1', ...o });
+  const pages = L.plan([mc(), BR({ column: true, region: 'r1', cols: 2 }), mc()]);
+  assert.equal(pages.length, 2);
+  // in a two column document \newpage ends the column, the page goes on
+  L.g = { ...L.g, cols: 2 };
+  assert.equal(L.plan([P(), BR({ column: true }), P()]).length, 1);
+  // the source: the model reads the idiom Even page writes
+  const src = doc('', 'One.\n' + PS.BREAKS.even + '\nTwo.');
+  const m = buildModel({ files: new Map([['main.tex', src]]), main: 'main.tex' });
+  const br = m.blocks.flatMap((B) => B.items).filter((x) => x.type === 'pagebreak');
+  assert.deepEqual(br.map((x) => x.parity || (x.column ? 'col' : 'page')), ['page', 'even']);
+});
+
+ok('several steps of a dialog: as many edits as places changed, each the smallest (review, Low)', () => {
+  const src = doc('', 'One.\n\nTwo.');
+  const E = PS.stepEdits(src, [(t) => [{ s: t.indexOf('Two'), e: t.indexOf('Two'), t: '\\vspace*{\\fill}\n' }], (t) => PS.marginEdits(t, { t: 72.27, b: 72.27, l: 72.27, r: 72.27 })]);
+  assert.equal(E.length, 2);
+  assert.ok(E.every((x) => x.t.length < 60), JSON.stringify(E));
+  assert.equal(apply(src, E), doc('\\usepackage[a4paper,margin=2.54cm]{geometry}\n', 'One.\n\n\\vspace*{\\fill}\nTwo.'));
+  assert.equal(PS.stepEdits(src, [() => null]), null);
+});
+
+ok('columns never hold a float: multicols ended before it and begun again after, read back as the body\'s columns, gone again to the byte (review H5)', () => {
+  const src = '\\documentclass{article}\n\\begin{document}\nText before words.\n\\begin{figure}[h]\n\\centering\nFIGBODY\n\\caption{A caption}\n\\end{figure}\nText after.\n\\end{document}\n';
+  const three = apply(src, PS.columnsEdits(src, 3));
+  assert.equal(three, '\\documentclass{article}\n\\usepackage{multicol}\n\\begin{document}\n\\begin{multicols}{3}\nText before words.\n\\end{multicols}\n\\begin{figure}[h]\n\\centering\nFIGBODY\n\\caption{A caption}\n\\end{figure}\n\\begin{multicols}{3}\nText after.\n\\end{multicols}\n\\end{document}\n');
+  assert.equal(PS.bodyColumns(three).n, 3);
+  assert.deepEqual(PS.columnsEdits(three, 3), []);
+  const two = apply(three, PS.columnsEdits(three, 2));
+  assert.equal(two.match(/\\begin\{multicols\}\{2\}/g).length, 2);
+  assert.equal(apply(three, PS.columnsEdits(three, 1)), src.replace('\\begin{document}', '\\usepackage{multicol}\n\\begin{document}'));
+  // around a selection too; figure* may stay (it goes to a page's top)
+  const sel = 'A.\n\n\\begin{table}\nT\n\\end{table}\n\nB.\n\n\\begin{figure*}\nW\n\\end{figure*}\n\nC.';
+  assert.equal(apply(sel, PS.wrapMulticols(sel, 0, sel.length, 3)), '\\begin{multicols}{3}\nA.\n\\end{multicols}\n\n\\begin{table}\nT\n\\end{table}\n\n\\begin{multicols}{3}\nB.\n\n\\begin{figure*}\nW\n\\end{figure*}\n\nC.\n\\end{multicols}');
+  // a float a document has inside multicols: drawn as left out, as TeX leaves it out
+  const inside = '\\documentclass{article}\n\\usepackage{multicol}\n\\begin{document}\n\\begin{multicols}{2}\nOne.\n\\begin{figure}\nX\\caption{Gone}\n\\end{figure}\nTwo.\n\\end{multicols}\n\\end{document}\n';
+  const m = buildModel({ files: new Map([['main.tex', inside]]), main: 'main.tex' });
+  const items = m.blocks.flatMap((B) => B.items);
+  const lost = items.find((x) => x.lost);
+  assert.ok(lost && /left out of the PDF/.test(lost.name), JSON.stringify(items.map((x) => x.type)));
+  assert.ok(!items.some((x) => x.type === 'float'));
+  // and each paragraph of the multicols is a block of its own (review M5): typing redraws one
+  const mb = m.blocks.filter((B) => B.items.some((x) => x.mc));
+  assert.ok(mb.length >= 3, mb.length);
+  assert.ok(mb.every((B) => B.items.every((x) => x.mc && x.mc.n === 2 && x.mc.key === 'main.tex:mc1')));
+});
+
 ok('headers and footers: fancyhdr turned on once, a place written in place, the plain page number kept', () => {
   const src = doc('\\usepackage{amsmath}\n');
   const keep = { FOC: '\\thepage', FEC: '\\thepage' };
@@ -191,6 +342,112 @@ ok('headers and footers: fancyhdr turned on once, a place written in place, the 
   // \pagestyle{empty} becomes fancy where it stands
   const e = doc('\\pagestyle{empty}\n');
   assert.equal(apply(e, PS.slotEdits(e, new Set(['FOC', 'FEC']), '\\thepage')), doc('\\usepackage{fancyhdr}\n\\pagestyle{fancy}\n\\fancyhf{}\n\\renewcommand{\\headrulewidth}{0pt}\n\\fancyfoot[C]{\\thepage}\n'));
+});
+
+ok('the header typed on the page: TeX\'s signs typed as words, braces that do not pair never written (review H1)', () => {
+  // the reviewer's: \textbf{ typed, a pause: nothing written until the brace closes
+  assert.ok(unbalanced(escapeTyped('Old', 'Old \\textbf{')));
+  assert.equal(unbalanced(escapeTyped('Old', 'Old \\textbf{x}')), '');
+  assert.ok(unbalanced('Old \\'));
+  assert.ok(unbalanced('a}b{'));
+  // $ _ ^ ~ & % # typed are text; the source's own $x$ stays maths; \$ typed is a command already
+  assert.equal(escapeTyped('Old', 'Old costs $5 and a_b'), 'Old costs \\$5 and a\\_b');
+  assert.equal(escapeTyped('$x$ and', '$x$ and 50% ^~#&'), '$x$ and 50\\% \\textasciicircum{}\\textasciitilde{}\\#\\&');
+  assert.equal(escapeTyped('', 'a \\$ b \\\\$'), 'a \\$ b \\\\\\$');
+  assert.equal(escapeTyped('\\thepage', 'Page \\thepage'), 'Page \\thepage');
+  // and the page draws them as the PDF prints them
+  assert.equal(hfRuns('50\\% \\textasciicircum{}\\textasciitilde{} \\$5 a\\_b').map((x) => x.t).join(''), '50% ^~ $5 a_b');
+});
+
+ok('a header\'s argument over several lines, with comments: read as TeX reads it, edited where it changed, comments kept (review H2)', () => {
+  const src = doc('\\usepackage{fancyhdr}\n\\pagestyle{fancy}\n\\fancyhf{}\n\\fancyhead[L]{%\n  \\textbf{My Title}% the running title\n}\n');
+  const P = PS.readPage(src);
+  assert.equal(P.slots.HOL, '\\textbf{My Title}');
+  assert.equal(hfRuns(P.slots.HOL).map((x) => x.t).join(''), 'My Title');
+  // even unread, a comment in the TeX is no text on the page
+  assert.equal(hfRuns('\\textbf{My Title}% the running title\n').map((x) => x.t).join(''), 'My Title');
+  // "!" typed at the end: one character, before the comment
+  const a = apply(src, PS.slotEdits(src, new Set(['HOL', 'HEL']), '\\textbf{My Title}!'));
+  assert.equal(a, src.replace('{My Title}%', '{My Title}!%'));
+  assert.equal(PS.readPage(a).slots.HOL, '\\textbf{My Title}!');
+  // a change across the comment cannot be made without losing it: refused
+  const b = doc('\\usepackage{fancyhdr}\n\\pagestyle{fancy}\n\\fancyhead[L]{One% note\nTwo}\n');
+  assert.equal(PS.readPage(b).slots.HOL, 'OneTwo');
+  assert.equal(PS.slotEdits(b, new Set(['HOL', 'HEL']), 'Three'), null);
+  assert.equal(apply(b, PS.slotEdits(b, new Set(['HOL', 'HEL']), 'OneTwo!')), b.replace('Two}', 'Two!}'));
+  // CRLF: the line added in the file's own line ends
+  const c = doc('\\usepackage{fancyhdr}\n\\pagestyle{fancy}\n').replace(/\n/g, '\r\n');
+  const c1 = apply(c, PS.slotEdits(c, new Set(['FOR', 'FER']), 'x'));
+  assert.ok(!/[^\r]\n/.test(c1), JSON.stringify(c1));
+  const d = doc('').replace(/\n/g, '\r\n');
+  const d1 = apply(d, PS.slotEdits(d, new Set(['HOL', 'HEL']), 'x', { keep: { FOC: '\\thepage', FEC: '\\thepage' } }));
+  assert.ok(!/[^\r]\n/.test(d1), JSON.stringify(d1));
+});
+
+ok('a \\fancypagestyle of the document\'s own: drawn as its pages get it, edited inside it (review H3)', () => {
+  const thesis = '\\usepackage{fancyhdr}\n\\fancypagestyle{thesis}{\\fancyhf{}\\fancyhead[L]{My Thesis}\\fancyhead[R]{\\leftmark}\\fancyfoot[R]{\\thepage}}\n\\pagestyle{thesis}\n';
+  const src = doc(thesis);
+  const P = PS.readPage(src);
+  assert.equal(P.style, 'thesis');
+  assert.equal(P.fancy, true);
+  assert.deepEqual([P.slots.HOL, P.slots.HOR, P.slots.FOR, P.slots.FOC], ['My Thesis', '\\leftmark', '\\thepage', '']);
+  assert.equal(P.headrule, 0.4);
+  // "Draft" at the centre: inside the style, \pagestyle{thesis} kept
+  const a = twice(src, (t) => PS.slotEdits(t, new Set(['HOC', 'HEC']), 'Draft'));
+  assert.equal(a, src.replace('\\fancyfoot[R]{\\thepage}}', '\\fancyfoot[R]{\\thepage}\\fancyhead[C]{Draft}}'));
+  // its own place: in place
+  assert.equal(apply(src, PS.slotEdits(src, new Set(['HOL', 'HEL']), 'Final Thesis')), src.replace('{My Thesis}', '{Final Thesis}'));
+  // a style over several lines: a line before its closing brace, indented as its lines
+  const m = doc('\\usepackage{fancyhdr}\n\\fancypagestyle{main}{%\n  \\fancyhf{}%\n  \\fancyfoot[C]{\\thepage}%\n}\n\\pagestyle{main}\n');
+  assert.equal(apply(m, PS.slotEdits(m, new Set(['HOR', 'HER']), 'X')), m.replace('  \\fancyfoot[C]{\\thepage}%\n}', '  \\fancyfoot[C]{\\thepage}%\n  \\fancyhead[R]{X}\n}'));
+  // a style over fancy's own settings, and over its base
+  const b = doc('\\usepackage{fancyhdr}\n\\pagestyle{fancy}\n\\fancyhf{}\n\\fancyfoot[C]{\\thepage}\n\\fancypagestyle{x}{\\fancyhead[L]{X}}\n\\fancypagestyle{y}[x]{\\renewcommand{\\headrulewidth}{0pt}\\fancyhead[R]{Y}}\n\\pagestyle{y}\n');
+  const B = PS.readPage(b);
+  assert.deepEqual([B.slots.HOL, B.slots.HOR, B.slots.FOC, B.headrule], ['X', 'Y', '\\thepage', 0]);
+  // \fancypagestyle{plain}: the chapters' and the title's pages
+  const pl = PS.readPage(doc('\\usepackage{fancyhdr}\n\\pagestyle{fancy}\n\\fancypagestyle{plain}{\\fancyhf{}\\fancyfoot[R]{\\thepage}}\n'));
+  assert.equal(pl.styles.plain.slots.FOR, '\\thepage');
+  assert.equal(pl.styles.plain.slots.HOL, '');
+});
+
+ok('KOMA-Script: scrlayer-scrpage\'s own commands read and edited, a KOMA class gets it rather than fancyhdr (review, Low)', () => {
+  const cls = '\\documentclass{scrartcl}';
+  const src = doc('\\usepackage{scrlayer-scrpage}\n\\ihead{Left}\n\\cfoot[\\pagemark]{\\pagemark}\n', 'Text.', cls);
+  const P = PS.readPage(src);
+  assert.equal(P.style, 'scrheadings');
+  assert.deepEqual([P.slots.HOL, P.slots.HOC, P.slots.FOC], ['Left', '\\headmark', '\\pagemark']);
+  assert.equal(P.styles['plain.scrheadings'].slots.FOC, '\\pagemark');
+  // in place, and a new one after the last
+  assert.equal(apply(src, PS.slotEdits(src, new Set(['HOL', 'HEL']), 'Right now')), src.replace('{Left}', '{Right now}'));
+  assert.equal(twice(src, (t) => PS.slotEdits(t, new Set(['HOR', 'HER']), 'X')), src.replace('{\\pagemark}\n', '{\\pagemark}\n\\ohead{X}\n'));
+  assert.ok(!PS.slotEdits(src, new Set(['HOR', 'HER']), 'X').some((e) => /fancy/.test(e.t)));
+  // a KOMA class without it: scrlayer-scrpage, its running head out where the page had none
+  const k = doc('', 'Text.', cls);
+  const k1 = apply(k, PS.slotEdits(k, new Set(['HOL', 'HEL']), 'Draft', { keep: { FOC: '\\thepage', FEC: '\\thepage' } }));
+  assert.equal(k1, doc('\\usepackage{scrlayer-scrpage}\n\\ihead{Draft}\n\\chead{}\n', 'Text.', cls));
+  const K1 = PS.readPage(k1);
+  assert.deepEqual([K1.slots.HOL, K1.slots.HOC, K1.slots.FOC], ['Draft', '', '\\pagemark']);
+  assert.equal(hfRuns('\\pagemark \\headmark', { page: '3', headmark: '1 Intro' }).map((x) => x.t).join(''), '3 1 Intro');
+});
+
+ok('a book\'s pages: the headings style, its running head at the top and no number at the foot, in the page and in Word (review M4)', () => {
+  const src = doc('', '\\chapter{One}\nText.', '\\documentclass{book}');
+  const P = PS.readPage(src);
+  assert.equal(P.style, 'headings');
+  assert.equal(P.fancy, false);
+  assert.deepEqual([P.slots.HEL, P.slots.HER, P.slots.HOL, P.slots.HOR, P.slots.FOC], ['\\thepage', '\\slshape\\leftmark', '\\slshape\\rightmark', '\\thepage', '']);
+  assert.equal(PS.readPage(doc('', 'Text.', '\\documentclass{report}')).style, 'plain');
+  assert.equal(PS.readPage(doc('', 'Text.', '\\documentclass{memoir}')).style, 'headings');
+  // Word gets the running head and the number at the top, nothing at the foot
+  const m = buildModel({ files: new Map([['main.tex', src]]), main: 'main.tex' });
+  const W = pageForWord(m, src);
+  assert.ok(W.head && !W.foot, JSON.stringify(W));
+  assert.deepEqual(W.head.even[0], [{ field: 'PAGE', b: false, i: false }]);
+  // a header typed in: fancyhdr, the running head kept as it was
+  const keep = Object.fromEntries(Object.entries(P.slots).filter(([, t]) => t));
+  const a = apply(src, PS.slotEdits(src, new Set(['FOC', 'FEC']), 'Draft', { keep, twoside: true }));
+  const A = PS.readPage(a);
+  assert.deepEqual([A.slots.HEL, A.slots.HER, A.slots.HOL, A.slots.HOR, A.slots.FOC], ['\\thepage', '\\slshape\\leftmark', '\\slshape\\rightmark', '\\thepage', 'Draft']);
 });
 
 ok('page numbers: their format and first number at the body\'s start, back to the bytes of before', () => {
@@ -314,6 +571,19 @@ ok('a stranger\'s preamble is read in bounded time', () => {
   assert.ok(Date.now() - t1 < 500, 'took ' + (Date.now() - t1) + ' ms');
   assert.deepEqual(PS.setLengths('\\setlength{\\columnsep}{1cm}\\setlength \\columnseprule {2pt}\\setlength{\\columnsepx}{3pt}', 'columnseprule').length, 1);
   assert.equal(PS.readPage(doc('\\setlength{\\columnsep}{1cm}\n\\setlength\\columnsep{2cm}\n')).colsep.toFixed(2), (2 * 72.27 / 2.54).toFixed(2));
+  // the review fixes' readings (security audit, quick profile): a paragraph of brackets or of
+  // nested groups at the caret (read as the ribbon's state at every caret move), a preamble of a
+  // thousand \fancypagestyle lines, a body of 20 000 unclosed floats, a header argument of
+  // backslashes and comments
+  const t2 = Date.now();
+  const br = '\\a['.repeat(13000) + 'x', ne = '\\textbf{'.repeat(5000) + 'x', bra = '{'.repeat(39000) + 'x';
+  for (const x of [br, ne, bra]) PS.breakAt(x, 0, x.length - 1, x.length - 1, '\\newpage');
+  PS.readPage(doc('\\usepackage{fancyhdr}\n' + '\\fancypagestyle{a}{\\fancyhead[L]{x}}\n'.repeat(3000) + '\\pagestyle{a}\n'));
+  const fl = doc('', '\\begin{figure}'.repeat(20000));
+  PS.bodyColumns(fl); PS.columnsEdits(fl, 3); PS.wrapMulticols(fl, 0, fl.length, 3);
+  PS.argEdits('{' + '\\'.repeat(4000) + '%\n'.repeat(500) + '}', 1, 4000 + 1000 + 1, 'x');
+  PS.cleanArg('%'.repeat(4000)); PS.cleanArg(' \n'.repeat(4000));
+  assert.ok(Date.now() - t2 < 1500, 'took ' + (Date.now() - t2) + ' ms');
 });
 
 console.log('page: ' + n + ' passed');
