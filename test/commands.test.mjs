@@ -39,8 +39,9 @@ ok('no name twice in one tab\'s panel (the downloads and the bar are in view wit
     const all = [...always, ...here];
     const twice = all.filter((x, i) => all.indexOf(x) !== i);
     assert.deepEqual(twice, [], t.name);
-    // a group folds into a button of its name: no command of the tab may have it
-    for (const g of t.groups) if (here.length) assert.ok(!all.includes('button:' + g.name), t.name + ': group ' + g.name);
+    // a group folds into a button of its name: no command of the tab may have it (a group with
+    // no command has no such button: File's Open while Print alone is there)
+    for (const g of t.groups) if (here.length && describe().some((x) => x.tab === t.id && x.group === g.id)) assert.ok(!all.includes('button:' + g.name), t.name + ': group ' + g.name);
   }
 });
 

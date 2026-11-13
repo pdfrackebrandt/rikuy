@@ -34,6 +34,9 @@ on:
       - 'test/ribbon.py'
       - 'test/agent.py'
       - 'test/preamble.py'
+      - 'test/page.py'
+      - 'src/layout.js'
+      - 'src/pagesrc.js'
       - 'test/serve.py'
       - 'test/browser.py'
       - '.github/workflows/tex.yml'
@@ -104,6 +107,8 @@ jobs:
         run: cd test && python3 agent.py
       - name: The preamble's format gives the pass an ordinary compile gives
         run: cd test && python3 preamble.py
+      - name: The page's set up in TeX's PDF (paper size, header, line numbers) and Print
+        run: cd test && python3 page.py compile_pdf
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rikuy-dist

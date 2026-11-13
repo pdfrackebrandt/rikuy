@@ -64,7 +64,8 @@ def mouse_and_keys(page):
     load_doc(page, DOC)
     click_text(page, 'Second paragraph', 3)
     tabs = shown_tabs(page)
-    check('the tablist "Ribbon" holds the tabs in Word\'s order, Home open; tabs without a command yet are not shown', tabs == ['Home', 'Insert', 'References', 'Review', 'View', 'Help']
+    WORD = ['File', 'Home', 'Insert', 'Design', 'Layout', 'References', 'Review', 'View', 'Help']
+    check('the tablist "Ribbon" holds the tabs in Word\'s order, Home open; tabs without a command yet are not shown', tabs == [t for t in WORD if t in tabs] and 'Home' in tabs and 'Layout' in tabs
           and page.get_by_role('tab', name='Home', exact=True).get_attribute('aria-selected') == 'true', tabs)
     seen = []
     for name in tabs:
@@ -89,9 +90,13 @@ def mouse_and_keys(page):
     for key in ('ArrowRight', 'ArrowRight', 'End', 'Home', 'ArrowLeft', 'ArrowRight'):
         page.keyboard.press(key); page.wait_for_timeout(80)
         got.append(page.evaluate('[document.activeElement.textContent, document.querySelector("#rb-tabs [aria-selected=true]").textContent]'))
-    check('the arrows, Home and End move along the tabs and open each (the last wraps to the first)', [g[0] for g in got] == ['Insert', 'References', 'Help', 'Home', 'Help', 'Home'] and all(a == b for a, b in got), got)
+    # (from Home two to the right, the last, the first, back round to the last, on to the first)
+    k = tabs.index('Home')
+    want = [tabs[k + 1], tabs[k + 2], tabs[-1], tabs[0], tabs[-1], tabs[0]]
+    check('the arrows, Home and End move along the tabs and open each (the last wraps to the first)', [g[0] for g in got] == want and all(a == b for a, b in got), got)
     stops = page.evaluate('[...document.querySelectorAll("#rb-tabs [role=tab]")].filter((t) => t.tabIndex === 0).map((t) => t.textContent)')
-    check('one tab stop in the tablist: the open tab', stops == ['Home'], stops)
+    check('one tab stop in the tablist: the open tab', stops == [tabs[0]], stops)
+    open_tab(page, 'Home'); page.focus('#rt-home')
     page.keyboard.press('ArrowDown'); page.wait_for_timeout(80)
     into = page.evaluate('[document.activeElement.id, document.activeElement.closest("[role=toolbar]") && document.activeElement.closest("[role=toolbar]").getAttribute("aria-label")]')
     check('the down arrow goes into the open tab\'s toolbar, to its tab stop', into == ['rb-b', 'Home'], into)
@@ -208,12 +213,17 @@ def every_command(page):
     for x in reg:
         if x['tab'].startswith('table'):
             click_text(page, 'cell', 2); page.wait_for_timeout(200)
+        elif x['tab'] == 'headfoot':
+            # (the Header & Footer tab is there while the header is open on the page)
+            if not page.evaluate('!!rikuy.hf'): page.evaluate('rikuy.pageHFOpen("head")'); page.wait_for_timeout(200)
         else:
+            if page.evaluate('!!rikuy.hf'): page.evaluate('rikuy.pageHFClose()')
             click_text(page, 'A paragraph', 2); page.wait_for_timeout(120)
         open_tab(page, tabs[x['tab']])
         loc = page.get_by_role(x['role'], name=x['name'], exact=True)
         n += 1
         if loc.count() != 1 or not page.locator('#' + x['id']).is_visible(): bad.append((x['tabName'] if 'tabName' in x else x['tab'], x['name'], loc.count()))
+    if page.evaluate('!!rikuy.hf'): page.evaluate('rikuy.pageHFClose()')
     open_tab(page, 'Home')
     check('every command placed on the ribbon (%d) is found by its role and name, once, with its tab open' % n, not bad and n > 20, bad)
 
