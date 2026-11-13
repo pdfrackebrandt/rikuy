@@ -172,6 +172,29 @@ export class Renderer {
     return B;
   }
 
+  // (B2) a paragraph's own settings, as the model read them from its environments and its start
+  // (src/model.js): its line spacing against the document's, adjustwidth's margins, a hanging
+  // indent, a tcolorbox's colour and frame, samepage (its lines stay on one page), \nopagebreak
+  // after it, no hyphenation. Lengths are points, drawn at the page's scale (--pt).
+  paraLook(it, el, item) {
+    const pt = (v) => 'calc(var(--pt) * ' + (+v).toFixed(2) + ' * 1px)';
+    if (it.spread) el.style.lineHeight = 'calc(var(--lh) * ' + (it.spread / (this.model.opts.spread || 1)).toFixed(4) + ')';
+    if (it.mx) { if (it.mx[0]) el.style.marginLeft = pt(it.mx[0]); if (it.mx[1]) el.style.marginRight = pt(it.mx[1]); }
+    if (it.hang) { el.classList.add('hang'); el.style.setProperty('--hang', pt(it.hang)); }
+    if (it.box) {
+      const b = it.box, line = b.rule > 0 ? pt(Math.max(b.rule, 0.4)) + ' solid ' + (cssColor(b.fr) || '#404040') : '';
+      el.classList.add('bx');
+      el.style.background = cssColor(b.bg) || '#F2F2F2';
+      el.style.paddingLeft = pt(b.l); el.style.paddingRight = pt(b.r);
+      if (line) { el.style.borderLeft = line; el.style.borderRight = line; }
+      if (it.boxFirst) { el.style.paddingTop = pt(b.t); if (line) el.style.borderTop = line; if (!b.sharp) { el.style.borderTopLeftRadius = el.style.borderTopRightRadius = pt(2.85); } }
+      if (it.boxLast) { el.style.paddingBottom = pt(b.b); if (line) el.style.borderBottom = line; if (!b.sharp) { el.style.borderBottomLeftRadius = el.style.borderBottomRightRadius = pt(2.85); } }
+    }
+    if (it.keepLines) item.splittable = false;
+    if (it.keepNext) item.keepNext = true;
+    if (it.nohy) el.classList.add('nohy');
+  }
+
   atomOf(el) {
     const id = el.dataset.a;
     if (!id) return null;
@@ -231,6 +254,7 @@ export class Renderer {
         item.sbEm = sbEm || (this.model.opts.parskip || 0);
         if (it.saThm || it.saList) el.classList.add('pad-after');
         if (/\bthm\b/.test(it.cls || '') && it.thmFirst) el.dataset.thm = '1';
+        this.paraLook(it, el, item);
         break;
       }
       case 'h': {
@@ -434,6 +458,8 @@ export class Renderer {
     }
     if (p.type === 'tabular') {
       const wrap = div('tabw');
+      // (B2: a float with no \centering sets its table at the left margin, as TeX does)
+      if (p.falign === 'left' || p.falign === 'right') wrap.classList.add('tw-' + p.falign);
       const t = document.createElement('table');
       t.className = 'tab';
       // (which table it is: a table that runs over pages is cut into one <table> a page, each
@@ -673,6 +699,7 @@ export class Renderer {
       case 'logo': s.innerHTML = logo(x.text); break;
       case 'sp': {
         if (x.w === 'fill') s.classList.add('fill'); else s.style.width = x.w;
+        if (x.dots) s.classList.add('dots'); else if (x.rule) s.classList.add('rulefill');
         s.innerHTML = '&#8203;';
         break;
       }

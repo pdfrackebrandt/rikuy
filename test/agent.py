@@ -456,7 +456,8 @@ def five(page, width):
     check('   a formula in the line by the button Formula and the dialog "New inline math", typed where the focus is' + w, 'paragraph here.$x^2+1$\n' in src(page) and page.get_by_role('dialog').count() == 0, src(page)[-80:])
     # 4. the LaTeX source, downloaded
     with page.expect_download() as dl:
-        if width > 1000:
+        # (three buttons where the row has room for them; else one Download button and its menu)
+        if page.locator('#b-save').is_visible():
             button('Download LaTeX').click()
         else:
             button('Download').click()

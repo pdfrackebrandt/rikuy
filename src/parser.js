@@ -64,7 +64,9 @@ const SIG = {
   MakeUppercase: 'm', MakeLowercase: 'm', textcircled: 'm',
   // character formats Rikuy's Font group writes (src/cmd/font.js): ulem's other lines, its double
   // strikethrough, a size and a family for a run of text, ruby
-  dashuline: 'm', dotuline: 'm', culine: 'mm', dsout: 'm', fontsize: 'mm', fontfamily: 'm', fontspec: 'om', ruby: 'omm'
+  dashuline: 'm', dotuline: 'm', culine: 'mm', dsout: 'm', fontsize: 'mm', fontfamily: 'm', fontspec: 'om', ruby: 'omm',
+  // memoir's spacing and paragraph skip (src/parasrc.js writes them in a memoir document)
+  setSpacing: 'm', setSingleSpace: 'm', abnormalparskip: 'm'
 };
 
 // Commands that take no arguments but print characters, keyed by name.
@@ -114,6 +116,8 @@ const ENV_SIG = {
   alignat: 'm', 'alignat*': 'm', proof: 'o', adjustbox: 'm', center: '', tcolorbox: 'o', mdframed: 'o',
   minted: 'om', lstlisting: 'o', Verbatim: 'o', spacing: 'm', otherlanguage: 'm', 'otherlanguage*': 'm',
   landscape: '', appendices: '', resizebox_env: '',
+  // paragraph settings (src/parasrc.js): changepage's indents, memoir's spacing, babel's hyphenation
+  adjustwidth: 'mm', 'adjustwidth*': 'mm', Spacing: 'm', hyphenrules: 'm',
   // CJK's encoding and font family are settings, not text: \begin{CJK*}[T1]{UTF8}{gbsn}
   CJK: 'omm', 'CJK*': 'omm'
 };
@@ -570,7 +574,7 @@ export function parse(src, opts = {}) {
       return { t: 'env', name, s, e: i, bs: s, be, es: k, args, raw: true, math: MATH_ENVS.has(name), nameEnd };
     }
     // Args for theorem-like envs: optional title.
-    if (!sig && !['document', 'abstract', 'center', 'quote', 'quotation', 'verse', 'flushleft', 'flushright', 'small', 'footnotesize', 'scriptsize', 'large', 'Large', 'appendix', 'appendices', 'singlespace', 'onehalfspace', 'doublespace', 'titlepage', 'landscape', 'acknowledgments', 'acknowledgements', 'RTL', 'LTR'].includes(name)) sig = 'o';
+    if (!sig && !['document', 'abstract', 'center', 'quote', 'quotation', 'verse', 'flushleft', 'flushright', 'small', 'footnotesize', 'scriptsize', 'large', 'Large', 'appendix', 'appendices', 'singlespace', 'onehalfspace', 'doublespace', 'titlepage', 'landscape', 'acknowledgments', 'acknowledgements', 'RTL', 'LTR', 'samepage', 'nolinenumbers', 'singlespace*', 'SingleSpace', 'OnehalfSpace', 'DoubleSpace'].includes(name)) sig = 'o';
     let args = [];
     if (sig) {
       // optional args of envs must not swallow text on the next line: only if '[' or '{' follows.

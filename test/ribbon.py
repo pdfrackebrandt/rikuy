@@ -530,8 +530,9 @@ def downloads_in_sight(page):
     page.on('download', lambda d: got.append(d.suggested_filename))
     page.click('body > .pop.pop-dl button.nav-act >> nth=2'); page.wait_for_timeout(1200)
     check('and LaTeX there saves the file, once', got == ['main.tex'] and page.evaluate('document.querySelectorAll("body > .pop").length') == 0, got)
-    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(200)
+    page.set_viewport_size({'width': 1920, 'height': 1000}); page.wait_for_timeout(200)
     check('a wide screen shows the three buttons and no Download button', not page.is_visible('#rb-dl-menu') and page.is_visible('#rb-pdf') and page.is_visible('#b-save'))
+    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(200)
 
 
 def bold_across(page):
@@ -1024,6 +1025,8 @@ def run():
                gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, latex_style, latex_typing, latex_after_ghost, latex_edges, latex_clipboard, latex_pdf)
         # (the tests that read the tiles see all six: from 1600 px the gallery has room for them)
         wide = (styles, gallery, gallery_keys, quote_style, latex_style, latex_edges)
+        # (and those that press PDF, Word or LaTeX: Home's row has room for the three at 1920 px)
+        wide += (downloads, one_save, live_graphs)
         # (names given on the command line run those alone)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             browser, page, errors = open_page(p, width=1920 if fn in wide else 1400)
