@@ -45,7 +45,7 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   as LaTeX), table cells, footnotes, `siunitx` quantities. The source pane shows every
   change as it lands.
 - **Word's ribbon over the page.** Tabs as in Word (Home, Insert, References, Review, View, Help,
-  and Table Layout while the caret is in a table), Word's keys for headings, Normal and bullets,
+  and Table Design and Table Layout while the caret is in a table), Word's keys for headings, Normal and bullets,
   a search box for any command by its name (Alt+Q), a right click menu of what applies where you
   are. Every button is a command of one registry, which agents find by name
   (`controls.json`, llms.txt) and run (`rikuy.api.run`).
@@ -56,6 +56,11 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   footnote, equation, figure, table, comment or label. The Navigation pane has the headings
   (drag one to move its section), thumbnails of the pages and the results; Alt+Shift and the
   arrows promote, demote and move headings with their sections, and paragraphs.
+- **Tables as in Word.** Insert › Table's grid of sizes and Insert Table…, Convert Text to Table,
+  a table from a .csv; Table Design and Table Layout while the caret is in a table: rows and
+  columns in and out, merge and split, AutoFit, the nine alignments, looks, borders, shading,
+  sorting, header rows that repeat on every page. New tables are booktabs; a table written with
+  `\hline` is edited with `\hline`.
 - **The whole TeX Live 2026 toolchain.** The three engines, latexmk's reruns, bibtex and biber,
   makeindex and xindy, glossaries, and shell escape: Ghostscript, gnuplot, Python with Pygments
   (minted), dvips, Asymptote with 3D rendering, and TeX starting TeX (TikZ externalize,

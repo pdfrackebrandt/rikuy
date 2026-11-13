@@ -410,6 +410,27 @@ const open = (bytes) => docxToLatex(P, new Uint8Array(bytes), 'x.docx');
 const bodyOf = (tex) => tex.slice(tex.indexOf('\\begin{document}'));
 const wp = (t, ppr = '') => '<w:p>' + ppr + '<w:r><w:t xml:space="preserve">' + t + '</w:t></w:r></w:p>';
 
+// (B7) merged cells: Word's own spans, both ways
+await ok('to Word: a cell merged across (\\multicolumn) and one merged down (\\multirow) are Word\'s merged cells, and opened again they are LaTeX\'s', async () => {
+  const src = doc('\\begin{table}[h]\n\\centering\n\\begin{tabular}{lll}\n\\toprule\n\\multicolumn{2}{c}{Wide head} & Last \\\\\n\\midrule\n\\multirow{2}{*}{Tall} & b1 & c1 \\\\\n & b2 & c2 \\\\\n\\bottomrule\n\\end{tabular}\n\\caption{Spans}\n\\end{table}\n', '\\usepackage{booktabs,multirow}\n');
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  const d = text(unzip(E.docx).get('word/document.xml'));
+  assert.match(d, /<w:gridSpan w:val="2" \/>(?:(?!<\/w:tc>)[\s\S])*Wide head/);
+  assert.match(d, /<w:vMerge w:val="restart" \/>(?:(?!<\/w:tc>)[\s\S])*Tall/);
+  assert.match(d, /<w:vMerge w:val="continue" \/>/);
+  // every cell's words where they were; nothing changed, nothing to bring back
+  for (const w of ['Wide head', 'Last', 'Tall', 'b1', 'c1', 'b2', 'c2']) assert.ok(d.includes('>' + w + '<'), w);
+  assert.equal(importInto(E.docx, files).files.size, 0);
+  // an edit in a merged cell comes back to it
+  await roundTrip(src, rep('>Tall<', '>Taller<'), src.replace('{Tall}', '{Taller}'));
+  // opened as a stranger's file: LaTeX's merged cells again
+  const t = bodyOf(open(E.docx).tex);
+  assert.ok(/\\multicolumn\{2\}\{(?:[^{}]|\{\})*\}\{%?\s*Wide head\}/.test(t), t);
+  assert.ok(/\\multirow\{2\}\{\*\}\{Tall\}/.test(t), t);
+});
+
+
 await ok('a Word file of what pandoc alone loses: nothing goes without a word, and every command has its package', () => {
   // test/word_fixture.py's make_rich()
   const r = open(fs.readFileSync(new URL('./fixtures/word-rich.docx', import.meta.url)));

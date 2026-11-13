@@ -92,8 +92,10 @@ ok('the search box finds commands by Word\'s names, other names, starts of words
 ok('the right click menu by context: the particular first, a line between contexts', () => {
   const m = menuItems(['table', 'selection', 'text']);
   assert.equal(m[0].id, 'table-row-below');
-  assert.equal(m[1], null);
-  assert.deepEqual(m.filter(Boolean).slice(1, 5).map((c) => c.id), ['cut', 'copy', 'bold', 'italic']);
+  // (the table's items, then a line, then the selection's)
+  const line = m.indexOf(null);
+  assert.ok(line > 0 && m.slice(0, line).every((c) => c.menu.table != null));
+  assert.deepEqual(m.slice(line + 1, line + 5).map((c) => c.id), ['cut', 'copy', 'bold', 'italic']);
   assert.ok(m.filter(Boolean).some((c) => c.id === 'show-in-source'));
 });
 
