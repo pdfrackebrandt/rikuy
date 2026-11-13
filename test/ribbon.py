@@ -432,7 +432,8 @@ def list_edges(page):
     check('the same from the last item', src(page) == wrap('\\begin{itemize}\n  \\setlength\\itemsep{0pt}\n  \\item one\n\\end{itemize}\n\ntwo'), src(page)[40:])
     load_doc(page, wrap('\\begin{itemize}\n  \\item[a)] one\n  \\item[b)] two\n\\end{itemize}')); click_text(page, 'two', 1)
     st = state(page)
-    check('an item with a label of its own is not offered the way back to a paragraph, which would lose the label', st['rb-ul'][0] and not st['rb-ol'][0], (st['rb-ul'], st['rb-ol']))
+    # (task 29 left it open; task 41: the label stays as the paragraph's first words, test/lists.py)
+    check('an item with a label of its own is offered the way back to a paragraph, its bullet pressed', not st['rb-ul'][0] and st['rb-ul'][1] and not st['rb-ol'][0], (st['rb-ul'], st['rb-ol']))
     # a paragraph that starts with a bracket: \item would read it as the item's label
     para = '[Draft] words to keep.'
     load_doc(page, wrap(para)); click_text(page, 'words to keep', 2); press(page, 'rb-ul')

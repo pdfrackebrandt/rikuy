@@ -98,6 +98,8 @@ jobs:
       # its PDF of every format needs dist/tex and runs in tex.yml; here it says it skips that part
       - name: Home's Font group, the Format Painter and the Font dialog
         run: cd test && python3 font.py
+      - name: Lists (levels by Tab, the libraries, numbering values, multilevel lists, sorting, automatic lists)
+        run: cd test && python3 lists.py
       # its compile offline needs dist/tex and runs in tex.yml; here it says it skips that part
       - name: The installed app offline, its updates, and none in the artifact build
         run: cd test && python3 offline.py

@@ -4835,6 +4835,7 @@ class App {
         <dt>Tab, ${mod}+Enter</dt><dd>Next cell (from the last, a new row), new row in tables</dd>
         <dt>${mod}+Enter</dt><dd>A page break (\\newpage) outside a table; in a table's cell it still adds a row. ${mod}+Shift+Enter: a column break</dd>
         <dt>Double click a page's top or bottom margin</dt><dd>Type its header or footer (fancyhdr); \\thepage is the page's number</dd>
+        <dt>Tab, Shift+Tab in a list</dt><dd>The item one level down, under the item before it, or one up. Typing "- ", "1. " or "a) " at a paragraph's start makes it a list (Undo gives back what you typed)</dd>
         <dt>${mod}+Z, ${mod}+Shift+Z</dt><dd>Undo, redo</dd>
         <dt>${mod}+Alt+M</dt><dd>Comment on the selected words. A comment is a LaTeX comment line in the source, so Overleaf, Git and TeX keep it and print nothing</dd>
         <dt>Paste</dt><dd>From Word, Google Docs or the web: bold, italics, lists, links, tables and equations become LaTeX. ${mod}+Shift+V pastes plain text</dd>

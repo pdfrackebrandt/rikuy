@@ -1368,3 +1368,56 @@ body.fpainting #pages { cursor: copy; }
 @media (max-width: 640px) {
   .fd-grid, .fd-eff { grid-template-columns: 1fr 1fr; }
 }
+
+/* ---- B3: lists — the bullet, numbering and multilevel libraries as grids of tiles over their
+   menus' commands, and the lists' dialogs ---- */
+.pop-menu:has(> .li-tile) { display: grid; grid-template-columns: repeat(3, 72px); gap: 3px; min-width: 0; }
+.pop-menu:has(> .li-c5) { grid-template-columns: repeat(5, 46px); }
+.pop-menu:has(> .li-c4) { grid-template-columns: repeat(4, 78px); }
+.pop-menu:has(> .li-tile) > :not(.li-tile) { grid-column: 1 / -1; }
+.pop-menu .nav-act.li-tile { padding: 4px; justify-content: center; min-height: 44px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); }
+.pop-menu .li-c5.li-tile { min-height: 40px; }
+.pop-menu .li-c4.li-tile { min-height: 62px; }
+.pop-menu .nav-act.li-tile:hover { border-color: var(--blue); }
+.pop-menu .nav-act.li-tile[aria-checked="true"] { background: var(--blue-wash); border-color: var(--blue); }
+.pop-menu .nav-act.li-tile[aria-checked="true"]::before { display: none; }
+.pop-menu .nav-act.li-tile .mi-g { display: flex; width: 100%; justify-content: center; }
+.li-g { font: 19px/1 var(--font-ui); color: var(--ink-ui); }
+.li-g.li-none { font: 12px var(--font-ui); color: var(--mute); }
+.li-n, .li-m { display: flex; flex-direction: column; gap: 3px; width: 100%; font: 10.5px/1 var(--font-doc, Georgia, serif); color: var(--ink-ui); }
+.li-n > span, .li-m > span { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
+.li-m > span { padding-left: calc(var(--l, 0) * 9px); }
+.li-n i, .li-m i { flex: 1; height: 2px; border-radius: 1px; background: color-mix(in srgb, var(--mute) 45%, transparent); min-width: 14px; }
+/* the ribbon's buttons hold their screen reader names: one past the window's edge on a phone (Sort, at
+   390 px) made the whole page scroll sideways */
+.rb .btn { position: relative; }
+/* the dialogs */
+.pop.pop-list { width: min(380px, calc(100vw - 16px)); }
+.ld { display: flex; flex-direction: column; gap: 9px; padding: 2px 2px 4px; }
+.ld-f { display: grid; grid-template-columns: 112px 1fr; align-items: center; gap: 8px; }
+.ld-l, .ld-note { font-size: 12.5px; color: var(--mute); }
+.ld input[type="text"], .ld select { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; background: var(--chrome); color: var(--ink-ui); padding: 5px 8px; font: 13px/1.4 var(--font-ui); }
+.ld input[type="text"]:focus, .ld select:focus { outline: 2px solid color-mix(in srgb, var(--blue) 55%, transparent); outline-offset: 0; border-color: var(--blue); }
+.ld .nf { justify-self: start; }
+.ld .nf input.nf-v { width: 64px; border: 0; background: transparent; }
+.ld-level .ld-c { flex-basis: 100%; padding-left: 24px; }
+.ld-c, .ld-r label { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; cursor: pointer; }
+.ld-c input, .ld-r input { margin: 0; accent-color: var(--blue); }
+.ld-r { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.ld-syms { display: grid; grid-template-columns: repeat(auto-fill, minmax(34px, 1fr)); gap: 3px; }
+.ld-sym { height: 34px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink-ui); font: 18px/1 var(--font-ui); cursor: pointer; }
+.ld-sym:hover { border-color: var(--blue); }
+.ld-sym[aria-checked="true"] { background: var(--blue-wash); border-color: var(--blue); }
+.ld-sym:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.ld-prev { white-space: pre; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); color: var(--ink); padding: 8px 12px; font: 14px/1.6 var(--font-doc, Georgia, serif); min-height: 2.4em; }
+.ld-levels { display: flex; flex-direction: column; gap: 6px; }
+.ld-level { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.ld-level .ld-f { display: flex; gap: 4px; }
+.ld-level .ld-f .ld-l { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.ld-level input[type="text"] { width: 52px; }
+.ld-level select { width: auto; }
+.ld-lv { width: 18px; font: 600 12px var(--font-ui); color: var(--mute); }
+.ld-msg { color: var(--warn); font-size: 12.5px; }
+.ld-msg:empty { display: none; }
+.ld-btns { display: flex; justify-content: flex-end; gap: 8px; padding-top: 6px; }
+@media (max-width: 640px) { .ld-f { grid-template-columns: 1fr; gap: 3px; } }

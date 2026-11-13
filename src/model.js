@@ -11,6 +11,7 @@ import { readPage, paperName, NO_MEDIA_CLASSES, setsMedia, KOMA_CLASS } from './
 import { DVIPS_COLORS, BASE_COLORS } from './ui/kit.js';
 
 const DVIPS = Object.fromEntries(DVIPS_COLORS), XC = Object.fromEntries(BASE_COLORS);
+import { listSetup, formatOf, numText, bulletGlyph } from './lists.js';
 
 const WIDGET_FILE = /\.html?$/i;
 // the page's set up of the last preamble read (Builder.pageSetup)
@@ -1524,13 +1525,6 @@ class Builder {
     const depth = (env.listDepth || 0) + 1;
     const kind = /enum/.test(name) ? 'enum' : name === 'description' ? 'desc' : 'item';
     const level = kind === 'enum' ? (env.enumDepth || 0) + 1 : (env.itemDepth || 0) + 1;
-    let fmt = null;
-    const opt = nd.args[0] ? this.argText(ctx, nd.args[0]) : '';
-    if (kind === 'enum' && opt) {
-      const lm = /label\s*=\s*\{?([^,}]*(?:\{[^}]*\})?[^,}]*)\}?/.exec(opt);
-      const L = lm ? lm[1] : (!/=/.test(opt) ? opt : null);
-      if (L) fmt = L;
-    }
     // split by \item
     const items = [];
     let cur = null;
@@ -1538,26 +1532,51 @@ class Builder {
       if (n.t === 'cmd' && n.name === 'item') { cur = { cmd: n, nodes: [] }; items.push(cur); }
       else if (cur) cur.nodes.push(n);
     }
-    const out = [], fns = [];
+    // What labels and numbers it, as TeX reads it (src/lists.js, which the list commands share):
+    // its options (enumitem's label=, start=, resume, nosep; the enumerate package's "(a)"), its
+    // own set up (\def\labelenumi, \setcounter{enumi}, \setlength{\itemsep}), the preamble's
+    // \setlist and \renewcommand of \labelitemi or \theenumi, LaTeX's own by level
+    const cfg = this.listCfg || (this.listCfg = this.docBody ? listSetup(this.mainCtx.src, this.docBody.at) : listSetup(''));
+    const a0 = nd.args[0];
+    const L = { name: nd.name, kind, s: nd.s, e: nd.e, be: nd.be, es: nd.es, opt: a0 && a0.o !== false ? { s: a0.s, e: a0.e, is: a0.is, ie: a0.ie } : null, setupE: items.length ? items[0].cmd.s : nd.es };
+    const F = kind === 'desc' ? null : formatOf(ctx.src, L, cfg, { level, depth });
+    const vals = env.enumVals || [];
     let count = 0;
+    if (F && kind === 'enum') {
+      count = F.start - 1;
+      // (enumitem's resume: the count of the last numbered list that ended, if it ended at this level)
+      if (F.resume) { const last = this.enumLast; count = last && last.level === level ? last.count : 0; }
+    }
+    const bullet = kind === 'item' ? (F && bulletGlyph(F.label)) ?? ['•', '–', '∗', '·'][(level - 1) % 4] : null;
+    // the space between items (enumitem's nosep and itemsep, \setlength{\itemsep}, \tightlist)
+    const sep = !F || !F.sep ? null : F.sep === 'nosep' ? 0 : F.sep === 'noitemsep' || F.sep === 'tight' ? 0.2 : itemSep(parseLen(F.sep, this.opts.pt));
+    const out = [], fns = [];
     items.forEach((it) => {
       count++;
       let label = null;
       const optA = it.cmd.args[0];
       const saveT = this.lastTarget;
       if (kind === 'enum') {
-        const num = enumLabel(count, level, fmt);
-        label = [{ k: 'chr', text: num.label }];
-        this.lastTarget = { num: num.ref, kind: 'item' };
+        let star = F.label || '\\arabic*.';
+        if (F.star && env.enumLabel) star = env.enumLabel.replace(/[{}]/g, '') + star;
+        const text = numText(star, count, vals);
+        label = [{ k: 'chr', text }];
+        // \ref gives what enumitem labels (its label= as written), else LaTeX's \theenumi with
+        // the levels above it (1a, 1(a)i)
+        const own = F.from === 'opt' || F.from === 'setlist';
+        const ref = own ? text : F.from === 'short' ? numText(F.label.replace(/^[^\\]*(\\[A-Za-z]+\*)[\s\S]*$/, '$1'), count) : theRef(level, [...vals.slice(0, level - 1), count]);
+        this.lastTarget = { num: ref, kind: 'item' };
       }
-      if (kind === 'item') label = [{ k: 'chr', text: ['•', '–', '∗', '·'][(level - 1) % 4] }];
+      if (kind === 'item') label = [{ k: 'chr', text: bullet }];
       if (optA) {
         const kids = this.inl(optA.nodes, ctx, fns);
         if (!kids.length) kids.push({ k: 'seg', f: ctx.f, t: '​', map: [optA.is, optA.is], ph: true });
         label = [{ k: 'sty', st: kind === 'desc' ? 'bf' : '', kids, f: ctx.f, s: optA.s, e: optA.e, is: optA.is, ie: optA.ie }];
       }
-      this.use('L' + count + level);
-      const sub = { ...env, top: false, listDepth: depth, list: true, enumDepth: kind === 'enum' ? level : (env.enumDepth || 0), itemDepth: kind === 'item' ? level : (env.itemDepth || 0), ctxKind: 'li', noIndentFirst: true, depth: depth, cls: (env.cls || '') };
+      // (the label and the spacing are the block's own: a \setlist in the preamble changes them)
+      this.use('L' + count + level + (label && label[0] && label[0].text != null ? label[0].text : '') + '|' + (sep ?? ''));
+      const sub = { ...env, top: false, listDepth: depth, list: true, enumDepth: kind === 'enum' ? level : (env.enumDepth || 0), itemDepth: kind === 'item' ? level : (env.itemDepth || 0), ctxKind: 'li', noIndentFirst: true, depth: depth, cls: (env.cls || ''),
+        enumVals: kind === 'enum' ? [...vals.slice(0, level - 1), count] : vals, enumLabel: kind === 'enum' && label && label[0].text != null ? label[0].text : env.enumLabel };
       const us = this.flow(it.nodes, ctx, sub);
       const its = [];
       for (const u of us) { its.push(...u.items); fns.push(...u.fns); }
@@ -1569,14 +1588,19 @@ class Builder {
         let php = optA ? optA.e : it.cmd.ne;
         if (ctx.src[php] === ' ') php++;
         const at = ctx.pm ? ctx.pm[php] : php;
-        its.unshift({ type: 'p', inl: [{ k: 'seg', f: ctx.f, t: '\u200B', map: [at, at], ph: true }], label, labelKind: kind, li: meta, indent: false, depth, cls: env.cls || '', ctx: 'li', f: ctx.f, dir: this.dirOf() });
+        its.unshift({ type: 'p', inl: [{ k: 'seg', f: ctx.f, t: '​', map: [at, at], ph: true }], label, labelKind: kind, li: meta, indent: false, depth, cls: env.cls || '', ctx: 'li', f: ctx.f, dir: this.dirOf() });
       }
+      if (sep != null && its[0]) { its[0].liSep = sep; if (F.sep === 'nosep') its[0].liTop = 0; }
       for (const x of its) { if (x.type === 'p' && x.depth == null) x.depth = depth; if (x.type === 'p' && x !== its[0]) x.li = x.li || { ...meta, cont: true }; if (x.type !== 'p') x.depth = depth; }
       out.push(...its);
       this.lastTarget = saveT;
     });
+    if (kind === 'enum') this.enumLast = { level, count };
     if (!out.length) out.push({ type: 'p', inl: [{ k: 'chr', text: '' }], depth, indent: false, ctx: 'p', f: ctx.f });
-    if (out.length) { out[0].sbList = depth === 1; out[out.length - 1].saList = depth === 1; }
+    // (nosep: no space around the list either)
+    if (out.length) { out[0].sbList = depth === 1; out[out.length - 1].saList = depth === 1 && !(F && F.sep === 'nosep'); }
+    // (Word's numbered list starts at the list's number, in its style: wordast.js)
+    if (kind === 'enum' && out[0] && F) out[0].listFmt = wordFmt(F.label, F.resume ? count - items.length + 1 : F.start);
     return { f: ctx.f, s: nd.s, e: nd.e, items: out, fns };
   }
 
@@ -2598,6 +2622,26 @@ function today(lang) {
   if (lang === 'de') return d.getDate() + '. ' + M.de[d.getMonth()] + ' ' + d.getFullYear();
   if (lang === 'es') return d.getDate() + ' de ' + M.es[d.getMonth()] + ' de ' + d.getFullYear();
   return M.en[d.getMonth()] + ' ' + d.getDate() + ', ' + d.getFullYear();
+}
+
+// the space before an item, in em, for an \itemsep of v pt (LaTeX's own, 4pt, and \parsep's 4pt
+// draw as 0.45 em)
+const itemSep = (v) => Math.max(0, Math.min(3, 0.45 * ((typeof v === 'number' ? v : 4) + 4) / 8));
+// LaTeX's \ref of an item of a numbered list at a level: \theenumi with the levels above it
+// (\p@enumii is \theenumi: 1a; \p@enumiii is \theenumi(\theenumii): 1(a)i)
+function theRef(level, v) {
+  const t = [String(v[0] || 0), alph(v[1] || 0), roman(v[2] || 0), alph(v[3] || 0).toUpperCase()];
+  if (level === 1) return t[0];
+  if (level === 2) return t[0] + t[1];
+  if (level === 3) return t[0] + '(' + t[1] + ')' + t[2];
+  return t[0] + '(' + t[1] + ')' + t[2] + t[3];
+}
+// a numbered list's style as pandoc's OrderedList names it: [start, style, delimiter]
+function wordFmt(star, start) {
+  const m = /^(\()?\\(arabic|alph|Alph|roman|Roman)\*([.)])?$/.exec(String(star || '').replace(/\s+/g, ''));
+  if (!m) return null;
+  const style = { arabic: 'Decimal', alph: 'LowerAlpha', Alph: 'UpperAlpha', roman: 'LowerRoman', Roman: 'UpperRoman' }[m[2]];
+  return [Math.max(1, start || 1), { t: style }, { t: m[1] && m[3] === ')' ? 'TwoParens' : m[3] === ')' ? 'OneParen' : m[3] === '.' ? 'Period' : 'DefaultDelim' }];
 }
 
 function enumLabel(n, level, fmt) {
