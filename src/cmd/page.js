@@ -82,10 +82,10 @@ register(
   { id: 'orientation', name: 'Orientation', label: 'Orientation', title: 'Portrait or landscape pages', icon: I.orientation, kind: 'menu', tab: 'layout', group: 'setup', order: 20,
     synonyms: ['Landscape', 'Portrait', 'Page orientation', 'Rotate page'], when: sheet, whyNot: sheetWhy,
     menuItems: (app) => ['portrait', 'landscape'].map((w) => ({ name: w === 'portrait' ? 'Portrait' : 'Landscape', checked: app.pageLand() === (w === 'landscape'), radio: true, run: () => app.runCommand('orientation', w) })),
-    run: (app, args) => (typeof args === 'string' ? app.pageEdit(PS.orientationEdits(app.src(app.main), args, { others: app.preambleOthers(), pin: app.pagePin() }), 'page-orient') : app.pageMenu('orientation', app.pageCmdItems('orientation'), 'Orientation')) },
+    run: (app, args) => (typeof args === 'string' ? app.pageEdit(PS.orientationEdits(app.src(app.main), args, { others: app.preambleOthers(), own: app.pageOwn(), pin: app.pagePin() }), 'page-orient') : app.pageMenu('orientation', app.pageCmdItems('orientation'), 'Orientation')) },
   { id: 'size', name: 'Size', label: 'Size', title: 'The paper: Letter, Legal, A4, A5, B5, Executive or any size', icon: I.size, kind: 'menu', tab: 'layout', group: 'setup', order: 30,
     synonyms: ['Paper size', 'A4', 'Letter', 'Page size', 'Legal', 'A5'], when: sheet, whyNot: sheetWhy, menuItems: SIZE_ITEMS,
-    run: (app, args) => (args ? app.pageEdit(PS.paperEdits(app.src(app.main), args, { others: app.preambleOthers(), pin: app.pagePin() }), 'page-size') : app.pageMenu('size', SIZE_ITEMS(app), 'Size')) },
+    run: (app, args) => (args ? app.pageEdit(PS.paperEdits(app.src(app.main), args, { others: app.preambleOthers(), own: app.pageOwn(), pin: app.pagePin() }), 'page-size') : app.pageMenu('size', SIZE_ITEMS(app), 'Size')) },
   { id: 'columns', name: 'Columns', label: 'Columns', title: 'Text in one, two or three columns: the whole document, or the selected paragraphs', icon: I.columns, kind: 'menu', tab: 'layout', group: 'setup', order: 40,
     synonyms: ['Two columns', 'Three columns', 'multicols', 'twocolumn'], when: sheet, whyNot: sheetWhy,
     menuItems: (app) => {
@@ -278,12 +278,14 @@ export const methods = {
     return hit ? hit[0] : null;
   },
   pageLand() { return !!(this.model && this.pageGeom().land); },
-  // the page as it is, for src/pagesrc.js to keep where geometry comes to lay it out: the margins
-  // (a new paper keeps them), or the text block (o.block: the header's distances change alone)
-  pagePin(o = {}) {
+  // the project's own classes and packages (src/pagesrc.js mediaSet reads them as what they load)
+  pageOwn() { return new Set([...(this.files ? this.files.keys() : [])].filter((n) => /\.(sty|cls)$/.test(n)).map((n) => n.split('/').pop())); },
+  // the margins as the page has them, for src/pagesrc.js to keep where geometry comes to lay the
+  // page out for a paper the class does not know
+  pagePin() {
     if (!this.model) return null;
     const g = this.pageGeom();
-    return o.block ? { l: g.ml, tw: g.tw, t: g.mt, th: g.th } : { l: g.ml, r: g.pw - g.ml - g.tw, t: g.mt, b: g.ph - g.mt - g.th };
+    return { l: g.ml, r: g.pw - g.ml - g.tw, t: g.mt, b: g.ph - g.mt - g.th };
   },
   pageColumns() {
     if (!this.model) return 1;
@@ -297,7 +299,7 @@ export const methods = {
     const P = PS.MARGINS.find((x) => x[0] === id);
     if (!P) return false;
     const [, , t, b, l, r, mir] = P;
-    return this.pageEdit(PS.marginEdits(this.src(this.main), { t: t * CM, b: b * CM, l: l * CM, r: r * CM, mirrored: !!mir }, { others: this.preambleOthers() }), 'page-margins');
+    return this.pageEdit(PS.marginEdits(this.src(this.main), { t: t * CM, b: b * CM, l: l * CM, r: r * CM, mirrored: !!mir }, { others: this.preambleOthers(), own: this.pageOwn() }), 'page-margins');
   },
 
   // Columns: n for the whole document, or for the selected paragraphs (multicols around them), or
@@ -459,14 +461,23 @@ export const methods = {
   pageSlot(places, text, o = {}) {
     return this.pageEdit(this.pageSlotSteps(places, text, o), 'page-hf');
   },
-  // the edits of pageSlot, without committing them: steps of text in places, then emptied ones
+  // the edits of pageSlot, without committing them: steps of text in places, then emptied ones.
+  // A place is both sides' (or o.side's in a two sided document); o.slots and o.emptySlots name
+  // exact slots instead (HER, the even pages' right), so a two sided document's running heads on
+  // the other side stay; what the page showed (o.keep, else pageKeep) is kept but where written.
   pageSlotSteps(places, text, o = {}) {
     const two = twoSided(this), others = this.preambleOthers();
     const keep = o.keep !== undefined ? o.keep : this.pageKeep();
+    const sides = o.side && two ? [o.side] : ['O', 'E'];
+    const of = (p) => new Set(sides.map((side) => p[0] + side + p[1]));
+    const groups = (o.slots || []).filter((g) => g.length).map((g) => new Set(g)).concat(places.map(of));
+    const empties = (o.emptySlots || []).filter((g) => g.length).map((g) => new Set(g)).concat((o.empty || []).map(of));
+    const taken = new Set([...groups, ...empties].flatMap((g) => [...g]));
+    const kept = keep && Object.fromEntries(Object.entries(keep).filter(([k]) => !taken.has(k)));
+    const set = (g, t) => (src) => PS.slotEdits(src, g, t, { others, twoside: two, keep: kept });
     const steps = [...(o.before || [])];
-    const set = (p, t) => (src) => PS.slotEdits(src, new Set((o.side && two ? [o.side] : ['O', 'E']).map((side) => p[0] + side + p[1])), t, { others, twoside: two, keep: keep && Object.fromEntries(Object.entries(keep).filter(([k]) => !places.some((q) => q[0] === k[0] && q[1] === k[2]) && !(o.empty || []).some((q) => q[0] === k[0] && q[1] === k[2]))) });
-    for (const p of o.empty || []) steps.push(set(p, ''));
-    for (const p of places) steps.push(set(p, text));
+    for (const g of empties) steps.push(set(g, ''));
+    for (const g of groups) steps.push(set(g, text));
     return this.pageSteps(steps);
   },
   // what LaTeX's own style shows (plain's number at the foot, a book's running head), to keep when
@@ -512,55 +523,84 @@ export const methods = {
       return this.commit([{ f: at.c.f, s: at.c.a, e: at.c.b, t: '\\thepage{}' }], { f: at.c.f, p: at.c.a + 10, bias: 1 }, 'page-num');
     }
     const s = this.model.opts.page || {};
+    const S = s.slots || {};
+    const two = twoSided(this);
+    // the slots that hold the page's number now
+    const numbered = Object.keys(S).filter((k) => PAGE_NUM.test(S[k]));
     if (where === 'remove') {
-      // (LaTeX's plain style: empty; a running head stays where the number goes)
+      // (LaTeX's plain style: empty; a running head stays where the number goes, on its own side)
       if (!s.fancy && s.style === 'plain') return this.pageEdit(PS.pageStyleEdits(src, 'empty'), 'page-num');
-      const S = s.slots || {};
-      const places = Object.keys(S).filter((k) => PAGE_NUM.test(S[k])).map((k) => k[0] + k[2]);
-      return places.length ? this.pageSlot([...new Set(places)], '') : false;
-    }
-    if (where === 'XofY') {
-      const others = this.preambleOthers();
-      return this.pageEdit(this.pageSlotSteps(['FC'], 'Page \\thepage\\ of \\pageref{LastPage}', { before: [(t) => usePackages(t, ['lastpage'], { others })], empty: thepageIn(s, 'FC'), keep: this.pageKeepText() }), 'page-num');
+      return numbered.length ? this.pageEdit(this.pageSlotSteps([], '', { emptySlots: [numbered], keep: this.pageKeepText() }), 'page-num') : false;
     }
     // (a plain page has its number at the foot's centre already)
     if (where === 'FC' && !s.fancy && s.style === 'plain') return false;
-    // (the number moves there: the one the style had is not kept, a running head is)
-    return this.pageEdit(this.pageSlotSteps([where], '\\thepage', { empty: thepageIn(s, where), keep: this.pageKeepText() }), 'page-num');
+    // The slots the number goes to: the place on both sides; in a two sided document a side where
+    // that place holds a running head (a book's \leftmark on even pages' right) gets it on the
+    // other side of its page instead, as the classes' headings put it, so no head is lost
+    const keepT = this.pageKeepText() || {};
+    const held = (k) => !!keepT[k] || (!!s.fancy && !!S[k] && !PAGE_NUM.test(S[k]));
+    const mirror = (k) => k[0] + k[1] + { L: 'R', R: 'L', C: 'C' }[k[2]];
+    const place = where === 'XofY' ? 'FC' : where;
+    let target = ['O', 'E'].map((side) => place[0] + side + place[1]);
+    if (two) target = [...new Set(target.map((k) => (held(k) ? mirror(k) : k)))].filter((k) => !held(k));
+    if (!target.length) { this.toast('Both sides hold a running head there: choose another place.', 5000); return false; }
+    // (the number moves there: the slots that held it are emptied, side by side)
+    const empty = numbered.filter((k) => !target.includes(k));
+    const text = where === 'XofY' ? 'Page \\thepage\\ of \\pageref{LastPage}' : '\\thepage';
+    const others = this.preambleOthers();
+    const before = where === 'XofY' ? [(t) => usePackages(t, ['lastpage'], { others })] : [];
+    return this.pageEdit(this.pageSlotSteps([], text, { slots: [target], emptySlots: [empty], before, keep: this.pageKeepText() }), 'page-num');
   },
 
   // ---- print: TeX's PDF ----
   // The PDF of the document as it is now, printed: its pages drawn into a sheet only the printer
   // sees, as pdf.js's own viewer prints, each at the PDF's size for that page, one picture at a
-  // time, kept as a blob each (a long document says how far it got, and Escape stops it there),
-  // then the browser's print dialog. (The PDF itself in a frame would be sharper, but the page
-  // allows no blob: frame: src/widget.js framesOnlySrcdoc.) A frame that may not print gets the
-  // PDF itself to download instead.
+  // time, kept as a blob each, then the browser's print dialog. The pictures share a budget of
+  // pixels (150 million: 75 A4 pages at 144 dpi, fewer dots each for a longer PDF); a PDF that
+  // would get under 96 dpi is not drawn but downloaded, to print from a PDF reader, and the toast
+  // says so. Escape, from the moment Print is asked for, stops it all: nothing goes to the
+  // printer. (The PDF itself in a frame would be sharper, but the page allows no blob: frame:
+  // src/widget.js framesOnlySrcdoc.) A frame that may not print downloads the PDF instead.
   async pagePrint() {
-    this.togglePdf(true);
-    const fresh = () => this.lastPdf && this.lastPdfSig === this.textSigNow();
-    if (!fresh()) { try { await this.compilePdf(); } catch (e) { /* the PDF pane says why */ } }
-    if (!this.lastPdf) { this.toast('No PDF to print yet: TeX stopped at an error, which the PDF pane shows. The page itself prints with the browser\'s Print (its menu).', 7000); return false; }
-    return this.printPdfImages();
+    let stopped = false;
+    const esc = (e) => { if (e.key === 'Escape') { stopped = true; e.preventDefault(); } };
+    window.addEventListener('keydown', esc, true);
+    const stop = () => { this.toast('Print stopped (Escape): nothing went to the printer.', 5000); return false; };
+    try {
+      this.togglePdf(true);
+      const fresh = () => this.lastPdf && this.lastPdfSig === this.textSigNow();
+      if (!fresh()) { try { await this.compilePdf(); } catch (e) { /* the PDF pane says why */ } }
+      if (stopped) return stop();
+      if (!this.lastPdf) { this.toast('No PDF to print yet: TeX stopped at an error, which the PDF pane shows. The page itself prints with the browser\'s Print (its menu).', 7000); return false; }
+      return await this.printPdfImages(() => stopped, stop);
+    } finally { window.removeEventListener('keydown', esc, true); }
   },
-  async printPdfImages() {
+  async printPdfImages(isStopped, stop) {
     const { loadPdfjs } = await import('../pdfview.js');
     const lib = await loadPdfjs(new URL('tex/pdf.worker.min.mjs', location.href).href);
+    if (isStopped()) return stop();
     const pdf = await lib.getDocument({ data: new Uint8Array(this.lastPdf.slice(0)), isEvalSupported: false }).promise;
     const box = document.createElement('div');
     box.id = 'print-pdf';
     box.setAttribute('aria-hidden', 'true');
     const urls = [], sizes = new Map(), rules = [];
-    let stopped = false;
-    const stop = (e) => { if (e.key === 'Escape') stopped = true; };
-    window.addEventListener('keydown', stop, true);
+    const free = () => { for (const u of urls) URL.revokeObjectURL(u); urls.length = 0; };
+    let scale = 2;
     try {
-      for (let k = 1; k <= pdf.numPages && !stopped; k++) {
+      // (the dots each page gets: the budget shared out by the first page's size)
+      const v0 = (await pdf.getPage(1)).getViewport({ scale: 1 });
+      const budget = this.printBudget || 150e6;
+      scale = Math.min(2, Math.sqrt(budget / (pdf.numPages * v0.width * v0.height)));
+      if (scale < 96 / 72) {
+        this.toast('This PDF has ' + pdf.numPages + ' pages: too many to draw for the printer here. It downloads instead: print it from your PDF reader.', 8000);
+        await this.downloadPdf();
+        return false;
+      }
+      for (let k = 1; k <= pdf.numPages; k++) {
+        if (isStopped()) return stop();
         if (pdf.numPages > 20 && k % 10 === 1) this.toast('Drawing page ' + k + ' of ' + pdf.numPages + ' for the printer (Escape stops)…', 4000);
         const pg = await pdf.getPage(k);
         const v1 = pg.getViewport({ scale: 1 });
-        // (two device pixels to the point, but no picture over 16 million pixels)
-        const scale = Math.min(2, Math.sqrt(16e6 / (v1.width * v1.height)));
         const vp = pg.getViewport({ scale });
         const c = document.createElement('canvas');
         c.width = Math.ceil(vp.width); c.height = Math.ceil(vp.height);
@@ -579,8 +619,8 @@ export const methods = {
         img.style.cssText = 'width:' + v1.width.toFixed(2) + 'pt;height:' + v1.height.toFixed(2) + 'pt;page:' + sizes.get(key);
         box.appendChild(img);
       }
-    } finally { pdf.destroy(); window.removeEventListener('keydown', stop, true); }
-    if (stopped) this.toast('Printing ' + box.children.length + ' of the PDF\'s pages: stopped there (Escape).', 6000);
+      if (isStopped()) return stop();
+    } catch (e) { free(); throw e; } finally { pdf.destroy(); if (isStopped()) free(); }
     document.getElementById('print-pdf')?.remove();
     document.body.appendChild(box);
     const st = document.getElementById('print-pdf-page') || document.head.appendChild(Object.assign(document.createElement('style'), { id: 'print-pdf-page' }));
@@ -593,14 +633,14 @@ export const methods = {
     this.printing = false;
     this.printedPages = box.children.length;
     this.printedSizes = [...sizes.keys()];
+    this.printedScale = scale;
     box.remove();
     st.textContent = '';
-    for (const u of urls) URL.revokeObjectURL(u);
+    free();
     if (blocked && !this.noPrintFallback) { this.toast('This window may not print: here is the PDF to print from your PDF reader.', 6000); await this.downloadPdf(); }
     return true;
   }
 };
 
-// the places of the header and footer that hold \thepage now, but one
+// a page's number in a header's TeX
 const PAGE_NUM = /\\(?:thepage|pagemark)(?![A-Za-z@])/;
-const thepageIn = (s, but) => (s.slots ? [...new Set(Object.keys(s.slots).filter((k) => PAGE_NUM.test(s.slots[k])).map((k) => k[0] + k[2]))].filter((p) => p !== but) : []);

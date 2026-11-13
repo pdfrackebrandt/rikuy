@@ -154,33 +154,86 @@ export function classPage(src) {
   const paper = keys.map(paperName).filter(Boolean).pop() || kp.map((x) => paperName(x + 'paper')).filter(Boolean).pop() || null;
   const pt = (keys.find((k) => /^(10|11|12)pt$/.test(k)) || '').slice(0, 2);
   const book = /^(book|scrbook|memoir)$/.test(d.name);
-  return { name: d.name, paper, komaPaper: kp.length > 0, landscape: 'landscape' in o || kp.includes('landscape'), twoside: 'twoside' in o || (book && !('oneside' in o)), twocolumn: 'twocolumn' in o, pt: pt ? +pt : 10, options: o, beamer: d.name === 'beamer' };
+  return { name: d.name, paper, defaultPaper: KOMA_CLASS.test(d.name) ? 'a4' : 'letter', komaPaper: kp.length > 0, landscape: 'landscape' in o || kp.includes('landscape'), twoside: 'twoside' in o || (book && !('oneside' in o)), twocolumn: 'twocolumn' in o, pt: pt ? +pt : 10, options: o, beamer: d.name === 'beamer' };
 }
 
 // ---- paper, orientation, margins -----------------------------------------------------------------
+// Whether the PDF's sheet follows LaTeX's paper (\paperwidth, \paperheight). TeX Live's engines
+// start every PDF on A4; the sheet changes where something sets \pdfpagewidth (\pagewidth in
+// LuaTeX): the graphics and colour drivers (graphics, graphicx, color, xcolor, and so TikZ and most
+// of what draws), hyperref (setpagesize), geometry (pass or not), KOMA's typearea, crop, memoir, the
+// kernel's PDF management (\DocumentMetadata). So the sheet stays A4 only where nothing loaded
+// sets it: the classes and packages below, measured in this TeX Live to leave it alone
+// (dev/media_probe.py: each class with letterpaper, each package in an article with letterpaper,
+// the PDF's MediaBox read; the corpus's and the common ones). Any other is taken to set it, as
+// almost all do (they load graphics, colour or hyperref), and a PDF of the document has the last
+// word: src/app.js takes the sheet from it (opts.pdfSheet).
+export const NO_MEDIA_CLASSES = new Set(['article', 'report', 'book', 'amsart', 'amsbook', 'amsproc', 'extarticle', 'extreport', 'extbook', 'revtex4-2', 'llncs', 'letter', 'exam', 'proc']);
+export const NO_MEDIA_PACKAGES = new Set([
+  'a4wide', 'abstract', 'accsupp', 'acronym', 'afterpage', 'algorithm', 'algorithm2e',
+  'algorithmicx', 'algpseudocode', 'amsfonts', 'amsmath', 'amssymb', 'amsthm', 'anysize',
+  'appendix', 'array', 'arydshln', 'authblk', 'babel', 'backref', 'biblatex', 'bigfoot',
+  'blindtext', 'bm', 'bold-extra', 'bookman', 'booktabs', 'braket', 'breakurl', 'calc', 'cancel',
+  'caption', 'changepage', 'charter', 'cite', 'cleveref', 'cmll', 'comment', 'courier', 'csquotes',
+  'csvsimple', 'cuisine', 'datatool', 'datetime2', 'dcolumn', 'docmute', 'dsfont', 'emptypage',
+  'endnotes', 'enotez', 'enumerate', 'enumitem', 'epstopdf', 'esint', 'etex', 'etoolbox',
+  'eulervm', 'eurosym', 'fancyhdr', 'fancyheadings', 'fancyref', 'fancyvrb', 'filecontents',
+  'float', 'fmtcount', 'fontawesome', 'fontawesome5', 'fontenc', 'fontspec', 'footmisc',
+  'footnote', 'fourier', 'fp', 'framed', 'fullpage', 'gensymb', 'glossaries', 'glossaries-extra',
+  'helvet', 'hhline', 'hypcap', 'hyphenat', 'ifluatex', 'ifpdf', 'ifsym', 'ifthen', 'ifxetex',
+  'imakeidx', 'import', 'inconsolata', 'inputenc', 'isodate', 'keyval', 'kpfonts', 'kvoptions',
+  'lastpage', 'layaureo', 'libertine', 'lineno', 'lipsum', 'listings', 'lmodern', 'longtable',
+  'makecell', 'makeidx', 'manyfoot', 'marginnote', 'marvosym', 'mathpazo', 'mathptmx', 'mathrsfs',
+  'media9', 'microtype', 'movie15', 'multicol', 'multido', 'multirow', 'nameref', 'natbib',
+  'needspace', 'newtxmath', 'nextpage', 'nicefrac', 'nomencl', 'nth', 'ntheorem', 'numprint',
+  'ocgx2', 'palatino', 'parskip', 'pgfkeys', 'phaistos', 'physics', 'pifont', 'placeins',
+  'polyglossia', 'preview', 'ragged2e', 'refcount', 'relsize', 'sansmath', 'scrextend',
+  'scrlayer-scrpage', 'scrtime', 'setspace', 'sidecap', 'skak', 'skull', 'soul', 'stackengine',
+  'stmaryrd', 'subcaption', 'subfig', 'subfigure', 'subfiles', 'tabto', 'tabu', 'tabularx',
+  'tensor', 'textcomp', 'textgreek', 'textpos', 'tgheros', 'tgtermes', 'thmtools',
+  'threeparttable', 'times', 'titlesec', 'titling', 'tocloft', 'totcount', 'ulem', 'underscore',
+  'unicode-math', 'units', 'upgreek', 'url', 'varioref', 'verbatim', 'vmargin', 'wasysym',
+  'wrapfig', 'xifthen', 'xmpincl', 'xparse', 'xr', 'xr-hyper', 'xspace', 'xtab', 'xurl', 'xy',
+  'xypic', 'yfonts', 'zref', 'zwpagelayout'
+]);
+// options that keep a package that sets the sheet from setting it
+const NO_SET = { hyperref: (op) => String(op.setpagesize) === 'false', graphicx: (op) => 'nosetpagesize' in op, graphics: (op) => 'nosetpagesize' in op, color: (op) => 'nosetpagesize' in op, xcolor: (op) => 'nosetpagesize' in op };
+export const setsMedia = (name, op = {}) => !NO_MEDIA_PACKAGES.has(name) && !(NO_SET[name] && NO_SET[name](op));
+// KOMA-Script's paper where its class or typearea is given none: A4 (typearea's paper=a4)
+export const KOMA_CLASS = /^(?:scrartcl|scrreprt|scrbook|scrlttr2)$/;
+// o.own: the names of the project's own packages (their own loads are in o.others' texts)
+export function mediaSet(src, o = {}) {
+  const end = preambleEnd(src);
+  const cls = classPage(src);
+  if (cls && !NO_MEDIA_CLASSES.has(cls.name) && !(o.own && o.own.has(cls.name + '.cls'))) return true;
+  if (/\\DocumentMetadata\s*\{/.test(stripComments(src.slice(0, end < 0 ? Math.min(src.length, 200000) : end)))) return true;
+  for (const t of [src, ...(o.others || [])]) {
+    for (const p of packages(t, t === src ? end : Math.min(t.length, 200000))) {
+      const op = p.opts ? Object.fromEntries(parseKV(t, p.opts[0], p.opts[1]).map((x) => [x.key, x.value == null ? true : x.value])) : {};
+      for (const n of p.names) if (!(o.own && o.own.has(n.name + '.sty')) && setsMedia(n.name, op)) return true;
+    }
+  }
+  return false;
+}
 // Who lays the page out: geometry (loaded without pass), or the class (no geometry, or geometry's
-// pass, which leaves the class's text block and only sets the PDF's sheet). And whether the PDF's
-// sheet follows LaTeX's paper: geometry, hyperref, KOMA's typearea, memoir, beamer, IEEEtran,
-// elsarticle and acmart set it; with none of them TeX Live's sheet is A4, whatever the class's
-// paper (measured, all three engines). src/model.js reads the same (opts.media).
-const MEDIA_CLASSES = /^(?:scrartcl|scrreprt|scrbook|scrlttr2|memoir|beamer|IEEEtran|elsarticle|acmart)$/;
+// pass, which leaves the class's text block and only sets the PDF's sheet); whether the PDF's
+// sheet follows the paper (mediaSet). src/model.js reads the same (opts.media).
 export function pageMode(src, o = {}) {
   const end = preambleEnd(src);
+  // (the project's own packages are read as what they load)
   const cls = classPage(src);
   const geo = loaded(src, 'geometry', end, o.others);
   const keys = geometryKeys(src, end);
   const pass = geo && keys.pass === true;
-  const hyper = packageOptions(src, 'hyperref', end, o.others);
   const koma = !!cls && /^scr/.test(cls.name);
-  const media = geo || (hyper !== null && String(hyper.setpagesize) !== 'false') || loaded(src, 'typearea', end, o.others) || (!!cls && MEDIA_CLASSES.test(cls.name));
-  return { end, cls, geo, keys, pass, byGeometry: geo && !pass, media, koma };
+  return { end, cls, geo, keys, pass, byGeometry: geo && !pass, media: mediaSet(src, o), koma };
 }
 // Where nothing sets the PDF's sheet, the page shows A4 upright: whatever comes to set it keeps
 // that sheet (the class's paper, Letter by default, would take its place): the keys or class
 // options that say A4 upright, or none where the class says so already
 function sheetKeep(M) {
   if (M.media || !M.cls) return {};
-  return { ...(M.cls.paper === 'a4' ? {} : { a4paper: true }), ...(M.cls.landscape ? { portrait: true } : {}) };
+  return { ...((M.cls.paper || M.cls.defaultPaper) === 'a4' ? {} : { a4paper: true }), ...(M.cls.landscape ? { portrait: true } : {}) };
 }
 // geometry's pass, which sets the PDF's sheet from the class's paper and touches nothing else
 // (none where that sheet is A4 upright, TeX Live's own)
@@ -188,15 +241,10 @@ function mediaEdits(src, M, o, size, land) {
   if (M.media || (size === 'a4' && !land)) return [];
   return usePackages(src, { geometry: { pass: true } }, { end: M.end, others: o.others });
 }
-// pin: the page as it is now (points), so that turning to geometry's layout moves nothing but
-// what is asked: { l, r, t, b } the margins (a new paper keeps them, as Word does), or { l, tw, t,
-// th } the text block itself (the header's distances change and not a line of the text moves)
+// pin: the margins as the page has them (points), so that turning to geometry's layout for a new
+// paper keeps them, as Word does
 const PT = (x) => fmtLen(x, 'pt');
-function pinKeys(pin) {
-  if (!pin) return {};
-  if (pin.tw != null) return { left: PT(pin.l), textwidth: PT(pin.tw), top: PT(pin.t), textheight: PT(pin.th) };
-  return { left: PT(pin.l), right: PT(pin.r), top: PT(pin.t), bottom: PT(pin.b) };
-}
+const pinKeys = (pin) => (pin ? { left: PT(pin.l), right: PT(pin.r), top: PT(pin.t), bottom: PT(pin.b) } : {});
 // geometry's keys of a paper ('a4' or { w, h, unit })
 const paperKeys = (size) => (typeof size === 'string' ? { [size + 'paper']: true } : { paperwidth: fmtLen(size.w, size.unit || 'cm'), paperheight: fmtLen(size.h, size.unit || 'cm') });
 
@@ -212,7 +260,7 @@ export function paperEdits(src, size, o = {}) {
   if (named && !PAPERS[size]) return [];
   if (M.byGeometry) return geometryEdits(src, paperKeys(size), FAMILY.paper, { end: M.end, others: o.others });
   if (named && CLASS_PAPER.test(size + 'paper')) {
-    const cur = M.cls.paper || 'letter';
+    const cur = M.cls.paper || M.cls.defaultPaper;
     const out = [];
     if (cur !== size) {
       // (KOMA's paper=a4 written as KOMA writes it)
@@ -242,8 +290,8 @@ export function orientationEdits(src, way, o = {}) {
     if (sheetLandscape(src, o)) return [];
     if (M.byGeometry) return geometryEdits(src, { landscape: true, portrait: null }, null, { end: M.end, others: o.others });
     // (the sheet shown, A4, stays A4 turned)
-    const keep = M.media || cls.paper === 'a4' ? {} : classPaperOf(cls, 'a4');
-    return joinEdits([...classOptions(src, { ...keep, ...(cls.landscape ? {} : { landscape: true }) }, (k) => 'a4paper' in keep && CLASS_PAPER.test(k)), ...mediaEdits(src, M, o, cls.paper, true)]);
+    const keep = M.media || (cls.paper || cls.defaultPaper) === 'a4' ? {} : classPaperOf(cls, 'a4');
+    return joinEdits([...classOptions(src, { ...keep, ...(cls.landscape ? {} : { landscape: true }) }, (k) => 'a4paper' in keep && CLASS_PAPER.test(k)), ...mediaEdits(src, M, o, cls.paper || cls.defaultPaper, true)]);
   }
   // portrait: landscape comes out where it stands (the class's too where the sheet does not show
   // it: its text block is a landscape page's)
@@ -253,18 +301,50 @@ export function orientationEdits(src, way, o = {}) {
 }
 const classPaperOf = (cls, size) => (cls.komaPaper ? { paper: size } : { [size + 'paper']: true });
 
-// The distances of the header and the footer (headsep, footskip: points): geometry's keys; where
-// the class lays the page out, with its text block pinned (o.pin: { l, tw, t, th }), so the text
-// stays where it is and only the header or the footer moves
+// The distances of the header and the footer (headsep, footskip: points): geometry's keys where
+// geometry lays the page out; where the class does, the lengths themselves, so that only the
+// asked distance changes whatever the class (amsart, revtex, llncs, KOMA: their own numbers, which
+// the page does not model): \headsep set with \topmargin moved by as much the other way, so the
+// text stays where the class put it, and \footskip, which moves the footer alone.
+const HS_LINES = (v) => '\\addtolength{\\topmargin}{\\headsep}\n\\setlength{\\headsep}{' + v + '}\n\\addtolength{\\topmargin}{-\\headsep}';
+const HS_IDIOM = /\\addtolength\s*\{\\topmargin\}\s*\{\\headsep\}\s*\\setlength\s*\{\\headsep\}\s*\{([^{}]{0,40})\}\s*\\addtolength\s*\{\\topmargin\}\s*\{-\\headsep\}/g;
+// what the preamble says of them: { headsep: { pt, keep (the text stays: the lines above), at },
+// footskip: { pt, at } }, the last of each as TeX takes it
+export function headFootLengths(src) {
+  const end = preambleEnd(src);
+  if (end < 0) return {};
+  const pre = stripComments(src.slice(0, end));
+  const out = {};
+  const idioms = [];
+  HS_IDIOM.lastIndex = 0;
+  for (let m, k = 0; (m = HS_IDIOM.exec(pre)) && k < 200; k++) idioms.push({ s: m.index, e: m.index + m[0].length, v: m[1], vAt: m.index + m[0].indexOf('{' + m[1] + '}', m[0].indexOf('\\setlength')) + 1 });
+  const hs = setLengths(pre, 'headsep'), last = hs[hs.length - 1];
+  if (last) {
+    const id = idioms.find((x) => x.s <= last.s && last.e <= x.e);
+    const pt = lenPt(pre.slice(last.v[0], last.v[1]));
+    if (pt != null) out.headsep = { pt, keep: !!id, at: id ? [id.vAt, id.vAt + id.v.length] : last.v };
+  }
+  const fs = setLengths(pre, 'footskip'), lf = fs[fs.length - 1];
+  if (lf) { const pt = lenPt(pre.slice(lf.v[0], lf.v[1])); if (pt != null) out.footskip = { pt, at: lf.v }; }
+  return out;
+}
 export function headFootEdits(src, hf, o = {}) {
   const M = pageMode(src, o);
   if (M.end < 0) return [];
-  const ch = {};
-  if (hf.headsep != null) ch.headsep = PT(hf.headsep);
-  if (hf.footskip != null) ch.footskip = PT(hf.footskip);
-  if (!Object.keys(ch).length) return [];
-  if (M.byGeometry) return geometryEdits(src, ch, null, { end: M.end, others: o.others });
-  return geometryEdits(src, { pass: null, ...sheetKeep(M), ...pinKeys(o.pin), ...ch }, FAMILY.margins, { end: M.end, others: o.others });
+  if (M.byGeometry) {
+    const ch = {};
+    if (hf.headsep != null) ch.headsep = PT(hf.headsep);
+    if (hf.footskip != null) ch.footskip = PT(hf.footskip);
+    return Object.keys(ch).length ? geometryEdits(src, ch, null, { end: M.end, others: o.others }) : [];
+  }
+  const L = headFootLengths(src), out = [];
+  if (hf.headsep != null) {
+    const v = PT(hf.headsep);
+    if (L.headsep && L.headsep.keep) { if (src.slice(L.headsep.at[0], L.headsep.at[1]).trim() !== v) out.push({ s: L.headsep.at[0], e: L.headsep.at[1], t: v }); }
+    else out.push(lineBefore(src, M.end, HS_LINES(v)));
+  }
+  if (hf.footskip != null) out.push(...lengthEdits(src, 'footskip', PT(hf.footskip)));
+  return joinEdits(out);
 }
 
 // Word's margins, in cm: [id, name, top, bottom, left (inside), right (outside), mirrored]
@@ -332,10 +412,18 @@ export function breakEdits(src, p, q, text) {
 
 // What holds p in a paragraph that starts at s: the groups open there, outermost first, as [{ s
 // (the command's start), o (its brace), name (the command, '' for a bare group, the environment
-// for a box's), re (what opens it again: \textcolor{red}{, {\bfseries ) }], or null where the
-// paragraph is too long to read. Comments, \verb and maths are passed over.
-const BOX_CMD = /^(?:footnote|footnotetext|footnotemark|marginpar|marginnote|parbox|mbox|makebox|fbox|framebox|raisebox|colorbox|fcolorbox|hbox|vbox|vtop|vcenter|resizebox|scalebox|rotatebox|caption|thanks|title|author|date|tcbox|adjustbox|savebox|sbox|pbox|shortstack|stackon|underbrace|overbrace|cite|ref|label|url|href|includegraphics|tikz|text)$/;
+// for a box's), box (TeX makes no page in it), style (a group of the words' style, which can be
+// closed and opened again), decls (the declarations in force in it before p: \bfseries, \color{red},
+// \large), re (what opens it again: \textcolor{red}{, {\bfseries ) }], or null where the paragraph
+// is too long to read. Comments, \verb and maths are passed over.
+const BOX_CMD = /^(?:footnote|footnotetext|footnotemark|marginpar|marginnote|parbox|mbox|makebox|fbox|framebox|raisebox|colorbox|fcolorbox|hbox|vbox|vtop|vcenter|resizebox|scalebox|rotatebox|caption|thanks|title|author|date|tcbox|adjustbox|savebox|sbox|pbox|shortstack|stackon|underbrace|overbrace|includegraphics|tikz|text)$/;
 const BOX_ENV = /^(?:minipage|tabular\*?|tabularx|tabulary|array|tikzpicture|picture|tcolorbox|framed|mdframed|adjustbox|wrapfigure|wraptable|lrbox)$/;
+// the commands whose argument is words in a style, as LaTeX defines them: cut, each half keeps it
+// (their other arguments, \textcolor's colour, are repeated); any other command's argument, a
+// macro of the document's own above all, is not cut: \pair{Key}{value} cut would print Key twice
+const STYLE_CMD = /^(?:textbf|textit|emph|textsl|textsc|texttt|textsf|textrm|textup|textmd|textnormal|underline|uline|uuline|uwave|sout|xout|hl|textcolor|foreignlanguage|textsuperscript|textsubscript|tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge)$/;
+// the declarations a group carries on to its other half
+const DECL = /^(?:bfseries|mdseries|itshape|slshape|scshape|upshape|normalfont|rmfamily|sffamily|ttfamily|em|bf|it|sl|sc|tt|sf|rm|tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge|color|selectlanguage)$/;
 export function groupsAt(src, s, p) {
   if (p - s > 40000) return null;
   const stack = [], envs = [];
@@ -352,27 +440,34 @@ export function groupsAt(src, s, p) {
       if (name === 'begin' || name === 'end') {
         const e = /^\\(?:begin|end)\s*\{([^{}]{1,40})\}/.exec(src.slice(i, i + 60));
         if (e) {
-          if (name === 'begin') { envs.push(e[1]); if (BOX_ENV.test(e[1])) stack.push({ s: i, o: i + e[0].length - 1, name: e[1], env: true, box: true, re: '' }); }
+          if (name === 'begin') { envs.push(e[1]); if (BOX_ENV.test(e[1])) stack.push({ s: i, o: i + e[0].length - 1, name: e[1], env: true, box: true, decls: [], re: '' }); }
           else { const k = envs.lastIndexOf(e[1]); if (k >= 0) envs.length = k; const j = stack.findIndex((g) => g.env && g.name === e[1]); if (j >= 0) stack.length = j; }
           i += e[0].length - 1; pending = null; continue;
         }
       }
       if (name === '(' || name === '[') math = true;
       if (name === ')' || name === ']') math = false;
+      // (a declaration in a group goes on in its other half: \color{red} with its argument)
+      if (name && DECL.test(name) && stack.length && !math) {
+        let z = i + m[0].length;
+        if (name === 'color' || name === 'selectlanguage') { const k = src.slice(z, z + 4).indexOf('{'); const w = k >= 0 ? groupEnd(src, z + k, 200) : -1; if (w > 0 && w <= p) z = w; }
+        stack[stack.length - 1].decls.push(src.slice(i, z));
+      }
       pending = name ? { name, s: i } : null;
       i += m[0].length - 1;
       continue;
     }
     // (an optional argument passed over; the caret inside one, or one not closed, ends the scan:
     // each [ is scanned once, so a stranger's paragraph of brackets costs its length)
-    if (c === '[' && pending) { const z = groupEnd(src, i, Math.min(4000, p - i + 1)); if (z > 0 && z <= p) { i = z - 1; continue; } stack.push({ s: pending.s, o: i, name: pending.name, box: true, re: '' }); return stack; }
+    if (c === '[' && pending) { const z = groupEnd(src, i, Math.min(4000, p - i + 1)); if (z > 0 && z <= p) { i = z - 1; continue; } stack.push({ s: pending.s, o: i, name: pending.name, box: true, decls: [], re: '' }); return stack; }
     if (c === '{') {
-      const g = pending ? { s: pending.s, o: i, name: pending.name, re: '' } : { s: i, o: i, name: '', re: '' };
+      const g = pending ? { s: pending.s, o: i, name: pending.name, decls: [], re: '' } : { s: i, o: i, name: '', decls: [], re: '' };
       g.box = BOX_CMD.test(g.name) || (math && !g.name);
+      g.style = !g.box && (!g.name || STYLE_CMD.test(g.name));
       // (groups nested deeper than any formatting goes: not read)
       if (stack.length >= 64) return null;
       if (g.name) g.re = src.slice(g.s, i + 1);
-      else { const d = /^\{((?:\s*\\[A-Za-z]+(?:\{[^{}]{0,40}\})?)*\s*)/.exec(src.slice(i, i + 200)); g.re = d ? d[0] : '{'; }
+      else { const d = /^\{((?:\s*\\[A-Za-z]+(?:\{[^{}]{0,40}\})?)*\s*)/.exec(src.slice(i, i + 200)); g.lead = d ? d[0].length : 1; }
       stack.push(g);
       pending = null;
       continue;
@@ -385,14 +480,22 @@ export function groupsAt(src, s, p) {
     }
     if (!/\s/.test(c)) pending = null;
   }
+  // what opens each group again: the command and its arguments before this one (or a bare
+  // brace), then the declarations in force in it
+  for (const g of stack) {
+    const ds = g.decls.join('');
+    g.re = (g.name ? g.re : '{') + ds + (/\\[A-Za-z@]+$/.test(ds) ? ' ' : '');
+  }
   return stack;
 }
-// A break at p (a selection [p, q) goes) in the paragraph that starts at s: on lines of its own
+// A break at p (a selection [p, q) goes) in the paragraph [s, e): on lines of its own
 // (breakEdits) where no group is open; at a group's start before the group, at its end after it;
-// within a group of the words' style (\textbf{…}, {\itshape …}, \textcolor{red}{…}) the groups
-// closed before it and opened again after it, so the words keep their style on both pages.
-// { blocked: why } inside a footnote, a box, a caption or a minipage, where TeX makes no page.
-export function breakAt(src, s, p, q, text) {
+// within groups of the words' style (\textbf{…}, {\itshape …}, \textcolor{red}{…}) the groups
+// closed before it and opened again after it with the declarations in force, so the words keep
+// their style on both pages; inside any other command's argument (a macro of the document's own)
+// at the paragraph's start or end, whichever is nearer. { blocked: why } inside a footnote, a box,
+// a caption or a minipage, where TeX makes no page.
+export function breakAt(src, s, p, q, text, e) {
   if (q == null) q = p;
   const G = groupsAt(src, s, p);
   if (!G) return breakEdits(src, p, q, text);
@@ -405,8 +508,8 @@ export function breakAt(src, s, p, q, text) {
   const stack = G.slice();
   while (stack.length) {
     const g = stack[stack.length - 1];
-    // (its words start after the brace, or after a bare group's declarations)
-    const cs = g.name ? g.o + 1 : g.o + g.re.length;
+    // (its words start after the brace, or after a bare group's leading declarations)
+    const cs = g.name ? g.o + 1 : g.o + (g.lead || 1);
     if (!/\S/.test(src.slice(Math.min(cs, a), a))) { a = b = g.s; stack.pop(); continue; }
     // (its end looked for only past the caret: each group's text once)
     const z = groupEnd(src, g.o, Math.min(40000, b - g.o + 8000));
@@ -414,6 +517,15 @@ export function breakAt(src, s, p, q, text) {
     break;
   }
   if (!stack.length) return breakEdits(src, a, b, text);
+  if (stack.some((g) => !g.style)) {
+    // the paragraph's nearer end: its start, or its end (e, else its first blank line)
+    let ps = s;
+    while (ps < p && /\s/.test(src[ps])) ps++;
+    let pe = e != null ? e : (() => { const k = src.slice(p, p + 40000).search(/\n[ \t]*\r?\n/); return k < 0 ? Math.min(src.length, p + 40000) : p + k; })();
+    while (pe > p && /\s/.test(src[pe - 1])) pe--;
+    const at = p - ps <= pe - p ? ps : pe;
+    return breakEdits(src, at, at, text);
+  }
   while (a > 0 && (src[a - 1] === ' ' || src[a - 1] === '\t')) a--;
   while (b < src.length && (src[b] === ' ' || src[b] === '\t')) b++;
   const nl = eolOf(src);
@@ -433,7 +545,11 @@ export function multicolsAt(src, p) {
     if (m[1] === 'begin') {
       const after = m.index + m[0].length;
       const nm = /^\s*\{\s*(\d+)\s*\}/.exec(src.slice(after, after + 20));
-      stack.push({ s: m.index, star: m[2].endsWith('*'), n: nm ? +nm[1] : 2, nAt: nm ? [after + nm[0].indexOf(nm[1]), after + nm[0].indexOf(nm[1]) + nm[1].length] : null, hs: after + (nm ? nm[0].length : 0) });
+      let hs = after + (nm ? nm[0].length : 0), pre = null;
+      // (its optional argument, the text set across before the columns, is part of its head)
+      const sp = /^\s*/.exec(src.slice(hs, hs + 40))[0].length;
+      if (nm && src[hs + sp] === '[') { const z = groupEnd(src, hs + sp, 4000); if (z > 0) { pre = [hs + sp + 1, z - 1]; hs = z; } }
+      stack.push({ s: m.index, star: m[2].endsWith('*'), n: nm ? +nm[1] : 2, nAt: nm ? [after + nm[0].indexOf(nm[1]), after + nm[0].indexOf(nm[1]) + nm[1].length] : null, hs, pre });
     } else if (stack.length) {
       const b = stack.pop();
       const e = m.index + m[0].length;
@@ -552,7 +668,9 @@ export function unwrapMulticols(src, M) {
   const hs = M.head[1], te = M.tail[0];
   const a = src[hs] === '\n' ? hs + 1 : src[hs] === '\r' && src[hs + 1] === '\n' ? hs + 2 : hs;
   const b = src[te - 1] === '\n' ? (src[te - 2] === '\r' ? te - 2 : te - 1) : te;
-  return [{ s: b, e: M.e, t: '' }, { s: M.s, e: a, t: '' }];
+  // (the text it set across stays, before the words)
+  const pre = M.pre ? src.slice(M.pre[0], M.pre[1]).trim() : '';
+  return [{ s: b, e: M.e, t: '' }, { s: M.s, e: a, t: pre ? pre + eolOf(src) : '' }];
 }
 // \setlength{\name}{value} and \setlength\name{value} of a text: [{ s, e, v: [a, b) }], read by
 // steps (a pattern with a run of spaces each side of an optional brace backtracked over a
@@ -616,8 +734,10 @@ const KOMA_CLEAR = { clearpairofpagestyles: ['main', 'plain'], clearmainofpairof
 
 // An argument as TeX reads it and as the page and the header's field show it: a comment (% to the
 // line's end) goes with that line end and the spaces that start the next line, a line end is a
-// space, a run of spaces is one, none at either end. map[i]: where the text's i-th character
-// stands in the argument, [s, e) (a space stands for its whole run).
+// space, a run of spaces is one; a space right after the brace or before the closing one stays,
+// as TeX prints it. (A space after a command's name stays in the text, where it ends the name; the
+// page draws none there, as TeX prints none: src/layout.js hfRuns.) map[i]: where the text's i-th
+// character stands in the argument, [s, e) (a space stands for its whole run).
 export function cleanArg(raw) {
   raw = String(raw);
   const chars = [], map = [];
@@ -633,12 +753,11 @@ export function cleanArg(raw) {
     if (c === ' ' || c === '\t' || c === '\n' || c === '\r') {
       let j = i + 1;
       while (j < n && (raw[j] === ' ' || raw[j] === '\t' || raw[j] === '\n' || raw[j] === '\r')) j++;
-      if (chars.length && chars[chars.length - 1] !== ' ') { chars.push(' '); map.push([i, j]); }
+      if (chars[chars.length - 1] !== ' ') { chars.push(' '); map.push([i, j]); }
       i = j; continue;
     }
     chars.push(c); map.push([i, i + 1]); i++;
   }
-  while (chars.length && chars[chars.length - 1] === ' ') { chars.pop(); map.pop(); }
   return { text: chars.join(''), map };
 }
 // The edit that makes the argument [a, b) of src read as text (as cleanArg reads it): the smallest
@@ -1298,6 +1417,14 @@ export function sidesEdits(src, two) {
   return classOptions(src, book ? { oneside: true, twoside: null } : { twoside: null });
 }
 
+export function mediaKey(src, others = []) {
+  const end = preambleEnd(src);
+  if (end < 0) return '';
+  const d = docClass(src);
+  const pre = stripComments(src.slice(0, end));
+  return [d ? d.name + '[' + (d.opts ? src.slice(d.opts[0], d.opts[1]) : '') + ']' : '', ...packages(src, end).map((p) => src.slice(p.s, p.e)), /\\DocumentMetadata\s*\{/.test(pre) ? 'DM' : '', ...others.map((t) => String(t.length))].join('|').slice(0, 20000);
+}
+
 // ---- all of it, for the page (src/model.js) ------------------------------------------------------
 // others: the text of the files the preamble reads, in the order it reads them
 export function readPage(src, others = []) {
@@ -1317,6 +1444,9 @@ export function readPage(src, others = []) {
     headrule: main ? main.headrule : 0, footrule: main ? main.footrule : 0,
     lineno: lineNumbers(src, { others }), hyph: hyphenation(src, { others }),
     wm: watermark(src, { others }), color: color ? { color: color.color, model: color.model } : null, border: pageBorder(src),
-    colsep: sep('columnsep'), colrule: sep('columnseprule')
+    colsep: sep('columnsep'), colrule: sep('columnseprule'), lengths: headFootLengths(src),
+    // what decides the PDF's sheet: the class and its options, the packages and theirs, the kernel's
+    // PDF management (a PDF of the same takes its sheet to the page: src/app.js pdfSheet)
+    mediaKey: mediaKey(src, others)
   };
 }

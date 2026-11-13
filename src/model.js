@@ -7,7 +7,7 @@ import { siTex, siOptions, siUnitSymbol } from './siunitx.js';
 import { widgetPath, hashText } from './widget.js';
 import { rtlDocument, languageDir } from './scripts.js';
 import { isLatexMark } from './styles.js';
-import { readPage, paperName } from './pagesrc.js';
+import { readPage, paperName, NO_MEDIA_CLASSES, setsMedia, KOMA_CLASS } from './pagesrc.js';
 
 const WIDGET_FILE = /\.html?$/i;
 // the page's set up of the last preamble read (Builder.pageSetup)
@@ -38,6 +38,8 @@ const FILE_CMDS = {
   chemfig: ['molecule', -1], chemname: ['molecule', -1], arrow: ['arrow', -1],
 };
 const SI_CMDS = new Set(['num', 'SI', 'si', 'qty', 'unit', 'numrange', 'SIrange', 'qtyrange', 'numlist', 'SIlist', 'qtylist', 'numproduct', 'SIproduct', 'qtyproduct', 'ang', 'tablenum']);
+// a package's options as { key: value or true }, for src/pagesrc.js setsMedia
+const optsOf = (op) => Object.fromEntries(String(op || '').split(',').map((x) => x.trim()).filter(Boolean).map((x) => { const q = x.indexOf('='); return q < 0 ? [x, true] : [x.slice(0, q).trim(), x.slice(q + 1).trim()]; }));
 const INVIS = new Set([
   'label', 'index', 'glossary', 'nocite', 'phantomsection', 'protect', 'relax', 'indent', 'sloppy', 'fussy',
   'frenchspacing', 'makeatletter', 'makeatother', 'raggedright', 'raggedleft', 'addcontentsline', 'setlength',
@@ -357,7 +359,7 @@ class Builder {
           if (this.files.has(p.trim() + '.sty')) this.preFile(p.trim() + '.sty', true);
           // (the project's own class or package may load what lays out the page or sets its sheet)
           if (p.trim() === 'geometry') this.geometry(this.argText(c, nd.args[0]));
-          if (p.trim() === 'hyperref' || p.trim() === 'typearea') this.opts.media = true;
+          if (!this.files.has(p.trim() + '.sty') && setsMedia(p.trim(), optsOf(this.argText(c, nd.args[0])))) this.opts.media = true;
         }
       } else if (/^(newcommand|providecommand|newenvironment|DeclareMathOperator|newtheorem|theoremstyle|numberwithin)$/.test(nd.name) &&
         !(nd.def && (nd.def.bs < 0 || /@/.test(c.src.slice(nd.s, nd.def.bs > 0 ? nd.def.bs : nd.e))))) this.defCmd(nd, c);
@@ -374,7 +376,7 @@ class Builder {
     const O = this.opts;
     for (const o of list.split(',').map((x) => x.trim())) {
       if (/^(10|11|12)pt$/.test(o)) O.pt = parseInt(o, 10);
-      if (paperName(o)) O.paper = paperName(o);
+      if (paperName(o)) { O.paper = paperName(o); O.paperByClass = true; }
       if (o === 'twocolumn') O.twocolumn = true;
       if (o === 'onecolumn') O.twocolumn = false;
       // the page's sides and its orientation (src/layout.js lays the page out from them)
@@ -384,6 +386,7 @@ class Builder {
       if (o === 'openright') O.openright = true;
       if (o === 'openany') O.openright = false;
       if (o === 'titlepage') O.titlepage = true;
+      if (o === 'notitlepage') O.notitlepage = true;
       if (/^(ngerman|german|austrian|naustrian)$/.test(o)) O.lang = 'de';
       if (/^spanish$/.test(o)) O.lang = 'es';
       if (/^(french|francais)$/.test(o)) O.lang = 'fr';
@@ -411,12 +414,14 @@ class Builder {
         if (/^(amsart|amsbook)$/.test(O.cls)) O.ams = true;
         // KOMA's classes (typearea), memoir, beamer, IEEEtran, elsarticle and acmart set the PDF's
         // sheet themselves (src/pagesrc.js pageMode)
-        if (/^(scrartcl|scrreprt|scrbook|scrlttr2|memoir|beamer|IEEEtran|elsarticle|acmart)$/.test(O.cls)) O.media = true;
+        if (!NO_MEDIA_CLASSES.has(O.cls)) O.media = true;
         // (KOMA's paper=a5 and paper=landscape)
         for (const x of (/(?:^|,)\s*paper\s*=\s*([A-Za-z0-9:]+)/.exec(A(0)) || ['', ''])[1].split(':')) {
-          if (paperName(x + 'paper')) O.paper = paperName(x + 'paper');
+          if (paperName(x + 'paper')) { O.paper = paperName(x + 'paper'); O.paperByClass = true; }
           if (x === 'landscape') O.landscape = true;
         }
+        // (KOMA-Script's paper where none is given: A4)
+        if (KOMA_CLASS.test(O.cls) && !O.paperByClass) O.paper = 'a4';
         break;
       }
       case 'usepackage': case 'RequirePackage': {
@@ -445,7 +450,10 @@ class Builder {
           // the class's layout and only sets the PDF's sheet)
           if (p === 'geometry') this.geometry(op);
           // what sets the PDF's sheet to LaTeX's paper: without any of it TeX Live's sheet is A4
-          if ((p === 'hyperref' && !/setpagesize\s*=\s*false/.test(op)) || p === 'typearea') O.media = true;
+          // (src/pagesrc.js mediaSet)
+          if (!this.files.has(p + '.sty') && setsMedia(p, optsOf(op))) O.media = true;
+          // (typearea's paper is A4 where the class's options give none)
+          if (p === 'typearea' && !O.paperByClass) O.paper = 'a4';
           if (p === 'babel') {
             const langs = op.split(',').map((x) => x.trim()).filter(Boolean);
             const last = langs[langs.length - 1] || 'english';
@@ -458,6 +466,8 @@ class Builder {
         break;
       }
       case 'geometry': this.geometry(A(0)); break;
+      // (the kernel's PDF management sets the PDF's sheet from the paper)
+      case 'DocumentMetadata': O.media = true; break;
       // (the numbers' format from the first page: \pagenumbering{gobble} in the preamble prints none)
       case 'pagenumbering': O.numbering = A(0).trim(); break;
       case 'onehalfspacing': O.spread = { 10: 1.25, 11: 1.213, 12: 1.241 }[O.pt] || 1.25; break;
@@ -927,6 +937,14 @@ class Builder {
           this.use('d' + this.dir);
           const u = this.titleBlock(nd, ctx);
           if (u) units.push(u);
+          // a title page of its own (report, book and KOMA's, or the titlepage option): the text
+          // starts on the next page, numbered 1 again in a one sided document, as the titlepage
+          // environment does
+          const O = this.opts;
+          if (u && (O.titlepage || (!O.notitlepage && /^(report|book|scrreprt|scrbook)$/.test(O.cls)))) {
+            units.push({ f: ctx.f, s: nd.e, e: nd.e, items: [{ type: 'pagebreak', column: false }], fns: [], sig: 'tp' });
+            if (!O.twoside) units.push({ f: ctx.f, s: nd.e, e: nd.e, items: [{ type: 'pagemark', mark: { page: 1 } }], fns: [], sig: 'tp1' });
+          }
           continue;
         }
         if (name === 'tableofcontents') {
@@ -1360,13 +1378,15 @@ class Builder {
       const ord = (this.mcCount.get(ctx.f) || 0) + 1;
       this.mcCount.set(ctx.f, ord);
       const mc = { n, key: ctx.f + ':mc' + ord, star: name.endsWith('*') };
+      // (its optional argument, \begin{multicols}{2}[\section{...}], is set across, before them)
+      const pre = nd.args && nd.args[1] && nd.args[1].nodes ? this.flow(nd.args[1].nodes, ctx, env) : [];
       const us = this.flow(nd.nodes, ctx, { ...env, inMc: true });
       const list = us.length ? us : [{ f: ctx.f, s: nd.s, e: nd.e, items: [this.emptyPara(ctx, nd.be, env.cls)], fns: [] }];
       for (const u of list) {
         for (const it of u.items) if (!it.mc) it.mc = mc;
         u.sig = (u.sig || '') + '\u0001mc' + n + ':' + ord + (mc.star ? '*' : '');
       }
-      return list;
+      return [...pre, ...list];
     }
     if (/^(small|footnotesize|scriptsize|large|Large|singlespace|onehalfspace|doublespace|spacing|minipage|landscape|appendices|otherlanguage\*?|titlepage|multicols\*?|adjustbox|threeparttable|tablenotes|acknowledgments|acknowledgements)$/.test(name)) {
       const ex = /^(small|footnotesize|scriptsize|large|Large)$/.test(name) ? { cls: (env.cls || '') + ' z-' + name } : {};

@@ -135,15 +135,23 @@ ok('orientation: the class\'s landscape (and pass) where the class lays the page
   assert.equal(twice(c, (t) => PS.orientationEdits(t, 'landscape')), doc('\\usepackage{hyperref}\n', 'Text.', '\\documentclass[a4paper,landscape]{article}'));
 });
 
-ok('header and footer distances: geometry\'s keys, the text block pinned where the class lays it out', () => {
-  const a = doc('', 'Text.', '\\documentclass[a4paper]{article}');
-  const pin = { l: 125.27, tw: 345, t: 125.27, th: 598 };
-  assert.equal(apply(a, PS.headFootEdits(a, { headsep: 40 }, { pin })), doc('\\usepackage[left=125.27pt,textwidth=345pt,top=125.27pt,textheight=598pt,headsep=40pt]{geometry}\n', 'Text.', '\\documentclass[a4paper]{article}'));
+ok('header and footer distances: geometry\'s keys where geometry lays the page out, the lengths themselves where the class does, the text kept where it was (review M7, verifier 2)', () => {
+  const a = doc('', 'Text.', '\\documentclass{amsart}');
+  const a1 = twice(a, (t) => PS.headFootEdits(t, { headsep: 40 }));
+  assert.equal(a1, doc('\\addtolength{\\topmargin}{\\headsep}\n\\setlength{\\headsep}{40pt}\n\\addtolength{\\topmargin}{-\\headsep}\n', 'Text.', '\\documentclass{amsart}'));
+  // again: the value in place; the footer's distance a line of its own
+  assert.equal(apply(a1, PS.headFootEdits(a1, { headsep: 30, footskip: 50 })), doc('\\addtolength{\\topmargin}{\\headsep}\n\\setlength{\\headsep}{30pt}\n\\addtolength{\\topmargin}{-\\headsep}\n\\setlength{\\footskip}{50pt}\n', 'Text.', '\\documentclass{amsart}'));
+  assert.deepEqual(PS.headFootLengths(a1).headsep, { pt: 40, keep: true, at: PS.headFootLengths(a1).headsep.at });
   const b = doc('\\usepackage[margin=2cm]{geometry}\n');
   assert.equal(twice(b, (t) => PS.headFootEdits(t, { footskip: 30 })), doc('\\usepackage[margin=2cm,footskip=30pt]{geometry}\n'));
-  // nothing sets the sheet (A4 shown, Letter the class's paper): A4 kept
+  // the page: the header moves, the text does not (TeX's: the body's first line stays)
+  const G = (src) => geometry(buildModel({ files: new Map([['main.tex', src]]), main: 'main.tex' }).opts);
   const c = doc('');
-  assert.equal(apply(c, PS.headFootEdits(c, { headsep: 40 }, { pin })), doc('\\usepackage[a4paper,left=125.27pt,textwidth=345pt,top=125.27pt,textheight=598pt,headsep=40pt]{geometry}\n'));
+  const g0 = G(c), g1 = G(apply(c, PS.headFootEdits(c, { headsep: 40, footskip: 50 })));
+  assert.deepEqual([g1.mt, g1.ml, g1.tw, g1.th, g1.headsep, g1.footskip], [g0.mt, g0.ml, g0.tw, g0.th, 40, 50]);
+  // a \headsep of the document's own, without \topmargin moved: the text moves by as much
+  const h = G(doc('\\setlength{\\headsep}{35pt}\n'));
+  assert.ok(Math.abs(h.mt - (g0.mt + 10)) < 0.01 && h.headsep === 35, JSON.stringify([h.mt, g0.mt]));
 });
 
 ok('the sheet and the text block as TeX makes them: A4 where nothing sets the PDF\'s size, geometry bare or with pass (review H4, M1)', () => {
@@ -170,6 +178,40 @@ ok('the sheet and the text block as TeX makes them: A4 where nothing sets the PD
   near(G(apply(a, PS.paperEdits(a, 'a5'))), { pw: 421.1, tw: 276 }, 'Size a5');
   // margins on a page whose sheet nothing set: the sheet stays A4
   near(G(apply(a, PS.marginEdits(a, { t: 72.27, b: 72.27, l: 72.27, r: 72.27 }))), { pw: 597.51, tw: 597.51 - 144.54 }, 'margins');
+});
+
+ok('the PDF\'s sheet: A4 only where nothing loaded sets it, by the table measured in this TeX Live; the PDF\'s own once made (verifier 1)', () => {
+  const G = (src, files = []) => geometry(buildModel({ files: new Map([['main.tex', src], ...files]), main: 'main.tex' }).opts);
+  const A4 = 597.51, LETTER = 614.295;
+  const cases = [
+    ['nothing', doc(''), A4], ['amsmath, lineno, fancyhdr', doc('\\usepackage{amsmath}\n\\usepackage{lineno,fancyhdr}\n'), A4],
+    ['graphicx (its driver sets it)', doc('\\usepackage{graphicx}\n'), LETTER], ['xcolor', doc('\\usepackage{xcolor}\n'), LETTER],
+    ['graphicx nosetpagesize', doc('\\usepackage[nosetpagesize]{graphicx}\n'), A4],
+    ['bookmark', doc('\\usepackage{bookmark}\n'), LETTER], ['savetrees', doc('\\usepackage{savetrees}\n'), LETTER],
+    ['crop', doc('\\usepackage[cam]{crop}\n'), LETTER], ['hyperref setpagesize=false', doc('\\usepackage[setpagesize=false]{hyperref}\n'), A4],
+    ['\\DocumentMetadata', '\\DocumentMetadata{}\n' + doc(''), LETTER],
+    ['tufte-book', doc('', 'Text.', '\\documentclass{tufte-book}'), LETTER], ['tufte-handout', doc('', 'Text.', '\\documentclass{tufte-handout}'), LETTER],
+    ['amsart', doc('', 'Text.', '\\documentclass{amsart}'), A4], ['llncs', doc('', 'Text.', '\\documentclass{llncs}'), A4],
+    // KOMA: typearea sets the sheet, and its paper is A4 where none is given
+    ['scrreprt', doc('', 'Text.', '\\documentclass{scrreprt}'), A4], ['scrlttr2', doc('', 'Text.', '\\documentclass{scrlttr2}'), A4],
+    ['scrartcl letterpaper', doc('', 'Text.', '\\documentclass[letterpaper]{scrartcl}'), LETTER],
+    ['typearea in an article', doc('\\usepackage{typearea}\n'), A4],
+    // a package nobody measured: taken to set it (most load graphics, colour or hyperref)
+    ['an unknown package', doc('\\usepackage{zzunknown}\n'), LETTER]
+  ];
+  for (const [name, src, w] of cases) assert.ok(Math.abs(G(src).pw - w) < 0.1, name + ': ' + G(src).pw);
+  // the project's own package: read as what it loads
+  assert.ok(Math.abs(G(doc('\\usepackage{mine}\n'), [['mine.sty', '\\RequirePackage{amsmath}\n']]).pw - A4) < 0.1);
+  assert.ok(Math.abs(G(doc('\\usepackage{mine}\n'), [['mine.sty', '\\RequirePackage{tikz}\n']]).pw - LETTER) < 0.1);
+  assert.equal(PS.mediaSet(doc('\\usepackage{mine}\n'), { own: new Set(['mine.sty']), others: ['\\RequirePackage{amsmath}\n'] }), false);
+  // a PDF made of the same set up gives the sheet (src/app.js pdfSheet), whatever the table says
+  const m = buildModel({ files: new Map([['main.tex', doc('\\usepackage{zzunknown}\n')]]), main: 'main.tex' });
+  m.opts.pdfSheet = { key: m.opts.page.mediaKey, w: 597.51, h: 845.05 };
+  assert.ok(Math.abs(geometry(m.opts).pw - A4) < 0.1);
+  // the key: the class, the packages and their options, not the title or the words
+  const k1 = PS.mediaKey(doc('\\usepackage{graphicx}\n\\title{A}\n')), k2 = PS.mediaKey(doc('\\usepackage{graphicx}\n\\title{B}\n'));
+  assert.equal(k1, k2);
+  assert.notEqual(k1, PS.mediaKey(doc('\\usepackage[nosetpagesize]{graphicx}\n')));
 });
 
 ok('margins: Word\'s presets as the fewest keys; the same again changes nothing; mirrored is two sided', () => {
@@ -246,6 +288,13 @@ ok('a page break in formatted words: the groups closed and opened again, or the 
   assert.match(at('\\begin{minipage}{3cm}\nmini words\n\\end{minipage}', 'words').blocked, /minipage/);
   // a comment or maths before it changes nothing
   assert.equal(at('$a{b}$ then words % {\n', 'words').text, '$a{b}$ then\n\\newpage\nwords % {\n');
+  // a macro of the document's own is never cut (\pair{Key}{value} cut printed Key twice): the
+  // break goes to the paragraph's nearer end (verifier 6)
+  assert.equal(at('Some \\pair{Key}{value words} after.', 'words').text, 'Some \\pair{Key}{value words} after.\n\\newpage');
+  assert.equal(at('\\pair{Key}{value words} and a long tail of words after it.', 'value').text, '\\newpage\n\\pair{Key}{value words} and a long tail of words after it.');
+  // the declarations in force where it is cut go on after it
+  assert.equal(at('A {plain words \\bfseries bold words} b.', 'words}').text, 'A {plain words \\bfseries bold}\n\\newpage\n{\\bfseries words} b.');
+  assert.equal(at('A \\textbf{a \\color{red}\\itshape b words} c.', 'words').text, 'A \\textbf{a \\color{red}\\itshape b}\n\\newpage\n\\textbf{\\color{red}\\itshape words} c.');
 });
 
 ok('breaks as TeX makes them: \\newpage ends the page in multicols and a column in two columns; Even and Odd page land on the next page of that parity (review M2, M6)', () => {
@@ -269,6 +318,9 @@ ok('breaks as TeX makes them: \\newpage ends the page in multicols and a column 
   // in a two column document \newpage ends the column, the page goes on
   L.g = { ...L.g, cols: 2 };
   assert.equal(L.plan([P(), BR({ column: true }), P()]).length, 1);
+  // and Even page there: no band of nothing, no extra blank page (the verifier's case)
+  assert.deepEqual(where([P(), BR(), BR({ parity: 'even' }), P()]), [[0], [3]]);
+  assert.deepEqual(where([P(), BR(), BR({ parity: 'odd' }), P()]), [[0], [], [3]]);
   // the source: the model reads the idiom Even page writes
   const src = doc('', 'One.\n' + PS.BREAKS.even + '\nTwo.');
   const m = buildModel({ files: new Map([['main.tex', src]]), main: 'main.tex' });
@@ -370,6 +422,15 @@ ok('a header\'s argument over several lines, with comments: read as TeX reads it
   const a = apply(src, PS.slotEdits(src, new Set(['HOL', 'HEL']), '\\textbf{My Title}!'));
   assert.equal(a, src.replace('{My Title}%', '{My Title}!%'));
   assert.equal(PS.readPage(a).slots.HOL, '\\textbf{My Title}!');
+  // a space right after the brace, or before the closing one, is TeX's to print: kept (verifier 7)
+  assert.equal(PS.cleanArg(' Title').text, ' Title');
+  assert.equal(PS.cleanArg('Title ').text, 'Title ');
+  assert.equal(PS.cleanArg('\n  Title\n').text, ' Title ');
+  const sp = doc('\\usepackage{fancyhdr}\n\\pagestyle{fancy}\n\\fancyhead[C]{ Title}\n');
+  assert.equal(PS.readPage(sp).slots.HOC, ' Title');
+  assert.equal(apply(sp, PS.slotEdits(sp, new Set(['HOC', 'HEC']), ' Title!')), sp.replace('{ Title}', '{ Title!}'));
+  // and no space after a command's name, which TeX does not read either
+  assert.equal(hfRuns('\\thepage of').map((x) => x.t).join(''), 'of');
   // a change across the comment cannot be made without losing it: refused
   const b = doc('\\usepackage{fancyhdr}\n\\pagestyle{fancy}\n\\fancyhead[L]{One% note\nTwo}\n');
   assert.equal(PS.readPage(b).slots.HOL, 'OneTwo');
@@ -427,7 +488,9 @@ ok('KOMA-Script: scrlayer-scrpage\'s own commands read and edited, a KOMA class 
   assert.equal(k1, doc('\\usepackage{scrlayer-scrpage}\n\\ihead{Draft}\n\\chead{}\n', 'Text.', cls));
   const K1 = PS.readPage(k1);
   assert.deepEqual([K1.slots.HOL, K1.slots.HOC, K1.slots.FOC], ['Draft', '', '\\pagemark']);
-  assert.equal(hfRuns('\\pagemark \\headmark', { page: '3', headmark: '1 Intro' }).map((x) => x.t).join(''), '3 1 Intro');
+  // (no space after a command's name, as TeX reads it; a control space gives one)
+  assert.equal(hfRuns('\\pagemark \\headmark', { page: '3', headmark: '1 Intro' }).map((x) => x.t).join(''), '31 Intro');
+  assert.equal(hfRuns('\\pagemark\\ \\headmark', { page: '3', headmark: '1 Intro' }).map((x) => x.t).join(''), '3 1 Intro');
 });
 
 ok('a book\'s pages: the headings style, its running head at the top and no number at the foot, in the page and in Word (review M4)', () => {
@@ -576,8 +639,11 @@ ok('a stranger\'s preamble is read in bounded time', () => {
   // thousand \fancypagestyle lines, a body of 20 000 unclosed floats, a header argument of
   // backslashes and comments
   const t2 = Date.now();
-  const br = '\\a['.repeat(13000) + 'x', ne = '\\textbf{'.repeat(5000) + 'x', bra = '{'.repeat(39000) + 'x';
+  const br = '\\a['.repeat(13000) + 'x', ne = '\\textbf{'.repeat(5000) + 'x', bra = '{'.repeat(39000) + 'x', col = '{' + '\\color'.repeat(5000) + 'x' + ' y'.repeat(400000);
   for (const x of [br, ne, bra]) PS.breakAt(x, 0, x.length - 1, x.length - 1, '\\newpage');
+  PS.breakAt(col, 0, 5000 * 6 + 2, 5000 * 6 + 2, '\\newpage');
+  PS.headFootLengths(doc('\\addtolength{\\topmargin}{\\headsep}\\setlength{\\headsep}{'.repeat(3000)));
+  PS.mediaKey(doc('\\usepackage{x}'.repeat(5000)));
   PS.readPage(doc('\\usepackage{fancyhdr}\n' + '\\fancypagestyle{a}{\\fancyhead[L]{x}}\n'.repeat(3000) + '\\pagestyle{a}\n'));
   const fl = doc('', '\\begin{figure}'.repeat(20000));
   PS.bodyColumns(fl); PS.columnsEdits(fl, 3); PS.wrapMulticols(fl, 0, fl.length, 3);

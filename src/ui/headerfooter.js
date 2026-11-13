@@ -97,6 +97,12 @@ export function hfOpen(app, where, o = {}) {
   app.hf.ro = typeof ResizeObserver === 'function' ? new ResizeObserver(place) : null;
   if (app.hf.ro) app.hf.ro.observe(app.root);
   place();
+  // (a field out of the desk's sight is hidden and takes no keys: the page scrolls to it first)
+  if (box.style.visibility === 'hidden' && app.desk) {
+    const d = app.desk.getBoundingClientRect(), y = parseFloat(box.style.top) || 0;
+    app.desk.scrollTop += y - d.top - Math.min(120, d.height / 3);
+    place();
+  }
   app.hf.last.focus();
   app.ribbonSync();
   if (app.rbTabs && app.rbTabs.includes('headfoot')) app.selectTab('headfoot');

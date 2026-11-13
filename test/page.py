@@ -315,7 +315,8 @@ def header_footer(page):
     page.keyboard.press('Escape'); page.wait_for_timeout(300)
     want = hd.replace('{Old}', '{Old \\textbf{x} \\thepage costs \\$5 and a\\_b}')
     check('the header typed with a pause after \\textbf{ and after a lone backslash: nothing written until it is whole, then one line, $ and _ as text', mid == hd and inv == 'true' and mid2.count('\\fancyhead[C]') == 1 and '\\textbf{x}' in mid2 and src(page) == want, (inv, src(page)[60:300]))
-    check('and the page draws it as TeX will print it', page.evaluate('document.querySelector("#pages .page .hd .c").textContent') == 'Old x 1 costs $5 and a_b', page.evaluate('document.querySelector("#pages .page .hd .c").textContent'))
+    # (TeX reads no space after \thepage: "1costs", as the PDF has it)
+    check('and the page draws it as TeX will print it', page.evaluate('document.querySelector("#pages .page .hd .c").textContent') == 'Old x 1costs $5 and a_b', page.evaluate('document.querySelector("#pages .page .hd .c").textContent'))
     # review H2: an argument over lines with comments: shown and edited as TeX reads it, the comments kept
     hc = DOC(pre=HF_COMMENT)
     load_doc(page, hc); click_text(page, 'First', 2)
@@ -419,13 +420,14 @@ def compile_doc(page, text=None):
     their boxes in bp, page: what the page draws (its pages' head and foot, the sheet and the
     text block in pt) }"""
     page.set_default_timeout(600000)
-    r = page.evaluate('''async (t) => { if (t !== null) await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile(); let s = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) s += String.fromCharCode(...r.pdf.subarray(i, i + 8192));
+    r = page.evaluate('''async (t) => { if (t !== null) await window.rikuy.api.setSource(t); const g0 = window.rikuy.layout.g, before = { pw: g0.pw, ph: g0.ph };
+      const r = await window.rikuy.api.compile(); let s = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) s += String.fromCharCode(...r.pdf.subarray(i, i + 8192));
       const g = window.rikuy.layout.g, pages = [...document.querySelectorAll('#pages > .page')];
-      return { ok: r.ok, pages: r.pages, b64: r.pdf ? btoa(s) : '', page: { n: pages.length, g: { pw: g.pw, ph: g.ph, ml: g.ml, mt: g.mt, tw: g.tw, th: g.th },
+      return { ok: r.ok, pages: r.pages, b64: r.pdf ? btoa(s) : '', before, page: { n: pages.length, g: { pw: g.pw, ph: g.ph, ml: g.ml, mt: g.mt, tw: g.tw, th: g.th },
         hd: pages.map((p) => p.querySelector('.hd').hidden ? '' : p.querySelector('.hd').textContent),
         ft: pages.map((p) => p.querySelector('.ft').hidden ? '' : p.querySelector('.ft').textContent) } }; }''', text)
     page.set_default_timeout(30000)
-    out = {'ok': r['ok'], 'pages': r['pages'], 'page': r['page'], 'pdf': None, 'txt': [], 'words': []}
+    out = {'ok': r['ok'], 'pages': r['pages'], 'page': r['page'], 'before': r['before'], 'pdf': None, 'txt': [], 'words': []}
     if not r['b64']: return out
     from pypdf import PdfReader
     f = tempfile.NamedTemporaryFile(suffix='.pdf', delete=False); f.write(base64.b64decode(r['b64'])); f.close()
@@ -550,11 +552,91 @@ def compile_pdf(page):
     check('KOMA: \\ohead{Right} with scrlayer-scrpage compiles, the PDF\'s head Left ... Right as the page\'s', c['ok'] and 'Left' in t0 and 'Right' in t0 and 'fancyhdr' not in src(page) and c['page']['hd'][0].startswith('Left') and c['page']['hd'][0].endswith('Right'), (t0[:80], c['page']['hd'][:1]))
 
 
+def verifier_pdf(page):
+    """The verifier's cases of PR 19 (c08fc02), each compiled in the page against what it draws."""
+    if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        print('SKIP the verifier\'s PDF cases: no TeX tree in %s' % DIST)
+        return
+    # 1: the sheet: the page draws the PDF's before any compile (the measured table), and after it
+    # (the PDF's own); a package nobody measured gets the PDF's once one is made
+    cases = [('nothing', DOC()), ('graphicx', DOC('\\usepackage{graphicx}\n')), ('bookmark', DOC('\\usepackage{bookmark}\n')), ('savetrees', DOC('\\usepackage{savetrees}\n')),
+             ('crop', DOC('\\usepackage[cam]{crop}\n')), ('DocumentMetadata', '\\DocumentMetadata{}\n' + DOC()), ('tufte-book', DOC(cls='\\documentclass{tufte-book}')),
+             ('tufte-handout', DOC(cls='\\documentclass{tufte-handout}')), ('scrreprt', DOC(cls='\\documentclass{scrreprt}')), ('scrlttr2', DOC(body='Text.', cls='\\documentclass{scrlttr2}')),
+             ('amsart', DOC(cls='\\documentclass{amsart}'))]
+    for name, d in cases:
+        c = compile_doc(page, d)
+        w, h = sheet(c) if c['pdf'] else (0, 0)
+        b, a = c['before'], c['page']['g']
+        check('1: the sheet of %s: the PDF\'s (%.0f by %.0f bp) drawn before the compile and after it' % (name, w, h), c['ok'] and abs(b['pw'] * BP - w) < 1 and abs(b['ph'] * BP - h) < 1 and abs(a['pw'] * BP - w) < 1 and abs(a['ph'] * BP - h) < 1, (b, a, (w, h)))
+    c = compile_doc(page, DOC('\\usepackage{xstring}\n'))
+    w, h = sheet(c)
+    check('1: a package not measured (xstring) is drawn on the paper until the PDF says A4, then on A4', abs(c['before']['pw'] - 614.295) < 0.1 and abs(w - 595.28) < 1 and abs(c['page']['g']['pw'] * BP - w) < 1, (c['before'], c['page']['g'], (w, h)))
+    # 2: Header to text on classes the page does not model: the text stays where TeX put it
+    for cls in ('amsart', 'revtex4-2', 'scrartcl', 'llncs'):
+        d = DOC(body='\\noindent ' + LONG, cls='\\documentclass{%s}' % cls)
+        c0 = compile_doc(page, d)
+        click_text(page, 'Words', 2)
+        open_tab(page, 'Layout'); page.click('#rc-page-setup'); page.wait_for_timeout(250)
+        dlg = page.get_by_role('dialog', name='Page setup')
+        dlg.get_by_role('spinbutton', name='Header to text', exact=True).fill('1.5')
+        dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+        c1 = compile_doc(page, None)
+        first = lambda c: [w for w in c['words'][0] if w[4] == 'Words'][:1]
+        f0, f1 = first(c0), first(c1)
+        check('2: Header to text 1.5 cm on %s: only \\headsep (\\topmargin moved the other way) is written, and the body\'s first word stays where TeX put it' % cls,
+              c1['ok'] and '\\setlength{\\headsep}{42.68pt}' in src(page) and 'geometry' not in src(page) and f0 and f1 and abs(f0[0][0] - f1[0][0]) < 0.1 and abs(f0[0][1] - f1[0][1]) < 0.1, (f0, f1, src(page)[:220]))
+    # 3: Even page in two columns: no extra blank page
+    load_doc(page, DOC(body='Oddone words.\n\nAfterbreak words.', cls='\\documentclass[twocolumn,twoside]{article}')); click_text(page, 'Afterbreak', 0)
+    page.evaluate('rikuy.pageBreakAt("even")'); page.wait_for_timeout(300)
+    c = compile_doc(page, None)
+    check('3: Even page from page 1 in two columns: TeX goes on on page 2, and so does the page (no blank page between)', c['pages'] == 2 == c['page']['n'] and 'Afterbreak' in c['txt'][1], (c['pages'], c['page']['n']))
+    # 4: a book's page numbers moved: the running heads stay on their side, in the PDF as on the page
+    for where, name in (('FC', 'Bottom center'), ('HR', 'Top right')):
+        load_doc(page, BOOK); click_text(page, 'Words', 2)
+        cmd(page, 'page-number', where)
+        c = compile_doc(page, None)
+        t1 = re.sub(r'\s+', ' ', c['txt'][1]).strip() if len(c['txt']) > 1 else ''
+        hd1 = re.sub(r'\s+', ' ', c['page']['hd'][1]) if len(c['page']['hd']) > 1 else ''
+        ft1 = c['page']['ft'][1] if len(c['page']['ft']) > 1 else ''
+        ok = 'CHAPTER 1. ONE' in t1 and 'CHAPTER 1. ONE' in hd1
+        ok = ok and (t1.endswith(' 2') and ft1 == '2' if where == 'FC' else t1.startswith('2 CHAPTER 1. ONE') and hd1.startswith('2'))
+        check('4: a book, Page number › %s: the even page\'s running head stays, the number where asked, in the PDF as on the page' % name, c['ok'] and ok, (t1[:50], t1[-12:], hd1, ft1, src(page)[:260]))
+    # 5: Print: Escape at once (while pdf.js loads) sends nothing to the printer; a PDF over the
+    # pictures' budget is downloaded instead, saying so
+    page.evaluate('''() => { window.__printed = -1; window.print = () => { window.__printed = document.querySelectorAll('#print-pdf img').length; window.dispatchEvent(new Event('beforeprint')); }; window.rikuy.noPrintFallback = true; window.__dl = 0; window.rikuy.downloadPdf = async () => { window.__dl++; }; }''')
+    page.evaluate('() => { window.__pp = window.rikuy.pagePrint(); }')
+    page.keyboard.press('Escape')
+    page.evaluate('window.__pp'); page.wait_for_timeout(300)
+    check('5: Escape right after Print: nothing goes to the printer, nothing is left drawn', page.evaluate('window.__printed') == -1 and page.evaluate('!document.getElementById("print-pdf")'), page.evaluate('window.__printed'))
+    page.evaluate('async () => { window.rikuy.printBudget = 1e5; await window.rikuy.pagePrint(); window.rikuy.printBudget = 0; }')
+    check('5: a PDF over the budget of pictures: downloaded to print from a PDF reader, not drawn', page.evaluate('window.__printed') == -1 and page.evaluate('window.__dl') == 1)
+    # 6: Ctrl+Enter in a macro of the document's own: at the paragraph's end, the macro whole
+    d = DOC(pre='\\newcommand{\\pair}[2]{\\textbf{#1:} #2}\n', body='Some \\pair{Key}{value words} after.\n\nNext.')
+    load_doc(page, d); click_text(page, 'words', 0)
+    page.keyboard.press('Control+Enter'); page.wait_for_timeout(250)
+    c = compile_doc(page, None)
+    all_txt = ' '.join(c['txt'])
+    check('6: Ctrl+Enter in \\pair{Key}{value words}: the break after the paragraph, Key printed once', 'Some \\pair{Key}{value words} after.\n\\newpage' in src(page) and all_txt.count('Key:') == 1 and c['pages'] == 2 == c['page']['n'], (src(page)[60:200], all_txt[:80]))
+    load_doc(page, DOC(body='A {plain words \\bfseries bold words} b.'))
+    page.evaluate('''() => { const sp = [...document.querySelectorAll('#pages span.t')].filter((x) => x.textContent.includes('words')); const t = sp[sp.length - 1]; const r = document.createRange(); r.setStart(t.firstChild, t.textContent.lastIndexOf('words')); r.collapse(true); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''')
+    page.wait_for_timeout(150)
+    page.keyboard.press('Control+Enter'); page.wait_for_timeout(250)
+    bold = page.evaluate('''() => { const p = document.querySelectorAll('#pages > .page')[1]; const t = p && [...p.querySelectorAll('span.t')].find((x) => x.textContent.includes('words')); return !!t && +getComputedStyle(t).fontWeight >= 600; }''')
+    c = compile_doc(page, None)
+    check('6: Ctrl+Enter after \\bfseries in a group: {\\bfseries words} on the next page, bold on the page as in the PDF', '{\\bfseries words}' in src(page) and bold and c['ok'] and c['pages'] == 2 == c['page']['n'], (src(page)[60:200], bold))
+    # 7: a space after the brace TeX prints: the field shows it and typing keeps it
+    load_doc(page, DOC(pre='\\usepackage{fancyhdr}\n\\pagestyle{fancy}\n\\fancyhf{}\n\\fancyhead[C]{ Title}\n')); click_text(page, 'First', 2)
+    page.evaluate('rikuy.pageHFOpen("head")'); page.wait_for_timeout(300)
+    shown = page.evaluate('document.querySelector(".hfedit .hf-center").value')
+    page.focus('.hfedit .hf-center'); page.keyboard.press('End'); page.keyboard.type('!'); page.wait_for_timeout(700); page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    check('7: \\fancyhead[C]{ Title}: the field shows " Title" and "!" typed writes { Title!}', shown == ' Title' and '\\fancyhead[C]{ Title!}' in src(page), (shown, src(page)[60:200]))
+
+
 def run():
     names = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (margins_size_orientation, breaks, columns, line_numbers_and_more, header_footer, background, page_setup_dialog, agents_and_keys, compile_pdf):
+        for f in (margins_size_orientation, breaks, columns, line_numbers_and_more, header_footer, background, page_setup_dialog, agents_and_keys, compile_pdf, verifier_pdf):
             if names and f.__name__ not in names: continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])

@@ -600,6 +600,9 @@ class App {
     const model = this.model;
     const items = [], fns = [];
     for (const B of this.renderer.blocks) { for (const it of B.items) items.push(it); for (const f of B.fns) fns.push(f); }
+    // (the sheet of the PDF TeX made of this set up, where there is one: src/layout.js sheetSize)
+    const ps = this.pdfSheet, mk = model.opts.page && model.opts.page.mediaKey;
+    model.opts.pdfSheet = ps && mk && ps.key === mk ? ps : null;
     const g = geometry(model.opts);
     // (whose fonts draw the Chinese characters is part of it: other fonts, other widths)
     const cjk = this.cjkOrder();
@@ -4503,6 +4506,17 @@ class App {
     return this.compiling ? null : this.lastCompile;
   }
 
+  // The PDF's first page as the page's sheet, for documents of this set up (mediaKey): what TeX
+  // made is what the page draws, whatever class or package set it (src/pagesrc.js mediaSet
+  // knows the common ones before any PDF is made)
+  takePdfSheet(key) {
+    const p0 = this.pdfView && this.pdfView.pages && this.pdfView.pages[0];
+    if (!key || !p0 || !(p0.w1 > 0)) return;
+    const w = p0.w1 * 72.27 / 72, h = p0.h1 * 72.27 / 72, old = this.pdfSheet;
+    this.pdfSheet = { key, w, h };
+    if (this.model && (!old || old.key !== key || Math.abs(old.w - w) > 0.5 || Math.abs(old.h - h) > 0.5)) this.layoutPass();
+  }
+
   async compilePdf(opts = {}) {
     if (this.compiling) { this.compileAgain = opts.clean ? 'clean' : (this.compileAgain || true); return; }
     this.compiling = true;
@@ -4513,6 +4527,8 @@ class App {
     const st = $('#pdf-status'), bar = $('#pdf-prog'), msg = $('#pdf-msg');
     let said = ''; // how the run ended, for the "PDF status" line
     const sig = textSig(this.main, [...this.files.entries()]);
+    // (what decides the PDF's sheet in the source compiled: the sheet TeX gives it is the page's)
+    const mediaKey = this.model && this.model.opts.page ? this.model.opts.page.mediaKey : null;
     // a long TeX run gets a clock and a Stop button; one that never ends is stopped after
     // 5 minutes of typesetting (downloading the engine does not count)
     this.compileStart = Date.now();
@@ -4578,6 +4594,7 @@ class App {
         if (!document.body.classList.contains('pdf-on')) this.pdfStale = true;
         const n = await this.pdfView.show(new Uint8Array(res.pdf), res.synctex ? new Uint8Array(res.synctex) : null);
         this.lastCompile.pages = n;
+        this.takePdfSheet(mediaKey);
         st.innerHTML = '<b>' + this.engineLabel + '</b> · ' + n + (n === 1 ? ' page' : ' pages') + ' · ' + (res.ms / 1000).toFixed(1) + ' s';
         $('#pdf-dl').disabled = false;
       } else {

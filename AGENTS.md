@@ -69,6 +69,7 @@ a command fails, trust the code and fix this file.
 | compile one folder | `RIKUY_DIST=dist python3 dev/texrun.py DIR main.tex auto 300` | |
 | how long the PDF takes in the page, per document of `dev/bench/` and situation (first compile, unchanged, one word changed, a reference or a citation added): medians of N sessions, the worker's time and the passes | `python3 dev/bench_compile.py -n 5 --json after.json --against before.json` (one core for it: `taskset -c 0`) | 4 min a document, LuaLaTeX's 9 |
 | the same PDFs, page counts, text and problems from this worker and another commit's, on `dev/bench/` and 75 corpus documents, each compiled four times (the third and fourth from the preamble's format where one is made) | `python3 dev/bench_same.py --base main --corpus <LaTeX-examples clone>` (`--part k/4` for a quarter) | 30 min |
+| which classes and packages make the PDF's sheet follow the paper (`src/pagesrc.js` NO_MEDIA_CLASSES and NO_MEDIA_PACKAGES come from it) | `python3 dev/media_probe.py [names.json]` | 10 min |
 | run one program through the shell | `python3 dev/shellrun.py DIR asy asy -f pdf fig.asy` | |
 | rebuild a program | `RIKUY_SRC=/tmp/src sh tex/build_tools.sh asy` (also `dvips`, `xindy`, `gnuplot`, `mesa`) | asy 10 min |
 | refresh the tools in `dist/tex` after a program changed | `python3 tex/build_tree.py tools && npm run build` | 1 min |

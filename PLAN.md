@@ -1179,6 +1179,39 @@ Tests:
     18/18, `deploy_check.py` 43/43, `pages_check.py` fits, actionlint clean, the corpus 716 of
     716.
 
+    *After the verifier of PR 19 (c08fc02)*, each case compiled in the page against what it draws
+    (`test/page.py` verifier_pdf). The PDF's sheet: TeX Live's PDF is A4 only where nothing loaded
+    sets `\pdfpagewidth`, and far more does than the review knew: the graphics and colour drivers
+    set it (graphics, graphicx, color, xcolor, so TikZ and most of what draws), as do hyperref,
+    geometry, typearea, crop, memoir and `\DocumentMetadata`. `dev/media_probe.py` measured 290
+    classes and packages in this TeX Live (25 classes, the corpus's packages and the common ones);
+    the sheet stays A4 only where every class and package loaded is among the classes and the 195
+    packages measured to leave it alone (`NO_MEDIA_CLASSES`, `NO_MEDIA_PACKAGES`), any other being
+    taken to set it, and the document's PDF, once made, gives the page its own first page's sheet
+    for that set up (the class, the packages and their options: `mediaKey`), so a package nobody
+    measured is drawn right after the first compile. KOMA's classes and typearea take A4 as their paper where none is
+    given. Header to text and Text to footer, where the class lays the page out, write `\headsep`
+    (with `\topmargin` moved the other way) and `\footskip` themselves, so amsart, revtex,
+    KOMA's and llncs's own text block stays put (geometry with article's numbers moved them). Even
+    and Odd page in two columns: no band of nothing, no extra blank page. A two sided book's Page
+    number: the number goes where asked on the side where that place is free and on the other
+    side of the page where a running head holds it, so the heads stay; Remove takes out the
+    numbers' own slots only. Print: Escape is heard from the moment Print is asked for and sends
+    nothing to the printer; the pages' pictures share a budget of 150 million pixels, and a PDF
+    that would get under 96 dpi is downloaded to print from a PDF reader, saying so. Ctrl+Enter
+    never cuts a macro of the document's own (`\pair{Key}{value}` printed Key twice): the break
+    goes to the paragraph's nearer end; in a group cut, the declarations in force (`\bfseries`,
+    `\color{red}`, `\large`) open its other half too. A space right after a header argument's
+    brace, which TeX prints, is kept, and the page draws no space after a command's name, as TeX
+    reads none (`\thepage of` prints 1of). Opening the header scrolls its field into sight (one
+    out of sight took no keys). Also: a report's or book's title (and the titlepage option) on a
+    page of its own, the next numbered 1 again in a one sided document; multicols' optional
+    argument set across before the columns (and kept when One takes the columns out). Not done:
+    `\markright` and `\markboth` written by hand (myheadings) are not drawn. Evidence: `npm
+    test` green (`page` 26 groups), `test/page.py` 139 (25 new, compiled in the page),
+    `tabs.py` 116, `ribbon.py` 268, `browser.py` 189, `agent.py` 138, `word.py` 111,
+    `scripts.py` 302, `offline.py` 54/54, `launch.py` 18/18, `deploy_check.py` 43/43,
+    `pages_check.py` fits, actionlint clean, the corpus 716 of 716.
 45. **B7, tables as in Word.** Done in the code (branch `wordgap-b7-table`), rows I4, I5, I7, I8,
     T1 to T5, T7 to T20 and C2 of the gap list (task 38). *One reading of a table.*
     `src/table.js` reads tabular, tabular*, tabularx, tabulary, longtable, array and xltabular

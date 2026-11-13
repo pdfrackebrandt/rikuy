@@ -101,7 +101,7 @@ export function openPageSetup(app, focus) {
   sync();
   const before = { m: [m.t, m.b, m.l, m.r, m.gutter || 0, mirror.c.checked], land: P.land, paper: pSel.value, w: P.w, h: P.h, hs: g.headsep, fs: g.footskip };
   buttons(app, p, () => {
-    const others = app.preambleOthers(), pin = app.pagePin();
+    const others = app.preambleOthers(), own = app.pageOwn(), pin = app.pagePin();
     const steps = [];
     const near = (a, b) => Math.abs(a - b) < 0.02 * CM;
     const now = [toPt(top.get()), toPt(bottom.get()), toPt(left.get()), toPt(right.get()), toPt(gutter.get()), mirror.c.checked];
@@ -111,18 +111,17 @@ export function openPageSetup(app, focus) {
     const hf = {};
     if (!near(h1, before.hs)) hf.headsep = h1;
     if (!near(f1, before.fs)) hf.footskip = f1;
-    // (the header's distances before the rest: where the class lays the page out the text block is
-    // pinned as it is, so the text stays line for line and only the header or the footer moves)
-    if (Object.keys(hf).length) steps.push((t) => PS.headFootEdits(t, hf, { others, pin: app.pagePin({ block: true }) }));
+    // (the header's distances before the rest: only they change, the text stays line for line)
+    if (Object.keys(hf).length) steps.push((t) => PS.headFootEdits(t, hf, { others, own }));
     if (!now.slice(0, 5).every((v, k) => near(v, before.m[k])) || now[5] !== before.m[5]) {
-      steps.push((t) => PS.marginEdits(t, { t: now[0], b: now[1], l: now[2], r: now[3], gutter: now[4] > 0.01 ? now[4] : 0, mirrored: now[5] }, { others }));
+      steps.push((t) => PS.marginEdits(t, { t: now[0], b: now[1], l: now[2], r: now[3], gutter: now[4] > 0.01 ? now[4] : 0, mirrored: now[5] }, { others, own }));
     }
     const land = oSel.value === 'landscape';
     if (pSel.value === 'custom') {
       const w = toPt(pw.get()), h = toPt(ph.get());
-      if (!near(w, Math.min(before.w, before.h)) || !near(h, Math.max(before.w, before.h)) || before.paper !== 'custom') steps.push((t) => PS.paperEdits(t, { w, h, unit: 'cm' }, { others, pin }));
-    } else if (pSel.value !== before.paper) steps.push((t) => PS.paperEdits(t, pSel.value, { others, pin }));
-    if (land !== before.land) steps.push((t) => PS.orientationEdits(t, land ? 'landscape' : 'portrait', { others, pin }));
+      if (!near(w, Math.min(before.w, before.h)) || !near(h, Math.max(before.w, before.h)) || before.paper !== 'custom') steps.push((t) => PS.paperEdits(t, { w, h, unit: 'cm' }, { others, own, pin }));
+    } else if (pSel.value !== before.paper) steps.push((t) => PS.paperEdits(t, pSel.value, { others, own, pin }));
+    if (land !== before.land) steps.push((t) => PS.orientationEdits(t, land ? 'landscape' : 'portrait', { others, own, pin }));
     if (!steps.length) return null;
     return () => app.pageEdit(app.pageSteps(steps), 'page-setup');
   });

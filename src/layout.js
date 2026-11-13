@@ -60,6 +60,10 @@ export function paperSize(opts) {
 // measured), and the class's text block then sits on it from the top left as TeX puts it.
 const A4 = { w: PAPERS.a4[0], h: PAPERS.a4[1], land: false };
 export function sheetSize(opts) {
+  // (the PDF itself, where one was made of this set up: its first page; beamer's slides are not
+  // laid out as slides here, so they keep the paper the class sums are made for)
+  const P = opts.pdfSheet;
+  if (P && opts.cls !== 'beamer' && P.w > 50 && P.h > 50) return { w: P.w, h: P.h, land: P.w > P.h, pdf: true };
   return opts.media || opts.geometry ? paperSize(opts) : A4;
 }
 
@@ -130,6 +134,12 @@ export function geometry(opts) {
     mt = IN + topmargin + hh + hs;
   }
   const pg = opts.page || {};
+  // \headsep and \footskip set in the preamble where the class lays the page out: the header and
+  // the footer move; the text too, unless \topmargin moved the other way (src/pagesrc.js
+  // headFootEdits writes it so)
+  const HL = (!opts.geometry || opts.geoPass) && pg.lengths;
+  if (HL && HL.headsep) { if (!HL.headsep.keep) mt += HL.headsep.pt - hs; hs = HL.headsep.pt; }
+  if (HL && HL.footskip) fs = HL.footskip.pt;
   const colsep = pg.colsep != null ? pg.colsep : len(geo.columnsep) != null ? len(geo.columnsep) : pt === 10 ? 10 : 10;
   // (hyphenation rides along: a change of it measures the lines again, src/app.js layoutPass)
   // pw, ph: the sheet; paperW, paperH: LaTeX's \paperwidth and \paperheight, which the class's
@@ -356,7 +366,7 @@ export class Layout {
     // Fill k columns of height T from pos ({ i, a } in run): { cols, hs, end, done, page (a page break ended it) }
     const fill = (run, pos, k, T) => {
       const cols = [], hs = [];
-      let i = pos.i, a = pos.a, pageBreak = false;
+      let i = pos.i, a = pos.a, pageBreak = false, par = null;
       for (let c = 0; c < k; c++) {
         const col = [];
         let used = 0;
@@ -366,8 +376,9 @@ export class Layout {
           if (it.kind === 'break') {
             i++;
             // (\columnbreak ends a column; \newpage ends a column of a two column page, but the
-            // page in multicols, as TeX does)
+            // page in multicols, as TeX does; Even and Odd page end the band, placeBand decides)
             if (it.only || (it.column && !it.region)) break;
+            if (it.parity) { par = it.parity; break; }
             pageBreak = true;
             break;
           }
@@ -384,10 +395,10 @@ export class Layout {
           break;
         }
         cols.push(col); hs.push(used);
-        if (pageBreak) break;
+        if (pageBreak || par) break;
       }
       while (cols.length < k) { cols.push([]); hs.push(0); }
-      return { cols, hs, end: { i, a }, done: i >= run.length, page: pageBreak };
+      return { cols, hs, end: { i, a }, done: i >= run.length, page: pageBreak, parity: par };
     };
     const placeBand = (run, k, balance) => {
       const sep = (it) => (it.region ? 12 * this.px : 0);
@@ -417,7 +428,9 @@ export class Layout {
           }
           F = fill(run, pos, k, hi);
         }
-        const h = F.done && (balance || F.page) ? Math.max(...F.hs) : Math.max(cap, ...F.hs);
+        // (a band that holds nothing, as after \clearpage where Even page starts: none drawn)
+        if (F.parity && !F.cols.some((c) => c.length)) { pos = F.end; parity(F.parity); first = false; continue; }
+        const h = (F.done && (balance || F.page)) || F.parity ? Math.max(...F.hs) : Math.max(cap, ...F.hs);
         const band = { k, cols: [] };
         page.used += gapTop;
         F.cols.forEach((col, c) => {
@@ -439,7 +452,8 @@ export class Layout {
         (page.bands || (page.bands = [])).push(band);
         pos = F.end;
         first = false;
-        if (!F.done || F.page) close();
+        if (F.parity) parity(F.parity);
+        else if (!F.done || F.page) close();
         else if (run[0].region) page.used += 12 * this.px;
       }
     };
@@ -910,6 +924,8 @@ export function hfRuns(tex, ctx = {}) {
       i += m[0].length;
       const name = m[1];
       if (!name) { const ch = m[2]; push(ch === '\\' ? ' ' : ch === ' ' ? ' ' : '&%$#_{}'.includes(ch) ? ch : ''); continue; }
+      // (TeX reads no space after a command's name: \thepage of prints 1of)
+      while (t[i] === ' ' || t[i] === '\t' || t[i] === '\n') i++;
       const arg = () => { let j = i; while (t[j] === ' ') j++; if (t[j] !== '{') return null; let d = 0; for (let k = j; k < t.length; k++) { if (t[k] === '\\') { k++; continue; } if (t[k] === '{') d++; else if (t[k] === '}' && --d === 0) { i = k + 1; return t.slice(j + 1, k); } } i = t.length; return t.slice(j + 1); };
       if (name === 'thepage' || name === 'pagemark') push(ctx.page || '');
       else if (name === 'headmark') push(ctx.headmark != null ? ctx.headmark : ctx.right || '');
