@@ -717,22 +717,30 @@ class Builder {
       if (nd.t === 'par') { flushPara(); continue; }
       if (nd.t === 'include') continue;
       // A LaTeX paragraph (src/styles.js): the mark's line, then everything to the next blank
-      // line, shown as its source. In the document's own text only (not inside an environment
-      // or a macro's text), and only with something after the mark before that blank line.
-      if (nd.t === 'comment' && env.top && !ctx.pm && k + 1 < nodes.length && nodes[k + 1].t !== 'par' && isLatexMark(ctx.src, nd.s, nd.e)) {
+      // line, shown as its source. In the document's own text only (its body, the files it
+      // \inputs, and the language, direction and subequations environments whose paragraphs are
+      // the body's own; not inside another environment or a macro's text), at the start of a
+      // paragraph (a mark under a line of text is a comment inside that paragraph, as TeX reads
+      // it), and only with something after the mark before that blank line.
+      if (nd.t === 'comment' && env.top && !ctx.pm && k + 1 < nodes.length && nodes[k + 1].t !== 'par' && !paraShows() && isLatexMark(ctx.src, nd.s, nd.e)) {
         flushPara();
         let j = k + 1;
         while (j < nodes.length && nodes[j].t !== 'par') j++;
         // A brace or an environment opened in it and not closed (a \textbf{ being typed) takes
         // the rest of the text as the parser reads it: the paragraph ends at its first blank
-        // line all the same, and what follows is the document's as before.
-        const body = nodes.slice(k + 1, j), cut = cutOpen(ctx.src, body[body.length - 1]);
+        // line all the same, and what follows is the document's as before. So for a \verb or
+        // an argument read as it is (\url{, \href{) open over a blank line, where TeX stops
+        // with an error: what follows is read again without it.
+        const body = nodes.slice(k + 1, j), last = body[body.length - 1];
+        let cut = cutOpen(ctx.src, last);
+        const raw = cut ? -1 : rawCut(ctx.src, last);
+        if (raw >= 0) cut = { node: { t: 'text', s: last.s, e: raw }, rest: this.readAfter(ctx, last.s, raw), whole: true };
         if (cut) body[body.length - 1] = cut.node;
         const u = this.texBlock(nd, body, ctx, env);
         units.push(u);
         afterHeading = u.items[0].endsHeading; cont = false; paraNoIndent = false;
         if (cut) {
-          for (const v of this.flow([...cut.rest, ...nodes.slice(j)], ctx, { ...env, afterHeading })) units.push(v);
+          for (const v of this.flow(cut.whole ? cut.rest : [...cut.rest, ...nodes.slice(j)], ctx, { ...env, afterHeading })) units.push(v);
           return units;
         }
         k = j - 1;
@@ -867,6 +875,19 @@ class Builder {
     }
     flushPara();
     return units;
+  }
+
+  // The nodes after position at of the file, at the depth of the environment that holds it,
+  // read again with [s, at) blanked: what a \verb or an argument read as it is had swallowed
+  readAfter(ctx, s, at) {
+    const src = ctx.src, blanked = src.slice(0, s) + src.slice(s, at).replace(/[^\n]/g, ' ') + src.slice(at);
+    let ns = parse(blanked, { userSigs: this.userSigs });
+    for (;;) {
+      const env = ns.find((x) => x.t === 'env' && !x.raw && x.nodes && x.s < at && at < x.e);
+      if (!env) break;
+      ns = env.nodes;
+    }
+    return ns.filter((x) => x.s >= at);
   }
 
   // A LaTeX paragraph: one item that shows the source from the line after the mark to the last
@@ -2088,6 +2109,16 @@ function cutOpen(src, n) {
   if (q >= 0) { const at = kids[q].s; return { node: { ...n, e: at, ie: at, es: at, nodes: kids.slice(0, q), cut: true }, rest: kids.slice(q) }; }
   const r = cutOpen(src, kids[kids.length - 1]);
   return r && { node: { ...n, e: r.node.e, ie: r.node.e, es: r.node.e, nodes: [...kids.slice(0, -1), r.node], cut: true }, rest: r.rest };
+}
+
+// Where a \verb, or a command's argument read as it is (\url{, \href{), runs over a blank line,
+// the place of that blank line; else -1. TeX ends the paragraph there with an error.
+function rawCut(src, n) {
+  const BLANK = /\n[ \t]*\n/;
+  if (!n) return -1;
+  if (n.t === 'verb') { const k = src.slice(n.s, n.e).search(BLANK); return k < 0 ? -1 : n.s + k; }
+  if (n.t === 'cmd') for (const a of n.args || []) if (a && a.raw) { const k = src.slice(a.s, a.e).search(BLANK); if (k >= 0) return a.s + k; }
+  return -1;
 }
 
 // Accumulates characters into editable segments.

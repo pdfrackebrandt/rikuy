@@ -24,6 +24,13 @@ export function isLatexMark(src, s, e) {
 }
 
 export const lineStart = (src, p) => src.lastIndexOf('\n', p - 1) + 1;
+// whether nothing but spaces stands before p on its line
+export const startsLine = (src, p) => !/\S/.test(src.slice(lineStart(src, p), p));
+// the line ending of the line that holds p: a file written with CRLF keeps them
+export function eolAt(src, p) {
+  const k = src.indexOf('\n', p);
+  return k > 0 && src[k - 1] === '\r' ? '\r\n' : '\n';
+}
 
 // After a block that the mark alone may turn into a LaTeX paragraph: the rest of its last line,
 // comment or \label lines (which become part of it), then a blank line or the end of the text
@@ -53,11 +60,14 @@ export const HEADING_LINE = /^\s*\\(?:part|chapter|(?:sub){0,2}section|(?:sub)?p
 export function blankPads(src, s, e) {
   const before = src.slice(0, s), after = src.slice(e);
   const prev = before.trimEnd().split('\n').pop(), next = after.trimStart().split('\n')[0];
-  const closed = /\\(?:(?:begin|end)\s*\{[^}]*\}|maketitle|\]|par)\s*$/.test(prev) || HEADING_LINE.test(prev);
+  // (an environment's opening line ends a paragraph also with its arguments after it: \begin{otherlanguage}{german})
+  const closed = /\\(?:(?:begin|end)\s*\{[^}]*\}(?:\s*[[{][^\]{}]*[\]}])*|maketitle|\]|par)\s*$/.test(prev) || HEADING_LINE.test(prev);
   const opens = /^\\(?:(?:begin|end)\s*\{|\[|item\b|bibliography)/.test(next) || HEADING_LINE.test(next);
+  // (a file written with CRLF: its \r is a space here, and the lines added end as its own do)
+  const nl = eolAt(src, s);
   return {
-    b: !before.trim() || closed || /(^|\n)[ \t]*\n[ \t]*$/.test(before) ? '' : /\n[ \t]*$/.test(before) ? '\n' : '\n\n',
-    a: !after.trim() || opens || /^[ \t]*\n[ \t]*\n/.test(after) ? '' : /^[ \t]*\n/.test(after) ? '\n' : '\n\n'
+    b: !before.trim() || closed || /(^|\n)[ \t\r]*\n[ \t\r]*$/.test(before) ? '' : /\n[ \t\r]*$/.test(before) ? nl : nl + nl,
+    a: !after.trim() || opens || /^[ \t\r]*\n[ \t\r]*\n/.test(after) ? '' : /^[ \t\r]*\n/.test(after) ? nl : nl + nl
   };
 }
 
@@ -93,13 +103,17 @@ export function restyle(src, b, to, p) {
   if (to === b.v) return null;
   if (to === 'latex') {
     if (b.spot == null || b.spot < 0) return null;
-    const t = LATEX_MARK + '\n';
+    const t = LATEX_MARK + eolAt(src, b.spot);
     return { edits: [{ s: b.spot, e: b.spot, t }], p: p >= b.spot ? p + t.length : p };
   }
   let A, Z;
   const extra = [];
+  // what Quote wrote, intact, with the paragraph kept apart from its neighbours without it
+  const quoted = b.v === 'quote' && /^\\begin\{quote\}\r?\n$/.test(src.slice(b.s, b.ws)) && /^\r?\n\\end\{quote\}$/.test(src.slice(b.we, b.e));
+  const apart = () => { const pad = blankPads(src, b.s, b.e); return !pad.b && !pad.a; };
   if (to === 'p') {
-    if (b.v === 'latex') { A = ''; Z = ''; }
+    // (LaTeX and Quote take away exactly what they added: the way back is the bytes of before)
+    if (b.v === 'latex' || (quoted && apart())) { A = ''; Z = ''; }
     else {
       const q = b.after != null ? b.after : b.e;
       const pad = blankPads(src, b.s, q);
@@ -114,7 +128,7 @@ export function restyle(src, b, to, p) {
       const last = src.slice(lineStart(src, b.we), b.we);
       A = '\\' + to + '{'; Z = commentIn(last) >= 0 ? '\n}' : '}';
     }
-  } else if (to === 'quote') { A = '\\begin{quote}\n'; Z = '\n\\end{quote}'; }
+  } else if (to === 'quote') { const nl = eolAt(src, b.s); A = '\\begin{quote}' + nl; Z = nl + '\\end{quote}'; }
   else return null;
   const edits = [...extra, { s: b.we, e: b.e, t: Z }, { s: b.s, e: b.ws, t: A }].filter((x) => x.s !== x.e || x.t);
   return { edits, p: b.s + A.length + Math.min(Math.max(p, b.ws), b.we) - b.ws };

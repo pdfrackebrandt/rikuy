@@ -5,7 +5,7 @@
 // ends, and every style change there and back, byte for byte.
 import assert from 'node:assert/strict';
 import { buildModel } from '../src/model.js';
-import { LATEX_MARK, isLatexMark, latexSpot, restyle, applyEdits, quoteWords } from '../src/styles.js';
+import { LATEX_MARK, isLatexMark, latexSpot, restyle, applyEdits, quoteWords, startsLine } from '../src/styles.js';
 
 let n = 0;
 const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
@@ -195,6 +195,57 @@ ok('quoteWords: a quote or quotation as a block, its words; and quickly on a str
     assert.equal(at(t), null);
     assert.ok(performance.now() - t0 < 100, (performance.now() - t0) + ' ms');
   }
+});
+
+ok('a mark under a line of text is a comment inside that paragraph, as TeX reads it: no box', () => {
+  // (TeX makes one paragraph of "Before it." and the lines after the comment; the page did show
+  // a paragraph and a box, and Enter after "Before it." put the new paragraph between them)
+  const M = model(wrap('Before it.\n% rikuy: latex\nalpha \\x\n\nAfter it.'));
+  assert.equal(types(M), 'p p');
+  assert.equal(texts(M).length, 0);
+  // at a paragraph's start it counts: after a blank line, a heading, \noindent alone on its line
+  for (const body of ['Before.\n\n% rikuy: latex\nalpha', '\\section{A}\n% rikuy: latex\nalpha', '\\noindent\n% rikuy: latex\nalpha'])
+    assert.deepEqual(texts(model(wrap(body))), ['alpha'], body);
+});
+
+ok('a \\verb or an argument read as it is, open over a blank line, ends the box there: the rest is the document\'s again', () => {
+  for (const open of ['\\verb|', '\\verb+', '\\url{', '\\href{']) {
+    const M = model(wrap('% rikuy: latex\n' + open + 'x\n\nNext para.\n\n\\section{S}\nLast para.', '\\usepackage{hyperref}\n'));
+    assert.deepEqual(texts(M), [open + 'x'], open);
+    assert.equal(types(M), 'tex p h p', open);
+    assert.deepEqual(M.headings.map((h) => h.num + ' ' + h.text), ['1 S'], open);
+  }
+  // closed on its own line, nothing is cut
+  assert.deepEqual(texts(model(wrap('% rikuy: latex\n\\url{a.org} \\verb|x|\n\nNext.', '\\usepackage{url}\n'))), ['\\url{a.org} \\verb|x|']);
+});
+
+ok('Quote and back is byte for byte also inside an environment and in a file written with CRLF; Quote only where the paragraph starts its line', () => {
+  const words = 'Said here.';
+  for (const src of [wrap('\\begin{otherlanguage}{german}\nSaid here.\n\\end{otherlanguage}\n\nAfter.', '\\usepackage[german,english]{babel}\n'), wrap('Before.\n\nSaid here.\n\nAfter.').replace(/\n/g, '\r\n'), wrap('\\section{H}\nSaid here.\n\nAfter.')]) {
+    const there = step(src, P(src, words), 'quote').src;
+    assert.ok(!/\r\n/.test(src) || !/[^\r]\n/.test(there), 'CRLF kept: ' + JSON.stringify(there));
+    const back = step(there, Q(there, words), 'p').src;
+    assert.equal(back, src);
+  }
+  const t = wrap('Before.\n\n\\noindent Said here.\n\nAfter.');
+  assert.equal(startsLine(t, t.indexOf('Said')), false);
+  assert.equal(startsLine(t, t.indexOf('\\noindent')), true);
+  // a quote written by hand with no blank line around it keeps its paragraph apart on the way back
+  const h = wrap('Before.\n\\begin{quote}\nSaid here.\n\\end{quote}\nAfter.');
+  assert.equal(step(h, Q(h, words), 'p').src, wrap('Before.\n\nSaid here.\n\nAfter.'));
+  // LaTeX in a CRLF file writes its mark with CRLF
+  const c = wrap('Before.\n\nSaid here.\n\nAfter.').replace(/\n/g, '\r\n');
+  assert.ok(step(c, P(c, words), 'latex').src.includes('% rikuy: latex\r\nSaid here.'));
+});
+
+ok('where the mark counts, as llms-full.txt and docs/ARCHITECTURE.md say', () => {
+  for (const [body, pre] of [['\\begin{otherlanguage}{german}\n% rikuy: latex\nA\n\\end{otherlanguage}', '\\usepackage[german,english]{babel}\n'], ['\\begin{CJK}{UTF8}{gbsn}\n% rikuy: latex\nA\n\\end{CJK}', '\\usepackage{CJK}\n'],
+    ['\\begin{RTL}\n% rikuy: latex\nA\n\\end{RTL}', '\\usepackage{bidi}\n'], ['\\begin{subequations}\n% rikuy: latex\nA\n\\end{subequations}', '\\usepackage{amsmath}\n'], ['\\begin{itemize}\\item x\\end{itemize}\n% rikuy: latex\nA', '']])
+    assert.deepEqual(texts(model(wrap(body, pre))), ['A'], body);
+  for (const body of ['\\begin{center}\n% rikuy: latex\nA\n\\end{center}', '\\begin{quote}\n% rikuy: latex\nA\n\\end{quote}', '\\begin{minipage}{3cm}\n% rikuy: latex\nA\n\\end{minipage}'])
+    assert.deepEqual(texts(model(wrap(body))), [], body);
+  // in the preamble it is a comment like any other
+  assert.deepEqual(texts(model('\\documentclass{article}\n% rikuy: latex\n\\usepackage{x}\n\\begin{document}\nA\n\\end{document}\n')), []);
 });
 
 console.log('styles: ' + n + ' groups of checks passed');

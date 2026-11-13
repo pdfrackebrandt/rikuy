@@ -329,22 +329,45 @@ await ok('a paragraph deleted in Word before a code listing: the listing is not 
   assert.ok(importInto(edit(E.docx, add), files).files.get('main.tex').includes('Typed in Word.'));
 });
 
-await ok('a LaTeX paragraph goes to Word as plain code, its source as it is, and a coauthor\'s edits keep it and its mark', async () => {
+await ok('a LaTeX paragraph goes to Word as plain code with a read only bookmark: edits there come back as a comment under it, not as words elsewhere', async () => {
   const src = doc('First paragraph.\n\n% rikuy: latex\nRaw \\textbf{bold} 50\\% & $x^2$\n  second line\n\nLast paragraph.\n');
   const files = new Map([['main.tex', src]]);
   const E = exportFiles(files);
   assert.equal(E.lost, 0);
   const xml = text(unzip(E.docx).get('word/document.xml'));
   // as source, in the code paragraph style, one Word line for each of its lines; the mark is not in it
-  assert.ok(/SourceCode/.test(xml) && xml.includes('Raw \\textbf{bold} 50\\% &amp; $x^2$') && xml.includes('second line') && !xml.includes('rikuy'), xml.slice(xml.indexOf('Raw') - 300, xml.indexOf('Raw') + 200));
+  assert.ok(/SourceCode/.test(xml) && xml.includes('Raw \\textbf{bold} 50\\% &amp; $x^2$') && xml.includes('  second line') && !xml.includes('rikuy'), xml.slice(xml.indexOf('Raw') - 300, xml.indexOf('Raw') + 200));
   // unchanged, nothing changes; a word changed in the paragraph after it arrives, the LaTeX paragraph stays as it was
   assert.equal(importInto(E.docx, files).files.size, 0);
   await roundTrip(src, rep('Last paragraph.', 'Last words.'), src.replace('Last paragraph.', 'Last words.'));
-  // an edit made in Word inside the code is not applied, as in a verbatim listing: a comment says
-  // so, on a line of its own before the blank line, so the mark still marks the same paragraph
-  const got = importInto(edit(E.docx, rep('second line', 'other line')), files).files.get('main.tex');
-  assert.ok(/^% comment \(Ana\) on "second": .*Not applied\.$/m.test(got) && got.replace(/^% comment \(Ana\).*\n/m, '') === src, got);
-  assert.deepEqual(buildModel({ files: new Map([['main.tex', got]]), main: 'main.tex' }).blocks.flatMap((x) => x.items).filter((x) => x.type === 'tex').map((x) => x.text), ['Raw \\textbf{bold} 50\\% & $x^2$\n  second line']);
+  const texts = (t) => buildModel({ files: new Map([['main.tex', t]]), main: 'main.tex' }).blocks.flatMap((x) => x.items).filter((x) => x.type === 'tex').map((x) => x.text);
+  // Changed in Word inside the code (a word added, letters added, a word deleted, a line changed):
+  // nothing of it is written anywhere, a comment under the paragraph's last line says so, and the
+  // mark still marks the same paragraph. (A code block with no bookmark of its own belonged in
+  // Word to the paragraph before it: added words went there, "First paragraph.new".)
+  for (const [what, a, b] of [['a word added', 'Raw ', 'Raw new '], ['letters added', 'Raw ', 'Rawer '], ['a word deleted', '  second line', '  line'], ['a line changed', 'second line', 'other line']]) {
+    const got = importInto(edit(E.docx, rep(a, b)), files).files.get('main.tex');
+    assert.ok(/^  second line\n% comment \(Ana\)[^\n]*: In Word, a LaTeX paragraph was changed: .*Not applied: it is changed as its LaTeX, on the page or in the source\.$/m.test(got), what + ': ' + got);
+    assert.equal(got.replace(/^% comment \(Ana\).*\n/m, ''), src, what);
+    assert.equal(texts(got)[0].split('\n% comment')[0], 'Raw \\textbf{bold} 50\\% & $x^2$\n  second line', what);
+  }
+  // a verbatim listing is protected the same way
+  const vsrc = doc('First paragraph.\n\n\\begin{verbatim}\nx <- lm(y)\n\\end{verbatim}\n\nLast paragraph.\n');
+  const vfiles = new Map([['main.tex', vsrc]]);
+  const V = exportFiles(vfiles);
+  const vgot = importInto(edit(V.docx, rep('x &lt;- lm(y)', 'x &lt;- glm(y)')), vfiles).files.get('main.tex');
+  assert.ok(/\\end\{verbatim\}\n% comment \(Ana\)[^\n]*: In Word, a code listing was changed: .*Not applied/.test(vgot) && vgot.replace(/^% comment \(Ana\).*\n/m, '') === vsrc && !vgot.includes('glm'), vgot);
+});
+
+await ok('a paragraph deleted in Word just before a LaTeX paragraph leaves its mark on a line of its own', async () => {
+  const del = (needle) => (d) => d.replace(new RegExp('<w:p>(?:(?!<w:p>)[\\s\\S])*?' + needle + '[\\s\\S]*?</w:p>'), '');
+  for (const body of ['First paragraph.\n\n% rikuy: latex\nRaw \\textbf{x}\n\nLast.\n', '\\section{A}\nFirst paragraph.\n\n% rikuy: latex\nRaw \\textbf{x}\n\nLast.\n', 'Zero.\n\nFirst paragraph.\n\n% rikuy: latex\nRaw \\textbf{x}\n\nLast.\n']) {
+    const src = doc(body), files = new Map([['main.tex', src]]);
+    const got = importInto(edit(exportFiles(files).docx, del('First paragraph')), files).files.get('main.tex');
+    // (joined to \begin{document} or the heading's line, the mark had marked nothing)
+    assert.ok(/(^|\n)% rikuy: latex\nRaw/.test(got) && !got.includes('First paragraph'), got);
+    assert.deepEqual(buildModel({ files: new Map([['main.tex', got]]), main: 'main.tex' }).blocks.flatMap((x) => x.items).filter((x) => x.type === 'tex').map((x) => x.text), ['Raw \\textbf{x}']);
+  }
 });
 
 await ok('to Word: colour, highlight, centred text and a list\'s own labels are kept, and still round trip', async () => {

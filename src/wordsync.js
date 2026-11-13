@@ -487,6 +487,13 @@ export function planImport(data, X, cur, H = {}) {
     const src = base.get(A.f);
     const res = [];
     for (const h of hs) {
+      // Code (a LaTeX paragraph, a verbatim listing) is the source itself: an edit made to it in
+      // Word is said in a comment under it and not applied
+      if (A.k === 'tex' || A.k === 'code') {
+        const was = o.slice(h.a, h.b), now = n.slice(h.A, h.B);
+        note(A, h.a, 'In Word, ' + (A.k === 'tex' ? 'a LaTeX paragraph' : 'a code listing') + ' was changed: ' + (was.trim() ? show(was) + ' became ' + (now.trim() ? show(now) : 'nothing') : 'added ' + show(now)) + '. Not applied: ' + (A.k === 'tex' ? 'it is changed as its LaTeX, on the page or in the source.' : 'it is changed in the source.'), plain(was));
+        continue;
+      }
       // a new Word list paragraph in a list item's text starts an \item of its own
       let newText = n.slice(h.A, h.B);
       if (A.k === 'li') for (const p of [...items].sort((x, y) => y - x)) if (p > h.A && p <= h.B) newText = newText.slice(0, p - h.A) + ITEM + newText.slice(p - h.A);
@@ -545,11 +552,14 @@ export function planImport(data, X, cur, H = {}) {
 }
 
 // a deleted paragraph goes with the space after it, so no blank lines pile up
+// (a comment line after it keeps a line of its own: joined to the line before, a LaTeX paragraph's
+// mark, % rikuy: latex, would mark nothing and its paragraph would be typeset)
 function delBlock(src, A) {
   let e = A.e;
   while (e < src.length && /[ \t]/.test(src[e])) e++;
   if (src[e] === '\n') { e++; while (e < src.length && /[ \t]/.test(src[e])) e++; if (src[e] === '\n') e++; }
-  return { f: A.f, s: A.s, e, t: '', kind: 'delete', what: 'paragraph' };
+  const t = src[e] === '%' && A.s > 0 && src[A.s - 1] !== '\n' ? '\n' : '';
+  return { f: A.f, s: A.s, e, t, kind: 'delete', what: 'paragraph' };
 }
 
 // an edit of the exported source carried onto the current one; null where the owner changed the

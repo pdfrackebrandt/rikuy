@@ -841,6 +841,90 @@ def latex_typing(page):
     check('the arrow keys go into the box and out of it', a and not b[0] and 'After' in b[1], (a, b))
 
 
+def latex_after_ghost(page):
+    """After a line to come, the caret and the selection go where they are put: a click, a double
+    click and the arrow keys in the same box act there, not at the box's start or end (the text
+    split around the line to come was put together in a way that moved them)."""
+    doc = WRAP('Before it.\n\n% rikuy: latex\nalpha line\n  beta line\n  gamma line\n\nAfter it.')
+    AT = """([w, o]) => { const s = [...document.querySelectorAll('#pages span.t')].find((s) => s.textContent.includes(w)); const n = s.firstChild, i = n.data.indexOf(w) + o;
+      const r = document.createRange(); r.setStart(n, i); r.setEnd(n, i + 1); const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; }"""
+    def ghost_under_beta():
+        load_doc(page, doc); click_text(page, 'beta line', 9); page.keyboard.press('Enter'); page.wait_for_timeout(150)
+        return page.evaluate('!!window.rikuy.ghost && window.rikuy.ghost.tex') == 'after'
+    for what, word, off, act, want in (('a click after the line to come, then typing', 'gamma', 2, 'Z', '  gaZmma line'), ('a click before it, then typing', 'alpha', 2, 'Z', 'alZpha line'),
+                                       ('a double click on a word after it, then typing', 'gamma', 2, 'W', '  W line'), ('a double click on a word before it, then Backspace', 'alpha', 2, 'Backspace', '% rikuy: latex\n line\n')):
+        ok = ghost_under_beta()
+        x, y = page.evaluate(AT, [word, off])
+        (page.mouse.dblclick if 'double' in what else page.mouse.click)(x, y); page.wait_for_timeout(250)
+        page.keyboard.press(act) if act == 'Backspace' else page.keyboard.type(act)
+        page.wait_for_timeout(200)
+        check('after a line to come: %s acts where it was put' % what, ok and want in src(page) and len(boxes(page)) == 1, body(page))
+    load_doc(page, doc); click_text(page, 'alpha line', 10); page.keyboard.press('Enter'); page.keyboard.press('ArrowDown'); page.wait_for_timeout(150)
+    page.keyboard.type('Z'); page.wait_for_timeout(200)
+    check('after a line to come: ArrowDown and typing write in the next line', 'gamma lineZ' not in src(page) and 'Z' in body(page).split('alpha line')[1].split('gamma')[0], body(page))
+    load_doc(page, WRAP('Before it.\n\n% rikuy: latex\nalpha line\nz\n  beta line\n\nAfter it.'))
+    click_text(page, 'z', 1); page.keyboard.press('Backspace'); page.wait_for_timeout(150)
+    x, y = page.evaluate(AT, ['beta', 2]); page.mouse.click(x, y); page.wait_for_timeout(250)
+    page.keyboard.type('Z'); page.wait_for_timeout(200)
+    check('after Backspace empties a line, a click in the next line and typing write there', '  beZta line' in src(page), body(page))
+
+
+def latex_edges(page):
+    """What would leave a blank line in a LaTeX paragraph by accident does not: line breaks at the
+    ends of what is pasted; a mark under a line of text stays where it is when Enter starts a
+    paragraph after that line. Ctrl+Shift+E writes nothing in a box; a blank paragraph set to Quote
+    keeps the quote for a formula and for the insert list; text typed over a selection that ends in
+    a box lands there as source."""
+    doc = WRAP('Before it.\n\n% rikuy: latex\nalpha line\n  beta line\n\nAfter it.')
+    PASTE = """(t) => { const d = new DataTransfer(); d.setData('text/plain', t); document.getElementById('pages').dispatchEvent(new ClipboardEvent('paste', { clipboardData: d, bubbles: true, cancelable: true })); }"""
+    one = lambda: len(boxes(page)) == 1 and 'alpha' in boxes(page)[0] and 'beta line' in boxes(page)[0] and '\n\n' not in boxes(page)[0]
+    for what, prep, text in (('"\\nfoo" at the box\'s start', lambda: click_text(page, 'alpha', 0), '\nfoo'), ('"\\n" at the start of its second line', lambda: click_text(page, '  beta', 0), '\n'),
+                             ('"foo\\n" on a line to come after a line', lambda: (click_text(page, 'alpha line', 10), page.keyboard.press('Enter')), 'foo\n'),
+                             ('"foo\\n" on a line to come before a line', lambda: (click_text(page, '  beta', 0), page.keyboard.press('Enter')), 'foo\n'),
+                             ('"\\nfoo" on a line to come', lambda: (click_text(page, 'alpha line', 10), page.keyboard.press('Enter')), '\nfoo')):
+        load_doc(page, doc); prep(); page.wait_for_timeout(120)
+        page.evaluate(PASTE, text); page.wait_for_timeout(250)
+        check('paste %s writes no blank line: one LaTeX paragraph still holds all its lines' % what, one() and ('foo' in boxes(page)[0] or text == '\n'), (body(page), boxes(page)))
+    load_doc(page, doc); click_text(page, 'alpha line', 10)
+    page.evaluate(PASTE, 'one\n\ntwo'); page.wait_for_timeout(250)
+    check('a blank line inside what is pasted stays: it was meant (TeX ends the paragraph there)', 'alpha lineone\n\ntwo\n  beta line' in src(page), body(page))
+    load_doc(page, WRAP('Before it.')); click_text(page, 'Before it.', 10); page.keyboard.press('Enter'); page.wait_for_timeout(120)
+    page.click('#rb-st-latex'); page.wait_for_timeout(120)
+    page.evaluate(PASTE, '\n\\alpha x\n'); page.wait_for_timeout(250)
+    check('a blank paragraph set to LaTeX, paste "\\n\\alpha x\\n": a LaTeX paragraph of it, the mark marking it', boxes(page) == ['\\alpha x'] and '% rikuy: latex\n\\alpha x' in src(page), body(page))
+    # a mark written by hand right under a line of text: TeX reads one paragraph, and so does the page
+    hand = WRAP('Before it.\n% rikuy: latex\nalpha \\x\n\nAfter it.')
+    load_doc(page, hand)
+    one_para = page.evaluate('[...document.querySelectorAll("#pages .it")].map((e) => e.className.includes("tex") ? "tex" : e.textContent.trim())')
+    click_text(page, 'Before it.', 10); page.keyboard.press('Enter'); page.wait_for_timeout(250)
+    check('a mark under a line of text is a comment in that paragraph (no box); Enter there splits the paragraph, and the mark starts the second part', 'tex' not in one_para and one_para[0] == 'Before it. alpha \\x' and boxes(page) == ['alpha \\x'] and src(page) == hand.replace('Before it.\n', 'Before it.\n\n\n'), (one_para, body(page)))
+    # under a heading: Enter at its end puts the new paragraph before the mark, not between the mark and its paragraph
+    under = WRAP('\\section{A}\n% rikuy: latex\nalpha \\x\n\nAfter it.')
+    load_doc(page, under); click_text(page, 'A', 1); page.keyboard.press('Enter'); page.wait_for_timeout(120); page.keyboard.type('New'); page.wait_for_timeout(250)
+    check('Enter at the end of a heading with a LaTeX paragraph right under it: the new paragraph goes before the mark', src(page) == under.replace('\\section{A}\n', '\\section{A}\n\nNew\n\n') and boxes(page) == ['alpha \\x'], body(page))
+    # Ctrl+Shift+E in a box
+    load_doc(page, doc); click_text(page, 'alpha', 3); page.keyboard.press('Control+Shift+E'); page.wait_for_timeout(300)
+    check('Ctrl+Shift+E in a LaTeX paragraph writes nothing (Equation is off there)', src(page) == doc and page.evaluate('document.querySelectorAll("body > .pop").length') == 0, body(page))
+    page.keyboard.press('Escape')
+    # a blank paragraph set to Quote: $ and the insert list
+    load_doc(page, WRAP('Before it.')); click_text(page, 'Before it.', 10); page.keyboard.press('Enter'); page.wait_for_timeout(120)
+    page.click('#rb-st-quote'); page.wait_for_timeout(120)
+    page.keyboard.type('$'); page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=10000)
+    page.evaluate('(v) => { const ta = document.querySelector(".pop-math textarea"); ta.focus(); ta.value = v; ta.dispatchEvent(new Event("input", { bubbles: true })); }', 'x^2')
+    page.wait_for_timeout(300); page.focus('.pop-math textarea'); page.keyboard.press('Enter'); page.wait_for_timeout(250)
+    check('a blank paragraph set to Quote keeps the quote for a formula started with $', '\\begin{quote}\n$x^2$\n\\end{quote}' in src(page), body(page))
+    load_doc(page, WRAP('Before it.')); click_text(page, 'Before it.', 10); page.keyboard.press('Enter'); page.wait_for_timeout(120)
+    page.click('#rb-st-quote'); page.wait_for_timeout(120)
+    page.keyboard.type('\\'); page.wait_for_timeout(250); page.keyboard.type('emph'); page.wait_for_timeout(150); page.keyboard.press('Enter'); page.wait_for_timeout(250)
+    check('and for what the insert list (\\) puts in', '\\begin{quote}\n\\emph{' in src(page) and src(page).count('\\end{quote}') == 1, body(page))
+    # typing over a selection from a paragraph into a box: the text lands in the box, as source
+    load_doc(page, doc)
+    page.evaluate("""() => { const sp = [...document.querySelectorAll('#pages span.t')]; const a = sp.find((s) => s.textContent.includes('alpha line')), z = sp.find((s) => s.textContent.includes('After it'));
+      const r = document.createRange(); r.setStart(a.firstChild, a.textContent.indexOf('line')); r.setEnd(z.firstChild, 5); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }""")
+    page.keyboard.type('$\\x'); page.wait_for_timeout(250)
+    check('typing over a selection that starts in a box writes the text there as source ($ and \\ as they are)', 'alpha $\\x' in src(page) and '\\textbackslash' not in src(page) and '\\$' not in src(page), body(page))
+
+
 def latex_clipboard(page):
     """Copy, cut and paste in a LaTeX paragraph: its source, as it is."""
     doc = WRAP('Some $x$ text.\n\n% rikuy: latex\nalpha \\beta{} gamma\n\nAfter.')
@@ -893,9 +977,9 @@ def latex_pdf(page):
 def run():
     with sync_playwright() as p:
         fns = (top_bar, styles, letters, lists, inserts, keyboard, narrow, downloads, one_save, where_it_applies, list_edges, insert_edges, downloads_in_sight, bold_across, live_graphs,
-               gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, latex_style, latex_typing, latex_clipboard, latex_pdf)
+               gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, latex_style, latex_typing, latex_after_ghost, latex_edges, latex_clipboard, latex_pdf)
         # (the tests that read the tiles see all six: from 1600 px the gallery has room for them)
-        wide = (styles, gallery, gallery_keys, quote_style, latex_style)
+        wide = (styles, gallery, gallery_keys, quote_style, latex_style, latex_edges)
         # (names given on the command line run those alone)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             browser, page, errors = open_page(p, width=1920 if fn in wide else 1400)

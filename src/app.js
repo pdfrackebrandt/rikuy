@@ -1293,7 +1293,8 @@ class App {
     if (/^(?:\s|%[^\n]*\n)+$/.test(slice) && /\n[ \t]*\n/.test(slice)) {
       const lines = slice.split('\n');
       // (a LaTeX paragraph's mark goes too: the paragraph it marked joins the one before, as text)
-      const kept = lines.filter((l, i) => i === 0 || (i === lines.length - 1 ? !/^[ \t]*%[ \t]*rikuy:[ \t]*latex[ \t]*$/.test(l) : l.trim() !== '' && !/^[ \t]*%[ \t]*rikuy:[ \t]*latex[ \t]*$/.test(l)));
+      const mark = (l) => /^[ \t]*%[ \t]*rikuy:[ \t]*latex[ \t]*\r?$/.test(l);
+      const kept = lines.filter((l, i) => i === 0 || (i === lines.length - 1 ? !mark(l) : l.trim() !== '' && !mark(l)));
       return [{ f, s: a, e: b, t: kept.join('\n') }];
     }
     if (isBalanced(src, a, b) && !/\\(begin|end)\s*\{(document)\}/.test(slice) && !/\\(section|subsection|subsubsection|chapter|part|maketitle|item|bibliography)\b/.test(slice)) {
@@ -1353,9 +1354,12 @@ class App {
     // If deletion collapsed to visible ranges, insertion goes where the first visible char was
     if (edits.length && edits[0].s > a && edits.length > 0 && edits[0].t === '') at = edits[0].s;
     const prev = src[at - 1] || ' ';
-    let t = escapeTeX(data, prev);
-    if (/^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
-    if (/^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
+    // (a selection from a paragraph into a LaTeX paragraph or back: the text is written as the
+    // place it lands in takes it, as source in the box, escaped in the text)
+    const lands = this.texAt(f, at);
+    let t = lands ? data : escapeTeX(data, prev);
+    if (!lands && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
+    if (!lands && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
     // merge if insertion point coincides with a deletion start
     const merged = [];
     let inserted = false;
@@ -1658,15 +1662,18 @@ class App {
     // Spaces alone after the mark would make a blank line, which marks nothing: they wait in
     // the blank paragraph for the first character that is not one
     if (g.style === 'latex') {
-      tex = g.pend + tex;
-      if (!tex.trim()) { g.pend = tex; this.paintGhost(); return; }
+      // (a line break at either end of what is pasted would be a blank line after the mark, or
+      // after the paragraph's last line: one that marks nothing, or one that splits it)
+      tex = (g.pend + tex).replace(/^[ \t]*(?:\r?\n[ \t]*)+/, '').replace(/(?:[ \t]*\r?\n)+[ \t]*$/, '');
+      if (!tex.trim()) { g.pend = (g.pend + tex).replace(/[^ \t]/g, ''); this.paintGhost(); return; }
     }
     const open = g.style === 'latex' ? LATEX_MARK + '\n' : g.style === 'quote' ? '\\begin{quote}\n' : '';
     const close = g.style === 'quote' ? '\n\\end{quote}' : '';
     const src = this.src(g.f);
     // comment lines right under the paragraph belong to it (a review comment is about the line
     // above it): the new paragraph goes after them (not for one before a block: those are its own)
-    const cm = /^[ \t]*(?:%[^\n]*)?(?:\r?\n[ \t]*%[^\n]*)*/.exec(src.slice(g.pos));
+    // (a LaTeX paragraph's mark is no comment on the line above: the skip stops before it)
+    const cm = /^[ \t]*(?:%(?![ \t]*rikuy:[ \t]*latex[ \t]*\r?(?:\n|$))[^\n]*)?(?:\r?\n[ \t]*%(?![ \t]*rikuy:[ \t]*latex[ \t]*\r?(?:\n|$))[^\n]*)*/.exec(src.slice(g.pos));
     if (!g.before && cm[0].includes('%')) g.pos += cm[0].length;
     let nlB = 0; for (let k = g.pos - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
     let nlA = 0; for (let k = g.pos; k < src.length && /\s/.test(src[k]); k++) if (src[k] === '\n') nlA++;
@@ -1697,6 +1704,11 @@ class App {
     const b = B.base, T = B.tex;
     return { it, B, f: B.f, is: T.is + b, ie: T.ie + b, ms: lineAt(this.src(B.f), b), para: T.para, nest: T.nest.map(([s, e]) => [s + b, e + b]) };
   }
+  // whether source position p of file f is in the source of a LaTeX paragraph on the page
+  texAt(f, p) {
+    for (const B of this.renderer.blocks) if (B.tex && B.f === f && B.tex.is + B.base <= p && p <= B.tex.ie + B.base) return true;
+    return false;
+  }
   // the one the caret, and all of the selection, is in
   texHere() {
     const s = getSelection();
@@ -1711,13 +1723,25 @@ class App {
   texEdit(T, a, b, t, kind) {
     const f = T.f, src = this.src(f);
     a = Math.max(T.is, Math.min(a, T.ie)); b = Math.max(a, Math.min(b, T.ie));
+    const nested = T.nest.some(([x, y]) => x < a && b < y);
+    // A line break at an end of what is written there, beside nothing but spaces on that side of
+    // the line (or the paragraph's own start or end), would be a blank line: it goes. Blank lines
+    // inside what is pasted stay: they were meant.
+    if (!nested && /\n/.test(t)) {
+      const left = src.slice(Math.max(T.is, src.lastIndexOf('\n', a - 1) + 1), a);
+      let re = src.indexOf('\n', b);
+      if (re < 0 || re > T.ie) re = T.ie;
+      if (!left.trim()) t = t.replace(/^[ \t]*(?:\r?\n[ \t]*)+/, '');
+      if (!src.slice(b, re).trim()) t = t.replace(/(?:[ \t]*\r?\n)+[ \t]*$/, '');
+      if (!t && a === b) return;
+    }
     const out = src.slice(0, a) + t + src.slice(b), q = a + t.length, ie = T.ie + t.length - (b - a);
     const ls = Math.max(T.is, out.lastIndexOf('\n', q - 1) + 1);
     let le = out.indexOf('\n', q);
     if (le < 0 || le > ie) le = ie;
     const line = out.slice(ls, le);
     // (inside an environment or a group a blank line ends nothing; one pasted is meant)
-    if (line.trim() || T.nest.some(([x, y]) => x < a && b < y) || /\n[ \t]*\n/.test(t)) { this.commit([{ f, s: a, e: b, t }], { f, p: q, bias: -1 }, kind); return; }
+    if (line.trim() || nested || /\n[ \t]*\n/.test(t)) { this.commit([{ f, s: a, e: b, t }], { f, p: q, bias: -1 }, kind); return; }
     if (!out.slice(T.is, ie).trim()) {
       // Nothing left: the mark goes too, with the blank lines it stood between (one stays where
       // it kept two paragraphs apart), and a blank paragraph set to LaTeX takes the caret.
@@ -1796,7 +1820,20 @@ class App {
       rest.textContent = node.data.slice(k);
       node.data = node.data.slice(0, k);
       span.after(g); g.after(rest);
-      restore = () => { if (node.isConnected && rest.isConnected) { node.data += rest.textContent; rest.remove(); } };
+      // Put back together without moving the selection: setting the text node's data put every
+      // place in it at its start, and removing the split off span moved the places in it after
+      // the line, so the next key acted at the box's start or end. The text is appended (places
+      // in the node stay) and a place in the split off part goes to the same character.
+      restore = () => {
+        if (!node.isConnected || !rest.isConnected) return;
+        const sel = getSelection(), len = node.data.length, rn = rest.firstChild;
+        const at = (n, o) => (n === rn ? [node, len + o] : n === rest ? [node, len + (o ? rn.data.length : 0)] : [n, o]);
+        const moved = sel.rangeCount && (rest.contains(sel.anchorNode) || rest.contains(sel.focusNode));
+        const A = sel.rangeCount ? at(sel.anchorNode, sel.anchorOffset) : null, F = sel.rangeCount ? at(sel.focusNode, sel.focusOffset) : null;
+        node.appendData(rn.data);
+        rest.remove();
+        if (moved) { this.ourSel = true; sel.setBaseAndExtent(A[0], A[1], F[0], F[1]); }
+      };
     }
     this.ghost = { el: g, f, pos, tex: mode, pend, restore };
     this.paintGhost();
@@ -1815,8 +1852,10 @@ class App {
   }
   // the first character that is not a space, typed on a line to come, writes the line
   texGhostInsert(t) {
-    const g = this.ghost, text = (g.pend || '') + t;
-    if (!text.trim()) { g.pend = text; this.paintGhost(); return; }
+    const g = this.ghost;
+    // (a line break at an end of what is pasted on a line to come would leave a blank line beside it)
+    const text = ((g.pend || '') + t).replace(/^[ \t]*(?:\r?\n[ \t]*)+/, '').replace(/(?:[ \t]*\r?\n)+[ \t]*$/, '');
+    if (!text.trim()) { g.pend = (g.pend || '') + t.replace(/[^ \t]/g, ''); this.paintGhost(); return; }
     this.removeGhost();
     const ins = g.tex === 'after' ? '\n' + text : text + '\n';
     this.commit([{ f: g.f, s: g.pos, e: g.pos, t: ins }], { f: g.f, p: g.pos + (g.tex === 'after' ? 1 : 0) + text.length, bias: -1 }, 'type');
@@ -1866,8 +1905,9 @@ class App {
     if (T && T.f === c.f) { this.texEdit(T, c.a, c.b, data, 'type'); return; }
     const src = this.src(c.f);
     const edits = c.collapsed ? [] : this.deletionEdits(c.f, c.a, c.b);
-    let t = escapeTeX(data, src[c.a - 1] || ' ');
-    if (/^[A-Za-z]/.test(t) && endsWithControlWord(src, c.a)) t = '{}' + t;
+    const raw = this.texAt(c.f, c.a);
+    let t = raw ? data : escapeTeX(data, src[c.a - 1] || ' ');
+    if (!raw && /^[A-Za-z]/.test(t) && endsWithControlWord(src, c.a)) t = '{}' + t;
     // the deletions of a replaced selection lie after c.a: they do not move the caret back
     const removedBefore = edits.filter((ed) => ed.e <= c.a).reduce((s, ed) => s + (ed.e - ed.s) - ed.t.length, 0);
     this.commit([...edits, { f: c.f, s: c.a, e: c.a, t }], { f: c.f, p: c.a - removedBefore + t.length }, 'type');
@@ -1953,9 +1993,11 @@ class App {
     if (whole) { this.replaceBody(whole, latex || rich(), 'paste'); return; }
     const edits = this.deletionEdits(c.f, c.a, c.b);
     const at = edits.length && edits[0].s >= c.a ? edits[0].s : c.a;
-    let t = latex || rich();
-    if (/^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
-    if (/^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
+    // (landing in a LaTeX paragraph from a selection that started outside it: as source)
+    const raw = this.texAt(c.f, at);
+    let t = raw ? (latex || plain).replace(/\r\n?/g, '\n') : latex || rich();
+    if (!raw && /^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
+    if (!raw && /^[[*]/.test(t) && grabsBracket(src, at, t[0])) t = '{' + t[0] + '}' + t.slice(1);
     const removedBefore = edits.filter((ed) => ed.e <= at).reduce((s, ed) => s + (ed.e - ed.s), 0);
     this.commit([...edits, { f: c.f, s: at, e: at, t }], { f: c.f, p: at - removedBefore + t.length }, 'paste');
     // LaTeX source pasted as text got its backslashes escaped: offer to keep it as LaTeX
@@ -2722,8 +2764,10 @@ class App {
           const src = this.src(ghost.f);
           let nlB = 0; for (let k = ghost.pos - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
           const pre = '\n'.repeat(Math.max(0, 2 - nlB));
-          this.commit([{ f: ghost.f, s: ghost.pos, e: ghost.pos, t: pre + t + '\n\n' }], null, this.pop.session);
-          ins = { f: ghost.f, s: ghost.pos + pre.length, e: ghost.pos + pre.length + t.length };
+          // (a blank paragraph set to Quote: the formula goes in the quote)
+          const [qo, qc] = ghost.style === 'quote' ? ['\\begin{quote}\n', '\n\\end{quote}'] : ['', ''];
+          this.commit([{ f: ghost.f, s: ghost.pos, e: ghost.pos, t: pre + qo + t + qc + '\n\n' }], null, this.pop.session);
+          ins = { f: ghost.f, s: ghost.pos + pre.length + qo.length, e: ghost.pos + pre.length + qo.length + t.length };
         } else {
           const edits = base.a !== base.b ? this.deletionEdits(base.f, base.a, base.b) : [];
           const removed = edits.reduce((s, ed) => s + (ed.e - ed.s), 0);
@@ -2782,6 +2826,8 @@ class App {
   newDisplayMath() {
     let c = this.caretNow();
     if (!c) return;
+    // (not in a LaTeX paragraph or a line to come in one: an equation there is typed as its source)
+    if (c.ghost ? this.ghostRaw() : this.texHere()) return;
     // in the blank paragraph of a new document too (the ribbon's Equation is pressed there)
     if (c.ghost) { c = { f: this.ghost.f, a: this.ghost.pos }; this.removeGhost(); }
     const t = '\n\\begin{equation}\n  \n\\end{equation}\n';
@@ -3014,9 +3060,11 @@ class App {
       const src = this.src(ghost.f);
       let nlB = 0; for (let k = ghost.pos - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
       const pre = '\n'.repeat(Math.max(0, 2 - nlB));
-      const o = open.replace(/^\n+/, '');
+      // (a blank paragraph set to Quote: what is inserted goes in the quote)
+      const [qo, qc] = ghost.style === 'quote' ? ['\\begin{quote}\n', '\n\\end{quote}'] : ['', ''];
+      const o = qo + open.replace(/^\n+/, '');
       this.removeGhost();
-      this.commit([{ f: ghost.f, s: ghost.pos, e: ghost.pos, t: pre + o + close }], { f: ghost.f, p: ghost.pos + pre.length + o.length, bias: 1 }, 'insert');
+      this.commit([{ f: ghost.f, s: ghost.pos, e: ghost.pos, t: pre + o + close + qc }], { f: ghost.f, p: ghost.pos + pre.length + o.length, bias: 1 }, 'insert');
       return;
     }
     const src = this.src(base.f);

@@ -167,13 +167,19 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   TeX skips a comment line, so the file compiles anywhere to the same PDF (`test/ribbon.py`
   compiles a document with and without its marks and compares), and no package or editor writes
   that line by chance: the 716 documents of the corpus have none. `Builder.flow` recognises the
-  mark only in the document's own text (`env.top`: the body and `\input` files, not inside an
-  environment or a macro's text) and hands the nodes up to the next `par` to `Builder.texBlock`,
+  mark only in the document's own text (`env.top`: the body, `\input` files, and the language,
+  direction and `subequations` environments whose paragraphs are the body's own; not inside
+  any other environment or a macro's text) and only at the start of a paragraph (`paraShows`:
+  under a line of text it is a comment inside that paragraph, as TeX reads it, and the page
+  shows one paragraph; Enter there splits it, and the mark then starts the second part). It
+  hands the nodes up to the next `par` to `Builder.texBlock`,
   which builds them as usual and drops the result (counters, labels, headings and footnote
   numbers stay as TeX will have them) and makes one item `{type: 'tex'}` whose one seg maps every
   character to itself. A brace, a bracket or an environment opened and not closed (one being
   typed) would hold the rest of the file as the parser reads it; `cutOpen` ends it at its first
-  blank line, as TeX ends the paragraph there. The renderer draws the item as a box headed LaTeX
+  blank line, as TeX ends the paragraph there. A `\verb` or an argument read as it is (`\url{`,
+  `\href{`) open over a blank line is cut there by `rawCut`, and `Builder.readAfter` reads what
+  follows again without it. The renderer draws the item as a box headed LaTeX
   (the header is CSS, so it is never selected or copied) and records `B.tex`. In the box
   `insertText`, paste, cut, composition and `deleteInput` go through `texEdit`, which writes
   exactly what was typed. A line left empty would be a blank line, which ends the paragraph for
@@ -183,8 +189,13 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   start a paragraph of text begins outside it, in its middle the rest becomes a second LaTeX
   paragraph with a mark of its own. Backspace at the box's start takes the mark away (the
   paragraph stays, typeset); deleting all of it takes the mark with it and leaves a blank
-  paragraph set to LaTeX. Word gets the box's source as a plain code block (`wordast.js`); an
-  edit made there in Word is not applied, as for a verbatim listing.
+  paragraph set to LaTeX. A line break at an end of what is pasted, beside nothing but spaces,
+  is dropped for the same reason (blank lines inside what is pasted stay). Text typed or pasted
+  over a selection that reaches into a box is written as the place it lands in takes it
+  (`texAt`). Word gets the box's source as a Source Code paragraph in a bookmark of its own whose
+  every character is read only (`Walker.code` in `wordast.js`, also for verbatim listings): what
+  a coauthor changes there comes back as a comment under it (`textEdits` in `wordsync.js`), and a
+  paragraph deleted in Word just before a mark leaves the mark on a line of its own (`delBlock`).
 - **Styles.** `blockStyle` reads the caret's block into `{v, to, b}`: its style now, the styles it
   may take, and where its words are; `restyle` (`src/styles.js`, tested on strings in
   `test/styles.test.mjs`) turns that into the smallest edits: Normal to LaTeX writes the mark's

@@ -8,7 +8,7 @@
 
 import { BLOCKS } from './render.js';
 import { styOfEl } from './editor.js';
-import { NOT_PLAIN, latexSpot, restyle, blankPads, quoteWords } from './styles.js';
+import { NOT_PLAIN, latexSpot, restyle, blankPads, quoteWords, startsLine } from './styles.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const HEAD = /^\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)(\*?)\s*(\[[^\]]*\])?\s*\{/;
@@ -126,13 +126,15 @@ export const ribbon = {
     const q = this.quoteOf(B);
     if (q) return { v: 'quote', to: latex(new Set(q.one ? ['p', ...(q.plain ? HEADS : [])] : [])), b: { v: 'quote', s: B.s, ws: q.ws, we: q.we, e: B.e, spot } };
     const r = this.plainPara(B, it);
-    if (r) return { v: 'p', to: latex(new Set([...HEADS, 'quote'])), b: { v: 'p', s: r.s, ws: r.s, we: r.e, e: r.e, spot } };
+    // (Quote only for a paragraph that starts its line: after \noindent or the like on the same
+    // line, the environment would go in after it, and the way back would not be byte for byte)
+    if (r) return { v: 'p', to: latex(new Set([...HEADS, ...(startsLine(src, r.s) ? ['quote'] : [])])), b: { v: 'p', s: r.s, ws: r.s, we: r.e, e: r.e, spot } };
     if (ctx === 'p' && B.items.length === 1 && !/\bthm\b/.test(it.className)) {
       // a paragraph with a footnote or a display in it: no heading can hold it, a quote can
       let s = B.s, e = B.e;
       while (s < e && /\s/.test(src[s])) s++;
       while (e > s && /\s/.test(src[e - 1])) e--;
-      const words = src.slice(s, e), quote = e > s && !/^\\begin\s*\{/.test(words) && !/\n[ \t]*\n/.test(words);
+      const words = src.slice(s, e), quote = e > s && startsLine(src, s) && !/^\\begin\s*\{/.test(words) && !/\n[ \t]*\n/.test(words);
       return { v: 'p', to: latex(new Set(quote ? ['quote'] : [])), b: { v: 'p', s, ws: s, we: e, e, spot } };
     }
     return { v: '', to: latex(new Set()), b: { spot } };

@@ -434,11 +434,16 @@ comment line of its own just before it, exactly
 
 (spaces around the words may vary; small letters), and runs from the next line to the next
 blank line, or to the end of the text it is in (\\end{document}, the end of an \\input file). The
-line after the mark must not be blank. The mark counts in the document's own text and in files
-it \\inputs, not inside an environment or a macro. TeX reads the line as a comment, so the file
-compiles anywhere, and to the same PDF, with or without it; an agent may add or remove the line
-with rikuy.api.setSource. Inside the box Enter starts a new line of the same paragraph; Enter
-twice is the blank line that ends it.
+line after the mark must not be blank, and the mark must start a paragraph: after a blank line,
+a heading, an environment, or at the start of the text. Under a line of text it is a comment
+inside that paragraph, as TeX reads it, and marks nothing. It counts in the document's body, in
+files it \\inputs, and in the environments whose paragraphs are the body's own: language and
+direction ones (otherlanguage, RTL, LTR, polyglossia's language environments, CJK) and
+subequations; not inside any other environment, nor in a macro. TeX reads the line as a
+comment, so the file compiles anywhere, and to the same PDF, with or without it; an agent may
+add or remove the line with rikuy.api.setSource. Inside the box Enter starts a new line of the
+same paragraph; Enter twice is the blank line that ends it. A Word file shows the paragraph as
+code; what a coauthor changes there comes back as a comment, not as an edit.
 
     % rikuy: latex
     \\begin{tabular}{ll}
