@@ -1,4 +1,5 @@
-# The programs committed in tex/vendor/ are build outputs of tex/build_tools.sh (AGENTS.md). This
+# The programs committed in tex/vendor/ are build outputs of tex/build_tools.sh (AGENTS.md), and so
+# is the editor's native core (tex/vendor/core/rikuy-core.wasm, from tex/native/core/). This
 # rebuilds each one from an empty RIKUY_SRC into a folder of its own (RIKUY_VENDOR) and compares
 # every file with the committed one by SHA-256: a binary that the scripts do not make, or a script
 # change that moves a binary without it being committed, fails here. Mesa has no job of its own:
@@ -34,7 +35,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        program: [dvips, gnuplot, xindy, asy]
+        program: [dvips, gnuplot, xindy, asy, core]
     env:
       # Azure's copy of Ubuntu's archive, next to the runner; same paths, so the same hashes
       UBUNTU_POOL: http://azure.archive.ubuntu.com/ubuntu/pool

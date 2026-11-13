@@ -8,9 +8,12 @@
 # Their main() is compiled as real_main and entered through galley_main (native/galley_main.c):
 # this Emscripten does not export a main(int, char **) built by clang 15. tools.js calls it.
 #
-# Usage: build_tools.sh [dvips] [asy] [xindy] [gnuplot] [mesa] [gsl] [fftw] [eigen]
-#   (default: the four programs; mesa, gsl, fftw and eigen build only asy's libraries, into
-#   $RIKUY_SRC)   env: RIKUY_SRC, RIKUY_VENDOR, UBUNTU_POOL
+# core is no program: the editor's own C++ (native/core/), one module with no JavaScript glue,
+# vendor/core/rikuy-core.wasm, which build.mjs puts inside the page and src/native.js loads.
+#
+# Usage: build_tools.sh [dvips] [asy] [xindy] [gnuplot] [core] [mesa] [gsl] [fftw] [eigen]
+#   (default: the four programs and core; mesa, gsl, fftw and eigen build only asy's libraries,
+#   into $RIKUY_SRC)   env: RIKUY_SRC, RIKUY_VENDOR, UBUNTU_POOL
 # Needs: Ubuntu's emscripten 3.1.6 and node; git, curl, make, pkg-config, xz and bzip2; meson,
 #   ninja, bison, flex and Python 3 with mako (Mesa); gcc with libgmp-dev and libgc-dev (a native
 #   ECL, which compiles ECL's Lisp for WebAssembly); dpkg-deb (xindy's modules)
@@ -232,6 +235,21 @@ asy() {
 # Lua (tikz). The PostScript prologues the postscript and epslatex terminals copy into their
 # output are in the TeX tree (extra/texlive/gnuplot-ps, the same files as term/PostScript here).
 GNUPLOT_V=6.0.2+dfsg1
+# The editor's native core (native/core/, src/native.js): its sources and nothing else, no
+# library but Emscripten's libc and its small allocator (emmalloc), as a standalone module that
+# imports one empty function. C++17 without exceptions or RTTI; -O3 (-Os makes it 22 KB instead
+# of 52 and measured no faster). The files are named, not globbed: the order of objects is the
+# order of the module's bytes.
+CORE_SOURCES="parse.cc"
+core() {
+  mkdir -p "$VENDOR/core"
+  em++ -O3 -std=c++17 -fno-exceptions -fno-rtti -Wall -Wextra --no-entry -sSTANDALONE_WASM -sMALLOC=emmalloc \
+    -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=2MB -sTOTAL_STACK=512KB \
+    $(for f in $CORE_SOURCES; do printf ' %s/native/core/%s' "$HERE" "$f"; done) -o "$VENDOR/core/rikuy-core.wasm"
+  chmod 644 "$VENDOR/core/rikuy-core.wasm"
+  ls -l "$VENDOR/core"
+}
+
 gnuplot() {
   galley_main
   fetch $UBUNTU/universe/g/gnuplot/gnuplot_$GNUPLOT_V.orig.tar.xz c02de00f808fd0911b68050b9ce4a4d9f2901aeca6fda66a2f41bfde650fabc2
@@ -367,5 +385,5 @@ xindy() {
   ls -l "$VENDOR/xindy"
 }
 
-[ $# -gt 0 ] || set -- dvips asy xindy gnuplot
+[ $# -gt 0 ] || set -- dvips asy xindy gnuplot core
 for t in "$@"; do "$t"; done

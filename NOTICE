@@ -58,6 +58,10 @@ Built for Rikuy from source (tex/build_tools.sh, tex/native/)
   zlib (TeX Live's, in                zlib license                           zlib.net
     Asymptote and Mesa)
   gnuplot 6.0.2                       gnuplot license (LICENSES/gnuplot.txt) www.gnuplot.info
+  Rikuy's native core (C++, in the    AGPL-3.0-or-later, Rikuy's own; with   tex/native/core/
+    page; tex/vendor/core/)           Emscripten's libc parts and emmalloc
+                                      (MIT or NCSA, LICENSES/third-party/
+                                      emscripten.txt)
       Modified by Rikuy: tex/native/patch_gnuplot.py changes one line of src/complexfun.c (the
       underflow check after cexp()) and gives the build its own version label (patchlevel
       2-rikuy, in src/version.c); tex/build_tools.sh compiles it for WebAssembly. Questions

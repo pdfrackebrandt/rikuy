@@ -238,6 +238,8 @@ def main():
             check('offline, Save as Word makes a .docx with pandoc from the kept copy', 'word/document.xml' in names and os.path.getsize(docx) > 5000, names[:5])
         check('offline, the page reloads from the service worker and renders math', nmath > 0 and page.evaluate("document.querySelectorAll('#pages .katex').length") == nmath, nmath)
         check('offline, the project typed before is still there', 'Offline proof. Click anywhere' in page.evaluate('window.rikuy.files.get("main.tex")'))
+        # the native core, a content addressed file the service worker kept at install
+        check('offline, the native core loads from the kept copy and runs', page.evaluate('() => window.rikuy.core.load()') is True and page.evaluate('window.rikuy.core.ready()'))
         click_text(page, 'Offline proof.')
         page.keyboard.type('Still typing. ')
         page.wait_for_function('window.rikuy.files.get("main.tex").includes("Still typing. Offline proof.")', timeout=5000)

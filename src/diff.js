@@ -12,7 +12,8 @@ export function diffSeq(a, b) {
   const mid = myers(A, B);
   const out = [];
   for (let i = 0; i < s; i++) out.push([' ', a[i]]);
-  out.push(...mid);
+  // (a loop, not push(...mid): spreading a list of a few hundred thousand overflows the stack)
+  for (const x of mid) out.push(x);
   for (let i = ea; i < n; i++) out.push([' ', a[i]]);
   return out;
 }

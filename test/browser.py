@@ -884,6 +884,24 @@ def formula_mistakes(page):
     page.keyboard.press('Control+Shift+z'); page.wait_for_timeout(300)
     check('and redo brings that typing back, not the equation', src(page) == mark)
 
+def native_core(page):
+    """The native core (src/native.js) runs in the page, fetched beside it: a long document is parsed
+    by it, typing there writes the same source as ever, and in Chromium the core's tree of it is
+    JavaScript's."""
+    # (fetched once the page is in use: load() is the same promise, started if it was not)
+    check('the native core runs in the page, fetched beside it after the first build', page.evaluate('() => window.rikuy.core.load()') and page.evaluate('window.rikuy.core.ready()'))
+    doc = ('\\documentclass{article}\n\\newcommand{\\R}{\\mathbb{R}}\n\\begin{document}\n\\section{One}\n'
+           + ''.join('Paragraph %d has \\textbf{bold} words, $x_%d \\in \\R$ and a \\emph{stress}.\n\n' % (k, k) for k in range(60))
+           + 'Last words here.\n\\end{document}\n')
+    load_doc(page, {'main.tex': doc})
+    before = page.evaluate('window.rikuy.core.stats.parsed')
+    click_text(page, 'Last words', 4)
+    page.keyboard.type('XY')
+    page.wait_for_timeout(300)
+    check('typing on a long document parses it in the core', page.evaluate('window.rikuy.core.stats.parsed') > before and 'LastXY words' in src(page), page.evaluate('window.rikuy.core.stats'))
+    check('the core\'s tree of it in Chromium is JavaScript\'s', page.evaluate('() => { const g = window.rikuy; return g.core.same(g.files.get("main.tex")) && g.core.same(g.files.get("main.tex") + "\\\\verb|\\ud83d\\ude00| \\\\begin{toString}"); }'))
+
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
@@ -1119,6 +1137,7 @@ def run():
         hidden_deletes(page)
         default_macros(page)
         skipped_args(page)
+        native_core(page)
 
         check('no console errors', not errors, errors[:5])
         browser.close()
