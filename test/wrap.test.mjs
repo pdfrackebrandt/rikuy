@@ -172,4 +172,95 @@ ok('a stranger\'s thousands of {\\bf groups, unclosed: the ribbon\'s look at eve
   assert.ok(Date.now() - t0 < 1500, 'took ' + (Date.now() - t0) + ' ms');
 });
 
+ok('the look at each move of the caret, and Clear All: the ends of the groups found in one walk', () => {
+  // (each unclosed {\bf had its end looked for alone, 20 000 characters: 40 ms a look, three
+  // looks at every move)
+  const t0 = Date.now();
+  const un = '{\\bf a '.repeat(4000) + 'x' + '%{\n'.repeat(4000) + 'word';
+  for (let k = 0; k < 100; k++) assert.equal(enclosing(un, un.length - 1 - (k % 3), un.length - 1 - (k % 3), groupNames(['bold', 'italic', 'underline'][k % 3])), null);
+  const closed = '{\\bf a '.repeat(4000) + 'x' + '}'.repeat(4000);
+  for (let k = 0; k < 100; k++) assert.equal(enclosing(closed, 4000 * 7 - 1 - k, 4000 * 7 - 1 - k, groupNames('bold')).cmd, 'bf');
+  // and Clear All on 3000 nested groups and on 20 000 in a row (0.2 s and 0.5 s before)
+  // (2000 wrappers inside a selection at most, and the braces of one holding more than 4000
+  // characters kept, as with a stranger's text a result that is whole matters more)
+  const nested = '{\\bf x '.repeat(3000) + '}'.repeat(3000), flat = '{\\bf x} '.repeat(20000), few = '{\\bf x} '.repeat(1500);
+  assert.ok(clearText(nested, 0, nested.length, groupNames('bold')).text.length < nested.length);
+  assert.ok(clearText(flat, 0, flat.length, groupNames('bold')).text.startsWith('x '.repeat(2000) + '{\\bf x}'));
+  assert.ok(clearText(few, 0, few.length, groupNames('bold')).text === 'x '.repeat(1500));
+  assert.ok(Date.now() - t0 < 1500, 'took ' + (Date.now() - t0) + ' ms');
+});
+
+// ---- a review's cases (the braces of a hand written group, comments, a command before) ----------
+// B off with the caret in the word, as the B button does it
+const off = (src, word, names = groupNames('bold'), group = 'bold') => {
+  const k = src.indexOf(word) + 1, W = enclosing(src, k, k, names);
+  if (!W) return null;
+  const r = toggleEdits(src, k, k, group, W);
+  return applyEdits(src, r.edits);
+};
+
+ok('a group {\\bf ...} that is an argument or follows a command keeps its braces; \\bf alone goes', () => {
+  for (const [src, word, want, names] of [
+    ['\\noindent{\\bf Proof.} The claim follows.', 'Proof', '\\noindent{Proof.} The claim follows.'],
+    ['\\section{\\bf Intro}\nText', 'Intro', '\\section{Intro}\nText'],
+    ['\\textcolor{red}{\\bf warning text} is here.', 'warning', '\\textcolor{red}{warning text} is here.'],
+    ['\\href{https://x.org}{\\bf link text}', 'link', '\\href{https://x.org}{link text}'],
+    ['\\centerline{\\bf Abstract}', 'Abstract', '\\centerline{Abstract}'],
+    ['\\item[{\\bf Step}] do it', 'Step', '\\item[{Step}] do it'],
+    ['\\multicolumn{2}{|c|}{\\bf Header words} \\\\', 'Header', '\\multicolumn{2}{|c|}{Header words} \\\\'],
+    ['\\mbox{\\tt code}', 'code', '\\mbox{code}', groupNames('mono')],
+    ['\\noindent {\\bf Proof.} x', 'Proof', '\\noindent {Proof.} x'],
+    // as the corpus writes them
+    ['\\multicolumn{3}{|c|}{\\bf Results} \\\\ \\hline', 'Results', '\\multicolumn{3}{|c|}{Results} \\\\ \\hline'],
+    ['\\textcolor{red}{\\bf Achtung:} Text', 'Achtung', '\\textcolor{red}{Achtung:} Text'],
+    ['\\begin{description}\n\\item[{\\bf Step 1:}] Start\n\\end{description}', 'Step', '\\begin{description}\n\\item[{Step 1:}] Start\n\\end{description}'],
+    // (verbatim from the corpus at 8bfd313b8d98: after a superscript's group, and an argument
+    // whose words are a command)
+    ['Varianz $u\\lambda^{3}{\\bf Var}(t)$. Genauso', 'Var}', 'Varianz $u\\lambda^{3}{Var}(t)$. Genauso'],
+    ['  \\fancyhead[L]{\\small\\textcolor{GruenPrimary}{\\bfseries\\partei}\\hspace{0.8em}\\textcolor{Grau}{Stadtrat Plattling}}', 'partei', '  \\fancyhead[L]{\\small\\textcolor{GruenPrimary}{\\partei}\\hspace{0.8em}\\textcolor{Grau}{Stadtrat Plattling}}']
+  ]) assert.equal(off(src, word, names, names ? 'mono' : 'bold'), want, src);
+});
+
+ok('a group whose words hold another declaration keeps its braces: nothing leaks past it', () => {
+  assert.equal(off('{\\bf\\large Title words} and the rest of the paragraph.', 'Title'), '{\\large Title words} and the rest of the paragraph.');
+  assert.equal(off('{\\bf bold \\it bolditalic} plain after', 'bold '), '{bold \\it bolditalic} plain after');
+  assert.equal(off('A {\\bf see \\ref{x}} b', 'see'), 'A {see \\ref{x}} b');
+  // one that stands free loses its braces with \\bf
+  assert.equal(off('Some {\\bf plain words} here.', 'plain'), 'Some plain words here.');
+  assert.equal(off('x {\\it y} z', 'y', groupNames('italic'), 'italic'), 'x y z');
+  assert.equal(off('{\\bfseries Plain} at the start', 'Plain'), 'Plain at the start');
+});
+
+ok('off right after a command: a space (or {}) keeps the words from running into it', () => {
+  assert.equal(off('\\noindent\\textbf{Proof.} The claim.', 'Proof'), '\\noindent Proof. The claim.');
+  assert.equal(off('\\item\\textbf{[x]} y', 'x]'), '\\item{}[x] y');
+  assert.equal(off('a \\textbf{\\LaTeX}ing', 'LaTeX'), 'a \\LaTeX{}ing');
+  assert.equal(off('see \\textbf{word} here', 'word'), 'see word here');
+  const c = clearText('\\noindent{\\bf Proof.} x', 0, 24, groupNames('bold'));
+  assert.equal(c.text, '\\noindent{Proof.} x');
+  assert.equal(clearText('\\section{\\bf A} \\textbf{b}', 0, 26, groupNames('bold')).text, '\\section{A} b');
+});
+
+ok('braces in comments count for nothing', () => {
+  const bold = groupNames('bold');
+  for (const [src, word] of [['Intro % {\\bf old\nThe caret text here} and more', 'caret'], ['%{\\bf\nCaret here.\n%}\n\\begin{center}x\\end{center}}', 'Caret'],
+    ['\\footnote{\n%\\textbf{\nSome note words here.\n%}\n}', 'note'], ['x \\% {\\bf y} % z\nw', 'w']]) {
+    const k = src.indexOf(word) + 1;
+    assert.equal(enclosing(src, k, k, bold), null, src);
+  }
+  // the real one is still found past a comment
+  const src = '\\textbf{a % } not this\nb}';
+  const W = enclosing(src, src.indexOf('b}') + 1, src.indexOf('b}') + 1, bold);
+  assert.equal(src.slice(W.s, W.e), src);
+});
+
+ok('a part of a group that is an argument stays in one group; declarations that would move along refuse', () => {
+  const src = '\\textcolor{red}{\\bf abc} d', W = enclosing(src, src.indexOf('abc') + 1, src.indexOf('abc') + 2, groupNames('bold'));
+  assert.equal(splitText(src, W, src.indexOf('abc') + 1, src.indexOf('abc') + 2).text, '\\textcolor{red}{{\\bf a}b{\\bf c}} d');
+  const d = '{\\bf a \\it b c}', V = parseAt(d, 0);
+  assert.equal(splitText(d, V, d.indexOf('b c'), d.indexOf('b c') + 1), null);
+  const f = 'x {\\bf abc} y', U = parseAt(f, 2);
+  assert.equal(splitText(f, U, f.indexOf('abc') + 1, f.indexOf('abc') + 2).text, 'x {\\bf a}b{\\bf c} y');
+});
+
 console.log('wrap: ' + n + ' groups of checks passed');

@@ -20,15 +20,20 @@ export const methods = {
   },
   // the place kept, back on the page: a field took the document's selection with the focus, so
   // the page's focus alone would put the caret at its start
+  // Whether there was one: with none, the page is not given the focus (its start would become the
+  // caret, and a command would write into the title)
   backToPlace() {
-    const r = this.rbRange, s = getSelection();
+    const r = this.searchRange, s = getSelection();
+    if (!(r && r.startContainer.isConnected && this.root.contains(r.startContainer))) return false;
     this.root.focus({ preventScroll: true });
-    if (r && r.startContainer.isConnected && this.root.contains(r.startContainer)) { s.removeAllRanges(); s.addRange(r); }
+    s.removeAllRanges(); s.addRange(r);
+    return true;
   },
-  // where the caret is on the page, kept while a field of the bar has the focus
+  // where the caret is on the page, kept while a field of the bar has the focus (none: none)
   keepPlace() {
-    const s = getSelection();
-    if (s.rangeCount && this.root.contains(s.anchorNode)) { this.rbRange = s.getRangeAt(0).cloneRange(); this.searchAt = this.ribbonAt(); }
+    const s = getSelection(), on = s.rangeCount && this.root.contains(s.anchorNode);
+    this.searchRange = on ? s.getRangeAt(0).cloneRange() : null;
+    this.searchAt = on ? this.ribbonAt() : null;
   }
 };
 
@@ -83,9 +88,9 @@ export function installSearch(app) {
     if (!c) return;
     inp.value = '';
     close();
-    app.backToPlace();
-    app.searchAt = null;
-    const at = app.ribbonAt();
+    const placed = app.backToPlace();
+    app.searchAt = null; app.searchRange = null;
+    const at = placed ? app.ribbonAt() : null;
     if (at) at.memo = {};
     if (!enabled(app, c, at)) {
       const why = c.whyNot ? c.whyNot(app, at) : null;
@@ -95,7 +100,7 @@ export function installSearch(app) {
     app.runCommand(c.id, null, at);
   };
   inp.addEventListener('pointerdown', () => app.keepPlace());
-  inp.addEventListener('focus', () => { if (!app.searchAt) app.keepPlace(); });
+  inp.addEventListener('focus', () => { if (!app.searchRange) app.keepPlace(); });
   inp.addEventListener('input', () => { hi = 0; draw(); });
   inp.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
@@ -109,10 +114,10 @@ export function installSearch(app) {
     } else if (e.key === 'Enter') { e.preventDefault(); go(hi); }
     else if (e.key === 'Escape') {
       e.preventDefault();
-      if (inp.value) { inp.value = ''; close(); } else { close(); app.searchAt = null; app.backToPlace(); }
+      if (inp.value) { inp.value = ''; close(); } else { close(); if (!app.backToPlace()) app.root.focus({ preventScroll: true }); app.searchAt = null; app.searchRange = null; }
     }
   });
-  inp.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== inp) { close(); app.searchAt = null; } }, 120));
+  inp.addEventListener('blur', () => setTimeout(() => { if (document.activeElement !== inp) { close(); app.searchAt = null; app.searchRange = null; } }, 120));
   // (a name for each command in the list, and its other names: test/tabs.py)
   app.searchCommands = (q) => search(q, { max: MAX }).map((c) => ({ id: c.id, name: c.name }));
 }

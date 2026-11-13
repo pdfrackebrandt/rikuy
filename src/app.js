@@ -35,7 +35,7 @@ import { review } from './review.js';
 import { $, mk, mkBtn, store, load, PREFS, textSig, when } from './ui/dom.js';
 // the command registry and everything drawn from it: the ribbon's tabs, the keys, the search box,
 // the right click menu, the insert list (src/commands.js, src/cmd/*.js)
-import { paletteItems, insertTextHooks, command, commands, describe, enabled, register, unregister, run as runCmd } from './commands.js';
+import { paletteItems, insertTextHooks, command, commands, describe, enabled, register, unregister, run as runCmd, joinMethods } from './commands.js';
 import { methods as cmdMethods } from './cmd/index.js';
 import { tabs, installRibbon } from './ribbon/tabs.js';
 import { methods as galleryMethods } from './ui/gallery.js';
@@ -43,8 +43,8 @@ import { methods as searchMethods, installSearch } from './ui/search.js';
 import { methods as menuMethods, installMenu } from './ui/menu.js';
 import { installKeys } from './keys.js';
 import * as kit from './ui/kit.js';
-import { usePackages, hasPackage, usePackage } from './preamble.js';
-import { groupNames, enclosing, wrapEdits } from './wrap.js';
+import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass } from './preamble.js';
+import { groupNames, enclosing, wrapEdits, unwrapEdits, mapPos } from './wrap.js';
 import { LATEX_MARK, lineStart as lineAt } from './styles.js';
 import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
 import { version as VERSION } from '../package.json';
@@ -1296,13 +1296,6 @@ class App {
 
   insertText(data, range) {
     if (!data) return;
-    // what typing passes through first (AutoCorrect's place): a hook may write it itself or change it
-    for (const h of insertTextHooks) {
-      const r = h(this, data, range);
-      if (r === true) return;
-      if (typeof r === 'string') data = r;
-    }
-    if (!data) return;
     const whole = range ? null : this.wholeDoc();
     if (whole) { this.replaceBody(whole, escapeTeX(data, ' '), 'replace'); return; }
     const c = this.caretNow();
@@ -1311,6 +1304,16 @@ class App {
     const T = c.ghost ? null : this.texHere();
     if (T && c.f === T.f) { const r = range && range.f === T.f ? range : c; this.texEdit(T, r.a, r.b, data, c.collapsed && !range ? 'type' : 'replace'); return; }
     const raw = c.ghost && this.ghostRaw();
+    // What typing passes through (AutoCorrect's place): a hook may write it itself or change it.
+    // Not in a LaTeX paragraph or a line to come in one (above and here): typed there is source.
+    if (!raw && !(!c.ghost && this.texAt(c.f, c.a))) {
+      for (const h of insertTextHooks) {
+        const r = h(this, data, range);
+        if (r === true) return;
+        if (typeof r === 'string') data = r;
+      }
+      if (!data) return;
+    }
     // in a blank paragraph too (a new document, the line after Enter): there they were typed
     // as the characters, though that is where an equation or a heading most often starts
     if (data === '$' && !range && !raw && (c.collapsed || c.ghost)) { this.newMath(); return; }
@@ -1998,9 +2001,10 @@ class App {
     // a group the page draws without a range of its own ({\bfseries ...}, {\bf ...}): from the source
     if (!wrapper) wrapper = enclosing(src, c.a, c.b, names);
     if (wrapper && (c.collapsed || (c.a >= wrapper.is && c.b <= wrapper.ie))) {
-      const inner = src.slice(wrapper.is, wrapper.ie);
-      const shift = wrapper.is - wrapper.s;
-      this.commit([{ f: c.f, s: wrapper.s, e: wrapper.e, t: inner }], c.collapsed ? { f: c.f, p: c.a - shift } : { f: c.f, p: c.a - shift, selA: c.a - shift, selB: c.b - shift }, 'style');
+      // (src/wrap.js: a group's braces stay where it is an argument or follows a command, and the
+      // words never run into a command before them)
+      const edits = unwrapEdits(src, wrapper), at = (p) => mapPos(edits, p);
+      this.commit(edits.map((x) => ({ f: c.f, ...x })), c.collapsed ? { f: c.f, p: at(c.a) } : { f: c.f, p: at(c.a), selA: at(c.a), selB: at(c.b) }, 'style');
       return;
     }
     // The wrapper around the selection (src/wrap.js): an empty one at a caret, the caret between
@@ -2291,6 +2295,38 @@ class App {
     if (P.anchor instanceof HTMLButtonElement && P.anchor.offsetParent && (!document.activeElement || document.activeElement === document.body)) P.anchor.focus({ preventScroll: true });
   }
 
+  // The text of the project's files the main file's preamble reads: \input and \include files,
+  // and its own .sty and .cls files, two levels deep, 20 at most. A package one of them loads is
+  // loaded (src/preamble.js, others): a second \usepackage with other options stopped TeX
+  // (option clash).
+  preambleOthers() {
+    const out = [], seen = new Set([this.main]);
+    const visit = (text, depth) => {
+      if (depth > 2 || out.length >= 20) return;
+      const end = preambleEnd(text), pre = stripComments(text.slice(0, end < 0 ? Math.min(text.length, 200000) : end));
+      const names = [];
+      for (let k = 0, re = /\\(?:input|include)\s*\{([^{}\n]{1,200})\}/g, m; (m = re.exec(pre)) && k < 200; k++) names.push(m[1].trim());
+      for (const p of packages(text, end).slice(0, 200)) for (const n of p.names) names.push(n.name + '.sty');
+      const d = docClass(text);
+      if (d) names.push(d.name + '.cls');
+      for (const n of names) {
+        const f = [n, n + '.tex'].find((x) => this.files.has(x) && !seen.has(x));
+        if (!f || out.length >= 20) continue;
+        seen.add(f);
+        out.push(this.files.get(f));
+        visit(this.files.get(f), depth + 1);
+      }
+    };
+    visit(this.src(this.main), 0);
+    return out;
+  }
+
+  // The edits that load these packages in the main file (src/preamble.js's usePackages, with the
+  // files its preamble reads): [{ f, s, e, t }]
+  packageEdits(names, o = {}) {
+    return usePackages(this.src(this.main), names, { ...o, others: this.preambleOthers() }).map((x) => ({ f: this.main, ...x }));
+  }
+
   // A few Word symbols need a package beyond amsmath and amssymb (\\llbracket needs stmaryrd).
   // Add the \\usepackage line once, in the same undo step as the equation edit.
   ensurePackages(tex, P) {
@@ -2300,8 +2336,9 @@ class App {
     const f = this.main;
     const src = this.src(f);
     // (src/preamble.js: once, after the last \usepackage line; commented lines load nothing)
-    const add = [...need].filter((x) => !hasPackage(src, x));
-    const edits = usePackages(src, add);
+    const others = this.preambleOthers();
+    const add = [...need].filter((x) => !hasPackage(src, x, undefined, others));
+    const edits = usePackages(src, add, { others });
     if (!edits.length) return;
     const top = this.hist[this.hist.length - 1];
     if (top && top.open && top.kind === P.session) top.time = Date.now();
@@ -4141,8 +4178,9 @@ class App {
     let shift = 0;
     // graphicx once, after the last \usepackage line, as a package for an equation's symbol is
     // added (src/preamble.js); graphics, loaded by hand, does as well
-    if (d && !hasPackage(main, 'graphics', d.at)) {
-      const add = usePackage(main, 'graphicx', null, { end: d.at });
+    const others = d ? this.preambleOthers() : [];
+    if (d && !hasPackage(main, 'graphics', d.at, others)) {
+      const add = usePackage(main, 'graphicx', null, { end: d.at, others });
       for (const x of add) edits.push({ f: this.main, ...x });
       if (f === this.main) shift = add.reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
     }
@@ -5011,7 +5049,9 @@ function agentApi(app) {
   });
 }
 
-Object.assign(App.prototype, collab, word, ribbon, nav, review, tabs, galleryMethods, searchMethods, menuMethods, cmdMethods);
+// (joined so that no module takes a name another or the app has: joinMethods throws, naming both)
+joinMethods(App.prototype, { 'src/collab.js': collab, 'src/word.js': word, 'src/ribbon.js': ribbon, 'src/nav.js': nav, 'src/review.js': review, 'src/ribbon/tabs.js': tabs,
+  'src/ui/gallery.js': galleryMethods, 'src/ui/search.js': searchMethods, 'src/ui/menu.js': menuMethods, 'src/cmd/*.js': cmdMethods });
 // one item of the insert list, where the caret is: what the ribbon's Insert buttons press
 App.prototype.insertFromPalette = function (k) {
   const c = this.caretNow(), x = paletteItems().find((y) => y.k === k);

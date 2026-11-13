@@ -880,8 +880,9 @@ Tests:
     `rikuy.api` gains `commands()` and `run(id)` (0.26.0; additions only). The side panel's tab
     "Review" and the ribbon's tab "Review" share a name, so llms.txt and `test/agent.py` find the
     panel's within its tablist "Panel". *Keys that changed:* Ctrl+B, I, U, M, K and Shift+E are
-    the commands' keys now, so they take no Shift they were not written with (Ctrl+Shift+B no
-    longer bolds) and do nothing where their button is off (Ctrl+Shift+E in a cell). Ctrl+K,
+    the commands' keys now and do nothing where their button is off (Ctrl+Shift+E in a cell);
+    Ctrl+Shift+B, I, U and M still act as they did (`keysQuiet`: bound, said nowhere), not
+    Ctrl+Shift+K, which small capitals take in B1. Ctrl+K,
     Ctrl+Shift+E, Ctrl+Enter and Ctrl+P are as before: their batches move them. *Security:* the
     audit skill's quick profile on the new modules (one agent; notes kept outside the repository)
     found two ways a stranger's document could stall the reader's tab, both fixed with a test:
@@ -900,8 +901,33 @@ Tests:
     `paste.py` 25, `mathfield.py` 19, `eqextras.py` 18/18, `frontier.py` 13, `stress.py` 9,
     `deploy_check.py` 43/43, `pages_check.py` fits, actionlint clean; the model and parser are
     untouched. Not done: no command of its own yet on File, Design and Layout, which stay hidden
-    until B12, B4 and B6 fill them; the review `docs/REVIEW_PROCESS.md` asks for; Safari and
-    Firefox, by hand.
+    until B12, B4 and B6 fill them; Safari and Firefox, by hand.
+    *The review.* A hostile reader of 59b0131 found four ways it corrupted a source and more;
+    all fixed in the commit after it, each with the reader's own case as a test. Bold, Italic
+    and Typewriter taken off a hand written group dropped its braces wherever it stood
+    (`\noindent{\bf Proof.}` became `\noindentProof.`, `\textcolor{red}{\bf x}` lost its
+    argument's braces, `{\bf\large Title}` let the size leak): a group now loses its braces only
+    where it stands free (`standsFree`), and words that would run into a command get a space or
+    `{}` (`\noindent\textbf{Proof.}` off is `\noindent Proof.`); braces in comments no longer
+    count; a class's or a package's options are rewritten in one edit (all removed left
+    `\documentclass[{article}`) and read with their comments as comments; a new `\usepackage`
+    line stays out of `\if…\fi` and braces; a package loaded in a file the preamble reads gets
+    `\PassOptionsToPackage` (`App.packageEdits` for the batches); the scans of a stranger's
+    preamble and of the groups around the caret are bounded by work, not only by length (the
+    reader's 450 unclosed `\textbf{` 58 ms a look, now 0.6; Clear All on 20 000 wrappers 0.5 s,
+    now 20 ms); AutoCorrect's hooks skip LaTeX paragraphs; on a phone the Table Layout option
+    goes with its tab; Shift+F10 or the menu key again gives the browser's menu, a long press the
+    system's; two modules adding one method name throw (`joinMethods`). And the lows: Home whole
+    at 860 px (the downloads one button there), the search box with no place writes nothing, Ask
+    Claude only inside Claude, red and Red told apart, llms.txt in screen order, "bul" no longer
+    finds Table, Ctrl+F1 from a field and none kept below 861 px, the folded ribbon kept over a
+    reload and shown for a moment by a tab, the groups named, an `[option]` only for environments
+    that take one, Page width on a phone, the row of tabs 28 px. Evidence: `npm test` green
+    (`wrap` 21 groups, `preamble` 18, `blockenv` 10, `commands` 12), `tabs.py` 104, `ribbon.py`
+    267, `browser.py` 189, `agent.py` 132, `word.py` 110, `share.py` 46, `history.py` 39/39,
+    `offline.py` 54/54, `launch.py` 18/18, `deploy_check.py` 43/43, `pages_check.py` fits; the
+    security audit's quick profile on the changed files (notes outside the repository) found
+    three more stalls of the same kind, fixed above with tests.
 
 ## Open tasks
 

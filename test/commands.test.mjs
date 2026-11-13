@@ -4,7 +4,7 @@
 // apply at the same rank; the insert list in its old order; the names agents found before kept;
 // the search finding Word's names; controls.json's shape.
 import assert from 'node:assert/strict';
-import { commands, command, places, paletteItems, search, describe, menuItems, register, unregister, run, enabled } from '../src/commands.js';
+import { commands, command, places, paletteItems, search, describe, menuItems, register, unregister, run, enabled, joinMethods } from '../src/commands.js';
 import '../src/cmd/index.js';
 import { TABS, groupOf } from '../src/ribbon/order.js';
 import { parseChord, chordFor } from '../src/keys.js';
@@ -46,7 +46,7 @@ ok('no name twice in one tab\'s panel (the downloads and the bar are in view wit
 
 ok('every chord reads; two commands on one chord differ in rank, or one says where it applies', () => {
   const seen = new Map();
-  for (const c of commands()) for (const k of c.keys || []) {
+  for (const c of commands()) for (const k of [...(c.keys || []), ...(c.keysQuiet || [])]) {
     for (const mac of [false, true]) {
       const on = chordFor(k, mac, c.mac);
       if (!on) continue;
@@ -79,6 +79,8 @@ ok('the search box finds commands by Word\'s names, other names, starts of words
   assert.equal(search('Bullets')[0].id, 'bullets');
   assert.equal(search('numbering')[0].id, 'numbering');
   assert.equal(search('bul')[0].id, 'bullets');
+  // (the start of a word only: "bul" is in "tabular", a synonym of Table)
+  assert.ok(!search('bul').some((c) => c.id === 'insert-table' || /table/i.test(c.name)), search('bul').map((c) => c.id).join());
   assert.equal(search('heading 2')[0].id, 'style-heading2');
   assert.equal(search('theorem')[0].id, 'insert-theorem');
   assert.ok(search('pdf').some((c) => c.id === 'download-pdf'));
@@ -114,6 +116,25 @@ ok('controls.json: every control with its role, name and place', () => {
   assert.ok(c.some((x) => x.id === 'ri-pic' && x.name === 'Picture' && x.tabName === 'Insert'));
   assert.ok(c.some((x) => x.id === 'rv-comment' && x.name === 'New comment') && c.some((x) => x.id === 'ri-comment' && x.name === 'Comment'));
   assert.ok(c.find((x) => x.command === 'table-row-below').contextual);
+});
+
+ok('the quiet chords: Ctrl+Shift+B, I, U and M act as before the registry, listed nowhere', () => {
+  for (const [id, k] of [['bold', 'Ctrl+Shift+B'], ['italic', 'Ctrl+Shift+I'], ['underline', 'Ctrl+Shift+U'], ['formula', 'Ctrl+Shift+M']]) {
+    assert.ok((command(id).keysQuiet || []).includes(k), id);
+    assert.ok(!describe().some((x) => x.command === id && x.keys.includes(k)), id);
+  }
+  // (Ctrl+Shift+K is small capitals, B1's)
+  assert.ok(!commands().some((c) => (c.keysQuiet || []).includes('Ctrl+Shift+K')));
+});
+
+ok('the methods of the modules joined into the app: a name in two of them throws', () => {
+  const t = {};
+  joinMethods(t, { 'a.js': { f() { return 1; } }, 'b.js': { g() { return 2; } } });
+  assert.equal(t.f() + t.g(), 3);
+  assert.throws(() => joinMethods({}, { 'a.js': { f() {} }, 'b.js': { f() {} } }), /f.*a\.js.*b\.js|f.*b\.js.*a\.js/);
+  class A { h() {} }
+  assert.throws(() => joinMethods(A.prototype, { 'c.js': { h() {} } }), /h/);
+  assert.doesNotThrow(() => joinMethods({}, { 'a.js': { toString() { return ''; } } }));
 });
 
 console.log('commands: ' + n + ' groups of checks passed');

@@ -12,7 +12,12 @@ to 3 and 0, Ctrl+Shift+L, Alt+Q, Ctrl+F1, Shift+F10), the AltGr guard and an inp
 the search box (Word's names, other names, Enter, a command that cannot run here); the right click
 menu by context, a second right click for the browser's; the kit (split button, menu, gallery,
 colour picker, number field, dialog shell); the round trip rule (test/browser.py's roundtrip) on
-Bold, Italic, Underline with their hand written forms, and the headings by their keys.
+Bold, Italic, Underline with their hand written forms, and the headings by their keys; Bold taken
+off a hand written group whose braces do something for the words around it; and the review's
+other findings: the folded ribbon kept over a reload and shown for a moment by a tab, Ctrl+F1 from
+a field and none kept below 861 px, the groups named, Ctrl+Shift+B, the search box with no place,
+the menu (no Ask Claude outside Claude, Shift+F10 again, a long press), a contextual tab's option
+on a phone, Page width on a phone, and Home whole at 860 px.
 
 RIKUY_DIST names another dist/."""
 import os, sys
@@ -151,7 +156,7 @@ def widths(page):
     print('     widths:', seen)
     check('at 1400 and 1024 px the tabs are a row above the toolbar, nothing folds and the row does not scroll', all(seen[w]['tabs'] and not seen[w]['sel'] and not seen[w]['over'] and not seen[w]['folded'] for w in (1400, 1024)), seen)
     check('at 860 and 390 px the tabs are the combobox "Ribbon tab" at the row\'s start, in one row that scrolls sideways on a phone', all(not seen[w]['tabs'] and seen[w]['sel'] and seen[w]['h'] <= 44 and seen[w]['page'] <= 0 for w in (860, 390)) and seen[390]['over'], seen)
-    check('the downloads: three at 1400, 1024 and 860 px, one Download menu on a phone', all(seen[w]['dl'] == ['rb-pdf', 'rb-word', 'b-save'] for w in (1400, 1024, 860)) and seen[390]['dl'] == ['rb-dl-menu'], {w: seen[w]['dl'] for w in seen})
+    check('the downloads: three at 1400 and 1024 px; one Download menu at 860 px, where the row has no room for three, and on a phone', all(seen[w]['dl'] == ['rb-pdf', 'rb-word', 'b-save'] for w in (1400, 1024)) and seen[860]['dl'] == ['rb-dl-menu'] and not seen[860]['over'] and seen[390]['dl'] == ['rb-dl-menu'], {w: seen[w]['dl'] for w in seen})
     page.set_viewport_size({'width': 390, 'height': 900}); page.wait_for_timeout(300)
     page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label='Insert'); page.wait_for_timeout(200)
     check('on a phone the combobox opens a tab: Insert\'s Picture is there by its name', page.get_by_role('tabpanel', name='Insert', exact=True).get_by_role('button', name='Picture', exact=True).is_visible())
@@ -188,9 +193,11 @@ def collapse(page):
     check('Ctrl+F1 folds the ribbon to its tabs (the caret stays on the page) and shows it again', a == [True, False, 'true', 'pages'] and b == [False, True], (a, b))
     page.get_by_role('button', name='Collapse the ribbon', exact=True).click(); page.wait_for_timeout(150)
     open_tab(page, 'Insert')
-    c = page.evaluate('[document.body.classList.contains("rb-collapsed"), document.querySelector("#rb-tabs [aria-selected=true]").textContent]')
-    check('the button "Collapse the ribbon" does it too, and a tab pressed while folded shows the ribbon with that tab', c == [False, 'Insert'], c)
+    c = page.evaluate('[document.body.classList.contains("rb-collapsed"), !!document.getElementById("ribbon").offsetParent, document.querySelector("#rb-tabs [aria-selected=true]").textContent]')
+    check('the button "Collapse the ribbon" does it too, and a tab pressed while folded shows the ribbon with that tab (the setting stays folded)', c == [True, True, 'Insert'], c)
+    page.get_by_role('button', name='Collapse the ribbon', exact=True).click(); page.wait_for_timeout(150)
     open_tab(page, 'Home')
+    check('and the button shows it again for good', page.evaluate('[document.body.classList.contains("rb-collapsed"), !!document.getElementById("ribbon").offsetParent]') == [False, True])
 
 
 def every_command(page):
@@ -317,7 +324,8 @@ def kit(page):
     check('the colour picker is a menu "Font Color": Automatic, the document\'s own colours, Word\'s standard ones by their xcolor names, all of dvipsnames, More colors',
           m.get_by_role('menuitem', name='Automatic', exact=True).count() == 1 and names[:3] == ['accent', 'x"><img src=x onerror=window.__hit=1>', 'BrickRed'] and m.get_by_role('menuitemradio', name='ForestGreen', exact=True).count() == 1
           and m.get_by_role('menuitem', name='More colors', exact=True).count() == 1 and m.get_by_role('menuitemradio').count() > 80
-          and len(set(m.get_by_role('menuitemradio').evaluate_all('(xs) => xs.map((x) => x.getAttribute("aria-label"))'))) == m.get_by_role('menuitemradio').count(), names)
+          and len(set(m.get_by_role('menuitemradio').evaluate_all('(xs) => xs.map((x) => x.getAttribute("aria-label").toLowerCase())'))) == m.get_by_role('menuitemradio').count(), names)
+    check('red and Red, which a screen reader says alike, are told apart by where they come from', m.get_by_role('menuitemradio', name='red', exact=True).count() == 1 and m.get_by_role('menuitemradio', name='Red (dvipsnames)', exact=True).count() == 1)
     check('a document\'s colour name and value stay text: no element made of them', page.evaluate('[window.__hit, document.querySelectorAll(".pop-colors img, .pop-colors b").length]') == [None, 0])
     m.get_by_role('menuitemradio', name='ForestGreen', exact=True).click(); page.wait_for_timeout(100)
     check('a swatch picked gives its name, and the menu closes', page.evaluate('window.__pick') == {'name': 'ForestGreen'} and m.count() == 0)
@@ -371,10 +379,111 @@ def round_trips(page):
     roundtrip(page, body, ('Another', 3), 'numbering', body.replace('Another paragraph.', '\\begin{enumerate}\n  \\item Another paragraph.\n\\end{enumerate}'), label='Numbered list')
 
 
+def kept_braces(page):
+    # Bold off keeps what the braces do for the words around them (the reviewer's cases)
+    for body, sel, want in [
+            ('\\noindent{\\bf Proof.} The rest of it.', 'Proof.', '\\noindent{Proof.} The rest of it.'),
+            ('Look: \\textcolor{red}{\\bf warning text} here.', 'warning text', 'Look: \\textcolor{red}{warning text} here.'),
+            ('\\noindent\\textbf{Proof.} The rest of it.', 'Proof.', '\\noindent Proof. The rest of it.'),
+            ('{\\bf\\large Title words} and more.', 'Title words', '{\\large Title words} and more.'),
+            ('Some {\\bf plain words} here.', 'plain words', 'Some plain words here.')]:
+        doc = WRAP(body, '\\usepackage{xcolor}\n')
+        load_doc(page, doc); place(page, sel)
+        on = pressed(page, 'bold')
+        page.evaluate("window.rikuy.runCommand('bold')"); page.wait_for_timeout(200)
+        got = src(page)
+        page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+        check('Bold off on "' + body + '" writes "' + want + '", one undo gives it back', on is True and got == WRAP(want, '\\usepackage{xcolor}\n') and src(page) == doc, (on, got[-80:]))
+
+
+def review_fixes(page):
+    load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
+    # the ribbon folded stays folded: after a reload, and after a tab was pressed to look in it
+    page.keyboard.press('Control+F1'); page.wait_for_timeout(200)
+    page.reload()
+    page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
+    page.wait_for_timeout(300)
+    a = page.evaluate('[document.body.classList.contains("rb-collapsed"), !!document.getElementById("ribbon").offsetParent, document.getElementById("rb-collapse").getAttribute("aria-pressed")]')
+    load_doc(page, DOC)
+    page.get_by_role('tab', name='Insert', exact=True).click(); page.wait_for_timeout(200)
+    b = page.evaluate('[!!document.getElementById("ribbon").offsetParent, document.querySelector("#rb-tabs [aria-selected=true]").textContent, JSON.parse(localStorage.getItem("galley.prefs.v1") || localStorage.getItem("rikuy.prefs") || "{}").ribbon]')
+    click_text(page, 'Second paragraph', 3)
+    page.mouse.click(*page.evaluate('() => { const s = [...document.querySelectorAll("#pages span.t")].find((x) => x.textContent.includes("Second")); const r = s.getBoundingClientRect(); return [r.left + 5, r.top + r.height / 2]; }')); page.wait_for_timeout(200)
+    c = page.evaluate('[document.body.classList.contains("rb-collapsed"), !!document.getElementById("ribbon").offsetParent]')
+    check('Ctrl+F1\'s folded ribbon is folded after a reload; a tab pressed shows it for a moment, and a press on the page folds it again (Word\'s "Show tabs only")',
+          a == [True, False, 'true'] and b[:2] == [True, 'Insert'] and c == [True, False], (a, b, c))
+    box = page.get_by_role('combobox', name='Search', exact=True)
+    box.click(); page.keyboard.press('Control+F1'); page.wait_for_timeout(200)
+    d = page.evaluate('[document.body.classList.contains("rb-collapsed"), document.activeElement.id]')
+    check('Ctrl+F1 acts with the focus in a field too (the search box), which keeps the focus', d == [False, 'rk-search'], d)
+    page.keyboard.press('Escape')
+    open_tab(page, 'Home')
+    page.set_viewport_size({'width': 390, 'height': 800}); page.wait_for_timeout(300)
+    click_text(page, 'Second paragraph', 3)
+    page.keyboard.press('Control+F1'); page.wait_for_timeout(200)
+    e = page.evaluate('document.body.classList.contains("rb-collapsed")')
+    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
+    check('below 861 px Ctrl+F1 keeps no setting that would fold the wide ribbon later', e is False and page.evaluate('!!document.getElementById("ribbon").offsetParent'))
+    # the row of tabs, 28 px
+    hh = page.evaluate('document.getElementById("rb-top").getBoundingClientRect().height')
+    check('the row of tabs is 28 px high', hh == 28, hh)
+    # groups are named groups for a screen reader
+    load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
+    panel = page.get_by_role('tabpanel', name='Home', exact=True)
+    check('Home\'s groups are groups named Font, Paragraph and Insert', all(panel.get_by_role('group', name=g, exact=True).count() == 1 for g in ('Font', 'Paragraph', 'Insert')),
+          [panel.get_by_role('group', name=g, exact=True).count() for g in ('Font', 'Paragraph', 'Insert')])
+    # the quiet chords of before the registry
+    load_doc(page, DOC); select_text(page, 'Second paragraph')
+    page.keyboard.press('Control+Shift+B'); page.wait_for_timeout(200)
+    check('Ctrl+Shift+B still bolds (as before the registry; it is not said anywhere)', '\\textbf{Second paragraph}' in src(page), src(page)[60:160])
+    # the search box with no place on the page writes nothing and says why
+    load_doc(page, DOC)
+    page.evaluate('() => { document.activeElement && document.activeElement.blur(); getSelection().removeAllRanges(); }')
+    box.click(); box.fill('bold'); page.wait_for_timeout(150); page.keyboard.press('Enter'); page.wait_for_timeout(200)
+    check('the search box with no caret on the page writes nothing (not into the title) and asks for a click in the text', src(page) == DOC and 'Click in the text of the page first' in page.inner_text('#toast'), (src(page)[40:120], page.inner_text('#toast')))
+    # the right click menu: Ask Claude only inside Claude; Shift+F10 again is the browser's
+    load_doc(page, DOC); select_text(page, 'Second paragraph')
+    page.keyboard.press('Shift+F10'); page.wait_for_timeout(200)
+    m = page.get_by_role('menu', name='Context menu', exact=True)
+    names = m.get_by_role('menuitem').evaluate_all('(xs) => xs.map((x) => x.getAttribute("aria-label"))')
+    page.evaluate("() => { window.__ctx = []; document.addEventListener('contextmenu', (e) => setTimeout(() => window.__ctx.push(e.defaultPrevented), 0)); }")
+    page.keyboard.press('Shift+F10'); page.wait_for_timeout(200)
+    f = [m.count(), page.evaluate('document.activeElement.id'), page.evaluate('window.__ctx')]
+    check('outside Claude the menu has no Ask Claude', 'Ask Claude' not in names, names)
+    check('Shift+F10 again while it is open closes it, the focus on the page, and lets the browser\'s menu come', f[0] == 0 and f[1] == 'pages' and f[2] == [False], f)
+    page.evaluate("() => window.rikuy.closePop && window.rikuy.closePop(true)")
+    # a long press on a touch screen keeps the system's menu
+    r = page.evaluate('() => { const s = [...document.querySelectorAll("#pages span.t")].find((x) => x.textContent.includes("Third")); const b = s.getBoundingClientRect(); return [b.left + 10, b.top + b.height / 2]; }')
+    t = page.evaluate("""([x, y]) => { const el = document.elementFromPoint(x, y); el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', clientX: x, clientY: y }));
+        const e = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y }); el.dispatchEvent(e); return [e.defaultPrevented, !!document.querySelector('.pop-ctx')]; }""", r)
+    check('a long press on a touch screen gives the system\'s menu, not Rikuy\'s', t == [False, False], t)
+    # the combobox of tabs on a phone: a contextual tab\'s option goes with its tab
+    load_doc(page, TABLE)
+    page.set_viewport_size({'width': 390, 'height': 800}); page.wait_for_timeout(300)
+    click_text(page, 'cell', 2); page.wait_for_timeout(250)
+    inside = page.evaluate('[...document.getElementById("rb-tabsel").options].filter((o) => !o.hidden && !o.disabled).map((o) => o.textContent)')
+    click_text(page, 'After it', 2); page.wait_for_timeout(250)
+    out = page.evaluate('[...document.getElementById("rb-tabsel").options].filter((o) => !o.hidden && !o.disabled).map((o) => o.textContent)')
+    check('on a phone "Ribbon tab" offers Table Layout in a table and not after it', 'Table Layout' in inside and 'Table Layout' not in out, (inside, out))
+    # View, Page width on a phone: the whole sheet, every press the same
+    page.evaluate("() => { window.rikuy.runCommand('page-width'); }"); page.wait_for_timeout(150)
+    z1 = page.evaluate('[window.rikuy.prefs.zoom, window.rikuy.prefs.phone, window.rikuy.textFit]')
+    page.evaluate("() => { window.rikuy.runCommand('page-width'); }"); page.wait_for_timeout(150)
+    z2 = page.evaluate('[window.rikuy.prefs.zoom, window.rikuy.prefs.phone, window.rikuy.textFit]')
+    check('on a phone View\'s Page width shows the whole sheet, and a second press keeps it', z1 == ['fit', 'sheet', False] and z2 == z1, (z1, z2))
+    page.set_viewport_size({'width': 860, 'height': 900}); page.wait_for_timeout(300)
+    load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
+    page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label='Home'); page.wait_for_timeout(200)
+    w = page.evaluate("""() => { const p = document.querySelector('#ribbon [role=tabpanel]:not([hidden]) [role=toolbar]'); const out = [...p.querySelectorAll('button')].filter((b) => b.offsetParent && b.getBoundingClientRect().right > innerWidth + 1).map((b) => b.getAttribute('aria-label') || b.textContent);
+        return [out, p.scrollWidth <= p.clientWidth + 1]; }""")
+    check('at 860 px every control of Home is on the screen (Footnote, Citation, Link no longer scroll off)', w == [[], True], w)
+    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
+
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (mouse_and_keys, contextual, widths, collapse, every_command, keys, search_box, context_menu, kit, round_trips):
+        for f in (mouse_and_keys, contextual, widths, collapse, every_command, keys, search_box, context_menu, kit, round_trips, kept_braces, review_fixes):
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])

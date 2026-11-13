@@ -81,7 +81,7 @@ export const chordText = (s) => String(s);
 export function bindings(mac) {
   const out = [];
   for (const c of commands()) {
-    for (const chord of c.keys || []) {
+    for (const chord of [...(c.keys || []), ...(c.keysQuiet || [])]) {
       const on = chordFor(chord, mac, c.mac);
       if (!on) continue;
       out.push({ chord: on, k: parseChord(on), id: c.id, scope: c.keyScope || 'page', rank: c.keyRank || 0 });
@@ -121,7 +121,8 @@ export function installKeys(app, mac, runCmd) {
   app.root.addEventListener('keydown', (e) => go(e, 'page'), true);
   document.addEventListener('keydown', (e) => {
     if (e.target === app.root || (app.root.contains && app.root.contains(e.target))) return;
-    if (e.target && e.target.closest && e.target.closest(OWN)) return;
+    // (a field types nothing on Ctrl and a function key: Ctrl+F1 folds the ribbon from it too)
+    if (e.target && e.target.closest && e.target.closest(OWN) && !((e.ctrlKey || e.metaKey) && /^F\d+$/.test(e.key))) return;
     go(e, 'app');
   }, true);
 }

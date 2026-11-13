@@ -60,6 +60,19 @@ ok('one written by hand: its words stay a paragraph of their own when it goes', 
   assert.equal(envWords(t, s, e - 3, ['center']), null);
 });
 
+ok('an [option] only where the environment takes one: center\'s "[t]" is the text it centres', () => {
+  const t = 'Before.\n\\begin{center}[t] words\n\\end{center}\nAfter.';
+  const [s, e] = block(t, 'center');
+  const W = envWords(t, s, e, ['center']);
+  assert.equal(W.opt, null);
+  assert.equal(t.slice(W.ws, W.we), '[t] words');
+  assert.equal(applyEdits(t, unwrapBlockEdits(t, W)), 'Before.\n\n[t] words\n\nAfter.');
+  const f = 'Before.\n\\begin{figure}[t]\nwords\n\\end{figure}\nAfter.', [fs, fe] = block(f, 'figure');
+  assert.equal(envWords(f, fs, fe, ['figure']).opt, 't');
+  // (a batch with an environment of its own names it)
+  assert.equal(envWords(t, s, e, ['center'], {}, ['center']).opt, 't');
+});
+
 ok('a file written with CRLF keeps them', () => {
   const crlf = DOC.replace(/\n/g, '\r\n');
   const s = crlf.indexOf('The'), e = crlf.indexOf('lines.') + 6;

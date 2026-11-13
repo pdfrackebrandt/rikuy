@@ -38,6 +38,8 @@
 //   synonyms  more words the search box finds it by (Word's names where Rikuy's differ)
 //   palette   { k, d, order, t: {open, close} | act, block }: an item of the insert list (\ or
 //             Ctrl+K), as the list always had them
+//   keysQuiet chords bound as keys are but said nowhere (Ctrl+Shift+B bolds as Ctrl+B did before
+//             the registry, and is not Chrome's bookmarks bar)
 //   keysElsewhere  chords that reach it but are caught elsewhere (the page's own editing keys):
 //             said in controls.json and the search box, not bound by src/keys.js
 //   static, place  the control is in src/template.html: place says where ('bar', 'status',
@@ -48,6 +50,10 @@
 //   searchable  false: the search box leaves it out (a paging arrow)
 //   only      'wide', 'narrow' or 'claude': a control shown at one width only, or only in the
 //             copy inside Claude (agents, test/agent.py)
+//
+// A module of src/cmd/ is loaded by the build too, under node (build/app.mjs writes llms.txt and
+// controls.json from the registry): nothing in it may touch the page (document, window, navigator)
+// as it loads, only inside the functions it registers. test/commands.test.mjs loads them all.
 //   order     its place in its group (default: the order of registration; a copy in also may
 //             give its own)
 
@@ -136,7 +142,8 @@ export function search(q, o = {}) {
     let best = 0;
     for (const [i, n] of names.entries()) {
       const f = fold(n), parts = f.split(' ');
-      if (!words.every((w) => parts.some((p) => p.startsWith(w)) || f.includes(w))) continue;
+      // (the start of a word only: "bul" is no part of "tabular")
+      if (!words.every((w) => parts.some((p) => p.startsWith(w)))) continue;
       // the name itself before a synonym; a whole match before a start; fewer words before more
       const whole = f === words.join(' ') ? 4 : parts[0].startsWith(words[0]) ? 2 : 1;
       best = Math.max(best, whole * 10 + (i === 0 ? 5 : 0) - Math.min(4, parts.length - words.length));
@@ -144,6 +151,23 @@ export function search(q, o = {}) {
     if (best) out.push({ c, score: best });
   }
   return out.sort((a, b) => b.score - a.score || a.c.order - b.c.order).slice(0, o.max || 12).map((x) => x.c);
+}
+
+// ---- methods ---------------------------------------------------------------------------------
+// The methods modules add to App's prototype, joined so that two never take one name: with 13
+// batches adding methods, a second one of a name silently replaced the first. { module: methods }
+// in; a name met twice, or one the target has already, throws, naming both.
+export function joinMethods(target, sources) {
+  const from = new Map();
+  for (const [mod, obj] of Object.entries(sources)) {
+    for (const k of Object.keys(obj || {})) {
+      if (from.has(k)) throw new Error('Two modules add the method ' + k + ': ' + from.get(k) + ' and ' + mod + '.');
+      if (target && Object.prototype.hasOwnProperty.call(target, k)) throw new Error('The method ' + k + ' of ' + mod + ' would replace one the app has.');
+      from.set(k, mod);
+    }
+  }
+  for (const obj of Object.values(sources)) Object.assign(target || (target = {}), obj || {});
+  return target;
 }
 
 // ---- starting up ----------------------------------------------------------------------------
@@ -170,7 +194,7 @@ export function describe() {
     if (c.fit) base.fit = true;
     const ps = places(c);
     if (c.static && c.el && !ps.length) out.push({ id: c.el, name: c.name, place: c.place || null, tab: null, group: null, ...base });
-    for (const p of ps) out.push({ id: p.el, name: p.name, place: 'ribbon', tab: p.tab, group: p.group, ...base });
+    for (const p of ps) out.push({ id: p.el, name: p.name, place: 'ribbon', tab: p.tab, group: p.group, order: p.order, ...base });
     if (!ps.length && !c.static) out.push({ id: null, name: c.name, place: c.menu ? 'menu' : 'search', tab: null, group: null, ...base });
   }
   return out;

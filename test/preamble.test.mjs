@@ -138,4 +138,65 @@ ok('a stranger\'s \\newcommand followed by thousands of spaces: whether it defin
   assert.ok(Date.now() - t0 < 2000, 'took ' + (Date.now() - t0) + ' ms');
 });
 
+// ---- a review's cases ----------------------------------------------------------------------------
+const doc2 = (pre) => pre + '\n\\begin{document}\nx\n\\end{document}\n';
+const size = (k) => /^\d+pt$/.test(k);
+
+ok('options going together: the list is written again in one edit, never overlapping ones', () => {
+  const all = doc2('\\documentclass[a=1,b=2,c=3]{article}');
+  assert.equal(applyEdits(all, classOptions(all, { a: null, b: null, c: null })), doc2('\\documentclass{article}'));
+  const two = doc2('\\documentclass[a4paper,11pt,twoside]{article}');
+  assert.equal(twice(two, (t) => classOptions(t, { a4paper: null, '11pt': null })), doc2('\\documentclass[twoside]{article}'));
+  const sizes = doc2('\\documentclass[10pt,11pt,a4paper]{article}');
+  assert.equal(twice(sizes, (t) => classOptions(t, { '12pt': true }, size)), doc2('\\documentclass[a4paper,12pt]{article}'));
+  const only = doc2('\\documentclass[10pt]{article}');
+  assert.equal(twice(only, (t) => classOptions(t, { '12pt': true }, size)), doc2('\\documentclass[12pt]{article}'));
+  for (const e of [classOptions(all, { a: null, b: null, c: null }), classOptions(sizes, { '12pt': true }, size)]) assert.equal(e.length, 1);
+  // a key named twice: both go
+  const dup = doc2('\\documentclass[a,b,a]{article}');
+  assert.equal(applyEdits(dup, classOptions(dup, { a: null })), doc2('\\documentclass[b]{article}'));
+});
+
+ok('comments in an option list are comments: items read without them, nothing written into one', () => {
+  const c = doc2('\\documentclass[%\n  11pt,%\n  a4paper%\n]{article}');
+  assert.deepEqual(docClass(c).options, { '11pt': true, a4paper: true });
+  assert.equal(twice(c, (t) => classOptions(t, { '12pt': true }, size)), doc2('\\documentclass[%\n  a4paper,12pt%\n]{article}'));
+  const t1 = doc2('\\documentclass[11pt % size\n]{article}');
+  assert.equal(twice(t1, (t) => classOptions(t, { twoside: true })), doc2('\\documentclass[11pt,twoside % size\n]{article}'));
+  const g = doc2('\\documentclass{article}\n\\usepackage[margin=1in, % wide\n  top=2cm]{geometry}');
+  assert.equal(twice(g, (t) => setPackageKeys(t, 'geometry', 'geometry', { top: '3cm' })), g.replace('top=2cm', 'top=3cm'));
+  assert.deepEqual(packageOptions(g, 'geometry'), { margin: '1in', top: '2cm' });
+  const b = doc2('\\documentclass{article}\n\\usepackage[margin=1in, % {wide\n  top=2cm]{geometry}');
+  assert.equal(twice(b, (t) => setPackageKeys(t, 'geometry', 'geometry', { left: '3cm' })), b.replace('top=2cm]', 'top=2cm,left=3cm]'));
+  assert.deepEqual(parseKV('a, % b, c\n d').map((x) => x.key), ['a', 'd']);
+});
+
+ok('a new \\usepackage line never lands inside a conditional or braces', () => {
+  const ifpdf = doc2('\\documentclass{article}\n\\usepackage{amsmath}\n\\ifpdf\n\\usepackage[pdftex]{graphicx}\n\\else\n\\usepackage{graphicx}\n\\fi');
+  assert.equal(twice(ifpdf, (t) => usePackages(t, ['xcolor'])), ifpdf.replace('{amsmath}\n', '{amsmath}\n\\usepackage{xcolor}\n'));
+  const only = doc2('\\documentclass{article}\n\\IfFileExists{foo.sty}{\n  \\usepackage{foo}\n}{}');
+  assert.equal(twice(only, (t) => usePackages(t, ['xcolor'])), only.replace('{}\n\\begin{document}', '{}\n\\usepackage{xcolor}\n\\begin{document}'));
+  const newif = doc2('\\documentclass{article}\n\\newif\\ifdraft\n\\usepackage{amsmath}');
+  assert.equal(twice(newif, (t) => usePackages(t, ['xcolor'])), newif.replace('{amsmath}\n', '{amsmath}\n\\usepackage{xcolor}\n'));
+});
+
+ok('a package the preamble loads in a file it reads: no second line; options it lacks go before that file is read', () => {
+  const src = '\\documentclass{article}\n\\input{preamble}\n\\begin{document}\nx\n\\end{document}\n';
+  const others = ['\\usepackage[table]{xcolor}\n\\usepackage{amsmath}\n'];
+  assert.deepEqual(usePackages(src, ['xcolor', 'amsmath'], { others }), []);
+  assert.equal(hasPackage(src, 'xcolor', undefined, others), true);
+  assert.deepEqual(packageOptions(src, 'xcolor', undefined, others), { table: true });
+  assert.equal(twice(src, (t) => usePackage(t, 'xcolor', 'dvipsnames', { others })), src.replace('\\input', '\\PassOptionsToPackage{dvipsnames}{xcolor}\n\\input'));
+  assert.deepEqual(usePackage(src, 'xcolor', 'table', { others }), []);
+});
+
+ok('a stranger\'s thousands of unclosed \\usepackage[{ are read in bounded time', () => {
+  const t0 = Date.now();
+  for (const body of ['\\usepackage[{'.repeat(15000), '\\usepackage{'.repeat(15000)]) { const src = doc2('\\documentclass{article}\n' + body); hasPackage(src, 'graphics'); usePackages(src, ['xcolor']); }
+  // (and in the files the preamble reads: 50 of them, three names; 5.9 s before)
+  const others = Array.from({ length: 50 }, (_, k) => '%' + k + '\n' + '\\usepackage[{'.repeat(15000));
+  assert.equal(usePackages(doc2('\\documentclass{article}\n\\input{a}\n'), ['xcolor', 'graphicx', 'amsmath'], { others }).length, 1);
+  assert.ok(Date.now() - t0 < 1500, 'took ' + (Date.now() - t0) + ' ms');
+});
+
 console.log('preamble: ' + n + ' groups of checks passed');

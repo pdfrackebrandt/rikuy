@@ -471,15 +471,20 @@ def insert_edges(page):
 
 def downloads_in_sight(page):
     """The downloads stay at the right end of the row at every width, the other buttons scrolling
-    under a soft edge beside them; on a phone they are one Download button with the three choices."""
+    under a soft edge beside them; below 861 px where the row has no room for the three, and on a
+    phone, they are one Download button with the three choices."""
     load_doc(page, DOC)
     IN = """(ids) => { const r = document.getElementById('ribbon'); r.scrollLeft = 0; return ids.map((id) => { const e = document.getElementById(id), b = e.getBoundingClientRect(), rr = r.getBoundingClientRect();
       const top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return b.width > 0 && b.left >= rr.left - 1 && b.right <= innerWidth + 1 && !!top && (top === e || e.contains(top)); }); }"""
-    for w in (820, 1000):
+    for w in (820, 860, 1000):
         page.set_viewport_size({'width': w, 'height': 800}); page.wait_for_timeout(300)
-        seen = page.evaluate(IN, ['rb-pdf', 'rb-word', 'b-save'])
-        over = page.evaluate('(() => { const r = document.getElementById("ribbon"); return r.scrollWidth > r.clientWidth; })()')
-        check('at %dpx PDF, Word and LaTeX are in sight with the row not scrolled' % w, all(seen) and (over or w > 900), (seen, over))
+        seen = page.evaluate(IN, ['rb-pdf', 'rb-word', 'b-save'] if w > 860 else ['rb-dl-menu'])
+        over = page.evaluate('(() => { const r = document.getElementById("ribbon"); return r.scrollWidth > r.clientWidth + 1; })()')
+        if w > 860:
+            check('at %dpx PDF, Word and LaTeX are in sight with the row not scrolled' % w, all(seen), (seen, over))
+        else:
+            # (the tabs' list at the row's start left no room for the three: Footnote, Citation and Link went under them)
+            check('at %dpx, with no room for the three, one Download button is in sight and the row does not scroll: every button to insert is on the screen' % w, all(seen) and not over, (seen, over))
         clear = page.evaluate("""() => { const r = document.getElementById('ribbon'); r.scrollLeft = r.scrollWidth; const a = document.getElementById('rb-link').getBoundingClientRect(), d = document.querySelector('.rb-dl').getBoundingClientRect(); r.scrollLeft = 0; return a.right <= d.left + 1; }""")
         check('and scrolled to its end, the last button to insert is clear of them', clear)
     for w in (360, 390, 430):

@@ -146,12 +146,12 @@ body.has-ai .ai-only { display: inline-flex !important; }
 
 /* ---- the ribbon: Word's tabs, and under them the open tab's row of groups ---- */
 /* the tabs' row; contextual tabs (a table's, an equation's) in their own colour, after Help */
-.rb-top { display: flex; align-items: flex-end; gap: 2px; height: 30px; padding: 0 8px 0 8px; background: var(--chrome); flex: none; }
+.rb-top { display: flex; align-items: flex-end; gap: 2px; height: 28px; padding: 0 8px 0 8px; background: var(--chrome); flex: none; }
 :root { --ctx: #7A3FA8; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ctx: #C59BE8; } }
 :root[data-theme="dark"] { --ctx: #C59BE8; }
 .rb-tabs { display: flex; align-items: flex-end; gap: 1px; min-width: 0; }
-.rb-tab { position: relative; flex: none; height: 28px; padding: 0 11px; border: 0; border-radius: 6px 6px 0 0; background: transparent; color: var(--mute); font: 500 13px var(--font-ui); cursor: pointer; white-space: nowrap; }
+.rb-tab { position: relative; flex: none; height: 26px; padding: 0 11px; border: 0; border-radius: 6px 6px 0 0; background: transparent; color: var(--mute); font: 500 13px var(--font-ui); cursor: pointer; white-space: nowrap; }
 .rb-tab:hover { color: var(--ink-ui); background: color-mix(in srgb, var(--blue-wash) 50%, transparent); }
 .rb-tab.on { color: var(--blue-ink); }
 .rb-tab.on::after { content: ""; position: absolute; left: 9px; right: 9px; bottom: 0; height: 3px; border-radius: 2px 2px 0 0; background: var(--blue); }
@@ -160,14 +160,14 @@ body.has-ai .ai-only { display: inline-flex !important; }
 .rb-tab:not(.ctx) + .rb-tab.ctx { margin-left: 10px; }
 .rb-tab:not(.ctx) + .rb-tab.ctx::before { content: ""; position: absolute; left: -6px; top: 7px; bottom: 7px; width: 1px; background: var(--line); }
 .rb-tab:focus-visible, .rb-coll:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
-.rb-coll { flex: none; width: 28px; height: 26px; margin-bottom: 2px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: var(--mute); cursor: pointer; }
+.rb-coll { flex: none; width: 28px; height: 24px; margin-bottom: 2px; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: var(--mute); cursor: pointer; }
 .rb-coll:hover { background: var(--blue-wash); color: var(--ink-ui); }
 .rb-coll svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 body.rb-collapsed .rb-coll svg { transform: rotate(180deg); }
 body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
-@media (min-width: 861px) { body.rb-collapsed #ribbon { display: none; } }
+@media (min-width: 861px) { body.rb-collapsed:not(.rb-peek) #ribbon { display: none; } }
 /* a phone's tabs: one list at the start of the row */
-.rb-tabsel { display: none; font: 13px var(--font-ui); color: var(--ink-ui); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; height: 28px; padding: 0 4px; width: 96px; margin-right: 4px; }
+.rb-tabsel { display: none; font: 13px var(--font-ui); color: var(--ink-ui); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; height: 28px; padding: 0 2px; width: 86px; margin-right: 2px; }
 .rb-tabsel:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 /* the open tab's panel: one toolbar of groups, the downloads at its end */
 .rb-panel { flex: 1 0 auto; display: flex; align-self: stretch; }
@@ -264,6 +264,9 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
 .rb-dl::before { content: ""; position: absolute; top: 0; bottom: 0; right: 100%; width: 18px; background: linear-gradient(to right, transparent, var(--chrome)); pointer-events: none; }
 /* on a phone the three are one button that opens them (see the 520px rule) */
 #rb-dl-menu { display: none; }
+/* and so below 861 px where the row has no room for the three (rb-dl1, src/ribbon/tabs.js) */
+.rb.rb-dl1 .rb-dl #rb-pdf, .rb.rb-dl1 .rb-dl #rb-word, .rb.rb-dl1 .rb-dl #b-save, .rb.rb-dl1 .rb-dl .rb-lab { display: none; }
+.rb.rb-dl1 .rb-dl #rb-dl-menu { display: inline-flex; }
 .rb-lab { font-size: 12px; color: var(--mute); margin-right: 4px; }
 /* the LaTeX download keeps live graphs live: a mark says so when the document has some */
 #b-save.live { padding-left: 13px; }

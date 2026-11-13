@@ -150,18 +150,27 @@ export function splitButton(app, b, name, menu, o = {}) {
 export function colorPicker(app, at, o) {
   const pick = (v) => () => o.onPick(v);
   // (a document's own colour comes with its name and value from its preamble: both stay text)
-  const sw = (name, hex, title) => ({ name, label: '', title: title || name, swatch: hex, checked: o.current === name, radio: true, cls: 'gal-tile sw', run: pick({ name }) });
-  const items = [], named = new Set();
-  // (each name once: a menu with two items of one name leaves an agent to guess)
-  const add = (n, hex, title) => { if (named.has(n)) return; named.add(n); items.push(sw(n, hex, title)); };
+  const sw = (name, hex, title, label) => ({ name: label || name, label: '', title: title || name, swatch: hex, checked: o.current === name, radio: true, cls: 'gal-tile sw', run: pick({ name }) });
+  const items = [], named = new Set(), heard = new Set();
+  // (each name once: a menu with two items of one name leaves an agent to guess. xcolor's names
+  // tell red from Red, a screen reader does not: the second of two such is said with where it
+  // comes from, "Red (dvipsnames)")
+  const add = (n, hex, title, from) => {
+    if (named.has(n)) return;
+    named.add(n);
+    const said = heard.has(n.toLowerCase()) ? n + ' (' + from + ')' : n;
+    heard.add(n.toLowerCase());
+    items.push(sw(n, hex, title, said));
+  };
+  const base = new Set(BASE_COLORS.map(([n]) => n));
   if (o.auto) items.push({ name: o.auto, run: pick(null) }, null);
-  for (const t of o.theme || []) add(t.name, t.hex, t.name + ' (this document\'s colour)');
+  for (const t of o.theme || []) add(t.name, t.hex, t.name + ' (this document\'s colour)', 'this document');
   if (o.theme && o.theme.length) items.push(null);
-  for (const [n, hex, word] of STANDARD_COLORS) add(n, hex, word + ': ' + n);
+  for (const [n, hex, word] of STANDARD_COLORS) add(n, hex, word + ': ' + n, base.has(n) ? 'xcolor' : 'dvipsnames');
   items.push(null);
-  for (const [n, hex] of BASE_COLORS) add(n, hex);
+  for (const [n, hex] of BASE_COLORS) add(n, hex, null, 'xcolor');
   items.push(null);
-  for (const [n, hex] of DVIPS_COLORS) add(n, hex, n + ' (dvipsnames)');
+  for (const [n, hex] of DVIPS_COLORS) add(n, hex, n + ' (dvipsnames)', 'dvipsnames');
   items.push(null, { name: 'More colors', title: 'Any colour, written as HTML', run: () => {
     const inp = el('input'); inp.type = 'color'; inp.value = o.html ? '#' + o.html : '#c00000';
     inp.addEventListener('change', () => o.onPick({ html: inp.value.slice(1).toUpperCase() }));

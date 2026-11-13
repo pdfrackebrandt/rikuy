@@ -44,11 +44,11 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | Word (.docx in and out, a coauthor's edits back) | `saveDocx`, `openDocx`, `wordEdits` (`src/word.js`); `buildWordDoc` (`src/wordast.js`); `extract` (`src/docx.js`); `planImport`, `mathPatch` (`src/wordsync.js`); `docxToLatex` (`src/wordjobs.js`) |
 | right to left text, the fonts of Chinese, Japanese, Korean, Arabic, Hebrew, Thai, Sinhala and India's scripts, the set up notice | `rtlDocument`, `languageDir`, `scriptNeeds`, `addScriptSetup` (`src/scripts.js`); `Builder.dirOf`, `dirCmd`, `declDir`, `dirEnv` (`src/model.js`); `setDir` (`src/render.js`); `--font-cjk`, `--font-ar` and their like, `:root[data-cjk]` and the `dir` rules (`src/app.css`); `App.scriptNotice`, `scriptSetUp`, `cjkOrder` |
 | live figures (`\rikuywidget`) | `WidgetLayer`, `widgetDoc`, `WIDGET_CSP` (`src/widget.js`); `Builder.cmd` (kind `widget`), `Renderer.atomEl`; `App.widgetsAllowed`, `widgetResized` |
-| a command (a button, a key, a menu item, an item of the insert list or of the search box) | `register`, `run`, `enabled`, `inGroup`, `paletteItems`, `menuItems`, `search`, `describe` (`src/commands.js`); one module per batch in `src/cmd/` (`index.js` imports them); `TABS`, `CONTEXTS` (`src/ribbon/order.js`) |
-| the ribbon: tabs, contextual tabs, groups folding, the keyboard | `ribbonBuild`, `makeControl`, `selectTab`, `ribbonContexts`, `ribbonSync`, `ribbonFit`, `ribbonRove`, `runCommand`, `toggleRibbon`, `installRibbon` (`src/ribbon/tabs.js`); `ribbonAt`, `insertEmpty`, `dropEmpty`, `ribbonBack` (`src/ribbon.js`) |
+| a command (a button, a key, a menu item, an item of the insert list or of the search box) | `register`, `run`, `enabled`, `inGroup`, `paletteItems`, `menuItems`, `search`, `describe`, `joinMethods` (`src/commands.js`); one module per batch in `src/cmd/` (`index.js` imports them); `TABS`, `CONTEXTS` (`src/ribbon/order.js`) |
+| the ribbon: tabs, contextual tabs, groups folding, the keyboard | `ribbonBuild`, `makeControl`, `selectTab`, `ribbonContexts`, `ribbonSync`, `ribbonFit`, `ribbonRove`, `runCommand`, `toggleRibbon`, `peekRibbon`, `installRibbon` (`src/ribbon/tabs.js`); `ribbonAt`, `insertEmpty`, `dropEmpty`, `ribbonBack` (`src/ribbon.js`) |
 | the Styles gallery and the paragraph's style | `styleSync`, `paintGallery`, `pageGallery`, `openStyles`, `tileOrder`, `installGallery` (`src/ui/gallery.js`); `blockStyle`, `setBlockStyle` (`src/cmd/styles.js`); `restyle`, `latexSpot` (`src/styles.js`) |
 | keys, the search box, the right click menu, the kit | `matches`, `lookup`, `installKeys` (`src/keys.js`); `installSearch` (`src/ui/search.js`); `openContextMenu`, `installMenu` (`src/ui/menu.js`); `openMenu`, `openGallery`, `splitButton`, `colorPicker`, `numberField`, `dialog` (`src/ui/kit.js`) |
-| an edit of the preamble, an inline wrapper, an environment around paragraphs | `usePackages`, `kvEdits`, `classOptions`, `setPackageKeys`, `defineOnce` (`src/preamble.js`); `wrapEdits`, `unwrapEdits`, `rewrapEdits`, `enclosing`, `clearText`, `GROUPS` (`src/wrap.js`); `envWords`, `wrapBlockEdits`, `unwrapBlockEdits` (`src/blockenv.js`) |
+| an edit of the preamble, an inline wrapper, an environment around paragraphs | `usePackages`, `kvEdits`, `classOptions`, `setPackageKeys`, `defineOnce` (`src/preamble.js`); `App.packageEdits`, `preambleOthers`; `wrapEdits`, `unwrapEdits`, `standsFree`, `rewrapEdits`, `enclosing`, `clearText`, `GROUPS` (`src/wrap.js`); `envWords`, `wrapBlockEdits`, `unwrapBlockEdits` (`src/blockenv.js`) |
 | the side panel: outline and problems; versions and changes | `toggleNav`, `refreshNav`, `goTo` (`src/nav.js`); `snapshot`, `currentChanges`, `renderChanges`, `paintChanges` (`src/review.js`) |
 | LaTeX paragraphs (`% rikuy: latex`) | `isLatexMark` (`src/styles.js`); `Builder.texBlock`, `cutOpen` (`src/model.js`); `Renderer.item` case `tex`; `App.texBox`, `texEdit`, `texEnter`, `texDelete`, `showTexGhost` (`src/app.js`) |
 | equation editing | `App.openMath`, `attachField`, `toField`, `fromField`; `src/minimal.js`, `wordmath.js`, `fences.js` |
@@ -221,26 +221,40 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   (`listAt`, `blockStyle`) compute it once. `ribbonFit` gives way as Home always has (fewer
   tiles, no Download label, no names, the style list) and then folds whole groups, the lowest
   `rank` first, into a button named after the group whose menu has the same commands by the
-  same names; below 861 px the tabs are the combobox "Ribbon tab" and the row scrolls.
+  same names; below 861 px the tabs are the combobox "Ribbon tab" (a contextual tab's option
+  hidden with its tab), the three downloads become the phone's one Download button where the row
+  has no room for them, and a phone's row scrolls. Ctrl+F1 (from a field too) folds the ribbon
+  to its tabs and keeps that for the next visit; a tab pressed then shows it for a moment
+  (`peekRibbon`), as Word's "Show tabs only" does, until the page is pressed or a button ran.
   `src/keys.js` binds each command's `keys` (Ctrl is Cmd on a Mac; `mac` gives a Mac's own or
-  none; `keyScope` page or app; `keyRank` for two on one chord), refuses AltGr (Windows reports
+  none; `keyScope` page or app; `keyRank` for two on one chord; `keysQuiet` for chords bound but
+  said nowhere, Ctrl+Shift+B, I, U and M as before the registry), refuses AltGr (Windows reports
   it as Ctrl+Alt) and anything while an input method composes, and catches a chord before
   `App.onKeyDown`. The search box (`src/ui/search.js`, Alt+Q) finds commands by name, synonym,
   insert list name or start of a word (`search`) and runs one at the place on the page it kept;
   the right click menu (`src/ui/menu.js`; Shift+F10, the menu key) lists `menuItems` of the
-  caret's contexts, and a second right click, or one with Shift, is the browser's. Typed text
-  passes through `insertTextHooks` first (AutoCorrect's place). `build/app.mjs` writes
+  caret's contexts, and a second right click, one with Shift, or Shift+F10 or the menu key
+  pressed while it is open is the browser's; a long press on a touch screen keeps the system's.
+  Typed text passes through `insertTextHooks` first (AutoCorrect's place), but not in a LaTeX
+  paragraph or a raw spot, where it is source. `build/app.mjs` writes
   `dist/controls.json` (`describe`: every control's id, role, name, place, tab, group, keys) and
   llms.txt's list of tabs from the registry; `test/agent.py` reads the first, `test/tabs.py`
   checks the frame, and `test/browser.py`'s `roundtrip()` turns GAP section 0's round trip rule
   into one call per case.
 - **Edits of a document's structure** go through three pure modules, each tested on strings:
-  `src/preamble.js` (a package once after the last `\usepackage` line, options merged into its
-  line or a `\PassOptionsToPackage` before a line of several, the class's options, key=value
-  lists of `\geometry`, `\hypersetup` and their like, a definition once at the preamble's end;
-  comments read as comments, every scan bounded, as the preamble may be a stranger's),
+  `src/preamble.js` (a package once after the last `\usepackage` line that is loaded whatever
+  happens, outside braces and `\if…\fi`, else just before `\begin{document}`; options merged
+  into its line, or a `\PassOptionsToPackage` before a line of several or, for a package loaded
+  in a file the preamble reads (`App.preambleOthers`: `\input`, a `.sty` or `.cls` of the
+  project), after the `\documentclass` line; the class's options, key=value lists of
+  `\geometry`, `\hypersetup` and their like, rewritten as one edit; a definition once at the
+  preamble's end; comments read as comments, every scan bounded, as the preamble may be a
+  stranger's),
   `src/wrap.js` (inline wrappers with their leading arguments and options, the hand written
-  forms of a kind as one, split and cleared) and `src/blockenv.js` (paragraphs in an environment
+  forms of a kind as one, split and cleared; a group `{\bf …}` loses its braces only where it
+  stands free (`standsFree`: after a space or a line's start, holding no other declaration),
+  elsewhere `\bf` alone goes, and words that would run into a command get a space or `{}`;
+  braces in comments do not count) and `src/blockenv.js` (paragraphs in an environment
   and out again byte for byte). `ensurePackages` and the picture's `graphicx` use the first,
   `toggleStyle` the second (so `{\bfseries …}`, which the page draws without a range of its own,
   is found in the source and comes off exactly), Quote the third.

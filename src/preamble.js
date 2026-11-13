@@ -9,6 +9,7 @@
 // as comments (a % line that names \usepackage loads nothing). test/preamble.test.mjs.
 
 const MAX = 200000; // the most of a preamble read
+const GROUP = 4000; // the most of one argument read
 
 // The text with each comment's characters (from an unescaped % to the line's end) made spaces,
 // so offsets stay those of the text
@@ -52,13 +53,16 @@ export function packages(src, end) {
   if (end == null) end = preambleEnd(src);
   const pre = stripComments(src.slice(0, end < 0 ? Math.min(src.length, MAX) : end));
   const out = [], re = /\\(usepackage|RequirePackage)(?![A-Za-z@])/g;
-  let m;
-  while ((m = re.exec(pre)) && out.length < 2000) {
+  // (every match counts toward the bound, the ones that lead nowhere too, each group is read
+  // 4000 characters at most, and after 20 groups that never close the rest is not read: 15 000
+  // unclosed \usepackage[{ took a second for each look, and LaTeX itself stops at the first)
+  let m, n = 0, bad = 0;
+  while ((m = re.exec(pre)) && n++ < 4000 && out.length < 2000) {
     let i = skipWs(pre, m.index + m[0].length), opts = null;
-    if (pre[i] === '[') { const e = groupEnd(pre, i); if (e < 0) continue; opts = [i + 1, e - 1]; i = skipWs(pre, e); }
+    if (pre[i] === '[') { const e = groupEnd(pre, i, GROUP); if (e < 0) { if (++bad > 20) break; continue; } opts = [i + 1, e - 1]; i = skipWs(pre, e); }
     if (pre[i] !== '{') continue;
-    const e = groupEnd(pre, i);
-    if (e < 0) continue;
+    const e = groupEnd(pre, i, GROUP);
+    if (e < 0) { if (++bad > 20) break; continue; }
     const names = [];
     const body = pre.slice(i + 1, e - 1);
     for (let k = 0, re2 = /[^,\s][^,]*/g, n; (n = re2.exec(body)) && k < 100; k++) {
@@ -67,7 +71,7 @@ export function packages(src, end) {
     }
     // (a version date after it: \usepackage{x}[2020/01/01])
     let z = e;
-    if (pre[skipWs(pre, z)] === '[') { const v = groupEnd(pre, skipWs(pre, z)); if (v > 0) z = v; }
+    if (pre[skipWs(pre, z)] === '[') { const v = groupEnd(pre, skipWs(pre, z), GROUP); if (v > 0) z = v; }
     const ls = pre.lastIndexOf('\n', m.index - 1) + 1, nl = pre.indexOf('\n', z);
     out.push({ cmd: m[1], s: m.index, e: z, line: [ls, nl < 0 ? pre.length : nl + 1], opts, names, list: [i + 1, e - 1] });
     re.lastIndex = e;
@@ -80,115 +84,178 @@ export function packages(src, end) {
 export function packageLine(src, name, end) {
   return packages(src, end).find((p) => p.names.some((n) => n.name === name)) || null;
 }
-export const hasPackage = (src, name, end) => !!packageLine(src, name, end);
+// (others: the text of the files the preamble reads, as usePackages takes them)
+export const hasPackage = (src, name, end, others) => !!packageLine(src, name, end) || (others || []).some((t) => !!packageLine(t, name, -1));
 
 // ---- key=value lists ----------------------------------------------------------------------
 // [{ key, value (null for a flag), s, e }] of a comma list at [s, e) of t; commas in braces and
-// brackets stay inside their value
+// brackets stay inside their value. Comments are read as comments: [%\n 11pt,%\n a4paper%\n] holds
+// 11pt and a4paper, and an item's range ends before a comment after it.
 export function parseKV(t, s = 0, e = t.length) {
-  const out = [];
-  let i = s, start = s;
+  const u = stripComments(t.slice(s, e)), out = [];
+  let start = 0;
   const push = (z) => {
-    const raw = t.slice(start, z);
+    const raw = u.slice(start, z);
     const a = start + (raw.length - raw.trimStart().length), b = z - (raw.length - raw.trimEnd().length);
     if (b > a) {
-      const item = t.slice(a, b), q = item.indexOf('=');
-      out.push(q < 0 ? { key: item, value: null, s: a, e: b } : { key: item.slice(0, q).trim(), value: item.slice(q + 1).trim(), s: a, e: b });
+      const item = u.slice(a, b), q = item.indexOf('=');
+      out.push(q < 0 ? { key: item, value: null, s: s + a, e: s + b } : { key: item.slice(0, q).trim(), value: item.slice(q + 1).trim(), s: s + a, e: s + b });
     }
   };
-  for (; i < e; i++) {
-    const c = t[i];
+  for (let i = 0; i < u.length; i++) {
+    const c = u[i];
     if (c === '\\') { i++; continue; }
-    if (c === '{' || c === '[') { const z = groupEnd(t, i); if (z < 0 || z > e) break; i = z - 1; continue; }
+    if (c === '{' || c === '[') { const z = groupEnd(u, i, GROUP); if (z < 0) break; i = z - 1; continue; }
     if (c === ',') { push(i); start = i + 1; }
   }
-  push(e);
+  push(u.length);
   return out;
 }
 const kvText = (key, value) => (value === true || value == null ? key : key + '=' + value);
 
 // The edits that set keys in the list at [s, e) of src: { key: value } sets or replaces, true a
 // flag, null takes the key out. Keys the list does not have go at its end, in the order given.
-// drop(key) also takes out any key it says yes to (a4paper when letterpaper is set).
+// drop(key) also takes out any key it says yes to (a4paper when letterpaper is set). The list
+// from its first item to its last is written again from what stays, the text between two items
+// (a comma, spaces, a comment) as it was, and returned as one edit: edits made item by item
+// overlapped where two neighbours went ([a=1,b=2,c=3] without all three left "[{").
 export function kvEdits(src, s, e, changes, drop) {
-  const items = parseKV(src, s, e), edits = [];
-  const want = Object.entries(changes);
-  const done = new Set();
-  for (const [k, it] of items.entries()) {
+  const items = parseKV(src, s, e), want = Object.entries(changes), done = new Set(), kept = [];
+  items.forEach((it, k) => {
     const ch = want.find(([key]) => key === it.key);
-    const gone = (ch && ch[1] === null) || (!ch && drop && drop(it.key));
-    if (gone) {
-      // the item and the comma before it (after it, for the first)
-      const prev = items[k - 1], next = items[k + 1];
-      if (prev) edits.push({ s: prev.e, e: it.e, t: '' });
-      else if (next) edits.push({ s: it.s, e: next.s, t: '' });
-      else edits.push({ s: it.s, e: it.e, t: '' });
-      if (ch) done.add(ch[0]);
-      continue;
-    }
-    if (ch) {
-      done.add(ch[0]);
-      const t = kvText(it.key, ch[1]);
-      if (src.slice(it.s, it.e) !== t && !(ch[1] === true && it.value == null)) edits.push({ s: it.s, e: it.e, t });
-    }
-  }
-  const add = want.filter(([key, v]) => !done.has(key) && v !== null).map(([key, v]) => kvText(key, v));
-  if (add.length) {
-    const kept = items.filter((it) => !edits.some((x) => x.s <= it.s && x.e >= it.e && x.t === ''));
-    const at = kept.length ? kept[kept.length - 1].e : s;
-    edits.push({ s: at, e: at, t: (kept.length ? ',' : '') + add.join(',') });
-  }
-  return edits;
+    if (ch) done.add(ch[0]);
+    if ((ch && ch[1] === null) || (!ch && drop && drop(it.key))) return;
+    const same = !ch || (ch[1] === true && it.value == null) || (it.value != null && String(ch[1]) === it.value);
+    kept.push({ k, text: same ? src.slice(it.s, it.e) : kvText(it.key, ch[1]) });
+  });
+  for (const [key, v] of want) if (!done.has(key) && v !== null) kept.push({ k: -1, text: kvText(key, v) });
+  const first = items.length ? items[0].s : s, last = items.length ? items[items.length - 1].e : s;
+  let out = '';
+  kept.forEach((x, n) => {
+    // (between two items that both stay, what stood before the later one; else a comma)
+    if (n) out += x.k > 0 && kept[n - 1].k >= 0 ? src.slice(items[x.k - 1].e, items[x.k].s) : ',';
+    out += x.text;
+  });
+  const d = diffText(src.slice(first, last), out);
+  return d ? [{ s: first + d.s, e: first + d.e, t: d.t }] : [];
+}
+// kvEdits on the options in brackets [os, oe): a list left with nothing loses its brackets
+function optionEdits(src, os, oe, changes, drop) {
+  const e = kvEdits(src, os, oe, changes, drop);
+  if (e.length && !/\S/.test(stripComments(applyOne(src.slice(os, oe), e[0].s - os, e[0].e - os, e[0].t)))) return [{ s: os - 1, e: oe + 1, t: '' }];
+  return e;
+}
+const applyOne = (t, s, e, x) => t.slice(0, s) + x + t.slice(e);
+function diffText(a, b) {
+  let p = 0;
+  while (p < a.length && p < b.length && a[p] === b[p]) p++;
+  let z = 0;
+  while (z < a.length - p && z < b.length - p && a[a.length - 1 - z] === b[b.length - 1 - z]) z++;
+  return p === a.length && p === b.length ? null : { s: p, e: a.length - z, t: b.slice(p, b.length - z) };
 }
 
 // ---- packages -------------------------------------------------------------------------------
-// Where a new line goes in the preamble: after the last \usepackage line, else after the
-// \documentclass line, else at the preamble's end; and what goes before it (a line break when
-// the text there does not end one)
+// The brace depth and the depth of \if ... \fi at each of these places of a preamble (comments
+// already blanked): a line added after a \usepackage inside \ifpdf ... \else or the braces of
+// \IfFileExists{...}{...} would load its package only on one branch
+function levels(pre, at) {
+  const want = new Set(at), out = new Map();
+  let braces = 0, conds = 0, newif = false;
+  for (let i = 0; i < pre.length; i++) {
+    if (want.has(i)) out.set(i, [braces, conds]);
+    const c = pre[i];
+    if (c === '{') braces++;
+    else if (c === '}') braces = Math.max(0, braces - 1);
+    else if (c === '\\') {
+      const m = /^[A-Za-z@]+/.exec(pre.slice(i + 1, i + 40));
+      if (!m) { i++; continue; }
+      const w = m[0];
+      if (w === 'newif') newif = true;
+      else if (newif) newif = false;
+      // (\iff is a symbol, \ifthenelse a command with arguments: neither opens a conditional)
+      else if (/^if/.test(w) && w !== 'iff' && w !== 'ifthenelse') conds++;
+      else if (w === 'fi') conds = Math.max(0, conds - 1);
+      i += w.length;
+    }
+  }
+  return out;
+}
+
+// the place just after the \documentclass line, or -1
+function afterClass(src, end) {
+  const pre = stripComments(src.slice(0, end));
+  const d = /\\documentclass\b/.exec(pre);
+  if (!d) return -1;
+  let i = skipWs(pre, d.index + 14);
+  if (pre[i] === '[') { const z = groupEnd(pre, i, GROUP); if (z > 0) i = skipWs(pre, z); }
+  if (pre[i] !== '{') return -1;
+  const z = groupEnd(pre, i, GROUP);
+  if (z < 0) return -1;
+  const nl = pre.indexOf('\n', z);
+  return nl < 0 || nl >= end ? end : nl + 1;
+}
+
+// Where a new line goes in the preamble: after the last \usepackage line that is loaded whatever
+// happens (outside braces and conditionals); with \usepackage lines but none of those, just before
+// \begin{document}; with none, after the \documentclass line, else at the preamble's end. And
+// what goes before it (a line break when the text there does not end one).
 function newLineAt(src, end) {
   const ps = packages(src, end).filter((p) => p.cmd === 'usepackage');
   let at = -1;
-  if (ps.length) at = ps[ps.length - 1].line[1];
-  else {
-    const pre = stripComments(src.slice(0, end));
-    const d = /\\documentclass\b/.exec(pre);
-    if (d) {
-      let i = skipWs(pre, d.index + 14);
-      if (pre[i] === '[') { const z = groupEnd(pre, i); if (z > 0) i = skipWs(pre, z); }
-      if (pre[i] === '{') { const z = groupEnd(pre, i); if (z > 0) { const nl = pre.indexOf('\n', z); at = nl < 0 || nl >= end ? end : nl + 1; } }
-    }
-  }
+  if (ps.length) {
+    const lv = levels(stripComments(src.slice(0, end)), ps.map((p) => p.s));
+    const sure = ps.filter((p) => { const l = lv.get(p.s); return l && !l[0] && !l[1]; });
+    at = sure.length ? sure[sure.length - 1].line[1] : src.lastIndexOf('\n', end - 1) + 1;
+  } else at = afterClass(src, end);
   if (at < 0 || at > end) at = end;
   return { at, pre: at > 0 && src[at - 1] !== '\n' ? '\n' : '' };
 }
 
+// The line of a package in the main preamble or in one of the others (the text of files it
+// reads: \input{preamble}, a .sty of the project), with the text it was found in
+// (memo: the lists of a call that looks for several names, each text read once)
+function findPackage(src, end, name, others, memo = new Map()) {
+  const list = (t, e) => { if (!memo.has(t)) memo.set(t, packages(t, e)); return memo.get(t); };
+  const p = list(src, end).find((x) => x.names.some((n) => n.name === name));
+  if (p) return { p, text: src, main: true };
+  for (const t of others || []) {
+    if (typeof t !== 'string' || t === src) continue;
+    const q = list(t, -1).find((x) => x.names.some((n) => n.name === name));
+    if (q) return { p: q, text: t, main: false };
+  }
+  return null;
+}
+
 // The edits that load these packages, each once: names a list of names or { name: options }.
 // A package already loaded gets the options it lacks merged into its line (a line that loads
-// several packages gets \PassOptionsToPackage before it instead: its options are every one's).
-// o.end: where the preamble ends, if the caller knows it better (the parser's docBody); without
-// a preamble (an \input file) there is nothing to add to: [].
+// several packages, or one in another file, gets \PassOptionsToPackage instead: before that line,
+// or after the \documentclass line, which comes before the file is read). o.end: where the
+// preamble ends, if the caller knows it better (the parser's docBody); o.others: the text of the
+// files the preamble reads (App.preambleOthers), where a package may be loaded too. Without a
+// preamble (an \input file) there is nothing to add to: [].
 export function usePackages(src, names, o = {}) {
   const end = o.end != null ? o.end : preambleEnd(src);
   if (end < 0) return [];
   const want = Array.isArray(names) ? names.map((n) => [n, null]) : Object.entries(names);
-  const lines = [], edits = [];
-  const ps = packages(src, end);
+  const lines = [], edits = [], memo = new Map();
   for (const [name, opts] of want) {
-    const p = ps.find((x) => x.names.some((n) => n.name === name));
+    const found = findPackage(src, end, name, o.others, memo);
     const ch = opts == null ? {} : typeof opts === 'string' ? Object.fromEntries(parseKV(opts).map((x) => [x.key, x.value == null ? true : x.value])) : opts;
-    if (!p) { lines.push('\\usepackage' + (Object.keys(ch).length ? '[' + Object.entries(ch).filter(([, v]) => v !== null).map(([k, v]) => kvText(k, v)).join(',') + ']' : '') + '{' + name + '}'); continue; }
+    if (!found) { lines.push('\\usepackage' + (Object.keys(ch).length ? '[' + Object.entries(ch).filter(([, v]) => v !== null).map(([k, v]) => kvText(k, v)).join(',') + ']' : '') + '{' + name + '}'); continue; }
     if (!Object.keys(ch).length) continue;
-    if (p.names.length > 1) {
-      const have = p.opts ? parseKV(src, p.opts[0], p.opts[1]) : [];
+    const { p, text, main } = found;
+    if (p.names.length > 1 || !main) {
+      const have = p.opts ? parseKV(text, p.opts[0], p.opts[1]) : [];
       // (and what a \PassOptionsToPackage before it gives this package)
-      const pass = stripComments(src.slice(0, p.s));
+      const pass = stripComments(main ? src.slice(0, p.s) : src.slice(0, end));
       for (let k = 0, re = /\\PassOptionsToPackage\s*\{([^{}]*)\}\s*\{([^{}]*)\}/g, m; (m = re.exec(pass)) && k < 200; k++)
         if (m[2].split(',').some((x) => x.trim() === name)) have.push(...parseKV(m[1]));
       const lack = Object.entries(ch).filter(([k, v]) => v !== null && !have.some((h) => h.key === k && (v === true ? h.value == null : h.value === String(v))));
-      if (lack.length) edits.push({ s: p.line[0], e: p.line[0], t: '\\PassOptionsToPackage{' + lack.map(([k, v]) => kvText(k, v)).join(',') + '}{' + name + '}\n' });
+      const at = main ? p.line[0] : afterClass(src, end);
+      if (lack.length && at >= 0) edits.push({ s: at, e: at, t: (at > 0 && src[at - 1] !== '\n' ? '\n' : '') + '\\PassOptionsToPackage{' + lack.map(([k, v]) => kvText(k, v)).join(',') + '}{' + name + '}\n' });
       continue;
     }
-    if (p.opts) edits.push(...kvEdits(src, p.opts[0], p.opts[1], ch, o.drop));
+    if (p.opts) edits.push(...optionEdits(src, p.opts[0], p.opts[1], ch, o.drop));
     else {
       const t = Object.entries(ch).filter(([, v]) => v !== null).map(([k, v]) => kvText(k, v)).join(',');
       if (t) edits.push({ s: p.list[0] - 1, e: p.list[0] - 1, t: '[' + t + ']' });
@@ -200,10 +267,11 @@ export function usePackages(src, names, o = {}) {
 export const usePackage = (src, name, opts, o) => usePackages(src, { [name]: opts == null ? null : opts }, o);
 
 // The options a package is loaded with, as { key: value or true }, or null when it is not loaded
-export function packageOptions(src, name, end) {
-  const p = packageLine(src, name, end);
-  if (!p) return null;
-  return p.opts ? Object.fromEntries(parseKV(src, p.opts[0], p.opts[1]).map((x) => [x.key, x.value == null ? true : x.value])) : {};
+export function packageOptions(src, name, end, others) {
+  const f = findPackage(src, end == null ? preambleEnd(src) : end, name, others);
+  if (!f) return null;
+  const { p, text } = f;
+  return p.opts ? Object.fromEntries(parseKV(text, p.opts[0], p.opts[1]).map((x) => [x.key, x.value == null ? true : x.value])) : {};
 }
 
 // ---- the class --------------------------------------------------------------------------------
@@ -214,9 +282,9 @@ export function docClass(src) {
   const m = /\\documentclass(?![A-Za-z@])/.exec(pre);
   if (!m) return null;
   let i = skipWs(pre, m.index + m[0].length), opts = null;
-  if (pre[i] === '[') { const z = groupEnd(pre, i); if (z < 0) return null; opts = [i + 1, z - 1]; i = skipWs(pre, z); }
+  if (pre[i] === '[') { const z = groupEnd(pre, i, GROUP); if (z < 0) return null; opts = [i + 1, z - 1]; i = skipWs(pre, z); }
   if (pre[i] !== '{') return null;
-  const z = groupEnd(pre, i);
+  const z = groupEnd(pre, i, GROUP);
   if (z < 0) return null;
   return { name: pre.slice(i + 1, z - 1).trim(), s: m.index, e: z, opts, nameAt: [i + 1, z - 1], options: opts ? Object.fromEntries(parseKV(src, opts[0], opts[1]).map((x) => [x.key, x.value == null ? true : x.value])) : {} };
 }
@@ -225,7 +293,7 @@ export function docClass(src) {
 export function classOptions(src, changes, drop) {
   const d = docClass(src);
   if (!d) return [];
-  if (d.opts) return kvEdits(src, d.opts[0], d.opts[1], changes, drop);
+  if (d.opts) return optionEdits(src, d.opts[0], d.opts[1], changes, drop);
   const t = Object.entries(changes).filter(([, v]) => v !== null).map(([k, v]) => kvText(k, v)).join(',');
   return t ? [{ s: d.nameAt[0] - 1, e: d.nameAt[0] - 1, t: '[' + t + ']' }] : [];
 }
@@ -244,9 +312,9 @@ export function lastCall(src, cmd, end) {
   let m, last = null, n = 0;
   while ((m = re.exec(pre)) && n++ < 1000) {
     let i = skipWs(pre, m.index + m[0].length), opt = null;
-    if (pre[i] === '[') { const z = groupEnd(pre, i); if (z < 0) continue; opt = [i + 1, z - 1]; i = skipWs(pre, z); }
+    if (pre[i] === '[') { const z = groupEnd(pre, i, GROUP); if (z < 0) continue; opt = [i + 1, z - 1]; i = skipWs(pre, z); }
     if (pre[i] !== '{') continue;
-    const z = groupEnd(pre, i);
+    const z = groupEnd(pre, i, GROUP);
     if (z < 0) continue;
     last = { s: m.index, e: z, opt, arg: [i + 1, z - 1] };
   }

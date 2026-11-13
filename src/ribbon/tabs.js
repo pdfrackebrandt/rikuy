@@ -52,9 +52,11 @@ export const tabs = {
       const tab = mk('button', 'rb-tab' + (T.ctx ? ' ctx' : ''), T.name);
       tab.type = 'button'; tab.id = 'rt-' + T.id; tab.dataset.tab = T.id;
       tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', 'false'); tab.setAttribute('aria-controls', 'rp-' + T.id); tab.tabIndex = -1;
-      if (T.ctx) tab.hidden = true;
       list.append(tab);
-      sel.add(new Option(T.name, T.id));
+      const opt = new Option(T.name, T.id);
+      sel.add(opt);
+      // (a contextual tab, and its place in a narrow window's list, wait for their object)
+      if (T.ctx) tab.hidden = opt.hidden = opt.disabled = true;
       const panel = mk('div', 'rb-panel');
       panel.id = 'rp-' + T.id; panel.dataset.tab = T.id; panel.hidden = true;
       panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', tab.id);
@@ -64,6 +66,9 @@ export const tabs = {
         if (k) tb.append(mk('span', 'sep'));
         const box = mk('div', 'rb-grp');
         box.dataset.group = g.id; box.dataset.rank = g.rank;
+        // a group by its name, as Word's are; not where a control in it has that name already (the
+        // Styles gallery is the group "Styles")
+        if (!items.some(({ c }) => c.role === 'group' && c.name === g.name)) { box.setAttribute('role', 'group'); box.setAttribute('aria-label', g.name); }
         // the button the group folds into: its name, and a menu of its commands
         const gb = mk('button', 'btn ghost rb-gbtn');
         gb.type = 'button'; gb.id = 'rg-' + T.id + '-' + g.id;
@@ -166,11 +171,10 @@ export const tabs = {
       if (!T.ctx || !this.rbTabs.includes(T.id)) continue;
       let on = false;
       try { on = !!CONTEXTS[T.ctx](this, at); } catch (e) { on = false; }
-      const t = $('#rt-' + T.id);
+      const t = $('#rt-' + T.id), o = $('#rb-tabsel').querySelector('option[value="' + T.id + '"]');
+      o.hidden = o.disabled = !on;
       if (t.hidden === !on) continue;
       t.hidden = !on;
-      const o = $('#rb-tabsel').querySelector('option[value="' + T.id + '"]');
-      o.hidden = o.disabled = !on;
       if (!on && this.rbTab === T.id) gone = true;
     }
     if (gone) this.selectTab(this.rbTabBefore || 'home');
@@ -216,7 +220,7 @@ export const tabs = {
       this.paintGallery();
     };
     for (const g of groups) g.classList.remove('folded');
-    rb.classList.remove('rb-narrow');
+    rb.classList.remove('rb-narrow', 'rb-dl1');
     // (a phone's width has the list whatever the room: the style sheet hides the gallery there)
     const wide = gal ? getComputedStyle(gw).display !== 'none' : wideScreen();
     const done = () => { this.rbFitting = false; this.ribbonRove(); };
@@ -230,8 +234,12 @@ export const tabs = {
     }
     set(true, true, gal ? 6 : this.rbTiles || 6);
     // (the list's row too goes without the Download label where it is longer than the window, as
-    // between 861 and 900 px; a phone's row scrolls as it did)
-    if (wide && !fits()) set(true, true, gal ? 6 : this.rbTiles || 6, 1);
+    // between 861 and 900 px, and below them before a button goes out of sight; a phone's one
+    // Download button has no label)
+    if (!fits()) set(true, true, gal ? 6 : this.rbTiles || 6, 1);
+    // (and below 861 px the three downloads are the phone's one Download button before the row's
+    // own buttons go under them: at 860 px Footnote, Citation and Link did)
+    if (!wideScreen() && !fits()) rb.classList.add('rb-dl1');
     // then whole groups fold into their buttons, the lowest rank first (not on a phone: its row scrolls)
     if (wide && wideScreen() && !fits()) {
       for (const g of [...groups].sort((a, b) => a.dataset.rank - b.dataset.rank || groups.indexOf(b) - groups.indexOf(a))) {
@@ -254,12 +262,25 @@ export const tabs = {
 
   // Ctrl+F1: the ribbon folded to its tabs, or shown again (kept for the next visit)
   toggleRibbon(force) {
+    // (a narrow window has no tabs to fold to: a setting made there would fold a wide one later)
+    if (force === undefined && !wideScreen()) return;
     const on = force ?? !document.body.classList.contains('rb-collapsed');
     document.body.classList.toggle('rb-collapsed', on);
+    document.body.classList.remove('rb-peek');
     const b = $('#rb-collapse');
     if (b) { b.setAttribute('aria-pressed', on ? 'true' : 'false'); b.title = (on ? 'Show the ribbon' : 'Collapse the ribbon to its tabs') + ' (Ctrl+F1)'; }
     if (this.prefs && !!this.prefs.ribbon !== on) { this.prefs.ribbon = on; store(PREFS, this.prefs); }
     if (!on) requestAnimationFrame(() => this.ribbonFit());
+  },
+  // A tab pressed while the ribbon is folded shows it for a moment, as Word does: it folds again
+  // when the page is pressed or has the focus back, or after a button of it ran, and the setting
+  // stays folded (only Ctrl+F1 and the button change it)
+  peekRibbon(on) {
+    const b = document.body;
+    if (on && !b.classList.contains('rb-collapsed')) return;
+    if (b.classList.contains('rb-peek') === on) return;
+    b.classList.toggle('rb-peek', on);
+    if (on) requestAnimationFrame(() => this.ribbonFit());
   }
 };
 
@@ -276,7 +297,10 @@ export function installRibbon(app) {
   rb.addEventListener('mousedown', (e) => { if (!e.target.closest('select, input')) e.preventDefault(); });
   rb.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-cmd]');
-    if (b && !b.disabled && rb.contains(b)) app.runCommand(b.dataset.cmd, null, undefined, b);
+    if (b && !b.disabled && rb.contains(b)) {
+      app.runCommand(b.dataset.cmd, null, undefined, b);
+      if (!b.hasAttribute('aria-haspopup')) app.peekRibbon(false);
+    }
   });
   // a toolbar: arrows move between its controls (in the style list, up and down pick a style)
   rb.addEventListener('keydown', (e) => {
@@ -299,7 +323,7 @@ export function installRibbon(app) {
   list.addEventListener('click', (e) => {
     const t = e.target.closest('[role=tab]');
     if (!t) return;
-    if (document.body.classList.contains('rb-collapsed')) app.toggleRibbon(false);
+    app.peekRibbon(true);
     app.selectTab(t.dataset.tab, document.activeElement === t || document.activeElement === document.body);
   });
   list.addEventListener('keydown', (e) => {
@@ -311,7 +335,7 @@ export function installRibbon(app) {
       app.selectTab(to.dataset.tab, true);
     } else if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      if (document.body.classList.contains('rb-collapsed')) app.toggleRibbon(false);
+      app.peekRibbon(true);
       if (e.key !== 'ArrowDown') app.selectTab(shown[i].dataset.tab);
       const stop = app.ribbonRove().find((x) => x.tabIndex === 0);
       if (stop) stop.focus();
@@ -327,6 +351,9 @@ export function installRibbon(app) {
   $('#rb-collapse').addEventListener('mousedown', (e) => e.preventDefault());
   $('#rb-collapse').addEventListener('click', () => app.toggleRibbon());
   if (app.prefs && app.prefs.ribbon) app.toggleRibbon(true);
+  // (the folded ribbon shown for a moment folds again on a press elsewhere or the page's focus)
+  document.addEventListener('pointerdown', (e) => { if (!e.target.closest('#ribbon, #rb-top, .pop, [role=menu], [role=listbox]')) app.peekRibbon(false); }, true);
+  app.root.addEventListener('focusin', () => app.peekRibbon(false));
   for (const f of installers) f(app);
   document.addEventListener('selectionchange', app.ribbonSoon);
   document.addEventListener('focusin', app.ribbonSoon);

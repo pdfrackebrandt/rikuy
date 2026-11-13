@@ -2,6 +2,7 @@
 // calls another's command by its id (run(app, 'bold') in src/commands.js), never by importing it.
 // Their methods join App's prototype (src/app.js), the frame's first.
 
+import { joinMethods } from '../commands.js';
 import * as frame from './frame.js';
 import * as font from './font.js';          // B1 character formatting
 import * as para from './para.js';          // B2 paragraphs
@@ -19,4 +20,6 @@ import * as view from './view.js';
 import * as help from './help.js';
 import * as equation from './equation.js';  // B13 equations
 
-export const methods = Object.assign({}, ...[frame, font, para, lists, styles, find, page, table, picture, refs, review, insert, file, view, help, equation].map((m) => m.methods || {}));
+
+// (a method name two modules both add throws here: test/commands.test.mjs imports this file)
+export const methods = joinMethods({}, Object.fromEntries(Object.entries({ frame, font, para, lists, styles, find, page, table, picture, refs, review, insert, file, view, help, equation }).map(([k, m]) => ['src/cmd/' + k + '.js', m.methods || {}])));

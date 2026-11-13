@@ -216,12 +216,14 @@ export function controls() {
 export const controlsJson = () => JSON.stringify({ version: VERSION, controls: controls() }, null, 1) + '\n';
 
 // The ribbon's tabs as llms.txt lists them: each tab that has controls, the names of its controls
-// in their order, the contextual ones said so
+// in the order the screen has them (its groups' order, then each control's), the contextual ones
+// said so
 function ribbonList() {
   const all = controls().filter((x) => x.place === 'ribbon' && x.tab && !x.fit && x.role !== 'group');
   const out = [];
   for (const t of TABS) {
-    const here = all.filter((x) => x.tab === t.id);
+    const g = (x) => t.groups.findIndex((y) => y.id === x.group);
+    const here = all.filter((x) => x.tab === t.id).sort((x, y) => g(x) - g(y) || x.order - y.order);
     if (!here.length) continue;
     const names = [...new Set(here.map((x) => '"' + x.name + '"'))];
     out.push('  - ' + t.name + (t.ctx ? ' (shown while the caret is in a ' + ({ table: 'table', picture: 'picture', equation: 'equation', headfoot: 'header or footer' })[t.ctx] + ')' : '') + ': ' + names.join(', '));

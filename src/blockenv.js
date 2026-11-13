@@ -44,14 +44,16 @@ export const envClose = (name) => '\\end{' + name + '}';
 // takes (spacing and adjustwidth take some). The end is looked for in the last characters alone:
 // a pattern that starts with \s* is tried at every place of the text, and a stranger's
 // paragraph of 60 000 spaces took seconds at every move of the caret.
-export function envWords(src, s, e, names, nargs = {}) {
+// the environments that take an [option] after \begin: anywhere else "[t]" is text
+export const OPT_ENVS = new Set(['tcolorbox', 'figure', 'figure*', 'table', 'table*', 'minipage', 'itemize', 'enumerate', 'description', 'wrapfigure', 'multicols', 'quote*', 'lstlisting', 'framed', 'mdframed', 'adjustwidth*']);
+export function envWords(src, s, e, names, nargs = {}, opts = OPT_ENVS) {
   const m = /^\\begin\s*\{([A-Za-z*]+)\}/.exec(src.slice(s, Math.min(e, s + 200)));
   if (!m || !names.includes(m[1])) return null;
   const name = m[1];
   let i = s + m[0].length, opt = null;
   const args = [];
   const brace = (k) => { let d = 0; for (let j = k, z = Math.min(src.length, k + 4000); j < z; j++) { const c = src[j]; if (c === '\\') { j++; continue; } if (c === '{' || c === '[') d++; else if ((c === '}' || c === ']') && --d === 0) return j + 1; } return -1; };
-  if (src[i] === '[') { const z = brace(i); if (z < 0) return null; opt = src.slice(i + 1, z - 1); i = z; }
+  if (src[i] === '[' && (opts.has ? opts.has(name) : opts.includes(name))) { const z = brace(i); if (z < 0) return null; opt = src.slice(i + 1, z - 1); i = z; }
   for (let n = nargs[name] || 0; n > 0; n--) {
     if (src[i] !== '{') return null;
     const z = brace(i);
