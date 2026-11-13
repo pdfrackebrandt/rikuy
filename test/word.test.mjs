@@ -23,6 +23,8 @@ import { isBalanced } from '../src/parser.js';
 import { scriptNeeds, scriptLines, addScriptSetup, rtlDocument, INDIC } from '../src/scripts.js';
 import { scanDir, resolve } from '../src/wordbidi.js';
 import { zipSync } from 'fflate';
+import { pageForWord } from '../src/pageword.js';
+import { hfPlaces } from '../src/wordpage.js';
 
 const P = await createPandoc(fs.readFileSync(new URL('../node_modules/pandoc-wasm/src/pandoc.wasm', import.meta.url)));
 let n = 0;
@@ -452,7 +454,9 @@ await ok('a Word file of what pandoc alone loses: nothing goes without a word, a
   assert.ok(isBalanced(t, 0, t.length));
   // told: in the result and at the top of the source
   const said = r.warnings.join(' ');
-  for (const s of ['Armenian: Հայ', '1 chart', 'the header and footer text (“Draft: do not cite”)', '1 Word comment came in', '2 tracked changes in the file were accepted', 'Endnotes are footnotes', 'table of contents is LaTeX', '2 equations typed with a number'])
+  // (the header is kept now, as fancyhdr's: task 44)
+  assert.ok(t.slice(0, t.indexOf('\\begin{document}')).includes('\\usepackage{fancyhdr}\n') && t.includes('\\fancyhead[L]{Draft: do not cite}'), 'the header');
+  for (const s of ['Armenian: Հայ', '1 chart', '1 Word comment came in', '2 tracked changes in the file were accepted', 'Endnotes are footnotes', 'table of contents is LaTeX', '2 equations typed with a number'])
     assert.ok(said.includes(s), s + '\n' + said);
   assert.ok(t.startsWith('% Opened from a Word file by Rikuy.\n% - Not kept: 3 characters pdfLaTeX has no font'));
   // and the page reads it: a title, the contents, a page break, three floats, no raw source
@@ -1482,6 +1486,47 @@ await ok('a coauthor\'s edit in Japanese, Thai, Korean, Hebrew or Sinhala is a s
   const withRuby = edit(E.docx, (d) => d.replace(/<w:r>((?:<w:rPr>(?:(?!<\/w:rPr>)[\s\S])*<\/w:rPr>)?)<w:t xml:space="preserve">日本語の<\/w:t><\/w:r>/, (m, rpr) => '<w:r><w:ruby><w:rubyPr/><w:rt><w:r><w:t>にほんご</w:t></w:r></w:rt><w:rubyBase><w:r>' + rpr + '<w:t>日本語</w:t></w:r></w:rubyBase></w:ruby></w:r><w:r>' + rpr + '<w:t>の</w:t></w:r>'));
   assert.notEqual(withRuby.length, E.docx.length);
   assert.equal(importInto(withRuby, files).files.size, 0);
+});
+
+await ok('the page\'s set up goes to Word and comes back: paper, margins, columns, headers and footers with their fields, numbers, line numbers, colour, border', async () => {
+  const src = '\\documentclass[twocolumn,twoside]{article}\n\\usepackage[a4paper,landscape,margin=2cm,bindingoffset=1cm]{geometry}\n\\usepackage{fancyhdr}\n\\usepackage{lastpage}\n\\pagestyle{fancy}\n\\fancyhf{}\n\\renewcommand{\\headrulewidth}{0pt}\n'
+    + '\\fancyhead[LE,RO]{\\thepage}\n\\fancyhead[RE,LO]{\\textbf{My} paper \\& notes}\n\\fancyfoot[C]{Page \\thepage\\ of \\pageref{LastPage}}\n\\usepackage[pagewise]{lineno}\n\\linenumbers\n\\modulolinenumbers[5]\n\\usepackage{xcolor}\n\\pagecolor{yellow!10}\n'
+    + '\\usepackage{tikz}\n\\AddToHook{shipout/background}{\\begin{tikzpicture}[remember picture,overlay]\\draw ([shift={(1cm,-1cm)}]current page.north west) rectangle ([shift={(-1cm,1cm)}]current page.south east);\\end{tikzpicture}}\n'
+    + '\\begin{document}\n\\pagenumbering{roman}\n\\setcounter{page}{3}\nHello.\n\\end{document}\n';
+  const files = new Map([['main.tex', src]]);
+  const m = buildModel({ files, main: 'main.tex' });
+  const W = buildWordDoc(m, files, { main: 'main.tex' });
+  const E = exportDocx(P, { doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources: {}, bibs: [], page: pageForWord(m, src), project: { name: 'P', main: 'main.tex', files: [...files] } });
+  const parts = unzip(E.docx);
+  const d = text(parts.get('word/document.xml'));
+  const sect = d.slice(d.lastIndexOf('<w:sectPr'));
+  assert.match(sect, /<w:pgSz w:w="16838" w:h="11906" w:orient="landscape"\/>/);
+  assert.match(sect, /<w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" [^>]*w:gutter="567"\/>/);
+  assert.match(sect, /<w:pgBorders w:offsetFrom="page"><w:top w:val="single" w:sz="3" w:space="28"/);
+  assert.match(sect, /<w:lnNumType w:countBy="5" w:restart="newPage"\/><w:pgNumType w:fmt="lowerRoman" w:start="3"\/><w:cols w:num="2" w:space="199"\/>/);
+  assert.match(sect, /<w:headerReference w:type="default" r:id="rIdRikuyHF1"\/><w:headerReference w:type="even" r:id="rIdRikuyHF2"\/><w:footerReference w:type="default"/);
+  assert.match(d, /<w:background w:color="FFFFE6"\/>/);
+  const settings = text(parts.get('word/settings.xml'));
+  assert.ok(settings.indexOf('<w:evenAndOddHeaders/>') > settings.indexOf('<w:defaultTabStop') && settings.indexOf('<w:displayBackgroundShape/>') > settings.indexOf('<w:zoom'));
+  // the odd header: the title at the left, the page's number at the right; the even one mirrored
+  const h1 = text(parts.get('word/header1.xml')), h2 = text(parts.get('word/header2.xml'));
+  assert.match(h1, /<w:b\/><\/w:rPr><w:t xml:space="preserve">My<\/w:t>[\s\S]*paper &amp; notes[\s\S]*<w:tab\/>[\s\S]*<w:tab\/>[\s\S]*<w:fldSimple w:instr="PAGE">/);
+  assert.match(h2, /^[\s\S]*<\/w:pPr><w:fldSimple w:instr="PAGE">/);
+  assert.match(text(parts.get('word/footer3.xml')), /Page <\/w:t><\/w:r><w:fldSimple w:instr="PAGE">[\s\S]* of <\/w:t><\/w:r><w:fldSimple w:instr="NUMPAGES">/);
+  assert.match(text(parts.get('[Content_Types].xml')), /PartName="\/word\/header1.xml" ContentType="application\/vnd.openxmlformats-officedocument.wordprocessingml.header\+xml"/);
+  // and opened again as a Word file: the same constructs in LaTeX
+  const back = docxToLatex(P, E.docx, 'x.docx').tex;
+  for (const want of ['\\documentclass[12pt,twocolumn,twoside]{article}', 'landscape', 'bindingoffset=1cm', '\\usepackage{fancyhdr}', '\\pagestyle{fancy}', '\\fancyhead[RO]{\\thepage{}}', '\\fancyhead[LO]{My paper \\& notes}', '\\fancyhead[LE]{\\thepage{}}',
+    '\\fancyfoot[CO]{Page \\thepage{} of \\pageref{LastPage}}', '\\usepackage{lastpage}', '\\usepackage[pagewise]{lineno}', '\\linenumbers', '\\modulolinenumbers[5]', '\\pagecolor[HTML]{FFFFE6}', 'shipout/background', '\\begin{document}\n\\pagenumbering{roman}\n\\setcounter{page}{3}']) {
+    assert.ok(back.includes(want.replace('[12pt,', back.includes('[12pt,') ? '[12pt,' : '[')), 'opened again it has ' + want + ':\n' + back.slice(0, 1400));
+  }
+  assert.ok(!/Not kept:.*header/.test(back), back.slice(0, 400));
+  // a header Word wrote: the page number as a field of three parts, the text centred by alignment
+  assert.deepEqual(hfPlaces('<w:hdr><w:p><w:pPr><w:jc w:val="center"/></w:pPr><w:r><w:t>Draft 50%</w:t></w:r></w:p></w:hdr>'), ['', 'Draft 50\\%', '']);
+  assert.deepEqual(hfPlaces('<w:ftr><w:p><w:r><w:t>A</w:t></w:r><w:r><w:tab/></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>7</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r><w:r><w:tab/></w:r><w:r><w:t>B</w:t></w:r></w:p></w:ftr>'), ['A', '\\thepage{}', 'B']);
+  // a coauthor's edit of the text still comes back with headers in the file
+  const plan = importInto(edit(E.docx, (x) => x.replace('Hello.', 'Hello again.')), files);
+  assert.equal(plan.files.get('main.tex'), src.replace('Hello.', 'Hello again.'));
 });
 
 console.log('word: ' + n + ' groups of checks passed');

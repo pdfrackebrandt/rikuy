@@ -6,7 +6,7 @@ import { register } from '../commands.js';
 
 const always = () => true;
 register(
-  { id: 'preview', name: 'Preview', el: 'b-pdf', static: true, place: 'bar', title: 'Show the PDF as TeX makes it, beside the page (Ctrl+P)', keysElsewhere: ['Ctrl+P'], synonyms: ['PDF', 'Print preview', 'Compile'], when: always, run: (app) => app.togglePdf() },
+  { id: 'preview', name: 'Preview', el: 'b-pdf', static: true, place: 'bar', title: 'Show the PDF as TeX makes it, beside the page', synonyms: ['PDF', 'Compile'], when: always, run: (app) => app.togglePdf() },
   { id: 'source', name: 'Source', el: 'b-src', static: true, place: 'bar', title: 'Show the source (Ctrl+\\)', keysElsewhere: ['Ctrl+\\'], synonyms: ['LaTeX source', 'Code'], when: always, run: (app) => app.toggleSource() },
   { id: 'zoom-out', name: 'Zoom out', el: 'b-zout', static: true, place: 'bar', only: 'wide', keysElsewhere: ['Ctrl+-'], when: always, run: (app) => app.setZoom(-1) },
   { id: 'zoom-fit', name: 'Fit width', el: 'zoomv', static: true, place: 'bar', synonyms: ['Zoom'], when: always, run: (app) => app.setZoom(0) },

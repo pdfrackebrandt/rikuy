@@ -347,7 +347,10 @@ try:
         t = src(page)
         toast = page.inner_text('#toast')
         shown = page.inner_text('#pages')
-        check('a rich Word file: the toast says what was not kept and what came differently', 'Not kept:' in toast and 'header and footer text' in toast and '1 chart' in toast and '1 Word comment came in' in toast and 'tracked changes' in toast, toast[:500])
+        # (its header is kept now, as fancyhdr's, and drawn on the page: task 44)
+        check('a rich Word file: the toast says what was not kept and what came differently', 'Not kept:' in toast and 'header and footer text' not in toast and '1 chart' in toast and '1 Word comment came in' in toast and 'tracked changes' in toast, toast[:500])
+        # (the title's page has the plain style, as \maketitle gives it: the pages after it have the header)
+        check('and its header comes as fancyhdr\'s, drawn at the top of the pages after the title\'s', '\\fancyhead[L]{Draft: do not cite}' in t and page.evaluate('[...document.querySelectorAll("#pages > .page .hd")].slice(1).some((h) => h.textContent.startsWith("Draft: do not cite"))'), t[:600])
         check('and the same notes stay at the top of the source', t.startswith('% Opened from a Word file by Rikuy.\n% - Not kept:') and '\\documentclass' in t.split('\n')[7], t[:300])
         check('its comment is a Rikuy comment under the words, its TeX inert', '\n% comment (Ana P) on "robust": Is it? \\input{/etc/passwd} 50% }\n' in t and 'passwd' not in shown, t[t.find('robust') - 60:t.find('robust') + 160])
         check('the page shows it: subtitle, contents, underlined and struck words, the centred line, both captions once, no stale contents',

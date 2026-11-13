@@ -244,6 +244,7 @@ export class Renderer {
         } else if (it.num) { el.appendChild(chr(it.num, 'secnum')); }
         this.inl(it.inl, el);
         item.keepNext = true;
+        item.level = it.level;
         item.sbEm = { 0: 2.5, 1: 1.5, 2: 1.35, 3: 1.35, 4: 1.1, 5: 1.1, abs: 0.6 }[it.level] ?? 1.2;
         break;
       }
@@ -373,12 +374,25 @@ export class Renderer {
         el.style.height = 'calc(var(--pt) * ' + Math.max(0, it.pt) + ' * 1px)';
         el.contentEditable = 'false';
         item.sbEm = 0;
+        // \vspace*{\fill}: what the page has left (src/layout.js)
+        if (it.fill) item.fill = true;
         break;
       }
       case 'pagebreak': {
         el.classList.add('pbk');
         el.contentEditable = 'false';
         item.kind = 'break';
+        // (to an odd page, a column's end, or one that ends a column alone: src/layout.js)
+        item.odd = !!it.odd; item.column = !!it.column; item.only = !!it.only;
+        break;
+      }
+      case 'pagemark': {
+        // \thispagestyle, \pagenumbering and their like: nothing on the page but its header,
+        // footer and numbers (src/layout.js)
+        el.classList.add('pbk');
+        el.contentEditable = 'false';
+        item.kind = 'mark';
+        item.mark = it.mark;
         break;
       }
       case 'rule': {
@@ -390,6 +404,8 @@ export class Renderer {
       default:
         return null;
     }
+    // a paragraph of multicols: set in its columns (src/layout.js)
+    if (it.mc) { item.cols = it.mc.n; item.region = it.mc.key; item.balance = !it.mc.star; }
     return item;
   }
 
