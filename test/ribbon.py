@@ -112,9 +112,11 @@ def letters(page):
     before = src(page)
     select_text(page, 'words')
     press(page, 'rb-u')
-    check('U underlines the selection and keeps it selected', '\\underline{words}' in src(page) and page.evaluate('getSelection().toString()') == 'words' and state(page)['rb-u'][1], src(page)[src(page).find('slanted'):][:40])
+    # (\uline, ulem's, which breaks across lines: Home's Font group, src/cmd/font.js)
+    check('U underlines the selection and keeps it selected', '\\uline{words}' in src(page) and page.evaluate('getSelection().toString()') == 'words' and state(page)['rb-u'][1], src(page)[src(page).find('slanted'):][:40])
     press(page, 'rb-u')
-    check('U again takes the underline off', src(page) == before and not state(page)['rb-u'][1])
+    # (the line that loads ulem stays: other words may use it)
+    check('U again takes the underline off', src(page).replace('\\usepackage[normalem]{ulem}\n', '') == before and not state(page)['rb-u'][1])
     select_text(page, 'First')
     press(page, 'rb-b'); press(page, 'rb-i')
     check('B and I on a selection', '\\emph{\\textbf{First}}' in src(page) or '\\textbf{\\emph{First}}' in src(page), src(page)[src(page).find('Opening'):][:60])
@@ -285,12 +287,13 @@ def keyboard(page):
     stops = page.evaluate('[...document.querySelectorAll("#ribbon select, #ribbon button")].filter((x) => x.tabIndex === 0).map((x) => x.id)')
     # (the ribbon is the tablist "Ribbon" over one toolbar per tab, named after it; Home's groups in Word's order: Font, Paragraph, Styles, Insert)
     bar = page.evaluate('(() => { const t = document.querySelector("#rp-home > [role=toolbar]"); return [document.getElementById("rb-tabs").getAttribute("role"), document.getElementById("rb-tabs").getAttribute("aria-label"), t && t.getAttribute("aria-label")]; })()')
-    check('the ribbon\'s open tab is a toolbar with one tab stop', bar == ['tablist', 'Ribbon', 'Home'] and stops == ['rb-b'], (bar, stops))
+    # (its first control is the Clipboard group's Format Painter, in Word's order)
+    check('the ribbon\'s open tab is a toolbar with one tab stop', bar == ['tablist', 'Ribbon', 'Home'] and stops == ['rc-format-painter'], (bar, stops))
     page.focus('#rb-st-p')
     seen = []
     for key in ('ArrowRight', 'ArrowLeft', 'ArrowLeft', 'End', 'Home', 'ArrowRight'):
         page.keyboard.press(key); seen.append(page.evaluate('document.activeElement.id'))
-    check('arrows, Home and End move between its controls (the strip\'s disabled arrows skipped)', seen == ['rb-st-section', 'rb-st-p', 'rb-ol', 'b-save', 'rb-b', 'rb-i'], seen)
+    check('arrows, Home and End move between its controls (the strip\'s disabled arrows skipped), the font box among them', seen == ['rb-st-section', 'rb-st-p', 'rb-ol', 'b-save', 'rc-format-painter', 'rb-font'], seen)
     page.focus('#rb-i'); page.keyboard.press('ArrowLeft')
     ring = page.evaluate('(() => { const c = getComputedStyle(document.activeElement); return c.outlineStyle !== "none" && parseFloat(c.outlineWidth) > 0; })()')
     page.keyboard.press('Enter'); page.wait_for_timeout(200)
@@ -616,7 +619,7 @@ def gallery_widths(page):
     LaTeX always in sight; the list where three tiles do not fit and on phones; one row height."""
     load_doc(page, DOC)
     seen = {}
-    for w in (1920, 1600, 1536, 1440, 1366, 1300, 1280, 1180, 1100, 1024, 1000, 900, 820, 390):
+    for w in (1920, 1840, 1800, 1760, 1700, 1600, 1536, 1440, 1366, 1300, 1280, 1180, 1100, 1024, 1000, 900, 820, 390):
         page.set_viewport_size({'width': w, 'height': 900}); page.wait_for_timeout(250)
         click_text(page, 'First paragraph', 2); page.wait_for_timeout(120)
         seen[w] = page.evaluate("""() => { const r = document.getElementById('ribbon'), sel = document.getElementById('rb-style');
@@ -626,12 +629,13 @@ def gallery_widths(page):
             arrows: !!document.getElementById('rb-st-up').offsetParent }; }""")
     print('     widths:', {w: (len(v['tiles']), 'list' if v['list'] else '', 'names' if v['names'] else '', v['h']) for w, v in seen.items()})
     six = ['p', 'section', 'subsection', 'subsubsection', 'latex', 'quote']
-    check('at 1600 and 1920 px all six tiles with the insert buttons\' names, no paging arrows, a row that does not scroll', all(seen[w]['tiles'] == six and seen[w]['names'] and not seen[w]['arrows'] and not seen[w]['over'] for w in (1600, 1920)), {w: seen[w] for w in (1600, 1920)})
-    check('at 1366, 1440 and 1536 px the insert buttons keep their names: the gallery has fewer tiles instead, LaTeX among them', all(seen[w]['names'] and 'latex' in seen[w]['tiles'] and len(seen[w]['tiles']) >= 3 and seen[w]['arrows'] and not seen[w]['over'] for w in (1366, 1440, 1536)), {w: seen[w]['tiles'] for w in (1366, 1440, 1536)})
+    # (the widths as Home has its Font group, in Word's two rows: src/cmd/font.js)
+    check('at 1800 and 1920 px all six tiles with the insert buttons\' names, no paging arrows, a row that does not scroll', all(seen[w]['tiles'] == six and seen[w]['names'] and not seen[w]['arrows'] and not seen[w]['over'] for w in (1800, 1920)), {w: seen[w] for w in (1800, 1920)})
+    check('at 1600, 1700 and 1760 px the insert buttons keep their names: the gallery has fewer tiles instead, LaTeX among them', all(seen[w]['names'] and 'latex' in seen[w]['tiles'] and len(seen[w]['tiles']) >= 3 and seen[w]['arrows'] and not seen[w]['over'] for w in (1600, 1700, 1760)), {w: seen[w]['tiles'] for w in (1600, 1700, 1760)})
     order = {3: ['p', 'section', 'latex'], 4: ['p', 'section', 'subsection', 'latex'], 5: ['p', 'section', 'subsection', 'subsubsection', 'latex'], 6: six}
     tiled = [w for w in seen if seen[w]['tiles']]
     check('wherever the gallery shows, its first page is Normal and Heading 1 with LaTeX in sight (Normal, Heading 1, LaTeX for three), and the row does not scroll', all(seen[w]['tiles'] == order[len(seen[w]['tiles'])] and not seen[w]['over'] for w in tiled), {w: seen[w]['tiles'] for w in tiled})
-    check('the row is as tall with the list as with the gallery (no jump between 1024 and 1000 px)', seen[1024]['tiles'] and seen[1000]['list'] and seen[1024]['h'] == seen[1000]['h'], (seen[1024]['h'], seen[1000]['h']))
+    check('the row is as tall with the list as with the gallery (no jump between 1280 and 1180 px)', seen[1280]['tiles'] and seen[1180]['list'] and seen[1280]['h'] == seen[1180]['h'], (seen[1280]['h'], seen[1180]['h']))
     check('narrower, the style list takes the gallery\'s place, with LaTeX and Quote', all(seen[w]['list'] and not seen[w]['tiles'] and seen[w]['opts'] == six for w in (900, 820, 390)) and seen[390]['page'] <= 0 and seen[390]['h'] <= 44, {w: seen[w] for w in (820, 390)})
     page.set_viewport_size({'width': 390, 'height': 800}); page.wait_for_timeout(300)
     click_text(page, 'Second paragraph', 3); state(page)
@@ -645,14 +649,14 @@ def gallery_paging(page):
     the arrows hand the focus on at their ends; the gallery pages to the caret's style; the strip's
     targets are 24 px or more; a tile that cannot apply keeps its tooltip, which says why."""
     load_doc(page, WRAP('Text here.\n\n\\subsubsection{Deep}\nUnder it.'))
-    page.set_viewport_size({'width': 1180, 'height': 900}); page.wait_for_timeout(300)
+    page.set_viewport_size({'width': 1440, 'height': 900}); page.wait_for_timeout(300)
     click_text(page, 'Text here', 2); state(page)
     POS = """() => { const r = (id) => { const b = document.getElementById(id).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.width), Math.round(b.height)]; };
       return { up: r('rb-st-up'), down: r('rb-st-down'), more: r('rb-st-more'), bold: r('rb-b'), gal: r('rb-gallery'), tiles: [...document.querySelectorAll('#rb-gallery [data-style]')].filter((b) => !b.hidden).map((b) => b.dataset.style) }; }"""
     a = page.evaluate(POS)
     page.click('#rb-st-down'); page.wait_for_timeout(120)
     b = page.evaluate(POS)
-    check('at 1180 px Next shows the last four styles (a full page) and the gallery, the arrows and Bold stay where they were', len(a['tiles']) == 4 and b['tiles'] == ['subsection', 'latex', 'subsubsection', 'quote'] and all(a[k] == b[k] for k in ('up', 'down', 'more', 'bold', 'gal')), (a, b))
+    check('at 1440 px Next shows the last four styles (a full page) and the gallery, the arrows and Bold stay where they were', len(a['tiles']) == 4 and b['tiles'] == ['subsection', 'latex', 'subsubsection', 'quote'] and all(a[k] == b[k] for k in ('up', 'down', 'more', 'bold', 'gal')), (a, b))
     check('the arrows and More are 24 px wide or more and as tall as the box', all(a[k][1] >= 24 and a[k][2] >= 24 for k in ('up', 'down', 'more')), a)
     page.click('#rb-st-up'); page.wait_for_timeout(120)
     # by keyboard: an arrow that reaches its end gives the focus to the other one

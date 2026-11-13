@@ -48,6 +48,7 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | the ribbon: tabs, contextual tabs, groups folding, the keyboard | `ribbonBuild`, `makeControl`, `selectTab`, `ribbonContexts`, `ribbonSync`, `ribbonFit`, `ribbonRove`, `runCommand`, `toggleRibbon`, `peekRibbon`, `installRibbon` (`src/ribbon/tabs.js`); `ribbonAt`, `insertEmpty`, `dropEmpty`, `ribbonBack` (`src/ribbon.js`) |
 | the Styles gallery and the paragraph's style | `styleSync`, `paintGallery`, `pageGallery`, `openStyles`, `tileOrder`, `installGallery` (`src/ui/gallery.js`); `blockStyle`, `setBlockStyle` (`src/cmd/styles.js`); `restyle`, `latexSpot` (`src/styles.js`) |
 | keys, the search box, the right click menu, the kit | `matches`, `lookup`, `installKeys` (`src/keys.js`); `installSearch` (`src/ui/search.js`); `openContextMenu`, `installMenu` (`src/ui/menu.js`); `openMenu`, `openGallery`, `splitButton`, `colorPicker`, `numberField`, `dialog` (`src/ui/kit.js`) |
+| a character format (Bold to Font Color, the boxes, the Font dialog, the Format Painter) | `toggle`, `setValue`, `wrapIn`, `clearFormats`, `chainAt`, `preambleFor`, `docSizeEdits`, `docFontEdits`, `changeCase`, `autoFormat` (`src/charfmt.js`); `fmtCommit`, `fmtToggle`, `fmtSet`, `fontState`, `fontBox` (`src/cmd/font.js`); `openFontDialog` (`src/ui/fontdialog.js`) |
 | an edit of the preamble, an inline wrapper, an environment around paragraphs | `usePackages`, `kvEdits`, `classOptions`, `setPackageKeys`, `defineOnce` (`src/preamble.js`); `App.packageEdits`, `preambleOthers`; `wrapEdits`, `unwrapEdits`, `standsFree`, `rewrapEdits`, `enclosing`, `clearText`, `GROUPS` (`src/wrap.js`); `envWords`, `wrapBlockEdits`, `unwrapBlockEdits` (`src/blockenv.js`) |
 | the side panel: outline and problems; versions and changes | `toggleNav`, `refreshNav`, `goTo` (`src/nav.js`); `snapshot`, `currentChanges`, `renderChanges`, `paintChanges` (`src/review.js`) |
 | LaTeX paragraphs (`% rikuy: latex`) | `isLatexMark` (`src/styles.js`); `Builder.texBlock`, `cutOpen` (`src/model.js`); `Renderer.item` case `tex`; `App.texBox`, `texEdit`, `texEnter`, `texDelete`, `showTexGhost` (`src/app.js`) |
@@ -258,6 +259,25 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   and out again byte for byte). `ensurePackages` and the picture's `graphicx` use the first,
   `toggleStyle` the second (so `{\bfseries …}`, which the page draws without a range of its own,
   is found in the source and comes off exactly), Quote the third.
+- **Character formatting** (Home's Font group, task 39) is `src/charfmt.js`, pure and tested on
+  strings (`test/font.test.mjs`), over `src/wrap.js`: each format is a kind of `GROUPS` (bold,
+  underline, strike, size, colour, family, ...), and `toggle`, `setValue`, `wrapIn` and
+  `clearFormats` take the text and the selection and give back the text and the selection after
+  them, so the Font dialog's changes chain into one commit. It reads itself the forms
+  `src/wrap.js` leaves out: a declaration with arguments (`{\color{red} …}`,
+  `{\fontsize{14}{17}\selectfont …}`, `{\fontfamily{ppl}\selectfont …}`) and an option after the
+  arguments (`\scalebox{1.5}[1]{…}`). `needsOf` says what a written command needs and
+  `preambleFor` writes it once (ulem, xcolor with dvipsnames, or `\PassOptionsToPackage` before
+  tikz; the highlighter's and the double strikethrough's one line definitions); `docSizeEdits` and
+  `docFontEdits` are the document's size and font (the class's option, extarticle, KOMA's
+  fontsize; a font package's line in place of the last one's, or `\setmainfont`); `changeCase`
+  and `autoFormat` the rest. `src/cmd/font.js` registers the commands and commits each action
+  (`fmtCommit`: the caret's file, then the main file's preamble); `chainAt` reads the wrappers
+  around the caret once for each look at the ribbon, for every toggle's pressed state and the
+  boxes. `src/ui/fontdialog.js` is the Font dialog and the Phonetic Guide. On the page
+  `src/model.js` draws what they write (its inline table, `fontLook`, extsizes' base sizes) and
+  `paint` in `src/render.js` sets sizes, tracking, shifts and the highlighter's colour as numbers
+  and checked colours only.
 - **Styles.** `blockStyle` reads the caret's block into `{v, to, b}`: its style now, the styles it
   may take, and where its words are; `restyle` (`src/styles.js`, tested on strings in
   `test/styles.test.mjs`) turns that into the smallest edits: Normal to LaTeX writes the mark's

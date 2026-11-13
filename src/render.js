@@ -754,8 +754,17 @@ const NAMED = { lightgreen: '#cfeccf', verylightgreen: '#e6f5e6', lightblue: '#d
 // served without the artifact host's policy lets it).
 // a styled run's colour (or its background, for \colorbox), through the style API only
 function paint(s, x) {
+  // a size, a tracking, a shift or a scale the source gives in numbers (src/model.js made them numbers)
+  const num = (v) => typeof v === 'number' && Number.isFinite(v);
+  if (num(x.fs)) s.style.fontSize = 'calc(var(--pt) * ' + Math.min(400, Math.max(1, x.fs)) + 'px)';
+  if (num(x.ls)) s.style.letterSpacing = Math.min(1, Math.max(-0.5, x.ls / 1000)) + 'em';
+  if (num(x.raise)) { s.style.position = 'relative'; s.style.top = 'calc(var(--pt) * ' + Math.min(200, Math.max(-200, -x.raise)) + 'px)'; }
+  if (num(x.scale)) { s.style.display = 'inline-block'; s.style.transform = 'scaleX(' + Math.min(10, Math.max(0.05, x.scale)) + ')'; s.style.transformOrigin = '0 50%'; }
   if (!x.color) return;
-  if (x.st === 'bg') s.style.background = cssColor(x.color); else s.style.color = cssColor(x.color);
+  // (the highlighter's colour is its background, as \colorbox's is)
+  if (x.st === 'bg' || x.st === 'hl') s.style.background = cssColor(x.color);
+  else if (x.st === 'ul') s.style.textDecorationColor = cssColor(x.color);
+  else s.style.color = cssColor(x.color);
 }
 const SAFE_COLOR = /^(#[0-9a-f]{3,8}|[a-z]+)$/i;
 function cssColor(c) {

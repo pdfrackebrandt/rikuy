@@ -94,7 +94,7 @@ def mouse_and_keys(page):
     check('one tab stop in the tablist: the open tab', stops == ['Home'], stops)
     page.keyboard.press('ArrowDown'); page.wait_for_timeout(80)
     into = page.evaluate('[document.activeElement.id, document.activeElement.closest("[role=toolbar]") && document.activeElement.closest("[role=toolbar]").getAttribute("aria-label")]')
-    check('the down arrow goes into the open tab\'s toolbar, to its tab stop', into == ['rb-b', 'Home'], into)
+    check('the down arrow goes into the open tab\'s toolbar, to its tab stop', into == ['rc-format-painter', 'Home'], into)
     page.focus('#rt-insert'); page.keyboard.press('Enter'); page.wait_for_timeout(80)
     check('Enter on a tab opens it and goes into its toolbar', page.evaluate('document.activeElement.closest("#rp-insert") !== null'))
     page.keyboard.press('Escape'); page.wait_for_timeout(80)
@@ -154,7 +154,8 @@ def widths(page):
             folded: [...document.querySelectorAll('.rb-grp.folded')].length, page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
             dl: [...document.querySelectorAll('.rb-dl button')].filter((x) => x.offsetParent).map((x) => x.id) }; }''')
     print('     widths:', seen)
-    check('at 1400 and 1024 px the tabs are a row above the toolbar, nothing folds and the row does not scroll', all(seen[w]['tabs'] and not seen[w]['sel'] and not seen[w]['over'] and not seen[w]['folded'] for w in (1400, 1024)), seen)
+    # (Home's Font group, in Word's two rows, leaves 1400 px unfolded; at 1024 px the lowest ranks fold)
+    check('at 1400 and 1024 px the tabs are a row above the toolbar and the row does not scroll; at 1400 px nothing folds', all(seen[w]['tabs'] and not seen[w]['sel'] and not seen[w]['over'] for w in (1400, 1024)) and not seen[1400]['folded'], seen)
     check('at 860 and 390 px the tabs are the combobox "Ribbon tab" at the row\'s start, in one row that scrolls sideways on a phone', all(not seen[w]['tabs'] and seen[w]['sel'] and seen[w]['h'] <= 44 and seen[w]['page'] <= 0 for w in (860, 390)) and seen[390]['over'], seen)
     check('the downloads: three at 1400 and 1024 px; one Download menu at 860 px, where the row has no room for three, and on a phone', all(seen[w]['dl'] == ['rb-pdf', 'rb-word', 'b-save'] for w in (1400, 1024)) and seen[860]['dl'] == ['rb-dl-menu'] and not seen[860]['over'] and seen[390]['dl'] == ['rb-dl-menu'], {w: seen[w]['dl'] for w in seen})
     page.set_viewport_size({'width': 390, 'height': 900}); page.wait_for_timeout(300)
@@ -169,7 +170,7 @@ def widths(page):
     page.set_viewport_size({'width': 1024, 'height': 900}); page.wait_for_timeout(300)
     click_text(page, 'Second paragraph', 3); page.wait_for_timeout(150)
     f = page.evaluate('''() => ({ folded: [...document.querySelectorAll('#rp-home .rb-grp.folded')].map((g) => g.dataset.group), over: document.getElementById('ribbon').scrollWidth > document.getElementById('ribbon').clientWidth + 1 })''')
-    check('at 1024 px with more than fits, groups fold, the lowest rank first (Editing, then Clipboard), and the row fits', {'editing', 'clipboard'} <= set(f['folded']) and not f['over'] and 'styles' not in f['folded'] and 'font' not in f['folded'], f)
+    check('at 1024 px with more than fits, groups fold, the lowest rank first (Editing, then Clipboard), and the row fits', {'editing', 'clipboard'} <= set(f['folded']) and not f['over'] and 'styles' not in f['folded'], f)
     gb = page.get_by_role('button', name='Editing', exact=True)
     check('a folded group is one button named after it; its own buttons are out of the accessibility tree', gb.count() == 1 and page.get_by_role('button', name='Editing test 0', exact=True).count() == 0 and not twice(page), twice(page))
     gb.click(); page.wait_for_timeout(200)
@@ -290,7 +291,7 @@ def context_menu(page):
     page.mouse.click(r[0], r[1], button='right'); page.wait_for_timeout(200)
     menu = page.get_by_role('menu', name='Context menu', exact=True)
     items = [menu.get_by_role('menuitem').nth(k).get_attribute('aria-label') for k in range(menu.get_by_role('menuitem').count())]
-    check('a right click on selected words opens Rikuy\'s menu "Context menu": Cut, Copy, Bold, Italic, New comment, Show in source', items[:6] == ['Cut', 'Copy', 'Bold', 'Italic', 'New comment', 'Show in source'], items)
+    check('a right click on selected words opens Rikuy\'s menu "Context menu": Cut, Copy, Bold, Italic, New comment, Font Settings, Show in source', items[:7] == ['Cut', 'Copy', 'Bold', 'Italic', 'New comment', 'Font Settings', 'Show in source'], items)
     menu.get_by_role('menuitem', name='Bold', exact=True).click(); page.wait_for_timeout(200)
     check('its Bold makes them bold, and the caret is back on the page', '\\textbf{Second paragraph} here.' in src(page) and page.evaluate('document.activeElement.id') == 'pages', src(page)[60:140])
     page.keyboard.press('Control+z'); page.wait_for_timeout(120)
@@ -374,7 +375,9 @@ def round_trips(page):
               forms=[body.replace('plain words', '{\\bfseries plain words}'), body.replace('plain words', '{\\bf plain words}')], label='Bold')
     roundtrip(page, body, 'plain words', 'italic', body.replace('plain words', '\\emph{plain words}'),
               forms=[body.replace('plain words', '\\textit{plain words}'), body.replace('plain words', '{\\itshape plain words}')], label='Italic')
-    roundtrip(page, body, 'plain words', 'underline', body.replace('plain words', '\\underline{plain words}'), forms=[body.replace('plain words', '\\uline{plain words}')], label='Underline')
+    # (Underline writes ulem's \uline, which breaks across lines, and loads ulem; \underline by hand still comes off)
+    ul = body.replace('\\begin{document}', '\\usepackage[normalem]{ulem}\n\\begin{document}')
+    roundtrip(page, body, 'plain words', 'underline', ul.replace('plain words', '\\uline{plain words}'), forms=[ul.replace('plain words', '\\underline{plain words}')], off=ul, label='Underline')
     roundtrip(page, body, ('Another', 3), 'style-heading1', body.replace('Another paragraph.', '\\section{Another paragraph.}'), off_command='style-normal', label='Heading 1')
     roundtrip(page, body, ('Another', 3), 'numbering', body.replace('Another paragraph.', '\\begin{enumerate}\n  \\item Another paragraph.\n\\end{enumerate}'), label='Numbered list')
 
