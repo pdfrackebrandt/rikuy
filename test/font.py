@@ -550,9 +550,62 @@ def review(page):
     page.keyboard.press('Escape')
 
 
+def review2(page):
+    """The verifier's last round on 921d945: each case on the page."""
+    # 1: Change Case over a table: each cell and row starts a word and a sentence
+    T = '\\begin{tabular}{ll}\nAb Cd & Ef Gh \\\\\nIj & Kl\n\\end{tabular}'
+    for mode, before, after in (('title', T, T), ('sentence', T.replace('Ab Cd & Ef Gh', 'ab cd & ef gh').replace('Ij & Kl', 'ij & kl'), T.replace('Cd', 'cd').replace('Gh', 'gh'))):
+        load_doc(page, WRAP(before)); page.wait_for_timeout(250)
+        page.evaluate("""() => { const sp = [...document.querySelectorAll('#pages span.t')]; const s = sp.find((x) => /ab/i.test(x.textContent)), e = sp.find((x) => /kl/i.test(x.textContent));
+          const r = document.createRange(); r.setStart(s.firstChild, 0); r.setEnd(e.firstChild, e.textContent.length); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }""")
+        page.wait_for_timeout(120); run_cmd(page, 'change-case', {'mode': mode})
+        check('verify 1: Change Case %s over a table: every cell and row starts its words%s' % (mode, ' and sentences' if mode == 'sentence' else ''), body(page) == after, body(page))
+    # 2: \SS drawn as two letters: one edit
+    load_doc(page, WRAP('STRA\\SS E and more.')); page.wait_for_timeout(200); click_text(page, 'and', 1)
+    page.keyboard.press('Control+a'); page.wait_for_timeout(120); run_cmd(page, 'change-case', {'mode': 'lower'})
+    check('verify 2: lowercase on \\SS gives \\ss once', body(page) == 'stra\\ss e and more.', body(page))
+    # 3: Greek's final sigma
+    load_doc(page, WRAP('ΟΔΟΣ ΚΑΙ ΣΟΦΙΑ.')); page.wait_for_timeout(200); click_text(page, 'ΚΑΙ', 1)
+    page.keyboard.press('Control+a'); page.wait_for_timeout(120); run_cmd(page, 'change-case', {'mode': 'lower'})
+    check('verify 3: lowercase Greek ends a word in ς', body(page) == 'οδος και σοφια.', body(page))
+    # 4: a selection over a heading: the heading stays out of the line (and the document compiles)
+    H = WRAP('Some text here.\n\\section{Head Title}\nMore text.', '\\usepackage[normalem]{ulem}\n')
+    load_doc(page, H); page.wait_for_timeout(200); place(page, ('text here', 'More'))
+    page.keyboard.press('Control+u'); page.wait_for_timeout(300)
+    check('verify 4: Underline over a heading leaves the heading out: \\uline{text here.} \\section{Head Title} \\uline{More}', body(page) == 'Some \\uline{text here.}\n\\section{Head Title}\n\\uline{More} text.', body(page))
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        page.set_default_timeout(600000)
+        r = page.evaluate("""async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile(); return { ok: r.ok, problems: (window.rikuy.api.problems ? window.rikuy.api.problems() : []) }; }""", src(page))
+        page.set_default_timeout(30000)
+        errs = [x for x in (r.get('problems') or []) if isinstance(x, dict) and x.get('severity') == 'error']
+        check('verify 4: and it compiles in the page with no error (\\uline{\\section..} stopped TeX)', r['ok'] and not errs, r)
+    # 4: Select All over a document that reads in another file: both files
+    files = {'main.tex': WRAP('Intro words here.\n\n\\input{chap}\n\nLast words.'), 'chap.tex': 'Chapter words here.\n'}
+    load_doc(page, files); page.wait_for_timeout(300); click_text(page, 'Intro', 1)
+    page.keyboard.press('Control+a'); page.wait_for_timeout(120); run_cmd(page, 'bold')
+    m, ch = src(page), page.evaluate("window.rikuy.src('chap.tex')")
+    check('verify 4: Ctrl+A, Bold over a document with \\input: the main file\'s words and the file read in, \\input left out', '\\textbf{Intro words here.}' in m and '\\textbf{Last words.}' in m and '\\input{chap}' in m and '\\textbf{\\input' not in m and ch.startswith('\\textbf{Chapter words here.}'), (m[m.index('\\begin{document}'):], ch))
+    check('verify 4: and all of it is still selected', 'Chapter' in page.evaluate('String(getSelection())') and 'Intro' in page.evaluate('String(getSelection())'), page.evaluate('String(getSelection())')[:80])
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('verify 4: one undo takes it off both files', src(page) == files['main.tex'] and page.evaluate("window.rikuy.src('chap.tex')") == files['chap.tex'], page.evaluate("window.rikuy.src('chap.tex')"))
+    click_text(page, 'Intro', 1); page.keyboard.press('Control+a'); page.wait_for_timeout(120); run_cmd(page, 'change-case', {'mode': 'upper'})
+    check('verify 4: Ctrl+A, UPPERCASE: every file\'s words', 'INTRO WORDS HERE.' in src(page) and 'LAST WORDS.' in src(page) and page.evaluate("window.rikuy.src('chap.tex')").startswith('CHAPTER WORDS HERE.'), page.evaluate("window.rikuy.src('chap.tex')"))
+    # 5: the largest size says so
+    load_doc(page, WRAP('A {\\Huge big} z.')); page.wait_for_timeout(200); select_text(page, 'big')
+    page.evaluate('document.getElementById("toast").hidden = true')
+    page.keyboard.press('Control+]'); page.wait_for_timeout(250)
+    check('verify 5: Increase Font Size at \\Huge changes nothing and says it is the largest', body(page) == 'A {\\Huge big} z.' and 'largest' in page.inner_text('#toast'), page.inner_text('#toast'))
+    # 5: Home fits at 521 and 525 px with every group it can fold folded
+    for w in (521, 525):
+        page.set_viewport_size({'width': w, 'height': 900}); page.wait_for_timeout(250)
+        over = page.evaluate("(() => { const r = document.getElementById('ribbon'); return r.scrollWidth - r.clientWidth; })()")
+        check('verify 5: Home\'s row fits at %d px' % w, over <= 1, over)
+    page.set_viewport_size({'width': 1400, 'height': 900})
+
+
 def run():
     with sync_playwright() as p:
-        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, compiles)
+        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, compiles)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             browser, page, errors = open_page(p, width=1400, height=900)
             try:

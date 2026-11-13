@@ -1441,6 +1441,20 @@ Tests:
     `word.py` 110, `scripts.py` 302, `find.py` 76, `outline.py` 59, `offline.py` 54/54,
     `launch.py` 18/18, `deploy_check.py` 43/43, `pages_check.py` fits, actionlint clean, the
     corpus model run 716 of 716 with the same unknown commands.
+    *The verifier's last round on 921d945* (each with a test, `font.test.mjs`'s "verify" groups and
+    `font.py`'s `review2`): Change Case starts a word and a sentence at each cell, row, item,
+    paragraph and line break the page draws, and in the source at `&`, `\\`, `\item`, headings,
+    environments and blank lines (a single line end in a paragraph is a space); one edit for one
+    source however many letters the page draws from it (`\SS`, which the page now draws, as do
+    `\dh`, `\th` and `\ng`); Greek's final sigma; the page read only in the blocks the selection
+    touches, each character's place summed in the loop (300 KB after Ctrl+A: 100 ms to read, 170 ms
+    to work out; the rest of the second is the page drawn again). A heading and a file read in
+    (`\input`, `\include`, `\subfile`) stay out of a wrapper whole (`\uline{\section..}` stopped
+    TeX; the review's document compiles in the page). Select All over a document that reads in
+    files formats the main file's words and every file the page draws, in one step of undo, and
+    stays selected. Increase and Decrease Font Size at `\Huge` and `\tiny` say so; Home fits at
+    521 px with every group folded; a selection that would part a letter from its accent or vowel
+    sign says that.
 
 ## Open tasks
 

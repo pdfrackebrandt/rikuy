@@ -523,4 +523,48 @@ ok('review L3: the class\'s size: comments kept, an explicit size kept, beamer\'
   assert.deepEqual(F.docSizeEdits('\\documentclass{beamer}\n\\begin{document}x\\end{document}', 11), []);
 });
 
+// ---- the verifier's last round on 921d945 ----------------------------------------------------
+ok('verify: one edit for one source, \\SS and \\ss, a final sigma, cells and rows start words and sentences', () => {
+  // (the page draws \SS as two letters with one source: one edit, not two)
+  const s = 'STRA\\SS E x', i = s.indexOf('\\SS');
+  const drawn = { before: '', chars: [] };
+  for (let k = 0; k < s.length; k++) {
+    if (k === i) { drawn.chars.push({ s: i, e: i + 3, ch: 'S' }, { s: i, e: i + 3, ch: 'S' }); k += 2; continue; }
+    drawn.chars.push({ s: k, e: k + 1, ch: s[k], gap: s[k - 1] === ' ' ? 'word' : undefined });
+  }
+  assert.equal(F.changeDrawn(s, 0, s.length, drawn, 'lower').text, 'stra\\ss e x');
+  assert.equal(F.changeCase('stra\\ss e', 0, 9, 'upper').text, 'STRA\\SS E');
+  // Greek: a capital sigma ending a word is ς in small letters
+  assert.equal(F.changeCase('ΟΔΟΣ ΚΑΙ ΣΟΦΙΑ', 0, 14, 'lower').text, 'οδος και σοφια');
+  assert.equal(F.changeCase('ΟΔΟΣ ΚΑΙ ΣΟΦΙΑ', 0, 14, 'title').text, 'Οδος Και Σοφια');
+  // a cell, a row, a blank line start a word and a sentence; a line's end in a paragraph does not
+  const tab = 'ab cd & ef gh \\\\ ij & kl';
+  assert.equal(F.changeCase(tab, 0, tab.length, 'title').text, 'Ab Cd & Ef Gh \\\\ Ij & Kl');
+  assert.equal(F.changeCase(tab, 0, tab.length, 'sentence').text, 'Ab cd & Ef gh \\\\ Ij & Kl');
+  assert.equal(F.changeCase('one two\nthree.\n\nfour', 0, 20, 'sentence').text, 'One two\nthree.\n\nFour');
+  // and on the page's characters: a cell's start is a 'par' gap (src/cmd/font.js drawnChars)
+  const t2 = 'Ab Cd & Ef Gh', d2 = { before: '', chars: [...'Ab Cd'].map((ch, k) => ({ s: k, e: k + 1, ch })).concat([...'Ef Gh'].map((ch, k) => ({ s: 8 + k, e: 9 + k, ch, gap: k ? undefined : 'par' }))) };
+  assert.equal(F.changeDrawn(t2, 0, t2.length, d2, 'title'), null);
+  assert.equal(F.changeDrawn(t2.toLowerCase(), 0, t2.length, { before: '', chars: d2.chars.map((c) => ({ ...c, ch: c.ch.toLowerCase() })) }, 'title').text, 'Ab Cd & Ef Gh');
+  // 300 KB in a quarter of a second or so (the page's own part)
+  const para = 'Some \\textbf{bold} and \\emph{italic} words with \\textcolor{blue}{more} text here. ';
+  let big = ''; while (big.length < 300000) big += para + (big.length % 2000 < 90 ? '\n\n' : '');
+  const t0 = performance.now();
+  F.changeCase(big, 0, big.length, 'upper');
+  assert.ok(performance.now() - t0 < 1500, 'case: ' + (performance.now() - t0));
+});
+
+ok('verify: headings and the files read in stay out of a wrapper; a split letter says so', () => {
+  for (const s of ['Some text here.\n\\section{Head Title}\nMore text.', 'Some text here.\n\n\\section*{Head Title}\n\nMore text.']) {
+    const a = s.indexOf('text here'), b = s.indexOf('More') + 4;
+    const u = F.toggle(s, a, b, 'underline', { w: { cmd: 'uline' } }).text;
+    assert.ok(u.includes('\\section') && !/\\uline\{[^}]*\\section/.test(u) && u.includes('\\uline{text here.}') && u.includes('\\uline{More}'), u);
+  }
+  const inp = 'One \\input{chap} two.';
+  assert.equal(F.toggle(inp, 0, inp.length, 'bold').text, '\\textbf{One} \\input{chap} \\textbf{two.}');
+  const haraka = 'x ب\\textcolor{red}{َ}ت';
+  const r = F.toggle(haraka, haraka.indexOf('َ'), haraka.length, 'bold');
+  assert.ok(r.error && /accent or vowel sign/.test(r.error), JSON.stringify(r));
+});
+
 console.log('font: ' + n + ' groups of checks passed');

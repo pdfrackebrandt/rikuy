@@ -643,7 +643,8 @@ def marks_after_syntax(page):
         return s[s.index('\\begin{document}') + 17:s.index('\n\\end{document}')], (page.inner_text('#toast') if page.is_visible('#toast') else '')
     haraka = 'x \u0628\\textcolor{red}{\u064E}\u062A'
     got, toast = run(haraka, 2)
-    check('bold over a coloured vowel mark and the letter after it is refused, the source left whole', got == haraka and 'crosses structure' in toast, [got.encode('unicode_escape').decode(), toast])
+    # (the message names what would happen: B1's verifier found "crosses structure" misleading)
+    check('bold over a coloured vowel mark and the letter after it is refused, the source left whole, and says why', got == haraka and 'accent or vowel sign' in toast, [got.encode('unicode_escape').decode(), toast])
     got, toast = run(haraka, 1)
     check('bold on the letter after it wraps that letter', got == 'x \u0628\\textcolor{red}{\u064E}\\textbf{\u062A}', got.encode('unicode_escape').decode())
     accent = 'Start \\emph{cafe}\u0301s end.'

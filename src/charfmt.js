@@ -596,7 +596,7 @@ export function wrapIn(src, a, b, group, w) {
   if (segs.length > 2000) return { error: 'That selection is too long to format at once.' };
   // (a part that starts or ends at a mark that goes with a letter outside it, a vowel sign or an
   // accent written apart, would part the two: refused, as src/wrap.js refuses a cluster cut)
-  if (segs.length > 1 && segs.some(([s, e]) => /^\p{M}/u.test(c.text[s] || '') || /^\p{M}/u.test(c.text[e] || ''))) return { error: 'crosses' };
+  if (segs.length > 1 && segs.some(([s, e]) => /^\p{M}/u.test(c.text[s] || '') || /^\p{M}/u.test(c.text[e] || ''))) return { error: 'That would part a letter from its accent or vowel sign: select the whole letter.' };
   const edits = [];
   for (const [s, e] of segs) {
     const r = wrapEdits(c.text, s, e, open);
@@ -691,6 +691,10 @@ function breakAt(src, i, b) {
     }
     return Math.min(b, args(src, i + env[0].length, b));
   }
+  // (a heading with its title, and a file read in, stay out of a wrapper whole: \uline{\section..}
+  // stopped TeX, and \input's file has its own words)
+  const h = /^\\(?:part|chapter|(?:sub)*section|(?:sub)?paragraph|input|include|subfile|import|subimport)\*?(?![A-Za-z])/.exec(head);
+  if (h) return Math.min(b, args(src, i + h[0].length, b));
   const m = ROW.exec(head);
   if (!m) return i;
   return Math.min(b, m[0] === '\\par' || m[0] === '\\newline' ? i + m[0].length : args(src, i + m[0].length, b));
@@ -1323,26 +1327,44 @@ export function caseEdits(src, chars, mode, before = '', ok = null) {
     mode = L === up && L !== lo ? 'lower' : L === lo ? 'title' : L === titleCase(D, before).replace(/[^\p{L}]/gu, '') ? 'upper' : 'upper';
   }
   const want = targetCase(D, mode, before);
-  const edits = [];
+  const edits = [], taken = new Set();
   for (let k = 0; k < chars.length; k++) {
     const { s, e, ch } = chars[k], dir = want[at[k]];
-    if (!dir || !/\p{L}/u.test(ch) || (ok && !ok.has(s))) continue;
+    if (!dir || !isLetter(ch) || (ok && !ok.has(s))) continue;
     // (already in that case: nothing to do; ß is a small letter whose capital is \SS)
     const isUp = ch !== ch.toLowerCase() && ch === ch.toUpperCase(), isLo = ch !== ch.toUpperCase() && ch === ch.toLowerCase();
     if ((dir > 0 && !isLo) || (dir < 0 && !isUp)) continue;
-    const x = letterEdit(src, s, e, dir > 0);
+    // (one source for two drawn letters, \SS: one edit; a capital sigma ending a word is ς)
+    if (taken.has(s + ':' + e)) continue;
+    taken.add(s + ':' + e);
+    const next = chars[k + 1], prev = chars[k - 1];
+    const final = dir < 0 && ch === 'Σ' && !!prev && !prev.gap && isLetter(prev.ch) && !(next && !next.gap && isLetter(next.ch));
+    const x = letterEdit(src, s, e, dir > 0, final ? 'ς' : null);
     if (x) edits.push(x);
   }
   return edits.length ? { edits, mode } : null;
 }
 // for each character of the drawn text, the case the mode asks of it: 1 capital, -1 small, 0 none
+// what each character is to Change Case, worked out once for each character (a pattern for each
+// character of 300 KB took 200 ms): 1 a letter; else bits: 2 starts a word after it, 4 a line's
+// end, 8 a full stop, 16 a space, 32 a closing quote or bracket
+const KIND = new Map();
+const kindOf = (ch) => {
+  let k = KIND.get(ch);
+  if (k === undefined) {
+    k = /\p{L}/u.test(ch) ? 1 : (/[\s~(\[{"'`\u2018\u201C/-]/.test(ch) ? 2 : 0) | (ch === '\n' ? 4 : 0) | (/[.!?]/.test(ch) ? 8 : 0) | (/\s/.test(ch) ? 16 : 0) | (/["'\u2019\u201D)]/.test(ch) ? 32 : 0);
+    if (KIND.size < 4096) KIND.set(ch, k);
+  }
+  return k;
+};
+const isLetter = (ch) => kindOf(ch) === 1;
 function targetCase(D, mode, before) {
-  const out = [];
-  let word = !before || /[\s~(\[{"'`‘“-]$/.test(before), sentence = !before.trim() || /[.!?:]\s*$/.test(before);
+  const out = new Int8Array(D.length);
+  let word = !before || /[\s~(\[{"'`\u2018\u201C-]$/.test(before), sentence = !before.trim() || /[.!?:]\s*$/.test(before);
   for (let i = 0; i < D.length; i++) {
-    const ch = D[i];
+    const ch = D[i], k = kindOf(ch);
     let c = 0;
-    if (/\p{L}/u.test(ch)) {
+    if (k === 1) {
       if (mode === 'upper') c = 1;
       else if (mode === 'lower') c = -1;
       else if (mode === 'toggle') c = ch !== ch.toLowerCase() ? -1 : 1;
@@ -1350,22 +1372,22 @@ function targetCase(D, mode, before) {
       else if (mode === 'sentence') c = sentence ? 1 : -1;
       word = false; sentence = false;
     } else {
-      if (/[\s~(\[{"'`‘“/-]/.test(ch)) word = true;
-      if (/\n/.test(ch)) sentence = true;
-      if (/[.!?]/.test(ch)) sentence = 'next';
-      else if (/\s/.test(ch) && sentence === 'next') sentence = true;
-      else if (sentence === 'next' && !/["'’”)]/.test(ch)) sentence = false;
+      if (k & 2) word = true;
+      if (k & 4) sentence = true;
+      if (k & 8) sentence = 'next';
+      else if (k & 16 && sentence === 'next') sentence = true;
+      else if (sentence === 'next' && !(k & 32)) sentence = false;
     }
-    out.push(c);
+    out[i] = c;
   }
   return out;
 }
 // the drawn text with each word capitalised
 const titleCase = (D, before) => { const t = targetCase(D, 'title', before); return D.split('').map((ch, i) => (t[i] > 0 ? ch.toUpperCase() : t[i] < 0 ? ch.toLowerCase() : ch)).join(''); };
 // The edit that gives the letter drawn from [s, e) the other case (up: to capitals), or null
-function letterEdit(src, s, e, up) {
+function letterEdit(src, s, e, up, to = null) {
   const R = src.slice(s, e);
-  const flip = (c) => { const t = up ? c.toUpperCase() : c.toLowerCase(); return t.length === c.length ? t : c; };
+  const flip = (c) => { const t = to || (up ? c.toUpperCase() : c.toLowerCase()); return t.length === c.length ? t : c; };
   if ([...R].length === 1) { const t = flip(R); return t === R ? null : { s, e, t }; }
   const m = /^\\([A-Za-z]+)(?![A-Za-z])/.exec(R);
   if (m && LETTER_CMDS[m[1]] && /^\s*(?:\{\})?$/.test(R.slice(m[0].length))) {
@@ -1419,10 +1441,13 @@ export function caseChars(src, a, b) {
     }
     return k;
   };
+  // (gapNext: 'par' where a paragraph, a cell, a row, an item or a heading starts, a sentence's
+  // start; true where something not drawn stands between two words)
   const push = (s, e, ch) => {
-    chars.push({ s, e, ch, gap: chars.length && (gapNext || (last < s && /\s/.test(src.slice(last, s)))) ? 'word' : undefined });
+    chars.push({ s, e, ch, gap: chars.length && (gapNext || (last < s && /\s/.test(src.slice(last, s)))) ? (gapNext === 'par' ? 'par' : 'word') : undefined });
     last = e; gapNext = false;
   };
+  const par = () => { gapNext = 'par'; };
   for (let i = a, n = 0; i < b && n < 400000; n++) {
     const c = src[i];
     if (c === '%') { const z = src.indexOf('\n', i); i = z < 0 || z > b ? b : z; continue; }
@@ -1442,12 +1467,13 @@ export function caseChars(src, a, b) {
         i += m[0].length; continue;
       }
       let k = i + m[0].length;
-      if (!name) { i = m[0] === '\\\\' ? pass(k, 0) : k; continue; }
+      if (!name) { if (m[0] === '\\\\') { par(); i = pass(k, 0); } else i = k; continue; }
+      if (/^(?:item|par|newline|linebreak|part|chapter|(?:sub)*section|(?:sub)?paragraph|caption)$/.test(name)) par();
       if (name === 'begin' || name === 'end') {
         const env = /^\\(?:begin|end)\s*\{([^{}]{1,40})\}/.exec(src.slice(i, i + 60));
         if (!env) { i = k; continue; }
-        if (name === 'begin' && WHOLE.test(env[1])) { const z = src.indexOf('\\end{' + env[1] + '}', i); i = z < 0 ? b : z + 6 + env[1].length; gapNext = true; continue; }
-        i = name === 'begin' ? args(src, i + env[0].length, b) : i + env[0].length; gapNext = true; continue;
+        if (name === 'begin' && WHOLE.test(env[1])) { const z = src.indexOf('\\end{' + env[1] + '}', i); i = z < 0 ? b : z + 6 + env[1].length; par(); continue; }
+        i = name === 'begin' ? args(src, i + env[0].length, b) : i + env[0].length; par(); continue;
       }
       if (name === 'verb') { const y = src.indexOf(src[k], k + 1); i = y < 0 ? b : y + 1; gapNext = true; continue; }
       if (name === 'tikz') { const y = src.indexOf(';', k), q = sp(src, k); i = src[q] === '{' ? pass(q, 1) : y < 0 ? b : y + 1; gapNext = true; continue; }
@@ -1458,6 +1484,9 @@ export function caseChars(src, a, b) {
       continue;
     }
     if (c === '{' || c === '}') { i++; continue; }
+    // (a cell's end, a blank line: a sentence starts after; a line's end in a paragraph is a space)
+    if (c === '&') { par(); i++; continue; }
+    if (c === '\n') { let q = i + 1; while (q < b && (src[q] === ' ' || src[q] === '\t')) q++; if (src[q] === '\n') { par(); i = q + 1; continue; } push(i, i + 1, ' '); i++; continue; }
     push(i, i + 1, c);
     i++;
   }

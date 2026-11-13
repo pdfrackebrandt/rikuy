@@ -1284,6 +1284,11 @@ body.nav-on.nav-outline #nav { width: 460px; }
   .rb-grp[data-group="font"] > .rb-gbtn { display: inline-flex; width: auto; padding: 0 4px 0 8px; }
   .rb-grp[data-group="font"]:not(.ico) > .rb-gbtn > span { display: inline; }
 }
+/* (narrower still where Home has every other group folded: it fits from 521 px) */
+@media (max-width: 600px) {
+  .rb-grp[data-group="font"] > .btn.icon, .rb-grp[data-group="font"] .rb-split > .btn.icon:not(.rb-x) { width: 26px; }
+  .rb-grp[data-group="font"] .rb-split > .rb-x { width: 10px; }
+}
 /* folded, the Font group keeps Bold, Italic and Underline beside its button, one press away */
 .rb-grp[data-group="font"].folded > [data-cmd="bold"], .rb-grp[data-group="font"].folded > [data-cmd="italic"] { display: inline-flex !important; order: -1; }
 .rb-grp[data-group="font"].folded > .rb-split:has([data-cmd="underline"]) { display: inline-flex !important; order: -1; }

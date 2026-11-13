@@ -16,7 +16,8 @@ import * as F from '../charfmt.js';
 import { openMenu, colorPicker, BASE_COLORS, CARET } from '../ui/kit.js';
 import { $, mk } from '../ui/dom.js';
 import { docClass } from '../preamble.js';
-import { segOfSpan, charRange } from '../editor.js';
+import { segOfSpan } from '../editor.js';
+import { BLOCKS } from '../render.js';
 import { openFontDialog, openRubyDialog } from '../ui/fontdialog.js';
 
 const SVG = (paths) => '<svg viewBox="0 0 20 20" aria-hidden="true">' + paths + '</svg>';
@@ -131,24 +132,41 @@ export const methods = {
   fmtCommit(steps, o = {}) {
     const at = o.at || this.ribbonAt(), c = at && at.c;
     if (!c || c.ghost || this.texHere()) return false;
-    const f = c.f, src0 = this.src(f);
-    let st = { text: src0, a: c.a, b: c.b };
-    // (Select all: the document's body, not the page's last drawn character, which may be a footnote's)
-    const whole = !c.collapsed && f === this.main && this.wholeDoc ? this.wholeDoc() : null;
-    if (whole) st = { text: src0, a: whole.s, b: whole.e };
+    // (Select all: the main file's body, not the page's last drawn character, which may be a
+    // footnote's, and the whole of each file it reads in that the page draws (\input, \include);
+    // a selection over two files has a caret for its place, so Select all is read off the page)
+    const whole = this.wholeDoc ? this.wholeDoc() : null;
+    const f = whole ? this.main : c.f, src0 = this.src(f);
+    let st = { text: src0, a: c.a, b: c.b, f };
+    // (the words of a body or a file, not the blank lines around them)
+    const words = (t, a, b) => { while (a < b && /\s/.test(t[a])) a++; while (b > a && /\s/.test(t[b - 1])) b--; return [a, b]; };
+    if (whole) { const [a, b] = words(src0, whole.s, whole.e); st = { text: src0, a, b, f }; }
+    const more = whole ? [...new Set([...this.root.querySelectorAll('.it[data-b]')].map((el) => (BLOCKS.get(+el.dataset.b) || {}).f))].filter((x) => x && x !== f && this.files.has(x)) : [];
     // (a caret in a word: the word, as Word formats it; o.word 'inside' wants the caret inside it,
     // not at its ends, where what is typed next takes the format)
-    if (o.word && c.collapsed) { const w = F.wordAt(src0, c.a); if (w && (o.word !== 'inside' || (w[0] < c.a && c.a < w[1]))) st = { text: src0, a: w[0], b: w[1], word: c.a - w[0] }; }
+    if (o.word && c.collapsed && !whole) { const w = F.wordAt(src0, c.a); if (w && (o.word !== 'inside' || (w[0] < c.a && c.a < w[1]))) st = { text: src0, a: w[0], b: w[1], word: c.a - w[0], f }; }
     const needs = [];
     let r = null;
-    for (const step of steps) {
-      r = step(st.text, st.a, st.b, st);
-      if (!r) continue;
-      if (r.error) { this.toast(r.error === 'crosses' ? 'That selection crosses structure. Select text inside one paragraph or cell.' : r.error); return false; }
-      st = { ...st, ...r };
-      if (r.need) needs.push(...[].concat(r.need));
-    }
+    const run = (s0) => {
+      let x = s0;
+      for (const step of steps) {
+        r = step(x.text, x.a, x.b, x);
+        if (!r) continue;
+        if (r.error) { this.toast(r.error === 'crosses' ? 'That selection crosses structure. Select text inside one paragraph or cell.' : r.error); return null; }
+        x = { ...x, ...r };
+        if (r.need) needs.push(...[].concat(r.need));
+      }
+      return x;
+    };
+    st = run(st);
+    if (!st) return false;
     const main = this.main, edits = [];
+    for (const x of more) {
+      const t0 = this.src(x), [a0, b0] = words(t0, 0, t0.length), y = run({ text: t0, a: a0, b: b0, f: x });
+      if (!y) return false;
+      const dx = F.diffEdit(t0, y.text);
+      if (dx) edits.push({ f: x, ...dx });
+    }
     let text = st.text, shift = 0, mtext = f === main ? null : this.src(main);
     // the preamble's lines for what was written, then what the document itself takes (its font and
     // size, from the Font dialog): each on the text the one before left, all before the selection
@@ -172,6 +190,8 @@ export const methods = {
     this.closeGroup();
     this.commit(edits, caret, 'format');
     this.closeGroup();
+    // (all of it stays selected, every file's)
+    if (whole && this.selectAllText) this.selectAllText();
     return true;
   },
 
@@ -229,7 +249,7 @@ export const methods = {
     const W = F.around(src, a, b, 'size');
     const from = W ? (W.cmd === 'fontsize' ? F.nearestSize(base, F.sizeOf(base, W)) : W.cmd) : 'normalsize';
     const to = F.stepSize(from, dir);
-    if (!to) return false;
+    if (!to) { this.toast(dir > 0 ? 'That is LaTeX\'s largest size here (\\Huge): the size box takes any number of points.' : 'That is LaTeX\'s smallest size here (\\tiny): the size box takes any number of points.'); return false; }
     return this.fmtSet('size', to === 'normalsize' ? null : { cmd: to, decl: true }, { word: 'inside' });
   },
   // the document's next base size up or down, of those its class has
@@ -463,9 +483,9 @@ export const methods = {
   changeCase(mode) {
     const at = this.ribbonAt(), c = at && at.c;
     if (!c || c.ghost) return false;
-    return this.fmtCommit([(t, a, b) => {
+    return this.fmtCommit([(t, a, b, st) => {
       if (a === b) return null;
-      const D = this.drawnChars(c.f, a, b);
+      const D = this.drawnChars((st && st.f) || c.f, a, b);
       return D ? F.changeDrawn(t, a, b, D, mode) : F.changeCase(t, a, b, mode);
     }], { word: true, keepWord: false, at });
   },
@@ -479,20 +499,27 @@ export const methods = {
     if (!root) return null;
     const chars = [];
     let seen = false, item = null, pend = null, before = '', firstItem = null;
+    // (only the page's blocks that hold some of [a, b) are read: Ctrl+A on 300 KB walked every
+    // span, inside blocks of other files and far from the selection too)
+    const outside = (el) => { const B = BLOCKS.get(+el.dataset.b); return !!B && (B.f !== f || B.e < a || B.s > b); };
     const walk = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT, { acceptNode: (n) => {
       if (n.matches('.fn, .it.tex, [data-ctx="tex"]')) return NodeFilter.FILTER_REJECT;
-      if (n.matches('span.t') || (n.dataset && (n.dataset.a || n.dataset.m)) || n.matches('.it')) return NodeFilter.FILTER_ACCEPT;
+      if (n.matches('.it')) return n.dataset.b && outside(n) ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+      if (n.matches('span.t, td, th, tr, li, br') || (n.dataset && (n.dataset.a || n.dataset.m))) return NodeFilter.FILTER_ACCEPT;
       return NodeFilter.FILTER_SKIP;
     } });
     for (let n = walk.nextNode(), k = 0; n && k < 400000; n = walk.nextNode(), k++) {
-      if (n.matches('.it')) { item = n; if (chars.length) pend = 'par'; else before = ''; continue; }
+      // (a paragraph, a cell, a row or an item starts a word and a sentence; a line break a word)
+      if (n.matches('.it, td, th, tr, li')) { if (n.matches('.it')) item = n; if (chars.length) pend = 'par'; else before = ''; continue; }
       if (!n.matches('span.t')) { if (chars.length && pend !== 'par') pend = 'word'; else if (!chars.length) before += ' '; continue; }
       if (n.classList.contains('ph')) continue;
       const g = segOfSpan(n);
       if (!g || (g.seg.f || g.B.f) !== f) continue;
       const text = n.firstChild ? n.firstChild.data : '';
+      // (charRange's sums, in the loop: an array for each character of 300 KB was a third of the time)
+      const base = g.B.base, rel = g.seg.rel;
       for (let j = 0; j < text.length; j++) {
-        const [cs, ce] = charRange(g.B, g.seg, g.o + j);
+        const cs = base + rel[2 * (g.o + j)], ce = base + rel[2 * (g.o + j) + 1];
         if (ce <= a && !chars.length) { before = (before + text[j]).slice(-80); continue; }
         if (cs < a || ce > b || ce <= cs) continue;
         seen = true;
@@ -503,6 +530,7 @@ export const methods = {
     }
     return seen ? { chars, before: firstItem ? before : '' } : null;
   },
+
 
   // ---- Clear All Formatting -------------------------------------------------------------------
   // Character formats in and around the selection; with all, the paragraph's alignment too (an
