@@ -474,8 +474,10 @@ export const ribbon = {
     const st = this.rbStyle || { v: 'p' }, n = this.rbTiles || 6, starts = pageStarts(tileOrder(n, st.v === 'title').length, n);
     const cur = this.rbStart || 0;
     this.rbStart = dir < 0 ? starts.filter((x) => x < cur).pop() ?? starts[0] : starts.find((x) => x > cur) ?? starts[starts.length - 1];
-    this.paintGallery();
+    // which control had the focus is read before painting: some Chromium versions move the focus
+    // to the body at once when a focused button is disabled, others only at the next frame
     const a = document.activeElement;
+    this.paintGallery();
     if (a && a.closest && a.closest('.rb-gal') && isOff(a)) {
       const to = [$(dir < 0 ? '#rb-st-down' : '#rb-st-up'), ...$('#rb-gallery').querySelectorAll('[data-style]:not([hidden])')].find((x) => x.offsetParent && !isOff(x)) || $('#rb-st-more');
       this.ribbonRove(to);
