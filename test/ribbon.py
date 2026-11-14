@@ -335,7 +335,7 @@ def narrow(page):
 
 def top_bar(page):
     ids = page.evaluate('[...document.querySelectorAll("#bar .tools button:not(.ai-only)")].map((b) => b.id)')
-    check('the top bar keeps Open, Preview, Share, undo and redo, zoom, Source and Help', ids == ['b-open', 'b-pdf', 'b-share', 'b-undo', 'b-redo', 'b-zout', 'zoomv', 'b-zin', 'b-src', 'b-help'] and page.inner_text('#b-pdf').strip() == 'Preview', ids)
+    check('the top bar keeps Open, Preview, Share, undo (and its list of steps) and redo, zoom, Source and Help', ids == ['b-open', 'b-pdf', 'b-share', 'b-undo', 'b-undo-x', 'b-redo', 'b-zout', 'zoomv', 'b-zin', 'b-src', 'b-help'] and page.inner_text('#b-pdf').strip() == 'Preview', ids)
     page.evaluate('window.rikuy.toggleSource(true)'); page.wait_for_timeout(500)
     page.context.grant_permissions(['clipboard-read', 'clipboard-write'])
     page.click('#b-copy'); page.wait_for_timeout(300)

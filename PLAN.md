@@ -1639,6 +1639,56 @@ Tests:
     111, `offline.py` 54/54, `launch.py` 18/18, `deploy_check.py` 43/43, `pages_check.py` fits,
     actionlint clean, the corpus model run 716 of 716 with main's unknown commands.
 
+50. **B12, File, View and Help, with the owner's views.** Done in the code (branch
+    `wordgap-b12-file`). The owner asked for the math and everything to look and feel like Word,
+    to switch to LaTeX right there and back and forth with the PDF, and to be shown how the
+    interactive graphs work. *Views:* the status bar's Page · LaTeX · PDF (group "Views"; Word's
+    view buttons beside the zoom slider and percent) shows the page, the source or TeX's PDF
+    across the window, one at a time, at the same place: the caret's source position into
+    CodeMirror and back, SyncTeX into the PDF and back (the line at the top third of the PDF's
+    window, or the one clicked there); a current PDF shows without a compile, a stale one shows
+    while TeX makes the new one ("Updating the PDF"); the page stays laid out underneath, so
+    going back costs no layout; Preview and Source keep showing the PDF or the source beside the
+    page, and pressed in another view go back to the page first; the panes a reload opens with
+    stay as they were. The arrows move between the three; on a phone they are first in the status
+    bar, 44 px each. View's Read Mode, Print Layout and LaTeX Mode are the same three. *Show
+    LaTeX* (Shift+F9, the right click menu, View › Show; Ctrl+Shift+= in the equation field, as
+    Word's Linear; the Equation tab's Conversions group once B13 declares it) turns the caret's
+    paragraph or equation, or each block a selection touches, into its source where it stands:
+    a view, never an edit (no mark written). The model takes the blocks' starts
+    (`project.views`, kept in place across every change of the text) and draws them as the LaTeX
+    paragraph's box, so typing, Enter, undo and layout are that box's own; Esc shows it typeset;
+    Word's export and Export as read the model without it. *Interactive graphs, taught:* Help ›
+    Interactive graphs (how `\rikuywidget` is written, the widget's rules and height message, the
+    picture TeX prints, which download keeps what; B11's Insert › Interactive graph is offered
+    where registered) and Help › Learn Rikuy, a document of its own (`src/tour.js`, 5 KB) with
+    typing, the three views, an equation with Show LaTeX, and a live graph with two sliders whose
+    picture for TeX is a vector PDF made in the page from the same curve. *GAP rows:* F2 New from
+    template (article, report, book or thesis, letter, KOMA-Script, beamer, exam, CV; each
+    compiles in the page), F4 Recent documents (open, remove; no rename), F5 Properties (title,
+    author in place; subject and keywords through `\hypersetup` or hyperref's options, hyperref
+    with hidelinks where none is loaded, a `\hypersetup` line under beamer), F8 Check
+    accessibility (alt text, skipped levels, header rows, title, language; Tag the PDF writes
+    `\DocumentMetadata{lang=..,pdfstandard=ua-2,tagging=on}`), F12 Export as (HTML with MathML,
+    Markdown, ODT, RTF, EPUB, plain text, by the Word worker's pandoc), F22 Set as default (the
+    preamble kept in the browser for Blank document), H41 Show marks (Ctrl+Shift+8; partial:
+    paragraph ends, line breaks, hand set spaces; no `~` or `\label` marks), Q2 Undo's list
+    (the arrow "Undo options"; in the phone's menu panel too), Q3 Repeat (F4, Ctrl+Y with nothing
+    to redo), Q5 was B0's (Ctrl+F1), V1 Read Mode (the PDF view), V3 Draft (partial: the pages run
+    on with a dotted line where TeX turns the page; no reflow to the window as Web Layout),
+    V5 Focus (Esc or Leave Focus), V7 Side to Side, V11 One page and Multiple pages (the slider in
+    the place of a Zoom dialog), V12 Dark page (the screen only), HL1 (Learn Rikuy, Interactive
+    graphs, Keyboard shortcuts from the registry, What's new), S4 (views, slider, percent).
+    Not done: Q6 KeyTips (Alt is the browser's; F10 in the installed app is a task of its own),
+    V8 the ruler (B6's layout has no ruler to hang margins and indents on; M effort). File stays
+    a row of groups, not Word's backstage panel, so the fold rule, agents' names and the phone's
+    scrolling row hold. Security quick review: Check accessibility's two patterns backtracked on
+    a stranger's run of spaces (a minute for 200 000); now a bounded scan, with a test.
+    Evidence on main 3ad0d31 (with B3's lists): `npm test` green (`view` 13 checks new), `view.py` 100 and `file.py` 66
+    (with `dist/tex` and `dist/word`), `tabs.py` 115, `ribbon.py` 268, `agent.py` 138,
+    `browser.py` 189, `offline.py` 54/54, `launch.py` 18/18, `deploy_check.py` 43/43,
+    `pages_check.py` fits, the corpus model run 716 of 716 with main's unknown commands.
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000

@@ -14,6 +14,7 @@
       <button id="b-share" class="btn ghost" type="button" title="A link anyone can open and type in, or a copy for Overleaf" aria-label="Share"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="5" cy="10" r="2.2"/><circle cx="15" cy="5" r="2.2"/><circle cx="15" cy="15" r="2.2"/><path d="M7 9l6-3M7 11l6 3"/></svg><span>Share</span></button>
       <span class="sep"></span>
       <button id="b-undo" class="btn ghost icon" type="button" title="Undo (Ctrl+Z)" disabled aria-label="Undo"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5 3.5 8.5 7 12M4 8.5h8a4 4 0 0 1 0 8H9"/></svg><span class="sr">Undo</span></button>
+      <button id="b-undo-x" class="btn ghost icon undo-x" type="button" title="The last steps: undo several at once" aria-label="Undo options" disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 8.5l3 3 3-3"/></svg><span class="sr">Undo options</span></button>
       <button id="b-redo" class="btn ghost icon" type="button" title="Redo (Ctrl+Shift+Z)" disabled aria-label="Redo"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m13 5 3.5 3.5L13 12m3-3.5H8a4 4 0 0 0 0 8h3"/></svg><span class="sr">Redo</span></button>
       <span class="sep"></span>
       <div class="zoom" role="group" aria-label="Zoom">
@@ -117,7 +118,14 @@
     <span id="st-save">Kept in this browser</span>
     <button id="b-new" class="linkish" type="button" aria-label="New document">New document</button>
     <button id="b-sample" class="linkish" type="button" aria-label="Load the sample">Load the sample</button>
+    <div id="st-views" class="st-views" role="group" aria-label="Views">
+      <button id="sv-page" type="button" aria-pressed="true" aria-label="Page view" title="Page: the typeset page you type on"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5.5 2.5h9v15h-9zM8 6h4M8 9h4M8 12h3"/></svg><span>Page</span></button>
+      <button id="sv-latex" type="button" aria-pressed="false" aria-label="LaTeX view" title="LaTeX: the source across the window, at the same place"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 6-4 4 4 4m6-8 4 4-4 4"/></svg><span>LaTeX</span></button>
+      <button id="sv-pdf" type="button" aria-pressed="false" aria-label="PDF view" title="PDF: TeX's PDF across the window, at the same place"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5h7l3.5 3.5v11.5H5zM12 2.5V6h3.5M7.5 10h5M7.5 13h5"/></svg><span>PDF</span></button>
+    </div>
+    <div class="st-zoom"><input id="st-zoom" type="range" min="25" max="400" step="5" value="100" aria-label="Zoom" title="Zoom: drag, or Ctrl and + or -"><button id="st-zoomv" class="linkish" type="button" aria-label="Zoom level" title="The page at its actual size (Ctrl+0)">100%</button></div>
   </footer>
+  <button id="focus-x" class="focus-x" type="button" hidden aria-label="Leave Focus" title="Leave Focus (Esc)"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 5l10 10M15 5 5 15"/></svg><span>Leave Focus</span></button>
   <div id="bubble" class="bubble" role="toolbar" aria-label="Selection" hidden>
     <button type="button" data-act="bf" aria-label="Bold selection" title="Bold"><b aria-hidden="true">B</b></button>
     <button type="button" data-act="em" aria-label="Emphasize selection" title="Emphasis"><i aria-hidden="true">I</i></button>

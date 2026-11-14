@@ -316,9 +316,11 @@ export class Renderer {
         el.dir = 'ltr';
         el.spellcheck = false;
         el.setAttribute('role', 'paragraph');
-        el.setAttribute('aria-roledescription', 'LaTeX paragraph');
+        el.setAttribute('aria-roledescription', it.view ? 'LaTeX view' : 'LaTeX paragraph');
+        // (a block shown as its LaTeX for a while, src/cmd/view.js: no mark in the source)
+        if (it.view) el.classList.add('texview');
         this.inl(it.inl, el);
-        B.tex = { is: this.rel(it.is), ie: this.rel(it.ie), para: !!it.para, nest: it.nest.map(([s, e]) => [this.rel(s), this.rel(e)]) };
+        B.tex = { is: this.rel(it.is), ie: this.rel(it.ie), para: !!it.para, nest: it.nest.map(([s, e]) => [this.rel(s), this.rel(e)]), view: !!it.view };
         item.splittable = true;
         item.sbEm = 0.6;
         break;

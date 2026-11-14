@@ -563,7 +563,8 @@ class App {
   rebuild(caret) {
     const t0 = performance.now();
     let model;
-    try { model = buildModel({ files: this.files, main: this.main }, this.model && this.model.main === this.main ? this.model : null); model.main = this.main; }
+    // (views: the blocks shown as their LaTeX for a while, src/cmd/view.js Show LaTeX)
+    try { model = buildModel({ files: this.files, main: this.main, views: this.viewKeys() }, this.model && this.model.main === this.main ? this.model : null); model.main = this.main; }
     catch (e) {
       // The pages still show the text before this change, and their offsets no longer match it:
       // a keystroke there would land in the wrong place. They take no typing until a build works.
@@ -1025,7 +1026,8 @@ class App {
     if (this.srcRebuild.pending()) this.srcRebuild.flush();
     this.closePop(true);
     const h = this.redoStack.pop();
-    if (!h) { this.toast('Nothing to redo'); return; }
+    // nothing to redo: Ctrl+Y repeats the last command at the caret, as Word's does (src/cmd/view.js)
+    if (!h) { if (!this.repeatLast()) this.toast('Nothing to redo'); return; }
     for (const d of h.files) { const t = this.files.get(d.f) ?? ''; this.files.set(d.f, t.slice(0, d.s) + d.ins + t.slice(d.s + d.del.length)); }
     this.hist.push(h);
     const c = h.caretAfter || (h.files[0] ? { f: h.files[0].f, p: h.files[0].s + h.files[0].ins.length } : null);
@@ -1034,7 +1036,7 @@ class App {
     this.saveSoon();
     this.updateUndoUI();
   }
-  updateUndoUI() { $('#b-undo').disabled = !this.hist.length; $('#b-redo').disabled = !this.redoStack.length; }
+  updateUndoUI() { $('#b-undo').disabled = !this.hist.length; $('#b-redo').disabled = !this.redoStack.length; if ($('#b-undo-x')) $('#b-undo-x').disabled = !this.hist.length; }
 
   src(f) { return this.files.get(f) ?? ''; }
   savePrefs() { store(PREFS, this.prefs); }
@@ -1103,7 +1105,7 @@ class App {
     // Where the bar shows icons alone (a phone hides Help and the zoom steps too), the menu
     // panel lists each of its actions by name: the bar's own buttons, pressed from here.
     // The three downloads come first: on a phone the ribbon's end, where they are, is a swipe away.
-    for (const id of ['rb-pdf', 'rb-word', 'b-save', 'b-open', 'b-pdf', 'b-copy', 'b-share', 'b-undo', 'b-redo', 'b-zout', 'zoomv', 'b-zin', 'b-src', 'b-help']) {
+    for (const id of ['rb-pdf', 'rb-word', 'b-save', 'b-open', 'b-pdf', 'b-copy', 'b-share', 'b-undo', 'b-undo-x', 'b-redo', 'b-zout', 'zoomv', 'b-zin', 'b-src', 'b-help']) {
       const b = $('#' + id), a = mk('button', 'nav-act');
       a.type = 'button'; a.dataset.for = id;
       // (a menu item under the button's own name: the bar's button of that name is still there)
@@ -1703,7 +1705,8 @@ class App {
     const B = it && BLOCKS.get(+it.dataset.b);
     if (!B || !B.tex || !this.root.contains(it)) return null;
     const b = B.base, T = B.tex;
-    return { it, B, f: B.f, is: T.is + b, ie: T.ie + b, ms: lineAt(this.src(B.f), b), para: T.para, nest: T.nest.map(([s, e]) => [s + b, e + b]) };
+    // (a block shown as its LaTeX, view: no mark line before it; what is typed is written as it is)
+    return { it, B, f: B.f, is: T.is + b, ie: T.ie + b, ms: T.view ? T.is + b : lineAt(this.src(B.f), b), para: T.para, nest: T.nest.map(([s, e]) => [s + b, e + b]), view: !!T.view };
   }
   // whether source position p of file f is in the source of a LaTeX paragraph on the page
   texAt(f, p) {
@@ -1724,6 +1727,8 @@ class App {
   texEdit(T, a, b, t, kind) {
     const f = T.f, src = this.src(f);
     a = Math.max(T.is, Math.min(a, T.ie)); b = Math.max(a, Math.min(b, T.ie));
+    // a block shown as its LaTeX (Show LaTeX) has no mark to keep or take off: it is written as typed
+    if (T.view) { if (a !== b || t) this.commit([{ f, s: a, e: b, t }], { f, p: a + t.length, bias: -1 }, kind); return; }
     const nested = T.nest.some(([x, y]) => x < a && b < y);
     // A line break at an end of what is written there, beside nothing but spaces on that side of
     // the line (or the paragraph's own start or end), would be a blank line: it goes. Blank lines
@@ -1764,6 +1769,8 @@ class App {
   texEnter(T, c) {
     if (!c.collapsed) { this.texEdit(T, c.a, c.b, '\n', 'enter'); return; }
     const src = this.src(T.f), p = Math.max(T.is, Math.min(c.a, T.ie));
+    // (shown as its LaTeX: a line break with the line's indent, a blank line too, as in the source)
+    if (T.view) { const ind = /^[ \t]*/.exec(src.slice(Math.max(T.is, src.lastIndexOf('\n', p - 1) + 1), p))[0], nl = src.includes('\r\n') ? '\r\n' : '\n'; this.commit([{ f: T.f, s: p, e: p, t: nl + ind }], { f: T.f, p: p + nl.length + ind.length, bias: 1 }, 'enter'); return; }
     const ls = Math.max(T.is, src.lastIndexOf('\n', p - 1) + 1);
     let le = src.indexOf('\n', p);
     if (le < 0 || le > T.ie) le = T.ie;
@@ -1784,6 +1791,8 @@ class App {
     if (!c.collapsed) { this.texEdit(T, c.a, c.b, '', 'del'); return true; }
     // Backspace at its start takes the LaTeX style off, as at a list item's start the bullet
     // goes: the source stays, now typeset. A second one joins it to the paragraph before.
+    // (shown as its LaTeX: its edges stay where they are, as the source pane's would not move them)
+    if (T.view && ((back && c.a <= T.is) || (!back && c.a >= T.ie))) return true;
     if (back && c.a <= T.is) { this.commit([{ f: T.f, s: T.ms, e: T.is, t: '' }], { f: T.f, p: T.ms, bias: 1 }, 'block'); return true; }
     if (!back && c.a >= T.ie) {
       // Delete at its end brings the next paragraph's source in, on a line of its own
@@ -3153,6 +3162,8 @@ class App {
 
   // ---- source pane -----------------------------------------------------------------
   async toggleSource(force) {
+    // (in the LaTeX or PDF view across the window, src/cmd/view.js: back to the page, the source beside it)
+    if (this.leaveView() && force == null) force = true;
     const on = force ?? !document.body.classList.contains('src-on');
     if (on && document.body.classList.contains('pdf-on')) this.togglePdf(false);
     document.body.classList.toggle('src-on', on);
@@ -4341,6 +4352,7 @@ class App {
   // source line (SyncTeX), and clicking the page finds the spot in the PDF.
   // shown: the pane already holds what the last run left (Download PDF opens it on an error)
   togglePdf(force, shown) {
+    if (this.leaveView() && force == null) force = true;
     const on = force ?? !document.body.classList.contains('pdf-on');
     if (on && document.body.classList.contains('src-on') && window.innerWidth < 1500) this.toggleSource(false);
     document.body.classList.toggle('pdf-on', on);
@@ -4430,6 +4442,8 @@ class App {
   fromPdf(file, line) {
     const f = this.fromTexPath(file);
     if (!f) return;
+    // in the PDF view the page is not there to go to: the place is kept for going back to it
+    if (this.viewPdfClick && this.viewPdfClick(f, line)) return;
     this.goTo(f, lineStart(this.src(f), line));
   }
 

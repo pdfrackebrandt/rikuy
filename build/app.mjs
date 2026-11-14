@@ -537,6 +537,34 @@ Ctrl is Cmd on a Mac.
 - Click math, a citation or a cross reference to edit it; Alt+click shows that spot in the source
 - In an equation: names as in LaTeX or Word (\\alpha then Space), a/b for a fraction, x^2 and
   x_i, Space to step out, Tab to the next empty slot, Enter to finish
+- Shift+F9: Show LaTeX, the caret's paragraph or equation (each one a selection touches) shown
+  as its source where it stands, to type in (the source changes only as typed; Esc or Shift+F9
+  again shows it typeset). In the equation field, Ctrl+Shift+= does the same for the equation
+- Ctrl+Shift+8: Show marks (paragraph ends, line breaks and hand set spaces drawn, nothing written)
+- F4, or Ctrl+Y with nothing to redo: Repeat, the last command that wrote, again at the caret
+
+## Views, File and Help
+
+The status bar's group "Views" has three toggle buttons, "Page view", "LaTeX view" and "PDF view":
+the typeset page, the source across the window, or TeX's PDF across the window, one at a time,
+each opened at the place of the last (the caret's source position, SyncTeX into the PDF and back;
+a click in the PDF view picks the place to go back to). A PDF that is current shows at once; else
+TeX makes it while the old one shows. Preview and Source in the bar still show the PDF or the
+source beside the page (pressed in another view they go back to the page first). The slider
+"Zoom" and the button "Zoom level" (actual size) sit beside them on a wide window. The View tab:
+Read Mode (the PDF view), Print Layout (the page), LaTeX Mode (the LaTeX view), Draft (the pages
+run on), Outline; Show LaTeX, Show marks, Navigation pane; 100%, One page, Multiple pages, Page
+width; Side to Side, Dark page (the screen only), Focus (every bar hidden; Escape or "Leave
+Focus"). The File tab: Blank document (from the preamble kept by Set as default), New from
+template (article, report, book or thesis, letter, KOMA-Script, slides, exam, CV), Browse,
+Recent documents, Properties (dialog: Title, Author, Subject, Keywords; \\title, \\author and
+\\hypersetup's pdfsubject and pdfkeywords), Check accessibility (pictures without alt text, skipped
+heading levels, tables without a header row, no title or language; "Tag the PDF" writes
+\\DocumentMetadata{lang=..,pdfstandard=ua-2,tagging=on}), Export as (web page, Markdown,
+OpenDocument, RTF, EPUB, plain text, by pandoc, on a copy with Word), Print PDF, Set as default.
+The Help tab: How it works, Learn Rikuy (a document to try things in, with a live graph),
+Interactive graphs, Keyboard shortcuts, What's new, Report a problem, For AI agents. The arrow
+"Undo options" beside Undo lists the last steps to undo several at once.
 
 ## Character formatting
 

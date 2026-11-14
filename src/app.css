@@ -1438,3 +1438,116 @@ body.fpainting #pages { cursor: copy; }
   .ld-btns .btn { min-height: 44px; min-width: 72px; }
   .ld-level input[type="text"] { width: 56px; }
 }
+
+/* ---- B12: the views (Page · LaTeX · PDF), Show LaTeX, the View tab's page modes, Focus ---- */
+/* the status bar's three views, a segmented control as Word's view buttons beside the zoom */
+.st-views { display: inline-flex; flex: none; padding: 2px; gap: 2px; border-radius: 7px; background: color-mix(in srgb, var(--line) 55%, transparent); }
+.st-views button { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 9px; border: 0; border-radius: 5px; background: transparent; color: var(--mute); font-size: 12px; font-weight: 500; cursor: pointer; }
+.st-views button svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.st-views button:hover { color: var(--ink-ui); }
+.st-views button[aria-pressed="true"] { background: var(--paper); color: var(--blue-ink); box-shadow: 0 1px 2px rgba(20, 32, 44, .18); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .st-views button[aria-pressed="true"] { background: var(--panel); } }
+:root[data-theme="dark"] .st-views button[aria-pressed="true"] { background: var(--panel); }
+.st-views button:focus-visible, .st-zoom input:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.st-zoom { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.st-zoom input { width: 110px; height: 16px; margin: 0; accent-color: var(--blue); cursor: pointer; }
+#st-zoomv { min-width: 38px; text-align: right; color: var(--mute); text-decoration: none; font-size: 12px; }
+#st-zoomv:hover { color: var(--ink-ui); }
+/* Undo's arrow: the last steps (Word's Undo list) */
+#bar .btn.undo-x { width: 16px; margin-left: -6px; }
+#bar .btn.undo-x svg { width: 12px; height: 12px; }
+@media (max-width: 860px) { #bar .btn.undo-x { display: none; } }
+
+/* one view across the window: the LaTeX source, or TeX's PDF */
+/* (the page stays laid out underneath, at its width: back to it is instant, and the place holds) */
+body.view-latex #desk, body.view-pdf #desk { position: absolute; top: 0; bottom: 0; right: 0; width: var(--desk-w, 100%); visibility: hidden; pointer-events: none; }
+body.view-latex #gutter, body.view-pdf #gutter { display: none; }
+body.view-latex .st-zoom, body.view-pdf .st-zoom { visibility: hidden; }
+body.view-latex #srcpane { display: flex; flex: 1 1 auto; width: auto !important; position: static; box-shadow: none; border-left: 0; }
+body.view-pdf #pdfpane { display: flex; flex: 1 1 auto; width: auto !important; position: static; box-shadow: none; border-left: 0; }
+body.view-latex #cmhost .CodeMirror { font-size: 14px; }
+body.view-latex #cmhost .CodeMirror-lines { max-width: 980px; }
+
+/* Show LaTeX: a block shown as its source for now, not a LaTeX paragraph of the document's */
+.it.tex.texview { box-shadow: inset 2px 0 0 var(--blue), 0 0 0 1px color-mix(in srgb, var(--blue) 30%, transparent); background: #F2F7FC; }
+.it.tex.texview::before { content: "LaTeX view \00B7  Esc shows it typeset" / ""; color: #1D5C91; }
+
+/* Draft: the pages run on, a dotted line where TeX turns the page */
+body.pg-draft #pages { gap: 0; }
+body.pg-draft .page { box-shadow: 0 0 0 1px var(--line); }
+body.pg-draft .page + .page { border-top: 1px dashed #9AA6B2; }
+/* Side to Side, Multiple pages: the pages in a row */
+body.pg-side .sheet, body.pg-grid .sheet { width: max-content; min-width: 100%; }
+body.pg-side #pages { flex-direction: row; align-items: flex-start; padding: 0 28px; }
+body.pg-grid .sheet { width: auto; }
+body.pg-grid #pages { flex-direction: row; flex-wrap: wrap; justify-content: center; align-items: flex-start; padding: 0 22px; }
+body.pg-side .page, body.pg-grid .page { margin: 0; }
+
+/* Show marks: what TeX reads and does not print */
+body.show-marks .sheet .it.p::after, body.show-marks .sheet .it.h::after { content: "\00B6"; color: #3B82C4; font-family: var(--font-ui); font-weight: 400; font-size: .85em; margin-left: .15em; user-select: none; pointer-events: none; }
+body.show-marks .sheet .atom.a-br::before { content: "\21B5"; color: #3B82C4; font-family: var(--font-ui); font-size: .8em; }
+body.show-marks .sheet .atom.a-sp { outline: 1px dotted #3B82C4; outline-offset: -1px; }
+@media print { body.show-marks .sheet .it::after, body.show-marks .sheet .atom.a-br::before { content: none !important; } }
+
+/* Dark page: on the screen only */
+body.dark-page .sheet { --paper: #1E2227; --ink: #E4E7EB; color: var(--ink); }
+body.dark-page .page { box-shadow: 0 0 0 1px #343C46, 0 8px 28px rgba(0, 0, 0, .35); }
+body.dark-page .sheet .it.tex { background: #262C33; color: #D9DEE4; box-shadow: inset 2px 0 0 #4B5866; }
+body.dark-page .sheet .it.tex::before { color: #9AA7B4; }
+body.dark-page .sheet .it.tex.texview { background: #1C2C3B; box-shadow: inset 2px 0 0 var(--blue); }
+body.dark-page #pages { caret-color: #8CC4F2; }
+@media print { body.dark-page .sheet { --paper: #fff; --ink: #141414; } }
+
+/* Focus: the page alone */
+body.focus #bar, body.focus #rb-top, body.focus #ribbon, body.focus #status, body.focus #nav, body.focus #srcpane, body.focus #pdfpane, body.focus #gutter { display: none !important; }
+body.focus #desk { display: block !important; }
+.focus-x { position: fixed; top: calc(10px + env(safe-area-inset-top, 0px)); right: 14px; z-index: 40; display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid var(--line); border-radius: 15px; background: var(--chrome); color: var(--mute); font-size: 12.5px; cursor: pointer; opacity: .55; transition: opacity .15s; }
+.focus-x:hover, .focus-x:focus-visible { opacity: 1; color: var(--ink-ui); }
+.focus-x svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+
+/* phones: the three views first in the status bar, where the thumb is; 44 px under a finger */
+@media (max-width: 860px) {
+  body.view-latex #srcpane, body.view-pdf #pdfpane { position: absolute; inset: 0; width: 100% !important; z-index: 22; }
+}
+/* (a window narrower than its line: the slider goes, and the line scrolls by itself, never the page) */
+@media (max-width: 860px) {
+  .st-zoom { display: none; }
+  #status { white-space: nowrap; overflow-x: auto; scrollbar-width: none; }
+  #status::-webkit-scrollbar { display: none; }
+}
+@media (max-width: 520px) {
+  .st-views { order: -1; }
+  .st-views button { padding: 0 8px; }
+  .st-zoom { display: none; }
+}
+@media (pointer: coarse) {
+  #status { min-height: 44px; }
+  .st-views { padding: 0; background: transparent; }
+  .st-views button { height: 44px; min-width: 44px; justify-content: center; }
+  .focus-x { height: 44px; padding: 0 16px; }
+}
+/* Help's guides: Interactive graphs, Keyboard shortcuts, What's new */
+.pop.pop-guide { width: min(560px, calc(100vw - 16px)); gap: 6px; font-size: 13.5px; line-height: 1.5; }
+.pop-guide p { margin: 0 0 4px; }
+.pop-guide h3 { margin: 8px 0 2px; font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--blue-ink); }
+.pop-guide code { font: 12px var(--font-mono); background: var(--chrome); border-radius: 3px; padding: 0 3px; }
+.pop-guide .code-ex { margin: 2px 0 6px; padding: 8px 10px; font: 12px/1.5 var(--font-mono); background: var(--chrome); border: 1px solid var(--line); border-radius: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.pop-guide .news { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 5fr); gap: 6px 14px; margin: 0; }
+.pop-guide .news dt { font-weight: 600; }
+.pop-guide .news dd { margin: 0; color: var(--ink-ui); }
+@media (max-width: 520px) { .pop-guide .news { grid-template-columns: 1fr; } .pop-guide .news dd { margin-bottom: 6px; } }
+@media (pointer: coarse) { .pop-guide .btn.sm { min-height: 44px; } }
+/* Read Mode's PDF: a column to read, not a poster */
+body.view-pdf #pdf-host { width: 100%; max-width: 1040px; margin: 0 auto; }
+.pop-guide .keys { grid-template-columns: 12.5em minmax(0, 1fr); }
+.pop-props label.props-row { display: flex; flex-direction: column; gap: 3px; }
+.pop-props label.props-row > span { font-weight: 500; font-size: 12.5px; }
+.pop-props label.props-row small { color: var(--mute); font-size: 11.5px; }
+.pop-a11y .a11y-row { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.pop-a11y .a11y-row:last-child { border-bottom: 0; }
+@media (pointer: coarse) { .pop-props input { min-height: 44px; } .pop-props .btn.sm, .pop-a11y .btn.sm { min-height: 44px; } }
+/* File, View and Help (and Show LaTeX on the Equation tab) under a finger: 44 px each way */
+@media (pointer: coarse) {
+  .rb-panel[data-tab="file"] .btn, .rb-panel[data-tab="view"] .btn, .rb-panel[data-tab="help"] .btn, #re-latex { min-width: 44px; min-height: 44px; }
+  #st-zoomv { min-height: 44px; }
+}

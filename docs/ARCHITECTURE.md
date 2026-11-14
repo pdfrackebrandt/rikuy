@@ -491,6 +491,21 @@ prototype).
   one status line (`pdfSay`). `llms.txt` (`build/app.mjs`) tells agents all of this, and
   `test/agent.py` does what it says.
 
+### Views and Show LaTeX (src/cmd/view.js)
+
+`setView('page' | 'latex' | 'pdf')` shows one view across the window and carries the place: the
+caret's source position into CodeMirror, SyncTeX's `where` into the PDF, and back the CodeMirror
+cursor, or the line `pdfSpotAtView` reads with SyncTeX's `at` at the top third of the PDF's window
+(a click in the PDF view, `viewPdfClick`, is kept instead). It reuses `toggleSource` and `togglePdf`
+and keeps the page laid out underneath at its width, so going back costs no layout; those two ask
+`leaveView` first, so Preview and Source still mean "beside the page". Show LaTeX is a view, not
+an edit: `texViews` holds the starts of the blocks shown as source, `viewKeys` moves them along
+each change of the text (one changed stretch, found as prefix and suffix) and hands them to
+`buildModel` as `project.views`; the model's `asSource` turns those units into the LaTeX
+paragraph's `tex` item marked `view`, so typing, undo and layout are the LaTeX paragraph's own
+(`texEdit`, `texEnter`, `texDelete` skip the mark's rules for a view). Word's export and Export as
+read `plainModel()`, the model without views.
+
 ## 5. Live figures
 
 `rikuy.sty` (in `sample/widget/`; a document carries a copy beside its main file, so Overleaf

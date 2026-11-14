@@ -1124,3 +1124,22 @@ function walk(blocks, fn) {
   };
   go(blocks);
 }
+
+// ---- Export as (src/cmd/file.js) ----------------------------------------------------------------
+// The page's AST, as the Word export gets it, in another of pandoc's formats: a standalone web page
+// (its pictures inside it, equations as MathML), Markdown, OpenDocument, RTF, EPUB or plain text.
+// { bytes } of the file.
+const EXPORT_AS = { html: ['html5', 'out.html'], markdown: ['markdown', 'out.md'], odt: ['odt', 'out.odt'], rtf: ['rtf', 'out.rtf'], epub: ['epub3', 'out.epub'], txt: ['plain', 'out.txt'] };
+export function exportAs(P, req, to) {
+  const f = EXPORT_AS[to];
+  if (!f) throw new Error('unknown format ' + to);
+  const opts = { from: 'json', to: f[0], 'output-file': f[1], standalone: true };
+  if (to === 'html') { opts['html-math-method'] = { method: 'mathml' }; opts['embed-resources'] = true; }
+  if (req.citeproc && req.bibs && req.bibs.length) { opts.citeproc = true; opts.bibliography = req.bibs; if (req.csl) opts.csl = req.csl; }
+  if (req.toc && to !== 'txt') opts['table-of-contents'] = true;
+  const r = P.convert(opts, JSON.stringify(req.doc), req.resources || {});
+  let out = r.files[f[1]];
+  if (out == null && r.stdout) out = r.stdout;
+  if (out == null) throw new Error('pandoc wrote no file: ' + (r.stderr || '').trim().slice(0, 300));
+  return { bytes: typeof out === 'string' ? new TextEncoder().encode(out) : out };
+}

@@ -157,7 +157,8 @@ export const word = {
   },
 
   async wordRequest() {
-    const model = this.model;
+    // (the document as TeX reads it: blocks shown as their LaTeX for now, src/cmd/view.js, are a view)
+    const model = this.plainModel ? this.plainModel() : this.model;
     const bibs = [...this.files.keys()].filter((n) => /\.bib$/i.test(n));
     const csl = [...this.extra.keys()].find((n) => /\.csl$/i.test(n));
     const resources = {};

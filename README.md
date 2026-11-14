@@ -50,6 +50,12 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   a search box for any command by its name (Alt+Q), a right click menu of what applies where you
   are. Every button is a command of one registry, which agents find by name
   (`controls.json`, llms.txt) and run (`rikuy.api.run`).
+- **Page, LaTeX, PDF: one view at a time, at the same place.** The status bar switches between
+  the typeset page, the source and TeX's PDF across the window (SyncTeX both ways); Show LaTeX
+  (Shift+F9) turns one paragraph or equation into its source where it stands, as Word's Linear.
+  View has Read Mode, Draft, Side to Side, Multiple pages, Dark page and Focus; File has
+  templates, recent documents, properties, an accessibility check and Export as HTML, Markdown,
+  OpenDocument, RTF, EPUB; Help opens Learn Rikuy, a document with a live graph to play with.
 - **Find, Replace, Go To and the outline, as in Word.** Ctrl+F searches the text the page shows
   (50% finds `\%`), every hit marked and listed with its context in the Navigation pane; Ctrl+H
   replaces through the same escaping as typing, Replace All as one undo, with Word's wildcards,
