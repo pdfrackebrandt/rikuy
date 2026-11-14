@@ -48,6 +48,8 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
 
 ## What works
 
+- **Interactive graphs, as easily as Word's charts.** Insert › Interactive graph: a function with
+  sliders, data with a fit, a curve, a distribution; live on the page, a picture in the PDF.
 - **Typing on the page.** Text, bold and italic, formulas (in a MathLive field, written back
   as LaTeX), table cells, footnotes, `siunitx` quantities. The source pane shows every
   change as it lands.

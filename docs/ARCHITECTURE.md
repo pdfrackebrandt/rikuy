@@ -641,6 +641,26 @@ fallback from the widget's own generator.
   text with a message, and past 2 MiB, more than Chrome opens from its address bar, the link's
   note says to paste it onto the page or send the .zip.
 
+### Interactive graphs
+
+Insert › Interactive graph (`src/cmd/insert.js`, the dialog `src/ui/graphdialog.js`) makes live
+figures without writing HTML. `src/graph.js` holds `graphKit`, a function that uses nothing outside
+itself: the formula language (its own parser to closures, never `eval`), the four kinds (a
+function with sliders, data with a least squares fit, a parametric or polar curve, a distribution
+or the mean of n draws), their axes and the drawing on a canvas. Its text is copied into every
+graph's file, after the graph's description as JSON (`<script type="application/json"
+id="rikuy-graph">`), and the editor runs the same function to draw the PDF's picture
+(`graphPNG`) at the sliders' starting values, so the picture is the live figure by construction
+(`test/insert.py` compares their pixels). `readGraph` reads the description back to edit it;
+Update with nothing changed writes nothing. Insert is one commit: the file, the
+`\rikuywidget` block, `rikuy.sty` where the project has none, `\usepackage{rikuy}`, and the
+picture through `commit`'s `blobs` (a binary file in the history: undo takes it out or puts the
+old one back). On the page `WidgetLayer`'s host gives a graph's frame an Edit graph button
+(`--ws` keeps it 44 px on a phone's zoomed page) and the first time hint; the frame's own script
+asks for Rikuy's menu on a right click or long press (`{rikuy: "menu"}`), which the page grants
+only to a graph's frame, once a second. The dialog's preview is a sandboxed srcdoc frame like the
+page's.
+
 ## 6. The installed app (hosted build)
 
 The build without `RIKUY_SHARE` makes `dist/index.html` an installable app: `appPage()`

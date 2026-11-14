@@ -337,7 +337,8 @@ def context_menu(page):
     page.mouse.click(r[0], r[1], button='right'); page.wait_for_timeout(200)
     menu = page.get_by_role('menu', name='Context menu', exact=True)
     items = [menu.get_by_role('menuitem').nth(k).get_attribute('aria-label') for k in range(menu.get_by_role('menuitem').count())]
-    check('a right click on selected words opens Rikuy\'s menu "Context menu": Cut, Copy, Bold, Italic, New comment, Font Settings, Show in source', items[:7] == ['Cut', 'Copy', 'Bold', 'Italic', 'New comment', 'Font Settings', 'Show in source'], items)
+    # (B11: Paste after Copy, as in Word's menu)
+    check('a right click on selected words opens Rikuy\'s menu "Context menu": Cut, Copy, Paste, Bold, Italic, New comment, Font Settings, Show in source', items[:8] == ['Cut', 'Copy', 'Paste', 'Bold', 'Italic', 'New comment', 'Font Settings', 'Show in source'], items)
     menu.get_by_role('menuitem', name='Bold', exact=True).click(); page.wait_for_timeout(200)
     check('its Bold makes them bold, and the caret is back on the page', '\\textbf{Second paragraph} here.' in src(page) and page.evaluate('document.activeElement.id') == 'pages', src(page)[60:140])
     page.keyboard.press('Control+z'); page.wait_for_timeout(120)

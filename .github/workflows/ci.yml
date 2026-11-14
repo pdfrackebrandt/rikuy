@@ -107,6 +107,9 @@ jobs:
       # its compile in the page needs dist/tex and runs in tex.yml; here it says it skips that part
       - name: Styles (the gallery, every heading and environment, the Styles pane, Modify and Create a Style, the Design tab)
         run: cd test && python3 styles.py
+      # its compile on three engines needs dist/tex and runs in tex.yml; here it says it skips that part
+      - name: Insert, interactive graphs, the clipboard, symbols and AutoCorrect
+        run: cd test && python3 insert.py
       # its compile offline needs dist/tex and runs in tex.yml; here it says it skips that part
       - name: The installed app offline, its updates, and none in the artifact build
         run: cd test && python3 offline.py
