@@ -193,8 +193,27 @@ const unbrace = (v) => (typeof v === 'string' && /^\{[\s\S]*\}$/.test(v) ? v.sli
 
 // The edits that set keys of the picture's options: { key: value } sets, true a flag, null takes
 // it out. Brackets come where there were none and go where none is left.
+const SIZE_KEYS = new Set(['width', 'height', 'totalheight', 'scale', 'keepaspectratio']);
 export function keyEdits(src, P, changes) {
   if (!P.keyval) return null;
+  // A size key added where an angle is: before it. graphicx applies the keys in their order, and
+  // one after the angle sizes the turned box: a height after angle=-90 or 180 (a box all depth,
+  // height 0) stops TeX with "Division by 0", and a width and height after it cannot distort the
+  // picture as Word's fields do
+  const ai = P.kv.findIndex((i) => i.key === 'angle');
+  const late = ai < 0 ? [] : Object.entries(changes).filter(([k, v]) => v != null && SIZE_KEYS.has(k) && !P.kv.some((i) => i.key === k));
+  if (late.length) {
+    const rest = Object.fromEntries(Object.entries(changes).filter(([k]) => !late.some(([x]) => x === k)));
+    const e1 = kvEdits(src, P.opt.is, P.opt.ie, rest);
+    let t = src.slice(P.opt.is, P.opt.ie);
+    for (const x of e1) t = t.slice(0, x.s - P.opt.is) + x.t + t.slice(x.e - P.opt.is);
+    const A = parseKV(t).find((i) => i.key === 'angle');
+    t = t.slice(0, A.s) + late.map(([k, v]) => (v === true ? k : k + '=' + v)).join(',') + ',' + t.slice(A.s);
+    const old = src.slice(P.opt.is, P.opt.ie);
+    let a = 0; while (a < old.length && a < t.length && old[a] === t[a]) a++;
+    let z = 0; while (z < old.length - a && z < t.length - a && old[old.length - 1 - z] === t[t.length - 1 - z]) z++;
+    return [{ s: P.opt.is + a, e: P.opt.is + old.length - z, t: t.slice(a, t.length - z) }];
+  }
   if (P.opt) {
     const e = kvEdits(src, P.opt.is, P.opt.ie, changes);
     if (e.length) {
@@ -301,11 +320,14 @@ export function angleOf(src, P) {
   const R = P.wraps.find((w) => w.kind === 'rot');
   if (R) return Number.isFinite(R.angle) ? R.angle : 0;
   const a = keyOf(P, 'angle');
-  return a == null || a === true ? 0 : num(String(unbrace(a))) || 0;
+  return a == null || a === true ? 0 : num(String(unbrace(a)));
 }
+// whether the picture's turn is a number Rotate can add to (not \myangle)
+export const angleKnown = (src, P) => Number.isFinite(angleOf(src, P));
 const norm = (a) => { let x = ((a % 360) + 360) % 360; if (x > 180) x -= 360; return Math.round(x * 1000) / 1000; };
 // Rotate by delta degrees (Rotate Left 90°: 90, Rotate Right 90°: -90; graphicx turns counterclockwise)
 export function rotate(src, P, delta) {
+  if (!angleKnown(src, P)) return { error: 'The picture is turned by a macro\'s angle: edit it in the source.' };
   const R = P.wraps.find((w) => w.kind === 'rot');
   const to = norm(angleOf(src, P) + delta);
   if (R) {
@@ -348,8 +370,8 @@ export function unescapeAlt(t) { return String(t).replace(/\\textbackslash\{\}|\
 // { text, decorative } of the alt key, the artifact flag, or a "% alt: " line before it (graphics' own form)
 export function altOf(src, P) {
   if (P.keyval) {
-    const a = keyOf(P, 'alt');
-    return { text: a == null || a === true ? '' : unescapeAlt(unbrace(String(a))), decorative: keyOf(P, 'artifact') != null && keyOf(P, 'artifact') !== 'false', has: a != null };
+    const a = keyOf(P, 'alt'), c = altComment(src, P);
+    return { text: a == null || a === true ? '' : unescapeAlt(unbrace(String(a))), decorative: (keyOf(P, 'artifact') != null && keyOf(P, 'artifact') !== 'false') || !!(c && c.decorative), has: a != null };
   }
   const c = altComment(src, P);
   return { text: c ? c.text : '', decorative: false, has: !!c, comment: c };
@@ -359,7 +381,8 @@ function altComment(src, P) {
   if (!/^\s*$/.test(src.slice(ls, P.outer.s))) return null;
   const ps = src.lastIndexOf('\n', ls - 2) + 1, line = src.slice(ps, ls);
   const m = /^[ \t]*% alt: (.*?)\r?\n$/.exec(line);
-  return m ? { s: ps, e: ls, text: m[1] } : null;
+  if (m) return { s: ps, e: ls, text: m[1] };
+  return /^[ \t]*% alt \(decorative\)\r?\n$/.test(line) ? { s: ps, e: ls, text: '', decorative: true } : null;
 }
 // Alt text (escaped as TeX reads a key's value), or decorative (graphicx's artifact key, which
 // tagged PDF leaves out of what is read aloud); empty text and not decorative: both go
@@ -373,8 +396,19 @@ export function setAlt(src, P, text, decorative) {
     const ls = src.lastIndexOf('\n', P.outer.s - 1) + 1;
     return { edits: /^\s*$/.test(src.slice(ls, P.outer.s)) ? [{ s: ls, e: ls, t: line }] : [{ s: P.outer.s, e: P.outer.s, t: '%' + nl + line }] };
   }
-  const ch = decorative ? { alt: null, artifact: true } : { alt: text ? '{' + escapeAlt(text) + '}' : null, artifact: null };
-  return { edits: keyEdits(src, P, ch) };
+  // Decorative: a "% alt (decorative)" line above the picture. graphicx's artifact key, which
+  // tagged PDF reads, is TeX Live 2024's: a document taken to an older TeX would stop on it
+  const c = altComment(src, P);
+  if (decorative) {
+    const ed = keyEdits(src, P, { alt: null, artifact: null }) || [];
+    const nl = P.eol, line = '% alt (decorative)' + nl;
+    if (c) ed.push({ s: c.s, e: c.e, t: line });
+    else { const ls = src.lastIndexOf('\n', P.outer.s - 1) + 1; ed.push(/^\s*$/.test(src.slice(ls, P.outer.s)) ? { s: ls, e: ls, t: line } : { s: P.outer.s, e: P.outer.s, t: '%' + nl + line }); }
+    return { edits: ed };
+  }
+  const ed = keyEdits(src, P, { alt: text ? '{' + escapeAlt(text) + '}' : null, artifact: null }) || [];
+  if (c && c.decorative) ed.push({ s: c.s, e: c.e, t: '' });
+  return { edits: ed };
 }
 
 // ---- reset and change ---------------------------------------------------------------------------------
@@ -421,7 +455,13 @@ export function whyFixed(src, P, to, o = {}) {
   if (to === 'wrap') {
     if (P.anc.list) return 'wrapfig cannot wrap text in a list.';
     if (o.nextIsList) return 'wrapfig cannot wrap a list: the paragraph after the picture is a list.';
+    if (o.nextIsHeading) return 'wrapfig cannot wrap a heading: a heading follows the picture, and the figure would float away.';
+    // (in a quote, a theorem, a proof or any other environment built on a list, wrapfig stops:
+    // "wrapfigure used inside a conflicting environment")
+    const inner = P.path.filter((x) => x.n.t === 'env' && x.n !== B.env && x.n.name !== 'document').map((x) => x.n.name);
+    if (inner.length) return 'wrapfig cannot wrap text inside ' + inner[inner.length - 1] + ': move the picture out of it first.';
   }
+  if (to !== 'float' && B.kind === 'float' && /\*$/.test(B.env.name)) return 'A figure across the page\'s columns (figure*) has no in-line or wrapped form: it stays a figure*.';
   return null;
 }
 const nlAround = (src, s) => src[s - 1] === '\n';
@@ -453,10 +493,11 @@ export function setPosition(src, P, to, o = {}) {
     // a caption follows: \caption in a float, \captionof{figure} out of one (caption's)
     const C = B.caption;
     if (!C) return;
-    if (fromFloat && C.name === 'caption') { ed.push({ s: C.s, e: C.ne, t: '\\captionof{figure}' }); packages.push('caption'); }
+    const star = C.star ? '*' : '';
+    if (fromFloat && C.name === 'caption') { ed.push({ s: C.s, e: C.ne, t: '\\captionof' + star + '{figure}' }); packages.push('caption'); }
     if (!fromFloat && C.name === 'captionof') {
       const a = C.args[0];
-      if (a && /^figure$/.test(argText(src, a))) ed.push({ s: C.s, e: a.e, t: '\\caption' });
+      if (a && /^figure$/.test(argText(src, a))) ed.push({ s: C.s, e: a.e, t: '\\caption' + star });
     }
   };
   if (to.mode === 'inline') {
@@ -566,7 +607,7 @@ export function naturalSize(bytes, name = '') {
     return { w: w * 72 / (dx || 72), h: h * 72 / (dy || dx || 72), px: [w, h] };
   }
   if (b.length > 4 && b[0] === 0xff && b[1] === 0xd8) {
-    let dx = 0, dy = 0, w = 0, h = 0;
+    let dx = 0, dy = 0, w = 0, h = 0, ex = null;
     for (let i = 2, n = 0; i + 4 <= b.length && n < 2000; n++) {
       if (b[i] !== 0xff) { i++; continue; }
       const m = b[i + 1];
@@ -574,12 +615,16 @@ export function naturalSize(bytes, name = '') {
       const len = u16(i + 2);
       if (m === 0xe0 && i + 18 <= b.length && b[i + 4] === 0x4a && b[i + 5] === 0x46 && b[i + 6] === 0x49 && b[i + 7] === 0x46) {
         const unit = b[i + 11], x = u16(i + 12), y = u16(i + 14);
-        if (unit === 1) { dx = x; dy = y; } else if (unit === 2) { dx = Math.round(x * 2.54); dy = Math.round(y * 2.54); }
+        // (dots per centimetre: pdfTeX truncates them to dots per inch, 118 is 299)
+        if (unit === 1) { dx = x; dy = y; } else if (unit === 2) { dx = Math.trunc(x * 2.54); dy = Math.trunc(y * 2.54); }
       }
+      // Exif's resolution (a camera's JPEG has no JFIF), which the three engines read too
+      if (m === 0xe1 && !ex && i + 18 <= b.length && b[i + 4] === 0x45 && b[i + 5] === 0x78 && b[i + 6] === 0x69 && b[i + 7] === 0x66) ex = exifRes(b, i + 10, Math.min(b.length, i + 2 + len));
       if (m >= 0xc0 && m <= 0xcf && m !== 0xc4 && m !== 0xc8 && m !== 0xcc && i + 9 <= b.length) { h = u16(i + 5); w = u16(i + 7); break; }
       i += 2 + len;
     }
     if (!w || !h) return null;
+    if (!dx && ex) { dx = ex[0]; dy = ex[1]; }
     return { w: w * 72 / (dx || 72), h: h * 72 / (dy || dx || 72), px: [w, h] };
   }
   if (b.length > 5 && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) {
@@ -590,9 +635,37 @@ export function naturalSize(bytes, name = '') {
     for (let n = 0; (m = re.exec(t)) && n < 50; n++) { if (!best || m[1] === 'CropBox') best = m; if (m[1] === 'CropBox') break; }
     if (!best) return null;
     const v = best.slice(2).map(Number);
-    return { w: Math.abs(v[2] - v[0]), h: Math.abs(v[3] - v[1]) };
+    // (a page turned by /Rotate 90 or 270 is set across: pdfTeX swaps its sides)
+    const rot = /\/Rotate\s+(-?\d{1,4})\b/.exec(t);
+    const q = rot ? ((+rot[1] % 360) + 360) % 360 : 0;
+    const W = Math.abs(v[2] - v[0]), H = Math.abs(v[3] - v[1]);
+    return q === 90 || q === 270 ? { w: H, h: W } : { w: W, h: H };
   }
   return null;
+}
+// Exif's XResolution and YResolution in IFD0 as dots per inch ([x, y]), or null; t0 is the TIFF
+// header's place, end the segment's end. At most 200 entries are read.
+function exifRes(b, t0, end) {
+  const le = b[t0] === 0x49 && b[t0 + 1] === 0x49;
+  if (!le && !(b[t0] === 0x4d && b[t0 + 1] === 0x4d)) return null;
+  const u16 = (i) => (i + 2 <= end ? (le ? b[i] + (b[i + 1] << 8) : (b[i] << 8) + b[i + 1]) : 0);
+  const u32 = (i) => (i + 4 <= end ? (le ? b[i] + (b[i + 1] << 8) + (b[i + 2] << 16) + ((b[i + 3] << 24) >>> 0) : ((b[i] << 24) >>> 0) + (b[i + 1] << 16) + (b[i + 2] << 8) + b[i + 3]) : 0);
+  const ifd = t0 + u32(t0 + 4);
+  const n = Math.min(200, u16(ifd));
+  let x = 0, y = 0, unit = 2;
+  const rat = (off) => { const a = u32(t0 + off), d = u32(t0 + off + 4); return d ? a / d : 0; };
+  for (let k = 0; k < n; k++) {
+    const e = ifd + 2 + k * 12;
+    if (e + 12 > end) break;
+    const tag = u16(e);
+    if (tag === 0x011a) x = rat(u32(e + 8));
+    else if (tag === 0x011b) y = rat(u32(e + 8));
+    else if (tag === 0x0128) unit = u16(e + 8);
+  }
+  if (!(x > 0)) return null;
+  if (unit === 3) { x = Math.trunc(x * 2.54); y = Math.trunc((y || x) * 2.54); }
+  else if (unit !== 2) return null;
+  return [x, y || x];
 }
 
 // ---- the box graphicx makes -------------------------------------------------------------------------
@@ -612,31 +685,31 @@ export function graphicBox(kv, nat, lw) {
     const c = cropOf(P, nat);
     if (c) { crop.l = c.l / nat.w; crop.r = c.r / nat.w; crop.b = c.b / nat.h; crop.t = c.t / nat.h; w = Math.max(1, (nat.w - c.l - c.r) * BP); h = Math.max(1, (nat.h - c.b - c.t) * BP); }
   }
-  let iw = w, ih = h, angle = 0, sized = false;
-  const size = () => {
-    if (sized) return;
-    sized = true;
-    const W = lengthPt(get('width'), lw), H = lengthPt(get('height') ?? get('totalheight'), lw), S = get('scale');
-    const keep = get('keepaspectratio') != null;
-    let sx = 1, sy = 1;
-    if (W != null && H != null && !keep) { sx = W / bw0(); sy = H / bh0(); }
-    else if (W != null && H != null && keep) { const f = Math.min(W / bw0(), H / bh0()); sx = sy = f; }
-    else if (W != null) sx = sy = W / bw0();
-    else if (H != null) sx = sy = H / bh0();
-    else if (S != null && Number.isFinite(parseFloat(S))) sx = sy = parseFloat(S);
-    iw *= sx; ih *= sy;
+  // graphicx's order: the size keys before the first angle size the picture; the angle turns it;
+  // the size keys after it size the turned box (one key, or keepaspectratio, keeps its shape)
+  let iw = w, ih = h, angle = 0;
+  const ai = kv.findIndex((i) => i.key === 'angle');
+  const pre = ai < 0 ? kv : kv.slice(0, ai), post = ai < 0 ? [] : kv.slice(ai + 1);
+  if (ai >= 0) angle = parseFloat(String(unbrace(kv[ai].value))) || 0;
+  const keep = get('keepaspectratio') != null;
+  const factors = (keys, bw, bh) => {
+    const g = (k) => { const x = keys.find((i) => i.key === k); return x ? (x.value == null ? true : x.value) : undefined; };
+    const W = lengthPt(g('width'), lw), H = lengthPt(g('height') ?? g('totalheight'), lw), S = g('scale');
+    if (W != null && H != null && !keep) return [W / bw, H / bh];
+    if (W != null && H != null) { const f = Math.min(W / bw, H / bh); return [f, f]; }
+    if (W != null) return [W / bw, W / bw];
+    if (H != null) return [H / bh, H / bh];
+    if (S != null && Number.isFinite(parseFloat(S))) return [parseFloat(S), parseFloat(S)];
+    return [1, 1];
   };
-  // (the box at the moment size applies: turned already when angle came first)
-  const bw0 = () => turned(iw, ih, angle).w, bh0 = () => turned(iw, ih, angle).h;
-  for (const it of kv) {
-    if (it.key === 'angle') { angle = parseFloat(String(unbrace(it.value))) || 0; }
-    else if (/^(width|height|totalheight|scale)$/.test(it.key) && angle) { /* (after an angle: the turned box is sized) */ }
+  const [ax, ay] = factors(pre, iw, ih);
+  iw *= ax; ih *= ay;
+  if (post.length) {
+    const T = turned(iw, ih, angle), [bx, by] = factors(post, T.w || 1, T.h || 1);
+    // (a quarter turn: the box's width is the picture's height)
+    const q = Math.abs(Math.round(angle / 90)) % 2 === 1 && Math.abs(angle % 90) < 1e-6;
+    if (q) { iw *= by; ih *= bx; } else { iw *= bx; ih *= by; }
   }
-  // graphicx: a size key before the angle sizes the picture, then it turns; after it, the turned box is sized
-  const order = kv.map((i) => i.key);
-  const ai = order.indexOf('angle'), si = order.findIndex((k) => /^(width|height|totalheight|scale)$/.test(k));
-  if (ai >= 0 && si >= 0 && si < ai) { const a = angle; angle = 0; size(); angle = a; }
-  else size();
   const B = turned(iw, ih, angle);
   return { bw: B.w, bh: B.h, iw, ih, angle, crop, clip: get('clip') != null };
 }

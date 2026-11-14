@@ -35,6 +35,9 @@ const pic = (app, at) => {
 };
 const has = (app, at) => !!pic(app, at);
 const keyed = (app, at) => { const h = pic(app, at); return !!h && h.P.keyval; };
+// (a picture turned by a macro's angle: Rotate cannot add to it)
+const turnable = (app, at) => { const h = pic(app, at); return !!h && h.P.keyval && X.angleKnown(h.src, h.P); };
+const turnWhy = (app, at) => (keyed(app, at) ? 'The picture is turned by a macro\'s angle: edit it in the source.' : WHY);
 const placeWhy = (app, at, mode) => { const h = pic(app, at); if (!h) return WHY; return X.whyFixed(h.src, h.P, mode, app.picContext(h)); };
 const ICON = {
   change: '<path d="M3.5 4.5h10v8h-10zM3.5 10.5l3-3 3 3 2-1.5 2 2"/><path d="M12 15.5h4.5M14.5 13.5l2 2-2 2"/>',
@@ -110,8 +113,8 @@ register(
   P('picture-wrap-topbottom', 'Top and Bottom', { title: 'Top and Bottom: the text above and below the picture, none beside it (a figure, placed where it fits best)', synonyms: ['Wrap top and bottom'],
     when: (app, at) => has(app, at) && !placeWhy(app, at, 'float'), whyNot: (app, at) => placeWhy(app, at, 'float') || WHY, on: (app, at) => { const h = pic(app, at); return h ? X.positionOf(h.src, h.P).mode === 'float' : null; },
     run: (app) => { const h = app.picHere(); const p = h && X.positionOf(h.src, h.P); return app.picPlace({ mode: 'float', place: p && p.mode === 'float' ? p.place : 'htbp' }); } }),
-  P('picture-rotate-right', 'Rotate Right 90°', { title: 'Rotate Right 90°: a quarter turn clockwise (angle=-90)', when: keyed, synonyms: ['Rotate clockwise'], run: (app) => app.picOp((src, Q) => X.rotate(src, Q, -90)) }),
-  P('picture-rotate-left', 'Rotate Left 90°', { title: 'Rotate Left 90°: a quarter turn counterclockwise (angle=90)', when: keyed, synonyms: ['Rotate counterclockwise', 'Rotate anticlockwise'], run: (app) => app.picOp((src, Q) => X.rotate(src, Q, 90)) }),
+  P('picture-rotate-right', 'Rotate Right 90°', { title: 'Rotate Right 90°: a quarter turn clockwise (angle=-90)', when: turnable, whyNot: turnWhy, synonyms: ['Rotate clockwise'], run: (app) => app.picOp((src, Q) => X.rotate(src, Q, -90)) }),
+  P('picture-rotate-left', 'Rotate Left 90°', { title: 'Rotate Left 90°: a quarter turn counterclockwise (angle=90)', when: turnable, whyNot: turnWhy, synonyms: ['Rotate counterclockwise', 'Rotate anticlockwise'], run: (app) => app.picOp((src, Q) => X.rotate(src, Q, 90)) }),
   P('picture-flip-vertical', 'Flip Vertical', { title: 'Flip Vertical: upside down as in a mirror (\\scalebox{1}[-1]{…}); again flips it back', kind: 'toggle', synonyms: ['Mirror vertically'],
     on: (app, at) => { const h = pic(app, at); return h ? X.flipped(h.P, 'v') : null; }, run: (app) => app.picOp((src, Q) => X.flip(src, Q, 'v')) }),
   P('picture-flip-horizontal', 'Flip Horizontal', { title: 'Flip Horizontal: left to right as in a mirror (\\reflectbox{…}); again flips it back', kind: 'toggle', synonyms: ['Mirror', 'reflectbox'],
@@ -268,6 +271,7 @@ export const methods = {
     this.disarm();
     if (this.picCropping) this.picCropEnd(false);
     this.armed = { f: info.f, s: info.s, e: info.e, el, kind: 'img' };
+    if (info.a.file) this.picNatural(info.a.file);
     // (a tap: the touch screen's own caret comes a moment later, and is not a move elsewhere)
     this.picSelT = o.touch ? Date.now() : 0;
     el.classList.add('sel');
@@ -288,12 +292,12 @@ export const methods = {
     const main = this.src(this.main), cls = docClass(main);
     const name = cls && cls.name;
     const o = { beamer: name === 'beamer' };
-    if (name === 'memoir') o.noH = 'memoir has the float package\'s commands but not its [H]: choose Here If It Fits.';
     // the paragraph after the picture: a list there, and wrapfig cannot wrap it
     const B = h.P.block;
     if (B.env || B.kind === 'para') {
       const after = h.src.slice(B.env ? B.env.e : h.P.outer.e, Math.min(h.src.length, (B.env ? B.env.e : h.P.outer.e) + 400));
       o.nextIsList = /^\s*\\begin\s*\{(itemize|enumerate|description)\}/.test(after);
+      o.nextIsHeading = /^\s*\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)\b/.test(after);
     }
     return o;
   },
@@ -491,7 +495,11 @@ export const methods = {
     const h = this.picHere();
     if (!h) { this.toast(WHY); return false; }
     if (!h.el.querySelector('img')) { sizeDialog(this, 'crop'); return true; }
-    return this.picHandles.crop(h);
+    // (the bars are in TeX's units of the file: its size first, as TeX reads it)
+    if (this.picNaturalNow(h)) return this.picHandles.crop(h);
+    const keep = { f: h.f, s: h.s };
+    this.picNaturalWait(h.P.file.name).then(() => requestAnimationFrame(() => { const g = this.picHere(); if (g && g.f === keep.f && g.s === keep.s) this.picHandles.crop(g); }));
+    return true;
   },
   picCropEnd(apply) { return this.picHandles ? this.picHandles.cropEnd(apply) : false; },
 
@@ -508,12 +516,42 @@ export const methods = {
     if (hit && hit.blob === blob) return hit.size;
     if (hit && hit.wait && hit.blob === blob) return null;
     c.set(key, { blob, wait: true, size: null });
-    blob.slice(0, 1 << 19).arrayBuffer().then((buf) => {
+    const done = blob.slice(0, 1 << 19).arrayBuffer().then((buf) => {
       const size = X.naturalSize(new Uint8Array(buf), key);
       c.set(key, { blob, size });
-      if (size) { this.forceRender = true; this.rebuild(this.caretNow()); if (this.armed && this.armed.kind === 'img') { const A = this.armed; this.armed = null; this.picSelect({ f: A.f, s: A.s }); } }
-    }).catch(() => c.set(key, { blob, size: null }));
+      if (size) this.picNatSoon();
+      return size;
+    }).catch(() => { c.set(key, { blob, size: null }); return null; });
+    c.get(key).done = done;
     return null;
+  },
+  // the size of a picture's file when it is known: a promise
+  picNaturalWait(name) {
+    const now = this.picNatural(name);
+    if (now) return Promise.resolve(now);
+    const key = this.picAssetName(name), hit = key && this.picNat.get(key);
+    return hit && hit.done ? hit.done : Promise.resolve(null);
+  },
+  // Sizes that came in: one rebuild for all of them (a document of 120 pictures read their headers
+  // one by one, and each rebuilt every page), the picture selected kept selected, Crop going on
+  picNatSoon() {
+    if (this.picNatT) return;
+    this.picNatT = requestAnimationFrame(() => {
+      this.picNatT = 0;
+      const A = this.armed && this.armed.kind === 'img' ? this.armed : null;
+      this.forceRender = true;
+      this.rebuild(A ? null : this.caretNow());
+      if (A) {
+        const el = this.findAtomEl({ f: A.f, s: A.s, kind: 'img' });
+        if (el) {
+          A.el = el; el.classList.add('sel');
+          const r = document.createRange(); r.selectNode(el); this.ourSel = true;
+          const s = getSelection(); s.removeAllRanges(); s.addRange(r);
+          this.ribbonSync();
+          if (this.picHandles) this.picHandles.show();
+        } else this.disarm();
+      }
+    });
   },
   // the name a picture's file has in the project (\includegraphics{plot} names plot.png)
   picAssetName(name) {
@@ -654,7 +692,10 @@ Object.assign(methods, {
     const f = c.ghost ? this.ghost.f : c.f, p = c.ghost ? this.ghost.pos : c.b;
     if (this.texAt(f, p)) { this.toast('The caret is in a LaTeX paragraph: write \\faIcon{' + id + '} there yourself.'); return false; }
     const t = '\\faIcon{' + id + '}';
-    const pk = this.picPackages(['fontawesome5']);
+    const main = this.src(this.main), end = preambleEnd(main), others = this.preambleOthers();
+    if (hasPackage(main, 'fontawesome', end, others)) { this.toast('This document loads Font Awesome 4 (fontawesome), which clashes with fontawesome5: write its own command, \\fa' + id.replace(/(^|-)(\w)/g, (m, a, b) => b.toUpperCase()) + ', where the icon goes.', 8000); return false; }
+    const fa = ['fontawesome6', 'fontawesome7', 'fontawesome5'].some((n) => hasPackage(main, n, end, others));
+    const pk = fa ? [] : this.picPackages(['fontawesome5']);
     let at = p + t.length;
     for (const x of pk) if (x.f === f && x.s <= p) at += x.t.length - (x.e - x.s);
     this.closeGroup();
@@ -667,6 +708,7 @@ Object.assign(methods, {
     if (!D.SMART.some((x) => x[0] === kind)) kind = D.SMART[0][0];
     const list = (Array.isArray(items) ? items : String(items || '').split(/\r?\n/)).map((x) => String(x).trim()).filter(Boolean);
     if (!list.length) { this.toast('SmartArt needs at least one item.'); return false; }
+    if (list.length > D.smartMax(kind)) { this.toast('SmartArt (smartdiagram) holds at most ' + D.smartMax(kind) + ' items here: its colours stop there and TeX stops on more. Split the list into two diagrams.', 8000); return false; }
     return this.insertObject(D.smartTex(kind, list), ['smartdiagram']);
   },
   insertChart(kind, cats, series) {

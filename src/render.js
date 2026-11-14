@@ -288,6 +288,7 @@ export class Renderer {
       case 'float': {
         el.classList.add('flt', 'flt-' + it.kind);
         if (it.wide) el.classList.add('wide');
+        if (it.depth) { el.classList.add('deep'); el.style.setProperty('--depth', it.depth); }
         // a wrapfigure: its parts as wide as it is (its pictures' \linewidth), until the page wraps
         // text round it (B6); a share of the line, or a length in points
         const ww = it.wrapW ? cssLength(it.wrapW) : null;
@@ -457,7 +458,8 @@ export class Renderer {
       d.dataset.ctx = 'cap';
       setDir(d, p.dir);
       const lab = { figure: 'Figure', table: 'Table' }[p.kind] || p.kind;
-      d.appendChild(chr(lab + (p.num ? ' ' + p.num : '') + ': ', 'caplab'));
+      // (\caption*: the words alone; beamer's: "Figure:" with no number)
+      if (!p.star) d.appendChild(chr(lab + (p.num ? ' ' + p.num : '') + ': ', 'caplab'));
       this.inl(p.inl, d);
       return d;
     }
@@ -728,14 +730,14 @@ export class Renderer {
       case 'rule': s.innerHTML = ''; break;
       case 'img': {
         const url = this.app.assetURL(x.file);
-        const w = imgWidth(x.opts);
+        const w = inBox(imgWidth(x.opts), x.box);
         // (its keys, read once: alt text, and for a crop, a turn or a height the box graphicx
         // makes of the file's natural size, which comes from its first bytes: src/picture.js)
         const kv = x.opts && x.opts.length < 4000 ? parseKV(x.opts) : [];
         const alt = kv.find((k) => k.key === 'alt');
         const fancy = kv.some((k) => /^(trim|viewport|angle|height|totalheight)$/.test(k.key));
         const nat = (fancy || !w) && this.app.picNatural ? this.app.picNatural(x.file) : null;
-        const box = fancy && nat ? this.picBox(kv, nat) : null;
+        const box = fancy && nat ? this.picBox(kv, nat, x.box) : null;
         if (url) {
           const img = document.createElement('img');
           img.src = url;
@@ -832,9 +834,10 @@ export class Renderer {
 }
 
 // (B8) the box of a picture, in TeX points, its line the wrapfigure's or the text's width
-Renderer.prototype.picBox = function (kv, nat) {
+Renderer.prototype.picBox = function (kv, nat, inbox) {
   const g = this.app.layout && this.app.layout.g, tw = g && g.tw ? g.tw : 345;
-  const lw = this.lineW ? (lengthPtOf(this.lineW, tw) || tw) : tw;
+  let lw = this.lineW ? (lengthPtOf(this.lineW, tw) || tw) : tw;
+  if (inbox) lw = inbox.pt || lw * inbox.share;
   try { return graphicBox(kv, nat, lw); } catch (e) { return null; }
 };
 // A picture drawn as graphicx sets it: its box the size TeX gives it, the picture turned in it
@@ -907,6 +910,13 @@ function logo(name) {
 // a widget's height in its own pixels (laid out at 100 % zoom) as a length that follows the zoom
 export function widgetCss(h) { return 'calc(var(--pt) * ' + (h * 72.27 / 96).toFixed(4) + ' * 1px)'; }
 
+// a picture's width in the box it stands in (a minipage, a subfigure, a parbox: { share } of the
+// line or { pt }): a share of that box, not of the page's line
+function inBox(w, box) {
+  if (!w || !box || !/%$/.test(w)) return w;
+  const f = parseFloat(w) / 100;
+  return box.pt ? ptCss(box.pt * f) : Math.min(100, box.share * f * 100) + '%';
+}
 function imgWidth(opts) {
   if (!opts) return null;
   let m = /width\s*=\s*([\d.]*)\s*\\(textwidth|linewidth|columnwidth|hsize)/.exec(opts);

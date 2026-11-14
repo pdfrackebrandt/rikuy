@@ -76,7 +76,8 @@ class Handles {
         else { this.app.disarm(); this.app.ribbonSync(); this.frame.hidden = true; return; }
       }
     }
-    if (!t) { this.frame.hidden = true; return; }
+    // (a picture gone from the page, by a rebuild nothing reselected: nothing stays selected)
+    if (!t) { this.frame.hidden = true; if (this.app.armed && this.app.armed.kind === 'img') { this.app.disarm(); this.app.ribbonSync(); } return; }
     // (the bubble of bold and italic is for words: a picture has its tab)
     const bub = document.getElementById('bubble');
     if (bub) bub.hidden = true;
@@ -90,6 +91,7 @@ class Handles {
     Object.assign(this.frame.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' });
     const h = this.app.picHere();
     this.frame.classList.toggle('locked', !h || !h.P.keyval);
+    this.frame.classList.toggle('tiny', r.width < 40 || r.height < 40);
   }
   hide() { if (this.frame) this.frame.hidden = true; }
 
@@ -170,6 +172,9 @@ class Handles {
     el.style.width = D.was.w; el.style.height = D.was.h; D.img.style.width = D.was.iw; D.img.style.height = D.was.ih;
     const inner = el.querySelector('.pic-in'); if (inner) inner.style.transform = '';
     if (D.cancel || (Math.abs(D.w - D.r0.width) < 2 && Math.abs(D.hh - D.r0.height) < 2)) { this.show(); return; }
+    // (turned a quarter, the box's width is the picture's height: its keys come before the angle)
+    const a = X.angleOf(D.h.src, D.h.P), q = Number.isFinite(a) && Math.abs(Math.round(a / 90)) % 2 === 1;
+    if (q) { const w = D.w; D.w = D.hh; D.hh = w; D.snap = false; }
     const t = this.text(D);
     this.app.picResize(D.free ? { width: t.width, height: t.height, free: true } : { width: t.width, free: false });
     this.app.ribbonSync();
