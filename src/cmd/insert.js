@@ -12,8 +12,11 @@ import { chordText } from '../keys.js';
 import { SYMBOLS, openSymbols } from '../ui/symbol.js';
 import { correct, borderLine, DEFAULTS as AC_DEFAULTS, REPLACE } from '../autocorrect.js';
 import { openGraphDialog } from '../ui/graphdialog.js';
-import { kit as GK, graphHtml, readGraph, isGraph, sameGraph, graphPNG, TEMPLATES, RIKUY_STY } from '../graph.js';
+import { kit as GK, graphHtml, readGraph, isGraph, sameGraph, graphPNG, pngWidth, TEMPLATES, RIKUY_STY } from '../graph.js';
 import { widgetPath } from '../widget.js';
+import { hasPackage, kvEdits } from '../preamble.js';
+import { escapeAlt } from '../picture.js';
+import { escapeTeX } from '../editor.js';
 
 const piece = (open, close) => ({ open, close });
 const env = (k, d, order) => ({ id: 'insert-' + k, name: d, synonyms: [k], run: (app) => app.insertFromPalette(k), palette: { k, d, order, t: piece('\n\n\\begin{' + k + '}\n', '\n\\end{' + k + '}\n\n'), block: true } });
@@ -86,7 +89,9 @@ function freshName(app, kind) {
   const dir = dirOf(app.main);
   const base = { function: 'function', data: 'data', curve: 'curve', dist: 'distribution' }[kind] || 'graph';
   for (let n = 1; n < 1000; n++) {
-    const rel = 'graphs/' + base + '-' + n;
+    // (a few random letters: two coauthors' first graphs were both function-1, and a merge kept one)
+    const tag = Math.random().toString(36).slice(2, 6).padEnd(4, '0');
+    const rel = 'graphs/' + base + '-' + tag;
     if (![rel + '.html', rel + '.png'].some((x) => app.files.has(dir + x) || app.assetBlobs.has(dir + x) || app.extra.has(dir + x))) return rel;
   }
   return 'graphs/' + base + '-' + Date.now();
@@ -160,11 +165,14 @@ export const methods = {
     const dir = dirOf(this.main), rel = freshName(this, s.kind);
     if (spot) this.restoreCaret(spot);
     const { f, p, pre, post } = this.afterBlockPos();
-    const cmd = '\\rikuywidget[width=\\linewidth]{' + rel + '.html}{' + rel + '.png}';
+    // (its description is the picture's alt text: tagged PDF and Word read it)
+    const alt = s.title.trim() ? ',alt={' + escapeAlt(s.title.trim()) + '}' : '';
+    const cmd = '\\rikuywidget[width=\\linewidth' + alt + ']{' + rel + '.html}{' + rel + '.png}';
     const cap = String(caption || '').trim();
-    const text = cap ? '\\begin{figure}[htbp]\n\\centering\n' + cmd + '\n\\caption{' + this.escapeAt(f, p, cap) + '}\n\\end{figure}' : '\\begin{center}\n' + cmd + '\n\\end{center}';
+    const text = cap ? '\\begin{figure}[htbp]\n\\centering\n' + cmd + '\n\\caption{' + this.escapeAt(f, p, cap) + '}\n\\label{fig:' + rel.slice(7) + '}\n\\end{figure}' : '\\begin{center}\n' + cmd + '\n\\end{center}';
     const edits = [{ f, s: p, e: p, t: pre + text + post }, { f: dir + rel + '.html', s: 0, e: 0, t: graphHtml(s) }];
-    const hasSty = [...this.files.keys(), ...this.assetBlobs.keys(), ...this.extra.keys()].some((k) => k === 'rikuy.sty' || k.endsWith('/rikuy.sty'));
+    // (TeX reads rikuy.sty beside the main file; one in another folder is not found)
+    const hasSty = [this.files, this.assetBlobs, this.extra].some((m) => m.has(dir + 'rikuy.sty'));
     if (!hasSty) edits.push({ f: dir + 'rikuy.sty', s: 0, e: 0, t: RIKUY_STY });
     const pk = this.packageEdits(['rikuy']);
     edits.push(...pk);
@@ -172,8 +180,40 @@ export const methods = {
     const shift = f === this.main ? pk.filter((x) => x.s <= p).reduce((n, x) => n + x.t.length - (x.e - x.s), 0) : 0;
     this.closeGroup();
     this.commit(edits, { f, p: p + shift + pre.length + text.length, bias: -1 }, undefined, [{ name: dir + rel + '.png', blob }]);
+    // (drawn for the text's width; once the page has its box, at that box's width: a column)
+    setTimeout(() => this.graphRefresh(), 400);
     this.toast('Inserted a live graph: drag its sliders on the page. The PDF prints its picture.', 4000);
     return true;
+  },
+
+  // Derived data, no step of the history: each graph's picture drawn at its own box's width (a
+  // column, a width option, the margins changed since), and drawn where it is missing (a share
+  // link carries no figures). Before every compile, and as the page shows a graph. It runs
+  // Rikuy's own drawing on the graph's JSON, never the file's script.
+  graphRefreshSoon() { clearTimeout(this.grT); this.grT = setTimeout(() => this.graphRefresh().catch(() => {}), 700); },
+  async graphRefresh() {
+    if (this.grBusy) return this.grBusy;
+    const run = async () => {
+      const dir = dirOf(this.main), k = this.widgets && this.widgets.host ? this.widgets.host.scale() : 1;
+      let n = 0;
+      for (const u of graphUses(this).slice(0, 50)) {
+        const fb = u.fb.v.trim().replace(/^\.\//, '');
+        if (!/\.png$/i.test(fb) || /[{}\\]|\.\./.test(fb)) continue;
+        const spec = readGraph(this.files.get(u.path));
+        if (!spec) continue;
+        const box = [...this.root.querySelectorAll('.w-live')].find((b) => b.dataset.wf === u.path);
+        const name = dir + fb, old = this.assetBlobs.get(name);
+        const had = old ? pngWidth(new Uint8Array(await old.arrayBuffer())) : 0;
+        const W = Math.round((box && box.getBoundingClientRect().width / k) || had || textWidthPx(this));
+        if (old && Math.abs(had - W) < 2) continue;
+        this.setAsset(name, await graphPNG(spec, W));
+        n++;
+      }
+      if (n) this.saveSoon();
+      return n;
+    };
+    this.grBusy = run();
+    try { return await this.grBusy; } finally { this.grBusy = null; }
   },
 
   // the dialog on the graph of this widget file
@@ -203,6 +243,15 @@ export const methods = {
       rel = path.slice(dir.length).replace(/\.html?$/i, '') + '.png';
       for (const u of uses) edits.push({ f: u.f, s: u.fb.s, e: u.fb.e, t: rel });
     }
+    // a new description: the alt text of each command that shows it
+    if (!was || was.title !== s.title) {
+      const a = s.title.trim() ? '{' + escapeAlt(s.title.trim()) + '}' : null;
+      for (const u of uses) {
+        const src = this.src(u.f);
+        if (u.opt) for (const x of kvEdits(src, u.opt.s, u.opt.e, { alt: a })) edits.push({ f: u.f, ...x });
+        else if (a) edits.push({ f: u.f, s: u.s + 12, e: u.s + 12, t: '[alt=' + a + ']' });
+      }
+    }
     this.closeGroup();
     this.commit(edits, null, undefined, [{ name: dir + rel.replace(/^\.\//, ''), blob }]);
     return true;
@@ -213,6 +262,14 @@ export const methods = {
   graphDecorate(F) {
     if (!isGraph(this.files.get(F.path))) return;
     F.box.classList.add('wgraph');
+    // (a press in the frame gives it the focus: that, and only that, allows one menu)
+    F.frame.addEventListener('focus', () => { F.pressed = true; });
+    // (focus moving into a frame shows as the page's window losing it)
+    if (!this.graphBlurOn) {
+      this.graphBlurOn = true;
+      window.addEventListener('blur', () => setTimeout(() => { const a = document.activeElement; for (const x of this.widgets.frames.values()) if (x.frame && x.frame === a) x.pressed = true; }, 0));
+    }
+    this.graphRefreshSoon();
     const b = mk('button', 'w-edit', 'Edit graph');
     b.type = 'button';
     b.title = 'Change this graph: its formulas or data, sliders and axes (or right click it)';
@@ -237,9 +294,11 @@ export const methods = {
   // menu for it. Only for a graph's frame, at most once a second: a frame cannot open menus at will
   graphMenu(F, x, y) {
     if (!isGraph(this.files.get(F.path))) return;
-    const now = Date.now();
-    if (now - (this.graphMenuT || 0) < 1000) return;
-    this.graphMenuT = now;
+    // A message alone opens nothing: the frame must have the focus a press in it gives (a frame
+    // cannot take it by itself in Chromium), nothing else may be open, and one press opens one
+    // menu. A graph sending it every second took the keyboard and closed dialogs.
+    if (!F.pressed || document.activeElement !== F.frame || this.pop) return;
+    F.pressed = false;
     const r = F.box.getBoundingClientRect(), w = parseFloat(F.box.style.width) || r.width;
     const k = r.width / w;
     const px = r.left + Math.max(0, Math.min(w, Number(x) || 0)) * k, py = r.top + Math.max(0, Math.min(r.height / k, Number(y) || 0)) * k;
@@ -306,8 +365,8 @@ register(
       return [{ name: 'Update automatically (\\today)', title: 'The date TeX prints each time it runs, in the document\'s language (Alt+Shift+D)', keys: 'Alt+Shift+D', command: 'insert-date' }, null,
         ...fixed.map((t) => ({ name: t, title: 'As text: it stays this date', run: () => app.insertTeX(app.escapeTyped(t)) }))];
     } },
-  tex('insert-date', 'Date', '\\today{}', { keys: ['Alt+Shift+D'], title: 'Today\'s date, updated each time TeX runs (\\today) (Alt+Shift+D)', synonyms: ['Today', 'Insert date'] }),
-  { id: 'insert-time', name: 'Time', title: 'The time now, as text (Alt+Shift+T)', keys: ['Alt+Shift+T'], synonyms: ['Insert time', 'Clock'], when: (app, at) => !!at && !app.armed, whyNot: () => PASTE_WHY,
+  tex('insert-date', 'Date', '\\today{}', { keys: ['Alt+Shift+D'], mac: { 'Alt+Shift+D': 'Control+Shift+D' }, title: 'Today\'s date, updated each time TeX runs (\\today) (Alt+Shift+D)', synonyms: ['Today', 'Insert date'] }),
+  { id: 'insert-time', name: 'Time', title: 'The time now, as text (Alt+Shift+T)', keys: ['Alt+Shift+T'], mac: { 'Alt+Shift+T': 'Control+Shift+T' }, synonyms: ['Insert time', 'Clock'], when: (app, at) => !!at && !app.armed, whyNot: () => PASTE_WHY,
     run: (app) => { const d = new Date(); return app.insertTeX(pad(d.getHours()) + ':' + pad(d.getMinutes())); } }
 );
 
@@ -327,17 +386,21 @@ register(
 );
 
 // ---- Insert › LaTeX (I47): environments, the live figure ------------------------------------------
+// (book and beamer have no abstract environment; article, report and most others do)
+const hasAbstract = (app) => !(app.model && app.model.opts && /^(book|scrbook|memoir|beamer|letter)$/.test(app.model.opts.cls || ''));
+// the packages environments by name need
+const ENV_PKG = { align: 'amsmath', 'align*': 'amsmath', gather: 'amsmath', 'gather*': 'amsmath', multline: 'amsmath', 'multline*': 'amsmath', flalign: 'amsmath', 'flalign*': 'amsmath', alignat: 'amsmath', tikzpicture: 'tikz', multicols: 'multicol', lstlisting: 'listings', minted: 'minted', algorithm: 'algorithm', algorithmic: 'algpseudocode' };
 const ENVS = [['center', 'Centered', '\\begin{center}'], ['flushleft', 'Flush left', '\\begin{flushleft}'], ['flushright', 'Flush right', '\\begin{flushright}'], ['quote', 'Quote', '\\begin{quote}'],
   ['quotation', 'Quotation', '\\begin{quotation}'], ['verse', 'Verse', '\\begin{verse}'], ['verbatim', 'Verbatim', '\\begin{verbatim}'], ['minipage', 'Minipage', '\\begin{minipage}{0.48\\linewidth}'], ['abstract', 'Abstract', '\\begin{abstract}']];
 register(
   { id: 'insert-environment', name: 'Environment', label: 'Environment', kind: 'menu', synonyms: ['begin', 'LaTeX environment', 'Theorem', 'Proof', 'Verbatim'],
     icon: '<path d="M6.5 4C4.5 4 4.5 5 4.5 7s-1 3-1 3 1 1 1 3 0 3 2 3M13.5 4c2 0 2 1 2 3s1 3 1 3-1 1-1 3 0 3-2 3"/>',
     title: '\\begin{…} and \\end{…} around a new paragraph: theorems, proof, quote, verbatim, minipage, or one by its name',
-    menuItems: () => [
+    menuItems: (app) => [
       ...['theorem', 'lemma', 'proposition', 'definition', 'assumption', 'proof'].map((k) => ({ name: command('insert-' + k).name, command: 'insert-' + k })), null,
-      ...ENVS.map(([k, n]) => ({ name: n, title: '\\begin{' + k + '}', command: 'insert-env-' + k })), null,
+      ...ENVS.filter(([k]) => k !== 'abstract' || hasAbstract(app)).map(([k, n]) => ({ name: n, title: '\\begin{' + k + '}', command: 'insert-env-' + k })), null,
       { name: 'Other environment', title: 'Any environment by its name', command: 'insert-env-other' }] },
-  ...ENVS.map(([k, n, open], i) => ({ id: 'insert-env-' + k, name: n + ' environment', synonyms: [k], run: (app) => app.insertFromPalette(k), palette: { k, d: n + ' (' + k + ')', order: 240 + i, t: piece('\n\n' + open + '\n', '\n\\end{' + k + '}\n\n'), block: true } })),
+  ...ENVS.map(([k, n, open], i) => ({ id: 'insert-env-' + k, name: n + ' environment', synonyms: [k], ...(k === 'abstract' ? { when: (app, at) => !!at && hasAbstract(app), whyNot: () => 'This document\'s class has no abstract (book, beamer)' } : {}), run: (app) => app.insertFromPalette(k), palette: { k, d: n + ' (' + k + ')', order: 240 + i, t: piece('\n\n' + open + '\n', '\n\\end{' + k + '}\n\n'), block: true } })),
   { id: 'insert-env-other', name: 'Other environment', title: 'An environment by its name: \\begin{name} … \\end{name}', synonyms: ['Custom environment'], run: (app) => app.otherEnv() }
 );
 
@@ -356,7 +419,14 @@ onInsertText((app, data, range) => {
   if (!c || c.ghost || !c.collapsed || app.texHere()) return;
   const src = app.src(c.f), p = c.a;
   // not inside math, a comment, a verbatim or a command's name: the page's own spans say text
-  const r = correct(src, p, data, o, (app.prefs.acList || []).filter((x) => Array.isArray(x) && x.length === 2));
+  // a correction undone (Word's rule for INitial CAps): that word becomes an exception
+  const L = app.acLast;
+  if (L && L.f === c.f && app.src(L.f).slice(L.s, L.s + L.word.length) === L.word && !(app.hist.length && app.hist[app.hist.length - 1].kind === 'autocorrect')) {
+    app.prefs.acExcept = [L.word, ...(app.prefs.acExcept || []).filter((w) => w !== L.word)].slice(0, 500);
+    app.savePrefs();
+  }
+  app.acLast = null;
+  const r = correct(src, p, data, o, (app.prefs.acList || []).filter((x) => Array.isArray(x) && x.length === 2), app.prefs.acExcept || []);
   if (!r) return;
   // the character as typing writes it, then the correction: one undo gives back what was typed
   const t = app.escapeAt(c.f, p, data);
@@ -364,12 +434,19 @@ onInsertText((app, data, range) => {
   app.closeGroup();
   // (a replacement ending in the typed character takes it in; a word's correction is before it)
   const e = r.typed ? p + t.length : r.e;
-  const caret = r.typed ? r.s + r.t.length : p + t.length + r.t.length - (r.e - r.s);
-  app.commit([{ f: c.f, s: r.s, e, t: r.t }], { f: c.f, p: caret, bias: -1 }, 'autocorrect');
+  let caret = r.typed ? r.s + r.t.length : p + t.length + r.t.length - (r.e - r.s);
+  // \url needs a package: url in the same step, where neither hyperref, url nor xurl is loaded
+  const pk = /^\\url\{/.test(r.t) && !['hyperref', 'url', 'xurl'].some((n) => hasPackage(app.src(app.main), n, undefined, app.preambleOthers())) ? app.packageEdits(['url']) : [];
+  if (c.f === app.main) caret += pk.filter((x) => x.s <= r.s).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
+  app.commit([{ f: c.f, s: r.s, e, t: r.t }, ...pk], { f: c.f, p: caret, bias: -1 }, 'autocorrect');
+  if (r.kind === 'twoCaps') app.acLast = { f: c.f, s: r.s - 1, word: r.word };
   app.closeGroup();
   return true;
 });
 onInstall((app) => {
+  // the graphs' pictures, at their boxes' widths and none missing, before TeX reads them
+  const cf = app.compileFiles;
+  app.compileFiles = async function compileFiles(...a) { try { await this.graphRefresh(); } catch (e) { /* the pictures as they are */ } return cf.apply(this, a); };
   // ---, ___ or === alone on a line, then Enter: a rule across the text (A7)
   app.root.addEventListener('beforeinput', (e) => {
     if (e.inputType !== 'insertParagraph' || acOn(app).borders === false || acOn(app).off) return;
@@ -493,7 +570,7 @@ Object.assign(methods, {
     });
     const ok = mk('button', 'btn primary', 'OK');
     ok.type = 'button';
-    ok.addEventListener('click', () => { this.closePop(); if (at) this.restoreCaret({ f: at.f, p: at.a }); this.pasteData(d, pick); });
+    ok.addEventListener('click', () => { this.closePop(); if (at) this.restoreCaret(at.collapsed ? { f: at.f, p: at.a } : { f: at.f, p: at.b, selA: at.a, selB: at.b }); this.pasteData(d, pick); });
     const row = mk('div', 'gd-btns');
     row.append(mk('span', 'grow'), ok);
     p.append(list, row);
@@ -518,12 +595,22 @@ Object.assign(methods, {
   // a .tex file joins the project, \input{name} reads it after the caret's block: one step
   async textFromFile(file) {
     if (file.size > 5e6) { this.toast('That file is over 5 MB: not text to \\input.'); return false; }
-    const text = await file.text();
+    let text = await file.text(), names = [];
+    // a whole document: its body alone (a second \\documentclass stops TeX), its packages here
+    const b = /\\begin\s*\{document\}/.exec(text);
+    if (b) {
+      for (const m of text.slice(0, b.index).matchAll(/^[ \t]*\\(?:usepackage|RequirePackage)(?:\[[^\]\n]*\])?\{([^}\n]*)\}/gm)) for (const x of m[1].split(',')) if (/^[A-Za-z0-9-]{1,40}$/.test(x.trim())) names.push(x.trim());
+      const rest = text.slice(b.index + b[0].length), e = rest.search(/\\end\s*\{document\}/);
+      text = (e >= 0 ? rest.slice(0, e) : rest).replace(/^[ \t]*\n/, '').replace(/\s*$/, '\n');
+    }
     const name = this.freeName(/\.(tex|ltx)$/i.test(file.name) ? file.name : file.name.replace(/\.[^.]*$/, '') + '.tex');
     const { f, p, pre, post } = this.afterBlockPos();
     const t = '\\input{' + name.replace(/\.tex$/i, '') + '}';
+    const pk = names.length ? this.packageEdits([...new Set(names)].slice(0, 40)) : [];
+    const shift = f === this.main ? pk.filter((x) => x.s <= p).reduce((n, x) => n + x.t.length - (x.e - x.s), 0) : 0;
     this.closeGroup();
-    this.commit([{ f, s: p, e: p, t: pre + t + post }, { f: dirOf(this.main) + name, s: 0, e: 0, t: text }], { f, p: p + pre.length + t.length, bias: -1 });
+    this.commit([{ f, s: p, e: p, t: pre + t + post }, { f: dirOf(this.main) + name, s: 0, e: 0, t: text }, ...pk], { f, p: p + shift + pre.length + t.length, bias: -1 });
+    if (b) this.toast('A whole document: its text went in, and its packages joined this one\'s preamble.', 5000);
     return true;
   },
   // a PDF's pages: the file joins the project and \includepdf puts every page in (pdfpages)
@@ -544,7 +631,7 @@ Object.assign(methods, {
     const spot = c ? { f: c.ghost ? this.ghost.f : c.f, p: c.ghost ? this.ghost.pos : c.a } : null;
     const p = dialog(this, { title: 'Other environment', cls: 'pop-env', rect: new DOMRect(Math.max(8, innerWidth / 2 - 180), 120, 0, 0) });
     const i = mk('input', 'gd-in code');
-    i.type = 'text'; i.placeholder = 'align*, tikzpicture, frame'; i.setAttribute('aria-label', 'Environment name');
+    i.type = 'text'; i.placeholder = 'align*, tikzpicture, multicols'; i.setAttribute('aria-label', 'Environment name');
     const ok = mk('button', 'btn primary', 'Insert');
     ok.type = 'button';
     const go = () => {
@@ -554,9 +641,12 @@ Object.assign(methods, {
       if (spot) this.restoreCaret(spot);
       const c2 = this.caretNow();
       this.insertPiece(c2 && !c2.ghost ? { f: c2.f, a: c2.a, b: c2.b } : null, c2 && c2.ghost ? this.ghost : null, '\n\n\\begin{' + n + '}\n', '\n\\end{' + n + '}\n\n');
+      // its package, in the same step (a commit of the same kind within the moment joins it)
+      const need = ENV_PKG[n];
+      if (need && !(this.model && this.model.opts && this.model.opts.cls === 'beamer' && n === 'frame')) { const pk = this.packageEdits([need]); if (pk.length) this.commit(pk, null, 'insert'); }
     };
     ok.addEventListener('click', go);
-    i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+    i.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); go(); } });
     const row = mk('div', 'gd-btns');
     row.append(mk('span', 'grow'), ok);
     p.append(i, row);
@@ -573,11 +663,9 @@ Object.assign(methods, {
     const you = sec('Your name');
     const row = mk('div', 'gd-row');
     const name = mk('input', 'gd-in'); name.type = 'text'; name.value = this.prefs.who || ''; name.autocomplete = 'name'; name.setAttribute('aria-label', 'User name');
-    const ini = mk('input', 'gd-in'); ini.type = 'text'; ini.value = this.prefs.initials || ''; ini.maxLength = 8; ini.setAttribute('aria-label', 'Initials');
     name.addEventListener('change', () => { this.prefs.who = name.value.trim().slice(0, 80); save(); });
-    ini.addEventListener('change', () => { this.prefs.initials = ini.value.trim().slice(0, 8); save(); });
     const lab = (t, el, cls) => { const l = mk('label', 'gd-f' + (cls ? ' ' + cls : '')); l.append(mk('span', 'gd-l', t), el); return l; };
-    row.append(lab('User name', name, 'gd-grow'), lab('Initials', ini));
+    row.append(lab('User name', name, 'gd-grow'));
     you.append(row, mk('p', 'gd-hint', 'Written with your comments and changes: % comment (your name).'));
     const ac = sec('As you type');
     const sw = [['off', 'Turn AutoCorrect off', true], ['replace', 'Replace text as you type: (c) ©, (tm) ™, ... …, -> →'], ['links', 'Internet addresses as links (\\url)'], ['capitals', 'Capitalize the first letter of sentences'],
@@ -622,7 +710,7 @@ Object.assign(methods, {
       const x = a.value.trim().slice(0, 30), y = b.value.slice(0, 200);
       if (!x || /\s/.test(x)) { a.classList.add('gd-bad'); return; }
       // (what it writes is typed text, escaped as typing escapes it)
-      this.prefs.acList = [[x, y.replace(/[\\{}$&#^_%~]/g, (z) => '\\' + z)], ...(this.prefs.acList || []).filter((z) => z[0] !== x)].slice(0, 200);
+      this.prefs.acList = [[x, escapeTeX(y, ' ')], ...(this.prefs.acList || []).filter((z) => z[0] !== x)].slice(0, 200);
       save(); a.value = ''; b.value = ''; draw();
     });
     r2.append(lab('Replace', a, 'gd-grow'), lab('With', b, 'gd-grow'), add);

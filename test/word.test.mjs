@@ -25,6 +25,7 @@ import { scanDir, resolve } from '../src/wordbidi.js';
 import { zipSync } from 'fflate';
 import { pageForWord } from '../src/pageword.js';
 import { hfPlaces } from '../src/wordpage.js';
+import { graphHtml, template } from '../src/graph.js';
 
 const P = await createPandoc(fs.readFileSync(new URL('../node_modules/pandoc-wasm/src/pandoc.wasm', import.meta.url)));
 let n = 0;
@@ -1648,6 +1649,27 @@ await ok('a picture\'s alt text and size go to Word (its description) and come b
   const W2 = buildWordDoc(buildModel({ files: new Map([['main.tex', two]]), main: 'main.tex' }), new Map([['main.tex', two]]), { now: 0, main: 'main.tex', asset: (n) => n });
   const img = JSON.stringify(W2.doc).match(/"t":"Image","c":\[\["",\[\],(\[[^\]]*\](?:,\[[^\]]*\])*\])/);
   assert.ok(img && img[1].includes('"height","2cm"') && img[1].includes('"width","4cm"'), img && img[1]);
+});
+
+await ok('an interactive graph goes to Word as its picture, the PDF\'s, with its caption and alt text; Word moves nothing; unchanged it comes back as it was', async () => {
+  // (the owner: graphs move on Rikuy's page alone; the PDF and Word print the same picture)
+  const png = fs.readFileSync(new URL('../sample/widget/figures/clt.png', import.meta.url));
+  const body = 'Before.\n\n\\begin{figure}[htbp]\n\\centering\n\\rikuywidget[width=\\linewidth,alt={A sine with sliders}]{graphs/function-ab12.html}{graphs/function-ab12.png}\n\\caption{A live sine.}\n\\label{fig:function-ab12}\n\\end{figure}\n\nAfter.';
+  const files = new Map([['main.tex', doc(body, '\\usepackage{rikuy}\n')], ['graphs/function-ab12.html', graphHtml(template('function'))]]);
+  const m = buildModel({ files, main: 'main.tex' });
+  const W = buildWordDoc(m, files, { now: 0, main: 'main.tex' });
+  const E = exportDocx(P, { doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources: { 'graphs/function-ab12.png': png }, bibs: [], citeproc: false, project: { name: 'Paper', main: 'main.tex', files: [...files] } });
+  const parts = unzip(E.docx);
+  const media = [...parts.keys()].filter((k) => k.startsWith('word/media/'));
+  assert.equal(media.length, 1);
+  assert.ok(Buffer.from(parts.get(media[0])).equals(png), 'the PDF\'s picture, byte for byte');
+  const d = text(parts.get('word/document.xml'));
+  assert.match(d, /descr="A sine with sliders"/);
+  assert.match(d.replace(/<[^>]+>/g, ''), /A live sine\./);
+  // nothing of the live figure: no script, no frame, no graph data in the document
+  assert.ok(![...parts.keys()].some((k) => /\.html?$/i.test(k) && !/rikuy/i.test(k)) && !/<script|rikuy-graph|iframe/i.test(d));
+  const plan = importInto(E.docx, files);
+  assert.equal(plan.files.size, 0, 'unchanged in Word: the \\rikuywidget block comes back unchanged');
 });
 
 console.log('word: ' + n + ' groups of checks passed');

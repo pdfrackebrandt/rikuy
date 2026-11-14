@@ -54,6 +54,7 @@ export function graphKit() {
   };
   // the functions that take more than one argument, and how many at most
   const ARGS = { log: 2, min: 8, max: 8, mod: 2, atan2: 2, binom: 2, normpdf: 3, normcdf: 3, frac: 2, if: 3 };
+  const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const KNOWN = Object.keys(FN).concat(['if'], Object.keys(GREEK), Object.keys(CONST));
 
   // Tokens: numbers, names, operators. A run of letters is cut into names the way Desmos does
@@ -116,7 +117,7 @@ export function graphKit() {
       throw err('"' + ch + '" is not part of a formula', i);
     }
     // Greek letters by name; gamma before a bracket is the function
-    out.forEach((t, k) => { if (t.t === 'name' && GREEK[t.v] && !(t.v === 'gamma' && out[k + 1] && out[k + 1].v === '(')) t.v = GREEK[t.v]; });
+    out.forEach((t, k) => { if (t.t === 'name' && own(GREEK, t.v) && !(t.v === 'gamma' && out[k + 1] && out[k + 1].v === '(')) t.v = GREEK[t.v]; });
     return out.filter((t) => t.t !== 'name' || t.v !== '');
   }
   function err(msg, at) { const e = new Error(msg); e.at = at; return e; }
@@ -128,7 +129,7 @@ export function graphKit() {
     const peek = () => T[i], at = () => (T[i] ? T[i].at : String(text).length);
     const isOp = (v) => T[i] && T[i].t === 'op' && T[i].v === v;
     const node = (x) => { if (++nodes > MAXNODES) throw err('The formula is too long', at()); return x; };
-    const isFn = (t) => t && t.t === 'name' && (!!FN[t.v] || t.v === 'if');
+    const isFn = (t) => t && t.t === 'name' && (own(FN, t.v) || t.v === 'if');
     const startsAtom = (t) => t && (t.t === 'n' || t.t === 'name' || (t.t === 'op' && t.v === '('));
     const deeper = (f) => { if (++depth > MAXDEPTH) throw err('The formula nests too deep', at()); try { return f(); } finally { depth--; } };
     function cmp() {
@@ -174,7 +175,7 @@ export function graphKit() {
       if (t.t === 'name') {
         i++;
         if (isFn(t)) return deeper(() => call(t));
-        if (t.bs && !(t.v in CONST) && !/^[α-ωΑ-Ω]$/.test(t.v)) throw err('\\' + t.v + ' is not a function this graph knows', t.at);
+        if (t.bs && !own(CONST, t.v) && !/^[α-ωΑ-Ω]$/.test(t.v)) throw err('\\' + t.v + ' is not a function this graph knows', t.at);
         return node(['v', t.v]);
       }
       throw err('"' + t.v + '" cannot stand here', t.at);
@@ -213,7 +214,7 @@ export function graphKit() {
 
   // the names a formula uses that are not functions or constants: its variables
   function names(tree, out = new Set()) {
-    if (tree[0] === 'v') { if (!(tree[1] in CONST)) out.add(tree[1]); }
+    if (tree[0] === 'v') { if (!own(CONST, tree[1])) out.add(tree[1]); }
     else if (tree[0] === 'f') for (const a of tree[2]) names(a, out);
     else if (tree[0] !== 'n') for (let k = 1; k < tree.length; k++) names(tree[k], out);
     return out;
@@ -225,7 +226,7 @@ export function graphKit() {
     const op = tree[0];
     if (op === 'n') { const v = tree[1]; return () => v; }
     if (op === 'v') {
-      if (tree[1] in CONST) { const v = CONST[tree[1]]; return () => v; }
+      if (own(CONST, tree[1])) { const v = CONST[tree[1]]; return () => v; }
       const k = slots[tree[1]];
       if (k === undefined) throw err('Unknown name ' + tree[1], 0);
       return (e) => e[k];
@@ -280,9 +281,18 @@ export function graphKit() {
     beta: { name: 'Beta', p: [['α', 0.5, 10, 0.1, 2], ['β', 0.5, 10, 0.1, 5]], x: [0, 1], pdf: (x, P) => (x <= 0 || x >= 1 ? 0 : Math.exp((P.α - 1) * Math.log(x) + (P.β - 1) * Math.log(1 - x) - lg(P.α) - lg(P.β) + lg(P.α + P.β))), mean: (P) => P.α / (P.α + P.β), vari: (P) => P.α * P.β / ((P.α + P.β) * (P.α + P.β) * (P.α + P.β + 1)), draw: (r, P) => { const a = gammaDraw(r, P.α), b = gammaDraw(r, P.β); return a / (a + b); } },
     t: { name: 'Student\'s t', p: [['ν', 1, 30, 1, 3]], x: [-5, 5], pdf: (x, P) => Math.exp(lg((P.ν + 1) / 2) - lg(P.ν / 2)) / Math.sqrt(P.ν * Math.PI) * Math.pow(1 + x * x / P.ν, -(P.ν + 1) / 2), mean: () => 0, vari: (P) => (P.ν > 2 ? P.ν / (P.ν - 2) : NaN), draw: (r, P) => normal(r) / Math.sqrt(2 * gammaDraw(r, P.ν / 2) / P.ν) },
     chi2: { name: 'Chi-square', p: [['k', 1, 20, 1, 3]], x: [0, 12], pdf: (x, P) => (x <= 0 ? 0 : Math.exp((P.k / 2 - 1) * Math.log(x) - x / 2 - lg(P.k / 2) - (P.k / 2) * Math.log(2))), mean: (P) => P.k, vari: (P) => 2 * P.k, draw: (r, P) => 2 * gammaDraw(r, P.k / 2) },
-    binomial: { name: 'Binomial', discrete: true, p: [['n', 1, 100, 1, 10], ['p', 0, 1, 0.01, 0.3]], x: [0, 10], pdf: (k, P) => { if (k < 0 || k > P.n || k !== Math.floor(k)) return 0; if (P.p <= 0) return k === 0 ? 1 : 0; if (P.p >= 1) return k === P.n ? 1 : 0; return Math.exp(lg(P.n + 1) - lg(k + 1) - lg(P.n - k + 1) + k * Math.log(P.p) + (P.n - k) * Math.log(1 - P.p)); }, mean: (P) => P.n * P.p, vari: (P) => P.n * P.p * (1 - P.p), draw: (r, P) => { let c = 0; for (let k = 0; k < P.n; k++) if (r() < P.p) c++; return c; } },
+    binomial: { name: 'Binomial', discrete: true, p: [['n', 1, 100, 1, 10], ['p', 0, 1, 0.01, 0.3]], x: [0, 10], pdf: (k, P) => { if (k < 0 || k > P.n || k !== Math.floor(k)) return 0; if (P.p <= 0) return k === 0 ? 1 : 0; if (P.p >= 1) return k === P.n ? 1 : 0; return Math.exp(lg(P.n + 1) - lg(k + 1) - lg(P.n - k + 1) + k * Math.log(P.p) + (P.n - k) * Math.log(1 - P.p)); }, mean: (P) => P.n * P.p, vari: (P) => P.n * P.p * (1 - P.p),
+      // (by its cdf, a search per draw: n uniform numbers a draw froze the page at n = 100)
+      draw: (r, P) => { const c = cdfOf(FAM.binomial, P, Math.round(P.n)); const u = r(); let lo = 0, hi = c.length - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (c[m] < u) lo = m + 1; else hi = m; } return lo; } },
     poisson: { name: 'Poisson', discrete: true, p: [['λ', 0.5, 20, 0.1, 4]], x: [0, 15], pdf: (k, P) => (k < 0 || k !== Math.floor(k) ? 0 : Math.exp(k * Math.log(P.λ) - P.λ - lg(k + 1))), mean: (P) => P.λ, vari: (P) => P.λ, draw: (r, P) => { const L = Math.exp(-P.λ); let k = 0, p = 1; do { k++; p *= r(); } while (p > L && k < 400); return k - 1; } }
   };
+  // a discrete family's cdf at 0..n, kept for the values it was made for
+  let cdfKey = '', cdfVal = null;
+  function cdfOf(F, P, n) {
+    const key = n + ':' + P.p;
+    if (key !== cdfKey) { const c = []; let acc = 0; for (let k = 0; k <= n; k++) { acc += F.pdf(k, P); c.push(acc); } c[n] = 1; cdfKey = key; cdfVal = c; }
+    return cdfVal;
+  }
   // the number of draws averaged, in "mean of n draws": n, or N where the family has its own n
   const sizeName = (fam) => (FAM[fam].p.some((q) => q[0] === 'n') ? 'N' : 'n');
   const REPS = 4000, BINS = 32, ZLO = -4, ZHI = 4;
@@ -347,7 +357,7 @@ export function graphKit() {
     for (const q of (Array.isArray(r.sliders) ? r.sliders : []).slice(0, 8)) {
       if (!q || typeof q !== 'object') continue;
       const name = str(q.name, 16).trim();
-      if (!/^[A-Za-zα-ωΑ-Ω][A-Za-z0-9α-ωΑ-Ω]*(_[A-Za-z0-9]{1,8})?$/.test(name) || seen.has(name) || name in CONST || FN[name]) continue;
+      if (!/^[A-Za-zα-ωΑ-Ω][A-Za-z0-9α-ωΑ-Ω]*(_[A-Za-z0-9]{1,8})?$/.test(name) || seen.has(name) || own(CONST, name) || own(FN, name)) continue;
       seen.add(name);
       let min = num(q.min, 0), max = num(q.max, 10);
       if (!(max > min)) max = min + 1;
@@ -813,7 +823,7 @@ export function graphKit() {
       const inp = D.createElement('input'); inp.type = 'range'; inp.id = 'rk-' + k;
       inp.min = String(q.min); inp.max = String(q.max); inp.step = String(q.step); inp.value = String(q.value);
       const out = D.createElement('output'); out.htmlFor = inp.id; out.textContent = fmtStep(q.value, q.step);
-      inp.addEventListener('input', () => { vals[q.name] = +inp.value; out.textContent = fmtStep(+inp.value, q.step); redraw(true); });
+      inp.addEventListener('input', () => { vals[q.name] = +inp.value; out.textContent = fmtStep(+inp.value, q.step); soon(); });
       r.append(lab, inp, out);
       list.append(r);
       outs.push([inp, out, q]);
@@ -825,7 +835,9 @@ export function graphKit() {
       row.append(b);
     }
     cv.setAttribute('aria-label', s.title || 'Interactive graph');
-    let W = 0, H = 0;
+    let W = 0, H = 0, queued = 0;
+    // (a slider's input events come faster than frames: one compute a frame)
+    const soon = () => { if (!queued) queued = requestAnimationFrame(() => { queued = 0; redraw(true); }); };
     function redraw(again) {
       W = Math.max(120, Math.round(cv.clientWidth || box.clientWidth || 600));
       H = Math.round(W * s.aspect);
@@ -946,9 +958,37 @@ export function graphCanvas(spec, W, scale = 3) {
   K.paint(g, s, K.compute(s, vals), K.ranges(s), vals, W, H, null);
   return c;
 }
-export function graphPNG(spec, W, scale) {
+export function graphPNG(spec, W, scale = 3) {
   const c = graphCanvas(spec, W, scale);
-  return new Promise((ok, no) => c.toBlob((b) => (b ? ok(b) : no(new Error('The picture could not be made'))), 'image/png'));
+  return new Promise((ok, no) => c.toBlob((b) => (b ? ok(b) : no(new Error('The picture could not be made'))), 'image/png'))
+    .then(async (b) => new Blob([withDpi(new Uint8Array(await b.arrayBuffer()), 96 * scale)], { type: 'image/png' }));
+}
+
+// A PNG with its resolution written (a pHYs chunk after IHDR): without one graphicx takes 72 dpi,
+// and a command with no width printed the picture at three times its size
+export function withDpi(png, dpi) {
+  if (png.length < 33 || png[12] !== 0x49 || png[13] !== 0x48) return png;
+  const ppm = Math.round(dpi / 0.0254);
+  const chunk = new Uint8Array(21), v = new DataView(chunk.buffer);
+  v.setUint32(0, 9); chunk.set([0x70, 0x48, 0x59, 0x73], 4); v.setUint32(8, ppm); v.setUint32(12, ppm); chunk[16] = 1;
+  v.setUint32(17, crc32(chunk.subarray(4, 17)));
+  // (one already there is replaced: the IHDR is 8 + 25 bytes from the start)
+  let rest = png.subarray(33);
+  if (rest.length > 8 && String.fromCharCode(...rest.subarray(4, 8)) === 'pHYs') rest = rest.subarray(21);
+  const out = new Uint8Array(33 + 21 + rest.length);
+  out.set(png.subarray(0, 33)); out.set(chunk, 33); out.set(rest, 54);
+  return out;
+}
+let CRC = null;
+function crc32(a) {
+  if (!CRC) { CRC = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; CRC[n] = c >>> 0; } }
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < a.length; i++) c = CRC[(c ^ a[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+// the width a PNG was drawn for, in CSS pixels (its pixels over its scale), or 0
+export function pngWidth(png, scale = 3) {
+  return png && png.length > 24 && png[12] === 0x49 ? new DataView(png.buffer, png.byteOffset).getUint32(16) / scale : 0;
 }
 
 // Data pasted from a spreadsheet, a CSV or typed: two numbers a line (the first two columns);

@@ -7,8 +7,8 @@ import { correct, borderLine, DEFAULTS } from '../src/autocorrect.js';
 let n = 0;
 const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
 // the text after typing ch at the end of s, corrected: the typed character as typing writes it
-const type = (s, ch, o = DEFAULTS, own = []) => {
-  const r = correct(s, s.length, ch, o, own);
+const type = (s, ch, o = DEFAULTS, own = [], ex = []) => {
+  const r = correct(s, s.length, ch, o, own, ex);
   if (!r) return s + ch;
   const t = s + ch, e = r.typed ? r.e + 1 : r.e;
   return t.slice(0, r.s) + r.t + t.slice(e);
@@ -50,6 +50,13 @@ ok('capitals: a sentence\'s first letter, TWo INitial CApitals, days; not after 
   assert.equal(type('Text.\n\nb', '.'), 'Text.\n\nb.');
   assert.equal(type('x\n\n(c', ')'), 'x\n\n(c)');
   assert.equal(type('\\item (r', ')'), '\\item (r)');
+  // the review's (M4): degrees and words written so on purpose, one's own exceptions, f(c), (a) (b) (c)
+  for (const w of ['MPhil', 'DPhil', 'MRes', 'OAuth', 'OCaml', 'DNase', 'IPython']) assert.equal(type('an ' + w, ' '), 'an ' + w + ' ');
+  assert.equal(type('a THere', ' ', DEFAULTS, [], ['THere']), 'a THere ');
+  assert.equal(type('f(c', ')'), 'f(c)');
+  assert.equal(type('items (a) (b) (c', ')'), 'items (a) (b) (c)');
+  assert.equal(type('see https://x.org/a(c', ')'), 'see https://x.org/a(c)');
+  assert.equal(type('see https://x.org/a->b', '-'), 'see https://x.org/a->b-');
   assert.equal(type('\\section{intro', '}'), '\\section{intro}');
   assert.equal(type('\\section{intro', ' '), '\\section{Intro ');
   assert.equal(type('x \\textbf', ' '), 'x \\textbf ');
