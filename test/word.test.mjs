@@ -379,11 +379,12 @@ await ok('to Word: colour, highlight, centred text and a list\'s own labels are 
   const parts = unzip(E.docx);
   const d = text(parts.get('word/document.xml')), st = text(parts.get('word/styles.xml')), nu = text(parts.get('word/numbering.xml'));
   assert.match(d, /<w:rStyle w:val="ColourFF0000" \/><\/w:rPr><w:t[^>]*>Red words/);
-  assert.match(d, /<w:rStyle w:val="Highlight" \/><\/w:rPr><w:t[^>]*>marked ones/);
+  // (Word's own highlight on the run, which Text Highlight Color shows and takes off; review L6)
+  assert.match(d, /<w:rStyle w:val="Highlight" \/><w:highlight w:val="yellow" \/><\/w:rPr><w:t[^>]*>marked ones/);
   assert.match(d, /<w:pStyle w:val="Centred" \/>/);
   assert.match(st, /w:styleId="ColourFF0000">(?:(?!<\/w:style>)[\s\S])*<w:rPr><w:color w:val="FF0000" \/><\/w:rPr><\/w:style>/);
   assert.match(st, /w:styleId="Colour0F9ED5">(?:(?!<\/w:style>)[\s\S])*<w:color w:val="0F9ED5" \/>/);
-  assert.match(st, /w:styleId="Highlight">(?:(?!<\/w:style>)[\s\S])*<w:shd [^>]*w:fill="FFFF00" \/>/);
+  assert.doesNotMatch(st, /w:styleId="Highlight">(?:(?!<\/w:style>)[\s\S])*<w:shd [^>]*w:fill="FFFF00" \/>/);
   assert.match(st, /w:styleId="Centred">(?:(?!<\/w:style>)[\s\S])*<w:pPr><w:jc w:val="center" \/><\/w:pPr><\/w:style>/);
   assert.match(nu, /<w:numFmt w:val="lowerLetter" \/><w:lvlText w:val="\(%1\)" \/>/);
   assert.equal(importInto(E.docx, files).files.size, 0);
@@ -392,6 +393,38 @@ await ok('to Word: colour, highlight, centred text and a list\'s own labels are 
   assert.equal(wordColor('mycolour'), null);
   assert.deepEqual(listStyle('iv)'), [1, { t: 'DefaultStyle' }, { t: 'DefaultDelim' }]);
   assert.deepEqual(listStyle('3.'), [3, { t: 'Decimal' }, { t: 'Period' }]);
+});
+
+await ok('to Word: the Font group\'s formats as Word\'s own (a highlighter\'s colour, ulem\'s lines, double strike, caps, border, sizes, fonts, spacing, position, scale), and still round trip', async () => {
+  const src = doc('\\hl[green]{green marked} \\hl{yellow marked} \\uuline{twice under} \\uwave{wavy} \\dashuline{dashed} \\dotuline{dotted} \\dsout{struck twice} \\MakeUppercase{capitals} \\fbox{boxed}'
+    + ' {\\large larger} {\\fontsize{14}{17}\\selectfont fourteen} {\\fontfamily{ppl}\\selectfont palatino} \\textsf{sans} \\textls[100]{spaced} \\raisebox{3pt}{raised} \\scalebox{1.5}[1]{wide}.\n',
+  '\\usepackage{xcolor,graphicx,microtype}\n\\usepackage[normalem]{ulem}\n\\DeclareRobustCommand{\\hl}[1][yellow]{\\bgroup\\markoverwith{\\textcolor{#1}{\\rule[-.5ex]{2pt}{2.5ex}}}\\ULon}\n'
+    + '\\DeclareRobustCommand{\\dsout}{\\bgroup\\markoverwith{\\raise.35ex\\hbox{\\vbox{\\hrule width.2em height.4pt\\kern.25ex\\hrule width.2em height.4pt}}}\\ULon}\n');
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  const parts = unzip(E.docx);
+  const d = text(parts.get('word/document.xml')), st = text(parts.get('word/styles.xml'));
+  const styled = (id, words) => assert.match(d, new RegExp('<w:rStyle w:val="' + id + '" />(?:(?!</w:r>)[\\s\\S])*<w:t[^>]*>' + words), id + ' on ' + words);
+  const fills = (id, xml) => assert.match(st, new RegExp('w:styleId="' + id + '">(?:(?!</w:style>)[\\s\\S])*' + xml.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), id);
+  styled('Highlight00FF00', 'green marked'); styled('Highlight00FF00" /><w:highlight w:val="green', 'green marked');
+  styled('Highlight', 'yellow marked'); styled('Highlight" /><w:highlight w:val="yellow', 'yellow marked');
+  // (a colour Word's highlighter does not have: the style's shading)
+  assert.match(exportFiles(new Map([['main.tex', src.replace('\\hl[green]', '\\hl[orange]')]])).docx ? text(unzip(exportFiles(new Map([['main.tex', src.replace('\\hl[green]', '\\hl[orange]')]])).docx).get('word/styles.xml')) : '', /w:styleId="HighlightFF8000">(?:(?!<\/w:style>)[\s\S])*<w:shd [^>]*w:fill="FF8000" \/>/);
+  styled('UnderlineDouble', 'twice under'); fills('UnderlineDouble', '<w:u w:val="double" />');
+  styled('UnderlineWave', 'wavy'); fills('UnderlineWave', '<w:u w:val="wave" />');
+  fills('UnderlineDash', '<w:u w:val="dash" />'); fills('UnderlineDotted', '<w:u w:val="dotted" />');
+  styled('DoubleStrikethrough', 'struck twice'); fills('DoubleStrikethrough', '<w:dstrike />');
+  styled('AllCaps', 'capitals'); fills('AllCaps', '<w:caps />');
+  styled('CharacterBorder', 'boxed'); fills('CharacterBorder', '<w:bdr w:val="single"');
+  styled('Size24', 'larger'); fills('Size24', '<w:sz w:val="24" />');
+  styled('Size28', 'fourteen'); fills('Size28', '<w:sz w:val="28" />');
+  styled('FontPalatino', 'palatino'); fills('FontPalatino', 'w:ascii="Palatino Linotype"');
+  styled('FontSans', 'sans'); fills('FontSans', 'w:ascii="Arial"');
+  styled('Spacing20', 'spaced'); fills('Spacing20', '<w:spacing w:val="20" />');
+  styled('Position6', 'raised'); fills('Position6', '<w:position w:val="6" />');
+  styled('Scale150', 'wide'); fills('Scale150', '<w:w w:val="150" />');
+  assert.equal(importInto(E.docx, files).files.size, 0);
+  await roundTrip(src, rep('green marked', 'green noted'), src.replace('green marked', 'green noted'));
 });
 
 // a .docx of one body, as small as pandoc reads: for the cases a line of XML says best
@@ -430,6 +463,12 @@ await ok('to Word: a cell merged across (\\multicolumn) and one merged down (\\m
   const t = bodyOf(open(E.docx).tex);
   assert.ok(/\\multicolumn\{2\}\{(?:[^{}]|\{\})*\}\{%?\s*Wide head\}/.test(t), t);
   assert.ok(/\\multirow\{2\}\{\*\}\{Tall\}/.test(t), t);
+});
+
+await ok('from Word: highlighted text gets the highlighter that takes a colour, as the Font group writes it', () => {
+  const r = docxToLatex(P, new Uint8Array(tiny('<w:p><w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>marked words</w:t></w:r></w:p>')), 'x.docx');
+  assert.ok(r.tex.includes('\\hl{marked words}'), r.tex);
+  assert.ok(r.tex.includes('\\DeclareRobustCommand{\\hl}[1][yellow]{\\bgroup\\markoverwith{\\textcolor{#1}{\\rule[-.5ex]{2pt}{2.5ex}}}\\ULon}'), r.tex);
 });
 
 

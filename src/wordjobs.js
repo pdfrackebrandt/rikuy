@@ -175,11 +175,11 @@ function styled(docx, rtl, have) {
     if (k >= 0 && !/<w:bidi\b/.test(d.slice(d.lastIndexOf('<w:sectPr'), k))) d = d.slice(0, k) + '<w:bidi />' + d.slice(k);
   }
   if (d.includes('<w:bidi />') && d.includes('<w:tbl>')) d = bidiTables(d);
-  d = scriptRuns(d, skip);
+  d = highlights(scriptRuns(d, skip));
   if (d !== d0) { parts.set(dp, d); n++; }
   for (const name of ['word/footnotes.xml', 'word/comments.xml']) {
     if (!parts.has(name)) continue;
-    const was = text(parts.get(name)), now = scriptRuns(was, skip);
+    const was = text(parts.get(name)), now = highlights(scriptRuns(was, skip));
     if (now !== was) { parts.set(name, now); n++; }
   }
   let st = text(parts.get(p));
@@ -205,16 +205,47 @@ function styled(docx, rtl, have) {
   st = st.replace(/(<w:style [^>]*w:styleId="(Colour|Shade|Highlight|Centred|RightAligned)([0-9A-F]{6})?"[^>]*>(?:(?!<\/w:style>)[\s\S])*?)(<\/w:style>)/g, (s, head, kind, hex, end) => {
     const add = kind === 'Colour' && hex ? '<w:rPr><w:color w:val="' + hex + '" /></w:rPr>'
       : kind === 'Shade' && hex ? '<w:rPr><w:shd w:val="clear" w:color="auto" w:fill="' + hex + '" /></w:rPr>'
-        : kind === 'Highlight' && !hex ? '<w:rPr><w:shd w:val="clear" w:color="auto" w:fill="FFFF00" /></w:rPr>'
+        : kind === 'Highlight' && !HL_WORD[hex || 'FFFF00'] ? '<w:rPr><w:shd w:val="clear" w:color="auto" w:fill="' + hex + '" /></w:rPr>'
           : kind === 'Centred' && !hex ? '<w:pPr><w:jc w:val="center" /></w:pPr>'
             : kind === 'RightAligned' && !hex ? '<w:pPr><w:jc w:val="right" /></w:pPr>' : '';
     if (!add || /<w:[pr]Pr>/.test(head)) return s;
     n++;
     return head + add + end;
   });
+  // the Font group's other formats (src/wordast.js): what each style's name says
+  st = st.replace(/(<w:style [^>]*w:styleId="(UnderlineDouble|UnderlineWave|UnderlineDash|UnderlineDotted|DoubleStrikethrough|AllCaps|CharacterBorder|FontSans|Font(?:Times|Palatino|Charter|Schola|Bookman|Mono)|Size(\d{1,4})|Spacing(m?\d{1,5})|Position(m?\d{1,4})|Scale(\d{1,3}))"[^>]*>(?:(?!<\/w:style>)[\s\S])*?)(<\/w:style>)/g, (s, head, kind, sz, sp, pos, sc, end) => {
+    if (/<w:[pr]Pr>/.test(head)) return s;
+    const fonts = { FontSans: 'Arial', FontTimes: 'Times New Roman', FontPalatino: 'Palatino Linotype', FontCharter: 'Charter', FontSchola: 'Century Schoolbook', FontBookman: 'Bookman Old Style', FontMono: 'Courier New' };
+    const signed = (v) => (v[0] === 'm' ? '-' + v.slice(1) : v);
+    const r = sz ? '<w:sz w:val="' + sz + '" /><w:szCs w:val="' + sz + '" />' : sp ? '<w:spacing w:val="' + signed(sp) + '" />' : pos ? '<w:position w:val="' + signed(pos) + '" />' : sc ? '<w:w w:val="' + sc + '" />'
+      : fonts[kind] ? '<w:rFonts w:ascii="' + fonts[kind] + '" w:hAnsi="' + fonts[kind] + '" />'
+        : { UnderlineDouble: '<w:u w:val="double" />', UnderlineWave: '<w:u w:val="wave" />', UnderlineDash: '<w:u w:val="dash" />', UnderlineDotted: '<w:u w:val="dotted" />',
+          DoubleStrikethrough: '<w:dstrike />', AllCaps: '<w:caps />', CharacterBorder: '<w:bdr w:val="single" w:sz="4" w:space="0" w:color="auto" />' }[kind];
+    if (!r) return s;
+    n++;
+    return head + '<w:rPr>' + r + '</w:rPr>' + end;
+  });
   if (!n) return docx;
   parts.set(p, st);
   return zip(parts);
+}
+
+// Word's highlighter has sixteen colours, set on each run (a style cannot carry one): a run of
+// the Highlight style in one of them gets Word's own highlight, so Text Highlight Color shows and
+// takes it off; any other colour is the style's shading. (w:highlight goes where Word's order of
+// run properties puts it: before the underline, the border, the shading and the language.)
+const HL_WORD = { FFFF00: 'yellow', '00FF00': 'green', '00FFFF': 'cyan', FF00FF: 'magenta', '0000FF': 'blue', FF0000: 'red', '000080': 'darkBlue', '008080': 'darkCyan',
+  '008000': 'darkGreen', '800080': 'darkMagenta', '800000': 'darkRed', '808000': 'darkYellow', '808080': 'darkGray', BFBFBF: 'lightGray', C0C0C0: 'lightGray', '000000': 'black', FFFFFF: 'white' };
+function highlights(xml) {
+  if (!xml.includes('w:val="Highlight')) return xml;
+  return xml.replace(/<w:rPr>((?:(?!<\/w:rPr>)[\s\S])*?)<\/w:rPr>/g, (all, inner) => {
+    const m = /<w:rStyle w:val="Highlight([0-9A-F]{6})?"\s*\/>/.exec(inner);
+    const name = m && HL_WORD[m[1] || 'FFFF00'];
+    if (!name || /<w:highlight\b/.test(inner)) return all;
+    const k = inner.search(/<w:(?:u|effect|bdr|shd|fitText|vertAlign|rtl|cs|em|lang|eastAsianLayout|specVanish|oMath)\b/);
+    const at = k < 0 ? inner.length : k;
+    return '<w:rPr>' + inner.slice(0, at) + '<w:highlight w:val="' + name + '" />' + inner.slice(at) + '</w:rPr>';
+  });
 }
 
 // w:bidiVisual on each table of document.xml whose paragraphs all carry w:bidi
@@ -1015,7 +1046,8 @@ export function docxToLatex(P, bytes, name) {
   if (used(/\\(sout|uline|hl)\{/)) pre.push('\\usepackage[normalem]{ulem}');
   // Word's highlighter: pandoc writes soul's \hl, which stops at a formula inside it and, before
   // 2023, at an accented letter; this one (ulem's) takes both and breaks across lines
-  if (used(/\\hl\{/)) pre.push('\\DeclareRobustCommand{\\hl}{\\bgroup\\markoverwith{\\textcolor{yellow}{\\rule[-.5ex]{2pt}{2.5ex}}}\\ULon}');
+  // (with a colour, [yellow] unless one is named: the line Rikuy's highlighter writes, src/charfmt.js)
+  if (used(/\\hl\{/)) pre.push('\\DeclareRobustCommand{\\hl}[1][yellow]{\\bgroup\\markoverwith{\\textcolor{#1}{\\rule[-.5ex]{2pt}{2.5ex}}}\\ULon}');
   if (used(/\\(cite[tp]?|citeauthor|citeyear)\{/) || bib) pre.push('\\usepackage[authoryear,round]{natbib}');
   if (used(/\\(texttt|verb)|\\begin\{verbatim\}/)) { /* the class has them */ }
   if (used(/\\(href|url|hyperlink|hypertarget|hyperref|phantomsection|nolinkurl)\b/)) pre.push('\\usepackage[hidelinks]{hyperref}');

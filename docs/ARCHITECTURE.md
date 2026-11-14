@@ -49,6 +49,7 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | the Styles gallery and the paragraph's style | `styleSync`, `paintGallery`, `pageGallery`, `openStyles`, `tileOrder`, `installGallery` (`src/ui/gallery.js`); `blockStyle`, `setBlockStyle` (`src/cmd/styles.js`); `restyle`, `latexSpot` (`src/styles.js`) |
 | keys, the search box, the right click menu, the kit | `matches`, `lookup`, `installKeys` (`src/keys.js`); `installSearch` (`src/ui/search.js`); `openContextMenu`, `installMenu` (`src/ui/menu.js`); `openMenu`, `openGallery`, `splitButton`, `colorPicker`, `numberField`, `dialog` (`src/ui/kit.js`) |
 | a table: where the caret is in it, and every operation on it | `parseTable`, `tableAt`, `cellAt`, `emit`, `insertRow`, `deleteRows`, `insertCol`, `deleteCols`, `mergeCells`, `splitCell`, `applyLook`, `setBorders`, `shade`, `setSetting`, `autofit`, `repeatHeader` (`src/table.js`); `tableHere`, `tableOp`, `tableApply`, `tablePackages`, `caretToCell` (`src/cmd/table.js`); `openTablePicker` and the dialogs (`src/ui/tablepicker.js`); `tabular`, `tableCell`, `tableSetting`, `csvTable` (`src/model.js`) |
+| a character format (Bold to Font Color, the boxes, the Font dialog, the Format Painter) | `toggle`, `setValue`, `wrapIn`, `clearFormats`, `chainAt`, `preambleFor`, `docSizeEdits`, `docFontEdits`, `changeCase`, `autoFormat` (`src/charfmt.js`); `fmtCommit`, `fmtToggle`, `fmtSet`, `fontState`, `fontBox` (`src/cmd/font.js`); `openFontDialog` (`src/ui/fontdialog.js`) |
 | an edit of the preamble, an inline wrapper, an environment around paragraphs | `usePackages`, `kvEdits`, `classOptions`, `setPackageKeys`, `defineOnce` (`src/preamble.js`); `App.packageEdits`, `preambleOthers`; `wrapEdits`, `unwrapEdits`, `standsFree`, `rewrapEdits`, `enclosing`, `clearText`, `GROUPS` (`src/wrap.js`); `envWords`, `wrapBlockEdits`, `unwrapBlockEdits` (`src/blockenv.js`) |
 | the side panel: outline and problems; versions and changes | `toggleNav`, `refreshNav`, `goTo` (`src/nav.js`); `snapshot`, `currentChanges`, `renderChanges`, `paintChanges` (`src/review.js`) |
 | Find, Replace, Go To; the Navigation pane (its box, Headings, Pages, Results) and the Outline view | `compile`, `hitsIn`, `blockText`, `hitSource`, `expand`, `labelsIn` (`src/find.js`); `findRun`, `findPaint`, `findGo`, `hitEdits`, `replaceOne`, `replaceAll`, `goToTargets`, `goToTarget`, `countStatus` (`src/cmd/find.js`); `openFindDialog`, `findDialogSync` (`src/ui/finddialog.js`); `renderOutline`, `navShell`, `paintHeadings`, `navDrop`, `paintPages`, `paintResults`, `setOutlineView` (`src/nav.js`) |
@@ -245,8 +246,10 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   (`when`) and presses what is on (`on`), with `at.memo` so two commands asking the same
   (`listAt`, `blockStyle`) compute it once. `ribbonFit` is one rule for every tab and width:
   everything open, then one step at a time while the row is too long, the cheapest loss first
-  counted in controls (the Download label and the buttons' names, which take none; a tile of the
-  gallery, down to three; the three downloads as one Download button; the style list for the
+  counted in controls (a spare group first, one whose commands have a tab of their own as well,
+  `spare` in `src/ribbon/order.js`: Home's Insert; the Download label; a tile of the gallery,
+  down to three; the buttons' names, which take none but come after the tiles, in their chain,
+  so a desktop keeps them; the three downloads as one Download button; the style list for the
   gallery; then groups, rank 1 and then the lowest `rank` first, of equal ranks the rightmost,
   each into one button named after the group, its first command's icon, whose menu has the same
   commands by the same names); then each step tried back, the last first, kept undone where the
@@ -307,6 +310,38 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   the page draws merged rows, turned words, banded rows, bold and coloured columns and a csvsimple
   table from its file (`tabular`, `tableCell`, `csvTable` in `src/model.js`, the tabular branch of
   `src/render.js`), and Word gets merged cells as Word's (`table` in `src/wordast.js`).
+- **Character formatting** (Home's Font group, task 39) is `src/charfmt.js`, pure and tested on
+  strings (`test/font.test.mjs`), over `src/wrap.js`: each format is a kind of `GROUPS` (bold,
+  underline, strike, size, colour, family, ...), and `toggle`, `setValue`, `wrapIn` and
+  `clearFormats` take the text and the selection and give back the text and the selection after
+  them, so the Font dialog's changes chain into one commit. It reads itself the forms
+  `src/wrap.js` leaves out: a declaration with arguments (`{\color{red} …}`,
+  `{\fontsize{14}{17}\selectfont …}`, `{\fontfamily{ppl}\selectfont …}`) and an option after the
+  arguments (`\scalebox{1.5}[1]{…}`). Everything is taken off a part as Word takes it
+  (`clearKinds`: a group of declarations split keeps its other declarations and, where it is an
+  argument, its braces; an end of the selection inside another format splits that one too,
+  `wholePart`), and put on in whole pieces (`segmentsOf` cuts a selection at braces it crosses,
+  cells, rows, items, environments and paragraphs, and leaves out LaTeX paragraphs and displays;
+  ulem's lines close around a `\footnote`, `\marginpar` or `\todo`). `needsOf` says what a written command needs and
+  `preambleFor` writes it once (ulem, xcolor with dvipsnames, or `\PassOptionsToPackage` before
+  tikz; the highlighter's and the double strikethrough's one line definitions); `docSizeEdits` and
+  `docFontEdits` are the document's size and font (the class's option, extarticle, KOMA's
+  fontsize; a font package's line in place of the last one's, a package Rikuy does not list
+  named and replaced, or `\setmainfont`). Change Case changes only the letters the page draws
+  (`drawnChars` in `src/cmd/font.js` reads the page's text runs and their places in the source)
+  that the source also gives as letters of words (`caseChars`: no math, keys, labels, column
+  specs, code or pictures); `changeCase` is the same on the source alone. `autoFormat` the rest. `src/cmd/font.js` registers the commands and commits each action
+  (`fmtCommit`: the caret's file, then the main file's preamble; a block of table cells, from
+  `blockCells` over `tableHere` of `src/cmd/table.js`, cell by cell on each cell's own text);
+  `chainAt` reads the wrappers
+  around the caret once for each look at the ribbon, for every toggle's pressed state and the
+  boxes. `src/ui/fontdialog.js` is the Font dialog and the Phonetic Guide. On a touch screen
+  (`pointer: coarse` in `src/app.css`) the group's controls, a menu's items and the dialog's
+  fields are 44 px each way, and a phone's sheet opens above the on-screen keyboard (`--vk-h`,
+  set from the visual viewport in `src/cmd/font.js`). On the page
+  `src/model.js` draws what they write (its inline table, `fontLook`, extsizes' base sizes) and
+  `paint` in `src/render.js` sets sizes, tracking, shifts and the highlighter's colour as numbers
+  and checked colours only.
 - **Styles.** `blockStyle` reads the caret's block into `{v, to, b}`: its style now, the styles it
   may take, and where its words are; `restyle` (`src/styles.js`, tested on strings in
   `test/styles.test.mjs`) turns that into the smallest edits: Normal to LaTeX writes the mark's
@@ -314,8 +349,8 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   on lines around the words, a heading its command and braces; each way back restores the bytes.
   A heading or a quote is offered for a LaTeX paragraph only where its source is one paragraph
   of text. The gallery (`paintGallery`) shows as many tiles as the row has room for, each as wide
-  as its name: `ribbonFit` takes the Download label and the insert buttons' names first (they
-  lose no control), then tiles (six to three), and puts the style list in its place where three
+  as its name: `ribbonFit` folds Home's spare Insert and takes the Download label first, then
+  tiles (six to three), then the buttons' names, and puts the style list in its place where three
   do not fit and on phones. LaTeX is always on the first page (`tileOrder`: Normal, Heading 1, LaTeX
   for three). Pages of n tiles start every n and the last one is full (`pageStarts`); the row
   keeps the width of its widest page, so the arrows do not move under the pointer, and it pages
@@ -348,9 +383,9 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   `\end{document}`; none when a heading under it is in another file), `swapEdit` exchanges two
   neighbours with the space between kept (Move up and Move down: sections, paragraphs, list
   items), `moveEdits` takes one elsewhere (a heading dragged in the Navigation pane).
-  Where Home's row is short its least needed group, Editing (rank 1), folds first into one icon
-  button "Editing" (`ribbonFit`; from 860 px down, where the names, tiles and downloads have no
-  more to give), and `chordText` (`src/keys.js`) writes the outline's keys in menus and tooltips
+  Where Home's row is short, after its spare Insert, its least needed group, Editing (rank 1),
+  folds first into one icon button "Editing" (`ribbonFit`; at 700 px beside the Font group's
+  Bold, Italic and Underline), and `chordText` (`src/keys.js`) writes the outline's keys in menus and tooltips
   as Alt+Shift+←.
   `src/nav.js` draws the Navigation pane in the side panel's Outline tab: the box, Headings (a
   tree with collapse, Show levels, the Outlining toolbar, Alt+Shift and the arrows, dragging; in

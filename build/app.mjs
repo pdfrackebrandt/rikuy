@@ -471,7 +471,14 @@ export function llmsFull() {
 
 Ctrl is Cmd on a Mac.
 
-- Ctrl+B, Ctrl+I, Ctrl+U: bold, italic, underline
+- Ctrl+B, Ctrl+I, Ctrl+U: bold, italic, underline (Underline writes ulem's \\uline, which breaks
+  across lines, and loads ulem; \\underline written by hand is read and taken off too)
+- Ctrl+Shift+X: strikethrough; Ctrl+, and Ctrl+.: subscript and superscript (Google Docs' keys:
+  Ctrl+= stays zoom); Ctrl+Shift+A, Ctrl+Shift+K: all caps, small caps; Ctrl+Alt+H: the
+  highlighter (\\hl, yellow or the colour picked last); Ctrl+Shift+> and <, and Ctrl+] and [ (not
+  on a Mac): the next size up or down ({\\large ...}; at a caret outside any size, the document's
+  base size); Shift+F3: lowercase, Capitalize Each Word, UPPERCASE in turn; Ctrl+Space (not on a
+  Mac): clear the character formatting; Ctrl+D: the Font dialog; Ctrl+Shift+F: the font box
 - $ or Ctrl+M: a formula in the line; Ctrl+Shift+E: a numbered equation
 - \\ or Ctrl+K: the list of things to insert (footnote, citation, section, table and more)
 - Ctrl+Z, Ctrl+Shift+Z: undo, redo
@@ -516,6 +523,30 @@ Ctrl is Cmd on a Mac.
 - Click math, a citation or a cross reference to edit it; Alt+click shows that spot in the source
 - In an equation: names as in LaTeX or Word (\\alpha then Space), a/b for a fraction, x^2 and
   x_i, Space to step out, Tab to the next empty slot, Enter to finish
+
+## Character formatting
+
+Home's Font group writes the LaTeX a person writes, and reads the forms written by hand:
+\\textbf (and {\\bfseries ...}, {\\bf ...}), \\emph (\\textit, {\\itshape ...}), \\uline, \\uuline,
+\\uwave, \\dashuline, \\dotuline (ulem, loaded with normalem), \\sout, \\dsout (two of \\sout's
+lines, defined once in the preamble), \\textsubscript, \\textsuperscript, \\textsc, \\MakeUppercase,
+\\fbox, \\colorbox{lightgray}{...}, \\textcircled, \\textcolor{name}{...} or \\textcolor[HTML]{C00000}{...}
+(xcolor; Word's standard colours are dvipsnames, so the option dvipsnames is added, or passed to
+xcolor before tikz loads it), {\\color{red} ...} by hand, \\hl{...} and \\hl[green]{...} (the
+highlighter Word import defines: one \\DeclareRobustCommand{\\hl}[1][yellow] line), sizes
+{\\large ...} or {\\fontsize{13}{15.6}\\selectfont ...}, families \\textsf, \\textrm, \\texttt or
+{\\fontfamily{ppl}\\selectfont ...} ({\\fontspec{TeX Gyre Pagella} ...} under XeLaTeX and
+LuaLaTeX), \\textls[100]{...}, \\scalebox{1.5}[1]{...}, \\raisebox{3pt}{...} and \\ruby{base}{reading}.
+The font box, the size box, Increase and Decrease Font Size act on the selected text, or, at a
+caret inside a word, on that word (as Word's do); a selection over several paragraphs, cells or
+list items gets a wrapper on each, a LaTeX paragraph in it none, and ulem's lines close around a
+\\footnote. The Font dialog's Set As Default sets the document's font (its package line: newtx
+for Times, newpx for Palatino, tgheros with \\familydefault for Helvetica, XCharter, tgschola,
+tgbonum, kpfonts; or \\setmainfont under fontspec; a font package Rikuy does not list is shown by
+its name and replaced) and its base size (the class option; extarticle and its kin for 8, 9, 14,
+17 and 20pt; KOMA's fontsize=). Change Case changes only the letters the page draws: math, keys,
+labels and LaTeX paragraphs keep theirs. Each action is one step of undo. Typing *words* or
+_words_ makes them \\textbf or \\emph (one undo gives the marks back).
 
 ## LaTeX paragraphs
 

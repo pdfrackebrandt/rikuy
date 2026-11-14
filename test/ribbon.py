@@ -35,8 +35,16 @@ def state(page):
 
 
 def press(page, bid):
-    """A real click on a ribbon button: it must leave the caret on the page."""
-    page.click('#' + bid)
+    """A real click on a ribbon button: it must leave the caret on the page. Where its group is
+    folded (Home's Insert, which the Insert tab has too, folds first), the item of its name in the
+    group's menu, as a person would press it."""
+    gb = page.evaluate("(id) => { const e = document.getElementById(id), g = e && e.closest('.rb-grp.folded'); return g && !e.offsetParent ? g.querySelector('.rb-gbtn').id : null; }", bid)
+    if gb:
+        name = page.get_attribute('#' + bid, 'aria-label')
+        page.click('#' + gb); page.wait_for_timeout(120)
+        page.locator('.pop [role^=menuitem][aria-label="%s"]' % name).click()
+    else:
+        page.click('#' + bid)
     page.wait_for_timeout(120)
 
 
@@ -47,6 +55,11 @@ def style(page, value):
         page.select_option('#rb-style', value)
     elif page.is_visible('#rb-st-' + value):
         page.click('#rb-st-' + value)
+    elif page.is_visible('#rg-home-styles'):
+        # (the Styles group folded into its button where the row is short: its menu names each style)
+        page.click('#rg-home-styles'); page.wait_for_timeout(150)
+        name = {'p': 'Normal', 'title': 'Title', 'section': 'Heading 1', 'subsection': 'Heading 2', 'subsubsection': 'Heading 3', 'latex': 'LaTeX source', 'quote': 'Quote'}[value]
+        page.locator('.pop [role^=menuitem][aria-label="%s"]' % name).click()
     else:
         page.click('#rb-st-more'); page.wait_for_timeout(150)
         page.click('.pop-styles .rb-mi.st-' + value)
@@ -112,9 +125,11 @@ def letters(page):
     before = src(page)
     select_text(page, 'words')
     press(page, 'rb-u')
-    check('U underlines the selection and keeps it selected', '\\underline{words}' in src(page) and page.evaluate('getSelection().toString()') == 'words' and state(page)['rb-u'][1], src(page)[src(page).find('slanted'):][:40])
+    # (\uline, ulem's, which breaks across lines: Home's Font group, src/cmd/font.js)
+    check('U underlines the selection and keeps it selected', '\\uline{words}' in src(page) and page.evaluate('getSelection().toString()') == 'words' and state(page)['rb-u'][1], src(page)[src(page).find('slanted'):][:40])
     press(page, 'rb-u')
-    check('U again takes the underline off', src(page) == before and not state(page)['rb-u'][1])
+    # (the line that loads ulem stays: other words may use it)
+    check('U again takes the underline off', src(page).replace('\\usepackage[normalem]{ulem}\n', '') == before and not state(page)['rb-u'][1])
     select_text(page, 'First')
     press(page, 'rb-b'); press(page, 'rb-i')
     check('B and I on a selection', '\\emph{\\textbf{First}}' in src(page) or '\\textbf{\\emph{First}}' in src(page), src(page)[src(page).find('Opening'):][:60])
@@ -286,16 +301,20 @@ def keyboard(page):
     stops = page.evaluate('[...document.querySelectorAll("#ribbon select, #ribbon button")].filter((x) => x.tabIndex === 0).map((x) => x.id)')
     # (the ribbon is the tablist "Ribbon" over one toolbar per tab, named after it; Home's groups in Word's order: Font, Paragraph, Styles, Insert)
     bar = page.evaluate('(() => { const t = document.querySelector("#rp-home > [role=toolbar]"); return [document.getElementById("rb-tabs").getAttribute("role"), document.getElementById("rb-tabs").getAttribute("aria-label"), t && t.getAttribute("aria-label")]; })()')
-    check('the ribbon\'s open tab is a toolbar with one tab stop', bar == ['tablist', 'Ribbon', 'Home'] and stops == ['rb-b'], (bar, stops))
+    # (its first control is the Clipboard group's Format Painter, in Word's order)
+    check('the ribbon\'s open tab is a toolbar with one tab stop', bar == ['tablist', 'Ribbon', 'Home'] and stops == ['rc-format-painter'], (bar, stops))
     page.focus('#rb-st-p')
     seen = []
     for key in ('ArrowRight', 'ArrowLeft', 'ArrowLeft', 'End', 'Home', 'ArrowRight'):
         page.keyboard.press(key); seen.append(page.evaluate('document.activeElement.id'))
-    check('arrows, Home and End move between its controls (the strip\'s disabled arrows skipped)', seen == ['rb-st-section', 'rb-st-p', 'rb-ol', 'b-save', 'rb-b', 'rb-i'], seen)
+    check('arrows, Home and End move between its controls (the strip\'s disabled arrows skipped), the font box among them', seen == ['rb-st-section', 'rb-st-p', 'rb-ol', 'b-save', 'rc-format-painter', 'rb-font'], seen)
     page.focus('#rb-i'); page.keyboard.press('ArrowLeft')
     ring = page.evaluate('(() => { const c = getComputedStyle(document.activeElement); return c.outlineStyle !== "none" && parseFloat(c.outlineWidth) > 0; })()')
+    # (what each half saw, printed where it fails: the focus, its ring, Bold's state, the selection)
+    look = '(() => { const b = document.getElementById("rb-b"), s = getSelection(); return { active: document.activeElement.id || document.activeElement.tagName, pressed: b.getAttribute("aria-pressed"), disabled: b.disabled, sel: String(s), onPage: !!(s.anchorNode && document.getElementById("pages").contains(s.anchorNode)) }; })()'
+    before = page.evaluate(look)
     page.keyboard.press('Enter'); page.wait_for_timeout(200)
-    check('the focus shows, and Enter on Bold makes the words selected on the page bold', ring and '\\textbf{Second}' in src(page), src(page)[src(page).find('Second') - 8:][:30])
+    check('the focus shows, and Enter on Bold makes the words selected on the page bold', ring and '\\textbf{Second}' in src(page), {'ring': ring, 'before': before, 'after': page.evaluate(look), 'src': src(page)[src(page).find('Second') - 8:][:30]})
     check('every control names itself and its shortcut in a title', page.evaluate('[...document.querySelectorAll("#ribbon select, #ribbon button")].every((x) => x.title.length > 3)') and 'Ctrl+B' in page.evaluate('document.getElementById("rb-b").title') and 'Ctrl+Shift+E' in page.evaluate('document.getElementById("rb-eq").title'))
 
 
@@ -368,7 +387,9 @@ def where_it_applies(page):
     # (at 1600 px, where the label shows whatever Home holds)
     page.set_viewport_size({'width': 1600, 'height': 1000}); page.wait_for_timeout(300)
     click_text(page, 'cell', 2); state(page)
-    for what, sel in (('a disabled button', '#rb-eq'), ('the Download label', '.rb-lab'), ('the empty part of the row', '#ribbon .rb-panel:not([hidden]) .grow')):
+    # (a disabled button in sight: Equation and Footnote can be in the folded Insert's menu)
+    page.evaluate("() => { for (const b of document.querySelectorAll('#rp-home button:disabled')) if (b.offsetParent) { b.dataset.testOff = '1'; return; } }")
+    for what, sel in (('a disabled button', '[data-test-off]'), ('the Download label', '.rb-lab'), ('the empty part of the row', '#ribbon .rb-panel:not([hidden]) .grow')):
         r = page.evaluate('(s) => { const r = document.querySelector(s).getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; }', sel)
         page.mouse.click(*r); page.wait_for_timeout(100)
         page.keyboard.type('Q'); page.wait_for_timeout(150)
@@ -482,10 +503,13 @@ def downloads_in_sight(page):
       const top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return b.width > 0 && b.left >= rr.left - 1 && b.right <= innerWidth + 1 && !!top && (top === e || e.contains(top)); }); }"""
     for w in (820, 860, 1000):
         page.set_viewport_size({'width': w, 'height': 800}); page.wait_for_timeout(300)
-        seen = page.evaluate(IN, ['rb-pdf', 'rb-word', 'b-save'] if w > 860 else ['rb-dl-menu'])
+        # (above 860 px the three where the row has room for them, else the one button: Home's Font
+        # group in Word's two rows leaves 1000 px without room for three)
+        three = w > 860 and page.evaluate("!!document.getElementById('rb-pdf').offsetParent")
+        seen = page.evaluate(IN, ['rb-pdf', 'rb-word', 'b-save'] if three else ['rb-dl-menu'])
         over = page.evaluate('(() => { const r = document.getElementById("ribbon"); return r.scrollWidth > r.clientWidth + 1; })()')
         if w > 860:
-            check('at %dpx PDF, Word and LaTeX are in sight with the row not scrolled' % w, all(seen), (seen, over))
+            check('at %dpx the downloads (PDF, Word and LaTeX, or the one Download button) are in sight with the row not scrolled' % w, all(seen) and not over, (seen, over))
         else:
             # (the tabs' list at the row's start left no room for the three: Footnote, Citation and Link went under them)
             check('at %dpx, with no room for the three, one Download button is in sight and the row does not scroll: every button to insert is on the screen' % w, all(seen) and not over, (seen, over))
@@ -621,24 +645,26 @@ def gallery_widths(page):
     not fit and on phones; one row height."""
     load_doc(page, DOC)
     seen = {}
-    for w in (1920, 1600, 1536, 1440, 1366, 1300, 1280, 1180, 1100, 1024, 1000, 900, 820, 390):
+    for w in (1920, 1840, 1800, 1760, 1700, 1600, 1536, 1440, 1366, 1300, 1280, 1180, 1100, 1024, 1000, 900, 820, 390):
         page.set_viewport_size({'width': w, 'height': 900}); page.wait_for_timeout(250)
         click_text(page, 'First paragraph', 2); page.wait_for_timeout(120)
         seen[w] = page.evaluate("""() => { const r = document.getElementById('ribbon'), sel = document.getElementById('rb-style');
           const tiles = [...document.querySelectorAll('#rb-gallery [data-style]')].filter((b) => !b.hidden && b.offsetParent).map((b) => b.dataset.style);
-          const lab = document.querySelector('#rb-math span'); return { tiles, list: !!sel.offsetParent, opts: [...sel.options].filter((o) => !o.hidden).map((o) => o.value), over: r.scrollWidth > r.clientWidth + 1,
-            names: !!lab && getComputedStyle(lab).display !== 'none', h: Math.round(r.getBoundingClientRect().height), page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+          const labs = [...document.querySelectorAll('#rp-home .rb-grp > .btn:not(.icon):not(.rb-gbtn)')].filter((b) => b.offsetParent).map((b) => b.querySelector('span:not(.sr)'));
+          return { tiles, list: !!sel.offsetParent, opts: [...sel.options].filter((o) => !o.hidden).map((o) => o.value), over: r.scrollWidth > r.clientWidth + 1,
+            names: labs.length > 0 && labs.every((x) => x && getComputedStyle(x).display !== 'none'), insert: !!document.querySelector('#rp-home .rb-grp[data-group=insert].folded'), h: Math.round(r.getBoundingClientRect().height), page: document.documentElement.scrollWidth - document.documentElement.clientWidth,
             arrows: !!document.getElementById('rb-st-up').offsetParent }; }""")
     print('     widths:', {w: (len(v['tiles']), 'list' if v['list'] else '', 'names' if v['names'] else '', v['h']) for w, v in seen.items()})
     six = ['p', 'section', 'subsection', 'subsubsection', 'latex', 'quote']
-    check('at 1920 px all six tiles with the insert buttons\' names, no paging arrows, a row that does not scroll', seen[1920]['tiles'] == six and seen[1920]['names'] and not seen[1920]['arrows'] and not seen[1920]['over'], seen[1920])
-    check('from 1600 to 1366 px the insert buttons\' names go first and the gallery keeps its six tiles, no paging arrows, no scroll', all(seen[w]['tiles'] == six and not seen[w]['names'] and not seen[w]['arrows'] and not seen[w]['over'] for w in (1366, 1440, 1536, 1600)), {w: (seen[w]['tiles'], seen[w]['names']) for w in (1366, 1440, 1536, 1600)})
-    check('then fewer tiles, LaTeX among them, with the paging arrows (1300 to 1024 px)', all('latex' in seen[w]['tiles'] and 3 <= len(seen[w]['tiles']) < 6 and seen[w]['arrows'] and not seen[w]['over'] for w in (1300, 1280, 1180, 1100, 1024)), {w: seen[w]['tiles'] for w in (1300, 1280, 1180, 1100, 1024)})
+    # (Home's Insert, which the Insert tab has too, is spare: it folds first, so Home's other
+    # groups keep their names, and the gallery its tiles, on a desktop; src/ribbon/order.js)
+    check('from 1440 to 1920 px Home\'s Insert is folded, the other buttons keep their names, the gallery all six tiles, no paging arrows, no scroll', all(seen[w]['insert'] and seen[w]['names'] and seen[w]['tiles'] == six and not seen[w]['arrows'] and not seen[w]['over'] for w in (1440, 1536, 1600, 1700, 1760, 1800, 1840, 1920)), {w: (seen[w]['tiles'], seen[w]['names']) for w in (1440, 1600, 1920)})
+    check('from 1280 to 1366 px the names stay and the gallery has fewer tiles, three or more, LaTeX among them, with the paging arrows', all(seen[w]['names'] and 'latex' in seen[w]['tiles'] and 3 <= len(seen[w]['tiles']) < 6 and seen[w]['arrows'] and not seen[w]['over'] for w in (1280, 1300, 1366)), {w: (seen[w]['tiles'], seen[w]['names']) for w in (1280, 1300, 1366)})
+    check('the gallery stays, three tiles, down to 1024 px', all(len(seen[w]['tiles']) >= 3 for w in (1024, 1100, 1180)), {w: seen[w]['tiles'] for w in (1024, 1100, 1180)})
     order = {3: ['p', 'section', 'latex'], 4: ['p', 'section', 'subsection', 'latex'], 5: ['p', 'section', 'subsection', 'subsubsection', 'latex'], 6: six}
     tiled = [w for w in seen if seen[w]['tiles']]
     check('wherever the gallery shows, its first page is Normal and Heading 1 with LaTeX in sight (Normal, Heading 1, LaTeX for three), and the row does not scroll', all(seen[w]['tiles'] == order[len(seen[w]['tiles'])] and not seen[w]['over'] for w in tiled), {w: seen[w]['tiles'] for w in tiled})
-    # (where the gallery gives way to the list: between 1100 and 1024 px since Home has its Editing
-    # group, between 1024 and 1000 px before)
+    # (where the gallery gives way to the list: between 1024 and 1000 px)
     g = min(w for w in seen if seen[w]['tiles'])
     l = max(w for w in seen if seen[w]['list'] and w < g)
     check('the row is as tall with the list as with the gallery (no jump where the one gives way to the other, %d and %d px)' % (g, l), g >= 1024 and l >= 1000 and seen[g]['h'] == seen[l]['h'], (g, l, seen[g]['h'], seen[l]['h']))
@@ -655,14 +681,14 @@ def gallery_paging(page):
     the arrows hand the focus on at their ends; the gallery pages to the caret's style; the strip's
     targets are 24 px or more; a tile that cannot apply keeps its tooltip, which says why."""
     load_doc(page, WRAP('Text here.\n\n\\subsubsection{Deep}\nUnder it.'))
-    page.set_viewport_size({'width': 1100, 'height': 900}); page.wait_for_timeout(300)
+    page.set_viewport_size({'width': 1366, 'height': 900}); page.wait_for_timeout(300)
     click_text(page, 'Text here', 2); state(page)
     POS = """() => { const r = (id) => { const b = document.getElementById(id).getBoundingClientRect(); return [Math.round(b.left), Math.round(b.width), Math.round(b.height)]; };
       return { up: r('rb-st-up'), down: r('rb-st-down'), more: r('rb-st-more'), bold: r('rb-b'), gal: r('rb-gallery'), tiles: [...document.querySelectorAll('#rb-gallery [data-style]')].filter((b) => !b.hidden).map((b) => b.dataset.style) }; }"""
     a = page.evaluate(POS)
     page.click('#rb-st-down'); page.wait_for_timeout(120)
     b = page.evaluate(POS)
-    check('at 1100 px Next shows the last four styles (a full page) and the gallery, the arrows and Bold stay where they were', len(a['tiles']) == 4 and b['tiles'] == ['subsection', 'latex', 'subsubsection', 'quote'] and all(a[k] == b[k] for k in ('up', 'down', 'more', 'bold', 'gal')), (a, b))
+    check('at 1366 px Next shows the last four styles (a full page) and the gallery, the arrows and Bold stay where they were', len(a['tiles']) == 4 and b['tiles'] == ['subsection', 'latex', 'subsubsection', 'quote'] and all(a[k] == b[k] for k in ('up', 'down', 'more', 'bold', 'gal')), (a, b))
     check('the arrows and More are 24 px wide or more and as tall as the box', all(a[k][1] >= 24 and a[k][2] >= 24 for k in ('up', 'down', 'more')), a)
     page.click('#rb-st-up'); page.wait_for_timeout(120)
     # by keyboard: an arrow that reaches its end gives the focus to the other one
@@ -698,7 +724,8 @@ def gallery_keys(page):
     seen = []
     for key in ('ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight'):
         page.keyboard.press(key); seen.append(page.evaluate('document.activeElement.id'))
-    check('the arrow keys go along the tiles, past the strip\'s disabled arrows to More, and on to Formula', seen == ['rb-st-section', 'rb-st-subsection', 'rb-st-subsubsection', 'rb-st-latex', 'rb-st-quote', 'rb-st-more', 'rb-math'], seen)
+    # (after the gallery Home's Insert, folded: it is spare, the Insert tab has its commands)
+    check('the arrow keys go along the tiles, past the strip\'s disabled arrows to More, and on to the folded Insert', seen == ['rb-st-section', 'rb-st-subsection', 'rb-st-subsubsection', 'rb-st-latex', 'rb-st-quote', 'rb-st-more', 'rg-home-insert'], seen)
     page.focus('#rb-st-latex'); page.keyboard.press('Enter'); page.wait_for_timeout(200)
     check('Enter on LaTeX makes the caret\'s paragraph a LaTeX paragraph', body(page).count('% rikuy: latex\nThird paragraph here.') == 1 and boxes(page) == ['Third paragraph here.'], body(page))
     page.focus('#rb-st-quote'); page.keyboard.press(' '); page.wait_for_timeout(200)

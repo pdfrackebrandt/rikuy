@@ -70,6 +70,7 @@ export const tabs = {
         if (k) tb.append(mk('span', 'sep'));
         const box = mk('div', 'rb-grp');
         box.dataset.group = g.id; box.dataset.rank = g.rank;
+        if (g.spare) box.dataset.spare = '1';
         // a group by its name, as Word's are; not where a control in it has that name already (the
         // Styles gallery is the group "Styles")
         if (!items.some(({ c }) => c.role === 'group' && c.name === g.name)) { box.setAttribute('role', 'group'); box.setAttribute('aria-label', g.name); }
@@ -140,6 +141,9 @@ export const tabs = {
   // One command run where the caret is, from a button, a key, the search box or a menu: nothing
   // when it cannot run there. The ribbon then shows the new state.
   runCommand(id, args, at, from) {
+    // (the font box gives the page's selection back as it loses the focus; a key pressed before
+    // that is done must find it on the page, see fbxFlush)
+    if (this.fbxFlush && this.fbxFlush() && at !== undefined) at = this.ribbonAt();
     const c = command(id);
     if (!c || !c.run) return false;
     if (at === undefined) at = this.ribbonAt();
@@ -249,13 +253,18 @@ export const tabs = {
     // (once: again only where the fonts came since, or the ribbon was folded to its tabs and had no width)
     if (gal && wide && !(this.rbW && this.rbW.p > 0)) measureTiles(this);
     if (gal) { tiles(6); this.paintGallery(); }
-    const steps = [flag('rb-nolab'), flag('rb-fold')];
-    // (the tiles one at a time: each undone only after the one after it, chain)
+    // (a spare group first, as one step each: its commands have a tab of their own)
+    const fold = (g) => ({ do: () => g.classList.add('folded', ...(g.querySelector('.rb-gico') ? ['ico'] : [])), undo: () => g.classList.remove('folded', 'ico') });
+    const spare = foldsGroups() ? groups.filter((g) => g.dataset.spare).sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
+    const steps = [...spare.map(fold), flag('rb-nolab')];
+    // (the tiles one at a time: each undone only after the one after it, chain; down to three
+    // before the buttons' names go, so a desktop keeps them; and the names in the chain too: a
+    // tile given back for names lost showed more controls than a wider window)
     if (gal && wide) for (const n of [5, 4, 3]) steps.push({ do: () => tiles(n), undo: () => tiles(n + 1), chain: true });
-    steps.push(flag('rb-dl1'));
+    steps.push({ ...flag('rb-fold'), chain: true }, flag('rb-dl1'));
     if (gal && wide) steps.push(flag('rb-narrow'));
-    const order = foldsGroups() ? [...groups].sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
-    for (const g of order) steps.push({ do: () => g.classList.add('folded', ...(g.querySelector('.rb-gico') ? ['ico'] : [])), undo: () => g.classList.remove('folded', 'ico') });
+    const order = foldsGroups() ? [...groups].filter((g) => !g.dataset.spare).sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
+    for (const g of order) steps.push(fold(g));
     let k = 0;
     while (k < steps.length && !fits()) steps[k++].do();
     let chain = true;
@@ -272,7 +281,8 @@ export const tabs = {
   // one tab stop for the whole toolbar: the control the arrows last reached, or the first that works
   ribbonRove(to) {
     // (of the controls this width shows: a phone has one Download button, a wider screen the three)
-    const every = [...$('#ribbon').querySelectorAll('select, button')], all = every.filter((x) => x.offsetParent !== null);
+    // (and the boxes a toolbar may hold, the font's and the size's)
+    const every = [...$('#ribbon').querySelectorAll('select, button, input')], all = every.filter((x) => x.offsetParent !== null);
     if (to) this.rbStop = to;
     const cur = this.rbStop && !isOff(this.rbStop) && all.includes(this.rbStop) ? this.rbStop : all.find((x) => !isOff(x));
     for (const x of every) x.tabIndex = x === cur ? 0 : -1;
@@ -307,7 +317,8 @@ export function installRibbon(app) {
   const rb = $('#ribbon');
   if (!rb) return;
   // (not while the search box has the focus: the ribbon keeps showing the place on the page)
-  app.ribbonSoon = (() => { let t = 0; return () => { clearTimeout(t); t = setTimeout(() => { if (!(document.activeElement && document.activeElement.id === 'rk-search')) app.ribbonSync(); }, 60); }; })();
+  // (nor while a box of the ribbon has it, the font's or the size's: typing there is no move on the page)
+  app.ribbonSoon = (() => { let t = 0; return () => { clearTimeout(t); t = setTimeout(() => { const a = document.activeElement; if (!(a && (a.id === 'rk-search' || (a.matches && a.matches('#ribbon input'))))) app.ribbonSync(); }, 60); }; })();
   app.ribbonBuild();
   installGallery(app);
   // A press must not take the caret or the selection off the page: not on a button, and not on
@@ -316,6 +327,9 @@ export function installRibbon(app) {
   rb.addEventListener('mousedown', (e) => { if (!e.target.closest('select, input')) e.preventDefault(); });
   rb.addEventListener('click', (e) => {
     const b = e.target.closest('button[data-cmd]');
+    // (Enter on a button the arrows reached from the font box, before the box gave the page's
+    // selection back: given back now, and the buttons' states read again from it)
+    if (b && app.fbxFlush && app.fbxFlush()) app.ribbonSync();
     if (b && !b.disabled && rb.contains(b)) {
       app.runCommand(b.dataset.cmd, null, undefined, b);
       if (!b.hasAttribute('aria-haspopup')) app.peekRibbon(false);
@@ -328,6 +342,9 @@ export function installRibbon(app) {
     // a menu button opens its menu with the down arrow too
     if (e.key === 'ArrowDown' && e.target.matches('.rb-gbtn, [data-cmd][aria-haspopup]')) { e.preventDefault(); e.target.click(); return; }
     if (!/^(ArrowLeft|ArrowRight|Home|End)$/.test(e.key) || e.altKey || e.ctrlKey || e.metaKey) return;
+    // in a box the keys move in its text; past its first or last character they go on to the controls beside it
+    const t = e.target;
+    if (t.matches && t.matches('input') && (/^(Home|End)$/.test(e.key) || t.selectionStart !== t.selectionEnd || (e.key === 'ArrowLeft' ? t.selectionStart > 0 : t.selectionEnd < t.value.length))) return;
     const all = app.ribbonRove().filter((x) => !isOff(x)), i = all.indexOf(document.activeElement);
     if (i < 0) return;
     e.preventDefault();
@@ -381,6 +398,10 @@ export function installRibbon(app) {
   let fit = 0, w = innerWidth;
   addEventListener('resize', () => { if (innerWidth === w) return; w = innerWidth; cancelAnimationFrame(fit); fit = requestAnimationFrame(() => app.ribbonFit()); });
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { app.rbW = null; app.ribbonFit(); });
+  // (and whenever a face comes later: the page's serif in bold and italic, drawn on B, I and the
+  // tiles, loads when first used, after fonts.ready on a slow line or machine, and the fold
+  // measured before it was wrong: the tiles' names fell off at 1920 px, Save hid behind the fold)
+  if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', () => { cancelAnimationFrame(fit); fit = requestAnimationFrame(() => { app.rbW = null; app.ribbonFit(); }); });
   app.ribbonSync();
   app.ribbonFit();
 }

@@ -1324,6 +1324,169 @@ Tests:
     `table.test.mjs` 46 groups, `test/table.py` 161 (11 new: the page's drawing, Off, the
     engines, the .sty, the timing; two more compiles in the page, the grouped longtable and a
     XeLaTeX document with its data table, every character in the PDF).
+39. **B1, character formatting: Home's Font group as Word's.** Done in the code (branch
+    `wordgap-b1-font`, from `ribbon-tabs`), GAP rows H4, H6 to H12, H15 to H19, H21, H22, H24 to
+    H31 and A4 (H20 and H23 stay SKIP). *What it writes* (`src/charfmt.js`, pure, over
+    `src/wrap.js`, which it does not change): Underline is ulem's `\uline` now, which breaks across
+    lines, as Word import writes it (`\underline` by hand is still read and taken off), with its
+    styles (`\uuline`, `\uwave`, `\dashuline`, `\dotuline`) and a colour (`\culine{red}`, ulem's
+    line coloured, defined once); Strikethrough `\sout`, Double Strikethrough `\dsout` (two of
+    `\sout`'s lines, one `\DeclareRobustCommand` line); Subscript and Superscript
+    (`\textsubscript`, `\textsuperscript`, each turning the other in place); Small Caps, All Caps,
+    Character Border (`\fbox`), Character Shading (`\colorbox{lightgray}`), Enclose Characters
+    (`\textcircled`); Font Color `\textcolor{name}` or `[HTML]{..}` (Word's standard colours are
+    dvipsnames: the option is merged into xcolor's line, or `\PassOptionsToPackage` goes before a
+    tikz that loads xcolor, or beamer's class option; `{\color{red} ..}` by hand keeps its form);
+    Text Highlight Color `\hl` and `\hl[green]` with the definition Word import writes, which takes
+    a colour now (`\DeclareRobustCommand{\hl}[1][yellow]{...}`; the import's line of before is
+    upgraded in place; a document's own `\hl` is never overwritten); the size box and Increase and
+    Decrease Font Size: `{\large ..}` at the size's points, `{\fontsize{13}{15.6}\selectfont ..}`
+    for any other, the switch gone at `\normalsize`; at a bare caret the document's base size (the
+    class's option; extsizes' `extarticle` and its kin for 8, 9, 14, 17, 20pt, back to no option at
+    10pt; KOMA's `fontsize=`; a class with sizes of its own is left and says so); the font box: the
+    document's font as a package line in the place of the last one's (newtx, newpx, tgheros with
+    `\familydefault`, XCharter, tgschola, tgbonum, kpfonts; Computer Modern takes them away) or
+    fontspec's `\setmainfont`, and a selection's Serif, Sans Serif, Monospace or
+    `{\fontfamily{ppl}\selectfont ..}` (`{\fontspec{..} ..}` under XeLaTeX and LuaLaTeX), only
+    fonts the tree has; Change Case on the letters only (commands, keys, math, comments, a colour's
+    name, `\href`'s address keep theirs; Shift+F3 in turn); Clear All Formatting (every format in
+    and around the selection, those holding an end of it taken off that part, and a center,
+    flushleft, flushright or setspace environment holding the paragraph alone; Ctrl+Space the
+    characters only); the Font dialog (Ctrl+D: every field, a preview, its Advanced tab with
+    `\textls`, `\scalebox{..}[1]`, `\raisebox`, microtype and `\DisableLigatures`; OK writes only
+    what changed, as one commit; Set As Default gives the document the font and size); the
+    Phonetic Guide (`\ruby{base}{reading}`: luatexja-ruby where luatexja is loaded, else a one line
+    `\providecommand`); the Format Painter (the formats around the caret onto the next selection or
+    the word clicked, a double click until Escape); `*words*` and `_words_` typed become `\textbf`
+    and `\emph` (one undo gives the marks back). Each action is one commit and one undo; the
+    preamble's lines are written once (`preambleFor`). *Where.* Home's Font group in Word's two
+    rows of small buttons (one row on a phone), the Format Painter in Clipboard, More Font Effects
+    for the rest; Font Settings in the right click menu. *Keys:* Ctrl+Shift+X, Ctrl+, and Ctrl+.
+    (Google Docs' keys: Ctrl+= stays zoom), Ctrl+Shift+A and K, Ctrl+Alt+H (AltGr left alone),
+    Ctrl+D, Ctrl+Shift+F, Ctrl+Shift+> and <, Ctrl+] and [ (not on a Mac), Shift+F3, Ctrl+Space (not
+    on a Mac); in llms-full.txt and Help. *The page* draws all of it (`src/model.js`: ulem's lines,
+    the double strike, an enclosed character, ruby, a run's size, family, tracking, shift and
+    scale, the highlighter's colour exactly, dvipsnames as their values, extsizes' base sizes,
+    the document's fonts by their looks; `paint` in `src/render.js` takes numbers and checked
+    colours only). *Word:* each format a character style Word fills in (a highlighter's colour,
+    double, wave, dashed and dotted underlines, double strike, caps, a border, sizes in half points,
+    fonts, spacing, position, scale); Word import's highlighter takes a colour. *Frame changes*
+    (`src/ribbon/tabs.js`, small): the boxes join the toolbar's arrow keys and keep the ribbon as
+    it was while typed in; every ribbon button holds its screen reader name
+    (`position: relative`: absolute names past a phone's edge widened the page by the row's
+    length). The preamble's lines go through `usePackages` with the files the preamble reads
+    (`App.preambleOthers`), as B0's review asked. B0's tests changed
+    only where B1 changes what they saw: `\uline` for `\underline`, the Format Painter as Home's
+    first control, the right click menu's Font Settings, and the widths at which the Styles
+    gallery has room (see the review's paragraph below for the widths on B5's fold rule). *Security* (the audit skill's quick profile on
+    the changed files, notes outside the repository): a stranger's `\setmainfont{constructor}`
+    stopped the page from drawing the document, and two patterns backtracked on a stranger's
+    preamble (spaces after `\renewcommand`, an option list without its brace); fixed with tests,
+    and Clear All over thousands of unclosed declarations bounded. Evidence: `npm test` green
+    (new `font` 16 groups; `word` 57, two new), on main with B0's review fixes, `font.py` 175 (with `dist/tex`: a compile in the
+    page of every format, extarticle 14pt and Times, no error, every word in the PDF),
+    `tabs.py` 104, `ribbon.py` 267, `agent.py` 132, `browser.py` 189 (its math popover check
+    failed twice under the machine's load and passed on the next two runs), `word.py` 110,
+    `scripts.py` 302, `offline.py` 54/54, `launch.py` 18/18, `deploy_check.py` 43/43,
+    `pages_check.py` fits, actionlint clean, the corpus model run 716 of 716 with the same unknown
+    commands as before. Not done: Clear All Formatting's paragraph part covers alignment and
+    setspace environments, not B2's other paragraph formats (it should call B2's reset once that
+    exists); the Format Painter copies character formats, not a paragraph's style; an underline
+    colour takes a named colour only; Word import keeps no highlighter colour (pandoc reads none);
+    Safari and Firefox, by hand.
+    *The hostile review of a20db3f* (6 high, 7 medium, 8 low; each fixed with the reader's case
+    as a test, `test/font.test.mjs`'s "review" groups and `test/font.py`'s `review`). A format comes off a part as Word takes it off: a group of declarations split
+    keeps its other declarations and, where it is an argument (`\footnote{\color{red} ..}`,
+    `\section{..}`, `\textbf{..}`), its braces, so no word leaves its command (H1, L8); Automatic,
+    No Color and a toggle off take the kind off the selection alone, `\textbf` included (M6); an
+    end of the selection inside another format splits that one too. A format goes on in whole
+    pieces: a selection over a brace, cells, items, environments or paragraphs gets a wrapper on
+    each, LaTeX paragraphs and displays none, the mark kept on its line (M3, M4); ulem's lines
+    close around a `\footnote`, `\marginpar` or `\todo` (H4: the document that stopped TeX with
+    seven errors compiles in the page). A family on a declaration that is an argument stays one
+    (`\textbf{\rmfamily ..}`, H2). Change Case changes only letters the page draws that the
+    source gives as letters of words: no math, label, column spec, reference, glossary or
+    language key, code, picture, footnote behind its mark or LaTeX paragraph; `\ss` becomes
+    `\SS`, an accent's letter its capital (H3). The Font dialog keeps a main font Rikuy does not
+    list (H5); a font package it does not list (fourier, libertine, stix2, mathdesign, ...) is shown
+    by its name and replaced by the font chosen, helvet and courier stay with another roman (H6,
+    L5). Increase and Decrease Font Size step from the run's size (M2); at a caret inside a word the
+    size box, the font box and both steps act on that word, never the class: the document's font
+    and size are the Font dialog's Set As Default (M7). An ulem the document loads keeps its
+    options, soul's `\hl` or one an `\input` file defines is never redefined and takes no
+    colour (M5); CR LF files get CR LF lines (L4); the class's size changes only its option's text,
+    comments kept, an explicit `[10pt]` kept, beamer's own 11pt (L3). Clear All and a toggle over
+    a whole document clear every wrapper, 2000 at a time in one pass each (300 KB: 0.1 s, L1).
+    Character Shading writes `\hl[lightgray]` over words, which breaks across lines (L2); Word
+    gets its own highlight on the run for its sixteen colours and the reading of a phonetic guide
+    in brackets, said among what it loses (L6; a .docx from Word without Rikuy's data still comes
+    in without highlight, sizes and shading: pandoc's reader has none); the boxes keep the
+    selection on Enter, apply on Tab and open their list on the current value (L7). M1: the
+    ribbon's one fold rule is B5's (task 43, rebased onto 49e49eb); B1 keeps for its Font group
+    Word's two rows above 860 px and, below 861 px, Bold, Italic and Underline first in the row
+    beside the group's button, whose menu has the rest (one row of all of it was 640 px), also
+    when the group is folded; B5's sweep (every tab, 390 to 1920 px, with and without extra
+    commands) passes with no new exception. Home's Insert group, whose commands the Insert tab
+    has too, is `spare` (`src/ribbon/order.js`): it folds first, into one icon button whose menu
+    has its commands by their names, before any name drops or tile goes, and the names come after
+    the tiles (in their chain, so a tile given back never costs them). So from 1440 to 1920 px Home
+    shows every other name and all six tiles, at 1366 px four, at 1280 px three with the names, and
+    the gallery stays, three tiles, down to 1024 px; the style list from 1000 px; Editing folds
+    from 700 px. The two rows take 182 px more than B0's three buttons; at 1920 px the Insert
+    group with its names (559 px) does not fit beside them (123 px over) and stays folded, leaving
+    438 px empty. `tabs.py`, `ribbon.py`, `find.py` and `agent.py` reach its commands through its
+    menu.
+    Evidence on main 49e49eb with B5: `npm test` green (`font` 25 groups, `word` 57), `font.py`
+    199 (with `dist/tex`), `tabs.py` 115, `ribbon.py` 268, `agent.py` 138, `browser.py` 189,
+    `word.py` 110, `scripts.py` 302, `find.py` 76, `outline.py` 59, `offline.py` 54/54,
+    `launch.py` 18/18, `deploy_check.py` 43/43, `pages_check.py` fits, actionlint clean, the
+    corpus model run 716 of 716 with the same unknown commands.
+    *The verifier's last round on 921d945* (each with a test, `font.test.mjs`'s "verify" groups and
+    `font.py`'s `review2`): Change Case starts a word and a sentence at each cell, row, item,
+    paragraph and line break the page draws, and in the source at `&`, `\\`, `\item`, headings,
+    environments and blank lines (a single line end in a paragraph is a space); one edit for one
+    source however many letters the page draws from it (`\SS`, which the page now draws, as do
+    `\dh`, `\th` and `\ng`); Greek's final sigma; the page read only in the blocks the selection
+    touches, each character's place summed in the loop (300 KB after Ctrl+A: 100 ms to read, 170 ms
+    to work out; the rest of the second is the page drawn again). A heading and a file read in
+    (`\input`, `\include`, `\subfile`) stay out of a wrapper whole (`\uline{\section..}` stopped
+    TeX; the review's document compiles in the page). Select All over a document that reads in
+    files formats the main file's words and every file the page draws, in one step of undo, and
+    stays selected. Increase and Decrease Font Size at `\Huge` and `\tiny` say so; Home fits at
+    521 px with every group folded; a selection that would part a letter from its accent or vowel
+    sign says that.
+    *With B7's tables and B6's page set up* (rebased on main a941302; extsizes' measures, `ext`,
+    kept inside B6's geometry in `src/layout.js` and its class options in `src/model.js`): a block of cells (Select Column, Row or Table,
+    a drag from one cell into another, which B7 shows as a block) takes a format in its cells
+    alone, whole, as Word's does; before, Bold after Select Column reached the cells the browser's
+    selection runs through (seven of a three by three table, not three). `blockCells` reads the
+    block's cells from B7's `tableHere`; each cell is formatted on its own text (a cell is a group
+    of its own in TeX), the last first, all in one step of undo; a toggle chooses once for the
+    block (on in every cell takes it off), Change Case reads the block's characters as one text,
+    and Bold shows pressed when every cell is bold. Clear All Formatting on cells leaves the
+    `center` around the table. A column of 3000 rows takes Bold in about a second (the whole text
+    read back from each cell took 6.5 s); each cell's state is read in the cell alone, and a block
+    of more than 5000 cells is refused with a toast (a stranger's table may hold 100 000). A toggle now reads every part of its selection to choose
+    (a button's look still reads 400), so Bold again over a table or a document of more than 400
+    parts takes the bold off; the Font dialog's boxes force what they say (Bold ticked over
+    `\textbf{one} \textbf{two}` took their bold off). Each with a test: `font.py`'s `cells`,
+    `font.test.mjs`'s "with tables" group.
+    *On a phone* (asked for by the owner; `font.py`'s `phones`, at 390 by 844 and 360 by 740 px
+    with a touch screen and taps): under `pointer: coarse` every control of the Font group, the
+    Format Painter, the boxes, a menu's items, the colours and the Font dialog's fields are at
+    least 44 px each way (the colours in as many columns of 44 px as the screen holds); on a phone
+    the font and size boxes stay in the row after Bold, Italic and Underline, so a size is typed
+    with the on-screen keyboard; a sheet (a menu, a list, a dialog) opens above that keyboard,
+    whose height the visual viewport gives (`--vk-h`); the Font dialog scrolls; the Format
+    Painter paints the word tapped, or words selected by a long press once the selection rests;
+    Clear Character Formatting (Ctrl+Space) is in More Font Effects, so every key of the group has
+    a control a finger reaches; Bold by a tap leaves the words selected and typing goes on in
+    them; no sideways scroll. Screenshots at 390 px, light and dark, outside the repository.
+    Evidence on main a941302: `npm test` green (`font` 28 groups, `word` 59, `page` 26),
+    `font.py` 272 (with `dist/tex`), `tabs.py` 115, `ribbon.py` 268, `agent.py` 138, `browser.py`
+    189, `table.py` 161, `page.py` 139, `find.py` 76, `outline.py` 59, `scripts.py` 302, `word.py`
+    111, `offline.py` 54/54, `launch.py` 18/18, `deploy_check.py` 43/43, `pages_check.py` fits,
+    actionlint clean, the corpus model run 716 of 716 with main's unknown commands.
 
 ## Open tasks
 

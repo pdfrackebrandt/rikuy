@@ -44,7 +44,6 @@ import { methods as menuMethods, installMenu } from './ui/menu.js';
 import { installKeys } from './keys.js';
 import * as kit from './ui/kit.js';
 import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass } from './preamble.js';
-import { groupNames, enclosing, wrapEdits, unwrapEdits, mapPos } from './wrap.js';
 import { LATEX_MARK, lineStart as lineAt } from './styles.js';
 import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
 import { version as VERSION } from '../package.json';
@@ -2012,38 +2011,7 @@ class App {
     }
   }
 
-  // ---- styles ---------------------------------------------------------------------
-  toggleStyle(cmd) {
-    const c = this.caretNow();
-    // (a LaTeX paragraph shows source: bold there is \textbf, written by hand)
-    if (!c || c.ghost || this.texHere()) return;
-    // every form of the kind counts: \textbf, \bf, \bfseries are bold (src/wrap.js)
-    const names = groupNames({ textbf: 'bold', emph: 'italic', underline: 'underline', texttt: 'mono' }[cmd] || cmd);
-    const sel = getSelection();
-    // Are we inside a matching style wrapper? The page's own (the model's) first
-    let wrapper = null;
-    const anc = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
-    for (let n = anc; n && n !== this.root; n = n.parentElement) {
-      if (n.dataset && n.dataset.y) { const y = styOfEl(n); if (y && names.includes(y.cmd)) { wrapper = y; break; } }
-    }
-    const src = this.src(c.f);
-    // a group the page draws without a range of its own ({\bfseries ...}, {\bf ...}): from the source
-    if (!wrapper) wrapper = enclosing(src, c.a, c.b, names);
-    if (wrapper && (c.collapsed || (c.a >= wrapper.is && c.b <= wrapper.ie))) {
-      // (src/wrap.js: a group's braces stay where it is an argument or follows a command, and the
-      // words never run into a command before them)
-      const edits = unwrapEdits(src, wrapper), at = (p) => mapPos(edits, p);
-      this.commit(edits.map((x) => ({ f: c.f, ...x })), c.collapsed ? { f: c.f, p: at(c.a) } : { f: c.f, p: at(c.a), selA: at(c.a), selB: at(c.b) }, 'style');
-      return;
-    }
-    // The wrapper around the selection (src/wrap.js): an empty one at a caret, the caret between
-    // its braces; a character of several code points taken whole; one for each paragraph's part
-    // of a selection over several (one around all of them took the blank lines into its braces,
-    // which TeX refuses: "Paragraph ended before \textbf was complete"); none over structure.
-    const r = wrapEdits(src, c.a, c.b, '\\' + cmd + '{');
-    if (r.error) { this.toast('That selection crosses structure. Select text inside one paragraph or cell.'); return; }
-    this.commit(r.edits.map((x) => ({ f: c.f, ...x })), r.sel ? { f: c.f, p: r.p, selA: r.sel.a, selB: r.sel.b } : { f: c.f, p: r.p, bias: r.bias }, 'style');
-  }
+  // (Bold, Italic, Underline and the rest of the Font group: src/cmd/font.js, toggleStyle among them)
 
   // ---- mouse ---------------------------------------------------------------------
   onMouseDown(e) {
@@ -4852,6 +4820,8 @@ class App {
       <dl class="keys">
         <dt>Type, select, delete</dt><dd>As in any editor</dd>
         <dt>${mod}+B, ${mod}+I</dt><dd>Bold, italic (\\textbf, \\emph)</dd>
+        <dt>${mod}+U, ${mod}+Shift+X, ${mod}+, and ${mod}+.</dt><dd>Underline (\\uline), strikethrough, subscript, superscript; ${mod}+Shift+A, K: all caps, small caps; ${mod}+Alt+H: highlight; ${mod}+D: the Font dialog; ${mod}+Shift+F: the font box</dd>
+        <dt>${mod}+Shift+&gt; and &lt;, Shift+F3, ${mod}+Space</dt><dd>The next size up or down (the document's at a bare caret); lowercase, Capitalize Each Word, UPPERCASE in turn; clear the character formatting</dd>
         <dt>${mod}+Alt+1, 2, 3, ${mod}+Alt+0</dt><dd>Heading 1, 2, 3; Normal</dd>
         <dt>${mod}+Shift+L</dt><dd>Bulleted list</dd>
         <dt>Alt+Q</dt><dd>Search for a command by its name</dd>

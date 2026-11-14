@@ -180,7 +180,7 @@ def api(p):
     page.evaluate('(t) => window.rikuy.api.setSource(t)', DOC)
     # with a dialog open that writes into the source as it closes
     page.get_by_role('textbox', name='Document', exact=True).get_by_role('paragraph').nth(1).click()
-    page.get_by_role('button', name='Equation', exact=True).click()
+    Control(page, 'Equation').click()
     field = page.get_by_role('dialog', name='Display math', exact=True).get_by_role('textbox', name='Equation editor', exact=True)
     field.wait_for(state='attached', timeout=8000)
     page.wait_for_timeout(500)
@@ -298,7 +298,12 @@ def names(page, width):
     # (a control shown as the row has room, Home's Find, Replace and Select, may be in view or in its group's menu)
     narrow = {i for i in NAMES if ONLY[i] != 'wide'} - GALLERY | {i for i in GALLERY if i in seen and ONLY[i] != 'wide'}
     check('the registry keeps every name these tests began with, on the same element' + w, all(NAMES.get(i) == n for i, n in KEPT.items()), [(i, NAMES.get(i)) for i, n in KEPT.items() if NAMES.get(i) != n])
-    check('every control in view has its one name, and no other control has it' + w, not wrong and not twice and set(seen) == (wide if width > 1000 else narrow), (wrong, twice, sorted(set(seen) ^ (wide if width > 1000 else narrow))))
+    # (a group folded where the row is short is one button named after it, and the Font group below
+    # 861 px keeps Bold, Italic and Underline beside its button: what that button's menu holds is
+    # there by the same names, and checked there by reach)
+    folded = set(page.evaluate("[...document.querySelectorAll('.rb-panel:not([hidden]) .rb-grp')].filter((g) => g.querySelector('.rb-gbtn').offsetParent).flatMap((g) => [...g.querySelectorAll('[id]')]).filter((x) => !x.offsetParent).map((x) => x.id)"))
+    want = (wide if width > 1000 else narrow) - folded
+    check('every control in view has its one name, and no other control has it' + w, not wrong and not twice and set(seen) == want, (wrong, twice, sorted(set(seen) ^ want)))
     if width > 1000:
         # (the gallery's tiles: Home's Find is found loosely with its arrow, Find options, as Word's)
         loose = {NAMES[i]: page.get_by_role('button', name=NAMES[i]).count() for i in GALLERY if i.startswith('rb-st-') and page.locator('#' + i).is_visible()}
@@ -345,10 +350,37 @@ def names(page, width):
     close_all(page)
 
 
+class Control:
+    """A ribbon control by its name, as an agent reaches it: the button itself, or where its group
+    is folded (llms.txt: a short row folds a group into one button named after the group), the
+    item of that name in the group's menu."""
+    def __init__(self, page, name):
+        self.page, self.name = page, name
+        self.loc = page.get_by_role('button', name=name, exact=True)
+
+    def is_visible(self):
+        return self.loc.is_visible() or self._group() is not None
+
+    def _group(self):
+        return self.page.evaluate("""(name) => { for (const e of document.querySelectorAll('.rb-panel:not([hidden]) .rb-grp [aria-label]')) { const b = e.closest('.rb-grp').querySelector('.rb-gbtn'); if (e.getAttribute('aria-label') === name && !e.offsetParent && b.offsetParent) return b.id; } return null; }""", self.name)
+
+    def click(self):
+        if self.loc.count() and self.loc.first.is_visible():
+            return self.loc.click()
+        gb = self._group()
+        if not gb:
+            return self.loc.click()
+        self.page.click('#' + gb); self.page.wait_for_timeout(150)
+        self.page.locator('.pop [role^=menuitem][aria-label="%s"]' % self.name).click()
+
+    def __getattr__(self, k):
+        return getattr(self.loc, k)
+
+
 def five(page, width):
     """The five things an audit asked of an agent, by role and name alone."""
     w = ' (%d px)' % width
-    button = lambda name: page.get_by_role('button', name=name, exact=True)
+    button = lambda name: Control(page, name)
     doc = page.get_by_role('textbox', name='Document', exact=True)
     paras = doc.get_by_role('paragraph')
     pick = lambda text: next(k for k, t in enumerate(paras.all_inner_texts()) if text in t)
@@ -381,9 +413,13 @@ def five(page, width):
             page.get_by_role('button', name='More styles', exact=True).click()
             page.get_by_role('menu', name='Styles', exact=True).get_by_role('menuitemradio', name='Heading 2', exact=True).click()
             how = 'the menu item "Heading 2" of the menu "Styles" ("More styles")'
-    else:
+    elif page.get_by_label('Style of this paragraph', exact=True).is_visible():
         page.get_by_label('Style of this paragraph', exact=True).select_option(label='Heading 2')
         how = 'the list labelled "Style of this paragraph"'
+    else:
+        # (the group Styles folded where the row is short: its button opens the styles by name)
+        Control(page, 'Heading 2').click()
+        how = 'the item "Heading 2" of the folded group "Styles"'
     page.wait_for_timeout(250)
     check('   a paragraph made a heading with ' + how + w, '\\subsection{First paragraph here.}' in src(page) and doc.get_by_role('heading', name='First paragraph here.').count() == 1, src(page)[60:140])
     if width > 1000:
@@ -439,7 +475,7 @@ def five(page, width):
 def audit(page, cdp, width):
     """Nothing a person or an agent acts on is without a name, in each state the app has."""
     w = ' (%d px)' % width
-    button = lambda name: page.get_by_role('button', name=name, exact=True)
+    button = lambda name: Control(page, name)
     doc = page.get_by_role('textbox', name='Document', exact=True)
     first = lambda: (doc.get_by_role('paragraph').nth(1).click(), page.keyboard.press('End'))
     found = {}
@@ -598,6 +634,15 @@ def reach(page, width):
         for x in xs:
             n = page.get_by_role(x['role'], name=x['name'], exact=True).count()
             if n != 1 or not page.locator('#' + x['id']).is_visible():
+                # (in a folded group: its button, named after the group, opens a menu with it by name)
+                gb = page.evaluate("(id) => { const e = document.getElementById(id), g = e && e.closest('.rb-grp'), b = g && g.querySelector('.rb-gbtn'); return b && b.offsetParent && !e.offsetParent ? b.id : null; }", x['id'])
+                if gb and n == 0:
+                    page.click('#' + gb); page.wait_for_timeout(150)
+                    # (the style list's group folded: its menu has each style by name)
+                    m = page.locator('.pop [role^=menuitem][aria-label="%s"]' % ('Normal' if x['id'] == 'rb-style' else x['name'])).count()
+                    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+                    if m == 1:
+                        continue
                 bad.append((name, x['name'], n))
         if ctx:
             if page.evaluate('!!rikuy.hf'): page.evaluate('rikuy.pageHFClose()')
