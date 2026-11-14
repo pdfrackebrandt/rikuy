@@ -123,6 +123,9 @@ def main():
         nfonts = len(os.listdir(os.path.join(DIST, 'fonts')))
         check('install kept the fonts (%d, 5 of them the Latin Extended cut), named by their hash, apart from the version' % nfonts,
               nfonts > 30 and sum('/fonts/' in u for u in imm) == nfonts and sum('/fonts/ibm-plex-' in u and '-latin-ext-' in u for u in imm) == 5, imm)
+        tnames = [f for f in os.listdir(DIST) if re.match(r'^texnames-[0-9a-f]{16}\.txt$', f)]
+        check('install kept the names Create a Style checks against (%s), named by their hash, apart from the version, and the page has not fetched them' % tnames,
+              len(tnames) == 1 and sum(u.endswith('/' + tnames[0]) for u in imm) == 1 and page.evaluate('window.rikuy.texNamesState()') == 'none', (tnames, [u for u in imm if 'texnames' in u]))
         # the hosted page's fonts are files: none inside the page, the faces the first layout waits
         # for asked for from the head (with KaTeX's script), each of them then used, and no face
         # beyond the ones the document and the interface drew with fetched by the page
@@ -255,6 +258,10 @@ def main():
           try { r.pdfjs = !!(await import(window.rikuy.texEngine().scripts + 'pdf.min.mjs')).getDocument; } catch (e) { r.pdfjs = String(e); }
           return r; }''')
         check('offline, git.js and pdf.js load as modules from the kept copy', mods == {'git': True, 'pdfjs': True}, mods)
+        page.evaluate('window.rikuy.runCommand("create-style")')
+        page.wait_for_function('window.rikuy.texNamesState() !== "loading"', timeout=10000)
+        check('offline, Create a Style gets LaTeX\'s names from the kept copy', page.evaluate('window.rikuy.texNamesState()') == 'ready' and page.get_by_role('dialog', name='Create a Style').count() == 1, page.evaluate('window.rikuy.texNamesState()'))
+        page.keyboard.press('Escape'); page.wait_for_timeout(100)
         both = page.evaluate(ENGINE_BOTH)
         check('offline, a TeX worker started as the PDF pane starts it gets its scripts', both['worker'] == both['page'] and 'ERR' not in both['worker'], both)
         sync_read = '''(h) => { const src = 'let r; try { const x = new XMLHttpRequest(); x.open("GET", self.B + "p-' + h + '.wasm", false); x.send(); r = x.status + " " + x.responseText; } catch (e) { r = "ERR " + e.name; } postMessage(r);';
@@ -343,6 +350,10 @@ def main():
         page.wait_for_timeout(1500)
         regs = page.evaluate('navigator.serviceWorker.getRegistrations().then(r => r.length)')
         check('the artifact build registers no service worker and shows no app marks', regs == 0 and not page.is_visible('#b-offline') and page.query_selector('#st-update') is None, regs)
+        page.evaluate('window.rikuy.runCommand("create-style")')
+        page.wait_for_function('window.rikuy.texNamesState() !== "loading"', timeout=10000)
+        check('the artifact build ships the names beside the page, one file named by its hash, and Create a Style fetches them from there',
+              [f for f in os.listdir(art) if f.startswith('texnames-')] == tnames and page.evaluate('window.rikuy.texNamesState()') == 'ready', ([f for f in os.listdir(art) if f.startswith('texnames-')], page.evaluate('window.rikuy.texNamesState()')))
         ctx.close()
         srv.shutdown(); srv.server_close()
 

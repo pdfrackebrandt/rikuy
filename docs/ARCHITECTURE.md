@@ -657,8 +657,8 @@ servers), is unchanged, and the artifact build (`RIKUY_SHARE` set) compiles `src
   `sw.js` as `const RIKUY = {v, files}` (path → SHA-256, size, kind) followed by `src/sw.js`.
   `_headers` is in the version, so a change of policy reaches the kept page too.
 - **Service worker** (`src/sw.js`). `install` fetches every file of kind `p` (all the page and
-  the TeX worker load, about 7 MB; `l` for any over 4 MiB, fetched on first use; and the fonts,
-  kind `i`, into `rikuy-immutable`) into
+  the TeX worker load, about 7 MB; `l` for any over 4 MiB, fetched on first use; and the fonts
+  and Create a Style's names, kind `i`, into `rikuy-immutable`) into
   `rikuy-v-<version>`, each checked against its hash (the page by its version tag), so a version
   is kept whole or not at all. `activate` keeps that version and the one before, drops older
   caches and claims the open pages. `fetch` answers the page (navigations to the scope) from the
@@ -666,8 +666,8 @@ servers), is unchanged, and the artifact build (`RIKUY_SHARE` set) compiles `src
   closed, or after "Update ready" (`skipWaiting` on the page's message, then `controllerchange`
   reloads that tab; another tab offers a reload).
 - **One version at a time.** A page under a worker asks for its own files as
-  `_v/<version>/<path>` (`asset()` in `src/pwa.js`, used for `git.js`, `lib/`, pdf.js and the TeX
-  worker's script folder: `TeXEngine`'s `scripts`, which becomes the worker's `HERE`), and the
+  `_v/<version>/<path>` (`asset()` in `src/pwa.js`, used for `git.js`, the names Create a Style
+  checks against, `lib/`, pdf.js and the TeX worker's script folder: `TeXEngine`'s `scripts`, which becomes the worker's `HERE`), and the
   worker answers from that version's cache, or 410: a tab left on the old version gets the old
   scripts, never the new ones. The packs keep their plain `tex/` address (`TeXEngine`'s `base`).
 - **Packs.** The service worker does not keep TeX packs: the TeX worker keeps them in IndexedDB
@@ -1115,7 +1115,9 @@ under a real one's name. A page on claude.ai reaches only its own server: self h
    `patch_wasm.py` into `$RIKUY_WORK/busytex-patched.wasm` when that is missing or older).
 3. `node build.mjs`: `src/sample.js` from `sample/`; esbuild bundles `src/app.js` (IIFE, minified
    unless `--dev`, `__RIKUY_MIRROR__`) and `src/git.js` as `dist/git.js` (loaded by the Git
-   panel); the fonts of `build/fonts` (Paper Modern, cut from the Computer Modern Unicode fonts
+   panel); `src/texnames.txt` (`dev/texnames.py`: the command names Create a Style refuses, a
+   name a line) goes beside the page as `dist/texnames-<hash>.txt`, fetched the first time that
+   dialog opens, its name given to the bundle as `__RIKUY_TEXNAMES__`; the fonts of `build/fonts` (Paper Modern, cut from the Computer Modern Unicode fonts
    by `build/fonts/subset.py`), the interface's IBM Plex Sans and Mono (Google Fonts' Latin and Latin
    Extended cuts, unchanged, from npm's `@fontsource` packages, each with its unicode-range) and
    the CSS go into `src/template.html` as `dist/rikuy.html`, every font as `data:` (the installed

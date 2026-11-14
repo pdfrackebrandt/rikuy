@@ -12,7 +12,9 @@ report, Part, numbered and unnumbered headings and the document's numbering, Quo
 Abstract, the theorem like environments with their \\newtheorem once, a style on several paragraphs
 at once, the keys (Ctrl+Alt+4, Ctrl+Shift+S, Ctrl+Alt+Shift+S), "# " typed at a paragraph's start;
 the Styles pane, Apply Styles, Modify Style (titlesec's lines), Create a Style (\\newcommand and
-\\newenvironment), Update to Match Selection; the Design tab's Themes, Style Set, Colors and Fonts,
+\\newenvironment; LaTeX's own names fetched beside the page as the dialog opens, never with the
+page: a name typed before they arrive refused at OK, saying why, then checked when they come; a
+list that cannot be fetched said so, and fetched again), Update to Match Selection; the Design tab's Themes, Style Set, Colors and Fonts,
 with KOMA-Script and memoir; and, where dist/tex holds a TeX tree, all of it compiled in the page.
 
 Run it alone with names to run some: python3 styles.py gallery design."""
@@ -36,6 +38,12 @@ P3 = 'Before it.\n\nWords here.\n\nAfter it.'
 
 def run_cmd(page, cid, args=None):
     page.evaluate('([id, a]) => window.rikuy.runCommand(id, a || undefined)', [cid, args]); page.wait_for_timeout(200)
+
+
+def create_style(page):
+    """Create a Style opened, and LaTeX's own names (fetched as it opens) arrived."""
+    run_cmd(page, 'create-style')
+    page.wait_for_function('window.rikuy.texNamesState() === "ready"', timeout=10000)
 
 
 def styles(page):
@@ -496,7 +504,7 @@ def create_and_update(page):
     """Create a Style (character and paragraph), apply it, Update to Match Selection."""
     doc = A('Some key words here.\n\nA note to keep.')
     load_doc(page, doc); select_text(page, 'key words')
-    run_cmd(page, 'create-style')
+    create_style(page)
     d = page.get_by_role('dialog', name='Create a Style')
     page.fill('#cs-name', 'keyterm'); page.check('#ms-bold'); page.select_option('#ms-color', 'red')
     d.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
@@ -513,7 +521,7 @@ def create_and_update(page):
     run_cmd(page, 'styles-pane')
     # a paragraph style
     load_doc(page, doc); click_text(page, 'note', 1)
-    run_cmd(page, 'create-style'); d = page.get_by_role('dialog', name='Create a Style')
+    create_style(page); d = page.get_by_role('dialog', name='Create a Style')
     page.fill('#cs-name', 'remark'); page.select_option('#cs-type', 'para'); page.wait_for_timeout(100)
     check('a name LaTeX has (remark is no environment, but \\remark...)', True)
     page.fill('#cs-name', 'aside'); page.check('#ms-italic'); page.select_option('#ms-align', 'center')
@@ -526,7 +534,7 @@ def create_and_update(page):
     check('and the style list shows it as the paragraph\'s style', page.evaluate('document.getElementById("rb-style").value') == 'env:aside')
     taken = A('Some key words here.\n\nA note to keep.', '\\newcommand{\\keyterm}[1]{#1}\n')
     load_doc(page, taken); click_text(page, 'key', 1)
-    run_cmd(page, 'create-style'); page.fill('#cs-name', 'keyterm'); page.wait_for_timeout(100)
+    create_style(page); page.fill('#cs-name', 'keyterm'); page.wait_for_timeout(100)
     check('a name the document has is refused, saying so', page.get_by_role('dialog', name='Create a Style').get_by_role('button', name='OK').is_disabled() and 'taken' in page.evaluate('document.querySelector(".ms-note").textContent'))
     page.keyboard.press('Escape'); page.wait_for_timeout(100)
     # Update to Match Selection: a heading's own formatting becomes its level's look
@@ -825,7 +833,7 @@ def review(page):
         check('H4: compiled with thmtools: no error, the lemma\'s \\newtheorem added, "Lemma 1" in the PDF', r['ok'] and not r['errors'] and 'Lemma 1' in t, (r['errors'], t[:160]))
     # H5: Create a Style refuses names LaTeX, a package or the document has
     load_doc(page, A('Some key words here.', '\\newenvironment{aside}{\\par}{\\par}\n')); select_text(page, 'key words')
-    run_cmd(page, 'create-style'); refused = []
+    create_style(page); refused = []
     for kind, names in (('char', ('emph', 'quote', 'small', 'title', 'line', 'mark', 'url', 'underline', 'footnote', 'aside')), ('para', ('small', 'box', 'title', 'flushleft', 'frame', 'tabular'))):
         page.select_option('#cs-type', kind)
         for n in names:
@@ -865,10 +873,10 @@ def review(page):
     check('M3: a \\paragraph the preamble sets on its own line is not run in', page.evaluate('!document.querySelector("#pages .it.h4.runin")'))
     # M1: a new paragraph style is justified, LaTeX's own; M2: ulem already loaded keeps its options
     load_doc(page, A('Words here.', '\\usepackage{ulem}\n')); click_text(page, 'Words', 2)
-    run_cmd(page, 'create-style'); page.fill('#cs-name', 'aside'); page.select_option('#cs-type', 'para'); page.wait_for_timeout(80); page.check('#ms-italic')
+    create_style(page); page.fill('#cs-name', 'aside'); page.select_option('#cs-type', 'para'); page.wait_for_timeout(80); page.check('#ms-italic')
     page.locator('.pop-modstyle').get_by_role('button', name='OK').click(); page.wait_for_timeout(250)
     check('M1: a new paragraph style, italic: \\newenvironment{aside}{\\par\\itshape}{\\par}, no \\raggedright', '\\newenvironment{aside}{\\par\\itshape}{\\par}' in src(page), src(page)[:200])
-    select_text(page, 'Words'); run_cmd(page, 'create-style'); page.fill('#cs-name', 'under'); page.check('#ms-ul')
+    select_text(page, 'Words'); create_style(page); page.fill('#cs-name', 'under'); page.check('#ms-ul')
     page.locator('.pop-modstyle').get_by_role('button', name='OK').click(); page.wait_for_timeout(250)
     check('M2: Underline with ulem loaded: its line stays \\usepackage{ulem} (no normalem: \\emph keeps its underline)', '\\usepackage{ulem}\n' in src(page) and 'normalem' not in src(page), src(page)[:200])
     # M4: memoir with \mainmatter: off writes its own pair; the page draws what TeX prints
@@ -951,7 +959,7 @@ def verify(page):
         check('V1: compiled, TeX prints the same: "Satz 1.", "Remark.", the boxes\' words with no label', r['ok'] and 'Satz 1' in t2 and 'Remark.' in t2 and 'Mybox' not in t2 and 'Boxed text.' in t2, (r['errors'], t2[:200]))
     # V2: every name LaTeX's kernel, amsmath, amssymb or a common package defines is refused
     load_doc(page, A('Some key words here.', '\\usepackage{amsmath,amssymb,comment}\n')); select_text(page, 'key words')
-    run_cmd(page, 'create-style'); taken = []
+    create_style(page); taken = []
     for kind, names in (('char', ('big', 'space', 'tag', 'boxed', 'overline', 'check', 'vec', 'hat', 'top', 'stop', 'loop', 'do', 'mathbf', 'max', 'ln', 'Box', 'path', 'cancel', 'bar', 'Re', 'leq')),
                         ('para', ('cases', 'matrix', 'align', 'gather', 'comment'))):
         page.select_option('#cs-type', kind)
@@ -978,6 +986,70 @@ def verify(page):
     click_text(page, 'Intro', 2)
     modify_style(page, 'section', lambda pg: pg.check('#ms-num'))
     check('V5: Numbered off then on in Modify Style: the label is \\thesection. again, the line as the author wrote it but its format', '{\\thesection.}{0.5em}{\\MakeUppercase}' in src(page), src(page)[:260])
+
+
+def lazy_names(page):
+    """LaTeX's own names (src/texnames.txt), which Create a Style refuses: no part of the page, a
+    file beside it named by its hash, fetched once, the first time the dialog opens; the dialog
+    works at once, OK waits for them saying why, and a list that cannot be fetched is said so and
+    fetched again at the next OK."""
+    import hashlib
+    data = open(os.path.join(ROOT, 'src', 'texnames.txt'), 'rb').read()
+    names = [n for n in data.decode().split('\n') if n and not n.startswith('%')]
+    files = [f for f in os.listdir(DIST) if f.startswith('texnames-')]
+    html = open(os.path.join(DIST, 'rikuy.html'), encoding='utf8').read()
+    check('the list is a file beside the page named by its SHA-256, a name a line, sorted, and the page carries none of it',
+          files == ['texnames-%s.txt' % hashlib.sha256(data).hexdigest()[:16]] and open(os.path.join(DIST, files[0]), 'rb').read() == data
+          and names == sorted(names) and len(names) > 9000 and 'ACRfullplfmt' not in html and html.count(files[0]) == 1, (files, len(names)))
+    asked = []
+    page.on('request', lambda r: asked.append(r.url) if '/texnames-' in r.url else None)
+    doc = A('Some key words here.')
+    load_doc(page, doc); select_text(page, 'key words')
+    check('nothing fetches it before Create a Style opens', page.evaluate('window.rikuy.texNamesState()') == 'none' and not asked
+          and not page.evaluate("performance.getEntriesByType('resource').some((e) => e.name.includes('/texnames-'))"), asked)
+    held = []
+    page.route('**/texnames-*.txt', lambda r: held.append(r))
+    run_cmd(page, 'create-style')
+    d = page.get_by_role('dialog', name='Create a Style'); ok = d.get_by_role('button', name='OK')
+    check('opening the dialog fetches it', page.evaluate('window.rikuy.texNamesState()') == 'loading' and len(held) == 1, (page.evaluate('window.rikuy.texNamesState()'), len(held)))
+    # a name only LaTeX's list has: nothing else the page knows refuses it
+    only = page.evaluate('(ns) => ns.filter((n) => /^[A-Za-z]{2,30}$/.test(n) && window.rikuy.nameTaken(n) === null).slice(0, 3)', names[:4000])
+    x = only[0] if only else 'ACRlong'
+    page.fill('#cs-name', x); page.wait_for_timeout(50)
+    check('the dialog works while it comes: a name typed, OK ready, nothing said yet (%s)' % x, only and not ok.is_disabled() and page.inner_text('.ms-note') == '', only)
+    ok.click(); page.wait_for_timeout(150)
+    note = page.inner_text('.ms-note')
+    check('OK before the list has come is refused, saying why, the dialog left open and the source as it was',
+          src(page) == doc and d.count() == 1 and 'Still fetching' in note and x in note, note)
+    for r in held: r.fallback()
+    page.wait_for_function('window.rikuy.texNamesState() === "ready"', timeout=10000); page.wait_for_timeout(50)
+    note = page.inner_text('.ms-note')
+    check('when it comes the check is applied: %s refused as taken' % x, ok.is_disabled() and 'taken' in note and x in note, note)
+    page.fill('#cs-name', 'keyterm'); page.wait_for_timeout(30)
+    ok.click(); page.wait_for_timeout(250)
+    check('and a new name made the style', '\\newcommand{\\keyterm}' in src(page) and '\\keyterm{key words}' in src(page), src(page)[:200])
+    load_doc(page, doc); select_text(page, 'key words'); run_cmd(page, 'create-style')
+    page.fill('#cs-name', x); page.wait_for_timeout(30)
+    check('the dialog opened again uses the list it has: %s refused at once, nothing fetched again' % x, ok.is_disabled() and len(asked) == 1, asked)
+    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    page.unroute('**/texnames-*.txt')
+    # a list that cannot be fetched: a page started again (no list), the file answered with 404
+    page.route('**/texnames-*.txt', lambda r: r.fulfill(status=404, body='gone'))
+    page.reload(); page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=20000)
+    load_doc(page, doc); select_text(page, 'key words'); run_cmd(page, 'create-style')
+    page.wait_for_function('window.rikuy.texNamesState() === "failed"', timeout=10000)
+    page.fill('#cs-name', 'keyterm'); page.wait_for_timeout(30)
+    check('a list that could not be fetched leaves the dialog working', not ok.is_disabled() and page.inner_text('.ms-note') == '')
+    ok.click(); page.wait_for_timeout(150)
+    note = page.inner_text('.ms-note')
+    check('OK says it could not be fetched and why, makes nothing, and fetches it again', src(page) == doc and 'could not be fetched' in note and 'HTTP 404' in note
+          and page.evaluate('window.rikuy.texNamesState()') in ('loading', 'failed'), note)
+    page.wait_for_function('window.rikuy.texNamesState() === "failed"', timeout=10000)
+    page.unroute('**/texnames-*.txt')
+    ok.click(); page.wait_for_function('window.rikuy.texNamesState() === "ready"', timeout=10000); page.wait_for_timeout(50)
+    check('once it can be fetched, the next OK fetches it and the note clears', page.inner_text('.ms-note') == '' and not ok.is_disabled(), page.inner_text('.ms-note'))
+    ok.click(); page.wait_for_timeout(250)
+    check('and OK makes the style', '\\keyterm{key words}' in src(page), src(page)[:200])
 
 
 def compile_all(page):
@@ -1012,7 +1084,7 @@ def compile_all(page):
 
 def run():
     with sync_playwright() as p:
-        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, design, tile_menu, big, review, verify, compile_all)
+        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all)
         # (the tests that read the tiles see all six: from 1600 px the gallery has room for them)
         wide = (styles, gallery, gallery_keys, quote_style)
         # (names given on the command line run those alone)

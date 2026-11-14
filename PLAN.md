@@ -1292,6 +1292,30 @@ Tests:
     `eqtab.py` 159; `agent.py` 141; `browser.py` 190; the corpus model run 716 of 716, unknown
     commands unchanged.
 
+42c. **B4: Create a Style's names fetched as the dialog opens, never with the page.** The 9828
+    names (41 KB gzipped, for one dialog) were in the page
+    bundle every first load paid for, a phone's too. `dev/texnames.py` now writes
+    `src/texnames.txt`, the names sorted, a name a line, under one `%` line naming the TeX Live
+    they came from (Debian's TeX Live 2023: regenerating from Rikuy's own TeX Live 2026 is noted in
+    the script as the thing to do when convenient). `build.mjs` writes it beside the page as
+    `texnames-<the first 16 hex digits of its SHA-256>.txt`, in every build (the artifact's too),
+    and gives the bundle its name; Create a Style fetches it as it opens (same origin, so
+    `connect-src 'self'` allows it; under the installed app by its version's address, as
+    `git.js`), once per page. The dialog works at once: the check of the parser's tables and the
+    document's own runs while typing, LaTeX's list is applied when it arrives, and OK before it
+    has is refused saying so; a list that cannot be fetched is said so with the reason at OK, and
+    fetched again. Named by its hash it is the service worker's kind `i`, kept at install apart
+    from the version, and `_headers` caches it for a year as immutable. Evidence (on main 5802352,
+    after task 52): the hosted page's script 1326 KB before, 1196 KB after; `index.html` 1552197
+    bytes before, 1418789 after, gzipped 515558 and 473258 (42 KB less on every first load); the
+    artifact's `rikuy.html` 2878 KB before, 2748 KB after; the list itself,
+    `texnames-d2369a53e8e5db5c.txt`, 134674 bytes, 41387 gzipped, fetched only by Create a Style.
+    `npm test` green (`native.test.mjs` 43, `deploy_check.py` 45); `test/styles.py` 333
+    (`lazy_names`: no part of the page, nothing fetched before the dialog, OK refused while the
+    list is held back and the check applied when it comes, fetched once, a 404 said and fetched
+    again); `offline.py` 58 (kept at install as kind `i`, Create a Style's list offline, the
+    artifact's build ships it and fetches it); `agent.py` 141; `browser.py` 193; `tabs.py` 115.
+
 43. **B5, Find, Replace, Go To and the outline, as in Word.** Done in the code (branch
     `wordgap-b5-find`, on task 38's frame; GAP rows H75 to H81, V4, V10, S1, C5). *Find*
     (Ctrl+F on the page, Home's Find): the side panel's Outline tab is now Word's Navigation

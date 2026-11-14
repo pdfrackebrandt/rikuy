@@ -15,8 +15,30 @@ import { isHeading, isEnvStyle, envOf, charDef, envDef, defRange, readCharBody, 
 import { enclosing, wrapEdits, unwrapEdits, parseAt } from '../wrap.js';
 import { defineOnce, defines, packageLine, packageOptions, preambleEnd, stripComments } from '../preamble.js';
 import { SIG, CHARS } from '../parser.js';
-import { TEX_NAMES } from '../texnames.js';
-let NAMES = null;
+import { asset as appAsset } from '../pwa.js';
+
+// The 9828 command names LaTeX's kernel and 88 common packages define (dev/texnames.py), which
+// Create a Style refuses: 41 KB gzipped, too much for every first load of a phone for one dialog,
+// so they are no part of the page. build.mjs writes them beside it as texnames-<hash>.txt, a name
+// a line; the dialog fetches them as it opens (connect-src 'self' allows it), and the service
+// worker keeps the file by its hash, for offline (build/app.mjs, kind i). The dialog works at once:
+// its check takes them in when they arrive, and OK waits for them, saying so.
+let NAMES = null, NAMES_LOADING = null, NAMES_FAILED = '';
+function texNames() {
+  if (NAMES) return Promise.resolve(NAMES);
+  if (NAMES_LOADING) return NAMES_LOADING;
+  // (the hosted app asks under its version, as for git.js: src/pwa.js asset)
+  const url = __RIKUY_APP__ ? appAsset(__RIKUY_TEXNAMES__) : new URL(__RIKUY_TEXNAMES__, location.href).href;
+  NAMES_FAILED = '';
+  NAMES_LOADING = fetch(url, { credentials: 'same-origin' }).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); }).then((t) => {
+    // (its first line, a % comment, names the TeX Live it came from)
+    const s = new Set(t.split('\n').filter((x) => x && x[0] !== '%'));
+    if (s.size < 1000) throw new Error('only ' + s.size + ' names');
+    NAMES = s;
+    return s;
+  }).catch((e) => { NAMES_FAILED = String((e && e.message) || e); throw e; }).finally(() => { NAMES_LOADING = null; });
+  return NAMES_LOADING;
+}
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 // classes whose headings titlesec must not set (they have their own means), and why
@@ -518,19 +540,33 @@ export const methods = {
     ok.type = no.type = 'button';
     row.append(ok, no);
     p.append(note, row);
-    const check = () => {
-      const n = name.value.trim(), src = this.src(this.main), M = this.model;
-      let why = '';
+    // atOk: OK pressed, where a name not yet checked against LaTeX's own list is refused, saying
+    // why; while typing, that list's verdict waits for the list (fetched as the dialog opens)
+    let asked = false;
+    const check = (atOk) => {
+      const n = name.value.trim(), shown = kind.value === 'char' ? '\\' + n : n;
+      let why = '', wait = '';
       if (!NAME_OK.test(n)) why = 'Letters only, two or more (LaTeX\'s names have no digits or spaces).';
-      else if (this.nameTaken(n)) why = (kind.value === 'char' ? '\\' + n : n) + ' is taken: LaTeX, a package or this document has a command or an environment of that name.';
+      else {
+        const t = this.nameTaken(n);
+        if (t) why = shown + ' is taken: LaTeX, a package or this document has a command or an environment of that name.';
+        else if (t == null && atOk) wait = NAMES_FAILED ? 'The names LaTeX and its packages define could not be fetched to check ' + shown + ' against (' + NAMES_FAILED + '); fetching them again: OK once they are here.'
+          : 'Still fetching the names LaTeX and its packages define, to check ' + shown + ' against them: OK again in a moment.';
+      }
       // (nothing said before a name is typed)
-      note.textContent = n ? why : '';
+      note.textContent = n ? why || wait : '';
       ok.disabled = !!why;
+      return !!n && !why && !wait;
     };
-    name.addEventListener('input', check); kind.addEventListener('change', check);
-    check();
+    const fetchNames = () => texNames().then(() => { if (p.isConnected) check(false); }, () => { if (p.isConnected && asked) check(true); });
+    fetchNames();
+    name.addEventListener('input', () => check(false)); kind.addEventListener('change', () => check(false));
+    check(false);
     no.addEventListener('click', () => { this.closePop(true); this.ribbonBack(); });
-    ok.addEventListener('click', () => { check(); if (ok.disabled) return; const G = form.get(), n = name.value.trim(), k = kind.value; this.closePop(true); this.ribbonBack(); this.createStyle(n, k, G, c0, at0); this.ribbonSync(); });
+    ok.addEventListener('click', () => {
+      if (!check(true)) { if (!NAMES && name.value.trim()) { asked = true; if (!NAMES_LOADING) fetchNames(); } return; }
+      const G = form.get(), n = name.value.trim(), k = kind.value; this.closePop(true); this.ribbonBack(); this.createStyle(n, k, G, c0, at0); this.ribbonSync();
+    });
     this.positionPop();
     name.focus();
   },
@@ -611,15 +647,20 @@ export const methods = {
   },
   canUpdateStyle(v) { return !!this.matchPlan(v); },
   // whether a name is LaTeX's, TeX's, a package's the parser knows, or the document's own, as a
-  // command or an environment (\newenvironment{x} defines \x and \endx; review H5)
+  // command or an environment (\\newenvironment{x} defines \\x and \\endx; review H5); null when
+  // nothing here has it but LaTeX's own list (texNames) has not come yet
   nameTaken(n) {
     const M = this.model, src = this.src(this.main), end = this.stylePreEnd(), others = this.preambleOthers();
-    // (LaTeX's kernel and 88 common packages, from their own hash table: src/texnames.js)
-    if (!NAMES) NAMES = new Set(TEX_NAMES.split(' '));
-    if (NAMES.has(n) || NAMES.has('end' + n) || TAKEN.has(n) || TAKEN.has(n.replace(/^end/, '')) || Object.prototype.hasOwnProperty.call(SIG, n) || Object.prototype.hasOwnProperty.call(CHARS, n)) return true;
+    if (TAKEN.has(n) || TAKEN.has(n.replace(/^end/, '')) || Object.prototype.hasOwnProperty.call(SIG, n) || Object.prototype.hasOwnProperty.call(CHARS, n)) return true;
     if (M && (M.textMacros.has(n) || M.envDefs.has(n) || M.thms.has(n) || (M.mathMacros && M.mathMacros['\\' + n]))) return true;
-    return [src, ...others].some((t, k) => defines(t, n, 'command', k ? -1 : end) || defines(t, n, 'environment', k ? -1 : end) || thmDefsIn(t, true).has(n));
+    if ([src, ...others].some((t, k) => defines(t, n, 'command', k ? -1 : end) || defines(t, n, 'environment', k ? -1 : end) || thmDefsIn(t, true).has(n))) return true;
+    // (LaTeX's kernel and 88 common packages, from their own hash table: src/texnames.txt)
+    if (!NAMES) return null;
+    return NAMES.has(n) || NAMES.has('end' + n);
   },
+  // how far the names Create a Style checks against have come: none, loading, ready or failed
+  // (tests wait on it)
+  texNamesState() { return NAMES ? 'ready' : NAMES_LOADING ? 'loading' : NAMES_FAILED ? 'failed' : 'none'; },
   updateStyle(v) {
     const P = this.matchPlan(v);
     if (!P) { this.toast('Put the caret in a ' + this.styleName(v) + ' whose words all have the formatting to take (\\textsf{…}, \\textcolor{…}{…}).'); return false; }
