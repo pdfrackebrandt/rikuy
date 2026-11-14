@@ -16,6 +16,8 @@ export const methods = {
     if (!at) return [];
     const out = [];
     if (at.cell) out.push('table');
+    // an interactive graph armed or in the caret's block: Edit graph (src/cmd/insert.js)
+    if (this.graphHere && this.graphHere(at)) out.push('graph');
     if (at.it && at.it.dataset.li) out.push('list');
     if (at.ctx === 'h') out.push('heading');
     if (!at.c.ghost && !at.c.collapsed) out.push('selection');

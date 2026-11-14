@@ -387,7 +387,10 @@ class App {
       maxHeight: () => (this.layout.g ? this.layout.g.th : 550) * PX_PER_PT,
       resized: (key) => this.widgetResized(key),
       source: (ph, e) => this.widgetSource(ph, e),
-      allow: () => this.allowWidgets()
+      allow: () => this.allowWidgets(),
+      // an interactive graph's Edit graph button and its menu (src/cmd/insert.js)
+      decorate: (F) => this.graphDecorate && this.graphDecorate(F),
+      menu: (F, x, y) => this.graphMenu && this.graphMenu(F, x, y)
     });
     this.relayoutSoon = debounce(() => this.relayout(), 40);
     // a figure, or a live figure's fallback, measured before its picture loaded: measured again
@@ -958,11 +961,15 @@ class App {
   }
 
   // ---- edits & history ----------------------------------------------------------
-  commit(edits, caret, kind) {
+  // blobs: pictures the same step puts in the project ([{ name, blob }], an interactive graph's
+  // picture for the PDF): one undo takes them out again with the text, or back to what they were
+  commit(edits, caret, kind, blobs) {
     // while the pages are stale (see rebuild) only edits made from the text itself go through
     if (this.stale && !/^(restore|reject|merge|other-tab|api)$/.test(kind || '')) { this.toast('The page cannot show the document as it is now. Edit the source, or undo.'); return; }
     edits = edits.filter((ed) => { const n = (this.files.get(ed.f) ?? '').length; return ed.s >= 0 && ed.e >= ed.s && ed.e <= n; });
-    if (!edits.length) { if (caret) this.restoreCaret(caret); return; }
+    const swaps = (blobs || []).map(({ name, blob }) => ({ name, before: this.assetBlobs.get(name) || null, after: blob }));
+    if (!edits.length && !swaps.length) { if (caret) this.restoreCaret(caret); return; }
+    for (const b of swaps) this.setAsset(b.name, b.after);
     const cb = this.caretNow() || caret;
     this.removeGhost();
     const before = new Map();
@@ -977,7 +984,7 @@ class App {
       for (const ed of list) text = text.slice(0, ed.s) + ed.t + text.slice(ed.e);
       this.files.set(f, text);
     }
-    this.record(before, kind, cb && cb.f != null ? { f: cb.f, p: cb.p } : caret, caret);
+    this.record(before, kind, cb && cb.f != null ? { f: cb.f, p: cb.p } : caret, caret, swaps);
     if (made.length) { const top = this.hist[this.hist.length - 1]; if (top) for (const d of top.files) if (made.includes(d.f)) d.made = true; }
     this.zipDirty = true;
     this.rebuild(caret);
@@ -985,9 +992,18 @@ class App {
     this.saveSoon();
   }
 
-  record(before, kind, cb, ca) {
+  record(before, kind, cb, ca, swaps) {
     const files = [];
     for (const [f, b] of before) { const d = diff(b, this.files.get(f)); if (d) files.push({ f, ...d }); }
+    if (swaps && swaps.length) {
+      // (a step with pictures is a step of its own, never joined to the one before)
+      if (this.hist.length) { const t = this.hist[this.hist.length - 1]; t.open = false; t.before = null; }
+      this.hist.push({ kind, files, blobs: swaps, caretBefore: cb, caretAfter: ca, time: Date.now(), open: false, before: null });
+      if (this.hist.length > 400) this.hist.shift();
+      this.redoStack = [];
+      this.updateUndoUI();
+      return;
+    }
     if (!files.length) return;
     const now = Date.now();
     const top = this.hist[this.hist.length - 1];
@@ -1017,6 +1033,7 @@ class App {
     if (!h) { this.toast('Nothing to undo'); return; }
     h.open = false; h.before = null;
     for (const d of h.files) { const t = this.files.get(d.f) ?? ''; this.files.set(d.f, t.slice(0, d.s) + d.del + t.slice(d.s + d.ins.length)); if (d.made && !this.files.get(d.f)) this.files.delete(d.f); }
+    for (const b of h.blobs || []) this.setAsset(b.name, b.before);
     this.redoStack.push(h);
     const c = h.caretBefore || (h.files[0] ? { f: h.files[0].f, p: h.files[0].s + h.files[0].del.length } : null);
     this.rebuild(c);
@@ -1030,6 +1047,7 @@ class App {
     const h = this.redoStack.pop();
     if (!h) { this.toast('Nothing to redo'); return; }
     for (const d of h.files) { const t = this.files.get(d.f) ?? ''; this.files.set(d.f, t.slice(0, d.s) + d.ins + t.slice(d.s + d.del.length)); }
+    for (const b of h.blobs || []) this.setAsset(b.name, b.after);
     this.hist.push(h);
     const c = h.caretAfter || (h.files[0] ? { f: h.files[0].f, p: h.files[0].s + h.files[0].ins.length } : null);
     this.rebuild(c);
@@ -1169,11 +1187,12 @@ class App {
     // Ctrl and + / - / 0 zoom the document where the document is what is being read: on the
     // page, or with nothing in particular in focus. In a field, the source or the PDF the
     // browser zooms as it always does.
-    if (mod && !e.altKey && /^(=|\+|-|_|0)$/.test(e.key) && !e.defaultPrevented
+    // (Ctrl+Shift+- types _ and is the nonbreaking hyphen, as in Word: src/cmd/insert.js)
+    if (mod && !e.altKey && /^(=|\+|-|0)$/.test(e.key) && !e.defaultPrevented
       && (e.target === document.body || e.target === this.root || (e.target.closest && e.target.closest('#desk') && !e.target.closest('input, textarea, select, math-field, [contenteditable="true"]:not(#pages)')))) {
       e.preventDefault();
       if (e.key === '0') this.zoomTo(1, null);
-      else this.setZoom(e.key === '-' || e.key === '_' ? -1 : +1);
+      else this.setZoom(e.key === '-' ? -1 : +1);
     }
     // Ctrl+Z where no field takes it, after a click on Reject, a zoom button or the bubble, undoes
     // in the document as on the page; it did nothing until a click back on the page
@@ -3060,6 +3079,8 @@ class App {
       if (el) { const info = atomOfEl(el); if (info) (x.act === 'cite' ? this.openCite(el, info) : this.openRef(el, info)); }
       return;
     }
+    // an item that is a command of the registry run as its button runs it (Interactive graph)
+    if (x.act === 'cmd') { if (base) this.restoreCaret({ f: base.f, p: base.a }); this.runCommand(x.id); return; }
     if (x.raw) { insertAt('\\' + x.k + (/[A-Za-z]$/.test(x.k) ? ' ' : ''), ''); return; }
     insertAt(x.t.open, x.t.close);
   }
@@ -4189,6 +4210,16 @@ class App {
   addAsset(name, blob) {
     this.assetBlobs.set(name, blob);
     if (IMG_EXT.test(name)) this.assets.set(name, URL.createObjectURL(blob));
+  }
+  // a picture of the project put in, replaced or (blob null) taken out, by a step of the history
+  setAsset(name, blob) {
+    const url = this.assets.get(name);
+    if (url) URL.revokeObjectURL(url);
+    this.assets.delete(name);
+    this.assetBlobs.delete(name);
+    if (blob) this.addAsset(name, blob);
+    this.binaryDirty = true;
+    this.forceRender = true;
   }
 
   missingInputs() {

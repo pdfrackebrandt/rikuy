@@ -534,7 +534,27 @@ Ctrl is Cmd on a Mac.
   text back), from a phone's keyboard too (the marker and space sent at once, a dash its
   autocorrect made of "-", an IME's composition). The labels are written as enumitem's options (\begin{enumerate}[label=\alph*),start=3]);
   a list's own \def\labelenumi, \setcounter{enumi} or "(a)" is changed where it is written.
-- Ctrl+Shift+V: paste as plain text
+- Ctrl+Shift+V: paste as plain text. The right click menu: Cut, Copy, Paste (the browser asks
+  once to let the page read the clipboard); the search box finds them and Keep Text Only, Paste
+  as LaTeX source and Paste Special
+- Insert, Interactive graph (command insert-interactive-graph; Help can call it): the dialog
+  "Interactive graph" with the radiogroup "Graph type" (Function, Data and fit, Curve,
+  Distribution), fields "Formulas" (one a line, in x; any other letter gets a slider), "Data",
+  "Fit", "r(θ) =", "x(t) =", "Distribution", "Show", "Slider n name/from/to/step/start", axes,
+  "Description", "Caption", a live preview, and Insert. It writes graphs/<kind>-<n>.html (the graph
+  as JSON and its script), graphs/<kind>-<n>.png (the picture the PDF prints, the graph at its
+  sliders' starting values), \\rikuywidget[width=\\linewidth]{…}{…}, rikuy.sty and
+  \\usepackage{rikuy}: one undo. On the page the graph runs live; its button "Edit graph" (or
+  command edit-graph with {file}) reopens the dialog, whose Update rewrites the file and picture
+  only
+- Symbols and special characters: Ctrl+Alt+C ©, Ctrl+Alt+R ®, Ctrl+Alt+T ™, Ctrl+Alt+. …,
+  Ctrl+Alt+- em dash, Ctrl+Shift+Space nonbreaking space (~), Ctrl+Shift+_ nonbreaking hyphen
+  (\\nobreakdash-; Ctrl+- alone still zooms out); Alt+Shift+D \\today, Alt+Shift+T the time.
+  Insert's Symbol button and More Symbols write LaTeX commands (\\texteuro{}, \\S{})
+- AutoCorrect as typed, each correction one undo after the typing: (c) (r) (tm) ... at once;
+  -> => <= != at the next space; an address then a space becomes \\url{}; a sentence's first
+  letter, TWo INitial CApitals, day names; ---, ___ or === then Enter a rule. File's
+  "AutoCorrect Options" switches each one off and holds the user name on comments
 - Ctrl+F, Ctrl+H, Ctrl+G, on the page only (with the focus anywhere else Ctrl+F is the browser's
   own find): Find puts the focus in the Navigation pane's searchbox "Search document" (the side
   panel's tab Outline; its tablist "Navigation" has Headings, Pages and Results, which lists the

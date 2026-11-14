@@ -144,6 +144,8 @@ jobs:
         run: cd test && python3 para.py
       - name: Styles, every heading, environment, look and style Rikuy writes compiled in the page with pdfLaTeX and LuaLaTeX
         run: cd test && python3 styles.py compile_all
+      - name: An interactive graph compiles on pdfLaTeX, XeLaTeX and LuaLaTeX with its picture
+        run: cd test && python3 insert.py graph_compiles
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rikuy-dist
