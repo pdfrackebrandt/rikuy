@@ -2250,10 +2250,15 @@ Tests:
     runs into, by `\paragraph`, `\subparagraph` and titlesec's runin, on the fast path; a paragraph
     style's and a theorem's paragraphs by the full build) and of B2 Paragraph (line spacing and
     `\centering` declared before a paragraph, carried over; a hanging indent and `\nopagebreak`
-    by the full build), 18 checks; with the corpus 11,616 edits over 722 documents (633 on the
+    by the full build) and of B8 Pictures (the paragraphs a wrapfigure wraps and one after a
+    tcolorbox on the fast path; a paragraph with a picture, a `\scalebox`, a `\captionof`'s caption
+    and a boxed paragraph by the full build), 25 checks, the streams over 8 documents (5200 edits,
+    356 fast); with the corpus 11,664 edits over 724 documents (738 on the
     fast path, the corpus being short documents full of commands), all equal. Rebased on B2 (its
     `ps`, `pe`, `vs`, `ve` named in `OFFSET_KEYS`, its line spacing carried) and B4 (run in
-    headings carried; B4 added no offset field and no inline command, so `PURE_CMDS` stays). `npm test` green, the corpus
+    headings carried; B4 added no offset field and no inline command, so `PURE_CMDS` stays) and
+    B8 (no offset field; its boxes read the builder's box share, so `\scalebox`, `\rotatebox` and
+    pictures stay out of `PURE_CMDS`). `npm test` green, the corpus
     model run 716 of 716, `browser.py` 193, `styles.py` 333, `word.py` 111 (on d55b5fa); `find.py` 76,
     `history.py` 39/39, `share.py` 46, `agent.py` 141 (on 07069e1); the security audit's quick profile (one reviewer, notes outside
     git): nothing is kept across documents, every reuse is proven against the new text. *Next:* the same for paragraphs with citations,

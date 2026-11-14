@@ -77,6 +77,17 @@ for (const d of ['dev/bench/long', 'dev/bench/sample', 'dev/bench/lua', 'dev/ben
     body.join('\n') + '\n\\subsection{Run in by titlesec} Its paragraph, plain.\n\n\\end{document}\n']]), 'main.tex']);
 }
 
+docs.push(['pictures (B8)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{graphicx,wrapfig,caption,subcaption,tcolorbox}\n\\begin{document}\n' +
+  'Words before a picture \\includegraphics[width=1cm]{a.png} and after it, in one paragraph.\n\n' +
+  'A \\scalebox{1.5}{scaled} word and a \\rotatebox{90}{turned} one.\n\n' +
+  '\\begin{wrapfigure}{r}{0.4\\textwidth}\n\\centering\n\\includegraphics[width=\\linewidth]{b.png}\n\\caption{Wrapped}\n\\end{wrapfigure}\n' +
+  'The paragraph the figure wraps, plain and long enough to go on beside it for a while.\n\nThe next paragraph, still beside it.\n\n' +
+  '\\begin{center}\n\\includegraphics[width=3cm]{c.png}\n\\captionof{figure}{A caption of its own}\n\\end{center}\n\n' +
+  '\\begin{figure}[h]\n\\begin{minipage}{0.45\\linewidth}\\includegraphics[width=\\linewidth]{d.png}\\end{minipage}\\hfill\n' +
+  '\\begin{subfigure}{0.45\\linewidth}\\includegraphics[width=\\linewidth]{e.png}\\caption{Sub}\\end{subfigure}\n\\caption{Two}\n\\end{figure}\n\n' +
+  '\\begin{tcolorbox}[width=0.6\\linewidth,center]A boxed paragraph.\\end{tcolorbox}\n\nLast plain paragraph after the box.\n\\end{document}\n'], ['a.png', ''], ['b.png', ''], ['c.png', ''], ['d.png', ''], ['e.png', '']]), 'main.tex']);
+docs.push(['paragraph settings (B2)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{setspace}\n\\begin{document}\nFirst plain paragraph, typed in.\n\n\\onehalfspacing\nA paragraph after one and a half spacing.\n\nAnother after it.\n\n' +
+  '\\doublespacing\n\\centering\nCentred from here on, plain.\n\nStill centred, the next paragraph.\n\n\\hangindent=1cm\\hangafter=1 A hanging paragraph with words.\n\nKept with the next\\nopagebreak\n\nLast plain words.\n\\end{document}\n']]), 'main.tex']);
 const corpus = process.argv[2];
 if (corpus) {
   const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { if (e.name.startsWith('.')) continue; const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (e.name.endsWith('.tex')) { const t = fs.readFileSync(p, 'utf8'); if (/\\documentclass/.test(t)) add(path.dirname(p), e.name); } } };
@@ -84,7 +95,7 @@ if (corpus) {
 }
 const N = corpus ? 16 : 400;
 let failsBefore = fail;
-for (const [name, files, main] of docs) stream(name + ' ' + main, files, main, name.includes('long') || name.includes('sample') || name.includes('styles') ? N * 2 : N);
+for (const [name, files, main] of docs) stream(name + ' ' + main, files, main, name.includes('long') || name.includes('sample') || name.includes('styles') || name.includes('pictures') ? N * 2 : N);
 check('every edit of every stream: the incremental model is the full build\'s (' + steps + ' edits, ' + fast + ' on the fast path, ' + docs.length + ' documents)', fail === failsBefore && fast > steps / 20, [steps, fast]);
 console.log('edits ' + steps + ', on the fast path ' + fast + ', documents ' + docs.length);
 
@@ -112,14 +123,31 @@ console.log('edits ' + steps + ', on the fast path ' + fast + ', documents ' + d
   check('every field of the models\' units that moves with the text is one OFFSET_KEYS names (' + [...moved].sort().join(' ') + ')', !missing.length, 'not named: ' + missing.join(' '));
 }
 
+// what Pictures (B8) draws: a picture inside a paragraph, \scalebox and \rotatebox, a wrapfigure
+// with the paragraphs it wraps, \captionof in a center, minipages and subfigures sharing a line,
+// a tcolorbox of a width
+
+for (const [what, needle, fastWanted] of [['a paragraph with a picture in it', 'Words before a picture', false], ['a paragraph with \\scalebox', 'scaled} word', false],
+  ['the paragraph a wrapfigure wraps', 'The paragraph the figure wraps', true], ['the next paragraph beside it', 'The next paragraph, still', true],
+  ['a \\captionof\'s caption', 'A caption of its own', false], ['a boxed paragraph', 'A boxed paragraph', false], ['the paragraph after the box', 'Last plain paragraph', true]]) {
+  const [, files] = docs.find(([n]) => n.startsWith('pictures'));
+  const t = files.get('main.tex'), prev = buildModel({ files, main: 'main.tex' });
+  const at = t.indexOf(needle) + 3, next = new Map(files);
+  next.set('main.tex', t.slice(0, at) + 'xy' + t.slice(at));
+  const before = INCR.reused;
+  const a = buildModel({ files: next, main: 'main.tex' }, prev);
+  const fast = INCR.reused > before;
+  INCR.on = false; const b = buildModel({ files: next, main: 'main.tex' }, prev); INCR.on = true;
+  check('typing in ' + what + ': the full build\'s model, ' + (fastWanted ? 'on the fast path' : 'by the full build'), ser(a) === ser(b) && fast === fastWanted, [fast, ser(a) === ser(b) ? '' : first(ser(a), ser(b))]);
+}
+
 // the paragraph settings of B2 that reach a later paragraph: line spacing declared in the body,
 // \centering before a paragraph, a hanging indent and \nopagebreak in one
-docs.push(['paragraph settings (B2)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{setspace}\n\\begin{document}\nFirst plain paragraph, typed in.\n\n\\onehalfspacing\nA paragraph after one and a half spacing.\n\nAnother after it.\n\n' +
-  '\\doublespacing\n\\centering\nCentred from here on, plain.\n\nStill centred, the next paragraph.\n\n\\hangindent=1cm\\hangafter=1 A hanging paragraph with words.\n\nKept with the next\\nopagebreak\n\nLast plain words.\n\\end{document}\n']]), 'main.tex']);
+
 for (const [what, needle, fastWanted] of [['a paragraph that opens with \\onehalfspacing (the declaration is its own)', 'A paragraph after one', false], ['the paragraph after it, one and a half spaced', 'Another after it', true],
   ['a paragraph that opens with \\centering', 'Centred from here', false], ['the centred paragraph after it', 'Still centred', true],
   ['a paragraph with \\hangindent', 'A hanging paragraph', false], ['a paragraph with \\nopagebreak', 'Kept with the next', false], ['the last paragraph', 'Last plain', true]]) {
-  const [, files] = docs[docs.length - 1];
+  const [, files] = docs.find(([n]) => n.startsWith('paragraph settings'));
   const t = files.get('main.tex'), prev = buildModel({ files, main: 'main.tex' });
   const at = t.indexOf(needle) + 3, next = new Map(files);
   next.set('main.tex', t.slice(0, at) + 'xy' + t.slice(at));
