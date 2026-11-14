@@ -18,7 +18,7 @@ const own = (o) => Object.assign(Object.create(null), o);
 
 // Argument signatures. o = optional [..], m = mandatory, v = verbatim braces,
 // p = optional (..) as used by \cmidrule.
-const SIG = own({
+export const SIG = own({
   part: 'om', chapter: 'om', section: 'om', subsection: 'om', subsubsection: 'om', paragraph: 'om', subparagraph: 'om',
   textbf: 'm', textit: 'm', emph: 'm', texttt: 'm', textsc: 'm', textsf: 'm', textrm: 'm', textup: 'm',
   textsl: 'm', textmd: 'm', textnormal: 'm', underline: 'm', uline: 'm', uuline: 'm', uwave: 'm', sout: 'm', xout: 'm',
@@ -67,6 +67,7 @@ const SIG = own({
   addcontentsline: 'mmm', index: 'm', glossary: 'm', setkeys: 'mm', allowdisplaybreaks: 'o',
   selectlanguage: 'm', foreignlanguage: 'omm', babelsublr: 'm', CJKfamily: 'm', ensure: 'm', textls: 'om', lowercase: 'm', uppercase: 'm',
   MakeUppercase: 'm', MakeLowercase: 'm', textcircled: 'm',
+  setsecnumdepth: 'm', maxsecnumdepth: 'm',
   // character formats Rikuy's Font group writes (src/cmd/font.js): ulem's other lines, its double
   // strikethrough, a size and a family for a run of text, ruby
   dashuline: 'm', dotuline: 'm', culine: 'mm', dsout: 'm', fontsize: 'mm', fontfamily: 'm', fontspec: 'om', ruby: 'omm',

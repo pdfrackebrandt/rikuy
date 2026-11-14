@@ -45,7 +45,7 @@ import { methods as menuMethods, installMenu } from './ui/menu.js';
 import { installKeys } from './keys.js';
 import * as kit from './ui/kit.js';
 import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass } from './preamble.js';
-import { LATEX_MARK, lineStart as lineAt } from './styles.js';
+import { LATEX_MARK, lineStart as lineAt, isEnvStyle, envOf } from './styles.js';
 import { eolAt } from './blockenv.js';
 import { shareParam, texParam, commentOnly, cleanPath } from './share.js';
 import { version as VERSION } from '../package.json';
@@ -1642,7 +1642,7 @@ class App {
   showGhost(afterEl, f, pos, o = {}) {
     this.removeGhost();
     const g = document.createElement('div');
-    g.className = 'it p ghostp' + (afterEl.classList.contains('ind') || afterEl.classList.contains('p') || afterEl.classList.contains('tex') ? ' ind' : '') + (o.style === 'latex' ? ' tex' : o.style === 'quote' ? ' quote' : '');
+    g.className = 'it p ghostp' + (afterEl.classList.contains('ind') || afterEl.classList.contains('p') || afterEl.classList.contains('tex') ? ' ind' : '') + (o.style === 'latex' ? ' tex' : isEnvStyle(o.style) ? ' quote' : '');
     g.dataset.ctx = 'p';
     // the new paragraph runs the way the one above it does
     if (afterEl.dir === 'rtl' || afterEl.dir === 'ltr') g.dir = afterEl.dir;
@@ -1671,8 +1671,8 @@ class App {
       tex = (g.pend + tex).replace(/^[ \t]*(?:\r?\n[ \t]*)+/, '').replace(/(?:[ \t]*\r?\n)+[ \t]*$/, '');
       if (!tex.trim()) { g.pend = (g.pend + tex).replace(/[^ \t]/g, ''); this.paintGhost(); return; }
     }
-    const open = g.style === 'latex' ? LATEX_MARK + '\n' : g.style === 'quote' ? '\\begin{quote}\n' : '';
-    const close = g.style === 'quote' ? '\n\\end{quote}' : '';
+    const open = g.style === 'latex' ? LATEX_MARK + '\n' : isEnvStyle(g.style) ? '\\begin{' + envOf(g.style) + '}\n' : '';
+    const close = isEnvStyle(g.style) ? '\n\\end{' + envOf(g.style) + '}' : '';
     const src = this.src(g.f);
     // comment lines right under the paragraph belong to it (a review comment is about the line
     // above it): the new paragraph goes after them (not for one before a block: those are its own)
@@ -2721,7 +2721,7 @@ class App {
           let nlB = 0; for (let k = ghost.pos - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
           const pre = '\n'.repeat(Math.max(0, 2 - nlB));
           // (a blank paragraph set to Quote: the formula goes in the quote)
-          const [qo, qc] = ghost.style === 'quote' ? ['\\begin{quote}\n', '\n\\end{quote}'] : ['', ''];
+          const [qo, qc] = isEnvStyle(ghost.style) ? ['\\begin{' + envOf(ghost.style) + '}\n', '\n\\end{' + envOf(ghost.style) + '}'] : ['', ''];
           this.commit([{ f: ghost.f, s: ghost.pos, e: ghost.pos, t: pre + qo + t + qc + '\n\n' }], null, this.pop.session);
           ins = { f: ghost.f, s: ghost.pos + pre.length + qo.length, e: ghost.pos + pre.length + qo.length + t.length };
         } else {
@@ -3037,7 +3037,7 @@ class App {
       let nlB = 0; for (let k = ghost.pos - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
       const pre = '\n'.repeat(Math.max(0, 2 - nlB));
       // (a blank paragraph set to Quote: what is inserted goes in the quote)
-      const [qo, qc] = ghost.style === 'quote' ? ['\\begin{quote}\n', '\n\\end{quote}'] : ['', ''];
+      const [qo, qc] = isEnvStyle(ghost.style) ? ['\\begin{' + envOf(ghost.style) + '}\n', '\n\\end{' + envOf(ghost.style) + '}'] : ['', ''];
       const o = qo + open.replace(/^\n+/, '');
       this.removeGhost();
       this.commit([{ f: ghost.f, s: ghost.pos, e: ghost.pos, t: pre + o + close + qc }], { f: ghost.f, p: ghost.pos + pre.length + o.length, bias: 1 }, 'insert');

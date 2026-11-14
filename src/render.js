@@ -240,8 +240,23 @@ export class Renderer {
           el.dataset.li = [this.rel(L.itemS), this.rel(L.itemE), this.rel(L.listS), this.rel(L.listE), this.rel(L.cmdE), L.kind, L.cont ? 1 : 0].join(',');
         }
         if (it.envTag) { const t = chr(it.envTag, 'envtag'); el.appendChild(t); }
+        // a run in heading's room at the line's start: its words again, unseen (the heading
+        // itself is drawn over them, src/model.js runIns), and the space after it
+        if (it.runIn) {
+          const g = document.createElement('span');
+          g.className = 'runin-gap';
+          g.setAttribute('aria-hidden', 'true');
+          g.contentEditable = 'false';
+          if (it.runIn.num) { const n = document.createElement('span'); n.className = 'secnum'; n.textContent = it.runIn.num; g.append(n); }
+          g.append(document.createTextNode(it.runIn.text));
+          headLook(g, it.runIn.look, true);
+          el.appendChild(g);
+          el.classList.add('ri' + it.runIn.level);
+        }
         if (it.lead) this.inl(it.lead, el);
         this.inl(it.inl, el);
+        // a paragraph style of the document's own (\newenvironment of formatting alone)
+        if (it.look) headLook(el, { ...it.look, bf: !!it.look.bf }, false);
         if (it.tail) { this.inl(it.tail, el); if (it.tail.some((t) => t.cls === 'qed')) el.classList.add('has-qed'); }
         item.splittable = true;
         let sbEm = 0;
@@ -254,6 +269,8 @@ export class Renderer {
         if (/\bbibitem\b/.test(it.cls || '')) sbEm = 0.3;
         if (/\babs\b/.test(it.cls || '') && !it.indent) sbEm = 0;
         item.sbEm = sbEm || (this.model.opts.parskip || 0);
+        // (a run in heading's paragraph starts on the heading's line: the space before it is the heading's)
+        if (it.runIn) item.sbEm = 0;
         if (it.saThm || it.saList) el.classList.add('pad-after');
         if (/\bthm\b/.test(it.cls || '') && it.thmFirst) el.dataset.thm = '1';
         this.paraLook(it, el, item);
@@ -267,14 +284,20 @@ export class Renderer {
         el.setAttribute('aria-level', String(typeof it.level === 'number' ? Math.min(6, it.level + 1 || 1) : 2));
         if (it.chapLabel) {
           if (it.num) { const l = chr(it.chapLabel + ' ' + it.num, 'chapl'); el.appendChild(l); }
-        } else if (it.num) { el.appendChild(chr(it.num, 'secnum')); }
+        } else if (it.num) { el.appendChild(chr(it.num, it.numBlock ? 'chapl' : 'secnum')); }
         this.inl(it.inl, el);
+        headLook(el, it.look, false);
+        // a heading that runs into its paragraph takes no height of its own: drawn over the room
+        // its paragraph keeps for it at its first line's start
+        if (it.runIn) el.classList.add('runin');
         item.keepNext = true;
         item.level = it.level;
         // (its number and label apart from its words: a running head's mark, src/layout.js)
         item.hnum = it.num || '';
         item.hlabel = it.chapLabel || '';
         item.sbEm = { 0: 2.5, 1: 1.5, 2: 1.35, 3: 1.35, 4: 1.1, 5: 1.1, abs: 0.6 }[it.level] ?? 1.2;
+        // (and the \parskip its paragraph would have had before it)
+        if (it.runIn) item.sbEm += this.model.opts.parskip || 0;
         break;
       }
       case 'title': {
@@ -835,6 +858,22 @@ const NAMED = { lightgreen: '#cfeccf', verylightgreen: '#e6f5e6', lightblue: '#d
 // Only a colour reaches the style: the argument is the document's text, maybe a stranger's,
 // and url(...) there would have the reader's browser fetch from wherever it points (a copy
 // served without the artifact host's policy lets it).
+// a heading's look from the preamble (titlesec, KOMA-Script): its size, series, shape, family,
+// colour, alignment and rule, through the style API only. gap: the run in heading's room in its
+// paragraph, which needs the font alone.
+function headLook(el, L, gap) {
+  if (!L) return;
+  if (L.size && /^[A-Za-z]+$/.test(L.size)) el.style.fontSize = L.size === 'normalsize' ? '1em' : 'calc(var(--z-' + L.size + ') * 1em)';
+  el.style.fontWeight = L.bf ? 'bold' : 'normal';
+  el.style.fontStyle = L.it ? 'italic' : 'normal';
+  el.style.fontVariant = L.sc ? 'small-caps' : 'normal';
+  if (L.sf) el.style.fontFamily = 'var(--font-doc-sf)'; else if (L.tt) el.style.fontFamily = 'var(--font-doc-tt)';
+  if (gap) return;
+  if (L.color) { const c = cssColor(L.color); if (c) el.style.color = c; }
+  if (L.align === 'center' || L.align === 'right') el.style.textAlign = L.align;
+  if (L.rule) el.classList.add('h-rule');
+}
+
 // a styled run's colour (or its background, for \colorbox), through the style API only
 function paint(s, x) {
   // a size, a tracking, a shift or a scale the source gives in numbers (src/model.js made them numbers)

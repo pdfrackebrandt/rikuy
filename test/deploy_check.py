@@ -60,7 +60,7 @@ ok('the hosted policy is the browser tests\' policy without its outside sources,
    {k: v for k, v in hosted.items() if k not in ('frame-ancestors', 'manifest-src')} == {k: [v for v in vs if not v.startswith('https:')] for k, vs in artifact.items()}
    and hosted['frame-ancestors'] == ["'none'"] and hosted['manifest-src'] == ["'self'"], (hosted, outside))
 ok('it allows no outside source at all', not any(v.startswith(('http', '*')) for vs in hosted.values() for v in vs), hosted)
-for p in ('/tex/p-0123456789abcdef.wasm', '/tex/w-0123456789abcdef.wasm', '/tex/t-0123456789abcdef.wasm', '/tex/b-0123456789abcdef.wasm', '/fonts/ibm-plex-sans-latin-ext-400-0123456789abcdef.woff2', '/core/rikuy-core-0123456789abcdef.wasm'):
+for p in ('/tex/p-0123456789abcdef.wasm', '/tex/w-0123456789abcdef.wasm', '/tex/t-0123456789abcdef.wasm', '/tex/b-0123456789abcdef.wasm', '/fonts/ibm-plex-sans-latin-ext-400-0123456789abcdef.woff2', '/core/rikuy-core-0123456789abcdef.wasm', '/texnames-0123456789abcdef.txt'):
     ok('content addressed files are cached for a year as immutable, by one rule: ' + p, H(p).get('cache-control') == 'public, max-age=31536000, immutable', H(p))
 for p in ('/', '/index.html', '/sw.js', '/manifest.webmanifest'):
     ok('revalidated on every request: ' + p, H(p).get('cache-control') == 'no-cache', H(p))

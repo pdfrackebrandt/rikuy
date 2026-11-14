@@ -1169,6 +1169,152 @@ Tests:
     `agent.py` 138; `find.py` 76; `outline.py` 59; `word.py` 110; `history.py` 39/39;
     `paste.py` 25; `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43;
     `pages_check.py` fits; actionlint clean; the model on the corpus 716 of 716.
+42. **B4, Word's styles over LaTeX's own.** Done in the code (branch `wordgap-b4-styles`, on task
+    38's frame; GAP rows H59 to H74, A8, D1 to D4). *The gallery's tiles are slots* (`SLOT_EL`,
+    `gallerySlots`): Heading 1 is `\section`, or `\chapter` in a report, book, scrbook or memoir,
+    and so on down; Heading 4 shows once Heading 3 is in use, as in Word; a tile's right click (or
+    the Styles pane's "<name> options") gives Update to Match Selection, Modify…, Select All
+    Instances, Remove from Style Gallery and Reset. *Every style LaTeX has* (`styleCatalog`):
+    Normal, Title, Heading 1 to 6 (`\paragraph`, `\subparagraph`), Part, LaTeX, Quote,
+    Quotation, Verse, Abstract, Theorem, Lemma, Proposition, Corollary, Definition, Example,
+    Remark, Proof, the document's own theorem environments and its `\newenvironment` of
+    formatting alone; `restyle` takes any to any other by the smallest edit, an environment
+    renamed at both ends (a theorem's `[title]` kept, and then only another theorem offered); a
+    theorem's `\newtheorem` (with `\theoremstyle{plain}` where another style is in force, and
+    amsthm for a style or proof) goes in the same commit unless the preamble, a file it reads, the
+    model or the class (llncs, svjour) has it; ntheorem gets its own `\newtheorem` alone. *On
+    several paragraphs* a heading, Normal or LaTeX goes on each (from the last back, one edit
+    per file, one undo), an environment once around all of them where they follow one another.
+    *Numbers:* Unnumbered heading (`\section*`) and Heading numbers off
+    (`\setcounter{secnumdepth}{0}`, -1 in a class with chapters; a line of that kind is changed
+    where it stands, Rikuy's own goes again whole). *Keys:* Ctrl+Alt+4 Heading 4, Ctrl+Shift+S
+    Apply Styles, Ctrl+Alt+Shift+S the Styles pane (no dialog: it stays beside the page and follows
+    the caret, a sheet on a phone; on narrow windows the style list's last choices open it and
+    Create a Style). "# "
+    to "#### " at a paragraph's start make it a heading as a step of its own (AutoFormat headings
+    turns it off). *Modify Style* writes titlesec's `\titleformat*` (the format alone) or
+    `\titleformat` (shape, rule, number) and `\titlespacing*`, each heading's lines replaced
+    where they stand (`src/looks.js`, every scan bounded); LaTeX's own takes them away; a style of
+    the document's own gets its `\newcommand` body or `\newenvironment` start rewritten; Normal
+    hands over to B1's Font dialog (`font-dialog`) or B2's paragraph dialog by id. *Create a
+    Style:* `\newcommand{\name}[1]{\textcolor{…}{\textbf{#1}}}` or
+    `\newenvironment{name}{\par\itshape…}{\par}` once, applied to the selection or the paragraph
+    in the same step. *Update to Match Selection:* `\section{\textsf{\textcolor{teal}{X}}}` gives
+    its formatting to every Heading 1 and loses the wrappers; inside `\keyterm{…}` the same into
+    the macro. *The Design tab* (group Document formatting): Themes (five), Style Set (seven
+    titlesec sets, "LaTeX" none), Colors (`\definecolor{accent}`; every colour picker that lists
+    the document's colours lists it first), Fonts (the headings'; "Text font…" opens B1's Font box
+    by id); KOMA-Script by `\setkomafont{disposition}`, memoir and beamer refused with the reason.
+    *The page draws it as TeX prints it:* the model reads the looks (`headLook`, KOMA's sans
+    serif headings too) and an own environment's look; `\paragraph` and `\subparagraph` run into
+    the paragraph after them (a blank line between or not: `runIns`), drawn over the start of its
+    first line, which keeps their words' room unseen; `\part` shows "Part I". Word: Heading 4 and 5
+    go out as Word's and come back as `\paragraph` and `\subparagraph`, Quotation as a quote.
+    The gallery tests moved from `ribbon.py` to `test/styles.py`, every check kept (those whose
+    expectation the new styles change rewritten: Heading 4 in the paging, every style in the
+    list and More, a quotation shown as Quotation, two quoted paragraphs back to Normal). Not done
+    or changed: H63 (Subtitle, Author, Date as styles) not done, the title is still edited where it
+    stands; H65's Code (verbatim) left out, a verbatim block is an atom the caret cannot enter, so
+    it could not be taken off again from the gallery; H74's Rename not done; D1 writes no
+    `\hypersetup` link colour; D2 never changes the class; Set as default is F22 (B12's). The
+    security audit's quick profile (notes outside the repository) found three stalls on a
+    stranger's long document: six commands' `when` scanning the preamble at every caret move
+    (cached per model), Select All Instances querying the page once per block (one walk), and
+    "# " reading the whole paragraph at every space (nine characters first); fixed with a timing
+    test. Phones: the style list (with the pane and Create a Style at its end), the pane as a sheet
+    with 44 px rows and its options always in sight (a heading's Unnumbered heading among them,
+    since a phone has no right click), Modify Style and Create a Style fitting and scrolling, the
+    Design tab's gallery, all by taps at 390 by 844 and 360 by 740 with no sideways scroll.
+    Evidence (on main at a941302, after B6): `npm test` green (`styles.test.mjs` 24 groups, `looks.test.mjs` 6, `word` 58);
+    `test/styles.py` 263 (the 76 gallery checks moved from `ribbon.py`, the round trips, the
+    phones at two sizes, the long document's timings, and every style compiled in the page with
+    pdfLaTeX and LuaLaTeX, the PDF's text read back); `ribbon.py` 193 (268 less the 76 moved,
+    one rewritten: a selection over two paragraphs now takes a style); `tabs.py` 116 (Design is
+    a tab now); `agent.py` 138; `browser.py` 189; `find.py` 76; `page.py` 139; `outline.py` 59 (the styles'
+    heading menu items after the outline's); `offline.py` 54/54; `launch.py` 18/18;
+    `deploy_check.py` 43/43; `pages_check.py` fits; the corpus model run 716 of 716 with the same
+    unknown commands as before; actionlint clean.
+
+42a. **B4 review: every finding of the hostile review of e6bcad3 fixed, each with its case as a
+    test.** *titlesec* only for article, report, book and the ext classes; amsart, llncs,
+    elsarticle, revtex, IEEEtran, KOMA-Script, memoir and beamer are refused with the reason, and
+    Update to Match and the Design tab follow (H1). Only what changed is written: a heading's last
+    `\titleformat` and `\titlespacing` get the arguments of the fields the dialog changed and
+    nothing else, so a label's punctuation, a separator, before and after code, glue and
+    titlesec's `*4` stay byte for byte, and OK with nothing changed writes nothing (H3, H9); an
+    argument that is not there no longer takes the line break with it (H3d). Under titlesec's
+    `explicit` option every line is the full `\titleformat` with `#1` (H2). `\usepackage{titlesec}`
+    goes in only with a line, and goes again with the last one (H1, L3). *Theorems:* a name made
+    by thmtools, tcolorbox, mdframed or llncs' own forms counts as defined, and the model knows them
+    as theorems; Proof under ntheorem without its amsthm option is refused (H4). *Create a Style*
+    refuses a name TeX, LaTeX, a package the parser knows or the document has, as a command or an
+    environment (H5); a new paragraph style is justified, LaTeX's own (M1); Underline asks ulem for
+    `normalem` only where ulem is not loaded (M2). *Numbers:* off writes Rikuy's own
+    `\setcounter{secnumdepth}` after the author's, on takes only that away (H6); memoir gets
+    `\setsecnumdepth{none}\maxsecnumdepth{none}`, and the model knows that its `\mainmatter` sets the
+    depth again (M4); the page leaves out a number titlesec's empty label leaves out (H7), numbers
+    `\paragraph` and `\subparagraph` where secnumdepth reaches them, and `\part` in an article only
+    from 0 (L2, L7); Unnumbered heading is refused on `\section[short]{…}`, which `\section*` cannot
+    take (H8). *Run in* only into a paragraph of the same flow, not into a quote, a list or a
+    theorem, and not where the preamble or a class of the project sets `\paragraph` on its own line
+    by `\@startsection` (H10, M3); the space before is the heading's, so with `\parskip` it stays on
+    its paragraph's line (H10). The pane and the narrow list are made again when the document's
+    styles change by name (M5). CRLF kept in every line written (L1). Phones: Create a Style's
+    Name, the sheet's Close, a style's menu items and the style list at 44 px; a dialog follows the
+    window when it shrinks (L4, L5). Home and the up arrow on a run in heading's line go to its
+    start, Backspace at its paragraph's start does what it does after any heading (L6); Style Set
+    Casual alone defines its accent (L7). Not done: a float between `\paragraph{Lead}` and its text
+    (TeX runs in after the float, which it places elsewhere; the page draws floats where they stand,
+    so Lead stays before it). Also fixed: the rebase onto B1 had left B1's last `@media` block of
+    app.css open, so B4's rules were inside it. Evidence (on main ea60497, after B1): `npm test` green
+    (`looks.test.mjs` 9 groups: the review's titlesec lines, explicit, `\\@startsection`; `styles.test.mjs`
+    24: numbers off and on keeping the author's line, memoir, CRLF); `test/styles.py` 312 (`review`
+    and `review_phone`: one case for each finding, the explicit, thmtools and memoir documents
+    compiled in the page, `pdftotext` the judge); `ribbon.py` 193; `tabs.py` 115; `font.py` 272;
+    `agent.py` 138; `browser.py` 189; `page.py` 143; the corpus model run 716 of 716, unknown
+    commands unchanged.
+
+42b. **B4 verification: what the verifier of 42a found, fixed with its cases.** The names a
+    preamble's scan finds (tcolorbox's and mdframed's boxes, `\newtcbtheorem`) serve only the
+    "already defined" check; the page draws as theorems only those that are: thmtools'
+    `\declaretheorem` with its `name=`, `numbered=no` and `sibling=`, mdframed's
+    `\newmdtheoremenv`, llncs' `\spnewtheorem` (`thmMakersIn`), and none of the others is offered
+    as a style (V1). Create a Style checks a name against every command name LaTeX's kernel and 88
+    common packages define, as LuaTeX's hash table lists them after loading each (`src/texnames.js`,
+    9828 names, written by `dev/texnames.py` from a native LuaLaTeX), with the parser's tables and
+    the document's own (V2). An `\@startsection` after skip of zero runs in, and `\def\paragraph`
+    is read (V3). The narrow list is made again by its styles' values (V4). A `\titleformat*`
+    after a full `\titleformat` folds into it when the shape, the rule or the number changes, so
+    the full line's label and before code keep applying; numbers off and on give the author's label
+    back (V5). Evidence (on main 5f12c07, after B13): `npm test` green (`styles.test.mjs` 25 groups,
+    `looks.test.mjs` 10); `test/styles.py` 320 (`verify`: the verifier's cases, its theorem forms
+    document compiled in the page); `ribbon.py` 193; `tabs.py` 115; `lists.py` 184; `font.py` 272;
+    `eqtab.py` 159; `agent.py` 141; `browser.py` 190; the corpus model run 716 of 716, unknown
+    commands unchanged.
+
+42c. **B4: Create a Style's names fetched as the dialog opens, never with the page.** The 9828
+    names (41 KB gzipped, for one dialog) were in the page
+    bundle every first load paid for, a phone's too. `dev/texnames.py` now writes
+    `src/texnames.txt`, the names sorted, a name a line, under one `%` line naming the TeX Live
+    they came from (Debian's TeX Live 2023: regenerating from Rikuy's own TeX Live 2026 is noted in
+    the script as the thing to do when convenient). `build.mjs` writes it beside the page as
+    `texnames-<the first 16 hex digits of its SHA-256>.txt`, in every build (the artifact's too),
+    and gives the bundle its name; Create a Style fetches it as it opens (same origin, so
+    `connect-src 'self'` allows it; under the installed app by its version's address, as
+    `git.js`), once per page. The dialog works at once: the check of the parser's tables and the
+    document's own runs while typing, LaTeX's list is applied when it arrives, and OK before it
+    has is refused saying so; a list that cannot be fetched is said so with the reason at OK, and
+    fetched again. Named by its hash it is the service worker's kind `i`, kept at install apart
+    from the version, and `_headers` caches it for a year as immutable. Evidence (on main 5802352,
+    after task 52): the hosted page's script 1326 KB before, 1196 KB after; `index.html` 1552197
+    bytes before, 1418789 after, gzipped 515558 and 473258 (42 KB less on every first load); the
+    artifact's `rikuy.html` 2878 KB before, 2748 KB after; the list itself,
+    `texnames-d2369a53e8e5db5c.txt`, 134674 bytes, 41387 gzipped, fetched only by Create a Style.
+    `npm test` green (`native.test.mjs` 43, `deploy_check.py` 45); `test/styles.py` 333
+    (`lazy_names`: no part of the page, nothing fetched before the dialog, OK refused while the
+    list is held back and the check applied when it comes, fetched once, a 404 said and fetched
+    again); `offline.py` 58 (kept at install as kind `i`, Create a Style's list offline, the
+    artifact's build ships it and fetches it); `agent.py` 141; `browser.py` 193; `tabs.py` 115.
 
 43. **B5, Find, Replace, Go To and the outline, as in Word.** Done in the code (branch
     `wordgap-b5-find`, on task 38's frame; GAP rows H75 to H81, V4, V10, S1, C5). *Find*

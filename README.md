@@ -96,6 +96,12 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   shading and borders (tcolorbox), Show marks, Word's Paragraph dialog, Layout's fields and Design's
   Paragraph Spacing; each one small edit of the source, read back from LaTeX written by hand and
   drawn on the page as TeX prints it.
+- **Word's styles, over LaTeX's own.** Heading 1 to 6 (`\chapter` in a report, `\paragraph`
+  running into its paragraph as TeX sets it), Part, Quotation, Verse, Abstract and the theorem
+  environments in the Styles gallery, on one paragraph or several; the Styles pane, Apply Styles,
+  Modify Style (titlesec's `\titleformat`, once in the preamble), Create a Style (`\newcommand`,
+  `\newenvironment`) and Update to Match; the Design tab's Themes, Style Set, Colors and Fonts
+  for the whole document, and LaTeX's own look back by taking the lines away.
 - **The whole TeX Live 2026 toolchain.** The three engines, latexmk's reruns, bibtex and biber,
   makeindex and xindy, glossaries, and shell escape: Ghostscript, gnuplot, Python with Pygments
   (minted), dvips, Asymptote with 3D rendering, and TeX starting TeX (TikZ externalize,
