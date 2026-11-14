@@ -17,6 +17,9 @@ N = int(sys.argv[sys.argv.index('-n') + 1]) if '-n' in sys.argv else 40
 OUT = sys.argv[sys.argv.index('--json') + 1] if '--json' in sys.argv else None
 CPU = float(sys.argv[sys.argv.index('--cpu') + 1]) if '--cpu' in sys.argv else 1
 WIDTH = int(sys.argv[sys.argv.index('--width') + 1]) if '--width' in sys.argv else 1400
+# what is switched off and on: the native core (core), or the incremental model build (incr)
+TOGGLE = sys.argv[sys.argv.index('--toggle') + 1] if '--toggle' in sys.argv else 'core'
+SWITCH = 'window.rikuy.core.use(!!on)' if TOGGLE == 'core' else 'window.rikuy.incr.on = !!on'
 CORE = 'core/' + [f for f in os.listdir(os.path.join(os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist'), 'core'))][0]
 long_doc = {'main.tex': open(os.path.join(ROOT, 'dev/bench/long/main.tex')).read(), 'refs.bib': open(os.path.join(ROOT, 'dev/bench/long/refs.bib')).read()}
 generated = subprocess.run(['node', '--input-type=module', '-e', '''
@@ -49,13 +52,18 @@ with sync_playwright() as p:
     for name, files in [('long', long_doc), ('generated', {'main.tex': generated})]:
         load_doc(page, files)
         page.wait_for_timeout(1000)
-        page.evaluate('''() => { const sp = [...document.querySelectorAll('#pages span.t')]; const s = sp[Math.floor(sp.length / 2)];
+        # the caret in the middle of the document; for --toggle incr in a paragraph of plain text (no
+        # command, no formula), which is what the incremental build takes
+        page.evaluate('''(plain) => { const g = window.rikuy, src = g.files.get(g.main); let sp = [...document.querySelectorAll('#pages span.t')]; let s = sp[Math.floor(sp.length / 2)];
+          if (plain) { const bs = g.model.blocks.filter((u) => u.items.length === 1 && u.items[0].type === 'p' && !/[\\\\$%{}]/.test(src.slice(u.s, u.e)));
+            const u = bs[Math.floor(bs.length / 2)], head = src.slice(u.s, u.s + 24).replace(/\\s+/g, ' ');
+            s = sp.find((x) => x.textContent.includes(head.slice(0, 16))) || s; }
           const r = document.createRange(); r.setStart(s.firstChild, Math.min(3, s.firstChild.length)); r.collapse(true);
-          document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); s.scrollIntoView(); }''')
+          document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); s.scrollIntoView(); }''', TOGGLE == 'incr')
         res = {0: {'commit': [], 'rebuild': [], 'model': []}, 1: {'commit': [], 'rebuild': [], 'model': []}}
         for k in range(N + 6):
             for on in ((1, 0) if k % 2 else (0, 1)):
-                page.evaluate('(on) => { window.rikuy.core.use(!!on); for (const v of Object.values(window.__T)) v.length = 0; }', on)
+                page.evaluate('(on) => { ' + SWITCH + '; for (const v of Object.values(window.__T)) v.length = 0; }', on)
                 page.keyboard.type('x')
                 page.wait_for_timeout(40)
                 T = page.evaluate('() => window.__T')
@@ -64,7 +72,7 @@ with sync_playwright() as p:
                 res[on]['commit'].append(T['commit'][-1])
                 res[on]['rebuild'].append(T['rebuild'][-1])
                 res[on]['model'].append(T['rebuild'][-1] - sum(T['sync'][-1:]) - sum(T['layout'][-1:]) - sum(T['caret'][-1:]))
-        page.evaluate('() => window.rikuy.core.use(true)')
+        page.evaluate('() => { window.rikuy.core.use(true); window.rikuy.incr.on = true; }')
         med = lambda v: round(statistics.median(v), 2)
         row = {'doc': name, 'cpu': CPU, 'width': WIDTH, 'n': len(res[1]['commit'])}
         for k in ('commit', 'rebuild', 'model'):
