@@ -62,6 +62,20 @@ function stream(name, files, main, n) {
 const docs = [];
 const add = (dir, main) => { const files = new Map(); for (const n of fs.readdirSync(dir)) if (/\.(tex|bib)$/.test(n)) files.set(n, fs.readFileSync(path.join(dir, n), 'utf8')); docs.push([dir.replace(root, ''), files, main]); };
 for (const d of ['dev/bench/long', 'dev/bench/sample', 'dev/bench/lua', 'dev/bench/heavy', 'sample']) add(path.join(root, d), 'main.tex');
+// what the Styles batch (B4) draws: headings run into their paragraph (\paragraph, titlesec's
+// runin), a paragraph style of the document's own, theorems of thmtools, headings with a look
+{
+  const body = [];
+  for (let k = 0; k < 12; k++) body.push('\\section{Part ' + k + '}', '', 'Opening words of part ' + k + ' with \\textbf{bold} and $x_' + k + '$ in it.', '',
+    '\\paragraph{Run in ' + k + '} The paragraph the heading runs into, with plain words that go on for a while.', '',
+    '\\subparagraph{Deeper} Another run in paragraph, typed into.', '',
+    '\\begin{note}A paragraph in the document\'s own style.\n\nIts second paragraph.\\end{note}', '',
+    '\\begin{theorem}[Name]A theorem\'s text.\\end{theorem}', '', '\\begin{lemma}A lemma.\\end{lemma}', '',
+    'Closing words of part ' + k + ', plain and long enough to type in.', '');
+  docs.push(['styles (B4)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{amsthm,thmtools,xcolor,titlesec}\n\\titleformat{\\subsection}[runin]{\\bfseries}{\\thesubsection}{1em}{}\n' +
+    '\\declaretheorem[name=Theorem]{theorem}\n\\declaretheorem[sibling=theorem]{lemma}\n\\newenvironment{note}{\\par\\itshape\\color{blue}}{\\par}\n\\setcounter{secnumdepth}{5}\n\\begin{document}\n' +
+    body.join('\n') + '\n\\subsection{Run in by titlesec} Its paragraph, plain.\n\n\\end{document}\n']]), 'main.tex']);
+}
 
 const corpus = process.argv[2];
 if (corpus) {
@@ -70,7 +84,7 @@ if (corpus) {
 }
 const N = corpus ? 16 : 400;
 let failsBefore = fail;
-for (const [name, files, main] of docs) stream(name + ' ' + main, files, main, name.includes('long') || name.includes('sample') ? N * 2 : N);
+for (const [name, files, main] of docs) stream(name + ' ' + main, files, main, name.includes('long') || name.includes('sample') || name.includes('styles') ? N * 2 : N);
 check('every edit of every stream: the incremental model is the full build\'s (' + steps + ' edits, ' + fast + ' on the fast path, ' + docs.length + ' documents)', fail === failsBefore && fast > steps / 20, [steps, fast]);
 console.log('edits ' + steps + ', on the fast path ' + fast + ', documents ' + docs.length);
 
@@ -96,6 +110,42 @@ console.log('edits ' + steps + ', on the fast path ' + fast + ', documents ' + d
   }
   const missing = [...moved].filter((k) => !OFFSET_KEYS.has(k) && k !== 'map');
   check('every field of the models\' units that moves with the text is one OFFSET_KEYS names (' + [...moved].sort().join(' ') + ')', !missing.length, 'not named: ' + missing.join(' '));
+}
+
+// the paragraph settings of B2 that reach a later paragraph: line spacing declared in the body,
+// \centering before a paragraph, a hanging indent and \nopagebreak in one
+docs.push(['paragraph settings (B2)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{setspace}\n\\begin{document}\nFirst plain paragraph, typed in.\n\n\\onehalfspacing\nA paragraph after one and a half spacing.\n\nAnother after it.\n\n' +
+  '\\doublespacing\n\\centering\nCentred from here on, plain.\n\nStill centred, the next paragraph.\n\n\\hangindent=1cm\\hangafter=1 A hanging paragraph with words.\n\nKept with the next\\nopagebreak\n\nLast plain words.\n\\end{document}\n']]), 'main.tex']);
+for (const [what, needle, fastWanted] of [['a paragraph that opens with \\onehalfspacing (the declaration is its own)', 'A paragraph after one', false], ['the paragraph after it, one and a half spaced', 'Another after it', true],
+  ['a paragraph that opens with \\centering', 'Centred from here', false], ['the centred paragraph after it', 'Still centred', true],
+  ['a paragraph with \\hangindent', 'A hanging paragraph', false], ['a paragraph with \\nopagebreak', 'Kept with the next', false], ['the last paragraph', 'Last plain', true]]) {
+  const [, files] = docs[docs.length - 1];
+  const t = files.get('main.tex'), prev = buildModel({ files, main: 'main.tex' });
+  const at = t.indexOf(needle) + 3, next = new Map(files);
+  next.set('main.tex', t.slice(0, at) + 'xy' + t.slice(at));
+  const before = INCR.reused;
+  const a = buildModel({ files: next, main: 'main.tex' }, prev);
+  const fast = INCR.reused > before;
+  INCR.on = false; const b = buildModel({ files: next, main: 'main.tex' }, prev); INCR.on = true;
+  check('typing in ' + what + ': the full build\'s model, ' + (fastWanted ? 'on the fast path' : 'by the full build'), ser(a) === ser(b) && fast === fastWanted, [fast, ser(a) === ser(b) ? '' : first(ser(a), ser(b))]);
+}
+
+// typing in each construct of the Styles document, once: equal to the full build, and on the fast
+// path where the paragraph is plain (a paragraph a heading runs into is; a paragraph style's or a
+// theorem's paragraph is inside an environment, which takes the full build)
+{
+  const [, files] = docs.find(([n]) => n.startsWith('styles'));
+  const t = files.get('main.tex'), prev = buildModel({ files, main: 'main.tex' });
+  for (const [what, needle, fastWanted] of [['a paragraph \\paragraph runs into', 'The paragraph the heading runs into', true], ['a paragraph \\subparagraph runs into', 'Another run in paragraph', true],
+    ['a paragraph titlesec\'s runin runs into', 'Its paragraph, plain', true], ['a paragraph of the document\'s own style', 'in the document\'s own style', false], ['a theorem', 'A theorem\'s text', false], ['a plain paragraph after a heading', 'Opening words of part 3', true]]) {
+    const at = t.indexOf(needle) + 4, next = new Map(files);
+    next.set('main.tex', t.slice(0, at) + 'xy' + t.slice(at));
+    const before = INCR.reused;
+    const a = buildModel({ files: next, main: 'main.tex' }, prev);
+    const fast = INCR.reused > before;
+    INCR.on = false; const b = buildModel({ files: next, main: 'main.tex' }, prev); INCR.on = true;
+    check('typing in ' + what + ': the full build\'s model, ' + (fastWanted ? 'on the fast path' : 'by the full build'), ser(a) === ser(b) && fast === fastWanted, [fast, ser(a) === ser(b) ? '' : first(ser(a), ser(b))]);
+  }
 }
 
 // keystrokes no one reads in between: the moved units' steps pile up (src/model.js movedUnit),

@@ -2106,13 +2106,19 @@ Tests:
     5 ms of a 22 to 36 ms keystroke at a desktop's speed, the rest being the DOM's layout and the
     caret, so a port would not pay; a first load is 87 % layout. *Evidence:*
     `test/incremental.test.mjs` (in `npm test`): every edit of random streams of the repository's
-    documents equal to the full build from the same last model (3200 edits, 225 on the fast path),
+    documents equal to the full build from the same last model (4000 edits, 282 on the fast path),
     90 unread keystrokes in two paragraphs, a field that moves with the text and is not in
     `OFFSET_KEYS` (it caught B2's `ps`, `pe`, `vs`, `ve` at the rebase), another document or main
-    file never taking the fast path; with the corpus 11,584 edits over 721 documents (666 on the fast
-    path, the corpus being short documents full of commands), all equal. `npm test` green, the corpus
-    model run 716 of 716, `browser.py` 193, `find.py` 76, `word.py` 111, `history.py` 39/39,
-    `share.py` 46, `agent.py` 141; the security audit's quick profile (one reviewer, notes outside
+    file never taking the fast path, typing in each construct of B4 Styles (a paragraph a heading
+    runs into, by `\paragraph`, `\subparagraph` and titlesec's runin, on the fast path; a paragraph
+    style's and a theorem's paragraphs by the full build) and of B2 Paragraph (line spacing and
+    `\centering` declared before a paragraph, carried over; a hanging indent and `\nopagebreak`
+    by the full build), 18 checks; with the corpus 11,616 edits over 722 documents (633 on the
+    fast path, the corpus being short documents full of commands), all equal. Rebased on B2 (its
+    `ps`, `pe`, `vs`, `ve` named in `OFFSET_KEYS`, its line spacing carried) and B4 (run in
+    headings carried; B4 added no offset field and no inline command, so `PURE_CMDS` stays). `npm test` green, the corpus
+    model run 716 of 716, `browser.py` 193, `styles.py` 333, `word.py` 111 (on d55b5fa); `find.py` 76,
+    `history.py` 39/39, `share.py` 46, `agent.py` 141 (on 07069e1); the security audit's quick profile (one reviewer, notes outside
     git): nothing is kept across documents, every reuse is proven against the new text. *Next:* the same for paragraphs with citations,
     references and footnotes (their entry state recorded per unit: the counters, the citations
     and labels so far), which would take most of the paper's other paragraphs.

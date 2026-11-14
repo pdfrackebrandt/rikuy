@@ -439,6 +439,9 @@ function incremental(project, hint) {
   if (ui < 0) return null;
   const U = hint.blocks[ui], it = U.items[0];
   if (!(U.s <= p && p + del <= U.e) || U.items.length !== 1 || it.type !== 'p' || U.fns.length || it.cls || it.ctx !== 'p' || it.pad || it.depth || it.label || it.lead || it.li) return null;
+  // (B2's settings an environment gives its paragraphs, or the paragraph's own assignments: none of
+  // them on a top level paragraph of plain text, where a full build is the answer anyway)
+  if (it.mx || it.box || it.keepLines || it.nohy || it.hang != null) return null;
   // the two parse trees: the same nodes before the paragraph, the same moved by d after it
   const userSigs = {};
   for (const [n, t] of files) if (!WIDGET_FILE.test(n)) scanUserSigs(t, userSigs);
@@ -469,10 +472,15 @@ function incremental(project, hint) {
   B.opts = hint.opts; B.textMacros = hint.textMacros; B.mathMacros = hint.mathMacros; B.siOpts = hint.siOpts; B.siUnits = hint.siUnits; B.thms = hint.thms;
   B.dir = it.dir || 'ltr';
   B.userSigs = userSigs;
-  const units = B.flow(mine, { f, src: now, pm: null }, { top: true, afterHeading: false, noindent: !it.indent, align: it.align || null });
+  // (the line spacing a declaration before it set, \onehalfspacing in the body: flow keeps it as
+  // it goes, and the old paragraph carries it)
+  const units = B.flow(mine, { f, src: now, pm: null }, { top: true, afterHeading: false, noindent: !it.indent, align: it.align || null, spread: it.spread ?? null });
   if (units.length !== 1 || units[0].items.length !== 1 || units[0].items[0].type !== 'p' || units[0].fns.length || B.warn.length) return null;
   const nu = units[0], ni = nu.items[0];
   if (it.cont) ni.cont = true;
+  // a heading run into this paragraph (Builder.runIns, which the heading before it decided and an
+  // edit of plain text cannot change): the same mark and the same addition to its signature
+  if (it.runIn) { ni.runIn = it.runIn; nu.sig += '\u0001ri' + it.runIn.num + '\u0002' + it.runIn.text + (it.runIn.look ? JSON.stringify(it.runIn.look) : ''); }
   if (ni.indent !== it.indent || ni.dir !== it.dir) return null;
   const count = (inl) => { const c = new Builder(project, hint); c.words = 0; c.countWords(inl); return c.words; };
   // A table of contents lists the last model's headings, as a full build's does (Builder.flow: the
