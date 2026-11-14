@@ -9,6 +9,7 @@
 
 [![Open Rikuy](https://img.shields.io/badge/open-rikuy.rackebrandt.pe-0B3D25)](https://rikuy.rackebrandt.pe/)
 [![License: AGPL v3](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
+[![Last commit](https://img.shields.io/github/last-commit/pdfrackebrandt/rikuy)](https://github.com/pdfrackebrandt/rikuy/commits/main)
 [![GitHub stars](https://img.shields.io/github/stars/pdfrackebrandt/rikuy?style=social)](https://github.com/pdfrackebrandt/rikuy/stargazers)
 
 [Open Rikuy](https://rikuy.rackebrandt.pe/) ·
@@ -23,6 +24,12 @@ Type on the typeset page as in Word, get the PDF from real TeX
 Live, keep a clean `.tex` that Overleaf, Git and any TeX open. **Try it now at
 <https://rikuy.rackebrandt.pe/>**: no install, no account. If it helps you, a star here is how
 other people find it.
+
+**Updated often, and carefully.** I keep improving Rikuy fast: new parts of Word land week after
+week. Speed never skips the checks. Every change runs the editor's browser tests and real TeX
+compiles; anything larger also goes to a fresh, hostile reviewer ([how](docs/REVIEW_PROCESS.md)),
+and nothing reaches the site before CI passes. Watch the repository or follow the
+[commits](https://github.com/pdfrackebrandt/rikuy/commits/main) to see what lands next.
 
 *Rikuy* is Quechua for "to see". It is a LaTeX editor in the browser where you type on the
 typeset page. Click into a paragraph, a formula, a table cell or a footnote on the rendered page
