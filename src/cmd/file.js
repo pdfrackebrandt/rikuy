@@ -9,8 +9,9 @@ import { register, onInstall } from '../commands.js';
 import { wordEnabled } from '../word.js';
 import { $, mk, load, store } from '../ui/dom.js';
 import { openMenu, dialog } from '../ui/kit.js';
-import { where } from './help.js';
-import { preambleEnd, lastCall, hasPackage, setPackageKeys, docClass, usePackages, packageOptions, packageLine, kvEdits } from '../preamble.js';
+import { guide } from './help.js';
+import { preambleEnd, lastCall, hasPackage, docClass } from '../preamble.js';
+import { readProperties, propertyEdits } from '../props.js';
 
 const LIVE_NOTE = 'Graphs are pictures in a PDF or Word file. Download LaTeX to keep them live.';
 const always = () => true;
@@ -88,11 +89,6 @@ register(
     whyNot: () => 'This file has no preamble to keep.', run: (app, args) => app.setDefaultPreamble(args) }
 );
 
-// The text of a title, an author, a subject as typed in a field: LaTeX may be written in it, and
-// the three characters that would stop TeX in running text (& % #) are escaped where they stand
-// bare. Braces must pair: a field whose braces do not is refused.
-const texField = (s) => String(s).replace(/\r?\n+/g, ' ').replace(/(?<!\\)[&%#]/g, (c) => '\\' + c);
-const paired = (s) => { let d = 0; for (let i = 0; i < s.length; i++) { if (s[i] === '\\') { i++; continue; } if (s[i] === '{') d++; else if (s[i] === '}' && --d < 0) return false; } return d === 0; };
 
 // The options of each \\includegraphics of a text (null for none), at most 500, read by a scan: a
 // pattern with \\s* on both sides of an optional [..] took seconds on a stranger's file of spaces
@@ -137,7 +133,10 @@ function a11yIssues(app) {
     }
   }
   if (plain) out.push({ k: 'table', t: plain + ' of ' + tabs + ' tables have no marked header row (\\toprule, \\hline or \\midrule under the first row).' });
-  if (end >= 0 && !/\\DocumentMetadata\s*\{[^}]*tagging\s*=\s*on/.test(pre.slice(0, 4000))) out.push({ k: 'tagging', t: 'The PDF is not tagged: a screen reader reads it as loose text.', fix: 'Tag the PDF' });
+  // (LaTeX tags a PDF with \\DocumentMetadata{..., tagging=on}; Rikuy's TeX tree leaves out the
+  // HTML files of latex-lab that tagging embeds, so every tagged compile stops with an error: no
+  // fix offered until the tree has them, PLAN.md's open task 60)
+  if (end >= 0 && !/\\DocumentMetadata\s*\{[^}]*tagging\s*=\s*on/.test(pre.slice(0, 4000))) out.push({ k: 'tagging', t: 'The PDF is not tagged: a screen reader reads it as loose text. LaTeX can tag it (\\DocumentMetadata with tagging=on), but this copy of TeX lacks files tagging needs; it will come with a TeX tree update.' });
   return out;
 }
 
@@ -251,6 +250,13 @@ export const methods = {
     }
     const src = this.src(this.main), end = preambleEnd(src);
     if (end < 0) return false;
+    // (a preamble that reads the project's own files would not compile in a new document)
+    const pre = src.slice(0, end).replace(/(^|[^\\])%[^\n]*/g, '$1');
+    const own = [...this.files.keys()].filter((n) => n !== this.main && /\.(tex|sty|cls)$/i.test(n)).map((n) => n.replace(/\.(tex|sty|cls)$/i, '').split('/').pop());
+    if (/\\(input|include|subfile|import)\b/.test(pre) || own.some((n) => pre.includes('{' + n + '}') || pre.includes(',' + n + '}') || pre.includes('{' + n + ','))) {
+      this.toast('This preamble reads files of this project (\\input or its own packages): a new document would not find them. Copy what it needs into the preamble first.', 9000);
+      return false;
+    }
     if (!store(DEFAULT_KEY, { pre: src.slice(0, end), t: Date.now(), from: this.name })) { this.toast('This browser keeps nothing more: the default could not be saved.'); return false; }
     this.toast('New blank documents (File, Blank document) start with this preamble.', 5000);
     return true;
@@ -277,8 +283,10 @@ export const methods = {
     const vs = all.filter((v) => v.name === name);
     if (!vs.length) return false;
     this.toast('Remove ' + name + ' and its ' + vs.length + (vs.length === 1 ? ' version' : ' versions') + ' from this browser?', 8000, { label: 'Remove', fn: async () => {
-      const { snapDel } = await import('../store.js');
+      const { snapDel, kvDel } = await import('../store.js');
       for (const v of vs) { try { await snapDel(v.id); } catch (e) { /* gone */ } }
+      // (and its pictures, kept apart from its text: one record for each of its main files)
+      for (const m of new Set(vs.map((v) => v.main))) { try { await kvDel('bin:' + name + '|' + m); } catch (e) { /* none */ } }
       this.memSnaps = (this.memSnaps || []).filter((m) => m.name !== name);
       this.snapList = null;
       this.toast('Removed ' + name + '.');
@@ -287,76 +295,10 @@ export const methods = {
   },
 
   // ---- Properties -----------------------------------------------------------------------------
-  // { title, author, subject, keywords } as the source has them (the text of the arguments)
-  properties() {
-    const src = this.src(this.main), end = preambleEnd(src);
-    const arg = (cmd, endAt) => { const c = lastCall(src, cmd, endAt); return c ? src.slice(c.arg[0], c.arg[1]) : null; };
-    const out = { title: arg('title', end), author: arg('author', end) };
-    // (written after \begin{document} in some documents)
-    const body = Math.min(src.length, 200000);
-    if (out.title == null) out.title = arg('title', body);
-    if (out.author == null) out.author = arg('author', body);
-    const hs = lastCall(src, 'hypersetup', end);
-    const kv = (k) => {
-      const t = hs ? src.slice(hs.arg[0], hs.arg[1]) : '';
-      const m = new RegExp('(?:^|,)\\s*' + k + '\\s*=\\s*').exec(t);
-      if (!m) return null;
-      let i = m.index + m[0].length;
-      if (t[i] === '{') { let d = 0; for (let j = i; j < t.length && j < i + 2000; j++) { if (t[j] === '{') d++; else if (t[j] === '}' && --d === 0) return t.slice(i + 1, j); } return null; }
-      const z = t.indexOf(',', i);
-      return t.slice(i, z < 0 ? t.length : z).trim();
-    };
-    // (\\hypersetup's, else hyperref's options)
-    const opt = packageOptions(src, 'hyperref', end) || {};
-    const unbrace = (x) => (typeof x === 'string' ? x.trim().replace(/^\{([^]*)\}$/, '$1') : null);
-    out.subject = kv('pdfsubject') ?? unbrace(opt.pdfsubject); out.keywords = kv('pdfkeywords') ?? unbrace(opt.pdfkeywords);
-    return out;
-  },
-  // The edits that set them: a changed title or author replaces the argument (or a line is added
-  // before \begin{document}); subject and keywords are \hypersetup's keys, hyperref loaded with
-  // hidelinks where nothing loads it (so links look as before); a class that loads hyperref
-  // itself (beamer) gets a \hypersetup line instead. Unchanged fields write nothing.
-  propertyEdits(v) {
-    const src = this.src(this.main), end = preambleEnd(src);
-    if (end < 0) return null;
-    const cur = this.properties(), edits = [], nl = src.includes('\r\n') ? '\r\n' : '\n';
-    for (const k of ['title', 'author', 'subject', 'keywords']) if (v[k] != null && !paired(String(v[k]))) return { error: 'The braces of the ' + k + ' do not pair.' };
-    for (const k of ['title', 'author']) {
-      if (v[k] == null || v[k] === (cur[k] ?? '')) continue;
-      const t = texField(v[k]);
-      let c = lastCall(src, k, end);
-      if (!c) c = lastCall(src, k, Math.min(src.length, 200000));
-      if (c) edits.push({ s: c.arg[0], e: c.arg[1], t });
-      else if (t) { const at = src.lastIndexOf('\n', end - 1) + 1; edits.push({ s: at, e: at, t: '\\' + k + '{' + t + '}' + nl }); }
-    }
-    const keys = {};
-    for (const [k, key] of [['subject', 'pdfsubject'], ['keywords', 'pdfkeywords']]) {
-      if (v[k] == null || v[k] === (cur[k] ?? '')) continue;
-      keys[key] = v[k] ? '{' + texField(v[k]) + '}' : null;
-    }
-    if (Object.keys(keys).length) {
-      const cls = docClass(src), others = this.preambleOthers ? this.preambleOthers() : [];
-      const viaClass = cls && /^(beamer|beamerposter)$/.test(src.slice(cls.nameAt[0], cls.nameAt[1]).trim());
-      if (lastCall(src, 'hypersetup', end) || hasPackage(src, 'hyperref', end, others) || viaClass) {
-        if (!lastCall(src, 'hypersetup', end) && (viaClass || !hasPackage(src, 'hyperref', end))) {
-          // hyperref loaded by the class or another file: a \hypersetup line of its own
-          const set = Object.entries(keys).filter(([, x]) => x != null).map(([a, b]) => a + '=' + b).join(',');
-          if (set) { const at = src.lastIndexOf('\n', end - 1) + 1; edits.push({ s: at, e: at, t: '\\hypersetup{' + set + '}' + nl }); }
-        } else if (lastCall(src, 'hypersetup', end)) edits.push(...setPackageKeys(src, 'hyperref', 'hypersetup', keys, { end }));
-        else {
-          // (hyperref's own options: set or taken out in its line; a line of several packages, or
-          // one in another file, gets what is added through usePackages)
-          const L = packageLine(src, 'hyperref', end);
-          if (L && L.opts && L.names.length === 1) edits.push(...kvEdits(src, L.opts[0], L.opts[1], keys));
-          else { const add = Object.fromEntries(Object.entries(keys).filter(([, x]) => x != null)); if (Object.keys(add).length) edits.push(...usePackages(src, { hyperref: add }, { end, others })); }
-        }
-      } else if (Object.values(keys).some((x) => x != null)) edits.push(...usePackages(src, { hyperref: { hidelinks: true, ...keys } }, { end, others }));
-    }
-    return { edits };
-  },
+  // (the edits on strings: src/props.js)
+  properties() { return readProperties(this.src(this.main)).value; },
   setProperties(v) {
-    const r = this.propertyEdits(v || {});
-    if (!r) return false;
+    const r = propertyEdits(this.src(this.main), v || {}, { others: this.preambleOthers ? this.preambleOthers() : [] });
     if (r.error) { this.toast(r.error); return false; }
     if (!r.edits.length) return true;
     this.commit(r.edits.map((x) => ({ f: this.main, ...x })), null, 'properties');
@@ -365,12 +307,17 @@ export const methods = {
   },
   openProperties() {
     const cur = this.properties();
-    const p = dialog(this, { title: 'Properties', ...where('rf-props', 440), cls: 'pop-props' });
-    const fields = {};
+    const p = guide(this, 'Properties', 'rf-props', 440, 'pop-props pop-guide-fit');
+    const fields = {}, shown = {};
     const row = (k, label, hint) => {
       const l = mk('label', 'props-row');
-      const i = mk('input');
-      i.type = 'text'; i.value = cur[k] ?? ''; i.spellcheck = k !== 'keywords'; i.setAttribute('aria-label', label);
+      // (title and author in text areas: an <input> drops the line breaks the source has, and
+      // every field was then sent as changed)
+      const multi = k === 'title' || k === 'author';
+      const i = mk(multi ? 'textarea' : 'input');
+      if (multi) i.rows = Math.min(4, Math.max(1, String(cur[k] ?? '').split('\n').length)); else i.type = 'text';
+      i.value = cur[k] ?? ''; i.spellcheck = k !== 'keywords'; i.setAttribute('aria-label', label);
+      shown[k] = i.value;
       fields[k] = i;
       l.append(mk('span', null, label), i);
       if (hint) l.append(mk('small', null, hint));
@@ -384,8 +331,9 @@ export const methods = {
     const ok = mk('button', 'btn sm', 'Apply');
     ok.type = 'button';
     ok.addEventListener('click', () => {
+      // only the fields the person changed
       const v = {};
-      for (const k in fields) v[k] = fields[k].value;
+      for (const k in fields) if (fields[k].value !== shown[k]) v[k] = fields[k].value;
       if (this.setProperties(v) !== false) { this.closePop(true); this.ribbonBack(); }
     });
     p.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); ok.click(); } });
@@ -400,7 +348,7 @@ export const methods = {
   accessibilityIssues() { return a11yIssues(this); },
   openAccessibility() {
     const list = a11yIssues(this);
-    const p = dialog(this, { title: 'Check accessibility', ...where('rf-a11y', 560), cls: 'pop-help pop-guide pop-a11y' });
+    const p = guide(this, 'Check accessibility', 'rf-a11y', 560, 'pop-help pop-guide pop-a11y');
     if (!list.length) p.append(mk('p', null, 'Nothing found: pictures have alt text, headings keep their order, tables mark their header, and the PDF is tagged.'));
     for (const x of list) {
       const d = mk('div', 'a11y-row');
@@ -419,6 +367,11 @@ export const methods = {
   },
   // \DocumentMetadata{lang=..,pdfstandard=ua-2,tagging=on} on the first line, once
   addTagging() {
+    this.toast('Tagging the PDF needs a TeX tree update: this copy of TeX lacks the files of latex-lab that tagging embeds.', 7000);
+    return false;
+  },
+  // (kept for the TeX tree that has latex-lab's files: PLAN.md task 60)
+  addTaggingLine() {
     const src = this.src(this.main), cls = docClass(src);
     if (!cls || /\\DocumentMetadata\s*\{/.test(src.slice(0, cls.s))) return false;
     const lang = (this.model && this.model.opts.lang) || 'en', nl = src.includes('\r\n') ? '\r\n' : '\n';
@@ -441,7 +394,7 @@ export const methods = {
       const req = await this.wordRequest();
       const res = await this.wordEngine().run('convert', { req, to: id });
       const blob = new Blob([res.bytes], { type: MIME[x[2]] });
-      const fname = (this.name || 'paper').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') + '.' + x[2];
+      const fname = ((this.name || '').replace(/[^\w.-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '') || 'paper') + '.' + x[2];
       const D = this.caps && this.caps.downloads;
       if (D) await D.save({ filename: fname, data: blob });
       else { const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = fname; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }

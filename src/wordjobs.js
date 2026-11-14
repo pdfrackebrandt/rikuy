@@ -1181,6 +1181,23 @@ function walk(blocks, fn) {
 // The page's AST, as the Word export gets it, in another of pandoc's formats: a standalone web page
 // (its pictures inside it, equations as MathML), Markdown, OpenDocument, RTF, EPUB or plain text.
 // { bytes } of the file.
+// The AST as another format wants it: without the Word round trip's anchors (a Span or Div whose
+// one attribute is an id Rk<n>: Markdown printed them as [text]{#Rk5}), and without pictures this
+// copy has no bytes for (pandoc stopped on the first one while embedding), their words kept.
+function plainAst(node, res) {
+  if (Array.isArray(node)) {
+    const out = [];
+    for (const x of node) { const y = plainAst(x, res); if (y && y.__splice) out.push(...y.__splice); else out.push(y); }
+    return out;
+  }
+  if (!node || typeof node !== 'object') return node;
+  const c = node.c;
+  if ((node.t === 'Span' || node.t === 'Div') && Array.isArray(c) && Array.isArray(c[0]) && /^Rk\d+$/.test(c[0][0] || '') && !(c[0][1] || []).length && !(c[0][2] || []).length) return { __splice: plainAst(c[1], res) };
+  if (node.t === 'Image' && Array.isArray(c) && Array.isArray(c[2]) && typeof c[2][0] === 'string' && !/^data:/i.test(c[2][0]) && !Object.prototype.hasOwnProperty.call(res, c[2][0])) return { __splice: plainAst(c[1], res) };
+  const o = {};
+  for (const k of Object.keys(node)) o[k] = plainAst(node[k], res);
+  return o;
+}
 const EXPORT_AS = { html: ['html5', 'out.html'], markdown: ['markdown', 'out.md'], odt: ['odt', 'out.odt'], rtf: ['rtf', 'out.rtf'], epub: ['epub3', 'out.epub'], txt: ['plain', 'out.txt'] };
 export function exportAs(P, req, to) {
   const f = EXPORT_AS[to];
@@ -1189,7 +1206,7 @@ export function exportAs(P, req, to) {
   if (to === 'html') { opts['html-math-method'] = { method: 'mathml' }; opts['embed-resources'] = true; }
   if (req.citeproc && req.bibs && req.bibs.length) { opts.citeproc = true; opts.bibliography = req.bibs; if (req.csl) opts.csl = req.csl; }
   if (req.toc && to !== 'txt') opts['table-of-contents'] = true;
-  const r = P.convert(opts, JSON.stringify(req.doc), req.resources || {});
+  const r = P.convert(opts, JSON.stringify(plainAst(req.doc, req.resources || {})), req.resources || {});
   let out = r.files[f[1]];
   if (out == null && r.stdout) out = r.stdout;
   if (out == null) throw new Error('pandoc wrote no file: ' + (r.stderr || '').trim().slice(0, 300));
