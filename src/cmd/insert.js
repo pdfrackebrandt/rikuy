@@ -294,7 +294,9 @@ register(
 // ---- the date and the time (I38) ----------------------------------------------------------------
 const pad = (n) => String(n).padStart(2, '0');
 register(
-  { id: 'date-time', name: 'Date & Time', label: 'Date & Time', tab: 'insert', group: 'text', order: 30, kind: 'menu', synonyms: ['Date', 'Time', 'Today'],
+  // (no control on Insert's row, nor Environment: with them the row folded more at 870 px than at
+  // 860 (test/tabs.py's sweep); Alt+Shift+D and T, the search box and the insert list reach them)
+  { id: 'date-time', name: 'Date & Time', label: 'Date & Time', kind: 'menu', synonyms: ['Date', 'Time', 'Today'],
     icon: '<rect x="3.5" y="4.5" width="13" height="12" rx="1.5"/><path d="M3.5 8h13M7 3v3M13 3v3"/>',
     title: 'Today\'s date, as \\today (updated every time TeX runs, in the document\'s language) or as text; the time', when: (app, at) => !!at && !app.armed, whyNot: () => PASTE_WHY,
     menuItems: (app) => {
@@ -328,7 +330,7 @@ register(
 const ENVS = [['center', 'Centered', '\\begin{center}'], ['flushleft', 'Flush left', '\\begin{flushleft}'], ['flushright', 'Flush right', '\\begin{flushright}'], ['quote', 'Quote', '\\begin{quote}'],
   ['quotation', 'Quotation', '\\begin{quotation}'], ['verse', 'Verse', '\\begin{verse}'], ['verbatim', 'Verbatim', '\\begin{verbatim}'], ['minipage', 'Minipage', '\\begin{minipage}{0.48\\linewidth}'], ['abstract', 'Abstract', '\\begin{abstract}']];
 register(
-  { id: 'insert-environment', name: 'Environment', label: 'Environment', tab: 'insert', group: 'latex', order: 10, kind: 'menu', synonyms: ['begin', 'LaTeX environment', 'Theorem', 'Proof', 'Verbatim'],
+  { id: 'insert-environment', name: 'Environment', label: 'Environment', kind: 'menu', synonyms: ['begin', 'LaTeX environment', 'Theorem', 'Proof', 'Verbatim'],
     icon: '<path d="M6.5 4C4.5 4 4.5 5 4.5 7s-1 3-1 3 1 1 1 3 0 3 2 3M13.5 4c2 0 2 1 2 3s1 3 1 3-1 1-1 3 0 3-2 3"/>',
     title: '\\begin{…} and \\end{…} around a new paragraph: theorems, proof, quote, verbatim, minipage, or one by its name',
     menuItems: () => [

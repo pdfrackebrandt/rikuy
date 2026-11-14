@@ -336,7 +336,7 @@ def date_latex(page):
     page.evaluate('window.rikuy.runCommand("insert-env-center")'); page.wait_for_timeout(200)
     check('LaTeX: Environment, Centered, a center environment after it', '\\begin{center}' in src(page) and '\\end{center}' in src(page), src(page))
     page.get_by_role('tab', name='Insert').click()
-    check('Insert: the tab has Interactive graph, Date & Time, Symbol and Environment', all(page.get_by_role('tabpanel', name='Insert').get_by_role('button', name=n, exact=True).count() == 1 for n in ('Environment', 'Interactive graph', 'Symbol', 'Date & Time')))
+    check('Insert: the tab has Interactive graph and Symbol; Date & Time and Environment are found by the search box', all(page.get_by_role('tabpanel', name='Insert').get_by_role('button', name=n, exact=True).count() == 1 for n in ('Interactive graph', 'Symbol')) and all(page.evaluate('(n) => window.rikuy.cmds.commands().some((c) => c.name === n)', n) for n in ('Date & Time', 'Environment')))
     # the right click menu has the paste options
     select_text(page, 'Para')
     page.evaluate('window.rikuy.openContextMenu(100, 100)'); page.wait_for_timeout(200)

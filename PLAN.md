@@ -2307,10 +2307,11 @@ Tests:
     I44 (Symbol, its grid with the ones used last, More Symbols with a search) and I45
     (Special Characters and their keys: Ctrl+Alt+C, R, T, ., Ctrl+Alt+-, Ctrl+Shift+Space,
     Ctrl+Shift+_, which Ctrl+- zoom no longer takes) done; I38 (Date & Time: `\today` or fixed
-    text, Alt+Shift+D and T) done; I39 (Text from file: the file and `\input`, one undo) and I40
+    text, Alt+Shift+D and T; a command the search box finds, not a button: Insert's row had no
+    room for it at 870 px) done; I39 (Text from file: the file and `\input`, one undo) and I40
     (PDF pages: `\includepdf[pages=-]` with pdfpages and the file, one undo) done, both under the
-    command Object (no room on Insert's row at 870 px; the search box reaches them); I47 (Insert ›
-    LaTeX: Environment) done, the live figure being Interactive graph, the LaTeX paragraph Home's
+    command Object (no room on Insert's row at 870 px; the search box reaches them); I47 (Environment, in the search box and
+    the insert list; not on the row, for the same room) done, the live figure being Interactive graph, the LaTeX paragraph Home's
     style; A5,
     A6 (off by default), A7, A9 (sentences, two capitals, days; not table cells or Caps Lock) and
     A10 (Word's list and one's own) done in `src/autocorrect.js` (`test/autocorrect.test.mjs`),
