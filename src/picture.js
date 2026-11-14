@@ -17,6 +17,8 @@ import { parseKV, kvEdits } from './preamble.js';
 const WRAPS = new Set(['reflectbox', 'scalebox', 'rotatebox', 'fbox', 'resizebox']);
 const FLOATS = /^(figure|table|wrapfigure|wraptable|SCfigure|SCtable|sidewaysfigure|sidewaystable|marginfigure)\*?$/;
 const BOXES = /^(minipage|subfigure|subtable|tabular|tabularx|tabular\*|tabulary|longtable|array|adjustbox|tcolorbox|mdframed|parbox|tikzpicture|columns|column)$/;
+// environments wrapfig works in (no list underneath): a language's, line spacing's, landscape, sizes
+const WRAP_OK = /^(document|otherlanguage\*?|hyphenrules|spacing|singlespace|onehalfspace|doublespace|landscape|sloppypar|tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge|RTL|LTR)$/;
 const LISTS = /^(itemize|enumerate|description|list|compactitem|compactenum)$/;
 // what may stand beside the picture in a figure or a center and still leave it the picture's own
 const FLOAT_OK = new Set(['centering', 'caption', 'captionof', 'label', 'vspace', 'par', 'small', 'footnotesize', 'noindent', 'medskip', 'smallskip', 'bigskip', 'raggedright', 'raggedleft']);
@@ -200,7 +202,7 @@ export function keyEdits(src, P, changes) {
   // one after the angle sizes the turned box: a height after angle=-90 or 180 (a box all depth,
   // height 0) stops TeX with "Division by 0", and a width and height after it cannot distort the
   // picture as Word's fields do
-  const ai = P.kv.findIndex((i) => i.key === 'angle');
+  const ai = changes.angle === null ? -1 : P.kv.findIndex((i) => i.key === 'angle');
   const late = ai < 0 ? [] : Object.entries(changes).filter(([k, v]) => v != null && SIZE_KEYS.has(k) && !P.kv.some((i) => i.key === k));
   if (late.length) {
     const rest = Object.fromEntries(Object.entries(changes).filter(([k]) => !late.some(([x]) => x === k)));
@@ -284,6 +286,12 @@ export function setSize(src, P, width, height, free) {
     return { edits: [{ s: S.wrapArg.is, e: S.wrapArg.ie, t: width }].filter((x) => src.slice(x.s, x.e) !== x.t) };
   }
   const ch = { scale: null };
+  const ai = P.kv.findIndex((i) => i.key === 'angle');
+  if (free && ai >= 0 && P.kv.slice(ai + 1).some((i) => SIZE_KEYS.has(i.key))) {
+    // (the hand written size keys go, and the two written just before the angle)
+    const items = P.kv.filter((i) => !SIZE_KEYS.has(i.key)).map((i) => (i.key === 'angle' ? 'width=' + width + ',height=' + height + ',' : '') + src.slice(i.s, i.e));
+    return { edits: [{ s: P.opt.is, e: P.opt.ie, t: items.join(',') }] };
+  }
   if (free) { ch.width = width; ch.height = height; if (keyOf(P, 'totalheight') != null) ch.totalheight = null; }
   else if (width != null) { ch.width = width; ch.height = null; ch.totalheight = null; }
   else if (height != null) { ch.height = height; ch.width = null; ch.totalheight = null; }
@@ -458,7 +466,7 @@ export function whyFixed(src, P, to, o = {}) {
     if (o.nextIsHeading) return 'wrapfig cannot wrap a heading: a heading follows the picture, and the figure would float away.';
     // (in a quote, a theorem, a proof or any other environment built on a list, wrapfig stops:
     // "wrapfigure used inside a conflicting environment")
-    const inner = P.path.filter((x) => x.n.t === 'env' && x.n !== B.env && x.n.name !== 'document').map((x) => x.n.name);
+    const inner = P.path.filter((x) => x.n.t === 'env' && x.n !== B.env && !WRAP_OK.test(x.n.name)).map((x) => x.n.name);
     if (inner.length) return 'wrapfig cannot wrap text inside ' + inner[inner.length - 1] + ': move the picture out of it first.';
   }
   if (to !== 'float' && B.kind === 'float' && /\*$/.test(B.env.name)) return 'A figure across the page\'s columns (figure*) has no in-line or wrapped form: it stays a figure*.';
@@ -607,7 +615,7 @@ export function naturalSize(bytes, name = '') {
     return { w: w * 72 / (dx || 72), h: h * 72 / (dy || dx || 72), px: [w, h] };
   }
   if (b.length > 4 && b[0] === 0xff && b[1] === 0xd8) {
-    let dx = 0, dy = 0, w = 0, h = 0, ex = null;
+    let dx = 0, dy = 0, w = 0, h = 0, ex = null, jfif = false;
     for (let i = 2, n = 0; i + 4 <= b.length && n < 2000; n++) {
       if (b[i] !== 0xff) { i++; continue; }
       const m = b[i + 1];
@@ -615,7 +623,9 @@ export function naturalSize(bytes, name = '') {
       const len = u16(i + 2);
       if (m === 0xe0 && i + 18 <= b.length && b[i + 4] === 0x4a && b[i + 5] === 0x46 && b[i + 6] === 0x49 && b[i + 7] === 0x46) {
         const unit = b[i + 11], x = u16(i + 12), y = u16(i + 14);
-        // (dots per centimetre: pdfTeX truncates them to dots per inch, 118 is 299)
+        // (dots per centimetre: pdfTeX truncates them to dots per inch, 118 is 299; a JFIF header of
+        // no unit, PIL's and libjpeg's default, sets no density but still hides Exif's: 72 dpi)
+        jfif = true;
         if (unit === 1) { dx = x; dy = y; } else if (unit === 2) { dx = Math.trunc(x * 2.54); dy = Math.trunc(y * 2.54); }
       }
       // Exif's resolution (a camera's JPEG has no JFIF), which the three engines read too
@@ -624,7 +634,7 @@ export function naturalSize(bytes, name = '') {
       i += 2 + len;
     }
     if (!w || !h) return null;
-    if (!dx && ex) { dx = ex[0]; dy = ex[1]; }
+    if (!jfif && ex) { dx = ex[0]; dy = ex[1]; }
     return { w: w * 72 / (dx || 72), h: h * 72 / (dy || dx || 72), px: [w, h] };
   }
   if (b.length > 5 && b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46) {
@@ -663,9 +673,11 @@ function exifRes(b, t0, end) {
     else if (tag === 0x0128) unit = u16(e + 8);
   }
   if (!(x > 0)) return null;
-  if (unit === 3) { x = Math.trunc(x * 2.54); y = Math.trunc((y || x) * 2.54); }
-  else if (unit !== 2) return null;
-  return [x, y || x];
+  y = y || x;
+  if (unit === 3) { x *= 2.54; y *= 2.54; }
+  else if (unit !== 2 && unit !== 1) return null;
+  x = Math.trunc(x); y = Math.trunc(y);
+  return x > 0 ? [x, y || x] : null;
 }
 
 // ---- the box graphicx makes -------------------------------------------------------------------------

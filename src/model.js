@@ -1719,7 +1719,7 @@ class Builder {
           const a0 = n.name === 'captionof' ? n.args[2] : n.args[1];
           // (\caption* and \captionof*: no number, no "Figure"; beamer prints "Figure:" unless its
           // caption template is the numbered one)
-          if (n.star || (this.opts.cls === 'beamer' && !this.beamerNumbered())) {
+          if (n.star) {
             const kids = a0 ? this.inl(a0.nodes, ctx, fns) : [];
             if (a0 && !kids.length) kids.push({ k: 'seg', f: ctx.f, t: '​', map: [a0.is, a0.is], ph: true });
             parts.push({ type: 'caption', kind, num: '', star: !!n.star, inl: kids, f: ctx.f, ctx: 'cap', dir: this.dirOf() });
@@ -1734,7 +1734,9 @@ class Builder {
           const a = n.name === 'captionof' ? n.args[2] : n.args[1];
           const kids = a ? this.inl(a.nodes, ctx, fns) : [];
           if (a && !kids.length) kids.push({ k: 'seg', f: ctx.f, t: '​', map: [a.is, a.is], ph: true });
-          parts.push({ type: 'caption', kind, num, inl: kids, f: ctx.f, ctx: 'cap', dir: this.dirOf() });
+          // (beamer steps the counter, so \ref gives the number, but its caption template prints
+          // "Figure:" without it unless it is the numbered one)
+          parts.push({ type: 'caption', kind, num: this.opts.cls === 'beamer' && !this.beamerNumbered() ? '' : num, inl: kids, f: ctx.f, ctx: 'cap', dir: this.dirOf() });
           continue;
         }
         if (n.t === 'env' && /^(tabular|tabularx|tabular\*|tabulary|longtable|array)$/.test(n.name)) { flushP(); parts.push(this.tabular(n, ctx, fns, tset)); continue; }
@@ -2225,7 +2227,12 @@ class Builder {
     // graphicx's \scalebox{x}[y]{...} around a picture and \rotatebox[...]{angle}{...}: drawn scaled
     // and turned (B8: Flip Vertical writes \scalebox{1}[-1]{...}); a \scalebox of words is the Font
     // group's below
-    const onlyPic = (g) => { const sol = g ? g.nodes.filter((x) => !(x.t === 'text' && !ctx.src.slice(x.s, x.e).trim()) && x.t !== 'comment') : []; return sol.length === 1 && sol[0].t === 'cmd' && /^(includegraphics|reflectbox|scalebox|rotatebox|fbox)$/.test(sol[0].name); };
+    const onlyPic = (g, d = 0) => {
+      const sol = g && g.nodes ? g.nodes.filter((x) => !(x.t === 'text' && !ctx.src.slice(x.s, x.e).trim()) && x.t !== 'comment') : [];
+      if (sol.length !== 1 || sol[0].t !== 'cmd' || d > 20) return false;
+      if (sol[0].name === 'includegraphics') return true;
+      return /^(reflectbox|scalebox|rotatebox|fbox)$/.test(sol[0].name) && onlyPic(sol[0].args.filter((x) => x && !x.o).pop(), d + 1);
+    };
     if ((name === 'rotatebox' || (name === 'scalebox' && onlyPic(nd.args.filter((x) => x && !x.o).pop()))) && nd.args.filter((x) => x && !x.o).length >= 2) {
       acc.flush();
       const ms = nd.args.filter((x) => x && !x.o), a = ms[ms.length - 1];
@@ -2233,6 +2240,10 @@ class Builder {
       const xf = name === 'scalebox' ? { sx: Number.isFinite(n1) ? n1 : 1, sy: o && Number.isFinite(parseFloat(this.argText(ctx, o))) ? parseFloat(this.argText(ctx, o)) : (Number.isFinite(n1) ? n1 : 1) } : { rot: Number.isFinite(n1) ? n1 : 0 };
       const kids = this.inl(a.nodes, ctx, fns);
       if (!kids.length) kids.push(this.ph(ctx, a.is));
+      if (xf.sx != null && (Math.abs(xf.sx) !== 1 || Math.abs(xf.sy) !== 1)) {
+        const put = (ks, d) => { for (const y of ks) { if (d > 20) return; if (y.k === 'img') y.outer = { sx: Math.abs(xf.sx) * ((y.outer && y.outer.sx) || 1), sy: Math.abs(xf.sy) * ((y.outer && y.outer.sy) || 1) }; else if (y.kids) put(y.kids, d + 1); } };
+        put(kids, 0);
+      }
       out.push(this.styAtom(ctx, { k: 'sty', st: 'xf', xf, kids, s: nd.s, e: nd.e, is: a.is, ie: a.ie, cmd: name }));
       return false;
     }

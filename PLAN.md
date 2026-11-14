@@ -1960,6 +1960,19 @@ Tests:
     Evidence: `picture.test.mjs` 20 groups, `drawing.test.mjs` 7, `test/picture.py` 168 (22 new,
     four compiles in the page: the height before the angle, an Exif JPEG at TeX's size, a starred
     caption numbered as TeX numbers it, SmartArt of ten items).
+    *Verification* (a fresh verifier of the review round: 21 of 22 fixed; the Exif fix brought a
+    new high, and seven more, each fixed with its case as a test): a JPEG with a JFIF header of no
+    unit (PIL's and libjpeg's default) keeps 72 dpi whatever its Exif says, as the three engines do
+    (it was drawn 4.2 times too small); Exif's resolution truncated to whole dots per inch and its
+    unit "none" taken as inches, as pdfTeX reads them; beamer steps the figure counter, so `\ref`
+    gives the number its caption leaves out; a picture in a `\scalebox` takes the scaled box on the
+    page (CSS scale had left its line the unscaled height); a `\scalebox` of an `\fbox` of words is
+    the Font group's; the Font Awesome 4 refusal names v4's own command; a picture's first
+    selection rebuilds nothing; wrap is allowed in a language's, line spacing's or landscape's
+    environment; free size on a hand written angle then width writes both before the angle, and
+    Lock Aspect Ratio shows on where a size key follows the angle. Evidence: `picture.test.mjs`
+    21 groups (`test/fixtures/jfif0-exif300.jpg` new), `test/picture.py` 174 (6 new, one compiled:
+    that JPEG at TeX's size in the PDF and on the page).
 
 ## Open tasks
 

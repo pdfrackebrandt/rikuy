@@ -271,7 +271,7 @@ export const methods = {
     this.disarm();
     if (this.picCropping) this.picCropEnd(false);
     this.armed = { f: info.f, s: info.s, e: info.e, el, kind: 'img' };
-    if (info.a.file) this.picNatural(info.a.file);
+    if (info.a.file) this.picNatural(info.a.file, false);
     // (a tap: the touch screen's own caret comes a moment later, and is not a move elsewhere)
     this.picSelT = o.touch ? Date.now() : 0;
     el.classList.add('sel');
@@ -360,6 +360,9 @@ export const methods = {
   },
   picLocked(h) {
     const S = X.sizeOf(h.src, h.P);
+    // (a size key after the angle sizes the turned box with its shape kept: locked, whatever else)
+    const ai = h.P.kv.findIndex((i) => i.key === 'angle');
+    if (ai >= 0 && h.P.kv.slice(ai + 1).some((i) => /^(width|height|totalheight|scale)$/.test(i.key))) return true;
     return !(S.width && S.height && !S.keepaspect);
   },
   // Width and height: { width, height } as LaTeX lengths or numbers of points, free (both kept
@@ -387,7 +390,9 @@ export const methods = {
     return this.picOp((src, Q, h) => {
       const S = X.sizeOf(src, Q);
       if (!this.picLocked(h)) return X.setSize(src, Q, S.width, null, false);
-      const d = this.picDrawn(h);
+      let d = this.picDrawn(h);
+      const a = X.angleOf(src, Q);
+      if (Number.isFinite(a) && Math.abs(Math.round(a / 90)) % 2 === 1) d = { w: d.h, h: d.w };
       if (S.keepaspect && S.width && S.height) return { edits: X.keyEdits(src, Q, { keepaspectratio: null }) };
       return X.setSize(src, Q, S.width || X.lengthText(d.w), S.height || X.lengthText(d.h), true);
     });
@@ -507,19 +512,19 @@ export const methods = {
   // { w, h } in bp, as TeX reads the file; null until its first bytes are read (then the page is
   // drawn again with it)
   picNaturalNow(h) { return this.picNatural(h.P.file.name); },
-  picNatural(name) {
+  picNatural(name, need = true) {
     const c = this.picNat || (this.picNat = new Map());
     const key = this.picAssetName(name);
     if (!key) return null;
     const blob = this.assetBlobs.get(key);
     const hit = c.get(key);
+    if (hit && hit.blob === blob && hit.wait) { if (need) hit.need = true; return null; }
     if (hit && hit.blob === blob) return hit.size;
-    if (hit && hit.wait && hit.blob === blob) return null;
-    c.set(key, { blob, wait: true, size: null });
+    c.set(key, { blob, wait: true, size: null, need });
     const done = blob.slice(0, 1 << 19).arrayBuffer().then((buf) => {
-      const size = X.naturalSize(new Uint8Array(buf), key);
+      const size = X.naturalSize(new Uint8Array(buf), key), was = c.get(key);
       c.set(key, { blob, size });
-      if (size) this.picNatSoon();
+      if (size && was && was.need) this.picNatSoon();
       return size;
     }).catch(() => { c.set(key, { blob, size: null }); return null; });
     c.get(key).done = done;
@@ -529,7 +534,7 @@ export const methods = {
   picNaturalWait(name) {
     const now = this.picNatural(name);
     if (now) return Promise.resolve(now);
-    const key = this.picAssetName(name), hit = key && this.picNat.get(key);
+    const key = this.picAssetName(name), hit = key && this.picNat && this.picNat.get(key);
     return hit && hit.done ? hit.done : Promise.resolve(null);
   },
   // Sizes that came in: one rebuild for all of them (a document of 120 pictures read their headers
@@ -693,7 +698,11 @@ Object.assign(methods, {
     if (this.texAt(f, p)) { this.toast('The caret is in a LaTeX paragraph: write \\faIcon{' + id + '} there yourself.'); return false; }
     const t = '\\faIcon{' + id + '}';
     const main = this.src(this.main), end = preambleEnd(main), others = this.preambleOthers();
-    if (hasPackage(main, 'fontawesome', end, others)) { this.toast('This document loads Font Awesome 4 (fontawesome), which clashes with fontawesome5: write its own command, \\fa' + id.replace(/(^|-)(\w)/g, (m, a, b) => b.toUpperCase()) + ', where the icon goes.', 8000); return false; }
+    if (hasPackage(main, 'fontawesome', end, others)) {
+      const v4 = { 'map-marker-alt': 'faMapMarker', clock: 'faClockO', lightbulb: 'faLightbulbO', 'chart-bar': 'faBarChart' }[id] || 'fa' + id.replace(/(^|-)(\w)/g, (m, a, b) => b.toUpperCase());
+      this.toast('This document loads Font Awesome 4 (fontawesome), which clashes with fontawesome5: write its own command, \\' + v4 + ', where the icon goes.', 8000);
+      return false;
+    }
     const fa = ['fontawesome6', 'fontawesome7', 'fontawesome5'].some((n) => hasPackage(main, n, end, others));
     const pk = fa ? [] : this.picPackages(['fontawesome5']);
     let at = p + t.length;
