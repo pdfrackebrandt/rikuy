@@ -69,7 +69,9 @@ const SIG = own({
   MakeUppercase: 'm', MakeLowercase: 'm', textcircled: 'm',
   // character formats Rikuy's Font group writes (src/cmd/font.js): ulem's other lines, its double
   // strikethrough, a size and a family for a run of text, ruby
-  dashuline: 'm', dotuline: 'm', culine: 'mm', dsout: 'm', fontsize: 'mm', fontfamily: 'm', fontspec: 'om', ruby: 'omm'
+  dashuline: 'm', dotuline: 'm', culine: 'mm', dsout: 'm', fontsize: 'mm', fontfamily: 'm', fontspec: 'om', ruby: 'omm',
+  // memoir's spacing and paragraph skip (src/parasrc.js writes them in a memoir document)
+  setSpacing: 'm', setSingleSpace: 'm', abnormalparskip: 'm'
 });
 
 // Commands that take no arguments but print characters, keyed by name.
@@ -119,11 +121,15 @@ const ENV_SIG = own({
   alignat: 'm', 'alignat*': 'm', proof: 'o', adjustbox: 'm', center: '', tcolorbox: 'o', mdframed: 'o',
   minted: 'om', lstlisting: 'o', Verbatim: 'o', spacing: 'm', otherlanguage: 'm', 'otherlanguage*': 'm',
   landscape: '', appendices: '', resizebox_env: '',
+  // paragraph settings (src/parasrc.js): changepage's indents, memoir's spacing, babel's hyphenation
+  adjustwidth: 'mm', 'adjustwidth*': 'mm', Spacing: 'm', hyphenrules: 'm',
   // CJK's encoding and font family are settings, not text: \begin{CJK*}[T1]{UTF8}{gbsn}
   CJK: 'omm', 'CJK*': 'omm'
 });
 // environments whose body is text and that take no optional title (any other unknown one does)
-const PLAIN_ENVS = new Set(['document', 'abstract', 'center', 'quote', 'quotation', 'verse', 'flushleft', 'flushright', 'small', 'footnotesize', 'scriptsize', 'large', 'Large', 'appendix', 'appendices', 'singlespace', 'onehalfspace', 'doublespace', 'titlepage', 'landscape', 'acknowledgments', 'acknowledgements', 'RTL', 'LTR']);
+const PLAIN_ENVS = new Set(['document', 'abstract', 'center', 'quote', 'quotation', 'verse', 'flushleft', 'flushright', 'small', 'footnotesize', 'scriptsize', 'large', 'Large', 'appendix', 'appendices', 'singlespace', 'onehalfspace', 'doublespace', 'titlepage', 'landscape', 'acknowledgments', 'acknowledgements', 'RTL', 'LTR',
+  // (B2) setspace's, memoir's and lineno's environments that take no optional argument
+  'samepage', 'nolinenumbers', 'singlespace*', 'SingleSpace', 'OnehalfSpace', 'DoubleSpace']);
 
 // What the C++ parser (tex/native/core/parse.cc) reads at load: the tables are kept here only.
 export const PARSE_TABLES = { SIG, CHARS, ACCENTS, ENV_SIG, MATH_ENVS, RAW_ENVS, DEF_CMDS, ENV_DEF, DIM_CMDS, PLAIN_ENVS };

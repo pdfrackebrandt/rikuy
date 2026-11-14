@@ -1604,4 +1604,21 @@ await ok('the page\'s set up goes to Word and comes back: paper, margins, column
   assert.equal(plan.files.get('main.tex'), src.replace('Hello.', 'Hello again.'));
 });
 
+await ok('to Word: a paragraph\'s alignment, line spacing, indents and keeping are its style\'s, the document\'s spacing the defaults\', and the source comes back', async () => {
+  const src = doc('\\begin{flushleft}\nRagged words.\n\\end{flushleft}\n\n\\begin{onehalfspace}\n\\begin{center}\nCentred and spaced.\n\\end{center}\n\\end{onehalfspace}\n\n\\begin{adjustwidth}{1cm}{2cm}\nIndented words.\n\\end{adjustwidth}\n\n\\noindent\\hangindent=1cm Hanging words.\n\\nopagebreak\n\nLast.\n', '\\usepackage{setspace,changepage}\n\\setstretch{1.15}\n');
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  const parts = unzip(E.docx);
+  const d = text(parts.get('word/document.xml')), st = text(parts.get('word/styles.xml'));
+  const style = (name) => { const m = new RegExp('<w:style [^>]*>(?:(?!</w:style>)[\\s\\S])*?<w:name w:val="' + name + '"(?:(?!</w:style>)[\\s\\S])*</w:style>').exec(st); return m ? m[0] : ''; };
+  assert.match(style('Left Aligned'), /<w:jc w:val="left" \/>/);
+  assert.match(style('Centred, Line Spacing 1.5'), /<w:spacing w:line="360" w:lineRule="auto" \/>(?:(?!<\/w:pPr>)[\s\S])*<w:jc w:val="center" \/>/);
+  assert.match(style('Indent 1cm 2cm'), /<w:ind w:left="567" w:right="1134" \/>/);
+  assert.match(style('Hanging 1cm, Keep With Next'), /<w:keepNext \/>(?:(?!<\/w:pPr>)[\s\S])*<w:ind w:left="567" w:right="0" w:hanging="567" \/>/);
+  assert.match(st, /<w:pPrDefault><w:pPr>(?:(?!<\/w:pPr>)[\s\S])*<w:spacing [^>]*w:line="276"[^>]*w:lineRule="auto"/, 'the document\'s 1.15 in the defaults');
+  assert.match(d, /<w:pStyle w:val="[^"]*" \/>(?:(?!<\/w:p>)[\s\S])*Ragged words/);
+  // unchanged in Word: nothing to bring back; an edit comes back with the environments as they were
+  assert.equal(importInto(E.docx, files).files.size, 0);
+  await roundTrip(src, rep('Indented words.', 'Indented text.'), src.replace('Indented words.', 'Indented text.'));
+});
 console.log('word: ' + n + ' groups of checks passed');

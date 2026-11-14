@@ -537,6 +537,25 @@ Ctrl is Cmd on a Mac.
   the one beside it. Ctrl+Alt+O: the Outline view (the side panel's headings with the paragraphs
   under them; its toolbar "Outlining" has Promote, Demote, Move up, Move down, Expand all,
   Collapse all and the combobox "Show levels"; a heading dragged onto another moves its section)
+- Ctrl+L, Ctrl+E, Ctrl+R, Ctrl+J, on the page only: Align Left (flushleft), Center (center),
+  Align Right (flushright), Justify (LaTeX's own: the environment comes off); pressed again an
+  alignment goes back to justified. On selected paragraphs one environment goes around them all; a
+  paragraph in a centred group is split out of it and joined back. In a quote, a theorem,
+  adjustwidth, tcolorbox or a minipage the environment goes inside it (TeX centres nothing in them
+  from around them). In a figure or a table they write \\centering (\\raggedleft, \\raggedright)
+  at its start; beamer, the AMS classes, revtex, acmart and floatrow centre a figure by
+  themselves, so there Center writes nothing. A paragraph with display math in it is aligned whole. Ctrl+Shift+8: Show marks (¶ at each
+  paragraph's end, ↵ at each \\\\, nothing written). Ctrl+M stays Formula; outside a list the buttons
+  Increase Indent and Decrease Indent step a paragraph's left indent by Word's 1.27 cm (adjustwidth;
+  commands paragraph-indent and paragraph-outdent). The button "Line
+  and Paragraph Spacing" opens a menu (1.0, 1.15, 1.5, 2.0, 2.5, 3.0 for the paragraph: setspace's
+  singlespace, spacing{1.15}, onehalfspace, doublespace; "Whole document: 1.5" and its like in the
+  preamble; Add Space Before or After Paragraph: \\vspace{12pt}); rikuy.api.run('line-spacing',
+  '1.5') or run('line-spacing', { v: '2.0', scope: 'document' }) does the same. "Paragraph Settings"
+  opens the dialog "Paragraph" (tabs "Indents and Spacing", "Line and Page Breaks"; OK writes all
+  of it as one undo step). Layout's spinbuttons "Indent Left", "Indent Right" (cm), "Spacing
+  Before", "Spacing After" (pt) take a number and Enter; Design's "Paragraph Spacing" sets the whole
+  document's (parskip and setspace).
 - Click math, a citation or a cross reference to edit it; Alt+click shows that spot in the source
 - In an equation: names as in LaTeX or Word (\\alpha then Space), a/b for a fraction, x^2 and
   x_i, Space to step out, Tab to the next empty slot, Enter to finish

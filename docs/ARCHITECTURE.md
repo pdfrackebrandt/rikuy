@@ -52,6 +52,7 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | a character format (Bold to Font Color, the boxes, the Font dialog, the Format Painter) | `toggle`, `setValue`, `wrapIn`, `clearFormats`, `chainAt`, `preambleFor`, `docSizeEdits`, `docFontEdits`, `changeCase`, `autoFormat` (`src/charfmt.js`); `fmtCommit`, `fmtToggle`, `fmtSet`, `fontState`, `fontBox` (`src/cmd/font.js`); `openFontDialog` (`src/ui/fontdialog.js`) |
 | an edit of the preamble, an inline wrapper, an environment around paragraphs | `usePackages`, `kvEdits`, `classOptions`, `setPackageKeys`, `defineOnce` (`src/preamble.js`); `App.packageEdits`, `preambleOthers`; `wrapEdits`, `unwrapEdits`, `standsFree`, `rewrapEdits`, `enclosing`, `clearText`, `GROUPS` (`src/wrap.js`); `envWords`, `wrapBlockEdits`, `unwrapBlockEdits` (`src/blockenv.js`) |
 | the side panel: outline and problems; versions and changes | `toggleNav`, `refreshNav`, `goTo` (`src/nav.js`); `snapshot`, `currentChanges`, `renderChanges`, `paintChanges` (`src/review.js`) |
+| a paragraph's settings: alignment, line spacing, indents, space before and after, breaks, shading and borders, the document's paragraph spacing, Show marks, the Paragraph dialog | `unitOf`, `layerEdits`, `alignEdits`, `docSpacingEdits`, `indentEdits`, `spaceEdits`, `flagEdits`, `boxEdits`, `docParskipEdits`, `widowEdits` (`src/parasrc.js`, on strings); `paraUnits`, `paraRun`, `paraNeeds`, `paraAlign`, `paraSpacing`, `paraDialogApply` (`src/cmd/para.js`); `openParagraphDialog`, `paraField` (`src/ui/paradialog.js`); `Builder.flow` (item `ps`, `pe`, `vs`, `ve`, `spread`, `mx`, `hang`, `box`), `Builder.boxEnv` (`src/model.js`); `Renderer.paraLook` (`src/render.js`); `paraStyle` (`src/wordast.js`), `paraStyles` (`src/wordjobs.js`) |
 | Find, Replace, Go To; the Navigation pane (its box, Headings, Pages, Results) and the Outline view | `compile`, `hitsIn`, `blockText`, `hitSource`, `expand`, `labelsIn` (`src/find.js`); `findRun`, `findPaint`, `findGo`, `hitEdits`, `replaceOne`, `replaceAll`, `goToTargets`, `goToTarget`, `countStatus` (`src/cmd/find.js`); `openFindDialog`, `findDialogSync` (`src/ui/finddialog.js`); `renderOutline`, `navShell`, `paintHeadings`, `navDrop`, `paintPages`, `paintResults`, `setOutlineView` (`src/nav.js`) |
 | promote, demote, move a section or a paragraph, a new heading | `headingAt`, `sectionRange`, `promoteEdits`, `swapEdit`, `moveEdits`, `newHeading` (`src/outline.js`); `promoteAt`, `moveEditsAt`, `sectionMove`, `moveSectionTo`, `newHeadingAt` (`src/cmd/find.js`) |
 | lists: levels, labels and numbers, multilevel lists, sorting, automatic lists | `readLists`, `chainAt`, `formatOf`, `listSetup`, `labelEdits`, `startEdits`, `demote`, `promote`, `unlist`, `restartEdit`, `multilevelEdits`, `sortEdit`, `autoMarker`, `numText`, `bulletGlyph` (`src/lists.js`); `listAt`, `toggleList`, `listLevel`, `listLabel`, `listCommit`, `autoList`, `sortTarget` (`src/cmd/lists.js`); the dialogs (`src/ui/listdialog.js`); `Builder.listBlock` (`src/model.js`) |
@@ -424,6 +425,35 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   tree with collapse, Show levels, the Outlining toolbar, Alt+Shift and the arrows, dragging; in
   the Outline view the paragraphs too, by their first line), Pages (each page cloned small,
   inert, only those in sight) and Results.
+- **Paragraphs** (batch B2). The model gives each paragraph its source range (`item.ps`, `pe`) and
+  where its first and last characters on the page come from (`vs`, `ve`). `unitOf` (`src/parasrc.js`)
+  reads, from those and the parse of the block, what is the paragraph's own: what starts it on its
+  line (`\noindent`, `\hangindent=1cm`), lines of their own right before or after it
+  (`\vspace{12pt}`, `\nopagebreak`, `\clearpage`, a rule, `\centering`), the environments whose
+  whole body it is, level by level, and the innermost environment that holds more than it (a
+  centred group of three). Lines before its first character's line are not its own (a
+  `\selectlanguage` there keeps its reach). `layerEdits` is one rule for every kind of paragraph
+  environment (alignment, setspace's spacing, adjustwidth, tcolorbox, samepage, hyphenrules,
+  nolinenumbers, otherlanguage): its own environment changed or taken off byte for byte, one that
+  holds others split around it, a new one joined with the same one right beside it (found as TeX
+  reads it: never into a comment, a verbatim or a LaTeX paragraph), so a paragraph taken out of a
+  centred group and centred again gives the bytes back. An alignment stops at a list's or a box's
+  environment (quote, adjustwidth, tcolorbox, minipage: `alignScope`), whose paragraphs TeX sets as
+  they will. `paraRun` (`src/cmd/para.js`) edits the paragraphs of a selection one after another,
+  each read again in the text the ones before left, and maps the caret through every edit; the
+  page's own parse of the text (`parsedText` of `src/model.js`) spares a parse at every move of the
+  caret. The document's settings are
+  edits of the preamble in the form found (`\linespread{1.3}` stays `\linespread`, setspace's
+  option stays an option, KOMA's `parskip=` stays the class's, memoir's own commands); packages
+  through `usePackages` in the same commit (`paraNeeds`: changepage, setspace, tcolorbox, xcolor's
+  dvipsnames before tcolorbox loads xcolor). The model draws each paragraph as TeX sets it
+  (`Renderer.paraLook`: the line height against the document's, adjustwidth's margins, the hang,
+  tcolorbox's colour, padding and frame, samepage and `\nopagebreak` for the page breaks; an
+  alignment declaration sets `\parindent` to 0; a figure without `\centering` at the left margin).
+  Word export names a paragraph style after the settings (`paraStyle`: "Centred, Line Spacing 1.5,
+  Indent 1cm 0cm") and `paraStyles` gives each its formatting; the document's spacing goes in the
+  defaults. Show marks is a class on the body (`marks-on`): marks drawn in pseudo elements of no
+  width, so nothing moves and nothing is written.
 
 ## 3. Undo and redo
 

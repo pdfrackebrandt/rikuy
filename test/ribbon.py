@@ -307,8 +307,8 @@ def keyboard(page):
     seen = []
     for key in ('ArrowRight', 'ArrowLeft', 'ArrowLeft', 'End', 'Home', 'ArrowRight'):
         page.keyboard.press(key); seen.append(page.evaluate('document.activeElement.id'))
-    # (left of the gallery, Paragraph's last control that applies to a paragraph: Multilevel list, B3)
-    check('arrows, Home and End move between its controls (the strip\'s disabled arrows skipped), the font box among them', seen == ['rb-st-section', 'rb-st-p', 'rb-ml', 'b-save', 'rc-format-painter', 'rb-font'], seen)
+    # (left of the gallery, Paragraph's last control that applies to a paragraph: Multilevel list, B3; then B2's buttons, Paragraph Settings last)
+    check('arrows, Home and End move between its controls (the strip\'s disabled arrows skipped), the font box among them', seen == ['rb-st-section', 'rb-st-p', 'rc-paragraph-settings', 'b-save', 'rc-format-painter', 'rb-font'], seen)
     page.focus('#rb-i'); page.keyboard.press('ArrowLeft')
     ring = page.evaluate('(() => { const c = getComputedStyle(document.activeElement); return c.outlineStyle !== "none" && parseFloat(c.outlineWidth) > 0; })()')
     # (what each half saw, printed where it fails: the focus, its ring, Bold's state, the selection)
@@ -503,14 +503,15 @@ def downloads_in_sight(page):
     load_doc(page, DOC)
     IN = """(ids) => { const r = document.getElementById('ribbon'); r.scrollLeft = 0; return ids.map((id) => { const e = document.getElementById(id), b = e.getBoundingClientRect(), rr = r.getBoundingClientRect();
       const top = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2); return b.width > 0 && b.left >= rr.left - 1 && b.right <= innerWidth + 1 && !!top && (top === e || e.contains(top)); }); }"""
-    for w in (820, 860, 1000):
+    for w in (820, 860, 1000, 1366):
         page.set_viewport_size({'width': w, 'height': 800}); page.wait_for_timeout(300)
         # (above 860 px the three where the row has room for them, else the one button: Home's Font
         # group in Word's two rows and the Paragraph group's list commands leave 1000 px without room for three)
-        three = w > 860 and page.evaluate("!!document.getElementById('rb-pdf').offsetParent")
+        # (at 860 px the Paragraph group, one row there, folds and leaves room for the three, B2)
+        three = w == 860 or (w > 860 and page.evaluate("!!document.getElementById('rb-pdf').offsetParent"))
         seen = page.evaluate(IN, ['rb-pdf', 'rb-word', 'b-save'] if three else ['rb-dl-menu'])
         over = page.evaluate('(() => { const r = document.getElementById("ribbon"); return r.scrollWidth > r.clientWidth + 1; })()')
-        if w > 860:
+        if w >= 860:
             check('at %dpx the downloads (PDF, Word and LaTeX, or the one Download button) are in sight with the row not scrolled' % w, all(seen) and not over, (seen, over))
         else:
             # (the tabs' list at the row's start left no room for the three: Footnote, Citation and Link went under them)
