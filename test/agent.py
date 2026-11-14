@@ -60,7 +60,7 @@ KEPT = {'b-nav': 'Outline and problems', 'b-open': 'Open', 'b-pdf': 'Preview', '
         'rb-st-quote': 'Quote', 'rb-st-up': 'Previous styles', 'rb-st-down': 'Next styles', 'rb-st-more': 'More styles'}
 # the Styles gallery a wide window has in the place of the style list: as many tiles as there is room for
 GALLERY = {x['id'] for x in SHOWN if x.get('fit')}
-ACTIONS = ['Download PDF', 'Download Word', 'Download LaTeX', 'Open', 'Preview', 'Copy source', 'Share', 'Undo', 'Redo', 'Zoom out', 'Fit width', 'Zoom in', 'Source', 'Help']
+ACTIONS = ['Download PDF', 'Download Word', 'Download LaTeX', 'Open', 'Preview', 'Copy source', 'Share', 'Undo', 'Undo options', 'Redo', 'Zoom out', 'Fit width', 'Zoom in', 'Source', 'Help']
 # roles a person or an agent acts on, and the containers they look for them in
 ACTED = {'button', 'link', 'textbox', 'searchbox', 'combobox', 'listbox', 'checkbox', 'radio', 'switch', 'slider', 'spinbutton', 'menuitem', 'menuitemcheckbox',
          'menuitemradio', 'tab', 'dialog', 'alertdialog', 'menu', 'toolbar', 'tablist', 'tabpanel'}

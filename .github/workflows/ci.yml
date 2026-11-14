@@ -115,6 +115,12 @@ jobs:
       # its compile on three engines needs dist/tex and runs in tex.yml; here it says it skips that part
       - name: Insert, interactive graphs, the clipboard, symbols and AutoCorrect
         run: cd test && python3 insert.py
+      # their PDF parts (the PDF view by SyncTeX, Learn Rikuy and the templates compiled) need
+      # dist/tex and run in tex.yml; here they skip them
+      - name: The views (Page, LaTeX, PDF), Show LaTeX, the View and Help tabs, on phones too
+        run: cd test && python3 view.py
+      - name: The File tab (templates, recent documents, properties, accessibility, Export as)
+        run: cd test && python3 file.py
       # its compile offline needs dist/tex and runs in tex.yml; here it says it skips that part
       - name: The installed app offline, its updates, and none in the artifact build
         run: cd test && python3 offline.py

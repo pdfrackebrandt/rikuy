@@ -5,7 +5,7 @@
 // kept in IndexedDB (the TeX worker's database, galley-tex) and checked again when read back, as the
 // cache is the whole site's, so a later Word action needs no network.
 import { createPandoc } from './pandoc.js';
-import { exportDocx, readDocx, docxToLatex } from './wordjobs.js';
+import { exportDocx, readDocx, docxToLatex, exportAs } from './wordjobs.js';
 
 const BASE = self.__rikuyWordBase || './';
 let pandocP = null;
@@ -101,9 +101,12 @@ self.onmessage = async ({ data }) => {
     else if (op === 'export') { result = exportDocx(P, data.req); result.mark = await sha256(new TextEncoder().encode(result.json)); delete result.json; }
     else if (op === 'read') { result = readDocx(P, data.bytes); if (result.data) result.mark = await sha256(new TextEncoder().encode(JSON.stringify(result.data))); }
     else if (op === 'open') result = docxToLatex(P, data.bytes, data.name);
+    // Export as: the same AST to another of pandoc's formats (src/cmd/file.js)
+    else if (op === 'convert') result = exportAs(P, data.req, data.to);
     else throw new Error('unknown request');
     const transfer = [];
     if (result && result.docx) transfer.push(result.docx.buffer);
+    if (result && result.bytes && result.bytes.buffer) transfer.push(result.bytes.buffer);
     self.postMessage({ id, result }, transfer);
   } catch (e) {
     if (pandocP && !(await pandocP.then(() => true, () => false))) pandocP = null;
