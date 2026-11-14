@@ -364,6 +364,28 @@ run("table-borders", {id: "border-all"}); run("pen-weight", {w: "1pt"}); run("ta
 the same step). New tables are booktabs (\\toprule, \\midrule, \\bottomrule); a table written
 with \\hline is edited with \\hline.
 
+Pictures: a press (or a tap) on a picture on the page selects it, as in Word: a frame with eight
+handles (a corner or a side sizes it with its shape kept, Shift frees it; with Lock Aspect Ratio
+off the other way round) and the contextual tab Picture Format. Its commands run on the selected
+picture by id: "picture-border", "picture-flip-horizontal", "picture-flip-vertical",
+"picture-rotate-left", "picture-rotate-right", "picture-inline", "picture-place-top",
+"picture-place-bottom", "picture-place-best", "picture-place-here", "picture-place-exact",
+"picture-place-page", "picture-wrap-left", "picture-wrap-right", "picture-wrap-square",
+"picture-wrap-topbottom", "picture-lock", "picture-reset", "picture-reset-size",
+"picture-caption", "picture-crop-remove". With arguments: run("picture-width", {width:
+"0.5\\linewidth"}) (or "6cm"; height: "4cm" instead; free: true keeps both); run("picture-crop",
+{l, b, r, t}) in big points from each edge; run("picture-alt", {text: "...", decorative: false});
+run("picture-size", {width, height, free, angle, crop, place: {mode: "float", place: "t"}}) all
+at once; run("picture-change", {file: "b.png", blob}). A picture in a sentence, a box, columns
+(multicols), a list (for wrapping) or beamer is not moved: those commands are disabled and their
+reason is in the search box. Insert's objects: run("insert-shapes", {shape: "rectangle"}) (ids:
+line, arrow, double-arrow, rectangle, rounded-rectangle, oval, circle, triangle, diamond,
+pentagon, hexagon, star), run("insert-icons", {icon: "check"}) (fontawesome5 names),
+run("insert-smartart", {kind: "flow diagram:horizontal", items: ["Plan", "Write"]}),
+run("insert-chart", {kind: "column", cats: ["Q1", "Q2"], series: [{name: "Sales", values: [3,
+4]}]}) ("bar", "line"), run("insert-textbox", {kind: "simple"}) ("shaded", "beside"),
+run("insert-dropcap", {mode: "dropped", lines: 3}) ("margin", "none").
+
 In a guest's view (a document opened from a link with "by") setSource, setUpScripts and run
 reject with an Error; the others work.
 

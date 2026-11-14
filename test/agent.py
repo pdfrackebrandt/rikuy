@@ -602,6 +602,10 @@ TABLE = ('\\documentclass{article}\n\\begin{document}\nA paragraph.\n\n\\begin{t
          'After it.\n\\end{document}\n')
 
 
+PICTURE = ('\\documentclass{article}\n\\usepackage{graphicx}\n\\begin{document}\nA paragraph.\n\n\\begin{center}\n\\includegraphics[width=0.5\\linewidth]{figure.png}\n\\end{center}\n\n'
+           'After it.\n\\end{document}\n')
+
+
 def open_tab(page, width, name):
     """A tab of the ribbon by its name: in the tablist "Ribbon", or the combobox "Ribbon tab" on a narrow window."""
     if width > 1000:
@@ -623,7 +627,7 @@ def reach(page, width):
         by_tab.setdefault((x['tab'], x['tabName'], x['contextual']), []).append(x)
     bad, opened = [], []
     for (tab, name, ctx), xs in by_tab.items():
-        if ctx and not tab.startswith('table') and tab not in ('headfoot', 'equation'):
+        if ctx and not tab.startswith('table') and tab not in ('headfoot', 'equation', 'picture-format'):
             continue  # (no command lives there yet: test/tabs.py brings one in for each)
         if ctx and tab == 'headfoot':
             # (the header open on the page, as a double click in its margin opens it)
@@ -632,6 +636,9 @@ def reach(page, width):
             # (the Equation tab shows while an equation's field is open: the button Formula opens one)
             load_doc(page, DOC); click_text(page, 'First paragraph', 5)
             page.evaluate('window.rikuy.runCommand("formula")'); page.wait_for_selector('.pop-math'); page.wait_for_timeout(250)
+        elif ctx and tab == 'picture-format':
+            # (a press on the picture selects it and opens its tab, as for a person)
+            load_doc(page, PICTURE); page.wait_for_timeout(300); page.locator('#pages .a-img').click(); page.wait_for_timeout(250)
         elif ctx:
             load_doc(page, TABLE); click_text(page, 'cell', 2); page.wait_for_timeout(250)
         open_tab(page, width, name)
@@ -655,6 +662,7 @@ def reach(page, width):
             load_doc(page, DOC)
     open_tab(page, width, 'Home')
     check('every control of every tab is found by its role and name once its tab is open: ' + ', '.join(opened) + w, not bad and 'Insert' in opened and 'Table Layout' in opened and 'Equation' in opened, bad)
+    check('Picture Format among them, opened by a press on a picture' + w, 'Picture Format' in opened, opened)
     tabs = page.get_by_role('tablist', name='Ribbon', exact=True).get_by_role('tab')
     if width > 1000:
         check('the tablist "Ribbon" has Word\'s tabs in Word\'s order, Home open' + w, tabs.all_inner_texts() == [n for n in ('File', 'Home', 'Insert', 'Design', 'Layout', 'References', 'Review', 'View', 'Help') if n in tabs.all_inner_texts()]

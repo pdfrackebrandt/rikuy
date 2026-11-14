@@ -1009,6 +1009,8 @@ class App {
   closeGroup() { const top = this.hist[this.hist.length - 1]; if (top) { top.open = false; top.before = null; } }
 
   undo() {
+    // (nothing stays selected across a change of the text: its offsets would be stale)
+    this.disarm();
     // typing in the source pane joins the history only after a pause: take it in first, so
     // Ctrl+Z right after typing undoes that typing instead of wiping it
     if (this.srcRebuild.pending()) this.srcRebuild.flush();
@@ -1025,6 +1027,7 @@ class App {
     this.updateUndoUI();
   }
   redo() {
+    this.disarm();
     if (this.srcRebuild.pending()) this.srcRebuild.flush();
     this.closePop(true);
     const h = this.redoStack.pop();
@@ -1215,11 +1218,18 @@ class App {
       }
     }
     if ((e.key === 'Backspace' || e.key === 'Delete') && this.armed) {
-      e.preventDefault();
-      const A = this.armed;
+      // Only what is still selected on the page goes, at the offsets it has now: an undo, a redo,
+      // a merge or a caret moved by code since may have left the selection's offsets stale (they
+      // once deleted half a picture and its \end{center})
+      const A = this.armed, sel = getSelection();
+      const info = A.el && A.el.isConnected ? atomOfEl(A.el) : null;
+      const still = info && info.s != null && sel.rangeCount && sel.getRangeAt(0).intersectsNode(A.el);
       this.disarm();
-      this.commit([{ f: A.f, s: A.s, e: A.e, t: '' }], { f: A.f, p: A.s }, 'del-atom');
-      return;
+      if (still) {
+        e.preventDefault();
+        this.commit([{ f: info.f, s: info.s, e: info.e, t: '' }], { f: info.f, p: info.s }, 'del-atom');
+        return;
+      }
     }
     if (this.armed && !['Shift', 'Control', 'Meta', 'Alt'].includes(e.key)) this.disarm();
   }

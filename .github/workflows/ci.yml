@@ -107,6 +107,8 @@ jobs:
       # its compile in the page needs dist/tex and runs in tex.yml; here it says it skips that part
       - name: Styles (the gallery, every heading and environment, the Styles pane, Modify and Create a Style, the Design tab)
         run: cd test && python3 styles.py
+      - name: Pictures and objects (selecting, Picture Format as round trips, handles, crop, the page's drawing, Insert's objects, phones)
+        run: cd test && python3 picture.py
       # its compile offline needs dist/tex and runs in tex.yml; here it says it skips that part
       - name: The installed app offline, its updates, and none in the artifact build
         run: cd test && python3 offline.py
