@@ -6,7 +6,7 @@
 //   and .bib of it too, and every document's model built both ways (buildModel) compared whole.
 import fs from 'fs';
 import path from 'path';
-import { parse, parseJS, scanUserSigs, PARSE_TABLES, MATH_SCAN } from '../src/parser.js';
+import { parse, parseJS, scanUserSigs, PARSE_TABLES, MATH_SCAN, MATH_BUDGET } from '../src/parser.js';
 import { loadCore, nativeParse, coreReady, coreStats, coreText, PARSE_MIN } from '../src/native.js';
 
 const root = new URL('..', import.meta.url).pathname;
@@ -156,7 +156,7 @@ for (const [name, s] of [['\\( without \\)', 'a\\('.repeat(40000)], ['\\[ withou
   ['\\begin{equation} without its end', '\\begin{equation}'.repeat(20000)], ['\\begin{verbatim} without its end, \\end { verbatim } spaced', '\\begin{verbatim}x\\end { verbatim }'.repeat(2) + '\\begin{verbatim}'.repeat(20000)],
   ['\\newcommand{\\a}[ without ]', '\\newcommand{\\a}['.repeat(20000)],
   // a $ that never closes (braces TeX does not count, inside \verb or verbatim): 6.7 s and 2.3 s
-  ['$ then \\verb|{|', '$\\verb|{|'.repeat(22000)], ['$ then a verbatim with {', '$\\begin{verbatim}{\\end{verbatim}'.repeat(6000)],
+  ['$ then \\verb|{|', '$\\verb|{|'.repeat(22000)], ['the same, 990 KB', '$\\verb|{|'.repeat(110000)], ['$ then a verbatim with {', '$\\begin{verbatim}{\\end{verbatim}'.repeat(6000)],
   ['$$ then \\verb|$|', '$$\\verb|$|'.repeat(15000)],
   // 8000 raw environments of 8000 names, none ended (2.3 s in JavaScript, 4.6 s in the core)
   ['8000 raw environments of different names without their end', (() => { const nm = (k) => 'e' + k.toString(26).replace(/[0-9]/g, (d) => 'qrstuvwxyz'[d]); let u = '', d = ''; for (let k = 0; k < 8000; k++) { u += '\\begin{' + nm(k) + '}'; d += '\\newenvironment{' + nm(k) + '}{\\tikz}{}\n'; } return u + d; })()]]) {
@@ -170,10 +170,42 @@ for (const [name, s] of [['\\( without \\)', 'a\\('.repeat(40000)], ['\\[ withou
   check(name + ': JavaScript in ' + tJS.toFixed(0) + ' ms, the core in ' + tC.toFixed(0) + ' ms (under 1500 each), the same tree', tJS < 1500 && tC < 1500 && js === c, [tJS, tC, js === c]);
 }
 
-// a formula as long as the bound closes; one longer does not, in both parsers alike
-const atBound = (len) => '$' + 'x'.repeat(len - 1) + '$ y' + ' z'.repeat(400);
-check('a $ closes within ' + MATH_SCAN + ' code units, not past them, the same in both', same('bound in', atBound(MATH_SCAN), {}) && same('bound out', atBound(MATH_SCAN + 1), {})
-  && parseJS(atBound(MATH_SCAN), {})[0].t === 'math' && parseJS(atBound(MATH_SCAN + 1), {})[0].t === 'special');
+// a formula of any length closes while the failed scans are under their budget: a polynomial of
+// computer algebra in $$, 8879 units on one line, is one formula (it was broken text under a fixed
+// bound); after the budget is spent, a $ closes within MATH_SCAN units, in both parsers alike
+const poly = (() => { let t = '$$', k = 0; while (t.length < 8870) { t += (k % 3 ? ' + ' : ' - ') + (k * 37 % 89 + 1) + ' x^{' + (k % 17) + '} y^{' + (k % 11) + '}'; k++; } return t + ' $$'; })();
+const polyDoc = 'The result is\n' + poly + '\nas computed.' + pad0();
+function pad0() { return ' '.repeat(700); }
+const pt = parseJS(polyDoc, {});
+check('a ' + (poly.length - 4) + ' unit $$ polynomial is one formula, the same in both', poly.length - 4 >= 8870 && same('polynomial', polyDoc, {}) && pt.filter((x) => x.t === 'math').length === 1 && !pt.some((x) => x.err));
+// (each $ of it scans to the blank line: 9 units times 1 + 2 + ... + 800, past the budget)
+const spent = '$\\verb|{|'.repeat(800) + '\n\n';
+const atBound = (len) => spent + '$' + 'x'.repeat(len - 1) + '$ y' + ' z'.repeat(400);
+check('once ' + MATH_BUDGET + ' units of failed scans are spent, a $ closes within ' + MATH_SCAN + ' units, not past them, the same in both',
+  same('bound in', atBound(MATH_SCAN), {}) && same('bound out', atBound(MATH_SCAN + 1), {})
+  && parseJS(atBound(MATH_SCAN), {}).some((x) => x.t === 'math' && x.ie - x.is === MATH_SCAN - 1) && !parseJS(atBound(MATH_SCAN + 1), {}).some((x) => x.t === 'math' && x.ie - x.is === MATH_SCAN));
+check('before then the same formula closes', same('unspent', atBound(MATH_SCAN + 1).slice(spent.length), {}) && parseJS(atBound(MATH_SCAN + 1).slice(spent.length), {})[0].t === 'math');
+
+// ---- every environment name the repository and the corpus write --------------------------------
+// (parseJS keeps no name list of its own beside PARSE_TABLES; a list added inline on one side, as a
+// branch editing parseEnv might, fails here for any name a test, a fixture, the editor's code or
+// the corpus writes)
+const envNames = new Set();
+const harvest = (t) => { for (const m of t.matchAll(/\\+begin\s*\{([^{}\\\n]{1,40})\}/g)) envNames.add(m[1].trim()); };
+const srcFiles = [];
+const walkAll = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { if (e.name.startsWith('.') || e.name === 'node_modules') continue; const p = path.join(d, e.name); if (e.isDirectory()) walkAll(p); else if (/\.(tex|sty|cls|bib|js|mjs|py)$/.test(e.name)) srcFiles.push(p); } };
+for (const d of ['src', 'test', 'sample', 'dev/bench']) walkAll(path.join(root, d));
+if (process.argv[2]) walkAll(process.argv[2]);
+for (const f of srcFiles) harvest(fs.readFileSync(f, 'utf8'));
+// and every word parser.js quotes: a list of names written inline in parseJS is in here too
+for (const m of fs.readFileSync(path.join(root, 'src/parser.js'), 'utf8').matchAll(/'([A-Za-z@*]{1,40})'/g)) envNames.add(m[1]);
+console.log('environment names: ' + envNames.size);
+let envOk = 0, envN = 0;
+for (const k of envNames) for (const t of ['\\begin{' + k + '}[o]{m}{m}x\\end{' + k + '}', '\\begin{' + k + '}x', '\\begin{' + k + '} [o] y \\end { ' + k + ' } z']) {
+  envN++;
+  if (same('environment ' + JSON.stringify(k), pad0() + t + pad0(), scanUserSigs(t, {}))) envOk++;
+}
+check('every environment name written in the repository' + (process.argv[2] ? ' and the corpus' : '') + ' (' + envNames.size + ' names), the same in both (' + envOk + ' of ' + envN + ')', envOk === envN && envNames.size > 50);
 
 // ---- every entry of every table the core reads -----------------------------------------------------
 // (a merge that changes a table or the algorithm on one side only fails here: each name as a

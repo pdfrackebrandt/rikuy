@@ -128,7 +128,7 @@ const PLAIN_ENVS = new Set(['document', 'abstract', 'center', 'quote', 'quotatio
 // What the C++ parser (tex/native/core/parse.cc) reads at load: the tables are kept here only.
 export const PARSE_TABLES = { SIG, CHARS, ACCENTS, ENV_SIG, MATH_ENVS, RAW_ENVS, DEF_CMDS, ENV_DEF, DIM_CMDS, PLAIN_ENVS };
 
-export const MATH_SCAN = 5000;
+export const MATH_BUDGET = 2000000, MATH_SCAN = 1000;
 const isLetter = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 const isWS = (c) => c === ' ' || c === '\t' || c === '\n' || c === '\r';
 
@@ -258,14 +258,20 @@ export function parseJS(src, userSigs) {
     return { t: 'group', s, e, is: s + 1, ie, nodes };
   }
 
-  // A $ or $$ closes within MATH_SCAN code units or not at all: the longest formula of the corpus's
-  // documents is 728, and a scan that ran to the end of the text from every $ that never closes
-  // (braces TeX does not count, in a \verb or a verbatim, keep it from closing) stalled the page
-  // for seconds on a crafted file. (parse.cc reads the same bound.)
+  // A scan that finds its $ moves i past the formula, so those scans cost the text's length at
+  // most; a scan from a $ that never closes (braces TeX does not count, in a \verb or a verbatim,
+  // keep it from closing) leaves i where it was, and one from every such $ to the end of the text
+  // stalled the page for seconds on a crafted file. So the units failed scans read are counted,
+  // and once they pass MATH_BUDGET in a parse a $ closes within MATH_SCAN units or not at all. A
+  // document gets there only through hundreds of $ that never close; until then a formula of any
+  // length closes (computer algebra's $$ polynomials run to thousands). (parse.cc does the same.)
+  let failedScan = 0;
   function findClosingDollar(from, double) {
     let depth = 0;
-    const end = Math.min(n, from + MATH_SCAN);
-    for (let j = from; j < end; j++) {
+    const end = failedScan > MATH_BUDGET ? Math.min(n, from + MATH_SCAN) : n;
+    let j = from;
+    const failed = () => { if (failedScan <= MATH_BUDGET) failedScan += j - from; return -1; };
+    for (; j < end; j++) {
       const c = src[j];
       if (c === '\\') { j++; continue; }
       if (c === '{') depth++;
@@ -274,13 +280,13 @@ export function parseJS(src, userSigs) {
       else if (c === '\n') {
         let k = j + 1;
         while (k < n && (src[k] === ' ' || src[k] === '\t' || src[k] === '\r')) k++;
-        if (src[k] === '\n') return -1; // blank line ends math (TeX error)
+        if (src[k] === '\n') return failed(); // blank line ends math (TeX error)
       } else if (c === '$' && depth <= 0) {
         if (double) { if (src[j + 1] === '$') return j; }
         else return j;
       }
     }
-    return -1;
+    return failed();
   }
 
   function parseDollar() {

@@ -27,7 +27,7 @@ enum { STOP_NONE, STOP_BRACE, STOP_BRACKET };
 // the deepest nesting of groups, environments and arguments parsed here; past it JavaScript does
 // the work (the wasm stack is the page's JavaScript stack)
 const int DEPTH = 200;
-const int MATH_SCAN = 5000;   // parser.js's MATH_SCAN
+const int MATH_BUDGET = 2000000, MATH_SCAN = 1000;   // parser.js's
 
 // ---- the tables, from parser.js ------------------------------------------------------------
 // One string: sections split by U+0003, entries by U+0001, a key and its value by U+0002.
@@ -442,11 +442,15 @@ struct Parser {
     return { N_GROUP, e };
   }
 
-  // a $ or $$ closes within MATH_SCAN code units or not at all (parser.js says why)
-  int findClosingDollar(int from, bool dbl) const {
+  // the units failed scans read, and past MATH_BUDGET a $ closes within MATH_SCAN units or not at
+  // all (parser.js says why)
+  int failedScan = 0;
+  int failed(int j, int from) { if (failedScan <= MATH_BUDGET) failedScan += j - from; return -1; }
+  int findClosingDollar(int from, bool dbl) {
     int d = 0;
-    const int end = from + MATH_SCAN < n ? from + MATH_SCAN : n;
-    for (int j = from; j < end; j++) {
+    const int end = failedScan > MATH_BUDGET ? (from + MATH_SCAN < n ? from + MATH_SCAN : n) : n;
+    int j = from;
+    for (; j < end; j++) {
       int c = src[j];
       if (c == '\\') { j++; continue; }
       if (c == '{') d++;
@@ -455,13 +459,13 @@ struct Parser {
       else if (c == '\n') {
         int k = j + 1;
         while (k < n && (src[k] == ' ' || src[k] == '\t' || src[k] == '\r')) k++;
-        if (at(k) == '\n') return -1;
+        if (at(k) == '\n') return failed(j, from);
       } else if (c == '$' && d <= 0) {
         if (dbl) { if (at(j + 1) == '$') return j; }
         else return j;
       }
     }
-    return -1;
+    return failed(j, from);
   }
 
   NodeInfo parseDollar() {
