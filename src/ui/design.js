@@ -72,22 +72,23 @@ export const methods = {
       if (set) { for (const k of FAMILY) if (!(k in sf)) L[k] = had[k]; if (!('color' in sf)) L.color = had.color; }
       if (C) L.color = C.hex ? 'accent' : null;
       if (Fo) Object.assign(L, Fo.set);
-      if (S.accent && !C && !accentOf(src) && L.color === 'accent') L.color = null;
       L.before = had.before; L.after = had.after;
-      want[cmd] = Object.keys(D).every((k) => (L[k] ?? null) === (D[k] ?? null)) ? null : L;
+      // (LaTeX's own set takes the heading's lines away; any other change writes the fields that
+      // changed alone, so a hand written spacing or label stays)
+      want[cmd] = set === 'latex' && Object.keys(D).every((k) => k === 'before' || k === 'after' || (L[k] ?? null) === (D[k] ?? null)) ? null : L;
     }
-    const ed = headLookEdits(src, want, {}) || [];
+    const ed = headLookEdits(src, want, this.headOpts()) || [];
     let acc = [];
     if (C) {
       // (Black takes the accent away where nothing else of the document uses it)
       if (C.hex) acc = accentEdits(src, C.hex) || [];
       else if (!this.accentUsedElsewhere()) acc = accentEdits(src, null) || [];
     } else if (Object.values(want).some((L) => L && L.color === 'accent') && !accentOf(src)) acc = accentEdits(src, COLORS[1].hex) || [];
-    const usesColor = Object.values(want).some((L) => L && L.color) || (C && C.hex);
-    const any = Object.values(want).some(Boolean);
-    const pk = [...(any ? ['titlesec'] : []), ...(usesColor ? ['xcolor'] : [])];
+    // (titlesec and xcolor only for lines written; the titlesec line away with the last of them)
+    const pk = this.headPackages(src, ed);
+    if (acc.some((x) => /definecolor/.test(x.t)) && !pk.some((x) => /xcolor/.test(x.t))) pk.push(...this.packageEdits(['xcolor']));
     const edits = joinInserts([...ed, ...acc].map((x) => ({ f, ...x })));
-    return edits.length ? [...edits, ...(pk.length ? this.packageEdits(pk) : [])] : [];
+    return edits.length ? [...edits, ...pk] : [];
   },
   // whether the document uses its accent colour anywhere but its own line and the headings' lines
   accentUsedElsewhere() {

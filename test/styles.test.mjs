@@ -300,13 +300,25 @@ ok('numbered and unnumbered: the star after the name, and secnumdepth in the pre
   const off = applyEdits(t, numberingEdits(t, true, false));
   assert.ok(off.includes('\\setcounter{secnumdepth}{0}\n\\begin{document}'));
   assert.equal(applyEdits(off, numberingEdits(off, false, false)), t);
-  assert.deepEqual(numberingEdits(off, true, false), []);
   assert.ok(applyEdits(t, numberingEdits(t, true, true)).includes('{secnumdepth}{-1}'));
-  // a hand written one with another number is changed where it stands; one inside a comment is none
-  const hand = wrap('x', '\\setcounter{secnumdepth}{2} % deeper\n');
-  assert.ok(applyEdits(hand, numberingEdits(hand, true, false)).includes('\\setcounter{secnumdepth}{0} % deeper'));
+  // review H6: the author's own line is never edited: off writes Rikuy's after it, on takes only that away
+  for (const [pre, ch] of [['\\setcounter{secnumdepth}{2} % deeper\n', false], ['\\setcounter{secnumdepth}{0}\n', true]]) {
+    const hand = wrap('x', pre).replace('{article}', ch ? '{report}' : '{article}');
+    const o = applyEdits(hand, numberingEdits(hand, true, ch));
+    assert.ok(o.includes(pre + '\\setcounter{secnumdepth}{' + (ch ? -1 : 0) + '}\n\\begin{document}'), o);
+    assert.equal(applyEdits(o, numberingEdits(o, false, ch)), hand);
+  }
+  // a comment is no line; memoir's pair, since its \mainmatter sets the depth again
   const com = wrap('x', '% \\setcounter{secnumdepth}{0}\n');
   assert.ok(applyEdits(com, numberingEdits(com, true, false)).includes('% \\setcounter{secnumdepth}{0}\n\\setcounter{secnumdepth}{0}\n'));
+  const mem = wrap('x').replace('{article}', '{memoir}'), mo = applyEdits(mem, numberingEdits(mem, true, true, true));
+  assert.ok(mo.includes('\\setsecnumdepth{none}\\maxsecnumdepth{none}\n\\begin{document}'), mo);
+  assert.equal(applyEdits(mo, numberingEdits(mo, false, true, true)), mem);
+  // numbers off in another file (no line here to take away): on writes the class's depth
+  assert.ok(applyEdits(wrap('x'), numberingEdits(wrap('x'), false, false)).includes('\\setcounter{secnumdepth}{3}\n\\begin{document}'));
+  // CRLF kept
+  const cr = wrap('x').replace(/\n/g, '\r\n');
+  assert.ok(applyEdits(cr, numberingEdits(cr, true, false)).includes('\\setcounter{secnumdepth}{0}\r\n\\begin{document}'));
   assert.equal(numberingEdits('no preamble', true, false), null);
 });
 

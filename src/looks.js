@@ -99,8 +99,11 @@ export function readFormat(fmt, base) {
   return L;
 }
 
-// Every \titleformat, \titleformat* and \titlespacing(*) of the preamble, by heading: { cmd: { fmt:
-// [s, e) of its line or command, look, spacing: [s, e) } }. Lines past the 300th are not read.
+// Every \titleformat, \titleformat* and \titlespacing(*) of the preamble, by heading, in their
+// order (TeX takes the last): { cmd: { fmts: [{ s, e, star, args }], spacings: [{ s, e, star, args }],
+// all } }. Each argument is kept as { s, e, t } (its text between its brackets, [s, e) in the
+// source), or null where it is not there, so a change to one field rewrites that argument alone
+// and every other character of a hand written line stays. Lines past the 300th are not read.
 export function titleLines(src, end) {
   if (end == null) end = preambleEnd(src);
   const pre = stripComments(src.slice(0, end < 0 ? Math.min(src.length, MAX) : end));
@@ -115,40 +118,38 @@ export function titleLines(src, end) {
     const cmd = pre.slice(i + 1, z - 1).trim().replace(/^\\/, '');
     if (!/^(part|chapter|(?:sub){0,2}section|(?:sub)?paragraph)$/.test(cmd)) continue;
     i = z;
-    const args = [], opts = [];
-    const take = (want) => { i = skipSp(pre, i); if (pre[i] !== want) return null; const e = group(pre, i); if (e < 0) return null; const a = pre.slice(i + 1, e - 1); i = e; return a; };
-    // (each one's range kept: Modify replaces the first and takes the others away; the last says how TeX sets it)
-    const rec = out[cmd] || (out[cmd] = { all: [] });
+    const head = i;
+    // (an argument that is not there leaves i where it was: the line break before the next line stays out of the range)
+    const take = (want) => { const j = skipSp(pre, i); if (pre[j] !== want) return null; const e = group(pre, j); if (e < 0) return null; i = e; return { s: j + 1, e: e - 1, t: pre.slice(j + 1, e - 1) }; };
+    const rec = out[cmd] || (out[cmd] = { fmts: [], spacings: [], all: [] });
     if (m[1] === 'titleformat' && m[2]) {
       const f = take('{');
-      if (f == null) continue;
-      rec.fmt = { s: m.index, e: i, star: true };
-      rec.all.push({ s: m.index, e: i });
-      rec.format = f; rec.shape = rec.label = rec.afterCode = undefined;
+      if (!f) continue;
+      rec.fmts.push({ s: m.index, e: i, star: true, head, args: { format: f } });
     } else if (m[1] === 'titleformat') {
       const shape = take('[');
+      const A = [];
       // ({format}{label}{sep}{before}, then [after])
-      for (let a = 0; a < 4; a++) { const g = take('{'); if (g == null) break; args.push(g); }
-      if (args.length < 4) continue;
+      for (let a = 0; a < 4; a++) { const g = take('{'); if (!g) break; A.push(g); }
+      if (A.length < 4) continue;
       const after = take('[');
-      if (after != null) opts.push(after);
-      rec.fmt = { s: m.index, e: i, star: false };
-      rec.all.push({ s: m.index, e: i });
-      rec.format = args[0]; rec.shape = shape; rec.label = args[1]; rec.sep = args[2]; rec.beforeCode = args[3]; rec.afterCode = after;
+      rec.fmts.push({ s: m.index, e: i, star: false, head, args: { shape, format: A[0], label: A[1], sep: A[2], before: A[3], after } });
     } else {
-      for (let a = 0; a < 3; a++) { const g = take('{'); if (g == null) break; args.push(g); }
-      if (args.length < 3) continue;
+      const A = [];
+      for (let a = 0; a < 3; a++) { const g = take('{'); if (!g) break; A.push(g); }
+      if (A.length < 3) continue;
       const right = take('[');
-      rec.spacing = { s: m.index, e: i };
-      rec.all.push({ s: m.index, e: i });
-      rec.space = { left: args[0].trim(), before: args[1].trim(), after: args[2].trim(), right };
+      rec.spacings.push({ s: m.index, e: i, star: !!m[2], args: { left: A[0], before: A[1], after: A[2], right } });
     }
+    rec.all.push({ s: m.index, e: i });
   }
   return out;
 }
 // the first length of a skip ("12pt plus 2pt" is 12pt), in points, or null
 export function lengthPt(t) {
   const m = /^\s*(-?\d*\.?\d+)\s*(pt|bp|mm|cm|in|ex|em|pc)?/.exec(String(t || ''));
+  // (titlesec's *4 and a register like \parskip are no length read here: null, and kept as written)
+  if (/^\s*[*\\]/.test(String(t || ''))) return null;
   if (!m) return null;
   const f = { pt: 1, bp: 72.27 / 72, mm: 72.27 / 25.4, cm: 72.27 / 2.54, in: 72.27, pc: 12, ex: 4.3, em: 10 }[m[2] || 'pt'];
   return Math.round(parseFloat(m[1]) * f * 100) / 100;
@@ -163,14 +164,20 @@ export function readHeadLooks(src, cls) {
   for (const [cmd, r] of Object.entries(T)) {
     let L = defaultLook(cmd, koma);
     if (!L) continue;
-    // (a format replaces the class's whole format: what it does not say is the text's own)
-    if (r.format != null) L = readFormat(r.format, { ...L, size: 'normalsize', bf: false, it: false, sc: false, sf: false, tt: false });
-    if (r.fmt && !r.fmt.star) {
-      L.shape = (r.shape || '').trim() || 'hang';
-      L.num = !!(r.label && r.label.trim());
-      if (r.afterCode && /\\titlerule/.test(r.afterCode)) L.rule = true;
+    for (const f of r.fmts) {
+      // (a format replaces the class's whole format: what it does not say is the text's own; the
+      // short form keeps the shape, label and rule the line before it gave)
+      const keep = { shape: L.shape, num: L.num, rule: L.rule };
+      L = readFormat(f.args.format.t, { ...L, size: 'normalsize', bf: false, it: false, sc: false, sf: false, tt: false, color: null, align: 'left', extra: undefined });
+      if (f.star) Object.assign(L, keep);
+      else {
+        L.shape = (f.args.shape ? f.args.shape.t : '').trim() || 'hang';
+        L.num = !!f.args.label.t.trim();
+        L.rule = !!(f.args.after && /\\titlerule/.test(f.args.after.t));
+      }
     }
-    if (r.space) { L.before = lengthPt(r.space.before); L.after = lengthPt(r.space.after); }
+    const sp = r.spacings[r.spacings.length - 1];
+    if (sp) { L.before = lengthPt(sp.args.before.t); L.after = lengthPt(sp.args.after.t); }
     out[cmd] = L;
   }
   if (koma) {
@@ -208,64 +215,124 @@ export function formatOf(L) {
 }
 const LABEL = (cmd) => (cmd === 'chapter' ? '\\chaptertitlename\\ \\thechapter' : '\\the' + cmd);
 const fmtPt = (v) => (Math.round(v * 10) / 10) + 'pt';
-// The lines of one heading's look: \titleformat* where the format alone changes, \titleformat in
-// full where the shape, the rule or the number does; \titlespacing* where a space is set
-export function lookLines(cmd, L, koma) {
+const FMT = ['size', 'bf', 'it', 'sc', 'sf', 'tt', 'color', 'align', 'extra'];
+const SPACE_DEF = { chapter: [50, 40], section: [3.5 * 4.3, 2.3 * 4.3], subsection: [3.25 * 4.3, 1.5 * 4.3], subsubsection: [3.25 * 4.3, 1.5 * 4.3], paragraph: [3.25 * 4.3, 10], subparagraph: [3.25 * 4.3, 10] };
+// The full \titleformat of a look: its label and before code under titlesec's explicit option take
+// the title as #1, which every line written then must place
+function fullLine(cmd, L, explicit) {
+  const shape = L.shape || 'hang', sep = shape === 'display' ? '20pt' : '1em';
+  const label = L.num === false ? '' : LABEL(cmd);
+  const before = (shape === 'display' && cmd === 'chapter' ? '\\Huge' : '') + (explicit ? (shape === 'display' && cmd === 'chapter' ? ' ' : '') + '#1' : '');
+  return '\\titleformat{\\' + cmd + '}[' + shape + ']{' + formatOf(L) + '}{' + label + '}{' + sep + '}{' + before + '}' + (L.rule ? '[\\titlerule]' : '');
+}
+// The lines of one heading's look, where it has none yet: \titleformat* where the format alone
+// changes (never under explicit, where it stops TeX), \titleformat in full where the shape, the
+// rule or the number does; \titlespacing* where a space is set
+export function lookLines(cmd, L, koma, explicit) {
   const D = defaultLook(cmd, koma);
   if (!L || !D) return [];
   const out = [];
   const shaped = (L.shape || 'hang') !== D.shape || L.rule || L.num === false;
-  const fmtSame = ['size', 'bf', 'it', 'sc', 'sf', 'tt', 'color', 'align'].every((k) => (L[k] ?? null) === (D[k] ?? null)) && !L.extra;
-  if (shaped) {
-    const shape = L.shape || 'hang', sep = shape === 'display' ? '20pt' : '1em';
-    const label = L.num === false ? '' : LABEL(cmd);
-    out.push('\\titleformat{\\' + cmd + '}[' + shape + ']{' + formatOf(L) + '}{' + label + '}{' + sep + '}{' + (shape === 'display' && cmd === 'chapter' ? '\\Huge' : '') + '}' + (L.rule ? '[\\titlerule]' : ''));
-  } else if (!fmtSame) out.push('\\titleformat*{\\' + cmd + '}{' + formatOf(L) + '}');
+  const fmtSame = FMT.every((k) => (L[k] ?? null) === (D[k] ?? null));
+  if (shaped || (explicit && !fmtSame)) out.push(fullLine(cmd, L, explicit));
+  else if (!fmtSame) out.push('\\titleformat*{\\' + cmd + '}{' + formatOf(L) + '}');
   if (L.before != null || L.after != null) {
-    const def = { chapter: [50, 40], section: [3.5 * 4.3, 2.3 * 4.3], subsection: [3.25 * 4.3, 1.5 * 4.3], subsubsection: [3.25 * 4.3, 1.5 * 4.3], paragraph: [3.25 * 4.3, 10], subparagraph: [3.25 * 4.3, 10] }[cmd] || [12, 6];
+    const def = SPACE_DEF[cmd] || [12, 6];
     out.push('\\titlespacing*{\\' + cmd + '}{0pt}{' + fmtPt(L.before ?? def[0]) + '}{' + fmtPt(L.after ?? def[1]) + '}');
   }
   return out;
 }
 
-// The edits that give the headings these looks ({ cmd: look, or null for LaTeX's own }): each
-// heading's \titleformat and \titlespacing lines replaced where they are (the first one; others of
-// the same heading go), new ones after the last of them or at the preamble's end. A line that
-// holds more than the command keeps the rest. [] where nothing changes; null with no preamble.
+// the line ending a file uses (a CRLF file keeps CRLF in what is written)
+export const eolOf = (src) => (/\r\n/.test(src.slice(0, 4000)) ? '\r\n' : '\n');
+
+// The edits that give the headings these looks ({ cmd: look, or null for LaTeX's own }). Only what
+// changed is written: a heading's last \titleformat and \titlespacing (the ones TeX takes) get
+// the arguments of the fields that changed and nothing else, so a hand written line's label,
+// separator, before and after code, glue and titlesec's *4 stay as written; a field the dialog
+// did not change writes nothing. A heading with no line gets new ones, after the last titlesec
+// line or at the preamble's end. LaTeX's own (null) takes every line of the heading away.
+// o: { cls, koma, explicit (titlesec's option) }. [] where nothing changes; null with no preamble.
 export function headLookEdits(src, want, o = {}) {
   const end = preambleEnd(src);
   if (end < 0) return null;
-  const T = titleLines(src, end), edits = [], add = [];
+  const T = titleLines(src, end), edits = [], add = [], was = readHeadLooks(src, o.cls || 'article');
   let last = -1;
   for (const r of Object.values(T)) for (const x of r.all) last = Math.max(last, x.e);
   // a range as its whole line where nothing else stands on it
   const whole = (x) => {
     const ls = src.lastIndexOf('\n', x.s - 1) + 1, le = src.indexOf('\n', x.e);
     const lineEnd = le < 0 ? src.length : le;
-    return src.slice(ls, x.s).trim() === '' && src.slice(x.e, lineEnd).trim() === '' ? { s: ls, e: le < 0 ? src.length : le + 1, line: true } : { s: x.s, e: x.e, line: false };
+    return src.slice(ls, x.s).trim() === '' && src.slice(x.e, lineEnd).trim() === '' ? { s: ls, e: le < 0 ? src.length : le + 1 } : { s: x.s, e: x.e };
   };
+  const arg = (a, t) => { if (a.t !== t) edits.push({ s: a.s, e: a.e, t }); };
   for (const [cmd, L] of Object.entries(want)) {
-    const lines = L ? lookLines(cmd, L, o.koma) : [];
-    const r = T[cmd] || { all: [] };
-    const have = r.all.map(whole).sort((a, b) => a.s - b.s);
-    const cur = have.map((x) => src.slice(x.s, x.e).trim()).join('\n');
-    if (cur === lines.join('\n')) continue;
-    if (have.length) {
-      const nl = src.slice(have[0].s, have[0].e).endsWith('\r\n') ? '\r\n' : '\n';
-      edits.push({ s: have[0].s, e: have[0].e, t: lines.length ? lines.join(nl) + (have[0].line ? nl : '') : have[0].line ? '' : '' });
-      for (const x of have.slice(1)) edits.push({ s: x.s, e: x.e, t: '' });
-    } else if (lines.length) add.push(...lines);
+    const r = T[cmd] || { fmts: [], spacings: [], all: [] };
+    if (!L) { for (const x of r.all) edits.push({ ...whole(x), t: '' }); continue; }
+    const D = defaultLook(cmd, o.koma), W = was[cmd] || D;
+    if (!D) continue;
+    const ch = (k) => (L[k] ?? null) !== (W[k] ?? null);
+    const fmtCh = FMT.some(ch), shapeCh = (L.shape || 'hang') !== (W.shape || 'hang'), ruleCh = !!L.rule !== !!W.rule, numCh = (L.num !== false) !== (W.num !== false);
+    const f = r.fmts[r.fmts.length - 1];
+    // (back to the class's own look: a line that says only that goes, as Rikuy writes it or the short form)
+    const plain = FMT.every((k) => (L[k] ?? null) === (D[k] ?? null)) && (L.shape || 'hang') === D.shape && !L.rule && L.num !== false;
+    const ownLine = (x) => x.star || ((!x.args.shape || /^\s*(hang|display)\s*$/.test(x.args.shape.t)) && /^\s*(\\the[a-z]+|\\chaptertitlename\\ \\thechapter)?\s*$/.test(x.args.label.t)
+      && /^\s*(1em|20pt)\s*$/.test(x.args.sep.t) && /^\s*(\\Huge)?\s*(#1)?\s*$/.test(x.args.before.t) && (!x.args.after || /^\s*\\titlerule\s*$/.test(x.args.after.t)));
+    if ((fmtCh || shapeCh || ruleCh || numCh) && plain && f && ownLine(f)) edits.push({ ...whole(f), t: '' });
+    else if (fmtCh || shapeCh || ruleCh || numCh) {
+      if (f && !f.star) {
+        const A = f.args;
+        if (fmtCh) arg(A.format, formatOf(L));
+        if (numCh) arg(A.label, L.num === false ? '' : LABEL(cmd));
+        if (shapeCh) { if (A.shape) arg(A.shape, L.shape || 'hang'); else edits.push({ s: f.head, e: f.head, t: '[' + (L.shape || 'hang') + ']' }); }
+        if (ruleCh) {
+          if (L.rule) { if (A.after) arg(A.after, A.after.t + '\\titlerule'); else edits.push({ s: f.e, e: f.e, t: '[\\titlerule]' }); }
+          else if (A.after) {
+            const t = A.after.t.replace(/\\titlerule(?:\s*\[[^\]]{0,40}\])?/, '');
+            // (an after code that held the rule alone goes with its brackets)
+            if (t.trim()) arg(A.after, t); else edits.push({ s: A.after.s - 1, e: A.after.e + 1, t: '' });
+          }
+        }
+      } else if (f && f.star && !shapeCh && !ruleCh && !numCh && !o.explicit) arg(f.args.format, formatOf(L));
+      else if (f) edits.push({ s: f.s, e: f.e, t: fullLine(cmd, L, o.explicit) });
+      else add.push(...lookLines(cmd, { ...L, before: null, after: null }, o.koma, o.explicit));
+    }
+    if (ch('before') || ch('after')) {
+      const sp = r.spacings[r.spacings.length - 1], def = SPACE_DEF[cmd] || [12, 6];
+      if (sp) { if (ch('before') && L.before != null) arg(sp.args.before, fmtPt(L.before)); if (ch('after') && L.after != null) arg(sp.args.after, fmtPt(L.after)); }
+      else if (L.before != null || L.after != null) add.push('\\titlespacing*{\\' + cmd + '}{0pt}{' + fmtPt(L.before ?? def[0]) + '}{' + fmtPt(L.after ?? def[1]) + '}');
+    }
   }
   if (add.length) {
+    const nl = eolOf(src);
     if (last >= 0) {
       const le = src.indexOf('\n', last), at = le < 0 ? src.length : le + 1;
-      edits.push({ s: at, e: at, t: add.join('\n') + '\n' });
+      edits.push({ s: at, e: at, t: (le < 0 ? nl : '') + add.join(nl) + (le < 0 ? '' : nl) });
     } else {
-      const at = src.lastIndexOf('\n', end - 1) + 1, lead = at < end && /\S/.test(src.slice(at, end)) ? '\n' : '', s = lead ? end : at;
-      edits.push({ s, e: s, t: lead + add.join('\n') + '\n' });
+      const at = src.lastIndexOf('\n', end - 1) + 1, lead = at < end && /\S/.test(src.slice(at, end)) ? nl : '', s = lead ? end : at;
+      edits.push({ s, e: s, t: lead + add.join(nl) + nl });
     }
   }
   return edits;
+}
+
+// How \@startsection sets \paragraph and \subparagraph where the preamble or a class or package of
+// the project redefines them: a positive after skip (its fifth argument) puts the heading on a line
+// of its own, a negative one runs it in. { paragraph: 'hang' | 'runin' }. Bounded scans.
+export function startsectionShapes(texts) {
+  const out = {};
+  for (const t of texts.slice(0, 20)) {
+    const pre = stripComments(String(t).slice(0, MAX));
+    const re = /\\(?:re)?newcommand\*?\s*\{?\s*\\(paragraph|subparagraph)\s*\}?\s*\{\s*\\@startsection\s*\{\s*(?:sub)?paragraph\s*\}/g;
+    let m;
+    for (let k = 0; (m = re.exec(pre)) && k < 20; k++) {
+      let i = m.index + m[0].length, n = 0, fifth = null;
+      // {level}{indent}{before}{after}: the fifth of \@startsection's, the fourth after its name
+      for (; n < 4; n++) { i = skipSp(pre, i); if (pre[i] !== '{') break; const e = group(pre, i); if (e < 0) break; if (n === 3) fifth = pre.slice(i + 1, e - 1); i = e; }
+      if (fifth != null) out[m[1]] = /^\s*-/.test(fifth) ? 'runin' : 'hang';
+    }
+  }
+  return out;
 }
 
 // KOMA-Script: the headings' font for all of them, \setkomafont{disposition}{…} on a line of its
@@ -287,7 +354,8 @@ export function komaFontEdits(src, fmt) {
   }
   if (fmt == null) return [];
   const at = src.lastIndexOf('\n', end - 1) + 1, lead = at < end && /\S/.test(src.slice(at, end)) ? '\n' : '', s = lead ? end : at;
-  return [{ s, e: s, t: lead + '\\setkomafont{disposition}{' + fmt + '}\n' }];
+  const nl = eolOf(src);
+  return [{ s, e: s, t: (lead ? nl : '') + '\\setkomafont{disposition}{' + fmt + '}' + nl }];
 }
 
 // The accent colour: \definecolor{accent}{HTML}{hex} written once (changed where it is), or
@@ -308,7 +376,8 @@ export function accentEdits(src, hex) {
   }
   if (hex == null) return [];
   const at = src.lastIndexOf('\n', end - 1) + 1, lead = at < end && /\S/.test(src.slice(at, end)) ? '\n' : '', s = lead ? end : at;
-  return [{ s, e: s, t: lead + '\\definecolor{accent}{HTML}{' + hex + '}\n' }];
+  const nl = eolOf(src);
+  return [{ s, e: s, t: (lead ? nl : '') + '\\definecolor{accent}{HTML}{' + hex + '}' + nl }];
 }
 // the accent colour the preamble defines, as #RRGGBB, or null
 export function accentOf(src) {

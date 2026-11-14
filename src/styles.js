@@ -156,7 +156,7 @@ export function restyle(src, b, to, p) {
     else {
       // a comment on the last line would take the closing brace with it
       const last = src.slice(lineStart(src, b.we), b.we);
-      A = '\\' + to + '{'; Z = commentIn(last) >= 0 ? '\n}' : '}';
+      A = '\\' + to + '{'; Z = commentIn(last) >= 0 ? eolAt(src, b.we) + '}' : '}';
     }
   } else if (isEnvStyle(to)) {
     const name = envOf(to);
@@ -175,30 +175,38 @@ export function applyEdits(src, edits) {
 }
 
 // ---- the preamble's lines for headings -----------------------------------------------------------
-// The edits that turn the document's heading numbers off (\setcounter{secnumdepth}{0}, -1 in a
-// class with chapters, whose \chapter is level 0) or on again: a line of that kind already in the
-// preamble changes its number; one Rikuy wrote alone on its line goes again whole, so off and on
-// give the bytes of before. null where the text has no preamble.
-const SECNUM = /\\setcounter\s*\{\s*secnumdepth\s*\}\s*\{\s*(-?\d{1,3})\s*\}/g;
-export function numberingEdits(src, off, chapters) {
+// The edits that turn the document's heading numbers off or on again. Off writes a line of
+// Rikuy's own at the preamble's end (\setcounter{secnumdepth}{0}, -1 in a class with chapters,
+// whose \chapter is level 0; memoir's \setsecnumdepth{none} and \maxsecnumdepth{none}, since its
+// \mainmatter sets the depth again), after any the author wrote, which stay: the last one counts.
+// On takes the last such line away where it turns numbers off and stands alone on its line (so
+// the author's own \setcounter{secnumdepth}{2} before it counts again); with none to take away
+// (the line is in another file) it writes the class's depth at the preamble's end.
+// null where the text has no preamble; [] where nothing changes.
+const SECNUM = /\\(?:setcounter\s*\{\s*secnumdepth\s*\}\s*\{\s*(-?\d{1,3})\s*\}|(setsecnumdepth|maxsecnumdepth)\s*\{\s*([a-z]{1,20})\s*\})/g;
+const DEPTH = { book: -2, part: -1, chapter: 0, section: 1, subsection: 2, subsubsection: 3, paragraph: 4, subparagraph: 5, none: -10, all: 10 };
+export function numberingEdits(src, off, chapters, memoir) {
   const end = preambleEndOf(src);
   if (end < 0) return null;
-  const pre = stripCommentsOf(src.slice(0, end));
-  let m, last = null;
+  const pre = stripCommentsOf(src.slice(0, end)), nl = eolAt(src, 0), min = chapters ? 0 : 1;
+  const lines = [];
+  let m;
   SECNUM.lastIndex = 0;
-  for (let k = 0; (m = SECNUM.exec(pre)) && k < 200; k++) last = { s: m.index, e: m.index + m[0].length, n: +m[1] };
-  const want = off ? (chapters ? -1 : 0) : chapters ? 2 : 3;
-  if (last) {
-    if (off ? last.n <= want : last.n >= (chapters ? 0 : 1)) return [];
-    // the line as Rikuy writes it, alone on its line: back on, it goes
-    const ls = src.lastIndexOf('\n', last.s - 1) + 1, le = src.indexOf('\n', last.e);
-    if (!off && src.slice(ls, last.s).trim() === '' && src.slice(last.e, le < 0 ? src.length : le).trim() === '' && last.n <= 0) return [{ s: ls, e: le < 0 ? src.length : le + 1, t: '' }];
-    const a = src.indexOf('{', src.indexOf('}', last.s) + 1);
-    return [{ s: a + 1, e: src.indexOf('}', a), t: String(want) }];
+  for (let k = 0; (m = SECNUM.exec(pre)) && k < 200; k++) lines.push({ s: m.index, e: m.index + m[0].length, n: m[1] != null ? +m[1] : DEPTH[m[3]] ?? 3, max: m[2] === 'maxsecnumdepth' });
+  const at = src.lastIndexOf('\n', end - 1) + 1, lead = at < end && /\S/.test(src.slice(at, end)) ? nl : '', s = lead ? end : at;
+  const put = (t) => [{ s, e: s, t: lead + t + nl }];
+  if (off) return put(memoir ? '\\setsecnumdepth{none}\\maxsecnumdepth{none}' : '\\setcounter{secnumdepth}{' + (chapters ? -1 : 0) + '}');
+  // the last line, with any on the same line before it (memoir's pair), where it turns numbers off
+  const last = lines[lines.length - 1];
+  if (last && last.n < min) {
+    const ls = src.lastIndexOf('\n', last.s - 1) + 1, le = src.indexOf('\n', last.e), lineEnd = le < 0 ? src.length : le;
+    const mine = lines.filter((x) => x.s >= ls && x.e <= lineEnd);
+    const rest = src.slice(ls, lineEnd);
+    let left = rest;
+    for (const x of [...mine].reverse()) left = left.slice(0, x.s - ls) + left.slice(x.e - ls);
+    if (!left.trim() && mine.every((x) => x.n < min)) return [{ s: ls, e: le < 0 ? src.length : le + 1, t: '' }];
   }
-  if (!off) return [];
-  const at = src.lastIndexOf('\n', end - 1) + 1, lead = at < end && /\S/.test(src.slice(at, end)) ? '\n' : '', s = lead ? end : at;
-  return [{ s, e: s, t: lead + '\\setcounter{secnumdepth}{' + want + '}\n' }];
+  return put(memoir ? '\\setsecnumdepth{subsection}\\maxsecnumdepth{subsection}' : '\\setcounter{secnumdepth}{' + (chapters ? 2 : 3) + '}');
 }
 function preambleEndOf(src) {
   const m = /\\begin\s*\{document\}/.exec(stripCommentsOf(src.slice(0, 200000)));
@@ -345,3 +353,138 @@ export function defRange(src, name, kind) {
   }
   return null;
 }
+
+// ---- what a preamble defines --------------------------------------------------------------------
+// The theorem like environments a preamble makes otherwise than by \newtheorem: thmtools'
+// \declaretheorem[…]{name} and \declaretheorem{name}[…] (a comma list too), tcolorbox's
+// \newtcbtheorem[…]{name}, mdframed's \newmdtheoremenv[…]{name}, llncs' \spnewtheorem{name}, and
+// tcolorbox's and mdframed's boxes (\newtcolorbox{name}, \newmdenv[…]{name}). Bounded scans.
+const THM_MAKERS = /\\(declaretheorem|newtcbtheorem|newmdtheoremenv|spnewtheorem|newtcolorbox|DeclareTColorBox|newmdenv|newtheorem|newenvironment|renewenvironment|NewDocumentEnvironment|newframedtheorem|newshadedtheorem)\*?(?![A-Za-z@])\s*/g;
+// envs: also \newenvironment and the like (what defines a name, for a check before writing one)
+export function thmDefsIn(text, envs) {
+  const end = preambleEndOf(text);
+  const pre = stripCommentsOf(String(text).slice(0, end < 0 ? Math.min(String(text).length, 200000) : end));
+  const out = new Set();
+  let m;
+  THM_MAKERS.lastIndex = 0;
+  for (let k = 0; (m = THM_MAKERS.exec(pre)) && k < 2000; k++) {
+    let i = m.index + m[0].length;
+    // an [option] before the name ([init options] of tcolorbox, mdframed's, thmtools' old form)
+    if (pre[i] === '[') { const z = pre.indexOf(']', i); if (z < 0 || z - i > 2000) continue; i = z + 1; while (/\s/.test(pre[i] || '')) i++; }
+    if (pre[i] !== '{') continue;
+    if (!envs && /environment$/i.test(m[1])) continue;
+    const z = pre.indexOf('}', i);
+    if (z < 0 || z - i > 300) continue;
+    for (const nm of pre.slice(i + 1, z).split(',')) { const n = nm.trim(); if (/^[A-Za-z*]{1,40}$/.test(n)) out.add(n); }
+    if (out.size > 300) break;
+  }
+  return out;
+}
+
+// ---- a style of the document's own, changed where the dialog changed it --------------------------
+// A character style's body as layers around #1, each { open, close, field, arg }: \textbf{…} is
+// one, {\bfseries #1} a group and a declaration. A field the dialog did not change leaves its
+// layers as they are written (\emph stays \emph, \colorbox and \textup stay), so OK with nothing
+// changed writes the body back byte for byte.
+const LAYER_FIELD = { textbf: 'bf', bfseries: 'bf', bf: 'bf', textit: 'it', emph: 'it', textsl: 'it', itshape: 'it', slshape: 'it', em: 'it', it: 'it', textsc: 'sc', scshape: 'sc',
+  textsf: 'sf', sffamily: 'sf', texttt: 'tt', ttfamily: 'tt', uline: 'ul', underline: 'ul', MakeUppercase: 'upper', textcolor: 'color', color: 'color' };
+export function charLayers(body) {
+  if (!charStyleBody(body)) return null;
+  const L = [];
+  let t = body, a = 0, z = body.length;
+  for (let k = 0; k < 24; k++) {
+    const sl = t.slice(a, z), lead = sl.length - sl.trimStart().length, tail = sl.length - sl.trimEnd().length;
+    if (sl.trim() === '#1') { L.inner = [a + lead, z - tail]; break; }
+    const u = t.slice(a + lead, z - tail);
+    let m;
+    if ((m = /^\\(textcolor|colorbox)\s*\{([^{}]{0,40})\}\s*\{/.exec(u))) { L.push({ open: t.slice(a, a + lead + m[0].length), close: t.slice(z - tail - 1, z), field: m[1] === 'textcolor' ? 'color' : null, arg: m[2] }); a += lead + m[0].length; z -= tail + 1; continue; }
+    if ((m = /^\\([A-Za-z]+)\s*\{/.exec(u))) { L.push({ open: t.slice(a, a + lead + m[0].length), close: t.slice(z - tail - 1, z), field: LAYER_FIELD[m[1]] || null }); a += lead + m[0].length; z -= tail + 1; continue; }
+    if (u[0] === '{') {
+      L.push({ open: t.slice(a, a + lead + 1), close: t.slice(z - tail - 1, z), field: null, group: true });
+      a += lead + 1; z -= tail + 1;
+      for (let n = 0; n < 8; n++) {
+        const v = t.slice(a, z), d = /^\s*\\([A-Za-z]+)(?![A-Za-z])\s*/.exec(v), col = /^\s*\\color\s*\{([^{}]{0,40})\}\s*/.exec(v);
+        if (col) { L.push({ open: col[0], close: '', field: 'color', arg: col[1], decl: true }); a += col[0].length; }
+        else if (d && v.trim() !== '#1') { L.push({ open: d[0], close: '', field: SIZE_NAMES.includes(d[1]) ? 'size' : LAYER_FIELD[d[1]] || null, arg: d[1], decl: true }); a += d[0].length; }
+        else break;
+      }
+      continue;
+    }
+    return null;
+  }
+  return L.inner ? L : null;
+}
+const joinLayers = (body, L) => L.map((x) => x.open).join('') + body.slice(L.inner[0], L.inner[1]) + [...L].reverse().map((x) => x.close).join('');
+const fieldsOf = (F) => ({ bf: !!F.bf, it: !!F.it, sc: !!F.sc, sf: !!F.sf, tt: !!F.tt, ul: !!F.ul, upper: !!F.upper, size: F.size && F.size !== 'normalsize' ? F.size : null, color: F.color || null, align: F.align || '' });
+// what changed between two forms' fields
+export function fieldsChanged(F, G) { const a = fieldsOf(F), b = fieldsOf(G); return Object.keys(a).filter((k) => a[k] !== b[k]); }
+const ADD = { bf: '\\textbf{', it: '\\textit{', sc: '\\textsc{', sf: '\\textsf{', tt: '\\texttt{', ul: '\\uline{', upper: '\\MakeUppercase{' };
+export function editCharBody(body, F, G) {
+  const ch = fieldsChanged(F, G);
+  if (!ch.length) return body;
+  let L = charLayers(body);
+  if (!L) return null;
+  const inner = L.inner, g = fieldsOf(G);
+  const keep = (x) => !(ch.includes(x.field) || (x.field === 'sf' && ch.includes('tt')) || (x.field === 'tt' && ch.includes('sf')));
+  // (a declaration taken out leaves the spaces it had: {\bfseries #1} stays readable)
+  let out = L.map((x) => (keep(x) ? x : x.decl ? { open: x.open.replace(/\\[A-Za-z]+(?:\s*\{[^{}]*\})?/, '').replace(/\s+/, ' '), close: '', field: null, gone: true } : null)).filter(Boolean);
+  // a group left with no declaration goes too
+  out = out.filter((x, k) => { if (!x.group) return true; for (let j = k + 1; j < out.length && !out[j].group; j++) if (out[j].decl) return true; return false; });
+  // (and the spaces of declarations in a group that went)
+  out = out.filter((x, k) => !x.gone || out.slice(0, k).some((y) => y.group));
+  for (const f of ['upper', 'ul', 'tt', 'sf', 'sc', 'it', 'bf']) if (ch.includes(f) || ((f === 'sf' || f === 'tt') && (ch.includes('sf') || ch.includes('tt')))) if (g[f]) out.push({ open: ADD[f], close: '}', field: f });
+  if ((ch.includes('size')) && g.size) out.unshift({ open: '{\\' + g.size + ' ', close: '}', field: 'size' });
+  if (ch.includes('color') && g.color) out.unshift({ open: '\\textcolor{' + g.color + '}{', close: '}', field: 'color' });
+  out.inner = inner;
+  return joinLayers(body, out);
+}
+// A paragraph style's start as its tokens: \par, \noindent, \slshape, \color{x}, \centering kept as
+// written where the dialog did not change their field
+export function envTokens(begin) {
+  if (!formatOnlyBegin(begin)) return null;
+  const T = [];
+  let i = 0;
+  for (let n = 0; n < 24 && i < begin.length; n++) {
+    const v = begin.slice(i), col = /^\s*\\color\s*\{([^{}]{0,40})\}\s*/.exec(v), d = /^\s*\\([A-Za-z]+)(?![A-Za-z])\s*/.exec(v);
+    if (col) { T.push({ t: col[0], field: 'color' }); i += col[0].length; continue; }
+    if (!d) { if (v.trim()) return null; T.push({ t: v, field: null }); break; }
+    const w = d[1];
+    T.push({ t: d[0], field: SIZE_NAMES.includes(w) ? 'size' : /^(centering|raggedleft|raggedright)$/.test(w) ? 'align' : LAYER_FIELD[w] || null });
+    i += d[0].length;
+  }
+  return T;
+}
+const DECL = { bf: '\\bfseries', it: '\\itshape', sc: '\\scshape', sf: '\\sffamily', tt: '\\ttfamily' };
+export function editEnvBegin(begin, F, G) {
+  const ch = fieldsChanged(F, G);
+  if (!ch.length) return begin;
+  const T = envTokens(begin);
+  if (!T) return null;
+  const g = fieldsOf(G);
+  const out = T.filter((x) => !(ch.includes(x.field) || (x.field === 'sf' && ch.includes('tt')) || (x.field === 'tt' && ch.includes('sf')))).map((x) => x.t);
+  if (ch.includes('size') && g.size) out.push('\\' + g.size);
+  for (const f of ['bf', 'it', 'sc', 'sf', 'tt']) if ((ch.includes(f) || ((f === 'sf' || f === 'tt') && (ch.includes('sf') || ch.includes('tt')))) && g[f]) out.push(DECL[f]);
+  if (ch.includes('color') && g.color) out.push('\\color{' + g.color + '}');
+  if (ch.includes('align') && g.align) out.push({ center: '\\centering', right: '\\raggedleft', left: '\\raggedright' }[g.align]);
+  return out.join('');
+}
+
+// Names LaTeX, TeX or the usual packages have: a style of the document's own may not take one
+// (\newcommand{\emph} stops TeX; \newenvironment{box} defines \box, a primitive). The parser's
+// and the model's own tables are added to these where the check is made.
+export const TAKEN = new Set(('box mark char count dimen skip toks output day month year time end begin par relax input include label ref cite item caption title author date '
+  + 'section part chapter paragraph subparagraph subsection subsubsection footnote emph underline url href line hline vline frame framebox makebox mbox fbox parbox raisebox '
+  + 'small large Large LARGE huge Huge tiny scriptsize footnotesize normalsize quote quotation verse center flushleft flushright tabular tabbing table figure array minipage '
+  + 'itemize enumerate description list trivlist document abstract equation eqnarray math displaymath verbatim picture thebibliography theindex titlepage proof theorem '
+  + 'lemma definition remark example corollary proposition note sloppy fussy cleardoublepage clearpage newpage pagebreak linebreak newline hfill vfill hspace vspace '
+  + 'textbf textit textsc textsf texttt textrm textup textsl textmd textnormal bfseries itshape scshape sffamily ttfamily rmfamily mdseries upshape slshape normalfont em bf it rm sf tt sc sl '
+  + 'color textcolor colorbox fcolorbox pagecolor definecolor rule kern hskip vskip penalty noindent indent centering raggedright raggedleft today the value arabic roman Roman alph Alph '
+  + 'newcommand renewcommand newenvironment renewenvironment def let edef gdef xdef chardef mathchardef countdef dimendef skipdef toksdef font hbox vbox vtop vcenter halign valign '
+  + 'hrule vrule unhbox unvbox copy lastbox setbox wd ht dp the number romannumeral string uppercase lowercase message write read openin openout closein closeout immediate special '
+  + 'show showbox showthe accent mathaccent discretionary insert vadjust mark topmark firstmark botmark splitfirstmark splitbotmark noalign omit span cr crcr '
+  + 'if ifx ifnum ifdim ifodd ifvmode ifhmode ifmmode ifinner ifvoid ifhbox ifvbox ifeof iftrue iffalse ifcase else fi or expandafter noexpand csname endcsname '
+  + 'advance multiply divide global long outer protect ensuremath text quad qquad enspace thinspace negthinspace dots ldots cdots vdots ddots '
+  + 'label pageref eqref cref Cref autoref nameref hyperref footnotemark footnotetext marginpar thanks maketitle tableofcontents listoffigures listoftables appendix '
+  + 'bibliography bibliographystyle printbibliography addbibresource index glossary includegraphics graphicspath input usepackage documentclass RequirePackage '
+  + 'item newline newpage pagestyle thispagestyle markboth markright stepcounter addtocounter setcounter newcounter refstepcounter setlength addtolength newlength settowidth '
+  + 'uline uuline uwave sout xout hl ul st so caps lowercase MakeUppercase MakeLowercase verb lstinline mintinline frame').split(/\s+/).filter(Boolean));

@@ -6,11 +6,11 @@
 // Style, Create a Style, Update to Match and the Design tab's looks are src/ui/stylespane.js's and
 // src/ui/looks.js's, on the pure edits of src/styles.js and src/looks.js.
 
-import { register, command, onInsertText } from '../commands.js';
+import { register, command, onInsertText, onInstall } from '../commands.js';
 import { $ } from '../ui/dom.js';
 import { BLOCKS } from '../render.js';
-import { NOT_PLAIN, latexSpot, restyle, startsLine, headLevels, isHeading, ENV_STYLES, THM_STYLES, isEnvStyle, envOf, quoteWords, thmLine, starEdits, applyEdits, numberingEdits, charStyleBody, formatOnlyBegin } from '../styles.js';
-import { defines, packageLine, preambleEnd, stripComments } from '../preamble.js';
+import { NOT_PLAIN, latexSpot, restyle, startsLine, headLevels, isHeading, ENV_STYLES, THM_STYLES, isEnvStyle, envOf, quoteWords, thmLine, starEdits, applyEdits, numberingEdits, charStyleBody, formatOnlyBegin, thmDefsIn, eolAt } from '../styles.js';
+import { defines, packageLine, packageOptions, preambleEnd, stripComments } from '../preamble.js';
 import { wrapBlockEdits } from '../blockenv.js';
 import { diffEdit } from '../wrap.js';
 import { methods as pane } from '../ui/stylespane.js';
@@ -53,7 +53,7 @@ const style = (id, v, name, el, more = {}) => ({
   when: (app, at) => { const st = styleOf(app, at), t = target(app, v); return !!st && !!t && st.to.has(t); },
   on: (app, at) => { const st = styleOf(app, at), t = target(app, v); return !!st && !!t && st.v === t; },
   run: (app) => { app.setBlockStyle(target(app, v)); app.ribbonSync(); },
-  whyNot: (app, at) => { const t = target(app, v); return t ? app.whyNot(styleOf(app, at) || { on: false }, t) : WHY.cls; },
+  whyNot: (app, at) => { const t = target(app, v); return t === 'proof' && app.noProof() ? app.noProof() : t ? app.whyNot(styleOf(app, at) || { on: false }, t) : WHY.cls; },
   ...more
 });
 const heading = (k, keys) => style('style-heading' + k, level(k), 'Heading ' + k, SLOT_EL['h' + k], {
@@ -89,10 +89,12 @@ register(
   { id: 'styles-more', name: 'More styles', resync: false, el: 'rb-st-more', static: true, only: 'wide', tab: 'home', group: 'styles', title: 'All the styles', synonyms: ['Styles', 'Style'], when: () => true, run: (app) => app.openStyles() },
   // headings: numbered or not, one at a time or the whole document
   { id: 'heading-unnumbered', name: 'Unnumbered heading', kind: 'toggle', menu: { heading: 70 }, title: 'Unnumbered heading: \\section*{…}, with no number (and left out of the contents); off, \\section{…} again',
-    synonyms: ['Numbered heading', 'Heading number', 'section*', 'No number'], when: (app, at) => !!app.headingAt(at), on: (app, at) => { const h = app.headingAt(at); return h ? h.star : null; },
-    whyNot: () => 'Put the caret in a heading first.', run: (app, args, at) => app.toggleHeadingStar(at) },
+    synonyms: ['Numbered heading', 'Heading number', 'section*', 'No number'],
+    // (a heading with a short title for the contents: \section*[…]{…} is no form TeX takes)
+    when: (app, at) => { const h = app.headingAt(at); return !!h && (h.star || !h.short); }, on: (app, at) => { const h = app.headingAt(at); return h ? h.star : null; },
+    whyNot: (app, at) => (app.headingAt(at) ? 'This heading has a short title for the contents ([…]): an unnumbered heading takes none. Take the short title off first.' : 'Put the caret in a heading first.'), run: (app, args, at) => app.toggleHeadingStar(at) },
   { id: 'heading-numbers-off', name: 'Heading numbers off', kind: 'toggle', menu: { heading: 71 }, title: 'Heading numbers off: no heading of the document numbered (\\setcounter{secnumdepth}{0} in the preamble); off, numbered again',
-    synonyms: ['Heading numbering', 'secnumdepth', 'Number headings', 'Numbering off'], when: (app) => app.stylePreEnd() >= 0, on: (app) => !!app.model && app.model.opts.secnumdepth < (app.model.opts.chapters ? 0 : 1),
+    synonyms: ['Heading numbering', 'secnumdepth', 'Number headings', 'Numbering off'], when: (app) => app.stylePreEnd() >= 0, on: (app) => app.numbersOff(),
     whyNot: () => 'The main file has no preamble to set it in.', run: (app) => app.toggleNumbering() },
   // Word's keys and panes for styles
   { id: 'apply-styles', name: 'Apply Styles', keys: ['Ctrl+Shift+S'], title: 'Apply Styles (Ctrl+Shift+S): type a style\'s name and press Enter', synonyms: ['Style box', 'Apply a style'], when: (app, at) => !!at,
@@ -125,6 +127,42 @@ register(
   { id: 'autoformat-headings', name: 'AutoFormat headings', kind: 'toggle', title: 'AutoFormat headings: "# " typed at a paragraph\'s start makes it Heading 1, "## " Heading 2, up to "#### "',
     synonyms: ['Headings while typing', 'Markdown headings', 'AutoFormat As You Type'], when: () => true, on: () => autoHeads(), run: () => autoHeads(!autoHeads()) }
 );
+
+// The dialogs follow the window: a phone's keyboard or a turn that shrinks it moved none of them,
+// and Create a Style's Name field was out of reach above the screen (review L5). And a run in
+// heading's line is one line for Home and the up arrow: the caret goes to the heading's start, not
+// to the end of its words over the paragraph's room (review L6).
+onInstall((app) => {
+  const fit = () => { if (app.pop && app.pop.el && app.pop.el.matches('.pop-modstyle, .pop-apply')) app.positionPop(); };
+  window.addEventListener('resize', fit);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', fit);
+  app.root.addEventListener('keydown', (e) => {
+    if ((e.key !== 'Home' && e.key !== 'ArrowUp' && e.key !== 'Backspace') || e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+    const sel = getSelection();
+    if (!sel.rangeCount || !sel.isCollapsed) return;
+    const n = sel.anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement), it = el && el.closest('.it.p');
+    const gap = it && it.querySelector(':scope > .runin-gap'), head = it && it.previousElementSibling;
+    if (!gap || !head || !head.classList.contains('runin')) return;
+    const r = sel.getRangeAt(0).getBoundingClientRect(), g = gap.getBoundingClientRect();
+    // (only on the line the heading stands on)
+    if (!(r.height || r.width) || Math.abs(r.top - g.top) > g.height / 2) return;
+    const words = [...head.querySelectorAll('span.t')].filter((x) => x.firstChild);
+    if (!words.length) return;
+    if (e.key === 'Backspace') {
+      // at the paragraph's start: as after a heading on its own line (the gap is no text to delete)
+      const first = [...it.querySelectorAll('span.t')].find((x) => x.firstChild && !x.closest('.runin-gap'));
+      if (!first || n !== first.firstChild || sel.anchorOffset !== 0) return;
+      e.preventDefault();
+      const last = words[words.length - 1];
+      sel.collapse(last.firstChild, last.firstChild.length);
+      app.deleteInput('deleteContentForward', null);
+      return;
+    }
+    sel.collapse(words[0].firstChild, 0);
+    // (Home stops there; the up arrow goes on from there to the line above)
+    if (e.key === 'Home') e.preventDefault();
+  }, true);
+});
 
 // a theme by its id: its set, colour and heading font in one commit
 function applyTheme(app, id) {
@@ -194,7 +232,7 @@ export const methods = {
     levels.forEach((c, k) => all.push({ v: c, name: 'Heading ' + (k + 1), group: 'para', slot: 'h' + (k + 1) }));
     all.push({ v: 'part', name: 'Part', group: 'para', slot: null }, { v: 'latex', name: 'LaTeX source', group: 'para', slot: 'latex' });
     for (const [v, name] of Object.entries(ENV_STYLES)) if (v !== 'verbatim' && (v !== 'abstract' || !NO_ABSTRACT.test(cls))) all.push({ v, name, group: 'para', slot: v === 'quote' ? 'quote' : null });
-    for (const [v, t] of Object.entries(THM_STYLES)) all.push({ v, name: t.name, group: 'env', slot: null });
+    for (const [v, t] of Object.entries(THM_STYLES)) if (v !== 'proof' || !this.noProof()) all.push({ v, name: t.name, group: 'env', slot: null });
     const chars = [];
     if (M) {
       // the document's own: its theorem like environments and its environments of formatting alone
@@ -423,11 +461,14 @@ export const methods = {
     const end = preambleEnd(src);
     if (end < 0) return [];
     const others = this.preambleOthers();
-    const defined = OWN_THMS.test(K.cls) || (to !== 'proof' && ((M && M.thms.has(to)) || defines(src, to, 'environment', end) || others.some((x) => defines(x, to, 'environment', -1))));
+    // (defined by \newtheorem, \newenvironment, thmtools' \declaretheorem, tcolorbox's \newtcbtheorem,
+    // mdframed's \newmdtheoremenv, llncs' \spnewtheorem, in this preamble, a file it reads or the class)
+    const has = (nm) => OWN_THMS.test(K.cls) || (M && M.thms.has(nm) && !M.thms.get(nm).auto) || defines(src, nm, 'environment', end) || thmDefsIn(src, true).has(nm) || others.some((x) => defines(x, nm, 'environment', -1) || thmDefsIn(x, true).has(nm));
     const ntheorem = !!packageLine(src, 'ntheorem', end) || others.some((x) => !!packageLine(x, 'ntheorem', -1));
     const ams = ['amsthm'];
-    if (to === 'proof') return defined || ntheorem ? [] : this.packageEdits(ams);
-    if (defined) return [];
+    // (proof: amsthm's, the class's or one the preamble makes; ntheorem has one only with its amsthm option, see noProof)
+    if (to === 'proof') return has('proof') || ntheorem || /^(amsart|amsbook|amsproc)$/.test(K.cls) ? [] : this.packageEdits(ams);
+    if (has(to)) return [];
     // the style in force at the preamble's end: a \theoremstyle there before would set this one too
     const pre = stripComments(src.slice(0, end));
     const k = pre.lastIndexOf('\\theoremstyle'), last = k < 0 ? null : /^\\theoremstyle\s*\{([^{}]*)\}/.exec(pre.slice(k, k + 200));
@@ -438,18 +479,36 @@ export const methods = {
     if (ntheorem) line = line.replace(/^\\theoremstyle\{[^}]*\}\n/, '');
     const style = /\\theoremstyle/.test(line) && want !== now;
     if (!style) line = line.replace(/^\\theoremstyle\{[^}]*\}\n/, '');
-    const at = src.lastIndexOf('\n', end - 1) + 1, lead = at < end && /\S/.test(src.slice(at, end)) ? '\n' : '', s = lead ? end : at;
-    const def = { f, s, e: s, t: lead + line + '\n' };
+    const nl = eolAt(src, 0), at = src.lastIndexOf('\n', end - 1) + 1, lead = at < end && /\S/.test(src.slice(at, end)) ? nl : '', s = lead ? end : at;
+    const def = { f, s, e: s, t: lead + line.replace(/\n/g, nl) + nl };
     const pk = /\\theoremstyle/.test(line) && !ntheorem ? this.packageEdits(ams) : [];
     // (a package line at the same place goes first)
     return [def, ...pk];
+  },
+
+  // Why Proof cannot be written here, or '': ntheorem without its amsthm option has no proof
+  noProof() {
+    const src = this.src(this.main), end = this.stylePreEnd();
+    if (end < 0) return '';
+    const others = this.preambleOthers(), o = packageOptions(src, 'ntheorem', end, others);
+    if (!o || o.amsthm) return '';
+    if (defines(src, 'proof', 'environment', end) || thmDefsIn(src, true).has('proof') || others.some((x) => defines(x, 'proof', 'environment', -1) || thmDefsIn(x, true).has('proof'))) return '';
+    return 'ntheorem has a proof environment only with its amsthm option: \\usepackage[amsthm]{ntheorem}.';
   },
 
   // ---- headings: numbered or not -----------------------------------------------------------
   headingAt(at) {
     if (!at || !at.B || !at.it || at.it.dataset.ctx !== 'h' || at.c.ghost) return null;
     const src = this.src(at.B.f), m = HEAD.exec(src.slice(at.B.s, at.B.e));
-    return m ? { cmd: m[1], star: !!m[2], s: at.B.s } : null;
+    return m ? { cmd: m[1], star: !!m[2], short: !!m[3], s: at.B.s } : null;
+  },
+  // the document's heading numbers are off: secnumdepth above the top level (memoir: also the
+  // depth its \mainmatter sets again)
+  numbersOff() {
+    const O = this.model && this.model.opts;
+    if (!O) return false;
+    const min = O.chapters ? 0 : 1;
+    return O.cls === 'memoir' ? O.secnumdepthPre < min && (O.maxsecnumdepth ?? 2) < min : O.secnumdepthPre < min;
   },
   toggleHeadingStar(at) {
     const h = this.headingAt(at);
@@ -465,8 +524,7 @@ export const methods = {
   // the document's headings numbered or not: \setcounter{secnumdepth}{0} in the preamble, and off again
   toggleNumbering() {
     const f = this.main, src = this.src(f), M = this.model;
-    const on = M.opts.secnumdepth >= (M.opts.chapters ? 0 : 1);
-    const ed = numberingEdits(src, on, M.opts.chapters);
+    const ed = numberingEdits(src, !this.numbersOff(), M.opts.chapters, M.opts.cls === 'memoir');
     if (!ed || !ed.length) return false;
     const c = this.caretNow(), grow = ed.reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
     this.closeGroup();

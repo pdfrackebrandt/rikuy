@@ -6,8 +6,8 @@ import { parseBib, texToPlain, shortAuthors, entryYear, formatEntry } from './bi
 import { siTex, siOptions, siUnitSymbol } from './siunitx.js';
 import { widgetPath, hashText } from './widget.js';
 import { rtlDocument, languageDir } from './scripts.js';
-import { isLatexMark, readEnvBegin } from './styles.js';
-import { readHeadLooks, defaultLook } from './looks.js';
+import { isLatexMark, readEnvBegin, thmDefsIn } from './styles.js';
+import { readHeadLooks, defaultLook, startsectionShapes } from './looks.js';
 import { readPage, paperName, NO_MEDIA_CLASSES, setsMedia, KOMA_CLASS } from './pagesrc.js';
 import { DVIPS_COLORS, BASE_COLORS } from './ui/kit.js';
 
@@ -108,6 +108,8 @@ const CITE_CMDS = new Set(['cite', 'citet', 'citep', 'citealt', 'citealp', 'cite
   'Parencite', 'Autocite', 'footcite', 'smartcite', 'citenum']);
 const REF_CMDS = new Set(['ref', 'eqref', 'pageref', 'cref', 'Cref', 'autoref', 'nameref', 'vref', 'Vref', 'labelcref']);
 const SECTIONS = { part: -1, chapter: 0, section: 1, subsection: 2, subsubsection: 3, paragraph: 4, subparagraph: 5 };
+// memoir's \setsecnumdepth{…} names
+const SECDEPTH = { ...SECTIONS, book: -2, none: -10, all: 10 };
 // commands that end a line of text: an environment followed by one stands alone (Builder.flow)
 const BLOCK_CMDS = /^(par|item|maketitle|tableofcontents|listoffigures|listoftables|newpage|clearpage|cleardoublepage|pagebreak|appendix|frontmatter|mainmatter|backmatter|bibliography|printbibliography|bigskip|medskip|smallskip|vspace|input|include|subfile|hrule|caption|captionof)$/;
 const LIST_ENVS = new Set(['itemize', 'enumerate', 'description', 'compactitem', 'compactenum', 'inparaenum', 'asparaenum', 'enumerate*', 'itemize*', 'description*']);
@@ -450,10 +452,17 @@ class Builder {
     // how the headings look: titlesec's lines, KOMA-Script's fonts (src/looks.js)
     O.koma = /^scr(artcl|reprt|book)$/.test(O.cls);
     O.heads = ctx.f === this.project.main ? readHeadLooks(ctx.src, O.cls) : {};
+    // \paragraph and \subparagraph as the preamble or the project's own classes and packages set
+    // them by \@startsection (a positive after skip: on a line of their own)
+    O.secShapes = startsectionShapes([ctx.src.slice(0, 200000), ...[...this.files].filter(([n]) => /\.(sty|cls)$/.test(n)).slice(0, 10).map(([, t]) => t)]);
+    // theorem environments made by thmtools, tcolorbox, mdframed and ntheorem's own forms: known as theorems
+    if (ctx.f === this.project.main) for (const nm of thmDefsIn(ctx.src)) if (!this.thms.has(nm)) this.thms.set(nm, { title: nm[0].toUpperCase() + nm.slice(1), counter: nm, style: 'plain' });
     if (O.chapters) {
       if (!O.secnumdepthSet) O.secnumdepth = 2;
       for (const k of ['equation', 'figure', 'table']) if (!this.within[k]) this.within[k] = 'chapter';
     }
+    // (as the preamble leaves it: memoir's \mainmatter changes it again as the text is read)
+    O.secnumdepthPre = O.secnumdepth;
     O.ext = extSize(O.pt);
     if (O.parindent == null) O.parindent = O.parskip ? 0 : ({ 10: 15, 11: 17, 12: 18 }[O.pt] || (O.ext ? O.ext.pi : 15));
     if (O.natbib && !O.forceNumeric) O.citeStyle = 'authoryear';
@@ -634,7 +643,10 @@ class Builder {
       case 'title': this.meta.title = { nd, ctx, a: nd.args[1] }; break;
       case 'author': this.meta.author = { nd, ctx, a: nd.args[1] }; break;
       case 'date': this.meta.date = { nd, ctx, a: nd.args[0] }; break;
-      case 'setcounter': if (A(0).trim() === 'secnumdepth') { O.secnumdepth = parseInt(A(1), 10); O.secnumdepthSet = true; } break;
+      case 'setcounter': if (A(0).trim() === 'secnumdepth') { O.secnumdepth = parseInt(A(1), 10); O.secnumdepthSet = true; } else if (A(0).trim() === 'maxsecnumdepth') O.maxsecnumdepth = parseInt(A(1), 10); break;
+      // memoir's own: by a sectioning name, none or all
+      case 'setsecnumdepth': { const v = SECDEPTH[A(0).trim()]; if (v != null) { O.secnumdepth = v; O.secnumdepthSet = true; } break; }
+      case 'maxsecnumdepth': { const v = SECDEPTH[A(0).trim()]; if (v != null) O.maxsecnumdepth = v; break; }
       // fontspec's main font, by its name (the page has a look for the common ones)
       case 'setmainfont': { const a = nd.args.filter((x) => x && !x.o).pop(); if (a) O.font = (fontLook(this.argText(ctx, a)) || '').replace('serif', ''); break; }
       default:
@@ -850,12 +862,16 @@ class Builder {
       if (level === 1) return ch + '.' + c.section;
       if (level === 2) return ch + '.' + c.section + '.' + c.subsection;
       if (level === 3) return ch + '.' + c.section + '.' + c.subsection + '.' + c.subsubsection;
+      if (level === 4) return ch + '.' + c.section + '.' + c.subsection + '.' + c.subsubsection + '.' + c.paragraph;
+      if (level === 5) return ch + '.' + c.section + '.' + c.subsection + '.' + c.subsubsection + '.' + c.paragraph + '.' + (c.subparagraph || 0);
       return '';
     }
     const top = this.appendix ? (c.section > 0 ? String.fromCharCode(64 + c.section) : '0') : String(c.section);
     if (level === 1) return top;
     if (level === 2) return top + '.' + c.subsection;
     if (level === 3) return top + '.' + c.subsection + '.' + c.subsubsection;
+    if (level === 4) return top + '.' + c.subsection + '.' + c.subsubsection + '.' + c.paragraph;
+    if (level === 5) return top + '.' + c.subsection + '.' + c.subsubsection + '.' + c.paragraph + '.' + (c.subparagraph || 0);
     return '';
   }
   withinPrefix(counter) {
@@ -873,6 +889,8 @@ class Builder {
     if (level === 2) { c.subsection++; c.subsubsection = 0; c.paragraph = 0; }
     if (level === 3) { c.subsubsection++; c.paragraph = 0; }
     if (level === 4) c.paragraph++;
+    if (level <= 4) c.subparagraph = 0;
+    if (level === 5) c.subparagraph = (c.subparagraph || 0) + 1;
     // reset counters numbered within
     for (const [cnt, w] of Object.entries(this.within)) {
       if ((w === 'chapter' && level === 0) || (w === 'section' && level <= 1) || (w === 'subsection' && level <= 2)) {
@@ -1012,7 +1030,7 @@ class Builder {
       cont = false;
       hang = null;
       flushStart = !!align;
-      units.push({ f: ctx.f, s, e, items: [item], fns, sig: env.top ? this.sig.join('\u0001') : '' });
+      units.push({ f: ctx.f, s, e, items: [item], fns, sig: env.top ? this.sig.join('\u0001') : '', plain: true });
     };
 
     // (a text node whose start an assignment took, \hangindent=1cm: what is left of it)
@@ -1235,7 +1253,12 @@ class Builder {
         }
         if (name === 'appendix') { flushPara(); this.appendix = true; if (this.opts.chapters) this.c.chapter = 0; else this.c.section = 0; continue; }
         // a book's front and back matter: chapters there have no number; \mainmatter numbers them
-        if (name === 'frontmatter' || name === 'mainmatter' || name === 'backmatter') { flushPara(); this.front = name !== 'mainmatter'; continue; }
+        if (name === 'frontmatter' || name === 'mainmatter' || name === 'backmatter') {
+          flushPara(); this.front = name !== 'mainmatter';
+          // (memoir's \mainmatter numbers down to maxsecnumdepth again, whatever secnumdepth was)
+          if (name === 'mainmatter' && this.opts.cls === 'memoir') { this.opts.secnumdepth = this.opts.maxsecnumdepth ?? 2; this.use('mm' + this.opts.secnumdepth); }
+          continue;
+        }
         if (name === 'bibliography' || name === 'printbibliography') {
           flushPara();
           if (env.top) this.sig = [];
@@ -1286,7 +1309,9 @@ class Builder {
       const u = units[i], h = u.items.length === 1 ? u.items[0] : null;
       if (!h || h.type !== 'h' || !h.runInto || h.runIn) continue;
       const n = units[i + 1], p = n.items[0];
-      if (!p || p.type !== 'p' || p.runIn || n.f !== u.f || p.ctx !== 'p') continue;
+      // (a paragraph of this flow, or one of an environment of declarations alone: a quote, a
+      // centring, a theorem or a list starts with \@trivlist, which sets the heading on its own line)
+      if (!p || p.type !== 'p' || p.runIn || n.f !== u.f || p.ctx !== 'p' || !n.plain) continue;
       h.runIn = true;
       p.runIn = { num: h.num, text: this.plain(h.inl), level: h.level, look: h.look || null };
       u.sig += '\u0001ri';
@@ -1352,13 +1377,16 @@ class Builder {
     let num = '';
     const minLevel = this.opts.chapters ? 0 : 1;
     const front = this.front && level === 0 && this.opts.chapters; // \frontmatter's Preface, unnumbered
-    const numbered = !star && !front && level <= this.opts.secnumdepth && level >= minLevel && level <= 3;
+    // (the look's label may be empty: titlesec's {} prints no number, though the counter steps)
+    const look = this.headLook(nd.name);
+    const numbered = !star && !front && level <= this.opts.secnumdepth && level >= minLevel && level <= 5 && !(look && look.num === false);
     if (!star && !front && level >= 0) {
       this.stepSection(level);
       if (numbered) num = this.secNum(level);
     }
-    // \part: Part I, II, … above its title (TeX numbers parts whatever secnumdepth says, down to -1)
-    if (level === -1 && !star && this.opts.secnumdepth >= -1) { this.c.part++; num = roman(this.c.part).toUpperCase(); }
+    // \part: Part I, II, … above its title, where secnumdepth reaches it (a class with chapters
+    // numbers its parts down to -1, article down to 0)
+    if (level === -1 && !star && this.opts.secnumdepth >= (this.opts.chapters ? -1 : 0)) { this.c.part++; num = roman(this.c.part).toUpperCase(); }
     this.use('h' + num + (this.appendix ? 'A' : ''));
     if (!star && !front) this.lastTarget = { num, kind: { '-1': 'part', 0: 'chapter', 1: 'section', 2: 'subsection', 3: 'subsubsection', 4: 'paragraph', 5: 'subparagraph' }[level] || 'section', name: this.appendix && level === minLevel ? 'appendix' : null };
     const fns = [];
@@ -1369,11 +1397,14 @@ class Builder {
     const de = this.opts.lang === 'de';
     const chapLabel = level === 0 && this.opts.chapters && !front ? (this.appendix ? (de ? 'Anhang' : 'Appendix') : (de ? 'Kapitel' : 'Chapter')) : level === -1 && num ? (de ? 'Teil' : 'Part') : null;
     // the look the preamble gives this heading (titlesec, KOMA-Script), where it is not LaTeX's own
-    const look = this.headLook(nd.name);
     if (look) this.use('L' + JSON.stringify(look));
     const it = { type: 'h', level, num, inl, star, f: ctx.f, ctx: 'h', s: nd.s, e: nd.e, chapLabel, dir: this.dirOf() };
     if (look) it.look = look;
-    if (look ? look.shape === 'runin' : level >= 4) it.runInto = true;
+    // (titlesec's display shape: the number on a line of its own above the title)
+    if (look && look.shape === 'display' && num && !chapLabel) it.numBlock = true;
+    // run in where the shape is titlesec's runin, or a \paragraph or \subparagraph that the preamble
+    // does not set on a line of its own by \@startsection
+    if (look ? look.shape === 'runin' : level >= 4 && (this.opts.secShapes || {})[nd.name] !== 'hang') it.runInto = true;
     return { f: ctx.f, s: nd.s, e: nd.e, items: [it], fns, sig: this.sig ? this.sig.join('\u0001') : '' };
   }
 
@@ -1382,7 +1413,7 @@ class Builder {
   headLook(cmd) {
     const O = this.opts, L = (O.heads && O.heads[cmd]) || (O.koma ? defaultLook(cmd, true) : null);
     if (!L) return null;
-    const out = { size: L.size, bf: L.bf, it: L.it, sc: L.sc, sf: L.sf, tt: L.tt, align: L.align, rule: !!L.rule, shape: L.shape };
+    const out = { size: L.size, bf: L.bf, it: L.it, sc: L.sc, sf: L.sf, tt: L.tt, align: L.align, rule: !!L.rule, shape: L.shape, num: L.num !== false };
     if (L.color) out.color = this.named(L.color) || L.color;
     return out;
   }
@@ -1676,7 +1707,7 @@ class Builder {
       const look = { size: F.size || null, bf: !!F.bf, it: !!F.it, sc: !!F.sc, sf: !!F.sf, tt: !!F.tt, color: F.color ? this.named(F.color) || F.color : null };
       this.use('E' + JSON.stringify(look));
       if (r) for (const it of r.items) if (it.type === 'p') it.look = look;
-      if (r) return r;
+      if (r) { r.plain = true; return r; }
     }
     // Unknown environment: render content with a small tag.
     const r = this.container(nd, ctx, env, { cls: (env.cls || '') + ' unk' });

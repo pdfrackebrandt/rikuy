@@ -355,7 +355,7 @@ def numbering(page):
     load_doc(page, hand); click_text(page, 'Text', 1); run_cmd(page, 'heading-numbers-off')
     check('a hand written \\setcounter{secnumdepth}{-2} turned off goes away exactly', src(page) == doc.replace('\\begin{document}', '\\usepackage{amsmath}\n\\begin{document}'), src(page)[:120])
     load_doc(page, doc.replace('\\begin{document}', '\\setcounter{secnumdepth}{1}\n\\begin{document}')); click_text(page, 'Text', 1); run_cmd(page, 'heading-numbers-off')
-    check('a hand written number of its own is changed where it stands', '\\setcounter{secnumdepth}{0}\n' in src(page) and src(page).count('secnumdepth') == 1, src(page)[:120])
+    check('a hand written number of its own stays; Rikuy\'s line goes after it (review H6)', '\\setcounter{secnumdepth}{1}\n\\setcounter{secnumdepth}{0}\n' in src(page), src(page)[:120])
     load_doc(page, R('\\chapter{One}\nText.')); click_text(page, 'Text', 1); run_cmd(page, 'heading-numbers-off')
     check('in a report numbering off is -1 (chapters too)', '\\setcounter{secnumdepth}{-1}' in src(page), src(page)[:120])
 
@@ -479,7 +479,7 @@ def modify(page):
     load_doc(page, want); click_text(page, 'Intro', 2); run_cmd(page, 'modify-style'); page.wait_for_timeout(200)
     check('read back: the fields show the look the line gives', page.evaluate('[document.getElementById("ms-family").value, document.getElementById("ms-align").value, document.getElementById("ms-color").value, document.getElementById("ms-rule").checked]') == ['sf', 'center', 'blue', True])
     page.get_by_role('dialog', name='Modify Style').get_by_role('button', name="LaTeX's own").click(); page.wait_for_timeout(250)
-    check('LaTeX\'s own takes the line away (the packages, added before, stay)', src(page) == doc.replace('\\begin{document}', '\\usepackage{titlesec}\n\\usepackage{xcolor}\n\\begin{document}'), src(page)[:300])
+    check('LaTeX\'s own takes the line away, and the titlesec line it needed (review H1); xcolor, which other text may use, stays', src(page) == doc.replace('\\begin{document}', '\\usepackage{xcolor}\n\\begin{document}'), src(page)[:300])
     # spacing and run in for a deeper level; a hand written \titleformat* is read and replaced in place
     hand = doc.replace('\\begin{document}', '\\usepackage{titlesec}\n\\titleformat*{\\section}{\\Large\\itshape}\n\\begin{document}')
     load_doc(page, hand); click_text(page, 'Intro', 2)
@@ -557,7 +557,7 @@ def design(page):
     check('Lines: a rule under the sections, titlesec once, one step', src(page) == want, src(page)[:300])
     check('the page draws the rule', page.evaluate('getComputedStyle(document.querySelector("#pages .it.h1")).borderBottomStyle') == 'solid')
     run_cmd(page, 'design-style-set', {'id': 'latex'})
-    check('LaTeX takes the lines away again', src(page) == doc.replace('\\begin{document}', '\\usepackage{titlesec}\n\\begin{document}'), src(page)[:300])
+    check('LaTeX takes the lines away again, and the titlesec line they needed (review H1)', src(page) == doc, src(page)[:300])
     load_doc(page, doc); click_text(page, 'Text', 1)
     run_cmd(page, 'design-colors', {'id': 'teal'})
     s = src(page)
@@ -745,6 +745,196 @@ def phone(p):
         browser.close()
 
 
+def pdf_text(page, text):
+    """The text and the problems of one compile in the page: { ok, errors, text }."""
+    import base64, subprocess, tempfile
+    page.set_default_timeout(600000)
+    r = page.evaluate("""async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile();
+      let b = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) b += String.fromCharCode(...r.pdf.subarray(i, i + 8192));
+      return { ok: r.ok, errors: r.problems.filter((p) => p.severity === 'error').map((p) => p.message).slice(0, 3), pdf: r.pdf ? btoa(b) : '' }; }""", text)
+    page.set_default_timeout(30000)
+    t = ''
+    if r['pdf']:
+        with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as fh:
+            fh.write(base64.b64decode(r['pdf']))
+        t = subprocess.run(['pdftotext', '-layout', fh.name, '-'], capture_output=True, text=True).stdout
+        os.unlink(fh.name)
+    return {'ok': r['ok'], 'errors': r['errors'], 'text': t}
+
+
+def modify_style(page, v, do, ok=True):
+    """Modify Style on style v: do(page) changes the dialog's fields, then OK."""
+    run_cmd(page, 'modify-style', {'v': v}); page.wait_for_timeout(250)
+    do(page)
+    if ok: page.locator('.pop-modstyle').get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+
+
+def review(page):
+    """The hostile review of B4 (review H1 to H10, M1 to M5, L1 to L7), each with its case."""
+    H = A('\\section{Intro}\nText.\n\n\\subsection{Sub}\nMore.\n\n\\paragraph{Lead} Runs in.')
+    # H1: titlesec only for article, report, book and the ext classes; refused elsewhere, nothing written
+    for cls in ('amsart', 'llncs', 'elsarticle', 'revtex4-2', 'IEEEtran', 'scrartcl', 'memoir'):
+        load_doc(page, H.replace('{article}', '{' + cls + '}')); click_text(page, 'Intro', 2); page.wait_for_timeout(200)
+        en = page.evaluate('["modify-style", "design-style-set", "design-colors", "design-themes", "update-style"].map((id) => window.rikuy.cmds.enabled(window.rikuy, id, window.rikuy.ribbonAt()))')
+        why = page.evaluate('window.rikuy.titlesecWhy() || ""')
+        before = src(page)
+        run_cmd(page, 'design-style-set', {'id': 'lines'}); run_cmd(page, 'design-colors', {'id': 'teal'})
+        check('H1: in %s Modify Style, Update to Match and the Design tab\'s sets are disabled, saying why, and write nothing' % cls, en == [False] * 5 and why and src(page) == before, (en, why[:60]))
+    for cls in ('extarticle', 'report', 'book'):
+        load_doc(page, H.replace('{article}', '{' + cls + '}')); click_text(page, 'Intro', 2)
+        check('H1: in %s they apply' % cls, page.evaluate('window.rikuy.cmds.enabled(window.rikuy, "design-style-set", window.rikuy.ribbonAt())'))
+    # H1: LaTeX's own takes the last line away and the titlesec line it needed with it; L3: Update to Match with nothing to write adds nothing
+    load_doc(page, H); click_text(page, 'Intro', 2)
+    run_cmd(page, 'design-style-set', {'id': 'lines'}); mid = src(page)
+    run_cmd(page, 'design-style-set', {'id': 'latex'})
+    check('H1: LaTeX\'s own after Lines gives the document back, the \\usepackage{titlesec} line gone too', '\\usepackage{titlesec}' in mid and src(page) == H, src(page)[:200])
+    load_doc(page, H.replace('\\section{Intro}', '\\section{\\textbf{Intro}}')); click_text(page, 'Intro', 2); run_cmd(page, 'update-style')
+    check('L3: Update to Match on \\section{\\textbf{…}} (its look already): the \\textbf comes off, no package line goes in', src(page) == H, src(page)[:200])
+    # H3: a hand written line kept byte for byte; OK with nothing changed changes nothing
+    hand = A('\\section{Intro}\nText.', '\\usepackage{titlesec}\n\\titleformat{\\section}[block]{\\Large\\bfseries}{\\thesection.}{0.5em}{\\MakeUppercase}\n\\titlespacing{\\section}{1em}{3.5ex plus 1ex minus .2ex}{*1.5}\n')
+    load_doc(page, hand); click_text(page, 'Intro', 2)
+    modify_style(page, 'section', lambda pg: None)
+    check('H3/H9: Modify Style, OK with nothing changed: no edit', src(page) == hand and page.evaluate('window.rikuy.hist.length') == 0, src(page)[:300])
+    modify_style(page, 'section', lambda pg: pg.check('#ms-italic'))
+    check('H3: italic on: the format argument alone changes; label, separator, before code, the glue and *1.5 stay', src(page) == hand.replace('{\\Large\\bfseries}{\\thesection.}', '{\\normalfont\\Large\\bfseries\\itshape}{\\thesection.}'), src(page)[:330])
+    # H2: titlesec's explicit option: the full form with #1, and the PDF has the titles
+    ex = A('\\section{Intro}\nText.\n\n\\subsection{Sub}\nMore.', '\\usepackage[explicit]{titlesec}\n')
+    load_doc(page, ex); click_text(page, 'Sub', 1)
+    modify_style(page, 'subsection', lambda pg: pg.uncheck('#ms-bold'))
+    click_text(page, 'Intro', 2)
+    modify_style(page, 'section', lambda pg: pg.uncheck('#ms-num'))
+    s2 = src(page)
+    check('H2: under explicit Modify writes \\titleformat in full with #1, never \\titleformat*', 'titleformat*' not in s2 and '{\\thesubsection}{1em}{#1}' in s2 and '{\\normalfont\\Large\\bfseries}{}{1em}{#1}' in s2, s2[:400])
+    # H7: Numbered off: the page draws no number, as TeX prints none
+    num = page.evaluate('[...document.querySelectorAll("#pages .it.h1 .secnum")].length')
+    check('H7: Numbered off: the page draws "Intro" with no number', num == 0, num)
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        r = pdf_text(page, s2)
+        t = re.sub(r'\s+', ' ', r['text'])
+        check('H2/H7: compiled, the PDF has both titles, the section with no number (its counter still steps: the subsection is 1.1)', r['ok'] and not r['errors'] and 'Intro' in t and not re.search(r'\b1 Intro', t) and '1.1 Sub' in t, (r['errors'], t[:200]))
+    # H4: a theorem made by thmtools, tcolorbox or mdframed: no second definition; Proof under ntheorem without amsthm refused
+    for pre in ('\\usepackage{amsthm,thmtools}\n\\declaretheorem{theorem}\n', '\\usepackage[most]{tcolorbox}\n\\newtcbtheorem{theorem}{Theorem}{}{th}\n', '\\usepackage{amsthm,mdframed}\n\\newmdtheoremenv{theorem}{Theorem}\n'):
+        load_doc(page, A(P3, pre)); click_text(page, 'Words', 2); run_cmd(page, 'style-thm-theorem')
+        check('H4: Theorem style where %s defines it: the environment alone, no \\newtheorem' % pre.split('\n')[1][:20], '\\newtheorem' not in src(page) and '\\begin{theorem}\nWords here.\n\\end{theorem}' in src(page), src(page)[:200])
+    load_doc(page, A(P3, '\\usepackage{ntheorem}\n')); click_text(page, 'Words', 2)
+    why = page.evaluate('window.rikuy.cmds.command("style-thm-proof").whyNot(window.rikuy, window.rikuy.ribbonAt())')
+    check('H4: Proof under ntheorem without its amsthm option is refused, saying why', not page.evaluate('window.rikuy.cmds.enabled(window.rikuy, "style-thm-proof", window.rikuy.ribbonAt())') and 'amsthm' in why, why)
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        load_doc(page, A(P3, '\\usepackage{amsthm,thmtools}\n\\declaretheorem{theorem}\n')); click_text(page, 'Words', 2); run_cmd(page, 'style-thm-theorem'); run_cmd(page, 'style-thm-lemma')
+        r = pdf_text(page, src(page)); t = re.sub(r'\s+', ' ', r['text'])
+        check('H4: compiled with thmtools: no error, the lemma\'s \\newtheorem added, "Lemma 1" in the PDF', r['ok'] and not r['errors'] and 'Lemma 1' in t, (r['errors'], t[:160]))
+    # H5: Create a Style refuses names LaTeX, a package or the document has
+    load_doc(page, A('Some key words here.', '\\newenvironment{aside}{\\par}{\\par}\n')); select_text(page, 'key words')
+    run_cmd(page, 'create-style'); refused = []
+    for kind, names in (('char', ('emph', 'quote', 'small', 'title', 'line', 'mark', 'url', 'underline', 'footnote', 'aside')), ('para', ('small', 'box', 'title', 'flushleft', 'frame', 'tabular'))):
+        page.select_option('#cs-type', kind)
+        for n in names:
+            page.fill('#cs-name', n); page.wait_for_timeout(30)
+            if not page.locator('.pop-modstyle').get_by_role('button', name='OK').is_disabled(): refused.append((kind, n))
+    check('H5: every name LaTeX, TeX or the document has is refused', not refused, refused)
+    page.fill('#cs-name', 'keyterm'); page.wait_for_timeout(30)
+    check('and a new name is taken', not page.locator('.pop-modstyle').get_by_role('button', name='OK').is_disabled())
+    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    # H6: the author's \setcounter{secnumdepth}{2}: off and on give it back
+    six = A('\\section{A}\nx', '\\setcounter{secnumdepth}{2}\n')
+    load_doc(page, six); click_text(page, 'x', 0); run_cmd(page, 'heading-numbers-off'); run_cmd(page, 'heading-numbers-off')
+    check('H6: Heading numbers off and on: the author\'s \\setcounter{secnumdepth}{2} stays', src(page) == six, src(page)[:160])
+    # H8: Unnumbered heading on \section[Short]{Long}: refused, saying why
+    load_doc(page, A('\\section[Short]{Long title}\nx')); click_text(page, 'Long', 2)
+    check('H8: Unnumbered heading on a heading with a short title is refused, saying why', not page.evaluate('window.rikuy.cmds.enabled(window.rikuy, "heading-unnumbered", window.rikuy.ribbonAt())')
+          and 'short title' in page.evaluate('window.rikuy.cmds.command("heading-unnumbered").whyNot(window.rikuy, window.rikuy.ribbonAt())'))
+    # H9: Modify on the document's own style, OK with nothing changed: no edit; a change keeps what the dialog does not show
+    own = A('A \\hl{x} y.\n\n\\begin{note}\nN.\n\\end{note}', '\\usepackage{xcolor}\n\\newcommand{\\hl}[1]{\\colorbox{yellow}{#1}}\n\\newenvironment{note}{\\par\\noindent\\slshape\\small}{\\par}\n')
+    load_doc(page, own); click_text(page, 'x', 0)
+    modify_style(page, 'char:hl', lambda pg: None)
+    modify_style(page, 'env:note', lambda pg: None)
+    check('H9: OK with nothing changed on \\hl and note: no edit', src(page) == own, src(page)[:300])
+    modify_style(page, 'char:hl', lambda pg: pg.check('#ms-bold'))
+    modify_style(page, 'env:note', lambda pg: pg.select_option('#ms-color', 'blue'))
+    check('H9: bold on \\hl keeps its \\colorbox; a colour on note keeps \\noindent, \\slshape and \\small', '\\newcommand{\\hl}[1]{\\colorbox{yellow}{\\textbf{#1}}}' in src(page) and '\\newenvironment{note}{\\par\\noindent\\slshape\\small\\color{blue}}{\\par}' in src(page), src(page)[:300])
+    # H10: run in only where TeX runs in; with \parskip the heading on its paragraph's line
+    load_doc(page, A('\\paragraph{Lead}\n\\begin{quote}\nQuoted.\n\\end{quote}\n\n\\paragraph{Next}\nRuns in.'))
+    ri = page.evaluate('[...document.querySelectorAll("#pages .it.h4")].map((h) => h.classList.contains("runin"))')
+    check('H10: \\paragraph before a quote stands on its own line, before a paragraph it runs in', ri == [False, True], ri)
+    for pre in ('\\usepackage{parskip}\n', '\\setlength{\\parskip}{2em}\n'):
+        load_doc(page, A('Before.\n\n\\paragraph{Lead}\nRuns in here.', pre))
+        g = page.evaluate("""() => { const h = document.querySelector('#pages .it.h4 span.t'), p = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('Runs in')); const a = h.getBoundingClientRect(), b = p.getBoundingClientRect(); return Math.round(Math.abs(a.top - b.top)); }""")
+        check('H10: with %s the heading stands on its paragraph\'s first line (%d px apart)' % (pre.strip(), g), g <= 3, g)
+    # M3: a hand written \@startsection with a positive after skip: on a line of its own
+    load_doc(page, A('\\paragraph{Lead}\nText.', '\\makeatletter\n\\renewcommand\\paragraph{\\@startsection{paragraph}{4}{\\z@}{3.25ex \\@plus1ex \\@minus.2ex}{1.5ex \\@plus .2ex}{\\normalfont\\normalsize\\bfseries}}\n\\makeatother\n'))
+    check('M3: a \\paragraph the preamble sets on its own line is not run in', page.evaluate('!document.querySelector("#pages .it.h4.runin")'))
+    # M1: a new paragraph style is justified, LaTeX's own; M2: ulem already loaded keeps its options
+    load_doc(page, A('Words here.', '\\usepackage{ulem}\n')); click_text(page, 'Words', 2)
+    run_cmd(page, 'create-style'); page.fill('#cs-name', 'aside'); page.select_option('#cs-type', 'para'); page.wait_for_timeout(80); page.check('#ms-italic')
+    page.locator('.pop-modstyle').get_by_role('button', name='OK').click(); page.wait_for_timeout(250)
+    check('M1: a new paragraph style, italic: \\newenvironment{aside}{\\par\\itshape}{\\par}, no \\raggedright', '\\newenvironment{aside}{\\par\\itshape}{\\par}' in src(page), src(page)[:200])
+    select_text(page, 'Words'); run_cmd(page, 'create-style'); page.fill('#cs-name', 'under'); page.check('#ms-ul')
+    page.locator('.pop-modstyle').get_by_role('button', name='OK').click(); page.wait_for_timeout(250)
+    check('M2: Underline with ulem loaded: its line stays \\usepackage{ulem} (no normalem: \\emph keeps its underline)', '\\usepackage{ulem}\n' in src(page) and 'normalem' not in src(page), src(page)[:200])
+    # M4: memoir with \mainmatter: off writes its own pair; the page draws what TeX prints
+    mem = '\\documentclass{memoir}\n\\begin{document}\n\\mainmatter\n\\chapter{One}\n\\section{Sec}\nText.\n\\end{document}\n'
+    load_doc(page, mem); click_text(page, 'Text', 1); run_cmd(page, 'heading-numbers-off')
+    nums = page.evaluate('[...document.querySelectorAll("#pages .it.h .secnum, #pages .it.h .chapl")].map((x) => x.textContent)')
+    check('M4: memoir: Heading numbers off writes \\setsecnumdepth{none}\\maxsecnumdepth{none}, the page draws no number', '\\setsecnumdepth{none}\\maxsecnumdepth{none}' in src(page) and not [x for x in nums if re.search(r'\d', x)], (src(page)[:120], nums))
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        r = pdf_text(page, src(page)); t = re.sub(r'\s+', ' ', r['text'])
+        check('M4: compiled, memoir prints neither "Chapter 1" nor "1.1"', r['ok'] and not r['errors'] and 'Sec' in t and 'Chapter 1' not in t and '1.1' not in t, (r['errors'], t[:160]))
+    # M5: the pane follows a rename in the source
+    load_doc(page, A('A \\keyterm{x} y.', '\\newcommand{\\keyterm}[1]{\\textbf{#1}}\n')); click_text(page, 'y.', 0); run_cmd(page, 'styles-pane')
+    page.evaluate("(t) => window.rikuy.api.setSource(t)", A('A \\keyword{x} y.', '\\newcommand{\\keyword}[1]{\\textbf{#1}}\n')); page.wait_for_timeout(400); click_text(page, 'y.', 0); page.wait_for_timeout(300)
+    names = page.evaluate('[...document.querySelectorAll("#stylespane [data-style^=\'char:\']")].map((x) => x.dataset.style)')
+    check('M5: the pane lists the renamed \\keyword, not \\keyterm', names == ['char:keyword'], names)
+    run_cmd(page, 'styles-pane')
+    # L1: CRLF kept in every line written
+    cr = A('\\section{Intro}\nText.').replace('\n', '\r\n')
+    load_doc(page, cr); click_text(page, 'Intro', 2); run_cmd(page, 'design-colors', {'id': 'teal'}); run_cmd(page, 'heading-numbers-off')
+    check('L1: in a CRLF file the colour, titlesec and secnumdepth lines end in CRLF', '\n' not in src(page).replace('\r\n', ''), repr(src(page)[:300]))
+    # L2: \part under secnumdepth -1 in an article: no "Part I"
+    load_doc(page, A('\\part{Whole}\nx', '\\setcounter{secnumdepth}{-1}\n'))
+    check('L2: \\part with secnumdepth -1 in an article shows no "Part I"', 'Part I' not in page.evaluate('document.querySelector("#pages .it.h").textContent'))
+    # L7: \paragraph numbered where secnumdepth reaches it; Casual alone gives its colour
+    load_doc(page, A('\\section{A}\n\\subsection{B}\n\\subsubsection{C}\n\\paragraph{D}\nx', '\\setcounter{secnumdepth}{4}\n'))
+    check('L7: with secnumdepth 4 \\paragraph is numbered 1.1.1.1', '1.1.1.1' in page.evaluate('document.querySelector("#pages .it.h4").textContent'))
+    load_doc(page, H); click_text(page, 'Intro', 2); run_cmd(page, 'design-style-set', {'id': 'casual'})
+    check('L7: Style Set Casual with no accent defined writes one, so its headings have the colour it promises', '\\definecolor{accent}' in src(page) and '\\color{accent}' in src(page), src(page)[:300])
+    # L6: Home on a run in heading's line goes to its start; Backspace at the paragraph's start joins as after any heading
+    load_doc(page, A('\\paragraph{Lead}\nRuns in.')); click_text(page, 'Runs', 2); page.keyboard.press('Home'); page.keyboard.type('X'); page.wait_for_timeout(200)
+    check('L6: Home on the line goes to the heading\'s start', '\\paragraph{XLead}' in src(page), src(page)[-60:])
+    load_doc(page, A('\\paragraph{Lead}\nRuns in.')); click_text(page, 'Runs', 0); page.keyboard.press('Backspace'); page.wait_for_timeout(250)
+    a = body(page)
+    load_doc(page, A('\\subsubsection{Lead}\nRuns in.')); click_text(page, 'Runs', 0); page.keyboard.press('Backspace'); page.wait_for_timeout(250)
+    b = body(page)
+    check('L6: Backspace at the paragraph\'s start does there what it does after a heading on its own line', a != A('\\paragraph{Lead}\nRuns in.') and a.replace('\\paragraph', '\\subsubsection') == b, (a, b))
+
+
+def review_phone(p):
+    """Review L4 and L5 on a phone: 44 px targets in Create a Style and the sheet; a dialog that
+    follows the window when it shrinks (the keyboard up)."""
+    browser, page, errors = open_phone(p, 360, 740)
+    try:
+        load_doc(page, A('Some words here.'))
+        tap_text(page, 'words', 1)
+        page.select_option('#rb-style', '__new'); page.wait_for_timeout(300)
+        small = page.evaluate(SMALL, '#cs-name, .pop-modstyle select')
+        check('L4: Create a Style\'s Name and lists are 44 px tall on a phone', not small, small)
+        page.set_viewport_size({'width': 360, 'height': 380}); page.wait_for_timeout(400)
+        box = page.evaluate("() => { const r = document.querySelector('.pop-modstyle').getBoundingClientRect(), n = document.getElementById('cs-name').getBoundingClientRect(); return [Math.round(r.top), Math.round(r.bottom), Math.round(n.top)]; }")
+        check('L5: with the window shrunk to 380 px the dialog moves into it, its Name field in reach', box[0] >= 0 and box[1] <= 381 and box[2] >= 0, box)
+        page.set_viewport_size({'width': 360, 'height': 740}); page.wait_for_timeout(300)
+        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+        tap_text(page, 'words', 1)
+        page.select_option('#rb-style', '__pane'); page.wait_for_timeout(300)
+        small = page.evaluate(SMALL, '#stylespane .pop-x, #rb-style')
+        check('L4: the sheet\'s Close and the style list are 44 px or more', not small, small)
+        page.get_by_role('button', name='Normal options').tap(); page.wait_for_timeout(250)
+        small = page.evaluate(SMALL, '.pop-menu [role^=menuitem]')
+        check('L4: a style\'s menu items are 44 px tall', not small, small)
+    except Exception as e:
+        check('review_phone runs to its end', False, e)
+    check('no console errors (review_phone)', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
+    browser.close()
+
+
 def compile_all(page):
     """Everything this suite writes, compiled in the page: no error, the words where TeX puts them."""
     if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
@@ -777,7 +967,7 @@ def compile_all(page):
 
 def run():
     with sync_playwright() as p:
-        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, design, tile_menu, big, compile_all)
+        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, design, tile_menu, big, review, compile_all)
         # (the tests that read the tiles see all six: from 1600 px the gallery has room for them)
         wide = (styles, gallery, gallery_keys, quote_style)
         # (names given on the command line run those alone)
@@ -785,6 +975,8 @@ def run():
         if len(sys.argv) < 2 or 'phone' in sys.argv[1:]:
             os.makedirs('/tmp/B4-shots', exist_ok=True)
             phone(p)
+        if len(sys.argv) < 2 or 'review_phone' in sys.argv[1:]:
+            review_phone(p)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             browser, page, errors = open_page(p, width=1920 if fn in wide else 1400)
             try:

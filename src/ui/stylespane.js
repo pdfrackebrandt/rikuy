@@ -11,12 +11,16 @@ import { $ } from './dom.js';
 import { dialog, openMenu, numberField } from './kit.js';
 import { command, enabled } from '../commands.js';
 import { SIZES, defaultLook, headLookEdits } from '../looks.js';
-import { isHeading, isEnvStyle, envOf, charDef, envDef, defRange, readCharBody, charBodyOf, readEnvBegin, envBeginOf, restyle } from '../styles.js';
+import { isHeading, isEnvStyle, envOf, charDef, envDef, defRange, readCharBody, readEnvBegin, restyle, editCharBody, editEnvBegin, applyEdits, thmDefsIn, eolAt, TAKEN } from '../styles.js';
 import { enclosing, wrapEdits, unwrapEdits, parseAt } from '../wrap.js';
-import { defineOnce } from '../preamble.js';
+import { defineOnce, defines, packageLine, packageOptions, preambleEnd, stripComments } from '../preamble.js';
+import { SIG, CHARS } from '../parser.js';
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 // classes whose headings titlesec must not set (they have their own means), and why
+// titlesec's looks are written for these classes' headings; any other class sets its own, and
+// titlesec breaks it (amsart's \subsection, llncs' \subparagraph, revtex's titles: review H1)
+const TITLESEC_OK = /^(article|report|book|extarticle|extreport|extbook)$/;
 const NO_TITLESEC = [[/^scr(artcl|reprt|book)$/, 'KOMA-Script sets its headings with \\setkomafont and \\RedeclareSectionCommand, and warns against titlesec: Fonts on the Design tab sets their font.'],
   [/^memoir$/, 'memoir sets its headings with its own commands (\\setsecheadstyle, \\chapterstyle), and titlesec breaks them.'],
   [/^beamer$/, 'A beamer presentation\'s headings are its theme\'s.']];
@@ -40,9 +44,27 @@ export const methods = {
   // ---- what the headings look like now -----------------------------------------------------
   titlesecWhy() {
     const cls = this.model ? this.model.opts.cls || 'article' : 'article';
-    for (const [re, why] of NO_TITLESEC) if (re.test(cls)) return why;
     if (!this.model || this.stylePreEnd() < 0) return 'The main file has no preamble to set it in.';
+    for (const [re, why] of NO_TITLESEC) if (re.test(cls)) return why;
+    if (!TITLESEC_OK.test(cls)) return 'The class ' + cls + ' sets its own headings, and titlesec (what Modify Style and the Design tab write) breaks them: its headings keep the class\'s look.';
     return null;
+  },
+  // what headLookEdits needs to know of this document: its class, and titlesec's explicit option
+  headOpts() {
+    const src = this.src(this.main), o = packageOptions(src, 'titlesec', this.stylePreEnd(), this.preambleOthers()) || {};
+    return { cls: this.model ? this.model.opts.cls : 'article', explicit: !!o.explicit };
+  },
+  // The packages edits of headings' looks need: titlesec where a line is written, xcolor where a
+  // colour is; and where the edits take the last titlesec line away, the \usepackage{titlesec}
+  // line too (alone on its line, with no option: one written for these lines). None for no edit.
+  headPackages(src, ed) {
+    if (!ed.length) return [];
+    const f = this.main, after = applyEdits(src, ed), others = this.preambleOthers();
+    const TS = /\\title(?:format|spacing|label|class|rule|line|contents)(?![A-Za-z])/;
+    const uses = TS.test(stripComments(after.slice(0, Math.max(0, preambleEnd(after))))) || others.some((x) => TS.test(stripComments(x)));
+    if (uses) return this.packageEdits(['titlesec', ...(ed.some((x) => /\\color\{/.test(x.t)) ? ['xcolor'] : [])]);
+    const m = /(^|\n)([ \t]*\\usepackage\{titlesec\}[ \t]*\r?\n)/.exec(stripComments(src.slice(0, Math.max(0, preambleEnd(src)))));
+    return m ? [{ f, s: m.index + m[1].length, e: m.index + m[1].length + m[2].length, t: '' }] : [];
   },
   headLookOf(cmd) {
     const O = this.model ? this.model.opts : {}, L = (O.heads && O.heads[cmd]) || defaultLook(cmd, !!O.koma);
@@ -52,12 +74,10 @@ export const methods = {
   writeHeadLooks(want, label) {
     const f = this.main, src = this.src(f), why = this.titlesecWhy();
     if (why) { this.toast(why); return false; }
-    const ed = headLookEdits(src, want, { koma: false });
+    const ed = headLookEdits(src, want, this.headOpts());
     if (!ed) return false;
     if (!ed.length) return true;
-    const removing = Object.values(want).every((L) => !L);
-    const pk = removing ? [] : this.packageEdits(['titlesec', ...(Object.values(want).some((L) => L && L.color) ? ['xcolor'] : [])]);
-    this.commitPreamble([...ed.map((x) => ({ f, ...x })), ...pk], label);
+    this.commitPreamble([...ed.map((x) => ({ f, ...x })), ...this.headPackages(src, ed)], label);
     return true;
   },
   // edits of the preamble, with the caret kept where it was in the words
@@ -169,7 +189,9 @@ export const methods = {
     const P = $('#stylespane');
     if (!P) return;
     const K = this.styleCatalog();
-    if (P.dataset.k !== String(K.all.length) + '|' + K.chars.length + '|' + K.levels.length) { P.dataset.k = String(K.all.length) + '|' + K.chars.length + '|' + K.levels.length; this.paneFill(); }
+    // (made again when the document's styles change: by their values and names, not their number)
+    const key = K.all.map((x) => x.v).join() + '|' + K.chars.map((c) => c.name + ':' + c.body).join();
+    if (P.dataset.k !== key) { P.dataset.k = key; this.paneFill(); }
     const here = at && !at.c.ghost ? this.charStyleAt(at) : null;
     for (const a of P.querySelectorAll('[role=option]')) {
       const v = a.dataset.style;
@@ -341,7 +363,12 @@ export const methods = {
       this.closePop(true);
       this.ribbonBack();
       if (head) this.writeHeadLooks({ [v]: G }, 'format');
-      else this.rewriteDef(name, ch ? 'cmd' : 'env', ch ? charBodyOf(G) : envBeginOf(G), G.color);
+      else {
+        // (the tokens the dialog does not show stay as written; nothing changed, nothing written)
+        const r = defRange(this.src(this.main), name, ch ? 'cmd' : 'env'), old = r ? this.src(this.main).slice(r.s, r.e) : '';
+        const t = ch ? editCharBody(old, F, G) : editEnvBegin(old, F, G);
+        if (t != null && t !== old) this.rewriteDef(name, ch ? 'cmd' : 'env', t, G.color && G.color !== F.color);
+      }
       this.ribbonSync();
     });
     this.positionPop();
@@ -366,7 +393,9 @@ export const methods = {
     if (F.color && !colors.some(([v]) => v === F.color)) colors.splice(1, 0, [F.color, F.color]);
     const seen = new Set(), cols = colors.filter(([v]) => (seen.has(v) ? false : (seen.add(v), true)));
     const col = select('ms-color', 'Colour', cols, F.color || '');
-    const align = o.ch ? null : select('ms-align', 'Alignment', [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']], F.align || 'left');
+    // (a heading is set flush left by its class; a paragraph justified, LaTeX's own, which writes nothing)
+    const align = o.ch ? null : o.head ? select('ms-align', 'Alignment', [['left', 'Left'], ['center', 'Centre'], ['right', 'Right']], F.align || 'left')
+      : select('ms-align', 'Alignment', [['', 'Justified (LaTeX\'s own)'], ['left', 'Left'], ['center', 'Centre'], ['right', 'Right']], F.align || '');
     let rule = null, runin = null, num = null, before = null, after = null;
     if (o.head) {
       const hc = el('div', 'ms-checks');
@@ -383,7 +412,8 @@ export const methods = {
       l1.append(el('span', 'ms-l', 'Space before'), before); l2.append(el('span', 'ms-l', 'Space after'), after);
       sp.append(l1, l2);
       box.append(sp);
-      const spaced = { b: F.before != null, a: F.after != null };
+      // (a space the dialog shows but nobody changed writes nothing: a hand written *4 or glue stays)
+      const spaced = { b: false, a: false };
       before.addEventListener('change', () => { spaced.b = true; }, true);
       after.addEventListener('change', () => { spaced.a = true; }, true);
       before.addEventListener('keydown', () => { spaced.b = true; }, true);
@@ -410,7 +440,8 @@ export const methods = {
     return {
       el: box,
       get: () => {
-        const G = o.head ? { ...F } : {};
+        // (what the dialog does not show stays as it was: \MakeUppercase, a hand written shape)
+        const G = { ...F };
         G.sf = fam.value === 'sf'; G.tt = fam.value === 'tt';
         if (size) G.size = size.value;
         G.bf = bf.checked; G.it = it.checked; G.sc = sc.checked;
@@ -419,11 +450,9 @@ export const methods = {
         if (align) G.align = align.value;
         if (o.head) {
           G.rule = rule.checked; G.num = num.checked;
-          if (runin) G.shape = runin.checked ? 'runin' : (defaultLook(o.cmd, false).shape === 'runin' ? 'hang' : defaultLook(o.cmd, false).shape);
+          if (runin) G.shape = runin.checked ? 'runin' : F.shape === 'runin' ? 'hang' : F.shape;
           if (box.spaced.b) G.before = before.get().value;
           if (box.spaced.a) G.after = after.get().value;
-          if (G.before != null && G.after == null) G.after = after.get().value;
-          if (G.after != null && G.before == null) G.before = before.get().value;
         }
         return G;
       }
@@ -465,7 +494,7 @@ export const methods = {
     const F = this.formatHere();
     const p = dialog(this, { title: 'Create a Style', rect: new DOMRect(Math.max(8, window.innerWidth / 2 - 200), 110, 0, 0), cls: 'pop-modstyle' });
     const nameRow = el('label', 'ms-row'), name = el('input', 'fd-in');
-    name.id = 'cs-name'; name.setAttribute('aria-label', 'Name'); name.placeholder = 'keyterm'; name.autocomplete = 'off'; name.spellcheck = false;
+    name.id = 'cs-name'; name.type = 'text'; name.setAttribute('aria-label', 'Name'); name.placeholder = 'keyterm'; name.autocomplete = 'off'; name.spellcheck = false;
     name.title = 'Letters only: it becomes the LaTeX name, \\keyterm{…} or \\begin{keyterm}';
     nameRow.append(el('span', 'ms-l', 'Name'), name);
     const kindRow = el('label', 'ms-row'), kind = el('select', 'fd-sel');
@@ -485,8 +514,7 @@ export const methods = {
       const n = name.value.trim(), src = this.src(this.main), M = this.model;
       let why = '';
       if (!NAME_OK.test(n)) why = 'Letters only, two or more (LaTeX\'s names have no digits or spaces).';
-      else if (kind.value === 'char' && (M.textMacros.has(n) || defRange(src, n, 'cmd') || /^(text|math|section|par|item|label|ref|cite|begin|end|new|renew|def|let|if|else|fi|relax|the|end)/.test(n))) why = '\\' + n + ' is taken: LaTeX or this document has a command of that name.';
-      else if (kind.value === 'para' && (M.envDefs.has(n) || M.thms.has(n) || /^(document|center|quote|quotation|verse|itemize|enumerate|description|figure|table|tabular|abstract|equation|align|minipage|proof|theorem)$/.test(n))) why = 'An environment of that name exists.';
+      else if (this.nameTaken(n)) why = (kind.value === 'char' ? '\\' + n : n) + ' is taken: LaTeX, a package or this document has a command or an environment of that name.';
       // (nothing said before a name is typed)
       note.textContent = n ? why : '';
       ok.disabled = !!why;
@@ -505,9 +533,11 @@ export const methods = {
     if (!NAME_OK.test(name)) return false;
     // (where the caret was when the dialog opened, if the text has not changed since)
     if (c0 && !c0.ghost && at0 && at0.B) { this.restoreCaret(c0.collapsed ? { f: c0.f, p: c0.a, bias: -1 } : { f: c0.f, p: c0.b, selA: c0.a, selB: c0.b }, true); }
-    const def = defineOnce(src, name, kind === 'char' ? charDef(name, F) : envDef(name, F), { kind: kind === 'char' ? 'command' : 'environment' }).map((x) => ({ f, ...x }));
+    const nl = eolAt(src, 0), def = defineOnce(src, name, kind === 'char' ? charDef(name, F) : envDef(name, F), { kind: kind === 'char' ? 'command' : 'environment' }).map((x) => ({ f, ...x, t: x.t.replace(/\r?\n/g, nl) }));
     if (!def.length) { this.toast('The preamble defines ' + name + ' already.'); return false; }
-    const pk = F.color || F.ul ? this.packageEdits({ ...(F.color ? { xcolor: null } : {}), ...(F.ul ? { ulem: 'normalem' } : {}) }) : [];
+    // (normalem only where ulem is not loaded yet: added to a line that loads it, every \emph of the document would change)
+    const ulemHere = !!packageLine(src, 'ulem', preambleEnd(src)) || this.preambleOthers().some((x) => !!packageLine(x, 'ulem', -1));
+    const pk = F.color || F.ul ? this.packageEdits({ ...(F.color ? { xcolor: null } : {}), ...(F.ul ? { ulem: ulemHere ? null : 'normalem' } : {}) }) : [];
     const c = this.caretNow(), at = this.ribbonAt();
     let use = [], caret = null;
     if (c && !c.ghost && kind === 'char') {
@@ -572,6 +602,14 @@ export const methods = {
     return null;
   },
   canUpdateStyle(v) { return !!this.matchPlan(v); },
+  // whether a name is LaTeX's, TeX's, a package's the parser knows, or the document's own, as a
+  // command or an environment (\newenvironment{x} defines \x and \endx; review H5)
+  nameTaken(n) {
+    const M = this.model, src = this.src(this.main), end = this.stylePreEnd(), others = this.preambleOthers();
+    if (TAKEN.has(n) || TAKEN.has(n.replace(/^end/, '')) || Object.prototype.hasOwnProperty.call(SIG, n) || Object.prototype.hasOwnProperty.call(CHARS, n)) return true;
+    if (M && (M.textMacros.has(n) || M.envDefs.has(n) || M.thms.has(n) || (M.mathMacros && M.mathMacros['\\' + n]))) return true;
+    return [src, ...others].some((t, k) => defines(t, n, 'command', k ? -1 : end) || defines(t, n, 'environment', k ? -1 : end) || thmDefsIn(t, true).has(n));
+  },
   updateStyle(v) {
     const P = this.matchPlan(v);
     if (!P) { this.toast('Put the caret in a ' + this.styleName(v) + ' whose words all have the formatting to take (\\textsf{…}, \\textcolor{…}{…}).'); return false; }
@@ -581,11 +619,12 @@ export const methods = {
       const why = this.titlesecWhy();
       if (why) { this.toast(why); return false; }
       const L = { ...this.headLookOf(v), ...P.F };
-      pre = headLookEdits(src, { [v]: L }, {}) || [];
-      pre = [...pre.map((x) => ({ f, ...x })), ...this.packageEdits(['titlesec', ...(L.color ? ['xcolor'] : [])])];
+      const ed = headLookEdits(src, { [v]: L }, this.headOpts()) || [];
+      // (packages only for a line written: the heading's own look already, nothing to load)
+      pre = [...ed.map((x) => ({ f, ...x })), ...this.headPackages(src, ed)];
     } else {
-      const r = defRange(src, P.name, 'cmd'), F = { ...(readCharBody(src.slice(r.s, r.e)) || {}), ...P.F };
-      pre = [{ f, s: r.s, e: r.e, t: charBodyOf(F) }, ...(F.color ? this.packageEdits(['xcolor']) : [])];
+      const r = defRange(src, P.name, 'cmd'), old = src.slice(r.s, r.e), F0 = readCharBody(old) || {}, t = editCharBody(old, F0, { ...F0, ...P.F });
+      pre = t != null && t !== old ? [{ f, s: r.s, e: r.e, t }, ...(P.F.color ? this.packageEdits(['xcolor']) : [])] : [];
     }
     this.commitPreamble([...pre, ...P.edits.map((x) => ({ f: P.f, ...x }))], 'format');
     return true;

@@ -1373,9 +1373,7 @@ body.fpainting #pages { cursor: copy; }
 .pop.pop-ruby { width: min(400px, calc(100vw - 16px)); }
 @media (max-width: 640px) {
   .fd-grid, .fd-eff { grid-template-columns: 1fr 1fr; }
-
-
-
+}
 
 /* ---- B4: styles, headings' looks, the Styles pane, Apply Styles, the Design tab ---- */
 /* a heading that runs into its paragraph (\paragraph, \subparagraph): no height of its own, drawn
@@ -1427,7 +1425,7 @@ body.fpainting #pages { cursor: copy; }
 /* Apply Styles, Modify Style, Create a Style */
 .pop.pop-apply { width: min(300px, calc(100vw - 16px)); }
 .pop.pop-modstyle { width: min(430px, calc(100vw - 16px)); }
-.fd-btns { display: flex; justify-content: flex-end; gap: 6px; }
+.pop-modstyle .fd-btns, .pop-apply .fd-btns { display: flex; justify-content: flex-end; gap: 6px; }
 .ms-name { font: 12.5px var(--font-ui); color: var(--mute); }
 .ms-form { display: flex; flex-direction: column; gap: 7px; }
 .ms-row { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 8px; font: 12.5px var(--font-ui); }
@@ -1453,7 +1451,11 @@ body.fpainting #pages { cursor: copy; }
   .stp-o { min-height: 44px; }
   .stp-x { opacity: 1; width: 44px; }
   .stp-f .btn, .pop-modstyle .btn, .pop-apply .btn { min-height: 44px; }
-  .pop-modstyle select, .pop-modstyle input[type="text"], .pop-apply input { min-height: 44px; }
+  .pop-modstyle select, .pop-modstyle input[type="text"], .pop-modstyle input:not([type]), .pop-apply input { min-height: 44px; }
+  /* the sheet's Close, a style's menu, the Design tab's menus and the phone's style list: a finger's 44 px */
+  .stp .pop-x { min-width: 44px; min-height: 44px; }
+  .pop-menu [role^=menuitem], .pop-styles [role^=menuitem] { min-height: 44px; }
+  #rb-style { min-height: 44px; }
   .ms-c { min-height: 44px; }
   .ms-c input { width: 20px; height: 20px; }
   .pop-styles .rb-mi { min-height: 44px; }

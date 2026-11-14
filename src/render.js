@@ -269,6 +269,8 @@ export class Renderer {
         if (/\bbibitem\b/.test(it.cls || '')) sbEm = 0.3;
         if (/\babs\b/.test(it.cls || '') && !it.indent) sbEm = 0;
         item.sbEm = sbEm || (this.model.opts.parskip || 0);
+        // (a run in heading's paragraph starts on the heading's line: the space before it is the heading's)
+        if (it.runIn) item.sbEm = 0;
         if (it.saThm || it.saList) el.classList.add('pad-after');
         if (/\bthm\b/.test(it.cls || '') && it.thmFirst) el.dataset.thm = '1';
         this.paraLook(it, el, item);
@@ -282,7 +284,7 @@ export class Renderer {
         el.setAttribute('aria-level', String(typeof it.level === 'number' ? Math.min(6, it.level + 1 || 1) : 2));
         if (it.chapLabel) {
           if (it.num) { const l = chr(it.chapLabel + ' ' + it.num, 'chapl'); el.appendChild(l); }
-        } else if (it.num) { el.appendChild(chr(it.num, 'secnum')); }
+        } else if (it.num) { el.appendChild(chr(it.num, it.numBlock ? 'chapl' : 'secnum')); }
         this.inl(it.inl, el);
         headLook(el, it.look, false);
         // a heading that runs into its paragraph takes no height of its own: drawn over the room
@@ -294,6 +296,8 @@ export class Renderer {
         item.hnum = it.num || '';
         item.hlabel = it.chapLabel || '';
         item.sbEm = { 0: 2.5, 1: 1.5, 2: 1.35, 3: 1.35, 4: 1.1, 5: 1.1, abs: 0.6 }[it.level] ?? 1.2;
+        // (and the \parskip its paragraph would have had before it)
+        if (it.runIn) item.sbEm += this.model.opts.parskip || 0;
         break;
       }
       case 'title': {

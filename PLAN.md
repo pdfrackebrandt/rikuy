@@ -1235,6 +1235,45 @@ Tests:
     `deploy_check.py` 43/43; `pages_check.py` fits; the corpus model run 716 of 716 with the same
     unknown commands as before; actionlint clean.
 
+42a. **B4 review: every finding of the hostile review of e6bcad3 fixed, each with its case as a
+    test.** *titlesec* only for article, report, book and the ext classes; amsart, llncs,
+    elsarticle, revtex, IEEEtran, KOMA-Script, memoir and beamer are refused with the reason, and
+    Update to Match and the Design tab follow (H1). Only what changed is written: a heading's last
+    `\titleformat` and `\titlespacing` get the arguments of the fields the dialog changed and
+    nothing else, so a label's punctuation, a separator, before and after code, glue and
+    titlesec's `*4` stay byte for byte, and OK with nothing changed writes nothing (H3, H9); an
+    argument that is not there no longer takes the line break with it (H3d). Under titlesec's
+    `explicit` option every line is the full `\titleformat` with `#1` (H2). `\usepackage{titlesec}`
+    goes in only with a line, and goes again with the last one (H1, L3). *Theorems:* a name made
+    by thmtools, tcolorbox, mdframed or llncs' own forms counts as defined, and the model knows them
+    as theorems; Proof under ntheorem without its amsthm option is refused (H4). *Create a Style*
+    refuses a name TeX, LaTeX, a package the parser knows or the document has, as a command or an
+    environment (H5); a new paragraph style is justified, LaTeX's own (M1); Underline asks ulem for
+    `normalem` only where ulem is not loaded (M2). *Numbers:* off writes Rikuy's own
+    `\setcounter{secnumdepth}` after the author's, on takes only that away (H6); memoir gets
+    `\setsecnumdepth{none}\maxsecnumdepth{none}`, and the model knows that its `\mainmatter` sets the
+    depth again (M4); the page leaves out a number titlesec's empty label leaves out (H7), numbers
+    `\paragraph` and `\subparagraph` where secnumdepth reaches them, and `\part` in an article only
+    from 0 (L2, L7); Unnumbered heading is refused on `\section[short]{…}`, which `\section*` cannot
+    take (H8). *Run in* only into a paragraph of the same flow, not into a quote, a list or a
+    theorem, and not where the preamble or a class of the project sets `\paragraph` on its own line
+    by `\@startsection` (H10, M3); the space before is the heading's, so with `\parskip` it stays on
+    its paragraph's line (H10). The pane and the narrow list are made again when the document's
+    styles change by name (M5). CRLF kept in every line written (L1). Phones: Create a Style's
+    Name, the sheet's Close, a style's menu items and the style list at 44 px; a dialog follows the
+    window when it shrinks (L4, L5). Home and the up arrow on a run in heading's line go to its
+    start, Backspace at its paragraph's start does what it does after any heading (L6); Style Set
+    Casual alone defines its accent (L7). Not done: a float between `\paragraph{Lead}` and its text
+    (TeX runs in after the float, which it places elsewhere; the page draws floats where they stand,
+    so Lead stays before it). Also fixed: the rebase onto B1 had left B1's last `@media` block of
+    app.css open, so B4's rules were inside it. Evidence (on main ea60497, after B1): `npm test` green
+    (`looks.test.mjs` 9 groups: the review's titlesec lines, explicit, `\\@startsection`; `styles.test.mjs`
+    24: numbers off and on keeping the author's line, memoir, CRLF); `test/styles.py` 312 (`review`
+    and `review_phone`: one case for each finding, the explicit, thmtools and memoir documents
+    compiled in the page, `pdftotext` the judge); `ribbon.py` 193; `tabs.py` 115; `font.py` 272;
+    `agent.py` 138; `browser.py` 189; `page.py` 143; the corpus model run 716 of 716, unknown
+    commands unchanged.
+
 43. **B5, Find, Replace, Go To and the outline, as in Word.** Done in the code (branch
     `wordgap-b5-find`, on task 38's frame; GAP rows H75 to H81, V4, V10, S1, C5). *Find*
     (Ctrl+F on the page, Home's Find): the side panel's Outline tab is now Word's Navigation
