@@ -1021,6 +1021,11 @@ Tests:
     aligned whole (17); and the low ones: nowidow read as options, the model's parse reused at each
     move of the caret (a paragraph of a 190 KB environment: 3 ms), every paragraph of a long text
     at once (1500 in 0.6 s), a theorem's first paragraph says why, Show marks' arrow only at fills.
+    The page's text keeps the font's own advances (`text-rendering: geometricPrecision` on the
+    sheet): CI's Chromium hints fonts in full, which drew a centred or right aligned line 2 bp off
+    TeX's; `para.py` checks it with full hinting. Since B3's lists the group's first row holds
+    them and the group is one row below 861 px, folding there with Insert (`tabs.py`'s sweep: a
+    wider window never shows fewer controls).
     On a phone (390 and 360 px, touch): Center, Justify, Line and Paragraph Spacing and Show marks
     by a tap, 44 px targets, the dialog fitting and scrolling, no sideways scroll. Evidence:
     `para.test.mjs` 28 groups (the reviewer's cases through paraUnits and paraRun on the real
