@@ -1060,8 +1060,8 @@ Tests:
     `test/lists.py` checks each at 390x844 (light) and 360x740 (dark) with touch, tapping;
     `open_page` in `test/browser.py` takes `touch=True`. The rest of the ribbon's buttons are still
     30 px on a phone (B0's row: one rule for it all belongs there). Evidence:
-    `npm test` green with `lists.test.mjs` 24 groups (on main with task 45's tables merged:
-    `table` 46, `word` 57); `lists.py` 184 (142 on a desktop, nine compiles in the page; 42 on
+    `npm test` green with `lists.test.mjs` 24 groups (on main with tasks 45, B6's page and B1's
+    Font group merged: `table` 46, `page` 26, `font` 28, `word` 60); `lists.py` 184 (142 on a desktop, nine compiles in the page; 42 on
     the two phones); `table.py` 161; `tabs.py` 116; `ribbon.py` 268; `browser.py` 189;
     `agent.py` 138; `find.py` 76; `outline.py` 59; `word.py` 110; `history.py` 39/39;
     `paste.py` 25; `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43;
