@@ -1274,6 +1274,24 @@ Tests:
     `agent.py` 138; `browser.py` 189; `page.py` 143; the corpus model run 716 of 716, unknown
     commands unchanged.
 
+42b. **B4 verification: what the verifier of 42a found, fixed with its cases.** The names a
+    preamble's scan finds (tcolorbox's and mdframed's boxes, `\newtcbtheorem`) serve only the
+    "already defined" check; the page draws as theorems only those that are: thmtools'
+    `\declaretheorem` with its `name=`, `numbered=no` and `sibling=`, mdframed's
+    `\newmdtheoremenv`, llncs' `\spnewtheorem` (`thmMakersIn`), and none of the others is offered
+    as a style (V1). Create a Style checks a name against every command name LaTeX's kernel and 88
+    common packages define, as LuaTeX's hash table lists them after loading each (`src/texnames.js`,
+    9828 names, written by `dev/texnames.py` from a native LuaLaTeX), with the parser's tables and
+    the document's own (V2). An `\@startsection` after skip of zero runs in, and `\def\paragraph`
+    is read (V3). The narrow list is made again by its styles' values (V4). A `\titleformat*`
+    after a full `\titleformat` folds into it when the shape, the rule or the number changes, so
+    the full line's label and before code keep applying; numbers off and on give the author's label
+    back (V5). Evidence (on main 5f12c07, after B13): `npm test` green (`styles.test.mjs` 25 groups,
+    `looks.test.mjs` 10); `test/styles.py` 320 (`verify`: the verifier's cases, its theorem forms
+    document compiled in the page); `ribbon.py` 193; `tabs.py` 115; `lists.py` 184; `font.py` 272;
+    `eqtab.py` 159; `agent.py` 141; `browser.py` 190; the corpus model run 716 of 716, unknown
+    commands unchanged.
+
 43. **B5, Find, Replace, Go To and the outline, as in Word.** Done in the code (branch
     `wordgap-b5-find`, on task 38's frame; GAP rows H75 to H81, V4, V10, S1, C5). *Find*
     (Ctrl+F on the page, Home's Find): the side panel's Outline tab is now Word's Navigation

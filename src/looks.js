@@ -280,20 +280,29 @@ export function headLookEdits(src, want, o = {}) {
       && /^\s*(1em|20pt)\s*$/.test(x.args.sep.t) && /^\s*(\\Huge)?\s*(#1)?\s*$/.test(x.args.before.t) && (!x.args.after || /^\s*\\titlerule\s*$/.test(x.args.after.t)));
     if ((fmtCh || shapeCh || ruleCh || numCh) && plain && f && ownLine(f)) edits.push({ ...whole(f), t: '' });
     else if (fmtCh || shapeCh || ruleCh || numCh) {
-      if (f && !f.star) {
-        const A = f.args;
-        if (fmtCh) arg(A.format, formatOf(L));
-        if (numCh) arg(A.label, L.num === false ? '' : LABEL(cmd));
-        if (shapeCh) { if (A.shape) arg(A.shape, L.shape || 'hang'); else edits.push({ s: f.head, e: f.head, t: '[' + (L.shape || 'hang') + ']' }); }
+      // a full line's arguments, each only where its field changed (fold: the format written
+      // whatever it was, a \titleformat* after it going away)
+      const editFull = (x, fold) => {
+        const A = x.args;
+        if (fmtCh || fold) arg(A.format, formatOf(L));
+        // (numbers on again: the label the author had, where the dialog kept it: \thesection.)
+        if (numCh) arg(A.label, L.num === false ? '' : (o.labels && o.labels[cmd]) || LABEL(cmd));
+        if (shapeCh) { if (A.shape) arg(A.shape, L.shape || 'hang'); else edits.push({ s: x.head, e: x.head, t: '[' + (L.shape || 'hang') + ']' }); }
         if (ruleCh) {
-          if (L.rule) { if (A.after) arg(A.after, A.after.t + '\\titlerule'); else edits.push({ s: f.e, e: f.e, t: '[\\titlerule]' }); }
+          if (L.rule) { if (A.after) arg(A.after, A.after.t + '\\titlerule'); else edits.push({ s: x.e, e: x.e, t: '[\\titlerule]' }); }
           else if (A.after) {
             const t = A.after.t.replace(/\\titlerule(?:\s*\[[^\]]{0,40}\])?/, '');
             // (an after code that held the rule alone goes with its brackets)
             if (t.trim()) arg(A.after, t); else edits.push({ s: A.after.s - 1, e: A.after.e + 1, t: '' });
           }
         }
-      } else if (f && f.star && !shapeCh && !ruleCh && !numCh && !o.explicit) arg(f.args.format, formatOf(L));
+      };
+      const full = [...r.fmts].reverse().find((x) => !x.star);
+      if (f && !f.star) editFull(f, false);
+      else if (f && f.star && !shapeCh && !ruleCh && !numCh && !o.explicit) arg(f.args.format, formatOf(L));
+      // (a \titleformat* after a full line: the full line takes the change and the format, the
+      // short one goes, so the full line's label, separator and before code keep applying)
+      else if (f && full) { editFull(full, true); edits.push({ ...whole(f), t: '' }); }
       else if (f) edits.push({ s: f.s, e: f.e, t: fullLine(cmd, L, o.explicit) });
       else add.push(...lookLines(cmd, { ...L, before: null, after: null }, o.koma, o.explicit));
     }
@@ -323,13 +332,14 @@ export function startsectionShapes(texts) {
   const out = {};
   for (const t of texts.slice(0, 20)) {
     const pre = stripComments(String(t).slice(0, MAX));
-    const re = /\\(?:re)?newcommand\*?\s*\{?\s*\\(paragraph|subparagraph)\s*\}?\s*\{\s*\\@startsection\s*\{\s*(?:sub)?paragraph\s*\}/g;
+    const re = /(?:\\(?:re)?newcommand\*?\s*\{?\s*|\\def\s*)\\(paragraph|subparagraph)\s*\}?\s*\{\s*\\@startsection\s*\{\s*(?:sub)?paragraph\s*\}/g;
     let m;
     for (let k = 0; (m = re.exec(pre)) && k < 20; k++) {
       let i = m.index + m[0].length, n = 0, fifth = null;
       // {level}{indent}{before}{after}: the fifth of \@startsection's, the fourth after its name
       for (; n < 4; n++) { i = skipSp(pre, i); if (pre[i] !== '{') break; const e = group(pre, i); if (e < 0) break; if (n === 3) fifth = pre.slice(i + 1, e - 1); i = e; }
-      if (fifth != null) out[m[1]] = /^\s*-/.test(fifth) ? 'runin' : 'hang';
+      // (an after skip of zero or less runs in: -1em, \z@, 0pt)
+      if (fifth != null) out[m[1]] = /^\s*-/.test(fifth) || /^\s*(?:\\z@|[+]?0*\.?0*\s*(?:pt|ex|em|mm|cm|in|bp|pc|sp|\\p@)?)\s*(?:\\@plus|plus|$)/.test(fifth) ? 'runin' : 'hang';
     }
   }
   return out;

@@ -6,7 +6,7 @@ import { parseBib, texToPlain, shortAuthors, entryYear, formatEntry } from './bi
 import { siTex, siOptions, siUnitSymbol } from './siunitx.js';
 import { widgetPath, hashText } from './widget.js';
 import { rtlDocument, languageDir } from './scripts.js';
-import { isLatexMark, readEnvBegin, thmDefsIn } from './styles.js';
+import { isLatexMark, readEnvBegin, thmMakersIn } from './styles.js';
 import { readHeadLooks, defaultLook, startsectionShapes } from './looks.js';
 import { readPage, paperName, NO_MEDIA_CLASSES, setsMedia, KOMA_CLASS } from './pagesrc.js';
 import { DVIPS_COLORS, BASE_COLORS } from './ui/kit.js';
@@ -455,8 +455,9 @@ class Builder {
     // \paragraph and \subparagraph as the preamble or the project's own classes and packages set
     // them by \@startsection (a positive after skip: on a line of their own)
     O.secShapes = startsectionShapes([ctx.src.slice(0, 200000), ...[...this.files].filter(([n]) => /\.(sty|cls)$/.test(n)).slice(0, 10).map(([, t]) => t)]);
-    // theorem environments made by thmtools, tcolorbox, mdframed and ntheorem's own forms: known as theorems
-    if (ctx.f === this.project.main) for (const nm of thmDefsIn(ctx.src)) if (!this.thms.has(nm)) this.thms.set(nm, { title: nm[0].toUpperCase() + nm.slice(1), counter: nm, style: 'plain' });
+    // theorems made by thmtools, mdframed and llncs' own forms, drawn as TeX prints them (their
+    // name=, numbered=no, sibling=); boxes and tcolorbox's theorems are no theorems here
+    if (ctx.f === this.project.main) for (const t of thmMakersIn(ctx.src)) if (!this.thms.has(t.name)) this.thms.set(t.name, { title: t.title, counter: t.numbered ? t.sibling || t.name : null, style: t.style });
     if (O.chapters) {
       if (!O.secnumdepthSet) O.secnumdepth = 2;
       for (const k of ['equation', 'figure', 'table']) if (!this.within[k]) this.within[k] = 'chapter';

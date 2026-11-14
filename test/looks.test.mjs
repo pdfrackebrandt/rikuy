@@ -89,6 +89,16 @@ ok('review H3: a hand written titlesec line keeps every argument the dialog did 
   assert.ok(d2.includes('{\\normalfont\\Large\\bfseries\\itshape}{\\thesection}{1em}{}\n\\titlespacing*{\\section}{0pt}{20pt}{6pt}\n\\begin{document}'), d2);
 });
 
+ok('verification V5: a \\titleformat* after a full line folds into it when the shape, rule or number changes; numbers on give the label back', () => {
+  const d = doc('\\usepackage{titlesec}\n\\titleformat{\\section}[block]{\\Large\\bfseries}{\\thesection.}{0.5em}{\\MakeUppercase}\n\\titleformat*{\\section}{\\Large\\itshape}\n');
+  const u = applyEdits(d, headLookEdits(d, { section: { ...readHeadLooks(d, 'article').section, rule: true } }));
+  assert.equal(u, doc('\\usepackage{titlesec}\n\\titleformat{\\section}[block]{\\normalfont\\Large\\itshape}{\\thesection.}{0.5em}{\\MakeUppercase}[\\titlerule]\n'));
+  const off = applyEdits(u, headLookEdits(u, { section: { ...readHeadLooks(u, 'article').section, num: false } }));
+  assert.ok(off.includes('{}{0.5em}'), off);
+  const on = applyEdits(off, headLookEdits(off, { section: { ...readHeadLooks(off, 'article').section, num: true } }, { labels: { section: '\\thesection.' } }));
+  assert.equal(on, u);
+});
+
 ok('review H2: under titlesec\'s explicit option every line is the full form with #1', () => {
   const t = doc('\\usepackage[explicit]{titlesec}\n');
   const u = applyEdits(t, headLookEdits(t, { subsection: { ...defaultLook('subsection'), bf: false } }, { explicit: true }));
@@ -101,6 +111,10 @@ ok('review M3: a hand written \\@startsection for \\paragraph: the sign of its a
   assert.deepEqual(startsectionShapes(['\\renewcommand\\paragraph{\\@startsection{paragraph}{4}{\\z@}{3.25ex \\@plus1ex \\@minus.2ex}{1.5ex \\@plus .2ex}{\\normalfont\\normalsize\\bfseries}}']), { paragraph: 'hang' });
   assert.deepEqual(startsectionShapes(['\\renewcommand{\\subparagraph}{\\@startsection{subparagraph}{5}{\\parindent}{3.25ex}{-1em}{\\bfseries}}']), { subparagraph: 'runin' });
   assert.deepEqual(startsectionShapes(['% \\renewcommand\\paragraph{\\@startsection{paragraph}{4}{0pt}{1ex}{1ex}{}}']), {});
+  // verification V3: an after skip of zero runs in (\z@, 0pt); the \def form is read
+  assert.deepEqual(startsectionShapes(['\\renewcommand\\paragraph{\\@startsection{paragraph}{4}{\\z@}{3.25ex \\@plus1ex}{\\z@}{\\normalfont\\bfseries}}']), { paragraph: 'runin' });
+  assert.deepEqual(startsectionShapes(['\\def\\paragraph{\\@startsection{paragraph}{4}{0pt}{1ex}{0pt}{x}}']), { paragraph: 'runin' });
+  assert.deepEqual(startsectionShapes(['\\def\\subparagraph{\\@startsection{subparagraph}{5}{0pt}{1ex}{1.5ex \\@plus .2ex}{x}}']), { subparagraph: 'hang' });
 });
 
 ok('KOMA-Script\'s heading font, the accent colour', () => {

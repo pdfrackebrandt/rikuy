@@ -98,8 +98,10 @@ export const methods = {
   // document's styles change: another class, a \newtheorem)
   fillStyleList(sel) {
     const K = this.styleCatalog();
-    if (sel.dataset.cat === String(K.all.length) + K.levels.join() && sel.options.length) return;
-    sel.dataset.cat = String(K.all.length) + K.levels.join();
+    // (made again when the styles change, by their values: a renamed environment is another style)
+    const key = K.all.map((x) => x.v).join();
+    if (sel.dataset.cat === key && sel.options.length) return;
+    sel.dataset.cat = key;
     sel.textContent = '';
     for (const x of K.all) sel.add(new Option(x.name, x.v));
     // a style that is none of the list's (a list, a table, a figure) shows as an empty choice

@@ -488,3 +488,48 @@ export const TAKEN = new Set(('box mark char count dimen skip toks output day mo
   + 'bibliography bibliographystyle printbibliography addbibresource index glossary includegraphics graphicspath input usepackage documentclass RequirePackage '
   + 'item newline newpage pagestyle thispagestyle markboth markright stepcounter addtocounter setcounter newcounter refstepcounter setlength addtolength newlength settowidth '
   + 'uline uuline uwave sout xout hl ul st so caps lowercase MakeUppercase MakeLowercase verb lstinline mintinline frame').split(/\s+/).filter(Boolean));
+
+// The theorems a preamble makes otherwise than by \newtheorem, as TeX prints them: thmtools'
+// \declaretheorem (its name= or title=, numbered=no, sibling= or numberlike=, style=), mdframed's
+// \newmdtheoremenv[…]{env}[shared]{Title} and llncs' \spnewtheorem(*){env}[shared]{Title}. Boxes
+// (tcolorbox, mdframed's \newmdenv) and \newtcbtheorem, which takes arguments, are none: the page
+// draws no label for them and the gallery offers none of them. Bounded scans.
+export function thmMakersIn(text) {
+  const end = preambleEndOf(text);
+  const pre = stripCommentsOf(String(text).slice(0, end < 0 ? Math.min(String(text).length, 200000) : end));
+  const out = [];
+  const re = /\\(declaretheorem|newmdtheoremenv|spnewtheorem)(\*?)(?![A-Za-z@])\s*/g;
+  // the group at i ({…} or […]) as [text, end], or null; 2000 characters at most
+  const grp = (i) => { const o = pre[i], c = o === '{' ? '}' : ']'; let d = 0; for (let j = i; j < Math.min(pre.length, i + 2000); j++) { const ch = pre[j]; if (ch === '\\') { j++; continue; } if (ch === o) d++; else if (ch === c && --d === 0) return [pre.slice(i + 1, j), j + 1]; } return null; };
+  const sp = (i) => { while (i < pre.length && /\s/.test(pre[i])) i++; return i; };
+  const kv = (t) => { const o = {}; for (const part of t.split(',').slice(0, 40)) { const k = part.indexOf('='); if (k > 0) o[part.slice(0, k).trim()] = part.slice(k + 1).trim().replace(/^\{|\}$/g, ''); else if (part.trim()) o[part.trim()] = true; } return o; };
+  let m;
+  for (let k = 0; (m = re.exec(pre)) && k < 500 && out.length < 300; k++) {
+    let i = m.index + m[0].length, opts = {};
+    if (m[1] === 'declaretheorem') {
+      if (pre[i] === '[') { const g = grp(i); if (!g) continue; opts = kv(g[0]); i = sp(g[1]); }
+      if (pre[i] !== '{') continue;
+      const g = grp(i); if (!g) continue;
+      i = sp(g[1]);
+      if (pre[i] === '[') { const h = grp(i); if (h) opts = { ...opts, ...kv(h[0]) }; }
+      for (const nm of g[0].split(',')) {
+        const name = nm.trim();
+        if (!/^[A-Za-z]{1,40}$/.test(name)) continue;
+        const title = opts.name || opts.title || name[0].toUpperCase() + name.slice(1);
+        out.push({ name, title, numbered: !/^(no|false)$/.test(String(opts.numbered || '')), sibling: opts.sibling || opts.numberlike || null, style: opts.style || 'plain' });
+      }
+      continue;
+    }
+    if (pre[i] === '[' && m[1] === 'newmdtheoremenv') { const g = grp(i); if (!g) continue; i = sp(g[1]); }
+    if (pre[i] !== '{') continue;
+    const g = grp(i); if (!g) continue;
+    i = sp(g[1]);
+    let sibling = null;
+    if (pre[i] === '[') { const h = grp(i); if (!h) continue; sibling = h[0].trim() || null; i = sp(h[1]); }
+    if (pre[i] !== '{') continue;
+    const t = grp(i); if (!t) continue;
+    const name = g[0].trim();
+    if (/^[A-Za-z]{1,40}$/.test(name)) out.push({ name, title: t[0].trim().replace(/[{}\\]/g, ''), numbered: !m[2], sibling, style: 'plain' });
+  }
+  return out;
+}

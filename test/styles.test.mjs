@@ -5,7 +5,7 @@
 // ends, and every style change there and back, byte for byte.
 import assert from 'node:assert/strict';
 import { buildModel } from '../src/model.js';
-import { LATEX_MARK, isLatexMark, latexSpot, restyle, applyEdits, quoteWords, startsLine, headLevels, headName, isEnvStyle, envOf, thmLine, starEdits, numberingEdits, charStyleBody, formatOnlyBegin, readCharBody, charBodyOf, readEnvBegin, envBeginOf, charDef, envDef, defRange } from '../src/styles.js';
+import { thmMakersIn, LATEX_MARK, isLatexMark, latexSpot, restyle, applyEdits, quoteWords, startsLine, headLevels, headName, isEnvStyle, envOf, thmLine, starEdits, numberingEdits, charStyleBody, formatOnlyBegin, readCharBody, charBodyOf, readEnvBegin, envBeginOf, charDef, envDef, defRange } from '../src/styles.js';
 
 let n = 0;
 const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
@@ -373,6 +373,17 @@ ok('the model: \\paragraph runs into the paragraph after it (a blank line betwee
   const M3 = model(wrap('\\begin{aside}\nSet apart.\n\\end{aside}', '\\newenvironment{aside}{\\par\\itshape\\color{red}}{\\par}\n'));
   const p = items(M3).find((x) => x.it.type === 'p').it;
   assert.ok(p.look && p.look.it && p.look.color && !p.envTag);
+});
+
+ok('verification V1: theorems thmtools, mdframed and llncs make, as TeX prints them; boxes are none', () => {
+  const pre = '\\usepackage{amsthm,thmtools}\n\\usepackage[most]{tcolorbox}\n\\usepackage{mdframed}\n\\newtcolorbox{mybox}{colback=red!5}\n\\declaretheorem[name=Satz]{theorem}\n\\declaretheorem[numbered=no,name=Remark]{remark}\n\\declaretheorem{lemma}[sibling=theorem]\n\\newmdenv[linecolor=red]{warnbox}\n\\newtcbtheorem{theo}{Theorem}{}{th}\n\\newmdtheoremenv{mdthm}{MD Theorem}\n';
+  const t = thmMakersIn(wrap('x', pre));
+  assert.deepEqual(t.map((x) => [x.name, x.title, x.numbered, x.sibling]), [['theorem', 'Satz', true, null], ['remark', 'Remark', false, null], ['lemma', 'Lemma', true, 'theorem'], ['mdthm', 'MD Theorem', true, null]]);
+  const M = model(wrap('\\begin{mybox}\nBoxed.\n\\end{mybox}\n\n\\begin{theorem}\nStated.\n\\end{theorem}\n\n\\begin{remark}\nRemarked.\n\\end{remark}\n\n\\begin{lemma}\nL.\n\\end{lemma}', pre));
+  assert.ok(!M.thms.has('mybox') && !M.thms.has('warnbox') && !M.thms.has('theo'));
+  assert.equal(M.thms.get('theorem').title, 'Satz');
+  assert.equal(M.thms.get('remark').counter, null);
+  assert.equal(M.thms.get('lemma').counter, 'theorem');
 });
 
 console.log('styles: ' + n + ' groups of checks passed');

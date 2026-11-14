@@ -10,11 +10,13 @@
 import { $ } from './dom.js';
 import { dialog, openMenu, numberField } from './kit.js';
 import { command, enabled } from '../commands.js';
-import { SIZES, defaultLook, headLookEdits } from '../looks.js';
+import { SIZES, defaultLook, headLookEdits, titleLines } from '../looks.js';
 import { isHeading, isEnvStyle, envOf, charDef, envDef, defRange, readCharBody, readEnvBegin, restyle, editCharBody, editEnvBegin, applyEdits, thmDefsIn, eolAt, TAKEN } from '../styles.js';
 import { enclosing, wrapEdits, unwrapEdits, parseAt } from '../wrap.js';
 import { defineOnce, defines, packageLine, packageOptions, preambleEnd, stripComments } from '../preamble.js';
 import { SIG, CHARS } from '../parser.js';
+import { TEX_NAMES } from '../texnames.js';
+let NAMES = null;
 
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 // classes whose headings titlesec must not set (they have their own means), and why
@@ -74,7 +76,13 @@ export const methods = {
   writeHeadLooks(want, label) {
     const f = this.main, src = this.src(f), why = this.titlesecWhy();
     if (why) { this.toast(why); return false; }
-    const ed = headLookEdits(src, want, this.headOpts());
+    // (a label numbers off takes away is kept, for numbers on again: \thesection. stays the author's)
+    const T = titleLines(src), was = this.model.opts.heads || {};
+    for (const [cmd, L] of Object.entries(want)) {
+      const full = T[cmd] && [...T[cmd].fmts].reverse().find((x) => !x.star);
+      if (L && L.num === false && (was[cmd] || {}).num !== false && full && full.args.label.t.trim()) this.stLabels = { ...this.stLabels, [cmd]: full.args.label.t };
+    }
+    const ed = headLookEdits(src, want, { ...this.headOpts(), labels: this.stLabels || {} });
     if (!ed) return false;
     if (!ed.length) return true;
     this.commitPreamble([...ed.map((x) => ({ f, ...x })), ...this.headPackages(src, ed)], label);
@@ -606,7 +614,9 @@ export const methods = {
   // command or an environment (\newenvironment{x} defines \x and \endx; review H5)
   nameTaken(n) {
     const M = this.model, src = this.src(this.main), end = this.stylePreEnd(), others = this.preambleOthers();
-    if (TAKEN.has(n) || TAKEN.has(n.replace(/^end/, '')) || Object.prototype.hasOwnProperty.call(SIG, n) || Object.prototype.hasOwnProperty.call(CHARS, n)) return true;
+    // (LaTeX's kernel and 88 common packages, from their own hash table: src/texnames.js)
+    if (!NAMES) NAMES = new Set(TEX_NAMES.split(' '));
+    if (NAMES.has(n) || NAMES.has('end' + n) || TAKEN.has(n) || TAKEN.has(n.replace(/^end/, '')) || Object.prototype.hasOwnProperty.call(SIG, n) || Object.prototype.hasOwnProperty.call(CHARS, n)) return true;
     if (M && (M.textMacros.has(n) || M.envDefs.has(n) || M.thms.has(n) || (M.mathMacros && M.mathMacros['\\' + n]))) return true;
     return [src, ...others].some((t, k) => defines(t, n, 'command', k ? -1 : end) || defines(t, n, 'environment', k ? -1 : end) || thmDefsIn(t, true).has(n));
   },

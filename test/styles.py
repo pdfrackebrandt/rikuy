@@ -935,6 +935,51 @@ def review_phone(p):
     browser.close()
 
 
+def verify(page):
+    """The verification of the review's fixes (V1 to V5), each with the verifier's case."""
+    pre = ('\\usepackage{amsthm,thmtools}\n\\usepackage[most]{tcolorbox}\n\\usepackage{mdframed}\n\\newtcolorbox{mybox}{colback=red!5}\n\\declaretheorem[name=Satz]{theorem}\n'
+           '\\declaretheorem[numbered=no,name=Remark]{remark}\n\\newmdenv[linecolor=red]{warnbox}\n\\newtcbtheorem{theo}{Theorem}{}{th}\n')
+    doc = A('\\begin{mybox}\nBoxed text.\n\\end{mybox}\n\n\\begin{theorem}\nStated.\n\\end{theorem}\n\n\\begin{remark}\nRemarked.\n\\end{remark}\n\n\\begin{warnbox}\nWarned.\n\\end{warnbox}\n\nBeta two.', pre)
+    load_doc(page, doc); click_text(page, 'Beta two', 2); state(page)
+    text = page.evaluate('[...document.querySelectorAll("#pages .it")].map((e) => e.textContent.replace(/\\s+/g, " ").trim()).filter(Boolean)')
+    t = ' | '.join(text)
+    check('V1: the page draws the boxes with no label, \\declaretheorem\'s name= and numbered=no as TeX prints them', 'Satz 1' in t and 'Remark.' in t and 'Remark 1' not in t and 'Mybox' not in t and 'Warnbox' not in t, text)
+    offered = page.evaluate('[...document.getElementById("rb-style").options].map((o) => o.value)')
+    check('V1: no box and no environment that takes arguments is offered as a style', not [v for v in offered if v in ('env:mybox', 'env:warnbox', 'env:theo')], [v for v in offered if v.startswith('env:')])
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        r = pdf_text(page, doc); t2 = re.sub(r'\s+', ' ', r['text'])
+        check('V1: compiled, TeX prints the same: "Satz 1.", "Remark.", the boxes\' words with no label', r['ok'] and 'Satz 1' in t2 and 'Remark.' in t2 and 'Mybox' not in t2 and 'Boxed text.' in t2, (r['errors'], t2[:200]))
+    # V2: every name LaTeX's kernel, amsmath, amssymb or a common package defines is refused
+    load_doc(page, A('Some key words here.', '\\usepackage{amsmath,amssymb,comment}\n')); select_text(page, 'key words')
+    run_cmd(page, 'create-style'); taken = []
+    for kind, names in (('char', ('big', 'space', 'tag', 'boxed', 'overline', 'check', 'vec', 'hat', 'top', 'stop', 'loop', 'do', 'mathbf', 'max', 'ln', 'Box', 'path', 'cancel', 'bar', 'Re', 'leq')),
+                        ('para', ('cases', 'matrix', 'align', 'gather', 'comment'))):
+        page.select_option('#cs-type', kind)
+        for n in names:
+            page.fill('#cs-name', n); page.wait_for_timeout(20)
+            if not page.locator('.pop-modstyle').get_by_role('button', name='OK').is_disabled(): taken.append((kind, n))
+    page.fill('#cs-name', 'keyterm'); page.wait_for_timeout(30)
+    check('V2: every name LaTeX, amsmath, amssymb or a loaded package defines is refused, a new one taken', not taken and not page.locator('.pop-modstyle').get_by_role('button', name='OK').is_disabled(), taken)
+    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    # V3: \paragraph with an after skip of zero runs in
+    load_doc(page, A('\\paragraph{Lead}\nText after.', '\\makeatletter\n\\renewcommand\\paragraph{\\@startsection{paragraph}{4}{\\z@}{3.25ex \\@plus1ex}{\\z@}{\\normalfont\\bfseries}}\n\\makeatother\n'))
+    check('V3: an after skip of \\z@ runs the heading in', page.evaluate('!!document.querySelector("#pages .it.h4.runin")'))
+    # V4: the narrow list follows a renamed environment
+    page.set_viewport_size({'width': 820, 'height': 900}); page.wait_for_timeout(300)
+    load_doc(page, A('\\begin{aside}\nIn it.\n\\end{aside}', '\\newenvironment{aside}{\\par\\itshape}{\\par}\n')); click_text(page, 'In it', 2); state(page)
+    load_doc(page, A('\\begin{memo}\nIn it.\n\\end{memo}', '\\newenvironment{memo}{\\par\\itshape}{\\par}\n')); click_text(page, 'In it', 2); state(page)
+    vals = page.evaluate('[...document.getElementById("rb-style").options].map((o) => o.value)')
+    check('V4: the narrow list offers the renamed memo, not aside, and shows it', 'env:memo' in vals and 'env:aside' not in vals and page.evaluate('document.getElementById("rb-style").value') == 'env:memo', [v for v in vals if v.startswith('env:')])
+    page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
+    # V5: through the dialog, Numbered off and on gives \thesection. back
+    hand = A('\\section{Intro}\nText.', '\\usepackage{titlesec}\n\\titleformat{\\section}[block]{\\Large\\bfseries}{\\thesection.}{0.5em}{\\MakeUppercase}\n')
+    load_doc(page, hand); click_text(page, 'Intro', 2)
+    modify_style(page, 'section', lambda pg: pg.uncheck('#ms-num'))
+    click_text(page, 'Intro', 2)
+    modify_style(page, 'section', lambda pg: pg.check('#ms-num'))
+    check('V5: Numbered off then on in Modify Style: the label is \\thesection. again, the line as the author wrote it but its format', '{\\thesection.}{0.5em}{\\MakeUppercase}' in src(page), src(page)[:260])
+
+
 def compile_all(page):
     """Everything this suite writes, compiled in the page: no error, the words where TeX puts them."""
     if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
@@ -967,7 +1012,7 @@ def compile_all(page):
 
 def run():
     with sync_playwright() as p:
-        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, design, tile_menu, big, review, compile_all)
+        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, design, tile_menu, big, review, verify, compile_all)
         # (the tests that read the tiles see all six: from 1600 px the gallery has room for them)
         wide = (styles, gallery, gallery_keys, quote_style)
         # (names given on the command line run those alone)
