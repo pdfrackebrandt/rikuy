@@ -24,7 +24,9 @@ const STY = {
   fbox: 'fbox', MakeUppercase: 'upper', uppercase: 'upper', MakeLowercase: 'lower', lowercase: 'lower',
   textcircled: 'circ', centerline: 'rm', foreignlanguage: '', textls: 'ls', ensure: '', phantom: 'ph', hphantom: 'ph',
   // ulem's dashed and dotted lines; the double strikethrough the Font group defines (src/cmd/font.js)
-  dashuline: 'uld', dotuline: 'ulo', culine: 'ul', dsout: 'so2', ruby: 'ruby'
+  dashuline: 'uld', dotuline: 'ulo', culine: 'ul', dsout: 'so2', ruby: 'ruby',
+  // graphicx's mirror (B8: a picture flipped by Flip Horizontal)
+  reflectbox: 'fliph'
 };
 // the looks the page has for a family of type (\fontfamily{ppl}, fontspec's names, the document's
 // font packages): a class y-ff-<look>, a face of app.css
@@ -1631,6 +1633,19 @@ class Builder {
     if (['quote', 'quotation', 'verse'].includes(name)) {
       return this.container(nd, ctx, env, { cls: (env.cls || '') + ' quote', noIndentFirst: name !== 'quotation', ...FLUSH });
     }
+    // a center holding a \captionof (B8's picture in line with a caption, caption's package):
+    // drawn as TeX prints it, a figure's parts with "Figure 1: …" under them, where it is written
+    if (['center', 'flushleft', 'flushright'].includes(name) && !env.inMc) {
+      const cap = nd.nodes.find((n) => n.t === 'cmd' && n.name === 'captionof' && n.args[0]);
+      if (cap) {
+        const k = this.argText(ctx, cap.args[0]).trim();
+        if (k === 'figure' || k === 'table') {
+          const r = this.floatBlock(nd, ctx, env, k, name === 'center' ? null : name === 'flushleft' ? 'left' : 'right');
+          for (const it of r.items) if (it.type === 'float') { it.placement = 'H'; if (env.depth) it.depth = env.depth; }
+          return r;
+        }
+      }
+    }
     if (['center', 'flushleft', 'flushright'].includes(name)) {
       // (\centering and its like set \parindent to 0: no paragraph of it is indented)
       return this.container(nd, ctx, env, { align: { center: 'center', flushleft: 'left', flushright: 'right' }[name], noIndentFirst: true, flushAll: true });
@@ -1692,7 +1707,10 @@ class Builder {
         if (r) r.items.unshift({ type: 'h', level: 3, num: '', inl: [{ k: 'chr', text: name === 'acknowledgements' ? 'Acknowledgements' : 'Acknowledgments' }], star: true, ctx: 'h', f: ctx.f, dir: this.dirOf() });
         return r;
       }
-      const r = this.container(nd, ctx, env, ex);
+      const wasBox = this.box;
+      if (name === 'minipage') this.box = this.boxIn(ctx, nd.args.filter((x) => x && !x.o).pop());
+      let r;
+      try { r = this.container(nd, ctx, env, ex); } finally { this.box = wasBox; }
       // (a multicols read raw, or nested where a block cannot be cut: one block in columns)
       if (/^multicols\*?$/.test(name) && r) {
         const n = Math.max(1, Math.min(10, parseInt(this.argText(ctx, nd.args && nd.args[0]), 10) || 2));
@@ -1728,6 +1746,10 @@ class Builder {
     const L = (x, d) => { const v = x != null ? parseLen(String(x), this.opts.pt) : null; return typeof v === 'number' ? v : d; };
     const box = { bg: kv.colback ? this.colorText(String(kv.colback)) : '#F2F2F2', fr: kv.colframe ? this.colorText(String(kv.colframe)) : '#404040', rule: typeof rule === 'number' ? rule : 1.42,
       l: L(kv.left, 11.38) + L(kv.boxsep, 2.85), r: L(kv.right, 11.38) + L(kv.boxsep, 2.85), t: L(kv.top, 5.69) + L(kv.boxsep, 2.85), b: L(kv.bottom, 5.69) + L(kv.boxsep, 2.85), sharp: !!kv['sharp corners'] || kv.arc === '0pt' };
+    // (B8's Text Box: a share of the line wide, centred, as width= and center set it)
+    const w = typeof kv.width === 'string' ? /^([\d.]*)\s*\\(?:linewidth|textwidth|columnwidth)$/.exec(kv.width.trim()) : null;
+    const share = w ? (w[1] === '' ? 1 : parseFloat(w[1])) : null;
+    if (share > 0 && share < 1) { box.w = share; box.center = kv.center === true; }
     const r = this.container(nd, ctx, env, { box, noIndentFirst: true, ...FLUSH, flushAll: true });
     const ps = r.items.filter((it) => it.type === 'p');
     if (ps.length) { ps[0].boxFirst = true; ps[ps.length - 1].boxLast = true; }
@@ -1748,6 +1770,22 @@ class Builder {
 
   emptyPara(ctx, pos, cls) {
     return { type: 'p', inl: [{ k: 'seg', f: ctx.f, t: '​', map: [pos, pos], ph: true }], indent: false, cls: cls || '', ctx: 'p', f: ctx.f, dir: this.dirOf() };
+  }
+
+  // beamer numbers its captions only with \setbeamertemplate{caption}[numbered] (read once)
+  beamerNumbered() {
+    if (this.beamerNum == null) { const t = (this.files && this.project && this.files.get(this.project.main)) || ''; this.beamerNum = /\\setbeamertemplate\s*\{caption\}\s*\[numbered\]/.test(t.slice(0, 200000)); }
+    return this.beamerNum;
+  }
+  // The box a picture now stands in, with the width argument of one more: { share } of the line
+  // or { pt }, nested boxes multiplied; null where it is the line
+  boxIn(ctx, a) {
+    const t = a ? this.argText(ctx, a).trim() : '';
+    const m = /^([\d.]*)\s*\\(linewidth|textwidth|columnwidth|hsize)$/.exec(t), u = /^([\d.]+)\s*(cm|mm|in|pt|bp|em)$/.exec(t);
+    const cur = this.box;
+    if (m) { const f = m[1] === '' ? 1 : parseFloat(m[1]); if (!Number.isFinite(f)) return cur; return cur && cur.pt ? { pt: cur.pt * f } : { share: (cur ? cur.share : 1) * f }; }
+    if (u) return { pt: parseFloat(u[1]) * { cm: 28.4528, mm: 2.84528, in: 72.27, pt: 1, bp: 72.27 / 72, em: 10 }[u[2]] };
+    return cur;
   }
 
   container(nd, ctx, env, ex) {
@@ -1920,13 +1958,13 @@ class Builder {
     return { f: ctx.f, s: nd.s, e: nd.e, items, fns };
   }
 
-  floatBlock(nd, ctx, env) {
-    const kind = /table/.test(nd.name) ? 'table' : 'figure';
+  floatBlock(nd, ctx, env, kindOver, alignOver) {
+    const kind = kindOver || (/table/.test(nd.name) ? 'table' : 'figure');
     const fns = [];
     const parts = [];
     let num = '';
     const saveT = this.lastTarget;
-    let align = null;
+    let align = alignOver || null;
     let para = [];
     // (B7) the settings before a table in the float, drawn with it
     let tset = null;
@@ -1954,6 +1992,15 @@ class Builder {
         if (n.t === 'cmd' && n.name === 'centerline' && n.args && n.args[0] && n.args[0].nodes) { flushP(); const was = align; align = 'center'; para = [...n.args[0].nodes]; flushP(); align = was; continue; }
         if (n.t === 'cmd' && (n.name === 'caption' || n.name === 'captionof')) {
           flushP();
+          const a0 = n.name === 'captionof' ? n.args[2] : n.args[1];
+          // (\caption* and \captionof*: no number, no "Figure"; beamer prints "Figure:" unless its
+          // caption template is the numbered one)
+          if (n.star) {
+            const kids = a0 ? this.inl(a0.nodes, ctx, fns) : [];
+            if (a0 && !kids.length) kids.push({ k: 'seg', f: ctx.f, t: '​', map: [a0.is, a0.is], ph: true });
+            parts.push({ type: 'caption', kind, num: '', star: !!n.star, inl: kids, f: ctx.f, ctx: 'cap', dir: this.dirOf() });
+            continue;
+          }
           if (!num) {
             this.c[kind]++;
             num = this.withinPrefix(kind) + this.c[kind];
@@ -1963,7 +2010,9 @@ class Builder {
           const a = n.name === 'captionof' ? n.args[2] : n.args[1];
           const kids = a ? this.inl(a.nodes, ctx, fns) : [];
           if (a && !kids.length) kids.push({ k: 'seg', f: ctx.f, t: '​', map: [a.is, a.is], ph: true });
-          parts.push({ type: 'caption', kind, num, inl: kids, f: ctx.f, ctx: 'cap', dir: this.dirOf() });
+          // (beamer steps the counter, so \ref gives the number, but its caption template prints
+          // "Figure:" without it unless it is the numbered one)
+          parts.push({ type: 'caption', kind, num: this.opts.cls === 'beamer' && !this.beamerNumbered() ? '' : num, inl: kids, f: ctx.f, ctx: 'cap', dir: this.dirOf() });
           continue;
         }
         if (n.t === 'env' && /^(tabular|tabularx|tabular\*|tabulary|longtable|array)$/.test(n.name)) { flushP(); const t = this.tabular(n, ctx, fns, tset); if ((align || dflt) !== 'center') t.falign = align || dflt; parts.push(t); continue; }
@@ -1971,7 +2020,13 @@ class Builder {
         { const st = this.tableSetting(n, ctx); if (st && (st.key !== 'size' || nodes.slice(i + 1, i + 40).some((x) => x.t === 'env' && /^(tabular|tabularx|tabular\*|tabulary|longtable)$/.test(x.name)))) { (tset = tset || {})[st.key] = st.value; continue; } }
         // (B7) a table csvsimple sets from a data file of the project: drawn from the file
         if (n.t === 'cmd' && /^csvauto(book)?tabular$/.test(n.name) && n.args[1]) { const t = this.csvTable(n, ctx); if (t) { flushP(); if ((align || dflt) !== 'center') t.falign = align || dflt; parts.push(t); continue; } }
-        if (n.t === 'env' && /^(minipage|subfigure|subtable|threeparttable|adjustbox|small|footnotesize|scriptsize)$/.test(n.name)) { flushP(); walk(n.nodes); flushP(); continue; }
+        if (n.t === 'env' && /^(minipage|subfigure|subtable|threeparttable|adjustbox|small|footnotesize|scriptsize)$/.test(n.name)) {
+          // (a minipage's or a subfigure's pictures are a share of its width, not of the page's)
+          const wasBox = this.box;
+          if (/^(minipage|subfigure|subtable)$/.test(n.name)) this.box = this.boxIn(ctx, n.args.filter((x) => x && !x.o).pop());
+          try { flushP(); walk(n.nodes); flushP(); } finally { this.box = wasBox; }
+          continue;
+        }
         // a language or direction environment around a figure's parts: they run its way
         if (n.t === 'env' && this.dirEnv(n, ctx)) { flushP(); const was = this.dir; this.dir = this.dirEnv(n, ctx).dir || was; walk(n.nodes); flushP(); this.dir = was; continue; }
         if (n.t === 'env' && n.name === 'tablenotes') { flushP(); const r = this.container(n, ctx, env, { cls: 'z-footnotesize', noIndentFirst: true }); parts.push(...r.items); fns.push(...r.fns); continue; }
@@ -1987,7 +2042,9 @@ class Builder {
     this.lastTarget = saveT;
     if (!parts.length) parts.push({ type: 'p', inl: [{ k: 'chip', f: ctx.f, s: nd.s, e: nd.e, text: kind, title: 'Empty ' + kind }], align: 'center', indent: false, ctx: 'p', f: ctx.f });
     const placement = nd.args[0] ? this.argText(ctx, nd.args[0]) : 'tbp';
-    return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'float', kind, num, parts, f: ctx.f, placement, wide: /\*$/.test(nd.name) }], fns };
+    // (a wrapfigure's width: the line its pictures' \linewidth is, B8)
+    const wrapW = /^wrap(figure|table)$/.test(nd.name) && nd.args[3] ? this.argText(ctx, nd.args[3]).trim() : null;
+    return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'float', kind, num, parts, f: ctx.f, placement, wide: /\*$/.test(nd.name), wrapW }], fns };
   }
 
   // set: what stands before the table in its float or group (B7: \rowcolors, \arraystretch,
@@ -2443,6 +2500,29 @@ class Builder {
       out.push(this.styAtom(ctx, { k: 'sty', st: 'dir', dir: d, kids, s: nd.s, e: nd.e, is: a.is, ie: a.ie, cmd: name }));
       return false;
     }
+    // graphicx's \scalebox{x}[y]{...} around a picture and \rotatebox[...]{angle}{...}: drawn scaled
+    // and turned (B8: Flip Vertical writes \scalebox{1}[-1]{...}); a \scalebox of words is the Font
+    // group's below
+    const onlyPic = (g, d = 0) => {
+      const sol = g && g.nodes ? g.nodes.filter((x) => !(x.t === 'text' && !ctx.src.slice(x.s, x.e).trim()) && x.t !== 'comment') : [];
+      if (sol.length !== 1 || sol[0].t !== 'cmd' || d > 20) return false;
+      if (sol[0].name === 'includegraphics') return true;
+      return /^(reflectbox|scalebox|rotatebox|fbox)$/.test(sol[0].name) && onlyPic(sol[0].args.filter((x) => x && !x.o).pop(), d + 1);
+    };
+    if ((name === 'rotatebox' || (name === 'scalebox' && onlyPic(nd.args.filter((x) => x && !x.o).pop()))) && nd.args.filter((x) => x && !x.o).length >= 2) {
+      acc.flush();
+      const ms = nd.args.filter((x) => x && !x.o), a = ms[ms.length - 1];
+      const n1 = parseFloat(this.argText(ctx, ms[0])), o = name === 'scalebox' ? nd.args.find((x) => x && x.o) : null;
+      const xf = name === 'scalebox' ? { sx: Number.isFinite(n1) ? n1 : 1, sy: o && Number.isFinite(parseFloat(this.argText(ctx, o))) ? parseFloat(this.argText(ctx, o)) : (Number.isFinite(n1) ? n1 : 1) } : { rot: Number.isFinite(n1) ? n1 : 0 };
+      const kids = this.inl(a.nodes, ctx, fns);
+      if (!kids.length) kids.push(this.ph(ctx, a.is));
+      if (xf.sx != null && (Math.abs(xf.sx) !== 1 || Math.abs(xf.sy) !== 1)) {
+        const put = (ks, d) => { for (const y of ks) { if (d > 20) return; if (y.k === 'img') y.outer = { sx: Math.abs(xf.sx) * ((y.outer && y.outer.sx) || 1), sy: Math.abs(xf.sy) * ((y.outer && y.outer.sy) || 1) }; else if (y.kids) put(y.kids, d + 1); } };
+        put(kids, 0);
+      }
+      out.push(this.styAtom(ctx, { k: 'sty', st: 'xf', xf, kids, s: nd.s, e: nd.e, is: a.is, ie: a.ie, cmd: name }));
+      return false;
+    }
     // a size or a family for the rest of the group, as the Font group writes them:
     // {\fontsize{14}{17}\selectfont ...}, {\fontfamily{ppl}\selectfont ...}, {\fontspec{TeX Gyre Pagella} ...}
     if ((name === 'fontsize' && nd.args[1]) || (name === 'fontfamily' && nd.args[0]) || (name === 'fontspec' && nd.args[1])) {
@@ -2484,6 +2564,10 @@ class Builder {
       // (an underline in a colour of its own, \culine{red}{..}: the line's colour, not the words')
       if (name === 'culine' && nd.args[0] && nd.args[0] !== a) x.color = this.colorArg(ctx, null, nd.args[0]);
       if (name === 'textls') { const t = nd.args[0] && nd.args[0] !== a ? parseFloat(A(0)) : 100; if (Number.isFinite(t)) x.ls = t; }
+      // (an \fbox with no gap: \fboxsep set to 0pt just before it, as Picture Border writes it;
+      // an \fbox around one minipage, Insert › Text Box: a box of the minipage's width)
+      if (name === 'fbox') { const sol = a.nodes.filter((n) => !(n.t === 'text' && !ctx.src.slice(n.s, n.e).trim()) && n.t !== 'comment'); if (sol.length === 1 && sol[0].t === 'env' && sol[0].name === 'minipage') { const wa = sol[0].args.filter((z) => z && !z.o).pop(); x.mp = wa ? this.argText(ctx, wa).trim().slice(0, 80) : '\\linewidth'; } }
+      if (name === 'fbox' && /\\fboxsep\s*(=\s*0\s*(pt)?|\}?\s*\{\s*0\s*(pt|cm|mm|bp)?\s*\})\s*$/.test(ctx.src.slice(Math.max(0, nd.s - 40), nd.s))) x.tight = true;
       out.push(this.styAtom(ctx, x));
       return false;
     }
@@ -2594,7 +2678,36 @@ class Builder {
       acc.flush();
       const file = A(1).trim();
       const opts = A(0);
-      out.push(this.atom(ctx, { k: 'img', s: nd.s, e: nd.e, file, opts }));
+      out.push(this.atom(ctx, { k: 'img', s: nd.s, e: nd.e, file, opts, box: this.box || null }));
+      return false;
+    }
+    // fontawesome5's \faIcon{name} (Insert › Icons): one atom, drawn as the icon
+    if ((name === 'faIcon' || name === 'faIcon*') && nd.args.some((x) => x && !x.o)) {
+      acc.flush();
+      out.push(this.atom(ctx, { k: 'icon', s: nd.s, e: nd.e, name: A(nd.args[0] && nd.args[0].o ? 1 : 0).trim().slice(0, 60) }));
+      return false;
+    }
+    // smartdiagram's \smartdiagram[kind]{items} (Insert › SmartArt): one atom, drawn as its boxes
+    if (name === 'smartdiagram' && nd.args.some((x) => x && !x.o)) {
+      acc.flush();
+      const o = nd.args.find((x) => x && x.o), m = nd.args.filter((x) => x && !x.o).pop();
+      out.push(this.atom(ctx, { k: 'smart', s: nd.s, e: nd.e, kind: o ? this.argText(ctx, o).trim().slice(0, 60) : 'flow diagram', items: ctx.src.slice(m.is, m.ie).slice(0, 4000) }));
+      return false;
+    }
+    // lettrine's \lettrine[options]{T}{his} (Insert › Drop Cap): the letter dropped over its lines,
+    // the rest of the word in small capitals, both typed in place
+    if (name === 'lettrine' && nd.args.filter((x) => x && !x.o).length >= 2) {
+      acc.flush();
+      const ms = nd.args.filter((x) => x && !x.o), o = nd.args.find((x) => x && x.o);
+      const ot = o ? this.argText(ctx, o) : '';
+      const ln = /(?:^|,)\s*lines\s*=\s*(\d+)/.exec(ot), hang = /(?:^|,)\s*lhang\s*=\s*([\d.]+)/.exec(ot);
+      const k1 = this.inl(ms[0].nodes, ctx, fns), k2 = this.inl(ms[1].nodes, ctx, fns);
+      if (!k1.length) k1.push(this.ph(ctx, ms[0].is));
+      const y = this.styAtom(ctx, { k: 'sty', st: 'dropcap', kids: k1, s: nd.s, e: nd.e, is: ms[0].is, ie: ms[0].ie, cmd: name });
+      y.lines = ln ? Math.max(2, Math.min(10, +ln[1])) : 2;
+      if (hang && +hang[1] > 0) y.hang = Math.min(1, +hang[1]);
+      out.push(y);
+      if (k2.length) out.push(this.styAtom(ctx, { k: 'sty', st: 'sc', kids: k2, s: ms[1].s, e: ms[1].e, is: ms[1].is, ie: ms[1].ie, cmd: 'lettrine' }));
       return false;
     }
     if (name === 'rikuywidget') {
@@ -2702,7 +2815,11 @@ class Builder {
     acc.flush();
     const lastM = nd.args.filter((a) => a && !a.o).pop();
     if (lastM && lastM.nodes && lastM.nodes.length && !lastM.raw) {
-      const kids = this.inl(lastM.nodes, ctx, fns);
+      // (a \parbox's pictures are a share of its width)
+      const wasBox = this.box;
+      if (name === 'parbox') { const ms = nd.args.filter((x) => x && !x.o); if (ms.length >= 2) this.box = this.boxIn(ctx, ms[ms.length - 2]); }
+      let kids;
+      try { kids = this.inl(lastM.nodes, ctx, fns); } finally { this.box = wasBox; }
       out.push(this.styAtom(ctx, { k: 'sty', st: 'unk', kids, s: nd.s, e: nd.e, is: lastM.is, ie: lastM.ie, cmd: name, title: '\\' + name }));
       if (!this.knownWarn) this.knownWarn = new Set();
       return false;

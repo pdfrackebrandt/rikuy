@@ -54,6 +54,10 @@ on:
       - 'test/para.py'
       - 'src/cmd/para.js'
       - 'src/parasrc.js'
+      - 'test/picture.py'
+      - 'src/picture.js'
+      - 'src/cmd/picture.js'
+      - 'src/drawing.js'
       - 'test/serve.py'
       - 'test/browser.py'
       - '.github/workflows/tex.yml'
@@ -144,6 +148,8 @@ jobs:
         run: cd test && python3 para.py
       - name: Styles, every heading, environment, look and style Rikuy writes compiled in the page with pdfLaTeX and LuaLaTeX
         run: cd test && python3 styles.py compile_all
+      - name: Pictures and objects compiled in the page, the picture's box in the PDF against the page's
+        run: cd test && python3 picture.py compiled
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rikuy-dist
