@@ -654,7 +654,7 @@ export class Renderer {
             if (a && x.st !== 'fbox') {
               let fx = +(a.dataset.fx || 1), fy = +(a.dataset.fy || 1), rot = +(a.dataset.rot || 0);
               if (x.st === 'fliph') fx = -fx;
-              if (x.xf && x.xf.sx != null) { fx *= clampN(x.xf.sx); fy *= clampN(x.xf.sy); }
+              if (x.xf && x.xf.sx != null) { fx *= Math.sign(x.xf.sx) || 1; fy *= Math.sign(x.xf.sy) || 1; }
               if (x.xf && x.xf.rot != null) rot += clampN(x.xf.rot, 360);
               a.dataset.fx = String(fx); a.dataset.fy = String(fy); a.dataset.rot = String(rot);
               a.style.scale = fx + ' ' + fy;
@@ -785,9 +785,9 @@ export class Renderer {
         // makes of the file's natural size, which comes from its first bytes: src/picture.js)
         const kv = x.opts && x.opts.length < 4000 ? parseKV(x.opts) : [];
         const alt = kv.find((k) => k.key === 'alt');
-        const fancy = kv.some((k) => /^(trim|viewport|angle|height|totalheight)$/.test(k.key));
+        const fancy = kv.some((k) => /^(trim|viewport|angle|height|totalheight)$/.test(k.key)) || !!x.outer;
         const nat = (fancy || !w) && this.app.picNatural ? this.app.picNatural(x.file) : null;
-        const box = fancy && nat ? this.picBox(kv, nat, x.box) : null;
+        const box = fancy && nat ? this.picBox(kv, nat, x.box, x.outer) : null;
         if (url) {
           const img = document.createElement('img');
           img.src = url;
@@ -884,11 +884,16 @@ export class Renderer {
 }
 
 // (B8) the box of a picture, in TeX points, its line the wrapfigure's or the text's width
-Renderer.prototype.picBox = function (kv, nat, inbox) {
+Renderer.prototype.picBox = function (kv, nat, inbox, outer) {
   const g = this.app.layout && this.app.layout.g, tw = g && g.tw ? g.tw : 345;
   let lw = this.lineW ? (lengthPtOf(this.lineW, tw) || tw) : tw;
   if (inbox) lw = inbox.pt || lw * inbox.share;
-  try { return graphicBox(kv, nat, lw); } catch (e) { return null; }
+  try {
+    const B = graphicBox(kv, nat, lw);
+    // (a \scalebox round it: the box and the picture scaled, as TeX's box is)
+    if (outer) { const sx = Math.min(50, outer.sx), sy = Math.min(50, outer.sy); B.bw *= sx; B.bh *= sy; const q = Math.abs(Math.round(B.angle / 90)) % 2 === 1; if (q) { B.iw *= sy; B.ih *= sx; } else { B.iw *= sx; B.ih *= sy; } }
+    return B;
+  } catch (e) { return null; }
 };
 // A picture drawn as graphicx sets it: its box the size TeX gives it, the picture turned in it
 // about its middle, of the file only the part kept (trim), the rest cut off where clip says so

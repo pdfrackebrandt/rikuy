@@ -301,6 +301,33 @@ ok('review M4: wrap only where wrapfig wraps: not in a quote, a theorem or a pro
   assert.match(X.whyFixed(CENTER, at(CENTER), 'wrap', { nextIsHeading: true }), /heading/);
 });
 
+ok('verification N1, N5, N8: JFIF of no unit hides Exif; Exif truncated, unit "none" as inches; keyEdits taking the angle away', () => {
+  // the fixture: JFIF of unit 0 (PIL's header) and Exif at 300 dpi; pdfLaTeX, XeLaTeX and the
+  // page's TeX give 301.12pt (72 dpi)
+  const ea = new Uint8Array(fs.readFileSync(new URL('./fixtures/jfif0-exif300.jpg', import.meta.url)));
+  assert.ok(Math.abs(X.naturalSize(ea).w * 72.27 / 72 - 301.124) < 0.01);
+  const tiff = (x, den, unit) => {
+    const w16 = (v) => [v & 255, v >> 8], w32 = (v) => [v & 255, (v >> 8) & 255, (v >> 16) & 255, v >>> 24];
+    const ifd = [...w16(2), ...w16(0x011a), ...w16(5), ...w32(1), ...w32(38), ...w16(0x0128), ...w16(3), ...w32(1), ...w16(unit), 0, 0, ...w32(0)];
+    const body = [0x49, 0x49, ...w16(42), ...w32(8), ...ifd];
+    while (body.length < 38) body.push(0);
+    body.push(...w32(x), ...w32(den));
+    const seg = [0x45, 0x78, 0x69, 0x66, 0, 0, ...body];
+    return new Uint8Array([0xff, 0xd8, 0xff, 0xe1, (seg.length + 2) >> 8, (seg.length + 2) & 255, ...seg, 0xff, 0xc0, 0, 17, 8, 0, 150, 1, 44, 3]);
+  };
+  const pt = (b) => Math.round(X.naturalSize(b).w * 72.27 / 72 * 100) / 100;
+  assert.equal(pt(tiff(2997, 10, 2)), 72.51);   // 299.7 dpi: 299, as pdfTeX
+  assert.equal(pt(tiff(300, 1, 1)), 72.27);     // no unit: taken as dots per inch, as pdfTeX
+  const t = doc('\\includegraphics[width=1cm,angle=90]{a}');
+  assert.equal(run(t, (s, P) => ({ edits: X.keyEdits(s, P, { angle: null, height: '2cm' }) })), doc('\\includegraphics[width=1cm,height=2cm]{a}'));
+  // free on a hand written angle then width: both before the angle, so TeX sizes them as written
+  const u = doc('\\includegraphics[angle=90,width=3cm]{a}');
+  assert.equal(run(u, (s, P) => X.setSize(s, P, '3cm', '2cm', true)), doc('\\includegraphics[width=3cm,height=2cm,angle=90]{a}'));
+  // wrap allowed where wrapfig works (a language's environment), refused in a quote
+  const ol = doc('\\begin{otherlanguage}{german}\n\\begin{center}\n\\includegraphics{a}\n\\end{center}\nText.\n\\end{otherlanguage}');
+  assert.equal(X.whyFixed(ol, at(ol), 'wrap', {}), null);
+});
+
 ok('a stranger\'s text is read in bounded time', () => {
   const t0 = Date.now();
   const opts = doc('\\includegraphics[' + 'a={x},['.repeat(20000) + ']{x}');

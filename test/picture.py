@@ -523,6 +523,30 @@ def reviewed(page):
     load_doc(page, DOC); sel_pic()(page)
     run_cmd(page, 'picture-alt', {'text': '', 'decorative': True})
     check('L3: Mark as decorative writes "% alt (decorative)" above the picture, no artifact key', '\\begin{center}\n% alt (decorative)\n\\includegraphics[width=0.5\\linewidth]{a.png}' in src(page), body(page))
+    # ---- the verification of 1c32c76 ----
+    # N2: beamer steps the counter: \ref gives 1 though the caption prints "Figure:"
+    load_doc(page, '\\documentclass{beamer}\n\\begin{document}\n\\begin{frame}\n\\begin{figure}\n\\includegraphics[width=3cm]{a.png}\n\\caption{Beamer cap}\\label{f:a}\n\\end{figure}\nSee \\ref{f:a}.\n\\end{frame}\n\\end{document}\n')
+    page.wait_for_timeout(400)
+    t = page.evaluate("document.getElementById('pages').textContent")
+    check('N2: in beamer "Figure: Beamer cap" and \\ref gives 1, as TeX prints them', 'Figure: Beamer cap' in t and 'See 1.' in t, t[:200])
+    # N3: a picture in \scalebox{0.5} takes half its height on the page, as TeX's box does
+    load_doc(page, WRAP('Before.\n\n\\begin{center}\n\\scalebox{0.5}{\\includegraphics[width=0.8\\linewidth]{a.png}}\n\\end{center}\n\nAfter.')); page.wait_for_timeout(800)
+    tw = page.evaluate('window.rikuy.layout.g.tw * window.rikuy.layout.px')
+    b = page.locator('#pages .a-img').bounding_box()
+    check('N3: \\scalebox{0.5} round width=0.8\\linewidth: a box 0.4 of the line wide and its height scaled with it', abs(b['width'] - 0.4 * tw) < 3 and abs(b['height'] - 0.4 * tw * 2 / 3) < 3, (b, tw))
+    # N4: \scalebox{2}{\fbox{words}} is the Font group's scaled words, not a picture
+    load_doc(page, WRAP('A \\scalebox{2}{\\fbox{Boxed}} word.')); page.wait_for_timeout(300)
+    check('N4: \\scalebox{2}{\\fbox{Boxed}} holds no picture: drawn as scaled words, not as a picture\'s box', not page.evaluate("!!document.querySelector('#pages .y-xf')"))
+    # N6: Font Awesome 4's own name in the refusal
+    load_doc(page, WRAP('First paragraph here.', '\\usepackage{fontawesome}\n')); click_text(page, 'First', 5)
+    run_cmd(page, 'insert-icons', {'icon': 'map-marker-alt'})
+    check('N6: with Font Awesome 4 the refusal names its own command, \\faMapMarker', '\\faMapMarker,' in page.evaluate("document.querySelector('#toast span').textContent"))
+    # N7: selecting a picture with a width rebuilds nothing
+    asset(page, 'once.png', png(80, 60, dpi=96))
+    load_doc(page, WRAP(CENTER().replace('a.png', 'once.png'))); page.wait_for_timeout(400)
+    page.evaluate("() => { const g = window.rikuy; if (!window.__rbw) { const r = g.rebuild; window.__rbw = 1; g.rebuild = function (...a) { window.__rb = (window.__rb || 0) + 1; return r.apply(this, a); }; } window.__rb = 0; }")
+    sel_pic()(page); page.wait_for_timeout(500)
+    check('N7: the first selection of a picture that has a width rebuilds nothing', page.evaluate('window.__rb') == 0, page.evaluate('window.__rb'))
     if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
         print('SKIP the review\'s compiles: no TeX tree in %s' % DIST)
         return
@@ -549,6 +573,13 @@ def reviewed(page):
     run_cmd(page, 'insert-smartart', {'kind': 'flow diagram:horizontal', 'items': ['I%d' % k for k in range(10)]})
     r = compile_pdf(page, src(page))
     check('H10: SmartArt with ten items, the most it allows, compiles', r['ok'] and not r['problems'], r['problems'])
+    # N1: JFIF of no unit and Exif at 300 dpi: 72 dpi, as the three engines take it
+    jpg = open(os.path.join(ROOT, 'test', 'fixtures', 'jfif0-exif300.jpg'), 'rb').read()
+    page.evaluate('(b) => { const u = Uint8Array.from(atob(b), (c) => c.charCodeAt(0)); window.rikuy.addAsset("ea.jpg", new Blob([u], { type: "image/jpeg" })); }', base64.b64encode(jpg).decode())
+    r = compile_pdf(page, WRAP('\\begin{center}\n\\includegraphics{ea.jpg}\n\\end{center}')); page.wait_for_timeout(800)
+    drawn = page.evaluate("(() => { const s = document.querySelector('#pages .a-img img'), r = s.getBoundingClientRect(), px = window.rikuy.layout.px; return [r.width / px, r.height / px]; })()")
+    box = pdf_image_box(base64.b64decode(r['pdf'])) if r['ok'] else None
+    check('N1: a JPEG with a JFIF header of no unit and Exif at 300 dpi is %s pt wide in the PDF and %s pt on the page (72 dpi)' % (box and round(box[0], 1), round(drawn[0], 1)), bool(box) and abs(box[0] - drawn[0]) < 1.5 and abs(box[0] - 301.12) < 1, (box, drawn))
 
 
 # ---- phones -------------------------------------------------------------------------------------------
