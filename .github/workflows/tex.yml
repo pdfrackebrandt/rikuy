@@ -47,6 +47,11 @@ on:
       - 'src/table.js'
       - 'src/cmd/table.js'
       - 'test/page.py'
+      - 'test/view.py'
+      - 'test/file.py'
+      - 'src/cmd/view.js'
+      - 'src/cmd/file.js'
+      - 'src/tour.js'
       - 'src/layout.js'
       - 'src/pagesrc.js'
       - 'test/lists.py'
@@ -150,6 +155,10 @@ jobs:
         run: cd test && python3 styles.py compile_all
       - name: Pictures and objects compiled in the page, the picture's box in the PDF against the page's
         run: cd test && python3 picture.py compiled
+      - name: The PDF view by SyncTeX both ways, and Learn Rikuy compiled in the page
+        run: cd test && python3 view.py views help_tab
+      - name: Every template of File, New compiles in the page, and a tagged PDF
+        run: cd test && python3 file.py new_docs accessibility
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rikuy-dist
