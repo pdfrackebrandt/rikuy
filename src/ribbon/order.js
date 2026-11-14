@@ -9,7 +9,7 @@
 // is (app.ribbonAt()) and from the app's state (an open equation, an armed picture).
 
 export const TABS = [
-  { id: 'file', name: 'File', groups: [['new', 'New'], ['open', 'Open'], ['info', 'Info'], ['save', 'Save a copy'], ['print', 'Print'], ['share', 'Share'], ['options', 'Options']] },
+  { id: 'file', name: 'File', groups: [['new', 'Create', 4], ['open', 'Open documents', 2], ['info', 'Info', 3], ['save', 'Save a copy', 2], ['print', 'Print', 1], ['share', 'Share', 1], ['options', 'Options', 1]] },
   { id: 'home', name: 'Home', groups: [['clipboard', 'Clipboard', 2], ['font', 'Font', 5], ['paragraph', 'Paragraph', 4], ['styles', 'Styles', 9], ['insert', 'Insert', 3, { spare: true }], ['editing', 'Editing', 1]] },
   { id: 'insert', name: 'Insert', groups: [['pages', 'Pages', 1], ['tables', 'Tables', 6], ['illustrations', 'Illustrations', 5], ['links', 'Links', 4], ['comments', 'Comments', 3], ['headfoot', 'Header & Footer', 2], ['text', 'Text', 2], ['symbols', 'Symbols', 7], ['latex', 'LaTeX', 8]] },
   { id: 'design', name: 'Design', groups: [['formatting', 'Document formatting', 2], ['background', 'Page background', 1]] },
