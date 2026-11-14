@@ -131,7 +131,9 @@ function normPath(p) {
 // options or the zoom change; only a change to its own file starts it again.
 //
 // Protocol, from the widget: parent.postMessage({rikuy: "height", px: <integer>}, "*") gives the
-// height its content needs, in its own CSS pixels. The page lays the widget out at the width the
+// height its content needs, in its own CSS pixels; {rikuy: "menu", x, y} asks for Rikuy's menu
+// at that point of the frame (an interactive graph's right click or long press: the host opens it
+// only for a graph, and at most once a second). The page lays the widget out at the width the
 // text has at 100 % zoom and scales it with the page, so a widget looks the same at any zoom, as a
 // figure does. Messages are taken only from these frames' windows (a widget's origin is "null",
 // as is every sandboxed frame's, so the window is what tells them apart).
@@ -195,6 +197,8 @@ export class WidgetLayer {
       B.width = (r.width / s) + 'px';
       B.height = (r.height / s) + 'px';
       B.transform = Math.abs(s - 1) < 1e-4 ? '' : 'scale(' + s + ')';
+      // the box's scale, so its buttons keep their size on the screen (44 px on a phone's page)
+      B.setProperty('--ws', String(s));
     }
     for (const [id, F] of this.frames) if (!keep.has(id)) { F.box.remove(); this.frames.delete(id); }
   }
@@ -225,6 +229,8 @@ export class WidgetLayer {
     tab.addEventListener('click', (e) => { if (!e.detail) this.host.source(F.ph, e); });
     box.append(fr, tab);
     this.layer.append(box);
+    // (an interactive graph adds its Edit graph button: src/cmd/insert.js)
+    if (this.host.decorate) this.host.decorate(F);
     return F;
   }
 
@@ -248,10 +254,12 @@ export class WidgetLayer {
 
   onMessage(e) {
     const d = e.data;
-    if (!d || typeof d !== 'object' || d.rikuy !== 'height' || !e.source) return;
+    if (!d || typeof d !== 'object' || (d.rikuy !== 'height' && d.rikuy !== 'menu') || !e.source) return;
     let F = null;
     for (const x of this.frames.values()) if (x.frame && x.frame.contentWindow === e.source) { F = x; break; }
     if (!F) return;
+    // a right click or long press in the frame: the host decides whether a menu opens
+    if (d.rikuy === 'menu') { if (this.host.menu) this.host.menu(F, d.x, d.y); return; }
     const px = Math.round(Number(d.px));
     if (!Number.isFinite(px) || px <= 0) return;
     // no taller than a page's text: a widget that grows with its frame stops there
