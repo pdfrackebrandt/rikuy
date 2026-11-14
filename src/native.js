@@ -18,12 +18,15 @@ let X = null;          // the instance's exports
 // 766 code units, 2 and more from a few thousand)
 export const PARSE_MIN = 600;
 // what the core did, for the tests and the status line
-export const coreStats = { parsed: 0, fellBack: 0 };
+export const coreStats = { parsed: 0, fellBack: 0, trapped: 0 };
 
 export function coreReady() { return !!X; }
 
 // bytes: the module (a Uint8Array or ArrayBuffer). Resolves to true when the core runs.
 export async function loadCore(bytes) {
+  // (a new instance holds no document's signatures: they must go over again, or its trees would
+  // be wrong without a word)
+  lastUser = null;
   try {
     const { instance } = await WebAssembly.instantiate(bytes, { env: { emscripten_notify_memory_growth() {} } });
     const x = instance.exports;
@@ -102,9 +105,14 @@ export function nativeParse(src, sigs, force) {
     coreStats.parsed++;
     return readTree(src, B);
   } catch (e) {
-    // (a trap: the stack past its end, memory refused) JavaScript parses
-    X.stackRestore(sp);
+    // A trap (the host's stack past its end, memory refused) can leave the core's heap half
+    // written, and a plausible wrong tree would patch the source in the wrong place: the core is
+    // off for the rest of the session, and JavaScript parses.
+    try { X.stackRestore(sp); } catch (e2) { /* gone anyway */ }
+    X = null;
     lastUser = null;
+    setNativeParse(null);
+    coreStats.trapped++;
     coreStats.fellBack++;
     return null;
   }

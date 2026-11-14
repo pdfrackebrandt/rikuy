@@ -6,7 +6,7 @@
 //   and .bib of it too, and every document's model built both ways (buildModel) compared whole.
 import fs from 'fs';
 import path from 'path';
-import { parse, parseJS, scanUserSigs } from '../src/parser.js';
+import { parse, parseJS, scanUserSigs, PARSE_TABLES, MATH_SCAN } from '../src/parser.js';
 import { loadCore, nativeParse, coreReady, coreStats, coreText, PARSE_MIN } from '../src/native.js';
 
 const root = new URL('..', import.meta.url).pathname;
@@ -154,7 +154,12 @@ check('\\constructor{a} is an unknown command with its argument', parseJS('\\con
 // were remembered: a crafted file a stranger can send, parsed again at every keystroke)
 for (const [name, s] of [['\\( without \\)', 'a\\('.repeat(40000)], ['\\[ without \\]', 'a\\['.repeat(40000)], ['an unknown command\'s [ without ]', 'a\\x['.repeat(40000)],
   ['\\begin{equation} without its end', '\\begin{equation}'.repeat(20000)], ['\\begin{verbatim} without its end, \\end { verbatim } spaced', '\\begin{verbatim}x\\end { verbatim }'.repeat(2) + '\\begin{verbatim}'.repeat(20000)],
-  ['\\newcommand{\\a}[ without ]', '\\newcommand{\\a}['.repeat(20000)]]) {
+  ['\\newcommand{\\a}[ without ]', '\\newcommand{\\a}['.repeat(20000)],
+  // a $ that never closes (braces TeX does not count, inside \verb or verbatim): 6.7 s and 2.3 s
+  ['$ then \\verb|{|', '$\\verb|{|'.repeat(22000)], ['$ then a verbatim with {', '$\\begin{verbatim}{\\end{verbatim}'.repeat(6000)],
+  ['$$ then \\verb|$|', '$$\\verb|$|'.repeat(15000)],
+  // 8000 raw environments of 8000 names, none ended (2.3 s in JavaScript, 4.6 s in the core)
+  ['8000 raw environments of different names without their end', (() => { const nm = (k) => 'e' + k.toString(26).replace(/[0-9]/g, (d) => 'qrstuvwxyz'[d]); let u = '', d = ''; for (let k = 0; k < 8000; k++) { u += '\\begin{' + nm(k) + '}'; d += '\\newenvironment{' + nm(k) + '}{\\tikz}{}\n'; } return u + d; })()]]) {
   const sigs = scanUserSigs(s, {});
   let t = performance.now();
   const js = JSON.stringify(parseJS(s, sigs));
@@ -164,6 +169,33 @@ for (const [name, s] of [['\\( without \\)', 'a\\('.repeat(40000)], ['\\[ withou
   const tC = performance.now() - t;
   check(name + ': JavaScript in ' + tJS.toFixed(0) + ' ms, the core in ' + tC.toFixed(0) + ' ms (under 1500 each), the same tree', tJS < 1500 && tC < 1500 && js === c, [tJS, tC, js === c]);
 }
+
+// a formula as long as the bound closes; one longer does not, in both parsers alike
+const atBound = (len) => '$' + 'x'.repeat(len - 1) + '$ y' + ' z'.repeat(400);
+check('a $ closes within ' + MATH_SCAN + ' code units, not past them, the same in both', same('bound in', atBound(MATH_SCAN), {}) && same('bound out', atBound(MATH_SCAN + 1), {})
+  && parseJS(atBound(MATH_SCAN), {})[0].t === 'math' && parseJS(atBound(MATH_SCAN + 1), {})[0].t === 'special');
+
+// ---- every entry of every table the core reads -----------------------------------------------------
+// (a merge that changes a table or the algorithm on one side only fails here: each name as a
+// command with arguments of every kind, with a star, as an environment, and as a raw end)
+let tabOk = 0, tabN = 0;
+const pad = ' '.repeat(PARSE_MIN);
+for (const [tab, v] of Object.entries(PARSE_TABLES)) {
+  for (const k of v instanceof Set ? v : Object.keys(v)) {
+    const cs = /^[A-Za-z]+$/.test(k) ? '\\' + k : '\\' + k;
+    for (const t of [cs + '*[o]{m}{m}(p) x', cs + ' {a} [b] c', cs + 'x {y}', '\\begin{' + k + '}[o]{m}{m}x\\end{' + k + '}', '\\begin{' + k + '}x', '\\begin{' + k + '} y \\end { ' + k + ' } z', '$' + cs + '{$}$']) {
+      tabN++;
+      if (same('table ' + tab + ' ' + JSON.stringify(k), pad + t + pad, scanUserSigs(t, {}))) tabOk++;
+    }
+  }
+}
+check('every entry of every table, read the same by both (' + tabOk + ' of ' + tabN + ')', tabOk === tabN);
+
+// ---- nesting: 200 levels of groups, environments and arguments alike, then JavaScript ------------
+const nest = (open, close, d) => open.repeat(d) + 'x' + close.repeat(d) + pad;
+check('190 levels of \\textbf{, of itemize and of braces: the core answers, the same tree',
+  ['\\textbf{|}', '\\begin{itemize}|\\end{itemize}', '{|}'].every((oc) => { const [o, c] = oc.split('|'); return same('nest ' + o, nest(o, c, 190), {}); }));
+check('past 200 of each: JavaScript parses', ['\\textbf{|}', '\\begin{itemize}|\\end{itemize}', '{|}'].every((oc) => { const [o, c] = oc.split('|'); return nativeParse(nest(o, c, 210), {}, true) === null; }));
 
 // ---- fallbacks ---------------------------------------------------------------------------------
 const deep = '{'.repeat(400) + 'x' + '}'.repeat(400);
@@ -218,6 +250,22 @@ if (corpus) {
   check('every document\'s model the same with and without the core (' + mOk + ' of ' + mDocs + ')', mOk === mDocs);
   console.log('corpus models: ' + mOk + ' of ' + mDocs + ' the same; JavaScript ' + sum(tJS).toFixed(0) + ' ms, with the core ' + sum(tC).toFixed(0) + ' ms in all');
 }
+
+// ---- a second load, and a trap -----------------------------------------------------------------
+// (after a new instance the document's signatures must go over again: the same text and
+// signatures as before gave wrong trees, with no error)
+const sig2 = '\\newcommand{\\mac}[2]{#1#2}\n' + 'Text \\mac {a} {b} more.\n'.repeat(40);
+check('the same document before and after a second load of the core', same('before reload', sig2, scanUserSigs(sig2, {})) && (await loadCore(fs.readFileSync(wasm))) && same('after reload', sig2, scanUserSigs(sig2, {})));
+// a parse from a JavaScript stack so deep that the core's recursion runs out of it: the core goes
+// off for the session (its heap may be half written) and JavaScript parses
+const deepDoc = nest('\\begin{itemize}', '\\end{itemize}', 190);
+const down = (d) => (d ? down(d - 1) : parse(deepDoc, { userSigs: {} }));
+let trapped = false;
+for (let d = 0; d < 20000 && !trapped; d += 7) { try { down(d); } catch (e) { /* the JavaScript stack itself */ } trapped = coreStats.trapped > 0; }
+if (trapped) {
+  check('after a trap the core is off for the session, and parse() is JavaScript\'s', !coreReady() && nativeParse(texts[0], {}, true) === null && JSON.stringify(parse(texts[0])) === JSON.stringify(parseJS(texts[0], scanUserSigs(texts[0], {}))));
+  check('and it loads again, giving the same trees', (await loadCore(fs.readFileSync(wasm))) && same('after trap', texts[texts.length - 1], scanUserSigs(texts[texts.length - 1], {})));
+} else console.log('(no trap could be made from this stack: the trap checks did not run)');
 
 console.log('native core:', pass, 'passed,', fail, 'failed');
 if (fail) process.exitCode = 1;

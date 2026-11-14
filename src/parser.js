@@ -128,6 +128,7 @@ const PLAIN_ENVS = new Set(['document', 'abstract', 'center', 'quote', 'quotatio
 // What the C++ parser (tex/native/core/parse.cc) reads at load: the tables are kept here only.
 export const PARSE_TABLES = { SIG, CHARS, ACCENTS, ENV_SIG, MATH_ENVS, RAW_ENVS, DEF_CMDS, ENV_DEF, DIM_CMDS, PLAIN_ENVS };
 
+export const MATH_SCAN = 5000;
 const isLetter = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 const isWS = (c) => c === ' ' || c === '\t' || c === '\n' || c === '\r';
 
@@ -257,14 +258,19 @@ export function parseJS(src, userSigs) {
     return { t: 'group', s, e, is: s + 1, ie, nodes };
   }
 
+  // A $ or $$ closes within MATH_SCAN code units or not at all: the longest formula of the corpus's
+  // documents is 728, and a scan that ran to the end of the text from every $ that never closes
+  // (braces TeX does not count, in a \verb or a verbatim, keep it from closing) stalled the page
+  // for seconds on a crafted file. (parse.cc reads the same bound.)
   function findClosingDollar(from, double) {
     let depth = 0;
-    for (let j = from; j < n; j++) {
+    const end = Math.min(n, from + MATH_SCAN);
+    for (let j = from; j < end; j++) {
       const c = src[j];
       if (c === '\\') { j++; continue; }
       if (c === '{') depth++;
       else if (c === '}') depth--;
-      else if (c === '%') { while (j < n && src[j] !== '\n') j++; }
+      else if (c === '%') { while (j < end && src[j] !== '\n') j++; }
       else if (c === '\n') {
         let k = j + 1;
         while (k < n && (src[k] === ' ' || src[k] === '\t' || src[k] === '\r')) k++;
@@ -300,6 +306,52 @@ export function parseJS(src, userSigs) {
     const k = src.indexOf(pat, p);
     seen.set(pat, [p, k]);
     return k;
+  }
+  // Where a raw environment ends: every \end{name} of the text (\end { name } too, with spaces
+  // anywhere JavaScript's \s takes them), found in one pass the first time one is asked for, then
+  // a binary search per environment. A memo per name once let 8000 environments of 8000 names,
+  // none ended, scan the text 8000 times. Names of other characters than these (no environment
+  // Rikuy or a document defines has them) take the searches below.
+  const END_NAME = /^[A-Za-z@*_]*$/;
+  let endIx = null;
+  function endIndex() {
+    endIx = new Map();
+    const sp = (c) => c !== undefined && /\s/.test(c);
+    const nameCh = (c) => c !== undefined && /[A-Za-z@*_]/.test(c);
+    for (let k = src.indexOf('\\end'); k >= 0; k = src.indexOf('\\end', k + 4)) {
+      let p = k + 4;
+      while (sp(src[p])) p++;
+      if (src[p] !== '{') continue;
+      let a = p + 1;
+      while (sp(src[a])) a++;
+      let b = a;
+      while (nameCh(src[b])) b++;
+      let c = b;
+      while (sp(src[c])) c++;
+      if (src[c] !== '}') continue;
+      const name = src.slice(a, b);
+      let e = endIx.get(name);
+      if (!e) endIx.set(name, (e = { x: [], l: [], len: [] }));
+      if (src[k + 4] === '{' && a === k + 5 && c === b) e.x.push(k);
+      e.l.push(k); e.len.push(c + 1 - k);
+    }
+  }
+  const atOrAfter = (list, p) => { let lo = 0, hi = list.length; while (lo < hi) { const m = (lo + hi) >> 1; if (list[m] < p) lo = m + 1; else hi = m; } return lo; };
+  // [start of the end, its length] at or after p, \end{name} first, else \end { name }; [-1, 0]
+  function rawEnd(name, p) {
+    if (!END_NAME.test(name)) {
+      const closer = '\\end{' + name + '}', k = nextAt(closer, p);
+      if (k >= 0) return [k, closer.length];
+      const mm = looseEnd(name, p);
+      return [mm[1], mm[2]];
+    }
+    if (!endIx) endIndex();
+    const e = endIx.get(name);
+    if (!e) return [-1, 0];
+    const x = atOrAfter(e.x, p);
+    if (x < e.x.length) return [e.x[x], name.length + 6];
+    const l = atOrAfter(e.l, p);
+    return l < e.l.length ? [e.l[l], e.len[l]] : [-1, 0];
   }
   // the same for \end { name } with spaces in it: [from, start of the match, its length]
   const seenLoose = new Map();
@@ -601,13 +653,10 @@ export function parseJS(src, userSigs) {
         if (src[i] === '[') args = parseArgs('o');
       }
       const be = i;
-      const closer = '\\end{' + name + '}';
-      let k = nextAt(closer, be);
-      // tolerate whitespace inside \end { name }
-      if (k < 0) {
-        const mm = looseEnd(name, be);
-        if (mm[1] >= 0) { k = mm[1]; i = k + mm[2]; } else { i = be; return { t: 'stray', name: 'begin{' + name + '}', s, e: be, err: true }; }
-      } else i = k + closer.length;
+      // (whitespace inside \end { name } is tolerated)
+      const [k, len] = rawEnd(name, be);
+      if (k < 0) { i = be; return { t: 'stray', name: 'begin{' + name + '}', s, e: be, err: true }; }
+      i = k + len;
       return { t: 'env', name, s, e: i, bs: s, be, es: k, args, raw: true, math: MATH_ENVS.has(name), nameEnd };
     }
     // Args for theorem-like envs: optional title.
