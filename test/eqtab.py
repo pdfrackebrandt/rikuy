@@ -665,6 +665,30 @@ MENU_GEO = '''(sel) => { const m = document.querySelector(sel); if (!m || !m.get
 FITS = lambda g: bool(g) and g['l'] >= 0 and g['r'] <= g['w'] and g['t'] >= 0 and g['b'] <= min(g['h'], g['vv']) - g['kb'] + 1
 
 
+def phone_tabs(page, tag):
+    """Every tab of the ribbon on a phone, the contextual ones with their object open: the page
+    never scrolls sideways (the row scrolls; the hidden names of its icon buttons stay in it)."""
+    sel = page.get_by_role('combobox', name='Ribbon tab', exact=True)
+    load_doc(page, WRAP('Some text here.\n\n\\begin{tabular}{ll}\na cell & b\\\\\nc & d\n\\end{tabular}\n\nSecond paragraph.'))
+    click_text(page, 'a cell', 2); page.wait_for_timeout(250)
+    wide = {}
+    names = sel.evaluate('(s) => [...s.options].filter((o) => !o.hidden && !o.disabled).map((o) => o.textContent)')
+    for n in names:
+        sel.select_option(label=n); page.wait_for_timeout(150)
+        wide[n] = page.evaluate(SIDEWAYS)
+    page.evaluate('() => { if (window.rikuy.pageHFOpen) window.rikuy.pageHFOpen("head"); }'); page.wait_for_timeout(250)
+    hf = sel.evaluate('(s) => [...s.options].filter((o) => !o.hidden && !o.disabled).map((o) => o.textContent)')
+    for n in [x for x in hf if x not in wide]:
+        sel.select_option(label=n); page.wait_for_timeout(150)
+        wide[n] = page.evaluate(SIDEWAYS)
+    page.evaluate('() => { if (window.rikuy.hf) window.rikuy.pageHFClose(); }'); page.wait_for_timeout(150)
+    click_text(page, 'Some text', 4); new_formula(page)
+    wide['Equation'] = page.evaluate(SIDEWAYS)
+    close(page)
+    check('%s: every tab of the ribbon (%d, with Table Design, Table Layout, Header & Footer and Equation open) leaves the page without sideways scroll' % (tag, len(wide)),
+          all(v <= 0 for v in wide.values()) and all(t in wide for t in ('Home', 'Insert', 'Table Layout', 'Equation')) and len(wide) >= 10, wide)
+
+
 def phone(p):
     """A phone (390 by 844 and 360 by 740, touch, is_mobile; taps, no hover, no right click):
     Insert's Equation by a tap is Alt+=; with the field open and its on-screen keyboard up the
@@ -675,6 +699,7 @@ def phone(p):
     for (w, h, dark) in ((390, 844, False), (390, 844, True), (360, 740, False)):
         browser, page, errors = open_page(p, width=w, height=h, dark=dark, touch=True)
         tag = '%d%s' % (w, '-dark' if dark else '')
+        phone_tabs(page, tag)
         shot = lambda name: page.screenshot(path=os.path.join(SHOTS, 'eqtab-phone-%s-%s.png' % (tag, name))) if w == 390 else None
         sel = page.get_by_role('combobox', name='Ribbon tab', exact=True)
         insert = lambda: (sel.select_option(label='Insert'), page.wait_for_timeout(200))

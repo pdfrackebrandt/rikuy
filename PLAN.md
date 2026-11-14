@@ -1732,13 +1732,16 @@ Tests:
     way under a coarse pointer; a long press on an equation opens its menu (without the right click
     line), a tap opens its field; the caret is back on the page when the field closes; nothing
     scrolls sideways (the hidden names of the ribbon's icon buttons past the screen's edge, placed
-    from the page, made the whole page 384 px wider: the tab's panel holds them now; other tabs
-    with icon buttons past the edge would do the same). Screenshots at 390 px, light and dark,
-    looked at. Evidence after both: `npm test` green (`preamble.test.mjs` 20 groups,
-    `equation.test.mjs` 11, `word.test.mjs` 57); `eqtab.py` 156 (34 of them on phones; the compiles
+    from the page, made the whole page 384 px wider: the ribbon's row is positioned now, so no tab's
+    do; `phone_tabs` checks every tab, the contextual ones open, at 390 and 360 px). Screenshots at
+    390 px, light and dark, looked at. *Polish:* the structures' tiles drawn at 19 px (from 16: a
+    small fraction's slots were hard to see), the gallery's formulas at 16; the tab declares Word's
+    Conversions group between Tools and Symbols, for B12's Show LaTeX. Evidence after both: `npm
+    test` green (`preamble.test.mjs` 20 groups,
+    `equation.test.mjs` 11, `word.test.mjs` 57); `eqtab.py` 159 (37 of them on phones; the compiles
     need `dist/tex`); `browser.py` 190 (its kind switch on the sample's labelled equation now
     expects unnumbered refused and Aligned renamed); `mathfield.py` 19; `eqextras.py` 18/18;
-    `wordmath.py` 83; `ribbon.py` 268; `tabs.py` 116; `agent.py` 141; `table.py` 161; `page.py` 139;
+    `wordmath.py` 83; `ribbon.py` 268; `tabs.py` 115; `agent.py` 141; `table.py` 161; `page.py` 139; `font.py` 272;
     `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43; `pages_check.py` fits;
     actionlint clean.
 
