@@ -1,7 +1,7 @@
 // Rikuy model: turns the syntax tree into blocks of flow items with
 // numbering, cross references and citations resolved. Every editable
 // character keeps a pointer to its exact source range.
-import { parse, scanUserSigs, CHARS, ACCENTS, splitRows } from './parser.js';
+import { parse, scanUserSigs, CHARS, ACCENTS, splitRows, MATH_BUDGET } from './parser.js';
 import { parseBib, texToPlain, shortAuthors, entryYear, formatEntry } from './bib.js';
 import { siTex, siOptions, siUnitSymbol } from './siunitx.js';
 import { widgetPath, hashText } from './widget.js';
@@ -284,6 +284,8 @@ function csvRows(text, sep) {
 
 export function buildModel(project, hint) {
   if (hint && hint.labels) {
+    if (INCR.on) { const r = incremental(project, hint); if (r) { INCR.reused++; return r; } }
+    INCR.full++;
     const b = new Builder(project, hint);
     b.run();
     const r = b.result();
@@ -297,6 +299,199 @@ export function buildModel(project, hint) {
   const p2 = new Builder(project, p1);
   p2.run();
   return p2.result();
+}
+
+// ---- a keystroke in a paragraph: the model of the text before, one paragraph built again ----------
+//
+// Typing in a paragraph of plain text changes that paragraph and nothing else the builder knows: no
+// counter, label, citation, heading, macro, footnote or direction moves, so every other unit is the
+// one the last build made, the units after the edit with their offsets moved by its length. Where
+// that holds (incremental below proves it from the two parse trees and both versions of the
+// paragraph), that paragraph is built again in a Builder set up as it was at the paragraph's start,
+// and the rest is taken from the last model; else the whole document is built as always. The full
+// build is the oracle: test/incremental.test.mjs holds the two equal on the corpus and on thousands
+// of random edits. Nothing is cached across documents: each step reads only the last model and
+// the new text, so a stranger's document cannot leave anything behind for the next one.
+export const INCR = { on: true, reused: 0, full: 0 };
+
+// the commands a paragraph may hold and still be plain text: they read and write no builder state
+// (the style wrappers, and characters; a document's own macro of the same name is not plain)
+const PURE_CMDS = new Set(['textbf', 'textit', 'emph', 'texttt', 'textsc', 'textsf', 'textrm', 'textup', 'textsl', 'textmd', 'textnormal',
+  'underline', 'uline', 'uuline', 'uwave', 'sout', 'xout', 'textsuperscript', 'textsubscript', 'mbox', 'fbox']);
+// the names an offset is kept under in a model's units (every numeric field the corpus's models move
+// when text is typed before them; test/incremental.test.mjs finds a missed one)
+export const OFFSET_KEYS = new Set(['s', 'e', 'is', 'ie', 'itemS', 'itemE', 'listS', 'listE', 'cmdE', 'ps', 'pe', 'vs', 've']);
+const MATH_READS = /\\(?:eqref|ref|cref|Cref|autoref|label|intertext|shortintertext)\b|color/;
+
+function pureNodes(ns, src, macros) {
+  for (const n of ns) {
+    switch (n.t) {
+      case 'text': case 'special': case 'comment': case 'verb': case 'stray': break;
+      case 'math': if (n.display || MATH_READS.test(src.slice(n.is, n.ie))) return false; break;
+      case 'group': if (!pureNodes(n.nodes, src, macros)) return false; break;
+      case 'cmd': {
+        if (macros.has(n.name)) return false;
+        if (!(n.accent || PURE_CMDS.has(n.name) || (Object.prototype.hasOwnProperty.call(CHARS, n.name) && !n.args.length))) return false;
+        for (const a of n.args) if (a && !pureNodes(a.nodes, src, macros)) return false;
+        break;
+      }
+      default: return false;
+    }
+  }
+  return true;
+}
+
+// a $ that found no partner: the parse's searches past MATH_BUDGET depend on how many failed, and
+// so on text far from the edit
+function failedDollars(ns) {
+  let k = 0;
+  const walk = (xs) => { for (const n of xs) { if (n.t === 'special' && n.err && (n.ch === '$' || n.ch === '$$')) k++; if (n.nodes) walk(n.nodes); if (n.args) for (const a of n.args) if (a) walk(a.nodes); } };
+  walk(ns);
+  return k;
+}
+
+// An offset moved by the edits since a unit was built: steps [[at, d], ...], each in the
+// coordinates the one before it left (values in other files, and before `at`, stay)
+const move = (v, steps) => { for (const [at, d] of steps) if (v >= at) v += d; return v; };
+// a copy of x with every offset into file f moved
+function shifted(x, f, cur, steps) {
+  if (Array.isArray(x)) return x.map((v) => (v && typeof v === 'object' ? shifted(v, f, cur, steps) : v));
+  const ef = x.f !== undefined ? x.f : cur, o = {};
+  for (const k in x) {
+    const v = x[k];
+    if (typeof v === 'number') o[k] = ef === f && OFFSET_KEYS.has(k) ? move(v, steps) : v;
+    else if (k === 'map' && Array.isArray(v)) o[k] = ef === f ? v.map((p) => move(p, steps)) : v;
+    else if (v && typeof v === 'object' && (Array.isArray(v) || Object.getPrototypeOf(v) === Object.prototype)) o[k] = shifted(v, f, ef, steps);
+    else o[k] = v;
+  }
+  return o;
+}
+// The smallest offset into file f a unit holds (none below 0: -1 is a character with no source of
+// its own), found once per unit: a unit all of whose offsets lie at or after an edit's end moves
+// as a whole, by the sum of the edits, however many came before anyone read it.
+const MIN_OFF = new WeakMap();
+function minOffset(x, f, cur) {
+  let m = Infinity;
+  const walk = (y, c) => {
+    if (Array.isArray(y)) { for (const v of y) if (v && typeof v === 'object') walk(v, c); return; }
+    const ef = y.f !== undefined ? y.f : c;
+    for (const k in y) {
+      const v = y[k];
+      if (typeof v === 'number') { if (ef === f && v >= 0 && v < m && OFFSET_KEYS.has(k)) m = v; }
+      else if (k === 'map' && Array.isArray(v)) { if (ef === f) for (const q of v) if (q >= 0 && q < m) m = q; }
+      else if (v && typeof v === 'object' && (Array.isArray(v) || Object.getPrototypeOf(v) === Object.prototype)) walk(v, ef);
+    }
+  };
+  walk(x, cur);
+  return m;
+}
+// A unit after the edit, moved: its own range at once (the page's renderer reads only that of a
+// block it keeps), its items and footnotes when first read (Word's export, the tests).
+const LAZY = Symbol('moved');
+function movedUnit(u, f, at, d) {
+  const L = u[LAZY], base = L && !L.done ? L.base : u, D = (L && !L.done ? L.D : 0) + d;
+  let min = MIN_OFF.get(base);
+  if (min === undefined) { min = minOffset(base, f, base.f); MIN_OFF.set(base, min); }
+  // (an offset before the edit's end in a unit after it: moved exactly, step by step, at once)
+  if (min + D - d < at) return shifted(u, f, f, [[at, d]]);
+  const steps = [[min, D]], o = {}, lazy = { base, D, done: false };
+  for (const k in base) {
+    if (k === 'items' || k === 'fns') {
+      let val;
+      Object.defineProperty(o, k, { enumerable: true, configurable: true, get() { if (val === undefined) { val = shifted(base[k], f, base.f, steps); lazy.done = true; } return val; } });
+      continue;
+    }
+    const v = base[k];
+    o[k] = typeof v === 'number' && OFFSET_KEYS.has(k) ? move(v, steps) : v && typeof v === 'object' ? shifted(v, f, base.f, steps) : v;
+  }
+  Object.defineProperty(o, LAZY, { value: lazy });
+  return o;
+}
+
+function incremental(project, hint) {
+  const H = hint._incr;
+  if (!H || project.main !== H.main) return null;
+  const f = project.main, files = project.files;
+  if (files.size !== H.files.size) return null;
+  let old = null;
+  for (const [n, t] of files) { const was = H.files.get(n); if (was === undefined) return null; if (was !== t) { if (n !== f) return null; old = was; } }
+  if (old === null) return null;
+  const now = files.get(f);
+  // the edit: [p, p + del) of the old text became [p, p + ins) of the new (compared 4096 code units
+  // at a time, which the engine does natively, then one by one)
+  let p = 0;
+  const m = Math.min(old.length, now.length);
+  const C = 4096;
+  while (p + C <= m && old.slice(p, p + C) === now.slice(p, p + C)) p += C;
+  while (p < m && old.charCodeAt(p) === now.charCodeAt(p)) p++;
+  let q = 0;
+  while (q + C <= m - p && old.slice(old.length - q - C, old.length - q) === now.slice(now.length - q - C, now.length - q)) q += C;
+  while (q < m - p && old.charCodeAt(old.length - 1 - q) === now.charCodeAt(now.length - 1 - q)) q++;
+  const del = old.length - q - p, d = now.length - old.length;
+  // the one unit of the main file that holds it, a plain top level paragraph
+  let ui = -1;
+  for (let i = 0; i < hint.blocks.length; i++) {
+    const u = hint.blocks[i];
+    if (u.f !== f || u.e < p || u.s > p + del) continue;
+    if (ui >= 0) return null;
+    ui = i;
+  }
+  if (ui < 0) return null;
+  const U = hint.blocks[ui], it = U.items[0];
+  if (!(U.s <= p && p + del <= U.e) || U.items.length !== 1 || it.type !== 'p' || U.fns.length || it.cls || it.ctx !== 'p' || it.pad || it.depth || it.label || it.lead || it.li) return null;
+  // the two parse trees: the same nodes before the paragraph, the same moved by d after it
+  const userSigs = {};
+  for (const [n, t] of files) if (!WIDGET_FILE.test(n)) scanUserSigs(t, userSigs);
+  if (JSON.stringify(userSigs) !== H.sigKey) return null;
+  const nodes = parseCached(f, now, userSigs, H.sigKey);
+  const docO = H.tree.find((n) => n.t === 'env' && n.name === 'document'), docN = nodes.find((n) => n.t === 'env' && n.name === 'document');
+  if (!docO || !docN || docN.s !== docO.s || docN.be !== docO.be || docN.es !== docO.es + d || docN.e !== docO.e + d) return null;
+  // (the count of the old tree, less the old paragraph's, plus the new one's)
+  if (H.failed === undefined) H.failed = failedDollars(H.tree);
+  const Lo = docO.nodes, Ln = docN.nodes;
+  let a = 0;
+  while (a < Lo.length && Lo[a].e <= U.s) a++;
+  let b = a;
+  while (b < Lo.length && Lo[b].s < U.e) b++;
+  if (a === b || Lo[a].s !== U.s || Lo[b - 1].e !== U.e) return null;
+  const after = Lo.length - b;
+  if (Ln.length - after <= a) return null;
+  for (let k = 0; k < a; k++) if (Ln[k].t !== Lo[k].t || Ln[k].s !== Lo[k].s || Ln[k].e !== Lo[k].e) return null;
+  for (let k = 0; k < after; k++) { const x = Lo[b + k], y = Ln[Ln.length - after + k]; if (y.t !== x.t || y.s !== x.s + d || y.e !== x.e + d) return null; }
+  const mine = Ln.slice(a, Ln.length - after), oldMine = Lo.slice(a, b);
+  if (mine[0].s !== U.s || mine[mine.length - 1].e !== U.e + d || mine.some((n) => n.t === 'par')) return null;
+  const macros = hint.textMacros;
+  if (!pureNodes(mine, now, macros) || !pureNodes(oldMine, old, macros)) return null;
+  const failed = H.failed - failedDollars(oldMine) + failedDollars(mine);
+  if (failed * now.length > MATH_BUDGET) return null;
+  // the paragraph built again where it was: its indent, alignment and direction are the old one's
+  const B = new Builder(project, hint);
+  B.opts = hint.opts; B.textMacros = hint.textMacros; B.mathMacros = hint.mathMacros; B.siOpts = hint.siOpts; B.siUnits = hint.siUnits; B.thms = hint.thms;
+  B.dir = it.dir || 'ltr';
+  B.userSigs = userSigs;
+  const units = B.flow(mine, { f, src: now, pm: null }, { top: true, afterHeading: false, noindent: !it.indent, align: it.align || null });
+  if (units.length !== 1 || units[0].items.length !== 1 || units[0].items[0].type !== 'p' || units[0].fns.length || B.warn.length) return null;
+  const nu = units[0], ni = nu.items[0];
+  if (it.cont) ni.cont = true;
+  if (ni.indent !== it.indent || ni.dir !== it.dir) return null;
+  const count = (inl) => { const c = new Builder(project, hint); c.words = 0; c.countWords(inl); return c.words; };
+  // A table of contents lists the last model's headings, as a full build's does (Builder.flow: the
+  // entries are prev.headings, where they stood then): taken from hint, never moved.
+  const tocEntries = hint.headings.filter((h) => h.level >= 0 && h.level <= (hint.opts.chapters ? 2 : 3));
+  // (whether a unit holds one is read from its key, whose last part is its items' types: reading
+  // u.items would make every moved unit's items)
+  const types = (u) => u.key.slice(u.key.lastIndexOf('\u0000') + 1).split(',');
+  const toc = (u) => (types(u).includes('toc') ? { ...u, items: u.items.map((x) => (x.type === 'toc' ? { ...x, entries: tocEntries } : x)) } : u);
+  const blocks = hint.blocks.slice(0, ui).map(toc);
+  blocks.push({ ...nu, key: f + '\u0000' + now.slice(nu.s, nu.e) + '\u0000' + (nu.sig || '') + '\u0000' + nu.items.map((x) => x.type).join(',') });
+  for (let i = ui + 1; i < hint.blocks.length; i++) { const u = hint.blocks[i]; blocks.push(toc(u.f === f && d ? movedUnit(u, f, U.e, d) : u)); }
+  const r = { ...hint, blocks, words: hint.words - count(it.inl) + count(ni.inl) };
+  if (d) {
+    r.headings = hint.headings.map((h) => (h.f === f && h.s >= U.e ? { ...h, s: h.s + d } : h));
+    if (hint.docBody) r.docBody = { ...hint.docBody, e: hint.docBody.e + d };
+  }
+  Object.defineProperty(r, '_incr', { value: { main: f, files: new Map(files), tree: nodes, sigKey: H.sigKey, failed } });
+  return r;
 }
 
 function sameRefs(a, b) {
@@ -313,6 +508,13 @@ const PARSE_CACHE = new Map();
 // (B2) the parse the model made of a file's text, for the paragraph commands (src/parasrc.js
 // unitOf): read again at every move of the caret, a long text would be parsed each time
 export function parsedText(t) { for (const v of PARSE_CACHE.values()) if (v.text === t) return v.nodes; return null; }
+function parseCached(name, t, userSigs, sigKey) {
+  const hit = PARSE_CACHE.get(name);
+  if (hit && hit.text === t && hit.sig === sigKey) return hit.nodes;
+  const nodes = parse(t, { userSigs });
+  PARSE_CACHE.set(name, { text: t, sig: sigKey, nodes });
+  return nodes;
+}
 
 class Builder {
   constructor(project, prev) {
@@ -420,10 +622,7 @@ class Builder {
     if (this.parsed.has(name)) return this.parsed.get(name);
     const t = this.files.get(name) || '';
     const sigKey = this.userSigKey || (this.userSigKey = JSON.stringify(this.userSigs));
-    const hit = PARSE_CACHE.get(name);
-    if (hit && hit.text === t && hit.sig === sigKey) { this.parsed.set(name, hit.nodes); return hit.nodes; }
-    const nodes = parse(t, { userSigs: this.userSigs });
-    PARSE_CACHE.set(name, { text: t, sig: sigKey, nodes });
+    const nodes = parseCached(name, t, this.userSigs, sigKey);
     this.parsed.set(name, nodes);
     return nodes;
   }
@@ -2801,7 +3000,7 @@ class Builder {
       const key = u.f + '\u0000' + src.slice(u.s, u.e) + '\u0000' + (u.sig || '') + '\u0000' + u.items.map((x) => x.type).join(',');
       return { ...u, key };
     });
-    return {
+    const r = {
       opts: this.opts,
       blocks,
       labels: this.labels,
@@ -2823,6 +3022,9 @@ class Builder {
       colors: this.colors,
       docBody: this.docBody || null
     };
+    // what the next keystroke's incremental build compares against (not part of the model)
+    if (this.parsed && this.parsed.has(this.project.main)) Object.defineProperty(r, '_incr', { value: { main: this.project.main, files: new Map(this.files), tree: this.parsed.get(this.project.main), sigKey: this.userSigKey } });
+    return r;
   }
 }
 

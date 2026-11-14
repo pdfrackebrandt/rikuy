@@ -80,6 +80,23 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
   math, list, theorem, float, table, bibliography) and `inl()`/`cmd()` build inline items;
   `\input` recurses with that file in `ctx.f`. Without `prev` it builds twice so forward
   references resolve; with `prev` once, and again only if `sameRefs()` sees a reference change.
+- **Incremental model.** With `prev`, `buildModel` first tries `incremental()`: a keystroke in a
+  top level paragraph of plain text (text, characters, accents, the style wrappers of
+  `PURE_CMDS`, inline math without a reference or a colour; no citation, reference, label,
+  footnote, macro or environment) changes nothing else the builder knows. It finds the edit
+  (common prefix and suffix of the main file's two texts), the one unit of `prev` holding it, and
+  proves the rest from the two parse trees: the same document environment, the same top level
+  nodes before the paragraph and the same moved by the edit's length after it, the same user
+  signatures, the old and the new paragraph both plain, the failed `$` scans under their budget.
+  Then only that paragraph goes through `Builder.flow` (with the old one's indent, alignment and
+  direction); the units before are `prev`'s, the units after are moved (`movedUnit`: their range
+  at once, their items and footnotes on first read, one cumulative shift however many keystrokes
+  came first, checked against the unit's smallest offset), a table of contents lists `prev`'s
+  headings as a full build's does, and the words, headings and body end follow. Anything else is
+  the full build, which stays the reference: `test/incremental.test.mjs` holds the two equal on
+  random edit streams of the repository's documents and the corpus. A field a unit gains that
+  holds an offset must be added to `OFFSET_KEYS`; the same test names any it misses. The page's
+  renderer reads whether a block holds references from its key, so moved items stay unread.
 - **Source map.** Text becomes `seg` items `{k: 'seg', f, t, map}`: `Acc.ch()` pushes one
   `[start, end)` source range per character, so “ points back at both characters of ``` `` ```.
   Units on the page (math, citation, reference, footnote, figure, raw block, error chip) are

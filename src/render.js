@@ -111,7 +111,10 @@ export class Renderer {
     const fresh = [];
     for (const mb of model.blocks) {
       const key = prefix + mb.key;
-      const q = mb.items.some((x) => x.type === 'refs') ? null : pool.get(key);
+      // (a list of references is drawn every time; whether a block holds one is in its key, whose
+      // last part is its items' types: read there, a block moved by the incremental build keeps
+      // its items unread, src/model.js movedUnit)
+      const q = mb.key.slice(mb.key.lastIndexOf('\u0000') + 1).split(',').includes('refs') ? null : pool.get(key);
       if (q && q.length) {
         const b = q.shift();
         b.base = mb.s; b.s = mb.s; b.e = mb.e;

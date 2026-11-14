@@ -2086,6 +2086,37 @@ Tests:
     the repository, its tests and the corpus write, and every word parser.js quotes, read the same
     by both, so a name list kept inline on one side fails) 43.
 
+53. **The incremental model build.** Done in the code (branch `perf-incremental-model`), the next
+    native step task 52 proposed. A keystroke in a paragraph of plain text rebuilds that paragraph
+    only (`incremental` in `src/model.js`, ARCHITECTURE section 1); every other case is the full
+    build, which is the oracle. Measured in the page (`dev/bench_native_page.py --toggle incr`,
+    keystrokes alternating on and off, medians of 20, on main 07069e1): `dev/bench/long` 34.7 to 23.1
+    ms a keystroke (the model 15.0 to 5.2), the generated 401 KB document 73.4 to 41.3 ms (model
+    49.7 to 16.2); at a phone's speed, 390 px: 4 times throttled 122.9 to 96.0 and 272.3 to 176.5
+    ms, 6 times 166.6 to 107.8 and 466.6 to 231.6 ms (1.3 to 2.0 times a keystroke, the model 2.6
+    to 3.6 times). In node the model of a keystroke on the paper is 16 to 2.8 ms
+    (with the native core). It covers 52 % of the paper's paragraphs and 69 % of the generated
+    document's: a paragraph with a citation, a reference or a footnote takes the full build.
+    *Chosen:* units after the edit are moved, not made relative to their block: the renderer
+    already keeps offsets relative to a block's base, but the model's consumers (Word's export,
+    the editor's maps) read absolute ones, so moving is the small change; and moved lazily (the
+    renderer reads only a kept block's range) with one cumulative shift per unit, it costs
+    nothing per keystroke where a deep copy cost 7 ms on the generated document. *Not done:* the
+    model's per character maps in C++: with one paragraph built per keystroke the model is 3 to
+    5 ms of a 22 to 36 ms keystroke at a desktop's speed, the rest being the DOM's layout and the
+    caret, so a port would not pay; a first load is 87 % layout. *Evidence:*
+    `test/incremental.test.mjs` (in `npm test`): every edit of random streams of the repository's
+    documents equal to the full build from the same last model (3200 edits, 225 on the fast path),
+    90 unread keystrokes in two paragraphs, a field that moves with the text and is not in
+    `OFFSET_KEYS` (it caught B2's `ps`, `pe`, `vs`, `ve` at the rebase), another document or main
+    file never taking the fast path; with the corpus 11,584 edits over 721 documents (666 on the fast
+    path, the corpus being short documents full of commands), all equal. `npm test` green, the corpus
+    model run 716 of 716, `browser.py` 193, `find.py` 76, `word.py` 111, `history.py` 39/39,
+    `share.py` 46, `agent.py` 141; the security audit's quick profile (one reviewer, notes outside
+    git): nothing is kept across documents, every reuse is proven against the new text. *Next:* the same for paragraphs with citations,
+    references and footnotes (their entry state recorded per unit: the counters, the citations
+    and labels so far), which would take most of the paper's other paragraphs.
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000

@@ -1,6 +1,6 @@
 // Rikuy app shell: rebuild pipeline, history, input, popovers, files.
 import { siInMath } from './siunitx.js';
-import { buildModel } from './model.js';
+import { buildModel, INCR } from './model.js';
 import { Renderer, BLOCKS, esc, widgetCss } from './render.js';
 import { Layout, geometry } from './layout.js';
 import {
@@ -5123,6 +5123,9 @@ app.core = {
   // off and on again, for a comparison in the page (dev/bench_native_page.py)
   use: (on) => { setNativeParse(on && coreReady() ? nativeParse : null); }
 };
+// the incremental model build (src/model.js): on, and how many builds took it, for the tests and
+// dev/bench_native_page.py --toggle incr
+app.incr = INCR;
 Object.defineProperty(app, 'api', { value: agentApi(app), enumerable: true });
 window.rikuy = app;
 installCollab(app);
