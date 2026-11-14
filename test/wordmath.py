@@ -326,6 +326,9 @@ try:
         check('tapping a key types into the equation', clicked[2] in val() or len(val()) > 0, (clicked, val()[-30:]))
     else:
         check('found a keycap', False)
+    # a host that forbids requests and WebAssembly: the native core is not asked for (no refused
+    # request in the console) and the page parses in JavaScript
+    check('in a host that compiles no WebAssembly, the native core stays off without a request', frame.evaluate('async () => (await window.rikuy.core.load()) === false && !window.rikuy.core.ready()'))
     print('errors:', logs[:5])
     logs[:] = [l for l in logs if 'Failed to load resource' not in l]
     check('no errors', not logs, logs[:5])

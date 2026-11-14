@@ -663,7 +663,8 @@ export const CSP = [
 
 // Cloudflare Pages' headers (_headers: at most 100 rules; every rule matching a path applies, and
 // a header two rules set gets both values joined), so Cache-Control is set by exactly one rule per
-// path. Content addressed files (TeX packs and engine chunks, programs, biber, the fonts) are
+// path. Content addressed files (TeX packs and engine chunks, programs, biber, the fonts, the
+// editor's native core) are
 // cached for a year as immutable; the page, the service worker and the manifest are revalidated
 // on every request, so an update is seen at once; everything else keeps Pages' default (max-age=0,
 // must-revalidate). The service worker checks every file it keeps by hash anyway.
@@ -681,7 +682,7 @@ export function headers() {
     // (text/plain, which a browser shows; it would save a text/markdown file instead of showing it)
     + [['/llms.txt', 'text/plain'], ['/llms-full.txt', 'text/plain'], ['/robots.txt', 'text/plain'], ['/sitemap.xml', 'application/xml']]
       .map(([p, t]) => rule(p, 'Access-Control-Allow-Origin: *', 'Content-Type: ' + t + '; charset=utf-8')).join('')
-    + ['/tex/p-*', '/tex/t-*', '/tex/b-*', '/tex/w-*', '/tex/m-*', '/fonts/*', '/word/pandoc-*'].map((p) => rule(p, 'Cache-Control: ' + FOREVER)).join('');
+    + ['/tex/p-*', '/tex/t-*', '/tex/b-*', '/tex/w-*', '/tex/m-*', '/fonts/*', '/word/pandoc-*', '/core/*'].map((p) => rule(p, 'Cache-Control: ' + FOREVER)).join('');
 }
 
 // Without a 404.html, Pages answers a missing file with index.html and 200 (it takes the site for

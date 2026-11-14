@@ -4,7 +4,8 @@ Every WebAssembly program Rikuy ships was compiled with Emscripten, which links 
 C library (musl), C++ library (libc++ and libc++abi, for C++ programs), compiler runtime
 (compiler-rt) and a memory allocator (dlmalloc unless a build asks for another) into the program
 and writes the JavaScript loader beside it: dvips, Asymptote,
-xindy and gnuplot (tex/vendor/, Emscripten 3.1.6, Ubuntu's package), BusyTeX's engines and biber
+xindy and gnuplot (tex/vendor/, Emscripten 3.1.6, Ubuntu's package), the editor's native core
+(tex/vendor/core/, the same Emscripten, with emmalloc as its allocator and no loader), BusyTeX's engines and biber
 (Emscripten 5.0.4), Pyodide (Emscripten 5.0.3) and Ghostscript (Emscripten 4.0.13, as
 @okathira/ghostpdl-wasm's release workflow says). The texts below are those of Emscripten's
 repository at the tag 3.1.6; the same files at the tag 5.0.4 are identical byte for byte

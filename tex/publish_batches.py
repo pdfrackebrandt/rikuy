@@ -47,13 +47,19 @@ order += extra
 # content-addressed files already live need no upload
 hashed = lambda f: f[:2] in ('p-', 'w-', 'b-', 't-')
 uploads = [f for f in order if not (hashed(f) and 'tex/' + f in live)]
-new_paths = set('tex/' + f for f in order) | {'git.js', 'LICENSES.txt', 'index.html'}
+# the editor's native core, beside the page (build.mjs), named by its hash
+core = sorted('core/' + f for f in os.listdir(os.path.join(ROOT, 'core')))
+assert len(core) == 1 and core[0].startswith('core/rikuy-core-') and core[0].endswith('.wasm'), core
+new_paths = set('tex/' + f for f in order) | {'git.js', 'LICENSES.txt', 'index.html'} | set(core)
 removals = sorted(p for p in live if p not in new_paths)
 
 batches, cur, size = [], {p: None for p in removals}, 0
 cur['git.js'] = os.path.join(ROOT, 'git.js')
 # the licenses of what the page ships travel with it (build.mjs writes them)
 cur['LICENSES.txt'] = os.path.join(ROOT, 'LICENSES.txt')
+for c in core:
+    if c not in live:
+        cur[c] = os.path.join(ROOT, c)
 LIM = 58_000_000
 for f in uploads:
     s = os.path.getsize(os.path.join(D, f))

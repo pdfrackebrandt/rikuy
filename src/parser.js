@@ -11,9 +11,14 @@ export const RAW_ENVS = new Set([
   'filecontents', 'filecontents*', 'algorithmic', 'algorithmicx', 'pgfpicture', 'forest', 'spverbatim'
 ]);
 
+// The tables below have no prototype: a document's \constructor or \begin{toString} is a name
+// like any other, not Object.prototype's (looked up in a plain object, it threw "sig is not
+// iterable" and the page took no more typing).
+const own = (o) => Object.assign(Object.create(null), o);
+
 // Argument signatures. o = optional [..], m = mandatory, v = verbatim braces,
 // p = optional (..) as used by \cmidrule.
-const SIG = {
+const SIG = own({
   part: 'om', chapter: 'om', section: 'om', subsection: 'om', subsubsection: 'om', paragraph: 'om', subparagraph: 'om',
   textbf: 'm', textit: 'm', emph: 'm', texttt: 'm', textsc: 'm', textsf: 'm', textrm: 'm', textup: 'm',
   textsl: 'm', textmd: 'm', textnormal: 'm', underline: 'm', uline: 'm', uuline: 'm', uwave: 'm', sout: 'm', xout: 'm',
@@ -65,10 +70,10 @@ const SIG = {
   // character formats Rikuy's Font group writes (src/cmd/font.js): ulem's other lines, its double
   // strikethrough, a size and a family for a run of text, ruby
   dashuline: 'm', dotuline: 'm', culine: 'mm', dsout: 'm', fontsize: 'mm', fontfamily: 'm', fontspec: 'om', ruby: 'omm'
-};
+});
 
 // Commands that take no arguments but print characters, keyed by name.
-export const CHARS = {
+export const CHARS = own({
   '%': '%', '&': '&', '$': '$', '#': '#', '_': '_', '{': '{', '}': '}', ' ': ' ', ',': ' ',
   ';': ' ', ':': ' ', '>': ' ', '!': '', '/': '', '@': '', '-': '­', '|': '‖',
   textbackslash: '\\', textasciitilde: '~', textasciicircum: '^', ldots: '…', dots: '…',
@@ -92,21 +97,21 @@ export const CHARS = {
   NG: 'Ŋ', ng: 'ŋ', TH: 'Þ', th: 'þ', DH: 'Ð', dh: 'ð', i_: 'i',
   '\n': ' ', '\t': ' ', glqq: '\u201E', grqq: '\u201C', glq: '\u201A', grq: '\u2018', flqq: '\u00AB', frqq: '\u00BB',
   flq: '\u2039', frq: '\u203A', percent: '%', textasteriskcentered: '*', textnumero: '\u2116'
-};
+});
 
 // Accent commands -> combining marks.
-export const ACCENTS = {
+export const ACCENTS = own({
   "'": '́', '`': '̀', '^': '̂', '"': '̈', '~': '̃', '=': '̄', '.': '̇',
   u: '̆', v: '̌', H: '̋', c: '̧', k: '̨', r: '̊', d: '̣', b: '̱',
   t: '͡'
-};
+});
 
 const DEF_CMDS = new Set(['newcommand', 'renewcommand', 'providecommand', 'DeclareRobustCommand', 'newcommandx']);
 const ENV_DEF = new Set(['newenvironment', 'renewenvironment']);
 const DIM_CMDS = new Set(['vskip', 'hskip', 'kern', 'vspace_', 'mskip']);
 
 // Environment argument signatures (after \begin{name}).
-const ENV_SIG = {
+const ENV_SIG = own({
   tabular: 'om', 'tabular*': 'mom', tabularx: 'mm', tabulary: 'mm', longtable: 'om', array: 'om',
   figure: 'o', 'figure*': 'o', table: 'o', 'table*': 'o', wrapfigure: 'omom', wraptable: 'omom',
   itemize: 'o', enumerate: 'o', description: 'o', minipage: 'ooom', thebibliography: 'm',
@@ -116,8 +121,14 @@ const ENV_SIG = {
   landscape: '', appendices: '', resizebox_env: '',
   // CJK's encoding and font family are settings, not text: \begin{CJK*}[T1]{UTF8}{gbsn}
   CJK: 'omm', 'CJK*': 'omm'
-};
+});
+// environments whose body is text and that take no optional title (any other unknown one does)
+const PLAIN_ENVS = new Set(['document', 'abstract', 'center', 'quote', 'quotation', 'verse', 'flushleft', 'flushright', 'small', 'footnotesize', 'scriptsize', 'large', 'Large', 'appendix', 'appendices', 'singlespace', 'onehalfspace', 'doublespace', 'titlepage', 'landscape', 'acknowledgments', 'acknowledgements', 'RTL', 'LTR']);
 
+// What the C++ parser (tex/native/core/parse.cc) reads at load: the tables are kept here only.
+export const PARSE_TABLES = { SIG, CHARS, ACCENTS, ENV_SIG, MATH_ENVS, RAW_ENVS, DEF_CMDS, ENV_DEF, DIM_CMDS, PLAIN_ENVS };
+
+export const MATH_BUDGET = 2000000, MATH_SCAN = 1000;
 const isLetter = (c) => (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 const isWS = (c) => c === ' ' || c === '\t' || c === '\n' || c === '\r';
 
@@ -145,9 +156,23 @@ export function scanUserSigs(src, into = {}) {
   return into;
 }
 
+// The C++ parser, once src/native.js has loaded it (setNativeParse): the same tree, made several
+// times faster on a long file. It answers null where it cannot (no core, a short text, nesting
+// past its depth), and parseJS, which it is tested against, does the work.
+let nativeParse = null;
+export function setNativeParse(f) { nativeParse = f; }
+
 export function parse(src, opts = {}) {
-  const n = src.length;
   const userSigs = opts.userSigs || scanUserSigs(src);
+  if (nativeParse) { const r = nativeParse(src, userSigs); if (r) return r; }
+  return parseJS(src, userSigs);
+}
+
+// (a user's signature is an own entry: \constructor is no member of Object.prototype here)
+const userSig = (sigs, name) => (Object.prototype.hasOwnProperty.call(sigs, name) ? sigs[name] : undefined);
+
+export function parseJS(src, userSigs) {
+  const n = src.length;
   const envStack = [];
   let i = 0;
 
@@ -233,24 +258,35 @@ export function parse(src, opts = {}) {
     return { t: 'group', s, e, is: s + 1, ie, nodes };
   }
 
+  // A scan that finds its $ moves i past the formula, so those scans cost the text's length at
+  // most; a scan from a $ that never closes (braces TeX does not count, in a \verb or a verbatim,
+  // keep it from closing) leaves i where it was, and one from every such $ to the end of the text
+  // stalled the page for seconds on a crafted file. So the units failed scans read are counted,
+  // and once they pass MATH_BUDGET in a parse a $ closes within MATH_SCAN units or not at all. A
+  // document gets there only through hundreds of $ that never close; until then a formula of any
+  // length closes (computer algebra's $$ polynomials run to thousands). (parse.cc does the same.)
+  let failedScan = 0;
   function findClosingDollar(from, double) {
     let depth = 0;
-    for (let j = from; j < n; j++) {
+    const end = failedScan > MATH_BUDGET ? Math.min(n, from + MATH_SCAN) : n;
+    let j = from;
+    const failed = () => { if (failedScan <= MATH_BUDGET) failedScan += j - from; return -1; };
+    for (; j < end; j++) {
       const c = src[j];
       if (c === '\\') { j++; continue; }
       if (c === '{') depth++;
       else if (c === '}') depth--;
-      else if (c === '%') { while (j < n && src[j] !== '\n') j++; }
+      else if (c === '%') { while (j < end && src[j] !== '\n') j++; }
       else if (c === '\n') {
         let k = j + 1;
         while (k < n && (src[k] === ' ' || src[k] === '\t' || src[k] === '\r')) k++;
-        if (src[k] === '\n') return -1; // blank line ends math (TeX error)
+        if (src[k] === '\n') return failed(); // blank line ends math (TeX error)
       } else if (c === '$' && depth <= 0) {
         if (double) { if (src[j + 1] === '$') return j; }
         else return j;
       }
     }
-    return -1;
+    return failed();
   }
 
   function parseDollar() {
@@ -263,15 +299,78 @@ export function parse(src, opts = {}) {
     return { t: 'math', s, e: i, is: from, ie: close, display: dbl, delim: dbl ? '$$' : '$' };
   }
 
-  function findText(needle, from) {
-    // Find needle not escaped; respects nothing else (used for \) \] and \end{raw}).
-    let j = from;
-    while (j < n) {
-      const k = src.indexOf(needle, j);
-      if (k < 0) return -1;
-      return k;
+  // The first place of a string at or after p (src.indexOf), remembered per string: nothing found
+  // from p is nothing from any later place, and k found from p is k from every place up to k.
+  // Searches that do not move i past what they find (\( without \), the [ after an unknown
+  // command, \begin{equation} without its end) once ran to the end of the text for every
+  // occurrence: seconds on a crafted file of 100 KB, a stranger's through a share link, again at
+  // every keystroke. (parse.cc remembers the same way.)
+  const seen = new Map();
+  function nextAt(pat, p) {
+    const c = seen.get(pat);
+    if (c && p >= c[0] && (c[1] < 0 || p <= c[1])) return c[1];
+    const k = src.indexOf(pat, p);
+    seen.set(pat, [p, k]);
+    return k;
+  }
+  // Where a raw environment ends: every \end{name} of the text (\end { name } too, with spaces
+  // anywhere JavaScript's \s takes them), found in one pass the first time one is asked for, then
+  // a binary search per environment. A memo per name once let 8000 environments of 8000 names,
+  // none ended, scan the text 8000 times. Names of other characters than these (no environment
+  // Rikuy or a document defines has them) take the searches below.
+  const END_NAME = /^[A-Za-z@*_]*$/;
+  let endIx = null;
+  function endIndex() {
+    endIx = new Map();
+    const sp = (c) => c !== undefined && /\s/.test(c);
+    const nameCh = (c) => c !== undefined && /[A-Za-z@*_]/.test(c);
+    for (let k = src.indexOf('\\end'); k >= 0; k = src.indexOf('\\end', k + 4)) {
+      let p = k + 4;
+      while (sp(src[p])) p++;
+      if (src[p] !== '{') continue;
+      let a = p + 1;
+      while (sp(src[a])) a++;
+      let b = a;
+      while (nameCh(src[b])) b++;
+      let c = b;
+      while (sp(src[c])) c++;
+      if (src[c] !== '}') continue;
+      const name = src.slice(a, b);
+      let e = endIx.get(name);
+      if (!e) endIx.set(name, (e = { x: [], l: [], len: [] }));
+      if (src[k + 4] === '{' && a === k + 5 && c === b) e.x.push(k);
+      e.l.push(k); e.len.push(c + 1 - k);
     }
-    return -1;
+  }
+  const atOrAfter = (list, p) => { let lo = 0, hi = list.length; while (lo < hi) { const m = (lo + hi) >> 1; if (list[m] < p) lo = m + 1; else hi = m; } return lo; };
+  // [start of the end, its length] at or after p, \end{name} first, else \end { name }; [-1, 0]
+  function rawEnd(name, p) {
+    if (!END_NAME.test(name)) {
+      const closer = '\\end{' + name + '}', k = nextAt(closer, p);
+      if (k >= 0) return [k, closer.length];
+      const mm = looseEnd(name, p);
+      return [mm[1], mm[2]];
+    }
+    if (!endIx) endIndex();
+    const e = endIx.get(name);
+    if (!e) return [-1, 0];
+    const x = atOrAfter(e.x, p);
+    if (x < e.x.length) return [e.x[x], name.length + 6];
+    const l = atOrAfter(e.l, p);
+    return l < e.l.length ? [e.l[l], e.len[l]] : [-1, 0];
+  }
+  // the same for \end { name } with spaces in it: [from, start of the match, its length]
+  const seenLoose = new Map();
+  function looseEnd(name, p) {
+    let c = seenLoose.get(name);
+    if (!(c && p >= c[0] && (c[1] < 0 || p <= c[1]))) {
+      const re = new RegExp('\\\\end\\s*\\{\\s*' + name.replace(/[*]/g, '\\*') + '\\s*\\}', 'g');
+      re.lastIndex = p;
+      const mm = re.exec(src);
+      c = [p, mm ? mm.index : -1, mm ? mm[0].length : 0];
+      seenLoose.set(name, c);
+    }
+    return c;
   }
 
   function parseArgs(sig) {
@@ -357,7 +456,7 @@ export function parse(src, opts = {}) {
     }
     if (name === '(' || name === '[') {
       const closer = name === '(' ? '\\)' : '\\]';
-      const k = findText(closer, ne);
+      const k = nextAt(closer, ne);
       if (k < 0) { i = ne; return { t: 'special', ch: '\\' + name, s, e: ne, err: true }; }
       i = k + 2;
       return { t: 'math', s, e: i, is: ne, ie: k, display: name === '[', delim: name === '(' ? '\\(' : '\\[' };
@@ -415,7 +514,7 @@ export function parse(src, opts = {}) {
       return node;
     }
     let sig = SIG[name];
-    if (sig === undefined) sig = userSigs[name];
+    if (sig === undefined) sig = userSig(userSigs, name);
     if (name === '\\') sig = 'o';
     if (sig === undefined && name in CHARS) {
       // A character command takes no argument: an empty {} after it only ends its name, and a
@@ -432,7 +531,7 @@ export function parse(src, opts = {}) {
       // Unknown: attach directly adjacent {..} groups (no whitespace) only.
       const args = [];
       i = ne;
-      while (src[i] === '{' || (src[i] === '[' && args.length === 0 && src.indexOf(']', i) > 0 && src[src.indexOf(']', i) + 1] === '{')) {
+      while (src[i] === '{' || (src[i] === '[' && args.length === 0 && nextAt(']', i) > 0 && src[nextAt(']', i) + 1] === '{')) {
         if (src[i] === '[') { const a = parseArgs('o')[0]; args.push(a); continue; }
         const g = parseGroup();
         args.push({ o: false, s: g.s, e: g.e, is: g.is, ie: g.ie, nodes: g.nodes });
@@ -474,7 +573,7 @@ export function parse(src, opts = {}) {
     let nargs = 0, dflt = null;
     let j = peekAfterSpaces();
     if (j >= 0 && src[j] === '[') {
-      const k = src.indexOf(']', j);
+      const k = nextAt(']', j);
       if (k > 0) { nargs = parseInt(src.slice(j + 1, k), 10) || 0; i = k + 1; }
     }
     j = peekAfterSpaces();
@@ -496,7 +595,8 @@ export function parse(src, opts = {}) {
     i = node.ne + m[0].length;
     let nargs = 0;
     let j = peekAfterSpaces();
-    if (j >= 0 && src[j] === '[') { const k = src.indexOf(']', j); nargs = parseInt(src.slice(j + 1, k), 10) || 0; i = k + 1; }
+    // (no ] after the [: indexOf's -1 once put i back to 0, and the parse ran for ever)
+    if (j >= 0 && src[j] === '[') { const k = nextAt(']', j); if (k > 0) { nargs = parseInt(src.slice(j + 1, k), 10) || 0; i = k + 1; } }
     j = peekAfterSpaces();
     if (j >= 0 && src[j] === '[') { const k = matchBracket(j); i = k + 1; }
     const parts = [];
@@ -550,7 +650,7 @@ export function parse(src, opts = {}) {
     i += m[0].length;
     const nameEnd = i;
     let sig = ENV_SIG[name] || '';
-    if (MATH_ENVS.has(name) || RAW_ENVS.has(name) || userSigs[' rawenv:' + name]) {
+    if (MATH_ENVS.has(name) || RAW_ENVS.has(name) || userSig(userSigs, ' rawenv:' + name)) {
       let args = [];
       if (name === 'alignat' || name === 'alignat*') { args = parseArgs('m'); }
       else if (name === 'minted') { args = parseArgs('om'); }
@@ -559,18 +659,14 @@ export function parse(src, opts = {}) {
         if (src[i] === '[') args = parseArgs('o');
       }
       const be = i;
-      const closer = '\\end{' + name + '}';
-      let k = src.indexOf(closer, be);
-      // tolerate whitespace inside \end { name }
-      if (k < 0) {
-        const re = new RegExp('\\\\end\\s*\\{\\s*' + name.replace(/[*]/g, '\\*') + '\\s*\\}', 'g');
-        re.lastIndex = be; const mm = re.exec(src);
-        if (mm) { k = mm.index; i = k + mm[0].length; } else { i = be; return { t: 'stray', name: 'begin{' + name + '}', s, e: be, err: true }; }
-      } else i = k + closer.length;
+      // (whitespace inside \end { name } is tolerated)
+      const [k, len] = rawEnd(name, be);
+      if (k < 0) { i = be; return { t: 'stray', name: 'begin{' + name + '}', s, e: be, err: true }; }
+      i = k + len;
       return { t: 'env', name, s, e: i, bs: s, be, es: k, args, raw: true, math: MATH_ENVS.has(name), nameEnd };
     }
     // Args for theorem-like envs: optional title.
-    if (!sig && !['document', 'abstract', 'center', 'quote', 'quotation', 'verse', 'flushleft', 'flushright', 'small', 'footnotesize', 'scriptsize', 'large', 'Large', 'appendix', 'appendices', 'singlespace', 'onehalfspace', 'doublespace', 'titlepage', 'landscape', 'acknowledgments', 'acknowledgements', 'RTL', 'LTR'].includes(name)) sig = 'o';
+    if (!sig && !PLAIN_ENVS.has(name)) sig = 'o';
     let args = [];
     if (sig) {
       // optional args of envs must not swallow text on the next line: only if '[' or '{' follows.

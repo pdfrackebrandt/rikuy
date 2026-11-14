@@ -9,7 +9,8 @@ hashes below are the same.
 ## Compiled here (`tex/vendor/`, by `tex/build_tools.sh`)
 
 dvips, Asymptote and xindy are built from TeX Live's own source tree; gnuplot and the libraries
-from Ubuntu's source packages. An empty `RIKUY_SRC`, in any folder, rebuilds every committed
+from Ubuntu's source packages; the editor's native core from this repository's own C++
+(`tex/native/core/`, `sh tex/build_tools.sh core`). An empty `RIKUY_SRC`, in any folder, rebuilds every committed
 program byte for byte (PLAN.md, task 21). The compiler is Ubuntu 24.04's `emscripten` 3.1.6
 package; xindy's `wasm-opt --spill-pointers` comes from binaryen 123.0.0, the npm registry's
 tarball (SHA-256 `11fcbcb97b5c8da3990106fb4e2d364ba95ddf313d7c0e61ca8e8c7948600f7f`).
@@ -20,6 +21,7 @@ tarball (SHA-256 `11fcbcb97b5c8da3990106fb4e2d364ba95ddf313d7c0e61ca8e8c7948600f
 | Asymptote | 3.09 | same commit, `utils/asymptote` (with its bundled GLEW) | GPL-3.0-or-later |
 | xindy | 2.5.1 | same commit, `utils/xindy` | GPL-2.0-or-later |
 | GLM | 1.0.1 | [g-truc/glm](https://github.com/g-truc/glm) at `0af55ccecd98d4e5a8d1fad7de25ba429d60e863` | MIT |
+| Rikuy's native core (`tex/vendor/core/rikuy-core.wasm`, inside the page) | this repository | `tex/native/core/`, with Emscripten 3.1.6's C library parts and its emmalloc allocator | AGPL-3.0-or-later (Emscripten's parts MIT or NCSA) |
 
 From Ubuntu's archive (`https://archive.ubuntu.com/ubuntu/pool/` plus the path), checked by
 SHA-256. The same files are attached to this repository's release `sources-2026-10-28`,
