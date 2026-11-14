@@ -1212,6 +1212,18 @@ Tests:
     `tabs.py` 116, `ribbon.py` 268, `browser.py` 189, `agent.py` 138, `word.py` 111,
     `scripts.py` 302, `offline.py` 54/54, `launch.py` 18/18, `deploy_check.py` 43/43,
     `pages_check.py` fits, actionlint clean, the corpus 716 of 716.
+44a. **The page commands' answers read once for each text.** Follow up of task 44, found by B4's
+    timing on a long document: Layout's and Header & Footer's `when` and `on` (Two sided,
+    Different first page, odd and even pages, Line numbers, Hyphenation, Page setup, Watermark and
+    the rest) each read the main file again at every look at the caret (`preambleEnd`,
+    `classPage`, `firstPageStyle`), about 100 ms a look with a 167 000 character preamble and 3000
+    paragraphs. `src/cmd/page.js` keeps each read for the file's text it was made from (`once`):
+    pure functions of the text, so the answers are a fresh read's, and an edit changes them at
+    once. Evidence: `page.py` 143 (four new in `long_document`: every command's `when` and `on`
+    together 1 ms there against 102 ms before, the same answers as a fresh read, twoside and
+    `\thispagestyle{empty}` pressed at once, no preamble disabling them); `npm test` green;
+    `tabs.py` 116; `agent.py` 138.
+
 45. **B7, tables as in Word.** Done in the code (branch `wordgap-b7-table`), rows I4, I5, I7, I8,
     T1 to T5, T7 to T20 and C2 of the gap list (task 38). *One reading of a table.*
     `src/table.js` reads tabular, tabular*, tabularx, tabulary, longtable, array and xltabular

@@ -632,11 +632,38 @@ def verifier_pdf(page):
     check('7: \\fancyhead[C]{ Title}: the field shows " Title" and "!" typed writes { Title!}', shown == ' Title' and '\\fancyhead[C]{ Title!}' in src(page), (shown, src(page)[60:200]))
 
 
+def long_document(page):
+    """A stranger's long document: the page commands' when and on, read once for each text of the
+    main file, take no time at a look at the caret, and answer as a fresh read does (an edit to the
+    preamble changes the answers at once)."""
+    pre = ''.join('\\newcommand{\\m%s}{x} %% %s\n' % (chr(97 + k % 26) * (1 + k // 26), 'y' * 60) for k in range(1500))
+    body = '\n\n'.join('\\subsection{Head %d}\nWords of paragraph %d here.' % (k, k) for k in range(1500))
+    text = '\\documentclass{article}\n' + pre + '\\begin{document}\n' + body + '\n\\end{document}\n'
+    load_doc(page, text); click_text(page, 'Words of paragraph 3 ', 2); page.wait_for_timeout(300)
+    STATE = """() => { const g = window.rikuy, C = g.cmds, at = g.ribbonAt(), out = {};
+      for (const c of C.commands()) { at.memo = {}; out[c.id] = [C.enabled(g, c, at), c.on ? !!c.on(g, at) : null]; } return out; }"""
+    t = page.evaluate("""() => { const g = window.rikuy, C = g.cmds, at = g.ribbonAt(), cs = C.commands(), t0 = performance.now();
+      for (let k = 0; k < 10; k++) { at.memo = {}; for (const c of cs) { C.enabled(g, c, at); if (c.on) c.on(g, at); } } return Math.round((performance.now() - t0) / 10); }""")
+    check('with a preamble of %d characters and 3000 paragraphs every command\'s when and on together take %d ms at a look at the caret (under 40)' % (len(pre), t), t < 40, t)
+    a = page.evaluate(STATE)
+    # the same answers as a fresh page reading the same text
+    load_doc(page, text.replace('\\begin{document}', '%\n\\begin{document}', 1)); click_text(page, 'Words of paragraph 3 ', 2); page.wait_for_timeout(300)
+    b = page.evaluate(STATE)
+    check('and they answer as a fresh read of the text does', a == b, [k for k in a if a[k] != b.get(k)][:6])
+    # an edit that changes what they read: the answers follow at once
+    load_doc(page, text.replace('{article}', '[twoside]{article}', 1).replace('\\begin{document}\n', '\\begin{document}\n\\thispagestyle{empty}\n', 1)); click_text(page, 'Words of paragraph 3 ', 2); page.wait_for_timeout(300)
+    c = page.evaluate(STATE)
+    check('a preamble with twoside and \\thispagestyle{empty}: Two sided, odd and even pages, first page pressed at once', c['two-sided'][1] and c['hf-oddeven'][1] and c['hf-first'][1] and not a['two-sided'][1] and not a['hf-first'][1], (a['two-sided'], c['two-sided'], c['hf-first']))
+    load_doc(page, 'Just words, no preamble.\n'); page.wait_for_timeout(300); click_text(page, 'Just words', 2)
+    d = page.evaluate(STATE)
+    check('and a file with no preamble disables them', not d['two-sided'][0] and not d['hf-first'][0] and not d['watermark'][0], (d['two-sided'], d['watermark']))
+
+
 def run():
     names = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (margins_size_orientation, breaks, columns, line_numbers_and_more, header_footer, background, page_setup_dialog, agents_and_keys, compile_pdf, verifier_pdf):
+        for f in (margins_size_orientation, breaks, columns, line_numbers_and_more, header_footer, background, page_setup_dialog, agents_and_keys, long_document, compile_pdf, verifier_pdf):
             if names and f.__name__ not in names: continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
