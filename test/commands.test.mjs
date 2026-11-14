@@ -62,7 +62,9 @@ ok('every chord reads; two commands on one chord differ in rank, or one says whe
 
 ok('the insert list keeps its items and their order', () => {
   assert.deepEqual(paletteItems().map((x) => x.k), ['footnote', 'cite', 'ref', 'eqref', 'emph', 'textbf', 'texttt', 'equation', 'math', 'section', 'subsection', 'itemize', 'enumerate',
-    'description', 'proposition', 'lemma', 'theorem', 'definition', 'assumption', 'proof', 'label', 'url', 'ldots', 'newline']);
+    'description', 'proposition', 'lemma', 'theorem', 'definition', 'assumption', 'proof', 'label', 'url', 'ldots', 'newline',
+    // (B11: the interactive graph and Insert › LaTeX's environments, after the items there were)
+    'graph', 'center', 'flushleft', 'flushright', 'quote', 'quotation', 'verse', 'verbatim', 'minipage', 'abstract']);
   const it = paletteItems().find((x) => x.k === 'itemize');
   assert.deepEqual(it.t, { open: '\n\n\\begin{itemize}\n  \\item ', close: '\n\\end{itemize}\n\n' });
   assert.equal(it.block, true);
@@ -96,7 +98,8 @@ ok('the right click menu by context: the particular first, a line between contex
   // (the table's items, then a line, then the selection's)
   const line = m.indexOf(null);
   assert.ok(line > 0 && m.slice(0, line).every((c) => c.menu.table != null));
-  assert.deepEqual(m.slice(line + 1, line + 5).map((c) => c.id), ['cut', 'copy', 'bold', 'italic']);
+  // (Word's order: Cut, Copy, Paste, then the font's)
+  assert.deepEqual(m.slice(line + 1, line + 5).map((c) => c.id), ['cut', 'copy', 'paste', 'bold']);
   assert.ok(m.filter(Boolean).some((c) => c.id === 'show-in-source'));
 });
 
