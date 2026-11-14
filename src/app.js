@@ -5096,14 +5096,14 @@ function loadCoreLater() {
   coreLoading = new Promise((done) => {
     const go = async () => {
       try {
+        // (no SubtleCrypto, as on a page over plain http: no check, so no core; JavaScript is exact)
+        if (!(window.crypto && crypto.subtle)) return done(false);
         const C = __RIKUY_CORE__;
         const r = await fetch(asset(C.file), { credentials: 'same-origin' });
         if (!r.ok) return done(false);
         const bytes = new Uint8Array(await r.arrayBuffer());
-        if (crypto.subtle) {
-          const h = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((b) => b.toString(16).padStart(2, '0')).join('');
-          if (h !== C.sha256) return done(false);
-        }
+        const h = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((b) => b.toString(16).padStart(2, '0')).join('');
+        if (h !== C.sha256) return done(false);
         done(await loadCore(bytes));
       } catch (e) { done(false); }
     };
