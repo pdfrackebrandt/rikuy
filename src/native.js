@@ -22,6 +22,15 @@ export const coreStats = { parsed: 0, fellBack: 0, trapped: 0 };
 
 export function coreReady() { return !!X; }
 
+// Whether this page may compile WebAssembly at all: a host whose policy has neither 'unsafe-eval'
+// nor 'wasm-unsafe-eval' (a frame that also forbids every request, as in test/wordmath.py) refuses
+// the empty module below with a CompileError and logs nothing, where the fetch of the core would
+// log a refused request. The hosts Rikuy runs on allow both or neither.
+const EMPTY = new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]);
+export function coreCanRun() {
+  try { return typeof WebAssembly === 'object' && !!new WebAssembly.Module(EMPTY); } catch (e) { return false; }
+}
+
 // bytes: the module (a Uint8Array or ArrayBuffer). Resolves to true when the core runs.
 export async function loadCore(bytes) {
   // (a new instance holds no document's signatures: they must go over again, or its trees would
