@@ -64,11 +64,22 @@ def new_docs(page):
     check('Recent documents lists the others, newest first, not the open one', items and items[0].startswith('Exam') and not any(i.startswith('CV') for i in items), items)
     page.get_by_role('menuitem', name='Report', exact=True).click(); page.wait_for_timeout(900)
     check('a press opens it', ev(page, 'window.rikuy.name') == 'Report' and '\\documentclass[11pt]{report}' in src(page))
+    # L6: Remove takes the document's pictures out of the browser too (Learn Rikuy has one)
+    ev(page, "window.rikuy.runCommand('help-tour')"); page.wait_for_timeout(1200)
+    tour = ev(page, 'window.rikuy.name')
+    ev(page, '() => window.rikuy.runCommand("new-template", "article")'); page.wait_for_timeout(1200)
+    KV = "(k) => new Promise((ok) => { const q = indexedDB.open('galley'); q.onsuccess = () => { const t = q.result.transaction('kv').objectStore('kv').get(k); t.onsuccess = () => ok(!!t.result); t.onerror = () => ok(null); }; q.onerror = () => ok(null); })"
+    had = ev(page, KV, 'bin:' + tour + '|main.tex')
+    ev(page, '(n) => window.rikuy.runCommand("recent", { remove: n })', tour); page.wait_for_timeout(300)
+    page.click('#toast button'); page.wait_for_timeout(800)
+    check('L6: Remove takes the document\'s versions and its pictures', had is True and ev(page, KV, 'bin:' + tour + '|main.tex') is False and tour not in ev(page, '(async () => (await window.rikuy.allSnaps()).map((v) => v.name))()'), (had, tour))
     # Set as default
     load_doc(page, DOC)
     ev(page, 'window.rikuy.runCommand("set-default", "set")')
     ev(page, 'window.rikuy.runCommand("new-blank")'); page.wait_for_timeout(900)
     check('Set as default: a blank document starts with this preamble', src(page) == DOC[:DOC.index('\\begin{document}')].rstrip() + '\n\n\\begin{document}\n\n\\end{document}\n', src(page))
+    load_doc(page, {'main.tex': DOC.replace('\\usepackage{amsmath}', '\\input{macros}'), 'macros.tex': '\\newcommand\\R{x}\n'})
+    check('L9: Set as default refuses a preamble that reads the project\'s files', ev(page, 'window.rikuy.runCommand("set-default", "set")') is False)
     ev(page, 'window.rikuy.runCommand("set-default", "reset")')
     ev(page, 'window.rikuy.runCommand("new-blank")'); page.wait_for_timeout(900)
     check('Forget the default: a plain article again', src(page).startswith('\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}'), src(page))
@@ -81,17 +92,41 @@ def properties(page):
     roundtrip(page, bare, 'Some', props({'title': 'Fresh'}), bare.replace('\\begin{document}', '\\title{Fresh}\n\\begin{document}'), label='Properties: a title where there was none, before \\begin{document}',
               off_command=props({'title': ''}), off=bare.replace('\\begin{document}', '\\title{}\n\\begin{document}'))
     roundtrip(page, DOC, 'Some', props({'subject': 'Economics', 'keywords': 'growth, AI'}),
-              DOC.replace('\\usepackage{amsmath}\n', '\\usepackage{amsmath}\n\\usepackage[hidelinks,pdfsubject={Economics},pdfkeywords={growth, AI}]{hyperref}\n'),
-              off_command=props({'subject': '', 'keywords': ''}), off=DOC.replace('\\usepackage{amsmath}\n', '\\usepackage{amsmath}\n\\usepackage[hidelinks]{hyperref}\n'), label='Properties: subject and keywords, hyperref loaded with hidelinks')
+              DOC.replace('\\usepackage{amsmath}\n', '\\usepackage{amsmath}\n\\usepackage{hyperref}\n\\hypersetup{hidelinks,pdfsubject={Economics},pdfkeywords={growth, AI}}\n'),
+              off_command=props({'subject': '', 'keywords': ''}), off=DOC.replace('\\usepackage{amsmath}\n', '\\usepackage{amsmath}\n\\usepackage{hyperref}\n\\hypersetup{hidelinks}\n'), label='Properties: subject and keywords, a bare hyperref and \\hypersetup with hidelinks')
     hs = DOC.replace('\\usepackage{amsmath}\n', '\\usepackage{amsmath}\n\\usepackage{hyperref}\n\\hypersetup{colorlinks=true}\n')
     roundtrip(page, hs, 'Some', props({'keywords': 'a, b'}), hs.replace('colorlinks=true', 'colorlinks=true,pdfkeywords={a, b}'), off_command=props({'keywords': ''}), label='Properties: keywords into the \\hypersetup there is')
     hl = DOC.replace('\\usepackage{amsmath}\n', '\\usepackage{amsmath}\n\\usepackage[colorlinks]{hyperref}\n')
-    roundtrip(page, hl, 'Some', props({'subject': 'X'}), hl.replace('[colorlinks]', '[colorlinks,pdfsubject={X}]'), off_command=props({'subject': ''}), label='Properties: the subject into hyperref\'s options, no hidelinks added')
+    roundtrip(page, hl, 'Some', props({'subject': 'X'}), hl.replace('{hyperref}\n', '{hyperref}\n\\hypersetup{pdfsubject={X}}\n'), off_command=props({'subject': ''}), off=hl.replace('{hyperref}\n', '{hyperref}\n\\hypersetup{}\n'), label='Properties: hyperref loaded with options: a \\hypersetup line after it, the options untouched')
     bm = '\\documentclass{beamer}\n\\title{T}\n\\begin{document}\n\\frame{Some words}\n\\end{document}\n'
     roundtrip(page, bm, 'Some', props({'subject': 'Talk'}), bm.replace('\\begin{document}', '\\hypersetup{pdfsubject={Talk}}\n\\begin{document}'), off_command=props({'subject': ''}), off=bm.replace('\\begin{document}', '\\hypersetup{}\n\\begin{document}'), label='Properties: beamer loads hyperref: a \\hypersetup line, no \\usepackage')
     load_doc(page, DOC); h = ev(page, 'window.rikuy.hist.length')
     ev(page, '() => window.rikuy.runCommand("properties", { title: "Bad {brace" })')
     check('braces that do not pair: refused, nothing written', src(page) == DOC and ev(page, 'window.rikuy.hist.length') == h)
+    # H1: only what was changed is written; the author's comment, line breaks and & stay
+    auth = '\\documentclass{article}\n\\title{A study}\n\\author{%\n  Jane Doe\\thanks{Funded by X.}\\\\\n  Department of Y % office 3\n  \\and\n  John Roe}\n\\begin{document}\\maketitle Text.\\end{document}\n'
+    load_doc(page, auth); h = ev(page, 'window.rikuy.hist.length')
+    page.get_by_role('tab', name='File', exact=True).click(); page.wait_for_timeout(200)
+    page.get_by_role('button', name='Properties', exact=True).click(); page.wait_for_timeout(300)
+    page.get_by_role('dialog', name='Properties', exact=True).get_by_role('button', name='Apply', exact=True).click(); page.wait_for_timeout(300)
+    check('H1: Apply with nothing changed writes nothing', src(page) == auth and ev(page, 'window.rikuy.hist.length') == h)
+    page.get_by_role('button', name='Properties', exact=True).click(); page.wait_for_timeout(300)
+    dlg = page.get_by_role('dialog', name='Properties', exact=True)
+    dlg.get_by_role('textbox', name='Keywords', exact=True).fill('economics, AI')
+    dlg.get_by_role('button', name='Apply', exact=True).click(); page.wait_for_timeout(300)
+    a0 = auth[auth.index('\\author'):auth.index('\\begin')]
+    check('H1: Keywords alone leave the commented, multi-line author byte for byte', a0 in src(page) and 'pdfkeywords={economics, AI}' in src(page), src(page)[:260])
+    if TEX:
+        cases = [('the author with comments', src(page)),
+                 ('cleveref (hyperref before it)', '\\documentclass{article}\n\\usepackage{amsmath}\n\\usepackage{cleveref}\n\\begin{document}\n\\section{A}\\label{s}\n\\Cref{s}.\n\\end{document}\n'),
+                 ('acmart (it loads hyperref)', '\\documentclass[sigconf]{acmart}\n\\begin{document}\n\\title{T}\\author{A}\\maketitle\nText.\n\\end{document}\n')]
+        for name, d in cases:
+            load_doc(page, d)
+            if 'economics' not in d:
+                ev(page, '() => window.rikuy.runCommand("properties", { subject: "Uber" })'); page.wait_for_timeout(300)
+            r = ev(page, 'window.rikuy.api.compile()')
+            errs = [x for x in r['problems'] if x.get('sev') == 'error']
+            check('Properties on ' + name + ': compiles in the page without an error', r['ok'] and not errs and ('Uber' in src(page) or 'economics' in src(page)), (errs[:2], src(page)[:200]))
     # read back: a hand written \hypersetup
     load_doc(page, hs.replace('colorlinks=true', 'colorlinks=true, pdfsubject = {Hand, written}, pdfkeywords=one'))
     page.get_by_role('tab', name='File', exact=True).click(); page.wait_for_timeout(200)
@@ -116,12 +151,10 @@ def accessibility(page):
     page.get_by_role('button', name='Check accessibility', exact=True).click(); page.wait_for_timeout(300)
     dlg = page.get_by_role('dialog', name='Check accessibility', exact=True)
     page.screenshot(path=os.path.join(SHOTS, 'file-a11y-1366.png'))
-    h = ev(page, 'window.rikuy.hist.length')
-    dlg.get_by_role('button', name='Tag the PDF', exact=True).click(); page.wait_for_timeout(300)
-    check('Tag the PDF: \\DocumentMetadata before \\documentclass, one step', src(page) == '\\DocumentMetadata{lang=en,pdfstandard=ua-2,tagging=on}\n' + d and ev(page, 'window.rikuy.hist.length') == h + 1, src(page)[:90])
-    check('and no second time', ev(page, 'window.rikuy.runCommand("check-accessibility", "tagging")') is False)
-    ev(page, 'window.rikuy.undo()'); page.wait_for_timeout(200)
-    check('one undo: the bytes of before', src(page) == d)
+    # (H4: the tree has no latex-lab HTML files, so a tagged PDF stops with an error: not offered)
+    check('Tag the PDF is not offered until the TeX tree has what tagging needs; it says why', dlg.get_by_role('button', name='Tag the PDF').count() == 0 and 'TeX tree update' in dlg.inner_text())
+    page.keyboard.press('Escape')
+    check('and the command writes nothing', ev(page, 'window.rikuy.runCommand("check-accessibility", "tagging")') is False and src(page) == d)
     # a stranger's file of spaces after \\includegraphics and \\usepackage: read in a moment
     load_doc(page, '\\documentclass{article}\n\\usepackage' + ' ' * 200000 + 'x\n\\begin{document}\n' + '\\includegraphics' + ' ' * 200000 + 'y\n\\end{document}\n')
     ms = ev(page, '(() => { const t = performance.now(); window.rikuy.accessibilityIssues(); return performance.now() - t; })()')
@@ -129,9 +162,6 @@ def accessibility(page):
     good = '\\DocumentMetadata{lang=en,pdfstandard=ua-2,tagging=on}\n\\documentclass{article}\n\\usepackage{booktabs}\n\\title{T}\n\\begin{document}\n\\section{A}\n\\subsection{B}\n\\begin{tabular}{ll}\n\\toprule\na & b \\\\\n\\midrule\nc & d\n\\end{tabular}\n\\end{document}\n'
     load_doc(page, good)
     check('a document with a title, a language, tagging, its levels and header rows: nothing found', ev(page, 'window.rikuy.accessibilityIssues().length') == 0, ev(page, 'window.rikuy.accessibilityIssues()'))
-    if TEX:
-        r = ev(page, 'window.rikuy.api.compile()')
-        check('the tagged document compiles in the page', r['ok'], r['problems'][:2])
 
 
 def export(page):
@@ -145,7 +175,12 @@ def export(page):
         e = ev(page, '(async () => { const x = window.rikuy.lastExport; return x ? { name: x.name, size: x.size, text: (await x.blob.text()).slice(0, 4000) } : null; })()')
         good = e and e['name'].endswith('.' + {'markdown': 'md'}.get(fmt, fmt)) and e['size'] > 50 and (needle is None or needle in e['text']) and (fmt not in ('odt', 'epub') or e['text'].startswith('PK'))
         check('Export as ' + fmt + ': a file with the document in it', good, e and (e['name'], e['size'], e['text'][:80]))
-    e = ev(page, '(async () => (await window.rikuy.lastExport.blob.text()))()')
+    ev(page, '() => window.rikuy.runCommand("export-as", "markdown")'); page.wait_for_function('!window.rikuy.wordBusy', timeout=120000)
+    md = ev(page, '(async () => (await window.rikuy.lastExport.blob.text()))()')
+    check('M1: the Markdown has none of Word\'s anchors', 'Some words here' in md and '{#Rk' not in md and '[Some' not in md, md[:200])
+    ev(page, "window.rikuy.name = '\u8bba\u6587'")
+    ev(page, '() => window.rikuy.runCommand("export-as", "markdown")'); page.wait_for_function('!window.rikuy.wordBusy', timeout=120000)
+    check('L8: a name in another script alone: paper.md, never a hidden .md', ev(page, 'window.rikuy.lastExport.name') == 'paper.md', ev(page, 'window.rikuy.lastExport.name'))
 
 
 def phones(p):

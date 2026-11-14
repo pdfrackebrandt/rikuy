@@ -16,7 +16,17 @@ export function where(el, w) {
   const b = document.getElementById(el);
   if (b && b.offsetParent && b.getBoundingClientRect().width) return { anchor: b };
   const x = Math.max(8, (window.innerWidth - w) / 2);
-  return { rect: new DOMRect(x, 56, 0, 0) };
+  // (below the ribbon, which the dialog's height leaves in view: .pop-guide's max-height)
+  const rb = document.getElementById('ribbon'), top = Math.max(56, rb && rb.offsetParent ? rb.getBoundingClientRect().bottom : 56);
+  return { rect: new DOMRect(x, top, 0, 0), top };
+}
+// a guide's dialog under its button or below the ribbon, never taller than the window leaves it
+export function guide(app, title, el, w, cls) {
+  // (below the ribbon, centred, never under its button: a tall dialog there was pushed up over the ribbon)
+  const at = where(null, w), p = dialog(app, { title, rect: at.rect, cls });
+  // (positionPop keeps a dialog inside the window; this keeps it below the ribbon too)
+  p.style.setProperty('--guide-top', ((at.top || 56) + 8) + 'px');
+  return p;
 }
 
 const always = () => true;
@@ -73,7 +83,7 @@ export const methods = {
   },
 
   openGraphsHelp() {
-    const p = dialog(this, { title: 'Interactive graphs', ...where('rh-graphs', 560), cls: 'pop-help pop-guide' });
+    const p = guide(this, 'Interactive graphs', 'rh-graphs', 560, 'pop-help pop-guide');
     p.append(
       para('A live figure is a graph you can move on the typeset page: drag a slider and it redraws. In the PDF, and in any TeX anywhere (Overleaf, a desktop TeX Live), it is a picture. So the paper prints as every journal wants, and your readers in Rikuy can play with it.'),
       mk('h3', null, 'How it is written'),
@@ -105,13 +115,13 @@ export const methods = {
     }
     p.append(row);
     this.positionPop();
-    tour.focus();
+    tour.focus({ preventScroll: true });
     return true;
   },
 
   // Every key the registry binds, by the tab its command sits on, as this computer has them
   openShortcuts() {
-    const p = dialog(this, { title: 'Keyboard shortcuts', ...where('rh-keys', 560), cls: 'pop-help pop-guide' });
+    const p = guide(this, 'Keyboard shortcuts', 'rh-keys', 560, 'pop-help pop-guide');
     const mac = /Mac|iPhone|iPad/.test(navigator.platform || '');
     p.append(para(mac ? 'Ctrl means Cmd on a Mac. The keys act with the caret on the page unless said.' : 'The keys act with the caret on the page unless said.'));
     const byTab = new Map();
@@ -137,7 +147,7 @@ export const methods = {
   },
 
   openWhatsNew() {
-    const p = dialog(this, { title: 'What\'s new', ...where('rh-new', 560), cls: 'pop-help pop-guide' });
+    const p = guide(this, 'What\'s new', 'rh-new', 560, 'pop-help pop-guide');
     const dl = mk('dl', 'news');
     for (const [h, t] of WHATS_NEW) dl.append(mk('dt', null, h), mk('dd', null, t));
     p.append(dl);

@@ -1212,14 +1212,15 @@ class Builder {
   // LaTeX paragraph's box, each character mapped to itself, with no mark in the source. A view
   // only: the text is unchanged, and what was counted, labelled and numbered in it stays so.
   asSource(u, views) {
-    if (!views.has(u.f + '\u0000' + u.s) || !(u.e > u.s) || u.items.some((x) => /^(tex|pagebreak|refs|toc)$/.test(x.type))) return u;
+    if (!(u.e > u.s) || u.items.some((x) => /^(tex|pagebreak|refs|toc)$/.test(x.type))) return u;
     const src = this.files.get(u.f) || '';
     let ie = u.e;
     while (ie > u.s && /\s/.test(src[ie - 1])) ie--;
-    // (the box starts at its first character: the line break before it is the paragraph's edge)
+    // (the box starts at its first character, which is the key: the line break before it is the
+    // paragraph's edge, and a line typed before it keeps the key on the block)
     let is = u.s;
     while (is < ie && /\s/.test(src[is])) is++;
-    if (ie <= is) return u;
+    if (ie <= is || !views.has(u.f + '\u0000' + is)) return u;
     const text = src.slice(is, ie), map = new Array(2 * text.length);
     for (let i = 0; i < text.length; i++) { map[2 * i] = is + i; map[2 * i + 1] = is + i + 1; }
     const item = { type: 'tex', view: true, f: u.f, s: is, e: ie, is, ie, text, nest: [], inl: [{ k: 'seg', f: u.f, t: text, map }], para: false, endsHeading: false };

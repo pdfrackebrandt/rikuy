@@ -284,6 +284,8 @@ export const methods = {
       // back to what its source makes; a heading or an environment only of what is one paragraph of text
       const T = this.texBox(it);
       if (!T) return { v: 'latex', to: none };
+      // (shown as LaTeX for now, Show LaTeX: its style is changed typeset, after Esc)
+      if (T.view) return { v: '', to: none, why: 'Shown as LaTeX for now: Esc shows it typeset, then pick a style.' };
       const words = src.slice(T.is, T.ie), to = new Set(['p']);
       if (T.para) { envs.forEach((v) => to.add(v)); if (!NOT_PLAIN.test(words) && words[0] !== '%') heads.forEach((h) => to.add(h)); }
       return { v: 'latex', to, b: { v: 'latex', s: T.ms, ws: T.is, we: T.ie, e: T.ie } };
