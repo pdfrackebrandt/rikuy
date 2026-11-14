@@ -11,7 +11,7 @@ import { SAMPLE } from './sample.js';
 import { splitRows, parseJS, scanUserSigs, setNativeParse } from './parser.js';
 import { installWordTyping, wordShortcuts, makeDialect, classifyMacros, resolveCommand, PACKAGES, WORD_GROUPS, FIELD_MACROS, fieldValue, modelValue } from './wordmath.js';
 import { isTallDef, fitBrackets, tallTest } from './fences.js';
-import { loadCore, coreReady, coreStats, nativeParse } from './native.js';
+import { loadCore, coreReady, coreCanRun, coreStats, nativeParse } from './native.js';
 import { minimalRow, makeSame } from './minimal.js';
 import { htmlToTeX, plainToTeX, unwrapMath } from './paste.js';
 import { findProblems, missingFigures } from './problems.js';
@@ -5054,8 +5054,10 @@ function loadCoreLater() {
   coreLoading = new Promise((done) => {
     const go = async () => {
       try {
-        // (no SubtleCrypto, as on a page over plain http: no check, so no core; JavaScript is exact)
-        if (!(window.crypto && crypto.subtle)) return done(false);
+        // (no SubtleCrypto, as on a page over plain http: no check, so no core; and a host that
+        // compiles no WebAssembly, which also forbids requests: nothing is asked for, so its
+        // console stays clean. JavaScript is exact.)
+        if (!(window.crypto && crypto.subtle) || !coreCanRun()) return done(false);
         const C = __RIKUY_CORE__;
         const r = await fetch(asset(C.file), { credentials: 'same-origin' });
         if (!r.ok) return done(false);

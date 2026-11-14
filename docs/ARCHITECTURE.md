@@ -1153,7 +1153,10 @@ there. So far one function is ported: `parse()`.
   arguments alike (`DEPTH`, counted in `parseSeq`: the wasm stack is the page's JavaScript stack),
   or a trap, after which the core is off for the session (its heap may be half written). A second
   `loadCore` sends the document's signatures again; without SubtleCrypto (a page over plain http)
-  the module's hash cannot be checked and the core is not loaded.
+  the module's hash cannot be checked and the core is not loaded. Nor is it asked for in a host
+  whose policy compiles no WebAssembly (`coreCanRun`: an empty module, refused without a word in
+  the console), which in every host known also forbids requests (`test/wordmath.py`'s frame); a
+  host that compiled WebAssembly but forbade requests would log the one refused fetch.
 - **Searches bounded.** A search that leaves the position where it was once ran to the end of the
   text for every occurrence, seconds on a crafted file. Both parsers now remember each "first
   place of this string at or after p" (`nextAt`, `Seen`: `\(` without `\)`, an unknown command's
