@@ -15,6 +15,8 @@ export const methods = {
   menuContexts(at) {
     if (!at) return [];
     const out = [];
+    // (a picture selected on the page: its own items first, B8)
+    if (this.armed && this.armed.kind === 'img' && this.armed.el && this.armed.el.isConnected) out.push('picture');
     if (at.cell) out.push('table');
     if (at.it && at.it.dataset.li) out.push('list');
     if (at.ctx === 'h') out.push('heading');
