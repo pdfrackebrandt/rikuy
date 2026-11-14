@@ -1935,6 +1935,31 @@ Tests:
     source); P7's border colour and weight; icons are the code's own drawings of fontawesome5's
     symbols, not its glyphs; rotation by a free angle with the mouse (the dialog's Rotation
     field takes any angle); the wrap's text flow on the page (B6).
+    *Review* (a fresh hostile reviewer of bd641ad: 10 high, 6 medium, 6 low, each reproduced; each
+    fixed with its case as a test, compiled in the page where TeX is the judge): nothing stays
+    selected across an undo, a redo, a merge or a picture gone from the page, and Backspace
+    deletes only what is still selected, at the offsets it has now (it had deleted half a picture
+    and its `\end{center}`); a size key added to a turned picture goes before `angle` (a height
+    after `angle=-90` stopped TeX with "Division by 0"), and the page walks graphicx's keys in
+    their order (sizes before the angle size the picture, after it the turned box); an angle given
+    by a macro is not overwritten; Icons refuse where Font Awesome 4 is loaded and add no package
+    where 6 or 7 gives `\faIcon`; a picture in a subfigure, a minipage or a `\parbox` is a share
+    of that box, not of the line (they had grown two to three times and moved figures a page on);
+    the sizes read from the files come in one rebuild, not one per picture (120 pictures froze the
+    page 24 s), and the first Crop waits for the file's size instead of closing; the natural size
+    reads Exif's resolution (cameras' JPEGs), JFIF's dots per centimetre truncated as pdfTeX does,
+    and a PDF's `/Rotate`, each against the three engines' sizes; `\caption*`, `\captionof*` and
+    `figure*` keep their stars (figure* has no in-line or wrapped form and says so), a starred
+    caption has no number and shifts none, beamer's caption is "Figure:"; only Rikuy's own charts
+    are drawn as charts, a hand written axis keeps its source box; SmartArt stops at ten items
+    (eleven for Bubbles), as smartdiagram does; wrap is refused in a quote, a theorem, a proof or
+    any environment round the picture and before a heading; Exactly Here under memoir loads float;
+    decorative is a `% alt (decorative)` line (graphicx's `artifact` is TeX Live 2024's); a turned
+    picture's handles size its own sides; a picture with its caption in a list item keeps the
+    item's indent; a small picture in a line has one handle and no wide target over the words.
+    Evidence: `picture.test.mjs` 20 groups, `drawing.test.mjs` 7, `test/picture.py` 168 (22 new,
+    four compiles in the page: the height before the angle, an Exif JPEG at TeX's size, a starred
+    caption numbered as TeX numbers it, SmartArt of ten items).
 
 ## Open tasks
 

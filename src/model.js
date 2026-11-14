@@ -1433,7 +1433,7 @@ class Builder {
         const k = this.argText(ctx, cap.args[0]).trim();
         if (k === 'figure' || k === 'table') {
           const r = this.floatBlock(nd, ctx, env, k, name === 'center' ? null : name === 'flushleft' ? 'left' : 'right');
-          for (const it of r.items) if (it.type === 'float') it.placement = 'H';
+          for (const it of r.items) if (it.type === 'float') { it.placement = 'H'; if (env.depth) it.depth = env.depth; }
           return r;
         }
       }
@@ -1481,7 +1481,10 @@ class Builder {
         if (r) r.items.unshift({ type: 'h', level: 3, num: '', inl: [{ k: 'chr', text: name === 'acknowledgements' ? 'Acknowledgements' : 'Acknowledgments' }], star: true, ctx: 'h', f: ctx.f, dir: this.dirOf() });
         return r;
       }
-      const r = this.container(nd, ctx, env, ex);
+      const wasBox = this.box;
+      if (name === 'minipage') this.box = this.boxIn(ctx, nd.args.filter((x) => x && !x.o).pop());
+      let r;
+      try { r = this.container(nd, ctx, env, ex); } finally { this.box = wasBox; }
       // (a multicols read raw, or nested where a block cannot be cut: one block in columns)
       if (/^multicols\*?$/.test(name) && r) {
         const n = Math.max(1, Math.min(10, parseInt(this.argText(ctx, nd.args && nd.args[0]), 10) || 2));
@@ -1498,6 +1501,22 @@ class Builder {
 
   emptyPara(ctx, pos, cls) {
     return { type: 'p', inl: [{ k: 'seg', f: ctx.f, t: '​', map: [pos, pos], ph: true }], indent: false, cls: cls || '', ctx: 'p', f: ctx.f, dir: this.dirOf() };
+  }
+
+  // beamer numbers its captions only with \setbeamertemplate{caption}[numbered] (read once)
+  beamerNumbered() {
+    if (this.beamerNum == null) { const t = (this.files && this.project && this.files.get(this.project.main)) || ''; this.beamerNum = /\\setbeamertemplate\s*\{caption\}\s*\[numbered\]/.test(t.slice(0, 200000)); }
+    return this.beamerNum;
+  }
+  // The box a picture now stands in, with the width argument of one more: { share } of the line
+  // or { pt }, nested boxes multiplied; null where it is the line
+  boxIn(ctx, a) {
+    const t = a ? this.argText(ctx, a).trim() : '';
+    const m = /^([\d.]*)\s*\\(linewidth|textwidth|columnwidth|hsize)$/.exec(t), u = /^([\d.]+)\s*(cm|mm|in|pt|bp|em)$/.exec(t);
+    const cur = this.box;
+    if (m) { const f = m[1] === '' ? 1 : parseFloat(m[1]); if (!Number.isFinite(f)) return cur; return cur && cur.pt ? { pt: cur.pt * f } : { share: (cur ? cur.share : 1) * f }; }
+    if (u) return { pt: parseFloat(u[1]) * { cm: 28.4528, mm: 2.84528, in: 72.27, pt: 1, bp: 72.27 / 72, em: 10 }[u[2]] };
+    return cur;
   }
 
   container(nd, ctx, env, ex) {
@@ -1697,6 +1716,15 @@ class Builder {
         if (n.t === 'cmd' && n.name === 'centering') { align = 'center'; continue; }
         if (n.t === 'cmd' && (n.name === 'caption' || n.name === 'captionof')) {
           flushP();
+          const a0 = n.name === 'captionof' ? n.args[2] : n.args[1];
+          // (\caption* and \captionof*: no number, no "Figure"; beamer prints "Figure:" unless its
+          // caption template is the numbered one)
+          if (n.star || (this.opts.cls === 'beamer' && !this.beamerNumbered())) {
+            const kids = a0 ? this.inl(a0.nodes, ctx, fns) : [];
+            if (a0 && !kids.length) kids.push({ k: 'seg', f: ctx.f, t: '​', map: [a0.is, a0.is], ph: true });
+            parts.push({ type: 'caption', kind, num: '', star: !!n.star, inl: kids, f: ctx.f, ctx: 'cap', dir: this.dirOf() });
+            continue;
+          }
           if (!num) {
             this.c[kind]++;
             num = this.withinPrefix(kind) + this.c[kind];
@@ -1714,7 +1742,13 @@ class Builder {
         { const st = this.tableSetting(n, ctx); if (st && (st.key !== 'size' || nodes.slice(i + 1, i + 40).some((x) => x.t === 'env' && /^(tabular|tabularx|tabular\*|tabulary|longtable)$/.test(x.name)))) { (tset = tset || {})[st.key] = st.value; continue; } }
         // (B7) a table csvsimple sets from a data file of the project: drawn from the file
         if (n.t === 'cmd' && /^csvauto(book)?tabular$/.test(n.name) && n.args[1]) { const t = this.csvTable(n, ctx); if (t) { flushP(); parts.push(t); continue; } }
-        if (n.t === 'env' && /^(center|minipage|subfigure|subtable|threeparttable|adjustbox|small|footnotesize|scriptsize)$/.test(n.name)) { flushP(); walk(n.nodes); flushP(); continue; }
+        if (n.t === 'env' && /^(center|minipage|subfigure|subtable|threeparttable|adjustbox|small|footnotesize|scriptsize)$/.test(n.name)) {
+          // (a minipage's or a subfigure's pictures are a share of its width, not of the page's)
+          const wasBox = this.box;
+          if (/^(minipage|subfigure|subtable)$/.test(n.name)) this.box = this.boxIn(ctx, n.args.filter((x) => x && !x.o).pop());
+          try { flushP(); walk(n.nodes); flushP(); } finally { this.box = wasBox; }
+          continue;
+        }
         // a language or direction environment around a figure's parts: they run its way
         if (n.t === 'env' && this.dirEnv(n, ctx)) { flushP(); const was = this.dir; this.dir = this.dirEnv(n, ctx).dir || was; walk(n.nodes); flushP(); this.dir = was; continue; }
         if (n.t === 'env' && n.name === 'tablenotes') { flushP(); const r = this.container(n, ctx, env, { cls: 'z-footnotesize', noIndentFirst: true }); parts.push(...r.items); fns.push(...r.fns); continue; }
@@ -2357,7 +2391,7 @@ class Builder {
       acc.flush();
       const file = A(1).trim();
       const opts = A(0);
-      out.push(this.atom(ctx, { k: 'img', s: nd.s, e: nd.e, file, opts }));
+      out.push(this.atom(ctx, { k: 'img', s: nd.s, e: nd.e, file, opts, box: this.box || null }));
       return false;
     }
     // fontawesome5's \faIcon{name} (Insert › Icons): one atom, drawn as the icon
@@ -2494,7 +2528,11 @@ class Builder {
     acc.flush();
     const lastM = nd.args.filter((a) => a && !a.o).pop();
     if (lastM && lastM.nodes && lastM.nodes.length && !lastM.raw) {
-      const kids = this.inl(lastM.nodes, ctx, fns);
+      // (a \parbox's pictures are a share of its width)
+      const wasBox = this.box;
+      if (name === 'parbox') { const ms = nd.args.filter((x) => x && !x.o); if (ms.length >= 2) this.box = this.boxIn(ctx, ms[ms.length - 2]); }
+      let kids;
+      try { kids = this.inl(lastM.nodes, ctx, fns); } finally { this.box = wasBox; }
       out.push(this.styAtom(ctx, { k: 'sty', st: 'unk', kids, s: nd.s, e: nd.e, is: lastM.is, ie: lastM.ie, cmd: name, title: '\\' + name }));
       if (!this.knownWarn) this.knownWarn = new Set();
       return false;

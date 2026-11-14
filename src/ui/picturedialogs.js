@@ -6,7 +6,7 @@
 import { dialog } from './kit.js';
 import { mk } from './dom.js';
 import * as X from '../picture.js';
-import { SMART } from '../drawing.js';
+import { SMART, smartMax } from '../drawing.js';
 
 const row = (cls, ...kids) => { const d = mk('div', cls); d.append(...kids); return d; };
 function field(name, ctl) {
@@ -75,7 +75,7 @@ export function altDialog(app) {
   const dec = check('Mark as decorative', cur.decorative);
   const sync = () => { ta.disabled = dec.input.checked; };
   dec.input.addEventListener('change', sync);
-  const note = mk('p', 'tb-note', h.P.keyval ? 'Written as \\includegraphics[alt={…}]: tagged PDF reads it aloud, and Word keeps it. Decorative: [artifact], left out of what is read.' : 'This picture uses graphics\' bounding box form, which takes no keys: the text goes in a "% alt:" line above it.');
+  const note = mk('p', 'tb-note', h.P.keyval ? 'Written as \\includegraphics[alt={…}]: tagged PDF reads it aloud, and Word keeps it. Decorative: a "% alt (decorative)" line above the picture (graphicx\'s artifact key needs TeX Live 2024 or later).' : 'This picture uses graphics\' bounding box form, which takes no keys: the text goes in a "% alt:" line above it.');
   const ok = () => { const t = ta.value, d = dec.input.checked; back(app, keep); app.runCommand('picture-alt', { text: t, decorative: d }); };
   p.append(row('tb-sec', mk('div', 'tb-gl', 'How would you describe this picture to someone who cannot see it?'), ta, dec, note), buttons(app, ok, () => back(app, keep)));
   sync();
@@ -191,8 +191,12 @@ export function smartDialog(app) {
   const kind = radios('Kind', SMART, SMART[0][0]);
   const ta = mk('textarea', 'pd-alt-t');
   ta.rows = 5; ta.value = 'Plan\nWrite\nSubmit'; ta.setAttribute('aria-label', 'Items, one per line');
-  const ok = () => { const k = kind.value(), items = ta.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean); backCaret(app); app.runCommand('insert-smartart', { kind: k, items }); };
-  p.append(row('tb-sec', kind), row('tb-sec', mk('div', 'tb-gl', 'Items, one per line'), ta, mk('p', 'tb-note', 'Written as \\smartdiagram[kind]{items} (smartdiagram); click it on the page to edit its items.')), buttons(app, ok, () => backCaret(app)));
+  const ok = () => {
+    const k = kind.value(), items = ta.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
+    if (items.length > smartMax(k)) { app.toast('At most ' + smartMax(k) + ' items: smartdiagram\'s colours stop there and TeX stops on more.'); return; }
+    backCaret(app); app.runCommand('insert-smartart', { kind: k, items });
+  };
+  p.append(row('tb-sec', kind), row('tb-sec', mk('div', 'tb-gl', 'Items, one per line'), ta, mk('p', 'tb-note', 'Written as \\smartdiagram[kind]{items} (smartdiagram), ten items at most (eleven for Bubbles); click it on the page to edit them.')), buttons(app, ok, () => backCaret(app)));
   place(app, p);
   ta.focus(); ta.select();
   ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); ok(); } });

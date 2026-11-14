@@ -139,7 +139,7 @@ def trips(page):
     check('a figure written by hand shows its place: Top of Page checked, Width 50% of the text', pressed(page, 'picture-place-top') is True and page.input_value('#rc-picture-width') == '50%')
     roundtrip(page, DOC, P, fn('picture-crop', {'l': 72 / 2.54, 'b': 0, 'r': 0, 't': 72 / 2.54}), WRAP(CENTER('width=0.5\\linewidth,trim=1cm 0 0 1cm,clip')), off_command='picture-crop-remove', label='Crop (trim, clip), Remove Crop undoes it')
     roundtrip(page, DOC, P, fn('picture-alt', {'text': 'A red & blue box, 50%'}), WRAP(CENTER('width=0.5\\linewidth,alt={A red \\& blue box, 50\\%}')), off_command=fn('picture-alt', {'text': ''}), label='Alt Text')
-    roundtrip(page, DOC, P, fn('picture-alt', {'text': '', 'decorative': True}), WRAP(CENTER('width=0.5\\linewidth,artifact')), off_command=fn('picture-alt', {'text': ''}), label='Mark as decorative')
+    roundtrip(page, DOC, P, fn('picture-alt', {'text': '', 'decorative': True}), WRAP(CENTER().replace('\\begin{center}\n', '\\begin{center}\n% alt (decorative)\n')), off_command=fn('picture-alt', {'text': ''}), label='Mark as decorative')
     roundtrip(page, DOC, P, 'picture-lock', lambda t: re.search(r'width=0\.5\\linewidth,height=[\d.]+cm\]', t) is not None, label='Lock Aspect Ratio off writes the height')
     load_doc(page, DOC); P(page); run_cmd(page, 'picture-lock'); P(page); run_cmd(page, 'picture-lock')
     check('Lock Aspect Ratio on again takes the height off: the bytes of before', src(page) == DOC, body(page))
@@ -420,6 +420,137 @@ def pdf_image_box(data):
     return [w * 72.27 / 72, h * 72.27 / 72]
 
 
+# ---- the review of bd641ad ------------------------------------------------------------------------
+
+def compile_pdf(page, doc):
+    page.set_default_timeout(600000)
+    r = page.evaluate("""async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile();
+      let b = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) b += String.fromCharCode(...r.pdf.subarray(i, i + 8192));
+      return { ok: r.ok, pages: r.pages, pdf: btoa(b), problems: (r.problems || []).filter((x) => x.severity === 'error').map((x) => x.message).slice(0, 4) }; }""", doc)
+    page.set_default_timeout(30000)
+    return r
+
+
+def pdf_text(r):
+    import io
+    from pypdf import PdfReader
+    return ' '.join(p.extract_text() or '' for p in PdfReader(io.BytesIO(base64.b64decode(r['pdf']))).pages) if r['pdf'] else ''
+
+
+def reviewed(page):
+    """Each finding of the hostile review of bd641ad, its case as a check (and where TeX is the
+    judge, compiled in the page)."""
+    # H1: undo, then Backspace: nothing stale is deleted
+    load_doc(page, DOC); page.wait_for_timeout(300); sel_pic()(page)
+    run_cmd(page, 'picture-rotate-right')
+    page.keyboard.press('Control+z'); page.wait_for_timeout(250)
+    armed = page.evaluate('!!window.rikuy.armed')
+    page.keyboard.press('Backspace'); page.wait_for_timeout(250)
+    s = src(page)
+    check('H1: after Rotate Right and Ctrl+Z nothing stays selected, and Backspace leaves the picture and its center whole', not armed and '\\includegraphics[width=0.5\\linewidth]{a.png}\n\\end{center}' in s and s.count('\\begin{center}') == s.count('\\end{center}'), body(page))
+    load_doc(page, DOC); page.wait_for_timeout(300); sel_pic()(page)
+    page.evaluate("() => { const g = window.rikuy, t = g.files.get('main.tex'), i = t.indexOf('After it'); g.commit([{ f: 'main.tex', s: i, e: i, t: 'Merged. ' }], null, 'merge'); }")
+    page.wait_for_timeout(250)
+    page.keyboard.press('Backspace'); page.wait_for_timeout(250)
+    check('H1: a merge in the text while a picture is selected: it is let go, and Backspace deletes no picture', '\\includegraphics[width=0.5\\linewidth]{a.png}' in src(page) and not page.evaluate('!!window.rikuy.armed'), body(page))
+    # H3: Font Awesome 4 clashes with fontawesome5; 6 gives \faIcon itself
+    for pk, ok_ in (('fontawesome', False), ('fontawesome6', True)):
+        d = WRAP('First paragraph here.', '\\usepackage{' + pk + '}\n')
+        load_doc(page, d); click_text(page, 'First', 5)
+        r = run_cmd(page, 'insert-icons', {'icon': 'envelope'})
+        check('H3: Icons with \\usepackage{%s}: %s' % (pk, 'its own \\faIcon, no fontawesome5 line' if ok_ else 'refused with the reason, nothing written'),
+              ('\\faIcon{envelope}' in src(page) and 'fontawesome5' not in src(page)) if ok_ else (r is False and src(page) == d), body(page))
+    # H4: pictures in subfigures and minipages are a share of their box, not of the line
+    sub = WRAP('Text.\n\n\\begin{figure}[h]\n\\centering\n\\begin{subfigure}{0.3\\linewidth}\n\\includegraphics[width=\\linewidth]{a.png}\n\\end{subfigure}\n\\begin{subfigure}{0.3\\linewidth}\n\\includegraphics[width=\\linewidth]{a.png}\n\\end{subfigure}\n\\end{figure}\n\nAfter.', '\\usepackage{graphicx}\n\\usepackage{subcaption}\n')
+    load_doc(page, sub); page.wait_for_timeout(500)
+    tw = page.evaluate('window.rikuy.layout.g.tw * window.rikuy.layout.px')
+    ws = page.evaluate("[...document.querySelectorAll('#pages .a-img')].map((e) => e.getBoundingClientRect().width)")
+    check('H4: a picture of width=\\linewidth in a 0.3\\linewidth subfigure is drawn 0.3 of the line wide, as TeX sets it', len(ws) == 2 and all(abs(w - 0.3 * tw) < 3 for w in ws), (ws, tw))
+    load_doc(page, WRAP('\\begin{minipage}{0.45\\linewidth}\n\\includegraphics[width=0.8\\linewidth]{a.png}\n\\end{minipage}'))
+    page.wait_for_timeout(500)
+    w = page.locator('#pages .a-img').bounding_box()['width']
+    check('H4: in a 0.45\\linewidth minipage, width=0.8\\linewidth is 0.36 of the line', abs(w - 0.36 * tw) < 3, (w, tw))
+    # H5: forty pictures whose size comes from their files: a handful of rebuilds, not one each
+    data = base64.b64encode(png(60, 40, dpi=150)).decode()
+    page.evaluate('([n, b]) => { const u = Uint8Array.from(atob(b), (c) => c.charCodeAt(0)); for (let k = 0; k < n; k++) window.rikuy.addAsset("f" + k + ".png", new Blob([u], { type: "image/png" })); }', [40, data])
+    page.evaluate("() => { const g = window.rikuy; if (!window.__rbw) { const r = g.rebuild; window.__rbw = 1; g.rebuild = function (...a) { window.__rb = (window.__rb || 0) + 1; return r.apply(this, a); }; } window.__rb = 0; }")
+    load_doc(page, WRAP('\n\n'.join('P %d.\n\n\\begin{center}\n\\includegraphics[height=1cm]{f%d.png}\n\\end{center}' % (k, k) for k in range(40))))
+    page.wait_for_timeout(1500)
+    n = page.evaluate('window.__rb')
+    check('H5: forty pictures sized from their files: at most 3 rebuilds (one for the document, one for the sizes that came)', n <= 3, n)
+    # M2: the first Crop on a fresh picture opens
+    asset(page, 'fresh.png', png(120, 80, dpi=144))
+    load_doc(page, WRAP(CENTER().replace('a.png', 'fresh.png'))); page.wait_for_timeout(300); sel_pic()(page)
+    run_cmd(page, 'picture-crop'); page.wait_for_timeout(600)
+    check('M2: the first Crop on a picture opens its bars', page.evaluate("!!document.querySelector('.pic-crop') && window.rikuy.picCropping"))
+    page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    # H8, M5: starred captions have no number and shift no later one; beamer's "Figure:"
+    load_doc(page, WRAP('\\begin{flushright}\n\\includegraphics[width=3cm]{a.png}\n\\captionof*{figure}{Starred}\n\\end{flushright}\n\n\\begin{figure}[h]\n\\centering\n\\includegraphics[width=3cm]{a.png}\n\\caption{Later}\n\\end{figure}', '\\usepackage{graphicx}\n\\usepackage{caption}\n'))
+    page.wait_for_timeout(400)
+    caps = page.evaluate("[...document.querySelectorAll('#pages .cap')].map((c) => c.textContent)")
+    check('H8: \\captionof*{figure}{Starred} is drawn without a number and the figure after it is Figure 1, as TeX prints them', caps == ['Starred', 'Figure 1: Later'], caps)
+    load_doc(page, '\\documentclass{beamer}\n\\usepackage{caption}\n\\begin{document}\n\\begin{frame}\n\\begin{center}\n\\includegraphics[width=3cm]{a.png}\n\\captionof{figure}{Beamer cap}\n\\end{center}\n\\end{frame}\n\\end{document}\n')
+    page.wait_for_timeout(400)
+    caps = page.evaluate("[...document.querySelectorAll('#pages .cap')].map((c) => c.textContent)")
+    check('M5: in beamer a caption is "Figure: ...", as beamer prints it', caps == ['Figure: Beamer cap'], caps)
+    # L4: a picture with its caption in a list item keeps the item's indent
+    load_doc(page, WRAP('\\begin{itemize}\n\\item One.\n\\begin{center}\n\\includegraphics[width=3cm]{a.png}\n\\captionof{figure}{In a list}\n\\end{center}\n\\end{itemize}', '\\usepackage{graphicx}\n\\usepackage{caption}\n'))
+    page.wait_for_timeout(400)
+    check('L4: in a list item the picture and its caption keep the item\'s indent', page.evaluate("(() => { const f = document.querySelector('#pages .flt.deep'); return !!f && getComputedStyle(f).paddingInlineStart !== '0px'; })()"))
+    # H10: SmartArt with eleven items is refused
+    load_doc(page, WRAP('First paragraph here.', '')); click_text(page, 'First', 2)
+    before = src(page)
+    r = run_cmd(page, 'insert-smartart', {'kind': 'flow diagram:horizontal', 'items': ['Item %d' % k for k in range(11)]})
+    check('H10: SmartArt with eleven items is refused (TeX stops on them), nothing written', r is False and src(page) == before)
+    # H9: a hand written axis keeps its source box
+    load_doc(page, WRAP('\\begin{tikzpicture}\n\\begin{axis}[ymode=log]\n\\addplot coordinates {(0,1) (1,10)};\n\\end{axis}\n\\end{tikzpicture}', '\\usepackage{pgfplots}\n'))
+    page.wait_for_timeout(300)
+    check('H9: a hand written pgfplots axis (ymode=log) is shown as its source, not drawn as a chart', not page.evaluate("!!document.querySelector('#pages svg.pgf')") and page.evaluate("!!document.querySelector('#pages .raw:not(.drawn)')"))
+    # M1: the right handle of a picture turned a quarter widens the turned box
+    load_doc(page, WRAP(CENTER('width=0.3\\linewidth,angle=90'))); page.wait_for_timeout(500); sel_pic()(page); page.wait_for_timeout(200)
+    e = page.locator('.pic-frame .pic-h-e').bounding_box()
+    page.mouse.move(e['x'] + 4, e['y'] + 4); page.mouse.down(); page.mouse.move(e['x'] + 44, e['y'] + 4, steps=5); page.mouse.up(); page.wait_for_timeout(400)
+    m = re.search(r'\[width=([\d.]+)cm,angle=90\]', src(page))
+    check('M1: dragging the right handle of a picture turned 90 degrees writes its width from the turned box\'s height, so the box grows', bool(m) and float(m.group(1)) > 0.3 * page.evaluate('window.rikuy.layout.g.tw') / 28.4528 * 1.05, body(page))
+    # L6: a picture in a line, an icon's size: one handle, no wide target over the words
+    load_doc(page, WRAP('Words \\includegraphics[height=1em]{a.png} in a line.')); page.wait_for_timeout(400); sel_pic()(page); page.wait_for_timeout(200)
+    check('L6: a small picture in a line has one handle, at its corner', page.evaluate("(() => { const f = document.querySelector('.pic-frame'); return f.classList.contains('tiny') && [...f.querySelectorAll('.pic-h')].filter((h) => getComputedStyle(h).display !== 'none').length === 1; })()"))
+    # L2: memoir sets [H] with the float package
+    load_doc(page, '\\documentclass{memoir}\n\\usepackage{graphicx}\n\\begin{document}\n' + CENTER() + '\n\\end{document}\n'); page.wait_for_timeout(300); sel_pic()(page)
+    run_cmd(page, 'picture-place-exact')
+    check('L2: Exactly Here under memoir writes [H] with the float package', '\\begin{figure}[H]' in src(page) and '\\usepackage{float}' in src(page), body(page))
+    # L3: decorative is a comment line, which every TeX reads
+    load_doc(page, DOC); sel_pic()(page)
+    run_cmd(page, 'picture-alt', {'text': '', 'decorative': True})
+    check('L3: Mark as decorative writes "% alt (decorative)" above the picture, no artifact key', '\\begin{center}\n% alt (decorative)\n\\includegraphics[width=0.5\\linewidth]{a.png}' in src(page), body(page))
+    if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        print('SKIP the review\'s compiles: no TeX tree in %s' % DIST)
+        return
+    # H2: Rotate Right then Height: the height before the angle, and TeX sets it
+    load_doc(page, WRAP(CENTER('width=3cm'))); sel_pic()(page)
+    run_cmd(page, 'picture-rotate-right'); sel_pic()(page)
+    run_cmd(page, 'picture-height', {'height': '3cm'})
+    s2 = src(page)
+    r = compile_pdf(page, s2)
+    check('H2: Rotate Right then Height 3cm writes [height=3cm,angle=-90] and TeX compiles it (no "Division by 0")', '[height=3cm,angle=-90]' in s2 and r['ok'] and not r['problems'], (body(page), r['problems']))
+    # H6: a camera JPEG with Exif's resolution only: the page draws it at TeX's size
+    jpg = open(os.path.join(ROOT, 'test', 'fixtures', 'exif-180dpi.jpg'), 'rb').read()
+    page.evaluate('(b) => { const u = Uint8Array.from(atob(b), (c) => c.charCodeAt(0)); window.rikuy.addAsset("cam.jpg", new Blob([u], { type: "image/jpeg" })); }', base64.b64encode(jpg).decode())
+    r = compile_pdf(page, WRAP('\\begin{center}\n\\includegraphics{cam.jpg}\n\\end{center}')); page.wait_for_timeout(800)
+    drawn = page.evaluate("(() => { const s = document.querySelector('#pages .a-img img'), r = s.getBoundingClientRect(), px = window.rikuy.layout.px; return [r.width / px, r.height / px]; })()")
+    box = pdf_image_box(base64.b64decode(r['pdf'])) if r['ok'] else None
+    check('H6: a JPEG with Exif at 180 dpi (no JFIF) is %s pt wide in the PDF and %s pt on the page' % (box and round(box[0], 1), round(drawn[0], 1)), bool(box) and abs(box[0] - drawn[0]) < 1.5 and abs(box[0] - 120.45) < 1, (box, drawn))
+    # H8 by TeX: \captionof* then a figure numbered 1
+    r = compile_pdf(page, WRAP('\\begin{flushright}\n\\includegraphics[width=3cm]{a.png}\n\\captionof*{figure}{Starred}\n\\end{flushright}\n\n\\begin{figure}[h]\n\\centering\n\\includegraphics[width=3cm]{a.png}\n\\caption{Later}\n\\end{figure}', '\\usepackage{graphicx}\n\\usepackage{caption}\n'))
+    t = pdf_text(r).replace('\n', ' ')
+    check('H8: TeX prints "Starred" unnumbered and "Figure 1: Later", as the page draws them', r['ok'] and 'Figure 1: Later' in t and 'Figure 1: Starred' not in t, t[:200])
+    # H10: ten items, the most allowed, compile
+    load_doc(page, WRAP('First paragraph here.', '')); click_text(page, 'First', 2)
+    run_cmd(page, 'insert-smartart', {'kind': 'flow diagram:horizontal', 'items': ['I%d' % k for k in range(10)]})
+    r = compile_pdf(page, src(page))
+    check('H10: SmartArt with ten items, the most it allows, compiles', r['ok'] and not r['problems'], r['problems'])
+
+
 # ---- phones -------------------------------------------------------------------------------------------
 
 def phones(p):
@@ -517,7 +648,7 @@ def run():
         browser, page, errors = open_page(p)
         asset(page)
         names = sys.argv[1:]
-        for f in (selecting, trips, sizing, tools, drawing, objects, compiled):
+        for f in (selecting, trips, sizing, tools, drawing, objects, reviewed, compiled):
             if names and f.__name__ not in names:
                 continue
             try: f(page)

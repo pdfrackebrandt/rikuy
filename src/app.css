@@ -1580,3 +1580,6 @@ html.pic-drag, html.pic-drag body { touch-action: none; overscroll-behavior: non
    Format tab took a 360 px page to 847). Placed at the corner, it widens nothing */
 .rb .sr { left: 0; top: 0; }
 @media (pointer: coarse) { .pop-pic .tb-btns .btn { padding: 0 18px; min-width: 88px; } }
+/* a small picture (an icon in a line): one handle at its corner, no target wider than it over the text */
+.pic-frame.tiny .pic-h:not(.pic-h-se) { display: none; }
+.pic-frame.tiny .pic-h::before { display: none; }
