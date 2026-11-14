@@ -1024,7 +1024,7 @@ Tests:
     by a tap, 44 px targets, the dialog fitting and scrolling, no sideways scroll. Evidence:
     `para.test.mjs` 28 groups (the reviewer's cases through paraUnits and paraRun on the real
     model); `para.py` 203 with `dist/tex` (the cases TeX refused compile, and where the page
-    and TeX disagreed TeX's PDF now sets the words where the page draws them); `tabs.py`, `ribbon.py` 271 and `agent.py` 138 with the strict widths back; `browser.py` 189; `word.py` 110; `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43; `pages_check.py` fits; the corpus model run 716 of 716; `npm test` green.
+    and TeX disagreed TeX's PDF now sets the words where the page draws them); `tabs.py` 116, `ribbon.py` 271 and `agent.py` 138 with the strict widths back (at 860 px the rule folds Home's Insert, whose buttons the Insert tab has); `browser.py` 189; `word.py` 111; `page.py` 139; `table.py` 161; `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43; `pages_check.py` fits; the corpus model run 716 of 716; `npm test` green.
 41. **B3, lists as in Word.** Done in the code (branch `wordgap-b3-lists`, on task 38's frame and
     B5's fold rule; GAP rows H32 to H38, H39 in lists, H40, A3, and task 29's labelled item).
     *Levels.* Tab and Shift+Tab in a list item (not in a table cell, whose keys they stay), and
