@@ -67,6 +67,11 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   on the page with their page numbers: written as geometry, multicol, fancyhdr, lineno, edited
   where a hand written line has them, drawn on the page as TeX prints them, and carried to Word
   and back.
+- **Pictures and objects as in Word.** A press or a tap selects a picture: eight handles size it
+  (a share of the line when near one), and Picture Format crops, turns, flips, frames, gives alt
+  text, floats it or wraps text round it, captions it; Insert has Shapes, Icons, SmartArt, Chart,
+  Screenshot, Text Box and Drop Cap, drawn on the page from the TikZ, pgfplots, smartdiagram,
+  fontawesome5, tcolorbox and lettrine they write.
 - **The whole TeX Live 2026 toolchain.** The three engines, latexmk's reruns, bibtex and biber,
   makeindex and xindy, glossaries, and shell escape: Ghostscript, gnuplot, Python with Pygments
   (minted), dvips, Asymptote with 3D rendering, and TeX starting TeX (TikZ externalize,

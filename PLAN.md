@@ -1325,6 +1325,105 @@ Tests:
     engines, the .sty, the timing; two more compiles in the page, the grouped longtable and a
     XeLaTeX document with its data table, every character in the PDF).
 
+46. **B8, pictures and objects as in Word.** Done in the code (branch `wordgap-b8-picture`), rows
+    P1 to P3, P6 to P8, L12, L13, L15, I12, I13, I15 to I17, I30, I36 and C3 of the gap list (task
+    38); P4, P5, L14 and I14 stay skipped as the list says. *Selecting.* A press or a tap on a
+    picture selects it as in Word (`picSelect`, `src/cmd/picture.js`): a frame with eight handles
+    over it (`src/ui/handles.js`, outside the text the editor owns), the contextual tab Picture
+    Format opened (a phone's "Ribbon tab" list too), no bubble of bold and italic; a double click,
+    Enter or Show Picture Source edits its `\includegraphics`; Delete takes it out; a caret put
+    elsewhere lets it go. *One reading of a picture.* `src/picture.js` finds the
+    `\includegraphics` in the parser's tree of its file (kept while the text is the same): its
+    options as key=value pieces (graphics' bounding box form told apart), the boxes round it
+    innermost first (`\reflectbox`, `\scalebox{1}[-1]` and `{-1}[1]`, `\rotatebox`, `\fbox` and
+    Rikuy's `{\setlength{\fboxsep}{0pt}\fbox{…}}`, `\resizebox`) and the block it stands in (a
+    center or flush environment, a figure, a wrapfigure, a paragraph of its own, a sentence, a
+    box) with what else is there (its caption, label, `\centering`) and round it (floats, boxes,
+    multicols, lists, a beamer frame). *The commands*, each one commit with its packages through
+    `packageEdits` and the picture selected again after: Height and Width fields (a length, or a
+    share of the line: "50%" writes `0.5\linewidth`; a hand written `\textwidth` share stays one;
+    arrows step), the handles (corner or side, the shape kept; Shift frees it, and with Lock Aspect
+    Ratio off the other way round, which is how a phone frees it; a snap to twentieths of the line
+    within 1.2 %, else a length to the millimetre; a tip says what will be written; Escape gives
+    up), Lock Aspect Ratio (the height written or taken off), Crop (the whole file dim, the part
+    kept bright, black bars, Enter writes `trim=… ,clip` in cm, Escape gives up; Crop by
+    Numbers…, Remove Crop; viewport read as a crop), Rotate Right and Left 90° (`angle`, back to
+    none; a hand written `\rotatebox` turned in its argument), Flip Vertical and Horizontal,
+    Picture Border, Alt Text (`alt={…}` escaped as TeX reads a key, or Mark as decorative,
+    graphicx's `artifact`; graphics' bounding box form gets a `% alt:` line), Reset Picture and
+    Reset Picture & Size, Change Picture (a safe name, the options kept), Insert Caption (`\caption`
+    in a float, `\captionof{figure}` with caption's package in line, a center made round a picture
+    alone; References' own Insert Caption takes over where a batch brings one), Position (In Line
+    with Text, Best Place, Top, Bottom, Here If It Fits, Exactly Here with the float package, Page
+    of Floats, Left or Right with Text Wrapping), Wrap Text (In Line, Square, Tight and Through as
+    one wrapfigure, Top and Bottom as a figure; Behind and In Front of Text disabled: LaTeX has no
+    form), Size and Position… (all of them in one step). In line with text is a center; a figure
+    from it has `\centering`, back byte for byte, its `\captionof` becoming `\caption` and back; a
+    wrapfigure takes the picture's share of the line and the picture `width=\linewidth`, which
+    goes back with it (a length stays the picture's); sizing a picture that fills its wrapfigure
+    sizes the wrapfigure. Not moved, the reason said: a picture in a sentence, in a box, in
+    multicols, in a list or before one (wrapping), in beamer, a figure holding more than it,
+    `[H]` under memoir. The same Position, Wrap Text and Rotate on Layout's Arrange; the picture's
+    right click menu (C3: Change Picture, Size and Position, Crop, Wrap Text, Insert Caption, Alt
+    Text, Show Picture Source, then the selection's items), which a long press opens on a phone.
+    *Insert's objects*, each a block of its own in a center after the caret's block (never a
+    float, so never in columns or another float), its package once: Shapes (twelve, a TikZ
+    picture of one path, filled blue like Word's), Icons (a gallery of 32 fontawesome5 names,
+    `\faIcon{…}` at the caret), SmartArt (five kinds of smartdiagram from items one per line),
+    Chart (column, bar or line from a grid holding Word's sample data, a pgfplots axis with its
+    coordinates in the source and `\pgfplotsset{compat=1.18}` with the package; inline data, not
+    a .csv: the chart travels with its paragraph, one undo, and Table from Data File already makes
+    .csv tables), Screenshot (the browser's capture, one frame as screenshot.png placed as a
+    picture), Text Box (`\fbox` round a minipage, a shaded tcolorbox, or one beside the text in a
+    wrapfigure; "Type here." selected to type over), Drop Cap (Dropped, In Margin, None, Options:
+    `\lettrine[lines=3]{T}{his}`, `lhang=1`, `findent`; None gives the word back byte for byte).
+    *The page* draws a picture as graphicx sets it: `graphicBox` applies trim, width, height,
+    scale, keepaspectratio and angle in graphicx's order to the file's natural size, which
+    `naturalSize` reads from its first bytes as pdfTeX does (a PNG's pHYs and a JPEG's JFIF dots
+    per inch, rounded; a PDF's box), so a crop cuts where TeX cuts and a turn takes TeX's box; a
+    picture with no width is drawn at TeX's size; flips and frames are drawn on the picture
+    (composed: a flip of a flip is none); a picture's width is now a share of its line, not of its
+    own shrunk box (a small picture at `0.5\linewidth` was drawn at half its own size); its alt
+    text is the image's alt; a center holding `\captionof{figure}` is drawn as TeX prints it, the
+    picture with "Figure 1: …" under it, where it stands; a wrapfigure's parts are as wide as it is (it is drawn as a float
+    until B6 wraps text round it, as the gap list says). `src/drawing.js` draws what Insert
+    writes, and hand written pictures in the same subset: a TikZ picture of plain paths (lines,
+    arrows, rectangles, circles, ellipses, polygons; xcolor names and mixes, widths, dashes,
+    rounded corners; anything else keeps the source box), a pgfplots axis of bars or lines from
+    coordinates, smartdiagram's boxes and arrows, each icon, a tcolorbox framed at its width and
+    colour, an `\fbox` minipage at its width, a lettrine letter over its lines. *C and C++:* the
+    browser decodes the pixels and the page draws them; what it lacked was the resolution TeX
+    reads, forty lines of bounded header parsing, so no C library was brought in (the brief's
+    rule: none where the browser's canvas is enough). *Word:* a picture's alt text goes out as
+    its description (`descr`) and comes back as `alt={…}` (pandoc 3.10 writes it); a height with
+    the width goes too. *Phones:* at 390 and 360 px with touch the tap selects, a finger on a
+    handle sizes the picture with the page held still (no pan, no pinch zoom while a handle or a
+    bar is held), the handles and bars are 44 px targets under `pointer: coarse`, as are the
+    tab's buttons and fields and the dialogs' fields; the dialogs are sheets at the screen's foot;
+    fixed on the way: a button's screen reader name (`.sr`) placed where the button is widened a
+    phone's page when the button was past the screen's edge in the scrolling row (the Picture
+    Format tab took a 360 px page to 847 px). *Agents:* every command by id, the dialogs' fields
+    as arguments (llms-full.txt), validated (a length or a share, crops finite, drop cap lines 2
+    to 10); `test/agent.py` opens Picture Format by a press on a picture. *Security:* the audit
+    skill's quick profile on the changed files (notes outside the repository): the one innerHTML
+    takes the code's own icon table; a document's words reach the page as text and its colours
+    only from xcolor's table; every style written is a number; every reading capped (text,
+    commands, points, chunks, depth), each with a bounded-time test; no finding.
+    Evidence: `npm test` green (`picture.test.mjs` 15 groups and `drawing.test.mjs` 6, new;
+    `word` 58, one new: alt text both ways); `tabs.py` 116, `agent.py` 140 (Picture Format
+    reached by a press on a picture), `browser.py` 189, `ribbon.py` 268, `page.py` 139, `word.py`
+    111, `offline.py` 54/54, `launch.py` 18/18, the corpus model run 716 of 716, `pages_check.py`
+    fits, actionlint clean; `test/picture.py` 147 (new): the round trip rule on 22 commands with their hand written forms,
+    sizing by mouse and by finger, the fields, Crop, the dialogs, the menus, where a picture
+    cannot go, the page's drawing measured, Insert's objects, phones at two widths, and in the
+    page with `dist/tex` every construct compiled by pdfLaTeX with no error and the picture's box
+    in the PDF equal to the page's within 2.5 pt for a quarter turn and for a crop. Not done:
+    I12's handles that write a shape's coordinates (a shape is edited in its source box, its
+    drawing redrawn); Chart's grid opened again on a chart (its coordinates are edited in the
+    source); P7's border colour and weight; icons are the code's own drawings of fontawesome5's
+    symbols, not its glyphs; rotation by a free angle with the mouse (the dialog's Rotation
+    field takes any angle); the wrap's text flow on the page (B6).
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000

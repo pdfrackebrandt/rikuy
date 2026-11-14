@@ -42,6 +42,10 @@ on:
       - 'test/page.py'
       - 'src/layout.js'
       - 'src/pagesrc.js'
+      - 'test/picture.py'
+      - 'src/picture.js'
+      - 'src/cmd/picture.js'
+      - 'src/drawing.js'
       - 'test/serve.py'
       - 'test/browser.py'
       - '.github/workflows/tex.yml'
@@ -122,6 +126,8 @@ jobs:
         run: cd test && python3 table.py reviewed verified compiled
       - name: The page's set up in TeX's PDF (paper size, header, line numbers) and Print
         run: cd test && python3 page.py compile_pdf
+      - name: Pictures and objects compiled in the page, the picture's box in the PDF against the page's
+        run: cd test && python3 picture.py compiled
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rikuy-dist

@@ -3,6 +3,9 @@
 // to the block start, so unchanged blocks survive edits elsewhere.
 
 import { siInMath } from './siunitx.js';
+import { graphicBox, unescapeAlt } from './picture.js';
+import { drawRaw, drawSmart, drawIcon, smartItems, colorOf } from './drawing.js';
+import { parseKV } from './preamble.js';
 
 export const BLOCKS = new Map();
 let blockSeq = 1;
@@ -197,6 +200,9 @@ export class Renderer {
         // (a paragraph to a screen reader and an agent, which can then pick one inside the page)
         el.setAttribute('role', 'paragraph');
         if (it.cls) for (const c of it.cls.split(/\s+/).filter(Boolean)) el.classList.add(c);
+        // (a tcolorbox's width and its background, B8: a share of the line, a colour of xcolor's)
+        if (it.boxW) { el.style.width = (it.boxW * 100) + '%'; if (it.boxC) el.style.marginLeft = el.style.marginRight = 'auto'; }
+        if (it.boxBg && colorOf(it.boxBg)) el.style.setProperty('--tcb-bg', colorOf(it.boxBg));
         if (it.indent) el.classList.add('ind');
         if (it.cont) el.classList.add('cont');
         if (it.align) el.classList.add('al-' + it.align);
@@ -280,7 +286,14 @@ export class Renderer {
       case 'float': {
         el.classList.add('flt', 'flt-' + it.kind);
         if (it.wide) el.classList.add('wide');
+        // a wrapfigure: its parts as wide as it is (its pictures' \linewidth), until the page wraps
+        // text round it (B6); a share of the line, or a length in points
+        const ww = it.wrapW ? cssLength(it.wrapW) : null;
+        if (ww) { el.classList.add('flt-wrap'); el.style.setProperty('--wrapw', ww); }
+        const lwWas = this.lineW;
+        if (ww) this.lineW = it.wrapW;
         for (const p of it.parts) el.appendChild(this.floatPart(p));
+        this.lineW = lwWas;
         item.isFloat = it.kind !== 'inline';
         if (it.kind === 'inline' && it.parts.length === 1 && it.parts[0].type === 'tabular' && it.parts[0].rows.length > 3) { item.splittable = true; item.rowSplit = true; }
         item.placement = it.placement || 'tbp';
@@ -291,6 +304,20 @@ export class Renderer {
       case 'raw': {
         el.classList.add('raw', 'atom');
         el.contentEditable = 'false';
+        // a TikZ picture of plain paths or a pgfplots axis (Insert › Shapes, Chart): drawn as TeX
+        // prints it (src/drawing.js); a click edits its source as before
+        const whole = it.name === 'tikzpicture' && it.s != null && it.e != null && it.e - it.s < 20000 ? (this.app.files.get(it.f) || '').slice(it.s, it.e) : null;
+        const pic = whole && /^\\begin\s*\{tikzpicture\}/.test(whole) ? drawRaw(whole) : null;
+        if (pic) {
+          el.classList.add('drawn');
+          el.title = 'TikZ picture: click to edit its source';
+          el.appendChild(pic);
+          const idx = B.atoms.length;
+          B.atoms.push({ kind: 'raw', f: it.f, s: this.rel(it.s), e: this.rel(it.e), is: this.rel(it.is), ie: this.rel(it.ie), name: it.name });
+          el.dataset.a = B.id + '.' + idx;
+          item.sbEm = 0.6;
+          break;
+        }
         const head = div('raw-h');
         head.textContent = it.verb ? '' : (it.name || 'source');
         if (!it.verb) el.appendChild(head);
@@ -551,6 +578,9 @@ export class Renderer {
           const tag = x.st === 'sup' ? 'sup' : x.st === 'sub' ? 'sub' : 'span';
           const s = document.createElement(tag);
           s.className = 'y y-' + (x.st || 'none') + (x.decl ? ' decl' : '');
+          if (x.tight) s.classList.add('tight');
+          if (x.st === 'dropcap') { s.style.setProperty('--dl', String(x.lines || 2)); if (x.hang) s.classList.add('hang'); }
+          if (x.mp) { const w = cssLength(x.mp.replace(/^\\dimexpr\s*|\s*-.*$/g, '')); s.classList.add('mp'); if (w) s.style.width = w; }
           paint(s, x);
           if (x.st === 'dir') setDir(s, x.dir);
           if (x.title) s.title = x.title;
@@ -561,6 +591,23 @@ export class Renderer {
             s.dataset.y = B.id + '.' + idx;
           }
           this.inl(x.kids, s);
+          // A box around one picture (B8: a border, a flip, a turn): what it does is drawn on the
+          // picture, through custom properties its frame reads (src/app.css, .a-img); around words a
+          // scale or a turn is shown as an unknown command's words were
+          if (/^(fbox|fliph|xf)$/.test(x.st) && picOnly(s)) {
+            s.classList.add('pic');
+            // (boxes inside boxes compose: a flip of a flip is none; kept on the picture's element)
+            const a = s.querySelector('.a-img');
+            if (a && x.st !== 'fbox') {
+              let fx = +(a.dataset.fx || 1), fy = +(a.dataset.fy || 1), rot = +(a.dataset.rot || 0);
+              if (x.st === 'fliph') fx = -fx;
+              if (x.xf && x.xf.sx != null) { fx *= clampN(x.xf.sx); fy *= clampN(x.xf.sy); }
+              if (x.xf && x.xf.rot != null) rot += clampN(x.xf.rot, 360);
+              a.dataset.fx = String(fx); a.dataset.fy = String(fy); a.dataset.rot = String(rot);
+              a.style.scale = fx + ' ' + fy;
+              a.style.rotate = rot ? (-rot) + 'deg' : '';
+            }
+          } else if (x.st === 'xf') s.classList.add('y-unk');
           parent.appendChild(s);
           break;
         }
@@ -680,15 +727,29 @@ export class Renderer {
       case 'img': {
         const url = this.app.assetURL(x.file);
         const w = imgWidth(x.opts);
+        // (its keys, read once: alt text, and for a crop, a turn or a height the box graphicx
+        // makes of the file's natural size, which comes from its first bytes: src/picture.js)
+        const kv = x.opts && x.opts.length < 4000 ? parseKV(x.opts) : [];
+        const alt = kv.find((k) => k.key === 'alt');
+        const fancy = kv.some((k) => /^(trim|viewport|angle|height|totalheight)$/.test(k.key));
+        const nat = (fancy || !w) && this.app.picNatural ? this.app.picNatural(x.file) : null;
+        const box = fancy && nat ? this.picBox(kv, nat) : null;
         if (url) {
           const img = document.createElement('img');
           img.src = url;
-          img.alt = x.file;
-          if (w) img.style.width = w;
-          s.appendChild(img);
+          img.alt = alt && alt.value ? unescapeAlt(alt.value.replace(/^\{([\s\S]*)\}$/, '$1')) : x.file;
+          if (box) this.picDraw(s, img, box);
+          else {
+            // (the width on the box, a share of its line, not of the box's own shrunk width)
+            if (w) { s.style.width = w; img.style.width = '100%'; }
+            else if (nat) img.style.width = ptCss(nat.w * 72.27 / 72);
+            s.appendChild(img);
+          }
         } else {
           s.classList.add('img-missing');
-          if (w) s.style.width = w;
+          if (box) { s.style.width = ptCss(box.bw); s.style.aspectRatio = (box.bw / box.bh).toFixed(4); }
+          else if (nat) s.style.aspectRatio = (nat.w / nat.h).toFixed(4);
+          if (w && !box) s.style.width = w;
           const lab = document.createElement('span');
           lab.textContent = x.file;
           const sub = document.createElement('small');
@@ -697,6 +758,17 @@ export class Renderer {
           s.append(lab, sub);
         }
         rec.file = x.file;
+        break;
+      }
+      case 'icon': {
+        // fontawesome5's icon, the code's drawing of it (src/drawing.js), at the text's size
+        s.appendChild(drawIcon(x.name));
+        s.title = '\\faIcon{' + x.name + '}';
+        break;
+      }
+      case 'smart': {
+        s.appendChild(drawSmart(x.kind, smartItems(x.items || '')));
+        s.title = 'smartdiagram: click to edit its items';
         break;
       }
       case 'widget': {
@@ -755,6 +827,51 @@ export class Renderer {
     s.dataset.a = B.id + '.' + idx;
     return s;
   }
+}
+
+// (B8) the box of a picture, in TeX points, its line the wrapfigure's or the text's width
+Renderer.prototype.picBox = function (kv, nat) {
+  const g = this.app.layout && this.app.layout.g, tw = g && g.tw ? g.tw : 345;
+  const lw = this.lineW ? (lengthPtOf(this.lineW, tw) || tw) : tw;
+  try { return graphicBox(kv, nat, lw); } catch (e) { return null; }
+};
+// A picture drawn as graphicx sets it: its box the size TeX gives it, the picture turned in it
+// about its middle, of the file only the part kept (trim), the rest cut off where clip says so
+Renderer.prototype.picDraw = function (s, img, B) {
+  s.classList.add('a-box');
+  s.style.width = ptCss(B.bw); s.style.height = ptCss(B.bh);
+  const inner = document.createElement('span');
+  inner.className = 'pic-in' + (B.clip ? ' clip' : '');
+  inner.style.width = ptCss(B.iw); inner.style.height = ptCss(B.ih);
+  if (B.angle) inner.style.rotate = (-B.angle) + 'deg';
+  const kw = 1 - B.crop.l - B.crop.r, kh = 1 - B.crop.t - B.crop.b;
+  img.style.width = ptCss(B.iw / Math.max(0.01, kw)); img.style.height = ptCss(B.ih / Math.max(0.01, kh));
+  img.style.left = ptCss(-B.crop.l * B.iw / Math.max(0.01, kw)); img.style.top = ptCss(-B.crop.t * B.ih / Math.max(0.01, kh));
+  inner.appendChild(img);
+  s.appendChild(inner);
+};
+const ptCss = (pt) => 'calc(var(--pt) * ' + (Math.round(pt * 100) / 100) + ' * 1px)';
+const clampN = (v, m = 50) => (Number.isFinite(v) ? Math.max(-m, Math.min(m, v)) : 1);
+function lengthPtOf(t, lw) {
+  const m = /^([\d.]*)\s*(\\(?:linewidth|textwidth|columnwidth|hsize)|cm|mm|in|pt|bp|em)$/.exec(String(t).trim());
+  if (!m) return null;
+  const f = m[1] === '' ? 1 : parseFloat(m[1]);
+  if (!Number.isFinite(f)) return null;
+  return m[2][0] === '\\' ? f * lw : f * { cm: 28.4528, mm: 2.84528, in: 72.27, pt: 1, bp: 72.27 / 72, em: 10 }[m[2]];
+}
+// a wrapfigure's width as CSS: a share of the line, or a length that follows the zoom
+function cssLength(t) {
+  const m = /^([\d.]*)\s*\\(linewidth|textwidth|columnwidth|hsize)$/.exec(String(t).trim());
+  if (m) { const f = m[1] === '' ? 1 : parseFloat(m[1]); return Number.isFinite(f) ? Math.min(100, f * 100) + '%' : null; }
+  const pt = lengthPtOf(t, 0);
+  return pt ? ptCss(pt) : null;
+}
+// an element that holds one picture and nothing else (spaces aside), maybe in other boxes of one picture
+function picOnly(s) {
+  const kids = [...s.childNodes].filter((n) => !(n.nodeType === 3 && !n.textContent.trim()));
+  if (kids.length !== 1 || kids[0].nodeType !== 1) return false;
+  const k = kids[0];
+  return k.classList.contains('a-img') || (k.classList.contains('pic') && k.classList.contains('y'));
 }
 
 function chr(text, cls) {

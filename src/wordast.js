@@ -14,6 +14,8 @@ import { findComments } from './share.js';
 import { texToPlain } from './bib.js';
 import { rtlDocument } from './scripts.js';
 import { bidiDoc, dirSpan, hasRtl, scanDir } from './wordbidi.js';
+import { parseKV } from './preamble.js';
+import { unescapeAlt } from './picture.js';
 
 export const API = [1, 23, 1, 2];
 const OBJ = '\uFFFC';
@@ -563,7 +565,12 @@ class Walker {
         if (!file) { this.degrade('missing figure'); return [{ t: 'Emph', c: [Str('[' + (name || 'figure') + ']')] }]; }
         this.images.add(file);
         const w = imgWidth(x.opts);
-        return [{ t: 'Image', c: [attr('', [], w ? [['width', w]] : []), [], [file, '']] }];
+        // (B8) its alt text, which Word keeps as the picture's description (descr) and pandoc
+        // reads back as alt={…}; a height given with the width (Lock Aspect Ratio off) too
+        const kv = x.opts && x.opts.length < 4000 ? parseKV(x.opts) : [];
+        const alt = kv.find((k) => k.key === 'alt' && k.value), hk = kv.find((k) => k.key === 'height' && k.value);
+        const h = w && hk ? imgLength(hk.value) : null;
+        return [{ t: 'Image', c: [attr('', [], [...(w ? [['width', w]] : []), ...(h ? [['height', h]] : [])]), alt ? [Str(unescapeAlt(alt.value.replace(/^\{([\s\S]*)\}$/, '$1')))] : [], [file, '']] }];
       }
       case 'br': { this.ro('\n'); return [{ t: 'LineBreak' }]; }
       case 'verb': { const ai = this.atom({ k: 'verb', f: x.f, s: x.s, e: x.e, ro: !!x.ro }); this.atomText(x.text, ai); return [{ t: 'Code', c: [attr(), x.text] }]; }
@@ -649,6 +656,8 @@ export function citeNotes(src, s, e) {
   return { pre: '', post: m[1] != null ? texToPlain(m[1]) : '' };
 }
 
+// a length of graphicx's as Word takes one (cm, mm, in, pt), or null
+function imgLength(v) { const m = /^\s*([\d.]+)\s*(cm|mm|in|pt)\s*$/.exec(String(v)); return m ? m[1] + m[2] : null; }
 function imgWidth(opts) {
   if (!opts) return null;
   let m = /width\s*=\s*([\d.]*)\s*\\(textwidth|linewidth|columnwidth|hsize)/.exec(opts);

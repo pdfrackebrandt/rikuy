@@ -17,7 +17,9 @@ const STY = {
   textsl: 'sl', textmd: 'md', textnormal: 'rm', underline: 'ul', uline: 'ul', uuline: 'ul', uwave: 'ul',
   sout: 'so', xout: 'so', hl: 'hl', textsuperscript: 'sup', textsubscript: 'sub', mbox: 'nb', text: 'rm',
   fbox: 'fbox', MakeUppercase: 'upper', uppercase: 'upper', MakeLowercase: 'lower', lowercase: 'lower',
-  textcircled: 'rm', centerline: 'rm', foreignlanguage: '', textls: '', ensure: '', phantom: 'ph', hphantom: 'ph'
+  textcircled: 'rm', centerline: 'rm', foreignlanguage: '', textls: '', ensure: '', phantom: 'ph', hphantom: 'ph',
+  // graphicx's mirror (B8: a picture flipped by Flip Horizontal)
+  reflectbox: 'fliph'
 };
 const DECL = {
   bf: 'bf', bfseries: 'bf', it: 'it', itshape: 'it', em: 'em', tt: 'tt', ttfamily: 'tt', sc: 'sc', scshape: 'sc',
@@ -1351,8 +1353,33 @@ class Builder {
     }
     const thm = this.thms.get(name) || this.thms.get(base) || (DEFAULT_THMS[base] ? { title: DEFAULT_THMS[base], counter: base, style: /definition|assumption|example|remark|notation|condition|problem|exercise|question/.test(base) ? 'definition' : 'plain', auto: true } : null);
     if (thm) return this.theorem(nd, ctx, env, thm, name);
+    // a tcolorbox (B8's shaded text box): its paragraphs in one frame, as wide as its width= says
+    if (name === 'tcolorbox') {
+      const o = nd.args[0] ? this.argText(ctx, nd.args[0]) : '';
+      const r = this.container(nd, ctx, env, { cls: (env.cls || '') + ' tcb' });
+      const ps = r.items.filter((x) => x.type === 'p');
+      if (ps.length) { ps[0].cls = (ps[0].cls || '') + ' tcb-a'; ps[ps.length - 1].cls = (ps[ps.length - 1].cls || '') + ' tcb-z'; }
+      const w = /(?:^|,)\s*width\s*=\s*([\d.]*)\s*\\(?:linewidth|textwidth|columnwidth)/.exec(o);
+      const share = w ? (w[1] === '' ? 1 : parseFloat(w[1])) : null;
+      const bg = /(?:^|,)\s*colback\s*=\s*([A-Za-z]+(?:![\d.]+(?:![A-Za-z]+)?)*)/.exec(o);
+      for (const x of ps) { if (share && share > 0 && share < 1) { x.boxW = share; x.boxC = /(?:^|,)\s*center\s*(,|$)/.test(o); } if (bg) x.boxBg = bg[1]; }
+      return r;
+    }
     if (['quote', 'quotation', 'verse'].includes(name)) {
       return this.container(nd, ctx, env, { cls: (env.cls || '') + ' quote', noIndentFirst: name !== 'quotation' });
+    }
+    // a center holding a \captionof (B8's picture in line with a caption, caption's package):
+    // drawn as TeX prints it, a figure's parts with "Figure 1: …" under them, where it is written
+    if (['center', 'flushleft', 'flushright'].includes(name) && !env.inMc) {
+      const cap = nd.nodes.find((n) => n.t === 'cmd' && n.name === 'captionof' && n.args[0]);
+      if (cap) {
+        const k = this.argText(ctx, cap.args[0]).trim();
+        if (k === 'figure' || k === 'table') {
+          const r = this.floatBlock(nd, ctx, env, k, name === 'center' ? null : name === 'flushleft' ? 'left' : 'right');
+          for (const it of r.items) if (it.type === 'float') it.placement = 'H';
+          return r;
+        }
+      }
     }
     if (['center', 'flushleft', 'flushright'].includes(name)) {
       return this.container(nd, ctx, env, { align: { center: 'center', flushleft: 'left', flushright: 'right' }[name], noIndentFirst: true });
@@ -1542,13 +1569,13 @@ class Builder {
     return { f: ctx.f, s: nd.s, e: nd.e, items, fns };
   }
 
-  floatBlock(nd, ctx, env) {
-    const kind = /table/.test(nd.name) ? 'table' : 'figure';
+  floatBlock(nd, ctx, env, kindOver, alignOver) {
+    const kind = kindOver || (/table/.test(nd.name) ? 'table' : 'figure');
     const fns = [];
     const parts = [];
     let num = '';
     const saveT = this.lastTarget;
-    let align = null;
+    let align = alignOver || null;
     let para = [];
     // (B7) the settings before a table in the float, drawn with it
     let tset = null;
@@ -1602,7 +1629,9 @@ class Builder {
     this.lastTarget = saveT;
     if (!parts.length) parts.push({ type: 'p', inl: [{ k: 'chip', f: ctx.f, s: nd.s, e: nd.e, text: kind, title: 'Empty ' + kind }], align: 'center', indent: false, ctx: 'p', f: ctx.f });
     const placement = nd.args[0] ? this.argText(ctx, nd.args[0]) : 'tbp';
-    return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'float', kind, num, parts, f: ctx.f, placement, wide: /\*$/.test(nd.name) }], fns };
+    // (a wrapfigure's width: the line its pictures' \linewidth is, B8)
+    const wrapW = /^wrap(figure|table)$/.test(nd.name) && nd.args[3] ? this.argText(ctx, nd.args[3]).trim() : null;
+    return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'float', kind, num, parts, f: ctx.f, placement, wide: /\*$/.test(nd.name), wrapW }], fns };
   }
 
   // set: what stands before the table in its float or group (B7: \rowcolors, \arraystretch,
@@ -2058,13 +2087,30 @@ class Builder {
       out.push(this.styAtom(ctx, { k: 'sty', st: 'dir', dir: d, kids, s: nd.s, e: nd.e, is: a.is, ie: a.ie, cmd: name }));
       return false;
     }
+    // graphicx's \scalebox{x}[y]{...} and \rotatebox[...]{angle}{...}: drawn scaled and turned (B8:
+    // Flip Vertical writes \scalebox{1}[-1]{...}; a hand written \rotatebox turns a picture)
+    if ((name === 'scalebox' || name === 'rotatebox') && nd.args.filter((x) => x && !x.o).length >= 2) {
+      acc.flush();
+      const ms = nd.args.filter((x) => x && !x.o), a = ms[ms.length - 1];
+      const n1 = parseFloat(this.argText(ctx, ms[0])), o = name === 'scalebox' ? nd.args.find((x) => x && x.o) : null;
+      const xf = name === 'scalebox' ? { sx: Number.isFinite(n1) ? n1 : 1, sy: o && Number.isFinite(parseFloat(this.argText(ctx, o))) ? parseFloat(this.argText(ctx, o)) : (Number.isFinite(n1) ? n1 : 1) } : { rot: Number.isFinite(n1) ? n1 : 0 };
+      const kids = this.inl(a.nodes, ctx, fns);
+      if (!kids.length) kids.push(this.ph(ctx, a.is));
+      out.push(this.styAtom(ctx, { k: 'sty', st: 'xf', xf, kids, s: nd.s, e: nd.e, is: a.is, ie: a.ie, cmd: name }));
+      return false;
+    }
     if (name in STY && nd.args.some(Boolean)) {
       acc.flush();
       const a = nd.args.filter(Boolean).pop();
       if (name === 'foreignlanguage' || name === 'textls') { out.push(...this.inl(a.nodes, ctx, fns)); return false; }
       const kids = this.inl(a.nodes, ctx, fns);
       if (!kids.length) kids.push(this.ph(ctx, a.is));
-      out.push(this.styAtom(ctx, { k: 'sty', st: STY[name], kids, s: nd.s, e: nd.e, is: a.is, ie: a.ie, cmd: name }));
+      const y = this.styAtom(ctx, { k: 'sty', st: STY[name], kids, s: nd.s, e: nd.e, is: a.is, ie: a.ie, cmd: name });
+      // (an \fbox with no gap: \fboxsep set to 0pt just before it, as Picture Border writes it)
+      // (an \fbox around one minipage, Insert › Text Box: a box of the minipage's width)
+      if (name === 'fbox') { const sol = a.nodes.filter((n) => !(n.t === 'text' && !ctx.src.slice(n.s, n.e).trim()) && n.t !== 'comment'); if (sol.length === 1 && sol[0].t === 'env' && sol[0].name === 'minipage') { const wa = sol[0].args.filter((x) => x && !x.o).pop(); y.mp = wa ? this.argText(ctx, wa).trim().slice(0, 80) : '\\linewidth'; } }
+      if (name === 'fbox' && /\\fboxsep\s*(=\s*0\s*(pt)?|\}?\s*\{\s*0\s*(pt|cm|mm|bp)?\s*\})\s*$/.test(ctx.src.slice(Math.max(0, nd.s - 40), nd.s))) y.tight = true;
+      out.push(y);
       return false;
     }
     if (name in DECL) {
@@ -2175,6 +2221,35 @@ class Builder {
       const file = A(1).trim();
       const opts = A(0);
       out.push(this.atom(ctx, { k: 'img', s: nd.s, e: nd.e, file, opts }));
+      return false;
+    }
+    // fontawesome5's \faIcon{name} (Insert › Icons): one atom, drawn as the icon
+    if ((name === 'faIcon' || name === 'faIcon*') && nd.args.some((x) => x && !x.o)) {
+      acc.flush();
+      out.push(this.atom(ctx, { k: 'icon', s: nd.s, e: nd.e, name: A(nd.args[0] && nd.args[0].o ? 1 : 0).trim().slice(0, 60) }));
+      return false;
+    }
+    // smartdiagram's \smartdiagram[kind]{items} (Insert › SmartArt): one atom, drawn as its boxes
+    if (name === 'smartdiagram' && nd.args.some((x) => x && !x.o)) {
+      acc.flush();
+      const o = nd.args.find((x) => x && x.o), m = nd.args.filter((x) => x && !x.o).pop();
+      out.push(this.atom(ctx, { k: 'smart', s: nd.s, e: nd.e, kind: o ? this.argText(ctx, o).trim().slice(0, 60) : 'flow diagram', items: ctx.src.slice(m.is, m.ie).slice(0, 4000) }));
+      return false;
+    }
+    // lettrine's \lettrine[options]{T}{his} (Insert › Drop Cap): the letter dropped over its lines,
+    // the rest of the word in small capitals, both typed in place
+    if (name === 'lettrine' && nd.args.filter((x) => x && !x.o).length >= 2) {
+      acc.flush();
+      const ms = nd.args.filter((x) => x && !x.o), o = nd.args.find((x) => x && x.o);
+      const ot = o ? this.argText(ctx, o) : '';
+      const ln = /(?:^|,)\s*lines\s*=\s*(\d+)/.exec(ot), hang = /(?:^|,)\s*lhang\s*=\s*([\d.]+)/.exec(ot);
+      const k1 = this.inl(ms[0].nodes, ctx, fns), k2 = this.inl(ms[1].nodes, ctx, fns);
+      if (!k1.length) k1.push(this.ph(ctx, ms[0].is));
+      const y = this.styAtom(ctx, { k: 'sty', st: 'dropcap', kids: k1, s: nd.s, e: nd.e, is: ms[0].is, ie: ms[0].ie, cmd: name });
+      y.lines = ln ? Math.max(2, Math.min(10, +ln[1])) : 2;
+      if (hang && +hang[1] > 0) y.hang = Math.min(1, +hang[1]);
+      out.push(y);
+      if (k2.length) out.push(this.styAtom(ctx, { k: 'sty', st: 'sc', kids: k2, s: ms[1].s, e: ms[1].e, is: ms[1].is, ie: ms[1].ie, cmd: 'lettrine' }));
       return false;
     }
     if (name === 'rikuywidget') {

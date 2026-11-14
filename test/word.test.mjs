@@ -1529,4 +1529,22 @@ await ok('the page\'s set up goes to Word and comes back: paper, margins, column
   assert.equal(plan.files.get('main.tex'), src.replace('Hello.', 'Hello again.'));
 });
 
+await ok('a picture\'s alt text and size go to Word (its description) and come back as alt={…} (B8)', () => {
+  const png = new Uint8Array(fs.readFileSync(new URL('../build/icons/' + fs.readdirSync(new URL('../build/icons/', import.meta.url)).find((f) => f.endsWith('.png')), import.meta.url)));
+  const src = doc('Before.\n\n\\begin{center}\n\\includegraphics[width=0.5\\linewidth,alt={A 50\\% rise in {cats}}]{a.png}\n\\end{center}\n\nAfter.', '\\usepackage{graphicx}\n');
+  const files = new Map([['main.tex', src]]);
+  const m = buildModel({ files, main: 'main.tex' });
+  const W = buildWordDoc(m, files, { now: 0, main: 'main.tex', asset: (n) => (n === 'a.png' ? 'a.png' : null) });
+  const E = exportDocx(P, { doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources: { 'a.png': png }, bibs: [], project: { name: 'Paper', main: 'main.tex', files: [...files] } });
+  const d = text(unzip(E.docx).get('word/document.xml'));
+  assert.match(d, /<wp:docPr [^>]*descr="A 50% rise in \{cats\}"/);
+  const r = docxToLatex(P, E.docx, 'p.docx');
+  assert.ok(/\\includegraphics\[[^\]]*alt=\{A 50\\% rise in \\\{cats\\\}\}/.test(r.tex), r.tex.slice(r.tex.indexOf('includegraphics') - 1, r.tex.indexOf('includegraphics') + 120));
+  // a height with the width (the shape not kept) goes too
+  const two = src.replace('width=0.5\\linewidth,', 'width=4cm,height=2cm,');
+  const W2 = buildWordDoc(buildModel({ files: new Map([['main.tex', two]]), main: 'main.tex' }), new Map([['main.tex', two]]), { now: 0, main: 'main.tex', asset: (n) => n });
+  const img = JSON.stringify(W2.doc).match(/"t":"Image","c":\[\["",\[\],(\[[^\]]*\](?:,\[[^\]]*\])*\])/);
+  assert.ok(img && img[1].includes('"height","2cm"') && img[1].includes('"width","4cm"'), img && img[1]);
+});
+
 console.log('word: ' + n + ' groups of checks passed');
