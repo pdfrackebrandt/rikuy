@@ -928,6 +928,145 @@ Tests:
     `offline.py` 54/54, `launch.py` 18/18, `deploy_check.py` 43/43, `pages_check.py` fits; the
     security audit's quick profile on the changed files (notes outside the repository) found
     three more stalls of the same kind, fixed above with tests.
+41. **B3, lists as in Word.** Done in the code (branch `wordgap-b3-lists`, on task 38's frame and
+    B5's fold rule; GAP rows H32 to H38, H39 in lists, H40, A3, and task 29's labelled item).
+    *Levels.* Tab and Shift+Tab in a list item (not in a table cell, whose keys they stay), and
+    Home's new Increase Indent and Decrease Indent: the selected items one level down, under the
+    item before them, into the list that ends that item or a new one of their kind; one level up,
+    after the item they stood in, the items after them and what that item held after its list
+    going under the last of them (`src/lists.js` `demote`, `promote`: the new text of the block,
+    returned as its smallest edit with the caret and the selection followed into it; structural
+    lines re-indented, never a verbatim one; CRLF files kept CRLF). Enter in an empty nested item
+    takes it a level up, as Word's; Shift+Tab at the first level leaves the page as it always did;
+    the first item has none to go under and a fifth level is refused (LaTeX nests four), each
+    said in a toast and in the button's tooltip. Change List Level (menus, right click) goes to a
+    level in one undo. Outside lists Increase and Decrease Indent run `paragraph-indent` and
+    `paragraph-outdent` where B2 registers them, and are off until then.
+    *Bulleted and Numbered list* are split buttons now (same ids and names): their arrows open
+    Word's libraries as grids of tiles (bullets • ◦ ▪ – ▸ ✓ ⋆ ⋄ →; numbers 1. 1) I. A. a) a. (a) i.;
+    None makes the items paragraphs), the list's own format checked, then Change List Level,
+    Define New Bullet (a grid of 28 symbols, or a character or LaTeX typed, written only when its
+    braces and dollars balance), Define New Number Format (style, text before and after, start),
+    Set Numbering Value (or continue the list before), Restart at 1 (a middle item starts a new
+    list), Continue Numbering (enumitem's `resume`), List spacing (LaTeX's, `noitemsep`, `nosep`,
+    an `itemsep` of your own). A format on paragraphs makes the list with it, on the other kind
+    changes the kind with it, in one step. *Written* as enumitem's options
+    (`\begin{enumerate}[label=\alph*),start=3]`, `\usepackage{enumitem}` once through
+    `App.packageEdits`; `amssymb` for ▪ ▸ ✓ only where no math font package (newtxmath,
+    unicode-math and the like, which clash with it) gives its symbols); in a document that labels
+    lists another way, that way: the enumerate package's `[(a)]`, paralist's, beamer's (numbers
+    only; bullets there are its theme's, said), a list's own `\renewcommand{\labelitemi}`. *Hand
+    written forms are Rikuy's own:* a pandoc list's `\def\labelenumi{\alph{enumi})}` and
+    `\setcounter{enumi}{4}`, the enumerate package's "(a)", `\setlength{\itemsep}{0pt}`,
+    `\tightlist`, the preamble's `\setlist` and `\renewcommand` are drawn, shown checked and
+    changed where they are written. *Multilevel list* (Home, a menu): five presets and LaTeX's own
+    two, as `\setlist[enumerate,k]{label=...}` lines (an existing one changed in place), the
+    caret's whole list made that kind; Define New Multilevel List sets each of four levels (style,
+    text, the levels above, or a bullet). *Description list* (the Multilevel menu, the insert
+    list, the right click menu). *Sort* (Home): the selected items of a list (all of them with a
+    caret) or the selected paragraphs, by the words the page shows, as text, a number or a date,
+    ascending or descending, case sensitive or not; the space between them kept, a comment
+    ending one keeping its line. *Automatic lists* (A3): "- ", "* ", "1. ", "3) ", "a) ", "(i) "
+    typed at a paragraph's start make it a list in that format from that number, joined to the
+    list just before where that one goes on so; the typed space is a step of its own, so Undo gives
+    back what was typed; `prefs.autoLists = false` switches it off (B11's Options shows it; the
+    toast offers it). *Task 29's labelled item* is made a paragraph now, its label kept as its
+    first words (a description's term in bold), as are items of nested lists and items selected
+    together. *The page draws what TeX prints* (`Builder.listBlock` reads lists through
+    `formatOf`): enumitem's labels at every level, `label*`, `start`, `resume` as enumitem counts
+    it (the last list that ended, at its level), bullets of the library and typed characters, the
+    space between items (nosep, noitemsep, itemsep, `\tightlist`), `\ref` as enumitem gives it (the
+    label as written) or LaTeX (`\theenumi` with the levels above: 1a, 1(a)i); a change of the
+    preamble's `\setlist` draws the lists again (their labels are in their blocks' keys).
+    *Word:* Download Word gives a numbered list the style and start the model read (roman from 4,
+    not the letters "iv"; a continued list's 6), and a coauthor's edit comes back as before;
+    opened as a new document, pandoc's `\def\labelenumi` and `\setcounter` draw as Word showed
+    them. *Also fixed on the way:* an icon button's screen reader name past the window's edge on a
+    phone made the whole page scroll sideways by 10 px (`.rb .btn` now holds it). *For agents:*
+    llms-full.txt says the keys, the split buttons' arrows by name, the tiles' names, the
+    automatic lists and how labels are written; the Help dialog says Tab and Shift+Tab.
+    *Security:* the audit skill's quick profile on the changed files (one agent; notes outside the
+    repository) found two ways a stranger's preamble or list stalled or crashed the tab, both new
+    with this task and fixed with a test: a `\renewcommand{\theenumi}` that names itself grew to the
+    fourth power of its length when read (30 names: 7 million characters; 150: the tab gone),
+    now stopped at 2000 characters; a label option of 100 000 characters was copied onto every
+    item, now drawn as its first 400. Evidence: `npm test` green with `lists.test.mjs` (17 groups:
+    reading, Tab and Shift+Tab, several items, depth, paragraphs again, formats of every hand
+    written form, labels written where they are, start, continue, restart, spacing, kind, the
+    automatic markers, the page's numbers and bullets, sorting, multilevel lines, CRLF, empty
+    items, a stranger's source in bounded time), `commands` 12 (the insert list has Description
+    list), `word` 56 (55: the list's style, start and continuation to Word and back); `lists.py`
+    112 (106 without `dist/tex`: every command a round trip of GAP section 0; with `dist/tex` a
+    document of every kind Rikuy writes compiled with pdfLaTeX, XeLaTeX and LuaLaTeX prints the
+    labels the page drew); `tabs.py` 116; `ribbon.py` 268; `agent.py` 138; `browser.py` 189;
+    `find.py` 76; `outline.py` 59; `word.py` 110; `features.py` 36; `history.py` 39/39;
+    `paste.py` 25; `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43;
+    `pages_check.py` fits; actionlint clean; the model on the corpus 716 of 716. *What moved in
+    other suites:* Home's row is about 160 px wider (Multilevel list, Decrease Indent, Increase
+    Indent, Sort, two split arrows): at 860 px Home's Insert folds and Editing stays open
+    (`tabs.py`), the gallery keeps six tiles to 1536 px and gives way to the list below 1180 px
+    (`ribbon.py`), the three downloads are one button at 1000 px; `ribbon.py`'s labelled item
+    check now expects the way back. Not done: picture bullets (Word's Picture... in Define New
+    Bullet; a `\includegraphics` label is source to write by hand), Word's "Adjust List
+    Indents" (enumitem's `leftmargin`), numbering a heading as a list (LaTeX numbers headings
+    itself), a nested list's bullet in Word (pandoc's AST has no bullet character); Safari and
+    Firefox, by hand.
+    *Review (a fresh hostile reviewer on f5bba2e: 3 high, 5 medium, 8 low; each fixed with its
+    case as a test, compiled in the page where TeX erred).* H1: List spacing, Multilevel list and
+    Define New Multilevel List added enumitem beside the enumerate package or paralist, and every
+    `[(a)]` list then failed ("(a) undefined"): there they now write LaTeX's own forms
+    (`\setlength{\itemsep}{0pt}` in the list, `\renewcommand{\labelenumii}{...}` in the preamble,
+    rewritten where written), Compact (`nosep`) is off with why, and `listPkgs` never adds
+    enumitem where the document labels lists another way. H2: Define New Number Format with a
+    start took two undo steps; one now (`listFormat`: each change re-reads the list the one
+    before left, one edit). H3: OK in Define New Multilevel List without a change rewrote
+    `\textbf{\alph*}`, `\S\roman*`, `\ding{43}` and added levels: only rows changed are written,
+    a label the dialog cannot show is "Custom (kept)", a level without its own label is LaTeX's
+    (∗ and · at levels 3 and 4). M1: the page drew labels TeX does not print; now enumitem's
+    `resume` keeps to the group it is in (a list's end saves into the list around it, lost with an
+    itemize's group), `series=`/`resume=` name their own counts, `resume*` takes the options too,
+    a labelled `\item[x]` steps no number, `\alph` of 0 prints nothing, `ref=` is used, `\ref`
+    follows `\theenumi` and the enumerate package's nested "(i)" refers as 1i; Set Numbering Value
+    and the dialogs stop at 26 for letters (TeX: "Counter too large"); each against pdfLaTeX in
+    the page. M2: a stranger's self naming `\theenumi` under 2000 lists cost 1.4 s a keystroke;
+    expansion stops within its pass and `starOf` and `numText` are kept per build (49 ms, the
+    same document without that line 34). M3: a typed » or → broke pdfLaTeX's OT1 fonts: a
+    symbol's glyph is written as its LaTeX (→ `$\rightarrow$`), another character outside ASCII
+    is refused with why on pdfLaTeX unless T1 fonts have it (Latin-1), taken as typed on XeLaTeX
+    and LuaLaTeX. M4: OK with nothing changed turned `Step~\arabic*.` into
+    `Step\textasciitilde{}\arabic*.`: unchanged fields keep the code, `~` shows as a no-break
+    space. M5: Tab and Shift+Tab were swallowed where nothing could be done (a paralist
+    `compactitem` in an itemize, a list inside a `center`): the key goes on now, as on the first
+    level; the first item and a fifth level still say why. Lows: an automatic list takes the
+    `\noindent` before it; a list split by Restart, None or Shift+Tab goes on with the numbers
+    (`start=` and `\setcounter` moved on by the items before, as Word renumbers); Tab joins the
+    list before when its `\end` line has a comment; Sort writes CRLF in CRLF files and sorts
+    paragraphs with a coauthor's comment above them (it goes with its paragraph); no literal
+    U+200B left in the code this task wrote (six older ones in `src/model.js` are other tasks').
+    `.rb .btn { position: relative }` stays: B2's ribbon relies on it. *Security, again:* the
+    quick profile on the changed files found two patterns in the fix itself that backtracked over
+    a stranger's text, both fixed before commit with a bounded time test: the dialogs' reading of
+    a label (ten `\q` runs took 15 s) and the check that a list ends an item (30 percent signs
+    after an `\end`: 16 s, at every move of the caret); `textEngine`'s patterns bounded. Evidence:
+    *Phones (the owner's ask):* a phone has no Tab key, so Increase Indent and Decrease Indent are
+    the way, tapped (the ribbon's row swiped to them); under a coarse pointer the list buttons and
+    their arrows, the libraries' tiles and the dialogs' fields, symbols and buttons are 44 px each
+    way, the libraries' grids centred in the bottom sheet; the libraries and dialogs stay inside
+    the screen and scroll in themselves, with no side scroll, at 390 and 360 px; automatic lists
+    take what an on-screen keyboard sends: the marker and its space at once ("- ", "1. "), a no
+    break space, its autocorrect's replacement (a target range ending at the caret), the dash it
+    makes of "-" (the source holds `--` or `---`), and an IME's composition committed with its
+    space (the composition one step, the list the next, so Undo gives the typed text back).
+    `test/lists.py` checks each at 390x844 (light) and 360x740 (dark) with touch, tapping;
+    `open_page` in `test/browser.py` takes `touch=True`. The rest of the ribbon's buttons are still
+    30 px on a phone (B0's row: one rule for it all belongs there). Evidence:
+    `npm test` green with `lists.test.mjs` 24 groups (on main with tasks 45, B6's page and B1's
+    Font group merged: `table` 46, `page` 26, `font` 28, `word` 60); `lists.py` 184 (142 on a desktop, nine compiles in the page; 42 on
+    the two phones); `table.py` 161; `tabs.py` 116; `ribbon.py` 268; `browser.py` 189;
+    `agent.py` 138; `find.py` 76; `outline.py` 59; `word.py` 110; `history.py` 39/39;
+    `paste.py` 25; `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43;
+    `pages_check.py` fits; actionlint clean; the model on the corpus 716 of 716.
+
 43. **B5, Find, Replace, Go To and the outline, as in Word.** Done in the code (branch
     `wordgap-b5-find`, on task 38's frame; GAP rows H75 to H81, V4, V10, S1, C5). *Find*
     (Ctrl+F on the page, Home's Find): the side panel's Outline tab is now Word's Navigation

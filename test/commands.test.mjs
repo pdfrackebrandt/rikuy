@@ -62,7 +62,7 @@ ok('every chord reads; two commands on one chord differ in rank, or one says whe
 
 ok('the insert list keeps its items and their order', () => {
   assert.deepEqual(paletteItems().map((x) => x.k), ['footnote', 'cite', 'ref', 'eqref', 'emph', 'textbf', 'texttt', 'equation', 'math', 'section', 'subsection', 'itemize', 'enumerate',
-    'proposition', 'lemma', 'theorem', 'definition', 'assumption', 'proof', 'label', 'url', 'ldots', 'newline']);
+    'description', 'proposition', 'lemma', 'theorem', 'definition', 'assumption', 'proof', 'label', 'url', 'ldots', 'newline']);
   const it = paletteItems().find((x) => x.k === 'itemize');
   assert.deepEqual(it.t, { open: '\n\n\\begin{itemize}\n  \\item ', close: '\n\\end{itemize}\n\n' });
   assert.equal(it.block, true);

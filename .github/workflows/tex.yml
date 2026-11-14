@@ -45,6 +45,8 @@ on:
       - 'test/page.py'
       - 'src/layout.js'
       - 'src/pagesrc.js'
+      - 'test/lists.py'
+      - 'src/lists.js'
       - 'test/serve.py'
       - 'test/browser.py'
       - '.github/workflows/tex.yml'
@@ -127,6 +129,8 @@ jobs:
         run: cd test && python3 page.py compile_pdf
       - name: Every format of the Font group compiles in the page
         run: cd test && python3 font.py compiles
+      - name: Lists, then every kind Rikuy writes compiles with pdfLaTeX, XeLaTeX and LuaLaTeX and prints the page's labels
+        run: cd test && python3 lists.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rikuy-dist

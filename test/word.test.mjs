@@ -427,6 +427,23 @@ await ok('to Word: the Font group\'s formats as Word\'s own (a highlighter\'s co
   await roundTrip(src, rep('green marked', 'green noted'), src.replace('green marked', 'green noted'));
 });
 
+await ok('to Word and back: a list\'s own number style and start, a continued list, a nested bulleted one (task 41)', async () => {
+  const src = doc('\\begin{enumerate}[label=\\roman*),start=4]\n  \\item Four\n    \\begin{itemize}[label=$\\circ$]\n      \\item Inner\n    \\end{itemize}\n  \\item Five\n\\end{enumerate}\n\nText.\n\n\\begin{enumerate}[resume]\n  \\item Six\n\\end{enumerate}\n', '\\usepackage{enumitem}\n');
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  const nu = text(unzip(E.docx).get('word/numbering.xml'));
+  // (iv) is roman from 4, not a letter's "iv"; the continued list starts at 6 in Word too)
+  assert.match(nu, /<w:start w:val="4" \/><w:numFmt w:val="lowerRoman" \/><w:lvlText w:val="%1\)" \/>/);
+  assert.match(nu, /<w:start w:val="6" \/><w:numFmt w:val="decimal" \/><w:lvlText w:val="%1\." \/>/);
+  assert.equal(importInto(E.docx, files).files.size, 0);
+  await roundTrip(src, rep('Inner', 'Inside'), src.replace('Inner', 'Inside'));
+  // opened as a new document: pandoc's \def\labelenumi and \setcounter, which the page draws as Word did
+  const r = docxToLatex(P, E.docx, 'x.docx');
+  assert.ok(r.tex.includes('\\def\\labelenumi{\\roman{enumi})}') && r.tex.includes('\\setcounter{enumi}{3}'), r.tex);
+  const M = buildModel({ files: new Map([['main.tex', r.tex]]), main: 'main.tex' });
+  assert.deepEqual(M.blocks.flatMap((b) => b.items).filter((x) => x.label && x.labelKind === 'enum').map((x) => x.label[0].text), ['iv)', 'v)', '6.']);
+});
+
 // a .docx of one body, as small as pandoc reads: for the cases a line of XML says best
 const NSW = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
 function tiny(body, extra = {}) {

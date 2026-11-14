@@ -172,8 +172,10 @@ def widths(page):
     print('     widths:', seen)
     # (Home's Insert, which the Insert tab has too, is spare: it folds first, into one icon button
     # named Insert, so Home's other groups keep their buttons and names; src/ribbon/order.js)
-    check('at 1400, 1024 and 860 px the row does not scroll and Home folds its spare Insert alone, into one icon button named Insert; the tabs a row above the toolbar at 1400 and 1024 px', all(seen[w]['tabs'] and not seen[w]['sel'] for w in (1400, 1024))
-          and all(not seen[w]['over'] and seen[w]['folded'] == ['insert'] and seen[w]['ico'] == ['insert'] for w in (1400, 1024, 860)), seen)
+    # (with the Font group's and the Paragraph group's list commands, B1 and B3, the lowest rank,
+    # Editing, folds after it at 860 px)
+    check('at 1400 and 1024 px the row does not scroll and Home folds its spare Insert alone, into one icon button named Insert, the tabs a row above the toolbar; at 860 px Editing too, each one icon button named after it', all(seen[w]['tabs'] and not seen[w]['sel'] for w in (1400, 1024))
+          and all(not seen[w]['over'] and seen[w]['folded'] == ['insert'] and seen[w]['ico'] == ['insert'] for w in (1400, 1024)) and not seen[860]['over'] and seen[860]['folded'] == ['insert', 'editing'] and seen[860]['ico'] == ['insert', 'editing'], seen)
     check('at 860 and 390 px the tabs are the combobox "Ribbon tab" at the row\'s start, in one row that scrolls sideways on a phone', all(not seen[w]['tabs'] and seen[w]['sel'] and seen[w]['h'] <= 44 and seen[w]['page'] <= 0 for w in (860, 390)) and seen[390]['over'], seen)
     # (the three go before any group folds: they take two controls, Editing three)
     check('the downloads: three at 1400 px; one Download menu where the row has no room for three (1024 px, beside Editing, and 860 px), and on a phone', seen[1400]['dl'] == ['rb-pdf', 'rb-word', 'b-save'] and all(seen[w]['dl'] == ['rb-dl-menu'] for w in (1024, 860, 390)) and not seen[860]['over'], {w: seen[w]['dl'] for w in seen})
@@ -191,7 +193,7 @@ def widths(page):
         page.set_viewport_size({'width': w, 'height': 900}); page.wait_for_timeout(300)
         click_text(page, 'Second paragraph', 3); page.wait_for_timeout(150)
         f[w] = page.evaluate('''() => ({ folded: [...document.querySelectorAll('#rp-home .rb-grp.folded')].map((g) => g.dataset.group), over: document.getElementById('ribbon').scrollWidth > document.getElementById('ribbon').clientWidth + 1 })''')
-    check('with more than fits, groups fold, the spare Insert first and then the lowest rank: Editing with it at 1024 px, Clipboard too at 900 px, and the row fits', sorted(f[1024]['folded']) == ['editing', 'insert'] and sorted(f[900]['folded']) == ['clipboard', 'editing', 'insert'] and not f[900]['over'] and not f[1024]['over'], f)
+    check('with more than fits, groups fold, the spare Insert first and then the lowest ranks: Editing and Clipboard with it at 1024 and 900 px, and the row fits', sorted(f[1024]['folded']) == ['clipboard', 'editing', 'insert'] and sorted(f[900]['folded']) == ['clipboard', 'editing', 'insert'] and not f[900]['over'] and not f[1024]['over'], f)
     gb = page.get_by_role('button', name='Editing', exact=True)
     check('a folded group is one button named after it; its own buttons are out of the accessibility tree', gb.count() == 1 and page.get_by_role('button', name='Editing test 0', exact=True).count() == 0 and not twice(page), twice(page))
     gb.click(); page.wait_for_timeout(200)
@@ -587,7 +589,7 @@ def fold_sweep(page):
         check('%s: no group is folded where it would fit open' % tag, not wasted, wasted[:6])
         if extra == []:
             home = {w: seen[w]['home'] for w in widths}
-            check('Home from 1920 to 1024 px folds nothing but its spare Insert; at 900 px one group at most', all(set(home[w]['folded']) <= {'insert'} for w in widths if w >= 1024) and len(home[900]['folded']) <= 1, {w: home[w]['folded'] for w in (900, 1030, 1360)})
+            check('Home from 1920 to 1024 px folds nothing but its spare Insert; at 900 px Editing at most with it', all(set(home[w]['folded']) <= {'insert'} for w in widths if w >= 1024) and set(home[900]['folded']) <= {'insert', 'editing'}, {w: home[w]['folded'] for w in (900, 1030, 1360)})
     page.evaluate("""() => { for (const c of window.rikuy.cmds.commands()) if (/^t-sw/.test(c.id)) window.rikuy.cmds.unregister(c.id); window.rikuy.ribbonBuild(); window.rikuy.ribbonFit = window.__rf; }""")
     page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
     open_tab(page, 'Home')

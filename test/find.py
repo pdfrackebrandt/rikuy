@@ -314,10 +314,12 @@ def review(page):
     click_text(page, 'First', 1); page.keyboard.press('Control+a'); page.wait_for_timeout(350)
     w = page.inner_text('#st-words')
     check('low: Ctrl+A counts as many words as the document has, headings left out as the total leaves them (5 of 5 words)', w == '5 of 5 words', w)
-    # low: the folded group Editing's menu has Find's other choices too (it folds at 700 px, after
-    # Home's spare Insert, beside the Font group's Bold, Italic and Underline)
-    page.set_viewport_size({'width': 700, 'height': 1000}); page.wait_for_timeout(300)
-    click_text(page, 'First', 1)
+    # low: the folded group Editing's menu has Find's other choices too (it folds below 861 px:
+    # where Home's other groups, the Font group's and the lists', leave it the room, 700 px at most)
+    for w in (860, 820, 780, 740, 700):
+        page.set_viewport_size({'width': w, 'height': 1000}); page.wait_for_timeout(300)
+        click_text(page, 'First', 1)
+        if page.get_by_role('button', name='Editing', exact=True).is_visible(): break
     page.get_by_role('button', name='Editing', exact=True).click(); page.wait_for_timeout(200)
     m = page.get_by_role('menu', name='Editing', exact=True)
     names = [m.get_by_role('menuitem').nth(k).get_attribute('aria-label') for k in range(m.get_by_role('menuitem').count())]
