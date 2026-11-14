@@ -17,7 +17,13 @@ import { hfOpen, hfClose, hfInsert, installHeaderFooter } from '../ui/headerfoot
 
 const CM = 72.27 / 2.54;
 // the document can take a page set up: a model, and a preamble in its main file
-const doc = (app) => !!(app.model && !app.stale && app.files && app.files.has(app.main) && preambleEnd(app.src(app.main)) >= 0);
+// What the commands' when and on read of the main file, once for each text of it: the ribbon asks
+// at every move of the caret, and on a stranger's 200 000 character preamble each read took
+// milliseconds, a dozen of them about 100 ms a look. Pure functions of the text, so the answer is
+// the one a fresh read gives; the file's text is the same string until it is edited.
+const once = (fn) => { let key = null, val; return (src) => { if (src !== key) { key = src; val = fn(src); } return val; }; };
+const preEnd = once(preambleEnd), classOf = once(PS.classPage), firstStyle = once(PS.firstPageStyle);
+const doc = (app) => !!(app.model && !app.stale && app.files && app.files.has(app.main) && preEnd(app.src(app.main)) >= 0);
 const NO_PRE = 'The page is set up in the preamble of the main file, and it has none (no \\begin{document} line)';
 const anyWhy = (app) => (doc(app) ? '' : NO_PRE);
 // beamer sets its slides' size and their frames itself (geometry or fancyhdr there clash with it)
@@ -144,7 +150,7 @@ register(
     run: (app, args) => (typeof args === 'number' ? app.pageEdit(PS.sizeEdits(app.src(app.main), args), 'page-pt') : app.pageMenu('base-size', app.pageCmdItems('base-size'), 'Base font size')) },
   { id: 'two-sided', name: 'Two sided', label: 'Two sided', title: 'Pages printed on both sides: margins and headers mirrored on even pages (twoside)', icon: I.sides, kind: 'toggle', tab: 'layout', group: 'document', order: 30,
     synonyms: ['twoside', 'oneside', 'Double sided', 'Different odd and even'], when: sheet, whyNot: sheetWhy,
-    on: (app) => { const c = doc(app) && PS.classPage(app.src(app.main)); return !!c && c.twoside; },
+    on: (app) => { const c = doc(app) && classOf(app.src(app.main)); return !!c && c.twoside; },
     run: (app) => { const c = PS.classPage(app.src(app.main)); return app.pageEdit(PS.sidesEdits(app.src(app.main), !(c && c.twoside)), 'page-sides'); } },
   // ---- Insert › Pages ----
   { id: 'blank-page', name: 'Blank page', label: 'Blank page', title: 'An empty page at the caret (\\newpage \\null \\newpage)', icon: I.blank, tab: 'insert', group: 'pages', order: 20,
@@ -200,7 +206,7 @@ register(
   { id: 'hf-pagenum', name: 'Page number here', label: 'Page number here', title: 'The page\'s number where the caret is in the header or footer (\\thepage)', icon: I.pnum, tab: 'headfoot', group: 'insert', order: 20,
     when: (app) => !!app.hf, whyNot: () => 'Open the header or footer first', run: (app) => hfInsert(app, '\\thepage') },
   { id: 'hf-first', name: 'Different first page', label: 'First page', title: 'Nothing in the header and footer of the first page (\\thispagestyle{empty})', icon: I.first, kind: 'toggle', tab: 'headfoot', group: 'options', order: 10,
-    synonyms: ['Different First Page', 'thispagestyle'], when: doc, whyNot: anyWhy, on: (app) => doc(app) && !!PS.firstPageStyle(app.src(app.main)),
+    synonyms: ['Different First Page', 'thispagestyle'], when: doc, whyNot: anyWhy, on: (app) => doc(app) && !!firstStyle(app.src(app.main)),
     run: (app) => app.pageEdit(PS.firstPageEdits(app.src(app.main), !PS.firstPageStyle(app.src(app.main))), 'page-first') },
   { id: 'hf-oddeven', name: 'Different odd & even pages', label: 'Odd & even pages', title: 'Even pages with headers and footers of their own: the document two sided (twoside)', icon: I.oddeven, kind: 'toggle', tab: 'headfoot', group: 'options', order: 20,
     synonyms: ['Different Odd & Even Pages', 'twoside'], when: doc, whyNot: anyWhy, on: (app) => doc(app) && twoSided(app), run: (app) => app.runCommand('two-sided') },
