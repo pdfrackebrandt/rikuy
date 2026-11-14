@@ -978,6 +978,9 @@ class App {
       for (const ed of list) text = text.slice(0, ed.s) + ed.t + text.slice(ed.e);
       this.files.set(f, text);
     }
+    // (the blocks shown as LaTeX move with these edits, src/cmd/view.js; typing ends Repeat's turn)
+    this.viewMap(byFile, before);
+    if (!this.cmdDepth) this.lastAct = null;
     this.record(before, kind, cb && cb.f != null ? { f: cb.f, p: cb.p } : caret, caret);
     if (made.length) { const top = this.hist[this.hist.length - 1]; if (top) for (const d of top.files) if (made.includes(d.f)) d.made = true; }
     this.zipDirty = true;
@@ -1019,7 +1022,10 @@ class App {
     const h = this.hist.pop();
     if (!h) { this.toast('Nothing to undo'); return; }
     h.open = false; h.before = null;
+    const was = new Map(h.files.map((d) => [d.f, this.files.get(d.f) ?? '']));
     for (const d of h.files) { const t = this.files.get(d.f) ?? ''; this.files.set(d.f, t.slice(0, d.s) + d.del + t.slice(d.s + d.ins.length)); if (d.made && !this.files.get(d.f)) this.files.delete(d.f); }
+    this.viewMap(new Map(h.files.map((d) => [d.f, [{ s: d.s, e: d.s + d.ins.length, t: d.del }]])), was);
+    this.lastAct = null;
     this.redoStack.push(h);
     const c = h.caretBefore || (h.files[0] ? { f: h.files[0].f, p: h.files[0].s + h.files[0].del.length } : null);
     this.rebuild(c);
@@ -1034,7 +1040,9 @@ class App {
     const h = this.redoStack.pop();
     // nothing to redo: Ctrl+Y repeats the last command at the caret, as Word's does (src/cmd/view.js)
     if (!h) { if (!this.repeatLast()) this.toast('Nothing to redo'); return; }
+    const was = new Map(h.files.map((d) => [d.f, this.files.get(d.f) ?? '']));
     for (const d of h.files) { const t = this.files.get(d.f) ?? ''; this.files.set(d.f, t.slice(0, d.s) + d.ins + t.slice(d.s + d.del.length)); }
+    this.viewMap(new Map(h.files.map((d) => [d.f, [{ s: d.s, e: d.s + d.del.length, t: d.ins }]])), was);
     this.hist.push(h);
     const c = h.caretAfter || (h.files[0] ? { f: h.files[0].f, p: h.files[0].s + h.files[0].ins.length } : null);
     this.rebuild(c);
@@ -1721,9 +1729,10 @@ class App {
     // (a block shown as its LaTeX, view: no mark line before it; what is typed is written as it is)
     return { it, B, f: B.f, is: T.is + b, ie: T.ie + b, ms: T.view ? T.is + b : lineAt(this.src(B.f), b), para: T.para, nest: T.nest.map(([s, e]) => [s + b, e + b]), view: !!T.view };
   }
-  // whether source position p of file f is in the source of a LaTeX paragraph on the page
-  texAt(f, p) {
-    for (const B of this.renderer.blocks) if (B.tex && B.f === f && B.tex.is + B.base <= p && p <= B.tex.ie + B.base) return true;
+  // whether source position p of file f is in the source of a LaTeX paragraph on the page (own:
+  // one of the document's own, not a block only shown as LaTeX for now, src/cmd/view.js)
+  texAt(f, p, own) {
+    for (const B of this.renderer.blocks) if (B.tex && B.f === f && !(own && B.tex.view) && B.tex.is + B.base <= p && p <= B.tex.ie + B.base) return true;
     return false;
   }
   // the one the caret, and all of the selection, is in
@@ -1741,7 +1750,7 @@ class App {
     const f = T.f, src = this.src(f);
     a = Math.max(T.is, Math.min(a, T.ie)); b = Math.max(a, Math.min(b, T.ie));
     // a block shown as its LaTeX (Show LaTeX) has no mark to keep or take off: it is written as typed
-    if (T.view) { if (a !== b || t) this.commit([{ f, s: a, e: b, t }], { f, p: a + t.length, bias: -1 }, kind); return; }
+    if (T.view) { t = t.replace(/\r?\n/g, src.includes('\r\n') ? '\r\n' : '\n'); if (a !== b || t) this.commit([{ f, s: a, e: b, t }], { f, p: a + t.length, bias: -1 }, kind); return; }
     const nested = T.nest.some(([x, y]) => x < a && b < y);
     // A line break at an end of what is written there, beside nothing but spaces on that side of
     // the line (or the paragraph's own start or end), would be a blank line: it goes. Blank lines

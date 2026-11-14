@@ -629,10 +629,11 @@ run on), Outline; Show LaTeX, Formatting marks, Navigation pane; 100%, One page,
 width; Side to Side, Dark page (the screen only), Focus (every bar hidden; Escape or "Leave
 Focus"). The File tab: Blank document (from the preamble kept by Set as default), New from
 template (article, report, book or thesis, letter, KOMA-Script, slides, exam, CV), Browse,
-Recent documents, Properties (dialog: Title, Author, Subject, Keywords; \\title, \\author and
-\\hypersetup's pdfsubject and pdfkeywords), Check accessibility (pictures without alt text, skipped
-heading levels, tables without a header row, no title or language; "Tag the PDF" writes
-\\DocumentMetadata{lang=..,pdfstandard=ua-2,tagging=on}), Export as (web page, Markdown,
+Recent documents, Properties (dialog: Title, Author, Subject, Keywords; only the fields changed are
+written, and only what was typed is escaped; \\title, \\author, and pdfsubject and pdfkeywords in
+\\hypersetup, a bare \\usepackage{hyperref} added before cleveref where nothing loads it), Check accessibility (pictures without alt text, skipped
+heading levels, tables without a header row, no title or language, an untagged PDF; tagging
+waits for a TeX tree that has latex-lab's files), Export as (web page, Markdown,
 OpenDocument, RTF, EPUB, plain text, by pandoc, on a copy with Word), Print PDF, Set as default.
 The Help tab: How it works, Learn Rikuy (a document to try things in, with a live graph),
 Interactive graphs, Keyboard shortcuts, What's new, Report a problem, For AI agents. The arrow

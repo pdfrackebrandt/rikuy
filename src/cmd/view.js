@@ -8,6 +8,7 @@ import { register, onInstall } from '../commands.js';
 import { $, PREFS, store } from '../ui/dom.js';
 import { openMenu } from '../ui/kit.js';
 import { buildModel } from '../model.js';
+import { hunks } from '../diff.js';
 import { groupOf } from '../ribbon/order.js';
 
 const always = () => true;
@@ -101,7 +102,9 @@ const KIND = { type: 'Typing', del: 'Delete', enter: 'New paragraph', paste: 'Pa
 const kindName = (k) => KIND[k] || (k ? String(k).replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase()).slice(0, 40) : 'Edit');
 
 // commands that only show or move, never write: Repeat skips them
-const NOT_REPEATED = /^(view-|zoom|read-mode|print-layout|latex-mode|draft|show-|one-page|multiple-pages|page-width|side-to-side|dark-page|focus|repeat|undo|preview|source|find|replace|go-to|select|navigation|outline|help|open|share|download|print|new-|load-sample|recent|properties|export|check-|set-default)/;
+// nor those that take something away (a row, a table, formatting, a sort): Repeat must never
+// destroy what the caret happens to be in after a Ctrl+Y meant as Redo
+const NOT_REPEATED = /(delete|remove|clear|sort|merge|split|cut|reject|accept|restore|paste|undo|redo)|^(view-|zoom|read-mode|print-layout|latex-mode|draft|show-|one-page|multiple-pages|page-width|side-to-side|dark-page|focus|repeat|undo|preview|source|find|replace|go-to|select|navigation|outline|help|open|share|download|print|new-|load-sample|recent|properties|export|check-|set-default)/;
 
 export const methods = {
   // the whole sheet as wide as the window, every press the same (the bar's Fit cycles on a phone)
@@ -304,10 +307,10 @@ export const methods = {
     const keys = this.texViews || (this.texViews = new Map());
     const c = at && at.c && !at.c.ghost ? { f: at.c.f, p: at.c.a, bias: 1 } : { f: bs[0].f, p: bs[0].s, bias: 1 };
     for (const B of bs) {
-      const k = B.f + '\u0000' + B.s;
-      if (off) keys.delete(k); else keys.set(k, { f: B.f, s: B.s });
+      const { k, f, s } = this.viewKeyOf(B);
+      if (off) keys.delete(k); else keys.set(k, { f, s });
     }
-    this.texViewText = new Map([...this.files].filter(([n]) => [...keys.values()].some((v) => v.f === n)));
+    this.viewSnap();
     this.texViewDoc = this.name + '\u0000' + this.main;
     this.forceRender = true;
     this.rebuild(c);
@@ -315,34 +318,80 @@ export const methods = {
     return true;
   },
 
-  // The keys of the blocks shown as LaTeX for the model (App.rebuild asks before each build), moved
-  // along with every change of the text since the last build: typing, undo, the source pane
+  // The keys of the blocks shown as LaTeX for the model (App.rebuild asks before each build). Each
+  // key is a block's first character that is not a space (src/model.js asSource reads it there).
+  // The edits of App.commit, undo and redo move them (viewMap); any other change of a file since
+  // (the source pane, a share merged, a script) is read as the hunks of its lines.
   viewKeys() {
     const keys = this.texViews;
     if (!keys || !keys.size) return null;
     // (another document opened: none of its blocks is shown as LaTeX)
     if (this.texViewDoc !== this.name + '\u0000' + this.main) { keys.clear(); return null; }
     const was = this.texViewText || new Map();
-    for (const [k, v] of [...keys]) {
-      const a = was.get(v.f), b = this.files.get(v.f);
-      if (b == null) { keys.delete(k); continue; }
+    for (const f of new Set([...keys.values()].map((v) => v.f))) {
+      const a = was.get(f), b = this.files.get(f);
+      if (b == null) { for (const [k, v] of [...keys]) if (v.f === f) keys.delete(k); continue; }
       if (a == null || a === b) continue;
-      // the one changed stretch: [i, a.length - j) became [i, b.length - j)
-      let i = 0;
-      const n = Math.min(a.length, b.length);
-      while (i < n && a.charCodeAt(i) === b.charCodeAt(i)) i++;
-      let j = 0;
-      while (j < n - i && a.charCodeAt(a.length - 1 - j) === b.charCodeAt(b.length - 1 - j)) j++;
-      let s = v.s;
-      const ae = a.length - j, ins = b.slice(i, b.length - j);
-      // (text typed at the block's very start joins it; a paragraph written before it does not)
-      if (s > ae || (s === ae && !(i === ae && s === i && !/\n[ \t]*\n/.test(ins)))) s += b.length - a.length;
-      else if (s > i) s = i;
-      keys.delete(k);
-      if (s >= 0 && s < b.length) keys.set(v.f + '\u0000' + s, { f: v.f, s });
+      const hs = hunks(a, b).map((h) => ({ s: h.as, e: h.as + h.a.length, t: h.b }));
+      this.viewMoveKeys(f, hs, b, a);
     }
-    this.texViewText = new Map([...this.files].filter(([n]) => [...keys.values()].some((v) => v.f === n)));
+    this.viewSnap();
     return keys.size ? new Set(keys.keys()) : null;
+  },
+  // edits of the text the keys were read in, [{ s, e, t }] by file in that text's places
+  viewMap(byFile, before) {
+    const keys = this.texViews;
+    if (!keys || !keys.size || !this.texViewText) return;
+    for (const [f, list] of byFile) {
+      // (only from the text the keys were read in; else viewKeys reads the change as hunks)
+      if (this.texViewText.get(f) !== before.get(f)) continue;
+      this.viewMoveKeys(f, list, this.files.get(f) ?? '', before.get(f));
+      this.texViewText.set(f, this.files.get(f) ?? '');
+    }
+  },
+  // Moves the keys of file f through edits (not overlapping, any order) into the new text b: one
+  // pass over the sorted keys and edits. A key inside a replaced stretch goes to its start; text
+  // written right at a block's first character joins the block unless it holds a blank line (a
+  // paragraph written before it). Then each key goes on to the next character that is no space.
+  viewMoveKeys(f, edits, b, a) {
+    const keys = this.texViews, mine = [...keys].filter(([, v]) => v.f === f).sort((x, y) => x[1].s - y[1].s);
+    if (!mine.length) return;
+    const es = [...edits].sort((x, y) => x.s - y.s || x.e - y.e);
+    let i = 0, d = 0;
+    for (const [k, v] of mine) {
+      while (i < es.length && (es[i].e < v.s || (es[i].e === v.s && es[i].s < v.s) || (es[i].s === v.s && es[i].e === v.s && /\n[ \t]*\r?\n/.test(es[i].t)))) { d += es[i].t.length - (es[i].e - es[i].s); i++; }
+      const E = es[i];
+      let s = v.s + d;
+      if (E && E.s < v.s && v.s < E.e) {
+        // inside one replaced stretch: the stretch read again as the hunks of its lines (undo's
+        // one region from a preamble line to a word far below), else its start
+        s = E.s + d;
+        if (a != null && E.e - E.s <= 2000000) {
+          let x = v.s - E.s, dd = 0;
+          for (const h of hunks(a.slice(E.s, E.e), E.t)) {
+            if (h.as + h.a.length <= x) { dd += h.b.length - h.a.length; continue; }
+            if (h.as < x) x = h.as;
+            break;
+          }
+          s = E.s + d + x + dd;
+        }
+      }
+      let n = 0;
+      while (s < b.length && n++ < 400 && /\s/.test(b[s])) s++;
+      keys.delete(k);
+      if (s >= 0 && s < b.length) keys.set(f + '\u0000' + s, { f, s });
+    }
+  },
+  viewSnap() {
+    const keys = this.texViews;
+    this.texViewText = new Map([...this.files].filter(([n]) => keys && [...keys.values()].some((v) => v.f === n)));
+  },
+  // the key of a block of the page: its first character that is not a space
+  viewKeyOf(B) {
+    const t = this.src(B.f);
+    let s = B.s, n = 0;
+    while (s < B.e && n++ < 400 && /\s/.test(t[s])) s++;
+    return { k: B.f + '\u0000' + s, f: B.f, s };
   },
 
   // the model as TeX reads the text, without the blocks shown as LaTeX (Word's export, Export as)
@@ -470,9 +519,10 @@ onInstall((app) => {
   if (fx) fx.addEventListener('click', () => app.runCommand('focus'));
   // Esc: out of a block shown as LaTeX (the caret's), else out of Focus
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !e.defaultPrevented && !app.pop) {
+    // (only with the caret on the page: Esc in a dialog or a field is theirs)
+    if (e.key === 'Escape' && !e.defaultPrevented && !app.pop && !e.isComposing && e.keyCode !== 229 && (document.activeElement === app.root || cls().contains('focus'))) {
       const T = app.texHere && app.texHere();
-      if (T && T.view) { e.preventDefault(); app.hideLatexViews(T.f + '\u0000' + T.B.s); app.ribbonSync(); return; }
+      if (T && T.view) { e.preventDefault(); app.hideLatexViews(app.viewKeyOf(T.B).k); app.ribbonSync(); return; }
       if (cls().contains('focus')) { e.preventDefault(); app.runCommand('focus'); }
       return;
     }
@@ -487,7 +537,10 @@ onInstall((app) => {
   const run0 = app.runCommand;
   app.runCommand = function (id, args, at, from) {
     const n = this.hist ? this.hist.length : 0, top = n ? this.hist[n - 1] : null;
-    const r = run0.call(this, id, args, at, from);
+    // (App.commit clears lastAct for any edit made outside a command: typing, paste, the source)
+    this.cmdDepth = (this.cmdDepth || 0) + 1;
+    let r;
+    try { r = run0.call(this, id, args, at, from); } finally { this.cmdDepth--; }
     const wrote = () => this.hist && (this.hist.length !== n || this.hist[this.hist.length - 1] !== top);
     if (!NOT_REPEATED.test(id) && r !== false) {
       if (r && typeof r.then === 'function') r.then(() => { if (wrote()) this.lastAct = { id, args }; }, () => {});

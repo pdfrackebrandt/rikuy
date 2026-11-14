@@ -8,7 +8,7 @@ right click menu; Ctrl+Shift+= in the equation field): the block shown as its so
 stands, the source unchanged by showing it, typing written as typed, one undo, Enter without a
 mark, CRLF kept, Esc back, a selection over two paragraphs, a LaTeX paragraph of the document's
 own left alone, the place kept when text before it changes, Word's model without it. The View
-tab: Draft, Side to Side, Multiple pages, One page, 100%, Dark page, Focus and Esc, Show marks
+tab: Draft, Side to Side, Multiple pages, One page, 100%, Dark page, Focus and Esc, Formatting marks (B2's) there
 (Ctrl+Shift+8) writing nothing, the zoom slider. Repeat (F4, Ctrl+Y with nothing to redo) and
 Undo's list. Help: Learn Rikuy (its files, the live graph on the page, its PDF compiled where
 dist/tex exists), Interactive graphs, Keyboard shortcuts, What's new. Phones at 390 and 360 px:
@@ -291,10 +291,55 @@ def phones(p):
         browser.close()
 
 
+def review(page):
+    """B12's hostile review: M3, M4, L1, L2, L3, L10."""
+    shown = lambda: ev(page, "[...document.querySelectorAll('.it.tex.texview')].map((b) => b.textContent)")
+    d3 = WRAP('Foo one.\n\nBar two second.\n\nFoo three.')
+    load_doc(page, d3); click_text(page, 'second', 2); page.keyboard.press('Shift+F9'); page.wait_for_timeout(300)
+    page.keyboard.press('Control+h'); page.wait_for_timeout(400)
+    dlg = page.get_by_role('dialog', name='Find and Replace', exact=True)
+    dlg.get_by_role('textbox', name='Find what', exact=True).fill('Foo')
+    dlg.get_by_role('textbox', name='Replace with', exact=True).fill('Baz')
+    dlg.get_by_role('button', name='Replace All', exact=True).click(); page.wait_for_timeout(500)
+    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    if dlg.count(): dlg.get_by_role('button', name='Close', exact=True).click(); page.wait_for_timeout(200)
+    check('M4: Replace All before and after a block shown as LaTeX: the same block stays shown', 'Baz one.' in src(page) and shown() == ['Bar two second.'], shown())
+    ev(page, r"""(() => { const g = window.rikuy, s = g.src('main.tex'), i = s.indexOf('three'), b = s.indexOf('\\begin{document}'); g.commit([{ f: 'main.tex', s: b, e: b, t: '\\usepackage{xcolor}\n' }, { f: 'main.tex', s: i, e: i + 5, t: '\\textcolor{red}{three}' }], null, 'color'); })()""")
+    page.wait_for_timeout(400)
+    check('M4: one commit in the preamble and the body (as Font colour makes): the block stays shown', shown() == ['Bar two second.'], shown())
+    ev(page, 'window.rikuy.undo()'); page.wait_for_timeout(300)
+    check('and after its undo', shown() == ['Bar two second.'], shown())
+    # L1: Enter at its very start keeps it shown
+    click_text(page, 'Bar', 0); page.keyboard.press('Home'); page.keyboard.press('Enter'); page.wait_for_timeout(400)
+    check('L1: Enter at the very start of a block shown as LaTeX keeps it shown', shown() == ['Bar two second.'] and '\n\n\nBar two' in src(page), (shown(), src(page)[-90:]))
+    # L3: a paste of CRLF text into a view of a CRLF file writes CRLF
+    crlf = d3.replace('\n', '\r\n')
+    load_doc(page, crlf); click_text(page, 'second', 2); page.keyboard.press('Shift+F9'); page.wait_for_timeout(300)
+    ev(page, r"""(() => { const g = window.rikuy, T = g.texHere(); g.texEdit(T, T.is + 3, T.is + 3, 'one\ntwo', 'paste'); })()"""); page.wait_for_timeout(300)
+    check('L3: pasted lines in a view of a CRLF file get CRLF', 'Barone\r\ntwo two' in src(page) and src(page).count('\n') == src(page).count('\r\n'), repr(src(page)[-80:]))
+    # L10: a view is no style to change, and Replace's LaTeX paragraph rule ignores it
+    st = ev(page, "(() => { const g = window.rikuy, at = g.ribbonAt(); return g.blockStyle(at).why || ''; })()")
+    check('L10: the Styles gallery says a block shown as LaTeX has no style to change while shown', 'Shown as LaTeX' in st, st)
+    ev(page, 'window.rikuy.hideLatexViews()')
+    # M3: Ctrl+Y after typing is no Repeat; F4 right after a command is
+    load_doc(page, WRAP('Alpha beta gamma.')); select_text(page, 'beta'); page.keyboard.press('Control+b'); page.wait_for_timeout(200)
+    click_text(page, 'gamma', 5); page.keyboard.type(' new'); page.wait_for_timeout(200)
+    select_text(page, 'Alpha'); page.keyboard.press('Control+y'); page.wait_for_timeout(300)
+    check('M3: Ctrl+Y after typing repeats no command', '\\textbf{Alpha}' not in src(page) and not ev(page, 'window.rikuy.lastAct'), src(page))
+    select_text(page, 'gamma'); page.keyboard.press('Control+b'); page.wait_for_timeout(200)
+    select_text(page, 'gamma'); ev(page, "window.rikuy.runCommand('clear-formatting')"); page.wait_for_timeout(200)
+    check('M3: a command that takes something away (Clear All Formatting) is never the one repeated', ev(page, 'window.rikuy.lastAct && window.rikuy.lastAct.id') == 'bold' and '\\textbf{gamma}' not in src(page), (ev(page, 'window.rikuy.lastAct'), src(page)))
+    # L2: Interactive graphs opens below the ribbon, at its top
+    ev(page, "window.rikuy.runCommand('help-graphs')"); page.wait_for_timeout(400)
+    r = ev(page, "(() => { const d = document.querySelector('.pop'), rb = document.getElementById('ribbon').getBoundingClientRect(), r = d.getBoundingClientRect(); return [Math.round(r.top - rb.bottom), d.scrollTop, Math.round(r.bottom), innerHeight]; })()")
+    check('L2: Interactive graphs opens below the ribbon, scrolled to its top, inside the window', r[0] >= 0 and r[1] == 0 and r[2] <= r[3], r)
+    page.keyboard.press('Escape')
+
+
 with sync_playwright() as p:
     want = sys.argv[1:]
     browser, page, errors = open_page(p, 1366, 800)
-    for name, fn in (('views', views), ('show_latex', show_latex), ('view_tab', view_tab), ('repeat_undo', repeat_undo), ('help_tab', help_tab)):
+    for name, fn in (('views', views), ('show_latex', show_latex), ('view_tab', view_tab), ('repeat_undo', repeat_undo), ('help_tab', help_tab), ('review', review)):
         if want and name not in want:
             continue
         try: fn(page)

@@ -378,7 +378,7 @@ export const methods = {
     const del = this.deletionEdits(h.f, a, b);
     let at = a;
     if (del.length && del[0].s > a && del[0].t === '') at = del[0].s;
-    if (text && this.texAt(h.f, at) && /[\\{}%$&#^_~]/.test(text)) return { skip: 'latex' };
+    if (text && this.texAt(h.f, at, true) && /[\\{}%$&#^_~]/.test(text)) return { skip: 'latex' };
     const t = text ? this.escapeAt(h.f, at, text) : '';
     const out = [];
     let put = !t;

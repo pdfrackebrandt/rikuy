@@ -2267,12 +2267,46 @@ Tests:
     a row of groups, not Word's backstage panel, so the fold rule, agents' names and the phone's
     scrolling row hold. Security quick review: Check accessibility's two patterns backtracked on
     a stranger's run of spaces (a minute for 200 000); now a bounded scan, with a test.
-    Evidence on main 3ad0d31 (with B3's lists): `npm test` green (`view` 13 checks new), `view.py` 100 and `file.py` 66
-    (with `dist/tex` and `dist/word`), `tabs.py` 115, `ribbon.py` 268, `agent.py` 138,
-    `browser.py` 189, `offline.py` 54/54, `launch.py` 18/18, `deploy_check.py` 43/43,
-    `pages_check.py` fits, the corpus model run 716 of 716 with main's unknown commands.
+    *After the hostile review of 8c6c832* (4 High, 4 Medium, 12 Low; each with the reviewer's case
+    as a test, `test/file.test.mjs` new, `view.test.mjs` and the `review` part of `view.py`):
+    Properties (now `src/props.js`, on strings) writes only the fields changed, compared as the
+    source holds them, and only the stretch typed, escaped (`& % #` always, `_ ^` outside math, a
+    lone `$`, a backslash counted as a run), so an author's comments, line breaks and a tabular's
+    `&` stay (H1, L4); title and author are text areas. hyperref comes bare,
+    `\usepackage{hyperref}`, before cleveref, hypcap, bookmark, glossaries and the others that must
+    follow it, its keys in `\hypersetup` (H2); a class that loads hyperref (acmart, beamer,
+    moderncv, tufte, aastex, ...) gets a `\hypersetup` line only (H3); a key is changed and cleared
+    where it is read, options or `\hypersetup`, comments read as TeX reads them (L5); with
+    `dist/tex` the review's author, cleveref and acmart documents compile in the page. Tag the PDF is
+    not offered: the tree leaves out latex-lab's HTML files, so a tagged compile stops (H4, open
+    task 60). Export as drops Word's anchors and pictures it has no bytes for (M1, L7); a name in
+    another script exports as `paper.*` (L8). The blocks shown as LaTeX move with the edits of
+    commit, undo and redo in one pass (a key inside undo's merged region through its hunks; other
+    changes as line hunks): 40 views in 850 KB under 30 ms a keystroke, a commit in the preamble and
+    the body or a Replace All keeps them (M2, M4); a key is the block's first character, so Enter at
+    its start keeps it (L1). Repeat follows a command only, typing ends it, and nothing that deletes,
+    clears, sorts, merges or splits is repeated (M3). Paste into a view of a CRLF file writes CRLF
+    (L3); Replace's LaTeX paragraph rule and the Styles gallery ignore views (L10); Esc acts only
+    with the caret on the page, never mid composition (L11); Interactive graphs opens below the
+    ribbon at its top (L2); Remove takes the document's pictures too (L6); Set as default refuses a
+    preamble that reads project files (L9); the status links are 44 px under a finger (L12).
+    Evidence on main 07069e1 (B3's lists, B13's Equation tab, the native parser and B2's Paragraph
+    group in; B2's Show marks, Ctrl+Shift+8, replaces B12's, with View's copy "Formatting marks"):
+    `npm test` green (`view` 16 checks, `file` 11 groups, both new), `view.py` 108 and `file.py` 73
+    (with `dist/tex` and `dist/word`), `eqtab.py` 159 (its Equation tab now has Conversions with
+    Show LaTeX), `para.py` 204, `tabs.py` 115, `ribbon.py` 270, `agent.py` 141, `browser.py` 193,
+    `offline.py` 55/55; on 3ad0d31 `launch.py` 18/18, `deploy_check.py` 43/43, `pages_check.py`
+    fits, the corpus model run 716 of 716.
 
 ## Open tasks
+
+60. **Tag the PDF.** LaTeX tags a PDF with `\DocumentMetadata{lang=..,pdfstandard=ua-2,tagging=on}`,
+    but `tex/build_tree.py` drops every `.html` file, latex-lab's `latex-list-css.html` and
+    `latex-align-css.html` among them, so every tagged compile stops with `pdffile Error`. Keep
+    `texmf-dist/tex/latex/latex-lab/*.html` in the tree, rebuild it reproducibly (Ubuntu's zlib in
+    `LD_PRELOAD`), update `dev/dist-manifest.txt` in the same commit, then offer Check
+    accessibility's Tag the PDF again (`addTaggingLine` in `src/cmd/file.js`) with a compile of a
+    tagged document on the three engines in `file.py`.
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000
     papers, every failure classified as in task 2. Needs arxiv.org (see task 3). The owner runs

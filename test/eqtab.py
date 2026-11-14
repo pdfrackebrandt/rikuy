@@ -60,9 +60,9 @@ def tab_comes(page):
     check('a press on the tab opens it and leaves the field open, with the focus', page.evaluate(TAB) == 'Equation' and page.evaluate('!!document.querySelector(".pop-math")') and page.evaluate(ACTIVE) == 'pop-field')
     tp = page.get_by_role('tabpanel', name='Equation', exact=True)
     names = tp.get_by_role('button').evaluate_all('(xs) => xs.filter((x) => x.offsetParent).map((x) => x.getAttribute("aria-label"))')
-    want = ['Equation gallery', 'Numbered', 'Numbered options', 'Display', 'Basic math', 'Greek letters', 'Operators', 'Arrows', 'Relations', 'Sets and logic', 'Geometry',
+    want = ['Equation gallery', 'Numbered', 'Numbered options', 'Display', 'Show LaTeX', 'Basic math', 'Greek letters', 'Operators', 'Arrows', 'Relations', 'Sets and logic', 'Geometry',
             'Fraction', 'Script', 'Radical', 'Integral', 'Large operator', 'Bracket', 'Function', 'Accent', 'Limit and log', 'Operator', 'Matrix']
-    check('its groups Tools, Symbols and Structures hold Word\'s commands by name', all(n in names for n in want) and tp.get_by_role('group').evaluate_all('(xs) => xs.map((x) => x.getAttribute("aria-label"))')[:3] == ['Tools', 'Symbols', 'Structures'], names)
+    check('its groups Tools, Conversions (B12\'s Show LaTeX), Symbols and Structures hold Word\'s commands by name', all(n in names for n in want) and tp.get_by_role('group').evaluate_all('(xs) => xs.map((x) => x.getAttribute("aria-label"))')[:4] == ['Tools', 'Conversions', 'Symbols', 'Structures'], names)
     check('Display shows the formula is in the line (not pressed); Numbered is not pressed', tp.get_by_role('button', name='Display', exact=True).get_attribute('aria-pressed') == 'false' and tp.get_by_role('button', name='Numbered', exact=True).get_attribute('aria-pressed') == 'false')
     page.mouse.click(5, 600); page.wait_for_timeout(300)
     check('a press on the page closes the field, and the tab goes', not page.evaluate('!!document.querySelector(".pop-math")') and 'Equation' not in page.evaluate(SHOWN))
