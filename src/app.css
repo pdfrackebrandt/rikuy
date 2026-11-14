@@ -186,7 +186,9 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
 .rb-split > .rb-x svg { width: 12px; height: 12px; }
 .rb-split:hover > .btn:not(:disabled) { background: color-mix(in srgb, var(--blue-wash) 60%, transparent); }
 .rb-split > .btn:hover:not(:disabled) { background: var(--blue-wash); }
-.rb { display: flex; align-items: center; gap: 2px; padding: 0 0 0 12px; min-height: 40px; background: var(--chrome); border-bottom: 1px solid var(--line); flex: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; white-space: nowrap; }
+/* (positioned, so the hidden names of the icon buttons, .sr, stay inside the row that scrolls: placed
+   from the page instead, those past a phone's right edge made the whole page scroll sideways) */
+.rb { position: relative; display: flex; align-items: center; gap: 2px; padding: 0 0 0 12px; min-height: 40px; background: var(--chrome); border-bottom: 1px solid var(--line); flex: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; white-space: nowrap; }
 .rb::-webkit-scrollbar { display: none; }
 .rb > * { flex: none; }
 .rb > .rb-panel { flex: 1 0 auto; }
@@ -1384,9 +1386,10 @@ body.fpainting #pages { cursor: copy; }
 .eq-mx .katex { font-size: 1em; }
 .eq-syms .eq-mx { font-size: 17px; }
 /* the structures' tiles: a template drawn as TeX draws it, its slots grey squares */
-.eq-structs .eq-sec { grid-template-columns: repeat(var(--cols, 5), minmax(64px, auto)); }
-.eq-structs .eq-mi { min-height: 52px; padding: 4px 8px; }
-.eq-structs .eq-mx { font-size: 16px; }
+.eq-structs .eq-sec { grid-template-columns: repeat(var(--cols, 5), minmax(68px, auto)); gap: 4px; }
+.eq-structs .eq-mi { min-height: 60px; padding: 6px 10px; }
+/* (drawn larger than a symbol, as Word's: a small fraction's slots stay big enough to see) */
+.eq-structs .eq-mx { font-size: 19px; }
 /* the gallery and the plain menus: one item to a row, its name over its formula */
 .eq-list .eq-sec { display: flex; flex-direction: column; gap: 1px; }
 .eq-list .eq-mi { justify-content: flex-start; min-height: 32px; padding: 4px 10px; }
@@ -1395,7 +1398,7 @@ body.fpainting #pages { cursor: copy; }
 .eq-gal { min-width: 300px; }
 .eq-gal .eq-mi { flex-direction: column; align-items: flex-start; gap: 4px; padding: 6px 10px 8px; }
 .eq-gal .eq-ml { font: 600 12px var(--font-ui); color: var(--mute); }
-.eq-gal .eq-mx { font-size: 15px; max-width: 100%; overflow: hidden; }
+.eq-gal .eq-mx { font-size: 16px; max-width: 100%; overflow: hidden; }
 .eq-gal .eq-sec + .eq-sec, .eq-gal .eq-h + .eq-sec { border-top: 0; }
 /* the name of an equation to keep */
 .pop.eq-ask { width: min(320px, calc(100vw - 16px)); padding: 10px; gap: 8px; }
@@ -1404,9 +1407,6 @@ body.fpainting #pages { cursor: copy; }
 @media (pointer: coarse) { .eq-mi { min-width: 44px; min-height: 44px; } .eq-list .eq-mi { min-height: 44px; } .eq-ask .btn { min-height: 44px; min-width: 64px; } .eq-in { min-height: 44px; } .pop-menu.eq-ctx .nav-act { min-height: 44px; } }
 /* the tab's buttons on a touch screen, and Insert's Equation with its arrow, take a finger */
 @media (pointer: coarse) { #rp-equation .btn, #ri-eq, #ri-eq-x { min-width: 44px; min-height: 44px; } }
-/* (the hidden names of the tab's icon buttons stay inside the row that scrolls on a phone: placed
-   from the page instead, those past its right edge made the whole page scroll sideways) */
-#rp-equation { position: relative; }
 .eq-gal .eq-mi.eq-act { flex-direction: row; min-height: 32px; padding: 4px 10px; }
 .eq-gal .eq-act .eq-ml { font: 400 13px var(--font-ui); color: var(--ink-ui); }
 @media (pointer: coarse) { .eq-gal .eq-mi.eq-act { min-height: 44px; } }
