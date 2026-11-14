@@ -292,6 +292,26 @@ def page_x(page, word):
       const r = document.createRange(), i = sp.textContent.indexOf(w); r.setStart(sp.firstChild, i); r.setEnd(sp.firstChild, i + w.length); const b = r.getBoundingClientRect(), pb = sp.closest('.pb, .flow').getBoundingClientRect();
       return { l: (b.left - pb.left) / px, r: (b.right - pb.left) / px, w: pb.width / px }; }''', word)
 
+def hinting(p):
+    """A Chromium that hints its fonts in full (CI's runner did): the page's words keep TeX's
+    widths, not widths rounded to whole pixels, so the page puts them where TeX does"""
+    was = os.environ.get('CHROME_ARGS', '')
+    os.environ['CHROME_ARGS'] = (was + ' --font-render-hinting=full').strip()
+    try:
+        br, page, errors = open_page(p)
+        load_doc(page, D('\\noindent Leftmost words here.\n\n\\begin{center}\nCentredword alone.\n\\end{center}\n\n\\begin{flushright}\nRightword alone.\n\\end{flushright}'))
+        page.wait_for_timeout(500)
+        got = [page_x(page, w) for w in ('Centredword', 'Rightword')]
+        br.close()
+    finally:
+        os.environ['CHROME_ARGS'] = was
+    # (TeX's: Centredword from 129.6 to 185.4 bp of the text's left, Rightword from 269.7 to 314.9;
+    # with the fonts' hinting the page had 127.4 to 185.7 and 265.1 to 313.1)
+    BP = 72 / 72.27
+    want = [(129.53, 185.41), (269.73, 314.95)]
+    check('with the fonts hinted in full, the page sets Centredword and Rightword where TeX does (within 0.5 bp)', all(g and abs(g['l'] * BP - a) < 0.5 and abs(g['r'] * BP - b) < 0.5 for g, (a, b) in zip(got, want)), got)
+
+
 def compile_pdf(page):
     if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
         print('SKIP the PDF of the paragraphs: no TeX tree in %s' % DIST)
@@ -617,6 +637,9 @@ def run():
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
         browser.close()
+        if not names or 'hinting' in names:
+            try: hinting(p)
+            except Exception as e: check('hinting runs to its end', False, str(e)[:400])
         if not names or 'phone' in names:
             try: phone(p)
             except Exception as e: check('phone runs to its end', False, str(e)[:400])

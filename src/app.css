@@ -354,7 +354,11 @@ body.pdf-on #pdfpane { display: flex; }
 .grow { flex: 1 1 auto; }
 
 /* ---- the sheet: everything typeset ---- */
-.sheet { padding: 28px 0 60px; font-family: var(--font-doc); color: var(--ink); --pt: 1.3; }
+/* (geometricPrecision: the glyphs' advances as the font has them, as TeX sets them, not rounded
+   to whole pixels by the font's hinting; a Chromium with full hinting, as CI's, drew "Centredword
+   alone." 2 bp wider than TeX and so 2 bp to the left. The measuring flow is in the sheet too, so
+   the line breaks and the drawing agree.) */
+.sheet { padding: 28px 0 60px; font-family: var(--font-doc); color: var(--ink); --pt: 1.3; text-rendering: geometricPrecision; }
 .sheet[data-font="times"] { --font-doc: "Times New Roman", Times, "Nimbus Roman", serif, var(--font-ar), var(--font-he), var(--font-cjk), var(--font-in), var(--font-th), var(--font-si); }
 .sheet[data-font="palatino"] { --font-doc: "Palatino Linotype", Palatino, "Book Antiqua", "URW Palladio L", serif, var(--font-ar), var(--font-he), var(--font-cjk), var(--font-in), var(--font-th), var(--font-si); }
 .sheet[data-font="sans"] { --font-doc: "Helvetica Neue", Helvetica, Arial, sans-serif, var(--font-ar-sf), var(--font-he-sf), var(--font-cjk-sf), var(--font-in-sf), var(--font-th-sf), var(--font-si-sf); }
