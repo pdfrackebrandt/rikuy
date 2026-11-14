@@ -1630,18 +1630,6 @@ class Builder {
     }
     const thm = this.thms.get(name) || this.thms.get(base) || (DEFAULT_THMS[base] ? { title: DEFAULT_THMS[base], counter: base, style: /definition|assumption|example|remark|notation|condition|problem|exercise|question/.test(base) ? 'definition' : 'plain', auto: true } : null);
     if (thm) return this.theorem(nd, ctx, env, thm, name);
-    // a tcolorbox (B8's shaded text box): its paragraphs in one frame, as wide as its width= says
-    if (name === 'tcolorbox') {
-      const o = nd.args[0] ? this.argText(ctx, nd.args[0]) : '';
-      const r = this.container(nd, ctx, env, { cls: (env.cls || '') + ' tcb' });
-      const ps = r.items.filter((x) => x.type === 'p');
-      if (ps.length) { ps[0].cls = (ps[0].cls || '') + ' tcb-a'; ps[ps.length - 1].cls = (ps[ps.length - 1].cls || '') + ' tcb-z'; }
-      const w = /(?:^|,)\s*width\s*=\s*([\d.]*)\s*\\(?:linewidth|textwidth|columnwidth)/.exec(o);
-      const share = w ? (w[1] === '' ? 1 : parseFloat(w[1])) : null;
-      const bg = /(?:^|,)\s*colback\s*=\s*([A-Za-z]+(?:![\d.]+(?:![A-Za-z]+)?)*)/.exec(o);
-      for (const x of ps) { if (share && share > 0 && share < 1) { x.boxW = share; x.boxC = /(?:^|,)\s*center\s*(,|$)/.test(o); } if (bg) x.boxBg = bg[1]; }
-      return r;
-    }
     if (['quote', 'quotation', 'verse'].includes(name)) {
       return this.container(nd, ctx, env, { cls: (env.cls || '') + ' quote', noIndentFirst: name !== 'quotation', ...FLUSH });
     }
@@ -1758,6 +1746,10 @@ class Builder {
     const L = (x, d) => { const v = x != null ? parseLen(String(x), this.opts.pt) : null; return typeof v === 'number' ? v : d; };
     const box = { bg: kv.colback ? this.colorText(String(kv.colback)) : '#F2F2F2', fr: kv.colframe ? this.colorText(String(kv.colframe)) : '#404040', rule: typeof rule === 'number' ? rule : 1.42,
       l: L(kv.left, 11.38) + L(kv.boxsep, 2.85), r: L(kv.right, 11.38) + L(kv.boxsep, 2.85), t: L(kv.top, 5.69) + L(kv.boxsep, 2.85), b: L(kv.bottom, 5.69) + L(kv.boxsep, 2.85), sharp: !!kv['sharp corners'] || kv.arc === '0pt' };
+    // (B8's Text Box: a share of the line wide, centred, as width= and center set it)
+    const w = typeof kv.width === 'string' ? /^([\d.]*)\s*\\(?:linewidth|textwidth|columnwidth)$/.exec(kv.width.trim()) : null;
+    const share = w ? (w[1] === '' ? 1 : parseFloat(w[1])) : null;
+    if (share > 0 && share < 1) { box.w = share; box.center = kv.center === true; }
     const r = this.container(nd, ctx, env, { box, noIndentFirst: true, ...FLUSH, flushAll: true });
     const ps = r.items.filter((it) => it.type === 'p');
     if (ps.length) { ps[0].boxFirst = true; ps[ps.length - 1].boxLast = true; }

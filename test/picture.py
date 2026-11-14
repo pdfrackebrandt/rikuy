@@ -337,7 +337,7 @@ def objects(page):
         check('Text Box (' + kind + '): written after the paragraph, "Type here." selected and typed over' + (', ' + pk + ' once' if pk else ''), needle.replace('Type here.', 'Boxed words') in src(page) and (not pk or src(page).count('\\usepackage{' + pk + '}') == 1), body(page))
     load_doc(page, PLAIN); click_text(page, 'First', 2)
     run_cmd(page, 'insert-textbox', {'kind': 'shaded'}); page.wait_for_timeout(250)
-    fr = page.evaluate("(() => { const e = document.querySelector('#pages .it.tcb'); return e && [getComputedStyle(e).borderTopStyle, Math.round(e.getBoundingClientRect().width / e.parentElement.getBoundingClientRect().width * 100)]; })()")
+    fr = page.evaluate("(() => { const e = document.querySelector('#pages .it.bx'); return e && [getComputedStyle(e).borderTopStyle, Math.round(e.getBoundingClientRect().width / e.parentElement.getBoundingClientRect().width * 100)]; })()")
     check('the shaded box drawn framed, 60% of the line wide', fr and fr[0] == 'solid' and abs(fr[1] - 60) <= 2, fr)
     # drop cap
     roundtrip(page, PLAIN, lambda pg: (click_text(pg, 'paragraph', 2), pg.wait_for_timeout(80)), fn('dropcap-dropped'), WRAP('\\lettrine[lines=3]{F}{irst} paragraph here.\n\nSecond paragraph here.', '\\usepackage{lettrine}\n'), off=WRAP('First paragraph here.\n\nSecond paragraph here.', '\\usepackage{lettrine}\n'), off_command=fn('dropcap-none'), label='Drop Cap: Dropped, None takes it off')

@@ -4,7 +4,7 @@
 
 import { siInMath } from './siunitx.js';
 import { graphicBox, unescapeAlt } from './picture.js';
-import { drawRaw, drawSmart, drawIcon, smartItems, colorOf } from './drawing.js';
+import { drawRaw, drawSmart, drawIcon, smartItems } from './drawing.js';
 import { parseKV } from './preamble.js';
 
 export const BLOCKS = new Map();
@@ -190,6 +190,7 @@ export class Renderer {
       el.style.background = cssColor(b.bg) || '#F2F2F2';
       el.style.paddingLeft = pt(b.l); el.style.paddingRight = pt(b.r);
       if (line) { el.style.borderLeft = line; el.style.borderRight = line; }
+      if (b.w) { el.style.boxSizing = 'border-box'; el.style.width = (b.w * 100) + '%'; if (b.center) el.style.marginLeft = el.style.marginRight = 'auto'; }
       if (it.boxFirst) { el.style.paddingTop = pt(b.t); if (line) el.style.borderTop = line; if (!b.sharp) { el.style.borderTopLeftRadius = el.style.borderTopRightRadius = pt(2.85); } }
       if (it.boxLast) { el.style.paddingBottom = pt(b.b); if (line) el.style.borderBottom = line; if (!b.sharp) { el.style.borderBottomLeftRadius = el.style.borderBottomRightRadius = pt(2.85); } }
     }
@@ -223,9 +224,6 @@ export class Renderer {
         // (a paragraph to a screen reader and an agent, which can then pick one inside the page)
         el.setAttribute('role', 'paragraph');
         if (it.cls) for (const c of it.cls.split(/\s+/).filter(Boolean)) el.classList.add(c);
-        // (a tcolorbox's width and its background, B8: a share of the line, a colour of xcolor's)
-        if (it.boxW) { el.style.width = (it.boxW * 100) + '%'; if (it.boxC) el.style.marginLeft = el.style.marginRight = 'auto'; }
-        if (it.boxBg && colorOf(it.boxBg)) el.style.setProperty('--tcb-bg', colorOf(it.boxBg));
         if (it.indent) el.classList.add('ind');
         if (it.cont) el.classList.add('cont');
         if (it.align) el.classList.add('al-' + it.align);
