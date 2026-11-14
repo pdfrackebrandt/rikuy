@@ -89,8 +89,10 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
   proves the rest from the two parse trees: the same document environment, the same top level
   nodes before the paragraph and the same moved by the edit's length after it, the same user
   signatures, the old and the new paragraph both plain, the failed `$` scans under their budget.
-  Then only that paragraph goes through `Builder.flow` (with the old one's indent, alignment and
-  direction); the units before are `prev`'s, the units after are moved (`movedUnit`: their range
+  Then only that paragraph goes through `Builder.flow` (with the old one's indent, alignment,
+  direction and line spacing, and a heading run into it carried over with its signature: what
+  the units before it decided); a paragraph with B2's own settings (a hanging indent, a box, kept
+  lines) takes the full build; the units before are `prev`'s, the units after are moved (`movedUnit`: their range
   at once, their items and footnotes on first read, one cumulative shift however many keystrokes
   came first, checked against the unit's smallest offset), a table of contents lists `prev`'s
   headings as a full build's does, and the words, headings and body end follow. Anything else is
