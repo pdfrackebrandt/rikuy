@@ -1763,7 +1763,7 @@ Tests:
     (`tex/native/core/parse.cc`, `src/native.js`; ARCHITECTURE.md section 17). The C++ is parseJS
     function for function; parser.js keeps the tables and sends them at load; the tree comes back
     as numbers and becomes parseJS's objects key for key. `sh tex/build_tools.sh core` makes
-    `tex/vendor/core/rikuy-core.wasm` (60,908 bytes after the review, 13.7 KB with Brotli; SHA-256 `4ae0594f...`;
+    `tex/vendor/core/rikuy-core.wasm` (60,669 bytes after the review, 13.7 KB with Brotli; SHA-256 `83dc7c30...`;
     rebuilt byte for byte from another folder and a moved copy of the sources, and by `vendor.yml`,
     whose matrix now has `core`); the page fetches it as `core/rikuy-core-<hash>.wasm` once it is
     in use and idle and checks its hash, so a first visit on a slow phone line waits for none of it
@@ -1819,9 +1819,11 @@ Tests:
     boxes: a task of its own). Find stays on V8's regular expressions.
     *Review* (a fresh hostile reader; no High, 2 Medium, 5 Low, all fixed with their inputs as
     tests): a `$` that never closes still scanned to the end from every `$` (`'$\verb|{|'` 22,000
-    times: 6.7 s in JavaScript, 5.9 s in the core); a `$` now closes within 5000 code units or not
-    at all (the corpus's longest formula is 728; only `cleveref.sty`'s three copies parse otherwise
-    than on main): 349 and 154 ms. 8000 raw environments of 8000 names, none ended, made the memo
+    times: 6.7 s in JavaScript, 5.9 s in the core); the units read by failed `$` scans are counted,
+    and once they pass 2,000,000 in a parse a `$` closes within 1000 units or not at all (a fixed
+    bound of 5000 for every scan, tried first, broke an 8879 unit `$$` polynomial that TeX
+    compiles, as the verifier found): 124 and 40 ms, and the 990 KB version 674 and 191 ms; every
+    file of the corpus parses as on main. 8000 raw environments of 8000 names, none ended, made the memo
     per name scan 8000 times, and the core, whose searches are plain loops, was twice as slow as
     JavaScript (4.6 against 2.3 s): every `\end` is now indexed in one pass, 19 and 8 ms. A second
     `loadCore` kept the last document's signatures as sent, and gave wrong trees; a trap left the
@@ -1831,7 +1833,9 @@ Tests:
     was 100). Prototype names: `\toString`, `\valueOf` and `\toLocaleString` were, on main,
     commands of no arguments whose star was not taken (`'toString' in CHARS`); now they are unknown
     commands, which take their adjacent groups and their star. `test/native.test.mjs` 39 checks
-    (41 with the corpus).
+    (41 with the corpus); after the verifier's two Lows (the budget above, and every environment name
+    the repository, its tests and the corpus write, and every word parser.js quotes, read the same
+    by both, so a name list kept inline on one side fails) 43.
 
 ## Open tasks
 

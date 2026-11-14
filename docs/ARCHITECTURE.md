@@ -1143,7 +1143,7 @@ there. So far one function is ported: `parse()`.
   `Text`, a string map, JavaScript's white space; `parse.cc`: `parseJS` function for function, in
   parser.js's order). `sh tex/build_tools.sh core` compiles `CORE_SOURCES` with Ubuntu's
   Emscripten 3.1.6 (C++17, no exceptions or RTTI, `-O3`, emmalloc, `STANDALONE_WASM`: one empty
-  import, no JavaScript glue) into `tex/vendor/core/rikuy-core.wasm` (61 KB), committed and
+  import, no JavaScript glue) into `tex/vendor/core/rikuy-core.wasm` (60 KB), committed and
   rebuilt byte for byte by `vendor.yml`. The sources live with the programs' native layer because
   that is where the toolchain, the path mapping of `EMCC_CFLAGS` and the reproducibility check are;
   `src/` holds only what esbuild bundles.
@@ -1172,10 +1172,11 @@ there. So far one function is ported: `parse()`.
   place of this string at or after p" (`nextAt`, `Seen`: `\(` without `\)`, an unknown command's
   `[`); find every `\end{name}` and `\end { name }` in one pass the first time a raw environment
   asks, then binary search per environment (`endIndex`, `rawEnd`; `buildEndIndex` in parse.cc);
-  and let a `$` or `$$` close only within `MATH_SCAN` (5000) code units: the longest formula of the
-  corpus's documents is 728, and braces TeX does not count (in a `\verb`, a verbatim) kept a `$`
-  from closing, so each scanned to the end. Of the corpus's 998 files only the three copies of
-  `cleveref.sty` (a `$` in macro code, 19,867 units to its partner) parse otherwise than before.
+  and count the units read by `$` scans that fail (braces TeX does not count, in a `\verb` or a
+  verbatim, kept a `$` from closing, so each scanned to the end): once they pass `MATH_BUDGET`
+  (2,000,000) in a parse, a `$` or `$$` closes within `MATH_SCAN` (1000) units or not at all.
+  Scans that succeed move past their formula, so a formula of any length (computer algebra's `$$`
+  polynomials) closes as before; every file of the corpus parses as on main.
   `test/native.test.mjs` times each of these inputs in both parsers.
 - **Measured** (`dev/bench_native.mjs`, `dev/bench_native_page.py`; PLAN.md task 52): `parse()` 4.3
   times faster on the 141 KB paper, 2.45 times on a 400 KB generated document of 18,700 nodes
