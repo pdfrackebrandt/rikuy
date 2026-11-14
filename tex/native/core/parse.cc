@@ -27,6 +27,7 @@ enum { STOP_NONE, STOP_BRACE, STOP_BRACKET };
 // the deepest nesting of groups, environments and arguments parsed here; past it JavaScript does
 // the work (the wasm stack is the page's JavaScript stack)
 const int DEPTH = 200;
+const int MATH_SCAN = 5000;   // parser.js's MATH_SCAN
 
 // ---- the tables, from parser.js ------------------------------------------------------------
 // One string: sections split by U+0003, entries by U+0001, a key and its value by U+0002.
@@ -136,8 +137,69 @@ struct Parser {
   EnvSeen *envSeen = nullptr;
   int envSeenN = 0, envSeenCap = 0;
 
+  // Every \end{name} of the text, as parser.js's endIndex finds them: per name, the sorted starts of
+  // its exact ends (xPos) and of all its ends with their lengths (lPos, lLen), [off[id], off[id+1]).
+  bool ixBuilt = false;
+  Map ixNames;
+  int ixN = 0;
+  int *xOff = nullptr, *xPos = nullptr, *lOff = nullptr, *lPos = nullptr, *lLen = nullptr;
+
   Parser(const char16_t *s, int len, Out &out) : src(s), n(len), o(out) {}
-  ~Parser() { free(envS); free(envE); free(envSeen); envIdx.clear(); }
+  ~Parser() { free(envS); free(envE); free(envSeen); envIdx.clear(); ixNames.clear(); free(xOff); free(xPos); free(lOff); free(lPos); free(lLen); }
+
+  static bool nameCh(int c) { return isLetter(c) || c == '@' || c == '*' || c == '_'; }
+  bool buildEndIndex() {
+    ixBuilt = true;
+    // first the matches in the order of the text, then grouped by name (a counting sort keeps
+    // each name's starts in order)
+    int cap = 64, cnt = 0;
+    int *ek = (int *)malloc(cap * 5 * sizeof(int));
+    if (!ek) return false;
+    for (int k = 0; k + 4 <= n; k++) {
+      if (src[k] != '\\' || !startsWith("\\end", k)) continue;
+      int p = k + 4;
+      while (p < n && jsSpace(src[p])) p++;
+      if (at(p) != '{') continue;
+      int a = p + 1;
+      while (a < n && jsSpace(src[a])) a++;
+      int b = a;
+      while (b < n && nameCh(src[b])) b++;
+      int c = b;
+      while (c < n && jsSpace(src[c])) c++;
+      if (at(c) != '}') continue;
+      int32_t id = ixNames.get(src + a, (uint32_t)(b - a));
+      if (id < 0) { id = ixN++; if (!ixNames.put(src + a, (uint32_t)(b - a), id)) { free(ek); return false; } }
+      if (cnt == cap) {
+        cap *= 2;
+        int *e2 = (int *)realloc(ek, (size_t)cap * 5 * sizeof(int));
+        if (!e2) { free(ek); return false; }
+        ek = e2;
+      }
+      int *e = ek + cnt * 5;
+      e[0] = k; e[1] = id; e[2] = c + 1 - k; e[3] = at(k + 4) == '{' && a == k + 5 && c == b; e[4] = 0;
+      cnt++;
+      k = c;
+    }
+    xOff = (int *)calloc(ixN + 1, sizeof(int)); lOff = (int *)calloc(ixN + 1, sizeof(int));
+    xPos = (int *)malloc((cnt + 1) * sizeof(int)); lPos = (int *)malloc((cnt + 1) * sizeof(int)); lLen = (int *)malloc((cnt + 1) * sizeof(int));
+    if (!xOff || !lOff || !xPos || !lPos || !lLen) { free(ek); return false; }
+    for (int q = 0; q < cnt; q++) { lOff[ek[q * 5 + 1] + 1]++; if (ek[q * 5 + 3]) xOff[ek[q * 5 + 1] + 1]++; }
+    for (int q = 0; q < ixN; q++) { lOff[q + 1] += lOff[q]; xOff[q + 1] += xOff[q]; }
+    int *lFill = (int *)malloc((ixN + 1) * sizeof(int)), *xFill = (int *)malloc((ixN + 1) * sizeof(int));
+    if (!lFill || !xFill) { free(lFill); free(xFill); free(ek); return false; }
+    memcpy(lFill, lOff, (ixN + 1) * sizeof(int)); memcpy(xFill, xOff, (ixN + 1) * sizeof(int));
+    for (int q = 0; q < cnt; q++) {
+      int *e = ek + q * 5, id = e[1];
+      lPos[lFill[id]] = e[0]; lLen[lFill[id]] = e[2]; lFill[id]++;
+      if (e[3]) xPos[xFill[id]++] = e[0];
+    }
+    free(lFill); free(xFill); free(ek);
+    return true;
+  }
+  static int atOrAfter(const int *list, int lo, int hi, int p) {
+    while (lo < hi) { int m = (lo + hi) >> 1; if (list[m] < p) lo = m + 1; else hi = m; }
+    return lo;
+  }
 
   static bool known(const Seen &c, int p) { return c.found != -2 && p >= c.from && (c.found < 0 || p <= c.found); }
   int nextCh(Seen &c, int ch, int p) {
@@ -380,14 +442,16 @@ struct Parser {
     return { N_GROUP, e };
   }
 
+  // a $ or $$ closes within MATH_SCAN code units or not at all (parser.js says why)
   int findClosingDollar(int from, bool dbl) const {
     int d = 0;
-    for (int j = from; j < n; j++) {
+    const int end = from + MATH_SCAN < n ? from + MATH_SCAN : n;
+    for (int j = from; j < end; j++) {
       int c = src[j];
       if (c == '\\') { j++; continue; }
       if (c == '{') d++;
       else if (c == '}') d--;
-      else if (c == '%') { while (j < n && src[j] != '\n') j++; }
+      else if (c == '%') { while (j < end && src[j] != '\n') j++; }
       else if (c == '\n') {
         int k = j + 1;
         while (k < n && (src[k] == ' ' || src[k] == '\t' || src[k] == '\r')) k++;
@@ -414,8 +478,9 @@ struct Parser {
   // the arguments of sig, appended; argc is the count's place in the list. Returns whether
   // every argument is missing, and the largest end (for lastEnd).
   struct Args { bool allNull; int maxE; };
+  // (no depth of its own: the lists it reads are counted by parseSeq, so DEPTH is 200 levels of
+  // groups, environments and arguments alike)
   Args parseArgs(const char16_t *sig, uint32_t sl, uint32_t argc, Args acc) {
-    if (++depth > DEPTH) { bail = true; depth--; return acc; }
     for (uint32_t q = 0; q < sl && !bail; q++) {
       int kind = sig[q];
       int save = i;
@@ -491,7 +556,6 @@ struct Parser {
         }
       }
     }
-    depth--;
     return acc;
   }
   Args parseArgs(const char *sig, uint32_t argc, Args acc) {
@@ -1007,8 +1071,33 @@ struct Parser {
       else if (sliceIs(a, b, "minted")) parseArgs("om", pa, { true, -1 });
       else if (sliceIs(a, b, "lstlisting") || sliceIs(a, b, "Verbatim")) { if (at(i) == '[') parseArgs("o", pa, { true, -1 }); }
       int be = i;
-      // '\\end{' + name + '}'
       int m = b - a;
+      bool plainName = true;
+      for (int q = a; q < b; q++) if (!nameCh(src[q])) { plainName = false; break; }
+      if (plainName) {
+        // the index of every \end (parser.js's rawEnd)
+        if (!ixBuilt && !buildEndIndex()) { bail = true; return { N_ENV, i }; }
+        int32_t id = ixNames.get(src + a, (uint32_t)m);
+        int k = -1, len = 0;
+        if (id >= 0) {
+          int x = atOrAfter(xPos, xOff[id], xOff[id + 1], be);
+          if (x < xOff[id + 1]) { k = xPos[x]; len = m + 6; }
+          else {
+            int l = atOrAfter(lPos, lOff[id], lOff[id + 1], be);
+            if (l < lOff[id + 1]) { k = lPos[l]; len = lLen[l]; }
+          }
+        }
+        if (k < 0) {
+          i = be;
+          o.truncate(start);
+          o.push(N_STRAY); o.push(1); o.push(a); o.push(b); o.push(s); o.push(be); o.push(1);
+          return { N_STRAY, be };
+        }
+        i = k + len;
+        o.set(pe, i); o.set(pbe, be); o.set(pes, k);
+        return { N_ENV, i };
+      }
+      // another name: '\\end{' + name + '}', then \end { name }
       char16_t *closer = (char16_t *)malloc((size_t)(m + 6) * 2);
       if (!closer) { bail = true; return { N_ENV, i }; }
       const char *head5 = "\\end{";

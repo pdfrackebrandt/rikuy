@@ -1506,7 +1506,7 @@ Tests:
     (`tex/native/core/parse.cc`, `src/native.js`; ARCHITECTURE.md section 17). The C++ is parseJS
     function for function; parser.js keeps the tables and sends them at load; the tree comes back
     as numbers and becomes parseJS's objects key for key. `sh tex/build_tools.sh core` makes
-    `tex/vendor/core/rikuy-core.wasm` (56,480 bytes, 12.5 KB with Brotli; SHA-256 `06eedda7...`;
+    `tex/vendor/core/rikuy-core.wasm` (60,908 bytes after the review, 13.7 KB with Brotli; SHA-256 `4ae0594f...`;
     rebuilt byte for byte from another folder and a moved copy of the sources, and by `vendor.yml`,
     whose matrix now has `core`); the page fetches it as `core/rikuy-core-<hash>.wasm` once it is
     in use and idle and checks its hash, so a first visit on a slow phone line waits for none of it
@@ -1537,7 +1537,7 @@ Tests:
     tables and threw, and the page took no more typing; searches that leave the position where it
     was (`\(` without `\)`, an unknown command's `[`, a raw environment without its end) ran to the
     end for every occurrence: 7.0 s (JavaScript) and 5.9 s (the core) on crafted files of 120 to
-    320 KB, now 30 to 70 ms, both remembering each search; and in `diff.js` a `push(...list)` of
+    320 KB, now 30 to 70 ms, both remembering each search (the review's addition below bounds two more); and in `diff.js` a `push(...list)` of
     160,000 entries overflowed the stack, which stopped the Review tab on a long rewritten line.
     *Evidence:* `test/native.test.mjs` 28 checks in `npm test` (30 with the corpus): the same tree
     for all 11 documents of the repository and a generated one, 3000 random TeX-like texts, 2000
@@ -1560,8 +1560,21 @@ Tests:
     (4) Knuth and Plass line breaking from measured widths, which would spare layout the DOM's
     line measuring and give the page TeX's lines (needs Paper Modern's glyph widths and KaTeX's
     boxes: a task of its own). Find stays on V8's regular expressions.
-    Open: the `{$` nesting case (1.8 s in JavaScript on 80 KB nested 40,000 deep; the core declines
-    past its depth) is left as it was: its search depends on the depth it starts at.
+    *Review* (a fresh hostile reader; no High, 2 Medium, 5 Low, all fixed with their inputs as
+    tests): a `$` that never closes still scanned to the end from every `$` (`'$\verb|{|'` 22,000
+    times: 6.7 s in JavaScript, 5.9 s in the core); a `$` now closes within 5000 code units or not
+    at all (the corpus's longest formula is 728; only `cleveref.sty`'s three copies parse otherwise
+    than on main): 349 and 154 ms. 8000 raw environments of 8000 names, none ended, made the memo
+    per name scan 8000 times, and the core, whose searches are plain loops, was twice as slow as
+    JavaScript (4.6 against 2.3 s): every `\end` is now indexed in one pass, 19 and 8 ms. A second
+    `loadCore` kept the last document's signatures as sent, and gave wrong trees; a trap left the
+    instance in use (now the core is off for the session); without SubtleCrypto the module was
+    loaded unchecked (now not at all); every entry of every table the core reads is now a case of
+    the test (a merge that edits one side fails); the nesting limit is 200 for arguments too (it
+    was 100). Prototype names: `\toString`, `\valueOf` and `\toLocaleString` were, on main,
+    commands of no arguments whose star was not taken (`'toString' in CHARS`); now they are unknown
+    commands, which take their adjacent groups and their star. `test/native.test.mjs` 39 checks
+    (41 with the corpus).
 
 ## Open tasks
 

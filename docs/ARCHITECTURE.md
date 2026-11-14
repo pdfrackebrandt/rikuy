@@ -1111,7 +1111,7 @@ there. So far one function is ported: `parse()`.
   `Text`, a string map, JavaScript's white space; `parse.cc`: `parseJS` function for function, in
   parser.js's order). `sh tex/build_tools.sh core` compiles `CORE_SOURCES` with Ubuntu's
   Emscripten 3.1.6 (C++17, no exceptions or RTTI, `-O3`, emmalloc, `STANDALONE_WASM`: one empty
-  import, no JavaScript glue) into `tex/vendor/core/rikuy-core.wasm` (57 KB), committed and
+  import, no JavaScript glue) into `tex/vendor/core/rikuy-core.wasm` (61 KB), committed and
   rebuilt byte for byte by `vendor.yml`. The sources live with the programs' native layer because
   that is where the toolchain, the path mapping of `EMCC_CFLAGS` and the reproducibility check are;
   `src/` holds only what esbuild bundles.
@@ -1130,12 +1130,21 @@ there. So far one function is ported: `parse()`.
   unit for one with a lone surrogate), `core_parse` writes the tree as 32-bit numbers (a node's
   fields before its children, lengths patched when known) and `readTree` makes parseJS's objects
   from them, key for key, names sliced from the source. Null, and parseJS, where the core cannot
-  answer: not loaded, memory refused, nesting past 200 levels (`DEPTH`: the wasm stack is the
-  page's JavaScript stack), or a trap (the wasm stack pointer is restored).
-- **Searches remembered.** Both parsers remember each "first place of this string at or after p"
-  (`nextAt` in parser.js, `Seen` in parse.cc): a search that leaves the position where it was
-  (`\(` without `\)`, an unknown command's `[`, a raw environment without its end) once ran to the
-  end for every occurrence, seconds on a crafted file.
+  answer: not loaded, memory refused, nesting past 200 levels of groups, environments and
+  arguments alike (`DEPTH`, counted in `parseSeq`: the wasm stack is the page's JavaScript stack),
+  or a trap, after which the core is off for the session (its heap may be half written). A second
+  `loadCore` sends the document's signatures again; without SubtleCrypto (a page over plain http)
+  the module's hash cannot be checked and the core is not loaded.
+- **Searches bounded.** A search that leaves the position where it was once ran to the end of the
+  text for every occurrence, seconds on a crafted file. Both parsers now remember each "first
+  place of this string at or after p" (`nextAt`, `Seen`: `\(` without `\)`, an unknown command's
+  `[`); find every `\end{name}` and `\end { name }` in one pass the first time a raw environment
+  asks, then binary search per environment (`endIndex`, `rawEnd`; `buildEndIndex` in parse.cc);
+  and let a `$` or `$$` close only within `MATH_SCAN` (5000) code units: the longest formula of the
+  corpus's documents is 728, and braces TeX does not count (in a `\verb`, a verbatim) kept a `$`
+  from closing, so each scanned to the end. Of the corpus's 998 files only the three copies of
+  `cleveref.sty` (a `$` in macro code, 19,867 units to its partner) parse otherwise than before.
+  `test/native.test.mjs` times each of these inputs in both parsers.
 - **Measured** (`dev/bench_native.mjs`, `dev/bench_native_page.py`; PLAN.md task 52): `parse()` 4.3
   times faster on the 141 KB paper, 2.45 times on a 400 KB generated document of 18,700 nodes
   (making the objects is the floor there); a keystroke in the page 0.5 to 3 ms faster on the paper
