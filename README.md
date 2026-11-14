@@ -45,11 +45,16 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   as LaTeX), table cells, footnotes, `siunitx` quantities. The source pane shows every
   change as it lands.
 - **Word's ribbon over the page.** Tabs as in Word (File, Home, Insert, Design, Layout,
-  References, Review, View, Help, and Table Design and Table Layout or Header & Footer while
-  their object is open), Word's keys for headings, Normal and bullets,
+  References, Review, View, Help, and Table Design and Table Layout, Header & Footer or Equation
+  while their object is open), Word's keys for headings, Normal and bullets,
   a search box for any command by its name (Alt+Q), a right click menu of what applies where you
   are. Every button is a command of one registry, which agents find by name
   (`controls.json`, llms.txt) and run (`rikuy.api.run`).
+- **Word's equation tools.** Alt+= starts an equation (numbered on an empty line, in the line in
+  text); while one is open the Equation tab has Word's eleven structures, its symbol groups and
+  its equation gallery, each written into the field as LaTeX; Display and Numbered, and the right
+  click menu, change `$…$` to `\begin{equation}` and back, `equation` to `equation*`, `align` or
+  `gather` by renaming only.
 - **Find, Replace, Go To and the outline, as in Word.** Ctrl+F searches the text the page shows
   (50% finds `\%`), every hit marked and listed with its context in the Navigation pane; Ctrl+H
   replaces through the same escaping as typing, Replace All as one undo, with Word's wildcards,

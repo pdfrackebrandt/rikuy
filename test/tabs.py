@@ -236,8 +236,13 @@ def every_command(page):
         elif x['tab'] == 'headfoot':
             # (the Header & Footer tab is there while the header is open on the page)
             if not page.evaluate('!!rikuy.hf'): page.evaluate('rikuy.pageHFOpen("head")'); page.wait_for_timeout(200)
+        elif x['tab'] == 'equation':
+            # (the Equation tab shows while an equation's field is open)
+            if not page.evaluate('!!document.querySelector(".pop-math")'):
+                click_text(page, 'A paragraph', 2); page.evaluate('rikuy.runCommand("formula")'); page.wait_for_selector('.pop-math'); page.wait_for_timeout(250)
         else:
             if page.evaluate('!!rikuy.hf'): page.evaluate('rikuy.pageHFClose()')
+            if page.evaluate('!!document.querySelector(".pop-math")'): page.evaluate('rikuy.closePop(true)'); page.wait_for_timeout(100)
             click_text(page, 'A paragraph', 2); page.wait_for_timeout(120)
         open_tab(page, tabs[x['tab']])
         loc = page.get_by_role(x['role'], name=x['name'], exact=True)
@@ -253,6 +258,7 @@ def every_command(page):
                     continue
             bad.append((x['tabName'] if 'tabName' in x else x['tab'], x['name'], loc.count()))
     if page.evaluate('!!rikuy.hf'): page.evaluate('rikuy.pageHFClose()')
+    page.evaluate('rikuy.closePop(true)'); page.wait_for_timeout(150)
     open_tab(page, 'Home')
     check('every command placed on the ribbon (%d) is found by its role and name, once, with its tab open' % n, not bad and n > 20, bad)
 

@@ -479,7 +479,10 @@ Ctrl is Cmd on a Mac.
   on a Mac): the next size up or down ({\\large ...}; at a caret outside any size, the document's
   base size); Shift+F3: lowercase, Capitalize Each Word, UPPERCASE in turn; Ctrl+Space (not on a
   Mac): clear the character formatting; Ctrl+D: the Font dialog; Ctrl+Shift+F: the font box
-- $ or Ctrl+M: a formula in the line; Ctrl+Shift+E: a numbered equation
+- $ or Ctrl+M: a formula in the line; Alt+= (Mac: Control+=): a new equation, numbered on a
+  line of its own when the caret is on an empty line, in the line in text. Ctrl+Shift+E no longer
+  makes an equation: it is free until Word's Track Changes comes with the review tools. The
+  Equation button (Home, Insert) still makes a numbered one.
 - \\ or Ctrl+K: the list of things to insert (footnote, citation, section, table and more)
 - Ctrl+Z, Ctrl+Shift+Z: undo, redo
 - Ctrl+O: open files; Ctrl+S: download the LaTeX source
@@ -537,6 +540,18 @@ Ctrl is Cmd on a Mac.
 - Click math, a citation or a cross reference to edit it; Alt+click shows that spot in the source
 - In an equation: names as in LaTeX or Word (\\alpha then Space), a/b for a fraction, x^2 and
   x_i, Space to step out, Tab to the next empty slot, Enter to finish
+- While an equation's field is open the contextual tab "Equation" shows (and comes to the front
+  for a new one): "Equation gallery", "Numbered" (its arrow "Numbered options": numbered,
+  unnumbered, aligned, gathered, multline), "Display" (pressed: on a line of its own; off: in the
+  line), the symbol groups "Basic math", "Greek letters", "Operators", "Arrows", "Relations",
+  "Sets and logic", "Geometry", and the structures "Fraction", "Script", "Radical", "Integral",
+  "Large operator", "Bracket", "Function", "Accent", "Limit and log", "Operator", "Matrix". Each
+  opens a menu of that name whose menu items (a symbol's name is its LaTeX and what it is called,
+  "\\pm plus or minus") put LaTeX in at the field's caret; the focus stays in the field. Escape
+  on the tab goes back to the field. A right click on an equation on the page opens a "Context
+  menu" with "Edit equation", "Change to inline", "Change to display", "Change to numbered",
+  "Change to unnumbered", "Add label", "Copy reference", "Copy as LaTeX", "Copy for Word", "Save
+  as new equation". Saved equations are kept in this browser and listed in the gallery.
 
 ## Character formatting
 

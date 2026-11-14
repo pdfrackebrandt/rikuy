@@ -3,9 +3,11 @@
 import { fenceSource, unfence, tallTest, OPEN_KEY, CLOSE_KEY, MATCH, isBar, sameClose } from './fences.js';
 
 // Where a selection goes when a command is typed over it: the base, not an index or label.
-function wrapSlot(tex) {
+export function wrapSlot(tex) {
   if (/^\\(overset|underset|stackrel)\{#\?\}\{#\?\}$/.test(tex)) return tex.replace(/\{#\?\}$/, '{#@}');
   if (/^\\sqrt\[#\?\]/.test(tex)) return tex.replace('{#?}', '{#@}');
+  // (an arrow with words below and above: the selection is the words above, as with no words below)
+  if (/^\\x(right|left)arrow\[#\?\]\{#\?\}$/.test(tex)) return tex.replace('{#?}', '{#@}');
   return tex.replace('#?', '#@');
 }
 
@@ -166,6 +168,8 @@ const argCount = (def) => { let n = 0; String(def).replace(/#(\d)/g, (m, d) => {
 const BIG_OPS = 'int|iint|iiint|iiiint|oint|oiint|sum|prod|coprod|bigcup|bigcap|bigoplus|bigotimes|bigodot|biguplus|bigsqcup|bigvee|bigwedge';
 export function tidy(s) {
   s = s.replace(/\\placeholder(?:\[[^\]]*\])?\{[^{}]*\}/g, ''); // empty slots left unfilled
+  // the field writes \middle{|}, which TeX stops at (a delimiter, not a group, follows \middle)
+  s = s.replace(/\\middle\{(\\[A-Za-z]+|\\[|{}]|[|/()[\]<>.])\}/g, (m, d) => '\\middle' + (/^\\[A-Za-z]/.test(d) ? d + ' ' : d));
   s = s.replace(/\\doubleprime(?![A-Za-z])/g, '\\prime\\prime');
   s = s.replace(/\^\{((?:\\prime)+)\}/g, (m, p) => "'".repeat(p.length / 6));
   s = s.replace(new RegExp('\\{\\\\(' + BIG_OPS + ')\\}([A-Za-z])?', 'g'), (m, n, next) => '\\' + n + (next ? ' ' + next : ''));

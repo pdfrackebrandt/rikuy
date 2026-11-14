@@ -22,7 +22,7 @@ export const TABS = [
   { id: 'table-design', name: 'Table Design', ctx: 'table', groups: [['options', 'Table style options', 2], ['styles', 'Table styles', 3], ['borders', 'Borders', 1]] },
   { id: 'table-layout', name: 'Table Layout', ctx: 'table', groups: [['table', 'Table', 3], ['rows', 'Rows & columns', 6], ['merge', 'Merge', 5], ['size', 'Cell size', 4], ['alignment', 'Alignment', 2], ['data', 'Data', 1]] },
   { id: 'picture-format', name: 'Picture Format', ctx: 'picture', groups: [['size', 'Size', 4], ['arrange', 'Arrange', 3], ['accessibility', 'Accessibility', 2], ['picture', 'Picture', 1]] },
-  { id: 'equation', name: 'Equation', ctx: 'equation', groups: [['tools', 'Tools', 3], ['symbols', 'Symbols', 1], ['structures', 'Structures', 2]] },
+  { id: 'equation', name: 'Equation', ctx: 'equation', groups: [['tools', 'Tools', 4], ['conversions', 'Conversions', 3], ['symbols', 'Symbols', 1], ['structures', 'Structures', 2]] },
   { id: 'headfoot', name: 'Header & Footer', ctx: 'headfoot', groups: [['headfoot', 'Header & Footer', 3], ['insert', 'Insert', 2], ['options', 'Options', 1], ['close', 'Close', 4]] }
 ].map((t) => ({ ...t, groups: t.groups.map(([id, name, rank = 1, more = {}]) => ({ id, name, rank, spare: !!more.spare })) }));
 
