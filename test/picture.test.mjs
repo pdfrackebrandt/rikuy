@@ -113,9 +113,13 @@ ok('alt text: escaped as a key\'s value, read back as typed; decorative; a "% al
   const balanced = (s) => { let d = 0; for (let i = 0; i < s.length; i++) { if (s[i] === '\\') { i++; continue; } if (s[i] === '{') d++; if (s[i] === '}') d--; if (d < 0) return false; } return d === 0; };
   assert.ok(balanced(t));
   assert.equal(run(t, (s, P) => X.setAlt(s, P, '', false)), CENTER);
+  // (decorative: a comment line, which every TeX reads; graphicx's artifact key is TeX Live 2024's)
   const d = run(CENTER, (s, P) => X.setAlt(s, P, '', true));
-  assert.ok(d.includes('[width=0.8\\linewidth,artifact]') && X.altOf(d, at(d)).decorative);
+  assert.ok(d.includes('\\begin{center}\n% alt (decorative)\n\\includegraphics[width=0.8\\linewidth]') && X.altOf(d, at(d)).decorative, d);
   assert.equal(run(d, (s, P) => X.setAlt(s, P, '', false)), CENTER);
+  const art = CENTER.replace('0.8\\linewidth]', '0.8\\linewidth,artifact]');
+  assert.ok(X.altOf(art, at(art)).decorative);
+  assert.equal(run(art, (s, P) => X.setAlt(s, P, 'Now said', false)), CENTER.replace('0.8\\linewidth]', '0.8\\linewidth,alt={Now said}]'));
   const bb = doc('A.\n\n\\includegraphics[0,0][100,50]{a.eps}\n\nB.');
   assert.equal(at(bb).keyval, false);
   const c = run(bb, (s, P) => X.setAlt(s, P, 'A plot', false));
@@ -233,6 +237,68 @@ ok('the box graphicx makes: width then angle turns the sized picture, angle then
   assert.ok(Math.abs(d.bw - d.bh) < 0.01);
   const e = X.graphicBox(kv('width=3cm,height=3cm,keepaspectratio'), nat, 345);
   assert.ok(Math.abs(e.bw - 2 * e.bh) < 0.01);
+});
+
+// ---- the review of bd641ad -----------------------------------------------------------------------
+import fs from 'node:fs';
+ok('review H2, H7: a size key added to a turned picture goes before its angle, as graphicx needs', () => {
+  const t = doc('\\begin{center}\n\\includegraphics[angle=-90]{a.png}\n\\end{center}');
+  assert.equal(run(t, (s, P) => X.setSize(s, P, null, '3cm', false)), t.replace('[angle=-90]', '[height=3cm,angle=-90]'));
+  const u = doc('\\includegraphics[width=3cm,angle=90]{a.png}');
+  assert.equal(run(u, (s, P) => X.setSize(s, P, '3cm', '3cm', true)), u.replace('[width=3cm,angle=90]', '[width=3cm,height=3cm,angle=90]'));
+  // the page's box as pdfLaTeX's (tex/box.tex): sizes after the angle size the turned box
+  const kv = (o) => X.findPicture('\\includegraphics[' + o + ']{a}', parse('\\includegraphics[' + o + ']{a}'), 0).kv;
+  const nat = { w: 200, h: 100 };
+  const B = X.graphicBox(kv('width=3cm,angle=90,height=3cm'), nat, 345);
+  assert.ok(Math.abs(B.bw - 42.68) < 0.1 && Math.abs(B.bh - 85.36) < 0.1, JSON.stringify(B));
+  const F = X.graphicBox(kv('width=3cm,height=3cm,angle=90'), nat, 345);
+  assert.ok(Math.abs(F.bw - 85.36) < 0.1 && Math.abs(F.bh - 85.36) < 0.1);
+});
+ok('review L5: Rotate leaves an angle given by a macro alone', () => {
+  const t = doc('\\includegraphics[angle=\\myangle]{a.png}');
+  assert.ok(X.rotate(t, at(t), -90).error);
+  assert.equal(X.angleKnown(t, at(t)), false);
+});
+ok('review H6, M6, L1: the natural size as the three engines read it: Exif, JFIF in dots per cm, a PDF\'s /Rotate', () => {
+  // a 300 by 150 JPEG with only Exif at 180 dpi (Canon), as pdfTeX: 120.45pt
+  const jpg = (app) => new Uint8Array([0xff, 0xd8, ...app, 0xff, 0xc0, 0, 17, 8, 0, 150, 1, 44, 3]);
+  const tiff = (le, x, unit) => {
+    const w16 = (v) => (le ? [v & 255, v >> 8] : [v >> 8, v & 255]), w32 = (v) => (le ? [v & 255, (v >> 8) & 255, (v >> 16) & 255, v >>> 24] : [v >>> 24, (v >> 16) & 255, (v >> 8) & 255, v & 255]);
+    const ifd = [...w16(3), ...w16(0x011a), ...w16(5), ...w32(1), ...w32(50), ...w16(0x011b), ...w16(5), ...w32(1), ...w32(58), ...w16(0x0128), ...w16(3), ...w32(1), ...w16(unit), 0, 0, ...w32(0)];
+    const body = [...(le ? [0x49, 0x49] : [0x4d, 0x4d]), ...w16(42), ...w32(8), ...ifd];
+    while (body.length < 50) body.push(0);
+    body.push(...w32(x), ...w32(1), ...w32(x), ...w32(1));
+    const seg = [0x45, 0x78, 0x69, 0x66, 0, 0, ...body];
+    return [0xff, 0xe1, (seg.length + 2) >> 8, (seg.length + 2) & 255, ...seg];
+  };
+  const pt = (r) => Math.round(r.w * 72.27 / 72 * 100) / 100;
+  assert.equal(pt(X.naturalSize(jpg(tiff(true, 180, 2)))), 120.45);
+  assert.equal(pt(X.naturalSize(jpg(tiff(false, 300, 2)))), 72.27);
+  // JFIF in dots per cm: 118 is 299 dpi to pdfTeX (72.51pt for 300 px)
+  const jfif = [0xff, 0xe0, 0, 16, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 2, 0, 118, 0, 118, 0, 0];
+  assert.equal(pt(X.naturalSize(jpg(jfif))), 72.51);
+  // the reviewer's files, measured by pdfTeX, XeTeX and LuaTeX (tex/nat*.log)
+  const dir = '/tmp/review-b8-out/tex/';
+  if (fs.existsSync(dir + 'jcanon.jpg')) for (const [f, w] of [['jcanon.jpg', 120.45], ['jexif.jpg', 72.27], ['jboth.jpg', 301.12], ['jcm.jpg', 72.51], ['prot.pdf', 100.37], ['p0.pdf', 200.75]]) assert.ok(Math.abs(X.naturalSize(new Uint8Array(fs.readFileSync(dir + f))).w * 72.27 / 72 - w) < 0.02, f);
+  const pdf = new TextEncoder().encode('%PDF-1.5\n1 0 obj << /Type /Page /MediaBox [0 0 200 100] /Rotate 90 >> endobj');
+  assert.deepEqual(X.naturalSize(pdf), { w: 100, h: 200 });
+});
+ok('review H8, M3: starred captions keep their stars both ways; figure* keeps its star', () => {
+  const t = doc('\\begin{figure}[htbp]\n\\centering\n\\includegraphics{a.png}\n\\caption*{Unnumbered}\n\\end{figure}');
+  const i = run(t, (s, P) => X.setPosition(s, P, { mode: 'inline' }));
+  assert.ok(i.includes('\\captionof*{figure}{Unnumbered}'), i);
+  assert.equal(run(i, (s, P) => X.setPosition(s, P, { mode: 'float', place: 'htbp' })), t);
+  const w = doc('\\begin{figure*}[t]\n\\centering\n\\includegraphics{a.png}\n\\end{figure*}');
+  assert.ok(X.setPosition(w, at(w), { mode: 'inline' }).error && X.setPosition(w, at(w), { mode: 'wrap', side: 'r' }).error);
+  assert.equal(run(w, (s, P) => X.setPosition(s, P, { mode: 'float', place: 'b' })), w.replace('[t]', '[b]'));
+});
+ok('review M4: wrap only where wrapfig wraps: not in a quote, a theorem or a proof, not before a heading', () => {
+  for (const env of ['quote', 'theorem', 'proof', 'abstract']) {
+    const t = doc('\\begin{' + env + '}\n\\begin{center}\n\\includegraphics{a}\n\\end{center}\nText.\n\\end{' + env + '}');
+    assert.match(X.whyFixed(t, at(t), 'wrap', {}), new RegExp(env));
+    assert.equal(X.whyFixed(t, at(t), 'float', {}), null);
+  }
+  assert.match(X.whyFixed(CENTER, at(CENTER), 'wrap', { nextIsHeading: true }), /heading/);
 });
 
 ok('a stranger\'s text is read in bounded time', () => {

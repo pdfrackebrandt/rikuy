@@ -60,6 +60,17 @@ ok('SmartArt: the items as written, commas kept in braces, specials taken out', 
   assert.ok(D.ICONS.length >= 30 && D.ICONS.every(([id, name, svg]) => /^[a-z-]+$/.test(id) && name && !/[<>]script|on\w+=/i.test(svg)));
 });
 
+ok('review H9, H10: a hand written pgfplots axis keeps its source box; SmartArt stops at ten items', () => {
+  for (const t of ['\\begin{tikzpicture}\\begin{axis}[ymode=log, xlabel=$x$, only marks]\\addplot coordinates {(0,1) (1,10) (2,100) (10,1000)};\\end{axis}\\end{tikzpicture}',
+    '\\begin{tikzpicture}\\begin{axis}[ybar stacked, symbolic x coords={a,b}, xtick=data]\\addplot coordinates {(a,1) (b,2)};\\addplot coordinates {(a,1) (b,2)};\\end{axis}\\end{tikzpicture}',
+    '\\begin{tikzpicture}\\begin{axis}[xmin=0, xmax=10]\\addplot+[smooth, mark=none] coordinates {(0,1) (1,2)};\\end{axis}\\end{tikzpicture}',
+    '\\begin{tikzpicture}\\begin{axis}[ybar, width=0.8\\linewidth]\\addplot coordinates {(1,1) (2,2)};\\end{axis}\\end{tikzpicture}']) assert.equal(D.readAxis(t), null, t);
+  for (const k of ['column', 'bar', 'line']) assert.ok(D.readAxis(D.chartTex(k, ['a', 'b'], [{ name: 's', values: [1, 2] }, { name: 't', values: [3, 4] }])), k);
+  const many = Array.from({ length: 12 }, (_, i) => 'Item ' + i);
+  assert.equal(D.smartItems(/\{(.*)\}$/.exec(D.smartTex('flow diagram:horizontal', many))[1]).length, 10);
+  assert.equal(D.smartItems(/\{(.*)\}$/.exec(D.smartTex('bubble diagram', many))[1]).length, 11);
+});
+
 ok('a stranger\'s picture is read in bounded time', () => {
   const t0 = Date.now();
   D.readTikz('\\begin{tikzpicture}' + '\\draw (0,0)'.repeat(5000) + '\\end{tikzpicture}');

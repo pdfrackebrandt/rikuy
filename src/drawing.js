@@ -124,18 +124,36 @@ function path(s) {
 
 // ---- pgfplots: an axis of bars or lines from coordinates ---------------------------------------------
 // { kind: 'ybar' | 'xbar' | 'line', cats: [..] | null, series: [{ name, pts: [[x, y]] }], width, height }
+// Only Rikuy's own charts (chartTex's options, nothing else): a hand written axis (a log scale,
+// labels, stacked bars, a smooth line) is drawn by TeX alone, and the page keeps its source box
+const AXIS_KEYS = [/^(x|y)bar$/, /^width=[\d.]*\\linewidth$/, /^height=[\d.]+cm$/, /^(x|y)min=0$/, /^symbolic (x|y) coords=\{[^{}]*\}$/, /^(x|y)tick=data$/, /^legend pos=north west$/];
+function axisOpts(t) {
+  const out = [];
+  let d = 0, cur = '';
+  for (const c of t) {
+    if (c === '{') d++;
+    if (c === '}') d--;
+    if (c === ',' && d === 0) { out.push(cur.trim()); cur = ''; continue; }
+    cur += c;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out.map((x) => x.replace(/\s*=\s*/, '='));
+}
 export function readAxis(text) {
   if (typeof text !== 'string' || text.length > MAX_TEXT) return null;
   const m = /^\\begin\{tikzpicture\}\s*\\begin\{axis\}\[([^\]]{0,2000})\]([\s\S]*)\\end\{axis\}\s*\\end\{tikzpicture\}\s*$/.exec(text.trim().replace(/%[^\n]*/g, ''));
   if (!m) return null;
-  const o = m[1];
-  const kind = /(^|[,\s])xbar\b/.test(o) ? 'xbar' : /(^|[,\s])ybar\b/.test(o) ? 'ybar' : 'line';
-  const sym = /symbolic (x|y) coords\s*=\s*\{([^{}]{0,1000})\}/.exec(o);
-  const cats = sym ? sym[2].split(',').map((x) => x.trim()).slice(0, 50) : null;
+  const opts = axisOpts(m[1]);
+  if (!opts.every((o) => AXIS_KEYS.some((r) => r.test(o)))) return null;
+  const kind = opts.includes('xbar') ? 'xbar' : opts.includes('ybar') ? 'ybar' : 'line';
+  const sym = opts.find((o) => /^symbolic (x|y) coords=/.test(o));
+  if (!sym) return null;
+  const cats = sym.slice(sym.indexOf('{') + 1, -1).split(',').map((x) => x.trim()).slice(0, 50);
   const series = [];
-  const re = /\\addplot\+?\s*(\[[^\]]{0,200}\])?\s*coordinates\s*\{([^{}]{0,4000})\}\s*;\s*(\\addlegendentry\s*\{([^{}]{0,200})\})?/g;
+  const re = /\\addplot(\+\[mark=\*\])?\s*coordinates\s*\{([^{}]{0,4000})\}\s*;\s*(\\addlegendentry\s*\{([^{}]{0,200})\})?/g;
   let x, k = 0;
   while ((x = re.exec(m[2])) && k++ < 8) {
+    if (!!x[1] !== (kind === 'line')) return null;
     const pts = [];
     const pr = /\(\s*([^,()]{1,60}),\s*([^,()]{1,60})\)/g;
     let p, j = 0;
@@ -203,8 +221,11 @@ export const SMART = [
   ['bubble diagram', 'Bubbles', 'A centre and the ideas round it (the first item in the middle)'],
   ['priority descriptive diagram', 'Priority List', 'Items stacked by priority, the first at the bottom']
 ];
+// smartdiagram's colours stop at ten: an eleventh item stops TeX ("Missing \\endcsname"); a
+// bubble diagram takes its centre and ten
+export const smartMax = (kind) => (/bubble/.test(kind) ? 11 : 10);
 export function smartTex(kind, items) {
-  const it = items.map((x) => String(x).replace(/[\\{}%#$&_^~]/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 12).map((x) => (/,/.test(x) ? '{' + x + '}' : x));
+  const it = items.map((x) => String(x).replace(/[\\{}%#$&_^~]/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, smartMax(kind)).map((x) => (/,/.test(x) ? '{' + x + '}' : x));
   return '\\smartdiagram[' + kind + ']{' + it.join(', ') + '}';
 }
 // a smartdiagram's items from its argument's text (braced items keep their commas)
