@@ -507,10 +507,11 @@ def downloads_in_sight(page):
         page.set_viewport_size({'width': w, 'height': 800}); page.wait_for_timeout(300)
         # (above 860 px the three where the row has room for them, else the one button: Home's Font
         # group in Word's two rows and the Paragraph group's list commands leave 1000 px without room for three)
-        three = w > 860 and page.evaluate("!!document.getElementById('rb-pdf').offsetParent")
+        # (at 860 px the Paragraph group, one row there, folds and leaves room for the three, B2)
+        three = w == 860 or (w > 860 and page.evaluate("!!document.getElementById('rb-pdf').offsetParent"))
         seen = page.evaluate(IN, ['rb-pdf', 'rb-word', 'b-save'] if three else ['rb-dl-menu'])
         over = page.evaluate('(() => { const r = document.getElementById("ribbon"); return r.scrollWidth > r.clientWidth + 1; })()')
-        if w > 860:
+        if w >= 860:
             check('at %dpx the downloads (PDF, Word and LaTeX, or the one Download button) are in sight with the row not scrolled' % w, all(seen) and not over, (seen, over))
         else:
             # (the tabs' list at the row's start left no room for the three: Footnote, Citation and Link went under them)

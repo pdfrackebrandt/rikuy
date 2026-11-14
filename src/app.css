@@ -1565,9 +1565,9 @@ body.marks-on #pages .it.vs { outline: 1px dashed rgba(62, 123, 196, .55); outli
   .rb-grp[data-group="paragraph"] .rb-split > .rb-x { width: 12px; height: 21px; border-radius: 0 4px 4px 0; }
   .rb-grp[data-group="paragraph"] .btn svg { width: 15px; height: 15px; }
 }
-}
 /* a finger on a phone's row: 44 px targets (the row grows to hold them) */
-@media (pointer: coarse) and (max-width: 860px) {
-  .rb-grp[data-group="paragraph"] > .btn.icon, .rb-grp[data-group="paragraph"] .rb-split > .btn.icon { min-width: 44px; height: 44px; }
-  .rb-grp[data-group="paragraph"] .rb-split > .rb-x { min-width: 28px; height: 44px; }
+@media (pointer: coarse) {
+  .rb-grp[data-group="paragraph"]:not(.folded) { flex-wrap: nowrap; width: auto; align-self: auto; }
+  .rb .btn:is([data-cmd="show-marks"], [data-cmd^="align-"], [data-cmd="justify"], [data-cmd="line-spacing"], [data-cmd="shading"], [data-cmd="borders"], [data-cmd="paragraph-settings"]) { min-width: 44px; min-height: 44px; }
+  .rb-split:has(> :is([data-cmd="shading"], [data-cmd="borders"])) > .rb-x { min-width: 28px; min-height: 44px; }
 }
