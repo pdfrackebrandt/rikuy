@@ -6,7 +6,7 @@
 // in a widget's frame).
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { graphKit, kit as K, graphHtml, readGraph, isGraph, sameGraph, template, TEMPLATES, parseData, dataText, RIKUY_STY } from '../src/graph.js';
+import { withDpi, pngWidth, graphKit, kit as K, graphHtml, readGraph, isGraph, sameGraph, template, TEMPLATES, parseData, dataText, RIKUY_STY } from '../src/graph.js';
 
 let n = 0;
 const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
@@ -185,4 +185,17 @@ ok('rikuy.sty is sample/widget\'s, byte for byte', () => {
   assert.equal(RIKUY_STY, fs.readFileSync(new URL('../sample/widget/rikuy.sty', import.meta.url), 'utf8'));
 });
 
+ok('the review: binomial means are cheap (H5); inherited names are no names (L10); a PNG\'s resolution (H4)', () => {
+  const s = K.normalize({ kind: 'dist', dist: { family: 'binomial', mode: 'mean' }, sliders: [{ name: 'n', min: 1, max: 100, value: 100 }, { name: 'p', min: 0, max: 1, value: 0.3 }, { name: 'N', min: 1, max: 50, value: 50 }] });
+  const t0 = performance.now(); K.compute(s, K.defaults(s)); const dt = performance.now() - t0;
+  assert.ok(dt < 250, 'binomial n = 100, N = 50: ' + dt + ' ms');
+  for (const t of ['\\valueOf(x)', '\\constructor', '\\toString x']) assert.throws(() => K.parse(t), (e) => /is not a function this graph knows/.test(e.message) && !/native code/.test(e.message), t);
+  assert.throws(() => K.formulas(K.normalize({ kind: 'function', f: ['valueOf x'] })), /No slider is called/);
+  const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 7, 8, 0, 0, 3, 132, 8, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 73, 69, 78, 68]);
+  const d = withDpi(png, 288);
+  assert.equal(String.fromCharCode(...d.subarray(37, 41)), 'pHYs');
+  assert.equal(new DataView(d.buffer).getUint32(41), 11339);
+  assert.equal(withDpi(d, 288).length, d.length);
+  assert.equal(pngWidth(d), 1800 / 3);
+});
 console.log('insert:', n, 'groups passed');

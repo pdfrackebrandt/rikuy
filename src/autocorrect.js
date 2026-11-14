@@ -21,15 +21,19 @@ export const REPLACE = [
   ['<=>', '\\ensuremath{\\Leftrightarrow}'], ['!=', '\\ensuremath{\\neq}'], ['+-', '\\textpm{}']
 ];
 const FRACTIONS = { '1/2': '\\textonehalf{}', '1/4': '\\textonequarter{}', '3/4': '\\textthreequarters{}' };
+// Word's INitial CApitals exceptions, and words written so on purpose (degrees, names of things)
+export const EXCEPTIONS = ['MPhil', 'DPhil', 'MRes', 'MLitt', 'MPhys', 'MChem', 'MMath', 'MEng', 'BEng', 'BSc', 'MSc', 'PhD', 'OAuth', 'OCaml', 'DNase', 'RNase', 'IPython', 'IPv', 'CDs', 'DVDs', 'PCs', 'IDs', 'URLs', 'APIs', 'GPUs', 'CPUs', 'FAQs', 'PDFs', 'MBps', 'GBs', 'TBs', 'KBs', 'MBs', 'LaTeX', 'TeX', 'BibTeX', 'XeLaTeX', 'LuaLaTeX', 'pdfLaTeX', 'MATLAB', 'JavaScript', 'TypeScript', 'GitHub', 'iOS', 'macOS', 'McDonald', 'MacBook', 'DeepMind', 'OpenAI'];
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
 // What typing ch at p of src corrects: { s, e, t } (replace src[s..e) by t, the typed character
 // already written after it), or null. o: the switches; own: the person's replacements [[from, to]].
 // Only the last 200 characters before the caret are read.
-export function correct(src, p, ch, o = DEFAULTS, own = []) {
+export function correct(src, p, ch, o = DEFAULTS, own = [], except = []) {
   const from = Math.max(0, p - 200), before = src.slice(from, p);
   // inside a command's name or right after a backslash: LaTeX being written by hand
   if (/\\[A-Za-z]*$/.test(before)) return null;
+  // an address being typed: its own characters, (c) and -> among them
+  if (/(?:https?:\/\/|www\.)\S*$/.test(before) && !/\s/.test(ch)) return null;
   // replacements, as Word makes them: (c), (r), (tm) and ... the moment they are complete; the
   // others (-> <= and the person's own) once a space or a sign ends them, so <=> is still typed
   if (o.replace !== false) {
@@ -40,10 +44,13 @@ export function correct(src, p, ch, o = DEFAULTS, own = []) {
       if (now ? !typed.endsWith(a) : !(/^[\s.,;:!?]$/.test(ch) && before.endsWith(a))) continue;
       const at = (now ? p + 1 : p) - a.length;
       if (at < from) continue;
-      // (a word's own letters run on: "xteh" is no "teh", nor is "x->y" an arrow)
-      if (/\w/.test(src[at - 1] || '') && (/^\w/.test(a) || !now)) continue;
+      // (a word's own letters run on: "xteh" is no "teh", "x->y" no arrow, f(c) a function's
+      // argument; Brand(tm) is still a trademark)
+      if (/\w/.test(src[at - 1] || '') && !/^(\(tm\)|\.\.\.)$/i.test(a)) continue;
       // (at a paragraph's or an item's start, (c) and (r) are a list's marker: B3's automatic lists)
       if (/^\(/.test(a) && /(^|\n\s*\n|\\item)\s*$/.test(src.slice(Math.max(0, at - 40), at))) continue;
+      // (and after (a) or (b): a run of markers, (a) (b) (c))
+      if (/^\([a-z]\)$/.test(a) && /\([a-z]\)[\s,;]*$/.test(src.slice(Math.max(0, at - 12), at))) continue;
       return { s: at, e: p, t, typed: now };
     }
   }
@@ -70,7 +77,7 @@ export function correct(src, p, ch, o = DEFAULTS, own = []) {
   // (capitals once a space ends the word: "a)" or "a." at a paragraph's start is a list's marker,
   // which B3's automatic lists read as typed)
   if (/^[A-Za-z]+$/.test(word) && /\s/.test(ch)) {
-    if (o.twoCaps !== false && /^[A-Z]{2}[a-z]{2,}$/.test(word) && !/\\/.test(src[ws - 1] || '')) return { s: ws + 1, e: ws + 2, t: word[1].toLowerCase() };
+    if (o.twoCaps !== false && /^[A-Z]{2}[a-z]{2,}$/.test(word) && !/\\/.test(src[ws - 1] || '') && !except.includes(word) && !EXCEPTIONS.includes(word)) return { s: ws + 1, e: ws + 2, t: word[1].toLowerCase(), kind: 'twoCaps', word };
     if (o.days !== false && DAYS.includes(word) && !/\\/.test(src[ws - 1] || '')) return { s: ws, e: ws + 1, t: word[0].toUpperCase() };
     if (o.capitals !== false && /^[a-z]/.test(word) && sentenceStart(src, ws)) return { s: ws, e: ws + 1, t: word[0].toUpperCase() };
   }

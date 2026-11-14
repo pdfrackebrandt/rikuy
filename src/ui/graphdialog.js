@@ -48,6 +48,14 @@ function select(opts, value) {
 }
 // a number as a field shows it: 2π stays as typed, a plain number without trailing noise
 const numText = (v) => (v == null ? '' : String(Math.round(v * 1e6) / 1e6));
+// a number field that gives back the number it was opened with, to every digit, until it is
+// edited (a graph's 2π read back as 6.283185 changed the graph on an Update with nothing touched)
+function numIn(v, ph) {
+  const i = input(numText(v), { num: true, ph });
+  i._orig = v == null ? null : v;
+  i.dataset.t0 = i.value;
+  return i;
+}
 // A number field's value: a number, a constant formula (2pi, pi/2, 1e-3), or null when empty;
 // undefined when it is neither
 function numOf(text) {
@@ -147,7 +155,7 @@ export function openGraphDialog(app, opts = {}) {
       if (spec.curve.mode === 'polar') { F.r = input(spec.curve.r, { code: true }); form.append(field('r(θ) =', F.r, 'gd-wide')); }
       else { F.cx = input(spec.curve.x, { code: true }); F.cy = input(spec.curve.y, { code: true }); form.append(field('x(t) =', F.cx, 'gd-wide'), field('y(t) =', F.cy, 'gd-wide')); }
       const row = mk('div', 'gd-row');
-      F.t0 = input(numText(spec.curve.t[0]), { num: true }); F.t1 = input(numText(spec.curve.t[1]), { num: true });
+      F.t0 = numIn(spec.curve.t[0]); F.t1 = numIn(spec.curve.t[1]);
       row.append(field((spec.curve.mode === 'polar' ? 'θ' : 't') + ' from', F.t0), field('to', F.t1));
       form.append(row);
       F.mode.addEventListener('change', () => { spec = read(); spec.curve = { mode: F.mode.value, ...(F.mode.value === 'polar' ? { r: '1 + a cos(k θ)' } : { x: 'cos(a t)', y: 'sin(k t)' }), t: spec.curve.t }; spec = K.normalize(spec); build(); changed(); });
@@ -182,7 +190,7 @@ export function openGraphDialog(app, opts = {}) {
       const name = input(q.name, { code: true });
       name.setAttribute('aria-label', 'Slider ' + n + ' name');
       if (fixed) name.readOnly = true;
-      const lo = input(numText(q.min), { num: true }), hi = input(numText(q.max), { num: true }), st = input(numText(q.step), { num: true }), v = input(numText(q.value), { num: true });
+      const lo = numIn(q.min), hi = numIn(q.max), st = numIn(q.step), v = numIn(q.value);
       lo.setAttribute('aria-label', 'Slider ' + n + ' from'); hi.setAttribute('aria-label', 'Slider ' + n + ' to'); st.setAttribute('aria-label', 'Slider ' + n + ' step'); v.setAttribute('aria-label', 'Slider ' + n + ' start');
       row.append(field('Name', name, 'gd-n'), field('From', lo), field('To', hi), field('Step', st), field('Start', v));
       for (const i of [name, lo, hi, st, v]) i.addEventListener('input', () => auto.delete(q.name));
@@ -217,14 +225,14 @@ export function openGraphDialog(app, opts = {}) {
     const ax = sec('Axes');
     const r1 = mk('div', 'gd-row'), r2 = mk('div', 'gd-row'), r3 = mk('div', 'gd-row');
     const xFixed = spec.kind === 'dist' && spec.dist.mode === 'mean';
-    F.x0 = input(spec.kind === 'function' || spec.kind === 'dist' || spec.x.min != null ? numText(spec.x.min) : '', { num: true, ph: 'auto' });
-    F.x1 = input(spec.kind === 'function' || spec.kind === 'dist' || spec.x.max != null ? numText(spec.x.max) : '', { num: true, ph: 'auto' });
-    F.y0 = input(spec.y.min != null ? numText(spec.y.min) : '', { num: true, ph: 'auto' });
-    F.y1 = input(spec.y.max != null ? numText(spec.y.max) : '', { num: true, ph: 'auto' });
+    F.x0 = numIn(spec.x.min, 'auto'); F.x1 = numIn(spec.x.max, 'auto');
+    F.y0 = numIn(spec.y.min, 'auto'); F.y1 = numIn(spec.y.max, 'auto');
     F.x0.disabled = F.x1.disabled = xFixed;
     r1.append(field('x from', F.x0), field('x to', F.x1), field('y from', F.y0), field('y to', F.y1));
     F.xl = input(spec.x.label); F.yl = input(spec.y.label);
-    F.shape = select(SHAPES.map(([v, n]) => [v, n]), (SHAPES.find(([v]) => Math.abs(v - spec.aspect) < 0.01) || SHAPES[1])[0]);
+    // (a graph's own height for its width, where it is none of the four, stays one to choose)
+    const own = SHAPES.some(([v]) => v === spec.aspect) ? [] : [[spec.aspect, 'As it is']];
+    F.shape = select([...SHAPES, ...own], spec.aspect);
     r2.append(field('x label', F.xl), field('y label', F.yl), field('Shape', F.shape));
     ax.append(r1, r2);
     F.title = input(spec.title, { ph: 'What the graph shows, for screen readers' });
@@ -243,7 +251,7 @@ export function openGraphDialog(app, opts = {}) {
   function read() {
     const s = JSON.parse(JSON.stringify(spec));
     bad = null;
-    const num = (el, what) => { const v = numOf(el.value); if (v === undefined) { bad = bad || { el, msg: what + ' is not a number' }; return null; } return v; };
+    const num = (el, what) => { if (el._orig !== undefined && el.value === el.dataset.t0) return el._orig; const v = numOf(el.value); if (v === undefined) { bad = bad || { el, msg: what + ' is not a number' }; return null; } return v; };
     if (s.kind === 'function') s.f = F.f.value.split('\n').map(stripLhs).filter((l) => l.trim()).slice(0, 4);
     if (s.kind === 'curve') {
       if (F.r) s.curve.r = stripLhs(F.r.value);
@@ -325,7 +333,7 @@ export function openGraphDialog(app, opts = {}) {
     }
   });
   // Enter in a one line field inserts, as a dialog's default button does
-  p.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && !e.isComposing) { e.preventDefault(); ok.click(); } });
+  p.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && !e.isComposing && e.keyCode !== 229) { e.preventDefault(); ok.click(); } });
 
   build();
   changed();

@@ -2265,6 +2265,29 @@ Tests:
     user name and initials, every switch, B1's *bold* among them). I2 Blank page was done by B6.
     Not done, left open: H82 (drag to move), I1 (cover pages), I31 (Quick Parts), I32 and I33
     (document properties and fields, which need the page to draw them), DV1 (form fields). The
+    The hostile review of a228b19 (7 High, 4 Medium, 10 Low, each reproduced) is closed, each
+    case a test (`test/insert.py` review and review_compiles, compiled in the page;
+    `test/insert.test.mjs`, `test/autocorrect.test.mjs`): an address AutoCorrect makes a `\\url`
+    brings `\\usepackage{url}` in the same step where no url, xurl or hyperref is loaded (H1); a
+    graph's frame opens Rikuy's menu only after a press in it, once a press, with nothing else open
+    (H2: a frame asking every 60 ms takes no letter and closes no dialog); the PDF's picture is
+    drawn at its own box's width (a column, a width option, the margins changed) before every
+    compile and as the page shows it, with a pHYs chunk so TeX takes its natural size (H3, H4);
+    binomial means by their cdf, 790 ms to 24 ms, and a slider computes once a frame (H5); Text
+    from file takes a whole document's body and its packages (H6); rikuy.sty is looked for beside
+    the main file alone (H7); a missing picture is drawn again (M1); each graph's name has four
+    random letters, so two coauthors' graphs never meet in a merge (M2); Update with nothing
+    touched keeps a graph's own shape and exact numbers (M3); Word's INitial CAps exceptions
+    (MPhil, DPhil, OAuth, DNase...) and a correction undone becomes one, f(c) and (a) (b) (c) stay
+    (M4); on a phone Edit graph sits at the top's centre (L1); Paste Special replaces the
+    selection (L2); a Mac's Date and Time are Control+Shift+D and T (L3); one's own replacement is
+    escaped as typing escapes it (L4); the unused initials field went (L5); a captioned graph gets
+    `\\label{fig:<name>}` (L6); a graph's file is 33 KB built (graphKit minified; L7); no Abstract
+    where the class has none, and align*, tikzpicture and the like bring their package (L8); an
+    input method's Enter (keyCode 229) inserts nothing (L9); inherited names are no names in the
+    formula language (L10). The graph's description is its picture's alt text, and Word gets the
+    PDF's picture with its caption and alt text, the graph unchanged on the way back
+    (`test/word.test.mjs`): graphs move on Rikuy's page alone.
     security audit skill's agents could not run in this session; the changed files were reviewed
     by hand against its client side and resource classes, with no finding.
 

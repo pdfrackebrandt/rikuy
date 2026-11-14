@@ -35,6 +35,13 @@ def blob_b64(page, name):
     return page.evaluate('''async (n) => { const b = window.rikuy.assetBlobs.get(n); if (!b) return null; const a = new Uint8Array(await b.arrayBuffer()); let s = ''; for (let i = 0; i < a.length; i += 8192) s += String.fromCharCode(...a.subarray(i, i + 8192)); return btoa(s); }''', name)
 
 
+def newest(page, base):
+    """The graph of this kind inserted last: graphs/<base>-<four letters> (each graph's name is its own)."""
+    names = sorted(n[:-5] for n in page.evaluate('[...window.rikuy.files.keys()]') if re.match(r'graphs/' + base + r'-[a-z0-9]{4}\.html$', n))
+    hist = page.evaluate('window.rikuy.src(window.rikuy.main)')
+    return [n for n in names if n in hist][-1] if any(n in hist for n in names) else (names[-1] if names else None)
+
+
 def insert_graph(page, kind=None, at=('Hello', 2), caption=None):
     click_text(page, *at)
     page.evaluate('(k) => window.rikuy.runCommand("insert-interactive-graph", k ? { template: k } : null)', kind)
@@ -51,22 +58,26 @@ def graph_insert(page):
     load_doc(page, DOC)
     h0 = page.evaluate('window.rikuy.hist.length')
     insert_graph(page)
-    check('graph: Insert writes the \\rikuywidget block after the paragraph and \\usepackage{rikuy}', src(page) == WANT, src(page))
-    check('graph: and its file, rikuy.sty and the picture, as one step', files(page) == [['graphs/function-1.html', 'main.tex', 'rikuy.sty'], ['graphs/function-1.png']] and page.evaluate('window.rikuy.hist.length') == h0 + 1, files(page))
-    html = src(page, 'graphs/function-1.html')
+    G = newest(page, 'function'); want = WANT.replace('graphs/function-1', G)
+    check('graph: its name is its own (graphs/function- and four letters: two coauthors\' first graphs never meet in a merge)', bool(G), G)
+    check('graph: Insert writes the \\rikuywidget block after the paragraph and \\usepackage{rikuy}', src(page) == want, src(page))
+    check('graph: and its file, rikuy.sty and the picture, as one step', files(page) == [[G + '.html', 'main.tex', 'rikuy.sty'], [G + '.png']] and page.evaluate('window.rikuy.hist.length') == h0 + 1, files(page))
+    html = src(page, G + '.html')
     check('graph: its file is a graph Rikuy reads back, with no request out', html.startswith('<!doctype html>') and 'id="rikuy-graph"' in html and not re.search(r'\b(src|href)\s*=', html.split('</script>', 1)[1]), html[:200])
-    png = base64.b64decode(blob_b64(page, 'graphs/function-1.png') or '')
+    png = base64.b64decode(blob_b64(page, G + '.png') or '')
     check('graph: the picture is a PNG three times the text\'s width', png[:8] == b'\x89PNG\r\n\x1a\n' and int.from_bytes(png[16:20], 'big') > 1200, len(png))
+    check('graph: with its resolution written (pHYs, 288 dpi): TeX takes its natural size as the page draws it (review H4)', png[37:41] == b'pHYs' and int.from_bytes(png[41:45], 'big') == 11339, png[33:50])
     page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000)
     check('graph: it runs on the page in a frame sandboxed to scripts alone', page.evaluate('document.querySelector("#wlayer iframe.rk-widget").getAttribute("sandbox")') == 'allow-scripts')
     page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(300)
     check('graph: one undo gives the source back byte for byte, the files and the picture gone', src(page) == DOC and files(page) == [['main.tex'], []], files(page))
     page.evaluate('window.rikuy.redo()'); page.wait_for_timeout(300)
-    check('graph: redo brings them all again', src(page) == WANT and files(page)[1] == ['graphs/function-1.png'] and src(page, 'graphs/function-1.html') == html)
+    check('graph: redo brings them all again', src(page) == want and files(page)[1] == [G + '.png'] and src(page, G + '.html') == html)
     # a second graph takes the next names; rikuy.sty and the package are not written twice
     insert_graph(page, 'data', at=('Second', 1), caption='Data & more')
     s = src(page)
-    check('graph: a second one is graphs/data-1, a figure with its caption escaped; no second package line', s.count('\\usepackage{rikuy}') == 1 and '\\begin{figure}[htbp]\n\\centering\n\\rikuywidget[width=\\linewidth]{graphs/data-1.html}{graphs/data-1.png}\n\\caption{Data \\& more}\n\\end{figure}' in s and files(page)[0].count('rikuy.sty') == 1, s)
+    D = newest(page, 'data')
+    check('graph: a second one, a figure with its caption escaped and a \\label Cross-reference offers (review L6); no second package line', s.count('\\usepackage{rikuy}') == 1 and '\\begin{figure}[htbp]\n\\centering\n\\rikuywidget[width=\\linewidth]{%s.html}{%s.png}\n\\caption{Data \\& more}\n\\label{fig:%s}\n\\end{figure}' % (D, D, D[7:]) in s and files(page)[0].count('rikuy.sty') == 1, s)
     # from the insert list
     load_doc(page, DOC); click_text(page, 'Hello', 2)
     names = page.evaluate('window.rikuy.cmds.commands().filter((c) => c.palette).map((c) => c.palette.d)')
@@ -76,24 +87,26 @@ def graph_insert(page):
 def graph_edit(page):
     load_doc(page, DOC)
     insert_graph(page)
-    before, png0 = src(page, 'graphs/function-1.html'), blob_b64(page, 'graphs/function-1.png')
+    G = newest(page, 'function'); want = WANT.replace('graphs/function-1', G)
+    page.evaluate('window.rikuy.graphRefresh()'); page.wait_for_timeout(300)
+    before, png0 = src(page, G + '.html'), blob_b64(page, G + '.png')
     h0 = page.evaluate('window.rikuy.hist.length')
     page.evaluate('window.rikuy.runCommand("edit-graph")')
     page.wait_for_selector('#gd-ok')
     check('graph: Edit graph opens the dialog on it, its formula in the field', page.get_by_role('textbox', name='Formulas').input_value() == 'y = a sin(b x)' and page.inner_text('#gd-ok') == 'Update')
     page.click('#gd-ok'); page.wait_for_timeout(500)
-    check('graph: Update with nothing changed writes nothing', page.evaluate('window.rikuy.hist.length') == h0 and src(page, 'graphs/function-1.html') == before)
-    page.evaluate('window.rikuy.runCommand("edit-graph", { file: "graphs/function-1.html" })')
+    check('graph: Update with nothing changed writes nothing', page.evaluate('window.rikuy.hist.length') == h0 and src(page, G + '.html') == before)
+    page.evaluate('(f) => window.rikuy.runCommand("edit-graph", { file: f })', G + '.html')
     page.wait_for_selector('#gd-ok')
     page.get_by_role('textbox', name='Formulas').fill('y = a sin(b x) + c')
     page.wait_for_timeout(400)
     check('graph: a new letter gets a slider of its own', page.get_by_role('textbox', name='Slider 3 name').input_value() == 'c')
     page.get_by_role('textbox', name='Slider 3 start').fill('0.5')
     page.click('#gd-ok'); page.wait_for_timeout(1200)
-    after = src(page, 'graphs/function-1.html')
-    check('graph: Update writes the file and the picture, the text untouched, one step', after != before and '"a sin(b x) + c"' in after and src(page) == WANT and blob_b64(page, 'graphs/function-1.png') != png0 and page.evaluate('window.rikuy.hist.length') == h0 + 1)
+    after = src(page, G + '.html')
+    check('graph: Update writes the file and the picture, the text untouched, one step', after != before and '"a sin(b x) + c"' in after and src(page) == want and blob_b64(page, G + '.png') != png0 and page.evaluate('window.rikuy.hist.length') == h0 + 1)
     page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(300)
-    check('graph: one undo gives the file and the picture back byte for byte', src(page, 'graphs/function-1.html') == before and blob_b64(page, 'graphs/function-1.png') == png0)
+    check('graph: one undo gives the file and the picture back byte for byte', src(page, G + '.html') == before and blob_b64(page, G + '.png') == png0)
     # a mistake is said where it is, and Update waits
     page.evaluate('window.rikuy.runCommand("edit-graph")'); page.wait_for_selector('#gd-ok')
     page.get_by_role('textbox', name='Formulas').fill('y = sin(x')
@@ -154,9 +167,17 @@ def graph_hint_menu(page):
     # a frame asking again and again opens one menu a second at most
     n = page.evaluate('''async () => { const w = document.querySelector('#wlayer iframe.rk-widget').contentWindow; let opened = 0;
       const mo = new MutationObserver(() => { if (document.querySelector('[aria-label="Graph menu"]')) opened++; }); mo.observe(document.body, { childList: true });
-      window.rikuy.graphMenuT = 0; for (let i = 0; i < 5; i++) window.dispatchEvent(new MessageEvent('message', { data: { rikuy: 'menu', x: 5, y: 5 }, source: w }));
+      for (let i = 0; i < 5; i++) window.dispatchEvent(new MessageEvent('message', { data: { rikuy: 'menu', x: 5, y: 5 }, source: w }));
       await new Promise((r) => setTimeout(r, 100)); mo.disconnect(); return opened; }''')
-    check('graph: five menu requests at once open one menu', n == 1, n)
+    check('graph: five menu requests with no press in the frame open no menu (review H2)', n == 0, n)
+    # a graph asking all the time while one types on the page and in a dialog: nothing is taken
+    page.evaluate('''() => { const w = document.querySelector('#wlayer iframe.rk-widget').contentWindow; window.__spam = setInterval(() => window.dispatchEvent(new MessageEvent('message', { data: { rikuy: 'menu', x: 10, y: 10 }, source: w })), 60); }''')
+    click_text(page, 'Second para.', 12); page.keyboard.type(' The quick brown fox'); page.wait_for_timeout(300)
+    page.evaluate('window.rikuy.runCommand("autocorrect-options")'); page.wait_for_selector('.pop-acopt')
+    page.get_by_role('textbox', name='User name').type('Ada Lovelace'); page.wait_for_timeout(300)
+    still = page.locator('.pop-acopt').count() == 1 and page.get_by_role('textbox', name='User name').input_value() == 'Ada Lovelace'
+    page.evaluate('clearInterval(window.__spam)'); page.keyboard.press('Escape')
+    check('graph: a frame asking every 60 ms takes no typed letter and closes no dialog (review H2)', 'Second para. The quick brown fox' in src(page) and still, src(page)[-80:])
     page.keyboard.press('Escape')
     # the Edit graph button over it, and the right click menu with the graph armed
     page.hover('#wlayer .wbox'); page.wait_for_timeout(200)
@@ -176,7 +197,7 @@ def graph_safety(page):
     page.get_by_role('textbox', name='Description').fill('<img src=x onerror=alert(1)>')
     page.wait_for_timeout(700)
     page.click('#gd-ok'); page.wait_for_timeout(1500)
-    html = src(page, 'graphs/function-1.html')
+    html = src(page, newest(page, 'function') + '.html')
     check('graph: a description cannot end its script element or reach the page', html.count('</script>') == 2 and page.evaluate('document.title') != 'pwned' and '<img src=x' not in html.split('<body>')[0].split('<title>')[1].split('</title>')[0], html[:400])
     reach = page.frame_locator('#wlayer iframe.rk-widget').locator('body').evaluate('''() => { const r = []; try { r.push(String(parent.document)); } catch (e) { r.push('blocked'); } try { r.push(String(localStorage.length)); } catch (e) { r.push('blocked'); } return r; }''')
     check('graph: its frame reaches neither the page nor storage', reach == ['blocked', 'blocked'], reach)
@@ -389,7 +410,114 @@ def files_in(page):
     check('PDF pages: one undo takes the text and the file out', src(page) == W('Para.') and 'scan.pdf' not in files(page)[1])
 
 
-EXTRA = [clipboard, symbols, date_latex, autocorrect, files_in]
+def review(page):
+    """The hostile review of a228b19, each finding's case (H3, H5 in node, H6, H7, M1, M3, M4, L1 in
+    the phones, L2, L3, L4, L8, L10 in node); what TeX judges is in review_compiles."""
+    page.context.grant_permissions(['clipboard-read', 'clipboard-write'], origin='https://rikuy.test')
+    # H3: the picture at its own box's width, in a column
+    load_doc(page, '\\documentclass[twocolumn]{article}\n\\begin{document}\nHello world.\n\nSecond para.\n\\end{document}\n')
+    insert_graph(page)
+    G = newest(page, 'function')
+    page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000); page.wait_for_timeout(500)
+    page.evaluate('window.rikuy.graphRefresh()'); page.wait_for_timeout(800)
+    w = page.evaluate('''async (n) => { const app = window.rikuy, box = [...document.querySelectorAll('.w-live')].find((b) => b.dataset.wf === n + '.html');
+      const a = new Uint8Array(await app.assetBlobs.get(n + '.png').arrayBuffer()); return [box.getBoundingClientRect().width / app.widgets.host.scale(), new DataView(a.buffer).getUint32(16) / 3]; }''', G)
+    check('review H3: in two columns the picture is drawn at the column\'s width, as the live figure', abs(w[0] - w[1]) < 3, w)
+    # M1: a picture gone (a share link has none) is drawn again
+    page.evaluate('(n) => window.rikuy.setAsset(n + ".png", null)', G)
+    page.evaluate('window.rikuy.graphRefresh()'); page.wait_for_timeout(800)
+    check('review M1: a graph\'s missing picture is drawn again', page.evaluate('(n) => window.rikuy.assetBlobs.has(n + ".png")', G))
+    # H7: a rikuy.sty in another folder is not the one TeX reads
+    load_doc(page, {'main.tex': DOC, 'old/rikuy.sty': '% old'})
+    insert_graph(page)
+    check('review H7: rikuy.sty is written beside the main file though old/rikuy.sty exists', 'rikuy.sty' in files(page)[0], files(page)[0])
+    size = len(src(page, newest(page, 'function') + '.html').encode())
+    check('review L7: a graph\'s file in the built page holds graphKit minified, under 36 KB (%d bytes)' % size, size < 36000, size)
+    # M3: a hand written graph's own shape and exact range: Update with nothing touched writes nothing
+    html = src(page, newest(page, 'function') + '.html').replace('"aspect": 0.5', '"aspect": 0.6')
+    hand = '\\documentclass{article}\n\\usepackage{rikuy}\n\\begin{document}\nText.\n\n\\rikuywidget{plot.html}{plot.png}\n\\end{document}\n'
+    load_doc(page, {'main.tex': hand, 'plot.html': html.replace('"kind": "function"', '"kind": "curve"'), 'rikuy.sty': '%'})
+    h0 = page.evaluate('window.rikuy.hist.length')
+    page.evaluate('window.rikuy.runCommand("edit-graph")'); page.wait_for_selector('#gd-ok'); page.wait_for_timeout(300)
+    page.click('#gd-ok'); page.wait_for_timeout(600)
+    check('review M3: Update with nothing touched on a hand written graph (its own shape, 2π exact) writes nothing', page.evaluate('window.rikuy.hist.length') == h0, page.evaluate('window.rikuy.hist.length') - h0)
+    # H6: Text from file with a whole document: its body, its packages here
+    load_doc(page, W('Para.')); click_text(page, 'Para', 2)
+    tex = os.path.join(SHOTS, 'whole.tex'); open(tex, 'w').write('\\documentclass{article}\n\\usepackage{amssymb}\n\\begin{document}\nChapter text $\\mathbb{R}$.\n\\end{document}\n')
+    with page.expect_file_chooser() as fc:
+        page.evaluate('window.rikuy.runCommand("text-from-file")')
+    fc.value.set_files(tex); page.wait_for_timeout(500)
+    check('review H6: a whole document comes in as its body, its packages in this preamble', src(page, 'whole.tex') == 'Chapter text $\\mathbb{R}$.\n' and '\\usepackage{amssymb}' in src(page), (src(page), src(page, 'whole.tex')))
+    # L2: Paste Special over a selection replaces it
+    load_doc(page, W('One two three.'))
+    page.evaluate('navigator.clipboard.writeText("$x$")')
+    select_text(page, 'two')
+    page.evaluate('window.rikuy.runCommand("paste-special")'); page.wait_for_selector('.ps-list')
+    page.get_by_role('radio', name='LaTeX source').check(); page.get_by_role('button', name='OK').click(); page.wait_for_timeout(400)
+    check('review L2: Paste Special replaces the selection', src(page) == W('One $x$ three.'), src(page))
+    # L3: a Mac keeps Option+Shift+D and T for their characters
+    check('review L3: on a Mac, Date and Time are Control+Shift+D and T', page.evaluate('[window.rikuy.cmds.command("insert-date").mac, window.rikuy.cmds.command("insert-time").mac]') == [{'Alt+Shift+D': 'Control+Shift+D'}, {'Alt+Shift+T': 'Control+Shift+T'}])
+    # L4: one's own replacement escaped as typing escapes it
+    page.evaluate('window.rikuy.runCommand("autocorrect-options")'); page.wait_for_selector('.pop-acopt')
+    page.get_by_role('textbox', name='Replace').fill('apx'); page.get_by_role('textbox', name='With', exact=True).fill('~5 ^ \\'); page.get_by_role('button', name='Add', exact=True).click()
+    page.keyboard.press('Escape')
+    got = page.evaluate('window.rikuy.prefs.acList[0]')
+    check('review L4: one\'s own replacement is escaped as typing escapes it', got[1] == '\\textasciitilde{}5 \\textasciicircum{} \\textbackslash{}', got)
+    # M4: a correction undone becomes an exception
+    load_doc(page, W('Start here.')); click_text(page, 'here', 5)
+    page.keyboard.type(' THis '); page.wait_for_timeout(200)
+    page.keyboard.press('Control+z'); page.wait_for_timeout(200)
+    page.keyboard.type('x'); page.wait_for_timeout(200)
+    check('review M4: TWo INitial CApitals undone: that word is an exception from then on', 'THis' in (page.evaluate('window.rikuy.prefs.acExcept') or []), page.evaluate('window.rikuy.prefs.acExcept'))
+    # L8: no Abstract where the class has none; align* brings amsmath
+    load_doc(page, '\\documentclass{book}\n\\begin{document}\nPara.\n\\end{document}\n'); click_text(page, 'Para', 2)
+    items = [x and x.get('name') for x in page.evaluate('window.rikuy.cmds.command("insert-environment").menuItems(window.rikuy)')]
+    check('review L8: a book\'s Environment menu has no Abstract', 'Abstract' not in items and 'Centered' in items, items)
+    page.evaluate('window.rikuy.runCommand("insert-env-other")'); page.wait_for_selector('.pop-env')
+    page.get_by_role('textbox', name='Environment name').fill('align*'); page.keyboard.press('Enter'); page.wait_for_timeout(400)
+    check('review L8: Other environment align* brings amsmath, one undo', '\\usepackage{amsmath}' in src(page) and '\\begin{align*}' in src(page), src(page))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('review L8: and one undo takes both out', src(page) == '\\documentclass{book}\n\\begin{document}\nPara.\n\\end{document}\n', src(page))
+
+
+def review_compiles(page):
+    """What TeX judges in the review (H1, H4, H6, M1): each compiled in the page."""
+    if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        print('SKIP the review\'s compiles: no TeX tree in %s' % DIST)
+        return
+    page.set_default_timeout(600000)
+    comp = lambda: page.evaluate('''async () => { const r = await window.rikuy.api.compile(); return { ok: r.ok, pages: r.pages, errors: (window.rikuy.api.problems ? window.rikuy.api.problems() : []).filter((p) => p.severity === 'error').map((p) => p.message || p.text).slice(0, 3) }; }''')
+    # H1: an address typed in a plain article
+    load_doc(page, W('Start here.')); click_text(page, 'here.', 5)
+    page.keyboard.type(' See www.example.org for more. '); page.wait_for_timeout(300)
+    r = comp()
+    check('review H1: an address typed becomes \\url with \\usepackage{url}, and it compiles', '\\usepackage{url}' in src(page) and '\\url{https://www.example.org}' in src(page) and r['ok'], (src(page), r))
+    # H4 and M1: a hand written command with no width, Edit graph, its picture missing at first
+    load_doc(page, DOC); insert_graph(page)
+    html = src(page, newest(page, 'function') + '.html')
+    hand = '\\documentclass{article}\n\\usepackage{rikuy}\n\\begin{document}\nText.\n\n\\rikuywidget{plot.html}{plot.png}\n\\end{document}\n'
+    load_doc(page, {'main.tex': hand, 'plot.html': html, 'rikuy.sty': open(os.path.join(ROOT, 'sample', 'widget', 'rikuy.sty')).read()})
+    page.evaluate('window.rikuy.runCommand("edit-graph")'); page.wait_for_selector('#gd-ok')
+    page.get_by_role('textbox', name='Formulas').fill('y = a cos(b x)'); page.wait_for_timeout(300); page.click('#gd-ok'); page.wait_for_timeout(1200)
+    r = comp()
+    check('review H4: a command with no width prints the picture at the text\'s width: one page, no overfull line', r['ok'] and r['pages'] == 1, r)
+    page.evaluate('window.rikuy.setAsset("plot.png", null)')
+    # (a change to the text, so TeX runs again: an unchanged text keeps the PDF it has)
+    click_text(page, 'Text.', 4); page.keyboard.type('s'); page.wait_for_timeout(300)
+    r = comp()
+    check('review M1: with its picture gone, the compile draws it again first', r['ok'] and page.evaluate('window.rikuy.assetBlobs.has("plot.png")'), r)
+    # H6: a whole document read in by Text from file compiles
+    load_doc(page, W('Para.')); click_text(page, 'Para', 2)
+    tex = os.path.join(SHOTS, 'whole2.tex'); open(tex, 'w').write('\\documentclass{article}\n\\usepackage{amssymb}\n\\begin{document}\nChapter $\\mathbb{R}$.\n\\end{document}\n')
+    with page.expect_file_chooser() as fc:
+        page.evaluate('window.rikuy.runCommand("text-from-file")')
+    fc.value.set_files(tex); page.wait_for_timeout(500)
+    r = comp()
+    check('review H6: and the document compiles', r['ok'] and r['pages'] == 1, r)
+    page.set_default_timeout(30000)
+
+
+EXTRA = [clipboard, symbols, date_latex, autocorrect, files_in, review, review_compiles]
 
 if __name__ == '__main__':
     sys.exit(run())

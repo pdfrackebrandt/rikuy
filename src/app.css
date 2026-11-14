@@ -1720,7 +1720,8 @@ textarea.gd-in { resize: vertical; line-height: 1.4; }
 .w-hint { position: absolute; left: 0; top: calc(100% + 6px); z-index: 2; display: flex; align-items: center; gap: 10px; max-width: 520px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink-ui); font: 13px/1.4 var(--font-ui); box-shadow: 0 6px 20px rgba(10, 20, 30, .16); transform: scale(calc(1 / var(--ws, 1))); transform-origin: top left; }
 .w-hint .btn { flex: none; }
 @media (pointer: coarse) {
-  .w-edit { opacity: 1; min-height: 44px; min-width: 44px; padding: 0 12px; font-size: 14px; right: 4px; top: 4px; }
+  /* (centred at the top: at the right it covered the LaTeX tab and the sliders' values) */
+  .w-edit { opacity: 1; min-height: 44px; min-width: 44px; padding: 0 12px; font-size: 14px; top: 4px; right: auto; left: 50%; transform: translateX(-50%) scale(calc(1 / var(--ws, 1))); transform-origin: top center; }
   .w-hint { max-width: min(520px, calc(100vw - 32px)); }
   .w-hint .btn { min-height: 44px; min-width: 44px; }
 }
