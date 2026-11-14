@@ -42,6 +42,8 @@ export function correct(src, p, ch, o = DEFAULTS, own = []) {
       if (at < from) continue;
       // (a word's own letters run on: "xteh" is no "teh", nor is "x->y" an arrow)
       if (/\w/.test(src[at - 1] || '') && (/^\w/.test(a) || !now)) continue;
+      // (at a paragraph's or an item's start, (c) and (r) are a list's marker: B3's automatic lists)
+      if (/^\(/.test(a) && /(^|\n\s*\n|\\item)\s*$/.test(src.slice(Math.max(0, at - 40), at))) continue;
       return { s: at, e: p, t, typed: now };
     }
   }
@@ -65,7 +67,9 @@ export function correct(src, p, ch, o = DEFAULTS, own = []) {
     return { s: ws, e: p, t: n + '\\textsuperscript{' + suf + '}' };
   }
   if (o.fractions && FRACTIONS[word] && !/[\w/]/.test(src[ws - 1] || '')) return { s: ws, e: p, t: FRACTIONS[word] };
-  if (/^[A-Za-z]+$/.test(word)) {
+  // (capitals once a space ends the word: "a)" or "a." at a paragraph's start is a list's marker,
+  // which B3's automatic lists read as typed)
+  if (/^[A-Za-z]+$/.test(word) && /\s/.test(ch)) {
     if (o.twoCaps !== false && /^[A-Z]{2}[a-z]{2,}$/.test(word) && !/\\/.test(src[ws - 1] || '')) return { s: ws + 1, e: ws + 2, t: word[1].toLowerCase() };
     if (o.days !== false && DAYS.includes(word) && !/\\/.test(src[ws - 1] || '')) return { s: ws, e: ws + 1, t: word[0].toUpperCase() };
     if (o.capitals !== false && /^[a-z]/.test(word) && sentenceStart(src, ws)) return { s: ws, e: ws + 1, t: word[0].toUpperCase() };

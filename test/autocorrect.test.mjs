@@ -45,6 +45,11 @@ ok('capitals: a sentence\'s first letter, TWo INitial CApitals, days; not after 
   assert.equal(type('a THere', ' '), 'a There ');
   assert.equal(type('the IDs', ' '), 'the IDs ');
   assert.equal(type('on monday', ' '), 'on Monday ');
+  // a list's marker at a paragraph's start stays as typed (B3's automatic lists read it)
+  assert.equal(type('a', ')'), 'a)');
+  assert.equal(type('Text.\n\nb', '.'), 'Text.\n\nb.');
+  assert.equal(type('x\n\n(c', ')'), 'x\n\n(c)');
+  assert.equal(type('\\item (r', ')'), '\\item (r)');
   assert.equal(type('\\section{intro', '}'), '\\section{intro}');
   assert.equal(type('\\section{intro', ' '), '\\section{Intro ');
   assert.equal(type('x \\textbf', ' '), 'x \\textbf ');
