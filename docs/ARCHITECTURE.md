@@ -48,6 +48,7 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | the ribbon: tabs, contextual tabs, groups folding, the keyboard | `ribbonBuild`, `makeControl`, `selectTab`, `ribbonContexts`, `ribbonSync`, `ribbonFit`, `ribbonRove`, `runCommand`, `toggleRibbon`, `peekRibbon`, `installRibbon` (`src/ribbon/tabs.js`); `ribbonAt`, `insertEmpty`, `dropEmpty`, `ribbonBack` (`src/ribbon.js`) |
 | the Styles gallery and the paragraph's style | `styleSync`, `paintGallery`, `pageGallery`, `openStyles`, `tileOrder`, `installGallery` (`src/ui/gallery.js`); `blockStyle`, `setBlockStyle` (`src/cmd/styles.js`); `restyle`, `latexSpot` (`src/styles.js`) |
 | keys, the search box, the right click menu, the kit | `matches`, `lookup`, `installKeys` (`src/keys.js`); `installSearch` (`src/ui/search.js`); `openContextMenu`, `installMenu` (`src/ui/menu.js`); `openMenu`, `openGallery`, `splitButton`, `colorPicker`, `numberField`, `dialog` (`src/ui/kit.js`) |
+| a picture: the one selected, its surroundings and every operation on it; Insert's objects | `findPicture`, `sizeOf`, `setSize`, `setCrop`, `rotate`, `flip`, `border`, `setAlt`, `setPosition`, `captionEdits`, `naturalSize`, `graphicBox` (`src/picture.js`); `picHere`, `picSelect`, `picOp`, `picApply`, `picPackages`, `insertObject`, `dropCap` (`src/cmd/picture.js`); `Handles` (`src/ui/handles.js`); the dialogs (`src/ui/picturedialogs.js`); `readTikz`, `readAxis`, `drawRaw`, `drawSmart`, `drawIcon` (`src/drawing.js`); `picBox`, `picDraw` (`src/render.js`) |
 | a table: where the caret is in it, and every operation on it | `parseTable`, `tableAt`, `cellAt`, `emit`, `insertRow`, `deleteRows`, `insertCol`, `deleteCols`, `mergeCells`, `splitCell`, `applyLook`, `setBorders`, `shade`, `setSetting`, `autofit`, `repeatHeader` (`src/table.js`); `tableHere`, `tableOp`, `tableApply`, `tablePackages`, `caretToCell` (`src/cmd/table.js`); `openTablePicker` and the dialogs (`src/ui/tablepicker.js`); `tabular`, `tableCell`, `tableSetting`, `csvTable` (`src/model.js`) |
 | a character format (Bold to Font Color, the boxes, the Font dialog, the Format Painter) | `toggle`, `setValue`, `wrapIn`, `clearFormats`, `chainAt`, `preambleFor`, `docSizeEdits`, `docFontEdits`, `changeCase`, `autoFormat` (`src/charfmt.js`); `fmtCommit`, `fmtToggle`, `fmtSet`, `fontState`, `fontBox` (`src/cmd/font.js`); `openFontDialog` (`src/ui/fontdialog.js`) |
 | an edit of the preamble, an inline wrapper, an environment around paragraphs | `usePackages`, `kvEdits`, `classOptions`, `setPackageKeys`, `defineOnce` (`src/preamble.js`); `App.packageEdits`, `preambleOthers`; `wrapEdits`, `unwrapEdits`, `standsFree`, `rewrapEdits`, `enclosing`, `clearText`, `GROUPS` (`src/wrap.js`); `envWords`, `wrapBlockEdits`, `unwrapBlockEdits` (`src/blockenv.js`) |
@@ -343,6 +344,30 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   `src/model.js` draws what they write (its inline table, `fontLook`, extsizes' base sizes) and
   `paint` in `src/render.js` sets sizes, tracking, shifts and the highlighter's colour as numbers
   and checked colours only.
+- **Pictures.** A press or a tap on a picture's atom selects it (`picSelect`, `src/cmd/picture.js`:
+  `app.armed` as Backspace's selection was, the Picture Format tab, the frame of
+  `src/ui/handles.js`, which follows the picture and lets it go when the caret goes elsewhere).
+  `findPicture` (`src/picture.js`) reads it from the parser's tree of its file (kept while the
+  text is the same): its options as key=value pieces, the boxes round it innermost first
+  (`\reflectbox`, `\scalebox`, `\rotatebox`, `\fbox` and Rikuy's `{\setlength{\fboxsep}{0pt}\fbox{…}}`,
+  `\resizebox`), and the block it stands in (a center, a figure, a wrapfigure, a paragraph of its
+  own, a sentence, a box) with what else is there and what lies round it (floats, boxes,
+  multicols, lists). Every operation is a function of the text and that reading giving small
+  edits, each the inverse of its opposite byte for byte (In Line with Text writes a center; a
+  wrapfigure takes the picture's share of the line and the picture `width=\linewidth`, which
+  goes back with it); `picApply` commits them with the packages (`picPackages`, through
+  `packageEdits`) and selects the picture again where it now is. The page draws a picture as
+  graphicx sets it: `graphicBox` applies trim, width, height, scale and angle in graphicx's order
+  to the file's natural size, which `naturalSize` reads from its first bytes as pdfTeX does (a
+  PNG's pHYs or a JPEG's JFIF density, rounded; a PDF's box), so a crop is cut where TeX cuts it
+  and a turn takes the box TeX gives it (`picBox`, `picDraw` in `src/render.js`); flips and
+  frames are drawn on the picture (`pic` boxes of the inline styles). The browser decodes the
+  pixels; only the resolution TeX reads needed a reader, forty lines of bounded header parsing,
+  so no C library was brought in. Insert's objects (`insertObject`) are blocks of their own in a
+  center after the caret's block, never floats; `src/drawing.js` reads what they write (a TikZ
+  picture of plain paths, a pgfplots axis from coordinates, smartdiagram's items, an icon's name)
+  and draws it as SVG through the DOM, the document's words as text and its colours from xcolor's
+  names only; anything outside that subset keeps the source box.
 - **Styles.** `blockStyle` reads the caret's block into `{v, to, b}`: its style now, the styles it
   may take, and where its words are; `restyle` (`src/styles.js`, tested on strings in
   `test/styles.test.mjs`) turns that into the smallest edits: Normal to LaTeX writes the mark's

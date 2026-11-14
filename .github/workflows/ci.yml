@@ -100,6 +100,9 @@ jobs:
         run: cd test && python3 font.py
       - name: Lists (levels by Tab, the libraries, numbering values, multilevel lists, sorting, automatic lists)
         run: cd test && python3 lists.py
+      # its compile in the page needs dist/tex and runs in tex.yml; here it says it skips that part
+      - name: Pictures and objects (selecting, Picture Format as round trips, handles, crop, the page's drawing, Insert's objects, phones)
+        run: cd test && python3 picture.py
       # its compile offline needs dist/tex and runs in tex.yml; here it says it skips that part
       - name: The installed app offline, its updates, and none in the artifact build
         run: cd test && python3 offline.py

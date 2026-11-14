@@ -21,7 +21,9 @@ export const TABS = [
   // contextual tabs, after Help, while their object has the caret
   { id: 'table-design', name: 'Table Design', ctx: 'table', groups: [['options', 'Table style options', 2], ['styles', 'Table styles', 3], ['borders', 'Borders', 1]] },
   { id: 'table-layout', name: 'Table Layout', ctx: 'table', groups: [['table', 'Table', 3], ['rows', 'Rows & columns', 6], ['merge', 'Merge', 5], ['size', 'Cell size', 4], ['alignment', 'Alignment', 2], ['data', 'Data', 1]] },
-  { id: 'picture-format', name: 'Picture Format', ctx: 'picture', groups: [['size', 'Size', 4], ['arrange', 'Arrange', 3], ['accessibility', 'Accessibility', 2], ['picture', 'Picture', 1]] },
+  // (Word's order: Adjust, Picture Styles, Accessibility, Arrange, Size. Size folds first: its two
+  // fields are wide and its buttons few, so folding it last showed fewer controls in a wider window)
+  { id: 'picture-format', name: 'Picture Format', ctx: 'picture', groups: [['adjust', 'Adjust', 2], ['styles', 'Picture Styles', 3], ['accessibility', 'Accessibility', 4], ['arrange', 'Arrange', 5], ['size', 'Size', 1]] },
   { id: 'equation', name: 'Equation', ctx: 'equation', groups: [['tools', 'Tools', 3], ['symbols', 'Symbols', 1], ['structures', 'Structures', 2]] },
   { id: 'headfoot', name: 'Header & Footer', ctx: 'headfoot', groups: [['headfoot', 'Header & Footer', 3], ['insert', 'Insert', 2], ['options', 'Options', 1], ['close', 'Close', 4]] }
 ].map((t) => ({ ...t, groups: t.groups.map(([id, name, rank = 1, more = {}]) => ({ id, name, rank, spare: !!more.spare })) }));
@@ -33,8 +35,8 @@ export const groupOf = (tab, group) => { const t = tabById(tab); return t ? t.gr
 // test finer (B7 tables, B8 pictures, B13 equations, B6 headers and footers).
 export const CONTEXTS = {
   table: (app, at) => !!(at && at.cell),
-  // a picture: one that Backspace selected (the page arms it)
-  picture: (app) => !!(app.armed && app.armed.kind === 'img'),
+  // a picture selected on the page: pressed (B8), or the one Backspace selected
+  picture: (app) => !!(app.armed && app.armed.kind === 'img' && app.armed.el && app.armed.el.isConnected),
   // the equation field is open
   equation: (app) => !!(app.pop && app.pop.el && app.pop.el.classList.contains('pop-math')),
   // the header or the footer is open on the page (src/ui/headerfooter.js)

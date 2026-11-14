@@ -225,19 +225,30 @@ def collapse(page):
     check('and the button shows it again for good', page.evaluate('[document.body.classList.contains("rb-collapsed"), !!document.getElementById("ribbon").offsetParent]') == [False, True])
 
 
+PICDOC = '\\documentclass{article}\n\\usepackage{graphicx}\n\\begin{document}\nA paragraph.\n\n\\begin{center}\n\\includegraphics[width=0.5\\linewidth]{figure.png}\n\\end{center}\n\\end{document}\n'
+
+
 def every_command(page):
     load_doc(page, TABLE)
     bad, n = [], 0
     reg = page.evaluate('rikuy.cmds.describe().filter((x) => x.place === "ribbon" && x.tab && !x.fit && x.role !== "group" && x.only !== "narrow")')
     tabs = page.evaluate('Object.fromEntries([...document.querySelectorAll("#rb-tabs [role=tab]")].map((t) => [t.dataset.tab, t.textContent]))')
     for x in reg:
-        if x['tab'].startswith('table'):
+        if x['tab'] == 'picture-format':
+            # (a picture selected by a press on it, B8)
+            if page.evaluate('!!rikuy.hf'): page.evaluate('rikuy.pageHFClose()')
+            load_doc(page, PICDOC); page.wait_for_timeout(200); page.locator('#pages .a-img').click(); page.wait_for_timeout(200)
+        elif x['tab'].startswith('table'):
+            if page.evaluate('!!rikuy.hf'): page.evaluate('rikuy.pageHFClose()')
+            if '\\includegraphics' in src(page): load_doc(page, TABLE)
             click_text(page, 'cell', 2); page.wait_for_timeout(200)
         elif x['tab'] == 'headfoot':
             # (the Header & Footer tab is there while the header is open on the page)
+            if '\\includegraphics' in src(page): load_doc(page, TABLE)
             if not page.evaluate('!!rikuy.hf'): page.evaluate('rikuy.pageHFOpen("head")'); page.wait_for_timeout(200)
         else:
             if page.evaluate('!!rikuy.hf'): page.evaluate('rikuy.pageHFClose()')
+            if '\\includegraphics' in src(page): load_doc(page, TABLE)
             click_text(page, 'A paragraph', 2); page.wait_for_timeout(120)
         open_tab(page, tabs[x['tab']])
         loc = page.get_by_role(x['role'], name=x['name'], exact=True)
