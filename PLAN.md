@@ -1024,7 +1024,7 @@ Tests:
     by a tap, 44 px targets, the dialog fitting and scrolling, no sideways scroll. Evidence:
     `para.test.mjs` 28 groups (the reviewer's cases through paraUnits and paraRun on the real
     model); `para.py` 203 with `dist/tex` (the cases TeX refused compile, and where the page
-    and TeX disagreed TeX's PDF now sets the words where the page draws them); `tabs.py`, `ribbon.py` 271 and `agent.py` 138 with the strict widths back; `browser.py` 189; `word.py` 110; `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43; `pages_check.py` fits; the corpus model run 716 of 716; `npm test` green.
+    and TeX disagreed TeX's PDF now sets the words where the page draws them); `tabs.py` 116, `ribbon.py` 271 and `agent.py` 138 with the strict widths back (at 860 px the rule folds Home's Insert, whose buttons the Insert tab has); `browser.py` 189; `word.py` 111; `page.py` 139; `table.py` 161; `offline.py` 54/54; `launch.py` 18/18; `deploy_check.py` 43/43; `pages_check.py` fits; the corpus model run 716 of 716; `npm test` green.
 43. **B5, Find, Replace, Go To and the outline, as in Word.** Done in the code (branch
     `wordgap-b5-find`, on task 38's frame; GAP rows H75 to H81, V4, V10, S1, C5). *Find*
     (Ctrl+F on the page, Home's Find): the side panel's Outline tab is now Word's Navigation
