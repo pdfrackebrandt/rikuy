@@ -172,13 +172,15 @@ def widths(page):
     print('     widths:', seen)
     # (Home's Insert, which the Insert tab has too, is spare: it folds first, into one icon button
     # named Insert, so Home's other groups keep their buttons and names; src/ribbon/order.js)
-    # (with the Font group's and the Paragraph group's list commands, B1 and B3, the lowest rank,
-    # Editing, folds after it at 860 px)
-    check('at 1400 and 1024 px the row does not scroll and Home folds its spare Insert alone, into one icon button named Insert, the tabs a row above the toolbar; at 860 px Editing too, each one icon button named after it', all(seen[w]['tabs'] and not seen[w]['sel'] for w in (1400, 1024))
-          and all(not seen[w]['over'] and seen[w]['folded'] == ['insert'] and seen[w]['ico'] == ['insert'] for w in (1400, 1024)) and not seen[860]['over'] and seen[860]['folded'] == ['insert', 'editing'] and seen[860]['ico'] == ['insert', 'editing'], seen)
+    # (at 860 px, where the Font group keeps Bold, Italic and Underline beside its button (B1), the
+    # Paragraph group (B3's lists, B2's alignment and spacing) is one row and folds into its button
+    # with Insert: a wider window then never shows fewer controls, which two rows here broke at 870 px)
+    check('at 1400 and 1024 px the row does not scroll and Home folds its spare Insert alone, into one icon button named Insert, the tabs a row above the toolbar; at 860 px Paragraph and Insert, each one icon button named after it', all(seen[w]['tabs'] and not seen[w]['sel'] for w in (1400, 1024))
+          and all(not seen[w]['over'] and seen[w]['folded'] == ['insert'] and seen[w]['ico'] == ['insert'] for w in (1400, 1024)) and not seen[860]['over'] and seen[860]['folded'] == ['paragraph', 'insert'] and seen[860]['ico'] == ['paragraph', 'insert'], seen)
     check('at 860 and 390 px the tabs are the combobox "Ribbon tab" at the row\'s start, in one row that scrolls sideways on a phone', all(not seen[w]['tabs'] and seen[w]['sel'] and seen[w]['h'] <= 44 and seen[w]['page'] <= 0 for w in (860, 390)) and seen[390]['over'], seen)
-    # (the three go before any group folds: they take two controls, Editing three)
-    check('the downloads: three at 1400 px; one Download menu where the row has no room for three (1024 px, beside Editing, and 860 px), and on a phone', seen[1400]['dl'] == ['rb-pdf', 'rb-word', 'b-save'] and all(seen[w]['dl'] == ['rb-dl-menu'] for w in (1024, 860, 390)) and not seen[860]['over'], {w: seen[w]['dl'] for w in seen})
+    # (the three go before any group folds: they take two controls, Editing three; at 860 px the
+    # folded Paragraph group leaves room for them)
+    check('the downloads: three at 1400 and 860 px; one Download menu where the row has no room for three (1024 px, beside Editing), and on a phone', all(seen[w]['dl'] == ['rb-pdf', 'rb-word', 'b-save'] for w in (1400, 860)) and all(seen[w]['dl'] == ['rb-dl-menu'] for w in (1024, 390)) and not seen[860]['over'], {w: seen[w]['dl'] for w in seen})
     page.set_viewport_size({'width': 390, 'height': 900}); page.wait_for_timeout(300)
     page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label='Insert'); page.wait_for_timeout(200)
     check('on a phone the combobox opens a tab: Insert\'s Picture is there by its name', page.get_by_role('tabpanel', name='Insert', exact=True).get_by_role('button', name='Picture', exact=True).is_visible())
