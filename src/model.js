@@ -614,8 +614,6 @@ class Builder {
       case 'DoubleSpacing': O.spread = DOUBLE[O.pt] || 1.667; break;
       case 'SingleSpacing': O.spread = 1; break;
       case 'setSpacing': O.spread = parseFloat(A(0)) || 1; break;
-      // (B2) \renewcommand{\baselinestretch}{1.5}: the stretch, and the macro as any other
-      case 'renewcommand': if (nd.def && nd.def.name === 'baselinestretch' && parseFloat(nd.def.body) > 0) O.spread = parseFloat(nd.def.body); this.defCmd(nd, ctx); break;
       case 'abnormalparskip': { const v = parseLen(A(0), O.pt); if (typeof v === 'number') O.parskip = v / O.pt; break; }
       case 'nonzeroparskip': O.parskip = 0.6; break;
       case 'linespread': O.spread = parseFloat(A(0)) || 1; break;
@@ -638,6 +636,8 @@ class Builder {
       default:
         // \renewcommand{\familydefault}{\sfdefault}: the document in its sans serif
         if (nd.def && nd.def.name === 'familydefault') O.font = /\\sfdefault\b/.test(nd.def.body) ? 'sans' : /\\ttdefault\b/.test(nd.def.body) ? 'mono' : O.font;
+        // (B2) \renewcommand{\baselinestretch}{1.5}: the stretch, and the macro as any other
+        if (nd.def && nd.def.name === 'baselinestretch' && parseFloat(nd.def.body) > 0) O.spread = parseFloat(nd.def.body);
         this.defCmd(nd, ctx);
     }
   }
