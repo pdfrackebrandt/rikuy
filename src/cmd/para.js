@@ -30,7 +30,24 @@ const canAlign = (app, at) => { const p = paraOf(app, at); return !!p && !p.why;
 const can = (app, at) => { const p = paraOf(app, at); return !!p && !p.why && !p.float; };
 const why = (app, at) => { const p = paraOf(app, at); return p && p.why ? p.why : 'Click in a paragraph of the page first.'; };
 const alignNow = (app, at) => { const p = paraOf(app, at); if (!p || p.why) return undefined; const m = at.memo; if (!('b2align' in m)) m.b2align = app.paraAlignNow(p); return m.b2align; };
-const docOK = (app) => !!app.model && preambleEnd(app.src(app.main)) >= 0;
+// What a look at the caret asks of the whole document is read once for each text of it: the main
+// file's (once), or every file's, each compared by reference (byFiles). On a long document the
+// preamble read at every look took 30 ms (Don't hyphenate) and 15 ms (Widow/Orphan control).
+const once = (fn) => { let key = null, val; return (src) => { if (src !== key) { key = src; val = fn(src); } return val; }; };
+function byFiles(app, key, fn) {
+  const memo = app.paraFileMemo || (app.paraFileMemo = {}), m = memo[key];
+  if (m && m.main === app.main && m.files.length === app.files.size) {
+    let same = true, i = 0;
+    for (const [n, t] of app.files) { const e = m.files[i++]; if (e[0] !== n || e[1] !== t) { same = false; break; } }
+    if (same) return m.v;
+  }
+  const v = fn();
+  memo[key] = { main: app.main, files: [...app.files], v };
+  return v;
+}
+const hasPre = once((src) => preambleEnd(src) >= 0);
+const widowsOn = once((src) => P.widowControl(src).on);
+const docOK = (app) => !!app.model && hasPre(app.src(app.main));
 
 const ICON = {
   left: '<path d="M3 4.5h14M3 8h9M3 11.5h14M3 15h9"/>',
@@ -102,7 +119,7 @@ register(
   { id: 'page-break-before', name: 'Page break before', kind: 'toggle', title: 'Page break before: the paragraph starts a new page (\\clearpage on the line before it)', synonyms: ['clearpage', 'New page before'],
     when: can, whyNot: why, on: (app, at) => app.paraFlag(at, 'break'), run: (app, args, at) => app.paraToggle('break', args, at) },
   { id: 'widow-control', name: 'Widow/Orphan control', kind: 'toggle', title: 'Widow/Orphan control: never one line of a paragraph alone at the top or the foot of a page, in the whole document (\\widowpenalty=10000 and \\clubpenalty=10000)', synonyms: ['Widows', 'Orphans', 'Club lines', 'widowpenalty'],
-    when: docOK, whyNot: () => 'This file has no preamble.', on: (app) => (app.model ? P.widowControl(app.src(app.main)).on : null), run: (app, args) => app.paraWidows(args) },
+    when: docOK, whyNot: () => 'This file has no preamble.', on: (app) => (app.model ? widowsOn(app.src(app.main)) : null), run: (app, args) => app.paraWidows(args) },
   { id: 'suppress-line-numbers', name: 'Suppress line numbers', kind: 'toggle', title: 'Suppress line numbers: no line numbers beside this paragraph (lineno\'s nolinenumbers environment)', synonyms: ['nolinenumbers', 'No line numbers here'],
     when: (app, at) => can(app, at) && app.paraLineno(), whyNot: (app, at) => (can(app, at) ? 'The document numbers no lines (Layout › Line Numbers).' : why(app, at)), on: (app, at) => app.paraFlag(at, 'nolineno'), run: (app, args, at) => app.paraToggle('nolineno', args, at) },
   { id: 'dont-hyphenate', name: 'Don\'t hyphenate', kind: 'toggle', title: 'Don\'t hyphenate: no word of this paragraph broken at a line\'s end (babel\'s hyphenrules with nohyphenation)', synonyms: ['No hyphenation', 'hyphenrules', 'nohyphenation'],
@@ -487,7 +504,7 @@ export const methods = {
     this.paraLnMemo = { src, v };
     return v;
   },
-  paraBabel() { const src = this.src(this.main), o = this.preambleOthers(); return hasPackage(src, 'babel', undefined, o) || hasPackage(src, 'polyglossia', undefined, o); },
+  paraBabel() { return byFiles(this, 'babel', () => { const src = this.src(this.main), o = this.preambleOthers(); return hasPackage(src, 'babel', undefined, o) || hasPackage(src, 'polyglossia', undefined, o); }); },
   paraWidows(args) {
     const src = this.src(this.main), on = typeof args === 'boolean' ? args : !P.widowControl(src).on;
     const r = P.widowEdits(src, on);
