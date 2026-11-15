@@ -253,7 +253,8 @@ export const methods = {
     // (a preamble that reads the project's own files would not compile in a new document)
     const pre = src.slice(0, end).replace(/(^|[^\\])%[^\n]*/g, '$1');
     const own = [...this.files.keys()].filter((n) => n !== this.main && /\.(tex|sty|cls)$/i.test(n)).map((n) => n.replace(/\.(tex|sty|cls)$/i, '').split('/').pop());
-    if (/\\(input|include|subfile|import)\b/.test(pre) || own.some((n) => pre.includes('{' + n + '}') || pre.includes(',' + n + '}') || pre.includes('{' + n + ','))) {
+    // (\input{..} or \input name, never \input@path)
+    if (/\\(input|include|subfile|import|subimport)(?![A-Za-z@])\s*(\{|[A-Za-z0-9_./-])/.test(pre) || own.some((n) => pre.includes('{' + n + '}') || pre.includes(',' + n + '}') || pre.includes('{' + n + ','))) {
       this.toast('This preamble reads files of this project (\\input or its own packages): a new document would not find them. Copy what it needs into the preamble first.', 9000);
       return false;
     }
@@ -297,8 +298,8 @@ export const methods = {
   // ---- Properties -----------------------------------------------------------------------------
   // (the edits on strings: src/props.js)
   properties() { return readProperties(this.src(this.main)).value; },
-  setProperties(v) {
-    const r = propertyEdits(this.src(this.main), v || {}, { others: this.preambleOthers ? this.preambleOthers() : [] });
+  setProperties(v, origins) {
+    const r = propertyEdits(this.src(this.main), v || {}, { others: this.preambleOthers ? this.preambleOthers() : [], origins });
     if (r.error) { this.toast(r.error); return false; }
     if (!r.edits.length) return true;
     this.commit(r.edits.map((x) => ({ f: this.main, ...x })), null, 'properties');
@@ -308,7 +309,7 @@ export const methods = {
   openProperties() {
     const cur = this.properties();
     const p = guide(this, 'Properties', 'rf-props', 440, 'pop-props pop-guide-fit');
-    const fields = {}, shown = {};
+    const fields = {}, shown = {}, origins = {};
     const row = (k, label, hint) => {
       const l = mk('label', 'props-row');
       // (title and author in text areas: an <input> drops the line breaks the source has, and
@@ -318,6 +319,19 @@ export const methods = {
       if (multi) i.rows = Math.min(4, Math.max(1, String(cur[k] ?? '').split('\n').length)); else i.type = 'text';
       i.value = cur[k] ?? ''; i.spellcheck = k !== 'keywords'; i.setAttribute('aria-label', label);
       shown[k] = i.value;
+      // where each character came from as the person types (props.js fieldEdits): one replaced
+      // stretch at a time, the field before and after each input
+      let prev = i.value, org = [...prev].map((_, x) => x);
+      i.addEventListener('input', () => {
+        const next = i.value;
+        let p = 0;
+        while (p < prev.length && p < next.length && prev[p] === next[p]) p++;
+        let q = 0;
+        while (q < prev.length - p && q < next.length - p && prev[prev.length - 1 - q] === next[next.length - 1 - q]) q++;
+        org = [...org.slice(0, p), ...new Array(next.length - p - q).fill(-1), ...org.slice(prev.length - q)];
+        prev = next;
+      });
+      origins[k] = () => org;
       fields[k] = i;
       l.append(mk('span', null, label), i);
       if (hint) l.append(mk('small', null, hint));
@@ -334,7 +348,9 @@ export const methods = {
       // only the fields the person changed
       const v = {};
       for (const k in fields) if (fields[k].value !== shown[k]) v[k] = fields[k].value;
-      if (this.setProperties(v) !== false) { this.closePop(true); this.ribbonBack(); }
+      const org = {};
+      for (const k in v) org[k] = origins[k]();
+      if (this.setProperties(v, org) !== false) { this.closePop(true); this.ribbonBack(); }
     });
     p.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); ok.click(); } });
     r.append(mk('span', 'grow'), ok);

@@ -2290,6 +2290,24 @@ Tests:
     with the caret on the page, never mid composition (L11); Interactive graphs opens below the
     ribbon at its top (L2); Remove takes the document's pictures too (L6); Set as default refuses a
     preamble that reads project files (L9); the status links are 44 px under a finger (L12).
+    *After the verifier's round on 3f8a4f7* (one High, eight smaller; each with its case as a test):
+    a field compared character by character, one edit for each changed run, so two changes in one
+    title or author never touch the source between them; in the dialog the typing itself says which
+    characters were typed (an `&` typed beside the source's own one), the text alone only where an
+    agent sets a field (V1). Typed text is escaped in its place: after a backslash, inside `\(..\)`
+    or `\[..\]` (V5). acmart takes its subject only at the document's end (a compile and pypdf
+    show it): `\AtEndDocument{\hypersetup{..}}` there, and its keywords, which its PDF never
+    carries, are refused with a word about its `\keywords` (V2). hyperref in a hook or braces
+    (`\AtEndPreamble`) gets its keys at `\AtBeginDocument` (V6); hyperref new to the main file comes
+    with hidelinks only where nothing loaded it before, through `\IfPackageLoadedTF`, so a class's
+    link colours stay (V7). The keys of the shown blocks move into a new set (two never collapse,
+    V3), an edit's hunks read once for all the keys inside it (one undo over 40 views in 850 KB well
+    under 50 ms, V4). Set as default takes `\input@path` (V8); Help's guides stop above the status
+    bar (V9).
+    Evidence on main 5fcb643 (B4's styles and B8's pictures in): `npm test` green (`view` 18,
+    `file` 15 groups), `view.py` 108, `file.py` 77, `styles.py` 333, `picture.py` 174, `tabs.py` 115,
+    `ribbon.py` 195, `agent.py` 141 to 143 with the new tabs' controls, `browser.py` 193,
+    `offline.py` 58/58.
     Evidence on main 07069e1 (B3's lists, B13's Equation tab, the native parser and B2's Paragraph
     group in; B2's Show marks, Ctrl+Shift+8, replaces B12's, with View's copy "Formatting marks"):
     `npm test` green (`view` 16 checks, `file` 11 groups, both new), `view.py` 108 and `file.py` 73

@@ -26,6 +26,9 @@ export function guide(app, title, el, w, cls) {
   const at = where(null, w), p = dialog(app, { title, rect: at.rect, cls });
   // (positionPop keeps a dialog inside the window; this keeps it below the ribbon too)
   p.style.setProperty('--guide-top', ((at.top || 56) + 8) + 'px');
+  // (and above the status bar)
+  const st = document.getElementById('status');
+  p.style.setProperty('--guide-bottom', (st && st.offsetParent ? Math.max(0, window.innerHeight - st.getBoundingClientRect().top) : 0) + 'px');
   return p;
 }
 

@@ -109,5 +109,32 @@ await ok('M2, M4: the blocks shown as LaTeX move with each edit, one pass; 40 of
   assert.deepEqual([...app.texViews.values()].map((v) => v.s), starts.map((s) => s + e2[0].t.length));
   assert.ok(ms2 < 400, ms2 + ' ms');
 });
+await ok('V3: a view moved onto another\'s old place keeps both', async () => {
+  const { methods } = await import('../src/cmd/view.js');
+  const t = 'Aaa first.\n\nBbb second.\n\nCcc.\n', s1 = 0, s2 = t.indexOf('Bbb');
+  const app = { ...methods, name: 'n', main: 'm.tex', files: new Map([['m.tex', t]]), src(f) { return this.files.get(f); } };
+  app.texViews = new Map([[s1, 'm.tex\u0000' + s1], [s2, 'm.tex\u0000' + s2]].map(([s, k]) => [k, { f: 'm.tex', s }]));
+  app.texViewDoc = 'n\u0000m.tex'; app.viewSnap();
+  const ins = 'Aaa first.\n\n', before = new Map([['m.tex', t]]);
+  app.files.set('m.tex', ins + t);
+  app.viewMap(new Map([['m.tex', [{ s: 0, e: 0, t: ins }]]]), before);
+  assert.deepEqual([...app.texViews.values()].map((v) => v.s).sort((x, y) => x - y), [s1 + ins.length, s2 + ins.length]);
+});
+await ok('V4: one undo region over 40 views in 850 KB: its hunks read once, well under 50 ms', async () => {
+  const { methods } = await import('../src/cmd/view.js');
+  let text = '';
+  for (let i = 0; i < 14000; i++) text += 'Paragraph ' + i + ' with some words to make it a line of text.\n\n';
+  const starts = [];
+  for (let i = 0; i < 40; i++) starts.push(text.indexOf('Paragraph ' + (i * 300 + 7) + ' '));
+  const app = { ...methods, name: 'n', main: 'm.tex', files: new Map([['m.tex', text]]), src(f) { return this.files.get(f); } };
+  app.texViews = new Map(starts.map((s) => ['m.tex\u0000' + s, { f: 'm.tex', s }]));
+  app.texViewDoc = 'n\u0000m.tex'; app.viewSnap();
+  // undo of a preamble line and a word near the end: one region from the start to the end
+  const E = { s: 0, e: text.length - 5, t: 'X' + text.slice(0, text.length - 5) }, before = new Map([['m.tex', text]]);
+  app.files.set('m.tex', E.t + text.slice(text.length - 5));
+  const t0 = performance.now(); app.viewMap(new Map([['m.tex', [E]]]), before); const ms = performance.now() - t0;
+  assert.deepEqual([...app.texViews.values()].map((v) => v.s), starts.map((s) => s + 1));
+  assert.ok(ms < 50, ms + ' ms');
+});
 await ok('Export as refuses a format it does not know', () => assert.throws(() => exportAs(P, { doc: W.doc }, 'exe')));
 console.log('view: ' + n + ' checks passed');
