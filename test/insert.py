@@ -487,17 +487,23 @@ def review(page):
 
 def verify(page):
     """The verification of d107908: V1 (a frame focusing itself), V2 (one's own PNG), V4 (a width option)."""
-    # V1: a graph whose script takes the focus on a timer and asks for the menu: typing stays on the page
+    # V1, hostile: a graph whose script calls focus() (an input's, the window's, a contentEditable's)
+    # every 10 ms and asks for the menu, while one types fast on the page; again with the CPU 6
+    # times slower (CI's runner lost a key to the frame between its focus() and a check after it)
     load_doc(page, DOC); insert_graph(page)
     G = newest(page, 'function')
-    evil = src(page, G + '.html').replace('</body>', '<script>setInterval(() => { const i = document.querySelector("input"); if (i) i.focus(); window.focus(); parent.postMessage({ rikuy: "menu", x: 10, y: 10 }, "*"); }, 250);</script></body>')
-    load_doc(page, {'main.tex': src(page), G + '.html': evil, 'rikuy.sty': '%'})
-    page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000); page.wait_for_timeout(800)
-    click_text(page, 'Second para.', 12)
-    for w in ' One two three four five six seven.'.split(' '):
-        page.keyboard.type(' ' + w if w else ''); page.wait_for_timeout(180)
-    page.wait_for_timeout(600)
-    check('verify V1: a frame that focuses itself on a timer takes no letter and opens no menu', 'Second para. One two three four five six seven.' in src(page) and page.locator('[aria-label="Graph menu"]').count() == 0, src(page)[-90:])
+    evil = src(page, G + '.html').replace('</body>', '<div contenteditable id="ce">x</div><label for="lb">l</label><input id="lb"><dialog id="dg"><input></dialog><script>let k = 0; setInterval(() => { k++; const i = document.querySelector("input"); if (i) i.focus(); window.focus(); self.focus(); document.getElementById("ce").focus(); document.querySelector("label").click(); try { getSelection().collapse(document.getElementById("ce"), 0); } catch (e) {} if (k % 50 === 0) { try { const d = document.getElementById("dg"); d.close(); d.show(); } catch (e) {} } parent.postMessage({ rikuy: "menu", x: 10, y: 10 }, "*"); }, 10);</script></body>')
+    cdp = page.context.new_cdp_session(page)
+    for rate in (1, 6):
+        load_doc(page, {'main.tex': DOC.replace('Second para.', '\\rikuywidget[width=\\linewidth]{%s.html}{%s.png}\n\nSecond para.' % (G, G)).replace('\\begin{document}', '\\usepackage{rikuy}\n\\begin{document}'), G + '.html': evil, 'rikuy.sty': '%'})
+        page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000); page.wait_for_timeout(800)
+        cdp.send('Emulation.setCPUThrottlingRate', {'rate': rate})
+        click_text(page, 'Second para.', 12)
+        page.keyboard.type(' One two three four five six seven eight nine ten.', delay=15)
+        page.wait_for_timeout(800 * rate)
+        cdp.send('Emulation.setCPUThrottlingRate', {'rate': 1})
+        check('verify V1 (CPU %dx): a frame calling focus() every 10 ms takes no letter of fast typing and opens no menu' % rate,
+              'Second para. One two three four five six seven eight nine ten.' in src(page) and page.locator('[aria-label="Graph menu"]').count() == 0, src(page)[-90:])
     # V2: one's own picture under a graph's name, or named by its command, is never drawn over
     photo = page.evaluate('''async () => { const c = new OffscreenCanvas(90, 60), g = c.getContext('2d'); g.fillStyle = '#c00'; g.fillRect(0, 0, 90, 60); const b = await c.convertToBlob({ type: 'image/png' }); return Array.from(new Uint8Array(await b.arrayBuffer())); }''')
     html = src(page, G + '.html')

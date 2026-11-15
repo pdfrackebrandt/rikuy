@@ -62,6 +62,29 @@ function widgetGuard() {
   // a shadow root made by script is watched as well (the HTML parser's are not: see above)
   const attach = Element.prototype.attachShadow;
   Element.prototype.attachShadow = function attachShadow(o) { const root = apply(attach, this, [o]); apply(watch, mo, [root, opts]); return root; };
+  // The focus, only after a person's press or key in the widget. A frame's document may take the
+  // focus from the page by itself in Chromium (focus() on a timer took the letters typed on the
+  // page; an inert or hidden frame does it too), and no check after the fact closes that race.
+  // So every way to the focus a script has is held until the frame has user activation, which
+  // only a person's input inside it gives (a press on the page does not reach a frame of another
+  // origin). Defense in depth, as above: what the page itself does is test/insert.py's to show.
+  const ua = W.navigator && W.navigator.userActivation, isActive = ua && gopd(Object.getPrototypeOf(ua), 'isActive');
+  const act = () => { try { return !isActive || apply(isActive.get, ua, []); } catch (e) { return false; } };
+  const hold = (P, name) => {
+    const d = P && gopd(P, name);
+    if (!d || typeof d.value !== 'function') return;
+    const fn = d.value;
+    Object.defineProperty(P, name, { configurable: false, enumerable: d.enumerable, writable: false, value: function () { if (!act()) return undefined; return apply(fn, this, arguments); } });
+  };
+  for (const P of [W.HTMLElement, W.SVGElement, W.MathMLElement]) if (P) hold(P.prototype, 'focus');
+  hold(W, 'focus');
+  // (a label's click focuses its control; a dialog or a popover focuses what it holds; a
+  // selection put in an editable element focuses it)
+  if (W.HTMLLabelElement) Object.defineProperty(W.HTMLLabelElement.prototype, 'click', { configurable: false, writable: false, value: function () { if (act()) return apply(HTMLElement.prototype.click, this, []); } });
+  if (W.HTMLDialogElement) { hold(W.HTMLDialogElement.prototype, 'show'); hold(W.HTMLDialogElement.prototype, 'showModal'); }
+  hold(W.HTMLElement && W.HTMLElement.prototype, 'showPopover'); hold(W.HTMLElement && W.HTMLElement.prototype, 'togglePopover');
+  for (const n of ['addRange', 'collapse', 'setPosition', 'setBaseAndExtent', 'selectAllChildren', 'extend', 'collapseToStart', 'collapseToEnd', 'modify']) hold(W.Selection && W.Selection.prototype, n);
+  hold(W.Document && W.Document.prototype, 'execCommand');
 }
 
 // The page's only frames are the widgets' srcdoc frames, which no frame-src refuses. A frame's
