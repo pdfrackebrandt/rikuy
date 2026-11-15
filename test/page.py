@@ -645,6 +645,11 @@ def long_document(page):
     t = page.evaluate("""() => { const g = window.rikuy, C = g.cmds, at = g.ribbonAt(), cs = C.commands(), t0 = performance.now();
       for (let k = 0; k < 10; k++) { at.memo = {}; for (const c of cs) { C.enabled(g, c, at); if (c.on) c.on(g, at); } } return Math.round((performance.now() - t0) / 10); }""")
     check('with a preamble of %d characters and 3000 paragraphs every command\'s when and on together take %d ms at a look at the caret (under 40)' % (len(pre), t), t < 40, t)
+    # (and none alone over 5 ms: the slow one named, as a look at the caret runs them all)
+    slow = page.evaluate("""() => { const g = window.rikuy, C = g.cmds, at = g.ribbonAt(), cs = C.commands(), t = {};
+      for (let k = 0; k < 10; k++) { at.memo = {}; for (const c of cs) { const t0 = performance.now(); C.enabled(g, c, at); if (c.on) c.on(g, at); t[c.id] = (t[c.id] || 0) + performance.now() - t0; } }
+      return Object.entries(t).map(([id, v]) => [id, Math.round(v / 10 * 10) / 10]).filter(([, v]) => v > 5); }""")
+    check('on that document no one command\'s when and on take over 5 ms at a look at the caret', not slow, slow)
     a = page.evaluate(STATE)
     # the same answers as a fresh page reading the same text
     load_doc(page, text.replace('\\begin{document}', '%\n\\begin{document}', 1)); click_text(page, 'Words of paragraph 3 ', 2); page.wait_for_timeout(300)
