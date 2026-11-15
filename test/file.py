@@ -21,7 +21,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIST = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
-TEX = os.path.isdir(os.path.join(DIST, 'tex'))
+TEX = os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm'))
 WORD = os.path.isdir(os.path.join(DIST, 'word'))
 SHOTS = os.environ.get('RIKUY_SHOTS', '/tmp/B12-shots')
 os.makedirs(SHOTS, exist_ok=True)
@@ -49,6 +49,7 @@ def new_docs(page):
         ev(page, '(t) => window.rikuy.runCommand("new-template", t)', tid); page.wait_for_timeout(900)
         s = src(page)
         ok = s.startswith('\\documentclass') and '\\begin{document}' in s and ev(page, 'window.rikuy.files.size') == 1
+        if not TEX: print('SKIP template ' + tid + ' compiled: no TeX tree in %s' % DIST)
         if TEX:
             r = ev(page, 'window.rikuy.api.compile()')
             errs = [x for x in r['problems'] if x.get('severity') == 'error']
@@ -131,6 +132,7 @@ def properties(page):
             page.keyboard.type(typed)
         page.get_by_role('dialog', name='Properties', exact=True).get_by_role('button', name='Apply', exact=True).click(); page.wait_for_timeout(300)
         check('V1: two changes typed in the Author box write those two, the source between them as it was (& typed escaped)', src(page) == want, src(page)[:220])
+    if not TEX: print('SKIP the review\'s Properties documents compiled (and acmart\'s PDF Info): no TeX tree in %s' % DIST)
     if TEX:
         cases = [('the author with comments', src(page)),
                  ('cleveref (hyperref before it)', '\\documentclass{article}\n\\usepackage{amsmath}\n\\usepackage{cleveref}\n\\begin{document}\n\\section{A}\\label{s}\n\\Cref{s}.\n\\end{document}\n'),

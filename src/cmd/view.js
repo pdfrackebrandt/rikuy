@@ -65,7 +65,7 @@ register(
     // that group is declared: B13 declares it in src/ribbon/order.js)
     tab: 'view', group: 'show', el: 'rw-showtex', order: 10, label: 'Show LaTeX', kind: 'toggle', icon: ICON.showtex, keys: ['Shift+F9'], keyScope: 'page',
     also: groupOf('equation', 'conversions') ? [{ tab: 'equation', group: 'conversions', el: 're-latex' }] : [],
-    menu: { text: 90, selection: 90, table: 90, list: 90, heading: 90 },
+    menu: { text: 90, selection: 90, list: 90, heading: 90 },
     when: (app, at) => app.showLatexBlocks(at).length > 0, whyNot: () => 'Put the caret in a paragraph or an equation of the page first.',
     on: (app, at) => { const bs = app.showLatexBlocks(at); return bs.length > 0 && bs.every((B) => B.tex && B.tex.view); },
     run: (app, args, at) => app.showLatex(at) },

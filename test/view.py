@@ -23,7 +23,7 @@ from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DIST = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
-TEX = os.path.isdir(os.path.join(DIST, 'tex'))
+TEX = os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm'))
 SHOTS = os.environ.get('RIKUY_SHOTS', '/tmp/B12-shots')
 os.makedirs(SHOTS, exist_ok=True)
 WRAP = lambda body: '\\documentclass{article}\n\\begin{document}\n' + body + '\n\\end{document}\n'
@@ -66,6 +66,7 @@ def views(page):
     page.keyboard.press('ArrowLeft'); page.keyboard.press('ArrowLeft')
     check('and round', ev(page, 'document.activeElement.id') == 'sv-pdf')
     if not TEX:
+        print('SKIP the PDF view by SyncTeX: no TeX tree in %s' % DIST)
         return
     click_text(page, 'omega', 1)
     t0 = time.time()
@@ -244,6 +245,7 @@ def help_tab(page):
     check('its live graph runs on the page', ev(page, "document.querySelectorAll('.wlayer iframe').length") == 1)
     pdf = ev(page, "(async () => { const b = await window.rikuy.assetBlobs.get('figures/wave.pdf').arrayBuffer(); return new TextDecoder().decode(b); })()")
     check('its picture for TeX is a PDF of one page with a cross reference table that adds up', pdf.startswith('%PDF-1.4') and '/MediaBox [0 0 360 160]' in pdf and pdf.rstrip().endswith('%%EOF') and int(pdf.split('startxref\n')[1].split()[0]) == pdf.index('xref\n0 6'))
+    if not TEX: print('SKIP Learn Rikuy compiled in the page: no TeX tree in %s' % DIST)
     if TEX:
         r = ev(page, "window.rikuy.api.compile()")
         check('Learn Rikuy compiles in the page, its graph the picture', r['ok'] and r['pages'] >= 2 and not [x for x in r['problems'] if x.get('severity') == 'error'], (r['ok'], r['pages'], r['problems'][:3]))
