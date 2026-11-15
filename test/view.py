@@ -246,7 +246,7 @@ def help_tab(page):
     check('its picture for TeX is a PDF of one page with a cross reference table that adds up', pdf.startswith('%PDF-1.4') and '/MediaBox [0 0 360 160]' in pdf and pdf.rstrip().endswith('%%EOF') and int(pdf.split('startxref\n')[1].split()[0]) == pdf.index('xref\n0 6'))
     if TEX:
         r = ev(page, "window.rikuy.api.compile()")
-        check('Learn Rikuy compiles in the page, its graph the picture', r['ok'] and r['pages'] >= 2 and not [x for x in r['problems'] if x.get('sev') == 'error'], (r['ok'], r['pages'], r['problems'][:3]))
+        check('Learn Rikuy compiles in the page, its graph the picture', r['ok'] and r['pages'] >= 2 and not [x for x in r['problems'] if x.get('severity') == 'error'], (r['ok'], r['pages'], r['problems'][:3]))
     page.get_by_role('tab', name='Help', exact=True).click(); page.wait_for_timeout(200)
     page.get_by_role('button', name='Keyboard shortcuts', exact=True).click(); page.wait_for_timeout(300)
     t = page.get_by_role('dialog', name='Keyboard shortcuts', exact=True).inner_text()
@@ -331,8 +331,8 @@ def review(page):
     check('M3: a command that takes something away (Clear All Formatting) is never the one repeated', ev(page, 'window.rikuy.lastAct && window.rikuy.lastAct.id') == 'bold' and '\\textbf{gamma}' not in src(page), (ev(page, 'window.rikuy.lastAct'), src(page)))
     # L2: Interactive graphs opens below the ribbon, at its top
     ev(page, "window.rikuy.runCommand('help-graphs')"); page.wait_for_timeout(400)
-    r = ev(page, "(() => { const d = document.querySelector('.pop'), rb = document.getElementById('ribbon').getBoundingClientRect(), r = d.getBoundingClientRect(); return [Math.round(r.top - rb.bottom), d.scrollTop, Math.round(r.bottom), innerHeight]; })()")
-    check('L2: Interactive graphs opens below the ribbon, scrolled to its top, inside the window', r[0] >= 0 and r[1] == 0 and r[2] <= r[3], r)
+    r = ev(page, "(() => { const d = document.querySelector('.pop'), rb = document.getElementById('ribbon').getBoundingClientRect(), r = d.getBoundingClientRect(); return [Math.round(r.top - rb.bottom), d.scrollTop, Math.round(r.bottom), Math.round(document.getElementById('status').getBoundingClientRect().top)]; })()")
+    check('L2, V9: Interactive graphs opens below the ribbon, scrolled to its top, above the status bar', r[0] >= 0 and r[1] == 0 and r[2] <= r[3], r)
     page.keyboard.press('Escape')
 
 
