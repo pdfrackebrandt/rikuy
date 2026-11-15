@@ -100,6 +100,14 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
   random edit streams of the repository's documents and the corpus. A field a unit gains that
   holds an offset must be added to `OFFSET_KEYS`; the same test names any it misses. The page's
   renderer reads whether a block holds references from its key, so moved items stay unread.
+  A moved unit's copy keeps what the unit shared as one object shared (a footnote's mark is the
+  atom in its text, which Word's export finds by identity), and the test compares that structure
+  per unit (`sharedParts`) as well as the JSON. The fast path also falls back when a table of
+  contents' entries are not `prev`'s headings (its signature would be stale), when the old
+  paragraph held an unknown command (its warning would stay), and it copies only the fields the
+  full build made, not what the app wrote on `prev`. A development build (`node build.mjs --dev`)
+  checks every eighth fast build against the full one (`INCR.check`, `sameModels`), says so on
+  the console and keeps the full one on any difference; a production build checks none.
 - **Source map.** Text becomes `seg` items `{k: 'seg', f, t, map}`: `Acc.ch()` pushes one
   `[start, end)` source range per character, so “ points back at both characters of ``` `` ```.
   Units on the page (math, citation, reference, footnote, figure, raw block, error chip) are

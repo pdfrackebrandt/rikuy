@@ -1,16 +1,19 @@
 // The incremental model build (src/model.js, incremental) against the full build it stands in for:
 // after every edit of a random stream the model built from the last one is the model the full
 // build makes from the same last model, value for value (the order of keys too), whether the edit
-// took the fast path or not; and the same after keystrokes whose moved units no one read.
+// took the fast path or not, with the same parts of each unit being one object (a footnote's mark
+// is the atom in its text); and the same after keystrokes whose moved units no one read.
 //   node test/incremental.test.mjs [CORPUS_DIR]   (with a LaTeX-examples clone: every document of it)
 import fs from 'fs';
 import path from 'path';
-import { buildModel, INCR, OFFSET_KEYS } from '../src/model.js';
+import { buildModel, INCR, OFFSET_KEYS, sameModels, sharedParts } from '../src/model.js';
+import { buildWordDoc } from '../src/wordast.js';
 
 const root = new URL('..', import.meta.url).pathname;
 let pass = 0, fail = 0;
 const check = (name, ok, detail) => { if (ok) pass++; else { fail++; console.log('FAIL', name, detail === undefined ? '' : String(detail).slice(0, 800)); } };
 const ser = (m) => JSON.stringify(m, (k, v) => (v instanceof Map ? [...v] : v instanceof Set ? [...v] : v));
+const modelText = ser;
 const first = (a, b) => { let k = 0; while (a[k] === b[k]) k++; return 'incremental ' + a.slice(Math.max(0, k - 150), k + 150) + '\n   full ' + b.slice(Math.max(0, k - 150), k + 150); };
 
 let seed = 20261114;
@@ -50,6 +53,7 @@ function stream(name, files, main, n) {
     if (INCR.reused > before) fast++;
     const sa = typeof a === 'string' ? a : ser(a), sb = typeof b === 'string' ? b : ser(b);
     if (sa !== sb) { check(name + ' edit ' + k + ' at ' + at + ' ' + JSON.stringify(ins) + ' -' + del + (INCR.reused > before ? ' (fast path)' : ' (full)'), false, first(sa, sb)); return; }
+    if (typeof a !== 'string' && a.blocks.some((u, j) => sharedParts(u) !== sharedParts(b.blocks[j]))) { const i = a.blocks.findIndex((u, j) => sharedParts(u) !== sharedParts(b.blocks[j])); check(name + ' edit ' + k + ': the parts unit ' + i + ' shares', false, sharedParts(a.blocks[i]) + ' | full: ' + sharedParts(b.blocks[i])); return; }
     ok++;
     if (typeof b === 'string') return;
     prev = a; cur = next;
@@ -88,6 +92,7 @@ docs.push(['pictures (B8)', new Map([['main.tex', '\\documentclass{article}\n\\u
   '\\begin{tcolorbox}[width=0.6\\linewidth,center]A boxed paragraph.\\end{tcolorbox}\n\nLast plain paragraph after the box.\n\\end{document}\n'], ['a.png', ''], ['b.png', ''], ['c.png', ''], ['d.png', ''], ['e.png', '']]), 'main.tex']);
 docs.push(['paragraph settings (B2)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{setspace}\n\\begin{document}\nFirst plain paragraph, typed in.\n\n\\onehalfspacing\nA paragraph after one and a half spacing.\n\nAnother after it.\n\n' +
   '\\doublespacing\n\\centering\nCentred from here on, plain.\n\nStill centred, the next paragraph.\n\n\\hangindent=1cm\\hangafter=1 A hanging paragraph with words.\n\nKept with the next\\nopagebreak\n\nLast plain words.\n\\end{document}\n']]), 'main.tex']);
+docs.push(['a LaTeX paragraph (its groups)', new Map([['main.tex', '\\documentclass{article}\n\\begin{document}\nFirst paragraph, typed in.\n\n% rikuy: latex\n{\\bfseries bold} raw and {\\itshape more {nested}} words\n\nLast plain paragraph.\n\\end{document}\n']]), 'main.tex']);
 const corpus = process.argv[2];
 if (corpus) {
   const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { if (e.name.startsWith('.')) continue; const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (e.name.endsWith('.tex')) { const t = fs.readFileSync(p, 'utf8'); if (/\\documentclass/.test(t)) add(path.dirname(p), e.name); } } };
@@ -110,16 +115,23 @@ console.log('edits ' + steps + ', on the fast path ' + fast + ', documents ' + d
     if (Array.isArray(a)) { for (let i = 0; i < Math.min(a.length, b.length); i++) walk(a[i], b[i], k, D); return; }
     for (const key of Object.keys(a)) walk(a[key], b[key], key, D);
   };
-  for (const [, files, main] of docs) {
-    const t = files.get(main), i = t.indexOf('\\begin{document}');
-    if (i < 0) continue;
-    const j = i + 16, ins = '\n\n%XXXX\n', next = new Map(files);
-    next.set(main, t.slice(0, j) + ins + t.slice(j));
-    let a, b;
-    try { a = buildModel({ files, main }); b = buildModel({ files: next, main }); } catch (e) { continue; }
-    walk(a.blocks, b.blocks, '', ins.length);
+  // (a comment line before each unit of the main file, at the start of its line: every unit of
+  // the repository's documents, eight spread over each of the corpus's)
+  for (const [name, files, main] of docs) {
+    const t = files.get(main);
+    let m;
+    try { m = buildModel({ files, main }); } catch (e) { continue; }
+    let us = m.blocks.filter((u) => u.f === main && u.s > 0);
+    if (corpus && !name.startsWith('dev/') && !name.startsWith('sample') && us.length > 8) us = us.filter((u, k) => k % Math.ceil(us.length / 8) === 0);
+    for (const u of us) {
+      const j = t.lastIndexOf('\n', u.s - 1) + 1, ins = '%XXXX\n', next = new Map(files);
+      next.set(main, t.slice(0, j) + ins + t.slice(j));
+      let b;
+      try { b = buildModel({ files: next, main }); } catch (e) { continue; }
+      walk(m.blocks, b.blocks, '', ins.length);
+    }
   }
-  const missing = [...moved].filter((k) => !OFFSET_KEYS.has(k) && k !== 'map');
+  const missing = [...moved].filter((k) => !OFFSET_KEYS.has(k) && k !== 'map' && k !== 'nest');
   check('every field of the models\' units that moves with the text is one OFFSET_KEYS names (' + [...moved].sort().join(' ') + ')', !missing.length, 'not named: ' + missing.join(' '));
 }
 
@@ -199,6 +211,70 @@ for (const [what, needle, fastWanted] of [['a paragraph that opens with \\onehal
     plain.length = 0; for (const b of cu) if (b.key.endsWith('\u0000p') && !/[\\$%{}]/.test(cur.get('main.tex').slice(b.s, b.e))) plain.push(b);
   }
   check('90 keystrokes in two paragraphs, read every 30: the full build\'s model each time (' + (INCR.reused - fastBefore) + ' on the fast path)', ok && INCR.reused - fastBefore > 60);
+}
+
+// the hostile review's cases (each once a difference the streams above had not met)
+{
+  const D = (body) => '\\documentclass{article}\n\\begin{document}\n' + body + '\n\\end{document}\n';
+  const F = (t) => new Map([['main.tex', t]]);
+  const type = (t, prev, at, ins, del = 0) => {
+    const nt = t.slice(0, at) + ins + t.slice(at + del), r0 = INCR.reused;
+    const a = buildModel({ files: F(nt), main: 'main.tex' }, prev);
+    const fast = INCR.reused > r0;
+    INCR.on = false; const b = buildModel({ files: F(nt), main: 'main.tex' }, prev); INCR.on = true;
+    return { nt, a, b, fast };
+  };
+  // H1: a footnote moved by a keystroke before it is still its mark's atom, and Word's export
+  // finds it (it looks the note up by that identity)
+  {
+    const t = D('First paragraph to type in.\n\nSecond paragraph with a note\\footnote{The note text.} here.');
+    const { nt, a, b, fast } = type(t, buildModel({ files: F(t), main: 'main.tex' }), t.indexOf('to type'), 'x');
+    const u = a.blocks[1], atom = u.items[0].inl.find((x) => x.k === 'fn');
+    const word = JSON.stringify(buildWordDoc(a, F(nt), {}));
+    check('a keystroke before a footnote, on the fast path: its mark is the atom in the text, Word\'s export has the note, the full build\'s model', fast && u.fns[0].mark === atom && word.includes('"Note"') && word === JSON.stringify(buildWordDoc(b, F(nt), {})) && sameModels(a, b));
+  }
+  // M1: a table of contents whose first pass left a \ref in a heading at ?? is drawn again by the
+  // full build at the first keystroke, then typing takes the fast path with the full build's key
+  {
+    let t = D('\\tableofcontents\n\n\\section{Overview of Section \\ref{sec:late}}\nFirst paragraph to type in.\n\n\\section{Late}\\label{sec:late}\nSecond.');
+    let m = buildModel({ files: F(t), main: 'main.tex' }), ok = true, fasts = [];
+    for (let k = 0; k < 3; k++) { const r = type(t, m, t.indexOf('to type'), 'x'); fasts.push(r.fast); ok = ok && modelText(r.a) === modelText(r.b) && sameModels(r.a, r.b); t = r.nt; m = r.a; }
+    check('a table of contents with a heading the first pass left at ??: the full build at the first key, then the fast path, each the full build\'s model', ok && JSON.stringify(fasts) === '[false,true,true]', fasts);
+  }
+  // M2: the groups of a LaTeX paragraph after the edit move with it
+  {
+    const t = D('First paragraph.\n\n% rikuy: latex\n{\\bfseries bar} raw\n\nLast.');
+    const { a, b, fast } = type(t, buildModel({ files: F(t), main: 'main.tex' }), t.indexOf('paragraph'), 'x');
+    check('a keystroke before a LaTeX paragraph: its groups (nest) moved, the full build\'s model', fast && modelText(a) === modelText(b) && sameModels(a, b));
+  }
+  // L1: a warning the old paragraph made (an unknown command, here a known one with no argument)
+  // leaves the list when the edit takes it away
+  for (const [cmd, by] of [['\\mbox', ''], ['\\underline', 'x']]) {
+    const t = D('First para.\n\nHello world ' + cmd + '\n\nLast para.'), m = buildModel({ files: F(t), main: 'main.tex' });
+    const { a, b } = type(t, m, t.indexOf(cmd), by, cmd.length);
+    check('deleting ' + cmd + ' with no argument: its warning gone, the full build\'s model', m.warn.length === 1 && !a.warn.length && modelText(a) === modelText(b));
+  }
+  // L2: what the app writes on a model (cmd/lists.js's listCfg, listMech) is not carried to the next
+  {
+    const t = D('First paragraph to type in.\n\nSecond.'), m = buildModel({ files: F(t), main: 'main.tex' });
+    m.listMech = { stale: true }; m.listCfg = { stale: true };
+    const { a, fast } = type(t, m, t.indexOf('to type'), 'x');
+    check('a model\'s fields the app wrote are not carried by the fast path', fast && !('listMech' in a) && !('listCfg' in a));
+  }
+  // the self check of development builds: every Nth fast build against the full one, the full one
+  // kept on a difference
+  {
+    const t = D('First paragraph to type in.\n\nSecond paragraph.'), m = buildModel({ files: F(t), main: 'main.tex' });
+    const was = INCR.check, mis = INCR.mismatch;
+    INCR.check = 1;
+    let r = type(t, m, t.indexOf('to type'), 'x');
+    const clean = INCR.mismatch === mis && modelText(r.a) === modelText(r.b);
+    const bad = { ...m, blocks: m.blocks.map((u, i) => (i === 1 ? { ...u, items: u.items.map((x) => ({ ...x, align: 'center' })) } : u)) };
+    Object.defineProperty(bad, '_incr', { value: m._incr });
+    const warn = console.warn; let said = 0; console.warn = () => { said++; };
+    try { r = type(t, bad, t.indexOf('to type'), 'x'); } finally { console.warn = warn; INCR.check = was; }
+    check('the self check: no difference on a clean model; a poisoned last model found, said once, and the full build\'s model returned', clean && INCR.mismatch === mis + 1 && said === 1 && modelText(r.a) === modelText(r.b));
+  }
 }
 
 // a stranger's document: nothing of it is kept for the next one (the fast path reads only the

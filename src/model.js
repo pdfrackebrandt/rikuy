@@ -286,7 +286,22 @@ function csvRows(text, sep) {
 
 export function buildModel(project, hint) {
   if (hint && hint.labels) {
-    if (INCR.on) { const r = incremental(project, hint); if (r) { INCR.reused++; return r; } }
+    if (INCR.on) {
+      const r = incremental(project, hint);
+      if (r) {
+        INCR.reused++;
+        // (a development build checks every INCR.check-th fast build against the full one, keeps
+        // the full one on any difference and says so; 0, a production build's, checks none)
+        if (!INCR.check || ++INCR.n % INCR.check) return r;
+        INCR.on = false;
+        let full;
+        try { full = buildModel(project, hint); } finally { INCR.on = true; }
+        if (sameModels(r, full)) return r;
+        INCR.mismatch++;
+        console.warn('Rikuy: the incremental model differed from the full build; the full one is used');
+        return full;
+      }
+    }
     INCR.full++;
     const b = new Builder(project, hint);
     b.run();
@@ -314,7 +329,7 @@ export function buildModel(project, hint) {
 // build is the oracle: test/incremental.test.mjs holds the two equal on the corpus and on thousands
 // of random edits. Nothing is cached across documents: each step reads only the last model and
 // the new text, so a stranger's document cannot leave anything behind for the next one.
-export const INCR = { on: true, reused: 0, full: 0 };
+export const INCR = { on: true, reused: 0, full: 0, check: typeof __RIKUY_DEV__ !== 'undefined' && __RIKUY_DEV__ ? 8 : 0, n: 0, mismatch: 0 };
 
 // the commands a paragraph may hold and still be plain text: they read and write no builder state
 // (the style wrappers, and characters; a document's own macro of the same name is not plain)
@@ -355,15 +370,27 @@ function failedDollars(ns) {
 // An offset moved by the edits since a unit was built: steps [[at, d], ...], each in the
 // coordinates the one before it left (values in other files, and before `at`, stay)
 const move = (v, steps) => { for (const [at, d] of steps) if (v >= at) v += d; return v; };
-// a copy of x with every offset into file f moved
-function shifted(x, f, cur, steps) {
-  if (Array.isArray(x)) return x.map((v) => (v && typeof v === 'object' ? shifted(v, f, cur, steps) : v));
+// A copy of x with every offset into file f moved. memo maps each object to its copy, so what a
+// unit shares stays shared in the copy (a footnote's mark is the same object as the footnote atom
+// in the text, which Word's export finds by identity; a float's fns are the unit's).
+// nest: a LaTeX paragraph's groups, [s, e] pairs.
+function shifted(x, f, cur, steps, memo) {
+  const was = memo.get(x);
+  if (was !== undefined) return was;
+  if (Array.isArray(x)) {
+    const o = [];
+    memo.set(x, o);
+    for (const v of x) o.push(v && typeof v === 'object' ? shifted(v, f, cur, steps, memo) : v);
+    return o;
+  }
   const ef = x.f !== undefined ? x.f : cur, o = {};
+  memo.set(x, o);
   for (const k in x) {
     const v = x[k];
     if (typeof v === 'number') o[k] = ef === f && OFFSET_KEYS.has(k) ? move(v, steps) : v;
     else if (k === 'map' && Array.isArray(v)) o[k] = ef === f ? v.map((p) => move(p, steps)) : v;
-    else if (v && typeof v === 'object' && (Array.isArray(v) || Object.getPrototypeOf(v) === Object.prototype)) o[k] = shifted(v, f, ef, steps);
+    else if (k === 'nest' && Array.isArray(v)) o[k] = ef === f ? v.map((q) => q.map((p) => move(p, steps))) : v;
+    else if (v && typeof v === 'object' && (Array.isArray(v) || Object.getPrototypeOf(v) === Object.prototype)) o[k] = shifted(v, f, ef, steps, memo);
     else o[k] = v;
   }
   return o;
@@ -374,13 +401,17 @@ function shifted(x, f, cur, steps) {
 const MIN_OFF = new WeakMap();
 function minOffset(x, f, cur) {
   let m = Infinity;
+  const seen = new Set();
   const walk = (y, c) => {
+    if (seen.has(y)) return;
+    seen.add(y);
     if (Array.isArray(y)) { for (const v of y) if (v && typeof v === 'object') walk(v, c); return; }
     const ef = y.f !== undefined ? y.f : c;
     for (const k in y) {
       const v = y[k];
       if (typeof v === 'number') { if (ef === f && v >= 0 && v < m && OFFSET_KEYS.has(k)) m = v; }
       else if (k === 'map' && Array.isArray(v)) { if (ef === f) for (const q of v) if (q >= 0 && q < m) m = q; }
+      else if (k === 'nest' && Array.isArray(v)) { if (ef === f) for (const q of v) for (const p of q) if (p >= 0 && p < m) m = p; }
       else if (v && typeof v === 'object' && (Array.isArray(v) || Object.getPrototypeOf(v) === Object.prototype)) walk(v, ef);
     }
   };
@@ -388,28 +419,57 @@ function minOffset(x, f, cur) {
   return m;
 }
 // A unit after the edit, moved: its own range at once (the page's renderer reads only that of a
-// block it keeps), its items and footnotes when first read (Word's export, the tests).
+// block it keeps), its items and footnotes together, with one memo, when either is first read
+// (Word's export, the tests).
 const LAZY = Symbol('moved');
 function movedUnit(u, f, at, d) {
   const L = u[LAZY], base = L && !L.done ? L.base : u, D = (L && !L.done ? L.D : 0) + d;
   let min = MIN_OFF.get(base);
   if (min === undefined) { min = minOffset(base, f, base.f); MIN_OFF.set(base, min); }
-  // (an offset before the edit's end in a unit after it: moved exactly, step by step, at once)
-  if (min + D - d < at) return shifted(u, f, f, [[at, d]]);
+  // (an offset before the edit's end in a unit after it, or an object beside the items: moved
+  // exactly, step by step, at once)
+  const other = Object.keys(base).some((k) => k !== 'items' && k !== 'fns' && base[k] && typeof base[k] === 'object');
+  if (min + D - d < at || other) return shifted(u, f, f, [[at, d]], new Map());
   const steps = [[min, D]], o = {}, lazy = { base, D, done: false };
+  let made = null;
+  const make = () => {
+    if (!made) { const memo = new Map(); made = { items: shifted(base.items, f, base.f, steps, memo), fns: shifted(base.fns, f, base.f, steps, memo) }; lazy.done = true; }
+    return made;
+  };
   for (const k in base) {
-    if (k === 'items' || k === 'fns') {
-      let val;
-      Object.defineProperty(o, k, { enumerable: true, configurable: true, get() { if (val === undefined) { val = shifted(base[k], f, base.f, steps); lazy.done = true; } return val; } });
-      continue;
-    }
+    if (k === 'items' || k === 'fns') { Object.defineProperty(o, k, { enumerable: true, configurable: true, get: () => make()[k] }); continue; }
     const v = base[k];
-    o[k] = typeof v === 'number' && OFFSET_KEYS.has(k) ? move(v, steps) : v && typeof v === 'object' ? shifted(v, f, base.f, steps) : v;
+    o[k] = typeof v === 'number' && OFFSET_KEYS.has(k) ? move(v, steps) : v;
   }
   Object.defineProperty(o, LAZY, { value: lazy });
   return o;
 }
 
+// The serialised model and, per unit, which of its parts are the same object: what the
+// incremental build must give as the full build gives it (the self check below, the tests).
+export const modelText = (m) => JSON.stringify(m, (k, v) => (v instanceof Map ? [...v] : v instanceof Set ? [...v] : v));
+export function sharedParts(u) {
+  // (objects numbered in the order a walk meets them, which the same JSON makes the same: each
+  // meeting of one already met is written down as the pair)
+  const seen = new Map(), out = [];
+  let n = 0;
+  const walk = (x) => {
+    const p = seen.get(x);
+    if (p !== undefined) { out.push(n + '=' + p); return; }
+    seen.set(x, n++);
+    if (Array.isArray(x)) { for (const v of x) if (v && typeof v === 'object') walk(v); else n++; }
+    else for (const k in x) { const v = x[k]; if (v && typeof v === 'object') walk(v); else n++; }
+  };
+  if (u && typeof u === 'object') walk(u);
+  return out.join(' ');
+}
+export function sameModels(a, b) {
+  if (modelText(a) !== modelText(b) || a.blocks.length !== b.blocks.length) return false;
+  for (let i = 0; i < a.blocks.length; i++) if (sharedParts(a.blocks[i]) !== sharedParts(b.blocks[i])) return false;
+  return true;
+}
+
+const UNKNOWN = 'Unknown command. Click to edit its source.';
 function incremental(project, hint) {
   const H = hint._incr;
   if (!H || project.main !== H.main) return null;
@@ -478,6 +538,11 @@ function incremental(project, hint) {
   // it goes, and the old paragraph carries it)
   const units = B.flow(mine, { f, src: now, pm: null }, { top: true, afterHeading: false, noindent: !it.indent, align: it.align || null, spread: it.spread ?? null });
   if (units.length !== 1 || units[0].items.length !== 1 || units[0].items[0].type !== 'p' || units[0].fns.length || B.warn.length) return null;
+  // and the old paragraph made no warning either (\underline with no argument does): a warning it
+  // made would stay in the model's list after the edit took it away
+  // (its mark: the chip an unknown command leaves, the only place a warning is made)
+  const unknown = (x) => (Array.isArray(x) ? x.some(unknown) : !!x && typeof x === 'object' && ((x.k === 'chip' && x.title === UNKNOWN) || Object.values(x).some((v) => v && typeof v === 'object' && unknown(v))));
+  if (unknown(it)) return null;
   const nu = units[0], ni = nu.items[0];
   if (it.cont) ni.cont = true;
   // a heading run into this paragraph (Builder.runIns, which the heading before it decided and an
@@ -492,15 +557,24 @@ function incremental(project, hint) {
   // u.items would make every moved unit's items)
   const types = (u) => u.key.slice(u.key.lastIndexOf('\u0000') + 1).split(',');
   const toc = (u) => (types(u).includes('toc') ? { ...u, items: u.items.map((x) => (x.type === 'toc' ? { ...x, entries: tocEntries } : x)) } : u);
+  // A table of contents whose entries say other things than these (a \ref in a heading the first
+  // pass left at ??): its signature, made from them, would be another, and the page would keep
+  // drawing the old one. The full build makes it.
+  const said = (es) => JSON.stringify(es.map((h) => [h.num, h.text, h.level]));
+  for (const u of hint.blocks) if (types(u).includes('toc')) for (const x of u.items) if (x.type === 'toc' && said(x.entries) !== said(tocEntries)) return null;
   const blocks = hint.blocks.slice(0, ui).map(toc);
   blocks.push({ ...nu, key: f + '\u0000' + now.slice(nu.s, nu.e) + '\u0000' + (nu.sig || '') + '\u0000' + nu.items.map((x) => x.type).join(',') });
   for (let i = ui + 1; i < hint.blocks.length; i++) { const u = hint.blocks[i]; blocks.push(toc(u.f === f && d ? movedUnit(u, f, U.e, d) : u)); }
-  const r = { ...hint, blocks, words: hint.words - count(it.inl) + count(ni.inl) };
+  // (the model's own fields, as the full build makes them: not what the app wrote on the last one,
+  // a cache of a build that would go stale)
+  const r = {};
+  for (const k of H.keys) r[k] = hint[k];
+  r.blocks = blocks; r.words = hint.words - count(it.inl) + count(ni.inl);
   if (d) {
     r.headings = hint.headings.map((h) => (h.f === f && h.s >= U.e ? { ...h, s: h.s + d } : h));
     if (hint.docBody) r.docBody = { ...hint.docBody, e: hint.docBody.e + d };
   }
-  Object.defineProperty(r, '_incr', { value: { main: f, files: new Map(files), tree: nodes, sigKey: H.sigKey, failed } });
+  Object.defineProperty(r, '_incr', { value: { main: f, files: new Map(files), tree: nodes, sigKey: H.sigKey, failed, keys: H.keys } });
   return r;
 }
 
@@ -3033,7 +3107,7 @@ class Builder {
     }
     if (!nd.args.length && /^(hfil|hss|vss|break|nobreak|allowbreak|ignorespaces|unskip|par|xspace|@|maketitle|selectfont|fontsize|usefont|fontfamily)$/.test(name)) return false;
     this.warn.push('\\' + name);
-    out.push(this.chip(ctx, nd.s, nd.e, '\\' + name + (nd.star ? '*' : ''), 'Unknown command. Click to edit its source.'));
+    out.push(this.chip(ctx, nd.s, nd.e, '\\' + name + (nd.star ? '*' : ''), UNKNOWN));
     return false;
   }
 
@@ -3148,7 +3222,7 @@ class Builder {
       docBody: this.docBody || null
     };
     // what the next keystroke's incremental build compares against (not part of the model)
-    if (this.parsed && this.parsed.has(this.project.main)) Object.defineProperty(r, '_incr', { value: { main: this.project.main, files: new Map(this.files), tree: this.parsed.get(this.project.main), sigKey: this.userSigKey } });
+    if (this.parsed && this.parsed.has(this.project.main)) Object.defineProperty(r, '_incr', { value: { main: this.project.main, files: new Map(this.files), tree: this.parsed.get(this.project.main), sigKey: this.userSigKey, keys: Object.keys(r) } });
     return r;
   }
 }

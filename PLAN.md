@@ -2261,7 +2261,20 @@ Tests:
     pictures stay out of `PURE_CMDS`). `npm test` green, the corpus
     model run 716 of 716, `browser.py` 193, `styles.py` 333, `word.py` 111 (on d55b5fa); `find.py` 76,
     `history.py` 39/39, `share.py` 46, `agent.py` 141 (on 07069e1); the security audit's quick profile (one reviewer, notes outside
-    git): nothing is kept across documents, every reuse is proven against the new text. *Next:* the same for paragraphs with citations,
+    git): nothing is kept across documents, every reuse is proven against the new text. The
+    hostile review (1 High, 2 Medium, 3 Low) found, and this fixes, each with its case as a test:
+    moved units lost what they shared (a footnote's mark no longer its atom, so Word's export
+    dropped the note after a fast keystroke; one memo per unit now, and the oracle compares each
+    unit's shared parts); a table of contents drawn from a first pass with `??` kept its stale
+    signature (the full build when its entries differ); a LaTeX paragraph's `nest` pairs were not
+    moved (and the offset guard now inserts before every unit, not once after
+    `\begin{document}`); a warning of the old paragraph stayed; fields the app wrote on the last
+    model were carried. Added: a development build's self check (every eighth fast build against
+    the full one, the full one kept on a difference; none in production). After the fixes: the
+    streams over 9 documents 5600 edits (361 fast), 32 checks; the reviewer's fuzz, seeds 25, 26,
+    27 and 43 with shared references compared, no difference; with the corpus 11,680 edits over
+    725 documents (707 fast), all equal; `npm test` green, the corpus model run 716 of 716,
+    `browser.py` 193, `word.py` 111, `picture.py` 174. *Next:* the same for paragraphs with citations,
     references and footnotes (their entry state recorded per unit: the counters, the citations
     and labels so far), which would take most of the paper's other paragraphs.
 
