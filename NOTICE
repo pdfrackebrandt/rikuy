@@ -57,6 +57,11 @@ Built for Rikuy from source (tex/build_tools.sh, tex/native/)
     with OpenEXR code)
   zlib (TeX Live's, in                zlib license                           zlib.net
     Asymptote and Mesa)
+  Hunspell 1.7.6 (spelling; the       LGPL-2.1-or-later (or MPL-1.1, or      hunspell.github.io
+    hosted Rikuy only)                GPL-2.0-or-later); MySpell's notice
+    Its dictionaries: en_US (SCOWL's license), en_GB (LGPL-3.0, LibreOffice), de_DE (igerman98,
+    GPL-2.0-or-later), es_ES (GPL-3.0-or-later, LGPL-3.0-or-later or MPL-1.1, LibreOffice);
+    LICENSES/third-party/hunspell.txt
   gnuplot 6.0.2                       gnuplot license (LICENSES/gnuplot.txt) www.gnuplot.info
   Rikuy's native core (C++, in the    AGPL-3.0-or-later, Rikuy's own; with   tex/native/core/
     page; tex/vendor/core/)           Emscripten's libc parts and emmalloc

@@ -5,7 +5,7 @@
 
 import { $, mk, mkBtn, store, PREFS, textSig, when } from './ui/dom.js';
 import { atomOfEl } from './editor.js';
-import { changes, spacingOnly } from './diff.js';
+import { changes, spacingOnly, hunks } from './diff.js';
 import { commentOnly } from './share.js';
 import { kvGet, kvPut, decodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
 
@@ -21,13 +21,14 @@ export const review = {
   async loadReview() {
     let r = null;
     try { r = this.noIdb ? null : await kvGet('review'); } catch (e) { r = null; }
-    if (r && r.main === this.main && r.name === this.name && r.files) this.base = { t: r.t, label: r.label, id: r.id, files: new Map(r.files) };
+    if (r && r.main === this.main && r.name === this.name && r.files) { this.base = { t: r.t, label: r.label, id: r.id, files: new Map(r.files), track: !!r.track }; this.trackPrev = new Map(this.files); }
     else this.setBase({ t: Date.now(), label: 'When opened', files: this.files });
     const mine = (await this.allSnaps()).filter((v) => this.isMine(v));
     if (mine.length) { this.lastSig = mine[0].sig; this.lastSnapT = mine[0].t; }
     await this.snapshot('Session start');
     this.refreshNav();
-    if (this.prefs.marks) this.marksSoon();
+    if (this.markupOn()) this.marksSoon();
+    this.reviewStatus();
   },
 
   // Images and other binary files are kept per project, so opening a version of another
@@ -56,13 +57,68 @@ export const review = {
     } catch (e) { /* none kept */ }
   },
 
+  // b.track: whether edits are kept as changes from here on (Track Changes); a new base keeps
+  // the switch where it was unless it says
   setBase(b) {
-    this.base = { t: b.t, label: b.label || '', id: b.id, files: new Map(b.files) };
+    const track = b.track != null ? !!b.track : !!(this.base && this.base.track);
+    this.base = { t: b.t, label: b.label || '', id: b.id, files: new Map(b.files), track };
+    this.trackPrev = new Map(this.files);
     this.chg = null;
-    if (!this.noIdb) kvPut('review', { t: b.t, label: this.base.label, id: b.id, main: this.main, name: this.name, files: [...this.base.files.entries()] }).catch(() => {});
+    this.saveBase(true);
+    if (this.reviewStatus) this.reviewStatus();
+  },
+  saveBase(now) {
+    clearTimeout(this.baseSaveT);
+    const go = () => { if (!this.noIdb && this.base) kvPut('review', { t: this.base.t, label: this.base.label, id: this.base.id, main: this.main, name: this.name, files: [...this.base.files.entries()], track: !!this.base.track }).catch(() => {}); };
+    if (now) go(); else this.baseSaveT = setTimeout(go, 1500);
+  },
+
+  // With Track Changes off an edit is no change: the base takes it too. Where the base and the
+  // text were the same before the edit (no change waiting in that file) the base becomes the text;
+  // elsewhere the edit goes into the base at its place there, found through the hunks between
+  // the two, unless it touches a change waiting, which it then changes (as an edit in a tracked
+  // insertion in Word changes the insertion).
+  absorbEdit() {
+    const B = this.base, prev = this.trackPrev;
+    if (!B || !prev) { this.trackPrev = new Map(this.files); return; }
+    let moved = false;
+    for (const [f, cur] of this.files) {
+      const p = prev.get(f);
+      if (p === cur) continue;
+      const b = B.files.get(f);
+      if (p == null) { if (b == null) { B.files.set(f, cur); moved = true; } continue; }
+      if (b === p) { B.files.set(f, cur); moved = true; continue; }
+      if (b == null) continue;
+      // the edit as one splice of the text before it
+      let s = 0;
+      const n = Math.min(p.length, cur.length);
+      while (s < n && p.charCodeAt(s) === cur.charCodeAt(s)) s++;
+      let e = 0;
+      while (e < n - s && p.charCodeAt(p.length - 1 - e) === cur.charCodeAt(cur.length - 1 - e)) e++;
+      const pe = p.length - e, ins = cur.slice(s, cur.length - e);
+      let delta = 0, ok = true;
+      for (const h of hunks(b, p)) {
+        if (h.be < s || (h.be === s && h.bs < s)) { delta += h.a.length - (h.be - h.bs); continue; }
+        if (h.bs > pe || (h.bs === pe && h.be > pe)) break;
+        ok = false;
+        break;
+      }
+      if (!ok) continue;
+      B.files.set(f, b.slice(0, s + delta) + ins + b.slice(pe + delta));
+      moved = true;
+    }
+    for (const f of prev.keys()) if (!this.files.has(f) && B.files.has(f) && B.files.get(f) === prev.get(f)) { B.files.delete(f); moved = true; }
+    this.trackPrev = new Map(this.files);
+    if (moved) { this.chg = null; this.saveBase(); }
   },
 
   noteEdit() {
+    // (a Reject, its undo and its redo move the text toward the base or back from it: never
+    // absorbed, or undoing a Reject with Track Changes off would lose the change it brings back)
+    const undone = this.redoStack && this.redoStack.length > (this.rvRedoLen || 0);
+    const step = undone ? this.redoStack[this.redoStack.length - 1] : this.hist && this.hist[this.hist.length - 1];
+    this.rvRedoLen = this.redoStack ? this.redoStack.length : 0;
+    if (this.base && !this.base.track && !(step && step.kind === 'reject')) this.absorbEdit(); else this.trackPrev = new Map(this.files);
     this.pdfStale = true;
     this.pdfSoon();
     this.snapDirty = true;
@@ -135,7 +191,7 @@ export const review = {
     }
     this.setBase({ ...this.base, files });
     this.refreshNav();
-    if (this.prefs.marks) this.marksSoon();
+    if (this.markupOn()) this.marksSoon();
   },
 
   rejectChanges(cs, label) {
@@ -150,20 +206,15 @@ export const review = {
     if (cs.length === 1) this.goTo(cs[0].f, cs[0].bs);
   },
 
-  setMarks(on) {
-    this.prefs.marks = !!on;
-    store(PREFS, this.prefs);
-    this.paintChanges();
-    const cb = $('#chg-show');
-    if (cb) cb.checked = !!on;
-  },
+  // the pane's "Show changes on the pages": All Markup or No Markup (Display for Review)
+  setMarks(on) { this.setMarkup(on ? 'all' : 'none'); },
 
   async compareWith(v) {
     const files = await this.versionFiles(v);
     if (!files) { this.toast('That version could not be read.'); return; }
     this.setBase({ t: v.t, label: v.label || 'Automatic version', id: v.id, files });
     this.refreshNav();
-    if (this.prefs.marks) this.marksSoon();
+    if (this.markupOn()) this.marksSoon();
   },
 
   async restoreVersion(v) {
@@ -210,7 +261,7 @@ export const review = {
     cmp.append('Changes since ', mk('b', '', this.base ? when(this.base.t) : ''), this.base && this.base.label ? ' · ' + this.base.label : '');
     const lab = mk('label', 'chg-show');
     const cb = mk('input');
-    cb.type = 'checkbox'; cb.id = 'chg-show'; cb.checked = !!this.prefs.marks;
+    cb.type = 'checkbox'; cb.id = 'chg-show'; cb.checked = this.markup() === 'all';
     cb.addEventListener('change', () => this.setMarks(cb.checked));
     lab.append(cb, 'Show changes on the pages');
     top.append(cmp, lab);
@@ -303,9 +354,12 @@ export const review = {
     for (const x of this.root.querySelectorAll('.chg-atom')) x.classList.remove('chg-atom');
     const HL = window.CSS && CSS.highlights;
     if (HL) HL.delete('g-ins');
-    if (!this.prefs.marks || !this.base || !this.model) return;
+    // (Display for Review: no marks, the bars alone, or all; Show Markup's Insertions and Deletions)
+    const mode = this.markup();
+    if (mode === 'none' || this.prefs.showIns === false || !this.base || !this.model) return;
     const list = this.currentChanges().filter((c) => !spacingOnly(c) && !commentOnly(c));
     if (!list.length) return;
+    const all = mode === 'all';
     const ins = new Map(), dels = [];
     for (const c of list) {
       for (const [op, v, p] of c.parts) {
@@ -324,7 +378,10 @@ export const review = {
       const hit = rs.some(([s, e]) => s < A.e && e > A.s) || dels.some((d) => d.f === A.f && d.p > A.s && d.p < A.e);
       if (hit && !el.parentElement.closest('.chg-atom')) { el.classList.add('chg-atom'); atomHit.push(A); }
     }
-    if (HL && window.Highlight) HL.set('g-ins', new window.Highlight(...ranges));
+    if (HL && window.Highlight && all) HL.set('g-ins', new window.Highlight(...ranges));
+    // (Simple Markup: the outline of a changed equation goes, its bar stays)
+    const atomEls = [...this.root.querySelectorAll('.chg-atom')];
+    if (!all) for (const x of atomEls) x.classList.remove('chg-atom');
     const layers = new Map();
     const layer = (page) => {
       let L = layers.get(page);
@@ -334,7 +391,7 @@ export const review = {
     const pageOf = (n) => (n.nodeType === 1 ? n : n.parentElement).closest('.page');
     const bar = (page, q) => { const P = page.getBoundingClientRect(); layer(page).bars.push([q.top - P.top, q.bottom - P.top]); };
     for (const r of ranges) { const page = pageOf(r.startContainer); if (page) for (const q of r.getClientRects()) if (q.height) bar(page, q); }
-    for (const el of this.root.querySelectorAll('.chg-atom')) { const page = pageOf(el); if (page) for (const q of el.getClientRects()) if (q.height) bar(page, q); }
+    for (const el of atomEls) { const page = pageOf(el); if (page) for (const q of el.getClientRects()) if (q.height) bar(page, q); }
     for (const d of dels) {
       if (atomHit.some((A) => A.f === d.f && d.p > A.s && d.p < A.e)) continue;
       const r = this.index.find(d.f, d.p, -1);
@@ -346,6 +403,7 @@ export const review = {
       const page = pageOf(r.node);
       if (!q || !q.height || !page) continue;
       const P = page.getBoundingClientRect();
+      if (!all) { bar(page, q); continue; }
       const m = mk('span', 'del-mk');
       m.style.left = (q.left - P.left) + 'px'; m.style.top = (q.top - P.top) + 'px'; m.style.height = q.height + 'px';
       m.title = 'Deleted: ' + (d.text.length > 300 ? d.text.slice(0, 300) + '…' : d.text);

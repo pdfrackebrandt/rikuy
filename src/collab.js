@@ -324,7 +324,9 @@ export const collab = {
     if (!on) return;
     $('#guest-msg').textContent = this.shareCtx.by + ' shared this document with you. Click anywhere on the page and type; select words to comment. Your edits are marked for ' + this.shareCtx.by + '.';
     if (document.body.classList.contains('src-on')) this.toggleSource(false);
-    if (!this.prefs.marks) this.setMarks(true);
+    if (!this.markupOn()) this.setMarks(true);
+    // (a guest's edits are changes for the owner: tracked from the start)
+    if (this.base && !this.base.track) { this.base.track = true; this.saveBase(); }
   },
 
   // a shared link pasted into the page opens it, after asking
@@ -471,7 +473,8 @@ export const collab = {
     for (const x of this.root.querySelectorAll('.cm-layer')) x.remove();
     const HL = window.CSS && CSS.highlights;
     if (HL) HL.delete('g-cmt');
-    if (!this.model) return;
+    // (Show Comments off, under Review: neither the words nor the margin's marks)
+    if (!this.model || this.prefs.showCmt === false) return;
     const list = this.allComments();
     if (!list.length) return;
     const all = [];

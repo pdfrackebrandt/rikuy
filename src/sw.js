@@ -4,7 +4,8 @@
 //
 // RIKUY.v      the version: a hash of every file of the build but the content addressed ones
 // RIKUY.files  path -> [sha256, size, kind] for what this worker serves; kind p: kept at install,
-//              l: kept the first time it is asked for (large), i: content addressed (any version)
+//              l: kept the first time it is asked for (large), i: content addressed (any version),
+//              kept at install unless a fourth field says it waits for its first use
 //
 // What it keeps, and why:
 // - The page and the scripts of the page and of the TeX worker, one Cache per version
@@ -70,7 +71,8 @@ self.addEventListener('install', (e) => { e.waitUntil(install()); });
 async function install() {
   const mine = await caches.open(CACHE_PREFIX + VERSION);
   const imm = await caches.open(IMMUTABLE);
-  const todo = Object.entries(FILES).filter(([, f]) => f[2] === 'p' || (f[2] === 'i' && f[1] <= PRECACHE_MAX));
+  // (a content addressed file whose fourth field is set, a spelling dictionary, waits for its first use)
+  const todo = Object.entries(FILES).filter(([, f]) => f[2] === 'p' || (f[2] === 'i' && f[1] <= PRECACHE_MAX && !f[3]));
   let i = 0;
   const lane = async () => {
     while (i < todo.length) {
