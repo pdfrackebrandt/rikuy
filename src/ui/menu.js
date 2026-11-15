@@ -23,6 +23,8 @@ export const methods = {
     if (this.graphHere && this.graphHere(at)) out.push('graph');
     if (at.it && at.it.dataset.li) out.push('list');
     if (at.ctx === 'h') out.push('heading');
+    // (B9: a link at the caret, src/cmd/refs.js)
+    if (this.linkAt(at)) out.push('link');
     if (!at.c.ghost && !at.c.collapsed) out.push('selection');
     // (a line a comment hangs under: Edit Comment, src/cmd/review.js)
     if (this.commentHere && this.commentHere()) out.push('comment');
