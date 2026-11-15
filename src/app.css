@@ -1659,7 +1659,7 @@ body.marks-on #pages .it.vs { outline: 1px dashed rgba(62, 123, 196, .55); outli
   .rb-grp[data-group="paragraph"]:not(.folded) { flex-wrap: nowrap; width: auto; align-self: auto; }
   .rb .btn:is([data-cmd="show-marks"], [data-cmd^="align-"], [data-cmd="justify"], [data-cmd="line-spacing"], [data-cmd="shading"], [data-cmd="borders"], [data-cmd="paragraph-settings"]) { min-width: 44px; min-height: 44px; }
   .rb-split:has(> :is([data-cmd="shading"], [data-cmd="borders"])) > .rb-x { min-width: 28px; min-height: 44px; }
-
+}
 
 /* ---- B11: Insert › Interactive graph (src/ui/graphdialog.js) and a graph on the page ---- */
 .pop.pop-graph { width: min(860px, calc(100vw - 16px)); gap: 10px; }

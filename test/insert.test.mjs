@@ -198,4 +198,10 @@ ok('the review: binomial means are cheap (H5); inherited names are no names (L10
   assert.equal(withDpi(d, 288).length, d.length);
   assert.equal(pngWidth(d), 1800 / 3);
 });
+ok('src/app.css: every brace closed (a merge once left one open, and every batch\'s rules after it applied on touch screens alone)', () => {
+  const css = fs.readFileSync(new URL('../src/app.css', import.meta.url), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  let d = 0;
+  for (const c of css) { if (c === '{') d++; else if (c === '}') { d--; assert.ok(d >= 0); } }
+  assert.equal(d, 0);
+});
 console.log('insert:', n, 'groups passed');
