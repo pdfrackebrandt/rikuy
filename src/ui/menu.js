@@ -18,6 +18,8 @@ export const methods = {
     // (a picture selected on the page: its own items first, B8)
     if (this.armed && this.armed.kind === 'img' && this.armed.el && this.armed.el.isConnected) out.push('picture');
     if (at.cell) out.push('table');
+    // an interactive graph armed or in the caret's block: Edit graph (src/cmd/insert.js)
+    if (this.graphHere && this.graphHere(at)) out.push('graph');
     if (at.it && at.it.dataset.li) out.push('list');
     if (at.ctx === 'h') out.push('heading');
     if (!at.c.ghost && !at.c.collapsed) out.push('selection');

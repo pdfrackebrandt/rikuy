@@ -2277,6 +2277,73 @@ Tests:
     `browser.py` 193, `word.py` 111, `picture.py` 174. *Next:* the same for paragraphs with citations,
     references and footnotes (their entry state recorded per unit: the counters, the citations
     and labels so far), which would take most of the paper's other paragraphs.
+49. **B11, Insert, the clipboard and AutoCorrect, interactive graphs first.** Done in the code
+    (branch `wordgap-b11-insert`), the owner's priority first: "show how to use interactive
+    graphs, since that's new here". Insert › Interactive graph (`src/graph.js`,
+    `src/ui/graphdialog.js`; command `insert-interactive-graph` in Insert › Illustrations, which
+    Help can call, and in the insert list): four kinds in a gallery, the
+    formulas typed as in Word, Desmos or LaTeX (`2x`, `a sin(b x)`, `\frac{1}{2}x^2`, `|x|`,
+    `if(x<0,0,x)`), data pasted from a spreadsheet with a least squares fit and R², a polar or
+    parametric curve, nine distributions or the mean of n draws; sliders named and ranged in the
+    dialog (a letter in a formula gets one by itself), a live preview, and one undo for the file,
+    the picture, the command, `rikuy.sty` and the package. Edit graph (a button over the graph,
+    the frame's own right click or long press menu, the command) edits it; nothing changed,
+    nothing written. Evidence: `test/insert.test.mjs` (13 groups: the formula language and its
+    mistakes, caps on a stranger's graph, the file read back and written to the same bytes,
+    fits, every density integrating to 1, the CLT template equal to `sample/widget`'s histogram
+    bin for bin, graphKit running from its own text); `test/insert.py` (115 checks with
+    `dist/tex`: insert, undo and redo with the picture, edit, a hand written command's `.jpg`
+    fallback pointed at the PNG, the four kinds' pictures against their live figures in pixels
+    (mean difference under 4 of 255), the hint once, the frame's menu at most once a second,
+    the sandbox and a description that tries to leave its script element, phones at 390 and 360
+    px with touch (the dialog fits, 44 px targets, Edit graph 44 px on the screen, a slider moved
+    by a tap), and a graph compiled on pdfLaTeX, XeLaTeX and LuaLaTeX with its picture). The
+    drawing is plain JS: 600 samples of a formula take 0.1 ms and the mean of 50 draws 4000
+    times 8 ms (node), so no native code.
+    Rows: H2 (Paste; Keep Text Only, as LaTeX source and Paste Special as commands the search box
+    finds) done; H3 changed: Cut, Copy and Paste in the right click menu and the search box, not
+    on Home's row (there Paste alone took the Styles gallery's tiles from 1920 px and folded
+    Editing below 1100 px: `test/ribbon.py` and `test/tabs.py` keep that room for the gallery);
+    I44 (Symbol, its grid with the ones used last, More Symbols with a search) and I45
+    (Special Characters and their keys: Ctrl+Alt+C, R, T, ., Ctrl+Alt+-, Ctrl+Shift+Space,
+    Ctrl+Shift+_, which Ctrl+- zoom no longer takes) done; I38 (Date & Time: `\today` or fixed
+    text, Alt+Shift+D and T; a command the search box finds, not a button: Insert's row had no
+    room for it at 870 px) done; I39 (Text from file: the file and `\input`, one undo) and I40
+    (PDF pages: `\includepdf[pages=-]` with pdfpages and the file, one undo) done, both under the
+    command Object (no room on Insert's row at 870 px; the search box reaches them); I47 (Environment, in the search box and
+    the insert list; not on the row, for the same room) done, the live figure being Interactive graph, the LaTeX paragraph Home's
+    style; A5,
+    A6 (off by default), A7, A9 (sentences, two capitals, days; not table cells or Caps Lock) and
+    A10 (Word's list and one's own) done in `src/autocorrect.js` (`test/autocorrect.test.mjs`),
+    each correction one undo after the typing; F19 and F20 as File › AutoCorrect Options (the
+    user name and initials, every switch, B1's *bold* among them). I2 Blank page was done by B6.
+    Not done, left open: H82 (drag to move), I1 (cover pages), I31 (Quick Parts), I32 and I33
+    (document properties and fields, which need the page to draw them), DV1 (form fields). The
+    The hostile review of a228b19 (7 High, 4 Medium, 10 Low, each reproduced) is closed, each
+    case a test (`test/insert.py` review and review_compiles, compiled in the page;
+    `test/insert.test.mjs`, `test/autocorrect.test.mjs`): an address AutoCorrect makes a `\\url`
+    brings `\\usepackage{url}` in the same step where no url, xurl or hyperref is loaded (H1); a
+    graph's frame opens Rikuy's menu only after a press in it, once a press, with nothing else open
+    (H2: a frame asking every 60 ms takes no letter and closes no dialog); the PDF's picture is
+    drawn at its own box's width (a column, a width option, the margins changed) before every
+    compile and as the page shows it, with a pHYs chunk so TeX takes its natural size (H3, H4);
+    binomial means by their cdf, 790 ms to 24 ms, and a slider computes once a frame (H5); Text
+    from file takes a whole document's body and its packages (H6); rikuy.sty is looked for beside
+    the main file alone (H7); a missing picture is drawn again (M1); each graph's name has four
+    random letters, so two coauthors' graphs never meet in a merge (M2); Update with nothing
+    touched keeps a graph's own shape and exact numbers (M3); Word's INitial CAps exceptions
+    (MPhil, DPhil, OAuth, DNase...) and a correction undone becomes one, f(c) and (a) (b) (c) stay
+    (M4); on a phone Edit graph sits at the top's centre (L1); Paste Special replaces the
+    selection (L2); a Mac's Date and Time are Control+Shift+D and T (L3); one's own replacement is
+    escaped as typing escapes it (L4); the unused initials field went (L5); a captioned graph gets
+    `\\label{fig:<name>}` (L6); a graph's file is 33 KB built (graphKit minified; L7); no Abstract
+    where the class has none, and align*, tikzpicture and the like bring their package (L8); an
+    input method's Enter (keyCode 229) inserts nothing (L9); inherited names are no names in the
+    formula language (L10). The graph's description is its picture's alt text, and Word gets the
+    PDF's picture with its caption and alt text, the graph unchanged on the way back
+    (`test/word.test.mjs`): graphs move on Rikuy's page alone.
+    security audit skill's agents could not run in this session; the changed files were reviewed
+    by hand against its client side and resource classes, with no finding.
 
 ## Open tasks
 

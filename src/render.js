@@ -852,6 +852,10 @@ export class Renderer {
           s.dataset.wf = x.wfile;
           const h = this.app.widgetHeight && this.app.widgetHeight(s.dataset.w, x.wfile);
           if (h) { s.classList.add('sized'); s.style.height = widgetCss(h); }
+          // (a width option sizes the live figure as it sizes the picture TeX prints: the graph's
+          // text then prints at its own size, not shrunk with it)
+          const lw = imgWidth(x.opts);
+          if (lw) { s.style.width = lw; s.style.marginInline = 'auto'; }
           // printed in its place: a print of the page shows the picture TeX prints
           if (fb) { const img = document.createElement('img'); img.className = 'wfb'; img.src = fb; img.alt = ''; s.appendChild(img); }
         } else if (fb) {
