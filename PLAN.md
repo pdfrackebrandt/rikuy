@@ -2291,7 +2291,7 @@ Tests:
     nothing written. Evidence: `test/insert.test.mjs` (13 groups: the formula language and its
     mistakes, caps on a stranger's graph, the file read back and written to the same bytes,
     fits, every density integrating to 1, the CLT template equal to `sample/widget`'s histogram
-    bin for bin, graphKit running from its own text); `test/insert.py` (93 checks with
+    bin for bin, graphKit running from its own text); `test/insert.py` (115 checks with
     `dist/tex`: insert, undo and redo with the picture, edit, a hand written command's `.jpg`
     fallback pointed at the PNG, the four kinds' pictures against their live figures in pixels
     (mean difference under 4 of 255), the hint once, the frame's menu at most once a second,
