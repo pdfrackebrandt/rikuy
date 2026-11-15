@@ -22,6 +22,8 @@ export const methods = {
     if (this.graphHere && this.graphHere(at)) out.push('graph');
     if (at.it && at.it.dataset.li) out.push('list');
     if (at.ctx === 'h') out.push('heading');
+    // (B9: a link at the caret, src/cmd/refs.js)
+    if (this.linkAt(at)) out.push('link');
     if (!at.c.ghost && !at.c.collapsed) out.push('selection');
     out.push('text');
     return out;

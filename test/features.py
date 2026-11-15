@@ -183,7 +183,7 @@ try:
         # --- biblatex without its natbib option has no \citep: Insert, Citation writes \parencite
         load_doc(page, {'main.tex': '\\documentclass{article}\n\\usepackage[style=authoryear]{biblatex}\n\\addbibresource{refs.bib}\n\\begin{document}\nHybrid regimes are common.\n\\end{document}\n', 'refs.bib': BIB})
         click_text(page, 'are common', 10)
-        page.keyboard.press('Control+k')
+        page.keyboard.type('\\')
         page.wait_for_selector('#pop-cmd')
         page.keyboard.type('cite')
         page.keyboard.press('Enter')
