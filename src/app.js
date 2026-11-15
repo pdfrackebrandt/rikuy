@@ -629,10 +629,12 @@ class App {
     this.plan = plan;
     this.index.dirty = true;
     this.tocPages(plan);
-    if (this.prefs.marks) this.marksSoon();
+    if (this.markupOn()) this.marksSoon();
     this.commentsSoon();
     // (what Find found, marked again on the pages as they are now: src/cmd/find.js)
     this.findSoon();
+    // (spelling's marks, on the pages as they are now: src/cmd/review.js)
+    this.spellSoon();
     this.emptyGhost();
     this.widgets.place();
   }
@@ -3608,7 +3610,7 @@ class App {
             const files = await this.gitTextFiles(await G.filesAt(dir, c.oid));
             this.setBase({ t: c.commit.author.timestamp * 1000, label: 'Commit ' + c.oid.slice(0, 7) + ' · ' + subj, files });
             this.toggleNav(true, 'changes');
-            if (this.prefs.marks) this.marksSoon();
+            if (this.markupOn()) this.marksSoon();
           } catch (e) { this.toast(this.gitError(e), 8000); }
         }, 'Show what changed since this commit, with Accept and Reject'),
         mkBtn('Restore', async () => {
@@ -4879,10 +4881,13 @@ class App {
         <dt>${mod}+Alt+1, 2, 3, ${mod}+Alt+0</dt><dd>Heading 1, 2, 3; Normal</dd>
         <dt>${mod}+Shift+L</dt><dd>Bulleted list</dd>
         <dt>Alt+Q</dt><dd>Search for a command by its name</dd>
-        <dt>Shift+F10, right click</dt><dd>The menu of what applies here; a second right click gives the browser's (spelling)</dd>
+        <dt>Shift+F10, right click</dt><dd>The menu of what applies here, with a marked word's spelling suggestions; a second right click gives the browser's</dd>
         <dt>${mod}+F1</dt><dd>Fold the ribbon to its tabs, and back</dd>
         <dt>$ or ${mod}+M</dt><dd>New inline math</dd>
-        <dt>Alt+= (Mac: Control+=)</dt><dd>New equation: numbered on an empty line, in the line in text. (${mod}+Shift+E no longer makes one: it is free until Track Changes comes with the review tools, as in Word)</dd>
+        <dt>Alt+= (Mac: Control+=)</dt><dd>New equation: numbered on an empty line, in the line in text. (${mod}+Shift+E is Track Changes, as in Word)</dd>
+        <dt>${mod}+Shift+E</dt><dd>Track Changes on and off</dd>
+        <dt>F7, ${mod}+Shift+G</dt><dd>Spelling; Word Count</dd>
+        <dt>${mod}+Alt+Space</dt><dd>Read Aloud from the cursor, and stop</dd>
         <dt>\\ or ${mod}+K</dt><dd>Insert a command</dd>
         <dt>Click math, a citation or a reference</dt><dd>Edit it in place</dd>
         <dt>Alt+click</dt><dd>Show that spot in the source</dd>

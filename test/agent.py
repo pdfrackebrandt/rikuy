@@ -798,8 +798,8 @@ def equations(p):
     "Display math" and its "Equation editor", the contextual tab "Equation" in front, its button
     "Fraction" and the menu item "stacked fraction"; Escape on the tab back to the field."""
     full = open(os.path.join(DIST, 'llms-full.txt'), encoding='utf8').read()
-    check('llms-full.txt says Alt+= makes an equation, Ctrl+Shift+E no longer, and names the Equation tab\'s controls',
-          'Alt+= (Mac: Control+=)' in full and 'Ctrl+Shift+E no longer' in full and all('"%s"' % n in full for n in ('Equation gallery', 'Numbered', 'Display', 'Fraction', 'Matrix', 'Change to inline', 'Copy as LaTeX')), full[:0])
+    check('llms-full.txt says Alt+= makes an equation, Ctrl+Shift+E is Track Changes, and names the Equation tab\'s controls',
+          'Alt+= (Mac: Control+=)' in full and 'Ctrl+Shift+E: Track Changes' in full and all('"%s"' % n in full for n in ('Equation gallery', 'Numbered', 'Display', 'Fraction', 'Matrix', 'Change to inline', 'Copy as LaTeX')), full[:0])
     browser, page, errors = open_page(p, width=1400, height=900)
     from browser import click_text
     load_doc(page, DOC); click_text(page, 'Second paragraph here.', 22); page.keyboard.press('Enter'); page.wait_for_timeout(150)

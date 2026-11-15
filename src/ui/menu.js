@@ -2,9 +2,10 @@
 // registry (each command's menu field says in which contexts it is listed: a selection, a table,
 // a list, a heading, plain text). It replaces the browser's menu on the page alone; a second
 // right click, one with Shift held, or Shift+F10 or the menu key pressed again while it is open
-// gives the browser's (its spelling suggestions, until Rikuy has its own). Shift+F10 and the menu
-// key open it at the caret. A long press on a touch screen keeps the system's own menu (select,
-// paste). Only the registry's names are shown, never the document's text.
+// gives the browser's. Shift+F10 and the menu key open it at the caret. A long press on a touch
+// screen keeps the system's own menu (select, paste), but on a word spelling marks it opens this
+// menu with the word's suggestions (src/cmd/review.js spellMenuItems). Names are the registry's
+// and, for a marked word, the dictionary's suggestions, always set as text.
 
 import { menuItems, enabled } from '../commands.js';
 import { chordText } from '../keys.js';
@@ -21,6 +22,8 @@ export const methods = {
     if (at.it && at.it.dataset.li) out.push('list');
     if (at.ctx === 'h') out.push('heading');
     if (!at.c.ghost && !at.c.collapsed) out.push('selection');
+    // (a line a comment hangs under: Edit Comment, src/cmd/review.js)
+    if (this.commentHere && this.commentHere()) out.push('comment');
     out.push('text');
     return out;
   },
@@ -37,6 +40,9 @@ export const methods = {
       name: c.name, title: c.title, keys: chordText((c.keys || c.keysElsewhere || [])[0]), disabled: !enabled(this, c, at),
       run: () => { this.ribbonBack(); this.runCommand(c.id); }
     });
+    // a word spelling marks: Hunspell's suggestions first, Ignore All, Add to Dictionary (src/cmd/review.js)
+    const sp = this.spellMenuItems ? this.spellMenuItems(at) : null;
+    if (sp) items.unshift(...sp.items);
     if (!items.length) return false;
     items.push(null, { name: 'Right click again for the browser\'s menu', title: 'Its spelling suggestions too; or hold Shift as you right click, or press Shift+F10 again', disabled: true, cls: 'mi-hint' });
     let rect;
@@ -46,6 +52,7 @@ export const methods = {
       rect = r && (r.width || r.height) ? new DOMRect(r.left, r.bottom, 0, 0) : this.root.getBoundingClientRect();
     }
     // closed with nothing picked (Escape, a press elsewhere), the focus goes back to the page
+    this.ctxXY = x != null ? [x, y] : null;
     const menu = openMenu(this, rect, items, { label: 'Context menu', cls: 'pop-ctx', onClose: () => setTimeout(() => { if (!document.activeElement || document.activeElement === document.body) this.ribbonBack(); }, 0) });
     // Shift+F10 or the menu key again: Rikuy's menu goes and the browser's comes (the key is let
     // through, with the focus back on the page)
@@ -55,6 +62,7 @@ export const methods = {
       this.closePop(true);
       this.ribbonBack();
     });
+    if (this.pop) this.pop.spellKey = sp ? sp.key : null;
     this.ctxT = Date.now();
     return true;
   }
@@ -72,7 +80,15 @@ export function installMenu(app) {
     if (e.shiftKey || wasOpen) { wasOpen = false; if (app.pop) app.closePop(true); return; }
     // (asked for again by its key, or a long press on a touch screen: the browser's or the system's)
     if (Date.now() - (app.ctxPass || 0) < 1500) { app.ctxPass = 0; return; }
-    if (touch && Date.now() - touch < 2000) return;
+    // (except on a word spelling marks: its suggestions, as a phone's own keyboard offers them)
+    if (touch && Date.now() - touch < 2000) {
+      const p = document.caretRangeFromPoint ? document.caretRangeFromPoint(e.clientX, e.clientY) : null;
+      if (!(p && app.spellAtPoint && app.spellAtPoint(p))) return;
+      e.preventDefault();
+      const s = getSelection(); s.removeAllRanges(); s.addRange(p);
+      app.openContextMenu(e.clientX, e.clientY);
+      return;
+    }
     // (the menu key and Shift+F10 opened it already)
     if (Date.now() - (app.ctxT || 0) < 400) { e.preventDefault(); return; }
     // a press outside the selection puts the caret there first, as Word does

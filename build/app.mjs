@@ -516,9 +516,18 @@ Ctrl is Cmd on a Mac.
   base size); Shift+F3: lowercase, Capitalize Each Word, UPPERCASE in turn; Ctrl+Space (not on a
   Mac): clear the character formatting; Ctrl+D: the Font dialog; Ctrl+Shift+F: the font box
 - $ or Ctrl+M: a formula in the line; Alt+= (Mac: Control+=): a new equation, numbered on a
-  line of its own when the caret is on an empty line, in the line in text. Ctrl+Shift+E no longer
-  makes an equation: it is free until Word's Track Changes comes with the review tools. The
-  Equation button (Home, Insert) still makes a numbered one.
+  line of its own when the caret is on an empty line, in the line in text. The Equation button
+  (Home, Insert) makes a numbered one.
+- Ctrl+Shift+E: Track Changes on and off, as in Word (it made an equation until 2026-11; the
+  status bar's "Track Changes: On" switches it too). Off, an edit is no change and the changes
+  waiting stay; on, every edit is a change against the version tracking started from (Review:
+  Accept, Reject, Previous Change, Next Change, Display for Review, Show Markup)
+- F7: the Spelling pane (Hunspell in a worker; the words the dictionary does not know have a red
+  wavy line; never a command, key, label, math, code or address); a right click (on a phone a
+  long press) on a marked word: its suggestions, Ignore All, Add to Dictionary (a
+  "% rikuy: words ..." line in the main file, which TeX never reads; "% cspell:words ..." lines
+  count too). Review > Proofing Language: \foreignlanguage for a selection, babel's language for
+  the document. Ctrl+Shift+G: Word Count; Ctrl+Alt+Space: Read Aloud and stop
 - \\ or Ctrl+K: the list of things to insert (footnote, citation, section, table and more)
 - Ctrl+Z, Ctrl+Shift+Z: undo, redo
 - Ctrl+O: open files; Ctrl+S: download the LaTeX source
@@ -740,7 +749,7 @@ export function headers() {
     // (text/plain, which a browser shows; it would save a text/markdown file instead of showing it)
     + [['/llms.txt', 'text/plain'], ['/llms-full.txt', 'text/plain'], ['/robots.txt', 'text/plain'], ['/sitemap.xml', 'application/xml']]
       .map(([p, t]) => rule(p, 'Access-Control-Allow-Origin: *', 'Content-Type: ' + t + '; charset=utf-8')).join('')
-    + ['/tex/p-*', '/tex/t-*', '/tex/b-*', '/tex/w-*', '/tex/m-*', '/fonts/*', '/word/pandoc-*', '/core/*', '/texnames-*'].map((p) => rule(p, 'Cache-Control: ' + FOREVER)).join('');
+    + ['/tex/p-*', '/tex/t-*', '/tex/b-*', '/tex/w-*', '/tex/m-*', '/fonts/*', '/word/pandoc-*', '/core/*', '/spell/*', '/texnames-*'].map((p) => rule(p, 'Cache-Control: ' + FOREVER)).join('');
 }
 
 // Without a 404.html, Pages answers a missing file with index.html and 200 (it takes the site for
@@ -775,6 +784,10 @@ const ADDRESSED = /-([0-9a-f]{16})\.[A-Za-z0-9]+$/;
 const NOT_SERVED = new Set(['rikuy.html', 'LICENSES.txt', '404.html', '_headers', '_redirects', 'robots.txt', 'sitemap.xml', 'llms.txt', 'llms-full.txt', 'og.png', 'controls.json']);
 const PRECACHE_MAX = 4 * 1024 * 1024;
 const WORD_PART = /^word\/pandoc-[0-9a-f]+-\d+\.bin$/;
+// the dictionaries of spelling (spell/<name>-<hash>.aff and .dic): content addressed, but kept the
+// first time a document in that language is checked, not at install (5 MB, mostly of languages
+// the person never writes in): the fourth field says so (src/sw.js install)
+const LATER = /^spell\/[A-Za-z_]+-[0-9a-f]{16}\.(aff|dic)$/;
 
 export function finishApp(OUT) {
   const index = path.join(OUT, 'index.html');
@@ -793,6 +806,7 @@ export function finishApp(OUT) {
     // such as what the file wraps) is treated as bound to the version: never kept as immutable
     const ca = ADDRESSED.exec(path.basename(rel));
     files[rel] = [h, buf.length, WORD_PART.test(rel) ? 'n' : ca && h.startsWith(ca[1]) ? 'i' : buf.length <= PRECACHE_MAX ? 'p' : 'l'];
+    if (LATER.test(rel) && files[rel][2] === 'i') files[rel].push(1);
   }
   const v = sha(lines.join('\n')).slice(0, 16);
   const stamped = normal.replace(META, '$1' + v + '$3');

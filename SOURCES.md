@@ -10,7 +10,9 @@ hashes below are the same.
 
 dvips, Asymptote and xindy are built from TeX Live's own source tree; gnuplot and the libraries
 from Ubuntu's source packages; the editor's native core from this repository's own C++
-(`tex/native/core/`, `sh tex/build_tools.sh core`). An empty `RIKUY_SRC`, in any folder, rebuilds every committed
+(`tex/native/core/`, `sh tex/build_tools.sh core`); Hunspell from Ubuntu's source package with
+Rikuy's `tex/native/spell/spell.cc`, and its dictionaries from Ubuntu 26.10's packages (the four
+`.deb` files' SHA-512 checked against that release's package index when they were pinned). An empty `RIKUY_SRC`, in any folder, rebuilds every committed
 program byte for byte (PLAN.md, task 21). The compiler is Ubuntu 24.04's `emscripten` 3.1.6
 package; xindy's `wasm-opt --spill-pointers` comes from binaryen 123.0.0, the npm registry's
 tarball (SHA-256 `11fcbcb97b5c8da3990106fb4e2d364ba95ddf313d7c0e61ca8e8c7948600f7f`).
@@ -22,6 +24,8 @@ tarball (SHA-256 `11fcbcb97b5c8da3990106fb4e2d364ba95ddf313d7c0e61ca8e8c7948600f
 | xindy | 2.5.1 | same commit, `utils/xindy` | GPL-2.0-or-later |
 | GLM | 1.0.1 | [g-truc/glm](https://github.com/g-truc/glm) at `0af55ccecd98d4e5a8d1fad7de25ba429d60e863` | MIT |
 | Rikuy's native core (`tex/vendor/core/rikuy-core.wasm`, inside the page) | this repository | `tex/native/core/`, with Emscripten 3.1.6's C library parts and its emmalloc allocator | AGPL-3.0-or-later (Emscripten's parts MIT or NCSA) |
+| Hunspell (`tex/vendor/hunspell/`, the hosted Rikuy's `spell/`) | 1.7.6 | Ubuntu's source package (below), with Rikuy's `tex/native/spell/spell.cc`; `sh tex/build_tools.sh hunspell` | MPL-1.1, GPL-2.0-or-later or LGPL-2.1-or-later (taken as LGPL-2.1) |
+| its dictionaries (`tex/vendor/hunspell/dict/`, copied unchanged from the packages below) | en_US 2020.12.07, en_GB and es_ES 26.8.0.3, de_DE 20161207 | Ubuntu 26.10's `hunspell-en-us`, `hunspell-en-gb`, `hunspell-es`, `hunspell-de-de` | SCOWL's license, LGPL-3.0, GPL-3.0-or-later or LGPL-3.0-or-later or MPL-1.1, GPL-2.0-or-later |
 
 From Ubuntu's archive (`https://archive.ubuntu.com/ubuntu/pool/` plus the path), checked by
 SHA-256. The same files are attached to this repository's release `sources-2026-10-28`,
@@ -41,6 +45,11 @@ SHA-256 `b9b09589078c539aa663d3e60a08045d1a4e0370f6417d17c96d0e61b02a4887`) and 
 | `main/g/gmp/gmp_6.3.0+dfsg.orig.tar.xz` | `bd2966e6d277f79328e894a5a9f3ba3fbf2ed2be81def5f48623e30c23fb1572` | LGPL-3.0-or-later or GPL-2.0-or-later |
 | `main/libg/libgc/libgc_8.2.8.orig.tar.gz` | `7649020621cb26325e1fb5c8742590d92fb48ce5c259b502faf7d9fb5dabb160` | MIT style (bdwgc) |
 | `universe/x/xindy/xindy-rules_2.5.1.20160104-12build2_all.deb` | `0c9e20debe3f1a5a601025fb70cdccf32c81b07bc28bd41591dc2dcce3986086` | GPL-2.0-or-later |
+| `main/h/hunspell/hunspell_1.7.6.orig.tar.gz` | `4fa9c52a5337fb0a3e03f3212b6372d0159eac3d1a3e6e938e8897ff3d9c3d0c` | MPL-1.1, GPL-2.0-or-later or LGPL-2.1-or-later |
+| `main/s/scowl/hunspell-en-us_2020.12.07-4build1_all.deb` | `81820320c9bd2cbceef26783ef8d9f78e7deba57b1c47944ef82662a7632ad3e` | SCOWL's license (permissive) |
+| `main/libr/libreoffice-dictionaries/hunspell-en-gb_26.8.0.3-1_all.deb` | `06179bbbfe572b0e49046b9274d6b124004353b75167ada73db03434ba8736d8` | LGPL-3.0 |
+| `main/i/igerman98/hunspell-de-de_20161207-16_all.deb` | `8f8f69e918f143102bfb090aa9d0833ef44154a5cdaf8992da91815adb46275e` | GPL-2.0-or-later |
+| `main/libr/libreoffice-dictionaries/hunspell-es_26.8.0.3-1_all.deb` | `24cb9ae90ce3326cda572c9364ca7e92a12e7db6e92aa38ec117aa245bc17407` | GPL-3.0-or-later or LGPL-3.0-or-later or MPL-1.1 |
 
 Rikuy's own changes to them are in `tex/native/` (`patch_asy.py`, `patch_mesa.py`,
 `patch_gnuplot.py`, `xindy/patch_xindy.py`, `rpc/`, `galley_main.c`) and the build steps in

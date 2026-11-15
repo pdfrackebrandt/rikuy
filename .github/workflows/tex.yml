@@ -150,6 +150,8 @@ jobs:
         run: cd test && python3 styles.py compile_all
       - name: Pictures and objects compiled in the page, the picture's box in the PDF against the page's
         run: cd test && python3 picture.py compiled
+      - name: Review, and the copy with markup (changes, todonotes) compiled in the page
+        run: cd test && python3 review.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rikuy-dist

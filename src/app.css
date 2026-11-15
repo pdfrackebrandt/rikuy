@@ -1757,3 +1757,50 @@ html.pic-drag, html.pic-drag body { touch-action: none; overscroll-behavior: non
 /* a small picture (an icon in a line): one handle at its corner, no target wider than it over the text */
 .pic-frame.tiny .pic-h:not(.pic-h-se) { display: none; }
 .pic-frame.tiny .pic-h::before { display: none; }
+/* ---- B10: Review and proofing (src/cmd/review.js, src/ui/spellpane.js, src/ui/wordcount.js) ---- */
+/* a word the dictionary does not know (on paper, so a fixed red); none in print */
+::highlight(rk-spell) { text-decoration: underline wavy #d7263d; text-decoration-thickness: 1px; text-underline-offset: 2px; text-decoration-skip-ink: none; }
+@media print { ::highlight(rk-spell) { text-decoration: none; } }
+.pop-ctx .mi-sugg { font-weight: 600; }
+/* the Spelling pane: Find and Replace's frame (.fr), its own parts */
+.sp-lab { font-size: 12.5px; color: var(--mute); }
+.sp-ctx { font: 14px/1.45 var(--font-serif, Georgia, serif); color: var(--ink); padding: 8px 10px; border: 1px solid color-mix(in srgb, var(--line) 75%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--chrome) 55%, transparent); overflow-wrap: anywhere; min-height: 22px; }
+.sp-ctx .sp-w { color: #c4162f; text-decoration: underline wavy #d7263d; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+.sp-sl { font-size: 12px; color: var(--mute); margin-bottom: -5px; }
+.sp-list { display: flex; flex-direction: column; max-height: 152px; overflow: auto; border: 1px solid var(--line); border-radius: 8px; padding: 3px; background: var(--panel); }
+.sp-opt { text-align: left; border: 0; background: transparent; padding: 5px 8px; border-radius: 5px; font: 13px var(--font-ui); color: var(--ink-ui); cursor: pointer; }
+.sp-opt:hover { background: color-mix(in srgb, var(--blue) 9%, transparent); }
+.sp-opt[aria-selected="true"] { background: color-mix(in srgb, var(--blue) 17%, transparent); color: var(--blue-ink); font-weight: 600; }
+.sp-none { padding: 5px 8px; font-size: 12.5px; color: var(--mute); }
+.sp-pane .fr-btns .btn.ghost { border: 1px solid var(--line); }
+/* the status bar's proofing language and Track Changes */
+.st-rv { color: var(--mute); text-decoration: none; font-size: 12px; }
+.st-rv:hover { color: var(--blue-ink); text-decoration: underline; }
+#st-lang::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; background: #2e9d52; }
+#st-lang[data-st="bad"]::before { background: #d7263d; }
+#st-lang[data-st="off"]::before { background: var(--line); }
+#st-track[data-on="1"] { color: var(--blue-ink); font-weight: 500; }
+/* Word Count and Inspect Document */
+.rv-stats { border-collapse: collapse; min-width: 260px; margin: 2px 0 8px; font-size: 13px; }
+.rv-stats caption { text-align: left; font-size: 12px; color: var(--mute); padding-bottom: 4px; }
+.rv-stats th { text-align: left; font-weight: 400; color: var(--ink-ui); padding: 3px 18px 3px 0; }
+.rv-stats td { text-align: right; font-variant-numeric: tabular-nums; padding: 3px 0; }
+.rv-chk { display: flex; align-items: center; gap: 6px; font-size: 12.5px; margin-bottom: 6px; }
+.rv-ins { display: flex; flex-direction: column; gap: 10px; min-width: min(380px, 80vw); margin-bottom: 4px; }
+.rv-ins-row { display: flex; gap: 12px; align-items: center; justify-content: space-between; }
+.rv-ins-d { font-size: 12.5px; color: var(--mute); }
+.rv-vsave input { width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+@media (pointer: coarse) {
+  #rp-review .btn { min-width: 44px; min-height: 44px; }
+  #rp-review .rb-split > .rb-x { width: 44px; min-height: 44px; }
+  .sp-pane .btn, .sp-opt, .st-rv, .rv-chk, .rv-ins .btn { min-height: 44px; }
+  .sp-opt { padding: 10px 10px; }
+  .rv-chk input { width: 22px; height: 22px; }
+}
+@media (max-width: 640px) {
+  .sp-pane .fr-btns { gap: 4px; }
+  .sp-pane .fr-btns .btn { flex: 1 1 auto; }
+  .sp-pane .fr-btns .grow { display: none; }
+  .sp-list { max-height: 132px; }
+  #st-track { display: none; }
+}

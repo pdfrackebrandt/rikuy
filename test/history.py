@@ -18,6 +18,8 @@ def edit(page, find, repl, nth=0):
 with sync_playwright() as p:
     browser, page, errors = open_page(p, width=1440, height=900)
     base = src(page)
+    # (edits are changes while Track Changes is on, as in Word: test/review.py tests the switch)
+    page.wait_for_function("!!window.rikuy.base"); page.evaluate("window.rikuy.setTracking(true)")
     page.click('#b-nav'); page.wait_for_timeout(200)
     page.click('#nt-changes'); page.wait_for_timeout(400)
     check('changes tab starts empty', page.evaluate("!!document.querySelector('#nav-body .nav-empty')") and page.evaluate(COUNT) == '')
@@ -152,6 +154,7 @@ with sync_playwright() as p:
 
     # dark mode and mobile look
     browser, page, errors = open_page(p, width=390, height=844, dark=True)
+    page.wait_for_function("!!window.rikuy.base"); page.evaluate("window.rikuy.setTracking(true)")
     page.click('#b-nav'); page.wait_for_timeout(200)
     page.click('#nt-changes'); page.wait_for_timeout(300)
     edit(page, 'round trip', 'return trip')
