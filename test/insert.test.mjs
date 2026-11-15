@@ -6,7 +6,8 @@
 // in a widget's frame).
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { withDpi, pngWidth, graphKit, kit as K, graphHtml, readGraph, isGraph, sameGraph, template, TEMPLATES, parseData, dataText, RIKUY_STY } from '../src/graph.js';
+import { carryPreamble } from '../src/cmd/insert.js';
+import { withMark, pngMark, withDpi, pngWidth, graphKit, kit as K, graphHtml, readGraph, isGraph, sameGraph, template, TEMPLATES, parseData, dataText, RIKUY_STY } from '../src/graph.js';
 
 let n = 0;
 const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
@@ -203,5 +204,16 @@ ok('src/app.css: every brace closed (a merge once left one open, and every batch
   let d = 0;
   for (const c of css) { if (c === '{') d++; else if (c === '}') { d--; assert.ok(d >= 0); } }
   assert.equal(d, 0);
+});
+ok('the verification of d107908: a whole document\'s preamble carried (V3); the mark of the pictures Rikuy draws (V2)', () => {
+  const pre = '\\documentclass{article}\n\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsthm}\n\\geometry{margin=1in}\n\\newcommand{\\R}{\\mathbb{R}}\n\\newtheorem{theorem}{Theorem}\n\\newtheorem{lemma}{Lemma}\n\\DeclareMathOperator*{\\argmax}{arg\\,max}\n\\title{X}\n';
+  const r = carryPreamble(pre, '\\newtheorem{lemma}{Lemma}');
+  assert.equal(r.text, '\\providecommand{\\R}{\\mathbb{R}}\n\\newtheorem{theorem}{Theorem}\n\\providecommand{\\argmax}{\\operatorname*{arg\\,max}}\n');
+  assert.deepEqual(r.packages, ['inputenc', 'amssymb', 'amsthm', 'amsmath']);
+  assert.equal(r.dropped, 1);
+  const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 13, 73, 72, 68, 82, 0, 0, 7, 8, 0, 0, 3, 132, 8, 6, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 73, 69, 78, 68]);
+  assert.equal(pngMark(png), null);
+  assert.equal(pngMark(withMark(withDpi(png, 288), 'graphs/f-ab12.html')), 'graphs/f-ab12.html');
+  assert.equal(pngWidth(withMark(withDpi(png, 288), 'x')), 600);
 });
 console.log('insert:', n, 'groups passed');
