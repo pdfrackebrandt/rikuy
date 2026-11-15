@@ -773,7 +773,9 @@ class App {
   }
 
   tocPages(plan) {
-    const tocs = this.root.querySelectorAll('.toc-p');
+    // (B9: the lists of figures and tables, the index's page numbers; src/cmd/refs.js)
+    this.refPages(plan);
+    const tocs = this.root.querySelectorAll('.toc-p:not([data-cap])');
     if (!tocs.length) return;
     const where = [];
     plan.forEach((pg, k) => { for (const e of pg.entries) if (e.it.kind === 'h' && e.a === 0) where.push({ el: e.it.el, page: k + 1 }); });
@@ -781,7 +783,7 @@ class App {
     for (const w of where) byText.set(w.el.textContent.replace(/\s+/g, ' ').trim(), w.page);
     for (const t of tocs) {
       const row = t.parentNode;
-      const key = ((row.querySelector('.toc-n').textContent || '') + (row.querySelector('.toc-t').textContent || '')).replace(/\s+/g, ' ').trim();
+      const key = (row.dataset.full || (row.querySelector('.toc-n').textContent || '') + (row.querySelector('.toc-t').textContent || '')).replace(/\s+/g, ' ').trim();
       let pg = byText.get(key);
       if (pg == null) for (const [k, v] of byText) if (k.endsWith(row.querySelector('.toc-t').textContent.trim())) { pg = v; break; }
       t.textContent = pg != null ? String(pg) : '';
@@ -2127,6 +2129,8 @@ class App {
     if (k === 'cite') return this.openCite(el, info);
     if (k === 'ref') return this.openRef(el, info);
     if (k === 'fn') return this.gotoFootnote(el, info);
+    if (k === 'en') return this.openEndnote(el, info);
+    if (k === 'url') return this.openLinkFor(el, info);
     if (k === 'br' || k === 'sp') { this.arm({ f: info.f, s: info.s, e: info.e, el, kind: k }); return; }
     return this.openRaw(el, info);
   }

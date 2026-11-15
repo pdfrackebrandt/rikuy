@@ -168,8 +168,8 @@ def inserts(page):
     check('Citation puts a citation in and opens its list', re.search(r'Second \\cite[a-z]*\{\}paragraph', src(page)) and page.evaluate(pops % '.pop-cite') == 1, src(page)[src(page).find('Second'):][:50])
     page.keyboard.press('Escape'); page.wait_for_timeout(150)
     load_doc(page, DOC); click_text(page, 'Second paragraph', 7)
-    press(page, 'rb-link'); page.keyboard.type('example.org'); page.wait_for_timeout(250)
-    check('Link puts \\url{} in to type the address into', 'Second \\url{example.org}paragraph' in src(page), src(page)[src(page).find('Second'):][:60])
+    press(page, 'rb-link'); page.wait_for_selector('#link-url'); page.keyboard.type('example.org'); page.keyboard.press('Enter'); page.wait_for_timeout(250)
+    check('Link opens Insert Hyperlink; the address typed and Enter write \\url{} with it (B9)', 'Second \\url{https://example.org}paragraph' in src(page), src(page)[src(page).find('Second'):][:60])
     click_text(page, 'Opening', 3)
     check('in a heading Equation is disabled, Formula is not', state(page)['rb-eq'][0] and not state(page)['rb-math'][0])
 
@@ -421,11 +421,13 @@ def insert_edges(page):
     check('with the caret in it', 'Second\\footnote{n} paragraph' in src(page), src(page)[src(page).find('Second'):][:40])
     page.keyboard.press('Control+z'); page.keyboard.press('Control+z'); page.wait_for_timeout(200)
     h0 = hist()   # (with the two steps just undone waiting to be redone)
-    for name, bid, cmd in (('Footnote', 'rb-fn', '\\footnote{}'), ('Link', 'rb-link', '\\url{}')):
+    for name, bid, cmd in (('Footnote', 'rb-fn', '\\footnote{}'),):
         click_text(page, 'Second paragraph', 7); press(page, bid)
         put = cmd in src(page)
         away()
         check('%s left empty goes again when the caret leaves it, and undo is as it was before' % name, put and src(page) == base and hist() == h0, (src(page)[src(page).find('Second'):][:40], hist(), h0))
+    click_text(page, 'Second paragraph', 7); press(page, 'rb-link'); page.wait_for_selector('#link-url'); page.keyboard.press('Escape'); page.wait_for_timeout(250)
+    check('Link\'s dialog closed with nothing typed writes nothing, and undo is as it was before (B9)', src(page) == base and hist() == h0, (src(page)[src(page).find('Second'):][:40], hist(), h0))
     click_text(page, 'Second paragraph', 7); press(page, 'rb-cite'); page.wait_for_timeout(300)
     put = re.search(r'\\cite[a-z]*\{\}', src(page)) and page.evaluate('document.querySelectorAll("body > .pop.pop-cite").length') == 1
     page.keyboard.press('Escape'); page.wait_for_timeout(300)
@@ -434,8 +436,8 @@ def insert_edges(page):
     check('so the next undo takes back the typing before it', 'Q' not in src(page)[src(page).find('Opening'):][:30] and '\\cite' not in src(page) and '\\footnote' not in src(page))
     # Link in a new, empty document: the caret is in the braces
     page.click('#b-new'); page.wait_for_function('window.rikuy.name.startsWith("Untitled") && window.rikuy.ghost', timeout=5000); page.wait_for_timeout(200)
-    press(page, 'rb-link'); page.keyboard.type('example.org'); page.wait_for_timeout(250)
-    check('Link in an empty document puts the caret between its braces', '\\url{example.org}' in src(page), src(page)[60:])
+    press(page, 'rb-link'); page.wait_for_selector('#link-url'); page.keyboard.type('example.org'); page.keyboard.press('Enter'); page.wait_for_timeout(250)
+    check('Link in an empty document writes the link where the caret was (B9)', '\\url{https://example.org}' in src(page), src(page)[60:])
     # the Picture dialog takes pictures: a .tex picked there is not opened as a project
     load_doc(page, DOC); click_text(page, 'Second paragraph', 7)
     with page.expect_file_chooser() as fc:

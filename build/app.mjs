@@ -519,7 +519,17 @@ Ctrl is Cmd on a Mac.
   line of its own when the caret is on an empty line, in the line in text. Ctrl+Shift+E no longer
   makes an equation: it is free until Word's Track Changes comes with the review tools. The
   Equation button (Home, Insert) still makes a numbered one.
-- \\ or Ctrl+K: the list of things to insert (footnote, citation, section, table and more)
+- \\: the list of things to insert (footnote, citation, section, table and more). Ctrl+K is
+  Word's Link: the Insert Hyperlink dialog (a web page, an e-mail address, a place in this
+  document); in a link, Edit Hyperlink with Remove Link. It writes \\href{…}{…}, \\url{…} when the
+  words are the address, \\hyperref[label]{…}, and hyperref with hidelinks where nothing loads it
+- Ctrl+Alt+D (not on a Mac): an endnote (enotez, \\printendnotes once); Alt+Shift+X: Mark Index
+  Entry (\\index{…}; imakeidx and \\makeindex once). The References tab: Table of Contents and its
+  levels (tocdepth), Add Text, Insert Endnote, Next Footnote, Show Notes, Footnote and Endnote,
+  Add New Source and Manage Sources (the project's .bib, entries edited field by field), Citation
+  Style (natbib's, biblatex's or BibTeX's own styles, never mixed), Bibliography, Insert Caption,
+  Insert Table of Figures, Cross-reference, Mark Entry, Insert Index; each takes its arguments
+  with its arguments through rikuy.api.run too (rikuy.api.run('add-source', { type, fields }))
 - Ctrl+Z, Ctrl+Shift+Z: undo, redo
 - Ctrl+O: open files; Ctrl+S: download the LaTeX source
 - Ctrl+P: Print, the PDF as TeX makes it (the Preview button shows it beside the page);

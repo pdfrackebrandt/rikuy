@@ -107,6 +107,11 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   text, floats it or wraps text round it, captions it; Insert has Shapes, Icons, SmartArt, Chart,
   Screenshot, Text Box and Drop Cap, drawn on the page from the TikZ, pgfplots, smartdiagram,
   fontawesome5, tcolorbox and lettrine they write.
+- **References as in Word.** The table of contents and its levels, endnotes, footnote numbering,
+  sources written into the project's .bib (and a hand written entry edited where it stands),
+  natbib's, biblatex's or BibTeX's citation styles, the bibliography and its title, captions and
+  lists of figures and tables, cross references, an index and links (Ctrl+K), each the LaTeX an
+  expert writes, the page drawing the contents, lists, notes and index as TeX prints them.
 - **The whole TeX Live 2026 toolchain.** The three engines, latexmk's reruns, bibtex and biber,
   makeindex and xindy, glossaries, and shell escape: Ghostscript, gnuplot, Python with Pygments
   (minted), dvips, Asymptote with 3D rendering, and TeX starting TeX (TikZ externalize,
