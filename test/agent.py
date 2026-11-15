@@ -516,10 +516,12 @@ def audit(page, cdp, width):
     page.evaluate('rikuy.undo()')
     dialog('Citation', 'Citation', lambda: button('Citation').click())
     page.evaluate('rikuy.undo()')
-    dialog('Insert', 'Insert', lambda: page.keyboard.press('Control+k'))
+    dialog('Insert', 'Insert', lambda: page.keyboard.type('\\'))
+    # (Ctrl+K is Word's Link since B9; the insert list keeps \)
+    dialog('Link', 'Insert Hyperlink', lambda: page.keyboard.press('Control+k'))
     dialog('Comment', 'Comment', lambda: (page.keyboard.press('Control+Shift+ArrowLeft'), page.keyboard.press('Control+Alt+m')))
     dialog('Find and Replace', 'Find and Replace', lambda: page.keyboard.press('Control+h'))
-    check('each dialog is a dialog named by its title, with a Close button, and does not call itself modal' + w, all(ok for _, ok in opened) and len(opened) == 8, opened)
+    check('each dialog is a dialog named by its title, with a Close button, and does not call itself modal' + w, all(ok for _, ok in opened) and len(opened) == 9, opened)
     first(); page.keyboard.press('Control+h')
     fr = page.get_by_role('dialog', name='Find and Replace', exact=True)
     fr.wait_for(timeout=4000)
@@ -595,7 +597,7 @@ def audit(page, cdp, width):
     look('the script notice')
     check('the notice\'s buttons: Set it up, Not now' + w, button('Set it up').is_visible() and button('Not now').is_visible())
     page.evaluate('rikuy.undo()')
-    check('no interactive element is without a name, in any of %d states' % len(looked) + w, not found and len(looked) == (24 if width > 1000 else 25), found or looked)
+    check('no interactive element is without a name, in any of %d states' % len(looked) + w, not found and len(looked) == (25 if width > 1000 else 26), found or looked)
 
 
 TABLE = ('\\documentclass{article}\n\\begin{document}\nA paragraph.\n\n\\begin{tabular}{ll}\ncell & other \\\\\nmore & last \\\\\n\\end{tabular}\n\n'

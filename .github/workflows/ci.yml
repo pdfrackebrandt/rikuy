@@ -148,6 +148,9 @@ jobs:
         run: cd test && python3 view.py
       - name: The File tab (templates, recent documents, properties, accessibility, Export as)
         run: cd test && python3 file.py
+      # its compile on three engines and biber needs dist/tex and runs in tex.yml; here it says it skips that part
+      - name: References (the table of contents, notes, sources and the bibliography, captions, cross references, the index, links, phones)
+        run: cd test && python3 refs.py
       # its compile offline needs dist/tex and runs in tex.yml; here it says it skips that part
       - name: The installed app offline, its updates, and none in the artifact build
         run: cd test && python3 offline.py

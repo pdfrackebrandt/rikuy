@@ -92,6 +92,21 @@ docs.push(['pictures (B8)', new Map([['main.tex', '\\documentclass{article}\n\\u
   '\\begin{figure}[h]\n\\begin{minipage}{0.45\\linewidth}\\includegraphics[width=\\linewidth]{d.png}\\end{minipage}\\hfill\n' +
   '\\begin{subfigure}{0.45\\linewidth}\\includegraphics[width=\\linewidth]{e.png}\\caption{Sub}\\end{subfigure}\n\\caption{Two}\n\\end{figure}\n\n' +
   '\\begin{tcolorbox}[width=0.6\\linewidth,center]A boxed paragraph.\\end{tcolorbox}\n\nLast plain paragraph after the box.\n\\end{document}\n'], ['a.png', ''], ['b.png', ''], ['c.png', ''], ['d.png', ''], ['e.png', '']]), 'main.tex']);
+// what the References batch (B9) draws from the whole document: the contents (tocdepth, a short
+// title, \addcontentsline), the lists of figures and tables, footnotes in their style, endnotes,
+// citations and the bibliography, index entries and the index, every one with plain words to type
+// before and after it
+{
+  const body = ['\\tableofcontents', '\\listoffigures', '\\listoftables', ''];
+  for (let k = 0; k < 6; k++) body.push('\\section[Short ' + k + ']{Section ' + k + '}', 'Plain words of section ' + k + ' to type in, long enough to go on.', '',
+    'A footnote\\footnote{Note ' + k + '.} and an endnote\\endnote{End ' + k + '.} and \\citet{knuth84} with an entry\\index{entry ' + k + '!sub|textbf}.', '',
+    '\\begin{figure}[htbp]\n\\centering\nX\n\\caption[Cap ' + k + ']{A caption ' + k + '}\\label{fig:' + k + '}\n\\end{figure}', '',
+    '\\begin{table}[htbp]\n\\caption{Table ' + k + '}\nT\n\\end{table}', '',
+    '\\section*{Starred ' + k + '}\n\\addcontentsline{toc}{section}{Starred ' + k + '}', 'More plain words after it, typed into as well.', '');
+  body.push('\\printendnotes', '\\bibliographystyle{plainnat}', '\\bibliography{refs}', '\\printindex');
+  docs.push(['references (B9)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{natbib,enotez,imakeidx}\n\\makeindex\n\\setcounter{tocdepth}{1}\n\\renewcommand{\\thefootnote}{\\roman{footnote}}\n\\counterwithin*{footnote}{section}\n\\begin{document}\n' +
+    body.join('\n') + '\n\\end{document}\n'], ['refs.bib', '@book{knuth84, author={Donald Knuth}, title={The TeXbook}, year=1984}\n']]), 'main.tex']);
+}
 docs.push(['paragraph settings (B2)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{setspace}\n\\begin{document}\nFirst plain paragraph, typed in.\n\n\\onehalfspacing\nA paragraph after one and a half spacing.\n\nAnother after it.\n\n' +
   '\\doublespacing\n\\centering\nCentred from here on, plain.\n\nStill centred, the next paragraph.\n\n\\hangindent=1cm\\hangafter=1 A hanging paragraph with words.\n\nKept with the next\\nopagebreak\n\nLast plain words.\n\\end{document}\n']]), 'main.tex']);
 docs.push(['a LaTeX paragraph (its groups)', new Map([['main.tex', '\\documentclass{article}\n\\begin{document}\nFirst paragraph, typed in.\n\n% rikuy: latex\n{\\bfseries bold} raw and {\\itshape more {nested}} words\n\nLast plain paragraph.\n\\end{document}\n']]), 'main.tex']);
@@ -104,7 +119,7 @@ if (corpus) {
 // two full builds and two serialisations)
 let failsBefore = fail;
 docs.forEach(([name, files, main], i) => {
-  const big = name.includes('long') || name.includes('sample') || name.includes('styles') || name.includes('pictures');
+  const big = name.includes('long') || name.includes('sample') || name.includes('styles') || name.includes('pictures') || name.includes('references');
   stream(name + ' ' + main, files, main, i >= repoDocs ? 16 : FULL ? (big ? 800 : 400) : name.includes('dev/bench/long') ? 25 : 80);
 });
 check('every edit of every stream: the incremental model is the full build\'s (' + steps + ' edits, ' + fast + ' on the fast path, ' + docs.length + ' documents)', fail === failsBefore && fast > steps / 20, [steps, fast]);

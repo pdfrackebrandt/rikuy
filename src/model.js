@@ -2,6 +2,7 @@
 // numbering, cross references and citations resolved. Every editable
 // character keeps a pointer to its exact source range.
 import { parse, scanUserSigs, CHARS, ACCENTS, splitRows, MATH_BUDGET } from './parser.js';
+import { refsSetup, readIndexArg, indexKey } from './refsrc.js';
 import { parseBib, texToPlain, shortAuthors, entryYear, formatEntry } from './bib.js';
 import { siTex, siOptions, siUnitSymbol } from './siunitx.js';
 import { widgetPath, hashText } from './widget.js';
@@ -552,16 +553,16 @@ function incremental(project, hint) {
   const count = (inl) => { const c = new Builder(project, hint); c.words = 0; c.countWords(inl); return c.words; };
   // A table of contents lists the last model's headings, as a full build's does (Builder.flow: the
   // entries are prev.headings, where they stood then): taken from hint, never moved.
-  const tocEntries = hint.headings.filter((h) => h.level >= 0 && h.level <= (hint.opts.chapters ? 2 : 3));
+  const tocEntries = tocList(hint, hint.opts);
   // (whether a unit holds one is read from its key, whose last part is its items' types: reading
   // u.items would make every moved unit's items)
   const types = (u) => u.key.slice(u.key.lastIndexOf('\u0000') + 1).split(',');
-  const toc = (u) => (types(u).includes('toc') ? { ...u, items: u.items.map((x) => (x.type === 'toc' ? { ...x, entries: tocEntries } : x)) } : u);
+  const toc = (u) => (types(u).includes('toc') ? { ...u, items: u.items.map((x) => (x.type === 'toc' && !x.lof ? { ...x, entries: tocEntries } : x)) } : u);
   // A table of contents whose entries say other things than these (a \ref in a heading the first
   // pass left at ??): its signature, made from them, would be another, and the page would keep
   // drawing the old one. The full build makes it.
   const said = (es) => JSON.stringify(es.map((h) => [h.num, h.text, h.level]));
-  for (const u of hint.blocks) if (types(u).includes('toc')) for (const x of u.items) if (x.type === 'toc' && said(x.entries) !== said(tocEntries)) return null;
+  for (const u of hint.blocks) if (types(u).includes('toc')) for (const x of u.items) if (x.type === 'toc' && !x.lof && said(x.entries) !== said(tocEntries)) return null;
   const blocks = hint.blocks.slice(0, ui).map(toc);
   blocks.push({ ...nu, key: f + '\u0000' + now.slice(nu.s, nu.e) + '\u0000' + (nu.sig || '') + '\u0000' + nu.items.map((x) => x.type).join(',') });
   for (let i = ui + 1; i < hint.blocks.length; i++) { const u = hint.blocks[i]; blocks.push(toc(u.f === f && d ? movedUnit(u, f, U.e, d) : u)); }
@@ -571,11 +572,24 @@ function incremental(project, hint) {
   for (const k of H.keys) r[k] = hint[k];
   r.blocks = blocks; r.words = hint.words - count(it.inl) + count(ni.inl);
   if (d) {
-    r.headings = hint.headings.map((h) => (h.f === f && h.s >= U.e ? { ...h, s: h.s + d } : h));
+    r.headings = hint.headings.map((h) => (h.f === f && h.s >= U.e ? { ...h, s: h.s + d, ...(h.e != null ? { e: h.e + d } : {}) } : h));
+    // (B9: captions, endnotes and index entries after the paragraph move with it; its plain words hold none)
+    for (const k of ['captions', 'endnotes', 'indexEntries']) if (hint[k]) r[k] = hint[k].map((x) => (x.f === f && x.s >= U.e ? { ...x, s: x.s + d } : x));
     if (hint.docBody) r.docBody = { ...hint.docBody, e: hint.docBody.e + d };
   }
   Object.defineProperty(r, '_incr', { value: { main: f, files: new Map(files), tree: nodes, sigKey: H.sigKey, failed, keys: H.keys } });
   return r;
+}
+
+// The contents' entries from a model: its headings down to tocdepth (the starred ones left out, as
+// TeX leaves them out), with \addcontentsline's entries where they stand (B9; both builds use it)
+function tocList(P, O) {
+  const H = P.headings || [], X = P.tocExtra || [];
+  const depth = O.tocdepth ?? (O.chapters ? 2 : 3), out = [];
+  const extra = (k) => { for (const x of X) if (x.after === k) out.push(x); };
+  H.forEach((h, k) => { extra(k); if (!h.star) out.push(h); });
+  extra(H.length);
+  return out.filter((h) => h.level >= 0 && h.level <= depth);
 }
 
 function sameRefs(a, b) {
@@ -583,6 +597,7 @@ function sameRefs(a, b) {
   if (a.cites.length !== b.cites.length || a.cites.some((x, i) => x !== b.cites[i])) return false;
   if (a.labels.size !== b.labels.size) return false;
   for (const [k, v] of b.labels) { const w = a.labels.get(k); if (!w || w.num !== v.num || w.kind !== v.kind || w.name !== v.name) return false; }
+  if ((a.refsSig || '') !== (b.refsSig || '')) return false;
   if (a.headings.length !== b.headings.length) return false;
   for (let i = 0; i < a.headings.length; i++) { const x = a.headings[i], y = b.headings[i]; if (x.num !== y.num || x.text !== y.text || x.level !== y.level) return false; }
   return true;
@@ -612,6 +627,12 @@ class Builder {
     this.blocks = [];
     this.warn = [];
     this.headings = [];
+    // (B9) what the contents, the lists of figures and tables, the notes and the index are drawn
+    // from: \addcontentsline's entries, captions, \endnote's texts, \index's entries
+    this.tocExtra = [];
+    this.captions = [];
+    this.endnotes = [];
+    this.indexEntries = [];
     this.words = 0;
     this.thms = new Map();
     this.thmStyle = 'plain';
@@ -747,6 +768,20 @@ class Builder {
     }
     // (as the preamble leaves it: memoir's \mainmatter changes it again as the text is read)
     O.secnumdepthPre = O.secnumdepth;
+    // (B9) the contents' depth, footnote numbers, counters numbered within others, endnotes and
+    // the index, as the main preamble sets them (src/refsrc.js)
+    if (ctx.f === this.project.main) {
+      const R = refsSetup(ctx.src, O.chapters);
+      O.refs = R;
+      if (R.tocdepth != null) O.tocdepth = R.tocdepth;
+      O.fnStyle = R.fn.style; O.enStyle = R.en.style;
+      if (R.fn.start > 1) this.c.footnote = R.fn.start - 1;
+      this.noPrefix = new Set();
+      // (a report's footnotes start again at each chapter, numbered 1, 2 and not 1.1)
+      if (O.chapters && !this.within.footnote) { this.within.footnote = 'chapter'; this.noPrefix.add('footnote'); }
+      for (const [k, w] of Object.entries(R.within)) this.within[k] = w;
+      for (const [k, w] of Object.entries(R.reset)) { if (w == null) { delete this.within[k]; continue; } this.within[k] = w; this.noPrefix.add(k); }
+    }
     O.ext = extSize(O.pt);
     if (O.parindent == null) O.parindent = O.parskip ? 0 : ({ 10: 15, 11: 17, 12: 18 }[O.pt] || (O.ext ? O.ext.pi : 15));
     if (O.natbib && !O.forceNumeric) O.citeStyle = 'authoryear';
@@ -1160,7 +1195,7 @@ class Builder {
   }
   withinPrefix(counter) {
     const w = this.within[counter];
-    if (!w) return '';
+    if (!w || (this.noPrefix && this.noPrefix.has(counter))) return '';
     if (w === 'chapter') return this.secNum(0) + '.';
     if (w === 'section') return this.secNum(1) + '.';
     if (w === 'subsection') return this.secNum(2) + '.';
@@ -1192,6 +1227,78 @@ class Builder {
     key = key.trim();
     const t = this.lastTarget || { num: '', kind: 'section' };
     if (!this.labels.has(key)) this.labels.set(key, { ...t, f: ctx.f });
+  }
+  // ---- (B9) contents, lists, notes and the index ---------------------------------------------
+  // The contents' entries: the headings of the build before down to tocdepth (the starred ones
+  // left out, as TeX leaves them out), with \addcontentsline's entries where they stand
+  tocEntries() { return tocList(this.prev || {}, this.opts); }
+  // \index{…} and \addcontentsline{toc}{…}{…}: nothing on the page where they stand
+  refMark(nd, ctx) {
+    const A = (k) => (nd.args[k] ? this.argText(ctx, nd.args[k]) : '');
+    if (nd.name === 'index') { if (nd.args[1] && this.indexEntries.length < 20000) this.indexEntries.push({ name: A(0).trim(), arg: A(1).slice(0, 2000), f: ctx.f, s: nd.s }); return; }
+    if (nd.name === 'addcontentsline' && A(0).trim() === 'toc' && nd.args[2] && this.tocExtra.length < 2000) {
+      const level = SECTIONS[A(1).trim()];
+      if (level == null) return;
+      const kids = this.inl(nd.args[2].nodes, ctx, []);
+      this.tocExtra.push({ after: this.headings.length, level, num: '', text: this.plain(kids), parts: this.tocParts(kids) });
+    }
+  }
+  // a counter's value as \arabic, \roman, \Roman, \alph, \Alph or \fnsymbol prints it
+  counterText(n, style) {
+    if (style === 'roman') return roman(n);
+    if (style === 'Roman') return roman(n).toUpperCase();
+    if (style === 'alph') return alph(n);
+    if (style === 'Alph') return alph(n).toUpperCase();
+    if (style === 'fnsymbol') return FN_SYMS[(n - 1) % FN_SYMS.length] || String(n);
+    return String(n);
+  }
+  // What the lists drawn from another build depend on: a second build when it changed
+  refsSig() {
+    return JSON.stringify([this.captions.map((c) => [c.kind, c.num, c.text]), this.tocExtra.map((x) => [x.after, x.level, x.text]), this.headings.map((h) => (h.tocText === h.text ? 0 : h.tocText))]);
+  }
+  // \printindex: makeindex's index of the entries before it (\printindex[name] imakeidx's index of
+  // that name), on a page of its own unless \indexsetup{noclearpage}, in its columns, the letter
+  // groups apart, page numbers from the page (src/cmd/refs.js refPages)
+  indexUnits(nd, ctx) {
+    const O = this.opts, R = (O.refs && O.refs.index) || {};
+    const name = nd.args[0] ? this.argText(ctx, nd.args[0]).trim() : '';
+    const top = new Map();
+    // (a stranger's document may print its index many times over: past the eighth only the
+    // heading, each entry read once whatever the number)
+    this.ixUnits = (this.ixUnits || 0) + 1;
+    for (const x of this.ixUnits > 8 ? [] : this.indexEntries) {
+      if (x.name !== name) continue;
+      const r = x.r || (x.r = readIndexArg(x.arg));
+      let lvl = top, node = null;
+      for (const L of r.levels.slice(0, 3)) {
+        const key = (L.sort || L.text).trim();
+        if (!key) break;
+        if (!lvl.has(key)) lvl.set(key, { sort: L.sort, text: L.text, pages: [], see: [], subs: new Map() });
+        node = lvl.get(key); lvl = node.subs;
+      }
+      if (!node) continue;
+      if (r.see || r.seealso) { if (node.see.length < 8) node.see.push({ also: !r.see, text: texToPlain(r.see || r.seealso) }); } else if (node.pages.length < 500) node.pages.push({ f: x.f, s: x.s, fmt: r.fmt || '', range: r.range });
+    }
+    const order = (m) => [...m.values()].sort((a, b) => { const x = indexKey(a.sort || a.text), y = indexKey(b.sort || b.text); return x.grp - y.grp || (x.key < y.key ? -1 : x.key > y.key ? 1 : 0) || (x.raw < y.raw ? -1 : x.raw > y.raw ? 1 : 0); });
+    const rows = [];
+    let letter = null;
+    const walk = (n, lvl, gap) => { rows.push({ lvl, text: texToPlain(n.text), pages: n.pages, see: n.see, gap }); for (const c of order(n.subs)) walk(c, lvl + 1, false); };
+    for (const n of order(top)) { const L = indexKey(n.sort || n.text).letter; walk(n, 0, letter !== null && L !== letter); letter = L; }
+    this.use(JSON.stringify(rows.map((r) => [r.lvl, r.text, r.pages.map((p) => p.fmt + (p.range || '')), r.see, r.gap])));
+    const out = [];
+    if (!R.noclear) out.push({ f: ctx.f, s: nd.s, e: nd.s, items: [{ type: 'pagebreak', odd: false, column: false }], fns: [], sig: 'ixpb' });
+    out.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'idx', head: 'Index', rows, cols: R.pkg === 'imakeidx' ? Math.max(1, Math.min(4, R.columns || 2)) : 2, key: ctx.f + ':ix' + name, dir: this.dirOf() }], fns: [], sig: this.sig.join('\u0001') });
+    return out;
+  }
+  // \printendnotes (enotez) and \theendnotes (endnotes): the notes so far, under Notes
+  notesUnits(nd, ctx, name) {
+    // (the notes drawn at most 5000 rows in all, however often a document prints them)
+    const room = Math.max(0, 5000 - (this.enRows || 0));
+    const rows = this.endnotes.slice(0, room).map((n) => ({ num: n.num, text: n.text, parts: n.parts }));
+    this.enRows = (this.enRows || 0) + rows.length;
+    this.use(JSON.stringify(rows.map((r) => [r.num, r.text])));
+    const head = this.opts.lang === 'de' ? 'Anmerkungen' : 'Notes';
+    return [{ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'idx', notes: name === 'theendnotes' ? 'endnotes' : 'enotez', head, rows, dir: this.dirOf() }], fns: [], sig: this.sig.join('\u0001') }];
   }
   lookupLabel(key) {
     key = key.trim();
@@ -1275,7 +1382,7 @@ class Builder {
       // Skip paragraphs with no visible content.
       if (ns.every((n) => n.t === 'comment' || (n.t === 'text' && !ctx.src.slice(n.s, n.e).trim()) || (n.t === 'cmd' && (INVIS.has(n.name) || n.name === 'label')))) {
         // labels still need registering
-        for (const n of ns) if (n.t === 'cmd' && n.name === 'label') this.label(this.argText(ctx, n.args[0]), ctx);
+        for (const n of ns) if (n.t === 'cmd' && n.name === 'label') this.label(this.argText(ctx, n.args[0]), ctx); else if (n.t === 'cmd' && (n.name === 'index' || n.name === 'addcontentsline')) this.refMark(n, ctx);
         return;
       }
       if (env.top) this.sig = [];
@@ -1291,7 +1398,7 @@ class Builder {
             const set = {};
             for (const n of inner) { const x = n !== tabs[0] && this.tableSetting(n, ctx); if (x) set[x.key] = x.value; }
             const t = this.tabular(tabs[0], ctx, [], set);
-            for (const n of ns) if (n.t === 'cmd' && n.name === 'label') this.label(this.argText(ctx, n.args[0]), ctx);
+            for (const n of ns) if (n.t === 'cmd' && n.name === 'label') this.label(this.argText(ctx, n.args[0]), ctx); else if (n.t === 'cmd' && (n.name === 'index' || n.name === 'addcontentsline')) this.refMark(n, ctx);
             units.push({ f: ctx.f, s: ns[0].s, e: ns[ns.length - 1].e, items: [{ type: 'float', kind: 'inline', parts: [t], f: ctx.f }], fns: t.fns || [], sig: env.top ? this.sig.join('\u0001') : '' });
             return;
           }
@@ -1482,7 +1589,7 @@ class Builder {
         if (name === 'tableofcontents') {
           flushPara();
           if (env.top) this.sig = [];
-          const entries = (this.prev ? this.prev.headings : []).filter((h) => h.level >= 0 && h.level <= (this.opts.chapters ? 2 : 3));
+          const entries = this.tocEntries();
           this.use(JSON.stringify(entries.map((h) => [h.num, h.text, h.level])));
           // (its direction is the text's where it stands: drawn again when a \selectlanguage before it changes)
           this.use('d' + this.dir);
@@ -1490,7 +1597,26 @@ class Builder {
           afterHeading = false;
           continue;
         }
-        if (name === 'listoffigures' || name === 'listoftables') { flushPara(); continue; }
+        if (name === 'listoffigures' || name === 'listoftables') {
+          // (B9) drawn from the captions of the build before, as TeX prints them from the .lof
+          flushPara();
+          if (env.top) this.sig = [];
+          const kind = name === 'listoffigures' ? 'figure' : 'table', de = this.opts.lang === 'de';
+          const entries = ((this.prev && this.prev.captions) || []).filter((c) => c.kind === kind).slice(0, 2000).map((c) => ({ num: c.num, text: c.text, parts: c.parts, level: this.opts.chapters ? 1 : 2 }));
+          this.use(JSON.stringify(entries.map((h) => [h.num, h.text])));
+          this.use('d' + this.dir);
+          const head = kind === 'figure' ? (de ? 'Abbildungsverzeichnis' : 'List of Figures') : (de ? 'Tabellenverzeichnis' : 'List of Tables');
+          units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'toc', head, lof: kind, entries, chapters: !!this.opts.chapters, dir: this.dirOf() }], fns: [], sig: this.sig.join('\u0001'), volatile: false });
+          afterHeading = false;
+          continue;
+        }
+        // (B9) the index (makeindex's, drawn from the entries) and the endnotes, where TeX prints them
+        if (name === 'printindex' || name === 'printendnotes' || name === 'theendnotes') {
+          flushPara();
+          if (env.top) this.sig = [];
+          units.push(...(name === 'printindex' ? this.indexUnits(nd, ctx) : this.notesUnits(nd, ctx, name)));
+          continue;
+        }
         // \ifodd\value{page}\hbox{}\clearpage\fi (and with \else before \hbox): on to an even (an
         // odd) page, a blank one before it where the page it is on is not (src/pagesrc.js BREAKS)
         if (name === 'ifodd' && !paraShows()) {
@@ -1697,7 +1823,9 @@ class Builder {
     const inl = titleArg ? this.inl(titleArg.nodes, ctx, fns) : [];
     if (titleArg && !inl.length) inl.push({ k: 'seg', f: ctx.f, t: '​', map: [titleArg.is, titleArg.is], ph: true });
     const text = this.plain(inl);
-    this.headings.push({ level, num, text, parts: this.tocParts(inl), star, f: ctx.f, s: nd.s });
+    // (B9) the contents show a short title where it has one: \section[Short]{Long}
+    const sh = nd.args[1] && nd.args[0] && nd.args[0].nodes ? this.inl(nd.args[0].nodes, ctx, []) : null;
+    this.headings.push({ level, num, text, parts: this.tocParts(sh || inl), tocText: sh ? this.plain(sh) : text, star, f: ctx.f, s: nd.s, e: nd.e });
     const de = this.opts.lang === 'de';
     const chapLabel = level === 0 && this.opts.chapters && !front ? (this.appendix ? (de ? 'Anhang' : 'Appendix') : (de ? 'Kapitel' : 'Chapter')) : level === -1 && num ? (de ? 'Teil' : 'Part') : null;
     // the look the preamble gives this heading (titlesec, KOMA-Script), where it is not LaTeX's own
@@ -1784,7 +1912,16 @@ class Builder {
     const O = this.opts;
     this.ensureBib();
     const list = this.refList();
-    const head = O.cls === 'book' || O.cls === 'report' ? 'Bibliography' : 'References';
+    let head = O.cls === 'book' || O.cls === 'report' ? 'Bibliography' : 'References';
+    // (B9) its title: biblatex's title= option, or \refname (\bibname) as the document sets it
+    if (nd.name === 'printbibliography' && nd.args[0]) {
+      const m = /(?:^|,)\s*title\s*=\s*(\{[^{}]{0,300}\}|[^,{}]{0,300})/.exec(this.argText(ctx, nd.args[0]).slice(0, 2000));
+      if (m) head = texToPlain(m[1].replace(/^\{|\}$/g, '').trim()) || head;
+    } else if (nd.name === 'bibliography') {
+      const M = this.textMacros.get(O.chapters ? 'bibname' : 'refname');
+      if (M && !M.nargs && M.body) head = texToPlain(M.body) || head;
+    }
+    this.use('B' + head);
     const entries = list.map((r) => ({ label: r.label, runs: r.runs, f: r.e ? r.e.file : null, s: r.e ? r.e.s : 0, e: r.e ? r.e.e : 0, key: r.key }));
     this.use(JSON.stringify(entries.map((x) => [x.label, x.runs.map((r) => r.t).join('')])));
     return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'refs', head, entries, numeric: O.citeStyle === 'numeric' }], fns: [], sig: this.sig.join('\u0001') };
@@ -2273,7 +2410,7 @@ class Builder {
       if (!para.length) return;
       const ns = para; para = [];
       if (ns.every((n) => n.t === 'comment' || (n.t === 'text' && !ctx.src.slice(n.s, n.e).trim()) || (n.t === 'cmd' && INVIS.has(n.name)))) {
-        for (const n of ns) if (n.t === 'cmd' && n.name === 'label') this.label(this.argText(ctx, n.args[0]), ctx);
+        for (const n of ns) if (n.t === 'cmd' && n.name === 'label') this.label(this.argText(ctx, n.args[0]), ctx); else if (n.t === 'cmd' && (n.name === 'index' || n.name === 'addcontentsline')) this.refMark(n, ctx);
         return;
       }
       const inl = this.inl(ns, ctx, fns);
@@ -2314,6 +2451,8 @@ class Builder {
           // (beamer steps the counter, so \ref gives the number, but its caption template prints
           // "Figure:" without it unless it is the numbered one)
           parts.push({ type: 'caption', kind, num: this.opts.cls === 'beamer' && !this.beamerNumbered() ? '' : num, inl: kids, f: ctx.f, ctx: 'cap', dir: this.dirOf() });
+          // (B9) for the list of figures or tables: its short title where it has one
+          { const o = n.name === 'captionof' ? n.args[1] : n.args[0], sh = o && o.nodes && a ? this.inl(o.nodes, ctx, []) : null; this.captions.push({ kind, num, text: this.plain(sh || kids), parts: this.tocParts(sh || kids), f: ctx.f, s: n.s }); }
           continue;
         }
         if (n.t === 'env' && /^(tabular|tabularx|tabular\*|tabulary|longtable|array)$/.test(n.name)) { flushP(); const t = this.tabular(n, ctx, fns, tset); if ((align || dflt) !== 'center') t.falign = align || dflt; parts.push(t); continue; }
@@ -2900,7 +3039,7 @@ class Builder {
       let num;
       if (name === 'thanks' || this.thanksMode) { this.c.thanks++; num = FN_SYMS[(this.c.thanks - 1) % FN_SYMS.length]; }
       else if (nd.args[0]) { num = texToPlain(A(0)); }
-      else { this.c.footnote++; num = String(this.c.footnote); }
+      else { this.c.footnote++; num = this.counterText(this.c.footnote, this.opts.fnStyle); }
       this.use('f' + num);
       const saveT = this.lastTarget;
       this.lastTarget = { num, kind: 'footnote' };
@@ -2913,12 +3052,12 @@ class Builder {
       fns.push({ num, inl: kids, f: ctx.f, mark, dir: this.dirOf() });
       return false;
     }
-    if (name === 'footnotemark') { acc.flush(); this.c.footnote++; out.push(this.atom(ctx, { k: 'fn', s: nd.s, e: nd.e, num: String(this.c.footnote) })); return false; }
+    if (name === 'footnotemark') { acc.flush(); this.c.footnote++; out.push(this.atom(ctx, { k: 'fn', s: nd.s, e: nd.e, num: this.counterText(this.c.footnote, this.opts.fnStyle) })); return false; }
     if (name === 'footnotetext') {
       acc.flush();
       const a = nd.args[1];
       const kids = a ? this.inl(a.nodes, ctx, fns) : [];
-      fns.push({ num: String(this.c.footnote), inl: kids, f: ctx.f, dir: this.dirOf() });
+      fns.push({ num: this.counterText(this.c.footnote, this.opts.fnStyle), inl: kids, f: ctx.f, dir: this.dirOf() });
       return false;
     }
     if (CITE_CMDS.has(name)) {
@@ -2954,6 +3093,20 @@ class Builder {
       return false;
     }
     if (name === 'label') { this.label(A(0), ctx); return false; }
+    if (name === 'index' || name === 'addcontentsline') { this.refMark(nd, ctx); return false; }
+    if (name === 'endnote') {
+      // (B9) a mark in the text; its words where \printendnotes or \theendnotes prints them
+      acc.flush();
+      const a = nd.args[1];
+      let num;
+      if (nd.args[0]) num = texToPlain(A(0));
+      else { this.c.endnote = (this.c.endnote || 0) + 1; num = this.counterText(this.c.endnote, this.opts.enStyle); }
+      this.use('n' + num);
+      const kids = a ? this.inl(a.nodes, ctx, []) : [];
+      out.push(this.atom(ctx, { k: 'en', s: nd.s, e: nd.e, num, is: a ? a.is : null, ie: a ? a.ie : null }));
+      this.endnotes.push({ num, text: this.plain(kids), parts: this.tocParts(kids), f: ctx.f, s: nd.s });
+      return false;
+    }
     if (name === 'url' || name === 'nolinkurl') {
       acc.flush();
       out.push(this.atom(ctx, { k: 'url', s: nd.s, e: nd.e, text: A(0), url: A(0) }));
@@ -3224,6 +3377,11 @@ class Builder {
       blocks,
       labels: this.labels,
       headings: this.headings,
+      tocExtra: this.tocExtra,
+      captions: this.captions,
+      endnotes: this.endnotes,
+      indexEntries: this.indexEntries,
+      refsSig: this.refsSig(),
       mathMacros: this.mathMacros,
       textMacros: this.textMacros,
       siOpts: this.siOpts,
