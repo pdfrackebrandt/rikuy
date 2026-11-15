@@ -2223,6 +2223,61 @@ Tests:
     21 groups (`test/fixtures/jfif0-exif300.jpg` new), `test/picture.py` 174 (6 new, one compiled:
     that JPEG at TeX's size in the PDF and on the page).
 
+53. **The incremental model build.** Done in the code (branch `perf-incremental-model`), the next
+    native step task 52 proposed. A keystroke in a paragraph of plain text rebuilds that paragraph
+    only (`incremental` in `src/model.js`, ARCHITECTURE section 1); every other case is the full
+    build, which is the oracle. Measured in the page (`dev/bench_native_page.py --toggle incr`,
+    keystrokes alternating on and off, medians of 20, on main 07069e1): `dev/bench/long` 34.7 to 23.1
+    ms a keystroke (the model 15.0 to 5.2), the generated 401 KB document 73.4 to 41.3 ms (model
+    49.7 to 16.2); at a phone's speed, 390 px: 4 times throttled 122.9 to 96.0 and 272.3 to 176.5
+    ms, 6 times 166.6 to 107.8 and 466.6 to 231.6 ms (1.3 to 2.0 times a keystroke, the model 2.6
+    to 3.6 times). In node the model of a keystroke on the paper is 16 to 2.8 ms
+    (with the native core). It covers 52 % of the paper's paragraphs and 69 % of the generated
+    document's: a paragraph with a citation, a reference or a footnote takes the full build.
+    *Chosen:* units after the edit are moved, not made relative to their block: the renderer
+    already keeps offsets relative to a block's base, but the model's consumers (Word's export,
+    the editor's maps) read absolute ones, so moving is the small change; and moved lazily (the
+    renderer reads only a kept block's range) with one cumulative shift per unit, it costs
+    nothing per keystroke where a deep copy cost 7 ms on the generated document. *Not done:* the
+    model's per character maps in C++: with one paragraph built per keystroke the model is 3 to
+    5 ms of a 22 to 36 ms keystroke at a desktop's speed, the rest being the DOM's layout and the
+    caret, so a port would not pay; a first load is 87 % layout. *Evidence:*
+    `test/incremental.test.mjs` (in `npm test`): every edit of random streams of the repository's
+    documents equal to the full build from the same last model (4000 edits, 282 on the fast path),
+    90 unread keystrokes in two paragraphs, a field that moves with the text and is not in
+    `OFFSET_KEYS` (it caught B2's `ps`, `pe`, `vs`, `ve` at the rebase), another document or main
+    file never taking the fast path, typing in each construct of B4 Styles (a paragraph a heading
+    runs into, by `\paragraph`, `\subparagraph` and titlesec's runin, on the fast path; a paragraph
+    style's and a theorem's paragraphs by the full build) and of B2 Paragraph (line spacing and
+    `\centering` declared before a paragraph, carried over; a hanging indent and `\nopagebreak`
+    by the full build) and of B8 Pictures (the paragraphs a wrapfigure wraps and one after a
+    tcolorbox on the fast path; a paragraph with a picture, a `\scalebox`, a `\captionof`'s caption
+    and a boxed paragraph by the full build), 25 checks, the streams over 8 documents (5200 edits,
+    356 fast); with the corpus 11,664 edits over 724 documents (738 on the
+    fast path, the corpus being short documents full of commands), all equal. Rebased on B2 (its
+    `ps`, `pe`, `vs`, `ve` named in `OFFSET_KEYS`, its line spacing carried) and B4 (run in
+    headings carried; B4 added no offset field and no inline command, so `PURE_CMDS` stays) and
+    B8 (no offset field; its boxes read the builder's box share, so `\scalebox`, `\rotatebox` and
+    pictures stay out of `PURE_CMDS`). `npm test` green, the corpus
+    model run 716 of 716, `browser.py` 193, `styles.py` 333, `word.py` 111 (on d55b5fa); `find.py` 76,
+    `history.py` 39/39, `share.py` 46, `agent.py` 141 (on 07069e1); the security audit's quick profile (one reviewer, notes outside
+    git): nothing is kept across documents, every reuse is proven against the new text. The
+    hostile review (1 High, 2 Medium, 3 Low) found, and this fixes, each with its case as a test:
+    moved units lost what they shared (a footnote's mark no longer its atom, so Word's export
+    dropped the note after a fast keystroke; one memo per unit now, and the oracle compares each
+    unit's shared parts); a table of contents drawn from a first pass with `??` kept its stale
+    signature (the full build when its entries differ); a LaTeX paragraph's `nest` pairs were not
+    moved (and the offset guard now inserts before every unit, not once after
+    `\begin{document}`); a warning of the old paragraph stayed; fields the app wrote on the last
+    model were carried. Added: a development build's self check (every eighth fast build against
+    the full one, the full one kept on a difference; none in production). After the fixes: the
+    streams over 9 documents 5600 edits (361 fast), 32 checks; the reviewer's fuzz, seeds 25, 26,
+    27 and 43 with shared references compared, no difference; with the corpus 11,680 edits over
+    725 documents (707 fast), all equal; `npm test` green, the corpus model run 716 of 716,
+    `browser.py` 193, `word.py` 111, `picture.py` 174. *Next:* the same for paragraphs with citations,
+    references and footnotes (their entry state recorded per unit: the counters, the citations
+    and labels so far), which would take most of the paper's other paragraphs.
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000
