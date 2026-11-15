@@ -51,7 +51,7 @@ def new_docs(page):
         ok = s.startswith('\\documentclass') and '\\begin{document}' in s and ev(page, 'window.rikuy.files.size') == 1
         if TEX:
             r = ev(page, 'window.rikuy.api.compile()')
-            errs = [x for x in r['problems'] if x.get('sev') == 'error']
+            errs = [x for x in r['problems'] if x.get('severity') == 'error']
             check('template ' + tid + ': a document of its own that compiles in the page', ok and r['ok'] and r['pages'] >= 1 and not errs, (r['ok'], errs[:2]))
         else:
             check('template ' + tid + ': a document of its own', ok, s[:80])
@@ -80,6 +80,8 @@ def new_docs(page):
     check('Set as default: a blank document starts with this preamble', src(page) == DOC[:DOC.index('\\begin{document}')].rstrip() + '\n\n\\begin{document}\n\n\\end{document}\n', src(page))
     load_doc(page, {'main.tex': DOC.replace('\\usepackage{amsmath}', '\\input{macros}'), 'macros.tex': '\\newcommand\\R{x}\n'})
     check('L9: Set as default refuses a preamble that reads the project\'s files', ev(page, 'window.rikuy.runCommand("set-default", "set")') is False)
+    load_doc(page, DOC.replace('\\usepackage{amsmath}', '\\makeatletter\\def\\input@path{{figs/}}\\makeatother'))
+    check('V8: Set as default takes a preamble with \\input@path (it reads no file)', ev(page, 'window.rikuy.runCommand("set-default", "set")') is True)
     ev(page, 'window.rikuy.runCommand("set-default", "reset")')
     ev(page, 'window.rikuy.runCommand("new-blank")'); page.wait_for_timeout(900)
     check('Forget the default: a plain article again', src(page).startswith('\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}'), src(page))
@@ -92,8 +94,8 @@ def properties(page):
     roundtrip(page, bare, 'Some', props({'title': 'Fresh'}), bare.replace('\\begin{document}', '\\title{Fresh}\n\\begin{document}'), label='Properties: a title where there was none, before \\begin{document}',
               off_command=props({'title': ''}), off=bare.replace('\\begin{document}', '\\title{}\n\\begin{document}'))
     roundtrip(page, DOC, 'Some', props({'subject': 'Economics', 'keywords': 'growth, AI'}),
-              DOC.replace('\\usepackage{amsmath}\n', '\\usepackage{amsmath}\n\\usepackage{hyperref}\n\\hypersetup{hidelinks,pdfsubject={Economics},pdfkeywords={growth, AI}}\n'),
-              off_command=props({'subject': '', 'keywords': ''}), off=DOC.replace('\\usepackage{amsmath}\n', '\\usepackage{amsmath}\n\\usepackage{hyperref}\n\\hypersetup{hidelinks}\n'), label='Properties: subject and keywords, a bare hyperref and \\hypersetup with hidelinks')
+              DOC.replace('\\usepackage{amsmath}\n', '\\usepackage{amsmath}\n\\IfPackageLoadedTF{hyperref}{}{\\PassOptionsToPackage{hidelinks}{hyperref}}\n\\usepackage{hyperref}\n\\hypersetup{pdfsubject={Economics},pdfkeywords={growth, AI}}\n'),
+              off_command=props({'subject': '', 'keywords': ''}), off=DOC.replace('\\usepackage{amsmath}\n', '\\usepackage{amsmath}\n\\IfPackageLoadedTF{hyperref}{}{\\PassOptionsToPackage{hidelinks}{hyperref}}\n\\usepackage{hyperref}\n\\hypersetup{}\n'), label='Properties: subject and keywords, a bare hyperref (hidelinks where it is new) and \\hypersetup')
     hs = DOC.replace('\\usepackage{amsmath}\n', '\\usepackage{amsmath}\n\\usepackage{hyperref}\n\\hypersetup{colorlinks=true}\n')
     roundtrip(page, hs, 'Some', props({'keywords': 'a, b'}), hs.replace('colorlinks=true', 'colorlinks=true,pdfkeywords={a, b}'), off_command=props({'keywords': ''}), label='Properties: keywords into the \\hypersetup there is')
     hl = DOC.replace('\\usepackage{amsmath}\n', '\\usepackage{amsmath}\n\\usepackage[colorlinks]{hyperref}\n')
@@ -116,6 +118,19 @@ def properties(page):
     dlg.get_by_role('button', name='Apply', exact=True).click(); page.wait_for_timeout(300)
     a0 = auth[auth.index('\\author'):auth.index('\\begin')]
     check('H1: Keywords alone leave the commented, multi-line author byte for byte', a0 in src(page) and 'pdfkeywords={economics, AI}' in src(page), src(page)[:260])
+    # V1: two changes typed in one field: the source between them (a % comment, a tabular &) stays
+    tab = '\\documentclass{article}\n\\author{\\begin{tabular}{cc}\n Ann & Ben\\\\\n MIT & ETH\n\\end{tabular}}\n\\begin{document}x\\end{document}\n'
+    for d0, edits, want in ((auth, (('Jane Doe', ' Jr'), ('John Roe', 'x')), auth.replace('Jane Doe', 'Jane Doe Jr').replace('John Roe', 'John Roex')),
+                            (tab, (('Ann', ' & Co'), ('ETH', ' Zurich')), tab.replace('Ann', 'Ann \\& Co').replace('ETH', 'ETH Zurich'))):
+        load_doc(page, d0)
+        page.get_by_role('tab', name='File', exact=True).click(); page.wait_for_timeout(200)
+        page.get_by_role('button', name='Properties', exact=True).click(); page.wait_for_timeout(300)
+        box = page.get_by_role('dialog', name='Properties', exact=True).get_by_role('textbox', name='Author', exact=True)
+        for word, typed in edits:
+            box.evaluate('(t, w) => { t.focus(); const i = t.value.indexOf(w) + w.length; t.setSelectionRange(i, i); }', word)
+            page.keyboard.type(typed)
+        page.get_by_role('dialog', name='Properties', exact=True).get_by_role('button', name='Apply', exact=True).click(); page.wait_for_timeout(300)
+        check('V1: two changes typed in the Author box write those two, the source between them as it was (& typed escaped)', src(page) == want, src(page)[:220])
     if TEX:
         cases = [('the author with comments', src(page)),
                  ('cleveref (hyperref before it)', '\\documentclass{article}\n\\usepackage{amsmath}\n\\usepackage{cleveref}\n\\begin{document}\n\\section{A}\\label{s}\n\\Cref{s}.\n\\end{document}\n'),
@@ -125,8 +140,13 @@ def properties(page):
             if 'economics' not in d:
                 ev(page, '() => window.rikuy.runCommand("properties", { subject: "Uber" })'); page.wait_for_timeout(300)
             r = ev(page, 'window.rikuy.api.compile()')
-            errs = [x for x in r['problems'] if x.get('sev') == 'error']
+            errs = [x for x in r['problems'] if x.get('severity') == 'error']
             check('Properties on ' + name + ': compiles in the page without an error', r['ok'] and not errs and ('Uber' in src(page) or 'economics' in src(page)), (errs[:2], src(page)[:200]))
+            if 'acmart' in name:
+                import base64, io, pypdf
+                b = ev(page, '(async () => { const r = await window.rikuy.api.compile(); let s = ""; for (const x of r.pdf) s += String.fromCharCode(x); return btoa(s); })()')
+                meta = pypdf.PdfReader(io.BytesIO(base64.b64decode(b))).metadata or {}
+                check('V2: acmart: the Subject reaches the PDF (pypdf reads its Info)', (meta.get('/Subject') or '') == 'Uber', dict(meta))
     # read back: a hand written \hypersetup
     load_doc(page, hs.replace('colorlinks=true', 'colorlinks=true, pdfsubject = {Hand, written}, pdfkeywords=one'))
     page.get_by_role('tab', name='File', exact=True).click(); page.wait_for_timeout(200)

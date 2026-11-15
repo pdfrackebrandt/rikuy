@@ -1866,6 +1866,6 @@ html.pic-drag, html.pic-drag body { touch-action: none; overscroll-behavior: non
 .pic-frame.tiny .pic-h:not(.pic-h-se) { display: none; }
 .pic-frame.tiny .pic-h::before { display: none; }
 /* B12 review: Help's guides below the ribbon, their body scrolling; the status links under a finger */
-.pop.pop-guide, .pop.pop-guide-fit { max-height: calc(100vh - var(--guide-top, 150px) - 8px) !important; max-height: calc(100dvh - var(--guide-top, 150px) - 8px) !important; }
+.pop.pop-guide, .pop.pop-guide-fit { max-height: calc(100vh - var(--guide-top, 150px) - var(--guide-bottom, 0px) - 8px) !important; max-height: calc(100dvh - var(--guide-top, 150px) - var(--guide-bottom, 0px) - 8px) !important; }
 @media (max-width: 639px) { .pop.pop-guide, .pop.pop-guide-fit { max-height: 70vh !important; } }
 @media (pointer: coarse) { #status .linkish { min-height: 44px; display: inline-flex; align-items: center; } }

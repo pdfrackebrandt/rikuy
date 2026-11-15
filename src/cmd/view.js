@@ -357,6 +357,9 @@ export const methods = {
     const keys = this.texViews, mine = [...keys].filter(([, v]) => v.f === f).sort((x, y) => x[1].s - y[1].s);
     if (!mine.length) return;
     const es = [...edits].sort((x, y) => x.s - y.s || x.e - y.e);
+    // (the keys moved go into a new set: one moved onto another's old place must not be taken
+    // away with it; an edit's hunks are read once, however many keys are inside it)
+    const moved = [], hk = new Map();
     let i = 0, d = 0;
     for (const [k, v] of mine) {
       while (i < es.length && (es[i].e < v.s || (es[i].e === v.s && es[i].s < v.s) || (es[i].s === v.s && es[i].e === v.s && /\n[ \t]*\r?\n/.test(es[i].t)))) { d += es[i].t.length - (es[i].e - es[i].s); i++; }
@@ -368,7 +371,8 @@ export const methods = {
         s = E.s + d;
         if (a != null && E.e - E.s <= 2000000) {
           let x = v.s - E.s, dd = 0;
-          for (const h of hunks(a.slice(E.s, E.e), E.t)) {
+          if (!hk.has(E)) hk.set(E, hunks(a.slice(E.s, E.e), E.t));
+          for (const h of hk.get(E)) {
             if (h.as + h.a.length <= x) { dd += h.b.length - h.a.length; continue; }
             if (h.as < x) x = h.as;
             break;
@@ -378,9 +382,10 @@ export const methods = {
       }
       let n = 0;
       while (s < b.length && n++ < 400 && /\s/.test(b[s])) s++;
-      keys.delete(k);
-      if (s >= 0 && s < b.length) keys.set(f + '\u0000' + s, { f, s });
+      if (s >= 0 && s < b.length) moved.push({ f, s });
     }
+    for (const [k] of mine) keys.delete(k);
+    for (const v of moved) keys.set(f + '\u0000' + v.s, v);
   },
   viewSnap() {
     const keys = this.texViews;
