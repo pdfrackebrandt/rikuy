@@ -958,10 +958,38 @@ export function graphCanvas(spec, W, scale = 3) {
   K.paint(g, s, K.compute(s, vals), K.ranges(s), vals, W, H, null);
   return c;
 }
-export function graphPNG(spec, W, scale = 3) {
+// mark: the graph's file the picture is drawn for (a tEXt chunk "rikuy-graph"): only a picture so
+// marked, or none, is ever drawn again (one's own picture under that name is one's own)
+export function graphPNG(spec, W, scale = 3, mark = '') {
   const c = graphCanvas(spec, W, scale);
   return new Promise((ok, no) => c.toBlob((b) => (b ? ok(b) : no(new Error('The picture could not be made'))), 'image/png'))
-    .then(async (b) => new Blob([withDpi(new Uint8Array(await b.arrayBuffer()), 96 * scale)], { type: 'image/png' }));
+    .then(async (b) => new Blob([withMark(withDpi(new Uint8Array(await b.arrayBuffer()), 96 * scale), mark)], { type: 'image/png' }));
+}
+const MARK_KEY = 'rikuy-graph';
+export function withMark(png, mark) {
+  if (!mark || png.length < 33) return png;
+  const data = new TextEncoder().encode(MARK_KEY + '\0' + String(mark).slice(0, 300).replace(/[^\x20-\x7e]/g, '_'));
+  const chunk = new Uint8Array(12 + data.length), v = new DataView(chunk.buffer);
+  v.setUint32(0, data.length); chunk.set([0x74, 0x45, 0x58, 0x74], 4); chunk.set(data, 8);
+  v.setUint32(8 + data.length, crc32(chunk.subarray(4, 8 + data.length)));
+  const out = new Uint8Array(png.length + chunk.length);
+  out.set(png.subarray(0, 33)); out.set(chunk, 33); out.set(png.subarray(33), 33 + chunk.length);
+  return out;
+}
+// the graph a picture was drawn for, from its mark, or null (bounded: the first 64 chunks)
+export function pngMark(png) {
+  if (!png || png.length < 33 || png[1] !== 0x50) return null;
+  const v = new DataView(png.buffer, png.byteOffset, png.length);
+  for (let p = 8, k = 0; p + 12 <= png.length && k < 64; k++) {
+    const n = v.getUint32(p), type = String.fromCharCode(png[p + 4], png[p + 5], png[p + 6], png[p + 7]);
+    if (type === 'IDAT' || type === 'IEND' || p + 12 + n > png.length) return null;
+    if (type === 'tEXt' && n < 400) {
+      const t = new TextDecoder().decode(png.subarray(p + 8, p + 8 + n));
+      if (t.startsWith(MARK_KEY + '\0')) return t.slice(MARK_KEY.length + 1);
+    }
+    p += 12 + n;
+  }
+  return null;
 }
 
 // A PNG with its resolution written (a pHYs chunk after IHDR): without one graphicx takes 72 dpi,

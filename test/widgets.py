@@ -243,7 +243,11 @@ try:
         page.screenshot(path=os.path.join(TMP, 'widget.png'))
         fl = page.frame_locator('#wlayer iframe.rk-widget').first
         check('the widget starts at n = 4', fl.locator('#v').inner_text() == 'n = 4', fl.locator('#v').inner_text())
-        fl.locator('#n').focus()
+        # (as a hand does: the mouse over the page to the figure, a click on the slider's label;
+        # a frame's focus taken with no click or Tab goes back to the page, src/cmd/insert.js)
+        fb = page.locator('#wlayer iframe.rk-widget').first.bounding_box()
+        page.mouse.move(fb['x'] - 30, fb['y'] + fb['height'] - 20); page.mouse.move(fb['x'] + 20, fb['y'] + fb['height'] - 20, steps=6)
+        fl.locator('label[for=n]').click()
         fl.locator('#n').press('ArrowRight')
         page.wait_for_timeout(150)
         check('moving its slider in the frame changes it', fl.locator('#v').inner_text() == 'n = 5', fl.locator('#v').inner_text())

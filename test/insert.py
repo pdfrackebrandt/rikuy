@@ -66,7 +66,8 @@ def graph_insert(page):
     check('graph: its file is a graph Rikuy reads back, with no request out', html.startswith('<!doctype html>') and 'id="rikuy-graph"' in html and not re.search(r'\b(src|href)\s*=', html.split('</script>', 1)[1]), html[:200])
     png = base64.b64decode(blob_b64(page, G + '.png') or '')
     check('graph: the picture is a PNG three times the text\'s width', png[:8] == b'\x89PNG\r\n\x1a\n' and int.from_bytes(png[16:20], 'big') > 1200, len(png))
-    check('graph: with its resolution written (pHYs, 288 dpi): TeX takes its natural size as the page draws it (review H4)', png[37:41] == b'pHYs' and int.from_bytes(png[41:45], 'big') == 11339, png[33:50])
+    k = png.find(b'pHYs', 33, 200)
+    check('graph: with its resolution written (pHYs, 288 dpi) and its mark (tEXt rikuy-graph): TeX takes its natural size as the page draws it (review H4, V2)', k > 0 and int.from_bytes(png[k + 4:k + 8], 'big') == 11339 and b'rikuy-graph\x00' + G.encode() + b'.html' in png[:400], png[33:120])
     page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000)
     check('graph: it runs on the page in a frame sandboxed to scripts alone', page.evaluate('document.querySelector("#wlayer iframe.rk-widget").getAttribute("sandbox")') == 'allow-scripts')
     page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(300)
@@ -126,7 +127,6 @@ def graph_edit(page):
 
 def graph_kinds(page):
     """Each kind on the page, and its picture against the live figure at its starting values."""
-    from PIL import Image, ImageChops, ImageStat, ImageFilter
     for kind in ('function', 'data', 'curve', 'dist'):
         load_doc(page, DOC)
         page.evaluate('window.rikuy.zoomTo ? window.rikuy.zoomTo(1, null) : 0')
@@ -136,14 +136,17 @@ def graph_kinds(page):
         name = [n for n in files(page)[1] if ('distribution' if kind == 'dist' else kind) + '-' in n][-1]
         fr = page.frame_locator('#wlayer iframe.rk-widget')
         box = fr.locator('#rk-c').bounding_box()
-        shot = Image.open(io.BytesIO(page.screenshot(clip=box))).convert('RGB')
-        pic = Image.open(io.BytesIO(base64.b64decode(blob_b64(page, name)))).convert('RGBA')
-        white = Image.new('RGBA', pic.size, (255, 255, 255, 255)); white.alpha_composite(pic)
-        pic = white.convert('RGB').resize(shot.size, Image.LANCZOS)
-        # (both softened by a pixel: a 1 px bar edge rasterised at another scale is not a difference a reader sees)
-        soft = lambda im: im.filter(ImageFilter.GaussianBlur(1))
-        diff = ImageStat.Stat(ImageChops.difference(soft(shot), soft(pic)).convert('L')).mean[0]
-        shot.save(os.path.join(SHOTS, 'live-%s.png' % kind)); pic.save(os.path.join(SHOTS, 'fallback-%s.png' % kind))
+        shot = base64.b64encode(page.screenshot(clip=box)).decode()
+        # compared in the page (CI has no Pillow): both drawn on white at the screenshot's size,
+        # softened by a pixel (a 1 px bar edge rasterised at another scale is no difference a
+        # reader sees), the mean of the channels' differences
+        diff = page.evaluate('''async ([shot, name]) => {
+          const img = async (blob) => createImageBitmap(blob);
+          const a = await img(await (await fetch('data:image/png;base64,' + shot)).blob()), b = await img(window.rikuy.assetBlobs.get(name));
+          const draw = (bm) => { const c = new OffscreenCanvas(a.width, a.height), g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, a.width, a.height); g.filter = 'blur(1px)'; g.drawImage(bm, 0, 0, a.width, a.height); return g.getImageData(0, 0, a.width, a.height).data; };
+          const x = draw(a), y = draw(b); let sum = 0;
+          for (let i = 0; i < x.length; i += 4) sum += (Math.abs(x[i] - y[i]) + Math.abs(x[i + 1] - y[i + 1]) + Math.abs(x[i + 2] - y[i + 2])) / 3;
+          return sum / (x.length / 4); }''', [shot, name])
         check('graph %s: the PDF\'s picture is the live figure at its starting values (mean pixel difference %.2f)' % (kind, diff), diff < 6, diff)
         ok = fr.locator('#rk-e').is_hidden()
         check('graph %s: runs on the page without a message' % kind, ok)
@@ -158,6 +161,8 @@ def graph_hint_menu(page):
     page.click('.w-hint button'); page.wait_for_timeout(200)
     check('graph: Got it puts it away for good', page.locator('.w-hint').count() == 0 and page.evaluate('window.rikuy.prefs.graphHint') == 1)
     fr = page.frame_locator('#wlayer iframe.rk-widget')
+    bb = page.locator('#wlayer iframe.rk-widget').bounding_box()
+    page.mouse.move(bb['x'] - 30, bb['y'] + 40); page.mouse.move(bb['x'] + 60, bb['y'] + 40, steps=8)
     fr.locator('#rk-c').click(button='right', position={'x': 60, 'y': 40})
     page.wait_for_selector('[role=menu][aria-label="Graph menu"]', timeout=4000)
     check('graph: a right click in its frame opens Rikuy\'s menu with Edit graph', page.get_by_role('menuitem', name='Edit graph').count() == 1)
@@ -180,7 +185,7 @@ def graph_hint_menu(page):
     check('graph: a frame asking every 60 ms takes no typed letter and closes no dialog (review H2)', 'Second para. The quick brown fox' in src(page) and still, src(page)[-80:])
     page.keyboard.press('Escape')
     # the Edit graph button over it, and the right click menu with the graph armed
-    page.hover('#wlayer .wbox'); page.wait_for_timeout(200)
+    page.mouse.move(bb['x'] - 30, bb['y'] + 40); page.hover('#wlayer .wbox'); page.wait_for_timeout(200)
     check('graph: Edit graph shows over the graph', page.evaluate('getComputedStyle(document.querySelector(".w-edit")).opacity') == '1')
     page.click('.w-edit'); page.wait_for_timeout(300)
     check('graph: and opens the dialog', page.locator('#gd-ok').count() == 1)
@@ -480,6 +485,38 @@ def review(page):
     check('review L8: and one undo takes both out', src(page) == '\\documentclass{book}\n\\begin{document}\nPara.\n\\end{document}\n', src(page))
 
 
+def verify(page):
+    """The verification of d107908: V1 (a frame focusing itself), V2 (one's own PNG), V4 (a width option)."""
+    # V1: a graph whose script takes the focus on a timer and asks for the menu: typing stays on the page
+    load_doc(page, DOC); insert_graph(page)
+    G = newest(page, 'function')
+    evil = src(page, G + '.html').replace('</body>', '<script>setInterval(() => { const i = document.querySelector("input"); if (i) i.focus(); window.focus(); parent.postMessage({ rikuy: "menu", x: 10, y: 10 }, "*"); }, 250);</script></body>')
+    load_doc(page, {'main.tex': src(page), G + '.html': evil, 'rikuy.sty': '%'})
+    page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000); page.wait_for_timeout(800)
+    click_text(page, 'Second para.', 12)
+    for w in ' One two three four five six seven.'.split(' '):
+        page.keyboard.type(' ' + w if w else ''); page.wait_for_timeout(180)
+    page.wait_for_timeout(600)
+    check('verify V1: a frame that focuses itself on a timer takes no letter and opens no menu', 'Second para. One two three four five six seven.' in src(page) and page.locator('[aria-label="Graph menu"]').count() == 0, src(page)[-90:])
+    # V2: one's own picture under a graph's name, or named by its command, is never drawn over
+    photo = page.evaluate('''async () => { const c = new OffscreenCanvas(90, 60), g = c.getContext('2d'); g.fillStyle = '#c00'; g.fillRect(0, 0, 90, 60); const b = await c.convertToBlob({ type: 'image/png' }); return Array.from(new Uint8Array(await b.arrayBuffer())); }''')
+    html = src(page, G + '.html')
+    for fb in ('figures/photo.png', G + '.png'):
+        load_doc(page, {'main.tex': '\\documentclass{article}\n\\usepackage{rikuy}\n\\begin{document}\n\\includegraphics{figures/photo.png}\n\n\\rikuywidget[width=\\linewidth]{%s.html}{%s}\n\\end{document}\n' % (G, fb), G + '.html': html, 'rikuy.sty': '%'})
+        page.evaluate('([n, a]) => window.rikuy.setAsset(n, new Blob([new Uint8Array(a)], { type: "image/png" }))', [fb, photo])
+        page.evaluate('window.rikuy.graphRefresh()'); page.wait_for_timeout(800)
+        kept = page.evaluate('async (n) => Array.from(new Uint8Array(await window.rikuy.assetBlobs.get(n).arrayBuffer()))', fb)
+        check('verify V2: one\'s own picture named %s is left as it is' % fb, kept == photo, len(kept))
+    # V4: a width option sizes the live figure, and so its picture
+    load_doc(page, {'main.tex': '\\documentclass{article}\n\\usepackage{rikuy}\n\\begin{document}\nText.\n\n\\begin{center}\n\\rikuywidget[width=0.5\\linewidth]{%s.html}{%s.png}\n\\end{center}\n\\end{document}\n' % (G, G), G + '.html': html, 'rikuy.sty': '%'})
+    page.evaluate('(n) => window.rikuy.setAsset(n + ".png", null)', G)
+    page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000); page.wait_for_timeout(600)
+    page.evaluate('window.rikuy.graphRefresh()'); page.wait_for_timeout(800)
+    w = page.evaluate('''async (n) => { const app = window.rikuy, k = app.widgets.host.scale(), box = document.querySelector('.w-live'), line = box.parentElement.getBoundingClientRect().width;
+      const a = new Uint8Array(await app.assetBlobs.get(n + '.png').arrayBuffer()); return [box.getBoundingClientRect().width / line, box.getBoundingClientRect().width / k, new DataView(a.buffer).getUint32(16) / 3]; }''', G)
+    check('verify V4: width=0.5\\linewidth: the live figure is half the line, its picture drawn at that width', abs(w[0] - 0.5) < 0.03 and abs(w[1] - w[2]) < 3, w)
+
+
 def review_compiles(page):
     """What TeX judges in the review (H1, H4, H6, M1): each compiled in the page."""
     if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
@@ -514,10 +551,18 @@ def review_compiles(page):
     fc.value.set_files(tex); page.wait_for_timeout(500)
     r = comp()
     check('review H6: and the document compiles', r['ok'] and r['pages'] == 1, r)
+    # V3: a whole document with its own definitions (\\newcommand, \\newtheorem) compiles too
+    load_doc(page, W('Para.')); click_text(page, 'Para', 2)
+    tex = os.path.join(SHOTS, 'defs.tex'); open(tex, 'w').write('\\documentclass{article}\n\\usepackage{amssymb,amsthm}\n\\newcommand{\\R}{\\mathbb{R}}\n\\newtheorem{theorem}{Theorem}\n\\DeclareMathOperator{\\Var}{Var}\n\\begin{document}\n\\begin{theorem}\nFor $x \\in \\R$, $\\Var x \\ge 0$.\n\\end{theorem}\n\\end{document}\n')
+    with page.expect_file_chooser() as fc:
+        page.evaluate('window.rikuy.runCommand("text-from-file")')
+    fc.value.set_files(tex); page.wait_for_timeout(500)
+    r = comp()
+    check('verify V3: a whole document with its own \\newcommand, \\newtheorem and \\DeclareMathOperator compiles', r['ok'] and r['pages'] == 1 and '\\newtheorem{theorem}{Theorem}' in src(page, 'defs.tex'), (r, src(page, 'defs.tex')[:200]))
     page.set_default_timeout(30000)
 
 
-EXTRA = [clipboard, symbols, date_latex, autocorrect, files_in, review, review_compiles]
+EXTRA = [clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles]
 
 if __name__ == '__main__':
     sys.exit(run())

@@ -12,7 +12,7 @@ import { chordText } from '../keys.js';
 import { SYMBOLS, openSymbols } from '../ui/symbol.js';
 import { correct, borderLine, DEFAULTS as AC_DEFAULTS, REPLACE } from '../autocorrect.js';
 import { openGraphDialog } from '../ui/graphdialog.js';
-import { kit as GK, graphHtml, readGraph, isGraph, sameGraph, graphPNG, pngWidth, TEMPLATES, RIKUY_STY } from '../graph.js';
+import { kit as GK, graphHtml, readGraph, isGraph, sameGraph, graphPNG, pngWidth, pngMark, TEMPLATES, RIKUY_STY } from '../graph.js';
 import { widgetPath } from '../widget.js';
 import { hasPackage, kvEdits } from '../preamble.js';
 import { escapeAlt } from '../picture.js';
@@ -72,6 +72,39 @@ function widgetUses(app) {
   return out;
 }
 const graphUses = (app) => widgetUses(app).filter((u) => u.path && isGraph(app.files.get(u.path)));
+// A document's preamble, to be read in another's body: the lines that work there (definitions,
+// settings), the packages it loads, and how many lines only a preamble may hold were left out.
+// Line by line, a line starting with a preamble only command and closing its braces on itself;
+// any other line kept as it is. Bounded: 4000 lines.
+const ONLY_PREAMBLE = /^\\(documentclass|usepackage|RequirePackage|PassOptionsToPackage|geometry|addbibresource|bibliographystyle|title|author|date|DeclareUnicodeCharacter)\b/;
+export function carryPreamble(pre, mainPre = '') {
+  const out = [], packages = [];
+  let dropped = 0;
+  const lines = pre.split('\n').slice(0, 4000);
+  for (const raw of lines) {
+    const line = raw.replace(/\r$/, ''), t = line.trim();
+    const bal = (x) => { let d = 0; for (let i = 0; i < x.length; i++) { if (x[i] === '\\') { i++; continue; } if (x[i] === '%') break; if (x[i] === '{') d++; else if (x[i] === '}') d--; } return d === 0; };
+    const m = ONLY_PREAMBLE.exec(t);
+    if (m && bal(t)) {
+      if (m[1] === 'usepackage' || m[1] === 'RequirePackage') {
+        const g = /\{([^}]*)\}/.exec(t.replace(/\[[^\]]*\]/, ''));
+        if (g) for (const x of g[1].split(',')) if (/^[A-Za-z0-9-]{1,40}$/.test(x.trim())) packages.push(x.trim());
+      } else if (!/^(documentclass|title|author|date)$/.test(m[1])) dropped++;
+      continue;
+    }
+    // \DeclareMathOperator{\x}{y} is for preambles alone: the command it makes, if not made yet
+    const op = /^\\DeclareMathOperator(\*?)\s*\{?\\([A-Za-z]+)\}?\s*\{([^{}]*)\}\s*$/.exec(t);
+    if (op) { out.push('\\providecommand{\\' + op[2] + '}{\\operatorname' + op[1] + '{' + op[3] + '}}'); packages.push('amsmath'); continue; }
+    // a theorem this document defines already: its own stays
+    const th = /^\\newtheorem\*?\s*\{([A-Za-z*]+)\}/.exec(t);
+    if (th && new RegExp('\\\\newtheorem\\*?\\s*\\{' + th[1].replace('*', '\\*') + '\\}').test(mainPre)) continue;
+    // a command this document defines already keeps its definition (\newcommand would stop TeX)
+    out.push(line.replace(/^(\s*)\\newcommand(\*?)/, '$1\\providecommand$2'));
+  }
+  while (out.length && !out[out.length - 1].trim()) out.pop();
+  while (out.length && !out[0].trim()) out.shift();
+  return { text: out.length ? out.join('\n') + '\n' : '', packages: [...new Set(packages)], dropped };
+}
 const dirOf = (p) => (p && p.includes('/') ? p.slice(0, p.lastIndexOf('/') + 1) : '');
 
 // The graph the caret means: an armed live figure, else one in the caret's block
@@ -161,8 +194,8 @@ export const methods = {
   async graphInsert(spec, caption, spot) {
     const s = GK.normalize(spec);
     GK.formulas(s);
-    const blob = await graphPNG(s, textWidthPx(this));
     const dir = dirOf(this.main), rel = freshName(this, s.kind);
+    const blob = await graphPNG(s, textWidthPx(this), 3, dir + rel + '.html');
     if (spot) this.restoreCaret(spot);
     const { f, p, pre, post } = this.afterBlockPos();
     // (its description is the picture's alt text: tagged PDF and Word read it)
@@ -202,11 +235,14 @@ export const methods = {
         const spec = readGraph(this.files.get(u.path));
         if (!spec) continue;
         const box = [...this.root.querySelectorAll('.w-live')].find((b) => b.dataset.wf === u.path);
-        const name = dir + fb, old = this.assetBlobs.get(name);
-        const had = old ? pngWidth(new Uint8Array(await old.arrayBuffer())) : 0;
+        const name = dir + fb, old = this.assetBlobs.get(name), bytes = old ? new Uint8Array(await old.arrayBuffer()) : null;
+        // only a picture Rikuy drew for this graph, or none at all: any other is someone's own
+        if (old && pngMark(bytes) !== u.path) continue;
+        if (!old && (this.extra.has(name) || this.files.has(name))) continue;
+        const had = old ? pngWidth(bytes) : 0;
         const W = Math.round((box && box.getBoundingClientRect().width / k) || had || textWidthPx(this));
         if (old && Math.abs(had - W) < 2) continue;
-        this.setAsset(name, await graphPNG(spec, W));
+        this.setAsset(name, await graphPNG(spec, W, 3, u.path));
         n++;
       }
       if (n) this.saveSoon();
@@ -231,16 +267,20 @@ export const methods = {
     if (was && sameGraph(was, spec)) { this.toast('The graph is as it was: nothing to write.'); return true; }
     const s = GK.normalize(spec);
     GK.formulas(s);
-    const blob = await graphPNG(s, textWidthPx(this));
+    const blob = await graphPNG(s, textWidthPx(this), 3, path);
     const edits = [{ f: path, s: 0, e: (this.files.get(path) || '').length, t: graphHtml(s) }];
     // the picture: the one its commands name where that is a PNG, else a PNG beside the widget
     // that those commands are pointed at
     const dir = dirOf(this.main);
     const uses = widgetUses(this).filter((u) => u.path === path);
     const pngOf = (u) => (/\.png$/i.test(u.fb.v.trim()) ? u.fb.v.trim() : null);
+    // (a PNG of one's own the command names is left alone: the graph gets a picture of its own)
+    const ours = async (r) => { const b = this.assetBlobs.get(dir + r.replace(/^\.\//, '')); return !b || pngMark(new Uint8Array(await b.arrayBuffer())) === path; };
     let rel = uses.map(pngOf).find(Boolean);
+    if (rel && !(await ours(rel))) rel = null;
     if (!rel) {
       rel = path.slice(dir.length).replace(/\.html?$/i, '') + '.png';
+      for (let k = 2; !(await ours(rel)) && k < 100; k++) rel = path.slice(dir.length).replace(/\.html?$/i, '') + '-' + k + '.png';
       for (const u of uses) edits.push({ f: u.f, s: u.fb.s, e: u.fb.e, t: rel });
     }
     // a new description: the alt text of each command that shows it
@@ -262,13 +302,6 @@ export const methods = {
   graphDecorate(F) {
     if (!isGraph(this.files.get(F.path))) return;
     F.box.classList.add('wgraph');
-    // (a press in the frame gives it the focus: that, and only that, allows one menu)
-    F.frame.addEventListener('focus', () => { F.pressed = true; });
-    // (focus moving into a frame shows as the page's window losing it)
-    if (!this.graphBlurOn) {
-      this.graphBlurOn = true;
-      window.addEventListener('blur', () => setTimeout(() => { const a = document.activeElement; for (const x of this.widgets.frames.values()) if (x.frame && x.frame === a) x.pressed = true; }, 0));
-    }
     this.graphRefreshSoon();
     const b = mk('button', 'w-edit', 'Edit graph');
     b.type = 'button';
@@ -294,9 +327,9 @@ export const methods = {
   // menu for it. Only for a graph's frame, at most once a second: a frame cannot open menus at will
   graphMenu(F, x, y) {
     if (!isGraph(this.files.get(F.path))) return;
-    // A message alone opens nothing: the frame must have the focus a press in it gives (a frame
-    // cannot take it by itself in Chromium), nothing else may be open, and one press opens one
-    // menu. A graph sending it every second took the keyboard and closed dialogs.
+    // A message alone opens nothing: the frame must hold the focus a click in it gave (see
+    // onInstall below: a frame's own focus() is no click), nothing else may be open, and one click
+    // opens one menu. A graph sending it every second took the keyboard and closed dialogs.
     if (!F.pressed || document.activeElement !== F.frame || this.pop) return;
     F.pressed = false;
     const r = F.box.getBoundingClientRect(), w = parseFloat(F.box.style.width) || r.width;
@@ -444,6 +477,29 @@ onInsertText((app, data, range) => {
   return true;
 });
 onInstall((app) => {
+  // Which focus a widget's frame may keep. The page sees no event inside a frame, so it reads
+  // what it can: a Tab just pressed (the keyboard's way in), or the page's user activation with
+  // the mouse last over that frame and no press on the page itself (a click in the frame). Only
+  // the latter allows a graph's menu, once. A frame that took the focus any other way (its own
+  // script's focus(), on a timer) gives it back to the page at once: it never takes the keyboard.
+  let tab = 0, down = 0, ptr = null;
+  window.addEventListener('keydown', (e) => { if (e.key === 'Tab') tab = Date.now(); }, true);
+  window.addEventListener('pointerdown', (e) => { down = Date.now(); ptr = { x: e.clientX, y: e.clientY }; }, true);
+  window.addEventListener('pointermove', (e) => { ptr = { x: e.clientX, y: e.clientY }; }, true);
+  window.addEventListener('blur', () => setTimeout(() => {
+    const a = document.activeElement;
+    if (!a || a.tagName !== 'IFRAME' || !app.widgets) return;
+    const F = [...app.widgets.frames.values()].find((x) => x.frame === a);
+    if (!F) return;
+    const now = Date.now(), r = F.box.getBoundingClientRect();
+    // (the last move the page saw before the mouse went into the frame: near its edge)
+    const over = !!ptr && ptr.x >= r.left - 40 && ptr.x <= r.right + 40 && ptr.y >= r.top - 40 && ptr.y <= r.bottom + 40;
+    const active = navigator.userActivation ? navigator.userActivation.isActive : false;
+    if (active && over && now - down > 300) { F.pressed = true; return; }
+    F.pressed = false;
+    if (now - tab < 300) return;
+    app.ribbonBack();
+  }, 0));
   // the graphs' pictures, at their boxes' widths and none missing, before TeX reads them
   const cf = app.compileFiles;
   app.compileFiles = async function compileFiles(...a) { try { await this.graphRefresh(); } catch (e) { /* the pictures as they are */ } return cf.apply(this, a); };
@@ -596,12 +652,22 @@ Object.assign(methods, {
   async textFromFile(file) {
     if (file.size > 5e6) { this.toast('That file is over 5 MB: not text to \\input.'); return false; }
     let text = await file.text(), names = [];
-    // a whole document: its body alone (a second \\documentclass stops TeX), its packages here
+    // A whole document: its body, after its preamble's own definitions (\\newcommand,
+    // \\newtheorem: \\input reads them in the body, where they work), and its packages in this
+    // preamble. What only a preamble may hold goes (a second \\documentclass, \\usepackage, the
+    // page's geometry, its bibliography's resources); \\DeclareMathOperator becomes the command it
+    // makes; a definition this document already has is left to this document's.
     const b = /\\begin\s*\{document\}/.exec(text);
+    let carried = '', dropped = 0;
     if (b) {
-      for (const m of text.slice(0, b.index).matchAll(/^[ \t]*\\(?:usepackage|RequirePackage)(?:\[[^\]\n]*\])?\{([^}\n]*)\}/gm)) for (const x of m[1].split(',')) if (/^[A-Za-z0-9-]{1,40}$/.test(x.trim())) names.push(x.trim());
+      const main = this.src(this.main), mainPre = main.slice(0, Math.max(0, main.search(/\\begin\s*\{document\}/)));
+      const lines = carryPreamble(text.slice(0, b.index), mainPre);
+      names = lines.packages;
+      carried = lines.text;
+      dropped = lines.dropped;
       const rest = text.slice(b.index + b[0].length), e = rest.search(/\\end\s*\{document\}/);
       text = (e >= 0 ? rest.slice(0, e) : rest).replace(/^[ \t]*\n/, '').replace(/\s*$/, '\n');
+      if (carried) text = '% from the preamble of ' + file.name.replace(/[^\w. -]/g, '_') + '\n' + carried + '\n' + text;
     }
     const name = this.freeName(/\.(tex|ltx)$/i.test(file.name) ? file.name : file.name.replace(/\.[^.]*$/, '') + '.tex');
     const { f, p, pre, post } = this.afterBlockPos();
@@ -610,7 +676,7 @@ Object.assign(methods, {
     const shift = f === this.main ? pk.filter((x) => x.s <= p).reduce((n, x) => n + x.t.length - (x.e - x.s), 0) : 0;
     this.closeGroup();
     this.commit([{ f, s: p, e: p, t: pre + t + post }, { f: dirOf(this.main) + name, s: 0, e: 0, t: text }, ...pk], { f, p: p + shift + pre.length + t.length, bias: -1 });
-    if (b) this.toast('A whole document: its text went in, and its packages joined this one\'s preamble.', 5000);
+    if (b) this.toast('A whole document: its text went in with its definitions, its packages joined this preamble' + (dropped ? '; ' + dropped + ' line' + (dropped > 1 ? 's' : '') + ' only a preamble can hold (geometry, bibliography) left out' : '') + '.', 6000);
     return true;
   },
   // a PDF's pages: the file joins the project and \includepdf puts every page in (pdfpages)
