@@ -282,6 +282,11 @@ export const methods = {
   // src/styles.js) is its source already: none of it.
   showLatexBlocks(at) {
     if (!this.renderer || !this.model) return [];
+    // (once for each look at the caret: when and on both ask)
+    if (at && at.memo) return at.memo.showLatex || (at.memo.showLatex = this.showLatexScan(at));
+    return this.showLatexScan(at);
+  },
+  showLatexScan(at) {
     let f, a, b;
     if (this.pop && this.pop.el && this.pop.el.classList.contains('pop-math') && this.pop.anchorPos) ({ f, s: a } = this.pop.anchorPos), b = a;
     else if (at && at.c && !at.c.ghost && at.c.f != null) { f = at.c.f; a = at.c.a; b = at.c.b; }

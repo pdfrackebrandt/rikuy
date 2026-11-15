@@ -15,6 +15,10 @@ import { readProperties, propertyEdits } from '../props.js';
 
 const LIVE_NOTE = 'Graphs are pictures in a PDF or Word file. Download LaTeX to keep them live.';
 const always = () => true;
+// (whether the main file has a preamble, read once for each text of it: a look at the caret never
+// scans the document)
+const once = (fn) => { let key = null, val; return (src) => { if (src !== key) { key = src; val = fn(src); } return val; }; };
+const hasPreamble = once((src) => preambleEnd(src) >= 0);
 const DEFAULT_KEY = 'rikuy.default.v1';
 const BLANK = '\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}\n\n\\end{document}\n';
 const I = {
@@ -73,7 +77,7 @@ register(
     tab: 'file', group: 'open', el: 'rf-recent', label: 'Recent', icon: I.recent, kind: 'menu', when: always, run: (app, args) => app.openRecent(args) },
   // ---- File ▸ Info
   { id: 'properties', name: 'Properties', order: 10, title: 'Title, author, subject and keywords: \\title, \\author and the PDF\'s own (\\hypersetup)', synonyms: ['Document properties', 'Info', 'Metadata', 'Keywords', 'Subject'],
-    tab: 'file', group: 'info', el: 'rf-props', label: 'Properties', icon: I.props, when: (app) => !!app.model && preambleEnd(app.src(app.main)) >= 0,
+    tab: 'file', group: 'info', el: 'rf-props', label: 'Properties', icon: I.props, when: (app) => !!app.model && hasPreamble(app.src(app.main)),
     whyNot: () => 'This file has no preamble (\\documentclass ... \\begin{document}) to hold them.', run: (app, args) => (args && typeof args === 'object' ? app.setProperties(args) : app.openProperties()) },
   { id: 'check-accessibility', name: 'Check accessibility', order: 20, title: 'What a screen reader would miss: pictures without alt text, skipped heading levels, tables without a header row, no title or language', synonyms: ['Accessibility checker', 'Tagged PDF', 'PDF/UA', 'Alt text'],
     tab: 'file', group: 'info', el: 'rf-a11y', label: 'Check accessibility', icon: I.a11y, also: [{ tab: 'review', group: 'accessibility', el: 'rr-a11y' }],
@@ -85,7 +89,7 @@ register(
     run: (app, args) => (typeof args === 'string' ? app.exportAs(args) : app.fileMenu('rf-export', 'Export as', EXPORTS.map(([id, name]) => ({ name, run: () => app.runCommand('export-as', id) })))) },
   // ---- File ▸ Options
   { id: 'set-default', name: 'Set as default', order: 10, title: 'New blank documents start with this document\'s preamble (its class, packages and definitions); kept in this browser', synonyms: ['Default template', 'Normal template', 'Default preamble'],
-    tab: 'file', group: 'options', el: 'rf-default', label: 'Set as default', icon: I.dflt, kind: 'menu', when: (app) => !!app.model && preambleEnd(app.src(app.main)) >= 0,
+    tab: 'file', group: 'options', el: 'rf-default', label: 'Set as default', icon: I.dflt, kind: 'menu', when: (app) => !!app.model && hasPreamble(app.src(app.main)),
     whyNot: () => 'This file has no preamble to keep.', run: (app, args) => app.setDefaultPreamble(args) }
 );
 
