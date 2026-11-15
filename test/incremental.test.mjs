@@ -3,7 +3,9 @@
 // build makes from the same last model, value for value (the order of keys too), whether the edit
 // took the fast path or not, with the same parts of each unit being one object (a footnote's mark
 // is the atom in its text); and the same after keystrokes whose moved units no one read.
-//   node test/incremental.test.mjs [CORPUS_DIR]   (with a LaTeX-examples clone: every document of it)
+//   node test/incremental.test.mjs   (npm test's: short streams over every document, about 15 s)
+//   INCR_FULL=1 node test/incremental.test.mjs [CORPUS_DIR]   (the long streams, every unit in
+//   the offset guard; with a LaTeX-examples clone also every document of it: CI's corpus job)
 import fs from 'fs';
 import path from 'path';
 import { buildModel, INCR, OFFSET_KEYS, sameModels, sharedParts } from '../src/model.js';
@@ -93,14 +95,18 @@ docs.push(['pictures (B8)', new Map([['main.tex', '\\documentclass{article}\n\\u
 docs.push(['paragraph settings (B2)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{setspace}\n\\begin{document}\nFirst plain paragraph, typed in.\n\n\\onehalfspacing\nA paragraph after one and a half spacing.\n\nAnother after it.\n\n' +
   '\\doublespacing\n\\centering\nCentred from here on, plain.\n\nStill centred, the next paragraph.\n\n\\hangindent=1cm\\hangafter=1 A hanging paragraph with words.\n\nKept with the next\\nopagebreak\n\nLast plain words.\n\\end{document}\n']]), 'main.tex']);
 docs.push(['a LaTeX paragraph (its groups)', new Map([['main.tex', '\\documentclass{article}\n\\begin{document}\nFirst paragraph, typed in.\n\n% rikuy: latex\n{\\bfseries bold} raw and {\\itshape more {nested}} words\n\nLast plain paragraph.\n\\end{document}\n']]), 'main.tex']);
-const corpus = process.argv[2];
+const corpus = process.argv[2], FULL = process.env.INCR_FULL === '1' || !!corpus, repoDocs = docs.length;
 if (corpus) {
   const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { if (e.name.startsWith('.')) continue; const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (e.name.endsWith('.tex')) { const t = fs.readFileSync(p, 'utf8'); if (/\\documentclass/.test(t)) add(path.dirname(p), e.name); } } };
   walk(corpus);
 }
-const N = corpus ? 16 : 400;
+// (the short run: every document, fewer edits, the 120 KB paper the fewest; each edit there is
+// two full builds and two serialisations)
 let failsBefore = fail;
-for (const [name, files, main] of docs) stream(name + ' ' + main, files, main, name.includes('long') || name.includes('sample') || name.includes('styles') || name.includes('pictures') ? N * 2 : N);
+docs.forEach(([name, files, main], i) => {
+  const big = name.includes('long') || name.includes('sample') || name.includes('styles') || name.includes('pictures');
+  stream(name + ' ' + main, files, main, i >= repoDocs ? 16 : FULL ? (big ? 800 : 400) : name.includes('dev/bench/long') ? 25 : 80);
+});
 check('every edit of every stream: the incremental model is the full build\'s (' + steps + ' edits, ' + fast + ' on the fast path, ' + docs.length + ' documents)', fail === failsBefore && fast > steps / 20, [steps, fast]);
 console.log('edits ' + steps + ', on the fast path ' + fast + ', documents ' + docs.length);
 
@@ -116,13 +122,15 @@ console.log('edits ' + steps + ', on the fast path ' + fast + ', documents ' + d
     for (const key of Object.keys(a)) walk(a[key], b[key], key, D);
   };
   // (a comment line before each unit of the main file, at the start of its line: every unit of
-  // the repository's documents, eight spread over each of the corpus's)
+  // the repository's documents in the long run, 24 spread over each in the short one, eight over
+  // each of the corpus's)
   for (const [name, files, main] of docs) {
     const t = files.get(main);
     let m;
     try { m = buildModel({ files, main }); } catch (e) { continue; }
     let us = m.blocks.filter((u) => u.f === main && u.s > 0);
-    if (corpus && !name.startsWith('dev/') && !name.startsWith('sample') && us.length > 8) us = us.filter((u, k) => k % Math.ceil(us.length / 8) === 0);
+    const cap = docs.findIndex((d) => d[0] === name) >= repoDocs ? 8 : FULL ? Infinity : 24;
+    if (us.length > cap) us = us.filter((u, k) => k % Math.ceil(us.length / cap) === 0);
     for (const u of us) {
       const j = t.lastIndexOf('\n', u.s - 1) + 1, ins = '%XXXX\n', next = new Map(files);
       next.set(main, t.slice(0, j) + ins + t.slice(j));
