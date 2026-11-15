@@ -88,7 +88,7 @@ export const nav = {
     wb.textContent = serious ? serious + (serious === 1 ? ' problem' : ' problems') : probs.length + (probs.length === 1 ? ' command shown as source' : ' commands shown as source');
     $('#nt-count').textContent = probs.length ? String(probs.length) : '';
     $('#nav-dot').hidden = !probs.some((x) => x.sev === 'error');
-    if (this.base && (document.body.classList.contains('nav-on') || this.prefs.marks)) {
+    if (this.base && (document.body.classList.contains('nav-on') || this.markupOn())) {
       const n = this.currentChanges().filter((c) => !spacingOnly(c) && !commentOnly(c)).length + this.allComments().length;
       $('#nt-ccount').textContent = n ? String(n) : '';
     }

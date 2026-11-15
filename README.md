@@ -77,6 +77,13 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   footnote, equation, figure, table, comment or label. The Navigation pane has the headings
   (drag one to move its section), thumbnails of the pages and the results; Alt+Shift and the
   arrows promote, demote and move headings with their sections, and paragraphs.
+- **Spelling and review as in Word.** Hunspell, compiled to WebAssembly, marks the words its
+  dictionary (English US or UK, German, Spanish, as babel or polyglossia set the language, per
+  sentence too) does not know, and only words: never a command, a key, math, code or an address;
+  suggestions on a right click or a long press, the Spelling pane (F7), Add to Dictionary as a
+  `% rikuy: words` line that travels with the .tex. Track Changes (Ctrl+Shift+E) with Accept and
+  Reject, Display for Review, comments to step through and delete, Word Count, Compare with a
+  file, a copy with markup for the PDF, Read Aloud.
 - **Tables as in Word.** Insert › Table's grid of sizes and Insert Table…, Convert Text to Table,
   a table from a .csv; Table Design and Table Layout while the caret is in a table: rows and
   columns in and out, merge and split, AutoFit, the nine alignments, looks, borders, shading,

@@ -113,7 +113,7 @@ def run():
         check('her edits are tracked changes against the author\'s text', n >= 2, n)
         check('and the author\'s own edit is not among them', not any('AUTHOR' in c for c in page.evaluate('() => window.rikuy.currentChanges().map(c => c.b)')))
         check('the author is not in the coauthor view', 'guest' not in (page.get_attribute('body', 'class') or ''))
-        check('the marks are on', page.evaluate('() => window.rikuy.prefs.marks') is True)
+        check('the marks are on', page.evaluate('() => window.rikuy.markup()') == 'all')
         job = page.evaluate(STUB_COMPILE)
         check('the project the copy came back into compiles restricted too', job and job.get('untrusted') is True, job)
         page.evaluate('() => window.rikuy.toggleNav(true, "changes")')

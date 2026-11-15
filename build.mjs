@@ -13,6 +13,8 @@
 //        RIKUY_NO_WORD leave pandoc (Word import and export, 16 MB) out: the claude.ai copy, which has
 //                      no room for it; its Word buttons say where Word support is
 //        RIKUY_WORD_HOST the address of a copy with Word support, named in that message
+//        RIKUY_NO_SPELL leave Hunspell and its dictionaries (spell/, 5 MB) out; the artifact's copy
+//                      (RIKUY_SHARE) leaves them out too, and the browser's own spelling stays
 import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
@@ -53,7 +55,34 @@ const coreWasm = fs.readFileSync(R('tex/vendor/core/rikuy-core.wasm'));
 if (coreWasm.subarray(0, 4).toString('hex') !== '0061736d') throw new Error('tex/vendor/core/rikuy-core.wasm is no WebAssembly module');
 const coreSha = crypto.createHash('sha256').update(coreWasm).digest('hex');
 const CORE = { file: 'core/rikuy-core-' + coreSha.slice(0, 16) + '.wasm', sha256: coreSha };
-const out = await build({ entryPoints: [R('src/app.js')], bundle: true, format: 'iife', minify: process.argv.includes('--dev') ? false : true, write: false, target: ['chrome100', 'firefox100', 'safari15'], legalComments: 'none', charset: 'utf8', define: { __RIKUY_MIRROR__: JSON.stringify(process.env.RIKUY_MIRROR || ''), __RIKUY_SHARE__: JSON.stringify(process.env.RIKUY_SHARE || ''), __RIKUY_APP__: JSON.stringify(APP), __RIKUY_WORD__: JSON.stringify(WORD), __RIKUY_WORD_HOST__: JSON.stringify(process.env.RIKUY_WORD_HOST || ''), __RIKUY_CORE__: JSON.stringify(CORE), __RIKUY_TEXNAMES__: JSON.stringify(TEXNAMES), __RIKUY_DEV__: JSON.stringify(process.argv.includes("--dev")) } });
+// Spelling (src/spell/): Hunspell (tex/vendor/hunspell/, built by tex/build_tools.sh hunspell) and
+// its dictionaries go beside the page in spell/, each named by the first 16 hex digits of its
+// SHA-256, with the spell worker (Emscripten's glue, then src/spell/worker.js, one classic
+// script). The bundle names each file with its hash, which the worker checks before it uses a
+// byte; nothing is fetched until a word is checked. The artifact's copy (RIKUY_SHARE) has no room
+// for the 5 MB, nor any build with RIKUY_NO_SPELL: those keep the browser's own spelling.
+const SPELL_ON = !process.env.RIKUY_NO_SPELL && !process.env.RIKUY_SHARE;
+const SPELL_FILES = new Map();
+let SPELL = null;
+if (SPELL_ON) {
+  const sha = (b) => crypto.createHash('sha256').update(b).digest('hex');
+  const named = (stem, ext, buf) => { const h = sha(buf); const name = 'spell/' + stem + '-' + h.slice(0, 16) + '.' + ext; SPELL_FILES.set(name, buf); return { name, sha256: h, size: buf.length }; };
+  const V = (p) => R('tex/vendor/hunspell/' + p);
+  const wasm = fs.readFileSync(V('hunspell.wasm'));
+  if (wasm.subarray(0, 4).toString('hex') !== '0061736d') throw new Error('tex/vendor/hunspell/hunspell.wasm is no WebAssembly module');
+  const glue = fs.readFileSync(V('hunspell.js'), 'utf8');
+  if (!/var RikuyHunspell\s*=/.test(glue)) throw new Error('tex/vendor/hunspell/hunspell.js does not define RikuyHunspell');
+  const wb = await build({ entryPoints: [R('src/spell/worker.js')], bundle: true, format: 'iife', minify: !process.argv.includes('--dev'), write: false, target: ['chrome100', 'firefox100', 'safari15'], legalComments: 'none', charset: 'utf8' });
+  const ctl = (t) => t.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, (c) => '\\x' + c.charCodeAt(0).toString(16).padStart(2, '0'));
+  const workerJs = Buffer.from('/* Rikuy\'s spell worker: Hunspell (MPL-1.1, GPL-2.0 or LGPL-2.1), built by tex/build_tools.sh. Licenses: LICENSES.txt beside the page. */\n' + ctl(glue) + '\n' + ctl(wb.outputFiles[0].text));
+  const dicts = {};
+  for (const d of fs.readdirSync(V('dict')).filter((n) => n.endsWith('.dic')).sort()) {
+    const stem = d.slice(0, -4);
+    dicts[stem] = { aff: named(stem, 'aff', fs.readFileSync(V('dict/' + stem + '.aff'))), dic: named(stem, 'dic', fs.readFileSync(V('dict/' + d))) };
+  }
+  SPELL = { worker: named('spell', 'js', workerJs).name, wasm: named('hunspell', 'wasm', wasm), dicts };
+}
+const out = await build({ entryPoints: [R('src/app.js')], bundle: true, format: 'iife', minify: process.argv.includes('--dev') ? false : true, write: false, target: ['chrome100', 'firefox100', 'safari15'], legalComments: 'none', charset: 'utf8', define: { __RIKUY_MIRROR__: JSON.stringify(process.env.RIKUY_MIRROR || ''), __RIKUY_SHARE__: JSON.stringify(process.env.RIKUY_SHARE || ''), __RIKUY_APP__: JSON.stringify(APP), __RIKUY_WORD__: JSON.stringify(WORD), __RIKUY_WORD_HOST__: JSON.stringify(process.env.RIKUY_WORD_HOST || ''), __RIKUY_CORE__: JSON.stringify(CORE), __RIKUY_SPELL__: JSON.stringify(SPELL), __RIKUY_TEXNAMES__: JSON.stringify(TEXNAMES), __RIKUY_DEV__: JSON.stringify(process.argv.includes("--dev")) } });
 let js = out.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
 
 // 2b. git, loaded by the page the first time the Git panel opens; the packages it bundles keep
@@ -168,6 +197,8 @@ fs.writeFileSync(O('git.js'), gitJs);
 fs.rmSync(O('core'), { recursive: true, force: true });
 fs.mkdirSync(O('core'), { recursive: true });
 fs.writeFileSync(O(CORE.file), coreWasm);
+fs.rmSync(O('spell'), { recursive: true, force: true });
+if (SPELL) { fs.mkdirSync(O('spell'), { recursive: true }); for (const [n, b] of SPELL_FILES) fs.writeFileSync(O(n), b); }
 // (in every build, the artifact's too; a list an earlier build left in dist/ goes)
 for (const f of fs.readdirSync(OUT)) if (/^texnames-[0-9a-f]{16}\.txt$/.test(f) && f !== TEXNAMES) fs.rmSync(O(f));
 fs.writeFileSync(O(TEXNAMES), texNames);
@@ -278,13 +309,13 @@ const rule = (title) => '\n\n' + '='.repeat(100) + '\n' + title + '\n' + '='.rep
 let lic = 'Rikuy and what it ships. The source of Rikuy and the address of the exact source of every\n'
   + 'part: https://github.com/pdfrackebrandt/rikuy (SOURCES.md).\n\n' + fs.readFileSync(R('NOTICE'), 'utf8').trim();
 lic += rule('GNU Affero General Public License 3.0: Rikuy, BusyTeX, Ghostscript') + fs.readFileSync(R('LICENSE'), 'utf8').trim();
-const texts = [['GPL-3.0', 'Asymptote as built (with GSL), GSL, Xpdf'], ['GPL-2.0', 'TeX Live\'s programs, dvips, xindy, FFTW, GMP, Xpdf, libpaper' + (WORD ? ', pandoc (word/)' : '')], ['LGPL-3.0', 'GMP, Asymptote, its PRC library'],
-  ['LGPL-2.1', 'kpathsea, ECL, Graphite2, TECkit, btparse'], ['MPL-2.0', 'Pyodide, Eigen'], ['Apache-2.0', 'pdf.js and npm packages below'], ['Artistic-2.0', 'biber'], ['gnuplot', 'gnuplot']];
+const texts = [['GPL-3.0', 'Asymptote as built (with GSL), GSL, Xpdf'], ['GPL-2.0', 'TeX Live\'s programs, dvips, xindy, FFTW, GMP, Xpdf, libpaper' + (WORD ? ', pandoc (word/)' : '') + (SPELL_ON ? ', the de_DE dictionary (spell/)' : '')], ['LGPL-3.0', 'GMP, Asymptote, its PRC library' + (SPELL_ON ? ', the en_GB and es_ES dictionaries (spell/)' : '')],
+  ['LGPL-2.1', 'kpathsea, ECL, Graphite2, TECkit, btparse' + (SPELL_ON ? ', Hunspell (spell/)' : '')], ['MPL-2.0', 'Pyodide, Eigen'], ['Apache-2.0', 'pdf.js and npm packages below'], ['Artistic-2.0', 'biber'], ['gnuplot', 'gnuplot']];
 for (const [id, who] of texts) lic += rule((id === 'gnuplot' ? 'The gnuplot license' : id) + ': ' + who) + fs.readFileSync(R('LICENSES/' + id + '.txt'), 'utf8').trim();
 lic += rule('SIL Open Font License 1.1: Paper Modern, the page\'s text fonts (KaTeX\'s fonts carry the same license in their own name tables; IBM Plex Sans and Mono, the interface\'s fonts, have it with IBM\'s copyright under npm below)') + fs.readFileSync(R('build/fonts/OFL.txt'), 'utf8').trim();
 // the notices of the libraries compiled into the programs (MIT, BSD and the like ask for them
 // with binary copies too), one file per program; each file's first line is its title
-for (const f of fs.readdirSync(R('LICENSES/third-party')).filter((n) => n.endsWith('.txt') && (WORD || n !== 'pandoc.txt')).sort()) {
+for (const f of fs.readdirSync(R('LICENSES/third-party')).filter((n) => n.endsWith('.txt') && (WORD || n !== 'pandoc.txt') && (SPELL_ON || n !== 'hunspell.txt')).sort()) {
   const [title, ...rest] = fs.readFileSync(R('LICENSES/third-party/' + f), 'utf8').trim().split('\n');
   lic += rule(title + ' (LICENSES/third-party/' + f + ')') + rest.join('\n').trim();
 }

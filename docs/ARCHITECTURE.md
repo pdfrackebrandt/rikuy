@@ -64,6 +64,7 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | a shell escape program | `exec` (`tex/shell.js`); `loadTool`, `make*` (`tex/tools.js`) |
 | which TeX Live files ship | `build_tree`, `build_packs` (`tex/build_tree.py`) |
 | a program compiled for Rikuy | `tex/build_tools.sh`, `tex/native/` |
+| spelling and the Review tab: which words are prose, Hunspell's worker, the marks, Track Changes | `spellPlan`, `proseRuns`, `languageSpans` (`src/spell/words.js`); `spellRun`, `spellPaint`, `setTracking` (`src/cmd/review.js`); `absorbEdit` (`src/review.js`); section 18 |
 | the editor's native core (C++ in the page): a port, its loading, its fallback | `loadCore`, `nativeParse`, `readTree`, `put` (`src/native.js`); `loadCoreLater` (`src/app.js`); `Parser` (`tex/native/core/parse.cc`); section 17 |
 
 ## 1. Source to page
@@ -1340,3 +1341,36 @@ function a hook like `setNativeParse` and keep it as the reference, read the res
 corpus, random input, random edits and a planted bug that must fail it. Keep it only if it is
 identical everywhere and at least twice as fast as a call, crossings included. Then
 `sh tex/build_tools.sh core` and commit the module; its new hash names the new file.
+
+## 18. Spelling and review
+
+Spelling is Hunspell 1.7.6 compiled by `tex/build_tools.sh hunspell` with a few C functions of
+Rikuy's (`tex/native/spell/spell.cc`: open a dictionary, check a list of words in one call,
+suggest, add), in a worker (`src/spell/worker.js`, written by `build.mjs` after Emscripten's glue
+as `spell/spell-<hash>.js`). The page starts it with the first check, from a blob as the TeX and
+Word workers start; the worker fetches the module and each dictionary it needs (`spell/<name>-
+<hash>.aff` and `.dic`) and uses no byte whose SHA-256 is not the one the bundle names
+(`__RIKUY_SPELL__`). The service worker keeps the module at install and a dictionary the first time
+a document in its language is checked. The artifact's copy has none of it and keeps the browser's
+own spelling.
+
+What is checked comes from the model, not from the source: `proseRuns` walks a block's parts and
+collects its seg runs (each character with its source range) and nothing else, so commands, keys,
+labels, citations, references, math, footnote marks and macros' drawn text are never words; code
+and addresses the page shows as text are left out by style (`\texttt`, `\url`), by environment
+(`codeSpans`: Asymptote, PSTricks, listings) and by Word's rules (`wordsIn`: capitals, digits,
+addresses, file names, key=value lists). A block's runs and words are kept by its key, so a
+keystroke reads one paragraph again. `languageSpans` parses only a file that switches language
+(babel's `\selectlanguage`, `otherlanguage`, `\foreignlanguage`, polyglossia's) and gives each
+word its dictionary; `mainLanguage` reads babel's last language or polyglossia's. The words each
+dictionary is asked are the distinct ones the page's cache does not know yet; `spellPaint` marks
+the rest with a CSS highlight (`rk-spell`), never in the page's text. The document's own words are
+`% rikuy: words …` lines (Add to Dictionary writes them, `addWordEdit`) and cspell's lines.
+
+Track Changes is a switch on the review base (`src/review.js`): changes are always the difference
+between the text and the base. On, the base stays; off, `absorbEdit` puts every edit into the base
+too (where it touches no change waiting), so it is no change, and the changes there stay, as Word's
+do. A Reject, its undo and its redo are never absorbed. Display for Review (`prefs.markup`) and
+Show Markup choose what `paintChanges` and `paintComments` draw; Accept and Reject, Previous and
+Next work on `orderedChanges`.
+
