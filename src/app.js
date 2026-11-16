@@ -289,7 +289,7 @@ function plainMathError(msg, tex) {
   if (/^Expected & or/.test(m)) return 'A \\begin{…} is not closed by its \\end{…}.';
   return m;
 }
-// What the insert list (\ or Ctrl+K) offers comes from the command registry (src/commands.js,
+// What the insert list (\) offers comes from the command registry (src/commands.js,
 // each command's palette field; src/cmd/*.js), in the list's own order.
 function debounce(fn, ms) { let t = null; const d = (...a) => { clearTimeout(t); t = setTimeout(() => { t = null; fn(...a); }, ms); }; d.flush = (...a) => { clearTimeout(t); t = null; fn(...a); }; d.cancel = () => { clearTimeout(t); t = null; }; d.pending = () => t !== null; return d; }
 
@@ -779,7 +779,9 @@ class App {
   }
 
   tocPages(plan) {
-    const tocs = this.root.querySelectorAll('.toc-p');
+    // (B9: the lists of figures and tables, the index's page numbers; src/cmd/refs.js)
+    this.refPages(plan);
+    const tocs = this.root.querySelectorAll('.toc-p:not([data-cap])');
     if (!tocs.length) return;
     const where = [];
     plan.forEach((pg, k) => { for (const e of pg.entries) if (e.it.kind === 'h' && e.a === 0) where.push({ el: e.it.el, page: k + 1 }); });
@@ -787,7 +789,7 @@ class App {
     for (const w of where) byText.set(w.el.textContent.replace(/\s+/g, ' ').trim(), w.page);
     for (const t of tocs) {
       const row = t.parentNode;
-      const key = ((row.querySelector('.toc-n').textContent || '') + (row.querySelector('.toc-t').textContent || '')).replace(/\s+/g, ' ').trim();
+      const key = (row.dataset.full || (row.querySelector('.toc-n').textContent || '') + (row.querySelector('.toc-t').textContent || '')).replace(/\s+/g, ' ').trim();
       let pg = byText.get(key);
       if (pg == null) for (const [k, v] of byText) if (k.endsWith(row.querySelector('.toc-t').textContent.trim())) { pg = v; break; }
       t.textContent = pg != null ? String(pg) : '';
@@ -2176,6 +2178,8 @@ class App {
     if (k === 'cite') return this.openCite(el, info);
     if (k === 'ref') return this.openRef(el, info);
     if (k === 'fn') return this.gotoFootnote(el, info);
+    if (k === 'en') return this.openEndnote(el, info);
+    if (k === 'url') return this.openLinkFor(el, info);
     if (k === 'br' || k === 'sp') { this.arm({ f: info.f, s: info.s, e: info.e, el, kind: k }); return; }
     return this.openRaw(el, info);
   }
@@ -2187,7 +2191,7 @@ class App {
     for (const f of fns) {
       const sp = f.querySelector('span.t');
       if (!sp) continue;
-      if (sp.dataset.g.split('.')[0] === bid && f.querySelector('.fnn').textContent === info.a.num) {
+      if (sp.dataset.g.split('.')[0] === bid && (f.querySelector('.fnn').dataset.n0 || f.querySelector('.fnn').textContent) === info.a.num) {
         const spans = f.querySelectorAll('span.t');
         const last = spans[spans.length - 1];
         const sel = getSelection();

@@ -153,6 +153,9 @@ jobs:
       # its compile of the copy with markup needs dist/tex and runs in tex.yml; here it skips that part
       - name: Review (Track Changes, Display for Review, Accept and Reject, comments, Word Count, Compare, Read Aloud, phones)
         run: cd test && python3 review.py
+      # its compile on three engines and biber needs dist/tex and runs in tex.yml; here it says it skips that part
+      - name: References (the table of contents, notes, sources and the bibliography, captions, cross references, the index, links, phones)
+        run: cd test && python3 refs.py
       # its compile offline needs dist/tex and runs in tex.yml; here it says it skips that part
       - name: The installed app offline, its updates, and none in the artifact build
         run: cd test && python3 offline.py

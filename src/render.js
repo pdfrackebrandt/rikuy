@@ -141,7 +141,7 @@ export class Renderer {
     const fnEls = [];
     for (const fn of mb.fns) {
       const el = document.createElement('div');
-      el.className = 'fn';
+      el.className = 'fn' + (fn.th ? ' fn-th' : '');
       el.dataset.ctx = 'fn';
       setDir(el, fn.dir);
       const sup = chr(fn.num, 'fnn');
@@ -404,7 +404,7 @@ export class Renderer {
       case 'toc': {
         el.classList.add('toc');
         el.contentEditable = 'false';
-        const h = div('toc-head'); h.textContent = this.model.opts.lang === 'de' ? 'Inhaltsverzeichnis' : 'Contents';
+        const h = div('toc-head'); h.textContent = it.head || (this.model.opts.lang === 'de' ? 'Inhaltsverzeichnis' : 'Contents');
         el.appendChild(h);
         it.entries.forEach((e, k) => {
           const row = div('toc-e toc-l' + (e.level + (it.chapters ? 1 : 0)));
@@ -416,12 +416,50 @@ export class Renderer {
           }
           const d = document.createElement('span'); d.className = 'toc-d';
           const pg = document.createElement('span'); pg.className = 'toc-p'; pg.dataset.hk = k;
+          // (B9) a list of figures' row finds its page by its caption; a short title's by the heading's own words
+          if (it.lof) pg.dataset.cap = it.lof + ':' + (e.num || '');
+          else if (e.tocText != null && e.tocText !== e.text) row.dataset.full = (e.num || '') + e.text;
           row.append(n, t, d, pg);
           el.appendChild(row);
         });
         item.toc = true;
         item.sbEm = 1.6;
         el.classList.add('pad-after');
+        break;
+      }
+      case 'idx': {
+        // (B9) the index (\printindex) or the endnotes (\printendnotes, \theendnotes): a heading as
+        // \section* sets it, then one row an entry; the index's rows in its columns, page numbers
+        // filled in once the pages are laid out (src/cmd/refs.js refPages)
+        el.classList.add('h', 'h1', 'refs-h');
+        el.contentEditable = 'false';
+        el.textContent = it.head;
+        item.keepNext = true;
+        item.sbEm = 1.5;
+        const region = it.notes ? null : (it.key || 'ix');
+        item.extra = it.rows.map((r, k) => {
+          const e2 = div('it p rol ' + (it.notes ? 'en-e en-' + it.notes + ' z-footnotesize' : 'idx-e idx-l' + Math.min(2, r.lvl) + (r.gap ? ' idx-gap' : '')));
+          e2.contentEditable = 'false';
+          if (it.notes) {
+            const l = document.createElement(it.notes === 'endnotes' ? 'sup' : 'span'); l.className = 'en-n'; l.textContent = r.num + (it.notes === 'endnotes' ? '' : '.');
+            e2.appendChild(l);
+            const t = document.createElement('span'); t.className = 'en-t';
+            for (const part of (r.parts || [r.text])) {
+              if (typeof part === 'string') t.appendChild(document.createTextNode(part));
+              else { const m = document.createElement('span'); m.innerHTML = this.katex(part.m, false).html; t.appendChild(m); }
+            }
+            e2.appendChild(t);
+          } else {
+            e2.appendChild(document.createTextNode(r.text));
+            const pg = document.createElement('span'); pg.className = 'idx-p';
+            pg.dataset.row = String(k);
+            e2.appendChild(pg);
+            for (const x of r.see) { e2.appendChild(document.createTextNode(r.pages.length || x !== r.see[0] ? ', ' : ', ')); const i = document.createElement('i'); i.textContent = x.also ? 'see also' : 'see'; e2.append(i, ' ' + x.text); }
+          }
+          const rec = { el: e2, kind: 'p', splittable: true, sbEm: it.notes ? 0.35 : r.gap ? 1 : 0 };
+          if (region) { rec.cols = it.cols || 2; rec.region = region; rec.balance = true; }
+          return rec;
+        });
         break;
       }
       case 'refs': {
@@ -509,7 +547,8 @@ export class Renderer {
       setDir(d, p.dir);
       const lab = { figure: 'Figure', table: 'Table' }[p.kind] || p.kind;
       // (\caption*: the words alone; beamer's: "Figure:" with no number)
-      if (!p.star) d.appendChild(chr(lab + (p.num ? ' ' + p.num : '') + ': ', 'caplab'));
+      if (p.kind === 'sub') d.appendChild(chr('(' + p.num + ') ', 'caplab'));
+      else if (!p.star) { d.appendChild(chr(lab + (p.num ? ' ' + p.num : '') + ': ', 'caplab')); d.dataset.cap = p.kind + ':' + (p.num || ''); }
       this.inl(p.inl, d);
       return d;
     }
@@ -737,7 +776,7 @@ export class Renderer {
 
   atomEl(x) {
     const B = this.B;
-    const s = document.createElement(x.k === 'fn' ? 'sup' : 'span');
+    const s = document.createElement(x.k === 'fn' || x.k === 'en' ? 'sup' : 'span');
     s.contentEditable = 'false';
     s.className = 'atom a-' + x.k;
     // made by a macro's own text: shown, not edited here (openAtom says where it is defined)
@@ -753,7 +792,8 @@ export class Renderer {
       }
       case 'cite': s.textContent = x.text; rec.keys = x.keys; rec.cmd = x.cmd; if (x.missing) s.classList.add('miss'); break;
       case 'ref': s.textContent = x.text; rec.key = x.key; rec.cmd = x.cmd; if (x.missing) s.classList.add('miss'); break;
-      case 'fn': s.classList.add('fnm'); s.textContent = x.num; rec.num = x.num; rec.fnIndex = B.fns.findIndex((f) => f.num === x.num && !f.claimed); if (rec.fnIndex >= 0) B.fns[rec.fnIndex].claimed = true; break;
+      case 'fn': s.classList.add('fnm'); if (x.th) s.classList.add('fn-th'); s.textContent = x.num; rec.num = x.num; rec.fnIndex = B.fns.findIndex((f) => f.num === x.num && !f.claimed); if (rec.fnIndex >= 0) B.fns[rec.fnIndex].claimed = true; break;
+      case 'en': s.classList.add('fnm', 'enm'); s.textContent = x.num; rec.num = x.num; break;
       case 'br': s.innerHTML = '<br>'; break;
       case 'url': s.textContent = x.text; rec.url = x.url; break;
       case 'verb': s.textContent = x.text; break;

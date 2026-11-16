@@ -1,4 +1,4 @@
-// Batch B11, inserting and the clipboard: the insert list (\ or Ctrl+K) and the environments,
+// Batch B11, inserting and the clipboard: the insert list (\; Ctrl+K is B9's Link) and the environments,
 // marks and breaks it offers; Cut and Copy for the right click menu; Insert › Interactive graph,
 // Rikuy's live figures made as easily as Word's charts (src/graph.js, src/ui/graphdialog.js).
 // B11 adds Paste and its options, symbols, special characters, building blocks, the date,
@@ -134,7 +134,7 @@ function freshName(app, kind) {
 const textWidthPx = (app) => Math.round(((app.layout && app.layout.g && app.layout.g.tw) || 345) * 96 / 72.27);
 
 register(
-  { id: 'insert-list', name: 'Insert list', title: 'The list of things to insert: footnote, citation, section, environments and more (\\ or Ctrl+K)', synonyms: ['Insert a command', 'Command'], keys: ['Ctrl+K'], run: (app) => app.openPalette() },
+  { id: 'insert-list', name: 'Insert list', title: 'The list of things to insert: footnote, citation, section, environments and more (\\; Ctrl+K is Link)', synonyms: ['Insert a command', 'Command'], run: (app) => app.openPalette() },
   env('proposition', 'Proposition', 140), env('lemma', 'Lemma', 150), env('theorem', 'Theorem', 160), env('definition', 'Definition', 170), env('assumption', 'Assumption', 180), env('proof', 'Proof', 190),
   { id: 'insert-ldots', name: 'Ellipsis', synonyms: ['Dots', 'ldots'], keys: ['Ctrl+Alt+.'], run: (app) => app.insertFromPalette('ldots'), palette: { k: 'ldots', d: 'Ellipsis …', order: 220, t: piece('\\ldots{}', '') } },
   { id: 'insert-newline', name: 'Line break', synonyms: ['New line'], run: (app) => app.insertFromPalette('newline'), palette: { k: 'newline', d: 'Line break', order: 230, t: piece('\\\\\n', '') } },

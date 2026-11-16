@@ -63,6 +63,10 @@ on:
       - 'src/picture.js'
       - 'src/cmd/picture.js'
       - 'src/drawing.js'
+      - 'test/refs.py'
+      - 'src/refsrc.js'
+      - 'src/cmd/refs.js'
+      - 'src/bib.js'
       - 'test/serve.py'
       - 'test/browser.py'
       - '.github/workflows/tex.yml'
@@ -163,6 +167,8 @@ jobs:
         run: cd test && python3 file.py new_docs accessibility
       - name: Review, and the copy with markup (changes, todonotes) compiled in the page
         run: cd test && python3 review.py
+      - name: References (contents, lists, notes, sources, the bibliography, captions, cross references, the index, links) compiled with pdfLaTeX, XeLaTeX and LuaLaTeX, biblatex with biber
+        run: cd test && python3 refs.py compiled
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rikuy-dist

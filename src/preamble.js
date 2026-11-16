@@ -237,7 +237,7 @@ PROVIDED.amsfonts = { pkgs: ['amssymb', ...PROVIDED.amssymb.pkgs], classes: [...
 // esint, wasysym, txfonts, pxfonts or mathabx it defines \iint a second time; hyperref goes before
 // cleveref and bookmark, which need it first.
 const AMS_FIRST = ['cleveref', 'hyperref', 'esint', 'wasysym', 'txfonts', 'pxfonts', 'mathabx', 'MnSymbol', 'varioref', 'unicode-math', 'fontsetup'];
-const BEFORE = { amsmath: AMS_FIRST, amssymb: AMS_FIRST, amsfonts: AMS_FIRST, mathtools: AMS_FIRST, hyperref: ['cleveref', 'bookmark', 'hypcap'] };
+const BEFORE = { amsmath: AMS_FIRST, amssymb: AMS_FIRST, amsfonts: AMS_FIRST, mathtools: AMS_FIRST, hyperref: ['cleveref', 'bookmark', 'hypcap'], imakeidx: ['hyperref'] };
 export const packageOrder = (name) => BEFORE[name] || null;
 
 // Whether the document has a package's commands: loaded itself (the preamble, or a file it

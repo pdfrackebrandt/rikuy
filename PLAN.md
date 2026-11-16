@@ -2545,6 +2545,115 @@ Tests:
     waiting in 127 kB a keystroke takes about 3 ms after the first (120 ms; it was 77 ms each,
     V-L2), the kept ones equal to fresh ones over 200 random keystrokes; Compare and git's "Show
     what changed" say Track Changes is on (V-L3). `review.py` 83, `review.test.mjs` 6 groups.
+47. **B9, references as in Word.** Done in the code (branch `wordgap-b9-refs`), rows R1, R3, R5 to
+    R7, R9 to R12, R14 to R18, I19 to I21 and C7 of the gap list (task 38); R19 (Table of
+    Authorities) skipped: a second imakeidx index is cheap to write (`\index` and `\printindex` now
+    read their `[name]`, and the page draws `\printindex[auth]`), but Word's Mark Citation needs its
+    own categories dialog, left for later. *Contents.* Table of Contents writes `\tableofcontents`
+    after the caret's paragraph; its arrow sets Show Levels 1 to 4 (`\setcounter{tocdepth}{n}`, a
+    chapter class one less) or takes it out; the page's contents honour tocdepth, leave starred
+    headings out, show `\section[Short]{…}`'s short title and `\addcontentsline` entries, as TeX's
+    .toc has them. Add Text: Do Not Show (`\section*`, B4's command), Level 1 to 3, Text in the
+    Table of Contents (a short title). *Notes.* Insert Endnote (Ctrl+Alt+D, not on a Mac):
+    `\endnote{…}`, enotez and `\printendnotes` once; its mark opens a box for its words; the page
+    draws the notes where TeX prints them (enotez's numbers in the margin, the endnotes package's
+    raised). Next and Previous Footnote and Endnote, Show Notes. The Footnote and Endnote dialog:
+    number format (`\renewcommand{\thefootnote}{\roman{footnote}}`), start (`\setcounter`), restart
+    each section (`\counterwithin*`), each chapter or continuous in a report (`\counterwithout`),
+    each page (footmisc's `perpage`), convert all footnotes to endnotes and back; the page numbers
+    them as TeX does (per page stays continuous on the page: it depends on TeX's page breaks).
+    *Sources.* Add New Source (Word's Create Source by type) appends a correct entry to the .bib
+    the document reads (refs.bib, natbib, plainnat and `\bibliography{refs}` where it reads none)
+    and cites it, one step; Manage Sources lists, cites, edits, copies, deletes (not a cited one)
+    and takes pasted BibTeX. A hand written entry is edited field by field (`bibFieldEdits`): only
+    the changed values move, its braces or quotes, padding, commas, comments and line ends kept.
+    *Style and bibliography.* Citation Style offers the system's own styles (natbib's .bst, plain
+    BibTeX's, biblatex's apa, chicago-authordate, ieee, mla, authoryear, numeric, alphabetic: never
+    mixed; a hand written thebibliography says why not); Bibliography inserts it, retitles it
+    (Bibliography, References, Works Cited: `\printbibliography[title=…]` or `\renewcommand{\refname}`
+    before it) or takes it out; the page shows its title. *Captions.* Insert Caption: in a figure or
+    a table, `\caption{…}\label{…}` below or above (after `\centering`); a centred picture or a table
+    on its own becomes a float with `\centering`; numbering by section (`\counterwithin`); refused in
+    multicols and longtable with the reason. Insert Table of Figures and List of Tables, drawn from
+    the captions with their short titles and page numbers (`\caption*` left out). *Cross-reference*
+    (Insert and References): heading, figure, table, equation or bookmark; number, page, and the
+    name or above/below only where cleveref, hyperref or varioref is loaded; a label written where
+    the target has none, in the same step. *Index.* Mark Entry (Alt+Shift+X): main entry, subentry,
+    see, a page range (`|(` and `|)`), bold or italic page, Mark All; imakeidx and `\makeindex` once.
+    Insert Index (columns); the page draws makeindex's index from the entries, page numbers from
+    its own pages. *Links.* Ctrl+K is Word's Link (the insert list keeps `\`): web page (`\href`,
+    `\url` when the words are the address), e-mail (`mailto:`), a place in this document
+    (`\hyperref`, a label added), hyperref with hidelinks once; Edit Hyperlink in a link or on a
+    clicked `\url`, with Remove Link, Open and Copy (the right click menu's link items too).
+    Bookmark: `\label` (`\phantomsection` in running text with hyperref), Go To, Delete.
+    Shared files: `model.js` (tocdepth, short titles, captions, endnotes, the index, the
+    bibliography's title, footnote formats and `\counterwithin`; a second build when they change),
+    `render.js` (the index, the notes, the lists' heads, the endnote mark), `parser.js` (`\endnote`,
+    `\index[name]`, `\printindex[name]`, `\printendnotes`), `app.js` (two lines), `ui/menu.js`
+    (the link context). Security quick profile: two low availability findings on a stranger's
+    document fixed with tests (bounded note conversion; repeated `\printindex` and notes drawn
+    within bounds). Evidence: `test/bib.test.mjs` 50; `test/refs.py` 210 (phones at 390 and
+    360 px; with `dist/tex` everything written compiled with pdfLaTeX, XeLaTeX and LuaLaTeX, and
+    biblatex's apa with biber); the corpus model run 716 of 716; `native.test.mjs` with the corpus
+    the same trees and models; `agent.py` 143 (Ctrl+K's Insert Hyperlink a dialog of its own), `tabs.py`
+    115 (the References tab's split buttons lose their names as the row folds: every width from
+    390 to 1920 px monotonic), `ribbon.py` 195 (Link opens its dialog), `browser.py` 193, `features.py` 36,
+    `npm test` green. On the incremental model build (task 53): the contents' entries are one
+    function both builds use (`tocList`), a list of figures is no table of contents to refresh,
+    captions', endnotes' and index entries' places are numeric `f` and `s` fields the fast path
+    moves (headings' `e` too), the index's page numbers are read from the model at each layout;
+    `incremental.test.mjs` gains a references document (its long streams: 6400 edits the same).
+    Ctrl+K left the insert list, whose title says `\` alone.
+
+47a. **B9 review: every finding of the hostile review of 25c4b9c fixed, each with its case as a
+    test.** Edit Source writes only a field the user changed, compared as the .bib holds it (a value
+    over several lines in a box that keeps its lines), text typed into an empty field alone escaped
+    and never inside math; a quoted value changed is written in braces, its `\"u` kept (H1, H2).
+    Insert Caption reads `\counterwithout` and writes the numbering only when it was changed, and
+    keeps a `\counterwithin` or `\numberwithin` where it stands (H3, M1); the Footnote and Endnote
+    dialog shows a document's own format and `\numberwithin` as its own and Apply with nothing
+    changed writes nothing (H4). A link over two paragraphs is refused (H5). natbib offers only
+    its own .bst, numbered ones with its `numbers` option set and taken off again (IEEEtranN for
+    IEEE), the page drawing them numbered (H6). Symbols past nine and letters past 26 footnotes
+    are refused with the reason unless they restart each page (H7). biblatex, natbib and their
+    resources are read from the files the preamble reads, so a project's .sty with biblatex gets
+    `\printbibliography` and nothing else (H8). The contents list `\part` and read a tocdepth set
+    in the body, and Show Levels edits that line (M2, M3); subcaptions are (a), (b), out of the list
+    of figures, and a figure with them takes its own caption (M4, L6); footmisc's perpage drawn,
+    each page's notes from 1 (M5); an entry another crossrefs is not deleted (M6); a short title or
+    a biblatex title holding a bracket goes in braces (M7); a .bib address keeps `#` and `%` bare,
+    as url.sty and biblatex read it, and an edited one keeps its address (M8, L4); the index's page
+    is the page of the words before each entry, entries after `\printindex` come from the build
+    before as TeX's .ind does, blocks found by halves (M9, L12); a field added to `@misc{k}` goes
+    inside it (L1); Ctrl+K is Link alone (L2); imakeidx goes above hyperref (L3); a caption goes
+    before a figure's lone `\label` (L5); converting leaves notes in headings and captions (L7);
+    tocbibind, KOMA-Script's `toc=`, memoir's unstarred lists and biblatex's `heading=bibintoc` put
+    their entries in the contents (L8); `@comment` counts its own brackets (L9); a report's
+    `\counterwithin{footnote}{chapter}` draws 1.1 (L10); a link's words changed keep its address's
+    bytes (L11). The rebase notes R1 to R3 hold with their tests (a label added after typing above
+    the figure lands after its caption; typing beside a list of figures stays on the fast path; a
+    reused index block's page numbers follow). Evidence: `bib.test.mjs` 63, `refs.py` 236 (24
+    review cases, four of them compiled: IEEE under natbib, biblatex from a .sty with biber, a short
+    title with a bracket, an edited url with `#` and a quoted accent).
+
+47b. **B9 verification: what the verifier of 47a found, fixed with its cases.** Edit Source escapes
+    exactly the span typed into a field it showed as LaTeX (`&`, `%`, `#`, `_`, a lone `$`, `~`,
+    `^`), never inside math and never what was there (V1, V10); compares and writes a CRLF file's
+    lines as the file has them (V3); refuses unbalanced braces before the dialog closes (V9). An
+    address with `#` or `%` in a BibTeX or natbib document brings `\usepackage{url}` in the same
+    step where neither url nor hyperref is there (V2: plainnat's own `\url` stops at them). Per
+    page footnote numbers leave `\thanks` alone (V4); an index entry at the end of a paragraph cut
+    over two pages takes the page of its half (V5); `ieeetr`, `plain`, `unsrt`, `abbrv` asked for
+    under natbib become its numbered forms and `alpha` is refused (V6); an author and year style
+    takes `\setcitestyle{numbers}` off (V7); `\footnotemark` counts toward the symbols' nine (V8).
+    Rebased on e309a85. Evidence: `bib.test.mjs` 71, `refs.py` 244 (8 new cases, one more
+    compiled: a typed `&` and `%` and an address with `#` and `%` in natbib). The References
+    commands' when and on read the preamble, the bibliography's set up and every file's body once
+    for each text of the project (`perText` in `src/cmd/refs.js`, the comment-blanked preamble and
+    body once per string in `src/refsrc.js`): on `page.py`'s long document a look at the caret
+    went from 349 to 12 ms, Citation Style from 83.6 ms to under 2; `refs.py cached` checks every
+    References command under 2 ms there and its answers equal to a fresh read after edits to an
+    `\input` file, to the main file and a change of main file (`refs.py` 251).
 
 ## Open tasks
 
