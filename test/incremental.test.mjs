@@ -109,6 +109,11 @@ docs.push(['pictures (B8)', new Map([['main.tex', '\\documentclass{article}\n\\u
 }
 docs.push(['paragraph settings (B2)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{setspace}\n\\begin{document}\nFirst plain paragraph, typed in.\n\n\\onehalfspacing\nA paragraph after one and a half spacing.\n\nAnother after it.\n\n' +
   '\\doublespacing\n\\centering\nCentred from here on, plain.\n\nStill centred, the next paragraph.\n\n\\hangindent=1cm\\hangafter=1 A hanging paragraph with words.\n\nKept with the next\\nopagebreak\n\nLast plain words.\n\\end{document}\n']]), 'main.tex']);
+// (R2) the title block with a subtitle and two authors, a picture bullet and a list's own indents,
+// colour links, a Code block and a run in heading with a float before its paragraph
+docs.push(['font, lists and styles (R2)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{enumitem,graphicx,xcolor,hyperref}\n\\title{Main\\\\[0.5ex]\\large The sub}\n\\author{Ann \\and Bob}\n\\hypersetup{colorlinks,linkcolor=blue}\n\\begin{document}\n\\maketitle\nFirst paragraph, typed in, see \\ref{a}.\n\n' +
+  '\\begin{itemize}[label={\\includegraphics[height=1.6ex]{dot.png}},leftmargin=3em,labelsep=1em]\n  \\item One item\\label{a}\n  \\begin{itemize}\n    \\item Nested item\n  \\end{itemize}\n\\end{itemize}\n\n\\begin{verbatim}\nSome code here.\n\\end{verbatim}\n\n' +
+  '\\paragraph{Lead}\n\n\\begin{figure}[h]\n\\centering\n\\fbox{F}\n\\caption{Cap}\n\\end{figure}\n\nRuns in after the float, with \\culine{rgb,255:red,231;green,84;blue,128}{a line}.\n\nLast plain paragraph.\n\\end{document}\n']]), 'main.tex']);
 docs.push(['a LaTeX paragraph (its groups)', new Map([['main.tex', '\\documentclass{article}\n\\begin{document}\nFirst paragraph, typed in.\n\n% rikuy: latex\n{\\bfseries bold} raw and {\\itshape more {nested}} words\n\nLast plain paragraph.\n\\end{document}\n']]), 'main.tex']);
 const corpus = process.argv[2], FULL = process.env.INCR_FULL === '1' || !!corpus, repoDocs = docs.length;
 if (corpus) {

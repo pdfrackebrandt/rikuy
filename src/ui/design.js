@@ -8,7 +8,8 @@
 
 import { openGallery, openMenu } from './kit.js';
 import { command } from '../commands.js';
-import { STYLE_SETS, COLORS, HEAD_FONTS, THEMES, defaultLook, headLookEdits, accentEdits, accentOf, komaFontEdits, stripComments } from '../looks.js';
+import { STYLE_SETS, COLORS, HEAD_FONTS, THEMES, defaultLook, headLookEdits, accentEdits, accentOf, komaFontEdits, stripComments, linkColorEdits } from '../looks.js';
+import { hasPackage } from '../preamble.js';
 
 const LEVELS = (ch) => [...(ch ? ['chapter'] : []), 'section', 'subsection', 'subsubsection'];
 const FAMILY = ['sf', 'tt', 'sc'];
@@ -87,7 +88,10 @@ export const methods = {
     // (titlesec and xcolor only for lines written; the titlesec line away with the last of them)
     const pk = this.headPackages(src, ed);
     if (acc.some((x) => /definecolor/.test(x.t)) && !pk.some((x) => /xcolor/.test(x.t))) pk.push(...this.packageEdits(['xcolor']));
-    const edits = joinInserts([...ed, ...acc].map((x) => ({ f, ...x })));
+    // (D1, R2) the links take the colour too, where hyperref is loaded: colorlinks and its colours
+    // accent on \hypersetup; Black (no accent) takes those keys away again
+    const lk = C && hasPackage(src, 'hyperref', undefined, this.preambleOthers()) ? linkColorEdits(src, !!C.hex) : [];
+    const edits = joinInserts([...ed, ...acc, ...lk].map((x) => ({ f, ...x })));
     return edits.length ? [...edits, ...pk] : [];
   },
   // whether the document uses its accent colour anywhere but its own line and the headings' lines

@@ -381,6 +381,8 @@ class Walker {
   title(it, u) {
     const fns = u.fns;
     if (it.title && it.title.length) this.meta.title = { t: 'MetaInlines', c: this.wrap('title', it.f, null, null, () => this.inl(it.title, fns)) };
+    // (R2) the subtitle: Word's Subtitle paragraph under the title
+    if (it.subtitle && it.subtitle.length) this.meta.subtitle = { t: 'MetaInlines', c: this.wrap('subtitle', it.f, null, null, () => this.inl(it.subtitle, fns)) };
     const au = (it.authors || []).filter((a) => a.length).map((a) => ({ t: 'MetaInlines', c: this.wrap('author', it.f, null, null, () => this.inl(a, fns)) }));
     if (au.length) this.meta.author = { t: 'MetaList', c: au };
     if (it.date && it.date.length) this.meta.date = { t: 'MetaInlines', c: this.wrap('date', it.f, null, null, () => this.inl(it.date, fns)) };

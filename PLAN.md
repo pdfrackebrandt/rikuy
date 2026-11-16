@@ -2679,6 +2679,89 @@ Tests:
     document compiled on the three engines, each checked with pypdf); `npm test`, `test:offline`
     58, `test:agent` 143, `launch.py` 18, `deploy_check.py` 45, `pages_check.py` (382 files, 358.6
     MB), and the manifest diff empty.
+62. **R2: what the Font (B1), Lists (B3) and Styles (B4) batches left undone.** Done in the code
+    (branch `round3-r2-styles`, on main e863372), every item of the round 3 list.
+    *Font.* Clear All Formatting takes the paragraph's own settings off with the characters'
+    formats, as Word's goes back to Normal: B2's alignment, line spacing, indents, first line
+    (`\noindent`, `\hangindent`), space before and after, keep with next, page break before,
+    samepage, no hyphenation, line numbers, shading and box (Rikuy's tcolorbox) and rules, each by
+    B2's own edits over `paraRun` (`paraReset` in `src/cmd/font.js`); what comes from further out
+    (a `\centering` above, a center around two paragraphs) stays; where B2 cannot read the
+    paragraph (a heading, a list item) the old alignment step still runs; characters and paragraph
+    are one step of history (`fmtOneStep` joins the commits a command makes). The Format Painter
+    armed from a caret, or a selection of a whole paragraph, carries the paragraph's style (a
+    heading, a quote, a theorem, Normal) to the paragraphs it paints, the words painted kept
+    selected, in one step; a double click keeps painting until Escape, as before; words selected
+    inside a paragraph carry their characters alone, as Word's do without the paragraph mark.
+    Underline Color takes any colour: More colors in the picker and the Font dialog write
+    xcolor's mix (`\culine{rgb,255:red,231;green,84;blue,128}{..}`, which Rikuy's `\culine`
+    passes to `\textcolor`), the page draws it (`colorArg` reads the mix), the dialog shows the
+    colour an underline has. Word import keeps the highlighter's colour: `premark` marks a run's
+    `w:highlight` other than yellow (seven digits, which no colour mark has) and the LaTeX's `\hl`
+    takes it: `\hl[green]`, xcolor's names for Word's teal, violet, olive, grays, and the mix for
+    its dark blue, green and red, read back by the page and Word export.
+    *Lists.* Define New Bullet › Picture… (Picture Bullet, also in the library's menu): a picture
+    of the project, or one from the device put into the project (`figures/`, a name TeX takes) in
+    the same step, as `label={\includegraphics[height=1.6ex]{..}}` with graphicx; the page draws
+    the picture on each item. Adjust List Indents (the library's menus and the right click menu):
+    enumitem's `leftmargin`, `labelwidth` and `labelsep`, shown as the list has them or LaTeX's own
+    at its level, with the bullet's position worked out; OK writes the three, LaTeX's own takes
+    them away, a hand written set changed where it stands; refused beside the enumerate package,
+    paralist and beamer. The page draws the text at the margin and the label's box labelsep before
+    it, a nested list from that margin (`Builder.listBlock`'s `lm`); TeX puts them there on the
+    three engines (`lists.py r2_pdf`, pdftotext's boxes against the page's). Word export gives
+    every bulleted list the bullet the page drew, nested ones too: pandoc gives each list its own
+    numbering on one abstract list of Symbol and Wingdings bullets, and `bulletDocx` gives each a
+    copy with its level's bullet the page's character (lists counted the same on both sides, else
+    nothing changes). A picture bullet goes to Word as a round bullet (Word's picture bullets,
+    `w:lvlPicBulletId`, are not written).
+    *Styles.* Code (H65): the paragraph in verbatim, only on words verbatim prints the same (no
+    special, no blank line, no dash or quote ligature), so Normal again gives the bytes back; a
+    press on a Code block selects it as a picture is (the gallery and the list show Code), Normal
+    makes it text (a hand written verbatim's specials escaped), a second press or Enter opens its
+    source as before. Subtitle, Author and Date (H63), with Title: a paragraph of the body made a
+    part of the title block (`\title` with `\maketitle` in the paragraph's place where there is
+    none; `\author`, joined by `\and`; `\date`; KOMA-Script's `\subtitle`, else
+    `\title{Main\\[0.5ex]\large Sub}`); the caret in a part shows its style, Normal makes it the
+    paragraph after `\maketitle` again (the title only where it stands alone), each the other's
+    way back byte for byte; the page draws the subtitle, Word gets it as Subtitle. Title shows in
+    More and the style list for a document with no title. Rename Style (H74): a style of the
+    document's own (the Styles pane's Rename…, `rename-style`): its definition, `\begin` and
+    `\end`, a theorem numbered with it, cleveref's names, its counter's uses, or every `\cmd`,
+    in every .tex and .sty of the project, comments and verbatim left as written, the new name
+    checked as Create a Style checks one. The links' colour (D1): Colors writes
+    `\hypersetup{colorlinks,linkcolor=accent,urlcolor=accent,citecolor=accent}` after the accent
+    where hyperref is loaded (a `\hypersetup` of the document's own takes the keys in place,
+    `hidelinks` off), Black takes them away; the page draws references, citations and addresses
+    in hyperref's colorlinks colours, a hand written `[colorlinks,linkcolor=blue]` too
+    (`Builder.linkColors`). A float between `\paragraph{Lead}` and its text: the heading runs into
+    the text as TeX runs it (`runIns` passes floats), the page draws the float first
+    (`App.layoutPass`). B4's tests changed only where R2 changes what they saw: the title alone
+    offers Normal, the lists and More have Title (untitled documents), Subtitle, Author, Date and
+    Code.
+    *Phones* (390 by 844 light, 360 by 740 dark, touch): Clear All, the Format Painter's style and
+    Underline Color's More colors by taps; Picture Bullet and Adjust List Indents from the
+    library's menu, in the screen with 44 px tiles, fields and buttons; a tap selects a Code block
+    and the style list takes it off; Author from the style list; Rename Style fitting, its Close
+    44 px. *Security* (the audit skill's guidance on the changed files, notes outside the
+    repository): a `.docx` highlight value naming a member of Object's prototype (`constructor`)
+    wrote junk characters into the imported LaTeX (now a key of the table alone), and a paragraph
+    ending in a comment made a title part left `\author{..}` open (now refused, as are braces that
+    do not close); both with a test; every new scan of a stranger's text bounded (the
+    `\hypersetup` reader, `titleInfo`, `renameEdits`), checked with timings. Evidence: `npm test`
+    green (`font` 28 groups, `lists` 25, `styles` 28, `looks` 11, `word` 68, `incremental` 32 on
+    11 documents with one of R2's constructs, `native` 43); `font.py` 305 (272: `r2`, its phones,
+    `r2_compiles` on pdfLaTeX, XeLaTeX and LuaLaTeX); `lists.py` 218 (184: `r2`, `r2_pdf` on the
+    three engines, `r2_phone`); `styles.py` 399 (320: `r2`, `r2_compile` on the three engines and
+    KOMA's subtitle, `r2_phone`); `para.py` 204; `tabs.py` 115; `ribbon.py` 195; `agent.py` 143;
+    `browser.py` 193; `word.py` 111; `page.py long_document` 6 (every command's when and on 18 ms
+    together, none over 5); `launch.py` 18/18; `deploy_check.py` 45/45; `pages_check.py` fits; the
+    corpus model run 716 of 716 with main's unknown commands. `offline.py` passed every check up to
+    the offline compile, whose TeX warm up timed out in a copy of `dist/` made of links (this
+    worktree's `dist/tex` is a link to another's); R2 changes only llms-full's text in
+    `build/app.mjs`. Screenshots outside the repository.
+
+## Open tasks
 
 ## Open tasks
 

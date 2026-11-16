@@ -242,6 +242,8 @@ export const methods = {
     // (a heading's own toggle, which a right click on the page has too: a phone has no right click)
     const h = isHeading(v) ? this.headingAt(this.ribbonAt()) : null;
     if (h && h.cmd === v) items.push({ name: 'Unnumbered heading', checked: h.star, title: command('heading-unnumbered').title, run: () => { this.ribbonBack(); this.runCommand('heading-unnumbered'); } });
+    // (R2) a style of the document's own: renamed with every use (H74)
+    if (this.canRenameStyle && this.canRenameStyle(v)) items.push({ name: 'Rename…', title: 'A new name for ' + name + ': its definition and every use in the project renamed', run: () => { this.ribbonBack(); this.openRenameStyle(v); } });
     if (!ch) items.push({ name: 'Select All Instances', title: 'Selects the first paragraph in this style and says how many there are', disabled: !this.styleInstances(v, 1).length, run: () => { this.ribbonBack(); this.selectStyleInstances(v); } });
     const slot = !ch && Object.entries(this.gallerySlots(v).val).find(([, w]) => w === v);
     if (slot && slot[0] !== 'p' && slot[0] !== 'latex' && slot[0] !== 'title') {
@@ -569,6 +571,46 @@ export const methods = {
     });
     this.positionPop();
     name.focus();
+  },
+  // (R2) Rename Style: the new name, checked as Create a Style checks one (letters only, no name
+  // LaTeX, a package or the document has), OK renames the definition and every use
+  openRenameStyle(v) {
+    const S = this.ownStyleOf && this.ownStyleOf(v);
+    if (!S) { this.toast('Only a style this document defines itself can be renamed.'); return false; }
+    const shown = (n) => (S.kind === 'cmd' ? '\\' + n : n);
+    const p = dialog(this, { title: 'Rename Style', rect: new DOMRect(Math.max(8, window.innerWidth / 2 - 180), 120, 0, 0), cls: 'pop-modstyle' });
+    const row = el('label', 'ms-row'), name = el('input', 'fd-in');
+    name.id = 'rs-name'; name.type = 'text'; name.value = S.name; name.setAttribute('aria-label', 'New name'); name.autocomplete = 'off'; name.spellcheck = false;
+    row.append(el('span', 'ms-l', 'New name'), name);
+    const note = el('div', 'ms-note', 'Renames ' + shown(S.name) + (S.kind === 'env' ? ' (\\begin and \\end, its definition)' : ' (its \\newcommand)') + ' and every use of it in the project.');
+    const btns = el('div', 'fd-btns'), ok = el('button', 'btn sm', 'OK'), no = el('button', 'btn ghost sm', 'Cancel');
+    ok.type = no.type = 'button';
+    btns.append(ok, no);
+    p.append(row, note, btns);
+    const check = (atOk) => {
+      const n = name.value.trim();
+      let why = '';
+      if (n === S.name) why = '';
+      else if (!NAME_OK.test(n)) why = 'Letters only, two or more (LaTeX\'s names have no digits or spaces).';
+      else { const t = this.nameTaken(n); if (t) why = shown(n) + ' is taken: LaTeX, a package or this document has a command or an environment of that name.'; else if (t == null && atOk) why = 'Still fetching the names LaTeX and its packages define, to check ' + shown(n) + ' against them: OK again in a moment.'; }
+      if (why) note.textContent = why;
+      ok.disabled = !!why && !/^Still/.test(why);
+      return !why;
+    };
+    texNames().then(() => { if (p.isConnected) check(false); }, () => {});
+    name.addEventListener('input', () => check(false));
+    name.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); ok.click(); } });
+    no.addEventListener('click', () => { this.closePop(true); this.ribbonBack(); });
+    ok.addEventListener('click', () => {
+      if (!check(true)) return;
+      const n = name.value.trim();
+      this.closePop(true); this.ribbonBack();
+      if (n !== S.name) this.renameStyle(v, n);
+      this.ribbonSync();
+    });
+    this.positionPop();
+    name.focus(); name.select();
+    return true;
   },
   // The style's definition, once in the preamble, and the style on the selection (a character
   // style) or the caret's paragraph (a paragraph style): one commit

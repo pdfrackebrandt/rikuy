@@ -8,6 +8,8 @@
 
 export const SIZES = ['tiny', 'scriptsize', 'footnotesize', 'small', 'normalsize', 'large', 'Large', 'LARGE', 'huge', 'Huge'];
 export const LOOK_CMDS = ['chapter', 'section', 'subsection', 'subsubsection', 'paragraph', 'subparagraph'];
+import { parseKV, kvEdits } from './preamble.js';
+
 const MAX = 200000, ARG = 2000;
 
 // LaTeX's own look of each heading (article, report, book): what titlesec starts from
@@ -388,6 +390,45 @@ export function accentEdits(src, hex) {
   const at = src.lastIndexOf('\n', end - 1) + 1, lead = at < end && /\S/.test(src.slice(at, end)) ? '\n' : '', s = lead ? end : at;
   const nl = eolOf(src);
   return [{ s, e: s, t: (lead ? nl : '') + '\\definecolor{accent}{HTML}{' + hex + '}' + nl }];
+}
+// (R2, D1) The links in the accent with the headings, as Word's theme colours its hyperlinks:
+// hyperref's colorlinks with linkcolor, urlcolor and citecolor accent, on the preamble's last
+// \hypersetup (changed in place) or a line of Rikuy's after the accent's; off, the keys that say
+// accent go, and Rikuy's line with them. Only where hyperref is loaded: the caller says so.
+export const LINK_LINE = '\\hypersetup{colorlinks,linkcolor=accent,urlcolor=accent,citecolor=accent}';
+export const LINK_KEYS = ['linkcolor', 'urlcolor', 'citecolor'];
+export function linkColorEdits(src, on) {
+  const end = preambleEnd(src);
+  if (end < 0) return [];
+  const pre = stripComments(src.slice(0, end));
+  let last = null;
+  for (let m, re = /\\hypersetup\s*\{/g, n = 0; (m = re.exec(pre)) && n < 50; n++) {
+    const z = group(pre, m.index + m[0].length - 1);
+    if (z > 0 && z - m.index < 4000) last = { s: m.index, e: z, is: m.index + m[0].length, ie: z - 1 };
+  }
+  const kv = last ? Object.fromEntries(parseKV(src, last.is, last.ie).map((x) => [x.key, x.value == null ? true : x.value])) : {};
+  if (on) {
+    if (last) {
+      const ch = {};
+      if (kv.colorlinks == null || /^false$/i.test(String(kv.colorlinks))) ch.colorlinks = true;
+      if (kv.hidelinks != null) ch.hidelinks = null;
+      for (const k of LINK_KEYS) if (kv[k] !== 'accent') ch[k] = 'accent';
+      return Object.keys(ch).length ? kvEdits(src, last.is, last.ie, ch) : [];
+    }
+    const nl = eolOf(src), m = /\\definecolor\s*\{accent\}[^\n]*\n?/.exec(pre);
+    if (m) { const at = m.index + m[0].length; return [{ s: at, e: at, t: (m[0].endsWith('\n') ? '' : nl) + LINK_LINE + nl }]; }
+    const at = src.lastIndexOf('\n', end - 1) + 1;
+    return [{ s: at, e: at, t: LINK_LINE + nl }];
+  }
+  if (!last) return [];
+  if (src.slice(last.s, last.e) === LINK_LINE) {
+    const ls = src.lastIndexOf('\n', last.s - 1) + 1, le = src.indexOf('\n', last.e);
+    if (!src.slice(ls, last.s).trim() && !src.slice(last.e, le < 0 ? src.length : le).trim()) return [{ s: ls, e: le < 0 ? src.length : le + 1, t: '' }];
+    return [{ s: last.s, e: last.e, t: '' }];
+  }
+  const ch = {};
+  for (const k of LINK_KEYS) if (kv[k] === 'accent') ch[k] = null;
+  return Object.keys(ch).length ? kvEdits(src, last.is, last.ie, ch) : [];
 }
 // the accent colour the preamble defines, as #RRGGBB, or null
 export function accentOf(src) {

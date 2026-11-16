@@ -892,7 +892,8 @@ function runFix(C, r, st) {
   C.info.chars += len;
   const rpr = kid(r, 'w:rPr');
   // (the highlighter's colour, where it is not Word's yellow: a mark the LaTeX's \hl takes)
-  const hl = len && rpr ? HL_HEX[val(rpr, 'w:highlight')] : null;
+  // (the file's own value, looked up as a key of the table alone: "constructor" is no colour)
+  const hv = len && rpr ? val(rpr, 'w:highlight') : '', hl = hv && Object.hasOwn(HL_HEX, hv) ? HL_HEX[hv] : null;
   if (hl) { ts[0].c.unshift(mark.highlight(hl)); ts[0].a['xml:space'] = 'preserve'; C.changed = true; }
   if (!len || !st.color || st.link) return;
   // code is set verbatim in LaTeX, where a mark's command would be printed as it is written:

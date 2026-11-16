@@ -3,7 +3,7 @@
 // they stand and taken away again; KOMA-Script's \setkomafont; the accent colour; the Design tab's
 // style sets read back from the looks they write; and every scan bounded on a stranger's preamble.
 import assert from 'node:assert/strict';
-import { readHeadLooks, readFormat, titleLines, lookLines, headLookEdits, defaultLook, formatOf, isDefaultLook, komaFontEdits, accentEdits, accentOf, STYLE_SETS, setLooks, setOf, lengthPt, startsectionShapes } from '../src/looks.js';
+import { readHeadLooks, readFormat, titleLines, lookLines, headLookEdits, defaultLook, formatOf, isDefaultLook, komaFontEdits, accentEdits, accentOf, STYLE_SETS, setLooks, setOf, lengthPt, startsectionShapes, linkColorEdits, LINK_LINE } from '../src/looks.js';
 import { applyEdits } from '../src/styles.js';
 
 let n = 0;
@@ -144,6 +144,19 @@ ok('a stranger\'s preamble: bounded scans', () => {
   const t0 = Date.now();
   readHeadLooks(big, 'article'); headLookEdits(big, { section: defaultLook('section') }); accentOf(big); komaFontEdits(big, null);
   assert.ok(Date.now() - t0 < 1500, 'took ' + (Date.now() - t0) + ' ms');
+});
+
+ok('R2 (D1): the links in the accent: Rikuy\'s \\hypersetup line after the accent\'s, a document\'s own \\hypersetup changed in place, off again', () => {
+  const D = (pre) => '\\documentclass{article}\n\\usepackage{hyperref}\n' + pre + '\\begin{document}\nx\n\\end{document}\n';
+  const a = D('\\definecolor{accent}{HTML}{0E6F70}\n'), on = applyEdits(a, linkColorEdits(a, true));
+  assert.equal(on, D('\\definecolor{accent}{HTML}{0E6F70}\n' + LINK_LINE + '\n'));
+  assert.equal(applyEdits(on, linkColorEdits(on, false)), a);
+  assert.equal(linkColorEdits(on, true).length, 0);
+  const own = D('\\hypersetup{pdftitle={A, B}, hidelinks}\n'), o2 = applyEdits(own, linkColorEdits(own, true));
+  assert.ok(o2.includes('\\hypersetup{pdftitle={A, B},colorlinks,linkcolor=accent,urlcolor=accent,citecolor=accent}'), o2);
+  assert.ok(applyEdits(o2, linkColorEdits(o2, false)).includes('\\hypersetup{pdftitle={A, B},colorlinks}'));
+  const w = a.replace(/\n/g, '\r\n'), wo = applyEdits(w, linkColorEdits(w, true));
+  assert.ok(!/[^\r]\n/.test(wo), JSON.stringify(wo));
 });
 
 console.log('looks: ' + n + ' groups of checks passed');

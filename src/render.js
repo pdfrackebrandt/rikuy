@@ -105,6 +105,9 @@ export class Renderer {
 
   // Sync with a new model: reuse unchanged blocks, render new ones.
   sync(model, prefix) {
+    // (R2, D1) hyperref's colorlinks: the colours links, citations and addresses print in
+    const L = model.opts.links, R = this.app && this.app.root;
+    if (R) { R.classList.toggle('colorlinks', !!L); for (const k of ['link', 'cite', 'url']) R.style.setProperty('--lk-' + k, (L && L[k]) || 'inherit'); }
     const pool = new Map();
     for (const b of this.blocks) {
       if (!pool.has(b.key)) pool.set(b.key, []);
@@ -316,6 +319,7 @@ export class Renderer {
         const t = div('ttl-t'); this.inl(it.title, t); el.appendChild(t);
         t.setAttribute('role', 'heading');
         t.setAttribute('aria-level', '1');
+        if (it.subtitle) { const st = div('ttl-s'); this.inl(it.subtitle, st); el.appendChild(st); }
         const a = div('ttl-a');
         for (const au of it.authors) { const s = document.createElement('span'); s.className = 'ttl-au'; this.inl(au, s); a.appendChild(s); }
         el.appendChild(a);

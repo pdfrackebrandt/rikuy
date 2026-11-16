@@ -656,7 +656,7 @@ class Builder {
     this.siOpts = {};
     this.siUnits = new Map();
     this.envDefs = new Map();
-    this.meta = { title: null, author: null, date: null };
+    this.meta = { title: null, author: null, date: null, subtitle: null };
     this.bibFiles = [];
     this.bibEntries = new Map();
     this.thebib = null;
@@ -690,6 +690,8 @@ class Builder {
     if (docEnv) {
       const pre = nodes.slice(0, nodes.indexOf(docEnv));
       this.preamble(pre, ctx);
+      // (R2, D1) hyperref's colorlinks: the colours TeX prints links, citations and addresses in
+      this.opts.links = this.linkColors(src, docEnv.s);
       // a document whose main language is Arabic, Hebrew or the like runs right to left as a whole
       this.opts.rtl = rtlDocument(src);
       this.dir = this.opts.rtl ? 'rtl' : 'ltr';
@@ -965,6 +967,8 @@ class Builder {
       case 'title': this.meta.title = { nd, ctx, a: nd.args[1] }; break;
       case 'author': this.meta.author = { nd, ctx, a: nd.args[1] }; break;
       case 'date': this.meta.date = { nd, ctx, a: nd.args[0] }; break;
+      // (KOMA-Script's subtitle, under the title: the title block's Subtitle, R2)
+      case 'subtitle': this.meta.subtitle = { nd, ctx, a: nd.args.find((x) => x && x.nodes) || null }; break;
       case 'setcounter': if (A(0).trim() === 'secnumdepth') { O.secnumdepth = parseInt(A(1), 10); O.secnumdepthSet = true; } else if (A(0).trim() === 'maxsecnumdepth') O.maxsecnumdepth = parseInt(A(1), 10); break;
       // memoir's own: by a sectioning name, none or all
       case 'setsecnumdepth': { const v = SECDEPTH[A(0).trim()]; if (v != null) { O.secnumdepth = v; O.secnumdepthSet = true; } break; }
@@ -1062,6 +1066,25 @@ class Builder {
     // (xcolor's dvipsnames, BrickRed and the like, which the Font Color picker writes: as the
     // values they print in, for the page and for Word)
     return this.named(spec) || (Object.hasOwn(DVIPS, spec) ? '#' + DVIPS[spec] : mixColor(spec) || spec);
+  }
+
+  // (R2, D1) The colours hyperref prints links in, where it is loaded with colorlinks (its options,
+  // then every \hypersetup of the preamble, in order; hidelinks takes them away): { link, cite, url }
+  // as #RRGGBB, each null where its colour is no name the page knows; null for no colorlinks.
+  // Bounded: the preamble's first 200 000 characters, 40 \hypersetup of 4000.
+  linkColors(src, end) {
+    const pre = src.slice(0, Math.min(end, 200000)).replace(/(^|[^\\])%[^\n]*/g, '$1');
+    const pk = /\\usepackage\s*(?:\[([^\]]{0,2000})\])?\s*\{[^{}]{0,300}\bhyperref\b[^{}]{0,300}\}/.exec(pre);
+    if (!pk) return null;
+    const kv = { colorlinks: false, linkcolor: 'red', citecolor: 'green', urlcolor: 'magenta' };
+    // (each key=value trimmed first, then read by a pattern with nothing to try twice)
+    const read = (t) => { for (const x of t.split(',').slice(0, 60)) { const m = /^([A-Za-z]+)(?:\s*=\s*(.*))?$/s.exec(x.trim()); if (!m) continue; const k = m[1], v = m[2] == null ? null : m[2].replace(/^\{/, '').replace(/\}$/, '').trim();
+      if (k === 'colorlinks') kv.colorlinks = v == null || /^true$/i.test(v); else if (k === 'hidelinks') kv.colorlinks = false; else if (k in kv && v) kv[k] = v; } };
+    if (pk[1]) read(pk[1]);
+    for (let m, re = /\\hypersetup\s*\{([^{}]{0,4000}(?:\{[^{}]{0,200}\}[^{}]{0,4000}){0,20})\}/g, n = 0; (m = re.exec(pre)) && n < 40; n++) read(m[1]);
+    if (!kv.colorlinks) return null;
+    const hex = (c) => { const v = this.colorText(String(c).trim()); const x = /^#[0-9A-F]{6}$/i.test(v) ? v : Object.hasOwn(XC, v) ? '#' + XC[v] : Object.hasOwn(DVIPS, v) ? '#' + DVIPS[v] : null; if (x && this.colors.has(c)) this.use('c' + c + x); return x; };
+    return { link: hex(kv.linkcolor), cite: hex(kv.citecolor), url: hex(kv.urlcolor) };
   }
 
   // a name of the document's own; used, so the block is drawn again when its \definecolor changes
@@ -1762,7 +1785,11 @@ class Builder {
     for (let i = 0; i + 1 < units.length; i++) {
       const u = units[i], h = u.items.length === 1 ? u.items[0] : null;
       if (!h || h.type !== 'h' || !h.runInto || h.runIn) continue;
-      const n = units[i + 1], p = n.items[0];
+      // (R2) a float between them: TeX places it elsewhere and runs the heading into the paragraph
+      // after it (the page draws the float first: App.layoutPass)
+      let j = i + 1;
+      while (j < units.length - 1 && units[j].items.length && units[j].items.every((x) => x.type === 'float')) j++;
+      const n = units[j], p = n.items[0];
       // (a paragraph of this flow, or one of an environment of declarations alone: a quote, a
       // centring, a theorem or a list starts with \@trivlist, which sets the heading on its own line)
       if (!p || p.type !== 'p' || p.runIn || n.f !== u.f || p.ctx !== 'p' || !n.plain) continue;
@@ -1909,9 +1936,17 @@ class Builder {
     const ranges = [];
     // a \title in a preamble file of its own (\input{preamble}) is not a range of this file
     const at = (x) => { if (x.ctx.f === ctx.f) ranges.push([x.nd.s, x.nd.e]); };
-    let title = [], authors = [], date = null;
+    let title = [], authors = [], date = null, subtitle = null;
     this.thanksMode = true;
-    if (m.title && m.title.a) { title = this.inl(m.title.a.nodes, m.title.ctx, fns); at(m.title); }
+    if (m.title && m.title.a) {
+      // (R2) the subtitle as a class without \subtitle has it: \title{Main\\[0.5ex]\large Sub}, the
+      // words after the line break and the size its own line in the title block
+      let nodes = m.title.a.nodes;
+      const k = m.subtitle ? -1 : nodes.findIndex((n, i) => n.t === 'cmd' && n.name === '\\' && nodes[i + 1] && nodes[i + 1].t === 'cmd' && /^(large|Large|normalsize|small)$/.test(nodes[i + 1].name));
+      if (k > 0) { subtitle = this.inl(nodes.slice(k + 2), m.title.ctx, fns); trimInl(subtitle); nodes = nodes.slice(0, k); }
+      title = this.inl(nodes, m.title.ctx, fns); at(m.title);
+    }
+    if (m.subtitle && m.subtitle.a) { subtitle = this.inl(m.subtitle.a.nodes, m.subtitle.ctx, fns); trimInl(subtitle); at(m.subtitle); }
     if (m.author && m.author.a) {
       const a = m.author.a;
       let cur = [];
@@ -1928,7 +1963,7 @@ class Builder {
     this.thanksMode = false;
     const s = Math.min(nd.s, ...ranges.map((r) => r[0]));
     const e = Math.max(nd.e, ...ranges.map((r) => r[1]));
-    return { f: ctx.f, s, e, items: [{ type: 'title', title, authors, date, f: ctx.f, dir: this.dirOf() }], fns, sig: (this.sig || []).join('\u0001') };
+    return { f: ctx.f, s, e, items: [{ type: 'title', title, ...(subtitle && subtitle.length ? { subtitle } : {}), authors, date, f: ctx.f, dir: this.dirOf() }], fns, sig: (this.sig || []).join('\u0001') };
   }
 
   refsBlock(nd, ctx) {

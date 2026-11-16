@@ -606,6 +606,15 @@ class App {
     const model = this.model;
     const items = [], fns = [];
     for (const B of this.renderer.blocks) { for (const it of B.items) items.push(it); for (const f of B.fns) fns.push(f); }
+    // (a float between a run in heading and its paragraph: TeX places the float elsewhere and runs
+    // the heading into the paragraph after it; the page draws the float first, then the heading
+    // over its paragraph's first line: src/model.js runIns, R2)
+    for (let i = 0; i + 2 < items.length; i++) {
+      if (!items[i].el || !items[i].el.classList.contains('runin')) continue;
+      let j = i + 1;
+      while (j < items.length && items[j].el && items[j].el.classList.contains('flt')) j++;
+      if (j > i + 1 && j < items.length) { const [h] = items.splice(i, 1); items.splice(j - 1, 0, h); i = j - 1; }
+    }
     // (the sheet of the PDF TeX made of this set up, where there is one: src/layout.js sheetSize)
     const ps = this.pdfSheet, mk = model.opts.page && model.opts.page.mediaKey;
     model.opts.pdfSheet = ps && mk && ps.key === mk ? ps : null;
@@ -1579,10 +1588,13 @@ class App {
       this.ourSel = true;
       s.removeAllRanges(); s.addRange(r);
     }
+    if (atom.kind === 'code') { this.toast('Code selected: Normal in Styles makes it text again; press it again or Enter to edit its source.', 2400); return; }
     this.toast('Press Backspace again to delete this ' + ({ math: 'equation', cite: 'citation', ref: 'reference', fn: 'footnote', img: 'figure', widget: 'live figure', chip: 'command', raw: 'block' }[atom.kind] || 'item') + (atom.kind === 'br' || atom.kind === 'sp' ? '.' : ', or Enter to edit it.'), 1800);
   }
   disarm() {
     if (this.armed && this.armed.el) this.armed.el.classList.remove('sel');
+    // (what was selected: a second press on a Code block opens its source, src/cmd/styles.js)
+    this.lastArmed = this.armed ? this.armed.el : null;
     this.armed = null;
   }
 
@@ -2181,6 +2193,9 @@ class App {
     if (k === 'en') return this.openEndnote(el, info);
     if (k === 'url') return this.openLinkFor(el, info);
     if (k === 'br' || k === 'sp') { this.arm({ f: info.f, s: info.s, e: info.e, el, kind: k }); return; }
+    // a Code block (verbatim, R2): a press selects it, so the Styles show Code and Normal takes it
+    // off; a second press, Enter or a double click opens its source
+    if (k === 'raw' && info.a.name === 'verbatim' && this.lastArmed !== el) { this.arm({ f: info.f, s: info.s, e: info.e, el, kind: 'code' }); this.ribbonSync(); return; }
     return this.openRaw(el, info);
   }
 

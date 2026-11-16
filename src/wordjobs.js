@@ -931,7 +931,7 @@ function unmark(tex, info, N, S) {
   }
   // the highlighter's colour (docx.js marks a run highlighted in a colour other than yellow):
   // \hl[green]{..}, as Text Highlight Color writes it; Word's dark ones as xcolor's mix
-  tex = tex.replace(/\\hl\{((?:\uE005[\uE010-\uE01F]{6}\uE001)?)\uE005\uE010([\uE010-\uE01F]{6})\uE001/g, (s, c, h) => { const n = HL_XC[decode(h)]; return n ? '\\hl[' + n + ']{' + c : '\\hl{' + c; });
+  tex = tex.replace(/\\hl\{((?:\uE005[\uE010-\uE01F]{6}\uE001)?)\uE005\uE010([\uE010-\uE01F]{6})\uE001/g, (s, c, h) => { const n = Object.hasOwn(HL_XC, decode(h)) ? HL_XC[decode(h)] : null; return n ? '\\hl[' + n + ']{' + c : '\\hl{' + c; });
   tex = tex.replace(/\uE005\uE010[\uE010-\uE01F]{6}\uE001/g, '');
   // colour: one colour over most of the text is the document's ink, not a mark of anything
   const base = ink(info);

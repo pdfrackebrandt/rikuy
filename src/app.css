@@ -455,6 +455,7 @@ body.pdf-on #pdfpane { display: flex; }
 .ttl-t { font-size: calc(var(--z-LARGE) * 1em); line-height: 1.22; margin-bottom: 1.1em; text-wrap: balance; }
 .ttl-a { font-size: calc(var(--z-large) * 1em); line-height: 1.25; display: flex; justify-content: center; flex-wrap: wrap; column-gap: 2.2em; row-gap: .6em; }
 .ttl-au { display: inline-block; }
+.ttl-s { font-size: calc(var(--z-large) * 1em); line-height: 1.25; margin: -.7em 0 1.1em; }
 .ttl-d { font-size: calc(var(--z-large) * 1em); margin-top: .8em; }
 
 /* abstract */
@@ -1453,7 +1454,7 @@ body.fpainting #pages { cursor: copy; }
   .stp-f .btn, .pop-modstyle .btn, .pop-apply .btn { min-height: 44px; }
   .pop-modstyle select, .pop-modstyle input[type="text"], .pop-modstyle input:not([type]), .pop-apply input { min-height: 44px; }
   /* the sheet's Close, a style's menu, the Design tab's menus and the phone's style list: a finger's 44 px */
-  .stp .pop-x { min-width: 44px; min-height: 44px; }
+  .stp .pop-x, .pop-modstyle .pop-x { min-width: 44px; min-height: 44px; }
   .pop-menu [role^=menuitem], .pop-styles [role^=menuitem] { min-height: 44px; }
   #rb-style { min-height: 44px; }
   .ms-c { min-height: 44px; }
@@ -2066,3 +2067,8 @@ html.pic-drag, html.pic-drag body { touch-action: none; overscroll-behavior: non
 .lbl .atom.a-img { display: inline-block; vertical-align: -.1em; }
 .lbl .atom.a-img img { height: 1.6ex; width: auto; }
 @media (pointer: coarse) { .ld > .btn { min-height: 44px; } .ld-pic { height: 60px; } }
+
+/* hyperref's colorlinks: references, citations and addresses in the colours TeX prints them (D1, R2) */
+.colorlinks .a-ref, .colorlinks .toc-l a { color: var(--lk-link); }
+.colorlinks .a-cite { color: var(--lk-cite); }
+.colorlinks .a-url, .colorlinks .y-link { color: var(--lk-url); }
