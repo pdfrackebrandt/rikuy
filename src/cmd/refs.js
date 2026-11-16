@@ -448,8 +448,9 @@ export const methods = {
     let most = 0, n = 0;
     for (const g of texFiles(this)) {
       const t = stripComments(this.src(g).slice(0, 4000000));
-      for (let re = /\\(footnote|section|chapter)(\*?)(?![A-Za-z@])/g, m, k = 0; (m = re.exec(t)) && k < 100000; k++) {
-        if (m[1] === 'footnote') { if (!m[2]) most = Math.max(most, ++n); } else if (!m[2] && at && (m[1] === at || (at === 'section' && m[1] === 'chapter'))) n = 0;
+      // (\footnotemark steps the counter as \footnote does, review V8)
+      for (let re = /\\(footnote|footnotemark|section|chapter)(\*?)(?![A-Za-z@])/g, m, k = 0; (m = re.exec(t)) && k < 100000; k++) {
+        if (m[1] === 'footnote' || m[1] === 'footnotemark') { if (!m[2]) most = Math.max(most, ++n); } else if (!m[2] && at && (m[1] === at || (at === 'section' && m[1] === 'chapter'))) n = 0;
       }
     }
     return most;
@@ -657,7 +658,17 @@ export const methods = {
       const S = starts.get(B);
       let j = -1;
       for (let a = 0, b = S.length - 1; a <= b;) { const m = (a + b) >> 1; if (S[m][0] <= s) { j = m; a = m + 1; } else b = m - 1; }
-      const el = (j >= 0 && this.root.querySelector('span.t[data-g="' + B.id + '.' + S[j][1] + '"]')) || this.root.querySelector('[data-b="' + B.id + '"]');
+      // (a segment cut over two pages is two spans of one data-g: the one holding the character
+      // just before the entry, counted along them, review V5)
+      let el = null;
+      if (j >= 0) {
+        const g = B.segs[S[j][1]], spans = this.root.querySelectorAll('span.t[data-g="' + B.id + '.' + S[j][1] + '"]');
+        let ci = 0;
+        if (g && g.rel) { const n = g.rel.length >> 1; while (ci < n && B.base + g.rel[2 * ci] < s) ci++; }
+        let at = 0;
+        for (const sp of spans) { el = sp; at += sp.textContent.length; if (at >= ci) break; }
+      }
+      el = el || this.root.querySelector('[data-b="' + B.id + '"]');
       const pg = el && el.closest('.page');
       return pg ? pageNo.get(pg) || null : null;
     };
@@ -694,12 +705,13 @@ export const methods = {
   // as the pages are laid out; the model's numbers kept to go back to (review M5)
   fnPerPage() {
     const R = ((this.model && this.model.opts.refs) || {}).fn || {}, per = R.restart === 'page';
-    const all = this.root.querySelectorAll('sup.a-fn, .fn .fnn');
+    // (\thanks' marks are the title's, not the footnotes': left as they are, review V4)
+    const all = this.root.querySelectorAll('sup.a-fn:not(.fn-th), .fn:not(.fn-th) .fnn');
     if (!per) { for (const x of all) if (x.dataset.n0 != null) { x.textContent = x.dataset.n0; delete x.dataset.n0; } return; }
     const style = R.style;
     const fmt = (n) => (style === 'roman' ? roman(n) : style === 'Roman' ? roman(n).toUpperCase() : style === 'alph' ? String.fromCharCode(96 + n) : style === 'Alph' ? String.fromCharCode(64 + n) : style === 'fnsymbol' ? ['*', '\u2020', '\u2021', '\u00a7', '\u00b6', '\u2016', '**', '\u2020\u2020', '\u2021\u2021'][n - 1] || String(n) : String(n));
     for (const pg of this.root.querySelectorAll('.page')) {
-      const marks = pg.querySelectorAll('sup.a-fn'), notes = pg.querySelectorAll('.fn .fnn');
+      const marks = pg.querySelectorAll('sup.a-fn:not(.fn-th)'), notes = pg.querySelectorAll('.fn:not(.fn-th) .fnn');
       marks.forEach((m, k) => { if (m.dataset.n0 == null) m.dataset.n0 = m.textContent; m.textContent = fmt(k + 1); });
       notes.forEach((m, k) => { if (m.dataset.n0 == null) m.dataset.n0 = m.textContent; m.textContent = fmt(k + 1); });
     }

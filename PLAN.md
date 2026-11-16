@@ -2529,6 +2529,19 @@ Tests:
     review cases, four of them compiled: IEEE under natbib, biblatex from a .sty with biber, a short
     title with a bracket, an edited url with `#` and a quoted accent).
 
+47b. **B9 verification: what the verifier of 47a found, fixed with its cases.** Edit Source escapes
+    exactly the span typed into a field it showed as LaTeX (`&`, `%`, `#`, `_`, a lone `$`, `~`,
+    `^`), never inside math and never what was there (V1, V10); compares and writes a CRLF file's
+    lines as the file has them (V3); refuses unbalanced braces before the dialog closes (V9). An
+    address with `#` or `%` in a BibTeX or natbib document brings `\usepackage{url}` in the same
+    step where neither url nor hyperref is there (V2: plainnat's own `\url` stops at them). Per
+    page footnote numbers leave `\thanks` alone (V4); an index entry at the end of a paragraph cut
+    over two pages takes the page of its half (V5); `ieeetr`, `plain`, `unsrt`, `abbrv` asked for
+    under natbib become its numbered forms and `alpha` is refused (V6); an author and year style
+    takes `\setcitestyle{numbers}` off (V7); `\footnotemark` counts toward the symbols' nine (V8).
+    Rebased on e309a85. Evidence: `bib.test.mjs` 71, `refs.py` 244 (8 new cases, one more
+    compiled: a typed `&` and `%` and an address with `#` and `%` in natbib).
+
 ## Open tasks
 
 60. **Tag the PDF.** LaTeX tags a PDF with `\DocumentMetadata{lang=..,pdfstandard=ua-2,tagging=on}`,

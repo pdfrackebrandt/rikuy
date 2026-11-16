@@ -2,7 +2,7 @@
 // entry changed field by field with every other byte kept, and the References tab's preamble and
 // body edits (src/refsrc.js): contents' depth, footnote numbering, the citation style per system,
 // the bibliography's title, makeindex's entries and page lists.
-import { parseBib, bibSpans, bibEntryText, bibFieldEdits, bibDeleteEdit, bibAppendEdit, bibEscape, bibKey, texToPlain } from '../src/bib.js';
+import { parseBib, bibSpans, bibEntryText, bibFieldEdits, bibDeleteEdit, bibAppendEdit, bibEscape, bibKey, texToPlain, typedInto } from '../src/bib.js';
 import * as R from '../src/refsrc.js';
 import { buildModel } from '../src/model.js';
 
@@ -143,6 +143,21 @@ const ap = (t, ed) => { for (const x of [...ed].sort((a, b) => b.s - a.s || b.e 
   const { usePackages } = await import('../src/preamble.js');
   const HY = '\\documentclass{article}\n\\usepackage{hyperref}\n\\begin{document}\n\\end{document}\n';
   check('L3: imakeidx goes above hyperref, so the index keeps its links', ap(HY, usePackages(HY, ['imakeidx'])).indexOf('imakeidx') < ap(HY, usePackages(HY, ['imakeidx'])).indexOf('hyperref'));
+}
+
+// ---- the verification of be26497
+{
+  check('V1: what was typed into a field escaped, what was there kept', typedInto('Science and Society', 'Science & Society, 50% of it') === 'Science \\& Society, 50\\% of it' && typedInto('{\\LaTeX} & more', '{\\LaTeX} & more, #1') === '{\\LaTeX} & more, \\#1');
+  check('V1: typed inside math left as math', typedInto('On $L_p$ spaces', 'On $L_p^2$ spaces') === 'On $L_p^2$ spaces');
+  check('V1: ~ and ^ typed are the characters', typedInto('a', 'a ~ b ^ c') === 'a \\textasciitilde{} b \\textasciicircum{} c');
+  check('V3: a CRLF field compared and written with its own line ends', typedInto('one\r\n  two', 'one\n  two') === null && typedInto('one\r\n  two', 'one\n  two & three', '\r\n') === 'one\r\n  two \\& three');
+  check('V10: a lone $ typed is a dollar sign', bibEscape('US$ 5 & Co') === 'US\\$ 5 \\& Co' && bibEscape('$x_1$ & y') === '$x_1$ \\& y');
+  const NB = '\\documentclass{article}\n\\usepackage{natbib}\n\\begin{document}\nX\n\\bibliographystyle{plainnat}\n\\bibliography{refs}\n\\end{document}\n';
+  const v6 = ap(NB, R.bibStyleEdits(NB, 'ieeetr'));
+  check('V6: ieeetr asked for under natbib gives IEEEtranN with numbers', v6.includes('\\usepackage[numbers]{natbib}') && v6.includes('{IEEEtranN}'), v6);
+  check('V6: alpha has no natbib form: nothing written', R.bibStyleEdits(NB, 'alpha').length === 0);
+  const SC = NB.replace('\\begin{document}', '\\setcitestyle{numbers}\n\\begin{document}');
+  check('V7: \\setcitestyle{numbers} read, and taken off for an author and year style', R.bibSetup(SC).numbers === true && ap(SC, R.bibStyleEdits(SC, 'abbrvnat')) === NB.replace('{plainnat}', '{abbrvnat}'), ap(SC, R.bibStyleEdits(SC, 'abbrvnat')));
 }
 
 console.log(`bib.test: ${pass} passed, ${fail} failed`);

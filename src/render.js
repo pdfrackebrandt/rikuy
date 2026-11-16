@@ -141,7 +141,7 @@ export class Renderer {
     const fnEls = [];
     for (const fn of mb.fns) {
       const el = document.createElement('div');
-      el.className = 'fn';
+      el.className = 'fn' + (fn.th ? ' fn-th' : '');
       el.dataset.ctx = 'fn';
       setDir(el, fn.dir);
       const sup = chr(fn.num, 'fnn');
@@ -792,7 +792,7 @@ export class Renderer {
       }
       case 'cite': s.textContent = x.text; rec.keys = x.keys; rec.cmd = x.cmd; if (x.missing) s.classList.add('miss'); break;
       case 'ref': s.textContent = x.text; rec.key = x.key; rec.cmd = x.cmd; if (x.missing) s.classList.add('miss'); break;
-      case 'fn': s.classList.add('fnm'); s.textContent = x.num; rec.num = x.num; rec.fnIndex = B.fns.findIndex((f) => f.num === x.num && !f.claimed); if (rec.fnIndex >= 0) B.fns[rec.fnIndex].claimed = true; break;
+      case 'fn': s.classList.add('fnm'); if (x.th) s.classList.add('fn-th'); s.textContent = x.num; rec.num = x.num; rec.fnIndex = B.fns.findIndex((f) => f.num === x.num && !f.claimed); if (rec.fnIndex >= 0) B.fns[rec.fnIndex].claimed = true; break;
       case 'en': s.classList.add('fnm', 'enm'); s.textContent = x.num; rec.num = x.num; break;
       case 'br': s.innerHTML = '<br>'; break;
       case 'url': s.textContent = x.text; rec.url = x.url; break;

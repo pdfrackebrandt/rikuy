@@ -296,12 +296,17 @@ export function bibStyleEdits(src, style, others = []) {
   }
   if (B.system === 'thebibliography') return [];
   // natbib: the .bst, and its numbers option on its line as the style wants it
+  // (BibTeX's own numbered styles under natbib, as an agent may ask: natbib's numbered ones; alpha
+  // has no natbib form, review V6)
+  if (B.natbib) { const NAT = { ieeetr: 'IEEEtranN:numbers', plain: 'plainnat:numbers', unsrt: 'unsrtnat:numbers', abbrv: 'abbrvnat:numbers' }; if (NAT[style]) style = NAT[style]; if (style === 'alpha') return []; }
   const num = /:numbers$/.test(style);
   style = style.replace(/:numbers$/, '');
   const opt = [];
   if (B.natbib) {
+    // (\setcitestyle{numbers} in the preamble taken off for an author and year style, review V7)
+    if (!num) { const pt = stripComments(src.slice(0, Math.max(0, end))); for (const c of cmdCalls(pt, 'setcitestyle', 1)) { const [a, b] = c.args[0], kv = parseKV(pt, a, b); if (!kv.some((x) => x.key === 'numbers')) continue; opt.push(kv.length === 1 ? drop(src, c.s, c.e) : kvEdits(src, a, b, { numbers: null, authoryear: true })[0]); } }
     const p = packageLine(src, 'natbib', end);
-    if (p && p.names.length === 1 && !!B.numbers !== num) {
+    if (p && p.names.length === 1 && (num ? !B.numbers : !!(packageOptions(src, 'natbib', end) || {}).numbers)) {
       if (!p.opts) { if (num) opt.push({ s: p.list[0] - 1, e: p.list[0] - 1, t: '[numbers]' }); } else {
         const kv = parseKV(src, p.opts[0], p.opts[1]);
         const ed = kvEdits(src, p.opts[0], p.opts[1], num ? { numbers: true, authoryear: null } : { numbers: null });

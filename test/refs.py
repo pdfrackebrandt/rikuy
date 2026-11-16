@@ -623,6 +623,14 @@ def compiled(page):
     ed = page.get_by_role('dialog', name='Edit Source'); ed.get_by_label('Author', exact=True).fill(ed.get_by_label('Author', exact=True).input_value() + ' and Doe, C.'); ed.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
     c = compile_doc(page, src(page), {'refs.bib': src(page, 'refs.bib')}); T = unicodedata.normalize('NFC', re.sub(r'\s+', ' ', c['text']))
     check('M7, L4, H2: a short title with ], an edited url with # and a quoted accent edited: TeX prints each', c['ok'] and '1 Results' in T and 'https://e.com/q#s' in T and 'Müller' in T and 'Doe' in T, (c['log'][-300:], T[:500]))
+    # V1, V2 where TeX is the judge
+    load_doc(page, {'main.tex': D('Words \\cite{s} to cite.\n\n\\bibliographystyle{plainnat}\n\\bibliography{refs}', '\\usepackage{natbib}\n'), 'refs.bib': '@book{s, author = {Roe, R.}, title = {Science and Society}, year = 2000}\n'})
+    click_text(page, 'Words', 2)
+    ed = edit_source(page); ed.get_by_label('Title', exact=True).fill('Science & Society, 50% of it'); ed.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    click_text(page, 'to cite', 2)
+    cmd(page, 'add-source', {'type': 'misc', 'fields': {'author': 'Doe, J.', 'title': 'Page', 'year': '2020', 'url': 'https://e.com/p#s?a=1%202'}})
+    c = compile_doc(page, src(page), {'refs.bib': src(page, 'refs.bib')}); T = re.sub(r'\s+', ' ', c['text'])
+    check('V1, V2: a typed & and % and an address with # and % compile in natbib; TeX prints them', c['ok'] and 'Science & Society, 50% of it' in T and 'https://e.com/p#s?a=1%202' in T, (c['log'][-300:], T[:400]))
     # biblatex with biber: APA, Works Cited
     bl = D('As \\textcite{knuth84} shows.\n\n\\printbibliography', '\\usepackage[style=authoryear]{biblatex}\n\\addbibresource{refs.bib}\n')
     load_doc(page, {'main.tex': bl, 'refs.bib': BIB}); click_text(page, 'shows', 1)
@@ -748,7 +756,46 @@ def review(page):
     p2 = texts(page, '.idx-e')
     check('R3: an entry pushed to page 2 by a page break before it: the index says 2', p1 == ['alpha, 1'] and p2 == ['alpha, 2'], (p1, p2))
 
-SECTIONS = {'review': review, 'toc': toc, 'notes': notes, 'sources': sources, 'captions': captions, 'xrefs': xrefs, 'index': index, 'links': links}
+# ---- the verification of be26497 (V1 to V10) -------------------------------------------------------
+def edit_source(page, k=0):
+    cmd(page, 'manage-sources'); mgr = page.get_by_role('dialog', name='Source Manager')
+    mgr.get_by_role('option').nth(k).click(); mgr.get_by_role('button', name='Edit…').click(); page.wait_for_timeout(300)
+    return page.get_by_role('dialog', name='Edit Source')
+
+def verify(page):
+    # V1: & and % typed into an existing field escaped, the rest kept
+    load_doc(page, {'main.tex': NAT.replace('\\citet{knuth84}', '\\citet{s}'), 'refs.bib': '@book{s, title = {Science and Society}, year = 2000}\n'}); click_text(page, 'words.', 1)
+    ed = edit_source(page); ed.get_by_label('Title', exact=True).fill('Science & Society, 50% of it'); ed.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    check('V1: & and % typed into a field written \\& and \\%', 'title = {Science \\& Society, 50\\% of it}' in src(page, 'refs.bib'), src(page, 'refs.bib'))
+    # V3: a CRLF .bib: an untouched field over two lines kept byte for byte
+    crlf = '@book{s,\r\n  title = {On spaces and\r\n             things},\r\n  year = 2000\r\n}\r\n'
+    load_doc(page, {'main.tex': NAT.replace('\\citet{knuth84}', '\\citet{s}'), 'refs.bib': crlf}); click_text(page, 'words.', 1)
+    ed = edit_source(page); ed.get_by_label('Year').fill('2001'); ed.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    check('V3: a CRLF .bib keeps its untouched field over two lines, its line ends too', src(page, 'refs.bib') == crlf.replace('2000', '2001'), repr(src(page, 'refs.bib')))
+    # V9: braces that do not balance: the dialog stays open with what was typed
+    load_doc(page, {'main.tex': NAT.replace('\\citet{knuth84}', '\\citet{s}'), 'refs.bib': '@book{s, title = {A {B} C}, year = 2000}\n'}); click_text(page, 'words.', 1)
+    ed = edit_source(page); ed.get_by_label('Title', exact=True).fill('A {B C'); ed.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    check('V9: unbalanced braces refused before the dialog closes, the typing kept', page.get_by_role('dialog', name='Edit Source').count() == 1 and page.get_by_role('dialog', name='Edit Source').get_by_label('Title', exact=True).input_value() == 'A {B C' and 'balance' in page.inner_text('#toast'), page.inner_text('#toast'))
+    page.evaluate('rikuy.closePop()')
+    # V2: a web address with # in Rikuy's own natbib set up gets url.sty in the same step
+    load_doc(page, D('Words to cite.')); click_text(page, 'to cite', 2); h0 = hist(page)
+    cmd(page, 'add-source', {'type': 'misc', 'fields': {'author': 'Doe, J.', 'title': 'Page', 'year': '2020', 'url': 'https://e.com/p#s?a=1%202'}})
+    check('V2: an address with # and % in natbib: \\usepackage{url} in the same step', '\\usepackage{url}' in src(page) and hist(page) == h0 + 1 and '{https://e.com/p#s?a=1%202}' in src(page, 'refs.bib'), (src(page)[:120], src(page, 'refs.bib')))
+    # V4: per page footnotes leave \thanks marks alone
+    load_doc(page, D('\\maketitle\nWords\\footnote{a} and\\footnote{b}.', '\\usepackage[perpage]{footmisc}\n\\title{T\\thanks{one}\\thanks{two}}\n\\author{A}\n')); page.wait_for_timeout(400)
+    check('V4: perpage: \\thanks keep their symbols, the footnotes 1 and 2', texts(page, 'sup.a-fn') == ['*', '†', '1', '2'], texts(page, 'sup.a-fn'))
+    # V5: an entry at the end of a paragraph cut over two pages takes the second page
+    long = 'Start\\index{alpha} ' + ' '.join('x%d' % k for k in range(900)) + ' End\\index{omega}.'
+    load_doc(page, D(long + '\n\n\\printindex', '\\usepackage{imakeidx}\n\\makeindex\n')); page.wait_for_timeout(600)
+    end_pg = page.evaluate("""() => { const sp = [...document.querySelectorAll('#pages span.t')].filter((x) => x.textContent.includes('End')).pop(); const pages = [...document.querySelectorAll('.page')]; return pages.indexOf(sp.closest('.page')) + 1; }""")
+    check('V5: "End" drawn on page %d, and the index gives omega that page' % end_pg, end_pg >= 2 and texts(page, '.idx-e') == ['alpha, 1', 'omega, %d' % end_pg], texts(page, '.idx-e'))
+    # V8: \footnotemark counts toward symbols' nine
+    fm = D(' '.join('W\\footnote{n}' for _ in range(9)) + ' X\\footnotemark')
+    load_doc(page, fm); click_text(page, 'W', 0)
+    cmd(page, 'footnote-options', {'style': 'fnsymbol'})
+    check('V8: nine footnotes and a \\footnotemark: symbols refused', src(page) == fm, page.inner_text('#toast'))
+
+SECTIONS = {'review': review, 'verify': verify, 'toc': toc, 'notes': notes, 'sources': sources, 'captions': captions, 'xrefs': xrefs, 'index': index, 'links': links}
 
 def main():
     want = sys.argv[1:]
