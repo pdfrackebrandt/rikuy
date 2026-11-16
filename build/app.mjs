@@ -671,8 +671,9 @@ template (article, report, book or thesis, letter, KOMA-Script, slides, exam, CV
 Recent documents, Properties (dialog: Title, Author, Subject, Keywords; only the fields changed are
 written, and only what was typed is escaped; \\title, \\author, and pdfsubject and pdfkeywords in
 \\hypersetup, a bare \\usepackage{hyperref} added before cleveref where nothing loads it), Check accessibility (pictures without alt text, skipped
-heading levels, tables without a header row, no title or language, an untagged PDF; tagging
-waits for a TeX tree that has latex-lab's files), Export as (web page, Markdown,
+heading levels, tables without a header row, no title or language, an untagged PDF; Tag the
+PDF writes \\DocumentMetadata{lang=..,pdfstandard=ua-2,tagging=on} before \\documentclass, or
+tagging=on into the \\DocumentMetadata there), Export as (web page, Markdown,
 OpenDocument, RTF, EPUB, plain text, by pandoc, on a copy with Word), Print PDF, Set as default.
 The Help tab: How it works, Learn Rikuy (a document to try things in, with a live graph),
 Interactive graphs, Keyboard shortcuts, What's new, Report a problem, For AI agents. The arrow

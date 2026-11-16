@@ -10,7 +10,7 @@ import { wordEnabled } from '../word.js';
 import { $, mk, load, store } from '../ui/dom.js';
 import { openMenu, dialog } from '../ui/kit.js';
 import { guide } from './help.js';
-import { preambleEnd, lastCall, hasPackage, docClass } from '../preamble.js';
+import { preambleEnd, lastCall, hasPackage, docClass, stripComments, groupEnd, parseKV, kvEdits } from '../preamble.js';
 import { readProperties, propertyEdits } from '../props.js';
 
 const LIVE_NOTE = 'Graphs are pictures in a PDF or Word file. Download LaTeX to keep them live.';
@@ -112,13 +112,24 @@ function graphicsOptions(t) {
   return out;
 }
 
+// \DocumentMetadata{...} before \documentclass, comments read as TeX reads them: the range of
+// its keys { s, e } and the keys, { bad: true } when its braces do not close, or null
+function docMetadata(src, cls) {
+  if (!cls) return null;
+  const pre = stripComments(src.slice(0, cls.s)), m = /\\DocumentMetadata\s*\{/.exec(pre);
+  if (!m) return null;
+  const i = m.index + m[0].length - 1, z = groupEnd(pre, i, 4000);
+  return z < 0 ? { bad: true } : { s: i + 1, e: z - 1, keys: parseKV(src, i + 1, z - 1) };
+}
+
 // Accessibility: what the document lacks, read from the model and the source (bounded)
 function a11yIssues(app) {
   const out = [], src = app.src(app.main), end = preambleEnd(src);
   const pre = end >= 0 ? src.slice(0, end) : '';
+  const cls = end >= 0 ? docClass(src) : null, meta = docMetadata(src, cls), keys = (meta && meta.keys) || [];
   const files = [...app.files].filter(([n]) => /\.tex$/i.test(n));
   if (end >= 0 && !lastCall(src, 'title', end) && !/\\title\s*\{/.test(src.slice(0, 200000))) out.push({ k: 'title', t: 'No title (\\title): a PDF reader names the document by its file instead.' });
-  if (end >= 0 && !/\\DocumentMetadata\s*\{[^}]*lang\s*=/.test(pre.slice(0, 4000)) && !hasPackage(src, 'babel', end) && !hasPackage(src, 'polyglossia', end) && !/\\set(main|default)language/.test(pre)) out.push({ k: 'lang', t: 'No language set: a screen reader guesses how to read the text. \\DocumentMetadata{lang=en} or babel says it.' });
+  if (end >= 0 && !keys.some((x) => x.key === 'lang') && !hasPackage(src, 'babel', end) && !hasPackage(src, 'polyglossia', end) && !/\\set(main|default)language/.test(pre)) out.push({ k: 'lang', t: 'No language set: a screen reader guesses how to read the text. \\DocumentMetadata{lang=en} or babel says it.' });
   let figs = 0, noAlt = 0;
   for (const [, t] of files) for (const o of graphicsOptions(t)) { figs++; if (o == null || !/\balt\s*=/.test(o)) noAlt++; }
   if (noAlt) out.push({ k: 'alt', t: noAlt + ' of ' + figs + ' pictures have no alt text: \\includegraphics[alt={What it shows}]{...}.' });
@@ -137,10 +148,9 @@ function a11yIssues(app) {
     }
   }
   if (plain) out.push({ k: 'table', t: plain + ' of ' + tabs + ' tables have no marked header row (\\toprule, \\hline or \\midrule under the first row).' });
-  // (LaTeX tags a PDF with \\DocumentMetadata{..., tagging=on}; Rikuy's TeX tree leaves out the
-  // HTML files of latex-lab that tagging embeds, so every tagged compile stops with an error: no
-  // fix offered until the tree has them, PLAN.md's open task 60)
-  if (end >= 0 && !/\\DocumentMetadata\s*\{[^}]*tagging\s*=\s*on/.test(pre.slice(0, 4000))) out.push({ k: 'tagging', t: 'The PDF is not tagged: a screen reader reads it as loose text. LaTeX can tag it (\\DocumentMetadata with tagging=on), but this copy of TeX lacks files tagging needs; it will come with a TeX tree update.' });
+  // (LaTeX tags a PDF with \\DocumentMetadata{..., tagging=on}; the tree keeps tagpdf's HTML
+  // files, the CSS a tagged PDF embeds for its lists and alignment, PLAN.md task 60)
+  if (end >= 0 && !keys.some((x) => x.key === 'tagging' && x.value === 'on')) out.push({ k: 'tagging', t: 'The PDF is not tagged: a screen reader reads it as loose text.', fix: cls && !(meta && meta.bad) ? 'Tag the PDF' : null });
   return out;
 }
 
@@ -376,7 +386,7 @@ export const methods = {
       if (x.fix) {
         const b = mk('button', 'btn ghost sm', x.fix);
         b.type = 'button';
-        b.title = 'Writes \\DocumentMetadata{lang=..., pdfstandard=ua-2, tagging=on} before \\documentclass: LaTeX tags the PDF (some older packages do not support it yet)';
+        b.title = 'Writes \\DocumentMetadata{lang=..., pdfstandard=ua-2, tagging=on} before \\documentclass (or tagging=on into the one there): LaTeX tags the PDF (some older packages do not support it yet)';
         b.addEventListener('click', () => { this.closePop(true); this.runCommand('check-accessibility', 'tagging'); });
         d.append(b);
       }
@@ -385,15 +395,18 @@ export const methods = {
     this.positionPop();
     return true;
   },
-  // \DocumentMetadata{lang=..,pdfstandard=ua-2,tagging=on} on the first line, once
+  // \DocumentMetadata{lang=..,pdfstandard=ua-2,tagging=on} on the line before \documentclass,
+  // once; a \DocumentMetadata already there gets tagging=on among its keys, the rest as written
   addTagging() {
-    this.toast('Tagging the PDF needs a TeX tree update: this copy of TeX lacks the files of latex-lab that tagging embeds.', 7000);
-    return false;
-  },
-  // (kept for the TeX tree that has latex-lab's files: PLAN.md task 60)
-  addTaggingLine() {
-    const src = this.src(this.main), cls = docClass(src);
-    if (!cls || /\\DocumentMetadata\s*\{/.test(src.slice(0, cls.s))) return false;
+    const src = this.src(this.main), cls = docClass(src), meta = docMetadata(src, cls);
+    if (!cls || (meta && (meta.bad || meta.keys.some((x) => x.key === 'tagging' && x.value === 'on')))) return false;
+    if (meta) {
+      const ed = kvEdits(src, meta.s, meta.e, { tagging: 'on' });
+      if (!ed.length) return false;
+      this.commit(ed.map((x) => ({ f: this.main, ...x })), null, 'tagging');
+      this.closeGroup();
+      return true;
+    }
     const lang = (this.model && this.model.opts.lang) || 'en', nl = src.includes('\r\n') ? '\r\n' : '\n';
     const at = src.lastIndexOf('\n', cls.s - 1) + 1;
     this.commit([{ f: this.main, s: at, e: at, t: '\\DocumentMetadata{lang=' + lang + ',pdfstandard=ua-2,tagging=on}' + nl }], null, 'tagging');

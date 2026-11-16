@@ -77,7 +77,10 @@ DROP = ['uantwerpendocs', 'nwejm', 'openmoji', 'twemojis', 'hwemoji', 'utfsym', 
         # integration models
         'pst-cox', 'biblatex-ms', 'citation-style-language', 'scholatex', 'hawkdraw', 'pmdraw', 'numodel-bundle']
 DROP_RE = re.compile(r'/(' + '|'.join(re.escape(x) for x in DROP) + r')/')
-KEEP_ANYWAY = re.compile(r'(^texlive/texmf-dist/web2c/|^texlive/texmf-dist/texmf-var/fonts/map/pdftex/|/language\.(dat|def)|/ls-R$|\.(map|enc)$)')
+# (tagpdf's .html files are TeX input, not documentation: a tagged PDF embeds the CSS of its lists
+# and alignment from them, and \DocumentMetadata{tagging=on} stops without them, PLAN.md task 60)
+KEEP_ANYWAY = re.compile(r'(^texlive/texmf-dist/web2c/|^texlive/texmf-dist/texmf-var/fonts/map/pdftex/|/language\.(dat|def)|/ls-R$|\.(map|enc)$'
+                         r'|^texlive/texmf-dist/tex/latex/tagpdf/[^/]+\.html$)')
 
 # Families taken from texlive-fonts-extra (the rest of it, 600 MB, stays out).
 FONT_PICKS = ['newtx', 'newpx', 'stix2-type1', 'stix', 'fourier', 'mathdesign', 'txfontsb', 'mnsymbol', 'mathabx-type1',

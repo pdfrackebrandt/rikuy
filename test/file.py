@@ -9,7 +9,8 @@ existing \\hypersetup, into hyperref's options, a new hyperref with hidelinks, a
 under beamer, which loads hyperref itself; one undo each, back byte for byte; hand written
 \\hypersetup read back into the dialog's fields); Check accessibility (pictures without alt text,
 a skipped heading level, a table without a header row, no language; Tag the PDF writing
-\\DocumentMetadata once, one undo). Save a copy: Export as, with pandoc where dist/word exists
+\\DocumentMetadata once, or tagging=on into one already there, one undo; where dist/tex exists,
+what it writes compiled on pdfLaTeX, XeLaTeX and LuaLaTeX into a tagged PDF 2.0). Save a copy: Export as, with pandoc where dist/word exists
 (HTML, Markdown and plain text holding the document's words). Phones: the File tab's buttons 44 px
 and its dialogs on the screen at 390 px.
 
@@ -173,10 +174,32 @@ def accessibility(page):
     page.get_by_role('button', name='Check accessibility', exact=True).click(); page.wait_for_timeout(300)
     dlg = page.get_by_role('dialog', name='Check accessibility', exact=True)
     page.screenshot(path=os.path.join(SHOTS, 'file-a11y-1366.png'))
-    # (H4: the tree has no latex-lab HTML files, so a tagged PDF stops with an error: not offered)
-    check('Tag the PDF is not offered until the TeX tree has what tagging needs; it says why', dlg.get_by_role('button', name='Tag the PDF').count() == 0 and 'TeX tree update' in dlg.inner_text())
-    page.keyboard.press('Escape')
-    check('and the command writes nothing', ev(page, 'window.rikuy.runCommand("check-accessibility", "tagging")') is False and src(page) == d)
+    h = ev(page, 'window.rikuy.hist.length')
+    dlg.get_by_role('button', name='Tag the PDF', exact=True).click(); page.wait_for_timeout(300)
+    check('Tag the PDF: \\DocumentMetadata before \\documentclass, one step', src(page) == '\\DocumentMetadata{lang=en,pdfstandard=ua-2,tagging=on}\n' + d and ev(page, 'window.rikuy.hist.length') == h + 1, src(page)[:90])
+    check('and no second time; the check finds it tagged', ev(page, 'window.rikuy.runCommand("check-accessibility", "tagging")') is False and 'tagging' not in ev(page, 'window.rikuy.accessibilityIssues().map((x) => x.k)'))
+    ev(page, 'window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('one undo: the bytes of before', src(page) == d)
+    # a \DocumentMetadata already there (CRLF, a comment, a group in a value, tagging=off) gets
+    # tagging=on among its keys; one commented out is no \DocumentMetadata
+    for name, before, after in (
+            ('keys of its own', '\\DocumentMetadata{\r\n  lang=de-DE, % German\r\n  testphase={phase-III,math},\r\n  tagging=off\r\n}\r\n\\documentclass{article}\r\n\\begin{document}\r\nText.\r\n\\end{document}\r\n',
+             '\\DocumentMetadata{\r\n  lang=de-DE, % German\r\n  testphase={phase-III,math},\r\n  tagging=on\r\n}\r\n\\documentclass{article}\r\n\\begin{document}\r\nText.\r\n\\end{document}\r\n'),
+            ('no tagging key', '\\DocumentMetadata{pdfversion=2.0}\n\\documentclass{article}\n\\begin{document}\nText.\n\\end{document}\n',
+             '\\DocumentMetadata{pdfversion=2.0,tagging=on}\n\\documentclass{article}\n\\begin{document}\nText.\n\\end{document}\n'),
+            ('one commented out', '% \\DocumentMetadata{tagging=on}\n\\documentclass{article}\n\\begin{document}\nText.\n\\end{document}\n',
+             '% \\DocumentMetadata{tagging=on}\n\\DocumentMetadata{lang=en,pdfstandard=ua-2,tagging=on}\n\\documentclass{article}\n\\begin{document}\nText.\n\\end{document}\n')):
+        load_doc(page, before)
+        ks = ev(page, 'window.rikuy.accessibilityIssues().map((x) => x.k)')
+        r = ev(page, 'window.rikuy.runCommand("check-accessibility", "tagging")')
+        ok = 'tagging' in ks and r is True and src(page) == after
+        ev(page, 'window.rikuy.undo()'); page.wait_for_timeout(200)
+        check('Tag the PDF on a \\DocumentMetadata with ' + name + ': tagging=on, the rest as written; one undo back', ok and src(page) == before, (ks, r, src(page)[:120]))
+    load_doc(page, '\\DocumentMetadata{testphase={a,b},lang=en,tagging=on}\n\\documentclass{article}\n\\begin{document}\nText.\n\\end{document}\n')
+    check('a group in a value does not hide the lang and tagging=on after it', 'tagging' not in ev(page, 'window.rikuy.accessibilityIssues().map((x) => x.k)') and 'lang' not in ev(page, 'window.rikuy.accessibilityIssues().map((x) => x.k)'))
+    load_doc(page, '\\DocumentMetadata{lang=en,\n\\documentclass{article}\n\\begin{document}\nText.\n\\end{document}\n')
+    check('a \\DocumentMetadata whose brace never closes: no button, nothing written', ev(page, 'window.rikuy.accessibilityIssues().find((x) => x.k === "tagging").fix') is None and ev(page, 'window.rikuy.runCommand("check-accessibility", "tagging")') is False)
+    tagged(page)
     # a stranger's file of spaces after \\includegraphics and \\usepackage: read in a moment
     load_doc(page, '\\documentclass{article}\n\\usepackage' + ' ' * 200000 + 'x\n\\begin{document}\n' + '\\includegraphics' + ' ' * 200000 + 'y\n\\end{document}\n')
     ms = ev(page, '(() => { const t = performance.now(); window.rikuy.accessibilityIssues(); return performance.now() - t; })()')
@@ -184,6 +207,45 @@ def accessibility(page):
     good = '\\DocumentMetadata{lang=en,pdfstandard=ua-2,tagging=on}\n\\documentclass{article}\n\\usepackage{booktabs}\n\\title{T}\n\\begin{document}\n\\section{A}\n\\subsection{B}\n\\begin{tabular}{ll}\n\\toprule\na & b \\\\\n\\midrule\nc & d\n\\end{tabular}\n\\end{document}\n'
     load_doc(page, good)
     check('a document with a title, a language, tagging, its levels and header rows: nothing found', ev(page, 'window.rikuy.accessibilityIssues().length') == 0, ev(page, 'window.rikuy.accessibilityIssues()'))
+
+
+def tagged(page):
+    """What Tag the PDF writes, compiled in the page on the three engines: a tagged PDF 2.0 (its
+    structure tree, marked, its language) with no error, lists and centred text in it (the CSS
+    tagpdf embeds for them comes from its .html files, which the tree once left out: task 60)"""
+    if not TEX:
+        print('SKIP Tag the PDF compiled on the three engines: no TeX tree in %s' % DIST)
+        return
+    import base64, io, logging, pypdf
+    logging.getLogger('pypdf').setLevel(logging.ERROR)
+
+    def embedded(rd):
+        """the names of the files a PDF carries (its /Filespec objects)"""
+        names = set()
+        for n in set(rd.xref_objStm) | {n for g in rd.xref.values() for n in g}:
+            try:
+                o = rd.get_object(n)
+            except Exception:
+                continue
+            if isinstance(o, dict) and o.get('/Type') == '/Filespec':
+                names.add(str(o.get('/F')))
+        return names
+    body = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\title{Tagged}\n\\begin{document}\n\\maketitle\n\\section{One}\nWords.\n'
+            '\\begin{itemize}\n\\item first\n\\end{itemize}\n\\begin{enumerate}\n\\item one\n\\end{enumerate}\n\\begin{center}\nCentred.\n\\end{center}\n'
+            '\\begin{equation}\nE = mc^2\n\\end{equation}\n\\begin{tabular}{ll}\n\\hline\na & b \\\\\n\\hline\nc & d\n\\end{tabular}\n\\end{document}\n')
+    load_doc(page, body)
+    check('the document to tag is offered Tag the PDF', ev(page, 'window.rikuy.runCommand("check-accessibility", "tagging")') is True and src(page).startswith('\\DocumentMetadata{lang=en,pdfstandard=ua-2,tagging=on}\n\\documentclass'), src(page)[:80])
+    written = src(page)
+    for engine in ('pdflatex', 'xelatex', 'lualatex'):
+        load_doc(page, written if engine == 'pdflatex' else '% !TeX program = ' + engine + '\n' + written)
+        r = ev(page, """async () => { const r = await window.rikuy.api.compile(); let s = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) s += String.fromCharCode(...r.pdf.subarray(i, i + 8192)); return { ok: r.ok, engine: r.engine, errs: (r.problems || []).filter((p) => p.severity === 'error').map((p) => p.message).slice(0, 3), pdf: s ? btoa(s) : '' }; }""")
+        info = None
+        if r['pdf']:
+            raw = base64.b64decode(r['pdf']); rd = pypdf.PdfReader(io.BytesIO(raw)); root = rd.trailer['/Root']
+            mark = root.get('/MarkInfo')
+            info = (rd.pdf_header, '/StructTreeRoot' in root, bool(mark and mark.get('/Marked')), str(root.get('/Lang')), {'latex-list-css.html', 'latex-align-css.html'} <= embedded(rd))
+        check('Tag the PDF on ' + engine + ': compiles in the page without an error, a tagged PDF 2.0 in English with the CSS of its lists and alignment',
+              r['ok'] and r['engine'] == engine and not r['errs'] and info == ('%PDF-2.0', True, True, 'en', True), (r['engine'], r['errs'], info))
 
 
 def export(page):

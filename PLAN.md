@@ -2277,9 +2277,9 @@ Tests:
     follow it, its keys in `\hypersetup` (H2); a class that loads hyperref (acmart, beamer,
     moderncv, tufte, aastex, ...) gets a `\hypersetup` line only (H3); a key is changed and cleared
     where it is read, options or `\hypersetup`, comments read as TeX reads them (L5); with
-    `dist/tex` the review's author, cleveref and acmart documents compile in the page. Tag the PDF is
-    not offered: the tree leaves out latex-lab's HTML files, so a tagged compile stops (H4, open
-    task 60). Export as drops Word's anchors and pictures it has no bytes for (M1, L7); a name in
+    `dist/tex` the review's author, cleveref and acmart documents compile in the page. Tag the PDF was
+    held back: the tree left out tagpdf's HTML files, so a tagged compile stopped (H4; task 60
+    offers it again). Export as drops Word's anchors and pictures it has no bytes for (M1, L7); a name in
     another script exports as `paper.*` (L8). The blocks shown as LaTeX move with the edits of
     commit, undo and redo in one pass (a key inside undo's merged region through its hunks; other
     changes as line hunks): 40 views in 850 KB under 30 ms a keystroke, a commit in the preamble and
@@ -2655,15 +2655,32 @@ Tests:
     References command under 2 ms there and its answers equal to a fresh read after edits to an
     `\input` file, to the main file and a change of main file (`refs.py` 251).
 
-## Open tasks
+60. **Tag the PDF.** Done in the code (branch `round3-r0-tagpdf`). `tex/build_tree.py` dropped every
+    `.html` file as documentation, and with it tagpdf's `latex-list-css.html` and
+    `latex-align-css.html` (TeX Live 2026 keeps them in `tex/latex/tagpdf/`, not latex-lab): CSS a
+    tagged PDF embeds for its lists and alignment, so every `\DocumentMetadata{...,tagging=on}`
+    compile stopped at `\end{document}` with `Package pdffile Error: File 'latex-list-css.html'
+    not found`. `KEEP_ANYWAY` now keeps `tex/latex/tagpdf/*.html` (the copies of
+    `texlive-latex-base`); nothing else was missing: the same tagged document (title, lists,
+    `center`, an equation, a table, a footnote, a reference) compiles in the page with no error on
+    pdfLaTeX, XeLaTeX and LuaLaTeX (`dev/texrun.py`) into a PDF 2.0 with a structure tree,
+    `/MarkInfo` marked, `/Lang (en)` and both CSS files attached. The tree and packs were rebuilt
+    from the inputs on this machine with Ubuntu 24.04's `libz.so.1.3` in `LD_PRELOAD`;
+    `dev/dist-manifest.txt` changes by three lines only: `tree.wasm`, the core pack with `ls-R`
+    and the pack with `tex/latex/tagpdf` (+515 bytes in all; the artifact's copy, the
+    other scripts' packs left out, is 254.1 MB of its 256). File › Check accessibility offers Tag
+    the PDF again: it writes `\DocumentMetadata{lang=..,pdfstandard=ua-2,tagging=on}` on the line
+    before `\documentclass`, or puts `tagging=on` among the keys of a `\DocumentMetadata` already
+    there (`kvEdits`: `tagging=off` turned on, CRLF, comments and a `{...}` value kept); the check
+    reads that `\DocumentMetadata` as TeX does (comments left out, braces balanced, so a group in
+    a value no longer hides `lang` or `tagging` after it) and offers no button where its braces do
+    not close. *Evidence:* `test/file.py` 87 with `dist/tex` and `dist/word` (the 77 before, the
+    test that Tag the PDF is held back replaced by its round trips on four sources and the tagged
+    document compiled on the three engines, each checked with pypdf); `npm test`, `test:offline`
+    58, `test:agent` 143, `launch.py` 18, `deploy_check.py` 45, `pages_check.py` (382 files, 358.6
+    MB), and the manifest diff empty.
 
-60. **Tag the PDF.** LaTeX tags a PDF with `\DocumentMetadata{lang=..,pdfstandard=ua-2,tagging=on}`,
-    but `tex/build_tree.py` drops every `.html` file, latex-lab's `latex-list-css.html` and
-    `latex-align-css.html` among them, so every tagged compile stops with `pdffile Error`. Keep
-    `texmf-dist/tex/latex/latex-lab/*.html` in the tree, rebuild it reproducibly (Ubuntu's zlib in
-    `LD_PRELOAD`), update `dev/dist-manifest.txt` in the same commit, then offer Check
-    accessibility's Tag the PDF again (`addTaggingLine` in `src/cmd/file.js`) with a compile of a
-    tagged document on the three engines in `file.py`.
+## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000
     papers, every failure classified as in task 2. Needs arxiv.org (see task 3). The owner runs
