@@ -2004,3 +2004,6 @@ html.pic-drag, html.pic-drag body { touch-action: none; overscroll-behavior: non
 .rb.rb-fold #rp-references .rb-grp > .rb-split > .btn:not(.icon):not(.rb-x) { width: 32px; padding: 0; justify-content: center; }
 /* (a dialog taller than the screen scrolls: its rows keep their height, none shrinks under the next) */
 .pop-refs > *, .pop-refs .src-fields > *, .pop-refs .refs-list > * { flex-shrink: 0; }
+/* \part in the contents, as article and report list it (review M2) */
+.toc-l-1, .toc-l0 { font-weight: bold; font-size: calc(var(--z-large, 1.2) * 1em); margin-top: .9em; }
+.toc-l-1 .toc-d, .toc-l0 .toc-d { border: 0; }

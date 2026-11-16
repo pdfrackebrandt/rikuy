@@ -41,7 +41,9 @@ const nameOf = (type) => (SOURCE_TYPES.find((x) => x[0] === type) || [type, type
 const fieldsOf = (type) => (SOURCE_TYPES.find((x) => x[0] === type) || SOURCE_TYPES[SOURCE_TYPES.length - 1])[2];
 const label = (e) => (shortAuthors(e) || e.key) + ' ' + (entryYear(e) || '');
 // an address as a .bib field holds it: spaces, braces and backslashes encoded, % and # escaped
-const urlField = (u) => String(u).trim().replace(/[\\{}\s]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0')).replace(/[%#]/g, (c) => '\\' + c);
+// (url.sty and biblatex read a .bib's url as it is written: % and # stay bare, review L4; an address
+// an earlier Rikuy wrote with \# and \% is read back without them, review M8)
+const urlField = (u) => String(u).trim().replace(/\\([%#&_~])/g, '$1').replace(/[\\{}\s]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase().padStart(2, '0'));
 
 // A new source, by the form or by an agent: { type, fields: { name: typed text }, key, cite }.
 // The entry goes at the end of the first .bib the document reads (refs.bib, and the
@@ -93,7 +95,11 @@ export function editSource(app, key, o, shown) {
   for (const [k, v] of Object.entries(o.fields || {})) {
     const was = shown && Object.prototype.hasOwnProperty.call(shown, k) ? shown[k] : '';
     if (String(v ?? '') === String(was)) continue;
-    ch[k] = String(v ?? '').trim() ? (k === 'url' ? urlField(v) : bibEscape(String(v).trim())) : '';
+    const t = String(v ?? '').trim();
+    // (a field the form showed as the .bib holds it is LaTeX: written as typed, never escaped again;
+    // only text typed into an empty field is escaped, review H1)
+    if (t && was && !balanced(t)) { app.toast('The braces of ' + k + ' do not balance: nothing written'); return false; }
+    ch[k] = !t ? '' : k === 'url' ? urlField(t) : was ? t : bibEscape(t);
   }
   const ed = bibFieldEdits(app.src(E.file), E, ch);
   if (!ed.length) return true;
@@ -101,6 +107,9 @@ export function editSource(app, key, o, shown) {
   w.apply(E.file, ed);
   return w.commit(null, 'format');
 }
+const balanced = (t) => { let d = 0; for (let i = 0; i < t.length; i++) { if (t[i] === '\\') { i++; continue; } if (t[i] === '{') d++; else if (t[i] === '}' && --d < 0) return false; } return d === 0; };
+// the keys another entry builds on (crossref, xref, xdata): deleting one breaks BibTeX's run (review M6)
+const builtOn = (all) => { const out = new Set(); for (const e of all) for (const k of ['crossref', 'xref', 'xdata']) if (e.fields[k]) for (const x of String(e.fields[k]).split(',')) out.add(x.trim()); return out; };
 // What the form shows of a field: what is between its braces or quotes, or the value as written
 export function shownFields(app, E) {
   const sp = bibSpans(app.src(E.file), E);
@@ -143,7 +152,7 @@ export function openSourceForm(app, o = {}) {
   cite.append(ci, mk('span', '', 'Cite it here'));
   const vals = {};
   const draw = () => {
-    for (const inp of box.querySelectorAll('input')) vals[inp.dataset.f] = inp.value;
+    for (const inp of box.querySelectorAll('input, textarea')) vals[inp.dataset.f] = inp.value;
     box.replaceChildren();
     const names = [...fieldsOf(type)];
     for (const k of Object.keys(shown)) if (!names.includes(k)) names.push(k);
@@ -151,7 +160,10 @@ export function openSourceForm(app, o = {}) {
     for (const k of names) {
       const r = mk('div', 'ps-row');
       const l = mk('label', 'ps-l', FIELD_NAMES[k] || k);
-      const i = mk('input', 'ps-text'); i.id = 'src-f-' + k; i.dataset.f = k; i.autocomplete = 'off';
+      // (a value over several lines in a box that keeps its lines: an input drops them, review H1)
+      const multi = /\n/.test(shown[k] || '');
+      const i = mk(multi ? 'textarea' : 'input', multi ? 'ps-ta' : 'ps-text'); i.id = 'src-f-' + k; i.dataset.f = k; i.autocomplete = 'off';
+      if (multi) i.rows = Math.min(4, (shown[k].match(/\n/g) || []).length + 1);
       l.htmlFor = i.id;
       i.value = vals[k] ?? shown[k] ?? '';
       if (k === 'author' || k === 'editor') i.placeholder = 'Last, First and Last, First';
@@ -162,7 +174,7 @@ export function openSourceForm(app, o = {}) {
       box.appendChild(r);
     }
   };
-  const field = (k) => { const i = box.querySelector('input[data-f="' + k + '"]'); return i ? i.value : vals[k] || ''; };
+  const field = (k) => { const i = box.querySelector('[data-f="' + k + '"]'); return i ? i.value : vals[k] || ''; };
   ts.addEventListener('change', () => { type = ts.value; draw(); });
   all.addEventListener('change', draw);
   draw();
@@ -178,7 +190,7 @@ export function openSourceForm(app, o = {}) {
   cancel.addEventListener('click', () => app.closePop());
   ok.addEventListener('click', () => {
     const fields = {};
-    for (const inp of box.querySelectorAll('input')) fields[inp.dataset.f] = inp.value;
+    for (const inp of box.querySelectorAll('input, textarea')) fields[inp.dataset.f] = inp.value;
     const at = o.at;
     app.closePop(true);
     if (E) editSource(app, E.key, { type, fields }, shown);
@@ -257,8 +269,9 @@ export function openSourceManager(app) {
     const E = all.find((e) => e.key === sel);
     prev.textContent = E ? app.src(E.file).slice(E.s, Math.min(E.e, E.s + 600)) : 'Pick a source to cite, edit, copy or delete it.';
     for (const b of [citeB, editB, copyB, delB]) b.disabled = !E;
-    delB.disabled = !E || cited.has(E.key);
-    delB.title = E && cited.has(E.key) ? 'The text cites it: take its citations out first' : 'Take the entry out of its .bib file';
+    const used = builtOn(all);
+    delB.disabled = !E || cited.has(E.key) || used.has(E.key);
+    delB.title = E && cited.has(E.key) ? 'The text cites it: take its citations out first' : E && used.has(E.key) ? 'Another entry builds on it (crossref): BibTeX needs it' : 'Take the entry out of its .bib file';
   };
   search.addEventListener('input', draw);
   draw();

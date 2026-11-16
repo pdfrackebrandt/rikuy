@@ -55,8 +55,10 @@ export function parseBib(src, file) {
     i += m[0].length;
     const close = m[2] === '{' ? '}' : ')';
     if (type === 'comment' || type === 'preamble') {
+      // (its own brackets only: a ( inside @comment{…} is text, review L9)
       let depth = 1;
-      for (; i < n && depth > 0; i++) { if (src[i] === '{' || src[i] === '(') depth++; else if (src[i] === '}' || src[i] === ')') depth--; }
+      const op = m[2], cl = close;
+      for (; i < n && depth > 0; i++) { if (src[i] === '\\') { i++; continue; } if (src[i] === op) depth++; else if (src[i] === cl) depth--; }
       continue;
     }
     if (type === 'string') {
@@ -292,9 +294,13 @@ export function bibEscape(t) {
   let d = 0, ok = true;
   for (let i = 0; i < s.length; i++) { if (s[i] === '\\') { i++; continue; } if (s[i] === '{') d++; else if (s[i] === '}' && --d < 0) { ok = false; break; } }
   if (d !== 0) ok = false;
-  let out = '';
+  let out = '', math = false;
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
+    // (math is left as it is: $L_p$ keeps its subscript, review H1)
+    if (c === '$') { math = !math; out += c; continue; }
+    if (c === '\\' && (s[i + 1] === '(' || s[i + 1] === ')')) { math = s[i + 1] === '('; out += c + s[i + 1]; i++; continue; }
+    if (math) { out += c; continue; }
     if (c === '\\') { if (i === s.length - 1) out += '\\textbackslash{}'; else { out += c + s[i + 1]; i++; } continue; }
     if ('&%#_'.includes(c)) { out += '\\' + c; continue; }
     if (!ok && (c === '{' || c === '}')) { out += '\\' + c; continue; }
@@ -425,7 +431,8 @@ export function bibFieldEdits(src, entry, changes) {
     if (f.q && cur === v) continue;
     if (!f.q && (cur === v || src.slice(f.vs, f.ve) === v)) continue;
     if (f.q === '{') out.push({ s: f.is, e: f.ie, t: v });
-    else if (f.q === '"') out.push({ s: f.is, e: f.ie, t: v.replace(/"/g, '{"}') });
+    // (a quoted value changed is written in braces: its accents \" and quotes stay as they are, review H2)
+    else if (f.q === '"') out.push({ s: f.vs, e: f.ve, t: '{' + v + '}' });
     else out.push({ s: f.vs, e: f.ve, t: /^\d{1,5}$/.test(v) || (name === 'month' && /^(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)$/.test(v)) ? v : '{' + v + '}' });
   }
   const kept = fields.filter((f) => !gone.has(f)), last = kept[kept.length - 1], orig = fields[fields.length - 1];
@@ -441,7 +448,7 @@ export function bibFieldEdits(src, entry, changes) {
     const gap = first ? src.slice(first.s + first.name.length, first.eq) : ' ', after = first ? src.slice(first.eq + 1, first.vs) : ' ', col = first ? first.eq - first.s : 0;
     const pad = (n) => (/^ +$/.test(gap) && n.length < col ? n.padEnd(col) : n + (gap ? ' ' : '')) + '=' + (/^[ \t]*$/.test(after) ? after : ' ');
     const lines = adds.map(([n, v]) => indent + pad(n) + (/^\d{1,5}$/.test(v) ? v : '{' + v + '}'));
-    if (!last) out.push({ s: sp.ke + 1, e: sp.ke + 1, t: br + lines.join(',' + br) + (trailing ? ',' : '') });
+    if (!last) { const comma = src[sp.ke] === ','; out.push({ s: comma ? sp.ke + 1 : sp.ke, e: comma ? sp.ke + 1 : sp.ke, t: (comma ? '' : ',') + nl + lines.join(',' + nl) + nl }); }
     else if (last.comma > 0) out.push({ s: last.comma, e: last.comma, t: br + lines.join(',' + br) + (trailing ? ',' : '') });
     else out.push({ s: last.e, e: last.e, t: ',' + br + lines.join(',' + br) });
   } else if (last && last !== orig && !trailing && last.comma > 0) out.push({ s: last.comma - 1, e: last.comma, t: '' });

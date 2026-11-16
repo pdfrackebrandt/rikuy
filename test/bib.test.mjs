@@ -23,7 +23,7 @@ const ap = (t, ed) => { for (const x of [...ed].sort((a, b) => b.s - a.s || b.e 
   check('a year bare, the = signs in a column', /\n {2}year {6}= 1984,\n/.test(t) && /\n {2}author {4}= \{Knuth/.test(t), t);
   check('a taken key gets b', bibKey(fields, new Set([key])) === key + 'b');
   check('nothing to change: no edit', bibFieldEdits(t, e, { title: e.fields.title, year: '1984' }).length === 0);
-  check('escaping is idempotent and leaves LaTeX alone', bibEscape('\\& {\\"o} $x_1$') === '\\& {\\"o} $x\\_1$' && bibEscape(bibEscape('a & b')) === 'a \\& b', bibEscape('\\& {\\"o} $x_1$'));
+  check('escaping is idempotent and leaves LaTeX and math alone (review H1)', bibEscape('\\& {\\"o} $x_1$ \\(a_b\\) c_d') === '\\& {\\"o} $x_1$ \\(a_b\\) c\\_d' && bibEscape(bibEscape('a & b')) === 'a \\& b', bibEscape('\\& {\\"o} $x_1$ \\(a_b\\) c_d'));
   check('unbalanced braces are escaped, a lone backslash at the end too', bibEscape('a } b {') === 'a \\} b \\{' && bibEscape('x\\') === 'x\\textbackslash{}');
 }
 
@@ -36,7 +36,7 @@ const ap = (t, ed) => { for (const x of [...ed].sort((a, b) => b.s - a.s || b.e 
   let t = ap(hand, bibFieldEdits(hand, e, { title: '{\\LaTeX}: A Document Preparation System, 2nd ed.' }));
   check('one field changed: only its words move, its braces and the rest kept byte for byte', t === hand.replace('System},', 'System, 2nd ed.},'), t);
   t = ap(hand, bibFieldEdits(hand, e, { author: 'Leslie B. Lamport' }));
-  check('a quoted field stays quoted', t === hand.replace('"Leslie Lamport"', '"Leslie B. Lamport"'), t);
+  check('a quoted field changed is written in braces, the rest kept', t === hand.replace('"Leslie Lamport"', '{Leslie B. Lamport}'), t);
   t = ap(hand, bibFieldEdits(hand, e, { pages: '1--20' }));
   check('a new field after the last, with the entry\'s tab, padding and no trailing comma', t === hand.replace('{keep me}\n}', '{keep me},\n\tpages  = {1--20}\n}'), t);
   t = ap(hand, bibFieldEdits(hand, e, { note: '' }));
@@ -110,6 +110,39 @@ const ap = (t, ed) => { for (const x of [...ed].sort((a, b) => b.s - a.s || b.e 
   const M = buildModel({ main: 'main.tex', files: new Map([['main.tex', doc]]) });
   const rows = M.blocks.flatMap((b) => b.items).filter((x) => x.type === 'idx').reduce((n, x) => n + x.rows.length, 0);
   check('60 indexes and 60 notes lists of 2000 entries: drawn within bounds, in time', rows <= 8 * 2 + 5000 + 60 && Date.now() - t0 < 6000, [rows, Date.now() - t0]);
+}
+
+// ---- the hostile review of 25c4b9c: each case as it was found
+{
+  const q = '@article{q,\n  author = "M{\\"u}ller, A. and Smith, B.",\n  year = 2000\n}\n', e = parseBib(q, 'x').get('q');
+  const t = ap(q, bibFieldEdits(q, e, { author: 'M{\\"u}ller, A. and Smith, B. and Doe, C.' }));
+  check('H2: a quoted author with an accent gets a coauthor: braces, the accent kept', t === q.replace('"M{\\"u}ller, A. and Smith, B."', '{M{\\"u}ller, A. and Smith, B. and Doe, C.}') && parseBib(t, 'x').get('q').fields.author.endsWith('Doe, C.'), t);
+  const m = '@misc{k}\n', em = parseBib(m, 'x').get('k');
+  check('L1: a field added to @misc{k} goes inside it', ap(m, bibFieldEdits(m, em, { title: 'T' })) === '@misc{k,\n  title = {T}\n}\n', ap(m, bibFieldEdits(m, em, { title: 'T' })));
+  check('L9: @comment{ see (below } hides no entry after it', [...parseBib('@comment{ see (below }\n@book{z, title={Z}}\n', 'x').keys()].join() === 'z');
+  const NB = '\\documentclass{article}\n\\usepackage{natbib}\n\\begin{document}\nX\n\\bibliographystyle{plainnat}\n\\bibliography{refs}\n\\end{document}\n';
+  const n1 = ap(NB, R.bibStyleEdits(NB, 'IEEEtranN:numbers'));
+  check('H6: IEEE under natbib: IEEEtranN with natbib\'s numbers, read back numbered', n1.includes('\\usepackage[numbers]{natbib}') && n1.includes('\\bibliographystyle{IEEEtranN}') && R.bibSetup(n1).numbers === true, n1);
+  check('H6: and an author and year style takes numbers off again', ap(n1, R.bibStyleEdits(n1, 'plainnat')) === NB, ap(n1, R.bibStyleEdits(n1, 'plainnat')));
+  check('H6: natbib offers no .bst that stops it (ieeetr, plain)', !R.BIB_STYLES.natbib.some(([v]) => /^(ieeetr|plain|unsrt|alpha|abbrv)(:|$)/.test(v)));
+  const ST = '\\documentclass{article}\n\\usepackage{mystyle}\n\\begin{document}\nW\n\\end{document}\n', sty = '\\RequirePackage[style=authoryear]{biblatex}\n\\addbibresource{refs.bib}\n';
+  const B8 = R.bibSetup(ST, [sty]);
+  check('H8: biblatex from the project\'s .sty is biblatex, its resource read', B8.system === 'biblatex' && B8.elsewhere && B8.resources.some((r) => r.name === 'refs.bib'), B8);
+  const BL = '\\documentclass{article}\n\\usepackage{biblatex}\n\\begin{document}\nX\n\\printbibliography\n\\end{document}\n';
+  check('M7: a title with a bracket goes in braces', ap(BL, R.bibTitleEdits(BL, 'Results [draft]', false)).includes('\\printbibliography[title={Results [draft]}]'));
+  const L7 = '\\begin{document}\n\\section{Intro\\footnote{h}}\nA\\footnote{x}.\n\\caption{c\\footnote{y}}\n\\end{document}';
+  check('L7: footnotes in a heading or a caption stay footnotes when converting', R.noteNames(L7, 'footnote').length === 1);
+  const NW = '\\documentclass{article}\n\\usepackage{amsmath}\n\\numberwithin{footnote}{section}\n\\renewcommand{\\thefootnote}{[\\arabic{footnote}]}\n\\begin{document}\nA\n\\end{document}\n';
+  const RN = R.refsSetup(NW);
+  check('H4: \\numberwithin read as its own mode, a custom format as custom', RN.fn.restart === 'within-section' && RN.fn.style === 'custom', RN.fn);
+  check('H4: that mode asked for again writes nothing', R.fnRestartEdits(NW, 'within-section', false).edits.length === 0);
+  const RW = R.refsSetup('\\documentclass{report}\n\\counterwithout{figure}{chapter}\n\\begin{document}\n\\end{document}', true);
+  check('H3: \\counterwithout read: the figures numbered 1, 2, 3', RW.reset.figure === null && !RW.within.figure);
+}
+{
+  const { usePackages } = await import('../src/preamble.js');
+  const HY = '\\documentclass{article}\n\\usepackage{hyperref}\n\\begin{document}\n\\end{document}\n';
+  check('L3: imakeidx goes above hyperref, so the index keeps its links', ap(HY, usePackages(HY, ['imakeidx'])).indexOf('imakeidx') < ap(HY, usePackages(HY, ['imakeidx'])).indexOf('hyperref'));
 }
 
 console.log(`bib.test: ${pass} passed, ${fail} failed`);
