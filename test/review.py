@@ -5,7 +5,8 @@ Reject at the caret and move to the next, all, all and stop tracking; Previous a
 comments: Previous, Next, Delete, Delete All (one undo), Edit, Show Comments; Inspect Document;
 Word Count (Ctrl+Shift+G) of the document and of a selection; Compare with a file; Download with
 Markup (the changes package, compiled in the page where dist/tex exists); Read Aloud with the
-browser's voices; the Review tab on a phone at 390 and 360 px with touch; screenshots in
+browser's voices; changes carrying their author, Show Markup's Specific People, Accept and Reject by
+author, Display for Review's Original (R4); the Review tab on a phone at 390 and 360 px with touch; screenshots in
 $SHOTS/review-*."""
 import os, sys, time, json, re, subprocess, tempfile
 sys.path.insert(0, os.path.dirname(__file__))
@@ -41,6 +42,80 @@ def fresh(page, doc=DOC):
     page.wait_for_function("!!window.rikuy.base")
     page.evaluate("(() => { const g = window.rikuy; g.setBase({ t: Date.now(), label: 'Opened', files: g.files, track: false }); })()")
     page.wait_for_timeout(100)
+
+
+def r4(p):
+    """R4: changes carry their author (the name in AutoCorrect Options, or the coauthor whose copy
+    came back), Show Markup's Specific People, Accept and Reject by author, Display for Review's
+    Original (the page draws the text before the changes and takes no edit), on a phone too."""
+    browser, page, errors = open_page(p, width=1366, height=900)
+    fresh(page)
+    page.evaluate("window.rikuy.prefs.who = 'Pedro'; window.rikuy.setTracking(true)")
+    edit(page, 'some words', 'a few words')
+    # a coauthor's copy coming in (src/collab.js takeBack names them for the step)
+    page.evaluate("(() => { const g = window.rikuy, f = g.main, s = g.files.get(f), at = s.indexOf('ends here'); g.rvBy = 'Ana'; g.closeGroup(); g.commit([{ f, s: 0, e: s.length, t: s.slice(0, at) + 'stops here' + s.slice(at + 9) }], null, 'merge'); g.closeGroup(); g.rvBy = null; })()")
+    page.wait_for_timeout(200)
+    who = page.evaluate("window.rikuy.realChanges().map(c => [c.b, window.rikuy.rvName(c.who)])")
+    check('R4: each change carries its author: yours by your name, the copy\'s by its sender', sorted(who) == sorted([['a few', 'Pedro'], ['stops', 'Ana']]), who)
+    page.evaluate("window.rikuy.toggleNav(true, 'changes')"); page.wait_for_timeout(300)
+    check('R4: the Changes list names each change\'s author', 'Pedro' in page.inner_text('#nav-body') and 'Ana' in page.inner_text('#nav-body'))
+    page.evaluate("window.rikuy.setMarkup('all')"); page.wait_for_timeout(300)
+    tones = page.evaluate("['g-ins', 'g-ins2'].map(k => CSS.highlights.get(k) ? [...CSS.highlights.get(k)].map(r => r.toString()).join('|') : '')")
+    check('R4: each reviewer\'s insertions in a colour of their own', 'a few' in tones[0] and 'stops' in tones[1], tones)
+    page.evaluate("window.rikuy.runCommand('show-markup')"); page.wait_for_timeout(250)
+    names = page.evaluate("[...document.querySelectorAll('.pop [role=menuitemcheckbox]')].map(e => [e.getAttribute('aria-label'), e.getAttribute('aria-checked')])")
+    check('R4: Show Markup lists All Reviewers and each reviewer, checked', ['All Reviewers', 'true'] in names and ['Pedro', 'true'] in names and ['Ana', 'true'] in names, names)
+    page.locator('.pop').get_by_role('menuitemcheckbox', name='Ana', exact=True).click(); page.wait_for_timeout(300)
+    tones = page.evaluate("['g-ins', 'g-ins2'].map(k => CSS.highlights.get(k) ? [...CSS.highlights.get(k)].map(r => r.toString()).join('|') : '')")
+    check('R4: Ana unticked, her changes leave the pages', 'stops' not in ''.join(tones) and 'a few' in ''.join(tones), tones)
+    items = page.evaluate("window.rikuy.commandMenu(window.rikuy.cmds.command('change-accept')).map(i => i && i.name)")
+    check('R4: Accept\'s arrow offers Accept All Changes Shown, and All by each reviewer', 'Accept All Changes Shown' in items and 'Accept All by Ana' in items and 'Accept All by Pedro' in items, items)
+    s0 = src(page)
+    page.evaluate("window.rikuy.acceptShown()"); page.wait_for_timeout(250)
+    left = page.evaluate("window.rikuy.realChanges().map(c => window.rikuy.rvName(c.who))")
+    check('R4: Accept All Changes Shown keeps Pedro\'s, Ana\'s still wait', left == ['Ana'] and src(page) == s0, left)
+    page.evaluate("window.rikuy.rvHidden = new Set(); window.rikuy.rvAfterFilter()")
+    page.evaluate("window.rikuy.rvActByAuthor('reject', 'Ana')"); page.wait_for_timeout(250)
+    check('R4: Reject All by Ana puts her words back', 'ends here' in src(page) and page.evaluate(N) == 0)
+    page.keyboard.press('Control+z'); page.wait_for_timeout(250)
+    check('R4: and Ctrl+Z brings her change back, hers still', page.evaluate("window.rikuy.realChanges().map(c => window.rikuy.rvName(c.who))") == ['Ana'])
+    # Display for Review › Original
+    page.evaluate("window.rikuy.runCommand('display-for-review')"); page.wait_for_timeout(250)
+    opts = page.evaluate("[...document.querySelectorAll('.pop [role=menuitemradio]')].map(e => e.getAttribute('aria-label'))")
+    check('R4: Display for Review offers Original, after No Markup as Word\'s', opts == ['Simple Markup', 'All Markup', 'No Markup', 'Original'], opts)
+    page.locator('.pop').get_by_role('menuitemradio', name='Original', exact=True).click(); page.wait_for_timeout(500)
+    text = page.evaluate("[...document.querySelectorAll('#pages .flow')].map(f => f.innerText).join(' ')")
+    check('R4: Original: the page draws the text before the changes', 'ends here' in text and 'stops here' not in text, text[:200])
+    check('R4: Original: no marks on the page, and it takes no typing', not page.evaluate("CSS.highlights.get('g-ins2') && CSS.highlights.get('g-ins2').size") and page.evaluate("document.getElementById('pages').contentEditable") == 'false')
+    s1 = src(page)
+    page.evaluate("window.rikuy.runCommand('bold')"); page.wait_for_timeout(200)
+    page.evaluate("(() => { const g = window.rikuy; g.commit([{ f: g.main, s: 0, e: 0, t: '%x\\n' }], null, 'type'); })()"); page.wait_for_timeout(200)
+    check('R4: Original: no command or edit reaches the source', src(page) == s1)
+    page.screenshot(path=os.path.join(SHOTS, 'review-original-1366.png'))
+    page.evaluate("window.rikuy.setMarkup('all')"); page.wait_for_timeout(500)
+    text = page.evaluate("[...document.querySelectorAll('#pages .flow')].map(f => f.innerText).join(' ')")
+    check('R4: back to All Markup: the text as it is now, editable again', 'stops here' in text and page.evaluate("document.getElementById('pages').contentEditable") == 'true')
+    edit(page, 'first paragraph', 'first PARAGRAPH')
+    check('R4: and an edit goes in again', 'first PARAGRAPH' in src(page))
+    check('R4: no page errors', not errors, errors[:5])
+    browser.close()
+    for w, h in ((390, 844), (360, 740)):
+        browser, page, errors = open_page(p, width=w, height=h, touch=True)
+        fresh(page)
+        page.evaluate("window.rikuy.prefs.who = 'Pedro'; window.rikuy.setTracking(true)")
+        edit(page, 'some words', 'a few words')
+        page.select_option('#rb-tabsel', 'review'); page.wait_for_timeout(300)
+        page.evaluate("window.rikuy.runCommand('display-for-review')"); page.wait_for_timeout(300)
+        it = page.locator('.pop').get_by_role('menuitemradio', name='Original', exact=True)
+        box = it.bounding_box()
+        check('R4 %d px: Original in Display for Review\'s menu, a 44 px target inside the screen' % w, box and box['height'] >= 44 and box['x'] >= 0 and box['x'] + box['width'] <= w, box)
+        it.tap(); page.wait_for_timeout(500)
+        text = page.evaluate("[...document.querySelectorAll('#pages .flow')].map(f => f.innerText).join(' ')")
+        check('R4 %d px: Original by a tap draws the text before the changes' % w, 'some words' in text and 'a few' not in text)
+        page.screenshot(path=os.path.join(SHOTS, 'review-original-%d.png' % w))
+        page.evaluate("window.rikuy.setMarkup('simple')"); page.wait_for_timeout(300)
+        check('R4 %d px: no sideways scroll, no page errors' % w, page.evaluate("document.documentElement.scrollWidth <= innerWidth") and not errors, errors[:3])
+        browser.close()
 
 
 def run():
@@ -334,10 +409,18 @@ def run():
             check('%d px: no page errors' % w, not errors, errors[:5])
             browser.close()
 
+        r4(p)
+
     bad = [r for r in results if not r[1]]
     print(f"{len(results) - len(bad)}/{len(results)} passed")
     sys.exit(1 if bad else 0)
 
 
 if __name__ == '__main__':
+    if sys.argv[1:] == ['r4']:
+        with sync_playwright() as p:
+            r4(p)
+        bad = [r for r in results if not r[1]]
+        print(f"{len(results) - len(bad)}/{len(results)} passed")
+        sys.exit(1 if bad else 0)
     run()

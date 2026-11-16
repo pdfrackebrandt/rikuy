@@ -103,6 +103,95 @@ export function absorbText(b, p, c) {
   return t;
 }
 
+// ---- who made a change ------------------------------------------------------------------------
+// Changes are one difference between the text and the base, so they carry no author by
+// themselves. Each file keeps a layer of who wrote what since: the ranges each step inserted
+// (in the text as it is now) and the places it deleted, with the step's author (the name in
+// AutoCorrect Options, or the coauthor whose copy came back in a link). A step's edit moves the
+// layer along (authorEdit) and adds its own pieces; a change is then the author of the pieces
+// it holds, and a change two people's pieces make up is cut in two (byAuthor). Kept with the base,
+// for the text it was made on. Pure, tested in test/review.test.mjs.
+const MAX_SEGS = 20000;
+// segs: [{s, e, who}] sorted by s (e === s: a deletion there); one edit of the old text's
+// [s, e) by text n characters long, made by who
+export function authorEdit(segs, s, e, n, who) {
+  const d = n - (e - s), out = [];
+  for (const g of segs) {
+    if (g.e < s || (g.e === s && (g.s < s || n === 0 || e > s))) { out.push(g); continue; }
+    if (g.s > e || (g.s === e && e > s)) { out.push({ s: g.s + d, e: g.e + d, who: g.who }); continue; }
+    // (a range the edit cuts: what is left of it before and after)
+    if (g.s < s) out.push({ s: g.s, e: s, who: g.who });
+    if (g.e > e) out.push({ s: s + n, e: g.e + d, who: g.who });
+    else if (g.s === g.e && g.s >= s && g.s <= e && e === s) out.push({ s: g.s + (g.s > s ? d : 0), e: g.s + (g.s > s ? d : 0), who: g.who });
+  }
+  if (n > 0) out.push({ s, e: s + n, who });
+  if (e > s) out.push({ s, e: s, who });
+  out.sort((a, b) => a.s - b.s || a.e - b.e);
+  // (one author's neighbouring ranges are one)
+  const m = [];
+  for (const g of out) {
+    const L = m[m.length - 1];
+    if (L && L.who === g.who && L.e === g.s && g.e > g.s && L.e > L.s) L.e = g.e;
+    else if (L && L.who === g.who && L.s === g.s && L.e === g.e) continue;
+    else m.push(g);
+  }
+  return m.length > MAX_SEGS ? m.slice(m.length - MAX_SEGS) : m;
+}
+// the edits that make cur of prev, in prev's offsets from the end backwards: one span where the
+// two differ (a keystroke), or word by word where a step replaced much at once (a merge)
+export function editSpans(prev, cur, fine) {
+  let a = 0;
+  const n = Math.min(prev.length, cur.length);
+  while (a < n && prev.charCodeAt(a) === cur.charCodeAt(a)) a++;
+  let b = 0;
+  while (b < n - a && prev.charCodeAt(prev.length - 1 - b) === cur.charCodeAt(cur.length - 1 - b)) b++;
+  const one = [{ s: a, e: prev.length - b, n: cur.length - b - a }];
+  if (!fine || (one[0].e - one[0].s < 200 && one[0].n < 200)) return one;
+  const out = [];
+  for (const c of changes(prev, cur, '')) {
+    let ap = c.as, bp = c.bs, run = null;
+    for (const [op, v] of c.parts) {
+      if (op === ' ') { ap += v.length; bp += v.length; run = null; continue; }
+      if (!run) { run = { s: ap, e: ap, n: 0 }; out.push(run); }
+      if (op === '-') { ap += v.length; run.e = ap; } else { run.n += v.length; bp += v.length; }
+    }
+  }
+  return out.reverse();
+}
+// a change's authors, and the change cut where its pieces' authors differ: [{...c, who}]
+export function byAuthor(c, segs) {
+  if (!segs || !segs.length) return [{ ...c, who: '' }];
+  const whoAt = (op, p, len) => {
+    if (op === '+') { for (const g of segs) { if (g.s >= p + len) break; if (g.e > g.s && g.s < p + len && p < g.e) return g.who; } return ''; }
+    let best = null;
+    for (const g of segs) { if (g.s > p + 2) break; if (g.e === g.s && Math.abs(g.s - p) <= 2 && (!best || Math.abs(g.s - p) < Math.abs(best.s - p))) best = g; }
+    return best ? best.who : '';
+  };
+  const parts = c.parts.map(([op, v, p]) => [op, v, p, op === ' ' ? null : whoAt(op, p, v.length)]);
+  // (a deletion no step is known for, beside an insertion: one replacement, the insertion's author)
+  for (let i = 0; i < parts.length; i++) if (parts[i][0] === '-' && !parts[i][3]) { const n = parts[i + 1] && parts[i + 1][0] === '+' ? parts[i + 1] : parts[i - 1] && parts[i - 1][0] === '+' ? parts[i - 1] : null; if (n) parts[i][3] = n[3]; }
+  const whos = new Set(parts.filter((x) => x[3] != null).map((x) => x[3]));
+  if (whos.size <= 1) return [{ ...c, who: [...whos][0] || '' }];
+  // cut at the unchanged words between pieces of different authors
+  const out = [];
+  let cur = null, ap = c.as, bp = c.bs, line = c.line;
+  const nl = (t) => (t.match(/\n/g) || []).length;
+  for (const [op, v, , who] of parts) {
+    if (op === ' ') {
+      if (cur) { cur.pend = (cur.pend || '') + v; }
+      ap += v.length; bp += v.length; line += nl(v);
+      continue;
+    }
+    if (cur && cur.who !== who) { delete cur.pend; out.push(cur); cur = null; }
+    if (cur && cur.pend) { cur.a += cur.pend; cur.b += cur.pend; cur.parts.push([' ', cur.pend, bp - cur.pend.length]); delete cur.pend; }
+    if (!cur) cur = { f: c.f, as: ap, ae: ap, bs: bp, be: bp, a: '', b: '', line, parts: [], who };
+    if (op === '-') { cur.a += v; cur.parts.push(['-', v, bp]); ap += v.length; } else { cur.b += v; cur.parts.push(['+', v, bp]); bp += v.length; line += nl(v); }
+    cur.ae = ap; cur.be = bp;
+  }
+  if (cur) { delete cur.pend; out.push(cur); }
+  return out;
+}
+
 export const review = {
   // ---- versions and changes ---------------------------------------------------------
   // The project's text is kept as a version every few minutes of editing, when the tab is
@@ -112,10 +201,74 @@ export const review = {
   // the same changes on the typeset pages, like Word's Track Changes.
   isMine(v) { return v.main === this.main && v.name === this.name; },
 
+  // ---- who made a change ----------------------------------------------------------------------
+  // a step's author: the coauthor whose copy is coming in, else the name in AutoCorrect Options
+  // ('' when none is set: shown as that name once it is, or "You")
+  rvWho(kind) { return kind === 'merge' && this.rvBy ? this.rvBy : (this.myName ? this.myName() : ''); },
+  rvName(who) { return who || (this.myName && this.myName()) || 'You'; },
+  // the layer of who wrote what, moved by a step made, undone or redone (the layer before and
+  // after a step is kept with it, so an undo gives its authors back as they were)
+  rvAuthorStep(h) {
+    const prev = this.trackPrev;
+    if (!this.authors) this.authors = new Map();
+    if (h && this.redoStack && this.redoStack[this.redoStack.length - 1] === h && h.seg0) { this.authors = new Map(h.seg0); return; }
+    if (h && h.seg1 && !h.open && this.hist[this.hist.length - 1] === h) { this.authors = new Map(h.seg1); return; }
+    if (!prev) return;
+    if (h && !h.seg0) h.seg0 = new Map(this.authors);
+    if (h && h.who == null) h.who = this.rvWho(h.kind);
+    const who = h ? h.who : this.rvWho('');
+    const fine = !!(h && /^(merge|word|other-tab|restore|reject)$/.test(h.kind || ''));
+    for (const [f, cur] of this.files) {
+      const p = prev.get(f);
+      if (p === cur || p == null) continue;
+      let segs = this.authors.get(f) || [];
+      for (const x of editSpans(p, cur, fine)) segs = authorEdit(segs, x.s, x.e, x.n, who);
+      this.authors.set(f, segs);
+    }
+    for (const f of [...this.authors.keys()]) if (!this.files.has(f)) this.authors.delete(f);
+    if (h) h.seg1 = new Map(this.authors);
+  },
+  rvAuthorsFrom(r) {
+    this.authors = new Map();
+    for (const x of Array.isArray(r.authors) ? r.authors : []) {
+      if (!Array.isArray(x) || typeof x[0] !== 'string' || !Array.isArray(x[2])) continue;
+      const t = this.files.get(x[0]);
+      if (t == null || t.length !== x[1]) continue;
+      const segs = x[2].filter((g) => g && Number.isInteger(g.s) && Number.isInteger(g.e) && g.s >= 0 && g.e >= g.s && g.e <= t.length && typeof g.who === 'string').slice(0, 20000).map((g) => ({ s: g.s, e: g.e, who: g.who.slice(0, 200) }));
+      this.authors.set(x[0], segs);
+    }
+  },
+  // the people whose changes are waiting, in the order they first come
+  rvReviewers() {
+    const out = [];
+    for (const c of this.realChanges ? this.realChanges() : []) { const n = this.rvName(c.who); if (!out.includes(n)) out.push(n); }
+    return out;
+  },
+  rvShown(c) { return !(this.rvHidden && this.rvHidden.has(this.rvName(c.who))); },
+  // Display for Review's Original: the page draws the base's text, as it was before the changes,
+  // and takes no edit until another view is chosen (rvRefuse); app.js rebuild reads pageFiles
+  pageFiles() {
+    const B = this.base;
+    return B && this.prefs.markup === 'original' && B.files.has(this.main) ? B.files : this.files;
+  },
+  // edits the page must not make here: any while it shows the Original, and anything but comments
+  // in a document a comments only link opened (src/collab.js); true when refused, with the reason
+  rvRefuse(edits, kind) {
+    if (this.pageFiles() !== this.files && !/^(restore|reject|merge|other-tab)$/.test(kind || '')) {
+      this.toast('The page shows the Original, the text before the changes: choose Simple Markup, All Markup or No Markup under Display for Review to edit.', 6000);
+      return true;
+    }
+    if (this.shareCtx && this.shareCtx.role === 'comments' && this.commentsOnlyRefuse(edits)) {
+      this.toast(this.shareCtx.by + ' shared this document for comments only: select words and press New Comment (Ctrl+Alt+M). The text itself stays as it is.', 6000);
+      return true;
+    }
+    return false;
+  },
+
   async loadReview() {
     let r = null;
     try { r = this.noIdb ? null : await kvGet('review'); } catch (e) { r = null; }
-    if (r && r.main === this.main && r.name === this.name && r.files) { this.base = { t: r.t, label: r.label, id: r.id, files: new Map(r.files), track: !!r.track, n: r.n || 0 }; this.trackPrev = new Map(this.files); }
+    if (r && r.main === this.main && r.name === this.name && r.files) { this.base = { t: r.t, label: r.label, id: r.id, files: new Map(r.files), track: !!r.track, n: r.n || 0 }; this.trackPrev = new Map(this.files); this.rvAuthorsFrom(r); }
     else this.setBase({ t: Date.now(), label: 'When opened', files: this.files });
     const mine = (await this.allSnaps()).filter((v) => this.isMine(v));
     if (mine.length) { this.lastSig = mine[0].sig; this.lastSnapT = mine[0].t; }
@@ -176,7 +329,9 @@ export const review = {
       const same = r && r.main === this.main && r.name === this.name;
       if (!force && same && (r.n || 0) > (B.n || 0)) { this.rvReloadBase(r); return; }
       B.n = Math.max(B.n || 0, same ? r.n || 0 : 0) + 1;
-      kvPut('review', { t: B.t, label: B.label, id: B.id, main: this.main, name: this.name, files: [...B.files.entries()], track: !!B.track, n: B.n }).catch(() => {});
+      // (who wrote what, for the text it was made on: its length says which)
+      const authors = [...(this.authors || new Map())].filter(([f]) => this.files.has(f)).map(([f, g]) => [f, this.files.get(f).length, g]);
+      kvPut('review', { t: B.t, label: B.label, id: B.id, main: this.main, name: this.name, files: [...B.files.entries()], track: !!B.track, n: B.n, authors }).catch(() => {});
     };
     if (now) return go();
     this.baseSaveT = setTimeout(go, 1500);
@@ -229,6 +384,7 @@ export const review = {
     if (!r || r.main !== this.main || r.name !== this.name || !r.files) return;
     this.base = { t: r.t, label: r.label, id: r.id, files: new Map(r.files), track: !!r.track, n: r.n || 0 };
     this.trackPrev = new Map(this.files);
+    this.rvAuthorsFrom(r);
     this.chg = null;
     this.refreshNav();
     if (this.markupOn()) this.marksSoon();
@@ -240,6 +396,7 @@ export const review = {
     // empty equation taken back, does as the switch says)
     const h = this.rvStep;
     this.rvStep = null;
+    this.rvAuthorStep(h);
     const abs = h ? !!h.abs : !!(this.base && !this.base.track);
     if (abs) this.absorbEdit(); else this.trackPrev = new Map(this.files);
     this.pdfStale = true;
@@ -257,6 +414,8 @@ export const review = {
     const sig = textSig(this.main, files);
     if (!o.force && sig === this.lastSig) { this.snapDirty = false; return null; }
     const v = { t: Date.now(), label: label || '', named: !!o.named, name: this.name, main: this.main, sig, files };
+    // (a version shared by a link: the link's name and what it allows, for the copy sent back)
+    if (o.share) v.share = o.share;
     this.lastSig = sig; this.lastSnapT = v.t; this.snapDirty = false;
     clearTimeout(this.snapTimer);
     try {
@@ -293,9 +452,10 @@ export const review = {
     const C = this.chg;
     if (C && C.base === this.base && C.files.size === this.files.size && [...this.files].every(([n, t]) => C.files.get(n) === t)) return C.list;
     const list = [];
+    const A = this.authors;
     for (const [n, t] of this.files) {
       const a = this.base.files.get(n) ?? '';
-      if (a !== t) list.push(...changes(a, t, n));
+      if (a !== t) for (const c of changes(a, t, n)) list.push(...byAuthor(c, A && A.get(n)));
     }
     this.chg = { base: this.base, files: new Map(this.files), list };
     return list;
@@ -452,7 +612,7 @@ export const review = {
     txt.addEventListener('click', () => { this.goTo(c.f, c.bs); if (window.innerWidth <= 860) this.toggleNav(false); });
     const row = mk('div', 'chg-row');
     const kind = !c.a ? 'Added' : !c.b ? 'Deleted' : 'Changed';
-    row.append(mk('span', 'where', kind + ' · ' + c.f + ':' + c.line), mk('span', 'grow'),
+    row.append(mk('span', 'where', kind + ' · ' + this.rvName(c.who) + ' · ' + c.f + ':' + c.line), mk('span', 'grow'),
       mkBtn('Accept', () => this.acceptChanges([c]), 'Keep this change'),
       mkBtn('Reject', () => this.rejectChanges([c]), 'Put the old text back'));
     it.append(txt, row);
@@ -487,30 +647,38 @@ export const review = {
     const HL = window.CSS && CSS.highlights;
     if (HL) HL.delete('g-ins');
     // (Display for Review: no marks, the bars alone, or all; Show Markup's Insertions and Deletions)
+    for (const k of ['g-ins2', 'g-ins3', 'g-ins4']) if (HL) HL.delete(k);
     const mode = this.markup();
-    if (mode === 'none' || this.prefs.showIns === false || !this.base || !this.model) return;
-    const list = this.currentChanges().filter((c) => !spacingOnly(c) && !commentOnly(c));
+    if (mode === 'none' || mode === 'original' || this.prefs.showIns === false || !this.base || !this.model) return;
+    // (Show Markup's Specific People: the changes of those shown)
+    const list = this.currentChanges().filter((c) => !spacingOnly(c) && !commentOnly(c) && this.rvShown(c));
     if (!list.length) return;
     const all = mode === 'all';
+    // (each reviewer a colour of their own, as Word gives them: the first four)
+    const people = this.rvReviewers();
+    const tone = (c) => Math.max(0, people.indexOf(this.rvName(c.who))) % 4;
     const ins = new Map(), dels = [];
     for (const c of list) {
+      const k = tone(c);
       for (const [op, v, p] of c.parts) {
-        if (op === '+' && v.trim()) { if (!ins.has(c.f)) ins.set(c.f, []); ins.get(c.f).push([p, p + v.length]); }
-        else if (op === '-' && v.trim()) dels.push({ f: c.f, p, text: v });
+        if (op === '+' && v.trim()) { const key = c.f + '\u0000' + k; if (!ins.has(key)) ins.set(key, []); ins.get(key).push([p, p + v.length]); }
+        else if (op === '-' && v.trim()) dels.push({ f: c.f, p, text: v, k, who: this.rvName(c.who) });
       }
     }
     for (const rs of ins.values()) rs.sort((a, b) => a[0] - b[0]);
-    const ranges = [];
-    for (const [f, rs] of ins) ranges.push(...this.index.domRanges(f, rs));
+    const ranges = [], byTone = [[], [], [], []];
+    for (const [key, rs] of ins) { const [f, k] = key.split('\u0000'); const R = this.index.domRanges(f, rs); ranges.push(...R); byTone[+k].push(...R); }
+    const insOf = new Map();
+    for (const [key, rs] of ins) { const f = key.split('\u0000')[0]; if (!insOf.has(f)) insOf.set(f, []); insOf.get(f).push(...rs); }
     const atomHit = [];
     for (const el of this.root.querySelectorAll('[data-a]')) {
       const A = atomOfEl(el);
       if (!A || A.s == null || A.e == null) continue;
-      const rs = ins.get(A.f) || [];
+      const rs = insOf.get(A.f) || [];
       const hit = rs.some(([s, e]) => s < A.e && e > A.s) || dels.some((d) => d.f === A.f && d.p > A.s && d.p < A.e);
       if (hit && !el.parentElement.closest('.chg-atom')) { el.classList.add('chg-atom'); atomHit.push(A); }
     }
-    if (HL && window.Highlight && all) HL.set('g-ins', new window.Highlight(...ranges));
+    if (HL && window.Highlight && all) byTone.forEach((R, k) => { if (R.length) HL.set(k ? 'g-ins' + (k + 1) : 'g-ins', new window.Highlight(...R)); });
     // (Simple Markup: the outline of a changed equation goes, its bar stays)
     const atomEls = [...this.root.querySelectorAll('.chg-atom')];
     if (!all) for (const x of atomEls) x.classList.remove('chg-atom');
@@ -536,9 +704,9 @@ export const review = {
       if (!q || !q.height || !page) continue;
       const P = page.getBoundingClientRect();
       if (!all) { bar(page, q); continue; }
-      const m = mk('span', 'del-mk');
+      const m = mk('span', 'del-mk' + (d.k ? ' a' + (d.k + 1) : ''));
       m.style.left = (q.left - P.left) + 'px'; m.style.top = (q.top - P.top) + 'px'; m.style.height = q.height + 'px';
-      m.title = 'Deleted: ' + (d.text.length > 300 ? d.text.slice(0, 300) + '…' : d.text);
+      m.title = 'Deleted by ' + d.who + ': ' + (d.text.length > 300 ? d.text.slice(0, 300) + '…' : d.text);
       layer(page).append(m);
       bar(page, q);
     }

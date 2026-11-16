@@ -7,7 +7,8 @@
 import assert from 'assert';
 globalThis.window = globalThis;
 globalThis.document = { addEventListener() {}, querySelector() { return null; }, body: { classList: { contains() { return false; } } } };
-const { review, absorbText, absorbFresh } = await import('../src/review.js');
+const { review, absorbText, absorbFresh, authorEdit, editSpans, byAuthor } = await import('../src/review.js');
+const { commentsOf, onlyComments, linkRole } = await import('../src/share.js');
 const { changes } = await import('../src/diff.js');
 const { setLanguageEdits } = await import('../src/ui/wordcount.js');
 const { usePackages } = await import('../src/preamble.js');
@@ -21,7 +22,7 @@ const NO = new Set(['reject', 'merge', 'word', 'other-tab', 'restore', 'accept']
 function mkApp(text, track) {
   const A = { files: new Map([['main.tex', text]]), noIdb: true, hist: [], redoStack: [], pdfSoon() {}, refreshNav() {}, reviewStatus() {}, snapshot() {}, marksSoon() {}, markupOn() { return false; },
     closeGroup() {}, updateUndoUI() {}, lastSnapT: Date.now(), main: 'main.tex', name: 'x', src(f) { return this.files.get(f) ?? ''; } };
-  for (const k of ['setBase', 'saveBase', 'absorbEdit', 'noteEdit', 'currentChanges', 'rvAbsorbs', 'rvBaseStep', 'acceptChanges']) A[k] = review[k];
+  for (const k of ['setBase', 'saveBase', 'absorbEdit', 'noteEdit', 'currentChanges', 'rvAbsorbs', 'rvBaseStep', 'acceptChanges', 'rvAuthorStep', 'rvWho', 'rvName']) A[k] = review[k];
   A.setBase({ t: 0, files: A.files, track });
   return A;
 }
@@ -184,6 +185,65 @@ group('the document\'s own language stays (H5, M5, L5, L6)', () => {
   A = lapp(doc('\\usepackage{polyglossia}\n\\setdefaultlanguage{english}\n', 'The colour here.'));
   const g = apply(A, setLanguageEdits(A, 'en_GB', sel(A, 'colour')));
   assert.ok(g.includes('\\foreignlanguage[variant=british]{english}{colour}') && !g.includes('setotherlanguage'), g);
+});
+
+
+group('R4: changes carry their author, cut where two people wrote a change, through undo and redo', () => {
+  const A = mkApp('Alpha beta gamma delta.\n', true);
+  A.myName = () => 'Pedro';
+  edit(A, 6, 10, 'BETA');
+  A.rvBy = 'Ana'; edit(A, 17, 22, 'DELTA', 'merge'); A.rvBy = null;
+  const who = () => A.currentChanges().map((c) => [c.a, c.b, A.rvName(c.who)]);
+  assert.deepStrictEqual(who(), [['beta', 'BETA', 'Pedro'], ['delta', 'DELTA', 'Ana']]);
+  // two people's edits a word apart are one change in the diff: cut in two by author
+  const B = mkApp('one two three\n', true);
+  B.myName = () => 'Pedro';
+  edit(B, 0, 3, 'ONE');
+  B.rvBy = 'Ana'; edit(B, 8, 13, 'THREE', 'merge'); B.rvBy = null;
+  edit(B, 4, 7, 'TWO');
+  const cs = B.currentChanges();
+  assert.deepStrictEqual(cs.map((c) => [c.a, c.b, B.rvName(c.who)]), [['one two', 'ONE TWO', 'Pedro'], ['three', 'THREE', 'Ana']]);
+  assert.ok(cs.every((c) => B.base.files.get('main.tex').slice(c.as, c.ae) === c.a && T(B).slice(c.bs, c.be) === c.b), 'each piece is a change Accept and Reject can act on');
+  assert.deepStrictEqual([...new Set(cs.map((c) => B.rvName(c.who)))].sort(), ['Ana', 'Pedro']);
+  // accept Ana's alone: Pedro's stay
+  B.acceptChanges(cs.filter((c) => c.who === 'Ana'));
+  assert.deepStrictEqual(B.currentChanges().map((c) => B.rvName(c.who)), ['Pedro']);
+  assert.ok(!B.currentChanges().some((c) => c.b.includes('THREE')), 'Ana\'s change is in the base');
+  // undo and redo give the authors back as they were
+  const C = mkApp('a b c\n', true);
+  C.myName = () => 'Pedro';
+  C.rvBy = 'Ana'; edit(C, 2, 3, 'B', 'merge'); C.rvBy = null;
+  undo(C); redo(C);
+  assert.deepStrictEqual(C.currentChanges().map((c) => C.rvName(c.who)), ['Ana']);
+  // the layer itself: an edit inside another's insertion, a deletion's place
+  let segs = authorEdit([], 0, 0, 5, 'Ana');
+  segs = authorEdit(segs, 2, 3, 0, 'Bob');
+  assert.deepStrictEqual(segs, [{ s: 0, e: 2, who: 'Ana' }, { s: 2, e: 2, who: 'Bob' }, { s: 2, e: 4, who: 'Ana' }]);
+  assert.deepStrictEqual(editSpans('abc', 'aXc', false), [{ s: 1, e: 2, n: 1 }]);
+  const one = byAuthor(changes('x y z', 'X y Z')[0], [{ s: 0, e: 1, who: 'A' }, { s: 4, e: 5, who: 'B' }]);
+  assert.deepStrictEqual(one.map((c) => [c.a, c.b, c.who]), [['x', 'X', 'A'], ['z', 'Z', 'B']]);
+});
+
+group('R4: a comments only link lets in comment lines alone, whatever its copy says', () => {
+  const base = 'A line.\nB line.\nC line.';
+  const theirs = 'A line.\n% comment (Ana) on "A": Why?\nB changed.\nC line.\n% comment (Ana): ok\n';
+  const r = commentsOf(base, theirs);
+  assert.strictEqual(r.text, 'A line.\n% comment (Ana) on "A": Why?\nB line.\nC line.\n% comment (Ana): ok\n');
+  assert.strictEqual(r.dropped, 1);
+  assert.ok(onlyComments(base, r.text), 'what comes in differs from the base in comment lines alone');
+  assert.ok(!onlyComments('a\n', 'b\n') && onlyComments('a\n', 'a\n% reply (X): y\n'));
+  // (security review) none in verbatim, listings or filecontents, where TeX prints or writes a % line, nor in the preamble
+  const vb = 'X\n\\begin{document}\nA.\n\\begin{filecontents*}{run.sh}\necho hi\n\\end{filecontents*}\nB.\n\\end{document}\n';
+  const vt = vb.replace('echo hi\n', 'echo hi\n% comment (Eve): $(touch /tmp/x)\n').replace('A.\n', 'A.\n% comment (Eve): fine\n').replace('X\n', 'X\n% comment (Eve): pre\n');
+  const rv = commentsOf(vb, vt);
+  assert.ok(rv.text.includes('% comment (Eve): fine') && !rv.text.includes('touch') && !rv.text.includes('pre\n') && rv.dropped === 2, JSON.stringify(rv));
+  const snaps = [{ sig: 's', share: { rid: 'edit-link-1', role: 'coauthor' } }, { sig: 's', share: { rid: 'cmnt-link-1', role: 'comments' } }, { sig: 't', share: { rid: 'other', role: 'coauthor' } }];
+  assert.strictEqual(linkRole(snaps, 's', 'edit-link-1'), 'coauthor');
+  assert.strictEqual(linkRole(snaps, 's', 'cmnt-link-1'), 'comments');
+  assert.strictEqual(linkRole(snaps, 's', null), 'comments', 'a copy that drops its link\'s name is taken as the stricter link');
+  assert.strictEqual(linkRole(snaps, 's', 'forged-name'), 'comments');
+  assert.strictEqual(linkRole(snaps, 't', null), 'coauthor');
+  assert.strictEqual(linkRole([], 'u', null), 'coauthor', 'a version shared before links had roles: as before');
 });
 
 console.log('review: ' + groups + ' groups of checks passed');

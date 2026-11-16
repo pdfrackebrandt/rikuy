@@ -2,7 +2,10 @@
 coauthor types and comments on the typeset page, sends a link back, and the author's copy takes
 the edits as tracked changes (merged with what the author wrote meanwhile). Comments are LaTeX
 comment lines that change nothing on the page. Save gives one .tex for a one file project, and
-Open in Overleaf posts the project as a .zip. Opening one's own link keeps the project and its
+Open in Overleaf posts the project as a .zip. A link for comments only (R4): the coauthor's page
+takes comments and refuses any other edit (typing, a command, a script's), and the copy that comes
+back brings its comment lines alone, as the author's browser kept the link it made, never as the
+copy says of itself. Opening one's own link keeps the project and its
 figures; a link naming files outside the project, or inflating past any document, is refused; a link in
 a stranger's document opens only as a web or mail address."""
 import base64, io, json, os, sys, zipfile, zlib
@@ -208,9 +211,78 @@ def run():
         A.close(); B.close()
 
 
+COMMENTS_DOC = '\\documentclass{article}\n\\begin{document}\nFirst line of text.\n\nSecond line stays.\n\\end{document}\n'
+
+
+def comments_only():
+    """RV21: a link that lets its reader comment and nothing else, enforced where the page
+    applies an edit (App.commit) and again where the author's page takes the copy back."""
+    with sync_playwright() as p:
+        A, page, errs = open_page(p)
+        page.evaluate('(t) => window.rikuy.loadProject(new Map([["main.tex", t]]), "main.tex", "cmonly", "Opened")', COMMENTS_DOC)
+        page.wait_for_timeout(400)
+        page.click('#b-share'); page.wait_for_selector('.pop-share')
+        perm = page.get_by_role('combobox', name='Link permission')
+        check('comments only: the Share panel asks what the link allows, by name', perm.count() == 1 and perm.evaluate('(e) => [...e.options].map((o) => o.textContent)') == ['Can edit and comment', 'Can comment only'])
+        perm.select_option('comments')
+        page.fill('.pop-share .share-name', 'Pedro')
+        page.click('.pop-share button.btn:not(.ghost) >> text=Copy link')
+        page.wait_for_function('() => (document.querySelector(".pop-share .share-link") || {}).value', timeout=8000)
+        link = page.eval_on_selector('.pop-share .share-link', 'e => e.value')
+        page.keyboard.press('Escape'); page.evaluate('() => window.rikuy.closePop()')
+        meta = page.evaluate('async () => (await window.rikuy.allSnaps()).filter((v) => v.share).map((v) => v.share.role)')
+        check("comments only: the version shared is kept with the link's name and what it allows", meta[:1] == ['comments'], meta)
+        B, page2, errs2 = open_page(p, clear=False)
+        page2.goto('about:blank'); page2.goto(link)
+        page2.wait_for_function('window.rikuy && document.body.classList.contains("guest")', timeout=20000)
+        page2.wait_for_timeout(400)
+        check('comments only: the reader is told they can comment only', 'for comments' in page2.inner_text('#guest'), page2.inner_text('#guest'))
+        s0 = src(page2)
+        click_text(page2, 'First line', 3)
+        page2.keyboard.type('XYZ')
+        page2.wait_for_timeout(300)
+        check('comments only: typing on the page changes nothing', src(page2) == s0)
+        page2.evaluate('() => window.rikuy.runCommand("bold")')
+        page2.evaluate('() => window.rikuy.commit([{ f: "main.tex", s: 0, e: 0, t: "% sneaky\\n" }], null, "api")')
+        check('comments only: neither a command nor an edit made by script gets in', src(page2) == s0)
+        select_text(page2, 'Second line', 0)
+        page2.wait_for_selector('#bubble:not([hidden])')
+        page2.click('#bubble button[data-act="cm"]')
+        page2.wait_for_selector('.pop-comment textarea')
+        if page2.locator('.pop-comment .share-name').count():
+            page2.fill('.pop-comment .share-name', 'Ana')
+        page2.fill('.pop-comment textarea', 'Clearer?')
+        page2.click('.pop-comment button.btn:not(.ghost)')
+        wait_src(page2, '% comment (')
+        check('comments only: a comment goes in', 'on "Second line": Clearer?' in src(page2), src(page2))
+        # the reader's page could be changed by hand: its copy then carries a text edit anyway
+        page2.evaluate("() => { const g = window.rikuy; g.files.set('main.tex', g.files.get('main.tex').replace('First line', 'FIRST LINE')); }")
+        page2.click('#b-share'); page2.wait_for_selector('.pop-share')
+        page2.click('.pop-share button.btn:not(.ghost) >> text=Copy the link for Pedro')
+        page2.wait_for_function('() => (document.querySelector(".pop-share .share-link") || {}).value', timeout=8000)
+        back = page2.eval_on_selector('.pop-share .share-link', 'e => e.value')
+        page.goto(back)
+        page.wait_for_function('() => window.rikuy.files.get("main.tex").includes("Clearer?")', timeout=20000)
+        page.wait_for_timeout(400)
+        s = src(page)
+        check('comments only: the copy back brings the comment and not the text edit', 'Clearer?' in s and 'First line of text.' in s and 'FIRST LINE' not in s, s)
+        check('comments only: the author is told an edit was left out', 'comment only' in page.evaluate('() => [...document.querySelectorAll(".toast")].map((t) => t.textContent).join(" ")'))
+        # (security review) a copy back that names another version than the one shared: not opened over the document
+        s_before = src(page)
+        forged = page2.evaluate("async () => { const g = window.rikuy; g.shareCtx.base = 'forged-version'; g.shareCtx.rid = null; g.files.set('main.tex', g.files.get('main.tex').replace('Second line', 'SECOND LINE')); return (await g.makeShareLink('back')).url; }")
+        page.goto(forged); page.wait_for_timeout(2500)
+        check('comments only: a copy back naming a version this browser never shared does not open over the document', src(page) == s_before and 'not opened' in page.evaluate('() => [...document.querySelectorAll(".toast")].map((t) => t.textContent).join(" ")'), src(page)[:200])
+        bad = [e for e in errs + errs2 if 'clipboard' not in e.lower()]
+        check('comments only: no page errors', not bad, bad[:3])
+        A.close(); B.close()
+
+
 if __name__ == '__main__':
     try:
-        run()
+        if len(sys.argv) < 2 or 'run' in sys.argv[1:]:
+            run()
+        if len(sys.argv) < 2 or 'comments' in sys.argv[1:]:
+            comments_only()
     except Exception:
         import traceback
         traceback.print_exc()

@@ -149,10 +149,15 @@ await ok('robots.txt, the sitemap and the page\'s data for search engines', () =
 });
 
 await ok('a link round trips, unicode and all', async () => {
-  const o = { v: 1, name: 'Paper', main: 'main.tex', files: [['main.tex', DOC + ' ü — ∑ 😀'], ['refs.bib', '@article{a,}']], base: 'abc', by: 'Ana', role: 'coauthor' };
+  const o = { v: 1, name: 'Paper', main: 'main.tex', files: [['main.tex', DOC + ' ü — ∑ 😀'], ['refs.bib', '@article{a,}']], base: 'abc', by: 'Ana', role: 'coauthor', rid: null };
   const s = await packShare(o);
   assert.match(s, /^1\.[A-Za-z0-9_-]+$/);
   assert.deepEqual(await unpackShare(s), o);
+  // (R4) a comments only link keeps its role and its name; a name that is no name is dropped
+  const c = await unpackShare(await packShare({ ...o, role: 'comments', rid: 'a1b2c3d4e5f6a7b8c9d0e1f2' }));
+  assert.equal(c.role, 'comments'); assert.equal(c.rid, 'a1b2c3d4e5f6a7b8c9d0e1f2');
+  for (const bad of ['short', '<script>x</script>xxxxxxxx', 'x'.repeat(41), 42]) assert.equal((await unpackShare(await packShare({ ...o, rid: bad }))).rid, null, String(bad));
+  assert.equal((await unpackShare(await packShare({ ...o, role: 'owner' }))).role, 'coauthor', 'an unknown role is a coauthor\'s');
   assert.equal(shareParam('https://x.test/rikuy/#share=' + s), s);
   assert.equal(shareParam('#a=1&share=' + s), s);
   assert.equal(shareParam('https://x.test/'), null);

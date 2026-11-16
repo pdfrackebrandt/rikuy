@@ -8,6 +8,7 @@ import { isBalanced } from './parser.js';
 import { safeUrl } from './wordast.js';
 import { scriptNeeds, scriptLines, scriptSetup, otherDirection, INDIC, MORE } from './scripts.js';
 import { pageDocx, pageLatex, relsMap } from './wordpage.js';
+import { endnotesDocx, markEndnotes, endnotesTex } from './wordnotes.js';
 import { docSpacing } from './parasrc.js';
 
 // pandoc's messages worth telling the user: the ones that say something was lost
@@ -31,7 +32,11 @@ export function exportDocx(P, req) {
   const mainTex = (req.project.files.find(([f]) => f === req.project.main) || [])[1];
   const made = styled(r.files['out.docx'], !!(req.doc.meta && req.doc.meta.dir && req.doc.meta.dir.c === 'rtl'), typeof mainTex === 'string' ? { ...scriptSetup(mainTex), mainTex } : {});
   // the page's set up: paper, margins, columns, headers and footers (src/wordpage.js)
-  const docx = req.page ? zip(pageDocx(unzip(made), req.page)) : made;
+  let parts = req.page ? pageDocx(unzip(made), req.page) : null;
+  // (R4: the notes that are endnotes made Word's own, src/wordnotes.js)
+  const en = endnotesDocx(parts || unzip(made));
+  if (en) parts = en;
+  const docx = parts ? zip(parts) : made;
   // what Word got, block by block, lined up with what the page showed
   const X = extract(unzip(docx));
   const anchors = [];
@@ -963,6 +968,8 @@ function geometry(pg, PG = {}) {
 export function docxToLatex(P, bytes, name) {
   // the zip pandoc reads is the one rebuilt from what passed the checks
   const parts = unzip(bytes);
+  // (R4: Word's endnotes marked, so they come back as \endnote and not as footnotes)
+  const ens = markEndnotes(parts);
   const opts = { from: 'docx+citations', to: 'json', 'input-files': ['in.docx'], 'extract-media': 'media', 'track-changes': 'accept' };
   let info = null, r = null;
   try {
@@ -974,6 +981,7 @@ export function docxToLatex(P, bytes, name) {
   if (!r || !r.stdout) r = P.convert(opts, null, { 'in.docx': zip(parts) });
   if (!r.stdout) throw new Error('The file is damaged: its text (word/document.xml) is cut short or not valid, so nothing in it can be read. Open it in Word, which offers to repair it, save it again and open that file here. (pandoc: ' + (r.stderr || '').trim().slice(0, 200) + ')');
   const doc = JSON.parse(r.stdout);
+  if (ens) endnotesTex(doc);
   const media = {};
   const renamed = new Map();
   let k = 0, total = 0;
@@ -1102,6 +1110,7 @@ export function docxToLatex(P, bytes, name) {
   if (used(/\\hl\{/)) pre.push('\\DeclareRobustCommand{\\hl}[1][yellow]{\\bgroup\\markoverwith{\\textcolor{#1}{\\rule[-.5ex]{2pt}{2.5ex}}}\\ULon}');
   if (used(/\\(cite[tp]?|citeauthor|citeyear)\{/) || bib) pre.push('\\usepackage[authoryear,round]{natbib}');
   if (used(/\\(texttt|verb)|\\begin\{verbatim\}/)) { /* the class has them */ }
+  if (used(/\\endnote\{/)) pre.push('\\usepackage{enotez}');
   if (used(/\\(href|url|hyperlink|hypertarget|hyperref|phantomsection|nolinkurl)\b/)) pre.push('\\usepackage[hidelinks]{hyperref}');
   for (const p of PG.packages) pre.push(Array.isArray(p) ? '\\usepackage[' + p[1] + ']{' + p[0] + '}' : '\\usepackage{' + p + '}');
   if (many) pre.push('\\usepackage{multicol}');
@@ -1120,6 +1129,7 @@ export function docxToLatex(P, bytes, name) {
   if (abstract) lines.push('', '\\begin{abstract}', abstract, '\\end{abstract}');
   lines.push('', many ? '\\begin{multicols}{' + many + '}\n' + tex.trim() + '\n\\end{multicols}' : tex.trim(), '');
   if (bib) lines.push('\\bibliographystyle{plainnat}', '\\bibliography{references}', '');
+  if (used(/\\endnote\{/)) lines.push('\\printendnotes', '');
   lines.push('\\end{document}', '');
   let out = comments(lines.join('\n'), info, N);
   // ---- what the user is told: what came differently, and what did not come at all

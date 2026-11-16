@@ -11,8 +11,10 @@ hashes below are the same.
 dvips, Asymptote and xindy are built from TeX Live's own source tree; gnuplot and the libraries
 from Ubuntu's source packages; the editor's native core from this repository's own C++
 (`tex/native/core/`, `sh tex/build_tools.sh core`); Hunspell from Ubuntu's source package with
-Rikuy's `tex/native/spell/spell.cc`, and its dictionaries from Ubuntu 26.10's packages (the four
-`.deb` files' SHA-512 checked against that release's package index when they were pinned). An empty `RIKUY_SRC`, in any folder, rebuilds every committed
+Rikuy's `tex/native/spell/spell.cc`, MyThes with it, and the dictionaries and thesauri from Ubuntu
+26.10's packages (the seven `.deb` files' and MyThes's SHA-512 checked against that release's
+package index when they were pinned); Harper is its own WebAssembly build, npm's package, pinned
+by SHA-256 and copied unchanged (Rust: no recipe here). An empty `RIKUY_SRC`, in any folder, rebuilds every committed
 program byte for byte (PLAN.md, task 21). The compiler is Ubuntu 24.04's `emscripten` 3.1.6
 package; xindy's `wasm-opt --spill-pointers` comes from binaryen 123.0.0, the npm registry's
 tarball (SHA-256 `11fcbcb97b5c8da3990106fb4e2d364ba95ddf313d7c0e61ca8e8c7948600f7f`).
@@ -26,6 +28,9 @@ tarball (SHA-256 `11fcbcb97b5c8da3990106fb4e2d364ba95ddf313d7c0e61ca8e8c7948600f
 | Rikuy's native core (`tex/vendor/core/rikuy-core.wasm`, inside the page) | this repository | `tex/native/core/`, with Emscripten 3.1.6's C library parts and its emmalloc allocator | AGPL-3.0-or-later (Emscripten's parts MIT or NCSA) |
 | Hunspell (`tex/vendor/hunspell/`, the hosted Rikuy's `spell/`) | 1.7.6 | Ubuntu's source package (below), with Rikuy's `tex/native/spell/spell.cc`; `sh tex/build_tools.sh hunspell` | MPL-1.1, GPL-2.0-or-later or LGPL-2.1-or-later (taken as LGPL-2.1) |
 | its dictionaries (`tex/vendor/hunspell/dict/`, copied unchanged from the packages below) | en_US 2020.12.07, en_GB and es_ES 26.8.0.3, de_DE 20161207 | Ubuntu 26.10's `hunspell-en-us`, `hunspell-en-gb`, `hunspell-es`, `hunspell-de-de` | SCOWL's license, LGPL-3.0, GPL-3.0-or-later or LGPL-3.0-or-later or MPL-1.1, GPL-2.0-or-later |
+| MyThes, in the same module (`tex/native/spell/spell.cc` calls it) | 1.2.6 | Ubuntu's source package (below), unchanged; `sh tex/build_tools.sh hunspell` | BSD-style (its COPYING) |
+| the thesauri (`tex/vendor/hunspell/thes/`: each `.idx` copied unchanged, each `.dat` cut at line ends into pieces of at most 1 MiB, which together are the package's file) | en_US and es_ES 26.8.0.3, de_DE 20160424 | Ubuntu 26.10's `mythes-en-us`, `mythes-es`, `mythes-de` | WordNet 3.0's license (GPL-2.0 as Ubuntu lists the folder), LGPL-2.1, LGPL |
+| Harper (`tex/vendor/harper/`, the hosted Rikuy's `spell/harper-*.wasm` and the grammar worker) | 3.2.0 | npm's `harper.js` (below), its slim WebAssembly module, JavaScript glue and license copied unchanged; `sh tex/build_tools.sh harper` | Apache-2.0 |
 
 From Ubuntu's archive (`https://archive.ubuntu.com/ubuntu/pool/` plus the path), checked by
 SHA-256. The same files are attached to this repository's release `sources-2026-10-28`,
@@ -50,6 +55,11 @@ SHA-256 `b9b09589078c539aa663d3e60a08045d1a4e0370f6417d17c96d0e61b02a4887`) and 
 | `main/libr/libreoffice-dictionaries/hunspell-en-gb_26.8.0.3-1_all.deb` | `06179bbbfe572b0e49046b9274d6b124004353b75167ada73db03434ba8736d8` | LGPL-3.0 |
 | `main/i/igerman98/hunspell-de-de_20161207-16_all.deb` | `8f8f69e918f143102bfb090aa9d0833ef44154a5cdaf8992da91815adb46275e` | GPL-2.0-or-later |
 | `main/libr/libreoffice-dictionaries/hunspell-es_26.8.0.3-1_all.deb` | `24cb9ae90ce3326cda572c9364ca7e92a12e7db6e92aa38ec117aa245bc17407` | GPL-3.0-or-later or LGPL-3.0-or-later or MPL-1.1 |
+| `main/m/mythes/mythes_1.2.6.orig.tar.gz` | `7ebc9d32e4d37c1da7fb9dd9673dec2deda9607470a84ebcab2c0d08dc3c7d6c` | BSD-style |
+| `main/libr/libreoffice-dictionaries/mythes-en-us_26.8.0.3-1_all.deb` | `047ff14fd41e9c976f595335ea682d5cc02c03e908f2c0ffe98e454c79db43b5` | WordNet 3.0 (GPL-2.0 per Ubuntu) |
+| `main/libr/libreoffice-dictionaries/mythes-es_26.8.0.3-1_all.deb` | `5b2eee2a9f5d96c8413911af6a73d8e1d8faec999fbbf944292a274882564f4d` | LGPL-2.1 |
+| `main/o/openthesaurus/mythes-de_20160424-4build1_all.deb` | `7da3d2cb8bf9cf322c040863ed8a522b825a74390eef3d882b56bf0bcad00f17` | LGPL |
+| `https://registry.npmjs.org/harper.js/-/harper.js-3.2.0.tgz` (npm, not Ubuntu) | `99bbcbb4cbd630d2e802fd693a826926b1726ca1ac40ef109127a215d9fa2da6` | Apache-2.0 |
 
 Rikuy's own changes to them are in `tex/native/` (`patch_asy.py`, `patch_mesa.py`,
 `patch_gnuplot.py`, `xindy/patch_xindy.py`, `rpc/`, `galley_main.c`) and the build steps in

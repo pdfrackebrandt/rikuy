@@ -2680,6 +2680,94 @@ Tests:
     58, `test:agent` 143, `launch.py` 18, `deploy_check.py` 45, `pages_check.py` (382 files, 358.6
     MB), and the manifest diff empty.
 
+64. **R4, what B10 and B9 left: the thesaurus, grammar, a comments only link, the Original,
+    changes by author, and the rest of References.** Done in the code (branch
+    `round3-r4-review`). *Thesaurus (RV3), in C++.* MyThes 1.2.6, LibreOffice's thesaurus
+    (Ubuntu's source package, pinned by SHA-256 in `tex/build_tools.sh`), is compiled into the
+    spell worker's module beside Hunspell (`thes_open`, `thes_lookup`, and `spell_stem`: Hunspell's
+    stems find an inflected word's entry, "Häuser" as "haus", "corriendo" as "correr", "running"
+    as "running" or "run"), with the data of Ubuntu 26.10's `mythes-en-us` (WordNet's), `mythes-es`
+    (ISO8859-1, converted in C++) and `mythes-de` (OpenThesaurus), each `.deb` checked against
+    the release's index. The module grew 6 kB (468 kB). The data is 54 MB (gzipped 13 MB in git;
+    German alone 28.7 MB, past Pages' 25 MiB a file): each `.idx` is copied as it is and each
+    `.dat` cut at line ends into 52 pieces of at most 1 MiB (`split -C`), which together are the
+    package's file byte for byte (the recipe checks it). MyThes reads its data with fseek and
+    fgets through a device of Emscripten's file system that serves only the pieces fetched so far
+    (`thesDevice`, `src/spell/worker.js`): a lookup that reads into a missing piece notes it and
+    finds nothing, the worker fetches and checks that piece and asks again. The first English
+    lookup fetches the index (3 MB) and one piece and takes 0.2 to 0.55 s; German "Häuser" fetched
+    the index and two of 28 pieces. Shift+F7 is the Thesaurus pane (search, meanings by part of
+    speech, a word pressed looked up in turn, Back, Insert), a sheet on a phone; the right click
+    menu's Synonyms lists the first eight; Insert changes only the letters that differ (inside
+    `\textbf{quick}` the bold stays), the old word's capitals kept, one step. Hosted build only
+    (`spell/`, kept by the service worker at first use), as spelling: the artifact has no room.
+    *Grammar (RV2): Harper, decided by measuring.* Two candidates on 40 sentences with one
+    error each (agreement, articles, doubled words, its/it's, could of, then/than) and 312
+    sentences of the corpus's English prose: link-grammar 5.12 (C, AbiWord's checker, Ubuntu's
+    package) flagged 25 of 40 and 82 clean sentences (26 %), a whole sentence each with no place
+    and no correction; Harper 3.2.0 (Rust, Apache-2.0) flagged 24 of 40 and 31 clean sentences
+    (10 %, about half of them real slips: "of of", "state of art", "suchas"), each with its words,
+    a message and a correction. No C or C++ checker was good enough, so Harper's own WebAssembly
+    build is vendored: `sh tex/build_tools.sh harper` downloads npm's `harper.js` 3.2.0 pinned by
+    SHA-256 and copies its slim module (20.3 MB, 8.3 MB gzipped), its JavaScript glue and license
+    unchanged into `tex/vendor/harper/`; `vendor.yml` has the `harper` job. It runs in a worker of
+    its own (`src/spell/grammar.js`; the module used only with the bundle's SHA-256, its glue's one
+    fetch answered from those bytes), hosted build only, and only once Check Grammar as You Type is
+    turned on (Spelling's arrow, the search box): starting it takes 1.3 to 1.6 s and a node process
+    holding it grows to about 280 MB, which a document that never asks should not pay; Word's default is on, Rikuy's is
+    off for that reason. Only prose, as spelling: `grammarBlocks` gives each block's text as one
+    paragraph, a formula, a citation, a reference or code standing as "x", a footnote apart,
+    another language, code and table cells left out; Harper's spelling, sentence capitals (a
+    paragraph after a displayed equation starts in lower case) and long sentences are off. Blue
+    double lines; the right click menu and a long press give the message, the corrections and
+    Ignore Once; F7 becomes the Spelling and Grammar pane; a correction changes only the
+    characters that differ, where the words are the source's own. *Comments only link (RV21).*
+    Share's "Anyone with the link: Can edit and comment / Can comment only". A link has a role and
+    a random name (`rid`); the version shared is kept with both. The reader's page refuses every
+    edit that changes more than comment lines (`rvRefuse`, first in `App.commit`: typing, commands,
+    the source, a script's `commit`). Enforced where the author's page takes the copy back: what
+    it may bring is decided from the author's own versions (`linkRole`: the link the copy names,
+    else the strictest link of that version; never the copy's word), and a comments only copy
+    brings its comment lines alone (`commentsOf`, line by line, under the line they stand under),
+    never in the preamble or inside verbatim, listings or filecontents. *Display for Review's
+    Original*: the page draws the base's text (`pageFiles()` in `rebuild`) and takes no edit
+    until another view is chosen; it is not kept past a session. *Changes by author.* Each step
+    has an author (the AutoCorrect Options user name, Word's practice for changes; initials are
+    for comments, or the coauthor whose copy came back); a layer per file of who inserted and
+    deleted what (`authorEdit`) moves with every step, is kept before and after each step for
+    undo and redo and stored with the base; a change two people's pieces make is cut in two
+    (`byAuthor`). The Changes list names each author, each reviewer's marks have a colour of
+    their own (four), Show Markup has Specific People (All Reviewers and each), Accept and
+    Reject's arrows have All Changes Shown and All by each reviewer. Changes made before this
+    version have no author and show as yours. *References.* Endnote number formats in the
+    Footnote and Endnote dialog: enotez's `\setenotez{counter-format=…}` (written, changed in
+    place, taken out) or `\theendnote` for the endnotes package; read back by hand. Insert
+    Caption's Label (Figure, Table and the document's own floats), New Label (newfloat's
+    `\DeclareFloatingEnvironment[fileext,listname,name]{scheme}`; float's `\newfloat` with
+    `\floatname` read too; an existing figure's float renamed in the same step) and Exclude label
+    from caption (caption's `\captionsetup{labelformat=nolabel}` in the float with
+    `\DeclareCaptionLabelFormat{nolabel}{#2}` once: "1: …"); the page draws "Scheme 1:" and "1:".
+    Insert Index's Right align page numbers: imakeidx's `options=-s index-right.ist`, a makeindex
+    style of the project's own (`\dotfill` as the delimiters), drawn on the page with dots;
+    off takes the option out. Table of Authorities: Mark Citation (Alt+Shift+I; Selected text,
+    Word's seven categories, Short citation, Mark, Mark All) writes
+    `\index[toa]{1@\textbf{Cases}!Smith v. Jones, …}` with imakeidx and
+    `\makeindex[name=toa,title=Table of Authorities,columns=1]` once; Insert Table of Authorities
+    writes `\printindex[toa]`; the page draws its title, the categories in bold and the
+    citations; makeidx documents say why not. *Word.* An `\endnote` is a Word endnote (the note
+    pandoc writes moved to `endnotes.xml` with its reference, styles, numbering format and
+    relations, `src/wordnotes.js`), and Word's endnotes come back as `\endnote` with enotez and
+    `\printendnotes`; `\index` entries are XE fields (TA fields for `\index[toa]`) at the end of
+    their paragraph, `\printindex` an INDEX field, a Table of Authorities TOA fields, the lists of
+    figures and tables TOC fields of the caption styles, all marked for Word to update as the file
+    opens. pandoc reads no field, so these come back as their text only. *Security quick review*
+    (outside the repository): a copy back naming a version the author never shared fell to the
+    "open the copy" path and brought every edit of a comments only reader: refused now; comment
+    lines inside verbatim or filecontents (a `%` line written into a file a shell escape could run)
+    or in the preamble: left out; the endnotes of a stranger's Word file were rebuilt once per note
+    (100,000 notes: quadratic): one pass now (0.3 s). Each with its case. *Evidence.* see the
+    commit message.
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000

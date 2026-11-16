@@ -570,7 +570,8 @@ class App {
     const t0 = performance.now();
     let model;
     // (views: the blocks shown as their LaTeX for a while, src/cmd/view.js Show LaTeX)
-    try { model = buildModel({ files: this.files, main: this.main, views: this.viewKeys() }, this.model && this.model.main === this.main ? this.model : null); model.main = this.main; }
+    // (pageFiles: Display for Review's Original draws the base's text, src/review.js)
+    try { const files = this.pageFiles(); model = buildModel({ files, main: this.main, views: this.viewKeys() }, this.model && this.model.main === this.main && this.model.pageFiles === files ? this.model : null); model.main = this.main; Object.defineProperty(model, 'pageFiles', { value: files, configurable: true }); }
     catch (e) {
       // The pages still show the text before this change, and their offsets no longer match it:
       // a keystroke there would land in the wrong place. They take no typing until a build works.
@@ -971,6 +972,8 @@ class App {
   commit(edits, caret, kind, blobs) {
     // while the pages are stale (see rebuild) only edits made from the text itself go through
     if (this.stale && !/^(restore|reject|merge|other-tab|api)$/.test(kind || '')) { this.toast('The page cannot show the document as it is now. Edit the source, or undo.'); return; }
+    // (src/review.js: none while the page shows the Original; comments only in a comments only link)
+    if (this.rvRefuse(edits, kind)) return;
     edits = edits.filter((ed) => { const n = (this.files.get(ed.f) ?? '').length; return ed.s >= 0 && ed.e >= ed.s && ed.e <= n; });
     const swaps = (blobs || []).map(({ name, blob }) => ({ name, before: this.assetBlobs.get(name) || null, after: blob }));
     if (!edits.length && !swaps.length) { if (caret) this.restoreCaret(caret); return; }

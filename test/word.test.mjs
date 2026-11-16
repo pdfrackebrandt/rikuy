@@ -518,7 +518,7 @@ await ok('a Word file of what pandoc alone loses: nothing goes without a word, a
   for (const s of ['\\tableofcontents', '\\textcolor[HTML]{C00000}{red words}', '\\hl{marked}', '\\uline{under}', '\\sout{struck}',
     'p \\(\\leq\\) 0.05', '\\(\\neq\\) 0', '\\(\\infty\\)', '\\textminus{} 5\\,\\%', 'Ελληνικά, Привет', '\n% comment (Ana P) on "robust": Is it? \\input{/etc/passwd} 50% }\n',
     '\\begin{center}\nCentred line.\n\\end{center}', 'Before the break.\n\n\\newpage', 'See Figure~\\ref{_Ref7} and', '\\label{_Ref7}{}A blue box.}', 'width=1\\linewidth', '\\begin{table}[htbp]\n\\centering\n\\caption{Growth by region}\n\\begin{tabular}',
-    '\\multirow{2}{*}{Region}', 'South & 3 & \\begin{tabular}{@{}ll@{}}', '\\begin{aligned}\nx &= 1 \\\\\ny &= 2 + x \\\\\nz &= 3\n\\end{aligned}', '\\begin{equation}\nE = mc^{2}\n\\end{equation}', '\\begin{equation}\nF = ma\n\\tag{7}\n\\end{equation}', '\\footnote{The endnote text.}', 'The result is strong and'])
+    '\\multirow{2}{*}{Region}', 'South & 3 & \\begin{tabular}{@{}ll@{}}', '\\begin{aligned}\nx &= 1 \\\\\ny &= 2 + x \\\\\nz &= 3\n\\end{aligned}', '\\begin{equation}\nE = mc^{2}\n\\end{equation}', '\\begin{equation}\nF = ma\n\\tag{7}\n\\end{equation}', '\\endnote{The endnote text.}', 'The result is strong and'])
     assert.ok(b.includes(s), s + '\n' + b);
   for (const s of ['Stale entry', '\\ul{', '\\st{', 'longtable', 'Figure 1:', 'Table 1:', 'weak']) assert.ok(!b.includes(s), s);
   // every command the body uses is defined by the preamble: these were undefined before
@@ -1670,6 +1670,55 @@ await ok('an interactive graph goes to Word as its picture, the PDF\'s, with its
   assert.ok(![...parts.keys()].some((k) => /\.html?$/i.test(k) && !/rikuy/i.test(k)) && !/<script|rikuy-graph|iframe/i.test(d));
   const plan = importInto(E.docx, files);
   assert.equal(plan.files.size, 0, 'unchanged in Word: the \\rikuywidget block comes back unchanged');
+});
+
+await ok('R4: endnotes are Word\'s endnotes and come back as \\endnote; the index, a Table of Authorities and the lists are Word\'s fields', () => {
+  const src = '\\documentclass{article}\n\\usepackage{enotez}\n\\setenotez{counter-format=roman}\n\\usepackage{imakeidx}\n\\makeindex\n\\makeindex[name=toa,title=Table of Authorities]\n\\begin{document}\n'
+    + '\\listoffigures\n\nThe text\\endnote{An endnote with $x^2$.} and a cat\\index{cat!black|textbf} and a case\\index[toa]{1@\\textbf{Cases}!Smith v. Jones, 1 U.S. 2 (1990)} here\\footnote{A footnote.}.\n\n'
+    + '\\begin{figure}[htbp]\n\\centering\n\\caption{A cat}\n\\end{figure}\n\n\\printendnotes\n\\printindex\n\\printindex[toa]\n\\end{document}\n';
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  const parts = unzip(E.docx);
+  const d = text(parts.get('word/document.xml'));
+  assert.ok(parts.has('word/endnotes.xml'), 'an endnotes part');
+  const en = text(parts.get('word/endnotes.xml')), fn = text(parts.get('word/footnotes.xml'));
+  assert.match(en, /An endnote with/);
+  assert.ok(!/An endnote with/.test(fn) && /A footnote\./.test(fn), 'the endnote left the footnotes, the footnote stayed');
+  assert.ok(!/rikuy:endnote/.test(en + fn + d), 'no mark left in the file');
+  assert.match(d, /<w:endnoteReference w:id="\d+"\/>/);
+  assert.match(text(parts.get('word/settings.xml')), /<w:endnotePr><w:numFmt w:val="lowerRoman"\/>/, 'numbered i, ii, iii as \\setenotez says');
+  assert.match(text(parts.get('[Content_Types].xml')), /\/word\/endnotes\.xml/);
+  assert.match(text(parts.get('word/_rels/document.xml.rels')), /relationships\/endnotes/);
+  assert.match(d, /XE &quot;cat:black&quot; \\b|XE "cat:black" \\b/, 'the index entry an XE field, its page in bold');
+  assert.match(d, /TA \\l (&quot;|")Smith v\. Jones, 1 U\.S\. 2 \(1990\)(&quot;|") \\s (&quot;|")Smith v\. Jones, 1 U\.S\. 2 \(1990\)(&quot;|") \\c 1/, 'the citation a TA field of category 1 (Cases)');
+  assert.match(d, /INDEX \\c (&quot;|")2(&quot;|")/, 'the index an INDEX field in two columns');
+  assert.match(d, /TOA \\h \\c (&quot;|")1(&quot;|") \\p/, 'the Table of Authorities a TOA field of its category');
+  assert.match(d, /TOC \\h \\z \\t (&quot;|")Image Caption,1(&quot;|")/, 'the list of figures a TOC field of the caption style');
+  assert.match(d, /w:dirty="true"/, 'fields Word updates as the file opens');
+  // what Word shows as text: no field code in it, the endnote's words not in the body
+  const shown = extract(parts);
+  assert.ok(![...shown.regions.values()].some((R) => /XE|INDEX|TOC \\/.test(R.text)), 'no field code in the text Word shows');
+  // unchanged in Word: no edit comes back
+  const plan = importInto(E.docx, files);
+  assert.equal(plan.files.size, 0, 'the exported file read back unchanged gives no edit');
+  // opened as a Word file of its own: the endnote is \endnote again, with enotez and \printendnotes
+  const r = docxToLatex(P, E.docx, 'x.docx');
+  assert.match(r.tex, /\\endnote\{An endnote with/);
+  assert.match(r.tex, /\\footnote\{A footnote\.\}/);
+  assert.match(r.tex, /\\usepackage\{enotez\}/);
+  assert.match(r.tex, /\\printendnotes\n/);
+  assert.ok(isBalanced(r.tex), 'balanced');
+});
+
+await ok('R4: captions of the document\'s own floats and with the number alone go to Word as the page draws them', () => {
+  const src = '\\documentclass{article}\n\\usepackage{newfloat}\n\\usepackage{caption}\n\\DeclareFloatingEnvironment[fileext=loscheme,listname={List of Schemes},name={Scheme}]{scheme}\n\\DeclareCaptionLabelFormat{nolabel}{#2}\n\\begin{document}\n'
+    + '\\begin{scheme}[htbp]\n\\centering\n\\caption{A reaction}\n\\end{scheme}\n\n\\begin{figure}[htbp]\n\\centering\n\\captionsetup{labelformat=nolabel}\n\\caption{Plain}\n\\end{figure}\n\\end{document}\n';
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  const d = text(unzip(E.docx).get('word/document.xml')).replace(/<[^>]+>/g, '');
+  assert.match(d, /Scheme 1: A reaction/);
+  assert.match(d, /(^|[^e] )1: Plain/);
+  assert.ok(!/Figure 1: Plain/.test(d));
 });
 
 console.log('word: ' + n + ' groups of checks passed');

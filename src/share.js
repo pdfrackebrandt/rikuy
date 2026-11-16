@@ -63,7 +63,10 @@ export function cleanPath(name) {
 
 const label = (x, dflt) => (typeof x === 'string' && x.trim() ? x.trim().slice(0, MAX_LABEL) : dflt);
 
-// { v, name, main, files: [[name, text]], base, by, role, t } -> the text after "#share="
+// { v, name, main, files: [[name, text]], base, by, role, rid, t } -> the text after "#share="
+// role: 'coauthor' (edits and comments), 'comments' (comments only) or 'back' (a copy sent back);
+// rid: the link's own random name, which a copy sent back carries, so the sender's browser knows
+// which link it answers and what that link allowed (src/collab.js takeBack)
 export async function packShare(o) {
   const z = await through(enc.encode(JSON.stringify(o)), new CompressionStream('deflate-raw'));
   return V + b64url(z);
@@ -95,7 +98,8 @@ export async function unpackShare(s) {
   const out = {
     v: 1, name: label(o.name, main), main, files,
     base: typeof o.base === 'string' && o.base.length <= 100 ? o.base : null,
-    by: label(o.by, 'A coauthor'), role: o.role === 'back' ? 'back' : 'coauthor'
+    by: label(o.by, 'A coauthor'), role: o.role === 'back' ? 'back' : o.role === 'comments' ? 'comments' : 'coauthor',
+    rid: typeof o.rid === 'string' && /^[A-Za-z0-9_-]{8,40}$/.test(o.rid) ? o.rid : null
   };
   if (typeof o.t === 'number') out.t = o.t;
   // no sender named (Share always names one; a link built by hand may not): the reader's own
@@ -268,3 +272,73 @@ const COMMENT_LINES = /(^|\n)[ \t]*%[ \t]*(?:comment|reply)[ \t]*\([^)\n]*\)[^\n
 const bare = (t) => String(t).replace(COMMENT_LINES, '$1').replace(/\s+/g, ' ').trim();
 const HAS = /%[ \t]*(?:comment|reply)[ \t]*\(/i;
 export const commentOnly = (c) => (HAS.test(c.a) || HAS.test(c.b)) && bare(c.a) === bare(c.b);
+
+// whether after differs from before only in its comment lines (added, removed, changed): what a
+// comments only link lets through (src/collab.js); bounded, one pass over each text
+const WHOLE = /^[ \t]*%[ \t]*(?:comment|reply)[ \t]*\([^)\n]*\)[^\n]*(?:\n|$)/gim;
+const isComment = (line) => !!parseCommentLine(line.replace(/\r?\n$/, ''));
+export function onlyComments(before, after) {
+  // (a line end added at the very end, as a comment under the last line brings, is no change)
+  const strip = (t) => String(t).replace(WHOLE, '').replace(/\n$/, '');
+  return strip(before) === strip(after);
+}
+
+// What of theirs a comments only link lets in: base with their comment lines, and without the
+// comment lines they took out, and nothing else. Line by line in each hunk: a comment line of
+// theirs goes after the line of the base it stands under in their copy (that line's own comments
+// first); one under a line they changed, under the line before that; at the hunk's start if none. { text, dropped: hunks whose
+// text they changed, left out }
+// (where TeX reads lines as they are, verbatim, listings, filecontents and the like, a % line is
+// printed or written to a file, so no comment line goes there: security review)
+function verbatimRanges(text) {
+  const out = [];
+  let depth = 0, from = 0;
+  VERBATIM.lastIndex = 0;
+  for (let m, k = 0; (m = VERBATIM.exec(text)) && k < 100000; k++) {
+    if (m[1] === 'begin') { if (depth++ === 0) from = m.index; } else if (depth > 0 && --depth === 0) out.push([from, m.index + m[0].length]);
+  }
+  if (depth > 0) out.push([from, text.length]);
+  return out;
+}
+const inRanges = (R, p) => { let lo = 0, hi = R.length - 1; while (lo <= hi) { const m = (lo + hi) >> 1; if (R[m][1] <= p) lo = m + 1; else if (R[m][0] >= p) hi = m - 1; else return true; } return false; };
+export function commentsOf(base, theirs) {
+  if (base === theirs) return { text: base, dropped: 0 };
+  let out = '', p = 0, dropped = 0;
+  const lines = (t) => t.match(/[^\n]*\n|[^\n]+$/g) || [];
+  const verb = verbatimRanges(base);
+  const begin = base.search(/\\begin\s*\{document\}/);
+  for (const h of hunks(base, theirs)) {
+    out += base.slice(p, h.as);
+    p = h.as + h.a.length;
+    // (not in the preamble, nor where TeX would print or write a comment line: as commentEdit)
+    if ((begin >= 0 && h.as <= begin) || inRanges(verb, h.as) || (h.a.length && inRanges(verb, h.as + h.a.length - 1))) { out += h.a; if (h.a !== h.b) dropped++; continue; }
+    if (onlyComments(h.a, h.b)) { out += h.b; continue; }
+    dropped++;
+    const A = lines(h.a), B = lines(h.b);
+    const keep = A.filter((l) => !isComment(l) || B.includes(l));
+    const res = keep.map((l) => [l]);
+    let anchor = -1, head = [];
+    for (const l of B) {
+      // (a line they changed keeps the anchor before it: its comments go under the line above)
+      if (!isComment(l)) { const k = keep.findIndex((x) => x.replace(/\n$/, '') === l.replace(/\n$/, '')); if (k >= 0) anchor = k; continue; }
+      if (A.includes(l)) continue;
+      const line = l.endsWith('\n') ? l : l + '\n';
+      if (anchor < 0) { head.push(line); continue; }
+      // (under a last line with no line end: the line ends first, which TeX reads as it did)
+      const g = res[anchor];
+      if (!g[g.length - 1].endsWith('\n')) g[g.length - 1] += '\n';
+      g.push(line);
+    }
+    out += head.join('') + res.map((g) => g.join('')).join('');
+  }
+  return { text: out + base.slice(p), dropped };
+}
+
+// What a copy sent back may bring in, from the versions this browser shared ({sig, share: {rid,
+// role}}): the link it names by rid, else, where any link of that version was for comments only,
+// comments only (a copy cannot lift its own limit by dropping or changing its link's name)
+export function linkRole(snaps, sig, rid) {
+  const same = (snaps || []).filter((v) => v && v.sig === sig && v.share);
+  const link = rid && same.find((v) => v.share.rid === rid);
+  return link ? (link.share.role === 'comments' ? 'comments' : 'coauthor') : same.some((v) => v.share.role === 'comments') ? 'comments' : 'coauthor';
+}

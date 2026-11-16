@@ -41,4 +41,6 @@ export class SpellClient {
   }
   check(dict, words) { return this.run('check', { dict, words }); }
   suggest(dict, word) { return this.run('suggest', { dict, word }); }
+  synonyms(dict, thes, word) { return this.run('synonyms', { dict, thes, word }); }
+  lint(text, dialect) { return this.run('lint', { text, dialect }); }
 }

@@ -3,7 +3,7 @@
 // that are LaTeX comments in the source, a copy sent back that arrives as tracked changes, and
 // one click out to Overleaf or a plain .tex. The methods join App's prototype (app.js).
 
-import { packShare, unpackShare, shareParam, texParam, unpackTex, findComments, commentEdit, stripComments, mergeProjects, commentOnly } from './share.js';
+import { packShare, unpackShare, shareParam, texParam, unpackTex, findComments, commentEdit, stripComments, mergeProjects, commentOnly, onlyComments, commentsOf, linkRole } from './share.js';
 import { kvGet, kvPut, kvDel } from './store.js';
 import { buildModel } from './model.js';
 
@@ -46,15 +46,18 @@ export const collab = {
     return location.href.split('#')[0];
   },
 
+  // role: 'coauthor' (edits and comments), 'comments' (comments only) or 'back'
   async makeShareLink(role) {
-    let base = null;
-    if (role === 'back') base = this.shareCtx && this.shareCtx.base;
+    let base = null, rid = null;
+    if (role === 'back') { base = this.shareCtx && this.shareCtx.base; rid = (this.shareCtx && this.shareCtx.rid) || null; }
     else {
-      // the version shared is kept, so the copy that comes back can be compared with it
-      const v = await this.snapshot('Shared', { force: true, named: true });
+      // the version shared is kept, with the link's name and what it allows, so the copy that
+      // comes back is compared with it and let in as that link allows (takeBack)
+      rid = [...crypto.getRandomValues(new Uint8Array(12))].map((b) => b.toString(16).padStart(2, '0')).join('');
+      const v = await this.snapshot(role === 'comments' ? 'Shared for comments' : 'Shared', { force: true, named: true, share: { rid, role } });
       base = (v && v.sig) || this.lastSig || null;
     }
-    const o = { v: 1, name: this.name, main: this.main, files: [...this.files.entries()], base, by: this.myName() || 'A coauthor', role, t: Date.now() };
+    const o = { v: 1, name: this.name, main: this.main, files: [...this.files.entries()], base, by: this.myName() || 'A coauthor', role, rid, t: Date.now() };
     const url = this.shareBase() + '#share=' + await packShare(o);
     return { url, figures: this.assetBlobs.size };
   },
@@ -112,8 +115,14 @@ export const collab = {
       p.append(b2);
     } else {
       p.append(mk('p', 'share-lead', 'Anyone with the link opens this document and can type on the page and comment, with no account and nothing to install. The document travels inside the link: it is not uploaded anywhere.'));
-      const b1 = btn('Copy link', () => go('coauthor', b1), 'btn sm');
-      p.append(mk('label', 'share-row', 'Your name'), name, b1);
+      // (Word's Can edit and Can review: a comments only link's copy comes back with its comments alone)
+      const perm = mk('select', 'share-perm');
+      perm.setAttribute('aria-label', 'Link permission');
+      for (const [v, t] of [['coauthor', 'Can edit and comment'], ['comments', 'Can comment only']]) { const o = mk('option', '', t); o.value = v; perm.append(o); }
+      perm.value = this.prefs.shareRole === 'comments' ? 'comments' : 'coauthor';
+      perm.addEventListener('change', () => { this.prefs.shareRole = perm.value; this.savePrefs(); });
+      const b1 = btn('Copy link', () => go(perm.value, b1), 'btn sm');
+      p.append(mk('label', 'share-row', 'Your name'), name, mk('label', 'share-row', 'Anyone with the link'), perm, b1);
     }
     p.append(field, note);
     p.append(mk('div', 'share-sep'));
@@ -151,6 +160,13 @@ export const collab = {
     try { buildModel({ files: theirs, main: o.main }); } catch (e) { this.toast('Could not open the link: the editor cannot read the document in it (' + e.message + ').', 8000); return; }
     const base = o.base ? (await this.allSnaps()).find((v) => v.sig === o.base) : null;
     if (o.role === 'back' && base) { await this.takeBack(o, base, theirs); return; }
+    // (R4, security review) a copy back naming no version this browser has, for a document it
+    // shared for comments only: its comments cannot be told from edits, so it does not open over
+    // that document (a copy that changes its base's name would otherwise bring every edit in)
+    if (o.role === 'back' && (await this.allSnaps()).some((v) => v.share && v.share.role === 'comments' && v.name === (o.name || o.main) && v.main === o.main)) {
+      this.toast(by + "'s copy answers a link for comments only, and this browser does not have the version it was shared from: it is not opened. Ask " + by + ' to send the link again from the copy they were sent.', 10000);
+      return;
+    }
     // the same coauthor link opened again (bookmarked, or clicked a second time in the chat): they
     // are already in this document, so keep what they have typed instead of resetting it to the
     // pristine shared copy, which would silently throw their edits away. Only a link Share made
@@ -184,7 +200,7 @@ export const collab = {
       this.toast(by + "'s copy is open. This browser does not have the version you shared, so their edits cannot be marked; your earlier text is under Review, Versions.", 10000);
       return;
     }
-    this.shareCtx = { base: o.base, by, name: this.name, main: this.main };
+    this.shareCtx = { base: o.base, by, name: this.name, main: this.main, role: o.role === 'comments' ? 'comments' : 'coauthor', rid: o.rid || null };
     kvPut('share:' + this.name + '|' + this.main, this.shareCtx).catch(() => {});
     this.guestMode(true);
   },
@@ -247,6 +263,24 @@ export const collab = {
   async takeBack(o, snap, theirs) {
     const by = String(o.by || 'A coauthor');
     const baseFiles = new Map((await this.versionFiles(snap)) || []);
+    // What the link this copy answers allowed, as this browser kept it when it made the link: the
+    // copy's own word for it is never taken. A link for comments only lets in comment lines alone,
+    // in the files that were shared; a copy that names no link of this version, where one of its
+    // links was for comments only, is taken as that one.
+    const role = linkRole(await this.allSnaps(), snap.sig, o.rid);
+    let dropped = 0;
+    if (role === 'comments') {
+      const kept = new Map();
+      for (const [n, t] of theirs) {
+        const b = baseFiles.get(n);
+        if (b == null) { dropped++; continue; }
+        const r = commentsOf(b, t);
+        kept.set(n, r.text);
+        dropped += r.dropped;
+      }
+      for (const [n, b] of baseFiles) if (!kept.has(n)) kept.set(n, b);
+      theirs = kept;
+    }
     if (!(this.name === snap.name && this.main === snap.main)) {
       // back to that project first, as it was last kept
       const last = (await this.allSnaps()).find((v) => v.name === snap.name && v.main === snap.main) || snap;
@@ -262,7 +296,10 @@ export const collab = {
     this.closeGroup();
     const edits = [];
     for (const [n, t] of files) if ((this.files.get(n) ?? null) !== t) edits.push({ f: n, s: 0, e: (this.files.get(n) ?? '').length, t });
+    // (their edits are theirs: the changes carry their name, src/review.js)
+    this.rvBy = by;
     if (edits.length) { this.markFromLink(by, this.name, this.main, 'back'); this.commit(edits, null, 'merge'); }
+    this.rvBy = null;
     this.closeGroup();
     if (!pending) this.setBase({ t: Date.now(), label: 'Before the changes from ' + by, files: mine });
     this.setMarks(true);
@@ -271,6 +308,7 @@ export const collab = {
     const c = [...this.files].reduce((k, [f, t]) => k + findComments(t, f).length, 0) - [...mine].reduce((k, [f, t]) => k + findComments(t, f).length, 0);
     let msg = edits.length ? by + "'s copy is in: " + plural(n, 'change', 'changes') + (c > 0 ? ' and ' + plural(c, 'comment', 'comments') : '') + ', marked on the page. Accept or reject each under Review.' : by + ' sent the document back unchanged.';
     if (conflicts.length) msg += ' In ' + conflicts.join(', ') + ' you both edited the same lines, so their version is shown; yours is under Review, Versions.';
+    if (dropped) msg += ' The link let ' + by + ' comment only: ' + plural(dropped, 'edit of the text was', 'edits of the text were') + ' left out.';
     this.toast(msg, 12000);
   },
 
@@ -324,7 +362,9 @@ export const collab = {
     if (!g) return;
     g.hidden = !on;
     if (!on) return;
-    $('#guest-msg').textContent = this.shareCtx.by + ' shared this document with you. Click anywhere on the page and type; select words to comment. Your edits are marked for ' + this.shareCtx.by + '.';
+    $('#guest-msg').textContent = this.shareCtx.role === 'comments'
+      ? this.shareCtx.by + ' shared this document with you for comments. Select words and press New Comment (Ctrl+Alt+M); the text itself stays as it is.'
+      : this.shareCtx.by + ' shared this document with you. Click anywhere on the page and type; select words to comment. Your edits are marked for ' + this.shareCtx.by + '.';
     if (document.body.classList.contains('src-on')) this.toggleSource(false);
     if (!this.markupOn()) this.setMarks(true);
     // (a guest's edits are changes for the owner: tracked from the start)
@@ -337,6 +377,21 @@ export const collab = {
     if ((!s && t == null) || text.trim().split(/\s+/).length > 1) return false;
     this.toast('That is a link to a shared document.', 8000, { label: 'Open it', fn: () => (s ? this.openSharedLink(s) : this.openTexLink(t)) });
     return true;
+  },
+
+  // a comments only link's document: an edit that changes more than comment lines is refused
+  // (src/review.js rvRefuse, from App.commit), whatever made it: typing, a command, the source
+  commentsOnlyRefuse(edits) {
+    const byF = new Map();
+    for (const ed of edits) { if (!byF.has(ed.f)) byF.set(ed.f, []); byF.get(ed.f).push(ed); }
+    for (const [f, list] of byF) {
+      if (!this.files.has(f)) return true;
+      const before = this.files.get(f);
+      let t = before;
+      for (const ed of list.slice().sort((x, y) => y.s - x.s || y.e - x.e)) t = t.slice(0, ed.s) + ed.t + t.slice(ed.e);
+      if (!onlyComments(before, t)) return true;
+    }
+    return false;
   },
 
   // ---- comments -----------------------------------------------------------------------
