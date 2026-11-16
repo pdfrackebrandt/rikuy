@@ -5,9 +5,103 @@
 
 import { $, mk, mkBtn, store, PREFS, textSig, when } from './ui/dom.js';
 import { atomOfEl } from './editor.js';
-import { changes, spacingOnly } from './diff.js';
+import { changes, spacingOnly, hunks, wordDiff } from './diff.js';
 import { commentOnly } from './share.js';
 import { kvGet, kvPut, decodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
+
+// steps never absorbed into the base (rvAbsorbs)
+const NO_ABSORB = new Set(['reject', 'merge', 'word', 'other-tab', 'restore', 'accept']);
+
+// An edit (text p becoming c) put into the base b where it touches no change waiting between b
+// and p. The edit's pieces (diff.js changes of p and c, walked part by part) are each tested
+// against the waiting changes' own word operations, never their merged ranges or whole lines: a
+// piece overlapping one stays part of that change, every other goes into b at its place there.
+// The waiting changes are found as line hunks first, kept from one keystroke to the next (shifted
+// by what went in), and read word by word only in the hunks an edit touches: a 127 kB file with
+// 1,500 changes waiting costs a keystroke about what an empty one does. Pure, tested in
+// test/review.test.mjs.
+const overlaps = (a1, a2, b1, b2) => (a1 === a2 && b1 === b2 ? a1 === b1 : a1 === a2 ? b1 < a1 && a1 < b2 : b1 === b2 ? a1 < b1 && b1 < a2 : a1 < b2 && b1 < a2);
+let hunkCache = null;
+// (for the tests: the next call reads the hunks afresh)
+export function absorbFresh() { hunkCache = null; }
+// (a deletion and an insertion with nothing between them are one piece: a word replaced)
+function pieces(chs) {
+  const out = [];
+  for (const ch of chs) {
+    let ap = ch.as, cur = null;
+    for (const [op, v] of ch.parts) {
+      if (op === ' ') { ap += v.length; cur = null; continue; }
+      if (!cur) { cur = { s: ap, e: ap, t: '' }; out.push(cur); }
+      if (op === '-') { ap += v.length; cur.e = ap; } else cur.t += v;
+    }
+  }
+  return out;
+}
+// a hunk's waiting operations, word by word: each with its range in p (an insertion's text, or
+// the point a deletion was) and what it adds to b's length against p's
+function hunkOps(h) {
+  if (h.ops) return h.ops;
+  const out = [];
+  let ap = h.as, bp = h.bs;
+  for (const [op, v] of wordDiff(h.a, h.b)) {
+    if (op === ' ') { ap += v.length; bp += v.length; } else if (op === '-') { out.push({ ps: bp, pe: bp, d: v.length }); ap += v.length; } else { out.push({ ps: bp, pe: bp + v.length, d: -v.length }); bp += v.length; }
+  }
+  return (h.ops = out);
+}
+export function absorbText(b, p, c) {
+  if (b === p) { hunkCache = null; return c; }
+  const H0 = hunkCache && hunkCache.b === b && hunkCache.p === p ? hunkCache.H : hunks(b, p);
+  const done = [];
+  let safe = true;
+  for (const s of pieces(changes(p, c, ''))) {
+    // the hunks before it (their whole difference) and the one it touches, if any
+    let d = 0, hit = -1;
+    for (let i = 0; i < H0.length; i++) {
+      const h = H0[i];
+      if (h.be < s.s || (h.be === s.s && s.e > s.s)) { d += h.a.length - (h.be - h.bs); continue; }
+      if (h.bs > s.e || (h.bs === s.e && s.e > s.s)) break;
+      hit = i;
+      break;
+    }
+    let abs = true;
+    if (hit >= 0) {
+      const h = H0[hit], ops = hunkOps(h);
+      if (s.e > h.be || s.s < h.bs) safe = false;
+      if (ops.some((o) => overlaps(s.s, s.e, o.ps, o.pe))) abs = false;
+      else for (const o of ops) if (o.pe <= s.s && !(o.ps === o.pe && o.ps === s.s && s.s === s.e)) d += o.d;
+    }
+    done.push({ ...s, bs: s.s + d, hit, abs, dd: s.t.length - (s.e - s.s) });
+  }
+  let t = b;
+  for (const e of done.slice().sort((x, y) => y.bs - x.bs)) if (e.abs) t = t.slice(0, e.bs) + e.t + t.slice(e.bs + (e.e - e.s));
+  // (the hunks of the next keystroke: these with the pieces in them, the ones after moved; read
+  // again where a piece ran past the hunk it touched)
+  if (safe) {
+    // (a hunk's word operations are kept too and moved with it: a hunk Myers gave up on, one
+    // over the whole of a much changed file, is read word by word once, not at every keystroke)
+    const H = H0.map((h) => ({ a: h.a, b: h.b, as: h.as, bs: h.bs, be: h.be, line: h.line, ops: h.ops ? h.ops.map((o) => ({ ...o })) : null }));
+    const move = (ops, at, dd) => { if (ops) for (const o of ops) if (o.ps >= at) { o.ps += dd; o.pe += dd; } };
+    for (const e of done.slice().sort((x, y) => y.s - x.s)) {
+      let from;
+      if (e.hit >= 0) {
+        const h = H[e.hit], lb = e.s - h.bs;
+        h.b = h.b.slice(0, lb) + e.t + h.b.slice(lb + (e.e - e.s));
+        if (e.abs) { const la = e.bs - h.as; h.a = h.a.slice(0, la) + e.t + h.a.slice(la + (e.e - e.s)); move(h.ops, e.e, e.dd); } else if (h.ops) {
+          // (an edit inside a waiting change: that change grows or shrinks by it, the ones after move)
+          for (const o of h.ops) {
+            if (o.ps >= e.e && !(o.ps === e.s && o.pe === e.s)) { o.ps += e.dd; o.pe += e.dd; }
+            else if (o.pe >= e.s && o.pe > o.ps) { o.pe = Math.max(o.ps, o.pe + e.dd); o.d -= e.dd; }
+          }
+        }
+        h.be += e.dd;
+        from = e.hit + 1;
+      } else { from = H.findIndex((h) => h.bs >= e.e); if (from < 0) from = H.length; }
+      for (let i = from; i < H.length; i++) { H[i].bs += e.dd; H[i].be += e.dd; if (e.abs) H[i].as += e.dd; move(H[i].ops, -Infinity, e.dd); }
+    }
+    hunkCache = { b: t, p: c, H };
+  } else hunkCache = null;
+  return t;
+}
 
 export const review = {
   // ---- versions and changes ---------------------------------------------------------
@@ -21,13 +115,14 @@ export const review = {
   async loadReview() {
     let r = null;
     try { r = this.noIdb ? null : await kvGet('review'); } catch (e) { r = null; }
-    if (r && r.main === this.main && r.name === this.name && r.files) this.base = { t: r.t, label: r.label, id: r.id, files: new Map(r.files) };
+    if (r && r.main === this.main && r.name === this.name && r.files) { this.base = { t: r.t, label: r.label, id: r.id, files: new Map(r.files), track: !!r.track, n: r.n || 0 }; this.trackPrev = new Map(this.files); }
     else this.setBase({ t: Date.now(), label: 'When opened', files: this.files });
     const mine = (await this.allSnaps()).filter((v) => this.isMine(v));
     if (mine.length) { this.lastSig = mine[0].sig; this.lastSnapT = mine[0].t; }
     await this.snapshot('Session start');
     this.refreshNav();
-    if (this.prefs.marks) this.marksSoon();
+    if (this.markupOn()) this.marksSoon();
+    this.reviewStatus();
   },
 
   // Images and other binary files are kept per project, so opening a version of another
@@ -56,13 +151,97 @@ export const review = {
     } catch (e) { /* none kept */ }
   },
 
+  // b.track: whether edits are kept as changes from here on (Track Changes); a new base keeps
+  // the switch where it was unless it says
   setBase(b) {
-    this.base = { t: b.t, label: b.label || '', id: b.id, files: new Map(b.files) };
+    const track = b.track != null ? !!b.track : !!(this.base && this.base.track);
+    this.base = { t: b.t, label: b.label || '', id: b.id, files: new Map(b.files), track, n: this.base ? this.base.n || 0 : 0 };
+    this.trackPrev = new Map(this.files);
     this.chg = null;
-    if (!this.noIdb) kvPut('review', { t: b.t, label: this.base.label, id: b.id, main: this.main, name: this.name, files: [...this.base.files.entries()] }).catch(() => {});
+    // (a new base is this tab's own decision: written whatever another tab stored)
+    this.saveBase(true, true);
+    if (this.reviewStatus) this.reviewStatus();
+  },
+  // The stored base carries a count (n), one more at every write. A tab writes only over the
+  // base it last read: where another tab stored a newer one (its Track Changes switched, an
+  // Accept), this tab takes that one instead of writing over it; force: a base of its own.
+  saveBase(now, force) {
+    clearTimeout(this.baseSaveT);
+    const go = async () => {
+      this.baseSaveT = null;
+      const B = this.base;
+      if (this.noIdb || !B) return;
+      let r = null;
+      try { r = await kvGet('review'); } catch (e) { r = null; }
+      const same = r && r.main === this.main && r.name === this.name;
+      if (!force && same && (r.n || 0) > (B.n || 0)) { this.rvReloadBase(r); return; }
+      B.n = Math.max(B.n || 0, same ? r.n || 0 : 0) + 1;
+      kvPut('review', { t: B.t, label: B.label, id: B.id, main: this.main, name: this.name, files: [...B.files.entries()], track: !!B.track, n: B.n }).catch(() => {});
+    };
+    if (now) return go();
+    this.baseSaveT = setTimeout(go, 1500);
+    return null;
+  },
+  // on coming back to this tab: another tab's newer base, if it stored one
+  async rvCheckBase() {
+    if (this.noIdb || !this.base) return;
+    let r = null;
+    try { r = await kvGet('review'); } catch (e) { return; }
+    if (r && r.main === this.main && r.name === this.name && (r.n || 0) > (this.base.n || 0)) this.rvReloadBase(r);
+  },
+
+  // With Track Changes off an edit is no change: the base takes it too (absorbText). Which
+  // steps do is decided once, when a step is made (record, src/app.js: h.abs), and kept: its
+  // undo and redo do the same later, whatever the switch says then, so a change made with
+  // tracking on stays a change through them, and a merge or a Word import never goes into the
+  // base by a redo.
+  absorbEdit() {
+    const B = this.base, prev = this.trackPrev;
+    if (!B || !prev) { this.trackPrev = new Map(this.files); return; }
+    let moved = false;
+    for (const [f, cur] of this.files) {
+      const p = prev.get(f);
+      if (p === cur) continue;
+      const b = B.files.get(f);
+      if (p == null) { if (b == null) { B.files.set(f, cur); moved = true; } continue; }
+      if (b == null) continue;
+      const nb = b === p ? cur : absorbText(b, p, cur);
+      if (nb !== b) { B.files.set(f, nb); moved = true; }
+    }
+    for (const f of prev.keys()) if (!this.files.has(f) && B.files.has(f) && B.files.get(f) === prev.get(f)) { B.files.delete(f); moved = true; }
+    this.trackPrev = new Map(this.files);
+    if (moved) { this.chg = null; this.saveBase(); }
+  },
+  // whether a step made now goes into the base: Track Changes off, and an edit of the person's
+  // own (a Reject, a merge, a Word import, another tab's text, a restored version never)
+  rvAbsorbs(kind) { return !!(this.base && !this.base.track) && !NO_ABSORB.has(kind || ''); },
+  // Accept's step, undone and redone: the base before it and after it
+  rvBaseStep(h, undo) {
+    if (!this.base) return;
+    this.base.files = new Map(undo ? h.base0 : h.base1);
+    this.chg = null;
+    this.trackPrev = new Map(this.files);
+    this.saveBase();
+  },
+  // after another tab's text came in: its base and switch, as that tab left them
+  async rvReloadBase(r) {
+    if (!r) { try { r = this.noIdb ? null : await kvGet('review'); } catch (e) { r = null; } }
+    if (!r || r.main !== this.main || r.name !== this.name || !r.files) return;
+    this.base = { t: r.t, label: r.label, id: r.id, files: new Map(r.files), track: !!r.track, n: r.n || 0 };
+    this.trackPrev = new Map(this.files);
+    this.chg = null;
+    this.refreshNav();
+    if (this.markupOn()) this.marksSoon();
+    if (this.reviewStatus) this.reviewStatus();
   },
 
   noteEdit() {
+    // (the step this edit is: made, undone or redone; an edit with no step of its own, as the
+    // empty equation taken back, does as the switch says)
+    const h = this.rvStep;
+    this.rvStep = null;
+    const abs = h ? !!h.abs : !!(this.base && !this.base.track);
+    if (abs) this.absorbEdit(); else this.trackPrev = new Map(this.files);
     this.pdfStale = true;
     this.pdfSoon();
     this.snapDirty = true;
@@ -133,9 +312,16 @@ export const review = {
       for (const c of list.sort((x, y) => y.as - x.as)) t = t.slice(0, c.as) + c.b + t.slice(c.ae);
       files.set(f, t);
     }
+    // (a step of history of its own, the base before and after: Ctrl+Z takes an Accept back)
+    const base0 = new Map(this.base.files);
     this.setBase({ ...this.base, files });
+    this.closeGroup();
+    this.hist.push({ kind: 'accept', files: [], base0, base1: new Map(files), caretBefore: null, caretAfter: null, time: Date.now(), open: false, before: null });
+    if (this.hist.length > 400) this.hist.shift();
+    this.redoStack = [];
+    this.updateUndoUI();
     this.refreshNav();
-    if (this.prefs.marks) this.marksSoon();
+    if (this.markupOn()) this.marksSoon();
   },
 
   rejectChanges(cs, label) {
@@ -150,20 +336,17 @@ export const review = {
     if (cs.length === 1) this.goTo(cs[0].f, cs[0].bs);
   },
 
-  setMarks(on) {
-    this.prefs.marks = !!on;
-    store(PREFS, this.prefs);
-    this.paintChanges();
-    const cb = $('#chg-show');
-    if (cb) cb.checked = !!on;
-  },
+  // the pane's "Show changes on the pages": All Markup or No Markup (Display for Review)
+  setMarks(on) { this.setMarkup(on ? 'all' : 'none'); },
 
   async compareWith(v) {
     const files = await this.versionFiles(v);
     if (!files) { this.toast('That version could not be read.'); return; }
-    this.setBase({ t: v.t, label: v.label || 'Automatic version', id: v.id, files });
+    // (tracked from here: with it off every later edit would go into the version compared with)
+    this.setBase({ t: v.t, label: v.label || 'Automatic version', id: v.id, files, track: true });
     this.refreshNav();
-    if (this.prefs.marks) this.marksSoon();
+    if (this.markupOn()) this.marksSoon();
+    this.toast('Compared with the version from ' + when(v.t) + '. Track Changes is on: your edits from here are changes too.', 6000);
   },
 
   async restoreVersion(v) {
@@ -210,7 +393,7 @@ export const review = {
     cmp.append('Changes since ', mk('b', '', this.base ? when(this.base.t) : ''), this.base && this.base.label ? ' · ' + this.base.label : '');
     const lab = mk('label', 'chg-show');
     const cb = mk('input');
-    cb.type = 'checkbox'; cb.id = 'chg-show'; cb.checked = !!this.prefs.marks;
+    cb.type = 'checkbox'; cb.id = 'chg-show'; cb.checked = this.markup() === 'all';
     cb.addEventListener('change', () => this.setMarks(cb.checked));
     lab.append(cb, 'Show changes on the pages');
     top.append(cmp, lab);
@@ -303,9 +486,12 @@ export const review = {
     for (const x of this.root.querySelectorAll('.chg-atom')) x.classList.remove('chg-atom');
     const HL = window.CSS && CSS.highlights;
     if (HL) HL.delete('g-ins');
-    if (!this.prefs.marks || !this.base || !this.model) return;
+    // (Display for Review: no marks, the bars alone, or all; Show Markup's Insertions and Deletions)
+    const mode = this.markup();
+    if (mode === 'none' || this.prefs.showIns === false || !this.base || !this.model) return;
     const list = this.currentChanges().filter((c) => !spacingOnly(c) && !commentOnly(c));
     if (!list.length) return;
+    const all = mode === 'all';
     const ins = new Map(), dels = [];
     for (const c of list) {
       for (const [op, v, p] of c.parts) {
@@ -324,7 +510,10 @@ export const review = {
       const hit = rs.some(([s, e]) => s < A.e && e > A.s) || dels.some((d) => d.f === A.f && d.p > A.s && d.p < A.e);
       if (hit && !el.parentElement.closest('.chg-atom')) { el.classList.add('chg-atom'); atomHit.push(A); }
     }
-    if (HL && window.Highlight) HL.set('g-ins', new window.Highlight(...ranges));
+    if (HL && window.Highlight && all) HL.set('g-ins', new window.Highlight(...ranges));
+    // (Simple Markup: the outline of a changed equation goes, its bar stays)
+    const atomEls = [...this.root.querySelectorAll('.chg-atom')];
+    if (!all) for (const x of atomEls) x.classList.remove('chg-atom');
     const layers = new Map();
     const layer = (page) => {
       let L = layers.get(page);
@@ -334,7 +523,7 @@ export const review = {
     const pageOf = (n) => (n.nodeType === 1 ? n : n.parentElement).closest('.page');
     const bar = (page, q) => { const P = page.getBoundingClientRect(); layer(page).bars.push([q.top - P.top, q.bottom - P.top]); };
     for (const r of ranges) { const page = pageOf(r.startContainer); if (page) for (const q of r.getClientRects()) if (q.height) bar(page, q); }
-    for (const el of this.root.querySelectorAll('.chg-atom')) { const page = pageOf(el); if (page) for (const q of el.getClientRects()) if (q.height) bar(page, q); }
+    for (const el of atomEls) { const page = pageOf(el); if (page) for (const q of el.getClientRects()) if (q.height) bar(page, q); }
     for (const d of dels) {
       if (atomHit.some((A) => A.f === d.f && d.p > A.s && d.p < A.e)) continue;
       const r = this.index.find(d.f, d.p, -1);
@@ -346,6 +535,7 @@ export const review = {
       const page = pageOf(r.node);
       if (!q || !q.height || !page) continue;
       const P = page.getBoundingClientRect();
+      if (!all) { bar(page, q); continue; }
       const m = mk('span', 'del-mk');
       m.style.left = (q.left - P.left) + 'px'; m.style.top = (q.top - P.top) + 'px'; m.style.height = q.height + 'px';
       m.title = 'Deleted: ' + (d.text.length > 300 ? d.text.slice(0, 300) + '…' : d.text);

@@ -2438,6 +2438,114 @@ Tests:
     security audit skill's agents could not run in this session; the changed files were reviewed
     by hand against its client side and resource classes, with no finding.
 
+48. **B10, review and proofing as in Word.** Done in the code (branch `wordgap-b10-review`), rows
+    RV1, RV4, RV5, RV7 to RV9, RV13 to RV15, RV17 to RV20, F7, F14, S2 and S3 of the gap list
+    (task 38); RV2, RV3 and RV21 not done (below). *Spelling in C++.* Hunspell 1.7.6 (Ubuntu's
+    source package, pinned by hash in `tex/build_tools.sh`, where every vendored program's source
+    is pinned and where `vendor.yml` rebuilds it; `fetch_inputs.sh` is the TeX tree's) with
+    Rikuy's C functions (`tex/native/spell/spell.cc`: open, check a list in one call, suggest,
+    add) built by `sh tex/build_tools.sh hunspell` into `tex/vendor/hunspell/` (wasm 462 kB, 150
+    kB gzipped; glue and worker 87 kB), with the dictionaries en_US (SCOWL), en_GB and es_ES
+    (LibreOffice's), de_DE (igerman98) copied unchanged from Ubuntu 26.10's packages, each `.deb`
+    pinned by SHA-256 and checked against that release's index (4.5 MB, 1.4 MB gzipped). Two
+    builds from empty `RIKUY_SRC` folders gave the same bytes; `vendor.yml` has the `hunspell`
+    job. It runs in a worker (`src/spell/worker.js`, `client.js`) started with the first check;
+    the module and each dictionary are fetched only when a word of that language comes and used
+    only with the SHA-256 the bundle names (`spell/<name>-<hash>`, cached for good; the service
+    worker keeps the module at install and a dictionary at its first use). The artifact's copy
+    has no room (2 MB were left under its 256 MB) and keeps the browser's own spelling, as any
+    build with `RIKUY_NO_SPELL`. *Only prose.* `src/spell/words.js` reads the words from the
+    model's seg runs, never the source: no command, key, label, citation key, reference, math or
+    macro output is a word; `\texttt`, `\url`, verbatim, Asymptote, PSTricks, TikZ and
+    listings environments, addresses, file names, key=value lists, capitals and words touching a
+    digit are not checked (Word's rules). On the corpus (`node test/spell.test.mjs <clone>`): 716
+    documents, 56,799 words checked, none inside a command's name, a key, math, verbatim, a URL,
+    a file name or a comment. The dictionary per word: babel's last language or `main=`,
+    polyglossia's, `\selectlanguage` to its group's end, `otherlanguage`, `\foreignlanguage`,
+    `\text<language>`; a language without a dictionary is not checked. *On the page.* A red wavy
+    line (a CSS highlight, nothing in the text); the right click menu, and a long press on a
+    phone, give Hunspell's suggestions, Ignore All, Add to Dictionary and Spelling…; a suggestion
+    changes only the letters that differ (inside `\textbf{wr}onng` the bold stays), one undo;
+    the word being typed is marked once the caret leaves it. Add to Dictionary writes the word on
+    a `% rikuy: words …` line of the main file (before `\begin{document}`; a second line past 90
+    characters): the document's own list travels with the .tex to a coauthor, git and Overleaf,
+    which Word's dictionary on one computer does not; cspell's `% cspell:words` lines count too.
+    Ignore All is this browser's, per project; Recheck Document clears it. The Spelling pane (F7)
+    is Word's: the word in its sentence, suggestions, Ignore Once, Ignore All, Add to Dictionary,
+    Change, Change All, Previous, Next; a sheet on a phone. Review › Proofing Language puts a
+    selection in `\foreignlanguage{…}` (the language added to babel's options before the
+    document's, or `\setotherlanguage`) or sets the document's (babel's last option replaced,
+    polyglossia's `\setdefaultlanguage`, or `\usepackage[british]{babel}`), and takes a
+    `\foreignlanguage` off again. *Timing.* 141 kB of prose where nearly every word differs
+    (15,840 distinct): the worker checks them in 65 ms; from the page's build to its marks 0.5 s;
+    after a keystroke 0.2 ms on the page's thread (a block's words are kept by its key); 20,000
+    words in node 0.2 to 0.35 s; the bench paper `dev/bench/long` (144 kB) 17 ms in the worker.
+    *Review.* Track Changes (Ctrl+Shift+E, Word's key: it no longer makes an equation; the
+    status bar's "Track Changes: On" too) is a switch on the review base: on, edits are changes
+    to accept or reject; off (the default, as Word's), an edit goes into the base as well where
+    it touches no change waiting, so it is no change and the changes waiting stay (a Reject, its
+    undo and redo are never absorbed). A coauthor's link opens with it on. Display for Review
+    (Simple Markup: bars; All Markup; No Markup), Show Markup (Insertions and Deletions,
+    Comments); Accept and Reject as split buttons (and move to next, this change, all, all and
+    stop tracking), Previous and Next Change (the change selected); Delete Comment, Delete All
+    Comments (one undo), Previous and Next Comment, Edit Comment (right click on its line), Show
+    Comments; Inspect Document (comments with their authors, changes waiting, the word list);
+    Word Count (Ctrl+Shift+G: pages, words, characters with and without spaces, paragraphs,
+    lines as the page breaks them, of the selection too, footnotes and captions in or out);
+    Read Aloud (Ctrl+Alt+Space, the system's voices, in the document's language); Compare with
+    a version or a .tex file; Save Version and Versions; Download with Markup: the main file
+    with `\added`, `\deleted`, `\replaced` (changes package) where the words are plain text and
+    the comments as todonotes' `\todo`, which compiles in the page; the status bar says the
+    proofing language and the count of spelling errors. `prefs.marks` was two things (B2's Show
+    marks and the changes on the pages): the changes now have `prefs.markup`. *Not done.* RV2
+    (grammar): Harper is Rust, not C or C++, and an L of its own; RV3 (thesaurus): MyThes is
+    C++, but the English data is 13 MB more for the hosted copy and no smaller source was found
+    in the time; RV21 (a "comments only" share link) needs a role in share links (`share.js`),
+    no cheap change; Display for Review's Original, and accept or reject by author (changes are
+    one difference to one base, with no author of their own). *Security* (quick review, outside
+    the repository): a run of closing marks made the words' trimming take squared time on the
+    page's thread (200,000 marks: minutes); a chunk past 128 characters is now skipped whole,
+    with a test. *Evidence.* `npm test` with `spell` (6 groups; with the corpus 7);
+    `test/spell.py` 86 and `test/review.py` 63 (the copy with markup compiled with pdfLaTeX in
+    the page), `history.py` 39 and `share.py` 46 (Track Changes turned on where they edit);
+    `tabs.py` 115, `ribbon.py` 195, `agent.py` 143 (its llms-full.txt check now says Ctrl+Shift+E
+    is Track Changes), `browser.py` 193, `find.py` 76, `offline.py` 58, `launch.py` 18,
+    `pages_check` and `actionlint` clean; the artifact's build has no `spell/`. Screenshots in
+    `/tmp/B10-shots`.
+    *After the hostile review* (6 High, 6 Medium, 8 Low, each reproduced; every case is now a
+    check of `test/review.test.mjs`, `test/spell.test.mjs`, `review.py` or `spell.py`): whether a
+    step goes into the base is decided when it is made (`h.abs` in `record`) and its undo and redo
+    do the same, so an undo and redo of a merge or a Word import no longer accepts it (H1), a
+    tracked edit stays tracked through off, undo and redo (H2), and an untracked edit undone with
+    tracking on leaves no phantom (M1); `absorbText` takes each piece of a step by words and
+    characters, so Reject All no longer reverts untracked edits sharing a line or a step with a
+    change (H3); Accept is a step Ctrl+Z takes back (M1); a merge or a Word import keeps your own
+    waiting changes (M2); another tab's text is never absorbed and brings that tab's base (M3);
+    leaving writes the base (M4). Proofing Language refuses a selection across `&`, `\\`,
+    `\item`, `\verb` or an environment's edge (H4), keeps babel's last language the document's
+    own (a French document stays French; H5, M5), keeps a language the text still uses loaded
+    (L5) and polyglossia's British variant (L6). The Spelling pane's Change works from the text
+    as it is, once per press (H6), and Enter on a suggestion is Change (L3). A language without a
+    dictionary keeps the browser's own spelling and is named in the status bar (M5). Download with
+    Markup marks only prose after `\begin{document}` (M6). `\-` no longer splits a word (L1);
+    circuitikz, tcblisting, Sweave and `\iffalse` are code (L2); a dictionary that failed is asked
+    for again on Recheck and when the network is back (L4); comparing with a version, a file or
+    a commit tracks from it (L7); the old `prefs.marks` becomes All Markup once (L8).
+    `history.py` 40 (Accept's undo is a step of its own), `review.py` 77, `spell.py` 90,
+    `review.test.mjs` 5 groups, `spell.test.mjs` 6; the incremental oracle (`INCR_FULL=1`) 32,
+    `view.py` 108, `browser.py` 193, `ribbon.py` 195, `share.py` 46.
+    *After its verification* (1 High, 2 Medium, 3 Low): Proofing Language on words already in
+    `\foreignlanguage` with babel on a shared line says why instead of writing
+    `\foreignlanguageundefined` (V-H1); `absorbText` tests each piece against the waiting
+    changes' own word operations, never their merged ranges, so the one word between two changes
+    a word apart is absorbed (V-M1); the stored base carries a count, a tab writes only over the
+    base it last read and takes a newer one on coming back, so one tab's switch or Accept reaches
+    the other (V-M2, tested with two pages); `\Verb` and `\path` are refused (V-L1); the line
+    hunks and word operations are kept from one keystroke to the next, so with 1,500 changes
+    waiting in 127 kB a keystroke takes about 3 ms after the first (120 ms; it was 77 ms each,
+    V-L2), the kept ones equal to fresh ones over 200 random keystrokes; Compare and git's "Show
+    what changed" say Track Changes is on (V-L3). `review.py` 83, `review.test.mjs` 6 groups.
+
 ## Open tasks
 
 60. **Tag the PDF.** LaTeX tags a PDF with `\DocumentMetadata{lang=..,pdfstandard=ua-2,tagging=on}`,

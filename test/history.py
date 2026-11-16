@@ -18,6 +18,8 @@ def edit(page, find, repl, nth=0):
 with sync_playwright() as p:
     browser, page, errors = open_page(p, width=1440, height=900)
     base = src(page)
+    # (edits are changes while Track Changes is on, as in Word: test/review.py tests the switch)
+    page.wait_for_function("!!window.rikuy.base"); page.evaluate("window.rikuy.setTracking(true)")
     page.click('#b-nav'); page.wait_for_timeout(200)
     page.click('#nt-changes'); page.wait_for_timeout(400)
     check('changes tab starts empty', page.evaluate("!!document.querySelector('#nav-body .nav-empty')") and page.evaluate(COUNT) == '')
@@ -77,10 +79,13 @@ with sync_playwright() as p:
     check('one change left', page.evaluate(COUNT) == '1', page.evaluate(COUNT))
     check('no deletion marker after accept', page.evaluate("document.querySelectorAll('.del-mk').length") == 0)
 
-    # undo the reject restores the replacement and the change reappears: Ctrl+Z, with the focus
-    # still in the panel whose button was clicked (it did nothing off the page)
+    # Ctrl+Z, with the focus still in the panel whose button was clicked (it did nothing off the
+    # page): first the Accept is undone (a step of its own since task 48, as Word's), the deletion
+    # a change again; then the reject, which restores the replacement
     page.keyboard.press('Control+z'); page.wait_for_timeout(600)
-    check('Ctrl+Z after a click in the panel brings the rejected change back', 'return trip' in src(page) and page.evaluate(COUNT) == '2', page.evaluate(COUNT))
+    check('Ctrl+Z after a click in the panel undoes the Accept: the deletion is a change again', 'Display equations ' not in src(page) and page.evaluate(COUNT) == '2', page.evaluate(COUNT))
+    page.keyboard.press('Control+z'); page.wait_for_timeout(600)
+    check('Ctrl+Z again brings the rejected change back', 'return trip' in src(page) and page.evaluate(COUNT) == '3', page.evaluate(COUNT))
 
     # a math change outlines the equation
     s = src(page)
@@ -152,6 +157,7 @@ with sync_playwright() as p:
 
     # dark mode and mobile look
     browser, page, errors = open_page(p, width=390, height=844, dark=True)
+    page.wait_for_function("!!window.rikuy.base"); page.evaluate("window.rikuy.setTracking(true)")
     page.click('#b-nav'); page.wait_for_timeout(200)
     page.click('#nt-changes'); page.wait_for_timeout(300)
     edit(page, 'round trip', 'return trip')

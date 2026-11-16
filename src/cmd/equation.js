@@ -231,7 +231,7 @@ register(
     tab: 'insert', group: 'symbols', el: 'ri-eq', label: 'Equation', icon: EQ_ICON, searchable: false, keysElsewhere: ['Alt+='],
     when: (app, at) => enabled(app, 'insert-equation', at), run: (app, args, at) => app.eqAltEquals(at), menuItems: (app) => app.eqGalleryItems() },
   // Word's Alt+= (Option+= types ≠ on a Mac: Control+= there). It takes over the numbered
-  // equation from Ctrl+Shift+E, which is free until Track Changes (B10) takes it.
+  // equation from Ctrl+Shift+E, which is Track Changes now, as in Word (src/cmd/review.js).
   { id: 'insert-equation', name: 'Insert new equation', title: 'Insert new equation (Alt+=): numbered, on a line of its own, on an empty line; in the line in text', synonyms: ['New equation', 'Equation', 'Math', 'Alt+='],
     keys: ['Alt+='], mac: { 'Alt+=': 'Control+=' }, when: (app, at) => !!at && !(at.c.ghost && app.ghost && app.ghost.tex), run: (app, args, at) => app.eqAltEquals(at) },
 

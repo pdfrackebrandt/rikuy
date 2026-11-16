@@ -633,10 +633,12 @@ class App {
     this.plan = plan;
     this.index.dirty = true;
     this.tocPages(plan);
-    if (this.prefs.marks) this.marksSoon();
+    if (this.markupOn()) this.marksSoon();
     this.commentsSoon();
     // (what Find found, marked again on the pages as they are now: src/cmd/find.js)
     this.findSoon();
+    // (spelling's marks, on the pages as they are now: src/cmd/review.js)
+    this.spellSoon();
     this.emptyGhost();
     this.widgets.place();
   }
@@ -1002,7 +1004,7 @@ class App {
     if (swaps && swaps.length) {
       // (a step with pictures is a step of its own, never joined to the one before)
       if (this.hist.length) { const t = this.hist[this.hist.length - 1]; t.open = false; t.before = null; }
-      this.hist.push({ kind, files, blobs: swaps, caretBefore: cb, caretAfter: ca, time: Date.now(), open: false, before: null });
+      this.hist.push(this.rvStep = { kind, files, blobs: swaps, caretBefore: cb, caretAfter: ca, time: Date.now(), open: false, before: null, abs: this.rvAbsorbs(kind) });
       if (this.hist.length > 400) this.hist.shift();
       this.redoStack = [];
       this.updateUndoUI();
@@ -1017,10 +1019,12 @@ class App {
       top.files = [];
       for (const [f, b] of top.before) { const d = diff(b, this.files.get(f)); if (d) top.files.push({ f, ...d }); }
       top.caretAfter = ca; top.time = now;
+      // (Track Changes: the step's edits go into the review base or not as when it was made)
+      this.rvStep = top;
       return;
     }
     if (top) { top.open = false; top.before = null; }
-    this.hist.push({ kind, files, caretBefore: cb, caretAfter: ca, time: now, open: true, before });
+    this.hist.push(this.rvStep = { kind, files, caretBefore: cb, caretAfter: ca, time: now, open: true, before, abs: this.rvAbsorbs(kind) });
     if (this.hist.length > 400) this.hist.shift();
     this.redoStack = [];
     this.updateUndoUI();
@@ -1044,6 +1048,9 @@ class App {
     this.viewMap(new Map(h.files.map((d) => [d.f, [{ s: d.s, e: d.s + d.ins.length, t: d.del }]])), was);
     this.lastAct = null;
     this.redoStack.push(h);
+    // (src/review.js: an Accept's base back; the step's edit absorbed as it was when made)
+    if (h.base0) this.rvBaseStep(h, true);
+    this.rvStep = h;
     const c = h.caretBefore || (h.files[0] ? { f: h.files[0].f, p: h.files[0].s + h.files[0].del.length } : null);
     this.rebuild(c);
     this.pushToSource();
@@ -1062,6 +1069,8 @@ class App {
     for (const b of h.blobs || []) this.setAsset(b.name, b.after);
     this.viewMap(new Map(h.files.map((d) => [d.f, [{ s: d.s, e: d.s + d.del.length, t: d.ins }]])), was);
     this.hist.push(h);
+    if (h.base1) this.rvBaseStep(h, false);
+    this.rvStep = h;
     const c = h.caretAfter || (h.files[0] ? { f: h.files[0].f, p: h.files[0].s + h.files[0].ins.length } : null);
     this.rebuild(c);
     this.pushToSource();
@@ -1182,6 +1191,9 @@ class App {
   // quick navigation drops the write), so the text also goes to localStorage, which is written
   // at once; init takes whichever copy is newer, and the next write to IndexedDB clears it.
   leaving() {
+    // (Track Changes' base, whose writes wait a moment: written now, or the last words typed
+    // with tracking off would come back as changes)
+    if (this.baseSaveT) this.saveBase(true);
     if (!this.unsaved) return;
     store(STORE, { name: this.name, main: this.main, files: [...this.files.entries()], t: Date.now(), zipDirty: this.zipDirty });
     this.saveSoon.flush();
@@ -3647,9 +3659,10 @@ class App {
         mkBtn('Compare', async () => {
           try {
             const files = await this.gitTextFiles(await G.filesAt(dir, c.oid));
-            this.setBase({ t: c.commit.author.timestamp * 1000, label: 'Commit ' + c.oid.slice(0, 7) + ' · ' + subj, files });
+            this.setBase({ t: c.commit.author.timestamp * 1000, label: 'Commit ' + c.oid.slice(0, 7) + ' · ' + subj, files, track: true });
             this.toggleNav(true, 'changes');
-            if (this.prefs.marks) this.marksSoon();
+            this.toast('The changes since commit ' + c.oid.slice(0, 7) + ' are listed. Track Changes is on: your edits from here are changes too.', 6000);
+            if (this.markupOn()) this.marksSoon();
           } catch (e) { this.toast(this.gitError(e), 8000); }
         }, 'Show what changed since this commit, with Accept and Reject'),
         mkBtn('Restore', async () => {
@@ -4317,6 +4330,8 @@ class App {
   // Back in this tab after working in another one on the same project: take its text, as one
   // step Ctrl+Z undoes, so this tab does not go on from an older copy.
   async adoptOtherTab() {
+    // (Track Changes' base another tab stored, its switch or an Accept, with or without new text)
+    if (!this.noIdb && this.rvCheckBase) this.rvCheckBase();
     if (this.noIdb || this.unsaved || !this.model) return;
     let cur = null;
     try { cur = await kvGet('project'); } catch (e) { return; }
@@ -4330,6 +4345,8 @@ class App {
     this.closeGroup();
     this.commit(edits, null, 'other-tab');
     this.closeGroup();
+    // (and that tab's Track Changes base and switch: its edits stay its changes)
+    this.rvCheckBase();
     this.toast('Brought in what was typed in another tab. Ctrl+Z undoes it.', 5000);
   }
 
@@ -4933,10 +4950,13 @@ class App {
         <dt>${mod}+Alt+1, 2, 3, ${mod}+Alt+0</dt><dd>Heading 1, 2, 3; Normal</dd>
         <dt>${mod}+Shift+L</dt><dd>Bulleted list</dd>
         <dt>Alt+Q</dt><dd>Search for a command by its name</dd>
-        <dt>Shift+F10, right click</dt><dd>The menu of what applies here; a second right click gives the browser's (spelling)</dd>
+        <dt>Shift+F10, right click</dt><dd>The menu of what applies here, with a marked word's spelling suggestions; a second right click gives the browser's</dd>
         <dt>${mod}+F1</dt><dd>Fold the ribbon to its tabs, and back</dd>
         <dt>$ or ${mod}+M</dt><dd>New inline math</dd>
-        <dt>Alt+= (Mac: Control+=)</dt><dd>New equation: numbered on an empty line, in the line in text. (${mod}+Shift+E no longer makes one: it is free until Track Changes comes with the review tools, as in Word)</dd>
+        <dt>Alt+= (Mac: Control+=)</dt><dd>New equation: numbered on an empty line, in the line in text. (${mod}+Shift+E is Track Changes, as in Word)</dd>
+        <dt>${mod}+Shift+E</dt><dd>Track Changes on and off</dd>
+        <dt>F7, ${mod}+Shift+G</dt><dd>Spelling; Word Count</dd>
+        <dt>${mod}+Alt+Space</dt><dd>Read Aloud from the cursor, and stop</dd>
         <dt>\\ or ${mod}+K</dt><dd>Insert a command</dd>
         <dt>Click math, a citation or a reference</dt><dd>Edit it in place</dd>
         <dt>Alt+click</dt><dd>Show that spot in the source</dd>

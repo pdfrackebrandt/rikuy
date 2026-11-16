@@ -161,6 +161,8 @@ jobs:
         run: cd test && python3 view.py views help_tab
       - name: Every template of File, New compiles in the page, and a tagged PDF
         run: cd test && python3 file.py new_docs accessibility
+      - name: Review, and the copy with markup (changes, todonotes) compiled in the page
+        run: cd test && python3 review.py
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rikuy-dist

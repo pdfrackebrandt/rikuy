@@ -11,8 +11,8 @@
 # core is no program: the editor's own C++ (native/core/), one module with no JavaScript glue,
 # vendor/core/rikuy-core.wasm, which build.mjs puts inside the page and src/native.js loads.
 #
-# Usage: build_tools.sh [dvips] [asy] [xindy] [gnuplot] [core] [mesa] [gsl] [fftw] [eigen]
-#   (default: the four programs and core; mesa, gsl, fftw and eigen build only asy's libraries,
+# Usage: build_tools.sh [dvips] [asy] [xindy] [gnuplot] [core] [hunspell] [mesa] [gsl] [fftw] [eigen]
+#   (default: the four programs, core and hunspell; mesa, gsl, fftw and eigen build only asy's libraries,
 #   into $RIKUY_SRC)   env: RIKUY_SRC, RIKUY_VENDOR, UBUNTU_POOL
 # Needs: Ubuntu's emscripten 3.1.6 and node; git, curl, make, pkg-config, xz and bzip2; meson,
 #   ninja, bison, flex and Python 3 with mako (Mesa); gcc with libgmp-dev and libgc-dev (a native
@@ -250,6 +250,39 @@ core() {
   ls -l "$VENDOR/core"
 }
 
+# ---- hunspell ------------------------------------------------------------------------------------
+# Hunspell 1.7.6 (Ubuntu's source package) with Rikuy's few C functions (native/spell/spell.cc),
+# for the editor's spelling (src/spell/): a classic script defining RikuyHunspell and its .wasm,
+# which build.mjs puts beside the page with the spell worker. The dictionaries are Ubuntu 26.10's
+# packages, each .aff and .dic copied as it is (all four say SET UTF-8, which spell.cc needs):
+# en_US from SCOWL, en_GB and es_ES from LibreOffice's dictionaries, de_DE from igerman98.
+HUNSPELL_V=1.7.6
+HUNSPELL_SOURCES="affentry.cxx affixmgr.cxx csutil.cxx filemgr.cxx hashmgr.cxx hunspell.cxx hunspelltrace.cxx hunzip.cxx phonet.cxx replist.cxx suggestmgr.cxx"
+DICTS="main/s/scowl/hunspell-en-us_2020.12.07-4build1_all.deb:81820320c9bd2cbceef26783ef8d9f78e7deba57b1c47944ef82662a7632ad3e:en_US
+main/libr/libreoffice-dictionaries/hunspell-en-gb_26.8.0.3-1_all.deb:06179bbbfe572b0e49046b9274d6b124004353b75167ada73db03434ba8736d8:en_GB
+main/i/igerman98/hunspell-de-de_20161207-16_all.deb:8f8f69e918f143102bfb090aa9d0833ef44154a5cdaf8992da91815adb46275e:de_DE
+main/libr/libreoffice-dictionaries/hunspell-es_26.8.0.3-1_all.deb:24cb9ae90ce3326cda572c9364ca7e92a12e7db6e92aa38ec117aa245bc17407:es_ES"
+hunspell() {
+  fetch $UBUNTU/main/h/hunspell/hunspell_$HUNSPELL_V.orig.tar.gz 4fa9c52a5337fb0a3e03f3212b6372d0159eac3d1a3e6e938e8897ff3d9c3d0c
+  H="$SRC/hunspell" && rm -rf "$H" && mkdir -p "$H" && tar --no-same-owner -xzf "$SRC/dl/hunspell_$HUNSPELL_V.orig.tar.gz" -C "$H" --strip-components=1
+  rm -rf "$VENDOR/hunspell" && mkdir -p "$VENDOR/hunspell/dict"
+  # (the sources named, not globbed: their order is the order of the module's bytes)
+  em++ -O2 -std=c++17 -DHUNSPELL_STATIC -I"$H/src/hunspell" $(for f in $HUNSPELL_SOURCES; do printf ' %s/src/hunspell/%s' "$H" "$f"; done) "$HERE/native/spell/spell.cc" \
+    -sMODULARIZE=1 -sEXPORT_NAME=RikuyHunspell -sENVIRONMENT=worker,node -sALLOW_MEMORY_GROWTH=1 -sFORCE_FILESYSTEM=1 -sINITIAL_MEMORY=33554432 \
+    -sEXPORTED_RUNTIME_METHODS=FS,stringToUTF8,UTF8ToString,lengthBytesUTF8 \
+    -sEXPORTED_FUNCTIONS=_spell_open,_spell_close,_spell_check_list,_spell_suggest,_spell_add,_spell_remove,_malloc,_free \
+    -o "$VENDOR/hunspell/hunspell.js"
+  chmod 644 "$VENDOR/hunspell/hunspell.js" "$VENDOR/hunspell/hunspell.wasm"
+  for d in $DICTS; do
+    url=${d%%:*}; rest=${d#*:}; sum=${rest%%:*}; name=${rest#*:}
+    fetch $UBUNTU/$url $sum
+    x="$SRC/dict-$name" && rm -rf "$x" && dpkg-deb -x "$SRC/dl/$(basename "$url")" "$x"
+    for e in aff dic; do cp "$x/usr/share/hunspell/$name.$e" "$VENDOR/hunspell/dict/$name.$e"; chmod 644 "$VENDOR/hunspell/dict/$name.$e"; done
+    grep -q '^SET UTF-8' "$VENDOR/hunspell/dict/$name.aff" || { echo "build_tools.sh: $name.aff is not UTF-8" >&2; exit 1; }
+  done
+  ls -l "$VENDOR/hunspell" "$VENDOR/hunspell/dict"
+}
+
 gnuplot() {
   galley_main
   fetch $UBUNTU/universe/g/gnuplot/gnuplot_$GNUPLOT_V.orig.tar.xz c02de00f808fd0911b68050b9ce4a4d9f2901aeca6fda66a2f41bfde650fabc2
@@ -385,5 +418,5 @@ xindy() {
   ls -l "$VENDOR/xindy"
 }
 
-[ $# -gt 0 ] || set -- dvips asy xindy gnuplot core
+[ $# -gt 0 ] || set -- dvips asy xindy gnuplot core hunspell
 for t in "$@"; do "$t"; done
