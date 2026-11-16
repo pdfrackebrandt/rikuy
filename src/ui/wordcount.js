@@ -124,8 +124,9 @@ function usedIn(app, name) {
   return false;
 }
 // what a selection's words may not hold to be wrapped in one argument: a cell or row's end, an
-// item, \verb (illegal in an argument), an environment's edge, a paragraph's end, a comment
-const UNWRAPPABLE = /(^|[^\\])&|\\\\|\\(?:tabularnewline|cr|crcr|item|verb|lstinline|mintinline|begin|end|par)\b|\n[ \t]*\n|(^|[^\\])%/;
+// item, \verb, fancyvrb's \Verb and \path (illegal in an argument), an environment's edge, a
+// paragraph's end, a comment
+const UNWRAPPABLE = /(^|[^\\])&|\\\\|\\(?:tabularnewline|cr|crcr|item|verb|Verb|lstinline|mintinline|path|begin|end|par)\b|\n[ \t]*\n|(^|[^\\])%/;
 export function setLanguageEdits(app, d, c) {
   const f = app.main, src = app.src(f);
   const b = /\\begin\s*\{document\}/.exec(src);
@@ -188,6 +189,8 @@ export function setLanguageEdits(app, d, c) {
     if (d === cur) return { edits: [{ f: c.f, s: ws, e: a, t: '' }, { f: c.f, s: z, e: z + 1, t: '' }] };
     if (dictOf(wrap[1]) === d) return { edits: [], why: 'Those words are in ' + DICT_NAME[d] + ' already.' };
     const r = setLanguageEdits(app, d, { f: c.f, a: z, b: z, collapsed: false, onlyLoad: true });
+    // (the language could not be loaded, as with babel on a line with other packages: why not)
+    if (r.why || !r.lang) return { edits: [], why: r.why || 'Nothing to change.' };
     return { edits: [...(r.load || []), { f: c.f, s: ws, e: a, t: '\\foreignlanguage' + r.opt + '{' + r.lang + '}{' }] };
   }
   if (d === cur && !c.onlyLoad) return { edits: [], why: 'The document is in ' + DICT_NAME[d] + ': its words need no \\foreignlanguage.' };

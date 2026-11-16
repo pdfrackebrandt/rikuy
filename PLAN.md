@@ -2534,6 +2534,17 @@ Tests:
     `history.py` 40 (Accept's undo is a step of its own), `review.py` 77, `spell.py` 90,
     `review.test.mjs` 5 groups, `spell.test.mjs` 6; the incremental oracle (`INCR_FULL=1`) 32,
     `view.py` 108, `browser.py` 193, `ribbon.py` 195, `share.py` 46.
+    *After its verification* (1 High, 2 Medium, 3 Low): Proofing Language on words already in
+    `\foreignlanguage` with babel on a shared line says why instead of writing
+    `\foreignlanguageundefined` (V-H1); `absorbText` tests each piece against the waiting
+    changes' own word operations, never their merged ranges, so the one word between two changes
+    a word apart is absorbed (V-M1); the stored base carries a count, a tab writes only over the
+    base it last read and takes a newer one on coming back, so one tab's switch or Accept reaches
+    the other (V-M2, tested with two pages); `\Verb` and `\path` are refused (V-L1); the line
+    hunks and word operations are kept from one keystroke to the next, so with 1,500 changes
+    waiting in 127 kB a keystroke takes about 3 ms after the first (120 ms; it was 77 ms each,
+    V-L2), the kept ones equal to fresh ones over 200 random keystrokes; Compare and git's "Show
+    what changed" say Track Changes is on (V-L3). `review.py` 83, `review.test.mjs` 6 groups.
 
 ## Open tasks
 

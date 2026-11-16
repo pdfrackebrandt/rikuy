@@ -625,7 +625,7 @@ export const methods = {
       this.toggleNav(true, 'changes');
       this.refreshNav();
       this.paintChanges();
-      this.toast(plural(this.realChanges().length, 'difference', 'differences') + ' to ' + f.name + ', marked as changes.', 5000);
+      this.toast(plural(this.realChanges().length, 'difference', 'differences') + ' to ' + f.name + ', marked as changes. Track Changes is on: your edits from here are changes too.', 6000);
     });
     inp.click();
   },

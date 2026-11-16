@@ -3661,6 +3661,7 @@ class App {
             const files = await this.gitTextFiles(await G.filesAt(dir, c.oid));
             this.setBase({ t: c.commit.author.timestamp * 1000, label: 'Commit ' + c.oid.slice(0, 7) + ' · ' + subj, files, track: true });
             this.toggleNav(true, 'changes');
+            this.toast('The changes since commit ' + c.oid.slice(0, 7) + ' are listed. Track Changes is on: your edits from here are changes too.', 6000);
             if (this.markupOn()) this.marksSoon();
           } catch (e) { this.toast(this.gitError(e), 8000); }
         }, 'Show what changed since this commit, with Accept and Reject'),
@@ -4329,6 +4330,8 @@ class App {
   // Back in this tab after working in another one on the same project: take its text, as one
   // step Ctrl+Z undoes, so this tab does not go on from an older copy.
   async adoptOtherTab() {
+    // (Track Changes' base another tab stored, its switch or an Accept, with or without new text)
+    if (!this.noIdb && this.rvCheckBase) this.rvCheckBase();
     if (this.noIdb || this.unsaved || !this.model) return;
     let cur = null;
     try { cur = await kvGet('project'); } catch (e) { return; }
@@ -4343,7 +4346,7 @@ class App {
     this.commit(edits, null, 'other-tab');
     this.closeGroup();
     // (and that tab's Track Changes base and switch: its edits stay its changes)
-    this.rvReloadBase();
+    this.rvCheckBase();
     this.toast('Brought in what was typed in another tab. Ctrl+Z undoes it.', 5000);
   }
 

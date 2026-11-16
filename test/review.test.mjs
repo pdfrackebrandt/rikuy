@@ -7,7 +7,7 @@
 import assert from 'assert';
 globalThis.window = globalThis;
 globalThis.document = { addEventListener() {}, querySelector() { return null; }, body: { classList: { contains() { return false; } } } };
-const { review, absorbText } = await import('../src/review.js');
+const { review, absorbText, absorbFresh } = await import('../src/review.js');
 const { changes } = await import('../src/diff.js');
 const { setLanguageEdits } = await import('../src/ui/wordcount.js');
 const { usePackages } = await import('../src/preamble.js');
@@ -91,6 +91,34 @@ group('each edit by itself, by words not lines (H3)', () => {
   assert.strictEqual(absorbText('One two three four.\n', 'One three four.\n', 'Zero One three four.\n'), 'Zero One two three four.\n');
 });
 
+group('one word between two waiting changes a word apart (V-M1); kept hunks equal fresh ones; fast with 1,500 waiting (V-L2)', () => {
+  assert.strictEqual(absorbText('Alpha beta gamma delta.\n', 'Omega beta Gamma delta.\n', 'Omega BETA Gamma delta.\n'), 'Alpha BETA gamma delta.\n');
+  // random keystrokes, each absorbed with the hunks kept from the one before and again afresh
+  let r = 7; const rnd = () => (r = (r * 16807) % 2147483647) / 2147483647;
+  const words = 'alpha beta gamma delta epsilon zeta eta theta iota kappa'.split(' ');
+  const lines = []; for (let i = 0; i < 300; i++) { const l = []; for (let k = 0; k < 10; k++) l.push(words[Math.floor(rnd() * words.length)]); lines.push(l.join(' ') + '.'); }
+  let b = lines.join('\n\n');
+  const L = lines.slice(); for (let i = 0; i < 40; i++) { const j = Math.floor(rnd() * L.length); L[j] = L[j].replace(/\w+/, 'CHANGED'); }
+  let p = L.join('\n\n');
+  for (let k = 0; k < 200; k++) {
+    const at = Math.floor(rnd() * p.length), del = rnd() < 0.3 ? 1 : 0, c = p.slice(0, at) + (del ? '' : 'xy'[k % 2]) + p.slice(at + del);
+    const kept = absorbText(b, p, c);
+    absorbFresh();
+    const fresh = absorbText(b, p, c);
+    assert.strictEqual(kept, fresh, 'keystroke ' + k);
+    b = fresh; p = c;
+  }
+  // 1,500 changes waiting in 127 kB: a keystroke after the first is a few ms
+  const big = []; for (let i = 0; i < 1500; i++) { const l = []; for (let k = 0; k < 16; k++) l.push(words[Math.floor(rnd() * words.length)]); big.push(l.join(' ') + '.'); }
+  let B = big.join('\n\n');
+  const BL = big.slice(); for (let i = 0; i < 1500; i++) { const j = Math.floor(rnd() * BL.length); BL[j] = 'CHANGED ' + BL[j]; }
+  let P = BL.join('\n\n'), at = P.indexOf('.', P.length >> 1);
+  absorbFresh();
+  let ms = 0;
+  for (let k = 0; k < 21; k++) { const C = P.slice(0, at) + 'x' + P.slice(at); const t0 = performance.now(); B = absorbText(B, P, C); if (k) ms += performance.now() - t0; P = C; at++; }
+  assert.ok(ms / 20 < 25, 'a keystroke with 1,500 changes waiting took ' + (ms / 20).toFixed(1) + ' ms');
+});
+
 group('Accept is a step: undone, the change is back (M1)', () => {
   const A = mkApp('One iota three.\n', true);
   edit(A, 4, 8, 'IOTA5');
@@ -122,6 +150,14 @@ group('a selection\'s language: never across a cell, a row, \\verb or an environ
     assert.ok(/one paragraph or one cell/.test(r.why), r.why);
   }
   assert.ok(apply(A, setLanguageEdits(A, 'de_DE', sel(A, 'Zelle zwei'))).includes('\\foreignlanguage{ngerman}{Zelle zwei} \\\\'));
+  // fancyvrb's \\Verb and \\path refused too (V-L1)
+  const V = lapp(doc('', 'Use \\Verb|x_y| now and \\path{a/b} here.'));
+  for (const w of ['Use \\Verb|x_y| now', 'and \\path{a/b}']) assert.deepStrictEqual(setLanguageEdits(V, 'de_DE', sel(V, w)).edits, [], w);
+  // words already in \\foreignlanguage, babel on a line with other packages: refused with its
+  // reason, never \\foreignlanguageundefined{undefined} (V-H1)
+  const S = lapp(doc('\\usepackage[ngerman,english]{babel,csquotes}\n', 'Text \\foreignlanguage{ngerman}{Wort} end.'));
+  const rs = setLanguageEdits(S, 'es_ES', sel(S, 'Wort'));
+  assert.ok(rs.edits.length === 0 && /other packages/.test(rs.why), JSON.stringify(rs));
 });
 
 group('the document\'s own language stays (H5, M5, L5, L6)', () => {
