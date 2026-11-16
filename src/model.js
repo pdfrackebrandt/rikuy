@@ -575,6 +575,7 @@ function incremental(project, hint) {
     r.headings = hint.headings.map((h) => (h.f === f && h.s >= U.e ? { ...h, s: h.s + d, ...(h.e != null ? { e: h.e + d } : {}) } : h));
     // (B9: captions, endnotes and index entries after the paragraph move with it; its plain words hold none)
     for (const k of ['captions', 'endnotes', 'indexEntries']) if (hint[k]) r[k] = hint[k].map((x) => (x.f === f && x.s >= U.e ? { ...x, s: x.s + d } : x));
+    if (hint.ixAt != null && hint.ixFile === f && hint.ixAt >= U.e) r.ixAt = hint.ixAt + d;
     if (hint.docBody) r.docBody = { ...hint.docBody, e: hint.docBody.e + d };
   }
   Object.defineProperty(r, '_incr', { value: { main: f, files: new Map(files), tree: nodes, sigKey: H.sigKey, failed, keys: H.keys } });
@@ -589,7 +590,7 @@ function tocList(P, O) {
   const extra = (k) => { for (const x of X) if (x.after === k) out.push(x); };
   H.forEach((h, k) => { extra(k); if (!h.star) out.push(h); });
   extra(H.length);
-  return out.filter((h) => h.level >= 0 && h.level <= depth);
+  return out.filter((h) => h.level >= -1 && h.level <= depth);
 }
 
 function sameRefs(a, b) {
@@ -779,7 +780,7 @@ class Builder {
       this.noPrefix = new Set();
       // (a report's footnotes start again at each chapter, numbered 1, 2 and not 1.1)
       if (O.chapters && !this.within.footnote) { this.within.footnote = 'chapter'; this.noPrefix.add('footnote'); }
-      for (const [k, w] of Object.entries(R.within)) this.within[k] = w;
+      for (const [k, w] of Object.entries(R.within)) { this.within[k] = w; this.noPrefix.delete(k); }
       for (const [k, w] of Object.entries(R.reset)) { if (w == null) { delete this.within[k]; continue; } this.within[k] = w; this.noPrefix.add(k); }
     }
     O.ext = extSize(O.pt);
@@ -1243,6 +1244,18 @@ class Builder {
       this.tocExtra.push({ after: this.headings.length, level, num: '', text: this.plain(kids), parts: this.tocParts(kids) });
     }
   }
+  // tocbibind, KOMA-Script's toc=…, memoir's unstarred lists and biblatex's heading=bibintoc put a
+  // list, the bibliography or the index in the contents: an entry where it stands (review L8)
+  inToc(what, nd, text) {
+    const O = this.opts, R = O.refs || {}, tb = R.pkgs && R.pkgs.tocbibind ? R.tocbibind || {} : null, ko = O.koma ? R.clsOpts || '' : '';
+    let on = !!tb && !tb['not' + what];
+    if (what === 'toc' && tb && !tb.nottoc) on = true;
+    if (O.koma && ((what === 'bib' && /\btoc\s*=\s*(bibliography|bib)/.test(ko)) || (what === 'index' && /\btoc\s*=\s*(index|idx)/.test(ko)) || (/^lo[ft]$/.test(what) && /\btoc\s*=\s*(listof|lof)/.test(ko)))) on = true;
+    if (O.cls === 'memoir' && /^(toc|lof|lot)$/.test(what) && !nd.star) on = true;
+    if (what === 'bib' && nd.name === 'printbibliography' && nd.args[0] && /\bheading\s*=\s*bib(intoc|numbered)\b/.test(this.argText(this.mainCtx, nd.args[0]) || '')) on = true;
+    if (!on || this.tocExtra.length >= 2000) return;
+    this.tocExtra.push({ after: this.headings.length, level: O.chapters ? 0 : 1, num: '', text, parts: [text] });
+  }
   // a counter's value as \arabic, \roman, \Roman, \alph, \Alph or \fnsymbol prints it
   counterText(n, style) {
     if (style === 'roman') return roman(n);
@@ -1254,7 +1267,7 @@ class Builder {
   }
   // What the lists drawn from another build depend on: a second build when it changed
   refsSig() {
-    return JSON.stringify([this.captions.map((c) => [c.kind, c.num, c.text]), this.tocExtra.map((x) => [x.after, x.level, x.text]), this.headings.map((h) => (h.tocText === h.text ? 0 : h.tocText))]);
+    return JSON.stringify([this.ixAt == null ? 0 : this.indexEntries.filter((x) => x.f === this.ixFile && x.s > this.ixAt).map((x) => [x.name, x.arg]), this.captions.map((c) => [c.kind, c.num, c.text]), this.tocExtra.map((x) => [x.after, x.level, x.text]), this.headings.map((h) => (h.tocText === h.text ? 0 : h.tocText))]);
   }
   // \printindex: makeindex's index of the entries before it (\printindex[name] imakeidx's index of
   // that name), on a page of its own unless \indexsetup{noclearpage}, in its columns, the letter
@@ -1266,7 +1279,11 @@ class Builder {
     // (a stranger's document may print its index many times over: past the eighth only the
     // heading, each entry read once whatever the number)
     this.ixUnits = (this.ixUnits || 0) + 1;
-    for (const x of this.ixUnits > 8 ? [] : this.indexEntries) {
+    if (this.ixAt == null) { this.ixAt = nd.s; this.ixFile = ctx.f; }
+    // (the entries after it come from the build before, as TeX's .ind comes from the last run: review M9)
+    const P = this.prev, moved = nd.s - (P && P.ixAt != null ? P.ixAt : nd.s);
+    const later = this.ixUnits === 1 && P && P.ixAt != null && P.ixFile === ctx.f ? (P.indexEntries || []).filter((x) => x.f === ctx.f && x.s > P.ixAt).map((x) => ({ ...x, s: x.s + moved })) : [];
+    for (const x of this.ixUnits > 8 ? [] : [...this.indexEntries, ...later]) {
       if (x.name !== name) continue;
       const r = x.r || (x.r = readIndexArg(x.arg));
       let lvl = top, node = null;
@@ -1287,6 +1304,7 @@ class Builder {
     this.use(JSON.stringify(rows.map((r) => [r.lvl, r.text, r.pages.map((p) => p.fmt + (p.range || '')), r.see, r.gap])));
     const out = [];
     if (!R.noclear) out.push({ f: ctx.f, s: nd.s, e: nd.s, items: [{ type: 'pagebreak', odd: false, column: false }], fns: [], sig: 'ixpb' });
+    this.inToc('index', nd, 'Index');
     out.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'idx', head: 'Index', rows, cols: R.pkg === 'imakeidx' ? Math.max(1, Math.min(4, R.columns || 2)) : 2, key: ctx.f + ':ix' + name, dir: this.dirOf() }], fns: [], sig: this.sig.join('\u0001') });
     return out;
   }
@@ -1590,6 +1608,7 @@ class Builder {
           flushPara();
           if (env.top) this.sig = [];
           const entries = this.tocEntries();
+          this.inToc('toc', nd, this.opts.lang === 'de' ? 'Inhaltsverzeichnis' : 'Contents');
           this.use(JSON.stringify(entries.map((h) => [h.num, h.text, h.level])));
           // (its direction is the text's where it stands: drawn again when a \selectlanguage before it changes)
           this.use('d' + this.dir);
@@ -1606,6 +1625,7 @@ class Builder {
           this.use(JSON.stringify(entries.map((h) => [h.num, h.text])));
           this.use('d' + this.dir);
           const head = kind === 'figure' ? (de ? 'Abbildungsverzeichnis' : 'List of Figures') : (de ? 'Tabellenverzeichnis' : 'List of Tables');
+          this.inToc(kind === 'figure' ? 'lof' : 'lot', nd, head);
           units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'toc', head, lof: kind, entries, chapters: !!this.opts.chapters, dir: this.dirOf() }], fns: [], sig: this.sig.join('\u0001'), volatile: false });
           afterHeading = false;
           continue;
@@ -1654,6 +1674,8 @@ class Builder {
           units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'pagebreak', column: true, only: true }], fns: [], sig: '' });
           continue;
         }
+        // (B9) tocdepth set in the body, as people set it before \tableofcontents (review M3)
+        if (name === 'setcounter' && this.argText(ctx, nd.args[0]).trim() === 'tocdepth') { const v = parseInt(this.argText(ctx, nd.args[1]), 10); if (Number.isFinite(v)) this.opts.tocdepth = v; }
         const pageCounter = (name === 'setcounter' || name === 'addtocounter') && this.argText(ctx, nd.args[0]).trim() === 'page';
         if (name === 'thispagestyle' || name === 'pagestyle' || name === 'pagenumbering' || pageCounter) {
           const a = this.argText(ctx, nd.args[pageCounter ? 1 : 0]).trim();
@@ -1693,7 +1715,7 @@ class Builder {
           flushPara();
           if (env.top) this.sig = [];
           if (name === 'bibliography') for (const b of this.argText(ctx, nd.args[0]).split(',')) this.bibFiles.push(b.trim());
-          units.push(this.refsBlock(nd, ctx));
+          { const u = this.refsBlock(nd, ctx); units.push(u); this.inToc('bib', nd, u.items[0].head); }
           continue;
         }
         if (name === 'bigskip' || name === 'medskip' || name === 'smallskip' || name === 'vspace') {
@@ -2419,6 +2441,7 @@ class Builder {
     };
     // (with no declaration: the class's own, src/model.js preamble)
     const dflt = this.opts.floatAlign || 'left';
+    let subDepth = 0, subN = 0;
     const walk = (nodes) => {
       for (const [i, n] of nodes.entries()) {
         if (n.t === 'par') { flushP(); continue; }
@@ -2428,6 +2451,17 @@ class Builder {
         if (n.t === 'env' && (n.name === 'center' || n.name === 'centering' || n.name === 'flushleft' || n.name === 'flushright')) { flushP(); const was = align; align = n.name === 'center' || n.name === 'centering' ? 'center' : n.name === 'flushleft' ? 'left' : 'right'; walk(n.nodes); flushP(); align = was; continue; }
         // (\centerline{...}: its words a centred line of their own)
         if (n.t === 'cmd' && n.name === 'centerline' && n.args && n.args[0] && n.args[0].nodes) { flushP(); const was = align; align = 'center'; para = [...n.args[0].nodes]; flushP(); align = was; continue; }
+        if (n.t === 'cmd' && n.name === 'caption' && subDepth > 0 && !n.star) {
+          // (B9: subcaption's (a), (b); \ref to it gives 1a, the float's number to come: review M4)
+          flushP();
+          subN++;
+          const a1 = n.args[1], kids = a1 ? this.inl(a1.nodes, ctx, fns) : [];
+          if (a1 && !kids.length) kids.push({ k: 'seg', f: ctx.f, t: '\u200b', map: [a1.is, a1.is], ph: true });
+          this.lastTarget = { num: (num || this.withinPrefix(kind) + (this.c[kind] + 1)) + alph(subN), kind };
+          this.use('Fs' + subN);
+          parts.push({ type: 'caption', kind: 'sub', num: alph(subN), inl: kids, f: ctx.f, ctx: 'cap', dir: this.dirOf() });
+          continue;
+        }
         if (n.t === 'cmd' && (n.name === 'caption' || n.name === 'captionof')) {
           flushP();
           const a0 = n.name === 'captionof' ? n.args[2] : n.args[1];
@@ -2464,7 +2498,9 @@ class Builder {
           // (a minipage's or a subfigure's pictures are a share of its width, not of the page's)
           const wasBox = this.box;
           if (/^(minipage|subfigure|subtable)$/.test(n.name)) this.box = this.boxIn(ctx, n.args.filter((x) => x && !x.o).pop());
-          try { flushP(); walk(n.nodes); flushP(); } finally { this.box = wasBox; }
+          const sub = /^sub(figure|table)$/.test(n.name);
+          if (sub) subDepth++;
+          try { flushP(); walk(n.nodes); flushP(); } finally { this.box = wasBox; if (sub) subDepth--; }
           continue;
         }
         // a language or direction environment around a figure's parts: they run its way
@@ -3039,7 +3075,8 @@ class Builder {
       let num;
       if (name === 'thanks' || this.thanksMode) { this.c.thanks++; num = FN_SYMS[(this.c.thanks - 1) % FN_SYMS.length]; }
       else if (nd.args[0]) { num = texToPlain(A(0)); }
-      else { this.c.footnote++; num = this.counterText(this.c.footnote, this.opts.fnStyle); }
+      // (numbered within the chapter or section where the preamble says so: 1.1, review L10)
+      else { this.c.footnote++; num = this.withinPrefix('footnote') + this.counterText(this.c.footnote, this.opts.fnStyle); }
       this.use('f' + num);
       const saveT = this.lastTarget;
       this.lastTarget = { num, kind: 'footnote' };
@@ -3052,12 +3089,12 @@ class Builder {
       fns.push({ num, inl: kids, f: ctx.f, mark, dir: this.dirOf() });
       return false;
     }
-    if (name === 'footnotemark') { acc.flush(); this.c.footnote++; out.push(this.atom(ctx, { k: 'fn', s: nd.s, e: nd.e, num: this.counterText(this.c.footnote, this.opts.fnStyle) })); return false; }
+    if (name === 'footnotemark') { acc.flush(); this.c.footnote++; out.push(this.atom(ctx, { k: 'fn', s: nd.s, e: nd.e, num: this.withinPrefix('footnote') + this.counterText(this.c.footnote, this.opts.fnStyle) })); return false; }
     if (name === 'footnotetext') {
       acc.flush();
       const a = nd.args[1];
       const kids = a ? this.inl(a.nodes, ctx, fns) : [];
-      fns.push({ num: this.counterText(this.c.footnote, this.opts.fnStyle), inl: kids, f: ctx.f, dir: this.dirOf() });
+      fns.push({ num: this.withinPrefix('footnote') + this.counterText(this.c.footnote, this.opts.fnStyle), inl: kids, f: ctx.f, dir: this.dirOf() });
       return false;
     }
     if (CITE_CMDS.has(name)) {
@@ -3382,6 +3419,8 @@ class Builder {
       endnotes: this.endnotes,
       indexEntries: this.indexEntries,
       refsSig: this.refsSig(),
+      ixAt: this.ixAt ?? null,
+      ixFile: this.ixFile ?? null,
       mathMacros: this.mathMacros,
       textMacros: this.textMacros,
       siOpts: this.siOpts,

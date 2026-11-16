@@ -20,7 +20,7 @@ dist/tex holds a TeX tree, all of it compiled in the page (pdfLaTeX, XeLaTeX, Lu
 with biber) and read back from TeX's PDF.
 
     cd test && python3 refs.py [section ...]"""
-import os, re, sys, base64, tempfile, subprocess
+import os, re, sys, base64, tempfile, subprocess, unicodedata
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from browser import open_page, load_doc, src, click_text, select_text, check, results, roundtrip, ROOT
 from playwright.sync_api import sync_playwright
@@ -227,7 +227,7 @@ def sources(page):
     page.get_by_role('dialog', name='Source Manager').get_by_role('button', name='Edit…').click(); page.wait_for_timeout(300)
     ed = page.get_by_role('dialog', name='Edit Source')
     ed.get_by_label('Year').fill('1986'); ed.get_by_label('Title', exact=True).fill('The {\\TeX}book, 2nd'); ed.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
-    check('two fields changed: those bytes alone, the quotes, padding and comment kept', src(page, 'refs.bib') == BIB.replace('= 1984', '= 1986').replace('"The {\\TeX}book"', '"The {\\TeX}book, 2nd"'), src(page, 'refs.bib'))
+    check('two fields changed: those values alone (a quoted one now in braces, review H2), padding and comment kept', src(page, 'refs.bib') == BIB.replace('= 1984', '= 1986').replace('"The {\\TeX}book"', '{The {\\TeX}book, 2nd}'), src(page, 'refs.bib'))
     page.evaluate('rikuy.undo()'); page.wait_for_timeout(150)
     check('one undo gives the .bib back byte for byte', src(page, 'refs.bib') == BIB)
     # delete one not cited; paste BibTeX
@@ -599,6 +599,30 @@ def compiled(page):
               not [x for x in ('Contents', '1 Intro', 'List of Figures', 'Figure 1: A cat & dog', 'See1 here', 'Notes', 'An endnote 50%.', 'References', 'On DNA & more', 'Index', 'alpha, 1') if x not in T], [x for x in ('Contents', '1 Intro', 'List of Figures', 'Figure 1: A cat & dog', 'See1 here', 'Notes', 'An endnote 50%.', 'References', 'On DNA & more', 'Index', 'alpha, 1') if x not in T])
         if engine == 'pdflatex':
             check('the index has the entry\'s page as the page drew it', re.search(r'alpha, (\d+)', T) and page.evaluate('[...document.querySelectorAll(".idx-e")].map((e) => e.textContent)') == ['alpha, ' + re.search(r'alpha, (\d+)', T).group(1)], (T[-300:], page.evaluate('[...document.querySelectorAll(".idx-e")].map((e) => e.textContent)')))
+    # the review's cases where TeX is the judge
+    nb = D('Words \\citet{knuth84} here.\n\n\\bibliographystyle{plainnat}\n\\bibliography{refs}', '\\usepackage{natbib}\n')
+    load_doc(page, {'main.tex': nb, 'refs.bib': BIB}); click_text(page, 'here', 1)
+    cmd(page, 'citation-style', {'style': 'IEEEtranN:numbers'})
+    c = compile_doc(page, src(page), {'refs.bib': BIB}); T = re.sub(r'\s+', ' ', c['text'])
+    check('H6: IEEE under natbib (IEEEtranN, numbers) compiles and TeX prints [1], as the page does', c['ok'] and '[1]' in T and texts(page, '.a-cite') == ['Knuth [1]'], (c['log'][-300:], T[:200], texts(page, '.a-cite')))
+    sty = D('Words here.', '\\usepackage{mystyle}\n')
+    load_doc(page, {'main.tex': sty, 'mystyle.sty': '\\RequirePackage[style=authoryear]{biblatex}\n\\addbibresource{refs.bib}\n', 'refs.bib': ''}); click_text(page, 'Words', 2)
+    cmd(page, 'add-source', {'type': 'book', 'fields': {'author': 'Doe, Jane', 'title': 'A Title', 'year': '2020', 'publisher': 'P'}})
+    files = {'refs.bib': src(page, 'refs.bib'), 'mystyle.sty': '\\RequirePackage[style=authoryear]{biblatex}\n\\addbibresource{refs.bib}\n'}
+    c = compile_doc(page, src(page), files); T = re.sub(r'\s+', ' ', c['text'])
+    check('H8: Add New Source with biblatex from a .sty compiles with biber; TeX prints the citation and the entry', c['ok'] and 'Doe' in T and '2020' in T and '?' not in T, (c['log'][-300:], T[:300]))
+    ub = '@misc{u, title={U}, url={https://e.com/p\\#s}}\n@article{q, author = "M{\\"u}ller, A.", title={Q}, journal={J}, year=2001}\n'
+    mix = D('\\section{Results}\nWords \\cite{u} and \\cite{q}.\n\n\\bibliographystyle{plainnat}\n\\bibliography{refs}', '\\usepackage{url}\n')
+    load_doc(page, {'main.tex': mix, 'refs.bib': ub}); click_text(page, 'Results', 2)
+    page.evaluate('rikuy.shortTitle(rikuy.ribbonAt(), "Results [draft]")'); page.wait_for_timeout(200)
+    click_text(page, 'Words', 2); cmd(page, 'manage-sources'); mgr = page.get_by_role('dialog', name='Source Manager')
+    mgr.get_by_role('option').first.click(); mgr.get_by_role('button', name='Edit…').click(); page.wait_for_timeout(300)
+    ed = page.get_by_role('dialog', name='Edit Source'); ed.get_by_label('URL').fill(ed.get_by_label('URL').input_value().replace('/p', '/q')); ed.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    click_text(page, 'Words', 2); cmd(page, 'manage-sources'); mgr = page.get_by_role('dialog', name='Source Manager')
+    mgr.get_by_role('option').nth(1).click(); mgr.get_by_role('button', name='Edit…').click(); page.wait_for_timeout(300)
+    ed = page.get_by_role('dialog', name='Edit Source'); ed.get_by_label('Author', exact=True).fill(ed.get_by_label('Author', exact=True).input_value() + ' and Doe, C.'); ed.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    c = compile_doc(page, src(page), {'refs.bib': src(page, 'refs.bib')}); T = unicodedata.normalize('NFC', re.sub(r'\s+', ' ', c['text']))
+    check('M7, L4, H2: a short title with ], an edited url with # and a quoted accent edited: TeX prints each', c['ok'] and '1 Results' in T and 'https://e.com/q#s' in T and 'Müller' in T and 'Doe' in T, (c['log'][-300:], T[:500]))
     # biblatex with biber: APA, Works Cited
     bl = D('As \\textcite{knuth84} shows.\n\n\\printbibliography', '\\usepackage[style=authoryear]{biblatex}\n\\addbibresource{refs.bib}\n')
     load_doc(page, {'main.tex': bl, 'refs.bib': BIB}); click_text(page, 'shows', 1)
@@ -608,7 +632,123 @@ def compiled(page):
     check('biblatex: style=apa and title=Works Cited compile with biber, and TeX prints them', c['ok'] and 'Works Cited' in T and 'Knuth' in T and '1984' in T, (c['log'][-300:], T[:400]))
 
 
-SECTIONS = {'toc': toc, 'notes': notes, 'sources': sources, 'captions': captions, 'xrefs': xrefs, 'index': index, 'links': links}
+# ---- the hostile review of 25c4b9c: each finding as its case ---------------------------------------
+def review(page):
+    # H1: a field written over lines, never touched, stays as it is; math is never escaped
+    bib = '@article{s,\n  author = {Smith, John and\n             Doe, Jane},\n  title = {On $L_p$ spaces and\n             fifty things},\n  year = 2000\n}\n'
+    load_doc(page, {'main.tex': NAT.replace('\\citet{knuth84}', '\\citet{s}'), 'refs.bib': bib}); click_text(page, 'words.', 1)
+    cmd(page, 'manage-sources'); mgr = page.get_by_role('dialog', name='Source Manager')
+    mgr.get_by_role('option').first.click(); mgr.get_by_role('button', name='Edit…').click(); page.wait_for_timeout(300)
+    ed = page.get_by_role('dialog', name='Edit Source')
+    ed.get_by_label('Year').fill('2001'); ed.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    check('H1: Edit Source changes the year alone; fields over several lines and their math kept byte for byte', src(page, 'refs.bib') == bib.replace('year = 2000', 'year = 2001'), src(page, 'refs.bib'))
+    # H3: a report numbering its figures 1, 2, 3 keeps \counterwithout
+    rep = D('\\chapter{One}\n\\begin{figure}[h]\nX\n\\end{figure}', '\\counterwithout{figure}{chapter}\n', cls='\\documentclass{report}')
+    load_doc(page, rep); click_text(page, 'X', 0)
+    page.evaluate('rikuy.selectTab("references")'); page.locator('#rc-insert-caption').click(); page.wait_for_timeout(300)
+    dlg = page.get_by_role('dialog', name='Caption')
+    check('H3: the dialog shows 1, 2, 3 for \\counterwithout', dlg.get_by_label('Numbering').input_value() == 'plain')
+    dlg.get_by_label('Caption').fill('C'); dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    check('H3: OK leaves the preamble alone', '\\counterwithout{figure}{chapter}' in src(page) and src(page).count('counterwith') == 1 and '\\caption{C}' in src(page), src(page)[:200])
+    # H4: Apply with nothing changed writes nothing
+    nw = D('\\section{S}\nA\\footnote{x}.', '\\usepackage{amsmath}\n\\numberwithin{footnote}{section}\n\\renewcommand{\\thefootnote}{[\\arabic{footnote}]}\n\\setcounter{footnote}{0}\n')
+    load_doc(page, nw); click_text(page, 'A', 0); h0 = hist(page)
+    page.locator('#rc-footnote-options').click(); page.wait_for_timeout(300)
+    page.get_by_role('dialog', name='Footnote and Endnote').get_by_role('button', name='Apply').click(); page.wait_for_timeout(300)
+    check('H4: Footnote and Endnote, Apply untouched: nothing written', src(page) == nw and hist(page) == h0, src(page)[:260])
+    # H5: a link over two paragraphs is refused
+    two = D('Alpha one.\n\nBeta two.')
+    load_doc(page, two); page.evaluate("""() => { const sp = [...document.querySelectorAll('#pages span.t')]; const a = sp.find((x) => x.textContent.includes('one.')), z = sp.find((x) => x.textContent.includes('Beta')); const r = document.createRange(); r.setStart(a.firstChild, a.textContent.indexOf('one.')); r.setEnd(z.firstChild, 4); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }""")
+    cmd(page, 'link', {'url': 'https://x.org', 'kind': 'web'})
+    check('H5: a link over two paragraphs is refused, the reason said', src(page) == two and 'one paragraph' in page.inner_text('#toast'), page.inner_text('#toast'))
+    # H7: symbols for eleven footnotes are refused
+    many = D(' '.join('W\\footnote{n}' for _ in range(11)))
+    load_doc(page, many); click_text(page, 'W', 0)
+    cmd(page, 'footnote-options', {'style': 'fnsymbol'})
+    check('H7: symbols for 11 footnotes refused (TeX counts nine), the reason said', src(page) == many and 'nine' in page.inner_text('#toast').replace('9', 'nine'), page.inner_text('#toast'))
+    cmd(page, 'footnote-options', {'style': 'fnsymbol', 'restart': 'page'})
+    check('H7: with Restart each page they are allowed', '\\fnsymbol{footnote}' in src(page) and 'perpage' in src(page))
+    # H8: biblatex from the project's .sty: Add New Source writes \printbibliography alone
+    sty = D('Words here.', '\\usepackage{mystyle}\n')
+    load_doc(page, {'main.tex': sty, 'mystyle.sty': '\\RequirePackage[style=authoryear]{biblatex}\n\\addbibresource{refs.bib}\n', 'refs.bib': ''}); click_text(page, 'Words', 2)
+    cmd(page, 'add-source', {'type': 'book', 'fields': {'author': 'Doe, J.', 'title': 'T', 'year': '2020'}})
+    t = src(page)
+    check('H8: biblatex from a .sty: no natbib, no \\bibliography; \\printbibliography and the citation', 'natbib' not in t and '\\bibliography{' not in t and '\\printbibliography' in t and re.search(r'\\(paren)?cite\{doe2020t\}', t), t)
+    # M1: an existing \counterwithin stays where it is; \numberwithin stays \numberwithin
+    m1 = D('\\section{S}\n\\begin{figure}[h]\nX\n\\end{figure}', '\\usepackage{graphicx}\n\\counterwithin{figure}{section}\n\\usepackage{xcolor}\n')
+    load_doc(page, m1); click_text(page, 'X', 0)
+    cmd(page, 'insert-caption', {'text': 'C', 'label': '', 'numbering': 'section'})
+    check('M1: \\counterwithin kept where it stands', src(page) == m1.replace('X\n', 'X\n\\caption{C}\n'), src(page)[:200])
+    # M2, M3: parts in the contents; tocdepth set in the body
+    load_doc(page, D('\\setcounter{tocdepth}{1}\n\\tableofcontents\n\\part{Big}\n\\section{Sec}\n\\subsection{Sub}\nText.')); page.wait_for_timeout(300)
+    check('M2, M3: the contents list the part, and tocdepth 1 set in the body leaves out the subsection', toc_rows(page) == ['I Big 1', '1 Sec 1'], toc_rows(page))
+    load_doc(page, D('\\setcounter{tocdepth}{1}\n\\tableofcontents\n\\section{Sec}\nText.')); click_text(page, 'Text', 1)
+    cmd(page, 'toc-levels', {'levels': 3})
+    check('M3: Show Levels changes the body\'s line, the one TeX reads', '\\setcounter{tocdepth}{3}\n\\tableofcontents' in src(page) and src(page).count('tocdepth') == 1, src(page)[:160])
+    # M4, L6: subfigure captions are (a), (b), not in the list; the figure still takes its caption
+    sf = D('\\listoffigures\n\n\\begin{figure}[h]\n\\begin{subfigure}{.4\\linewidth}A\\caption{Left}\\end{subfigure}\n\\begin{subfigure}{.4\\linewidth}B\\caption{Right}\\end{subfigure}\n\\end{figure}', '\\usepackage{subcaption}\n')
+    load_doc(page, sf); page.wait_for_timeout(300)
+    check('M4: subcaptions drawn (a) and (b), the list of figures empty of them', texts(page, '.cap') == ['(a) Left', '(b) Right'] and toc_rows(page) == [], (texts(page, '.cap'), toc_rows(page)))
+    click_text(page, 'Left', 1)
+    check('L6: a figure with subcaptions still takes its own caption', page.evaluate('rikuy.captionWhyNot(rikuy.ribbonAt())') == '', page.evaluate('rikuy.captionWhyNot(rikuy.ribbonAt())'))
+    # M6: an entry another builds on is not deleted
+    cr = '@book{parent, title={P}, year=2000}\n@incollection{child, title={C}, crossref={parent}}\n'
+    load_doc(page, {'main.tex': NAT.replace('\\citet{knuth84}', '\\citet{child}'), 'refs.bib': cr}); click_text(page, 'words.', 1)
+    cmd(page, 'manage-sources'); mgr = page.get_by_role('dialog', name='Source Manager')
+    mgr.get_by_role('option', name=re.compile('P')).first.click()
+    check('M6: an entry another one crossrefs cannot be deleted', mgr.get_by_role('button', name='Delete').is_disabled())
+    page.evaluate('rikuy.closePop()')
+    # M7: a short title with a bracket in braces
+    load_doc(page, D('\\section{Results}\nText.')); click_text(page, 'Results', 2)
+    page.evaluate('rikuy.shortTitle(rikuy.ribbonAt(), "Results [draft]")'); page.wait_for_timeout(200)
+    check('M7: a short title holding ] is written in braces', '\\section[{Results [draft]}]{Results}' in src(page), src(page)[40:120])
+    # M8, L4: a url field edited keeps its address; # and % stay bare
+    ub = '@misc{u, title={U}, url={https://e.com/p\\#s?a=1\\%202}}\n'
+    load_doc(page, {'main.tex': NAT.replace('\\citet{knuth84}', '\\citet{u}'), 'refs.bib': ub}); click_text(page, 'words.', 1)
+    cmd(page, 'manage-sources'); mgr = page.get_by_role('dialog', name='Source Manager')
+    mgr.get_by_role('option').first.click(); mgr.get_by_role('button', name='Edit…').click(); page.wait_for_timeout(300)
+    ed = page.get_by_role('dialog', name='Edit Source')
+    ed.get_by_label('URL').fill(ed.get_by_label('URL').input_value().replace('/p', '/q')); ed.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    check('M8, L4: an edited address keeps its # and %, written bare as url.sty reads them', 'url={https://e.com/q#s?a=1%202}' in src(page, 'refs.bib'), src(page, 'refs.bib'))
+    # L5: the caption goes before a lone \label at the figure's end
+    l5 = D('\\section{S}\n\\begin{figure}[h]\nX\n\\label{fig:x}\n\\end{figure}')
+    load_doc(page, l5); click_text(page, 'X', 0)
+    cmd(page, 'insert-caption', {'text': 'C', 'label': ''})
+    check('L5: the caption before the figure\'s lone \\label', 'X\n\\caption{C}\n\\label{fig:x}\n\\end{figure}' in src(page), src(page)[-90:])
+    # L10: a report's footnotes numbered within the chapter
+    load_doc(page, D('\\chapter{One}\nA\\footnote{x}.', '\\counterwithin{footnote}{chapter}\n', cls='\\documentclass{report}')); page.wait_for_timeout(200)
+    check('L10: \\counterwithin{footnote}{chapter}: 1.1 as TeX prints it', texts(page, 'sup.a-fn') == ['1.1'], texts(page, 'sup.a-fn'))
+    # L11: changing only a link's words keeps its address's bytes
+    lk = D('See \\href{https://a.org/x\\_y}{old words} now.', '\\usepackage{hyperref}\n')
+    load_doc(page, lk); click_text(page, 'old', 1)
+    cmd(page, 'link', {'kind': 'web', 'url': 'https://a.org/x_y', 'text': 'new words'})
+    check('L11: the words changed, the address\'s \\_ kept', '\\href{https://a.org/x\\_y}{new words}' in src(page), src(page)[40:140])
+    # M5: Restart each page drawn: each page's marks from 1
+    pp = D(' '.join('Words of a long paragraph\\footnote{n}' for _ in range(3)) + '\n\\newpage\n' + ' '.join('More\\footnote{m}' for _ in range(2)), '\\usepackage[perpage]{footmisc}\n')
+    load_doc(page, pp); page.wait_for_timeout(400)
+    check('M5: footmisc\'s perpage: the second page\'s marks start from 1', texts(page, 'sup.a-fn') == ['1', '2', '3', '1', '2'], texts(page, 'sup.a-fn'))
+    # R1: after typing above a figure, a label added by Cross-reference lands after its caption
+    rf = D('Typed here.\n\n\\begin{figure}[h]\nX\n\\caption{Cat}\n\\end{figure}\n\nSee it.')
+    load_doc(page, rf); click_text(page, 'Typed', 2); page.keyboard.type('abc '); page.wait_for_timeout(300)
+    click_text(page, 'See', 3)
+    tg = page.evaluate('rikuy.refTargets("figure")[0]')
+    cmd(page, 'cross-reference', {'target': {'add': tg['add']}, 'form': 'ref', 'kind': 'figure'})
+    check('R1: after typing above it, the label goes right after the caption', '\\caption{Cat}\\label{fig:cat}' in src(page) and 'See\\ref{fig:cat} it.' in src(page), src(page)[40:200])
+    # R2: typing in a document with a list of figures and a starred heading stays on the fast path
+    load_doc(page, D('\\listoffigures\n\\section*{Pre}\nPlain words to type in.\n\n\\begin{figure}[h]\nX\\caption{C}\n\\end{figure}', '\\setcounter{tocdepth}{1}\n')); click_text(page, 'Plain', 2)
+    n0 = page.evaluate('window.rikuy.incr ? window.rikuy.incr.reused : null')
+    page.keyboard.type('xyz'); page.wait_for_timeout(300)
+    n1 = page.evaluate('window.rikuy.incr ? window.rikuy.incr.reused : null')
+    check('R2: typing beside a list of figures and a starred heading takes the fast path', n0 is not None and n1 > n0, (n0, n1))
+    # R3: the index's page numbers follow when its block is reused and the entry moves to page 2
+    ix = D('First words.\n\nAlpha\\index{alpha}.\n\n' + '\n\n'.join(['Filler paragraph that is long enough to take room on the page. ' * 3] * 2) + '\n\n\\printindex', '\\usepackage{imakeidx}\n\\makeindex\n')
+    load_doc(page, ix); page.wait_for_timeout(300)
+    p1 = texts(page, '.idx-e')
+    click_text(page, 'Alpha', 0); page.keyboard.press('Control+Enter'); page.wait_for_timeout(400)
+    p2 = texts(page, '.idx-e')
+    check('R3: an entry pushed to page 2 by a page break before it: the index says 2', p1 == ['alpha, 1'] and p2 == ['alpha, 2'], (p1, p2))
+
+SECTIONS = {'review': review, 'toc': toc, 'notes': notes, 'sources': sources, 'captions': captions, 'xrefs': xrefs, 'index': index, 'links': links}
 
 def main():
     want = sys.argv[1:]

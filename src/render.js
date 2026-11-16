@@ -547,7 +547,8 @@ export class Renderer {
       setDir(d, p.dir);
       const lab = { figure: 'Figure', table: 'Table' }[p.kind] || p.kind;
       // (\caption*: the words alone; beamer's: "Figure:" with no number)
-      if (!p.star) { d.appendChild(chr(lab + (p.num ? ' ' + p.num : '') + ': ', 'caplab')); d.dataset.cap = p.kind + ':' + (p.num || ''); }
+      if (p.kind === 'sub') d.appendChild(chr('(' + p.num + ') ', 'caplab'));
+      else if (!p.star) { d.appendChild(chr(lab + (p.num ? ' ' + p.num : '') + ': ', 'caplab')); d.dataset.cap = p.kind + ':' + (p.num || ''); }
       this.inl(p.inl, d);
       return d;
     }

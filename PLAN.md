@@ -2605,6 +2605,37 @@ Tests:
     `incremental.test.mjs` gains a references document (its long streams: 6400 edits the same).
     Ctrl+K left the insert list, whose title says `\` alone.
 
+47a. **B9 review: every finding of the hostile review of 25c4b9c fixed, each with its case as a
+    test.** Edit Source writes only a field the user changed, compared as the .bib holds it (a value
+    over several lines in a box that keeps its lines), text typed into an empty field alone escaped
+    and never inside math; a quoted value changed is written in braces, its `\"u` kept (H1, H2).
+    Insert Caption reads `\counterwithout` and writes the numbering only when it was changed, and
+    keeps a `\counterwithin` or `\numberwithin` where it stands (H3, M1); the Footnote and Endnote
+    dialog shows a document's own format and `\numberwithin` as its own and Apply with nothing
+    changed writes nothing (H4). A link over two paragraphs is refused (H5). natbib offers only
+    its own .bst, numbered ones with its `numbers` option set and taken off again (IEEEtranN for
+    IEEE), the page drawing them numbered (H6). Symbols past nine and letters past 26 footnotes
+    are refused with the reason unless they restart each page (H7). biblatex, natbib and their
+    resources are read from the files the preamble reads, so a project's .sty with biblatex gets
+    `\printbibliography` and nothing else (H8). The contents list `\part` and read a tocdepth set
+    in the body, and Show Levels edits that line (M2, M3); subcaptions are (a), (b), out of the list
+    of figures, and a figure with them takes its own caption (M4, L6); footmisc's perpage drawn,
+    each page's notes from 1 (M5); an entry another crossrefs is not deleted (M6); a short title or
+    a biblatex title holding a bracket goes in braces (M7); a .bib address keeps `#` and `%` bare,
+    as url.sty and biblatex read it, and an edited one keeps its address (M8, L4); the index's page
+    is the page of the words before each entry, entries after `\printindex` come from the build
+    before as TeX's .ind does, blocks found by halves (M9, L12); a field added to `@misc{k}` goes
+    inside it (L1); Ctrl+K is Link alone (L2); imakeidx goes above hyperref (L3); a caption goes
+    before a figure's lone `\label` (L5); converting leaves notes in headings and captions (L7);
+    tocbibind, KOMA-Script's `toc=`, memoir's unstarred lists and biblatex's `heading=bibintoc` put
+    their entries in the contents (L8); `@comment` counts its own brackets (L9); a report's
+    `\counterwithin{footnote}{chapter}` draws 1.1 (L10); a link's words changed keep its address's
+    bytes (L11). The rebase notes R1 to R3 hold with their tests (a label added after typing above
+    the figure lands after its caption; typing beside a list of figures stays on the fast path; a
+    reused index block's page numbers follow). Evidence: `bib.test.mjs` 63, `refs.py` 236 (24
+    review cases, four of them compiled: IEEE under natbib, biblatex from a .sty with biber, a short
+    title with a bracket, an edited url with `#` and a quoted accent).
+
 ## Open tasks
 
 60. **Tag the PDF.** LaTeX tags a PDF with `\DocumentMetadata{lang=..,pdfstandard=ua-2,tagging=on}`,

@@ -104,14 +104,19 @@ export function openCaptionDialog(app, at) {
   const taken = new Set(app.model.labels.keys());
   words.addEventListener('input', () => { if (!keyTyped) key.value = labelKey(T.kind === 'figure' ? 'fig:' : 'tab:', words.value, taken); });
   key.value = labelKey(T.kind === 'figure' ? 'fig:' : 'tab:', '', taken);
-  const within = (O.refs && O.refs.within && O.refs.within[T.kind]) || (ch ? 'chapter' : 'plain');
+  // (as the preamble numbers them now: \counterwithout in a report is 1, 2, 3; review H3)
+  const RR = O.refs || {};
+  const within = RR.reset && RR.reset[T.kind] === null ? 'plain' : (RR.within && RR.within[T.kind]) || (ch ? 'chapter' : 'plain');
   const num = select('cap-num', 'Numbering', [['plain', '1, 2, 3'], ...(ch ? [['chapter', '1.1, 1.2 (by chapter)']] : []), ['section', ch ? '1.1.1 (by section)' : '1.1, 1.2 (by section)']], within === 'section' || within === 'chapter' ? within : 'plain');
+  const num0 = num.value;
   const lc = check('cap-haslabel', 'A label to refer to it (Cross-reference finds it)', true);
   lc.c.addEventListener('change', () => { key.disabled = !lc.c.checked; });
   p.append(capRow, row('Position', pos), row('Numbering', num), lc.box, row('Label', key));
   p.append(mk('div', 'pop-note', T.mode === 'float' ? 'A \\caption and a \\label in this ' + T.kind + '.' : 'The ' + (T.kind === 'figure' ? 'picture' : 'table') + ' becomes a ' + T.kind + ' (\\begin{' + T.kind + '}[htbp], centred) with its caption.'));
   buttons(app, p, () => {
-    const args = { text: words.value, position: pos.value, label: lc.c.checked ? key.value.trim() : '', numbering: num.value };
+    // (the numbering written only where it was changed here)
+    const args = { text: words.value, position: pos.value, label: lc.c.checked ? key.value.trim() : '' };
+    if (num.value !== num0) args.numbering = num.value;
     return () => app.runCommand('insert-caption', args, back(app));
   });
   app.positionPop();
@@ -285,17 +290,24 @@ export function openNotesDialog(app) {
   keep(app);
   const p = dialog(app, { title: 'Footnote and Endnote', ...near(app, 'rc-footnote-options'), cls: 'pop-ps pop-refs' });
   const O = app.model.opts, R = O.refs || { fn: { style: 'arabic', start: 1, restart: 'continuous' } }, ch = !!O.chapters;
-  const style = select('fn-format', 'Number format', [['arabic', '1, 2, 3'], ['alph', 'a, b, c'], ['Alph', 'A, B, C'], ['roman', 'i, ii, iii'], ['Roman', 'I, II, III'], ['fnsymbol', '*, †, ‡']], R.fn.style === 'custom' ? 'arabic' : R.fn.style);
+  // (the document's own format and numbering shown as its own, and kept unless changed: review H4)
+  const style = select('fn-format', 'Number format', [...(R.fn.style === 'custom' ? [['custom', 'This document\'s own']] : []), ['arabic', '1, 2, 3'], ['alph', 'a, b, c'], ['Alph', 'A, B, C'], ['roman', 'i, ii, iii'], ['Roman', 'I, II, III'], ['fnsymbol', '*, †, ‡']], R.fn.style);
   const start = text('fn-start', String(R.fn.start || 1), { mode: 'numeric' });
   start.classList.add('ps-num');
-  const restart = select('fn-restart', 'Numbering', [['continuous', 'Continuous'], ch ? ['chapter', 'Restart each chapter'] : ['section', 'Restart each section'], ['page', 'Restart each page']], R.fn.restart);
+  const restart = select('fn-restart', 'Numbering', [['continuous', 'Continuous'], ch ? ['chapter', 'Restart each chapter'] : ['section', 'Restart each section'], ['page', 'Restart each page'],
+    ...(/^within-/.test(R.fn.restart) ? [[R.fn.restart, 'Within each ' + R.fn.restart.slice(7) + ': 1.1, 1.2']] : [])], R.fn.restart);
+  const s0 = style.value, st0 = String(R.fn.start || 1), r0 = restart.value;
   const conv = select('fn-convert', 'Convert', [['', 'Leave notes as they are'], ['en', 'Convert all footnotes to endnotes'], ['fn', 'Convert all endnotes to footnotes']], '');
   const sec = mk('fieldset', 'ps-sec'); sec.append(mk('legend', '', 'Footnote layout'), row('Number format', style), row('Start at', start), row('Numbering', restart));
   p.append(sec, row('Convert', conv));
   if (R.fn.style === 'custom') p.append(mk('div', 'pop-note', 'This document numbers its footnotes its own way (\\thefootnote): a format picked here replaces it.'));
   buttons(app, p, () => {
-    const o = { start: start.value, restart: restart.value, convert: conv.value || undefined };
-    if (style.value !== R.fn.style) o.style = style.value;
+    const o = {};
+    if (start.value.trim() !== st0) o.start = start.value;
+    if (restart.value !== r0) o.restart = restart.value;
+    if (style.value !== s0 && style.value !== 'custom') o.style = style.value;
+    if (conv.value) o.convert = conv.value;
+    if (!Object.keys(o).length) return;
     return () => app.runCommand('footnote-options', o, back(app));
   }, 'Apply');
   app.positionPop();
