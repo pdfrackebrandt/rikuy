@@ -16,6 +16,7 @@ import * as X from '../src/picture.js';
 import * as D from '../src/drawing.js';
 import * as T from '../src/table.js';
 import * as WT from '../src/wordtable.js';
+import { preambleFor } from '../src/charfmt.js';
 
 let n = 0;
 const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
@@ -195,6 +196,63 @@ ok('a stranger\'s document read in bounded time: thousands of fields and form fi
   // a field's options cannot reach an object's prototype
   assert.equal(FM.readField('TextField', '__proto__=x, constructor=y').kind, 'text');
   assert.equal({}.x, undefined);
+});
+
+ok('review of fc36bf5, H1 and L4: a Form read as TeX reads it (comments, nesting, two Forms); a tag moved only where it stays at the top level', () => {
+  const D = (b) => '\\documentclass{article}\n\\usepackage{hyperref}\n\\begin{document}\n' + b + '\n\\end{document}\n';
+  const at = (src, w) => src.indexOf(w);
+  // a Form inside center, the caret before it or after it: nothing moved, the reason said
+  const nb = D('Before words here.\n\n\\begin{center}\n\\begin{Form}\n\\TextField[name=a]{A}\n\\end{Form}\n\\end{center}');
+  assert.ok(FM.formEdits(nb, at(nb, 'Before')).error);
+  const na = D('\\begin{center}\n\\begin{Form}\n\\TextField[name=a]{A}\n\\end{Form}\n\\end{center}\n\nAfter words here.');
+  assert.ok(FM.formEdits(na, at(na, 'After')).error);
+  // a Form in a comment is no Form: one round the text, the comment as it was
+  const cm = D('% \\begin{Form} old draft \\end{Form}\nPlain words here.');
+  const c1 = apply(cm, FM.formEdits(cm, at(cm, 'Plain')));
+  assert.equal(c1, D('\\begin{Form}\n% \\begin{Form} old draft \\end{Form}\nPlain words here.\n\\end{Form}'));
+  // two Forms, the caret between: no Form inside another
+  const two = D('\\begin{Form}\n\\TextField[name=a]{A}\n\\end{Form}\n\nMiddle words here.\n\n\\begin{Form}\n\\TextField[name=b]{B}\n\\end{Form}');
+  assert.ok(FM.formEdits(two, at(two, 'Middle')).error);
+  assert.deepEqual(FM.formEdits(two, at(two, '\\TextField[name=b]') + 3), []);
+  // one Form at the top level, after the caret: its \begin moves to the text's start
+  const one = D('Before.\n\n\\begin{Form}\nIn it.\n\\end{Form}');
+  assert.equal(apply(one, FM.formEdits(one, at(one, 'Before'))), D('\\begin{Form}\nBefore.\n\nIn it.\n\\end{Form}'));
+  // verbatim is no Form either
+  const vb = D('\\begin{verbatim}\n\\begin{Form}\n\\end{verbatim}\nWords.');
+  assert.equal(FM.formScan(vb).forms.length, 0);
+  // L4: no line's end after \begin{document}, words before \end{document} on its line: inside the Form
+  const tight = '\\documentclass{article}\n\\begin{document}Words.\\end{document}\n';
+  assert.equal(apply(tight, FM.formEdits(tight, at(tight, 'Words'))), '\\documentclass{article}\n\\begin{document}\n\\begin{Form}\nWords.\n\\end{Form}\n\\end{document}\n');
+});
+
+ok('review H2: memoir gets titlingpage (it has no titlepage), read back, taken out, drawn as a page of its own', () => {
+  const src = '\\documentclass{memoir}\n\\title{Report}\n\\author{Ann}\n\\begin{document}\nText.\n\\end{document}\n';
+  const r = C.coverEdits(src, 'plain', { title: true, author: true }, 'memoir');
+  const one = apply(src, r.edits);
+  assert.ok(one.includes('\\begin{titlingpage}\n\\centering') && one.includes('\\end{titlingpage}\n') && !one.includes('{titlepage}'));
+  assert.deepEqual(r.packages, []);
+  assert.equal(C.coverDesign(one), 'plain');
+  assert.equal(apply(one, C.coverRemoveEdits(one)), src);
+  const M = buildModel({ main: 'm.tex', files: new Map([['m.tex', one]]) });
+  const items = M.blocks.flatMap((b) => b.items.map((i) => i.type));
+  assert.deepEqual(items.slice(0, 2), ['pagebreak', 'pagemark']);
+});
+
+ok('review M3: a Quick Part\'s ulem with normalem, and the Font group\'s own \\dsout, \\culine and \\hl defined as it defines them', () => {
+  const src = '\\documentclass{article}\n\\begin{document}\n\\emph{x}\n\\end{document}\n';
+  const pre = apply(src, preambleFor(src, Q.partNeeds('\\uline{under} \\hl{mark} \\dsout{gone} \\culine{red}{line}')));
+  assert.ok(pre.includes('\\usepackage[normalem]{ulem}') && pre.includes('\\usepackage{xcolor}'), pre);
+  for (const d of ['\\hl}', '\\dsout}', '\\culine}']) assert.ok(pre.includes('\\DeclareRobustCommand{' + d), d);
+  assert.ok(!Q.partPackages('\\uline{x}').includes('ulem'));
+});
+
+ok('review L5: a boxed table\'s alt line goes on the line above, not inside the box\'s argument', () => {
+  const s = 'x\n  \\resizebox{\\linewidth}{!}{\\begin{tabular}{l}\na \\\\\n\\end{tabular}}\n';
+  const at = (t) => T.tableAt(t, t.indexOf('a \\\\'), 0, t.length);
+  const one = apply(s, T.setTableAlt(s, at(s), 'Boxed').edits);
+  assert.equal(one, 'x\n  % alt: Boxed\n  \\resizebox{\\linewidth}{!}{\\begin{tabular}{l}\na \\\\\n\\end{tabular}}\n');
+  assert.equal(T.tableAlt(one, at(one)).text, 'Boxed');
+  assert.equal(apply(one, T.setTableAlt(one, at(one), '').edits), s);
 });
 
 console.log('objects: ' + n + ' groups passed');

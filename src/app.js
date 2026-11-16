@@ -1287,6 +1287,9 @@ class App {
     if (e.isComposing || t === 'insertCompositionText' || t === 'deleteCompositionText' || t === 'insertFromComposition') return;
     e.preventDefault();
     if (this.composing) return;
+    // (R3) words dragged out of the page are copied there: a move within the page is the page's
+    // own drop (src/cmd/move.js), so a deletion by drag only ever follows a drop elsewhere
+    if (t === 'deleteByDrag' || t === 'insertFromDrop') return;
     switch (t) {
       case 'insertText': case 'insertReplacementText': {
         let data = e.data;

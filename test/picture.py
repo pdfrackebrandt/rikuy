@@ -784,6 +784,53 @@ def r3_objects(page):
     check('a picture among words dragged before another word moves there', src(page) == WRAP('Alpha  beta \\includegraphics[height=1em]{a.png}gamma.'), body(page))
 
 
+def r3_review(page):
+    """The review of fc36bf5: H3 a wrapfigure taken out is no longer drawn, also before the text's first
+    paragraph; H4 a wrapped paragraph breaks across pages below its figure, never past a sheet; M5 a
+    figure taller than its paragraph goes on beside the next; M4 a figure taken from a paragraph's
+    middle leaves it one paragraph; L1 a picture dropped on a list goes before or after the whole list,
+    where the line is drawn."""
+    asset(page)
+    P2 = '\\usepackage{graphicx}\n\\usepackage{wrapfig}\n'
+    fig = '\\begin{wrapfigure}{r}{0.4\\linewidth}\n\\centering\n\\includegraphics[width=\\linewidth]{a.png}\n\\caption{FIGCAP}\n\\end{wrapfigure}\n'
+    D = WRAP(fig + 'Alpha words beside the figure. ' * 4 + '\n\nSecond paragraph here.', P2)
+    load_doc(page, D); page.wait_for_timeout(400)
+    s = src(page); a = s.index('\\begin{wrapfigure}'); e = s.index('\\end{wrapfigure}') + len('\\end{wrapfigure}') + 1
+    page.evaluate('([a, e]) => { const g = window.rikuy; g.commit([{ f: "main.tex", s: a, e, t: "" }], { f: "main.tex", p: a }); }', [a, e]); page.wait_for_timeout(400)
+    check('H3: a wrapfigure deleted before the first paragraph is no longer drawn in it', not page.evaluate("document.getElementById('pages').textContent.includes('FIGCAP') || !!document.querySelector('#pages .wrap-in, #pages .has-wrap')"))
+    long = ' '.join(['Lorem ipsum dolor sit amet consectetur adipiscing elit sed do.'] * 140)
+    D4 = WRAP('Intro paragraph.\n\n' + fig + long + '\n\nSecond paragraph here.', P2)
+    load_doc(page, D4); page.wait_for_timeout(800)
+    r = page.evaluate("""() => { const out = []; for (const pg of document.querySelectorAll('#pages .page')) { const pr = pg.getBoundingClientRect(); for (const it of pg.querySelectorAll('.it.p')) { const q = it.getBoundingClientRect(); out.push([Math.round(pr.top), Math.round(pr.bottom), Math.round(q.top), Math.round(q.bottom), it.textContent.slice(0, 12), !!it.querySelector('.wrap-in')]); } } return out; }""")
+    over = [x for x in r if x[3] > x[1] + 1]
+    first = [x for x in r if x[5]]
+    pieces = [x for x in r if 'Intro' not in x[4] and 'Second' not in x[4]]
+    check('H4: the wrapped paragraph starts on page 1 with its figure and goes on over the next pages; nothing runs past a sheet', not over and first and first[0][0] == r[0][0] and len(pieces) >= 2 and pieces[0][5], (over, r[:6]))
+    tall = '\\begin{wrapfigure}{r}{0.4\\textwidth}\n\\centering\\includegraphics[height=6cm]{a.png}\n\\end{wrapfigure}\n'
+    D5 = WRAP(tall + 'Short first paragraph beside the figure, two lines at most here.\n\n' + 'Second paragraph words flow on and on here. ' * 12, P2)
+    load_doc(page, D5); page.wait_for_timeout(600)
+    st = page.evaluate("""() => { const w = document.querySelector('#pages .wrap-in'), f = w.getBoundingClientRect(); const p2 = [...document.querySelectorAll('#pages .it.p')].find((x) => x.textContent.includes('Second paragraph')); const sp = p2.querySelector('span.t'); const q = sp.getClientRects()[0];
+      return { gap: Math.round(p2.getBoundingClientRect().top - w.parentElement.getBoundingClientRect().bottom), beside: q.right < f.left + 1 && q.top < f.bottom, ghost: !!p2.querySelector('.wrap-ghost') }; }""")
+    check('M5: a figure taller than its paragraph goes on beside the next one, no blank under the first', st['beside'] and st['ghost'] and st['gap'] < 20, st)
+    # M4: a figure from a paragraph's middle
+    D6 = WRAP('Joined part one\n\\begin{figure}[h]\n\\centering\n\\includegraphics[width=0.3\\linewidth]{a.png}\n\\end{figure}\njoined part two.\n\nBottom para.')
+    load_doc(page, D6); sel_pic()(page); page.wait_for_timeout(200)
+    a = page.evaluate("(() => { const r = document.querySelector('#pages .a-img').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()")
+    t = page.evaluate("(() => { const p = [...document.querySelectorAll('#pages .it.p')].find((x) => x.textContent.includes('Bottom para')); const r = p.getBoundingClientRect(); return [r.x + 30, r.y + r.height * 0.8]; })()")
+    page.mouse.move(a[0], a[1]); page.mouse.down(); page.mouse.move(a[0] + 20, a[1] + 20, steps=3); page.mouse.move(t[0], t[1], steps=6); page.mouse.up(); page.wait_for_timeout(400)
+    check('M4: a figure taken from a paragraph\'s middle leaves it one paragraph', 'Joined part one\njoined part two.' in src(page) and body(page).rstrip().endswith('\\end{figure}'), body(page))
+    # L1: dropped on a list's lower half: after the whole list, where the line is drawn
+    D7 = WRAP(CENTER() + '\n\n\\begin{itemize}\n\\item One\n\\item Two\n\\item Three\n\\end{itemize}\n\nLast.')
+    load_doc(page, D7); sel_pic()(page); page.wait_for_timeout(200)
+    a = page.evaluate("(() => { const r = document.querySelector('#pages .a-img').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()")
+    t = page.evaluate("(() => { const p = [...document.querySelectorAll('#pages .it')].find((x) => x.textContent.includes('Three')); const r = p.getBoundingClientRect(); return [r.x + 30, r.y + r.height * 0.7]; })()")
+    page.mouse.move(a[0], a[1]); page.mouse.down(); page.mouse.move(a[0] + 20, a[1] + 20, steps=3); page.mouse.move(t[0], t[1], steps=6)
+    line = page.evaluate("(() => { const m = document.querySelector('.move-mark').getBoundingClientRect(); const l = [...document.querySelectorAll('#pages .it')].find((x) => x.textContent.includes('Three')).getBoundingClientRect(); return Math.abs(m.top - l.bottom) < 3; })()")
+    page.mouse.up(); page.wait_for_timeout(400)
+    b = body(page)
+    check('L1: dropped on a list\'s last item, the picture goes after the whole list, where the line was drawn', line and b.index('\\end{itemize}') < b.index('\\begin{center}') < b.index('Last.'), (line, b))
+
+
 def r3_compiled(page):
     """With dist/tex: a picture with a red 1.5 pt border turned 30° by the handle, a moved drawing, a chart
     written again and a wrapfigure, on pdfLaTeX, XeLaTeX and LuaLaTeX; the turned box in the PDF as on the page."""
@@ -863,7 +910,7 @@ def run():
         browser, page, errors = open_page(p)
         asset(page)
         names = sys.argv[1:]
-        for f in (selecting, trips, sizing, tools, drawing, objects, reviewed, compiled, r3_objects, r3_compiled):
+        for f in (selecting, trips, sizing, tools, drawing, objects, reviewed, compiled, r3_objects, r3_review, r3_compiled):
             if names and f.__name__ not in names:
                 continue
             try: f(page)

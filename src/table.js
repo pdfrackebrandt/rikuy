@@ -2156,7 +2156,6 @@ export function deleteCells(src, T, rect, how) {
 const ALT_LINE = /^[ \t]*%[ \t]*alt:[ \t]?(.*)$/;
 export function tableAlt(src, T) {
   const ls = src.lastIndexOf('\n', T.s - 1) + 1;
-  if (src.slice(ls, T.s).trim()) return null;
   if (ls === 0) return null;
   const ps = src.lastIndexOf('\n', ls - 2) + 1;
   const line = src.slice(ps, ls - 1).replace(/\r$/, '');
@@ -2168,9 +2167,9 @@ export function setTableAlt(src, T, text) {
   const A = tableAlt(src, T);
   if (A) return { edits: [t ? { s: A.s + src.slice(A.s, A.e).indexOf(':') + 1, e: A.e - (src[A.e - 2] === '\r' ? 2 : 1), t: ' ' + t } : { s: A.s, e: A.e, t: '' }] };
   if (!t) return { edits: [] };
+  // (a line of its own above the table's line, as indented; above a \resizebox{…}{!}{\begin{tabular}
+  // too, where a line's end in the box's argument would be a space)
   const ls = src.lastIndexOf('\n', T.s - 1) + 1;
-  const indent = src.slice(ls, T.s);
-  // (a table that starts its line: the comment on a line of its own above it, as indented)
-  if (indent.trim()) return { edits: [{ s: T.s, e: T.s, t: T.eol + '% alt: ' + t + T.eol }] };
+  const indent = /^[ \t]*/.exec(src.slice(ls, T.s))[0];
   return { edits: [{ s: ls, e: ls, t: indent + '% alt: ' + t + T.eol }] };
 }

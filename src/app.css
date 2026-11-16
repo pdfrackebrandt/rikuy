@@ -2056,10 +2056,10 @@ html.pic-drag, html.pic-drag body { touch-action: none; overscroll-behavior: non
 .toc-l-1 .toc-d, .toc-l0 .toc-d { border: 0; }
 
 /* ---- R3: fields, form fields, Quick Parts, cover pages, shapes' points, a free turn, drag to move ---- */
-#pages .atom.a-form { white-space: nowrap; }
-#pages .a-form .ff { display: inline-block; vertical-align: -0.2em; height: 1.1em; min-width: 1.1em; box-sizing: border-box; border: 1px solid #3a6ea5; background: #e8f0fb; font-size: 0.85em; line-height: 1.2em; padding: 0 0.25em; overflow: hidden; text-overflow: ellipsis; color: #333; }
-#pages .ff-check .ff { width: 1.1em; padding: 0; text-align: center; }
-#pages .ff-combo .ff::after, #pages .ff-list .ff::after { content: '▾'; float: right; margin-left: 0.3em; color: #3a6ea5; }
+.atom.a-form { white-space: nowrap; }
+.a-form .ff { display: inline-block; vertical-align: -0.2em; height: 1.1em; min-width: 1.1em; box-sizing: border-box; border: 1px solid #3a6ea5; background: #e8f0fb; font-size: 0.85em; line-height: 1.2em; padding: 0 0.25em; overflow: hidden; text-overflow: ellipsis; color: #333; }
+.ff-check .ff { width: 1.1em; padding: 0; text-align: center; }
+.ff-combo .ff::after, .ff-list .ff::after { content: '▾'; float: right; margin-left: 0.3em; color: #3a6ea5; }
 .move-mark { position: fixed; z-index: 60; background: var(--accent, #2b6cb0); pointer-events: none; }
 #pages .atom.a-img.sel { touch-action: none; }
 html.pic-moving, html.pic-moving * { cursor: grabbing !important; }
@@ -2073,19 +2073,23 @@ html.pic-moving, html.pic-moving * { cursor: grabbing !important; }
 #pages .raw.drawn.sel { outline: 1px solid #2B74B0; outline-offset: 2px; }
 #pages .raw.drawn svg.tz, #pages .raw.drawn svg.pgf { cursor: pointer; }
 @media (pointer: coarse) { .shape-layer .shape-h { width: 14px; height: 14px; } .shape-layer .shape-h::before { content: ''; position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; translate: -50% -50%; } }
-#pages .it.p.has-wrap { display: flow-root; }
-#pages .it.flt-wrap.wrap-in { width: var(--wrapw); max-width: 60%; margin: calc(var(--pt) * 2px) 0 calc(var(--pt) * 6px) calc(var(--pt) * 10px); text-indent: 0; text-align: center; }
-#pages .it.flt-wrap.wrap-in.wrap-r { float: right; }
-#pages .it.flt-wrap.wrap-in.wrap-l { float: left; margin: calc(var(--pt) * 2px) calc(var(--pt) * 10px) calc(var(--pt) * 6px) 0; }
-#pages .it.flt-wrap.wrap-in > .fp, #pages .it.flt-wrap.wrap-in > .cap { width: 100%; }
+.it.p.has-wrap { display: flow-root; }
+.wrap-ghost { display: block; pointer-events: none; user-select: none; }
+.wrap-ghost.wrap-r { float: right; } .wrap-ghost.wrap-l { float: left; }
+.it.flt-wrap.wrap-in { width: var(--wrapw); max-width: 60%; margin: calc(var(--pt) * 2px) 0 calc(var(--pt) * 6px) calc(var(--pt) * 10px); text-indent: 0; text-align: center; }
+.it.flt-wrap.wrap-in.wrap-r { float: right; }
+.it.flt-wrap.wrap-in.wrap-l { float: left; margin: calc(var(--pt) * 2px) calc(var(--pt) * 10px) calc(var(--pt) * 6px) 0; }
+.it.flt-wrap.wrap-in > .fp, .it.flt-wrap.wrap-in > .cap { width: 100%; }
 /* (a size declared in a group, {\Huge\bfseries Title\par} as a cover page writes it: drawn at that
-   size, its lines as far apart as TeX's \baselineskip for it, about 1.2 of the size) */
-.y.y-z-tiny { font-size: calc(var(--z-tiny) * 1em); }
-.y.y-z-scriptsize { font-size: calc(var(--z-scriptsize) * 1em); }
-.y.y-z-footnotesize { font-size: calc(var(--z-footnotesize) * 1em); }
-.y.y-z-small { font-size: calc(var(--z-small) * 1em); }
-.y.y-z-large { font-size: calc(var(--z-large) * 1em); }
-.y.y-z-Large { font-size: calc(var(--z-Large) * 1em); line-height: 1.2; }
-.y.y-z-LARGE { font-size: calc(var(--z-LARGE) * 1em); line-height: 1.2; }
-.y.y-z-huge { font-size: calc(var(--z-huge) * 1em); line-height: 1.2; }
-.y.y-z-Huge { font-size: calc(var(--z-Huge) * 1em); line-height: 1.2; }
+   size, which TeX's are whatever stands round them (\small in a heading or a footnote is 9 pt in
+   10 pt type), its lines as far apart as TeX's \baselineskip for it, about 1.2 of the size) */
+.y.y-z-tiny { font-size: calc(var(--z-tiny) * var(--fs)); }
+.y.y-z-scriptsize { font-size: calc(var(--z-scriptsize) * var(--fs)); }
+.y.y-z-footnotesize { font-size: calc(var(--z-footnotesize) * var(--fs)); }
+.y.y-z-small { font-size: calc(var(--z-small) * var(--fs)); }
+.y.y-z-normalsize { font-size: var(--fs); }
+.y.y-z-large { font-size: calc(var(--z-large) * var(--fs)); }
+.y.y-z-Large { font-size: calc(var(--z-Large) * var(--fs)); line-height: 1.2; }
+.y.y-z-LARGE { font-size: calc(var(--z-LARGE) * var(--fs)); line-height: 1.2; }
+.y.y-z-huge { font-size: calc(var(--z-huge) * var(--fs)); line-height: 1.2; }
+.y.y-z-Huge { font-size: calc(var(--z-Huge) * var(--fs)); line-height: 1.2; }

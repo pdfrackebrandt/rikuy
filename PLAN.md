@@ -2767,6 +2767,33 @@ Tests:
     hand against its client side, injection and resource classes (notes outside the repository):
     no finding; a form field's options are read into an object with no prototype, and the bounded
     time of a stranger's document is a test.
+    *Review* (a fresh hostile reviewer of fc36bf5: 4 high, 6 medium, 7 low; each fixed with its case
+    as a test, compiled in the page where TeX is the judge, but L7): H1 Form Fields read the body's
+    environments as TeX does (`formScan`: comments and verbatim skipped, nesting counted) and move a
+    Form's tag only where it is the only Form and both its tags stand at the text's top level;
+    otherwise the field goes in where the caret is and a toast says why (the four documents of the
+    review compile); H2 memoir gets `titlingpage`, which Rikuy reads back and draws as a page of its
+    own; H3 a pair whose figure went parts also when its paragraph is the first item; H4 a wrapped
+    paragraph is cut across pages below its figure (its lines beside the figure count as one), never
+    placed taller than a sheet. The wrap's styles and the form fields' boxes now hold in the measuring
+    flow too (they were scoped to `#pages`, so the page had measured a wrapped paragraph without its
+    float). M1 a deletion by drag (words dropped in a box of the interface, another tab or program) is
+    ignored: they are copied there; M2 a size declared in a group is TeX's absolute size (`--fs`),
+    `\normalsize` too; M3 a Quick Part's packages and definitions go through the Font group's
+    `preambleFor` (ulem with normalem, `\dsout`, `\culine`, `\hl` defined once); M4 a figure
+    taken from a paragraph's middle leaves one paragraph; M5 a figure taller than its paragraph goes
+    on beside the next ones (`wrapGhosts`: an empty float of what is left, measured with them); M6
+    words dragged out of `\textbf` (any wrapper) keep it where they go and take the space before
+    the brace. L1 a picture dropped on a list goes before or after the whole list, the line drawn
+    there; L2 a moved word next to a formula gets its space (a drop from another page is not spaced);
+    L3 Cover Page asks before it replaces a hand written title page (`{replace: true}` for agents); L4
+    the Form's end goes after the words on `\end{document}`'s line, and a body with no line's end
+    after `\begin{document}` gets its Form; L5 a boxed table's alt line goes on the line above the
+    box; L6 Firefox's `caretPositionFromPoint`. Not done: L7, wrapfig's `i` and `o` on two sided pages
+    (the side depends on the page the figure lands on, which the model does not know: drawn as one
+    sided). Evidence: `objects.test.mjs` 13 groups (4 new), `test/picture.py` r3_review 6 new,
+    `test/insert.py` r3_review 8 and r3_review_compiles 7 new (memoir, the four Form documents, the
+    Quick Part, each compiled in the page).
 
 ## Open tasks
 

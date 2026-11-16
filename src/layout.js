@@ -220,16 +220,25 @@ export class Layout {
 
   // Measure items (and their footnotes) that lack metrics.
   // (R3) A wrapfigure and the paragraph after it, as wrapfig sets them: the figure at the side of
-  // the paragraph's first lines and the words beside it (a CSS float in the paragraph), the two
-  // measured as one item that moves to a page whole. Returns the items to lay out (the figure is
-  // in its paragraph's); pairs that no longer stand (the figure gone, a paragraph changed) part.
+  // the paragraph's first lines and the words beside it (a CSS float in the paragraph, measured
+  // with it), the paragraph cut across pages only below the figure. A figure taller than its
+  // paragraph goes on beside the paragraphs after it, as wrapfig's line count does: each gets an
+  // empty float of what is left (wrapGhosts). Returns the items to lay out (the figure is in its
+  // paragraph's); pairs that no longer stand (the figure gone, a paragraph changed) part.
   wrapPairs(items) {
+    const unpair = (P) => {
+      if (P.wrapOf && P.wrapOf.el.parentNode === P.el) P.wrapOf.el.remove();
+      P.wrapOf = null; P.wrapFloat = null; P.overhang = 0; P.measured = false; P.pieces = null;
+      P.el.classList.remove('has-wrap'); P.el.style.height = '';
+    };
+    // (every item first, the first of all too: a pair whose figure went parts)
+    items.forEach((P, k) => { if (P.wrapOf && P.wrapOf !== items[k - 1]) unpair(P); });
     const out = [];
     for (let i = 0; i < items.length; i++) {
       const W = items[i], P = items[i + 1];
       if (W.wrapIn && W.wrapIn !== P) W.wrapIn = null;
-      if (P && P.wrapOf && P.wrapOf !== W) { if (P.wrapOf.el.parentNode === P.el) P.wrapOf.el.remove(); P.wrapOf = null; P.measured = false; P.el.classList.remove('has-wrap'); }
       if (W.wrapSide && P && P.kind === 'p' && !P.isFloat && this.colsOf(P) === 1 && this.colsOf(W) === 1) {
+        if (P.ghost) this.setGhost(P, null);
         if (W.el.parentNode !== P.el || P.el.firstChild !== W.el) {
           W.el.classList.add('wrap-in', 'wrap-' + W.wrapSide);
           W.el.style.marginTop = '';
@@ -237,21 +246,95 @@ export class Layout {
           P.el.classList.add('has-wrap');
           P.measured = false; P.pieces = null;
         }
-        P.wrapOf = W; W.wrapIn = P;
-        out.push(W.el === P.el.firstChild ? null : W);
+        P.wrapOf = W; P.wrapFloat = W.el; W.wrapIn = P;
         continue;
       }
       if (W.wrapSide && W.el.classList.contains('wrap-in')) { W.el.classList.remove('wrap-in', 'wrap-l', 'wrap-r'); W.measured = false; }
       out.push(W);
     }
-    return out.filter(Boolean);
+    return out;
+  }
+  // an item's empty float of h px at a side, w px wide (null: none), measured again when it changes
+  setGhost(Q, g) {
+    const key = g ? g.side + ':' + Math.round(g.w) + ':' + Math.round(g.h) : '';
+    if ((Q.ghostKey || '') === key) return false;
+    if (Q.ghost) { Q.ghost.remove(); Q.ghost = null; }
+    Q.ghostKey = key; Q.wrapFloat = null; Q.overhang = 0;
+    Q.el.classList.remove('has-wrap'); Q.el.style.height = '';
+    if (g) {
+      const e = document.createElement('span');
+      e.className = 'wrap-ghost wrap-' + g.side;
+      e.contentEditable = 'false';
+      e.setAttribute('aria-hidden', 'true');
+      e.style.width = Math.round(g.w) + 'px'; e.style.height = Math.round(g.h) + 'px';
+      Q.el.prepend(e);
+      Q.el.classList.add('has-wrap');
+      Q.ghost = e; Q.wrapFloat = e;
+    }
+    Q.measured = false; Q.pieces = null;
+    return true;
+  }
+  // A wrapped item measured: its lines beside the float are one (a cut goes below the float, the
+  // float with the first piece); where the float reaches below its words, the item ends with its
+  // words and the rest of the float is left over for the items after it (overhang, in px)
+  wrapMeasure(it, r) {
+    const F = it.wrapFloat;
+    if (!F || F.parentNode !== it.el) { it.overhang = 0; return; }
+    const fr = F.getBoundingClientRect(), mb = parseFloat(getComputedStyle(F).marginBottom) || 0;
+    const fb = fr.bottom + mb - r.top;
+    // the words' bottom: every text of the item but the float's
+    let tb = 0;
+    const rg = document.createRange(), tw = document.createTreeWalker(it.el, NodeFilter.SHOW_TEXT);
+    for (let n; (n = tw.nextNode());) {
+      if (F.contains(n) || !n.data.trim()) continue;
+      rg.selectNodeContents(n);
+      for (const q of rg.getClientRects()) if (q.height > 0) tb = Math.max(tb, q.bottom - r.top);
+    }
+    if (fb > tb + 1) {
+      it.el.style.height = Math.max(1, tb).toFixed(2) + 'px';
+      it.h = it.el.getBoundingClientRect().height;
+      it.lines = null;
+      it.overhang = fb - it.h;
+      it.wrapW = fr.width + (parseFloat(getComputedStyle(F).marginLeft) || 0) + (parseFloat(getComputedStyle(F).marginRight) || 0);
+      it.wrapSideOf = F.classList.contains('wrap-l') ? 'l' : 'r';
+      return;
+    }
+    it.overhang = 0;
+    if (it.lines) {
+      const below = it.lines.filter((l) => l.t >= fb - 0.5);
+      it.lines = below.length ? [{ t: 0, b: below[0].t }, ...below] : null;
+      if (it.lines && it.lines.length < 2) it.lines = null;
+    }
+  }
+  // the floats left over, beside the paragraphs after a wrapped one (a few, while one is left)
+  wrapGhosts(items) {
+    const want = new Map();
+    for (let k = 0; k < items.length; k++) {
+      const P = items[k];
+      if (!P.wrapOf || !(P.overhang > 1)) continue;
+      let left = P.overhang;
+      for (let j = k + 1; j < items.length && j <= k + 8 && left > 1; j++) {
+        const Q = items[j];
+        if (Q.kind !== 'p' || Q.isFloat || Q.wrapOf || this.colsOf(Q) !== 1) break;
+        const h = left - (Q.sb || 0);
+        if (h <= 1) break;
+        const g = { h, w: P.wrapW, side: P.wrapSideOf };
+        want.set(Q, g);
+        this.setGhost(Q, g);
+        if (!Q.measured) this.measure([Q], [], true);
+        // (what is left of the float under this paragraph's words, for the next)
+        left = Q.overhang > 1 ? Q.overhang : 0;
+      }
+    }
+    for (const it of items) if (it.ghost && !want.has(it)) { this.setGhost(it, null); this.measure([it], [], true); }
   }
 
-  measure(items, fns) {
+  measure(items, fns, inner) {
     const host = this.host;
     const todo = items.filter((it) => !it.measured);
     const fnTodo = fns.filter((f) => !f.measured);
-    if (!todo.length && !fnTodo.length) return;
+    if (!todo.length && !fnTodo.length) { if (!inner) this.wrapGhosts(items); return; }
+    for (const it of todo) if (it.wrapFloat) it.el.style.height = '';
     const frags = new Map();
     for (const it of todo) {
       it.el.style.marginTop = '';
@@ -267,8 +350,8 @@ export class Layout {
       const r = it.el.getBoundingClientRect();
       it.h = r.height;
       it.lines = it.rowSplit ? rowBoxes(it.el, r.top, r.height) : it.splittable ? lineBoxes(it.el, r.top, r.height) : null;
-      // (a paragraph with a wrapped figure in it moves to a page whole)
-      if (it.wrapOf) it.lines = null;
+      // (a paragraph with a wrapped figure in it: cut below the figure only)
+      if (it.wrapFloat) this.wrapMeasure(it, r);
       if (it.lines && it.lines.length < 2) it.lines = null;
       it.fnLine = [];
       if (it.fnIdx && it.fnIdx.length) {
@@ -290,6 +373,7 @@ export class Layout {
       for (const im of it.el.querySelectorAll('img')) if (!im.complete) (it.late || (it.late = new Set())).add(im);
     }
     for (const f of fnTodo) { f.h = f.el.getBoundingClientRect().height + 1; f.measured = true; }
+    if (!inner) this.wrapGhosts(items);
   }
 
   // Items whose size changed after they were placed (a live figure that asked for a height):

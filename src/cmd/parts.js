@@ -8,8 +8,9 @@ import { openMenu, dialog } from '../ui/kit.js';
 import { mk } from '../ui/dom.js';
 import { COVERS, coverEdits, coverRemoveEdits, coverAt, coverDesign } from '../cover.js';
 import { FIELDS, propertyTex } from '../fields.js';
-import { readParts, partName, partPackages, partIsBlock, wholeGroups, MAX_PARTS, MAX_TEXT } from '../quickparts.js';
-import { CONTROLS, controlTex, formEnv } from '../forms.js';
+import { readParts, partName, partNeeds, partIsBlock, wholeGroups, MAX_PARTS, MAX_TEXT } from '../quickparts.js';
+import { preambleFor } from '../charfmt.js';
+import { CONTROLS, controlTex, formEdits } from '../forms.js';
 import { hasPackage } from '../preamble.js';
 
 export const methods = {};
@@ -39,7 +40,7 @@ register(
     title: 'Cover Page: a page of its own before the text with the title, the author and the date (titlepage); a new design takes the old one\'s place',
     synonyms: ['Title page', 'titlepage', 'Front page', 'Cover'],
     when: (app) => !!app.model && !app.stale && cls(app) !== 'beamer', whyNot: (app) => (cls(app) === 'beamer' ? 'A presentation\'s title page is a frame of its own (\\titlepage in a frame).' : 'Open a document first.'),
-    run: (app, args) => (args && args.design ? app.coverPage(args.design) : app.coverMenu()),
+    run: (app, args) => (args && args.design ? app.coverPage(args.design, !!args.replace) : app.coverMenu()),
     menuItems: (app) => app.coverItems() },
   { id: 'cover-page-remove', name: 'Remove Current Cover Page', title: 'Take the cover page out (the titlepage the text starts with)', synonyms: ['Delete cover page', 'Remove title page'],
     when: (app) => !!app.model && !app.stale && !!coverHere(app), whyNot: () => 'The document has no cover page (a titlepage first in its text).', run: (app) => app.coverRemove() }
@@ -51,9 +52,11 @@ Object.assign(methods, {
       { name: 'Remove Current Cover Page', title: 'Take the cover page out', disabled: !now, command: 'cover-page-remove' }];
   },
   coverMenu() { return menuOf(this, 'cover-page', 'Cover Page'); },
-  coverPage(id) {
+  coverPage(id, replace) {
     if (!COVERS.some((x) => x[0] === id)) return false;
     const f = this.main, src = this.src(f);
+    // (a title page of the document's own, its logos and all: asked first, as Word asks)
+    if (!replace && coverDesign(src) === 'own') { this.toast('The text starts with a title page of its own.', 8000, { label: 'Replace it', fn: () => this.coverPage(id, true) }); return false; }
     const r = coverEdits(src, id, props(this), cls(this));
     if (r.error) { this.toast(r.error, 6000); return false; }
     const pk = r.packages.length ? this.packageEdits(r.packages) : [];
@@ -186,16 +189,17 @@ Object.assign(methods, {
   quickPartInsert(name) {
     const x = this.quickParts().find((q) => q.name === name);
     if (!x) { this.toast('No Quick Part has that name.'); return false; }
-    const pk = partPackages(x.tex, cls(this));
+    const needs = partNeeds(x.tex, cls(this));
     // (url: unless hyperref, url or xurl gives \url already)
-    if (/\\url\s*\{/.test(x.tex) && !['hyperref', 'url', 'xurl'].some((n) => hasPackage(mainSrc(this), n, undefined, this.preambleOthers()))) pk.push('url');
+    if (/\\url\s*\{/.test(x.tex) && !['hyperref', 'url', 'xurl'].some((n) => hasPackage(mainSrc(this), n, undefined, this.preambleOthers()))) needs.push({ pkgs: { url: null } });
+    // (packages with the Font group's options, its definitions once: src/charfmt.js)
+    const ed = preambleFor(mainSrc(this), needs, { others: this.preambleOthers() }).map((y) => ({ f: this.main, ...y }));
     const c = this.caretNow();
     const T = c && !c.ghost ? this.texHere() : null;
-    if (!partIsBlock(x.tex) || (T && T.f === c.f)) return this.insertTeX(x.tex, pk);
+    if (!partIsBlock(x.tex) || (T && T.f === c.f)) return this.insertTeX(x.tex, { edits: ed });
     const { f, p, pre, post } = this.afterBlockPos();
     const nl = /\r\n/.test(this.src(f).slice(0, 4000)) ? '\r\n' : '\n';
     const body = x.tex.replace(/\r?\n/g, nl);
-    const ed = pk.length ? this.packageEdits(pk) : [];
     const shift = ed.filter((y) => y.f === f && y.s <= p).reduce((n, y) => n + y.t.length - (y.e - y.s), 0);
     this.closeGroup();
     this.removeGhost();
@@ -266,7 +270,9 @@ Object.assign(methods, {
     const t = controlTex(kind, all, { label: o.label, items: o.items, escape: (x) => this.escapeAt(f, p, x) });
     if (!t) return false;
     const edits = [{ f, s: p, e: p, t }];
-    edits.push(...this.formEdits(msrc, f === main ? p : null).map((x) => ({ f: main, ...x })));
+    const fe = formEdits(msrc, f === main ? p : null);
+    if (fe.error) this.toast(fe.error, 8000);
+    else edits.push(...fe.map((x) => ({ f: main, ...x })));
     edits.push(...this.packageEdits(['hyperref']));
     // (the caret after the field: the edits before it in its file move it)
     const mine = edits.filter((x) => x.f === f);
@@ -278,24 +284,5 @@ Object.assign(methods, {
     this.commit(edits, { f, p: caret, bias: -1 }, 'insert');
     this.closeGroup();
     return true;
-  },
-  // the edits that put the place at (in the main file, or null for another file) inside the Form
-  formEdits(src, at) {
-    const b = /\\begin\s*\{document\}/.exec(src), d = /\\end\s*\{document\}/.exec(src);
-    if (!b) return [];
-    const eol = /\r\n/.test(src.slice(0, 4000)) ? '\r\n' : '\n';
-    let open = b.index + b[0].length;
-    if (src[open] === '\r') open++;
-    if (src[open] === '\n') open++; else return [];
-    const close = d ? src.lastIndexOf('\n', d.index) + 1 : src.length;
-    const F = formEnv(src.slice(0, d ? d.index : src.length));
-    if (!F) return [{ s: open, e: open, t: '\\begin{Form}' + eol }, { s: close, e: close, t: '\\end{Form}' + eol }];
-    if (at == null || (at >= F.inner && at <= F.e - '\\end{Form}'.length)) return [];
-    // (the place outside it: the Form grows to the whole text, its tags moved, their lines with them)
-    const line = (s, e) => { let a = s, z = e; while (a > 0 && (src[a - 1] === ' ' || src[a - 1] === '\t')) a--; while (z < src.length && (src[z] === ' ' || src[z] === '\t')) z++; if ((a === 0 || src[a - 1] === '\n') && (src[z] === '\n' || src.slice(z, z + 2) === '\r\n')) return { s: a, e: z + (src[z] === '\r' ? 2 : 1) }; return { s, e }; };
-    const out = [];
-    if (at < F.s) { out.push({ s: open, e: open, t: '\\begin{Form}' + eol }, { ...line(F.s, F.inner), t: '' }); }
-    else { const e0 = F.e - '\\end{Form}'.length; out.push({ ...line(e0, F.e), t: '' }, { s: close, e: close, t: '\\end{Form}' + eol }); }
-    return out;
   }
 });

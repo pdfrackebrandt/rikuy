@@ -32,10 +32,10 @@ export function coverAt(src) {
     if (src[i] === '%') { const nl = src.indexOf('\n', i); i = nl < 0 ? src.length : nl + 1; continue; }
     break;
   }
-  const m = /^\\begin\s*\{titlepage\}/.exec(src.slice(i, i + 40));
+  const m = /^\\begin\s*\{(titlepage|titlingpage)\}/.exec(src.slice(i, i + 40));
   if (!m) return null;
-  // its end, the first \end{titlepage} not in a comment (titlepage does not nest)
-  const re = /\\end\s*\{titlepage\}|%[^\n]*/g;
+  // its end, the first \end of its name not in a comment (neither nests)
+  const re = new RegExp('\\\\end\\s*\\{' + m[1] + '\\}|%[^\\n]*', 'g');
   re.lastIndex = i + m[0].length;
   let x;
   while ((x = re.exec(src))) {
@@ -43,7 +43,7 @@ export function coverAt(src) {
     let e = x.index + x[0].length;
     if (src[e] === '\r') e++;
     if (src[e] === '\n') e++;
-    return { s: i, e };
+    return { s: i, e, env: m[1] };
   }
   return null;
 }
@@ -62,7 +62,9 @@ export function coverTex(id, props = {}, cls = '', eol = '\n') {
   // (the date: \date's, else the day the PDF is made, as \maketitle prints it)
   const T = field('title', 'Document title'), A = field('author', 'Author name');
   const D = props.title || props.author || props.date ? field('date', '\\today{}') : '\\today{}';
-  return { text: ['\\begin{titlepage}', ...make(T, A, D), '\\end{titlepage}'].join(eol) + eol, packages: [...pk] };
+  // (memoir has no titlepage environment: its titlingpage is the same page)
+  const env = cls === 'memoir' ? 'titlingpage' : 'titlepage';
+  return { text: ['\\begin{' + env + '}', ...make(T, A, D), '\\end{' + env + '}'].join(eol) + eol, packages: [...pk] };
 }
 
 // The edits that put a design in: in place of the cover page there is, else right after

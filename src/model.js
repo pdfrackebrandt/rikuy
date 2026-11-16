@@ -2160,7 +2160,7 @@ class Builder {
       }
       return [...pre, ...list];
     }
-    if (/^(small|footnotesize|scriptsize|large|Large|minipage|landscape|appendices|otherlanguage\*?|titlepage|multicols\*?|adjustbox|threeparttable|tablenotes|acknowledgments|acknowledgements|Form)$/.test(name)) {
+    if (/^(small|footnotesize|scriptsize|large|Large|minipage|landscape|appendices|otherlanguage\*?|titlepage|titlingpage|multicols\*?|adjustbox|threeparttable|tablenotes|acknowledgments|acknowledgements|Form)$/.test(name)) {
       const ex = /^(small|footnotesize|scriptsize|large|Large)$/.test(name) ? { cls: (env.cls || '') + ' z-' + name } : name === 'minipage' ? { ...FLUSH, flushAll: true } : {};
       if (name === 'appendices') { this.appendix = true; if (this.opts.chapters) this.c.chapter = 0; else this.c.section = 0; }
       if (name === 'acknowledgments' || name === 'acknowledgements') {
@@ -2175,7 +2175,7 @@ class Builder {
       try { r = this.container(nd, ctx, env, ex); } finally { this.box = wasBox; }
       // (R3) a cover page (titlepage, Insert › Cover Page): a page of its own with no number, as
       // the classes' titlepage sets it; the text after it starts on page 1 in a one sided document
-      if (name === 'titlepage' && r && env.top) {
+      if ((name === 'titlepage' || name === 'titlingpage') && r && env.top) {
         r.items.unshift({ type: 'pagebreak', column: false }, { type: 'pagemark', mark: { thisStyle: 'empty' } }, { type: 'pagemark', mark: { page: 1 } });
         r.items.push({ type: 'pagebreak', column: false });
         if (!this.opts.twoside) r.items.push({ type: 'pagemark', mark: { page: 1 } });

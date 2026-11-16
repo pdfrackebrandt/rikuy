@@ -783,6 +783,39 @@ def r3_phones(p):
         browser.close()
 
 
+def r3_review_compiles(page):
+    """With dist/tex, the review's cases compiled: a memoir cover page (titlingpage), the four Form documents
+    with a field written by Form Fields, a Quick Part of ulem's line and the highlighter put in a document
+    that uses \\emph (normalem: \\emph stays italic, no line)."""
+    if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        print('SKIP the R3 review\'s compiles: no TeX tree in %s' % DIST)
+        return
+    def comp():
+        page.set_default_timeout(600000)
+        r = page.evaluate("""async () => { const r = await window.rikuy.api.compile(); return { ok: r.ok, problems: (r.problems || []).filter((x) => x.severity === 'error').map((x) => x.message).slice(0, 3) }; }""")
+        page.set_default_timeout(30000)
+        return r
+    load_doc(page, '\\documentclass{memoir}\n\\title{Report}\n\\author{Ann}\n\\begin{document}\nHello world.\n\\end{document}\n'); click_text(page, 'Hello', 2)
+    run_cmd(page, 'cover-page', {'design': 'sideline'}); page.wait_for_timeout(200)
+    r = comp()
+    check('H2: a memoir cover page is a titlingpage, and it compiles', '\\begin{titlingpage}' in src(page) and r['ok'] and not r['problems'], r)
+    D = lambda b: '\\documentclass{article}\n\\usepackage{hyperref}\n\\begin{document}\n' + b + '\n\\end{document}\n'
+    cases = {'nested_before': (D('Before words here.\n\n\\begin{center}\n\\begin{Form}\n\\TextField[name=a]{A}\n\\end{Form}\n\\end{center}'), 'Before'),
+             'nested_after': (D('\\begin{center}\n\\begin{Form}\n\\TextField[name=a]{A}\n\\end{Form}\n\\end{center}\n\nAfter words here.'), 'After'),
+             'commented_form': (D('% \\begin{Form} old draft \\end{Form}\nPlain words here.'), 'Plain'),
+             'two_forms': (D('\\begin{Form}\n\\TextField[name=a]{A}\n\\end{Form}\n\nMiddle words here.\n\n\\begin{Form}\n\\TextField[name=b]{B}\n\\end{Form}'), 'Middle')}
+    for name, (doc, w) in cases.items():
+        load_doc(page, doc); click_text(page, w, 3)
+        run_cmd(page, 'form-text'); page.wait_for_timeout(200)
+        r = comp()
+        check('H1: Form Fields in %s, and it compiles (no Form inside another, no comment changed)' % name, r['ok'] and not r['problems'] and src(page).count('\\begin{Form}') == doc.count('\\begin{Form}') + (1 if name == 'commented_form' else 0) and ('% \\begin{Form} old draft \\end{Form}' in src(page) or name != 'commented_form'), (r, src(page)[60:400]))
+    load_doc(page, W('Some \\emph{stress} here.')); click_text(page, 'here', 4)
+    page.evaluate("window.rikuy.prefs.quickParts = [{ name: 'Marked', tex: '\\\\uline{under} \\\\hl{mark} \\\\dsout{gone}' }]; window.rikuy.savePrefs()")
+    run_cmd(page, 'quick-part-insert', {'name': 'Marked'}); page.wait_for_timeout(200)
+    r = comp()
+    check('M3: a Quick Part of \\uline, \\hl and \\dsout in another document: ulem with normalem, the definitions once, and it compiles', '\\usepackage[normalem]{ulem}' in src(page) and '\\DeclareRobustCommand{\\hl}' in src(page) and '\\DeclareRobustCommand{\\dsout}' in src(page) and r['ok'] and not r['problems'], (r, src(page)[:400]))
+
+
 def r3_compiles(page):
     """With dist/tex: a cover page, every field, every form field and a Quick Part compile with pdfLaTeX,
     XeLaTeX and LuaLaTeX; the PDF prints the title, the pages' numbers and holds the fields."""
@@ -814,7 +847,47 @@ def r3_compiles(page):
               r['ok'] and not r['problems'] and r['engine'] == eng and 'Report' in txt and 'main' in txt and fields == ['check1', 'combo1', 'date1', 'list1', 'text1'], {'ok': r['ok'], 'problems': r['problems'], 'fields': fields, 'text': txt[:200]})
 
 
-EXTRA = [clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles, r3_fields, r3_quickparts, r3_cover, r3_forms, r3_move, r3_compiles]
+def r3_review(page):
+    """The review of fc36bf5: M1 words dragged into a box of the interface are copied there, the page
+    keeps them; M6 words dragged out of \\textbf stay bold and leave no space before its brace; L2 a space
+    between a moved word and a formula; L3 Cover Page asks before it takes a hand written title page's
+    place; M2 a size declared in a group is TeX's size wherever it stands; H1 a field before a Form inside
+    another environment goes in with no Form moved, and says why."""
+    D = W('Start alpha beta gamma end.\n\nOther \\textbf{bold one two} end.\n\nMath here $x+y=z$ done.')
+    load_doc(page, D); page.wait_for_timeout(300)
+    place_sel(page, ('alpha', 'beta'))
+    x = word_box(page, 'alpha'); t = page.locator('#rk-search').bounding_box()
+    page.mouse.move(x[0] + 4, x[1] + x[3] / 2); page.mouse.down(); page.mouse.move(x[0] + 30, x[1] + 30, steps=4); page.mouse.move(t['x'] + 20, t['y'] + t['height'] / 2, steps=6); page.mouse.up(); page.wait_for_timeout(400)
+    check('M1: words dragged into the search box are copied there; the page keeps them', src(page) == D, src(page)[40:120])
+    load_doc(page, D); page.wait_for_timeout(200)
+    place_sel(page, ('one', 'two'))
+    a = word_box(page, 'one'); y = word_box(page, 'Start')
+    page.mouse.move(a[0] + 3, a[1] + a[3] / 2); page.mouse.down(); page.mouse.move(a[0] + 30, a[1] + 30, steps=4); page.mouse.move(y[0] + 1, y[1] + y[3] / 2, steps=6); page.mouse.up(); page.wait_for_timeout(400)
+    check('M6: words dragged out of \\textbf stay bold where they go, and \\textbf{bold} keeps no space before its brace', src(page) == D.replace('Start alpha', '\\textbf{one two} Start alpha').replace('\\textbf{bold one two}', '\\textbf{bold}'), src(page)[40:200])
+    load_doc(page, D); page.wait_for_timeout(200)
+    select_text(page, 'gamma')
+    g = word_box(page, 'gamma'); m = page.evaluate("(() => { const e = document.querySelector('#pages .a-math'); const r = e.getBoundingClientRect(); return [r.x + 1, r.y + r.height / 2]; })()")
+    page.mouse.move(g[0] + 4, g[1] + g[3] / 2); page.mouse.down(); page.mouse.move(g[0] + 30, g[1] + 30, steps=4); page.mouse.move(m[0], m[1], steps=6); page.mouse.up(); page.wait_for_timeout(400)
+    check('L2: a word dropped before a formula gets a space between', 'here gamma $x+y=z$' in src(page), src(page)[40:220])
+    # L3: a hand written title page first: asked, then replaced
+    own = R3DOC.replace('\\begin{document}\n', '\\begin{document}\n\\begin{titlepage}\nMy logo and words.\n\\end{titlepage}\n')
+    load_doc(page, own); click_text(page, 'Hello', 2)
+    run_cmd(page, 'cover-page', {'design': 'plain'}); page.wait_for_timeout(200)
+    asked = src(page) == own and 'title page of its own' in page.evaluate("document.getElementById('toast').textContent")
+    run_cmd(page, 'cover-page', {'design': 'plain', 'replace': True}); page.wait_for_timeout(200)
+    check('L3: Cover Page on a hand written title page asks first; Replace it writes the design in its place', asked and 'My logo' not in src(page) and src(page).count('\\begin{titlepage}') == 1)
+    # M2: sizes are TeX's, absolute
+    load_doc(page, W('\\section{Head {\\small x}}\n{\\Large A {\\normalsize y}} and {\\small\\Large z}.\\footnote{{\\Large w}}'))
+    page.wait_for_timeout(400)
+    fs = page.evaluate("""(() => { const pt = parseFloat(getComputedStyle(document.querySelector('#pages .page')).getPropertyValue('--pt')); const size = (t) => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.trim() === t); return s ? Math.round(parseFloat(getComputedStyle(s).fontSize) / pt * 10) / 10 : null; }; return [size('x'), size('y'), size('z'), size('w')]; })()""")
+    check('M2: {\\small x} in a heading 9 pt, {\\normalsize y} in \\Large 10 pt, \\small\\Large 14.4 pt, \\Large in a footnote 14.4 pt, as TeX sets them', fs == [9.0, 10.0, 14.4, 14.4], fs)
+    # H1: a Form inside center, a field before it: no Form moved, the reason said
+    nb = '\\documentclass{article}\n\\usepackage{hyperref}\n\\begin{document}\nBefore words here.\n\n\\begin{center}\n\\begin{Form}\n\\TextField[name=a]{A}\n\\end{Form}\n\\end{center}\n\\end{document}\n'
+    one_step(page, nb, ('Before', 6), lambda pg: run_cmd(pg, 'form-text'), 'H1: a field before a Form inside center', lambda g: g == nb.replace('Before ', 'Before\\TextField[name=text1, width=4cm]{} '))
+    page.wait_for_timeout(100)
+
+
+EXTRA = [clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles, r3_fields, r3_quickparts, r3_cover, r3_forms, r3_move, r3_review, r3_compiles, r3_review_compiles]
 
 if __name__ == '__main__':
     sys.exit(run())

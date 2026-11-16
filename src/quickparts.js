@@ -29,8 +29,14 @@ export function partName(text) {
 // the package each command or environment of a part needs (those Rikuy itself writes)
 const CMD_PKG = { textcolor: 'xcolor', color: 'xcolor', colorbox: 'xcolor', fcolorbox: 'xcolor', cellcolor: 'xcolor', rowcolor: 'xcolor', includegraphics: 'graphicx', rotatebox: 'graphicx', scalebox: 'graphicx', resizebox: 'graphicx',
   href: 'hyperref', TextField: 'hyperref', CheckBox: 'hyperref', ChoiceMenu: 'hyperref', SI: 'siunitx', si: 'siunitx', num: 'siunitx', qty: 'siunitx', unit: 'siunitx', toprule: 'booktabs', midrule: 'booktabs', bottomrule: 'booktabs', cmidrule: 'booktabs',
-  faIcon: 'fontawesome5', uline: 'ulem', sout: 'ulem', uwave: 'ulem', mathbb: 'amssymb', mathfrak: 'amssymb', checkmark: 'amssymb', eqref: 'amsmath', text: 'amsmath', smartdiagram: 'smartdiagram', lettrine: 'lettrine', multirow: 'multirow',
-  thetitle: 'titling', theauthor: 'titling', thedate: 'titling', thistime: 'scrtime', csvautobooktabular: 'csvsimple', hl: 'soul' };
+  faIcon: 'fontawesome5', mathbb: 'amssymb', mathfrak: 'amssymb', checkmark: 'amssymb', eqref: 'amsmath', text: 'amsmath', smartdiagram: 'smartdiagram', lettrine: 'lettrine', multirow: 'multirow',
+  thetitle: 'titling', theauthor: 'titling', thedate: 'titling', thistime: 'scrtime', csvautobooktabular: 'csvsimple' };
+// (ulem's lines as the Font group writes them: ulem with normalem, else every \emph of the
+// document is underlined; \dsout, \culine and the highlighter \hl are the Font group's own
+// definitions, written in the preamble as it writes them: src/charfmt.js)
+const ULEM = { ulem: { normalem: true } };
+const CMD_NEED = { uline: { pkgs: ULEM }, uuline: { pkgs: ULEM }, uwave: { pkgs: ULEM }, sout: { pkgs: ULEM }, xout: { pkgs: ULEM }, dashuline: { pkgs: ULEM }, dotuline: { pkgs: ULEM },
+  dsout: { pkgs: ULEM, defs: ['dsout'] }, culine: { pkgs: { ...ULEM, xcolor: null }, defs: ['culine'] }, hl: { pkgs: { ...ULEM, xcolor: null }, defs: ['hl'] } };
 const ENV_PKG = { align: 'amsmath', 'align*': 'amsmath', gather: 'amsmath', 'gather*': 'amsmath', multline: 'amsmath', 'multline*': 'amsmath', cases: 'amsmath', pmatrix: 'amsmath', bmatrix: 'amsmath', tikzpicture: 'tikz', axis: 'pgfplots',
   tabularx: 'tabularx', longtable: 'longtable', multicols: 'multicol', 'multicols*': 'multicol', lstlisting: 'listings', wrapfigure: 'wrapfig', tcolorbox: 'tcolorbox', Form: 'hyperref' };
 // (titling's commands are memoir's own, and beamer has \inserttitle)
@@ -46,6 +52,16 @@ export function partPackages(tex, cls = '') {
   // (pgfplots brings tikz; a tikzpicture of an axis needs pgfplots alone)
   if (need.has('pgfplots')) need.delete('tikz');
   return [...need];
+}
+
+// What a part needs in the preamble, as src/charfmt.js's preambleFor takes it: [{ pkgs, defs }]
+export function partNeeds(tex, cls = '') {
+  const out = partPackages(tex, cls).map((n) => ({ pkgs: { [n]: null } }));
+  const t = String(tex).slice(0, MAX_TEXT), seen = new Set();
+  const re = /\\([A-Za-z]{1,20})/g;
+  let m, n = 0;
+  while ((m = re.exec(t)) && n++ < 5000) if (Object.hasOwn(CMD_NEED, m[1]) && !seen.has(m[1])) { seen.add(m[1]); out.push(CMD_NEED[m[1]]); }
+  return out;
 }
 
 // whether a part is a block of its own (paragraphs, an environment that stands alone), put after

@@ -8,10 +8,17 @@
 
 import { onInstall } from '../commands.js';
 import { BLOCKS } from '../render.js';
-import { posFromDom, endsWithControlWord } from '../editor.js';
+import { posFromDom, endsWithControlWord, styOfEl } from '../editor.js';
 
 export const methods = {};
 const TYPE = 'text/x-rikuy-move';
+// a block's box on the page: all its items (a list's, a table's rows), where a picture goes before or after
+function blockRect(it) {
+  const all = [...document.querySelectorAll('#pages .it[data-b="' + it.dataset.b + '"]')].map((x) => x.getBoundingClientRect()).filter((q) => q.height);
+  if (!all.length) return it.getBoundingClientRect();
+  const top = Math.min(...all.map((q) => q.top)), bottom = Math.max(...all.map((q) => q.bottom)), left = Math.min(...all.map((q) => q.left)), right = Math.max(...all.map((q) => q.right));
+  return { top, bottom, left, right, width: right - left, height: bottom - top };
+}
 const isMac = () => typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
 
 Object.assign(methods, {
@@ -22,9 +29,18 @@ Object.assign(methods, {
     if (!dt || !c || c.collapsed || c.ghost || c.crossFile || this.stale || this.armed) return false;
     const latex = this.selectionLatex(c);
     if (!latex) return false;
-    const plain = getSelection().toString().replace(/​/g, '');
+    const plain = getSelection().toString().replace(/\u200B/g, '');
     const token = Math.random().toString(36).slice(2) + Date.now().toString(36);
-    this.dragMove = { f: c.f, a: c.a, b: c.b, latex, token, src: this.src(c.f) };
+    // (the formatting the words stand in, innermost first: they keep it where they go, as Word's)
+    const src = this.src(c.f), wraps = [];
+    const n0 = getSelection().anchorNode;
+    for (let n = n0 && (n0.nodeType === 1 ? n0 : n0.parentElement); n && n !== this.root && wraps.length < 12; n = n.parentElement) {
+      if (!n.dataset || !n.dataset.y) continue;
+      const y = styOfEl(n);
+      if (!y || y.f !== c.f || y.is == null || y.ie == null || !(y.is <= c.a && c.b <= y.ie) || (y.is === c.a && y.ie === c.b) || y.ie - y.s > 200000) continue;
+      wraps.push({ is: y.is, ie: y.ie, pre: src.slice(y.s, y.is), post: src.slice(y.ie, y.e) });
+    }
+    this.dragMove = { f: c.f, a: c.a, b: c.b, latex, token, src, wraps };
     dt.setData('text/plain', plain);
     dt.setData(TYPE, token);
     dt.effectAllowed = 'copyMove';
@@ -63,7 +79,9 @@ Object.assign(methods, {
   // the source place under a point of the screen: { f, p } (never in a LaTeX block's header, an
   // equation or a picture: before or after them)
   posAtPoint(x, y) {
-    const r = document.caretRangeFromPoint ? document.caretRangeFromPoint(x, y) : null;
+    // (Firefox has caretPositionFromPoint alone)
+    let r = document.caretRangeFromPoint ? document.caretRangeFromPoint(x, y) : null;
+    if (!r && document.caretPositionFromPoint) { const q = document.caretPositionFromPoint(x, y); if (q) r = { startContainer: q.offsetNode, startOffset: q.offset }; }
     if (!r || !this.root.contains(r.startContainer)) return null;
     const p = posFromDom(r.startContainer, r.startOffset, this.root);
     return p && !p.ghost && p.f != null && Number.isFinite(p.p) ? { f: p.f, p: p.p } : null;
@@ -79,14 +97,19 @@ Object.assign(methods, {
     // (Word's smart spacing: a word taken from between spaces takes one of them along, one put
     // between letters gets a space each side it needs)
     const W = /[\p{L}\p{N}]/u;
-    if (del.length === 1 && del[0].s === M.a && del[0].e === M.b && !del[0].t && src[M.a - 1] === ' ' && /^[ .,;:!?)]/.test(src[M.b] || '') && W.test(src[M.a] || '') && W.test(src[M.b - 1] || '')) del[0] = { ...del[0], s: M.a - 1 };
+    if (del.length === 1 && del[0].s === M.a && del[0].e === M.b && !del[0].t && src[M.a - 1] === ' ' && /^[ .,;:!?)}]/.test(src[M.b] || '') && W.test(src[M.a] || '') && W.test(src[M.b - 1] || '')) del[0] = { ...del[0], s: M.a - 1 };
     // (a drop inside what the deletion takes, a wrapper left empty: at its edge)
     let at = pos.p;
     for (const d of del) if (at > d.s && at < d.e) at = d.e;
     let t = M.latex;
+    // (wrapped again in what held it, but in none the place dropped is in too)
+    for (const w of M.wraps || []) if (!(w.is <= at && at <= w.ie)) t = w.pre + t + w.post;
     if (this.texAt(M.f, at)) t = t.replace(/\r\n?/g, '\n');
     else if (/^[A-Za-z]/.test(t) && endsWithControlWord(src, at)) t = '{}' + t;
-    const lead = W.test(t[0] || '') && W.test(src[at - 1] || '') ? ' ' : '', tail = W.test(t[t.length - 1] || '') && W.test(src[at] || '') ? ' ' : '';
+    // (a word, a number or a formula on either side: a space between)
+    const wordL = (k) => W.test(src[k - 1] || '') || src[k - 1] === '$' || src.slice(k - 2, k) === '\\)';
+    const wordR = (k) => W.test(src[k] || '') || src[k] === '$' || src.slice(k, k + 2) === '\\(';
+    const lead = W.test(M.latex[0] || '') && wordL(at) ? ' ' : '', tail = W.test(M.latex[M.latex.length - 1] || '') && wordR(at) ? ' ' : '';
     const before = del.filter((d) => d.e <= at).reduce((n, d) => n + (d.e - d.s) - d.t.length, 0);
     const s = at - before + lead.length;
     this.closeGroup();
@@ -135,7 +158,7 @@ Object.assign(methods, {
     const B = it && BLOCKS.get(+it.dataset.b);
     if (!B || B.f == null) return false;
     if (B.f !== W.f) { this.toast('A picture is moved within one file.'); return false; }
-    const r = it.getBoundingClientRect();
+    const r = blockRect(it);
     at = y < r.top + r.height / 2 ? B.s : B.e;
     // what goes: the block, from its line's start to what follows it; a blank line is left where
     // the paragraphs round it would otherwise join
@@ -147,8 +170,11 @@ Object.assign(methods, {
     // (dropped where it stands, or only blank lines away from it: nothing moves)
     if ((at >= ls && at <= z) || (at < ls && !src.slice(at, ls).trim()) || (at > z && !src.slice(z, at).trim())) return false;
     const nl = /\r\n/.test(src.slice(0, 4000)) ? '\r\n' : '\n';
+    // (the words on either side keep what they had: one paragraph round a float in its middle,
+    // two where a blank line stood after it)
     const blankBefore = ls === 0 || /\n[ \t]*\r?\n[ \t]*$/.test(src.slice(Math.max(0, ls - 200), ls));
-    const gap = blankBefore || z >= src.length || /^\\end\s*\{document\}/.test(src.slice(z, z + 20)) ? '' : nl;
+    const blankAfter = /\n[ \t]*\r?\n/.test(src.slice(W.e, z));
+    const gap = !blankBefore && blankAfter && z < src.length && !/^\\end\s*\{document\}/.test(src.slice(z, z + 20)) ? nl : '';
     const body = src.slice(W.s, W.e);
     // (put in as a paragraph of its own: a blank line each side)
     let nlB = 0; for (let k = at - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
@@ -182,7 +208,7 @@ onInstall((app) => {
     if (W.block) {
       const hit = document.elementFromPoint(x, y), it = hit && hit.closest ? hit.closest('#pages .it') : null;
       if (!it) { mark.hidden = true; return; }
-      const r = it.getBoundingClientRect(), top = y < r.top + r.height / 2;
+      const r = blockRect(it), top = y < r.top + r.height / 2;
       Object.assign(mark.style, { left: r.left + 'px', top: (top ? r.top - 2 : r.bottom) + 'px', width: r.width + 'px', height: '2px' });
     } else {
       const r = document.caretRangeFromPoint ? document.caretRangeFromPoint(x, y) : null;
