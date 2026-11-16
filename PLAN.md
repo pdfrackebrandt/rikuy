@@ -2685,7 +2685,23 @@ Tests:
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000
     papers, every failure classified as in task 2. Needs arxiv.org (see task 3). The owner runs
     it once the repository is public, where Actions minutes are free; `arxiv.yml` is ready
-    (task 24 hardened it) but has never run.
+    (task 24 hardened it).
+    First run, 43936586314 (2026-11-16; its merge redone by run 43980636663 once
+    `arxiv_collect.py` read corpus_full.py's row names): 998 papers, Rikuy compiled 932 (93.4 %),
+    the desktop 964; of the desktop's 964 Rikuy compiled 932 (96.7 %); 623 of the 932 both
+    compiled matched (66.8 %). Median compile 2.3 s in the page, 90th percentile 7.5 s.
+    - 183 mismatches print [?] where the desktop prints numbers: the paper ships its .bbl and
+      not the .bib, and Rikuy ran bibtex anyway, whose failed run wrote an empty .bbl over it.
+      latexmk does not run bibtex when a .bib is missing. Fixed: `tex/engine.js` keeps a project's
+      own .bbl when a .bib the .aux names is in neither the project nor the tree.
+    - 32 papers fail in Rikuy alone: about 22 packages and fonts missing from the tree (newtxtt 5,
+      bbding 3, kotex, fdsymbol, feynmf, feynmp 2 each, then one each), and 2 biblatex papers whose
+      shipped .bbl this biblatex cannot read (100 errors at the first pass; latexmk -f goes on to
+      biber). The second is fixed: the .bbl is dropped after that pass and biber writes it again.
+    - 30 fail on both: journal classes arXiv supplies beyond TeX Live (aa, svjour3, mn2e, jheppub,
+      iopart, PoS, aastex, svmult), files missing from the source, errors under TeX Live 2026.
+    - 4 ran past the 240 s limit; corpus_full.py now records the worker's last steps for such a
+      row, and pdfcompare.py the fonts on one side only for a mismatch (the run keeps no PDFs).
 
 ## Rules
 
