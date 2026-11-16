@@ -109,6 +109,11 @@ docs.push(['pictures (B8)', new Map([['main.tex', '\\documentclass{article}\n\\u
 }
 docs.push(['paragraph settings (B2)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{setspace}\n\\begin{document}\nFirst plain paragraph, typed in.\n\n\\onehalfspacing\nA paragraph after one and a half spacing.\n\nAnother after it.\n\n' +
   '\\doublespacing\n\\centering\nCentred from here on, plain.\n\nStill centred, the next paragraph.\n\n\\hangindent=1cm\\hangafter=1 A hanging paragraph with words.\n\nKept with the next\\nopagebreak\n\nLast plain words.\n\\end{document}\n']]), 'main.tex']);
+// (R1) the page's and the paragraphs' leftovers: hand written marks, a paragraph without line
+// numbers, landscape pages, a tabbing (its \= read again), fills, a title for the header
+docs.push(['page and paragraph leftovers (R1)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{lineno,pdflscape}\n\\linenumbers\n\\pagestyle{myheadings}\n\\title{A Title}\n\\makeatletter\\let\\thetitle\\@title\\makeatother\n\\begin{document}\n\\markboth{Left}{Right}\nFirst plain paragraph, typed in.\n\n' +
+  '\\begin{nolinenumbers}\nNo numbers here, plain words.\n\\end{nolinenumbers}\n\n\\begin{landscape}\nA wide paragraph on its own page.\n\nAnother one there.\n\\end{landscape}\n\n\\begin{tabbing}\n\\hspace{2cm}\\=\\hspace{3cm}\\=\\kill\nName\\>Value\\>Note\\\\\nAlpha \\> Beta \\> Gamma\n\\end{tabbing}\n\n' +
+  'Left \\hfill Right and Fig.~5 with a label\\label{x} here.\n\n\\markright{Later}\nLast plain words.\n\\end{document}\n']]), 'main.tex']);
 docs.push(['a LaTeX paragraph (its groups)', new Map([['main.tex', '\\documentclass{article}\n\\begin{document}\nFirst paragraph, typed in.\n\n% rikuy: latex\n{\\bfseries bold} raw and {\\itshape more {nested}} words\n\nLast plain paragraph.\n\\end{document}\n']]), 'main.tex']);
 const corpus = process.argv[2], FULL = process.env.INCR_FULL === '1' || !!corpus, repoDocs = docs.length;
 if (corpus) {

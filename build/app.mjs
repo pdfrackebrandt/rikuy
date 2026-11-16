@@ -557,6 +557,14 @@ Ctrl is Cmd on a Mac.
 - Ctrl+Enter outside a table: a page break (\\newpage on a line of its own, the paragraph cut
   there); Ctrl+Shift+Enter: a column break (\\columnbreak in multicols, \\newpage in a two
   column document)
+- Tab stops at positions (Tabs…, the command "Tabs" with stops): the paragraph becomes a tabbing
+  environment whose first line sets the stops (\\hspace{2cm}\\=...\\kill); in its lines Tab goes
+  to the next stop (\\>), Enter starts the next line (\\\\); the command "Next tab stop" (the
+  right click menu) does Tab's work on a phone
+- Landscape pages for part of a document: Layout › Orientation › "Landscape pages for the
+  selection" (pdflscape's landscape around the selected paragraphs), "Portrait pages here" takes
+  it out; Header & Footer › "Document info" puts \\thetitle, \\theauthor, \\thedate or \\jobname
+  in the header
 - A double click in a page's top or bottom margin opens its header or footer: three fields
   (left, center, right), each the LaTeX of fancyhdr's \\fancyhead or \\fancyfoot
   (\\thepage is the page number); Escape closes them. The Layout tab sets margins, size,

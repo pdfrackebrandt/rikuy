@@ -527,6 +527,12 @@ export class Renderer {
     }
     // a paragraph of multicols: set in its columns (src/layout.js)
     if (it.mc) { item.cols = it.mc.n; item.region = it.mc.key; item.balance = !it.mc.star; }
+    // (R1) lines lineno leaves without numbers (nolinenumbers): src/layout.js eachLine
+    if (it.noLn) item.noLn = true;
+    // (R1) a paragraph of pdflscape's landscape: on turned pages (src/layout.js)
+    if (it.land) item.land = it.land;
+    // (R1) a line of a tabbing: its fields at the stops (src/layout.js tabStops)
+    if (it.tab) { item.tab = it.tab; item.tabSets = !!it.tabSets; }
     return item;
   }
 

@@ -528,7 +528,13 @@ export const mark = {
   // and uses the four after it for the groups' ends
   rtl: '',
   rtlGroup: ['', ''],
-  ltrGroup: ['', '']
+  ltrGroup: ['', ''],
+  // (R1) a paragraph's own settings Word keeps and pandoc reads past (left aligned where the
+  // document justifies, its line spacing, indents, no line numbers): '1' and 16 hex digits at
+  // its head; a part of the document in columns or on landscape pages (Word's sections): 'A'
+  // and the number of columns, 'B' for their end, 'C' and 'D' for landscape's (paragraphs of
+  // their own). src/wordjobs.js unmark turns each into the LaTeX Rikuy writes for it.
+  para: (hex) => '' + code(hex) + ''
 };
 
 const mk = (n, a = {}, c = []) => ({ n, a, c });
@@ -554,7 +560,7 @@ function colorOf(rpr) {
 // style id -> its name as Word files spell it in every language ("heading 1", "toc 2"), the
 // colour of a character style, and the size of the body text in half points
 function styleInfo(parts) {
-  const S = { names: new Map(), colors: new Map(), sz: 0, bidi: new Map(), jc: new Map(), based: new Map(), bidiDefault: false };
+  const S = { names: new Map(), colors: new Map(), sz: 0, bidi: new Map(), jc: new Map(), based: new Map(), bidiDefault: false, sp: new Map(), ind: new Map(), noln: new Map(), ddSp: null, ddInd: null, ddJc: '' };
   if (!parts.has('word/styles.xml')) return S;
   let st;
   try { st = find(parseXml(text(parts.get('word/styles.xml'))), 'w:styles'); } catch (e) { return S; }
@@ -563,6 +569,8 @@ function styleInfo(parts) {
   const dsz = dd && find(dd, 'w:sz');
   if (dsz) S.sz = +dsz.a['w:val'] || 0;
   S.bidiDefault = onOff(dd && kid(dd, 'w:pPrDefault') && kid(kid(dd, 'w:pPrDefault'), 'w:pPr'), 'w:bidi') === true;
+  const ddp = dd && kid(dd, 'w:pPrDefault') && kid(kid(dd, 'w:pPrDefault'), 'w:pPr');
+  S.ddSp = spacingOf(ddp); S.ddInd = indentOf(ddp); S.ddJc = val(ddp, 'w:jc');
   for (const s of kids(st, 'w:style')) {
     const id = s.a['w:styleId'];
     if (!id) continue;
@@ -571,6 +579,11 @@ function styleInfo(parts) {
       const b = onOff(kid(s, 'w:pPr'), 'w:bidi');
       if (b != null) S.bidi.set(id, b);
       if (val(kid(s, 'w:pPr'), 'w:jc')) S.jc.set(id, val(kid(s, 'w:pPr'), 'w:jc'));
+      const sp = spacingOf(kid(s, 'w:pPr')), ind = indentOf(kid(s, 'w:pPr'));
+      if (sp) S.sp.set(id, sp);
+      if (ind) S.ind.set(id, ind);
+      const nl = onOff(kid(s, 'w:pPr'), 'w:suppressLineNumbers');
+      if (nl != null) S.noln.set(id, nl);
       if (val(s, 'w:basedOn')) S.based.set(id, val(s, 'w:basedOn'));
       if (s.a['w:default'] === '1') S.normal = id;
     }
@@ -581,6 +594,19 @@ function styleInfo(parts) {
   return S;
 }
 
+// (R1) a paragraph's line spacing as Word keeps it ({ line, rule }: 240ths of a line where the rule
+// is auto), and its indents in twips ({ l, r, h: hanging, f: first line }), or null
+function spacingOf(ppr) {
+  const e = ppr && kid(ppr, 'w:spacing');
+  if (!e || e.a['w:line'] == null || !/^\d{1,5}$/.test(e.a['w:line'])) return null;
+  return { line: +e.a['w:line'], rule: e.a['w:lineRule'] || 'auto' };
+}
+function indentOf(ppr) {
+  const e = ppr && kid(ppr, 'w:ind');
+  if (!e) return null;
+  const n = (...ks) => { for (const k of ks) if (e.a[k] != null && /^-?\d{1,6}$/.test(e.a[k])) return +e.a[k]; return null; };
+  return { l: n('w:left', 'w:start'), r: n('w:right', 'w:end'), h: n('w:hanging'), f: n('w:firstLine') };
+}
 // a property Word switches on by naming it and off with w:val="0": true, false, or null when
 // the element does not say
 function onOff(el, name) {
@@ -653,6 +679,11 @@ export function premark(parts) {
   info.sz = styles.sz;
   const out = new Map(parts);
   const C = { info, styles, heads: new Set(info.threads.keys()), pending: [], changed: false };
+  // (R1) the document's own line spacing (its Normal style's, Word's default's) where it is a
+  // choice: from 1.25 lines up (Word's own defaults, 1.08 and 1.15 lines, are no one's choice and
+  // LaTeX's single spacing stands for them), the preamble's (src/wordjobs.js)
+  const bsp = styled(C, null, styles.sp) || styles.ddSp;
+  if (bsp && bsp.rule === 'auto' && bsp.line >= 300 && bsp.line <= 1200) info.spacing = Math.round(bsp.line / 240 * 100);
   for (const name of ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml']) {
     if (!parts.has(name)) continue;
     let root;
@@ -665,6 +696,7 @@ export function premark(parts) {
     if (!body) continue;
     if (main) {
       blocksFix(C, body, true);
+      sectionsFix(C, body);
       each(body, (x) => {
         if (x.n !== 'w:sectPr') return;
         info.cols.push(+((kid(x, 'w:cols') || { a: {} }).a['w:num']) || 1);
@@ -685,6 +717,35 @@ export function premark(parts) {
     try { const t = bare(headText(parseXml(text(b)))); if (t && !info.heads.includes(t)) info.heads.push(t); } catch (e) { /* not text a reader saw */ }
   }
   return { parts: out, info };
+}
+
+// (R1) Word's sections that LaTeX sets as a part of the document: one in columns other than the
+// document's (its last section's) is multicols, one turned to landscape where the document is
+// not is pdflscape's landscape; each marked by a paragraph of its own before its first block and
+// after its last (the one whose properties end it)
+function sectionsFix(C, body) {
+  const cs = body.c, ends = [];
+  for (let i = 0; i < cs.length; i++) { const c = cs[i]; if (c && c.n === 'w:p' && kid(kid(c, 'w:pPr'), 'w:sectPr')) ends.push(i); }
+  const last = kid(body, 'w:sectPr');
+  if (!ends.length || !last) return;
+  const colsOf = (x) => Math.min(9, Math.max(1, +((kid(x, 'w:cols') || { a: {} }).a['w:num']) || 1));
+  const landOf = (x) => { const z = kid(x, 'w:pgSz'); return !!z && (z.a['w:orient'] === 'landscape' || +z.a['w:w'] > +z.a['w:h']); };
+  const dCols = colsOf(last), dLand = landOf(last);
+  const marks = [];
+  let from = 0;
+  // (the last section's blocks run from after the last end to the body's end)
+  for (const [k, e] of [...ends.map((e, k) => [k, e]), [ends.length, cs.length - 1]]) {
+    const sp = k < ends.length ? kid(kid(cs[e], 'w:pPr'), 'w:sectPr') : last;
+    const n = colsOf(sp), land = landOf(sp);
+    const words = cs.slice(from, e + 1).some((c) => c && (c.n === 'w:p' || c.n === 'w:tbl'));
+    if (words && k < ends.length) {
+      if (land && !dLand) marks.push([from, 'C'], [e + 1, 'D']);
+      else if (n !== dCols && n > 1 && !land) marks.push([from, 'A' + n], [e + 1, 'B']);
+    }
+    from = e + 1;
+  }
+  for (const [at, code] of marks.reverse()) cs.splice(at, 0, { ...mk('w:p', {}, [markRun(mark.para(code))]), own: true });
+  if (marks.length) { C.info.sections = marks.length / 2; C.changed = true; }
 }
 
 function blocksFix(C, box, top) {
@@ -792,6 +853,38 @@ function paraFix(C, p, top) {
     p.c.push(markRun(m[1]));
     C.info.aligned++;
     C.changed = true;
+  }
+  // (R1) a paragraph of words in the body with settings of its own beyond what the document's
+  // paragraphs have (its Normal style and Word's defaults): left aligned where they are justified,
+  // another line spacing, other indents, no line numbers. Not a list's, a quotation's or a right to
+  // left one (their environments are pandoc's and directions()'s)
+  if (top && C.body && !own && st.n && !st.hold && !(ppr && kid(ppr, 'w:numPr')) && !/^(quote|intense quote|block text|list)/.test(sname) && !isBidi(C, ppr, sid)) {
+    const S = C.styles;
+    const base = C.base || (C.base = { jc: styled(C, null, S.jc) || S.ddJc || 'left', sp: styled(C, null, S.sp) || S.ddSp, ind: styled(C, null, S.ind) || S.ddInd || {} });
+    const mult = (x) => (x && x.rule === 'auto' ? Math.round(x.line / 240 * 100) : 100);
+    const sp = spacingOf(ppr) || styled(C, sid, S.sp) || S.ddSp, ind = indentOf(ppr) || styled(C, sid, S.ind) || S.ddInd || {};
+    let flags = 0;
+    if ((jc === 'left' || jc === 'start') && base.jc === 'both') flags |= 1;
+    const nl = onOff(ppr, 'w:suppressLineNumbers');
+    if (nl === true || (nl == null && styled(C, sid, S.noln) === true)) flags |= 2;
+    if ((!sp || sp.rule === 'auto') && mult(sp) !== mult(base.sp)) flags |= 4;
+    const tw = (x) => Math.max(0, Math.min(x == null ? 0 : x, 0xFFFF));
+    const L = tw(ind.l), R = tw(ind.r), H = Math.min(tw(ind.h), 0xFFF);
+    if (Math.abs(L - tw(base.ind.l)) > 56 || Math.abs(R - tw(base.ind.r)) > 56 || Math.abs(H - tw(base.ind.h)) > 56) flags |= 8;
+    if (flags) {
+      // (indents the mark carries are none to pandoc, which reads an indented paragraph as a
+      // quotation: the paragraph's own indent set to nothing)
+      if (flags & 8) {
+        const pp = ppr || (p.c.unshift(mk('w:pPr')), p.c[0]);
+        pp.c = pp.c.filter((x) => typeof x === 'string' || x.n !== 'w:ind');
+        const k = pp.c.findIndex((x) => typeof x !== 'string' && /^w:(jc|textDirection|textAlignment|textboxTightWrap|outlineLvl|divId|cnfStyle|rPr|sectPr|pPrChange)$/.test(x.n));
+        pp.c.splice(k < 0 ? pp.c.length : k, 0, mk('w:ind', { 'w:left': '0', 'w:right': '0', 'w:hanging': '0' }));
+      }
+      const hex = (v, n) => Math.max(0, Math.min(v, 16 ** n - 1)).toString(16).padStart(n, '0');
+      p.c.splice(at(), 0, markRun(mark.para('1' + hex(flags, 2) + hex(mult(sp), 3) + hex(L, 4) + hex(R, 4) + hex(H, 3))));
+      C.info.paras = (C.info.paras || 0) + 1;
+      C.changed = true;
+    }
   }
   // a right to left paragraph of words in the body: headings too, but not what pandoc reads
   // as the title block or a caption, where a mark would be part of the title

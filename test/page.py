@@ -18,7 +18,7 @@ hostile review of b1ccf0f (H1 to M7, the low ones), on the page and, where it is
 TeX's PDF compiled in the page and held against what the page draws (compile_pdf)."""
 import os, re, sys, base64, tempfile, subprocess
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import open_page, load_doc, src, click_text, select_text, check, results, roundtrip, pressed, ROOT
+from browser import open_page, load_doc, src, click_text, select_text, check, results, roundtrip, pressed, place, ROOT
 from playwright.sync_api import sync_playwright
 
 DIST = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
@@ -664,11 +664,176 @@ def long_document(page):
     check('and a file with no preamble disables them', not d['two-sided'][0] and not d['hf-first'][0] and not d['watermark'][0], (d['two-sided'], d['watermark']))
 
 
+# ---- R1: what the page batch left (PLAN.md task 61) -------------------------------------------------
+LONG3 = ' '.join(['Words of a long paragraph that runs over several lines of the page.'] * 40)
+def heads(page):
+    return page.evaluate('[...document.querySelectorAll("#pages > .page")].map((p) => p.querySelector(".hd").hidden ? "" : p.querySelector(".hd").textContent)')
+
+def r1_marks_and_lines(page):
+    """\\markboth and \\markright written by hand drawn as myheadings and headings print them;
+    lineno's nolinenumbers lines not numbered nor counted, and Layout › Line numbers › Suppress for
+    current paragraph writing it as a round trip"""
+    d = DOC('\\pagestyle{myheadings}\n', body='\\markboth{Left mark}{Right mark}\n\\section{Sec}\n' + LONG3 + '\n\n\\markright{Later mark}\n' + LONG3)
+    load_doc(page, d); page.wait_for_timeout(300)
+    h = heads(page)
+    check('R1: myheadings with \\markboth: every page\'s head has the right mark and its number, no heading\'s mark', h[0].startswith('Right mark') and 'SEC' not in ''.join(h) and len(h) >= 2, h)
+    check('R1: \\markright later: the pages after it have that mark (the first mark on a page, else the one before)', any(x.startswith('Later mark') for x in h[1:]), h)
+    check('R1: and no mark is drawn in the text', 'Right mark' not in page.evaluate('[...document.querySelectorAll("#pages .flow")].map((f) => f.textContent).join("")'))
+    d2 = DOC('\\pagestyle{headings}\n', body='\\section{Intro}\n' + LONG3 + '\n\n\\markright{Hand}\n' + LONG3)
+    load_doc(page, d2); page.wait_for_timeout(300)
+    h = heads(page)
+    check('R1: with headings, a heading\'s mark and then a \\markright by hand', 'INTRO' in h[0].upper() and any(x.startswith('Hand') for x in h[1:]), h)
+    body = 'First paragraph here with words.\n\nSecond paragraph of the text.\n\nThird paragraph.'
+    d3 = DOC('\\usepackage{lineno}\n\\linenumbers\n', body=body)
+    want = DOC('\\usepackage{lineno}\n\\linenumbers\n', body='First paragraph here with words.\n\n\\begin{nolinenumbers}\nSecond paragraph of the text.\n\\end{nolinenumbers}\n\nThird paragraph.')
+    def suppress(pg):
+        open_tab(pg, 'Layout'); pg.click('#rc-line-numbers'); pg.wait_for_timeout(200)
+        pg.get_by_role('menu').get_by_role('menuitemcheckbox', name='Suppress for current paragraph', exact=True).click(); pg.wait_for_timeout(250)
+    roundtrip(page, d3, ('Second', 2), suppress, want, label='R1 Line numbers › Suppress for current paragraph')
+    load_doc(page, d3); page.wait_for_timeout(200)
+    n0 = page.evaluate('document.querySelectorAll("#pages .lnum span").length')
+    load_doc(page, want); page.wait_for_timeout(200)
+    ln = page.evaluate('[...document.querySelectorAll("#pages .lnum span")].map((s) => s.textContent)')
+    check('R1: the page numbers none of its lines and counts none (1, 2: the first and the third)', ln == ['1', '2'] and n0 == 3, (n0, ln))
+    click_text(page, 'Second', 2); open_tab(page, 'Layout'); page.click('#rc-line-numbers'); page.wait_for_timeout(200)
+    st = page.get_by_role('menu').get_by_role('menuitemcheckbox', name='Suppress for current paragraph', exact=True).get_attribute('aria-checked')
+    page.keyboard.press('Escape')
+    check('R1: and the menu shows it on there', st == 'true', st)
+
+def r1_docinfo(page):
+    """Header & Footer › Document info: the title, author, date and file name where the caret is in
+    the header, the preamble's copy written once, one step; the page draws the title"""
+    d = DOC('\\title{My Title}\n\\author{Ann Author}\n')
+    load_doc(page, d); click_text(page, 'First', 2)
+    page.evaluate('rikuy.pageHFOpen("head")'); page.wait_for_timeout(300)
+    h0 = page.evaluate('rikuy.hist.length')
+    page.get_by_role('tabpanel', name='Header & Footer').get_by_role('button', name='Document info', exact=True).click(); page.wait_for_timeout(200)
+    names = page.get_by_role('menu').get_by_role('menuitem').all_inner_texts()
+    page.get_by_role('menu').get_by_role('menuitem', name='Title', exact=True).click(); page.wait_for_timeout(600)
+    got = src(page)
+    check('R1: Document info › Title: \\thetitle in the header, \\makeatletter\\let\\thetitle\\@title\\makeatother after \\title, one step', '\\fancyhead[L]{\\thetitle}' in got and '\\title{My Title}\n\\makeatletter\\let\\thetitle\\@title\\makeatother\n\\author' in got and page.evaluate('rikuy.hist.length') == h0 + 1, (names, got[:420]))
+    page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    check('R1: the page draws the title in the header', heads(page)[0].startswith('My Title'), heads(page))
+    page.evaluate('rikuy.undo()'); page.wait_for_timeout(200)
+    check('R1: one undo gives the bytes back', src(page) == d, src(page)[:300])
+    load_doc(page, DOC()); click_text(page, 'First', 2)
+    page.evaluate('rikuy.pageHFOpen("head")'); page.wait_for_timeout(300)
+    page.get_by_role('tabpanel', name='Header & Footer').get_by_role('button', name='Document info', exact=True).click(); page.wait_for_timeout(200)
+    dis = page.get_by_role('menu').get_by_role('menuitem', name='Title', exact=True).get_attribute('aria-disabled')
+    fdis = page.get_by_role('menu').get_by_role('menuitem', name='File name', exact=True).get_attribute('aria-disabled')
+    page.keyboard.press('Escape'); page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    check('R1: without \\title, Title is disabled (saying why), the file name is not', dis == 'true' and fdis != 'true', (dis, fdis))
+
+def r1_background(page):
+    """A picture as the watermark (its dialog, drawn at its width), art and styled page borders
+    (the dialog's Style and Art, drawn as TikZ draws them)"""
+    d = DOC()
+    load_doc(page, d); click_text(page, 'First', 2)
+    page.evaluate("""async () => { const c = document.createElement('canvas'); c.width = 40; c.height = 20; const x = c.getContext('2d'); x.fillStyle = '#c00'; x.fillRect(0, 0, 40, 20);
+      const b = await new Promise((r) => c.toBlob(r, 'image/png')); window.rikuy.addAsset('logo.png', b); }""")
+    open_tab(page, 'Design'); page.click('#rc-watermark'); page.wait_for_timeout(150)
+    page.get_by_role('menu').get_by_role('menuitem', name='Custom watermark…').click(); page.wait_for_timeout(250)
+    dlg = page.get_by_role('dialog', name='Watermark')
+    dlg.get_by_label('Watermark', exact=True).select_option('pic'); page.wait_for_timeout(100)
+    dlg.get_by_label('Picture', exact=True).select_option('logo.png')
+    dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(400)
+    want = DOC('\\usepackage{graphicx}\n\\usepackage{draftwatermark}\n\\DraftwatermarkOptions{text={\\includegraphics[width=10cm]{logo.png}},angle=0}\n')
+    w = page.evaluate('(() => { const i = document.querySelector("#pages .page .wmk img"); return i && [i.getBoundingClientRect().width / window.rikuy.px, i.complete]; })()')
+    check('R1: Watermark › Picture watermark: draftwatermark with \\includegraphics[width=10cm]{logo.png}, upright; the page draws the picture 10 cm wide', src(page) == want and w and abs(w[0] - 10 * CM) < 1, (src(page)[:300], w))
+    page.evaluate('rikuy.undo()'); page.wait_for_timeout(200)
+    check('R1: one undo gives the bytes back', src(page) == d)
+    load_doc(page, want); click_text(page, 'First', 2)
+    page.click('#rc-watermark'); page.wait_for_timeout(150)
+    page.get_by_role('menu').get_by_role('menuitemradio', name='DRAFT').click(); page.wait_for_timeout(300)
+    check('R1: a text watermark after the picture starts afresh: diagonal, the picture\'s keys gone', src(page) == DOC('\\usepackage{graphicx}\n\\usepackage{draftwatermark}\n\\DraftwatermarkOptions{text=DRAFT}\n'), src(page)[:300])
+    load_doc(page, d); click_text(page, 'First', 2)
+    page.click('#rc-page-borders'); page.wait_for_timeout(200)
+    dlg = page.get_by_role('dialog', name='Page borders')
+    dlg.get_by_label('Setting').select_option('box'); dlg.get_by_label('Art').select_option('stars'); dlg.get_by_label('Color').select_option('red')
+    dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    t = src(page)
+    pts = page.evaluate('(() => { const p = document.querySelector("#pages .page .pbd svg path"); return p ? (p.getAttribute("d").match(/M/g) || []).length : 0; })()')
+    check('R1: Page borders › Art › Stars: TikZ marks along the border (decorations.markings once), the page drawing every star', '\\usetikzlibrary{decorations.markings}' in t and '\\path[postaction={decorate},decoration={markings,mark=between positions 0 and' in t and pts > 80, (t[:500], pts))
+    page.evaluate('rikuy.undo()'); page.wait_for_timeout(200)
+    check('R1: one undo gives the bytes back', src(page) == d)
+    load_doc(page, d); click_text(page, 'First', 2)
+    page.click('#rc-page-borders'); page.wait_for_timeout(200)
+    dlg = page.get_by_role('dialog', name='Page borders')
+    dlg.get_by_label('Setting').select_option('box'); dlg.get_by_label('Style').select_option('double')
+    dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    n = page.evaluate('document.querySelectorAll("#pages .page .pbd svg path").length')
+    check('R1: Style › Double: \\draw[double,double distance=2pt], drawn as two lines', '\\draw[double,double distance=2pt]' in src(page) and n == 2, (src(page)[:400], n))
+    page.click('#rc-page-borders'); page.wait_for_timeout(200)
+    st = page.get_by_role('dialog', name='Page borders').get_by_label('Style').input_value()
+    page.keyboard.press('Escape')
+    check('R1: and the dialog reads it back', st == 'double', st)
+
+def r1_landscape(page):
+    """Landscape pages for part of a document: Orientation › Landscape pages for the selection as a
+    round trip; the page draws those pages turned; Portrait pages here takes them out to the byte"""
+    body = 'First paragraph here with words.\n\nSecond paragraph of the text.\n\nThird paragraph.'
+    d = DOC(body=body)
+    want = DOC('\\usepackage{pdflscape}\n', body='First paragraph here with words.\n\n\\begin{landscape}\nSecond paragraph of the text.\n\\end{landscape}\n\nThird paragraph.')
+    def land(pg):
+        open_tab(pg, 'Layout'); pg.click('#rc-orientation'); pg.wait_for_timeout(200)
+        pg.get_by_role('menu').get_by_role('menuitemcheckbox', name='Landscape pages for the selection', exact=True).click(); pg.wait_for_timeout(300)
+    def back(pg):
+        open_tab(pg, 'Layout'); pg.click('#rc-orientation'); pg.wait_for_timeout(200)
+        pg.get_by_role('menu').get_by_role('menuitem', name='Portrait pages here', exact=True).click(); pg.wait_for_timeout(300)
+    roundtrip(page, d, ('Second', 2), land, want, off=DOC('\\usepackage{pdflscape}\n', body=body), label='R1 Orientation › Landscape pages for the selection', off_command=back)
+    load_doc(page, want); page.wait_for_timeout(300)
+    P = page.evaluate('[...document.querySelectorAll("#pages > .page")].map((p) => [p.classList.contains("land"), p.offsetWidth / window.rikuy.px, p.offsetHeight / window.rikuy.px, p.querySelector(".flow").textContent.slice(0, 12)])')
+    g = page.evaluate('({ pw: rikuy.layout.g.pw, ph: rikuy.layout.g.ph })')
+    check('R1: three pages, the second turned (its sheet on its side) with the landscape paragraph alone on it', len(P) == 3 and P[1][0] and abs(P[1][1] - g['ph']) < 1 and abs(P[1][2] - g['pw']) < 1 and P[1][3].startswith('Second') and not P[0][0] and not P[2][0], P)
+    click_text(page, 'Second', 2); open_tab(page, 'Layout'); page.click('#rc-orientation'); page.wait_for_timeout(200)
+    st = page.get_by_role('menu').get_by_role('menuitemcheckbox', name='Landscape pages for the selection', exact=True).get_attribute('aria-checked')
+    page.keyboard.press('Escape')
+    check('R1: the caret there shows it on', st == 'true', st)
+    load_doc(page, d); place(page, ('Second', 'Third')); land(page)
+    check('R1: two paragraphs selected: one landscape around both', src(page) == DOC('\\usepackage{pdflscape}\n', body='First paragraph here with words.\n\n\\begin{landscape}\nSecond paragraph of the text.\n\nThird paragraph.\n\\end{landscape}'), src(page)[-160:])
+
+PS_BORDER = '\\AddToHook{shipout/background}{\\begin{tikzpicture}[remember picture,overlay]\\path[postaction={decorate},decoration={markings,mark=between positions 0 and 0.9938 step 0.0125 with {\\fill[red] (90:2pt)--(234:2pt)--(18:2pt)--(162:2pt)--(306:2pt)--cycle;}}] ([shift={(1cm,-1cm)}]current page.north west) rectangle ([shift={(-1cm,1cm)}]current page.south east);\\end{tikzpicture}}'
+
+def r1_page_pdf(page):
+    """TeX is the judge: what R1 writes for the page compiles with pdfLaTeX, XeLaTeX and LuaLaTeX,
+    and TeX's PDF has the landscape page turned with its first word where the page draws it, the
+    hand written mark and the title in the header, line numbers but the suppressed paragraph's"""
+    if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        print('SKIP R1\'s PDFs: no TeX tree in %s' % DIST)
+        return
+    pre = ('\\usepackage{lineno}\n\\linenumbers\n\\usepackage{pdflscape}\n\\usepackage{fancyhdr}\n\\pagestyle{fancy}\n\\fancyhf{}\n\\renewcommand{\\headrulewidth}{0pt}\n\\fancyhead[L]{\\thetitle}\n\\fancyhead[R]{\\rightmark}\n\\fancyfoot[C]{\\thepage}\n'
+           '\\title{My Title}\n\\makeatletter\\let\\thetitle\\@title\\makeatother\n\\usepackage{graphicx}\n\\usepackage{draftwatermark}\n\\DraftwatermarkOptions{text={\\includegraphics[width=6cm]{example-image-a}},angle=0}\n'
+           '\\usepackage{tikz}\n\\usetikzlibrary{decorations.markings}\n' + PS_BORDER + '\n')
+    body = ('\\markright{Hand mark}\nFirst paragraph here with words.\n\n\\begin{nolinenumbers}\nUnnumbered words.\n\\end{nolinenumbers}\n\n\\begin{landscape}\nTurned words of the landscape page. ' + ' '.join(['Wide words run on.'] * 30) + '\n\\end{landscape}\n\nBack upright.')
+    text = DOC(pre, body=body)
+    got = {}
+    for eng in ('pdflatex', 'xelatex', 'lualatex'):
+        page.set_default_timeout(600000)
+        r = page.evaluate("""async ([t, eng]) => { await window.rikuy.api.setSource('% !TeX program = ' + eng + '\\n' + t); const r = await window.rikuy.api.compile();
+          return { ok: r.ok, pages: r.pages, errors: r.problems.filter((p) => p.severity === 'error').map((p) => p.message).slice(0, 3) }; }""", [text, eng])
+        page.set_default_timeout(30000)
+        got[eng] = r
+    check('R1: the page\'s constructs (myheadings marks, \\thetitle, a picture watermark, an art border, nolinenumbers, pdflscape) compile with pdfLaTeX, XeLaTeX and LuaLaTeX', all(got[e]['ok'] and not got[e]['errors'] for e in got), got)
+    c = compile_doc(page, text)
+    if not c['ok']:
+        check('R1: the PDF', False, c.get('pages')); return
+    rot = [p.get('/Rotate') for p in c['pdf'].pages]
+    check('R1: TeX\'s PDF: three pages, the second turned (pdflscape\'s /Rotate 90), as the page draws them', len(rot) == 3 and rot[1] == 90 and c['page']['n'] == 3, (rot, c['page']['n']))
+    check('R1: the header has the title and the hand written mark in TeX\'s PDF and on the page', 'My Title' in c['txt'][0] and 'Hand mark' in c['txt'][0] and c['page']['hd'][0].startswith('My Title') and 'Hand mark' in c['page']['hd'][0], (c['txt'][0][:200], c['page']['hd'][:1]))
+    w = [x for x in c['words'][1] if x[4] == 'Turned']
+    pw = page.evaluate("""() => { const p = [...document.querySelectorAll('#pages > .page')][1], px = window.rikuy.px; const s = [...p.querySelectorAll('span.t')].find((x) => x.textContent.includes('Turned'));
+      const r = document.createRange(); r.setStart(s.firstChild, s.textContent.indexOf('Turned')); r.setEnd(s.firstChild, s.textContent.indexOf('Turned') + 6); const b = r.getBoundingClientRect(), q = p.getBoundingClientRect(); return [(b.left - q.left) / px, (b.top - q.top) / px]; }""")
+    check('R1: on the landscape page TeX sets its first word where the page draws it (within 3 bp across, 4 down)', w and abs(w[0][0] - pw[0] * BP) < 3 and abs(w[0][1] - pw[1] * BP) < 4, (w[:1], [pw[0] * BP, pw[1] * BP]))
+    nums = re.findall(r'(?m)^\s*(\d+)\s+(\S+)', c['txt'][0])
+    check('R1: line numbers beside the first paragraph, none beside the suppressed one', any(n == '1' and t.startswith('First') for n, t in nums) and not any(t.startswith('Unnumbered') for n, t in nums), nums[:6])
+
+
 def run():
     names = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (margins_size_orientation, breaks, columns, line_numbers_and_more, header_footer, background, page_setup_dialog, agents_and_keys, long_document, compile_pdf, verifier_pdf):
+        for f in (margins_size_orientation, breaks, columns, line_numbers_and_more, header_footer, background, page_setup_dialog, agents_and_keys,
+                  r1_marks_and_lines, r1_docinfo, r1_background, r1_landscape, long_document, compile_pdf, verifier_pdf, r1_page_pdf):
             if names and f.__name__ not in names: continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])

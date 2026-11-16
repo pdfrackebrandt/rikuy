@@ -1309,6 +1309,9 @@ export function watermark(src, o = {}) {
     const x = lastCall(src, cmd, end);
     if (x) take({ [key]: src.slice(x.arg[0], x.arg[1]) });
   }
+  // (R1) a picture as the watermark: text={\includegraphics[width=10cm]{logo.png}}
+  const pic = /^\s*\\includegraphics\s*(?:\[([^\][{}]{0,200})\])?\s*\{([^{}\\%]{1,200})\}\s*$/.exec(String(W.text).slice(0, 500));
+  if (pic) { const kv = Object.fromEntries((pic[1] || '').split(',').map((x) => x.split('=').map((y) => y.trim()))); W.pic = { file: pic[2].trim(), width: kv.width || null }; }
   return W;
 }
 const unbrace = (v) => { v = String(v).trim(); return v[0] === '{' && v[v.length - 1] === '}' ? v.slice(1, -1) : v; };
@@ -1326,18 +1329,23 @@ export function watermarkEdits(src, w, o = {}) {
     if (W.at) out.push(wholeLine(src, W.at.s, W.at.e));
     return out;
   }
-  const keys = { text: braceIf(w.text) };
+  // (R1) w.pic: { file, width (pt) }: the picture, upright where no angle is asked, graphicx with it
+  if (w.pic) w = { ...w, text: '\\includegraphics[width=' + fmtLen(w.pic.width || 10 * UNIT.cm, 'cm') + ']{' + w.pic.file + '}', angle: w.angle == null ? 0 : w.angle };
+  const keys = { text: w.pic ? '{' + w.text + '}' : braceIf(w.text) };
   if (w.scale != null && w.scale !== 1) keys.scale = String(w.scale);
   if (w.angle != null && w.angle !== 45) keys.angle = String(w.angle);
   if (w.color) keys.color = w.color;
   const out = [];
+  // (a picture needs graphicx, once, before draftwatermark where neither is loaded)
+  const gfx = w.pic && p ? usePackages(src, ['graphicx'], { end, others: o.others }) : [];
   if (W.on && W.at) {
     const have = Object.fromEntries(parseKV(src, W.at.arg[0], W.at.arg[1]).map((x) => [x.key, x.value]));
     const ch = { ...keys };
     for (const k of ['scale', 'angle', 'color']) if (!(k in keys) && k in have) ch[k] = null;
-    return kvEdits(src, W.at.arg[0], W.at.arg[1], ch);
+    return [...gfx, ...kvEdits(src, W.at.arg[0], W.at.arg[1], ch)];
   }
-  if (!p) out.push(...usePackages(src, ['draftwatermark'], { end, others: o.others }));
+  out.push(...gfx);
+  if (!p) out.push(...usePackages(src, w.pic ? ['graphicx', 'draftwatermark'] : ['draftwatermark'], { end, others: o.others }));
   else if (p.opts && parseKV(src, p.opts[0], p.opts[1]).some((k) => k.key === 'nostamp' || k.key === 'final')) out.push(...usePackages(src, { draftwatermark: { nostamp: null, final: null } }, { end, others: o.others }));
   const line = '\\DraftwatermarkOptions{' + Object.entries(keys).map(([k, v]) => k + '=' + v).join(',') + '}';
   if (W.at) out.push({ s: W.at.s, e: W.at.e, t: line });
@@ -1368,24 +1376,88 @@ export function pageColorEdits(src, color, o = {}) {
 }
 
 // The page border Rikuy writes: a TikZ rectangle on every page's background (the shipout hook),
-// inset from the paper's edge. Read back from that form alone: { inset, width, color, at }.
-const BORDER = /\\AddToHook\{shipout\/background\}\{\\begin\{tikzpicture\}\[remember picture,overlay\]\\draw(?:\[([^\]]{0,80})\])? \(\[shift=\{\(([-\d.]+)(cm|mm|pt|in),-[-\d.]+(?:cm|mm|pt|in)\)\}\]current page\.north west\) rectangle \(\[shift=\{\(-[-\d.]+(?:cm|mm|pt|in),[-\d.]+(?:cm|mm|pt|in)\)\}\]current page\.south east\);\\end\{tikzpicture\}\}/;
+// inset from the paper's edge. Read back from that form alone: { inset, width, color, style, art,
+// step, at }. (R1) Word's line styles as TikZ's: double (double distance=2pt), dashed, dotted;
+// Word's art borders as small marks set evenly along it (decorations.markings, step a fraction of
+// its length so they close up where they start): dots, diamonds, stars pointing outwards.
+const BORDER_HEAD = '\\AddToHook{shipout/background}{\\begin{tikzpicture}[remember picture,overlay]';
+const BORDER_RECT = /^ \(\[shift=\{\(([-\d.]+)(cm|mm|pt|in),-[-\d.]+(?:cm|mm|pt|in)\)\}\]current page\.north west\) rectangle \(\[shift=\{\(-[-\d.]+(?:cm|mm|pt|in),[-\d.]+(?:cm|mm|pt|in)\)\}\]current page\.south east\);\\end\{tikzpicture\}\}/;
+export const BORDER_STYLES = [['single', 'Single'], ['double', 'Double'], ['dashed', 'Dashed'], ['dotted', 'Dotted']];
+export const BORDER_ART = [['dots', 'Dots'], ['diamonds', 'Diamonds'], ['stars', 'Stars']];
+const ART_MARK = {
+  dots: (r) => '(0,0) circle (' + r + 'pt)',
+  diamonds: (r) => '(' + r + 'pt,0)--(0,' + r + 'pt)--(-' + r + 'pt,0)--(0,-' + r + 'pt)--cycle',
+  stars: (r) => [90, 234, 18, 162, 306].map((a) => '(' + a + ':' + r + 'pt)').join('--') + '--cycle'
+};
+const ART_READ = /^mark=between positions 0 and ([\d.]+) step ([\d.]+) with \{\\fill(?:\[([A-Za-z]+(?:!\d{1,3})?)\])? (\(0,0\) circle \(([\d.]+)pt\)|\(([\d.]+)pt,0\)--.*--cycle|\(90:([\d.]+)pt\)--.*--cycle);\}$/;
 export function pageBorder(src) {
   const end = preambleEnd(src);
   if (end < 0) return null;
   const pre = src.slice(0, end);
   const k = pre.indexOf('\\AddToHook{shipout/background}');
   if (k < 0) return null;
-  const m = BORDER.exec(pre.slice(k, k + 600));
+  const t = pre.slice(k, k + 1200);
+  if (!t.startsWith(BORDER_HEAD)) return null;
+  let i = BORDER_HEAD.length;
+  const cmd = /^\\(draw|path)/.exec(t.slice(i));
+  if (!cmd) return null;
+  i += cmd[0].length;
+  // the options, brackets and braces paired (an art mark's colour is in brackets of its own)
+  let opts = '';
+  if (t[i] === '[') {
+    let d = 0, j = i;
+    for (; j < t.length; j++) { const c = t[j]; if (c === '[' || c === '{') d++; else if ((c === ']' || c === '}') && --d === 0) break; }
+    if (d !== 0 || t[j] !== ']') return null;
+    opts = t.slice(i + 1, j);
+    i = j + 1;
+  }
+  const m = BORDER_RECT.exec(t.slice(i));
   if (!m) return null;
-  const opt = Object.fromEntries((m[1] || '').split(',').map((x) => x.trim()).filter(Boolean).map((x) => { const q = x.indexOf('='); return q < 0 ? [x, true] : [x.slice(0, q).trim(), x.slice(q + 1).trim()]; }));
-  const color = Object.keys(opt).find((x) => opt[x] === true && x !== 'thick' && x !== 'thin' && x !== 'very thick' && x !== 'ultra thick' && x !== 'semithick');
-  return { inset: parseFloat(m[2]) * UNIT[m[3]], width: opt['line width'] ? lenPt(opt['line width']) : 0.4, color: color || null, at: { s: k, e: k + m[0].length } };
+  const B = { inset: parseFloat(m[1]) * UNIT[m[2]], width: 0.4, color: null, style: 'single', art: null, at: { s: k, e: k + i + m[0].length } };
+  if (cmd[1] === 'path') {
+    const a = /^postaction=\{decorate\},decoration=\{markings,(.*)\}$/.exec(opts);
+    const r = a && ART_READ.exec(a[1]);
+    if (!r) return null;
+    B.art = r[5] ? 'dots' : r[6] ? 'diamonds' : 'stars';
+    B.width = 2 * parseFloat(r[5] || r[6] || r[7]);
+    B.step = parseFloat(r[2]);
+    B.color = r[3] || null;
+    return B;
+  }
+  const opt = splitTop(opts).map((x) => { const q = x.indexOf('='); return q < 0 ? [x.trim(), true] : [x.slice(0, q).trim(), x.slice(q + 1).trim()]; }).filter(([x]) => x);
+  for (const [key, v] of opt) {
+    if (key === 'line width') B.width = lenPt(v) ?? 0.4;
+    else if (key === 'double' || key === 'dashed' || key === 'dotted') B.style = key;
+    else if (key === 'double distance') { /* Rikuy's 2pt */ }
+    else if (v === true && !/^(thick|thin|very thick|ultra thick|semithick)$/.test(key)) B.color = key;
+  }
+  return B;
+}
+// a TikZ option list split at its top level commas
+function splitTop(t) {
+  const out = []; let d = 0, a = 0;
+  for (let i = 0; i < t.length; i++) { const c = t[i]; if (c === '{' || c === '[') d++; else if (c === '}' || c === ']') d--; else if (c === ',' && !d) { out.push(t.slice(a, i)); a = i + 1; } }
+  out.push(t.slice(a));
+  return out;
+}
+// the number of art marks round a page (about one each 14 pt of its border, set once)
+export function artStep(paper, inset) {
+  const P = 2 * (paper.w + paper.h) - 8 * inset;
+  // (a stranger's Word file names any sheet: between 8 and 1000 marks, so TikZ's step is never 0)
+  const n = Number.isFinite(P) ? Math.min(1000, Math.max(8, Math.round(P / 14))) : 80;
+  return Math.round(1e6 / n) / 1e6;
 }
 export function borderLine(b) {
-  const opt = [b.width && Math.abs(b.width - 0.4) > 0.01 ? 'line width=' + fmtLen(b.width, 'pt') : '', b.color || ''].filter(Boolean).join(',');
   const d = fmtLen(b.inset, 'cm');
-  return '\\AddToHook{shipout/background}{\\begin{tikzpicture}[remember picture,overlay]\\draw' + (opt ? '[' + opt + ']' : '') + ' ([shift={(' + d + ',-' + d + ')}]current page.north west) rectangle ([shift={(-' + d + ',' + d + ')}]current page.south east);\\end{tikzpicture}}';
+  const rect = ' ([shift={(' + d + ',-' + d + ')}]current page.north west) rectangle ([shift={(-' + d + ',' + d + ')}]current page.south east);';
+  if (b.art && ART_MARK[b.art]) {
+    const r = Math.round(Math.max(0.5, (b.width || 4) / 2) * 100) / 100, step = b.step || 0.0125;
+    const last = Math.round((1 - step / 2) * 1e6) / 1e6;
+    return BORDER_HEAD + '\\path[postaction={decorate},decoration={markings,mark=between positions 0 and ' + last + ' step ' + step + ' with {\\fill' + (b.color ? '[' + b.color + ']' : '') + ' ' + ART_MARK[b.art](r) + ';}}]' + rect + '\\end{tikzpicture}}';
+  }
+  const style = b.style === 'double' ? 'double,double distance=2pt' : b.style === 'dashed' || b.style === 'dotted' ? b.style : '';
+  const opt = [style, b.width && Math.abs(b.width - 0.4) > 0.01 ? 'line width=' + fmtLen(b.width, 'pt') : '', b.color || ''].filter(Boolean).join(',');
+  return BORDER_HEAD + '\\draw' + (opt ? '[' + opt + ']' : '') + rect + '\\end{tikzpicture}}';
 }
 export function borderEdits(src, b, o = {}) {
   const end = preambleEnd(src);
@@ -1393,8 +1465,23 @@ export function borderEdits(src, b, o = {}) {
   const B = pageBorder(src);
   if (!b) return B ? [wholeLine(src, B.at.s, B.at.e)] : [];
   const line = borderLine(b);
-  if (B) return src.slice(B.at.s, B.at.e) === line ? [] : [{ s: B.at.s, e: B.at.e, t: line }];
-  return [...usePackages(src, ['tikz'], { end, others: o.others }), lineBefore(src, end, line)];
+  const lib = b.art ? tikzLibEdits(src, end, 'decorations.markings', o.others) : null;
+  if (B) return src.slice(B.at.s, B.at.e) === line ? [] : [...(lib && lib.edit ? [lib.edit] : []), { s: B.at.s, e: B.at.e, t: line }];
+  const out = usePackages(src, ['tikz'], { end, others: o.others });
+  if (lib && lib.edit) out.push(lib.edit);
+  out.push(lineBefore(src, end, (lib && lib.line ? lib.line + '\n' : '') + line));
+  return out;
+}
+// a TikZ library once: in the list of a \usetikzlibrary{...} the preamble has, else on a line
+// of its own (line), before what needs it
+function tikzLibEdits(src, end, lib, others = []) {
+  const pre = stripComments(src.slice(0, end));
+  const re = /\\usetikzlibrary\s*\{([^{}]{0,400})\}/g;
+  let m, last = null;
+  for (let n = 0; (m = re.exec(pre)) && n < 200; n++) { if (m[1].split(',').some((x) => x.trim() === lib)) return {}; last = m; }
+  for (const t of others) if (new RegExp('\\\\usetikzlibrary\\s*\\{[^{}]{0,400}\\b' + lib.replace('.', '\\.') + '\\b').test(stripComments(String(t).slice(0, 200000)))) return {};
+  if (last) { const at = last.index + last[0].length - 1; return { edit: { s: at, e: at, t: (/\S\s*$/.test(last[1]) ? ',' : '') + lib } }; }
+  return { line: '\\usetikzlibrary{' + lib + '}' };
 }
 
 // ---- the class, its size and its sides -----------------------------------------------------------------
@@ -1447,6 +1534,116 @@ export function readPage(src, others = []) {
     colsep: sep('columnsep'), colrule: sep('columnseprule'), lengths: headFootLengths(src),
     // what decides the PDF's sheet: the class and its options, the packages and theirs, the kernel's
     // PDF management (a PDF of the same takes its sheet to the page: src/app.js pdfSheet)
-    mediaKey: mediaKey(src, others)
+    mediaKey: mediaKey(src, others),
+    // (R1) what weighs a page break inside a paragraph (src/layout.js plan)
+    pen: penalties(src, end)
   };
+}
+// (R1) The penalties of a paragraph's first line alone at a page's foot (club) and its last alone at
+// the next page's top (widow), LaTeX's 150 unless the preamble sets them (nowidow's all: 10000),
+// and whether pages are filled to their foot (\flushbottom, a two sided class's) or not
+// (\raggedbottom, one sided): TeX weighs a penalty against how badly the page before would
+// stretch, which ragged pages never are
+// (spaces read once each: two runs of them either side of an optional = backtracked over a
+// stranger's 200 000 spaces, B2's review)
+const PEN = /\\(widowpenalty|clubpenalty)(?![A-Za-z@])[ \t]*(?:=[ \t]*)?(-?\d{1,6})/g;
+export function penalties(src, end = preambleEnd(src)) {
+  const out = { widow: 150, club: 150, flush: false };
+  if (end < 0) return out;
+  const pre = stripComments(src.slice(0, end));
+  PEN.lastIndex = 0;
+  for (let m, n = 0; (m = PEN.exec(pre)) && n < 200; n++) out[m[1] === 'widowpenalty' ? 'widow' : 'club'] = +m[2];
+  const nw = packageOptions(src, 'nowidow', end);
+  if (nw && nw.all) { out.widow = out.club = 10000; }
+  const cls = classPage(src);
+  out.flush = !!(cls && cls.twoside);
+  const b = /\\(flushbottom|raggedbottom)(?![A-Za-z@])/g;
+  for (let m, n = 0; (m = b.exec(pre)) && n < 200; n++) out.flush = m[1] === 'flushbottom';
+  return out;
+}
+
+// ---- Document info in the header (R1): the title, author and date as \maketitle leaves them ------
+// The standard classes empty \@title, \@author and \@date as \maketitle sets them, so a running
+// head names them by a copy the preamble makes after \title{...}, as people write it:
+// \makeatletter\let\thetitle\@title\makeatother (titling and memoir have \thetitle of their
+// own; KOMA-Script keeps \@title, the copy is the same there). The date's is LaTeX's \today where
+// no \date is given. The file's name is \jobname.
+export const DOC_INFO = {
+  title: { name: 'Title', cmd: '\\thetitle', of: '\\@title', set: 'title' },
+  author: { name: 'Author', cmd: '\\theauthor', of: '\\@author', set: 'author' },
+  date: { name: 'Date', cmd: '\\thedate', of: '\\@date', set: 'date' },
+  file: { name: 'File name', cmd: '\\jobname' }
+};
+// { ready: \cmd prints it already, why: what is missing, at: after which the copy goes }
+export function docInfo(src, field, o = {}) {
+  const F = DOC_INFO[field];
+  const end = preambleEnd(src);
+  if (!F || end < 0) return { ready: false, why: 'The main file has no preamble' };
+  if (!F.of) return { ready: true };
+  const cls = docClass(src);
+  if ((cls && cls.name === 'memoir') || loaded(src, 'titling', end, o.others)) return { ready: true };
+  const pre = stripComments(src.slice(0, end));
+  // (a copy written by hand, with or without \makeatletter on its line)
+  const re = new RegExp('\\\\(?:let|def|global\\\\let)\\s*\\\\the' + F.set + '(?![A-Za-z@])');
+  if (re.test(pre)) return { ready: true };
+  const c = lastCall(src, F.set, end);
+  if (!c && F.set !== 'date') return { ready: false, why: 'The document has no \\' + F.set + '{…} in its preamble to show' };
+  return { ready: false, at: c ? c.e : null };
+}
+// The copy's line, once, after \title{...} (the date's before \begin{document} where no \date is)
+export function docInfoEdits(src, field, o = {}) {
+  const I = docInfo(src, field, o);
+  if (I.ready) return [];
+  if (I.why) return null;
+  const F = DOC_INFO[field], end = preambleEnd(src), nl = eolOf(src);
+  const line = '\\makeatletter\\let' + F.cmd + F.of + '\\makeatother';
+  if (I.at == null) return [lineBefore(src, end, line)];
+  const le = src.indexOf('\n', I.at);
+  const rest = src.slice(I.at, le < 0 ? src.length : le);
+  // (after the line \title{...} stands on, where nothing but a comment follows it there)
+  if (le >= 0 && !/\S/.test(stripComments(rest))) return [{ s: le + 1, e: le + 1, t: line + nl }];
+  return [{ s: I.at, e: I.at, t: nl + line + (le < 0 ? nl : '') }];
+}
+
+// ---- landscape pages for part of a document (R1): pdflscape's landscape around whole paragraphs --
+// (lscape's is the same environment; pdflscape also turns the PDF's pages so a reader shows them
+// upright). The environment the position p is in: { s, e, head: [s, after its line], tail: [s, e] }
+export function landscapeAt(src, p) {
+  const re = /\\(begin|end)\s*\{landscape\}/g;
+  const stack = [];
+  let found = null;
+  // (as TeX reads it: none in a comment)
+  const t = stripComments(src);
+  for (let m, k = 0; (m = re.exec(t)) && k < 2000; k++) {
+    if (m.index >= p && !stack.length) break;
+    if (m[1] === 'begin') stack.push({ s: m.index, hs: m.index + m[0].length });
+    else if (stack.length) {
+      const b = stack.pop();
+      const e = m.index + m[0].length;
+      if (b.s < p && p < e) found = { s: b.s, e, head: [b.s, b.hs], tail: [m.index, e] };
+    }
+  }
+  return found;
+}
+// landscape around the paragraphs [s, e) (whole lines), pdflscape loaded once unless lscape or
+// pdflscape is; none inside another landscape, a float or multicols (TeX: \clearpage there)
+export function landscapeEdits(src, s, e, o = {}) {
+  const end = preambleEnd(src);
+  if (end < 0 || s < end) return [];
+  const nl = eolOf(src);
+  while (s < e && /\s/.test(src[s])) s++;
+  while (e > s && /\s/.test(src[e - 1])) e--;
+  if (s >= e) return [];
+  const lineStart = src[s - 1] === '\n';
+  const out = [];
+  if (!loaded(src, 'lscape', end, o.others) && !loaded(src, 'pdflscape', end, o.others)) out.push(...usePackages(src, ['pdflscape'], { end, others: o.others }));
+  out.push({ s: e, e, t: nl + '\\end{landscape}' }, { s, e: s, t: (lineStart ? '' : nl) + '\\begin{landscape}' + nl });
+  return out.sort((u, v) => v.s - u.s);
+}
+// the environment's lines out, the words where they were (what landscapeEdits wrote goes exactly)
+export function unwrapLandscape(src, L) {
+  const hs = L.head[1], te = L.tail[0];
+  const a = src[hs] === '\n' ? hs + 1 : src[hs] === '\r' && src[hs + 1] === '\n' ? hs + 2 : hs;
+  const b = src[te - 1] === '\n' ? (src[te - 2] === '\r' ? te - 2 : te - 1) : te;
+  return [{ s: b, e: L.e, t: '' }, { s: L.s, e: a, t: '' }];
 }
