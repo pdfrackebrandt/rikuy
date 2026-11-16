@@ -576,7 +576,7 @@ def reviewed(page):
     page.evaluate('window.rikuy.runCommand("eq-to-display")'); page.wait_for_timeout(150)
     check('L: the right click menu closed with Escape forgets its equation: a command run later changes nothing', src(page) == WRAP('Some text $x$ here.') and page.evaluate('window.rikuy.eqCtx') is None)
     help_text = page.evaluate('() => { window.rikuy.openHelp(); const t = document.querySelector(".pop-help").textContent; window.rikuy.closePop(); return t; }')
-    check('L: Help says Ctrl+Shift+E is free until Track Changes comes (nothing binds it yet)', 'free until Track Changes' in help_text and not page.evaluate('window.rikuy.cmds.commands().some((c) => (c.keys || []).includes("Ctrl+Shift+E"))'))
+    check('L: Help says Ctrl+Shift+E is Track Changes now, which alone binds it (no equation)', 'Shift+E is Track Changes' in help_text and page.evaluate('window.rikuy.cmds.commands().filter((c) => (c.keys || []).includes("Ctrl+Shift+E")).map((c) => c.id)') == ['track-changes'])
 
 
 def compile_check(page):
