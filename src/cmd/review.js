@@ -225,7 +225,9 @@ export const methods = {
     const S = this.spellState();
     const on = this.spellOn();
     // the browser's own spelling only where Rikuy's cannot run (and the person wants spelling)
-    if (this.root) this.root.spellcheck = !on && this.prefs.spell !== false && !this.spellAvailable();
+    // (set only when it changes: each write is an attribute change the browser acts on)
+    const native = !on && this.prefs.spell !== false && !this.spellAvailable();
+    if (this.root && this.root.spellcheck !== native) this.root.spellcheck = native;
     if (!on || !this.model) { S.bad = []; S.plan = null; this.spellPaint(); return; }
     await this.spellIgnoreLoad();
     if (!S.client) S.client = new SpellClient(location.href, this.spellSpec());
