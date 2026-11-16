@@ -233,9 +233,12 @@ export class Renderer {
         el.dataset.ctx = it.ctx || 'p';
         if (it.depth) el.style.setProperty('--depth', it.depth);
         if (it.depth) el.classList.add('deep');
+        // (a list's own indents, enumitem's: the text's margin and the label's box, in em; R2)
+        if (it.lmPad != null) el.style.paddingInlineStart = it.lmPad + 'em';
         if (it.label) {
           const lab = document.createElement('span');
           lab.className = 'lbl lbl-' + (it.labelKind || 'item');
+          if (it.lm) { lab.style.insetInlineStart = it.lm.lab + 'em'; lab.style.width = (it.lm.w + it.lm.sep) + 'em'; lab.style.paddingInlineEnd = it.lm.sep + 'em'; }
           this.inl(it.label, lab);
           // description labels are editable inline text
           if (it.labelKind === 'desc') { lab.removeAttribute('contenteditable'); lab.className = 'dlbl'; }

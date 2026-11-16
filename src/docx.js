@@ -528,8 +528,14 @@ export const mark = {
   // and uses the four after it for the groups' ends
   rtl: '',
   rtlGroup: ['', ''],
-  ltrGroup: ['', '']
+  ltrGroup: ['', ''],
+  // Word's highlighter in a colour other than yellow, at the head of the run's text: pandoc reads
+  // the highlight (soul's \hl) and not its colour. Seven digits, so no colour's six take it.
+  highlight: (hex) => '' + code('0' + hex) + ''
 };
+// Word's sixteen highlighter colours (w:highlight's names), as their values
+export const HL_HEX = { green: '00FF00', cyan: '00FFFF', magenta: 'FF00FF', blue: '0000FF', red: 'FF0000', darkBlue: '000080', darkCyan: '008080', darkGreen: '008000',
+  darkMagenta: '800080', darkRed: '800000', darkYellow: '808000', darkGray: '808080', lightGray: 'C0C0C0', black: '000000', white: 'FFFFFF' };
 
 const mk = (n, a = {}, c = []) => ({ n, a, c });
 // own: made here; the walk leaves it as it is (it takes private use characters out of the file's text)
@@ -884,8 +890,11 @@ function runFix(C, r, st) {
   const len = ts.reduce((n, t) => n + textContent(t).replace(/\s/g, '').length, 0);
   st.n += len;
   C.info.chars += len;
-  if (!len || !st.color || st.link) return;
   const rpr = kid(r, 'w:rPr');
+  // (the highlighter's colour, where it is not Word's yellow: a mark the LaTeX's \hl takes)
+  const hl = len && rpr ? HL_HEX[val(rpr, 'w:highlight')] : null;
+  if (hl) { ts[0].c.unshift(mark.highlight(hl)); ts[0].a['xml:space'] = 'preserve'; C.changed = true; }
+  if (!len || !st.color || st.link) return;
   // code is set verbatim in LaTeX, where a mark's command would be printed as it is written:
   // the colours of syntax highlighting (pandoc's, Quarto's, R Markdown's token styles) stay behind
   if (CODE.test(C.styles.names.get(val(rpr, 'w:rStyle')) || val(rpr, 'w:rStyle'))) return;

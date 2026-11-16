@@ -194,6 +194,7 @@ export const word = {
     }
     return {
       doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources, bibs: citeproc ? bibs : [], csl: citeproc ? cslName : null, citeproc,
+      bullets: W.bullets,
       toc: W.doc.blocks && model.blocks.some((u) => u.items.some((x) => x.type === 'toc')),
       // the page's set up (task 44): paper, margins, columns, headers and footers, in Word's terms
       page: pageForWord(model, this.src(this.main)),

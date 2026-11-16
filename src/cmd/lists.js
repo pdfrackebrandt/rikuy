@@ -18,9 +18,9 @@ import { NOT_PLAIN } from '../styles.js';
 import { escapeTeX } from '../editor.js';
 import { openMenu } from '../ui/kit.js';
 import { $ } from '../ui/dom.js';
-import { bulletCode, textEngine, readLists, allLists, selectedItems, restartEdit, crlf, noindentBefore, maxStart, SYMBOLS, formatOf, labelEdits, startEdits, resumeEdits, sepEdits, kindEdits, demote, promote, unlist, listFrom, autoMarker, sortEdit,
+import { indentEdits, indentLen, INDENT_KEYS, bulletCode, textEngine, readLists, allLists, selectedItems, restartEdit, crlf, noindentBefore, maxStart, SYMBOLS, formatOf, labelEdits, startEdits, resumeEdits, sepEdits, kindEdits, demote, promote, unlist, listFrom, autoMarker, sortEdit,
   multilevelEdits, multilevelOf, listSetup, mechOf, levelOf, BULLETS, NUMBERS, MULTI, OWN_SYMBOLS, bulletGlyph, numText, sameBullet, sameNumber, DEFAULT, indentAt, MAX_LEVEL } from '../lists.js';
-import { openBulletDialog, openNumberDialog, openValueDialog, openMultilevelDialog, openSortDialog, openSpacingDialog } from '../ui/listdialog.js';
+import { openBulletDialog, openNumberDialog, openValueDialog, openMultilevelDialog, openSortDialog, openSpacingDialog, openPictureBulletDialog, openIndentsDialog } from '../ui/listdialog.js';
 
 const ENVS = { item: 'itemize', enum: 'enumerate', desc: 'description' };
 // The list the caret is in (or the paragraphs it covers), worked out once for each look at the ribbon
@@ -81,6 +81,15 @@ register(
     run: (app, args) => (args && 'sep' in args ? app.listSpacing(args.sep) : app.openListMenu('spacing')) },
   { id: 'bullet-define', name: 'Define New Bullet', title: 'Define New Bullet: any symbol, character or LaTeX as the list\'s bullet', synonyms: ['Custom bullet', 'Bullet symbol'],
     when: (app, at) => { const I = listOf(app, at); return !!I && (!I.L || I.L.kind !== 'desc') && app.listMech() !== 'beamer'; }, whyNot: (app, at) => app.listMech() === 'beamer' ? 'Beamer sets bullets in its theme.' : why(app, at), run: (app, args) => (args && args.code != null ? app.bulletDefine(args.code) : openBulletDialog(app)) },
+  // (R2) Define New Bullet › Picture: a picture of the project, or one from a file, as the bullet
+  { id: 'bullet-picture', name: 'Picture Bullet', title: 'Picture Bullet: a picture as the list\'s bullet (\\includegraphics[height=1.6ex] in enumitem\'s label, graphicx)', synonyms: ['Picture bullet', 'Image bullet', 'Define New Bullet Picture', 'includegraphics bullet'],
+    when: (app, at) => { const I = listOf(app, at); return !!I && (!I.L || I.L.kind !== 'desc') && app.listMech() !== 'beamer'; }, whyNot: (app, at) => app.listMech() === 'beamer' ? 'Beamer sets bullets in its theme.' : why(app, at),
+    run: (app, args) => (args && args.file ? app.bulletPicture(args.file, args.blob || null) : openPictureBulletDialog(app)) },
+  // (R2) Adjust List Indents: where the text and the label start (enumitem's leftmargin, labelwidth, labelsep)
+  { id: 'list-indents', name: 'Adjust List Indents', title: 'Adjust List Indents: where the list\'s text starts, the label\'s width and the space after it (enumitem\'s leftmargin, labelwidth and labelsep)', synonyms: ['List indents', 'leftmargin', 'labelsep', 'labelwidth', 'Text indent', 'Bullet position', 'Number position'], menu: { list: 55 },
+    when: (app, at) => { const I = inList(app, at); return !!I && I.L.editable && app.listMech() === 'enumitem'; },
+    whyNot: (app, at) => (inList(app, at) && app.listMech() !== 'enumitem' ? 'This document labels its lists with ' + (app.listMech() === 'beamer' ? 'beamer\'s own' : 'the enumerate package or paralist') + ', beside which enumitem\'s indents would break its lists: set \\leftmargin in the source.' : 'Put the caret in a list.'),
+    run: (app, args) => (args && INDENT_KEYS.some((k) => k in args) ? app.listIndents(args) : openIndentsDialog(app)) },
   { id: 'number-define', name: 'Define New Number Format', title: 'Define New Number Format: the number style, the text around it and where it starts', synonyms: ['Custom numbering', 'Number format'],
     when: (app, at) => { const I = listOf(app, at); return !!I && (!I.L || I.L.kind !== 'desc'); }, whyNot: why,
     // ({ label, start }: either may be left out, which leaves it as it is; both are one undo)
@@ -250,7 +259,7 @@ export const methods = {
     for (const x of pe) if (x.f === f && x.s <= first) shift += x.t.length - (x.e - x.s);
     if (caret && caret.f === f) { if (caret.p != null) caret = { ...caret, p: caret.p + shift }; if (caret.selA != null) caret = { ...caret, selA: caret.selA + shift, selB: caret.selB + shift }; }
     this.closeGroup();
-    this.commit([...all, ...pe], caret, 'list');
+    this.commit([...all, ...pe], caret, 'list', this.listBlobs || undefined);
     this.closeGroup();
     return true;
   },
@@ -349,6 +358,7 @@ export const methods = {
     if (!I) return false;
     const pk = env === 'itemize' ? (SYMBOLS.find((x) => x.code === code) || {}).pkg : null;
     const pkgs = pk ? [pk] : env === 'itemize' && /\\(checkmark|blacksquare|blacktriangleright|square|blacklozenge|lozenge|bigstar)\b/.test(code || '') ? ['amssymb'] : [];
+    if (env === 'itemize' && /\\includegraphics\b/.test(code || '')) pkgs.push('graphicx');
     if (!I.L || I.L.name !== env) return this.toggleList(env, { label: code, pkgs });
     const r = labelEdits(I.src, I.L, code, this.listCfg(), this.listMech());
     if (!r) { this.toast('This list\'s label is written in a way Rikuy cannot change here; the source can.'); return false; }
@@ -363,6 +373,28 @@ export const methods = {
     return this.listLabel('itemize', r.code);
   },
   textEngine() { return textEngine(this.src(this.main), this.engineChoice ? this.engineChoice() : 'auto'); },
+  // (R2) a picture as the bullet: \includegraphics at the height of a capital letter, as Word sizes
+  // a picture bullet to the text; a file from the device goes into the project in the same step
+  bulletPicture(file, blob = null) {
+    const name = String(file || '').replace(/^\.\//, '');
+    if (!/^[A-Za-z0-9_./-]{1,200}$/.test(name) || /(^|\/)\.\.?(\/|$)/.test(name) || !/\.(png|jpe?g|pdf)$/i.test(name)) { this.toast('A picture bullet takes a PNG, JPEG or PDF file whose name has letters, digits, - _ . and / only.', 6000); return false; }
+    if (!blob && !this.assetBlobs.has(name)) { this.toast('No picture ' + name + ' in the project.'); return false; }
+    this.listBlobs = blob ? [{ name, blob }] : null;
+    try { return this.listLabel('itemize', '\\includegraphics[height=1.6ex]{' + name + '}'); }
+    finally { this.listBlobs = null; }
+  },
+  // (R2) Adjust List Indents: vals { leftmargin, labelwidth, labelsep }, each a length or null for
+  // LaTeX's own; one left out stays
+  listIndents(vals) {
+    const at = this.ribbonAt(), I = at && inList(this, at);
+    if (!I) return false;
+    for (const k of INDENT_KEYS) if (vals[k] != null && !indentLen(vals[k])) { this.toast('An indent is a number and a unit: 1.5cm, 2em, 12pt.'); return false; }
+    const r = indentEdits(I.src, I.L, vals, this.listCfg(), this.listMech());
+    if (!r) { this.toast('This list\'s indents are set another way here: change them in the source.'); return false; }
+    if (!r.edits.length) return true;
+    return this.listCommit(I.f, r.edits, r.pkgs, this.listCaret(I.f, r.edits, at.c.a, at.c.b));
+  },
+
   // the number the list starts at
   listStart(n) {
     const at = this.ribbonAt(), I = at && numbered(this, at);
@@ -665,13 +697,13 @@ export const methods = {
     const I = listOf(this, at), cur = I && I.L && I.L.kind === 'item' ? I.fmt.label : null, beamer = this.listMech() === 'beamer';
     const items = [{ ...tile('None', '<span class="li-g li-none">None</span>', false, () => this.listNone('itemize'), 5, 'No bullet: the items become paragraphs'), disabled: !(I && I.L) }];
     for (const b of BULLETS) items.push({ ...tile(b.name, '<span class="li-g">' + esc(b.glyph) + '</span>', cur != null && sameBullet(cur, b.code), () => this.listLabel('itemize', b.code), 5, b.name + ': ' + b.code), disabled: beamer });
-    return [...items, null, ...this.cmdItems(['list-level', 'bullet-define', 'list-spacing'])];
+    return [...items, null, ...this.cmdItems(['list-level', 'bullet-define', 'bullet-picture', 'list-indents', 'list-spacing'])];
   },
   numberItems(at) {
     const I = listOf(this, at), cur = I && I.L && I.L.kind === 'enum' ? I.fmt.label : null;
     const items = [{ ...tile('None', '<span class="li-g li-none">None</span>', false, () => this.listNone('enumerate'), 3, 'No numbering: the items become paragraphs'), disabled: !(I && I.L) }];
     for (const n of NUMBERS) items.push(tile(n.name, '<span class="li-n">' + n.show.map((x) => '<span>' + esc(x) + '<i></i></span>').join('') + '</span>', cur != null && sameNumber(cur, n.star), () => this.listLabel('enumerate', n.star), 3, n.name + ': label=' + n.star));
-    return [...items, null, ...this.cmdItems(['list-level', 'number-define', 'list-value', 'list-restart', 'list-continue', 'list-spacing'])];
+    return [...items, null, ...this.cmdItems(['list-level', 'number-define', 'list-value', 'list-restart', 'list-continue', 'list-indents', 'list-spacing'])];
   },
   multiItems(at) {
     const cfg = this.listCfg(), have = { enum: multilevelOf(cfg, 'enum'), item: multilevelOf(cfg, 'item') };

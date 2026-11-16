@@ -30,8 +30,10 @@ export function exportDocx(P, req) {
   if (!r.files['out.docx']) throw new Error('pandoc wrote no Word file: ' + (r.stderr || '').trim().slice(0, 300));
   const mainTex = (req.project.files.find(([f]) => f === req.project.main) || [])[1];
   const made = styled(r.files['out.docx'], !!(req.doc.meta && req.doc.meta.dir && req.doc.meta.dir.c === 'rtl'), typeof mainTex === 'string' ? { ...scriptSetup(mainTex), mainTex } : {});
-  // the page's set up: paper, margins, columns, headers and footers (src/wordpage.js)
-  const docx = req.page ? zip(pageDocx(unzip(made), req.page)) : made;
+  // the page's set up: paper, margins, columns, headers and footers (src/wordpage.js); the bullets
+  // the page drew (R2)
+  const bul = req.bullets && req.bullets.some(Boolean);
+  const docx = req.page || bul ? zip(bulletDocx(req.page ? pageDocx(unzip(made), req.page) : unzip(made), bul ? req.bullets : null)) : made;
   // what Word got, block by block, lined up with what the page showed
   const X = extract(unzip(docx));
   const anchors = [];
@@ -65,6 +67,53 @@ export function exportDocx(P, req) {
   const out = addRikuyPart(docx, data);
   // json: what the worker hashes into the export's mark (src/wordworker.js)
   return { docx: out, warnings: said(r.warnings), lost, unread, size: out.length, json: JSON.stringify(data) };
+}
+
+// (R2) Word's bullets as the page drew them. pandoc's AST has no bullet: it gives each list its own
+// w:num, in the order it starts them, on one abstract list of Symbol and Wingdings bullets by level.
+// bullets: wordast's record of every bulleted and numbered list in that order ({ glyph } or null).
+// A list whose bullet the page drew gets a copy of its abstract list with that level's bullet the
+// page's character, in the document's font. Where the lists do not count the same on both sides,
+// nothing changes.
+export function bulletDocx(parts, bullets) {
+  const np = 'word/numbering.xml';
+  if (!bullets || !parts.has(np)) return parts;
+  let nu = text(parts.get(np));
+  const used = new Map();
+  for (const name of ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml']) {
+    if (!parts.has(name)) continue;
+    for (const m of text(parts.get(name)).matchAll(/<w:numPr>\s*<w:ilvl w:val="(\d{1,2})"\s*\/>\s*<w:numId w:val="(\d{1,9})"\s*\/>/g)) if (!used.has(+m[2])) used.set(+m[2], +m[1]);
+  }
+  const ids = [...used.keys()].sort((a, b) => a - b);
+  if (ids.length !== bullets.length) return parts;
+  const made = new Map(), add = [];
+  let next = 7000;
+  const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  bullets.forEach((b, k) => {
+    if (!b || !b.glyph || b.glyph.length > 4) return;
+    const id = ids[k], lvl = used.get(id);
+    const nm = new RegExp('<w:num w:numId="' + id + '"><w:abstractNumId w:val="(\\d{1,9})" \\/>').exec(nu);
+    if (!nm) return;
+    const key = nm[1] + '|' + lvl + '|' + b.glyph;
+    if (!made.has(key)) {
+      const am = new RegExp('<w:abstractNum w:abstractNumId="' + nm[1] + '">(?:(?!<\\/w:abstractNum>)[\\s\\S])*<\\/w:abstractNum>').exec(nu);
+      if (!am) return;
+      const nid = next++;
+      let x = am[0].replace(/w:abstractNumId="\d+"/, 'w:abstractNumId="' + nid + '"').replace(/<w:nsid w:val="[0-9A-Fa-f]+" \/>/, '<w:nsid w:val="' + (0xB000 + nid).toString(16).toUpperCase().padStart(8, '0') + '" />');
+      x = x.replace(new RegExp('(<w:lvl w:ilvl="' + lvl + '"[^>]*>)((?:(?!<\\/w:lvl>)[\\s\\S])*)(<\\/w:lvl>)'), (all, a, body, z) =>
+        /<w:numFmt w:val="bullet" \/>/.test(body) ? a + body.replace(/<w:lvlText w:val="[^"]*" \/>/, '<w:lvlText w:val="' + esc(b.glyph) + '" />').replace(/<w:rPr>(?:(?!<\/w:rPr>)[\s\S])*<\/w:rPr>/, '') + z : all);
+      made.set(key, nid);
+      add.push(x);
+    }
+    nu = nu.replace(nm[0], '<w:num w:numId="' + id + '"><w:abstractNumId w:val="' + made.get(key) + '" />');
+  });
+  if (!add.length) return parts;
+  const at = nu.indexOf('<w:num ');
+  if (at < 0) return parts;
+  nu = nu.slice(0, at) + add.join('') + nu.slice(at);
+  const out = new Map(parts);
+  out.set(np, new TextEncoder().encode(nu));
+  return out;
 }
 
 // The styles Rikuy names in the tree (src/wordast.js: Colour C00000, Shade FFFF00, Highlight,
@@ -880,6 +929,10 @@ function unmark(tex, info, N, S) {
     });
     tex = tex.split('\\end{' + env + '}\n\n\\begin{' + env + '}\n').join('\n');
   }
+  // the highlighter's colour (docx.js marks a run highlighted in a colour other than yellow):
+  // \hl[green]{..}, as Text Highlight Color writes it; Word's dark ones as xcolor's mix
+  tex = tex.replace(/\\hl\{((?:\uE005[\uE010-\uE01F]{6}\uE001)?)\uE005\uE010([\uE010-\uE01F]{6})\uE001/g, (s, c, h) => { const n = HL_XC[decode(h)]; return n ? '\\hl[' + n + ']{' + c : '\\hl{' + c; });
+  tex = tex.replace(/\uE005\uE010[\uE010-\uE01F]{6}\uE001/g, '');
   // colour: one colour over most of the text is the document's ink, not a mark of anything
   const base = ink(info);
   const OPEN = '\uE005([\uE010-\uE01F]{6})\uE001';
@@ -895,6 +948,10 @@ function unmark(tex, info, N, S) {
   return tex.replace(/[\uE003\uE005][\uE010-\uE01F]*\uE001?/g, '').replace(/[\uE002\uE004\uE006-\uE00F]/g, '');
 }
 
+// Word's highlighter colours as the names \hl takes (xcolor's; its mix of red, green and blue for
+// the three dark ones xcolor has no name for), which the page and Word export read back
+const HL_XC = { '00FF00': 'green', '00FFFF': 'cyan', FF00FF: 'magenta', '0000FF': 'blue', FF0000: 'red', '000080': 'rgb,255:red,0;green,0;blue,128', '008080': 'teal',
+  '008000': 'rgb,255:red,0;green,128;blue,0', '800080': 'violet', '800000': 'rgb,255:red,128;green,0;blue,0', '808000': 'olive', '808080': 'gray', C0C0C0: 'lightgray', '000000': 'black', FFFFFF: 'white' };
 const ink = (info) => new Set([...info.colors].filter(([, n]) => n / (info.chars || 1) > 0.5).map(([c]) => c));
 
 // Word's comments, each under the line of the text it is on, as Rikuy writes comments
@@ -1095,11 +1152,11 @@ export function docxToLatex(P, bytes, name) {
   if (used(/\\real\{/)) pre.push('\\usepackage{calc}');
   if (used(/\\multirow\b/)) pre.push('\\usepackage{multirow}');
   if (used(/\\(textcolor|hl)\b/)) pre.push('\\usepackage{xcolor}');
-  if (used(/\\(sout|uline|hl)\{/)) pre.push('\\usepackage[normalem]{ulem}');
+  if (used(/\\(sout|uline)\{|\\hl[{[]/)) pre.push('\\usepackage[normalem]{ulem}');
   // Word's highlighter: pandoc writes soul's \hl, which stops at a formula inside it and, before
   // 2023, at an accented letter; this one (ulem's) takes both and breaks across lines
   // (with a colour, [yellow] unless one is named: the line Rikuy's highlighter writes, src/charfmt.js)
-  if (used(/\\hl\{/)) pre.push('\\DeclareRobustCommand{\\hl}[1][yellow]{\\bgroup\\markoverwith{\\textcolor{#1}{\\rule[-.5ex]{2pt}{2.5ex}}}\\ULon}');
+  if (used(/\\hl[{[]/)) pre.push('\\DeclareRobustCommand{\\hl}[1][yellow]{\\bgroup\\markoverwith{\\textcolor{#1}{\\rule[-.5ex]{2pt}{2.5ex}}}\\ULon}');
   if (used(/\\(cite[tp]?|citeauthor|citeyear)\{/) || bib) pre.push('\\usepackage[authoryear,round]{natbib}');
   if (used(/\\(texttt|verb)|\\begin\{verbatim\}/)) { /* the class has them */ }
   if (used(/\\(href|url|hyperlink|hypertarget|hyperref|phantomsection|nolinkurl)\b/)) pre.push('\\usepackage[hidelinks]{hyperref}');

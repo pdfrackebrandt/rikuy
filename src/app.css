@@ -2054,3 +2054,15 @@ html.pic-drag, html.pic-drag body { touch-action: none; overscroll-behavior: non
 /* \part in the contents, as article and report list it (review M2) */
 .toc-l-1, .toc-l0 { font-weight: bold; font-size: calc(var(--z-large, 1.2) * 1em); margin-top: .9em; }
 .toc-l-1 .toc-d, .toc-l0 .toc-d { border: 0; }
+
+/* ---- R2: picture bullets, a list's own indents ------------------------------------------------ */
+.ld-pics { display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 4px; max-height: 40vh; overflow-y: auto; }
+.ld-pic { height: 56px; padding: 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink-ui); cursor: pointer; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.ld-pic img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.ld-pic-n { font: 11px/1.2 var(--font-ui); word-break: break-all; }
+.ld-pic:hover { border-color: var(--blue); }
+.ld-pic[aria-checked="true"] { background: var(--blue-wash); border-color: var(--blue); }
+.ld-pic:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.lbl .atom.a-img { display: inline-block; vertical-align: -.1em; }
+.lbl .atom.a-img img { height: 1.6ex; width: auto; }
+@media (pointer: coarse) { .ld > .btn { min-height: 44px; } .ld-pic { height: 60px; } }

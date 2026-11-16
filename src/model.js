@@ -13,7 +13,7 @@ import { readPage, paperName, NO_MEDIA_CLASSES, setsMedia, KOMA_CLASS } from './
 import { DVIPS_COLORS, BASE_COLORS } from './ui/kit.js';
 
 const DVIPS = Object.fromEntries(DVIPS_COLORS), XC = Object.fromEntries(BASE_COLORS);
-import { listSetup, formatOf, numText, bulletGlyph } from './lists.js';
+import { listSetup, formatOf, numText, bulletGlyph, INDENT_KEYS } from './lists.js';
 
 const WIDGET_FILE = /\.html?$/i;
 // the page's set up of the last preamble read (Builder.pageSetup)
@@ -199,6 +199,8 @@ function splitTop(t) {
 const unbrace = (t) => (t[0] === '{' && t[t.length - 1] === '}' ? t.slice(1, -1).trim() : t);
 // (B2) xcolor's mix of red, green and blue in 255ths, as More colors writes an HTML colour:
 // rgb,255:red,231;green,84;blue,128 -> #E75480
+// (R2) a picture bullet's label: \includegraphics[options]{file}, maybe in braces
+const PIC_LABEL = /^\{?\s*\\includegraphics\s*(?:\[([^\]{}]{0,200})\])?\s*\{([^{}\\%]{1,300})\}\s*\}?$/;
 function mixColor(t) {
   const m = /^rgb\s*,\s*255\s*:\s*red\s*,\s*(\d{1,3})\s*;\s*green\s*,\s*(\d{1,3})\s*;\s*blue\s*,\s*(\d{1,3})$/.exec(String(t).trim());
   if (!m || [m[1], m[2], m[3]].some((x) => +x > 255)) return null;
@@ -1059,7 +1061,7 @@ class Builder {
     if (opt) return colorValue(this.argText(ctx, opt), spec) || spec;
     // (xcolor's dvipsnames, BrickRed and the like, which the Font Color picker writes: as the
     // values they print in, for the page and for Word)
-    return this.named(spec) || (Object.hasOwn(DVIPS, spec) ? '#' + DVIPS[spec] : spec);
+    return this.named(spec) || (Object.hasOwn(DVIPS, spec) ? '#' + DVIPS[spec] : mixColor(spec) || spec);
   }
 
   // a name of the document's own; used, so the block is drawn again when its \definecolor changes
@@ -2332,6 +2334,20 @@ class Builder {
     }
     const first = count + 1;
     const bullet = kind === 'item' ? (F && bulletGlyph(F.label)) ?? ['•', '–', '∗', '·'][(level - 1) % 4] : null;
+    // (R2) a picture as the bullet (Define New Bullet › Picture: \includegraphics[height=..]{file}),
+    // drawn as the picture, shown and never edited there
+    const picM = kind === 'item' && F && F.label && bulletGlyph(F.label) == null ? PIC_LABEL.exec(F.label) : null;
+    // (R2) Adjust List Indents: enumitem's leftmargin, labelwidth and labelsep, where TeX's \list puts
+    // the text (the margin) and the label's box (its width, labelsep before the text), in em; a
+    // list inside one with indents of its own goes in from that one's margin
+    let lm = null;
+    const I = F && F.indents;
+    if ((I && INDENT_KEYS.some((k) => I[k])) || env.lmBase != null) {
+      const em = (k) => { const v = I && I[k] ? parseLen(I[k], this.opts.pt) : null; return typeof v === 'number' && isFinite(v) ? Math.max(-20, Math.min(40, v / this.opts.pt)) : null; };
+      const left = em('leftmargin') ?? 2.5, sep = em('labelsep') ?? 0.5, w = em('labelwidth') ?? Math.max(0, left - sep);
+      const base = env.lmBase ?? (depth - 1) * 2.5;
+      lm = { text: base + left, lab: base + left - sep - w, w, sep };
+    }
     // the space between items (enumitem's nosep and itemsep, \setlength{\itemsep}, \tightlist)
     const sep = !F || !F.sep ? null : F.sep === 'nosep' ? 0 : F.sep === 'noitemsep' || F.sep === 'tight' ? 0.2 : itemSep(parseLen(F.sep, this.opts.pt));
     const out = [], fns = [];
@@ -2357,15 +2373,15 @@ class Builder {
         if (!optA) listTarget = { num: ref, kind: 'item' };
         this.lastTarget = listTarget;
       }
-      if (kind === 'item') label = [{ k: 'chr', text: bullet }];
+      if (kind === 'item') label = picM ? [{ k: 'img', f: ctx.f, s: -1, e: -1, ro: true, file: picM[2].trim(), opts: (picM[1] || '').trim(), box: null }] : [{ k: 'chr', text: bullet }];
       if (optA) {
         const kids = this.inl(optA.nodes, ctx, fns);
         if (!kids.length) kids.push({ k: 'seg', f: ctx.f, t: '\u200B', map: [optA.is, optA.is], ph: true });
         label = [{ k: 'sty', st: kind === 'desc' ? 'bf' : '', kids, f: ctx.f, s: optA.s, e: optA.e, is: optA.is, ie: optA.ie }];
       }
       // (the label and the spacing are the block's own: a \setlist in the preamble changes them)
-      this.use('L' + count + level + (label && label[0] && label[0].text != null ? label[0].text : '') + '|' + (sep ?? ''));
-      const sub = { ...env, ...FLUSH, top: false, listDepth: depth, list: true, enumDepth: kind === 'enum' ? level : (env.enumDepth || 0), itemDepth: kind === 'item' ? level : (env.itemDepth || 0), ctxKind: 'li', noIndentFirst: true, depth: depth, cls: (env.cls || ''),
+      this.use('L' + count + level + (label && label[0] && label[0].text != null ? label[0].text : picM ? 'img:' + picM[0] : '') + '|' + (sep ?? '') + (lm ? '|' + lm.text + ',' + lm.lab + ',' + lm.w : ''));
+      const sub = { ...env, ...FLUSH, top: false, listDepth: depth, list: true, lmBase: lm ? lm.text : env.lmBase, enumDepth: kind === 'enum' ? level : (env.enumDepth || 0), itemDepth: kind === 'item' ? level : (env.itemDepth || 0), ctxKind: 'li', noIndentFirst: true, depth: depth, cls: (env.cls || ''),
         enumVals: kind === 'enum' ? [...vals.slice(0, level - 1), count] : vals, enumThe: kind === 'enum' ? [...thes.slice(0, level - 1), F.theStar] : thes,
         enumLabel: kind === 'enum' && label && label[0].text != null ? label[0].text : env.enumLabel };
       const us = this.flow(it.nodes, ctx, sub);
@@ -2374,12 +2390,13 @@ class Builder {
       const firstP = its[0] && its[0].type === 'p' ? its[0] : null;
       const itemEnd = it.nodes.length ? it.nodes[it.nodes.length - 1].e : it.cmd.e;
       const meta = { kind, itemS: it.cmd.s, itemE: itemEnd, listS: nd.s, listE: nd.e, cmdE: it.cmd.e, empty: !its.length };
+      if (lm) for (const x of its) if (x.lmPad == null) { x.lmPad = lm.text; if (x === firstP) x.lm = lm; }
       if (firstP) { firstP.label = label; firstP.labelKind = kind; firstP.li = meta; firstP.indent = false; }
       else {
         let php = optA ? optA.e : it.cmd.ne;
         if (ctx.src[php] === ' ') php++;
         const at = ctx.pm ? ctx.pm[php] : php;
-        its.unshift({ type: 'p', inl: [{ k: 'seg', f: ctx.f, t: '\u200B', map: [at, at], ph: true }], label, labelKind: kind, li: meta, indent: false, depth, cls: env.cls || '', ctx: 'li', f: ctx.f, dir: this.dirOf() });
+        its.unshift({ type: 'p', inl: [{ k: 'seg', f: ctx.f, t: '\u200B', map: [at, at], ph: true }], label, labelKind: kind, li: meta, indent: false, depth, cls: env.cls || '', ctx: 'li', f: ctx.f, dir: this.dirOf(), ...(lm ? { lmPad: lm.text, lm } : {}) });
       }
       if (sep != null && its[0]) { its[0].liSep = sep; if (F.sep === 'nosep') its[0].liTop = 0; }
       for (const x of its) { if (x.type === 'p' && x.depth == null) x.depth = depth; if (x.type === 'p' && x !== its[0]) x.li = x.li || { ...meta, cont: true }; if (x.type !== 'p') x.depth = depth; }
