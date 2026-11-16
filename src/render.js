@@ -383,6 +383,8 @@ export class Renderer {
         pre.textContent = it.text;
         el.appendChild(pre);
         if (it.verb) el.classList.add('verb');
+        // (LaTeX's verbatim never breaks a line: drawn so, R2)
+        if (/^verbatim\*?$/.test(it.name || '')) el.classList.add('verbatim-env');
         const idx = B.atoms.length;
         B.atoms.push({ kind: 'raw', f: it.f, s: this.rel(it.s), e: this.rel(it.e), is: this.rel(it.is), ie: this.rel(it.ie), name: it.name });
         el.dataset.a = B.id + '.' + idx;

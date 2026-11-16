@@ -700,6 +700,13 @@ export const methods = {
     if (!NAMES) return null;
     return NAMES.has(n) || NAMES.has('end' + n);
   },
+  // whether LaTeX's kernel or a common package defines a command of this name (true, false), or
+  // null while the list is still coming (it is fetched then)
+  latexKnows(n) {
+    if (TAKEN.has(n) || Object.prototype.hasOwnProperty.call(SIG, n) || Object.prototype.hasOwnProperty.call(CHARS, n)) return true;
+    if (!NAMES) { texNames().catch(() => {}); return null; }
+    return NAMES.has(n);
+  },
   // how far the names Create a Style checks against have come: none, loading, ready or failed
   // (tests wait on it)
   texNamesState() { return NAMES ? 'ready' : NAMES_LOADING ? 'loading' : NAMES_FAILED ? 'failed' : 'none'; },

@@ -9,7 +9,7 @@
 import { register, command, onInsertText, onInstall } from '../commands.js';
 import { $ } from '../ui/dom.js';
 import { BLOCKS } from '../render.js';
-import { NOT_PLAIN, latexSpot, restyle, startsLine, headLevels, isHeading, ENV_STYLES, THM_STYLES, isEnvStyle, envOf, quoteWords, thmLine, starEdits, applyEdits, numberingEdits, charStyleBody, formatOnlyBegin, thmDefsIn, eolAt, codeSafe, codeBlock, codeText, titleInfo, titlePartAt, titlePartEdits, titleNormalEdits, renameEdits } from '../styles.js';
+import { NOT_PLAIN, latexSpot, restyle, startsLine, headLevels, isHeading, ENV_STYLES, THM_STYLES, isEnvStyle, envOf, quoteWords, thmLine, starEdits, applyEdits, numberingEdits, charStyleBody, formatOnlyBegin, thmDefsIn, eolAt, codeSafe, codeBlock, codeText, titleInfo, titlePartAt, titlePartEdits, titleNormalEdits, renameEdits, createsOwn, verbatimRuns } from '../styles.js';
 import { escapeTeX } from '../editor.js';
 import { defines, packageLine, packageOptions, preambleEnd, stripComments } from '../preamble.js';
 import { wrapBlockEdits } from '../blockenv.js';
@@ -294,12 +294,20 @@ export const methods = {
     if (!st || !st.to) return st;
     const why = {};
     if (st.to.has('verbatim')) {
-      const ok = st.many ? st.many.every((x) => x.st.b && codeSafe(this.src(x.B.f).slice(x.st.b.ws, x.st.b.we))) : !!st.b && codeSafe(this.src(at.B ? at.B.f : this.main).slice(st.b.ws, st.b.we));
-      if (!ok) { st = { ...st, to: new Set([...st.to].filter((x) => x !== 'verbatim')) }; why.verbatim = 'Not here: Code prints its words exactly as typed, and this paragraph has LaTeX in it (a command, braces, $, %, a dash or quotes) that it would print as typed.'; }
+      // (one line of words verbatim prints as the paragraph does, no longer than a line of the
+      // text in the typewriter font: TeX never breaks a verbatim line, review H2)
+      const cols = this.codeCols(), words = !st.many && st.b ? this.src(at.B ? at.B.f : this.main).slice(st.b.ws, st.b.we) : '';
+      const ok = !st.many && !!st.b && codeSafe(words, cols);
+      if (!ok) {
+        st = { ...st, to: new Set([...st.to].filter((x) => x !== 'verbatim')) };
+        why.verbatim = !st.many && codeSafe(words) ? 'Not here: this paragraph is longer than one line of code (' + cols + ' characters), and TeX never breaks a verbatim line: it would run off the page.'
+          : 'Not here: Code prints one line of words exactly as typed, and this paragraph has more lines or LaTeX in it (a command, braces, $, %, < > |, a dash or quotes) that it would print otherwise.';
+      }
     }
     if (st.v === 'p' && st.b && !st.many && at.B && at.B.f === this.main && !at.c.ghost && [...st.to].some(isHeading)) {
-      const T = this.titleNow();
-      if (T) {
+      const T = this.titleNow(), away = this.titleAway();
+      if (away) for (const k of ['title', ...Object.keys(TITLE_PARTS)]) why[k] = 'The title is set in ' + away + ': its parts are edited there.';
+      else if (T) {
         const add = [];
         if (!T.title) add.push('title'); else if (T.make) { if (!T.subtitle) add.push('subtitle'); add.push('author'); if (!T.date || !this.src(this.main).slice(T.date.is, T.date.ie).trim()) add.push('date'); }
         if (add.length) st = { ...st, to: new Set([...st.to, ...add]) };
@@ -309,15 +317,32 @@ export const methods = {
     }
     return Object.keys(why).length ? { ...st, whyTo: why } : st;
   },
+  // how many typewriter characters a line of the text holds (cmtt's are .525em wide)
+  codeCols() {
+    const g = this.layout && this.layout.g, pt = (g && g.pt) || (this.model && this.model.opts.pt) || 10, tw = (g && g.tw) || 345, cols = (g && g.cols) || 1;
+    const w = cols > 1 ? (tw - (g.colsep || 10) * (cols - 1)) / cols : tw;
+    return Math.max(10, Math.floor(w / (0.525 * pt)));
+  },
   // the title block's set up in the main file, once for each text
   titleNow() {
     const src = this.src(this.main);
     if (!this.stTitle || this.stTitle.src !== src) this.stTitle = { src, T: titleInfo(src) };
     return this.stTitle.T;
   },
+  // a file of the preamble that sets a part of the title (\input{preamble}, a .sty): its name, or
+  // null (review M4), once for each set of texts
+  titleAway() {
+    if (this.stAway && this.stAway.M === this.model) return this.stAway.v;
+    const others = this.preambleOthers();
+    let v = null;
+    for (const t of others) { const k = this.files ? [...this.files].find(([, x]) => x === t) : null; if (/\\(?:title|subtitle|author|date)\s*[[{]/.test(stripComments(t.slice(0, 200000)))) { v = k ? k[0] : 'a file the preamble reads'; break; } }
+    this.stAway = { M: this.model, v };
+    return v;
+  },
   // the caret in the title block: the part it is in as its style; Normal makes it a paragraph
   titlePartStyle(at) {
-    const T = this.titleNow(), c = at.c;
+    const T = this.titleNow(), c = at.c, away = this.titleAway();
+    if (away) return { v: 'title', to: new Set(), why: 'The title is set in ' + away + ': its parts are edited there.' };
     if (!T || c.ghost || c.f !== this.main) return { v: 'title', to: new Set(), why: WHY.title };
     const P = titlePartAt(T, c.a);
     if (!P) return { v: 'title', to: new Set(), why: WHY.title };
@@ -503,12 +528,19 @@ export const methods = {
   // (R2) Rename a style of the document's own: 'env:name' or 'char:name' (or a character style's
   // name), the new name checked as Create a Style checks one
   canRenameStyle(v) { return !!this.ownStyleOf(v); },
+  // (one the project makes itself, \newcommand or \newenvironment and their kin; one it only
+  // redefines, \renewcommand{\emph}, is LaTeX's and keeps its name: review H5)
   ownStyleOf(v) {
     const M = this.model;
     if (!M || typeof v !== 'string') return null;
-    if (/^env:/.test(v)) { const n = v.slice(4); return M.thms.has(n) || M.envDefs.has(n) ? { kind: 'env', name: n } : null; }
-    const n = v.replace(/^char:/, '');
-    return /^char:/.test(v) && M.textMacros.has(n) ? { kind: 'cmd', name: n } : null;
+    let S = null;
+    if (/^env:/.test(v)) { const n = v.slice(4); if (M.thms.has(n) || M.envDefs.has(n)) S = { kind: 'env', name: n }; }
+    else { const n = v.replace(/^char:/, ''); if (/^char:/.test(v) && M.textMacros.has(n)) S = { kind: 'cmd', name: n }; }
+    if (!S) return null;
+    const memo = this.stOwn && this.stOwn.M === M ? this.stOwn.map : (this.stOwn = { M, map: new Map() }).map;
+    const key = S.kind + ':' + S.name;
+    if (!memo.has(key)) memo.set(key, [this.src(this.main), ...this.preambleOthers()].some((t) => createsOwn(t, S.name, S.kind)));
+    return memo.get(key) ? S : null;
   },
   renameStyle(v, neu) {
     const S = this.ownStyleOf(v);
@@ -519,8 +551,19 @@ export const methods = {
     const taken = this.nameTaken(neu);
     if (taken) { this.toast((S.kind === 'cmd' ? '\\' : '') + neu + ' is taken: LaTeX, a package or this document has a command or an environment of that name.'); return false; }
     if (taken == null) { this.toast('Still fetching the names LaTeX and its packages define, to check ' + neu + ' against them: again in a moment.'); return false; }
+    // (the names LaTeX derives from the old one must be its own alone: an environment "ta" would
+    // otherwise take \theta with it, "input" \endinput; review L3)
+    const derived = S.kind === 'env' ? ['the' + S.name, 'end' + S.name, S.name + 'name', S.name + 'autorefname'] : [S.name];
+    const known = derived.map((n) => this.latexKnows(n));
+    if (known.some((x) => x == null)) { this.toast('Still fetching the names LaTeX and its packages define, to check the rename against them: again in a moment.'); return false; }
+    const clash = derived.find((n, k) => known[k]);
+    if (clash) { this.toast('\\' + clash + ' is LaTeX\'s or a package\'s own: renaming ' + S.name + ' would rename it too. Rename it in the source.', 6000); return false; }
+    // (.bib files too for a command: a title may use it, review H6)
+    const files = [...this.files].filter(([f, t]) => typeof t === 'string' && (/\.(tex|sty|ltx)$/i.test(f) || (S.kind === 'cmd' && /\.bib$/i.test(f))));
+    const runs = files.find(([, t]) => verbatimRuns(t, S.name));
+    if (runs) { this.toast(runs[0] + ' has a Verbatim block with commandchars that runs \\' + S.name + ': rename it in the source.', 6000); return false; }
     const edits = [];
-    for (const [f, t] of this.files) if (/\.(tex|sty|ltx)$/i.test(f) && typeof t === 'string') for (const x of renameEdits(t, S.name, neu, S.kind)) edits.push({ f, ...x });
+    for (const [f, t] of files) for (const x of renameEdits(t, S.name, neu, S.kind)) edits.push({ f, ...x });
     if (!edits.length) return false;
     const c = this.caretNow(), mine = c && !c.ghost ? edits.filter((x) => x.f === c.f) : [];
     const map = (p) => { let d = 0; for (const x of mine) if (x.e <= p) d += x.t.length - (x.e - x.s); return p + d; };

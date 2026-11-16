@@ -538,8 +538,10 @@ export function thmMakersIn(text) {
 // Code goes only on words verbatim prints as the paragraph does: none of LaTeX's specials, no blank
 // line, no dash or quote ligature (verbatim prints -- and `` as typed). So Normal again gives the
 // same bytes back; a hand written verbatim with specials in it comes back as text that prints them.
-export const CODE_UNSAFE = /--|``|''|!`|\?`|"/;
-export const codeSafe = (t) => !!t && !VERB_UNSAFE.test(t) && !CODE_UNSAFE.test(t);
+// (and none of what OT1's fonts print otherwise than verbatim does: < > | as ¡ ¿ —, two spaces as
+// one; and one line, which verbatim keeps as typed and TeX does not break: review H2, L2)
+export const CODE_UNSAFE = /--|``|''|!`|\?`|"|[<>|]| {2}|\t|\r|\n/;
+export const codeSafe = (t, cols = Infinity) => !!t && t.length <= cols && !VERB_UNSAFE.test(t) && !CODE_UNSAFE.test(t);
 // A verbatim block [s, e) as a style's place: { v, s, ws, we, e } (the words between its lines), or null
 export function codeBlock(src, s, e) {
   const head = /^\\begin\s*\{verbatim\}[ \t]*\r?\n?/.exec(src.slice(s, s + 40));
@@ -564,8 +566,12 @@ const SUB_TAIL = /\\\\[ \t]*(?:\[[^\]\n]{0,20}\])?[ \t]*\\(?:large|Large|normals
 export function titleInfo(src) {
   const end = preambleEndOf(src);
   if (end < 0) return null;
-  const pre = stripCommentsOf(src.slice(0, end));
   const out = { end, title: null, subtitle: null, author: null, date: null, authors: [], make: null };
+  const body = stripCommentsOf(src.slice(end, end + 200000)), k = body.search(/\\maketitle(?![A-Za-z@])/);
+  if (k >= 0) out.make = { s: end + k, e: end + k + 10 };
+  // (the preamble and the body before \maketitle, where a \title or \author is as common: the
+  // last of each before it is the one TeX prints, review H4)
+  const pre = stripCommentsOf(src.slice(0, out.make ? out.make.s : end));
   TITLE_CMDS.lastIndex = 0;
   for (let m, n = 0; (m = TITLE_CMDS.exec(pre)) && n < 200; n++) {
     let i = m.index + m[0].length;
@@ -592,8 +598,6 @@ export function titleInfo(src) {
     }
     cut(from, t.length);
   }
-  const body = stripCommentsOf(src.slice(end, end + 200000)), k = body.search(/\\maketitle(?![A-Za-z@])/);
-  if (k >= 0) out.make = { s: end + k, e: end + k + 10 };
   return out;
 }
 function groupEndOf(t, i) {
@@ -633,8 +637,10 @@ export function titlePartEdits(src, b, part, o = {}) {
   if (!words.trim() || /\n[ \t]*\r?\n/.test(words)) return { why: 'One paragraph of words at a time.' };
   // (into a command's argument only words that close in it: a comment would take its closing brace)
   if (!argSafe(words)) return { why: 'This paragraph has a comment or a brace that does not close in it: it cannot go into the title\'s command as it is.' };
+  if (T.make && b.ws < T.make.e) return { why: 'Only a paragraph after \\maketitle can be a part of the title.' };
   const beginLine = lineStart(src, T.end), edits = [], cut = paraCut(src, b.ws, b.we);
-  const line = (t) => ({ s: beginLine, e: beginLine, t: t + nl });
+  // (a new line beside the title where the title is in the body, else in the preamble)
+  const line = (t) => (T.title && T.title.s > T.end ? ownLineAfter(src, T.title, t, nl) : { s: beginLine, e: beginLine, t: t + nl });
   if (part === 'title') {
     if (T.title) return { why: 'This document has a title: its words are edited where it shows, above the text.' };
     edits.push(line('\\title{' + words + '}'));
@@ -689,10 +695,10 @@ export function titleNormalEdits(src, at) {
   if (P.part === 'title') {
     if (T.subtitle || T.authors.some((x) => x.e > x.s) || (T.date && src.slice(T.date.is, T.date.ie).trim())) return { why: 'The title stays while the title block has a subtitle, an author or a date: \\maketitle needs it. Make those Normal first.' };
     words = src.slice(T.title.is, T.title.ie);
+    if (/\\thanks(?![A-Za-z@])/.test(words)) return { why: 'A \\thanks note prints only in the title block: take it out first.' };
+    // (an empty \author{} or \date{} stays: harmless without \maketitle, and the way back is byte for byte)
     const L = ownLine(src, T.title.s, T.title.e);
     edits.push({ s: L.s, e: L.e, t: '' }, { s: T.make.s, e: T.make.e, t: words });
-    if (T.author) { const A = ownLine(src, T.author.s, T.author.e); edits.push({ s: A.s, e: A.e, t: '' }); }
-    if (T.date) { const D = ownLine(src, T.date.s, T.date.e); edits.push({ s: D.s, e: D.e, t: '' }); }
     return { edits, p: T.make.s };
   }
   if (P.part === 'subtitle') {
@@ -712,6 +718,7 @@ export function titleNormalEdits(src, at) {
     edits.push({ s: L.s, e: L.e, t: '' });
   }
   if (!words) return { why: 'That part has no words to make a paragraph of.' };
+  if (/\\thanks(?![A-Za-z@])/.test(words)) return { why: 'A \\thanks note prints only in the title block: take it out first.' };
   edits.push({ s: T.make.e, e: T.make.e, t: nl + nl + words });
   return { edits, p: T.make.e + 2 * nl.length };
 }
@@ -724,7 +731,14 @@ export function titleNormalEdits(src, at) {
 // 2 000 000 characters, 20 000 places.
 const ENV_NAMERS = new Set(['begin', 'end', 'newenvironment', 'renewenvironment', 'provideenvironment', 'NewDocumentEnvironment', 'RenewDocumentEnvironment', 'newtheorem', 'declaretheorem', 'newtcbtheorem', 'newmdtheoremenv', 'spnewtheorem', 'newtcolorbox', 'DeclareTColorBox', 'newmdenv', 'crefname', 'Crefname', 'newframedtheorem', 'newshadedtheorem',
   // (a theorem's counter has its name: \setcounter{claim}{0}, \arabic{claim})
-  'arabic', 'alph', 'Alph', 'roman', 'Roman', 'fnsymbol', 'setcounter', 'addtocounter', 'stepcounter', 'refstepcounter', 'value', 'numberwithin', 'counterwithin', 'counterwithout']);
+  'arabic', 'alph', 'Alph', 'roman', 'Roman', 'fnsymbol', 'setcounter', 'addtocounter', 'stepcounter', 'refstepcounter', 'value', 'numberwithin', 'counterwithin', 'counterwithout',
+  'newcounter', '@addtoreset']);
+// (namers whose every braced argument may be the counter: \numberwithin{equation}{claim}, review H6)
+const COUNTER_PAIRS = new Set(['numberwithin', 'counterwithin', 'counterwithout', '@addtoreset']);
+// (thmtools' and the like's options that name another theorem's counter)
+const SIBLING_KEYS = /(\b(?:sibling|numberlike|sharenumber|numberwithin|parent)\s*=\s*\{?\s*)([A-Za-z@*]{1,60})(?=\s*\}?\s*(?:,|$))/g;
+// (inline verbatim: its text is as written, as \verb's, review L3)
+const INLINE_VERB = new Set(['lstinline', 'path', 'url', 'nolinkurl', 'mintinline', 'mint', 'Verb']);
 const VERB_ENVS = /^(verbatim\*?|Verbatim\*?|lstlisting|minted|comment|filecontents\*?)$/;
 export function renameEdits(text, old, neu, kind) {
   const out = [], n = Math.min(text.length, 2e6);
@@ -738,6 +752,15 @@ export function renameEdits(text, old, neu, kind) {
     if (!name) { i++; continue; }
     // \verb|...| and the verbatim environments: their text is as written
     if (name === 'verb') { let k = j; if (text[k] === '*') k++; const d = text[k], z = d ? text.indexOf(d, k + 1) : -1; i = z < 0 ? j : z; continue; }
+    if (INLINE_VERB.has(name)) {
+      let k = skipSp(j);
+      if (text[k] === '[') { const z = groupEndOf(text, k); k = z < 0 ? k : skipSp(z); }
+      if (name === 'mint' || name === 'mintinline') { if (text[k] === '{') { const z = groupEndOf(text, k); k = z < 0 ? k : z; } }
+      const d = text[k];
+      const z = d === '{' ? groupEndOf(text, k) - 1 : d && !/[\s\\]/.test(d) ? text.indexOf(d, k + 1) : -1;
+      i = z < 0 ? j - 1 : z;
+      continue;
+    }
     if (name === 'begin') {
       const k = skipSp(j);
       if (text[k] === '{') { const z = text.indexOf('}', k); const env = z > 0 && z - k < 60 ? text.slice(k + 1, z).trim() : ''; if (VERB_ENVS.test(env)) { const end = text.indexOf('\\end{' + env + '}', z); i = end < 0 ? n : end + 5 + env.length; continue; } }
@@ -755,13 +778,40 @@ export function renameEdits(text, old, neu, kind) {
       const z = text[k] === '[' || text[k] === '{' ? groupEndOf(text, k) : -1;
       if (z < 0) break;
       const inner = text.slice(k + 1, z - 1), here = (k + 1) + inner.indexOf(old);
-      if (text[k] === '[') { if (thm && braces === 1 && inner.trim() === old) out.push({ s: here, e: here + old.length, t: neu }); k = skipSp(z); continue; }
-      if (braces === 0 && inner.trim() === old) out.push({ s: here, e: here + old.length, t: neu });
+      if (text[k] === '[') {
+        // (\newtheorem{x}[claim]{..}, \newtheorem{x}{..}[claim], \newcounter{x}[claim]; a key naming it)
+        if (inner.trim() === old && ((thm && braces >= 1) || (name === 'newcounter' && braces === 1))) out.push({ s: here, e: here + old.length, t: neu });
+        else if (inner.length < 2000) for (const m of inner.matchAll(SIBLING_KEYS)) if (m[2] === old) { const q = k + 1 + m.index + m[1].length; out.push({ s: q, e: q + old.length, t: neu }); }
+        k = skipSp(z); continue;
+      }
+      if ((braces === 0 || COUNTER_PAIRS.has(name)) && inner.trim() === old) out.push({ s: here, e: here + old.length, t: neu });
       braces++;
-      if (!thm) break;
+      if (!thm && name !== 'newcounter' && !(COUNTER_PAIRS.has(name) && braces < 2)) break;
       k = skipSp(z);
     }
     i = j - 1;
   }
   return out;
+}
+
+// (R2, review H5) Whether a text makes a command or an environment its own (\newcommand, \def,
+// \newenvironment, \newtheorem and the theorem makers), not one it only redefines (\renewcommand,
+// \renewenvironment): only those are renamed. name: letters only.
+export function createsOwn(text, name, kind) {
+  if (!/^[A-Za-z]{1,40}$/.test(name)) return false;
+  const t = stripCommentsOf(String(text).slice(0, 400000));
+  const re = kind === 'cmd' ? new RegExp('\\\\(?:newcommand|providecommand|DeclareRobustCommand|NewDocumentCommand|[gex]?def)\\*?\\s*\\{?\\s*\\\\' + name + '(?![A-Za-z@])')
+    : new RegExp('\\\\(?:newenvironment|NewDocumentEnvironment|newtheorem|declaretheorem|newtcbtheorem|newmdtheoremenv|spnewtheorem|newtcolorbox|DeclareTColorBox|newmdenv|newframedtheorem|newshadedtheorem)\\*?\\s*(?:\\[[^\\]]{0,500}\\]\\s*)?\\{\\s*' + name + '\\s*\\}');
+  return re.test(t);
+}
+// (review H6) A fancyvrb Verbatim with commandchars runs the commands in it: a rename would have to
+// reach into it, so a text holding one that names \old is refused
+export function verbatimRuns(text, old) {
+  const re = /\\begin\s*\{(Verbatim|BVerbatim|LVerbatim)\}\s*\[([^\]]{0,2000})\]/g, cmd = new RegExp('\\\\' + old + '(?![A-Za-z@])');
+  for (let m, n = 0; (m = re.exec(text)) && n < 200; n++) {
+    if (!/commandchars/.test(m[2])) continue;
+    const z = text.indexOf('\\end{' + m[1] + '}', m.index);
+    if (cmd.test(text.slice(m.index, z < 0 ? text.length : z))) return true;
+  }
+  return false;
 }

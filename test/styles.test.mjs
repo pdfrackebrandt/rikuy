@@ -450,4 +450,43 @@ ok('R2: Rename a style: \\begin, \\end and the definition, a theorem numbered wi
   assert.ok(Date.now() - t0 < 2000, Date.now() - t0 + ' ms');
 });
 
+ok('R2 review: Code on one line that fits, nothing OT1 prints otherwise; title parts in the body before \\maketitle; \\thanks stays; Rename\'s counters, own definitions, inline verbatim', () => {
+  // H2, L2
+  assert.ok(SR2.codeSafe('int x = 1;', 65));
+  for (const t of ['a < b', 'a | b', 'x  y', 'one\ntwo', 'tab\there']) assert.ok(!SR2.codeSafe(t, 65), JSON.stringify(t));
+  assert.ok(!SR2.codeSafe('word '.repeat(40).trim(), 65) && SR2.codeSafe('word '.repeat(12).trim(), 65));
+  // H4: \title and \author in the body, before \maketitle, are the title TeX prints
+  const D = (pre, body) => '\\documentclass{article}\n' + pre + '\\begin{document}\n' + body + '\n\\end{document}\n';
+  const par = (t, w) => ({ ws: t.indexOf(w), we: t.indexOf(w) + w.length });
+  const b4 = D('', '\\title{Real Title}\n\\maketitle\n\nMy words\n\nText.');
+  const T = SR2.titleInfo(b4);
+  assert.equal(b4.slice(T.title.is, T.title.ie), 'Real Title');
+  assert.ok(SR2.titlePartEdits(b4, par(b4, 'My words'), 'title').why, 'a second title refused');
+  const a4 = SR2.applyEdits(b4, SR2.titlePartEdits(b4, par(b4, 'My words'), 'author').edits);
+  assert.equal(a4, D('', '\\title{Real Title}\n\\author{My words}\n\\maketitle\n\nText.'));
+  assert.equal(SR2.applyEdits(a4, SR2.titleNormalEdits(a4, a4.indexOf('My words') + 1).edits), b4);
+  // (a paragraph before \maketitle is no part of it)
+  const pre4 = D('\\title{T}\n', 'Early\n\n\\maketitle\n\nText.');
+  assert.ok(SR2.titlePartEdits(pre4, par(pre4, 'Early'), 'author').why);
+  // L6: \thanks is the title block's alone; an empty \date{} stays when the title goes
+  const th = D('\\title{T}\n\\author{Ann\\thanks{Funded.}}\n', '\\maketitle\n\nText.');
+  assert.ok(SR2.titleNormalEdits(th, th.indexOf('Ann') + 1).why);
+  const ph = D('\\title{T}\n\\date{}\n', '\\maketitle\n\nText.');
+  assert.ok(SR2.applyEdits(ph, SR2.titleNormalEdits(ph, ph.indexOf('{T}') + 1).edits).includes('\\date{}'));
+  // H5: only what the document makes is its own
+  assert.ok(!SR2.createsOwn('\\renewcommand{\\emph}[1]{\\textbf{#1}}', 'emph', 'cmd'));
+  assert.ok(!SR2.createsOwn('\\renewenvironment{quote}{}{}', 'quote', 'env'));
+  assert.ok(SR2.createsOwn('\\newcommand*\\key[1]{#1}', 'key', 'cmd') && SR2.createsOwn('\\declaretheorem[name=A]{claim}', 'claim', 'env'));
+  // H6: the counter's every name
+  const t = '\\newtheorem{claim}{Claim}\n\\numberwithin{equation}{claim}\n\\newtheorem{lemma}{Lemma}[claim]\n\\newtheorem{note}[claim]{Note}\n\\declaretheorem[sibling=claim,name=X]{other}\n\\makeatletter\\@addtoreset{figure}{claim}\\makeatother\n\\newcounter{ex}[claim]\n';
+  assert.equal(SR2.applyEdits(t, SR2.renameEdits(t, 'claim', 'fact', 'env')), t.replace(/claim/g, 'fact'));
+  const c = '\\newcounter{example}\n\\newenvironment{example}{\\refstepcounter{example}}{}\n\\begin{example}x\\end{example}\n';
+  assert.equal(SR2.applyEdits(c, SR2.renameEdits(c, 'example', 'sample', 'env')), c.replace(/example/g, 'sample'));
+  // L3: inline verbatim as written
+  const v = '\\lstinline|\\key| \\url{\\key} \\path|\\key| \\mint{tex}|\\key| \\key';
+  assert.equal(SR2.applyEdits(v, SR2.renameEdits(v, 'key', 'term', 'cmd')), v.replace(/\\key$/, '\\term'));
+  assert.ok(SR2.verbatimRuns('\\begin{Verbatim}[commandchars=\\\\\\{\\}]\n\\key{a}\n\\end{Verbatim}', 'key'));
+  assert.ok(!SR2.verbatimRuns('\\begin{Verbatim}\n\\key{a}\n\\end{Verbatim}', 'key'));
+});
+
 console.log('styles: ' + n + ' groups of checks passed');

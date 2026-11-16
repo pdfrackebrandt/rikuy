@@ -146,16 +146,23 @@ ok('a stranger\'s preamble: bounded scans', () => {
   assert.ok(Date.now() - t0 < 1500, 'took ' + (Date.now() - t0) + ' ms');
 });
 
-ok('R2 (D1): the links in the accent: Rikuy\'s \\hypersetup line after the accent\'s, a document\'s own \\hypersetup changed in place, off again', () => {
-  const D = (pre) => '\\documentclass{article}\n\\usepackage{hyperref}\n' + pre + '\\begin{document}\nx\n\\end{document}\n';
-  const a = D('\\definecolor{accent}{HTML}{0E6F70}\n'), on = applyEdits(a, linkColorEdits(a, true));
-  assert.equal(on, D('\\definecolor{accent}{HTML}{0E6F70}\n' + LINK_LINE + '\n'));
-  assert.equal(applyEdits(on, linkColorEdits(on, false)), a);
+ok('R2 (D1): the links in the accent: Rikuy\'s own \\hypersetup line after the accent, hyperref and the document\'s own \\hypersetup, which stay as written; off, that line alone goes (review H3, M1)', () => {
+  const D = (pre) => '\\documentclass{article}\n' + pre + '\\begin{document}\nx\n\\end{document}\n';
+  const go = (t, on) => applyEdits(t, linkColorEdits(t, on));
+  const a = D('\\usepackage{hyperref}\n\\definecolor{accent}{HTML}{0E6F70}\n'), on = go(a, true);
+  assert.equal(on, D('\\usepackage{hyperref}\n\\definecolor{accent}{HTML}{0E6F70}\n' + LINK_LINE + '\n'));
+  assert.equal(go(on, false), a);
   assert.equal(linkColorEdits(on, true).length, 0);
-  const own = D('\\hypersetup{pdftitle={A, B}, hidelinks}\n'), o2 = applyEdits(own, linkColorEdits(own, true));
-  assert.ok(o2.includes('\\hypersetup{pdftitle={A, B},colorlinks,linkcolor=accent,urlcolor=accent,citecolor=accent}'), o2);
-  assert.ok(applyEdits(o2, linkColorEdits(o2, false)).includes('\\hypersetup{pdftitle={A, B},colorlinks}'));
-  const w = a.replace(/\n/g, '\r\n'), wo = applyEdits(w, linkColorEdits(w, true));
+  // (H3: the accent above hyperref: the line goes after hyperref, never before it is loaded)
+  const h3 = D('\\usepackage{xcolor}\n\\definecolor{accent}{HTML}{AA0000}\n\\usepackage[hidelinks]{hyperref}\n');
+  assert.equal(go(h3, true), h3.replace('{hyperref}\n', '{hyperref}\n' + LINK_LINE + '\n'));
+  // (M1: the document's own \hypersetup kept as written; Black gives it back whole)
+  for (const own of ['\\hypersetup{pdftitle={A, B}, hidelinks}', '\\hypersetup{colorlinks,linkcolor=blue}', '\\hypersetup{colorlinks=false,pdfborder={0 0 0}}']) {
+    const t = D('\\usepackage{hyperref}\n' + own + '\n'), o = go(t, true);
+    assert.equal(o, t.replace(own + '\n', own + '\n' + LINK_LINE + '\n'), own);
+    assert.equal(go(o, false), t, own);
+  }
+  const w = a.replace(/\n/g, '\r\n'), wo = go(w, true);
   assert.ok(!/[^\r]\n/.test(wo), JSON.stringify(wo));
 });
 

@@ -706,11 +706,18 @@ def r2(page):
     check('the Format Painter from a caret in a heading makes the paragraph clicked a heading', '\\section{Other words.}' in body(page), body(page))
     page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(250)
     check('one undo gives the source back byte for byte', src(page) == doc)
-    click_text(page, 'Quoted', 2); run_cmd(page, 'format-painter'); select_text(page, 'Plain'); up()
-    check('from a quote, the words selected in another paragraph put it in a quote', '\\begin{quote}\nPlain words here.\n\\end{quote}' in body(page), body(page))
-    check('and the words painted stay selected', page.evaluate('String(getSelection())') == 'Plain', page.evaluate('String(getSelection())'))
+    click_text(page, 'Quoted', 2); run_cmd(page, 'format-painter'); select_text(page, 'Plain words here.'); up()
+    check('from a quote, a whole paragraph selected goes in a quote', '\\begin{quote}\nPlain words here.\n\\end{quote}' in body(page), body(page))
+    check('and the words painted stay selected', page.evaluate('String(getSelection())').strip() == 'Plain words here.', page.evaluate('String(getSelection())'))
     page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(250)
     check('one undo again', src(page) == doc)
+    # (review M2: words selected inside a paragraph take the characters' formats alone, its style stays)
+    click_text(page, 'Head', 2); run_cmd(page, 'format-painter'); select_text(page, 'Plain'); up()
+    check('M2 painted from a heading onto a few words of a paragraph: the paragraph stays a paragraph', '\\section{Plain' not in body(page) and 'Plain words here.' in body(page), body(page))
+    load_doc(page, WRAP('\\section{Head words}\n\nSome \\textbf{bold} text.')); page.wait_for_timeout(200); click_text(page, 'bold', 2)
+    run_cmd(page, 'format-painter'); select_text(page, 'words'); up()
+    check('M2 painted from a Normal paragraph onto a word of a heading: the heading stays, the word bold', '\\section{Head \\textbf{words}}' in body(page), body(page))
+    load_doc(page, doc); page.wait_for_timeout(200)
     # a selection inside a paragraph carries its characters only (Word: no paragraph mark, no style)
     select_text(page, 'Quoted'); run_cmd(page, 'format-painter'); click_text(page, 'Other', 2); up()
     check('words selected inside a quote carry no style', body(page).endswith('\n\nOther words.') and '\\begin{quote}\nOther' not in body(page), body(page))
@@ -745,6 +752,15 @@ def r2(page):
     sel.select_option(value='*more'); page.wait_for_timeout(200)
     d.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
     check('and More colors… there gives any other', '\\culine{rgb,255:red,18;green,52;blue,86}{plain}' in body(page), body(page))
+
+
+def r2_review(page):
+    """Review L1: Clear All's joined step at history's cap of 400 drops one old step, not two"""
+    load_doc(page, WRAP('A.\n\n\\begin{center}\nSome \\textbf{bold} words.\n\\end{center}\n\nB.')); page.wait_for_timeout(200)
+    page.evaluate("() => { const g = window.rikuy; g.hist.length = 0; for (let i = 0; i < 400; i++) g.hist.push({ kind: 'x' + i, files: [], open: false, before: null, time: 0 }); }")
+    place(page, ('Some', 'words')); run_cmd(page, 'clear-formatting')
+    h = page.evaluate("[window.rikuy.hist.length, window.rikuy.hist[0].kind, window.rikuy.hist[399].kind, window.rikuy.rvStep]")
+    check('L1 at the cap the joined step drops one old step (x0), keeps x1, and leaves no step for Track Changes', h == [400, 'x1', 'format', None] and 'center' not in body(page), (h, body(page)))
 
 
 def r2_compiles(page):
@@ -931,7 +947,7 @@ def phones(p):
 
 def run():
     with sync_playwright() as p:
-        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, phones, compiles, r2_compiles)
+        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, phones, compiles, r2_compiles)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             if fn is phones:
                 phones(p)

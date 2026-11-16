@@ -1182,7 +1182,8 @@ def r2(page):
     check('Black takes the accent and Rikuy\'s \\hypersetup line away again (xcolor stays, as before)', src(page).replace('\\usepackage{xcolor}\n', '') == L, src(page)[:400])
     L2 = TDOC('\\usepackage{hyperref}\n\\hypersetup{pdftitle={A, B}}\n', 'See \\url{https://x.org}.')
     load_doc(page, L2); click_text(page, 'See', 1); run_cmd(page, 'design-colors', {'id': 'red'})
-    check('a \\hypersetup of the document\'s own takes the keys where it stands', '\\hypersetup{pdftitle={A, B},colorlinks,linkcolor=accent,urlcolor=accent,citecolor=accent}' in src(page), src(page)[:300])
+    t2 = src(page)
+    check('a \\hypersetup of the document\'s own stays as written, Rikuy\'s line after it (review M1)', '\\hypersetup{pdftitle={A, B}}\n' in t2 and t2.find('\\hypersetup{colorlinks,linkcolor=accent,urlcolor=accent,citecolor=accent}\n') > t2.find('\\hypersetup{pdftitle'), t2[:400])
     load_doc(page, WRAP('Plain.')); click_text(page, 'Plain', 1); run_cmd(page, 'design-colors', {'id': 'red'})
     check('without hyperref no \\hypersetup is written', 'hypersetup' not in src(page) and 'hyperref' not in src(page), src(page)[:300])
     load_doc(page, TDOC('\\usepackage[colorlinks,linkcolor=blue]{hyperref}\n', '\\section{A}\\label{a}\nSee \\ref{a}.'))
@@ -1194,6 +1195,86 @@ def r2(page):
     g = page.evaluate("""() => { const h = document.querySelector('#pages .it.h.runin'), p = [...document.querySelectorAll('#pages .it.p')].find((x) => x.textContent.includes('Runs in')), f = document.querySelector('#pages .it.flt');
       if (!h || !p || !f) return null; const hr = h.getBoundingClientRect(), pr = p.getBoundingClientRect(), fr = f.getBoundingClientRect(); return { gap: !!p.querySelector('.runin-gap'), same: Math.abs(hr.top - pr.top) < 3, floatFirst: fr.bottom <= pr.top + 1 }; }""")
     check('a float between \\paragraph{Lead} and its text: the heading runs into the text, the float drawn before them', g == {'gap': True, 'same': True, 'floatFirst': True}, g)
+
+
+
+def r2_review(page):
+    """The hostile review of R2: each finding's case (H1 to H6, M1, M3, M4), compiled where dist/tex exists"""
+    tex = os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm'))
+    # H1: a float between \paragraph{Lead} and its text: Delete at the heading's end keeps the float,
+    # and a selection from the heading into the text shows the float selected when it holds it
+    F = WRAP('Intro words first.\n\n\\paragraph{Lead}\n\\begin{figure}[t]\n\\centering\nFIGBODY\n\\caption{Cap words}\n\\end{figure}\nText of the paragraph here.\n\nNext para words.')
+    load_doc(page, F); click_text(page, 'Lead', 4); page.keyboard.press('Delete'); page.wait_for_timeout(250)
+    check('H1 Delete at the end of a run in heading over a float leaves the float\'s words', 'FIGBODY' in src(page) and 'Cap words' in src(page), src(page)[60:260])
+    load_doc(page, F); click_text(page, 'Lead', 0)
+    for _ in range(10): page.keyboard.press('Shift+ArrowRight')
+    page.wait_for_timeout(150)
+    sel = page.evaluate("""() => { const c = window.rikuy.caretNow(), t = window.rikuy.src('main.tex'), f = document.querySelector('#pages .it.flt');
+      return { spans: c.a < t.indexOf('FIGBODY') && c.b > t.indexOf('FIGBODY'), shown: getSelection().containsNode(f, true) }; }""")
+    check('H1 a selection that holds the float in the source shows it selected on the page', not sel['spans'] or sel['shown'], sel)
+    g = page.evaluate("""() => { const h = document.querySelector('#pages .it.h.runin'), p = [...document.querySelectorAll('#pages .it.p')].find((x) => x.textContent.includes('Text of')), f = document.querySelector('#pages .it.flt');
+      const order = [...document.querySelectorAll('#pages .it')].map((x) => x === h ? 'h' : x === f ? 'f' : x === p ? 'p' : ''); const hr = h.getBoundingClientRect(), pr = p.getBoundingClientRect();
+      return { dom: order.filter(Boolean).join(''), same: Math.abs(hr.top - pr.top) < 3 }; }""")
+    check('H1 the items keep the source\'s order (heading, float, text); the heading is drawn on its text\'s first line', g == {'dom': 'hfp', 'same': True}, g)
+    # H2: Code is one line that fits; a long verbatim line drawn unbroken, as TeX sets it
+    load_doc(page, WRAP(' '.join(['word'] * 40) + '\n\nAfter.')); click_text(page, 'word', 1)
+    en = page.evaluate("(() => { const g = window.rikuy, c = g.cmds.command('style-verbatim'), at = g.ribbonAt(); return [g.cmds.enabled(g, c, at), c.whyNot(g, at)]; })()")
+    check('H2 Code is off on a paragraph longer than a line of code, saying why', en[0] is False and 'longer than one line' in en[1], en)
+    load_doc(page, WRAP('\\begin{verbatim}\n' + ' '.join(['word'] * 40) + '\n\\end{verbatim}'))
+    pre = page.evaluate("(() => { const p = document.querySelector('#pages .it.verb pre'); return [getComputedStyle(p).whiteSpace, p.getBoundingClientRect().height < 30]; })()")
+    check('H2 a hand written verbatim line runs on unbroken, as TeX prints it', pre == ['pre', True], pre)
+    # H3, M1: the links' line after hyperref; the document's own \hypersetup back whole after Black
+    H3 = TDOC('\\usepackage{xcolor}\n\\definecolor{accent}{HTML}{AA0000}\n\\usepackage{hyperref}\n\\hypersetup{hidelinks}\n', '\\section{A}\\label{a}\nSee \\ref{a}.')
+    load_doc(page, H3); click_text(page, 'See', 1); run_cmd(page, 'design-colors', {'id': 'teal'})
+    t3 = src(page)
+    k3 = t3.find('\\hypersetup{colorlinks,linkcolor=accent,urlcolor=accent,citecolor=accent}\n')
+    check('H3 the links\' line goes after hyperref and the document\'s own \\hypersetup, which stays as written', '\\hypersetup{hidelinks}\n' in t3 and k3 > t3.find('\\hypersetup{hidelinks}') > t3.find('\\usepackage{hyperref}') and k3 < t3.find('\\begin{document}'), t3[:400])
+    if tex:
+        r = pdf_text(page, t3)
+        check('H3 that document compiles in the page, no key list printed', r['ok'] and not r['errors'] and 'colorlinks' not in r['text'], (r['errors'], r['text'][:200]))
+    run_cmd(page, 'design-colors', {'id': 'none'})
+    check('M1 Black gives the document\'s own \\hypersetup{hidelinks} back (only Rikuy\'s line goes)', '\\hypersetup{hidelinks}\n' in src(page) and 'colorlinks' not in src(page), src(page)[:400])
+    # H4: the title in the body before \maketitle is the document's title
+    B4 = TDOC('', '\\title{Real Title}\n\\author{Ann}\n\\maketitle\n\nMy words\n\nText.')
+    load_doc(page, B4); click_text(page, 'My words', 2)
+    st = st_now(page)
+    check('H4 a title in the body: Title is not offered, Author is', 'title' not in st[1] and 'author' in st[1], st)
+    run_cmd(page, 'style-author')
+    check('H4 Author joins the body\'s \\author where it stands', '\\author{Ann \\and My words}\n\\maketitle\n\nText.' in src(page), src(page)[:300])
+    if tex:
+        r = pdf_text(page, src(page))
+        check('H4 and TeX prints it in the title block', r['ok'] and 'My words' in r['text'] and 'Real Title' in r['text'], (r['errors'], r['text'][:200]))
+    # M4: a title set in a file the preamble reads: its parts are refused, with the reason
+    page.evaluate("""async () => { await window.rikuy.api.setFiles ? 0 : 0; }""")
+    page.evaluate("""() => { const g = window.rikuy; g.files.set('preamble.tex', '\\\\title{T from a file}\\n'); }""")
+    load_doc(page, TDOC('\\input{preamble}\n', '\\maketitle\n\nMy words\n\nText.'))
+    page.evaluate("""() => { const g = window.rikuy; if (!g.files.has('preamble.tex')) g.files.set('preamble.tex', '\\\\title{T from a file}\\n'); g.forceRender = true; g.rebuild(); }"""); page.wait_for_timeout(200)
+    click_text(page, 'My words', 2)
+    st = page.evaluate("(() => { const g = window.rikuy, at = g.ribbonAt(), s = g.blockStyle(at); return [[...s.to].sort(), (s.whyTo || {}).title || ''] })()")
+    check('M4 a title in \\input{preamble}: no title part is offered, the reason names the file', not any(x in st[0] for x in ('title', 'author', 'date', 'subtitle')) and 'preamble.tex' in st[1], st)
+    # H5: a command the document only redefines is no style of its own to rename
+    load_doc(page, TDOC('\\renewcommand{\\emph}[1]{\\textbf{#1}}\n\\newcommand{\\keyterm}[1]{\\textbf{#1}}\n', 'An \\emph{a} and \\keyterm{b}.'))
+    can = page.evaluate("[window.rikuy.canRenameStyle('char:emph'), window.rikuy.canRenameStyle('char:keyterm')]")
+    check('H5 Rename is offered for \\newcommand{\\keyterm} and not for \\renewcommand{\\emph}', can == [False, True], can)
+    # H6: a theorem's counter renamed everywhere; compiled
+    R6 = TDOC('\\usepackage{amsmath,amsthm}\n\\newtheorem{claim}{Claim}\n\\numberwithin{equation}{claim}\n\\newtheorem{lemma}{Lemma}[claim]\n\\newcounter{example}\n\\newenvironment{example}{\\refstepcounter{example}\\par Example \\theexample. }{\\par}\n',
+              '\\begin{claim}A claim.\\end{claim}\n\\begin{lemma}A lemma.\\end{lemma}\n\\begin{example}An example.\\end{example}')
+    load_doc(page, R6); page.wait_for_function('true'); click_text(page, 'A claim', 1)
+    page.evaluate("window.rikuy.latexKnows('x')"); page.wait_for_function('window.rikuy.texNamesState() === "ready"', timeout=10000)
+    run_cmd(page, 'rename-style', {'v': 'env:claim', 'name': 'fact'}); run_cmd(page, 'rename-style', {'v': 'env:example', 'name': 'sample'})
+    t6 = src(page)
+    check('H6 Rename reaches \\numberwithin, \\newtheorem[within] and \\newcounter', '{claim}' not in t6 and '[claim]' not in t6 and '\\numberwithin{equation}{fact}' in t6 and '[fact]' in t6 and '\\newcounter{sample}' in t6 and '{example}' not in t6, t6[:500])
+    if tex:
+        r = pdf_text(page, t6)
+        check('H6 the renamed document compiles in the page: Claim 1, Lemma 1.1, Example 1', r['ok'] and not r['errors'] and all(x in r['text'] for x in ('Claim 1', 'Lemma 1.1', 'Example 1')), (r['errors'], r['text'][:300]))
+    load_doc(page, TDOC('\\newenvironment{ta}{\\par}{\\par}\n', '\\begin{ta}x $\\theta$\\end{ta}')); click_text(page, 'x', 0)
+    r = page.evaluate("window.rikuy.renameStyle('env:ta', 'tb')")
+    check('L3 an environment whose \\the form is LaTeX\'s (\\theta) is not renamed', r is False and '\\theta' in src(page), src(page)[-80:])
+    # M3: a key typed on a selected Code block opens its source and changes nothing
+    C = WRAP('Before words.\n\n\\begin{verbatim}\nint x = 1;\n\\end{verbatim}\n\nAfter words.')
+    load_doc(page, C); press_code(page); page.keyboard.type('Z'); page.wait_for_timeout(300)
+    check('M3 a key typed on a selected Code block opens its source; the block stays', src(page) == C and page.evaluate("!!document.querySelector('.pop-raw')"), src(page)[-120:])
+    page.keyboard.press('Escape')
 
 
 def r2_compile(page):
@@ -1245,7 +1326,7 @@ def r2_phone(p):
 
 def run():
     with sync_playwright() as p:
-        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile)
+        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review)
         # (the tests that read the tiles see all six: from 1600 px the gallery has room for them)
         wide = (styles, gallery, gallery_keys, quote_style)
         # (names given on the command line run those alone)

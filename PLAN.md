@@ -2761,6 +2761,40 @@ Tests:
     worktree's `dist/tex` is a link to another's); R2 changes only llms-full's text in
     `build/app.mjs`. Screenshots outside the repository.
 
+62a. **R2 review: every High and Medium finding of the hostile review of 1d96496 and dfcd1cd fixed,
+    each with its case as a test; the small Lows too.** H1: a float between `\paragraph{Lead}` and
+    its text was moved before the heading in the page's order, so Delete at the heading's end and a
+    selection from it into the text deleted the float's words unseen (main, with no run in there,
+    had no such path; this branch made it reachable). The items now keep the source's order, the
+    float is drawn between and shown selected when a selection holds it, and the heading, which takes
+    no height, is shifted onto its text's first line (`App.runInOverFloats`). H2: Code goes only on
+    one line no longer than a line of the text in typewriter characters (`codeCols`), and a
+    verbatim's lines are drawn unbroken, as TeX sets them. H3, M1: the links' colour is a line of
+    Rikuy's own, after the last of the accent, hyperref's `\usepackage` and the document's own
+    `\hypersetup` lines, which stay as written; Black takes away that line alone (`hidelinks` and
+    `colorlinks=false` come back). H4: `titleInfo` reads the body before `\maketitle` too (the last
+    of each command, as TeX takes it); a new part's line goes beside a `\title` in the body; a
+    paragraph before `\maketitle` is no part of it. M4: a title set in a file the preamble reads
+    refuses every part, naming the file. H5: Rename only for what the project makes itself
+    (`createsOwn`: `\newcommand`, `\def`, `\newenvironment`, `\newtheorem` and the theorem
+    makers), never a `\renewcommand`. H6: the counter's every name is renamed (`\newcounter` and
+    its `[within]`, both arguments of `\numberwithin`, `\counterwithin`, `\counterwithout`,
+    `\@addtoreset`, `\newtheorem`'s within, thmtools' `sibling=`, `numberlike=`, `sharenumber=`),
+    a command in the .bib files too; a fancyvrb Verbatim with commandchars that runs the command
+    refuses the rename. M2: the Format Painter gives the carried style to a paragraph clicked or
+    selected whole, never to a few words selected in one. M3: a key typed on a selected Code block
+    opens its source (a phone's text through beforeinput), where it replaced the block. Lows: the
+    join at history's cap drops one step, not two, and leaves no step for Track Changes (L1); Code
+    refuses < > |, two spaces, tabs and several lines (L2); Rename refuses where LaTeX's own names
+    derive from the old one (`\theta` for an environment `ta`, `\endinput` for `input`) and skips
+    `\lstinline`, `\url`, `\path`, `\mint` (L3); Normal leaves an `\author{}` or `\date{}`
+    placeholder and refuses a part holding `\thanks` (L6). Not done: L4 (a highlight's colour in
+    the title, author or abstract of a .docx, and two adjacent runs of two colours, which pandoc
+    joins in one span), L5 (link colours set in an `\input` preamble file are not drawn): each needs
+    more than a small change, and nothing breaks without it. Evidence: `styles.test.mjs` 29 groups,
+    `looks.test.mjs` 11; `styles.py r2_review` 18 (H1 to H6, M1, M3, M4, L3; H3, H4 and H6's
+    documents compiled in the page), `font.py r2_review` and the M2 cases in `r2`.
+
 ## Open tasks
 
 ## Open tasks

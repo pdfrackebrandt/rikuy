@@ -678,7 +678,11 @@ export const methods = {
   fmtOneStep(fn) {
     const top0 = this.hist[this.hist.length - 1], before = new Map(this.files);
     this.closeGroup();
-    const r = fn();
+    // (history's cap of 400 steps waits for the joined step: each commit inside would drop one of
+    // the oldest, and the join takes them back to one; review L1)
+    this.histHold = true;
+    let r;
+    try { r = fn(); } finally { this.histHold = false; }
     const k = top0 ? this.hist.lastIndexOf(top0) + 1 : 0, added = this.hist.slice(k);
     if (added.length > 1 && !added.some((x) => x.blobs)) {
       this.hist.length = k;
@@ -686,7 +690,10 @@ export const methods = {
       for (const [f, t] of before) if (this.files.get(f) !== t) changed.set(f, t);
       this.record(changed, added[0].kind, added[0].caretBefore, added[added.length - 1].caretAfter);
       this.closeGroup();
+      // (Track Changes took each commit's edits as it was made: nothing is left for it to take)
+      this.rvStep = null;
     }
+    while (this.hist.length > 400) this.hist.shift();
     return r;
   },
 
@@ -807,26 +814,33 @@ export const methods = {
     if (!this.blockStyle || at.multi) return null;
     const st = this.blockStyle(at);
     if (!st || !st.v || st.v === 'latex' || st.v === 'title') return null;
-    if (!at.c.collapsed) {
-      const b = st.b, src = this.src(at.c.f);
-      if (!b || b.ws == null) return null;
-      let ws = b.ws, we = b.we;
-      while (ws < we && /\s/.test(src[ws])) ws++;
-      while (we > ws && /\s/.test(src[we - 1])) we--;
-      if (at.c.a > ws || at.c.b < we) return null;
-    }
+    if (!at.c.collapsed && !this.fpWhole(at, st)) return null;
     return { v: st.v, name: this.styleName ? this.styleName(st.v) : st.v };
+  },
+  // whether a selection holds all of its paragraph's words (as Word's paragraph mark: then a
+  // paragraph's style goes with it, both ways)
+  fpWhole(at, st) {
+    const b = st && st.b, src = this.src(at.c.f);
+    if (!b || b.ws == null) return false;
+    let ws = b.ws, we = b.we;
+    while (ws < we && /\s/.test(src[ws])) ws++;
+    while (we > ws && /\s/.test(src[we - 1])) we--;
+    return at.c.a <= ws && at.c.b >= we;
   },
   paintFormat() {
     const P0 = this.fpaint;
     if (!P0) return false;
+    // (the style goes on a paragraph clicked, or one selected whole; words selected in a paragraph
+    // take the characters' formats alone, as Word's do: review M2)
+    const at0 = P0.style ? this.ribbonAt() : null;
+    const toPara = !!at0 && !at0.c.ghost && !at0.multi && (at0.c.collapsed || this.fpWhole(at0, this.blockStyle(at0)));
     const ok = this.fmtOneStep(() => {
       let done = this.fmtCommit([(t, a, b) => F.clearFormats(t, a, b) || { text: t, a, b }, ...P0.fmts.map((x) => (t, a, b) => {
         const r = F.wrapIn(t, a, b, x.group, x.w);
         return r.error ? r : { ...r, need: F.needsOf(x.group, x.w) };
       })], { word: true, keepWord: true });
       // (the style of the paragraphs painted, where they can take it; the selection kept)
-      if (P0.style && this.setBlockStyle) {
+      if (P0.style && toPara && this.setBlockStyle) {
         const at = this.ribbonAt(), st = at && !at.c.ghost ? this.blockStyle(at) : null;
         if (st && st.v !== P0.style.v && st.to.has(P0.style.v)) {
           const c = at.c, keep = !c.collapsed ? { f: c.f, a: c.a, b: c.b } : null, n = this.hist.length;
