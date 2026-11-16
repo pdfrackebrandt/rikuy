@@ -7,7 +7,8 @@
 import { dialog } from './kit.js';
 import { mk } from './dom.js';
 import { near } from './refsdialog.js';
-import { parseBib, bibSpans, SOURCE_TYPES, FIELD_NAMES, MORE_FIELDS, bibEscape, bibKey, bibEntryText, bibFieldEdits, bibDeleteEdit, bibAppendEdit, texToPlain, shortAuthors, entryYear } from '../bib.js';
+import { parseBib, bibSpans, SOURCE_TYPES, FIELD_NAMES, MORE_FIELDS, bibEscape, typedInto, bibKey, bibEntryText, bibFieldEdits, bibDeleteEdit, bibAppendEdit, texToPlain, shortAuthors, entryYear } from '../bib.js';
+import { provides, hasPackage, preambleEnd } from '../preamble.js';
 import { stripComments } from '../preamble.js';
 
 const KEY = /^[A-Za-z0-9_:.\-+/]{1,80}$/;
@@ -75,6 +76,7 @@ export function addSource(app, o, at) {
   if (!app.bibAt()) app.bibInsert(null, w, 'end');
   const file = had.length ? had[0].name : 'refs.bib';
   w.apply(file, [bibAppendEdit(w.src(file), bibEntryText(type, key, fields, /\r\n/.test(w.src(file).slice(0, 4000)) ? '\r\n' : '\n'))]);
+  if (fields.url && /[#%]/.test(fields.url)) urlPackage(app, w);
   let caret = null;
   if (citeAt) {
     const cmd = app.citeChoices()[0][0], t = citeAt.pre + '\\' + cmd + '{' + key + '}';
@@ -87,25 +89,45 @@ export function addSource(app, o, at) {
 
 // An entry changed: { type, fields: { name: text as shown or typed } }; the fields shown as they
 // were are left alone
-export function editSource(app, key, o, shown) {
-  const E = allSources(app).find((e) => e.key === key);
-  if (!E) return false;
-  const ch = {};
+// The changes Edit Source writes, or { why } where it cannot (braces that do not balance): read
+// before the dialog closes, so nothing typed is lost (review V9)
+export function sourceChanges(app, E, o, shown) {
+  const ch = {}, eol = /\r\n/.test(app.src(E.file).slice(E.s, E.e)) ? '\r\n' : '\n';
   if (o.type && o.type !== E.type) ch['@type'] = o.type;
   for (const [k, v] of Object.entries(o.fields || {})) {
     const was = shown && Object.prototype.hasOwnProperty.call(shown, k) ? shown[k] : '';
-    if (String(v ?? '') === String(was)) continue;
+    // (a box gives its lines back as LF: a CRLF file's field is the same field, review V3)
+    if (String(v ?? '').replace(/\r\n/g, '\n') === String(was).replace(/\r\n/g, '\n')) continue;
     const t = String(v ?? '').trim();
-    // (a field the form showed as the .bib holds it is LaTeX: written as typed, never escaped again;
-    // only text typed into an empty field is escaped, review H1)
-    if (t && was && !balanced(t)) { app.toast('The braces of ' + k + ' do not balance: nothing written'); return false; }
-    ch[k] = !t ? '' : k === 'url' ? urlField(t) : was ? t : bibEscape(t);
+    // (a field the form showed as the .bib holds it is LaTeX: what was there stays as it is, and the
+    // span typed into it is escaped as typed text; a new field's text escaped whole: review H1, V1)
+    const val = !t ? '' : k === 'url' ? urlField(t) : was ? typedInto(was, t, eol) : bibEscape(t);
+    if (val && !balanced(val)) return { why: 'The braces of ' + (FIELD_NAMES[k] || k) + ' do not balance: fix them, or Cancel' };
+    ch[k] = val;
   }
+  return { ch };
+}
+export function editSource(app, key, o, shown) {
+  const E = allSources(app).find((e) => e.key === key);
+  if (!E) return false;
+  const r = sourceChanges(app, E, o, shown);
+  if (r.why) { app.toast(r.why); return false; }
+  const ch = r.ch;
   const ed = bibFieldEdits(app.src(E.file), E, ch);
   if (!ed.length) return true;
   const w = app.refsWork();
   w.apply(E.file, ed);
+  if (ch.url && /[#%]/.test(ch.url)) urlPackage(app, w);
   return w.commit(null, 'format');
+}
+// A .bib address with # or % in a BibTeX or natbib document: url.sty for its \url, where nothing
+// gives one (plainnat's own \url is \texttt, which stops at # and %: review V2)
+function urlPackage(app, w) {
+  const B = app.bibState();
+  if (B.biblatex) return;
+  const src = w.src(app.main), others = app.preambleOthers(), end = preambleEnd(src);
+  if (['url', 'hyperref'].some((n) => hasPackage(src, n, end, others) || provides(src, n, others, end))) return;
+  w.pkgs(['url']);
 }
 const balanced = (t) => { let d = 0; for (let i = 0; i < t.length; i++) { if (t[i] === '\\') { i++; continue; } if (t[i] === '{') d++; else if (t[i] === '}' && --d < 0) return false; } return d === 0; };
 // the keys another entry builds on (crossref, xref, xdata): deleting one breaks BibTeX's run (review M6)
@@ -192,6 +214,7 @@ export function openSourceForm(app, o = {}) {
     const fields = {};
     for (const inp of box.querySelectorAll('input, textarea')) fields[inp.dataset.f] = inp.value;
     const at = o.at;
+    if (E) { const r = sourceChanges(app, E, { type, fields }, shown); if (r.why) { app.toast(r.why); return; } }
     app.closePop(true);
     if (E) editSource(app, E.key, { type, fields }, shown);
     else addSource(app, { type, fields, key: keyTyped ? ki.value.trim() : '', cite: ci.checked }, at);

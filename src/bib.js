@@ -294,19 +294,45 @@ export function bibEscape(t) {
   let d = 0, ok = true;
   for (let i = 0; i < s.length; i++) { if (s[i] === '\\') { i++; continue; } if (s[i] === '{') d++; else if (s[i] === '}' && --d < 0) { ok = false; break; } }
   if (d !== 0) ok = false;
+  // (a lone $, as in "US$ 5", is a dollar sign: math only where they pair, review V10)
+  let dollars = 0;
+  for (let i = 0; i < s.length; i++) { if (s[i] === '\\') { i++; continue; } if (s[i] === '$') dollars++; }
+  const money = dollars % 2 === 1;
   let out = '', math = false;
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
     // (math is left as it is: $L_p$ keeps its subscript, review H1)
-    if (c === '$') { math = !math; out += c; continue; }
+    if (c === '$') { if (money) { out += '\\$'; continue; } math = !math; out += c; continue; }
     if (c === '\\' && (s[i + 1] === '(' || s[i + 1] === ')')) { math = s[i + 1] === '('; out += c + s[i + 1]; i++; continue; }
     if (math) { out += c; continue; }
     if (c === '\\') { if (i === s.length - 1) out += '\\textbackslash{}'; else { out += c + s[i + 1]; i++; } continue; }
     if ('&%#_'.includes(c)) { out += '\\' + c; continue; }
+    // (typed ~ and ^ are the characters, not a tie and a superscript, review V1)
+    if (c === '~') { out += '\\textasciitilde{}'; continue; }
+    if (c === '^') { out += '\\textasciicircum{}'; continue; }
     if (!ok && (c === '{' || c === '}')) { out += '\\' + c; continue; }
     out += c;
   }
   return out;
+}
+
+// What was typed into a field the form showed as the .bib holds it: the span that changed between
+// was and now (their common start and end kept as they were), escaped as typed text, unless it
+// lies in math; line ends as the file writes them (review V1, V3)
+export function typedInto(was, now, eol = '\n') {
+  const w = String(was).replace(/\r\n/g, '\n'), t = String(now).replace(/\r\n/g, '\n');
+  if (w === t) return null;
+  let a = 0;
+  while (a < w.length && a < t.length && w[a] === t[a]) a++;
+  let z = 0;
+  while (z < w.length - a && z < t.length - a && w[w.length - 1 - z] === t[t.length - 1 - z]) z++;
+  // (the changed span from a whole word's start: a $ or a backslash just before it belongs to it)
+  while (a > 0 && /[\\$]/.test(t[a - 1])) a--;
+  const mid = t.slice(a, t.length - z);
+  let math = false;
+  for (let i = 0; i < a; i++) { if (t[i] === '\\') { if (t[i + 1] === '(' || t[i + 1] === ')') math = t[i + 1] === '('; i++; continue; } if (t[i] === '$') math = !math; }
+  const done = t.slice(0, a) + (math || /^\\[A-Za-z]/.test(mid) && !/[&%#_~^$]/.test(mid.replace(/\\./g, '')) ? mid : bibEscape(mid)) + t.slice(t.length - z);
+  return eol === '\n' ? done : done.replace(/\n/g, eol);
 }
 
 // A new entry's key, as people write them: the first author's last name, the year, the title's

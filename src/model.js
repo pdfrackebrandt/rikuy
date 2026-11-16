@@ -3084,9 +3084,10 @@ class Builder {
       trimInl(kids);
       if (a && !kids.length) kids.push(this.ph(ctx, a.is));
       this.lastTarget = saveT;
-      const mark = this.atom(ctx, { k: 'fn', s: nd.s, e: nd.e, num, is: a ? a.is : null, ie: a ? a.ie : null });
+      const th = name === 'thanks' || !!this.thanksMode;
+      const mark = this.atom(ctx, { k: 'fn', s: nd.s, e: nd.e, num, is: a ? a.is : null, ie: a ? a.ie : null, ...(th ? { th: true } : {}) });
       out.push(mark);
-      fns.push({ num, inl: kids, f: ctx.f, mark, dir: this.dirOf() });
+      fns.push({ num, inl: kids, f: ctx.f, mark, dir: this.dirOf(), ...(th ? { th: true } : {}) });
       return false;
     }
     if (name === 'footnotemark') { acc.flush(); this.c.footnote++; out.push(this.atom(ctx, { k: 'fn', s: nd.s, e: nd.e, num: this.withinPrefix('footnote') + this.counterText(this.c.footnote, this.opts.fnStyle) })); return false; }
