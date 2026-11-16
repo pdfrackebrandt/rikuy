@@ -23,9 +23,9 @@ DOC = ('\\documentclass{article}\n\\begin{document}\n'
 N = "window.rikuy.realChanges().length"
 
 
-def edit(page, find, repl):
-    page.evaluate("""([a, b]) => { const g = window.rikuy; const f = g.main; const s = g.files.get(f); const at = s.indexOf(a);
-      if (at < 0) throw new Error('not found: ' + a); g.closeGroup(); g.commit([{ f, s: at, e: at + a.length, t: b }], null, 'type'); g.closeGroup(); }""", [find, repl])
+def edit(page, find, repl, kind='type'):
+    page.evaluate("""([a, b, k]) => { const g = window.rikuy; const f = g.main; const s = g.files.get(f); const at = s.indexOf(a);
+      if (at < 0) throw new Error('not found: ' + a); g.closeGroup(); g.commit([{ f, s: at, e: at + a.length, t: b }], null, k); g.closeGroup(); }""", [find, repl, kind])
     page.wait_for_timeout(120)
 
 
@@ -77,19 +77,19 @@ def run():
         edit(page, 'The first', 'A first')
         check('off again: the two changes stay, the new edit is none', page.evaluate(N) == 2 and 'A first' in src(page), page.evaluate(N))
         edit(page, 'many words', 'many more words')
-        check('an edit inside a change waiting changes that change (now "many " put in before "more")', page.evaluate(N) == 2 and page.evaluate("window.rikuy.realChanges().some(c => c.b === 'many ' && !c.a)"), page.evaluate("window.rikuy.realChanges().map(c => [c.a, c.b])"))
+        check('an edit beside a change waiting, with tracking off, is no change: the waiting one stays as it was', page.evaluate(N) == 2 and page.evaluate("window.rikuy.realChanges().some(c => c.a === 'more' && c.b === 'many')"), page.evaluate("window.rikuy.realChanges().map(c => [c.a, c.b])"))
         # Previous and Next change, Accept and Reject
         click_text(page, 'A first', 0)
         page.evaluate("window.rikuy.runCommand('change-next')"); page.wait_for_timeout(200)
         sel = page.evaluate("String(getSelection())")
-        check('Next Change goes to the first change and selects it', sel == 'many ', sel)
+        check('Next Change goes to the first change and selects it', sel == 'many', sel)
         page.evaluate("window.rikuy.runCommand('change-next')"); page.wait_for_timeout(200)
         check('and the next', page.evaluate("window.rikuy.caretNow().p") > src(page).index('third'), page.evaluate("String(getSelection())"))
         page.evaluate("window.rikuy.runCommand('change-prev')"); page.wait_for_timeout(200)
-        check('Previous Change goes back', page.evaluate("String(getSelection())") == 'many ', page.evaluate("String(getSelection())"))
+        check('Previous Change goes back', page.evaluate("String(getSelection())") == 'many', page.evaluate("String(getSelection())"))
         before = src(page)
         page.evaluate("window.rikuy.runCommand('change-reject')"); page.wait_for_timeout(300)
-        check('Reject (and move to next) puts the old words back, one change left', 'has more words' in src(page) and page.evaluate(N) == 1, (page.evaluate(N), src(page)[60:140]))
+        check('Reject (and move to next) puts the old word back (the untracked one stays), one change left', 'has more more words' in src(page) and page.evaluate(N) == 1, (page.evaluate(N), src(page)[60:140]))
         page.evaluate("window.rikuy.undo()"); page.wait_for_timeout(250)
         check('one undo brings the change back byte for byte', src(page) == before and page.evaluate(N) == 2)
         click_text(page, 'many more', 2)
@@ -102,6 +102,64 @@ def run():
         page.evaluate("window.rikuy.rejectAllChanges(true)"); page.wait_for_timeout(300)
         check('Reject All Changes and Stop Tracking: the text back, tracking off', src(page) == before and page.evaluate(N) == 0 and page.evaluate("window.rikuy.trackOn()") is False)
         check('the Accept and Reject buttons say there is nothing to do', page.evaluate("document.getElementById('rv-accept').disabled") is True)
+        # ---- the hostile review of task 48 (py/track.py S1 to S6, M1 to M4, L7, L8) ----
+        D2 = ('\\documentclass{article}\n\\begin{document}\n'
+              'Alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu.\n\n'
+              'Second paragraph stays here as it is.\n\\end{document}\n')
+        chg = lambda: page.evaluate("window.rikuy.realChanges().map(c => [c.a, c.b])")
+        U = lambda: (page.evaluate("window.rikuy.undo()"), page.wait_for_timeout(150))
+        R = lambda: (page.evaluate("window.rikuy.redo()"), page.wait_for_timeout(150))
+        T = lambda on: (page.evaluate("(o) => window.rikuy.setTracking(o)", on), page.wait_for_timeout(80))
+        def fresh2(track):
+            fresh(page, D2); page.evaluate("(t) => { const g = window.rikuy; g.setBase({ t: Date.now(), label: 'Opened', files: g.files, track: t }); }", track)
+        fresh2(True); edit(page, 'gamma', 'gamma NEWWORD'); T(False); U(); R()
+        check('H2: a tracked insertion stays a change through Track Changes off, undo and redo', len(chg()) == 1 and chg()[0][0] == '' and chg()[0][1].strip() == 'NEWWORD', chg())
+        fresh2(False)
+        page.evaluate("""() => { const g = window.rikuy; const mine = new Map(g.files); const f = g.main; const s = g.files.get(f);
+          const at = s.indexOf('delta'); g.closeGroup(); g.commit([{ f, s: at, e: at + 5, t: 'DELTA-FROM-ANA' }], null, 'merge'); g.closeGroup();
+          g.setBase({ t: Date.now(), label: 'Before the changes from Ana', files: mine }); }""")
+        page.wait_for_timeout(150); U(); R()
+        check('H1: a coauthor\'s merge undone and redone keeps its changes', chg() == [['delta', 'DELTA-FROM-ANA']], chg())
+        fresh2(True); edit(page, 'beta', 'BETA2'); T(False); edit(page, 'lambda mu', 'lambda mu nu')
+        check('H3: an untracked edit in a waiting change\'s line is no change', chg() == [['beta', 'BETA2']], chg())
+        page.evaluate("window.rikuy.rejectAllChanges(false)"); page.wait_for_timeout(200)
+        check('H3: and Reject All keeps it', 'mu nu.' in src(page) and 'Alpha beta' in src(page), src(page)[40:140])
+        fresh2(True); edit(page, 'Second', 'Secund'); T(False)
+        page.evaluate("""() => { const g = window.rikuy; const f = g.main; const s = g.files.get(f); const ed = [];
+          for (const w of ['Alpha', 'zeta']) { const at = s.indexOf(w); ed.push({ f, s: at, e: at + w.length, t: w.toUpperCase() }); }
+          const at2 = s.indexOf('as it is'); ed.push({ f, s: at2, e: at2 + 2, t: 'AS' });
+          g.closeGroup(); g.commit(ed, null, 'replace'); g.closeGroup(); }""")
+        page.wait_for_timeout(150)
+        check('H3: a Replace All with tracking off: none of its edits is a change', chg() == [['Second', 'Secund']], chg())
+        fresh2(False); edit(page, 'gamma', 'big gamma'); T(True); U()
+        check('M1: an untracked edit undone with tracking on leaves no phantom change', chg() == [], chg())
+        fresh2(True); edit(page, 'iota', 'IOTA5'); page.evaluate("window.rikuy.acceptAllChanges(false)"); page.wait_for_timeout(150); U()
+        check('M1: Accept is undone by Ctrl+Z, the change back, the text as it was', chg() == [['iota', 'IOTA5']] and 'IOTA5' in src(page), (chg(), src(page)[40:120]))
+        # M2: a merge while changes of your own wait keeps yours
+        fresh2(True); edit(page, 'kappa', 'KAPPA'); T(False)
+        page.evaluate("""() => { const g = window.rikuy; const pend = g.realChanges().length > 0; const mine = new Map(g.files); const f = g.main; const s = g.files.get(f);
+          const at = s.indexOf('eta theta'); g.closeGroup(); g.commit([{ f, s: at, e: at + 3, t: 'ETA' }], null, 'merge'); g.closeGroup();
+          if (!pend) g.setBase({ t: Date.now(), label: 'x', files: mine }); }""")
+        page.wait_for_timeout(150)
+        check('M2: bringing a coauthor\'s copy back keeps your own changes beside theirs', sorted(chg()) == [['eta', 'ETA'], ['kappa', 'KAPPA']], chg())
+        # M3: another tab's text with tracking off here is no absorbed edit; its base comes from storage
+        fresh2(False)
+        edit(page, 'mu.', 'mu, from the other tab.', 'other-tab')
+        check('M3: another tab\'s edits are never absorbed', len(chg()) == 1, chg())
+        page.evaluate("(async () => { const g = window.rikuy; g.base.track = true; g.saveBase(true); g.base.track = false; await g.rvReloadBase(); })()"); page.wait_for_timeout(300)
+        check('M3: and the base and its switch are read back as that tab left them', page.evaluate("window.rikuy.trackOn()") is True)
+        # M4: leaving writes the base at once
+        fresh2(False); T(True); edit(page, 'Alpha', 'Alphas'); T(False); edit(page, 'theta', 'thetas')
+        waiting = page.evaluate("!!window.rikuy.baseSaveT")
+        page.evaluate("(() => { const g = window.rikuy; g.unsaved = true; g.leaving(); })()"); page.wait_for_timeout(200)
+        check('M4: leaving the page writes the base that was waiting to be saved', waiting and not page.evaluate("window.rikuy.baseSaveT"), waiting)
+        # L7: a compared version stays tracked
+        page.evaluate("(async () => { const g = window.rikuy; const v = await g.snapshot('L7', { force: true, named: true }); await g.compareWith(v); })()"); page.wait_for_timeout(300)
+        check('L7: comparing with a version tracks from it', page.evaluate("window.rikuy.trackOn()") is True)
+        T(False)
+        page.evaluate("(() => { const g = window.rikuy; delete g.prefs.markup; g.prefs.marks = true; g.reviewStatusInstall(); })()")
+        check('L8: the old setting (prefs.marks) taken over once as All Markup', page.evaluate("window.rikuy.markup()") == 'all')
+        page.evaluate("window.rikuy.setMarkup('none')")
         # comments
         fresh(page)
         click_text(page, 'first paragraph', 0)
@@ -187,6 +245,16 @@ def run():
         mt = open(mp, encoding='utf8').read()
         check('Download with Markup: \\added, \\deleted, \\replaced and the comments as \\todo', '\\usepackage{changes}\n\\usepackage{todonotes}\n\\begin{document}' in mt and '\\added{good }' in mt and '\\deleted{more }' in mt and '\\replaced{stops}{ends}' in mt and '\\todo[inline]{Ana: Is this right?}%' in mt, mt)
         check('the project itself is untouched', src(page) == cur)
+        # M6: only prose is marked: never the preamble, a label, a citation key or math
+        fresh(page, '\\documentclass{article}\n\\usepackage{amsmath}\n% comment (Pre): in the preamble\n\\begin{document}\nSee \\label{sec:old} and \\cite{smith2020} for $x+y$ in a sentence that ends here.\n\\end{document}\n')
+        page.evaluate("window.rikuy.setTracking(true)")
+        edit(page, '{amsmath}', '{amsmath,amssymb}'); edit(page, 'sec:old', 'sec:new'); edit(page, 'smith2020', 'smith2021'); edit(page, 'x+y', 'x+z'); edit(page, 'here', 'there')
+        with page.expect_download() as dl2:
+            page.evaluate("window.rikuy.runCommand('markup-copy')")
+        mp2 = os.path.join(tmpd, 'markup2.tex'); dl2.value.save_as(mp2)
+        m2 = open(mp2, encoding='utf8').read()
+        check('M6: Download with Markup marks prose only, never the preamble, a label, a citation or math', '\\usepackage{amsmath,amssymb}' in m2 and '\\label{sec:new}' in m2 and '\\cite{smith2021}' in m2 and '$x+z$' in m2 and '\\replaced{there}{here}' in m2 and '% comment (Pre): in the preamble' in m2 and m2.count('\\added') + m2.count('\\deleted') + m2.count('\\replaced') == 1, m2)
+        fresh(page)
         if os.path.isdir(os.path.join(ROOT, 'dist', 'tex')) and os.path.exists(os.path.join(ROOT, 'dev', 'texrun.py')) and os.environ.get('RIKUY_NO_COMPILE') != '1':
             d2 = tempfile.mkdtemp(); open(os.path.join(d2, 'main.tex'), 'w').write(mt)
             r = subprocess.run([sys.executable, os.path.join(ROOT, 'dev', 'texrun.py'), d2, 'main.tex', 'pdflatex', '240'], env={**os.environ, 'RIKUY_DIST': os.path.join(ROOT, 'dist')}, capture_output=True, text=True, timeout=600)

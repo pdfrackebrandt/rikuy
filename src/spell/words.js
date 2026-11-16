@@ -71,7 +71,8 @@ export function blockRuns(B, o = {}, runs = []) {
 
 // a word: letters, with an apostrophe or a hyphen inside (don't, well-known); the dictionary
 // decides on compounds (Hunspell's BREAK)
-const WORD = /[\p{L}\p{M}]+(?:['’\-‐][\p{L}\p{M}]+)*/gu;
+// (with \- 's soft hyphen inside: hy\-phen\-ation is one word)
+const WORD = /[\p{L}\p{M}\u00AD]+(?:['’\-‐][\p{L}\p{M}\u00AD]+)*/gu;
 // a chunk between spaces that is an address or a file name: checked as no words at all
 // (a key=value list, as an unknown command's options show on the page, is no prose either)
 const ADDRESS = /:\/\/|^www\.|@|[\\/_=]|\p{L}\.\p{L}{2,}/u;
@@ -232,7 +233,7 @@ export function languageSpans(src) {
 // The ranges of a file that are code the page may still show as text: the environments of
 // drawing and listing programs (Asymptote, gnuplot, PSTricks, TikZ, listings), whose contents
 // are no prose. A bounded scan of \begin and \end, no parse; cached for the text.
-const CODE_ENVS = 'asy|asydef|asyinclude|gnuplot|gnuplottex|pspicture\\*?|psgraph|tikzpicture|axis|lstlisting|minted|verbatim\\*?|Verbatim|BVerbatim|LVerbatim|comment|filecontents\\*?|alltt|python|pycode|sagesilent|sageblock|luacode\\*?|code';
+const CODE_ENVS = 'asy|asydef|asyinclude|gnuplot|gnuplottex|pspicture\\*?|psgraph|tikzpicture|circuitikz|axis|lstlisting|minted|tcblisting|tcboutputlisting|verbatim\\*?|Verbatim|BVerbatim|LVerbatim|comment|filecontents\\*?|alltt|python|pycode|sagesilent|sageblock|luacode\\*?|code|Sinput|Soutput|Schunk|Scode';
 const CODE_BEGIN = new RegExp('\\\\begin\\s*\\{(' + CODE_ENVS + ')\\}', 'g');
 const codeCache = new Map();
 export function codeSpans(src) {
@@ -249,6 +250,13 @@ export function codeSpans(src) {
     out.push([m.index, stop, 'code']);
     CODE_BEGIN.lastIndex = stop;
   }
+  // what \iffalse leaves out (to its \fi, unnested: what is commented out that way)
+  for (let i = src.indexOf('\\iffalse'); i >= 0 && out.length < 10000; i = src.indexOf('\\iffalse', i + 8)) {
+    const e = src.indexOf('\\fi', i + 8);
+    if (e < 0) break;
+    out.push([i, e + 3, 'code']);
+  }
+  out.sort((x, y) => x[0] - y[0]);
   if (codeCache.size > 8) codeCache.clear();
   codeCache.set(src, out);
   return out;
@@ -364,7 +372,7 @@ export function spellPlan(model, project, o = {}) {
     for (const run of E.runs) runs.push(off ? { f: run.f, text: run.text, map: run.map, off } : run);
     for (const t of E.toks) {
       const run = E.runs[t.r];
-      let dict = docDict;
+      let dict = docDict, lang = ml.name;
       if (!spans.has(run.f)) { const t0 = project.files.get(run.f) || ''; spans.set(run.f, [languageSpans(t0), codeSpans(t0)]); }
       const [sp, code] = spans.get(run.f);
       if (sp.length || code.length) {
@@ -372,10 +380,11 @@ export function spellPlan(model, project, o = {}) {
         while (x < t.j && run.map[2 * x] < 0) x++;
         const p = x < t.j ? run.map[2 * x] + off : -1;
         if (code.length && p >= 0 && langAt(code, p)) continue;
-        const lang = sp.length && p >= 0 ? langAt(sp, p) : '';
-        if (lang) dict = dictOf(lang);
-        if (!dict) { skipped.set(lang, (skipped.get(lang) || 0) + 1); continue; }
+        const l = sp.length && p >= 0 ? langAt(sp, p) : '';
+        if (l) { lang = l; dict = dictOf(l); }
       }
+      // (a language Rikuy has no dictionary for: not checked, counted)
+      if (!dict) { skipped.set(lang, (skipped.get(lang) || 0) + 1); continue; }
       if (listed.size && (listed.has(t.q) || listed.has(t.w))) continue;
       occ.push({ r: r0 + t.r, i: t.i, j: t.j, q: t.q, dict });
       let set = words.get(dict);

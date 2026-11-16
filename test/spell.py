@@ -153,6 +153,30 @@ def run():
         check('Check Spelling as You Type off: no red lines, the browser\'s off too', page.evaluate("!CSS.highlights.get('rk-spell')") and page.evaluate("document.getElementById('pages').spellcheck") is False)
         page.evaluate("window.rikuy.runCommand('spell-as-you-type')"); settle(page)
         check('and on again (what was ignored once stays so)', page.evaluate(BAD) == ['wronng'], page.evaluate(BAD))
+        # (task 48's review) H6: Change pressed twice writes the correction once; L3: Enter on a
+        # suggestion is Change; M5: a French document keeps the browser's own spelling
+        load_doc(page, '\\documentclass{article}\n\\begin{document}\nIt occured to me that the resul was wierd.\n\\end{document}\n'); settle(page)
+        for w in ('occured', 'resul', 'wierd'):
+            page.evaluate("(w) => { const g = window.rikuy; const x = g.sp.bad.find(y => y.w === w); return x && g.spellSuggest(x); }", w)
+        page.wait_for_timeout(1200)
+        click_text(page, 'It occ', 0); page.keyboard.press('F7'); page.wait_for_timeout(500)
+        page.wait_for_function("document.querySelector('#sp-pane .sp-opt')", timeout=5000)
+        page.evaluate("[...document.querySelectorAll('#sp-pane .sp-opt')].find(e => e.textContent === 'occurred').click()")
+        page.click('#sp-pane button[aria-label=Change]'); page.wait_for_timeout(150)
+        page.click('#sp-pane button[aria-label=Change]', force=True); page.wait_for_timeout(1200)
+        check('H6: Change pressed twice writes the correction once', 'It occurred to me' in src(page) and 'occurrred' not in src(page), src(page)[40:100])
+        settle(page); page.wait_for_timeout(400)
+        page.wait_for_function("document.querySelector('#sp-pane .sp-w') && document.querySelector('#sp-pane .sp-opt')", timeout=6000)
+        word = page.evaluate("document.querySelector('#sp-pane .sp-w').textContent")
+        page.evaluate("[...document.querySelectorAll('#sp-pane .sp-opt')].find(e => e.textContent === 'result').focus()") if word == 'resul' else None
+        page.keyboard.press('Enter'); page.wait_for_timeout(800)
+        check('L3: Enter on a suggestion with the focus is Change', word == 'resul' and 'the result was' in src(page), (word, src(page)[40:110]))
+        page.keyboard.press('Escape')
+        fr = '\\documentclass{article}\n\\usepackage[french]{babel}\n\\begin{document}\nBonjour le monde, voici un texte. \\foreignlanguage{english}{The colour and the mistakke.}\n\\end{document}\n'
+        load_doc(page, fr); settle(page)
+        st = page.evaluate("document.getElementById('st-lang').textContent")
+        check('M5: a French document: the browser\'s own spelling on, Hunspell for its English words, the status says French', page.evaluate("document.getElementById('pages').spellcheck") is True and sorted(page.evaluate(BAD)) == ['colour', 'mistakke'] and st.startswith('French'), (st, page.evaluate(BAD)))
+        check('M5: no dictionary called null asked for', not page.evaluate("window.rikuy.sp.failed.size"), page.evaluate("[...window.rikuy.sp.failed]"))
         # typing: the word being typed is not marked until the caret leaves it, and only new words go to the worker
         load_doc(page, DOC); settle(page)
         click_text(page, ' math', 0)

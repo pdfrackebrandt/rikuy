@@ -2512,6 +2512,28 @@ Tests:
     is Track Changes), `browser.py` 193, `find.py` 76, `offline.py` 58, `launch.py` 18,
     `pages_check` and `actionlint` clean; the artifact's build has no `spell/`. Screenshots in
     `/tmp/B10-shots`.
+    *After the hostile review* (6 High, 6 Medium, 8 Low, each reproduced; every case is now a
+    check of `test/review.test.mjs`, `test/spell.test.mjs`, `review.py` or `spell.py`): whether a
+    step goes into the base is decided when it is made (`h.abs` in `record`) and its undo and redo
+    do the same, so an undo and redo of a merge or a Word import no longer accepts it (H1), a
+    tracked edit stays tracked through off, undo and redo (H2), and an untracked edit undone with
+    tracking on leaves no phantom (M1); `absorbText` takes each piece of a step by words and
+    characters, so Reject All no longer reverts untracked edits sharing a line or a step with a
+    change (H3); Accept is a step Ctrl+Z takes back (M1); a merge or a Word import keeps your own
+    waiting changes (M2); another tab's text is never absorbed and brings that tab's base (M3);
+    leaving writes the base (M4). Proofing Language refuses a selection across `&`, `\\`,
+    `\item`, `\verb` or an environment's edge (H4), keeps babel's last language the document's
+    own (a French document stays French; H5, M5), keeps a language the text still uses loaded
+    (L5) and polyglossia's British variant (L6). The Spelling pane's Change works from the text
+    as it is, once per press (H6), and Enter on a suggestion is Change (L3). A language without a
+    dictionary keeps the browser's own spelling and is named in the status bar (M5). Download with
+    Markup marks only prose after `\begin{document}` (M6). `\-` no longer splits a word (L1);
+    circuitikz, tcblisting, Sweave and `\iffalse` are code (L2); a dictionary that failed is asked
+    for again on Recheck and when the network is back (L4); comparing with a version, a file or
+    a commit tracks from it (L7); the old `prefs.marks` becomes All Markup once (L8).
+    `history.py` 40 (Accept's undo is a step of its own), `review.py` 77, `spell.py` 90,
+    `review.test.mjs` 5 groups, `spell.test.mjs` 6; the incremental oracle (`INCR_FULL=1`) 32,
+    `view.py` 108, `browser.py` 193, `ribbon.py` 195, `share.py` 46.
 
 ## Open tasks
 
