@@ -7,7 +7,7 @@
 // The text may be a stranger's: every scan is bounded (MAX characters, a cap on matches), no
 // pattern can backtrack over the text, and comments are read as comments.
 
-import { stripComments, preambleEnd, groupEnd, eolOf, packageLine, packageOptions, kvEdits, parseKV } from './preamble.js';
+import { stripComments, preambleEnd, groupEnd, eolOf, packageLine, packageOptions, kvEdits, parseKV, hasPackage, provides } from './preamble.js';
 
 const MAX = 200000;     // the most of a preamble read
 const BODY = 2000000;   // the most of a body read for its bibliography and notes
@@ -130,7 +130,9 @@ export function refsSetup(src, chapters = false) {
   const { t, end } = preOf(src);
   const has = (n) => !!packageLine(src, n, end);
   const R = { tocdepth: null, fn: { style: 'arabic', start: 1, restart: chapters ? 'chapter' : 'continuous' }, en: { style: 'arabic' }, within: {}, reset: {}, endnotes: null, index: null, pkgs: {} };
-  for (const n of ['hyperref', 'cleveref', 'varioref', 'amsmath', 'mathtools', 'caption', 'newfloat', 'natbib', 'biblatex', 'footmisc', 'perpage', 'enotez', 'endnotes', 'imakeidx', 'makeidx']) R.pkgs[n] = has(n);
+  for (const n of ['hyperref', 'cleveref', 'varioref', 'amsmath', 'mathtools', 'caption', 'newfloat', 'natbib', 'biblatex', 'footmisc', 'perpage', 'enotez', 'endnotes', 'imakeidx', 'makeidx', 'tocbibind']) R.pkgs[n] = has(n);
+  if (R.pkgs.tocbibind) R.tocbibind = packageOptions(src, 'tocbibind', end) || {};
+  { const m = /\\documentclass\s*\[([^\]]{0,600})\]/.exec(t); R.clsOpts = m ? m[1] : ''; }
   for (const c of cmdCalls(t, 'setcounter', 2)) {
     const n = argOf(t, c, 0), v = parseInt(argOf(t, c, 1), 10);
     if (!Number.isFinite(v)) continue;
@@ -153,6 +155,8 @@ export function refsSetup(src, chapters = false) {
   const fw = R.reset.footnote !== undefined ? R.reset.footnote : R.within.footnote;
   if (fw === null) R.fn.restart = 'continuous';
   else if (fw) R.fn.restart = fw === 'chapter' ? 'chapter' : fw === 'section' ? (chapters ? 'chapter' : 'section') : R.fn.restart;
+  // (numbered within the section, 1.1, by \counterwithin or \numberwithin: a mode of its own)
+  if (R.within.footnote && !(R.reset.footnote !== undefined)) R.fn.restart = 'within-' + R.within.footnote;
   if (fm.perpage || (R.pkgs.perpage && /\\MakePerPage\s*(\[[^\]]{0,20}\])?\s*\{\s*footnote\s*\}/.test(t))) R.fn.restart = 'page';
   R.fn.within = R.within.footnote || null;
   R.endnotes = R.pkgs.enotez ? 'enotez' : R.pkgs.endnotes ? 'endnotes' : null;
@@ -165,6 +169,11 @@ export function refsSetup(src, chapters = false) {
 }
 
 // ---- edits: counters and their look ---------------------------------------------------------------
+// The body's \setcounter{counter}{…} calls (where people set tocdepth: just before \tableofcontents)
+export function bodyCounterCalls(src, counter) {
+  const { t, from } = bodyOf(src);
+  return cmdCalls(t, 'setcounter', 2, from).filter((c) => argOf(t, c, 0) === counter).map((c) => ({ s: c.s, e: c.e, v: [c.args[1][0], c.args[1][1]] }));
+}
 // \setcounter{counter}{value} in the preamble: its value changed where it stands, a new line, or
 // (value null) every one taken out
 export function setCounterEdits(src, counter, value) {
@@ -205,7 +214,7 @@ function optEdits(src, p, changes) {
 // footmisc, which the caller makes (App.packageEdits, with the files the preamble reads).
 export function fnRestartEdits(src, mode, chapters) {
   const { t, end } = preOf(src);
-  if (end < 0) return { edits: [], pkg: null };
+  if (end < 0 || /^within-/.test(mode)) return { edits: [], pkg: null };
   const out = [];
   const calls = (n) => cmdCalls(t, n, 2).filter((c) => argOf(t, c, 0) === 'footnote');
   // (what restarts it now, other than the page: taken out unless it is what is asked)
@@ -227,22 +236,28 @@ export function fnRestartEdits(src, mode, chapters) {
 // ---- edits: the bibliography --------------------------------------------------------------------
 // What a file says of its bibliography: the system (biblatex, natbib, plain BibTeX, a list written
 // by hand), the style, and where each command is ({ s, e, args } of the file's text)
-export function bibSetup(src) {
+// others: the text of the files the preamble reads (App.preambleOthers): biblatex loaded by the
+// project's own .sty is biblatex, and wants no natbib and no \bibliography (review H8)
+export function bibSetup(src, others = []) {
   const { end } = preOf(src);
   const { t, from } = bodyOf(src);
-  const has = (n) => !!packageLine(src, n, end);
-  const B = { biblatex: has('biblatex') || has('biblatex-chicago'), natbib: has('natbib'), style: null, styleCall: null, bib: null, print: null, thebib: false, resources: [], files: [] };
+  const has = (n) => !!packageLine(src, n, end) || (others.length ? hasPackage(src, n, end, others) || provides(src, n, others, end) : false);
+  const B = { biblatex: has('biblatex') || has('biblatex-chicago'), natbib: has('natbib'), style: null, styleCall: null, bib: null, print: null, thebib: false, resources: [], files: [], elsewhere: false };
+  B.elsewhere = B.biblatex && !packageLine(src, 'biblatex', end) && !packageLine(src, 'biblatex-chicago', end);
   B.system = B.biblatex ? 'biblatex' : B.natbib ? 'natbib' : 'bibtex';
   if (B.biblatex) {
     const o = packageOptions(src, 'biblatex', end) || {};
     B.style = o.style || o.bibstyle || 'numeric';
     for (const c of cmdCalls(t, 'addbibresource', 1, 0, Math.max(0, end), true)) B.resources.push({ ...c, name: argOf(t, c, 0) });
+    for (const o of others.slice(0, 20)) { const u = stripComments(o.slice(0, MAX)); for (const c of cmdCalls(u, 'addbibresource', 1, 0, u.length, true)) B.resources.push({ name: u.slice(c.args[0][0], c.args[0][1]).trim(), other: true }); }
     const pr = cmdCalls(t, 'printbibliography', 0, from, t.length, true);
     if (pr.length) B.print = pr[0];
     B.files = B.resources.map((r) => r.name);
   } else {
     const st = cmdCalls(t, 'bibliographystyle', 1);
     if (st.length) { B.styleCall = st[st.length - 1]; B.style = argOf(t, B.styleCall, 0); }
+    // (natbib's numbers: its option, or \setcitestyle{numbers} in the preamble)
+    if (B.natbib) { const o = packageOptions(src, 'natbib', end) || {}; B.numbers = !!o.numbers || /\\setcitestyle\s*\{[^{}]{0,80}\bnumbers\b/.test(t.slice(0, Math.max(0, end))); }
     const bb = cmdCalls(t, 'bibliography', 1, from);
     if (bb.length) { B.bib = bb[0]; B.print = bb[0]; B.files = argOf(t, bb[0], 0).split(',').map((x) => x.trim()).filter(Boolean); }
   }
@@ -256,18 +271,21 @@ export function bibSetup(src) {
 export const BIB_STYLES = {
   biblatex: [['apa', 'APA', 'Author and year, APA 7th edition'], ['chicago-authordate', 'Chicago', 'Author and date, Chicago Manual of Style'], ['ieee', 'IEEE', 'Numbered, IEEE'],
     ['mla', 'MLA', 'Author and page, MLA 9th edition'], ['authoryear', 'Harvard', 'Author and year'], ['numeric', 'Numbered', 'Numbered in alphabetical order'], ['alphabetic', 'Alphabetic', 'Labels from authors and year: [Knu84]']],
+  // (natbib takes only its own .bst in its author and year mode; a numbered style is the same .bst
+  // with natbib's numbers option, which bibStyleEdits sets and takes away: review H6)
   natbib: [['plainnat', 'Author–year', 'Author and year (plainnat)'], ['apalike', 'APA', 'APA-like (apalike)'], ['abbrvnat', 'Author–year, abbreviated', 'First names abbreviated (abbrvnat)'],
-    ['unsrtnat', 'Author–year, in order cited', 'Listed in the order cited (unsrtnat)'], ['ieeetr', 'IEEE', 'Numbered in the order cited (ieeetr)'], ['plain', 'Numbered', 'Numbered in alphabetical order (plain)']],
+    ['unsrtnat', 'Author–year, in order cited', 'Listed in the order cited (unsrtnat)'], ['IEEEtranN:numbers', 'IEEE', 'Numbered, IEEE (IEEEtranN, natbib\'s numbers)'],
+    ['plainnat:numbers', 'Numbered', 'Numbered in alphabetical order (plainnat, natbib\'s numbers)'], ['unsrtnat:numbers', 'Numbered, in order cited', 'Numbered in the order cited (unsrtnat, natbib\'s numbers)']],
   bibtex: [['plain', 'Numbered', 'Numbered in alphabetical order (plain)'], ['unsrt', 'Numbered, in order cited', 'Numbered in the order cited (unsrt)'], ['ieeetr', 'IEEE', 'Numbered in the order cited (ieeetr)'],
     ['abbrv', 'Abbreviated', 'First names abbreviated (abbrv)'], ['alpha', 'Alphabetic', 'Labels from authors and year (alpha)'], ['apalike', 'APA', 'APA-like, author and year (apalike)']]
 };
-const SAFE_STYLE = /^[A-Za-z0-9-]{1,40}$/;
+const SAFE_STYLE = /^[A-Za-z0-9-]{1,40}(:numbers)?$/;
 
 // The style set: biblatex's style= option (bibstyle= and citestyle= go with it), or the argument
 // of \bibliographystyle, written next to \bibliography where the file has none
-export function bibStyleEdits(src, style) {
+export function bibStyleEdits(src, style, others = []) {
   if (!SAFE_STYLE.test(style)) return [];
-  const B = bibSetup(src), { end } = preOf(src);
+  const B = bibSetup(src, others), { end } = preOf(src);
   if (B.system === 'biblatex') {
     const p = packageLine(src, 'biblatex', end);
     if (!p || p.names.length !== 1) return [];
@@ -277,15 +295,30 @@ export function bibStyleEdits(src, style) {
     return kvEdits(src, p.opts[0], p.opts[1], { style }, (k) => k === 'bibstyle' || k === 'citestyle');
   }
   if (B.system === 'thebibliography') return [];
-  if (B.styleCall) { const [a, b] = B.styleCall.args[0]; return src.slice(a, b).trim() === style ? [] : [{ s: a, e: b, t: style }]; }
-  if (B.bib) { const ls = src.lastIndexOf('\n', B.bib.s - 1) + 1, ind = src.slice(ls, B.bib.s); return [{ s: B.bib.s, e: B.bib.s, t: '\\bibliographystyle{' + style + '}' + eolOf(src) + (/^[ \t]*$/.test(ind) ? ind : '') }]; }
-  return [];
+  // natbib: the .bst, and its numbers option on its line as the style wants it
+  const num = /:numbers$/.test(style);
+  style = style.replace(/:numbers$/, '');
+  const opt = [];
+  if (B.natbib) {
+    const p = packageLine(src, 'natbib', end);
+    if (p && p.names.length === 1 && !!B.numbers !== num) {
+      if (!p.opts) { if (num) opt.push({ s: p.list[0] - 1, e: p.list[0] - 1, t: '[numbers]' }); } else {
+        const kv = parseKV(src, p.opts[0], p.opts[1]);
+        const ed = kvEdits(src, p.opts[0], p.opts[1], num ? { numbers: true, authoryear: null } : { numbers: null });
+        opt.push(...(ed.length === 1 && !ed[0].t.trim() && kv.length === 1 ? [{ s: p.opts[0] - 1, e: p.opts[1] + 1, t: '' }] : ed));
+      }
+    }
+  } else if (num) return [];
+  const withOpt = (ed) => [...opt, ...ed];
+  if (B.styleCall) { const [a, b] = B.styleCall.args[0]; return withOpt(src.slice(a, b).trim() === style ? [] : [{ s: a, e: b, t: style }]); }
+  if (B.bib) { const ls = src.lastIndexOf('\n', B.bib.s - 1) + 1, ind = src.slice(ls, B.bib.s); return withOpt([{ s: B.bib.s, e: B.bib.s, t: '\\bibliographystyle{' + style + '}' + eolOf(src) + (/^[ \t]*$/.test(ind) ? ind : '') }]); }
+  return withOpt([]);
 }
 
 // The bibliography's title: biblatex's title= of \printbibliography, else \refname (\bibname with
 // chapters) set just before \bibliography; null: the class's own
-export function bibTitle(src, chapters) {
-  const B = bibSetup(src), { t } = bodyOf(src);
+export function bibTitle(src, chapters, others = []) {
+  const B = bibSetup(src, others), { t } = bodyOf(src);
   if (B.system === 'biblatex') {
     if (!B.print || !B.print.opt) return null;
     const kv = parseKV(t, B.print.opt[0], B.print.opt[1]).find((x) => x.key === 'title');
@@ -297,12 +330,12 @@ export function bibTitle(src, chapters) {
 }
 // The edits that give the bibliography this title (null: the class's own, any title taken out).
 // title is LaTeX already (the caller escapes what was typed).
-export function bibTitleEdits(src, title, chapters) {
-  const B = bibSetup(src), { t } = bodyOf(src), nl = eolOf(src);
+export function bibTitleEdits(src, title, chapters, others = []) {
+  const B = bibSetup(src, others), { t } = bodyOf(src), nl = eolOf(src);
   if (B.system === 'biblatex') {
     const P = B.print;
     if (!P) return [];
-    const v = title == null ? null : /[,=]/.test(title) ? '{' + title + '}' : title;
+    const v = title == null ? null : /[,=\]\[]/.test(title) ? '{' + title + '}' : title;
     if (!P.opt) return v == null ? [] : [{ s: P.e, e: P.e, t: '[title=' + v + ']' }];
     const kv = parseKV(t, P.opt[0], P.opt[1]);
     if (v == null && !kv.some((x) => x.key === 'title')) return [];
@@ -342,11 +375,15 @@ export function noteNames(src, name) {
     if (z < 0) break;
     i = t.indexOf('\\begin{verbatim}', z);
   }
+  // (and not in a heading's or a caption's argument: moved to the contents, an endnote there is
+  // printed twice by enotez, review L7)
+  for (const n of ['part', 'chapter', 'section', 'subsection', 'subsubsection', 'paragraph', 'subparagraph', 'caption']) for (const c of cmdCalls(t, n, 1, from, t.length, true)) verb.push([c.opt ? c.opt[0] : c.args[0][0], c.e]);
+  verb.sort((a, b) => a[0] - b[0]);
   let v = 0;
   re.lastIndex = from;
   for (let m, k = 0; (m = re.exec(t)) && k < 20000; k++) {
     while (v < verb.length && verb[v][1] < m.index) v++;
-    if (v < verb.length && verb[v][0] <= m.index) continue;
+    if (verb.slice(v, v + 12).some(([a, b]) => a <= m.index && m.index < b)) continue;
     out.push({ s: m.index + 1, e: m.index + 1 + name.length });
   }
   return out;

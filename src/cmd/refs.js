@@ -276,8 +276,11 @@ export const methods = {
   },
   tocLevels(n) {
     const ch = !!this.model.opts.chapters;
-    const w = new Work(this), f = this.main;
-    w.apply(f, RS.setCounterEdits(w.src(f), 'tocdepth', n == null ? null : Math.max(-1, Math.min(5, n - (ch ? 1 : 0)))));
+    const w = new Work(this), f = this.main, v = n == null ? null : Math.max(-1, Math.min(5, n - (ch ? 1 : 0)));
+    // (where the body sets it, before \tableofcontents, that line is the one TeX reads: review M3)
+    const body = texFiles(this).map((g) => [g, RS.bodyCounterCalls(this.src(g), 'tocdepth')]).filter(([, cs]) => cs.length);
+    if (body.length) for (const [g, cs] of body) w.apply(g, cs.map((c) => (v == null ? (([a, b]) => ({ s: a, e: b, t: '' }))(RS.lineSpan(this.src(g), c.s, c.e)) : { s: c.v[0], e: c.v[1], t: String(v) })));
+    else w.apply(f, RS.setCounterEdits(w.src(f), 'tocdepth', v));
     return w.commit(null, 'format');
   },
   tocRemove() { return this.removeSpots(this.tocSpots()); },
@@ -302,8 +305,8 @@ export const methods = {
     if (src[i] === '[') {
       const z = groupClose(src, i);
       if (z < 0) return false;
-      w.apply(f, [{ s: i, e: z, t: short ? '[' + short + ']' : '' }]);
-    } else if (short) w.apply(f, [{ s: i, e: i, t: '[' + short + ']' }]);
+      w.apply(f, [{ s: i, e: z, t: short ? '[' + br(short) + ']' : '' }]);
+    } else if (short) w.apply(f, [{ s: i, e: i, t: '[' + br(short) + ']' }]);
     return w.commit(null, 'format');
   },
 
@@ -415,6 +418,13 @@ export const methods = {
   // The Footnote and Endnote dialog's Apply: { style, start, restart, enStyle, convert: 'en'|'fn' }
   notesApply(o) {
     const w = new Work(this), f = this.main, ch = !!this.model.opts.chapters;
+    const R = (this.model.opts.refs || {}).fn || {};
+    // (\fnsymbol counts nine, \alph 26: past them TeX stops, "Counter too large"; review H7)
+    const style = o.style || R.style, restart = o.restart || R.restart, cap = style === 'fnsymbol' ? 9 : /^alph$/i.test(style) ? 26 : 0;
+    if (cap && restart !== 'page') {
+      const most = this.notesPerScope(restart) + Math.max(0, parseInt(o.start ?? R.start, 10) || 1) - 1;
+      if (most > cap) { this.toast((style === 'fnsymbol' ? 'Symbols' : 'Letters') + ' number ' + cap + ' footnotes at most and this document has ' + most + (restart === 'continuous' ? '' : ' in one ' + restart.replace(/^within-/, '')) + ': restart them each page, or pick numbers'); return false; }
+    }
     if (o.style) w.apply(f, RS.counterStyleEdits(w.src(f), 'footnote', o.style));
     if (o.enStyle) w.apply(f, RS.counterStyleEdits(w.src(f), 'endnote', o.enStyle));
     if (o.start != null) { const n = Math.max(1, Math.min(9999, parseInt(o.start, 10) || 1)); w.apply(f, RS.setCounterEdits(w.src(f), 'footnote', n > 1 ? n - 1 : null)); }
@@ -432,9 +442,21 @@ export const methods = {
     return w.commit(c && !c.ghost ? { f: c.f, p: c.a } : null, 'format');
   },
 
+  // the most footnotes one numbering holds: all of them, or per section or chapter where they restart
+  notesPerScope(restart) {
+    const at = /section/.test(restart) ? 'section' : /chapter/.test(restart) ? 'chapter' : null;
+    let most = 0, n = 0;
+    for (const g of texFiles(this)) {
+      const t = stripComments(this.src(g).slice(0, 4000000));
+      for (let re = /\\(footnote|section|chapter)(\*?)(?![A-Za-z@])/g, m, k = 0; (m = re.exec(t)) && k < 100000; k++) {
+        if (m[1] === 'footnote') { if (!m[2]) most = Math.max(most, ++n); } else if (!m[2] && at && (m[1] === at || (at === 'section' && m[1] === 'chapter'))) n = 0;
+      }
+    }
+    return most;
+  },
   // ---- sources, the style, the bibliography ------------------------------------------------------------
   // the bibliography of the main file: biblatex, natbib, BibTeX or a list written by hand
-  bibState() { return RS.bibSetup(this.src(this.main)); },
+  bibState() { return RS.bibSetup(this.src(this.main), this.preambleOthers()); },
   bibWhyNot() {
     if (preambleEnd(this.src(this.main)) < 0) return 'The main file has no preamble';
     const B = this.bibState();
@@ -444,8 +466,8 @@ export const methods = {
   bibAt() { const B = this.bibState(); return B.print ? true : this.bodySpots(['bibliography', 'printbibliography'], true).length > 0; },
   bibStyleMenu() {
     const B = this.bibState(), list = RS.BIB_STYLES[B.system] || RS.BIB_STYLES.bibtex;
-    const items = list.map(([v, name, t]) => ({ name, title: t + (B.system === 'biblatex' ? ' (style=' + v + ')' : ' (\\bibliographystyle{' + v + '})'), radio: true, checked: B.style === v, run: () => this.runCommand('citation-style', { style: v }) }));
-    if (B.style && !list.some(([v]) => v === B.style)) items.unshift({ name: B.style, title: 'This document\'s own style', radio: true, checked: true, disabled: true }, null);
+    const items = list.map(([v, name, t]) => ({ name, title: t + (B.system === 'biblatex' ? ' (style=' + v + ')' : ' (\\bibliographystyle{' + v + '})'), radio: true, checked: B.style === v.replace(/:numbers$/, '') && (B.system !== 'natbib' || !!B.numbers === /:numbers$/.test(v)), run: () => this.runCommand('citation-style', { style: v }) }));
+    if (B.style && !list.some(([v]) => v.replace(/:numbers$/, '') === B.style)) items.unshift({ name: B.style, title: 'This document\'s own style', radio: true, checked: true, disabled: true }, null);
     const n = near(this, 'rc-citation-style');
     openMenu(this, n.anchor || n.rect, items, { label: 'Citation Style' });
   },
@@ -453,7 +475,7 @@ export const methods = {
     // (in the main file, or the .tex file that has \bibliographystyle)
     const files = [this.main, ...texFiles(this).filter((x) => x !== this.main)];
     const w = new Work(this);
-    for (const f of files) { const ed = RS.bibStyleEdits(w.src(f), style); if (ed.length) { w.apply(f, ed); break; } }
+    for (const f of files) { const ed = RS.bibStyleEdits(w.src(f), style, f === this.main ? this.preambleOthers() : []); if (ed.length) { w.apply(f, ed); break; } }
     return w.commit(null, 'format');
   },
   // The bibliography's lines where the document has none: natbib with plainnat and refs.bib for
@@ -477,7 +499,7 @@ export const methods = {
       w.apply(f, [{ s: p, e: p, t: (pre + lines.join('\n') + post).replace(/\n/g, eolOf(this.src(f))) }]);
     }
     if (!files.length && !this.files.has(file)) w.t.set(file, '');
-    if (title) { const f = this.main; w.apply(f, RS.bibTitleEdits(w.src(f), title, ch)); }
+    if (title) { const f = this.main; w.apply(f, RS.bibTitleEdits(w.src(f), title, ch, this.preambleOthers())); }
     void nl;
     return place === 'end' ? w : w.commit(null, 'insert');
   },
@@ -487,7 +509,7 @@ export const methods = {
   },
   bibItems() {
     const has = this.bibAt(), ch = !!this.model.opts.chapters;
-    const cur = RS.bibTitle(this.src(this.main), ch);
+    const cur = RS.bibTitle(this.src(this.main), ch, this.preambleOthers());
     const dflt = this.bibState().biblatex ? (ch ? 'Bibliography' : 'References') : ch ? 'Bibliography' : 'References';
     const set = (t) => () => this.runCommand(has ? 'bibliography-title' : 'bibliography', { title: t === dflt ? null : t });
     return [...['Bibliography', 'References', 'Works Cited'].map((t) => ({ name: t, title: has ? 'Its title: ' + t : 'A bibliography titled ' + t + ' after this paragraph', radio: has, checked: has && (cur ? cur === t : t === dflt), run: set(t) })),
@@ -495,7 +517,7 @@ export const methods = {
   },
   bibRetitle(title) {
     const w = new Work(this), f = this.main, ch = !!this.model.opts.chapters;
-    w.apply(f, RS.bibTitleEdits(w.src(f), title, ch));
+    w.apply(f, RS.bibTitleEdits(w.src(f), title, ch, this.preambleOthers()));
     return w.commit(null, 'format');
   },
   // a new source: { type, fields (typed text), key?, file?, cite } through the form or an agent
@@ -513,7 +535,8 @@ export const methods = {
     const nodes = parse(text).filter((n) => !(n.t === 'text' && !text.slice(n.s, n.e).trim()) && n.t !== 'comment' && n.t !== 'par');
     if (nodes.length !== 1) return { why: 'Put the caret in a figure, a picture or a table first' };
     const n = nodes[0];
-    const has = (ns, name) => ns && ns.some((x) => (x.t === 'cmd' && x.name === name) || (x.nodes && has(x.nodes, name)) || (x.args && x.args.some((a) => a && a.nodes && has(a.nodes, name))));
+    // (a subfigure's or a subtable's caption is its own: the float may still want one, review L6)
+    const has = (ns, name) => ns && ns.some((x) => (x.t === 'cmd' && x.name === name) || (x.nodes && !(x.t === 'env' && /^sub(figure|table)$/.test(x.name)) && has(x.nodes, name)) || (x.t !== 'env' && x.args && x.args.some((a) => a && a.nodes && has(a.nodes, name))));
     if (n.t === 'env' && /^(figure|table)\*?$/.test(n.name)) {
       if (has(n.nodes, 'caption')) return { why: 'This ' + n.name.replace('*', '') + ' has its caption: type in it on the page' };
       return { kind: n.name.replace('*', ''), f, mode: 'float', s: off + n.s, be: off + n.be, es: off + n.es, e: off + n.e };
@@ -550,7 +573,10 @@ export const methods = {
         const p = T.be + m[0].length;
         w.apply(f, [{ s: p, e: p, t: (/\n$/.test(src.slice(T.be, p)) ? '' : nl) + lines(ind) + nl }]);
       } else {
-        const ls = src.lastIndexOf('\n', T.es - 1) + 1, atLine = ls > T.be && !src.slice(ls, T.es).trim();
+        let ls = src.lastIndexOf('\n', T.es - 1) + 1, atLine = ls > T.be && !src.slice(ls, T.es).trim();
+        // (a lone \label at the float's end goes after the caption, so \ref gives the figure's number: review L5)
+        const lab = /\\label\s*\{[^{}\n]{0,200}\}\s*$/.exec(src.slice(T.be, T.es));
+        if (lab) { const at = T.be + lab.index, l2 = src.lastIndexOf('\n', at - 1) + 1; if (l2 > T.be && !src.slice(l2, at).trim()) { ls = l2; atLine = true; } }
         const p = atLine ? ls : T.es;
         w.apply(f, [{ s: p, e: p, t: (atLine ? '' : nl) + lines(ind) + nl + (atLine ? '' : indentOf(T.s)) }]);
       }
@@ -580,7 +606,10 @@ export const methods = {
     const t = stripComments(src.slice(0, Math.max(0, preambleEnd(src))));
     const calls = [...RS.cmdCalls(t, 'counterwithin', 2), ...RS.cmdCalls(t, 'numberwithin', 2), ...RS.cmdCalls(t, 'counterwithout', 2)].filter((c) => t.slice(c.args[0][0], c.args[0][1]).trim() === kind);
     const want = how === 'section' || how === 'chapter' ? how : null;
-    const ok = calls.some((c) => /within$/.test(t.slice(c.s, c.s + 15)) && !/without/.test(t.slice(c.s, c.s + 16)) && !c.star && t.slice(c.args[1][0], c.args[1][1]).trim() === want);
+    // (each call by its name: \counterwithin and amsmath's \numberwithin number within, review M1)
+    const nameOf = (c) => /^\\([A-Za-z]+)/.exec(t.slice(c.s, c.s + 20))[1];
+    const ok = calls.some((c) => nameOf(c) !== 'counterwithout' && !c.star && t.slice(c.args[1][0], c.args[1][1]).trim() === want);
+    if (!want && !calls.some((c) => nameOf(c) !== 'counterwithout' && !c.star) && (!ch || calls.some((c) => nameOf(c) === 'counterwithout'))) return;
     const dflt = ch ? 'chapter' : null;
     if ((want === dflt && !calls.length) || ok) return;
     const ed = calls.map((c) => { const [s, e] = RS.lineSpan(src, c.s, c.e); return { s, e, t: '' }; });
@@ -599,20 +628,38 @@ export const methods = {
   // (by where each \index stands), from the pages as they are laid out: never stale
   refPages(plan) {
     const caps = this.root.querySelectorAll('.toc-p[data-cap]'), ixs = this.root.querySelectorAll('.idx-p');
+    this.fnPerPage();
     if (!caps.length && !ixs.length) return;
-    const capPage = new Map(), spans = [];
+    const capPage = new Map();
     plan.forEach((pg, k) => {
       for (const e of pg.entries) {
         const it = e.it;
         if (!it || !it.el) continue;
         if (caps.length) for (const c of it.el.querySelectorAll('[data-cap]')) if (!capPage.has(c.dataset.cap)) capPage.set(c.dataset.cap, k + 1);
-        if (ixs.length && it.block) spans.push([it.block, k + 1]);
       }
     });
     for (const c of caps) c.textContent = capPage.has(c.dataset.cap) ? String(capPage.get(c.dataset.cap)) : '';
+    // (an entry's page: the page holding the words just before it, a paragraph cut over two pages
+    // giving each part its own; blocks by file, searched by halves: review M9, L12)
+    const pageNo = new Map([...this.root.querySelectorAll('.page')].map((p, k) => [p, k + 1]));
+    const byF = new Map();
+    for (const B of this.renderer.blocks) { if (!byF.has(B.f)) byF.set(B.f, []); byF.get(B.f).push(B); }
+    for (const L of byF.values()) L.sort((a, b) => a.s - b.s);
+    const starts = new Map();
     const pageOf = (f, s) => {
-      for (const [B, n] of spans) if (B.f === f && B.s <= s && s < B.e) return n;
-      return null;
+      const L = byF.get(f);
+      if (!L) return null;
+      let lo = 0, hi = L.length - 1, k = -1;
+      while (lo <= hi) { const m = (lo + hi) >> 1; if (L[m].s <= s) { k = m; lo = m + 1; } else hi = m - 1; }
+      if (k < 0 || s > L[k].e) return null;
+      const B = L[k];
+      if (!starts.has(B)) starts.set(B, B.segs.map((g, i) => [g && g.rel && g.rel.length && (g.f || B.f) === f ? B.base + g.rel[0] : -1, i]).filter((x) => x[0] >= 0).sort((a, b) => a[0] - b[0]));
+      const S = starts.get(B);
+      let j = -1;
+      for (let a = 0, b = S.length - 1; a <= b;) { const m = (a + b) >> 1; if (S[m][0] <= s) { j = m; a = m + 1; } else b = m - 1; }
+      const el = (j >= 0 && this.root.querySelector('span.t[data-g="' + B.id + '.' + S[j][1] + '"]')) || this.root.querySelector('[data-b="' + B.id + '"]');
+      const pg = el && el.closest('.page');
+      return pg ? pageNo.get(pg) || null : null;
     };
     // (an index row's entries from the model as it is now, the page's block reused or not)
     const rows = new Map(), RB = this.renderer.blocks;
@@ -640,6 +687,21 @@ export const methods = {
         const tag = /^(textbf|bfseries)$/.test(p.fmt) ? 'b' : /^(textit|emph|itshape)$/.test(p.fmt) ? 'i' : 'span';
         const el = document.createElement(tag); el.textContent = p.t; x.append(el);
       }
+    }
+  },
+
+  // footmisc's perpage (Restart each page): the marks and the notes of each page numbered from 1
+  // as the pages are laid out; the model's numbers kept to go back to (review M5)
+  fnPerPage() {
+    const R = ((this.model && this.model.opts.refs) || {}).fn || {}, per = R.restart === 'page';
+    const all = this.root.querySelectorAll('sup.a-fn, .fn .fnn');
+    if (!per) { for (const x of all) if (x.dataset.n0 != null) { x.textContent = x.dataset.n0; delete x.dataset.n0; } return; }
+    const style = R.style;
+    const fmt = (n) => (style === 'roman' ? roman(n) : style === 'Roman' ? roman(n).toUpperCase() : style === 'alph' ? String.fromCharCode(96 + n) : style === 'Alph' ? String.fromCharCode(64 + n) : style === 'fnsymbol' ? ['*', '\u2020', '\u2021', '\u00a7', '\u00b6', '\u2016', '**', '\u2020\u2020', '\u2021\u2021'][n - 1] || String(n) : String(n));
+    for (const pg of this.root.querySelectorAll('.page')) {
+      const marks = pg.querySelectorAll('sup.a-fn'), notes = pg.querySelectorAll('.fn .fnn');
+      marks.forEach((m, k) => { if (m.dataset.n0 == null) m.dataset.n0 = m.textContent; m.textContent = fmt(k + 1); });
+      notes.forEach((m, k) => { if (m.dataset.n0 == null) m.dataset.n0 = m.textContent; m.textContent = fmt(k + 1); });
     }
   },
 
@@ -726,7 +788,7 @@ export const methods = {
       let b = z; while (b < e && /\s/.test(src[b])) b++;
       if (src[b] !== '{') return null;
       const bz = groupClose(src, b);
-      return { f, s, e, cmd: 'href', url: src.slice(a + 1, z - 1).replace(/\\([%#&_~])/g, '$1'), text: [b + 1, bz - 1] };
+      return { f, s, e, cmd: 'href', url: src.slice(a + 1, z - 1).replace(/\\([%#&_~])/g, '$1'), urlRaw: src.slice(a + 1, z - 1), text: [b + 1, bz - 1] };
     }
     m = /^\\hyperref\s*\[([^\]\n]{0,200})\]\s*\{/.exec(t);
     if (m) { const b = s + m[0].length - 1, bz = groupClose(src, b); return { f, s, e, cmd: 'hyperref', url: '', label: m[1].trim(), text: [b + 1, bz - 1] }; }
@@ -777,14 +839,18 @@ export const methods = {
       const sel = e > s ? src.slice(s, e) : '';
       const selPlain = sel ? textOf(this.plainOf(f, s, e)) : '';
       words = sel && (typed == null || textOf(typed) === selPlain) ? sel : this.escapeAt(f, s, textOf(typed || (kind === 'mail' ? url.slice(7).replace(/\?.*$/, '') : kind === 'web' ? url : '')));
-      if (sel && !/^[^{}]*$/.test(sel) && !balanced(sel)) { this.toast('The selection crosses a brace: select words within one paragraph'); return false; }
+      if (sel && ((!/^[^{}]*$/.test(sel) && !balanced(sel)) || /\n[ \t]*\r?\n|\\(?:begin|end|par|item)(?![A-Za-z@])/.test(sel))) { this.toast('A link holds words of one paragraph: select within one paragraph'); return false; }
     }
     const m = w.mark(f, s, -1), me = w.mark(f, e, 1);
     if (kind === 'place' && !label) { label = RS.labelKey(o.target.add.prefix, o.target.add.words, new Set(this.model.labels.keys())); w.apply(o.target.add.f, [{ s: o.target.add.p, e: o.target.add.p, t: '\\label{' + label + '}' }]); }
     let t;
     if (kind === 'place') t = '\\hyperref[' + label + ']{' + (words || this.escapeAt(f, s, label)) + '}';
     else if (!words || (kind === 'web' && textOf(words) === url && !/[%#\\{}~^]/.test(url))) t = '\\url{' + url + '}';
-    else t = '\\href{' + urlArg + '}{' + words + '}';
+    else {
+      // (an address left as it was keeps its own bytes: \_ and \& in it stay, review L11)
+      const keep = L && L.cmd === 'href' && L.url === url && L.urlRaw != null ? L.urlRaw : urlArg;
+      t = '\\href{' + keep + '}{' + words + '}';
+    }
     w.apply(f, [{ s: m.p, e: me.p, t: (sp.pre || '') + t }]);
     // (hyperref with hidelinks, the links black as Word prints them, where nothing gives it yet)
     const main = this.main, msrc = w.src(main), others = this.preambleOthers();
@@ -920,6 +986,9 @@ export const methods = {
   }
 };
 
+// an optional argument's words in braces where a bracket would end it early (review M7)
+const br = (t) => (/[\]\[]/.test(t) ? '{' + t + '}' : t);
+function roman(n) { let s = ''; for (const [v, r] of [[1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'], [100, 'c'], [90, 'xc'], [50, 'l'], [40, 'xl'], [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i']]) while (n >= v) { s += r; n -= v; } return s; }
 const balanced = (t) => { let d = 0; for (let i = 0; i < t.length; i++) { if (t[i] === '\\') { i++; continue; } if (t[i] === '{') d++; else if (t[i] === '}' && --d < 0) return false; } return d === 0; };
 function setKV(list, key, value) {
   const parts = list.split(',').map((x) => x.trim()).filter(Boolean).filter((x) => x.split('=')[0].trim() !== key);

@@ -2179,7 +2179,7 @@ class App {
     for (const f of fns) {
       const sp = f.querySelector('span.t');
       if (!sp) continue;
-      if (sp.dataset.g.split('.')[0] === bid && f.querySelector('.fnn').textContent === info.a.num) {
+      if (sp.dataset.g.split('.')[0] === bid && (f.querySelector('.fnn').dataset.n0 || f.querySelector('.fnn').textContent) === info.a.num) {
         const spans = f.querySelectorAll('span.t');
         const last = spans[spans.length - 1];
         const sel = getSelection();
