@@ -2647,7 +2647,13 @@ Tests:
     under natbib become its numbered forms and `alpha` is refused (V6); an author and year style
     takes `\setcitestyle{numbers}` off (V7); `\footnotemark` counts toward the symbols' nine (V8).
     Rebased on e309a85. Evidence: `bib.test.mjs` 71, `refs.py` 244 (8 new cases, one more
-    compiled: a typed `&` and `%` and an address with `#` and `%` in natbib).
+    compiled: a typed `&` and `%` and an address with `#` and `%` in natbib). The References
+    commands' when and on read the preamble, the bibliography's set up and every file's body once
+    for each text of the project (`perText` in `src/cmd/refs.js`, the comment-blanked preamble and
+    body once per string in `src/refsrc.js`): on `page.py`'s long document a look at the caret
+    went from 349 to 12 ms, Citation Style from 83.6 ms to under 2; `refs.py cached` checks every
+    References command under 2 ms there and its answers equal to a fresh read after edits to an
+    `\input` file, to the main file and a change of main file (`refs.py` 251).
 
 ## Open tasks
 

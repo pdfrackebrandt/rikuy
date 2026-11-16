@@ -82,7 +82,7 @@ register(
     whyNot: (app) => (app.tocSpots().length ? 'The document has its table of contents already: the arrow sets its levels or takes it out' : NOT_HERE),
     run: (app) => app.blockCommand('\\tableofcontents'), menuItems: (app) => app.tocItems() },
   { id: 'toc-levels', name: 'Table of Contents levels', title: 'How many levels of headings the table of contents shows: \\setcounter{tocdepth}{…}', synonyms: ['Show levels', 'tocdepth', 'Contents depth'],
-    when: (app) => preambleEnd(app.src(app.main)) >= 0, whyNot: () => 'The main file has no preamble to set it in', run: (app, args) => (args && args.levels !== undefined ? app.tocLevels(args.levels) : app.refsMenu('table-of-contents')) },
+    when: (app) => app.refsHasPreamble(), whyNot: () => 'The main file has no preamble to set it in', run: (app, args) => (args && args.levels !== undefined ? app.tocLevels(args.levels) : app.refsMenu('table-of-contents')) },
   { id: 'toc-remove', name: 'Remove Table of Contents', title: 'Remove Table of Contents: \\tableofcontents taken out', synonyms: ['Delete table of contents'], when: (app) => app.tocSpots().length > 0, whyNot: () => 'The document has no table of contents', run: (app) => app.tocRemove() },
   { id: 'toc-add-text', name: 'Add Text', kind: 'menu', tab: 'references', group: 'toc', order: 20, label: 'Add Text', icon: ICON.addText,
     title: 'Add Text: the heading\'s level in the table of contents, or none (\\section*), or a short title for it (\\section[Short]{…})', synonyms: ['Do not show in table of contents', 'Heading level', 'Outline level', 'Short title'],
@@ -103,7 +103,7 @@ register(
   { id: 'show-notes', name: 'Show Notes', tab: 'references', group: 'footnotes', order: 40, label: 'Show Notes', icon: ICON.show, title: 'Show Notes: from a footnote\'s mark to its text and back; with endnotes, to the notes at the end',
     synonyms: ['Footnote text', 'Endnotes list'], when: (app) => app.noteMarks('fn').length + app.noteMarks('en').length > 0, whyNot: () => 'The document has no notes', run: (app, args, at) => app.showNotes(at) },
   { id: 'footnote-options', name: 'Footnote and Endnote', tab: 'references', group: 'footnotes', order: 50, icon: ICON.options, title: 'Footnote and Endnote: the numbers\' format, where they start and start again, and turning footnotes into endnotes or back',
-    synonyms: ['Footnote options', 'Footnote numbering', 'Restart each page', 'Restart each section', 'Convert footnotes', 'fnsymbol'], when: (app) => preambleEnd(app.src(app.main)) >= 0,
+    synonyms: ['Footnote options', 'Footnote numbering', 'Restart each page', 'Restart each section', 'Convert footnotes', 'fnsymbol'], when: (app) => app.refsHasPreamble(),
     whyNot: () => 'The main file has no preamble to set it in', run: (app, args) => (args ? app.notesApply(args) : openNotesDialog(app)) },
 
   // ---- References › Citations & Bibliography
@@ -186,6 +186,27 @@ class Work {
 
 const eolOf = (t) => (/\r\n/.test(String(t).slice(0, 4000)) ? '\r\n' : '\n');
 const texFiles = (app) => [...app.files.keys()].filter((n) => /\.(tex|ltx)$/i.test(n)).slice(0, 200);
+// What the commands' when and on read of the project, once for each text of it: a look at the
+// caret runs every command's, and on a long document (167 KB of preamble, 3000 paragraphs) reading
+// the preamble and every file's body again took 27 to 84 ms a command. The answers are kept while
+// the main file is the same and every file holds the same string (compared by reference, as
+// para.js's byFiles), so an edit anywhere reads them afresh.
+function perText(app, key, fn) {
+  let m = app.refsMemo;
+  const same = () => {
+    if (m.main !== app.main || m.n !== app.files.size) return false;
+    let i = 0;
+    for (const [n, t] of app.files) { if (m.files[i] !== n || m.files[i + 1] !== t) return false; i += 2; }
+    return true;
+  };
+  if (!m || !same()) {
+    const files = [];
+    for (const [n, t] of app.files) files.push(n, t);
+    m = app.refsMemo = { main: app.main, n: app.files.size, files, vals: new Map() };
+  }
+  if (!m.vals.has(key)) m.vals.set(key, fn());
+  return m.vals.get(key);
+}
 const SAFE_KEY = /^[A-Za-z0-9:_.\-/+]{1,80}$/;
 const textOf = (s) => String(s || '').replace(/\s+/g, ' ').trim();
 
@@ -250,10 +271,13 @@ export const methods = {
   },
   // the lines of the body that call a command, in every .tex file: [{ f, s, e }]
   bodySpots(names, opt = false) {
-    const out = [];
-    for (const f of texFiles(this)) for (const c of RS.bodyCalls(this.src(f), names, opt)) out.push({ f, s: c.s, e: c.e, name: c.name });
-    return out;
+    return perText(this, 'spots ' + names.join(' ') + (opt ? ' opt' : ''), () => {
+      const out = [];
+      for (const f of texFiles(this)) for (const c of RS.bodyCalls(this.src(f), names, opt)) out.push({ f, s: c.s, e: c.e, name: c.name });
+      return out;
+    });
   },
+  refsHasPreamble() { return perText(this, 'pre', () => preambleEnd(this.src(this.main)) >= 0); },
   removeSpots(spots) {
     const w = new Work(this);
     const byF = new Map();
@@ -457,9 +481,9 @@ export const methods = {
   },
   // ---- sources, the style, the bibliography ------------------------------------------------------------
   // the bibliography of the main file: biblatex, natbib, BibTeX or a list written by hand
-  bibState() { return RS.bibSetup(this.src(this.main), this.preambleOthers()); },
+  bibState() { return perText(this, 'bib', () => RS.bibSetup(this.src(this.main), this.preambleOthers())); },
   bibWhyNot() {
-    if (preambleEnd(this.src(this.main)) < 0) return 'The main file has no preamble';
+    if (!this.refsHasPreamble()) return 'The main file has no preamble';
     const B = this.bibState();
     return B.system === 'thebibliography' ? 'This document\'s bibliography is written by hand (thebibliography): edit its \\bibitem entries on the page' : '';
   },

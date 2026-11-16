@@ -795,7 +795,41 @@ def verify(page):
     cmd(page, 'footnote-options', {'style': 'fnsymbol'})
     check('V8: nine footnotes and a \\footnotemark: symbols refused', src(page) == fm, page.inner_text('#toast'))
 
-SECTIONS = {'review': review, 'verify': verify, 'toc': toc, 'notes': notes, 'sources': sources, 'captions': captions, 'xrefs': xrefs, 'index': index, 'links': links}
+REFS_IDS = ['table-of-contents', 'toc-levels', 'toc-remove', 'toc-add-text', 'endnote', 'next-footnote', 'previous-footnote', 'next-endnote', 'previous-endnote', 'show-notes', 'footnote-options', 'add-source', 'manage-sources', 'citation-style', 'bibliography', 'bibliography-title', 'bibliography-remove', 'insert-caption', 'table-of-figures', 'list-of-tables', 'remove-list-of-figures', 'remove-list-of-tables', 'mark-entry', 'insert-index', 'link', 'bookmark', 'cross-reference', 'link-edit', 'link-open', 'link-copy', 'link-remove']
+
+def cached(page):
+    """The References commands' when and on on a long document of several files: read once for each
+    text of the project (CI's page.py long_document named them at 27 to 84 ms a look at the caret),
+    under 2 ms each at a look, and the same answers as a fresh read after an edit to any file."""
+    pre = ''.join('\\newcommand{\\m%s}{x} %% %s\n' % (chr(97 + k % 26) * (1 + k // 26), 'y' * 60) for k in range(1500))
+    body = '\n\n'.join('\\subsection{Head %d}\nWords of paragraph %d here.' % (k, k) for k in range(1500))
+    main = '\\documentclass{article}\n' + pre + '\\usepackage{natbib}\n\\begin{document}\n\\input{ch1}\n' + body + '\n\\end{document}\n'
+    load_doc(page, {'main.tex': main, 'ch1.tex': 'Chapter words.\n', 'refs.bib': BIB}); click_text(page, 'Words of paragraph 3 ', 2); page.wait_for_timeout(300)
+    STATE = """(ids) => { const g = window.rikuy, C = g.cmds, at = g.ribbonAt(), out = {};
+      for (const id of ids) { const c = C.command(id); at.memo = {}; out[id] = [C.enabled(g, c, at), c.on ? !!c.on(g, at) : null]; } return out; }"""
+    FRESH = "(ids) => { window.rikuy.refsMemo = null; return (" + STATE + ")(ids); }"
+    a = page.evaluate(STATE, REFS_IDS)
+    check('its answers are a fresh read\'s', a == page.evaluate(FRESH, REFS_IDS), a)
+    page.evaluate(STATE, REFS_IDS)  # (the look the ribbon makes after a fresh read)
+    t = page.evaluate("""(ids) => { const g = window.rikuy, C = g.cmds, at = g.ribbonAt(), t = {};
+      for (let k = 0; k < 10; k++) { at.memo = {}; for (const id of ids) { const c = C.command(id), t0 = performance.now(); C.enabled(g, c, at); if (c.on) c.on(g, at); t[id] = (t[id] || 0) + performance.now() - t0; } }
+      return Object.entries(t).map(([id, v]) => [id, Math.round(v / 10 * 10) / 10]).filter(([, v]) => v > 2); }""", REFS_IDS)
+    check('a preamble of 167 KB, 3000 paragraphs and two more files: no References command\'s when and on over 2 ms at a look at the caret', not t, t)
+    steps = [('ch1.tex gets \\listoffigures', 'rikuy.files.set("ch1.tex", "\\\\listoffigures\\n\\nChapter words.\\n")', 'remove-list-of-figures'),
+             ('ch1.tex gets \\tableofcontents', 'rikuy.files.set("ch1.tex", "\\\\tableofcontents\\n\\\\listoffigures\\n\\nChapter words.\\n")', 'toc-remove'),
+             ('main.tex gets its bibliography', 'rikuy.files.set("main.tex", rikuy.src("main.tex").replace("\\\\end{document}", "\\\\bibliographystyle{plainnat}\\n\\\\bibliography{refs}\\n\\\\end{document}"))', 'bibliography-remove'),
+             ('main.tex becomes a thebibliography document', 'rikuy.files.set("main.tex", rikuy.src("main.tex").replace("\\\\bibliographystyle{plainnat}\\n\\\\bibliography{refs}", "\\\\begin{thebibliography}{9}\\\\bibitem{a} A.\\\\end{thebibliography}"))', '!add-source')]
+    for label, js, cid in steps:
+        before = page.evaluate(STATE, REFS_IDS)
+        page.evaluate(js)
+        now = page.evaluate(STATE, REFS_IDS)
+        want = not cid.startswith('!')
+        check('after an edit (%s) the answers are a fresh read\'s, %s %s' % (label, cid.lstrip('!'), 'on' if want else 'off'), now == page.evaluate(FRESH, REFS_IDS) and now[cid.lstrip('!')][0] == want and before[cid.lstrip('!')][0] != want, (before[cid.lstrip('!')], now[cid.lstrip('!')]))
+    page.evaluate('rikuy.files.set("other.tex", "\\\\documentclass{article}\\n\\\\begin{document}\\nOther.\\n\\\\end{document}\\n"); rikuy.main = "other.tex"')
+    now = page.evaluate(STATE, REFS_IDS)
+    check('another main file: the answers are a fresh read\'s (add-source on again, no bibliography)', now == page.evaluate(FRESH, REFS_IDS) and now['add-source'][0] and not now['bibliography-remove'][0], now['add-source'])
+
+SECTIONS = {'review': review, 'verify': verify, 'cached': cached, 'toc': toc, 'notes': notes, 'sources': sources, 'captions': captions, 'xrefs': xrefs, 'index': index, 'links': links}
 
 def main():
     want = sys.argv[1:]

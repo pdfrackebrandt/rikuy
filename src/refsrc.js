@@ -39,15 +39,18 @@ export function cmdCalls(t, name, n, a = 0, b = t.length, opt = false) {
 }
 
 // the preamble with its comments blanked, and where it ends (-1: no \begin{document})
-function preOf(src) {
+// (each read once for a text: a look at the caret asks several commands of the same file, and on a
+// long document blanking its comments took 7 ms a time)
+const lastOf = (fn) => { let k = null, v; return (src) => (src === k ? v : ((k = src), (v = fn(src)))); };
+const preOf = lastOf((src) => {
   const end = preambleEnd(src);
   return { end, t: stripComments(src.slice(0, end < 0 ? Math.min(src.length, MAX) : end)) };
-}
+});
 // the body (after \begin{document}) with comments blanked, offsets those of src
-function bodyOf(src) {
+const bodyOf = lastOf((src) => {
   const end = preambleEnd(src), from = Math.max(0, end);
   return { from, t: stripComments(src.slice(0, Math.min(src.length, from + BODY))) };
-}
+});
 const argOf = (t, c, k) => t.slice(c.args[k][0], c.args[k][1]).trim();
 const unbrace = (x) => x.replace(/^\{\s*|\s*\}$/g, '').trim();
 
