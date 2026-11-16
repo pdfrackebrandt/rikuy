@@ -261,7 +261,8 @@ def run():
         m2 = open(mp2, encoding='utf8').read()
         check('M6: Download with Markup marks prose only, never the preamble, a label, a citation or math', '\\usepackage{amsmath,amssymb}' in m2 and '\\label{sec:new}' in m2 and '\\cite{smith2021}' in m2 and '$x+z$' in m2 and '\\replaced{there}{here}' in m2 and '% comment (Pre): in the preamble' in m2 and m2.count('\\added') + m2.count('\\deleted') + m2.count('\\replaced') == 1, m2)
         fresh(page)
-        if os.path.isdir(os.path.join(ROOT, 'dist', 'tex')) and os.path.exists(os.path.join(ROOT, 'dev', 'texrun.py')) and os.environ.get('RIKUY_NO_COMPILE') != '1':
+        # the build always makes dist/tex for the worker's own files; a TeX tree is there only with tree.wasm
+        if os.path.exists(os.path.join(ROOT, 'dist', 'tex', 'tree.wasm')) and os.path.exists(os.path.join(ROOT, 'dev', 'texrun.py')) and os.environ.get('RIKUY_NO_COMPILE') != '1':
             d2 = tempfile.mkdtemp(); open(os.path.join(d2, 'main.tex'), 'w').write(mt)
             r = subprocess.run([sys.executable, os.path.join(ROOT, 'dev', 'texrun.py'), d2, 'main.tex', 'pdflatex', '240'], env={**os.environ, 'RIKUY_DIST': os.path.join(ROOT, 'dist')}, capture_output=True, text=True, timeout=600)
             out = r.stdout + r.stderr
