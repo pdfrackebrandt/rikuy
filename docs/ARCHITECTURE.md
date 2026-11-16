@@ -1368,9 +1368,15 @@ the rest with a CSS highlight (`rk-spell`), never in the page's text. The docume
 `% rikuy: words …` lines (Add to Dictionary writes them, `addWordEdit`) and cspell's lines.
 
 Track Changes is a switch on the review base (`src/review.js`): changes are always the difference
-between the text and the base. On, the base stays; off, `absorbEdit` puts every edit into the base
-too (where it touches no change waiting), so it is no change, and the changes there stay, as Word's
-do. A Reject, its undo and its redo are never absorbed. Display for Review (`prefs.markup`) and
+between the text and the base. On, the base stays; off, an edit goes into the base too, so it is
+no change, and the changes there stay, as Word's do. Whether a step goes into the base is decided
+when it is made (`record` in `src/app.js` sets `h.abs` from the switch and the step's kind: a
+Reject, a merge, a Word import, another tab's text, a restored version, an Accept never) and its
+undo and redo do the same (`rvStep`), whatever the switch says later. `absorbText` puts each
+changed piece of the step into the base by words and characters (`changes`, never whole lines),
+except where it overlaps a change waiting. Accept is a step of history holding the base before and
+after it (`rvBaseStep`); a merge or a Word import keeps your own waiting changes; another tab's
+text brings that tab's base (`rvReloadBase`); leaving the page writes the base. Display for Review (`prefs.markup`) and
 Show Markup choose what `paintChanges` and `paintComments` draw; Accept and Reject, Previous and
 Next work on `orderedChanges`.
 

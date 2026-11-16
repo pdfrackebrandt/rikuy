@@ -255,6 +255,8 @@ export const collab = {
       this.loadProject(new Map((await this.versionFiles(last)) || baseFiles), snap.main, snap.name, 'Opened', true);
     }
     const mine = new Map(this.files);
+    // (changes of your own waiting: kept, theirs come beside them, never into the base)
+    const pending = !!this.base && this.realChanges().length > 0;
     const { files, conflicts } = mergeProjects(baseFiles, mine, theirs);
     await this.snapshot('Before the changes from ' + by, { force: true });
     this.closeGroup();
@@ -262,7 +264,7 @@ export const collab = {
     for (const [n, t] of files) if ((this.files.get(n) ?? null) !== t) edits.push({ f: n, s: 0, e: (this.files.get(n) ?? '').length, t });
     if (edits.length) { this.markFromLink(by, this.name, this.main, 'back'); this.commit(edits, null, 'merge'); }
     this.closeGroup();
-    this.setBase({ t: Date.now(), label: 'Before the changes from ' + by, files: mine });
+    if (!pending) this.setBase({ t: Date.now(), label: 'Before the changes from ' + by, files: mine });
     this.setMarks(true);
     this.toggleNav(true, 'changes');
     const n = this.currentChanges().filter((x) => !commentOnly(x)).length;

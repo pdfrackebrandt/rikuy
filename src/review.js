@@ -9,6 +9,29 @@ import { changes, spacingOnly, hunks } from './diff.js';
 import { commentOnly } from './share.js';
 import { kvGet, kvPut, decodeText, snapAdd, snapAll, snapFiles, snapDel, snapPrune } from './store.js';
 
+// steps never absorbed into the base (rvAbsorbs)
+const NO_ABSORB = new Set(['reject', 'merge', 'word', 'other-tab', 'restore', 'accept']);
+
+// An edit (text p becoming c) put into the base b where it touches no change waiting between b
+// and p: each changed piece of the edit, at the level of words and characters (diff.js changes,
+// never whole lines), goes into b at its place there unless it overlaps a waiting change's range,
+// where it stays part of that change. Pure, so test/spell.test.mjs runs it.
+const overlaps = (a1, a2, b1, b2) => (a1 === a2 && b1 === b2 ? a1 === b1 : a1 === a2 ? b1 < a1 && a1 < b2 : b1 === b2 ? a1 < b1 && b1 < a2 : a1 < b2 && b1 < a2);
+export function absorbText(b, p, c) {
+  if (b === p) return c;
+  const pend = changes(b, p, '');
+  const edits = [];
+  for (const s of changes(p, c, '')) {
+    if (pend.some((x) => overlaps(s.as, s.ae, x.bs, x.be))) continue;
+    let d = 0;
+    for (const x of pend) if (x.be <= s.as && !(x.be === s.as && x.bs === x.be && s.as === s.ae)) d += (x.ae - x.as) - (x.be - x.bs);
+    edits.push({ s: s.as + d, e: s.ae + d, t: s.b });
+  }
+  let t = b;
+  for (const e of edits.sort((x, y) => y.s - x.s)) t = t.slice(0, e.s) + e.t + t.slice(e.e);
+  return t;
+}
+
 export const review = {
   // ---- versions and changes ---------------------------------------------------------
   // The project's text is kept as a version every few minutes of editing, when the tab is
@@ -69,15 +92,15 @@ export const review = {
   },
   saveBase(now) {
     clearTimeout(this.baseSaveT);
-    const go = () => { if (!this.noIdb && this.base) kvPut('review', { t: this.base.t, label: this.base.label, id: this.base.id, main: this.main, name: this.name, files: [...this.base.files.entries()], track: !!this.base.track }).catch(() => {}); };
+    const go = () => { this.baseSaveT = null; if (!this.noIdb && this.base) kvPut('review', { t: this.base.t, label: this.base.label, id: this.base.id, main: this.main, name: this.name, files: [...this.base.files.entries()], track: !!this.base.track }).catch(() => {}); };
     if (now) go(); else this.baseSaveT = setTimeout(go, 1500);
   },
 
-  // With Track Changes off an edit is no change: the base takes it too. Where the base and the
-  // text were the same before the edit (no change waiting in that file) the base becomes the text;
-  // elsewhere the edit goes into the base at its place there, found through the hunks between
-  // the two, unless it touches a change waiting, which it then changes (as an edit in a tracked
-  // insertion in Word changes the insertion).
+  // With Track Changes off an edit is no change: the base takes it too (absorbText). Which
+  // steps do is decided once, when a step is made (record, src/app.js: h.abs), and kept: its
+  // undo and redo do the same later, whatever the switch says then, so a change made with
+  // tracking on stays a change through them, and a merge or a Word import never goes into the
+  // base by a redo.
   absorbEdit() {
     const B = this.base, prev = this.trackPrev;
     if (!B || !prev) { this.trackPrev = new Map(this.files); return; }
@@ -87,38 +110,45 @@ export const review = {
       if (p === cur) continue;
       const b = B.files.get(f);
       if (p == null) { if (b == null) { B.files.set(f, cur); moved = true; } continue; }
-      if (b === p) { B.files.set(f, cur); moved = true; continue; }
       if (b == null) continue;
-      // the edit as one splice of the text before it
-      let s = 0;
-      const n = Math.min(p.length, cur.length);
-      while (s < n && p.charCodeAt(s) === cur.charCodeAt(s)) s++;
-      let e = 0;
-      while (e < n - s && p.charCodeAt(p.length - 1 - e) === cur.charCodeAt(cur.length - 1 - e)) e++;
-      const pe = p.length - e, ins = cur.slice(s, cur.length - e);
-      let delta = 0, ok = true;
-      for (const h of hunks(b, p)) {
-        if (h.be < s || (h.be === s && h.bs < s)) { delta += h.a.length - (h.be - h.bs); continue; }
-        if (h.bs > pe || (h.bs === pe && h.be > pe)) break;
-        ok = false;
-        break;
-      }
-      if (!ok) continue;
-      B.files.set(f, b.slice(0, s + delta) + ins + b.slice(pe + delta));
-      moved = true;
+      const nb = b === p ? cur : absorbText(b, p, cur);
+      if (nb !== b) { B.files.set(f, nb); moved = true; }
     }
     for (const f of prev.keys()) if (!this.files.has(f) && B.files.has(f) && B.files.get(f) === prev.get(f)) { B.files.delete(f); moved = true; }
     this.trackPrev = new Map(this.files);
     if (moved) { this.chg = null; this.saveBase(); }
   },
+  // whether a step made now goes into the base: Track Changes off, and an edit of the person's
+  // own (a Reject, a merge, a Word import, another tab's text, a restored version never)
+  rvAbsorbs(kind) { return !!(this.base && !this.base.track) && !NO_ABSORB.has(kind || ''); },
+  // Accept's step, undone and redone: the base before it and after it
+  rvBaseStep(h, undo) {
+    if (!this.base) return;
+    this.base.files = new Map(undo ? h.base0 : h.base1);
+    this.chg = null;
+    this.trackPrev = new Map(this.files);
+    this.saveBase();
+  },
+  // after another tab's text came in: its base and switch, as that tab left them
+  async rvReloadBase() {
+    let r = null;
+    try { r = this.noIdb ? null : await kvGet('review'); } catch (e) { r = null; }
+    if (!r || r.main !== this.main || r.name !== this.name || !r.files) return;
+    this.base = { t: r.t, label: r.label, id: r.id, files: new Map(r.files), track: !!r.track };
+    this.trackPrev = new Map(this.files);
+    this.chg = null;
+    this.refreshNav();
+    if (this.markupOn()) this.marksSoon();
+    if (this.reviewStatus) this.reviewStatus();
+  },
 
   noteEdit() {
-    // (a Reject, its undo and its redo move the text toward the base or back from it: never
-    // absorbed, or undoing a Reject with Track Changes off would lose the change it brings back)
-    const undone = this.redoStack && this.redoStack.length > (this.rvRedoLen || 0);
-    const step = undone ? this.redoStack[this.redoStack.length - 1] : this.hist && this.hist[this.hist.length - 1];
-    this.rvRedoLen = this.redoStack ? this.redoStack.length : 0;
-    if (this.base && !this.base.track && !(step && step.kind === 'reject')) this.absorbEdit(); else this.trackPrev = new Map(this.files);
+    // (the step this edit is: made, undone or redone; an edit with no step of its own, as the
+    // empty equation taken back, does as the switch says)
+    const h = this.rvStep;
+    this.rvStep = null;
+    const abs = h ? !!h.abs : !!(this.base && !this.base.track);
+    if (abs) this.absorbEdit(); else this.trackPrev = new Map(this.files);
     this.pdfStale = true;
     this.pdfSoon();
     this.snapDirty = true;
@@ -189,7 +219,14 @@ export const review = {
       for (const c of list.sort((x, y) => y.as - x.as)) t = t.slice(0, c.as) + c.b + t.slice(c.ae);
       files.set(f, t);
     }
+    // (a step of history of its own, the base before and after: Ctrl+Z takes an Accept back)
+    const base0 = new Map(this.base.files);
     this.setBase({ ...this.base, files });
+    this.closeGroup();
+    this.hist.push({ kind: 'accept', files: [], base0, base1: new Map(files), caretBefore: null, caretAfter: null, time: Date.now(), open: false, before: null });
+    if (this.hist.length > 400) this.hist.shift();
+    this.redoStack = [];
+    this.updateUndoUI();
     this.refreshNav();
     if (this.markupOn()) this.marksSoon();
   },
@@ -212,7 +249,8 @@ export const review = {
   async compareWith(v) {
     const files = await this.versionFiles(v);
     if (!files) { this.toast('That version could not be read.'); return; }
-    this.setBase({ t: v.t, label: v.label || 'Automatic version', id: v.id, files });
+    // (tracked from here: with it off every later edit would go into the version compared with)
+    this.setBase({ t: v.t, label: v.label || 'Automatic version', id: v.id, files, track: true });
     this.refreshNav();
     if (this.markupOn()) this.marksSoon();
   },

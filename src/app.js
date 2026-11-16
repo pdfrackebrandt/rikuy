@@ -1004,7 +1004,7 @@ class App {
     if (swaps && swaps.length) {
       // (a step with pictures is a step of its own, never joined to the one before)
       if (this.hist.length) { const t = this.hist[this.hist.length - 1]; t.open = false; t.before = null; }
-      this.hist.push({ kind, files, blobs: swaps, caretBefore: cb, caretAfter: ca, time: Date.now(), open: false, before: null });
+      this.hist.push(this.rvStep = { kind, files, blobs: swaps, caretBefore: cb, caretAfter: ca, time: Date.now(), open: false, before: null, abs: this.rvAbsorbs(kind) });
       if (this.hist.length > 400) this.hist.shift();
       this.redoStack = [];
       this.updateUndoUI();
@@ -1019,10 +1019,12 @@ class App {
       top.files = [];
       for (const [f, b] of top.before) { const d = diff(b, this.files.get(f)); if (d) top.files.push({ f, ...d }); }
       top.caretAfter = ca; top.time = now;
+      // (Track Changes: the step's edits go into the review base or not as when it was made)
+      this.rvStep = top;
       return;
     }
     if (top) { top.open = false; top.before = null; }
-    this.hist.push({ kind, files, caretBefore: cb, caretAfter: ca, time: now, open: true, before });
+    this.hist.push(this.rvStep = { kind, files, caretBefore: cb, caretAfter: ca, time: now, open: true, before, abs: this.rvAbsorbs(kind) });
     if (this.hist.length > 400) this.hist.shift();
     this.redoStack = [];
     this.updateUndoUI();
@@ -1046,6 +1048,9 @@ class App {
     this.viewMap(new Map(h.files.map((d) => [d.f, [{ s: d.s, e: d.s + d.ins.length, t: d.del }]])), was);
     this.lastAct = null;
     this.redoStack.push(h);
+    // (src/review.js: an Accept's base back; the step's edit absorbed as it was when made)
+    if (h.base0) this.rvBaseStep(h, true);
+    this.rvStep = h;
     const c = h.caretBefore || (h.files[0] ? { f: h.files[0].f, p: h.files[0].s + h.files[0].del.length } : null);
     this.rebuild(c);
     this.pushToSource();
@@ -1064,6 +1069,8 @@ class App {
     for (const b of h.blobs || []) this.setAsset(b.name, b.after);
     this.viewMap(new Map(h.files.map((d) => [d.f, [{ s: d.s, e: d.s + d.del.length, t: d.ins }]])), was);
     this.hist.push(h);
+    if (h.base1) this.rvBaseStep(h, false);
+    this.rvStep = h;
     const c = h.caretAfter || (h.files[0] ? { f: h.files[0].f, p: h.files[0].s + h.files[0].ins.length } : null);
     this.rebuild(c);
     this.pushToSource();
@@ -1184,6 +1191,9 @@ class App {
   // quick navigation drops the write), so the text also goes to localStorage, which is written
   // at once; init takes whichever copy is newer, and the next write to IndexedDB clears it.
   leaving() {
+    // (Track Changes' base, whose writes wait a moment: written now, or the last words typed
+    // with tracking off would come back as changes)
+    if (this.baseSaveT) this.saveBase(true);
     if (!this.unsaved) return;
     store(STORE, { name: this.name, main: this.main, files: [...this.files.entries()], t: Date.now(), zipDirty: this.zipDirty });
     this.saveSoon.flush();
@@ -3649,7 +3659,7 @@ class App {
         mkBtn('Compare', async () => {
           try {
             const files = await this.gitTextFiles(await G.filesAt(dir, c.oid));
-            this.setBase({ t: c.commit.author.timestamp * 1000, label: 'Commit ' + c.oid.slice(0, 7) + ' · ' + subj, files });
+            this.setBase({ t: c.commit.author.timestamp * 1000, label: 'Commit ' + c.oid.slice(0, 7) + ' · ' + subj, files, track: true });
             this.toggleNav(true, 'changes');
             if (this.markupOn()) this.marksSoon();
           } catch (e) { this.toast(this.gitError(e), 8000); }
@@ -4332,6 +4342,8 @@ class App {
     this.closeGroup();
     this.commit(edits, null, 'other-tab');
     this.closeGroup();
+    // (and that tab's Track Changes base and switch: its edits stay its changes)
+    this.rvReloadBase();
     this.toast('Brought in what was typed in another tab. Ctrl+Z undoes it.', 5000);
   }
 

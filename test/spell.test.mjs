@@ -81,6 +81,17 @@ group('the plan: prose only, never LaTeX', () => {
   // code the page shows as text: a drawing program's environment, an unknown command's key=value list
   const C = asked_(planOf(doc('Prose here.\n\\begin{asy}\nimport graphthree;\nreal xfun(real t) {return cosine;}\n\\end{asy}\n\\psSolid[objectname=cylindre,hval=1] after.')));
   assert.ok(C.has('Prose') && C.has('after') && !C.has('import') && !C.has('graphthree') && !C.has('cosine') && !C.has('cylindre') && !C.has('objectname'), [...C].join(' '));
+  // (task 48's review) \\- is no break in a word; circuitikz, tcblisting, Sweave and \\iffalse are code
+  const H = planOf(doc('A hy\\-phen\\-ation here.'));
+  assert.ok(asked_(H).has('hyphenation') && !asked_(H).has('hy'), [...asked_(H)].join(' '));
+  const K = asked_(planOf(doc('Words.\n\\begin{circuitikz}\\draw (0,0) to[short, o-*] (1,0) node[right] {lbl};\\end{circuitikz}\n\\begin{tcblisting}{}\nlistingword\n\\end{tcblisting}\n\\begin{Sinput}\nsinputword\n\\end{Sinput}\n\\iffalse\nhiddenword\n\\fi\nAfter.')));
+  assert.ok(K.has('Words') && K.has('After') && !K.has('short') && !K.has('right') && !K.has('listingword') && !K.has('sinputword') && !K.has('hiddenword'), [...K].join(' '));
+  // a document in a language with no dictionary: its words are not asked of any (the browser's own
+  // spelling takes them), counted as skipped under its name; its English parts are checked
+  for (const pre of ['\\usepackage[french]{babel}\n', '\\usepackage{polyglossia}\n\\setdefaultlanguage{french}\n', '\\usepackage[english,french]{babel}\n']) {
+    const F = planOf(doc('Bonjour le monde, voici un texte. \\foreignlanguage{english}{The colour.}', pre));
+    assert.ok(F.dict === null && !F.words.has(null) && !F.words.has('null') && F.skipped.get('french') > 3 && (F.words.get('en_US') || new Set()).has('colour'), pre + JSON.stringify([...F.words.keys()]) + JSON.stringify([...F.skipped]));
+  }
   // the sample: its source words are where the page has them
   const files = new Map(Object.entries(SAMPLE));
   const M = buildModel({ files, main: 'main.tex' });

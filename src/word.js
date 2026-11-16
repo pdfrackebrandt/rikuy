@@ -278,6 +278,8 @@ export const word = {
     const mine = new Map(this.files);
     const plan = planImport(data, X, mine, { who });
     if (!plan.files.size) { this.toast(fname + ' has no changes to the text exported from Rikuy.', 7000); return; }
+    // (changes of your own waiting: kept, Word's come beside them, never into the base)
+    const pending = !!this.base && this.realChanges().length > 0;
     await this.snapshot('Before the edits from Word (' + who + ')', { force: true });
     this.closePop(true);
     this.closeGroup();
@@ -286,7 +288,7 @@ export const word = {
     this.markFromLink(who, this.name, this.main, 'word');
     this.commit(edits, null, 'word');
     this.closeGroup();
-    this.setBase({ t: Date.now(), label: 'Before the edits from Word (' + who + ')', files: mine });
+    if (!pending) this.setBase({ t: Date.now(), label: 'Before the edits from Word (' + who + ')', files: mine });
     this.setMarks(true);
     this.toggleNav(true, 'changes');
     const S = plan.stats;

@@ -45,14 +45,22 @@ function build(app) {
   x.addEventListener('click', close);
   d.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') { e.preventDefault(); close(); }
-    else if (e.key === 'Enter' && !e.target.closest('button')) { e.preventDefault(); bChange.click(); }
+    // (Enter is Change, as Word's, on a suggestion too: the one with the focus)
+    else if (e.key === 'Enter' && (!e.target.closest('button') || e.target.classList.contains('sp-opt'))) {
+      e.preventDefault();
+      if (e.target.classList.contains('sp-opt')) P.pick = e.target.textContent;
+      bChange.click();
+    }
   });
   const act = (fn) => () => { const c = P.cur; if (!c) return; P.after = { f: c.f, p: c.s }; P.back = document.activeElement; fn(c); };
   bOnce.addEventListener('click', act((c) => app.spellIgnoreOnce(c)));
   bAll.addEventListener('click', act((c) => app.spellIgnoreAll(c.q)));
   bAdd.addEventListener('click', act((c) => app.spellAddWord(c.q)));
-  bChange.addEventListener('click', act((c) => { if (P.pick) app.spellChange(c, P.pick); }));
-  bChangeAll.addEventListener('click', act((c) => { if (P.pick) app.spellChange(c, P.pick, true); }));
+  // (a Change is done once: the pane waits for the page's next check before it shows a word again,
+  // so a second press, a double click or a double tap, finds nothing to change twice)
+  const done = (c) => { P.cur = null; P.after = { f: c.f, p: c.s }; for (const b of [bOnce, bAll, bAdd, bChange, bChangeAll]) b.disabled = true; };
+  bChange.addEventListener('click', act((c) => { if (P.pick && app.spellChange(c, P.pick)) done(c); }));
+  bChangeAll.addEventListener('click', act((c) => { if (P.pick && app.spellChange(c, P.pick, true)) done(c); }));
   bNext.addEventListener('click', () => step(app, 1));
   bPrev.addEventListener('click', () => step(app, -1));
   return P;

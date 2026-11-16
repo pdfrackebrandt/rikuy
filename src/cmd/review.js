@@ -236,6 +236,10 @@ export const methods = {
     const seq = ++S.seq;
     S.plan = plan;
     S.planModel = this.model;
+    // (a document in a language Rikuy has no dictionary for: the browser's own spelling, in the
+    // page's language, for its words; Hunspell for the parts in languages it has)
+    const nat = plan.dict === null && this.prefs.spell !== false;
+    if (this.root && this.root.spellcheck !== nat) this.root.spellcheck = nat;
     this.spellPaint();
     // (what the page's own thread spent, for the tests and a look in the console)
     S.mainMs = performance.now() - t0;
@@ -328,7 +332,13 @@ export const methods = {
   // A word changed to another: only the characters that differ, in the source; where those run
   // across markup (a word half bold) the change goes on the part that holds them, or says why not
   spellChange(x, to, all) {
-    const list = all ? this.spellState().bad.filter((y) => y.q === x.q && y.dict === x.dict) : [x];
+    // (from the text as it is now: a plan older than the page, as after a first Change pressed
+    // twice, is made again, and the word must still be there, letter for letter)
+    const S = this.spellState();
+    if (S.planModel !== this.model && this.model) { S.plan = spellPlan(this.model, { files: this.files, main: this.main }); S.planModel = this.model; this.spellPaint(); }
+    const now = S.bad.find((y) => y.key === x.key && y.w === x.w);
+    if (!now) { this.toast('That word is no longer there.'); return false; }
+    const list = all ? S.bad.filter((y) => y.q === x.q && y.dict === x.dict) : [now];
     const edits = [];
     for (const y of list) {
       const ed = this.spellEdit(y, to);
@@ -382,6 +392,8 @@ export const methods = {
   spellRecheck() {
     const S = this.spellState();
     S.ignore = new Set(); S.once = new Set();
+    // (a dictionary that could not be had, offline, is asked for again)
+    S.failed.clear();
     this.spellIgnoreSave();
     this.spellRun();
     this.toast('Every word is checked again.');
@@ -542,6 +554,8 @@ export const methods = {
   },
   setTracking(on) {
     if (!this.base) return;
+    // (the next typing is a step of its own, absorbed or not as the switch now says)
+    this.closeGroup();
     if (on) {
       // with no change waiting, tracking starts from the text as it is now
       if (!this.realChanges().length) this.setBase({ t: Date.now(), label: 'Tracking since ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }), files: this.files, track: true });
@@ -606,7 +620,7 @@ export const methods = {
       const text = await f.text();
       const files = new Map(this.files);
       files.set(this.main, text);
-      this.setBase({ t: Date.now(), label: 'Compared with ' + f.name.slice(0, 80), files, track: this.trackOn() });
+      this.setBase({ t: Date.now(), label: 'Compared with ' + f.name.slice(0, 80), files, track: true });
       if (this.markup() === 'none') this.setMarkup('all');
       this.toggleNav(true, 'changes');
       this.refreshNav();
@@ -645,7 +659,21 @@ export const methods = {
   markupCopy() {
     const f = this.main, now = this.src(f);
     const PLAIN = /^[^\\{}$%&#^_~\n]*$/;
-    const list = this.realChanges().filter((c) => c.f === f && PLAIN.test(c.a) && PLAIN.test(c.b)).sort((a, b) => b.bs - a.bs);
+    // (only where the page has prose, the words spelling reads: never the preamble, a label, a
+    // citation key, math or a command's argument; there a change is in the copy as it is now)
+    const prose = new Uint8Array(now.length + 1);
+    if (this.model) for (const r of proseRuns(this.model, { code: true })) {
+      if (r.f !== f) continue;
+      const off = r.off || 0;
+      for (let k = 0; k < r.text.length; k++) { const a = r.map[2 * k], b = r.map[2 * k + 1]; if (a >= 0) for (let x = a + off; x < b + off && x < prose.length; x++) prose[x] = 1; }
+    }
+    const begin = now.search(/\\begin\s*\{document\}/);
+    const inProse = (c) => {
+      if (begin < 0 || c.bs <= begin) return false;
+      if (c.be > c.bs) { for (let x = c.bs; x < c.be; x++) if (!prose[x] && /\S/.test(now[x])) return false; return true; }
+      return !!(prose[c.bs - 1] || prose[c.bs]);
+    };
+    const list = this.realChanges().filter((c) => c.f === f && PLAIN.test(c.a) && PLAIN.test(c.b) && inProse(c)).sort((a, b) => b.bs - a.bs);
     let t = now;
     for (const c of list) {
       const m = !c.a ? '\\added{' + c.b + '}' : !c.b ? '\\deleted{' + c.a + '}' : '\\replaced{' + c.b + '}{' + c.a + '}';
@@ -653,9 +681,11 @@ export const methods = {
     }
     const esc = (s) => s.replace(/[\\{}$%&#^_~]/g, (ch) => (ch === '\\' ? '\\textbackslash{}' : ch === '^' ? '\\^{}' : ch === '~' ? '\\~{}' : '\\' + ch));
     let notes = 0;
-    t = t.replace(/^([ \t]*)%[ \t]*(comment|reply)[ \t]*\(([^)\n]*)\)(?:[ \t]+on[ \t]+"[^"\n]*")?[ \t]*:[ \t]?([^\n]*)$/gim, (m, ind, kind, who, body) => { notes++; return ind + '\\todo[inline]{' + esc(who.trim()) + ': ' + esc(body.trim()) + '}%'; });
     const b = /\\begin\s*\{document\}/.exec(t);
     if (!b) { this.toast('The main file has no \\begin{document}.'); return; }
+    // (the comments of the text, not of the preamble, where todonotes is not loaded yet)
+    const body = t.slice(b.index).replace(/^([ \t]*)%[ \t]*(comment|reply)[ \t]*\(([^)\n]*)\)(?:[ \t]+on[ \t]+"[^"\n]*")?[ \t]*:[ \t]?([^\n]*)$/gim, (m, ind, kind, who, txt) => { notes++; return ind + '\\todo[inline]{' + esc(who.trim()) + ': ' + esc(txt.trim()) + '}%'; });
+    t = t.slice(0, b.index) + body;
     t = t.slice(0, b.index) + '\\usepackage{changes}\n' + (notes ? '\\usepackage{todonotes}\n' : '') + t.slice(b.index);
     const name = f.replace(/\.tex$/i, '') + '-markup.tex';
     const a = document.createElement('a');
@@ -713,6 +743,10 @@ export const methods = {
 
   // ---- the status bar --------------------------------------------------------------------------
   reviewStatusInstall() {
+    // (before Display for Review, prefs.marks meant the changes on the pages too: taken over once)
+    if (this.prefs && this.prefs.markup === undefined && this.prefs.marks === true) { this.prefs.markup = 'all'; store(PREFS, this.prefs); }
+    // (a dictionary that failed offline is asked for again once the network is back)
+    window.addEventListener('online', () => { if (this.sp && this.sp.failed.size) { this.sp.failed.clear(); this.spellSoon(); } });
     const after = $('#st-warn') || $('#st-words');
     if (!after || $('#st-lang')) return;
     const lang = mk('button', 'linkish st-rv', '');
@@ -729,10 +763,11 @@ export const methods = {
     if (lang) {
       const S = this.sp;
       const ml = this.files ? mainLanguage(this.src(this.main)) : { name: '' };
-      const d = (S && S.plan && S.plan.dict) || dictOf(ml.name, ml.variant) || 'en_US';
-      const name = DICT_NAME[d] || 'English (United States)';
+      const d = S && S.plan ? S.plan.dict : ml.name ? dictOf(ml.name, ml.variant) : 'en_US';
+      const name = d ? DICT_NAME[d] || 'English (United States)' : ml.name.charAt(0).toUpperCase() + ml.name.slice(1);
       let t, title;
-      if (!this.spellOn()) { t = name; title = 'Proofing language: ' + name + '. ' + (this.spellWhyNot() || ''); lang.dataset.st = 'off'; }
+      if (!d) { t = name; title = 'Proofing language: ' + name + '. Rikuy has no dictionary for it: the browser\'s own spelling marks its words.'; lang.dataset.st = 'off'; }
+      else if (!this.spellOn()) { t = name; title = 'Proofing language: ' + name + '. ' + (this.spellWhyNot() || ''); lang.dataset.st = 'off'; }
       else {
         const n = S ? S.bad.length : 0;
         const failed = S && S.failed.size ? ' No dictionary could be loaded for ' + [...S.failed.keys()].map((k) => DICT_NAME[k] || k).join(', ') + '.' : '';
