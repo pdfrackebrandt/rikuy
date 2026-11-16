@@ -363,6 +363,10 @@ def context_menu(page):
     check('in a table cell the table\'s items come first (Insert below)', first == 'Insert below', first)
     # a second right click is the browser's, as is one with Shift
     page.evaluate('''() => { window.__ctx = []; document.addEventListener('contextmenu', (e) => setTimeout(() => window.__ctx.push(e.defaultPrevented), 0)); }''')
+    # (on the page: where the menu, taller than the room below the press, covers the place pressed, a
+    # word of the page beside it)
+    r = page.evaluate('''(r) => { const on = (x, y) => { const e = document.elementFromPoint(x, y); return e && document.getElementById('pages').contains(e); };
+      if (on(r[0], r[1])) return r; for (const s of document.querySelectorAll('#pages span.t')) { const b = s.getBoundingClientRect(); if (b.width && on(b.left + 3, b.top + b.height / 2)) return [b.left + 3, b.top + b.height / 2]; } return r; }''', r)
     page.mouse.click(r[0], r[1], button='right'); page.wait_for_timeout(150)
     page.keyboard.press('Escape')
     page.keyboard.down('Shift'); page.mouse.click(r[0], r[1], button='right'); page.keyboard.up('Shift'); page.wait_for_timeout(150)

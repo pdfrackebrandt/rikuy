@@ -139,7 +139,7 @@ export const word = {
       const res = await this.wordEngine().run('export', { req });
       await this.wordRemember(res.mark);
       const blob = new Blob([res.docx], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
-      const fname = (this.name || 'paper').replace(/[^\w.-]+/g, '-').replace(/^-+|-+$/g, '') + '.docx';
+      const fname = ((this.name || '').replace(/[^\w.-]+/g, '-').replace(/^[-.]+|[-.]+$/g, '') || 'paper') + '.docx';
       this.lastDocx = { blob, name: fname, degraded: req.degraded, warnings: res.warnings };
       if (D) await D.save({ filename: fname, data: blob });
       else {
@@ -157,7 +157,8 @@ export const word = {
   },
 
   async wordRequest() {
-    const model = this.model;
+    // (the document as TeX reads it: blocks shown as their LaTeX for now, src/cmd/view.js, are a view)
+    const model = this.plainModel ? this.plainModel() : this.model;
     const bibs = [...this.files.keys()].filter((n) => /\.bib$/i.test(n));
     const csl = [...this.extra.keys()].find((n) => /\.csl$/i.test(n));
     const resources = {};
