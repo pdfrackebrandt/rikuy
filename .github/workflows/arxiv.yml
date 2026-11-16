@@ -8,9 +8,16 @@
 #             with a desktop TeX Live 2026 (pdfcompare.py), both inside dev/sandbox.sh
 #   collect   commit the identifiers, the compile results and the comparison to the branch
 #             arxiv-results; the sources are never committed
+# With from_run set to an earlier run of this workflow, only collect runs, on that run's shard
+# files: a fix to the merge does not cost the 20 runner hours again (artifacts last 90 days).
 name: arXiv corpus
 on:
   workflow_dispatch:
+    inputs:
+      from_run:
+        description: 'Merge the shard files of this earlier run instead of compiling (its id)'
+        required: false
+        default: ''
 # Read only, except the job that commits: the shards compile papers from arXiv with a desktop
 # TeX Live and shell escape, which runs whatever a paper asks for, so no job that compiles holds
 # a token that can push, and their checkouts keep no credentials. The runner user could still
@@ -25,6 +32,7 @@ env:
   SDE: '1700000000'
 jobs:
   sources:
+    if: inputs.from_run == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 240
     steps:
@@ -44,6 +52,7 @@ jobs:
           name: arxiv-ids
           path: dev/arxiv-ids.txt
   rikuy:
+    if: inputs.from_run == ''
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -177,11 +186,25 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+      actions: read
+    env:
+      RUN: ${{ inputs.from_run || github.run_id }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # an earlier run's shard files only if it was this workflow on main: rows from any other
+      # run would be merged as this corpus's results
+      - name: Check the run whose shards are merged
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          case "$RUN" in ''|*[!0-9]*) echo "from_run must be a run id" >&2; exit 1;; esac
+          got=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq '.path + " " + .head_branch')
+          [ "$got" = ".github/workflows/arxiv.yml main" ] || { echo "run $RUN is $got, not arXiv corpus on main" >&2; exit 1; }
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           path: shards
+          run-id: ${{ env.RUN }}
+          github-token: ${{ github.token }}
       - name: Merge and commit to arxiv-results
         run: |
           cp shards/arxiv-ids/arxiv-ids.txt dev/arxiv-ids.txt
@@ -191,5 +214,5 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git checkout -b arxiv-results
           git add dev/arxiv-ids.txt dev/arxiv-results.jsonl dev/arxiv-pdfcompare.jsonl
-          git commit -m "arXiv corpus: identifiers, Rikuy's results and the comparison with TeX Live 2026 (run ${{ github.run_id }})"
+          git commit -m "arXiv corpus: identifiers, Rikuy's results and the comparison with TeX Live 2026 (run $RUN)"
           git push -f origin arxiv-results
