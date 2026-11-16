@@ -48,6 +48,12 @@ class Handles {
       h.addEventListener('pointerdown', (e) => this.down(e, k));
       f.append(h);
     }
+    // (R3) the round handle above: a turn by any angle, as Word's (Shift: in steps of 15°)
+    const rot = el('pic-rot');
+    rot.dataset.h = 'rot';
+    rot.addEventListener('pointerdown', (e) => this.rotDown(e));
+    f.append(rot);
+    this.rot = rot;
     const tip = el('pic-tip');
     tip.hidden = true;
     f.append(tip);
@@ -91,6 +97,7 @@ class Handles {
     Object.assign(this.frame.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' });
     const h = this.app.picHere();
     this.frame.classList.toggle('locked', !h || !h.P.keyval);
+    this.frame.classList.toggle('noturn', !h || !h.P.keyval || !X.angleKnown(h.src, h.P));
     this.frame.classList.toggle('tiny', r.width < 40 || r.height < 40);
   }
   hide() { if (this.frame) this.frame.hidden = true; }
@@ -179,6 +186,51 @@ class Handles {
     this.app.picResize(D.free ? { width: t.width, height: t.height, free: true } : { width: t.width, free: false });
     this.app.ribbonSync();
     this.show();
+  }
+
+  // ---- a free turn (R3) ---------------------------------------------------------------------------
+  // The handle above the frame turns the picture about its middle as the pointer goes round it; one
+  // commit (angle=…, graphicx's counterclockwise degrees) when the press ends, Escape gives up
+  rotDown(e) {
+    if (e.button !== 0) return;
+    const app = this.app, h = app.picHere();
+    if (!h || !h.P.keyval || !X.angleKnown(h.src, h.P)) return;
+    e.preventDefault(); e.stopPropagation();
+    const inner = h.el.querySelector('.pic-in') || h.el.querySelector('img') || h.el;
+    const r = h.el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const a0 = X.angleOf(h.src, h.P) || 0;
+    const R = { h, inner, cx, cy, a0, p0: Math.atan2(e.clientY - cy, e.clientX - cx), was: inner.style.rotate, angle: a0 };
+    this.rotating = R;
+    e.target.setPointerCapture(e.pointerId);
+    document.documentElement.classList.add('pic-drag');
+    const move = (ev) => {
+      const d = (Math.atan2(ev.clientY - cy, ev.clientX - cx) - R.p0) * 180 / Math.PI;
+      // (on the screen clockwise; graphicx's angle goes counterclockwise)
+      let a = a0 - d;
+      a = ev.shiftKey ? Math.round(a / 15) * 15 : Math.round(a);
+      a = ((a % 360) + 540) % 360 - 180;
+      R.angle = a;
+      inner.style.rotate = (-a) + 'deg';
+      this.tip.hidden = false;
+      this.tip.textContent = a + '°';
+    };
+    const up = (ev) => {
+      document.documentElement.classList.remove('pic-drag');
+      e.target.removeEventListener('pointermove', move); e.target.removeEventListener('pointerup', up); e.target.removeEventListener('pointercancel', up);
+      document.removeEventListener('keydown', esc, true);
+      this.rotating = null;
+      this.tip.hidden = true;
+      inner.style.rotate = R.was;
+      if (R.cancel || ev.type === 'pointercancel' || Math.round(R.angle) === Math.round(a0)) { this.show(); return; }
+      app.picOp((src, Q) => X.rotate(src, Q, R.angle - (X.angleOf(src, Q) || 0)));
+      app.ribbonSync();
+      this.show();
+    };
+    const esc = (ev) => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); R.cancel = true; up(ev); } };
+    e.target.addEventListener('pointermove', move);
+    e.target.addEventListener('pointerup', up);
+    e.target.addEventListener('pointercancel', up);
+    document.addEventListener('keydown', esc, true);
   }
 
   // ---- crop -------------------------------------------------------------------------------------

@@ -219,6 +219,34 @@ export class Layout {
   }
 
   // Measure items (and their footnotes) that lack metrics.
+  // (R3) A wrapfigure and the paragraph after it, as wrapfig sets them: the figure at the side of
+  // the paragraph's first lines and the words beside it (a CSS float in the paragraph), the two
+  // measured as one item that moves to a page whole. Returns the items to lay out (the figure is
+  // in its paragraph's); pairs that no longer stand (the figure gone, a paragraph changed) part.
+  wrapPairs(items) {
+    const out = [];
+    for (let i = 0; i < items.length; i++) {
+      const W = items[i], P = items[i + 1];
+      if (W.wrapIn && W.wrapIn !== P) W.wrapIn = null;
+      if (P && P.wrapOf && P.wrapOf !== W) { if (P.wrapOf.el.parentNode === P.el) P.wrapOf.el.remove(); P.wrapOf = null; P.measured = false; P.el.classList.remove('has-wrap'); }
+      if (W.wrapSide && P && P.kind === 'p' && !P.isFloat && this.colsOf(P) === 1 && this.colsOf(W) === 1) {
+        if (W.el.parentNode !== P.el || P.el.firstChild !== W.el) {
+          W.el.classList.add('wrap-in', 'wrap-' + W.wrapSide);
+          W.el.style.marginTop = '';
+          P.el.prepend(W.el);
+          P.el.classList.add('has-wrap');
+          P.measured = false; P.pieces = null;
+        }
+        P.wrapOf = W; W.wrapIn = P;
+        out.push(W.el === P.el.firstChild ? null : W);
+        continue;
+      }
+      if (W.wrapSide && W.el.classList.contains('wrap-in')) { W.el.classList.remove('wrap-in', 'wrap-l', 'wrap-r'); W.measured = false; }
+      out.push(W);
+    }
+    return out.filter(Boolean);
+  }
+
   measure(items, fns) {
     const host = this.host;
     const todo = items.filter((it) => !it.measured);
@@ -239,6 +267,8 @@ export class Layout {
       const r = it.el.getBoundingClientRect();
       it.h = r.height;
       it.lines = it.rowSplit ? rowBoxes(it.el, r.top, r.height) : it.splittable ? lineBoxes(it.el, r.top, r.height) : null;
+      // (a paragraph with a wrapped figure in it moves to a page whole)
+      if (it.wrapOf) it.lines = null;
       if (it.lines && it.lines.length < 2) it.lines = null;
       it.fnLine = [];
       if (it.fnIdx && it.fnIdx.length) {
@@ -634,6 +664,8 @@ export class Layout {
       else if (P.ln) { P.ln.remove(); P.ln = null; }
     });
     while (this.pages.length > plan.length) { const P = this.pages.pop(); P.el.remove(); }
+    // (R3) the fields in the text (src/fields.js): the number of the page each is on, the pages' count
+    this.pages.forEach((P, k) => { const pg = plan[k]; if (pg) fillFields(P.el, fmtNum(pg.num, pg.fmt), total); });
     this.host.flow.replaceChildren();
     this.host.fns.replaceChildren();
     for (const h of this.hosts.values()) h.replaceChildren();
@@ -904,6 +936,13 @@ export function fmtNum(n, fmt) {
     return fmt === 'Alph' ? c.toUpperCase() : c;
   }
   return String(n);
+}
+// a page's fields: \thepage its number, \pageref{LastPage} the last page's
+export function fillFields(el, page, total) {
+  for (const x of el.getElementsByClassName('fld')) {
+    const v = x.dataset.fld === 'page' ? page : x.dataset.fld === 'pages' ? total : null;
+    if (v != null && x.textContent !== v) x.textContent = v;
+  }
 }
 // A header's TeX as text with its weight and shape, the page's numbers in: \thepage, LastPage,
 // \leftmark and \rightmark, \today; \textbf, \textit, \emph and their declarations; other

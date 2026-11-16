@@ -502,6 +502,39 @@ await ok('to Word: a cell merged across (\\multicolumn) and one merged down (\\m
   assert.ok(/\\multirow\{2\}\{\*\}\{Tall\}/.test(t), t);
 });
 
+await ok('to Word (R3): a cell\'s shading (\\cellcolor, \\rowcolor, \\rowcolors), its words turned (\\rotatebox) and the table\'s alt text, in Word\'s cells; nothing changed comes back changed', async () => {
+  const src = doc('\\begin{table}[h]\n\\centering\n\\rowcolors{2}{gray!25}{}\n% alt: Two rows of fruit\n\\begin{tabular}{lll}\n\\toprule\n\\cellcolor{yellow}Head & \\rotatebox{90}{Up} & \\rotatebox{270}{Down} \\\\\n\\midrule\n\\rowcolor{blue!20} b1 & \\multirow{2}{*}{Tall} & c1 \\\\\n b2 & & c2 \\\\\n\\bottomrule\n\\end{tabular}\n\\caption{Fruit}\n\\end{table}\n', '\\usepackage{booktabs,multirow,graphicx}\n\\usepackage[table]{xcolor}\n');
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  const d = text(unzip(E.docx).get('word/document.xml'));
+  const cellOf = (w) => { const i = d.indexOf('>' + w + '<'), s = d.lastIndexOf('<w:tc>', i); return d.slice(s, i); };
+  assert.match(cellOf('Head'), /<w:shd w:val="clear" w:color="auto" w:fill="FFFF00" \/>/);
+  assert.match(cellOf('Up'), /<w:textDirection w:val="btLr" \/>/);
+  assert.match(cellOf('Down'), /<w:textDirection w:val="tbRl" \/>/);
+  assert.match(cellOf('b1'), /w:fill="CCCCFF"/);
+  assert.match(cellOf('c1'), /w:fill="CCCCFF"/);
+  // (\rowcolors{2}: the third row's band, the second row of the body, as the page draws it)
+  assert.match(cellOf('b2'), /w:fill="DFDFDF"/);
+  assert.ok(!/<w:shd/.test(cellOf('Tall')) || /CCCCFF/.test(cellOf('Tall')));
+  assert.match(d, /<w:tblDescription w:val="Two rows of fruit" \/><\/w:tblPr>/);
+  assert.equal(importInto(E.docx, files).files.size, 0);
+});
+
+await ok('to Word (R3): \\thepage, \\pageref{LastPage}, \\thetitle and \\theauthor as Word\'s fields; hyperref\'s form fields as content controls; nothing changed comes back changed', async () => {
+  const src = doc('\\begin{Form}\nPage \\thepage{} of \\pageref{LastPage} in \\thetitle{} by \\theauthor{}.\n\nName \\TextField[name=t, width=4cm]{Who} on \\TextField[name=d, format={AFDate_FormatEx("dd/mm/yyyy");}]{} picks \\ChoiceMenu[name=l]{}{One,Two} or \\ChoiceMenu[combo,name=c]{}{A & B,C} and \\CheckBox[name=k,checked]{Agree}.\n\\end{Form}', '\\usepackage{titling,lastpage,hyperref}\n\\title{Fields}\n\\author{Ann}\n');
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  const d = text(unzip(E.docx).get('word/document.xml'));
+  for (const f of ['PAGE', 'NUMPAGES', 'TITLE', 'AUTHOR']) assert.match(d, new RegExp('<w:fldSimple w:instr=" ' + f + ' ">'), f);
+  assert.match(d, />Fields<\/w:t><\/w:r><\/w:fldSimple>/);
+  assert.match(d, /Who <\/w:t>(?:(?!<w:sdt>)[\s\S])*<w:sdt><w:sdtPr><w:tag w:val="rikuy-text" \/><w:text \/>/);
+  assert.match(d, /<w:date><w:dateFormat w:val="dd\/MM\/yyyy" \/>/);
+  assert.match(d, /<w:dropDownList><w:listItem w:displayText="One" w:value="One" \/><w:listItem w:displayText="Two" w:value="Two" \/><\/w:dropDownList>/);
+  assert.match(d, /<w:comboBox><w:listItem w:displayText="A &amp; B"/);
+  assert.match(d, /\u2612<\/w:t>/);
+  assert.equal(importInto(E.docx, files).files.size, 0);
+});
+
 await ok('from Word: highlighted text gets the highlighter that takes a colour, as the Font group writes it', () => {
   const r = docxToLatex(P, new Uint8Array(tiny('<w:p><w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>marked words</w:t></w:r></w:p>')), 'x.docx');
   assert.ok(r.tex.includes('\\hl{marked words}'), r.tex);

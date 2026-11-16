@@ -2679,6 +2679,96 @@ Tests:
     document compiled on the three engines, each checked with pypdf); `npm test`, `test:offline`
     58, `test:agent` 143, `launch.py` 18, `deploy_check.py` 45, `pages_check.py` (382 files, 358.6
     MB), and the manifest diff empty.
+63. **R3, round 3 of the Word gap: what Tables (task 45), Pictures (46) and Insert (49) left.** Done
+    in the code (branch `round3-r3-objects`), every item of the R3 list.
+    *Tables.* A table's alt text: LaTeX's tagging (latex-lab's table module in TeX Live 2026) has
+    no field for one (its keys are tagging, header rows and columns, multirow), so it is a
+    `% alt: …` line just before the table, as pictures in graphics' own form have theirs: Table
+    Alt Text (the search box, `{text}`) and Table Properties' new Description write, change and
+    take it off where it stands (`tableAlt`, `setTableAlt` in `src/table.js`), and Word gets it as
+    the table's description; the PDF's reader gets the caption. Height and Width are boxes on
+    Table Layout's row (Cell Size): the rows' height as `\arraystretch` (as Properties writes it;
+    LaTeX has no height of one row but a strut) and the caret's column's width as `p{…}`, Auto
+    giving its letter back, read back as the caret moves. Word now gets a cell's shading
+    (`\cellcolor`, `\rowcolor` over its row, `\rowcolors`' bands counted as the page counts them)
+    and its words turned (`\rotatebox{90}`, `{270}`: btLr, tbRl): `src/wordast.js` keeps them in
+    the AST's cell attributes, which pandoc drops, and `src/wordtable.js` writes them into the cells
+    pandoc wrote, in the schema's order, after pandoc (the n-th table of the AST is the n-th
+    `w:tbl`; a cell continued from one merged down is skipped).
+    *Pictures and objects.* I12: a press on a drawing (Insert › Shapes, any TikZ picture the page
+    draws) selects it with a handle on each point (a corner, a line's end, a circle's radius, an
+    ellipse's two radii); a drag writes that coordinate alone, in cm to two places, the drawing
+    redrawn meanwhile in its box (`tikzPoints`, `pointText` in `src/drawing.js`, `src/ui/shapes.js`);
+    Escape gives up; a second press, a double click or Enter edits its source as before. Sizing
+    the whole drawing at once (a `scale` handle) is not there: its points are. A chart Rikuy wrote
+    reopens in its grid on a press (Edit Data, `chart-edit-data`), filled from its coordinates; OK
+    writes it again in its place. P7: Border Weight (`\setlength{\fboxrule}{…}`, ½ to 6 pt,
+    Automatic) and Border Color (`\color{…}` before the `\fbox`, xcolor, dvipsnames where the name
+    needs it) in the border's group, read back and taken off where written; Picture Border and Reset
+    take the whole group; the page draws the weight and colour. They are in the picture's right
+    click menu (a long press on a phone) and the search box, not an arrow on the row: the arrow made
+    the Arrange group fold at 870 px but not at 860 (`test/tabs.py`'s sweep). A round handle above
+    the frame turns the picture by any angle (Shift: steps of 15°), one `angle=` when the press
+    ends, by mouse or finger. The wrap's text flow: a wrapfigure goes into the paragraph after it
+    as a CSS float on its side, the words beside it and then under it at full width, measured with
+    it; that paragraph moves to a page whole (`wrapPairs` in `src/layout.js`). Not as wrapfig: a
+    figure taller than its paragraph does not go on wrapping the next one.
+    *Insert.* H82, drag to move: selected words dragged move there as one commit (the deletion
+    Cut makes and the LaTeX Copy takes, inserted as Paste inserts it), Word's smart spaces, the
+    words selected after; Ctrl (Option on a Mac) as it drops copies; a drop in another file moves
+    nothing and says why; a drop from another page is its words and HTML through the paste path,
+    never the LaTeX type it may carry. A selected picture is dragged by a press, mouse or finger:
+    its environment (center, figure, wrapfigure, or a paragraph of its own) goes between the
+    paragraphs at the point, a picture among words goes among words, a line showing where; one
+    commit (`src/cmd/move.js`). Words dragged by a finger are not tested (Playwright drags no
+    selection by touch): on a phone the long press menu's Cut and Paste move them. I1: Insert › Cover Page writes a
+    titlepage first in the text in one of three designs (Plain, Sideline, Motion) with the
+    document's own title, author and date (titling's `\thetitle`; memoir's own; words to type over
+    where there is no `\title`); another design takes its place; Remove Current Cover Page takes it
+    out, also a hand written one; refused in beamer. The page draws a titlepage as the classes set
+    it: a page of its own, unnumbered, the text after it on page 1. I31: Quick Parts: Save Selection
+    to Quick Part Gallery keeps the selection's LaTeX with the groups round its words (Word keeps a
+    selection's formatting), per user in this browser (100 parts, 64 KB each, read back with caps);
+    a part goes in at the caret, or after its paragraph when it is paragraphs, with the packages
+    its commands need in the same step; the Building Blocks Organizer renames, deletes and inserts.
+    I32 and I33: Quick Parts › Document Property (Title, Author, Date) and Field… (Page, NumPages,
+    Section, Date, Time, FileName, Title, Author, CreateDate): `\thepage`, `\pageref{LastPage}`
+    (lastpage), `\thesection`, `\today`, `\thistime` (KOMA-Script's scrtime: datetime2 changes
+    `\today` to ISO dates), `\jobname`, `\thetitle`, `\theauthor` (titling; beamer's
+    `\inserttitle`), drawn on the page as TeX prints them, a page's number and the pages' count
+    filled in by the layout from the page each stands on (`src/fields.js`, `fillFields`); to Word
+    as its fields PAGE, NUMPAGES, TITLE and AUTHOR. Word's SEQ and STYLEREF are not fields here:
+    LaTeX numbers what it counts by its environments (captions, theorems), and the running heads
+    are the header's (task 44). DV1: Form Fields (Word's content controls: plain text, check box,
+    combo box, drop-down list, date) as hyperref's `\TextField`, `\CheckBox`, `\ChoiceMenu` with
+    names of their own, labels escaped, in one Form round the text (XeLaTeX leaves a field outside
+    a Form out of the PDF's form); the page draws them as boxes as wide as hyperref makes them; to
+    Word as content controls (a check box as its character: Word's own needs a namespace pandoc's
+    document does not declare). And: `{\Huge …}` and the other size declarations in a group are
+    drawn at their size (they were drawn at the text's), as a cover page needs.
+    Evidence: `npm test` green (`objects.test.mjs` new, 9 groups: fields drawn, cover pages each
+    way, Quick Parts' storage and packages, form fields, the border's weight and colour, a
+    drawing's points, a table's alt text, Word's table extras, a stranger's document in bounded
+    time; `word.test.mjs` 67, two new with the real pandoc; `incremental.test.mjs` 32 with a
+    document of these constructs in its streams, and with `INCR_FULL=1`), `test/table.py` 175 (14
+    new), `test/picture.py` 216 (42 new: the round trip rule on Border Weight with hand written
+    forms, the free turn by mouse and Shift, a drawing's point by mouse and Escape, the chart's grid,
+    the wrap measured, a picture dragged as a block and among words, phones at 390 and 360 px by
+    finger, and with `dist/tex` a picture bordered and turned 30°, a moved drawing, a rewritten chart
+    and a wrapfigure compiled with pdfLaTeX, XeLaTeX and LuaLaTeX, the turned box in the PDF equal to
+    the page's within 2.5 pt), `test/insert.py` 206 (every field one step and its package once,
+    drawn with the pages' numbers; Quick Parts, the menu, the organizer, a stranger's storage; the
+    cover page by the round trip rule; every form field; drag to move by mouse, Ctrl, across files,
+    from another page; phones; with `dist/tex` all of it compiled on the three engines with the five
+    fields in the PDF's form), `tabs.py` 115, `ribbon.py` 195, `agent.py` 143, `browser.py` 193,
+    `widgets.py` 60, `word.py` 111, `font.py` 272, `page.py long_document` 6, the corpus model run
+    716 of 716. Screenshots in `/tmp/R3-shots` (1920, 1366, 390, 360 px, light and dark). Security:
+    the audit skill's agents could not be started in this session; the changed files were read by
+    hand against its client side, injection and resource classes (notes outside the repository):
+    no finding; a form field's options are read into an object with no prototype, and the bounded
+    time of a stranger's document is a test.
+
+## Open tasks
 
 ## Open tasks
 

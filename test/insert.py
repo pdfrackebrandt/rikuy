@@ -278,7 +278,7 @@ def run():
                 check('%s runs to its end' % fn.__name__, False, repr(e)[:300])
             check('no console errors (%s)' % fn.__name__, not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
             browser.close()
-        for fn in (graph_phones, shots):
+        for fn in (graph_phones, shots, r3_phones):
             if not want or fn.__name__ in want:
                 try:
                     fn(p)
@@ -568,7 +568,253 @@ def review_compiles(page):
     page.set_default_timeout(30000)
 
 
-EXTRA = [clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles]
+# ---- R3: Cover Page, Quick Parts, Document Property and Field, form fields, drag to move ----------------
+R3DOC = '\\documentclass{article}\n\\title{Report}\n\\author{Ann}\n\\begin{document}\n\\maketitle\nHello world.\n\nSecond para.\n\\end{document}\n'
+run_cmd = lambda page, cid, args=None: page.evaluate('([c, a]) => window.rikuy.runCommand(c, a)', [cid, args])
+hist = lambda page: page.evaluate('window.rikuy.hist.length')
+
+
+def one_step(page, doc, at, fn, label, test, back=True):
+    """fn on doc with the caret at at: test(source) holds, one step of history, one undo gives doc back."""
+    load_doc(page, doc); click_text(page, *at)
+    h0 = hist(page)
+    fn(page); page.wait_for_timeout(250)
+    got = src(page)
+    ok = check(label + ': written, one step', test(got) and hist(page) == h0 + 1, got[-300:])
+    if back:
+        page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+        ok = check(label + ': one undo gives the source back byte for byte', src(page) == doc, src(page)[-200:]) and ok
+    return got
+
+
+def r3_fields(page):
+    """Insert › Quick Parts › Field and Document Property (I32, I33): each as the LaTeX that prints it,
+    its package once, drawn on the page as TeX prints it (the page's number, the pages' count)."""
+    D = R3DOC
+    want = {'PAGE': ('Hello\\thepage{} world.', None), 'NUMPAGES': ('Hello\\pageref{LastPage} world.', 'lastpage'), 'SECTION': ('Hello\\thesection{} world.', None),
+            'DATE': ('Hello\\today{} world.', None), 'TIME': ('Hello\\thistime{} world.', 'scrtime'), 'FILENAME': ('Hello\\jobname{} world.', None),
+            'TITLE': ('Hello\\thetitle{} world.', 'titling'), 'AUTHOR': ('Hello\\theauthor{} world.', 'titling'), 'CREATEDATE': ('Hello\\today{} world.', None)}
+    for fid, (txt, pk) in want.items():
+        one_step(page, D, ('Hello', 5), lambda pg: run_cmd(pg, 'insert-field', {'field': fid}), 'Field ' + fid,
+                 lambda g: txt in g and (pk is None and g.count('\\usepackage') == 0 or pk is not None and g.count('\\usepackage{' + pk + '}') == 1) and g.replace(txt, 'Hello world.').replace('\\usepackage{%s}\n' % pk, '') == D)
+    # the page draws them: the page each is on, the pages' count, the title
+    load_doc(page, D.replace('Hello world.', 'Hello \\thepage{} \\thetitle{}.').replace('Second para.', '\\newpage\nSecond \\thepage{} of \\pageref{LastPage}.').replace('\\title', '\\usepackage{titling,lastpage}\n\\title'))
+    page.wait_for_timeout(400)
+    drawn = page.evaluate("[...document.querySelectorAll('#pages .a-chip')].map((x) => x.textContent)")
+    check('fields drawn as TeX prints them: page 1, the title, page 2 of 2', drawn == ['1', 'Report', '2', '2'], drawn)
+    # a document property the document has not: said, nothing written
+    load_doc(page, W('Hello world.')); click_text(page, 'Hello', 5)
+    run_cmd(page, 'insert-field', {'field': 'TITLE'}); page.wait_for_timeout(200)
+    check('Title in a document with no \\title: nothing written, the toast says where to set it', src(page) == W('Hello world.') and 'File' in page.evaluate("document.getElementById('toast').textContent"))
+    # beamer has its own: \inserttitle, no package
+    bd = '\\documentclass{beamer}\n\\title{Talk}\n\\begin{document}\n\\begin{frame}\nHello world.\n\\end{frame}\n\\end{document}\n'
+    one_step(page, bd, ('Hello', 5), lambda pg: run_cmd(pg, 'insert-field', {'field': 'TITLE'}), 'Title in beamer', lambda g: g == bd.replace('Hello world.', 'Hello\\inserttitle{} world.'))
+    # the Field dialog: NumPages picked, OK
+    load_doc(page, D); click_text(page, 'Hello', 5)
+    run_cmd(page, 'insert-field'); page.wait_for_timeout(200)
+    page.get_by_role('radio', name='NumPages', exact=True).check(); page.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(250)
+    check('the Field dialog: NumPages, OK writes \\pageref{LastPage} at the caret and lastpage once', 'Hello\\pageref{LastPage} world.' in src(page) and src(page).count('\\usepackage{lastpage}') == 1, src(page)[:200])
+
+
+def r3_quickparts(page):
+    """Quick Parts (I31): a selection kept with its formatting, put in again in another document with the
+    packages its commands need, one step; a part of paragraphs after the caret's paragraph; the gallery,
+    the organizer; a stranger's storage read with caps."""
+    A = '\\documentclass{article}\n\\usepackage{xcolor}\n\\begin{document}\nKind \\textcolor{red}{regards}, Ann.\n\nOther.\n\\end{document}\n'
+    load_doc(page, A)
+    place_sel(page, ('Kind', 'regards'))
+    run_cmd(page, 'quick-part-save', {'name': 'Closing'}); page.wait_for_timeout(150)
+    parts = page.evaluate('window.rikuy.prefs.quickParts')
+    check('Save Selection to Quick Part Gallery: the words with the colour round them, under its name', parts == [{'name': 'Closing', 'tex': 'Kind \\textcolor{red}{regards}'}], parts)
+    B = W('Hello world.\n\nSecond para.')
+    one_step(page, B, ('world', 5), lambda pg: run_cmd(pg, 'quick-part-insert', {'name': 'Closing'}), 'a Quick Part put in another document',
+             lambda g: 'Hello worldKind \\textcolor{red}{regards}.' in g and g.count('\\usepackage{xcolor}') == 1)
+    # a part of paragraphs goes after the caret's paragraph
+    page.evaluate("window.rikuy.prefs.quickParts = [{ name: 'Two', tex: 'First kept.\\n\\nSecond kept.' }, ...window.rikuy.prefs.quickParts]; window.rikuy.savePrefs()")
+    one_step(page, B, ('Hello', 2), lambda pg: run_cmd(pg, 'quick-part-insert', {'name': 'Two'}), 'a Quick Part of two paragraphs', lambda g: g == B.replace('Hello world.\n', 'Hello world.\n\nFirst kept.\n\nSecond kept.\n'))
+    # the gallery lists them, then Document Property and Field
+    load_doc(page, B); click_text(page, 'Hello', 2)
+    page.get_by_role('tab', name='Insert', exact=True).click(); page.wait_for_timeout(150)
+    page.get_by_role('button', name='Quick Parts', exact=True).click(); page.wait_for_timeout(200)
+    items = page.evaluate("[...document.querySelectorAll('.pop [role^=menuitem]')].map((x) => x.getAttribute('aria-label'))")
+    check('the Quick Parts menu: the parts, Title, Author, Date, Field…, the organizer, Save Selection', items[:2] == ['Two', 'Closing'] and 'Field…' in items and 'Save Selection to Quick Part Gallery…' in items, items)
+    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    # the organizer renames and deletes
+    run_cmd(page, 'building-blocks'); page.wait_for_timeout(200)
+    page.get_by_role('textbox', name='Name of Two', exact=True).fill('Pair')
+    page.keyboard.press('Tab'); page.wait_for_timeout(150)
+    page.get_by_role('button', name='Delete Closing', exact=True).click(); page.wait_for_timeout(150)
+    check('the Building Blocks Organizer renames one and deletes another', [x['name'] for x in page.evaluate('window.rikuy.prefs.quickParts')] == ['Pair'], page.evaluate('window.rikuy.prefs.quickParts'))
+    page.keyboard.press('Escape'); click_text(page, 'Hello', 2)
+    # a stranger's storage (another page of the origin wrote it): read with caps, the menu still opens
+    page.evaluate("window.rikuy.prefs.quickParts = [{ name: 5, tex: 'x' }, { name: 'Ok', tex: 'Fine.' }, { name: 'Big', tex: 'x'.repeat(70000) }, null, { name: '<img src=x onerror=alert(1)>', tex: 'y' }]; window.rikuy.savePrefs()")
+    names = page.evaluate('window.rikuy.quickParts().map((x) => x.name)')
+    page.get_by_role('button', name='Quick Parts', exact=True).click(); page.wait_for_timeout(200)
+    imgs = page.evaluate("document.querySelectorAll('.pop img').length")
+    check('a stranger\'s Quick Parts: bad entries left out, a name with markup set as text', names == ['Ok', '<img src=x onerror=alert(1)>'] and imgs == 0, (names, imgs))
+    page.keyboard.press('Escape')
+
+
+def place_sel(page, sel):
+    from browser import place
+    place(page, sel)
+
+
+def r3_cover(page):
+    """Insert › Cover Page (I1): a titlepage after \\begin{document} with the document's own title,
+    author and date (titling), one step; another design in its place; Remove Current Cover Page gives
+    the bytes of before, also for a hand written titlepage; drawn as a page of its own, unnumbered."""
+    D = R3DOC
+    cover = ('\\begin{titlepage}\n\\centering\n\\vspace*{\\fill}\n{\\Huge\\bfseries \\thetitle{}\\par}\n\\vspace{2em}\n{\\Large \\theauthor{}\\par}\n'
+             '\\vspace{1em}\n{\\large \\today{}\\par}\n\\vspace*{\\fill}\n\\end{titlepage}\n')
+    want = D.replace('\\title', '\\usepackage{titling}\n\\title').replace('\\begin{document}\n', '\\begin{document}\n' + cover)
+    roundtrip(page, D, ('Hello', 2), lambda pg: run_cmd(pg, 'cover-page', {'design': 'plain'}), want, label='Cover Page (Plain)', off_command='cover-page-remove', off=D.replace('\\title', '\\usepackage{titling}\n\\title'))
+    # a hand written titlepage first in the text is the cover page: Remove takes exactly it, its comment stays
+    hand = D.replace('\\begin{document}\n', '\\begin{document}\n% hand written\n\\begin{titlepage}\nMy own cover.\n\\end{titlepage}\n')
+    one_step(page, hand, ('Hello', 2), lambda pg: run_cmd(pg, 'cover-page-remove'), 'Remove Current Cover Page on a hand written titlepage', lambda g: g == D.replace('\\begin{document}\n', '\\begin{document}\n% hand written\n'))
+    load_doc(page, want); page.wait_for_timeout(300)
+    st = page.evaluate("(() => { const ps = [...document.querySelectorAll('#pages .page')]; return [ps.length, ps[0].innerText.includes('Report'), ps[0].dataset.n, ps[1] && ps[1].dataset.n]; })()")
+    check('the cover drawn as a page of its own, and the text after it numbered 1 again', st[0] == 2 and st[1] and st[3] == '1', st)
+    run_cmd(page, 'cover-page', {'design': 'sideline'}); page.wait_for_timeout(250)
+    check('another design takes the cover\'s place: one titlepage, Sideline\'s rules', src(page).count('\\begin{titlepage}') == 1 and '\\rule{\\linewidth}{1pt}' in src(page))
+    bd = '\\documentclass{beamer}\n\\begin{document}\n\\begin{frame}\nHello world.\n\\end{frame}\n\\end{document}\n'
+    load_doc(page, bd); click_text(page, 'Hello', 2)
+    check('in a presentation Cover Page is off and says why', page.evaluate("(() => { const c = window.rikuy.cmds.command('cover-page'); return !c.when(window.rikuy, window.rikuy.ribbonAt()) && /frame/.test(c.whyNot(window.rikuy)); })()"))
+
+
+def r3_forms(page):
+    """Form fields (DV1): Word's content controls as hyperref's fields in one Form round the text, hyperref
+    once, one step each; the Form grows to reach a field written outside it; drawn as boxes."""
+    D = W('Hello world.\n\nSecond para.')
+    wrap = lambda body: '\\documentclass{article}\n\\usepackage{hyperref}\n\\begin{document}\n\\begin{Form}\n' + body + '\n\\end{Form}\n\\end{document}\n'
+    tex = {'text': '\\TextField[name=text1, width=4cm]{}', 'check': '\\CheckBox[name=check1]{}', 'combo': '\\ChoiceMenu[combo, name=combo1, width=4cm]{}{Choose an item,Item 1,Item 2}',
+           'list': '\\ChoiceMenu[name=list1, width=4cm]{}{Choose an item,Item 1,Item 2}', 'date': '\\TextField[name=date1, width=3cm, format={AFDate_FormatEx("dd/mm/yyyy");}, keystroke={AFDate_KeystrokeEx("dd/mm/yyyy");}]{}'}
+    for k, t in tex.items():
+        one_step(page, D, ('Hello', 6), lambda pg: run_cmd(pg, 'form-' + k), 'Form field ' + k, lambda g: g == wrap('Hello ' + t + 'world.\n\nSecond para.'))
+    load_doc(page, wrap('Hello ' + tex['text'] + 'world.\n\nSecond para.')); page.wait_for_timeout(300)
+    check('a text field drawn as hyperref sets it: a box 4 cm wide', page.evaluate("(() => { const b = document.querySelector('#pages .a-form.ff-text .ff'); return !!b && Math.abs(b.getBoundingClientRect().width / window.rikuy.layout.px - 113.8) < 3; })()"))
+    click_text(page, 'Second', 6); run_cmd(page, 'form-check', {'label': 'I agree & sign'}); page.wait_for_timeout(250)
+    check('a second field: the same Form, a name of its own, its label escaped', src(page).count('\\begin{Form}') == 1 and 'Second\\CheckBox[name=check1]{I agree \\& sign} para.' in src(page), src(page))
+    # a Form round the second paragraph only, a field before it: the Form grows to the whole text
+    hand = '\\documentclass{article}\n\\usepackage{hyperref}\n\\begin{document}\nHello world.\n\n\\begin{Form}\nSecond \\TextField[name=text1]{} para.\n\\end{Form}\n\\end{document}\n'
+    one_step(page, hand, ('Hello', 6), lambda pg: run_cmd(pg, 'form-text'), 'a field before the Form there is',
+             lambda g: g == '\\documentclass{article}\n\\usepackage{hyperref}\n\\begin{document}\n\\begin{Form}\nHello \\TextField[name=text2, width=4cm]{}world.\n\nSecond \\TextField[name=text1]{} para.\n\\end{Form}\n\\end{document}\n')
+
+
+def r3_move(page):
+    """Drag to move (H82): selected words dragged elsewhere move as one edit, Word's smart spaces; one undo
+    gives the bytes back; Ctrl copies; a drop in another file moves nothing; a drop from another page is
+    its words and HTML (never LaTeX it says it is)."""
+    D = W('Alpha \\textbf{beta} gamma.\n\nDelta epsilon.')
+    def drag(pg, word, to, ctrl=False):
+        x = word_box(pg, word); y = word_box(pg, to)
+        pg.mouse.move(x[0] + 4, x[1] + x[3] / 2); pg.mouse.down(); pg.mouse.move(x[0] + 30, x[1] + 30, steps=4); pg.mouse.move(y[0] + 1, y[1] + y[3] / 2, steps=4)
+        if ctrl: pg.keyboard.down('Control')
+        pg.mouse.up()
+        if ctrl: pg.keyboard.up('Control')
+        pg.wait_for_timeout(300)
+    load_doc(page, D); select_text(page, 'gamma'); h0 = hist(page)
+    drag(page, 'gamma', 'epsilon')
+    check('a word dragged to another paragraph moves there, its space with it: one step', src(page) == D.replace(' gamma.', '.').replace('Delta epsilon', 'Delta gamma epsilon') and hist(page) == h0 + 1, src(page))
+    check('the moved words stay selected', page.evaluate('getSelection().toString()') == 'gamma')
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('one undo gives the bytes of before', src(page) == D, src(page))
+    load_doc(page, D); select_text(page, 'gamma'); drag(page, 'gamma', 'epsilon', ctrl=True)
+    check('Ctrl as it drops copies instead', src(page) == D.replace('Delta epsilon', 'Delta gamma epsilon'), src(page))
+    # across files: nothing moves
+    two = {'main.tex': W('Alpha gamma.\n\n\\input{b}'), 'b.tex': 'Delta epsilon.\n'}
+    load_doc(page, two); select_text(page, 'gamma'); drag(page, 'gamma', 'epsilon')
+    check('a drop in another file moves nothing (and says so)', src(page) == two['main.tex'] and src(page, 'b.tex') == two['b.tex'], (src(page), src(page, 'b.tex')))
+    # from another page: its HTML as a paste, never the LaTeX it says it is
+    load_doc(page, D)
+    y = word_box(page, 'epsilon')
+    page.evaluate("""([x, y]) => { const dt = new DataTransfer(); dt.setData('text/plain', 'bold'); dt.setData('text/html', '<b>bold</b>'); dt.setData('text/x-galley-latex', '\\\\immediate\\\\write18{rm -rf x}'); dt.setData('text/x-rikuy-move', 'guess');
+      const t = document.elementFromPoint(x, y); for (const k of ['dragenter', 'dragover', 'drop']) t.dispatchEvent(new DragEvent(k, { bubbles: true, cancelable: true, clientX: x, clientY: y, dataTransfer: dt })); }""", [y[0] + 1, y[1] + y[3] / 2])
+    page.wait_for_timeout(300)
+    check('a drop from another page: its HTML as LaTeX (\\textbf), not the LaTeX it carried', '\\textbf{bold}' in src(page) and 'write18' not in src(page), src(page))
+
+
+def word_box(page, word):
+    return page.evaluate("""(w) => { const sp = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(w)); const r = document.createRange(); const i = sp.textContent.indexOf(w);
+      r.setStart(sp.firstChild, i); r.setEnd(sp.firstChild, i + w.length); const b = r.getBoundingClientRect(); return [b.left, b.top, b.width, b.height]; }""", word)
+
+
+def r3_phones(p):
+    """On a phone (390 and 360 px, touch): Cover Page, Quick Parts and Form Fields from the Insert tab by taps,
+    their menus inside the screen with 44 px items, the Field dialog fits, nothing scrolls sideways."""
+    for w, h in ((390, 844), (360, 740)):
+        browser, page, errors = open_page(p, w, h, touch=True)
+        tag = ' (%d px, touch)' % w
+        try:
+            load_doc(page, R3DOC); page.wait_for_timeout(300)
+            sp = word_box(page, 'Hello')
+            page.touchscreen.tap(sp[0] + 10, sp[1] + sp[3] / 2); page.wait_for_timeout(300)
+            page.select_option('#rb-tabsel', 'insert'); page.wait_for_timeout(250)
+            for name in ('Quick Parts', 'Form Fields', 'Cover Page'):
+                b = page.get_by_role('button', name=name, exact=True)
+                if not b.count() or not b.first.is_visible():
+                    # (folded: its group's button first)
+                    page.get_by_role('button', name='Text' if name != 'Cover Page' else 'Pages', exact=True).first.tap(); page.wait_for_timeout(200)
+                    page.get_by_role('menuitem', name=name, exact=True).first.tap()
+                else:
+                    b.first.tap()
+                page.wait_for_timeout(250)
+                m = page.evaluate("""(() => { const p = document.querySelector('.pop'); if (!p) return null; const r = p.getBoundingClientRect(); const it = [...p.querySelectorAll('[role^=menuitem]')];
+                  return { in: r.left >= 0 && r.right <= innerWidth + 1 && r.top >= 0, n: it.length, small: it.filter((x) => x.getBoundingClientRect().height < 43.5).length }; })()""")
+                check(name + ': its menu opens by a tap, inside the screen, its items 44 px' + tag, bool(m) and m['in'] and m['n'] >= 3 and m['small'] == 0, m)
+                if name == 'Form Fields':
+                    page.get_by_role('menuitem', name='Check Box Content Control', exact=True).tap(); page.wait_for_timeout(300)
+                    check('a tap puts a check box in, in a Form, hyperref once' + tag, '\\CheckBox[name=check1]{}' in src(page) and src(page).count('\\usepackage{hyperref}') == 1, src(page)[-200:])
+                elif name == 'Cover Page':
+                    page.get_by_role('menuitemradio', name='Plain', exact=True).tap(); page.wait_for_timeout(300)
+                    check('a tap puts the cover page in' + tag, '\\begin{titlepage}' in src(page))
+                else:
+                    page.get_by_role('menuitem', name='Field…', exact=True).tap(); page.wait_for_timeout(300)
+                    fit = page.evaluate("(() => { const d = document.querySelector('.pop-field'); const r = d.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth + 1 && document.documentElement.scrollWidth <= innerWidth + 1; })()")
+                    check('the Field dialog fits the screen' + tag, fit)
+                    page.get_by_role('radio', name='Page', exact=True).tap(); page.get_by_role('button', name='OK', exact=True).tap(); page.wait_for_timeout(300)
+                    check('and a tap on OK writes \\thepage' + tag, '\\thepage{}' in src(page), src(page)[-200:])
+                    sp = word_box(page, 'Second')
+                    page.touchscreen.tap(sp[0] + 10, sp[1] + sp[3] / 2); page.wait_for_timeout(250)
+            check('no sideways scroll' + tag, page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'))
+            page.screenshot(path=os.path.join(SHOTS, 'r3-insert-%d.png' % w))
+        except Exception as e:
+            check('r3_phones runs to its end' + tag, False, repr(e)[:300])
+        browser.close()
+
+
+def r3_compiles(page):
+    """With dist/tex: a cover page, every field, every form field and a Quick Part compile with pdfLaTeX,
+    XeLaTeX and LuaLaTeX; the PDF prints the title, the pages' numbers and holds the fields."""
+    if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        print('SKIP R3\'s compiles: no TeX tree in %s' % DIST)
+        return
+    load_doc(page, R3DOC)
+    run_cmd(page, 'cover-page', {'design': 'sideline'}); page.wait_for_timeout(200)
+    click_text(page, 'Hello', 5)
+    for fid in ('PAGE', 'NUMPAGES', 'SECTION', 'DATE', 'TIME', 'FILENAME', 'TITLE', 'AUTHOR'):
+        run_cmd(page, 'insert-field', {'field': fid}); page.wait_for_timeout(120); page.keyboard.type(' ')
+    click_text(page, 'Second', 6)
+    for k in ('text', 'check', 'combo', 'list', 'date'):
+        run_cmd(page, 'form-' + k, {'label': 'L' + k}); page.wait_for_timeout(150)
+    body = src(page)
+    import base64, io
+    from pypdf import PdfReader
+    for eng in ('pdflatex', 'xelatex', 'lualatex'):
+        doc = ('% !TEX program = ' + eng + '\n' + body) if eng != 'pdflatex' else body
+        page.set_default_timeout(600000)
+        r = page.evaluate("""async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile();
+          let b = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) b += String.fromCharCode(...r.pdf.subarray(i, i + 8192));
+          return { ok: r.ok, engine: r.engine, pdf: btoa(b), problems: (r.problems || []).filter((x) => x.severity === 'error').map((x) => x.message).slice(0, 4) }; }""", doc)
+        page.set_default_timeout(30000)
+        rd = PdfReader(io.BytesIO(base64.b64decode(r['pdf']))) if r['pdf'] else None
+        txt = ' '.join(pg.extract_text() or '' for pg in rd.pages) if rd else ''
+        fields = sorted((rd.get_fields() or {}).keys()) if rd else []
+        check('R3 compiles with %s: cover, fields, form fields; the title and "Report" printed, the five fields in the PDF\'s form' % eng,
+              r['ok'] and not r['problems'] and r['engine'] == eng and 'Report' in txt and 'main' in txt and fields == ['check1', 'combo1', 'date1', 'list1', 'text1'], {'ok': r['ok'], 'problems': r['problems'], 'fields': fields, 'text': txt[:200]})
+
+
+EXTRA = [clipboard, symbols, date_latex, autocorrect, files_in, review, verify, review_compiles, r3_fields, r3_quickparts, r3_cover, r3_forms, r3_move, r3_compiles]
 
 if __name__ == '__main__':
     sys.exit(run())

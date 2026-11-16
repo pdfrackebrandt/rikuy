@@ -203,11 +203,14 @@ export function smartDialog(app) {
 }
 
 // Chart: its kind and a small grid of numbers, Word's own sample data to start with
-export function chartDialog(app) {
-  const p = openAt(app, 'Chart', 'rc-insert-chart', 'pd-chart');
-  const kind = radios('Chart type', [['column', 'Column'], ['bar', 'Bar'], ['line', 'Line']], 'column');
-  const COLS = 3, ROWS = 6;
-  const sample = [['', 'Series 1', 'Series 2', 'Series 3'], ['Category 1', '4.3', '2.4', '2'], ['Category 2', '2.5', '4.4', '2'], ['Category 3', '3.5', '1.8', '3'], ['Category 4', '4.5', '2.8', '5'], ['', '', '', ''], ['', '', '', '']];
+// edit (R3): a chart on the page opened again, { kind, cats, series: [{ name, values }], done }:
+// its grid filled from its coordinates, OK writes the chart again in its place
+export function chartDialog(app, edit) {
+  const p = openAt(app, edit ? 'Edit Data' : 'Chart', 'rc-insert-chart', 'pd-chart');
+  const kind = radios('Chart type', [['column', 'Column'], ['bar', 'Bar'], ['line', 'Line']], edit ? edit.kind : 'column');
+  const COLS = edit ? Math.min(8, Math.max(3, edit.series.length)) : 3, ROWS = edit ? Math.min(50, Math.max(6, edit.cats.length + 2)) : 6;
+  const sample = edit ? [['', ...edit.series.map((x) => x.name)], ...edit.cats.map((c, i) => [c, ...edit.series.map((x) => String(x.values[i] ?? ''))])]
+    : [['', 'Series 1', 'Series 2', 'Series 3'], ['Category 1', '4.3', '2.4', '2'], ['Category 2', '2.5', '4.4', '2'], ['Category 3', '3.5', '1.8', '3'], ['Category 4', '4.5', '2.8', '5'], ['', '', '', ''], ['', '', '', '']];
   const grid = mk('div', 'pd-grid');
   grid.setAttribute('role', 'grid'); grid.setAttribute('aria-label', 'Chart data');
   const cells = [];
@@ -216,7 +219,7 @@ export function chartDialog(app) {
     tr.setAttribute('role', 'row');
     cells.push([]);
     for (let c = 0; c <= COLS; c++) {
-      const i = text(sample[r] ? sample[r][c] : '', 'pd-cell' + (r === 0 || c === 0 ? ' head' : ''));
+      const i = text(sample[r] ? sample[r][c] ?? '' : '', 'pd-cell' + (r === 0 || c === 0 ? ' head' : ''));
       i.setAttribute('aria-label', r === 0 && c === 0 ? 'Corner' : r === 0 ? 'Name of series ' + c : c === 0 ? 'Category ' + r : 'Row ' + r + ', series ' + c);
       if (r === 0 && c === 0) { i.disabled = true; i.value = ''; }
       const cell = mk('div', 'pd-gc'); cell.setAttribute('role', 'gridcell'); cell.append(i);
@@ -236,10 +239,11 @@ export function chartDialog(app) {
     }
     if (!rows.length || !series.length) { app.toast('Fill in at least one category and one series of numbers.'); return; }
     const k = kind.value(), cats = rows.map((r) => cells[r][0].value.trim());
+    if (edit) { app.closePop(); edit.done(k, cats, series); return; }
     backCaret(app);
     app.runCommand('insert-chart', { kind: k, cats, series });
   };
-  p.append(row('tb-sec', kind), row('tb-sec', mk('div', 'tb-gl', 'Data'), grid, mk('p', 'tb-note', 'Written as a pgfplots axis with its coordinates in the source; click the chart on the page to edit them.')), buttons(app, ok, () => backCaret(app)));
+  p.append(row('tb-sec', kind), row('tb-sec', mk('div', 'tb-gl', 'Data'), grid, mk('p', 'tb-note', 'Written as a pgfplots axis with its coordinates in the source; click the chart on the page to edit them here again.')), buttons(app, ok, () => backCaret(app)));
   p.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('input')) { e.preventDefault(); ok(); } });
   place(app, p);
   cells[1][0].focus(); cells[1][0].select();

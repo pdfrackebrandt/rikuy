@@ -11,6 +11,8 @@ import { isLatexMark, readEnvBegin, thmMakersIn } from './styles.js';
 import { readHeadLooks, defaultLook, startsectionShapes } from './looks.js';
 import { readPage, paperName, NO_MEDIA_CLASSES, setsMedia, KOMA_CLASS } from './pagesrc.js';
 import { DVIPS_COLORS, BASE_COLORS } from './ui/kit.js';
+import { fieldText } from './fields.js';
+import { readField } from './forms.js';
 
 const DVIPS = Object.fromEntries(DVIPS_COLORS), XC = Object.fromEntries(BASE_COLORS);
 import { listSetup, formatOf, numText, bulletGlyph } from './lists.js';
@@ -2158,7 +2160,7 @@ class Builder {
       }
       return [...pre, ...list];
     }
-    if (/^(small|footnotesize|scriptsize|large|Large|minipage|landscape|appendices|otherlanguage\*?|titlepage|multicols\*?|adjustbox|threeparttable|tablenotes|acknowledgments|acknowledgements)$/.test(name)) {
+    if (/^(small|footnotesize|scriptsize|large|Large|minipage|landscape|appendices|otherlanguage\*?|titlepage|multicols\*?|adjustbox|threeparttable|tablenotes|acknowledgments|acknowledgements|Form)$/.test(name)) {
       const ex = /^(small|footnotesize|scriptsize|large|Large)$/.test(name) ? { cls: (env.cls || '') + ' z-' + name } : name === 'minipage' ? { ...FLUSH, flushAll: true } : {};
       if (name === 'appendices') { this.appendix = true; if (this.opts.chapters) this.c.chapter = 0; else this.c.section = 0; }
       if (name === 'acknowledgments' || name === 'acknowledgements') {
@@ -2171,6 +2173,13 @@ class Builder {
       if (name === 'minipage') this.box = this.boxIn(ctx, nd.args.filter((x) => x && !x.o).pop());
       let r;
       try { r = this.container(nd, ctx, env, ex); } finally { this.box = wasBox; }
+      // (R3) a cover page (titlepage, Insert › Cover Page): a page of its own with no number, as
+      // the classes' titlepage sets it; the text after it starts on page 1 in a one sided document
+      if (name === 'titlepage' && r && env.top) {
+        r.items.unshift({ type: 'pagebreak', column: false }, { type: 'pagemark', mark: { thisStyle: 'empty' } }, { type: 'pagemark', mark: { page: 1 } });
+        r.items.push({ type: 'pagebreak', column: false });
+        if (!this.opts.twoside) r.items.push({ type: 'pagemark', mark: { page: 1 } });
+      }
       // (a multicols read raw, or nested where a block cannot be cut: one block in columns)
       if (/^multicols\*?$/.test(name) && r) {
         const n = Math.max(1, Math.min(10, parseInt(this.argText(ctx, nd.args && nd.args[0]), 10) || 2));
@@ -2520,7 +2529,9 @@ class Builder {
     const placement = nd.args[0] ? this.argText(ctx, nd.args[0]) : 'tbp';
     // (a wrapfigure's width: the line its pictures' \linewidth is, B8)
     const wrapW = /^wrap(figure|table)$/.test(nd.name) && nd.args[3] ? this.argText(ctx, nd.args[3]).trim() : null;
-    return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'float', kind, num, parts, f: ctx.f, placement, wide: /\*$/.test(nd.name), wrapW }], fns };
+    // (R3) its side: r, l, or the outer and inner margins, which a one sided page has right and left
+    const side = wrapW && nd.args[1] ? ({ r: 'r', l: 'l', o: 'r', i: 'l' }[this.argText(ctx, nd.args[1]).trim().toLowerCase()[0]] || 'r') : null;
+    return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'float', kind, num, parts, f: ctx.f, placement, wide: /\*$/.test(nd.name), wrapW, side }], fns };
   }
 
   // set: what stands before the table in its float or group (B7: \rowcolors, \arraystretch,
@@ -3043,7 +3054,9 @@ class Builder {
       // (an \fbox with no gap: \fboxsep set to 0pt just before it, as Picture Border writes it;
       // an \fbox around one minipage, Insert › Text Box: a box of the minipage's width)
       if (name === 'fbox') { const sol = a.nodes.filter((n) => !(n.t === 'text' && !ctx.src.slice(n.s, n.e).trim()) && n.t !== 'comment'); if (sol.length === 1 && sol[0].t === 'env' && sol[0].name === 'minipage') { const wa = sol[0].args.filter((z) => z && !z.o).pop(); x.mp = wa ? this.argText(ctx, wa).trim().slice(0, 80) : '\\linewidth'; } }
-      if (name === 'fbox' && /\\fboxsep\s*(=\s*0\s*(pt)?|\}?\s*\{\s*0\s*(pt|cm|mm|bp)?\s*\})\s*$/.test(ctx.src.slice(Math.max(0, nd.s - 40), nd.s))) x.tight = true;
+      if (name === 'fbox' && /\\fboxsep(=0(pt)?|\}?\{0(pt|cm|mm|bp)?\})$/.test(ctx.src.slice(Math.max(0, nd.s - 160), nd.s).replace(/\\setlength\{?\\fboxrule\}?\{[^{}]{0,30}\}|\\fboxrule=?[0-9.]+\s*(pt|bp|mm|cm|in)|\\color(\[[^\]]{0,10}\])?\{[^{}]{0,40}\}|\s+/g, ''))) x.tight = true;
+      // (R3) the border's weight, \setlength{\fboxrule}{1pt} before it in its group (Picture Border's arrow)
+      if (name === 'fbox') { const r = /\\setlength\{?\\fboxrule\}?\{([^{}]{1,30})\}\s*$/.exec(ctx.src.slice(Math.max(0, nd.s - 160), nd.s).replace(/\\color(\[[^\]]{0,10}\])?\{[^{}]{0,40}\}\s*$/, '')); const v = r ? parseLen(r[1], this.opts.pt) : null; if (typeof v === 'number' && v >= 0) x.rule = Math.min(20, v); }
       out.push(this.styAtom(ctx, x));
       return false;
     }
@@ -3118,6 +3131,10 @@ class Builder {
       }
       return false;
     }
+    // (R3) Word's fields and document properties as TeX prints them (src/fields.js): a page's
+    // number and the pages' count are filled in by the layout once it knows the pages
+    const fld = fieldText(this, name, nd, A);
+    if (fld) { acc.flush(); this.use('F' + fld.text); out.push(this.atom(ctx, { k: 'chip', s: nd.s, e: nd.e, plain: true, ...fld })); return false; }
     if (REF_CMDS.has(name)) {
       acc.flush();
       const keys = A(0).split(',').map((s) => s.trim()).filter(Boolean);
@@ -3200,6 +3217,18 @@ class Builder {
       if (hang && +hang[1] > 0) y.hang = Math.min(1, +hang[1]);
       out.push(y);
       if (k2.length) out.push(this.styAtom(ctx, { k: 'sty', st: 'sc', kids: k2, s: ms[1].s, e: ms[1].e, is: ms[1].is, ie: ms[1].ie, cmd: 'lettrine' }));
+      return false;
+    }
+    // (R3) hyperref's form fields (Word's content controls, src/forms.js): the label, then the box
+    // the PDF reader fills in, as wide as hyperref makes it
+    if ((name === 'TextField' || name === 'CheckBox' || name === 'ChoiceMenu') && nd.args.some((x) => x && !x.o)) {
+      acc.flush();
+      const o = nd.args.find((x) => x && x.o), ms = nd.args.filter((x) => x && !x.o);
+      const F = readField(name, o ? this.argText(ctx, o) : '');
+      const w = F.width ? parseLen(F.width, this.opts.pt) : null;
+      const wpt = typeof w === 'number' ? Math.min(800, Math.max(4, w)) : w && w.rel ? 345 * Math.min(1, w.rel) : F.kind === 'check' ? null : F.kind === 'text' || F.kind === 'date' ? 85.4 : 86;
+      const choices = name === 'ChoiceMenu' && ms[1] ? texToPlain(ctx.src.slice(ms[1].is, Math.min(ms[1].ie, ms[1].is + 2000))).split(',').map((x) => x.trim()).slice(0, 50) : [];
+      out.push(this.atom(ctx, { k: 'form', s: nd.s, e: nd.e, kind: F.kind, label: texToPlain(this.argText(ctx, ms[0])).trim().slice(0, 200), wpt, value: F.value || choices[0] || '', checked: F.checked, choices }));
       return false;
     }
     if (name === 'rikuywidget') {

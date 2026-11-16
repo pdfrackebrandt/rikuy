@@ -588,6 +588,19 @@ Ctrl is Cmd on a Mac.
   \\usepackage{rikuy}: one undo. On the page the graph runs live; its button "Edit graph" (or
   command edit-graph with {file}) reopens the dialog, whose Update rewrites the file and picture
   only
+- Round 3's objects, each one commit and one undo, each command also with its fields as
+  arguments: Insert's Cover Page (cover-page {design: plain | sideline | motion}; a titlepage
+  first in the text; Remove Current Cover Page), Quick Parts (quick-part-save {name},
+  quick-part-insert {name}, kept in this browser; Building Blocks Organizer), Field (insert-field
+  {field: PAGE, NUMPAGES, SECTION, DATE, TIME, FILENAME, TITLE, AUTHOR, CREATEDATE}: \\thepage,
+  \\pageref{LastPage}, \\thetitle and their like, drawn with the page's own numbers), Form Fields
+  (form-text, form-check, form-combo, form-list, form-date with {label, items}: hyperref's fields
+  in one Form round the text); Picture Format's Border Weight {weight} and Border Color {color};
+  a picture's round handle turns it by any angle; a press on a drawing gives each of its points a
+  handle; a press on a chart reopens its grid (chart-edit-data {kind, cats, series}); Table Layout's
+  Height {height} and Width {width} boxes and Table Alt Text {text} (a "% alt:" line before the
+  table). Selected words dragged on the page move (Ctrl copies); a selected picture is dragged by
+  a press; a move never crosses files
 - Symbols and special characters: Ctrl+Alt+C ©, Ctrl+Alt+R ®, Ctrl+Alt+T ™, Ctrl+Alt+. …,
   Ctrl+Alt+- em dash, Ctrl+Shift+Space nonbreaking space (~), Ctrl+Shift+_ nonbreaking hyphen
   (\\nobreakdash-; Ctrl+- alone still zooms out); Alt+Shift+D \\today, Alt+Shift+T the time.

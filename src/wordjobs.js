@@ -9,6 +9,7 @@ import { safeUrl } from './wordast.js';
 import { scriptNeeds, scriptLines, scriptSetup, otherDirection, INDIC, MORE } from './scripts.js';
 import { pageDocx, pageLatex, relsMap } from './wordpage.js';
 import { docSpacing } from './parasrc.js';
+import { tableExtras, applyTableExtras } from './wordtable.js';
 
 // pandoc's messages worth telling the user: the ones that say something was lost
 const said = (ws) => (ws || []).filter((w) => w.verbosity && w.verbosity !== 'INFO').map((w) => w.pretty || w.type).slice(0, 20);
@@ -30,8 +31,11 @@ export function exportDocx(P, req) {
   if (!r.files['out.docx']) throw new Error('pandoc wrote no Word file: ' + (r.stderr || '').trim().slice(0, 300));
   const mainTex = (req.project.files.find(([f]) => f === req.project.main) || [])[1];
   const made = styled(r.files['out.docx'], !!(req.doc.meta && req.doc.meta.dir && req.doc.meta.dir.c === 'rtl'), typeof mainTex === 'string' ? { ...scriptSetup(mainTex), mainTex } : {});
+  // (R3) a table's shading, turned words and alt text, which pandoc's table has no field for
+  const tx = tableExtras(req.doc);
+  const made2 = tx.length ? tablesOut(made, tx) : made;
   // the page's set up: paper, margins, columns, headers and footers (src/wordpage.js)
-  const docx = req.page ? zip(pageDocx(unzip(made), req.page)) : made;
+  const docx = req.page ? zip(pageDocx(unzip(made2), req.page)) : made2;
   // what Word got, block by block, lined up with what the page showed
   const X = extract(unzip(docx));
   const anchors = [];
@@ -151,6 +155,14 @@ function runProps(rpr, x) {
   return rpr + '<w:lang ' + lang + '="' + x.lang + '" />';
 }
 const attrSet = (tag, name, v) => (new RegExp(' ' + name + '="[^"]*"').test(tag) ? tag.replace(new RegExp(' ' + name + '="[^"]*"'), ' ' + name + '="' + v + '"') : tag.replace(/\s*\/>$/, ' ' + name + '="' + v + '" />'));
+function tablesOut(docx, extras) {
+  const parts = unzip(docx), dp = 'word/document.xml';
+  if (!parts.has(dp)) return docx;
+  const was = text(parts.get(dp)), now = applyTableExtras(was, extras);
+  if (now === was) return docx;
+  parts.set(dp, new TextEncoder().encode(now));
+  return zip(parts);
+}
 function styled(docx, rtl, have) {
   const parts = unzip(docx);
   const p = 'word/styles.xml';
