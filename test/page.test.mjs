@@ -7,7 +7,8 @@ import assert from 'node:assert/strict';
 import * as PS from '../src/pagesrc.js';
 import { geometry, hfRuns, fmtNum, cssColor, Layout } from '../src/layout.js';
 import { applyEdits } from '../src/styles.js';
-import { buildModel } from '../src/model.js';
+import { buildModel, shiftNodes } from '../src/model.js';
+import { parse } from '../src/parser.js';
 import { escapeTyped, unbalanced } from '../src/ui/headerfooter.js';
 import { pageForWord } from '../src/pageword.js';
 
@@ -741,7 +742,22 @@ ok('R1: the model: \\markboth and \\markright as marks, nolinenumbers\' lines, l
   // (review L1: \+ starts the lines after it at the next stop, \- takes that back, \< for one line)
   const t2 = buildModel({ files: new Map([['main.tex', doc('', '\\begin{tabbing}\nAa \\= Bb \\= Cc\\kill\n\\+ In \\> x\\\\\nmore\\\\\n\\<back\\\\\n\\- Out\n\\end{tabbing}')]]), main: 'main.tex' }).blocks.flatMap((b) => b.items).filter((i) => i.tab);
   assert.deepEqual(t2.map((i) => i.tabFrom || 0), [0, 0, 1, 0, 1], "\\- moves the margin back for the lines after its own");
+  // (verification N1: a group the parser gives \< or \+ as an argument stays the field's text)
+  const t3 = buildModel({ files: new Map([['main.tex', doc('', '\\begin{tabbing}\nAa \\= Bb\\kill\nBeta \\<{\\small S} x\\\\\n\\+{\\em E} y\n\\end{tabbing}')]]), main: 'main.tex' }).blocks.flatMap((b) => b.items).filter((i) => i.tab);
+  const words = (it) => JSON.stringify(it.inl).match(/"t":"[^"]*"/g).join('');
+  assert.ok(/S/.test(words(t3[1])) && / x/.test(words(t3[1])) && /E/.test(words(t3[2])), t3.map(words));
   assert.ok(!JSON.stringify(items).includes('"t":"R"'), 'no mark printed in the text');
+});
+
+ok('R1 verification N2, N3: a part of a file parsed alone and moved is the file\'s parse, every offset (ne too), however long', () => {
+  const body = '\\textbf{X} y \\> {\\em z} \\verb|v| $m$ \\begin{center}c\\end{center}' + '\\>x'.repeat(600000);
+  const d = 12345;
+  const a = parse(body), b = parse(' '.repeat(d) + body);
+  shiftNodes(a, d);
+  const strip = (ns) => JSON.stringify(ns.filter((n) => n.e > d).map((n) => (n.s < d ? { ...n, s: d } : n)));
+  assert.equal(JSON.stringify(a.slice(0, 40)), JSON.stringify(JSON.parse(strip(b)).slice(0, 40)));
+  assert.equal(a[a.length - 1].s, b[b.length - 1].s, 'the last of 1.2 million nodes moved too');
+  assert.equal(a[0].ne, d + 7);
 });
 
 ok('R1: club and widow penalties read from the preamble; flush or ragged pages', () => {

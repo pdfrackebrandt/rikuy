@@ -2258,9 +2258,12 @@ class Builder {
       if (n.t === 'cmd' && (n.name === '=' || n.name === '>')) { if (n.name === '=' || isSet(n)) cur.sets = true; cur.cells.push([]); continue; }
       // (\+ and \- move the left margin to the next stop and back for the lines after, \< this
       // line's back by one: its first field starts at that stop)
-      if (n.t === 'cmd' && (n.name === '+' || n.name === '-')) { margin = Math.max(0, margin + (n.name === '+' ? 1 : -1)); continue; }
-      if (n.t === 'cmd' && n.name === '<') { cur.back = (cur.back || 0) + 1; continue; }
-      if (n.t === 'cmd' && /^(?:'|`|pushtabs|poptabs)$/.test(n.name)) continue;
+      // (the parser may give these the group after them as an argument, as an accent takes its
+      // letter: what it holds is text of the field, kept, a group as a group)
+      const keepArgs = () => { for (const a of n.args || []) if (a && a.nodes) { if (ctx.src[a.s] === '{') cur.cells[cur.cells.length - 1].push({ t: 'group', s: a.s, e: a.e, is: a.is, ie: a.ie, nodes: a.nodes }); else cur.cells[cur.cells.length - 1].push(...a.nodes); } };
+      if (n.t === 'cmd' && (n.name === '+' || n.name === '-')) { margin = Math.max(0, margin + (n.name === '+' ? 1 : -1)); keepArgs(); continue; }
+      if (n.t === 'cmd' && n.name === '<') { cur.back = (cur.back || 0) + 1; keepArgs(); continue; }
+      if (n.t === 'cmd' && /^(?:'|`|pushtabs|poptabs)$/.test(n.name)) { keepArgs(); continue; }
       cur.cells[cur.cells.length - 1].push(n);
     }
     cur.e = nd.es;
@@ -3576,10 +3579,12 @@ function rawCut(src, n) {
 
 // (R1) a parse of part of a file moved to where that part stands in it: every offset of its nodes
 // and their arguments
-const NODE_OFFSETS = ['s', 'e', 'is', 'ie', 'bs', 'be', 'es', 'nameEnd'];
-function shiftNodes(ns, d) {
+// (every offset the parser sets: ne is where a command's name ends. The walk visits each node once,
+// so it is as long as the text and needs no cap: a cut one would leave nodes half moved)
+const NODE_OFFSETS = ['s', 'e', 'is', 'ie', 'bs', 'be', 'es', 'nameEnd', 'ne'];
+export function shiftNodes(ns, d) {
   const stack = [ns];
-  for (let n = 0; stack.length && n < 1e6; n++) {
+  while (stack.length) {
     const x = stack.pop();
     if (!x || typeof x !== 'object') continue;
     if (Array.isArray(x)) { for (const y of x) stack.push(y); continue; }
