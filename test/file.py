@@ -3,7 +3,8 @@
 New: Blank document from the default preamble (Set as default, and Forget the default), each of
 New from template's eight skeletons opened as a document of its own and, where dist/tex exists,
 compiled in the page without an error. Open: Recent documents lists the documents kept in this
-browser and opens one. Info: Properties as round trips (a title replaced in place, one added
+browser and opens one; Rename a document gives one another name, its versions, its pictures and
+the open one's record with it (a taken or an empty name refused). Info: Properties as round trips (a title replaced in place, one added
 before \\begin{document}, & escaped, braces that do not pair refused, subject and keywords into an
 existing \\hypersetup, into hyperref's options, a new hyperref with hidelinks, a \\hypersetup line
 under beamer, which loads hyperref itself; one undo each, back byte for byte; hand written
@@ -87,6 +88,47 @@ def new_docs(page):
     ev(page, 'window.rikuy.runCommand("set-default", "reset")')
     ev(page, 'window.rikuy.runCommand("new-blank")'); page.wait_for_timeout(900)
     check('Forget the default: a plain article again', src(page).startswith('\\documentclass{article}\n\\usepackage{amsmath}\n\n\\begin{document}'), src(page))
+
+
+def rename(page):
+    """F4: Recent documents renames a document kept here: all of its versions, its pictures in the
+    browser, the open one too (the bar, the record a reload opens); a taken or an empty name is
+    refused."""
+    names = lambda: ev(page, '(async () => (await window.rikuy.allSnaps()).map((v) => v.name))()')
+    KV = "(k) => new Promise((ok) => { const q = indexedDB.open('galley'); q.onsuccess = () => { const t = q.result.transaction('kv').objectStore('kv').get(k); t.onsuccess = () => ok(t.result === undefined ? false : t.result); t.onerror = () => ok(null); }; q.onerror = () => ok(null); })"
+    PUT = "([k, v]) => new Promise((ok) => { const q = indexedDB.open('galley'); q.onsuccess = () => { const t = q.result.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => ok(true); t.onerror = () => ok(false); }; })"
+    ev(page, '() => window.rikuy.runCommand("new-template", "letter")'); page.wait_for_timeout(900)
+    first = ev(page, 'window.rikuy.name')
+    ev(page, '() => window.rikuy.runCommand("new-template", "exam")'); page.wait_for_timeout(900)
+    opened = ev(page, 'window.rikuy.name')
+    n0 = names().count(first)
+    ev(page, PUT, ['bin:' + first + '|main.tex', {'assets': [], 'extra': [], 'orig': []}])
+    page.get_by_role('tab', name='File', exact=True).click(); page.wait_for_timeout(200)
+    page.get_by_role('button', name='Recent documents', exact=True).click(); page.wait_for_timeout(500)
+    page.get_by_role('menuitem', name='Rename a document…', exact=True).click(); page.wait_for_timeout(300)
+    items = page.get_by_role('menuitem').all_inner_texts()
+    check('Rename a document… lists the open document and the others', any(i.startswith('Rename ' + opened + ' (open)') for i in items) and any(i.startswith('Rename ' + first) for i in items), items)
+    page.get_by_role('menuitem', name='Rename ' + first, exact=True).click(); page.wait_for_timeout(300)
+    dlg = page.get_by_role('dialog', name='Rename a document')
+    field = dlg.get_by_role('textbox', name='New name')
+    check('a dialog "Rename a document", its field "New name" holding the name now', dlg.count() == 1 and field.input_value() == first)
+    page.screenshot(path=os.path.join(SHOTS, 'file-rename-1366.png'))
+    field.fill('My letter'); dlg.get_by_role('button', name='Rename', exact=True).click(); page.wait_for_timeout(900)
+    ns = names()
+    check('renamed: every version under the new name, none under the old', n0 >= 1 and ns.count('My letter') == n0 and first not in ns, (n0, ns[:8]))
+    check('its pictures kept in the browser go with it', ev(page, KV, 'bin:My letter|main.tex') not in (False, None) and ev(page, KV, 'bin:' + first + '|main.tex') is False)
+    check('the open document stays open and untouched', ev(page, 'window.rikuy.name') == opened)
+    ok = ev(page, '(n) => window.rikuy.runCommand("recent", { rename: n, to: "Exam renamed" })', opened); page.wait_for_timeout(500)
+    rec = ev(page, KV, 'project')
+    check('the open document renamed: the bar says it, its versions follow, the record a reload opens too',
+          ok is True and ev(page, 'window.rikuy.name') == 'Exam renamed' and ev(page, "document.getElementById('docname').textContent") == 'Exam renamed'
+          and 'Exam renamed' in names() and opened not in names() and rec and rec.get('name') == 'Exam renamed', (ok, ev(page, 'window.rikuy.name'), rec and rec.get('name')))
+    check('a name another document has is refused', ev(page, '() => window.rikuy.runCommand("recent", { rename: "Exam renamed", to: "My letter" })') is False and ev(page, 'window.rikuy.name') == 'Exam renamed')
+    check('security: a | in a new name (records are kept under name|main) becomes a space', ev(page, '() => window.rikuy.runCommand("recent", { rename: "Exam renamed", to: "a|main.tex" })') is True and ev(page, 'window.rikuy.name') == 'a main.tex')
+    ev(page, '() => window.rikuy.runCommand("recent", { rename: "a main.tex", to: "Exam renamed" })')
+    check('an empty name is refused', ev(page, '() => window.rikuy.runCommand("recent", { rename: "My letter", to: "   " })') is False and 'My letter' in names())
+    ev(page, '() => window.rikuy.runCommand("recent", { open: "My letter" })'); page.wait_for_timeout(900)
+    check('the renamed document opens under its name, its text as it was', ev(page, 'window.rikuy.name') == 'My letter' and '\\documentclass' in src(page) and 'letter' in src(page)[:60], src(page)[:60])
 
 
 def properties(page):
@@ -276,6 +318,12 @@ def phones(p):
     dl = ev(page, "(() => { const d = document.querySelector('.pop'); const r = d.getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right), Math.round(r.bottom), innerHeight]; })()")
     check('Properties fits a phone\'s screen (390 px)', dl[0] >= 0 and dl[1] <= 390 and dl[2] <= dl[3], dl)
     page.screenshot(path=os.path.join(SHOTS, 'phone-390-properties.png'))
+    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    ev(page, '() => window.rikuy.runCommand("recent", { rename: window.rikuy.name })'); page.wait_for_timeout(400)
+    dl = ev(page, "(() => { const d = document.querySelector('.pop-rename'); if (!d) return null; const r = d.getBoundingClientRect(), b = d.querySelector('button[aria-label=Rename]').getBoundingClientRect(); return [Math.round(r.left), Math.round(r.right), Math.round(r.bottom), innerHeight, Math.round(b.height)]; })()")
+    check('F4: Rename a document fits a phone\'s screen, its button 44 px (390 px)', dl and dl[0] >= 0 and dl[1] <= 390 and dl[2] <= dl[3] and dl[4] >= 44, dl)
+    page.screenshot(path=os.path.join(SHOTS, 'phone-390-rename.png'))
+    page.keyboard.press('Escape')
     check('no sideways scroll (390 px)', ev(page, 'document.documentElement.scrollWidth') <= 390)
     check('no errors (390 px)', not errors, errors)
     browser.close()
@@ -284,11 +332,11 @@ def phones(p):
 with sync_playwright() as p:
     want = sys.argv[1:]
     browser, page, errors = open_page(p, 1366, 800)
-    for name, fn in (('new_docs', new_docs), ('properties', properties), ('accessibility', accessibility), ('export', export)):
+    for name, fn in (('new_docs', new_docs), ('rename', rename), ('properties', properties), ('accessibility', accessibility), ('export', export)):
         if want and name not in want:
             continue
         try: fn(page)
-        except Exception as e: check(name + ' ran to its end', False, repr(e)[:300])
+        except Exception as e: check(name + " ran to its end", False, repr(e)[:1500])
     check('no errors in the page', not errors, errors[:3])
     browser.close()
     if not want or 'phones' in want:

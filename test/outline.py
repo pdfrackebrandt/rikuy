@@ -12,7 +12,10 @@ Show levels, the Outlining toolbar acting on the row chosen, Alt+Shift and the a
 a heading dragged onto another moving its section in one undo), Pages (one thumbnail a page, a
 click goes there), Results (the search's hits; the figures and tables of the options); the Outline
 view (Ctrl+Alt+O: the panel wide, the paragraphs under the headings, View's Outline pressed,
-again to leave it). Where dist/tex exists, a promoted heading compiles as the level it was given.
+again to leave it). A heading collapsed on the page (Word's triangle, Alt+Shift+- and +, Expand and
+Collapse all, kept in the browser, followed through edits, opened by Find and by a caret put back
+under it; on a phone by a tap, 44 px). Where dist/tex exists, a promoted heading compiles as the
+level it was given, and a collapsed one's text is still in TeX's PDF.
 
 RIKUY_DIST names another dist/."""
 import os, sys, base64, io
@@ -260,14 +263,131 @@ def pdf_check(page):
     check('compiled in the page, the promoted heading prints as section 2 and Beta becomes 3', r['ok'] and '2 Alpha one' in text and '3 Beta' in text, text[:200])
 
 
+SHOTS = os.environ.get('RIKUY_SHOTS', '/tmp/R5-shots')
+
+
+def drawn(page):
+    """The words the page draws, block by block (what a collapsed heading hides is not there)."""
+    return page.evaluate("[...document.querySelectorAll('#pages .it')].map((e) => e.textContent.replace(/\\s+/g, ' ').trim()).join(' | ')")
+
+
+def triangle(page, words):
+    return page.evaluate("(w) => { const b = [...document.querySelectorAll('.fold-tg')].find((x) => x.getAttribute('aria-label').endsWith(w)); if (!b) return null; const r = b.getBoundingClientRect(); return { name: b.getAttribute('aria-label'), expanded: b.getAttribute('aria-expanded'), w: Math.round(r.width), h: Math.round(r.height), x: r.left + r.width / 2, y: r.top + r.height / 2 }; }", words)
+
+
+def collapse(page):
+    """A heading's text collapsed on the page, Word's triangle: the page's view alone (the source,
+    its history and the PDF keep the text), kept for the document in this browser, its place
+    followed through edits; Expand and Collapse all; the keys; Find and a caret put back under it
+    open it."""
+    load_doc(page, DOC)
+    h0 = page.evaluate('window.rikuy.hist.length')
+    click_text(page, 'Alpha', 1)
+    page.evaluate("window.rikuy.runCommand('heading-collapse')"); page.wait_for_timeout(300)
+    d = drawn(page)
+    check('Collapse heading: the section\'s text and its subheading leave the page, the next section stays', 'Alpha text' not in d and 'Alpha one' not in d and 'Sub text' not in d and 'Beta text' in d and 'Alpha' in d, d)
+    check('nothing is written: the source the same bytes, no step of history', src(page) == DOC and page.evaluate('window.rikuy.hist.length') == h0)
+    t = triangle(page, 'Alpha')
+    check('a collapsed heading has its triangle beside it, "Expand: Alpha", collapsed', t and t['name'] == 'Expand: Alpha' and t['expanded'] == 'false', t)
+    check('Expand heading is offered on it, Collapse heading not', page.evaluate("(() => { const a = window.rikuy.ribbonAt(); a.memo = {}; const c = window.rikuy.cmds; return [c.enabled(window.rikuy, c.command('heading-expand'), a), c.enabled(window.rikuy, c.command('heading-collapse'), a)]; })()") == [True, False])
+    page.mouse.click(t['x'], t['y']); page.wait_for_timeout(300)
+    check('a press on the triangle shows the text again', 'Alpha text' in drawn(page) and 'Sub text' in drawn(page))
+    # the pointer over a heading shows its triangle; a press collapses
+    box = page.evaluate("(() => { const e = [...document.querySelectorAll('#pages .it.h')].find((x) => x.textContent.includes('Beta')); const r = e.getBoundingClientRect(); return [r.left + 20, r.top + r.height / 2]; })()")
+    page.mouse.move(box[0], box[1]); page.wait_for_timeout(250)
+    t = triangle(page, 'Beta')
+    check('the pointer over a heading shows its triangle, "Collapse: Beta", expanded', t and t['expanded'] == 'true', t)
+    page.mouse.move(t['x'], t['y']); page.mouse.down(); page.mouse.up(); page.wait_for_timeout(300)
+    check('a press on it collapses the section', 'Beta text' not in drawn(page) and 'Gamma text' in drawn(page))
+    # kept in this browser, and read again with the page's memory gone
+    kept = page.evaluate("JSON.parse(localStorage.getItem('rikuy.fold.v1') || '{}')")
+    key0 = page.evaluate("window.rikuy.name + '|' + window.rikuy.main")
+    check('kept for this document in the browser: its file, place, level and words', key0 in kept and kept[key0][0]['t'] == 'Beta' and kept[key0][0]['lv'] == 1, kept)
+    page.evaluate("window.rikuy.fold = null; window.rikuy.relayout()"); page.wait_for_timeout(200)
+    check('read back from the browser, the heading is still collapsed', 'Beta text' not in drawn(page))
+    # an edit before it moves its place: it stays collapsed
+    click_text(page, 'Alpha text', 0); page.keyboard.type('New '); page.wait_for_timeout(400)
+    check('typing before a collapsed heading moves its place with the edit: still collapsed', 'New Alpha text' in src(page) and 'Beta text' not in drawn(page) and page.evaluate('window.rikuy.fold.list[0].s') == src(page).index('\\section{Beta}'))
+    # Expand all, Collapse all
+    page.evaluate("window.rikuy.runCommand('headings-collapse-all')"); page.wait_for_timeout(300)
+    d = drawn(page)
+    check('Collapse all headings: the page shows the headings of the top level alone', 'Alpha' in d and 'Beta' in d and 'Gamma' in d and 'Alpha one' not in d and 'text' not in d, d)
+    page.evaluate("window.rikuy.runCommand('headings-expand-all')"); page.wait_for_timeout(300)
+    d = drawn(page)
+    check('Expand all headings: everything again', all(w in d for w in ('Alpha text', 'Sub text', 'Beta text', 'Gamma text')), d)
+    # the keys: Alt+Shift+- and Alt+Shift++
+    click_text(page, 'Gamma', 1); page.keyboard.press('Alt+Shift+Minus'); page.wait_for_timeout(300)
+    check('Alt+Shift+- collapses the heading the caret is in', 'Gamma text' not in drawn(page))
+    page.keyboard.press('Alt+Shift+Equal'); page.wait_for_timeout(300)
+    check('Alt+Shift++ expands it', 'Gamma text' in drawn(page))
+    # Find goes into a collapsed section: it opens
+    click_text(page, 'Beta', 1); page.evaluate("window.rikuy.runCommand('heading-collapse')"); page.wait_for_timeout(300)
+    page.evaluate("window.rikuy.findSet({ q: 'Beta text', o: { fmt: 0, source: false, regex: false, wildcards: false, insel: false } })"); page.evaluate('window.rikuy.findGo(1)'); page.wait_for_timeout(400)
+    check('Find shows a hit under a collapsed heading: the heading opens, as Word\'s does', 'Beta text' in drawn(page) and page.evaluate('window.rikuy.foldCount()') == 0)
+    page.evaluate('window.rikuy.findClear()')
+    # a caret put back under a collapsed heading (Undo of an edit made there) opens it
+    click_text(page, 'Gamma text', 0); page.keyboard.type('Z'); page.wait_for_timeout(300)
+    click_text(page, 'Gamma', 1); page.evaluate("window.rikuy.runCommand('heading-collapse')"); page.wait_for_timeout(300)
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(400)
+    check('Undo of an edit under a collapsed heading opens it, the caret there', 'Gamma text' in drawn(page) and 'ZGamma' not in src(page))
+    # the heading's right click menu
+    click_text(page, 'Beta', 1)
+    page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); window.rikuy.openContextMenu(r.left, r.bottom); })()"); page.wait_for_timeout(200)
+    names = page.get_by_role('menuitem').all_inner_texts()
+    check('a heading\'s right click menu has Collapse heading, Expand heading, Expand all and Collapse all headings', all(any(i.startswith(n) for i in names) for n in ('Collapse heading', 'Expand heading', 'Expand all headings', 'Collapse all headings')), names)
+    page.keyboard.press('Escape')
+    # TeX's PDF keeps the text (the source is untouched; with dist/tex, compiled)
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        click_text(page, 'Alpha', 1); page.evaluate("window.rikuy.runCommand('heading-collapse')"); page.wait_for_timeout(200)
+        page.set_default_timeout(600000)
+        r = page.evaluate("""async () => { const r = await window.rikuy.api.compile(); let s = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) s += String.fromCharCode(...r.pdf.subarray(i, i + 8192)); return { ok: r.ok, pdf: s ? btoa(s) : '' }; }""")
+        page.set_default_timeout(30000)
+        from pypdf import PdfReader
+        text = PdfReader(io.BytesIO(base64.b64decode(r['pdf']))).pages[0].extract_text() if r['pdf'] else ''
+        check('compiled in the page with Alpha collapsed: TeX\'s PDF still prints its text', r['ok'] and 'Alpha text' in text and 'Sub text' in text, text[:160])
+        page.evaluate("window.rikuy.runCommand('headings-expand-all')")
+    page.screenshot(path=os.path.join(SHOTS, 'collapse-1366.png'))
+
+
+def collapse_phones(p):
+    """On a phone (390 and 360 px, touch): the caret in a heading shows its triangle, 44 px, a tap
+    collapses; a long press's menu has Collapse heading; no sideways scroll."""
+    os.makedirs(SHOTS, exist_ok=True)
+    for w, h in ((390, 844), (360, 740)):
+        for dark in ((False, True) if w == 390 else (False,)):
+            browser, page, errors = open_page(p, w, h, dark=dark, touch=True)
+            load_doc(page, DOC)
+            click_text(page, 'Beta', 1); page.wait_for_timeout(400)
+            t = triangle(page, 'Beta')
+            check('%d px%s: the caret in a heading shows its triangle, 44 by 44 px' % (w, ' dark' if dark else ''), t and t['w'] >= 44 and t['h'] >= 44, t)
+            if t:
+                page.touchscreen.tap(t['x'], t['y']); page.wait_for_timeout(400)
+                check('%d px: a tap collapses the section' % w, 'Beta text' not in drawn(page) and 'Gamma text' in drawn(page), drawn(page))
+                t2 = triangle(page, 'Beta')
+                check('%d px: the collapsed heading keeps its triangle, inside the screen' % w, t2 and t2['expanded'] == 'false' and t2['x'] - t2['w'] / 2 >= 0, t2)
+                page.screenshot(path=os.path.join(SHOTS, 'collapse-phone-%d%s.png' % (w, '-dark' if dark else '')))
+                if t2:
+                    page.touchscreen.tap(t2['x'], t2['y']); page.wait_for_timeout(400)
+                    check('%d px: a tap on it shows the text again' % w, 'Beta text' in drawn(page))
+            click_text(page, 'Gamma', 1)
+            items = page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); window.rikuy.openContextMenu(r.left, r.bottom); return [...document.querySelectorAll('.pop [role=menuitem]')].map((x) => x.textContent); })()")
+            check('%d px: a long press\'s menu (the right click menu) has Collapse heading' % w, any(i.startswith('Collapse heading') for i in items), items)
+            check('%d px: no sideways scroll' % w, page.evaluate('document.documentElement.scrollWidth') <= w)
+            check('%d px: no errors' % w, not errors, errors[:3])
+            browser.close()
+
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (promote_demote, moves, heading_menu, pane, outline_view, review, pdf_check):
+        os.makedirs(SHOTS, exist_ok=True)
+        for f in (promote_demote, moves, heading_menu, pane, outline_view, review, collapse, pdf_check):
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
         browser.close()
+        try: collapse_phones(p)
+        except Exception as e: check('collapse_phones runs to its end', False, str(e)[:400])
     bad = [r for r in results if not r[1]]
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     sys.exit(1 if bad else 0)

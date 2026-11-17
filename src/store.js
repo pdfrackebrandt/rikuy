@@ -75,6 +75,24 @@ export function snapDel(id) {
     t.onerror = () => reject(t.error);
   }));
 }
+// Every version of a project named from renamed to: one transaction over the list (the texts are
+// kept under the versions' ids, which stay)
+export function snapRename(from, to) {
+  return db().then((d) => new Promise((resolve, reject) => {
+    const t = d.transaction('snaps', 'readwrite');
+    const req = t.objectStore('snaps').openCursor();
+    let n = 0;
+    req.onsuccess = () => {
+      const c = req.result;
+      if (!c) return;
+      if (c.value && c.value.name === from) { c.update({ ...c.value, name: to }); n++; }
+      c.continue();
+    };
+    t.oncomplete = () => resolve(n);
+    t.onerror = () => reject(t.error);
+    t.onabort = () => reject(t.error || new Error('aborted'));
+  }));
+}
 export async function snapPrune(keep) {
   const all = await snapAll();
   if (all.length <= keep) return 0;

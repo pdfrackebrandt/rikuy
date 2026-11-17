@@ -2054,3 +2054,61 @@ html.pic-drag, html.pic-drag body { touch-action: none; overscroll-behavior: non
 /* \part in the contents, as article and report list it (review M2) */
 .toc-l-1, .toc-l0 { font-weight: bold; font-size: calc(var(--z-large, 1.2) * 1em); margin-top: .9em; }
 .toc-l-1 .toc-d, .toc-l0 .toc-d { border: 0; }
+
+/* ---- R5: a heading collapsed on the page (its triangle), Web Layout, the rulers ---- */
+/* the triangles beside the headings: over the page, never in it (src/cmd/find.js foldPaint) */
+.fold-layer { position: absolute; left: 0; top: 0; width: 0; height: 0; z-index: 2; }
+.fold-tg { position: absolute; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: #7A8794; display: grid; place-items: center; cursor: pointer; }
+.fold-tg svg { width: 14px; height: 14px; fill: currentColor; stroke: none; transition: transform .12s; }
+.fold-tg.shut svg { transform: rotate(-90deg); }
+.fold-tg.shut { color: var(--blue); }
+@media (hover: hover) { .fold-tg:hover { background: var(--blue-wash); color: var(--blue-ink); } body.dark-page .fold-tg:hover { background: #2A3440; } }
+.fold-tg:focus-visible { background: var(--blue-wash); color: var(--blue-ink); outline: none; }
+@media (pointer: coarse) { .fold-tg { width: 44px; height: 44px; } .fold-tg svg { width: 18px; height: 18px; } }
+/* Web Layout: one sheet as wide as the window, no foot, no header, footer or page numbers */
+body.pg-web #pages { gap: 0; }
+body.pg-web .page { height: auto; min-height: 60vh; box-shadow: 0 0 0 1px var(--line); content-visibility: visible; contain: layout style; }
+body.pg-web .page + .page { border-top: 1px dashed #9AA6B2; }
+body.pg-web .pb { position: relative; left: auto; top: auto; margin: var(--mt) var(--ml); height: auto; }
+body.pg-web .page .hd, body.pg-web .page .ft, body.pg-web .page .folio, body.pg-web .page .lnum { display: none !important; }
+/* the rulers (src/ui/ruler.js): the horizontal one stays at the window's top as the pages scroll */
+.ruler { position: sticky; top: 0; left: 0; z-index: 4; height: 20px; width: 100%; background: var(--chrome); border-bottom: 1px solid var(--line); user-select: none; -webkit-user-select: none; font: 9px/1 var(--font-ui); color: var(--mute); }
+.ruler[hidden] { display: none; }
+.ru-track { position: absolute; top: 0; height: 20px; background: var(--panel); }
+.ru-g, .ru-gap { position: absolute; top: 0; height: 20px; background: var(--desk-2); }
+.ru-gl { left: 0; } .ru-gr { right: 0; }
+.ru-ticks { position: absolute; inset: 0; pointer-events: none; }
+.ru-ticks svg { display: block; overflow: visible; }
+.ru-ticks path { stroke: var(--mute); stroke-width: 1; fill: none; }
+.ru-ticks text { fill: var(--mute); font: 9px var(--font-ui); text-anchor: middle; dominant-baseline: central; }
+.ru-mk { position: absolute; width: 11px; margin-left: -5.5px; cursor: ew-resize; z-index: 2; outline: none; }
+.ru-mk::before { content: ""; position: absolute; left: 0; width: 11px; background: #6B7A89; }
+.ru-mk:hover::before, .ru-mk:focus-visible::before { background: var(--blue); }
+.ru-mk.off { cursor: default; }
+.ru-mk.off::before { background: #B4BEC8; }
+.ru-first { top: 0; height: 7px; } .ru-first::before { top: 0; height: 7px; clip-path: polygon(0 0, 100% 0, 50% 100%); }
+.ru-hang, .ru-right { top: 8px; height: 7px; } .ru-hang::before, .ru-right::before { top: 0; height: 7px; clip-path: polygon(50% 0, 100% 100%, 0 100%); }
+.ru-left { top: 15px; height: 5px; } .ru-left::before { top: 0; height: 5px; }
+/* (a margin's handle lies on the grey side of its edge, under the indents' markers, as Word's) */
+.ru-mk.ru-ml, .ru-mk.ru-mr { top: 0; height: 20px; width: 10px; margin-left: -10px; z-index: 1; }
+.ru-mk.ru-mr { margin-left: 0; }
+.ru-mk.ru-ml::before, .ru-mk.ru-mr::before { left: 9px; width: 1px; top: 0; height: 20px; background: transparent; }
+.ru-mk.ru-mr::before { left: 0; }
+.ru-mk.ru-ml:hover::before, .ru-mk.ru-mr:hover::before, .ru-mk.ru-ml:focus-visible::before, .ru-mk.ru-mr:focus-visible::before { background: var(--blue); }
+.ru-tab { position: absolute; top: 9px; width: 7px; height: 7px; margin-left: -6px; border-right: 2px solid var(--ink-ui); border-bottom: 2px solid var(--ink-ui); box-sizing: border-box; }
+.vruler { position: absolute; top: 0; width: 20px; height: auto; border-bottom: 0; border-right: 1px solid var(--line); background: var(--panel); }
+.vruler .ru-g { left: 0; width: 20px; } .vruler .ru-gt { top: 0; } .vruler .ru-gb { top: auto; bottom: 0; }
+.vruler .ru-mk { left: 0; width: 20px; height: 9px; margin: -4.5px 0 0; cursor: ns-resize; }
+.vruler .ru-mk::before { top: 4px; left: 0; width: 20px; height: 1px; background: transparent; }
+.vruler .ru-mk:hover::before, .vruler .ru-mk:focus-visible::before { background: var(--blue); }
+.ru-guide { position: fixed; z-index: 60; border-left: 1px dashed var(--ink-ui); pointer-events: none; }
+.ru-guide.v { border-left: 0; border-top: 1px dashed var(--ink-ui); }
+.ru-tip { position: fixed; z-index: 61; padding: 2px 6px; border-radius: 4px; background: var(--ink-ui); color: #fff; font: 11px/1.4 var(--font-ui); pointer-events: none; white-space: nowrap; }
+.ru-guide[hidden], .ru-tip[hidden] { display: none; }
+@media (max-width: 639px), (pointer: coarse) { #ruler, #vruler { display: none !important; } }
+body.focus #ruler, body.focus #vruler, body.view-latex #ruler, body.view-pdf #ruler { display: none !important; }
+@media print { #ruler, #vruler, .fold-layer, .ru-guide, .ru-tip { display: none !important; } }
+.pop-rename label.props-row { display: flex; flex-direction: column; gap: 3px; margin-bottom: 6px; }
+.pop-rename label.props-row > span { font-weight: 500; font-size: 12.5px; }
+.pop-rename input { width: 100%; box-sizing: border-box; }
+@media (pointer: coarse) { .pop-rename .btn { min-height: 44px; min-width: 44px; } .pop-rename input { min-height: 44px; } }

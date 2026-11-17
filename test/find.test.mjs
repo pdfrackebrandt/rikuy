@@ -7,8 +7,8 @@
 // across files), two sections or paragraphs swapped and moved with the space between them kept,
 // a new heading's edit; and a person's own pattern bounded in time.
 import assert from 'node:assert/strict';
-import { compile, expand, hitsIn, runsWith, context, hitsInSource, joinRanges, labelsIn, SEP, PARA, FMT } from '../src/find.js';
-import { headingAt, sectionRange, under, promoteEdits, swapEdit, moveEdits, newHeading, eolOf } from '../src/outline.js';
+import { compile, expand, hitsIn, runsWith, context, hitsInSource, joinRanges, labelsIn, gapKind, hasParaMark, SEP, PARA, PMARK, FMT } from '../src/find.js';
+import { headingAt, sectionRange, under, promoteEdits, swapEdit, moveEdits, newHeading, eolOf, foldItems, matchFold, foldEntry } from '../src/outline.js';
 import { applyEdits } from '../src/styles.js';
 
 let n = 0;
@@ -162,9 +162,9 @@ ok('review: Word\'s * and @ are bounded, so a long paragraph without the end of 
   assert.deepEqual(find('cat cart', 'c*t', { wildcards: true }), ['cat', 'cart']);
 });
 
-ok('review: ^p is a blank line in the LaTeX source, and in the page\'s text says where it works', () => {
+ok('review: ^p is a blank line in the LaTeX source, and on the page the mark between paragraphs', () => {
   const c = compile('end.^p', {});
-  assert.ok(c.error && /In LaTeX source/.test(c.error), c.error);
+  assert.ok(c.re && c.re.source.endsWith('\\u2029'), c.error);
   const src = 'One end.\n\nTwo end.\r\n\r\nThree.';
   assert.deepEqual(hitsInSource(src, compile('end.^p', { source: true }).re).hits.map((h) => JSON.stringify(src.slice(h.i, h.j))), ['"end.\\n\\n"', '"end.\\r\\n\\r\\n"']);
   assert.equal(expand('^p', ['x'], {}), '\n\n');
@@ -305,6 +305,62 @@ ok('review: a section moved after the last one goes before the bibliography, not
     '\\begin{document}\n\\section{B}\nText b.\n\n\\section{A}\nText a.\n\n\\bibliographystyle{plain}\n\\bibliography{refs}\n\\end{document}\n');
   // after the section just before it: where it is already, nothing
   assert.equal(moveEdits(src, 'f', B.s, B.e, A.e, true), null);
+});
+
+ok('^p on the page: a hit across the paragraph mark between two paragraphs, none across a stop', () => {
+  const t = 'ends here.' + PMARK + 'Second line' + PARA + 'cell' + SEP + 'x';
+  assert.deepEqual(find(t, 'here.^pSecond'), ['here.' + PMARK + 'Second']);
+  assert.deepEqual(find(t, '^p'), [PMARK]);
+  // (a paragraph's end within a block, an item's or a cell's, stays a stop)
+  assert.deepEqual(find(t, 'line^pcell'), []);
+  // wildcards: ? and * never run over a mark; ^p in them is the mark
+  assert.deepEqual(find(t, 'here?Second', { wildcards: true }), []);
+  assert.deepEqual(find(t, '.^p<*>', { wildcards: true }), ['.' + PMARK + 'Second']);
+  assert.ok(hasParaMark('a^pb') && !hasParaMark('a^^pb') && !hasParaMark('ap'));
+  // In LaTeX source ^p is still a blank line
+  assert.deepEqual(hitsInSource('a\n\nb', compile('a^pb', { source: true }).re).hits.length, 1);
+  // the context shows the mark as a pilcrow
+  assert.equal(context(t, 5, 17).join('|'), 'ends |here. ¶ Second| line');
+});
+
+ok('^p: which paragraph ends are marks, from the source between them (bounded)', () => {
+  assert.equal(gapKind('\n\n'), 'soft');
+  assert.equal(gapKind('\n  \n\t'), 'soft');
+  assert.equal(gapKind('\n% a note\n\n'), 'soft');
+  assert.equal(gapKind('}\n\n\\textbf{'), 'hard');
+  assert.equal(gapKind('\n\n\\noindent '), 'hard');
+  assert.equal(gapKind('}\n', true), 'hard');
+  assert.equal(gapKind('\n\\section{', true), 'hard');
+  assert.equal(gapKind('}\n'), null);
+  assert.equal(gapKind('\n  \\item '), null);
+  assert.equal(gapKind('\n\\begin{itemize}\n'), null);
+  assert.equal(gapKind('$x$\n\n'), null);
+  assert.equal(gapKind('\n'.repeat(500)), null);
+  // a stranger's gap of every kind of sign is read in one pass
+  const t0 = Date.now();
+  for (let i = 0; i < 2000; i++) gapKind('}'.repeat(60) + '\\a{'.repeat(80) + '[' + 'x'.repeat(39));
+  assert.ok(Date.now() - t0 < 500);
+});
+
+ok('a collapsed heading hides the items up to its next heading of its level or above', () => {
+  const B = (s, e) => ({ f: 'm', s, e });
+  const heads = [{ f: 'm', s: 0, level: 1, text: 'A' }, { f: 'm', s: 20, level: 2, text: 'A1' }, { f: 'm', s: 40, level: 1, text: 'B' }];
+  const items = [{ kind: 'h', level: 1, block: B(0, 9) }, { kind: 'p', block: B(10, 19) }, { kind: 'h', level: 2, block: B(20, 29) }, { kind: 'p', block: B(30, 35) }, { kind: 'mark', block: B(36, 37) },
+    { kind: 'h', level: 1, block: B(40, 49) }, { kind: 'p', block: B(50, 59) }, { kind: 'refs', block: B(60, 69) }];
+  const names = (r) => items.map((it, k) => (r.hidden.has(it) ? k : -1)).filter((k) => k >= 0);
+  assert.deepEqual(names(foldItems(items, heads, new Set([0]))), [1, 2, 3]);
+  assert.deepEqual(names(foldItems(items, heads, new Set([1]))), [3]);
+  // the bibliography's heading ends the last section's text
+  assert.deepEqual(names(foldItems(items, heads, new Set([2]))), [6]);
+  // nested: the outer one hides the inner, which is hidden itself
+  const r = foldItems(items, heads, new Set([0, 1]));
+  assert.deepEqual(names(r), [1, 2, 3]);
+  assert.equal(r.by.get(items[3]), 0);
+  assert.equal(r.at.get(items[5]), 2);
+  // found again by place, else by the same words at the same level, the nearest
+  assert.deepEqual([...matchFold([foldEntry(heads[2])], heads)], [2]);
+  assert.deepEqual([...matchFold([{ f: 'm', s: 45, lv: 1, t: 'B' }], heads)], [2]);
+  assert.deepEqual([...matchFold([{ f: 'm', s: 45, lv: 2, t: 'B' }], heads)], []);
 });
 
 console.log('find: ' + n + ' groups of checks passed');

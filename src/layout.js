@@ -644,7 +644,8 @@ export class Layout {
   // what \vspace*{\fill} gets on a page: what the page has left, shared among its fills
   fillOf(pg) {
     const n = pg.entries.filter((e) => e.it.fill).length;
-    if (!n) return 0;
+    // (Web Layout's one long sheet has no foot for a fill to reach: src/cmd/view.js)
+    if (!n || this.g.web) return 0;
     return Math.max(0, (this.g.th * this.px - pg.used - pg.fnH) / n);
   }
   // the space between bands and the paragraphs beside them (pg.used counted it)

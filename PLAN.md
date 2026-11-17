@@ -2680,6 +2680,69 @@ Tests:
     58, `test:agent` 143, `launch.py` 18, `deploy_check.py` 45, `pages_check.py` (382 files, 358.6
     MB), and the manifest diff empty.
 
+65. **R5: what Find (task 43) and the views and File (task 50) left.** Done in the code (branch
+    `round3-r5-view`). *A heading's text collapsed on the page* (Word's triangle): Collapse heading
+    and Expand heading (Alt+Shift+- and Alt+Shift++, Mac Control+Shift; a heading's right click
+    menu, so a long press on a phone), Expand all headings and Collapse all headings (the page then
+    shows its top level alone). `App.layoutPass` hands the page's items to `foldFilter`
+    (`src/cmd/find.js`) before they are measured: those under a collapsed heading, up to its next
+    heading of its level or above (or the bibliography's and the index's), leave the page's layout
+    and nothing else: no edit, no step of history, the PDF as before (with `dist/tex` a compile with
+    a section collapsed still prints its text). The state is the browser's (`localStorage`
+    `rikuy.fold.v1`, under the document's name and main file, fifty documents): each heading by
+    file, place, level and words; the places move with every edit (the difference from the text
+    last seen, as Find's), the words find a heading again otherwise. The triangle is a button over
+    the page, never in it ("Collapse: <words>", "Expand: <words>", `aria-expanded`): with a mouse
+    beside the heading under the pointer, on a touch screen beside the heading the caret is in, 44
+    px, after the heading's last line where the margin is off the screen; always beside a collapsed
+    one. Find showing a hit under a collapsed heading opens it, and so does a caret a rebuild puts
+    back there (an Undo of an edit made under it). *^p on the page's text:* the page's paragraphs
+    as one text (`pageParaText`, footnotes apart), a paragraph mark where the source between two
+    paragraphs is a blank line (`gapKind` 'soft': Replace takes it away or keeps its comment lines,
+    as typing's join does) or a blank line or a heading's end with closing braces or opening
+    commands round it ('hard': found, not replaced, the note says to use In LaTeX source); an
+    `\item`, an environment or a formula between is no mark. ^p in Replace with writes a blank line
+    where the place is a paragraph's own text outside any group, argument or formula
+    (`breakFits`), never in a heading, a cell, a caption or a LaTeX paragraph. Special lists
+    Paragraph mark. *LaTeX's kinds in Format* (Word's Format › Style): Any heading, List item,
+    Table cell, Theorem or proof, Quotation, and Equation, alone: each formula (inline and
+    displayed) with nothing typed, or the words in its LaTeX, replaced as LaTeX, one undo, the
+    formula marked whole on the page. *V8 the rulers* (View › Show › Ruler, `src/ui/ruler.js`):
+    the horizontal one stays over the pages as they scroll, the vertical one beside the page;
+    the margins grey as TeX sets them (two sided documents' even pages, two columns' gaps), the
+    caret's paragraph's First Line, Hanging and Left Indent and Right Indent, and the stop of a
+    leader (`\dotfill`, `\hrulefill`, `\hfill`: LaTeX's fill always reaches the right indent, so it
+    is shown and explained, not moved). A marker dragged (a quarter centimetre a step, Alt free,
+    Escape puts it back, the value in a tip and a guide over the page) or moved with the arrows
+    (it is a slider by name) writes B2's edits through `App.paraDialogApply`: `adjustwidth` for
+    the indents, `\noindent`, `\hangindent` or LaTeX's own `\parindent` for the first line (Word's
+    mapping: the first line left of the others is a hanging indent from a smaller left indent);
+    the margins B6's `marginEdits` through `App.pageEdit`. Off where they cannot apply (a heading,
+    a list item, a cell: the title says why; the margins where Layout's Margins is off). Hidden on a
+    touch screen or under 640 px (the button off, saying Layout's fields do the same), in Web
+    Layout, Focus and the LaTeX and PDF views. Word's tab stops at any place have no LaTeX of their
+    own outside `tabbing`, which the page does not draw: the ruler adds none. *V3 Web Layout* (View
+    › Views, beside Print Layout): `viewGeometry` gives `App.layoutPass` a sheet as wide as the
+    window at the zoom, a quarter inch of margin, one column, no foot: the lines reflow with the
+    window (the one view whose line breaks are not TeX's; the PDF is), headers, footers and page
+    numbers hidden, a page break a dashed line; on a phone the text at its actual size; Draft,
+    Print Layout, One page and pages across take it off; kept with the preferences. *F4 Recent
+    documents › Rename a document…* (the open one too): every version, the pictures, where it came
+    from and the live figures' permission (`bin:`, `link:`, `share:`, `scripts:` records) and its
+    collapsed headings go under the new name (`snapRename` in `src/store.js`, one transaction);
+    the open one's record and the bar too; a taken or an empty name is refused, a `|` (the records'
+    separator) becomes a space. *Security quick review* (notes outside the repository): two
+    findings fixed with tests, a ^p replacement across a break holding a review comment deleted
+    the comment, and a renamed name with `|` could alias another document's records; the scans on
+    a stranger's text are bounded (`gapKind` 400 characters, `breakFits` 40 000, fold lookahead
+    64, entries validated and capped at 2000). *Evidence:* `npm test` green (`find` 28 groups: ^p
+    on the page, the gaps, 2000 hostile gaps under 500 ms, folding and finding it again);
+    `find.py` 102 (76), `outline.py` 98 (59) with `dist/tex`, `view.py` 151 (108), `file.py` 98 (87) with `dist/tex` and `dist/word`,
+    `browser.py` 193, `agent.py` 143, `tabs.py` 115, `ribbon.py` 195, `para.py` 204, `page.py` 144 (its speed check on every command). Screenshots in
+    `/tmp/R5-shots` and `/tmp/B12-shots` (collapse, rulers light and dark, Web Layout at 1366, 390
+    and 360 px, Rename). Not done: the page's table of contents leaves the page numbers of
+    collapsed headings blank while they are collapsed (the PDF's are TeX's).
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000
