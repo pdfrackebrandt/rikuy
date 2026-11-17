@@ -369,6 +369,20 @@ def comments_attacks():
         if TEX:
             t = pdf_text(page)
             check('attacks: compiled in the page, the PDF prints the percent signs and no injected word', '5% and 7%' in t and 'INJECTED' not in t, t[:300])
+        # V2: a link naming no sender (a #share= built by hand, a #tex= link) under a kept project's name opens beside it
+        def pack(o):
+            c = zlib.compressobj(9, zlib.DEFLATED, -15)
+            return base64.urlsafe_b64encode(c.compress(json.dumps(o).encode()) + c.flush()).rstrip(b'=').decode()
+        kept = src(page)
+        page.goto('https://rikuy.test/#share=1.' + pack({'v': 1, 'name': 'catdoc', 'main': 'main.tex', 'files': [['main.tex', CAT_DOC.replace('End of text.', 'NOSENDER REWRITE.')]]}))
+        page.wait_for_function('() => window.rikuy.name !== "catdoc"', timeout=20000)
+        st = page.evaluate('async () => { const g = window.rikuy; const v = (await g.allSnaps()).filter((x) => x.name === "catdoc" && x.main === "main.tex"); return { name: g.name, own: v.length ? new Map(await g.versionFiles(v[0])).get("main.tex") : null }; }')
+        check('attacks: a #share= link with no sender opens beside the kept project of its name, which stays as it was', st['name'] == 'catdoc (from a link)' and st['own'] == kept and 'project of its own' in page.evaluate(TOASTS), st)
+        page.evaluate('(t) => window.rikuy.loadProject(new Map([["main.tex", t]]), "main.tex", "main.tex", "Opened")', COMMENTS_DOC)
+        page.wait_for_timeout(300)
+        page.goto('https://rikuy.test/#tex=' + base64.urlsafe_b64encode(CAT_DOC.encode()).rstrip(b'=').decode())
+        page.wait_for_function('() => window.rikuy.name !== "main.tex"', timeout=20000)
+        check('attacks: a #tex= link opens beside a kept project called main.tex', page.evaluate('() => window.rikuy.name') == 'main.tex (from a link)' and src(page) == CAT_DOC, page.evaluate('() => window.rikuy.name'))
         bad = [e for e in errs + errs2 if 'clipboard' not in e.lower()]
         check('attacks: no page errors', not bad, bad[:3])
         A.close(); B.close()

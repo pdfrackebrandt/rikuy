@@ -308,7 +308,9 @@ What either link does when opened:
 - The document travels in the part of the address after #, which browsers never send to a
   server: nothing is uploaded, and the host puts no limit on its length.
 - It takes the place of the document that was open. That one is not lost: a version of it is
-  kept first, and Review, Versions in the side panel restores it.
+  kept first, and Review, Versions in the side panel restores it. Where this browser already
+  keeps a document of the same name (and main file), the link's document opens beside it as
+  "Name (from a link)", or "Name (from <by>)", and the kept one stays as it was.
 - It is treated as someone else's: programs it would start through TeX's shell escape stay off,
   and live figures wait for a click, until the person allows them. TeX runs only when the
   person has the PDF preview open or presses Download PDF.

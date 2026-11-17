@@ -187,13 +187,14 @@ export const collab = {
       if (n === this.name && o.main === this.main && (this.assetBlobs.size || this.extra.size || this.orig.size)) return true;
       try { const b = await kvGet('bin:' + n + '|' + o.main); return !!(b && ((b.assets || []).length || (b.extra || []).length || (b.orig || []).length)); } catch (e) { return false; }
     };
-    // (review M1) a link from someone else under the name of a project this browser keeps opens as
-    // a project of its own beside it, never over it: whoever sent it may have relabelled a copy
-    // back as a new link. Only the reader's own copy of that sender's document, which this
-    // browser marked as theirs when it first opened, is opened over (kept as a version).
-    const snaps = by ? await this.allSnaps() : [];
-    const theirsAlready = async (n) => { try { const r = await kvGet('share:' + n + '|' + o.main); return !!(r && r.by === by); } catch (e) { return false; } };
-    const taken = async (n) => (await keeps(n)) || (!!by && ((n === this.name && o.main === this.main) || snaps.some((v) => v.name === n && v.main === o.main)) && !(await theirsAlready(n)));
+    // (review M1, V2) a link under the name of a project this browser keeps opens as a project of
+    // its own beside it, never over it, whether it names a sender or none (#tex=, a #share= built
+    // by hand): whoever made it may have relabelled a copy back as a new link. Only the reader's
+    // own copy of that sender's document, which this browser marked as theirs when it first
+    // opened, is opened over (kept as a version).
+    const snaps = await this.allSnaps();
+    const theirsAlready = async (n) => { if (!by) return false; try { const r = await kvGet('share:' + n + '|' + o.main); return !!(r && r.by === by); } catch (e) { return false; } };
+    const taken = async (n) => (await keeps(n)) || (((n === this.name && o.main === this.main) || snaps.some((v) => v.name === n && v.main === o.main)) && !(await theirsAlready(n)));
     let name = o.name || o.main;
     for (let k = 1; await taken(name); k++) name = (o.name || o.main) + ' (' + (by ? 'from ' + by : 'from a link') + (k > 1 ? ' ' + k : '') + ')';
     const apart = name !== (o.name || o.main);
@@ -204,7 +205,7 @@ export const collab = {
     // from a link, so it compiles restricted until they allow more)
     // (a guest's record kept under this name, from an earlier link, would make them a guest of
     // that sender in this document at the next start)
-    if (o.own) { kvDel('share:' + this.name + '|' + this.main).catch(() => {}); this.toast('The document from the link is open. The one you had is under Review, Versions.', 7000); return; }
+    if (o.own) { kvDel('share:' + this.name + '|' + this.main).catch(() => {}); this.toast(apart ? 'The document from the link is open as a project of its own, ' + name + ': this browser keeps a document under that name, which stays as it was.' : 'The document from the link is open. The one you had is under Review, Versions.', 9000); return; }
     if (o.role === 'back') {
       this.toast(by + "'s copy is open" + (apart ? ' as a project of its own, ' + name + ', beside yours' : '') + '. This browser does not have the version you shared, so their edits cannot be marked; your earlier text is under Review, Versions.', 10000);
       return;

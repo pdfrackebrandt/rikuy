@@ -2877,7 +2877,12 @@ Tests:
     (hyperref reads a quoted one as a format); SOURCES.md names Harper's source tag and commit and
     says its module is upstream's build pinned by hash. Each repro is a test (`test/share.py
     attacks`, compiled in the page: the injected words are not in the PDF; `test/review.test.mjs`,
-    `test/word.test.mjs`, `spell.py`, `refs.py`).
+    `test/word.test.mjs`, `spell.py`, `refs.py`). Its verification left four: any project TeX file
+    naming catcode, cctab, makeother, @sanitize, dospecials or ^^ in any syntax refuses comment
+    lines; a link naming no sender (`#tex=`, a `#share=` built by hand) opens beside a kept project
+    of its name as "Name (from a link)" too (llms.txt says so); `bodyAt` skips `\verb` to its
+    delimiter and reads `\url` and `\href` addresses whole, so a `%20` keeps the count; a file the
+    document lists as it stands (`\lstinputlisting` and its like) takes no comment line.
 
 ## Open tasks
 
