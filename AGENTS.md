@@ -2,8 +2,10 @@
 
 Rikuy is a LaTeX editor in the browser: you type on the typeset page and edits patch the
 `.tex` source; real TeX Live 2026, compiled to WebAssembly, runs in a Web Worker to make the
-PDF. Read this file first, then `docs/ARCHITECTURE.md` for how the parts fit, and the table at
-the top of `PLAN.md` for where the project stands. Everything below was true when written; if
+PDF. Read this file first, then `HANDOFF.md` for the work in flight (several agents build Rikuy
+and any of them may stop mid task: it says what is half done and how to carry it on), then
+`docs/ARCHITECTURE.md` for how the parts fit, and the table at the top of `PLAN.md` for where the
+project stands. Everything below was true when written; if
 a command fails, trust the code and fix this file.
 
 ## Map
@@ -26,6 +28,7 @@ a command fails, trust the code and fix this file.
 | `docs/ARCHITECTURE.md` | how the editor, the worker, the programs and the tree fit, with the functions to start at |
 | `docs/HOSTING.md` | the hosted Rikuy on Cloudflare Pages: what the maintainer sets up once, what the workflows do, rolling back, which browsers do what |
 | `PLAN.md` | status, numbers, finished and open tasks, and the rules for commits |
+| `HANDOFF.md`, `docs/handoff/`, `docs/reviews/` | the work in flight and how another agent carries it on (Handing off, below); the Word gap list every batch worked from (`GAP.md`), the brief its authors got, the round 3 list; the reviews of the batches in flight |
 | `CONTRIBUTING.md`, `SECURITY.md`, `docs/REVIEW_PROCESS.md` | how to send a change, how to report a hole, and the review every change that is not small goes through (a written plan, a fresh reader restating it, hostile reviewers, verdicts in the commit message) |
 | `SOURCES.md`, `NOTICE`, `LICENSES/` | where every shipped part's source is, its license, and the license texts not elsewhere in the repository |
 | `.github/` | CI (`npm test`, the corpus model run, the editor in Chromium, actionlint), `tex.yml` (on every push to `main`: builds `dist/tex` from the pinned inputs or takes it from the cache when they are unchanged, checks the manifest, runs `test/engines.py`, `test/pdf.py` and the offline compile, keeps `dist/` as a workflow artifact), `deploy.yml` (deploys that `dist/` to Cloudflare Pages once the TeX run passed; `docs/HOSTING.md`), `vendor.yml` (rebuilds each program in `tex/vendor/` from an empty `RIKUY_SRC` and fails unless every file has the committed SHA-256), the arXiv corpus workflow, issue and pull request templates |
@@ -102,6 +105,21 @@ a command fails, trust the code and fix this file.
 - What an agent using Rikuy (not changing it) reads: `llms.txt` and `llms-full.txt` on the site, written by `llms()` in `build/app.mjs`; the scripting surface is `window.rikuy.api` (`src/app.js`), and `test/agent.py` checks that an agent finds every control by its name.
 - What ships and deploys: a merge to `main` runs `tex.yml`, and `deploy.yml` puts that run's `dist/` on Cloudflare Pages (`docs/HOSTING.md`). Nothing else publishes.
 
+## Handing off
+
+Rikuy is built by several agents (Claude, Grok Bot, Pedro himself), and any of them may stop in
+the middle of a task. Work is never kept only on one machine:
+
+- Commit each finished step on its branch and push it; on an unmerged branch a commit
+  "WIP: done X; left Y" is fine.
+- Stopping mid task, with changes not ready to commit or a merge half done:
+  `sh dev/wip.sh [worktree] "done X; left Y"` pushes the worktree as it stands to `wip/<branch>`
+  (a fast forward each time; the worktree is not touched). `HANDOFF.md` says how to pick one up.
+- Every open pull request ends with a `## Handoff` section (state, next step, where its review
+  is); whoever stops updates it, and `HANDOFF.md`'s table when the list changes.
+- A review is a file, `docs/reviews/<batch>.md`, with each verification appended to it.
+- Never force push; a branch that must take main merges main.
+
 ## Checking a change
 
 Pick the checks by what you touched, and run them before you call it done:
@@ -121,7 +139,7 @@ Pick the checks by what you touched, and run them before you call it done:
 - `dist/tex` is reproducible: the same inputs give `dev/dist-manifest.txt` byte for byte. Update the manifest only together with the change that moves it.
 - Programs in `tex/vendor/` are build outputs of `tex/build_tools.sh`; never edit or replace them by hand.
 - Result files (`dev/*-results.jsonl`) are replaced by a full run, never appended to by hand.
-- Commits follow `PLAN.md`'s rules: one commit per finished task, its message saying what changed and the evidence; no status commits.
+- Commits follow `PLAN.md`'s rules: one commit per finished task, its message saying what changed and the evidence; no status commits (but `HANDOFF.md`, and "WIP:" commits on an unmerged branch, see Handing off).
 - Code comments say why, in plain words; keep the style of the file you are in.
 
 ## Pitfalls already met
