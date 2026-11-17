@@ -120,6 +120,23 @@ if (corpus) {
   const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { if (e.name.startsWith('.')) continue; const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (e.name.endsWith('.tex')) { const t = fs.readFileSync(p, 'utf8'); if (/\\documentclass/.test(t)) add(path.dirname(p), e.name); } } };
   walk(corpus);
 }
+// (R1 review M1) tabbings far down a file: each read again by itself, so a keystroke before them
+// leaves the incremental build equal to the full one and every letter after a \= in place
+{
+  const tb = (k) => '\\begin{tabbing}\nName' + k + '\\=Value\\=Note\\kill\nName\\>Value\\>Note\\\\\nAlpha \\> Beta \\> Gamma\n\\end{tabbing}\n\n';
+  const t0 = '\\documentclass{article}\n\\begin{document}\nFirst plain paragraph typed in.\n\n' + ('%' + 'x'.repeat(98) + '\n').repeat(3000) + Array.from({ length: 10 }, (_, k) => tb(k)).join('') + 'End.\n\\end{document}\n';
+  const prev = buildModel({ files: new Map([['main.tex', t0]]), main: 'main.tex' });
+  const at = t0.indexOf('typed in') + 5, t1 = t0.slice(0, at) + 'x' + t0.slice(at);
+  const was = INCR.reused;
+  const a = buildModel({ files: new Map([['main.tex', t1]]), main: 'main.tex' }, prev);
+  const fastPath = INCR.reused > was;
+  INCR.on = false;
+  const b = buildModel({ files: new Map([['main.tex', t1]]), main: 'main.tex' }, prev);
+  INCR.on = true;
+  const cells = (m) => m.blocks.filter((u) => u.items[0] && u.items[0].tab).map((u) => u.items.map((it) => (it.inl || []).map((c) => (c.kids || []).map((x) => x.t || '').join('')).join('|')).join('/'));
+  check('a keystroke before ten tabbings far down: the incremental build is the full one (' + (fastPath ? 'fast path' : 'full') + ')', sameModels(a, b));
+  check('and every letter after a \\= is in place in both', cells(b).length === 10 && cells(b).every((x, k) => x === 'Name' + k + '|Value|Note/Name|Value|Note/Alpha |Beta |Gamma ') && JSON.stringify(cells(a)) === JSON.stringify(cells(b)), cells(b).slice(-1));
+}
 // (the short run: every document, fewer edits, the 120 KB paper the fewest; each edit there is
 // two full builds and two serialisations)
 let failsBefore = fail;

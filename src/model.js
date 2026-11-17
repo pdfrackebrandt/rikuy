@@ -2236,28 +2236,31 @@ class Builder {
     this.tbCount.set(ctx.f, ord);
     const key = ctx.f + ':tb' + ord, fns = [];
     // (the parser reads \= as the macron accent, which takes what follows as its letter: here it
-    // sets a stop, so the environment's text is read again with each \= as \>, a control
-    // symbol of the same length taking nothing, its place told apart by the source)
+    // sets a stop, so the environment's text alone is read again with each \= as \>, a control
+    // symbol of the same length taking nothing, its place told apart by the source, and the
+    // offsets moved to the file's; the same reading in a full build and an incremental one)
     let nodes = nd.nodes;
     const body = ctx.src.slice(nd.be, nd.es);
-    // (the spaces before it cost as much as the file before it: a stranger's file of many
-    // tabbings far down is read so up to a budget per build, then as the parser read it)
-    if (body.indexOf('\\=') >= 0 && body.length < 200000 && (this.tbBudget = (this.tbBudget ?? 2e7) - nd.be - body.length) > 0) {
-      const fake = ' '.repeat(nd.be) + body.replace(/(?<!\\)((?:\\\\)*)\\=/g, '$1\\>');
-      const r = parse(fake, { userSigs: this.userSigs });
+    if (body.indexOf('\\=') >= 0) {
+      const r = parse(body.replace(/(?<!\\)((?:\\\\)*)\\=/g, '$1\\>'), { userSigs: this.userSigs });
       const ns = Array.isArray(r) ? r : (r && r.nodes) || null;
-      // (the spaces standing for the text before it are one text node, cut to the environment's)
-      if (ns) nodes = ns.filter((n) => n.e > nd.be).map((n) => (n.s < nd.be ? { ...n, s: nd.be } : n));
+      if (ns) { shiftNodes(ns, nd.be); nodes = ns; }
     }
     const isSet = (n) => ctx.src[n.s] === '\\' && ctx.src[n.s + 1] === '=';
     const lines = [];
     let cur = { cells: [[]], sets: false, kill: false, s: nd.be };
-    const end = (n, kill) => { cur.kill = !!kill; cur.e = n.s; lines.push(cur); cur = { cells: [[]], sets: false, kill: false, s: n.e }; };
+    let margin = 0;
+    const end = (n, kill) => { cur.kill = !!kill; cur.e = n.s; lines.push(cur); cur = { cells: [[]], sets: false, kill: false, s: n.e, margin }; };
+    cur.margin = 0;
     for (const n of nodes) {
       if (n.t === 'cmd' && n.name === '\\') { end(n); continue; }
       if (n.t === 'cmd' && n.name === 'kill') { end(n, true); continue; }
       if (n.t === 'cmd' && (n.name === '=' || n.name === '>')) { if (n.name === '=' || isSet(n)) cur.sets = true; cur.cells.push([]); continue; }
-      if (n.t === 'cmd' && /^(?:\+|-|<|'|`|pushtabs|poptabs)$/.test(n.name)) continue;
+      // (\+ and \- move the left margin to the next stop and back for the lines after, \< this
+      // line's back by one: its first field starts at that stop)
+      if (n.t === 'cmd' && (n.name === '+' || n.name === '-')) { margin = Math.max(0, margin + (n.name === '+' ? 1 : -1)); continue; }
+      if (n.t === 'cmd' && n.name === '<') { cur.back = (cur.back || 0) + 1; continue; }
+      if (n.t === 'cmd' && /^(?:'|`|pushtabs|poptabs)$/.test(n.name)) continue;
       cur.cells[cur.cells.length - 1].push(n);
     }
     cur.e = nd.es;
@@ -2272,6 +2275,8 @@ class Builder {
       });
       const it = { type: 'p', inl, indent: false, cls: (env.cls || '') + ' tabl' + (L.kill ? ' tabk' : ''), ctx: 'tab', f: ctx.f, dir: this.dirOf(), tab: key };
       if (L.sets) it.tabSets = true;
+      const lm = Math.max(0, (L.margin || 0) - (L.back || 0));
+      if (lm) it.tabFrom = lm;
       if (k === 0) it.sbThm = true;
       if (k === lines.length - 1) it.saThm = true;
       return it;
@@ -3567,6 +3572,21 @@ function rawCut(src, n) {
   if (n.t === 'verb') { const k = src.slice(n.s, n.e).search(BLANK); return k < 0 ? -1 : n.s + k; }
   if (n.t === 'cmd') for (const a of n.args || []) if (a && a.raw) { const k = src.slice(a.s, a.e).search(BLANK); if (k >= 0) return a.s + k; }
   return -1;
+}
+
+// (R1) a parse of part of a file moved to where that part stands in it: every offset of its nodes
+// and their arguments
+const NODE_OFFSETS = ['s', 'e', 'is', 'ie', 'bs', 'be', 'es', 'nameEnd'];
+function shiftNodes(ns, d) {
+  const stack = [ns];
+  for (let n = 0; stack.length && n < 1e6; n++) {
+    const x = stack.pop();
+    if (!x || typeof x !== 'object') continue;
+    if (Array.isArray(x)) { for (const y of x) stack.push(y); continue; }
+    for (const k of NODE_OFFSETS) if (typeof x[k] === 'number') x[k] += d;
+    if (x.nodes) stack.push(x.nodes);
+    if (x.args) stack.push(x.args);
+  }
 }
 
 // Accumulates characters into editable segments.

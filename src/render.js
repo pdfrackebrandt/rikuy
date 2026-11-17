@@ -532,7 +532,7 @@ export class Renderer {
     // (R1) a paragraph of pdflscape's landscape: on turned pages (src/layout.js)
     if (it.land) item.land = it.land;
     // (R1) a line of a tabbing: its fields at the stops (src/layout.js tabStops)
-    if (it.tab) { item.tab = it.tab; item.tabSets = !!it.tabSets; }
+    if (it.tab) { item.tab = it.tab; item.tabSets = !!it.tabSets; item.tabFrom = it.tabFrom || 0; }
     return item;
   }
 

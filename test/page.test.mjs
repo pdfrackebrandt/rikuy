@@ -738,6 +738,9 @@ ok('R1: the model: \\markboth and \\markright as marks, nolinenumbers\' lines, l
   const tab = items.filter((i) => i.tab);
   assert.equal(tab.length, 3); assert.ok(tab[0].tabSets && !tab[1].tabSets && /tabk/.test(tab[0].cls));
   assert.deepEqual(tab[1].inl.map((c) => c.kids.map((k) => k.t).join('')), ['x ', 'y']);
+  // (review L1: \+ starts the lines after it at the next stop, \- takes that back, \< for one line)
+  const t2 = buildModel({ files: new Map([['main.tex', doc('', '\\begin{tabbing}\nAa \\= Bb \\= Cc\\kill\n\\+ In \\> x\\\\\nmore\\\\\n\\<back\\\\\n\\- Out\n\\end{tabbing}')]]), main: 'main.tex' }).blocks.flatMap((b) => b.items).filter((i) => i.tab);
+  assert.deepEqual(t2.map((i) => i.tabFrom || 0), [0, 0, 1, 0, 1], "\\- moves the margin back for the lines after its own");
   assert.ok(!JSON.stringify(items).includes('"t":"R"'), 'no mark printed in the text');
 });
 
@@ -746,6 +749,8 @@ ok('R1: club and widow penalties read from the preamble; flush or ragged pages',
   assert.deepEqual(PS.penalties(doc('\\widowpenalty=10000\n\\clubpenalty 0\n')), { widow: 10000, club: 0, flush: false });
   assert.deepEqual(PS.penalties(doc('', 'x', '\\documentclass{book}')), { widow: 150, club: 150, flush: true });
   assert.deepEqual(PS.penalties(doc('\\raggedbottom\n', 'x', '\\documentclass[twoside]{article}')).flush, false);
+  // (review L2: the standard classes are flush in two columns)
+  assert.equal(PS.penalties(doc('', 'x', '\\documentclass[twocolumn]{article}')).flush, true);
   assert.deepEqual(PS.penalties(doc('\\usepackage[all]{nowidow}\n')), { widow: 10000, club: 10000, flush: false });
   // a stranger's spaces read once
   const t = Date.now();

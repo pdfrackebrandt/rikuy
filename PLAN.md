@@ -2751,8 +2751,23 @@ Tests:
     where the page draws it, the hand written mark and the title in the header, the tabbing's
     fields and the filled word where the page draws them, the club line where the page ends its
     page; phones at 390 and 360 px with touch; screenshots in `/tmp/R1-shots`).
-
-## Open tasks
+61a. **R1 review: the findings of the hostile review of 6bb2975 fixed, each with its case as a
+    test.** H1: the `\topskip` allowance and the plan's 1.5 px tolerance together let a page hold
+    more than TeX's (a memoir document went from 12 pages, matching TeX, to 10): the tolerance is
+    taken off where the allowance is added (the memoir document in `page.py` `r1_review`, 12 pages
+    each starting with TeX's words). M1: a tabbing is read again by itself, its offsets moved to
+    the file's, with no padding and no budget, so a full build and an incremental one read every
+    tabbing alike (past the old budget the full build ate the letter after each `\=`;
+    `incremental.test.mjs`). M2: a LibreOffice Word file names its Normal style without
+    `w:default`: the paragraph style called Normal is taken (every paragraph had come in wrapped in
+    `spacing{1.15}` and hand set left alignment was lost; `word.test.mjs`, and the review's file
+    gives no setspace and its three flushleft paragraphs). Lows: L1 `\+`, `\-` and `\<` move a
+    tabbing's lines to their stops; L2 the standard classes' two columns are flush bottomed; L3 a
+    turned Word section keeps its header and footer inside its own top and bottom margins. L4
+    (inside landscape pages with a footnote and an [h] float the cuts differ from TeX's) is left: the
+    review did not trace it. Evidence: the review's page break table on its 26 no-wrap documents:
+    page starts agreeing with TeX's 214 of 303 (R1 210/301, main 152/304), page counts equal 17
+    (R1 16, main 16), memoir 12 pages 9/9 again.
 
 ## Open tasks
 

@@ -589,8 +589,11 @@ function styleInfo(parts) {
     }
     const rpr = kid(s, 'w:rPr');
     if (s.a['w:type'] === 'character') { const c = colorOf(rpr); if (c) S.colors.set(id, c); }
+    // (R1) LibreOffice names its Normal without w:default="1": the paragraph style called Normal
+    if (s.a['w:type'] === 'paragraph' && !S.normalByName && (id === 'Normal' || (val(s, 'w:name') || '').toLowerCase() === 'normal')) S.normalByName = id;
     if (s.a['w:type'] === 'paragraph' && s.a['w:default'] === '1' && +val(rpr, 'w:sz')) S.sz = +val(rpr, 'w:sz');
   }
+  if (!S.normal && S.normalByName) S.normal = S.normalByName;
   return S;
 }
 

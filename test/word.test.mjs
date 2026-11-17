@@ -1698,6 +1698,14 @@ await ok('R1: a foreign Word file\'s left alignment, line spacing, indents and n
   assert.ok(preambleOf(t2).includes('\\usepackage{setspace}\n\\onehalfspacing') && !t2.includes('flushleft') && !t2.includes('\\begin{onehalfspace}'), t2);
 });
 
+await ok('R1 review M2: a LibreOffice file (its Normal style without w:default): its Normal\'s spacing is the document\'s, no paragraph wrapped, a left one still flushleft', async () => {
+  const styles = '<?xml version="1.0"?><w:styles ' + NSW + '><w:docDefaults><w:pPrDefault><w:pPr/></w:pPrDefault></w:docDefaults>'
+    + '<w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/><w:pPr><w:spacing w:line="276" w:lineRule="auto"/><w:jc w:val="both"/></w:pPr></w:style></w:styles>';
+  const tex = open(tiny(wp('Justified words.', '<w:pPr><w:pStyle w:val="Normal"/></w:pPr>') + wp('Left by hand.', '<w:pPr><w:pStyle w:val="Normal"/><w:jc w:val="left"/></w:pPr>') + wp('More justified words.'), { 'word/styles.xml': styles })).tex;
+  assert.ok(!tex.includes('spacing') && !tex.includes('setspace'), tex);
+  assert.ok(bodyOf(tex).includes('\\begin{flushleft}\nLeft by hand.\n\\end{flushleft}') && (bodyOf(tex).match(/flushleft/g) || []).length === 2, bodyOf(tex));
+});
+
 await ok('R1: Word\'s sections: a part in columns as multicols, a part on landscape pages as pdflscape\'s landscape, both ways', async () => {
   const src = doc('Opening words in one column.\n\n\\begin{multicols}{2}\nWords in two columns. More words in them.\n\\end{multicols}\n\nBetween the parts.\n\n\\begin{landscape}\nA wide part on its own pages.\n\\end{landscape}\n\nClosing words.', '\\usepackage{multicol}\n\\usepackage{pdflscape}\n\\usepackage[a4paper]{geometry}\n');
   const files = new Map([['main.tex', src]]);
@@ -1710,6 +1718,9 @@ await ok('R1: Word\'s sections: a part in columns as multicols, a part on landsc
   assert.ok(!/<w:type /.test(sects[0]) && /<w:cols/.test(sects[1]) && /<w:type w:val="continuous"/.test(sects[1]) && /w:num="2"/.test(sects[1]) && /<w:footerReference/.test(sects[0]) && !/Reference/.test(sects.slice(1).join('')), sects.slice(0, 2).join('\n'));
   assert.ok(/w:orient="landscape"/.test(sects[3]) && /<w:pgSz w:w="16838" w:h="11906"/.test(sects[3]) && !/<w:type /.test(sects[3]) && !/<w:type /.test(sects[4]) && !/landscape/.test(sects[4]), sects.slice(3).join('\n'));
   assert.ok(sects.every((x) => /<w:pgMar /.test(x)), 'each section has the page\'s margins');
+  // (review L3: the turned section's header and footer within its own top and bottom margins)
+  const mar = /<w:pgMar w:top="(\d+)" w:right="\d+" w:bottom="(\d+)" w:left="\d+" w:header="(\d+)" w:footer="(\d+)"/.exec(sects[3]);
+  assert.ok(mar && +mar[3] <= +mar[1] - 240 && +mar[4] <= +mar[2] - 240, sects[3]);
   // a foreign file with those sections (no Rikuy part): the same LaTeX
   const plain = edit(E.docx, (x) => x, 'word/document.xml');
   const parts = unzip(plain);

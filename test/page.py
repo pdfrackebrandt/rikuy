@@ -792,6 +792,21 @@ def r1_landscape(page):
     load_doc(page, d); place(page, ('Second', 'Third')); land(page)
     check('R1: two paragraphs selected: one landscape around both', src(page) == DOC('\\usepackage{pdflscape}\n', body='First paragraph here with words.\n\n\\begin{landscape}\nSecond paragraph of the text.\n\nThird paragraph.\n\\end{landscape}'), src(page)[-160:])
 
+def r1_review(page):
+    """The hostile review of 6bb2975: H1, a memoir document's pages (12 in TeX, openright's blank
+    pages 6 and 10) are 12 on the page too, the topskip allowance taking no tolerance past TeX's
+    page; with dist/tex every page starts with the words TeX starts it with"""
+    text = open(os.path.join(ROOT, 'test', 'fixtures', 'r1-memoir.tex'), encoding='utf8').read()
+    load_doc(page, text); page.wait_for_timeout(600)
+    firsts = page.evaluate("[...document.querySelectorAll('#pages > .page')].map((p) => p.querySelector('.flow').textContent.replace(/\\s+/g, ' ').trim().split(' ').slice(0, 3).join(' '))")
+    check('R1 review H1: the memoir document is 12 pages on the page, as TeX makes it', len(firsts) == 12, firsts)
+    if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')): return
+    c = compile_doc(page, text)
+    tex = [' '.join(t.split()) for t in c['txt']]
+    # (a chapter's label and title run together in a page's text: compared without spaces)
+    bad = [(k, f) for k, f in enumerate(firsts) if f and k < len(tex) and f.replace(' ', '') not in tex[k].replace(' ', '')]
+    check('R1 review H1: and each page starts with words TeX sets on that page', c['ok'] and len(c['pdf'].pages) == 12 and not bad, (len(c['pdf'].pages) if c['pdf'] else None, bad[:3]))
+
 PS_BORDER = '\\AddToHook{shipout/background}{\\begin{tikzpicture}[remember picture,overlay]\\path[postaction={decorate},decoration={markings,mark=between positions 0 and 0.9938 step 0.0125 with {\\fill[red] (90:2pt)--(234:2pt)--(18:2pt)--(162:2pt)--(306:2pt)--cycle;}}] ([shift={(1cm,-1cm)}]current page.north west) rectangle ([shift={(-1cm,1cm)}]current page.south east);\\end{tikzpicture}}'
 
 def r1_page_pdf(page):
@@ -833,7 +848,7 @@ def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         for f in (margins_size_orientation, breaks, columns, line_numbers_and_more, header_footer, background, page_setup_dialog, agents_and_keys,
-                  r1_marks_and_lines, r1_docinfo, r1_background, r1_landscape, long_document, compile_pdf, verifier_pdf, r1_page_pdf):
+                  r1_marks_and_lines, r1_docinfo, r1_background, r1_landscape, r1_review, long_document, compile_pdf, verifier_pdf, r1_page_pdf):
             if names and f.__name__ not in names: continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])

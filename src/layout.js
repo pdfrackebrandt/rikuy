@@ -286,7 +286,8 @@ export class Layout {
     // whole line: a page holds (height - topskip) / baselineskip + 1 lines, a line more than a
     // page of lines each a baselineskip tall where LaTeX's classes make the height just that
     const top = Math.max(0, (this.g.bs || 12) * ((this.opts && this.opts.spread) || 1) - (this.g.pt || 10)) * this.px;
-    const H0 = this.g.th * this.px + top, HL = this.g.tw * this.px + top;
+    // (the plan takes a piece up to EPS past its height; the allowance leaves TeX's page no such room)
+    const H0 = this.g.th * this.px + top - (top ? EPS : 0), HL = this.g.tw * this.px + top - (top ? EPS : 0);
     let H = H0, land = null;
     const fnSep = this.g.pt * 1.1 * this.px;
     const two = !!this.g.twoside;
@@ -1032,7 +1033,10 @@ function tabStops(items, stops) {
     }
     const xs = stops.get(it.tab);
     if (!xs) continue;
-    cells.forEach((c, i) => { if (i + 1 < cells.length && xs[i + 1] != null) c.style.width = Math.max(0, xs[i + 1] - (xs[i] || 0)).toFixed(2) + 'px'; });
+    // (after \+ the line's fields start at a later stop: its first one there)
+    const f = Math.min(it.tabFrom || 0, xs.length - 1);
+    cells[0].style.marginLeft = f ? (xs[f] || 0).toFixed(2) + 'px' : '';
+    cells.forEach((c, i) => { const k = i + f; if (i + 1 < cells.length && xs[k + 1] != null) c.style.width = Math.max(0, xs[k + 1] - (xs[k] || 0)).toFixed(2) + 'px'; });
   }
 }
 // (R1) A fill (\hfill, \dotfill, \hrulefill) takes what its line leaves, shared among the fills

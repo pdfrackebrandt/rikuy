@@ -84,7 +84,8 @@ export function pageDocx(parts, P) {
       o.footnotePr || '',
       o.type ? '<w:type w:val="' + o.type + '"/>' : '',
       '<w:pgSz w:w="' + int(land ? P.h : P.w) + '" w:h="' + int(land ? P.w : P.h) + '"' + (!!P.land !== land ? ' w:orient="landscape"' : '') + '/>',
-      land ? '<w:pgMar w:top="' + int(M.left) + '" w:right="' + int(M.top) + '" w:bottom="' + int(M.right) + '" w:left="' + int(M.bottom) + '" w:header="' + int(M.header) + '" w:footer="' + int(M.footer) + '" w:gutter="' + int(M.gutter) + '"/>'
+      // (turned, the header and footer stay within its new top and bottom margins, a line inside)
+      land ? '<w:pgMar w:top="' + int(M.left) + '" w:right="' + int(M.top) + '" w:bottom="' + int(M.right) + '" w:left="' + int(M.bottom) + '" w:header="' + int(Math.min(M.header, Math.max(0, M.left - 240))) + '" w:footer="' + int(Math.min(M.footer, Math.max(0, M.right - 240))) + '" w:gutter="' + int(M.gutter) + '"/>'
         : '<w:pgMar w:top="' + int(M.top) + '" w:right="' + int(M.right) + '" w:bottom="' + int(M.bottom) + '" w:left="' + int(M.left) + '" w:header="' + int(M.header) + '" w:footer="' + int(M.footer) + '" w:gutter="' + int(M.gutter) + '"/>',
       P.border ? '<w:pgBorders w:offsetFrom="page">' + ['top', 'left', 'bottom', 'right'].map((s) => '<w:' + s + ' w:val="' + (P.border.val || 'single') + '" w:sz="' + int(P.border.sz) + '" w:space="' + Math.min(31, int(P.border.space)) + '" w:color="' + (P.border.color || '000000') + '"/>').join('') + '</w:pgBorders>' : '',
       P.lnNum ? '<w:lnNumType w:countBy="' + Math.max(1, int(P.lnNum.countBy)) + '" w:restart="' + P.lnNum.restart + '"/>' : '',

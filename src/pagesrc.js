@@ -1556,7 +1556,8 @@ export function penalties(src, end = preambleEnd(src)) {
   const nw = packageOptions(src, 'nowidow', end);
   if (nw && nw.all) { out.widow = out.club = 10000; }
   const cls = classPage(src);
-  out.flush = !!(cls && cls.twoside);
+  // (the standard classes set \flushbottom when two sided and in two columns)
+  out.flush = !!(cls && (cls.twoside || cls.twocolumn));
   const b = /\\(flushbottom|raggedbottom)(?![A-Za-z@])/g;
   for (let m, n = 0; (m = b.exec(pre)) && n < 200; n++) out.flush = m[1] === 'flushbottom';
   return out;
