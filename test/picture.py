@@ -856,6 +856,16 @@ def r3_review(page):
     page.mouse.up(); page.wait_for_timeout(400)
     b = body(page)
     check('L1: dropped on a list\'s last item, the picture goes after the whole list, where the line was drawn', line and b.index('\\end{itemize}') < b.index('\\begin{center}') < b.index('Last.'), (line, b))
+    # (merge with R1) \hfill beside a wrapped figure, and beside what is left of it, stretches to the
+    # figure's side, not under it; on a landscape page the figure still wraps
+    D9 = WRAP(tall + 'Lefta\\hfill Righta\n\nLeftb\\hfill Rightb', P2)
+    load_doc(page, D9); page.wait_for_timeout(600)
+    st = page.evaluate("""() => { const f = document.querySelector('#pages .wrap-in').getBoundingClientRect(), out = {};
+      for (const w of ['Righta', 'Rightb']) { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(w)); const q = s.getClientRects()[0]; out[w] = [Math.round(q.right), Math.round(q.top)]; }
+      return { left: Math.round(f.left), bottom: Math.round(f.bottom), ...out }; }""")
+    check('merge: \\hfill beside a wrapped figure and beside its empty float ends at the figure, on the first line', all(st[w][0] <= st['left'] + 1 and st[w][0] > st['left'] - 40 and st[w][1] < st['bottom'] for w in ('Righta', 'Rightb')), st)
+    load_doc(page, WRAP('\\begin{landscape}\n' + fig + 'Alpha words beside the figure. ' * 6 + '\n\\end{landscape}', P2 + '\\usepackage{pdflscape}\n')); page.wait_for_timeout(600)
+    check('merge: a wrapfigure on a landscape page (R1) wraps its paragraph', page.evaluate("!!document.querySelector('#pages .page.land .has-wrap > .wrap-in')"), body(page)[:200])
 
 
 def r3_compiled(page):
