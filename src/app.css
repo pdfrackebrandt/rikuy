@@ -1586,7 +1586,7 @@ body.fpainting #pages { cursor: copy; }
 .tabw.tw-left .tab { margin-left: 0; }
 .tabw.tw-right .tab { margin-right: 0; }
 /* Show marks: drawn over the page, taking no room (nothing moves when they show) */
-body.marks-on #pages .it.p:not(.split-a)::after, body.marks-on #pages .it.h::after { content: "¶" / ""; display: inline-block; width: 0; white-space: nowrap; text-indent: 0; padding-inline-start: .12em; color: #3E7BC4; font: normal normal 400 1em/1 var(--font-doc, serif); pointer-events: none; user-select: none; }
+body.marks-on #pages .it.p:not(.split-a)::after, body.marks-on #pages .it.h::after { content: "¶" / ""; display: inline-block; width: 0; white-space: nowrap; text-indent: 0; transform: translateX(.12em); color: #3E7BC4; font: normal normal 400 1em/1 var(--font-doc, serif); pointer-events: none; user-select: none; }
 body.marks-on #pages .a-br::before { content: "↵" / ""; display: inline-block; width: 0; color: #3E7BC4; font-weight: 400; pointer-events: none; }
 body.marks-on #pages .a-sp.fill::before { content: "→" / ""; display: inline-block; width: 0; color: #3E7BC4; font-weight: 400; pointer-events: none; }
 body.marks-on #pages .it.vs { outline: 1px dashed rgba(62, 123, 196, .55); outline-offset: -1px; }
@@ -2055,6 +2055,7 @@ html.pic-drag, html.pic-drag body { touch-action: none; overscroll-behavior: non
 .toc-l-1, .toc-l0 { font-weight: bold; font-size: calc(var(--z-large, 1.2) * 1em); margin-top: .9em; }
 .toc-l-1 .toc-d, .toc-l0 .toc-d { border: 0; }
 
+<<<<<<< HEAD
 /* R4: the Thesaurus pane (src/ui/thespane.js) and grammar's marks (src/cmd/proofing.js) */
 .th-row { display: flex; gap: 6px; align-items: center; }
 .th-row input[type="text"] { flex: 1 1 auto; min-width: 0; }
@@ -2091,3 +2092,31 @@ html.pic-drag, html.pic-drag body { touch-action: none; overscroll-behavior: non
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sp-ctx { color: var(--ink-ui); } :root:not([data-theme="light"]) .sp-ctx .sp-g { color: #8ab4ff; } }
 :root[data-theme="dark"] .sp-ctx { color: var(--ink-ui); }
 :root[data-theme="dark"] .sp-ctx .sp-g { color: #8ab4ff; }
+=======
+/* ---- R1: what the paragraph and page batches left (src/cmd/para.js marks, src/layout.js) ---- */
+.pmk { position: absolute; inset: 0; pointer-events: none; user-select: none; z-index: 2; }
+.pmk > span { position: absolute; color: #3E7BC4; font: 400 var(--fs) / 1 var(--font-doc, serif); }
+.pmk > .pm-sp::before { content: "·" / ""; position: absolute; transform: translate(-50%, -55%); }
+.pmk > .pm-nb::before { content: "°" / ""; position: absolute; transform: translate(-50%, -80%); }
+.pmk > .pm-lb { width: .2em; box-sizing: border-box; border: 1px solid #3E7BC4; border-right: 0; transform: translateX(-50%); }
+@media print { .pmk { display: none; } }
+.wmk.pic img { display: block; }
+.pbd-svg { position: absolute; left: 0; top: 0; overflow: visible; }
+.it.p.tabl { white-space: nowrap; text-align: left; text-align-last: left; text-indent: 0; }
+.it.p.tabl > .y-tab { display: inline-block; white-space: pre; vertical-align: baseline; }
+.it.p.tabk { height: 0; overflow: hidden; visibility: hidden; }
+.pd-tabrow { gap: 6px; align-items: center; flex-wrap: wrap; }
+.pd-tabrow .pd-num { width: 6em; }
+.pd-tablist { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 6px 0 2px; max-height: 8em; overflow: auto; }
+.pd-tabstop { display: inline-flex; align-items: center; gap: 4px; }
+@media (pointer: coarse) { .pd-tabrow .btn, .pd-tabstop .btn, .ps-pic .btn { min-height: 44px; min-width: 44px; } }
+.ps-pic { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+/* (R1) the Tabs dialog on a touch screen: every control a finger's size */
+@media (pointer: coarse) {
+  .pop-tabs .pop-x, .pop-tabs .btn, .pop-tabs .pd-num { min-height: 44px; min-width: 44px; }
+  .pop-tabs .pd-check { min-height: 44px; }
+  .rb .btn[data-cmd="tab-next"] { min-width: 44px; min-height: 44px; }
+  .pop-ps .pop-x, .pop-ps .btn, .pop-ps select, .pop-ps input { min-height: 44px; }
+  .pop.pop-ps, .pop.pop-tabs { max-height: calc(100dvh - 16px); overflow: auto; overscroll-behavior: contain; }
+}
+>>>>>>> origin/main

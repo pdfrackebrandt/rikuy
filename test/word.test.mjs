@@ -1672,6 +1672,7 @@ await ok('an interactive graph goes to Word as its picture, the PDF\'s, with its
   assert.equal(plan.files.size, 0, 'unchanged in Word: the \\rikuywidget block comes back unchanged');
 });
 
+<<<<<<< HEAD
 await ok('R4: endnotes are Word\'s endnotes and come back as \\endnote; the index, a Table of Authorities and the lists are Word\'s fields', () => {
   const src = '\\documentclass{article}\n\\usepackage{enotez}\n\\setenotez{counter-format=roman}\n\\usepackage{imakeidx}\n\\makeindex\n\\makeindex[name=toa,title=Table of Authorities]\n\\begin{document}\n'
     + '\\listoffigures\n\nThe text\\endnote{An endnote with $x^2$.} and a cat\\index{cat!black|textbf} and a case\\index[toa]{1@\\textbf{Cases}!Smith v. Jones, 1 U.S. 2 (1990)} here\\footnote{A footnote.}.\n\n'
@@ -1734,6 +1735,85 @@ await ok('R4: captions of the document\'s own floats and with the number alone g
   assert.match(d, /Scheme 1: A reaction/);
   assert.match(d, /(^|[^e] )1: Plain/);
   assert.ok(!/Figure 1: Plain/.test(d));
+=======
+// (R1) What the paragraph and page batches left: a foreign file's left alignment, line spacing,
+// indents and suppressed line numbers; Word's sections as a part in columns or on landscape pages,
+// both ways; Word's art borders and line styles; the title and author fields of a header; a
+// paragraph without line numbers to Word
+await ok('R1: a foreign Word file\'s left alignment, line spacing, indents and no line numbers come in as LaTeX', async () => {
+  const styles = '<?xml version="1.0"?><w:styles ' + NSW + '><w:docDefaults><w:pPrDefault><w:pPr><w:jc w:val="both"/><w:spacing w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>'
+    + '<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>';
+  const body = wp('Justified words like the rest.') + wp('A ragged paragraph.', '<w:pPr><w:jc w:val="left"/></w:pPr>') + wp('Spaced one and a half.', '<w:pPr><w:spacing w:line="360" w:lineRule="auto"/></w:pPr>')
+    + wp('Also one and a half.', '<w:pPr><w:spacing w:line="360" w:lineRule="auto"/></w:pPr>') + wp('Indented both sides.', '<w:pPr><w:ind w:left="567" w:right="1134"/></w:pPr>')
+    + wp('A hanging paragraph of words.', '<w:pPr><w:ind w:left="567" w:hanging="567"/></w:pPr>') + wp('Not numbered.', '<w:pPr><w:suppressLineNumbers/></w:pPr>')
+    + '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="708" w:footer="708" w:gutter="0"/><w:lnNumType w:countBy="1" w:restart="continuous"/></w:sectPr>';
+  const tex = open(tiny(body, { 'word/styles.xml': styles })).tex, b = bodyOf(tex);
+  assert.ok(b.includes('Justified words like the rest.') && !/flushleft\}\nJustified/.test(b), b);
+  assert.ok(b.includes('\\begin{flushleft}\nA ragged paragraph.\n\\end{flushleft}'), b);
+  assert.ok(b.includes('\\begin{onehalfspace}\nSpaced one and a half.\n\nAlso one and a half.\n\\end{onehalfspace}'), 'neighbours share one environment: ' + b);
+  assert.ok(b.includes('\\begin{adjustwidth}{1cm}{2cm}\nIndented both sides.\n\\end{adjustwidth}'), b);
+  assert.ok(b.includes('\\noindent\\hangindent=1cm A hanging paragraph of words.'), b);
+  assert.ok(b.includes('\\begin{nolinenumbers}\nNot numbered.\n\\end{nolinenumbers}'), b);
+  for (const p of ['\\usepackage{setspace}', '\\usepackage{changepage}', 'lineno']) assert.ok(preambleOf(tex).includes(p), p + ' in ' + preambleOf(tex));
+  // the document's own spacing (Normal at 1.5 lines, left aligned as Word's are): the preamble's,
+  // and a left aligned paragraph there is the document's, so no environment
+  const st2 = styles.replace('<w:jc w:val="both"/><w:spacing w:line="240" w:lineRule="auto"/>', '<w:spacing w:line="360" w:lineRule="auto"/>');
+  const t2 = open(tiny(wp('One.') + wp('Two.', '<w:pPr><w:jc w:val="left"/></w:pPr>'), { 'word/styles.xml': st2 })).tex;
+  assert.ok(preambleOf(t2).includes('\\usepackage{setspace}\n\\onehalfspacing') && !t2.includes('flushleft') && !t2.includes('\\begin{onehalfspace}'), t2);
+});
+
+await ok('R1 review M2: a LibreOffice file (its Normal style without w:default): its Normal\'s spacing is the document\'s, no paragraph wrapped, a left one still flushleft', async () => {
+  const styles = '<?xml version="1.0"?><w:styles ' + NSW + '><w:docDefaults><w:pPrDefault><w:pPr/></w:pPrDefault></w:docDefaults>'
+    + '<w:style w:type="paragraph" w:styleId="Normal"><w:name w:val="Normal"/><w:pPr><w:spacing w:line="276" w:lineRule="auto"/><w:jc w:val="both"/></w:pPr></w:style></w:styles>';
+  const tex = open(tiny(wp('Justified words.', '<w:pPr><w:pStyle w:val="Normal"/></w:pPr>') + wp('Left by hand.', '<w:pPr><w:pStyle w:val="Normal"/><w:jc w:val="left"/></w:pPr>') + wp('More justified words.'), { 'word/styles.xml': styles })).tex;
+  assert.ok(!tex.includes('spacing') && !tex.includes('setspace'), tex);
+  assert.ok(bodyOf(tex).includes('\\begin{flushleft}\nLeft by hand.\n\\end{flushleft}') && (bodyOf(tex).match(/flushleft/g) || []).length === 2, bodyOf(tex));
+});
+
+await ok('R1: Word\'s sections: a part in columns as multicols, a part on landscape pages as pdflscape\'s landscape, both ways', async () => {
+  const src = doc('Opening words in one column.\n\n\\begin{multicols}{2}\nWords in two columns. More words in them.\n\\end{multicols}\n\nBetween the parts.\n\n\\begin{landscape}\nA wide part on its own pages.\n\\end{landscape}\n\nClosing words.', '\\usepackage{multicol}\n\\usepackage{pdflscape}\n\\usepackage[a4paper]{geometry}\n');
+  const files = new Map([['main.tex', src]]);
+  const m = buildModel({ files, main: 'main.tex' });
+  const W = buildWordDoc(m, files, { main: 'main.tex' });
+  const E = exportDocx(P, { doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources: {}, bibs: [], page: pageForWord(m, src), project: { name: 'P', main: 'main.tex', files: [...files] } });
+  const d = text(unzip(E.docx).get('word/document.xml'));
+  const sects = d.match(/<w:sectPr>[\s\S]*?<\/w:sectPr>/g);
+  assert.equal(sects.length, 5, 'four section ends in paragraphs and the body\'s: ' + sects.join('\n'));
+  assert.ok(!/<w:type /.test(sects[0]) && /<w:cols/.test(sects[1]) && /<w:type w:val="continuous"/.test(sects[1]) && /w:num="2"/.test(sects[1]) && /<w:footerReference/.test(sects[0]) && !/Reference/.test(sects.slice(1).join('')), sects.slice(0, 2).join('\n'));
+  assert.ok(/w:orient="landscape"/.test(sects[3]) && /<w:pgSz w:w="16838" w:h="11906"/.test(sects[3]) && !/<w:type /.test(sects[3]) && !/<w:type /.test(sects[4]) && !/landscape/.test(sects[4]), sects.slice(3).join('\n'));
+  assert.ok(sects.every((x) => /<w:pgMar /.test(x)), 'each section has the page\'s margins');
+  // (review L3: the turned section's header and footer within its own top and bottom margins)
+  const mar = /<w:pgMar w:top="(\d+)" w:right="\d+" w:bottom="(\d+)" w:left="\d+" w:header="(\d+)" w:footer="(\d+)"/.exec(sects[3]);
+  assert.ok(mar && +mar[3] <= +mar[1] - 240 && +mar[4] <= +mar[2] - 240, sects[3]);
+  // a foreign file with those sections (no Rikuy part): the same LaTeX
+  const plain = edit(E.docx, (x) => x, 'word/document.xml');
+  const parts = unzip(plain);
+  for (const k of [...parts.keys()]) if (/rikuy/i.test(k)) parts.delete(k);
+  const back = docxToLatex(P, zip(parts), 'x.docx').tex, b = bodyOf(back);
+  assert.ok(/\\begin\{multicols\}\{2\}\nWords in two columns\. More words in them\.\n\\end\{multicols\}/.test(b), b);
+  assert.ok(/\\begin\{landscape\}\nA wide part on its own pages\.\n\\end\{landscape\}/.test(b), b);
+  assert.ok(preambleOf(back).includes('\\usepackage{multicol}') && preambleOf(back).includes('\\usepackage{pdflscape}'), preambleOf(back));
+});
+
+await ok('R1: art and styled page borders, the title and author in a header, a paragraph without line numbers: to Word and back', async () => {
+  const src = '\\documentclass{article}\n\\usepackage{fancyhdr}\n\\pagestyle{fancy}\n\\fancyhf{}\n\\fancyhead[L]{\\thetitle}\n\\fancyhead[R]{\\theauthor}\n\\title{My Title}\n\\makeatletter\\let\\thetitle\\@title\\makeatother\n\\author{Ann Author}\n\\makeatletter\\let\\theauthor\\@author\\makeatother\n\\usepackage{lineno}\n\\linenumbers\n\\usepackage{tikz}\n\\usetikzlibrary{decorations.markings}\n'
+    + '\\AddToHook{shipout/background}{\\begin{tikzpicture}[remember picture,overlay]\\path[postaction={decorate},decoration={markings,mark=between positions 0 and 0.9938 step 0.0125 with {\\fill[red] (90:2pt)--(234:2pt)--(18:2pt)--(162:2pt)--(306:2pt)--cycle;}}] ([shift={(1cm,-1cm)}]current page.north west) rectangle ([shift={(-1cm,1cm)}]current page.south east);\\end{tikzpicture}}\n'
+    + '\\begin{document}\nWords.\n\n\\begin{nolinenumbers}\nNot numbered.\n\\end{nolinenumbers}\n\\end{document}\n';
+  const files = new Map([['main.tex', src]]);
+  const m = buildModel({ files, main: 'main.tex' });
+  const W = buildWordDoc(m, files, { main: 'main.tex' });
+  const E = exportDocx(P, { doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources: {}, bibs: [], page: pageForWord(m, src), project: { name: 'P', main: 'main.tex', files: [...files] } });
+  const parts = unzip(E.docx), d = text(parts.get('word/document.xml')), st = text(parts.get('word/styles.xml'));
+  assert.match(d, /<w:pgBorders w:offsetFrom="page"><w:top w:val="starsBlack" w:sz="8" w:space="28" w:color="FF0000"/);
+  assert.match(text(parts.get('word/header1.xml')), /<w:fldSimple w:instr="TITLE"><w:r><w:t xml:space="preserve">My Title<\/w:t>[\s\S]*<w:fldSimple w:instr="AUTHOR"><w:r><w:t xml:space="preserve">Ann Author</);
+  assert.match(st, /<w:name w:val="No Line Numbers" ?\/>[\s\S]{0,400}<w:suppressLineNumbers \/>/);
+  // opened as a foreign file: an art border, the fields' text
+  for (const k of [...parts.keys()]) if (/rikuy/i.test(k)) parts.delete(k);
+  const back = docxToLatex(P, zip(parts), 'x.docx').tex;
+  assert.ok(back.includes('\\usetikzlibrary{decorations.markings}') && /\\path\[postaction=\{decorate\},decoration=\{markings,mark=between positions 0 and [\d.]+ step [\d.]+ with \{\\fill\[pageborder\] \(90:/.test(back) && back.includes("\\definecolor{pageborder}{HTML}{FF0000}"), preambleOf(back));
+  assert.ok(back.includes('\\fancyhead[L]{My Title}') && back.includes('\\fancyhead[R]{Ann Author}'), preambleOf(back));
+  assert.ok(back.includes('\\begin{nolinenumbers}\nNot numbered.\n\\end{nolinenumbers}'), bodyOf(back));
+>>>>>>> origin/main
 });
 
 console.log('word: ' + n + ' groups of checks passed');
