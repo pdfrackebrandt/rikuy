@@ -27,8 +27,17 @@ const TYPED = ['a', 'b', 'e', 'x', ' ', ' ', 'word ', 'Z', 'é', '😀', '--', "
   '\\cite{k}', '\\ref{sec:1}', '\\label{new}', '\\footnote{n}', '\n', '\n\n', '% c\n', '\\section{S}', '\\newcommand{\\q}{Q}', '\\verb|v|', '$\\ref{x}$', '\\ldots{}', "\\'e", '\\\\'];
 
 const PLAIN = ['a', 'e', 'n', 's', 't', ' ', 'the ', 'X', 'é', '.', ','];
-let steps = 0, fast = 0;
+let steps = 0, fast = 0, shareSteps = 0, shareFast = 0;
+// (the documents whose every edit is meant to leave the fast path: R3's objects sit in a Form, its
+// fields read the page, so each keystroke there is a full build. Their edits are compared with the
+// full build as every other's; they only stay out of the share of edits the fast path takes, which
+// the two batches' documents together would otherwise pull under its floor by their count alone)
+const FULL_PATH_DOCS = new Set(['objects (R3): a cover page, fields, form fields, a wrapped figure, a bordered picture, a drawing']);
 function stream(name, files, main, n) {
+  const s0 = steps, f0 = fast;
+  try { return streamOf(name, files, main, n); } finally { if (![...FULL_PATH_DOCS].some((d) => name.startsWith(d + ' '))) { shareSteps += steps - s0; shareFast += fast - f0; } }
+}
+function streamOf(name, files, main, n) {
   let cur = new Map(files);
   let prev;
   try { prev = buildModel({ files: cur, main }); } catch (e) { return; }
@@ -154,7 +163,7 @@ docs.forEach(([name, files, main], i) => {
   const big = name.includes('long') || name.includes('sample') || name.includes('styles') || name.includes('pictures') || name.includes('references');
   stream(name + ' ' + main, files, main, i >= repoDocs ? 16 : FULL ? (big ? 800 : 400) : name.includes('dev/bench/long') ? 25 : 80);
 });
-check('every edit of every stream: the incremental model is the full build\'s (' + steps + ' edits, ' + fast + ' on the fast path, ' + docs.length + ' documents)', fail === failsBefore && fast > steps / 20, [steps, fast]);
+check('every edit of every stream: the incremental model is the full build\'s (' + steps + ' edits, ' + fast + ' on the fast path, ' + docs.length + ' documents)', fail === failsBefore && shareFast > shareSteps / 20, [steps, fast, shareSteps, shareFast]);
 console.log('edits ' + steps + ', on the fast path ' + fast + ', documents ' + docs.length);
 
 // every numeric field of a model that moves with the text before it is a name OFFSET_KEYS holds: a
