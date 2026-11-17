@@ -17,6 +17,7 @@ import { bidiDoc, dirSpan, hasRtl, scanDir } from './wordbidi.js';
 import { parseKV } from './preamble.js';
 import { unescapeAlt } from './picture.js';
 import { tableAlt } from './table.js';
+import { sectionRuns, sectionType } from './pageword.js';
 
 export const API = [1, 23, 1, 2];
 const OBJ = '\uFFFC';
@@ -154,6 +155,8 @@ export function paraStyle(it, O = {}) {
   if (it.hang) parts.push('Hanging ' + cm(it.hang));
   if (it.keepNext) parts.push('Keep With Next');
   if (it.keepLines) parts.push('Keep Lines Together');
+  // (R1) lineno's nolinenumbers: Word's Suppress line numbers
+  if (it.noLn) parts.push('No Line Numbers');
   return parts.join(', ');
 }
 
@@ -227,9 +230,17 @@ class Walker {
   walk() {
     const out = [];
     const units = this.m.blocks;
+    // (R1) where a part in columns or on landscape pages begins and ends, the section before it ends
+    // (src/pageword.js sectionRuns; src/wordpage.js gives each its sheet, margins and the rest)
+    const runs = sectionRuns(this.m), at = new Map(runs.map((r, j) => [r.i, j]));
     for (let i = 0; i < units.length; i++) {
       const u = units[i];
       const items = u.items;
+      const j = at.get(i);
+      if (j > 0) {
+        const R = runs[j - 1], type = sectionType(runs, j - 1);
+        out.push({ t: 'RawBlock', c: ['openxml', '<w:p><w:pPr><w:sectPr>' + (type ? '<w:type w:val="' + type + '"/>' : '') + (R.kind === 'L' ? '<w:pgSz w:orient="landscape"/>' : '') + (R.kind[0] === 'C' ? '<w:cols w:num="' + +R.kind.slice(1) + '"/>' : '') + '</w:sectPr></w:pPr></w:p>'] });
+      }
       if (items.length && items[0].type === 'h' && items[0].level === 'abs') { this.abstract(items.slice(1), u); continue; }
       // a list: its items, flat in the model, become nested Word lists; also one that stands
       // among paragraphs in an environment the model reads as one block (otherlanguage, small)

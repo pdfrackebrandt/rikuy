@@ -8,6 +8,7 @@ import { isBalanced } from './parser.js';
 import { safeUrl } from './wordast.js';
 import { scriptNeeds, scriptLines, scriptSetup, otherDirection, INDIC, MORE } from './scripts.js';
 import { pageDocx, pageLatex, relsMap } from './wordpage.js';
+import { wrapMulticols } from './pagesrc.js';
 import { docSpacing } from './parasrc.js';
 import { tableExtras, applyTableExtras } from './wordtable.js';
 
@@ -281,13 +282,14 @@ export function paraStyles(st, line) {
     const nm = /<w:name w:val="([^"]{1,200})"/.exec(inner);
     if (!nm || /<w:pPr>/.test(inner)) return all;
     const parts = nm[1].split(', ');
-    const known = /^(Centred|Right Aligned|Left Aligned|Line Spacing [\d.]{1,6}|Indent -?[\d.]{1,6}cm -?[\d.]{1,6}cm|Hanging [\d.]{1,6}cm|Keep With Next|Keep Lines Together)$/;
+    const known = /^(Centred|Right Aligned|Left Aligned|Line Spacing [\d.]{1,6}|Indent -?[\d.]{1,6}cm -?[\d.]{1,6}cm|Hanging [\d.]{1,6}cm|Keep With Next|Keep Lines Together|No Line Numbers)$/;
     // (Centred and Right Aligned alone have theirs already, by their ids)
-    if (parts.length < 2 && !/^(Left Aligned|Line Spacing|Indent|Hanging|Keep)/.test(parts[0])) return all;
+    if (parts.length < 2 && !/^(Left Aligned|Line Spacing|Indent|Hanging|Keep|No Line Numbers)/.test(parts[0])) return all;
     if (!parts.every((x) => known.test(x))) return all;
     let p = '';
     if (parts.includes('Keep With Next')) p += '<w:keepNext />';
     if (parts.includes('Keep Lines Together')) p += '<w:keepLines />';
+    if (parts.includes('No Line Numbers')) p += '<w:suppressLineNumbers />';
     const ls = parts.find((x) => x.startsWith('Line Spacing '));
     if (ls) p += lineXml(parseFloat(ls.slice(13)));
     const ind = parts.find((x) => x.startsWith('Indent ')), hg = parts.find((x) => x.startsWith('Hanging '));
@@ -822,6 +824,8 @@ function codeSpaces(tex) {
 function unmark(tex, info, N, S) {
   const count = (k, n = 1) => { N[k] = (N[k] || 0) + n; };
   tex = uncode(tex);
+  // (R1) a paragraph's settings mark on a line of its own, before what the marks below make of it
+  tex = tex.replace(/(^|\n)(\uE002[\uE010-\uE01F]{17}\uE001)/g, '$1$2\n');
   // the groups of paragraphs directions() set between marks: one that runs against the
   // document goes into the environment that turns it. Where neither Arabic nor Hebrew is set up
   // (another right to left script, which has no font here) nothing can turn a paragraph, and one that
@@ -903,8 +907,68 @@ function unmark(tex, info, N, S) {
     count('colors');
     return '\\textcolor[HTML]{' + hex + '}{' + t + '}';
   });
+  tex = paraMarks(tex, info, N);
   // marks that found no place go; the comments' stay for comments()
-  return tex.replace(/[\uE003\uE005][\uE010-\uE01F]*\uE001?/g, '').replace(/[\uE002\uE004\uE006-\uE00F]/g, '');
+  return tex.replace(/[\uE002\uE003\uE005][\uE010-\uE01F]*\uE001?/g, '').replace(/[\uE002\uE004\uE006-\uE00F]/g, '');
+}
+
+// (R1) What premark marked of paragraphs and sections (src/docx.js mark.para), as Rikuy writes it:
+// a part in columns as multicols (ended before each float in it and begun again after it, as
+// Layout › Columns does), one on landscape pages as pdflscape's landscape; a paragraph's settings
+// as B2's environments around it, neighbours with the same settings sharing them: setspace's
+// spacing outermost, then changepage's adjustwidth, flushleft, lineno's nolinenumbers; a hanging
+// indent as \noindent\hangindent at its head
+const cmOf = (twips) => (Math.round(twips / 1440 * 254) / 100) + 'cm';
+function paraMarks(tex, info, N) {
+  const count = (k, n = 1) => { N[k] = (N[k] || 0) + n; };
+  if (tex.indexOf('\uE002') < 0) return tex;
+  // the sections' paragraphs of their own
+  tex = tex.replace(/(^|\n)\uE002([\uE010-\uE01F]{1,3})\uE001(?=\n|$)/g, (all, nl, c) => {
+    const k = decode(c);
+    const line = /^A[2-9]$/.test(k) ? '\\begin{multicols}{' + k[1] + '}' : k === 'B' ? '\\end{multicols}' : k === 'C' ? '\\begin{landscape}' : k === 'D' ? '\\end{landscape}' : null;
+    if (!line) return nl;
+    if (k === 'C' || k[0] === 'A') count(k === 'C' ? 'landscape' : 'columns');
+    return nl + line;
+  });
+  tex = tex.replace(/(\\begin\{(?:multicols\}\{\d\}|landscape\}))\n\n/g, '$1\n').replace(/\n\n(\\end\{(?:multicols|landscape)\})/g, '\n$1');
+  // (no float inside multicols: TeX sets it and leaves it out of the PDF)
+  tex = tex.replace(/\\begin\{multicols\}\{(\d)\}\n([\s\S]*?)\n\\end\{multicols\}/g, (all, n, body) => {
+    if (!/\\begin\{(?:figure|table)\}/.test(body)) return all;
+    const t = '\n' + body + '\n';
+    let out = t;
+    const ed = wrapMulticols(t, 0, t.length, n);
+    for (const e of ed) out = out.slice(0, e.s) + e.t + out.slice(e.e);
+    return out.trim();
+  });
+  // the paragraphs' settings
+  const lineno = !!(info.sect && (info.sect.c || []).some((x) => x && x.n === 'w:lnNumType'));
+  const blocks = tex.split('\n\n'), out = [];
+  const head = /^\uE002([\uE010-\uE01F]{17})\uE001/;
+  for (let i = 0; i < blocks.length;) {
+    const m = head.exec(blocks[i]);
+    if (!m) { out.push(blocks[i]); i++; continue; }
+    const group = [];
+    for (; i < blocks.length; i++) { const mm = head.exec(blocks[i]); if (!mm || mm[1] !== m[1]) break; group.push(blocks[i].slice(mm[0].length).replace(/^\n/, '')); }
+    const h = decode(m[1]).toLowerCase();
+    const flags = parseInt(h.slice(1, 3), 16), mult = parseInt(h.slice(3, 6), 16), L = parseInt(h.slice(6, 10), 16), R = parseInt(h.slice(10, 14), 16), H = parseInt(h.slice(14, 17), 16);
+    const open = [], close = [];
+    const env = (b, e) => { open.push(b); close.unshift(e); };
+    if (flags & 4) {
+      if (mult === 150) env('\\begin{onehalfspace}', '\\end{onehalfspace}');
+      else if (mult === 200) env('\\begin{doublespace}', '\\end{doublespace}');
+      else if (mult > 0 && mult <= 108) env('\\begin{singlespace}', '\\end{singlespace}');
+      else if (mult > 108 && mult < 1000) env('\\begin{spacing}{' + mult / 100 + '}', '\\end{spacing}');
+    }
+    if (flags & 8 && (L - H > 56 || R > 56)) env('\\begin{adjustwidth}{' + (L - H > 56 ? cmOf(L - H) : '') + '}{' + (R > 56 ? cmOf(R) : '') + '}', '\\end{adjustwidth}');
+    if (flags & 1) env('\\begin{flushleft}', '\\end{flushleft}');
+    if (flags & 2 && lineno) env('\\begin{nolinenumbers}', '\\end{nolinenumbers}');
+    const hang = flags & 8 && H > 56 ? '\\noindent\\hangindent=' + cmOf(H) + ' ' : '';
+    const tail = /\s*$/.exec(group[group.length - 1])[0];
+    const body = group.map((b) => b.replace(/\s+$/, '')).map((b) => (hang && b && !/^\\begin\{/.test(b) ? hang + b : b)).join('\n\n');
+    if (open.length || hang) count('paraSettings', group.length);
+    out.push((open.length ? [...open, body, ...close].join('\n') : body) + tail);
+  }
+  return out.join('\n\n');
 }
 
 const ink = (info) => new Set([...info.colors].filter(([, n]) => n / (info.chars || 1) > 0.5).map(([c]) => c));
@@ -1114,9 +1178,16 @@ export function docxToLatex(P, bytes, name) {
   if (used(/\\hl\{/)) pre.push('\\DeclareRobustCommand{\\hl}[1][yellow]{\\bgroup\\markoverwith{\\textcolor{#1}{\\rule[-.5ex]{2pt}{2.5ex}}}\\ULon}');
   if (used(/\\(cite[tp]?|citeauthor|citeyear)\{/) || bib) pre.push('\\usepackage[authoryear,round]{natbib}');
   if (used(/\\(texttt|verb)|\\begin\{verbatim\}/)) { /* the class has them */ }
+  // (R1) a foreign file's paragraph settings, its parts in columns or on landscape pages, and its
+  // own line spacing (src/docx.js premark marks them)
+  const spaced = info && info.spacing && info.spacing !== 100 ? info.spacing : 0;
+  if (spaced || used(/\\begin\{(?:onehalfspace|doublespace|singlespace|spacing)\}/)) pre.push('\\usepackage{setspace}');
+  if (spaced) pre.push(spaced === 150 ? '\\onehalfspacing' : spaced === 200 ? '\\doublespacing' : '\\setstretch{' + spaced / 100 + '}');
+  if (used(/\\begin\{adjustwidth\}/)) pre.push('\\usepackage{changepage}');
+  if (used(/\\begin\{landscape\}/)) pre.push('\\usepackage{pdflscape}');
   if (used(/\\(href|url|hyperlink|hypertarget|hyperref|phantomsection|nolinkurl)\b/)) pre.push('\\usepackage[hidelinks]{hyperref}');
   for (const p of PG.packages) pre.push(Array.isArray(p) ? '\\usepackage[' + p[1] + ']{' + p[0] + '}' : '\\usepackage{' + p + '}');
-  if (many) pre.push('\\usepackage{multicol}');
+  if (many || used(/\\begin\{multicols\}/)) pre.push('\\usepackage{multicol}');
   pre.push(...PG.lines);
   if (used(/\\tightlist/)) pre.push('\\providecommand{\\tightlist}{\\setlength{\\itemsep}{0pt}\\setlength{\\parskip}{0pt}}');
   if (used(/\\pandocbounded/)) pre.push('% pictures at their own size, no wider than the text', '\\newcommand{\\pandocbounded}[1]{\\resizebox{\\ifdim\\width>\\linewidth\\linewidth\\else\\width\\fi}{!}{#1}}');

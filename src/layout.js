@@ -3,7 +3,7 @@
 
 import { clusterEdge } from './editor.js';
 import { BASE_COLORS, DVIPS_COLORS } from './ui/kit.js';
-import { builtinSlots } from './pagesrc.js';
+import { builtinSlots, lenPt as lenPtOf } from './pagesrc.js';
 
 const EPS = 1.5;
 const IN = 72.27;
@@ -200,18 +200,20 @@ export class Layout {
   // How many columns an item is set in: its multicols', else the document's (twocolumn), but the
   // title and a float of the page's width (figure*) run across
   colsOf(it) {
+    // (R1: a landscape page's text in one column, as wide as the page is long)
+    if (it.land) return 'L';
     if (it.cols > 1) return it.cols;
     if (this.g && this.g.cols > 1 && !spans(it)) return this.g.cols;
     return 1;
   }
   colW(k) { return (this.g.tw - (k - 1) * (this.g.colsep ?? 10)) / k; }
   hostFor(k) {
-    if (k <= 1) return this.host.flow;
+    if (k !== 'L' && k <= 1) return this.host.flow;
     let h = this.hosts.get(k);
     if (!h || !h.isConnected) {
       h = document.createElement('div');
       h.className = 'flow mcol';
-      h.style.width = (this.colW(k) * this.px) + 'px';
+      h.style.width = ((k === 'L' ? this.g.th : this.colW(k)) * this.px) + 'px';
       this.host.flow.parentNode.appendChild(h);
       this.hosts.set(k, h);
     }
@@ -237,7 +239,7 @@ export class Layout {
     for (let i = 0; i < items.length; i++) {
       const W = items[i], P = items[i + 1];
       if (W.wrapIn && W.wrapIn !== P) W.wrapIn = null;
-      if (W.wrapSide && P && P.kind === 'p' && !P.isFloat && this.colsOf(P) === 1 && this.colsOf(W) === 1) {
+      if (W.wrapSide && P && P.kind === 'p' && !P.isFloat && oneCol(this.colsOf(P)) && this.colsOf(W) === this.colsOf(P)) {
         if (P.ghost) this.setGhost(P, null);
         if (W.el.parentNode !== P.el || P.el.firstChild !== W.el) {
           W.el.classList.add('wrap-in', 'wrap-' + W.wrapSide);
@@ -312,7 +314,7 @@ export class Layout {
       let left = P.overhang;
       for (let j = k + 1; j < items.length && j <= k + 8 && left > 1; j++) {
         const Q = items[j];
-        if (Q.kind !== 'p' || Q.isFloat || Q.wrapOf || this.colsOf(Q) !== 1) break;
+        if (Q.kind !== 'p' || Q.isFloat || Q.wrapOf || this.colsOf(Q) !== this.colsOf(P)) break;
         const h = left - (Q.sb || 0);
         if (h <= 1) break;
         const g = { h, w: P.wrapW, side: P.wrapSideOf };
@@ -340,6 +342,10 @@ export class Layout {
       frags.get(k).appendChild(it.el);
     }
     for (const [k, f] of frags) this.hostFor(k).appendChild(f);
+    // (R1) \hfill, \dotfill and \hrulefill to the margin, as TeX stretches them
+    for (const it of todo) if (it.el.querySelector('.a-sp.fill')) fillLines(it.el);
+    // (R1) a tabbing's fields at its stops: those of the last line that set them before
+    tabStops(todo, this.stops || (this.stops = new Map()));
     const ffrag = document.createDocumentFragment();
     for (const f of fnTodo) ffrag.appendChild(f.el);
     host.fns.appendChild(ffrag);
@@ -387,14 +393,21 @@ export class Layout {
   // multicols) are set in bands of columns: filled one after another and, in multicols, balanced
   // where the environment ends on the page.
   plan(items) {
-    const H = this.g.th * this.px;
+    // (R1: a landscape page's text is as tall as the portrait page's is wide)
+    // (R1) TeX's first line on a page stands \topskip (the font's size) below the text's top, not a
+    // whole line: a page holds (height - topskip) / baselineskip + 1 lines, a line more than a
+    // page of lines each a baselineskip tall where LaTeX's classes make the height just that
+    const top = Math.max(0, (this.g.bs || 12) * ((this.opts && this.opts.spread) || 1) - (this.g.pt || 10)) * this.px;
+    // (the plan takes a piece up to EPS past its height; the allowance leaves TeX's page no such room)
+    const H0 = this.g.th * this.px + top - (top ? EPS : 0), HL = this.g.tw * this.px + top - (top ? EPS : 0);
+    let H = H0, land = null;
     const fnSep = this.g.pt * 1.1 * this.px;
     const two = !!this.g.twoside;
     const pages = [];
     let page = null;
     const deferred = [];
     const cnt = { num: 1, fmt: (this.opts && this.opts.numbering) || 'arabic', style: this.page.style || 'plain' };
-    const newPage = () => { page = { entries: [], fns: [], used: 0, fnH: 0, marks: [] }; };
+    const newPage = () => { page = { entries: [], fns: [], used: 0, fnH: 0, marks: [] }; if (land) page.land = land; };
     const avail = () => H - page.used - page.fnH;
     const fnCost = (list) => (list.length ? (page.fns.length ? 0 : fnSep) + list.reduce((s, f) => s + f.h, 0) : 0);
     const pieceH = (it, a, b) => {
@@ -550,7 +563,7 @@ export class Layout {
         F.cols.forEach((col, c) => {
           const list = [];
           for (const e of col) {
-            if (e.mark) { page.marks.push(e.mark); continue; }
+            if (e.mark) { page.marks.push(e.mark.markR != null ? { ...e.mark, at: page.entries.length } : e.mark); continue; }
             const en = { it: e.it, a: e.a, b: e.b, sb: e.sb, band, col: c };
             page.entries.push(en);
             list.push(en);
@@ -571,10 +584,36 @@ export class Layout {
         else if (run[0].region) page.used += 12 * this.px;
       }
     };
+    // (R1) TeX's choice between a page break that leaves a club or widow line (its penalty) and
+    // one a line earlier (the badness of the page stretched by what that leaves): the later break
+    // where they cost the same; stretch is the page's paragraph gaps' (\parskip's 1 pt each) and
+    // its headings' (about 5 pt each)
+    const pen = this.page.pen || { widow: 150, club: 150, flush: false };
+    const takes = (p, short, it) => {
+      if (p >= 10000) return false;
+      if (!pen.flush || short <= 0.5) return p <= 0;
+      const heads = page.entries.filter((e) => e.it.kind === 'h').length;
+      const stretch = (Math.max(0, page.entries.length - heads) + 5 * heads) * this.px;
+      const bad = stretch <= 0 ? 10000 : Math.min(10000, 100 * Math.pow(short / stretch, 3));
+      return p <= bad;
+    };
+    // pdflscape's landscape begins and ends with \clearpage: the floats waiting go first, its
+    // text starts a page of its own and the text after it another
+    const clearAll = () => {
+      if (page.entries.length || deferred.length) close();
+      for (let n = 0; deferred.length && n < 1000; n++) close();
+      if (page.entries.length) close();
+    };
     newPage();
     for (let i = 0; i < items.length; i++) {
       const it = items[i];
-      if (it.kind === 'mark') { page.marks.push(it.mark); continue; }
+      if ((it.land || null) !== land) {
+        clearAll();
+        land = it.land || null;
+        H = land ? HL : H0;
+        if (land) page.land = land; else delete page.land;
+      }
+      if (it.kind === 'mark') { page.marks.push(it.mark.markR != null ? { ...it.mark, at: page.entries.length } : it.mark); continue; }
       if (it.kind === 'break') {
         if (it.only) continue;
         if (it.parity) { parity(it.parity); continue; }
@@ -583,7 +622,7 @@ export class Layout {
         continue;
       }
       const k = this.colsOf(it);
-      if (k > 1) {
+      if (k !== 'L' && k > 1) {
         const j = runEnd(i, k, it.region || null);
         placeBand(items.slice(i, j), k, it.region ? it.balance !== false : false);
         i = j - 1;
@@ -620,14 +659,20 @@ export class Layout {
             const cost = sb + pieceH(it, a, b) + fnCost(fnsOf(it, a, b));
             if (cost <= avail() + EPS) best = b; else break;
           }
-          if (best >= 0 && !empty && best - a < 2) best = -1;
-          if (best >= 0 && n - best < 2 && best - a > 2) best -= 1;
+          // (R1) a paragraph's first line alone at the foot (club) or its last alone at the next
+          // page's top (widow), as TeX weighs them: its penalty against how badly the page would
+          // stretch to its foot without that line (a ragged page never badly, so 150 keeps them
+          // off, 0 lets them be; 10000 never)
+          const lineH = (it.lines[1].t - it.lines[0].t) || this.g.bs * this.px;
+          if (best >= 0 && !empty && best - a < 2 && !(a === 0 && takes(pen.club, avail(), it))) best = -1;
+          if (best >= 0 && n - best < 2 && best - a > 2 && !takes(pen.widow, lineH, it)) best -= 1;
           if (best > a) { put(it, a, best, sb); close(); a = best; continue; }
         }
         if (empty) { put(it, a, null, sb); break; }
         close();
       }
     }
+    if (land) { clearAll(); land = null; H = H0; delete page.land; }
     while (deferred.length) { if (page.entries.length) close(); else { const f = deferred.shift(); put(f, 0, null, 0); } }
     if (page.entries.length || !pages.length) { number(page); pages.push(page); }
     return pages;
@@ -702,6 +747,7 @@ export class Layout {
     const marks = this.needsMarks() ? this.marks(plan) : null;
     const ln = this.page.lineno && this.page.lineno.on ? this.lineStarts(plan) : null;
     const total = plan.length ? fmtNum(plan[plan.length - 1].num, plan[plan.length - 1].fmt) : '1';
+    this.info = this.docInfo();
     const base = this.chromeBase();
     plan.forEach((pg, k) => {
       const fill = this.fillOf(pg);
@@ -712,8 +758,8 @@ export class Layout {
       if (!P) { P = this.makePage(); this.pages.push(P); this.root.appendChild(P.el); }
       // (the header, the footer and the page's numbers are drawn again on their own)
       const mk = marks ? marks[k] : NO_MARKS;
-      const chrome = this.chromeSig(pg, mk, total, base) + '|' + k;
-      if (P.chrome !== chrome) { P.chrome = chrome; this.drawChrome(P, pg, mk, total, k); }
+      const chrome = this.chromeSig(pg, mk, total, base) + '|' + k + (pg.land ? '|L' : '');
+      if (P.chrome !== chrome) { P.chrome = chrome; this.drawChrome(P, pg, mk, total, k); this.turn(P, pg); }
       if (P.sig === sig) { if (ln && P.lnSig !== ln[k] + '|' + chrome + sig) this.lineNumbers(P, pg, ln[k]); else if (!ln && P.ln) { P.ln.remove(); P.ln = null; } return; }
       P.sig = sig;
       changed.push(k);
@@ -761,7 +807,26 @@ export class Layout {
   fillOf(pg) {
     const n = pg.entries.filter((e) => e.it.fill).length;
     if (!n) return 0;
-    return Math.max(0, (this.g.th * this.px - pg.used - pg.fnH) / n);
+    return Math.max(0, ((pg.land ? this.g.tw : this.g.th) * this.px - pg.used - pg.fnH) / n);
+  }
+  // (R1) A page of pdflscape's landscape as a reader sees it (pdflscape turns it a quarter to the
+  // right in the PDF): the sheet on its side; the text block where the portrait page's was, turned,
+  // its left margin the portrait page's bottom one and its top the left one (the inner one of an
+  // even page); the header and footer where TeX set them, upright on the portrait page, so
+  // running down the right and the left side
+  turn(P, pg) {
+    const el = P.el, g = this.g, px = this.px, VARS = ['--pw', '--ph', '--ml', '--mle', '--mt', '--tw', '--th'];
+    const on = !!pg.land;
+    el.classList.toggle('land', on);
+    for (const x of [P.hd, P.ft]) { x.style.left = x.style.top = x.style.width = x.style.transform = x.style.transformOrigin = ''; }
+    if (!on) { for (const v of VARS) el.style.removeProperty(v); return; }
+    const even = el.classList.contains('even'), side = (even ? g.mlE ?? g.ml : g.ml);
+    const set = (v, pt) => el.style.setProperty(v, (pt * px) + 'px');
+    set('--pw', g.ph); set('--ph', g.pw); set('--ml', g.ph - g.mt - g.th); set('--mle', g.ph - g.mt - g.th); set('--mt', side); set('--tw', g.th); set('--th', g.tw);
+    const place = (x, top) => { x.style.left = ((g.ph - top) * px).toFixed(2) + 'px'; x.style.top = (side * px).toFixed(2) + 'px'; x.style.width = (g.tw * px).toFixed(2) + 'px'; x.style.transformOrigin = '0 0'; x.style.transform = 'rotate(90deg)'; };
+    place(P.hd, g.mt - (g.headsep ?? 25) - g.pt);
+    place(P.ft, g.mt + g.th + g.footskip - g.pt);
+    if (P.wm) P.wm.style.transform = P.wm.style.transform.replace(/rotate\((-?[\d.]+)deg\)/, (m, a) => 'rotate(' + (+a + 90) + 'deg)');
   }
   // the space between bands and the paragraphs beside them (pg.used counted it)
   bandGaps(pg, els) {
@@ -795,14 +860,26 @@ export class Layout {
       if (chap) return (lvl === 0 ? (h.label ? h.label + ' ' : '') + h.num + '.\u2002' + h.title : h.num + '.\u2002' + h.title).toUpperCase();
       return lvl === 0 ? (h.num + '\u2003' + h.title).toUpperCase() : h.num + '\u2003' + h.title;
     };
+    // (myheadings: the headings make no marks, only \markboth and \markright written by hand,
+    // which count with any style, each where it stands among the page's entries)
+    const my = P.style === 'myheadings';
     let left = '', right = '';
     return plan.map((pg) => {
       let firstRight = null;
-      for (const e of pg.entries) {
-        if (e.it.kind !== 'h' || e.a !== 0 || typeof e.it.level !== 'number') continue;
-        const lvl = e.it.level - top;
+      const ev = [];
+      pg.entries.forEach((e, i) => { if (!my && e.it.kind === 'h' && e.a === 0 && typeof e.it.level === 'number') ev.push([i, 1, e]); });
+      for (const m of pg.marks) if (m.markR != null) ev.push([m.at ?? 0, 0, m]);
+      if (ev.length > 1) ev.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+      for (const [, k, x] of ev) {
+        if (k === 0) {
+          if (x.markL != null) left = markText(x.markL);
+          right = markText(x.markR);
+          if (firstRight === null) firstRight = right;
+          continue;
+        }
+        const lvl = x.it.level - top;
         if (lvl !== 0 && lvl !== 1) continue;
-        const m = fmt(headParts(e.it), lvl);
+        const m = fmt(headParts(x.it), lvl);
         if (m == null) continue;
         if (lvl === 0 && !oneRight) { left = m; right = ''; if (firstRight === null) firstRight = ''; }
         else if (lvl === 0 || !oneRight) { right = m; if (firstRight === null) firstRight = m; }
@@ -829,7 +906,14 @@ export class Layout {
   // what every page's chrome depends on beyond its own numbers and marks, once per pass
   chromeBase() {
     const P = this.page;
-    return [JSON.stringify(P.styles || null), P.style, JSON.stringify(P.wm || null), JSON.stringify(P.color || null), JSON.stringify(P.border || null), this.g.twoside ? 1 : 0, this.px].join('|');
+    return [JSON.stringify(P.styles || null), P.style, JSON.stringify(P.wm || null), JSON.stringify(P.color || null), JSON.stringify(P.border || null), this.g.twoside ? 1 : 0, this.px, JSON.stringify(this.info || null)].join('|');
+  }
+  // the title, author, date and file name a header names (\thetitle, \theauthor, \thedate,
+  // \jobname) as text; \and between authors as a comma, LaTeX's \today where no \date is
+  docInfo() {
+    const D = (this.opts && this.opts.docInfo) || {};
+    const t = (x) => (x == null ? '' : markText(String(x).replace(/\\and(?![A-Za-z@])/g, ', ')));
+    return { title: t(D.title), author: t(D.author), date: D.date != null ? t(D.date) : t('\\today'), job: (this.opts && this.opts.job) || '' };
   }
   // the slots of a page by its style: [left, centre, right] of the head and of the foot, as TeX
   // text, and the rules under the head and over the foot; null for the empty style
@@ -845,7 +929,7 @@ export class Layout {
     const S = this.slotsFor(pg);
     const even = this.g.twoside && pg.num % 2 === 0;
     // (KOMA's \headmark: the left mark on even pages, the right one on odd)
-    const ctx = { page: fmtNum(pg.num, pg.fmt), total, left: mk.left, right: mk.right, headmark: even ? mk.left : mk.right };
+    const ctx = { page: fmtNum(pg.num, pg.fmt), total, left: mk.left, right: mk.right, headmark: even ? mk.left : mk.right, info: this.info };
     const fill = (box, list) => {
       box.replaceChildren();
       let any = false;
@@ -875,7 +959,15 @@ export class Layout {
     const W = this.page.wm;
     if (W && W.on && !(W.firstpage && k > 0)) {
       if (!P.wm) { P.wm = document.createElement('div'); P.wm.className = 'wmk'; P.wm.contentEditable = 'false'; P.wm.setAttribute('aria-hidden', 'true'); P.el.prepend(P.wm); }
-      P.wm.textContent = plainTex(W.text || 'DRAFT').slice(0, 200);
+      // (R1) a picture: the project's file at its width, scaled, about the page's middle
+      const url = W.pic && this.assetURL ? this.assetURL(W.pic.file) : null;
+      if (W.pic) {
+        const w = (lenPtOf(W.pic.width, { w: this.g.pw, h: this.g.ph, tw: this.g.tw }) || 10 * 72.27 / 2.54) * (W.scale || 1) * this.px;
+        let im = P.wm.querySelector('img');
+        if (url) { if (!im || P.wm.childNodes.length > 1) { im = document.createElement('img'); im.alt = ''; P.wm.replaceChildren(im); } if (im.getAttribute('src') !== url) im.src = url; im.style.width = w.toFixed(1) + 'px'; }
+        else P.wm.textContent = W.pic.file.slice(0, 200);
+        P.wm.classList.add('pic');
+      } else { P.wm.classList.remove('pic'); P.wm.textContent = plainTex(W.text || 'DRAFT').slice(0, 200); }
       P.wm.style.fontSize = (0.25 * this.g.pw * (W.scale || 1) * this.px).toFixed(1) + 'px';
       P.wm.style.transform = 'translate(-50%, -50%) rotate(' + (-(Number.isFinite(W.angle) ? W.angle : 45)) + 'deg)';
       P.wm.style.color = cssColor(W.color) || '#CCCCCC';
@@ -886,9 +978,60 @@ export class Layout {
     if (B) {
       if (!P.bd) { P.bd = document.createElement('div'); P.bd.className = 'pbd'; P.bd.contentEditable = 'false'; P.bd.setAttribute('aria-hidden', 'true'); P.el.prepend(P.bd); }
       P.bd.style.inset = (B.inset * this.px).toFixed(2) + 'px';
-      P.bd.style.borderWidth = Math.max(1, B.width * this.px).toFixed(2) + 'px';
+      // (R1) a single line as the box's border; double, dashed, dotted and art as TikZ draws them
+      const plain = !B.art && (!B.style || B.style === 'single');
+      P.bd.style.borderWidth = plain ? Math.max(1, B.width * this.px).toFixed(2) + 'px' : '0';
       P.bd.style.borderColor = cssColor(B.color) || '#000';
-    } else if (P.bd) { P.bd.remove(); P.bd = null; }
+      const key = plain ? '' : JSON.stringify([B.style, B.art, B.width, B.color, B.step, B.inset, this.g.pw, this.g.ph, this.px, !!pg.land]);
+      if (P.bdKey !== key) { P.bdKey = key; P.bd.replaceChildren(...(plain ? [] : [this.borderSvg(B, !!pg.land)])); }
+    } else if (P.bd) { P.bd.remove(); P.bd = null; P.bdKey = null; }
+  }
+
+  // (R1) A page border TikZ draws on the shipout background, as an SVG over the box at its inset:
+  // the rectangle's path from its top left corner east, south, west and back, as TikZ's rectangle
+  // makes it; double as TikZ's double (two lines of the width, 2 pt apart); dashed (on 3 pt off
+  // 3 pt) and dotted (on the width off 2 pt) dashed from that corner; art marks every step of its
+  // length from that corner, each turned to the path as decorations.markings turns it
+  // (a landscape page of pdflscape is the portrait page turned: its border drawn upright and turned
+  // with it, a quarter to the right)
+  borderSvg(B, land) {
+    const NS = 'http://www.w3.org/2000/svg', px = this.px;
+    const W = (this.g.pw - 2 * B.inset) * px, H = (this.g.ph - 2 * B.inset) * px;
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('class', 'pbd-svg');
+    svg.setAttribute('width', (land ? H : W).toFixed(2)); svg.setAttribute('height', (land ? W : H).toFixed(2));
+    svg.setAttribute('aria-hidden', 'true');
+    const g0 = document.createElementNS(NS, 'g');
+    if (land) g0.setAttribute('transform', 'translate(' + H.toFixed(2) + ',0) rotate(90)');
+    svg.appendChild(g0);
+    const color = cssColor(B.color) || '#000';
+    const add = (name, a) => { const el = document.createElementNS(NS, name); for (const [k, v] of Object.entries(a)) el.setAttribute(k, v); g0.appendChild(el); return el; };
+    const rect = (o) => 'M' + (-o).toFixed(2) + ',' + (-o).toFixed(2) + 'H' + (W + o).toFixed(2) + 'V' + (H + o).toFixed(2) + 'H' + (-o).toFixed(2) + 'Z';
+    const lw = Math.max(0.1, B.width || 0.4) * px;
+    if (B.art) {
+      const P = 2 * (W + H), step = B.step || 0.0125, last = 1 - step / 2, r = Math.max(0.5, (B.width || 4) / 2) * px;
+      // (a point and the path's direction at length d along it: east, south, west, north)
+      const at = (d) => d <= W ? [d, 0, 0] : d <= W + H ? [W, d - W, 1] : d <= 2 * W + H ? [W - (d - W - H), H, 2] : [0, H - (d - 2 * W - H), 3];
+      const shape = (B.art === 'dots') ? null : B.art === 'diamonds' ? [[r, 0], [0, r], [-r, 0], [0, -r]] : [90, 234, 18, 162, 306].map((a) => [r * Math.cos(a * Math.PI / 180), r * Math.sin(a * Math.PI / 180)]);
+      let d = '';
+      for (let k = 0; k * step <= last + 1e-9 && k < 4000; k++) {
+        const [x, y, side] = at(k * step * P);
+        if (!shape) { add('circle', { cx: x.toFixed(2), cy: y.toFixed(2), r: r.toFixed(2), fill: color }); continue; }
+        // (TikZ's x along the path, y to its left; the page's y runs down)
+        const [tx, ty] = [[1, 0], [0, -1], [-1, 0], [0, 1]][side];
+        d += shape.map(([a, b], i) => (i ? 'L' : 'M') + (x + a * tx - b * ty).toFixed(2) + ',' + (y - (a * ty + b * tx)).toFixed(2)).join('') + 'Z';
+      }
+      if (d) add('path', { d, fill: color });
+      return svg;
+    }
+    if (B.style === 'double') {
+      const o = (2 * px + lw) / 2;
+      for (const k of [-o, o]) add('path', { d: rect(k), fill: 'none', stroke: color, 'stroke-width': lw.toFixed(2) });
+      return svg;
+    }
+    const dash = B.style === 'dashed' ? [3 * px, 3 * px] : [lw, 2 * px];
+    add('path', { d: rect(0), fill: 'none', stroke: color, 'stroke-width': lw.toFixed(2), 'stroke-dasharray': dash.map((x) => x.toFixed(2)).join(' ') });
+    return svg;
   }
 
   // lineno: the lines of the page's paragraphs and headings numbered in the margin, from the plan
@@ -936,7 +1079,8 @@ export class Layout {
         y = top + pieceHOf(e);
       }
       const it = e.it;
-      if (!(it.kind === 'p' || it.kind === 'h' || it.kind === 'title')) continue;
+      // (nolinenumbers: its lines have no number and are not counted)
+      if (!(it.kind === 'p' || it.kind === 'h' || it.kind === 'title') || it.noLn) continue;
       const lines = it.lines ? it.lines.slice(e.a, e.b == null ? it.lines.length : e.b) : [{ t: 0, b: it.h }];
       const base = it.lines ? it.lines[e.a].t : 0;
       lines.forEach((l, j) => fn(e, top + (l.t + l.b) / 2 - base, j === 0 && L.mode === 'section' && it.kind === 'h' && e.a === 0));
@@ -987,6 +1131,81 @@ export class Layout {
 }
 
 const NO_MARKS = { left: '', right: '' };
+// (R1) The lines of a tabbing, in order: a line with \= (a \kill line, often) sets the stops where
+// its fields end, each as wide as its text with its trailing space, as TeX measures them; a line
+// after it has each field start at its stop (a field wider than its stop's room runs over the
+// next, as TeX's does)
+function tabStops(items, stops) {
+  for (const it of items) {
+    if (!it.tab) continue;
+    const cells = [...it.el.children].filter((c) => c.classList.contains('y-tab'));
+    for (const c of cells) c.style.width = '';
+    if (it.tabSets) {
+      const xs = [0];
+      let x = 0;
+      for (const c of cells.slice(0, -1)) { x += c.getBoundingClientRect().width; xs.push(x); }
+      stops.set(it.tab, xs);
+      continue;
+    }
+    const xs = stops.get(it.tab);
+    if (!xs) continue;
+    // (after \+ the line's fields start at a later stop: its first one there)
+    const f = Math.min(it.tabFrom || 0, xs.length - 1);
+    cells[0].style.marginLeft = f ? (xs[f] || 0).toFixed(2) + 'px' : '';
+    cells.forEach((c, i) => { const k = i + f; if (i + 1 < cells.length && xs[k + 1] != null) c.style.width = Math.max(0, xs[k + 1] - (xs[k] || 0)).toFixed(2) + 'px'; });
+  }
+}
+// (R1) A fill (\hfill, \dotfill, \hrulefill) takes what its line leaves, shared among the fills
+// of that line, as TeX gives a fill all the line's stretch: measured with the paragraph set
+// ragged (no justified spaces), each line's content against the text's right edge. A fill in a
+// table's cell or a box is that box's (a fixed width there), and a right to left paragraph keeps
+// the width it had.
+// (one column: the page's, or a landscape page's (R1), where a wrapped figure stands as on any page)
+const oneCol = (k) => k === 1 || k === 'L';
+
+function fillLines(el) {
+  // (a stranger's paragraph of thousands of fills: the first 200 measured, the rest as they were)
+  const fills = [...el.querySelectorAll('.a-sp.fill')].filter((f) => !f.closest('td, th, .mp, .tex, .wrap-in')).slice(0, 200);
+  if (!fills.length || getComputedStyle(el).direction === 'rtl') return;
+  for (const f of fills) f.style.width = '0px';
+  const ta = el.style.textAlign, tl = el.style.textAlignLast;
+  el.style.textAlign = 'left'; el.style.textAlignLast = 'left';
+  const cs = getComputedStyle(el), er = el.getBoundingClientRect();
+  const right = er.right - (parseFloat(cs.paddingRight) || 0) - (parseFloat(cs.borderRightWidth) || 0);
+  const rg = document.createRange();
+  rg.selectNodeContents(el);
+  // (R3) a wrapped figure in the paragraph, or what is left of one beside it (its empty float):
+  // the lines beside it end at its side, and its words are no line's
+  const wf = [...el.children].find((c) => c.classList.contains('wrap-in'));
+  const wr = wf && wf.getBoundingClientRect(), wcs = wf && getComputedStyle(wf);
+  const gw = el.classList.contains('has-ghost') && !el.classList.contains('ghost-l') ? parseFloat(el.style.getPropertyValue('--gw')) || 0 : 0;
+  const gTop = er.top + (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.borderTopWidth) || 0), gBot = gTop + (parseFloat(el.style.getPropertyValue('--gh')) || 0);
+  const rightAt = (m) => {
+    if (wf && wf.classList.contains('wrap-r') && m >= wr.top && m <= wr.bottom) return Math.min(right, wr.left - (parseFloat(wcs.marginLeft) || 0));
+    if (gw && m >= gTop && m <= gBot) return right - gw;
+    return right;
+  };
+  const inWf = wf ? (r) => r.left >= wr.left - 0.5 && r.right <= wr.right + 0.5 && r.top >= wr.top - 0.5 && r.bottom <= wr.bottom + 0.5 : () => false;
+  const rects = [...rg.getClientRects()].filter((r) => (r.width > 0 || r.height > 0) && !inWf(r)).slice(0, 20000);
+  const lines = new Map();
+  for (const f of fills) {
+    const fr = f.getBoundingClientRect(), mid = (fr.top + fr.bottom) / 2;
+    let key = null;
+    for (const k of lines.keys()) if (Math.abs(k - mid) < 2) { key = k; break; }
+    if (key === null) { key = mid; lines.set(key, { fills: [], top: fr.top, bottom: fr.bottom }); }
+    lines.get(key).fills.push(f);
+  }
+  const widths = [];
+  for (const L of lines.values()) {
+    let end = -Infinity;
+    const m = (L.top + L.bottom) / 2;
+    for (const r of rects) if (r.top - 1 <= m && m <= r.bottom + 1 && r.right > end) end = r.right;
+    const left = Math.max(0, rightAt(m) - end - 0.5);
+    for (const f of L.fills) widths.push([f, left / L.fills.length]);
+  }
+  for (const [f, w] of widths) f.style.width = w.toFixed(2) + 'px';
+  el.style.textAlign = ta; el.style.textAlignLast = tl;
+}
 // the height of a piece of an item, as the plan counts it
 function pieceHOf(e) {
   const it = e.it;
@@ -1061,6 +1280,7 @@ export function hfRuns(tex, ctx = {}) {
       else if (name === 'leftmark') push(ctx.left || '');
       else if (name === 'rightmark') push(ctx.right || '');
       else if (name === 'today') push(today());
+      else if (/^the(?:title|author|date)$/.test(name) || name === 'jobname') { const I = ctx.info || {}; push(name === 'jobname' ? I.job || '' : I[name.slice(3)] || ''); }
       else if (name === 'LaTeX') push('LaTeX');
       else if (name === 'TeX') push('TeX');
       else if (name === 'ldots' || name === 'dots') push('…');
@@ -1097,6 +1317,8 @@ function hfInto(el, tex, ctx) {
   }
 }
 const plainTex = (t) => hfRuns(t, {}).map((r) => r.t).join('').trim();
+// a mark written by hand as a running head shows it (\MakeUppercase in it as capitals)
+const markText = (t) => hfRuns(t, {}).map((r) => (r.st.up ? r.t.toUpperCase() : r.t)).join('').replace(/\s+/g, ' ').trim();
 
 // a colour as xcolor names it (red, gray!30, a dvipsnames name) or #RRGGBB, for the page's style;
 // anything else gives nothing

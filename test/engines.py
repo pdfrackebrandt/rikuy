@@ -144,6 +144,28 @@ try:
                     fonts.add(str(f.get_object().get('/BaseFont')))
             return fonts, ''.join(pg.extract_text() for pg in r.pages)
 
+        # an arXiv paper's sources: the .bbl and no .bib. bibtex is not run (latexmk's rule): it
+        # would fail and write an empty .bbl over the paper's own (183 papers of the arXiv run)
+        paper = '\\documentclass{article}\n\\begin{document}\nSee \\cite{knuth} and \\cite{lamport}.\n\\bibliographystyle{plain}\n\\bibliography{refs}\n\\end{document}\n'
+        bbl = '\\begin{thebibliography}{1}\n\\bibitem{knuth} D. Knuth. \\newblock The TeXbook.\n\\bibitem{lamport} L. Lamport. \\newblock A Document Preparation System.\n\\end{thebibliography}\n'
+        open_doc(page, [['paper.tex', paper], ['paper.bbl', bbl]])
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('a paper with its .bbl and no .bib keeps its references', 'page' in st and '[1]' in text and 'Lamport' in text and '[?]' not in text, [st, text[:200]])
+        # with the .bib there, bibtex runs and its .bbl replaces the paper's, as latexmk's does
+        open_doc(page, [['paper.tex', paper], ['paper.bbl', bbl], ['refs.bib', '@book{knuth, author={Donald Knuth}, title={Computers and Typesetting}, year={1984}, publisher={AW}}\n@book{lamport, author={Leslie Lamport}, title={LaTeX}, year={1994}, publisher={AW}}\n']])
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('with the .bib there, bibtex makes the references', 'page' in st and 'Computers and Typesetting' in text and 'Preparation' not in text, [st, text[:200]])
+        # biblatex: a .bbl from another biblatex version stops TeX at 100 errors; it is dropped
+        # after that pass and biber writes it again, as latexmk -f goes on to biber
+        old = '% $ biblatex auxiliary file $\n% $ biblatex bbl format version 3.3 $\n% Do not modify the above lines!\n\\begingroup\n\\makeatletter\n\\refsection{0}\n' + '\\blx@oldmacro{x}\n' * 120 + '\\endrefsection\n\\endgroup\n'
+        open_doc(page, [['paper.tex', '\\documentclass{article}\n\\usepackage{biblatex}\n\\addbibresource{refs.bib}\n\\begin{document}\nSee \\cite{knuth}.\n\\printbibliography\n\\end{document}\n'],
+                        ['refs.bib', '@book{knuth, author={Donald Knuth}, title={Computers and Typesetting}, year={1984}, publisher={AW}}\n'], ['paper.bbl', old]])
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('a biblatex paper whose .bbl this biblatex cannot read compiles, with biber\'s references', 'page' in st and 'Computers and Typesetting' in text, [st, text[:200]])
+
         open_doc(page, [['main.tex', '\\documentclass{article}\n\\usepackage[scheme=plain]{ctex}\n\\begin{document}\nHello 你好，世界！\\textbf{粗体} \\textit{楷体} 繁體：臺灣。\n\\end{document}\n']])
         st = wait_pdf(page)
         fonts, text = pdf_fonts_text(page)
