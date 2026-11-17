@@ -91,9 +91,10 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   `\hline` is edited with `\hline`.
 - **The page as in Word's Layout tab.** Margins, size, orientation, columns, breaks (Ctrl+Enter),
   line numbers, hyphenation, a watermark, the page's colour and border, headers and footers typed
-  on the page with their page numbers: written as geometry, multicol, fancyhdr, lineno, edited
-  where a hand written line has them, drawn on the page as TeX prints them, and carried to Word
-  and back.
+  on the page with their page numbers, the title and author in them, landscape pages for part of
+  a document, a picture as the watermark, art borders: written as geometry, multicol, fancyhdr,
+  lineno, pdflscape, TikZ, edited where a hand written line has them, drawn on the page as TeX
+  prints them, and carried to Word and back (a part in columns or turned as Word's sections).
 - **Word's Font group.** The font and size boxes (the selection's or the word's; the document's
   font package and class size from the Font dialog's Set As Default), bigger and smaller, Change
   Case on the words alone, Clear All Formatting (the paragraph's settings too), underline styles
@@ -110,9 +111,10 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
 - **Paragraphs as in Word.** Ctrl+L, E, R, J align (flushleft, center, flushright, LaTeX's own
   justified), line spacing 1.0 to 3.0 for a paragraph or the whole document (setspace), indents
   (adjustwidth), space before and after, keep with next, keep lines together, page break before,
-  shading and borders (tcolorbox), Show marks, Word's Paragraph dialog, Layout's fields and Design's
-  Paragraph Spacing; each one small edit of the source, read back from LaTeX written by hand and
-  drawn on the page as TeX prints it.
+  shading and borders (tcolorbox), tab stops (tabbing), Show marks, Word's Paragraph dialog,
+  Layout's fields and Design's Paragraph Spacing; each one small edit of the source, read back from
+  LaTeX written by hand and drawn on the page as TeX prints it, and a Word file's own settings
+  read in.
 - **Word's styles, over LaTeX's own.** Heading 1 to 6 (`\chapter` in a report, `\paragraph`
   running into its paragraph as TeX sets it), Part, Subtitle, Author, Date, Code, Quotation, Verse,
   Abstract and the theorem

@@ -114,11 +114,33 @@ docs.push(['paragraph settings (B2)', new Map([['main.tex', '\\documentclass{art
 docs.push(['font, lists and styles (R2)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{enumitem,graphicx,xcolor,hyperref}\n\\title{Main\\\\[0.5ex]\\large The sub}\n\\author{Ann \\and Bob}\n\\hypersetup{colorlinks,linkcolor=blue}\n\\begin{document}\n\\maketitle\nFirst paragraph, typed in, see \\ref{a}.\n\n' +
   '\\begin{itemize}[label={\\includegraphics[height=1.6ex]{dot.png}},leftmargin=3em,labelsep=1em]\n  \\item One item\\label{a}\n  \\begin{itemize}\n    \\item Nested item\n  \\end{itemize}\n\\end{itemize}\n\n\\begin{verbatim}\nSome code here.\n\\end{verbatim}\n\n' +
   '\\paragraph{Lead}\n\n\\begin{figure}[h]\n\\centering\n\\fbox{F}\n\\caption{Cap}\n\\end{figure}\n\nRuns in after the float, with \\culine{rgb,255:red,231;green,84;blue,128}{a line}.\n\nLast plain paragraph.\n\\end{document}\n']]), 'main.tex']);
+// (R1) the page's and the paragraphs' leftovers: hand written marks, a paragraph without line
+// numbers, landscape pages, a tabbing (its \= read again), fills, a title for the header
+docs.push(['page and paragraph leftovers (R1)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{lineno,pdflscape}\n\\linenumbers\n\\pagestyle{myheadings}\n\\title{A Title}\n\\makeatletter\\let\\thetitle\\@title\\makeatother\n\\begin{document}\n\\markboth{Left}{Right}\nFirst plain paragraph, typed in.\n\n' +
+  '\\begin{nolinenumbers}\nNo numbers here, plain words.\n\\end{nolinenumbers}\n\n\\begin{landscape}\nA wide paragraph on its own page.\n\nAnother one there.\n\\end{landscape}\n\n\\begin{tabbing}\n\\hspace{2cm}\\=\\hspace{3cm}\\=\\kill\nName\\>Value\\>Note\\\\\nAlpha \\> Beta \\> Gamma\n\\end{tabbing}\n\n' +
+  'Left \\hfill Right and Fig.~5 with a label\\label{x} here.\n\n\\markright{Later}\nLast plain words.\n\\end{document}\n']]), 'main.tex']);
 docs.push(['a LaTeX paragraph (its groups)', new Map([['main.tex', '\\documentclass{article}\n\\begin{document}\nFirst paragraph, typed in.\n\n% rikuy: latex\n{\\bfseries bold} raw and {\\itshape more {nested}} words\n\nLast plain paragraph.\n\\end{document}\n']]), 'main.tex']);
 const corpus = process.argv[2], FULL = process.env.INCR_FULL === '1' || !!corpus, repoDocs = docs.length;
 if (corpus) {
   const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { if (e.name.startsWith('.')) continue; const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (e.name.endsWith('.tex')) { const t = fs.readFileSync(p, 'utf8'); if (/\\documentclass/.test(t)) add(path.dirname(p), e.name); } } };
   walk(corpus);
+}
+// (R1 review M1) tabbings far down a file: each read again by itself, so a keystroke before them
+// leaves the incremental build equal to the full one and every letter after a \= in place
+{
+  const tb = (k) => '\\begin{tabbing}\nName' + k + '\\=Value\\=Note\\kill\nName\\>Value\\>Note\\\\\nAlpha \\> Beta \\> Gamma\n\\end{tabbing}\n\n';
+  const t0 = '\\documentclass{article}\n\\begin{document}\nFirst plain paragraph typed in.\n\n' + ('%' + 'x'.repeat(98) + '\n').repeat(3000) + Array.from({ length: 10 }, (_, k) => tb(k)).join('') + 'End.\n\\end{document}\n';
+  const prev = buildModel({ files: new Map([['main.tex', t0]]), main: 'main.tex' });
+  const at = t0.indexOf('typed in') + 5, t1 = t0.slice(0, at) + 'x' + t0.slice(at);
+  const was = INCR.reused;
+  const a = buildModel({ files: new Map([['main.tex', t1]]), main: 'main.tex' }, prev);
+  const fastPath = INCR.reused > was;
+  INCR.on = false;
+  const b = buildModel({ files: new Map([['main.tex', t1]]), main: 'main.tex' }, prev);
+  INCR.on = true;
+  const cells = (m) => m.blocks.filter((u) => u.items[0] && u.items[0].tab).map((u) => u.items.map((it) => (it.inl || []).map((c) => (c.kids || []).map((x) => x.t || '').join('')).join('|')).join('/'));
+  check('a keystroke before ten tabbings far down: the incremental build is the full one (' + (fastPath ? 'fast path' : 'full') + ')', sameModels(a, b));
+  check('and every letter after a \\= is in place in both', cells(b).length === 10 && cells(b).every((x, k) => x === 'Name' + k + '|Value|Note/Name|Value|Note/Alpha |Beta |Gamma ') && JSON.stringify(cells(a)) === JSON.stringify(cells(b)), cells(b).slice(-1));
 }
 // (the short run: every document, fewer edits, the 120 KB paper the fewest; each edit there is
 // two full builds and two serialisations)

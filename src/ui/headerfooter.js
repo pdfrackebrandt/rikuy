@@ -52,7 +52,10 @@ function slotsOf(app, k, where) {
 export function hfOpen(app, where, o = {}) {
   if (!app.model || !app.layout.pages.length) return false;
   hfClose(app, false);
-  const k = Math.min(app.layout.pages.length - 1, o.page != null && o.page >= 0 ? o.page : pageInView(app));
+  let k = Math.min(app.layout.pages.length - 1, o.page != null && o.page >= 0 ? o.page : pageInView(app));
+  // (R1) a landscape page's header runs down its side: the fields go over the nearest upright page's
+  const up = (j) => app.layout.pages[j] && !app.layout.pages[j].el.classList.contains('land');
+  if (!up(k)) for (let d = 1; d < app.layout.pages.length; d++) { if (up(k - d)) { k -= d; break; } if (up(k + d)) { k += d; break; } }
   const P = app.layout.pages[k];
   const { side, texts } = slotsOf(app, k, where);
   const two = !!app.layout.g.twoside;
@@ -143,7 +146,7 @@ function hfWrite(app, where, i, inp) {
   inp.title = bad || TITLE;
   if (bad) return false;
   const place = (where === 'head' ? 'H' : 'F') + POS[i];
-  const edits = app.pageSlotSteps([place], text, { side: H.side });
+  const edits = app.pageSlotSteps([place], text, { side: H.side, before: inp.preSteps || [] });
   if (edits === null) {
     inp.setAttribute('aria-invalid', 'true');
     inp.title = 'Not written: the source has a comment where this changes. Change it in the source.';
@@ -152,6 +155,7 @@ function hfWrite(app, where, i, inp) {
   // (the field shows what the source now has: a typed % reads \%)
   if (text !== inp.value) { const a = inp.selectionStart, grow = text.length - inp.value.length; inp.value = text; if (a != null) inp.setSelectionRange(a + grow, a + grow); }
   inp.base = text;
+  inp.preSteps = null;
   if (!edits.length) return true;
   // (each run of typing in one place is one step of history: record joins them)
   app.commit(edits.map((x) => ({ f: app.main, ...x })), null, 'hf-' + place);
@@ -214,10 +218,13 @@ export function hfClose(app, back) {
 }
 
 // \today or \thepage where the caret is in the open header or footer
-export function hfInsert(app, tex) {
+// before: a step the preamble needs for it (a function of the main file's text giving edits,
+// src/cmd/page.js pageSteps), written in the same step of history as the place
+export function hfInsert(app, tex, before) {
   const H = app.hf;
   if (!H) return false;
   const inp = H.last || H.inputs[0];
+  if (before) inp.preSteps = [...(inp.preSteps || []), before];
   const a = inp.selectionStart ?? inp.value.length, b = inp.selectionEnd ?? a;
   // (a command put in: the base moves with it, so it is not escaped as typing would be)
   const v = inp.value.slice(0, a) + tex + inp.value.slice(b);

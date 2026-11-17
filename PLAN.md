@@ -2679,6 +2679,95 @@ Tests:
     document compiled on the three engines, each checked with pypdf); `npm test`, `test:offline`
     58, `test:agent` 143, `launch.py` 18, `deploy_check.py` 45, `pages_check.py` (382 files, 358.6
     MB), and the manifest diff empty.
+61. **R1, what the paragraph (B2) and page (B6) batches left.** Done in the code (branch
+    `round3-r1-pages`), every item of LEFTOVERS' R1 list. *Hand written marks:* `\markboth` and
+    `\markright` are page marks of the model (they printed their words in the text before); the
+    running head takes them in order with the headings' marks (TeX's first mark on the page for
+    `\rightmark`, the last for `\leftmark`), none from headings under myheadings. *A paragraph
+    without line numbers:* lineno's `nolinenumbers` lines get no number and are not counted;
+    Layout › Line numbers › Suppress for current paragraph (Word's) toggles B2's setting.
+    *Document info:* Header & Footer › Document info puts `\thetitle`, `\theauthor`, `\thedate`
+    or `\jobname` where the caret is in the header, with the preamble's copy
+    `\makeatletter\let\thetitle\@title\makeatother` written once after `\title` in the same step
+    (the standard classes empty `\@title` at `\maketitle`; titling and memoir have their own, KOMA
+    keeps it; titling itself was measured to move the title 10 bp, so it is not loaded); disabled,
+    saying why, where there is no `\title`; drawn on the page; Word gets TITLE and AUTHOR fields
+    and a foreign file's fields come in as the text Word shows. *A picture as the watermark:*
+    Watermark › Custom watermark… › Picture watermark (a picture of the project or one chosen now,
+    its width): draftwatermark's `text={\includegraphics[width=10cm]{logo.png}},angle=0` with
+    graphicx, drawn on the page at its width; a text watermark after it starts afresh. Word's
+    Washout has no form XeLaTeX keeps on the shipout background (the transparent package needs
+    `\DocumentMetadata` there, pgf's opacity is lost by xdvipdfmx: measured), so the picture is
+    set as it is. *Art page borders:* Page borders › Style (Single, Double, Dashed, Dotted: TikZ's
+    `double,double distance=2pt`, `dashed`, `dotted`) and Art (Dots, Diamonds, Stars:
+    decorations.markings' marks at a fraction of the border's length, so they close up where they
+    start, the library once), drawn as an SVG reproducing TikZ's path, dash phase and the marks'
+    turns; to Word as `w:pgBorders` line styles and art (starsBlack, diamondsGray), back as TikZ.
+    pgfornament was not used: the page could draw its ornaments only by shipping their paths (its
+    `.pgf` files, LPPL) into the page. *Landscape pages for part of a document:* Layout ›
+    Orientation › Landscape pages for the selection writes pdflscape's `landscape` around the
+    selected paragraphs (Portrait pages here takes it out to the byte); the page sets its text on
+    pages of their own as tall as the text is wide and draws them on their side, the header and
+    footer down the sides, as a reader shows pdflscape's turned PDF pages. *Columns for part of a
+    document, Word's sections:* a multicols part or a landscape part is a Word section of its own
+    (continuous, its columns or its turned sheet; the headers with the first section), and a
+    foreign Word file's sections other than its last come in as multicols (ended around floats)
+    and landscape (where its last section is landscape, the whole document is, as before). The
+    header and footer of a landscape page are typed on the nearest upright page. *Tab stops at positions:* Tabs… sets stops (cm): the paragraph becomes a
+    tabbing whose first line sets them (`\hspace{2cm}\=\hspace{3cm}\=\kill`), changed in place,
+    taken off with the environment it added; Tab in a tabbing goes to the next stop (`\>`), Enter
+    starts its next line (`\\`), Layout › Paragraph › Next tab stop does Tab's work on a phone;
+    the model reads a tabbing (written by hand too, its stops set by its words) line by line with
+    its fields at TeX's stops (the parser reads `\=` as the macron accent, so the environment is
+    read again with it as `\>`). Leaders at a position and right, centre or decimal stops: tabbing
+    has none (the right margin's leader stays B2's). *Fills to the margin:* `\hfill`, `\dotfill`,
+    `\hrulefill` take what their line leaves, shared among a line's fills. *Club and widow lines:*
+    a page break leaving a paragraph's first line alone at the foot or its last at the next top is
+    weighed as TeX weighs it, `\clubpenalty` and `\widowpenalty` (LaTeX's 150, nowidow's, the
+    preamble's) against the badness of the page stretched without that line (ragged pages never
+    badly, flush ones by their paragraphs' and headings' stretch); and a page holds
+    `(\textheight - \topskip) / \baselineskip + 1` lines, as TeX's first line stands `\topskip`
+    below the text's top (the page held a line less where the classes make the height just
+    that). *Show marks:* a dot in each space, a degree sign in each `~`, a bracket where a `\label`
+    stands, drawn over the pages in sight from each character's source, taking no room (the ¶'s
+    padding, which pushed a full line's last word to the next, is gone). *A foreign Word file's
+    paragraph settings:* left aligned where the document justifies (flushleft), its own line
+    spacing (setspace's environments; a document's own from 1.25 lines up in the preamble, Word's
+    defaults of 1.08 and 1.15 lines left as LaTeX's single), indents (adjustwidth; a hanging indent
+    as `\noindent\hangindent`, the paragraph's indent hidden from pandoc, which made indented
+    paragraphs quotations) and suppressed line numbers (nolinenumbers where lineno numbers lines),
+    neighbours sharing one environment; and No Line Numbers to Word. *Security:* the quick
+    profile (notes outside the repository) found four, fixed with tests: a tabbing's second read
+    padded with the file before it (now a budget of 20 million characters a build), an art
+    border's step from a stranger's Word sheet of 1e9 twips was 0 (TikZ loops for ever; now 8 to
+    1000 marks), the watermark's picture list offered asset names TeX would not read as written
+    (only plain names now), a paragraph of thousands of fills measured quadratically (200 at
+    most). Also: the page dialogs opened from a hidden button (a phone, the search box) were not
+    placed at all; they stand by a rect now and scroll within the screen. Evidence: `npm test`
+    green (`page` 32 groups, `para` 29, `word` 68 with three new: a foreign file's settings,
+    sections both ways, art borders and header fields; `incremental` with an R1 document),
+    `para.py` 254 and `page.py` 175 with `dist/tex` (R1's: every construct compiled with
+    pdfLaTeX, XeLaTeX and LuaLaTeX; TeX's PDF with the landscape page turned and its first word
+    where the page draws it, the hand written mark and the title in the header, the tabbing's
+    fields and the filled word where the page draws them, the club line where the page ends its
+    page; phones at 390 and 360 px with touch; screenshots in `/tmp/R1-shots`).
+61a. **R1 review: the findings of the hostile review of 6bb2975 fixed, each with its case as a
+    test.** H1: the `\topskip` allowance and the plan's 1.5 px tolerance together let a page hold
+    more than TeX's (a memoir document went from 12 pages, matching TeX, to 10): the tolerance is
+    taken off where the allowance is added (the memoir document in `page.py` `r1_review`, 12 pages
+    each starting with TeX's words). M1: a tabbing is read again by itself, its offsets moved to
+    the file's, with no padding and no budget, so a full build and an incremental one read every
+    tabbing alike (past the old budget the full build ate the letter after each `\=`;
+    `incremental.test.mjs`). M2: a LibreOffice Word file names its Normal style without
+    `w:default`: the paragraph style called Normal is taken (every paragraph had come in wrapped in
+    `spacing{1.15}` and hand set left alignment was lost; `word.test.mjs`, and the review's file
+    gives no setspace and its three flushleft paragraphs). Lows: L1 `\+`, `\-` and `\<` move a
+    tabbing's lines to their stops; L2 the standard classes' two columns are flush bottomed; L3 a
+    turned Word section keeps its header and footer inside its own top and bottom margins. L4
+    (inside landscape pages with a footnote and an [h] float the cuts differ from TeX's) is left: the
+    review did not trace it. Evidence: the review's page break table on its 26 no-wrap documents:
+    page starts agreeing with TeX's 214 of 303 (R1 210/301, main 152/304), page counts equal 17
+    (R1 16, main 16), memoir 12 pages 9/9 again.
 62. **R2: what the Font (B1), Lists (B3) and Styles (B4) batches left undone.** Done in the code
     (branch `round3-r2-styles`, on main e863372), every item of the round 3 list.
     *Font.* Clear All Formatting takes the paragraph's own settings off with the characters'
@@ -2809,8 +2898,6 @@ Tests:
     caret is, and a document's own `\newtheorem{theorem}` can be renamed. Evidence: `npm test`
     green (`styles.test.mjs` 29 groups, `looks.test.mjs` 11); `styles.py` 422 (`r2_review` 23: N1's
     TikZ document and N3's project compiled in the page).
-
-## Open tasks
 
 ## Open tasks
 

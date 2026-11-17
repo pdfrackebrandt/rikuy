@@ -16,12 +16,13 @@ import { register, command, onInstall } from '../commands.js';
 import { openMenu, colorPicker, colorNeeds } from '../ui/kit.js';
 import { $, store, PREFS } from '../ui/dom.js';
 import * as P from '../parasrc.js';
-import { usePackages, preambleEnd, hasPackage, docClass, packageOptions } from '../preamble.js';
+import { usePackages, preambleEnd, hasPackage, docClass, packageOptions, stripComments as stripCommentsOf } from '../preamble.js';
 import { envWords, declAtStart, startsLine, eolAt } from '../blockenv.js';
 import { mapPos } from '../wrap.js';
 import { parsedText } from '../model.js';
 import { scriptSetup, rtlDocument, RTL_LANGUAGES } from '../scripts.js';
 import { openParagraphDialog, paraField } from '../ui/paradialog.js';
+import { segOfSpan, charRange } from '../editor.js';
 
 // ---- where the caret is, once for each look at the ribbon ---------------------------------------
 // (at.memo is shared by every batch: keys of this one start with b2)
@@ -45,11 +46,19 @@ function byFiles(app, key, fn) {
   memo[key] = { main: app.main, files: [...app.files], v };
   return v;
 }
+// (R1) the tabbing the caret is in: its line on the page says so, the source where it stands
+const tabbingOf = (app, at) => {
+  if (!at || !at.c || at.c.ghost || !at.it || !at.it.classList || !at.it.classList.contains('tabl')) return null;
+  const m = at.memo || (at.memo = {});
+  if (!('r1tab' in m)) m.r1tab = P.tabbingAt(app.src(at.c.f), at.c.a);
+  return m.r1tab;
+};
 const hasPre = once((src) => preambleEnd(src) >= 0);
 const widowsOn = once((src) => P.widowControl(src).on);
 const docOK = (app) => !!app.model && hasPre(app.src(app.main));
 
 const ICON = {
+  tabnext: '<path d="M3 10h11M10.5 6.5L14 10l-3.5 3.5M16.5 5v10"/>',
   left: '<path d="M3 4.5h14M3 8h9M3 11.5h14M3 15h9"/>',
   center: '<path d="M3 4.5h14M5.5 8h9M3 11.5h14M5.5 15h9"/>',
   right: '<path d="M3 4.5h14M8 8h9M3 11.5h14M8 15h9"/>',
@@ -132,8 +141,13 @@ register(
   { id: 'ltr-paragraph', name: 'Left-to-Right Text Direction', title: 'This paragraph runs from the left (otherlanguage with the document\'s left to right language; bidi\'s LTR)', synonyms: ['Left to right', 'LTR'],
     when: (app, at) => can(app, at) && !!app.paraDirs().rtl, whyNot: (app, at) => (can(app, at) ? 'The document sets up no right to left language: every paragraph runs from the left.' : why(app, at)), kind: 'toggle',
     on: (app, at) => (can(app, at) && app.paraDirs().rtl ? app.paraDirNow(at) === 'ltr' : null), run: (app, args, at) => app.paraDirection('ltr', at) },
-  { id: 'tab-leader', name: 'Tabs', title: 'Tabs…: a stop at the right margin with a leader of dots, a line or none (\\dotfill, \\hrulefill, \\hfill), at the caret', synonyms: ['Tab stops', 'Leader', 'Dot leader', 'dotfill', 'hfill'],
-    when: (app, at) => can(app, at) && !!(at && at.c && !at.c.ghost), whyNot: why, run: (app, args, at) => (args ? app.paraLeader(args, at) : app.paraDialog({ tab: 'tabs' }, at)) },
+  { id: 'tab-leader', name: 'Tabs', title: 'Tabs…: stops at positions (LaTeX\'s tabbing), and a stop at the right margin with a leader of dots, a line or none (\\dotfill, \\hrulefill, \\hfill), at the caret', synonyms: ['Tab stops', 'Leader', 'Dot leader', 'dotfill', 'hfill', 'tabbing', 'Set tab stop'],
+    when: (app, at) => (can(app, at) || !!tabbingOf(app, at)) && !!(at && at.c && !at.c.ghost), whyNot: why,
+    run: (app, args, at) => (args && typeof args === 'object' ? app.paraTabStops(args.stops || [], at) : args ? app.paraLeader(args, at) : app.paraDialog({ tab: 'tabs' }, at)) },
+  // (R1) in a tabbing, the next stop: Tab on a keyboard, this on a phone (the right click menu, a
+  // long press)
+  { id: 'tab-next', name: 'Next tab stop', label: 'Next tab stop', icon: ICON.tabnext, tab: 'layout', group: 'paragraph', order: 50, title: 'What follows starts at the next tab stop (\\> in a tabbing) (Tab)', keysElsewhere: ['Tab'], synonyms: ['Tab', 'tabbing'], menu: { text: 93 },
+    when: (app, at) => !!tabbingOf(app, at), whyNot: () => 'Only in a paragraph with tab stops (Tabs…)', run: (app, args, at) => app.paraTabNext(at) },
   // Layout › Paragraph: the indents and the spacing as fields (folded, each opens the dialog there)
   ...['indent-left', 'indent-right', 'spacing-before', 'spacing-after'].map((id, k) => ({
     id, name: ['Indent Left', 'Indent Right', 'Spacing Before', 'Spacing After'][k], el: 'rl-' + id, role: 'spinbutton', kind: 'custom', tab: 'layout', group: 'paragraph', order: 10 + k * 10,
@@ -150,6 +164,21 @@ register(
 
 // Show marks as it was left, as Word keeps it
 onInstall((app) => { if (app.prefs && app.prefs.marks) app.toggleMarks(true); });
+// (R1) in a tabbing's line Tab goes to the next stop (\>) and Enter starts the next line (\\), as
+// the environment's lines do
+onInstall((app) => {
+  app.root.addEventListener('keydown', (e) => {
+    if ((e.key !== 'Tab' && e.key !== 'Enter') || e.shiftKey || e.ctrlKey || e.metaKey || e.altKey || e.isComposing) return;
+    const n = getSelection().anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement);
+    if (!el || !el.closest || !el.closest('.it.tabl') || app.armed) return;
+    const c = app.caretNow();
+    if (!c || c.ghost) return;
+    e.preventDefault(); e.stopPropagation();
+    if (e.key === 'Tab') { app.paraTabNext(app.ribbonAt()); return; }
+    const a = c.collapsed ? c.p : c.a, b = c.collapsed ? c.p : c.b, t = '\\\\' + eolAt(app.src(c.f), a);
+    app.commit([{ f: c.f, s: a, e: b, t }], { f: c.f, p: a + t.length, bias: 1 }, 'insert');
+  }, true);
+});
 
 export const methods = {
   // ---- the paragraphs the caret or the selection is in ----------------------------------------
@@ -597,6 +626,40 @@ export const methods = {
     }]);
   },
 
+  // ---- tab stops at positions (R1): the caret's paragraph a tabbing, its first line the stops ------
+  // what the Tabs dialog shows: { stops (pt), text (stops set by its words: not edited here), why }
+  paraTabsNow(at) {
+    const c = at && at.c;
+    if (!c || c.ghost) return { why: 'Click in a paragraph first.', stops: [] };
+    const T = tabbingOf(this, at);
+    if (T) { const S = P.tabbingStops(this.src(c.f), T); return { T, stops: S.stops || [], text: !!S.text }; }
+    const p = paraOf(this, at);
+    if (!p || p.why || p.float) return { why: (p && p.why) || 'Click in a paragraph first.', stops: [] };
+    const U = p.units[0].U, t = this.src(c.f).slice(U.s, U.e);
+    if (p.units.length > 1) return { why: 'Tab stops are set for one paragraph at a time.', stops: [] };
+    if (/\\begin\s*\{|\\\[|\$\$|\\par\b/.test(stripCommentsOf(t))) return { why: 'A paragraph with a display or an environment in it cannot be a tabbing.', stops: [] };
+    return { U, stops: [] };
+  },
+  paraTabStops(stops, at) {
+    const N = this.paraTabsNow(at);
+    if (N.why || N.text) { this.toast(N.why || 'Its stops are set by the \\= in its words: change them in the source.', 6000); return false; }
+    const f = at.c.f, src = this.src(f);
+    const edits = N.T ? P.tabStopEdits(src, 0, 0, stops, N.T) : P.tabStopEdits(src, N.U.s, N.U.e, stops, null);
+    if (!edits.length) return false;
+    const p = at.c.a, q = edits.reduce((x, d) => (d.s <= p ? x + d.t.length - (d.e - d.s) : x), p);
+    this.closeGroup();
+    this.commit(edits.map((d) => ({ f, ...d })), { f, p: q, bias: 1 }, 'para-tabs');
+    this.closeGroup();
+    return true;
+  },
+  paraTabNext(at) {
+    const c = this.caretNow();
+    if (!c || c.ghost || !tabbingOf(this, at)) return false;
+    const a = c.collapsed ? c.p : c.a, b = c.collapsed ? c.p : c.b;
+    this.commit([{ f: c.f, s: a, e: b, t: '\\>' }], { f: c.f, p: a + 2, bias: 1 }, 'insert');
+    return true;
+  },
+
   // ---- tab stops with a leader: \hfill, \dotfill, \hrulefill at the caret ----------------------------
   paraLeader(kind, at) {
     const c = at && at.c;
@@ -651,7 +714,94 @@ export const methods = {
     this.marksOn = on ?? !this.marksOn;
     document.body.classList.toggle('marks-on', this.marksOn);
     if (this.prefs) { this.prefs.marks = this.marksOn; store(PREFS, this.prefs); }
+    // (R1) the marks drawn over the pages in sight, again as the desk scrolls
+    if (this.marksOn && !this.pmScroll && this.desk) { this.pmScroll = () => { if (this.marksOn) this.paraMarksSoon(); }; this.desk.addEventListener('scroll', this.pmScroll, { passive: true }); }
+    this.paraMarksPaint();
     return true;
+  },
+  paraMarksSoon() { clearTimeout(this.pmT); this.pmT = setTimeout(() => { this.pmT = 0; this.paraMarksPaint(); }, 100); },
+  // (R1) Show marks' marks that CSS cannot draw, as Word draws them: a dot in each space, a degree
+  // sign in each ~ (a space no line breaks at), a bracket where a \label stands. Drawn over the
+  // pages in sight (and one either side) without taking room, each page again when its text or
+  // the zoom changed; read from the page's text and the source behind each character.
+  paraMarksPaint() {
+    const pages = (this.layout && this.layout.pages) || [];
+    if (!this.marksOn || !this.desk || !this.index) { for (const P of pages) if (P.pmk) { P.pmk.remove(); P.pmk = null; P.pmkKey = null; } return; }
+    const d = this.desk.getBoundingClientRect(), h = d.height || innerHeight;
+    if (this.index.dirty) this.index.build();
+    let labels = null;
+    pages.forEach((P, k) => {
+      const r = P.el.getBoundingClientRect();
+      if (r.bottom < d.top - h || r.top > d.bottom + h) return;
+      const key = [P.sig, P.chrome, this.px, this.renderVer, r.width.toFixed(1)].join('|');
+      if (P.pmk && P.pmkKey === key && P.pmk.isConnected) return;
+      if (!labels) labels = this.paraLabelSpots();
+      if (!P.pmk || !P.pmk.isConnected) { P.pmk = document.createElement('div'); P.pmk.className = 'pmk'; P.pmk.contentEditable = 'false'; P.pmk.setAttribute('aria-hidden', 'true'); P.el.appendChild(P.pmk); }
+      P.pmkKey = key;
+      P.pmk.replaceChildren(this.paraMarksOf(P, r, labels));
+    });
+  },
+  paraMarksOf(P, pr, labels) {
+    const out = document.createDocumentFragment(), rg = document.createRange();
+    const mark = (cls, x, y, hgt) => { const m = document.createElement('span'); m.className = cls; m.style.left = (x - pr.left).toFixed(1) + 'px'; m.style.top = (y - pr.top).toFixed(1) + 'px'; if (hgt) m.style.height = hgt.toFixed(1) + 'px'; out.appendChild(m); };
+    let n = 0;
+    for (const span of P.flow.querySelectorAll('span.t')) {
+      const node = span.firstChild;
+      if (!node || node.nodeType !== 3 || span.closest('.tex, .ghostp, .tabk')) continue;
+      const t = node.data;
+      if (t.indexOf(' ') < 0 && t.indexOf('\u00a0') < 0) continue;
+      const info = segOfSpan(span);
+      const src = info ? this.src(info.seg.f) : '';
+      for (let i = 0; i < t.length && n < 20000; i++) {
+        const c = t[i];
+        if (c !== ' ' && c !== '\u00a0') continue;
+        rg.setStart(node, i); rg.setEnd(node, i + 1);
+        const b = rg.getBoundingClientRect();
+        // (a space a line ends at takes no room: none is drawn there)
+        if (b.width < 0.5) continue;
+        const tilde = info && i < info.len && src[charRange(info.B, info.seg, info.o + i)[0]] === '~';
+        mark(tilde ? 'pm-nb' : 'pm-sp', b.left + b.width / 2, b.top + b.height / 2);
+        n++;
+      }
+    }
+    // a \label: where its place on the page is, or after the words before it
+    for (const L of labels) {
+      const at = L.pt;
+      if (!at || !P.el.contains(at.node)) continue;
+      rg.setStart(at.node, at.offset); rg.collapse(true);
+      const rs = rg.getClientRects(), b = rs.length ? rs[rs.length - 1] : rg.getBoundingClientRect();
+      if (!b || (!b.height && !b.top)) continue;
+      mark('pm-lb', b.left, b.top, b.height || 10);
+    }
+    return out;
+  },
+  // every \label of the project's TeX files (5000 at most), each with its place on the page
+  paraLabelSpots() {
+    const out = [];
+    for (const [f, text] of this.files) {
+      if (!/\.tex$/i.test(f) || text.indexOf('\\label') < 0) continue;
+      const arr = this.index.byFile.get(f);
+      if (!arr || !arr.length) continue;
+      const re = /\\label\s*\{/g;
+      for (let m; (m = re.exec(text)) && out.length < 5000;) {
+        // (none in a comment: a % before it on its line, not escaped)
+        const ls = text.lastIndexOf('\n', m.index) + 1;
+        if (/(^|[^\\])(\\\\)*%/.test(text.slice(Math.max(ls, m.index - 400), m.index))) continue;
+        out.push({ f, p: m.index, pt: this.paraSpot(arr, m.index) });
+      }
+    }
+    return out;
+  },
+  // the place on the page of source offset p of a file: inside the text that has it, else at the
+  // end of the nearest text before it (a label after a heading's words: at their end)
+  paraSpot(arr, p) {
+    let lo = 0, hi = arr.length - 1, last = -1;
+    while (lo <= hi) { const m = (lo + hi) >> 1; if (arr[m].a <= p) { last = m; lo = m + 1; } else hi = m - 1; }
+    if (last < 0) return null;
+    const E = arr[last];
+    if (E.seg.ph || !E.span.firstChild) return null;
+    if (p <= E.b) { const r = this.index.findIn([E], p, -1); return r && r.node ? { node: r.node, offset: r.offset } : null; }
+    return { node: E.span.firstChild, offset: E.len };
   },
 
   // ---- Layout's fields ------------------------------------------------------------------------------
