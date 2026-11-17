@@ -644,6 +644,10 @@ class Builder {
     // multicols environments met so far, by file: each one's paragraphs share its number as their
     // region (one that does not move as text is typed before it)
     this.mcCount = new Map();
+    // (R1) landscape environments met so far, by file: each one's pages are turned together
+    this.lsCount = new Map();
+    // (R1) tabbing environments met so far, by file: each one's lines share its stops
+    this.tbCount = new Map();
     this.subeq = null;
     this.targets = [];
     this.lastTarget = null;
@@ -685,6 +689,8 @@ class Builder {
     this.collectBibItems(nodes, { f: main, src, pm: null });
     const ctx = { f: main, src, pm: null };
     this.mainCtx = ctx;
+    // (R1: TeX's \jobname, the main file's name as the worker compiles it)
+    this.opts.job = String(main || '').slice(String(main || '').lastIndexOf('/') + 1).replace(/\.tex$/i, '');
     if (docEnv) {
       const pre = nodes.slice(0, nodes.indexOf(docEnv));
       this.preamble(pre, ctx);
@@ -960,9 +966,10 @@ class Builder {
       case 'bibliographystyle': O.bibstyle = A(0).trim(); break;
       case 'setcitestyle': if (/numbers/.test(A(0))) O.forceNumeric = true; if (/authoryear/.test(A(0))) O.forceAY = true; if (/aysep=\{\}/.test(A(0))) O.aysep = ''; break;
       case 'addbibresource': this.bibFiles.push(A(1).trim()); break;
-      case 'title': this.meta.title = { nd, ctx, a: nd.args[1] }; break;
-      case 'author': this.meta.author = { nd, ctx, a: nd.args[1] }; break;
-      case 'date': this.meta.date = { nd, ctx, a: nd.args[0] }; break;
+      // (R1: their TeX, as a running head's \thetitle, \theauthor and \thedate print it)
+      case 'title': this.meta.title = { nd, ctx, a: nd.args[1] }; O.docInfo = { ...O.docInfo, title: A(1).slice(0, 300) }; break;
+      case 'author': this.meta.author = { nd, ctx, a: nd.args[1] }; O.docInfo = { ...O.docInfo, author: A(1).slice(0, 300) }; break;
+      case 'date': this.meta.date = { nd, ctx, a: nd.args[0] }; O.docInfo = { ...O.docInfo, date: A(0).slice(0, 300) }; break;
       case 'setcounter': if (A(0).trim() === 'secnumdepth') { O.secnumdepth = parseInt(A(1), 10); O.secnumdepthSet = true; } else if (A(0).trim() === 'maxsecnumdepth') O.maxsecnumdepth = parseInt(A(1), 10); break;
       // memoir's own: by a sectioning name, none or all
       case 'setsecnumdepth': { const v = SECDEPTH[A(0).trim()]; if (v != null) { O.secnumdepth = v; O.secnumdepthSet = true; } break; }
@@ -1687,6 +1694,15 @@ class Builder {
           units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'pagemark', mark }], fns: [], sig: 'pm' + JSON.stringify(mark) });
           continue;
         }
+        // (R1) \markboth{left}{right} and \markright{right} by hand: the marks a running head
+        // shows (\leftmark, \rightmark), as myheadings asks; one inside a paragraph's words
+        // prints nothing there
+        if ((name === 'markboth' || name === 'markright') && !paraShows()) {
+          flushPara();
+          const mark = name === 'markboth' ? { markL: this.argText(ctx, nd.args[0]).slice(0, 300), markR: this.argText(ctx, nd.args[1]).slice(0, 300) } : { markR: this.argText(ctx, nd.args[0]).slice(0, 300) };
+          units.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'pagemark', mark }], fns: [], sig: 'pm' + JSON.stringify(mark) });
+          continue;
+        }
         // \null between two page breaks: an empty page, as TeX gives it
         if (name === 'null' && !paraShows()) {
           let j = k + 1;
@@ -2133,13 +2149,15 @@ class Builder {
     if (name === 'tcolorbox') return this.boxEnv(nd, ctx, env);
     if (name === 'samepage') return this.container(nd, ctx, env, { keepLines: true });
     if (name === 'hyphenrules') return this.container(nd, ctx, env, this.argText(ctx, nd.args[0]).trim() === 'nohyphenation' ? { nohy: true } : {});
-    if (name === 'nolinenumbers') return this.container(nd, ctx, env, {});
+    // (R1) lineno numbers none of its lines, and counts none (src/layout.js eachLine)
+    if (name === 'nolinenumbers') { const r = this.container(nd, ctx, env, {}); for (const it of r.items) it.noLn = true; return r; }
     if (/^(figure|table|wrapfigure|wraptable|SCfigure|SCtable|sidewaysfigure|sidewaystable)\*?$/.test(name)) return this.floatBlock(nd, ctx, env);
     if (/^(tabular|tabularx|tabular\*|tabulary|longtable|array)$/.test(name)) {
       const t = this.tabular(nd, ctx);
       return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'float', kind: 'inline', parts: [t], f: ctx.f }], fns: t.fns || [] };
     }
     if (name === 'thebibliography') return this.theBib(nd, ctx);
+    if (name === 'tabbing' && !nd.raw && nd.nodes) return this.tabbing(nd, ctx, env);
     if (/^multicols\*?$/.test(name) && !nd.raw && nd.nodes) {
       // multicols: its paragraphs set in columns on the page (src/layout.js), balanced unless
       // starred. Each is a block of its own, as the document's are, so that typing in one draws
@@ -2157,6 +2175,20 @@ class Builder {
         u.sig = (u.sig || '') + '\u0001mc' + n + ':' + ord + (mc.star ? '*' : '');
       }
       return [...pre, ...list];
+    }
+    if (name === 'landscape' && !nd.raw && nd.nodes && !env.inMc && !env.land) {
+      // (R1) lscape's and pdflscape's landscape: its paragraphs on pages of their own, turned
+      // (src/layout.js), each a block of its own as multicols' are
+      const ord = (this.lsCount.get(ctx.f) || 0) + 1;
+      this.lsCount.set(ctx.f, ord);
+      const key = ctx.f + ':ls' + ord;
+      const us = this.flow(nd.nodes, ctx, { ...env, land: key });
+      const list = us.length ? us : [{ f: ctx.f, s: nd.s, e: nd.e, items: [this.emptyPara(ctx, nd.be, env.cls)], fns: [] }];
+      for (const u of list) {
+        for (const it of u.items) if (!it.land) it.land = key;
+        u.sig = (u.sig || '') + '\u0001ls' + ord;
+      }
+      return list;
     }
     if (/^(small|footnotesize|scriptsize|large|Large|minipage|landscape|appendices|otherlanguage\*?|titlepage|multicols\*?|adjustbox|threeparttable|tablenotes|acknowledgments|acknowledgements)$/.test(name)) {
       const ex = /^(small|footnotesize|scriptsize|large|Large)$/.test(name) ? { cls: (env.cls || '') + ' z-' + name } : name === 'minipage' ? { ...FLUSH, flushAll: true } : {};
@@ -2193,6 +2225,68 @@ class Builder {
     if (r && r.items.length) r.items[0].envTag = name;
     else return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'raw', f: ctx.f, s: nd.s, e: nd.e, is: nd.be, ie: nd.es, text: '\\begin{' + name + '}', verb: false, name }], fns: [] };
     return r;
+  }
+
+  // (R1) tabbing: each line a paragraph of the page, its fields at the stops (src/layout.js
+  // tabStops). \\ ends a line, \kill one that only sets stops (drawn as nothing), \= sets a stop
+  // where the line has got to, \> goes to the next; a field's leading spaces are TeX's to drop.
+  // The environment is a list to TeX: its topsep above and below it.
+  tabbing(nd, ctx, env) {
+    const ord = (this.tbCount.get(ctx.f) || 0) + 1;
+    this.tbCount.set(ctx.f, ord);
+    const key = ctx.f + ':tb' + ord, fns = [];
+    // (the parser reads \= as the macron accent, which takes what follows as its letter: here it
+    // sets a stop, so the environment's text alone is read again with each \= as \>, a control
+    // symbol of the same length taking nothing, its place told apart by the source, and the
+    // offsets moved to the file's; the same reading in a full build and an incremental one)
+    let nodes = nd.nodes;
+    const body = ctx.src.slice(nd.be, nd.es);
+    if (body.indexOf('\\=') >= 0) {
+      const r = parse(body.replace(/(?<!\\)((?:\\\\)*)\\=/g, '$1\\>'), { userSigs: this.userSigs });
+      const ns = Array.isArray(r) ? r : (r && r.nodes) || null;
+      if (ns) { shiftNodes(ns, nd.be); nodes = ns; }
+    }
+    const isSet = (n) => ctx.src[n.s] === '\\' && ctx.src[n.s + 1] === '=';
+    const lines = [];
+    let cur = { cells: [[]], sets: false, kill: false, s: nd.be };
+    let margin = 0;
+    const end = (n, kill) => { cur.kill = !!kill; cur.e = n.s; lines.push(cur); cur = { cells: [[]], sets: false, kill: false, s: n.e, margin }; };
+    cur.margin = 0;
+    for (const n of nodes) {
+      if (n.t === 'cmd' && n.name === '\\') { end(n); continue; }
+      if (n.t === 'cmd' && n.name === 'kill') { end(n, true); continue; }
+      if (n.t === 'cmd' && (n.name === '=' || n.name === '>')) { if (n.name === '=' || isSet(n)) cur.sets = true; cur.cells.push([]); continue; }
+      // (\+ and \- move the left margin to the next stop and back for the lines after, \< this
+      // line's back by one: its first field starts at that stop)
+      // (the parser may give these the group after them as an argument, as an accent takes its
+      // letter: what it holds is text of the field, kept, a group as a group)
+      const keepArgs = () => { for (const a of n.args || []) if (a && a.nodes) { if (ctx.src[a.s] === '{') cur.cells[cur.cells.length - 1].push({ t: 'group', s: a.s, e: a.e, is: a.is, ie: a.ie, nodes: a.nodes }); else cur.cells[cur.cells.length - 1].push(...a.nodes); } };
+      if (n.t === 'cmd' && (n.name === '+' || n.name === '-')) { margin = Math.max(0, margin + (n.name === '+' ? 1 : -1)); keepArgs(); continue; }
+      if (n.t === 'cmd' && n.name === '<') { cur.back = (cur.back || 0) + 1; keepArgs(); continue; }
+      if (n.t === 'cmd' && /^(?:'|`|pushtabs|poptabs)$/.test(n.name)) { keepArgs(); continue; }
+      cur.cells[cur.cells.length - 1].push(n);
+    }
+    cur.e = nd.es;
+    if (cur.cells.length > 1 || cur.cells[0].some((n) => !(n.t === 'text' && !ctx.src.slice(n.s, n.e).trim()) && n.t !== 'comment')) lines.push(cur);
+    const items = lines.map((L, k) => {
+      const inl = L.cells.map((ns) => {
+        const kids = this.inl(ns, ctx, fns);
+        // (TeX drops the spaces a field starts with)
+        const x = kids[0];
+        if (x && x.k === 'seg' && !x.ph) { const m = /^[ ]+/.exec(x.t); if (m) { x.t = x.t.slice(m[0].length); x.map = x.map.slice(m[0].length * 2); } }
+        return { k: 'sty', st: 'tab', kids, f: ctx.f };
+      });
+      const it = { type: 'p', inl, indent: false, cls: (env.cls || '') + ' tabl' + (L.kill ? ' tabk' : ''), ctx: 'tab', f: ctx.f, dir: this.dirOf(), tab: key };
+      if (L.sets) it.tabSets = true;
+      const lm = Math.max(0, (L.margin || 0) - (L.back || 0));
+      if (lm) it.tabFrom = lm;
+      if (k === 0) it.sbThm = true;
+      if (k === lines.length - 1) it.saThm = true;
+      return it;
+    });
+    if (!items.length) items.push(this.emptyPara(ctx, nd.be, env.cls));
+    this.use('tb' + lines.length);
+    return { f: ctx.f, s: nd.s, e: nd.e, items, fns };
   }
 
   // (B2) tcolorbox: its paragraphs on its colback, in its frame; first and last carry the box's
@@ -3131,6 +3225,8 @@ class Builder {
       return false;
     }
     if (name === 'label') { this.label(A(0), ctx); return false; }
+    // (R1) a running head's mark: nothing in the text (src/layout.js marks)
+    if (name === 'markboth' || name === 'markright') return false;
     if (name === 'index' || name === 'addcontentsline') { this.refMark(nd, ctx); return false; }
     if (name === 'endnote') {
       // (B9) a mark in the text; its words where \printendnotes or \theendnotes prints them
@@ -3479,6 +3575,25 @@ function rawCut(src, n) {
   if (n.t === 'verb') { const k = src.slice(n.s, n.e).search(BLANK); return k < 0 ? -1 : n.s + k; }
   if (n.t === 'cmd') for (const a of n.args || []) if (a && a.raw) { const k = src.slice(a.s, a.e).search(BLANK); if (k >= 0) return a.s + k; }
   return -1;
+}
+
+// (R1) a parse of part of a file moved to where that part stands in it: every offset of its nodes
+// and their arguments
+// (every offset the parser sets: ne is where a command's name ends. The walk visits each node once,
+// so it is as long as the text and needs no cap: a cut one would leave nodes half moved)
+const NODE_OFFSETS = ['s', 'e', 'is', 'ie', 'bs', 'be', 'es', 'nameEnd', 'ne'];
+export function shiftNodes(ns, d) {
+  // (an object reached twice, were the parser ever to share one, is moved once; a cycle ends)
+  const stack = [ns], seen = new Set();
+  while (stack.length) {
+    const x = stack.pop();
+    if (!x || typeof x !== 'object' || seen.has(x)) continue;
+    seen.add(x);
+    if (Array.isArray(x)) { for (const y of x) stack.push(y); continue; }
+    for (const k of NODE_OFFSETS) if (typeof x[k] === 'number') x[k] += d;
+    if (x.nodes) stack.push(x.nodes);
+    if (x.args) stack.push(x.args);
+  }
 }
 
 // Accumulates characters into editable segments.

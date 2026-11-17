@@ -627,11 +627,201 @@ def screenshots(p):
             b.close()
 
 
+# ---- R1: what the paragraph batch left (PLAN.md task 61) -------------------------------------------
+def r1_marks(page):
+    """Show marks draws a dot in each space, a degree sign in each ~ and a bracket where a \\label
+    stands, over the page and taking no room; nothing written; off again takes them away"""
+    d = D('One two three four.\n\nFig.~5 here and a label\\label{x} there.\n\n\\noindent Leftedge\\hfill Rightedge')
+    load_doc(page, d); click_text(page, 'One', 1)
+    before = page.evaluate('[...document.querySelectorAll("#pages .it.p")].map((p) => p.getBoundingClientRect().height)')
+    page.keyboard.press('Control+Shift+8'); page.wait_for_timeout(400)
+    k = page.evaluate('[...document.querySelectorAll("#pages .pmk > span")].map((s) => s.className)')
+    after = page.evaluate('[...document.querySelectorAll("#pages .it.p")].map((p) => p.getBoundingClientRect().height)')
+    check('R1: Show marks: a dot in each space, a degree sign in the ~, a bracket at the \\label', k.count('pm-nb') == 1 and k.count('pm-lb') == 1 and k.count('pm-sp') == 8, k)
+    check('R1: nothing written, and no paragraph moves (the marks take no room, a filled line stays one line)', src(page) == d and before == after, (before, after))
+    nb = page.evaluate('''() => { const m = document.querySelector('.pmk .pm-nb').getBoundingClientRect(); const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('Fig.')); const r = document.createRange(); const i = s.textContent.indexOf('Fig.') + 4; r.setStart(s.firstChild, i); r.setEnd(s.firstChild, i + 1); const b = r.getBoundingClientRect(); return [m.left, b.left, b.right]; }''')
+    check('R1: the degree sign stands in the space the ~ makes', nb[1] - 1 <= nb[0] <= nb[2] + 1, nb)
+    page.keyboard.press('Control+Shift+8'); page.wait_for_timeout(200)
+    check('R1: and Show marks off takes them away', page.evaluate('document.querySelectorAll("#pages .pmk > span").length') == 0)
+
+def r1_fills(page):
+    """\\hfill, \\dotfill and \\hrulefill take what their line leaves, as TeX stretches them"""
+    load_doc(page, D('Left \\hfill Right\n\nName\\dotfill 12\n\nOne \\hfill two \\hfill three\n\n\\noindent Leftedge\\hfill Rightedge')); page.wait_for_timeout(300)
+    for w in ('Right', '12', 'three', 'Rightedge'):
+        x = page_x(page, w)
+        check('R1: "%s" ends at the right margin, as TeX sets it' % w, x and abs(x['r'] - x['w']) < 0.6, x)
+    a, b, c = page_x(page, 'One'), page_x(page, 'two'), page_x(page, 'three')
+    mid = (a['r'] + c['l']) / 2
+    check('R1: two fills on one line share what it leaves: "two" in the middle', abs((b['l'] + b['r']) / 2 - mid) < 1.5, (a, b, c))
+
+def r1_tabs(page):
+    """Tabs…: stops at positions make the paragraph a tabbing (its first line the stops), a round
+    trip; Tab goes to the next stop (\\>), Enter starts the next line; the page sets each field at
+    its stop as TeX does; Clear all takes them away to the byte"""
+    d = D('First words.\n\nName and value.\n\nLast.')
+    want = D('First words.\n\n\\begin{tabbing}\n\\hspace{2cm}\\=\\hspace{3cm}\\=\\kill\nName and value.\n\\end{tabbing}\n\nLast.')
+    def stops(pg):
+        pg.evaluate('rikuy.runCommand("tab-leader")'); pg.wait_for_timeout(250)
+        dlg = pg.get_by_role('dialog', name='Tabs')
+        for v in ('2', '5'):
+            dlg.get_by_label('Tab stop position (cm)').fill(v); dlg.get_by_role('button', name='Set', exact=True).click(); pg.wait_for_timeout(80)
+        dlg.get_by_role('button', name='OK', exact=True).click(); pg.wait_for_timeout(300)
+    def clear(pg):
+        pg.evaluate('rikuy.runCommand("tab-leader")'); pg.wait_for_timeout(250)
+        dlg = pg.get_by_role('dialog', name='Tabs')
+        dlg.get_by_role('button', name='Clear all', exact=True).click(); dlg.get_by_role('button', name='OK', exact=True).click(); pg.wait_for_timeout(300)
+    roundtrip(page, d, ('Name', 2), stops, want, label='R1 Tabs › stops at 2 cm and 5 cm', off_command=clear)
+    load_doc(page, want); click_text(page, 'Name', 4)
+    page.keyboard.press('Tab'); page.wait_for_timeout(250)
+    check('R1: Tab in a tabbing goes to the next stop (\\>)', 'Name\\> and value.' in src(page), src(page)[-120:])
+    x = page_x(page, 'and')
+    check('R1: and the page sets what follows at the stop, 2 cm in', x and abs(x['l'] - 2 * CM) < 0.6, x)
+    click_text(page, 'value', 5); page.keyboard.press('Enter'); page.keyboard.type('Next'); page.wait_for_timeout(300)
+    check('R1: Enter starts the next line of the tabbing (\\\\)', 'and value\\\\\nNext' in src(page), src(page)[-140:])
+    page.evaluate('rikuy.runCommand("tab-leader")'); page.wait_for_timeout(250)
+    shown = page.get_by_role('dialog', name='Tabs').get_by_role('listitem').all_inner_texts()
+    page.keyboard.press('Escape')
+    check('R1: the Tabs dialog reads the stops back', [t.split('\n')[0].strip() for t in shown] == ['2 cm', '5 cm'], shown)
+    # hand written: stops set by the words of a \kill line; the page puts the fields there
+    load_doc(page, D('\\begin{tabbing}\nNameXX \\= ValueYY \\= x\\kill\nA \\> B \\>C\n\\end{tabbing}')); page.wait_for_timeout(300)
+    b, n = page_x(page, 'B'), None
+    check('R1: a tabbing written by hand: B at the stop the words of its \\kill line set (43.6 pt, TeX\'s)', b and abs(b['l'] - 43.61) < 0.8, b)
+    click_text(page, 'B', 0); page.evaluate('rikuy.runCommand("tab-leader")'); page.wait_for_timeout(250)
+    dis = page.get_by_role('dialog', name='Tabs').get_by_role('button', name='Set', exact=True).is_disabled()
+    page.keyboard.press('Escape')
+    check('R1: its stops are its words\': the dialog says so and sets none', dis)
+
+def r1_widows(page):
+    """A paragraph's first line alone at a page's foot or its last at the next page's top, as TeX
+    weighs \\clubpenalty and \\widowpenalty: 150 (LaTeX's) keeps them off a ragged page, 0 lets
+    them be"""
+    W = 'word ' * 60
+    body = '\n\n'.join('P%d %s' % (k, W[: (k * 37 % 200) + 120]) for k in range(30))
+    def last_on_first(text):
+        load_doc(page, text); page.wait_for_timeout(400)
+        return page.evaluate('''() => { const p = document.querySelector('#pages > .page .flow'); const its = [...p.querySelectorAll('.it.p')]; const l = its[its.length - 1]; return [l.textContent.slice(0, 4), l.classList.contains('split-a'), (l.getBoundingClientRect().height / (window.rikuy.layout.g.bs * window.rikuy.px)).toFixed(1)]; }''')
+    a = last_on_first(D(body))
+    b = last_on_first(D(body, '\\widowpenalty=0\n\\clubpenalty=0\n'))
+    check('R1: LaTeX\'s penalties: no paragraph\'s first line alone at the first page\'s foot', not (a[1] and a[2] == '1.0'), a)
+    check('R1: \\clubpenalty=0: P13\'s first line ends the first page, as TeX\'s PDF has it', b[0] == 'P13 ' and b[1] and b[2] == '1.0', b)
+    if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')): return
+    c = compile_doc(page, D(body, '\\widowpenalty=0\n\\clubpenalty=0\n'))
+    last = c['words'][0][-2][4] if c['words'] else None
+    first2 = ' '.join(w[4] for w in c['words'][1][:1]) if len(c['words']) > 1 else None
+    check('R1: and TeX\'s PDF ends the first page with that line too (the page and TeX agree)', c['ok'] and any(w[4] == 'P13' for w in c['words'][0][-40:]), (last, first2))
+
+def r1_para_pdf(page):
+    """TeX is the judge: a tabbing with Rikuy's stops, fills and Show marks' tildes compile with
+    pdfLaTeX, XeLaTeX and LuaLaTeX, and TeX sets the tabbing's fields and the filled words where
+    the page draws them"""
+    if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        print('SKIP R1\'s PDFs of paragraphs: no TeX tree in %s' % DIST)
+        return
+    BP = 72 / 72.27
+    text = D(EDGES + 'Left \\hfill Farright\n\n\\begin{tabbing}\n\\hspace{2cm}\\=\\hspace{3cm}\\=\\kill\nAa\\>Bb\\>Cc\\\\\nDd\\>Ee\n\\end{tabbing}\n\n\\begin{tabbing}\nNameXX \\= ValueYY \\= x\\kill\nGg \\> Hh \\>Ii\n\\end{tabbing}\n\nFig.~5 and a label\\label{x}.')
+    got = {}
+    for eng in ('pdflatex', 'xelatex', 'lualatex'):
+        page.set_default_timeout(600000)
+        r = page.evaluate("""async ([t, eng]) => { await window.rikuy.api.setSource('% !TeX program = ' + eng + '\\n' + t); const r = await window.rikuy.api.compile();
+          return { ok: r.ok, errors: r.problems.filter((p) => p.severity === 'error').map((p) => p.message).slice(0, 3) }; }""", [text, eng])
+        page.set_default_timeout(30000)
+        got[eng] = r
+    check('R1: tabbing, fills and ~ compile with pdfLaTeX, XeLaTeX and LuaLaTeX', all(got[e]['ok'] and not got[e]['errors'] for e in got), got)
+    c = compile_doc(page, text)
+    if not c['ok'] or not c['words']: check('R1: the PDF', False, c['log'][-300:]); return
+    W = c['words'][0]
+    left = next(w for w in W if w[4] == 'Leftedge')[0]
+    for word in ('Bb', 'Cc', 'Ee', 'Hh', 'Ii', 'Farright'):
+        t = next((w for w in W if w[4] == word), None)
+        p = page_x(page, word)
+        check('R1: TeX sets "%s" where the page draws it (within 1.5 bp)' % word, t and p and abs(t[0] - (left + p['l'] * BP)) < 1.5, (t, p and left + p['l'] * BP))
+
+def r1_phone(p):
+    """On a phone (390 and 360 px, touch): Show marks' dots by a tap; the Tabs dialog, the watermark
+    dialog's picture and the borders' Art fitting the screen; Orientation's landscape pages and
+    Next tab stop by taps (a long press's menu), 44 px targets"""
+    for (w, h) in ((390, 844), (360, 740)):
+        br, page, errors = open_phone(p, w, h)
+        load_doc(page, D('One two three four.\n\n\\begin{tabbing}\n\\hspace{2cm}\\=\\kill\nName and value.\n\\end{tabbing}\n\nLast words.')); page.wait_for_timeout(400)
+        tap_word(page, 'One')
+        page.select_option('#rb-tabsel', 'home'); page.wait_for_timeout(200)
+        page.evaluate('rikuy.runCommand("show-marks")'); page.wait_for_timeout(400)
+        n = page.evaluate('document.querySelectorAll("#pages .pmk .pm-sp").length')
+        check('R1 phone %d: Show marks draws the dots' % w, n >= 3, n)
+        page.evaluate('rikuy.runCommand("show-marks")'); page.wait_for_timeout(200)
+        tap_word(page, 'Name')
+        page.evaluate('rikuy.runCommand("tab-leader")'); page.wait_for_timeout(300)
+        r = page.evaluate('(() => { const d = document.querySelector("[role=dialog]"); const b = d.getBoundingClientRect(); const small = [...d.querySelectorAll("button, input, select")].filter((x) => x.offsetParent).map((x) => x.matches("[type=radio], [type=checkbox]") ? x.closest("label") : x).filter((x) => x.getBoundingClientRect().height < 43.5).map((x) => x.textContent || x.id); return [b.left, b.right, innerWidth, small]; })()')
+        check('R1 phone %d: the Tabs dialog fits the screen, its targets 44 px' % w, r[0] >= 0 and r[1] <= r[2] + 0.5 and not r[3], r)
+        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+        # Next tab stop by a tap on Layout's button (no Tab key on the screen's keyboard)
+        tap_word(page, 'Name', 4)
+        page.select_option('#rb-tabsel', 'layout'); page.wait_for_timeout(250)
+        tap_word(page, 'Name', 4)
+        btn = page.locator('#rc-tab-next')
+        vis = btn.is_visible()
+        if not vis:
+            page.locator('#rg-layout-paragraph').tap(); page.wait_for_timeout(250)
+            btn = page.get_by_role('menu').get_by_role('menuitem', name='Next tab stop')
+        bb = btn.bounding_box()
+        btn.tap(); page.wait_for_timeout(300)
+        check('R1 phone %d: Next tab stop by a tap writes \\> at the caret, a 44 px target' % w, 'Name\\>' in src(page) and bb and bb['height'] >= 43.5, (src(page)[-100:], bb))
+        # Orientation's landscape pages for the caret's paragraph, by taps
+        tap_word(page, 'Last', 2)
+        page.evaluate('rikuy.runCommand("orientation")'); page.wait_for_timeout(300)
+        it = page.get_by_role('menu').get_by_role('menuitemcheckbox', name='Landscape pages for the selection', exact=True)
+        ib = it.bounding_box()
+        it.tap(); page.wait_for_timeout(300)
+        check('R1 phone %d: Orientation › Landscape pages for the selection by taps, inside the screen' % w, '\\begin{landscape}\nLast words.\n\\end{landscape}' in src(page) and ib and ib['x'] >= 0 and ib['x'] + ib['width'] <= w + 0.5, (src(page)[-140:], ib))
+        for cmd_id, name in (('page-borders', 'Page borders'), ('watermark', None)):
+            tap_word(page, 'One', 1)
+            if name: page.evaluate('(c) => rikuy.runCommand(c)', cmd_id)
+            else: page.evaluate('rikuy.runCommand("watermark", undefined)'); page.wait_for_timeout(200); page.get_by_role('menu').get_by_role('menuitem', name='Custom watermark…').tap()
+            page.wait_for_timeout(300)
+            if not name: page.get_by_role('dialog', name='Watermark').get_by_label('Watermark', exact=True).select_option('pic'); page.wait_for_timeout(150)
+            r = page.evaluate('(() => { const d = document.querySelector(".pop[role=dialog]"); const b = d.getBoundingClientRect(); const small = [...d.querySelectorAll("button, input, select")].filter((x) => x.offsetParent && x.getBoundingClientRect().height < 43.5).map((x) => x.textContent || x.id); return [b.left, b.right, b.bottom, innerWidth, innerHeight, small]; })()')
+            check('R1 phone %d: the %s dialog fits the screen (scrolling inside), its controls 44 px' % (w, name or 'Watermark (a picture)'), r[0] >= 0 and r[1] <= r[3] + 0.5 and r[2] <= r[4] + 0.5 and not r[5], r)
+            page.keyboard.press('Escape'); page.wait_for_timeout(150)
+        check('R1 phone %d: no sideways scroll' % w, sideways(page) <= 0, sideways(page))
+        check('R1 phone %d: no page errors' % w, not errors, errors[:3])
+        br.close()
+
+def r1_shots(p):
+    """Screenshots of R1's work at 1920, 1366 and 390 px, light and dark: /tmp/R1-shots"""
+    out = '/tmp/R1-shots'
+    os.makedirs(out, exist_ok=True)
+    doc = D('\\markboth{Left mark}{Running head}\nOne two three~four and a label\\label{x} here.\n\n\\noindent Leftedge\\hfill Rightedge\n\n\\begin{tabbing}\n\\hspace{2cm}\\=\\hspace{3cm}\\=\\kill\nName\\>Value\\>Note\\\\\nAlpha\\>Beta\\>Gamma\n\\end{tabbing}\n\n\\begin{landscape}\nA part on a landscape page. ' + ' '.join(['Wide words run on.'] * 20) + '\n\\end{landscape}\n\nBack upright.',
+            '\\pagestyle{myheadings}\n\\usepackage{pdflscape}\n\\usepackage{tikz}\n\\usetikzlibrary{decorations.markings}\n\\AddToHook{shipout/background}{\\begin{tikzpicture}[remember picture,overlay]\\path[postaction={decorate},decoration={markings,mark=between positions 0 and 0.9938 step 0.0125 with {\\fill[red] (90:2pt)--(234:2pt)--(18:2pt)--(162:2pt)--(306:2pt)--cycle;}}] ([shift={(1cm,-1cm)}]current page.north west) rectangle ([shift={(-1cm,1cm)}]current page.south east);\\end{tikzpicture}}\n')
+    for dark in (False, True):
+        for w in (1920, 1366, 390):
+            b, page, errors = open_page(p, width=w, height=900, dark=dark, touch=w < 500)
+            tag = ('dark' if dark else 'light') + '-' + str(w)
+            load_doc(page, doc); page.wait_for_timeout(400)
+            click_text(page, 'One', 2)
+            cmd(page, 'show-marks'); page.wait_for_timeout(400)
+            page.screenshot(path=os.path.join(out, tag + '-marks.png'))
+            cmd(page, 'show-marks')
+            page.evaluate('document.querySelectorAll("#pages > .page")[1].scrollIntoView()'); page.wait_for_timeout(300)
+            page.screenshot(path=os.path.join(out, tag + '-landscape.png'))
+            click_text(page, 'Name', 2)
+            cmd(page, 'tab-leader'); page.wait_for_timeout(300)
+            page.screenshot(path=os.path.join(out, tag + '-tabs.png'))
+            page.keyboard.press('Escape'); click_text(page, 'One', 2)
+            cmd(page, 'page-borders'); page.wait_for_timeout(300)
+            page.screenshot(path=os.path.join(out, tag + '-borders.png'))
+            page.keyboard.press('Escape')
+            page.evaluate('rikuy.runCommand("orientation")'); page.wait_for_timeout(300)
+            page.screenshot(path=os.path.join(out, tag + '-orientation.png'))
+            page.keyboard.press('Escape')
+            check('R1: no page errors in the screenshots at %s' % tag, not errors, errors[:3])
+            b.close()
+
+
 def run():
     names = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (alignment, spacing, indents, flags, boxes, marks, dialog, layout_and_design, agents, compile_pdf, reviewed):
+        for f in (alignment, spacing, indents, flags, boxes, marks, dialog, layout_and_design, agents, compile_pdf, reviewed, r1_marks, r1_fills, r1_tabs, r1_widows, r1_para_pdf):
             if names and f.__name__ not in names: continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
@@ -643,6 +833,12 @@ def run():
         if not names or 'phone' in names:
             try: phone(p)
             except Exception as e: check('phone runs to its end', False, str(e)[:400])
+        if not names or 'r1_phone' in names:
+            try: r1_phone(p)
+            except Exception as e: check('r1_phone runs to its end', False, str(e)[:400])
+        if not names or 'r1_shots' in names:
+            try: r1_shots(p)
+            except Exception as e: check('r1_shots run to their end', False, str(e)[:400])
         if not names or 'screenshots' in names:
             try: screenshots(p)
             except Exception as e: check('screenshots run to their end', False, str(e)[:400])

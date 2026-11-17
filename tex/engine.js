@@ -1024,6 +1024,12 @@ function touchProject(dir) {
   }
 }
 
+// Whether a .bib file the .aux names (\bibdata) is neither in the project nor in the TeX tree.
+function bibMissing(aux) {
+  const names = [...aux.matchAll(/\\bibdata\{([^}]*)\}/g)].flatMap((m) => m[1].split(',')).map((n) => n.trim()).filter(Boolean);
+  return names.some((n) => { const f = /\.bib$/i.test(n) ? n : n + '.bib'; return !exists(f) && !treeLookup(f); });
+}
+
 // Citations recorded by a run: the main .aux and the .aux files it pulls in (\include).
 function citesIn(auxPath, seen = new Set()) {
   if (seen.has(auxPath)) return '';
@@ -1882,8 +1888,18 @@ async function compile(job) {
     M.FS.writeFile(base + '.aux', TRIVIAL_AUX);
     reread.set(M.FS.cwd().replace(/\/$/, '') + '/' + base + '.aux', TRIVIAL_AUX);
   }
+  // latexmk's rule ($bibtex_use = 1): when a .bib the document names is missing and the project
+  // brings its own .bbl, bibtex is not run. It would fail and write an empty .bbl over the one
+  // the document came with: arXiv's sources carry the .bbl and seldom the .bib, and in run
+  // 43936586314 183 papers printed [?] where TeX Live's latexmk printed the numbers.
+  const ownBbl = job.files.some((f) => projectPath(f.path) === (sub ? sub + '/' : '') + base + '.bbl');
   let r = await pass();
   const fatal = (x) => /Emergency stop|Fatal error occurred|==> Fatal error|No pages of output/.test(x.log) && !exists(base + '.' + E.out);
+  // A .bbl the document came with that this biblatex cannot read (its macros change between
+  // versions, and arXiv papers keep the .bbl of the one they were written with: two papers of run
+  // 43936586314) stops the first pass at 100 errors. latexmk -f goes on to biber, which writes it
+  // again; so does this loop, after one pass without it.
+  if (ownBbl && fatal(r) && r.log.includes('./' + base + '.bbl:')) { M.FS.unlink(base + '.bbl'); r = await pass(); }
   // bibliography
   const aux = readText(base + '.aux');
   const wantsBib = /\\bibdata\{|\\abx@aux@/.test(aux) || exists(base + '.bcf');
@@ -1898,7 +1914,7 @@ async function compile(job) {
         runs.push({ cmd: 'biber', code: b.code, log: b.log });
         if (b.bbl != null) { M.FS.writeFile(base + '.bbl', b.bbl); bibSigs.set(dir, job.bibSig || ''); r = await pass(); }
       }
-    } else if (changed) {
+    } else if (changed && !(ownBbl && bibMissing(aux))) {
       status('bibtex');
       const b = run(['bibtex8', '--8bit', base + '.aux']);
       runs.push({ cmd: 'bibtex', code: b.code, log: readText(base + '.blg') || b.stdout });

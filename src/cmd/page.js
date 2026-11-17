@@ -6,7 +6,7 @@
 // The Page setup dialog and the others are in src/ui/pagesetup.js; the header and footer are
 // typed in on the page itself (src/ui/headerfooter.js).
 
-import { register, command, onInstall } from '../commands.js';
+import { register, command, onInstall, enabled } from '../commands.js';
 import { openMenu, colorPicker, colorNeeds } from '../ui/kit.js';
 import { geometry, fmtNum } from '../layout.js';
 import { preambleEnd, usePackages, setClass } from '../preamble.js';
@@ -62,6 +62,7 @@ const I = {
   print: '<path d="M6 7.5V3h8v4.5M6 14H4.5V8h11v6H14M6 11.5h8v5.5H6z"/>',
   close: '<path d="M5.5 5.5l9 9M14.5 5.5l-9 9"/>',
   date: '<path d="M3.5 5h13v11.5h-13zM3.5 8.5h13M7 3v3.5M13 3v3.5"/>',
+  info: '<path d="M5.5 2.5h6.5l3 3v12h-9.5zM12 2.5v3h3M8 9h4.5M8 12h4.5M8 15h2.5"/>',
   first: '<path d="M5.5 2.5h9v15h-9zM7.5 5.5h5"/>',
   oddeven: '<path d="M3.5 4.5h6v11h-6zM10.5 4.5h6v11h-6zM5 6.5h3M12 13.5h3"/>'
 };
@@ -87,8 +88,16 @@ register(
     run: (app, args) => (typeof args === 'string' ? app.pageMarginsSet(args) : app.pageMenu('margins', MARGIN_ITEMS(app), 'Margins')) },
   { id: 'orientation', name: 'Orientation', label: 'Orientation', title: 'Portrait or landscape pages', icon: I.orientation, kind: 'menu', tab: 'layout', group: 'setup', order: 20,
     synonyms: ['Landscape', 'Portrait', 'Page orientation', 'Rotate page'], when: sheet, whyNot: sheetWhy,
-    menuItems: (app) => ['portrait', 'landscape'].map((w) => ({ name: w === 'portrait' ? 'Portrait' : 'Landscape', checked: app.pageLand() === (w === 'landscape'), radio: true, run: () => app.runCommand('orientation', w) })),
-    run: (app, args) => (typeof args === 'string' ? app.pageEdit(PS.orientationEdits(app.src(app.main), args, { others: app.preambleOthers(), own: app.pageOwn(), pin: app.pagePin() }), 'page-orient') : app.pageMenu('orientation', app.pageCmdItems('orientation'), 'Orientation')) },
+    // (R1) Word's Apply to: Selected text: pdflscape's landscape around the selected paragraphs
+    // (or the caret's), and back to portrait where the caret is in one
+    menuItems: (app) => {
+      const P = app.pagePart();
+      return [...['portrait', 'landscape'].map((w) => ({ name: w === 'portrait' ? 'Portrait' : 'Landscape', title: 'Every page of the document', checked: !P.in && app.pageLand() === (w === 'landscape'), radio: true, run: () => app.runCommand('orientation', w) })),
+        null, { name: 'Landscape pages for the selection', title: P.why || 'The selected paragraphs on pages of their own, turned (pdflscape\'s landscape environment)', checked: !!P.in, disabled: !!P.why || !!P.in, run: () => app.runCommand('orientation', 'part-landscape') },
+        { name: 'Portrait pages here', title: P.in ? 'The landscape pages the caret is on back to portrait (the landscape environment taken out)' : 'Put the caret in landscape pages first', disabled: !P.in, run: () => app.runCommand('orientation', 'part-portrait') }];
+    },
+    run: (app, args) => (args === 'part-landscape' || args === 'part-portrait' ? app.pagePartSet(args === 'part-landscape')
+      : typeof args === 'string' ? app.pageEdit(PS.orientationEdits(app.src(app.main), args, { others: app.preambleOthers(), own: app.pageOwn(), pin: app.pagePin() }), 'page-orient') : app.pageMenu('orientation', app.pageCmdItems('orientation'), 'Orientation')) },
   { id: 'size', name: 'Size', label: 'Size', title: 'The paper: Letter, Legal, A4, A5, B5, Executive or any size', icon: I.size, kind: 'menu', tab: 'layout', group: 'setup', order: 30,
     synonyms: ['Paper size', 'A4', 'Letter', 'Page size', 'Legal', 'A5'], when: sheet, whyNot: sheetWhy, menuItems: SIZE_ITEMS,
     run: (app, args) => (args ? app.pageEdit(PS.paperEdits(app.src(app.main), args, { others: app.preambleOthers(), own: app.pageOwn(), pin: app.pagePin() }), 'page-size') : app.pageMenu('size', SIZE_ITEMS(app), 'Size')) },
@@ -121,8 +130,13 @@ register(
     menuItems: (app) => {
       const L = app.pageLineNumbers();
       const mode = L && L.on ? L.mode : 'none';
+      // (Word's Suppress for Current Paragraph: B2's paragraph setting, lineno's nolinenumbers
+      // around the caret's paragraph; the page numbers none of its lines and counts none)
+      const sup = command('suppress-line-numbers'), at = app.ribbonAt();
+      const can = !!sup && mode !== 'none' && enabled(app, sup, at);
       return [...[['none', 'None'], ['continuous', 'Continuous'], ['page', 'Restart each page'], ['section', 'Restart each section']].map(([id, name]) => ({ name, checked: mode === id, radio: true, run: () => app.runCommand('line-numbers', id) })),
-        null, { name: 'Line numbering options…', title: 'Count by every n-th line, and where numbers start again', run: () => openLineNumbering(app) }];
+        null, { name: 'Suppress for current paragraph', title: 'No line numbers beside the caret\'s paragraph, and none counted (lineno\'s nolinenumbers environment)', checked: can && !!sup.on(app, at), disabled: !can, run: () => { app.ribbonBack(); app.runCommand('suppress-line-numbers'); } },
+        { name: 'Line numbering options…', title: 'Count by every n-th line, and where numbers start again', run: () => openLineNumbering(app) }];
     },
     run: (app, args) => (typeof args === 'string' ? app.pageEdit(PS.lineNumberEdits(app.src(app.main), args, { others: app.preambleOthers() }), 'page-lineno') : app.pageMenu('line-numbers', app.pageCmdItems('line-numbers'), 'Line numbers')) },
   { id: 'hyphenation', name: 'Hyphenation', label: 'Hyphenation', title: 'Words broken at the line\'s end: automatically, never, or where you say', icon: I.hyph, kind: 'menu', tab: 'layout', group: 'setup', order: 70,
@@ -182,7 +196,7 @@ register(
         { name: 'Remove watermark', disabled: !W.on, run: () => app.runCommand('watermark', 'off') }];
     },
     run: (app, args) => (args === 'off' ? app.pageEdit(PS.watermarkEdits(app.src(app.main), null, { others: app.preambleOthers() }), 'page-wm')
-      : args && typeof args === 'object' ? app.pageEdit(PS.watermarkEdits(app.src(app.main), { ...(PS.watermark(app.src(app.main)) || {}), ...args }, { others: app.preambleOthers() }), 'page-wm')
+      : args && typeof args === 'object' ? app.pageEdit(PS.watermarkEdits(app.src(app.main), app.pageWatermarkArgs(args), { others: app.preambleOthers() }), 'page-wm')
         : app.pageMenu('watermark', app.pageCmdItems('watermark'), 'Watermark')) },
   { id: 'page-color', name: 'Page color', label: 'Page color', title: 'The colour of every page (\\pagecolor)', icon: I.color, kind: 'menu', tab: 'design', group: 'background', order: 20,
     synonyms: ['Page Color', 'Page colour', 'Background color', 'pagecolor'], when: doc, whyNot: anyWhy,
@@ -203,6 +217,21 @@ register(
   // ---- the Header & Footer tab ----
   { id: 'hf-date', name: 'Date', label: 'Date', title: 'Today\'s date where the caret is in the header or footer (\\today)', icon: I.date, tab: 'headfoot', group: 'insert', order: 10,
     synonyms: ['Date & Time', 'today'], when: (app) => !!app.hf, whyNot: () => 'Open the header or footer first (double click the top or bottom margin)', run: (app) => hfInsert(app, '\\today') },
+  // (R1) Word's Document Info: the title, the author, the date and the file's name where the
+  // caret is in the header or footer, the preamble's copy of each written once with it
+  { id: 'hf-docinfo', name: 'Document info', label: 'Document info', title: 'The document\'s title, author, date or file name where the caret is in the header or footer (\\thetitle, \\theauthor, \\thedate, \\jobname)', icon: I.info, kind: 'menu', tab: 'headfoot', group: 'insert', order: 15,
+    synonyms: ['Document Info', 'Document title', 'Author', 'File name', 'thetitle', 'theauthor', 'jobname'], when: (app) => !!app.hf, whyNot: () => 'Open the header or footer first (double click the top or bottom margin)',
+    menuItems: (app) => Object.entries(PS.DOC_INFO).map(([k, F]) => {
+      const I = PS.docInfo(app.src(app.main), k, { others: app.preambleOthers() });
+      return { name: F.name, title: I.why || ((I.ready ? '' : 'With \\makeatletter\\let' + F.cmd + F.of + '\\makeatother in the preamble: ') + F.cmd), disabled: !!I.why, run: () => app.runCommand('hf-docinfo', k) };
+    }),
+    run: (app, args) => {
+      const F = typeof args === 'string' && PS.DOC_INFO[args];
+      if (!F) return app.pageMenu('hf-docinfo', app.pageCmdItems('hf-docinfo'), 'Document info');
+      const others = app.preambleOthers();
+      if (PS.docInfoEdits(app.src(app.main), args, { others }) === null) { app.toast(PS.docInfo(app.src(app.main), args, { others }).why, 6000); return false; }
+      return hfInsert(app, F.cmd, (src) => PS.docInfoEdits(src, args, { others }) || []);
+    } },
   { id: 'hf-pagenum', name: 'Page number here', label: 'Page number here', title: 'The page\'s number where the caret is in the header or footer (\\thepage)', icon: I.pnum, tab: 'headfoot', group: 'insert', order: 20,
     when: (app) => !!app.hf, whyNot: () => 'Open the header or footer first', run: (app) => hfInsert(app, '\\thepage') },
   { id: 'hf-first', name: 'Different first page', label: 'First page', title: 'Nothing in the header and footer of the first page (\\thispagestyle{empty})', icon: I.first, kind: 'toggle', tab: 'headfoot', group: 'options', order: 10,
@@ -224,7 +253,11 @@ function classEdits(app, name) {
   return c && c.name !== name ? setClass(src, name) : [];
 }
 
-onInstall((app) => installHeaderFooter(app));
+onInstall((app) => {
+  installHeaderFooter(app);
+  // (the page's chrome draws a picture of the project: a watermark's)
+  if (app.layout) app.layout.assetURL = (f) => app.assetURL(f);
+});
 
 export const methods = {
   // Edits of the main file as one step of history, the caret kept on its words (edits before it
@@ -253,6 +286,25 @@ export const methods = {
     const r = document.getElementById('ribbon');
     if (r) { const q = r.getBoundingClientRect(); return { left: q.left + 40, right: q.left + 200, top: q.top, bottom: q.bottom, width: 160, height: q.height }; }
     return null;
+  },
+  // what a watermark command writes: the one there with what is asked changed; text after a
+  // picture starts afresh (diagonal, scale 1), as Word's text watermarks are
+  pageWatermarkArgs(args) {
+    const W = PS.watermark(this.src(this.main)) || {};
+    const base = W.on && !(W.pic && !args.pic) ? W : {};
+    return { ...base, ...args, pic: args.pic || null };
+  },
+  // a picture chosen for the page (a watermark): added to the project under a safe name, another
+  // where the name is taken by a different file; the name it has
+  pageAssetName(name, blob) {
+    const m = /\.([A-Za-z0-9]+)$/.exec(String(name || ''));
+    const ext = m ? '.' + m[1].toLowerCase() : '.png';
+    const base = (String(name).split('/').pop().slice(0, -ext.length).replace(/[^A-Za-z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'picture').slice(0, 60);
+    const taken = (n) => this.files.has(n) || this.extra.has(n) || (this.assetBlobs.has(n) && this.assetBlobs.get(n) !== blob);
+    let nm = base + ext;
+    for (let k = 2; taken(nm); k++) nm = base + '-' + k + ext;
+    if (blob && !this.assetBlobs.has(nm)) { this.addAsset(nm, blob); this.binaryDirty = true; this.zipDirty = true; this.forceRender = true; }
+    return nm;
   },
   pageMenu(id, items, label) { openMenu(this, this.pageAnchor(id), items, { label }); return true; },
   pageCmdItems(id) { return this.commandMenu(command(id)); },
@@ -334,6 +386,26 @@ export const methods = {
       steps.push((t) => usePackages(t, ['multicol'], { others }));
     } else steps.push((t) => PS.columnsEdits(t, n, { others }));
     return this.pageEdit(this.pageSteps(steps), 'page-cols');
+  },
+  // (R1) Landscape pages for part of the document: where the caret is ({ in: the landscape
+  // environment it is in }), or why none can be made there ({ why })
+  pagePart() {
+    const at = this.ribbonAt();
+    if (!at || !at.c || at.c.ghost || at.c.f !== this.main || at.cell || this.armed) return { why: 'Put the caret in a paragraph of the main file, or select paragraphs there' };
+    const src = this.src(this.main);
+    const L = PS.landscapeAt(src, at.c.a);
+    if (L) return { in: L };
+    if (PS.multicolsAt(src, at.c.a)) return { why: 'Not in columns: TeX starts landscape pages with \\clearpage, which multicols does not take' };
+    const r = this.pageBlocks(at);
+    if (!r) return { why: 'Landscape pages go around whole paragraphs of the main file: select paragraphs there' };
+    return { r };
+  },
+  pagePartSet(on) {
+    const P = this.pagePart();
+    if (!on) return P.in ? this.pageEdit(PS.unwrapLandscape(this.src(this.main), P.in), 'page-land') : false;
+    if (P.why || P.in) { if (P.why) this.toast(P.why, 6000); return false; }
+    // (a float the selection is in or a list item: the blocks hold it whole, as pageBlocks reads them)
+    return this.pageEdit(PS.landscapeEdits(this.src(this.main), P.r.s, P.r.e, { others: this.preambleOthers() }), 'page-land');
   },
   // the blocks a selection covers, as [s, e) of whole lines of the main file
   pageBlocks(at) {

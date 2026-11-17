@@ -109,11 +109,33 @@ docs.push(['pictures (B8)', new Map([['main.tex', '\\documentclass{article}\n\\u
 }
 docs.push(['paragraph settings (B2)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{setspace}\n\\begin{document}\nFirst plain paragraph, typed in.\n\n\\onehalfspacing\nA paragraph after one and a half spacing.\n\nAnother after it.\n\n' +
   '\\doublespacing\n\\centering\nCentred from here on, plain.\n\nStill centred, the next paragraph.\n\n\\hangindent=1cm\\hangafter=1 A hanging paragraph with words.\n\nKept with the next\\nopagebreak\n\nLast plain words.\n\\end{document}\n']]), 'main.tex']);
+// (R1) the page's and the paragraphs' leftovers: hand written marks, a paragraph without line
+// numbers, landscape pages, a tabbing (its \= read again), fills, a title for the header
+docs.push(['page and paragraph leftovers (R1)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{lineno,pdflscape}\n\\linenumbers\n\\pagestyle{myheadings}\n\\title{A Title}\n\\makeatletter\\let\\thetitle\\@title\\makeatother\n\\begin{document}\n\\markboth{Left}{Right}\nFirst plain paragraph, typed in.\n\n' +
+  '\\begin{nolinenumbers}\nNo numbers here, plain words.\n\\end{nolinenumbers}\n\n\\begin{landscape}\nA wide paragraph on its own page.\n\nAnother one there.\n\\end{landscape}\n\n\\begin{tabbing}\n\\hspace{2cm}\\=\\hspace{3cm}\\=\\kill\nName\\>Value\\>Note\\\\\nAlpha \\> Beta \\> Gamma\n\\end{tabbing}\n\n' +
+  'Left \\hfill Right and Fig.~5 with a label\\label{x} here.\n\n\\markright{Later}\nLast plain words.\n\\end{document}\n']]), 'main.tex']);
 docs.push(['a LaTeX paragraph (its groups)', new Map([['main.tex', '\\documentclass{article}\n\\begin{document}\nFirst paragraph, typed in.\n\n% rikuy: latex\n{\\bfseries bold} raw and {\\itshape more {nested}} words\n\nLast plain paragraph.\n\\end{document}\n']]), 'main.tex']);
 const corpus = process.argv[2], FULL = process.env.INCR_FULL === '1' || !!corpus, repoDocs = docs.length;
 if (corpus) {
   const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { if (e.name.startsWith('.')) continue; const p = path.join(d, e.name); if (e.isDirectory()) walk(p); else if (e.name.endsWith('.tex')) { const t = fs.readFileSync(p, 'utf8'); if (/\\documentclass/.test(t)) add(path.dirname(p), e.name); } } };
   walk(corpus);
+}
+// (R1 review M1) tabbings far down a file: each read again by itself, so a keystroke before them
+// leaves the incremental build equal to the full one and every letter after a \= in place
+{
+  const tb = (k) => '\\begin{tabbing}\nName' + k + '\\=Value\\=Note\\kill\nName\\>Value\\>Note\\\\\nAlpha \\> Beta \\> Gamma\n\\end{tabbing}\n\n';
+  const t0 = '\\documentclass{article}\n\\begin{document}\nFirst plain paragraph typed in.\n\n' + ('%' + 'x'.repeat(98) + '\n').repeat(3000) + Array.from({ length: 10 }, (_, k) => tb(k)).join('') + 'End.\n\\end{document}\n';
+  const prev = buildModel({ files: new Map([['main.tex', t0]]), main: 'main.tex' });
+  const at = t0.indexOf('typed in') + 5, t1 = t0.slice(0, at) + 'x' + t0.slice(at);
+  const was = INCR.reused;
+  const a = buildModel({ files: new Map([['main.tex', t1]]), main: 'main.tex' }, prev);
+  const fastPath = INCR.reused > was;
+  INCR.on = false;
+  const b = buildModel({ files: new Map([['main.tex', t1]]), main: 'main.tex' }, prev);
+  INCR.on = true;
+  const cells = (m) => m.blocks.filter((u) => u.items[0] && u.items[0].tab).map((u) => u.items.map((it) => (it.inl || []).map((c) => (c.kids || []).map((x) => x.t || '').join('')).join('|')).join('/'));
+  check('a keystroke before ten tabbings far down: the incremental build is the full one (' + (fastPath ? 'fast path' : 'full') + ')', sameModels(a, b));
+  check('and every letter after a \\= is in place in both', cells(b).length === 10 && cells(b).every((x, k) => x === 'Name' + k + '|Value|Note/Name|Value|Note/Alpha |Beta |Gamma ') && JSON.stringify(cells(a)) === JSON.stringify(cells(b)), cells(b).slice(-1));
 }
 // (the short run: every document, fewer edits, the 120 KB paper the fewest; each edit there is
 // two full builds and two serialisations)

@@ -1077,3 +1077,64 @@ export const DIRECTION = {
   same: (a, b) => a === b,
   open: (v) => v === 'rtl' ? { name: 'RTL' } : v === 'ltr' ? { name: 'LTR' } : { name: 'otherlanguage', args: [v] }
 };
+
+// ---- tab stops at positions (R1): LaTeX's tabbing ------------------------------------------------
+// A paragraph with stops of its own is a tabbing environment whose first line sets them and
+// prints nothing: \hspace{2cm}\=\hspace{3cm}\=\kill (each \hspace the room to the next stop).
+// The tabbing the position p is in: { s, e, hs: after \begin{tabbing}, ts: \end's start }
+export function tabbingAt(src, p) {
+  const t = stripComments(src);
+  const re = /\\(begin|end)\s*\{tabbing\}/g;
+  const stack = [];
+  let found = null;
+  for (let m, k = 0; (m = re.exec(t)) && k < 2000; k++) {
+    if (m.index >= p && !stack.length) break;
+    if (m[1] === 'begin') stack.push({ s: m.index, hs: m.index + m[0].length });
+    else if (stack.length) { const b = stack.pop(), e = m.index + m[0].length; if (b.s < p && p < e) found = { s: b.s, e, hs: b.hs, ts: m.index }; }
+  }
+  return found;
+}
+const KILL = /^[ \t]*((?:\\hspace\*?\{[^{}\n]{1,40}\}\\=)+)\\kill[ \t]*(?:\r?\n|$)/;
+// its stops in points from the line's start, and that line's range, where its first line is such a
+// \kill line; { text: true } where its stops come from its text (a \= among its words)
+export function tabbingStops(src, T) {
+  let i = T.hs;
+  while (i < T.ts && (src[i] === ' ' || src[i] === '\t')) i++;
+  if (src[i] === '\r') i++;
+  if (src[i] === '\n') i++;
+  const m = KILL.exec(src.slice(i, Math.min(T.ts, i + 1000)));
+  if (m) {
+    const xs = [];
+    let x = 0;
+    for (const h of m[1].match(/\\hspace\*?\{[^{}\n]{1,40}\}/g)) { const v = lenPt(/\{([^{}]*)\}/.exec(h)[1]); if (v == null) return { text: true }; x += v; xs.push(x); }
+    return { stops: xs, line: [i, i + m[0].length] };
+  }
+  return { text: /\\=/.test(stripComments(src.slice(T.hs, T.ts))), stops: [] };
+}
+const cmOf = (pt) => (Math.round(pt / PT.cm * 100) / 100) + 'cm';
+export const killLine = (stops) => [...stops].sort((a, b) => a - b).map((x, k, a) => '\\hspace{' + cmOf(x - (k ? a[k - 1] : 0)) + '}\\=').join('') + '\\kill';
+// Edits that give the paragraph [s, e) (or the tabbing T it is in) the stops (points); none left
+// takes the stops off, and the environment with them where Rikuy's line was all it added
+export function tabStopEdits(src, s, e, stops, T) {
+  const nl = eolAt(src, s);
+  stops = [...new Set(stops.filter((x) => x > 0).map((x) => Math.round(x * 100) / 100))].sort((a, b) => a - b);
+  if (T) {
+    const S = tabbingStops(src, T);
+    if (S.line) {
+      if (stops.length) { const line = killLine(stops); return src.slice(S.line[0], S.line[1]).replace(/\r?\n$/, '') === line ? [] : [{ s: S.line[0], e: S.line[1], t: line + nl }]; }
+      // (the environment goes where nothing else in it moves to a stop)
+      const rest = stripComments(src.slice(S.line[1], T.ts));
+      if (/\\[=>+<-]|\\kill|\\\\/.test(rest)) return [{ s: S.line[0], e: S.line[1], t: '' }];
+      const a = T.hs + (src[T.hs] === '\r' ? 2 : src[T.hs] === '\n' ? 1 : 0);
+      const b = src[T.ts - 1] === '\n' ? T.ts - (src[T.ts - 2] === '\r' ? 2 : 1) : T.ts;
+      if (a !== S.line[0]) return [{ s: S.line[0], e: S.line[1], t: '' }];
+      return [{ s: b, e: T.e, t: '' }, { s: T.s, e: S.line[1], t: '' }];
+    }
+    if (S.text || !stops.length) return [];
+    return [{ s: T.hs, e: T.hs, t: nl + killLine(stops) }];
+  }
+  if (!stops.length) return [];
+  while (s < e && /\s/.test(src[s])) s++;
+  while (e > s && /\s/.test(src[e - 1])) e--;
+  return [{ s: e, e, t: nl + '\\end{tabbing}' }, { s, e: s, t: '\\begin{tabbing}' + nl + killLine(stops) + nl }];
+}
