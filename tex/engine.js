@@ -256,9 +256,12 @@ async function keep(folders) {
 // What one compile read and could not load, by pack number (compile() empties both).
 const jobPacks = new Set();
 const packMissed = new Set();
-// whether the job's own files have Chinese or Arabic text or name those fonts and packages
+// whether the job's own files have Chinese, Arabic or other such text or name those fonts and
+// packages, or name one of the large font families that share their packs (build_tree.py
+// LARGE_ONLY): where a copy lacks those packs, such a job is told so (unkeptScripts), not that a
+// file is missing
 let jobScripts = false;
-const SCRIPTS_RE = /[\u0590-\u05FF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\u0900-\u0DFF\u0E00-\u0E7F\u1100-\u11FF\u2E80-\u2FDF\u3040-\u30FF\u3130-\u318F\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFB1D-\uFDFF\uFE70-\uFEFF]|ctex|xeCJK|CJK|[Aa]miri|[Ff]andol|arphic|\b(?:gbsn|gkai|bsmi|bkai)\b|zhnumber|xpinyin|Noto ?(?:Serif|Sans|Nastaliq)|Harano ?Aji|Nanum/;
+const SCRIPTS_RE = /[\u0590-\u05FF\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\u0900-\u0DFF\u0E00-\u0E7F\u1100-\u11FF\u2E80-\u2FDF\u3040-\u30FF\u3130-\u318F\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF\uF900-\uFAFF\uFB1D-\uFDFF\uFE70-\uFEFF]|ctex|xeCJK|CJK|[Aa]miri|[Ff]andol|arphic|\b(?:gbsn|gkai|bsmi|bkai)\b|zhnumber|xpinyin|Noto ?(?:Serif|Sans|Nastaliq)|Harano ?Aji|Nanum|kotex|oblivoir|pmhanguljamo|[Ll]ibertinus|\b[Dd]roid ?(?:[Ss]ans|[Ss]erif|[Mm]ono)?|\bfbb\b|frcursive|[Bb]askervald|FdSymbol|utfsym/;
 // The folder of the tree a pack holds, as build_tree.py grouped the files ('core' for the packs
 // loaded at start): what the page shows for a pack, and what src/pwa.js lists.
 function packFolder(n) {

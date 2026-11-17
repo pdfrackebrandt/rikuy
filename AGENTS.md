@@ -50,7 +50,7 @@ a command fails, trust the code and fix this file.
 | build the inputs, then the TeX tree and packs | `tex/fetch_inputs.sh`, then `python3 tex/build_tree.py tree && python3 tex/build_tree.py packs` | about 3 GB of downloads |
 | build the page into `dist/` | `npm run build`; the editor and its browser tests need nothing more, the PDF pane and the TeX tests need `dist/tex/` from the step above | 10 s |
 | serve `dist/` as the artifact host does | `npm run serve` (port 8790) | |
-| engines and shell escape in the page | `npm run test:engines` (40 checks) | 9 min |
+| engines and shell escape in the page | `npm run test:engines` (44 checks) | 9 min |
 | typing on the page | `npm run test:browser` | 20 s (80 s on a busy machine) |
 | Rikuy as an AI agent meets it: `window.rikuy.api`, every control of `dist/controls.json` found by role and name at two widths on every tab, `#tex=` links, what llms.txt promises | `npm run test:agent` (138 checks with `dist/tex`, 137 without) | 1 min |
 | the ribbon's frame: tabs by mouse and keys, contextual tabs, folding at four widths and its one rule swept from 390 to 1920 px on every tab (never fewer controls at a wider width, the row fitting from 521 px, no group folded where it would fit open), every command by role and name, the chord table, the search box, the right click menu, the kit, round trips | `npm run test:tabs` | 2 min |
