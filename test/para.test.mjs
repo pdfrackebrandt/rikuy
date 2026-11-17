@@ -589,4 +589,41 @@ ok('review, lows: a theorem\'s first paragraph says why; every paragraph of a lo
   assert.ok(Date.now() - t2 < 1500, 'took ' + (Date.now() - t2) + ' ms');
 });
 
+// (R1) tab stops at positions: the paragraph a tabbing whose first line sets them (\kill), its
+// stops read back, changed in place, taken off with the environment Rikuy added
+ok('R1: tab stops as a tabbing: written, read, changed, taken off to the byte', () => {
+  const D = (b) => '\\documentclass{article}\n\\begin{document}\n' + b + '\n\\end{document}\n';
+  const d = D('First words.\n\nName and value.\n\nLast.');
+  const s0 = d.indexOf('Name'), e0 = d.indexOf('value.') + 6;
+  const CMp = 72.27 / 2.54;
+  const a = applyEdits(d, P.tabStopEdits(d, s0, e0, [2 * CMp, 5 * CMp], null));
+  assert.equal(a, D('First words.\n\n\\begin{tabbing}\n\\hspace{2cm}\\=\\hspace{3cm}\\=\\kill\nName and value.\n\\end{tabbing}\n\nLast.'));
+  const T = P.tabbingAt(a, a.indexOf('Name'));
+  assert.ok(T);
+  const S = P.tabbingStops(a, T);
+  assert.ok(Math.abs(S.stops[0] - 2 * CMp) < 0.01 && Math.abs(S.stops[1] - 5 * CMp) < 0.01);
+  // changed: the line in place; the same stops again: nothing
+  const b = applyEdits(a, P.tabStopEdits(a, 0, 0, [3 * CMp], T));
+  assert.equal(b, D('First words.\n\n\\begin{tabbing}\n\\hspace{3cm}\\=\\kill\nName and value.\n\\end{tabbing}\n\nLast.'));
+  assert.deepEqual(P.tabStopEdits(a, 0, 0, [2 * CMp, 5 * CMp], T), []);
+  // none left: the environment goes with them, the bytes of before
+  assert.equal(applyEdits(a, P.tabStopEdits(a, 0, 0, [], T)), d);
+  // with \> in it the environment stays, the stops' line goes
+  const c = a.replace('Name and', 'Name\\>and');
+  assert.equal(applyEdits(c, P.tabStopEdits(c, 0, 0, [], P.tabbingAt(c, c.indexOf('Name')))), D('First words.\n\n\\begin{tabbing}\nName\\>and value.\n\\end{tabbing}\n\nLast.'));
+  // stops set by its words: not edited here
+  const w = D('\\begin{tabbing}\nName \\= Value\\kill\nA \\> B\n\\end{tabbing}');
+  assert.equal(P.tabbingStops(w, P.tabbingAt(w, w.indexOf('A \\>'))).text, true);
+  assert.deepEqual(P.tabStopEdits(w, 0, 0, [CMp], P.tabbingAt(w, w.indexOf('A \\>'))), []);
+  // CRLF
+  const dc = d.replace(/\n/g, '\r\n');
+  assert.equal(applyEdits(dc, P.tabStopEdits(dc, dc.indexOf('Name'), dc.indexOf('value.') + 6, [2 * CMp], null)), D('First words.\n\n\\begin{tabbing}\n\\hspace{2cm}\\=\\kill\nName and value.\n\\end{tabbing}\n\nLast.').replace(/\n/g, '\r\n'));
+  // a stranger's text read in bounded time
+  const t = Date.now();
+  P.tabbingAt(D('\\begin{tabbing}'.repeat(30000)), 50);
+  const big = D('\\begin{tabbing}\n' + '\\hspace{1cm}\\='.repeat(20000) + '\\kill\n\\end{tabbing}');
+  P.tabbingStops(big, P.tabbingAt(big, 60));
+  assert.ok(Date.now() - t < 1000, 'took ' + (Date.now() - t) + ' ms');
+});
+
 console.log('para: ' + n + ' groups of checks passed');

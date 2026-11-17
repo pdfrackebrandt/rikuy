@@ -128,6 +128,14 @@ def pages_text(pdf):
     return [re.sub(r'\s+', ' ', p).strip() for p in pages]
 
 
+def fonts_of(pdf):
+    """The fonts a PDF embeds or names, without the subset prefix (pdffonts' first column)."""
+    with tempfile.NamedTemporaryFile(suffix='.pdf') as t:
+        t.write(pdf); t.flush()
+        r = subprocess.run(['pdffonts', t.name], capture_output=True, timeout=300)
+    return {re.sub(r'^[A-Z]{6}\+', '', l.split()[0]) for l in r.stdout.decode('utf8', 'replace').split('\n')[2:] if l.strip()}
+
+
 def render(pdf, out_dir, tag):
     p = os.path.join(out_dir, tag + '.pdf')
     open(p, 'wb').write(pdf)
@@ -178,6 +186,14 @@ def compare(g, t):
     finally:
         shutil.rmtree(d, ignore_errors=True)
     out['match'] = out['pages'][0] == out['pages'][1] and out['text_equal'] and not out['pixel_pages_over']
+    if not out['match']:
+        # fonts on one side only: a substituted font is the first thing to rule in or out when
+        # the PDFs themselves are not kept (the arXiv workflow keeps none)
+        try:
+            fg, ft = fonts_of(g), fonts_of(t)
+            out['fonts_only'] = [sorted(fg - ft)[:20], sorted(ft - fg)[:20]]
+        except Exception as e:
+            out['fonts_only'] = str(e)[:200]
     return out
 
 

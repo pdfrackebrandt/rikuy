@@ -180,7 +180,21 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
   header and footer typed on the page `src/ui/headerfooter.js` (fields over the page, outside
   its editable text). Word: `pageForWord` (`src/pageword.js`, the page's thread) describes the
   page in twips, `pageDocx` and `pageLatex` (`src/wordpage.js`, the Word worker) write it into
-  the .docx and read a Word file's back.
+  the .docx and read a Word file's back. Since task 61: `\markboth` and `\markright` are
+  `pagemark` items whose marks `Layout.marks` takes in order with the headings' (none of those under
+  myheadings); a `nolinenumbers` item carries `noLn` (`eachLine` skips it); pdflscape's
+  `landscape` gives its items `land`, and `Layout.plan` sets them on pages of their own as tall as
+  the text is wide, `Layout.turn` drawing those pages on their side with the header down the right
+  (`hostFor('L')` measures them as wide as the text is tall); a page holds `(\textheight -
+  \topskip) / \baselineskip + 1` lines, and a club or widow line is weighed as TeX weighs it
+  (`readPage`'s `pen`: the penalties and whether pages are flush or ragged); a header's
+  `\thetitle`, `\theauthor`, `\thedate`, `\jobname` come from `opts.docInfo` and `opts.job`;
+  `drawChrome` draws a picture watermark (`watermark().pic`) and `borderSvg` the border's TikZ
+  line styles and art marks (`pageBorder`: `style`, `art`, `step`); Word's sections:
+  `sectionRuns` (`src/pageword.js`) splits the body where multicols or landscape parts begin and
+  end, `src/wordast.js` ends each with a paragraph's `w:sectPr`, `pageDocx` gives each the page's
+  props (the first the headers), and `premark`'s `sectionsFix` (`src/docx.js`) marks a foreign
+  file's sections for `paraMarks` (`src/wordjobs.js`).
 
 ## 2. Page to source
 
@@ -530,7 +544,14 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   Word export names a paragraph style after the settings (`paraStyle`: "Centred, Line Spacing 1.5,
   Indent 1cm 0cm") and `paraStyles` gives each its formatting; the document's spacing goes in the
   defaults. Show marks is a class on the body (`marks-on`): marks drawn in pseudo elements of no
-  width, so nothing moves and nothing is written.
+  width, so nothing moves and nothing is written; since task 61 the dots of spaces, the degree
+  signs of `~` and the brackets of `\label` are drawn over the pages in sight (`paraMarksPaint`,
+  `src/cmd/para.js`, from each character's source). Fills take what their line leaves
+  (`fillLines`, `src/layout.js`); a `tabbing` is read by `Builder.tabbing` (its `\=` read again as
+  `\>`, which the parser takes for an accent otherwise), each line an item whose fields
+  `tabStops` sets at the stops; Tabs… writes the stops as its first line (`tabStopEdits`,
+  `src/parasrc.js`). A foreign Word file's paragraph settings come in through `premark`'s marks
+  (`mark.para`) and `paraMarks`.
 
 ## 3. Undo and redo
 
