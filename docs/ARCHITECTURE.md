@@ -426,7 +426,23 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   center after the caret's block, never floats; `src/drawing.js` reads what they write (a TikZ
   picture of plain paths, a pgfplots axis from coordinates, smartdiagram's items, an icon's name)
   and draws it as SVG through the DOM, the document's words as text and its colours from xcolor's
-  names only; anything outside that subset keeps the source box.
+  names only; anything outside that subset keeps the source box. Round 3 (R3): `tikzPoints`
+  gives each coordinate of such a drawing with its offsets, which `src/ui/shapes.js` puts handles
+  on (a drag writes one coordinate, the drawing kept in its box meanwhile), and a chart Rikuy
+  wrote reopens in its grid (`editChart`, `chartReplace`); the round handle of `src/ui/handles.js`
+  turns a picture by any angle (`rotDown`, one `rotate`); `borderSet` and `borderStyle` write and
+  read the border's `\fboxrule` and `\color` in its group; `src/cmd/move.js` moves dragged words
+  (`moveSource`: the deletion and the insertion as one commit, never across files) and a selected
+  picture (`picMoveTo`: its environment between paragraphs, or among words); a wrapfigure goes
+  into the paragraph after it as a CSS float (`wrapPairs` in `src/layout.js`), measured with it.
+- **Insert's round 3 (R3).** `src/fields.js` maps Word's fields to LaTeX and gives the model
+  their text (`fieldText`); the layout fills a page's number and the pages' count into them once
+  it knows the pages (`fillFields`). `src/cover.js` writes a cover page (a titlepage first in the
+  body), `src/quickparts.js` reads Quick Parts back from the browser's storage and finds the
+  packages a part needs, `src/forms.js` writes hyperref's form fields, which the model reads with
+  `readField` and the page draws as boxes; their commands are `src/cmd/parts.js`. Word gets a
+  table's shading, turned words and alt text through `src/wordtable.js`, after pandoc (the AST's
+  attributes, which pandoc drops, written into the cells pandoc wrote).
 - **Styles.** `blockStyle` reads the caret's block into `{v, to, b}`: its style now, the styles it
   may take, and where its words are; `restyle` (`src/styles.js`, tested on strings in
   `test/styles.test.mjs`) turns that into the smallest edits: Normal to LaTeX writes the mark's

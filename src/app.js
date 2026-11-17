@@ -625,6 +625,8 @@ class App {
     const model = this.model;
     const items = [], fns = [];
     for (const B of this.renderer.blocks) { for (const it of B.items) items.push(it); for (const f of B.fns) fns.push(f); }
+    // (a wrapfigure goes into the paragraph it wraps: src/layout.js wrapPairs)
+    items.splice(0, items.length, ...this.layout.wrapPairs(items));
     // (the sheet of the PDF TeX made of this set up, where there is one: src/layout.js sheetSize)
     const ps = this.pdfSheet, mk = model.opts.page && model.opts.page.mediaKey;
     model.opts.pdfSheet = ps && mk && ps.key === mk ? ps : null;
@@ -1116,8 +1118,11 @@ class App {
     R.addEventListener('paste', (e) => this.onPaste(e));
     R.addEventListener('copy', (e) => this.onCopy(e, false));
     R.addEventListener('cut', (e) => this.onCopy(e, true));
-    R.addEventListener('dragstart', (e) => e.preventDefault());
-    R.addEventListener('drop', (e) => { if (!(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length)) e.preventDefault(); });
+    // (R3, src/cmd/move.js: selected words dragged move as one edit; a drop from elsewhere is a paste)
+    R.addEventListener('dragstart', (e) => { if (!this.dragMoveStart(e)) e.preventDefault(); });
+    R.addEventListener('dragover', (e) => this.dragMoveOver(e));
+    R.addEventListener('dragend', () => this.dragMoveEnd());
+    R.addEventListener('drop', (e) => { if (!this.dragMoveDrop(e) && !(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length)) e.preventDefault(); });
     R.addEventListener('mousedown', (e) => this.onMouseDown(e), true);
     R.addEventListener('click', (e) => this.onClick(e));
     document.addEventListener('selectionchange', () => this.onSelChange());
@@ -1317,6 +1322,9 @@ class App {
     if (e.isComposing || t === 'insertCompositionText' || t === 'deleteCompositionText' || t === 'insertFromComposition') return;
     e.preventDefault();
     if (this.composing) return;
+    // (R3) words dragged out of the page are copied there: a move within the page is the page's
+    // own drop (src/cmd/move.js), so a deletion by drag only ever follows a drop elsewhere
+    if (t === 'deleteByDrag' || t === 'insertFromDrop') return;
     switch (t) {
       case 'insertText': case 'insertReplacementText': {
         let data = e.data;

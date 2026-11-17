@@ -126,7 +126,11 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   (a share of the line when near one), and Picture Format crops, turns, flips, frames, gives alt
   text, floats it or wraps text round it, captions it; Insert has Shapes, Icons, SmartArt, Chart,
   Screenshot, Text Box and Drop Cap, drawn on the page from the TikZ, pgfplots, smartdiagram,
-  fontawesome5, tcolorbox and lettrine they write.
+  fontawesome5, tcolorbox and lettrine they write. A round handle turns a picture by any angle, a
+  drawing's points have handles, a chart reopens in its grid, a wrapfigure's words flow beside it,
+  and selected words or a picture are dragged to move. Insert also has Cover Page, Quick Parts with
+  Word's fields (page, pages, title: `\thepage`, `\pageref{LastPage}`, `\thetitle`) and form fields
+  a PDF reader fills in (hyperref's).
 - **References as in Word.** The table of contents and its levels, endnotes, footnote numbering,
   sources written into the project's .bib (and a hand written entry edited where it stands),
   natbib's, biblatex's or BibTeX's citation styles, the bibliography and its title, captions and

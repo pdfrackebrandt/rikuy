@@ -674,12 +674,280 @@ def phones(p):
         br.close()
 
 
+# ---- R3: the border's weight and colour, a free turn, a drawing's points, a chart's grid again, the
+# wrap's text flow, a picture dragged ------------------------------------------------------------------
+BORDERED = lambda pre='': WRAP(CENTER().replace('\\includegraphics[width=0.5\\linewidth]{a.png}', '{\\setlength{\\fboxsep}{0pt}' + pre + '\\fbox{\\includegraphics[width=0.5\\linewidth]{a.png}}}'))
+SHAPE = '\\begin{center}\n\\begin{tikzpicture}\n\\draw[thick, draw=blue!60!black, fill=blue!20] (0,0) rectangle (3,2);\n\\end{tikzpicture}\n\\end{center}\n'
+CHART = '\\begin{center}\n\\begin{tikzpicture}\n\\begin{axis}[ybar, width=0.8\\linewidth, height=6cm, ymin=0, symbolic x coords={A,B}, xtick=data]\n\\addplot coordinates {(A,4.3) (B,2.5)};\n\\end{axis}\n\\end{tikzpicture}\n\\end{center}\n'
+TIKZPRE = '\\usepackage{graphicx}\n\\usepackage{tikz}\n\\usepackage{pgfplots}\n\\pgfplotsset{compat=1.18}\n'
+
+
+def r3_objects(page):
+    asset(page)
+    # P7: the border's weight and colour, by the round trip rule; hand written forms come off whole
+    roundtrip(page, DOC, sel_pic(), fn('picture-border-weight', {'weight': '1.5pt'}), BORDERED('\\setlength{\\fboxrule}{1.5pt}'), label='Border Weight 1.5 pt', off_command='picture-border',
+              forms=(BORDERED('\\setlength{\\fboxrule}{2pt}\\color{blue}'), BORDERED('\\color[HTML]{1F4E79}\\setlength{\\fboxrule}{3pt}')))
+    load_doc(page, BORDERED('\\setlength{\\fboxrule}{1.5pt}')); sel_pic()(page)
+    h0 = page.evaluate('window.rikuy.hist.length')
+    run_cmd(page, 'picture-border-color', {'color': 'red'})
+    want = BORDERED('\\setlength{\\fboxrule}{1.5pt}\\color{red}').replace('\\usepackage{graphicx}\n', '\\usepackage{graphicx}\n\\usepackage{xcolor}\n')
+    check('Border Color red: \\color{red} before the \\fbox, xcolor once, one step', src(page) == want and page.evaluate('window.rikuy.hist.length') == h0 + 1, body(page))
+    page.wait_for_timeout(300)
+    st = page.evaluate("(() => { const i = document.querySelector('#pages .y-fbox.pic .a-img'), c = getComputedStyle(i); return [c.borderTopColor, parseFloat(c.borderTopWidth) / parseFloat(c.getPropertyValue('--pt')), getComputedStyle(i.closest('.y-fbox')).color]; })()")
+    check('the page draws the border in the red it draws \\color{red} in, 1.5 pt wide', st[0] == st[2] and st[0] != 'rgb(0, 0, 0)' and abs(st[1] - 1.5) < 0.3, st)
+    run_cmd(page, 'picture-border-weight', {'weight': None}); run_cmd(page, 'picture-border-color', {'color': None})
+    check('Automatic weight and colour take their lines off, the frame stays', src(page) == BORDERED().replace('\\usepackage{graphicx}\n', '\\usepackage{graphicx}\n\\usepackage{xcolor}\n'), body(page))
+    box = page.locator('#pages .a-img').bounding_box()
+    page.mouse.click(box['x'] + box['width'] / 2, box['y'] + box['height'] / 2, button='right'); page.wait_for_timeout(250)
+    items = page.evaluate("[...document.querySelectorAll('.pop [role^=menuitem]')].map((x) => x.getAttribute('aria-label'))")
+    check('the picture\'s right click menu: Border Weight and Border Color', 'Border Weight' in items and 'Border Color' in items, items)
+    page.get_by_role('menuitem', name='Border Weight', exact=True).click(); page.wait_for_timeout(200)
+    page.get_by_role('menuitemcheckbox', name='3 pt', exact=True).click(); page.wait_for_timeout(250)
+    check('and Weight › 3 pt writes \\fboxrule 3pt', '\\setlength{\\fboxrule}{3pt}\\fbox' in src(page), body(page))
+    # a free turn: the round handle dragged a quarter round, Shift in steps of 15°
+    for shift, label in ((False, 'by the mouse'), (True, 'with Shift')):
+        load_doc(page, DOC); sel_pic()(page); page.wait_for_timeout(200)
+        r = page.evaluate("(() => { const h = document.querySelector('.pic-frame .pic-rot'), f = document.querySelector('.pic-frame').getBoundingClientRect(), b = h.getBoundingClientRect(); return [b.x + b.width / 2, b.y + b.height / 2, f.x + f.width / 2, f.y + f.height / 2]; })()")
+        cx, cy = r[2], r[3]; rad = cy - r[1]
+        page.mouse.move(r[0], r[1]); page.mouse.down()
+        if shift: page.keyboard.down('Shift')
+        import math
+        for k in range(1, 9):
+            a = math.radians(-90 + 40 * k / 8)
+            page.mouse.move(cx + rad * math.cos(a), cy + rad * math.sin(a))
+        page.mouse.up()
+        if shift: page.keyboard.up('Shift')
+        page.wait_for_timeout(300)
+        m = re.search(r'angle=(-?\d+)', src(page))
+        ang = int(m.group(1)) if m else None
+        check('a free turn %s: the handle 40° clockwise writes angle=%s (one step), as TeX turns it' % (label, ang), ang is not None and (ang == -45 if shift else abs(ang + 40) <= 2) and src(page).replace(m.group(0) if m else '', '').count('angle') == 0, body(page))
+        page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+        check('and one undo gives the bytes back (%s)' % label, src(page) == DOC)
+    # I12: a drawing's point dragged writes its coordinate; Escape gives up
+    D2 = WRAP('Intro.\n\n' + SHAPE + '\nAfter.', TIKZPRE)
+    load_doc(page, D2); page.wait_for_timeout(300)
+    box = page.evaluate("(() => { const e = document.querySelector('#pages .raw.drawn svg.tz'); e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; })()")
+    page.mouse.click(box[0] + box[2] / 2, box[1] + box[3] / 2); page.wait_for_timeout(300)
+    hs = page.evaluate("[...document.querySelectorAll('.shape-layer .shape-h')].filter((h) => !h.hidden).map((h) => [parseFloat(h.style.left), parseFloat(h.style.top)])")
+    check('a press on a drawing selects it: a handle on each of its points, no source box', len(hs) == 2 and not page.evaluate("!!(window.rikuy.pop && window.rikuy.pop.el.classList.contains('pop-raw'))"), hs)
+    h0 = page.evaluate('window.rikuy.hist.length')
+    px = page.evaluate('window.rikuy.layout.px')
+    cm = 72.27 / 2.54 * px
+    page.mouse.move(hs[1][0], hs[1][1]); page.mouse.down(); page.mouse.move(hs[1][0] + cm, hs[1][1] + cm / 2, steps=6); page.mouse.up(); page.wait_for_timeout(400)
+    m = re.search(r'rectangle \(([\d.]+),([\d.]+)\)', src(page))
+    check('dragging its corner a centimetre right and half down writes (4,1.5) in place of (3,2), one step', m and abs(float(m.group(1)) - 4) < 0.08 and abs(float(m.group(2)) - 1.5) < 0.08 and src(page).replace(m.group(0), 'rectangle (3,2)') == D2 and page.evaluate('window.rikuy.hist.length') == h0 + 1, body(page))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('one undo gives the drawing back', src(page) == D2)
+    hs = page.evaluate("[...document.querySelectorAll('.shape-layer .shape-h')].filter((h) => !h.hidden).map((h) => [parseFloat(h.style.left), parseFloat(h.style.top)])")
+    if hs:
+        page.mouse.move(hs[0][0], hs[0][1]); page.mouse.down(); page.mouse.move(hs[0][0] + 30, hs[0][1] + 30, steps=4); page.keyboard.press('Escape'); page.mouse.up(); page.wait_for_timeout(300)
+    check('Escape while dragging a point writes nothing', src(page) == D2)
+    page.keyboard.press('Escape')
+    # a chart opened again in its grid
+    D3 = WRAP('Intro.\n\n' + CHART + '\nAfter.', TIKZPRE)
+    load_doc(page, D3); page.wait_for_timeout(300)
+    box = page.evaluate("(() => { const e = document.querySelector('#pages .raw.drawn svg.pgf'); e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; })()")
+    page.mouse.click(box[0] + box[2] / 2, box[1] + box[3] / 2); page.wait_for_timeout(300)
+    vals = page.evaluate("[...document.querySelectorAll('.pop input.pd-cell')].slice(0, 12).map((i) => i.value)")
+    check('a click on a chart Rikuy made opens its grid again with its data', vals[:4] == ['', 'Series 1', '', ''] and vals[4:6] == ['A', '4.3'], vals)
+    h0 = page.evaluate('window.rikuy.hist.length')
+    page.get_by_role('textbox', name='Row 2, series 1', exact=True).fill('7'); page.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(300)
+    check('OK writes the chart again in its place: (B,7), one step', src(page) == D3.replace('(B,2.5)', '(B,7)') and page.evaluate('window.rikuy.hist.length') == h0 + 1, body(page))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    check('one undo gives the chart back', src(page) == D3)
+    # the wrap's text flow: a wrapfigure's words beside it on the page
+    D4 = WRAP('\\begin{wrapfigure}{r}{0.4\\linewidth}\n\\centering\n\\includegraphics[width=\\linewidth]{a.png}\n\\end{wrapfigure}\n' + 'Words beside the figure flow round it as TeX sets them. ' * 12 + '\n\nNext paragraph.', '\\usepackage{graphicx}\n\\usepackage{wrapfig}\n')
+    load_doc(page, D4); page.wait_for_timeout(500)
+    st = page.evaluate("""(() => { const w = document.querySelector('#pages .wrap-in'); if (!w) return null; const p = w.parentElement, r = w.getBoundingClientRect(), q = p.getBoundingClientRect();
+      const sp = [...p.querySelectorAll('span.t')]; const first = sp[0].getClientRects()[0], rects = sp.flatMap((x) => [...x.getClientRects()]); const below = rects.filter((x) => x.top > r.bottom + 2);
+      return { float: getComputedStyle(w).float, para: p.classList.contains('p'), w: r.width / q.width, beside: first.right < r.left + 1, full: below.length > 0 && Math.max(...below.map((x) => x.right)) > r.left + 10 }; })()""")
+    check('a wrapfigure drawn as wrapfig sets it: at the right of the paragraph after it, the words beside it, then the whole line again under it', st and st['float'] == 'right' and st['para'] and abs(st['w'] - 0.4) < 0.03 and st['beside'] and st['full'], st)
+    # a picture dragged: its center to after the last paragraph, one step; among words to another word
+    D5 = WRAP(CENTER() + '\n\nLast words here.')
+    load_doc(page, D5); sel_pic()(page); page.wait_for_timeout(200)
+    a = page.evaluate("(() => { const r = document.querySelector('#pages .a-img').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()")
+    t = page.evaluate("(() => { const p = [...document.querySelectorAll('#pages .it.p')].find((x) => x.textContent.includes('Last words')); const r = p.getBoundingClientRect(); return [r.x + 30, r.y + r.height * 0.8]; })()")
+    h0 = page.evaluate('window.rikuy.hist.length')
+    page.mouse.move(a[0], a[1]); page.mouse.down(); page.mouse.move(a[0] + 20, a[1] + 20, steps=3); page.mouse.move(t[0], t[1], steps=6)
+    mark = page.evaluate("!document.querySelector('.move-mark').hidden")
+    page.mouse.up(); page.wait_for_timeout(400)
+    want = WRAP('Before it here.\n\nAfter it here.\n\nLast words here.\n\n\\begin{center}\n\\includegraphics[width=0.5\\linewidth]{a.png}\n\\end{center}\n')
+    check('a selected picture dragged below the last paragraph moves there with its center, a line showing where; one step', src(page) == want and mark and page.evaluate('window.rikuy.hist.length') == h0 + 1, body(page))
+    check('and it stays selected there', page.evaluate("!!(window.rikuy.armed && window.rikuy.armed.kind === 'img')"))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    check('one undo gives the bytes back', src(page) == D5, body(page))
+    D6 = WRAP('Alpha \\includegraphics[height=1em]{a.png} beta gamma.')
+    load_doc(page, D6); sel_pic()(page); page.wait_for_timeout(200)
+    a = page.evaluate("(() => { const r = document.querySelector('#pages .a-img').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()")
+    t = page.evaluate("(() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('gamma')); const r = document.createRange(); const i = s.textContent.indexOf('gamma'); r.setStart(s.firstChild, i); r.setEnd(s.firstChild, i + 1); const b = r.getBoundingClientRect(); return [b.x + 0.5, b.y + b.height / 2]; })()")
+    page.mouse.move(a[0], a[1]); page.mouse.down(); page.mouse.move(a[0] + 15, a[1], steps=3); page.mouse.move(t[0], t[1], steps=6); page.mouse.up(); page.wait_for_timeout(400)
+    check('a picture among words dragged before another word moves there', src(page) == WRAP('Alpha  beta \\includegraphics[height=1em]{a.png}gamma.'), body(page))
+
+
+def word_box(page, word):
+    return page.evaluate("""(w) => { const sp = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(w)); const r = document.createRange(); const i = sp.textContent.indexOf(w);
+      r.setStart(sp.firstChild, i); r.setEnd(sp.firstChild, i + w.length); const b = r.getBoundingClientRect(); return [b.left, b.top, b.width, b.height]; }""", word)
+
+
+def r3_review(page):
+    """The review of fc36bf5: H3 a wrapfigure taken out is no longer drawn, also before the text's first
+    paragraph; H4 a wrapped paragraph breaks across pages below its figure, never past a sheet; M5 a
+    figure taller than its paragraph goes on beside the next; M4 a figure taken from a paragraph's
+    middle leaves it one paragraph; L1 a picture dropped on a list goes before or after the whole list,
+    where the line is drawn."""
+    asset(page)
+    P2 = '\\usepackage{graphicx}\n\\usepackage{wrapfig}\n'
+    fig = '\\begin{wrapfigure}{r}{0.4\\linewidth}\n\\centering\n\\includegraphics[width=\\linewidth]{a.png}\n\\caption{FIGCAP}\n\\end{wrapfigure}\n'
+    D = WRAP(fig + 'Alpha words beside the figure. ' * 4 + '\n\nSecond paragraph here.', P2)
+    load_doc(page, D); page.wait_for_timeout(400)
+    s = src(page); a = s.index('\\begin{wrapfigure}'); e = s.index('\\end{wrapfigure}') + len('\\end{wrapfigure}') + 1
+    page.evaluate('([a, e]) => { const g = window.rikuy; g.commit([{ f: "main.tex", s: a, e, t: "" }], { f: "main.tex", p: a }); }', [a, e]); page.wait_for_timeout(400)
+    check('H3: a wrapfigure deleted before the first paragraph is no longer drawn in it', not page.evaluate("document.getElementById('pages').textContent.includes('FIGCAP') || !!document.querySelector('#pages .wrap-in, #pages .has-wrap')"))
+    long = ' '.join(['Lorem ipsum dolor sit amet consectetur adipiscing elit sed do.'] * 140)
+    D4 = WRAP('Intro paragraph.\n\n' + fig + long + '\n\nSecond paragraph here.', P2)
+    load_doc(page, D4); page.wait_for_timeout(800)
+    r = page.evaluate("""() => { const out = []; for (const pg of document.querySelectorAll('#pages .page')) { const pr = pg.getBoundingClientRect(); for (const it of pg.querySelectorAll('.it.p')) { const q = it.getBoundingClientRect(); out.push([Math.round(pr.top), Math.round(pr.bottom), Math.round(q.top), Math.round(q.bottom), it.textContent.slice(0, 12), !!it.querySelector('.wrap-in')]); } } return out; }""")
+    over = [x for x in r if x[3] > x[1] + 1]
+    first = [x for x in r if x[5]]
+    pieces = [x for x in r if 'Intro' not in x[4] and 'Second' not in x[4]]
+    check('H4: the wrapped paragraph starts on page 1 with its figure and goes on over the next pages; nothing runs past a sheet', not over and first and first[0][0] == r[0][0] and len(pieces) >= 2 and pieces[0][5], (over, r[:6]))
+    tall = '\\begin{wrapfigure}{r}{0.4\\textwidth}\n\\centering\\includegraphics[height=6cm]{a.png}\n\\end{wrapfigure}\n'
+    D5 = WRAP(tall + 'Short first paragraph beside the figure, two lines at most here.\n\n' + 'Second paragraph words flow on and on here. ' * 12, P2)
+    load_doc(page, D5); page.wait_for_timeout(600)
+    st = page.evaluate("""() => { const w = document.querySelector('#pages .wrap-in'), f = w.getBoundingClientRect(); const p2 = [...document.querySelectorAll('#pages .it.p')].find((x) => x.textContent.includes('Second paragraph')); const sp = p2.querySelector('span.t'); const q = sp.getClientRects()[0];
+      return { gap: Math.round(p2.getBoundingClientRect().top - w.parentElement.getBoundingClientRect().bottom), beside: q.right < f.left + 1 && q.top < f.bottom, ghost: p2.classList.contains('has-ghost') }; }""")
+    check('M5: a figure taller than its paragraph goes on beside the next one, no blank under the first', st['beside'] and st['ghost'] and st['gap'] < 20, st)
+    # N4: ArrowLeft at the start of that paragraph goes to the end of the one before, past the empty float
+    p2 = page.evaluate("(() => { const p = [...document.querySelectorAll('#pages .it.p')].find((x) => x.textContent.includes('Second paragraph')); const r = document.createRange(); const t = p.querySelector('span.t').firstChild; r.setStart(t, 0); r.collapse(true); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); return true; })()")
+    page.keyboard.press('ArrowLeft'); page.keyboard.type('L'); page.wait_for_timeout(300)
+    check('N4: ArrowLeft from a paragraph beside the empty float reaches the paragraph before', 'most here.L' in src(page), body(page)[:240])
+    # N1: around a wrapfigure every paragraph stays drawn: its caption typed in, its width changed, it deleted first, undo
+    words = ['Alpha words', 'Second paragraph', 'Third one']
+    D8 = WRAP(fig + 'Alpha words beside the figure. ' * 6 + '\n\nSecond paragraph here. ' * 1 + '\n\nThird one here.', P2)
+    missing = lambda ws: page.evaluate("(ws) => { const t = [...document.querySelectorAll('#pages .page')].map((p) => p.textContent).join(' '); return ws.filter((w) => !t.includes(w)); }", ws)
+    load_doc(page, D8); page.wait_for_timeout(500)
+    cap = word_box(page, 'FIGCAP')
+    page.mouse.click(cap[0] + cap[2] / 2, cap[1] + cap[3] / 2); page.keyboard.type('QR'); page.wait_for_timeout(500)
+    check('N1: letters typed in a wrapfigure\'s caption: the caption and every paragraph stay drawn', not missing(words + ['FIG']) and page.evaluate("document.querySelector('#pages').textContent.includes('Q')") and 'Q' in src(page), (missing(words + ['FIG']), body(page)[:200]))
+    load_doc(page, D8); page.wait_for_timeout(400)
+    s = src(page); a = s.index('{0.4\\linewidth}')
+    page.evaluate('([a]) => { window.rikuy.commit([{ f: "main.tex", s: a + 1, e: a + 4, t: "0.3" }], { f: "main.tex", p: a }); }', [a]); page.wait_for_timeout(500)
+    check('N1: a wrapfigure\'s width changed: the figure and every paragraph stay drawn', not missing(words + ['FIGCAP']), missing(words + ['FIGCAP']))
+    load_doc(page, D8); page.wait_for_timeout(400)
+    s = src(page); a = s.index('\\begin{wrapfigure}'); e = s.index('\\end{wrapfigure}') + len('\\end{wrapfigure}') + 1
+    page.evaluate('([a, e]) => { window.rikuy.commit([{ f: "main.tex", s: a, e, t: "" }], { f: "main.tex", p: a }); }', [a, e]); page.wait_for_timeout(500)
+    gone = missing(words)
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(500)
+    check('N1: a wrapfigure first in the text deleted: every paragraph stays drawn; undo brings the figure back, drawn', not gone and not missing(words + ['FIGCAP']) and src(page) == D8, (gone, missing(words + ['FIGCAP'])))
+    # M4: a figure from a paragraph's middle
+    D6 = WRAP('Joined part one\n\\begin{figure}[h]\n\\centering\n\\includegraphics[width=0.3\\linewidth]{a.png}\n\\end{figure}\njoined part two.\n\nBottom para.')
+    load_doc(page, D6); sel_pic()(page); page.wait_for_timeout(200)
+    a = page.evaluate("(() => { const r = document.querySelector('#pages .a-img').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()")
+    t = page.evaluate("(() => { const p = [...document.querySelectorAll('#pages .it.p')].find((x) => x.textContent.includes('Bottom para')); const r = p.getBoundingClientRect(); return [r.x + 30, r.y + r.height * 0.8]; })()")
+    page.mouse.move(a[0], a[1]); page.mouse.down(); page.mouse.move(a[0] + 20, a[1] + 20, steps=3); page.mouse.move(t[0], t[1], steps=6); page.mouse.up(); page.wait_for_timeout(400)
+    check('M4: a figure taken from a paragraph\'s middle leaves it one paragraph', 'Joined part one\njoined part two.' in src(page) and body(page).rstrip().endswith('\\end{figure}'), body(page))
+    # L1: dropped on a list's lower half: after the whole list, where the line is drawn
+    D7 = WRAP(CENTER() + '\n\n\\begin{itemize}\n\\item One\n\\item Two\n\\item Three\n\\end{itemize}\n\nLast.')
+    load_doc(page, D7); sel_pic()(page); page.wait_for_timeout(200)
+    a = page.evaluate("(() => { const r = document.querySelector('#pages .a-img').getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()")
+    t = page.evaluate("(() => { const p = [...document.querySelectorAll('#pages .it')].find((x) => x.textContent.includes('Three')); const r = p.getBoundingClientRect(); return [r.x + 30, r.y + r.height * 0.7]; })()")
+    page.mouse.move(a[0], a[1]); page.mouse.down(); page.mouse.move(a[0] + 20, a[1] + 20, steps=3); page.mouse.move(t[0], t[1], steps=6)
+    line = page.evaluate("(() => { const m = document.querySelector('.move-mark').getBoundingClientRect(); const l = [...document.querySelectorAll('#pages .it')].find((x) => x.textContent.includes('Three')).getBoundingClientRect(); return Math.abs(m.top - l.bottom) < 3; })()")
+    page.mouse.up(); page.wait_for_timeout(400)
+    b = body(page)
+    check('L1: dropped on a list\'s last item, the picture goes after the whole list, where the line was drawn', line and b.index('\\end{itemize}') < b.index('\\begin{center}') < b.index('Last.'), (line, b))
+    # (merge with R1) \hfill beside a wrapped figure, and beside what is left of it, stretches to the
+    # figure's side, not under it; on a landscape page the figure still wraps
+    D9 = WRAP(tall + 'Lefta\\hfill Righta\n\nLeftb\\hfill Rightb', P2)
+    load_doc(page, D9); page.wait_for_timeout(600)
+    st = page.evaluate("""() => { const f = document.querySelector('#pages .wrap-in').getBoundingClientRect(), out = {};
+      for (const w of ['Righta', 'Rightb']) { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(w)); const q = s.getClientRects()[0]; out[w] = [Math.round(q.right), Math.round(q.top)]; }
+      return { left: Math.round(f.left), bottom: Math.round(f.bottom), ...out }; }""")
+    check('merge: \\hfill beside a wrapped figure and beside its empty float ends at the figure, on the first line', all(st[w][0] <= st['left'] + 1 and st[w][0] > st['left'] - 40 and st[w][1] < st['bottom'] for w in ('Righta', 'Rightb')), st)
+    load_doc(page, WRAP('\\begin{landscape}\n' + fig + 'Alpha words beside the figure. ' * 6 + '\n\\end{landscape}', P2 + '\\usepackage{pdflscape}\n')); page.wait_for_timeout(600)
+    check('merge: a wrapfigure on a landscape page (R1) wraps its paragraph', page.evaluate("!!document.querySelector('#pages .page.land .has-wrap > .wrap-in')"), body(page)[:200])
+
+
+def r3_compiled(page):
+    """With dist/tex: a picture with a red 1.5 pt border turned 30° by the handle, a moved drawing, a chart
+    written again and a wrapfigure, on pdfLaTeX, XeLaTeX and LuaLaTeX; the turned box in the PDF as on the page."""
+    if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        print('SKIP R3 pictures compiled in the page: no TeX tree in %s' % DIST)
+        return
+    asset(page)
+    pre = TIKZPRE + '\\usepackage{wrapfig}\n\\usepackage{xcolor}\n'
+    body_ = ('\\begin{center}\n{\\setlength{\\fboxsep}{0pt}\\setlength{\\fboxrule}{1.5pt}\\color{red}\\fbox{\\includegraphics[width=0.4\\linewidth,angle=30]{a.png}}}\n\\end{center}\n\n'
+             + SHAPE.replace('(3,2)', '(4.12,1.5)') + '\n' + CHART.replace('(B,2.5)', '(B,7)') + '\n'
+             + '\\begin{wrapfigure}{r}{0.3\\linewidth}\n\\centering\n\\includegraphics[width=\\linewidth]{a.png}\n\\end{wrapfigure}\n' + 'Words beside it. ' * 30)
+    for eng in ('pdflatex', 'xelatex', 'lualatex'):
+        doc = ('% !TEX program = ' + eng + '\n' if eng != 'pdflatex' else '') + WRAP(body_, pre)
+        r = compile_pdf(page, doc)
+        check('R3 pictures compile with %s: a coloured, weighted border on a picture turned 30°, a moved drawing, a chart written again, a wrapfigure' % eng, r['ok'] and not r['problems'] and 'Words beside it' in pdf_text(r), r['problems'])
+    one = WRAP('\\begin{center}\n\\includegraphics[width=0.4\\linewidth,angle=30]{a.png}\n\\end{center}')
+    rr = compile_pdf(page, one)
+    page.wait_for_timeout(500)
+    drawn = page.evaluate("(() => { const s = document.querySelector('#pages .a-img'), r = s.getBoundingClientRect(), px = window.rikuy.layout.px; return [r.width / px, r.height / px]; })()")
+    box = pdf_image_box(base64.b64decode(rr['pdf'])) if rr['ok'] else None
+    check('TeX agrees on a free turn: angle=30 takes %s pt in the PDF and %s pt on the page' % (box and [round(v, 1) for v in box], [round(v, 1) for v in drawn]), box and abs(box[0] - drawn[0]) < 2.5 and abs(box[1] - drawn[1]) < 2.5, (box, drawn))
+
+
+def r3_phones(p):
+    """On a phone (390 and 360 px, touch): the round handle a 44 px target that a finger turns; a tap on a
+    drawing gives its points 44 px handles and a finger moves one; a finger drags a selected picture."""
+    for w, h in ((390, 844), (360, 740)):
+        br, page, errs = open_page(p, w, h, touch=True)
+        tag = ' (%d px, touch)' % w
+        try:
+            asset(page)
+            load_doc(page, DOC); page.wait_for_timeout(500)
+            sel_pic()(page); page.wait_for_timeout(300)
+            hit = page.evaluate("(() => { const h = document.querySelector('.pic-frame .pic-rot'), b = getComputedStyle(h, '::before'); return [parseFloat(b.width), parseFloat(b.height), !!h.offsetParent]; })()")
+            check('the round handle is there, a 44 px target' + tag, hit[0] >= 44 and hit[1] >= 44 and hit[2], hit)
+            r = page.evaluate("(() => { const h = document.querySelector('.pic-frame .pic-rot').getBoundingClientRect(), f = document.querySelector('.pic-frame').getBoundingClientRect(); return [h.x + h.width / 2, h.y + h.height / 2, f.x + f.width / 2, f.y + f.height / 2]; })()")
+            cdp = page.context.new_cdp_session(page)
+            import math
+            cx, cy, rad = r[2], r[3], r[3] - r[1]
+            cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': r[0], 'y': r[1]}]})
+            for k in range(1, 9):
+                a = math.radians(-90 - 30 * k / 8)
+                cdp.send('Input.dispatchTouchEvent', {'type': 'touchMove', 'touchPoints': [{'x': cx + rad * math.cos(a), 'y': cy + rad * math.sin(a)}]})
+            cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []}); page.wait_for_timeout(400)
+            m = re.search(r'angle=(-?\d+)', src(page))
+            check('a finger turns the picture 30° the other way: angle=%s' % (m and m.group(1)) + tag, m and abs(int(m.group(1)) - 30) <= 2, body(page))
+            load_doc(page, WRAP('Intro.\n\n' + SHAPE + '\nAfter.', TIKZPRE)); page.wait_for_timeout(400)
+            box = page.evaluate("(() => { const e = document.querySelector('#pages .raw.drawn svg.tz'); e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; })()")
+            page.touchscreen.tap(box[0] + box[2] / 2, box[1] + box[3] / 2); page.wait_for_timeout(400)
+            hs = page.evaluate("[...document.querySelectorAll('.shape-layer .shape-h')].filter((h) => !h.hidden).map((h) => [parseFloat(h.style.left), parseFloat(h.style.top), parseFloat(getComputedStyle(h, '::before').width)])")
+            check('a tap on a drawing gives each point a 44 px handle' + tag, len(hs) == 2 and all(x[2] >= 44 for x in hs), hs)
+            if hs:
+                x0, y0 = hs[1][0], hs[1][1]
+                cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': x0, 'y': y0}]})
+                for k in range(1, 7): cdp.send('Input.dispatchTouchEvent', {'type': 'touchMove', 'touchPoints': [{'x': x0 - 3 * k, 'y': y0 + 3 * k}]})
+                cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []}); page.wait_for_timeout(400)
+                check('and a finger moves the point: its coordinate written' + tag, 'rectangle (3,2)' not in src(page) and re.search(r'rectangle \([\d.]+,[\d.]+\)', src(page)), body(page))
+            load_doc(page, WRAP(CENTER() + '\n\nLast words here.')); page.wait_for_timeout(400)
+            sel_pic()(page); page.wait_for_timeout(300)
+            a = page.evaluate("(() => { const e = document.querySelector('#pages .a-img'); const r = e.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; })()")
+            t = page.evaluate("(() => { const p = [...document.querySelectorAll('#pages .it.p')].find((x) => x.textContent.includes('Last words')); const r = p.getBoundingClientRect(); return [r.x + 30, r.y + r.height * 0.8]; })()")
+            cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': a[0], 'y': a[1]}]})
+            for k in range(1, 9): cdp.send('Input.dispatchTouchEvent', {'type': 'touchMove', 'touchPoints': [{'x': a[0] + (t[0] - a[0]) * k / 8, 'y': a[1] + (t[1] - a[1]) * k / 8}]})
+            cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []}); page.wait_for_timeout(500)
+            check('a finger drags a selected picture below the last paragraph' + tag, body(page).strip().endswith('\\end{center}') and body(page).index('Last words') < body(page).index('\\begin{center}'), body(page))
+            check('no sideways scroll' + tag, page.evaluate('document.documentElement.scrollWidth <= innerWidth + 1'))
+            shots = os.environ.get('RIKUY_SHOTS', '/tmp/R3-shots'); os.makedirs(shots, exist_ok=True)
+            load_doc(page, DOC); page.wait_for_timeout(400); sel_pic()(page); page.wait_for_timeout(300)
+            page.screenshot(path=os.path.join(shots, 'r3-picture-%d.png' % w))
+        except Exception as e:
+            check('r3_phones runs to its end' + tag, False, repr(e)[:300])
+        br.close()
+
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         asset(page)
         names = sys.argv[1:]
-        for f in (selecting, trips, sizing, tools, drawing, objects, reviewed, compiled):
+        for f in (selecting, trips, sizing, tools, drawing, objects, reviewed, compiled, r3_objects, r3_review, r3_compiled):
             if names and f.__name__ not in names:
                 continue
             try: f(page)
@@ -689,6 +957,8 @@ def run():
         if not names or 'phones' in names:
             try: phones(p)
             except Exception as e: check('phones runs to its end', False, str(e)[:400])
+        if not names or 'r3_phones' in names:
+            r3_phones(p)
     bad = [r for r in results if not r[1]]
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     sys.exit(1 if bad else 0)

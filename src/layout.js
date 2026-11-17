@@ -221,11 +221,119 @@ export class Layout {
   }
 
   // Measure items (and their footnotes) that lack metrics.
-  measure(items, fns) {
+  // (R3) A wrapfigure and the paragraph after it, as wrapfig sets them: the figure at the side of
+  // the paragraph's first lines and the words beside it (a CSS float in the paragraph, measured
+  // with it), the paragraph cut across pages only below the figure. A figure taller than its
+  // paragraph goes on beside the paragraphs after it, as wrapfig's line count does: each gets an
+  // empty float of what is left (wrapGhosts). Returns the items to lay out (the figure is in its
+  // paragraph's); pairs that no longer stand (the figure gone, a paragraph changed) part.
+  wrapPairs(items) {
+    const unpair = (P) => {
+      if (P.wrapOf && P.wrapOf.el.parentNode === P.el) P.wrapOf.el.remove();
+      P.wrapOf = null; P.wrapFloat = null; P.overhang = 0; P.measured = false; P.pieces = null;
+      P.el.classList.remove('has-wrap'); P.el.style.height = '';
+    };
+    // (every item first, the first of all too: a pair whose figure went parts)
+    items.forEach((P, k) => { if (P.wrapOf && P.wrapOf !== items[k - 1]) unpair(P); });
+    const out = [];
+    for (let i = 0; i < items.length; i++) {
+      const W = items[i], P = items[i + 1];
+      if (W.wrapIn && W.wrapIn !== P) W.wrapIn = null;
+      if (W.wrapSide && P && P.kind === 'p' && !P.isFloat && oneCol(this.colsOf(P)) && this.colsOf(W) === this.colsOf(P)) {
+        if (P.ghost) this.setGhost(P, null);
+        if (W.el.parentNode !== P.el || P.el.firstChild !== W.el) {
+          W.el.classList.add('wrap-in', 'wrap-' + W.wrapSide);
+          W.el.style.marginTop = '';
+          P.el.prepend(W.el);
+          P.el.classList.add('has-wrap');
+          P.measured = false; P.pieces = null;
+        }
+        P.wrapOf = W; P.wrapFloat = W.el; W.wrapIn = P;
+        continue;
+      }
+      if (W.wrapSide && W.el.classList.contains('wrap-in')) { W.el.classList.remove('wrap-in', 'wrap-l', 'wrap-r'); W.measured = false; }
+      out.push(W);
+    }
+    return out;
+  }
+  // an item's empty float of h px at a side, w px wide (null: none), measured again when it changes
+  setGhost(Q, g) {
+    const key = g ? g.side + ':' + Math.round(g.w) + ':' + Math.round(g.h) : '';
+    if ((Q.ghostKey || '') === key) return false;
+    Q.ghostKey = key; Q.ghost = null; Q.wrapFloat = null; Q.overhang = 0;
+    Q.el.classList.remove('has-ghost', 'ghost-l'); Q.el.style.height = '';
+    Q.el.style.removeProperty('--gw'); Q.el.style.removeProperty('--gh');
+    // (a ::before of the paragraph, not an element: the caret has nothing to stop at)
+    if (g) {
+      Q.el.classList.add('has-ghost');
+      if (g.side === 'l') Q.el.classList.add('ghost-l');
+      Q.el.style.setProperty('--gw', Math.round(g.w) + 'px'); Q.el.style.setProperty('--gh', Math.round(g.h) + 'px');
+      Q.ghost = { w: Math.round(g.w), h: Math.round(g.h), side: g.side }; Q.wrapFloat = Q.ghost;
+    }
+    Q.measured = false; Q.pieces = null;
+    return true;
+  }
+  // A wrapped item measured: its lines beside the float are one (a cut goes below the float, the
+  // float with the first piece); where the float reaches below its words, the item ends with its
+  // words and the rest of the float is left over for the items after it (overhang, in px)
+  wrapMeasure(it, r) {
+    const F = it.wrapFloat, G = F && F === it.ghost ? F : null;
+    if (!F || (!G && F.parentNode !== it.el)) { it.overhang = 0; return; }
+    const fr = G ? null : F.getBoundingClientRect(), mb = G ? 0 : parseFloat(getComputedStyle(F).marginBottom) || 0;
+    const fb = G ? G.h : fr.bottom + mb - r.top;
+    // the words' bottom: every text of the item but the float's
+    let tb = 0;
+    const rg = document.createRange(), tw = document.createTreeWalker(it.el, NodeFilter.SHOW_TEXT);
+    for (let n; (n = tw.nextNode());) {
+      if ((!G && F.contains(n)) || !n.data.trim()) continue;
+      rg.selectNodeContents(n);
+      for (const q of rg.getClientRects()) if (q.height > 0) tb = Math.max(tb, q.bottom - r.top);
+    }
+    if (fb > tb + 1) {
+      it.el.style.height = Math.max(1, tb).toFixed(2) + 'px';
+      it.h = it.el.getBoundingClientRect().height;
+      it.lines = null;
+      it.overhang = fb - it.h;
+      it.wrapW = G ? G.w : fr.width + (parseFloat(getComputedStyle(F).marginLeft) || 0) + (parseFloat(getComputedStyle(F).marginRight) || 0);
+      it.wrapSideOf = G ? G.side : F.classList.contains('wrap-l') ? 'l' : 'r';
+      return;
+    }
+    it.overhang = 0;
+    if (it.lines) {
+      const below = it.lines.filter((l) => l.t >= fb - 0.5);
+      it.lines = below.length ? [{ t: 0, b: below[0].t }, ...below] : null;
+      if (it.lines && it.lines.length < 2) it.lines = null;
+    }
+  }
+  // the floats left over, beside the paragraphs after a wrapped one (a few, while one is left)
+  wrapGhosts(items) {
+    const want = new Map();
+    for (let k = 0; k < items.length; k++) {
+      const P = items[k];
+      if (!P.wrapOf || !(P.overhang > 1)) continue;
+      let left = P.overhang;
+      for (let j = k + 1; j < items.length && j <= k + 8 && left > 1; j++) {
+        const Q = items[j];
+        if (Q.kind !== 'p' || Q.isFloat || Q.wrapOf || this.colsOf(Q) !== this.colsOf(P)) break;
+        const h = left - (Q.sb || 0);
+        if (h <= 1) break;
+        const g = { h, w: P.wrapW, side: P.wrapSideOf };
+        want.set(Q, g);
+        this.setGhost(Q, g);
+        if (!Q.measured) this.measure([Q], [], true);
+        // (what is left of the float under this paragraph's words, for the next)
+        left = Q.overhang > 1 ? Q.overhang : 0;
+      }
+    }
+    for (const it of items) if (it.ghost && !want.has(it)) { this.setGhost(it, null); this.measure([it], [], true); }
+  }
+
+  measure(items, fns, inner) {
     const host = this.host;
     const todo = items.filter((it) => !it.measured);
     const fnTodo = fns.filter((f) => !f.measured);
-    if (!todo.length && !fnTodo.length) return;
+    if (!todo.length && !fnTodo.length) { if (!inner) this.wrapGhosts(items); return; }
+    for (const it of todo) if (it.wrapFloat) it.el.style.height = '';
     const frags = new Map();
     for (const it of todo) {
       it.el.style.marginTop = '';
@@ -245,6 +353,8 @@ export class Layout {
       const r = it.el.getBoundingClientRect();
       it.h = r.height;
       it.lines = it.rowSplit ? rowBoxes(it.el, r.top, r.height) : it.splittable ? lineBoxes(it.el, r.top, r.height) : null;
+      // (a paragraph with a wrapped figure in it: cut below the figure only)
+      if (it.wrapFloat) this.wrapMeasure(it, r);
       if (it.lines && it.lines.length < 2) it.lines = null;
       it.fnLine = [];
       if (it.fnIdx && it.fnIdx.length) {
@@ -259,6 +369,7 @@ export class Layout {
       }
       it.sb = (it.sbEm || 0) * this.g.pt * this.px;
       it.measured = true;
+      it.mv = (it.mv || 0) + 1;
       it.pieces = null;
       // a picture not loaded yet was measured at no height: the item is measured again when it
       // loads (App, the sheet's load listener)
@@ -266,6 +377,7 @@ export class Layout {
       for (const im of it.el.querySelectorAll('img')) if (!im.complete) (it.late || (it.late = new Set())).add(im);
     }
     for (const f of fnTodo) { f.h = f.el.getBoundingClientRect().height + 1; f.measured = true; }
+    if (!inner) this.wrapGhosts(items);
   }
 
   // Items whose size changed after they were placed (a live figure that asked for a height):
@@ -639,7 +751,9 @@ export class Layout {
     const base = this.chromeBase();
     plan.forEach((pg, k) => {
       const fill = this.fillOf(pg);
-      const sig = pg.entries.map((e) => e.it.uid + ':' + e.a + ':' + (e.b ?? '') + ':' + e.sb.toFixed(1) + (e.band ? ':' + e.col + ':' + e.band.h.toFixed(1) : '')).join(',') + '|' + pg.fns.map((f) => f.uid).join(',') + '|' + (k + 1) + '|' + fill.toFixed(1);
+      // (mv: how often the item was measured, which takes its element out of the page it was on:
+      // a page of the same items is drawn again when one of them was measured since)
+      const sig = pg.entries.map((e) => e.it.uid + ':' + (e.it.mv || 0) + ':' + e.a + ':' + (e.b ?? '') + ':' + e.sb.toFixed(1) + (e.band ? ':' + e.col + ':' + e.band.h.toFixed(1) : '')).join(',') + '|' + pg.fns.map((f) => f.uid).join(',') + '|' + (k + 1) + '|' + fill.toFixed(1);
       let P = this.pages[k];
       if (!P) { P = this.makePage(); this.pages.push(P); this.root.appendChild(P.el); }
       // (the header, the footer and the page's numbers are drawn again on their own)
@@ -680,6 +794,8 @@ export class Layout {
       else if (P.ln) { P.ln.remove(); P.ln = null; }
     });
     while (this.pages.length > plan.length) { const P = this.pages.pop(); P.el.remove(); }
+    // (R3) the fields in the text (src/fields.js): the number of the page each is on, the pages' count
+    this.pages.forEach((P, k) => { const pg = plan[k]; if (pg) fillFields(P.el, fmtNum(pg.num, pg.fmt), total); });
     this.host.flow.replaceChildren();
     this.host.fns.replaceChildren();
     for (const h of this.hosts.values()) h.replaceChildren();
@@ -1044,9 +1160,12 @@ function tabStops(items, stops) {
 // ragged (no justified spaces), each line's content against the text's right edge. A fill in a
 // table's cell or a box is that box's (a fixed width there), and a right to left paragraph keeps
 // the width it had.
+// (one column: the page's, or a landscape page's (R1), where a wrapped figure stands as on any page)
+const oneCol = (k) => k === 1 || k === 'L';
+
 function fillLines(el) {
   // (a stranger's paragraph of thousands of fills: the first 200 measured, the rest as they were)
-  const fills = [...el.querySelectorAll('.a-sp.fill')].filter((f) => !f.closest('td, th, .mp, .tex')).slice(0, 200);
+  const fills = [...el.querySelectorAll('.a-sp.fill')].filter((f) => !f.closest('td, th, .mp, .tex, .wrap-in')).slice(0, 200);
   if (!fills.length || getComputedStyle(el).direction === 'rtl') return;
   for (const f of fills) f.style.width = '0px';
   const ta = el.style.textAlign, tl = el.style.textAlignLast;
@@ -1055,7 +1174,19 @@ function fillLines(el) {
   const right = er.right - (parseFloat(cs.paddingRight) || 0) - (parseFloat(cs.borderRightWidth) || 0);
   const rg = document.createRange();
   rg.selectNodeContents(el);
-  const rects = [...rg.getClientRects()].filter((r) => r.width > 0 || r.height > 0).slice(0, 20000);
+  // (R3) a wrapped figure in the paragraph, or what is left of one beside it (its empty float):
+  // the lines beside it end at its side, and its words are no line's
+  const wf = [...el.children].find((c) => c.classList.contains('wrap-in'));
+  const wr = wf && wf.getBoundingClientRect(), wcs = wf && getComputedStyle(wf);
+  const gw = el.classList.contains('has-ghost') && !el.classList.contains('ghost-l') ? parseFloat(el.style.getPropertyValue('--gw')) || 0 : 0;
+  const gTop = er.top + (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.borderTopWidth) || 0), gBot = gTop + (parseFloat(el.style.getPropertyValue('--gh')) || 0);
+  const rightAt = (m) => {
+    if (wf && wf.classList.contains('wrap-r') && m >= wr.top && m <= wr.bottom) return Math.min(right, wr.left - (parseFloat(wcs.marginLeft) || 0));
+    if (gw && m >= gTop && m <= gBot) return right - gw;
+    return right;
+  };
+  const inWf = wf ? (r) => r.left >= wr.left - 0.5 && r.right <= wr.right + 0.5 && r.top >= wr.top - 0.5 && r.bottom <= wr.bottom + 0.5 : () => false;
+  const rects = [...rg.getClientRects()].filter((r) => (r.width > 0 || r.height > 0) && !inWf(r)).slice(0, 20000);
   const lines = new Map();
   for (const f of fills) {
     const fr = f.getBoundingClientRect(), mid = (fr.top + fr.bottom) / 2;
@@ -1069,7 +1200,7 @@ function fillLines(el) {
     let end = -Infinity;
     const m = (L.top + L.bottom) / 2;
     for (const r of rects) if (r.top - 1 <= m && m <= r.bottom + 1 && r.right > end) end = r.right;
-    const left = Math.max(0, right - end - 0.5);
+    const left = Math.max(0, rightAt(m) - end - 0.5);
     for (const f of L.fills) widths.push([f, left / L.fills.length]);
   }
   for (const [f, w] of widths) f.style.width = w.toFixed(2) + 'px';
@@ -1108,6 +1239,13 @@ export function fmtNum(n, fmt) {
     return fmt === 'Alph' ? c.toUpperCase() : c;
   }
   return String(n);
+}
+// a page's fields: \thepage its number, \pageref{LastPage} the last page's
+export function fillFields(el, page, total) {
+  for (const x of el.getElementsByClassName('fld')) {
+    const v = x.dataset.fld === 'page' ? page : x.dataset.fld === 'pages' ? total : null;
+    if (v != null && x.textContent !== v) x.textContent = v;
+  }
 }
 // A header's TeX as text with its weight and shape, the page's numbers in: \thepage, LastPage,
 // \leftmark and \rightmark, \today; \textbf, \textit, \emph and their declarations; other

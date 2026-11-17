@@ -148,6 +148,18 @@ register(
   T('autofit-contents', 'AutoFit Contents', { title: 'AutoFit Contents: each column as wide as its words (l, c, r)', on: (app, at) => { const h = here(app, at); return !!h && X.fitOf(h.src, h.T) === 'contents'; }, run: (app) => app.tableFit('contents') }),
   T('autofit-window', 'AutoFit Window', { title: 'AutoFit Window: the table as wide as the text (tabularx with X columns)', synonyms: ['tabularx', 'Full width'], on: (app, at) => { const h = here(app, at); return !!h && X.fitOf(h.src, h.T) === 'window'; }, run: (app) => app.tableFit('window') }),
   T('autofit-fixed', 'Fixed Column Width', { title: 'Fixed Column Width: each column a paragraph column of the width it has now (p{…})', on: (app, at) => { const h = here(app, at); return !!h && X.fitOf(h.src, h.T) === 'fixed'; }, run: (app) => app.tableFit('fixed') }),
+  // (R3) Word's Height and Width boxes on the row: the rows' height (\arraystretch, as Properties
+  // writes it) and the caret's column's width (p{…}; Auto: its letter again)
+  T('table-row-height', 'Height', { title: 'Height: the rows\' height as a multiple of the usual (\\renewcommand{\\arraystretch}{…}); Enter sets it', tab: 'table-layout', group: 'size', order: 12, kind: 'custom', role: 'spinbutton', el: 'rc-table-row-height',
+    synonyms: ['Row height', 'Table row height', 'arraystretch'], render: (app) => app.tableField('height'), sync: (app, at) => app.tableFieldSync('height', at),
+    run: (app, args) => (args && args.height != null ? app.tableProperties({ stretch: Math.max(0.5, Math.min(4, parseFloat(args.height) || 1)) }) : propertiesDialog(app)) }),
+  T('table-col-width', 'Width', { title: 'Width: the caret\'s column\'s width (a length: p{3cm}); Auto lets its words decide; Enter sets it', tab: 'table-layout', group: 'size', order: 14, kind: 'custom', role: 'spinbutton', el: 'rc-table-col-width',
+    synonyms: ['Column width', 'Cell width', 'Table column width'], render: (app) => app.tableField('width'), sync: (app, at) => app.tableFieldSync('width', at),
+    run: (app, args) => (args && 'width' in args ? app.tableColWidth(args.width) : propertiesDialog(app)) }),
+  // (R3) a table's alt text: LaTeX's tagging has no field for one (src/table.js tableAlt), so a
+  // "% alt: …" line before it, which Word gets as the table's Description
+  T('table-alt-text', 'Table Alt Text', { title: 'Alt Text: what the table shows, for people who cannot see it; written as a "% alt:" line before it (LaTeX\'s tagging has no field for a table\'s) and given to Word as the table\'s description',
+    synonyms: ['Alt text', 'Alternative text', 'Table description', 'Accessibility'], run: (app, args) => (args && 'text' in args ? app.tableOp((src, t) => X.setTableAlt(src, t, args.text)) : propertiesDialog(app, 'alt')) }),
   T('distribute-rows', 'Distribute Rows', { title: 'Distribute Rows: rows of one height (the extra space after \\\\[…] goes)', tab: 'table-layout', group: 'size', order: 20, icon: ICON.distRows, run: (app) => app.tableOp((src, t) => X.distributeRows(src, t)) }),
   T('distribute-columns', 'Distribute Columns', { title: 'Distribute Columns: columns of one width (X in tabularx, else the same p{} each)', tab: 'table-layout', group: 'size', order: 30, icon: ICON.distCols, menu: { table: 41 }, run: (app) => app.tableDistributeCols() }),
 
@@ -652,9 +664,68 @@ export const methods = {
     });
   },
   tableToText(sep) { return this.tableOp((src, T) => X.tableToText(src, T, sep)); },
-  // Table Properties' OK: o { full, align, stretch, fixed, width, v } as one commit
+  // (R3) the Height and Width boxes of Table Layout's Cell Size group
+  tableField(which) {
+    const box = document.createElement('label');
+    box.className = 'pf-field';
+    const lab = document.createElement('span');
+    lab.className = 'pf-lab'; lab.textContent = which === 'width' ? 'Width' : 'Height';
+    lab.setAttribute('aria-hidden', 'true');
+    const inp = document.createElement('input');
+    const id = which === 'width' ? 'table-col-width' : 'table-row-height';
+    inp.type = 'text'; inp.id = 'rc-' + id; inp.className = 'pf-v'; inp.dataset.cmd = id;
+    inp.setAttribute('role', 'spinbutton'); inp.setAttribute('aria-label', which === 'width' ? 'Width' : 'Height');
+    inp.autocomplete = 'off'; inp.spellcheck = false; inp.inputMode = 'decimal';
+    inp.title = which === 'width' ? 'The column\'s width: 3 cm, 1.5in, or Auto' : 'The rows\' height: 1× is the usual, 1.5× half as high again';
+    // (the caret back in its cell, where the box took the focus from it)
+    const back = () => { const r = this.rbRange; this.root.focus({ preventScroll: true }); if (r && this.root.contains(r.startContainer)) { const g = getSelection(); g.removeAllRanges(); g.addRange(r); } };
+    const set = (v) => {
+      const t = String(v).trim().replace(',', '.');
+      if (which === 'height') {
+        const m = /^([\d.]+)\s*[×x]?$/.exec(t);
+        if (!m || !(parseFloat(m[1]) >= 0.5 && parseFloat(m[1]) <= 4)) { this.toast('The rows\' height: from 0.5× to 4×.'); this.tableFieldSync(which); return false; }
+        return this.tableProperties({ stretch: parseFloat(m[1]) });
+      }
+      if (!t || /^auto$/i.test(t)) return this.tableColWidth(null);
+      const m = /^([\d.]+)\s*(cm|mm|in|pt|em)?$/.exec(t);
+      if (!m || !(parseFloat(m[1]) > 0)) { this.toast('A length (3 cm, 1.5in, 40pt) or Auto.'); this.tableFieldSync(which); return false; }
+      return this.tableColWidth(parseFloat(m[1]) + (m[2] || 'cm'));
+    };
+    inp.addEventListener('keydown', (e) => {
+      // (the caret back in its cell first: the table is the one it is in)
+      if (e.key === 'Enter') { e.preventDefault(); const v = inp.value; back(); set(v); }
+      else if (e.key === 'Escape') { e.preventDefault(); this.ribbonBack(); this.tableFieldSync(which, this.ribbonAt()); }
+      else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        const d = e.key === 'ArrowUp' ? 1 : -1, t = inp.value.trim();
+        if (which === 'height') inp.value = Math.max(0.5, Math.min(4, Math.round(((parseFloat(t) || 1) + d * 0.1) * 10) / 10)) + '×';
+        else { const m = /^([\d.]+)\s*(cm|mm|in|pt|em)?$/.exec(t), u = (m && m[2]) || 'cm', st = { cm: 0.1, mm: 1, in: 0.1, pt: 2, em: 0.5 }[u]; inp.value = Math.max(st, Math.round(((m ? parseFloat(m[1]) : 3) + d * st) * 100) / 100) + ' ' + u; }
+        const v = inp.value;
+        back(); set(v);
+        setTimeout(() => { const x = document.getElementById(inp.id); if (x) x.focus(); }, 0);
+      }
+    });
+    inp.addEventListener('focus', () => { this.keepRange(); inp.select(); });
+    box.append(lab, inp);
+    return box;
+  },
+  tableFieldSync(which, at) {
+    const inp = document.getElementById(which === 'width' ? 'rc-table-col-width' : 'rc-table-row-height');
+    if (!inp || document.activeElement === inp) return;
+    const h = here(this, at);
+    inp.disabled = !h;
+    if (!h) { inp.value = ''; return; }
+    if (which === 'height') { const S = X.settingsOf(h.src, h.T); const v = S.arraystretch ? parseFloat(S.arraystretch.value) : 1; inp.value = (Number.isFinite(v) ? v : 1) + '×'; }
+    else { const col = h.T.spec.cols[h.cell.col]; inp.value = col && col.w ? String(col.w).replace(/^\s*([\d.]+)\s*([a-z]+)\s*$/, '$1 $2') : 'Auto'; }
+  },
+  tableColWidth(w) {
+    const v = w == null || w === '' ? null : String(w).replace(/[^0-9.a-z\\]/gi, '').slice(0, 30);
+    return this.tableOp((src, T, h) => (T.spec.cols[h.cell.col] ? X.setColWidth(src, T, h.cell.col, v) : { error: 'This column has no letter of its own to set.' }));
+  },
+  // Table Properties' OK: o { full, align, stretch, fixed, width, v, alt } as one commit
   tableProperties(o) {
     return this.tableOp((src, T, h) => composeOps(src, T, [
+      (s, t) => (o.alt != null && (X.tableAlt(s, t) || { text: '' }).text !== String(o.alt).trim() ? X.setTableAlt(s, t, o.alt) : null),
       (s, t) => (o.full != null && (o.full !== (X.fitOf(s, t) === 'window')) ? X.autofit(s, t, o.full ? 'window' : 'contents') : null),
       (s, t) => (o.align ? X.floatAlign(s, t, o.align) : null),
       (s, t) => (o.stretch != null ? X.setSetting(s, t, 'arraystretch', Math.abs(o.stretch - 1) < 1e-6 ? null : String(Math.round(o.stretch * 100) / 100)) : null),

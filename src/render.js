@@ -347,7 +347,7 @@ export class Renderer {
         // a wrapfigure: its parts as wide as it is (its pictures' \linewidth), until the page wraps
         // text round it (B6); a share of the line, or a length in points
         const ww = it.wrapW ? cssLength(it.wrapW) : null;
-        if (ww) { el.classList.add('flt-wrap'); el.style.setProperty('--wrapw', ww); }
+        if (ww) { el.classList.add('flt-wrap'); el.style.setProperty('--wrapw', ww); item.wrapSide = it.side || 'r'; }
         const lwWas = this.lineW;
         if (ww) this.lineW = it.wrapW;
         for (const p of it.parts) el.appendChild(this.floatPart(p));
@@ -689,6 +689,7 @@ export class Renderer {
           const s = document.createElement(tag);
           s.className = 'y y-' + (x.st || 'none') + (x.decl ? ' decl' : '');
           if (x.tight) s.classList.add('tight');
+          if (x.rule != null) s.style.setProperty('--fbr', String(Math.round(x.rule * 100) / 100));
           if (x.st === 'dropcap') { s.style.setProperty('--dl', String(x.lines || 2)); if (x.hang) s.classList.add('hang'); }
           if (x.mp) { const w = cssLength(x.mp.replace(/^\\dimexpr\s*|\s*-.*$/g, '')); s.classList.add('mp'); if (w) s.style.width = w; }
           paint(s, x);
@@ -826,6 +827,21 @@ export class Renderer {
         if (x.err) s.classList.add('err');
         if (x.plain) s.classList.add('plain');
         if (x.note) s.classList.add('note');
+        // (R3) a field the layout fills in with its page's number or the pages' count
+        if (x.fld) { s.classList.add('fld'); s.dataset.fld = x.fld; }
+        break;
+      }
+      case 'form': {
+        // (R3) a form field as hyperref sets it: its label, a space, the box (src/forms.js)
+        s.classList.add('a-form', 'ff-' + x.kind);
+        if (x.label) s.append(x.label + ' ');
+        const b = document.createElement('span');
+        b.className = 'ff';
+        if (x.wpt) b.style.width = ptCss(x.wpt);
+        if (x.kind === 'check') b.textContent = x.checked ? '✓' : '';
+        else b.textContent = x.value || '';
+        s.appendChild(b);
+        s.title = { text: 'Text field', date: 'Date field', check: 'Check box', combo: 'Combo box', list: 'Drop-down list' }[x.kind] + ' (hyperref): filled in in the PDF. Click to edit its source.';
         break;
       }
       case 'logo': s.innerHTML = logo(x.text); break;
