@@ -354,7 +354,7 @@ def index(page):
     insert_case(page, doc, lambda page: page.evaluate('''() => { const sp = [...document.querySelectorAll('#pages span.t')]; const a = sp.find((x) => x.textContent.includes('Beta')), z = sp.find((x) => x.textContent.includes('again')); const r = document.createRange(); r.setStart(a.firstChild, a.textContent.indexOf('Beta')); r.setEnd(z.firstChild, z.textContent.indexOf('again') + 5); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }'''),
                 run('mark-entry', {'main': 'Beta', 'range': True}), lambda t: '\\index{Beta|(}Beta words and alpha again\\index{Beta|)}.' in t, 'a page range: |( and |) around the selection')
     insert_case(page, doc, sel('Alpha'), run('mark-entry', {'main': 'alpha', 'all': True}), lambda t: t.count('\\index{alpha}') == 1 and 'alpha\\index{alpha} again' in t, 'Mark All: every place the words stand, as typed (case kept)')
-    insert_case(page, doc, sel('Alpha'), run('mark-entry', {'main': 'A!b@c|d'}), lambda t: '\\index{A"!b"@c"|d}' in t, 'makeindex\'s own characters quoted')
+    insert_case(page, doc, sel('Alpha'), run('mark-entry', {'main': 'A!b@c|d'}), lambda t: '\\index{A"!b"@c\\textbar{}d}' in t, 'makeindex\'s own characters quoted, a | as \\textbar{} (hyperref reads a quoted one too)')
     marked = D('Alpha\\index{Alpha} words here\\index{beta!sub|textbf}.\n\nBeta\\index{Gamma|see{Alpha}} words.\n\nLast.', '\\usepackage{imakeidx}\n\\makeindex\n')
     got = insert_case(page, marked, at('Last', 1), run('insert-index', {'columns': 2}), marked.replace('Last.', 'Last.\n\n\\printindex\n'), 'Insert Index: \\printindex after the paragraph')
     page.wait_for_timeout(300)
@@ -892,6 +892,12 @@ def r4refs(page):
     cmd(page, 'mark-citation', {'long': 'Smith v. Jones, 1 U.S. 2 (1990)', 'short': 'Smith v. Jones', 'category': 'Cases'})
     want = TOA.replace('Smith v. Jones here', 'Smith v. Jones\\index[toa]{1@\\textbf{Cases}!Smith v. Jones, 1 U.S. 2 (1990)} here').replace('\\begin{document}', '\\usepackage{imakeidx}\n\\makeindex[name=toa,title=Table of Authorities,columns=1]\n\\begin{document}')
     check('R4 Mark Citation: \\index[toa]{1@\\textbf{Cases}!…} and the second index set up, one step', src(page) == want and hist(page) == h0 + 1, src(page))
+    # (review L2) a | in a citation: \textbar{}, which hyperref's \index leaves alone
+    load_doc(page, TOA.replace('\\begin{document}', '\\usepackage{hyperref}\n\\begin{document}'))
+    select_text(page, 'Smith v. Jones')
+    cmd(page, 'mark-citation', {'long': 'Smith | Jones, 2 U.S. 3', 'short': 'Smith v. Jones', 'category': 'Cases'})
+    check('R4 Mark Citation: a | in the citation is \\textbar{}', '!Smith \\textbar{} Jones, 2 U.S. 3}' in src(page) and src(page).count('|') == 0, src(page))
+    load_doc(page, want)
     click_text(page, 'Last', 1)
     cmd(page, 'insert-toa')
     check('R4 Insert Table of Authorities: \\printindex[toa]', '\\printindex[toa]' in src(page))
@@ -912,9 +918,9 @@ def r4compiled(page):
     if not TEX:
         print('SKIP R4 compiles: no TeX tree')
         return
-    doc = D('\\listoffigures\n\nAs held in Smith v. Jones\\index[toa]{1@\\textbf{Cases}!Smith v. Jones, 1 U.S. 2 (1990)} and a cat\\index{cat}\\endnote{An endnote.} here.\n\n'
+    doc = D('\\listoffigures\n\nAs held in Smith v. Jones\\index[toa]{1@\\textbf{Cases}!Smith v. Jones, 1 U.S. 2 (1990)}\\index[toa]{1@\\textbf{Cases}!Bar \\textbar{} Case} and a cat\\index{cat}\\endnote{An endnote.} here.\n\n'
             '\\begin{scheme}[htbp]\n\\centering\nX\n\\caption{A reaction}\n\\end{scheme}\n\n\\begin{figure}[htbp]\n\\centering\nY\n\\captionsetup{labelformat=nolabel}\n\\caption{Plain}\n\\end{figure}\n\n\\printendnotes\n\\printindex\n\\printindex[toa]',
-            '\\usepackage{enotez}\n\\setenotez{counter-format=roman}\n\\usepackage{imakeidx}\n\\makeindex[options=-s index-right.ist]\n\\makeindex[name=toa,title=Table of Authorities,columns=1]\n\\usepackage{newfloat}\n\\DeclareFloatingEnvironment[fileext=loscheme,listname={List of Schemes},name={Scheme}]{scheme}\n\\usepackage{caption}\n\\DeclareCaptionLabelFormat{nolabel}{#2}\n')
+            '\\usepackage{enotez}\n\\setenotez{counter-format=roman}\n\\usepackage{imakeidx}\n\\makeindex[options=-s index-right.ist]\n\\makeindex[name=toa,title=Table of Authorities,columns=1]\n\\usepackage{newfloat}\n\\DeclareFloatingEnvironment[fileext=loscheme,listname={List of Schemes},name={Scheme}]{scheme}\n\\usepackage{caption}\n\\DeclareCaptionLabelFormat{nolabel}{#2}\n\\usepackage{hyperref}\n')
     ist = page.evaluate("() => null")
     load_doc(page, doc)
     istText = page.evaluate("(() => { const m = window.rikuy; return null; })()")
@@ -926,6 +932,7 @@ def r4compiled(page):
         check('R4 ' + engine + ': endnote formats, a float of its own, the number alone, a right aligned index and a Table of Authorities compile', c['ok'] and c['text'], c['log'][-400:])
         miss = [x for x in ('Scheme 1: A reaction', '1: Plain', 'Notes', 'An endnote', 'Table of Authorities', 'Cases', 'Smith v. Jones, 1 U.S. 2 (1990)', 'Index', 'cat') if x not in T]
         check('R4 ' + engine + ': TeX prints them as the page draws them', not miss and 'Figure 1: Plain' not in T, miss)
+        check('R4 ' + engine + ': a citation with a | prints it, under hyperref (review L2)', 'Bar | Case' in T and 'hyperxindexformat' not in T, T[-300:])
         check('R4 ' + engine + ': the endnote mark is i, the index\'s page at the right after dots', bool(re.search(r'cat ?(\. ?){3,}\d', T)) and bool(re.search(r'\bi\b', T)), T[-400:])
 
 SECTIONS = {'review': review, 'verify': verify, 'cached': cached, 'toc': toc, 'notes': notes, 'sources': sources, 'captions': captions, 'xrefs': xrefs, 'index': index, 'links': links, 'r4': r4refs}

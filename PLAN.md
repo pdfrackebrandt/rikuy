@@ -2768,6 +2768,26 @@ Tests:
     (100,000 notes: quadratic): one pass now (0.3 s). Each with its case. *Evidence.* see the
     commit message.
 
+64a. **R4's hostile review** (verdict: request changes, the comments only link did not hold).
+    A comment line ends at any line end TeX or an engine reads: a copy holding a lone carriage
+    return (or NEL, U+2028, U+2029) brings nothing. A copy back for comments only brings comment
+    lines into `.tex` and `.ltx` files alone, only where the model of the version shared reads body
+    text (paragraphs, headings, lists, displays, floats, tables, out of any brace group, and the
+    white space beside them: `bodyAt`, `commentsBack` in `src/share.js`); every other file stays
+    byte for byte, a file they add is not taken; where a file of the project changes what `%` is
+    (`\catcode`, `\makeother`, `\dospecials`, expl3's catcode tables) none at all, and the code
+    environments (tcblisting, VerbatimOut, luacode*, pycode and their like) are refused by name. A
+    link from someone else under the name of a project this browser keeps opens beside it as
+    "Name (from By)", never over it. Where two people's edits touch, each deletion keeps the words
+    it took, so a change is cut by whose words it holds, a deleted word beside a typed one each with
+    its space: Reject All by one person undoes theirs alone. A Word endnote holding a table or a
+    list stays a footnote with every block and the import says so. Lows: the Thesaurus pane's Back
+    and search field are 44 px on phones; a `|` in Mark Entry and Mark Citation is `\textbar{}`
+    (hyperref reads a quoted one as a format); SOURCES.md names Harper's source tag and commit and
+    says its module is upstream's build pinned by hash. Each repro is a test (`test/share.py
+    attacks`, compiled in the page: the injected words are not in the PDF; `test/review.test.mjs`,
+    `test/word.test.mjs`, `spell.py`, `refs.py`).
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000

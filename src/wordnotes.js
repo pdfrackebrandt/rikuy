@@ -125,8 +125,14 @@ export function markEndnotes(parts) {
 }
 // pandoc's JSON: a note carrying the mark becomes \endnote{…} (its paragraphs joined by \par)
 export function endnotesTex(doc) {
-  let n = 0;
-  const firstStr = (bs) => { const b = bs && bs[0]; const c = b && (b.t === 'Para' || b.t === 'Plain') ? b.c : null; return c && c[0] && c[0].t === 'Str' ? c[0] : null; };
+  let n = 0, foot = 0;
+  // (the note's first word, wherever its first paragraph is: a table's first cell too)
+  const firstStr = (v, d = 0) => {
+    if (!v || typeof v !== 'object' || d > 40) return null;
+    if (v.t === 'Str') return v;
+    for (const k of Array.isArray(v) ? v : [v.c]) { const r = firstStr(k, d + 1); if (r) return r; if (k && typeof k === 'object' && (k.t === 'Str' || k.t === 'Space')) return null; }
+    return null;
+  };
   const fix = (arr, depth) => {
     if (!Array.isArray(arr) || depth > 60) return;
     for (let i = 0; i < arr.length; i++) {
@@ -136,6 +142,13 @@ export function endnotesTex(doc) {
         const s = firstStr(x.c);
         if (s && s.c.startsWith(EN_MARK)) {
           s.c = s.c.slice(EN_MARK.length).replace(/^\s+/, '');
+          // (a note with a table, a list or any block an argument cannot hold stays a footnote,
+          // every block of it kept, and is counted for the import's notes: review M3)
+          if (x.c.some((b) => b.t !== 'Para' && b.t !== 'Plain')) {
+            foot++;
+            const b0 = x.c[0];
+            if (b0 && (b0.t === 'Para' || b0.t === 'Plain')) while (b0.c.length && ((b0.c[0].t === 'Str' && !b0.c[0].c) || b0.c[0].t === 'Space')) b0.c.shift();
+            if (Array.isArray(x.c)) fix(x.c, depth + 1); continue; }
           const inl = [{ t: 'RawInline', c: ['latex', '\\endnote{'] }];
           x.c.forEach((b, k) => { if (k) inl.push({ t: 'RawInline', c: ['latex', '\\par '] }); if (b.t === 'Para' || b.t === 'Plain') inl.push(...b.c); });
           // (the space Word puts after the note's number, as pandoc leaves a footnote's out)
@@ -152,5 +165,5 @@ export function endnotesTex(doc) {
     }
   };
   fix(doc.blocks, 0);
-  return n;
+  return { n, foot };
 }

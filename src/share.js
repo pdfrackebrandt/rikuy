@@ -148,7 +148,9 @@ export function shareParam(text) {
 // comment changes nothing TeX typesets: TeX drops it with its line end, and the line above
 // already ended in a space.
 
-const LINE = /^[ \t]*%[ \t]*(comment|reply)[ \t]*\(([^)\n]*)\)(?:[ \t]+on[ \t]+"([^"\n]*)")?[ \t]*:[ \t]?([^\n]*)$/i;
+// (a line is TeX's: it ends at a line feed or a carriage return, so neither is in a comment line;
+// a CRLF file's lines keep their \r at the end: review H1)
+const LINE = /^[ \t]*%[ \t]*(comment|reply)[ \t]*\(([^)\n\r\u0085\u2028\u2029]*)\)(?:[ \t]+on[ \t]+"([^"\n\r\u0085\u2028\u2029]*)")?[ \t]*:[ \t]?([^\n\r\u0085\u2028\u2029]*)\r?$/i;
 
 export function parseCommentLine(line) {
   const m = LINE.exec(line);
@@ -185,7 +187,10 @@ const quoteOf = (t) => { t = clean(t).replace(/"/g, "'"); return t.length > 60 ?
 const whoOf = (t) => clean(t).replace(/[()]/g, '') || 'Anonymous';
 
 // environments whose lines TeX reads as they are: a % there would be printed
-const VERBATIM = /\\(begin|end)\{(verbatim\*?|Verbatim\*?|BVerbatim|LVerbatim|lstlisting|minted|comment|filecontents\*?|alltt|code)\}/g;
+// (any environment whose name says code, verbatim, a listing, a file written or a program run:
+// tcblisting, VerbatimOut, luacode*, pycode, sagesilent, asy, gnuplot, scontents, verbatimwrite
+// and their like; a % line there is printed, written or run, not dropped: review M2)
+const VERBATIM = /\\(begin|end)\s*\{([A-Za-z@]{0,40}(?:verb|Verb|listing|minted|code|lua|py|sage|asy|gnuplot|contents|Out|write|tcb|comment|alltt|Sinput|Soutput|Schunk|tikz|pgf|forest|lily|only|dot|ipe|mp)[A-Za-z@]{0,40}\*?)\}/g;
 function inVerbatim(text, p) {
   let depth = 0;
   VERBATIM.lastIndex = 0;
@@ -268,14 +273,14 @@ export function mergeProjects(base, mine, theirs) {
 
 // a tracked change that only adds or removes comment lines: the Review tab shows those as
 // comments, not as changes to the text
-const COMMENT_LINES = /(^|\n)[ \t]*%[ \t]*(?:comment|reply)[ \t]*\([^)\n]*\)[^\n]*/gi;
+const COMMENT_LINES = /(^|\n)[ \t]*%[ \t]*(?:comment|reply)[ \t]*\([^)\n\r]*\)[^\n\r]*/gi;
 const bare = (t) => String(t).replace(COMMENT_LINES, '$1').replace(/\s+/g, ' ').trim();
 const HAS = /%[ \t]*(?:comment|reply)[ \t]*\(/i;
 export const commentOnly = (c) => (HAS.test(c.a) || HAS.test(c.b)) && bare(c.a) === bare(c.b);
 
 // whether after differs from before only in its comment lines (added, removed, changed): what a
 // comments only link lets through (src/collab.js); bounded, one pass over each text
-const WHOLE = /^[ \t]*%[ \t]*(?:comment|reply)[ \t]*\([^)\n]*\)[^\n]*(?:\n|$)/gim;
+const WHOLE = /^[ \t]*%[ \t]*(?:comment|reply)[ \t]*\([^)\n\r]*\)[^\n\r]*(?:\r?\n|$)/gim;
 const isComment = (line) => !!parseCommentLine(line.replace(/\r?\n$/, ''));
 export function onlyComments(before, after) {
   // (a line end added at the very end, as a comment under the last line brings, is no change)
@@ -301,27 +306,45 @@ function verbatimRanges(text) {
   return out;
 }
 const inRanges = (R, p) => { let lo = 0, hi = R.length - 1; while (lo <= hi) { const m = (lo + hi) >> 1; if (R[m][1] <= p) lo = m + 1; else if (R[m][0] >= p) hi = m - 1; else return true; } return false; };
-export function commentsOf(base, theirs) {
+// A document where % may not end a line as a comment: a file of the project changes its catcode
+// (\catcode`\%, \catcode 37, \makeother\%, \@sanitize, \dospecials): no comment line comes in
+export const PERCENT_CATCODE = /\\catcode\s*`\\?%|\\catcode\s*=?\s*(?:37\b|"25\b|'45\b)|\\(?:@)?makeother\s*\\%|\\@sanitize\b|\\dospecials\b|\\char_set_catcode_\w+:N\s*\\%|\\cctab_(?:select|begin):N/;
+// (and the line ends some engines read beside it: NEL, U+2028, U+2029)
+const LONE_CR = /\r(?!\n)|[\u0085\u2028\u2029]/;
+// o.at(p): whether a line may go in at offset p of base (the caller's knowledge of the document:
+// body text, not code); o.none: no comment line at all (a catcode of % changed)
+export function commentsOf(base, theirs, o = {}) {
   if (base === theirs) return { text: base, dropped: 0 };
+  // (a lone \r ends TeX's line where Rikuy reads on: nothing of such a copy is taken, review H1)
+  if (o.none || LONE_CR.test(theirs) || PERCENT_CATCODE.test(base)) return { text: base, dropped: 1 };
   let out = '', p = 0, dropped = 0;
   const lines = (t) => t.match(/[^\n]*\n|[^\n]+$/g) || [];
   const verb = verbatimRanges(base);
   const begin = base.search(/\\begin\s*\{document\}/);
+  // (where a comment line may go in or come out: in the body, out of code, as the caller allows)
+  const ok = (q) => !(begin >= 0 && q <= begin) && !inRanges(verb, q) && (!o.at || o.at(q));
   for (const h of hunks(base, theirs)) {
     out += base.slice(p, h.as);
     p = h.as + h.a.length;
-    // (not in the preamble, nor where TeX would print or write a comment line: as commentEdit)
-    if ((begin >= 0 && h.as <= begin) || inRanges(verb, h.as) || (h.a.length && inRanges(verb, h.as + h.a.length - 1))) { out += h.a; if (h.a !== h.b) dropped++; continue; }
-    if (onlyComments(h.a, h.b)) { out += h.b; continue; }
-    dropped++;
     const A = lines(h.a), B = lines(h.b);
-    const keep = A.filter((l) => !isComment(l) || B.includes(l));
+    // each line of the base's hunk with where it starts and ends
+    const pos = [];
+    let q = h.as;
+    for (const l of A) { pos.push([q, q + l.length]); q += l.length; }
+    let lost = false;
+    // their comment lines taken out: only where a comment line may stand
+    const keepIdx = [];
+    A.forEach((l, i) => { if (!isComment(l) || B.includes(l) || !ok(pos[i][0])) { keepIdx.push(i); if (isComment(l) && !B.includes(l)) lost = true; } });
+    const keep = keepIdx.map((i) => A[i]);
     const res = keep.map((l) => [l]);
-    let anchor = -1, head = [];
+    let anchor = -1;
+    const head = [];
     for (const l of B) {
       // (a line they changed keeps the anchor before it: its comments go under the line above)
-      if (!isComment(l)) { const k = keep.findIndex((x) => x.replace(/\n$/, '') === l.replace(/\n$/, '')); if (k >= 0) anchor = k; continue; }
+      if (!isComment(l)) { const k = keep.findIndex((x) => x.replace(/\r?\n$/, '') === l.replace(/\r?\n$/, '')); if (k >= 0) anchor = k; else lost = true; continue; }
       if (A.includes(l)) continue;
+      const at = anchor < 0 ? h.as : pos[keepIdx[anchor]][1];
+      if (!ok(at)) { lost = true; continue; }
       const line = l.endsWith('\n') ? l : l + '\n';
       if (anchor < 0) { head.push(line); continue; }
       // (under a last line with no line end: the line ends first, which TeX reads as it did)
@@ -329,9 +352,63 @@ export function commentsOf(base, theirs) {
       if (!g[g.length - 1].endsWith('\n')) g[g.length - 1] += '\n';
       g.push(line);
     }
+    // (lines of the base they removed that are no comment: kept, and counted)
+    if (A.some((l, i) => !isComment(l) && !keepIdx.includes(i))) lost = true;
+    if (lost || B.length - B.filter(isComment).length !== A.length - A.filter(isComment).length) dropped++;
     out += head.join('') + res.map((g) => g.join('')).join('');
   }
   return { text: out + base.slice(p), dropped };
+}
+
+// Where in file f the model reads body text: in its blocks of paragraphs, headings, lists,
+// displays, floats and tables, out of any brace group (an argument a command may read as it
+// stands, \url{...}'s), and in what is only white space beside such a block. blocks:
+// buildModel(...).blocks of the base; text: that file's base text. An environment the model does
+// not know, raw TeX, pictures, a file the document never reads: none of these.
+const BODY_ITEMS = new Set(['p', 'h', 'math', 'float', 'title', 'space', 'rule', 'pagebreak', 'pagemark', 'toc', 'caption', 'tabular', 'idx', 'refs']);
+export function bodyAt(blocks, f, text) {
+  const body = (b) => b.plain || (Array.isArray(b.items) && b.items.length > 0 && b.items.every((i) => i && BODY_ITEMS.has(i.type) && !i.envTag && !/\bunk\b/.test(i.cls || '')));
+  const B = blocks.filter((b) => b.f === f && Number.isInteger(b.s) && Number.isInteger(b.e)).sort((a, b) => a.s - b.s);
+  const R = [];
+  B.forEach((b, i) => {
+    const ok = body(b);
+    if (ok) R.push([b.s, b.e, true]);
+    const n = B[i + 1];
+    if (n && (ok || body(n)) && n.s > b.e && /^\s*$/.test(text.slice(b.e, n.s))) R.push([b.e, n.s, false]);
+  });
+  // (brace depth from the block's start: a % line inside a group is out)
+  const flat = (s, q) => {
+    let d = 0;
+    for (let i = s; i < q; i++) {
+      const c = text[i];
+      if (c === '\\') { i++; continue; }
+      if (c === '%') { while (i < q && text[i] !== '\n') i++; continue; }
+      if (c === '{') d++;
+      else if (c === '}') d--;
+    }
+    return d === 0;
+  };
+  return (q) => R.some(([s, e, blk]) => q >= s && q <= e && (!blk || flat(s, q)));
+}
+
+// A copy back from a link for comments only, file by file: comment lines come in only in .tex and
+// .ltx files, where at(f) (bodyAt) says the model reads body text, and in none where a file of the
+// project changes what % is; every other file stays byte for byte as the base had it, and a file
+// they added or removed is not taken (review H2, M2)
+export function commentsBack(baseFiles, theirs, at) {
+  const none = [...baseFiles].some(([n, t]) => /\.(tex|ltx|sty|cls|def|cfg|clo|dtx|ins)$/i.test(n) && PERCENT_CATCODE.test(t));
+  const files = new Map();
+  let dropped = 0;
+  for (const [n, b] of baseFiles) {
+    const t = theirs.get(n);
+    if (t === b) { files.set(n, b); continue; }
+    if (t == null || !/\.(tex|ltx)$/i.test(n)) { files.set(n, b); dropped++; continue; }
+    const r = commentsOf(b, t, { none, at: at ? at(n) : () => false });
+    files.set(n, r.text);
+    dropped += r.dropped;
+  }
+  for (const n of theirs.keys()) if (!baseFiles.has(n)) dropped++;
+  return { files, dropped };
 }
 
 // What a copy sent back may bring in, from the versions this browser shared ({sig, share: {rid,

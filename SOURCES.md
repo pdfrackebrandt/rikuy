@@ -13,8 +13,9 @@ from Ubuntu's source packages; the editor's native core from this repository's o
 (`tex/native/core/`, `sh tex/build_tools.sh core`); Hunspell from Ubuntu's source package with
 Rikuy's `tex/native/spell/spell.cc`, MyThes with it, and the dictionaries and thesauri from Ubuntu
 26.10's packages (the seven `.deb` files' and MyThes's SHA-512 checked against that release's
-package index when they were pinned); Harper is its own WebAssembly build, npm's package, pinned
-by SHA-256 and copied unchanged (Rust: no recipe here). An empty `RIKUY_SRC`, in any folder, rebuilds every committed
+package index when they were pinned); Harper is not built here: its WebAssembly module is
+upstream's own prebuilt build, taken from npm's package, pinned by SHA-256 and copied unchanged
+(Rust: no recipe here), and its source is Harper's repository at the tag the package was made from. An empty `RIKUY_SRC`, in any folder, rebuilds every committed
 program byte for byte (PLAN.md, task 21). The compiler is Ubuntu 24.04's `emscripten` 3.1.6
 package; xindy's `wasm-opt --spill-pointers` comes from binaryen 123.0.0, the npm registry's
 tarball (SHA-256 `11fcbcb97b5c8da3990106fb4e2d364ba95ddf313d7c0e61ca8e8c7948600f7f`).
@@ -30,7 +31,7 @@ tarball (SHA-256 `11fcbcb97b5c8da3990106fb4e2d364ba95ddf313d7c0e61ca8e8c7948600f
 | its dictionaries (`tex/vendor/hunspell/dict/`, copied unchanged from the packages below) | en_US 2020.12.07, en_GB and es_ES 26.8.0.3, de_DE 20161207 | Ubuntu 26.10's `hunspell-en-us`, `hunspell-en-gb`, `hunspell-es`, `hunspell-de-de` | SCOWL's license, LGPL-3.0, GPL-3.0-or-later or LGPL-3.0-or-later or MPL-1.1, GPL-2.0-or-later |
 | MyThes, in the same module (`tex/native/spell/spell.cc` calls it) | 1.2.6 | Ubuntu's source package (below), unchanged; `sh tex/build_tools.sh hunspell` | BSD-style (its COPYING) |
 | the thesauri (`tex/vendor/hunspell/thes/`: each `.idx` copied unchanged, each `.dat` cut at line ends into pieces of at most 1 MiB, which together are the package's file) | en_US and es_ES 26.8.0.3, de_DE 20160424 | Ubuntu 26.10's `mythes-en-us`, `mythes-es`, `mythes-de` | WordNet 3.0's license (GPL-2.0 as Ubuntu lists the folder), LGPL-2.1, LGPL |
-| Harper (`tex/vendor/harper/`, the hosted Rikuy's `spell/harper-*.wasm` and the grammar worker) | 3.2.0 | npm's `harper.js` (below), its slim WebAssembly module, JavaScript glue and license copied unchanged; `sh tex/build_tools.sh harper` | Apache-2.0 |
+| Harper (`tex/vendor/harper/`, the hosted Rikuy's `spell/harper-*.wasm` and the grammar worker) | 3.2.0 | source: `https://github.com/Automattic/harper`, tag `v3.2.0`, commit `ea9ab1b8f95be99a5d4040c53be92a6c2ad7f7f3`; shipped: upstream's prebuilt build, npm's `harper.js` (below), its slim WebAssembly module, JavaScript glue and license copied unchanged and pinned by hash, not built here; `sh tex/build_tools.sh harper` | Apache-2.0 |
 
 From Ubuntu's archive (`https://archive.ubuntu.com/ubuntu/pool/` plus the path), checked by
 SHA-256. The same files are attached to this repository's release `sources-2026-10-28`,

@@ -2067,7 +2067,7 @@ html.pic-drag, html.pic-drag body { touch-action: none; overscroll-behavior: non
 ::highlight(rk-grammar) { text-decoration: underline double #2f6fd6; text-decoration-thickness: 1px; text-underline-offset: 2px; text-decoration-skip-ink: none; }
 @media print { ::highlight(rk-grammar) { text-decoration: none; } }
 .sp-ctx .sp-g { color: #1f5fbf; text-decoration: underline double #2f6fd6; }
-@media (pointer: coarse) { .th-w, .th-ins, .th-back, .th-row .btn { min-height: 44px; } }
+@media (pointer: coarse) { .th-w, .th-ins, .th-back, .th-row .btn, .th-row input[type="text"] { min-height: 44px; } .th-back { min-width: 44px; } }
 .th-note { font-size: 11.5px; color: var(--mute); white-space: nowrap; }
 /* R4: each reviewer's changes in a colour of their own (src/review.js paintChanges) */
 ::highlight(g-ins2) { color: #8a3a00; background-color: rgba(200, 110, 20, .12); text-decoration: underline 1.5px #c46a10; }

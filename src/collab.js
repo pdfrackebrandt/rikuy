@@ -3,7 +3,7 @@
 // that are LaTeX comments in the source, a copy sent back that arrives as tracked changes, and
 // one click out to Overleaf or a plain .tex. The methods join App's prototype (app.js).
 
-import { packShare, unpackShare, shareParam, texParam, unpackTex, findComments, commentEdit, stripComments, mergeProjects, commentOnly, onlyComments, commentsOf, linkRole } from './share.js';
+import { packShare, unpackShare, shareParam, texParam, unpackTex, findComments, commentEdit, stripComments, mergeProjects, commentOnly, onlyComments, commentsBack, bodyAt, linkRole } from './share.js';
 import { kvGet, kvPut, kvDel } from './store.js';
 import { buildModel } from './model.js';
 
@@ -172,7 +172,8 @@ export const collab = {
     // pristine shared copy, which would silently throw their edits away. Only a link Share made
     // says which version it is (its base): one built by hand has none, and a second such link
     // under the same name may be a revised document, so it opens (the open one kept as a version).
-    if (o.role !== 'back' && !o.own && o.base && this.shareCtx && this.shareCtx.base === o.base && this.name === (o.name || o.main) && this.main === o.main) {
+    // (the reader's copy may stand under a name of its own, beside a project of theirs: review M1)
+    if (o.role !== 'back' && !o.own && o.base && this.shareCtx && this.shareCtx.base === o.base && this.main === o.main && (this.name === (o.name || o.main) || (this.shareCtx.by === by && this.shareCtx.name === this.name))) {
       this.guestMode(true);
       this.toast('You already have this shared document open, so your edits are kept. Earlier versions are under Review, Versions.', 7000);
       return;
@@ -186,8 +187,16 @@ export const collab = {
       if (n === this.name && o.main === this.main && (this.assetBlobs.size || this.extra.size || this.orig.size)) return true;
       try { const b = await kvGet('bin:' + n + '|' + o.main); return !!(b && ((b.assets || []).length || (b.extra || []).length || (b.orig || []).length)); } catch (e) { return false; }
     };
+    // (review M1) a link from someone else under the name of a project this browser keeps opens as
+    // a project of its own beside it, never over it: whoever sent it may have relabelled a copy
+    // back as a new link. Only the reader's own copy of that sender's document, which this
+    // browser marked as theirs when it first opened, is opened over (kept as a version).
+    const snaps = by ? await this.allSnaps() : [];
+    const theirsAlready = async (n) => { try { const r = await kvGet('share:' + n + '|' + o.main); return !!(r && r.by === by); } catch (e) { return false; } };
+    const taken = async (n) => (await keeps(n)) || (!!by && ((n === this.name && o.main === this.main) || snaps.some((v) => v.name === n && v.main === o.main)) && !(await theirsAlready(n)));
     let name = o.name || o.main;
-    for (let k = 1; await keeps(name); k++) name = (o.name || o.main) + ' (' + (by || 'from a link') + (k > 1 ? ' ' + k : '') + ')';
+    for (let k = 1; await taken(name); k++) name = (o.name || o.main) + ' (' + (by ? 'from ' + by : 'from a link') + (k > 1 ? ' ' + k : '') + ')';
+    const apart = name !== (o.name || o.main);
     // marked before it loads: loading may start a compile, which must already see the mark
     this.markFromLink(by, name, o.main);
     this.loadProject(theirs, o.main, name, by ? 'As ' + by + ' shared it' : 'As the link had it');
@@ -197,9 +206,10 @@ export const collab = {
     // that sender in this document at the next start)
     if (o.own) { kvDel('share:' + this.name + '|' + this.main).catch(() => {}); this.toast('The document from the link is open. The one you had is under Review, Versions.', 7000); return; }
     if (o.role === 'back') {
-      this.toast(by + "'s copy is open. This browser does not have the version you shared, so their edits cannot be marked; your earlier text is under Review, Versions.", 10000);
+      this.toast(by + "'s copy is open" + (apart ? ' as a project of its own, ' + name + ', beside yours' : '') + '. This browser does not have the version you shared, so their edits cannot be marked; your earlier text is under Review, Versions.', 10000);
       return;
     }
+    if (apart) this.toast('The link from ' + by + ' is open as a project of its own, ' + name + ': this browser keeps a document under that name, which stays as it was.', 9000);
     this.shareCtx = { base: o.base, by, name: this.name, main: this.main, role: o.role === 'comments' ? 'comments' : 'coauthor', rid: o.rid || null };
     kvPut('share:' + this.name + '|' + this.main, this.shareCtx).catch(() => {});
     this.guestMode(true);
@@ -270,16 +280,12 @@ export const collab = {
     const role = linkRole(await this.allSnaps(), snap.sig, o.rid);
     let dropped = 0;
     if (role === 'comments') {
-      const kept = new Map();
-      for (const [n, t] of theirs) {
-        const b = baseFiles.get(n);
-        if (b == null) { dropped++; continue; }
-        const r = commentsOf(b, t);
-        kept.set(n, r.text);
-        dropped += r.dropped;
-      }
-      for (const [n, b] of baseFiles) if (!kept.has(n)) kept.set(n, b);
-      theirs = kept;
+      // (where the model of the version shared reads body text: there alone; review H2)
+      let blocks = [];
+      try { blocks = buildModel({ files: baseFiles, main: snap.main }).blocks; } catch (e) { blocks = []; }
+      const r = commentsBack(baseFiles, theirs, (f) => bodyAt(blocks, f, baseFiles.get(f) || ''));
+      theirs = r.files;
+      dropped = r.dropped;
     }
     if (!(this.name === snap.name && this.main === snap.main)) {
       // back to that project first, as it was last kept

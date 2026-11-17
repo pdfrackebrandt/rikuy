@@ -1031,7 +1031,8 @@ export const methods = {
   indexMark(at, o) {
     const main = textOf(o.main);
     if (!main) { this.toast('Type the main entry first'); return false; }
-    const esc = (x) => escapeTeX(textOf(x));
+    // (a | as \textbar{}: hyperref reads the first | of an \index argument as its format, a quote or not)
+    const esc = (x) => escapeTeX(textOf(x)).replace(/\|/g, '\\textbar{}');
     const fmt = o.bold ? 'textbf' : o.italic ? 'textit' : '';
     const arg = (range) => RS.indexArg({ main: esc(main), sub: o.sub ? esc(o.sub) : '', see: o.see ? esc(o.see) : '', fmt, range });
     const w = new Work(this);
@@ -1118,7 +1119,8 @@ export const methods = {
     if (!long) { this.toast('Type the citation first'); return false; }
     const k = TOA_CATEGORIES.indexOf(cat);
     const rank = k >= 0 ? k + 1 : Math.max(1, Math.min(99, parseInt(o.rank, 10) || 8));
-    const arg = RS.indexArg({ sort: String(rank), main: '\\textbf{' + escapeTeX(cat) + '}', sub: escapeTeX(long) });
+    const bar = (x) => escapeTeX(x).replace(/\|/g, '\\textbar{}');
+    const arg = RS.indexArg({ sort: String(rank), main: '\\textbf{' + bar(cat) + '}', sub: bar(long) });
     const entry = '\\index[toa]{' + arg + '}';
     const w = new Work(this);
     if (o.all) {

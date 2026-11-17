@@ -149,6 +149,10 @@ def r4(p):
         check('R4 %d px: the Thesaurus is a sheet inside the screen, by taps' % w, box[0] >= 0 and box[1] <= box[4] and box[3] <= box[5], box)
         small = page.evaluate("[...document.querySelectorAll('#th-pane button')].filter(e => e.offsetParent && e.getBoundingClientRect().height < 44 && !e.classList.contains('pop-x')).map(e => e.textContent)")
         check('R4 %d px: its buttons are 44 px targets' % w, not small, small[:5])
+        # (review L1) the search field, and Back once a word is followed, 44 px each way
+        page.locator('#th-pane .th-w').first.tap(); page.wait_for_selector('#th-pane .th-back', timeout=15000)
+        dims = page.evaluate("(() => { const b = document.querySelector('#th-pane .th-back').getBoundingClientRect(), i = document.querySelector('#th-pane input').getBoundingClientRect(); return [b.width, b.height, i.height]; })()")
+        check('R4 %d px: Back is 44 by 44 px and the search field 44 px high' % w, dims[0] >= 44 and dims[1] >= 44 and dims[2] >= 44, dims)
         page.screenshot(path=os.path.join(SHOTS, 'thesaurus-%d.png' % w))
         page.locator('#th-pane .pop-x').tap()
         # a long press on a grammar issue gives its menu

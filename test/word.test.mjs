@@ -1710,6 +1710,21 @@ await ok('R4: endnotes are Word\'s endnotes and come back as \\endnote; the inde
   assert.ok(isBalanced(r.tex), 'balanced');
 });
 
+await ok('R4 review M3: a Word endnote holding a table keeps every block, as a footnote, and the import says so', () => {
+  const files = new Map([['main.tex', '\\documentclass{article}\n\\usepackage{enotez}\n\\begin{document}\nText\\endnote{First paragraph.} and\\footnote{Foot first.}\n\n\\printendnotes\n\\end{document}\n']]);
+  const parts = unzip(exportFiles(files).docx);
+  for (const n of [...parts.keys()]) if (/rikuy/i.test(n)) parts.delete(n);
+  const TBL = '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>TABLECELLTEXT</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>LASTPARA</w:t></w:r></w:p>';
+  let x = text(parts.get('word/endnotes.xml'));
+  const i = x.lastIndexOf('</w:endnote>');
+  parts.set('word/endnotes.xml', new TextEncoder().encode(x.slice(0, i) + TBL + x.slice(i)));
+  const r = docxToLatex(P, zip(parts), 'x.docx');
+  const b = bodyOf(r.tex);
+  assert.match(b, /\\footnote\{First paragraph\.[^]*TABLECELLTEXT[^]*LASTPARA\}/, 'every block of the note, in order');
+  assert.ok(!/\\endnote\{/.test(b) && !b.includes('\u2063'), 'no endnote cut short, no mark left');
+  assert.ok(r.warnings.some((n) => /1 endnote with a table/.test(n)) && r.tex.includes('1 endnote with a table'), r.warnings.join(' | '));
+});
+
 await ok('R4: captions of the document\'s own floats and with the number alone go to Word as the page draws them', () => {
   const src = '\\documentclass{article}\n\\usepackage{newfloat}\n\\usepackage{caption}\n\\DeclareFloatingEnvironment[fileext=loscheme,listname={List of Schemes},name={Scheme}]{scheme}\n\\DeclareCaptionLabelFormat{nolabel}{#2}\n\\begin{document}\n'
     + '\\begin{scheme}[htbp]\n\\centering\n\\caption{A reaction}\n\\end{scheme}\n\n\\begin{figure}[htbp]\n\\centering\n\\captionsetup{labelformat=nolabel}\n\\caption{Plain}\n\\end{figure}\n\\end{document}\n';

@@ -981,7 +981,7 @@ export function docxToLatex(P, bytes, name) {
   if (!r || !r.stdout) r = P.convert(opts, null, { 'in.docx': zip(parts) });
   if (!r.stdout) throw new Error('The file is damaged: its text (word/document.xml) is cut short or not valid, so nothing in it can be read. Open it in Word, which offers to repair it, save it again and open that file here. (pandoc: ' + (r.stderr || '').trim().slice(0, 200) + ')');
   const doc = JSON.parse(r.stdout);
-  if (ens) endnotesTex(doc);
+  const EN = ens ? endnotesTex(doc) : null;
   const media = {};
   const renamed = new Map();
   let k = 0, total = 0;
@@ -1167,6 +1167,7 @@ export function docxToLatex(P, bytes, name) {
   if (N.comments) notes.push(s(N.comments, 'Word comment') + ' came in as ' + (N.comments === 1 ? 'a comment' : 'comments') + ' under ' + (N.comments === 1 ? 'its' : 'their') + ' text.');
   if (info && info.tracked) notes.push(s(info.tracked, 'tracked change') + ' in the file ' + (info.tracked === 1 ? 'was' : 'were') + ' accepted.');
   if (info && info.endnotes) notes.push('Endnotes are footnotes here.');
+  if (EN && EN.foot) notes.push(s(EN.foot, 'endnote') + ' with a table, a list or another block ' + (EN.foot === 1 ? 'is a footnote' : 'are footnotes') + ' here, every block kept: an endnote holds paragraphs alone.');
   if (N.toc) notes.push('The table of contents is LaTeX\'s own now.');
   if (N.headnums) notes.push('The section numbers typed in ' + s(N.headnums, 'heading') + ' are LaTeX\'s own now.');
   if (N.numbered) notes.push(s(N.numbered, 'equation') + ' typed with a number ' + (N.numbered === 1 ? 'is' : 'are') + ' numbered by LaTeX.');
