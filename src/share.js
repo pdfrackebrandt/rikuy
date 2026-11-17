@@ -367,6 +367,8 @@ export function commentsOf(base, theirs, o = {}) {
 // stands, \url{...}'s), and in what is only white space beside such a block. blocks:
 // buildModel(...).blocks of the base; text: that file's base text. An environment the model does
 // not know, raw TeX, pictures, a file the document never reads: none of these.
+const LITERAL_ARG = new Set(['url', 'href', 'nolinkurl', 'path', 'urldef']);
+const VERB_CMDS = new Set(['verb', 'Verb', 'EscVerb', 'lstinline', 'spverb', 'mintinline']);
 const BODY_ITEMS = new Set(['p', 'h', 'math', 'float', 'title', 'space', 'rule', 'pagebreak', 'pagemark', 'toc', 'caption', 'tabular', 'idx', 'refs']);
 export function bodyAt(blocks, f, text) {
   const body = (b) => b.plain || (Array.isArray(b.items) && b.items.length > 0 && b.items.every((i) => i && BODY_ITEMS.has(i.type) && !i.envTag && !/\bunk\b/.test(i.cls || '')));
@@ -378,12 +380,40 @@ export function bodyAt(blocks, f, text) {
     const n = B[i + 1];
     if (n && (ok || body(n)) && n.s > b.e && /^\s*$/.test(text.slice(b.e, n.s))) R.push([b.e, n.s, false]);
   });
-  // (brace depth from the block's start: a % line inside a group is out)
+  // (brace depth from the block's start: a % line inside a group is out. An argument read as it
+  // stands, \url's or \href's address, is skipped whole, its % a letter (review V4); \verb and its
+  // like to their delimiter (V3); a line inside either is out)
   const flat = (s, q) => {
     let d = 0;
     for (let i = s; i < q; i++) {
       const c = text[i];
-      if (c === '\\') { i++; continue; }
+      if (c === '\\') {
+        const m = /^[A-Za-z@]+\*?/.exec(text.slice(i + 1, i + 42));
+        if (!m) { i++; continue; }
+        const name = m[0].replace(/\*$/, '');
+        let j = i + 1 + m[0].length;
+        if (LITERAL_ARG.has(name)) {
+          while (text[j] === ' ' || text[j] === '\t') j++;
+          if (text[j] === '{') {
+            let k = j + 1;
+            for (let n = 1; k < text.length && n; k++) { if (text[k] === '{') n++; else if (text[k] === '}') n--; }
+            if (k > q) return false;
+            i = k - 1;
+            continue;
+          }
+        } else if (VERB_CMDS.has(name)) {
+          if (name === 'mintinline' && text[j] === '{') { const e = text.indexOf('}', j); if (e < 0) return false; j = e + 1; }
+          if (text[j] === '[') { const e = text.indexOf(']', j); if (e < 0) return false; j = e + 1; }
+          const dl = text[j];
+          if (!dl || /\s/.test(dl)) return false;
+          const end = text.indexOf(dl === '{' ? '}' : dl, j + 1), nl = text.indexOf('\n', j + 1);
+          if (end < 0 || (nl >= 0 && nl < end) || end >= q) return false;
+          i = end;
+          continue;
+        }
+        i = j - 1;
+        continue;
+      }
       if (c === '%') { while (i < q && text[i] !== '\n') i++; continue; }
       if (c === '{') d++;
       else if (c === '}') d--;
@@ -397,14 +427,30 @@ export function bodyAt(blocks, f, text) {
 // .ltx files, where at(f) (bodyAt) says the model reads body text, and in none where a file of the
 // project changes what % is; every other file stays byte for byte as the base had it, and a file
 // they added or removed is not taken (review H2, M2)
+// the files a document prints as they stand (\lstinputlisting, \verbatiminput, \inputminted,
+// tcolorbox's listing file=...): a comment line in one would be printed (review V3)
+const LISTED = /\\([A-Za-z]*(?:listing|[Vv]erbatim|minted|[Ii]nput[Cc]ode)[A-Za-z]*)\*?((?:\s*(?:\[[^\]]*\]|\{[^{}]*\}))+)/g;
+export function listedFiles(files) {
+  const out = new Set();
+  const add = (x) => { x = x.trim().replace(/^\.\//, ''); if (x) { out.add(x); out.add(x + '.tex'); } };
+  for (const [n, t] of files) {
+    if (!/\.(tex|ltx|sty|cls|def|cfg)$/i.test(n)) continue;
+    for (const m of t.matchAll(LISTED)) {
+      for (const g of m[2].matchAll(/\{([^{}]*)\}/g)) add(g[1]);
+      for (const f of m[2].matchAll(/file\s*=\s*\{?([^,{}\]]+)/g)) add(f[1]);
+    }
+  }
+  return out;
+}
 export function commentsBack(baseFiles, theirs, at) {
   const none = [...baseFiles].some(([n, t]) => /\.(tex|ltx|sty|cls|def|cfg|clo|dtx|ins)$/i.test(n) && PERCENT_CATCODE.test(t));
+  const listed = listedFiles(baseFiles);
   const files = new Map();
   let dropped = 0;
   for (const [n, b] of baseFiles) {
     const t = theirs.get(n);
     if (t === b) { files.set(n, b); continue; }
-    if (t == null || !/\.(tex|ltx)$/i.test(n)) { files.set(n, b); dropped++; continue; }
+    if (t == null || !/\.(tex|ltx)$/i.test(n) || listed.has(n)) { files.set(n, b); dropped++; continue; }
     const r = commentsOf(b, t, { none, at: at ? at(n) : () => false });
     files.set(n, r.text);
     dropped += r.dropped;

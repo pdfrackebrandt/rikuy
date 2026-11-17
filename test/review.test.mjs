@@ -8,7 +8,7 @@ import assert from 'assert';
 globalThis.window = globalThis;
 globalThis.document = { addEventListener() {}, querySelector() { return null; }, body: { classList: { contains() { return false; } } } };
 const { review, absorbText, absorbFresh, authorEdit, editSpans, byAuthor } = await import('../src/review.js');
-const { commentsOf, onlyComments, linkRole, commentsBack, bodyAt, findComments } = await import('../src/share.js');
+const { commentsOf, onlyComments, linkRole, commentsBack, bodyAt, findComments, listedFiles } = await import('../src/share.js');
 const { buildModel } = await import('../src/model.js');
 const { changes } = await import('../src/diff.js');
 const { setLanguageEdits } = await import('../src/ui/wordcount.js');
@@ -282,6 +282,15 @@ group('R4 review: a comments only copy brings comment lines into body text alone
   assert.ok(rc.files.get('main.tex') === cat && rc.dropped >= 1, 'a catcode of % changed: none at all');
   for (const c of ['\\catcode`\\^^25=12', '\\ExplSyntaxOn\\char_set_catcode:nn {37} {12}\\ExplSyntaxOff', '\\ExplSyntaxOn\\char_set_catcode_other:n {37}\\ExplSyntaxOff', '\\catcode\\numexpr36+1\\relax=12', '\\catcode\'45=12', '\\char_set_catcode_other:N \\%', '\\catcode37=12', '\\catcode `\\% = 12', '\\makeother\\%', '\\@makeother\\%', '\\let\\do\\@makeother\\dospecials', '\\catcode"25=11'])
     assert.ok(commentsBack(new Map([['main.tex', cat.replace('\\catcode`\\%=12', c)]]), new Map([['main.tex', catT.replace('\\catcode`\\%=12', c)]]), () => () => true).files.get('main.tex').indexOf('CATINJECTED') < 0, c);
+  // (V3, V4) \verb|}| keeps the count; a line inside a multi-line \url is out; a % in \href's address is a letter;
+  // a file the document lists as it stands takes none
+  const back1 = (files, edit) => { const th = new Map(files); edit(th); const bl = buildModel({ files, main: 'main.tex' }).blocks; return commentsBack(files, th, (f) => bodyAt(bl, f, files.get(f))); };
+  const vd = '\\documentclass{article}\n\\usepackage{url,hyperref,listings}\n\\begin{document}\nSee \\verb|}| and \\url{http://a.b/\nc} then.\nA \\href{http://x.org/a%20b}{the page}.\nSame paragraph.\n\n\\input{code}\n\\lstinputlisting{code.tex}\n\\end{document}\n';
+  const vf = new Map([['main.tex', vd], ['code.tex', 'Code line.\n']]);
+  const rv3 = back1(vf, (th) => { th.set('main.tex', vd.replace('http://a.b/\n', 'http://a.b/\n% comment (Eve): URLV3\n').replace('{the page}.\n', '{the page}.\n% comment (Eve): HREFOK\n')); th.set('code.tex', 'Code line.\n% comment (Eve): LISTED\n'); });
+  assert.ok(!rv3.files.get('main.tex').includes('URLV3') && rv3.files.get('main.tex').includes('% comment (Eve): HREFOK\n') && rv3.files.get('code.tex') === 'Code line.\n', JSON.stringify([...rv3.files]));
+  for (const l of ['\\lstinputlisting[language=TeX]{./code}', '\\verbatiminput{code.tex}', '\\inputminted{latex}{code.tex}', '\\tcbinputlisting{listing file=code.tex}', '\\VerbatimInput[frame=single]{code}'])
+    assert.ok(listedFiles(new Map([['main.tex', l]])).has('code.tex'), l);
   const sty2 = new Map([['main.tex', doc0], ['p.sty', '\\catcode`\\%=12\n']]);
   assert.strictEqual(commentsBack(sty2, new Map([['main.tex', doc0.replace('Hello.\n', 'Hello.\n% comment (Eve): x\n')], ['p.sty', '\\catcode`\\%=12\n']]), () => () => true).files.get('main.tex'), doc0, 'a package of the project changing it: none either');
 });
