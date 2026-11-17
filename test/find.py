@@ -558,10 +558,50 @@ def kinds(page):
     page.evaluate('window.rikuy.closeFind()')
 
 
+def r5_review(page):
+    """The hostile review of R5: ^p replaced by nothing after a control word keeps it apart (H1); a
+    paragraph break is never written inside an optional argument (H2); in a formula the
+    replacement is LaTeX as written and no hit falls inside a command's name (H3); everything
+    written compiles in the page where dist/tex exists."""
+    out = []
+    for name, body, want in (('\\dots', 'See the end\\dots\n\nNext para.', 'See the end\\dots{}Next para.'), ('\\ldots', 'Wait\\ldots\n\nThen go.', 'Wait\\ldots{}Then go.'),
+                             ('\\ss', 'Stra\\ss\n\nweiter.', 'Stra\\ss{}weiter.'), ('\\S', 'See \\S\n\nThree.', 'See \\S{}Three.')):
+        load_doc(page, WRAP(body)); find_set(page, '^p'); replace_all(page, '')
+        check('H1: ^p replaced by nothing after ' + name + ' keeps the control word apart: ' + want, src(page) == WRAP(want), src(page)[40:110])
+        out.append(want)
+    for name, body, q, rep in (('a description\'s label', '\\begin{description}\n\\item[Label word] text here.\n\\end{description}', 'Label', 'La^pbel'),
+                               ('a theorem\'s name', '\\begin{theorem}[Name here]\nSome words.\n\\end{theorem}', 'Name', 'Na^pme')):
+        doc = WRAP(body, '\\newtheorem{theorem}{Theorem}\n')
+        load_doc(page, doc); find_set(page, q); replace_all(page, rep)
+        check('H2: no paragraph break inside ' + name + ' ([...] open): not written, the note says why', src(page) == doc and 'paragraph break' in summary(page), (src(page)[60:160], summary(page)))
+    eq = WRAP('Here $y = a+b$ and $M = N$ and $\\alpha = \\frac{a}{2}$ end.')
+    load_doc(page, eq)
+    find_set(page, 'y', FMT['equation']); replace_all(page, 'x^p')
+    check('H3: in a formula x^p is written as it is, no paragraph break', src(page) == eq.replace('$y = a+b$', '$x^p = a+b$'), src(page)[40:120])
+    load_doc(page, eq); find_set(page, 'M', FMT['equation']); replace_all(page, 'M^t')
+    check('H3: M^t, a transpose, stays M^t (no tab)', src(page) == eq.replace('$M = N$', '$M^t = N$'), src(page)[40:120])
+    load_doc(page, eq); find_set(page, 'a', FMT['equation'])
+    check('H3: "a" is found in the formulas\' letters, never inside \\alpha or \\frac', hits(page) == ['a', 'a'], hits(page))
+    replace_all(page, 'b')
+    fixed = eq.replace('a+b$', 'b+b$').replace('\\frac{a}', '\\frac{b}')
+    check('H3: Replace All a with b leaves \\alpha and \\frac whole', src(page) == fixed, src(page)[40:140])
+    load_doc(page, eq); find_set(page, '\\alpha', FMT['equation'])
+    check('a command asked for by its name is found', hits(page) == ['\\alpha'])
+    load_doc(page, WRAP('Here $x^p + A^t$ end.')); find_set(page, 'x^p', FMT['equation'])
+    check('in a formula x^p in the box is found as written', hits(page) == ['x^p'], hits(page))
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        load_doc(page, WRAP('\n\n'.join(out) + '\n\n' + fixed[fixed.index('Here'):fixed.index('\n\\end{document}')]))
+        page.set_default_timeout(600000)
+        r = page.evaluate('window.rikuy.api.compile()')
+        page.set_default_timeout(30000)
+        errs = [x for x in r['problems'] if x.get('severity') == 'error']
+        check('compiled in the page: what the fixed replacements wrote has no error', r['ok'] and not errs, errs[:2])
+
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (ctrl_f, dialog, in_selection_and_source, review, go_to, select_and_words, para_marks, kinds, pdf_check):
+        for f in (ctrl_f, dialog, in_selection_and_source, review, go_to, select_and_words, para_marks, kinds, r5_review, pdf_check):
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])

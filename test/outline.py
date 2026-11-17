@@ -349,6 +349,31 @@ def collapse(page):
     page.screenshot(path=os.path.join(SHOTS, 'collapse-1366.png'))
 
 
+def fold_review(page):
+    """The review of R5's folding: Go To and a press in the Navigation pane on a place a collapsed
+    heading hides open it first (M5); Remove forgets a document's collapsed headings (L2)."""
+    load_doc(page, DOC)
+    click_text(page, 'Alpha', 1); page.evaluate("window.rikuy.runCommand('heading-collapse')"); page.wait_for_timeout(300)
+    r = page.evaluate("window.rikuy.goToTarget('section', 'Alpha one')"); page.wait_for_timeout(400)
+    check('M5: Go To a section under a collapsed heading opens it, the caret on the page there', r['ok'] and 'Sub text' in drawn(page) and page.evaluate('window.rikuy.foldCount()') == 0 and page.evaluate("getSelection().anchorNode && document.getElementById('pages').contains(getSelection().anchorNode)"), (r, drawn(page)))
+    click_text(page, 'Alpha', 1); page.evaluate("window.rikuy.runCommand('heading-collapse')"); page.wait_for_timeout(300)
+    page.evaluate("window.rikuy.toggleNav(true, 'outline'); window.rikuy.setNavView('headings')"); page.wait_for_timeout(300)
+    page.get_by_role('tree').get_by_role('treeitem', name='1.1 Alpha one', exact=True).click(); page.wait_for_timeout(400)
+    check('M5: a press on a heading in the Navigation pane that a collapsed one hides opens it', 'Sub text' in drawn(page) and page.evaluate('window.rikuy.foldCount()') == 0, drawn(page))
+    page.evaluate("window.rikuy.toggleNav(false)")
+    # a later document of the same name does not take on a removed one's collapsed headings
+    click_text(page, 'Beta', 1); page.evaluate("window.rikuy.runCommand('heading-collapse')"); page.wait_for_timeout(300)
+    key = page.evaluate("window.rikuy.name + '|' + window.rikuy.main")
+    check('L2: kept under the document\'s name', key in page.evaluate("JSON.parse(localStorage.getItem('rikuy.fold.v1') || '{}')"))
+    page.evaluate("window.rikuy.runCommand('headings-expand-all')"); page.wait_for_timeout(200)
+    # L3: Move down of a collapsed section keeps it collapsed (and collapses nothing else)
+    click_text(page, 'Beta', 1); page.evaluate("window.rikuy.runCommand('heading-collapse')"); page.wait_for_timeout(300)
+    page.evaluate("window.rikuy.runCommand('move-down')"); page.wait_for_timeout(400)
+    d = drawn(page)
+    check('L3: Move down of a collapsed section: it stays collapsed, the one it passed stays open', src(page).index('section{Gamma}') < src(page).index('section{Beta}') and 'Beta text' not in d and 'Gamma text' in d, d)
+    page.evaluate("window.rikuy.runCommand('headings-expand-all')")
+
+
 def collapse_phones(p):
     """On a phone (390 and 360 px, touch): the caret in a heading shows its triangle, 44 px, a tap
     collapses; a long press's menu has Collapse heading; no sideways scroll."""
@@ -369,6 +394,12 @@ def collapse_phones(p):
                 if t2:
                     page.touchscreen.tap(t2['x'], t2['y']); page.wait_for_timeout(400)
                     check('%d px: a tap on it shows the text again' % w, 'Beta text' in drawn(page))
+            # L4: a heading of several lines: its triangle never over the line above
+            load_doc(page, WRAP('\\section{A heading long enough to take two or three lines on a phone screen}\nIts text.'))
+            click_text(page, 'long enough', 1); page.wait_for_timeout(400)
+            ov = page.evaluate("(() => { const b = document.querySelector('.fold-tg'); if (!b) return null; const r = b.getBoundingClientRect(), h = document.querySelector('#pages .it.h'), g = document.createRange(); g.selectNodeContents(h); const rs = [...g.getClientRects()], last = rs[rs.length - 1]; return rs.filter((q) => q.bottom <= last.top + 1 && q.right > r.left && q.left < r.right && q.bottom > r.top + 1).length; })()")
+            check('%d px: L4: the triangle beside a heading of several lines covers no word of the line above' % w, ov == 0, ov)
+            load_doc(page, DOC)
             click_text(page, 'Gamma', 1)
             items = page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); window.rikuy.openContextMenu(r.left, r.bottom); return [...document.querySelectorAll('.pop [role=menuitem]')].map((x) => x.textContent); })()")
             check('%d px: a long press\'s menu (the right click menu) has Collapse heading' % w, any(i.startswith('Collapse heading') for i in items), items)
@@ -381,7 +412,7 @@ def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         os.makedirs(SHOTS, exist_ok=True)
-        for f in (promote_demote, moves, heading_menu, pane, outline_view, review, collapse, pdf_check):
+        for f in (promote_demote, moves, heading_menu, pane, outline_view, review, collapse, fold_review, pdf_check):
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])

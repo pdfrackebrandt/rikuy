@@ -361,6 +361,10 @@ ok('a collapsed heading hides the items up to its next heading of its level or a
   assert.deepEqual([...matchFold([foldEntry(heads[2])], heads)], [2]);
   assert.deepEqual([...matchFold([{ f: 'm', s: 45, lv: 1, t: 'B' }], heads)], [2]);
   assert.deepEqual([...matchFold([{ f: 'm', s: 45, lv: 2, t: 'B' }], heads)], []);
+  // review L3: a section moved past another leaves its place to that one: found by its words
+  assert.deepEqual([...matchFold([{ f: 'm', s: 0, lv: 1, t: 'B' }], heads)], [2]);
+  // a heading typed in: its place, its words changed
+  assert.deepEqual([...matchFold([{ f: 'm', s: 40, lv: 1, t: 'Bx' }], heads)], [2]);
 });
 
 console.log('find: ' + n + ' groups of checks passed');

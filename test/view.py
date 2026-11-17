@@ -459,10 +459,50 @@ def ruler(page):
     ev(page, "window.rikuy.setRuler(false)")
 
 
+def press(page, k, key, n=1):
+    for _ in range(n):
+        ev(page, "(k) => document.querySelector('#ruler .ru-mk.ru-' + k).focus()", k) if _ == 0 else None
+        page.keyboard.press(key); page.wait_for_timeout(350)
+
+
+def r5_ruler(page):
+    """The review of R5's rulers: an even page of a two sided document moves the outer margin (M1);
+    a slider keeps the focus, two presses two steps (M2); First Line goes from one of LaTeX's states
+    to the next a press, and Hanging never moves the first line (M3)."""
+    ev(page, "window.rikuy.setRuler(true)")
+    two = '\\documentclass[twoside]{article}\n\\usepackage[left=3cm,right=2cm]{geometry}\n\\begin{document}\nPage one.\n\\newpage\nPage two words.\n\\end{document}\n'
+    load_doc(page, two); click_text(page, 'two words', 1); page.wait_for_timeout(400)
+    check('M1: on an even page of a two sided document the left margin shown is the outer one', marker(page, 'ml')['v'] == '2 cm', marker(page, 'ml'))
+    press(page, 'ml', 'ArrowRight')
+    check('M1: moving it writes the outer margin (right=), the inner one stays', 'left=3cm' in src(page) and 'right=2.25cm' in src(page), src(page)[:120])
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        page.set_default_timeout(600000)
+        r = ev(page, 'window.rikuy.api.compile()')
+        page.set_default_timeout(30000)
+        check('M1: it compiles in the page', r['ok'] and not [x for x in r['problems'] if x.get('severity') == 'error'])
+    load_doc(page, RDOC); click_text(page, 'Second', 2); page.wait_for_timeout(300)
+    press(page, 'left', 'ArrowRight', 2)
+    check('M2: two presses on Left Indent, two steps, 0.5 cm, the focus kept on it', '\\begin{adjustwidth}{0.5cm}{}' in src(page) and ev(page, 'window.rikuy.hist.length') == 2 and ev(page, "document.activeElement.getAttribute('aria-label')") == 'Left Indent', (src(page)[-120:], ev(page, 'window.rikuy.hist.length')))
+    load_doc(page, RDOC); click_text(page, 'Second', 2); page.wait_for_timeout(300)
+    press(page, 'first', 'ArrowLeft')
+    check('M3: First Line from \\parindent, one press left: \\noindent', '\\noindent Second' in src(page) and ev(page, 'window.rikuy.hist.length') == 1, src(page)[-100:])
+    page.keyboard.press('ArrowLeft'); page.wait_for_timeout(350)
+    check('M3: again: a hanging indent of a quarter centimetre', '\\begin{adjustwidth}{-0.25cm}{}' in src(page) and '\\hangindent=0.25cm' in src(page) and ev(page, 'window.rikuy.hist.length') == 2, src(page)[-140:])
+    page.keyboard.press('ArrowRight'); page.wait_for_timeout(350); page.keyboard.press('ArrowRight'); page.wait_for_timeout(350)
+    check('M3: two presses right: \\parindent again, the source as it was', src(page) == RDOC.replace('\\begin{document}', '\\usepackage{changepage}\n\\begin{document}'), src(page)[-140:])
+    load_doc(page, RDOC); click_text(page, 'Second', 2); page.wait_for_timeout(300)
+    f0 = marker(page, 'first')['v']
+    ruler_drag('hang', 0.25)(page)
+    check('M3: Hanging dragged right of the others but short of the first line writes nothing (the first line would move)', src(page) == RDOC and marker(page, 'first')['v'] == f0)
+    press(page, 'hang', 'ArrowRight')
+    check('M3: Hanging moved right by a press goes to the first line: the first line stays at \\parindent', '\\noindent' in src(page) and marker(page, 'first')['v'] == f0, (src(page)[-140:], marker(page, 'first')['v']))
+    ev(page, "window.rikuy.setRuler(false)")
+
+
 with sync_playwright() as p:
     want = sys.argv[1:]
     browser, page, errors = open_page(p, 1366, 800)
-    for name, fn in (('views', views), ('show_latex', show_latex), ('view_tab', view_tab), ('repeat_undo', repeat_undo), ('help_tab', help_tab), ('review', review), ('web', web), ('ruler', ruler)):
+    for name, fn in (('views', views), ('show_latex', show_latex), ('view_tab', view_tab), ('repeat_undo', repeat_undo), ('help_tab', help_tab), ('review', review), ('web', web), ('ruler', ruler), ('r5_ruler', r5_ruler)):
         if want and name not in want:
             continue
         try: fn(page)

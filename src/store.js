@@ -94,12 +94,12 @@ export function projectRename(from, to, mains, prefixes) {
         for (const m of mains) for (const pre of prefixes) {
           const g = kv.get(pre + from + '|' + m), h = kv.get(pre + to + '|' + m);
           h.onsuccess = () => { if (h.result !== undefined) stop('taken'); };
-          g.onsuccess = () => { if (g.result !== undefined && !why) { kv.put(g.result, pre + to + '|' + m); kv.delete(pre + from + '|' + m); } };
+          g.onsuccess = () => { if (g.result !== undefined && !why) { try { kv.put(g.result, pre + to + '|' + m); kv.delete(pre + from + '|' + m); } catch (e) { stop('storage'); } } };
         }
         return;
       }
       if (c.value && c.value.name === to) { stop('taken'); return; }
-      if (c.value && c.value.name === from) { c.update({ ...c.value, name: to }); n++; }
+      if (c.value && c.value.name === from) { try { c.update({ ...c.value, name: to }); n++; } catch (e) { stop('storage'); return; } }
       c.continue();
     };
     t.oncomplete = () => resolve(n);

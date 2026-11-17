@@ -185,15 +185,18 @@ export function foldEntry(h) { return { f: h.f, s: h.s, lv: h.level, t: String(h
 export function matchFold(entries, heads) {
   const out = new Set(), by = new Map();
   heads.forEach((h, j) => by.set(h.f + '\u0000' + h.s, j));
+  const words = (h) => String(h.text || '').slice(0, 200);
   const lost = [];
+  // (the place and the words first; then the same words nearest, as a section moved past another
+  // leaves its place to that one; then the place alone, as a heading typed in keeps its place)
   for (const x of entries) {
     const k = by.get(x.f + '\u0000' + x.s);
-    if (k != null && heads[k].level === x.lv && !out.has(k)) out.add(k); else lost.push(x);
+    if (k != null && heads[k].level === x.lv && words(heads[k]) === x.t && !out.has(k)) out.add(k); else lost.push(x);
   }
-  // (the same words at the same level, the nearest: a place an edit outside the page moved)
   for (const x of lost.slice(0, 200)) {
     let best = -1, d = Infinity;
-    heads.forEach((h, j) => { if (!out.has(j) && h.f === x.f && h.level === x.lv && Math.abs(h.s - x.s) < d && String(h.text || '').slice(0, 200) === x.t) { best = j; d = Math.abs(h.s - x.s); } });
+    heads.forEach((h, j) => { if (!out.has(j) && h.f === x.f && h.level === x.lv && Math.abs(h.s - x.s) < d && words(h) === x.t) { best = j; d = Math.abs(h.s - x.s); } });
+    if (best < 0) { const k = by.get(x.f + '\u0000' + x.s); if (k != null && heads[k].level === x.lv && !out.has(k)) best = k; }
     if (best >= 0) out.add(best);
   }
   return out;

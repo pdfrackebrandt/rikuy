@@ -131,6 +131,31 @@ def rename(page):
     check('the renamed document opens under its name, its text as it was', ev(page, 'window.rikuy.name') == 'My letter' and '\\documentclass' in src(page) and 'letter' in src(page)[:60], src(page)[:60])
 
 
+def rename_atomic(page):
+    """The review of R5's Rename: storage failing halfway leaves everything as it was and says so
+    (M4); two renames to one name at once: one wins, the other is refused, nobody's pictures lost."""
+    names = lambda: ev(page, '(async () => (await window.rikuy.allSnaps()).map((v) => v.name))()')
+    KV = "(k) => new Promise((ok) => { const q = indexedDB.open('galley'); q.onsuccess = () => { const t = q.result.transaction('kv').objectStore('kv').get(k); t.onsuccess = () => ok(t.result === undefined ? false : t.result); }; })"
+    PUT = "([k, v]) => new Promise((ok) => { const q = indexedDB.open('galley'); q.onsuccess = () => { const t = q.result.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => ok(true); }; })"
+    docs = []
+    for tid in ('letter', 'exam', 'report'):
+        ev(page, '(t) => window.rikuy.runCommand("new-template", t)', tid); page.wait_for_timeout(900)
+        docs.append(ev(page, 'window.rikuy.name'))
+    a, b = docs[0], docs[1]
+    for n in (a, b): ev(page, PUT, ['bin:' + n + '|main.tex', {'assets': [n], 'extra': [], 'orig': []}])
+    # the storage full as the pictures' record moves
+    ev(page, """() => { const put = IDBObjectStore.prototype.put; window.__put = put; IDBObjectStore.prototype.put = function (v, k) { if (typeof k === 'string' && k.startsWith('bin:Moved')) { this.transaction.abort(); return null; } return put.call(this, v, k); }; }""")
+    ok = ev(page, '(n) => window.rikuy.runCommand("recent", { rename: n, to: "Moved" })', a); page.wait_for_timeout(400)
+    ev(page, "() => { IDBObjectStore.prototype.put = window.__put; }")
+    toast = ev(page, "(document.getElementById('toast') || {}).textContent || ''")
+    check('M4: storage refusing halfway: nothing renamed, the pictures where they were, and it says so', ok is False and a in names() and 'Moved' not in names() and ev(page, KV, 'bin:' + a + '|main.tex') not in (False, None) and ev(page, KV, 'bin:Moved|main.tex') is False and 'nothing was renamed' in toast, (ok, toast))
+    r = ev(page, '([x, y]) => Promise.all([window.rikuy.runCommand("recent", { rename: x, to: "Same" }), window.rikuy.runCommand("recent", { rename: y, to: "Same" })])', [a, b]); page.wait_for_timeout(400)
+    left = names()
+    pics = ev(page, KV, 'bin:Same|main.tex')
+    check('two renames to one name at once: one done, one refused, no versions merged, no pictures lost',
+          sorted(r) == [False, True] and (a in left) != (b in left) and pics and pics['assets'][0] in (a, b) and ev(page, KV, 'bin:' + (a if a in left else b) + '|main.tex') not in (False, None), (r, pics))
+
+
 def properties(page):
     roundtrip(page, DOC, 'Some', props({'title': 'New title'}), DOC.replace('Old title', 'New title'), off_command=props({'title': 'Old title'}), label='Properties: the title replaced in place')
     roundtrip(page, DOC, 'Some', props({'author': 'Ann \\and Bo & Co'}), DOC.replace('{Ann}', '{Ann \\and Bo \\& Co}'), off_command=props({'author': 'Ann'}), label='Properties: the author, & escaped, LaTeX kept')
@@ -332,7 +357,7 @@ def phones(p):
 with sync_playwright() as p:
     want = sys.argv[1:]
     browser, page, errors = open_page(p, 1366, 800)
-    for name, fn in (('new_docs', new_docs), ('rename', rename), ('properties', properties), ('accessibility', accessibility), ('export', export)):
+    for name, fn in (('new_docs', new_docs), ('rename', rename), ('rename_atomic', rename_atomic), ('properties', properties), ('accessibility', accessibility), ('export', export)):
         if want and name not in want:
             continue
         try: fn(page)
