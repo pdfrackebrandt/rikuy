@@ -2789,6 +2789,23 @@ Tests:
       bbding 3, kotex, fdsymbol, feynmf, feynmp 2 each, then one each), and 2 biblatex papers whose
       shipped .bbl this biblatex cannot read (100 errors at the first pass; latexmk -f goes on to
       biber). The second is fixed: the .bbl is dropped after that pass and biber writes it again.
+    - The missing packages, in the tree now: newtxtt, bbding, fdsymbol (Type 1), dutchcal,
+      boondox (mathalpha's `bb=boondox`), urwchancal, phonetic, pbsi (brushscr), ascii, ascmac
+      (from `texlive-lang-japanese`), the LY1 encoding (fbb's), feynmf.sty and feynmp.sty
+      (Ubuntu's `feynmf`, newly pinned: 55 packages) in the packs the artifact carries (0.8 MB);
+      ifsym's and bbding's PK fonts from 7 to 12 pt (an ifsym symbol in a superscript asked for
+      ifsym10 at 420 dpi) and phonetic's from 10 to 12 pt (`build_pk.py`, 0.6 MB); Libertinus,
+      Droid, fbb, frcursive, Baskervald, fdsymbol's OpenType fonts and utfsym (out of `DROP`) in
+      hosted only packs (`LARGE_PICKS`, 15 MB), and ko.TeX with Nanum's Type 1 fonts and UHC's
+      Myeongjo beside the other scripts' (16.7 MB); 70 such packs, 109.9 MB. The worker lets a
+      document naming one of them read those packs as it does for scripts (`SCRIPTS_RE`), so the
+      artifact says where the hosted Rikuy is instead of "libertinus.sty not found". The
+      fontconfig and luaotfload caches were made again (187 caches; the 165 old ones unchanged).
+      Each package compiled in the page with a minimal paper (pdfLaTeX; Libertinus also by name
+      with XeLaTeX and with LuaLaTeX, ko.TeX also with XeLaTeX), no file missing and the
+      package's fonts in `pdffonts`. METAFONT and MetaPost do not run here: feynmf's and
+      feynmp's diagrams are missing and the paper compiles (a desktop makes feynmf's with
+      mktextfm). Artifact 254.1 → 255.7 MB.
     - 30 fail on both: journal classes arXiv supplies beyond TeX Live (aa, svjour3, mn2e, jheppub,
       iopart, PoS, aastex, svmult), files missing from the source, errors under TeX Live 2026.
     - 4 ran past the 240 s limit; corpus_full.py now records the worker's last steps for such a
