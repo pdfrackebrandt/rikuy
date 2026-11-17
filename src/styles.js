@@ -740,7 +740,9 @@ const SIBLING_KEYS = /(\b(?:sibling|numberlike|sharenumber|numberwithin|parent)\
 // (inline verbatim: its text is as written, as \verb's, review L3)
 const INLINE_VERB = new Set(['lstinline', 'path', 'url', 'nolinkurl', 'mintinline', 'mint', 'Verb']);
 const VERB_ENVS = /^(verbatim\*?|Verbatim\*?|lstlisting|minted|comment|filecontents\*?)$/;
-export function renameEdits(text, old, neu, kind) {
+// o.counter: the environment has a counter of its name (a theorem, \newcounter): \theold, \c@old and
+// \p@old are its own then, and are renamed; else they are left (\theta for an environment "ta")
+export function renameEdits(text, old, neu, kind, o = {}) {
   const out = [], n = Math.min(text.length, 2e6);
   const word = (i) => { let j = i; while (j < n && /[A-Za-z@]/.test(text[j])) j++; return j; };
   const skipSp = (i) => { while (i < n && (text[i] === ' ' || text[i] === '\t' || text[i] === '\n' || text[i] === '\r')) i++; return i; };
@@ -753,11 +755,15 @@ export function renameEdits(text, old, neu, kind) {
     // \verb|...| and the verbatim environments: their text is as written
     if (name === 'verb') { let k = j; if (text[k] === '*') k++; const d = text[k], z = d ? text.indexOf(d, k + 1) : -1; i = z < 0 ? j : z; continue; }
     if (INLINE_VERB.has(name)) {
+      // (url's \path|..| and \url{..} take no option, and no delimiter TikZ's \path starts with:
+      // "\path (0,0) node {..}" and "\path[draw]" are drawing commands whose text is TeX's; review N1)
+      const urlish = name === 'path' || name === 'url' || name === 'nolinkurl';
       let k = skipSp(j);
-      if (text[k] === '[') { const z = groupEndOf(text, k); k = z < 0 ? k : skipSp(z); }
+      if (text[k] === '[' && !urlish) { const z = groupEndOf(text, k); k = z < 0 ? k : skipSp(z); }
       if (name === 'mint' || name === 'mintinline') { if (text[k] === '{') { const z = groupEndOf(text, k); k = z < 0 ? k : z; } }
       const d = text[k];
-      const z = d === '{' ? groupEndOf(text, k) - 1 : d && !/[\s\\]/.test(d) ? text.indexOf(d, k + 1) : -1;
+      const ok = d === '{' || (!!d && (urlish ? /[|!+"'\/@=:;.,*-]/.test(d) : !/[\s\\]/.test(d)));
+      const z = !ok ? -1 : d === '{' ? groupEndOf(text, k) - 1 : text.indexOf(d, k + 1);
       i = z < 0 ? j - 1 : z;
       continue;
     }
@@ -767,7 +773,7 @@ export function renameEdits(text, old, neu, kind) {
     }
     if (kind === 'cmd') { if (name === old) out.push({ s: i + 1, e: j, t: neu }); i = j - 1; continue; }
     // (an environment's own commands and its counter's: \claim, \endclaim, \theclaim, \claimautorefname, \c@claim)
-    const own = name === old ? '' : name === 'end' + old ? 'end' : name === 'the' + old ? 'the' : name === 'c@' + old ? 'c@' : name === 'p@' + old ? 'p@' : name === old + 'autorefname' ? '+autorefname' : name === old + 'name' ? '+name' : null;
+    const own = name === old ? '' : name === 'end' + old ? 'end' : o.counter && name === 'the' + old ? 'the' : o.counter && name === 'c@' + old ? 'c@' : o.counter && name === 'p@' + old ? 'p@' : name === old + 'autorefname' ? '+autorefname' : name === old + 'name' ? '+name' : null;
     if (own != null) { out.push({ s: i + 1, e: j, t: own[0] === '+' ? neu + own.slice(1) : own + neu }); i = j - 1; continue; }
     if (!ENV_NAMERS.has(name)) { i = j - 1; continue; }
     // the namer's arguments: a star, an [option], then {name}; \newtheorem{x}[old] counts with old
@@ -814,4 +820,10 @@ export function verbatimRuns(text, old) {
     if (cmd.test(text.slice(m.index, z < 0 ? text.length : z))) return true;
   }
   return false;
+}
+
+// whether a text gives an environment a counter of its name (\newtheorem{claim}, \newcounter{claim})
+export function makesCounter(text, name) {
+  if (!/^[A-Za-z]{1,40}$/.test(name)) return false;
+  return new RegExp('\\\\(?:newtheorem|newcounter|declaretheorem|spnewtheorem|newmdtheoremenv|newtcbtheorem)\\s*(?:\\[[^\\]]{0,500}\\]\\s*)?\\{\\s*' + name + '\\s*\\}').test(stripCommentsOf(String(text).slice(0, 400000)));
 }

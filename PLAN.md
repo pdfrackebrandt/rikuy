@@ -2795,6 +2795,21 @@ Tests:
     `looks.test.mjs` 11; `styles.py r2_review` 18 (H1 to H6, M1, M3, M4, L3; H3, H4 and H6's
     documents compiled in the page), `font.py r2_review` and the M2 cases in `r2`.
 
+62b. **R2 verification: what the verifier of ffa732e found, fixed with its cases.** N1 (a
+    regression of L3): Rename took TikZ's `\path (0,0) node {..}` and `\path[draw]` for url's
+    verbatim `\path|..|` and left the commands in their nodes; url's `\path`, `\url` and
+    `\nolinkurl` now take no option and only a brace or a punctuation delimiter, never `(` or `[`.
+    N3: hyperref loaded by a file the preamble reads or a package puts the links' line right
+    before `\begin{document}` (`\RequirePackage{hyperref}` counts as loading it). N2: Rename
+    checked derived names against LaTeX's list of 88 packages' names, which holds
+    `\endtheorem` and `\lbl` for packages the document does not load, and refused its own
+    `\newtheorem{theorem}`: now `\theold`, `\c@old` and `\p@old` are renamed only where the
+    environment has that counter (`makesCounter`; `\theta` stays for an environment `ta`), and only
+    an `\end` form of TeX's own (`\endinput`) refuses; `rename-style` with `{ v }` runs wherever the
+    caret is, and a document's own `\newtheorem{theorem}` can be renamed. Evidence: `npm test`
+    green (`styles.test.mjs` 29 groups, `looks.test.mjs` 11); `styles.py` 422 (`r2_review` 23: N1's
+    TikZ document and N3's project compiled in the page).
+
 ## Open tasks
 
 ## Open tasks

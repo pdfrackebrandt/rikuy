@@ -162,6 +162,13 @@ ok('R2 (D1): the links in the accent: Rikuy\'s own \\hypersetup line after the a
     assert.equal(o, t.replace(own + '\n', own + '\n' + LINK_LINE + '\n'), own);
     assert.equal(go(o, false), t, own);
   }
+  // (review N3: hyperref loaded by \RequirePackage or a file the preamble reads: the line before \begin{document})
+  for (const pre of ['\\input{preamble}\n\\definecolor{accent}{HTML}{AA0000}\n', '\\definecolor{accent}{HTML}{AA0000}\n\\usepackage{mystyle}\n']) {
+    const t = D(pre), o = go(t, true);
+    assert.equal(o, D(pre + LINK_LINE + '\n'), pre);
+  }
+  const rq = D('\\definecolor{accent}{HTML}{AA0000}\n\\RequirePackage{hyperref}\n\\usepackage{amsmath}\n');
+  assert.ok(go(rq, true).indexOf(LINK_LINE) > go(rq, true).indexOf('\\RequirePackage{hyperref}'));
   const w = a.replace(/\n/g, '\r\n'), wo = go(w, true);
   assert.ok(!/[^\r]\n/.test(wo), JSON.stringify(wo));
 });

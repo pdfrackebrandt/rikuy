@@ -9,7 +9,7 @@
 import { register, command, onInsertText, onInstall } from '../commands.js';
 import { $ } from '../ui/dom.js';
 import { BLOCKS } from '../render.js';
-import { NOT_PLAIN, latexSpot, restyle, startsLine, headLevels, isHeading, ENV_STYLES, THM_STYLES, isEnvStyle, envOf, quoteWords, thmLine, starEdits, applyEdits, numberingEdits, charStyleBody, formatOnlyBegin, thmDefsIn, eolAt, codeSafe, codeBlock, codeText, titleInfo, titlePartAt, titlePartEdits, titleNormalEdits, renameEdits, createsOwn, verbatimRuns } from '../styles.js';
+import { NOT_PLAIN, latexSpot, restyle, startsLine, headLevels, isHeading, ENV_STYLES, THM_STYLES, isEnvStyle, envOf, quoteWords, thmLine, starEdits, applyEdits, numberingEdits, charStyleBody, formatOnlyBegin, thmDefsIn, eolAt, codeSafe, codeBlock, codeText, titleInfo, titlePartAt, titlePartEdits, titleNormalEdits, renameEdits, createsOwn, verbatimRuns, makesCounter } from '../styles.js';
 import { escapeTeX } from '../editor.js';
 import { defines, packageLine, packageOptions, preambleEnd, stripComments } from '../preamble.js';
 import { wrapBlockEdits } from '../blockenv.js';
@@ -46,6 +46,8 @@ const OWN_THMS = /^(llncs|svjour\d*|svmult|svmono)$/;
 
 // the caret's block's style, once for each look at the ribbon
 const styleOf = (app, at) => { if (app.codeArmed && app.codeArmed()) return app.blockStyle(at); if (!at) return null; const m = at.memo || (at.memo = {}); if (!('style' in m)) m.style = app.blockStyle(at); return m.style; };
+// (R2) TeX's and LaTeX's kernel commands an \end form could take with it
+const END_KERNEL = new Set(['endinput', 'endgroup', 'endcsname', 'endlinechar', 'endgraf', 'endtrivlist', 'endlist', 'endtabular', 'endarray', 'enddocument']);
 // (R2) the parts of the title block as styles, and their names
 const TITLE_PARTS = { subtitle: 'Subtitle', author: 'Author', date: 'Date' };
 // the style a command stands for in this document: Heading 2 is \subsection in an article and \section in a report
@@ -121,7 +123,8 @@ register(
     synonyms: ['New Style', 'New style', 'newcommand', 'newenvironment'], when: (app) => app.stylePreEnd() >= 0, whyNot: () => 'The main file has no preamble to define it in.', run: (app) => app.openCreateStyle() },
   // (R2) Rename: a style of the document's own, its definition and every use renamed (H74)
   { id: 'rename-style', name: 'Rename Style', title: 'Rename Style: a style of this document\'s own (its \\newcommand or \\newenvironment), its definition and every use of it in the project renamed', synonyms: ['Rename', 'Rename a style', 'Rename environment', 'Rename command'],
-    when: (app, at) => { const st = styleOf(app, at); return !!st && app.canRenameStyle(st.v); }, whyNot: () => 'Put the caret in a style of this document\'s own (one it defines), or use Rename… in the Styles pane.',
+    // (with { v } it names the style itself, wherever the caret is: the pane's menu and agents)
+    when: (app) => !!app.model, whyNot: () => 'Put the caret in a style of this document\'s own (one it defines), or use Rename… in the Styles pane.',
     run: (app, args, at) => { const v = args && args.v ? args.v : (styleOf(app, at) || {}).v; return args && args.name ? app.renameStyle(v, args.name) : app.openRenameStyle(v); } },
   { id: 'update-style', name: 'Update Style to Match Selection', title: 'Update to Match Selection: the formatting on the caret\'s heading (\\textsf{…}, \\textcolor{…}{…}) becomes its level\'s look, and comes off the heading',
     synonyms: ['Update to Match', 'Match Selection'], menu: { heading: 73 }, when: (app, at) => { const st = styleOf(app, at); return !!st && app.canUpdateStyle(st.v); },
@@ -534,7 +537,8 @@ export const methods = {
     const M = this.model;
     if (!M || typeof v !== 'string') return null;
     let S = null;
-    if (/^env:/.test(v)) { const n = v.slice(4); if (M.thms.has(n) || M.envDefs.has(n)) S = { kind: 'env', name: n }; }
+    // (a theorem environment the document makes with a built in name, \newtheorem{theorem}: its own too)
+    if (/^env:/.test(v) || THM_STYLES[v]) { const n = v.replace(/^env:/, ''); if (M.thms.has(n) || M.envDefs.has(n)) S = { kind: 'env', name: n }; }
     else { const n = v.replace(/^char:/, ''); if (/^char:/.test(v) && M.textMacros.has(n)) S = { kind: 'cmd', name: n }; }
     if (!S) return null;
     const memo = this.stOwn && this.stOwn.M === M ? this.stOwn.map : (this.stOwn = { M, map: new Map() }).map;
@@ -551,19 +555,16 @@ export const methods = {
     const taken = this.nameTaken(neu);
     if (taken) { this.toast((S.kind === 'cmd' ? '\\' : '') + neu + ' is taken: LaTeX, a package or this document has a command or an environment of that name.'); return false; }
     if (taken == null) { this.toast('Still fetching the names LaTeX and its packages define, to check ' + neu + ' against them: again in a moment.'); return false; }
-    // (the names LaTeX derives from the old one must be its own alone: an environment "ta" would
-    // otherwise take \theta with it, "input" \endinput; review L3)
-    const derived = S.kind === 'env' ? ['the' + S.name, 'end' + S.name, S.name + 'name', S.name + 'autorefname'] : [S.name];
-    const known = derived.map((n) => this.latexKnows(n));
-    if (known.some((x) => x == null)) { this.toast('Still fetching the names LaTeX and its packages define, to check the rename against them: again in a moment.'); return false; }
-    const clash = derived.find((n, k) => known[k]);
-    if (clash) { this.toast('\\' + clash + ' is LaTeX\'s or a package\'s own: renaming ' + S.name + ' would rename it too. Rename it in the source.', 6000); return false; }
+    // (an environment whose \end form is TeX's own is no style to rename: "input" would take
+    // \endinput; \theold and the like go only where the environment has that counter: review L3, N2)
+    if (S.kind === 'env' && END_KERNEL.has('end' + S.name)) { this.toast('\\end' + S.name + ' is TeX\'s own: rename ' + S.name + ' in the source.', 6000); return false; }
     // (.bib files too for a command: a title may use it, review H6)
     const files = [...this.files].filter(([f, t]) => typeof t === 'string' && (/\.(tex|sty|ltx)$/i.test(f) || (S.kind === 'cmd' && /\.bib$/i.test(f))));
     const runs = files.find(([, t]) => verbatimRuns(t, S.name));
     if (runs) { this.toast(runs[0] + ' has a Verbatim block with commandchars that runs \\' + S.name + ': rename it in the source.', 6000); return false; }
     const edits = [];
-    for (const [f, t] of files) for (const x of renameEdits(t, S.name, neu, S.kind)) edits.push({ f, ...x });
+    const counter = S.kind === 'env' && files.some(([, t]) => makesCounter(t, S.name));
+    for (const [f, t] of files) for (const x of renameEdits(t, S.name, neu, S.kind, { counter })) edits.push({ f, ...x });
     if (!edits.length) return false;
     const c = this.caretNow(), mine = c && !c.ghost ? edits.filter((x) => x.f === c.f) : [];
     const map = (p) => { let d = 0; for (const x of mine) if (x.e <= p) d += x.t.length - (x.e - x.s); return p + d; };

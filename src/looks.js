@@ -416,10 +416,13 @@ export function linkColorEdits(src, on) {
   let at = -1;
   const acc = /\\definecolor\s*\{accent\}/.exec(pre);
   if (acc) at = Math.max(at, after(acc.index));
-  for (let m, re = /\\usepackage\s*(?:\[[^\]]{0,2000}\])?\s*\{[^{}]{0,300}\}/g, n = 0; (m = re.exec(pre)) && n < 500; n++) if (/\bhyperref\b/.test(m[0].slice(m[0].lastIndexOf('{')))) at = Math.max(at, after(m.index + m[0].length - 1));
+  let loads = false;
+  for (let m, re = /\\(?:usepackage|RequirePackage)\s*(?:\[[^\]]{0,2000}\])?\s*\{[^{}]{0,300}\}/g, n = 0; (m = re.exec(pre)) && n < 500; n++) if (/\bhyperref\b/.test(m[0].slice(m[0].lastIndexOf('{')))) { loads = true; at = Math.max(at, after(m.index + m[0].length - 1)); }
   for (let m, re = /\\hypersetup\s*\{/g, n = 0; (m = re.exec(pre)) && n < 50; n++) { const z = group(pre, m.index + m[0].length - 1); if (z > 0) at = Math.max(at, after(z - 1)); }
   const nl = eolOf(src);
-  if (at < 0) at = src.lastIndexOf('\n', end - 1) + 1;
+  // (hyperref loaded elsewhere, by a file the preamble reads or a package: the line before
+  // \begin{document}, after all of them; review N3)
+  if (at < 0 || !loads) at = src.lastIndexOf('\n', end - 1) + 1;
   return [{ s: at, e: at, t: LINK_LINE + nl }];
 }
 // the accent colour the preamble defines, as #RRGGBB, or null

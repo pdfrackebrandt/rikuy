@@ -441,7 +441,7 @@ ok('R2: Rename a style: \\begin, \\end and the definition, a theorem numbered wi
   assert.equal(env, t.replace('\\newtheorem{claim}', '\\newtheorem{proposal}').replace('[claim]', '[proposal]').replace('\\crefname{claim}', '\\crefname{proposal}').replace('\\begin{claim}x\\end{ claim }', '\\begin{proposal}x\\end{ proposal }'));
   assert.ok(env.includes('{note}[proposal]{claim}'), 'a theorem\'s printed title is no name');
   const th = '\\renewcommand{\\theclaim}{\\arabic{claim}}\\def\\claimautorefname{Claim}\\let\\endclaimx\\relax \\endclaim \\theclaims';
-  assert.equal(SR2.applyEdits(th, SR2.renameEdits(th, 'claim', 'note', 'env')), '\\renewcommand{\\thenote}{\\arabic{note}}\\def\\noteautorefname{Claim}\\let\\endclaimx\\relax \\endnote \\theclaims');
+  assert.equal(SR2.applyEdits(th, SR2.renameEdits(th, 'claim', 'note', 'env', { counter: true })), '\\renewcommand{\\thenote}{\\arabic{note}}\\def\\noteautorefname{Claim}\\let\\endclaimx\\relax \\endnote \\theclaims');
   const cmd = SR2.applyEdits(t, SR2.renameEdits(t, 'key', 'term', 'cmd'));
   assert.equal(cmd, t.replace(/\\key(?![a-z])/g, '\\term'));
   // bounded on a stranger's text: 300 000 commands
@@ -486,6 +486,13 @@ ok('R2 review: Code on one line that fits, nothing OT1 prints otherwise; title p
   const v = '\\lstinline|\\key| \\url{\\key} \\path|\\key| \\mint{tex}|\\key| \\key';
   assert.equal(SR2.applyEdits(v, SR2.renameEdits(v, 'key', 'term', 'cmd')), v.replace(/\\key$/, '\\term'));
   assert.ok(SR2.verbatimRuns('\\begin{Verbatim}[commandchars=\\\\\\{\\}]\n\\key{a}\n\\end{Verbatim}', 'key'));
+  // (review L3, N2: \the forms only for an environment with that counter: \theta stays for "ta")
+  const ta = '\\newenvironment{ta}{}{}\\begin{ta}$\\theta$\\end{ta}';
+  assert.equal(SR2.applyEdits(ta, SR2.renameEdits(ta, 'ta', 'tb', 'env', { counter: SR2.makesCounter(ta, 'ta') })), ta.replace(/\{ta\}/g, '{tb}'));
+  assert.ok(SR2.makesCounter('\\newtheorem{claim}{Claim}', 'claim') && SR2.makesCounter('\\newcounter{ex}', 'ex') && !SR2.makesCounter('\\newenvironment{ta}{}{}', 'ta'));
+  // (review N1: TikZ's \path is a drawing command, its text renamed; url's \path|..| is not)
+  const tz = '\\path (0,0) node {\\lbl{a}} (2,0) node {\\lbl{b}};\n\\path[draw] (0,0) -- (1,1) node[right] {\\lbl{c}};\n\\path|\\lbl| \\path{\\lbl} \\lbl{d}';
+  assert.equal(SR2.applyEdits(tz, SR2.renameEdits(tz, 'lbl', 'tag', 'cmd')), tz.replace(/\\lbl\{/g, '\\tag{'));
   assert.ok(!SR2.verbatimRuns('\\begin{Verbatim}\n\\key{a}\n\\end{Verbatim}', 'key'));
 });
 

@@ -1269,7 +1269,30 @@ def r2_review(page):
         check('H6 the renamed document compiles in the page: Claim 1, Lemma 1.1, Example 1', r['ok'] and not r['errors'] and all(x in r['text'] for x in ('Claim 1', 'Lemma 1.1', 'Example 1')), (r['errors'], r['text'][:300]))
     load_doc(page, TDOC('\\newenvironment{ta}{\\par}{\\par}\n', '\\begin{ta}x $\\theta$\\end{ta}')); click_text(page, 'x', 0)
     r = page.evaluate("window.rikuy.renameStyle('env:ta', 'tb')")
-    check('L3 an environment whose \\the form is LaTeX\'s (\\theta) is not renamed', r is False and '\\theta' in src(page), src(page)[-80:])
+    check('L3 an environment "ta" renamed leaves \\theta as it is (no counter "ta")', r is True and '\\begin{tb}x $\\theta$\\end{tb}' in src(page), src(page)[-80:])
+    # N1: TikZ's \path is no url \path|..|: the command in its nodes is renamed; compiled
+    N1 = TDOC('\\usepackage{tikz}\n\\newcommand{\\lbl}[1]{\\textbf{#1}}\n', '\\begin{tikzpicture}\n\\path (0,0) node {\\lbl{a}} (2,0) node {\\lbl{b}};\n\\path[draw] (0,0) -- (1,1) node[right] {\\lbl{c}} -- (2,0);\n\\end{tikzpicture}\n\\lbl{d}')
+    load_doc(page, N1); click_text(page, 'd', 0)
+    run_cmd(page, 'rename-style', {'v': 'char:lbl', 'name': 'mylabeltag'})
+    check('N1 Rename reaches a command in TikZ \\path nodes', src(page) == N1.replace('\\lbl', '\\mylabeltag'), src(page)[-260:])
+    if tex:
+        r = pdf_text(page, src(page))
+        check('N1 the renamed TikZ document compiles in the page', r['ok'] and not r['errors'] and 'd' in r['text'], (r['errors'], r['text'][:120]))
+    # N2: a theorem environment of the document's own named like hyperref's \theoremautorefname is renamed
+    load_doc(page, TDOC('\\usepackage{amsthm}\n\\usepackage{hyperref}\n\\newtheorem{theorem}{Theorem}\n', '\\begin{theorem}Stated.\\end{theorem}')); click_text(page, 'Stated', 1)
+    run_cmd(page, 'rename-style', {'v': 'env:theorem', 'name': 'mainresult'})
+    check('N2 Rename takes \\newtheorem{theorem} (hyperref\'s \\theoremautorefname is no clash)', '\\newtheorem{mainresult}{Theorem}' in src(page) and '\\begin{mainresult}' in src(page), src(page)[-200:])
+    # N3: hyperref loaded by a file the preamble reads: the links' line before \begin{document}, after it; compiled
+    page.evaluate("""() => window.rikuy.files.set('preamble.tex', '\\\\usepackage{hyperref}\\n')""")
+    N3 = TDOC('\\usepackage{xcolor}\n\\definecolor{accent}{HTML}{AA0000}\n\\input{preamble}\n', '\\section{A}\\label{a}\nSee \\ref{a}.')
+    load_doc(page, N3)
+    page.evaluate("""() => { const g = window.rikuy; if (!g.files.has('preamble.tex')) g.files.set('preamble.tex', '\\\\usepackage{hyperref}\\n'); g.forceRender = true; g.rebuild(); }"""); page.wait_for_timeout(200)
+    click_text(page, 'See', 1); run_cmd(page, 'design-colors', {'id': 'teal'})
+    t3 = src(page)
+    check('N3 hyperref from \\input{preamble}: the links\' line comes after it, right before \\begin{document}', t3.find('\\hypersetup{colorlinks') > t3.find('\\input{preamble}') and '\\hypersetup{colorlinks,linkcolor=accent,urlcolor=accent,citecolor=accent}\n\\begin{document}' in t3, t3[:400])
+    if tex:
+        r = page.evaluate("""async () => { const r = await window.rikuy.api.compile(); return { ok: r.ok, errs: (r.problems || []).filter((p) => p.severity === 'error').map((p) => p.message).slice(0, 3) }; }""")
+        check('N3 that project compiles in the page', r['ok'] and not r['errs'], r)
     # M3: a key typed on a selected Code block opens its source and changes nothing
     C = WRAP('Before words.\n\n\\begin{verbatim}\nint x = 1;\n\\end{verbatim}\n\nAfter words.')
     load_doc(page, C); press_code(page); page.keyboard.type('Z'); page.wait_for_timeout(300)
