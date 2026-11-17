@@ -2897,7 +2897,11 @@ Tests:
     an `\end` form of TeX's own (`\endinput`) refuses; `rename-style` with `{ v }` runs wherever the
     caret is, and a document's own `\newtheorem{theorem}` can be renamed. Evidence: `npm test`
     green (`styles.test.mjs` 29 groups, `looks.test.mjs` 11); `styles.py` 422 (`r2_review` 23: N1's
-    TikZ document and N3's project compiled in the page).
+    TikZ document and N3's project compiled in the page). N4 (from the verification of 8d2e842):
+    renaming a theorem turned `\renewcommand{\theoremautorefname}{Thm}` into a renewal of a name
+    hyperref never defined, and TeX stopped; a renamed `\…autorefname` or `\…name` that a
+    `\renewcommand` set is written with `\providecommand` (the document compiled in the page,
+    `\autoref` printing "Thm 1").
 
 ## Open tasks
 

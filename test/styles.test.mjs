@@ -490,6 +490,9 @@ ok('R2 review: Code on one line that fits, nothing OT1 prints otherwise; title p
   const ta = '\\newenvironment{ta}{}{}\\begin{ta}$\\theta$\\end{ta}';
   assert.equal(SR2.applyEdits(ta, SR2.renameEdits(ta, 'ta', 'tb', 'env', { counter: SR2.makesCounter(ta, 'ta') })), ta.replace(/\{ta\}/g, '{tb}'));
   assert.ok(SR2.makesCounter('\\newtheorem{claim}{Claim}', 'claim') && SR2.makesCounter('\\newcounter{ex}', 'ex') && !SR2.makesCounter('\\newenvironment{ta}{}{}', 'ta'));
+  // (review N4: a renamed name hyperref defines for the old one only is provided, not renewed)
+  const ar = '\\usepackage{hyperref}\n\\newtheorem{theorem}{Theorem}\n\\renewcommand{\\theoremautorefname}{Thm}\n\\renewcommand*\\theoremname{T}\n';
+  assert.equal(SR2.applyEdits(ar, SR2.renameEdits(ar, 'theorem', 'result', 'env', { counter: true })), '\\usepackage{hyperref}\n\\newtheorem{result}{Theorem}\n\\providecommand{\\resultautorefname}{Thm}\n\\providecommand*\\resultname{T}\n');
   // (review N1: TikZ's \path is a drawing command, its text renamed; url's \path|..| is not)
   const tz = '\\path (0,0) node {\\lbl{a}} (2,0) node {\\lbl{b}};\n\\path[draw] (0,0) -- (1,1) node[right] {\\lbl{c}};\n\\path|\\lbl| \\path{\\lbl} \\lbl{d}';
   assert.equal(SR2.applyEdits(tz, SR2.renameEdits(tz, 'lbl', 'tag', 'cmd')), tz.replace(/\\lbl\{/g, '\\tag{'));

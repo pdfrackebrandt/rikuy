@@ -1282,6 +1282,14 @@ def r2_review(page):
     load_doc(page, TDOC('\\usepackage{amsthm}\n\\usepackage{hyperref}\n\\newtheorem{theorem}{Theorem}\n', '\\begin{theorem}Stated.\\end{theorem}')); click_text(page, 'Stated', 1)
     run_cmd(page, 'rename-style', {'v': 'env:theorem', 'name': 'mainresult'})
     check('N2 Rename takes \\newtheorem{theorem} (hyperref\'s \\theoremautorefname is no clash)', '\\newtheorem{mainresult}{Theorem}' in src(page) and '\\begin{mainresult}' in src(page), src(page)[-200:])
+    # N4: the theorem's \autoref name renamed is provided (hyperref defines only the old one); compiled
+    N4 = TDOC('\\usepackage{amsthm}\n\\usepackage{hyperref}\n\\newtheorem{theorem}{Theorem}\n\\renewcommand{\\theoremautorefname}{Thm}\n', '\\begin{theorem}\\label{t}Stated.\\end{theorem} See \\autoref{t}.')
+    load_doc(page, N4); click_text(page, 'Stated', 1)
+    run_cmd(page, 'rename-style', {'v': 'env:theorem', 'name': 'mainresult'})
+    check('N4 \\renewcommand{\\theoremautorefname} becomes \\providecommand{\\mainresultautorefname}', '\\providecommand{\\mainresultautorefname}{Thm}' in src(page), src(page)[:300])
+    if tex:
+        r = pdf_text(page, src(page))
+        check('N4 that document compiles in the page and \\autoref prints Thm 1', r['ok'] and not r['errors'] and 'Thm 1' in r['text'], (r['errors'], r['text'][:200]))
     # N3: hyperref loaded by a file the preamble reads: the links' line before \begin{document}, after it; compiled
     page.evaluate("""() => window.rikuy.files.set('preamble.tex', '\\\\usepackage{hyperref}\\n')""")
     N3 = TDOC('\\usepackage{xcolor}\n\\definecolor{accent}{HTML}{AA0000}\n\\input{preamble}\n', '\\section{A}\\label{a}\nSee \\ref{a}.')

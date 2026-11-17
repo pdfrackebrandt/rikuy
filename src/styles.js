@@ -774,7 +774,13 @@ export function renameEdits(text, old, neu, kind, o = {}) {
     if (kind === 'cmd') { if (name === old) out.push({ s: i + 1, e: j, t: neu }); i = j - 1; continue; }
     // (an environment's own commands and its counter's: \claim, \endclaim, \theclaim, \claimautorefname, \c@claim)
     const own = name === old ? '' : name === 'end' + old ? 'end' : o.counter && name === 'the' + old ? 'the' : o.counter && name === 'c@' + old ? 'c@' : o.counter && name === 'p@' + old ? 'p@' : name === old + 'autorefname' ? '+autorefname' : name === old + 'name' ? '+name' : null;
-    if (own != null) { out.push({ s: i + 1, e: j, t: own[0] === '+' ? neu + own.slice(1) : own + neu }); i = j - 1; continue; }
+    if (own != null) {
+      out.push({ s: i + 1, e: j, t: own[0] === '+' ? neu + own.slice(1) : own + neu });
+      // (\renewcommand{\theoremautorefname}{Thm}: hyperref defines the old name, not the new one,
+      // so the renamed one is provided: review N4)
+      if (own[0] === '+') { const back = text.slice(Math.max(0, i - 40), i), m = /\\renewcommand(\*?)\s*\{?\s*$/.exec(back); if (m) { const s0 = i - back.length + m.index + 1; out.push({ s: s0, e: s0 + 12, t: 'providecommand' }); } }
+      i = j - 1; continue;
+    }
     if (!ENV_NAMERS.has(name)) { i = j - 1; continue; }
     // the namer's arguments: a star, an [option], then {name}; \newtheorem{x}[old] counts with old
     const thm = name === 'newtheorem' || name === 'spnewtheorem';
