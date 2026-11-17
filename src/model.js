@@ -3583,10 +3583,12 @@ function rawCut(src, n) {
 // so it is as long as the text and needs no cap: a cut one would leave nodes half moved)
 const NODE_OFFSETS = ['s', 'e', 'is', 'ie', 'bs', 'be', 'es', 'nameEnd', 'ne'];
 export function shiftNodes(ns, d) {
-  const stack = [ns];
+  // (an object reached twice, were the parser ever to share one, is moved once; a cycle ends)
+  const stack = [ns], seen = new Set();
   while (stack.length) {
     const x = stack.pop();
-    if (!x || typeof x !== 'object') continue;
+    if (!x || typeof x !== 'object' || seen.has(x)) continue;
+    seen.add(x);
     if (Array.isArray(x)) { for (const y of x) stack.push(y); continue; }
     for (const k of NODE_OFFSETS) if (typeof x[k] === 'number') x[k] += d;
     if (x.nodes) stack.push(x.nodes);

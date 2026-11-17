@@ -758,6 +758,12 @@ ok('R1 verification N2, N3: a part of a file parsed alone and moved is the file\
   assert.equal(JSON.stringify(a.slice(0, 40)), JSON.stringify(JSON.parse(strip(b)).slice(0, 40)));
   assert.equal(a[a.length - 1].s, b[b.length - 1].s, 'the last of 1.2 million nodes moved too');
   assert.equal(a[0].ne, d + 7);
+  // an object reached twice moves once, and a cycle ends (the walk has no cap)
+  const shared = { s: 1, e: 2 }, cyc = { s: 0, e: 1, nodes: [] };
+  cyc.nodes.push(cyc);
+  shiftNodes([shared, { s: 0, e: 3, args: [{ nodes: [shared] }] }, cyc], 10);
+  assert.equal(shared.s, 11, 'an object reached twice moves once');
+  assert.equal(cyc.s, 10);
 });
 
 ok('R1: club and widow penalties read from the preamble; flush or ragged pages', () => {
