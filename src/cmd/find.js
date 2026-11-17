@@ -13,9 +13,9 @@
 
 import { register, command, enabled, onInstall } from '../commands.js';
 import { chordText } from '../keys.js';
-import { compile, expand, hitsIn, hitsInSource, runsWith, blockText, charSrc, hitSource, joinRanges, labelsIn, hasParaMark, pageParaText, paraHitSource, PARA, PMARK, FMT, FORMATS, MAX_HITS } from '../find.js';
+import { compile, expand, hitsIn, hitsInSource, runsWith, blockText, charSrc, hitSource, joinRanges, labelsIn, hasParaMark, pageParaText, paraHitSource, controlWords, inControlWord, PARA, PMARK, FMT, FORMATS, MAX_HITS } from '../find.js';
 import { headingAt, sectionRange, promoteEdits, swapEdit, moveEdits, newHeading, eolOf, foldItems, foldEntry, matchFold, NAME } from '../outline.js';
-import { absAtom, posFromDom, diff } from '../editor.js';
+import { absAtom, posFromDom, diff, endsWithControlWord } from '../editor.js';
 import { $, load, store } from '../ui/dom.js';
 import { openMenu } from '../ui/kit.js';
 import { openFindDialog, closeFindDialog, findDialogSync } from '../ui/finddialog.js';
@@ -146,7 +146,7 @@ export const methods = {
     if (!this.model || (!fs.q && !fs.o.fmt)) { this.findPaint(); this.findViews(); return; }
     let re = null;
     if (fs.q) {
-      const c = compile(fs.q, fs.o);
+      const c = compile(fs.q, fs.o.fmt & FMT.equation && !fs.o.source ? { ...fs.o, literal: true } : fs.o);
       if (c.error != null) { fs.msg = c.error; this.findPaint(); this.findViews(); return; }
       re = c.re;
     }
@@ -248,8 +248,9 @@ export const methods = {
         const add = (s, e, m) => { const h = { bi, B, f: A.f, s, e, m, parts: [[s, e]], src: true, eq: el, text: text.slice(s, e), st: text.slice(s, e) }; if (inSel(h)) fs.hits.push(h); };
         if (!re) { add(A.s, A.e, [text.slice(A.s, A.e)]); return; }
         const is = A.is != null && A.is >= A.s ? A.is : A.s, ie = A.ie != null && A.ie <= A.e ? A.ie : A.e;
-        const r = hitsInSource(text.slice(is, ie), re, { max: MAX_HITS - fs.hits.length });
-        for (const x of r.hits) add(is + x.i, is + x.j, x.m);
+        const t = text.slice(is, ie), cw = controlWords(t), own = fs.q[0] === '\\';
+        const r = hitsInSource(t, re, { max: MAX_HITS - fs.hits.length });
+        for (const x of r.hits) if (!inControlWord(cw, x.i, x.j, own)) add(is + x.i, is + x.j, x.m);
         if (r.more) fs.more = true;
         if (r.stopped || Date.now() - t0 > 1500) fs.stopped = true;
       });
@@ -441,7 +442,8 @@ export const methods = {
     const fs = this.findState(), src = this.src(h.f);
     if (h.st != null && src.slice(h.s, h.e) !== h.st) return null;
     const groups = fs.o.wildcards || fs.o.regex;
-    const text = /[\\^$]/.test(rep) ? expandRep(rep, h, fs.o, groups) : rep;
+    // (in a formula the replacement is LaTeX as it is written: only ^& and the groups are codes)
+    const text = !/[\\^$]/.test(rep) ? rep : h.eq ? expand(rep, h.m || [h.text], { ...(groups ? fs.o : {}), literal: true }) : expandRep(rep, h, fs.o, groups);
     if (h.src) return [{ f: h.f, s: h.s, e: h.e, t: text }];
     const a = h.parts[0][0], b = h.parts[h.parts.length - 1][1];
     // (a hit across a paragraph's end, ^p: each paragraph's part as typing over it takes it away,
@@ -463,6 +465,18 @@ export const methods = {
     let put = !t;
     for (const ed of del) { if (!put && ed.s === at) { out.push({ ...ed, t: ed.t + t }); put = true; } else out.push(ed); }
     if (!put) out.push({ f: h.f, s: at, e: at, t });
+    // (what is taken away must not join a control word to the letters after it: \dots and a
+    // blank line before Next become \dots{}Next, never \dotsNext)
+    out.sort((u, v) => u.s - v.s);
+    for (let i = 0; i < out.length; i++) {
+      if (out[i].t !== '') continue;
+      let k = i;
+      while (k + 1 < out.length && out[k + 1].s === out[k].e && out[k + 1].t === '') k++;
+      let L = out[i].s;
+      for (let j = i - 1; j >= 0 && out[j].e === L && out[j].t === ''; j--) L = out[j].s;
+      if (endsWithControlWord(src, L) && /[A-Za-z@]/.test(src[out[k].e] || '')) out[k] = { ...out[k], t: '{}' };
+      i = k;
+    }
     return out;
   },
   // whether a paragraph break may be written at source place at, the start of hit h
@@ -471,14 +485,16 @@ export const methods = {
     if (fmt & (FMT.heading | FMT.chapter | FMT.h1 | FMT.h2 | FMT.h3 | FMT.table | FMT.caption | FMT.footnote | FMT.latex)) return false;
     const B = h.B, src = this.src(h.f);
     if (!B || B.f !== h.f || B.s == null || at < B.s || at - B.s > 40000) return false;
-    let d = 0, math = false;
+    // (an optional argument open at the place, \item[..] or \begin{theorem}[..], holds no break either)
+    let d = 0, k = 0, math = false;
     for (let p = B.s; p < at; p++) {
       const c = src[p];
       if (c === '\\') { p++; continue; }
       if (c === '%') { const n = src.indexOf('\n', p); if (n < 0 || n >= at) return false; p = n; continue; }
       if (c === '{') d++; else if (c === '}') d--; else if (c === '$') math = !math;
+      else if (d === 0 && c === '[') k++; else if (d === 0 && c === ']' && k > 0) k--;
     }
-    return d === 0 && !math;
+    return d === 0 && k === 0 && !math;
   },
   // Replace: the hit shown, if it is still what was found (an edit since may have moved it: it is
   // looked for again where the edit took it); then the next one in the list is shown
@@ -1002,6 +1018,16 @@ export const methods = {
     this.foldShow(null);
     return true;
   },
+  // A place the caret is sent to (Go To, the Navigation pane, a comment, a change) that a collapsed
+  // heading hides: the heading opens first, as Word's does
+  foldOpenAt(f, p) {
+    const F = this.fold;
+    if (!F || !F.hidden.size || f == null || p == null) return false;
+    const pred = (it) => it.block && it.block.f === f && it.block.s <= p && p <= it.block.e;
+    // (a look at the hidden items first: a caret put back at every keystroke costs nothing more)
+    for (const it of F.hidden) if (pred(it)) return this.foldReveal(pred);
+    return false;
+  },
   // The triangles: one beside each collapsed heading, and one beside the heading the pointer is
   // over (with a mouse) or the caret is in (on a touch screen), drawn over the page, never in it
   foldLayer() {
@@ -1052,7 +1078,14 @@ export const methods = {
         const rg = document.createRange();
         rg.selectNodeContents(w.el);
         const rs = rg.getClientRects(), last = rs[rs.length - 1];
-        if (last) { x = Math.min(last.right + 4, D.right - size); y = (last.top + last.bottom) / 2; }
+        if (last) {
+          x = Math.min(last.right + 4, D.right - size); y = (last.top + last.bottom) / 2;
+          // (a heading of several lines: the button no higher than its last line, so it never
+          // covers the words of the line above)
+          let above = -Infinity;
+          for (const q of rs) if (q.bottom <= last.top + 1) above = Math.max(above, q.bottom);
+          if (y - size / 2 < above) y = above + size / 2;
+        }
       }
       b.style.left = Math.round(x - R.left) + 'px';
       b.style.top = Math.round(y - R.top - size / 2) + 'px';

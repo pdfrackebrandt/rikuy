@@ -928,6 +928,8 @@ class App {
 
   restoreCaret(c, quiet) {
     if (!c || c.f == null) return;
+    // (a place under a collapsed heading: it opens first, src/cmd/find.js)
+    this.foldOpenAt(c.f, c.selA != null ? c.selA : c.p);
     const sel = getSelection();
     if (c.selA != null) {
       const x = this.index.find(c.f, c.selA, 1), y = this.index.find(c.f, c.selB, -1);

@@ -90,8 +90,19 @@ export function rulerInstall(app) {
       e.preventDefault();
       const S = app.ru.S;
       if (!S) return;
-      // (a margin's own side: the right and bottom margins grow the other way)
-      apply(app, k, pos(S, k) + d);
+      // (the first line and the other lines' markers go from one of LaTeX's states to the next a
+      // press: a hanging indent, none, \parindent; a step is too small to leave \parindent)
+      const q = S.para;
+      let v = pos(S, k) + d;
+      if (q && k === 'first') {
+        if (q.special === 'first') v = d < 0 ? q.lines2 : null;
+        else if (q.special === 'none' && d > 0) v = q.lines2 + q.parindent;
+      } else if (q && k === 'hang' && q.special === 'first') v = d > 0 ? q.first : null;
+      if (v == null) { app.toast(k === 'first' ? 'The first line is at LaTeX\'s \\parindent already: Paragraph › Indentation › By sets that for the document.' : 'With LaTeX\'s \\parindent the other lines are the left indent: move Left Indent.'); return; }
+      apply(app, k, v);
+      // (the slider keeps the focus for the next press: the edit gave it to the page)
+      const back = () => { const m = app.ru.M[k]; if (m && !m.classList.contains('off')) m.focus({ preventScroll: true }); };
+      back(); requestAnimationFrame(back);
     });
   }
 }
@@ -302,7 +313,15 @@ export function apply(app, k, v) {
   else if (k === 'hang') {
     // the other lines move, the first stays where it is
     const F = q.first;
-    if (v > F + 0.5) { special = 'hanging'; X = v - F; l = F; } else if (v >= F - 0.5) { special = 'none'; l = F; } else { special = 'first'; l = v; }
+    if (v > F + 0.5) { special = 'hanging'; X = v - F; l = F; } else if (v >= F - 0.5) { special = 'none'; l = F; }
+    else if (Math.abs(F - v - q.parindent) < 0.6) { special = 'first'; l = v; }
+    else {
+      // (the first line further right of the others than \parindent: LaTeX has no such indent of
+      // one paragraph; the first line stays where it is, so nothing is written)
+      app.toast('LaTeX indents a first line by \\parindent alone: move Left Indent, or set the first line in Paragraph › Indentation.');
+      rulerSync(app);
+      return false;
+    }
   } else if (k === 'first') {
     // the first line moves, the others stay: left of them a hanging indent, at them \noindent,
     // right of them LaTeX's own \parindent
@@ -327,10 +346,11 @@ function applyMargin(app, S, k, v) {
   const m = app.pageMargins();
   if (!m) return false;
   const geo = (app.model.opts && app.model.opts.geo) || {};
+  // (geometry's own twoside key is written back as it is; but any two sided document, a book or
+  // twoside among the class's options too, has the outer margin on the left of an even page)
   const mirrored = !!(m.two && geo.twoside === true);
   const want = { t: m.t, b: m.b, l: m.l + (m.gutter || 0), r: m.r };
-  // (on an even page of a mirrored document the left margin is the outer one)
-  const left = S.even && mirrored ? 'r' : 'l', right = S.even && mirrored ? 'l' : 'r';
+  const left = S.even && m.two ? 'r' : 'l', right = S.even && m.two ? 'l' : 'r';
   const min = 0.2 * CM;
   if (k === 'ml') want[left] = Math.max(min, Math.min(S.pw - S.mr - 2 * CM, v));
   if (k === 'mr') want[right] = Math.max(min, Math.min(S.pw - S.ml - 2 * CM, S.pw - v));

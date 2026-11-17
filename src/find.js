@@ -146,9 +146,10 @@ export function compile(q, o = {}) {
     else if (o.wildcards) src = wildcards(q, pm).src;
     else {
       src = '';
+      // (literal: a formula's LaTeX, where x^p and A^t are what they say, not Word's codes)
       for (let i = 0; i < q.length; i++) {
-        if (q[i] === '^' && q[i + 1] === 'p') { src += pm; i++; continue; }
-        if (q[i] === '^' && i + 1 < q.length && CARET[q[i + 1]]) { src += CARET[q[++i]]; continue; }
+        if (!o.literal && q[i] === '^' && q[i + 1] === 'p') { src += pm; i++; continue; }
+        if (!o.literal && q[i] === '^' && i + 1 < q.length && CARET[q[i + 1]]) { src += CARET[q[++i]]; continue; }
         src += lit(q[i]);
       }
     }
@@ -165,11 +166,13 @@ export function compile(q, o = {}) {
 
 // The replacement for one hit: Word's ^& (what was found) and ^^ (a caret), \1 to \9 (a group of
 // the wildcards), and with regular expressions JavaScript's $1, $& and $<name> as well.
+// o.literal: a formula's LaTeX, where only ^& and the groups are codes (x^p stays x^p)
 export function expand(rep, m, o = {}) {
   let out = '';
   for (let i = 0; i < rep.length; i++) {
     const c = rep[i], d = rep[i + 1];
     if (c === '^' && d === '&') { out += m[0]; i++; continue; }
+    if (o.literal && c === '^' && d !== '&') { out += c; continue; }
     if (c === '^' && d === '^') { out += '^'; i++; continue; }
     if (c === '^' && d === 'p') { out += '\n\n'; i++; continue; }
     if (c === '^' && d && CARET[d] && d !== '?' && d !== '#' && d !== '$' && d !== 'w') { const t = { s: ' ', t: '\t', '+': '—', '=': '–', '~': '‑', '-': '­' }[d]; if (t != null) { out += t; i++; continue; } }
@@ -450,4 +453,18 @@ export function paraHitSource(blocks, P, i, j) {
   if (f == null || !rs.length) return null;
   const parts = joinRanges(rs);
   return { f, s: parts[0][0], e: parts[parts.length - 1][1], parts, ro, hard, marks, segs, gaps };
+}
+
+// The control words of a formula's LaTeX (\alpha, \frac): [[s, e]], in one pass; a hit inside one
+// is no hit (a in \alpha), unless the query asks for a command itself (starts with \)
+export function controlWords(t) {
+  const out = [], re = /\\[A-Za-z@]+/g;
+  let m;
+  while ((m = re.exec(t))) out.push([m.index, m.index + m[0].length]);
+  return out;
+}
+export function inControlWord(cw, i, j, own) {
+  let lo = 0, hi = cw.length - 1;
+  while (lo <= hi) { const k = (lo + hi) >> 1; if (cw[k][1] <= i) lo = k + 1; else if (cw[k][0] >= j) hi = k - 1; else return !(own && cw[k][0] === i); }
+  return false;
 }

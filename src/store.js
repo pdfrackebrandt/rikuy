@@ -75,22 +75,36 @@ export function snapDel(id) {
     t.onerror = () => reject(t.error);
   }));
 }
-// Every version of a project named from renamed to: one transaction over the list (the texts are
-// kept under the versions' ids, which stay)
-export function snapRename(from, to) {
+// A project renamed from one name to another, all or nothing, in one transaction over the versions
+// and the records kept beside them (keys: prefix + name + '|' + main, for each prefix and main): a
+// name some version or record has already is refused inside the transaction (two tabs renaming
+// two documents to one name), and any failure, full storage too, leaves everything as it was.
+// Resolves the number of versions renamed; rejects with 'taken' or the storage's error.
+export function projectRename(from, to, mains, prefixes) {
   return db().then((d) => new Promise((resolve, reject) => {
-    const t = d.transaction('snaps', 'readwrite');
-    const req = t.objectStore('snaps').openCursor();
-    let n = 0;
+    const t = d.transaction(['snaps', 'kv'], 'readwrite');
+    const snaps = t.objectStore('snaps'), kv = t.objectStore('kv');
+    let n = 0, why = null;
+    const stop = (w) => { if (!why) { why = w; try { t.abort(); } catch (e) { /* done already */ } } };
+    const req = snaps.openCursor();
     req.onsuccess = () => {
       const c = req.result;
-      if (!c) return;
+      if (!c) {
+        // the versions read: the records, each moved where none is
+        for (const m of mains) for (const pre of prefixes) {
+          const g = kv.get(pre + from + '|' + m), h = kv.get(pre + to + '|' + m);
+          h.onsuccess = () => { if (h.result !== undefined) stop('taken'); };
+          g.onsuccess = () => { if (g.result !== undefined && !why) { kv.put(g.result, pre + to + '|' + m); kv.delete(pre + from + '|' + m); } };
+        }
+        return;
+      }
+      if (c.value && c.value.name === to) { stop('taken'); return; }
       if (c.value && c.value.name === from) { c.update({ ...c.value, name: to }); n++; }
       c.continue();
     };
     t.oncomplete = () => resolve(n);
-    t.onerror = () => reject(t.error);
-    t.onabort = () => reject(t.error || new Error('aborted'));
+    t.onerror = (e) => { if (e && e.preventDefault && why) e.preventDefault(); };
+    t.onabort = () => reject(why ? new Error(why) : (t.error || new Error('aborted')));
   }));
 }
 export async function snapPrune(keep) {

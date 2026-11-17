@@ -334,10 +334,13 @@ export const methods = {
     const mains = new Set(all.filter((v) => v.name === from).map((v) => v.main));
     if (from === this.name) mains.add(this.main);
     if (!this.noIdb) {
-      const { snapRename, kvGet, kvPut, kvDel } = await import('../store.js');
-      try { await snapRename(from, to); } catch (e) { this.toast('This browser\'s storage refused the change: the name stays.'); return false; }
-      for (const m of mains) for (const pre of ['bin:', 'link:', 'share:', 'scripts:']) {
-        try { const v = await kvGet(pre + from + '|' + m); if (v !== undefined) { await kvPut(pre + to + '|' + m, v); await kvDel(pre + from + '|' + m); } } catch (e) { /* nothing kept there */ }
+      // (all or nothing: the versions and every record beside them in one transaction, the new
+      // name checked free inside it)
+      const { projectRename } = await import('../store.js');
+      try { await projectRename(from, to, [...mains], ['bin:', 'link:', 'share:', 'scripts:']); } catch (e) {
+        this.snapList = null;
+        this.toast(e && e.message === 'taken' ? 'A document called ' + to + ' is kept here already: choose another name.' : 'This browser\'s storage refused the change: nothing was renamed.');
+        return false;
       }
     }
     for (const m of this.memSnaps || []) if (m.name === from) m.name = to;
@@ -366,6 +369,9 @@ export const methods = {
       for (const v of vs) { try { await snapDel(v.id); } catch (e) { /* gone */ } }
       // (and its pictures, kept apart from its text: one record for each of its main files)
       for (const m of new Set(vs.map((v) => v.main))) { try { await kvDel('bin:' + name + '|' + m); } catch (e) { /* none */ } }
+      // (and its collapsed headings, which a later document of that name must not take on)
+      const folds = load('rikuy.fold.v1');
+      if (folds && typeof folds === 'object') { for (const m of new Set(vs.map((v) => v.main))) delete folds[name + '|' + m]; store('rikuy.fold.v1', folds); }
       this.memSnaps = (this.memSnaps || []).filter((m) => m.name !== name);
       this.snapList = null;
       this.toast('Removed ' + name + '.');
