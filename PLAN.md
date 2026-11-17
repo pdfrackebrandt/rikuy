@@ -2767,7 +2767,9 @@ Tests:
     (inside landscape pages with a footnote and an [h] float the cuts differ from TeX's) is left: the
     review did not trace it. Evidence: the review's page break table on its 26 no-wrap documents:
     page starts agreeing with TeX's 214 of 303 (R1 210/301, main 152/304), page counts equal 17
-    (R1 16, main 16), memoir 12 pages 9/9 again.
+    (R1 16, main 16), memoir 12 pages 9/9 again. After its verification (merge): N1 a group the
+    parser hands `\<` or `\+` as an argument is the field's text again; N2 `shiftNodes` moves `ne`
+    too; N3 it has no cap, which could leave a long tabbing half moved (`page.test.mjs`).
 
 63. **R3, round 3 of the Word gap: what Tables (task 45), Pictures (46) and Insert (49) left.** Done
     in the code (branch `round3-r3-objects`), every item of the R3 list.
