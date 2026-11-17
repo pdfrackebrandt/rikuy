@@ -40,9 +40,17 @@ RUN = [LD, '--library-path', LIB] if os.path.exists(LD) else []
 ALL = [1.0]
 TEXT = [1.0, 1.0954, 1.2, 1.44, 1.728, 2.0736]
 TEXT_FAMILIES = {'concrete', 'bbm', 'gothic', 'ecc', 'knuth-local', 'amsfonts', 'etex', 'xypic', 'cm-mf-extra-bold'}
+# symbol families whose .fd scales one design size to every size (<-> ifsym10): the sizes text
+# reaches from 7 pt (a superscript or \scriptsize at 10 pt: ifsym10 at 420 dpi) to 12 pt (0.45 MB
+# of packs; 5, 6 and 14.4 to 24.88 pt as well would be 1 MB more)
+ANY = [0.7, 0.8, 0.9, 1.0, 1.0954, 1.2]
+ANY_FAMILIES = {'ifsym', 'bbding'}
+# families whose .fd has text sizes but only 10 pt to 12 pt are worth their room (0.18 MB)
+SOME = [1.0, 1.0954, 1.2]
+SOME_FAMILIES = {'phonetic'}
 # the artifact has room for the families papers use (Concrete, \mathbbm, blackletter, symbol and
-# chess fonts, bold typewriter); a full TeX Live mirror (build_mirror.py) can carry the rest
-FAMILIES = os.environ.get('PK_FAMILIES', 'concrete,bbm,gothic,ecc,knuth-local,amsfonts,etex,xypic,skull,ifsym,skak,chess,dancers,circ,niceframe,clock,trsym,cm-mf-extra-bold').split(',')
+# chess fonts, bold typewriter, dingbats, phonetic); a full TeX Live mirror (build_mirror.py) can carry the rest
+FAMILIES = os.environ.get('PK_FAMILIES', 'concrete,bbm,gothic,ecc,knuth-local,amsfonts,etex,xypic,skull,ifsym,skak,chess,dancers,circ,niceframe,clock,trsym,cm-mf-extra-bold,bbding,phonetic').split(',')
 
 
 def sources():
@@ -81,7 +89,7 @@ def main():
     def one(name):
         family = tfms[name].split('/fonts/tfm/')[1].split('/')[1]
         made = 0
-        for mag in (TEXT if family in TEXT_FAMILIES else ALL):
+        for mag in (ANY if family in ANY_FAMILIES else SOME if family in SOME_FAMILIES else TEXT if family in TEXT_FAMILIES else ALL):
             dpi = int(round(600 * mag))
             dst = os.path.join(OUT, family, 'dpi%d' % dpi, name + '.pk')
             if os.path.exists(dst):

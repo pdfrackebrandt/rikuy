@@ -190,7 +190,7 @@ mismatch with its cause: [PLAN.md](PLAN.md).
 
 ## Running it
 
-Rikuy is one HTML page plus `dist/tex/` (about 327 MB of engines, TeX packs and programs, 78 MB of it the fonts for scripts other than Latin), which
+Rikuy is one HTML page plus `dist/tex/` (about 361 MB of engines, TeX packs and programs, 110 MB of it the fonts for scripts other than Latin and a few large font families), which
 any static web server can serve (`dist/index.html` is the page); the page fetches packs as a
 document needs them. Served that way it is an app the browser can install: after one visit it
 opens and works with no network, compiles what this browser has compiled before, and "Make
