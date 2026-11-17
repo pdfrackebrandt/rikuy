@@ -97,12 +97,14 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   prints them, and carried to Word and back (a part in columns or turned as Word's sections).
 - **Word's Font group.** The font and size boxes (the selection's or the word's; the document's
   font package and class size from the Font dialog's Set As Default), bigger and smaller, Change
-  Case on the words alone, Clear All Formatting, underline styles,
+  Case on the words alone, Clear All Formatting (the paragraph's settings too), underline styles
+  in any colour,
   strikethrough, sub- and superscript, highlighter and font colours, small and all caps, the
-  Font dialog and the Format Painter; each writes the LaTeX you would (`\uline`, `\hl[green]`,
+  Font dialog and the Format Painter (a paragraph's style with it); each writes the LaTeX you would (`\uline`, `\hl[green]`,
   `{\large …}`) and takes off what you wrote by hand.
 - **Lists as in Word.** Tab and Shift+Tab change an item's level; Word's bullet, numbering and
-  multilevel libraries, Define New Bullet and Number Format, Set Numbering Value, Restart at 1,
+  multilevel libraries, Define New Bullet (a picture too) and Number Format, Adjust List Indents,
+  Set Numbering Value, Restart at 1,
   Continue Numbering, the space between items, Sort, description lists, and "- " or "1. " typed at a
   paragraph's start making a list; written as enumitem's options, a list's own hand written labels
   changed where they are.
@@ -114,10 +116,11 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   LaTeX written by hand and drawn on the page as TeX prints it, and a Word file's own settings
   read in.
 - **Word's styles, over LaTeX's own.** Heading 1 to 6 (`\chapter` in a report, `\paragraph`
-  running into its paragraph as TeX sets it), Part, Quotation, Verse, Abstract and the theorem
+  running into its paragraph as TeX sets it), Part, Subtitle, Author, Date, Code, Quotation, Verse,
+  Abstract and the theorem
   environments in the Styles gallery, on one paragraph or several; the Styles pane, Apply Styles,
   Modify Style (titlesec's `\titleformat`, once in the preamble), Create a Style (`\newcommand`,
-  `\newenvironment`) and Update to Match; the Design tab's Themes, Style Set, Colors and Fonts
+  `\newenvironment`), Rename and Update to Match; the Design tab's Themes, Style Set, Colors and Fonts
   for the whole document, and LaTeX's own look back by taking the lines away.
 - **Pictures and objects as in Word.** A press or a tap selects a picture: eight handles size it
   (a share of the line when near one), and Picture Format crops, turns, flips, frames, gives alt

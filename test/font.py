@@ -667,6 +667,122 @@ PHONES = ((390, 844), (360, 740))
 SHOTS = os.environ.get('RIKUY_SHOTS', '/tmp/B1-shots')
 
 
+def r2(page):
+    """Round 3's R2: Clear All Formatting takes the paragraph's own settings (B2's) off too, in one
+    step; the Format Painter carries a paragraph's style; an underline in any colour."""
+    up = lambda: page.evaluate('document.getElementById("pages").dispatchEvent(new MouseEvent("mouseup", { bubbles: true }))') or page.wait_for_timeout(300)
+    plain = WRAP('Intro words.\n\nSome \\textbf{bold} words here.\n\nAfter words.')
+    load_doc(page, plain); page.wait_for_timeout(200)
+    for cmd, args in [('align-center', None), ('line-spacing', '1.5'), ('paragraph-indent', None), ('space-before', None), ('space-after', None), ('keep-with-next', None),
+                      ('page-break-before', None), ('keep-lines-together', None), ('shading', {'color': 'yellow'}), ('borders', {'kind': 'bottom'})]:
+        click_text(page, 'bold', 2); run_cmd(page, cmd, args)
+    formatted = src(page)
+    n0 = page.evaluate('window.rikuy.hist.length')
+    check('B2\'s settings written around a paragraph (alignment, spacing, indent, space, keep, break, samepage, shading, border)', all(x in formatted for x in ('\\begin{center}', 'onehalfspace', 'adjustwidth', '\\vspace{12pt}', '\\nopagebreak', '\\clearpage', 'samepage', 'tcolorbox', '\\rule')), formatted)
+    place(page, ('Some', 'here')); run_cmd(page, 'clear-formatting')
+    after = src(page)
+    body_of = lambda t: t[t.index('\\begin{document}') + 17:t.index('\\end{document}')].strip()
+    check('Clear All Formatting takes every one of them off with the bold, back to the paragraph as it was', body_of(after) == 'Intro words.\n\nSome bold words here.\n\nAfter words.', body_of(after))
+    check('in one step of history', page.evaluate('window.rikuy.hist.length') == n0 + 1, page.evaluate('window.rikuy.hist.length'))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(250)
+    check('one undo gives every byte back', src(page) == formatted)
+    place(page, ('Some', 'here')); run_cmd(page, 'clear-char-formatting')
+    check('Clear Character Formatting keeps the paragraph\'s settings', '\\begin{center}' in src(page) and 'tcolorbox' in src(page) and '\\textbf' not in body_of(src(page)), body_of(src(page)))
+    # hand written: a group's \centering, a hanging indent, a center of its own
+    for doc, want in [('A.\n\n{\\centering Some \\emph{words} here.\\par}\n\nB.', 'A.\n\nSome words here.\n\nB.'),
+                      ('A.\n\n\\noindent\\hangindent=1cm Some \\emph{words} here.\n\nB.', 'A.\n\nSome words here.\n\nB.'),
+                      ('A.\n\n\\begin{flushright}\nSome \\emph{words} here.\n\\end{flushright}\n\nB.', 'A.\n\nSome words here.\n\nB.')]:
+        load_doc(page, WRAP(doc)); page.wait_for_timeout(150); place(page, ('Some', 'here')); run_cmd(page, 'clear-formatting')
+        check('Clear All on hand written settings: %s' % doc.split('\n\n')[1][:30], body(page) == want, body(page))
+    # a center around two paragraphs is not the paragraph's own: it stays
+    load_doc(page, WRAP('\\begin{center}\nOne \\emph{a}.\n\nTwo b.\n\\end{center}')); place(page, ('One', 'a'))
+    run_cmd(page, 'clear-formatting')
+    check('a center around two paragraphs stays (it is not this paragraph\'s alone)', body(page) == '\\begin{center}\nOne a.\n\nTwo b.\n\\end{center}', body(page))
+
+    # the Format Painter carries the paragraph's style from a caret
+    doc = WRAP('\\section{Head words}\n\nPlain words here.\n\n\\begin{quote}\nQuoted \\emph{words}.\n\\end{quote}\n\nOther words.')
+    load_doc(page, doc); page.wait_for_timeout(200); click_text(page, 'Head', 2)
+    run_cmd(page, 'format-painter'); click_text(page, 'Other', 2); up()
+    check('the Format Painter from a caret in a heading makes the paragraph clicked a heading', '\\section{Other words.}' in body(page), body(page))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(250)
+    check('one undo gives the source back byte for byte', src(page) == doc)
+    click_text(page, 'Quoted', 2); run_cmd(page, 'format-painter'); select_text(page, 'Plain words here.'); up()
+    check('from a quote, a whole paragraph selected goes in a quote', '\\begin{quote}\nPlain words here.\n\\end{quote}' in body(page), body(page))
+    check('and the words painted stay selected', page.evaluate('String(getSelection())').strip() == 'Plain words here.', page.evaluate('String(getSelection())'))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(250)
+    check('one undo again', src(page) == doc)
+    # (review M2: words selected inside a paragraph take the characters' formats alone, its style stays)
+    click_text(page, 'Head', 2); run_cmd(page, 'format-painter'); select_text(page, 'Plain'); up()
+    check('M2 painted from a heading onto a few words of a paragraph: the paragraph stays a paragraph', '\\section{Plain' not in body(page) and 'Plain words here.' in body(page), body(page))
+    load_doc(page, WRAP('\\section{Head words}\n\nSome \\textbf{bold} text.')); page.wait_for_timeout(200); click_text(page, 'bold', 2)
+    run_cmd(page, 'format-painter'); select_text(page, 'words'); up()
+    check('M2 painted from a Normal paragraph onto a word of a heading: the heading stays, the word bold', '\\section{Head \\textbf{words}}' in body(page), body(page))
+    load_doc(page, doc); page.wait_for_timeout(200)
+    # a selection inside a paragraph carries its characters only (Word: no paragraph mark, no style)
+    select_text(page, 'Quoted'); run_cmd(page, 'format-painter'); click_text(page, 'Other', 2); up()
+    check('words selected inside a quote carry no style', body(page).endswith('\n\nOther words.') and '\\begin{quote}\nOther' not in body(page), body(page))
+    # double click: the style on each paragraph clicked until Escape, character formats with it
+    load_doc(page, WRAP('\\begin{quote}\nQuoted \\emph{lines}.\n\\end{quote}\n\nPlain words.\n\nOther words.')); page.wait_for_timeout(200); click_text(page, 'lines', 2)
+    page.dblclick('#rc-format-painter'); page.wait_for_timeout(200)
+    click_text(page, 'Plain', 2); up(); click_text(page, 'Other', 2); up()
+    b = body(page)
+    check('double click: each paragraph clicked takes the quote and the word its emphasis', b.count('\\begin{quote}') == 3 and '\\emph{Plain}' in b and '\\emph{Other}' in b, b)
+    page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    check('Escape puts it away', pressed(page, 'format-painter') is False)
+
+    # an underline in any colour: More Colors' value as xcolor's mix, drawn in it
+    load_doc(page, WRAP('Some plain words here.')); page.wait_for_timeout(200); select_text(page, 'plain')
+    page.evaluate("""() => { HTMLInputElement.prototype.click = function () { if (this.type === 'color') { this.value = '#e75480'; this.dispatchEvent(new Event('change')); } else HTMLElement.prototype.click.call(this); }; }""")
+    page.evaluate('window.rikuy.underlineColor(window.rikuy.ribbonAt())'); page.wait_for_timeout(250)
+    page.locator('.pop-menu [aria-label="More colors"]').first.click(); page.wait_for_timeout(300)
+    t = src(page)
+    check('Underline Color, More colors: \\culine in that colour, the definition and xcolor once', '\\culine{rgb,255:red,231;green,84;blue,128}{plain}' in t and t.count('\\DeclareRobustCommand{\\culine}') == 1 and '{xcolor}' in t and '{ulem}' in t, t)
+    col = page.evaluate("""() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent === 'plain'); const e = s && s.closest('[class*="y-ul"]') || s; return e ? getComputedStyle(e).textDecorationColor : null; }""")
+    check('the page draws the line in that colour', col == 'rgb(231, 84, 128)', col)
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('one undo', body(page) == 'Some plain words here.', body(page))
+    # the Font dialog: the colour it has shown, More colors… there too
+    load_doc(page, WRAP('Some \\culine{rgb,255:red,231;green,84;blue,128}{plain} words.', ULEM + XCOLOR + '\\DeclareRobustCommand{\\culine}[1]{\\bgroup\\markoverwith{\\textcolor{#1}{\\rule[-.55ex]{2pt}{.4pt}}}\\ULon}\n')); page.wait_for_timeout(200)
+    select_text(page, 'plain'); run_cmd(page, 'font-dialog')
+    d = page.get_by_role('dialog', name='Font')
+    sel = d.get_by_role('combobox', name='Underline color')
+    shown = sel.evaluate('(s) => [s.value, s.selectedOptions[0].textContent]')
+    check('the Font dialog shows an underline\'s own colour by its value', shown == ['rgb,255:red,231;green,84;blue,128', '#E75480'], shown)
+    page.evaluate("""() => { HTMLInputElement.prototype.click = function () { if (this.type === 'color') { this.value = '#123456'; this.dispatchEvent(new Event('change')); } else HTMLElement.prototype.click.call(this); }; }""")
+    sel.select_option(value='*more'); page.wait_for_timeout(200)
+    d.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    check('and More colors… there gives any other', '\\culine{rgb,255:red,18;green,52;blue,86}{plain}' in body(page), body(page))
+
+
+def r2_review(page):
+    """Review L1: Clear All's joined step at history's cap of 400 drops one old step, not two"""
+    load_doc(page, WRAP('A.\n\n\\begin{center}\nSome \\textbf{bold} words.\n\\end{center}\n\nB.')); page.wait_for_timeout(200)
+    page.evaluate("() => { const g = window.rikuy; g.hist.length = 0; for (let i = 0; i < 400; i++) g.hist.push({ kind: 'x' + i, files: [], open: false, before: null, time: 0 }); }")
+    place(page, ('Some', 'words')); run_cmd(page, 'clear-formatting')
+    h = page.evaluate("[window.rikuy.hist.length, window.rikuy.hist[0].kind, window.rikuy.hist[399].kind, window.rikuy.rvStep]")
+    check('L1 at the cap the joined step drops one old step (x0), keeps x1, and leaves no step for Track Changes', h == [400, 'x1', 'format', None] and 'center' not in body(page), (h, body(page)))
+
+
+def r2_compiles(page):
+    """R2's constructs compiled in the page with pdfLaTeX, XeLaTeX and LuaLaTeX (dist/tex only): an
+    underline in a colour of xcolor's mix, Word import's highlighter in its colours."""
+    if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        print('SKIP R2 compiles: no TeX tree in %s' % DIST)
+        return
+    import base64, io, pypdf
+    CUL = '\\DeclareRobustCommand{\\culine}[1]{\\bgroup\\markoverwith{\\textcolor{#1}{\\rule[-.55ex]{2pt}{.4pt}}}\\ULon}\n'
+    doc = WRAP('Some \\culine{rgb,255:red,231;green,84;blue,128}{underlined} and \\hl[rgb,255:red,0;green,0;blue,128]{navy} and \\hl[green]{greened} words.', ULEM + XCOLOR + CUL + HL)
+    page.set_default_timeout(600000)
+    for eng in ('pdflatex', 'xelatex', 'lualatex'):
+        t = doc if eng == 'pdflatex' else '%% !TeX program = %s\n' % eng + doc
+        r = page.evaluate("""async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile();
+          let s = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) s += String.fromCharCode(...r.pdf.subarray(i, i + 8192));
+          return { ok: r.ok, errs: (r.problems || []).filter((p) => p.severity === 'error').map((p) => p.message).slice(0, 3), pdf: s ? btoa(s) : '' }; }""", t)
+        text = ' '.join(pg.extract_text() for pg in pypdf.PdfReader(io.BytesIO(base64.b64decode(r['pdf']))).pages) if r['pdf'] else ''
+        check('R2 %s: an underline in any colour and the highlighter\'s mixes compile, every word in the PDF' % eng, r['ok'] and not r['errs'] and all(w in text for w in ('underlined', 'navy', 'greened')), (r['errs'], text[:200]))
+    page.set_default_timeout(30000)
+
+
 def phone_box(page, sel):
     """The rect of the last element sel matches, the smallest of its controls, and the page's sideways overflow."""
     return page.evaluate("""(sel) => { const all = [...document.querySelectorAll(sel)].filter((x) => x.offsetParent || getComputedStyle(x).position === 'fixed'); const p = all[all.length - 1];
@@ -780,6 +896,20 @@ def phone(page, w, h):
     # the right click menu's Font group commands are on the row or in its menus too (a long press keeps the system's menu)
     ctx = page.evaluate("() => window.rikuy.cmds.commands().filter((c) => c.menu && (c.group === 'font' || c.id === 'font-dialog')).map((c) => c.name)")
     check(tag + 'the right click menu\'s Font commands (Bold, Italic, Font Settings) are also a tap away', all(n in names or n + '…' in names or n in ('Bold', 'Italic') for n in ctx) and 'Font Settings…' in names, ctx)
+    # R2: Clear All by a tap takes the paragraph's own settings too; the Format Painter carries a
+    # paragraph's style by taps; an underline in any colour from the Underline menu
+    load_doc(page, WRAP('A.\n\n\\begin{center}\nSome \\textbf{bold} words.\n\\end{center}\n\nB.')); page.wait_for_timeout(200); select_text(page, 'bold')
+    page.tap('#rg-home-font'); page.wait_for_timeout(300); tap_item(page, 'Clear All Formatting')
+    check(tag + 'Clear All Formatting by a tap: the bold and the paragraph\'s center off', body(page) == 'A.\n\nSome bold words.\n\nB.', body(page))
+    load_doc(page, WRAP('\\section{Head}\n\nPlain words.')); page.wait_for_timeout(200); tap_text(page, 'Head')
+    page.tap('#rc-format-painter'); page.wait_for_timeout(250); tap_text(page, 'Plain')
+    check(tag + 'the Format Painter armed in a heading by taps makes the paragraph tapped a heading', body(page) == '\\section{Head}\n\n\\section{Plain words.}', body(page))
+    load_doc(page, DOC); page.wait_for_timeout(200); select_text(page, 'plain words')
+    page.evaluate("""() => { HTMLInputElement.prototype.click = function () { if (this.type === 'color') { this.value = '#e75480'; this.dispatchEvent(new Event('change')); } else HTMLElement.prototype.click.call(this); }; }""")
+    page.tap('#rb-u-x'); page.wait_for_timeout(300); tap_item(page, 'Underline Color…')
+    m = phone_box(page, '.pop-colors')
+    page.locator('.pop-menu [aria-label="More colors"]').first.tap(); page.wait_for_timeout(300)
+    check(tag + 'Underline Color… by taps: its picker on the screen, More colors gives any colour', inside(m) and '\\culine{rgb,255:red,231;green,84;blue,128}{plain words}' in body(page), (m, body(page)))
     check(tag + 'no sideways scroll at the end', side() <= 0, side())
 
 
@@ -817,7 +947,7 @@ def phones(p):
 
 def run():
     with sync_playwright() as p:
-        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, phones, compiles)
+        fns = (round_trips, keys, colors, sizes, fonts, case_and_clear, painter, autoformat, dialog, page_looks, review, review2, cells, r2, r2_review, phones, compiles, r2_compiles)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             if fn is phones:
                 phones(p)

@@ -455,6 +455,7 @@ body.pdf-on #pdfpane { display: flex; }
 .ttl-t { font-size: calc(var(--z-LARGE) * 1em); line-height: 1.22; margin-bottom: 1.1em; text-wrap: balance; }
 .ttl-a { font-size: calc(var(--z-large) * 1em); line-height: 1.25; display: flex; justify-content: center; flex-wrap: wrap; column-gap: 2.2em; row-gap: .6em; }
 .ttl-au { display: inline-block; }
+.ttl-s { font-size: calc(var(--z-large) * 1em); line-height: 1.25; margin: -.7em 0 1.1em; }
 .ttl-d { font-size: calc(var(--z-large) * 1em); margin-top: .8em; }
 
 /* abstract */
@@ -501,6 +502,8 @@ body.pdf-on #pdfpane { display: flex; }
 /* raw blocks */
 .it.raw { background: #F4F6F8; border-radius: 3px; padding: .5em .7em; font-family: var(--font-doc-tt); font-size: .82em; line-height: 1.35; text-align: left; text-indent: 0; overflow: hidden; }
 .it.raw.verb { background: transparent; padding: 0; font-size: .95em; }
+/* verbatim's lines as TeX sets them: never broken, a long one past the margin (review H2, R2) */
+.it.raw.verbatim-env pre { white-space: pre; overflow: visible; }
 .raw-h { font: 600 9px/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: .08em; color: #8693A0; margin-bottom: .3em; }
 .it.raw pre { margin: 0; white-space: pre-wrap; font: inherit; }
 /* A LaTeX paragraph (src/styles.js): its source in a quiet box, typed in as text. The header is
@@ -1453,7 +1456,7 @@ body.fpainting #pages { cursor: copy; }
   .stp-f .btn, .pop-modstyle .btn, .pop-apply .btn { min-height: 44px; }
   .pop-modstyle select, .pop-modstyle input[type="text"], .pop-modstyle input:not([type]), .pop-apply input { min-height: 44px; }
   /* the sheet's Close, a style's menu, the Design tab's menus and the phone's style list: a finger's 44 px */
-  .stp .pop-x { min-width: 44px; min-height: 44px; }
+  .stp .pop-x, .pop-modstyle .pop-x { min-width: 44px; min-height: 44px; }
   .pop-menu [role^=menuitem], .pop-styles [role^=menuitem] { min-height: 44px; }
   #rb-style { min-height: 44px; }
   .ms-c { min-height: 44px; }
@@ -2054,6 +2057,23 @@ html.pic-drag, html.pic-drag body { touch-action: none; overscroll-behavior: non
 /* \part in the contents, as article and report list it (review M2) */
 .toc-l-1, .toc-l0 { font-weight: bold; font-size: calc(var(--z-large, 1.2) * 1em); margin-top: .9em; }
 .toc-l-1 .toc-d, .toc-l0 .toc-d { border: 0; }
+
+/* ---- R2: picture bullets, a list's own indents ------------------------------------------------ */
+.ld-pics { display: grid; grid-template-columns: repeat(auto-fill, minmax(56px, 1fr)); gap: 4px; max-height: 40vh; overflow-y: auto; }
+.ld-pic { height: 56px; padding: 4px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--ink-ui); cursor: pointer; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.ld-pic img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.ld-pic-n { font: 11px/1.2 var(--font-ui); word-break: break-all; }
+.ld-pic:hover { border-color: var(--blue); }
+.ld-pic[aria-checked="true"] { background: var(--blue-wash); border-color: var(--blue); }
+.ld-pic:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.lbl .atom.a-img { display: inline-block; vertical-align: -.1em; }
+.lbl .atom.a-img img { height: 1.6ex; width: auto; }
+@media (pointer: coarse) { .ld > .btn { min-height: 44px; } .ld-pic { height: 60px; } }
+
+/* hyperref's colorlinks: references, citations and addresses in the colours TeX prints them (D1, R2) */
+.colorlinks .a-ref, .colorlinks .toc-l a { color: var(--lk-link); }
+.colorlinks .a-cite { color: var(--lk-cite); }
+.colorlinks .a-url, .colorlinks .y-link { color: var(--lk-url); }
 
 /* ---- R1: what the paragraph and page batches left (src/cmd/para.js marks, src/layout.js) ---- */
 .pmk { position: absolute; inset: 0; pointer-events: none; user-select: none; z-index: 2; }

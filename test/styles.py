@@ -25,11 +25,13 @@ from ribbon import DOC, DIST, state, style, undo_is, TILES, WRAP, body, boxes
 from playwright.sync_api import sync_playwright
 
 # every style an article offers a paragraph, in the list's order, and their names in More's menu
-ALL_STYLES = ['p', 'section', 'subsection', 'subsubsection', 'paragraph', 'subparagraph', 'part', 'latex', 'quote', 'quotation', 'verse', 'abstract',
+# (R2: Subtitle, Author and Date after LaTeX, Code after Abstract)
+ALL_STYLES = ['p', 'section', 'subsection', 'subsubsection', 'paragraph', 'subparagraph', 'part', 'latex', 'subtitle', 'author', 'date', 'quote', 'quotation', 'verse', 'abstract', 'verbatim',
               'theorem', 'lemma', 'proposition', 'corollary', 'definition', 'example', 'remark', 'proof']
 # (and after them the list's two actions, which a wide window has under More)
+# (R2: in a document with no \\title, Title is offered too, second: More and the narrow list show it)
 LIST = ALL_STYLES + ['__pane', '__new']
-ALL_NAMES = ['Normal*', 'Heading 1', 'Heading 2', 'Heading 3', 'Heading 4', 'Heading 5', 'Part', 'LaTeX source', 'Quote', 'Quotation', 'Verse', 'Abstract',
+ALL_NAMES = ['Normal*', 'Heading 1', 'Heading 2', 'Heading 3', 'Heading 4', 'Heading 5', 'Part', 'LaTeX source', 'Subtitle', 'Author', 'Date', 'Quote', 'Quotation', 'Verse', 'Abstract', 'Code',
              'Theorem', 'Lemma', 'Proposition', 'Corollary', 'Definition', 'Example', 'Remark', 'Proof']
 A = lambda body, pre='': '\\documentclass{article}\n' + pre + '\\begin{document}\n' + body + '\n\\end{document}\n'
 R = lambda body, pre='': '\\documentclass{report}\n' + pre + '\\begin{document}\n' + body + '\n\\end{document}\n'
@@ -77,7 +79,9 @@ def styles(page):
     load_doc(page, '\\documentclass{article}\n\\title{A title}\n\\begin{document}\n\\maketitle\nWords.\n\\end{document}\n')
     click_text(page, 'A title', 2)
     st = state(page)
-    check('in the title the style shows Title and stays as it is', st['style'] == 'title' and st['rb-style'][0], st['style'])
+    # (R2: a title standing alone can be made Normal again, the paragraph \maketitle stood for)
+    on = page.evaluate('[...document.getElementById("rb-style").options].filter((o) => !o.hidden && !o.disabled).map((o) => o.value)')
+    check('in the title the style shows Title, and only Normal applies (the title stands alone)', st['style'] == 'title' and not st['rb-style'][0] and [x for x in on if not x.startswith('__')] == ['p', 'title'], (st['style'], on))
     click_text(page, 'Words', 2)
     state(page)
     check('and Title is not offered for a paragraph (every other style is: headings to Heading 5, Part, LaTeX, the environments)', page.evaluate('[...document.getElementById("rb-style").options].filter((o) => !o.hidden && !o.disabled).map((o) => o.value)') == LIST
@@ -135,10 +139,11 @@ def gallery(page):
       return { role: m.getAttribute('role'), name: m.getAttribute('aria-label'), text: [...m.childNodes].filter((x) => x.nodeType === 3 || !x.matches('[role=menuitemradio], [role=separator], [role=menuitem]')).length,
         acts: [...m.querySelectorAll('[role=menuitem]')].map((x) => x.getAttribute('aria-label')), items: [...m.querySelectorAll('[role=menuitemradio]')].map((x) => x.getAttribute('aria-label') + (x.getAttribute('aria-checked') === 'true' ? '*' : '')),
         focus: document.activeElement.getAttribute('aria-label'), expanded: document.getElementById('rb-st-more').getAttribute('aria-expanded'), looks: [...m.querySelectorAll('.rb-mi > span')].map((x) => getComputedStyle(x).fontWeight) }; }""")
-    check('More opens a menu "Styles" of every style in order, then Word\'s Create a Style, Apply Styles and the Styles pane, the current one checked and focused', menu and menu['role'] == 'menu' and menu['name'] == 'Styles' and menu['text'] == 0 and menu['items'] == ALL_NAMES
+    check('More opens a menu "Styles" of every style in order, then Word\'s Create a Style, Apply Styles and the Styles pane, the current one checked and focused', menu and menu['role'] == 'menu' and menu['name'] == 'Styles' and menu['text'] == 0 and menu['items'] == ['Normal*', 'Title'] + ALL_NAMES[1:]
           and [a for a in menu['acts'] if a != 'Clear All Formatting'] == ['Create a Style…', 'Apply Styles…', 'Styles pane…']
-          and menu['focus'] == 'Normal' and menu['expanded'] == 'true' and menu['looks'][1] == '700', menu)
-    page.keyboard.press('ArrowDown'); page.keyboard.press('ArrowDown'); page.keyboard.press('Enter'); page.wait_for_timeout(200)
+          and menu['focus'] == 'Normal' and menu['expanded'] == 'true' and menu['looks'][2] == '700', menu)
+    # (Title second, R2: the document has none, so its first paragraph could be it)
+    page.keyboard.press('ArrowDown'); page.keyboard.press('ArrowDown'); page.keyboard.press('ArrowDown'); page.keyboard.press('Enter'); page.wait_for_timeout(200)
     check('the arrows and Enter pick Heading 2 there, and the menu closes', src(page) == DOC.replace('Second paragraph here.', '\\subsection{Second paragraph here.}') and page.evaluate('document.querySelectorAll("body > .pop").length') == 0
           and page.evaluate('document.getElementById("rb-st-more").getAttribute("aria-expanded")') == 'false', src(page)[60:160])
     page.keyboard.type('Y'); page.wait_for_timeout(150)
@@ -150,13 +155,13 @@ def gallery(page):
     click_text(page, 'A title', 2)
     st = state(page)
     t = page.evaluate(TILES)
-    check('in the title the Title tile shows, checked, and nothing applies there', t == ['p-', 'title*-', 'section-', 'subsection-', 'subsubsection-', 'latex-'] and not st['rb-st-down'][0], (t, st['rb-st-down']))
+    check('in the title the Title tile shows, checked, and only Normal applies there (R2)', t == ['p', 'title*', 'section-', 'subsection-', 'subsubsection-', 'latex-'] and not st['rb-st-down'][0], (t, st['rb-st-down']))
     page.click('#rb-st-down'); page.wait_for_timeout(100)
     t2 = page.evaluate(TILES)
     page.click('#rb-st-up'); page.wait_for_timeout(100)
-    check('the next arrow pages to the last six (a full page, with Quote), the previous one back', t2 == ['title*-', 'section-', 'subsection-', 'subsubsection-', 'latex-', 'quote-'] and page.evaluate(TILES) == t and page.evaluate('getSelection().anchorNode.parentNode.closest(".ttl") !== null'), t2)
+    check('the next arrow pages to the last six (a full page, with Quote), the previous one back', t2 == ['title*', 'section-', 'subsection-', 'subsubsection-', 'latex-', 'quote-'] and page.evaluate(TILES) == t and page.evaluate('getSelection().anchorNode.parentNode.closest(".ttl") !== null'), t2)
     look = page.evaluate('(() => { const b = document.getElementById("rb-st-title"), s = getComputedStyle(b.firstElementChild); return [b.getAttribute("aria-pressed"), b.getAttribute("aria-disabled"), s.opacity, getComputedStyle(b).backgroundColor !== "rgba(0, 0, 0, 0)"]; })()')
-    check('the pressed Title tile, which cannot change here, looks pressed and not faded', look == ['true', 'true', '1', True], look)
+    check('the pressed Title tile looks pressed and not faded', look == ['true', None, '1', True], look)
     # a new document: LaTeX and Quote wait for the first character
     for v, want in (('latex', '% rikuy: latex\n\\alpha$x'), ('quote', '\\begin{quote}\nSaid.\n\\end{quote}')):
         page.click('#b-new'); page.wait_for_function('window.rikuy.name.startsWith("Untitled") && window.rikuy.ghost', timeout=5000); page.wait_for_timeout(200)
@@ -200,7 +205,7 @@ def gallery_widths(page):
     g = min(w for w in seen if seen[w]['tiles'])
     l = max(w for w in seen if seen[w]['list'] and w < g)
     check('the row is as tall with the list as with the gallery (no jump where the one gives way to the other, %d and %d px)' % (g, l), g >= 1024 and l >= 1000 and seen[g]['h'] == seen[l]['h'], (g, l, seen[g]['h'], seen[l]['h']))
-    check('narrower, the style list takes the gallery\'s place, with every style (LaTeX, Quote and the rest)', all(seen[w]['list'] and not seen[w]['tiles'] and seen[w]['opts'] == LIST for w in (900, 820, 390)) and seen[390]['page'] <= 0 and seen[390]['h'] <= 44, {w: seen[w] for w in (820, 390)})
+    check('narrower, the style list takes the gallery\'s place, with every style (LaTeX, Quote and the rest)', all(seen[w]['list'] and not seen[w]['tiles'] and seen[w]['opts'] == ['p', 'title'] + LIST[1:] for w in (900, 820, 390)) and seen[390]['page'] <= 0 and seen[390]['h'] <= 44, {w: seen[w] for w in (820, 390)})
     page.set_viewport_size({'width': 390, 'height': 800}); page.wait_for_timeout(300)
     click_text(page, 'Second paragraph', 3); state(page)
     style(page, 'latex')
@@ -1082,9 +1087,277 @@ def compile_all(page):
     page.set_default_timeout(30000)
 
 
+
+# ---- round 3's R2: Code, the title block as styles, Rename, the links' colour, a run in heading over a float ----
+TDOC = lambda pre, body, cls='article': '\\documentclass{' + cls + '}\n' + pre + '\\begin{document}\n' + body + '\n\\end{document}\n'
+
+
+def press_code(page, k=0):
+    """A press on the k-th Code block (verbatim) of the page: it is selected, as a picture is"""
+    page.locator('#pages .it.verb').nth(k).click(); page.wait_for_timeout(250)
+
+
+def st_now(page):
+    return page.evaluate("(() => { const g = window.rikuy, at = g.ribbonAt(); const s = g.blockStyle(at); return [s.v, [...s.to].sort()]; })()")
+
+
+def r2(page):
+    """Code (verbatim) put on and taken off again; Subtitle, Author, Date and Title as styles of the
+    title block; Rename a style of the document's own; the links in the Design colours; a run in
+    heading with a float before its paragraph"""
+    # Code
+    D = WRAP('Before.\n\nSome code words here.\n\nAfter.')
+    E = WRAP('Before.\n\n\\begin{verbatim}\nSome code words here.\n\\end{verbatim}\n\nAfter.')
+    load_doc(page, D); click_text(page, 'code', 2); h0 = page.evaluate('window.rikuy.hist.length')
+    run_cmd(page, 'style-verbatim')
+    check('Code: the paragraph in \\begin{verbatim}, one step', src(page) == E and page.evaluate('window.rikuy.hist.length') == h0 + 1, src(page))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('Code: one undo gives the bytes back', src(page) == D)
+    load_doc(page, E); press_code(page)
+    st = st_now(page)
+    check('a press on a Code block selects it: its style is Code, Normal can take it off', st == ['verbatim', ['p']] and page.evaluate("document.querySelector('#pages .it.verb').classList.contains('sel')"), st)
+    check('the Code style shows pressed', pressed(page, 'style-verbatim') is True, pressed(page, 'style-verbatim'))
+    run_cmd(page, 'style-normal')
+    check('Normal on it gives the paragraph back byte for byte', src(page) == D, src(page))
+    load_doc(page, E); press_code(page); press_code(page)
+    check('a second press opens its source, as before', page.evaluate("!!document.querySelector('.pop-raw')"))
+    page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    H = WRAP('\\begin{verbatim}\nx = a_b & {c} 50%\n\\end{verbatim}\n\nAfter.')
+    load_doc(page, H); press_code(page); run_cmd(page, 'style-normal')
+    check('a hand written verbatim with LaTeX\'s specials: Normal escapes them, the page prints the same', body(page) == 'x = a\\_b \\& \\{c\\} 50\\%\n\nAfter.', body(page))
+    for words in ('A \\textbf{bold} word.', 'Pages 3--4 here.', 'A $x$ here.'):
+        load_doc(page, WRAP(words + '\n\nAfter.')); click_text(page, 'here' if 'here' in words else 'word', 1)
+        en = page.evaluate("(() => { const g = window.rikuy, c = g.cmds.command('style-verbatim'), at = g.ribbonAt(); return [g.cmds.enabled(g, c, at), c.whyNot(g, at)]; })()")
+        check('Code is off where verbatim would print otherwise (%s), saying why' % words, en[0] is False and 'exactly as typed' in en[1], en)
+    # the title block's parts as styles, by the round trip rule (the paragraph right after \maketitle)
+    base = TDOC('\\title{Main}\n', '\\maketitle\n\nJane Doe\n\nBody words.')
+    roundtrip(page, base, ('Jane', 1), 'style-author', TDOC('\\title{Main}\n\\author{Jane Doe}\n', '\\maketitle\n\nBody words.'), off_command='style-normal')
+    roundtrip(page, base, ('Jane', 1), 'style-date', TDOC('\\title{Main}\n\\date{Jane Doe}\n', '\\maketitle\n\nBody words.'), off_command='style-normal')
+    roundtrip(page, base, ('Jane', 1), 'style-subtitle', TDOC('\\title{Main\\\\[0.5ex]\\large Jane Doe}\n', '\\maketitle\n\nBody words.'), off_command='style-normal')
+    roundtrip(page, TDOC('\\title{Main}\n', '\\maketitle\n\nJane Doe\n\nBody words.', 'scrartcl'), ('Jane', 1), 'style-subtitle', TDOC('\\title{Main}\n\\subtitle{Jane Doe}\n', '\\maketitle\n\nBody words.', 'scrartcl'), off_command='style-normal')
+    roundtrip(page, TDOC('', 'My Title\n\nBody words.'), ('Title', 1), 'style-title', TDOC('\\title{My Title}\n', '\\maketitle\n\nBody words.'), off_command='style-normal')
+    load_doc(page, TDOC('\\title{Main\\\\[0.5ex]\\large The sub}\n\\author{Ann \\and Bob}\n', '\\maketitle\n\nCarl\n\nBody words.')); click_text(page, 'Carl', 1)
+    run_cmd(page, 'style-author')
+    check('a second author joins the first with \\and', '\\author{Ann \\and Bob \\and Carl}' in src(page), src(page)[:200])
+    drawn = page.evaluate("[...document.querySelectorAll('#pages .ttl-t, #pages .ttl-s, #pages .ttl-au')].map((x) => x.textContent.replace(/\\u200b/g, ''))")
+    check('the page draws the title, the subtitle under it and each author', drawn == ['Main', 'The sub', 'Ann', 'Bob', 'Carl'], drawn)
+    click_text(page, 'Bob', 1); s1 = st_now(page)
+    check('the caret in an author: its style is Author', s1[0] == 'author', s1)
+    run_cmd(page, 'style-normal')
+    check('Normal on the middle author takes it and its \\and out, a paragraph after \\maketitle', '\\author{Ann \\and Carl}' in src(page) and '\\maketitle\n\nBob\n\nBody' in src(page), src(page))
+    click_text(page, 'Main', 1); s2 = st_now(page)
+    check('the title stays while the block has more than it (Normal off, saying why)', s2[0] == 'title' and 'p' not in s2[1], s2)
+    load_doc(page, TDOC('\\title{Main}\n', '\\maketitle\n\nJane\n\nBody words.')); click_text(page, 'Body', 1)
+    run_cmd(page, 'style-title')
+    check('Title where the document has one is refused (its words are edited where it shows)', src(page) == TDOC('\\title{Main}\n', '\\maketitle\n\nJane\n\nBody words.'), src(page))
+    # Rename a style of the document's own
+    R = TDOC('\\newenvironment{aside}{\\par\\itshape}{\\par}\n\\newcommand{\\keyterm}[1]{\\textbf{#1}}\n', '\\begin{aside}\nOne \\keyterm{a}.\n\\end{aside}\n\n% \\begin{aside} stays\n\\begin{aside}\nTwo \\keyterm{b}.\n\\end{aside}')
+    load_doc(page, R); click_text(page, 'One', 1); h0 = page.evaluate('window.rikuy.hist.length')
+    page.evaluate("window.rikuy.openRenameStyle('env:aside')"); page.wait_for_timeout(200)
+    page.wait_for_function('window.rikuy.texNamesState() === "ready"', timeout=10000)
+    dlg = page.get_by_role('dialog', name='Rename Style'); nm = dlg.get_by_role('textbox', name='New name')
+    nm.fill('section'); page.wait_for_timeout(150)
+    check('Rename: a name LaTeX has is refused (OK off, saying why)', dlg.get_by_role('button', name='OK').is_disabled() and 'taken' in dlg.inner_text(), dlg.inner_text())
+    nm.fill('sidenote'); dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    want = R.replace('{aside}', '{sidenote}').replace('% \\begin{sidenote} stays', '% \\begin{aside} stays')
+    check('Rename: the definition and every \\begin and \\end renamed in one step, a comment left as written', src(page) == want and page.evaluate('window.rikuy.hist.length') == h0 + 1, src(page))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('one undo gives every byte back', src(page) == R)
+    run_cmd(page, 'rename-style', {'v': 'char:keyterm', 'name': 'keyword'})
+    check('Rename a character style: \\keyterm everywhere', src(page) == R.replace('\\keyterm', '\\keyword'), src(page))
+    load_doc(page, R); click_text(page, 'One', 1)
+    page.evaluate("window.rikuy.styleMenu('env:aside', 'aside', document.body, 200, 200)"); page.wait_for_timeout(200)
+    names = page.evaluate("[...document.querySelectorAll('.pop-menu [role^=menuitem]')].map((x) => x.getAttribute('aria-label'))")
+    page.keyboard.press('Escape')
+    check('the style\'s menu in the Styles pane has Rename…', 'Rename…' in names, names)
+    # the links' colour with the Design colours (D1)
+    L = TDOC('\\usepackage{hyperref}\n', '\\section{Intro}\\label{s}\nSee \\ref{s} and \\url{https://x.org}.')
+    load_doc(page, L); click_text(page, 'See', 1); h0 = page.evaluate('window.rikuy.hist.length')
+    run_cmd(page, 'design-colors', {'id': 'teal'})
+    t = src(page)
+    check('Colors: the accent, and hyperref\'s links in it (colorlinks, linkcolor, urlcolor, citecolor), one step', '\\definecolor{accent}{HTML}{0E6F70}\n\\hypersetup{colorlinks,linkcolor=accent,urlcolor=accent,citecolor=accent}\n' in t and page.evaluate('window.rikuy.hist.length') == h0 + 1, t[:400])
+    col = page.evaluate("[getComputedStyle(document.querySelector('#pages .a-ref')).color, getComputedStyle(document.querySelector('#pages .a-url')).color]")
+    check('the page draws the reference and the address in it', col == ['rgb(14, 111, 112)', 'rgb(14, 111, 112)'], col)
+    run_cmd(page, 'design-colors', {'id': 'none'})
+    check('Black takes the accent and Rikuy\'s \\hypersetup line away again (xcolor stays, as before)', src(page).replace('\\usepackage{xcolor}\n', '') == L, src(page)[:400])
+    L2 = TDOC('\\usepackage{hyperref}\n\\hypersetup{pdftitle={A, B}}\n', 'See \\url{https://x.org}.')
+    load_doc(page, L2); click_text(page, 'See', 1); run_cmd(page, 'design-colors', {'id': 'red'})
+    t2 = src(page)
+    check('a \\hypersetup of the document\'s own stays as written, Rikuy\'s line after it (review M1)', '\\hypersetup{pdftitle={A, B}}\n' in t2 and t2.find('\\hypersetup{colorlinks,linkcolor=accent,urlcolor=accent,citecolor=accent}\n') > t2.find('\\hypersetup{pdftitle'), t2[:400])
+    load_doc(page, WRAP('Plain.')); click_text(page, 'Plain', 1); run_cmd(page, 'design-colors', {'id': 'red'})
+    check('without hyperref no \\hypersetup is written', 'hypersetup' not in src(page) and 'hyperref' not in src(page), src(page)[:300])
+    load_doc(page, TDOC('\\usepackage[colorlinks,linkcolor=blue]{hyperref}\n', '\\section{A}\\label{a}\nSee \\ref{a}.'))
+    col = page.evaluate("getComputedStyle(document.querySelector('#pages .a-ref')).color")
+    check('hand written colorlinks: the page draws the reference in its linkcolor', col == 'rgb(0, 0, 255)', col)
+    # \paragraph{Lead}, a float, its text: Lead runs into the text, the float drawn before them
+    F = WRAP('\\paragraph{Lead}\n\n\\begin{figure}[h]\n\\centering\n\\fbox{F}\n\\caption{Cap}\n\\end{figure}\n\nRuns in after the float.')
+    load_doc(page, F)
+    g = page.evaluate("""() => { const h = document.querySelector('#pages .it.h.runin'), p = [...document.querySelectorAll('#pages .it.p')].find((x) => x.textContent.includes('Runs in')), f = document.querySelector('#pages .it.flt');
+      if (!h || !p || !f) return null; const hr = h.getBoundingClientRect(), pr = p.getBoundingClientRect(), fr = f.getBoundingClientRect(); return { gap: !!p.querySelector('.runin-gap'), same: Math.abs(hr.top - pr.top) < 3, floatFirst: fr.bottom <= pr.top + 1 }; }""")
+    check('a float between \\paragraph{Lead} and its text: the heading runs into the text, the float drawn before them', g == {'gap': True, 'same': True, 'floatFirst': True}, g)
+
+
+
+def r2_review(page):
+    """The hostile review of R2: each finding's case (H1 to H6, M1, M3, M4), compiled where dist/tex exists"""
+    tex = os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm'))
+    # H1: a float between \paragraph{Lead} and its text: Delete at the heading's end keeps the float,
+    # and a selection from the heading into the text shows the float selected when it holds it
+    F = WRAP('Intro words first.\n\n\\paragraph{Lead}\n\\begin{figure}[t]\n\\centering\nFIGBODY\n\\caption{Cap words}\n\\end{figure}\nText of the paragraph here.\n\nNext para words.')
+    load_doc(page, F); click_text(page, 'Lead', 4); page.keyboard.press('Delete'); page.wait_for_timeout(250)
+    check('H1 Delete at the end of a run in heading over a float leaves the float\'s words', 'FIGBODY' in src(page) and 'Cap words' in src(page), src(page)[60:260])
+    load_doc(page, F); click_text(page, 'Lead', 0)
+    for _ in range(10): page.keyboard.press('Shift+ArrowRight')
+    page.wait_for_timeout(150)
+    sel = page.evaluate("""() => { const c = window.rikuy.caretNow(), t = window.rikuy.src('main.tex'), f = document.querySelector('#pages .it.flt');
+      return { spans: c.a < t.indexOf('FIGBODY') && c.b > t.indexOf('FIGBODY'), shown: getSelection().containsNode(f, true) }; }""")
+    check('H1 a selection that holds the float in the source shows it selected on the page', not sel['spans'] or sel['shown'], sel)
+    g = page.evaluate("""() => { const h = document.querySelector('#pages .it.h.runin'), p = [...document.querySelectorAll('#pages .it.p')].find((x) => x.textContent.includes('Text of')), f = document.querySelector('#pages .it.flt');
+      const order = [...document.querySelectorAll('#pages .it')].map((x) => x === h ? 'h' : x === f ? 'f' : x === p ? 'p' : ''); const hr = h.getBoundingClientRect(), pr = p.getBoundingClientRect();
+      return { dom: order.filter(Boolean).join(''), same: Math.abs(hr.top - pr.top) < 3 }; }""")
+    check('H1 the items keep the source\'s order (heading, float, text); the heading is drawn on its text\'s first line', g == {'dom': 'hfp', 'same': True}, g)
+    # H2: Code is one line that fits; a long verbatim line drawn unbroken, as TeX sets it
+    load_doc(page, WRAP(' '.join(['word'] * 40) + '\n\nAfter.')); click_text(page, 'word', 1)
+    en = page.evaluate("(() => { const g = window.rikuy, c = g.cmds.command('style-verbatim'), at = g.ribbonAt(); return [g.cmds.enabled(g, c, at), c.whyNot(g, at)]; })()")
+    check('H2 Code is off on a paragraph longer than a line of code, saying why', en[0] is False and 'longer than one line' in en[1], en)
+    load_doc(page, WRAP('\\begin{verbatim}\n' + ' '.join(['word'] * 40) + '\n\\end{verbatim}'))
+    pre = page.evaluate("(() => { const p = document.querySelector('#pages .it.verb pre'); return [getComputedStyle(p).whiteSpace, p.getBoundingClientRect().height < 30]; })()")
+    check('H2 a hand written verbatim line runs on unbroken, as TeX prints it', pre == ['pre', True], pre)
+    # H3, M1: the links' line after hyperref; the document's own \hypersetup back whole after Black
+    H3 = TDOC('\\usepackage{xcolor}\n\\definecolor{accent}{HTML}{AA0000}\n\\usepackage{hyperref}\n\\hypersetup{hidelinks}\n', '\\section{A}\\label{a}\nSee \\ref{a}.')
+    load_doc(page, H3); click_text(page, 'See', 1); run_cmd(page, 'design-colors', {'id': 'teal'})
+    t3 = src(page)
+    k3 = t3.find('\\hypersetup{colorlinks,linkcolor=accent,urlcolor=accent,citecolor=accent}\n')
+    check('H3 the links\' line goes after hyperref and the document\'s own \\hypersetup, which stays as written', '\\hypersetup{hidelinks}\n' in t3 and k3 > t3.find('\\hypersetup{hidelinks}') > t3.find('\\usepackage{hyperref}') and k3 < t3.find('\\begin{document}'), t3[:400])
+    if tex:
+        r = pdf_text(page, t3)
+        check('H3 that document compiles in the page, no key list printed', r['ok'] and not r['errors'] and 'colorlinks' not in r['text'], (r['errors'], r['text'][:200]))
+    run_cmd(page, 'design-colors', {'id': 'none'})
+    check('M1 Black gives the document\'s own \\hypersetup{hidelinks} back (only Rikuy\'s line goes)', '\\hypersetup{hidelinks}\n' in src(page) and 'colorlinks' not in src(page), src(page)[:400])
+    # H4: the title in the body before \maketitle is the document's title
+    B4 = TDOC('', '\\title{Real Title}\n\\author{Ann}\n\\maketitle\n\nMy words\n\nText.')
+    load_doc(page, B4); click_text(page, 'My words', 2)
+    st = st_now(page)
+    check('H4 a title in the body: Title is not offered, Author is', 'title' not in st[1] and 'author' in st[1], st)
+    run_cmd(page, 'style-author')
+    check('H4 Author joins the body\'s \\author where it stands', '\\author{Ann \\and My words}\n\\maketitle\n\nText.' in src(page), src(page)[:300])
+    if tex:
+        r = pdf_text(page, src(page))
+        check('H4 and TeX prints it in the title block', r['ok'] and 'My words' in r['text'] and 'Real Title' in r['text'], (r['errors'], r['text'][:200]))
+    # M4: a title set in a file the preamble reads: its parts are refused, with the reason
+    page.evaluate("""async () => { await window.rikuy.api.setFiles ? 0 : 0; }""")
+    page.evaluate("""() => { const g = window.rikuy; g.files.set('preamble.tex', '\\\\title{T from a file}\\n'); }""")
+    load_doc(page, TDOC('\\input{preamble}\n', '\\maketitle\n\nMy words\n\nText.'))
+    page.evaluate("""() => { const g = window.rikuy; if (!g.files.has('preamble.tex')) g.files.set('preamble.tex', '\\\\title{T from a file}\\n'); g.forceRender = true; g.rebuild(); }"""); page.wait_for_timeout(200)
+    click_text(page, 'My words', 2)
+    st = page.evaluate("(() => { const g = window.rikuy, at = g.ribbonAt(), s = g.blockStyle(at); return [[...s.to].sort(), (s.whyTo || {}).title || ''] })()")
+    check('M4 a title in \\input{preamble}: no title part is offered, the reason names the file', not any(x in st[0] for x in ('title', 'author', 'date', 'subtitle')) and 'preamble.tex' in st[1], st)
+    # H5: a command the document only redefines is no style of its own to rename
+    load_doc(page, TDOC('\\renewcommand{\\emph}[1]{\\textbf{#1}}\n\\newcommand{\\keyterm}[1]{\\textbf{#1}}\n', 'An \\emph{a} and \\keyterm{b}.'))
+    can = page.evaluate("[window.rikuy.canRenameStyle('char:emph'), window.rikuy.canRenameStyle('char:keyterm')]")
+    check('H5 Rename is offered for \\newcommand{\\keyterm} and not for \\renewcommand{\\emph}', can == [False, True], can)
+    # H6: a theorem's counter renamed everywhere; compiled
+    R6 = TDOC('\\usepackage{amsmath,amsthm}\n\\newtheorem{claim}{Claim}\n\\numberwithin{equation}{claim}\n\\newtheorem{lemma}{Lemma}[claim]\n\\newcounter{example}\n\\newenvironment{example}{\\refstepcounter{example}\\par Example \\theexample. }{\\par}\n',
+              '\\begin{claim}A claim.\\end{claim}\n\\begin{lemma}A lemma.\\end{lemma}\n\\begin{example}An example.\\end{example}')
+    load_doc(page, R6); page.wait_for_function('true'); click_text(page, 'A claim', 1)
+    page.evaluate("window.rikuy.latexKnows('x')"); page.wait_for_function('window.rikuy.texNamesState() === "ready"', timeout=10000)
+    run_cmd(page, 'rename-style', {'v': 'env:claim', 'name': 'fact'}); run_cmd(page, 'rename-style', {'v': 'env:example', 'name': 'sample'})
+    t6 = src(page)
+    check('H6 Rename reaches \\numberwithin, \\newtheorem[within] and \\newcounter', '{claim}' not in t6 and '[claim]' not in t6 and '\\numberwithin{equation}{fact}' in t6 and '[fact]' in t6 and '\\newcounter{sample}' in t6 and '{example}' not in t6, t6[:500])
+    if tex:
+        r = pdf_text(page, t6)
+        check('H6 the renamed document compiles in the page: Claim 1, Lemma 1.1, Example 1', r['ok'] and not r['errors'] and all(x in r['text'] for x in ('Claim 1', 'Lemma 1.1', 'Example 1')), (r['errors'], r['text'][:300]))
+    load_doc(page, TDOC('\\newenvironment{ta}{\\par}{\\par}\n', '\\begin{ta}x $\\theta$\\end{ta}')); click_text(page, 'x', 0)
+    r = page.evaluate("window.rikuy.renameStyle('env:ta', 'tb')")
+    check('L3 an environment "ta" renamed leaves \\theta as it is (no counter "ta")', r is True and '\\begin{tb}x $\\theta$\\end{tb}' in src(page), src(page)[-80:])
+    # N1: TikZ's \path is no url \path|..|: the command in its nodes is renamed; compiled
+    N1 = TDOC('\\usepackage{tikz}\n\\newcommand{\\lbl}[1]{\\textbf{#1}}\n', '\\begin{tikzpicture}\n\\path (0,0) node {\\lbl{a}} (2,0) node {\\lbl{b}};\n\\path[draw] (0,0) -- (1,1) node[right] {\\lbl{c}} -- (2,0);\n\\end{tikzpicture}\n\\lbl{d}')
+    load_doc(page, N1); click_text(page, 'd', 0)
+    run_cmd(page, 'rename-style', {'v': 'char:lbl', 'name': 'mylabeltag'})
+    check('N1 Rename reaches a command in TikZ \\path nodes', src(page) == N1.replace('\\lbl', '\\mylabeltag'), src(page)[-260:])
+    if tex:
+        r = pdf_text(page, src(page))
+        check('N1 the renamed TikZ document compiles in the page', r['ok'] and not r['errors'] and 'd' in r['text'], (r['errors'], r['text'][:120]))
+    # N2: a theorem environment of the document's own named like hyperref's \theoremautorefname is renamed
+    load_doc(page, TDOC('\\usepackage{amsthm}\n\\usepackage{hyperref}\n\\newtheorem{theorem}{Theorem}\n', '\\begin{theorem}Stated.\\end{theorem}')); click_text(page, 'Stated', 1)
+    run_cmd(page, 'rename-style', {'v': 'env:theorem', 'name': 'mainresult'})
+    check('N2 Rename takes \\newtheorem{theorem} (hyperref\'s \\theoremautorefname is no clash)', '\\newtheorem{mainresult}{Theorem}' in src(page) and '\\begin{mainresult}' in src(page), src(page)[-200:])
+    # N4: the theorem's \autoref name renamed is provided (hyperref defines only the old one); compiled
+    N4 = TDOC('\\usepackage{amsthm}\n\\usepackage{hyperref}\n\\newtheorem{theorem}{Theorem}\n\\renewcommand{\\theoremautorefname}{Thm}\n', '\\begin{theorem}\\label{t}Stated.\\end{theorem} See \\autoref{t}.')
+    load_doc(page, N4); click_text(page, 'Stated', 1)
+    run_cmd(page, 'rename-style', {'v': 'env:theorem', 'name': 'mainresult'})
+    check('N4 \\renewcommand{\\theoremautorefname} becomes \\providecommand{\\mainresultautorefname}', '\\providecommand{\\mainresultautorefname}{Thm}' in src(page), src(page)[:300])
+    if tex:
+        r = pdf_text(page, src(page))
+        check('N4 that document compiles in the page and \\autoref prints Thm 1', r['ok'] and not r['errors'] and 'Thm 1' in r['text'], (r['errors'], r['text'][:200]))
+    # N3: hyperref loaded by a file the preamble reads: the links' line before \begin{document}, after it; compiled
+    page.evaluate("""() => window.rikuy.files.set('preamble.tex', '\\\\usepackage{hyperref}\\n')""")
+    N3 = TDOC('\\usepackage{xcolor}\n\\definecolor{accent}{HTML}{AA0000}\n\\input{preamble}\n', '\\section{A}\\label{a}\nSee \\ref{a}.')
+    load_doc(page, N3)
+    page.evaluate("""() => { const g = window.rikuy; if (!g.files.has('preamble.tex')) g.files.set('preamble.tex', '\\\\usepackage{hyperref}\\n'); g.forceRender = true; g.rebuild(); }"""); page.wait_for_timeout(200)
+    click_text(page, 'See', 1); run_cmd(page, 'design-colors', {'id': 'teal'})
+    t3 = src(page)
+    check('N3 hyperref from \\input{preamble}: the links\' line comes after it, right before \\begin{document}', t3.find('\\hypersetup{colorlinks') > t3.find('\\input{preamble}') and '\\hypersetup{colorlinks,linkcolor=accent,urlcolor=accent,citecolor=accent}\n\\begin{document}' in t3, t3[:400])
+    if tex:
+        r = page.evaluate("""async () => { const r = await window.rikuy.api.compile(); return { ok: r.ok, errs: (r.problems || []).filter((p) => p.severity === 'error').map((p) => p.message).slice(0, 3) }; }""")
+        check('N3 that project compiles in the page', r['ok'] and not r['errs'], r)
+    # M3: a key typed on a selected Code block opens its source and changes nothing
+    C = WRAP('Before words.\n\n\\begin{verbatim}\nint x = 1;\n\\end{verbatim}\n\nAfter words.')
+    load_doc(page, C); press_code(page); page.keyboard.type('Z'); page.wait_for_timeout(300)
+    check('M3 a key typed on a selected Code block opens its source; the block stays', src(page) == C and page.evaluate("!!document.querySelector('.pop-raw')"), src(page)[-120:])
+    page.keyboard.press('Escape')
+
+
+def r2_compile(page):
+    """R2's constructs compiled in the page on pdfLaTeX, XeLaTeX and LuaLaTeX, and what TeX prints"""
+    if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        print('SKIP the compile of R2\'s styles: no TeX tree in %s' % DIST)
+        return
+    doc = TDOC('\\usepackage{xcolor}\n\\usepackage{hyperref}\n\\title{Main\\\\[0.5ex]\\large The subtitle}\n\\author{Ann \\and Bob}\n\\date{May 2026}\n\\definecolor{accent}{HTML}{0E6F70}\n\\hypersetup{colorlinks,linkcolor=accent,urlcolor=accent,citecolor=accent}\n\\newenvironment{sidenote}{\\par\\itshape}{\\par}\n',
+               '\\maketitle\n\\section{Intro}\\label{s}\nSee \\ref{s}.\n\n\\begin{verbatim}\nSome code words here.\n\\end{verbatim}\n\n\\begin{sidenote}\nRenamed.\n\\end{sidenote}\n\n\\paragraph{Lead}\n\n\\begin{figure}[h]\n\\centering\n\\fbox{F}\n\\caption{Cap}\n\\end{figure}\n\nRuns in after the float.')
+    for eng in ('pdflatex', 'xelatex', 'lualatex'):
+        r = pdf_text(page, doc if eng == 'pdflatex' else '% !TeX program = ' + eng + '\n' + doc)
+        t = re.sub(r'[ \t]+', ' ', r['text'])
+        check('R2 %s: subtitle, authors, date, Code, a renamed environment, colour links and a run in heading over a float compile; TeX prints Lead on its paragraph\'s line' % eng,
+              r['ok'] and not r['errors'] and all(x in t for x in ('Main', 'The subtitle', 'Ann', 'Bob', 'May 2026', 'Some code words here.', 'Renamed.')) and re.search(r'Lead\s+Runs in after the float', t), (r['errors'], t[:500]))
+    k = pdf_text(page, TDOC('\\title{Main}\n\\subtitle{Koma sub}\n', '\\maketitle\nText.', 'scrartcl'))
+    check('KOMA-Script\'s \\subtitle compiles and prints under the title', k['ok'] and not k['errors'] and 'Koma sub' in k['text'], (k['errors'], k['text'][:200]))
+
+
+def r2_phone(p):
+    """R2 on a phone, by taps: Code taken off from the style list, a paragraph made Author from it,
+    the Rename Style dialog fitting with 44 px controls; screenshots"""
+    shots = os.environ.get('RIKUY_SHOTS') or '/tmp/R2-shots'
+    os.makedirs(shots, exist_ok=True)
+    for w, h, dark in ((390, 844, False), (360, 740, True)):
+        tag = ' (%dx%d)' % (w, h)
+        browser, page, errors = open_phone(p, w, h, dark)
+        try:
+            D = WRAP('Before.\n\n\\begin{verbatim}\nSome code words here.\n\\end{verbatim}\n\nAfter.')
+            load_doc(page, D); page.locator('#pages .it.verb').first.tap(); page.wait_for_timeout(300)
+            v = page.evaluate("document.querySelector('#rb-style') && document.querySelector('#rb-style').value")
+            page.screenshot(path=os.path.join(shots, 'styles-code-%d-%s.png' % (w, 'dark' if dark else 'light')))
+            page.select_option('#rb-style', 'p'); page.wait_for_timeout(300)
+            check('a tap on a Code block selects it, the style list shows Code, Normal there takes it off' + tag, v == 'verbatim' and body(page) == 'Before.\n\nSome code words here.\n\nAfter.', (v, body(page)))
+            load_doc(page, TDOC('\\title{Main}\n', '\\maketitle\n\nJane Doe\n\nBody words.')); tap_text(page, 'Jane', 1)
+            page.select_option('#rb-style', 'author'); page.wait_for_timeout(300)
+            check('Author from the style list by a tap' + tag, '\\author{Jane Doe}' in src(page), src(page)[:200])
+            load_doc(page, TDOC('\\newenvironment{aside}{\\par\\itshape}{\\par}\n', '\\begin{aside}\nOne.\n\\end{aside}')); tap_text(page, 'One', 1)
+            page.evaluate("window.rikuy.openRenameStyle('env:aside')"); page.wait_for_timeout(300)
+            f = page.evaluate(FITS, '.pop-modstyle'); small = page.evaluate(SMALL, '.pop-modstyle input, .pop-modstyle button')
+            page.screenshot(path=os.path.join(shots, 'styles-rename-%d-%s.png' % (w, 'dark' if dark else 'light')))
+            check('Rename Style fits the screen, its field and buttons 44 px' + tag, f and f['inside'] and not small, (f, small))
+            page.get_by_role('textbox', name='New name').fill('sidenote'); page.get_by_role('button', name='OK').tap(); page.wait_for_timeout(400)
+            check('and renames by a tap on OK' + tag, '\\begin{sidenote}' in src(page) and '{aside}' not in src(page), src(page)[:200])
+            check('no sideways scroll' + tag, page.evaluate('document.documentElement.scrollWidth <= innerWidth'))
+            check('no console errors' + tag, not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:3])
+        except Exception as e:
+            check('R2 phone run%s runs to its end' % tag, False, str(e)[:400])
+        browser.close()
+
 def run():
     with sync_playwright() as p:
-        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all)
+        fns = (styles, gallery, gallery_widths, gallery_paging, gallery_keys, quote_style, headings, numbering, environments, many, autoformat, keys_and_boxes, modify, create_and_update, lazy_names, design, tile_menu, big, review, verify, compile_all, r2, r2_compile, r2_review)
         # (the tests that read the tiles see all six: from 1600 px the gallery has room for them)
         wide = (styles, gallery, gallery_keys, quote_style)
         # (names given on the command line run those alone)
@@ -1094,6 +1367,8 @@ def run():
             phone(p)
         if len(sys.argv) < 2 or 'review_phone' in sys.argv[1:]:
             review_phone(p)
+        if len(sys.argv) < 2 or 'r2_phone' in sys.argv[1:]:
+            r2_phone(p)
         for fn in [f for f in fns if len(sys.argv) < 2 or f.__name__ in sys.argv[1:]]:
             browser, page, errors = open_page(p, width=1920 if fn in wide else 1400)
             try:

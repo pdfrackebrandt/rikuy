@@ -602,6 +602,25 @@ class App {
     this.status(performance.now() - t0);
   }
 
+  // A float between a run in heading and its paragraph (src/model.js runIns, R2): TeX places the
+  // float elsewhere and runs the heading into the paragraph after it. The items stay in the
+  // source's order (the browser's selection, Delete and the caret follow it: a selection from
+  // the heading into the text holds the float, which is drawn between them); the heading, which
+  // takes no height, is drawn over its paragraph's first line, past the float.
+  runInOverFloats(items) {
+    for (let i = 0; i + 2 < items.length; i++) {
+      const h = items[i].el;
+      if (!h || !h.classList.contains('runin')) continue;
+      h.style.transform = '';
+      let j = i + 1;
+      while (j < items.length && items[j].el && items[j].el.classList.contains('flt')) j++;
+      const p = j > i + 1 && j < items.length ? items[j].el : null;
+      if (!p || p.offsetParent !== h.offsetParent || p.offsetParent == null) continue;
+      const dy = p.offsetTop - h.offsetTop;
+      if (dy > 0) h.style.transform = 'translateY(' + dy + 'px)';
+    }
+  }
+
   layoutPass(force) {
     const model = this.model;
     const items = [], fns = [];
@@ -629,6 +648,7 @@ class App {
     this.layout.measure(items, fns);
     const plan = this.layout.plan(items);
     this.layout.apply(plan);
+    this.runInOverFloats(items);
     this.items = items;
     this.plan = plan;
     this.index.dirty = true;
@@ -1009,7 +1029,7 @@ class App {
       // (a step with pictures is a step of its own, never joined to the one before)
       if (this.hist.length) { const t = this.hist[this.hist.length - 1]; t.open = false; t.before = null; }
       this.hist.push(this.rvStep = { kind, files, blobs: swaps, caretBefore: cb, caretAfter: ca, time: Date.now(), open: false, before: null, abs: this.rvAbsorbs(kind) });
-      if (this.hist.length > 400) this.hist.shift();
+      if (this.hist.length > 400 && !this.histHold) this.hist.shift();
       this.redoStack = [];
       this.updateUndoUI();
       return;
@@ -1029,7 +1049,7 @@ class App {
     }
     if (top) { top.open = false; top.before = null; }
     this.hist.push(this.rvStep = { kind, files, caretBefore: cb, caretAfter: ca, time: now, open: true, before, abs: this.rvAbsorbs(kind) });
-    if (this.hist.length > 400) this.hist.shift();
+    if (this.hist.length > 400 && !this.histHold) this.hist.shift();
     this.redoStack = [];
     this.updateUndoUI();
   }
@@ -1276,11 +1296,24 @@ class App {
         return;
       }
     }
+    // (a Code block a press selected, R2: a character typed opens its source, as Enter does; it
+    // replaced the block and its paragraph break before, review M3. A phone's keyboard says no key
+    // here: its text comes as beforeinput, which decides)
+    if (this.armed && this.armed.kind === 'code') {
+      if (e.key === 'Unidentified' || e.key === 'Process') return;
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); this.codeOpen(); return; }
+    }
     if (this.armed && !['Shift', 'Control', 'Meta', 'Alt'].includes(e.key)) this.disarm();
+  }
+  codeOpen() {
+    const el = this.armed && this.armed.el, info = el && atomOfEl(el);
+    this.disarm();
+    if (info) this.openAtom(el, info);
   }
 
   onBeforeInput(e) {
     const t = e.inputType;
+    if (this.armed && this.armed.kind === 'code' && /^insert/.test(t)) { e.preventDefault(); this.codeOpen(); return; }
     if (e.isComposing || t === 'insertCompositionText' || t === 'deleteCompositionText' || t === 'insertFromComposition') return;
     e.preventDefault();
     if (this.composing) return;
@@ -1581,10 +1614,13 @@ class App {
       this.ourSel = true;
       s.removeAllRanges(); s.addRange(r);
     }
+    if (atom.kind === 'code') { this.toast('Code selected: Normal in Styles makes it text again; press it again or Enter to edit its source.', 2400); return; }
     this.toast('Press Backspace again to delete this ' + ({ math: 'equation', cite: 'citation', ref: 'reference', fn: 'footnote', img: 'figure', widget: 'live figure', chip: 'command', raw: 'block' }[atom.kind] || 'item') + (atom.kind === 'br' || atom.kind === 'sp' ? '.' : ', or Enter to edit it.'), 1800);
   }
   disarm() {
     if (this.armed && this.armed.el) this.armed.el.classList.remove('sel');
+    // (what was selected: a second press on a Code block opens its source, src/cmd/styles.js)
+    this.lastArmed = this.armed ? this.armed.el : null;
     this.armed = null;
   }
 
@@ -2183,6 +2219,9 @@ class App {
     if (k === 'en') return this.openEndnote(el, info);
     if (k === 'url') return this.openLinkFor(el, info);
     if (k === 'br' || k === 'sp') { this.arm({ f: info.f, s: info.s, e: info.e, el, kind: k }); return; }
+    // a Code block (verbatim, R2): a press selects it, so the Styles show Code and Normal takes it
+    // off; a second press, Enter or a double click opens its source
+    if (k === 'raw' && info.a.name === 'verbatim' && this.lastArmed !== el) { this.arm({ f: info.f, s: info.s, e: info.e, el, kind: 'code' }); this.ribbonSync(); return; }
     return this.openRaw(el, info);
   }
 

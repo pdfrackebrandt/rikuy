@@ -9,7 +9,8 @@
 import { register, command, onInsertText, onInstall } from '../commands.js';
 import { $ } from '../ui/dom.js';
 import { BLOCKS } from '../render.js';
-import { NOT_PLAIN, latexSpot, restyle, startsLine, headLevels, isHeading, ENV_STYLES, THM_STYLES, isEnvStyle, envOf, quoteWords, thmLine, starEdits, applyEdits, numberingEdits, charStyleBody, formatOnlyBegin, thmDefsIn, eolAt } from '../styles.js';
+import { NOT_PLAIN, latexSpot, restyle, startsLine, headLevels, isHeading, ENV_STYLES, THM_STYLES, isEnvStyle, envOf, quoteWords, thmLine, starEdits, applyEdits, numberingEdits, charStyleBody, formatOnlyBegin, thmDefsIn, eolAt, codeSafe, codeBlock, codeText, titleInfo, titlePartAt, titlePartEdits, titleNormalEdits, renameEdits, createsOwn, verbatimRuns, makesCounter } from '../styles.js';
+import { escapeTeX } from '../editor.js';
 import { defines, packageLine, packageOptions, preambleEnd, stripComments } from '../preamble.js';
 import { wrapBlockEdits } from '../blockenv.js';
 import { diffEdit } from '../wrap.js';
@@ -44,7 +45,11 @@ const NO_ABSTRACT = /^(book|scrbook|beamer|letter|scrlttr2|moderncv|exam)$/;
 const OWN_THMS = /^(llncs|svjour\d*|svmult|svmono)$/;
 
 // the caret's block's style, once for each look at the ribbon
-const styleOf = (app, at) => { if (!at) return null; const m = at.memo || (at.memo = {}); if (!('style' in m)) m.style = app.blockStyle(at); return m.style; };
+const styleOf = (app, at) => { if (app.codeArmed && app.codeArmed()) return app.blockStyle(at); if (!at) return null; const m = at.memo || (at.memo = {}); if (!('style' in m)) m.style = app.blockStyle(at); return m.style; };
+// (R2) TeX's and LaTeX's kernel commands an \end form could take with it
+const END_KERNEL = new Set(['endinput', 'endgroup', 'endcsname', 'endlinechar', 'endgraf', 'endtrivlist', 'endlist', 'endtabular', 'endarray', 'enddocument']);
+// (R2) the parts of the title block as styles, and their names
+const TITLE_PARTS = { subtitle: 'Subtitle', author: 'Author', date: 'Date' };
 // the style a command stands for in this document: Heading 2 is \subsection in an article and \section in a report
 const target = (app, v) => (typeof v === 'function' ? v(app) : v);
 const level = (k) => (app) => app.styleCatalog().levels[k - 1] || null;
@@ -82,6 +87,14 @@ register(
   envStyle('quotation', 'Quotation', { synonyms: ['Intense Quote', 'quotation'] }),
   envStyle('verse', 'Verse', { synonyms: ['Poem', 'verse'] }),
   envStyle('abstract', 'Abstract', { synonyms: ['Summary', 'abstract'] }),
+  // (R2) Code: the paragraph in verbatim, printed exactly as typed; a Code block is selected by a
+  // press (src/app.js openAtom) and Normal takes it off again
+  envStyle('verbatim', 'Code', { title: 'Code: the paragraph in \\begin{verbatim}, printed exactly as typed, in a typewriter font; a press on a Code block selects it, and Normal makes it text again', synonyms: ['verbatim', 'Code block', 'Source code', 'Monospace paragraph', 'HTML Code'] }),
+  // (R2) the title block as styles: a paragraph of the body made the title's Subtitle, Author or
+  // Date (\subtitle or \title{..\\[0.5ex]\large ..}, \author, \date); Normal on one makes it a paragraph again
+  style('style-subtitle', 'subtitle', 'Subtitle', null, { title: 'Subtitle: the paragraph under the title (KOMA-Script\'s \\subtitle, or \\title{Main\\\\[0.5ex]\\large Sub})', synonyms: ['subtitle', 'Sub title'] }),
+  style('style-author', 'author', 'Author', null, { title: 'Author: the paragraph one of the title\'s authors (\\author, joined by \\and)', synonyms: ['author', 'Byline', 'Authors'] }),
+  style('style-date', 'date', 'Date', null, { title: 'Date: the paragraph the title\'s date (\\date)', synonyms: ['date', 'Title date'] }),
   // (named apart from the insert list's Theorem, which inserts an empty one)
   ...Object.entries(THM_STYLES).map(([v, t]) => envStyle(v, t.name + ' style', { id: 'style-thm-' + v, title: t.name + ' style: the paragraph in \\begin{' + v + '}' + (v === 'proof' ? ' (amsthm loaded once)' : ', with its \\newtheorem written once where the preamble has none'), synonyms: [v, 'LaTeX environment'] })),
   { id: 'styles-prev', name: 'Previous styles', resync: false, el: 'rb-st-up', static: true, fit: true, only: 'wide', tab: 'home', group: 'styles', searchable: false, when: () => true, run: (app) => app.pageGallery(-1) },
@@ -108,6 +121,11 @@ register(
     whyNot: (app, at) => { const st = styleOf(app, at); return st ? app.modifyWhy(st.v) : WHY.none; }, run: (app, args, at) => app.openModifyStyle(args && args.v ? args.v : (styleOf(app, at) || {}).v) },
   { id: 'create-style', name: 'Create a Style', title: 'Create a Style: a character style (\\newcommand{\\name}[1]{…}) or a paragraph style (\\newenvironment), from the formatting at the caret, written once in the preamble',
     synonyms: ['New Style', 'New style', 'newcommand', 'newenvironment'], when: (app) => app.stylePreEnd() >= 0, whyNot: () => 'The main file has no preamble to define it in.', run: (app) => app.openCreateStyle() },
+  // (R2) Rename: a style of the document's own, its definition and every use renamed (H74)
+  { id: 'rename-style', name: 'Rename Style', title: 'Rename Style: a style of this document\'s own (its \\newcommand or \\newenvironment), its definition and every use of it in the project renamed', synonyms: ['Rename', 'Rename a style', 'Rename environment', 'Rename command'],
+    // (with { v } it names the style itself, wherever the caret is: the pane's menu and agents)
+    when: (app) => !!app.model, whyNot: () => 'Put the caret in a style of this document\'s own (one it defines), or use Rename… in the Styles pane.',
+    run: (app, args, at) => { const v = args && args.v ? args.v : (styleOf(app, at) || {}).v; return args && args.name ? app.renameStyle(v, args.name) : app.openRenameStyle(v); } },
   { id: 'update-style', name: 'Update Style to Match Selection', title: 'Update to Match Selection: the formatting on the caret\'s heading (\\textsf{…}, \\textcolor{…}{…}) becomes its level\'s look, and comes off the heading',
     synonyms: ['Update to Match', 'Match Selection'], menu: { heading: 73 }, when: (app, at) => { const st = styleOf(app, at); return !!st && app.canUpdateStyle(st.v); },
     whyNot: () => 'Put the caret in a heading whose words all have the formatting to take (\\textsf{…}, \\textcolor{…}{…}).', run: (app, args, at) => app.updateStyle(args && args.v ? args.v : (styleOf(app, at) || {}).v) },
@@ -231,7 +249,8 @@ export const methods = {
     all.push({ v: 'p', name: 'Normal', group: 'para', slot: 'p' }, { v: 'title', name: 'Title', group: 'para', slot: 'title' });
     levels.forEach((c, k) => all.push({ v: c, name: 'Heading ' + (k + 1), group: 'para', slot: 'h' + (k + 1) }));
     all.push({ v: 'part', name: 'Part', group: 'para', slot: null }, { v: 'latex', name: 'LaTeX source', group: 'para', slot: 'latex' });
-    for (const [v, name] of Object.entries(ENV_STYLES)) if (v !== 'verbatim' && (v !== 'abstract' || !NO_ABSTRACT.test(cls))) all.push({ v, name, group: 'para', slot: v === 'quote' ? 'quote' : null });
+    for (const [v, name] of Object.entries(TITLE_PARTS)) all.push({ v, name, group: 'para', slot: null });
+    for (const [v, name] of Object.entries(ENV_STYLES)) if (v !== 'abstract' || !NO_ABSTRACT.test(cls)) all.push({ v, name, group: 'para', slot: v === 'quote' ? 'quote' : null });
     for (const [v, t] of Object.entries(THM_STYLES)) if (v !== 'proof' || !this.noProof()) all.push({ v, name: t.name, group: 'env', slot: null });
     const chars = [];
     if (M) {
@@ -264,12 +283,88 @@ export const methods = {
   // a figure); to, the styles the ribbon may change it to; b, where its words are for restyle
   // (src/styles.js). A selection over several paragraphs: many, each block's own.
   blockStyle(at) {
+    // (R2) a Code block selected by a press: Code, and Normal to take it off
+    if (this.codeArmed()) return this.codeStyle();
+    if (!at) return { v: '', to: new Set() };
+    const st = this.blockStyleOf(at);
+    return this.styleR2(at, st);
+  },
+  // the styles R2 adds where they can go: Code on words verbatim prints as they are, Title,
+  // Subtitle, Author and Date on a paragraph of plain words of the main file's body; the title
+  // block's parts as their styles
+  styleR2(at, st) {
+    if (at.ctx === 'ttl' || (at.it && at.it.dataset.ctx === 'ttl')) return this.titlePartStyle(at) || st;
+    if (!st || !st.to) return st;
+    const why = {};
+    if (st.to.has('verbatim')) {
+      // (one line of words verbatim prints as the paragraph does, no longer than a line of the
+      // text in the typewriter font: TeX never breaks a verbatim line, review H2)
+      const cols = this.codeCols(), words = !st.many && st.b ? this.src(at.B ? at.B.f : this.main).slice(st.b.ws, st.b.we) : '';
+      const ok = !st.many && !!st.b && codeSafe(words, cols);
+      if (!ok) {
+        st = { ...st, to: new Set([...st.to].filter((x) => x !== 'verbatim')) };
+        why.verbatim = !st.many && codeSafe(words) ? 'Not here: this paragraph is longer than one line of code (' + cols + ' characters), and TeX never breaks a verbatim line: it would run off the page.'
+          : 'Not here: Code prints one line of words exactly as typed, and this paragraph has more lines or LaTeX in it (a command, braces, $, %, < > |, a dash or quotes) that it would print otherwise.';
+      }
+    }
+    if (st.v === 'p' && st.b && !st.many && at.B && at.B.f === this.main && !at.c.ghost && [...st.to].some(isHeading)) {
+      const T = this.titleNow(), away = this.titleAway();
+      if (away) for (const k of ['title', ...Object.keys(TITLE_PARTS)]) why[k] = 'The title is set in ' + away + ': its parts are edited there.';
+      else if (T) {
+        const add = [];
+        if (!T.title) add.push('title'); else if (T.make) { if (!T.subtitle) add.push('subtitle'); add.push('author'); if (!T.date || !this.src(this.main).slice(T.date.is, T.date.ie).trim()) add.push('date'); }
+        if (add.length) st = { ...st, to: new Set([...st.to, ...add]) };
+        if (T.title) why.title = 'This document has a title: its words are edited where it shows, above the text.';
+        else for (const k of Object.keys(TITLE_PARTS)) why[k] = 'Give the document a title first (Title on its first paragraph).';
+      }
+    }
+    return Object.keys(why).length ? { ...st, whyTo: why } : st;
+  },
+  // how many typewriter characters a line of the text holds (cmtt's are .525em wide)
+  codeCols() {
+    const g = this.layout && this.layout.g, pt = (g && g.pt) || (this.model && this.model.opts.pt) || 10, tw = (g && g.tw) || 345, cols = (g && g.cols) || 1;
+    const w = cols > 1 ? (tw - (g.colsep || 10) * (cols - 1)) / cols : tw;
+    return Math.max(10, Math.floor(w / (0.525 * pt)));
+  },
+  // the title block's set up in the main file, once for each text
+  titleNow() {
+    const src = this.src(this.main);
+    if (!this.stTitle || this.stTitle.src !== src) this.stTitle = { src, T: titleInfo(src) };
+    return this.stTitle.T;
+  },
+  // a file of the preamble that sets a part of the title (\input{preamble}, a .sty): its name, or
+  // null (review M4), once for each set of texts
+  titleAway() {
+    if (this.stAway && this.stAway.M === this.model) return this.stAway.v;
+    const others = this.preambleOthers();
+    let v = null;
+    for (const t of others) { const k = this.files ? [...this.files].find(([, x]) => x === t) : null; if (/\\(?:title|subtitle|author|date)\s*[[{]/.test(stripComments(t.slice(0, 200000)))) { v = k ? k[0] : 'a file the preamble reads'; break; } }
+    this.stAway = { M: this.model, v };
+    return v;
+  },
+  // the caret in the title block: the part it is in as its style; Normal makes it a paragraph
+  titlePartStyle(at) {
+    const T = this.titleNow(), c = at.c, away = this.titleAway();
+    if (away) return { v: 'title', to: new Set(), why: 'The title is set in ' + away + ': its parts are edited there.' };
+    if (!T || c.ghost || c.f !== this.main) return { v: 'title', to: new Set(), why: WHY.title };
+    const P = titlePartAt(T, c.a);
+    if (!P) return { v: 'title', to: new Set(), why: WHY.title };
+    const r = titleNormalEdits(this.src(this.main), c.a);
+    return { v: P.part, to: new Set(r.why ? [] : ['p']), why: r.why || null, titlePart: P, whyTo: r.why ? { p: r.why } : null };
+  },
+  // a Code block a press selected (src/app.js openAtom), still on the page
+  codeArmed() { return !!(this.armed && this.armed.kind === 'code' && this.armed.el && this.armed.el.isConnected); },
+  codeStyle() {
+    const A = this.armed, b = codeBlock(this.src(A.f), A.s, A.e);
+    return b ? { v: 'verbatim', to: new Set(['p']), b, code: true } : { v: 'verbatim', to: new Set() };
+  },
+  blockStyleOf(at) {
     const { c, it, B } = at, none = new Set();
     if (c.ghost) {
       // a line to come in a LaTeX paragraph keeps its paragraph's style
       if (this.ghost.tex) return { v: 'latex', to: none, why: WHY.line };
       const K = this.styleCatalog();
-      return { v: this.ghost.style || 'p', to: new Set(['p', ...K.levels, 'part', 'latex', ...K.all.filter((x) => isEnvStyle(x.v)).map((x) => x.v)]) };
+      return { v: this.ghost.style || 'p', to: new Set(['p', ...K.levels, 'part', 'latex', ...K.all.filter((x) => isEnvStyle(x.v) && x.v !== 'verbatim').map((x) => x.v)]) };
     }
     if (!it || !B) return { v: '', to: none };
     if (at.multi) return this.manyStyle(at);
@@ -380,10 +475,14 @@ export const methods = {
   // document) set to LaTeX or an environment shows so, and the mark or the environment goes in
   // with its first character.
   setBlockStyle(to) {
+    if (this.codeArmed()) return this.codeOff(to);
     const at = this.ribbonAt();
     if (!at) return;
     const { c } = at, cur = this.blockStyle(at);
     if (cur.v === to || !cur.to.has(to)) return;
+    // (R2) a part of the title block made a paragraph again; a paragraph made a part of it
+    if (cur.titlePart) return this.titleStyleSet(titleNormalEdits(this.src(this.main), c.a));
+    if (to === 'title' || TITLE_PARTS[to]) return this.titleStyleSet(titlePartEdits(this.src(this.main), cur.b, to, { koma: !!(this.model && this.model.opts.koma) }));
     this.closeGroup();
     if (c.ghost) {
       const g = this.ghost, needs = this.styleNeeds(to);
@@ -407,6 +506,73 @@ export const methods = {
     const needs = this.styleNeeds(to), grow = needs.filter((x) => x.f === f && x.s <= cur.b.s).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
     this.commit([...needs, ...r.edits.map((x) => ({ f, ...x }))], { f, p: r.p + grow, bias: -1 }, 'block');
     this.closeGroup();
+  },
+  // (R2) a Code block to Normal: its lines out of verbatim, LaTeX's specials in them escaped as
+  // typing escapes them (Rikuy's own Code has none: the bytes of before)
+  codeOff(to) {
+    const st = this.codeStyle();
+    if (!st.to.has(to) || !st.b) return;
+    const A = this.armed, f = A.f, src = this.src(f), b = st.b;
+    const r = restyle(src, b, to, b.ws);
+    if (!r) return;
+    const words = src.slice(b.ws, b.we), t = codeText(words, (x) => escapeTeX(x, ' ')), edits = [...r.edits];
+    if (t !== words) edits.push({ s: b.ws, e: b.we, t });
+    this.disarm();
+    this.closeGroup();
+    this.commit(edits.map((x) => ({ f, ...x })), { f, p: r.p, bias: -1 }, 'block');
+    this.closeGroup();
+  },
+  titleStyleSet(r) {
+    if (!r || r.why) { if (r && r.why) this.toast(r.why); return; }
+    this.closeGroup();
+    this.commit(r.edits.map((x) => ({ f: this.main, ...x })), { f: this.main, p: r.p, bias: 1 }, 'block');
+    this.closeGroup();
+  },
+  // (R2) Rename a style of the document's own: 'env:name' or 'char:name' (or a character style's
+  // name), the new name checked as Create a Style checks one
+  canRenameStyle(v) { return !!this.ownStyleOf(v); },
+  // (one the project makes itself, \newcommand or \newenvironment and their kin; one it only
+  // redefines, \renewcommand{\emph}, is LaTeX's and keeps its name: review H5)
+  ownStyleOf(v) {
+    const M = this.model;
+    if (!M || typeof v !== 'string') return null;
+    let S = null;
+    // (a theorem environment the document makes with a built in name, \newtheorem{theorem}: its own too)
+    if (/^env:/.test(v) || THM_STYLES[v]) { const n = v.replace(/^env:/, ''); if (M.thms.has(n) || M.envDefs.has(n)) S = { kind: 'env', name: n }; }
+    else { const n = v.replace(/^char:/, ''); if (/^char:/.test(v) && M.textMacros.has(n)) S = { kind: 'cmd', name: n }; }
+    if (!S) return null;
+    const memo = this.stOwn && this.stOwn.M === M ? this.stOwn.map : (this.stOwn = { M, map: new Map() }).map;
+    const key = S.kind + ':' + S.name;
+    if (!memo.has(key)) memo.set(key, [this.src(this.main), ...this.preambleOthers()].some((t) => createsOwn(t, S.name, S.kind)));
+    return memo.get(key) ? S : null;
+  },
+  renameStyle(v, neu) {
+    const S = this.ownStyleOf(v);
+    neu = String(neu || '').trim();
+    if (!S) { this.toast('Only a style this document defines itself can be renamed.'); return false; }
+    if (!/^[A-Za-z]{2,40}$/.test(neu)) { this.toast('Letters only, two or more (LaTeX\'s names have no digits or spaces).'); return false; }
+    if (neu === S.name) return true;
+    const taken = this.nameTaken(neu);
+    if (taken) { this.toast((S.kind === 'cmd' ? '\\' : '') + neu + ' is taken: LaTeX, a package or this document has a command or an environment of that name.'); return false; }
+    if (taken == null) { this.toast('Still fetching the names LaTeX and its packages define, to check ' + neu + ' against them: again in a moment.'); return false; }
+    // (an environment whose \end form is TeX's own is no style to rename: "input" would take
+    // \endinput; \theold and the like go only where the environment has that counter: review L3, N2)
+    if (S.kind === 'env' && END_KERNEL.has('end' + S.name)) { this.toast('\\end' + S.name + ' is TeX\'s own: rename ' + S.name + ' in the source.', 6000); return false; }
+    // (.bib files too for a command: a title may use it, review H6)
+    const files = [...this.files].filter(([f, t]) => typeof t === 'string' && (/\.(tex|sty|ltx)$/i.test(f) || (S.kind === 'cmd' && /\.bib$/i.test(f))));
+    const runs = files.find(([, t]) => verbatimRuns(t, S.name));
+    if (runs) { this.toast(runs[0] + ' has a Verbatim block with commandchars that runs \\' + S.name + ': rename it in the source.', 6000); return false; }
+    const edits = [];
+    const counter = S.kind === 'env' && files.some(([, t]) => makesCounter(t, S.name));
+    for (const [f, t] of files) for (const x of renameEdits(t, S.name, neu, S.kind, { counter })) edits.push({ f, ...x });
+    if (!edits.length) return false;
+    const c = this.caretNow(), mine = c && !c.ghost ? edits.filter((x) => x.f === c.f) : [];
+    const map = (p) => { let d = 0; for (const x of mine) if (x.e <= p) d += x.t.length - (x.e - x.s); return p + d; };
+    this.closeGroup();
+    this.commit(edits, c && !c.ghost ? (c.collapsed ? { f: c.f, p: map(c.a), bias: -1 } : { f: c.f, selA: map(c.a), selB: map(c.b) }) : null, 'format');
+    this.closeGroup();
+    this.toast('Renamed ' + (S.kind === 'cmd' ? '\\' : '') + S.name + ' to ' + (S.kind === 'cmd' ? '\\' : '') + neu + ' in ' + edits.length + ' place' + (edits.length === 1 ? '' : 's') + '.');
+    return true;
   },
   setManyStyle(cur, to, c) {
     const list = cur.many, f0 = list[0].B.f;

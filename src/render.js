@@ -105,6 +105,9 @@ export class Renderer {
 
   // Sync with a new model: reuse unchanged blocks, render new ones.
   sync(model, prefix) {
+    // (R2, D1) hyperref's colorlinks: the colours links, citations and addresses print in
+    const L = model.opts.links, R = this.app && this.app.root;
+    if (R) { R.classList.toggle('colorlinks', !!L); for (const k of ['link', 'cite', 'url']) R.style.setProperty('--lk-' + k, (L && L[k]) || 'inherit'); }
     const pool = new Map();
     for (const b of this.blocks) {
       if (!pool.has(b.key)) pool.set(b.key, []);
@@ -233,9 +236,12 @@ export class Renderer {
         el.dataset.ctx = it.ctx || 'p';
         if (it.depth) el.style.setProperty('--depth', it.depth);
         if (it.depth) el.classList.add('deep');
+        // (a list's own indents, enumitem's: the text's margin and the label's box, in em; R2)
+        if (it.lmPad != null) el.style.paddingInlineStart = it.lmPad + 'em';
         if (it.label) {
           const lab = document.createElement('span');
           lab.className = 'lbl lbl-' + (it.labelKind || 'item');
+          if (it.lm) { lab.style.insetInlineStart = it.lm.lab + 'em'; lab.style.width = (it.lm.w + it.lm.sep) + 'em'; lab.style.paddingInlineEnd = it.lm.sep + 'em'; }
           this.inl(it.label, lab);
           // description labels are editable inline text
           if (it.labelKind === 'desc') { lab.removeAttribute('contenteditable'); lab.className = 'dlbl'; }
@@ -313,6 +319,7 @@ export class Renderer {
         const t = div('ttl-t'); this.inl(it.title, t); el.appendChild(t);
         t.setAttribute('role', 'heading');
         t.setAttribute('aria-level', '1');
+        if (it.subtitle) { const st = div('ttl-s'); this.inl(it.subtitle, st); el.appendChild(st); }
         const a = div('ttl-a');
         for (const au of it.authors) { const s = document.createElement('span'); s.className = 'ttl-au'; this.inl(au, s); a.appendChild(s); }
         el.appendChild(a);
@@ -376,6 +383,8 @@ export class Renderer {
         pre.textContent = it.text;
         el.appendChild(pre);
         if (it.verb) el.classList.add('verb');
+        // (LaTeX's verbatim never breaks a line: drawn so, R2)
+        if (/^verbatim\*?$/.test(it.name || '')) el.classList.add('verbatim-env');
         const idx = B.atoms.length;
         B.atoms.push({ kind: 'raw', f: it.f, s: this.rel(it.s), e: this.rel(it.e), is: this.rel(it.is), ie: this.rel(it.ie), name: it.name });
         el.dataset.a = B.id + '.' + idx;

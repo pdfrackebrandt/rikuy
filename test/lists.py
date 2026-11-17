@@ -629,17 +629,193 @@ def pdf_check(page):
     page.set_default_timeout(30000)
 
 
+# ---- round 3's R2: picture bullets, Adjust List Indents ------------------------------------------------
+def png_file(path, rgb=(200, 30, 60)):
+    """A small PNG written here (8 by 8 of one colour), so the checks need no picture of their own"""
+    import zlib, struct
+    raw = b''.join(b'\x00' + bytes(rgb) * 8 for _ in range(8))
+    chunk = lambda t, d: struct.pack('>I', len(d)) + t + d + struct.pack('>I', zlib.crc32(t + d) & 0xffffffff)
+    with open(path, 'wb') as f:
+        f.write(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 8, 8, 8, 2, 0, 0, 0)) + chunk(b'IDAT', zlib.compress(raw)) + chunk(b'IEND', b''))
+    return path
+
+
+def put_picture(page, name):
+    """A picture of the project (as one opened with it), for the picture bullet to use"""
+    page.evaluate("""async (n) => { const c = document.createElement('canvas'); c.width = c.height = 8; const g = c.getContext('2d'); g.fillStyle = '#c81e3c'; g.fillRect(0, 0, 8, 8);
+      const b = await new Promise((r) => c.toBlob(r, 'image/png')); window.rikuy.addAsset(n, b); window.rikuy.forceRender = true; window.rikuy.rebuild(); }""", name)
+    page.wait_for_timeout(200)
+
+
+B3 = '\\begin{itemize}\n  \\item One\n  \\item Two\n\\end{itemize}'
+PIC = '\\begin{itemize}[label={\\includegraphics[height=1.6ex]{figures/dot.png}}]\n  \\item One\n  \\item Two\n\\end{itemize}'
+
+
+def r2(page):
+    """Define New Bullet › Picture (a picture of the project, or one from a file, in the same step)
+    and Adjust List Indents (enumitem's leftmargin, labelwidth, labelsep), each by the round trip
+    rule, drawn as TeX sets them"""
+    D = WRAP(B3)
+    load_doc(page, D); put_picture(page, 'figures/dot.png')
+    pic = lambda pg: pg.evaluate("window.rikuy.runCommand('bullet-picture', { file: 'figures/dot.png' })")
+    own = lambda pg: pg.evaluate("window.rikuy.listLabel('itemize', null)")
+    want = WRAP(PIC, '\\usepackage{enumitem}\n\\usepackage{graphicx}\n')
+    load_doc(page, D); put_picture(page, 'figures/dot.png'); click_text(page, 'Two', 1); h0 = hist(page)
+    pic(page); page.wait_for_timeout(250)
+    check('Picture Bullet: \\includegraphics[height=1.6ex] as enumitem\'s label, braced, enumitem and graphicx once, one step', src(page) == want and hist(page) == h0 + 1, src(page))
+    drawn = page.evaluate("[...document.querySelectorAll('#pages .lbl')].map((l) => { const i = l.querySelector('img'); return i ? [i.src.slice(0, 5), Math.round(i.getBoundingClientRect().height)] : l.textContent; })")
+    fs = page.evaluate("parseFloat(getComputedStyle(document.querySelector('#pages .it.p')).fontSize)")
+    check('the page draws the picture as each item\'s bullet, a capital letter high', len(drawn) == 2 and all(isinstance(x, list) and x[0] == 'blob:' and 0.5 * fs <= x[1] <= 1.1 * fs for x in drawn), (drawn, fs))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('one undo gives the source back byte for byte', src(page) == D)
+    load_doc(page, want); put_picture(page, 'figures/dot.png'); click_text(page, 'Two', 1); own(page); page.wait_for_timeout(200)
+    check('LaTeX\'s own bullet again takes exactly the label off', src(page) == WRAP(B3, '\\usepackage{enumitem}\n\\usepackage{graphicx}\n'), src(page))
+    # the dialog: a picture of the project, and one from a file going into the project in the same step
+    load_doc(page, D); put_picture(page, 'figures/dot.png'); click_text(page, 'Two', 1)
+    run(page, 'bullet-define'); page.get_by_role('button', name='Picture…').click(); page.wait_for_timeout(250)
+    dlg = page.get_by_role('dialog', name='Picture Bullet')
+    dlg.get_by_role('radio', name='figures/dot.png').click(); dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    check('Define New Bullet › Picture…: the project\'s picture picked and OK', src(page) == want, src(page))
+    load_doc(page, D); click_text(page, 'Two', 1); h0 = hist(page)
+    run(page, 'bullet-picture'); page.wait_for_timeout(200)
+    dlg = page.get_by_role('dialog', name='Picture Bullet')
+    dlg.locator('input[type=file]').set_input_files(png_file('/tmp/r2 red dot!.png')); page.wait_for_timeout(300)
+    picked = dlg.get_by_role('radio', name='figures/r2-red-dot.png').get_attribute('aria-checked')
+    dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(400)
+    has = page.evaluate("window.rikuy.assetBlobs.has('figures/r2-red-dot.png')")
+    check('a picture from a file: a name TeX takes, picked, put in the project with the label in one step', picked == 'true' and has and 'label={\\includegraphics[height=1.6ex]{figures/r2-red-dot.png}}' in src(page) and hist(page) == h0 + 1, (picked, has, src(page)[-200:]))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(250)
+    check('and one undo takes both out again', src(page) == D and not page.evaluate("window.rikuy.assetBlobs.has('figures/r2-red-dot.png')"))
+    r = page.evaluate("window.rikuy.runCommand('bullet-picture', { file: '../x}.png' })")
+    check('a picture name TeX would not take is refused, nothing written', r is False and src(page) == D)
+    load_doc(page, '\\documentclass{beamer}\n\\begin{document}\n\\begin{frame}\n' + B3 + '\n\\end{frame}\n\\end{document}\n'); click_text(page, 'Two', 1)
+    st = state(page, 'bullet-picture')
+    check('in beamer it is off, saying why', st[0] is False and 'Beamer' in st[2], st)
+
+    # Adjust List Indents, by the round trip rule
+    ind = lambda pg: pg.evaluate("window.rikuy.runCommand('list-indents', { leftmargin: '1.5cm', labelwidth: '1cm', labelsep: '0.25cm' })")
+    ind.__name__ = 'Adjust List Indents'
+    off = lambda pg: pg.evaluate("window.rikuy.runCommand('list-indents', { leftmargin: null, labelwidth: null, labelsep: null })")
+    E = WRAP(B3.replace('\\begin{itemize}', '\\begin{itemize}[leftmargin=1.5cm,labelwidth=1cm,labelsep=0.25cm]'), '\\usepackage{enumitem}\n')
+    roundtrip(page, WRAP(B3, '\\usepackage{enumitem}\n'), ('Two', 1), ind, E, forms=(E.replace('leftmargin=1.5cm,labelwidth=1cm,labelsep=0.25cm', 'labelsep=0.25cm, leftmargin=1.5cm , labelwidth=1cm'),), off_command=off)
+    load_doc(page, E); click_text(page, 'Two', 1)
+    geo = page.evaluate("""() => { const p = [...document.querySelectorAll('#pages .it.p')].find((x) => x.textContent.includes('Two')); const l = p.querySelector('.lbl'); const fs = parseFloat(getComputedStyle(p).fontSize);
+      const pr = p.getBoundingClientRect(), lr = l.getBoundingClientRect(), pad = parseFloat(getComputedStyle(p).paddingLeft); return { pad: pad / fs, labRight: (lr.right - pr.left) / fs - parseFloat(getComputedStyle(l).paddingRight) / fs, w: lr.width / fs }; }""")
+    # (1.5cm is 4.2675em at 10pt; the label's box ends labelsep, 0.25cm, before the text)
+    check('the page draws the text at the margin and the label\'s box labelsep before it', abs(geo['pad'] - 4.2675) < 0.05 and abs(geo['labRight'] - (4.2675 - 0.71125)) < 0.05 and abs(geo['w'] - (2.845 + 0.71125)) < 0.05, geo)
+    # the dialog
+    load_doc(page, WRAP(B3, '\\usepackage{enumitem}\n')); click_text(page, 'Two', 1)
+    run(page, 'list-indents'); page.wait_for_timeout(200)
+    dlg = page.get_by_role('dialog', name='Adjust List Indents')
+    vals = [dlg.get_by_role('spinbutton', name=n).input_value() for n in ('Text indent', 'Label width', 'Space after label')]
+    check('Adjust List Indents shows LaTeX\'s own at the level: 2.5em, 2em, 0.5em', vals == ['2.5', '2', '0.5'], vals)
+    f = dlg.get_by_role('spinbutton', name='Text indent'); f.fill('3'); f.press('Tab')
+    dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    check('OK after a change writes the three, so TeX and the page put the label where the dialog says', '\\begin{itemize}[leftmargin=3em,labelwidth=2em,labelsep=0.5em]' in src(page), src(page))
+    run(page, 'list-indents'); page.wait_for_timeout(200)
+    dlg = page.get_by_role('dialog', name='Adjust List Indents')
+    dlg.get_by_role('button', name='LaTeX\'s own').click(); dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    check('LaTeX\'s own there takes them away again', src(page) == WRAP(B3, '\\usepackage{enumitem}\n'), src(page))
+    load_doc(page, WRAP('\\begin{enumerate}[(a)]\n  \\item One\n\\end{enumerate}', '\\usepackage{enumerate}\n')); click_text(page, 'One', 1)
+    st = state(page, 'list-indents')
+    check('beside the enumerate package it is off, saying why (enumitem would break its lists)', st[0] is False and 'enumerate package' in st[2], st)
+    # the right click menu and the libraries have both
+    load_doc(page, D); click_text(page, 'Two', 1)
+    page.click('#rb-ul-x'); page.wait_for_timeout(200)
+    names = page.evaluate("[...document.querySelectorAll('.pop-menu [role^=menuitem]')].map((x) => x.getAttribute('aria-label'))")
+    page.keyboard.press('Escape')
+    check('the bullet library\'s menu has Picture Bullet and Adjust List Indents', 'Picture Bullet…' in names or 'Picture Bullet' in names, names)
+
+
+def r2_pdf(page):
+    """R2's lists compiled in the page with pdfLaTeX, XeLaTeX and LuaLaTeX: a picture bullet and a
+    list's own indents, where TeX puts the text and the label (pdftotext -bbox) against where the
+    page draws them"""
+    if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        print('SKIP R2 lists in the PDF: no TeX tree in %s' % DIST)
+        return
+    import subprocess, tempfile
+    from pypdf import PdfReader
+    body = '\\noindent Plain words.\n\n\\begin{itemize}[leftmargin=3cm,labelwidth=1cm,labelsep=0.5cm]\n  \\item Indented\n\\end{itemize}\n\n' + PIC.replace('One', 'Pictured')
+    pre = '\\usepackage{enumitem}\n\\usepackage{graphicx}\n'
+    page.set_default_timeout(900000)
+    for eng in ('pdflatex', 'xelatex', 'lualatex'):
+        doc = ('% !TeX program = ' + eng + '\n' if eng != 'pdflatex' else '') + WRAP(body, pre)
+        load_doc(page, doc); put_picture(page, 'figures/dot.png')
+        # where the page draws them, in points of a 10pt font
+        geo = page.evaluate("""() => { const p = [...document.querySelectorAll('#pages .it.p')].find((x) => x.textContent.includes('Indented')); const l = p.querySelector('.lbl'), fs = parseFloat(getComputedStyle(p).fontSize);
+          return { text: parseFloat(getComputedStyle(p).paddingLeft) / fs * 10, lab: ((l.getBoundingClientRect().right - p.getBoundingClientRect().left) - parseFloat(getComputedStyle(l).paddingRight)) / fs * 10 }; }""")
+        r = page.evaluate("""async () => { const r = await window.rikuy.api.compile(); let s = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) s += String.fromCharCode(...r.pdf.subarray(i, i + 8192)); return { ok: r.ok, errs: (r.problems || []).filter((p) => p.severity === 'error').map((p) => p.message).slice(0, 3), pdf: s ? btoa(s) : '' }; }""")
+        words, imgs = {}, 0
+        if r['pdf']:
+            raw = base64.b64decode(r['pdf'])
+            imgs = len(PdfReader(io.BytesIO(raw)).pages[0].images)
+            with tempfile.NamedTemporaryFile(suffix='.pdf', delete=False) as fh: fh.write(raw)
+            out = subprocess.run(['pdftotext', '-bbox', fh.name, '-'], capture_output=True, text=True).stdout
+            os.unlink(fh.name)
+            seq = re.findall(r'xMin="([\d.]+)"[^>]*xMax="([\d.]+)"[^>]*>([^<]*)</word>', out)
+            for i, (x0, x1, w) in enumerate(seq):
+                if w in ('Plain', 'Indented', 'Pictured') and w not in words: words[w] = (float(x0), float(x1), float(seq[i - 1][1]) if i else 0)
+        ok = r['ok'] and not r['errs'] and 'Plain' in words and 'Indented' in words and 'Pictured' in words and imgs >= 1
+        if ok:
+            m = words['Plain'][0]
+            tx, lx = words['Indented'][0] - m, words['Indented'][2] - m
+            ok = abs(tx - 85.04) < 1 and abs(lx - 70.81) < 1 and abs(geo['text'] - tx) < 1 and abs(geo['lab'] - lx) < 1
+        check('R2 %s: a picture bullet and a list\'s own indents compile; TeX puts the text 3cm in and the bullet\'s right edge labelsep before it, where the page draws them' % eng, ok, (r['errs'], words, geo, imgs))
+    page.set_default_timeout(30000)
+
+
+def r2_phone(p, w, h, dark=False):
+    """Picture Bullet and Adjust List Indents on a phone: from the bullet library's menu by taps,
+    the dialogs on the screen with 44 px controls, no sideways scroll; screenshots"""
+    browser, page, errors = open_page(p, w, h, dark=dark, touch=True)
+    tag = ' (%dx%d)' % (w, h)
+    shots = os.environ.get('RIKUY_SHOTS') or '/tmp/R2-shots'
+    os.makedirs(shots, exist_ok=True)
+    try:
+        load_doc(page, WRAP(B3)); put_picture(page, 'figures/dot.png'); tap_text(page, 'Two', 1)
+        tap(page, page.locator('#rb-ul-x')); page.wait_for_timeout(200)
+        page.locator('.pop-menu [aria-label="Picture Bullet…"], .pop-menu [aria-label="Picture Bullet"]').first.tap(); page.wait_for_timeout(300)
+        f = fits(page, '.pop-list')
+        small = page.evaluate("Math.min(...[...document.querySelectorAll('.pop-list .ld-pic, .pop-list .btn')].filter((x) => x.offsetParent).map((x) => Math.min(x.getBoundingClientRect().height, x.getBoundingClientRect().width)))")
+        page.screenshot(path=os.path.join(shots, 'lists-picture-bullet-%d-%s.png' % (w, 'dark' if dark else 'light')))
+        check('Picture Bullet by taps from the library\'s menu: on the screen, its tiles and buttons 44 px' + tag, f and f['across'] and f['down'] and small >= 44, (f, small))
+        page.get_by_role('radio', name='figures/dot.png').tap(); page.get_by_role('button', name='OK').tap(); page.wait_for_timeout(400)
+        check('and a tap on a picture and OK writes the bullet' + tag, 'label={\\includegraphics[height=1.6ex]{figures/dot.png}}' in src(page), src(page)[-160:])
+        tap_text(page, 'Two', 1)
+        tap(page, page.locator('#rb-ul-x')); page.wait_for_timeout(200)
+        page.locator('.pop-menu [aria-label="Adjust List Indents…"], .pop-menu [aria-label="Adjust List Indents"]').first.tap(); page.wait_for_timeout(300)
+        f = fits(page, '.pop-list')
+        small = page.evaluate("Math.min(...[...document.querySelectorAll('.pop-list input, .pop-list select, .pop-list .btn')].filter((x) => x.offsetParent).map((x) => x.getBoundingClientRect().height))")
+        page.screenshot(path=os.path.join(shots, 'lists-indents-%d-%s.png' % (w, 'dark' if dark else 'light')))
+        check('Adjust List Indents by taps: on the screen, its fields and buttons 44 px tall' + tag, f and f['across'] and f['down'] and small >= 44, (f, small))
+        fld = page.get_by_role('spinbutton', name='Text indent'); fld.tap(); fld.fill('4'); page.get_by_role('button', name='OK').tap(); page.wait_for_timeout(400)
+        check('a value typed and OK tapped writes the indents' + tag, 'leftmargin=4em,labelwidth=2em,labelsep=0.5em' in src(page), src(page)[-200:])
+        check('no sideways scroll' + tag, no_side_scroll(page))
+        check('no page errors' + tag, not errors, errors[:3])
+    finally:
+        browser.close()
+
+
 def run_all():
+    # (names on the command line run those parts alone: r2, r2_pdf, phones, review, ...)
+    only = set(sys.argv[1:])
+    want = lambda n: not only or n in only
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check):
+        for f in (levels, toggles, libraries, numbering, multilevel, sorting, autolists, menus, review, pdf_check, r2, r2_pdf):
+            if not want(f.__name__): continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
         browser.close()
         for w, h, dark in ((390, 844, False), (360, 740, True)):
-            try: phone_run(p, w, h, dark)
-            except Exception as e: check('the phone run at %dx%d runs to its end' % (w, h), False, str(e)[:400])
+            if want('phones'):
+                try: phone_run(p, w, h, dark)
+                except Exception as e: check('the phone run at %dx%d runs to its end' % (w, h), False, str(e)[:400])
+            if want('phones') or want('r2_phone'):
+                try: r2_phone(p, w, h, dark)
+                except Exception as e: check('the R2 phone run at %dx%d runs to its end' % (w, h), False, str(e)[:400])
     bad = [r for r in results if not r[1]]
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     sys.exit(1 if bad else 0)
