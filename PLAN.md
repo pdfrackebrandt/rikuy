@@ -2815,6 +2815,9 @@ Tests:
 
 - No status commits ("Note ...", "Record ...") and no log in this file. One commit per
   finished task, its message saying what changed and the evidence (test counts, corpus count).
+  Two exceptions, so another agent can carry on work someone stopped (AGENTS.md, Handing off):
+  `HANDOFF.md`, rewritten whenever the work in flight changes, and "WIP: done X; left Y"
+  commits on a branch that is not merged yet.
   If a task is blocked, say why under the task, once, and move on.
 - Corpus results: one file, `dev/corpus-results.jsonl`, replaced by each full run; the
   comparison likewise in `dev/pdfcompare-results.jsonl`. `dev/corpus-docs.jsonl` lists the
