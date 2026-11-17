@@ -415,6 +415,38 @@ await ok('to Word: colour, highlight, centred text and a list\'s own labels are 
   assert.deepEqual(listStyle('3.'), [3, { t: 'Decimal' }, { t: 'Period' }]);
 });
 
+await ok('to Word: the title block\'s subtitle as Word\'s Subtitle (KOMA\'s \\subtitle and \\title{..\\\\[0.5ex]\\large ..}), and still round trip', async () => {
+  for (const pre of ['\\documentclass{article}\n\\title{Main\\\\[0.5ex]\\large The sub}\n', '\\documentclass{scrartcl}\n\\title{Main}\n\\subtitle{The sub}\n']) {
+    const src = pre + '\\begin{document}\n\\maketitle\nText.\n\\end{document}\n', files = new Map([['main.tex', src]]);
+    const E = exportFiles(files), d = text(unzip(E.docx).get('word/document.xml'));
+    assert.match(d, /<w:pStyle w:val="Subtitle" \/>(?:(?!<\/w:p>)[\s\S])*The sub/);
+    assert.match(d, /<w:pStyle w:val="Title" \/>(?:(?!<\/w:p>)[\s\S])*Main/);
+    assert.equal(importInto(E.docx, files).files.size, 0);
+  }
+});
+
+await ok('to Word: each list\'s bullet as the page drew it, nested ones too (pandoc\'s AST has none: its numbering is given the page\'s), numbered lists untouched', async () => {
+  const src = doc('\\begin{itemize}\n  \\item One\n  \\begin{itemize}[label=$\\blacktriangleright$]\n    \\item Two\n    \\begin{enumerate}\n      \\item Three\n    \\end{enumerate}\n  \\end{itemize}\n  \\item Four\n\\end{itemize}\n\nPara.\n\n\\begin{itemize}\n  \\item Five\n\\end{itemize}\n', '\\usepackage{enumitem,amssymb}\n');
+  const files = new Map([['main.tex', src]]);
+  const m = buildModel({ files, main: 'main.tex' });
+  const W = buildWordDoc(m, files, { now: 0, main: 'main.tex' });
+  assert.deepEqual(W.bullets.map((b) => b && b.glyph), ['•', '▸', null, '•']);
+  const E = exportDocx(P, { doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources: {}, bibs: [], bullets: W.bullets, project: { name: 'Paper', main: 'main.tex', files: [...files] } });
+  const parts = unzip(E.docx), nu = text(parts.get('word/numbering.xml')), d = text(parts.get('word/document.xml'));
+  const lvlOf = (word) => { const k = d.indexOf('>' + word + '<'), p = d.lastIndexOf('<w:numPr>', k); const m2 = /<w:ilvl w:val="(\d+)" \/><w:numId w:val="(\d+)" \/>/.exec(d.slice(p, k)); const an = new RegExp('<w:num w:numId="' + m2[2] + '"><w:abstractNumId w:val="(\\d+)"').exec(nu)[1];
+    const ab = new RegExp('<w:abstractNum w:abstractNumId="' + an + '">([\\s\\S]*?)</w:abstractNum>').exec(nu)[1]; return new RegExp('<w:lvl w:ilvl="' + m2[1] + '"[^>]*>([\\s\\S]*?)</w:lvl>').exec(ab)[1]; };
+  assert.match(lvlOf('One'), /<w:lvlText w:val="•" \/>/);
+  assert.doesNotMatch(lvlOf('One'), /Symbol/);
+  assert.match(lvlOf('Two'), /<w:lvlText w:val="▸" \/>/);
+  assert.match(lvlOf('Three'), /<w:numFmt w:val="decimal" \/>/);
+  assert.match(lvlOf('Five'), /<w:lvlText w:val="•" \/>/);
+  // (still a Word file Word reads: every abstract list before the lists that use it, ids unique)
+  assert.ok(nu.lastIndexOf('<w:abstractNum ') < nu.indexOf('<w:num '));
+  const aids = [...nu.matchAll(/<w:abstractNum w:abstractNumId="(\d+)"/g)].map((x) => x[1]);
+  assert.equal(new Set(aids).size, aids.length);
+  assert.equal(importInto(E.docx, files).files.size, 0);
+});
+
 await ok('to Word: the Font group\'s formats as Word\'s own (a highlighter\'s colour, ulem\'s lines, double strike, caps, border, sizes, fonts, spacing, position, scale), and still round trip', async () => {
   const src = doc('\\hl[green]{green marked} \\hl{yellow marked} \\uuline{twice under} \\uwave{wavy} \\dashuline{dashed} \\dotuline{dotted} \\dsout{struck twice} \\MakeUppercase{capitals} \\fbox{boxed}'
     + ' {\\large larger} {\\fontsize{14}{17}\\selectfont fourteen} {\\fontfamily{ppl}\\selectfont palatino} \\textsf{sans} \\textls[100]{spaced} \\raisebox{3pt}{raised} \\scalebox{1.5}[1]{wide}.\n',
@@ -541,6 +573,28 @@ await ok('from Word: highlighted text gets the highlighter that takes a colour, 
   assert.ok(r.tex.includes('\\DeclareRobustCommand{\\hl}[1][yellow]{\\bgroup\\markoverwith{\\textcolor{#1}{\\rule[-.5ex]{2pt}{2.5ex}}}\\ULon}'), r.tex);
 });
 
+
+await ok('from Word: the highlighter keeps its colour (pandoc reads the highlight and not the colour): \\hl[green], a dark one as xcolor\'s mix, yellow as it was, and the page draws each', () => {
+  const run = (v, t) => '<w:r><w:rPr><w:highlight w:val="' + v + '"/></w:rPr><w:t>' + t + '</w:t></w:r>';
+  const red = '<w:r><w:rPr><w:color w:val="C00000"/><w:highlight w:val="cyan"/></w:rPr><w:t>red on cyan</w:t></w:r>';
+  const r = docxToLatex(P, new Uint8Array(tiny('<w:p>' + run('green', 'green words') + '<w:r><w:t> plain </w:t></w:r>' + run('darkBlue', 'navy words') + '<w:r><w:t> and </w:t></w:r>' + run('yellow', 'yellow words') + '<w:r><w:t> then </w:t></w:r>' + red + '</w:p><w:p><w:r><w:t>Plain text to make black the ink of the document, as most of it is.</w:t></w:r></w:p>')), 'x.docx');
+  assert.ok(r.tex.includes('\\hl[green]{green words}'), r.tex);
+  assert.ok(r.tex.includes('\\hl[rgb,255:red,0;green,0;blue,128]{navy words}'), r.tex);
+  assert.ok(r.tex.includes('\\hl{yellow words}'), r.tex);
+  assert.ok(/\\hl\[cyan\]\{\\textcolor\[HTML\]\{C00000\}\{red on cyan\}\}/.test(r.tex), r.tex);
+  assert.ok(!/[\uE000-\uE01F]/.test(r.tex), 'no mark left');
+  // (security: a highlight value that names a member of Object's prototype is no colour, and writes nothing)
+  const z = docxToLatex(P, new Uint8Array(tiny('<w:p>' + run('constructor', 'odd words') + run('toString', 'more words') + '</w:p>')), 'x.docx');
+  assert.ok(z.tex.includes('odd words') && !/[\u0000-\u0008\uE000-\uF8FF]/.test(z.tex) && !/\\hl\[/.test(z.tex), JSON.stringify(z.tex.slice(-200)));
+  assert.ok(r.tex.includes('\\DeclareRobustCommand{\\hl}[1][yellow]') && r.tex.includes('{ulem}'), r.tex);
+  const M = buildModel({ files: new Map([['main.tex', r.tex]]), main: 'main.tex' });
+  const sty = [];
+  const walk = (l) => { for (const x of l || []) { if (x.k === 'sty' && x.st === 'hl') sty.push(x); walk(x.kids); } };
+  for (const it of M.blocks.flatMap((b) => b.items)) walk(it.inl);
+  const col = (w) => { const x = sty.find((y) => (y.kids || []).some((k) => k.t && k.t.includes(w))); return x && x.color; };
+  assert.equal(col('green words'), '#00FF00');
+  assert.equal(col('navy words'), '#000080');
+});
 
 await ok('a Word file of what pandoc alone loses: nothing goes without a word, and every command has its package', () => {
   // test/word_fixture.py's make_rich()

@@ -16,6 +16,7 @@ import * as F from '../charfmt.js';
 import { openMenu, colorPicker, BASE_COLORS, CARET } from '../ui/kit.js';
 import { $, mk } from '../ui/dom.js';
 import { docClass } from '../preamble.js';
+import * as P from '../parasrc.js';
 import { segOfSpan } from '../editor.js';
 import { BLOCKS } from '../render.js';
 import { openFontDialog, openRubyDialog } from '../ui/fontdialog.js';
@@ -626,14 +627,74 @@ export const methods = {
 
 
   // ---- Clear All Formatting -------------------------------------------------------------------
-  // Character formats in and around the selection; with all, the paragraph's alignment too (an
-  // environment that holds this paragraph alone: center, flushleft, flushright)
+  // Character formats in and around the selection; with all, the paragraph's own settings too, as
+  // Word's Clear All takes the text back to Normal: B2's alignment, line spacing, indents, first
+  // line, space before and after, keep with next, page break before, keep lines together, no
+  // hyphenation, line numbers, shading, box and rules (Reset Paragraph, paraResetOps), all of it
+  // one step of history. Where B2 cannot read the paragraph (a heading, a list item) an alignment
+  // or spacing environment holding it alone still goes, as before.
   clearFormatting(all) {
+    const at = this.ribbonAt();
+    const p = all && at && this.paraUnits ? this.paraUnits(at) : null;
+    const para = !!p && !p.why && !p.float && p.units.length > 0;
     const steps = [(t, a, b) => F.clearFormats(t, a, b)];
-    if (all) steps.push((t, a, b) => F.clearAlignment(t, a, b));
-    const ok = this.fmtCommit(steps);
+    if (all && !para) steps.push((t, a, b) => F.clearAlignment(t, a, b));
+    const ok = this.fmtOneStep(() => {
+      let done = this.fmtCommit(steps);
+      if (para) done = this.paraReset() || done;
+      return done;
+    });
     if (!ok) this.toast('Nothing to clear here.');
     return ok;
+  },
+  // Word's Reset Paragraph: the settings of the paragraphs the caret or the selection is in that
+  // are their own (an environment, a line or a lead around them alone), taken off; what comes from
+  // further out (a \centering above, a center around several paragraphs) is left
+  paraReset() {
+    const at = this.ribbonAt(), p = at && this.paraUnits ? this.paraUnits(at) : null;
+    if (!p || p.why || p.float || !p.units.length) return false;
+    const main = this.src(this.main), others = this.preambleOthers();
+    const dialect = P.spacingDialect(main), doc = P.docSpacing(main, { others });
+    const K = dialect ? P.spacingKind(dialect) : null, docV = doc ? doc.v : { lines: 1 };
+    const quiet = (r) => (r && r.why ? null : r);
+    const ops = [
+      (t, U, u) => { const cur = P.alignOf(t, U, u.it.align || null); return ['env', 'decl', 'group'].includes(cur.from) ? quiet(P.alignEdits(t, U, 'justify', { inherit: u.it.align || null })) : null; },
+      (t, U) => (K && U.levels.some((L) => L.W && K.names.includes(L.W.name)) ? quiet(P.layerEdits(t, U, K, docV, { inherit: docV })) : null),
+      (t, U) => (P.indentOf(t, U).from === 'env' ? quiet(P.indentEdits(t, U, 0, 0)) : null),
+      (t, U, u) => (U.lead && (U.lead.hang || U.lead.noindent) ? quiet(P.firstLineEdits(t, U, 'first', null, { indented: !!u.it.indent })) : null),
+      (t, U) => quiet(P.spaceEdits(t, U, 'before', 0)),
+      (t, U) => quiet(P.spaceEdits(t, U, 'after', 0)),
+      (t, U) => quiet(P.flagEdits(t, U, 'keep', false)),
+      (t, U) => quiet(P.flagEdits(t, U, 'break', false)),
+      ...[P.SAMEPAGE, P.NOHYPH, P.NOLINENO].map((KK) => (t, U) => (P.flagEnvOf(t, U, KK) === 'env' ? quiet(P.layerEdits(t, U, KK, null)) : null)),
+      (t, U) => (P.boxOf(t, U).from === 'env' ? quiet(P.boxEdits(t, U, null, false)) : null),
+      (t, U) => quiet(P.ruleEdits(t, U, 'before', false)),
+      (t, U) => quiet(P.ruleEdits(t, U, 'after', false))
+    ];
+    return this.paraRun(p, ops, [], 'format');
+  },
+  // Several commits as one step of history (Clear All's characters and paragraphs, the Format
+  // Painter's formats and style): what fn commits is joined into one step, undone at once
+  fmtOneStep(fn) {
+    const top0 = this.hist[this.hist.length - 1], before = new Map(this.files);
+    this.closeGroup();
+    // (history's cap of 400 steps waits for the joined step: each commit inside would drop one of
+    // the oldest, and the join takes them back to one; review L1)
+    this.histHold = true;
+    let r;
+    try { r = fn(); } finally { this.histHold = false; }
+    const k = top0 ? this.hist.lastIndexOf(top0) + 1 : 0, added = this.hist.slice(k);
+    if (added.length > 1 && !added.some((x) => x.blobs)) {
+      this.hist.length = k;
+      const changed = new Map();
+      for (const [f, t] of before) if (this.files.get(f) !== t) changed.set(f, t);
+      this.record(changed, added[0].kind, added[0].caretBefore, added[added.length - 1].caretAfter);
+      this.closeGroup();
+      // (Track Changes took each commit's edits as it was made: nothing is left for it to take)
+      this.rvStep = null;
+    }
+    while (this.hist.length > 400) this.hist.shift();
+    return r;
   },
 
   // ---- Underline's menu ---------------------------------------------------------------------
@@ -642,7 +703,7 @@ export const methods = {
     const items = Object.entries(F.UNDERLINES).map(([cmd, name]) => ({ name: name === 'Single' ? 'Underline' : name + ' underline', checked: !!W && (W.cmd === cmd || (cmd === 'uline' && (W.cmd === 'underline' || W.cmd === 'culine'))), radio: true,
       cls: 'ul-mi ul-' + cmd, title: '\\' + cmd, html: '<span class="ul-demo y-' + { uline: 'ul', uuline: 'ul2', uwave: 'ulw', dashuline: 'uld', dotuline: 'ulo' }[cmd] + '">abc</span>',
       run: () => { this.ribbonBack(); this.fmtSet('underline', { cmd }); this.ribbonSync(); } }));
-    items.push(null, { name: 'Underline Color…', title: 'An underline in a colour of its own (\\culine, ulem\'s line coloured)', run: () => this.underlineColor(at) });
+    items.push(null, { name: 'Underline Color…', title: 'An underline in a colour of its own, any colour (\\culine, ulem\'s line coloured)', run: () => this.underlineColor(at) });
     return items;
   },
   // (a picker opened from a menu: the page's selection is kept to be given back, not left to the focus)
@@ -653,8 +714,9 @@ export const methods = {
     this.asGrid(colorPicker(this, b && b.offsetParent ? b : this.root, { label: 'Underline Color', auto: 'Automatic', theme: this.docColors(), onPick: (v) => {
       this.fbxBack();
       if (!v) this.fmtSet('underline', { cmd: 'uline' });
-      else if (v.html) this.toast('An underline takes a named colour; pick one of the list.');
-      else this.fmtSet('underline', { cmd: 'culine', args: [v.name] });
+      // (any colour: More Colors' HTML colour as xcolor's mix of red, green and blue, which
+      // \culine's \textcolor takes as it takes a name)
+      else this.fmtSet('underline', { cmd: 'culine', args: [v.html ? P.htmlColor(v.html) : v.name] });
       this.ribbonSync();
     } }));
   },
@@ -730,8 +792,10 @@ export const methods = {
 
   // ---- Format Painter ---------------------------------------------------------------------------
   // Armed: the character formats around the caret are kept; the next selection on the page (or
-  // the word clicked) gets them, its own taken off first. A double click keeps it armed until
-  // Escape or another press of the button.
+  // the word clicked) gets them, its own taken off first. Armed from a caret (no selection) or a
+  // selection of a whole paragraph, the paragraph's style goes too, as Word's paragraph mark
+  // carries it: the paragraphs painted take it (a heading, a quote, a theorem, Normal), in the
+  // same step. A double click keeps it armed until Escape or another press of the button.
   formatPainter(sticky) {
     if (this.fpaint) { this.fpaint = null; document.body.classList.remove('fpainting'); return true; }
     const at = this.ribbonAt(), c = at && at.c;
@@ -739,21 +803,75 @@ export const methods = {
     const fmts = F.formatsAt(this.src(c.f), c.a, c.b);
     const sel = getSelection();
     // (where it was armed: the selection there is no place to paint, see the touch screen's rest below)
-    this.fpaint = { fmts, sticky: !!sticky, from: sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null };
+    this.fpaint = { fmts, sticky: !!sticky, from: sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null, style: this.fpStyleAt(at) };
     document.body.classList.add('fpainting');
-    if (!fmts.length) this.toast('The caret is in plain text: the next selection is made plain.', 2400);
+    if (!fmts.length && !this.fpaint.style) this.toast('The caret is in plain text: the next selection is made plain.', 2400);
     return true;
   },
+  // the paragraph style the painter carries: from a caret, or a selection of all of one paragraph
+  // (its words from the first to the last); none from words inside a paragraph or a LaTeX paragraph
+  fpStyleAt(at) {
+    if (!this.blockStyle || at.multi) return null;
+    const st = this.blockStyle(at);
+    if (!st || !st.v || st.v === 'latex' || st.v === 'title') return null;
+    if (!at.c.collapsed && !this.fpWhole(at, st)) return null;
+    return { v: st.v, name: this.styleName ? this.styleName(st.v) : st.v };
+  },
+  // whether a selection holds all of its paragraph's words (as Word's paragraph mark: then a
+  // paragraph's style goes with it, both ways)
+  fpWhole(at, st) {
+    const b = st && st.b, src = this.src(at.c.f);
+    if (!b || b.ws == null) return false;
+    let ws = b.ws, we = b.we;
+    while (ws < we && /\s/.test(src[ws])) ws++;
+    while (we > ws && /\s/.test(src[we - 1])) we--;
+    return at.c.a <= ws && at.c.b >= we;
+  },
   paintFormat() {
-    const P = this.fpaint;
-    if (!P) return false;
-    const ok = this.fmtCommit([(t, a, b) => F.clearFormats(t, a, b) || { text: t, a, b }, ...P.fmts.map((x) => (t, a, b) => {
-      const r = F.wrapIn(t, a, b, x.group, x.w);
-      return r.error ? r : { ...r, need: F.needsOf(x.group, x.w) };
-    })], { word: true, keepWord: true });
-    if (!P.sticky) { this.fpaint = null; document.body.classList.remove('fpainting'); }
+    const P0 = this.fpaint;
+    if (!P0) return false;
+    // (the style goes on a paragraph clicked, or one selected whole; words selected in a paragraph
+    // take the characters' formats alone, as Word's do: review M2)
+    const at0 = P0.style ? this.ribbonAt() : null;
+    const toPara = !!at0 && !at0.c.ghost && !at0.multi && (at0.c.collapsed || this.fpWhole(at0, this.blockStyle(at0)));
+    const ok = this.fmtOneStep(() => {
+      let done = this.fmtCommit([(t, a, b) => F.clearFormats(t, a, b) || { text: t, a, b }, ...P0.fmts.map((x) => (t, a, b) => {
+        const r = F.wrapIn(t, a, b, x.group, x.w);
+        return r.error ? r : { ...r, need: F.needsOf(x.group, x.w) };
+      })], { word: true, keepWord: true });
+      // (the style of the paragraphs painted, where they can take it; the selection kept)
+      if (P0.style && toPara && this.setBlockStyle) {
+        const at = this.ribbonAt(), st = at && !at.c.ghost ? this.blockStyle(at) : null;
+        if (st && st.v !== P0.style.v && st.to.has(P0.style.v)) {
+          const c = at.c, keep = !c.collapsed ? { f: c.f, a: c.a, b: c.b } : null, n = this.hist.length;
+          this.setBlockStyle(P0.style.v);
+          if (this.hist.length !== n) done = true;
+          // (words selected stay selected: the style moved them by what it wrote before them)
+          if (keep && this.hist.length !== n) this.fpReselect(keep);
+        }
+      }
+      return done;
+    });
+    if (!P0.sticky) { this.fpaint = null; document.body.classList.remove('fpainting'); }
     this.ribbonSync();
     return ok;
+  },
+  // the words selected before a style was given to their paragraph, selected again where the
+  // step moved them: the style writes around the words and not in them, so they are found in what
+  // it wrote, the nearest to where they were
+  fpReselect(k) {
+    const top = this.hist[this.hist.length - 1], d = top && top.files.find((x) => x.f === k.f);
+    if (!d || d.s == null) return;
+    const del = d.del || '', ins = d.ins || '', at = (p) => (p <= d.s ? p : p >= d.s + del.length ? p + ins.length - del.length : null);
+    let a = at(k.a), b = at(k.b);
+    if (a == null || b == null) {
+      const words = del.slice(Math.max(0, k.a - d.s), k.b - d.s), want = k.a - d.s;
+      let best = -1;
+      for (let i = ins.indexOf(words), n = 0; i >= 0 && n < 50; i = ins.indexOf(words, i + 1), n++) if (best < 0 || Math.abs(i - want) < Math.abs(best - want)) best = i;
+      if (best < 0 || !words) return;
+      a = d.s + best; b = a + words.length;
+    }
+    this.restoreCaret({ f: k.f, p: b, selA: a, selB: b });
   },
 
   // a command of the registry by its id (for the menus that list others')

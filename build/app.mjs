@@ -437,8 +437,17 @@ ${ribbonList()}
   Instances). A selection over several paragraphs takes a heading on each, or one environment
   around them all. Modify Style writes titlesec's \\titleformat once in the preamble; Create a
   Style writes \\newcommand{\\name}[1]{…} or \\newenvironment.
+- More styles also has "Code" (the paragraph in verbatim, only for words verbatim prints the same),
+  "Subtitle", "Author" and "Date" (a paragraph of the body made that part of the title block:
+  \\author, \\date, KOMA-Script's \\subtitle or \\title{Main\\\\[0.5ex]\\large Sub}; the
+  caret in a part of the title shows its style, and "Normal" makes it a paragraph after
+  \\maketitle again). A press on a Code block selects it (a second press, or Enter, opens its
+  source): "Normal" then makes it text. A style of the document's own has "Rename…" in its
+  options (command "rename-style" with { v: 'env:name' or 'char:name', name }): the definition
+  and every use in the project renamed.
 - The Design tab: "Themes", "Style Set", "Colors" and "Fonts" (the headings' look, colour and
-  font for the whole document; "LaTeX" and "Black" take the lines away again).
+  font for the whole document; "LaTeX" and "Black" take the lines away again). Where hyperref is
+  loaded, Colors also colours the links (\\hypersetup{colorlinks,linkcolor=accent,...}).
 - Home also has the buttons "Bold", "Italic", "Underline", "Bulleted list", "Numbered list",
   "Formula" (math in the line), "Equation" (numbered, on a line of its own), "Table",
   "Picture", "Footnote", "Citation", "Link".
@@ -583,6 +592,12 @@ Ctrl is Cmd on a Mac.
   text back), from a phone's keyboard too (the marker and space sent at once, a dash its
   autocorrect made of "-", an IME's composition). The labels are written as enumitem's options (\begin{enumerate}[label=\alph*),start=3]);
   a list's own \def\labelenumi, \setcounter{enumi} or "(a)" is changed where it is written.
+  The libraries' menus also have "Picture Bullet…" (command "bullet-picture" with { file } of a
+  picture of the project: \includegraphics[height=1.6ex] as the label) and "Adjust List
+  Indents…" (command "list-indents" with { leftmargin, labelwidth, labelsep }: lengths, or null
+  for LaTeX's own). Clear All Formatting takes the paragraph's own settings (alignment, spacing,
+  indents, shading, borders) off with the characters' formats; the Format Painter armed from a
+  caret carries the paragraph's style too.
 - Ctrl+Shift+V: paste as plain text. The right click menu: Cut, Copy, Paste (the browser asks
   once to let the page read the clipboard); the search box finds them and Keep Text Only, Paste
   as LaTeX source and Paste Special

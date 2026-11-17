@@ -182,6 +182,9 @@ class Walker {
     this.n = 0; this.A = null; this.meta = {};
     this.cmarks = null; // source offset -> comment marks to emit (second pass)
     this.ncomments = 0;
+    // (R2) each bullet or numbered list in the order pandoc numbers them (its numIds): the bullet the
+    // page drew, null for a numbered one, for src/wordjobs.js to give Word the same bullets
+    this.lists = [];
     // Direction. The document's comes from the model when it says one, else from the preamble
     // (src/scripts.js); a block's or a stretch of text's from the model when the node says one
     // (dir: 'rtl' or 'ltr'), else from the wrappers around it in the source (src/wordbidi.js).
@@ -205,7 +208,7 @@ class Walker {
       const marks = this.commentMarks();
       if (marks.size) {
         this.cmarks = marks;
-        this.anchors = []; this.atoms = []; this.images = new Set(); this.warnings = []; this.degraded = new Map(); this.n = 0; this.meta = {};
+        this.anchors = []; this.atoms = []; this.images = new Set(); this.warnings = []; this.degraded = new Map(); this.n = 0; this.meta = {}; this.lists = [];
         this.blocks = this.walk();
       }
     }
@@ -216,7 +219,7 @@ class Walker {
     // only a document with right to left text in it, or a wrapper that sets a direction
     if (this.bidi) doc = bidiDoc(doc, new Map(this.anchors.filter((A) => A.dir).map((A) => [A.id, A.dir])), this.rtl);
     const deg = [...this.degraded.entries()].map(([k, n]) => k + (n > 1 ? ' (' + n + ')' : ''));
-    return { doc, anchors: this.anchors.map(packAnchor), atoms: this.atoms, images: [...this.images], warnings: this.warnings, degraded: deg, comments: this.ncomments, rtl: this.rtl };
+    return { doc, anchors: this.anchors.map(packAnchor), atoms: this.atoms, images: [...this.images], warnings: this.warnings, degraded: deg, comments: this.ncomments, rtl: this.rtl, bullets: this.lists };
   }
 
   plainMath(tex) {
@@ -413,6 +416,8 @@ class Walker {
   title(it, u) {
     const fns = u.fns;
     if (it.title && it.title.length) this.meta.title = { t: 'MetaInlines', c: this.wrap('title', it.f, null, null, () => this.inl(it.title, fns)) };
+    // (R2) the subtitle: Word's Subtitle paragraph under the title
+    if (it.subtitle && it.subtitle.length) this.meta.subtitle = { t: 'MetaInlines', c: this.wrap('subtitle', it.f, null, null, () => this.inl(it.subtitle, fns)) };
     const au = (it.authors || []).filter((a) => a.length).map((a) => ({ t: 'MetaInlines', c: this.wrap('author', it.f, null, null, () => this.inl(a, fns)) }));
     if (au.length) this.meta.author = { t: 'MetaList', c: au };
     if (it.date && it.date.length) this.meta.date = { t: 'MetaInlines', c: this.wrap('date', it.f, null, null, () => this.inl(it.date, fns)) };
@@ -475,6 +480,9 @@ class Walker {
       const kind = first.li.kind;
       const listS = first.li.listS;
       const entries = [];
+      // (pandoc numbers a list as it starts it, before the lists inside it: the same order here)
+      const slot = kind === 'desc' ? -1 : this.lists.push(null) - 1;
+      if (kind === 'item') { const L = first.label && first.label[0]; this.lists[slot] = L && L.k === 'chr' && L.text ? { glyph: L.text, level: depth } : null; }
       while (i < items.length) {
         const it = items[i];
         // what follows the list in its block (a paragraph that is no item's, a table) ends it

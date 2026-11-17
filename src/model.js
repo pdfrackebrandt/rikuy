@@ -15,7 +15,7 @@ import { fieldText } from './fields.js';
 import { readField } from './forms.js';
 
 const DVIPS = Object.fromEntries(DVIPS_COLORS), XC = Object.fromEntries(BASE_COLORS);
-import { listSetup, formatOf, numText, bulletGlyph } from './lists.js';
+import { listSetup, formatOf, numText, bulletGlyph, INDENT_KEYS } from './lists.js';
 
 const WIDGET_FILE = /\.html?$/i;
 // the page's set up of the last preamble read (Builder.pageSetup)
@@ -201,6 +201,8 @@ function splitTop(t) {
 const unbrace = (t) => (t[0] === '{' && t[t.length - 1] === '}' ? t.slice(1, -1).trim() : t);
 // (B2) xcolor's mix of red, green and blue in 255ths, as More colors writes an HTML colour:
 // rgb,255:red,231;green,84;blue,128 -> #E75480
+// (R2) a picture bullet's label: \includegraphics[options]{file}, maybe in braces
+const PIC_LABEL = /^\{?\s*\\includegraphics\s*(?:\[([^\]{}]{0,200})\])?\s*\{([^{}\\%]{1,300})\}\s*\}?$/;
 function mixColor(t) {
   const m = /^rgb\s*,\s*255\s*:\s*red\s*,\s*(\d{1,3})\s*;\s*green\s*,\s*(\d{1,3})\s*;\s*blue\s*,\s*(\d{1,3})$/.exec(String(t).trim());
   if (!m || [m[1], m[2], m[3]].some((x) => +x > 255)) return null;
@@ -660,7 +662,7 @@ class Builder {
     this.siOpts = {};
     this.siUnits = new Map();
     this.envDefs = new Map();
-    this.meta = { title: null, author: null, date: null };
+    this.meta = { title: null, author: null, date: null, subtitle: null };
     this.bibFiles = [];
     this.bibEntries = new Map();
     this.thebib = null;
@@ -696,6 +698,8 @@ class Builder {
     if (docEnv) {
       const pre = nodes.slice(0, nodes.indexOf(docEnv));
       this.preamble(pre, ctx);
+      // (R2, D1) hyperref's colorlinks: the colours TeX prints links, citations and addresses in
+      this.opts.links = this.linkColors(src, docEnv.s);
       // a document whose main language is Arabic, Hebrew or the like runs right to left as a whole
       this.opts.rtl = rtlDocument(src);
       this.dir = this.opts.rtl ? 'rtl' : 'ltr';
@@ -972,6 +976,8 @@ class Builder {
       case 'title': this.meta.title = { nd, ctx, a: nd.args[1] }; O.docInfo = { ...O.docInfo, title: A(1).slice(0, 300) }; break;
       case 'author': this.meta.author = { nd, ctx, a: nd.args[1] }; O.docInfo = { ...O.docInfo, author: A(1).slice(0, 300) }; break;
       case 'date': this.meta.date = { nd, ctx, a: nd.args[0] }; O.docInfo = { ...O.docInfo, date: A(0).slice(0, 300) }; break;
+      // (KOMA-Script's subtitle, under the title: the title block's Subtitle, R2)
+      case 'subtitle': this.meta.subtitle = { nd, ctx, a: nd.args.find((x) => x && x.nodes) || null }; break;
       case 'setcounter': if (A(0).trim() === 'secnumdepth') { O.secnumdepth = parseInt(A(1), 10); O.secnumdepthSet = true; } else if (A(0).trim() === 'maxsecnumdepth') O.maxsecnumdepth = parseInt(A(1), 10); break;
       // memoir's own: by a sectioning name, none or all
       case 'setsecnumdepth': { const v = SECDEPTH[A(0).trim()]; if (v != null) { O.secnumdepth = v; O.secnumdepthSet = true; } break; }
@@ -1068,7 +1074,26 @@ class Builder {
     if (opt) return colorValue(this.argText(ctx, opt), spec) || spec;
     // (xcolor's dvipsnames, BrickRed and the like, which the Font Color picker writes: as the
     // values they print in, for the page and for Word)
-    return this.named(spec) || (Object.hasOwn(DVIPS, spec) ? '#' + DVIPS[spec] : spec);
+    return this.named(spec) || (Object.hasOwn(DVIPS, spec) ? '#' + DVIPS[spec] : mixColor(spec) || spec);
+  }
+
+  // (R2, D1) The colours hyperref prints links in, where it is loaded with colorlinks (its options,
+  // then every \hypersetup of the preamble, in order; hidelinks takes them away): { link, cite, url }
+  // as #RRGGBB, each null where its colour is no name the page knows; null for no colorlinks.
+  // Bounded: the preamble's first 200 000 characters, 40 \hypersetup of 4000.
+  linkColors(src, end) {
+    const pre = src.slice(0, Math.min(end, 200000)).replace(/(^|[^\\])%[^\n]*/g, '$1');
+    const pk = /\\usepackage\s*(?:\[([^\]]{0,2000})\])?\s*\{[^{}]{0,300}\bhyperref\b[^{}]{0,300}\}/.exec(pre);
+    if (!pk) return null;
+    const kv = { colorlinks: false, linkcolor: 'red', citecolor: 'green', urlcolor: 'magenta' };
+    // (each key=value trimmed first, then read by a pattern with nothing to try twice)
+    const read = (t) => { for (const x of t.split(',').slice(0, 60)) { const m = /^([A-Za-z]+)(?:\s*=\s*(.*))?$/s.exec(x.trim()); if (!m) continue; const k = m[1], v = m[2] == null ? null : m[2].replace(/^\{/, '').replace(/\}$/, '').trim();
+      if (k === 'colorlinks') kv.colorlinks = v == null || /^true$/i.test(v); else if (k === 'hidelinks') kv.colorlinks = false; else if (k in kv && v) kv[k] = v; } };
+    if (pk[1]) read(pk[1]);
+    for (let m, re = /\\hypersetup\s*\{([^{}]{0,4000}(?:\{[^{}]{0,200}\}[^{}]{0,4000}){0,20})\}/g, n = 0; (m = re.exec(pre)) && n < 40; n++) read(m[1]);
+    if (!kv.colorlinks) return null;
+    const hex = (c) => { const v = this.colorText(String(c).trim()); const x = /^#[0-9A-F]{6}$/i.test(v) ? v : Object.hasOwn(XC, v) ? '#' + XC[v] : Object.hasOwn(DVIPS, v) ? '#' + DVIPS[v] : null; if (x && this.colors.has(c)) this.use('c' + c + x); return x; };
+    return { link: hex(kv.linkcolor), cite: hex(kv.citecolor), url: hex(kv.urlcolor) };
   }
 
   // a name of the document's own; used, so the block is drawn again when its \definecolor changes
@@ -1778,7 +1803,11 @@ class Builder {
     for (let i = 0; i + 1 < units.length; i++) {
       const u = units[i], h = u.items.length === 1 ? u.items[0] : null;
       if (!h || h.type !== 'h' || !h.runInto || h.runIn) continue;
-      const n = units[i + 1], p = n.items[0];
+      // (R2) a float between them: TeX places it elsewhere and runs the heading into the paragraph
+      // after it (the page draws the float first: App.layoutPass)
+      let j = i + 1;
+      while (j < units.length - 1 && units[j].items.length && units[j].items.every((x) => x.type === 'float')) j++;
+      const n = units[j], p = n.items[0];
       // (a paragraph of this flow, or one of an environment of declarations alone: a quote, a
       // centring, a theorem or a list starts with \@trivlist, which sets the heading on its own line)
       if (!p || p.type !== 'p' || p.runIn || n.f !== u.f || p.ctx !== 'p' || !n.plain) continue;
@@ -1925,9 +1954,17 @@ class Builder {
     const ranges = [];
     // a \title in a preamble file of its own (\input{preamble}) is not a range of this file
     const at = (x) => { if (x.ctx.f === ctx.f) ranges.push([x.nd.s, x.nd.e]); };
-    let title = [], authors = [], date = null;
+    let title = [], authors = [], date = null, subtitle = null;
     this.thanksMode = true;
-    if (m.title && m.title.a) { title = this.inl(m.title.a.nodes, m.title.ctx, fns); at(m.title); }
+    if (m.title && m.title.a) {
+      // (R2) the subtitle as a class without \subtitle has it: \title{Main\\[0.5ex]\large Sub}, the
+      // words after the line break and the size its own line in the title block
+      let nodes = m.title.a.nodes;
+      const k = m.subtitle ? -1 : nodes.findIndex((n, i) => n.t === 'cmd' && n.name === '\\' && nodes[i + 1] && nodes[i + 1].t === 'cmd' && /^(large|Large|normalsize|small)$/.test(nodes[i + 1].name));
+      if (k > 0) { subtitle = this.inl(nodes.slice(k + 2), m.title.ctx, fns); trimInl(subtitle); nodes = nodes.slice(0, k); }
+      title = this.inl(nodes, m.title.ctx, fns); at(m.title);
+    }
+    if (m.subtitle && m.subtitle.a) { subtitle = this.inl(m.subtitle.a.nodes, m.subtitle.ctx, fns); trimInl(subtitle); at(m.subtitle); }
     if (m.author && m.author.a) {
       const a = m.author.a;
       let cur = [];
@@ -1944,7 +1981,7 @@ class Builder {
     this.thanksMode = false;
     const s = Math.min(nd.s, ...ranges.map((r) => r[0]));
     const e = Math.max(nd.e, ...ranges.map((r) => r[1]));
-    return { f: ctx.f, s, e, items: [{ type: 'title', title, authors, date, f: ctx.f, dir: this.dirOf() }], fns, sig: (this.sig || []).join('\u0001') };
+    return { f: ctx.f, s, e, items: [{ type: 'title', title, ...(subtitle && subtitle.length ? { subtitle } : {}), authors, date, f: ctx.f, dir: this.dirOf() }], fns, sig: (this.sig || []).join('\u0001') };
   }
 
   refsBlock(nd, ctx) {
@@ -2437,6 +2474,20 @@ class Builder {
     }
     const first = count + 1;
     const bullet = kind === 'item' ? (F && bulletGlyph(F.label)) ?? ['•', '–', '∗', '·'][(level - 1) % 4] : null;
+    // (R2) a picture as the bullet (Define New Bullet › Picture: \includegraphics[height=..]{file}),
+    // drawn as the picture, shown and never edited there
+    const picM = kind === 'item' && F && F.label && bulletGlyph(F.label) == null ? PIC_LABEL.exec(F.label) : null;
+    // (R2) Adjust List Indents: enumitem's leftmargin, labelwidth and labelsep, where TeX's \list puts
+    // the text (the margin) and the label's box (its width, labelsep before the text), in em; a
+    // list inside one with indents of its own goes in from that one's margin
+    let lm = null;
+    const I = F && F.indents;
+    if ((I && INDENT_KEYS.some((k) => I[k])) || env.lmBase != null) {
+      const em = (k) => { const v = I && I[k] ? parseLen(I[k], this.opts.pt) : null; return typeof v === 'number' && isFinite(v) ? Math.max(-20, Math.min(40, v / this.opts.pt)) : null; };
+      const left = em('leftmargin') ?? 2.5, sep = em('labelsep') ?? 0.5, w = em('labelwidth') ?? Math.max(0, left - sep);
+      const base = env.lmBase ?? (depth - 1) * 2.5;
+      lm = { text: base + left, lab: base + left - sep - w, w, sep };
+    }
     // the space between items (enumitem's nosep and itemsep, \setlength{\itemsep}, \tightlist)
     const sep = !F || !F.sep ? null : F.sep === 'nosep' ? 0 : F.sep === 'noitemsep' || F.sep === 'tight' ? 0.2 : itemSep(parseLen(F.sep, this.opts.pt));
     const out = [], fns = [];
@@ -2462,15 +2513,15 @@ class Builder {
         if (!optA) listTarget = { num: ref, kind: 'item' };
         this.lastTarget = listTarget;
       }
-      if (kind === 'item') label = [{ k: 'chr', text: bullet }];
+      if (kind === 'item') label = picM ? [{ k: 'img', f: ctx.f, s: -1, e: -1, ro: true, file: picM[2].trim(), opts: (picM[1] || '').trim(), box: null }] : [{ k: 'chr', text: bullet }];
       if (optA) {
         const kids = this.inl(optA.nodes, ctx, fns);
         if (!kids.length) kids.push({ k: 'seg', f: ctx.f, t: '\u200B', map: [optA.is, optA.is], ph: true });
         label = [{ k: 'sty', st: kind === 'desc' ? 'bf' : '', kids, f: ctx.f, s: optA.s, e: optA.e, is: optA.is, ie: optA.ie }];
       }
       // (the label and the spacing are the block's own: a \setlist in the preamble changes them)
-      this.use('L' + count + level + (label && label[0] && label[0].text != null ? label[0].text : '') + '|' + (sep ?? ''));
-      const sub = { ...env, ...FLUSH, top: false, listDepth: depth, list: true, enumDepth: kind === 'enum' ? level : (env.enumDepth || 0), itemDepth: kind === 'item' ? level : (env.itemDepth || 0), ctxKind: 'li', noIndentFirst: true, depth: depth, cls: (env.cls || ''),
+      this.use('L' + count + level + (label && label[0] && label[0].text != null ? label[0].text : picM ? 'img:' + picM[0] : '') + '|' + (sep ?? '') + (lm ? '|' + lm.text + ',' + lm.lab + ',' + lm.w : ''));
+      const sub = { ...env, ...FLUSH, top: false, listDepth: depth, list: true, lmBase: lm ? lm.text : env.lmBase, enumDepth: kind === 'enum' ? level : (env.enumDepth || 0), itemDepth: kind === 'item' ? level : (env.itemDepth || 0), ctxKind: 'li', noIndentFirst: true, depth: depth, cls: (env.cls || ''),
         enumVals: kind === 'enum' ? [...vals.slice(0, level - 1), count] : vals, enumThe: kind === 'enum' ? [...thes.slice(0, level - 1), F.theStar] : thes,
         enumLabel: kind === 'enum' && label && label[0].text != null ? label[0].text : env.enumLabel };
       const us = this.flow(it.nodes, ctx, sub);
@@ -2479,12 +2530,13 @@ class Builder {
       const firstP = its[0] && its[0].type === 'p' ? its[0] : null;
       const itemEnd = it.nodes.length ? it.nodes[it.nodes.length - 1].e : it.cmd.e;
       const meta = { kind, itemS: it.cmd.s, itemE: itemEnd, listS: nd.s, listE: nd.e, cmdE: it.cmd.e, empty: !its.length };
+      if (lm) for (const x of its) if (x.lmPad == null) { x.lmPad = lm.text; if (x === firstP) x.lm = lm; }
       if (firstP) { firstP.label = label; firstP.labelKind = kind; firstP.li = meta; firstP.indent = false; }
       else {
         let php = optA ? optA.e : it.cmd.ne;
         if (ctx.src[php] === ' ') php++;
         const at = ctx.pm ? ctx.pm[php] : php;
-        its.unshift({ type: 'p', inl: [{ k: 'seg', f: ctx.f, t: '\u200B', map: [at, at], ph: true }], label, labelKind: kind, li: meta, indent: false, depth, cls: env.cls || '', ctx: 'li', f: ctx.f, dir: this.dirOf() });
+        its.unshift({ type: 'p', inl: [{ k: 'seg', f: ctx.f, t: '\u200B', map: [at, at], ph: true }], label, labelKind: kind, li: meta, indent: false, depth, cls: env.cls || '', ctx: 'li', f: ctx.f, dir: this.dirOf(), ...(lm ? { lmPad: lm.text, lm } : {}) });
       }
       if (sep != null && its[0]) { its[0].liSep = sep; if (F.sep === 'nosep') its[0].liTop = 0; }
       for (const x of its) { if (x.type === 'p' && x.depth == null) x.depth = depth; if (x.type === 'p' && x !== its[0]) x.li = x.li || { ...meta, cont: true }; if (x.type !== 'p') x.depth = depth; }

@@ -2770,6 +2770,140 @@ Tests:
     (R1 16, main 16), memoir 12 pages 9/9 again. After its verification (merge): N1 a group the
     parser hands `\<` or `\+` as an argument is the field's text again; N2 `shiftNodes` moves `ne`
     too; N3 it has no cap, which could leave a long tabbing half moved (`page.test.mjs`).
+62. **R2: what the Font (B1), Lists (B3) and Styles (B4) batches left undone.** Done in the code
+    (branch `round3-r2-styles`, on main e863372), every item of the round 3 list.
+    *Font.* Clear All Formatting takes the paragraph's own settings off with the characters'
+    formats, as Word's goes back to Normal: B2's alignment, line spacing, indents, first line
+    (`\noindent`, `\hangindent`), space before and after, keep with next, page break before,
+    samepage, no hyphenation, line numbers, shading and box (Rikuy's tcolorbox) and rules, each by
+    B2's own edits over `paraRun` (`paraReset` in `src/cmd/font.js`); what comes from further out
+    (a `\centering` above, a center around two paragraphs) stays; where B2 cannot read the
+    paragraph (a heading, a list item) the old alignment step still runs; characters and paragraph
+    are one step of history (`fmtOneStep` joins the commits a command makes). The Format Painter
+    armed from a caret, or a selection of a whole paragraph, carries the paragraph's style (a
+    heading, a quote, a theorem, Normal) to the paragraphs it paints, the words painted kept
+    selected, in one step; a double click keeps painting until Escape, as before; words selected
+    inside a paragraph carry their characters alone, as Word's do without the paragraph mark.
+    Underline Color takes any colour: More colors in the picker and the Font dialog write
+    xcolor's mix (`\culine{rgb,255:red,231;green,84;blue,128}{..}`, which Rikuy's `\culine`
+    passes to `\textcolor`), the page draws it (`colorArg` reads the mix), the dialog shows the
+    colour an underline has. Word import keeps the highlighter's colour: `premark` marks a run's
+    `w:highlight` other than yellow (seven digits, which no colour mark has) and the LaTeX's `\hl`
+    takes it: `\hl[green]`, xcolor's names for Word's teal, violet, olive, grays, and the mix for
+    its dark blue, green and red, read back by the page and Word export.
+    *Lists.* Define New Bullet › Picture… (Picture Bullet, also in the library's menu): a picture
+    of the project, or one from the device put into the project (`figures/`, a name TeX takes) in
+    the same step, as `label={\includegraphics[height=1.6ex]{..}}` with graphicx; the page draws
+    the picture on each item. Adjust List Indents (the library's menus and the right click menu):
+    enumitem's `leftmargin`, `labelwidth` and `labelsep`, shown as the list has them or LaTeX's own
+    at its level, with the bullet's position worked out; OK writes the three, LaTeX's own takes
+    them away, a hand written set changed where it stands; refused beside the enumerate package,
+    paralist and beamer. The page draws the text at the margin and the label's box labelsep before
+    it, a nested list from that margin (`Builder.listBlock`'s `lm`); TeX puts them there on the
+    three engines (`lists.py r2_pdf`, pdftotext's boxes against the page's). Word export gives
+    every bulleted list the bullet the page drew, nested ones too: pandoc gives each list its own
+    numbering on one abstract list of Symbol and Wingdings bullets, and `bulletDocx` gives each a
+    copy with its level's bullet the page's character (lists counted the same on both sides, else
+    nothing changes). A picture bullet goes to Word as a round bullet (Word's picture bullets,
+    `w:lvlPicBulletId`, are not written).
+    *Styles.* Code (H65): the paragraph in verbatim, only on words verbatim prints the same (no
+    special, no blank line, no dash or quote ligature), so Normal again gives the bytes back; a
+    press on a Code block selects it as a picture is (the gallery and the list show Code), Normal
+    makes it text (a hand written verbatim's specials escaped), a second press or Enter opens its
+    source as before. Subtitle, Author and Date (H63), with Title: a paragraph of the body made a
+    part of the title block (`\title` with `\maketitle` in the paragraph's place where there is
+    none; `\author`, joined by `\and`; `\date`; KOMA-Script's `\subtitle`, else
+    `\title{Main\\[0.5ex]\large Sub}`); the caret in a part shows its style, Normal makes it the
+    paragraph after `\maketitle` again (the title only where it stands alone), each the other's
+    way back byte for byte; the page draws the subtitle, Word gets it as Subtitle. Title shows in
+    More and the style list for a document with no title. Rename Style (H74): a style of the
+    document's own (the Styles pane's Rename…, `rename-style`): its definition, `\begin` and
+    `\end`, a theorem numbered with it, cleveref's names, its counter's uses, or every `\cmd`,
+    in every .tex and .sty of the project, comments and verbatim left as written, the new name
+    checked as Create a Style checks one. The links' colour (D1): Colors writes
+    `\hypersetup{colorlinks,linkcolor=accent,urlcolor=accent,citecolor=accent}` after the accent
+    where hyperref is loaded (a `\hypersetup` of the document's own takes the keys in place,
+    `hidelinks` off), Black takes them away; the page draws references, citations and addresses
+    in hyperref's colorlinks colours, a hand written `[colorlinks,linkcolor=blue]` too
+    (`Builder.linkColors`). A float between `\paragraph{Lead}` and its text: the heading runs into
+    the text as TeX runs it (`runIns` passes floats), the page draws the float first
+    (`App.layoutPass`). B4's tests changed only where R2 changes what they saw: the title alone
+    offers Normal, the lists and More have Title (untitled documents), Subtitle, Author, Date and
+    Code.
+    *Phones* (390 by 844 light, 360 by 740 dark, touch): Clear All, the Format Painter's style and
+    Underline Color's More colors by taps; Picture Bullet and Adjust List Indents from the
+    library's menu, in the screen with 44 px tiles, fields and buttons; a tap selects a Code block
+    and the style list takes it off; Author from the style list; Rename Style fitting, its Close
+    44 px. *Security* (the audit skill's guidance on the changed files, notes outside the
+    repository): a `.docx` highlight value naming a member of Object's prototype (`constructor`)
+    wrote junk characters into the imported LaTeX (now a key of the table alone), and a paragraph
+    ending in a comment made a title part left `\author{..}` open (now refused, as are braces that
+    do not close); both with a test; every new scan of a stranger's text bounded (the
+    `\hypersetup` reader, `titleInfo`, `renameEdits`), checked with timings. Evidence: `npm test`
+    green (`font` 28 groups, `lists` 25, `styles` 28, `looks` 11, `word` 68, `incremental` 32 on
+    11 documents with one of R2's constructs, `native` 43); `font.py` 305 (272: `r2`, its phones,
+    `r2_compiles` on pdfLaTeX, XeLaTeX and LuaLaTeX); `lists.py` 218 (184: `r2`, `r2_pdf` on the
+    three engines, `r2_phone`); `styles.py` 399 (320: `r2`, `r2_compile` on the three engines and
+    KOMA's subtitle, `r2_phone`); `para.py` 204; `tabs.py` 115; `ribbon.py` 195; `agent.py` 143;
+    `browser.py` 193; `word.py` 111; `page.py long_document` 6 (every command's when and on 18 ms
+    together, none over 5); `launch.py` 18/18; `deploy_check.py` 45/45; `pages_check.py` fits; the
+    corpus model run 716 of 716 with main's unknown commands. `offline.py` passed every check up to
+    the offline compile, whose TeX warm up timed out in a copy of `dist/` made of links (this
+    worktree's `dist/tex` is a link to another's); R2 changes only llms-full's text in
+    `build/app.mjs`. Screenshots outside the repository.
+
+62a. **R2 review: every High and Medium finding of the hostile review of 1d96496 and dfcd1cd fixed,
+    each with its case as a test; the small Lows too.** H1: a float between `\paragraph{Lead}` and
+    its text was moved before the heading in the page's order, so Delete at the heading's end and a
+    selection from it into the text deleted the float's words unseen (main, with no run in there,
+    had no such path; this branch made it reachable). The items now keep the source's order, the
+    float is drawn between and shown selected when a selection holds it, and the heading, which takes
+    no height, is shifted onto its text's first line (`App.runInOverFloats`). H2: Code goes only on
+    one line no longer than a line of the text in typewriter characters (`codeCols`), and a
+    verbatim's lines are drawn unbroken, as TeX sets them. H3, M1: the links' colour is a line of
+    Rikuy's own, after the last of the accent, hyperref's `\usepackage` and the document's own
+    `\hypersetup` lines, which stay as written; Black takes away that line alone (`hidelinks` and
+    `colorlinks=false` come back). H4: `titleInfo` reads the body before `\maketitle` too (the last
+    of each command, as TeX takes it); a new part's line goes beside a `\title` in the body; a
+    paragraph before `\maketitle` is no part of it. M4: a title set in a file the preamble reads
+    refuses every part, naming the file. H5: Rename only for what the project makes itself
+    (`createsOwn`: `\newcommand`, `\def`, `\newenvironment`, `\newtheorem` and the theorem
+    makers), never a `\renewcommand`. H6: the counter's every name is renamed (`\newcounter` and
+    its `[within]`, both arguments of `\numberwithin`, `\counterwithin`, `\counterwithout`,
+    `\@addtoreset`, `\newtheorem`'s within, thmtools' `sibling=`, `numberlike=`, `sharenumber=`),
+    a command in the .bib files too; a fancyvrb Verbatim with commandchars that runs the command
+    refuses the rename. M2: the Format Painter gives the carried style to a paragraph clicked or
+    selected whole, never to a few words selected in one. M3: a key typed on a selected Code block
+    opens its source (a phone's text through beforeinput), where it replaced the block. Lows: the
+    join at history's cap drops one step, not two, and leaves no step for Track Changes (L1); Code
+    refuses < > |, two spaces, tabs and several lines (L2); Rename refuses where LaTeX's own names
+    derive from the old one (`\theta` for an environment `ta`, `\endinput` for `input`) and skips
+    `\lstinline`, `\url`, `\path`, `\mint` (L3); Normal leaves an `\author{}` or `\date{}`
+    placeholder and refuses a part holding `\thanks` (L6). Not done: L4 (a highlight's colour in
+    the title, author or abstract of a .docx, and two adjacent runs of two colours, which pandoc
+    joins in one span), L5 (link colours set in an `\input` preamble file are not drawn): each needs
+    more than a small change, and nothing breaks without it. Evidence: `styles.test.mjs` 29 groups,
+    `looks.test.mjs` 11; `styles.py r2_review` 18 (H1 to H6, M1, M3, M4, L3; H3, H4 and H6's
+    documents compiled in the page), `font.py r2_review` and the M2 cases in `r2`.
+
+62b. **R2 verification: what the verifier of ffa732e found, fixed with its cases.** N1 (a
+    regression of L3): Rename took TikZ's `\path (0,0) node {..}` and `\path[draw]` for url's
+    verbatim `\path|..|` and left the commands in their nodes; url's `\path`, `\url` and
+    `\nolinkurl` now take no option and only a brace or a punctuation delimiter, never `(` or `[`.
+    N3: hyperref loaded by a file the preamble reads or a package puts the links' line right
+    before `\begin{document}` (`\RequirePackage{hyperref}` counts as loading it). N2: Rename
+    checked derived names against LaTeX's list of 88 packages' names, which holds
+    `\endtheorem` and `\lbl` for packages the document does not load, and refused its own
+    `\newtheorem{theorem}`: now `\theold`, `\c@old` and `\p@old` are renamed only where the
+    environment has that counter (`makesCounter`; `\theta` stays for an environment `ta`), and only
+    an `\end` form of TeX's own (`\endinput`) refuses; `rename-style` with `{ v }` runs wherever the
+    caret is, and a document's own `\newtheorem{theorem}` can be renamed. Evidence: `npm test`
+    green (`styles.test.mjs` 29 groups, `looks.test.mjs` 11); `styles.py` 422 (`r2_review` 23: N1's
+    TikZ document and N3's project compiled in the page). N4 (from the verification of 8d2e842):
+    renaming a theorem turned `\renewcommand{\theoremautorefname}{Thm}` into a renewal of a name
+    hyperref never defined, and TeX stopped; a renamed `\…autorefname` or `\…name` that a
+    `\renewcommand` set is written with `\providecommand` (the document compiled in the page,
+    `\autoref` printing "Thm 1").
 
 63. **R3, round 3 of the Word gap: what Tables (task 45), Pictures (46) and Insert (49) left.** Done
     in the code (branch `round3-r3-objects`), every item of the R3 list.
@@ -2919,6 +3053,23 @@ Tests:
       bbding 3, kotex, fdsymbol, feynmf, feynmp 2 each, then one each), and 2 biblatex papers whose
       shipped .bbl this biblatex cannot read (100 errors at the first pass; latexmk -f goes on to
       biber). The second is fixed: the .bbl is dropped after that pass and biber writes it again.
+    - The missing packages, in the tree now: newtxtt, bbding, fdsymbol (Type 1), dutchcal,
+      boondox (mathalpha's `bb=boondox`), urwchancal, phonetic, pbsi (brushscr), ascii, ascmac
+      (from `texlive-lang-japanese`), the LY1 encoding (fbb's), feynmf.sty and feynmp.sty
+      (Ubuntu's `feynmf`, newly pinned: 55 packages) in the packs the artifact carries (0.8 MB);
+      ifsym's and bbding's PK fonts from 7 to 12 pt (an ifsym symbol in a superscript asked for
+      ifsym10 at 420 dpi) and phonetic's from 10 to 12 pt (`build_pk.py`, 0.6 MB); Libertinus,
+      Droid, fbb, frcursive, Baskervald, fdsymbol's OpenType fonts and utfsym (out of `DROP`) in
+      hosted only packs (`LARGE_PICKS`, 15 MB), and ko.TeX with Nanum's Type 1 fonts and UHC's
+      Myeongjo beside the other scripts' (16.7 MB); 70 such packs, 109.9 MB. The worker lets a
+      document naming one of them read those packs as it does for scripts (`SCRIPTS_RE`), so the
+      artifact says where the hosted Rikuy is instead of "libertinus.sty not found". The
+      fontconfig and luaotfload caches were made again (187 caches; the 165 old ones unchanged).
+      Each package compiled in the page with a minimal paper (pdfLaTeX; Libertinus also by name
+      with XeLaTeX and with LuaLaTeX, ko.TeX also with XeLaTeX), no file missing and the
+      package's fonts in `pdffonts`. METAFONT and MetaPost do not run here: feynmf's and
+      feynmp's diagrams are missing and the paper compiles (a desktop makes feynmf's with
+      mktextfm). Artifact 254.1 → 255.7 MB.
     - 30 fail on both: journal classes arXiv supplies beyond TeX Live (aa, svjour3, mn2e, jheppub,
       iopart, PoS, aastex, svmult), files missing from the source, errors under TeX Live 2026.
     - 4 ran past the 240 s limit; corpus_full.py now records the worker's last steps for such a
@@ -2928,6 +3079,9 @@ Tests:
 
 - No status commits ("Note ...", "Record ...") and no log in this file. One commit per
   finished task, its message saying what changed and the evidence (test counts, corpus count).
+  Two exceptions, so another agent can carry on work someone stopped (AGENTS.md, Handing off):
+  `HANDOFF.md`, rewritten whenever the work in flight changes, and "WIP: done X; left Y"
+  commits on a branch that is not merged yet.
   If a task is blocked, say why under the task, once, and move on.
 - Corpus results: one file, `dev/corpus-results.jsonl`, replaced by each full run; the
   comparison likewise in `dev/pdfcompare-results.jsonl`. `dev/corpus-docs.jsonl` lists the

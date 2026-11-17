@@ -94,8 +94,9 @@ its program itself it names the command in the log; that command runs.
 - `build_formats.py` makes the formats (pdfLaTeX, XeLaTeX, LuaLaTeX, every language of
   `language.dat`) with Rikuy's own engines from that tree, as fmtutil does on a desktop.
 - `build_pk.py` makes PK fonts with METAFONT for the families that exist only as METAFONT
-  source (Concrete, bbm, blackletter, chess and symbol fonts, bold typewriter), as mktexpk
-  would on a desktop, and the EC and Cyrillic (T1, TS1, T2A) metrics TeX Live leaves to
+  source (Concrete, bbm, blackletter, chess and symbol fonts, bold typewriter, dingbats,
+  phonetic), as mktexpk would on a desktop, at the sizes documents usually reach (a size it
+  did not make stops pdfTeX: `Font ifsym10 at 300 not found`), and the EC and Cyrillic (T1, TS1, T2A) metrics TeX Live leaves to
   mktextfm, whose glyphs then come from cm-super.
 - `build_tree.py packs` writes `dist/tex/`: packs of whole package folders, the engine, biber, the
   shell's programs, and `tree.wasm`, the index. Type 1 fonts are stored with both of their
@@ -143,13 +144,18 @@ default fonts have none of them. The tree carries what three common routes need
   from the math font (Hadasim has none).
 - pdfLaTeX with the CJK package (`CJKutf8`) and the Arphic fonts `gbsn`, `gkai` (simplified),
   `bsmi`, `bkai` (traditional).
+- pdfLaTeX with ko.TeX (`\usepackage{kotex}`): Nanum Myeongjo and Gothic as Type 1 fonts
+  (`nanumtype1`) and UHC's Myeongjo for Hanja, from `texlive-lang-korean`.
 
 `src/scripts.js` writes the set up lines for the first three when a document has such text and no
-set up, and `pickEngine` reads them. These 78 MB travel in 36 packs of their own, marked `x` in
+set up, and `pickEngine` reads them. These 95 MB travel in packs of their own, marked `x` in
 the index and written after all others, so that no other pack's bytes depend on them: the hosted
-Rikuy serves them, `publish_batches.py` leaves them out of the artifact (which has 2 MB to
+Rikuy serves them, `publish_batches.py` leaves them out of the artifact (which has 0.3 MB to
 spare), and a compile that misses only such packs says where the hosted Rikuy is
-(`unkeptScripts`). Fonts are found by family name as well as file name (fontconfig's caches and
+(`unkeptScripts`). Large Latin font families that arXiv papers load take the same road
+(`LARGE_PICKS`, 15 MB): Libertinus, Droid, fbb, French school cursive, Baskervald, fdsymbol's
+OpenType fonts and utfsym's TikZ symbols; with the scripts' that makes 70 packs, 110 MB.
+Fonts are found by family name as well as file name (fontconfig's caches and
 luaotfload's name table in `inputs/generated.tar.gz` know them). As with a desktop TeX Live,
 xdvipdfmx writes no character map for the Fandol fonts (their glyphs are Adobe-GB1's, which PDF
 viewers know), so a viewer without Adobe's CMap data shows the page but cannot copy its Chinese.
@@ -159,7 +165,10 @@ fonts here.
 ## Limits
 
 Fonts that come from the mirror are found by file name, not by family name. Programs outside
-TeX Live (inkscape, R, Java's bib2gls) cannot run (PLAN.md, task 11). Asymptote renders 3D in
+TeX Live (inkscape, R, Java's bib2gls) cannot run (PLAN.md, task 11), and neither can METAFONT
+or MetaPost: feynmf's and feynmp's diagrams are missing (TeX says the font `fd1` cannot be
+loaded, or to process `fd1.mp` with MetaPost) and the rest of the paper compiles; a desktop
+makes feynmf's with mktextfm. Asymptote renders 3D in
 software, two and a half to three times slower than a native asy (PLAN.md, task 17); WebGL
 (`-f html`), V3D and PRC output work too. It runs without its garbage collector, so a run frees
 nothing until it ends: a long computation such as TeX Live's `slope.asy` example runs out of

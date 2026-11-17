@@ -97,8 +97,10 @@ submodule's tree in one archive) or as downloaded:
 
 ## The TeX tree
 
-TeX Live 2026.20260711 from Ubuntu 26.10's packages (54 of them, each pinned by SHA-512 in
-`tex/fetch_inputs.sh`), laid over the tree in BusyTeX's release. Ten of the 54 are for scripts
+TeX Live 2026.20260711 from Ubuntu 26.10's packages (55 of them, each pinned by SHA-512 in
+`tex/fetch_inputs.sh`), laid over the tree in BusyTeX's release. `feynmf` (Thorsten Ohl's
+feynmf.sty and feynmp.sty, GPL-2.0-or-later) is the one TeX package Ubuntu ships outside its
+`texlive-*` packages that the tree takes. Ten of the 55 are for scripts
 other than Latin, Greek and Cyrillic: twenty six Noto fonts (`fonts-noto-core`, OFL-1.1), Nanum
 for Korean (`fonts-nanum`, OFL-1.1), Hadasim for Hebrew (`fonts-culmus`, GPL-2.0 with the font
 exception), Amiri (`fonts-hosny-amiri`, OFL-1.1), the CJK package (`latex-cjk-common`,
