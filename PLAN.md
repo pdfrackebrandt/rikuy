@@ -2794,6 +2794,20 @@ Tests:
     sided). Evidence: `objects.test.mjs` 13 groups (4 new), `test/picture.py` r3_review 6 new,
     `test/insert.py` r3_review 8 and r3_review_compiles 7 new (memoir, the four Form documents, the
     Quick Part, each compiled in the page).
+    *Verification* (a fresh verifier of 6114f5f: every high and medium of the review fixed, L2 partly,
+    L7 open; and five new findings, each fixed with its case as a test): N1 a page whose items were all
+    the same was not drawn again though measuring had taken its items' elements out of it (the
+    wrapped paragraph's pairing, parting and empty floats measure more), so an edit round a
+    wrapfigure (its caption typed in, its width changed, a first one deleted, undo) emptied the page:
+    each measuring is counted and the count is in the page's signature; N2 the Form reader skips
+    `\verb|…|` and `\lstinline|…|`; N3 memoir's titlingpage: the text after it on a right hand page
+    in two sided documents, numbered 1 (cover, blank page, page 1, as TeX); N4 the empty float beside
+    the paragraphs after a tall wrapfigure is the paragraph's `::before`, so the caret's arrows pass
+    it; N5 the first words dragged out of a wrapper take the space after them. Evidence:
+    `test/picture.py` r3_review 4 new (the three edits round a wrapfigure, each failing without the
+    signature's count; ArrowLeft), `test/insert.py` r3_review_compiles 2 new (memoir two sided: 3
+    pages in the PDF and on the page, the body numbered 1; `\verb|\end{Form}|` in a Form, compiled),
+    r3_review 1 new (N5).
 
 ## Open tasks
 

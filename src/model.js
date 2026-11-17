@@ -2177,8 +2177,10 @@ class Builder {
       // the classes' titlepage sets it; the text after it starts on page 1 in a one sided document
       if ((name === 'titlepage' || name === 'titlingpage') && r && env.top) {
         r.items.unshift({ type: 'pagebreak', column: false }, { type: 'pagemark', mark: { thisStyle: 'empty' } }, { type: 'pagemark', mark: { page: 1 } });
-        r.items.push({ type: 'pagebreak', column: false });
-        if (!this.opts.twoside) r.items.push({ type: 'pagemark', mark: { page: 1 } });
+        // (memoir's titlingpage: the text after it on a right hand page, numbered 1 either way)
+        const memoir = name === 'titlingpage';
+        r.items.push({ type: 'pagebreak', column: false, odd: memoir && !!this.opts.twoside });
+        if (!this.opts.twoside || memoir) r.items.push({ type: 'pagemark', mark: { page: 1 } });
       }
       // (a multicols read raw, or nested where a block cannot be cut: one block in columns)
       if (/^multicols\*?$/.test(name) && r) {

@@ -98,6 +98,8 @@ Object.assign(methods, {
     // between letters gets a space each side it needs)
     const W = /[\p{L}\p{N}]/u;
     if (del.length === 1 && del[0].s === M.a && del[0].e === M.b && !del[0].t && src[M.a - 1] === ' ' && /^[ .,;:!?)}]/.test(src[M.b] || '') && W.test(src[M.a] || '') && W.test(src[M.b - 1] || '')) del[0] = { ...del[0], s: M.a - 1 };
+    // (the first words of a wrapper, \textbf{bold one two}: the space after them goes, not one before the brace)
+    else if (del.length === 1 && del[0].s === M.a && del[0].e === M.b && !del[0].t && src[M.a - 1] === '{' && src[M.b] === ' ' && W.test(src[M.a] || '') && W.test(src[M.b - 1] || '')) del[0] = { ...del[0], e: M.b + 1 };
     // (a drop inside what the deletion takes, a wrapper left empty: at its edge)
     let at = pos.p;
     for (const d of del) if (at > d.s && at < d.e) at = d.e;

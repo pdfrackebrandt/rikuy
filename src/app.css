@@ -2074,8 +2074,9 @@ html.pic-moving, html.pic-moving * { cursor: grabbing !important; }
 #pages .raw.drawn svg.tz, #pages .raw.drawn svg.pgf { cursor: pointer; }
 @media (pointer: coarse) { .shape-layer .shape-h { width: 14px; height: 14px; } .shape-layer .shape-h::before { content: ''; position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; translate: -50% -50%; } }
 .it.p.has-wrap { display: flow-root; }
-.wrap-ghost { display: block; pointer-events: none; user-select: none; }
-.wrap-ghost.wrap-r { float: right; } .wrap-ghost.wrap-l { float: left; }
+.it.p.has-ghost { display: flow-root; }
+.it.p.has-ghost::before { content: '' / ''; float: right; width: var(--gw); height: var(--gh); pointer-events: none; }
+.it.p.has-ghost.ghost-l::before { float: left; }
 .it.flt-wrap.wrap-in { width: var(--wrapw); max-width: 60%; margin: calc(var(--pt) * 2px) 0 calc(var(--pt) * 6px) calc(var(--pt) * 10px); text-indent: 0; text-align: center; }
 .it.flt-wrap.wrap-in.wrap-r { float: right; }
 .it.flt-wrap.wrap-in.wrap-l { float: left; margin: calc(var(--pt) * 2px) calc(var(--pt) * 10px) calc(var(--pt) * 6px) 0; }

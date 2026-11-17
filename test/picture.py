@@ -784,6 +784,11 @@ def r3_objects(page):
     check('a picture among words dragged before another word moves there', src(page) == WRAP('Alpha  beta \\includegraphics[height=1em]{a.png}gamma.'), body(page))
 
 
+def word_box(page, word):
+    return page.evaluate("""(w) => { const sp = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(w)); const r = document.createRange(); const i = sp.textContent.indexOf(w);
+      r.setStart(sp.firstChild, i); r.setEnd(sp.firstChild, i + w.length); const b = r.getBoundingClientRect(); return [b.left, b.top, b.width, b.height]; }""", word)
+
+
 def r3_review(page):
     """The review of fc36bf5: H3 a wrapfigure taken out is no longer drawn, also before the text's first
     paragraph; H4 a wrapped paragraph breaks across pages below its figure, never past a sheet; M5 a
@@ -810,8 +815,30 @@ def r3_review(page):
     D5 = WRAP(tall + 'Short first paragraph beside the figure, two lines at most here.\n\n' + 'Second paragraph words flow on and on here. ' * 12, P2)
     load_doc(page, D5); page.wait_for_timeout(600)
     st = page.evaluate("""() => { const w = document.querySelector('#pages .wrap-in'), f = w.getBoundingClientRect(); const p2 = [...document.querySelectorAll('#pages .it.p')].find((x) => x.textContent.includes('Second paragraph')); const sp = p2.querySelector('span.t'); const q = sp.getClientRects()[0];
-      return { gap: Math.round(p2.getBoundingClientRect().top - w.parentElement.getBoundingClientRect().bottom), beside: q.right < f.left + 1 && q.top < f.bottom, ghost: !!p2.querySelector('.wrap-ghost') }; }""")
+      return { gap: Math.round(p2.getBoundingClientRect().top - w.parentElement.getBoundingClientRect().bottom), beside: q.right < f.left + 1 && q.top < f.bottom, ghost: p2.classList.contains('has-ghost') }; }""")
     check('M5: a figure taller than its paragraph goes on beside the next one, no blank under the first', st['beside'] and st['ghost'] and st['gap'] < 20, st)
+    # N4: ArrowLeft at the start of that paragraph goes to the end of the one before, past the empty float
+    p2 = page.evaluate("(() => { const p = [...document.querySelectorAll('#pages .it.p')].find((x) => x.textContent.includes('Second paragraph')); const r = document.createRange(); const t = p.querySelector('span.t').firstChild; r.setStart(t, 0); r.collapse(true); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); return true; })()")
+    page.keyboard.press('ArrowLeft'); page.keyboard.type('L'); page.wait_for_timeout(300)
+    check('N4: ArrowLeft from a paragraph beside the empty float reaches the paragraph before', 'most here.L' in src(page), body(page)[:240])
+    # N1: around a wrapfigure every paragraph stays drawn: its caption typed in, its width changed, it deleted first, undo
+    words = ['Alpha words', 'Second paragraph', 'Third one']
+    D8 = WRAP(fig + 'Alpha words beside the figure. ' * 6 + '\n\nSecond paragraph here. ' * 1 + '\n\nThird one here.', P2)
+    missing = lambda ws: page.evaluate("(ws) => { const t = [...document.querySelectorAll('#pages .page')].map((p) => p.textContent).join(' '); return ws.filter((w) => !t.includes(w)); }", ws)
+    load_doc(page, D8); page.wait_for_timeout(500)
+    cap = word_box(page, 'FIGCAP')
+    page.mouse.click(cap[0] + cap[2] / 2, cap[1] + cap[3] / 2); page.keyboard.type('QR'); page.wait_for_timeout(500)
+    check('N1: letters typed in a wrapfigure\'s caption: the caption and every paragraph stay drawn', not missing(words + ['FIG']) and page.evaluate("document.querySelector('#pages').textContent.includes('Q')") and 'Q' in src(page), (missing(words + ['FIG']), body(page)[:200]))
+    load_doc(page, D8); page.wait_for_timeout(400)
+    s = src(page); a = s.index('{0.4\\linewidth}')
+    page.evaluate('([a]) => { window.rikuy.commit([{ f: "main.tex", s: a + 1, e: a + 4, t: "0.3" }], { f: "main.tex", p: a }); }', [a]); page.wait_for_timeout(500)
+    check('N1: a wrapfigure\'s width changed: the figure and every paragraph stay drawn', not missing(words + ['FIGCAP']), missing(words + ['FIGCAP']))
+    load_doc(page, D8); page.wait_for_timeout(400)
+    s = src(page); a = s.index('\\begin{wrapfigure}'); e = s.index('\\end{wrapfigure}') + len('\\end{wrapfigure}') + 1
+    page.evaluate('([a, e]) => { window.rikuy.commit([{ f: "main.tex", s: a, e, t: "" }], { f: "main.tex", p: a }); }', [a, e]); page.wait_for_timeout(500)
+    gone = missing(words)
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(500)
+    check('N1: a wrapfigure first in the text deleted: every paragraph stays drawn; undo brings the figure back, drawn', not gone and not missing(words + ['FIGCAP']) and src(page) == D8, (gone, missing(words + ['FIGCAP'])))
     # M4: a figure from a paragraph's middle
     D6 = WRAP('Joined part one\n\\begin{figure}[h]\n\\centering\n\\includegraphics[width=0.3\\linewidth]{a.png}\n\\end{figure}\njoined part two.\n\nBottom para.')
     load_doc(page, D6); sel_pic()(page); page.wait_for_timeout(200)

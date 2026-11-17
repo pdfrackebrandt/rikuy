@@ -258,18 +258,15 @@ export class Layout {
   setGhost(Q, g) {
     const key = g ? g.side + ':' + Math.round(g.w) + ':' + Math.round(g.h) : '';
     if ((Q.ghostKey || '') === key) return false;
-    if (Q.ghost) { Q.ghost.remove(); Q.ghost = null; }
-    Q.ghostKey = key; Q.wrapFloat = null; Q.overhang = 0;
-    Q.el.classList.remove('has-wrap'); Q.el.style.height = '';
+    Q.ghostKey = key; Q.ghost = null; Q.wrapFloat = null; Q.overhang = 0;
+    Q.el.classList.remove('has-ghost', 'ghost-l'); Q.el.style.height = '';
+    Q.el.style.removeProperty('--gw'); Q.el.style.removeProperty('--gh');
+    // (a ::before of the paragraph, not an element: the caret has nothing to stop at)
     if (g) {
-      const e = document.createElement('span');
-      e.className = 'wrap-ghost wrap-' + g.side;
-      e.contentEditable = 'false';
-      e.setAttribute('aria-hidden', 'true');
-      e.style.width = Math.round(g.w) + 'px'; e.style.height = Math.round(g.h) + 'px';
-      Q.el.prepend(e);
-      Q.el.classList.add('has-wrap');
-      Q.ghost = e; Q.wrapFloat = e;
+      Q.el.classList.add('has-ghost');
+      if (g.side === 'l') Q.el.classList.add('ghost-l');
+      Q.el.style.setProperty('--gw', Math.round(g.w) + 'px'); Q.el.style.setProperty('--gh', Math.round(g.h) + 'px');
+      Q.ghost = { w: Math.round(g.w), h: Math.round(g.h), side: g.side }; Q.wrapFloat = Q.ghost;
     }
     Q.measured = false; Q.pieces = null;
     return true;
@@ -278,15 +275,15 @@ export class Layout {
   // float with the first piece); where the float reaches below its words, the item ends with its
   // words and the rest of the float is left over for the items after it (overhang, in px)
   wrapMeasure(it, r) {
-    const F = it.wrapFloat;
-    if (!F || F.parentNode !== it.el) { it.overhang = 0; return; }
-    const fr = F.getBoundingClientRect(), mb = parseFloat(getComputedStyle(F).marginBottom) || 0;
-    const fb = fr.bottom + mb - r.top;
+    const F = it.wrapFloat, G = F && F === it.ghost ? F : null;
+    if (!F || (!G && F.parentNode !== it.el)) { it.overhang = 0; return; }
+    const fr = G ? null : F.getBoundingClientRect(), mb = G ? 0 : parseFloat(getComputedStyle(F).marginBottom) || 0;
+    const fb = G ? G.h : fr.bottom + mb - r.top;
     // the words' bottom: every text of the item but the float's
     let tb = 0;
     const rg = document.createRange(), tw = document.createTreeWalker(it.el, NodeFilter.SHOW_TEXT);
     for (let n; (n = tw.nextNode());) {
-      if (F.contains(n) || !n.data.trim()) continue;
+      if ((!G && F.contains(n)) || !n.data.trim()) continue;
       rg.selectNodeContents(n);
       for (const q of rg.getClientRects()) if (q.height > 0) tb = Math.max(tb, q.bottom - r.top);
     }
@@ -295,8 +292,8 @@ export class Layout {
       it.h = it.el.getBoundingClientRect().height;
       it.lines = null;
       it.overhang = fb - it.h;
-      it.wrapW = fr.width + (parseFloat(getComputedStyle(F).marginLeft) || 0) + (parseFloat(getComputedStyle(F).marginRight) || 0);
-      it.wrapSideOf = F.classList.contains('wrap-l') ? 'l' : 'r';
+      it.wrapW = G ? G.w : fr.width + (parseFloat(getComputedStyle(F).marginLeft) || 0) + (parseFloat(getComputedStyle(F).marginRight) || 0);
+      it.wrapSideOf = G ? G.side : F.classList.contains('wrap-l') ? 'l' : 'r';
       return;
     }
     it.overhang = 0;
@@ -366,6 +363,7 @@ export class Layout {
       }
       it.sb = (it.sbEm || 0) * this.g.pt * this.px;
       it.measured = true;
+      it.mv = (it.mv || 0) + 1;
       it.pieces = null;
       // a picture not loaded yet was measured at no height: the item is measured again when it
       // loads (App, the sheet's load listener)
@@ -707,7 +705,9 @@ export class Layout {
     const base = this.chromeBase();
     plan.forEach((pg, k) => {
       const fill = this.fillOf(pg);
-      const sig = pg.entries.map((e) => e.it.uid + ':' + e.a + ':' + (e.b ?? '') + ':' + e.sb.toFixed(1) + (e.band ? ':' + e.col + ':' + e.band.h.toFixed(1) : '')).join(',') + '|' + pg.fns.map((f) => f.uid).join(',') + '|' + (k + 1) + '|' + fill.toFixed(1);
+      // (mv: how often the item was measured, which takes its element out of the page it was on:
+      // a page of the same items is drawn again when one of them was measured since)
+      const sig = pg.entries.map((e) => e.it.uid + ':' + (e.it.mv || 0) + ':' + e.a + ':' + (e.b ?? '') + ':' + e.sb.toFixed(1) + (e.band ? ':' + e.col + ':' + e.band.h.toFixed(1) : '')).join(',') + '|' + pg.fns.map((f) => f.uid).join(',') + '|' + (k + 1) + '|' + fill.toFixed(1);
       let P = this.pages[k];
       if (!P) { P = this.makePage(); this.pages.push(P); this.root.appendChild(P.el); }
       // (the header, the footer and the page's numbers are drawn again on their own)

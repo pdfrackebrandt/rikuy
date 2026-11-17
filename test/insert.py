@@ -796,19 +796,25 @@ def r3_review_compiles(page):
         page.set_default_timeout(30000)
         return r
     load_doc(page, '\\documentclass{memoir}\n\\title{Report}\n\\author{Ann}\n\\begin{document}\nHello world.\n\\end{document}\n'); click_text(page, 'Hello', 2)
-    run_cmd(page, 'cover-page', {'design': 'sideline'}); page.wait_for_timeout(200)
+    run_cmd(page, 'cover-page', {'design': 'sideline'}); page.wait_for_timeout(400)
     r = comp()
     check('H2: a memoir cover page is a titlingpage, and it compiles', '\\begin{titlingpage}' in src(page) and r['ok'] and not r['problems'], r)
+    page.set_default_timeout(600000)
+    n = page.evaluate("async () => { const r = await window.rikuy.api.compile(); return r.pages; }")
+    page.set_default_timeout(30000)
+    drawn = page.evaluate("[...document.querySelectorAll('#pages .page')].map((p) => p.dataset.n)")
+    check('N3: two sided memoir: the cover, a blank page, the text on page 1, in the PDF (%s pages) and on the page %s' % (n, drawn), n == 3 and len(drawn) == 3 and drawn[-1] == '1', (n, drawn))
     D = lambda b: '\\documentclass{article}\n\\usepackage{hyperref}\n\\begin{document}\n' + b + '\n\\end{document}\n'
     cases = {'nested_before': (D('Before words here.\n\n\\begin{center}\n\\begin{Form}\n\\TextField[name=a]{A}\n\\end{Form}\n\\end{center}'), 'Before'),
              'nested_after': (D('\\begin{center}\n\\begin{Form}\n\\TextField[name=a]{A}\n\\end{Form}\n\\end{center}\n\nAfter words here.'), 'After'),
              'commented_form': (D('% \\begin{Form} old draft \\end{Form}\nPlain words here.'), 'Plain'),
+             'verb_inside': (D('\\begin{Form}\nClose it with \\verb|\\end{Form}| here.\n\\end{Form}\n\nAfter words here.'), 'After'),
              'two_forms': (D('\\begin{Form}\n\\TextField[name=a]{A}\n\\end{Form}\n\nMiddle words here.\n\n\\begin{Form}\n\\TextField[name=b]{B}\n\\end{Form}'), 'Middle')}
     for name, (doc, w) in cases.items():
         load_doc(page, doc); click_text(page, w, 3)
         run_cmd(page, 'form-text'); page.wait_for_timeout(200)
         r = comp()
-        check('H1: Form Fields in %s, and it compiles (no Form inside another, no comment changed)' % name, r['ok'] and not r['problems'] and src(page).count('\\begin{Form}') == doc.count('\\begin{Form}') + (1 if name == 'commented_form' else 0) and ('% \\begin{Form} old draft \\end{Form}' in src(page) or name != 'commented_form'), (r, src(page)[60:400]))
+        check('H1: Form Fields in %s, and it compiles (no Form inside another, no comment changed)' % name, r['ok'] and not r['problems'] and src(page).count('\\begin{Form}') == doc.count('\\begin{Form}') + (1 if name == 'commented_form' else 0) and ('\\verb|\\end{Form}|' in src(page) or name != 'verb_inside') and ('% \\begin{Form} old draft \\end{Form}' in src(page) or name != 'commented_form'), (r, src(page)[60:400]))
     load_doc(page, W('Some \\emph{stress} here.')); click_text(page, 'here', 4)
     page.evaluate("window.rikuy.prefs.quickParts = [{ name: 'Marked', tex: '\\\\uline{under} \\\\hl{mark} \\\\dsout{gone}' }]; window.rikuy.savePrefs()")
     run_cmd(page, 'quick-part-insert', {'name': 'Marked'}); page.wait_for_timeout(200)
@@ -864,6 +870,13 @@ def r3_review(page):
     a = word_box(page, 'one'); y = word_box(page, 'Start')
     page.mouse.move(a[0] + 3, a[1] + a[3] / 2); page.mouse.down(); page.mouse.move(a[0] + 30, a[1] + 30, steps=4); page.mouse.move(y[0] + 1, y[1] + y[3] / 2, steps=6); page.mouse.up(); page.wait_for_timeout(400)
     check('M6: words dragged out of \\textbf stay bold where they go, and \\textbf{bold} keeps no space before its brace', src(page) == D.replace('Start alpha', '\\textbf{one two} Start alpha').replace('\\textbf{bold one two}', '\\textbf{bold}'), src(page)[40:200])
+    load_doc(page, D); page.wait_for_timeout(200)
+    place_sel(page, ('bold', 'one'))
+    # (the drag begun from this selection as the page's dragstart takes it, dropped before "Start" as
+    # the page's drop moves it: Chromium under Playwright fires no drop for a selection that begins
+    # where a formatted run begins)
+    page.evaluate("""() => { const g = window.rikuy; g.dragMoveStart({ dataTransfer: new DataTransfer() }); const M = g.dragMove; g.dragMove = null; return g.moveSource(M, { f: 'main.tex', p: g.src('main.tex').indexOf('Start') }, false); }"""); page.wait_for_timeout(300)
+    check('N5: the first words dragged out of \\textbf leave no space inside it', '\\textbf{two}' in src(page) and '\\textbf{bold one} Start' in src(page), src(page)[40:200])
     load_doc(page, D); page.wait_for_timeout(200)
     select_text(page, 'gamma')
     g = word_box(page, 'gamma'); m = page.evaluate("(() => { const e = document.querySelector('#pages .a-math'); const r = e.getBoundingClientRect(); return [r.x + 1, r.y + r.height / 2]; })()")

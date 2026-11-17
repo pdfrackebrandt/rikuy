@@ -50,7 +50,8 @@ const VERB = new Set(['verbatim', 'verbatim*', 'lstlisting', 'minted', 'comment'
 export function formScan(src) {
   const b = /\\begin\s*\{document\}/.exec(src);
   if (!b) return null;
-  const re = /\\(begin|end)\s*\{([^{}\n]{1,40})\}|%[^\n]*|\\[\\%{}]/g;
+  // (\verb|…| and \lstinline|…| are words, whatever they hold)
+  const re = /\\(begin|end)\s*\{([^{}\n]{1,40})\}|\\(?:verb\*?|lstinline(?:\[[^\]\n]{0,80}\])?)([^A-Za-z\s*{])[^\n]{0,400}?\3|%[^\n]*|\\[\\%{}]/g;
   re.lastIndex = b.index + b[0].length;
   const stack = [], forms = [];
   let m, n = 0, end = src.length;
