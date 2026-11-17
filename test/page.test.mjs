@@ -652,4 +652,112 @@ ok('a stranger\'s preamble is read in bounded time', () => {
   assert.ok(Date.now() - t2 < 1500, 'took ' + (Date.now() - t2) + ' ms');
 });
 
+// (R1) what the page batch left: the title, author and date in a header, a picture as the
+// watermark, line styles and art for the border, landscape pages for part of a document, \markboth
+// and \markright drawn, lines lineno leaves without numbers, club and widow lines weighed
+const CM = 72.27 / 2.54;
+ok('R1: Document info: \\thetitle from a copy after \\title, once; memoir and titling have their own; none without \\title', () => {
+  const d = doc('\\title{My Title}\n\\author{Ann}\n');
+  const a = twice(d, (t) => PS.docInfoEdits(t, 'title'));
+  assert.equal(a, doc('\\title{My Title}\n\\makeatletter\\let\\thetitle\\@title\\makeatother\n\\author{Ann}\n'));
+  assert.equal(PS.docInfo(a, 'title').ready, true);
+  // the date: before \begin{document} where no \date is (LaTeX's \today)
+  assert.equal(apply(d, PS.docInfoEdits(d, 'date')), doc('\\title{My Title}\n\\author{Ann}\n\\makeatletter\\let\\thedate\\@date\\makeatother\n'));
+  assert.equal(PS.docInfoEdits(doc(''), 'title'), null);
+  assert.ok(/no \\title/.test(PS.docInfo(doc(''), 'title').why));
+  assert.deepEqual(PS.docInfoEdits(doc('\\title{T}\n', 'x', '\\documentclass{memoir}'), 'title'), []);
+  assert.deepEqual(PS.docInfoEdits(doc('\\title{T}\n'), 'author'), null, 'no \\author: nothing to show');
+  assert.deepEqual(PS.docInfoEdits(doc('\\usepackage{titling}\n\\title{T}\n'), 'title'), []);
+  assert.deepEqual(PS.docInfoEdits(doc('\\title{T}\n'), 'file'), []);
+  // CRLF and a title with a comment after it on its line
+  const crlf = doc('\\title{T} % mine\n').replace(/\n/g, '\r\n');
+  assert.equal(apply(crlf, PS.docInfoEdits(crlf, 'title')), doc('\\title{T} % mine\n\\makeatletter\\let\\thetitle\\@title\\makeatother\n').replace(/\n/g, '\r\n'));
+  // the page draws them: hfRuns with the model's text
+  assert.equal(hfRuns('\\thetitle\\ -- \\theauthor, \\jobname', { info: { title: 'T', author: 'A, B', job: 'main' } }).map((r) => r.t).join(''), 'T – A, B, main');
+  const m = buildModel({ files: new Map([['paper.tex', doc('\\title{My \\emph{Title}}\n\\author{A \\and B}\n')]]), main: 'paper.tex' });
+  assert.equal(m.opts.job, 'paper');
+  assert.equal(m.opts.docInfo.title, 'My \\emph{Title}');
+});
+
+ok('R1: a picture as the watermark: written once with graphicx, read back, text again after it', () => {
+  const W8 = 8 * 72.27 / 2.54;
+  const a = twice(doc(''), (t) => PS.watermarkEdits(t, { pic: { file: 'logo.png', width: W8 } }));
+  assert.equal(a, doc('\\usepackage{graphicx}\n\\usepackage{draftwatermark}\n\\DraftwatermarkOptions{text={\\includegraphics[width=8cm]{logo.png}},angle=0}\n'));
+  assert.deepEqual(PS.watermark(a).pic, { file: 'logo.png', width: '8cm' });
+  assert.equal(PS.watermark(a).angle, 0);
+  // hand written forms: \SetWatermarkText{\includegraphics{x}}
+  assert.equal(PS.watermark(doc('\\usepackage{draftwatermark}\n\\SetWatermarkText{\\includegraphics[width=5cm,height=2cm]{a/b.jpg}}\n')).pic.file, 'a/b.jpg');
+  // back to text: the keys of the picture go
+  const t = apply(a, PS.watermarkEdits(a, { text: 'DRAFT', pic: null }));
+  assert.equal(t, doc('\\usepackage{graphicx}\n\\usepackage{draftwatermark}\n\\DraftwatermarkOptions{text=DRAFT}\n'));
+  assert.equal(apply(a, PS.watermarkEdits(a, null)), doc('\\usepackage{graphicx}\n'));
+});
+
+ok('R1: page borders: double, dashed, dotted and art marks written and read back in their form', () => {
+  const L = (b) => PS.pageBorder(doc('\\usepackage{tikz}\n' + PS.borderLine(b) + '\n'));
+  for (const style of ['double', 'dashed', 'dotted']) { const B = L({ inset: CM, width: 0.8, style, color: 'blue' }); assert.equal(B.style, style); assert.equal(B.color, 'blue'); assert.ok(Math.abs(B.width - 0.8) < 0.01); assert.equal(B.art, null); }
+  for (const art of ['dots', 'diamonds', 'stars']) { const B = L({ inset: CM, width: 4, art, color: 'red', step: 0.0125 }); assert.equal(B.art, art); assert.equal(B.color, 'red'); assert.equal(B.step, 0.0125); assert.ok(Math.abs(B.width - 4) < 0.01); }
+  // with the library once, in a list the preamble has, or a line of its own
+  const a = twice(doc(''), (t) => PS.borderEdits(t, { inset: CM, width: 4, art: 'dots', step: 0.01 }));
+  assert.ok(a.includes('\\usepackage{tikz}\n\\usetikzlibrary{decorations.markings}\n\\AddToHook{shipout/background}'), a);
+  const b = apply(doc('\\usepackage{tikz}\n\\usetikzlibrary{calc}\n'), PS.borderEdits(doc('\\usepackage{tikz}\n\\usetikzlibrary{calc}\n'), { inset: CM, width: 4, art: 'stars', step: 0.01 }));
+  assert.ok(b.includes('\\usetikzlibrary{calc,decorations.markings}') && (b.match(/usetikzlibrary/g) || []).length === 1, b);
+  // the old single form reads as before; off takes the line out
+  assert.equal(apply(a, PS.borderEdits(a, null)), doc('\\usepackage{tikz}\n\\usetikzlibrary{decorations.markings}\n'));
+  assert.ok(PS.artStep({ w: 597.5, h: 845 }, CM) > 0.002 && PS.artStep({ w: 597.5, h: 845 }, CM) < 0.01);
+  // (a stranger's Word file's sheet: never a step of 0, which TikZ would loop on for ever)
+  assert.equal(PS.artStep({ w: 1e12, h: 1e12 }, 0), 0.001);
+  assert.equal(PS.artStep({ w: NaN, h: 5 }, 0), 0.0125);
+});
+
+ok('R1: landscape pages for part of a document: pdflscape around whole paragraphs, out again to the byte', () => {
+  const d = doc('', 'One.\n\nTwo wide.\n\nThree.');
+  const s0 = d.indexOf('Two'), e0 = d.indexOf('wide.') + 5;
+  const a = apply(d, PS.landscapeEdits(d, s0, e0));
+  assert.equal(a, doc('\\usepackage{pdflscape}\n', 'One.\n\n\\begin{landscape}\nTwo wide.\n\\end{landscape}\n\nThree.'));
+  const L = PS.landscapeAt(a, a.indexOf('wide'));
+  assert.ok(L && a.slice(L.s, L.e).startsWith('\\begin{landscape}') && a.slice(L.s, L.e).endsWith('\\end{landscape}'));
+  assert.equal(apply(a, PS.unwrapLandscape(a, L)), doc('\\usepackage{pdflscape}\n', 'One.\n\nTwo wide.\n\nThree.'));
+  assert.equal(PS.landscapeAt(a, a.indexOf('Three')), null);
+  // lscape loaded: no pdflscape; a commented \begin{landscape} is none
+  assert.ok(!apply(doc('\\usepackage{lscape}\n', 'X.'), PS.landscapeEdits(doc('\\usepackage{lscape}\n', 'X.'), doc('\\usepackage{lscape}\n', 'X.').indexOf('X'), doc('\\usepackage{lscape}\n', 'X.').indexOf('X') + 2)).includes('pdflscape'));
+  assert.equal(PS.landscapeAt(doc('', '% \\begin{landscape}\nX.\n% \\end{landscape}'), doc('', '% \\begin{landscape}\nX.\n% \\end{landscape}').indexOf('X.')), null);
+  // CRLF
+  const c = d.replace(/\n/g, '\r\n'), ca = apply(c, PS.landscapeEdits(c, c.indexOf('Two'), c.indexOf('wide.') + 5));
+  assert.equal(ca, a.replace(/\n/g, '\r\n'));
+  assert.equal(apply(ca, PS.unwrapLandscape(ca, PS.landscapeAt(ca, ca.indexOf('wide')))), doc('\\usepackage{pdflscape}\n', 'One.\n\nTwo wide.\n\nThree.').replace(/\n/g, '\r\n'));
+});
+
+ok('R1: the model: \\markboth and \\markright as marks, nolinenumbers\' lines, landscape\'s paragraphs, tabbing\'s lines', () => {
+  const m = buildModel({ files: new Map([['main.tex', doc('\\usepackage{pdflscape,lineno}\n', '\\markboth{L \\emph{x}}{R}\nA.\n\n\\markright{RR}\n\n\\begin{nolinenumbers}\nN.\n\\end{nolinenumbers}\n\n\\begin{landscape}\nW.\n\nV.\n\\end{landscape}\n\n\\begin{tabbing}\nAa \\= Bb \\kill\nx \\> y\\\\\nz\n\\end{tabbing}')]]), main: 'main.tex' });
+  const items = m.blocks.flatMap((b) => b.items);
+  assert.deepEqual(items.filter((i) => i.type === 'pagemark').map((i) => i.mark), [{ markL: 'L \\emph{x}', markR: 'R' }, { markR: 'RR' }]);
+  assert.ok(items.find((i) => i.noLn) && items.filter((i) => i.noLn).length === 1);
+  const land = items.filter((i) => i.land);
+  assert.equal(land.length, 2); assert.equal(land[0].land, land[1].land);
+  const tab = items.filter((i) => i.tab);
+  assert.equal(tab.length, 3); assert.ok(tab[0].tabSets && !tab[1].tabSets && /tabk/.test(tab[0].cls));
+  assert.deepEqual(tab[1].inl.map((c) => c.kids.map((k) => k.t).join('')), ['x ', 'y']);
+  // (review L1: \+ starts the lines after it at the next stop, \- takes that back, \< for one line)
+  const t2 = buildModel({ files: new Map([['main.tex', doc('', '\\begin{tabbing}\nAa \\= Bb \\= Cc\\kill\n\\+ In \\> x\\\\\nmore\\\\\n\\<back\\\\\n\\- Out\n\\end{tabbing}')]]), main: 'main.tex' }).blocks.flatMap((b) => b.items).filter((i) => i.tab);
+  assert.deepEqual(t2.map((i) => i.tabFrom || 0), [0, 0, 1, 0, 1], "\\- moves the margin back for the lines after its own");
+  assert.ok(!JSON.stringify(items).includes('"t":"R"'), 'no mark printed in the text');
+});
+
+ok('R1: club and widow penalties read from the preamble; flush or ragged pages', () => {
+  assert.deepEqual(PS.penalties(doc('')), { widow: 150, club: 150, flush: false });
+  assert.deepEqual(PS.penalties(doc('\\widowpenalty=10000\n\\clubpenalty 0\n')), { widow: 10000, club: 0, flush: false });
+  assert.deepEqual(PS.penalties(doc('', 'x', '\\documentclass{book}')), { widow: 150, club: 150, flush: true });
+  assert.deepEqual(PS.penalties(doc('\\raggedbottom\n', 'x', '\\documentclass[twoside]{article}')).flush, false);
+  // (review L2: the standard classes are flush in two columns)
+  assert.equal(PS.penalties(doc('', 'x', '\\documentclass[twocolumn]{article}')).flush, true);
+  assert.deepEqual(PS.penalties(doc('\\usepackage[all]{nowidow}\n')), { widow: 10000, club: 10000, flush: false });
+  // a stranger's spaces read once
+  const t = Date.now();
+  PS.penalties(doc('\\widowpenalty' + ' '.repeat(200000) + 'x\n'));
+  PS.landscapeAt(doc('', '\\begin{landscape}'.repeat(20000)), 10);
+  PS.pageBorder(doc('\\AddToHook{shipout/background}{\\begin{tikzpicture}[remember picture,overlay]\\draw[' + '['.repeat(5000) + '\n'));
+  assert.ok(Date.now() - t < 1000, 'took ' + (Date.now() - t) + ' ms');
+});
+
 console.log('page: ' + n + ' passed');

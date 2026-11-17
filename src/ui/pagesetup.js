@@ -54,12 +54,15 @@ function buttons(app, p, ok, okName = 'OK') {
 const section = (name) => { const f = mk('fieldset', 'ps-sec'); f.append(mk('legend', '', name)); return f; };
 const nf = (id, name, len, o = {}) => numberField({ id, name, value: len, units: o.units || ['cm', 'mm', 'in', 'pt'], step: o.step || 0.1, min: o.min ?? 0, max: o.max ?? 100 });
 const anchorOf = (app, id) => app.pageAnchor(id);
+// (R1) the button the dialog opens from, or where its group or the ribbon is when the button is
+// out of sight (a phone, the search box): a dialog with no element to stand by is placed by a rect
+const placeAt = (app, id) => { const a = anchorOf(app, id); return a && a.nodeType === 1 ? { anchor: a } : { rect: a || { left: 8, right: 8, top: 52, bottom: 52, width: 0, height: 0 } }; };
 
 // ---- Page setup ------------------------------------------------------------------------------------
 export function openPageSetup(app, focus) {
   // (the paper and its orientation as the PDF's sheet has them: src/layout.js sheetSize)
   const O = app.model.opts, g = geometry(O), m = app.pageMargins(), P = { w: g.pw, h: g.ph, land: g.land };
-  const p = dialog(app, { title: 'Page setup', anchor: anchorOf(app, 'page-setup'), cls: 'pop-ps' });
+  const p = dialog(app, { title: 'Page setup', ...placeAt(app, 'page-setup'), cls: 'pop-ps' });
   // Margins
   const mar = section('Margins');
   const top = nf('ps-top', 'Top', cm(m.t)), bottom = nf('ps-bottom', 'Bottom', cm(m.b));
@@ -133,7 +136,7 @@ export function openPageSetup(app, focus) {
 
 // ---- More columns ----------------------------------------------------------------------------------
 export function openColumns(app) {
-  const p = dialog(app, { title: 'Columns', anchor: anchorOf(app, 'columns'), cls: 'pop-ps' });
+  const p = dialog(app, { title: 'Columns', ...placeAt(app, 'columns'), cls: 'pop-ps' });
   const g = geometry(app.model.opts), at = app.ribbonAt();
   const n0 = app.pageColumns();
   const num = mk('input', 'ps-num');
@@ -164,41 +167,86 @@ export function openColumns(app) {
 const WM_COLORS = [['', 'Light gray (the package\'s own)'], ['gray!50', 'Gray'], ['red!30', 'Light red'], ['blue!25', 'Light blue'], ['green!30', 'Light green']];
 export function openWatermark(app) {
   const W = PS.watermark(app.src(app.main), { others: app.preambleOthers() }) || {};
-  const p = dialog(app, { title: 'Watermark', anchor: anchorOf(app, 'watermark'), cls: 'pop-ps' });
+  const p = dialog(app, { title: 'Watermark', ...placeAt(app, 'watermark'), cls: 'pop-ps' });
   const text = mk('input', 'ps-text');
   text.type = 'text'; text.id = 'ps-wm-text'; text.value = W.on ? W.text : 'DRAFT'; text.setAttribute('aria-label', 'Watermark text'); text.maxLength = 120;
   const scale = mk('input', 'ps-num');
   scale.type = 'number'; scale.step = '0.1'; scale.min = '0.1'; scale.max = '5'; scale.id = 'ps-wm-scale'; scale.value = String(W.on ? W.scale : 1); scale.setAttribute('aria-label', 'Size (scale)');
   const angle = select('ps-wm-angle', 'Layout', [['45', 'Diagonal'], ['0', 'Horizontal']], W.on && W.angle === 0 ? '0' : '45');
   const color = select('ps-wm-color', 'Color', WM_COLORS.some(([v]) => v === (W.color || '')) ? WM_COLORS : [...WM_COLORS, [W.color, W.color]], W.color || '');
-  p.append(row('Text', text, 'ps-wm-text'), row('Size (scale)', scale, 'ps-wm-scale'), row('Layout', angle, 'ps-wm-angle'), row('Color', color, 'ps-wm-color'));
+  // (R1) Word's Picture watermark: a picture of the project (or one chosen now, added to it),
+  // its width, upright (draftwatermark's text={\includegraphics[width=...]{...}}, angle=0)
+  const kind = select('ps-wm-kind', 'Watermark', [['text', 'Text watermark'], ['pic', 'Picture watermark']], W.on && W.pic ? 'pic' : 'text');
+  // (only names TeX reads as they are written: a project from someone else may hold others)
+  const pics = () => [...new Set([...app.assetBlobs.keys(), ...(W.pic ? [W.pic.file] : [])])].filter((n) => /^[A-Za-z0-9_.\/-]{1,120}\.(png|jpe?g)$/i.test(n) && !/\.\.|^\//.test(n)).sort();
+  const pic = select('ps-wm-pic', 'Picture', pics().map((n) => [n, n]), W.pic ? W.pic.file : pics()[0] || '');
+  const choose = mk('button', 'btn ghost sm', 'Select picture…');
+  choose.type = 'button';
+  choose.addEventListener('click', () => {
+    const inp = mk('input');
+    inp.type = 'file'; inp.accept = '.png,.jpg,.jpeg,image/png,image/jpeg';
+    inp.addEventListener('change', () => {
+      const f = inp.files && inp.files[0];
+      if (!f || !/\.(png|jpe?g)$/i.test(f.name)) { if (f) app.toast(f.name + ' is no PNG or JPEG picture.'); return; }
+      const nm = app.pageAssetName(f.name, f);
+      if (![...pic.options].some((o) => o.value === nm)) pic.add(new Option(nm, nm));
+      pic.value = nm;
+    });
+    inp.click();
+  });
+  const picBox = mk('div', 'ps-pic');
+  picBox.append(pic, choose);
+  const pw = PS.lenPt(W.pic && W.pic.width, { w: app.layout.g.pw, h: app.layout.g.ph, tw: app.layout.g.tw });
+  const width = nf('ps-wm-width', 'Width', cm(pw || 10 * CM), { max: 60 });
+  const rows = { text: [row('Text', text, 'ps-wm-text'), row('Color', color, 'ps-wm-color')], pic: [row('Picture', picBox, 'ps-wm-pic'), row('Width', width)] };
+  p.append(row('Watermark', kind, 'ps-wm-kind'), ...rows.text, ...rows.pic, row('Size (scale)', scale, 'ps-wm-scale'), row('Layout', angle, 'ps-wm-angle'));
+  const show = () => { for (const [k, rs] of Object.entries(rows)) for (const r of rs) r.hidden = kind.value !== k; app.positionPop(); };
+  kind.addEventListener('change', () => { if (kind.value === 'pic' && !(W.on && W.pic)) angle.value = '0'; show(); });
+  show();
   const rm = mk('button', 'btn ghost sm', 'Remove watermark');
   rm.type = 'button';
   rm.disabled = !W.on;
   rm.addEventListener('click', () => { app.closePop(true); app.runCommand('watermark', 'off'); });
   buttons(app, p, () => {
+    if (kind.value === 'pic') {
+      if (!pic.value) { app.toast('Choose a picture first (Select picture…)'); return null; }
+      return () => app.runCommand('watermark', { pic: { file: pic.value, width: toPt(width.get()) }, scale: parseFloat(scale.value) || 1, angle: +angle.value, color: null });
+    }
     const t = text.value.replace(/[{}\\%#&$]/g, '').trim();
     if (!t) return null;
     return () => app.runCommand('watermark', { text: t, scale: parseFloat(scale.value) || 1, angle: +angle.value, color: color.value || null });
   });
   p.querySelector('.ps-acts').prepend(rm);
   app.positionPop();
-  text.focus(); text.select();
+  if (kind.value === 'pic') kind.focus(); else { text.focus(); text.select(); }
   return p;
 }
 
 // ---- Page borders ------------------------------------------------------------------------------------
 export function openBorders(app) {
   const B = PS.pageBorder(app.src(app.main));
-  const p = dialog(app, { title: 'Page borders', anchor: anchorOf(app, 'page-borders'), cls: 'pop-ps' });
+  const p = dialog(app, { title: 'Page borders', ...placeAt(app, 'page-borders'), cls: 'pop-ps' });
   const kind = select('ps-bd-kind', 'Setting', [['none', 'None'], ['box', 'Box']], B ? 'box' : 'none');
   const inset = nf('ps-bd-inset', 'Distance from the edge', cm(B ? B.inset : CM), { max: 10 });
   const width = nf('ps-bd-width', 'Width', { value: B ? Math.round(B.width * 100) / 100 : 0.4, unit: 'pt' }, { units: ['pt', 'mm'], step: 0.2, max: 20 });
   const color = select('ps-bd-color', 'Color', [['', 'Black'], ['gray', 'Gray'], ['blue', 'Blue'], ['red', 'Red']], (B && B.color) || '');
-  p.append(row('Setting', kind, 'ps-bd-kind'), row('Distance from the edge', inset), row('Width', width), row('Color', color, 'ps-bd-color'));
+  // (R1) Word's Style (TikZ's line styles) and Art (small marks along it: their width their size)
+  const style = select('ps-bd-style', 'Style', PS.BORDER_STYLES, (B && B.style) || 'single');
+  const art = select('ps-bd-art', 'Art', [['', '(none)'], ...PS.BORDER_ART], (B && B.art) || '');
+  art.addEventListener('change', () => {
+    style.disabled = !!art.value;
+    const w = width.get();
+    // (a mark wants a few points, a line less than one)
+    if (art.value && w && toPt(w) < 2) width.set({ value: 4, unit: 'pt' });
+    else if (!art.value && w && toPt(w) > 3) width.set({ value: 0.4, unit: 'pt' });
+  });
+  style.disabled = !!art.value;
+  p.append(row('Setting', kind, 'ps-bd-kind'), row('Style', style, 'ps-bd-style'), row('Art', art, 'ps-bd-art'), row('Distance from the edge', inset), row('Width', width), row('Color', color, 'ps-bd-color'));
   buttons(app, p, () => {
     if (kind.value === 'none') return B ? () => app.runCommand('page-borders', 'off') : null;
-    return () => app.runCommand('page-borders', { inset: toPt(inset.get()), width: toPt(width.get()), color: color.value || null });
+    const d = toPt(inset.get());
+    const g = app.layout.g;
+    return () => app.runCommand('page-borders', { inset: d, width: toPt(width.get()), color: color.value || null, style: art.value ? 'single' : style.value, art: art.value || null, step: art.value ? (B && B.art && B.step) || PS.artStep({ w: g.pw, h: g.ph }, d) : null });
   });
   app.positionPop();
   kind.focus();
@@ -208,7 +256,7 @@ export function openBorders(app) {
 // ---- Line numbering options ----------------------------------------------------------------------------
 export function openLineNumbering(app) {
   const L = app.pageLineNumbers() || {};
-  const p = dialog(app, { title: 'Line numbers', anchor: anchorOf(app, 'line-numbers'), cls: 'pop-ps' });
+  const p = dialog(app, { title: 'Line numbers', ...placeAt(app, 'line-numbers'), cls: 'pop-ps' });
   const mode = select('ps-ln-mode', 'Numbering', [['none', 'None'], ['continuous', 'Continuous'], ['page', 'Restart each page'], ['section', 'Restart each section']], L.on ? L.mode : 'none');
   const by = mk('input', 'ps-num');
   by.type = 'number'; by.min = '1'; by.max = '100'; by.id = 'ps-ln-by'; by.value = String(L.modulo || 1); by.setAttribute('aria-label', 'Count by');
@@ -227,7 +275,7 @@ export function openLineNumbering(app) {
 // ---- Hyphenation options --------------------------------------------------------------------------------
 export function openHyphenation(app) {
   const src = app.src(app.main), h = PS.hyphenation(src, { others: app.preambleOthers() }), X = PS.exceptions(src);
-  const p = dialog(app, { title: 'Hyphenation', anchor: anchorOf(app, 'hyphenation'), cls: 'pop-ps' });
+  const p = dialog(app, { title: 'Hyphenation', ...placeAt(app, 'hyphenation'), cls: 'pop-ps' });
   const auto = check('ps-hy-auto', 'Hyphenate the document automatically', h !== 'none');
   const ta = mk('textarea', 'ps-ta');
   ta.id = 'ps-hy-words'; ta.rows = 4; ta.value = X.words.join('\n'); ta.setAttribute('aria-label', 'Words broken your way');
@@ -247,7 +295,7 @@ export function openHyphenation(app) {
 // ---- Format page numbers -----------------------------------------------------------------------------------
 export function openPageNumberFormat(app) {
   const P = PS.pageNumbers(app.src(app.main)) || { numbering: 'arabic', start: 1 };
-  const p = dialog(app, { title: 'Page number format', anchor: anchorOf(app, 'page-number'), cls: 'pop-ps' });
+  const p = dialog(app, { title: 'Page number format', ...placeAt(app, 'page-number'), cls: 'pop-ps' });
   const fmt = select('ps-pn-fmt', 'Number format', PS.NUMBERINGS, PS.NUMBERINGS.some(([v]) => v === P.numbering) ? P.numbering : 'arabic');
   const start = mk('input', 'ps-num');
   start.type = 'number'; start.min = '0'; start.max = '9999'; start.id = 'ps-pn-start'; start.value = String(P.start); start.setAttribute('aria-label', 'Start at');

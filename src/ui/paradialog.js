@@ -335,6 +335,44 @@ function applyEdits(src, edits) {
 // ---- Tabs: a stop at the right margin with its leader --------------------------------------------------
 export function openTabs(app, at) {
   const d = dialog(app, { title: 'Tabs', ...placeOf(app), cls: 'pop-pd pop-tabs' });
+  // (R1) stops at positions: the paragraph as LaTeX's tabbing, its first line the stops (\kill)
+  const N = app.paraTabsNow(at);
+  const stops = [...N.stops];
+  const ts = section('Tab stop position');
+  const pos = mk('input', 'pd-num');
+  pos.type = 'number'; pos.step = '0.25'; pos.min = '0.1'; pos.max = '50'; pos.id = 'pd-tabpos'; pos.setAttribute('aria-label', 'Tab stop position (cm)');
+  const list = mk('div', 'pd-tablist');
+  list.setAttribute('role', 'list'); list.setAttribute('aria-label', 'Tab stops');
+  const btn = (name, title, fn) => { const b = mk('button', 'btn ghost sm', name); b.type = 'button'; b.title = title; b.addEventListener('click', fn); return b; };
+  const draw = () => {
+    list.replaceChildren(...stops.map((x, k) => {
+      const r = mk('div', 'pd-tabstop');
+      r.setAttribute('role', 'listitem');
+      r.append(mk('span', '', (Math.round(x / P.PT.cm * 100) / 100) + ' cm'), btn('Clear', 'Take this stop away', () => { stops.splice(k, 1); draw(); }));
+      return r;
+    }));
+    if (!stops.length) list.append(mk('span', 'pd-note', 'No stops.'));
+    clearAll.disabled = !stops.length;
+  };
+  const setB = btn('Set', 'A stop at this position, from the paragraph\'s left edge', () => {
+    const v = parseFloat(pos.value);
+    if (!(v > 0)) { pos.focus(); return; }
+    const x = v * P.PT.cm;
+    if (!stops.some((y) => Math.abs(y - x) < 0.5)) { stops.push(x); stops.sort((a, b) => a - b); }
+    pos.value = ''; draw(); pos.focus();
+  });
+  setB.id = 'pd-tabset';
+  const clearAll = btn('Clear all', 'Every stop away', () => { stops.length = 0; draw(); });
+  // (the paragraph the dialog was opened for: the fields have the focus meanwhile)
+  const okB = btn('OK', 'The paragraph with these stops (Tab goes to the next)', () => { app.closePop(true); app.ribbonBack(); app.paraTabStops([...stops], at); app.ribbonSync && app.ribbonSync(); });
+  okB.className = 'btn sm';
+  const row = mk('div', 'pop-row pd-tabrow');
+  row.append(pos, mk('span', 'pd-unit', 'cm'), setB, clearAll, mk('span', 'grow'), okB);
+  const lock = N.why || (N.text ? 'Its stops are set by the \\= among its words: change them in the source.' : '');
+  if (lock) { for (const x of [pos, setB, clearAll, okB]) x.disabled = true; }
+  ts.append(row, list, mk('p', 'pd-note', lock || 'Each stop a place the text after a Tab (\\>) starts at; Enter starts the next line.'));
+  draw();
+  if (lock) clearAll.disabled = true;
   const sec = section('Leader');
   const opts = [['none', 'None (\\hfill)'], ['dots', 'Dots ……… (\\dotfill)'], ['line', 'Line ____ (\\hrulefill)']];
   const radios = opts.map(([v, t], k) => {
@@ -349,12 +387,13 @@ export function openTabs(app, at) {
   const acts = mk('div', 'pop-row pd-acts');
   const cancel = mk('button', 'btn ghost sm', 'Cancel');
   cancel.type = 'button'; cancel.addEventListener('click', () => app.closePop());
-  const set = mk('button', 'btn sm', 'Set');
+  const set = mk('button', 'btn sm', 'Set leader');
   set.type = 'button';
   set.addEventListener('click', () => { const v = radios.find((r) => r.checked).value; app.closePop(true); app.ribbonBack(); app.runCommand('tab-leader', v); });
+  set.title = 'A stop at the right margin with this leader, at the caret';
   acts.append(mk('span', 'grow'), cancel, set);
-  d.append(note, sec, acts);
+  d.append(ts, note, sec, acts);
   app.positionPop();
-  radios[1].focus();
+  if (!lock) pos.focus(); else radios[1].focus();
   return d;
 }

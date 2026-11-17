@@ -12,6 +12,7 @@
 // the text of the header with TeX's signs escaped, numbers and colours checked to be such.
 
 import { text, parseXml, find, textContent } from './docx.js';
+import { borderLine, artStep } from './pagesrc.js';
 
 const enc = new TextEncoder();
 const W_NS = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
@@ -25,7 +26,7 @@ function hfPara(places, tw, style) {
   const runs = (list) => list.map((r) => {
     const rpr = (r.b ? '<w:b/>' : '') + (r.i ? '<w:i/>' : '');
     const pr = rpr ? '<w:rPr>' + rpr + '</w:rPr>' : '';
-    if (r.field) return '<w:fldSimple w:instr="' + r.field + '"><w:r>' + pr + '<w:t>' + (r.field === 'PAGE' ? '1' : r.field === 'NUMPAGES' ? '1' : '') + '</w:t></w:r></w:fldSimple>';
+    if (r.field) return '<w:fldSimple w:instr="' + r.field + '"><w:r>' + pr + '<w:t xml:space="preserve">' + (r.res != null ? xmlEsc(r.res) : r.field === 'PAGE' ? '1' : r.field === 'NUMPAGES' ? '1' : '') + '</w:t></w:r></w:fldSimple>';
     return '<w:r>' + pr + '<w:t xml:space="preserve">' + xmlEsc(r.t) + '</w:t></w:r>';
   }).join('');
   const tab = '<w:r><w:tab/></w:r>';
@@ -70,22 +71,44 @@ export function pageDocx(parts, P) {
     if (P.titlePg) add(kind, 'first', H.first || [[], [], []]);
   }
   if (refs.length) { parts.set('word/_rels/document.xml.rels', enc.encode(rels)); parts.set('[Content_Types].xml', enc.encode(types)); }
-  // the section's own: Word wants them in this order
-  const M = P.margins;
-  const sect = [
-    ...refs,
-    inner.match(/<w:footnotePr>[\s\S]*?<\/w:footnotePr>/)?.[0] || '',
-    '<w:pgSz w:w="' + int(P.w) + '" w:h="' + int(P.h) + '"' + (P.land ? ' w:orient="landscape"' : '') + '/>',
-    '<w:pgMar w:top="' + int(M.top) + '" w:right="' + int(M.right) + '" w:bottom="' + int(M.bottom) + '" w:left="' + int(M.left) + '" w:header="' + int(M.header) + '" w:footer="' + int(M.footer) + '" w:gutter="' + int(M.gutter) + '"/>',
-    P.border ? '<w:pgBorders w:offsetFrom="page">' + ['top', 'left', 'bottom', 'right'].map((s) => '<w:' + s + ' w:val="single" w:sz="' + int(P.border.sz) + '" w:space="' + Math.min(31, int(P.border.space)) + '" w:color="' + (P.border.color || '000000') + '"/>').join('') + '</w:pgBorders>' : '',
-    P.lnNum ? '<w:lnNumType w:countBy="' + Math.max(1, int(P.lnNum.countBy)) + '" w:restart="' + P.lnNum.restart + '"/>' : '',
-    P.pgNum ? '<w:pgNumType' + (P.pgNum.fmt && P.pgNum.fmt !== 'decimal' ? ' w:fmt="' + P.pgNum.fmt + '"' : '') + (P.pgNum.start != null ? ' w:start="' + int(P.pgNum.start) + '"' : '') + '/>' : '',
-    P.cols && P.cols.num > 1 ? '<w:cols w:num="' + int(P.cols.num) + '" w:space="' + int(P.cols.space) + '"' + (P.cols.sep ? ' w:sep="1"' : '') + '/>' : '',
-    P.titlePg ? '<w:titlePg/>' : '',
-    // (what pandoc or the right to left set up put there besides)
-    ...(inner.match(/<w:(?:bidi|rtlGutter)\b[^>]*\/>/g) || [])
-  ].filter(Boolean).join('');
-  d = d.slice(0, k) + '<w:sectPr>' + sect + '</w:sectPr>' + d.slice(end);
+  // the section's own: Word wants them in this order. (R1) A section of its own, as the parts a
+  // document sets otherwise are (src/pageword.js sectionRuns: multicols around some paragraphs,
+  // pdflscape's landscape pages): o.type (continuous), o.land (the sheet turned, its margins
+  // with it: the portrait page's left one at the top), o.cols; o.first: the document's first
+  // section, the only one whose numbers start again
+  const sectOf = (o) => {
+    const M = P.margins, land = !!o.land;
+    const cols = o.cols != null ? (o.cols > 1 ? { num: o.cols, space: P.cols ? P.cols.space : 199, sep: P.cols && P.cols.sep } : null) : P.cols;
+    return [
+      ...(o.refs || []),
+      o.footnotePr || '',
+      o.type ? '<w:type w:val="' + o.type + '"/>' : '',
+      '<w:pgSz w:w="' + int(land ? P.h : P.w) + '" w:h="' + int(land ? P.w : P.h) + '"' + (!!P.land !== land ? ' w:orient="landscape"' : '') + '/>',
+      // (turned, the header and footer stay within its new top and bottom margins, a line inside)
+      land ? '<w:pgMar w:top="' + int(M.left) + '" w:right="' + int(M.top) + '" w:bottom="' + int(M.right) + '" w:left="' + int(M.bottom) + '" w:header="' + int(Math.min(M.header, Math.max(0, M.left - 240))) + '" w:footer="' + int(Math.min(M.footer, Math.max(0, M.right - 240))) + '" w:gutter="' + int(M.gutter) + '"/>'
+        : '<w:pgMar w:top="' + int(M.top) + '" w:right="' + int(M.right) + '" w:bottom="' + int(M.bottom) + '" w:left="' + int(M.left) + '" w:header="' + int(M.header) + '" w:footer="' + int(M.footer) + '" w:gutter="' + int(M.gutter) + '"/>',
+      P.border ? '<w:pgBorders w:offsetFrom="page">' + ['top', 'left', 'bottom', 'right'].map((s) => '<w:' + s + ' w:val="' + (P.border.val || 'single') + '" w:sz="' + int(P.border.sz) + '" w:space="' + Math.min(31, int(P.border.space)) + '" w:color="' + (P.border.color || '000000') + '"/>').join('') + '</w:pgBorders>' : '',
+      P.lnNum ? '<w:lnNumType w:countBy="' + Math.max(1, int(P.lnNum.countBy)) + '" w:restart="' + P.lnNum.restart + '"/>' : '',
+      P.pgNum ? '<w:pgNumType' + (P.pgNum.fmt && P.pgNum.fmt !== 'decimal' ? ' w:fmt="' + P.pgNum.fmt + '"' : '') + (o.first && P.pgNum.start != null ? ' w:start="' + int(P.pgNum.start) + '"' : '') + '/>' : '',
+      cols && cols.num > 1 ? '<w:cols w:num="' + int(cols.num) + '" w:space="' + int(cols.space) + '"' + (cols.sep ? ' w:sep="1"' : '') + '/>' : '',
+      o.first && P.titlePg ? '<w:titlePg/>' : '',
+      // (what pandoc or the right to left set up put there besides)
+      ...(o.rest || [])
+    ].filter(Boolean).join('');
+  };
+  const L = P.lastSection || {};
+  const nInner = (d.slice(0, k).match(/<w:sectPr>/g) || []).length;
+  // (the headers and footers go with the first section, which the others take them from)
+  const sect = sectOf({ refs: nInner ? [] : refs, footnotePr: inner.match(/<w:footnotePr>[\s\S]*?<\/w:footnotePr>/)?.[0], type: L.type, land: L.land, cols: L.cols, first: !nInner, rest: inner.match(/<w:(?:bidi|rtlGutter)\b[^>]*\/>/g) || [] });
+  // (the sections before the last, each its paragraph's sectPr as src/wordast.js wrote it: its
+  // own type, sheet and columns, the rest the document's)
+  let ns = 0;
+  const head = d.slice(0, k).replace(/<w:sectPr>([\s\S]{0,400}?)<\/w:sectPr>/g, (all, own) => {
+    const type = /<w:type w:val="(\w+)"\/>/.exec(own), cols = /<w:cols w:num="(\d+)"/.exec(own);
+    const first = ns++ === 0;
+    return '<w:sectPr>' + sectOf({ refs: first ? refs : [], type: type ? type[1] : null, land: /w:orient="landscape"/.test(own), cols: cols ? +cols[1] : undefined, first }) + '</w:sectPr>';
+  });
+  d = head + '<w:sectPr>' + sect + '</w:sectPr>' + d.slice(end);
   // the page's colour
   if (P.background && /^[0-9A-F]{6}$/.test(P.background)) d = d.replace(/(<w:document\b[^>]*>)/, '$1<w:background w:color="' + P.background + '"/>');
   parts.set('word/document.xml', enc.encode(d));
@@ -127,14 +150,16 @@ export function hfPlaces(xml) {
   walk(root, paras);
   for (const p of paras.slice(0, 20)) {
     const segs = [''];
-    let field = 0, instr = '', used = false;
+    let field = 0, instr = '', used = false, shown = false;
+    // (R1: a field LaTeX has no command for, the title or the author, is the text Word shows of it)
+    const keeps = (i) => !fieldTex(i) && /^\s*(TITLE|AUTHOR|FILENAME|SUBJECT|DOCPROPERTY|STYLEREF)\b/i.test(i);
     const go = (el, depth = 0) => {
       if (!el || typeof el === 'string' || depth > 40) return;
-      if (el.n === 'w:fldSimple') { segs[segs.length - 1] += fieldTex(el.a['w:instr']); used = true; return; }
-      if (el.n === 'w:fldChar') { const t = el.a['w:fldCharType']; if (t === 'begin') { field++; instr = ''; } else if (t === 'separate') { if (field === 1) { segs[segs.length - 1] += fieldTex(instr); used = true; } } else if (t === 'end') field = Math.max(0, field - 1); return; }
+      if (el.n === 'w:fldSimple') { if (keeps(el.a['w:instr'] || '')) { for (const c of el.c || []) go(c, depth + 1); return; } segs[segs.length - 1] += fieldTex(el.a['w:instr']); used = true; return; }
+      if (el.n === 'w:fldChar') { const t = el.a['w:fldCharType']; if (t === 'begin') { field++; instr = ''; shown = false; } else if (t === 'separate') { if (field === 1) { if (keeps(instr)) shown = true; else { segs[segs.length - 1] += fieldTex(instr); used = true; } } } else if (t === 'end') { field = Math.max(0, field - 1); shown = false; } return; }
       if (el.n === 'w:instrText') { instr += textContent(el); return; }
       if (el.n === 'w:tab' && !field) { if (segs.length < 3) segs.push(''); return; }
-      if (el.n === 'w:t' && !field) { segs[segs.length - 1] += texEsc(textContent(el)).slice(0, 300); used = true; return; }
+      if (el.n === 'w:t' && (!field || (field === 1 && shown))) { segs[segs.length - 1] += texEsc(textContent(el)).slice(0, 300); used = true; return; }
       if (el.n === 'w:pPr' || el.n === 'w:rPr') return;
       for (const c of el.c || []) go(c, depth + 1);
     };
@@ -232,9 +257,14 @@ export function pageLatex(parts, sect, rels) {
     const c = /^[0-9A-Fa-f]{6}$/.test(top.a['w:color'] || '') && top.a['w:color'] !== '000000' && top.a['w:color'].toLowerCase() !== 'auto' ? top.a['w:color'].toUpperCase() : null;
     out.packages.push('tikz');
     if (c) out.lines.push('\\definecolor{pageborder}{HTML}{' + c + '}');
-    const opt = [Math.abs(w - 0.4) > 0.01 ? 'line width=' + (Math.round(w * 100) / 100) + 'pt' : '', c ? 'pageborder' : ''].filter(Boolean).join(',');
-    const dd = (Math.round(inset * 100) / 100) + 'cm';
-    out.lines.push('\\AddToHook{shipout/background}{\\begin{tikzpicture}[remember picture,overlay]\\draw' + (opt ? '[' + opt + ']' : '') + ' ([shift={(' + dd + ',-' + dd + ')}]current page.north west) rectangle ([shift={(-' + dd + ',' + dd + ')}]current page.south east);\\end{tikzpicture}}');
+    // (R1) Word's line styles as TikZ's, its art (a picture repeated) as marks along the line
+    const v = top.a['w:val'];
+    const style = /^double|^thinThick|^thickThin/.test(v) ? 'double' : /^dash/.test(v) ? 'dashed' : /^dot(ted)?$/.test(v) ? 'dotted' : 'single';
+    const LINES = /^(single|thick|double|dotted|dashed|dotDash|dotDotDash|triple|thinThick|thickThin|thinThickThin|wave|doubleWave|dashSmallGap|dashDotStroked|threeDEmboss|threeDEngrave|outset|inset|none|nil)/;
+    const art = LINES.test(v) ? null : /^stars/.test(v) ? 'stars' : /^diamonds/.test(v) ? 'diamonds' : 'dots';
+    if (art) out.lines.push('\\usetikzlibrary{decorations.markings}');
+    const dd = Math.round(inset * 100) / 100 * 72.27 / 2.54, pw = (+(one('w:pgSz') || { a: {} }).a['w:w'] || 11906) / 20, ph = (+(one('w:pgSz') || { a: {} }).a['w:h'] || 16838) / 20;
+    out.lines.push(borderLine({ inset: dd, width: art ? Math.max(2, Math.min(15, (+top.a['w:sz'] || 8) / 2)) : w, color: c ? 'pageborder' : null, style, art, step: art ? artStep({ w: pw * 72.27 / 72, h: ph * 72.27 / 72 }, dd) : null }));
   }
   out.mirror = /<w:mirrorMargins\b(?![^>]*w:val="(?:0|false)")/.test(settings);
   return out;

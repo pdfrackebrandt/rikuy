@@ -639,6 +639,8 @@ class App {
     this.findSoon();
     // (spelling's marks, on the pages as they are now: src/cmd/review.js)
     this.spellSoon();
+    // (Show marks' dots, degree signs and label brackets: src/cmd/para.js)
+    if (this.marksOn) this.paraMarksSoon();
     this.emptyGhost();
     this.widgets.place();
   }
