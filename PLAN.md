@@ -2852,6 +2852,9 @@ Tests:
     they are: a break inside `{\bfseries ..}` is not offered as a mark (L1, found by none); a
     selection across a collapsed heading deletes the hidden text too, as Word's does, one Undo
     back (L5, said in llms-full.txt); the ruler's markers are Word's size, for a mouse (L6).
+    Evidence after merging main 4f0f489 (R1): `npm test` green (`find` 28 groups), `find.py` 115,
+    `outline.py` 105 and `view.py` 160 with `dist/tex`, `file.py` 100 with `dist/tex` and
+    `dist/word`, `tabs.py` 115.
 
 ## Open tasks
 
