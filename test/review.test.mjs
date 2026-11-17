@@ -280,7 +280,7 @@ group('R4 review: a comments only copy brings comment lines into body text alone
   const cf = new Map([['main.tex', cat]]), cb = buildModel({ files: cf, main: 'main.tex' }).blocks;
   const rc = commentsBack(cf, new Map([['main.tex', catT]]), (f) => bodyAt(cb, f, cf.get(f)));
   assert.ok(rc.files.get('main.tex') === cat && rc.dropped >= 1, 'a catcode of % changed: none at all');
-  for (const c of ['\\catcode\'45=12', '\\char_set_catcode_other:N \\%', '\\catcode37=12', '\\catcode `\\% = 12', '\\makeother\\%', '\\@makeother\\%', '\\let\\do\\@makeother\\dospecials', '\\catcode"25=11'])
+  for (const c of ['\\catcode`\\^^25=12', '\\ExplSyntaxOn\\char_set_catcode:nn {37} {12}\\ExplSyntaxOff', '\\ExplSyntaxOn\\char_set_catcode_other:n {37}\\ExplSyntaxOff', '\\catcode\\numexpr36+1\\relax=12', '\\catcode\'45=12', '\\char_set_catcode_other:N \\%', '\\catcode37=12', '\\catcode `\\% = 12', '\\makeother\\%', '\\@makeother\\%', '\\let\\do\\@makeother\\dospecials', '\\catcode"25=11'])
     assert.ok(commentsBack(new Map([['main.tex', cat.replace('\\catcode`\\%=12', c)]]), new Map([['main.tex', catT.replace('\\catcode`\\%=12', c)]]), () => () => true).files.get('main.tex').indexOf('CATINJECTED') < 0, c);
   const sty2 = new Map([['main.tex', doc0], ['p.sty', '\\catcode`\\%=12\n']]);
   assert.strictEqual(commentsBack(sty2, new Map([['main.tex', doc0.replace('Hello.\n', 'Hello.\n% comment (Eve): x\n')], ['p.sty', '\\catcode`\\%=12\n']]), () => () => true).files.get('main.tex'), doc0, 'a package of the project changing it: none either');

@@ -306,9 +306,11 @@ function verbatimRanges(text) {
   return out;
 }
 const inRanges = (R, p) => { let lo = 0, hi = R.length - 1; while (lo <= hi) { const m = (lo + hi) >> 1; if (R[m][1] <= p) lo = m + 1; else if (R[m][0] >= p) hi = m - 1; else return true; } return false; };
-// A document where % may not end a line as a comment: a file of the project changes its catcode
-// (\catcode`\%, \catcode 37, \makeother\%, \@sanitize, \dospecials): no comment line comes in
-export const PERCENT_CATCODE = /\\catcode\s*`\\?%|\\catcode\s*=?\s*(?:37\b|"25\b|'45\b)|\\(?:@)?makeother\s*\\%|\\@sanitize\b|\\dospecials\b|\\char_set_catcode_\w+:N\s*\\%|\\cctab_(?:select|begin):N/;
+// A document where % may not end a line as a comment: a file of the project that names a catcode
+// at all, in any syntax (\catcode`\%, \catcode`\^^25, \catcode\numexpr36+1\relax, expl3's
+// \char_set_catcode:nn {37}, a catcode table, \makeother, \@sanitize, \dospecials, a ^^ code):
+// no comment line comes in (the words alone: syntax has too many forms, review V1)
+export const PERCENT_CATCODE = /catcode|cctab|makeother|@sanitize|dospecials|\^\^/;
 // (and the line ends some engines read beside it: NEL, U+2028, U+2029)
 const LONE_CR = /\r(?!\n)|[\u0085\u2028\u2029]/;
 // o.at(p): whether a line may go in at offset p of base (the caller's knowledge of the document:
