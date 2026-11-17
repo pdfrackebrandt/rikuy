@@ -624,7 +624,9 @@ Ctrl is Cmd on a Mac.
   page (the text under it hidden on the page alone; the source and the PDF keep it; kept for the
   document in this browser); a heading's right click menu also has Expand all headings and
   Collapse all headings. Its triangle beside the heading is a button "Collapse: <words>" or
-  "Expand: <words>" (shown on hover, at the caret on a touch screen, always when collapsed)
+  "Expand: <words>" (shown on hover, at the caret on a touch screen, always when collapsed). Go To
+  and any place the caret is sent to open the heading that hides it; a selection across a
+  collapsed heading takes its hidden text too when deleted, as Word's does (one Undo back)
 - Ctrl+L, Ctrl+E, Ctrl+R, Ctrl+J, on the page only: Align Left (flushleft), Center (center),
   Align Right (flushright), Justify (LaTeX's own: the environment comes off); pressed again an
   alignment goes back to justified. On selected paragraphs one environment goes around them all; a

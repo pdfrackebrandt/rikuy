@@ -2742,6 +2742,25 @@ Tests:
     `/tmp/R5-shots` and `/tmp/B12-shots` (collapse, rulers light and dark, Web Layout at 1366, 390
     and 360 px, Rename). Not done: the page's table of contents leaves the page numbers of
     collapsed headings blank while they are collapsed (the PDF's are TeX's).
+    *After the hostile review of 411a0a7* (3 High, 5 Medium, 6 Low; each with the reviewer's case
+    as a test, compiled in the page): ^p replaced by nothing after a control word writes `{}`
+    (`\dots{}Next`, not `\dotsNext`; any deletion of a hit now keeps a control word apart from the
+    letters after it) (H1); `breakFits` counts an optional argument open at the place, so no
+    paragraph break goes into `\item[..]` or a theorem's `[..]` (H2); Format › Equation takes the
+    query and the replacement as LaTeX (x^p, M^t; only ^& and the groups are codes) and finds no
+    hit inside a control word (`a` never in `\alpha` or `\frac`; `\alpha` asked for is found) (H3).
+    The ruler moves the outer margin on an even page of any two sided document (M1); a slider keeps
+    the focus, two presses two steps (M2); First Line goes by the keys from one of LaTeX's states
+    to the next, and Hanging never moves the first line (a place LaTeX cannot give is refused with
+    a note) (M3). Rename is one IndexedDB transaction over the versions and the records, the new
+    name checked free inside it: all or nothing, two renames to one name at once refused (M4).
+    Go To, the Navigation pane and any caret sent to a place (`restoreCaret`, `goTo`: comments and
+    changes too) open the collapsed heading that hides it (M5). A collapsed section moved past
+    another stays collapsed (found by its words first, L3); Remove forgets its collapsed headings
+    (L2); on a phone a wrapped heading's triangle covers no word of the line above (L4). Left as
+    they are: a break inside `{\bfseries ..}` is not offered as a mark (L1, found by none); a
+    selection across a collapsed heading deletes the hidden text too, as Word's does, one Undo
+    back (L5, said in llms-full.txt); the ruler's markers are Word's size, for a mouse (L6).
 
 ## Open tasks
 
