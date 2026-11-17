@@ -82,6 +82,9 @@ def main():
                   open(os.path.join(PDF_DIR, '%d.pdf' % i), 'wb').write(base64.b64decode(b64))
           except Exception as e:
               r = {'error': 'harness ' + str(e)[:200]}
+              try:  # what the worker was doing when time ran out (a pass, a program)
+                  r['trail'] = pg.evaluate('(window.trail || []).slice(-8)')
+              except Exception: pass
               try:  # a TeX run still spinning keeps the page from closing: stop the worker first
                   pg.evaluate('w.terminate()')
               except Exception: pass
@@ -96,7 +99,7 @@ def main():
           errs = [l for l in lines if l.startswith('!') or ': LaTeX Error' in l or ':' in l[:80] and ' Error:' in l][:4]
           miss = [l for l in lines if 'not found' in l and ('File' in l or 'file' in l)][:3]
           out.write(json.dumps({'doc': doc, 'main': main, 'nfiles': len(files), 'ok': r.get('ok'), 'ms': r.get('ms'), 'passes': r.get('passes'), 'net': r.get('net'),
-                                'engine': r.get('engine'), 'errs': errs, 'miss': miss, 'error': r.get('error'), 'runs': r.get('runs'), 'tail': log[-1500:] if not r.get('ok') else ''}) + '\n'); out.flush()
+                                'engine': r.get('engine'), 'errs': errs, 'miss': miss, 'error': r.get('error'), 'trail': r.get('trail'), 'runs': r.get('runs'), 'tail': log[-1500:] if not r.get('ok') else ''}) + '\n'); out.flush()
           if i % 50 == 0: print(i, doc, r.get('ok'), r.get('ms'), round(time.time() - t0), flush=True)
       b.close()
   print('done', flush=True)

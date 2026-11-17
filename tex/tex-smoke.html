@@ -6,6 +6,8 @@ const w = new Worker('tex/engine.js');
 window.events = [];
 w.onmessage = ({ data }) => {
   window.events.push(data.status || (data.ready ? 'ready' : data.result ? 'result' : data.execResult ? 'exec' : 'error'));
+  // the last steps with their pass or program, for a corpus row whose compile ran out of time
+  if (data.status) { (window.trail = window.trail || []).push(data.status + (data.n ? ' ' + data.n : '') + (data.tool ? ' ' + data.tool : '')); if (window.trail.length > 8) window.trail.shift(); }
   if (data.ready) window.ready = data;
   if (data.result) window.result = data.result;
   if (data.execResult) window.execResult = data.execResult;
