@@ -537,6 +537,8 @@ def first_words(page):
     slow = dict(delay=40)   # the math field takes keys as a person types them, not all at once
     page.click('#b-new')
     page.wait_for_function('window.rikuy.name.startsWith("Untitled") && window.rikuy.ghost', timeout=5000)
+    hint = page.inner_text('#empty-hint')
+    check('a blank document says to type, or to drop a .tex, a .zip or a Word file', '.tex' in hint and '.zip' in hint and 'Word' in hint and 'Alt+Q' in hint, hint)
     name = page.evaluate('window.rikuy.name')
     page.keyboard.type('First words')
     wait_src(page, 'First words')
@@ -606,6 +608,10 @@ def phone_layout(page):
         m = page.evaluate(BAR)
         check('at %dpx no button of the bar lies over another or the name, or off the screen' % w, not m['off'] and not m['over'] and m['page'] <= 0 and m['nav'] >= 28, m)
         if w <= 430: check('at %dpx the status line is one line' % w, m['status'] <= 30, m['status'])
+        fade = page.evaluate('''() => { const st = document.getElementById('status'); const cs = getComputedStyle(st);
+          return { ox: cs.overflowX, sw: st.scrollWidth, cw: st.clientWidth, cls: st.className }; }''')
+        if fade['sw'] > fade['cw'] + 2:
+            check('at %dpx the status bar scrolls, and fades where it is cut off' % w, fade['ox'] in ('auto', 'scroll') and 'st-fade-r' in fade['cls'], fade)
     page.set_viewport_size({'width': 360, 'height': 800})
     page.wait_for_timeout(250)
     page.evaluate('window.rikuy.togglePdf(true)')
@@ -1250,9 +1256,9 @@ def run():
         # to do for a visitor whose download of it failed
         m = page.evaluate('''() => { const g = window.rikuy; const built = 'The TeX tree is not next to this page (tex/tree.wasm: Could not load https://x/tex/tree.wasm (HTTP 404)). A copy built from source needs tex/build_tree.py first; README.md, Running it';
           const net = built.replace(/Could not load.*\\(HTTP 404\\)/, 'Failed to fetch');
-          return [g.texFailText(new Error(net)), g.texFailText(new Error(built)), g.texFailText(new Error(built.replace('404', '503'))), g.texFailText(new Error('TeX ran out of memory')), g.texFailText(new Error(net), true)]; }''')
-        plain = 'The TeX engine could not be downloaded. Check your connection, then press Recompile. '
-        check('a failed download of the TeX engine is said in plain words, with what to do', m[0] == plain and m[2] == plain and 'build_tree' not in m[0], m)
+          return [g.texFailText(new Error(net)), g.texFailText(new Error(built)), g.texFailText(new Error(built.replace('404', '503'))), g.texFailText(new Error('TeX ran out of memory')), g.texFailText(new Error(net), true), g.texFailText(new Error('Failed to fetch')), g.texFailText(new Error('Load failed'))]; }''')
+        plain = 'The TeX engine could not be downloaded. Check your connection, then press Try again. '
+        check('a failed download of the TeX engine is said in plain words, with what to do', m[0] == plain and m[2] == plain and m[5] == plain and m[6] == plain and 'build_tree' not in m[0] and 'Failed to fetch' not in m[5], m)
         check('a page built without its TeX tree still names the build step; other errors pass as they are; offline has its own message', 'tex/build_tree.py' in m[1] and m[3] == 'TeX ran out of memory. ' and m[4] == '', m)
         check('no console errors (pdf.js)', not errors, errors[:5])
         browser.close()

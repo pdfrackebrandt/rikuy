@@ -771,6 +771,14 @@ class App {
     // (a document whose main language runs right to left starts at the right)
     if (this.model.opts.rtl) g.dir = 'rtl';
     g.appendChild(mk('span', 't gh', '\u200B'));
+    // not part of the document: contenteditable false, and the print rule hides it. The words
+    // sit under the caret's own "Type here", so a blank page says what a dropped file does.
+    const hint = mk('div', 'empty-hint');
+    hint.id = 'empty-hint';
+    hint.contentEditable = 'false';
+    hint.setAttribute('role', 'note');
+    hint.append(mk('p', '', 'Or drop a .tex file, a .zip, or a Word document on the page.'), mk('p', 'empty-keys', 'Alt+Q searches every command.'));
+    g.appendChild(hint);
     flow.appendChild(g);
     this.ghost = { el: g, f, pos, sticky: true };
   }
@@ -1173,6 +1181,16 @@ class App {
     $('#b-sample').addEventListener('click', () => this.resetToSample());
     $('#b-new').addEventListener('click', () => this.newDocument());
     $('#st-warn').addEventListener('click', () => this.toggleNav(true, 'problems'));
+    // the status line scrolls when it is wider than the window; the fades follow the cut edges
+    const stBar = $('#status');
+    if (stBar) {
+      const edges = () => this.statusEdges();
+      stBar.addEventListener('scroll', edges, { passive: true });
+      window.addEventListener('resize', edges);
+      if (window.ResizeObserver) new ResizeObserver(edges).observe(stBar);
+      if (window.MutationObserver) new MutationObserver(edges).observe(stBar, { childList: true, subtree: true, characterData: true });
+      edges();
+    }
     $('#b-nav').addEventListener('click', () => this.toggleNav());
     $('#nav-close').addEventListener('click', () => this.toggleNav(false));
     // Where the bar shows icons alone (a phone hides Help and the zoom steps too), the menu
@@ -4576,7 +4594,9 @@ class App {
       this.pdfSay(s.status === 'engine' ? 'Downloading TeX Live, once\u2026' : st.textContent);
       bar.hidden = false;
       bar.classList.toggle('busy', frac == null);
+      if (frac == null) bar.removeAttribute('aria-valuenow'); else bar.setAttribute('aria-valuenow', String(Math.round(frac * 100)));
       bar.firstChild.style.width = frac == null ? '' : Math.round(frac * 100) + '%';
+      this.pdfWait(st.textContent);
     };
     if (s.status === 'index') say('Starting TeX…');
     else if (s.status === 'engine') say('Downloading TeX Live, once: ' + fmtMB(s.got) + ' of ' + fmtMB(s.total), s.got / s.total);
@@ -4699,6 +4719,8 @@ class App {
       if (this.texQuiet) { this.texQuiet = false; if (!engine.info && this.texLast) this.texStatus(this.texLast); }
       if (__RIKUY_APP__ && !this.prefs.texUsed) { this.prefs.texUsed = true; this.savePrefs(); }
       if (!engine.info) bar.hidden = false;
+      $('#pdfpane').setAttribute('aria-busy', 'true');
+      this.pdfWait('TeX is getting ready. The first time, it downloads the engine, which takes a moment.');
       // a document that came in a link compiles restricted, and the worker keeps nothing of it
       const li = await this.linkInfo();
       const untrusted = !!(li && !li.allowed);
@@ -4771,20 +4793,26 @@ class App {
         return;
       }
       st.textContent = 'TeX could not run here';
-      $('#pdf-host').innerHTML = '';
+      $('#pdf-host').replaceChildren();
       const d = document.createElement('div'); d.className = 'pdf-empty';
       // offline, a file TeX has not kept fails to load; say what to do rather than "Failed to fetch"
       const need = e && e.unkept ? ' (' + e.unkept.slice(0, 5).join(', ') + (e.unkept.length > 5 ? ' and more' : '') + ')' : '';
       const off = __RIKUY_APP__ && APP.on && navigator.onLine === false ? 'You are offline, and this document needs TeX files this browser has not kept yet' + need + '. Compile it once with a network and they stay; Make available offline in the status bar keeps those of a typical paper and of the open document. ' : '';
-      d.textContent = e && e.scripts ? e.message + ' The page preview can still be printed.' : off + this.texFailText(e, !!off, !!need) + 'The page preview can still be printed.';
-      said = st.textContent + '. ' + d.textContent;
-      const b = document.createElement('button'); b.className = 'btn sm'; b.type = 'button'; b.textContent = 'Print the preview'; b.style.marginTop = '10px';
+      const line = document.createElement('p');
+      line.textContent = e && e.scripts ? e.message + ' The page preview can still be printed.' : off + this.texFailText(e, !!off, !!need) + 'The page preview can still be printed.';
+      said = st.textContent + '. ' + line.textContent;
+      const acts = document.createElement('div'); acts.className = 'pdf-acts';
+      const again = document.createElement('button'); again.className = 'btn sm'; again.type = 'button'; again.textContent = 'Try again';
+      again.addEventListener('click', () => this.compilePdf({ clean: true }));
+      const b = document.createElement('button'); b.className = 'btn sm ghost'; b.type = 'button'; b.textContent = 'Print the preview';
       b.addEventListener('click', () => this.printPDF());
-      d.append(document.createElement('br'), b);
+      acts.append(again, b);
+      d.append(line, acts);
       $('#pdf-host').appendChild(d);
     } finally {
       clearInterval(this.compileTick);
       $('#pdf-re').textContent = 'Recompile';
+      $('#pdfpane').setAttribute('aria-busy', 'false');
       bar.hidden = true;
       if (said) this.pdfSay(said);
       this.compiling = false;
@@ -5112,8 +5140,41 @@ class App {
   // error) read the same build instructions: they get what to do instead.
   texFailText(e, off, need) {
     const m = (e && e.message) || '';
-    if (/^The TeX tree is not next to this page/.test(m) && !/\(HTTP 4\d\d\)/.test(m)) return off ? '' : 'The TeX engine could not be downloaded. Check your connection, then press Recompile. ';
+    // a 404 is a page built without its TeX tree: the worker's words name the build step.
+    // "Failed to fetch", a dropped connection, or that same sentence with no HTTP status is
+    // what a visitor's browser says. They get plain words and the button that tries again.
+    const httpMissing = /\(HTTP 4\d\d\)/.test(m);
+    const fetchFailed = /Failed to fetch|NetworkError|Load failed/i.test(m);
+    if (!httpMissing && (fetchFailed || /^The TeX tree is not next to this page/.test(m))) return off ? '' : 'The TeX engine could not be downloaded. Check your connection, then press Try again. ';
     return m && !(off && need) ? m + '. ' : '';
+  }
+
+  // the PDF pane while TeX has not made a page yet: the same sentence the status line shows,
+  // in the pane, so a long download is not an empty grey panel
+  pdfWait(line) {
+    if (this.lastPdf) return;
+    const host = $('#pdf-host');
+    if (!host) return;
+    let d = host.querySelector('.pdf-wait');
+    if (!d) {
+      host.replaceChildren();
+      d = document.createElement('div'); d.className = 'pdf-empty pdf-wait';
+      const b = document.createElement('b'); b.textContent = 'Making the PDF.';
+      const s = document.createElement('span');
+      d.append(b, document.createTextNode(' '), s);
+      host.appendChild(d);
+    }
+    const s = d.querySelector('span');
+    if (s) s.textContent = line || 'TeX is getting ready.';
+  }
+
+  // fades on the status line where its contents run past the window
+  statusEdges() {
+    const st = $('#status');
+    if (!st) return;
+    const cut = st.scrollWidth - st.clientWidth > 2;
+    st.classList.toggle('st-fade-l', cut && st.scrollLeft > 2);
+    st.classList.toggle('st-fade-r', cut && st.scrollLeft + st.clientWidth < st.scrollWidth - 2);
   }
 
   toast(msg, ms = 3200, action) {
