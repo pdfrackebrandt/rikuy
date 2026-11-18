@@ -1150,6 +1150,10 @@ class App {
     // (b-save is the ribbon's LaTeX download: src/ribbon.js answers its click)
     $('#b-copy').addEventListener('click', () => this.copySource());
     $('#b-share').addEventListener('click', () => this.openSharePanel());
+    const qatSave = $('#qat-save');
+    if (qatSave) qatSave.addEventListener('click', () => this.runCommand('download-latex'));
+    const comments = $('#b-comments');
+    if (comments) comments.addEventListener('click', () => this.toggleNav(true, 'changes'));
     $('#guest-send').addEventListener('click', () => this.openSharePanel());
     $('#guest-x').addEventListener('click', () => { $('#guest').hidden = true; document.body.classList.remove('guest'); if (this.shareCtx) { this.shareCtx.dismissed = true; kvPut('share:' + this.name + '|' + this.main, this.shareCtx).catch(() => {}); } this.scriptsSoon(); });
     $('#script-go').addEventListener('click', () => this.scriptSetUp());

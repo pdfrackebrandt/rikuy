@@ -139,9 +139,9 @@ register(
   { id: 'insert-ldots', name: 'Ellipsis', synonyms: ['Dots', 'ldots'], keys: ['Ctrl+Alt+.'], run: (app) => app.insertFromPalette('ldots'), palette: { k: 'ldots', d: 'Ellipsis …', order: 220, t: piece('\\ldots{}', '') } },
   { id: 'insert-newline', name: 'Line break', synonyms: ['New line'], run: (app) => app.insertFromPalette('newline'), palette: { k: 'newline', d: 'Line break', order: 230, t: piece('\\\\\n', '') } },
   // (the page's own copy and cut handlers give the LaTeX: the focus goes back to the page first)
-  { id: 'cut', name: 'Cut', title: 'Cut (Ctrl+X)', keysElsewhere: ['Ctrl+X'], menu: { selection: 10 }, when: sel,
+  { id: 'cut', name: 'Cut', title: 'Cut (Ctrl+X)', keysElsewhere: ['Ctrl+X'], menu: { selection: 10 }, when: sel, tab: 'home', group: 'clipboard', order: 20,
     icon: '<circle cx="6" cy="14.5" r="2.2"/><circle cx="14" cy="14.5" r="2.2"/><path d="M7.6 12.9 14 3.5M12.4 12.9 6 3.5"/>', run: (app) => { app.ribbonBack(); document.execCommand('cut'); } },
-  { id: 'copy', name: 'Copy', title: 'Copy, as LaTeX and as text (Ctrl+C)', keysElsewhere: ['Ctrl+C'], menu: { selection: 11 }, when: sel,
+  { id: 'copy', name: 'Copy', title: 'Copy, as LaTeX and as text (Ctrl+C)', keysElsewhere: ['Ctrl+C'], menu: { selection: 11 }, when: sel, tab: 'home', group: 'clipboard', order: 30,
     icon: '<rect x="7" y="6.5" width="9" height="10.5" rx="1.2"/><path d="M4.5 13.5V4.2c0-.7.5-1.2 1.2-1.2h7"/>', run: (app) => { app.ribbonBack(); document.execCommand('copy'); } },
 
   // Rikuy's live figures, as Word's Insert Chart: a gallery of kinds, a dialog with the graph live
@@ -345,10 +345,9 @@ export const methods = {
 // ---- the clipboard: Paste and its options (H2, H3) ----------------------------------------------
 const PASTE_WHY = 'Put the caret on the page';
 register(
-  // (no button on Home's row: there it took the Styles gallery's tiles from 1920 px (test/ribbon.py);
-  // Ctrl+V, the right click menu and the search box have it, and its options are commands of
-  // their own the search box finds)
-  { id: 'paste', name: 'Paste', keysElsewhere: ['Ctrl+V'], menu: { text: 12, selection: 12 },
+  // Home's Clipboard, as Word's: a large Paste, with Cut and Copy beside it. Ctrl+V, the right
+  // click menu and the search box still have it, and its options are commands of their own.
+  { id: 'paste', name: 'Paste', tab: 'home', group: 'clipboard', order: 10, label: 'Paste', keysElsewhere: ['Ctrl+V'], menu: { text: 12, selection: 12 },
     title: 'Paste (Ctrl+V): from Rikuy as its LaTeX, from elsewhere with its formatting as LaTeX. Ctrl+Shift+V: the text only; the search box: Paste Special, as LaTeX source',
     icon: '<path d="M7 4.5H5.2c-.7 0-1.2.5-1.2 1.2v10.6c0 .7.5 1.2 1.2 1.2h9.6c.7 0 1.2-.5 1.2-1.2V5.7c0-.7-.5-1.2-1.2-1.2H13"/><rect x="7" y="3" width="6" height="3" rx=".8"/>',
     whyNot: () => PASTE_WHY, run: (app) => app.pasteFrom('keep'),

@@ -41,6 +41,11 @@ register(
     tab: 'help', group: 'help', el: 'rh-tour', label: 'Learn Rikuy', icon: '<path d="M3 6.5 10 3l7 3.5-7 3.5z"/><path d="M6 8v4c2.5 2 5.5 2 8 0V8M17 6.5V11"/>', when: always, run: (app) => app.openTour() },
   { id: 'help-graphs', name: 'Interactive graphs', order: 30, title: 'Live figures: graphs with sliders on the page, a picture in the PDF; how to make one', synonyms: ['Live figure', 'Widget', 'Interactive figure', 'Slider', 'rikuywidget', 'Chart'],
     tab: 'help', group: 'help', el: 'rh-graphs', label: 'Interactive graphs', icon: '<path d="M3 16.5h14M4 13c2-6 4-8 6-3s4 3 6-5"/><circle cx="10" cy="10" r="1.3"/>', when: always, run: (app) => app.openGraphsHelp() },
+  { id: 'ask-grok', name: 'Ask Grok', order: 35, tab: 'help', group: 'help', el: 'rh-grok', label: 'Ask Grok',
+    title: 'Open grok.com with the words you selected. Rikuy is not part of xAI.',
+    synonyms: ['Grok', 'Grok Bot'],
+    icon: '<path d="M10 2.2 11.3 7 16 8.2 11.3 9.5 10 14.2 8.7 9.5 4 8.2 8.7 7z"/>',
+    when: always, run: (app) => app.askGrok() },
   { id: 'help-keys', name: 'Keyboard shortcuts', order: 40, title: 'Every key of Rikuy, by tab, as it works on this computer', synonyms: ['Shortcuts', 'Keys', 'Hotkeys', 'Key bindings'],
     tab: 'help', group: 'help', el: 'rh-keys', label: 'Keyboard shortcuts', icon: '<rect x="2.5" y="5.5" width="15" height="9" rx="1.5"/><path d="M5.5 8.5h.01M8.5 8.5h.01M11.5 8.5h.01M14.5 8.5h.01M6.5 11.5h7"/>', when: always, run: (app) => app.openShortcuts() },
   { id: 'help-new', name: 'What\'s new', order: 50, title: 'What changed in Rikuy lately', synonyms: ['Release notes', 'Changes', 'New features', 'Changelog'],
@@ -146,6 +151,16 @@ export const methods = {
       p.append(dl);
     }
     this.positionPop();
+    return true;
+  },
+
+  // The selected words, if any, go in the address of grok.com. Nothing is sent until this is pressed,
+  // and only those words (not the document). The title says Rikuy is not part of xAI.
+  askGrok() {
+    const s = getSelection();
+    let t = '';
+    if (s && s.rangeCount && this.root && this.root.contains(s.anchorNode)) t = String(s).replace(/\s+/g, ' ').trim().slice(0, 500);
+    this.openLink(t ? 'https://grok.com/?q=' + encodeURIComponent(t) : 'https://grok.com/');
     return true;
   },
 

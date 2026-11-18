@@ -256,13 +256,13 @@ def keyboard(page):
     # (the ribbon is the tablist "Ribbon" over one toolbar per tab, named after it; Home's groups in Word's order: Font, Paragraph, Styles, Insert)
     bar = page.evaluate('(() => { const t = document.querySelector("#rp-home > [role=toolbar]"); return [document.getElementById("rb-tabs").getAttribute("role"), document.getElementById("rb-tabs").getAttribute("aria-label"), t && t.getAttribute("aria-label")]; })()')
     # (its first control is the Clipboard group's Format Painter, in Word's order)
-    check('the ribbon\'s open tab is a toolbar with one tab stop', bar == ['tablist', 'Ribbon', 'Home'] and stops == ['rc-format-painter'], (bar, stops))
+    check('the ribbon\'s open tab is a toolbar with one tab stop', bar == ['tablist', 'Ribbon', 'Home'] and stops == ['rc-paste'], (bar, stops))
     page.focus('#rb-st-p')
     seen = []
     for key in ('ArrowRight', 'ArrowLeft', 'ArrowLeft', 'End', 'Home', 'ArrowRight'):
         page.keyboard.press(key); seen.append(page.evaluate('document.activeElement.id'))
     # (left of the gallery, Paragraph's last control that applies to a paragraph: Multilevel list, B3; then B2's buttons, Paragraph Settings last)
-    check('arrows, Home and End move between its controls (the strip\'s disabled arrows skipped), the font box among them', seen == ['rb-st-section', 'rb-st-p', 'rc-paragraph-settings', 'b-save', 'rc-format-painter', 'rb-font'], seen)
+    check('arrows, Home and End move between its controls (the strip\'s disabled arrows skipped), the font box among them', seen == ['rb-st-section', 'rb-st-p', 'rc-paragraph-settings', 'b-save', 'rc-paste', 'rc-cut'], seen)
     page.focus('#rb-i'); page.keyboard.press('ArrowLeft')
     ring = page.evaluate('(() => { const c = getComputedStyle(document.activeElement); return c.outlineStyle !== "none" && parseFloat(c.outlineWidth) > 0; })()')
     # (what each half saw, printed where it fails: the focus, its ring, Bold's state, the selection)
@@ -289,7 +289,7 @@ def narrow(page):
 
 def top_bar(page):
     ids = page.evaluate('[...document.querySelectorAll("#bar .tools button:not(.ai-only)")].map((b) => b.id)')
-    check('the top bar keeps Open, Preview, Share, undo (and its list of steps) and redo, zoom, Source and Help', ids == ['b-open', 'b-pdf', 'b-share', 'b-undo', 'b-undo-x', 'b-redo', 'b-zout', 'zoomv', 'b-zin', 'b-src', 'b-help'] and page.inner_text('#b-pdf').strip() == 'Preview', ids)
+    check('the top bar keeps Open, Preview, zoom, Source and Help, and Quick Access is Save, Undo and Redo', ids == ['b-open', 'b-pdf', 'b-zout', 'zoomv', 'b-zin', 'b-src', 'b-help'] and page.inner_text('#b-pdf').strip() == 'Preview' and page.evaluate('[...document.querySelectorAll(".qat button")].map((b) => b.id)') == ['qat-save', 'b-undo', 'b-undo-x', 'b-redo'] and page.is_visible('#b-share') and page.is_visible('#b-comments'), ids)
     page.evaluate('window.rikuy.toggleSource(true)'); page.wait_for_timeout(500)
     page.context.grant_permissions(['clipboard-read', 'clipboard-write'])
     page.click('#b-copy'); page.wait_for_timeout(300)
@@ -465,7 +465,7 @@ def downloads_in_sight(page):
         # (above 860 px the three where the row has room for them, else the one button: Home's Font
         # group in Word's two rows and the Paragraph group's list commands leave 1000 px without room for three)
         # (at 860 px the Paragraph group, one row there, folds and leaves room for the three, B2)
-        three = w == 860 or (w > 860 and page.evaluate("!!document.getElementById('rb-pdf').offsetParent"))
+        three = page.evaluate("!!document.getElementById('rb-pdf').offsetParent")
         seen = page.evaluate(IN, ['rb-pdf', 'rb-word', 'b-save'] if three else ['rb-dl-menu'])
         over = page.evaluate('(() => { const r = document.getElementById("ribbon"); return r.scrollWidth > r.clientWidth + 1; })()')
         if w >= 860:

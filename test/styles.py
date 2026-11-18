@@ -194,14 +194,15 @@ def gallery_widths(page):
     # (Home's Insert, which the Insert tab has too, is spare: it folds first, so Home's other
     # groups keep their names, and the gallery its tiles, on a desktop; src/ribbon/order.js. With the
     # Font group's and the Paragraph group's list commands (B1, B3) the tiles give way below 1600 px,
-    # the names below 1440 and the gallery to the list below 1180)
+    # the names below 1440. Paste and the wider font box (the Word ribbon) give the gallery to the
+    # list below 1280)
     check('from 1600 to 1920 px Home\'s Insert is folded, the other buttons keep their names, the gallery all six tiles, no paging arrows, no scroll', all(seen[w]['insert'] and seen[w]['names'] and seen[w]['tiles'] == six and not seen[w]['arrows'] and not seen[w]['over'] for w in (1600, 1700, 1760, 1800, 1840, 1920)), {w: (seen[w]['tiles'], seen[w]['names']) for w in (1600, 1920)})
     check('at 1536 and 1440 px the names stay and the gallery has fewer tiles, three or more, LaTeX among them, with the paging arrows', all(seen[w]['names'] and 'latex' in seen[w]['tiles'] and 3 <= len(seen[w]['tiles']) < 6 and seen[w]['arrows'] and not seen[w]['over'] for w in (1440, 1536)), {w: (seen[w]['tiles'], seen[w]['names']) for w in (1440, 1536)})
-    check('the gallery stays, three tiles, LaTeX among them, down to 1180 px, the row not scrolling', all(len(seen[w]['tiles']) >= 3 and 'latex' in seen[w]['tiles'] and not seen[w]['over'] for w in (1180, 1280, 1300, 1366)), {w: seen[w]['tiles'] for w in (1180, 1280, 1366)})
+    check('the gallery stays, three tiles, LaTeX among them, down to 1280 px, the row not scrolling', all(len(seen[w]['tiles']) >= 3 and 'latex' in seen[w]['tiles'] and not seen[w]['over'] for w in (1280, 1300, 1366)), {w: seen[w]['tiles'] for w in (1280, 1366)})
     order = {3: ['p', 'section', 'latex'], 4: ['p', 'section', 'subsection', 'latex'], 5: ['p', 'section', 'subsection', 'subsubsection', 'latex'], 6: six}
     tiled = [w for w in seen if seen[w]['tiles']]
     check('wherever the gallery shows, its first page is Normal and Heading 1 with LaTeX in sight (Normal, Heading 1, LaTeX for three), and the row does not scroll', all(seen[w]['tiles'] == order[len(seen[w]['tiles'])] and not seen[w]['over'] for w in tiled), {w: seen[w]['tiles'] for w in tiled})
-    # (where the gallery gives way to the list: between 1024 and 1000 px)
+    # (where the gallery gives way to the list: between 1280 and 1180 px)
     g = min(w for w in seen if seen[w]['tiles'])
     l = max(w for w in seen if seen[w]['list'] and w < g)
     check('the row is as tall with the list as with the gallery (no jump where the one gives way to the other, %d and %d px)' % (g, l), g >= 1024 and l >= 1000 and seen[g]['h'] == seen[l]['h'], (g, l, seen[g]['h'], seen[l]['h']))

@@ -595,7 +595,7 @@ def first_words(page):
 def phone_layout(page):
     """The bar, the status line, Help and the PDF bar on screens as wide as phones are."""
     BAR = """() => { const W = document.documentElement.clientWidth; const box = (e) => e.getBoundingClientRect(); const vis = (e) => box(e).width > 0;
-      const kids = [...document.querySelectorAll('#b-nav, #bar .brand .mark, #bar .tools > button, #bar .tools .zoom > *')].filter(vis);
+      const kids = [...document.querySelectorAll('#b-nav, #bar .brand .mark, #bar .qat > button, #b-share, #b-comments, #bar .tools > button, #bar .tools .zoom > *')].filter(vis);
       const off = kids.filter((e) => box(e).right > W + 0.5 || box(e).left < -0.5).map((e) => e.id || e.className);
       const over = [];
       for (let i = 0; i < kids.length; i++) for (let j = i + 1; j < kids.length; j++) { const a = box(kids[i]), b = box(kids[j]); if (a.left < b.right - 1 && b.left < a.right - 1) over.push((kids[i].id || kids[i].className) + '~' + (kids[j].id || kids[j].className)); }
@@ -623,7 +623,7 @@ def phone_layout(page):
     page.click('#b-nav')
     page.wait_for_timeout(200)
     acts = page.evaluate('[...document.querySelectorAll("#nav-acts .nav-act")].map((a) => [a.dataset.for, a.textContent.trim(), a.disabled, a.getBoundingClientRect().height])')
-    bar = page.evaluate('[...document.querySelectorAll("#bar .tools button:not(.ai-only), .rb-dl button:not(#rb-dl-menu), #b-copy")].map((b) => b.id)')
+    bar = page.evaluate('[...document.querySelectorAll("#bar .tools button:not(.ai-only), #b-undo, #b-undo-x, #b-redo, #b-share, .rb-dl button:not(#rb-dl-menu), #b-copy")].map((b) => b.id)')
     check('the menu panel lists every action of the bar, the downloads and Copy source by name, each large enough to tap', sorted(a[0] for a in acts) == sorted(bar) and all(a[1] and a[3] >= 36 for a in acts), (acts, bar))
     check('Undo and Redo are greyed there when there is nothing to undo, and the zoom shows its value', all(a[2] for a in acts if a[0] in ('b-undo', 'b-redo')) and re.match(r'Zoom: (Fit|\d+%)$', [a[1] for a in acts if a[0] == 'zoomv'][0]), acts)
     page.click('#nav-acts [data-for=b-help]')

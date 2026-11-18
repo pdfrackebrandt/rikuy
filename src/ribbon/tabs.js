@@ -86,6 +86,9 @@ export const tabs = {
         gb.addEventListener('click', () => this.openGroupMenu(T.id, g, gb));
         box.append(gb);
         for (const { c, p } of items) { const e = c.kind === 'custom' ? made.get(c.id) : this.makeControl(c, p); if (e) box.append(e); }
+        // the group's name under its controls, as Word's ribbon labels them (the Styles gallery
+        // already has its own caption). Hidden from the accessibility tree: the group has the name.
+        if (g.id !== 'styles') { const lab = mk('span', 'rb-glab', g.name); lab.setAttribute('aria-hidden', 'true'); box.append(lab); }
         tb.append(box);
       });
       tb.append(mk('span', 'grow'));

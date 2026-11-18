@@ -446,17 +446,18 @@ export const methods = {
     if (!inp || (document.activeElement === inp && !force)) return;
     const st = this.fontState(at), ok = !!st && can(this, at);
     inp.disabled = !ok;
-    inp.closest('.fbx').classList.toggle('off', !ok);
-    if (!st) { inp.value = ''; return; }
+    inp.closest('.fbx').classList.toggle('off', !!st && !ok);
+    // with no caret yet, still show the document's own font and size, as Word's boxes do
+    const show = st || { docFont: F.docFont(this.src(this.main), this.engineChoice ? this.engineChoice() : 'auto'), size: this.baseSize(), family: null, fontSel: false, familyW: null, sizeW: null };
     if (kind === 'font') {
-      const id = st.fontSel && st.family ? st.family : st.docFont.id;
-      const name = (F.GENERIC.find((g) => g.id === id) || F.FONTS.find((f) => f.id === id) || st.docFont).name;
+      const id = show.fontSel && show.family ? show.family : show.docFont.id;
+      const name = (F.GENERIC.find((g) => g.id === id) || F.FONTS.find((f) => f.id === id) || show.docFont).name;
       inp.value = inp.dataset.shown = name;
-      inp.title = 'Font: ' + name + (st.familyW ? '' : ' (the document\'s)') + ' (Ctrl+Shift+F)';
+      inp.title = 'Font: ' + name + (show.familyW ? '' : ' (the document\'s)') + ' (Ctrl+Shift+F)';
     } else {
-      const v = Math.round(st.size * 100) / 100;
+      const v = Math.round(show.size * 100) / 100;
       inp.value = inp.dataset.shown = Number.isFinite(v) ? String(v) : '';
-      inp.title = 'Font Size: ' + v + 'pt' + (st.sizeW && st.sizeW.cmd !== 'fontsize' ? ' (\\' + st.sizeW.cmd + ')' : st.sizeW ? '' : ' (the document\'s)');
+      inp.title = 'Font Size: ' + v + 'pt' + (show.sizeW && show.sizeW.cmd !== 'fontsize' ? ' (\\' + show.sizeW.cmd + ')' : show.sizeW ? '' : ' (the document\'s)');
     }
   },
   // back to the page from a box: the selection it had (a box's text took the document's selection)
