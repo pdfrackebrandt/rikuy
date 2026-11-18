@@ -401,6 +401,15 @@ export function bodyAt(blocks, f, text) {
             i = k - 1;
             continue;
           }
+          // (url's \url|...| and \path+...+: read to the same character, as \verb is; a % in it
+          // is a letter, not a comment hiding the rest of the line's braces)
+          const dl = text[j];
+          if (dl && /[^\sA-Za-z0-9\\{}%]/.test(dl)) {
+            const end = text.indexOf(dl, j + 1), nl = text.indexOf('\n', j + 1);
+            if (end < 0 || (nl >= 0 && nl < end) || end >= q) return false;
+            i = end;
+            continue;
+          }
         } else if (VERB_CMDS.has(name)) {
           if (name === 'mintinline' && text[j] === '{') { const e = text.indexOf('}', j); if (e < 0) return false; j = e + 1; }
           if (text[j] === '[') { const e = text.indexOf(']', j); if (e < 0) return false; j = e + 1; }
@@ -432,7 +441,9 @@ export function bodyAt(blocks, f, text) {
 const LISTED = /\\([A-Za-z]*(?:listing|[Vv]erbatim|minted|[Ii]nput[Cc]ode)[A-Za-z]*)\*?((?:\s*(?:\[[^\]]*\]|\{[^{}]*\}))+)/g;
 export function listedFiles(files) {
   const out = new Set();
-  const add = (x) => { x = x.trim().replace(/^\.\//, ''); if (x) { out.add(x); out.add(x + '.tex'); } };
+  // (a name as TeX finds it: quotes off, ./ and dir/.. resolved, review of cfb9711)
+  const norm = (x) => { const st = []; for (const seg of x.trim().replace(/^"(.*)"$/, '$1').split('/')) { if (seg === '..') st.pop(); else if (seg && seg !== '.') st.push(seg); } return st.join('/'); };
+  const add = (x) => { x = norm(x); if (x) { out.add(x); out.add(x + '.tex'); } };
   for (const [n, t] of files) {
     if (!/\.(tex|ltx|sty|cls|def|cfg)$/i.test(n)) continue;
     for (const m of t.matchAll(LISTED)) {
@@ -443,7 +454,9 @@ export function listedFiles(files) {
   return out;
 }
 export function commentsBack(baseFiles, theirs, at) {
-  const none = [...baseFiles].some(([n, t]) => /\.(tex|ltx|sty|cls|def|cfg|clo|dtx|ins)$/i.test(n) && PERCENT_CATCODE.test(t));
+  // (any text file of the project: \input reads a .txt, .tikz or .inc as well as a .tex, review of
+  // a3925f7)
+  const none = [...baseFiles].some(([n, t]) => typeof t === 'string' && PERCENT_CATCODE.test(t));
   const listed = listedFiles(baseFiles);
   const files = new Map();
   let dropped = 0;

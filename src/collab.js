@@ -194,7 +194,9 @@ export const collab = {
     // opened, is opened over (kept as a version).
     const snaps = await this.allSnaps();
     const theirsAlready = async (n) => { if (!by) return false; try { const r = await kvGet('share:' + n + '|' + o.main); return !!(r && r.by === by); } catch (e) { return false; } };
-    const taken = async (n) => (await keeps(n)) || (((n === this.name && o.main === this.main) || snaps.some((v) => v.name === n && v.main === o.main)) && !(await theirsAlready(n)));
+    // (a name alone is enough: Recent documents lists projects by name, so a link under a kept name
+    // with another main file would hide the kept one there; Grok Bot's check of cfb9711)
+    const taken = async (n) => (await keeps(n)) || ((n === this.name || snaps.some((v) => v.name === n)) && !(await theirsAlready(n)));
     let name = o.name || o.main;
     for (let k = 1; await taken(name); k++) name = (o.name || o.main) + ' (' + (by ? 'from ' + by : 'from a link') + (k > 1 ? ' ' + k : '') + ')';
     const apart = name !== (o.name || o.main);

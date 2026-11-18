@@ -289,6 +289,19 @@ group('R4 review: a comments only copy brings comment lines into body text alone
   const vf = new Map([['main.tex', vd], ['code.tex', 'Code line.\n']]);
   const rv3 = back1(vf, (th) => { th.set('main.tex', vd.replace('http://a.b/\n', 'http://a.b/\n% comment (Eve): URLV3\n').replace('{the page}.\n', '{the page}.\n% comment (Eve): HREFOK\n')); th.set('code.tex', 'Code line.\n% comment (Eve): LISTED\n'); });
   assert.ok(!rv3.files.get('main.tex').includes('URLV3') && rv3.files.get('main.tex').includes('% comment (Eve): HREFOK\n') && rv3.files.get('code.tex') === 'Code line.\n', JSON.stringify([...rv3.files]));
+  // (Grok Bot's check of V1 to V4) a catcode in an \input file of any extension; \url|...| with a %
+  // before a multi-line \url{...}; a listed name with dir/.. or quotes
+  const pre4 = (x) => '\\documentclass{article}\n\\usepackage{url}\n' + x + '\\begin{document}\nFirst line.\n\nSecond line.\n\\end{document}\n';
+  for (const [n, t] of [['setup.txt', '\\catcode`\\%=12\n'], ['fig.tikz', '\\catcode37=12\n']]) {
+    const d = pre4('\\input{' + n + '}\n');
+    const r = back1(new Map([['main.tex', d], [n, t]]), (th) => th.set('main.tex', d.replace('First line.\n', 'First line.\n% comment (Eve): \\textbf{EXEC}\n')));
+    assert.ok(!r.files.get('main.tex').includes('EXEC'), n);
+  }
+  const vu = '\\documentclass{article}\n\\usepackage{url}\n\\begin{document}\nSee \\url|http://x/%| and \\url{http://a.b/\nc} then.\n\\end{document}\n';
+  const ru = back1(new Map([['main.tex', vu]]), (th) => th.set('main.tex', vu.replace('http://a.b/\n', 'http://a.b/\n% comment (Eve): URLD\n')));
+  assert.ok(!ru.files.get('main.tex').includes('URLD'), ru.files.get('main.tex'));
+  for (const l of ['\\lstinputlisting[firstline=2]{sub/../code.tex}', '\\VerbatimInput{"code.tex"}'])
+    assert.ok(listedFiles(new Map([['main.tex', l]])).has('code.tex'), l);
   for (const l of ['\\lstinputlisting[language=TeX]{./code}', '\\verbatiminput{code.tex}', '\\inputminted{latex}{code.tex}', '\\tcbinputlisting{listing file=code.tex}', '\\VerbatimInput[frame=single]{code}'])
     assert.ok(listedFiles(new Map([['main.tex', l]])).has('code.tex'), l);
   const sty2 = new Map([['main.tex', doc0], ['p.sty', '\\catcode`\\%=12\n']]);

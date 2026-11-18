@@ -378,6 +378,12 @@ def comments_attacks():
         page.wait_for_function('() => window.rikuy.name !== "catdoc"', timeout=20000)
         st = page.evaluate('async () => { const g = window.rikuy; const v = (await g.allSnaps()).filter((x) => x.name === "catdoc" && x.main === "main.tex"); return { name: g.name, own: v.length ? new Map(await g.versionFiles(v[0])).get("main.tex") : null }; }')
         check('attacks: a #share= link with no sender opens beside the kept project of its name, which stays as it was', st['name'] == 'catdoc (from a link)' and st['own'] == kept and 'project of its own' in page.evaluate(TOASTS), st)
+        # (Grok Bot's check of V2) the same name with another main file: still beside it, so Recent
+        # documents, which lists projects by name, does not show the link's copy in its place
+        page.evaluate('(t) => window.rikuy.loadProject(new Map([["main.tex", t]]), "main.tex", "catdoc", "Opened")', CAT_DOC); page.wait_for_timeout(300)
+        page.goto('https://rikuy.test/#share=1.' + pack({'v': 1, 'name': 'catdoc', 'main': 'paper.tex', 'files': [['paper.tex', CAT_DOC.replace('End of text.', 'OTHERMAIN REWRITE.')]]}))
+        page.wait_for_function('() => window.rikuy.main === "paper.tex"', timeout=20000)
+        check('attacks: a link under a kept name with another main file opens as a project of its own', page.evaluate('() => window.rikuy.name').startswith('catdoc (from a link'), page.evaluate('() => window.rikuy.name'))
         page.evaluate('(t) => window.rikuy.loadProject(new Map([["main.tex", t]]), "main.tex", "main.tex", "Opened")', COMMENTS_DOC)
         page.wait_for_timeout(300)
         page.goto('https://rikuy.test/#tex=' + base64.urlsafe_b64encode(CAT_DOC.encode()).rstrip(b'=').decode())
