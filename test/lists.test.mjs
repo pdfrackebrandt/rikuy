@@ -435,4 +435,32 @@ ok('review lows: \\noindent, joins past a comment, split numbers going on, CRLF 
   assert.ok(!/[^\r]\n/.test(ap(w, r)), JSON.stringify(ap(w, r)));
 });
 
+ok('R2: Adjust List Indents as enumitem\'s leftmargin, labelwidth and labelsep; a picture bullet; the page draws both', () => {
+  const t = 'x\n\\begin{itemize}\n  \\item a\n\\end{itemize}\ny\n\\begin{enumerate}[label=(\\alph*),leftmargin=2cm]\n  \\item b\n\\end{enumerate}\n';
+  const L = X.allLists(X.readLists(t)), cfg = X.listSetup('');
+  assert.deepEqual(X.formatOf(t, L[1], cfg).indents, { leftmargin: '2cm', labelwidth: null, labelsep: null });
+  const r = X.indentEdits(t, L[0], { leftmargin: '1.5cm', labelwidth: '1cm', labelsep: '0.25cm' }, cfg);
+  assert.equal(apE(t, r.edits), t.replace('\\begin{itemize}', '\\begin{itemize}[leftmargin=1.5cm,labelwidth=1cm,labelsep=0.25cm]'));
+  assert.deepEqual(r.pkgs, ['enumitem']);
+  // (changed in place, the label kept; taken off with its comma; nothing where nothing changes)
+  assert.equal(apE(t, X.indentEdits(t, L[1], { leftmargin: '3em' }, cfg).edits), t.replace('leftmargin=2cm', 'leftmargin=3em'));
+  assert.equal(apE(t, X.indentEdits(t, L[1], { leftmargin: null }, cfg).edits), t.replace(',leftmargin=2cm', ''));
+  assert.equal(X.indentEdits(t, L[1], { leftmargin: '2cm' }, cfg).edits.length, 0);
+  // (a length TeX takes, or nothing; never beside the enumerate package or paralist)
+  assert.equal(X.indentEdits(t, L[0], { leftmargin: '2 \\foo' }, cfg), null);
+  assert.equal(X.indentEdits(t, L[0], { leftmargin: '1cm' }, cfg, 'short'), null);
+  assert.equal(X.indentLen(' .5 cm'), '0.5cm');
+  assert.equal(X.indentLen('1e9cm'), null);
+  // a CRLF file keeps its line ends
+  const w = t.replace(/\n/g, '\r\n'), Lw = X.allLists(X.readLists(w));
+  assert.ok(!/[^\r]\n/.test(apE(w, X.indentEdits(w, Lw[1], { leftmargin: null }, cfg).edits)));
+  // the page: the text at the margin, the label's box before it, a nested list from that margin
+  const doc = '\\documentclass{article}\\usepackage{enumitem,graphicx}\n\\begin{document}\n\\begin{itemize}[label={\\includegraphics[height=1.6ex]{dot.png}},leftmargin=4em,labelwidth=2em,labelsep=1em]\n  \\item A\n  \\begin{itemize}\n    \\item B\n  \\end{itemize}\n\\end{itemize}\n\\end{document}\n';
+  const its = buildModel({ files: new Map([['main.tex', doc]]), main: 'main.tex' }).blocks.flatMap((b) => b.items);
+  assert.deepEqual(its[0].lm, { text: 4, lab: 1, w: 2, sep: 1 });
+  assert.deepEqual(its[0].label[0], { k: 'img', f: 'main.tex', s: -1, e: -1, ro: true, file: 'dot.png', opts: 'height=1.6ex', box: null });
+  assert.equal(its[1].lmPad, 6.5);
+  assert.equal(its[1].label[0].text, '–');
+});
+
 console.log('lists: ' + n + ' groups of checks passed');

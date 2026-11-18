@@ -547,8 +547,9 @@ Object.assign(methods, {
     // a dash after a dash would make a longer one; a quote after a quote another
     if ((/^-/.test(t) && src[at - 1] === '-') || (/^[`']/.test(t) && src[at - 1] === t[0])) t = '{}' + t;
     const removed = edits.filter((ed) => ed.e <= at).reduce((n, ed) => n + (ed.e - ed.s), 0);
-    const pk = pkgs.length ? this.packageEdits(pkgs) : [];
-    const shift = f === this.main ? pk.filter((x) => x.s <= at).reduce((n, x) => n + x.t.length - (x.e - x.s), 0) : 0;
+    // (pkgs: package names, or { edits } of the main file's preamble made by the caller)
+    const pk = Array.isArray(pkgs) ? (pkgs.length ? this.packageEdits(pkgs) : []) : (pkgs && pkgs.edits) || [];
+    const shift = f === this.main ? pk.filter((x) => x.f === f && x.s <= at).reduce((n, x) => n + x.t.length - (x.e - x.s), 0) : 0;
     this.commit([...edits, { f, s: at, e: at, t }, ...pk], { f, p: at - removed + shift + t.length, bias: -1 }, 'insert');
     this.closeGroup();
     return true;

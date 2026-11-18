@@ -80,10 +80,24 @@ export function findPicture(src, nodes, s) {
       inner = w;
       continue;
     }
-    // {\setlength{\fboxsep}{0pt}\fbox{...}}: the border Rikuy writes, one group
+    // {\setlength{\fboxsep}{0pt}\fbox{...}}: the border Rikuy writes, one group; with its weight
+    // (\setlength{\fboxrule}{1pt}) and its colour (\color{red}) before the \fbox when it has them
     if (w.t === 'group' && inner.t === 'cmd' && inner.name === 'fbox') {
       const sol = solid(src, w.nodes);
-      if (sol.length === 2 && sol[1] === inner && tightSep(src, sol[0])) { const B = P.wraps[P.wraps.length - 1]; B.group = { s: w.s, e: w.e }; B.ours = sol[0].s === w.s + 1 && inner.s === sol[0].e && inner.e === w.e - 1 && src.slice(sol[0].s, sol[0].e) === '\\setlength{\\fboxsep}{0pt}'; inner = w; continue; }
+      const B = P.wraps[P.wraps.length - 1];
+      let sep = null, rule = null, color = null, ok = sol.length >= 2 && sol[sol.length - 1] === inner;
+      for (const x of ok ? sol.slice(0, -1) : []) {
+        if (!sep && tightSep(src, x)) sep = x;
+        else if (!rule && ruleOf(src, x)) rule = x;
+        else if (!color && x.t === 'cmd' && x.name === 'color' && x.args.some((a) => a && !a.o)) color = x;
+        else ok = false;
+      }
+      if (ok && sep) {
+        B.group = { s: w.s, e: w.e };
+        B.sep = sep; B.rule = rule; B.color = color;
+        B.ours = sol[0] === sep && sep.s === w.s + 1 && inner.e === w.e - 1 && src.slice(sep.s, sep.e) === '\\setlength{\\fboxsep}{0pt}' && !rule && !color && inner.s === sep.e;
+        inner = w; continue;
+      }
     }
     break;
   }
@@ -109,6 +123,11 @@ function lastMand(w) { const m = w.args.filter((a) => a && !a.o); return m[m.len
 function only(src, nodes, x) { const s = solid(src, nodes); return s.length === 1 && s[0] === x; }
 const argText = (src, a) => (a ? src.slice(a.is, a.ie).trim() : '');
 const num = (t) => { const m = /^\s*([+-]?(?:\d+\.?\d*|\.\d+))\s*$/.exec(t); return m ? parseFloat(m[1]) : NaN; };
+// \setlength{\fboxrule}{1pt} (or \fboxrule=1pt): the border's weight, its length's text
+function ruleOf(src, n) {
+  const m = /^\\setlength\{?\\fboxrule\}?\{([^{}]{1,30})\}$|^\\fboxrule=?([0-9.]+\s*(?:pt|bp|mm|cm|in))$/.exec(src.slice(n.s, n.e).replace(/\s+/g, ''));
+  return m ? (m[1] || m[2]) : null;
+}
 function tightSep(src, n) {
   const t = src.slice(n.s, n.e).replace(/\s+/g, '');
   return /^\\setlength\{?\\fboxsep\}?\{0(pt|cm|mm|in|bp)?\}$/.test(t) || /^\\fboxsep=?0(pt)?$/.test(t);
@@ -359,6 +378,45 @@ function unwrapEdits(src, W) { return [{ s: W.s, e: W.is, t: '' }, { s: W.ie, e:
 // ---- border ----------------------------------------------------------------------------------------
 export const bordered = (P) => P.wraps.some((w) => w.kind === 'border');
 export const BORDER_OPEN = '{\\setlength{\\fboxsep}{0pt}\\fbox{', BORDER_CLOSE = '}}';
+// The border's weight and colour as written: { weight (a length's text) | null, color: { model,
+// value } | null }, or null where the picture has no border
+export function borderStyle(src, P) {
+  const W = P.wraps.find((w) => w.kind === 'border');
+  if (!W) return null;
+  let color = null;
+  if (W.color) { const o = W.color.args.find((a) => a && a.o), m = W.color.args.find((a) => a && !a.o); color = { model: o ? src.slice(o.is, o.ie).trim() : null, value: src.slice(m.is, m.ie).trim() }; }
+  return { weight: W.rule ? ruleOf(src, W.rule) : null, color };
+}
+const colorTex = (c) => '\\color' + (c.model ? '[' + c.model + ']' : '') + '{' + c.value + '}';
+// Picture Border's weight or colour (o.weight: a length or null for the class's 0.4pt; o.color:
+// { model, value } or null for the text's colour): the border made where there is none, its
+// group made round a bare \fbox, each setting written, changed or taken off where it stands
+export function borderSet(src, P, o) {
+  const W = P.wraps.find((w) => w.kind === 'border');
+  const rule = (v) => '\\setlength{\\fboxrule}{' + v + '}';
+  if (!W || !W.group) {
+    const pre = (o.weight ? rule(o.weight) : '') + (o.color ? colorTex(o.color) : '');
+    if (!W) return { edits: [{ s: P.outer.s, e: P.outer.s, t: '{\\setlength{\\fboxsep}{0pt}' + pre + '\\fbox{' }, { s: P.outer.e, e: P.outer.e, t: BORDER_CLOSE }], packages: o.color ? ['xcolor'] : [] };
+    if (!pre) return { edits: [] };
+    return { edits: [{ s: W.s, e: W.s, t: '{' + pre }, { s: W.e, e: W.e, t: '}' }], packages: o.color ? ['xcolor'] : [] };
+  }
+  const edits = [];
+  // (each where it stands; a new one after \fboxsep's, the weight before the colour)
+  let ins = '';
+  if ('weight' in o) {
+    if (W.rule && o.weight) { const r = ruleOf(src, W.rule); const k = src.slice(W.rule.s, W.rule.e).lastIndexOf(r); edits.push({ s: W.rule.s + k, e: W.rule.s + k + r.length, t: o.weight }); }
+    else if (W.rule) edits.push({ s: W.rule.s, e: W.rule.e, t: '' });
+    else if (o.weight) ins += rule(o.weight);
+  }
+  if ('color' in o) {
+    if (W.color && o.color) edits.push({ s: W.color.s, e: W.color.e, t: colorTex(o.color) });
+    else if (W.color) edits.push({ s: W.color.s, e: W.color.e, t: '' });
+    else if (o.color && W.rule && !('weight' in o && !o.weight)) edits.push({ s: W.rule.e, e: W.rule.e, t: colorTex(o.color) });
+    else if (o.color) ins += colorTex(o.color);
+  }
+  if (ins) edits.push({ s: W.sep.e, e: W.sep.e, t: ins });
+  return { edits, packages: o.color ? ['xcolor'] : [] };
+}
 // A frame tight around the picture (\fbox with no gap, in a group of its own), or off again
 export function border(src, P, on) {
   const W = P.wraps.find((w) => w.kind === 'border');

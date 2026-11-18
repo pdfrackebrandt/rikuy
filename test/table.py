@@ -636,17 +636,72 @@ def compiled(page):
           r['ok'] and not r['problems'] and all(w.replace(' ', '') in r['text'].replace(' ', '') for w in words), {k: r[k] for k in ('ok', 'pages', 'problems')} | {'missing': [w for w in words if w.replace(' ', '') not in r['text'].replace(' ', '')]})
 
 
+# ---- R3: alt text, the Height and Width boxes, phones ------------------------------------------------------
+def r3_tables(page):
+    """A table's alt text as a "% alt:" line before it (LaTeX's tagging has no field for one): the command,
+    the Properties dialog, read back, off to the bytes of before; Table Layout's Height and Width boxes:
+    the rows' \\arraystretch and the column's p{} by Enter, Auto back to its letter, each one step."""
+    alt = DOC.replace('\\centering\n\\begin{tabular}', '\\centering\n% alt: Two fruits and their counts\n\\begin{tabular}')
+    roundtrip(page, DOC, sel('one'), cmd_fn('table-alt-text', {'text': 'Two fruits and their counts'}), alt, label='Table Alt Text', off_command=cmd_fn('table-alt-text', {'text': ''}))
+    load_doc(page, alt); at_src(page, 'one')
+    run_cmd(page, 'table-properties'); page.wait_for_timeout(200)
+    v = page.get_by_role('textbox', name='Description', exact=True).input_value()
+    check('Table Properties shows the alt text read back', v == 'Two fruits and their counts', v)
+    page.get_by_role('textbox', name='Description', exact=True).fill('Fruit: 100% & more')
+    h0 = page.evaluate('window.rikuy.hist.length')
+    page.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(250)
+    check('and OK writes it where it was, its words as typed (a comment is not typeset), one step', src(page) == alt.replace('Two fruits and their counts', 'Fruit: 100% & more') and page.evaluate('window.rikuy.hist.length') == h0 + 1, src(page)[60:260])
+    # Height and Width on the row
+    load_doc(page, DOC); at_src(page, 'one')
+    page.get_by_role('tab', name='Table Layout', exact=True).click(); page.wait_for_timeout(200)
+    hv = page.get_by_role('spinbutton', name='Height', exact=True).input_value(); wv = page.get_by_role('spinbutton', name='Width', exact=True).input_value()
+    check('Table Layout\'s Cell Size group: Height 1× and Width Auto for a table of l columns', hv == '1×' and wv == 'Auto', (hv, wv))
+    h0 = page.evaluate('window.rikuy.hist.length')
+    page.get_by_role('spinbutton', name='Height', exact=True).fill('1.5'); page.keyboard.press('Enter'); page.wait_for_timeout(250)
+    check('Height 1.5 then Enter: \\renewcommand{\\arraystretch}{1.5} in the table\'s float, one step', src(page) == DOC.replace('\\centering\n', '\\centering\n\\renewcommand{\\arraystretch}{1.5}\n') and page.evaluate('window.rikuy.hist.length') == h0 + 1, src(page)[60:260])
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150); at_src(page, 'one')
+    page.get_by_role('spinbutton', name='Width', exact=True).fill('3 cm'); page.keyboard.press('Enter'); page.wait_for_timeout(250)
+    check('Width 3 cm then Enter: the caret\'s column p{3cm}', src(page) == DOC.replace('{tabular}{ll}', '{tabular}{p{3cm}l}'), src(page)[60:260])
+    at_src(page, 'one'); page.wait_for_timeout(150)
+    wv = page.get_by_role('spinbutton', name='Width', exact=True).input_value()
+    check('the box reads it back: 3 cm', wv == '3 cm', wv)
+    page.get_by_role('spinbutton', name='Width', exact=True).fill('Auto'); page.keyboard.press('Enter'); page.wait_for_timeout(250)
+    check('Auto gives the column its letter back: the bytes of before', src(page) == DOC, src(page)[60:260])
+    # on a phone the two boxes are in the folded group or the row, and the dialog's alt text fits
+    load_doc(page, DOC); at_src(page, 'one')
+
+
+def r3_table_phones(p):
+    """On a phone (390 and 360 px, touch): the alt text box in Table Properties inside the screen, its OK by a tap."""
+    for w, h in ((390, 844), (360, 740)):
+        br, page, errs = open_page(p, w, h, touch=True)
+        tag = ' (%d px, touch)' % w
+        try:
+            load_doc(page, DOC); at_src(page, 'one')
+            run_cmd(page, 'table-alt-text'); page.wait_for_timeout(300)
+            fit = page.evaluate("(() => { const d = document.querySelector('.pop'); const r = d.getBoundingClientRect(); const t = d.querySelector('textarea.tb-alt'); return { in: r.left >= 0 && r.right <= innerWidth + 1, focused: document.activeElement === t, scroll: document.documentElement.scrollWidth <= innerWidth + 1 }; })()")
+            check('Alt Text opens Table Properties at its Description, inside the screen' + tag, fit['in'] and fit['focused'] and fit['scroll'], fit)
+            page.get_by_role('textbox', name='Description', exact=True).fill('Counts')
+            page.get_by_role('button', name='OK', exact=True).tap(); page.wait_for_timeout(300)
+            check('a tap on OK writes the alt line' + tag, '% alt: Counts\n\\begin{tabular}' in src(page), src(page)[60:200])
+        except Exception as e:
+            check('r3_table_phones runs to its end' + tag, False, repr(e)[:300])
+        br.close()
+
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         names = sys.argv[1:]
-        for f in (inserting, tabs_and_trips, keys_and_select, the_rest, drawing, reviewed, verified, compiled):
+        for f in (inserting, tabs_and_trips, keys_and_select, the_rest, drawing, reviewed, verified, compiled, r3_tables):
             if names and f.__name__ not in names:
                 continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
         browser.close()
+        if not names or 'r3_table_phones' in names:
+            r3_table_phones(p)
     bad = [r for r in results if not r[1]]
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     sys.exit(1 if bad else 0)

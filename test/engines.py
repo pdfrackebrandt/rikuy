@@ -266,8 +266,15 @@ try:
         wait_pdf(page)
         lc = page.evaluate("window.rikuy.lastCompile")
         shown = page.evaluate("document.getElementById('pdf-host').textContent")
-        check('36 packs are marked as the ones for other scripts', len(xpacks) == 36, len(xpacks))
+        check('70 packs are marked as the ones for other scripts and the large font families', len(xpacks) == 70, len(xpacks))
         check('without them a Chinese document gets no PDF, and the result names only those packs', bool(lc) and lc.get('unkeptScripts') is True and not lc.get('ok') and not page.evaluate("!!document.querySelector('#pdf-host canvas')") and 'could not be loaded' in shown, [lc and {k: lc[k] for k in ('unkept', 'unkeptScripts', 'ok')}, shown[:160]])
+        # a large font family shares those packs (build_tree.py LARGE_ONLY): a paper that loads it
+        # is told the same, not that libertinus.sty is missing
+        open_doc(page, [['main.tex', '\\documentclass{article}\n\\usepackage{libertinus}\n\\begin{document}\nLibertinus.\n\\end{document}\n']])
+        wait_pdf(page)
+        lc = page.evaluate("window.rikuy.lastCompile")
+        probs = page.evaluate("window.rikuy.texIssues.map(x => x.msg)")
+        check('without them a paper loading Libertinus gets no PDF, and the result names only those packs, not a missing file', bool(lc) and lc.get('unkeptScripts') is True and not lc.get('ok') and not any('libertinus.sty' in x and 'not found' in x for x in probs), [lc and {k: lc[k] for k in ('unkept', 'unkeptScripts', 'ok')}, probs[:3]])
         browser.close()
 except Exception as e:
     # a run that stops part way has failed, whatever the checks before it said

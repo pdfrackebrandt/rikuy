@@ -122,6 +122,46 @@ function path(s) {
   return segs.length ? segs : null;
 }
 
+// ---- the points a drawing's handles move (I12) ----------------------------------------------------
+// Every coordinate of a picture readTikz draws, with where its text is: [{ s, e (offsets of the text
+// between the parentheses in text), kind: 'pt' | 'r' | 'ab', x, y (cm, the handle's place), c (the
+// centre, for a radius) }]. null where readTikz would not draw the picture.
+export function tikzPoints(text) {
+  if (!readTikz(text)) return null;
+  const out = [];
+  const b = text.indexOf('\\begin{tikzpicture}'), z = text.lastIndexOf('\\end{tikzpicture}');
+  let i = b + '\\begin{tikzpicture}'.length;
+  let cur = null, after = '';
+  for (let n = 0; i < z && n < MAX_PTS * 2; n++) {
+    const ch = text[i];
+    if (ch === '%') { const nl = text.indexOf('\n', i); i = nl < 0 ? z : nl + 1; continue; }
+    // (a command's options are no coordinates: \draw[...] skipped whole)
+    if (ch === '[') { const q = text.indexOf(']', i); i = q < 0 ? z : q + 1; continue; }
+    if (ch === ';') { cur = null; after = ''; i++; continue; }
+    if (ch !== '(') { if (/[a-z]/.test(ch)) { const m = /^(circle|ellipse|rectangle|cycle)/.exec(text.slice(i, i + 10)); if (m) { after = m[1]; i += m[1].length; continue; } } i++; continue; }
+    const q = text.indexOf(')', i);
+    if (q < 0 || q - i > 60) return out;
+    const inner = text.slice(i + 1, q);
+    if (after === 'circle' && cur) { const r = num(inner); if (Number.isFinite(r)) out.push({ s: i + 1, e: q, kind: 'r', x: cur[0] + r, y: cur[1], c: cur }); }
+    else if (after === 'ellipse' && cur) { const m = /^(.+?)\s+and\s+(.+)$/.exec(inner); if (m) { const a = num(m[1]), bb = num(m[2]); if (Number.isFinite(a) && Number.isFinite(bb)) out.push({ s: i + 1, e: q, kind: 'ab', x: cur[0] + a, y: cur[1] + bb, c: cur, a, b: bb }); } }
+    else {
+      const c = inner.split(',');
+      const x = c.length === 2 ? num(c[0]) : NaN, y = c.length === 2 ? num(c[1]) : NaN;
+      if (Number.isFinite(x) && Number.isFinite(y)) { out.push({ s: i + 1, e: q, kind: 'pt', x, y }); cur = [x, y]; }
+    }
+    after = '';
+    i = q + 1;
+  }
+  return out;
+}
+// The text of a point moved to (x, y) cm, as its handle writes it: two decimals, no unit (TikZ's cm)
+const r2 = (v) => String(Math.round(v * 100) / 100);
+export function pointText(P, x, y) {
+  if (P.kind === 'r') return r2(Math.max(0.05, Math.hypot(x - P.c[0], y - P.c[1])));
+  if (P.kind === 'ab') return r2(Math.max(0.05, Math.abs(x - P.c[0]))) + ' and ' + r2(Math.max(0.05, Math.abs(y - P.c[1])));
+  return r2(x) + ',' + r2(y);
+}
+
 // ---- pgfplots: an axis of bars or lines from coordinates ---------------------------------------------
 // { kind: 'ybar' | 'xbar' | 'line', cats: [..] | null, series: [{ name, pts: [[x, y]] }], width, height }
 // Only Rikuy's own charts (chartTex's options, nothing else): a hand written axis (a log scale,

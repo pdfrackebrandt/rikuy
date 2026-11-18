@@ -120,7 +120,30 @@ export function openFontDialog(app) {
   if (S.color && !colors.some(([v]) => v === S.color)) colors.push([S.color, S.colorHtml ? '#' + S.color : S.color]);
   const color = select(colors, S.color);
   const under = select([['', '(none)'], ...Object.entries(F.UNDERLINES).map(([k, v]) => [k, v])], S.underline);
-  const ulc = select([['', 'Automatic'], ...STANDARD_COLORS.filter(([n]) => !/[A-Z]/.test(n[0]) || true).map(([n]) => [n, colorName(n)])], S.ulColor);
+  // (any colour for the underline: the document's, Word's standard ones, the one it has, and More
+  // colors… for one of your own, written as xcolor's mix of red, green and blue)
+  const ulOpts = [['', 'Automatic'], ...app.docColors().map((t) => [t.name, t.name + ' (this document\'s)']), ...STANDARD_COLORS.map(([n]) => [n, colorName(n)])];
+  const mixHex = (v) => { const m = /^rgb,255:red,(\d{1,3});green,(\d{1,3});blue,(\d{1,3})$/.exec(v || ''); return m ? '#' + [m[1], m[2], m[3]].map((x) => (+x).toString(16).padStart(2, '0').toUpperCase()).join('') : null; };
+  if (S.ulColor && !ulOpts.some(([v]) => v === S.ulColor)) ulOpts.push([S.ulColor, mixHex(S.ulColor) || S.ulColor]);
+  ulOpts.push(['*more', 'More colors…']);
+  const ulc = select(ulOpts, S.ulColor);
+  let ulWas = ulc.value;
+  ulc.addEventListener('change', () => {
+    if (ulc.value !== '*more') { ulWas = ulc.value; return; }
+    ulc.value = ulWas;
+    const inp = mk('input');
+    inp.type = 'color';
+    inp.value = mixHex(ulWas) ? mixHex(ulWas).toLowerCase() : '#c00000';
+    inp.addEventListener('change', () => {
+      const h = inp.value.replace('#', '').toUpperCase();
+      if (!/^[0-9A-F]{6}$/.test(h)) return;
+      const v = 'rgb,255:red,' + parseInt(h.slice(0, 2), 16) + ';green,' + parseInt(h.slice(2, 4), 16) + ';blue,' + parseInt(h.slice(4), 16);
+      if (![...ulc.options].some((o) => o.value === v)) ulc.add(new Option('#' + h, v), ulc.options[ulc.options.length - 1]);
+      ulc.value = ulWas = v;
+      ulc.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    inp.click();
+  });
   const grid = mk('div', 'fd-grid');
   grid.append(field('Font name', fam), field('Font style', style), field('Size', size, 'fd-sz'), field('Font color', color), field('Underline style', under), field('Underline color', ulc));
   grid.append(dl);
