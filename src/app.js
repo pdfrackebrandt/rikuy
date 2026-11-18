@@ -4812,6 +4812,8 @@ class App {
       const line = document.createElement('p');
       line.textContent = e && e.scripts ? e.message + ' The page preview can still be printed.' : off + this.texFailText(e, !!off, !!need) + 'The page preview can still be printed.';
       said = st.textContent + '. ' + line.textContent;
+      // the same words the pane says: a script reading the problem must not see "Failed to fetch"
+      this.lastCompile.failed = line.textContent;
       const acts = document.createElement('div'); acts.className = 'pdf-acts';
       const again = document.createElement('button'); again.className = 'btn sm'; again.type = 'button'; again.textContent = 'Try again';
       again.addEventListener('click', () => this.compilePdf({ clean: true }));
