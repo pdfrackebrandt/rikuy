@@ -82,8 +82,10 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   sentence too) does not know, and only words: never a command, a key, math, code or an address;
   suggestions on a right click or a long press, the Spelling pane (F7), Add to Dictionary as a
   `% rikuy: words` line that travels with the .tex. Track Changes (Ctrl+Shift+E) with Accept and
-  Reject, Display for Review, comments to step through and delete, Word Count, Compare with a
-  file, a copy with markup for the PDF, Read Aloud.
+  Reject, Display for Review (its Original too), changes carrying their author and accepted or
+  rejected by author, comments to step through and delete, a share link for comments only, Word
+  Count, Compare with a file, a copy with markup for the PDF, Read Aloud. A thesaurus (MyThes,
+  Shift+F7, a right click's Synonyms) and, when asked for, grammar (Harper, in WebAssembly).
 - **Tables as in Word.** Insert › Table's grid of sizes and Insert Table…, Convert Text to Table,
   a table from a .csv; Table Design and Table Layout while the caret is in a table: rows and
   columns in and out, merge and split, AutoFit, the nine alignments, looks, borders, shading,

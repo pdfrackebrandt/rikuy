@@ -11,8 +11,8 @@
 # core is no program: the editor's own C++ (native/core/), one module with no JavaScript glue,
 # vendor/core/rikuy-core.wasm, which build.mjs puts inside the page and src/native.js loads.
 #
-# Usage: build_tools.sh [dvips] [asy] [xindy] [gnuplot] [core] [hunspell] [mesa] [gsl] [fftw] [eigen]
-#   (default: the four programs, core and hunspell; mesa, gsl, fftw and eigen build only asy's libraries,
+# Usage: build_tools.sh [dvips] [asy] [xindy] [gnuplot] [core] [hunspell] [harper] [mesa] [gsl] [fftw] [eigen]
+#   (default: the four programs, core, hunspell and harper; mesa, gsl, fftw and eigen build only asy's libraries,
 #   into $RIKUY_SRC)   env: RIKUY_SRC, RIKUY_VENDOR, UBUNTU_POOL
 # Needs: Ubuntu's emscripten 3.1.6 and node; git, curl, make, pkg-config, xz and bzip2; meson,
 #   ninja, bison, flex and Python 3 with mako (Mesa); gcc with libgmp-dev and libgc-dev (a native
@@ -256,7 +256,16 @@ core() {
 # which build.mjs puts beside the page with the spell worker. The dictionaries are Ubuntu 26.10's
 # packages, each .aff and .dic copied as it is (all four say SET UTF-8, which spell.cc needs):
 # en_US from SCOWL, en_GB and es_ES from LibreOffice's dictionaries, de_DE from igerman98.
+# The same module holds MyThes 1.2.6 (Ubuntu's source package), the thesaurus LibreOffice uses,
+# with its data from Ubuntu 26.10's packages: en_US (WordNet, from LibreOffice's dictionaries),
+# es_ES (LibreOffice's) and de_DE (OpenThesaurus). Each .idx is copied as it is; each .dat is cut
+# at line ends into pieces of at most 1 MiB (split -C), which put together again are the
+# package's file byte for byte: the worker fetches only the piece an entry is in (thes/).
 HUNSPELL_V=1.7.6
+MYTHES_V=1.2.6
+THES="main/libr/libreoffice-dictionaries/mythes-en-us_26.8.0.3-1_all.deb:047ff14fd41e9c976f595335ea682d5cc02c03e908f2c0ffe98e454c79db43b5:th_en_US_v2:en_US
+main/libr/libreoffice-dictionaries/mythes-es_26.8.0.3-1_all.deb:5b2eee2a9f5d96c8413911af6a73d8e1d8faec999fbbf944292a274882564f4d:th_es_ES_v2:es_ES
+main/o/openthesaurus/mythes-de_20160424-4build1_all.deb:7da3d2cb8bf9cf322c040863ed8a522b825a74390eef3d882b56bf0bcad00f17:th_de_DE_v2:de_DE"
 HUNSPELL_SOURCES="affentry.cxx affixmgr.cxx csutil.cxx filemgr.cxx hashmgr.cxx hunspell.cxx hunspelltrace.cxx hunzip.cxx phonet.cxx replist.cxx suggestmgr.cxx"
 DICTS="main/s/scowl/hunspell-en-us_2020.12.07-4build1_all.deb:81820320c9bd2cbceef26783ef8d9f78e7deba57b1c47944ef82662a7632ad3e:en_US
 main/libr/libreoffice-dictionaries/hunspell-en-gb_26.8.0.3-1_all.deb:06179bbbfe572b0e49046b9274d6b124004353b75167ada73db03434ba8736d8:en_GB
@@ -265,12 +274,14 @@ main/libr/libreoffice-dictionaries/hunspell-es_26.8.0.3-1_all.deb:24cb9ae90ce332
 hunspell() {
   fetch $UBUNTU/main/h/hunspell/hunspell_$HUNSPELL_V.orig.tar.gz 4fa9c52a5337fb0a3e03f3212b6372d0159eac3d1a3e6e938e8897ff3d9c3d0c
   H="$SRC/hunspell" && rm -rf "$H" && mkdir -p "$H" && tar --no-same-owner -xzf "$SRC/dl/hunspell_$HUNSPELL_V.orig.tar.gz" -C "$H" --strip-components=1
-  rm -rf "$VENDOR/hunspell" && mkdir -p "$VENDOR/hunspell/dict"
+  fetch $UBUNTU/main/m/mythes/mythes_$MYTHES_V.orig.tar.gz 7ebc9d32e4d37c1da7fb9dd9673dec2deda9607470a84ebcab2c0d08dc3c7d6c
+  T="$SRC/mythes" && rm -rf "$T" && mkdir -p "$T" && tar --no-same-owner -xzf "$SRC/dl/mythes_$MYTHES_V.orig.tar.gz" -C "$T" --strip-components=1
+  rm -rf "$VENDOR/hunspell" && mkdir -p "$VENDOR/hunspell/dict" "$VENDOR/hunspell/thes"
   # (the sources named, not globbed: their order is the order of the module's bytes)
-  em++ -O2 -std=c++17 -DHUNSPELL_STATIC -I"$H/src/hunspell" $(for f in $HUNSPELL_SOURCES; do printf ' %s/src/hunspell/%s' "$H" "$f"; done) "$HERE/native/spell/spell.cc" \
+  em++ -O2 -std=c++17 -DHUNSPELL_STATIC -I"$H/src/hunspell" -I"$T" $(for f in $HUNSPELL_SOURCES; do printf ' %s/src/hunspell/%s' "$H" "$f"; done) "$T/mythes.cxx" "$HERE/native/spell/spell.cc" \
     -sMODULARIZE=1 -sEXPORT_NAME=RikuyHunspell -sENVIRONMENT=worker,node -sALLOW_MEMORY_GROWTH=1 -sFORCE_FILESYSTEM=1 -sINITIAL_MEMORY=33554432 \
     -sEXPORTED_RUNTIME_METHODS=FS,stringToUTF8,UTF8ToString,lengthBytesUTF8 \
-    -sEXPORTED_FUNCTIONS=_spell_open,_spell_close,_spell_check_list,_spell_suggest,_spell_add,_spell_remove,_malloc,_free \
+    -sEXPORTED_FUNCTIONS=_spell_open,_spell_close,_spell_check_list,_spell_suggest,_spell_add,_spell_remove,_spell_stem,_thes_open,_thes_lookup,_malloc,_free \
     -o "$VENDOR/hunspell/hunspell.js"
   chmod 644 "$VENDOR/hunspell/hunspell.js" "$VENDOR/hunspell/hunspell.wasm"
   for d in $DICTS; do
@@ -280,7 +291,34 @@ hunspell() {
     for e in aff dic; do cp "$x/usr/share/hunspell/$name.$e" "$VENDOR/hunspell/dict/$name.$e"; chmod 644 "$VENDOR/hunspell/dict/$name.$e"; done
     grep -q '^SET UTF-8' "$VENDOR/hunspell/dict/$name.aff" || { echo "build_tools.sh: $name.aff is not UTF-8" >&2; exit 1; }
   done
-  ls -l "$VENDOR/hunspell" "$VENDOR/hunspell/dict"
+  for d in $THES; do
+    url=${d%%:*}; rest=${d#*:}; sum=${rest%%:*}; rest=${rest#*:}; file=${rest%%:*}; name=${rest#*:}
+    fetch $UBUNTU/$url $sum
+    x="$SRC/thes-$name" && rm -rf "$x" && dpkg-deb -x "$SRC/dl/$(basename "$url")" "$x"
+    cp "$x/usr/share/mythes/$file.idx" "$VENDOR/hunspell/thes/$name.idx"
+    (cd "$VENDOR/hunspell/thes" && LC_ALL=C split -C 1048576 -d -a 3 "$x/usr/share/mythes/$file.dat" "$name.dat.")
+    cat "$VENDOR/hunspell/thes/$name.dat."* | cmp -s - "$x/usr/share/mythes/$file.dat" || { echo "build_tools.sh: the pieces of $file.dat are not the file" >&2; exit 1; }
+    chmod 644 "$VENDOR/hunspell/thes/$name".*
+  done
+  ls -l "$VENDOR/hunspell" "$VENDOR/hunspell/dict"; ls "$VENDOR/hunspell/thes" | wc -l
+}
+
+# ---- harper ---------------------------------------------------------------------------------------
+# Grammar (src/spell/grammar.js): Harper 3.2.0, Automattic's English grammar checker, as its own
+# release builds it to WebAssembly (Rust, so not a recipe here): the npm package harper.js, pinned
+# by SHA-256, whose slim module (the smaller of its two builds), its JavaScript glue and license are copied
+# unchanged into vendor/harper/. Measured against link-grammar 5.12 (C, AbiWord's checker) on 40
+# sentences with one error each and 312 sentences of the corpus's English prose (PLAN.md task 64):
+# Harper found 24 of 40 and flagged 31 clean sentences (most of them real slips), with the words
+# and a correction; link-grammar 25 of 40 and 82 clean ones, a whole sentence each, with no
+# correction.
+HARPER_V=3.2.0
+harper() {
+  fetch https://registry.npmjs.org/harper.js/-/harper.js-$HARPER_V.tgz 99bbcbb4cbd630d2e802fd693a826926b1726ca1ac40ef109127a215d9fa2da6
+  P="$SRC/harper" && rm -rf "$P" && mkdir -p "$P" && tar --no-same-owner -xzf "$SRC/dl/harper.js-$HARPER_V.tgz" -C "$P" --strip-components=1
+  rm -rf "$VENDOR/harper" && mkdir -p "$VENDOR/harper"
+  for f in dist/harper_wasm_slim_bg.wasm dist/index.js dist/BinaryModule-DMhzYB6c.js LICENSE package.json; do cp "$P/$f" "$VENDOR/harper/$(basename "$f")"; chmod 644 "$VENDOR/harper/$(basename "$f")"; done
+  ls -l "$VENDOR/harper"
 }
 
 gnuplot() {
@@ -418,5 +456,5 @@ xindy() {
   ls -l "$VENDOR/xindy"
 }
 
-[ $# -gt 0 ] || set -- dvips asy xindy gnuplot core hunspell
+[ $# -gt 0 ] || set -- dvips asy xindy gnuplot core hunspell harper
 for t in "$@"; do "$t"; done

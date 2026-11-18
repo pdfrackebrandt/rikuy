@@ -308,7 +308,9 @@ What either link does when opened:
 - The document travels in the part of the address after #, which browsers never send to a
   server: nothing is uploaded, and the host puts no limit on its length.
 - It takes the place of the document that was open. That one is not lost: a version of it is
-  kept first, and Review, Versions in the side panel restores it.
+  kept first, and Review, Versions in the side panel restores it. Where this browser already
+  keeps a document of the same name (and main file), the link's document opens beside it as
+  "Name (from a link)", or "Name (from <by>)", and the kept one stays as it was.
 - It is treated as someone else's: programs it would start through TeX's shell escape stay off,
   and live figures wait for a click, until the person allows them. TeX runs only when the
   person has the PDF preview open or presses Download PDF.
@@ -537,6 +539,18 @@ Ctrl is Cmd on a Mac.
   "% rikuy: words ..." line in the main file, which TeX never reads; "% cspell:words ..." lines
   count too). Review > Proofing Language: \foreignlanguage for a selection, babel's language for
   the document. Ctrl+Shift+G: Word Count; Ctrl+Alt+Space: Read Aloud and stop
+- Shift+F7: the Thesaurus pane (MyThes, LibreOffice's, beside Hunspell: an inflected word is
+  looked up by its stem); its Insert puts a word of like meaning in place of the word at the
+  cursor, its letters that differ only; a right click's Synonyms lists the first ones. Review >
+  Spelling's arrow > Check Grammar as You Type (off at first): Harper's grammar, blue double
+  lines on English prose only, its corrections in the right click menu and the Spelling and
+  Grammar pane (F7). Review > Display for Review > Original: the page shows the text before the
+  changes and takes no edit until another view is chosen; Show Markup lists each reviewer, and
+  Accept's and Reject's arrows act on all of one reviewer's changes. Share's "Can comment only"
+  link: its reader can comment and nothing else, and the copy that comes back brings comments
+  alone
+- Alt+Shift+I: Mark Citation (the Table of Authorities: \index[toa]{n@\textbf{Category}!…},
+  imakeidx's \makeindex[name=toa,…] once); Insert Table of Authorities writes \printindex[toa]
 - \\: the list of things to insert (footnote, citation, section, table and more). Ctrl+K is
   Word's Link: the Insert Hyperlink dialog (a web page, an e-mail address, a place in this
   document); in a link, Edit Hyperlink with Remove Link. It writes \\href{…}{…}, \\url{…} when the
@@ -879,10 +893,11 @@ const ADDRESSED = /-([0-9a-f]{16})\.[A-Za-z0-9]+$/;
 const NOT_SERVED = new Set(['rikuy.html', 'LICENSES.txt', '404.html', '_headers', '_redirects', 'robots.txt', 'sitemap.xml', 'llms.txt', 'llms-full.txt', 'og.png', 'controls.json']);
 const PRECACHE_MAX = 4 * 1024 * 1024;
 const WORD_PART = /^word\/pandoc-[0-9a-f]+-\d+\.bin$/;
-// the dictionaries of spelling (spell/<name>-<hash>.aff and .dic): content addressed, but kept the
-// first time a document in that language is checked, not at install (5 MB, mostly of languages
-// the person never writes in): the fourth field says so (src/sw.js install)
-const LATER = /^spell\/[A-Za-z_]+-[0-9a-f]{16}\.(aff|dic)$/;
+// the dictionaries of spelling (spell/<name>-<hash>.aff and .dic), the thesauri's index and pieces
+// (spell/th_<name>-<hash>.idx and .dat) and the grammar worker: content addressed, but kept the
+// first time they are used, not at install (80 MB, mostly of languages the person never writes
+// in, and grammar only for those who ask for it): the fourth field says so (src/sw.js install)
+const LATER = /^spell\/(?:[A-Za-z_]+-[0-9a-f]{16}\.(?:aff|dic)|th_[A-Za-z0-9_]+-[0-9a-f]{16}\.(?:idx|dat)|grammar-[0-9a-f]{16}\.js)$/;
 
 export function finishApp(OUT) {
   const index = path.join(OUT, 'index.html');

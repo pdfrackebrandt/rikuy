@@ -1,4 +1,5 @@
 // The Spelling pane (F7), Word's: one word the dictionary does not know at a time, in its
+// sentence (with grammar on, Harper's issues too, in their place among them: src/cmd/proofing.js),
 // sentence, with Hunspell's suggestions and Ignore Once, Ignore All, Add to Dictionary, Change
 // and Change All. It stays open while the page is worked on (as Find and Replace does: a press on
 // the page does not close it), follows the edits, and on a phone is a sheet at the window's foot
@@ -53,13 +54,13 @@ function build(app) {
     }
   });
   const act = (fn) => () => { const c = P.cur; if (!c) return; P.after = { f: c.f, p: c.s }; P.back = document.activeElement; fn(c); };
-  bOnce.addEventListener('click', act((c) => app.spellIgnoreOnce(c)));
-  bAll.addEventListener('click', act((c) => app.spellIgnoreAll(c.q)));
-  bAdd.addEventListener('click', act((c) => app.spellAddWord(c.q)));
+  bOnce.addEventListener('click', act((c) => (c.g ? app.grammarIgnoreOnce(c) : app.spellIgnoreOnce(c))));
+  bAll.addEventListener('click', act((c) => (c.g ? app.grammarIgnoreRule(c) : app.spellIgnoreAll(c.q))));
+  bAdd.addEventListener('click', act((c) => { if (!c.g) app.spellAddWord(c.q); }));
   // (a Change is done once: the pane waits for the page's next check before it shows a word again,
   // so a second press, a double click or a double tap, finds nothing to change twice)
   const done = (c) => { P.cur = null; P.after = { f: c.f, p: c.s }; for (const b of [bOnce, bAll, bAdd, bChange, bChangeAll]) b.disabled = true; };
-  bChange.addEventListener('click', act((c) => { if (P.pick && app.spellChange(c, P.pick)) done(c); }));
+  bChange.addEventListener('click', act((c) => { if (c.g ? P.pickSg && app.grammarApply(c, P.pickSg) : P.pick && app.spellChange(c, P.pick)) done(c); }));
   bChangeAll.addEventListener('click', act((c) => { if (P.pick && app.spellChange(c, P.pick, true)) done(c); }));
   bNext.addEventListener('click', () => step(app, 1));
   bPrev.addEventListener('click', () => step(app, -1));
@@ -68,7 +69,8 @@ function build(app) {
 
 const order = (app) => {
   const rank = (f) => (f === app.main ? '' : f);
-  return app.spellState().bad.slice().sort((a, b) => (rank(a.f) < rank(b.f) ? -1 : rank(a.f) > rank(b.f) ? 1 : a.s - b.s));
+  const g = app.gr && app.grammarOn && app.grammarOn() ? app.gr.bad : [];
+  return [...app.spellState().bad, ...g].sort((a, b) => (rank(a.f) < rank(b.f) ? -1 : rank(a.f) > rank(b.f) ? 1 : a.s - b.s));
 };
 function step(app, dir) {
   const P = app.spPane, list = order(app);
@@ -95,12 +97,41 @@ function render(app) {
   if (!P || P.d.hidden) return;
   const S = app.spellState();
   const x = P.cur;
-  const n = S.bad.length;
+  const all = order(app);
+  const n = all.length;
+  const gOn = !!(app.grammarOn && app.grammarOn());
+  P.d.querySelector('#sp-title').textContent = gOn ? 'Spelling and Grammar' : 'Spelling';
   P.list.replaceChildren();
-  P.pick = null;
+  P.pick = null; P.pickSg = null;
   for (const b of [P.bOnce, P.bAll, P.bAdd, P.bChange, P.bChangeAll, P.bPrev, P.bNext]) b.disabled = !x;
+  if (x && x.g) {
+    // a grammar issue: Harper's message, the words in their sentence, its corrections
+    P.bAdd.disabled = true; P.bChangeAll.disabled = true;
+    P.bAll.title = 'Leave these words as they are for this kind of issue in this document';
+    P.lab.textContent = 'Grammar: ' + x.msg;
+    P.ctx.replaceChildren();
+    let a = Math.max(0, x.i - 60), b = Math.min(x.ctx.length, x.j + 60);
+    let pre = x.ctx.slice(a, x.i), post = x.ctx.slice(x.j, b);
+    if (a > 0) pre = '…' + pre.replace(/^\S*\s/, '');
+    if (b < x.ctx.length) post = post.replace(/\s\S*$/, '') + '…';
+    P.ctx.append(document.createTextNode(pre), mk('b', 'sp-w sp-g', x.words || '‸'), document.createTextNode(post));
+    P.st.textContent = (all.findIndex((y) => y.key === x.key) + 1) + ' of ' + n;
+    if (!x.sugg.length) { P.list.append(mk('div', 'sp-none', '(no suggestions)')); P.bChange.disabled = true; return; }
+    x.sugg.forEach((sg, i) => {
+      const o = mk('button', 'sp-opt', app.suggLabel(sg));
+      o.type = 'button';
+      o.setAttribute('role', 'option');
+      o.setAttribute('aria-selected', i === 0 ? 'true' : 'false');
+      o.addEventListener('click', () => { for (const y of P.list.children) y.setAttribute('aria-selected', 'false'); o.setAttribute('aria-selected', 'true'); P.pickSg = sg; });
+      o.addEventListener('dblclick', () => { P.pickSg = sg; P.bChange.click(); });
+      P.list.append(o);
+    });
+    P.pickSg = x.sugg[0];
+    return;
+  }
+  P.bAll.title = 'Leave this word as it is everywhere in this document (kept in this browser)';
   if (!x) {
-    P.lab.textContent = app.spellOn() ? 'No spelling errors' : (app.spellWhyNot() || 'Spelling is off');
+    P.lab.textContent = app.spellOn() ? (gOn ? 'No spelling or grammar issues' : 'No spelling errors') : (app.spellWhyNot() || 'Spelling is off');
     P.ctx.textContent = app.spellOn() && S.plan ? S.plan.occ.length.toLocaleString('en-US') + ' words checked in ' + (DICT_NAME[S.plan.dict] || S.plan.dict) + '.' : '';
     P.st.textContent = '';
     return;
@@ -116,7 +147,7 @@ function render(app) {
     if (b < run.text.length) post = post.replace(/\s\S*$/, '') + '…';
     P.ctx.append(document.createTextNode(pre), mk('b', 'sp-w', x.w), document.createTextNode(post));
   } else P.ctx.append(mk('b', 'sp-w', x.w));
-  const k = order(app).findIndex((y) => y.key === x.key);
+  const k = all.findIndex((y) => y.key === x.key);
   P.st.textContent = (k + 1) + ' of ' + n;
   const fill = (sugg) => {
     if (P.cur !== x) return;
@@ -148,7 +179,7 @@ export function openSpellPane(app, x) {
   const P = app.spPane || build(app);
   P.d.hidden = false;
   if (!app.spellOn() && app.spellAvailable() && app.prefs.spell === false) { P.cur = null; render(app); return; }
-  P.cur = x || app.spellAt() || null;
+  P.cur = x || app.spellAt() || (app.grammarAt && app.grammarAt()) || null;
   if (!P.cur) {
     const c = app.caretNow();
     const list = order(app);

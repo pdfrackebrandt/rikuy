@@ -1418,3 +1418,37 @@ text brings that tab's base (`rvReloadBase`); leaving the page writes the base. 
 Show Markup choose what `paintChanges` and `paintComments` draw; Accept and Reject, Previous and
 Next work on `orderedChanges`.
 
+Round 3 (R4) added these. A change carries its author: each file keeps a layer of who wrote what
+since the base (`authorEdit`, the ranges a step inserted and the places it deleted, moved by every
+step in `rvAuthorStep`, kept before and after each step for its undo and redo, and stored with the
+base for the text it was made on); `currentChanges` cuts a change where two authors' pieces meet
+(`byAuthor`). A step's author is the name in AutoCorrect Options, or the coauthor whose copy comes
+back (`rvBy`, set by `takeBack`). Show Markup's Specific People hide a reviewer's marks
+(`rvHidden`), and Accept and Reject act on all of one reviewer's changes. Display for Review's
+Original draws the base's text: `rebuild` builds the model from `pageFiles()`, and
+`rvRefuse`, called first in `App.commit`, refuses every edit while it does. The same guard
+refuses anything but comment lines in a document a comments only share link opened
+(`commentsOnlyRefuse`, `onlyComments` in `src/share.js`); the author's own browser decides what
+a copy coming back may bring (`linkRole` from the versions it shared, with each link's random
+name and role, never from the copy), and for a comments only link lets in its comment lines alone
+(`commentsOf`).
+
+The thesaurus is MyThes, compiled into the spell worker's module (`thes_open`, `thes_lookup`,
+and `spell_stem`, Hunspell's stems, so an inflected word finds its entry). Its index is read whole;
+its data, 3 to 29 MB a language, is served to MyThes through a device of Emscripten's file system
+(`thesDevice` in `src/spell/worker.js`) holding only the 1 MiB pieces fetched so far: a lookup
+that reads into a missing piece notes it, the worker fetches and checks it, and asks again. The
+Thesaurus pane is `src/ui/thespane.js`, its commands `src/cmd/proofing.js`. Grammar is Harper, its
+own WebAssembly build, in a worker of its own (`src/spell/grammar.js`, `src/spell/harper.js`):
+`grammarBlocks` (`src/spell/words.js`) gives it each block's prose as one paragraph, a formula or a
+citation standing as "x", other languages and code left out; `lintSource` maps an issue back to
+the source, and a correction is the characters that differ. It runs only when Check Grammar as You
+Type is on.
+
+Word export (`src/wordast.js`): an `\endnote` is a note marked for `endnotesDocx`
+(`src/wordnotes.js`), which makes it one of Word's endnotes; `\index` entries are XE fields (TA
+fields for `\index[toa]`) at the end of their paragraph, `\printindex` an INDEX field, the Table of
+Authorities TOA fields, the lists of figures and tables TOC fields of the caption styles, each
+marked for Word to update as it opens. Word's endnotes come back as `\endnote` (`markEndnotes`,
+`endnotesTex`); its fields are not read by pandoc and do not come back.
+

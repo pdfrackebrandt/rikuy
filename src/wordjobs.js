@@ -8,6 +8,7 @@ import { isBalanced } from './parser.js';
 import { safeUrl } from './wordast.js';
 import { scriptNeeds, scriptLines, scriptSetup, otherDirection, INDIC, MORE } from './scripts.js';
 import { pageDocx, pageLatex, relsMap } from './wordpage.js';
+import { endnotesDocx, markEndnotes, endnotesTex } from './wordnotes.js';
 import { wrapMulticols } from './pagesrc.js';
 import { docSpacing } from './parasrc.js';
 import { tableExtras, applyTableExtras } from './wordtable.js';
@@ -35,10 +36,14 @@ export function exportDocx(P, req) {
   // (R3) a table's shading, turned words and alt text, which pandoc's table has no field for
   const tx = tableExtras(req.doc);
   const made2 = tx.length ? tablesOut(made, tx) : made;
-  // the page's set up: paper, margins, columns, headers and footers (src/wordpage.js); the bullets
-  // the page drew (R2)
-  const bul = req.bullets && req.bullets.some(Boolean);
-  const docx = req.page || bul ? zip(bulletDocx(req.page ? pageDocx(unzip(made2), req.page) : unzip(made2), bul ? req.bullets : null)) : made2;
+  // the page's set up: paper, margins, columns, headers and footers (src/wordpage.js)
+  let parts = req.page ? pageDocx(unzip(made2), req.page) : null;
+  // (R4: the notes that are endnotes made Word's own, src/wordnotes.js)
+  const en = endnotesDocx(parts || unzip(made2));
+  if (en) parts = en;
+  // the bullets the page drew (R2; it reads the numbering of the body, footnotes and endnotes)
+  if (req.bullets && req.bullets.some(Boolean)) parts = bulletDocx(parts || unzip(made2), req.bullets);
+  const docx = parts ? zip(parts) : made2;
   // what Word got, block by block, lined up with what the page showed
   const X = extract(unzip(docx));
   const anchors = [];
@@ -1096,6 +1101,8 @@ function geometry(pg, PG = {}) {
 export function docxToLatex(P, bytes, name) {
   // the zip pandoc reads is the one rebuilt from what passed the checks
   const parts = unzip(bytes);
+  // (R4: Word's endnotes marked, so they come back as \endnote and not as footnotes)
+  const ens = markEndnotes(parts);
   const opts = { from: 'docx+citations', to: 'json', 'input-files': ['in.docx'], 'extract-media': 'media', 'track-changes': 'accept' };
   let info = null, r = null;
   try {
@@ -1107,6 +1114,7 @@ export function docxToLatex(P, bytes, name) {
   if (!r || !r.stdout) r = P.convert(opts, null, { 'in.docx': zip(parts) });
   if (!r.stdout) throw new Error('The file is damaged: its text (word/document.xml) is cut short or not valid, so nothing in it can be read. Open it in Word, which offers to repair it, save it again and open that file here. (pandoc: ' + (r.stderr || '').trim().slice(0, 200) + ')');
   const doc = JSON.parse(r.stdout);
+  const EN = ens ? endnotesTex(doc) : null;
   const media = {};
   const renamed = new Map();
   let k = 0, total = 0;
@@ -1235,6 +1243,7 @@ export function docxToLatex(P, bytes, name) {
   if (used(/\\hl[{[]/)) pre.push('\\DeclareRobustCommand{\\hl}[1][yellow]{\\bgroup\\markoverwith{\\textcolor{#1}{\\rule[-.5ex]{2pt}{2.5ex}}}\\ULon}');
   if (used(/\\(cite[tp]?|citeauthor|citeyear)\{/) || bib) pre.push('\\usepackage[authoryear,round]{natbib}');
   if (used(/\\(texttt|verb)|\\begin\{verbatim\}/)) { /* the class has them */ }
+  if (used(/\\endnote\{/)) pre.push('\\usepackage{enotez}');
   // (R1) a foreign file's paragraph settings, its parts in columns or on landscape pages, and its
   // own line spacing (src/docx.js premark marks them)
   const spaced = info && info.spacing && info.spacing !== 100 ? info.spacing : 0;
@@ -1260,6 +1269,7 @@ export function docxToLatex(P, bytes, name) {
   if (abstract) lines.push('', '\\begin{abstract}', abstract, '\\end{abstract}');
   lines.push('', many ? '\\begin{multicols}{' + many + '}\n' + tex.trim() + '\n\\end{multicols}' : tex.trim(), '');
   if (bib) lines.push('\\bibliographystyle{plainnat}', '\\bibliography{references}', '');
+  if (used(/\\endnote\{/)) lines.push('\\printendnotes', '');
   lines.push('\\end{document}', '');
   let out = comments(lines.join('\n'), info, N);
   // ---- what the user is told: what came differently, and what did not come at all
@@ -1297,6 +1307,7 @@ export function docxToLatex(P, bytes, name) {
   if (N.comments) notes.push(s(N.comments, 'Word comment') + ' came in as ' + (N.comments === 1 ? 'a comment' : 'comments') + ' under ' + (N.comments === 1 ? 'its' : 'their') + ' text.');
   if (info && info.tracked) notes.push(s(info.tracked, 'tracked change') + ' in the file ' + (info.tracked === 1 ? 'was' : 'were') + ' accepted.');
   if (info && info.endnotes) notes.push('Endnotes are footnotes here.');
+  if (EN && EN.foot) notes.push(s(EN.foot, 'endnote') + ' with a table, a list or another block ' + (EN.foot === 1 ? 'is a footnote' : 'are footnotes') + ' here, every block kept: an endnote holds paragraphs alone.');
   if (N.toc) notes.push('The table of contents is LaTeX\'s own now.');
   if (N.headnums) notes.push('The section numbers typed in ' + s(N.headnums, 'heading') + ' are LaTeX\'s own now.');
   if (N.numbered) notes.push(s(N.numbered, 'equation') + ' typed with a number ' + (N.numbered === 1 ? 'is' : 'are') + ' numbered by LaTeX.');

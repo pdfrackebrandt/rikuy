@@ -2,7 +2,7 @@
 // numbering, cross references and citations resolved. Every editable
 // character keeps a pointer to its exact source range.
 import { parse, scanUserSigs, CHARS, ACCENTS, splitRows, MATH_BUDGET } from './parser.js';
-import { refsSetup, readIndexArg, indexKey } from './refsrc.js';
+import { refsSetup, readIndexArg, indexKey, istRight } from './refsrc.js';
 import { parseBib, texToPlain, shortAuthors, entryYear, formatEntry } from './bib.js';
 import { siTex, siOptions, siUnitSymbol } from './siunitx.js';
 import { widgetPath, hashText } from './widget.js';
@@ -1333,13 +1333,20 @@ class Builder {
     const order = (m) => [...m.values()].sort((a, b) => { const x = indexKey(a.sort || a.text), y = indexKey(b.sort || b.text); return x.grp - y.grp || (x.key < y.key ? -1 : x.key > y.key ? 1 : 0) || (x.raw < y.raw ? -1 : x.raw > y.raw ? 1 : 0); });
     const rows = [];
     let letter = null;
-    const walk = (n, lvl, gap) => { rows.push({ lvl, text: texToPlain(n.text), pages: n.pages, see: n.see, gap }); for (const c of order(n.subs)) walk(c, lvl + 1, false); };
+    const walk = (n, lvl, gap) => { rows.push({ lvl, text: texToPlain(n.text), sort: n.sort || '', pages: n.pages, see: n.see, gap, ...(/^\s*\\textbf\s*\{/.test(n.text) ? { bold: true } : {}) }); for (const c of order(n.subs)) walk(c, lvl + 1, false); };
     for (const n of order(top)) { const L = indexKey(n.sort || n.text).letter; walk(n, 0, letter !== null && L !== letter); letter = L; }
     this.use(JSON.stringify(rows.map((r) => [r.lvl, r.text, r.pages.map((p) => p.fmt + (p.range || '')), r.see, r.gap])));
     const out = [];
     if (!R.noclear) out.push({ f: ctx.f, s: nd.s, e: nd.s, items: [{ type: 'pagebreak', odd: false, column: false }], fns: [], sig: 'ixpb' });
-    this.inToc('index', nd, 'Index');
-    out.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'idx', head: 'Index', rows, cols: R.pkg === 'imakeidx' ? Math.max(1, Math.min(4, R.columns || 2)) : 2, key: ctx.f + ':ix' + name, dir: this.dirOf() }], fns: [], sig: this.sig.join('\u0001') });
+    // (R4) this index's own \makeindex: its title (a Table of Authorities' name), its columns, and
+    // page numbers at the right margin where its makeindex style puts them there
+    const own = (R.mk || []).find((m) => m.name === name) || null;
+    const head = own && own.title ? texToPlain(own.title) : name ? name : 'Index';
+    const cols = R.pkg === 'imakeidx' ? Math.max(1, Math.min(4, (own && own.columns) || (name ? 2 : R.columns) || 2)) : 2;
+    const right = own && own.ist ? istRight(this.project.files.get(own.ist)) : null;
+    this.use('ixh' + head + cols + right);
+    this.inToc('index', nd, head);
+    out.push({ f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'idx', head, rows, cols, ...(right ? { right } : {}), key: ctx.f + ':ix' + name, dir: this.dirOf() }], fns: [], sig: this.sig.join('\u0001') });
     return out;
   }
   // \printendnotes (enotez) and \theendnotes (endnotes): the notes so far, under Notes
@@ -2191,6 +2198,8 @@ class Builder {
     // (R1) lineno numbers none of its lines, and counts none (src/layout.js eachLine)
     if (name === 'nolinenumbers') { const r = this.container(nd, ctx, env, {}); for (const it of r.items) it.noLn = true; return r; }
     if (/^(figure|table|wrapfigure|wraptable|SCfigure|SCtable|sidewaysfigure|sidewaystable)\*?$/.test(name)) return this.floatBlock(nd, ctx, env);
+    // (R4) a float of the document's own (newfloat, float): numbered and captioned under its name
+    { const F = this.opts.refs && this.opts.refs.floats, k = name.replace(/\*$/, ''); if (F && Object.prototype.hasOwnProperty.call(F, k)) return this.floatBlock(nd, ctx, env, k); }
     if (/^(tabular|tabularx|tabular\*|tabulary|longtable|array)$/.test(name)) {
       const t = this.tabular(nd, ctx);
       return { f: ctx.f, s: nd.s, e: nd.e, items: [{ type: 'float', kind: 'inline', parts: [t], f: ctx.f }], fns: t.fns || [] };
@@ -2599,6 +2608,19 @@ class Builder {
     // (with no declaration: the class's own, src/model.js preamble)
     const dflt = this.opts.floatAlign || 'left';
     let subDepth = 0, subN = 0;
+    // (R4) how this float's captions are labelled: its own \captionsetup{labelformat=…}, else the
+    // preamble's for its kind or for all; a format whose body is #2 (the number) prints the number
+    // alone, empty nothing; a float of the document's own under the name it declared
+    const RR = this.opts.refs || {};
+    if (this.c[kind] == null) this.c[kind] = 0;
+    let lf = (RR.capLabel || {})[kind] || (RR.capLabel || {})['*'] || '';
+    const capLab = () => {
+      const body = lf && (RR.capFormats || {})[lf];
+      if (lf === 'empty') return '-';
+      if (body != null && body.replace(/\s+/g, '') === '#2') return '';
+      const F = RR.floats && Object.prototype.hasOwnProperty.call(RR.floats, kind) ? RR.floats[kind] : null;
+      return F ? F.name : undefined;
+    };
     const walk = (nodes) => {
       for (const [i, n] of nodes.entries()) {
         if (n.t === 'par') { flushP(); continue; }
@@ -2617,6 +2639,11 @@ class Builder {
           this.lastTarget = { num: (num || this.withinPrefix(kind) + (this.c[kind] + 1)) + alph(subN), kind };
           this.use('Fs' + subN);
           parts.push({ type: 'caption', kind: 'sub', num: alph(subN), inl: kids, f: ctx.f, ctx: 'cap', dir: this.dirOf() });
+          continue;
+        }
+        if (n.t === 'cmd' && n.name === 'captionsetup' && !(n.args[0] && n.args[0].o) && n.args.length) {
+          const m = /(?:^|,)\s*labelformat\s*=\s*([A-Za-z-]{1,30})/.exec(this.argText(ctx, n.args[n.args.length - 1]));
+          if (m) lf = m[1];
           continue;
         }
         if (n.t === 'cmd' && (n.name === 'caption' || n.name === 'captionof')) {
@@ -2641,7 +2668,7 @@ class Builder {
           if (a && !kids.length) kids.push({ k: 'seg', f: ctx.f, t: '​', map: [a.is, a.is], ph: true });
           // (beamer steps the counter, so \ref gives the number, but its caption template prints
           // "Figure:" without it unless it is the numbered one)
-          parts.push({ type: 'caption', kind, num: this.opts.cls === 'beamer' && !this.beamerNumbered() ? '' : num, inl: kids, f: ctx.f, ctx: 'cap', dir: this.dirOf() });
+          { const lab = capLab(); parts.push({ type: 'caption', kind, num: this.opts.cls === 'beamer' && !this.beamerNumbered() ? '' : num, ...(lab === '-' ? { star: true } : lab != null ? { lab } : {}), inl: kids, f: ctx.f, ctx: 'cap', dir: this.dirOf() }); }
           // (B9) for the list of figures or tables: its short title where it has one
           { const o = n.name === 'captionof' ? n.args[1] : n.args[0], sh = o && o.nodes && a ? this.inl(o.nodes, ctx, []) : null; this.captions.push({ kind, num, text: this.plain(sh || kids), parts: this.tocParts(sh || kids), f: ctx.f, s: n.s }); }
           continue;

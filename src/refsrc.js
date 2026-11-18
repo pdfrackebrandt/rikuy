@@ -147,6 +147,11 @@ export function refsSetup(src, chapters = false) {
   if (fr) R.fn.style = styleOfBody(argOf(t, fr, 1), 'footnote');
   const er = renewOf(t, 'endnote').pop();
   if (er) R.en.style = styleOfBody(argOf(t, er, 1), 'endnote');
+  // (R4) enotez's own key, \setenotez{counter-format=roman}: the last one set wins, as in TeX
+  else for (const c of cmdCalls(t, 'setenotez', 1)) {
+    const kv = parseKV(t, c.args[0][0], c.args[0][1]).find((x) => x.key === 'counter-format');
+    if (kv) R.en.style = kv.value === 'symbols' ? 'fnsymbol' : STYLES.includes(kv.value) ? kv.value : 'custom';
+  }
   const fm = R.pkgs.footmisc ? packageOptions(src, 'footmisc', end) || {} : {};
   if (fm.symbol || fm['symbol*']) R.fn.style = 'fnsymbol';
   for (const c of [...cmdCalls(t, 'counterwithin', 2), ...cmdCalls(t, 'numberwithin', 2)]) {
@@ -163,10 +168,39 @@ export function refsSetup(src, chapters = false) {
   if (fm.perpage || (R.pkgs.perpage && /\\MakePerPage\s*(\[[^\]]{0,20}\])?\s*\{\s*footnote\s*\}/.test(t))) R.fn.restart = 'page';
   R.fn.within = R.within.footnote || null;
   R.endnotes = R.pkgs.enotez ? 'enotez' : R.pkgs.endnotes ? 'endnotes' : null;
+  // (R4) floats of the document's own (Word's New Label): newfloat's
+  // \DeclareFloatingEnvironment[name=Scheme]{scheme}, float's \newfloat{scheme}{tbp}{los} with
+  // \floatname{scheme}{Scheme}; and how captions are labelled: \captionsetup[figure]{labelformat=…}
+  // with the formats \DeclareCaptionLabelFormat defines ('#2': the number alone)
+  R.floats = {};
+  for (const c of cmdCalls(t, 'DeclareFloatingEnvironment', 1, 0, t.length, true)) {
+    const env = argOf(t, c, 0);
+    if (!/^[A-Za-z]{1,30}$/.test(env)) continue;
+    const kv = c.opt ? Object.fromEntries(parseKV(t, c.opt[0], c.opt[1]).map((x) => [x.key, unbrace(x.value || '')])) : {};
+    R.floats[env] = { name: kv.name || env.charAt(0).toUpperCase() + env.slice(1), by: 'newfloat' };
+  }
+  for (const c of cmdCalls(t, 'newfloat', 3)) { const env = argOf(t, c, 0); if (/^[A-Za-z]{1,30}$/.test(env)) R.floats[env] = { name: env.charAt(0).toUpperCase() + env.slice(1), by: 'float' }; }
+  for (const c of cmdCalls(t, 'floatname', 2)) { const env = argOf(t, c, 0); if (R.floats[env]) R.floats[env].name = unbrace(argOf(t, c, 1)); }
+  R.capFormats = {};
+  for (const c of cmdCalls(t, 'DeclareCaptionLabelFormat', 2)) { const n = argOf(t, c, 0); if (/^[A-Za-z-]{1,30}$/.test(n)) R.capFormats[n] = argOf(t, c, 1); }
+  R.capLabel = {};
+  for (const c of cmdCalls(t, 'captionsetup', 1, 0, t.length, true)) {
+    const lf = parseKV(t, c.args[0][0], c.args[0][1]).find((x) => x.key === 'labelformat');
+    if (!lf) continue;
+    const kinds = c.opt ? t.slice(c.opt[0], c.opt[1]).split(',').map((x) => x.trim()).filter(Boolean) : ['*'];
+    for (const k of kinds) R.capLabel[k] = lf.value;
+  }
   if (R.pkgs.imakeidx || R.pkgs.makeidx || /\\makeindex(?![A-Za-z@])/.test(t)) {
     const mk = cmdCalls(t, 'makeindex', 0, 0, t.length, true);
     const kv = mk.length && mk[0].opt ? Object.fromEntries(parseKV(t, mk[0].opt[0], mk[0].opt[1]).map((x) => [x.key, x.value])) : {};
     R.index = { pkg: R.pkgs.imakeidx ? 'imakeidx' : R.pkgs.makeidx ? 'makeidx' : null, make: mk.length > 0, columns: R.pkgs.imakeidx ? parseInt(kv.columns, 10) || 2 : 2, noclear: /\\indexsetup\s*\{[^{}]{0,200}\bnoclearpage\b/.test(t), names: mk.map((c) => (c.opt ? Object.fromEntries(parseKV(t, c.opt[0], c.opt[1]).map((x) => [x.key, x.value])).name || '' : '')) };
+    // (R4) each index by its name: its title, columns and makeindex style (options=-s file.ist:
+    // Insert Index's Right align page numbers, or the document's own)
+    R.index.mk = mk.map((c) => {
+      const o = c.opt ? Object.fromEntries(parseKV(t, c.opt[0], c.opt[1]).map((x) => [x.key, unbrace(x.value || '')])) : {};
+      const ist = /(?:^|\s)-s\s+([A-Za-z0-9_.\/-]{1,80}\.ist)\b/.exec(o.options || '');
+      return { name: o.name || '', title: o.title || '', columns: parseInt(o.columns, 10) || 0, ist: ist ? ist[1] : null };
+    });
   }
   return R;
 }
@@ -205,6 +239,48 @@ export function counterStyleEdits(src, counter, style) {
   if (last) { const [a, b] = last.args[1]; return src.slice(a, b) === body ? out : [...out, { s: a, e: b, t: body }]; }
   return [...out, ...preambleLine(src, '\\renewcommand{\\the' + counter + '}{' + body + '}')];
 }
+// (R4) How endnotes are numbered: enotez's \setenotez{counter-format=…} (its key changed where it
+// stands, put in a \setenotez already there, or a line of its own; taken out for arabic, the line
+// with it when nothing else is left), and \renewcommand{\theendnote} for the endnotes package or
+// where the document set it so by hand
+export function enoteFormatEdits(src, style, pkg) {
+  const { t, end } = preOf(src);
+  if (end < 0 || !STYLES.includes(style)) return [];
+  if (pkg !== 'enotez' || renewOf(t, 'endnote').length) return counterStyleEdits(src, 'endnote', style);
+  const fmt = style === 'fnsymbol' ? 'symbols' : style;
+  const calls = cmdCalls(t, 'setenotez', 1);
+  const kvOf = (c) => parseKV(t, c.args[0][0], c.args[0][1]);
+  const withKey = calls.filter((c) => kvOf(c).some((x) => x.key === 'counter-format'));
+  const last = withKey[withKey.length - 1];
+  if (last) {
+    const [a, b] = last.args[0];
+    if (style !== 'arabic') return kvEdits(src, a, b, { 'counter-format': fmt });
+    if (kvOf(last).length === 1) return [drop(src, last.s, last.e)];
+    return kvEdits(src, a, b, { 'counter-format': null });
+  }
+  if (style === 'arabic') return [];
+  if (calls.length) { const c = calls[calls.length - 1]; return kvEdits(src, c.args[0][0], c.args[0][1], { 'counter-format': fmt }); }
+  return preambleLine(src, '\\setenotez{counter-format=' + fmt + '}');
+}
+
+// (R4) Word's New Label as LaTeX: a float of its own, newfloat's \DeclareFloatingEnvironment (its
+// list's name and file too), at the preamble's end; the caller loads newfloat. env: its name in
+// letters; name: the label as typed (escaped by the caller). [] where that float is there already.
+export function newFloatEdits(src, env, name) {
+  const { t, end } = preOf(src);
+  if (end < 0 || !/^[a-z]{1,30}$/.test(env)) return [];
+  if (cmdCalls(t, 'DeclareFloatingEnvironment', 1, 0, t.length, true).some((c) => argOf(t, c, 0) === env) || cmdCalls(t, 'newfloat', 3).some((c) => argOf(t, c, 0) === env)) return [];
+  return preambleLine(src, '\\DeclareFloatingEnvironment[fileext=lo' + env + ',listname={List of ' + name + 's},name={' + name + '}]{' + env + '}');
+}
+// (R4) Word's Exclude label from caption: captions with their number alone ("1: …"), caption's
+// \DeclareCaptionLabelFormat{nolabel}{#2}, defined once, for the caption's own \captionsetup
+export function noLabelFormatEdits(src) {
+  const { t, end } = preOf(src);
+  if (end < 0) return [];
+  if (cmdCalls(t, 'DeclareCaptionLabelFormat', 2).some((c) => argOf(t, c, 0) === 'nolabel')) return [];
+  return preambleLine(src, '\\DeclareCaptionLabelFormat{nolabel}{#2}');
+}
+
 // kvEdits on a package line's options, the brackets gone when nothing is left
 function optEdits(src, p, changes) {
   const ed = kvEdits(src, p.opts[0], p.opts[1], changes);
@@ -474,3 +550,14 @@ export function labelKey(prefix, words, taken) {
   while (taken && taken.has(k) && n < 1000) k = prefix + base + '-' + n++;
   return k;
 }
+
+// (R4) a makeindex style's page numbers: 'dots' where the first page follows its entry after
+// \dotfill (Word's right aligned page numbers with dots), 'space' after \hfill, else null
+export function istRight(text) {
+  const m = /^\s*delim_0\s+"((?:[^"\\\n]|\\.){0,80})"/m.exec(String(text || '').slice(0, 20000));
+  if (!m) return null;
+  return /\\\\dotfill/.test(m[1]) ? 'dots' : /\\\\hfill/.test(m[1]) ? 'space' : null;
+}
+// the style Insert Index writes for right aligned page numbers, a file of the project
+export const RIGHT_IST = 'index-right.ist';
+export const RIGHT_IST_TEXT = '% Written by Rikuy (Insert Index, Right align page numbers): makeindex puts each entry\'s\n% page numbers at the right margin, joined to it by a row of dots\ndelim_0 "\\\\dotfill "\ndelim_1 "\\\\dotfill "\ndelim_2 "\\\\dotfill "\n';

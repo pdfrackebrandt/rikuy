@@ -8,13 +8,23 @@
 //   init    {base, spec}           where the files are and what they are (__RIKUY_SPELL__)
 //   check   {dict, words}          the words' answers as one string, '1' known and '0' not
 //   suggest {dict, word}           Hunspell's suggestions, at most 8
+//   synonyms {dict, thes, word}    MyThes's entry for the word, or for the stem Hunspell finds of
+//                                  it in dict: {head, meanings: [{pos, terms}]}
 // The words come from a stranger's document: each is bounded (64 characters, no line end) and a
 // list at most 200,000 words; a longer word is answered as known, never asked.
+//
+// A thesaurus is its index (read whole by MyThes, 0.4 to 3 MB) and its data in pieces of at most
+// 1 MiB (spec.thes[name].dat, each with its SHA-256). MyThes reads the data through a device of
+// Emscripten's file system that serves the pieces fetched so far; a lookup that reads into a
+// piece not yet here notes it and finds nothing, the worker fetches and checks that piece, and
+// asks again (at most four times: an entry spans two pieces at most).
 /* global RikuyHunspell */
 
 const MAX_WORD = 64, MAX_LIST = 200000, MAX_SUGGEST = 40;
 let base = '', spec = null, M = null, starting = null;
 const open = new Map();   // dict -> slot, or a promise while it opens
+const thesOpen = new Map();   // thesaurus -> {slot, T}, or a promise while it opens
+let devN = 0;
 
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 async function get(file) {
@@ -91,6 +101,97 @@ async function suggest(name, word) {
   return r.split('\n').filter(Boolean).slice(0, 8);
 }
 
+// the data of a thesaurus as a device MyThes reads with fseek and fgets: the pieces it has
+function thesDevice(name, pieces) {
+  const offs = [];
+  let total = 0;
+  for (const p of pieces) { offs.push(total); total += p.size; }
+  const T = { pieces, offs, total, have: new Map(), missing: new Set(), loading: new Map() };
+  const at = (pos) => { let lo = 0, hi = offs.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (offs[mid] <= pos) lo = mid; else hi = mid - 1; } return lo; };
+  const id = M.FS.makedev(64 + (devN++ % 64), 0);
+  M.FS.registerDevice(id, {
+    read(stream, buffer, offset, length, pos) {
+      if (pos >= total || length <= 0) return 0;
+      const k = at(pos), d = T.have.get(k);
+      if (!d) { T.missing.add(k); return 0; }
+      const a = pos - offs[k], n = Math.min(length, d.length - a);
+      buffer.set(d.subarray(a, a + n), offset);
+      return n;
+    },
+    llseek(stream, offset, whence) {
+      let p = offset;
+      if (whence === 1) p += stream.position; else if (whence === 2) p += total;
+      if (p < 0) throw new M.FS.ErrnoError(28);
+      return p;
+    }
+  });
+  const path = '/' + name + '.dat';
+  M.FS.mkdev(path, id);
+  return { T, path };
+}
+function piece(T, k) {
+  if (T.have.has(k)) return Promise.resolve();
+  if (!T.loading.has(k)) T.loading.set(k, get(T.pieces[k]).then((b) => { T.have.set(k, b); T.loading.delete(k); }, (e) => { T.loading.delete(k); throw e; }));
+  return T.loading.get(k);
+}
+async function thesaurus(name) {
+  const d = spec.thes && spec.thes[name];
+  if (!d) throw new Error('no thesaurus ' + name);
+  let h = thesOpen.get(name);
+  if (h == null) {
+    h = (async () => {
+      await start();
+      const idx = await get(d.idx);
+      const I = '/' + name + '.idx';
+      M.FS.writeFile(I, idx);
+      const { T, path } = thesDevice(name, d.dat);
+      const pi = cstr(I), pd = cstr(path);
+      const slot = M._thes_open(pi, pd);
+      M._free(pi); M._free(pd);
+      // (MyThes has read the index whole: the copy goes)
+      M.FS.unlink(I);
+      if (slot < 0) throw new Error('thesaurus ' + name + ' did not open');
+      return { slot, T };
+    })();
+    thesOpen.set(name, h);
+    h.then((x) => thesOpen.set(name, x), () => thesOpen.delete(name));
+  }
+  return h;
+}
+async function lookup(t, w) {
+  for (let i = 0; i < 4; i++) {
+    t.T.missing.clear();
+    const p = cstr(w);
+    const r = M.UTF8ToString(M._thes_lookup(t.slot, p));
+    M._free(p);
+    if (!t.T.missing.size) {
+      return r.split('\n').filter(Boolean).slice(0, 80).map((line) => { const [pos, ...terms] = line.split('\t'); return { pos, terms: terms.filter(Boolean).slice(0, 60) }; });
+    }
+    await Promise.all([...t.T.missing].slice(0, 2).map((k) => piece(t.T, k)));
+  }
+  return [];
+}
+async function synonyms(dictName, thesName, word) {
+  const w = clean(word).trim();
+  if (!w || w.length > MAX_SUGGEST) return { head: null, meanings: [] };
+  const t = await thesaurus(thesName);
+  const cands = [w.toLowerCase()];
+  // (an inflected word: its stems, as Hunspell finds them, are the entries LibreOffice looks up)
+  let slot = -1;
+  try { slot = await dict(dictName); } catch (e) { slot = -1; }
+  if (slot >= 0) {
+    const p = cstr(w);
+    const r = M.UTF8ToString(M._spell_stem(slot, p));
+    M._free(p);
+    for (const s of r.split('\n')) { const l = s.toLowerCase(); if (l && !cands.includes(l)) cands.push(l); }
+  }
+  for (const c of cands.slice(0, 6)) {
+    const meanings = await lookup(t, c);
+    if (meanings.length) return { head: c, meanings };
+  }
+  return { head: null, meanings: [] };
+}
+
 self.onmessage = async ({ data }) => {
   const { id, op } = data || {};
   try {
@@ -100,6 +201,7 @@ self.onmessage = async ({ data }) => {
     else if (op === 'check') result = await check(String(data.dict), data.words);
     else if (op === 'suggest') result = await suggest(String(data.dict), data.word);
     else if (op === 'load') { await dict(String(data.dict)); result = true; }
+    else if (op === 'synonyms') result = await synonyms(String(data.dict), String(data.thes), data.word);
     else throw new Error('unknown op');
     self.postMessage({ id, result });
   } catch (e) {

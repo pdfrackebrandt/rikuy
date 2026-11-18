@@ -12,6 +12,7 @@
 // edits in Word back into the .tex (src/wordsync.js).
 import { findComments } from './share.js';
 import { texToPlain } from './bib.js';
+import { readIndexArg } from './refsrc.js';
 import { rtlDocument } from './scripts.js';
 import { bidiDoc, dirSpan, hasRtl, scanDir } from './wordbidi.js';
 import { parseKV } from './preamble.js';
@@ -248,9 +249,60 @@ class Walker {
       // a list: its items, flat in the model, become nested Word lists; also one that stands
       // among paragraphs in an environment the model reads as one block (otherlanguage, small)
       if (items.some((x) => x.type === 'p' && x.li && !x.li.cont)) { out.push(...this.list(items, u)); continue; }
+      const from = out.length;
       for (const it of items) out.push(...this.item(it, u));
+      this.indexMarks(u, out, from);
     }
     return out;
+  }
+
+  // ---- R4: the index, the Table of Authorities and the lists of figures and tables as Word's
+  // fields. Each \index stands as an XE field (\index[toa] a TA field) at the end of the paragraph
+  // it is in: Word gives it that paragraph's page. \printindex is an INDEX field, \printindex[toa]
+  // a TOA field for each category, \listoffigures a TOC field of the caption style; each holds
+  // what the page shows, and Word fills in the page numbers when its fields are updated (F9; the
+  // fields are marked to be updated as the file opens).
+  indexMarks(u, out, from) {
+    if (!this.ixBy) {
+      this.ixBy = new Map();
+      for (const x of (this.m.indexEntries || []).slice(0, 20000)) { const k = x.f; if (!this.ixBy.has(k)) this.ixBy.set(k, []); this.ixBy.get(k).push(x); }
+    }
+    const list = this.ixBy.get(u.f);
+    if (!list || !list.length) return;
+    const mine = list.filter((x) => !x.done && x.s >= u.s && x.s < u.e);
+    if (!mine.length) return;
+    // (the last paragraph this unit gave: its runs take the fields)
+    let target = null;
+    const last = (b) => { if (!b) return null; if (b.t === 'Para' || b.t === 'Plain' || b.t === 'Header') return b; if (b.t === 'Div') return last(b.c[1][b.c[1].length - 1]); if (b.t === 'BlockQuote') return last(b.c[b.c.length - 1]); return null; };
+    for (let k = out.length - 1; k >= from && !target; k--) target = last(out[k]);
+    if (!target) return;
+    const inl = target.t === 'Header' ? target.c[2] : target.c;
+    for (const x of mine) {
+      x.done = true;
+      const code = fieldOfIndex(x);
+      if (code) inl.push({ t: 'RawInline', c: ['openxml', fieldRuns(code)] });
+    }
+  }
+  indexField(it) {
+    const out = [{ t: 'Header', c: [this.m.opts.chapters ? 1 : 1, attr(), [Str(it.head)]] }];
+    if (/^table of authorities$/i.test(it.head) || it.key && /:ixtoa$/.test(it.key)) {
+      // (a TOA field each category, in the order the index sorts them)
+      let cat = null, rows = [];
+      const flush = () => { if (cat) out.push({ t: 'RawBlock', c: ['openxml', fieldParas('TOA \\h \\c "' + cat.rank + '" \\p', [cat.text, ...rows])] }); rows = []; };
+      for (const r of it.rows) {
+        if (r.lvl === 0) { flush(); const m = /^(\d{1,2})$/.exec(String(r.sort || '')); cat = { rank: r.rank || (m ? m[1] : String(TOA_RANK(r.text))), text: r.text }; } else if (cat) rows.push(r.text);
+      }
+      flush();
+      return out;
+    }
+    const cols = Math.max(1, Math.min(4, it.cols || 2));
+    out.push({ t: 'RawBlock', c: ['openxml', fieldParas('INDEX \\c "' + cols + '"' + (it.right ? ' \\e "\t"' : '') + ' \\h "A"', it.rows.map((r) => (r.lvl ? '\u2003'.repeat(Math.min(2, r.lvl)) : '') + r.text), it.right)] });
+    return out;
+  }
+  lofField(it) {
+    const style = it.lof === 'table' ? 'Table Caption' : 'Image Caption';
+    return [{ t: 'Header', c: [1, attr(), [Str(it.head)]] },
+      { t: 'RawBlock', c: ['openxml', fieldParas('TOC \\h \\z \\t "' + style + ',1"', (it.entries || []).map((e) => (e.num ? e.num + ' ' : '') + e.text), true)] }];
   }
 
   // ---- anchors --------------------------------------------------------------------------------
@@ -303,7 +355,10 @@ class Walker {
       case 'raw': return this.raw(it);
       // a LaTeX paragraph goes as the page shows it, its source as code (src/styles.js)
       case 'tex': return this.code(it, 'tex', it.ie);
-      case 'toc': this.toc = true; return [];
+      // (R4: a list of figures or tables is Word's own, a TOC field of the caption style, filled as
+      // the page lists them; the index, a Table of Authorities and the endnotes' place below)
+      case 'toc': if (it.lof) return this.lofField(it); this.toc = true; return [];
+      case 'idx': return it.notes ? [] : this.indexField(it);
       case 'pagebreak': return [{ t: 'RawBlock', c: ['openxml', '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'] }];
       case 'rule': return [{ t: 'HorizontalRule' }];
       default: return [];
@@ -355,7 +410,9 @@ class Walker {
     for (const p of it.parts) {
       if (p.type === 'p') out.push(this.para(p, u));
       else if (p.type === 'caption') {
-        const lab = ({ figure: 'Figure', table: 'Table' }[p.kind] || p.kind) + (p.num ? ' ' + p.num : '') + ': ';
+        // (R4: a float of the document's own under its name, the number alone, or none for \caption*)
+        const name = p.lab != null ? p.lab : { figure: 'Figure', table: 'Table' }[p.kind] || p.kind;
+        const lab = p.star ? '' : (name ? name + (p.num ? ' ' + p.num : '') : p.num || '') + ': ';
         const inl = this.wrap('cap', p.f, null, null, () => { this.ro(lab); return [Str(lab), ...this.inl(p.inl, u.fns)]; }, { after: u.e, dir: p.dir || it.dir || u.dir });
         out.push({ t: 'Div', c: [attr('', [], [['custom-style', p.kind === 'table' ? 'Table Caption' : 'Image Caption']]), [{ t: 'Para', c: inl }]] });
       } else if (p.type === 'tabular') out.push(this.table(p, u));
@@ -644,6 +701,15 @@ class Walker {
         return [{ t: 'Cite', c: [cits, [Str(x.text)]] }];
       }
       case 'ref': { const ai = this.atom({ k: 'ref', f: x.f, s: x.s, e: x.e, ro: !!x.ro }); this.atomText(x.text, ai); return [Str(x.text)]; }
+      case 'en': {
+        // (R4) an endnote: a note pandoc writes as a footnote, marked for src/wordnotes.js, which
+        // makes it one of Word's endnotes; its words as the page lists them
+        const n = (this.m.endnotes || []).find((y) => y.f === x.f && y.s === x.s);
+        const parts = n ? (n.parts || [n.text]) : [];
+        const inl = [{ t: 'RawInline', c: ['openxml', '<!--rikuy:endnote:' + ((this.m.opts && this.m.opts.enStyle) || 'arabic') + '-->'] }];
+        for (const part of parts) { if (typeof part === 'string') { if (part) inl.push(Str(part)); } else if (part && part.m != null) inl.push({ t: 'Math', c: [{ t: 'InlineMath' }, part.m] }); }
+        return [{ t: 'Note', c: [{ t: 'Para', c: inl }] }];
+      }
       case 'fn': {
         const fn = fns.find((y) => y.mark === x) || null;
         const ai = this.atom({ k: 'fn', f: x.f, s: x.s, e: x.e, is: x.is, ie: x.ie, ro: !!x.ro });
@@ -826,4 +892,40 @@ export function unpackRuns(runs) {
     else if (r[0] === -2) for (let k = 0; k < r[2]; k++) m.push(ATOM, r[1]);
   }
   return m;
+}
+
+// ---- R4: Word fields ---------------------------------------------------------------------------------
+const xmlEsc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// a field's text in its quotes: Word's own quote marks keep a citation's
+const fq = (t) => texToPlain(String(t || '')).replace(/"/g, '”').replace(/[\u0000-\u001f]/g, ' ').slice(0, 250);
+const TOA_NAMES = ['Cases', 'Statutes', 'Other Authorities', 'Rules', 'Treatises', 'Regulations', 'Constitutional Provisions'];
+const TOA_RANK = (name) => { const k = TOA_NAMES.indexOf(String(name).trim()); return k >= 0 ? k + 1 : 8; };
+// the field code an \index entry is in Word: XE (the main index), TA (the Table of Authorities)
+export function fieldOfIndex(x) {
+  const r = readIndexArg(x.arg);
+  const L = r.levels.map((l) => fq(l.text)).filter(Boolean);
+  if (!L.length) return null;
+  if (x.name === 'toa') {
+    const cat = r.levels[0], cite = L[1] || L[0];
+    const rank = /^\d{1,2}$/.test(String(cat.sort || '').trim()) ? String(cat.sort).trim() : String(TOA_RANK(L[0]));
+    return 'TA \\l "' + cite + '" \\s "' + cite + '" \\c ' + rank;
+  }
+  if (x.name) return null;
+  if (r.range) return null;
+  let code = 'XE "' + L.slice(0, 3).join(':') + '"';
+  if (r.see || r.seealso) code += ' \\t "' + (r.see ? 'See ' : 'See also ') + fq(r.see || r.seealso) + '"';
+  else if (/^(textbf|bfseries)$/.test(r.fmt || '')) code += ' \\b';
+  else if (/^(textit|emph|itshape)$/.test(r.fmt || '')) code += ' \\i';
+  return code;
+}
+export function fieldRuns(code) {
+  return '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> ' + xmlEsc(code) + ' </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>';
+}
+// a field whose result is paragraphs: begun in the first, ended in the last; marked to be updated
+// when Word opens the file (dirty), so its page numbers are Word's own
+export function fieldParas(code, lines, right) {
+  const tab = right ? '<w:pPr><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="9350"/></w:tabs></w:pPr>' : '';
+  const ls = lines.length ? lines : [''];
+  return ls.map((l, i) => '<w:p>' + tab + (i === 0 ? '<w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r><w:r><w:instrText xml:space="preserve"> ' + xmlEsc(code) + ' </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>' : '')
+    + '<w:r><w:t xml:space="preserve">' + xmlEsc(l) + '</w:t></w:r>' + (i === ls.length - 1 ? '<w:r><w:fldChar w:fldCharType="end"/></w:r>' : '') + '</w:p>').join('');
 }

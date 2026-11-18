@@ -21,7 +21,7 @@ import { blockText, compile, hitsIn, hitSource } from '../find.js';
 import * as RS from '../refsrc.js';
 import { openMenu } from '../ui/kit.js';
 import { openSourceForm, openSourceManager, sourceFiles, addSource } from '../ui/sourceform.js';
-import { near, openCaptionDialog, openCrossRefDialog, openLinkDialog, openBookmarkDialog, openMarkEntryDialog, openIndexDialog, openNotesDialog, openShortTitleDialog } from '../ui/refsdialog.js';
+import { near, openCaptionDialog, openCrossRefDialog, openLinkDialog, openBookmarkDialog, openMarkEntryDialog, openIndexDialog, openNotesDialog, openShortTitleDialog, openMarkCitationDialog, TOA_CATEGORIES } from '../ui/refsdialog.js';
 
 // where a footnote cannot go: inside a heading, the title, a cell, a caption or another footnote
 const tight = (at) => /^(h|ttl|cell|cap|fn)$/.test(at.ctx) || at.cell;
@@ -43,7 +43,9 @@ const ICON = {
   lof: '<path d="M4 4h5v4H4zM11 5.5h5M4 11h5v4H4zM11 12.5h5"/>',
   mark: '<path d="M5 3.5h10v13l-5-3.5-5 3.5zM8 8h4"/>',
   index: '<path d="M4 4h12v12H4zM7 7.5h2M7 10.5h4M7 13.5h3M12.5 7.5h1"/>',
-  bookmark: '<path d="M6 3.5h8v13l-4-3-4 3z"/>'
+  bookmark: '<path d="M6 3.5h8v13l-4-3-4 3z"/>',
+  cite: '<path d="M4.5 5.5h4v4c0 2-1 3.5-3 4M11.5 5.5h4v4c0 2-1 3.5-3 4"/>',
+  toa: '<path d="M10 3.5v13M5 16.5h10M4 7.5h12M4 7.5l-1.8 4.5h3.6zM16 7.5l-1.8 4.5h3.6z"/>'
 };
 
 // ---- the commands ----------------------------------------------------------------------------------
@@ -144,7 +146,16 @@ register(
     synonyms: ['Mark index entry', 'Index entry', 'index'], when: (app, at) => textAt(app, at) && !at.c.ghost && at.ctx !== 'ttl', whyNot: () => 'Select the words to index first', run: (app, args, at) => (args ? app.indexMark(at, args) : openMarkEntryDialog(app, at)) },
   { id: 'insert-index', name: 'Insert Index', tab: 'references', group: 'index', order: 20, label: 'Insert Index', icon: ICON.index,
     title: 'Insert Index: \\printindex after the paragraph the caret is in, in its columns (imakeidx); TeX runs makeindex for you, and the page draws it from the entries', synonyms: ['Index', 'printindex', 'makeindex', 'Update index'],
-    when: (app, at) => !!at, whyNot: () => NOT_HERE, run: (app, args) => (args ? app.indexInsert(args) : openIndexDialog(app)) }
+    when: (app, at) => !!at, whyNot: () => NOT_HERE, run: (app, args) => (args ? app.indexInsert(args) : openIndexDialog(app)) },
+
+  // ---- References › Table of Authorities (R4): a second index, imakeidx's, under its categories
+  { id: 'mark-citation', name: 'Mark Citation', tab: 'references', group: 'authorities', order: 10, label: 'Mark Citation', icon: ICON.cite, keys: ['Alt+Shift+I'],
+    title: 'Mark Citation (Alt+Shift+I): the selected words as a citation of the Table of Authorities, under its category (Cases, Statutes…): \\index[toa]{…}; Mark All for every place it stands',
+    synonyms: ['Table of authorities', 'Legal citation', 'Mark authority', 'TA field'], when: (app, at) => textAt(app, at) && !at.c.ghost && at.ctx !== 'ttl' && !app.toaWhyNot(), whyNot: (app) => app.toaWhyNot() || 'Select the citation first',
+    run: (app, args, at) => (args ? app.citationMark(at, args) : openMarkCitationDialog(app, at)) },
+  { id: 'insert-toa', name: 'Insert Table of Authorities', tab: 'references', group: 'authorities', order: 20, label: 'Insert Table of Authorities', icon: ICON.toa,
+    title: 'Insert Table of Authorities: \\printindex[toa] after the paragraph the caret is in, the citations marked under their categories with their pages; TeX runs makeindex for you',
+    synonyms: ['Table of authorities', 'TOA', 'Update table of authorities', 'printindex toa'], when: (app, at) => !!at && !app.toaWhyNot(), whyNot: (app) => app.toaWhyNot() || NOT_HERE, run: (app) => app.toaInsert() }
 );
 
 // ---- what the commands do ----------------------------------------------------------------------
@@ -273,7 +284,7 @@ export const methods = {
   bodySpots(names, opt = false) {
     return perText(this, 'spots ' + names.join(' ') + (opt ? ' opt' : ''), () => {
       const out = [];
-      for (const f of texFiles(this)) for (const c of RS.bodyCalls(this.src(f), names, opt)) out.push({ f, s: c.s, e: c.e, name: c.name });
+      for (const f of texFiles(this)) for (const c of RS.bodyCalls(this.src(f), names, opt)) out.push({ f, s: c.s, e: c.e, name: c.name, opt: c.opt ? this.src(f).slice(c.opt[0], c.opt[1]).trim() : '' });
       return out;
     });
   },
@@ -450,7 +461,13 @@ export const methods = {
       if (most > cap) { this.toast((style === 'fnsymbol' ? 'Symbols' : 'Letters') + ' number ' + cap + ' footnotes at most and this document has ' + most + (restart === 'continuous' ? '' : ' in one ' + restart.replace(/^within-/, '')) + ': restart them each page, or pick numbers'); return false; }
     }
     if (o.style) w.apply(f, RS.counterStyleEdits(w.src(f), 'footnote', o.style));
-    if (o.enStyle) w.apply(f, RS.counterStyleEdits(w.src(f), 'endnote', o.enStyle));
+    if (o.enStyle) {
+      // (symbols and letters run out as for footnotes: nine and 26 endnotes, which never restart)
+      const ecap = o.enStyle === 'fnsymbol' ? 9 : /^alph$/i.test(o.enStyle) ? 26 : 0;
+      const n = ecap ? this.noteMarks('en').length : 0;
+      if (ecap && n > ecap) { this.toast((o.enStyle === 'fnsymbol' ? 'Symbols' : 'Letters') + ' number ' + ecap + ' endnotes at most and this document has ' + n + ': pick numbers'); return false; }
+      w.apply(f, RS.enoteFormatEdits(w.src(f), o.enStyle, (this.model.opts.refs || {}).endnotes));
+    }
     if (o.start != null) { const n = Math.max(1, Math.min(9999, parseInt(o.start, 10) || 1)); w.apply(f, RS.setCounterEdits(w.src(f), 'footnote', n > 1 ? n - 1 : null)); }
     if (o.restart) { const r = RS.fnRestartEdits(w.src(f), o.restart, ch); w.apply(f, r.edits); if (r.pkg) w.pkgs(r.pkg); }
     if (o.convert === 'en' || o.convert === 'fn') {
@@ -578,17 +595,34 @@ export const methods = {
     return { why: 'Put the caret in a figure, a picture or a table first' };
   },
   captionWhyNot(at) { const T = this.captionTarget(at); return T.why || ''; },
-  // { text (typed), position: 'below'|'above', label: key or '' , numbering: 'plain'|'section'|'chapter' }
+  // { text (typed), position: 'below'|'above', label: key or '' , numbering: 'plain'|'section'|'chapter',
+  //   kind: the float ('figure', 'table' or one of the document's own), newLabel: the name of a new
+  //   one (Word's New Label: newfloat's \\DeclareFloatingEnvironment), exclude: the number alone
+  //   (Word's Exclude label from caption: caption's \\captionsetup{labelformat=nolabel} in the float) }
   captionWrite(at, o) {
     const T = this.captionTarget(at);
     if (T.why) { this.toast(T.why); return false; }
     const f = T.f, src = this.src(f), nl = eolOf(src), w = new Work(this);
+    const own = (this.model.opts.refs || {}).floats || {};
+    const kind = o.kind == null ? T.kind : String(o.kind);
+    const newName = o.newLabel != null ? String(o.newLabel).replace(/\s+/g, ' ').trim().slice(0, 30) : '';
+    if (kind !== T.kind && !/^(figure|table)$/.test(kind) && !(Object.prototype.hasOwnProperty.call(own, kind) || (newName && /^[a-z]{1,30}$/.test(kind) && newName.toLowerCase().replace(/[^a-z]/g, '') === kind))) { this.toast('No such label: make it with New Label first'); return false; }
+    if (this.model.opts.cls === 'beamer' && (newName || o.exclude)) { this.toast('Beamer has no floats of its own: its figures are not numbered by the caption package'); return false; }
     const words = escapeTeX(textOf(o.text));
     const first = '\\caption{' + words + '}';
-    const cap = first + (o.label && SAFE_KEY.test(o.label) ? nl + '\\label{' + o.label + '}' : '');
+    const cap = (o.exclude ? '\\captionsetup{labelformat=nolabel}' + nl : '') + first + (o.label && SAFE_KEY.test(o.label) ? nl + '\\label{' + o.label + '}' : '');
     const above = o.position ? o.position === 'above' : T.kind === 'table';
     const indentOf = (p) => { const ls = src.lastIndexOf('\n', p - 1) + 1; return /^[ \t]*/.exec(src.slice(ls, p))[0]; };
     const lines = (ind) => cap.split(nl).map((l) => ind + l).join(nl);
+    // (another label for a float that is there: its name changed at its begin and its end, its
+    // star kept, in the same step as its caption)
+    let rename = [];
+    if (T.mode === 'float' && kind !== T.kind) {
+      const bm = /^\\begin\s*\{(figure|table)(\*?)\}/.exec(src.slice(T.s, T.be)), em = /\\end\s*\{(figure|table)(\*?)\}$/.exec(src.slice(T.es, T.e));
+      if (!bm || !em) { this.toast('This float\'s label cannot change here: change its environment in the source'); return false; }
+      const bs = T.s + bm[0].indexOf('{') + 1, es = T.es + em.index + em[0].indexOf('{') + 1;
+      rename = [{ s: bs, e: bs + bm[1].length, t: kind }, { s: es, e: es + em[1].length, t: kind }];
+    }
     if (T.mode === 'float') {
       const inner = src.slice(T.be, T.es);
       const ind = (/\n([ \t]*)\S/.exec(inner) || [, ''])[1];
@@ -596,17 +630,17 @@ export const methods = {
         // (after the begin line's options, and after \centering where it comes first)
         const m = /^(\s*\[[^\]\n]{0,40}\])?([ \t]*\r?\n)?([ \t]*\\centering\b[ \t]*\r?\n)?/.exec(inner);
         const p = T.be + m[0].length;
-        w.apply(f, [{ s: p, e: p, t: (/\n$/.test(src.slice(T.be, p)) ? '' : nl) + lines(ind) + nl }]);
+        w.apply(f, [{ s: p, e: p, t: (/\n$/.test(src.slice(T.be, p)) ? '' : nl) + lines(ind) + nl }, ...rename]);
       } else {
         let ls = src.lastIndexOf('\n', T.es - 1) + 1, atLine = ls > T.be && !src.slice(ls, T.es).trim();
         // (a lone \label at the float's end goes after the caption, so \ref gives the figure's number: review L5)
         const lab = /\\label\s*\{[^{}\n]{0,200}\}\s*$/.exec(src.slice(T.be, T.es));
         if (lab) { const at = T.be + lab.index, l2 = src.lastIndexOf('\n', at - 1) + 1; if (l2 > T.be && !src.slice(l2, at).trim()) { ls = l2; atLine = true; } }
         const p = atLine ? ls : T.es;
-        w.apply(f, [{ s: p, e: p, t: (atLine ? '' : nl) + lines(ind) + nl + (atLine ? '' : indentOf(T.s)) }]);
+        w.apply(f, [{ s: p, e: p, t: (atLine ? '' : nl) + lines(ind) + nl + (atLine ? '' : indentOf(T.s)) }, ...rename]);
       }
     } else {
-      const env = T.kind === 'figure' ? 'figure' : 'table', ind = indentOf(T.s);
+      const env = kind, ind = indentOf(T.s);
       const head = '\\begin{' + env + '}[htbp]' + nl + ind + '\\centering';
       if (T.mode === 'center') {
         // (center becomes the float, \centering inside it: the picture's own lines stay as they are)
@@ -619,7 +653,10 @@ export const methods = {
         w.apply(f, [{ s: T.s, e: T.e, t: head + nl + (above ? lines(ind) + nl : '') + ind + body + (above ? '' : nl + lines(ind)) + nl + ind + '\\end{' + env + '}' }]);
       }
     }
-    if (o.numbering) this.captionNumbering(w, T.kind, o.numbering);
+    if (o.numbering) this.captionNumbering(w, kind, o.numbering);
+    // (R4: a new label's float and the number alone's format, in the preamble, packages once)
+    if (newName && !Object.prototype.hasOwnProperty.call((this.model.opts.refs || {}).floats || {}, kind)) { w.pkgs(['newfloat']); w.apply(this.main, RS.newFloatEdits(w.src(this.main), kind, escapeTeX(newName))); }
+    if (o.exclude) { w.pkgs(['caption']); w.apply(this.main, RS.noLabelFormatEdits(w.src(this.main))); }
     // (the caret at the caption's end, as Word leaves it)
     const k = w.src(f).indexOf(first, Math.max(0, T.s - 4));
     w.commit(k >= 0 ? { f, p: k + first.length - 1, bias: -1 } : null);
@@ -717,8 +754,10 @@ export const methods = {
       }
       const list = [...RS.pageList(pages).map((p) => ({ ...p, n: parseInt(p.t, 10) })), ...ranges].sort((a, b) => a.n - b.n);
       x.replaceChildren();
-      for (const p of list) {
-        x.append(', ');
+      // (R4: right aligned, the first number comes after the leader, as makeindex's \dotfill puts it)
+      const right = !!(it && it.classList.contains('idx-right'));
+      for (const [k, p] of list.entries()) {
+        x.append(right && k === 0 ? '' : ', ');
         const tag = /^(textbf|bfseries)$/.test(p.fmt) ? 'b' : /^(textit|emph|itshape)$/.test(p.fmt) ? 'i' : 'span';
         const el = document.createElement(tag); el.textContent = p.t; x.append(el);
       }
@@ -949,6 +988,30 @@ export const methods = {
 
   // ---- the index ---------------------------------------------------------------------------------------
   // the edits that make an index where the preamble has none: imakeidx and \makeindex
+  // whether a makeindex style of the project sets page numbers at the right margin (R4)
+  indexRightIn(name) { return !!RS.istRight(this.files.get(name)); },
+  // (R4) Right align page numbers on or off: imakeidx's options=-s with a style of the project's
+  // own (index-right.ist, written where it is not there yet), or that option taken out
+  indexRight(w, on) {
+    const f = this.main, src = w.src(f), t = stripComments(src.slice(0, Math.max(0, preambleEnd(src))));
+    const mk = RS.cmdCalls(t, 'makeindex', 0, 0, t.length, true).find((c) => !c.opt || !/\bname\s*=/.test(t.slice(c.opt[0], c.opt[1])));
+    if (!mk) return;
+    const opt = mk.opt ? t.slice(mk.opt[0], mk.opt[1]) : '';
+    const m = /(^|,)\s*options\s*=\s*(\{[^{}]*\}|[^,]*)/.exec(opt);
+    if (on) {
+      const have = this.files.get(RS.RIGHT_IST);
+      if (have != null && !RS.istRight(have)) { this.toast(RS.RIGHT_IST + ' is a file of this project already: rename it first'); return false; }
+      if (have == null) w.apply(RS.RIGHT_IST, [{ s: 0, e: 0, t: RS.RIGHT_IST_TEXT }]);
+      const val = 'options=-s ' + RS.RIGHT_IST;
+      if (m) w.apply(f, [{ s: mk.opt[0] + m.index + m[1].length, e: mk.opt[0] + m.index + m[0].length, t: (m[0].startsWith(' ') || m[1] ? '' : '') + val }]);
+      else if (mk.opt) w.apply(f, [{ s: mk.opt[1], e: mk.opt[1], t: (opt.trim() ? ',' : '') + val }]);
+      else w.apply(f, [{ s: mk.e, e: mk.e, t: '[' + val + ']' }]);
+    } else if (m) {
+      // (the option goes; the brackets with it where nothing else is left)
+      const rest = (opt.slice(0, m.index) + opt.slice(m.index + m[0].length)).replace(/^\s*,/, '');
+      w.apply(f, rest.trim() ? [{ s: mk.opt[0], e: mk.opt[1], t: rest }] : [{ s: mk.opt[0] - 1, e: mk.opt[1] + 1, t: '' }]);
+    }
+  },
   indexSetup(w, columns) {
     const f = this.main, R = RS.refsSetup(w.src(f), !!this.model.opts.chapters);
     if (!R.index) {
@@ -968,7 +1031,8 @@ export const methods = {
   indexMark(at, o) {
     const main = textOf(o.main);
     if (!main) { this.toast('Type the main entry first'); return false; }
-    const esc = (x) => escapeTeX(textOf(x));
+    // (a | as \textbar{}: hyperref reads the first | of an \index argument as its format, a quote or not)
+    const esc = (x) => escapeTeX(textOf(x)).replace(/\|/g, '\\textbar{}');
     const fmt = o.bold ? 'textbf' : o.italic ? 'textit' : '';
     const arg = (range) => RS.indexArg({ main: esc(main), sub: o.sub ? esc(o.sub) : '', see: o.see ? esc(o.see) : '', fmt, range });
     const w = new Work(this);
@@ -1017,8 +1081,87 @@ export const methods = {
     const cols = Math.max(1, Math.min(4, parseInt(o && o.columns, 10) || 2));
     const w = new Work(this);
     this.indexSetup(w, cols);
-    if (this.bodySpots(['printindex'], true).length) return w.commit(null, 'format');
+    if (o && o.right != null && this.indexRight(w, !!o.right) === false) return false;
+    if (this.bodySpots(['printindex'], true).filter((x) => !x.opt).length) return w.commit(null, 'format');
     return this.blockCommand('\\printindex', w);
+  },
+
+  // ---- the Table of Authorities (R4) --------------------------------------------------------------
+  // a second index of imakeidx's, named toa: \makeindex[name=toa,title=Table of Authorities,columns=1] once (one column, as Word's),
+  // each citation \index[toa]{n@\textbf{Category}!citation} (the categories in Word's order),
+  // printed by \printindex[toa]; makeidx has no second index
+  toaWhyNot() {
+    const R = (this.model && this.model.opts.refs) || {};
+    if (R.index && R.index.pkg === 'makeidx') return 'This document\'s index is makeidx\'s, which has no second index: imakeidx has';
+    if (this.model && this.model.opts.cls === 'beamer') return 'Beamer has no index';
+    return '';
+  },
+  toaCategories() {
+    const out = [];
+    for (const x of (this.model && this.model.indexEntries) || []) {
+      if (x.name !== 'toa') continue;
+      const L = RS.readIndexArg(x.arg).levels[0];
+      const c = L && L.text.replace(/^\\textbf\s*\{(.*)\}$/, '$1').trim();
+      if (c && !out.includes(c) && out.length < 30) out.push(c);
+    }
+    return out;
+  },
+  toaSetup(w) {
+    const f = this.main, R = RS.refsSetup(w.src(f), !!this.model.opts.chapters);
+    if (!(R.index && R.index.pkg === 'imakeidx')) w.pkgs(['imakeidx']);
+    if (!(R.index && (R.index.mk || []).some((m) => m.name === 'toa'))) w.apply(f, RS.preambleLine(w.src(f), '\\makeindex[name=toa,title=Table of Authorities,columns=1]'));
+  },
+  // { long, short, category, rank, all } (typed text)
+  citationMark(at, o) {
+    const why = this.toaWhyNot();
+    if (why) { this.toast(why); return false; }
+    const long = textOf(o.long), cat = textOf(o.category) || 'Cases';
+    if (!long) { this.toast('Type the citation first'); return false; }
+    const k = TOA_CATEGORIES.indexOf(cat);
+    const rank = k >= 0 ? k + 1 : Math.max(1, Math.min(99, parseInt(o.rank, 10) || 8));
+    const bar = (x) => escapeTeX(x).replace(/\|/g, '\\textbar{}');
+    const arg = RS.indexArg({ sort: String(rank), main: '\\textbf{' + bar(cat) + '}', sub: bar(long) });
+    const entry = '\\index[toa]{' + arg + '}';
+    const w = new Work(this);
+    if (o.all) {
+      const words = textOf(o.short) || long;
+      const q = compile(words, { matchCase: true, wholeWord: true });
+      if (!q.re) return false;
+      const byF = new Map();
+      let n = 0;
+      for (const B of this.renderer.blocks) {
+        const T = blockText(B), r = hitsIn(T.text, q.re, { max: 2000 });
+        for (const h of r.hits) {
+          const x = hitSource(B, T, h.i, h.j);
+          if (!x || x.ro || !this.files.has(x.f)) continue;
+          if (/^\s*\\index\s*\[\s*toa\s*\]/.test(this.src(x.f).slice(x.e, x.e + 40))) continue;
+          if (!byF.has(x.f)) byF.set(x.f, []);
+          byF.get(x.f).push({ s: x.e, e: x.e, t: entry });
+          n++;
+        }
+      }
+      for (const [f, ed] of byF) w.apply(f, ed);
+      this.toaSetup(w);
+      if (!n) { this.toast('“' + words + '” stands nowhere in the text'); return false; }
+      w.commit(null, 'insert');
+      this.toast('Marked ' + n + ' place' + (n === 1 ? '' : 's'));
+      return true;
+    }
+    const sp = this.refsSpot(at);
+    if (!sp) return false;
+    const m = w.mark(sp.f, sp.p, -1);
+    this.toaSetup(w);
+    const t = sp.pre + entry;
+    w.apply(sp.f, [{ s: m.p, e: m.p, t }]);
+    return w.commit({ f: sp.f, p: m.p + t.length, bias: 1 });
+  },
+  toaInsert() {
+    const why = this.toaWhyNot();
+    if (why) { this.toast(why); return false; }
+    const w = new Work(this);
+    this.toaSetup(w);
+    if (this.bodySpots(['printindex'], true).some((x) => x.opt === 'toa')) return w.commit(null, 'format');
+    return this.blockCommand('\\printindex[toa]', w);
   }
 };
 

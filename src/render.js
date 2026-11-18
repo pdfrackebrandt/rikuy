@@ -447,7 +447,7 @@ export class Renderer {
         item.sbEm = 1.5;
         const region = it.notes ? null : (it.key || 'ix');
         item.extra = it.rows.map((r, k) => {
-          const e2 = div('it p rol ' + (it.notes ? 'en-e en-' + it.notes + ' z-footnotesize' : 'idx-e idx-l' + Math.min(2, r.lvl) + (r.gap ? ' idx-gap' : '')));
+          const e2 = div('it p rol ' + (it.notes ? 'en-e en-' + it.notes + ' z-footnotesize' : 'idx-e idx-l' + Math.min(2, r.lvl) + (r.gap ? ' idx-gap' : '') + (it.right ? ' idx-right idx-' + it.right : '')));
           e2.contentEditable = 'false';
           if (it.notes) {
             const l = document.createElement(it.notes === 'endnotes' ? 'sup' : 'span'); l.className = 'en-n'; l.textContent = r.num + (it.notes === 'endnotes' ? '' : '.');
@@ -459,7 +459,9 @@ export class Renderer {
             }
             e2.appendChild(t);
           } else {
-            e2.appendChild(document.createTextNode(r.text));
+            // (R4: a category of a Table of Authorities in bold; a leader to page numbers set at the right)
+            if (r.bold) { const b = document.createElement('b'); b.textContent = r.text; e2.appendChild(b); } else e2.appendChild(document.createTextNode(r.text));
+            if (it.right && r.pages.length) { const l = document.createElement('span'); l.className = 'idx-lead'; e2.appendChild(l); }
             const pg = document.createElement('span'); pg.className = 'idx-p';
             pg.dataset.row = String(k);
             e2.appendChild(pg);
@@ -560,10 +562,11 @@ export class Renderer {
       const d = div('cap');
       d.dataset.ctx = 'cap';
       setDir(d, p.dir);
-      const lab = { figure: 'Figure', table: 'Table' }[p.kind] || p.kind;
+      // (R4: p.lab, the name of a float of the document's own, or '' for the number alone)
+      const lab = p.lab != null ? p.lab : { figure: 'Figure', table: 'Table' }[p.kind] || p.kind;
       // (\caption*: the words alone; beamer's: "Figure:" with no number)
       if (p.kind === 'sub') d.appendChild(chr('(' + p.num + ') ', 'caplab'));
-      else if (!p.star) { d.appendChild(chr(lab + (p.num ? ' ' + p.num : '') + ': ', 'caplab')); d.dataset.cap = p.kind + ':' + (p.num || ''); }
+      else if (!p.star) { d.appendChild(chr((lab ? lab + (p.num ? ' ' + p.num : '') : p.num) + ': ', 'caplab')); d.dataset.cap = p.kind + ':' + (p.num || ''); }
       this.inl(p.inl, d);
       return d;
     }

@@ -6,7 +6,8 @@ Ignore All, Add to Dictionary (a `% rikuy: words` line, cspell's lines read too)
 Document, Check Spelling as You Type; the dictionary per language (babel, \\selectlanguage,
 \\foreignlanguage); Review › Language for a selection and the document as round trips; the
 Spelling pane (F7) by mouse and keys; the status bar's proofing language; a 141 KB paper's time;
-the phone at 390 and 360 px with touch; screenshots in $SHOTS/spell-*."""
+the phone at 390 and 360 px with touch; the Thesaurus and grammar (R4); screenshots in
+$SHOTS/spell-*, thesaurus-* and grammar-*."""
 import os, sys, time, json
 sys.path.insert(0, os.path.dirname(__file__))
 from browser import open_page, check, results, src, load_doc, click_text, select_text, roundtrip, SHOTS, ROOT
@@ -35,6 +36,135 @@ def settle(page, ms=6000):
 
 def menu_names(page):
     return page.evaluate("[...document.querySelectorAll('.pop-ctx [role=menuitem], .pop-ctx [role=menuitemcheckbox], .pop-ctx [role=menuitemradio]')].map(e => e.getAttribute('aria-label') || e.textContent.trim())")
+
+
+THES_DOC = '\\documentclass{article}\n\\begin{document}\nThe results are Fast and \\textbf{quick}. He go home and it is is clear that $x$ is small.\n\\end{document}\n'
+DE_DOC = '\\documentclass{article}\n\\usepackage[ngerman]{babel}\n\\begin{document}\nDie Häuser sind groß.\n\\end{document}\n'
+
+
+def grammar_settle(page, ms=30000):
+    t0 = time.time()
+    while time.time() - t0 < ms / 1000:
+        if page.evaluate("!!(window.rikuy.gr && window.rikuy.gr.lastRun && window.rikuy.gr.seq && !window.rikuy.grammarSoonD_pending)"):
+            page.wait_for_timeout(300)
+            return True
+        page.wait_for_timeout(200)
+    return False
+
+
+def r4(p):
+    """R4: the Thesaurus (MyThes with Hunspell's stems, Shift+F7, the right click menu's Synonyms)
+    and grammar (Harper: Check Grammar as You Type, blue double lines on prose only, its
+    corrections as the smallest edit, the Spelling and Grammar pane), on a phone too."""
+    browser, page, errors = open_page(p, width=1366, height=900)
+    check('R4: the thesaurus is here (hosted build)', page.evaluate('window.rikuy.thesAvailable()') is True)
+    load_doc(page, THES_DOC); settle(page, 15000)
+    click_text(page, 'Fast', 2); page.wait_for_timeout(200)
+    t0 = time.time()
+    page.keyboard.press('Shift+F7')
+    page.wait_for_selector('#th-pane:not([hidden]) .th-ins', timeout=20000)
+    ms = (time.time() - t0) * 1000
+    check('R4: Shift+F7 opens the Thesaurus pane with the word at the cursor and its synonyms (first lookup %d ms)' % ms, page.input_value('#th-pane input') == 'Fast' and page.locator('#th-pane .th-w').count() > 3)
+    names = page.evaluate("[...document.querySelectorAll('#th-pane .th-w')].map(e => e.textContent)")
+    check('R4: WordNet\'s meanings of "fast", by part of speech', 'quick' in names and 'speedy' in names, names[:12])
+    h0 = page.evaluate('window.rikuy.hist.length')
+    page.get_by_role('button', name='Insert speedy', exact=True).first.click(); page.wait_for_timeout(300)
+    check('R4: Insert puts the word in, its capital kept, as one step', src(page) == THES_DOC.replace('Fast', 'Speedy') and page.evaluate('window.rikuy.hist.length') == h0 + 1, src(page)[40:120])
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('R4: one undo gives the source back byte for byte', src(page) == THES_DOC)
+    page.locator('#th-pane .th-w', has_text='speedy').first.click(); page.wait_for_timeout(800)
+    check('R4: a synonym pressed is looked up in turn; Back returns', page.input_value('#th-pane input') == 'speedy' and page.get_by_role('button', name='Back', exact=True).is_enabled())
+    page.get_by_role('button', name='Back', exact=True).click(); page.wait_for_timeout(800)
+    check('R4: Back gives the word before', page.input_value('#th-pane input') == 'Fast')
+    page.screenshot(path=os.path.join(SHOTS, 'thesaurus-1366.png'))
+    page.keyboard.press('Escape')
+    # a word in bold: the edit stays inside the bold
+    click_text(page, 'quick', 2); page.wait_for_timeout(200)
+    r = page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); return [r.left, r.top]; })()")
+    page.mouse.click(r[0], r[1] + 4, button='right'); page.wait_for_timeout(300)
+    check('R4: the right click menu has Synonyms', 'Synonyms' in menu_names(page), menu_names(page))
+    page.get_by_role('menuitem', name='Synonyms', exact=True).click()
+    page.wait_for_function("document.querySelector('[aria-label=Synonyms] [role=menuitem]') && ![...document.querySelectorAll('[aria-label=Synonyms] [role=menuitem]')].some(e => /Looking/.test(e.textContent))", timeout=15000)
+    syn = page.evaluate("[...document.querySelectorAll('[aria-label=Synonyms] [role=menuitem]')].map(e => e.getAttribute('aria-label'))")
+    check('R4: Synonyms lists words and Thesaurus…', 'Thesaurus…' in syn and len(syn) > 2, syn)
+    page.get_by_role('menuitem', name='fast', exact=True).click(); page.wait_for_timeout(300)
+    check('R4: a synonym from the menu replaces the word inside its bold', src(page) == THES_DOC.replace('\\textbf{quick}', '\\textbf{fast}'), src(page)[40:120])
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    # German: Hunspell's stem finds the entry, OpenThesaurus's data, fetched piece by piece
+    seen = []
+    page.context.on('request', lambda rq: seen.append(rq.url) if '/spell/th_de_DE' in rq.url else None)
+    load_doc(page, DE_DOC); settle(page, 15000)
+    click_text(page, 'Häuser', 2); page.wait_for_timeout(200)
+    r = page.evaluate("(async () => { const x = window.rikuy.thesAt(); const r = await window.rikuy.synonymsFor(x.w, x.dict); return [x.dict, r.head, r.meanings.length]; })()")
+    check('R4: German: "Häuser" is looked up as "haus" (Hunspell\'s stem), in OpenThesaurus', r[0] == 'de_DE' and r[1] == 'haus' and r[2] > 0, r)
+    fetched = len(seen)
+    check('R4: of the German data only the index and a piece or two are fetched (of 28)', 1 < fetched <= 4, fetched)
+    # grammar: off at first, on by its switch
+    load_doc(page, THES_DOC); settle(page, 15000)
+    check('R4: grammar is off until asked for: no grammar worker started', page.evaluate("!window.rikuy.gr || !window.rikuy.gr.client"))
+    names = page.evaluate("window.rikuy.commandMenu(window.rikuy.cmds.command('spelling')).map(i => i && i.name)")
+    check('R4: Spelling\'s arrow offers Check Grammar as You Type and Thesaurus', 'Check Grammar as You Type' in names and 'Thesaurus' in names, names)
+    page.evaluate("window.rikuy.runCommand('grammar-as-you-type')")
+    check('R4: Harper answers', grammar_settle(page))
+    g = page.evaluate("window.rikuy.gr.bad.map(x => x.words)")
+    check('R4: grammar marks "go" and "is is", nothing in the math', sorted(g) == ['go', 'is is'], g)
+    marks = page.evaluate("[...(CSS.highlights.get('rk-grammar') || [])].map(r => r.toString())")
+    check('R4: blue double lines under them on the page', sorted(marks) == ['go', 'is is'], marks)
+    click_text(page, 'is is', 1); page.wait_for_timeout(150)
+    r = page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); return [r.left, r.top]; })()")
+    page.mouse.click(r[0], r[1] + 4, button='right'); page.wait_for_timeout(300)
+    names = menu_names(page)
+    check('R4: right click on a grammar issue: Harper\'s message, its correction, Ignore Once', 'Did you mean to repeat this word?' in names and 'is' in names and 'Ignore Once' in names, names)
+    page.get_by_role('menuitem', name='is', exact=True).click(); page.wait_for_timeout(300)
+    check('R4: the correction takes out only what differs, one step', src(page) == THES_DOC.replace('it is is clear', 'it is clear'), src(page)[60:140])
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('R4: and one undo gives it back byte for byte', src(page) == THES_DOC)
+    grammar_settle(page)
+    page.keyboard.press('F7'); page.wait_for_timeout(600)
+    check('R4: F7 is the Spelling and Grammar pane while grammar is on', page.inner_text('#sp-title') == 'Spelling and Grammar')
+    page.evaluate("(() => { const P = window.rikuy.spPane; P.cur = window.rikuy.gr.bad.find(x => x.words === 'go'); })()")
+    page.get_by_role('button', name='Next error').click(); page.get_by_role('button', name='Previous error').click(); page.wait_for_timeout(300)
+    lab = page.inner_text('#sp-pane .sp-lab')
+    check('R4: the pane shows a grammar issue with Harper\'s message', lab.startswith('Grammar:'), lab)
+    page.screenshot(path=os.path.join(SHOTS, 'grammar-pane-1366.png'))
+    page.keyboard.press('Escape')
+    page.evaluate("window.rikuy.runCommand('grammar-as-you-type')"); page.wait_for_timeout(300)
+    check('R4: turned off, its marks go', not page.evaluate("CSS.highlights.get('rk-grammar') && CSS.highlights.get('rk-grammar').size"))
+    check('R4: no page errors', not errors, errors[:5])
+    browser.close()
+    for w, h in ((390, 844), (360, 740)):
+        browser, page, errors = open_page(p, width=w, height=h, touch=True)
+        load_doc(page, THES_DOC); settle(page, 15000)
+        page.select_option('#rb-tabsel', 'review'); page.wait_for_timeout(300)
+        btn = page.locator('#rv-thes')
+        if btn.is_visible():
+            btn.tap()
+        else:
+            page.locator('#rv-thes').locator('xpath=ancestor::*[contains(@class, "rb-grp")]').locator('.rb-gbtn').tap(); page.wait_for_timeout(250)
+            page.locator('.pop').get_by_role('menuitem', name='Thesaurus').tap()
+        page.wait_for_timeout(400)
+        page.fill('#th-pane input', 'happy'); page.locator('#th-pane').get_by_role('button', name='Search').tap()
+        page.wait_for_selector('#th-pane .th-w', timeout=15000)
+        box = page.evaluate("(() => { const r = document.getElementById('th-pane').getBoundingClientRect(); return [r.left, r.right, r.top, r.bottom, innerWidth, innerHeight]; })()")
+        check('R4 %d px: the Thesaurus is a sheet inside the screen, by taps' % w, box[0] >= 0 and box[1] <= box[4] and box[3] <= box[5], box)
+        small = page.evaluate("[...document.querySelectorAll('#th-pane button')].filter(e => e.offsetParent && e.getBoundingClientRect().height < 44 && !e.classList.contains('pop-x')).map(e => e.textContent)")
+        check('R4 %d px: its buttons are 44 px targets' % w, not small, small[:5])
+        # (review L1) the search field, and Back once a word is followed, 44 px each way
+        page.locator('#th-pane .th-w').first.tap(); page.wait_for_selector('#th-pane .th-back', timeout=15000)
+        dims = page.evaluate("(() => { const b = document.querySelector('#th-pane .th-back').getBoundingClientRect(), i = document.querySelector('#th-pane input').getBoundingClientRect(); return [b.width, b.height, i.height]; })()")
+        check('R4 %d px: Back is 44 by 44 px and the search field 44 px high' % w, dims[0] >= 44 and dims[1] >= 44 and dims[2] >= 44, dims)
+        page.screenshot(path=os.path.join(SHOTS, 'thesaurus-%d.png' % w))
+        page.locator('#th-pane .pop-x').tap()
+        # a long press on a grammar issue gives its menu
+        page.evaluate("window.rikuy.prefs.grammar = true; window.rikuy.grammarRun()")
+        grammar_settle(page)
+        r = page.evaluate("(() => { const r = [...CSS.highlights.get('rk-grammar')].find(x => x.toString() === 'go').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()")
+        page.evaluate("([x, y]) => { const t = document.elementFromPoint(x, y); t.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch', clientX: x, clientY: y })); t.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y })); }", r)
+        page.wait_for_timeout(400)
+        names = menu_names(page)
+        check('R4 %d px: a long press on a grammar issue gives its correction' % w, 'goes' in names, names)
+        check('R4 %d px: no sideways scroll, no page errors' % w, page.evaluate("document.documentElement.scrollWidth <= innerWidth") and not errors, errors[:3])
+        browser.close()
 
 
 def run():
@@ -253,6 +383,7 @@ def run():
                 check(tag + ': the status bar\'s proofing button is a 44 px target', st >= 44 or page.evaluate("getComputedStyle(document.getElementById('st-lang')).minHeight") == '44px', st)
                 check(tag + ': no page errors', not errors, errors[:5])
                 browser.close()
+        r4(p)
 
     bad = [r for r in results if not r[1]]
     print(f"{len(results) - len(bad)}/{len(results)} passed")
@@ -260,4 +391,10 @@ def run():
 
 
 if __name__ == '__main__':
+    if sys.argv[1:] == ['r4']:
+        with sync_playwright() as p:
+            r4(p)
+        bad = [r for r in results if not r[1]]
+        print(f"{len(results) - len(bad)}/{len(results)} passed")
+        sys.exit(1 if bad else 0)
     run()

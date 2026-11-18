@@ -59,7 +59,8 @@ const ICON = {
 
 // ---- the commands -------------------------------------------------------------------------------
 
-const DISPLAY = [['simple', 'Simple Markup', 'A bar in the margin by each changed line; the text as it is now'], ['all', 'All Markup', 'Insertions underlined, deletions marked where they were, bars in the margin'], ['none', 'No Markup', 'The text as it is now, with no marks']];
+const DISPLAY = [['simple', 'Simple Markup', 'A bar in the margin by each changed line; the text as it is now'], ['all', 'All Markup', 'Insertions underlined, deletions marked where they were, bars in the margin'], ['none', 'No Markup', 'The text as it is now, with no marks'],
+  ['original', 'Original', 'The text as it was before the changes (the version compared with); the page takes no edit until another view is chosen']];
 const LANGS = ['en_US', 'en_GB', 'de_DE', 'es_ES'];
 
 register(
@@ -68,7 +69,9 @@ register(
     title: 'Spelling (F7): each word the dictionary does not know, with suggestions, Ignore, Ignore All and Add to Dictionary',
     synonyms: ['Spelling and Grammar', 'Spell check', 'Spellcheck', 'Editor', 'Proofing', 'Check spelling', 'Typos'], when: () => true,
     run: (app) => app.openSpelling(),
-    menuItems: (app) => [{ name: 'Spelling', keys: 'F7', command: 'spelling' }, { name: 'Check Spelling as You Type', checked: app.prefs.spell !== false, command: 'spell-as-you-type' }, { name: 'Recheck Document', command: 'spell-recheck' }] },
+    menuItems: (app) => [{ name: 'Spelling', keys: 'F7', command: 'spelling' }, { name: 'Check Spelling as You Type', checked: app.prefs.spell !== false, command: 'spell-as-you-type' },
+      ...(app.grammarAvailable() ? [{ name: 'Check Grammar as You Type', checked: app.grammarOn(), command: 'grammar-as-you-type' }] : []), { name: 'Recheck Document', command: 'spell-recheck' },
+      ...(app.thesAvailable() ? [null, { name: 'Thesaurus', keys: 'Shift+F7', command: 'thesaurus' }] : [])] },
   { id: 'spell-as-you-type', name: 'Check Spelling as You Type', kind: 'toggle', title: 'Mark the words the dictionary does not know as you type (a red wavy line); off, no line at all',
     synonyms: ['Hide spelling errors', 'Spelling underline', 'Red squiggles', 'Autocorrect spelling'], when: () => true, on: (app) => app.prefs.spell !== false,
     run: (app) => app.spellToggle() },
@@ -109,12 +112,14 @@ register(
     title: 'Track Changes (Ctrl+Shift+E): on, every edit is kept as a change to accept or reject; off, edits are not marked and the changes there stay',
     synonyms: ['Track changes', 'Record changes', 'Suggesting mode', 'Revisions'], when: (app) => !!app.base, on: (app) => app.trackOn(), run: (app) => app.setTracking(!app.trackOn()) },
   { id: 'display-for-review', name: 'Display for Review', label: 'Markup', kind: 'menu', tab: 'review', group: 'tracking', el: 'rv-display', order: 20, icon: ICON.display,
-    title: 'Display for Review: how the changes show on the pages', synonyms: ['Simple Markup', 'All Markup', 'No Markup', 'Markup view'], when: () => true, run: (app) => app.rvMenu('display-for-review'),
+    title: 'Display for Review: how the changes show on the pages', synonyms: ['Simple Markup', 'All Markup', 'No Markup', 'Original', 'Markup view', 'Show original'], when: () => true, run: (app) => app.rvMenu('display-for-review'),
     menuItems: (app) => DISPLAY.map(([v, name, title]) => ({ name, title, radio: true, checked: app.markup() === v, run: () => app.setMarkup(v) })) },
   { id: 'show-markup', name: 'Show Markup', kind: 'menu', tab: 'review', group: 'tracking', el: 'rv-showmk', order: 30, icon: ICON.markup,
     title: 'Show Markup: which marks the pages show', synonyms: ['Markup options', 'Balloons'], when: () => true, run: (app) => app.rvMenu('show-markup'),
     menuItems: (app) => [{ name: 'Insertions and Deletions', checked: app.prefs.showIns !== false, run: () => app.setMarkupShow('showIns', app.prefs.showIns === false) },
       { name: 'Comments', checked: app.prefs.showCmt !== false, run: () => app.setMarkupShow('showCmt', app.prefs.showCmt === false) }, null,
+      // (Specific People: whose changes the pages and the pane show, and Accept All Changes Shown acts on)
+      ...app.reviewerItems(), null,
       { name: 'Download with Markup (.tex)', title: 'A copy of the main file with the changes as the changes package marks them and the comments as todonotes; the project is not touched', run: () => app.runCommand('markup-copy') }] },
   { id: 'markup-copy', name: 'Download with Markup', title: 'A copy of the main .tex with the changes marked by the changes package (\\added, \\deleted, \\replaced) and the comments as \\todo notes, for a PDF with markup; the project itself is not touched',
     synonyms: ['Print with markup', 'Print markup', 'Changes in the PDF', 'Blackline PDF'], when: (app) => !!app.base, run: (app) => app.markupCopy() },
@@ -123,12 +128,14 @@ register(
     title: 'Accept this change and go to the next; the arrow: Accept This Change, Accept All Changes, Accept All and Stop Tracking', synonyms: ['Accept change', 'Accept all changes', 'Keep change'],
     when: (app) => app.realChanges().length > 0, whyNot: () => 'There are no changes', run: (app) => app.acceptHere(true),
     menuItems: (app) => [{ name: 'Accept and Move to Next', run: () => app.acceptHere(true) }, { name: 'Accept This Change', run: () => app.acceptHere(false) },
-      { name: 'Accept All Changes', run: () => app.acceptAllChanges(false) }, { name: 'Accept All Changes and Stop Tracking', run: () => app.acceptAllChanges(true) }] },
+      ...(app.rvHidden && app.rvHidden.size ? [{ name: 'Accept All Changes Shown', run: () => app.acceptShown() }] : []),
+      { name: 'Accept All Changes', run: () => app.acceptAllChanges(false) }, { name: 'Accept All Changes and Stop Tracking', run: () => app.acceptAllChanges(true) }, ...app.byAuthorItems('accept')] },
   { id: 'change-reject', name: 'Reject', label: 'Reject', kind: 'split', tab: 'review', group: 'changes', el: 'rv-reject', order: 20, icon: ICON.reject,
     title: 'Reject this change and go to the next; the arrow: Reject Change, Reject All Changes, Reject All and Stop Tracking', synonyms: ['Reject change', 'Reject all changes', 'Undo change'],
     when: (app) => app.realChanges().length > 0, whyNot: () => 'There are no changes', run: (app) => app.rejectHere(true),
     menuItems: (app) => [{ name: 'Reject and Move to Next', run: () => app.rejectHere(true) }, { name: 'Reject Change', run: () => app.rejectHere(false) },
-      { name: 'Reject All Changes', run: () => app.rejectAllChanges(false) }, { name: 'Reject All Changes and Stop Tracking', run: () => app.rejectAllChanges(true) }] },
+      ...(app.rvHidden && app.rvHidden.size ? [{ name: 'Reject All Changes Shown', run: () => app.rejectShown() }] : []),
+      { name: 'Reject All Changes', run: () => app.rejectAllChanges(false) }, { name: 'Reject All Changes and Stop Tracking', run: () => app.rejectAllChanges(true) }, ...app.byAuthorItems('reject')] },
   { id: 'change-prev', name: 'Previous Change', tab: 'review', group: 'changes', el: 'rv-prev', order: 30, icon: ICON.prev, title: 'Go to the change before the cursor and select it',
     synonyms: ['Previous revision'], when: (app) => app.realChanges().length > 0, whyNot: () => 'There are no changes', run: (app) => app.gotoChange(-1) },
   { id: 'change-next', name: 'Next Change', tab: 'review', group: 'changes', el: 'rv-next', order: 40, icon: ICON.next, title: 'Go to the change after the cursor and select it',
@@ -263,13 +270,17 @@ export const methods = {
       }
     }
     if (seq === S.seq) this.spellPaint();
+    // (grammar after spelling: an issue on a misspelt word is spelling's)
+    if (this.grammarOn && this.grammarOn()) this.grammarSoon();
   },
   // the files of spelling as addresses this page may fetch (the installed app's own)
   spellSpec() {
     const u = (f) => ({ ...f, name: this.assetUrl(f.name) });
     const dicts = {};
     for (const k in SPELL.dicts) dicts[k] = { aff: u(SPELL.dicts[k].aff), dic: u(SPELL.dicts[k].dic) };
-    return { worker: this.assetUrl(SPELL.worker), wasm: u(SPELL.wasm), dicts };
+    const thes = {};
+    for (const k in SPELL.thes || {}) thes[k] = { idx: u(SPELL.thes[k].idx), dat: SPELL.thes[k].dat.map(u) };
+    return { worker: this.assetUrl(SPELL.worker), wasm: u(SPELL.wasm), dicts, thes };
   },
   // the words to mark: the occurrences the dictionary does not know, neither ignored nor the one
   // being typed; red wavy lines under them
@@ -402,7 +413,7 @@ export const methods = {
   spellMenuItems(at) {
     if (!this.spellOn()) return null;
     const x = this.spellAt(at && at.c);
-    if (!x) return null;
+    if (!x) { const g = this.grammarMenuItems && this.grammarMenuItems(at); return g ? { items: g, key: null } : null; }
     const list = this.spellSuggestNow(x);
     const items = [];
     if (list == null) {
@@ -421,6 +432,7 @@ export const methods = {
   // whether a point of the page (a long press) lies on a marked word
   spellAtPoint(p) {
     const H = window.CSS && CSS.highlights && CSS.highlights.get('rk-spell');
+    if (this.grammarAtPoint && this.grammarAtPoint(p)) return true;
     if (!H || !p) return false;
     for (const r of H) { try { if (r.isPointInRange(p.startContainer, p.startOffset)) return true; } catch (e) { /* another document */ } }
     return false;
@@ -535,11 +547,22 @@ export const methods = {
 
   // ---- tracking -----------------------------------------------------------------------------
   trackOn() { return !!(this.base && this.base.track); },
-  markup() { const m = this.prefs.markup; return m === 'simple' || m === 'all' || m === 'none' ? m : 'none'; },
-  markupOn() { return this.markup() !== 'none'; },
+  markup() { const m = this.prefs.markup; return m === 'simple' || m === 'all' || m === 'none' || m === 'original' ? m : 'none'; },
+  markupOn() { const m = this.markup(); return m !== 'none' && m !== 'original'; },
   setMarkup(v) {
+    const was = this.markup();
     this.prefs.markup = v;
     store(PREFS, this.prefs);
+    // (to or from the Original: the page is drawn from the other text, and takes edits again or not)
+    if ((was === 'original') !== (v === 'original')) {
+      if (this.disarm) this.disarm();
+      this.root.contentEditable = v === 'original' ? 'false' : 'true';
+      this.root.classList.toggle('rv-original', v === 'original');
+      this.forceRender = true;
+      this.rebuild(v === 'original' ? null : this.caretNow());
+      this.spellRun();
+      if (this.grammarRun) this.grammarRun();
+    }
     this.paintChanges();
     const cb = $('#chg-show');
     if (cb) cb.checked = v === 'all';
@@ -606,6 +629,30 @@ export const methods = {
     this.rejectChanges([x]);
     if (next && this.realChanges().length) this.gotoChange(1, at);
   },
+  // Show Markup's Specific People: All Reviewers, and each person whose changes wait
+  reviewerItems() {
+    const people = this.rvReviewers();
+    if (!people.length) return [];
+    const hidden = this.rvHidden || new Set();
+    const items = [{ name: 'All Reviewers', checked: !people.some((p) => hidden.has(p)), title: 'Show every reviewer\'s changes', run: () => { this.rvHidden = new Set(); this.rvAfterFilter(); } }];
+    for (const p of people) items.push({ name: p, title: (hidden.has(p) ? 'Show ' : 'Hide ') + p + '\'s changes', checked: !hidden.has(p), run: () => { const H = new Set(this.rvHidden || []); if (H.has(p)) H.delete(p); else H.add(p); this.rvHidden = H; this.rvAfterFilter(); } });
+    return items;
+  },
+  rvAfterFilter() { this.paintChanges(); this.refreshNav(); this.ribbonSoon(); },
+  // Accept and Reject's arrows: all the changes of one person, where more than one made them
+  byAuthorItems(what) {
+    const people = this.rvReviewers();
+    if (people.length < 2) return [];
+    return [null, ...people.map((p) => ({ name: (what === 'accept' ? 'Accept' : 'Reject') + ' All by ' + p, title: (what === 'accept' ? 'Keep' : 'Take back') + ' every change ' + p + ' made', run: () => this.rvActByAuthor(what, p) }))];
+  },
+  rvActByAuthor(what, p) {
+    const cs = this.currentChanges().filter((c) => !spacingOnly(c) && !commentOnly(c) && this.rvName(c.who) === p);
+    if (!cs.length) return;
+    if (what === 'accept') this.acceptChanges(cs); else this.rejectChanges(cs, 'Before rejecting the changes of ' + p);
+    this.toast(plural(cs.length, 'change', 'changes') + ' by ' + p + (what === 'accept' ? ' accepted.' : ' rejected (Ctrl+Z undoes).'), 4000);
+  },
+  acceptShown() { this.acceptChanges(this.currentChanges().filter((c) => this.rvShown(c))); },
+  rejectShown() { this.rejectChanges(this.currentChanges().filter((c) => this.rvShown(c)), 'Before rejecting the changes shown'); },
   acceptAllChanges(stop) { this.acceptChanges(this.currentChanges()); if (stop) this.setTracking(false); },
   rejectAllChanges(stop) { this.rejectChanges(this.currentChanges(), 'Before rejecting all changes'); if (stop) this.setTracking(false); },
 
@@ -745,6 +792,9 @@ export const methods = {
   reviewStatusInstall() {
     // (before Display for Review, prefs.marks meant the changes on the pages too: taken over once)
     if (this.prefs && this.prefs.markup === undefined && this.prefs.marks === true) { this.prefs.markup = 'all'; store(PREFS, this.prefs); }
+    // (the Original is a look at the text before the changes, not a way to open documents: a new
+    // session starts with the marks)
+    if (this.prefs && this.prefs.markup === 'original') { this.prefs.markup = 'simple'; store(PREFS, this.prefs); }
     // (a dictionary that failed offline is asked for again once the network is back)
     window.addEventListener('online', () => { if (this.sp && this.sp.failed.size) { this.sp.failed.clear(); this.spellSoon(); } });
     const after = $('#st-warn') || $('#st-words');

@@ -7,7 +7,9 @@
 import assert from 'assert';
 globalThis.window = globalThis;
 globalThis.document = { addEventListener() {}, querySelector() { return null; }, body: { classList: { contains() { return false; } } } };
-const { review, absorbText, absorbFresh } = await import('../src/review.js');
+const { review, absorbText, absorbFresh, authorEdit, editSpans, byAuthor } = await import('../src/review.js');
+const { commentsOf, onlyComments, linkRole, commentsBack, bodyAt, findComments, listedFiles } = await import('../src/share.js');
+const { buildModel } = await import('../src/model.js');
 const { changes } = await import('../src/diff.js');
 const { setLanguageEdits } = await import('../src/ui/wordcount.js');
 const { usePackages } = await import('../src/preamble.js');
@@ -21,7 +23,7 @@ const NO = new Set(['reject', 'merge', 'word', 'other-tab', 'restore', 'accept']
 function mkApp(text, track) {
   const A = { files: new Map([['main.tex', text]]), noIdb: true, hist: [], redoStack: [], pdfSoon() {}, refreshNav() {}, reviewStatus() {}, snapshot() {}, marksSoon() {}, markupOn() { return false; },
     closeGroup() {}, updateUndoUI() {}, lastSnapT: Date.now(), main: 'main.tex', name: 'x', src(f) { return this.files.get(f) ?? ''; } };
-  for (const k of ['setBase', 'saveBase', 'absorbEdit', 'noteEdit', 'currentChanges', 'rvAbsorbs', 'rvBaseStep', 'acceptChanges']) A[k] = review[k];
+  for (const k of ['setBase', 'saveBase', 'absorbEdit', 'noteEdit', 'currentChanges', 'rvAbsorbs', 'rvBaseStep', 'acceptChanges', 'rvAuthorStep', 'rvWho', 'rvName']) A[k] = review[k];
   A.setBase({ t: 0, files: A.files, track });
   return A;
 }
@@ -184,6 +186,166 @@ group('the document\'s own language stays (H5, M5, L5, L6)', () => {
   A = lapp(doc('\\usepackage{polyglossia}\n\\setdefaultlanguage{english}\n', 'The colour here.'));
   const g = apply(A, setLanguageEdits(A, 'en_GB', sel(A, 'colour')));
   assert.ok(g.includes('\\foreignlanguage[variant=british]{english}{colour}') && !g.includes('setotherlanguage'), g);
+});
+
+
+group('R4: changes carry their author, cut where two people wrote a change, through undo and redo', () => {
+  const A = mkApp('Alpha beta gamma delta.\n', true);
+  A.myName = () => 'Pedro';
+  edit(A, 6, 10, 'BETA');
+  A.rvBy = 'Ana'; edit(A, 17, 22, 'DELTA', 'merge'); A.rvBy = null;
+  const who = () => A.currentChanges().map((c) => [c.a, c.b, A.rvName(c.who)]);
+  assert.deepStrictEqual(who(), [['beta', 'BETA', 'Pedro'], ['delta', 'DELTA', 'Ana']]);
+  // two people's edits a word apart are one change in the diff: cut in two by author
+  const B = mkApp('one two three\n', true);
+  B.myName = () => 'Pedro';
+  edit(B, 0, 3, 'ONE');
+  B.rvBy = 'Ana'; edit(B, 8, 13, 'THREE', 'merge'); B.rvBy = null;
+  edit(B, 4, 7, 'TWO');
+  const cs = B.currentChanges();
+  assert.deepStrictEqual(cs.map((c) => [c.a, c.b, B.rvName(c.who)]), [['one two', 'ONE TWO', 'Pedro'], ['three', 'THREE', 'Ana']]);
+  assert.ok(cs.every((c) => B.base.files.get('main.tex').slice(c.as, c.ae) === c.a && T(B).slice(c.bs, c.be) === c.b), 'each piece is a change Accept and Reject can act on');
+  assert.deepStrictEqual([...new Set(cs.map((c) => B.rvName(c.who)))].sort(), ['Ana', 'Pedro']);
+  // accept Ana's alone: Pedro's stay
+  B.acceptChanges(cs.filter((c) => c.who === 'Ana'));
+  assert.deepStrictEqual(B.currentChanges().map((c) => B.rvName(c.who)), ['Pedro']);
+  assert.ok(!B.currentChanges().some((c) => c.b.includes('THREE')), 'Ana\'s change is in the base');
+  // undo and redo give the authors back as they were
+  const C = mkApp('a b c\n', true);
+  C.myName = () => 'Pedro';
+  C.rvBy = 'Ana'; edit(C, 2, 3, 'B', 'merge'); C.rvBy = null;
+  undo(C); redo(C);
+  assert.deepStrictEqual(C.currentChanges().map((c) => C.rvName(c.who)), ['Ana']);
+  // the layer itself: an edit inside another's insertion, a deletion's place
+  let segs = authorEdit([], 0, 0, 5, 'Ana');
+  segs = authorEdit(segs, 2, 3, 0, 'Bob');
+  assert.deepStrictEqual(segs, [{ s: 0, e: 2, who: 'Ana' }, { s: 2, e: 2, who: 'Bob' }, { s: 2, e: 4, who: 'Ana' }]);
+  assert.deepStrictEqual(editSpans('abc', 'aXc', false), [{ s: 1, e: 2, n: 1 }]);
+  const one = byAuthor(changes('x y z', 'X y Z')[0], [{ s: 0, e: 1, who: 'A' }, { s: 4, e: 5, who: 'B' }]);
+  assert.deepStrictEqual(one.map((c) => [c.a, c.b, c.who]), [['x', 'X', 'A'], ['z', 'Z', 'B']]);
+});
+
+group('R4: a comments only link lets in comment lines alone, whatever its copy says', () => {
+  const base = 'A line.\nB line.\nC line.';
+  const theirs = 'A line.\n% comment (Ana) on "A": Why?\nB changed.\nC line.\n% comment (Ana): ok\n';
+  const r = commentsOf(base, theirs);
+  assert.strictEqual(r.text, 'A line.\n% comment (Ana) on "A": Why?\nB line.\nC line.\n% comment (Ana): ok\n');
+  assert.strictEqual(r.dropped, 1);
+  assert.ok(onlyComments(base, r.text), 'what comes in differs from the base in comment lines alone');
+  assert.ok(!onlyComments('a\n', 'b\n') && onlyComments('a\n', 'a\n% reply (X): y\n'));
+  // (security review) none in verbatim, listings or filecontents, where TeX prints or writes a % line, nor in the preamble
+  const vb = 'X\n\\begin{document}\nA.\n\\begin{filecontents*}{run.sh}\necho hi\n\\end{filecontents*}\nB.\n\\end{document}\n';
+  const vt = vb.replace('echo hi\n', 'echo hi\n% comment (Eve): $(touch /tmp/x)\n').replace('A.\n', 'A.\n% comment (Eve): fine\n').replace('X\n', 'X\n% comment (Eve): pre\n');
+  const rv = commentsOf(vb, vt);
+  assert.ok(rv.text.includes('% comment (Eve): fine') && !rv.text.includes('touch') && !rv.text.includes('pre\n') && rv.dropped === 2, JSON.stringify(rv));
+  const snaps = [{ sig: 's', share: { rid: 'edit-link-1', role: 'coauthor' } }, { sig: 's', share: { rid: 'cmnt-link-1', role: 'comments' } }, { sig: 't', share: { rid: 'other', role: 'coauthor' } }];
+  assert.strictEqual(linkRole(snaps, 's', 'edit-link-1'), 'coauthor');
+  assert.strictEqual(linkRole(snaps, 's', 'cmnt-link-1'), 'comments');
+  assert.strictEqual(linkRole(snaps, 's', null), 'comments', 'a copy that drops its link\'s name is taken as the stricter link');
+  assert.strictEqual(linkRole(snaps, 's', 'forged-name'), 'comments');
+  assert.strictEqual(linkRole(snaps, 't', null), 'coauthor');
+  assert.strictEqual(linkRole([], 'u', null), 'coauthor', 'a version shared before links had roles: as before');
+});
+
+group('R4 review: a comments only copy brings comment lines into body text alone (H1, H2, M2)', () => {
+  const doc0 = '\\documentclass{article}\n\\begin{document}\nHello.\nWorld.\n\\end{document}\n';
+  // H1: a lone \r ends TeX's line: what follows it would be read as TeX; nothing of such a copy is taken
+  const cr = doc0.replace('Hello.\n', 'Hello.\n% comment (Eve): fine\r\\immediate\\write18{echo pwned}\\textbf{CRINJECTED}\n');
+  const r1 = commentsOf(doc0, cr);
+  assert.ok(r1.text === doc0 && r1.dropped === 1 && !findComments(r1.text, 'main.tex').length, JSON.stringify(r1));
+  assert.ok(!onlyComments(doc0, cr), 'nor is it a copy of comments alone');
+  for (const ch of ['\u2028', '\u2029', '\u0085']) assert.strictEqual(commentsOf(doc0, doc0.replace('Hello.\n', 'Hello.\n% comment (Eve): x' + ch + '\\textbf{LSINJECTED}\n')).text, doc0, 'nor one with ' + escape(ch));
+  // (a file with CRLF line ends keeps its comment lines)
+  const crlf = doc0.replace(/\n/g, '\r\n'), crlf2 = crlf.replace('Hello.\r\n', 'Hello.\r\n% comment (Ana): ok\r\n');
+  assert.strictEqual(commentsOf(crlf, crlf2).text, crlf2);
+  // H2: comment lines only in .tex and .ltx files the document reads, in body text; every other file as it was
+  const base = '\\documentclass{article}\n\\usepackage{tcolorbox}\\tcbuselibrary{listings}\n\\begin{document}\n\\section{Intro}\nHello.\n\\begin{itemize}\n\\item One\n\\end{itemize}\n'
+    + '\\begin{tcblisting}{}\nx = 1\n\\end{tcblisting}\n\\begin{foo}\nF.\n\\end{foo}\n\\begin{luacode*}\ntex.print("a")\n\\end{luacode*}\nSee \\url{http://a.b/\nc}.\n\\begin{tikzpicture}\n\\draw (0,0)--(1,1);\n\\end{tikzpicture}\nEnd.\n\\end{document}\n';
+  let th = base;
+  for (const [a, w] of [['Hello.\n', 'OK1'], ['\\item One\n', 'OK2'], ['\\section{Intro}\n', 'OK3'], ['End.\n', 'OK4'], ['x = 1\n', 'BAD1'], ['F.\n', 'BAD2'], ['tex.print("a")\n', 'BAD3'], ['http://a.b/\n', 'BAD4'], ['(1,1);\n', 'BAD5']]) th = th.replace(a, a + '% comment (Eve): ' + w + '\n');
+  const bib = '@book{k, title={T}}\n', sty = '\\ProvidesPackage{my}\n';
+  const files = new Map([['main.tex', base], ['refs.bib', bib], ['my.sty', sty], ['unread.tex', 'Never read.\n'], ['data.csv', 'a,b\n']]);
+  const theirs = new Map([['main.tex', th], ['refs.bib', bib + '% comment (Eve): @preamble{"\\textbf{BIBINJECTED}"}\n'], ['my.sty', sty + '% comment (Eve): x\n\\def\\x{STYINJECTED}\n'],
+    ['unread.tex', 'Never read.\n% comment (Eve): BAD6\n'], ['data.csv', 'a,b\n% comment (Eve): c,d\n'], ['new.tex', '\\textbf{NEWFILE}']]);
+  const blocks = buildModel({ files, main: 'main.tex' }).blocks;
+  const r = commentsBack(files, theirs, (f) => bodyAt(blocks, f, files.get(f)));
+  const m = r.files.get('main.tex');
+  for (const w of ['OK1', 'OK2', 'OK3', 'OK4']) assert.ok(m.includes('% comment (Eve): ' + w + '\n'), w);
+  for (const w of ['BAD1', 'BAD2', 'BAD3', 'BAD4', 'BAD5']) assert.ok(!m.includes(w), w);
+  for (const f of ['refs.bib', 'my.sty', 'unread.tex', 'data.csv']) assert.strictEqual(r.files.get(f), files.get(f), f + ' byte for byte as the base had it');
+  assert.ok(!r.files.has('new.tex') && r.dropped === 10, 'a file they added is not taken; each line left out counted: ' + r.dropped);
+  // M2: where a file of the project changes what % is, no comment line comes in at all
+  const cat = '\\documentclass{article}\n\\begin{document}\nPercent table:\n{\\catcode`\\%=12\nRates are 5% and 7%.\n}\nEnd.\n\\end{document}\n';
+  const catT = cat.replace('Rates are 5% and 7%.\n', 'Rates are 5% and 7%.\n% comment (Eve): ok \\textbf{CATINJECTED}\n').replace('End.\n', 'End.\n% comment (Eve): fine\n');
+  const cf = new Map([['main.tex', cat]]), cb = buildModel({ files: cf, main: 'main.tex' }).blocks;
+  const rc = commentsBack(cf, new Map([['main.tex', catT]]), (f) => bodyAt(cb, f, cf.get(f)));
+  assert.ok(rc.files.get('main.tex') === cat && rc.dropped >= 1, 'a catcode of % changed: none at all');
+  for (const c of ['\\catcode`\\^^25=12', '\\ExplSyntaxOn\\char_set_catcode:nn {37} {12}\\ExplSyntaxOff', '\\ExplSyntaxOn\\char_set_catcode_other:n {37}\\ExplSyntaxOff', '\\catcode\\numexpr36+1\\relax=12', '\\catcode\'45=12', '\\char_set_catcode_other:N \\%', '\\catcode37=12', '\\catcode `\\% = 12', '\\makeother\\%', '\\@makeother\\%', '\\let\\do\\@makeother\\dospecials', '\\catcode"25=11'])
+    assert.ok(commentsBack(new Map([['main.tex', cat.replace('\\catcode`\\%=12', c)]]), new Map([['main.tex', catT.replace('\\catcode`\\%=12', c)]]), () => () => true).files.get('main.tex').indexOf('CATINJECTED') < 0, c);
+  // (V3, V4) \verb|}| keeps the count; a line inside a multi-line \url is out; a % in \href's address is a letter;
+  // a file the document lists as it stands takes none
+  const back1 = (files, edit) => { const th = new Map(files); edit(th); const bl = buildModel({ files, main: 'main.tex' }).blocks; return commentsBack(files, th, (f) => bodyAt(bl, f, files.get(f))); };
+  const vd = '\\documentclass{article}\n\\usepackage{url,hyperref,listings}\n\\begin{document}\nSee \\verb|}| and \\url{http://a.b/\nc} then.\nA \\href{http://x.org/a%20b}{the page}.\nSame paragraph.\n\n\\input{code}\n\\lstinputlisting{code.tex}\n\\end{document}\n';
+  const vf = new Map([['main.tex', vd], ['code.tex', 'Code line.\n']]);
+  const rv3 = back1(vf, (th) => { th.set('main.tex', vd.replace('http://a.b/\n', 'http://a.b/\n% comment (Eve): URLV3\n').replace('{the page}.\n', '{the page}.\n% comment (Eve): HREFOK\n')); th.set('code.tex', 'Code line.\n% comment (Eve): LISTED\n'); });
+  assert.ok(!rv3.files.get('main.tex').includes('URLV3') && rv3.files.get('main.tex').includes('% comment (Eve): HREFOK\n') && rv3.files.get('code.tex') === 'Code line.\n', JSON.stringify([...rv3.files]));
+  // (Grok Bot's check of V1 to V4) a catcode in an \input file of any extension; \url|...| with a %
+  // before a multi-line \url{...}; a listed name with dir/.. or quotes
+  const pre4 = (x) => '\\documentclass{article}\n\\usepackage{url}\n' + x + '\\begin{document}\nFirst line.\n\nSecond line.\n\\end{document}\n';
+  for (const [n, t] of [['setup.txt', '\\catcode`\\%=12\n'], ['fig.tikz', '\\catcode37=12\n']]) {
+    const d = pre4('\\input{' + n + '}\n');
+    const r = back1(new Map([['main.tex', d], [n, t]]), (th) => th.set('main.tex', d.replace('First line.\n', 'First line.\n% comment (Eve): \\textbf{EXEC}\n')));
+    assert.ok(!r.files.get('main.tex').includes('EXEC'), n);
+  }
+  const vu = '\\documentclass{article}\n\\usepackage{url}\n\\begin{document}\nSee \\url|http://x/%| and \\url{http://a.b/\nc} then.\n\\end{document}\n';
+  const ru = back1(new Map([['main.tex', vu]]), (th) => th.set('main.tex', vu.replace('http://a.b/\n', 'http://a.b/\n% comment (Eve): URLD\n')));
+  assert.ok(!ru.files.get('main.tex').includes('URLD'), ru.files.get('main.tex'));
+  for (const l of ['\\lstinputlisting[firstline=2]{sub/../code.tex}', '\\VerbatimInput{"code.tex"}'])
+    assert.ok(listedFiles(new Map([['main.tex', l]])).has('code.tex'), l);
+  for (const l of ['\\lstinputlisting[language=TeX]{./code}', '\\verbatiminput{code.tex}', '\\inputminted{latex}{code.tex}', '\\tcbinputlisting{listing file=code.tex}', '\\VerbatimInput[frame=single]{code}'])
+    assert.ok(listedFiles(new Map([['main.tex', l]])).has('code.tex'), l);
+  const sty2 = new Map([['main.tex', doc0], ['p.sty', '\\catcode`\\%=12\n']]);
+  assert.strictEqual(commentsBack(sty2, new Map([['main.tex', doc0.replace('Hello.\n', 'Hello.\n% comment (Eve): x\n')], ['p.sty', '\\catcode`\\%=12\n']]), () => () => true).files.get('main.tex'), doc0, 'a package of the project changing it: none either');
+});
+
+group('R4 review: two people\'s edits that touch keep each one\'s author, and Reject by one undoes theirs alone (M4)', () => {
+  const run = (base, steps) => {
+    let t = base, segs = [];
+    for (const [who, f] of steps) { const n = f(t); for (const x of editSpans(t, n, false)) segs = authorEdit(segs, x.s, x.e, x.n, who, t.slice(x.s, x.e)); t = n; }
+    const parts = [];
+    for (const c of changes(base, t, 'main.tex')) parts.push(...byAuthor(c, segs, t));
+    return { t, parts, got: parts.map((d) => d.who + ':' + d.a + '>' + d.b) };
+  };
+  const B = 'The quick brown fox jumps.\n';
+  assert.deepStrictEqual(run(B, [['Me', (t) => t.replace('quick ', 'quick big ')], ['Eve', (t) => t.replace('brown ', '')]]).got, ['Me:>big ', 'Eve:brown >']);
+  assert.deepStrictEqual(run(B, [['Eve', (t) => t.replace('jumps', '')], ['Me', (t) => t.replace('fox ', '')]]).got, ['Me:fox >', 'Eve:jumps>']);
+  assert.deepStrictEqual(run(B, [['Eve', (t) => t.replace('fox', 'cat')], ['Me', (t) => t.replace('cat', 'dog')]]).got, ['Me:>dog ', 'Eve:fox >']);
+  // a deletion that takes in another's deletion: both kept, each with its words
+  const r3 = run('a b c d e\n', [['Eve', (t) => t.replace('c ', '')], ['Me', (t) => t.replace('b d ', '')]]);
+  assert.deepStrictEqual(r3.got, ['Me:b >', 'Eve:c >', 'Me:d >']);
+  // Reject by Eve: her words back, mine still gone; and the other way round
+  for (const [steps, who, want] of [[[['Me', (t) => t.replace('quick ', 'quick big ')], ['Eve', (t) => t.replace('brown ', '')]], 'Eve', 'The quick big brown fox jumps.\n'],
+    [[['Eve', (t) => t.replace('jumps', '')], ['Me', (t) => t.replace('fox ', '')]], 'Eve', 'The quick brown jumps.\n'],
+    [[['Eve', (t) => t.replace('jumps', '')], ['Me', (t) => t.replace('fox ', '')]], 'Me', 'The quick brown fox .\n']]) {
+    const { t, parts } = run(B, steps);
+    let out = t;
+    for (const d of parts.filter((x) => x.who === who).sort((x, y) => y.bs - x.bs)) out = out.slice(0, d.bs) + d.a + out.slice(d.be);
+    assert.strictEqual(out, want, 'Reject All by ' + who);
+  }
+  // in the page: Eve's copy deletes next to my deletion; Reject All of Eve's leaves mine
+  const A = mkApp('The quick brown fox jumps.\n', true);
+  A.myName = () => 'Pedro';
+  edit(A, 16, 20, '');
+  A.rvBy = 'Eve'; edit(A, 16, 21, '', 'merge'); A.rvBy = null;
+  const cs = A.currentChanges();
+  assert.deepStrictEqual(cs.map((c) => [c.a, A.rvName(c.who)]), [['fox ', 'Pedro'], ['jumps', 'Eve']]);
+  // (Reject as rejectChanges makes it: each piece's old text put back, one step)
+  for (const c of cs.filter((x) => x.who === 'Eve').sort((x, y) => y.bs - x.bs)) edit(A, c.bs, c.be, c.a, 'reject');
+  assert.strictEqual(T(A), 'The quick brown jumps.\n');
+  assert.deepStrictEqual(A.currentChanges().map((c) => [c.a, A.rvName(c.who)]), [['fox ', 'Pedro']], 'my deletion still waits, still mine');
+  // what is kept with the base keeps the deleted words, and only text
+  review.rvAuthorsFrom.call(A, { authors: [['main.tex', T(A).length, [{ s: 16, e: 16, who: 'Pedro', t: 'fox ' }, { s: 1, e: 1, who: 'X', t: { evil: 1 } }]]] });
+  assert.deepStrictEqual(A.authors.get('main.tex'), [{ s: 16, e: 16, who: 'Pedro', t: 'fox ' }, { s: 1, e: 1, who: 'X' }]);
 });
 
 console.log('review: ' + groups + ' groups of checks passed');

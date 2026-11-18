@@ -62,6 +62,12 @@ Built for Rikuy from source (tex/build_tools.sh, tex/native/)
     Its dictionaries: en_US (SCOWL's license), en_GB (LGPL-3.0, LibreOffice), de_DE (igerman98,
     GPL-2.0-or-later), es_ES (GPL-3.0-or-later, LGPL-3.0-or-later or MPL-1.1, LibreOffice);
     LICENSES/third-party/hunspell.txt
+  MyThes 1.2.6 (the thesaurus, in     BSD-style (its COPYING)                github.com/hunspell/mythes
+    Hunspell's module; hosted only)
+    Its data: en_US (WordNet 3.0, LibreOffice's; GPL-2.0 as Ubuntu lists the folder), es_ES
+    (LGPL-2.1, LibreOffice), de_DE (OpenThesaurus, LGPL); LICENSES/third-party/mythes.txt
+  Harper 3.2.0 (grammar; its own      Apache-2.0                             writewithharper.com
+    WebAssembly build, hosted only)
   gnuplot 6.0.2                       gnuplot license (LICENSES/gnuplot.txt) www.gnuplot.info
   Rikuy's native core (C++, in the    AGPL-3.0-or-later, Rikuy's own; with   tex/native/core/
     page; tex/vendor/core/)           Emscripten's libc parts and emmalloc

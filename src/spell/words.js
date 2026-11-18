@@ -410,3 +410,87 @@ export function occSource(plan, x) {
   if (!parts.length) return null;
   return { f: run.f, s: parts[0][0], e: parts[parts.length - 1][1], parts, w: run.text.slice(x.i, x.j) };
 }
+
+// ---- grammar -------------------------------------------------------------------------------------
+
+// The text Harper reads (src/spell/harper.js): each block's prose as one paragraph, with
+// [{f, text, map}] like a run's (map: each character's source start and end, -1 for what Rikuy put
+// there). Between two runs of a block stands what parted them in the source: a formula, a
+// citation, a reference or code becomes "x" (a word the sentence keeps, never marked); a footnote,
+// a label or an index entry nothing; a cell's or a row's end, a blank line, or a run of another
+// file a paragraph end. Only English (en_US, en_GB) is read: a run in another language, or in code,
+// is left out. Bounded: a gap is read 2,000 characters at most, a block 20,000.
+const GAP_NOTHING = /^\s*\\(?:footnote|footnotemark|endnote|label|index|marginpar|thanks|nocite|hspace|vspace|noindent|phantom)\b/;
+export function grammarBlocks(model, project) {
+  const main = project.files.get(project.main) || '';
+  const ml = mainLanguage(main);
+  const docDict = dictOf(ml.name, ml.variant);
+  const doc = docDict === '' ? 'en_US' : docDict;
+  const out = [];
+  const spans = new Map();
+  for (const B of model.blocks || []) {
+    const E = blockEntry(B);
+    const off = E.rel ? B.s : 0;
+    let cur = null, last = null;
+    const push = () => { if (cur && /\S/.test(cur.text)) out.push(cur); cur = null; last = null; };
+    for (const run of E.runs) {
+      if (!run.text) continue;
+      const src = project.files.get(run.f) || '';
+      if (!spans.has(run.f)) spans.set(run.f, [languageSpans(src), codeSpans(src)]);
+      const [sp, code] = spans.get(run.f);
+      // (each character's language, where the file has spans: a stretch in another language or
+      // in code becomes one "x")
+      let text = '', map = [], away = false;
+      for (let x = 0; x < run.text.length; x++) {
+        const m = run.map[2 * x], pos = m >= 0 ? m + off : -1;
+        let foreign = false;
+        if (pos >= 0 && (sp.length || code.length)) {
+          if (code.length && langAt(code, pos)) foreign = true;
+          else if (sp.length) { const l = langAt(sp, pos); foreign = !!l && !/^en_/.test(dictOf(l) || ''); }
+        } else if (pos < 0 && away) foreign = true;
+        if (foreign) { if (!away) { text += 'x'; map.push(-1, -1); } away = true; continue; }
+        away = false;
+        text += run.text[x];
+        map.push(pos, pos >= 0 ? run.map[2 * x + 1] + off : -1);
+      }
+      let a = -1, b = -1;
+      for (let x = 0; x < text.length; x++) if (map[2 * x] >= 0) { if (a < 0) a = map[2 * x]; b = map[2 * x + 1]; }
+      if (a < 0) continue;
+      let join = '';
+      if (cur && (cur.f !== run.f || a < last || a - last > 2000)) push();
+      else if (cur) {
+        const gap = src.slice(last, a);
+        if (/\n[ \t]*\n|&|\\\\/.test(gap)) push();
+        else if (/\S/.test(gap)) join = GAP_NOTHING.test(gap) ? '' : 'x';
+      }
+      if (!cur) cur = { f: run.f, dict: doc, text: '', map: [] };
+      if (cur.text.length + text.length > 20000) { push(); cur = { f: run.f, dict: doc, text: '', map: [] }; join = ''; }
+      for (const ch of join) { cur.text += ch; cur.map.push(-1, -1); }
+      cur.text += text;
+      for (const v of map) cur.map.push(v);
+      last = b;
+    }
+    push();
+  }
+  return out;
+}
+
+// a lint's place in the source, or null where its words are not all the source's own characters
+// one after the other (a formula's "x" inside it, or a space Rikuy put between two lines is fine)
+export function lintSource(G, s, e) {
+  if (s === e) {
+    // (an insertion: after the character before it)
+    let k = s - 1;
+    while (k >= 0 && G.map[2 * k] < 0) k--;
+    return k < 0 ? null : { f: G.f, s: G.map[2 * k + 1], e: G.map[2 * k + 1] };
+  }
+  let a = -1, b = -1;
+  for (let k = s; k < e; k++) {
+    const x = G.map[2 * k];
+    if (x < 0) { if (/\S/.test(G.text[k])) return null; continue; }
+    if (a < 0) a = x;
+    else if (x < b) return null;
+    b = G.map[2 * k + 1];
+  }
+  return a < 0 ? null : { f: G.f, s: a, e: b };
+}

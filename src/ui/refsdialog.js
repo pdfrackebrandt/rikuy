@@ -89,21 +89,50 @@ export function openCaptionDialog(app, at) {
   if (T.why) { app.toast(T.why); return; }
   const O = app.model.opts, ch = !!O.chapters;
   const p = dialog(app, { title: 'Caption', ...near(app, 'rc-insert-caption'), cls: 'pop-ps pop-refs' });
-  const lab = T.kind === 'figure' ? 'Figure' : 'Table';
-  const n = (app.model.captions || []).filter((c) => c.kind === T.kind).length + 1;
+  // (R4: Word's Label list: Figure, Table and the document's own floats, New Label for another,
+  // and Exclude label from caption)
+  const RR0 = O.refs || {};
+  const own = Object.entries(RR0.floats || {}).map(([env, F]) => [env, F.name]);
+  const kinds = [['figure', 'Figure'], ['table', 'Table'], ...own];
+  const kindSel = select('cap-kind', 'Label', kinds, T.kind);
+  let added = null;
+  const nameOf = (k) => (kinds.find((x) => x[0] === k) || [k, k])[1];
+  const nOf = (k) => (app.model.captions || []).filter((c) => c.kind === k).length + 1;
   const words = text('cap-text', '', { placeholder: 'What it shows' });
-  const pre = mk('span', 'cap-pre', lab + ' ' + n + ': ');
+  const pre = mk('span', 'cap-pre', '');
+  const ex = check('cap-exclude', 'Exclude label from caption', false);
+  const show = () => { const k = kindSel.value; pre.textContent = (ex.c.checked ? '' : nameOf(k) + ' ') + nOf(k) + ': '; };
   const capRow = mk('div', 'ps-row cap-row');
   const cl = mk('label', 'ps-l', 'Caption'); cl.htmlFor = words.id;
   const wrap = mk('span', 'cap-in'); wrap.append(pre, words);
   capRow.append(cl, wrap);
+  const nlBtn = mk('button', 'btn ghost sm', 'New Label…'); nlBtn.type = 'button';
+  const nlRow = mk('div', 'ps-row cap-newlabel'); nlRow.hidden = true;
+  const nlIn = text('cap-newlabel', '', { placeholder: 'Scheme' }); nlIn.setAttribute('aria-label', 'New label name'); nlIn.maxLength = 30;
+  const nlOk = mk('button', 'btn sm', 'Add'); nlOk.type = 'button';
+  nlRow.append(mk('span', 'ps-l', 'New label'), nlIn, nlOk);
+  nlBtn.addEventListener('click', () => { nlRow.hidden = false; nlIn.focus(); });
+  const addLabel = () => {
+    const name = nlIn.value.replace(/\s+/g, ' ').trim();
+    const env = name.toLowerCase().replace(/[^a-z]/g, '');
+    if (!env || env.length > 30) { nlIn.focus(); return; }
+    if (!kinds.some((k) => k[0] === env)) { if (/^(figure|table|equation|center|document|itemize|enumerate|description|tabular|minipage|picture|abstract|quote|verse)$/.test(env)) { app.toast('“' + name + '” is a name LaTeX uses already'); return; } kinds.push([env, name]); kindSel.add(new Option(name, env)); added = { env, name }; }
+    kindSel.value = env; nlRow.hidden = true; kindSel.dispatchEvent(new Event('change')); words.focus();
+  };
+  nlOk.addEventListener('click', addLabel);
+  nlIn.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); addLabel(); } });
+  ex.c.addEventListener('change', show);
+  const T0 = T.kind;
+  const pfx = (k) => (k === 'figure' ? 'fig:' : k === 'table' ? 'tab:' : k.slice(0, 3) + ':');
   const pos = select('cap-pos', 'Position', [['above', 'Above selected item'], ['below', 'Below selected item']], T.kind === 'table' ? 'above' : 'below');
-  const key = text('cap-label', labelKey(T.kind === 'figure' ? 'fig:' : 'tab:', '', new Set()), { code: true });
+  const key = text('cap-label', labelKey(pfx(T0), '', new Set()), { code: true });
   let keyTyped = false;
   key.addEventListener('input', () => { keyTyped = true; });
   const taken = new Set(app.model.labels.keys());
-  words.addEventListener('input', () => { if (!keyTyped) key.value = labelKey(T.kind === 'figure' ? 'fig:' : 'tab:', words.value, taken); });
-  key.value = labelKey(T.kind === 'figure' ? 'fig:' : 'tab:', '', taken);
+  words.addEventListener('input', () => { if (!keyTyped) key.value = labelKey(pfx(kindSel.value), words.value, taken); });
+  kindSel.addEventListener('change', () => { if (!keyTyped) key.value = labelKey(pfx(kindSel.value), words.value, taken); show(); });
+  key.value = labelKey(pfx(T0), '', taken);
+  show();
   // (as the preamble numbers them now: \counterwithout in a report is 1, 2, 3; review H3)
   const RR = O.refs || {};
   const within = RR.reset && RR.reset[T.kind] === null ? 'plain' : (RR.within && RR.within[T.kind]) || (ch ? 'chapter' : 'plain');
@@ -111,12 +140,16 @@ export function openCaptionDialog(app, at) {
   const num0 = num.value;
   const lc = check('cap-haslabel', 'A label to refer to it (Cross-reference finds it)', true);
   lc.c.addEventListener('change', () => { key.disabled = !lc.c.checked; });
-  p.append(capRow, row('Position', pos), row('Numbering', num), lc.box, row('Label', key));
+  const kr = row('Label', kindSel); kr.append(nlBtn);
+  p.append(capRow, kr, nlRow, ex.box, row('Position', pos), row('Numbering', num), lc.box, row('Reference label', key));
   p.append(mk('div', 'pop-note', T.mode === 'float' ? 'A \\caption and a \\label in this ' + T.kind + '.' : 'The ' + (T.kind === 'figure' ? 'picture' : 'table') + ' becomes a ' + T.kind + ' (\\begin{' + T.kind + '}[htbp], centred) with its caption.'));
   buttons(app, p, () => {
     // (the numbering written only where it was changed here)
     const args = { text: words.value, position: pos.value, label: lc.c.checked ? key.value.trim() : '' };
     if (num.value !== num0) args.numbering = num.value;
+    if (kindSel.value !== T0) args.kind = kindSel.value;
+    if (added && kindSel.value === added.env) args.newLabel = added.name;
+    if (ex.c.checked) args.exclude = true;
     return () => app.runCommand('insert-caption', args, back(app));
   });
   app.positionPop();
@@ -278,11 +311,35 @@ export function openIndexDialog(app) {
   const R = (app.model.opts.refs || {}).index;
   const cols = select('ix-cols', 'Columns', [['1', '1'], ['2', '2'], ['3', '3'], ['4', '4']], String(R ? R.columns : 2));
   if (R && R.pkg === 'makeidx') { cols.disabled = true; cols.title = 'makeidx sets the index in two columns; imakeidx sets any number'; }
-  const n = (app.model.indexEntries || []).length;
-  p.append(row('Columns', cols), mk('div', 'pop-note', n ? n + ' entr' + (n === 1 ? 'y' : 'ies') + ' marked (References › Mark Entry). TeX runs makeindex for you.' : 'No entries yet: mark them with References › Mark Entry (Alt+Shift+X).'));
-  buttons(app, p, () => { const c = +cols.value; return () => app.runCommand('insert-index', { columns: c }, back(app)); });
+  const n = (app.model.indexEntries || []).filter((x) => !x.name).length;
+  // (R4: Word's Right align page numbers, with dots: a makeindex style of the project's own)
+  const main0 = R && R.mk ? R.mk.find((m) => !m.name) : null;
+  const right0 = !!(main0 && main0.ist && app.indexRightIn(main0.ist));
+  const right = check('ix-right', 'Right align page numbers, with dots', right0);
+  if (R && R.pkg === 'makeidx') { right.c.disabled = true; right.box.title = 'makeidx runs makeindex with no style of the document\'s own: imakeidx does'; }
+  p.append(row('Columns', cols), right.box, mk('div', 'pop-note', n ? n + ' entr' + (n === 1 ? 'y' : 'ies') + ' marked (References › Mark Entry). TeX runs makeindex for you.' : 'No entries yet: mark them with References › Mark Entry (Alt+Shift+X).'));
+  buttons(app, p, () => { const c = +cols.value, a = { columns: c }; if (right.c.checked !== right0) a.right = right.c.checked; return () => app.runCommand('insert-index', a, back(app)); });
   app.positionPop();
   cols.focus();
+}
+
+// ---- Mark Citation (R4: the Table of Authorities) -------------------------------------------------------
+export const TOA_CATEGORIES = ['Cases', 'Statutes', 'Other Authorities', 'Rules', 'Treatises', 'Regulations', 'Constitutional Provisions'];
+export function openMarkCitationDialog(app, at) {
+  keep(app);
+  const p = dialog(app, { title: 'Mark Citation', ...near(app, 'rc-mark-citation'), cls: 'pop-ps pop-refs' });
+  const sel = at && !at.c.collapsed && !at.c.ghost ? getSelection().toString().replace(/\s+/g, ' ').trim().slice(0, 300) : '';
+  const long = text('toa-long', sel, { placeholder: 'Smith v. Jones, 123 U.S. 456 (1990)' });
+  const short = text('toa-short', sel.split(',')[0].slice(0, 120));
+  const cats = [...TOA_CATEGORIES, ...app.toaCategories().filter((c) => !TOA_CATEGORIES.includes(c))];
+  const cat = select('toa-cat', 'Category', cats.map((c, i) => [String(i + 1), c]), '1');
+  p.append(row('Selected text', long), row('Category', cat), row('Short citation', short),
+    mk('div', 'pop-note', 'Each citation is an entry of a second index, \\index[toa]{…} (imakeidx), under its category; Insert Table of Authorities prints it.'));
+  const args = () => ({ long: long.value, short: short.value, category: cats[+cat.value - 1], rank: +cat.value });
+  const all = btn('Mark All', () => { const a = { ...args(), all: true }; app.closePop(true); app.runCommand('mark-citation', a, back(app)); }, 'Every place the short citation stands in the text');
+  buttons(app, p, () => { const a = args(); return () => app.runCommand('mark-citation', a, back(app)); }, 'Mark', [all]);
+  app.positionPop();
+  long.focus();
 }
 
 // ---- Footnote and Endnote ----------------------------------------------------------------------------
@@ -299,13 +356,20 @@ export function openNotesDialog(app) {
   const s0 = style.value, st0 = String(R.fn.start || 1), r0 = restart.value;
   const conv = select('fn-convert', 'Convert', [['', 'Leave notes as they are'], ['en', 'Convert all footnotes to endnotes'], ['fn', 'Convert all endnotes to footnotes']], '');
   const sec = mk('fieldset', 'ps-sec'); sec.append(mk('legend', '', 'Footnote layout'), row('Number format', style), row('Start at', start), row('Numbering', restart));
-  p.append(sec, row('Convert', conv));
+  // (R4) the endnotes' own format, where the document has endnotes (enotez's counter-format, or
+  // \theendnote for the endnotes package)
+  const en = R.en || { style: 'arabic' };
+  const hasEn = !!R.endnotes || app.noteMarks('en').length > 0;
+  const enStyle = select('en-format', 'Endnote number format', [...(en.style === 'custom' ? [['custom', 'This document\'s own']] : []), ['arabic', '1, 2, 3'], ['alph', 'a, b, c'], ['Alph', 'A, B, C'], ['roman', 'i, ii, iii'], ['Roman', 'I, II, III'], ['fnsymbol', '*, †, ‡']], en.style);
+  const e0 = enStyle.value;
+  if (hasEn) { const es = mk('fieldset', 'ps-sec'); es.append(mk('legend', '', 'Endnote layout'), row('Number format', enStyle)); p.append(sec, es, row('Convert', conv)); } else p.append(sec, row('Convert', conv));
   if (R.fn.style === 'custom') p.append(mk('div', 'pop-note', 'This document numbers its footnotes its own way (\\thefootnote): a format picked here replaces it.'));
   buttons(app, p, () => {
     const o = {};
     if (start.value.trim() !== st0) o.start = start.value;
     if (restart.value !== r0) o.restart = restart.value;
     if (style.value !== s0 && style.value !== 'custom') o.style = style.value;
+    if (hasEn && enStyle.value !== e0 && enStyle.value !== 'custom') o.enStyle = enStyle.value;
     if (conv.value) o.convert = conv.value;
     if (!Object.keys(o).length) return;
     return () => app.runCommand('footnote-options', o, back(app));
