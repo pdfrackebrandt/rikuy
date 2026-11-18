@@ -8,9 +8,9 @@ import { isBalanced } from './parser.js';
 import { safeUrl } from './wordast.js';
 import { scriptNeeds, scriptLines, scriptSetup, otherDirection, INDIC, MORE } from './scripts.js';
 import { pageDocx, pageLatex, relsMap } from './wordpage.js';
-import { endnotesDocx, markEndnotes, endnotesTex } from './wordnotes.js';
 import { wrapMulticols } from './pagesrc.js';
 import { docSpacing } from './parasrc.js';
+import { tableExtras, applyTableExtras } from './wordtable.js';
 
 // pandoc's messages worth telling the user: the ones that say something was lost
 const said = (ws) => (ws || []).filter((w) => w.verbosity && w.verbosity !== 'INFO').map((w) => w.pretty || w.type).slice(0, 20);
@@ -32,12 +32,13 @@ export function exportDocx(P, req) {
   if (!r.files['out.docx']) throw new Error('pandoc wrote no Word file: ' + (r.stderr || '').trim().slice(0, 300));
   const mainTex = (req.project.files.find(([f]) => f === req.project.main) || [])[1];
   const made = styled(r.files['out.docx'], !!(req.doc.meta && req.doc.meta.dir && req.doc.meta.dir.c === 'rtl'), typeof mainTex === 'string' ? { ...scriptSetup(mainTex), mainTex } : {});
-  // the page's set up: paper, margins, columns, headers and footers (src/wordpage.js)
-  let parts = req.page ? pageDocx(unzip(made), req.page) : null;
-  // (R4: the notes that are endnotes made Word's own, src/wordnotes.js)
-  const en = endnotesDocx(parts || unzip(made));
-  if (en) parts = en;
-  const docx = parts ? zip(parts) : made;
+  // (R3) a table's shading, turned words and alt text, which pandoc's table has no field for
+  const tx = tableExtras(req.doc);
+  const made2 = tx.length ? tablesOut(made, tx) : made;
+  // the page's set up: paper, margins, columns, headers and footers (src/wordpage.js); the bullets
+  // the page drew (R2)
+  const bul = req.bullets && req.bullets.some(Boolean);
+  const docx = req.page || bul ? zip(bulletDocx(req.page ? pageDocx(unzip(made2), req.page) : unzip(made2), bul ? req.bullets : null)) : made2;
   // what Word got, block by block, lined up with what the page showed
   const X = extract(unzip(docx));
   const anchors = [];
@@ -71,6 +72,53 @@ export function exportDocx(P, req) {
   const out = addRikuyPart(docx, data);
   // json: what the worker hashes into the export's mark (src/wordworker.js)
   return { docx: out, warnings: said(r.warnings), lost, unread, size: out.length, json: JSON.stringify(data) };
+}
+
+// (R2) Word's bullets as the page drew them. pandoc's AST has no bullet: it gives each list its own
+// w:num, in the order it starts them, on one abstract list of Symbol and Wingdings bullets by level.
+// bullets: wordast's record of every bulleted and numbered list in that order ({ glyph } or null).
+// A list whose bullet the page drew gets a copy of its abstract list with that level's bullet the
+// page's character, in the document's font. Where the lists do not count the same on both sides,
+// nothing changes.
+export function bulletDocx(parts, bullets) {
+  const np = 'word/numbering.xml';
+  if (!bullets || !parts.has(np)) return parts;
+  let nu = text(parts.get(np));
+  const used = new Map();
+  for (const name of ['word/document.xml', 'word/footnotes.xml', 'word/endnotes.xml']) {
+    if (!parts.has(name)) continue;
+    for (const m of text(parts.get(name)).matchAll(/<w:numPr>\s*<w:ilvl w:val="(\d{1,2})"\s*\/>\s*<w:numId w:val="(\d{1,9})"\s*\/>/g)) if (!used.has(+m[2])) used.set(+m[2], +m[1]);
+  }
+  const ids = [...used.keys()].sort((a, b) => a - b);
+  if (ids.length !== bullets.length) return parts;
+  const made = new Map(), add = [];
+  let next = 7000;
+  const esc = (t) => t.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  bullets.forEach((b, k) => {
+    if (!b || !b.glyph || b.glyph.length > 4) return;
+    const id = ids[k], lvl = used.get(id);
+    const nm = new RegExp('<w:num w:numId="' + id + '"><w:abstractNumId w:val="(\\d{1,9})" \\/>').exec(nu);
+    if (!nm) return;
+    const key = nm[1] + '|' + lvl + '|' + b.glyph;
+    if (!made.has(key)) {
+      const am = new RegExp('<w:abstractNum w:abstractNumId="' + nm[1] + '">(?:(?!<\\/w:abstractNum>)[\\s\\S])*<\\/w:abstractNum>').exec(nu);
+      if (!am) return;
+      const nid = next++;
+      let x = am[0].replace(/w:abstractNumId="\d+"/, 'w:abstractNumId="' + nid + '"').replace(/<w:nsid w:val="[0-9A-Fa-f]+" \/>/, '<w:nsid w:val="' + (0xB000 + nid).toString(16).toUpperCase().padStart(8, '0') + '" />');
+      x = x.replace(new RegExp('(<w:lvl w:ilvl="' + lvl + '"[^>]*>)((?:(?!<\\/w:lvl>)[\\s\\S])*)(<\\/w:lvl>)'), (all, a, body, z) =>
+        /<w:numFmt w:val="bullet" \/>/.test(body) ? a + body.replace(/<w:lvlText w:val="[^"]*" \/>/, '<w:lvlText w:val="' + esc(b.glyph) + '" />').replace(/<w:rPr>(?:(?!<\/w:rPr>)[\s\S])*<\/w:rPr>/, '') + z : all);
+      made.set(key, nid);
+      add.push(x);
+    }
+    nu = nu.replace(nm[0], '<w:num w:numId="' + id + '"><w:abstractNumId w:val="' + made.get(key) + '" />');
+  });
+  if (!add.length) return parts;
+  const at = nu.indexOf('<w:num ');
+  if (at < 0) return parts;
+  nu = nu.slice(0, at) + add.join('') + nu.slice(at);
+  const out = new Map(parts);
+  out.set(np, new TextEncoder().encode(nu));
+  return out;
 }
 
 // The styles Rikuy names in the tree (src/wordast.js: Colour C00000, Shade FFFF00, Highlight,
@@ -157,6 +205,14 @@ function runProps(rpr, x) {
   return rpr + '<w:lang ' + lang + '="' + x.lang + '" />';
 }
 const attrSet = (tag, name, v) => (new RegExp(' ' + name + '="[^"]*"').test(tag) ? tag.replace(new RegExp(' ' + name + '="[^"]*"'), ' ' + name + '="' + v + '"') : tag.replace(/\s*\/>$/, ' ' + name + '="' + v + '" />'));
+function tablesOut(docx, extras) {
+  const parts = unzip(docx), dp = 'word/document.xml';
+  if (!parts.has(dp)) return docx;
+  const was = text(parts.get(dp)), now = applyTableExtras(was, extras);
+  if (now === was) return docx;
+  parts.set(dp, new TextEncoder().encode(now));
+  return zip(parts);
+}
 function styled(docx, rtl, have) {
   const parts = unzip(docx);
   const p = 'word/styles.xml';
@@ -889,6 +945,10 @@ function unmark(tex, info, N, S) {
     });
     tex = tex.split('\\end{' + env + '}\n\n\\begin{' + env + '}\n').join('\n');
   }
+  // the highlighter's colour (docx.js marks a run highlighted in a colour other than yellow):
+  // \hl[green]{..}, as Text Highlight Color writes it; Word's dark ones as xcolor's mix
+  tex = tex.replace(/\\hl\{((?:\uE005[\uE010-\uE01F]{6}\uE001)?)\uE005\uE010([\uE010-\uE01F]{6})\uE001/g, (s, c, h) => { const n = Object.hasOwn(HL_XC, decode(h)) ? HL_XC[decode(h)] : null; return n ? '\\hl[' + n + ']{' + c : '\\hl{' + c; });
+  tex = tex.replace(/\uE005\uE010[\uE010-\uE01F]{6}\uE001/g, '');
   // colour: one colour over most of the text is the document's ink, not a mark of anything
   const base = ink(info);
   const OPEN = '\uE005([\uE010-\uE01F]{6})\uE001';
@@ -964,6 +1024,10 @@ function paraMarks(tex, info, N) {
   return out.join('\n\n');
 }
 
+// Word's highlighter colours as the names \hl takes (xcolor's; its mix of red, green and blue for
+// the three dark ones xcolor has no name for), which the page and Word export read back
+const HL_XC = { '00FF00': 'green', '00FFFF': 'cyan', FF00FF: 'magenta', '0000FF': 'blue', FF0000: 'red', '000080': 'rgb,255:red,0;green,0;blue,128', '008080': 'teal',
+  '008000': 'rgb,255:red,0;green,128;blue,0', '800080': 'violet', '800000': 'rgb,255:red,128;green,0;blue,0', '808000': 'olive', '808080': 'gray', C0C0C0: 'lightgray', '000000': 'black', FFFFFF: 'white' };
 const ink = (info) => new Set([...info.colors].filter(([, n]) => n / (info.chars || 1) > 0.5).map(([c]) => c));
 
 // Word's comments, each under the line of the text it is on, as Rikuy writes comments
@@ -1032,8 +1096,6 @@ function geometry(pg, PG = {}) {
 export function docxToLatex(P, bytes, name) {
   // the zip pandoc reads is the one rebuilt from what passed the checks
   const parts = unzip(bytes);
-  // (R4: Word's endnotes marked, so they come back as \endnote and not as footnotes)
-  const ens = markEndnotes(parts);
   const opts = { from: 'docx+citations', to: 'json', 'input-files': ['in.docx'], 'extract-media': 'media', 'track-changes': 'accept' };
   let info = null, r = null;
   try {
@@ -1045,7 +1107,6 @@ export function docxToLatex(P, bytes, name) {
   if (!r || !r.stdout) r = P.convert(opts, null, { 'in.docx': zip(parts) });
   if (!r.stdout) throw new Error('The file is damaged: its text (word/document.xml) is cut short or not valid, so nothing in it can be read. Open it in Word, which offers to repair it, save it again and open that file here. (pandoc: ' + (r.stderr || '').trim().slice(0, 200) + ')');
   const doc = JSON.parse(r.stdout);
-  const EN = ens ? endnotesTex(doc) : null;
   const media = {};
   const renamed = new Map();
   let k = 0, total = 0;
@@ -1167,14 +1228,13 @@ export function docxToLatex(P, bytes, name) {
   if (used(/\\real\{/)) pre.push('\\usepackage{calc}');
   if (used(/\\multirow\b/)) pre.push('\\usepackage{multirow}');
   if (used(/\\(textcolor|hl)\b/)) pre.push('\\usepackage{xcolor}');
-  if (used(/\\(sout|uline|hl)\{/)) pre.push('\\usepackage[normalem]{ulem}');
+  if (used(/\\(sout|uline)\{|\\hl[{[]/)) pre.push('\\usepackage[normalem]{ulem}');
   // Word's highlighter: pandoc writes soul's \hl, which stops at a formula inside it and, before
   // 2023, at an accented letter; this one (ulem's) takes both and breaks across lines
   // (with a colour, [yellow] unless one is named: the line Rikuy's highlighter writes, src/charfmt.js)
-  if (used(/\\hl\{/)) pre.push('\\DeclareRobustCommand{\\hl}[1][yellow]{\\bgroup\\markoverwith{\\textcolor{#1}{\\rule[-.5ex]{2pt}{2.5ex}}}\\ULon}');
+  if (used(/\\hl[{[]/)) pre.push('\\DeclareRobustCommand{\\hl}[1][yellow]{\\bgroup\\markoverwith{\\textcolor{#1}{\\rule[-.5ex]{2pt}{2.5ex}}}\\ULon}');
   if (used(/\\(cite[tp]?|citeauthor|citeyear)\{/) || bib) pre.push('\\usepackage[authoryear,round]{natbib}');
   if (used(/\\(texttt|verb)|\\begin\{verbatim\}/)) { /* the class has them */ }
-  if (used(/\\endnote\{/)) pre.push('\\usepackage{enotez}');
   // (R1) a foreign file's paragraph settings, its parts in columns or on landscape pages, and its
   // own line spacing (src/docx.js premark marks them)
   const spaced = info && info.spacing && info.spacing !== 100 ? info.spacing : 0;
@@ -1200,7 +1260,6 @@ export function docxToLatex(P, bytes, name) {
   if (abstract) lines.push('', '\\begin{abstract}', abstract, '\\end{abstract}');
   lines.push('', many ? '\\begin{multicols}{' + many + '}\n' + tex.trim() + '\n\\end{multicols}' : tex.trim(), '');
   if (bib) lines.push('\\bibliographystyle{plainnat}', '\\bibliography{references}', '');
-  if (used(/\\endnote\{/)) lines.push('\\printendnotes', '');
   lines.push('\\end{document}', '');
   let out = comments(lines.join('\n'), info, N);
   // ---- what the user is told: what came differently, and what did not come at all
@@ -1238,7 +1297,6 @@ export function docxToLatex(P, bytes, name) {
   if (N.comments) notes.push(s(N.comments, 'Word comment') + ' came in as ' + (N.comments === 1 ? 'a comment' : 'comments') + ' under ' + (N.comments === 1 ? 'its' : 'their') + ' text.');
   if (info && info.tracked) notes.push(s(info.tracked, 'tracked change') + ' in the file ' + (info.tracked === 1 ? 'was' : 'were') + ' accepted.');
   if (info && info.endnotes) notes.push('Endnotes are footnotes here.');
-  if (EN && EN.foot) notes.push(s(EN.foot, 'endnote') + ' with a table, a list or another block ' + (EN.foot === 1 ? 'is a footnote' : 'are footnotes') + ' here, every block kept: an endnote holds paragraphs alone.');
   if (N.toc) notes.push('The table of contents is LaTeX\'s own now.');
   if (N.headnums) notes.push('The section numbers typed in ' + s(N.headnums, 'heading') + ' are LaTeX\'s own now.');
   if (N.numbered) notes.push(s(N.numbered, 'equation') + ' typed with a number ' + (N.numbered === 1 ? 'is' : 'are') + ' numbered by LaTeX.');
