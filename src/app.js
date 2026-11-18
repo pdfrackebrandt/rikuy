@@ -552,7 +552,9 @@ class App {
     // half as large again, and a line is read without moving the page.
     // (prefs.phone: 'sheet' once the whole sheet was chosen with the zoom button there)
     this.textFit = z === 'fit' && this.prefs.phone !== 'sheet' && window.innerWidth <= 520;
-    if (this.textFit) px = Math.min(PX_PER_PT * 1.25, Math.max(avail / P.pw, (this.desk.clientWidth - 12) / P.tw));
+    // (Web Layout on a phone: the text at its actual size, the lines as wide as the screen)
+    if (this.textFit && document.body.classList.contains('pg-web')) px = PX_PER_PT;
+    else if (this.textFit) px = Math.min(PX_PER_PT * 1.25, Math.max(avail / P.pw, (this.desk.clientWidth - 12) / P.tw));
     else if (z === 'fit') px = Math.min(PX_PER_PT * 1.25, avail / P.pw);
     else px = PX_PER_PT * z;
     px = Math.round(px * 1000) / 1000;
@@ -631,7 +633,8 @@ class App {
     // (the sheet of the PDF TeX made of this set up, where there is one: src/layout.js sheetSize)
     const ps = this.pdfSheet, mk = model.opts.page && model.opts.page.mediaKey;
     model.opts.pdfSheet = ps && mk && ps.key === mk ? ps : null;
-    const g = geometry(model.opts);
+    // (View › Web Layout: the text as wide as the window, no pages: src/cmd/view.js)
+    const g = this.viewGeometry(geometry(model.opts));
     // (whose fonts draw the Chinese characters is part of it: other fonts, other widths)
     const cjk = this.cjkOrder();
     const gsig = JSON.stringify(g) + '|' + this.px + '|' + model.opts.spread + '|' + model.opts.parindent + '|' + model.opts.pt + '|' + model.opts.font + '|' + cjk;
@@ -648,6 +651,8 @@ class App {
     // (headers, footers, line numbers, the watermark: drawn from the model's page set up, src/layout.js)
     this.layout.page = model.opts.page || {};
     this.layout.opts = model.opts;
+    // (the text under a collapsed heading is left out of the page's view: src/cmd/find.js)
+    this.foldFilter(items);
     this.layout.measure(items, fns);
     const plan = this.layout.plan(items);
     this.layout.apply(plan);
@@ -948,6 +953,8 @@ class App {
 
   restoreCaret(c, quiet) {
     if (!c || c.f == null) return;
+    // (a place under a collapsed heading: it opens first, src/cmd/find.js)
+    this.foldOpenAt(c.f, c.selA != null ? c.selA : c.p);
     const sel = getSelection();
     if (c.selA != null) {
       const x = this.index.find(c.f, c.selA, 1), y = this.index.find(c.f, c.selB, -1);

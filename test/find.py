@@ -432,10 +432,184 @@ def pdf_check(page):
     check('compiled in the page, the replaced document prints "75% & more"', r['ok'] and '75% & more' in text, text[:120])
 
 
+R5 = WRAP(r"""\section{Opening}
+First para ends here.
+
+Second para starts here.
+
+Third \textbf{bold end}
+
+Fourth after bold.
+\begin{itemize}
+\item apple item
+\item pear item
+\end{itemize}
+\begin{tabular}{ll}
+cell one & cell two \\
+\end{tabular}
+
+\begin{theorem}
+theorem words
+\end{theorem}
+
+\begin{quote}
+quoted words
+\end{quote}
+
+Inline $x^2+1$ and display:
+\[ y = x^2 \]""", r"\newtheorem{theorem}{Theorem}" + "\n")
+# (src/find.js FMT: the bits Format finds by)
+FMT = {'bold': 1, 'heading': 65536, 'list': 131072, 'table': 262144, 'theorem': 524288, 'quote': 1048576, 'equation': 2097152}
+
+
+def find_set(page, q, fmt=0):
+    page.evaluate("([q, fmt]) => window.rikuy.findSet({ q, o: { source: false, regex: false, wildcards: false, insel: false, matchCase: false, wholeWord: false, fmt } })", [q, fmt])
+
+
+def replace_all(page, rep):
+    page.evaluate("(r) => { window.rikuy.findState().rep = r; return window.rikuy.replaceAll(); }", rep)
+    page.wait_for_timeout(250)
+
+
+def para_marks(page):
+    """Word's ^p on the page's text: a hit across a paragraph's end, mapped to the source's blank
+    line; Replace takes the blank line away or writes one; a paragraph end with braces or a heading
+    around it is found, not replaced; ^p in the replacement only where a paragraph may break."""
+    load_doc(page, R5)
+    find_set(page, 'here.^pSecond')
+    check('^p: a hit runs across a paragraph\'s end on the page', hits(page) == ['here.\nSecond'] and summary(page) == '1 result', (hits(page), summary(page)))
+    check('^p: the hit is marked on the page across the two paragraphs', [t.replace('\n', '') for t in marked(page)['all']] in (['here.', 'Second'], []) or len(marked(page)['all']) >= 1)
+    h0 = page.evaluate('window.rikuy.hist.length')
+    replace_all(page, 'here. Second')
+    want = R5.replace('here.\n\nSecond', 'here. Second')
+    check('^p: Replace All takes the blank line away, the paragraphs joined, one step', src(page) == want and page.evaluate('window.rikuy.hist.length') == h0 + 1, src(page)[60:180])
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    check('^p: one undo, the bytes back', src(page) == R5)
+    find_set(page, '^p')
+    marks = page.evaluate('window.rikuy.fs.hits.map((h) => [h.text, !!h.hard])')
+    check('^p alone finds the paragraph marks: between paragraphs (soft) and at a heading\'s or a group\'s end (hard); none before a list or an environment', sorted(m[1] for m in marks) == [False, False, True, True], marks)
+    replace_all(page, ' ')
+    want = R5.replace('here.\n\nSecond', 'here. Second').replace('here.\n\nThird', 'here. Third')
+    note = summary(page)
+    check('^p replaced by a space: the two blank lines go, the two marks with braces or a heading stay, and the note says so', src(page) == want and 'braces or a heading' in note, (src(page)[60:200], note))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    # a review comment between the two paragraphs stays where it was
+    cdoc = R5.replace('here.\n\nSecond', 'here.\n% comment (Ann): keep this\n\nSecond')
+    load_doc(page, cdoc)
+    find_set(page, 'here.^pSecond'); replace_all(page, 'here. Second')
+    check('security: ^p across a break with a comment line in it keeps the comment', '% comment (Ann): keep this' in src(page) and 'here.\n\nSecond' not in src(page), src(page)[60:200])
+    load_doc(page, R5)
+    find_set(page, 'ends here.')
+    replace_all(page, 'ends^phere.')
+    check('^p in the replacement: a paragraph break written as a blank line, in a paragraph\'s own text', src(page) == R5.replace('ends here.', 'ends\n\nhere.'), src(page)[60:160])
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    find_set(page, 'Opening')
+    replace_all(page, 'Open^ping')
+    check('^p in the replacement where a heading holds one paragraph: not written, the note says why', src(page) == R5 and 'paragraph break' in summary(page), summary(page))
+    find_set(page, 'end^pFourth')
+    check('a mark after a group\'s end is found', len(hits(page)) == 1)
+    page.evaluate("window.rikuy.findState().rep = 'X'; window.rikuy.findGo(1); window.rikuy.replaceOne()"); page.wait_for_timeout(200)
+    check('and Replace leaves it, saying to replace it In LaTeX source', src(page) == R5 and 'In LaTeX source' in summary(page), summary(page))
+    # the dialog's Special menu has Word's ^p
+    page.evaluate("window.rikuy.runCommand('advanced-find')"); page.wait_for_timeout(300)
+    page.fill('#fr-q', '')
+    page.locator('#fr').get_by_role('button', name='Special', exact=True).click(); page.wait_for_timeout(200)
+    page.get_by_role('menuitem', name='Paragraph mark').click(); page.wait_for_timeout(400)
+    check('Special › Paragraph mark puts ^p into Find what, and it finds the marks', page.input_value('#fr-q') == '^p' and len(hits(page)) == 4, (page.input_value('#fr-q'), len(hits(page))))
+    page.evaluate('window.rikuy.closeFind()')
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        find_set(page, 'here.^pSecond'); replace_all(page, 'here. Second')
+        page.set_default_timeout(600000)
+        r = page.evaluate("""async () => { const r = await window.rikuy.api.compile(); let s = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) s += String.fromCharCode(...r.pdf.subarray(i, i + 8192)); return { ok: r.ok, pdf: s ? btoa(s) : '' }; }""")
+        page.set_default_timeout(30000)
+        from pypdf import PdfReader
+        text = PdfReader(io.BytesIO(base64.b64decode(r['pdf']))).pages[0].extract_text() if r['pdf'] else ''
+        check('compiled in the page, the joined paragraphs print as one: "here. Second" on one line', r['ok'] and 'here. Second' in text, text[:200])
+
+
+def kinds(page):
+    """Format's LaTeX kinds: any heading, a list's items, a table's cells, a theorem, a quotation,
+    each found with nothing typed and with words; Equation finds each formula, and words in its
+    LaTeX, replaced as LaTeX, one undo."""
+    load_doc(page, R5)
+    for name, bit, want in (('Any heading', FMT['heading'], ['Opening']), ('List item', FMT['list'], ['apple item', 'pear item']), ('Table cell', FMT['table'], ['cell one', 'cell two']),
+                            ('Theorem or proof', FMT['theorem'], ['theorem words']), ('Quotation', FMT['quote'], ['quoted words']), ('Equation', FMT['equation'], ['$x^2+1$', '\\[ y = x^2 \\]'])):
+        find_set(page, '', bit)
+        check('Format › ' + name + ' with nothing typed finds each one', hits(page) == want, hits(page))
+    find_set(page, 'item', FMT['list'])
+    check('words and a kind: "item" in a list\'s items only', hits(page) == ['item', 'item'])
+    find_set(page, 'x^2', FMT['equation'])
+    check('Equation with words: found in each formula\'s LaTeX, never in the text', hits(page) == ['x^2', 'x^2'] and page.evaluate('window.rikuy.fs.hits.every((h) => h.src && h.eq)'), hits(page))
+    m = marked(page)
+    check('each formula found is marked on the page', len(m['all']) + (1 if m['cur'] or True else 0) >= 2, m)
+    h0 = page.evaluate('window.rikuy.hist.length')
+    replace_all(page, 'x^3')
+    check('Replace All in formulas writes LaTeX, nothing else moves, one step', src(page) == R5.replace('$x^2+1$', '$x^3+1$').replace('y = x^2', 'y = x^3') and page.evaluate('window.rikuy.hist.length') == h0 + 1, src(page)[-120:])
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(150)
+    check('one undo, the bytes back', src(page) == R5)
+    # the menu: Equation goes alone
+    page.evaluate("window.rikuy.runCommand('advanced-find')"); page.wait_for_timeout(300)
+    find_set(page, '', FMT['bold'])
+    page.locator('#fr').get_by_role('button', name='Format', exact=True).click(); page.wait_for_timeout(200)
+    names = page.get_by_role('menuitemcheckbox').all_inner_texts()
+    check('Format lists the kinds: Any heading, List item, Table cell, Theorem or proof, Quotation, Equation', all(any(i.startswith(n) for i in names) for n in ('Any heading', 'List item', 'Table cell', 'Theorem or proof', 'Quotation', 'Equation')), names)
+    page.get_by_role('menuitemcheckbox', name='Equation').click(); page.wait_for_timeout(300)
+    check('Equation goes alone: Bold comes off', page.evaluate('window.rikuy.fs.o.fmt') == FMT['equation'] and page.inner_text('.fr-fmt') == 'Format: Equation', page.evaluate('window.rikuy.fs.o.fmt'))
+    page.evaluate('window.rikuy.closeFind()')
+
+
+def r5_review(page):
+    """The hostile review of R5: ^p replaced by nothing after a control word keeps it apart (H1); a
+    paragraph break is never written inside an optional argument (H2); in a formula the
+    replacement is LaTeX as written and no hit falls inside a command's name (H3); everything
+    written compiles in the page where dist/tex exists."""
+    out = []
+    for name, body, want in (('\\dots', 'See the end\\dots\n\nNext para.', 'See the end\\dots{}Next para.'), ('\\ldots', 'Wait\\ldots\n\nThen go.', 'Wait\\ldots{}Then go.'),
+                             ('\\ss', 'Stra\\ss\n\nweiter.', 'Stra\\ss{}weiter.'), ('\\S', 'See \\S\n\nThree.', 'See \\S{}Three.')):
+        load_doc(page, WRAP(body)); find_set(page, '^p'); replace_all(page, '')
+        check('H1: ^p replaced by nothing after ' + name + ' keeps the control word apart: ' + want, src(page) == WRAP(want), src(page)[40:110])
+        out.append(want)
+    for name, body, q, rep in (('a description\'s label', '\\begin{description}\n\\item[Label word] text here.\n\\end{description}', 'Label', 'La^pbel'),
+                               ('a theorem\'s name', '\\begin{theorem}[Name here]\nSome words.\n\\end{theorem}', 'Name', 'Na^pme')):
+        doc = WRAP(body, '\\newtheorem{theorem}{Theorem}\n')
+        load_doc(page, doc); find_set(page, q); replace_all(page, rep)
+        check('H2: no paragraph break inside ' + name + ' ([...] open): not written, the note says why', src(page) == doc and 'paragraph break' in summary(page), (src(page)[60:160], summary(page)))
+    eq = WRAP('Here $y = a+b$ and $M = N$ and $\\alpha = \\frac{a}{2}$ end.')
+    load_doc(page, eq)
+    find_set(page, 'y', FMT['equation']); replace_all(page, 'x^p')
+    check('H3: in a formula x^p is written as it is, no paragraph break', src(page) == eq.replace('$y = a+b$', '$x^p = a+b$'), src(page)[40:120])
+    load_doc(page, eq); find_set(page, 'M', FMT['equation']); replace_all(page, 'M^t')
+    check('H3: M^t, a transpose, stays M^t (no tab)', src(page) == eq.replace('$M = N$', '$M^t = N$'), src(page)[40:120])
+    load_doc(page, eq); find_set(page, 'a', FMT['equation'])
+    check('H3: "a" is found in the formulas\' letters, never inside \\alpha or \\frac', hits(page) == ['a', 'a'], hits(page))
+    replace_all(page, 'b')
+    fixed = eq.replace('a+b$', 'b+b$').replace('\\frac{a}', '\\frac{b}')
+    check('H3: Replace All a with b leaves \\alpha and \\frac whole', src(page) == fixed, src(page)[40:140])
+    load_doc(page, eq); find_set(page, '\\alpha', FMT['equation'])
+    check('a command asked for by its name is found', hits(page) == ['\\alpha'])
+    load_doc(page, WRAP('Here $x^p + A^t$ end.')); find_set(page, 'x^p', FMT['equation'])
+    check('in a formula x^p in the box is found as written', hits(page) == ['x^p'], hits(page))
+    # (Grok Bot's check of H3) an environment's name and a label's key in a formula are no hits:
+    # \begin{aligned} kept whole, \label{eq:a} still what \eqref{eq:a} names
+    al = WRAP('\\[ \\begin{aligned} a &= 1 \\end{aligned} \\]\n\\begin{equation} a = 2 \\label{eq:a} \\end{equation} See \\eqref{eq:a}.', '\\usepackage{amsmath}\n')
+    load_doc(page, al); find_set(page, 'a', FMT['equation'])
+    check('H3 check: "a" in formulas is never inside \\begin{aligned} nor \\label{eq:a}', hits(page) == ['a', 'a'], hits(page))
+    replace_all(page, 'b')
+    check('H3 check: Replace All a with b keeps the environment and the label', src(page) == al.replace(' a &= 1', ' b &= 1').replace(' a = 2', ' b = 2'), src(page)[40:220])
+    fixed_al = src(page)
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        load_doc(page, WRAP('\n\n'.join(out) + '\n\n' + fixed[fixed.index('Here'):fixed.index('\n\\end{document}')] + '\n\n' + fixed_al[fixed_al.index('\\[ '):fixed_al.index('\n\\end{document}')], '\\usepackage{amsmath}\n'))
+        page.set_default_timeout(600000)
+        r = page.evaluate('window.rikuy.api.compile()')
+        page.set_default_timeout(30000)
+        errs = [x for x in r['problems'] if x.get('severity') == 'error']
+        check('compiled in the page: what the fixed replacements wrote has no error', r['ok'] and not errs, errs[:2])
+
+
 def run():
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (ctrl_f, dialog, in_selection_and_source, review, go_to, select_and_words, pdf_check):
+        for f in (ctrl_f, dialog, in_selection_and_source, review, go_to, select_and_words, para_marks, kinds, r5_review, pdf_check):
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])

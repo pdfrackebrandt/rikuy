@@ -294,6 +294,10 @@ export function unitOf(src, s, e, lo = 0, hi = src.length, vis = null, whole = n
     if (p.t !== 'env') { inArg = true; break; }
     // (a comment after \begin, or before \end, is no text: \begin{center}% c)
     const n = p.n, bs = skipBlank(src, n.be, n.es), be = skipWsBack(src, n.es, n.be);
+    // (R1's landscape turns its pages: what goes around its paragraph goes inside it, never around
+    // the landscape environment, whose \clearpage and turned text block an adjustwidth or a center
+    // outside would not hold)
+    if (/^landscape\*?$/.test(n.name)) { container = n; break; }
     const xs = skipBlank(src, L.xs, L.xe);
     if (bs === xs && be === L.xe) {
       const w = W(src, n);

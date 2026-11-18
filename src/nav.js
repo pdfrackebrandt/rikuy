@@ -714,6 +714,8 @@ export const nav = {
 
   // Show a source position on the page (and in the source pane if it is open).
   goTo(f, p, heading) {
+    // (a place a collapsed heading hides opens first)
+    this.foldOpenAt(f, p);
     let el = heading ? this.headingEl(f, p) : null;
     if (!el) {
       const r = this.index.find(f, p, 1);

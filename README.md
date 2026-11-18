@@ -67,13 +67,16 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
 - **Page, LaTeX, PDF: one view at a time, at the same place.** The status bar switches between
   the typeset page, the source and TeX's PDF across the window (SyncTeX both ways); Show LaTeX
   (Shift+F9) turns one paragraph or equation into its source where it stands, as Word's Linear.
-  View has Read Mode, Draft, Side to Side, Multiple pages, Dark page and Focus; File has
-  templates, recent documents, properties, an accessibility check and Export as HTML, Markdown,
+  View has Read Mode, Web Layout, Draft, the rulers (indents, first line and margins dragged),
+  Side to Side, Multiple pages, Dark page and Focus; File has templates, recent documents (open,
+  rename, remove), properties, an accessibility check and Export as HTML, Markdown,
   OpenDocument, RTF, EPUB; Help opens Learn Rikuy, a document with a live graph to play with.
 - **Find, Replace, Go To and the outline, as in Word.** Ctrl+F searches the text the page shows
   (50% finds `\%`), every hit marked and listed with its context in the Navigation pane; Ctrl+H
   replaces through the same escaping as typing, Replace All as one undo, with Word's wildcards,
-  regular expressions, a format, or in the LaTeX source itself; Ctrl+G goes to a page, heading,
+  regular expressions, ^p across paragraphs, a format or LaTeX's kinds (headings, lists, tables,
+  theorems, quotations, equations), or in the LaTeX source itself; a heading's text collapses on
+  the page with Word's triangle; Ctrl+G goes to a page, heading,
   footnote, equation, figure, table, comment or label. The Navigation pane has the headings
   (drag one to move its section), thumbnails of the pages and the results; Alt+Shift and the
   arrows promote, demote and move headings with their sections, and paragraphs.

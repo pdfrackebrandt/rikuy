@@ -10,8 +10,8 @@ import { FORMATS, FMT } from '../find.js';
 
 const OPTS = [['matchCase', 'Match case'], ['wholeWord', 'Find whole words only'], ['wildcards', 'Use wildcards'], ['regex', 'Use regular expressions'], ['source', 'In LaTeX source'], ['insel', 'In selection']];
 const WHAT = [['page', 'Page'], ['section', 'Section'], ['footnote', 'Footnote'], ['equation', 'Equation'], ['figure', 'Figure'], ['table', 'Table'], ['comment', 'Comment'], ['label', 'Label']];
-const SPECIAL = [['^?', 'Any character'], ['^#', 'Any digit'], ['^$', 'Any letter'], ['^w', 'White space'], ['^s', 'Nonbreaking space'], ['^=', 'En dash'], ['^+', 'Em dash'], ['^^', 'Caret character'], ['^&', 'Find what text (in Replace with)']];
-const WILD = [['?', 'Any character'], ['*', 'Any run of characters'], ['@', 'One or more of the one before'], ['{2,4}', 'From 2 to 4 of the one before'], ['[a-z]', 'One of these characters'], ['[!a-z]', 'Not one of these'], ['<', 'Beginning of a word'], ['>', 'End of a word'], ['()', 'A group, \\1 in Replace with']];
+const SPECIAL = [['^p', 'Paragraph mark'], ['^?', 'Any character'], ['^#', 'Any digit'], ['^$', 'Any letter'], ['^w', 'White space'], ['^s', 'Nonbreaking space'], ['^=', 'En dash'], ['^+', 'Em dash'], ['^^', 'Caret character'], ['^&', 'Find what text (in Replace with)']];
+const WILD = [['^p', 'Paragraph mark'], ['?', 'Any character'], ['*', 'Any run of characters'], ['@', 'One or more of the one before'], ['{2,4}', 'From 2 to 4 of the one before'], ['[a-z]', 'One of these characters'], ['[!a-z]', 'Not one of these'], ['<', 'Beginning of a word'], ['>', 'End of a word'], ['()', 'A group, \\1 in Replace with']];
 
 function el(tag, cls, text) { return mk(tag, cls, text); }
 function field(id, label, type = 'text') {
@@ -65,7 +65,7 @@ function build(app) {
     opts.append(l); O[k] = c;
   }
   const row = el('div', 'fr-row');
-  const bFmt = button('Format', 'ghost sm fr-menu', 'Find text with this formatting: bold, italic, a heading level, a footnote');
+  const bFmt = button('Format', 'ghost sm fr-menu', 'Find text with this formatting or of this kind: bold, italic, a heading, a footnote, a list, a table, a theorem, a quotation, an equation');
   const bSpec = button('Special', 'ghost sm fr-menu', 'Word\'s codes: any character, any digit, white space; with wildcards their signs');
   const bNoFmt = button('No formatting', 'ghost sm', 'Find text whatever its formatting');
   for (const b of [bFmt, bSpec]) { b.setAttribute('aria-haspopup', 'menu'); b.setAttribute('aria-expanded', 'false'); b.insertAdjacentHTML('beforeend', '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 8l4 4 4-4"/></svg>'); }
@@ -147,7 +147,17 @@ function build(app) {
   bNoFmt.addEventListener('click', () => app.findSet({ o: { fmt: 0 } }));
   bFmt.addEventListener('click', () => {
     const fs = app.findState();
-    const items = FORMATS.map((f) => ({ name: f.name, title: f.cmd, checked: !!(fs.o.fmt & FMT[f.id]), run: () => { app.findSet({ o: { fmt: fs.o.fmt ^ FMT[f.id] } }); q.i.focus(); } }));
+    // (the words' own formatting, then the headings and notes, then LaTeX's kinds of text; Equation
+    // finds formulas, in their LaTeX, and goes with none of the others)
+    const items = [];
+    for (const f of FORMATS) {
+      if (f.id === 'chapter' || f.id === 'heading') items.push(null);
+      items.push({ name: f.name, title: f.cmd, checked: !!(fs.o.fmt & FMT[f.id]), run: () => {
+        let v = fs.o.fmt ^ FMT[f.id];
+        if (f.id === 'equation') v &= FMT.equation; else v &= ~FMT.equation;
+        app.findSet({ o: { fmt: v } }); q.i.focus();
+      } });
+    }
     openMenu(app, bFmt, items, { label: 'Format' });
   });
   bSpec.addEventListener('click', () => {
