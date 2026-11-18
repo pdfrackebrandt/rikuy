@@ -1180,8 +1180,11 @@ function fillLines(el) {
   const wr = wf && wf.getBoundingClientRect(), wcs = wf && getComputedStyle(wf);
   const gw = el.classList.contains('has-ghost') && !el.classList.contains('ghost-l') ? parseFloat(el.style.getPropertyValue('--gw')) || 0 : 0;
   const gTop = er.top + (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.borderTopWidth) || 0), gBot = gTop + (parseFloat(el.style.getPropertyValue('--gh')) || 0);
-  const rightAt = (m) => {
-    if (wf && wf.classList.contains('wrap-r') && m >= wr.top && m <= wr.bottom) return Math.min(right, wr.left - (parseFloat(wcs.marginLeft) || 0));
+  // (M7 of R3's review) the text flows round the float's margin box, not its border box: a line whose
+  // box reaches into the figure's top or bottom margin is still set beside it, narrow
+  const wTop = wf ? wr.top - (parseFloat(wcs.marginTop) || 0) : 0, wBot = wf ? wr.bottom + (parseFloat(wcs.marginBottom) || 0) : 0;
+  const rightAt = (m, top = m, bot = m) => {
+    if (wf && wf.classList.contains('wrap-r') && bot > wTop + 0.5 && top < wBot - 0.5) return Math.min(right, wr.left - (parseFloat(wcs.marginLeft) || 0));
     if (gw && m >= gTop && m <= gBot) return right - gw;
     return right;
   };
@@ -1200,7 +1203,7 @@ function fillLines(el) {
     let end = -Infinity;
     const m = (L.top + L.bottom) / 2;
     for (const r of rects) if (r.top - 1 <= m && m <= r.bottom + 1 && r.right > end) end = r.right;
-    const left = Math.max(0, rightAt(m) - end - 0.5);
+    const left = Math.max(0, rightAt(m, L.top, L.bottom) - end - 0.5);
     for (const f of L.fills) widths.push([f, left / L.fills.length]);
   }
   for (const [f, w] of widths) f.style.width = w.toFixed(2) + 'px';

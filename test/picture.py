@@ -864,6 +864,17 @@ def r3_review(page):
       for (const w of ['Righta', 'Rightb']) { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(w)); const q = s.getClientRects()[0]; out[w] = [Math.round(q.right), Math.round(q.top)]; }
       return { left: Math.round(f.left), bottom: Math.round(f.bottom), ...out }; }""")
     check('merge: \\hfill beside a wrapped figure and beside its empty float ends at the figure, on the first line', all(st[w][0] <= st['left'] + 1 and st[w][0] > st['left'] - 40 and st[w][1] < st['bottom'] for w in ('Righta', 'Rightb')), st)
+    # M7 (check of the merge 7f3f269): a fill row in the strip under a right hand figure, inside its
+    # bottom margin, is still set beside it, as one line, as TeX sets it
+    rows = ''.join('Left%d \\hfill Right%d\\\\\n' % (i, i) for i in range(14))
+    load_doc(page, WRAP('\\begin{wrapfigure}{r}{4cm}\n\\centering\n\\includegraphics[width=\\linewidth]{a.png}\n\\end{wrapfigure}\n' + rows + 'End.', P2)); page.wait_for_timeout(600)
+    st = page.evaluate("""() => { const w = document.querySelector('#pages .wrap-in'), f = w.getBoundingClientRect(), mb = parseFloat(getComputedStyle(w).marginBottom) || 0;
+      const box = (t) => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes(t)); const r = document.createRange(); const i = s.textContent.indexOf(t); r.setStart(s.firstChild, i); r.setEnd(s.firstChild, i + t.length); return r.getBoundingClientRect(); };
+      const rows = []; for (let i = 0; i < 14; i++) { const l = box('Left' + i), r = box('Right' + i); rows.push([i, Math.round(l.top), Math.round(r.top), Math.round(l.bottom), Math.round(r.right)]); }
+      return { left: Math.round(f.left), bottom: f.bottom, mb, rows }; }""")
+    split = [r for r in st['rows'] if r[1] != r[2]]
+    strip = [r for r in st['rows'] if st['bottom'] - 0.5 < r[1] < st['bottom'] + st['mb']]
+    check('M7: every \\hfill row beside a right hand wrapfigure is one line; a row in its bottom margin ends at the figure', not split and all(r[4] <= st['left'] + 1 for r in strip), (split, strip, st['left'], st['bottom']))
     load_doc(page, WRAP('\\begin{landscape}\n' + fig + 'Alpha words beside the figure. ' * 6 + '\n\\end{landscape}', P2 + '\\usepackage{pdflscape}\n')); page.wait_for_timeout(600)
     check('merge: a wrapfigure on a landscape page (R1) wraps its paragraph', page.evaluate("!!document.querySelector('#pages .page.land .has-wrap > .wrap-in')"), body(page)[:200])
 
