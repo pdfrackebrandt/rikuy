@@ -1150,7 +1150,7 @@ class App {
     D.addEventListener('dragover', (e) => { if (e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files')) { e.preventDefault(); document.body.classList.add('dropping'); } });
     D.addEventListener('dragleave', (e) => { if (e.target === D) document.body.classList.remove('dropping'); });
     D.addEventListener('drop', (e) => { if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) { e.preventDefault(); document.body.classList.remove('dropping'); this.caretAtPoint(e.clientX, e.clientY); this.openFiles([...e.dataTransfer.files]); } });
-    D.addEventListener('scroll', () => { if (this.pop) this.positionPop(); this.hideBubble(); }, { passive: true });
+    D.addEventListener('scroll', () => { if (this.pop) this.positionPop(); if (!this._bubbleHold) this.hideBubble(); }, { passive: true });
 
     $('#b-open').addEventListener('click', () => $('#fileinput').click());
     $('#fileinput').addEventListener('change', (e) => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) this.openFiles(fs); });
@@ -2232,15 +2232,37 @@ class App {
   showBubble() {
     const sel = getSelection();
     if (!sel.rangeCount) return;
-    const r = sel.getRangeAt(0).getBoundingClientRect();
+    let r = sel.getRangeAt(0).getBoundingClientRect();
     if (!r.width && !r.height) return;
+    // the ribbon is taller than the old bar: a bubble that only cleared 56px sat under it,
+    // and a selection below the fold put the bubble where a click could not reach it
+    const rib = $('#ribbon');
+    const chrome = rib && rib.offsetParent ? rib.getBoundingClientRect().bottom + 4 : 56;
+    const off = r.bottom < chrome || r.top > window.innerHeight - 8;
+    if (off && !this._bubblePlace) {
+      const node = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
+      if (node && node.scrollIntoView) {
+        // scrolling the page hides the bubble; hold that off until the words are in view
+        this._bubbleHold = true;
+        node.scrollIntoView({ block: 'center', inline: 'nearest' });
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          this._bubbleHold = false;
+          this._bubblePlace = true;
+          const s = getSelection();
+          if (s.rangeCount && !s.isCollapsed && this.root.contains(s.anchorNode)) this.showBubble();
+          this._bubblePlace = false;
+        }));
+        return;
+      }
+    }
     const b = $('#bubble');
     b.hidden = false;
     const bw = b.offsetWidth, bh = b.offsetHeight;
     let x = r.left + r.width / 2 - bw / 2;
     x = Math.max(8, Math.min(window.innerWidth - bw - 8, x));
     let y = r.top - bh - 8;
-    if (y < 56) y = r.bottom + 8;
+    if (y < chrome) y = r.bottom + 8;
+    if (y + bh > window.innerHeight - 8) y = Math.max(chrome, window.innerHeight - bh - 8);
     b.style.left = x + 'px';
     b.style.top = y + 'px';
   }
