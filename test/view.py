@@ -496,6 +496,16 @@ def r5_ruler(page):
     check('M3: Hanging dragged right of the others but short of the first line writes nothing (the first line would move)', src(page) == RDOC and marker(page, 'first')['v'] == f0)
     press(page, 'hang', 'ArrowRight')
     check('M3: Hanging moved right by a press goes to the first line: the first line stays at \\parindent', '\\noindent' in src(page) and marker(page, 'first')['v'] == f0, (src(page)[-140:], marker(page, 'first')['v']))
+    # (Grok Bot's check: R1's landscape pages) the ruler measures the turned page; its margins are
+    # the portrait pages' and stay off there; an indent goes inside the landscape environment
+    LAND = WRAP('Portrait words here.\n\\begin{landscape}\nLandscape words here, a paragraph on its own page.\n\\end{landscape}\nAfter.').replace('\\begin{document}', '\\usepackage{pdflscape}\n\\usepackage[left=3cm,right=2cm,top=2.5cm,bottom=4cm]{geometry}\n\\begin{document}')
+    load_doc(page, LAND); page.wait_for_timeout(400); click_text(page, 'Landscape words', 1); page.wait_for_timeout(400)
+    g = ev(page, "(() => { const pg = document.querySelector('#pages .page.land'), t = pg.querySelector('.it.p').getBoundingClientRect(), l = document.querySelector('#ruler .ru-mk.ru-left').getBoundingClientRect(), r = document.querySelector('#ruler .ru-mk.ru-right').getBoundingClientRect(); return { t: [t.left, t.right], l: l.left + l.width / 2, r: r.left + r.width / 2 }; })()")
+    check('landscape: the indent markers stand at the turned page\'s text edges', abs(g['l'] - g['t'][0]) < 8 and abs(g['r'] - g['t'][1]) < 8, g)
+    m = marker(page, 'ml')
+    check('landscape: the margin markers are off, saying the margins are the portrait pages\'', m['off'] and 'portrait' in m['title'], m)
+    press(page, 'left', 'ArrowRight')
+    check('landscape: Left Indent writes adjustwidth inside the landscape environment', '\\begin{landscape}\n\\begin{adjustwidth}{0.25cm}{}\nLandscape words' in src(page), src(page)[-220:])
     ev(page, "window.rikuy.setRuler(false)")
 
 
