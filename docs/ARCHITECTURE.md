@@ -46,21 +46,19 @@ Build   tex/fetch_inputs.sh → build_tree.py tree → build_tree.py packs → n
 | live figures (`\rikuywidget`) | `WidgetLayer`, `widgetDoc`, `WIDGET_CSP` (`src/widget.js`); `Builder.cmd` (kind `widget`), `Renderer.atomEl`; `App.widgetsAllowed`, `widgetResized` |
 | a command (a button, a key, a menu item, an item of the insert list or of the search box) | `register`, `run`, `enabled`, `inGroup`, `paletteItems`, `menuItems`, `search`, `describe`, `joinMethods` (`src/commands.js`); one module per batch in `src/cmd/` (`index.js` imports them); `TABS`, `CONTEXTS` (`src/ribbon/order.js`) |
 | the ribbon: tabs, contextual tabs, groups folding, the keyboard | `ribbonBuild`, `makeControl`, `selectTab`, `ribbonContexts`, `ribbonSync`, `ribbonFit`, `ribbonRove`, `runCommand`, `toggleRibbon`, `peekRibbon`, `installRibbon` (`src/ribbon/tabs.js`); `ribbonAt`, `insertEmpty`, `dropEmpty`, `ribbonBack` (`src/ribbon.js`) |
-| the Styles gallery and the paragraph's style | `styleSync`, `paintGallery`, `gallerySlots`, `pageGallery`, `openStyles`, `tileMenu`, `tileOrder`, `installGallery` (`src/ui/gallery.js`); `styleCatalog`, `blockStyle`, `styleOfBlock`, `manyStyle`, `setBlockStyle`, `styleNeeds` (`src/cmd/styles.js`); `restyle`, `latexSpot`, `numberingEdits`, `defRange` (`src/styles.js`) |
-| headings' looks, the Styles pane, the Design tab | `readHeadLooks`, `lookLines`, `headLookEdits`, `accentEdits`, `komaFontEdits` (`src/looks.js`); `Builder.headLook`, `Builder.runIns` (`src/model.js`); `toggleStylesPane`, `openModifyStyle`, `openCreateStyle`, `updateStyle` (`src/ui/stylespane.js`); `designEdits`, `designMenu` (`src/ui/design.js`) |
+| the Styles gallery and the paragraph's style | `styleSync`, `paintGallery`, `gallerySlots`, `pageGallery`, `openStyles`, `tileMenu`, `tileOrder`, `installGallery` (`src/ui/gallery.js`); `styleCatalog`, `blockStyle`, `styleOfBlock`, `manyStyle`, `setBlockStyle`, `styleNeeds` (`src/cmd/styles.js`); `restyle`, `latexSpot`, `numberingEdits`, `defRange`, `codeBlock`, `titleInfo`, `titlePartEdits`, `titleNormalEdits`, `renameEdits` (`src/styles.js`); `styleR2`, `titlePartStyle`, `codeStyle`, `codeOff`, `renameStyle` (`src/cmd/styles.js`) |
+| headings' looks, the Styles pane, the Design tab | `readHeadLooks`, `lookLines`, `headLookEdits`, `accentEdits`, `komaFontEdits`, `linkColorEdits` (`src/looks.js`); `Builder.headLook`, `Builder.runIns`, `Builder.linkColors` (`src/model.js`); `toggleStylesPane`, `openModifyStyle`, `openCreateStyle`, `updateStyle` (`src/ui/stylespane.js`); `designEdits`, `designMenu` (`src/ui/design.js`) |
 | keys, the search box, the right click menu, the kit | `matches`, `lookup`, `installKeys` (`src/keys.js`); `installSearch` (`src/ui/search.js`); `openContextMenu`, `installMenu` (`src/ui/menu.js`); `openMenu`, `openGallery`, `splitButton`, `colorPicker`, `numberField`, `dialog` (`src/ui/kit.js`) |
 | a picture: the one selected, its surroundings and every operation on it; Insert's objects | `findPicture`, `sizeOf`, `setSize`, `setCrop`, `rotate`, `flip`, `border`, `setAlt`, `setPosition`, `captionEdits`, `naturalSize`, `graphicBox` (`src/picture.js`); `picHere`, `picSelect`, `picOp`, `picApply`, `picPackages`, `insertObject`, `dropCap` (`src/cmd/picture.js`); `Handles` (`src/ui/handles.js`); the dialogs (`src/ui/picturedialogs.js`); `readTikz`, `readAxis`, `drawRaw`, `drawSmart`, `drawIcon` (`src/drawing.js`); `picBox`, `picDraw` (`src/render.js`) |
 | references: the contents, notes, sources, the citation style, the bibliography, captions, lists of figures, cross references, the index, links and bookmarks | `refsSetup`, `setCounterEdits`, `counterStyleEdits`, `fnRestartEdits`, `bibSetup`, `bibStyleEdits`, `bibTitleEdits`, `indexArg`, `readIndexArg`, `pageList` (`src/refsrc.js`); `bibSpans`, `bibFieldEdits`, `bibEntryText`, `bibEscape` (`src/bib.js`); `Work`, `captionTarget`, `captionWrite`, `refTargets`, `crossRefWrite`, `linkAt`, `linkWrite`, `indexMark`, `refPages` (`src/cmd/refs.js`); the dialogs (`src/ui/refsdialog.js`, `src/ui/sourceform.js`); `tocEntries`, `indexUnits`, `notesUnits` (`src/model.js`) |
 | a table: where the caret is in it, and every operation on it | `parseTable`, `tableAt`, `cellAt`, `emit`, `insertRow`, `deleteRows`, `insertCol`, `deleteCols`, `mergeCells`, `splitCell`, `applyLook`, `setBorders`, `shade`, `setSetting`, `autofit`, `repeatHeader` (`src/table.js`); `tableHere`, `tableOp`, `tableApply`, `tablePackages`, `caretToCell` (`src/cmd/table.js`); `openTablePicker` and the dialogs (`src/ui/tablepicker.js`); `tabular`, `tableCell`, `tableSetting`, `csvTable` (`src/model.js`) |
-| a character format (Bold to Font Color, the boxes, the Font dialog, the Format Painter) | `toggle`, `setValue`, `wrapIn`, `clearFormats`, `chainAt`, `preambleFor`, `docSizeEdits`, `docFontEdits`, `changeCase`, `autoFormat` (`src/charfmt.js`); `fmtCommit`, `fmtToggle`, `fmtSet`, `fontState`, `fontBox` (`src/cmd/font.js`); `openFontDialog` (`src/ui/fontdialog.js`) |
+| a character format (Bold to Font Color, the boxes, the Font dialog, the Format Painter) | `toggle`, `setValue`, `wrapIn`, `clearFormats`, `chainAt`, `preambleFor`, `docSizeEdits`, `docFontEdits`, `changeCase`, `autoFormat` (`src/charfmt.js`); `fmtCommit`, `fmtToggle`, `fmtSet`, `fontState`, `fontBox`, `fmtOneStep`, `paraReset`, `paintFormat` (`src/cmd/font.js`); `openFontDialog` (`src/ui/fontdialog.js`) |
 | an edit of the preamble, an inline wrapper, an environment around paragraphs | `usePackages`, `kvEdits`, `classOptions`, `setPackageKeys`, `defineOnce` (`src/preamble.js`); `App.packageEdits`, `preambleOthers`; `wrapEdits`, `unwrapEdits`, `standsFree`, `rewrapEdits`, `enclosing`, `clearText`, `GROUPS` (`src/wrap.js`); `envWords`, `wrapBlockEdits`, `unwrapBlockEdits` (`src/blockenv.js`) |
 | the side panel: outline and problems; versions and changes | `toggleNav`, `refreshNav`, `goTo` (`src/nav.js`); `snapshot`, `currentChanges`, `renderChanges`, `paintChanges` (`src/review.js`) |
 | a paragraph's settings: alignment, line spacing, indents, space before and after, breaks, shading and borders, the document's paragraph spacing, Show marks, the Paragraph dialog | `unitOf`, `layerEdits`, `alignEdits`, `docSpacingEdits`, `indentEdits`, `spaceEdits`, `flagEdits`, `boxEdits`, `docParskipEdits`, `widowEdits` (`src/parasrc.js`, on strings); `paraUnits`, `paraRun`, `paraNeeds`, `paraAlign`, `paraSpacing`, `paraDialogApply` (`src/cmd/para.js`); `openParagraphDialog`, `paraField` (`src/ui/paradialog.js`); `Builder.flow` (item `ps`, `pe`, `vs`, `ve`, `spread`, `mx`, `hang`, `box`), `Builder.boxEnv` (`src/model.js`); `Renderer.paraLook` (`src/render.js`); `paraStyle` (`src/wordast.js`), `paraStyles` (`src/wordjobs.js`) |
 | Find, Replace, Go To; the Navigation pane (its box, Headings, Pages, Results) and the Outline view | `compile`, `hitsIn`, `blockText`, `hitSource`, `expand`, `labelsIn` (`src/find.js`); `findRun`, `findPaint`, `findGo`, `hitEdits`, `replaceOne`, `replaceAll`, `goToTargets`, `goToTarget`, `countStatus` (`src/cmd/find.js`); `openFindDialog`, `findDialogSync` (`src/ui/finddialog.js`); `renderOutline`, `navShell`, `paintHeadings`, `navDrop`, `paintPages`, `paintResults`, `setOutlineView` (`src/nav.js`) |
 | promote, demote, move a section or a paragraph, a new heading | `headingAt`, `sectionRange`, `promoteEdits`, `swapEdit`, `moveEdits`, `newHeading` (`src/outline.js`); `promoteAt`, `moveEditsAt`, `sectionMove`, `moveSectionTo`, `newHeadingAt` (`src/cmd/find.js`) |
-| a heading collapsed on the page; ^p and LaTeX's kinds in Find | `foldItems`, `matchFold` (`src/outline.js`); `foldFilter` (called by `App.layoutPass` before measuring: the hidden items leave the page's layout only), `foldSet`, `foldReveal`, `foldPaint` (`src/cmd/find.js`); `gapKind`, `pageParaText`, `paraHitSource` (`src/find.js`); `paraMarkHits`, `equationHits`, `breakFits` (`src/cmd/find.js`) |
-| Web Layout and the rulers | `viewGeometry` (called by `App.layoutPass`: a sheet as wide as the window), `setWeb`, `setRuler` (`src/cmd/view.js`); `rulerSync`, `apply` (`src/ui/ruler.js`: markers written through `App.paraDialogApply` and `App.pageEdit`) |
-| lists: levels, labels and numbers, multilevel lists, sorting, automatic lists | `readLists`, `chainAt`, `formatOf`, `listSetup`, `labelEdits`, `startEdits`, `demote`, `promote`, `unlist`, `restartEdit`, `multilevelEdits`, `sortEdit`, `autoMarker`, `numText`, `bulletGlyph` (`src/lists.js`); `listAt`, `toggleList`, `listLevel`, `listLabel`, `listCommit`, `autoList`, `sortTarget` (`src/cmd/lists.js`); the dialogs (`src/ui/listdialog.js`); `Builder.listBlock` (`src/model.js`) |
+| lists: levels, labels and numbers, multilevel lists, sorting, automatic lists | `readLists`, `chainAt`, `formatOf`, `listSetup`, `labelEdits`, `startEdits`, `demote`, `promote`, `unlist`, `restartEdit`, `multilevelEdits`, `sortEdit`, `autoMarker`, `numText`, `bulletGlyph`, `indentEdits` (`src/lists.js`); `listAt`, `toggleList`, `listLevel`, `listLabel`, `listCommit`, `autoList`, `sortTarget`, `bulletPicture`, `listIndents` (`src/cmd/lists.js`); the dialogs (`src/ui/listdialog.js`); `Builder.listBlock` (`src/model.js`); `bulletDocx` (`src/wordjobs.js`) |
 | LaTeX paragraphs (`% rikuy: latex`) | `isLatexMark` (`src/styles.js`); `Builder.texBlock`, `cutOpen` (`src/model.js`); `Renderer.item` case `tex`; `App.texBox`, `texEdit`, `texEnter`, `texDelete`, `showTexGhost` (`src/app.js`) |
 | equation editing | `App.openMath`, `attachField`, `toField`, `fromField`; `src/minimal.js`, `wordmath.js`, `fences.js`; the Equation tab, Alt+=, the gallery and an equation's right click menu: `src/cmd/equation.js` (`eqTarget`, `eqApply`, `eqInsert`, `eqInsertNew`), `src/ui/eqtab.js` (the tables and `eqMenu`) |
 | engine choice, passes, bibliography, indexes | `pickEngine`, `compile`, `runBiber`, `indexTools` (`tex/engine.js`) |
@@ -428,7 +426,23 @@ changes it. It dispatches to `insertText`, `enter`, `deleteInput`, `toggleStyle`
   center after the caret's block, never floats; `src/drawing.js` reads what they write (a TikZ
   picture of plain paths, a pgfplots axis from coordinates, smartdiagram's items, an icon's name)
   and draws it as SVG through the DOM, the document's words as text and its colours from xcolor's
-  names only; anything outside that subset keeps the source box.
+  names only; anything outside that subset keeps the source box. Round 3 (R3): `tikzPoints`
+  gives each coordinate of such a drawing with its offsets, which `src/ui/shapes.js` puts handles
+  on (a drag writes one coordinate, the drawing kept in its box meanwhile), and a chart Rikuy
+  wrote reopens in its grid (`editChart`, `chartReplace`); the round handle of `src/ui/handles.js`
+  turns a picture by any angle (`rotDown`, one `rotate`); `borderSet` and `borderStyle` write and
+  read the border's `\fboxrule` and `\color` in its group; `src/cmd/move.js` moves dragged words
+  (`moveSource`: the deletion and the insertion as one commit, never across files) and a selected
+  picture (`picMoveTo`: its environment between paragraphs, or among words); a wrapfigure goes
+  into the paragraph after it as a CSS float (`wrapPairs` in `src/layout.js`), measured with it.
+- **Insert's round 3 (R3).** `src/fields.js` maps Word's fields to LaTeX and gives the model
+  their text (`fieldText`); the layout fills a page's number and the pages' count into them once
+  it knows the pages (`fillFields`). `src/cover.js` writes a cover page (a titlepage first in the
+  body), `src/quickparts.js` reads Quick Parts back from the browser's storage and finds the
+  packages a part needs, `src/forms.js` writes hyperref's form fields, which the model reads with
+  `readField` and the page draws as boxes; their commands are `src/cmd/parts.js`. Word gets a
+  table's shading, turned words and alt text through `src/wordtable.js`, after pandoc (the AST's
+  attributes, which pandoc drops, written into the cells pandoc wrote).
 - **Styles.** `blockStyle` reads the caret's block into `{v, to, b}`: its style now, the styles it
   may take, and where its words are; `restyle` (`src/styles.js`, tested on strings in
   `test/styles.test.mjs`) turns that into the smallest edits: Normal to LaTeX writes the mark's
@@ -1403,4 +1417,38 @@ after it (`rvBaseStep`); a merge or a Word import keeps your own waiting changes
 text brings that tab's base (`rvReloadBase`); leaving the page writes the base. Display for Review (`prefs.markup`) and
 Show Markup choose what `paintChanges` and `paintComments` draw; Accept and Reject, Previous and
 Next work on `orderedChanges`.
+
+Round 3 (R4) added these. A change carries its author: each file keeps a layer of who wrote what
+since the base (`authorEdit`, the ranges a step inserted and the places it deleted, moved by every
+step in `rvAuthorStep`, kept before and after each step for its undo and redo, and stored with the
+base for the text it was made on); `currentChanges` cuts a change where two authors' pieces meet
+(`byAuthor`). A step's author is the name in AutoCorrect Options, or the coauthor whose copy comes
+back (`rvBy`, set by `takeBack`). Show Markup's Specific People hide a reviewer's marks
+(`rvHidden`), and Accept and Reject act on all of one reviewer's changes. Display for Review's
+Original draws the base's text: `rebuild` builds the model from `pageFiles()`, and
+`rvRefuse`, called first in `App.commit`, refuses every edit while it does. The same guard
+refuses anything but comment lines in a document a comments only share link opened
+(`commentsOnlyRefuse`, `onlyComments` in `src/share.js`); the author's own browser decides what
+a copy coming back may bring (`linkRole` from the versions it shared, with each link's random
+name and role, never from the copy), and for a comments only link lets in its comment lines alone
+(`commentsOf`).
+
+The thesaurus is MyThes, compiled into the spell worker's module (`thes_open`, `thes_lookup`,
+and `spell_stem`, Hunspell's stems, so an inflected word finds its entry). Its index is read whole;
+its data, 3 to 29 MB a language, is served to MyThes through a device of Emscripten's file system
+(`thesDevice` in `src/spell/worker.js`) holding only the 1 MiB pieces fetched so far: a lookup
+that reads into a missing piece notes it, the worker fetches and checks it, and asks again. The
+Thesaurus pane is `src/ui/thespane.js`, its commands `src/cmd/proofing.js`. Grammar is Harper, its
+own WebAssembly build, in a worker of its own (`src/spell/grammar.js`, `src/spell/harper.js`):
+`grammarBlocks` (`src/spell/words.js`) gives it each block's prose as one paragraph, a formula or a
+citation standing as "x", other languages and code left out; `lintSource` maps an issue back to
+the source, and a correction is the characters that differ. It runs only when Check Grammar as You
+Type is on.
+
+Word export (`src/wordast.js`): an `\endnote` is a note marked for `endnotesDocx`
+(`src/wordnotes.js`), which makes it one of Word's endnotes; `\index` entries are XE fields (TA
+fields for `\index[toa]`) at the end of their paragraph, `\printindex` an INDEX field, the Table of
+Authorities TOA fields, the lists of figures and tables TOC fields of the caption styles, each
+marked for Word to update as it opens. Word's endnotes come back as `\endnote` (`markEndnotes`,
+`endnotesTex`); its fields are not read by pandoc and do not come back.
 
