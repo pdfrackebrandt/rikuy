@@ -117,17 +117,24 @@ function state(app) {
   const even = page.classList.contains('even');
   const ml = even ? (g.mlE ?? g.ml) : g.ml;
   const S = { page, px, g, even, pw: g.pw, ph: g.ph, ml, mr: g.pw - ml - g.tw, mt: g.mt, mb: g.ph - g.mt - g.th, colL: ml, colW: g.tw, para: null, why: '' };
+  // (R1's landscape page, pdflscape's, as layout.js turn() draws it: the sheet on its side, its
+  // left margin the portrait page's bottom one and its top the left one; the text as wide as the
+  // portrait page's is tall. Its margins are the portrait page's, turned, so they are set there)
+  if (page.classList.contains('land')) {
+    Object.assign(S, { land: true, pw: g.ph, ph: g.pw, ml: g.ph - g.mt - g.th, mr: g.mt, mt: ml, mb: g.pw - ml - g.tw, colW: g.th });
+    S.colL = S.ml;
+  }
   // (the column the caret is in, in a document of two columns)
   const at = app.ribbonAt ? app.ribbonAt() : null;
-  if (g.cols > 1 && at && at.el) {
+  if (!S.land && g.cols > 1 && at && at.el) {
     const r = at.el.getBoundingClientRect(), R = page.getBoundingClientRect(), sep = g.colsep ?? 10, w = (g.tw - (g.cols - 1) * sep) / g.cols;
     const c = Math.max(0, Math.min(g.cols - 1, Math.floor(((r.left - R.left) / px - ml) / (w + sep))));
     S.colL = ml + c * (w + sep); S.colW = w;
   }
-  S.cols = g.cols > 1 ? { n: g.cols, sep: g.colsep ?? 10 } : null;
+  S.cols = !S.land && g.cols > 1 ? { n: g.cols, sep: g.colsep ?? 10 } : null;
   const mc = command('margins');
-  S.marginsOK = !!(mc && enabled(app, mc, at));
-  S.marginsWhy = S.marginsOK ? '' : (mc && mc.whyNot ? mc.whyNot(app, at) : 'The margins cannot be set here.');
+  S.marginsOK = !S.land && !!(mc && enabled(app, mc, at));
+  S.marginsWhy = S.marginsOK ? '' : S.land ? 'A landscape page has the portrait pages\' margins, turned: set them from a portrait page or Layout › Margins.' : (mc && mc.whyNot ? mc.whyNot(app, at) : 'The margins cannot be set here.');
   if (!at || !app.paraUnits) { S.why = 'Click in a paragraph of the page.'; return S; }
   const p = app.paraUnits(at);
   if (!p || p.why || p.float || !p.units.length) { S.why = (p && p.why) || 'Click in a paragraph of the page.'; return S; }

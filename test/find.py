@@ -589,8 +589,16 @@ def r5_review(page):
     check('a command asked for by its name is found', hits(page) == ['\\alpha'])
     load_doc(page, WRAP('Here $x^p + A^t$ end.')); find_set(page, 'x^p', FMT['equation'])
     check('in a formula x^p in the box is found as written', hits(page) == ['x^p'], hits(page))
+    # (Grok Bot's check of H3) an environment's name and a label's key in a formula are no hits:
+    # \begin{aligned} kept whole, \label{eq:a} still what \eqref{eq:a} names
+    al = WRAP('\\[ \\begin{aligned} a &= 1 \\end{aligned} \\]\n\\begin{equation} a = 2 \\label{eq:a} \\end{equation} See \\eqref{eq:a}.', '\\usepackage{amsmath}\n')
+    load_doc(page, al); find_set(page, 'a', FMT['equation'])
+    check('H3 check: "a" in formulas is never inside \\begin{aligned} nor \\label{eq:a}', hits(page) == ['a', 'a'], hits(page))
+    replace_all(page, 'b')
+    check('H3 check: Replace All a with b keeps the environment and the label', src(page) == al.replace(' a &= 1', ' b &= 1').replace(' a = 2', ' b = 2'), src(page)[40:220])
+    fixed_al = src(page)
     if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
-        load_doc(page, WRAP('\n\n'.join(out) + '\n\n' + fixed[fixed.index('Here'):fixed.index('\n\\end{document}')]))
+        load_doc(page, WRAP('\n\n'.join(out) + '\n\n' + fixed[fixed.index('Here'):fixed.index('\n\\end{document}')] + '\n\n' + fixed_al[fixed_al.index('\\[ '):fixed_al.index('\n\\end{document}')], '\\usepackage{amsmath}\n'))
         page.set_default_timeout(600000)
         r = page.evaluate('window.rikuy.api.compile()')
         page.set_default_timeout(30000)

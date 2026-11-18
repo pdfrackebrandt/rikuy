@@ -457,10 +457,18 @@ export function paraHitSource(blocks, P, i, j) {
 
 // The control words of a formula's LaTeX (\alpha, \frac): [[s, e]], in one pass; a hit inside one
 // is no hit (a in \alpha), unless the query asks for a command itself (starts with \)
+// (and the names a command takes as its argument: an environment's in \begin{aligned}, a key in
+// \label{eq:a} and \ref{eq:a}, a colour: a letter replaced there breaks the formula or a reference,
+// Grok Bot's check of R5's H3)
+const NAME_ARG = /^(?:begin|end|label|ref|eqref|pageref|autoref|cref|Cref|nameref|color|textcolor|colorbox|hyperref|hyperlink|hypertarget)\*?$/;
 export function controlWords(t) {
-  const out = [], re = /\\[A-Za-z@]+/g;
+  const out = [], re = /\\([A-Za-z@]+\*?)(\s*\{[^{}\n]{0,200}\})?/g;
   let m;
-  while ((m = re.exec(t))) out.push([m.index, m.index + m[0].length]);
+  while ((m = re.exec(t))) {
+    const name = m[1], whole = m[2] && NAME_ARG.test(name);
+    out.push([m.index, m.index + (whole ? m[0].length : 1 + name.replace(/\*$/, '').length)]);
+    if (!whole) re.lastIndex = m.index + 1 + name.replace(/\*$/, '').length;
+  }
   return out;
 }
 export function inControlWord(cw, i, j, own) {
