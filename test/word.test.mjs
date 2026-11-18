@@ -18,7 +18,7 @@ import { buildWordDoc, expandMath, unpackRuns, wordColor, listStyle, uncolor } f
 import { createPandoc } from '../src/pandoc.js';
 import { exportDocx, readDocx, docxToLatex } from '../src/wordjobs.js';
 import { checkData, planImport, unpackRead, rebase, textHunks, mathPatch, stripNumbers, safeMath } from '../src/wordsync.js';
-import { unzip, zip, extract, parseXml, readRikuyPart, text } from '../src/docx.js';
+import { unzip, zip, extract, parseXml, readRikuyPart, text, badZip64 } from '../src/docx.js';
 import { isBalanced } from '../src/parser.js';
 import { scriptNeeds, scriptLines, addScriptSetup, rtlDocument, INDIC } from '../src/scripts.js';
 import { scanDir, resolve } from '../src/wordbidi.js';
@@ -315,6 +315,24 @@ await ok('hostile files: bombs, DTDs, deep nesting, names that climb out, forged
   // a zip that declares 600 MB is refused before anything is inflated
   const big = zipSync({ '[Content_Types].xml': new Uint8Array(1), 'word/document.xml': new Uint8Array(1), 'a.bin': [new Uint8Array(300e6), { level: 1 }], 'b.bin': [new Uint8Array(300e6), { level: 1 }] });
   assert.throws(() => unzip(big), /unpack to more than/);
+  // (security review) a ZIP64 size with no ZIP64 field, which looped fflate 0.8.2 forever
+  // (GHSA-px8p-9vwx-vf98): refused before fflate reads it
+  {
+    const z = zipSync({ '[Content_Types].xml': new Uint8Array(1), 'word/document.xml': new Uint8Array(4) });
+    const cd = [...z.keys()].findIndex((i) => z[i] === 0x50 && z[i + 1] === 0x4b && z[i + 2] === 1 && z[i + 3] === 2);
+    const bad = z.slice(); bad.set([0xff, 0xff, 0xff, 0xff], cd + 20);
+    assert.throws(() => unzip(bad), /ZIP64/);
+    assert.ok(unzip(zipSync({ '[Content_Types].xml': new Uint8Array(1), 'word/document.xml': new Uint8Array(4) })).has('word/document.xml'));
+    // the same sentinel with the ZIP64 field (tag 1) that holds the size is well formed: not refused
+    const nl = bad[cd + 28] | (bad[cd + 29] << 8), at = cd + 46 + nl;
+    const field = [1, 0, 8, 0, 4, 0, 0, 0, 0, 0, 0, 0];
+    const good = new Uint8Array(bad.length + field.length);
+    good.set(bad.subarray(0, at)); good.set(field, at); good.set(bad.subarray(at), at + field.length);
+    good[cd + 30] = field.length;
+    const e = good.length - 22; good[e + 12] += field.length;
+    assert.equal(badZip64(good), false);
+    assert.equal(badZip64(bad), true);
+  }
   const mk = (xml) => zipSync({ '[Content_Types].xml': new TextEncoder().encode('<Types/>'), 'word/document.xml': new TextEncoder().encode(xml) });
   assert.throws(() => unzip(mk('<?xml version="1.0"?><!DOCTYPE d [<!ENTITY x SYSTEM "file:///etc/passwd">]><w:document>&x;</w:document>')), /DTD/);
   assert.throws(() => parseXml('<a>'.repeat(1000)), /too deeply/);
