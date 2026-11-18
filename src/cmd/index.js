@@ -14,6 +14,7 @@ import * as table from './table.js';        // B7 tables
 import * as picture from './picture.js';    // B8 pictures and objects
 import * as refs from './refs.js';          // B9 references
 import * as review from './review.js';      // B10 review and proofing
+import * as proofing from './proofing.js';  // R4 thesaurus and grammar
 import * as insert from './insert.js';      // B11 inserting, the clipboard, AutoCorrect
 import * as file from './file.js';          // B12 File, View, Help
 import * as view from './view.js';
@@ -24,4 +25,4 @@ import * as move from './move.js';          // R3 drag to move
 
 
 // (a method name two modules both add throws here: test/commands.test.mjs imports this file)
-export const methods = joinMethods({}, Object.fromEntries(Object.entries({ frame, font, para, lists, styles, find, page, table, picture, refs, review, insert, file, view, help, equation, parts, move }).map(([k, m]) => ['src/cmd/' + k + '.js', m.methods || {}])));
+export const methods = joinMethods({}, Object.fromEntries(Object.entries({ frame, font, para, lists, styles, find, page, table, picture, refs, review, proofing, insert, file, view, help, equation, parts, move }).map(([k, m]) => ['src/cmd/' + k + '.js', m.methods || {}])));
