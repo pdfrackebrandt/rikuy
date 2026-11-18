@@ -5,7 +5,7 @@
 #
 #   busy/busytex/   BusyTeX 1.4.0 release assets (TeX Live 2026 engines, texlive-*.data)
 #   tree-extra/     the TeX Live tree inside those .data packages (unpack_busytex.py)
-#   debs/x/<pkg>/   54 Ubuntu 26.10 packages (TeX Live 2026 and friends), each dpkg-deb -x
+#   debs/x/<pkg>/   55 Ubuntu 26.10 packages (TeX Live 2026 and friends), each dpkg-deb -x
 #   mf/x/           texlive-binaries, texlive-base, libkpathsea6 and libc6 in one folder (METAFONT
 #                   for build_pk.py, started through that libc's own loader)
 #   extra/ fccache/ fmt/ usage.json pdflatex-all.fmt   from inputs/generated*.tar.gz: what Rikuy's
@@ -82,6 +82,7 @@ fonts-hosny-amiri pool/main/f/fonts-hosny-amiri/fonts-hosny-amiri_1.003-6_all.de
 fonts-nanum pool/universe/f/fonts-nanum/fonts-nanum_20250212-1_all.deb sha512:4297df840fb1f835e2fadd2e7a8ce6976415416c1e9981ed7c81c05e95416bf1a61ada35e5e3880d8e6796bb6c80376c1d5240cd5b6efddaa7ec15f88b363c5f
 fonts-noto-core pool/main/f/fonts-noto/fonts-noto-core_20201225-6_all.deb sha512:bc3ca8bc8eeeb5986e62dfdec4732f81c730bdc59026812fc549a56561c820b101313cc43cce8a44facc754d736a63aefc9c3c664d02aedc832451422b9a2e5d
 cm-super pool/universe/c/cm-super/cm-super_0.3.4-17build1_all.deb sha512:b8a80e2c8854dc37e2b1c11eccfecf214c7d2cc424f93316b5c9cebfab7ce7cb5a96328c1ff9ea0365ec879f057e23bdefbfe29b5cf46ce92c3381078ad6ea19
+feynmf pool/universe/f/feynmf/feynmf_1.08-14build1_all.deb sha512:a43f74c17c16ec87067fdb0916056352f76f92fc2ced8c73083b2aae957a3aa6b244a3c45923da27389965c5efce627acca5d8bf70a92829b5558c3adcf6df02
 latex-cjk-all pool/universe/c/cjk/latex-cjk-all_4.8.5-3_all.deb sha512:209b9ea73a2f6883d8ba930464eea4c6996a224f75613fb2cecbd02d87552798b50089c78b58d7ce5f6ea39c2e00e44c9a980c97a7ebeeab2095bf411a77c415
 latex-cjk-chinese pool/universe/c/cjk/latex-cjk-chinese_4.8.5-3_amd64.deb sha512:c26adee3ddb08cc9a139e90c61f97b3eb16a58bec867b203a90c0495d74cb958d47dacaaba6c59967759802c5c62b1432c3ce83891ac1a5310fec7a97903f7bf
 latex-cjk-chinese-arphic-bkai00mp pool/universe/l/latex-cjk-chinese-arphic/latex-cjk-chinese-arphic-bkai00mp_2.2build1_all.deb sha512:b795f69614815d805ba3e450b837561db7e0e7cd2c3bf9ce55f19ec8946c059c170b69785b4c31f7cb2db29a2d59b9d5539ac5a23bca0596cd4741dc070c66e5

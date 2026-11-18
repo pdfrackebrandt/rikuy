@@ -308,7 +308,9 @@ What either link does when opened:
 - The document travels in the part of the address after #, which browsers never send to a
   server: nothing is uploaded, and the host puts no limit on its length.
 - It takes the place of the document that was open. That one is not lost: a version of it is
-  kept first, and Review, Versions in the side panel restores it.
+  kept first, and Review, Versions in the side panel restores it. Where this browser already
+  keeps a document of the same name (and main file), the link's document opens beside it as
+  "Name (from a link)", or "Name (from <by>)", and the kept one stays as it was.
 - It is treated as someone else's: programs it would start through TeX's shell escape stay off,
   and live figures wait for a click, until the person allows them. TeX runs only when the
   person has the PDF preview open or presses Download PDF.
@@ -437,8 +439,17 @@ ${ribbonList()}
   Instances). A selection over several paragraphs takes a heading on each, or one environment
   around them all. Modify Style writes titlesec's \\titleformat once in the preamble; Create a
   Style writes \\newcommand{\\name}[1]{…} or \\newenvironment.
+- More styles also has "Code" (the paragraph in verbatim, only for words verbatim prints the same),
+  "Subtitle", "Author" and "Date" (a paragraph of the body made that part of the title block:
+  \\author, \\date, KOMA-Script's \\subtitle or \\title{Main\\\\[0.5ex]\\large Sub}; the
+  caret in a part of the title shows its style, and "Normal" makes it a paragraph after
+  \\maketitle again). A press on a Code block selects it (a second press, or Enter, opens its
+  source): "Normal" then makes it text. A style of the document's own has "Rename…" in its
+  options (command "rename-style" with { v: 'env:name' or 'char:name', name }): the definition
+  and every use in the project renamed.
 - The Design tab: "Themes", "Style Set", "Colors" and "Fonts" (the headings' look, colour and
-  font for the whole document; "LaTeX" and "Black" take the lines away again).
+  font for the whole document; "LaTeX" and "Black" take the lines away again). Where hyperref is
+  loaded, Colors also colours the links (\\hypersetup{colorlinks,linkcolor=accent,...}).
 - Home also has the buttons "Bold", "Italic", "Underline", "Bulleted list", "Numbered list",
   "Formula" (math in the line), "Equation" (numbered, on a line of its own), "Table",
   "Picture", "Footnote", "Citation", "Link".
@@ -528,6 +539,18 @@ Ctrl is Cmd on a Mac.
   "% rikuy: words ..." line in the main file, which TeX never reads; "% cspell:words ..." lines
   count too). Review > Proofing Language: \foreignlanguage for a selection, babel's language for
   the document. Ctrl+Shift+G: Word Count; Ctrl+Alt+Space: Read Aloud and stop
+- Shift+F7: the Thesaurus pane (MyThes, LibreOffice's, beside Hunspell: an inflected word is
+  looked up by its stem); its Insert puts a word of like meaning in place of the word at the
+  cursor, its letters that differ only; a right click's Synonyms lists the first ones. Review >
+  Spelling's arrow > Check Grammar as You Type (off at first): Harper's grammar, blue double
+  lines on English prose only, its corrections in the right click menu and the Spelling and
+  Grammar pane (F7). Review > Display for Review > Original: the page shows the text before the
+  changes and takes no edit until another view is chosen; Show Markup lists each reviewer, and
+  Accept's and Reject's arrows act on all of one reviewer's changes. Share's "Can comment only"
+  link: its reader can comment and nothing else, and the copy that comes back brings comments
+  alone
+- Alt+Shift+I: Mark Citation (the Table of Authorities: \index[toa]{n@\textbf{Category}!…},
+  imakeidx's \makeindex[name=toa,…] once); Insert Table of Authorities writes \printindex[toa]
 - \\: the list of things to insert (footnote, citation, section, table and more). Ctrl+K is
   Word's Link: the Insert Hyperlink dialog (a web page, an e-mail address, a place in this
   document); in a link, Edit Hyperlink with Remove Link. It writes \\href{…}{…}, \\url{…} when the
@@ -583,6 +606,12 @@ Ctrl is Cmd on a Mac.
   text back), from a phone's keyboard too (the marker and space sent at once, a dash its
   autocorrect made of "-", an IME's composition). The labels are written as enumitem's options (\begin{enumerate}[label=\alph*),start=3]);
   a list's own \def\labelenumi, \setcounter{enumi} or "(a)" is changed where it is written.
+  The libraries' menus also have "Picture Bullet…" (command "bullet-picture" with { file } of a
+  picture of the project: \includegraphics[height=1.6ex] as the label) and "Adjust List
+  Indents…" (command "list-indents" with { leftmargin, labelwidth, labelsep }: lengths, or null
+  for LaTeX's own). Clear All Formatting takes the paragraph's own settings (alignment, spacing,
+  indents, shading, borders) off with the characters' formats; the Format Painter armed from a
+  caret carries the paragraph's style too.
 - Ctrl+Shift+V: paste as plain text. The right click menu: Cut, Copy, Paste (the browser asks
   once to let the page read the clipboard); the search box finds them and Keep Text Only, Paste
   as LaTeX source and Paste Special
@@ -596,6 +625,19 @@ Ctrl is Cmd on a Mac.
   \\usepackage{rikuy}: one undo. On the page the graph runs live; its button "Edit graph" (or
   command edit-graph with {file}) reopens the dialog, whose Update rewrites the file and picture
   only
+- Round 3's objects, each one commit and one undo, each command also with its fields as
+  arguments: Insert's Cover Page (cover-page {design: plain | sideline | motion}; a titlepage
+  first in the text; Remove Current Cover Page), Quick Parts (quick-part-save {name},
+  quick-part-insert {name}, kept in this browser; Building Blocks Organizer), Field (insert-field
+  {field: PAGE, NUMPAGES, SECTION, DATE, TIME, FILENAME, TITLE, AUTHOR, CREATEDATE}: \\thepage,
+  \\pageref{LastPage}, \\thetitle and their like, drawn with the page's own numbers), Form Fields
+  (form-text, form-check, form-combo, form-list, form-date with {label, items}: hyperref's fields
+  in one Form round the text); Picture Format's Border Weight {weight} and Border Color {color};
+  a picture's round handle turns it by any angle; a press on a drawing gives each of its points a
+  handle; a press on a chart reopens its grid (chart-edit-data {kind, cats, series}); Table Layout's
+  Height {height} and Width {width} boxes and Table Alt Text {text} (a "% alt:" line before the
+  table). Selected words dragged on the page move (Ctrl copies); a selected picture is dragged by
+  a press; a move never crosses files
 - Symbols and special characters: Ctrl+Alt+C ©, Ctrl+Alt+R ®, Ctrl+Alt+T ™, Ctrl+Alt+. …,
   Ctrl+Alt+- em dash, Ctrl+Shift+Space nonbreaking space (~), Ctrl+Shift+_ nonbreaking hyphen
   (\\nobreakdash-; Ctrl+- alone still zooms out); Alt+Shift+D \\today, Alt+Shift+T the time.
@@ -868,10 +910,11 @@ const ADDRESSED = /-([0-9a-f]{16})\.[A-Za-z0-9]+$/;
 const NOT_SERVED = new Set(['rikuy.html', 'LICENSES.txt', '404.html', '_headers', '_redirects', 'robots.txt', 'sitemap.xml', 'llms.txt', 'llms-full.txt', 'og.png', 'controls.json']);
 const PRECACHE_MAX = 4 * 1024 * 1024;
 const WORD_PART = /^word\/pandoc-[0-9a-f]+-\d+\.bin$/;
-// the dictionaries of spelling (spell/<name>-<hash>.aff and .dic): content addressed, but kept the
-// first time a document in that language is checked, not at install (5 MB, mostly of languages
-// the person never writes in): the fourth field says so (src/sw.js install)
-const LATER = /^spell\/[A-Za-z_]+-[0-9a-f]{16}\.(aff|dic)$/;
+// the dictionaries of spelling (spell/<name>-<hash>.aff and .dic), the thesauri's index and pieces
+// (spell/th_<name>-<hash>.idx and .dat) and the grammar worker: content addressed, but kept the
+// first time they are used, not at install (80 MB, mostly of languages the person never writes
+// in, and grammar only for those who ask for it): the fourth field says so (src/sw.js install)
+const LATER = /^spell\/(?:[A-Za-z_]+-[0-9a-f]{16}\.(?:aff|dic)|th_[A-Za-z0-9_]+-[0-9a-f]{16}\.(?:idx|dat)|grammar-[0-9a-f]{16}\.js)$/;
 
 export function finishApp(OUT) {
   const index = path.join(OUT, 'index.html');

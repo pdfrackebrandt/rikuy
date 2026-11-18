@@ -49,7 +49,7 @@ EXCLUDE = re.compile('|'.join([
     r'^texlive/texmf-dist/tex/latex/media9/players/',
 ]))
 # Large and rarely used: emoji and icon sets, single-university templates, sample bibliographies.
-DROP = ['uantwerpendocs', 'nwejm', 'openmoji', 'twemojis', 'hwemoji', 'utfsym', 'worldflags', 'rutitlepage', 'customenvs',
+DROP = ['uantwerpendocs', 'nwejm', 'openmoji', 'twemojis', 'hwemoji', 'worldflags', 'rutitlepage', 'customenvs',
         'vscodeicons', 'euromoney', 'ghsystem', 'realhats', 'tablericons', 'powerdot-tuliplab', 'stellenbosch-2', 'stellenbosch',
         'sduthesis', 'beebe', 'beamertheme-npbt', 'fithesis', 'isosigns', 'bootstrapicons', 'texfindpkg', 'pgf-periodictable',
         'duckuments', 'panneauxroute', 'lucide-icons', 'figchild', 'knitting', 'kosch', 'tudscr', 'lwarp',
@@ -94,12 +94,24 @@ FONT_PICKS = ['newtx', 'newpx', 'stix2-type1', 'stix', 'fourier', 'mathdesign', 
               # beamer loads it whenever it is installed: math italic in slides set in sans (76 KB)
               'sansmathaccent',
               # Euler math with Concrete text (ccfonts, eulervm: Concrete Mathematics' pair), 128 KB
-              'eulervm']
+              'eulervm',
+              # what arXiv papers load that a desktop TeX Live has (PLAN.md task 16), 0.8 MB of packs:
+              # newtx's typewriter, dingbats (METAFONT, as PK fonts), symbol and calligraphic math
+              # alphabets (fdsymbol's Type 1 fonts, dutchcal, boondox for mathalpha's bb=boondox, URW
+              # Chancery as \mathcal), the phonetic fonts (METAFONT), a brush script, ASCII glyphs, and
+              # the LY1 encoding (fbb's text encoding; fontenc stops without ly1enc.def)
+              'newtxtt', 'bbding', 'fdsymbol', 'dutchcal', 'boondox', 'urwchancal', 'phonetic', 'brushscr', 'ascii-font',
+              'ly1']
+# Single packages from TeX Live packages the tree does not take whole: (package, folders)
+PICKS = [('texlive-lang-japanese', ['ascmac'])]  # ascmac's boxes and their font, used in English papers too
 DEB_SETS = ['texlive-lang-german', 'texlive-lang-spanish', 'texlive-lang-french', 'texlive-lang-portuguese', 'texlive-lang-italian',
             'texlive-lang-european', 'texlive-science', 'texlive-bibtex-extra', 'texlive-pictures', 'texlive-publishers',
             'texlive-humanities', 'texlive-plain-generic', 'texlive-lang-cyrillic', 'texlive-latex-extra', 'texlive-latex-recommended', 'texlive-games',
             'texlive-pstricks', 'texlive-xetex', 'texlive-luatex', 'texlive-metapost', 'texlive-lang-greek', 'texlive-lang-arabic', 'texlive-lang-other',
-            'texlive-formats-extra', 'asymptote']
+            'texlive-formats-extra', 'asymptote',
+            # feynmf.sty and feynmp.sty (Feynman diagrams through METAFONT or MetaPost, which Rikuy does
+            # not run: the paper compiles without its diagrams, as with latexmk on a desktop)
+            'feynmf']
 
 
 # Chinese, Arabic, India's scripts, Japanese, Korean, Hebrew, Thai and Sinhala. What a document in those
@@ -110,7 +122,20 @@ DEB_SETS = ['texlive-lang-german', 'texlive-lang-spanish', 'texlive-lang-french'
 # into packs of their own (script_only), marked 'x' in the index: the hosted Rikuy serves them,
 # publish_batches.py leaves them out of the artifact, and no other pack's bytes depend on them.
 SCRIPT_PICKS = [('texlive-lang-chinese', ['fandol', 'zhnumber', 'zhmetrics', 'xpinyin', 'zhlineskip', 'zhlipsum', 'zhspacing', 'upzhkinsoku']),
-                ('texlive-lang-cjk', ['cjkpunct', 'xcjk2uni'])]
+                ('texlive-lang-cjk', ['cjkpunct', 'xcjk2uni']),
+                # Korean (kotex): ko.TeX for pdfLaTeX with Nanum's Type 1 fonts and UHC's Myeongjo for
+                # Hanja (TeX Live's texlive-lang-korean less its UnFonts and Baekmuk, which Ubuntu's
+                # package only links to); XeLaTeX's xetexko is in texlive-xetex
+                ('texlive-lang-korean', ['cjk-ko', 'kotex-utf', 'kotex-plain', 'kotex-oblivoir', 'pmhanguljamo', 'nanumtype1', 'uhc'])]
+# Large font families the artifact has no room for (PLAN.md task 16: 14 MB of packs, and the
+# artifact had 1.9 MB to spare): Libertinus (Type 1 and OpenType), Droid, fbb, French school
+# cursive, Baskervald, fdsymbol's OpenType fonts (unicode-math's; fdsymbol.sty itself takes the
+# Type 1 fonts with every engine), utfsym's 1,681 TikZ symbols (texlive-pictures, through
+# DEB_SETS). Their files go into
+# packs marked 'x' like the scripts' (APART), which the hosted Rikuy serves and the artifact leaves
+# out; the worker reads them for a document that names them (engine.js SCRIPTS_RE).
+LARGE_PICKS = [('texlive-fonts-extra', ['libertinus', 'libertinus-otf', 'libertinus-type1', 'libertinus-fonts', 'droid', 'fbb', 'frcursive',
+                                        'baskervaldadf'])]
 SCRIPT_SETS = ['latex-cjk-common', 'latex-cjk-chinese', 'latex-cjk-chinese-arphic-gbsn00lp', 'latex-cjk-chinese-arphic-gkai00mp',
                'latex-cjk-chinese-arphic-bsmi00lp', 'latex-cjk-chinese-arphic-bkai00mp']
 # files TeX Live has and Ubuntu's packages only link to: (package folder, folder in the tree, names)
@@ -136,9 +161,16 @@ SCRIPT_LINKED = [('fonts-hosny-amiri/usr/share/fonts/opentype/fonts-hosny-amiri'
                  # whose license lets a document embed it
                  ('fonts-culmus/usr/share/fonts/truetype/culmus', 'fonts/opentype/public/culmus',
                   ['HadasimCLM-Regular.otf', 'HadasimCLM-Bold.otf', 'HadasimCLM-RegularOblique.otf', 'HadasimCLM-BoldOblique.otf'])]
-SCRIPT_ONLY = re.compile(r'^(fonts/[^/]+/public/(fandol|amiri|noto-scripts|haranoaji|nanum|culmus)|fonts/([^/]+/)+arphic(/|$)|fonts/tfm/zhmetrics'
-                         r'|tex/latex/(CJK|zhnumber|zhmetrics|xpinyin|zhlineskip|zhlipsum|cjkpunct|xcjk2uni)$'
-                         r'|tex/generic/(zhmetrics|zhspacing|upzhkinsoku)$|tex/xelatex/zhspacing$)')
+SCRIPT_ONLY = re.compile(r'^(fonts/[^/]+/public/(fandol|amiri|noto-scripts|haranoaji|nanum|culmus)|fonts/([^/]+/)+(arphic|nanumtype1|uhc)(/|$)|fonts/tfm/zhmetrics'
+                         r'|tex/latex/(CJK|zhnumber|zhmetrics|xpinyin|zhlineskip|zhlipsum|cjkpunct|xcjk2uni|cjk-ko|kotex-utf|kotex-oblivoir|pmhanguljamo|nanumtype1)$'
+                         r'|tex/generic/(zhmetrics|zhspacing|upzhkinsoku)$|tex/xelatex/zhspacing$|tex/plain/kotex-plain$)')
+LARGE_ONLY = re.compile(r'^(fonts/([^/]+/)+(libertinus-type1|libertinus-fonts|droid|fbb|frcursive|baskervaldadf)|fonts/opentype/public/fdsymbol'
+                        r'|tex/latex/(libertinus|libertinus-otf|libertinus-type1|droid|fbb|frcursive|baskervaldadf|utfsym))$')
+
+
+def apart(key):
+    """Whether a package folder goes into the packs only the hosted Rikuy carries ('x')."""
+    return bool(SCRIPT_ONLY.search(key) or LARGE_ONLY.search(key))
 
 
 def group_key(rel):
@@ -156,7 +188,7 @@ def group_key(rel):
 
 
 def script_only(rel):
-    return bool(SCRIPT_ONLY.search(group_key(rel)))
+    return apart(group_key(rel))
 
 
 # the core of TeX Live that BusyTeX's tree also holds; with TL_FIRST these replace its copies
@@ -261,14 +293,19 @@ def build_tree():
     picks = set(FONT_PICKS)
     if os.path.isdir(fx):
         add_from(fx, 'fonts-extra', lambda sub: any(seg in picks for seg in sub.split('/')[1:-1]))
-
-    # Chinese and Arabic (SCRIPT_PICKS): only into folders of their own, so that every other
-    # pack stays as it was
-    before = set(files)
-    for name, folders in SCRIPT_PICKS:
+    for name, folders in PICKS:
         root = os.path.join(DEBS, name, 'usr/share/texlive/texmf-dist')
         if os.path.isdir(root):
-            add_from(root, 'scripts', lambda sub, folders=set(folders): any(seg in folders for seg in sub.split('/')[1:-1]))
+            add_from(root, name, lambda sub, folders=set(folders): any(seg in folders for seg in sub.split('/')[1:-1]))
+
+    # Chinese, Arabic, Korean and the rest (SCRIPT_PICKS), and the large families (LARGE_PICKS):
+    # only into folders of their own, so that every other pack stays as it was
+    before = set(files)
+    for label, picks_ in (('scripts', SCRIPT_PICKS), ('large', LARGE_PICKS)):
+        for name, folders in picks_:
+            root = os.path.join(DEBS, name, 'usr/share/texlive/texmf-dist')
+            if os.path.isdir(root):
+                add_from(root, label, lambda sub, folders=set(folders): sub.startswith(('tex/', 'fonts/')) and any(seg in folders for seg in sub.split('/')[1:-1]))
     for name in SCRIPT_SETS:
         root = os.path.join(DEBS, name, 'usr/share/texmf')
         if os.path.isdir(root):
@@ -281,7 +318,7 @@ def build_tree():
                 added['scripts'] += 1
                 added_bytes['scripts'] += os.path.getsize(src)
     stray = sorted(r for r in set(files) - before if not script_only('/' + r))
-    assert not stray, 'Chinese and Arabic files outside their own packs: %s' % stray[:5]
+    assert not stray, 'files of the scripts or the large families outside their own packs: %s' % stray[:5]
 
     if os.path.exists(TREE):
         shutil.rmtree(TREE)
@@ -622,7 +659,7 @@ def build_packs():
     LIM = 3_000_000
     for extra in (False, True):
         cur, cur_size, cur_labels = [], 0, []
-        for key in sorted(k for k in groups if bool(SCRIPT_ONLY.search(k)) == extra):
+        for key in sorted(k for k in groups if apart(k) == extra):
             g = groups[key]
             gsize = sum(x[1] for x in g)
             if gsize > LIM:

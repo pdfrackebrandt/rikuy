@@ -167,7 +167,67 @@ group('Hunspell: the four dictionaries, suggestions, words added', () => {
   assert.strictEqual(check(D.en_US, many).length, 20000);
   console.log('hunspell: 20000 words checked in', Math.round(performance.now() - t0), 'ms');
 });
+// (R4) MyThes in the same module: the data whole here (the worker serves it piece by piece)
+const openThes = (name) => {
+  const dir = path.join(ROOT, 'tex/vendor/hunspell/thes');
+  H.FS.writeFile('/' + name + '.idx', fs.readFileSync(path.join(dir, name + '.idx')));
+  const pieces = fs.readdirSync(dir).filter((x) => x.startsWith(name + '.dat.')).sort().map((x) => fs.readFileSync(path.join(dir, x)));
+  H.FS.writeFile('/' + name + '.dat', Buffer.concat(pieces));
+  return H._thes_open(cs('/' + name + '.idx'), cs('/' + name + '.dat'));
+};
+const look = (t, w) => H.UTF8ToString(H._thes_lookup(t, cs(w))).split('\n').filter(Boolean).map((l) => l.split('\t'));
+group('R4 MyThes: WordNet, OpenThesaurus, LibreOffice\'s Spanish (ISO8859-1), and Hunspell\'s stems', () => {
+  const D = { en: openDict('en_US'), de: openDict('de_DE'), es: openDict('es_ES') };
+  const T = { en: openThes('en_US'), de: openThes('de_DE'), es: openThes('es_ES') };
+  for (const k in T) assert.ok(T[k] >= 0, k);
+  const fast = look(T.en, 'fast');
+  assert.ok(fast.length > 3 && fast.some((m) => m[0] === '(adj)' && m.some((x) => x.startsWith('speedy'))), JSON.stringify(fast.slice(0, 2)));
+  assert.deepStrictEqual(look(T.en, 'qwzxv'), []);
+  // inflected: no entry of its own, its stem has one
+  assert.deepStrictEqual(look(T.de, 'häuser'), []);
+  const stems = H.UTF8ToString(H._spell_stem(D.de, cs('Häuser'))).split('\n').filter(Boolean);
+  assert.ok(stems.includes('Haus'), stems.join(','));
+  assert.ok(look(T.de, 'haus').length > 0);
+  assert.ok(H.UTF8ToString(H._spell_stem(D.es, cs('corriendo'))).split('\n').includes('correr'));
+  // Spanish's file is ISO8859-1: the word and the answer in UTF-8 all the same
+  const rap = look(T.es, 'rápido');
+  assert.ok(rap.length > 0 && rap.flat().some((x) => /[áéíóúñ]/.test(x)), JSON.stringify(rap.slice(0, 1)));
+  assert.deepStrictEqual(look(T.es, '中文'), [], 'a word with no place in ISO8859-1 is in no entry');
+  // a stranger's words: long, empty, odd
+  for (const w of ['', 'a'.repeat(400), '\u0000', '😀']) assert.ok(Array.isArray(look(T.en, w)));
+});
 fs.rmSync(tmp, { recursive: true, force: true });
+
+// ---- (R4) grammar: the page's prose as Harper reads it, and Harper itself ----
+{
+  const { grammarBlocks, lintSource } = await import('../src/spell/words.js');
+  const { harperBytes, lintText } = await import('../src/spell/harper.js');
+  const doc = '\\documentclass{article}\n\\usepackage[german,english]{babel}\n\\begin{document}\nLet $x$ be small\\footnote{A note.} and he go home \\cite{k}.\n\n\\foreignlanguage{german}{Das ist gut.} It is is clear \\texttt{code} here.\n\\begin{tabular}{ll}a & b\\\\ c & d\\end{tabular}\n\\end{document}\n';
+  const files = new Map([['main.tex', doc]]);
+  const B = grammarBlocks(buildModel({ files, main: 'main.tex' }), { files, main: 'main.tex' });
+  group('R4 grammar\'s text: a formula, a citation or code stands as x, a footnote apart, another language and table cells left out', () => {
+    const texts = B.map((b) => b.text);
+    assert.ok(texts.includes('Let x be small and he go home x.'), JSON.stringify(texts));
+    assert.ok(texts.includes('A note.'));
+    assert.ok(texts.includes('x It is is clear x here.'), JSON.stringify(texts));
+    assert.ok(texts.every((t) => !/Das ist|&/.test(t)) && texts.includes('a') && texts.includes('d'));
+    const g = B.find((b) => b.text.startsWith('Let'));
+    const k = g.text.indexOf('go');
+    assert.strictEqual(doc.slice(lintSource(g, k, k + 2).s, lintSource(g, k, k + 2).e), 'go');
+    assert.strictEqual(lintSource(g, 4, 9), null, 'a span over the formula\'s x has no place in the source');
+  });
+  harperBytes(fs.readFileSync(path.join(ROOT, 'tex/vendor/harper/harper_wasm_slim_bg.wasm')));
+  const t0 = performance.now();
+  const L = await lintText('He go home. It is is clear. 😀 It is is so. This is an useful result.');
+  console.log('harper: started and linted in', Math.round(performance.now() - t0), 'ms');
+  group('R4 Harper: agreement, a repeated word, an article; offsets in UTF-16 past a character beyond U+FFFF', () => {
+    const t = 'He go home. It is is clear. 😀 It is is so. This is an useful result.';
+    const words = L.map((l) => t.slice(l.s, l.e));
+    assert.ok(words.includes('go') && words.filter((w) => w === 'is is').length === 2 && words.includes('an'), JSON.stringify(words));
+    assert.ok(L.find((l) => t.slice(l.s, l.e) === 'go').sugg.some((x) => x.text === 'goes'));
+    assert.ok(!L.some((l) => /^Spelling$/.test(l.kind)), 'no spelling: Hunspell\'s');
+  });
+}
 
 // ---- the corpus: nothing of LaTeX is ever a word ----
 const CORPUS = process.env.CORPUS_DIR || process.argv[2];

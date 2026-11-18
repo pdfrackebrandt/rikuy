@@ -415,6 +415,38 @@ await ok('to Word: colour, highlight, centred text and a list\'s own labels are 
   assert.deepEqual(listStyle('3.'), [3, { t: 'Decimal' }, { t: 'Period' }]);
 });
 
+await ok('to Word: the title block\'s subtitle as Word\'s Subtitle (KOMA\'s \\subtitle and \\title{..\\\\[0.5ex]\\large ..}), and still round trip', async () => {
+  for (const pre of ['\\documentclass{article}\n\\title{Main\\\\[0.5ex]\\large The sub}\n', '\\documentclass{scrartcl}\n\\title{Main}\n\\subtitle{The sub}\n']) {
+    const src = pre + '\\begin{document}\n\\maketitle\nText.\n\\end{document}\n', files = new Map([['main.tex', src]]);
+    const E = exportFiles(files), d = text(unzip(E.docx).get('word/document.xml'));
+    assert.match(d, /<w:pStyle w:val="Subtitle" \/>(?:(?!<\/w:p>)[\s\S])*The sub/);
+    assert.match(d, /<w:pStyle w:val="Title" \/>(?:(?!<\/w:p>)[\s\S])*Main/);
+    assert.equal(importInto(E.docx, files).files.size, 0);
+  }
+});
+
+await ok('to Word: each list\'s bullet as the page drew it, nested ones too (pandoc\'s AST has none: its numbering is given the page\'s), numbered lists untouched', async () => {
+  const src = doc('\\begin{itemize}\n  \\item One\n  \\begin{itemize}[label=$\\blacktriangleright$]\n    \\item Two\n    \\begin{enumerate}\n      \\item Three\n    \\end{enumerate}\n  \\end{itemize}\n  \\item Four\n\\end{itemize}\n\nPara.\n\n\\begin{itemize}\n  \\item Five\n\\end{itemize}\n', '\\usepackage{enumitem,amssymb}\n');
+  const files = new Map([['main.tex', src]]);
+  const m = buildModel({ files, main: 'main.tex' });
+  const W = buildWordDoc(m, files, { now: 0, main: 'main.tex' });
+  assert.deepEqual(W.bullets.map((b) => b && b.glyph), ['•', '▸', null, '•']);
+  const E = exportDocx(P, { doc: W.doc, anchors: W.anchors, atoms: W.atoms, resources: {}, bibs: [], bullets: W.bullets, project: { name: 'Paper', main: 'main.tex', files: [...files] } });
+  const parts = unzip(E.docx), nu = text(parts.get('word/numbering.xml')), d = text(parts.get('word/document.xml'));
+  const lvlOf = (word) => { const k = d.indexOf('>' + word + '<'), p = d.lastIndexOf('<w:numPr>', k); const m2 = /<w:ilvl w:val="(\d+)" \/><w:numId w:val="(\d+)" \/>/.exec(d.slice(p, k)); const an = new RegExp('<w:num w:numId="' + m2[2] + '"><w:abstractNumId w:val="(\\d+)"').exec(nu)[1];
+    const ab = new RegExp('<w:abstractNum w:abstractNumId="' + an + '">([\\s\\S]*?)</w:abstractNum>').exec(nu)[1]; return new RegExp('<w:lvl w:ilvl="' + m2[1] + '"[^>]*>([\\s\\S]*?)</w:lvl>').exec(ab)[1]; };
+  assert.match(lvlOf('One'), /<w:lvlText w:val="•" \/>/);
+  assert.doesNotMatch(lvlOf('One'), /Symbol/);
+  assert.match(lvlOf('Two'), /<w:lvlText w:val="▸" \/>/);
+  assert.match(lvlOf('Three'), /<w:numFmt w:val="decimal" \/>/);
+  assert.match(lvlOf('Five'), /<w:lvlText w:val="•" \/>/);
+  // (still a Word file Word reads: every abstract list before the lists that use it, ids unique)
+  assert.ok(nu.lastIndexOf('<w:abstractNum ') < nu.indexOf('<w:num '));
+  const aids = [...nu.matchAll(/<w:abstractNum w:abstractNumId="(\d+)"/g)].map((x) => x[1]);
+  assert.equal(new Set(aids).size, aids.length);
+  assert.equal(importInto(E.docx, files).files.size, 0);
+});
+
 await ok('to Word: the Font group\'s formats as Word\'s own (a highlighter\'s colour, ulem\'s lines, double strike, caps, border, sizes, fonts, spacing, position, scale), and still round trip', async () => {
   const src = doc('\\hl[green]{green marked} \\hl{yellow marked} \\uuline{twice under} \\uwave{wavy} \\dashuline{dashed} \\dotuline{dotted} \\dsout{struck twice} \\MakeUppercase{capitals} \\fbox{boxed}'
     + ' {\\large larger} {\\fontsize{14}{17}\\selectfont fourteen} {\\fontfamily{ppl}\\selectfont palatino} \\textsf{sans} \\textls[100]{spaced} \\raisebox{3pt}{raised} \\scalebox{1.5}[1]{wide}.\n',
@@ -502,12 +534,67 @@ await ok('to Word: a cell merged across (\\multicolumn) and one merged down (\\m
   assert.ok(/\\multirow\{2\}\{\*\}\{Tall\}/.test(t), t);
 });
 
+await ok('to Word (R3): a cell\'s shading (\\cellcolor, \\rowcolor, \\rowcolors), its words turned (\\rotatebox) and the table\'s alt text, in Word\'s cells; nothing changed comes back changed', async () => {
+  const src = doc('\\begin{table}[h]\n\\centering\n\\rowcolors{2}{gray!25}{}\n% alt: Two rows of fruit\n\\begin{tabular}{lll}\n\\toprule\n\\cellcolor{yellow}Head & \\rotatebox{90}{Up} & \\rotatebox{270}{Down} \\\\\n\\midrule\n\\rowcolor{blue!20} b1 & \\multirow{2}{*}{Tall} & c1 \\\\\n b2 & & c2 \\\\\n\\bottomrule\n\\end{tabular}\n\\caption{Fruit}\n\\end{table}\n', '\\usepackage{booktabs,multirow,graphicx}\n\\usepackage[table]{xcolor}\n');
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  const d = text(unzip(E.docx).get('word/document.xml'));
+  const cellOf = (w) => { const i = d.indexOf('>' + w + '<'), s = d.lastIndexOf('<w:tc>', i); return d.slice(s, i); };
+  assert.match(cellOf('Head'), /<w:shd w:val="clear" w:color="auto" w:fill="FFFF00" \/>/);
+  assert.match(cellOf('Up'), /<w:textDirection w:val="btLr" \/>/);
+  assert.match(cellOf('Down'), /<w:textDirection w:val="tbRl" \/>/);
+  assert.match(cellOf('b1'), /w:fill="CCCCFF"/);
+  assert.match(cellOf('c1'), /w:fill="CCCCFF"/);
+  // (\rowcolors{2}: the third row's band, the second row of the body, as the page draws it)
+  assert.match(cellOf('b2'), /w:fill="DFDFDF"/);
+  assert.ok(!/<w:shd/.test(cellOf('Tall')) || /CCCCFF/.test(cellOf('Tall')));
+  assert.match(d, /<w:tblDescription w:val="Two rows of fruit" \/><\/w:tblPr>/);
+  assert.equal(importInto(E.docx, files).files.size, 0);
+});
+
+await ok('to Word (R3): \\thepage, \\pageref{LastPage}, \\thetitle and \\theauthor as Word\'s fields; hyperref\'s form fields as content controls; nothing changed comes back changed', async () => {
+  const src = doc('\\begin{Form}\nPage \\thepage{} of \\pageref{LastPage} in \\thetitle{} by \\theauthor{}.\n\nName \\TextField[name=t, width=4cm]{Who} on \\TextField[name=d, format={AFDate_FormatEx("dd/mm/yyyy");}]{} picks \\ChoiceMenu[name=l]{}{One,Two} or \\ChoiceMenu[combo,name=c]{}{A & B,C} and \\CheckBox[name=k,checked]{Agree}.\n\\end{Form}', '\\usepackage{titling,lastpage,hyperref}\n\\title{Fields}\n\\author{Ann}\n');
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  const d = text(unzip(E.docx).get('word/document.xml'));
+  for (const f of ['PAGE', 'NUMPAGES', 'TITLE', 'AUTHOR']) assert.match(d, new RegExp('<w:fldSimple w:instr=" ' + f + ' ">'), f);
+  assert.match(d, />Fields<\/w:t><\/w:r><\/w:fldSimple>/);
+  assert.match(d, /Who <\/w:t>(?:(?!<w:sdt>)[\s\S])*<w:sdt><w:sdtPr><w:tag w:val="rikuy-text" \/><w:text \/>/);
+  assert.match(d, /<w:date><w:dateFormat w:val="dd\/MM\/yyyy" \/>/);
+  assert.match(d, /<w:dropDownList><w:listItem w:displayText="One" w:value="One" \/><w:listItem w:displayText="Two" w:value="Two" \/><\/w:dropDownList>/);
+  assert.match(d, /<w:comboBox><w:listItem w:displayText="A &amp; B"/);
+  assert.match(d, /\u2612<\/w:t>/);
+  assert.equal(importInto(E.docx, files).files.size, 0);
+});
+
 await ok('from Word: highlighted text gets the highlighter that takes a colour, as the Font group writes it', () => {
   const r = docxToLatex(P, new Uint8Array(tiny('<w:p><w:r><w:rPr><w:highlight w:val="yellow"/></w:rPr><w:t>marked words</w:t></w:r></w:p>')), 'x.docx');
   assert.ok(r.tex.includes('\\hl{marked words}'), r.tex);
   assert.ok(r.tex.includes('\\DeclareRobustCommand{\\hl}[1][yellow]{\\bgroup\\markoverwith{\\textcolor{#1}{\\rule[-.5ex]{2pt}{2.5ex}}}\\ULon}'), r.tex);
 });
 
+
+await ok('from Word: the highlighter keeps its colour (pandoc reads the highlight and not the colour): \\hl[green], a dark one as xcolor\'s mix, yellow as it was, and the page draws each', () => {
+  const run = (v, t) => '<w:r><w:rPr><w:highlight w:val="' + v + '"/></w:rPr><w:t>' + t + '</w:t></w:r>';
+  const red = '<w:r><w:rPr><w:color w:val="C00000"/><w:highlight w:val="cyan"/></w:rPr><w:t>red on cyan</w:t></w:r>';
+  const r = docxToLatex(P, new Uint8Array(tiny('<w:p>' + run('green', 'green words') + '<w:r><w:t> plain </w:t></w:r>' + run('darkBlue', 'navy words') + '<w:r><w:t> and </w:t></w:r>' + run('yellow', 'yellow words') + '<w:r><w:t> then </w:t></w:r>' + red + '</w:p><w:p><w:r><w:t>Plain text to make black the ink of the document, as most of it is.</w:t></w:r></w:p>')), 'x.docx');
+  assert.ok(r.tex.includes('\\hl[green]{green words}'), r.tex);
+  assert.ok(r.tex.includes('\\hl[rgb,255:red,0;green,0;blue,128]{navy words}'), r.tex);
+  assert.ok(r.tex.includes('\\hl{yellow words}'), r.tex);
+  assert.ok(/\\hl\[cyan\]\{\\textcolor\[HTML\]\{C00000\}\{red on cyan\}\}/.test(r.tex), r.tex);
+  assert.ok(!/[\uE000-\uE01F]/.test(r.tex), 'no mark left');
+  // (security: a highlight value that names a member of Object's prototype is no colour, and writes nothing)
+  const z = docxToLatex(P, new Uint8Array(tiny('<w:p>' + run('constructor', 'odd words') + run('toString', 'more words') + '</w:p>')), 'x.docx');
+  assert.ok(z.tex.includes('odd words') && !/[\u0000-\u0008\uE000-\uF8FF]/.test(z.tex) && !/\\hl\[/.test(z.tex), JSON.stringify(z.tex.slice(-200)));
+  assert.ok(r.tex.includes('\\DeclareRobustCommand{\\hl}[1][yellow]') && r.tex.includes('{ulem}'), r.tex);
+  const M = buildModel({ files: new Map([['main.tex', r.tex]]), main: 'main.tex' });
+  const sty = [];
+  const walk = (l) => { for (const x of l || []) { if (x.k === 'sty' && x.st === 'hl') sty.push(x); walk(x.kids); } };
+  for (const it of M.blocks.flatMap((b) => b.items)) walk(it.inl);
+  const col = (w) => { const x = sty.find((y) => (y.kids || []).some((k) => k.t && k.t.includes(w))); return x && x.color; };
+  assert.equal(col('green words'), '#00FF00');
+  assert.equal(col('navy words'), '#000080');
+});
 
 await ok('a Word file of what pandoc alone loses: nothing goes without a word, and every command has its package', () => {
   // test/word_fixture.py's make_rich()
@@ -518,7 +605,7 @@ await ok('a Word file of what pandoc alone loses: nothing goes without a word, a
   for (const s of ['\\tableofcontents', '\\textcolor[HTML]{C00000}{red words}', '\\hl{marked}', '\\uline{under}', '\\sout{struck}',
     'p \\(\\leq\\) 0.05', '\\(\\neq\\) 0', '\\(\\infty\\)', '\\textminus{} 5\\,\\%', 'Ελληνικά, Привет', '\n% comment (Ana P) on "robust": Is it? \\input{/etc/passwd} 50% }\n',
     '\\begin{center}\nCentred line.\n\\end{center}', 'Before the break.\n\n\\newpage', 'See Figure~\\ref{_Ref7} and', '\\label{_Ref7}{}A blue box.}', 'width=1\\linewidth', '\\begin{table}[htbp]\n\\centering\n\\caption{Growth by region}\n\\begin{tabular}',
-    '\\multirow{2}{*}{Region}', 'South & 3 & \\begin{tabular}{@{}ll@{}}', '\\begin{aligned}\nx &= 1 \\\\\ny &= 2 + x \\\\\nz &= 3\n\\end{aligned}', '\\begin{equation}\nE = mc^{2}\n\\end{equation}', '\\begin{equation}\nF = ma\n\\tag{7}\n\\end{equation}', '\\footnote{The endnote text.}', 'The result is strong and'])
+    '\\multirow{2}{*}{Region}', 'South & 3 & \\begin{tabular}{@{}ll@{}}', '\\begin{aligned}\nx &= 1 \\\\\ny &= 2 + x \\\\\nz &= 3\n\\end{aligned}', '\\begin{equation}\nE = mc^{2}\n\\end{equation}', '\\begin{equation}\nF = ma\n\\tag{7}\n\\end{equation}', '\\endnote{The endnote text.}', 'The result is strong and'])
     assert.ok(b.includes(s), s + '\n' + b);
   for (const s of ['Stale entry', '\\ul{', '\\st{', 'longtable', 'Figure 1:', 'Table 1:', 'weak']) assert.ok(!b.includes(s), s);
   // every command the body uses is defined by the preamble: these were undefined before
@@ -1670,6 +1757,70 @@ await ok('an interactive graph goes to Word as its picture, the PDF\'s, with its
   assert.ok(![...parts.keys()].some((k) => /\.html?$/i.test(k) && !/rikuy/i.test(k)) && !/<script|rikuy-graph|iframe/i.test(d));
   const plan = importInto(E.docx, files);
   assert.equal(plan.files.size, 0, 'unchanged in Word: the \\rikuywidget block comes back unchanged');
+});
+
+await ok('R4: endnotes are Word\'s endnotes and come back as \\endnote; the index, a Table of Authorities and the lists are Word\'s fields', () => {
+  const src = '\\documentclass{article}\n\\usepackage{enotez}\n\\setenotez{counter-format=roman}\n\\usepackage{imakeidx}\n\\makeindex\n\\makeindex[name=toa,title=Table of Authorities]\n\\begin{document}\n'
+    + '\\listoffigures\n\nThe text\\endnote{An endnote with $x^2$.} and a cat\\index{cat!black|textbf} and a case\\index[toa]{1@\\textbf{Cases}!Smith v. Jones, 1 U.S. 2 (1990)} here\\footnote{A footnote.}.\n\n'
+    + '\\begin{figure}[htbp]\n\\centering\n\\caption{A cat}\n\\end{figure}\n\n\\printendnotes\n\\printindex\n\\printindex[toa]\n\\end{document}\n';
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  const parts = unzip(E.docx);
+  const d = text(parts.get('word/document.xml'));
+  assert.ok(parts.has('word/endnotes.xml'), 'an endnotes part');
+  const en = text(parts.get('word/endnotes.xml')), fn = text(parts.get('word/footnotes.xml'));
+  assert.match(en, /An endnote with/);
+  assert.ok(!/An endnote with/.test(fn) && /A footnote\./.test(fn), 'the endnote left the footnotes, the footnote stayed');
+  assert.ok(!/rikuy:endnote/.test(en + fn + d), 'no mark left in the file');
+  assert.match(d, /<w:endnoteReference w:id="\d+"\/>/);
+  assert.match(text(parts.get('word/settings.xml')), /<w:endnotePr><w:numFmt w:val="lowerRoman"\/>/, 'numbered i, ii, iii as \\setenotez says');
+  assert.match(text(parts.get('[Content_Types].xml')), /\/word\/endnotes\.xml/);
+  assert.match(text(parts.get('word/_rels/document.xml.rels')), /relationships\/endnotes/);
+  assert.match(d, /XE &quot;cat:black&quot; \\b|XE "cat:black" \\b/, 'the index entry an XE field, its page in bold');
+  assert.match(d, /TA \\l (&quot;|")Smith v\. Jones, 1 U\.S\. 2 \(1990\)(&quot;|") \\s (&quot;|")Smith v\. Jones, 1 U\.S\. 2 \(1990\)(&quot;|") \\c 1/, 'the citation a TA field of category 1 (Cases)');
+  assert.match(d, /INDEX \\c (&quot;|")2(&quot;|")/, 'the index an INDEX field in two columns');
+  assert.match(d, /TOA \\h \\c (&quot;|")1(&quot;|") \\p/, 'the Table of Authorities a TOA field of its category');
+  assert.match(d, /TOC \\h \\z \\t (&quot;|")Image Caption,1(&quot;|")/, 'the list of figures a TOC field of the caption style');
+  assert.match(d, /w:dirty="true"/, 'fields Word updates as the file opens');
+  // what Word shows as text: no field code in it, the endnote's words not in the body
+  const shown = extract(parts);
+  assert.ok(![...shown.regions.values()].some((R) => /XE|INDEX|TOC \\/.test(R.text)), 'no field code in the text Word shows');
+  // unchanged in Word: no edit comes back
+  const plan = importInto(E.docx, files);
+  assert.equal(plan.files.size, 0, 'the exported file read back unchanged gives no edit');
+  // opened as a Word file of its own: the endnote is \endnote again, with enotez and \printendnotes
+  const r = docxToLatex(P, E.docx, 'x.docx');
+  assert.match(r.tex, /\\endnote\{An endnote with/);
+  assert.match(r.tex, /\\footnote\{A footnote\.\}/);
+  assert.match(r.tex, /\\usepackage\{enotez\}/);
+  assert.match(r.tex, /\\printendnotes\n/);
+  assert.ok(isBalanced(r.tex), 'balanced');
+});
+
+await ok('R4 review M3: a Word endnote holding a table keeps every block, as a footnote, and the import says so', () => {
+  const files = new Map([['main.tex', '\\documentclass{article}\n\\usepackage{enotez}\n\\begin{document}\nText\\endnote{First paragraph.} and\\footnote{Foot first.}\n\n\\printendnotes\n\\end{document}\n']]);
+  const parts = unzip(exportFiles(files).docx);
+  for (const n of [...parts.keys()]) if (/rikuy/i.test(n)) parts.delete(n);
+  const TBL = '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t>TABLECELLTEXT</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p><w:r><w:t>LASTPARA</w:t></w:r></w:p>';
+  let x = text(parts.get('word/endnotes.xml'));
+  const i = x.lastIndexOf('</w:endnote>');
+  parts.set('word/endnotes.xml', new TextEncoder().encode(x.slice(0, i) + TBL + x.slice(i)));
+  const r = docxToLatex(P, zip(parts), 'x.docx');
+  const b = bodyOf(r.tex);
+  assert.match(b, /\\footnote\{First paragraph\.[^]*TABLECELLTEXT[^]*LASTPARA\}/, 'every block of the note, in order');
+  assert.ok(!/\\endnote\{/.test(b) && !b.includes('\u2063'), 'no endnote cut short, no mark left');
+  assert.ok(r.warnings.some((n) => /1 endnote with a table/.test(n)) && r.tex.includes('1 endnote with a table'), r.warnings.join(' | '));
+});
+
+await ok('R4: captions of the document\'s own floats and with the number alone go to Word as the page draws them', () => {
+  const src = '\\documentclass{article}\n\\usepackage{newfloat}\n\\usepackage{caption}\n\\DeclareFloatingEnvironment[fileext=loscheme,listname={List of Schemes},name={Scheme}]{scheme}\n\\DeclareCaptionLabelFormat{nolabel}{#2}\n\\begin{document}\n'
+    + '\\begin{scheme}[htbp]\n\\centering\n\\caption{A reaction}\n\\end{scheme}\n\n\\begin{figure}[htbp]\n\\centering\n\\captionsetup{labelformat=nolabel}\n\\caption{Plain}\n\\end{figure}\n\\end{document}\n';
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  const d = text(unzip(E.docx).get('word/document.xml')).replace(/<[^>]+>/g, '');
+  assert.match(d, /Scheme 1: A reaction/);
+  assert.match(d, /(^|[^e] )1: Plain/);
+  assert.ok(!/Figure 1: Plain/.test(d));
 });
 
 // (R1) What the paragraph and page batches left: a foreign file's left alignment, line spacing,

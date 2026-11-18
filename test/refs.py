@@ -304,8 +304,8 @@ def captions(page):
     load_doc(page, FIG); click_text(page, 'PICTURE', 2)
     page.evaluate('rikuy.selectTab("references")'); page.locator('#rc-insert-caption').click(); page.wait_for_timeout(300)
     dlg = page.get_by_role('dialog', name='Caption')
-    dlg.get_by_label('Caption').fill('Sunset over the sea')
-    check('the dialog shows Figure 1: and a label from the words', dlg.locator('.cap-pre').inner_text().strip() == 'Figure 1:' and dlg.get_by_label('Label', exact=True).input_value() == 'fig:sunset-over-the-sea')
+    dlg.get_by_label('Caption', exact=True).fill('Sunset over the sea')
+    check('the dialog shows Figure 1: and a label from the words', dlg.locator('.cap-pre').inner_text().strip() == 'Figure 1:' and dlg.get_by_label('Reference label', exact=True).input_value() == 'fig:sunset-over-the-sea')
     dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
     check('OK writes it', '\\caption{Sunset over the sea}\n\\label{fig:sunset-over-the-sea}\n\\end{figure}' in src(page), src(page)[-140:])
     # lists of figures and tables
@@ -354,7 +354,7 @@ def index(page):
     insert_case(page, doc, lambda page: page.evaluate('''() => { const sp = [...document.querySelectorAll('#pages span.t')]; const a = sp.find((x) => x.textContent.includes('Beta')), z = sp.find((x) => x.textContent.includes('again')); const r = document.createRange(); r.setStart(a.firstChild, a.textContent.indexOf('Beta')); r.setEnd(z.firstChild, z.textContent.indexOf('again') + 5); document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }'''),
                 run('mark-entry', {'main': 'Beta', 'range': True}), lambda t: '\\index{Beta|(}Beta words and alpha again\\index{Beta|)}.' in t, 'a page range: |( and |) around the selection')
     insert_case(page, doc, sel('Alpha'), run('mark-entry', {'main': 'alpha', 'all': True}), lambda t: t.count('\\index{alpha}') == 1 and 'alpha\\index{alpha} again' in t, 'Mark All: every place the words stand, as typed (case kept)')
-    insert_case(page, doc, sel('Alpha'), run('mark-entry', {'main': 'A!b@c|d'}), lambda t: '\\index{A"!b"@c"|d}' in t, 'makeindex\'s own characters quoted')
+    insert_case(page, doc, sel('Alpha'), run('mark-entry', {'main': 'A!b@c|d'}), lambda t: '\\index{A"!b"@c\\textbar{}d}' in t, 'makeindex\'s own characters quoted, a | as \\textbar{} (hyperref reads a quoted one too)')
     marked = D('Alpha\\index{Alpha} words here\\index{beta!sub|textbf}.\n\nBeta\\index{Gamma|see{Alpha}} words.\n\nLast.', '\\usepackage{imakeidx}\n\\makeindex\n')
     got = insert_case(page, marked, at('Last', 1), run('insert-index', {'columns': 2}), marked.replace('Last.', 'Last.\n\n\\printindex\n'), 'Insert Index: \\printindex after the paragraph')
     page.wait_for_timeout(300)
@@ -470,7 +470,7 @@ def phone(p):
         f = fits(page, '.pop-refs')
         check('%d px: Insert Caption by a tap opens its dialog inside the screen, scrolling where it is longer' % w, f and f['ok'], f)
         dlg = page.get_by_role('dialog', name='Caption')
-        dlg.get_by_label('Caption').fill('On a phone')
+        dlg.get_by_label('Caption', exact=True).fill('On a phone')
         small = page.evaluate('''() => [...document.querySelectorAll('.pop-refs input:not([type=checkbox]):not([type=radio]), .pop-refs select, .pop-refs .btn')].filter((e) => e.offsetParent).map((e) => Math.round(e.getBoundingClientRect().height)).filter((h) => h < 44)''')
         check('%d px: the dialog\'s fields and buttons are 44 px for a finger' % w, not small, small)
         dlg.get_by_role('button', name='OK').tap(); page.wait_for_timeout(300)
@@ -656,7 +656,7 @@ def review(page):
     page.evaluate('rikuy.selectTab("references")'); page.locator('#rc-insert-caption').click(); page.wait_for_timeout(300)
     dlg = page.get_by_role('dialog', name='Caption')
     check('H3: the dialog shows 1, 2, 3 for \\counterwithout', dlg.get_by_label('Numbering').input_value() == 'plain')
-    dlg.get_by_label('Caption').fill('C'); dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
+    dlg.get_by_label('Caption', exact=True).fill('C'); dlg.get_by_role('button', name='OK').click(); page.wait_for_timeout(300)
     check('H3: OK leaves the preamble alone', '\\counterwithout{figure}{chapter}' in src(page) and src(page).count('counterwith') == 1 and '\\caption{C}' in src(page), src(page)[:200])
     # H4: Apply with nothing changed writes nothing
     nw = D('\\section{S}\nA\\footnote{x}.', '\\usepackage{amsmath}\n\\numberwithin{footnote}{section}\n\\renewcommand{\\thefootnote}{[\\arabic{footnote}]}\n\\setcounter{footnote}{0}\n')
@@ -829,7 +829,113 @@ def cached(page):
     now = page.evaluate(STATE, REFS_IDS)
     check('another main file: the answers are a fresh read\'s (add-source on again, no bibliography)', now == page.evaluate(FRESH, REFS_IDS) and now['add-source'][0] and not now['bibliography-remove'][0], now['add-source'])
 
-SECTIONS = {'review': review, 'verify': verify, 'cached': cached, 'toc': toc, 'notes': notes, 'sources': sources, 'captions': captions, 'xrefs': xrefs, 'index': index, 'links': links}
+
+# ---- R4: endnote formats, New Label, Exclude label, right aligned index numbers, the Table of Authorities
+def r4refs(page):
+    from browser import roundtrip
+    EN = D('Text\\endnote{One.} more\\endnote{Two.}.\n\n\\printendnotes', '\\usepackage{enotez}\n')
+    insert_case(page, EN, at('Text', 2), run('footnote-options', {'enStyle': 'roman'}), EN.replace('\\usepackage{enotez}\n', '\\usepackage{enotez}\n\\setenotez{counter-format=roman}\n'), 'R4 endnote number format (enotez): \\setenotez{counter-format=roman}')
+    check('R4 the page numbers the endnotes i, ii as TeX will', texts(page, 'sup.a-en')[:2] == ['i', 'ii'], texts(page, 'sup.a-en'))
+    hand = EN.replace('\\usepackage{enotez}\n', '\\usepackage{enotez}\n\\setenotez{list-name=Notes,counter-format=Alph}\n')
+    load_doc(page, hand)
+    check('R4 a hand written \\setenotez{…,counter-format=Alph} is read: A, B on the page and in the dialog', texts(page, 'sup.a-en')[:2] == ['A', 'B'] and page.evaluate('window.rikuy.model.opts.refs.en.style') == 'Alph')
+    insert_case(page, hand, at('Text', 2), run('footnote-options', {'enStyle': 'arabic'}), hand.replace('list-name=Notes,counter-format=Alph', 'list-name=Notes'), 'R4 back to 1, 2: the key taken out, the other kept')
+    ENP = D('Text\\endnote{One.}.\n\n\\theendnotes', '\\usepackage{endnotes}\n')
+    insert_case(page, ENP, at('Text', 2), run('footnote-options', {'enStyle': 'Roman'}), ENP.replace('\\usepackage{endnotes}\n', '\\usepackage{endnotes}\n\\renewcommand{\\theendnote}{\\Roman{endnote}}\n'), 'R4 endnote number format (endnotes package): \\theendnote')
+    load_doc(page, EN); click_text(page, 'Text', 2)
+    cmd(page, 'footnote-options')
+    check('R4 the Footnote and Endnote dialog has the endnotes\' Number format', page.locator('#en-format').count() == 1)
+    page.keyboard.press('Escape'); page.evaluate('window.rikuy.closePop()')
+    # New Label: a float of the document's own, newfloat's
+    want = FIG.replace('\\begin{figure}', '\\begin{scheme}').replace('\\end{figure}', '\\caption{A reaction}\n\\label{sch:r}\n\\end{scheme}').replace('PICTURE', 'PICTURE')
+    want = want.replace('\\begin{document}', '\\usepackage{newfloat}\n\\DeclareFloatingEnvironment[fileext=loscheme,listname={List of Schemes},name={Scheme}]{scheme}\n\\begin{document}')
+    got = insert_case(page, FIG, at('PICTURE', 2), run('insert-caption', {'text': 'A reaction', 'label': 'sch:r', 'kind': 'scheme', 'newLabel': 'Scheme'}), want, 'R4 New Label: the figure becomes a scheme (newfloat) with its caption, one step')
+    check('R4 the page draws "Scheme 1:" as TeX prints it', 'Scheme 1:' in ' '.join(texts(page, '.cap')), texts(page, '.cap'))
+    load_doc(page, want)
+    names = page.evaluate("(() => { const g = window.rikuy; return Object.keys(g.model.opts.refs.floats); })()")
+    check('R4 a declared float is read back as a label of its own', names == ['scheme'], names)
+    hand = D('\\begin{scheme}\n\\caption{Two}\n\\end{scheme}', '\\usepackage{float}\n\\newfloat{scheme}{tbp}{los}\n\\floatname{scheme}{Reaction}\n')
+    load_doc(page, hand)
+    check('R4 float\'s \\newfloat with \\floatname: drawn "Reaction 1:"', 'Reaction 1:' in ' '.join(texts(page, '.cap')), texts(page, '.cap'))
+    # Exclude label from caption
+    want = FIG.replace('PICTURE\n', 'PICTURE\n\\captionsetup{labelformat=nolabel}\n\\caption{Plain}\n').replace('\\begin{document}', '\\usepackage{caption}\n\\DeclareCaptionLabelFormat{nolabel}{#2}\n\\begin{document}')
+    insert_case(page, FIG, at('PICTURE', 2), run('insert-caption', {'text': 'Plain', 'label': '', 'exclude': True}), want, 'R4 Exclude label from caption: the number alone, caption\'s own way')
+    check('R4 the page draws "1: Plain"', any(t.startswith('1: Plain') for t in texts(page, '.cap')), texts(page, '.cap'))
+    # the dialog: Label, New Label…, Exclude label from caption
+    load_doc(page, FIG); click_text(page, 'PICTURE', 2)
+    cmd(page, 'insert-caption')
+    dlg = page.get_by_role('dialog', name='Caption')
+    check('R4 the Caption dialog has Label, New Label… and Exclude label from caption, by name', dlg.get_by_label('Label', exact=True).count() == 1 and dlg.get_by_role('button', name='New Label…').count() == 1 and dlg.get_by_label('Exclude label from caption').count() == 1)
+    dlg.get_by_role('button', name='New Label…').click()
+    dlg.get_by_label('New label name').fill('Plate'); dlg.get_by_role('button', name='Add', exact=True).click(); page.wait_for_timeout(150)
+    check('R4 New Label adds the label and picks it', dlg.get_by_label('Label', exact=True).input_value() == 'plate' and dlg.locator('.cap-pre').inner_text().strip() == 'Plate 1:' and dlg.get_by_label('Reference label', exact=True).input_value() == 'pla:x')
+    dlg.get_by_label('Exclude label from caption').check()
+    check('R4 Exclude label shows the number alone', dlg.locator('.cap-pre').inner_text().strip() == '1:')
+    page.keyboard.press('Escape'); page.evaluate('window.rikuy.closePop()')
+    # Right align page numbers: a makeindex style of the project's own
+    IX = D('Alpha\\index{alpha} text.\n\n\\printindex', '\\usepackage{imakeidx}\n\\makeindex\n')
+    load_doc(page, IX); click_text(page, 'text', 2)
+    h0 = hist(page)
+    cmd(page, 'insert-index', {'columns': 2, 'right': True})
+    check('R4 Right align page numbers: options=-s index-right.ist and the style file, one step', src(page) == IX.replace('\\makeindex\n', '\\makeindex[options=-s index-right.ist]\n') and 'dotfill' in src(page, 'index-right.ist') and hist(page) == h0 + 1, src(page)[:160])
+    check('R4 the page sets the index\'s page numbers at the right margin, with dots', page.locator('.it.idx-right.idx-dots .idx-lead').count() >= 1)
+    page.evaluate('rikuy.undo()'); page.wait_for_timeout(200)
+    check('R4 one undo: the line and the file as they were', src(page) == IX and page.evaluate("!window.rikuy.files.has('index-right.ist')"))
+    page.evaluate('rikuy.redo()'); page.wait_for_timeout(200)
+    cmd(page, 'insert-index', {'columns': 2, 'right': False})
+    check('R4 turned off: the option goes, the brackets with it', src(page) == IX)
+    # the Table of Authorities
+    TOA = D('As held in Smith v. Jones here.\n\nLast.')
+    load_doc(page, TOA)
+    select_text(page, 'Smith v. Jones')
+    h0 = hist(page)
+    cmd(page, 'mark-citation', {'long': 'Smith v. Jones, 1 U.S. 2 (1990)', 'short': 'Smith v. Jones', 'category': 'Cases'})
+    want = TOA.replace('Smith v. Jones here', 'Smith v. Jones\\index[toa]{1@\\textbf{Cases}!Smith v. Jones, 1 U.S. 2 (1990)} here').replace('\\begin{document}', '\\usepackage{imakeidx}\n\\makeindex[name=toa,title=Table of Authorities,columns=1]\n\\begin{document}')
+    check('R4 Mark Citation: \\index[toa]{1@\\textbf{Cases}!…} and the second index set up, one step', src(page) == want and hist(page) == h0 + 1, src(page))
+    # (review L2) a | in a citation: \textbar{}, which hyperref's \index leaves alone
+    load_doc(page, TOA.replace('\\begin{document}', '\\usepackage{hyperref}\n\\begin{document}'))
+    select_text(page, 'Smith v. Jones')
+    cmd(page, 'mark-citation', {'long': 'Smith | Jones, 2 U.S. 3', 'short': 'Smith v. Jones', 'category': 'Cases'})
+    check('R4 Mark Citation: a | in the citation is \\textbar{}', '!Smith \\textbar{} Jones, 2 U.S. 3}' in src(page) and src(page).count('|') == 0, src(page))
+    load_doc(page, want)
+    click_text(page, 'Last', 1)
+    cmd(page, 'insert-toa')
+    check('R4 Insert Table of Authorities: \\printindex[toa]', '\\printindex[toa]' in src(page))
+    heads = texts(page, '.refs-h')
+    rows = texts(page, '.it.idx-e')
+    check('R4 the page draws the Table of Authorities: its title, the category in bold, the citation', 'Table of Authorities' in heads and 'Cases' in rows and any(r.startswith('Smith v. Jones, 1 U.S. 2 (1990)') for r in rows) and page.locator('.it.idx-e b', has_text='Cases').count() == 1, [heads, rows])
+    load_doc(page, TOA); select_text(page, 'Smith v. Jones')
+    cmd(page, 'mark-citation')
+    dlg = page.get_by_role('dialog', name='Mark Citation')
+    check('R4 the Mark Citation dialog: Selected text, Category (Word\'s seven), Short citation, Mark, Mark All', dlg.get_by_label('Selected text').input_value() == 'Smith v. Jones' and dlg.get_by_label('Category').evaluate('(e) => [...e.options].map((o) => o.textContent).slice(0, 7)') == ['Cases', 'Statutes', 'Other Authorities', 'Rules', 'Treatises', 'Regulations', 'Constitutional Provisions'] and dlg.get_by_role('button', name='Mark All').count() == 1)
+    page.keyboard.press('Escape'); page.evaluate('window.rikuy.closePop()')
+    load_doc(page, D('A citation here.', '\\usepackage{makeidx}\n\\makeindex\n'))
+    click_text(page, 'citation', 2)
+    check('R4 with makeidx, Mark Citation says why not (no second index)', page.evaluate("window.rikuy.cmds.command('mark-citation').when(window.rikuy, window.rikuy.ribbonAt())") is False and 'makeidx' in page.evaluate("window.rikuy.toaWhyNot()"))
+
+
+def r4compiled(page):
+    if not TEX:
+        print('SKIP R4 compiles: no TeX tree')
+        return
+    doc = D('\\listoffigures\n\nAs held in Smith v. Jones\\index[toa]{1@\\textbf{Cases}!Smith v. Jones, 1 U.S. 2 (1990)}\\index[toa]{1@\\textbf{Cases}!Bar \\textbar{} Case} and a cat\\index{cat}\\endnote{An endnote.} here.\n\n'
+            '\\begin{scheme}[htbp]\n\\centering\nX\n\\caption{A reaction}\n\\end{scheme}\n\n\\begin{figure}[htbp]\n\\centering\nY\n\\captionsetup{labelformat=nolabel}\n\\caption{Plain}\n\\end{figure}\n\n\\printendnotes\n\\printindex\n\\printindex[toa]',
+            '\\usepackage{enotez}\n\\setenotez{counter-format=roman}\n\\usepackage{imakeidx}\n\\makeindex[options=-s index-right.ist]\n\\makeindex[name=toa,title=Table of Authorities,columns=1]\n\\usepackage{newfloat}\n\\DeclareFloatingEnvironment[fileext=loscheme,listname={List of Schemes},name={Scheme}]{scheme}\n\\usepackage{caption}\n\\DeclareCaptionLabelFormat{nolabel}{#2}\n\\usepackage{hyperref}\n')
+    ist = page.evaluate("() => null")
+    load_doc(page, doc)
+    istText = page.evaluate("(() => { const m = window.rikuy; return null; })()")
+    from_ist = '% index style\ndelim_0 "\\\\dotfill "\ndelim_1 "\\\\dotfill "\ndelim_2 "\\\\dotfill "\n'
+    for engine in ('pdflatex', 'xelatex', 'lualatex'):
+        text = doc if engine == 'pdflatex' else '% !TeX program = ' + engine + '\n' + doc
+        c = compile_doc(page, text, {'index-right.ist': from_ist})
+        T = re.sub(r'\s+', ' ', c['text'])
+        check('R4 ' + engine + ': endnote formats, a float of its own, the number alone, a right aligned index and a Table of Authorities compile', c['ok'] and c['text'], c['log'][-400:])
+        miss = [x for x in ('Scheme 1: A reaction', '1: Plain', 'Notes', 'An endnote', 'Table of Authorities', 'Cases', 'Smith v. Jones, 1 U.S. 2 (1990)', 'Index', 'cat') if x not in T]
+        check('R4 ' + engine + ': TeX prints them as the page draws them', not miss and 'Figure 1: Plain' not in T, miss)
+        check('R4 ' + engine + ': a citation with a | prints it, under hyperref (review L2)', 'Bar | Case' in T and 'hyperxindexformat' not in T, T[-300:])
+        check('R4 ' + engine + ': the endnote mark is i, the index\'s page at the right after dots', bool(re.search(r'cat ?(\. ?){3,}\d', T)) and bool(re.search(r'\bi\b', T)), T[-400:])
+
+SECTIONS = {'review': review, 'verify': verify, 'cached': cached, 'toc': toc, 'notes': notes, 'sources': sources, 'captions': captions, 'xrefs': xrefs, 'index': index, 'links': links, 'r4': r4refs}
 
 def main():
     want = sys.argv[1:]
@@ -846,6 +952,10 @@ def main():
         if not want or 'compiled' in want:
             br, page, errors = open_page(p)
             compiled(page)
+            br.close()
+        if not want or 'compiled' in want or 'r4compiled' in want:
+            br, page, errors = open_page(p)
+            r4compiled(page)
             br.close()
         if 'screenshots' in want:
             screenshots(p)

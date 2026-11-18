@@ -2146,3 +2146,30 @@ export function deleteCells(src, T, rect, how) {
   }
   return { edits: edits.sort((a, b) => a.s - b.s) };
 }
+
+// ---- alt text (R3) --------------------------------------------------------------------------------
+// LaTeX's tagging (latex-lab's table module, TeX Live 2026) gives a table no alternative text: its
+// keys are tagging, header rows and columns, and multirow; a tagged PDF takes a table's caption for
+// its title and reads its cells. So a table's alt text is a line of its own just before it, as
+// pictures in graphics' own form have theirs: "% alt: …", which Rikuy reads back, Word gets as
+// the table's Description (w:tblDescription), and TeX leaves alone.
+const ALT_LINE = /^[ \t]*%[ \t]*alt:[ \t]?(.*)$/;
+export function tableAlt(src, T) {
+  const ls = src.lastIndexOf('\n', T.s - 1) + 1;
+  if (ls === 0) return null;
+  const ps = src.lastIndexOf('\n', ls - 2) + 1;
+  const line = src.slice(ps, ls - 1).replace(/\r$/, '');
+  const m = ALT_LINE.exec(line);
+  return m ? { text: m[1].trimEnd(), s: ps, e: ls } : null;
+}
+export function setTableAlt(src, T, text) {
+  const t = String(text || '').replace(/[\r\n]+/g, ' ').trim().slice(0, 2000);
+  const A = tableAlt(src, T);
+  if (A) return { edits: [t ? { s: A.s + src.slice(A.s, A.e).indexOf(':') + 1, e: A.e - (src[A.e - 2] === '\r' ? 2 : 1), t: ' ' + t } : { s: A.s, e: A.e, t: '' }] };
+  if (!t) return { edits: [] };
+  // (a line of its own above the table's line, as indented; above a \resizebox{…}{!}{\begin{tabular}
+  // too, where a line's end in the box's argument would be a space)
+  const ls = src.lastIndexOf('\n', T.s - 1) + 1;
+  const indent = /^[ \t]*/.exec(src.slice(ls, T.s))[0];
+  return { edits: [{ s: ls, e: ls, t: indent + '% alt: ' + t + T.eol }] };
+}

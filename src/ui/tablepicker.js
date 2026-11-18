@@ -243,7 +243,7 @@ export function sortDialog(app) {
 }
 
 // ---- Table Properties ------------------------------------------------------------------------------------------
-export function propertiesDialog(app) {
+export function propertiesDialog(app, focus) {
   const at = keep(app), h = at && app.tableHere(at);
   if (!h) return;
   const p = open(app, 'Table Properties', 'rc-table-properties', 'tb-props');
@@ -257,8 +257,12 @@ export function propertiesDialog(app) {
   const fixed = check('Preferred width', !!w);
   const width = numberField({ id: 'tb-width', name: 'Column width', value: w || { value: 3, unit: 'cm' }, units: ['cm', 'mm', 'in', 'pt'], step: 0.5, min: 0.2, max: 40 });
   const vert = radios('Vertical alignment', [['t', 'Top'], ['m', 'Center'], ['b', 'Bottom']], X.colV(col));
+  // (R3) the table's alt text: a "% alt:" line before it (LaTeX's tagging has no field for one)
+  const altNow = X.tableAlt(h.src, h.T);
+  const alt = mk('textarea', 'tb-alt');
+  alt.rows = 2; alt.maxLength = 2000; alt.value = altNow ? altNow.text : ''; alt.setAttribute('aria-label', 'Description');
   const ok = () => {
-    const want = { full: full.input.checked, align: F ? align.value() : null, stretch: stretch.get().value, fixed: fixed.input.checked, width: formatLength(width.get()), v: para || fixed.input.checked ? vert.value() : null };
+    const want = { full: full.input.checked, align: F ? align.value() : null, stretch: stretch.get().value, fixed: fixed.input.checked, width: formatLength(width.get()), v: para || fixed.input.checked ? vert.value() : null, alt: alt.value };
     back(app);
     app.runCommand('table-properties', want);
   };
@@ -269,9 +273,11 @@ export function propertiesDialog(app) {
   p.append(row('tb-sec', mk('div', 'tb-gl', 'Table'), full, align),
     row('tb-sec', mk('div', 'tb-gl', 'Row'), field('Row height (\\arraystretch)', stretch)),
     row('tb-sec', mk('div', 'tb-gl', 'Column ' + (h.cell.col + 1)), fixed, field('Column width', width)),
-    row('tb-sec', mk('div', 'tb-gl', 'Cell'), vert), buttons(app, ok));
+    row('tb-sec', mk('div', 'tb-gl', 'Cell'), vert),
+    row('tb-sec', mk('div', 'tb-gl', 'Alt Text'), field('Description', alt), mk('p', 'tb-note', 'Kept as a "% alt:" line before the table: LaTeX\'s tagged PDF takes a table\'s caption, and has no field for more. Word gets it as the table\'s description.')), buttons(app, ok));
   vOn();
   finish(app, p, ok);
+  if (focus === 'alt') alt.focus();
 }
 
 // ---- Cell Margins ---------------------------------------------------------------------------------------------

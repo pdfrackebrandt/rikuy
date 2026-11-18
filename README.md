@@ -85,8 +85,10 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   sentence too) does not know, and only words: never a command, a key, math, code or an address;
   suggestions on a right click or a long press, the Spelling pane (F7), Add to Dictionary as a
   `% rikuy: words` line that travels with the .tex. Track Changes (Ctrl+Shift+E) with Accept and
-  Reject, Display for Review, comments to step through and delete, Word Count, Compare with a
-  file, a copy with markup for the PDF, Read Aloud.
+  Reject, Display for Review (its Original too), changes carrying their author and accepted or
+  rejected by author, comments to step through and delete, a share link for comments only, Word
+  Count, Compare with a file, a copy with markup for the PDF, Read Aloud. A thesaurus (MyThes,
+  Shift+F7, a right click's Synonyms) and, when asked for, grammar (Harper, in WebAssembly).
 - **Tables as in Word.** Insert › Table's grid of sizes and Insert Table…, Convert Text to Table,
   a table from a .csv; Table Design and Table Layout while the caret is in a table: rows and
   columns in and out, merge and split, AutoFit, the nine alignments, looks, borders, shading,
@@ -100,12 +102,14 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   prints them, and carried to Word and back (a part in columns or turned as Word's sections).
 - **Word's Font group.** The font and size boxes (the selection's or the word's; the document's
   font package and class size from the Font dialog's Set As Default), bigger and smaller, Change
-  Case on the words alone, Clear All Formatting, underline styles,
+  Case on the words alone, Clear All Formatting (the paragraph's settings too), underline styles
+  in any colour,
   strikethrough, sub- and superscript, highlighter and font colours, small and all caps, the
-  Font dialog and the Format Painter; each writes the LaTeX you would (`\uline`, `\hl[green]`,
+  Font dialog and the Format Painter (a paragraph's style with it); each writes the LaTeX you would (`\uline`, `\hl[green]`,
   `{\large …}`) and takes off what you wrote by hand.
 - **Lists as in Word.** Tab and Shift+Tab change an item's level; Word's bullet, numbering and
-  multilevel libraries, Define New Bullet and Number Format, Set Numbering Value, Restart at 1,
+  multilevel libraries, Define New Bullet (a picture too) and Number Format, Adjust List Indents,
+  Set Numbering Value, Restart at 1,
   Continue Numbering, the space between items, Sort, description lists, and "- " or "1. " typed at a
   paragraph's start making a list; written as enumitem's options, a list's own hand written labels
   changed where they are.
@@ -117,16 +121,21 @@ pane also needs the TeX tree, which takes the longer build under [Running it](#r
   LaTeX written by hand and drawn on the page as TeX prints it, and a Word file's own settings
   read in.
 - **Word's styles, over LaTeX's own.** Heading 1 to 6 (`\chapter` in a report, `\paragraph`
-  running into its paragraph as TeX sets it), Part, Quotation, Verse, Abstract and the theorem
+  running into its paragraph as TeX sets it), Part, Subtitle, Author, Date, Code, Quotation, Verse,
+  Abstract and the theorem
   environments in the Styles gallery, on one paragraph or several; the Styles pane, Apply Styles,
   Modify Style (titlesec's `\titleformat`, once in the preamble), Create a Style (`\newcommand`,
-  `\newenvironment`) and Update to Match; the Design tab's Themes, Style Set, Colors and Fonts
+  `\newenvironment`), Rename and Update to Match; the Design tab's Themes, Style Set, Colors and Fonts
   for the whole document, and LaTeX's own look back by taking the lines away.
 - **Pictures and objects as in Word.** A press or a tap selects a picture: eight handles size it
   (a share of the line when near one), and Picture Format crops, turns, flips, frames, gives alt
   text, floats it or wraps text round it, captions it; Insert has Shapes, Icons, SmartArt, Chart,
   Screenshot, Text Box and Drop Cap, drawn on the page from the TikZ, pgfplots, smartdiagram,
-  fontawesome5, tcolorbox and lettrine they write.
+  fontawesome5, tcolorbox and lettrine they write. A round handle turns a picture by any angle, a
+  drawing's points have handles, a chart reopens in its grid, a wrapfigure's words flow beside it,
+  and selected words or a picture are dragged to move. Insert also has Cover Page, Quick Parts with
+  Word's fields (page, pages, title: `\thepage`, `\pageref{LastPage}`, `\thetitle`) and form fields
+  a PDF reader fills in (hyperref's).
 - **References as in Word.** The table of contents and its levels, endnotes, footnote numbering,
   sources written into the project's .bib (and a hand written entry edited where it stands),
   natbib's, biblatex's or BibTeX's citation styles, the bibliography and its title, captions and
@@ -190,7 +199,7 @@ mismatch with its cause: [PLAN.md](PLAN.md).
 
 ## Running it
 
-Rikuy is one HTML page plus `dist/tex/` (about 327 MB of engines, TeX packs and programs, 78 MB of it the fonts for scripts other than Latin), which
+Rikuy is one HTML page plus `dist/tex/` (about 361 MB of engines, TeX packs and programs, 110 MB of it the fonts for scripts other than Latin and a few large font families), which
 any static web server can serve (`dist/index.html` is the page); the page fetches packs as a
 document needs them. Served that way it is an app the browser can install: after one visit it
 opens and works with no network, compiles what this browser has compiled before, and "Make

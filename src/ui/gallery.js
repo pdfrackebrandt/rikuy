@@ -72,8 +72,9 @@ export const methods = {
   styleSync(at) {
     // (the focus in the Styles pane: the caret it came from is still the one its styles are for)
     if (!at && this.rbStyle && this.rbStyle.on && document.activeElement && document.activeElement.closest && document.activeElement.closest('#stylespane')) return;
-    const st = at ? this.blockStyle(at) : { v: 'p', to: new Set() };
-    this.rbStyle = { ...st, on: !!at };
+    const code = this.codeArmed && this.codeArmed();
+    const st = at || code ? this.blockStyle(at) : { v: 'p', to: new Set() };
+    this.rbStyle = { ...st, on: !!at || code };
     // a caret in another block (or the block's style changed): the gallery pages to its style
     const key = at ? (at.B ? at.B.id : at.c.ghost ? 'ghost' : '') + '|' + st.v : '';
     if (key !== this.rbKey) { this.rbKey = key; this.rbFollow = true; }
@@ -81,12 +82,13 @@ export const methods = {
     this.fillStyleList(sel);
     for (const o of sel.options) {
       if (o.value.startsWith('__')) continue;
-      if (o.value === 'title') o.hidden = o.disabled = st.v !== 'title';
+      // (Title on a paragraph where the document has none, R2)
+      if (o.value === 'title') o.hidden = o.disabled = st.v !== 'title' && !st.to.has('title');
       else if (o.value === '') o.hidden = o.disabled = st.v !== '';
       else o.disabled = o.value !== st.v && !st.to.has(o.value);
     }
     sel.value = st.v;
-    sel.disabled = !at || !st.to.size;
+    sel.disabled = (!at && !code) || !st.to.size;
     this.paintGallery();
     if (this.paneSync) this.paneSync(at, st);
     // the LaTeX paragraph the caret is in shows so
@@ -152,7 +154,8 @@ export const methods = {
     $('#rb-st-down').disabled = !paged || start === starts[starts.length - 1];
   },
   whyNot(st, v) {
-    if (!st.on) return WHY.none;
+    if (st.whyTo && st.whyTo[v]) return st.whyTo[v];
+    if (!st.on && !st.code) return WHY.none;
     if (st.why) return st.why;
     if (st.v === '') return v === 'latex' ? WHY.latex : WHY.part;
     if (v === 'latex') return WHY.latex;
@@ -194,7 +197,7 @@ export const methods = {
     let group = null;
     const sep = () => { const d = document.createElement('div'); d.className = 'pop-sep'; d.setAttribute('role', 'separator'); p.append(d); };
     for (const x of K.all) {
-      if (x.v === 'title' && st.v !== 'title') continue;
+      if (x.v === 'title' && st.v !== 'title' && !st.to.has('title')) continue;
       if (group && x.group !== group) sep();
       group = x.group;
       const tile = slotOf[x.v] ? $('#' + SLOT_EL[slotOf[x.v]]) : null, can = st.on && (st.to.has(x.v) || (x.v === st.v && st.to.size > 0));

@@ -27,8 +27,17 @@ const TYPED = ['a', 'b', 'e', 'x', ' ', ' ', 'word ', 'Z', 'é', '😀', '--', "
   '\\cite{k}', '\\ref{sec:1}', '\\label{new}', '\\footnote{n}', '\n', '\n\n', '% c\n', '\\section{S}', '\\newcommand{\\q}{Q}', '\\verb|v|', '$\\ref{x}$', '\\ldots{}', "\\'e", '\\\\'];
 
 const PLAIN = ['a', 'e', 'n', 's', 't', ' ', 'the ', 'X', 'é', '.', ','];
-let steps = 0, fast = 0;
+let steps = 0, fast = 0, shareSteps = 0, shareFast = 0;
+// (the documents whose every edit is meant to leave the fast path: R3's objects sit in a Form, its
+// fields read the page, so each keystroke there is a full build. Their edits are compared with the
+// full build as every other's; they only stay out of the share of edits the fast path takes, which
+// the two batches' documents together would otherwise pull under its floor by their count alone)
+const FULL_PATH_DOCS = new Set(['objects (R3): a cover page, fields, form fields, a wrapped figure, a bordered picture, a drawing']);
 function stream(name, files, main, n) {
+  const s0 = steps, f0 = fast;
+  try { return streamOf(name, files, main, n); } finally { if (![...FULL_PATH_DOCS].some((d) => name.startsWith(d + ' '))) { shareSteps += steps - s0; shareFast += fast - f0; } }
+}
+function streamOf(name, files, main, n) {
   let cur = new Map(files);
   let prev;
   try { prev = buildModel({ files: cur, main }); } catch (e) { return; }
@@ -107,8 +116,18 @@ docs.push(['pictures (B8)', new Map([['main.tex', '\\documentclass{article}\n\\u
   docs.push(['references (B9)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{natbib,enotez,imakeidx}\n\\makeindex\n\\setcounter{tocdepth}{1}\n\\renewcommand{\\thefootnote}{\\roman{footnote}}\n\\counterwithin*{footnote}{section}\n\\begin{document}\n' +
     body.join('\n') + '\n\\end{document}\n'], ['refs.bib', '@book{knuth84, author={Donald Knuth}, title={The TeXbook}, year=1984}\n']]), 'main.tex']);
 }
+docs.push(['objects (R3): a cover page, fields, form fields, a wrapped figure, a bordered picture, a drawing', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{titling,lastpage,scrtime,hyperref,graphicx,wrapfig,xcolor,tikz}\n\\title{The \\textbf{Title}}\n\\author{Ann \\and Bob}\n\\begin{document}\n\\begin{Form}\n' +
+  '\\begin{titlepage}\n\\centering\n\\vspace*{\\fill}\n{\\Huge\\bfseries \\thetitle{}\\par}\n{\\Large \\theauthor{}\\par}\n\\vspace*{\\fill}\n\\end{titlepage}\n\\section{One}\nPage \\thepage{} of \\pageref{LastPage}, section \\thesection{}, \\jobname{} at \\thistime{}.\n\n' +
+  'Name \\TextField[name=text1, width=4cm]{Who} and \\CheckBox[name=check1, checked]{Agree} or \\ChoiceMenu[combo, name=combo1, width=4cm]{}{One,Two}.\n\n' +
+  '\\begin{wrapfigure}{r}{0.4\\linewidth}\n\\centering\n{\\setlength{\\fboxsep}{0pt}\\setlength{\\fboxrule}{1.5pt}\\color{red}\\fbox{\\includegraphics[width=\\linewidth]{a.png}}}\n\\end{wrapfigure}\nWords beside the figure, typed in and changed.\n\n' +
+  '\\begin{center}\n\\begin{tikzpicture}\n\\draw[thick] (0,0) rectangle (3,2);\n\\end{tikzpicture}\n\\end{center}\n\n\\section{Two}\nLast words \\thesection{}.\n\\end{Form}\n\\end{document}\n']]), 'main.tex']);
 docs.push(['paragraph settings (B2)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{setspace}\n\\begin{document}\nFirst plain paragraph, typed in.\n\n\\onehalfspacing\nA paragraph after one and a half spacing.\n\nAnother after it.\n\n' +
   '\\doublespacing\n\\centering\nCentred from here on, plain.\n\nStill centred, the next paragraph.\n\n\\hangindent=1cm\\hangafter=1 A hanging paragraph with words.\n\nKept with the next\\nopagebreak\n\nLast plain words.\n\\end{document}\n']]), 'main.tex']);
+// (R2) the title block with a subtitle and two authors, a picture bullet and a list's own indents,
+// colour links, a Code block and a run in heading with a float before its paragraph
+docs.push(['font, lists and styles (R2)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{enumitem,graphicx,xcolor,hyperref}\n\\title{Main\\\\[0.5ex]\\large The sub}\n\\author{Ann \\and Bob}\n\\hypersetup{colorlinks,linkcolor=blue}\n\\begin{document}\n\\maketitle\nFirst paragraph, typed in, see \\ref{a}.\n\n' +
+  '\\begin{itemize}[label={\\includegraphics[height=1.6ex]{dot.png}},leftmargin=3em,labelsep=1em]\n  \\item One item\\label{a}\n  \\begin{itemize}\n    \\item Nested item\n  \\end{itemize}\n\\end{itemize}\n\n\\begin{verbatim}\nSome code here.\n\\end{verbatim}\n\n' +
+  '\\paragraph{Lead}\n\n\\begin{figure}[h]\n\\centering\n\\fbox{F}\n\\caption{Cap}\n\\end{figure}\n\nRuns in after the float, with \\culine{rgb,255:red,231;green,84;blue,128}{a line}.\n\nLast plain paragraph.\n\\end{document}\n']]), 'main.tex']);
 // (R1) the page's and the paragraphs' leftovers: hand written marks, a paragraph without line
 // numbers, landscape pages, a tabbing (its \= read again), fills, a title for the header
 docs.push(['page and paragraph leftovers (R1)', new Map([['main.tex', '\\documentclass{article}\n\\usepackage{lineno,pdflscape}\n\\linenumbers\n\\pagestyle{myheadings}\n\\title{A Title}\n\\makeatletter\\let\\thetitle\\@title\\makeatother\n\\begin{document}\n\\markboth{Left}{Right}\nFirst plain paragraph, typed in.\n\n' +
@@ -144,7 +163,7 @@ docs.forEach(([name, files, main], i) => {
   const big = name.includes('long') || name.includes('sample') || name.includes('styles') || name.includes('pictures') || name.includes('references');
   stream(name + ' ' + main, files, main, i >= repoDocs ? 16 : FULL ? (big ? 800 : 400) : name.includes('dev/bench/long') ? 25 : 80);
 });
-check('every edit of every stream: the incremental model is the full build\'s (' + steps + ' edits, ' + fast + ' on the fast path, ' + docs.length + ' documents)', fail === failsBefore && fast > steps / 20, [steps, fast]);
+check('every edit of every stream: the incremental model is the full build\'s (' + steps + ' edits, ' + fast + ' on the fast path, ' + docs.length + ' documents)', fail === failsBefore && shareFast > shareSteps / 20, [steps, fast, shareSteps, shareFast]);
 console.log('edits ' + steps + ', on the fast path ' + fast + ', documents ' + docs.length);
 
 // every numeric field of a model that moves with the text before it is a name OFFSET_KEYS holds: a

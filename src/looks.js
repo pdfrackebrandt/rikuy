@@ -8,6 +8,8 @@
 
 export const SIZES = ['tiny', 'scriptsize', 'footnotesize', 'small', 'normalsize', 'large', 'Large', 'LARGE', 'huge', 'Huge'];
 export const LOOK_CMDS = ['chapter', 'section', 'subsection', 'subsubsection', 'paragraph', 'subparagraph'];
+import { parseKV, kvEdits } from './preamble.js';
+
 const MAX = 200000, ARG = 2000;
 
 // LaTeX's own look of each heading (article, report, book): what titlesec starts from
@@ -388,6 +390,40 @@ export function accentEdits(src, hex) {
   const at = src.lastIndexOf('\n', end - 1) + 1, lead = at < end && /\S/.test(src.slice(at, end)) ? '\n' : '', s = lead ? end : at;
   const nl = eolOf(src);
   return [{ s, e: s, t: (lead ? nl : '') + '\\definecolor{accent}{HTML}{' + hex + '}' + nl }];
+}
+// (R2, D1) The links in the accent with the headings, as Word's theme colours its hyperlinks:
+// a line of Rikuy's own, \hypersetup{colorlinks,linkcolor=accent,urlcolor=accent,citecolor=accent},
+// after the last of the accent's line, hyperref's \usepackage and every \hypersetup of the
+// document's own (each of which it leaves as written: hidelinks, colorlinks=false come back when
+// it goes; review M1), never before hyperref is loaded (review H3); off, that line goes. Only
+// where hyperref is loaded: the caller says so.
+export const LINK_LINE = '\\hypersetup{colorlinks,linkcolor=accent,urlcolor=accent,citecolor=accent}';
+export const LINK_KEYS = ['linkcolor', 'urlcolor', 'citecolor'];
+export function linkColorEdits(src, on) {
+  const end = preambleEnd(src);
+  if (end < 0) return [];
+  const pre = stripComments(src.slice(0, end));
+  const own = pre.indexOf(LINK_LINE);
+  if (!on) {
+    if (own < 0) return [];
+    const ls = src.lastIndexOf('\n', own - 1) + 1, e = own + LINK_LINE.length, le = src.indexOf('\n', e);
+    if (!src.slice(ls, own).trim() && !src.slice(e, le < 0 ? src.length : le).trim()) return [{ s: ls, e: le < 0 ? src.length : le + 1, t: '' }];
+    return [{ s: own, e, t: '' }];
+  }
+  if (own >= 0) return [];
+  // (the start of the line after the one position i is on)
+  const after = (i) => { const k = src.indexOf('\n', i); return k < 0 || k >= end ? -1 : k + 1; };
+  let at = -1;
+  const acc = /\\definecolor\s*\{accent\}/.exec(pre);
+  if (acc) at = Math.max(at, after(acc.index));
+  let loads = false;
+  for (let m, re = /\\(?:usepackage|RequirePackage)\s*(?:\[[^\]]{0,2000}\])?\s*\{[^{}]{0,300}\}/g, n = 0; (m = re.exec(pre)) && n < 500; n++) if (/\bhyperref\b/.test(m[0].slice(m[0].lastIndexOf('{')))) { loads = true; at = Math.max(at, after(m.index + m[0].length - 1)); }
+  for (let m, re = /\\hypersetup\s*\{/g, n = 0; (m = re.exec(pre)) && n < 50; n++) { const z = group(pre, m.index + m[0].length - 1); if (z > 0) at = Math.max(at, after(z - 1)); }
+  const nl = eolOf(src);
+  // (hyperref loaded elsewhere, by a file the preamble reads or a package: the line before
+  // \begin{document}, after all of them; review N3)
+  if (at < 0 || !loads) at = src.lastIndexOf('\n', end - 1) + 1;
+  return [{ s: at, e: at, t: LINK_LINE + nl }];
 }
 // the accent colour the preamble defines, as #RRGGBB, or null
 export function accentOf(src) {

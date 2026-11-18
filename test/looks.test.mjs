@@ -3,7 +3,7 @@
 // they stand and taken away again; KOMA-Script's \setkomafont; the accent colour; the Design tab's
 // style sets read back from the looks they write; and every scan bounded on a stranger's preamble.
 import assert from 'node:assert/strict';
-import { readHeadLooks, readFormat, titleLines, lookLines, headLookEdits, defaultLook, formatOf, isDefaultLook, komaFontEdits, accentEdits, accentOf, STYLE_SETS, setLooks, setOf, lengthPt, startsectionShapes } from '../src/looks.js';
+import { readHeadLooks, readFormat, titleLines, lookLines, headLookEdits, defaultLook, formatOf, isDefaultLook, komaFontEdits, accentEdits, accentOf, STYLE_SETS, setLooks, setOf, lengthPt, startsectionShapes, linkColorEdits, LINK_LINE } from '../src/looks.js';
 import { applyEdits } from '../src/styles.js';
 
 let n = 0;
@@ -144,6 +144,33 @@ ok('a stranger\'s preamble: bounded scans', () => {
   const t0 = Date.now();
   readHeadLooks(big, 'article'); headLookEdits(big, { section: defaultLook('section') }); accentOf(big); komaFontEdits(big, null);
   assert.ok(Date.now() - t0 < 1500, 'took ' + (Date.now() - t0) + ' ms');
+});
+
+ok('R2 (D1): the links in the accent: Rikuy\'s own \\hypersetup line after the accent, hyperref and the document\'s own \\hypersetup, which stay as written; off, that line alone goes (review H3, M1)', () => {
+  const D = (pre) => '\\documentclass{article}\n' + pre + '\\begin{document}\nx\n\\end{document}\n';
+  const go = (t, on) => applyEdits(t, linkColorEdits(t, on));
+  const a = D('\\usepackage{hyperref}\n\\definecolor{accent}{HTML}{0E6F70}\n'), on = go(a, true);
+  assert.equal(on, D('\\usepackage{hyperref}\n\\definecolor{accent}{HTML}{0E6F70}\n' + LINK_LINE + '\n'));
+  assert.equal(go(on, false), a);
+  assert.equal(linkColorEdits(on, true).length, 0);
+  // (H3: the accent above hyperref: the line goes after hyperref, never before it is loaded)
+  const h3 = D('\\usepackage{xcolor}\n\\definecolor{accent}{HTML}{AA0000}\n\\usepackage[hidelinks]{hyperref}\n');
+  assert.equal(go(h3, true), h3.replace('{hyperref}\n', '{hyperref}\n' + LINK_LINE + '\n'));
+  // (M1: the document's own \hypersetup kept as written; Black gives it back whole)
+  for (const own of ['\\hypersetup{pdftitle={A, B}, hidelinks}', '\\hypersetup{colorlinks,linkcolor=blue}', '\\hypersetup{colorlinks=false,pdfborder={0 0 0}}']) {
+    const t = D('\\usepackage{hyperref}\n' + own + '\n'), o = go(t, true);
+    assert.equal(o, t.replace(own + '\n', own + '\n' + LINK_LINE + '\n'), own);
+    assert.equal(go(o, false), t, own);
+  }
+  // (review N3: hyperref loaded by \RequirePackage or a file the preamble reads: the line before \begin{document})
+  for (const pre of ['\\input{preamble}\n\\definecolor{accent}{HTML}{AA0000}\n', '\\definecolor{accent}{HTML}{AA0000}\n\\usepackage{mystyle}\n']) {
+    const t = D(pre), o = go(t, true);
+    assert.equal(o, D(pre + LINK_LINE + '\n'), pre);
+  }
+  const rq = D('\\definecolor{accent}{HTML}{AA0000}\n\\RequirePackage{hyperref}\n\\usepackage{amsmath}\n');
+  assert.ok(go(rq, true).indexOf(LINK_LINE) > go(rq, true).indexOf('\\RequirePackage{hyperref}'));
+  const w = a.replace(/\n/g, '\r\n'), wo = go(w, true);
+  assert.ok(!/[^\r]\n/.test(wo), JSON.stringify(wo));
 });
 
 console.log('looks: ' + n + ' groups of checks passed');

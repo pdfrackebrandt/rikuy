@@ -12,10 +12,12 @@
 // edits in Word back into the .tex (src/wordsync.js).
 import { findComments } from './share.js';
 import { texToPlain } from './bib.js';
+import { readIndexArg } from './refsrc.js';
 import { rtlDocument } from './scripts.js';
 import { bidiDoc, dirSpan, hasRtl, scanDir } from './wordbidi.js';
 import { parseKV } from './preamble.js';
 import { unescapeAlt } from './picture.js';
+import { tableAlt } from './table.js';
 import { sectionRuns, sectionType } from './pageword.js';
 
 export const API = [1, 23, 1, 2];
@@ -159,6 +161,15 @@ export function paraStyle(it, O = {}) {
   return parts.join(', ');
 }
 
+// (R3) text and attributes in Word's XML, and a form field's content control
+const xmlText = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
+function sdtXml(x, ph) {
+  const items = (x.choices || []).slice(0, 50).map((c) => '<w:listItem w:displayText="' + xmlText(c) + '" w:value="' + xmlText(c) + '" />').join('');
+  const kind = x.kind === 'date' ? '<w:date><w:dateFormat w:val="dd/MM/yyyy" /><w:lid w:val="en-GB" /><w:storeMappedDataAs w:val="dateTime" /><w:calendar w:val="gregorian" /></w:date>'
+    : x.kind === 'list' ? '<w:dropDownList>' + items + '</w:dropDownList>' : x.kind === 'combo' ? '<w:comboBox>' + items + '</w:comboBox>' : '<w:text />';
+  return '<w:sdt><w:sdtPr><w:tag w:val="rikuy-' + x.kind + '" />' + kind + '</w:sdtPr><w:sdtContent><w:r><w:t xml:space="preserve">' + xmlText(ph) + '</w:t></w:r></w:sdtContent></w:sdt>';
+}
+
 export function buildWordDoc(model, files, opts = {}) {
   const W = new Walker(model, files, opts);
   W.run();
@@ -172,6 +183,9 @@ class Walker {
     this.n = 0; this.A = null; this.meta = {};
     this.cmarks = null; // source offset -> comment marks to emit (second pass)
     this.ncomments = 0;
+    // (R2) each bullet or numbered list in the order pandoc numbers them (its numIds): the bullet the
+    // page drew, null for a numbered one, for src/wordjobs.js to give Word the same bullets
+    this.lists = [];
     // Direction. The document's comes from the model when it says one, else from the preamble
     // (src/scripts.js); a block's or a stretch of text's from the model when the node says one
     // (dir: 'rtl' or 'ltr'), else from the wrappers around it in the source (src/wordbidi.js).
@@ -195,7 +209,7 @@ class Walker {
       const marks = this.commentMarks();
       if (marks.size) {
         this.cmarks = marks;
-        this.anchors = []; this.atoms = []; this.images = new Set(); this.warnings = []; this.degraded = new Map(); this.n = 0; this.meta = {};
+        this.anchors = []; this.atoms = []; this.images = new Set(); this.warnings = []; this.degraded = new Map(); this.n = 0; this.meta = {}; this.lists = [];
         this.blocks = this.walk();
       }
     }
@@ -206,7 +220,7 @@ class Walker {
     // only a document with right to left text in it, or a wrapper that sets a direction
     if (this.bidi) doc = bidiDoc(doc, new Map(this.anchors.filter((A) => A.dir).map((A) => [A.id, A.dir])), this.rtl);
     const deg = [...this.degraded.entries()].map(([k, n]) => k + (n > 1 ? ' (' + n + ')' : ''));
-    return { doc, anchors: this.anchors.map(packAnchor), atoms: this.atoms, images: [...this.images], warnings: this.warnings, degraded: deg, comments: this.ncomments, rtl: this.rtl };
+    return { doc, anchors: this.anchors.map(packAnchor), atoms: this.atoms, images: [...this.images], warnings: this.warnings, degraded: deg, comments: this.ncomments, rtl: this.rtl, bullets: this.lists };
   }
 
   plainMath(tex) {
@@ -235,9 +249,60 @@ class Walker {
       // a list: its items, flat in the model, become nested Word lists; also one that stands
       // among paragraphs in an environment the model reads as one block (otherlanguage, small)
       if (items.some((x) => x.type === 'p' && x.li && !x.li.cont)) { out.push(...this.list(items, u)); continue; }
+      const from = out.length;
       for (const it of items) out.push(...this.item(it, u));
+      this.indexMarks(u, out, from);
     }
     return out;
+  }
+
+  // ---- R4: the index, the Table of Authorities and the lists of figures and tables as Word's
+  // fields. Each \index stands as an XE field (\index[toa] a TA field) at the end of the paragraph
+  // it is in: Word gives it that paragraph's page. \printindex is an INDEX field, \printindex[toa]
+  // a TOA field for each category, \listoffigures a TOC field of the caption style; each holds
+  // what the page shows, and Word fills in the page numbers when its fields are updated (F9; the
+  // fields are marked to be updated as the file opens).
+  indexMarks(u, out, from) {
+    if (!this.ixBy) {
+      this.ixBy = new Map();
+      for (const x of (this.m.indexEntries || []).slice(0, 20000)) { const k = x.f; if (!this.ixBy.has(k)) this.ixBy.set(k, []); this.ixBy.get(k).push(x); }
+    }
+    const list = this.ixBy.get(u.f);
+    if (!list || !list.length) return;
+    const mine = list.filter((x) => !x.done && x.s >= u.s && x.s < u.e);
+    if (!mine.length) return;
+    // (the last paragraph this unit gave: its runs take the fields)
+    let target = null;
+    const last = (b) => { if (!b) return null; if (b.t === 'Para' || b.t === 'Plain' || b.t === 'Header') return b; if (b.t === 'Div') return last(b.c[1][b.c[1].length - 1]); if (b.t === 'BlockQuote') return last(b.c[b.c.length - 1]); return null; };
+    for (let k = out.length - 1; k >= from && !target; k--) target = last(out[k]);
+    if (!target) return;
+    const inl = target.t === 'Header' ? target.c[2] : target.c;
+    for (const x of mine) {
+      x.done = true;
+      const code = fieldOfIndex(x);
+      if (code) inl.push({ t: 'RawInline', c: ['openxml', fieldRuns(code)] });
+    }
+  }
+  indexField(it) {
+    const out = [{ t: 'Header', c: [this.m.opts.chapters ? 1 : 1, attr(), [Str(it.head)]] }];
+    if (/^table of authorities$/i.test(it.head) || it.key && /:ixtoa$/.test(it.key)) {
+      // (a TOA field each category, in the order the index sorts them)
+      let cat = null, rows = [];
+      const flush = () => { if (cat) out.push({ t: 'RawBlock', c: ['openxml', fieldParas('TOA \\h \\c "' + cat.rank + '" \\p', [cat.text, ...rows])] }); rows = []; };
+      for (const r of it.rows) {
+        if (r.lvl === 0) { flush(); const m = /^(\d{1,2})$/.exec(String(r.sort || '')); cat = { rank: r.rank || (m ? m[1] : String(TOA_RANK(r.text))), text: r.text }; } else if (cat) rows.push(r.text);
+      }
+      flush();
+      return out;
+    }
+    const cols = Math.max(1, Math.min(4, it.cols || 2));
+    out.push({ t: 'RawBlock', c: ['openxml', fieldParas('INDEX \\c "' + cols + '"' + (it.right ? ' \\e "\t"' : '') + ' \\h "A"', it.rows.map((r) => (r.lvl ? '\u2003'.repeat(Math.min(2, r.lvl)) : '') + r.text), it.right)] });
+    return out;
+  }
+  lofField(it) {
+    const style = it.lof === 'table' ? 'Table Caption' : 'Image Caption';
+    return [{ t: 'Header', c: [1, attr(), [Str(it.head)]] },
+      { t: 'RawBlock', c: ['openxml', fieldParas('TOC \\h \\z \\t "' + style + ',1"', (it.entries || []).map((e) => (e.num ? e.num + ' ' : '') + e.text), true)] }];
   }
 
   // ---- anchors --------------------------------------------------------------------------------
@@ -290,7 +355,10 @@ class Walker {
       case 'raw': return this.raw(it);
       // a LaTeX paragraph goes as the page shows it, its source as code (src/styles.js)
       case 'tex': return this.code(it, 'tex', it.ie);
-      case 'toc': this.toc = true; return [];
+      // (R4: a list of figures or tables is Word's own, a TOC field of the caption style, filled as
+      // the page lists them; the index, a Table of Authorities and the endnotes' place below)
+      case 'toc': if (it.lof) return this.lofField(it); this.toc = true; return [];
+      case 'idx': return it.notes ? [] : this.indexField(it);
       case 'pagebreak': return [{ t: 'RawBlock', c: ['openxml', '<w:p><w:r><w:br w:type="page"/></w:r></w:p>'] }];
       case 'rule': return [{ t: 'HorizontalRule' }];
       default: return [];
@@ -342,7 +410,9 @@ class Walker {
     for (const p of it.parts) {
       if (p.type === 'p') out.push(this.para(p, u));
       else if (p.type === 'caption') {
-        const lab = ({ figure: 'Figure', table: 'Table' }[p.kind] || p.kind) + (p.num ? ' ' + p.num : '') + ': ';
+        // (R4: a float of the document's own under its name, the number alone, or none for \caption*)
+        const name = p.lab != null ? p.lab : { figure: 'Figure', table: 'Table' }[p.kind] || p.kind;
+        const lab = p.star ? '' : (name ? name + (p.num ? ' ' + p.num : '') : p.num || '') + ': ';
         const inl = this.wrap('cap', p.f, null, null, () => { this.ro(lab); return [Str(lab), ...this.inl(p.inl, u.fns)]; }, { after: u.e, dir: p.dir || it.dir || u.dir });
         out.push({ t: 'Div', c: [attr('', [], [['custom-style', p.kind === 'table' ? 'Table Caption' : 'Image Caption']]), [{ t: 'Para', c: inl }]] });
       } else if (p.type === 'tabular') out.push(this.table(p, u));
@@ -364,9 +434,15 @@ class Walker {
     // (B7) a cell merged down (\multirow) spans its rows in Word too: the empty cells under it,
     // which LaTeX needs and Word has not, are left out
     const covered = new Map();
+    // (\rowcolors' bands, counted as the page counts them: the rows that are not rules alone)
+    const bandOf = (n) => (t.band && n >= t.band.start ? (n % 2 ? t.band.odd : t.band.even) : null);
+    let rowNo = 0;
     const row = (r) => {
       const out = [];
       let col = 0;
+      rowNo = t.rows.filter((x) => !x.empty).indexOf(r) + 1;
+      // (\rowcolor in a row's first cell colours the whole row)
+      const rowBg = (r.cells.find((x) => x.rowbg) || {}).rowbg || null;
       for (const c of r.cells) {
         const cov = covered.get(col);
         if (cov && cov.left > 0 && c.inl.every((x) => x.ph)) {
@@ -375,7 +451,12 @@ class Walker {
           continue;
         }
         if (c.rows > 1) for (let q = col; q < col + (c.span || 1); q++) covered.set(q, { left: c.rows - 1 });
-        out.push([attr(), { t: AL[c.palign || c.align] || 'AlignDefault' }, c.rows > 1 ? c.rows : 1, c.span || 1,
+        // (R3) what Word keeps of the cell and pandoc's table has no field for: its shading and
+        // its words turned (src/wordtable.js writes them into the .docx)
+        const shd = wordColor(c.bg || rowBg || bandOf(rowNo)), kvs = [];
+        if (shd) kvs.push(['rk-shd', shd]);
+        if (c.rot === 90 || c.rot === 270) kvs.push(['rk-rot', String(c.rot)]);
+        out.push([attr('', [], kvs), { t: AL[c.palign || c.align] || 'AlignDefault' }, c.rows > 1 ? c.rows : 1, c.span || 1,
           [{ t: 'Plain', c: this.wrap('cell', t.f, null, null, () => this.inl(c.inl, u ? u.fns : []), { after: u ? u.e : null, dir: c.dir || t.dir || (u && u.dir) }) }]]);
         col += c.span || 1;
       }
@@ -383,12 +464,17 @@ class Walker {
     };
     const headRows = head ? [row(rows[0])] : [];
     const bodyRows = (head ? rows.slice(1) : rows).map(row);
-    return { t: 'Table', c: [attr(), [null, []], specs, [attr(), headRows], [[attr(), 0, [], bodyRows]], [attr(), []]] };
+    // (R3) its alt text, a "% alt:" line before it (src/table.js), as Word's table description
+    const src = t.f != null && this.files && this.files.get ? this.files.get(t.f) : null;
+    const alt = typeof src === 'string' && t.s != null ? tableAlt(src, { s: t.s }) : null;
+    return { t: 'Table', c: [attr('', [], alt && alt.text ? [['rk-alt', alt.text]] : []), [null, []], specs, [attr(), headRows], [[attr(), 0, [], bodyRows]], [attr(), []]] };
   }
 
   title(it, u) {
     const fns = u.fns;
     if (it.title && it.title.length) this.meta.title = { t: 'MetaInlines', c: this.wrap('title', it.f, null, null, () => this.inl(it.title, fns)) };
+    // (R2) the subtitle: Word's Subtitle paragraph under the title
+    if (it.subtitle && it.subtitle.length) this.meta.subtitle = { t: 'MetaInlines', c: this.wrap('subtitle', it.f, null, null, () => this.inl(it.subtitle, fns)) };
     const au = (it.authors || []).filter((a) => a.length).map((a) => ({ t: 'MetaInlines', c: this.wrap('author', it.f, null, null, () => this.inl(a, fns)) }));
     if (au.length) this.meta.author = { t: 'MetaList', c: au };
     if (it.date && it.date.length) this.meta.date = { t: 'MetaInlines', c: this.wrap('date', it.f, null, null, () => this.inl(it.date, fns)) };
@@ -451,6 +537,9 @@ class Walker {
       const kind = first.li.kind;
       const listS = first.li.listS;
       const entries = [];
+      // (pandoc numbers a list as it starts it, before the lists inside it: the same order here)
+      const slot = kind === 'desc' ? -1 : this.lists.push(null) - 1;
+      if (kind === 'item') { const L = first.label && first.label[0]; this.lists[slot] = L && L.k === 'chr' && L.text ? { glyph: L.text, level: depth } : null; }
       while (i < items.length) {
         const it = items[i];
         // what follows the list in its block (a paragraph that is no item's, a table) ends it
@@ -612,6 +701,15 @@ class Walker {
         return [{ t: 'Cite', c: [cits, [Str(x.text)]] }];
       }
       case 'ref': { const ai = this.atom({ k: 'ref', f: x.f, s: x.s, e: x.e, ro: !!x.ro }); this.atomText(x.text, ai); return [Str(x.text)]; }
+      case 'en': {
+        // (R4) an endnote: a note pandoc writes as a footnote, marked for src/wordnotes.js, which
+        // makes it one of Word's endnotes; its words as the page lists them
+        const n = (this.m.endnotes || []).find((y) => y.f === x.f && y.s === x.s);
+        const parts = n ? (n.parts || [n.text]) : [];
+        const inl = [{ t: 'RawInline', c: ['openxml', '<!--rikuy:endnote:' + ((this.m.opts && this.m.opts.enStyle) || 'arabic') + '-->'] }];
+        for (const part of parts) { if (typeof part === 'string') { if (part) inl.push(Str(part)); } else if (part && part.m != null) inl.push({ t: 'Math', c: [{ t: 'InlineMath' }, part.m] }); }
+        return [{ t: 'Note', c: [{ t: 'Para', c: inl }] }];
+      }
       case 'fn': {
         const fn = fns.find((y) => y.mark === x) || null;
         const ai = this.atom({ k: 'fn', f: x.f, s: x.s, e: x.e, is: x.is, ie: x.ie, ro: !!x.ro });
@@ -646,11 +744,23 @@ class Walker {
       case 'logo': { const ai = this.atom({ k: 'logo', f: x.f, s: x.s, e: x.e, ro: !!x.ro }); const t = x.text === 'LaTeXe' ? 'LaTeX2e' : x.text; this.atomText(t, ai); return [Str(t)]; }
       case 'sp': { this.ro(' '); return [Str(' ')]; }
       case 'rule': return [];
+      case 'form': {
+        // (R3) a form field as Word's content control (w:sdt) after its label: a plain text box, a
+        // date, a drop-down list or a combo box; a check box as its box's character (Word's own
+        // check box needs a namespace pandoc's document does not declare)
+        const ph = x.kind === 'check' ? (x.checked ? '\u2612' : '\u2610') : x.value || 'Click or tap here to enter text.';
+        const t = (x.label ? x.label + ' ' : '') + ph;
+        const ai = this.atom({ k: 'form', f: x.f, s: x.s, e: x.e, ro: !!x.ro });
+        this.atomText(t, ai);
+        return [...(x.label ? [Str(x.label + ' ')] : []), { t: 'RawInline', c: ['openxml', sdtXml(x, ph)] }];
+      }
       case 'chip': {
         const t = x.text || '';
         if (!t) return [];
         const ai = this.atom({ k: 'chip', f: x.f, s: x.s, e: x.e, ro: !!x.ro });
         this.atomText(t, ai);
+        // (R3) a field Word has as a field: the page's number, the pages', the title, the author
+        if (x.word && /^(PAGE|NUMPAGES|TITLE|AUTHOR)$/.test(x.word)) return [{ t: 'RawInline', c: ['openxml', '<w:fldSimple w:instr=" ' + x.word + ' "><w:r><w:t xml:space="preserve">' + xmlText(t) + '</w:t></w:r></w:fldSimple>'] }];
         if (x.err || /^\\/.test(t)) this.degrade('unknown command shown as its name');
         return [x.plain ? Str(t) : { t: 'Code', c: [attr(), t] }];
       }
@@ -782,4 +892,40 @@ export function unpackRuns(runs) {
     else if (r[0] === -2) for (let k = 0; k < r[2]; k++) m.push(ATOM, r[1]);
   }
   return m;
+}
+
+// ---- R4: Word fields ---------------------------------------------------------------------------------
+const xmlEsc = (t) => String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// a field's text in its quotes: Word's own quote marks keep a citation's
+const fq = (t) => texToPlain(String(t || '')).replace(/"/g, '”').replace(/[\u0000-\u001f]/g, ' ').slice(0, 250);
+const TOA_NAMES = ['Cases', 'Statutes', 'Other Authorities', 'Rules', 'Treatises', 'Regulations', 'Constitutional Provisions'];
+const TOA_RANK = (name) => { const k = TOA_NAMES.indexOf(String(name).trim()); return k >= 0 ? k + 1 : 8; };
+// the field code an \index entry is in Word: XE (the main index), TA (the Table of Authorities)
+export function fieldOfIndex(x) {
+  const r = readIndexArg(x.arg);
+  const L = r.levels.map((l) => fq(l.text)).filter(Boolean);
+  if (!L.length) return null;
+  if (x.name === 'toa') {
+    const cat = r.levels[0], cite = L[1] || L[0];
+    const rank = /^\d{1,2}$/.test(String(cat.sort || '').trim()) ? String(cat.sort).trim() : String(TOA_RANK(L[0]));
+    return 'TA \\l "' + cite + '" \\s "' + cite + '" \\c ' + rank;
+  }
+  if (x.name) return null;
+  if (r.range) return null;
+  let code = 'XE "' + L.slice(0, 3).join(':') + '"';
+  if (r.see || r.seealso) code += ' \\t "' + (r.see ? 'See ' : 'See also ') + fq(r.see || r.seealso) + '"';
+  else if (/^(textbf|bfseries)$/.test(r.fmt || '')) code += ' \\b';
+  else if (/^(textit|emph|itshape)$/.test(r.fmt || '')) code += ' \\i';
+  return code;
+}
+export function fieldRuns(code) {
+  return '<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> ' + xmlEsc(code) + ' </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>';
+}
+// a field whose result is paragraphs: begun in the first, ended in the last; marked to be updated
+// when Word opens the file (dirty), so its page numbers are Word's own
+export function fieldParas(code, lines, right) {
+  const tab = right ? '<w:pPr><w:tabs><w:tab w:val="right" w:leader="dot" w:pos="9350"/></w:tabs></w:pPr>' : '';
+  const ls = lines.length ? lines : [''];
+  return ls.map((l, i) => '<w:p>' + tab + (i === 0 ? '<w:r><w:fldChar w:fldCharType="begin" w:dirty="true"/></w:r><w:r><w:instrText xml:space="preserve"> ' + xmlEsc(code) + ' </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>' : '')
+    + '<w:r><w:t xml:space="preserve">' + xmlEsc(l) + '</w:t></w:r>' + (i === ls.length - 1 ? '<w:r><w:fldChar w:fldCharType="end"/></w:r>' : '') + '</w:p>').join('');
 }

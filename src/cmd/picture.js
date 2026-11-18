@@ -19,8 +19,9 @@ import { mapPos } from '../wrap.js';
 import { atomOfEl } from '../editor.js';
 import { hasPackage, docClass, preambleEnd } from '../preamble.js';
 import { $ } from '../ui/dom.js';
-import { openMenu } from '../ui/kit.js';
+import { openMenu, colorPicker, colorArg, colorNeeds } from '../ui/kit.js';
 import { installHandles } from '../ui/handles.js';
+import { installShapeHandles, editChart } from '../ui/shapes.js';
 import { altDialog, sizeDialog, smartDialog, chartDialog, dropCapDialog } from '../ui/picturedialogs.js';
 import * as D from '../drawing.js';
 import { openGallery } from '../ui/kit.js';
@@ -89,8 +90,15 @@ register(
   P('picture-reset-size', 'Reset Picture & Size', { title: 'Reset Picture & Size: the picture as its file is, at its natural size', when: keyed, run: (app) => app.picOp((src, Q) => X.reset(src, Q, true)) }),
 
   // ---- Picture Styles ---------------------------------------------------------------------------
-  P('picture-border', 'Picture Border', { title: 'Picture Border: a frame tight round the picture ({\\setlength{\\fboxsep}{0pt}\\fbox{…}}); again takes it off', tab: 'picture-format', group: 'styles', order: 10, kind: 'toggle', icon: ICON.border, label: 'Picture Border',
+  P('picture-border', 'Picture Border', { title: 'Picture Border: a frame tight round the picture ({\\setlength{\\fboxsep}{0pt}\\fbox{…}}); again takes it off; Border Weight and Border Color in the right click menu', tab: 'picture-format', group: 'styles', order: 10, kind: 'toggle', icon: ICON.border, label: 'Picture Border',
     synonyms: ['Frame', 'Outline', 'fbox', 'Border'], on: (app, at) => { const h = pic(app, at); return h ? X.bordered(h.P) : null; }, run: (app) => app.picOp((src, Q) => X.border(src, Q)) }),
+  // (R3, P7) the border's weight (\fboxrule) and colour (\color before the \fbox), Word's Picture Border
+  // arrow: in the right click menu (a long press on a phone) and the search box; an arrow on the row
+  // would fold the Arrange group at 870 px (test/tabs.py's sweep)
+  P('picture-border-weight', 'Border Weight', { menu: { picture: 92 }, title: 'Picture Border\'s weight: ½ pt to 6 pt (\\setlength{\\fboxrule}{…}); Automatic is the class\'s 0.4 pt', synonyms: ['Outline weight', 'Line width', 'fboxrule', 'Border width'],
+    run: (app, args) => (args && 'weight' in args ? app.picOp((src, Q) => X.borderSet(src, Q, { weight: args.weight ? String(args.weight).replace(/[^0-9.a-z]/g, '').slice(0, 12) : null })) : app.picBorderMenu('weight')) }),
+  P('picture-border-color', 'Border Color', { menu: { picture: 93 }, title: 'Picture Border\'s colour (\\color{…} before the \\fbox, xcolor)', synonyms: ['Outline color', 'Border colour', 'Frame colour'],
+    run: (app, args) => (args && 'color' in args ? app.picBorderColor(args.color) : app.picBorderMenu('color')) }),
   P('picture-caption', 'Insert Caption', { title: 'Insert Caption: a numbered caption under the picture ("Figure 1"): \\caption in a figure, \\captionof{figure} in line with text', tab: 'picture-format', group: 'styles', order: 20, icon: ICON.caption, label: 'Caption',
     synonyms: ['Caption', 'Figure caption', 'Title of figure'], menu: { picture: 50 }, run: (app) => app.picCaption() }),
 
@@ -157,6 +165,10 @@ register(
     synonyms: ['Diagram', 'Process diagram', 'Cycle', 'smartdiagram', 'Flow chart'], when: atAny, run: (app, args) => (args && args.items ? app.insertSmart(args.kind, args.items) : smartDialog(app)) },
   { id: 'insert-chart', name: 'Chart', title: 'Chart: columns, bars or a line from a small table of numbers (pgfplots), drawn on the page from its coordinates', tab: 'insert', group: 'illustrations', order: 50, icon: IC.chart, label: 'Chart',
     synonyms: ['Graph', 'Plot', 'Bar chart', 'Column chart', 'Line chart', 'pgfplots'], when: atAny, run: (app, args) => (args && args.cats ? app.insertChart(args.kind, args.cats, args.series) : chartDialog(app)) },
+  // (R3) a chart opened again in its grid: a click on it, or this with the chart's new data
+  { id: 'chart-edit-data', name: 'Edit Data', title: 'Edit Data: the chart\'s grid again (click a chart Rikuy made); OK writes it in its place', synonyms: ['Edit chart', 'Chart data', 'Change chart'],
+    when: (app) => app.chartLive(), whyNot: () => 'Click a chart on the page first (Insert › Chart makes one).',
+    run: (app, args) => (args && args.cats ? app.chartReplace(args.kind || 'column', args.cats, args.series || []) : app.chartReopen()) },
   { id: 'insert-screenshot', name: 'Screenshot', title: 'Screenshot: a window or the screen, captured as you choose, placed as a picture (PNG)', tab: 'insert', group: 'illustrations', order: 60, icon: IC.shot, label: 'Screenshot',
     synonyms: ['Screen capture', 'Screen clipping', 'Capture'], when: (app, at) => !!at && typeof navigator !== 'undefined' && !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia),
     whyNot: () => 'This browser lets no page capture the screen.', run: (app) => app.insertScreenshot() },
@@ -187,6 +199,7 @@ onInstall((app) => {
     app.openFiles(fs).then(() => { if (said) app.toast($('#toast span').textContent + ' ' + said, 10000); });
   });
   installHandles(app);
+  installShapeHandles(app);
   // A relayout (the window's size, a picture loaded, fonts) puts the caret back as text positions,
   // which would let the selected picture go: it is selected again where it is
   const rl = app.relayout;
@@ -334,9 +347,38 @@ export const methods = {
   },
   // the \usepackage lines an operation needs, once (graphicx where graphics alone is loaded;
   // caption's \captionof unless capt-of or caption gives it)
+  // (R3, P7) Picture Border's weight or colour, as a menu at the picture
+  picBorderMenu(what) {
+    const h = this.picHere();
+    if (!h) { this.toast(WHY); return false; }
+    const b = document.getElementById('rc-picture-border');
+    const at = b && b.offsetParent ? b : h.el;
+    const st = X.borderStyle(h.src, h.P);
+    if (what === 'color') {
+      const cur = st && st.color ? (st.color.model ? '#' + st.color.value : st.color.value) : null;
+      colorPicker(this, at, { label: 'Border Color', auto: 'Automatic', current: cur, onPick: (v) => { this.ribbonBack(); this.picBorderColor(v); } });
+      return true;
+    }
+    const W = ['0.5pt', '0.75pt', '1pt', '1.5pt', '2.25pt', '3pt', '4.5pt', '6pt'];
+    const lab = (w) => w.replace('0.5pt', '½ pt').replace('0.75pt', '¾ pt').replace('1.5pt', '1½ pt').replace('2.25pt', '2¼ pt').replace('4.5pt', '4½ pt').replace(/pt$/, ' pt');
+    openMenu(this, at, [{ name: 'Automatic', title: 'The class\'s weight, 0.4 pt', checked: !!st && !st.weight, run: () => this.picOp((src, Q) => X.borderSet(src, Q, { weight: null })) }, null,
+      ...W.map((w) => ({ name: lab(w), title: '\\setlength{\\fboxrule}{' + w + '}', checked: !!st && st.weight === w, run: () => this.picOp((src, Q) => X.borderSet(src, Q, { weight: w })) }))], { label: 'Weight' });
+    return true;
+  },
+  // a colour from the picker ({ name } | { html } | null) or an agent's name or #RRGGBB
+  picBorderColor(v) {
+    let c = null;
+    if (typeof v === 'string') v = /^#?[0-9A-Fa-f]{6}$/.test(v) ? { html: v.replace('#', '') } : /^[A-Za-z]{1,30}$/.test(v) ? { name: v } : null;
+    if (v && (v.name || v.html)) c = colorArg(v);
+    const dv = v && v.name && colorNeeds(v.name);
+    return this.picOp((src, Q) => { const r = X.borderSet(src, Q, { color: c }); if (dv && r.packages) r.packages = r.packages.map((x) => (x === 'xcolor' ? 'xcolor:' + dv : x)); return r; });
+  },
   picPackages(names) {
     const want = {}, src = this.src(this.main), end = preambleEnd(src), others = this.preambleOthers();
-    for (const n of new Set(names)) {
+    for (const raw of new Set(names)) {
+      // (a name with its option: 'xcolor:dvipsnames')
+      const [n, opt] = String(raw).split(':');
+      if (opt) { want[n] = opt; continue; }
       if (n === 'caption' && (hasPackage(src, 'capt-of', end, others) || hasPackage(src, 'caption', end, others))) continue;
       want[n] = null;
     }
@@ -719,6 +761,29 @@ Object.assign(methods, {
     if (!list.length) { this.toast('SmartArt needs at least one item.'); return false; }
     if (list.length > D.smartMax(kind)) { this.toast('SmartArt (smartdiagram) holds at most ' + D.smartMax(kind) + ' items here: its colours stop there and TeX stops on more. Split the list into two diagrams.', 8000); return false; }
     return this.insertObject(D.smartTex(kind, list), ['smartdiagram']);
+  },
+  // the chart opened last (editChart), while its text is as it was
+  chartLive() { const C = this.chartAt; return !!C && this.files.has(C.f) && this.src(C.f).slice(C.s, C.e) === C.t; },
+  chartReopen() {
+    const C = this.chartAt;
+    if (!this.chartLive()) return false;
+    const d = [...document.querySelectorAll('#pages .raw.drawn')].find((x) => { const a = atomOfEl(x); return a && a.f === C.f && a.s === C.s; });
+    return d ? editChart(this, d) : false;
+  },
+  chartReplace(kind, cats, series) {
+    const C = this.chartAt;
+    if (!this.chartLive()) { this.toast('The chart changed since: click it again.'); return false; }
+    const k = { column: 'column', bar: 'bar', line: 'line' }[kind] || 'column';
+    const C2 = cats.slice(0, 50).map((x) => String(x)), S = series.slice(0, 8).map((x) => ({ name: String(x.name || ''), values: (x.values || []).slice(0, 50) }));
+    if (!C2.length || !S.length) { this.toast('A chart needs at least one category and one series of numbers.'); return false; }
+    const eol = /\r\n/.test(C.t) ? '\r\n' : '\n';
+    const t = D.chartTex(k, C2, S, eol);
+    if (t === C.t) return false;
+    this.closeGroup();
+    this.commit([{ f: C.f, s: C.s, e: C.e, t }], { f: C.f, p: C.s, bias: 1 }, 'insert');
+    this.closeGroup();
+    this.chartAt = { f: C.f, s: C.s, e: C.s + t.length, t };
+    return true;
   },
   insertChart(kind, cats, series) {
     const k = kind === 'bar' || kind === 'line' ? kind : 'column';

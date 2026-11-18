@@ -13,7 +13,7 @@
 //        RIKUY_NO_WORD leave pandoc (Word import and export, 16 MB) out: the claude.ai copy, which has
 //                      no room for it; its Word buttons say where Word support is
 //        RIKUY_WORD_HOST the address of a copy with Word support, named in that message
-//        RIKUY_NO_SPELL leave Hunspell and its dictionaries (spell/, 5 MB) out; the artifact's copy
+//        RIKUY_NO_SPELL leave Hunspell, its dictionaries and thesauri and Harper (spell/, 80 MB) out; the artifact's copy
 //                      (RIKUY_SHARE) leaves them out too, and the browser's own spelling stays
 import fs from 'fs';
 import path from 'path';
@@ -80,7 +80,20 @@ if (SPELL_ON) {
     const stem = d.slice(0, -4);
     dicts[stem] = { aff: named(stem, 'aff', fs.readFileSync(V('dict/' + stem + '.aff'))), dic: named(stem, 'dic', fs.readFileSync(V('dict/' + d))) };
   }
-  SPELL = { worker: named('spell', 'js', workerJs).name, wasm: named('hunspell', 'wasm', wasm), dicts };
+  // the thesauri (MyThes's .idx whole, its .dat in the pieces build_tools.sh cut, in order)
+  const thes = {};
+  for (const d of fs.readdirSync(V('thes')).filter((n) => n.endsWith('.idx')).sort()) {
+    const lang = d.slice(0, -4);
+    const dat = fs.readdirSync(V('thes')).filter((n) => n.startsWith(lang + '.dat.')).sort().map((n) => named('th_' + lang + '_' + n.slice(-3), 'dat', fs.readFileSync(V('thes/' + n))));
+    if (!dat.length) throw new Error('tex/vendor/hunspell/thes/' + lang + ' has no data');
+    thes[lang] = { idx: named('th_' + lang, 'idx', fs.readFileSync(V('thes/' + d))), dat };
+  }
+  // grammar: Harper's own WebAssembly build (tex/vendor/harper/) and its worker (src/spell/grammar.js)
+  const hw = fs.readFileSync(R('tex/vendor/harper/harper_wasm_slim_bg.wasm'));
+  if (hw.subarray(0, 4).toString('hex') !== '0061736d') throw new Error('tex/vendor/harper/harper_wasm_slim_bg.wasm is no WebAssembly module');
+  const gb = await build({ entryPoints: [R('src/spell/grammar.js')], bundle: true, external: ['fs'], format: 'iife', minify: !process.argv.includes('--dev'), write: false, target: ['chrome100', 'firefox100', 'safari15'], legalComments: 'none', charset: 'utf8' });
+  const grammarJs = Buffer.from('/* Rikuy\'s grammar worker: Harper (Apache-2.0, Automattic), its glue unchanged. Licenses: LICENSES.txt beside the page. */\n' + ctl(gb.outputFiles[0].text));
+  SPELL = { worker: named('spell', 'js', workerJs).name, wasm: named('hunspell', 'wasm', wasm), dicts, thes, grammar: { worker: named('grammar', 'js', grammarJs).name, wasm: named('harper', 'wasm', hw) } };
 }
 const out = await build({ entryPoints: [R('src/app.js')], bundle: true, format: 'iife', minify: process.argv.includes('--dev') ? false : true, write: false, target: ['chrome100', 'firefox100', 'safari15'], legalComments: 'none', charset: 'utf8', define: { __RIKUY_MIRROR__: JSON.stringify(process.env.RIKUY_MIRROR || ''), __RIKUY_SHARE__: JSON.stringify(process.env.RIKUY_SHARE || ''), __RIKUY_APP__: JSON.stringify(APP), __RIKUY_WORD__: JSON.stringify(WORD), __RIKUY_WORD_HOST__: JSON.stringify(process.env.RIKUY_WORD_HOST || ''), __RIKUY_CORE__: JSON.stringify(CORE), __RIKUY_SPELL__: JSON.stringify(SPELL), __RIKUY_TEXNAMES__: JSON.stringify(TEXNAMES), __RIKUY_DEV__: JSON.stringify(process.argv.includes("--dev")) } });
 let js = out.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
@@ -309,13 +322,13 @@ const rule = (title) => '\n\n' + '='.repeat(100) + '\n' + title + '\n' + '='.rep
 let lic = 'Rikuy and what it ships. The source of Rikuy and the address of the exact source of every\n'
   + 'part: https://github.com/pdfrackebrandt/rikuy (SOURCES.md).\n\n' + fs.readFileSync(R('NOTICE'), 'utf8').trim();
 lic += rule('GNU Affero General Public License 3.0: Rikuy, BusyTeX, Ghostscript') + fs.readFileSync(R('LICENSE'), 'utf8').trim();
-const texts = [['GPL-3.0', 'Asymptote as built (with GSL), GSL, Xpdf'], ['GPL-2.0', 'TeX Live\'s programs, dvips, xindy, FFTW, GMP, Xpdf, libpaper' + (WORD ? ', pandoc (word/)' : '') + (SPELL_ON ? ', the de_DE dictionary (spell/)' : '')], ['LGPL-3.0', 'GMP, Asymptote, its PRC library' + (SPELL_ON ? ', the en_GB and es_ES dictionaries (spell/)' : '')],
-  ['LGPL-2.1', 'kpathsea, ECL, Graphite2, TECkit, btparse' + (SPELL_ON ? ', Hunspell (spell/)' : '')], ['MPL-2.0', 'Pyodide, Eigen'], ['Apache-2.0', 'pdf.js and npm packages below'], ['Artistic-2.0', 'biber'], ['gnuplot', 'gnuplot']];
+const texts = [['GPL-3.0', 'Asymptote as built (with GSL), GSL, Xpdf'], ['GPL-2.0', 'TeX Live\'s programs, dvips, xindy, FFTW, GMP, Xpdf, libpaper' + (WORD ? ', pandoc (word/)' : '') + (SPELL_ON ? ', the de_DE dictionary and the en_US thesaurus as Ubuntu lists it (spell/)' : '')], ['LGPL-3.0', 'GMP, Asymptote, its PRC library' + (SPELL_ON ? ', the en_GB and es_ES dictionaries (spell/)' : '')],
+  ['LGPL-2.1', 'kpathsea, ECL, Graphite2, TECkit, btparse' + (SPELL_ON ? ', Hunspell, the de_DE and es_ES thesauri (spell/)' : '')], ['MPL-2.0', 'Pyodide, Eigen'], ['Apache-2.0', 'pdf.js and npm packages below' + (SPELL_ON ? ', Harper (spell/)' : '')], ['Artistic-2.0', 'biber'], ['gnuplot', 'gnuplot']];
 for (const [id, who] of texts) lic += rule((id === 'gnuplot' ? 'The gnuplot license' : id) + ': ' + who) + fs.readFileSync(R('LICENSES/' + id + '.txt'), 'utf8').trim();
 lic += rule('SIL Open Font License 1.1: Paper Modern, the page\'s text fonts (KaTeX\'s fonts carry the same license in their own name tables; IBM Plex Sans and Mono, the interface\'s fonts, have it with IBM\'s copyright under npm below)') + fs.readFileSync(R('build/fonts/OFL.txt'), 'utf8').trim();
 // the notices of the libraries compiled into the programs (MIT, BSD and the like ask for them
 // with binary copies too), one file per program; each file's first line is its title
-for (const f of fs.readdirSync(R('LICENSES/third-party')).filter((n) => n.endsWith('.txt') && (WORD || n !== 'pandoc.txt') && (SPELL_ON || n !== 'hunspell.txt')).sort()) {
+for (const f of fs.readdirSync(R('LICENSES/third-party')).filter((n) => n.endsWith('.txt') && (WORD || n !== 'pandoc.txt') && (SPELL_ON || (n !== 'hunspell.txt' && n !== 'mythes.txt'))).sort()) {
   const [title, ...rest] = fs.readFileSync(R('LICENSES/third-party/' + f), 'utf8').trim().split('\n');
   lic += rule(title + ' (LICENSES/third-party/' + f + ')') + rest.join('\n').trim();
 }

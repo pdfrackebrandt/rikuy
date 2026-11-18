@@ -755,8 +755,9 @@ def links(p):
 
     # #share= by llms.txt's recipe: "name" and "by" are optional
     go(page, share({'v': 1, 'main': 'main.tex', 'files': [['main.tex', DOC], ['refs.bib', '@book{a, title={T}}']]}))
-    s = page.evaluate("({ name: rikuy.name, files: [...rikuy.files.keys()], guest: document.body.classList.contains('guest'), bar: document.getElementById('guest').hidden, mark: rikuy.linkCache.get('main.tex|main.tex'), href: location.href })")
-    check('a #share= link with no "name" and no "by" opens as one\'s own document, named by its main file', src(page) == DOC and s['name'] == 'main.tex' and s['files'] == ['main.tex', 'refs.bib'] and s['guest'] is False and s['bar'] is True
+    s = page.evaluate("({ name: rikuy.name, files: [...rikuy.files.keys()], guest: document.body.classList.contains('guest'), bar: document.getElementById('guest').hidden, mark: rikuy.linkCache.get(rikuy.name + '|main.tex'), href: location.href })")
+    # (a document called main.tex is kept from the #tex= links above: this one opens beside it)
+    check('a #share= link with no "name" and no "by" opens as one\'s own document, named by its main file, beside a kept one of that name', src(page) == DOC and s['name'].startswith('main.tex (from a link') and s['files'] == ['main.tex', 'refs.bib'] and s['guest'] is False and s['bar'] is True
           and s['mark']['by'] == '' and s['mark']['allowed'] is False and s['href'] == HOME, s)
     go(page, share({'v': 1, 'name': 'Our paper', 'main': 'main.tex', 'files': [['main.tex', DOC]], 'by': 'An agent'}))
     s = page.evaluate("({ name: rikuy.name, guest: document.body.classList.contains('guest'), msg: document.getElementById('guest-msg').textContent, mark: rikuy.linkCache.get('Our paper|main.tex') })")
@@ -769,10 +770,10 @@ def links(p):
     go(page, share({'v': 1, 'name': 'Our paper', 'main': 'main.tex', 'files': [['main.tex', REV]], 'by': 'An agent'}))
     check('a guest who follows a revised link of the same name gets the revised document', src(page) == REV and page.evaluate('rikuy.name') == 'Our paper' and page.evaluate("document.body.classList.contains('guest')"), toast(page))
     go(page, share({'v': 1, 'name': 'Our paper', 'main': 'main.tex', 'files': [['main.tex', DOC]]}))
-    check('and one with no "by" under that name opens too, as their own', src(page) == DOC and not page.evaluate("document.body.classList.contains('guest')"), toast(page))
+    check('and one with no "by" under that name opens too, as their own, beside the sender\'s copy', src(page) == DOC and not page.evaluate("document.body.classList.contains('guest')") and page.evaluate('rikuy.name') == 'Our paper (from a link)' and 'project of its own' in toast(page), toast(page))
     page.wait_for_timeout(300)
     go(page, HOME)
-    check('still their own after a new start: the guest\'s record of that name is gone', src(page) == DOC and page.evaluate('rikuy.name') == 'Our paper' and not page.evaluate("document.body.classList.contains('guest')")
+    check('still their own after a new start', src(page) == DOC and page.evaluate('rikuy.name') == 'Our paper (from a link)' and not page.evaluate("document.body.classList.contains('guest')")
           and page.evaluate('(t) => window.rikuy.api.setSource(t).then(() => true, () => false)', REV))
     # the same through #tex=, whose document is always called main.tex
     go(page, share({'v': 1, 'main': 'main.tex', 'files': [['main.tex', DOC]], 'by': 'Alice'}))

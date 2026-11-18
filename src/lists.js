@@ -600,7 +600,43 @@ export function formatOf(src, L, cfg, lv) {
   for (const k of ['nosep', 'noitemsep', 'itemsep']) if (o.kv[k]) { f.sep = k === 'itemsep' ? o.kv[k].value : k; f.sepFrom = 'opt'; break; }
   if (!f.sep) { const x = su.find((y) => y.what === 'itemsep' || y.what === 'tight'); if (x) { f.sep = x.what === 'tight' ? 'tight' : x.value; f.sepFrom = 'def'; } }
   if (!f.sep) { const v = fromKV((kv) => { const x = kv.find((y) => ['nosep', 'noitemsep', 'itemsep'].includes(y.key)); return x ? (x.key === 'itemsep' ? x.value : x.key) : undefined; }); if (v) { f.sep = v; f.sepFrom = 'setlist'; } }
+  // the indents (enumitem's leftmargin, labelwidth, labelsep: Adjust List Indents), the list's own
+  // option or the preamble's \setlist for its level, each a length as written or null
+  f.indents = {};
+  for (const k of INDENT_KEYS) {
+    const x = o.kv[k];
+    const v = x && x.value ? x.value : fromKV((kv) => { const y = kv.find((z) => z.key === k); return y && y.value ? y.value : undefined; });
+    f.indents[k] = v != null ? String(v).replace(/^\{([\s\S]*)\}$/, '$1').trim().slice(0, 60) : null;
+    if (x) f.indentFrom = 'opt';
+  }
   return f;
+}
+// Adjust List Indents' keys: where the text starts (leftmargin), the label's box (labelwidth) and the
+// space between them (labelsep); the label's own place is what is left: leftmargin - labelwidth - labelsep
+export const INDENT_KEYS = ['leftmargin', 'labelwidth', 'labelsep'];
+// LaTeX's own at each level (article, report, book: \leftmargini to iv; \labelsep .5em; the label's
+// box what is left of the margin), in em
+export const INDENT_DEFAULT = (level) => { const lm = [2.5, 2.2, 1.87, 1.7][Math.min(3, Math.max(0, level - 1))]; return { leftmargin: lm, labelsep: 0.5, labelwidth: lm - 0.5 }; };
+// A length enumitem takes for an indent, as typed: a number with a unit TeX knows, or null
+export function indentLen(t) {
+  const m = /^\s*(-?(?:\d{1,4}(?:\.\d{1,4})?|\.\d{1,4}))\s*(pt|mm|cm|in|em|ex|bp|pc)\s*$/.exec(String(t ?? ''));
+  return m ? m[1].replace(/^(-?)\./, '$10.') + m[2] : null;
+}
+// The edits that give a list the indents vals ({ leftmargin, labelwidth, labelsep }: a length, or
+// null for LaTeX's own; a key left out stays as it is), as enumitem's options. Only with enumitem:
+// beside the enumerate package or paralist it would break their lists, beamer sets its own
+export function indentEdits(src, L, vals, cfg, mech = 'enumitem') {
+  if (mech !== 'enumitem') return null;
+  const f = formatOf(src, L, cfg), ch = {};
+  for (const k of INDENT_KEYS) if (k in vals) {
+    const v = vals[k] == null ? null : indentLen(vals[k]);
+    if (vals[k] != null && v == null) return null;
+    if ((f.opts.kv[k] ? f.indents[k] : null) !== v) ch[k] = v;
+  }
+  if (!Object.keys(ch).length) return { edits: [], pkgs: [] };
+  if (L.opt) return { edits: crlfAll(src, { edits: optDrop(src, L, ch), pkgs: [] }).edits, pkgs: ['enumitem'] };
+  const put = INDENT_KEYS.filter((k) => ch[k] != null).map((k) => k + '=' + ch[k]);
+  return { edits: put.length ? [{ s: L.be, e: L.be, t: '[' + put.join(',') + ']' }] : [], pkgs: put.length ? ['enumitem'] : [] };
 }
 
 // The label LaTeX would print for a list's first level by default, and whether a label is one

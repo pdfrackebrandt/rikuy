@@ -105,6 +105,9 @@ export class Renderer {
 
   // Sync with a new model: reuse unchanged blocks, render new ones.
   sync(model, prefix) {
+    // (R2, D1) hyperref's colorlinks: the colours links, citations and addresses print in
+    const L = model.opts.links, R = this.app && this.app.root;
+    if (R) { R.classList.toggle('colorlinks', !!L); for (const k of ['link', 'cite', 'url']) R.style.setProperty('--lk-' + k, (L && L[k]) || 'inherit'); }
     const pool = new Map();
     for (const b of this.blocks) {
       if (!pool.has(b.key)) pool.set(b.key, []);
@@ -233,9 +236,12 @@ export class Renderer {
         el.dataset.ctx = it.ctx || 'p';
         if (it.depth) el.style.setProperty('--depth', it.depth);
         if (it.depth) el.classList.add('deep');
+        // (a list's own indents, enumitem's: the text's margin and the label's box, in em; R2)
+        if (it.lmPad != null) el.style.paddingInlineStart = it.lmPad + 'em';
         if (it.label) {
           const lab = document.createElement('span');
           lab.className = 'lbl lbl-' + (it.labelKind || 'item');
+          if (it.lm) { lab.style.insetInlineStart = it.lm.lab + 'em'; lab.style.width = (it.lm.w + it.lm.sep) + 'em'; lab.style.paddingInlineEnd = it.lm.sep + 'em'; }
           this.inl(it.label, lab);
           // description labels are editable inline text
           if (it.labelKind === 'desc') { lab.removeAttribute('contenteditable'); lab.className = 'dlbl'; }
@@ -313,6 +319,7 @@ export class Renderer {
         const t = div('ttl-t'); this.inl(it.title, t); el.appendChild(t);
         t.setAttribute('role', 'heading');
         t.setAttribute('aria-level', '1');
+        if (it.subtitle) { const st = div('ttl-s'); this.inl(it.subtitle, st); el.appendChild(st); }
         const a = div('ttl-a');
         for (const au of it.authors) { const s = document.createElement('span'); s.className = 'ttl-au'; this.inl(au, s); a.appendChild(s); }
         el.appendChild(a);
@@ -340,7 +347,7 @@ export class Renderer {
         // a wrapfigure: its parts as wide as it is (its pictures' \linewidth), until the page wraps
         // text round it (B6); a share of the line, or a length in points
         const ww = it.wrapW ? cssLength(it.wrapW) : null;
-        if (ww) { el.classList.add('flt-wrap'); el.style.setProperty('--wrapw', ww); }
+        if (ww) { el.classList.add('flt-wrap'); el.style.setProperty('--wrapw', ww); item.wrapSide = it.side || 'r'; }
         const lwWas = this.lineW;
         if (ww) this.lineW = it.wrapW;
         for (const p of it.parts) el.appendChild(this.floatPart(p));
@@ -376,6 +383,8 @@ export class Renderer {
         pre.textContent = it.text;
         el.appendChild(pre);
         if (it.verb) el.classList.add('verb');
+        // (LaTeX's verbatim never breaks a line: drawn so, R2)
+        if (/^verbatim\*?$/.test(it.name || '')) el.classList.add('verbatim-env');
         const idx = B.atoms.length;
         B.atoms.push({ kind: 'raw', f: it.f, s: this.rel(it.s), e: this.rel(it.e), is: this.rel(it.is), ie: this.rel(it.ie), name: it.name });
         el.dataset.a = B.id + '.' + idx;
@@ -438,7 +447,7 @@ export class Renderer {
         item.sbEm = 1.5;
         const region = it.notes ? null : (it.key || 'ix');
         item.extra = it.rows.map((r, k) => {
-          const e2 = div('it p rol ' + (it.notes ? 'en-e en-' + it.notes + ' z-footnotesize' : 'idx-e idx-l' + Math.min(2, r.lvl) + (r.gap ? ' idx-gap' : '')));
+          const e2 = div('it p rol ' + (it.notes ? 'en-e en-' + it.notes + ' z-footnotesize' : 'idx-e idx-l' + Math.min(2, r.lvl) + (r.gap ? ' idx-gap' : '') + (it.right ? ' idx-right idx-' + it.right : '')));
           e2.contentEditable = 'false';
           if (it.notes) {
             const l = document.createElement(it.notes === 'endnotes' ? 'sup' : 'span'); l.className = 'en-n'; l.textContent = r.num + (it.notes === 'endnotes' ? '' : '.');
@@ -450,7 +459,9 @@ export class Renderer {
             }
             e2.appendChild(t);
           } else {
-            e2.appendChild(document.createTextNode(r.text));
+            // (R4: a category of a Table of Authorities in bold; a leader to page numbers set at the right)
+            if (r.bold) { const b = document.createElement('b'); b.textContent = r.text; e2.appendChild(b); } else e2.appendChild(document.createTextNode(r.text));
+            if (it.right && r.pages.length) { const l = document.createElement('span'); l.className = 'idx-lead'; e2.appendChild(l); }
             const pg = document.createElement('span'); pg.className = 'idx-p';
             pg.dataset.row = String(k);
             e2.appendChild(pg);
@@ -551,10 +562,11 @@ export class Renderer {
       const d = div('cap');
       d.dataset.ctx = 'cap';
       setDir(d, p.dir);
-      const lab = { figure: 'Figure', table: 'Table' }[p.kind] || p.kind;
+      // (R4: p.lab, the name of a float of the document's own, or '' for the number alone)
+      const lab = p.lab != null ? p.lab : { figure: 'Figure', table: 'Table' }[p.kind] || p.kind;
       // (\caption*: the words alone; beamer's: "Figure:" with no number)
       if (p.kind === 'sub') d.appendChild(chr('(' + p.num + ') ', 'caplab'));
-      else if (!p.star) { d.appendChild(chr(lab + (p.num ? ' ' + p.num : '') + ': ', 'caplab')); d.dataset.cap = p.kind + ':' + (p.num || ''); }
+      else if (!p.star) { d.appendChild(chr((lab ? lab + (p.num ? ' ' + p.num : '') : p.num) + ': ', 'caplab')); d.dataset.cap = p.kind + ':' + (p.num || ''); }
       this.inl(p.inl, d);
       return d;
     }
@@ -680,6 +692,7 @@ export class Renderer {
           const s = document.createElement(tag);
           s.className = 'y y-' + (x.st || 'none') + (x.decl ? ' decl' : '');
           if (x.tight) s.classList.add('tight');
+          if (x.rule != null) s.style.setProperty('--fbr', String(Math.round(x.rule * 100) / 100));
           if (x.st === 'dropcap') { s.style.setProperty('--dl', String(x.lines || 2)); if (x.hang) s.classList.add('hang'); }
           if (x.mp) { const w = cssLength(x.mp.replace(/^\\dimexpr\s*|\s*-.*$/g, '')); s.classList.add('mp'); if (w) s.style.width = w; }
           paint(s, x);
@@ -817,6 +830,21 @@ export class Renderer {
         if (x.err) s.classList.add('err');
         if (x.plain) s.classList.add('plain');
         if (x.note) s.classList.add('note');
+        // (R3) a field the layout fills in with its page's number or the pages' count
+        if (x.fld) { s.classList.add('fld'); s.dataset.fld = x.fld; }
+        break;
+      }
+      case 'form': {
+        // (R3) a form field as hyperref sets it: its label, a space, the box (src/forms.js)
+        s.classList.add('a-form', 'ff-' + x.kind);
+        if (x.label) s.append(x.label + ' ');
+        const b = document.createElement('span');
+        b.className = 'ff';
+        if (x.wpt) b.style.width = ptCss(x.wpt);
+        if (x.kind === 'check') b.textContent = x.checked ? '✓' : '';
+        else b.textContent = x.value || '';
+        s.appendChild(b);
+        s.title = { text: 'Text field', date: 'Date field', check: 'Check box', combo: 'Combo box', list: 'Drop-down list' }[x.kind] + ' (hyperref): filled in in the PDF. Click to edit its source.';
         break;
       }
       case 'logo': s.innerHTML = logo(x.text); break;
