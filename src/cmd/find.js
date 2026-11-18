@@ -13,10 +13,10 @@
 
 import { register, command, enabled, onInstall } from '../commands.js';
 import { chordText } from '../keys.js';
-import { compile, expand, hitsIn, hitsInSource, runsWith, blockText, charSrc, hitSource, joinRanges, labelsIn, PARA, FMT, FORMATS, MAX_HITS } from '../find.js';
-import { headingAt, sectionRange, promoteEdits, swapEdit, moveEdits, newHeading, eolOf, NAME } from '../outline.js';
-import { absAtom, posFromDom, diff } from '../editor.js';
-import { $ } from '../ui/dom.js';
+import { compile, expand, hitsIn, hitsInSource, runsWith, blockText, charSrc, hitSource, joinRanges, labelsIn, hasParaMark, pageParaText, paraHitSource, controlWords, inControlWord, PARA, PMARK, FMT, FORMATS, MAX_HITS } from '../find.js';
+import { headingAt, sectionRange, promoteEdits, swapEdit, moveEdits, newHeading, eolOf, foldItems, foldEntry, matchFold, NAME } from '../outline.js';
+import { absAtom, posFromDom, diff, endsWithControlWord } from '../editor.js';
+import { $, load, store } from '../ui/dom.js';
 import { openMenu } from '../ui/kit.js';
 import { openFindDialog, closeFindDialog, findDialogSync } from '../ui/finddialog.js';
 
@@ -71,7 +71,20 @@ register(
   { id: 'heading-before', name: 'New heading before', title: 'A new heading of the same level before this one', menu: { heading: 40 }, when: (app, at) => headAt(app, at) >= 0, run: (app, args, at) => app.newHeadingAt(headAt(app, at), 'before') },
   { id: 'heading-after', name: 'New heading after', title: 'A new heading of the same level after this section', menu: { heading: 50 }, when: (app, at) => headAt(app, at) >= 0 && !!app.sectionOf(headAt(app, at)), run: (app, args, at) => app.newHeadingAt(headAt(app, at), 'after') },
   { id: 'subheading-new', name: 'New subheading', title: 'A new heading one level down, at the end of this section', menu: { heading: 55 }, when: (app, at) => { const k = headAt(app, at); return k >= 0 && app.model.headings[k].level < 5 && !!app.sectionOf(k); }, run: (app, args, at) => app.newHeadingAt(headAt(app, at), 'sub') },
-  { id: 'heading-select', name: 'Select heading and content', title: 'The heading and everything under it, to its next heading of the same level', menu: { heading: 60 }, when: (app, at) => headAt(app, at) >= 0 && !!app.sectionOf(headAt(app, at)), run: (app, args, at) => app.selectSection(headAt(app, at)) }
+  { id: 'heading-select', name: 'Select heading and content', title: 'The heading and everything under it, to its next heading of the same level', menu: { heading: 60 }, when: (app, at) => headAt(app, at) >= 0 && !!app.sectionOf(headAt(app, at)), run: (app, args, at) => app.selectSection(headAt(app, at)) },
+
+  // ---- a heading's text collapsed on the page (Word's triangle beside a heading): the page's
+  // view alone, never the source or the PDF; kept for each document in this browser
+  { id: 'heading-collapse', name: 'Collapse heading', title: 'Hide the text under this heading on the page; the source and the PDF keep it (Alt+Shift+-)', synonyms: ['Collapse', 'Fold heading', 'Hide section text', 'Expand/Collapse'],
+    keys: ['Alt+Shift+-'], keysQuiet: ['Alt+Shift+_'], mac: { 'Alt+Shift+-': 'Control+Shift+-', 'Alt+Shift+_': 'Control+Shift+_' }, menu: { heading: 70 },
+    when: (app, at) => { const k = headAt(app, at); return k >= 0 && !app.foldIs(k); }, whyNot: (app, at) => headAt(app, at) < 0 ? 'Put the caret in a heading first.' : 'It is collapsed already: Expand heading shows its text.', run: (app, args, at) => app.foldSet(headAt(app, at), true) },
+  { id: 'heading-expand', name: 'Expand heading', title: 'Show the text under this heading again (Alt+Shift++)', synonyms: ['Expand', 'Unfold heading', 'Show section text'],
+    keys: ['Alt+Shift++'], mac: { 'Alt+Shift++': 'Control+Shift++' }, menu: { heading: 71 },
+    when: (app, at) => { const k = headAt(app, at); return k >= 0 && app.foldIs(k); }, whyNot: (app, at) => headAt(app, at) < 0 ? 'Put the caret in a heading first.' : 'Its text shows already.', run: (app, args, at) => app.foldSet(headAt(app, at), false) },
+  { id: 'headings-expand-all', name: 'Expand all headings', title: 'Show the text under every collapsed heading', synonyms: ['Expand all', 'Show all text'], menu: { heading: 72 },
+    when: (app) => app.foldCount() > 0, whyNot: () => 'No heading is collapsed.', run: (app) => app.foldAll(false) },
+  { id: 'headings-collapse-all', name: 'Collapse all headings', title: 'Collapse every heading: the page shows the headings of the top level alone', synonyms: ['Collapse all', 'Headings only'], menu: { heading: 73 },
+    when: (app) => !!(app.model && app.model.headings && app.model.headings.length), whyNot: () => 'This document has no headings.', run: (app) => app.foldAll(true) }
 );
 
 // the status bar follows the caret and the scrolling: the page it is on, the words selected; a
@@ -133,7 +146,7 @@ export const methods = {
     if (!this.model || (!fs.q && !fs.o.fmt)) { this.findPaint(); this.findViews(); return; }
     let re = null;
     if (fs.q) {
-      const c = compile(fs.q, fs.o);
+      const c = compile(fs.q, fs.o.fmt & FMT.equation && !fs.o.source ? { ...fs.o, literal: true } : fs.o);
       if (c.error != null) { fs.msg = c.error; this.findPaint(); this.findViews(); return; }
       re = c.re;
     }
@@ -149,7 +162,9 @@ export const methods = {
         if (r.stopped || Date.now() - t0 > 1500) { fs.stopped = true; break; }
         if (fs.hits.length >= MAX_HITS) { fs.more = true; break; }
       }
-    } else if (!fs.o.source) {
+    } else if (!fs.o.source && (fs.o.fmt & FMT.equation)) this.equationHits(fs, re, inSel, t0);
+    else if (!fs.o.source && re && !fs.o.regex && hasParaMark(fs.q)) this.paraMarkHits(fs, re, fs.o.fmt || 0, inSel, t0);
+    else if (!fs.o.source) {
       const want = fs.o.fmt || 0;
       this.renderer.blocks.forEach((B, bi) => {
         if (fs.stopped || fs.hits.length >= MAX_HITS) return;
@@ -220,6 +235,49 @@ export const methods = {
     return true;
   },
 
+  // Format › Equation: each formula of the page (inline and displayed) as one result, or with words
+  // in the box the places in its LaTeX that match them; a replacement is written there as LaTeX
+  equationHits(fs, re, inSel, t0) {
+    const els = new Map();
+    for (const el of this.root.querySelectorAll('[data-a]')) els.set(el.dataset.a, el);
+    this.renderer.blocks.forEach((B, bi) => {
+      if (fs.stopped || fs.hits.length >= MAX_HITS) return;
+      B.atoms.forEach((a, k) => {
+        if (fs.stopped || a.kind !== 'math' || a.s == null || a.e == null || fs.hits.length >= MAX_HITS) return;
+        const A = absAtom(B, a), text = this.src(A.f), el = els.get(B.id + '.' + k) || null;
+        const add = (s, e, m) => { const h = { bi, B, f: A.f, s, e, m, parts: [[s, e]], src: true, eq: el, text: text.slice(s, e), st: text.slice(s, e) }; if (inSel(h)) fs.hits.push(h); };
+        if (!re) { add(A.s, A.e, [text.slice(A.s, A.e)]); return; }
+        const is = A.is != null && A.is >= A.s ? A.is : A.s, ie = A.ie != null && A.ie <= A.e ? A.ie : A.e;
+        const t = text.slice(is, ie), cw = controlWords(t), own = fs.q[0] === '\\';
+        const r = hitsInSource(t, re, { max: MAX_HITS - fs.hits.length });
+        for (const x of r.hits) if (!inControlWord(cw, x.i, x.j, own)) add(is + x.i, is + x.j, x.m);
+        if (r.more) fs.more = true;
+        if (r.stopped || Date.now() - t0 > 1500) fs.stopped = true;
+      });
+    });
+  },
+  // Word's ^p on the page: the page's paragraphs as one text, a paragraph mark between two where
+  // the source has a paragraph break (src/find.js pageParaText); a hit may run across marks
+  paraMarkHits(fs, re, want, inSel, t0) {
+    const bs = this.renderer.blocks, P = pageParaText(bs, (f) => this.src(f));
+    const r = hitsIn(P.text, re, { max: MAX_HITS, t0 });
+    if (r.stopped) fs.stopped = true;
+    if (r.more) fs.more = true;
+    const fmtOf = (x) => { if (P.bi[x] < 0) return -1; const B = bs[P.bi[x]]; return blockText(B).fmt[P.x[x]]; };
+    for (const x of r.hits) {
+      if (want) { let ok = true; for (let y = x.i; y < x.j && ok; y++) { const f = fmtOf(y); if (f >= 0 && (f & want) !== want) ok = false; } if (!ok) continue; }
+      const s = paraHitSource(bs, P, x.i, x.j);
+      if (!s) continue;
+      let y = x.i;
+      while (y < x.j && P.bi[y] < 0) y++;
+      // (a hit of marks alone belongs to the paragraph after them)
+      const bi = y < x.j ? P.bi[y] : (P.bi[x.j] >= 0 ? P.bi[x.j] : Math.max(0, P.bi[Math.max(0, x.i - 1)]));
+      const h = { bi, B: bs[bi], T: P, i: x.i, j: x.j, m: x.m, ...s, text: P.text.slice(x.i, x.j).replace(/\u2029/g, '\n'), first: y < x.j ? fmtOf(y) : 0 };
+      h.st = this.src(h.f).slice(h.s, h.e);
+      if (inSel(h)) fs.hits.push(h);
+    }
+  },
+
   // where a hit stands in the document: its block's index, then its place
   findKey(h) { if (h.bi == null) h.bi = this.blockIndexOf(h.f, h.s); return [h.bi, h.s]; },
   // (by a binary search in each file's blocks, made once for each drawing of the page: a
@@ -256,18 +314,21 @@ export const methods = {
     if (!HL || !window.Highlight) return;
     const fs = this.fs;
     if (!fs || !fs.on || !fs.hits.length) { HL.delete('rk-find'); HL.delete('rk-find-cur'); return; }
-    const byFile = new Map();
-    fs.hits.slice(0, 5000).forEach((h, k) => { if (k === fs.cur) return; if (!byFile.has(h.f)) byFile.set(h.f, []); byFile.get(h.f).push(...h.parts); });
-    const all = [];
+    const byFile = new Map(), all = [];
+    // (a formula found has no text of the page's own: the whole of it is marked)
+    const whole = (el) => { const r = document.createRange(); r.selectNodeContents(el); return r; };
+    fs.hits.slice(0, 5000).forEach((h, k) => { if (k === fs.cur) return; if (h.eq) { if (h.eq.isConnected) all.push(whole(h.eq)); return; } if (!byFile.has(h.f)) byFile.set(h.f, []); byFile.get(h.f).push(...h.parts); });
     for (const [f, rs] of byFile) all.push(...this.index.domRanges(f, joinRanges(rs)));
     HL.set('rk-find', new window.Highlight(...all));
     const cur = fs.hits[fs.cur];
-    if (cur) HL.set('rk-find-cur', new window.Highlight(...this.index.domRanges(cur.f, joinRanges(cur.parts))));
+    if (cur) HL.set('rk-find-cur', new window.Highlight(...(cur.eq ? (cur.eq.isConnected ? [whole(cur.eq)] : []) : this.index.domRanges(cur.f, joinRanges(cur.parts)))));
     else HL.delete('rk-find-cur');
   },
   // after the pages were laid out again (an edit, a zoom): the search again, the shown hit kept
   findSoon() {
     clearTimeout(this.findT);
+    // (the triangles of collapsed headings, where the pass put their headings)
+    if ((this.fold && this.fold.shut.size) || this.foldHover) { cancelAnimationFrame(this.foldRaf); this.foldRaf = requestAnimationFrame(() => this.foldPaint()); }
     // (the Navigation pane's headings follow every edit at once, not only with the problems)
     if (this.navOpen && this.navOpen('outline') && this.nv) { clearTimeout(this.navT); this.navT = setTimeout(() => { if (this.navOpen('outline') && this.navView === 'headings') this.paintHeadings(); }, 60); }
     if (!this.findActive()) return;
@@ -328,7 +389,9 @@ export const methods = {
   // the hit in view, about a third down the window
   findShow(h) {
     if (!h) return;
-    const rs = this.index.domRanges(h.f, joinRanges(h.parts));
+    // (a hit under a collapsed heading: the heading opens, as Word's does)
+    if (this.fold && this.fold.hidden && this.fold.hidden.size && h.B && h.B.items.some((it) => this.fold.hidden.has(it))) { this.foldReveal((it) => it.block === h.B); this.findRun({ keep: true }); h = this.fs.hits[this.fs.cur] || h; this.findPaint(); }
+    const rs = h.eq ? (h.eq.isConnected ? [(() => { const x = document.createRange(); x.selectNodeContents(h.eq); return x; })()] : []) : this.index.domRanges(h.f, joinRanges(h.parts));
     const r = rs[0] && rs[0].getBoundingClientRect();
     if (r && (r.width || r.height)) {
       const D = this.desk.getBoundingClientRect();
@@ -338,6 +401,7 @@ export const methods = {
       if (h.src && document.body.classList.contains('src-on') && pane) this.reveal(h.f, h.s, false);
       return;
     }
+    if (h.eq) return;
     // (a hit in the preamble, or in a file the page does not show: the source pane shows it)
     if (h.src) this.reveal(h.f, h.s, false);
   },
@@ -357,6 +421,12 @@ export const methods = {
   findSelectCur() {
     const fs = this.fs, h = fs && fs.hits[fs.cur];
     if (!h) { this.ribbonBack(); return; }
+    if (h.eq) {
+      // (a formula: the caret beside it, as after a click on the page)
+      const A = h.B && h.B.atoms.find((a) => a.kind === 'math' && absAtom(h.B, a).s <= h.s && h.e <= absAtom(h.B, a).e);
+      this.restoreCaret({ f: h.f, p: A ? absAtom(h.B, A).s : h.s, bias: -1 });
+      return;
+    }
     const a = h.parts[0][0], b = h.parts[h.parts.length - 1][1];
     this.restoreCaret({ f: h.f, selA: a, selB: b });
     if (!this.caretNow()) this.restoreCaret({ f: h.f, p: a, bias: 1 });
@@ -372,19 +442,59 @@ export const methods = {
     const fs = this.findState(), src = this.src(h.f);
     if (h.st != null && src.slice(h.s, h.e) !== h.st) return null;
     const groups = fs.o.wildcards || fs.o.regex;
-    const text = /[\\^$]/.test(rep) ? expandRep(rep, h, fs.o, groups) : rep;
+    // (in a formula the replacement is LaTeX as it is written: only ^& and the groups are codes)
+    const text = !/[\\^$]/.test(rep) ? rep : h.eq ? expand(rep, h.m || [h.text], { ...(groups ? fs.o : {}), literal: true }) : expandRep(rep, h, fs.o, groups);
     if (h.src) return [{ f: h.f, s: h.s, e: h.e, t: text }];
     const a = h.parts[0][0], b = h.parts[h.parts.length - 1][1];
-    const del = this.deletionEdits(h.f, a, b);
+    // (a hit across a paragraph's end, ^p: each paragraph's part as typing over it takes it away,
+    // and each break between them, a blank line alone, goes whole; one with braces or a heading's
+    // command around it is found, not replaced)
+    if (h.marks && h.hard) return { skip: 'para' };
+    // (a break with comment lines in it, a note or a review comment: the comments stay, as typing's
+    // joining keeps them, deletionEdits)
+    const gapEdit = ([x, y]) => (/%/.test(src.slice(x, y)) ? this.deletionEdits(h.f, x, y) : [{ f: h.f, s: x, e: y, t: '' }]);
+    const del = h.marks ? [...h.segs.flatMap(([x, y]) => this.deletionEdits(h.f, x, y)), ...h.gaps.flatMap(gapEdit)].sort((u, v) => u.s - v.s) : this.deletionEdits(h.f, a, b);
     let at = a;
     if (del.length && del[0].s > a && del[0].t === '') at = del[0].s;
-    if (text && this.texAt(h.f, at, true) && /[\\{}%$&#^_~]/.test(text)) return { skip: 'latex' };
+    if (text && this.texAt(h.f, at, true) && /[\\{}%$&#^_~\n]/.test(text)) return { skip: 'latex' };
+    // (^p in the replacement: a blank line, where the place is a paragraph's own text, outside any
+    // group, argument or formula; a heading's, a cell's or a caption's text cannot hold one)
+    if (/\n/.test(text) && !this.breakFits(h, at)) return { skip: 'break' };
     const t = text ? this.escapeAt(h.f, at, text) : '';
     const out = [];
     let put = !t;
     for (const ed of del) { if (!put && ed.s === at) { out.push({ ...ed, t: ed.t + t }); put = true; } else out.push(ed); }
     if (!put) out.push({ f: h.f, s: at, e: at, t });
+    // (what is taken away must not join a control word to the letters after it: \dots and a
+    // blank line before Next become \dots{}Next, never \dotsNext)
+    out.sort((u, v) => u.s - v.s);
+    for (let i = 0; i < out.length; i++) {
+      if (out[i].t !== '') continue;
+      let k = i;
+      while (k + 1 < out.length && out[k + 1].s === out[k].e && out[k + 1].t === '') k++;
+      let L = out[i].s;
+      for (let j = i - 1; j >= 0 && out[j].e === L && out[j].t === ''; j--) L = out[j].s;
+      if (endsWithControlWord(src, L) && /[A-Za-z@]/.test(src[out[k].e] || '')) out[k] = { ...out[k], t: '{}' };
+      i = k;
+    }
     return out;
+  },
+  // whether a paragraph break may be written at source place at, the start of hit h
+  breakFits(h, at) {
+    const fmt = h.marks ? h.first || 0 : (h.T && h.T.fmt ? h.T.fmt[h.i] : 0);
+    if (fmt & (FMT.heading | FMT.chapter | FMT.h1 | FMT.h2 | FMT.h3 | FMT.table | FMT.caption | FMT.footnote | FMT.latex)) return false;
+    const B = h.B, src = this.src(h.f);
+    if (!B || B.f !== h.f || B.s == null || at < B.s || at - B.s > 40000) return false;
+    // (an optional argument open at the place, \item[..] or \begin{theorem}[..], holds no break either)
+    let d = 0, k = 0, math = false;
+    for (let p = B.s; p < at; p++) {
+      const c = src[p];
+      if (c === '\\') { p++; continue; }
+      if (c === '%') { const n = src.indexOf('\n', p); if (n < 0 || n >= at) return false; p = n; continue; }
+      if (c === '{') d++; else if (c === '}') d--; else if (c === '$') math = !math;
+      else if (d === 0 && c === '[') k++; else if (d === 0 && c === ']' && k > 0) k--;
+    }
+    return d === 0 && k === 0 && !math;
   },
   // Replace: the hit shown, if it is still what was found (an edit since may have moved it: it is
   // looked for again where the edit took it); then the next one in the list is shown
@@ -403,7 +513,7 @@ export const methods = {
     if (h.ro) { this.findGo(1); fs.note = 'That one is drawn by a macro and cannot be replaced here: "In LaTeX source" finds its definition.'; this.findViews(); return; }
     const edits = this.hitEdits(h, fs.rep);
     if (!edits) { this.findGo(1); return; }
-    if (edits.skip) { this.findGo(1); fs.note = 'That one is in a LaTeX paragraph, where the replacement\'s %, $, & or braces would be LaTeX: tick In LaTeX source to write it there as source.'; this.findViews(); return; }
+    if (edits.skip) { this.findGo(1); fs.note = SKIP_NOTE[edits.skip]; this.findViews(); return; }
     const shown = (fs.o.wildcards || fs.o.regex || /\^/.test(fs.rep) ? expandRep(fs.rep, h, fs.o, true) : fs.rep).length;
     const was = { bi: h.bi, i: h.i, f: h.f, s: h.s, src: !!h.src, len: shown };
     this.closeGroup();
@@ -425,15 +535,16 @@ export const methods = {
     this.findFresh();
     if (!fs.on) this.findRun();
     const ok = [], edits = [];
-    let ro = 0, tex = 0;
+    let ro = 0, tex = 0, para = 0, brk = 0;
     for (const h of fs.hits) {
       if (h.ro) { ro++; continue; }
       const e = this.hitEdits(h, fs.rep);
       if (!e) continue;
-      if (e.skip) { tex++; continue; }
+      if (e.skip) { if (e.skip === 'para') para++; else if (e.skip === 'break') brk++; else tex++; continue; }
       ok.push(h); edits.push(...e);
     }
-    const left = (ro ? '; ' + plural(ro, 'other is', 'others are') + ' drawn by a macro and stayed' : '') + (tex ? '; ' + plural(tex, 'is', 'are') + ' in a LaTeX paragraph, where the replacement\'s %, $, & or braces would be LaTeX: tick In LaTeX source to write it there' : '');
+    const left = (ro ? '; ' + plural(ro, 'other is', 'others are') + ' drawn by a macro and stayed' : '') + (tex ? '; ' + plural(tex, 'is', 'are') + ' in a LaTeX paragraph, where the replacement\'s %, $, & or braces would be LaTeX: tick In LaTeX source to write it there' : '') +
+      (para ? '; ' + plural(para, 'runs', 'run') + ' across a paragraph\'s end with braces or a heading around it and stayed' : '') + (brk ? '; ' + plural(brk, 'is', 'are') + ' where a paragraph break (^p) cannot go (a heading, a cell, a caption, a group) and stayed' : '');
     if (!ok.length) { fs.note = fs.hits.length ? 'None replaced' + left + '.' : ''; this.findViews(); return 0; }
     const c = this.caretNow();
     this.closeGroup();
@@ -613,7 +724,7 @@ export const methods = {
   // the formatting of the caret's character (FMT bits), 0 for none
   fmtAt(at) {
     const P = this.paraAt(at);
-    return P ? P.T.fmt[P.x] & ~FMT.latex : 0;
+    return P ? P.T.fmt[P.x] & ~(FMT.latex | KINDS) : 0;
   },
   // Select text with similar formatting: every run with the caret's formatting, marked on the
   // pages and listed under Results, the first selected
@@ -782,7 +893,249 @@ export const methods = {
     const r = this.sectionOf(k);
     if (!r) return;
     this.restoreCaret({ f: r.f, selA: r.s, selB: r.e });
+  },
+
+  // ---- a heading collapsed on the page (Word's triangle) ---------------------------------------
+  // This document's collapsed headings (src/outline.js foldEntry), kept in this browser under its
+  // name and main file. Their places follow the edits: each file's text when last looked at is
+  // kept, and a place moves by the difference, as Find's do; the words find it again otherwise.
+  foldState() {
+    const key = (this.name || '') + '|' + (this.main || '');
+    if (!this.fold || this.fold.key !== key) {
+      const all = load(FOLD_KEY), list = all && typeof all === 'object' && Array.isArray(all[key]) ? all[key].filter(okEntry).slice(0, FOLD_MAX) : [];
+      this.fold = { key, list, snap: new Map(), shut: new Set(), hidden: new Set(), by: new Map(), at: new Map(), sig: JSON.stringify(list) };
+    }
+    return this.fold;
+  },
+  foldSave() {
+    const F = this.foldState(), sig = JSON.stringify(F.list);
+    if (sig === F.sig) return;
+    F.sig = sig;
+    const all = load(FOLD_KEY) || {};
+    delete all[F.key];
+    if (F.list.length) all[F.key] = F.list;
+    // (the documents last folded, fifty at most)
+    const keys = Object.keys(all);
+    for (const k of keys.slice(0, Math.max(0, keys.length - 50))) delete all[k];
+    store(FOLD_KEY, all);
+  },
+  foldIs(k) { const F = this.fold; return !!F && F.shut.has(k); },
+  foldCount() { return this.fold ? this.fold.list.length : 0; },
+  // the places kept, moved by the edits made since they were last looked at
+  foldMap() {
+    const F = this.fold;
+    for (const x of F.list) {
+      const old = F.snap.get(x.f), now = this.files.get(x.f);
+      if (now == null || old == null || old === now) continue;
+      const d = F.diffs.get(x.f) || F.diffs.set(x.f, diff(old, now)).get(x.f);
+      if (!d) continue;
+      const a = d.s, b = d.s + d.del.length;
+      if (x.s >= b) x.s += d.ins.length - d.del.length; else if (x.s > a) x.s = a;
+    }
+    F.snap = new Map();
+    for (const x of F.list) if (!F.snap.has(x.f) && this.files.has(x.f)) F.snap.set(x.f, this.files.get(x.f));
+  },
+  // App.layoutPass gives the page's items here before they are measured and laid out: those under a
+  // collapsed heading are taken out (the model, the source and the PDF keep them). A caret a
+  // rebuild puts back inside them opens their heading.
+  foldFilter(items) {
+    const F = this.foldState();
+    if (!F.list.length || !this.model) { if (F.hidden.size || F.shut.size) { F.hidden = new Set(); F.shut = new Set(); F.by = new Map(); F.at = new Map(); } return items; }
+    F.diffs = new Map();
+    this.foldMap();
+    const heads = this.model.headings || [];
+    const top = this.model.opts && this.model.opts.chapters ? 0 : 1;
+    let shut = matchFold(F.list, heads), r = foldItems(items, heads, shut, top);
+    const c = this.foldCaret;
+    if (c && c.f != null && r.hidden.size) {
+      const p = c.p != null ? c.p : c.selA;
+      const want = (it) => it.block && it.block.f === c.f && it.block.s <= p && p <= it.block.e;
+      for (let n = 0; n < 8; n++) {
+        const it = items.find((x) => r.hidden.has(x) && want(x));
+        if (!it) break;
+        shut.delete(r.by.get(it));
+        r = foldItems(items, heads, shut, top);
+      }
+    }
+    F.shut = shut; F.hidden = r.hidden; F.by = r.by; F.at = r.at;
+    F.list = [...shut].sort((a, b) => a - b).map((k) => foldEntry(heads[k]));
+    clearTimeout(this.foldT);
+    this.foldT = setTimeout(() => this.foldSave(), 400);
+    if (r.hidden.size) { let w = 0; for (const it of items) if (!r.hidden.has(it)) items[w++] = it; items.length = w; }
+    return items;
+  },
+  // Collapse (on) or expand heading k of the model; the caret inside the text that goes moves to
+  // the heading's end, as Word puts it
+  foldSet(k, on) {
+    const h = this.model && this.model.headings[k];
+    if (!h) return false;
+    const F = this.foldState();
+    F.list = F.list.filter((x) => !(x.f === h.f && x.s === h.s));
+    if (on) {
+      F.list.push(foldEntry(h));
+      const c = this.caretNow(), r = this.sectionOf(k);
+      if (c && !c.ghost && r && c.f === r.f && c.a > h.e && c.a <= r.e) this.restoreCaret({ f: h.f, p: Math.max(h.s, h.e - 1), bias: -1 });
+    }
+    this.foldShow(on ? null : k);
+    return true;
+  },
+  // Collapse all headings: every one, so the page shows its top level alone; Expand all: none
+  foldAll(on) {
+    const F = this.foldState(), heads = (this.model && this.model.headings) || [];
+    if (on) {
+      F.list = heads.slice(0, FOLD_MAX).map(foldEntry);
+      // (the caret to the heading of the top level its text is under)
+      const c = this.caretNow(), lv = Math.min(...heads.map((h) => h.level));
+      if (c && !c.ghost) { let best = null; for (const h of heads) if (h.level === lv && h.f === c.f && h.s <= c.a) best = h; if (best && c.a > best.e) this.restoreCaret({ f: best.f, p: Math.max(best.s, best.e - 1), bias: -1 }); }
+    } else F.list = [];
+    this.foldShow(null);
+    return true;
+  },
+  // the page laid out again without (or with) the text, the state kept, the controls told
+  foldShow(k) {
+    clearTimeout(this.foldT);
+    this.relayout();
+    this.foldSave();
+    this.ribbonSync && this.ribbonSync();
+    if (k != null) this.foldHover = null;
+    this.foldPaint();
+  },
+  // The headings that hide the items pred chooses open, outermost first (one hiding another is
+  // opened in turn), the page laid out again
+  foldReveal(pred) {
+    const F = this.fold;
+    if (!F || !F.hidden.size) return false;
+    const heads = this.model.headings || [], items = this.renderer.blocks.flatMap((B) => B.items), top = this.model.opts.chapters ? 0 : 1;
+    let shut = new Set(F.shut), r = foldItems(items, heads, shut, top), any = false;
+    for (let n = 0; n < 8; n++) {
+      const it = items.find((x) => r.hidden.has(x) && pred(x));
+      if (!it) break;
+      shut.delete(r.by.get(it)); any = true;
+      r = foldItems(items, heads, shut, top);
+    }
+    if (!any) return false;
+    F.list = [...shut].sort((a, b) => a - b).map((k) => foldEntry(heads[k]));
+    this.foldShow(null);
+    return true;
+  },
+  // A place the caret is sent to (Go To, the Navigation pane, a comment, a change) that a collapsed
+  // heading hides: the heading opens first, as Word's does
+  foldOpenAt(f, p) {
+    const F = this.fold;
+    if (!F || !F.hidden.size || f == null || p == null) return false;
+    const pred = (it) => it.block && it.block.f === f && it.block.s <= p && p <= it.block.e;
+    // (a look at the hidden items first: a caret put back at every keystroke costs nothing more)
+    for (const it of F.hidden) if (pred(it)) return this.foldReveal(pred);
+    return false;
+  },
+  // The triangles: one beside each collapsed heading, and one beside the heading the pointer is
+  // over (with a mouse) or the caret is in (on a touch screen), drawn over the page, never in it
+  foldLayer() {
+    let L = this.foldEl;
+    if (!L || !L.isConnected) {
+      L = document.createElement('div');
+      L.className = 'fold-layer';
+      L.setAttribute('aria-hidden', 'false');
+      const sheet = $('#sheet');
+      if (!sheet) return null;
+      sheet.appendChild(L);
+      this.foldEl = L;
+      L.addEventListener('mousedown', (e) => e.preventDefault());
+      L.addEventListener('click', (e) => {
+        const b = e.target.closest('.fold-tg');
+        if (!b) return;
+        const k = +b.dataset.k;
+        if (this.model && this.model.headings[k]) this.foldSet(k, b.getAttribute('aria-expanded') === 'true');
+      });
+    }
+    return L;
+  },
+  foldPaint() {
+    const F = this.fold, L = this.foldLayer();
+    if (!L) return;
+    const want = [];
+    if (F && F.at) for (const [it, k] of F.at) if (F.shut.has(k) && it.el.isConnected) want.push({ el: it.el, k, shut: true });
+    const hv = this.foldHover;
+    if (hv && hv.el.isConnected && !(F && F.shut.has(hv.k)) && this.model && this.model.headings[hv.k]) want.push({ el: hv.el, k: hv.k, shut: false });
+    const have = [...L.children];
+    while (have.length > want.length) have.pop().remove();
+    if (!want.length) return;
+    const R = L.getBoundingClientRect(), D = this.desk.getBoundingClientRect(), coarse = window.matchMedia && matchMedia('(pointer: coarse)').matches, size = coarse ? 44 : 20;
+    want.forEach((w, i) => {
+      let b = have[i];
+      if (!b) { b = document.createElement('button'); b.type = 'button'; b.className = 'fold-tg'; b.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M6 7.5l4 5 4-5z"/></svg>'; L.appendChild(b); }
+      const h = this.model.headings[w.k], words = String(h.text || '').trim().slice(0, 60) || 'heading';
+      b.dataset.k = String(w.k);
+      b.setAttribute('aria-expanded', w.shut ? 'false' : 'true');
+      b.setAttribute('aria-label', (w.shut ? 'Expand: ' : 'Collapse: ') + words);
+      b.title = w.shut ? 'Expand: show the text under this heading (Alt+Shift++)' : 'Collapse: hide the text under this heading on the page (Alt+Shift+-)';
+      b.classList.toggle('shut', w.shut);
+      const r = w.el.getBoundingClientRect(), lh = parseFloat(getComputedStyle(w.el).lineHeight) || 20;
+      let x = r.left - size - 2, y = r.top + Math.min(r.height, lh) / 2;
+      // (where the margin is off the screen, as on a phone with the text as wide as the screen:
+      // after the heading's last line, inside the window)
+      if (x < D.left) {
+        const rg = document.createRange();
+        rg.selectNodeContents(w.el);
+        const rs = rg.getClientRects(), last = rs[rs.length - 1];
+        if (last) {
+          x = Math.min(last.right + 4, D.right - size); y = (last.top + last.bottom) / 2;
+          // (a heading of several lines: the button no higher than its last line, so it never
+          // covers the words of the line above)
+          let above = -Infinity;
+          for (const q of rs) if (q.bottom <= last.top + 1) above = Math.max(above, q.bottom);
+          if (y - size / 2 < above) y = above + size / 2;
+        }
+      }
+      b.style.left = Math.round(x - R.left) + 'px';
+      b.style.top = Math.round(y - R.top - size / 2) + 'px';
+    });
+  },
+  // the heading item the pointer is over or the caret is in, as { el, k }
+  foldHeadingOf(el) {
+    const it = el && el.closest && el.closest('.it.h[data-ctx="h"]');
+    if (!it || !this.root.contains(it) || !this.model) return null;
+    const B = this.renderer.blocks.find((x) => String(x.id) === it.dataset.b);
+    if (!B) return null;
+    const k = (this.model.headings || []).findIndex((h) => h.f === B.f && h.s >= B.s && h.s <= B.e);
+    return k >= 0 ? { el: it, k } : null;
   }
+};
+
+// the collapsed headings of every document, in the browser (localStorage)
+const FOLD_KEY = 'rikuy.fold.v1';
+const FOLD_MAX = 2000;
+const okEntry = (x) => !!x && typeof x === 'object' && typeof x.f === 'string' && Number.isInteger(x.s) && x.s >= 0 && Number.isInteger(x.lv) && typeof x.t === 'string';
+
+// the triangles follow the pointer over the page's headings (with a mouse) and the caret (on a
+// touch screen, where there is no pointer over anything), and the layout's every pass
+onInstall((app) => {
+  let t = 0;
+  const set = (hv) => {
+    const was = app.foldHover;
+    if ((was && hv && was.el === hv.el && was.k === hv.k) || (!was && !hv)) return;
+    app.foldHover = hv;
+    cancelAnimationFrame(t); t = requestAnimationFrame(() => app.foldPaint());
+  };
+  app.root.addEventListener('mousemove', (e) => { if (e.buttons) return; const hv = app.foldHeadingOf(e.target); if (hv || !(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('.fold-layer'))) set(hv); }, { passive: true });
+  app.root.addEventListener('mouseleave', (e) => { if (!(e.relatedTarget && e.relatedTarget.closest && e.relatedTarget.closest('.fold-layer'))) set(null); });
+  document.addEventListener('selectionchange', () => {
+    if (!(window.matchMedia && matchMedia('(pointer: coarse)').matches)) return;
+    const s = getSelection(), n = s.rangeCount && app.root.contains(s.anchorNode) ? s.anchorNode : null;
+    set(n ? app.foldHeadingOf(n.nodeType === 1 ? n : n.parentElement) : null);
+  });
+  // (a rebuild's caret: one put back under a collapsed heading opens it)
+  const rb = app.rebuild;
+  app.rebuild = function (caret) { this.foldCaret = caret; try { return rb.call(this, caret); } finally { this.foldCaret = null; } };
+});
+
+// (the kinds of text Format finds as Word's styles; Select text with similar formatting keeps to
+// the formatting of the words themselves)
+const KINDS = FMT.heading | FMT.list | FMT.table | FMT.theorem | FMT.quote | FMT.equation;
+const SKIP_NOTE = {
+  latex: 'That one is in a LaTeX paragraph, where the replacement\'s %, $, & or braces would be LaTeX: tick In LaTeX source to write it there as source.',
+  para: 'That one runs across a paragraph\'s end with braces or a heading\'s command around it: replace it In LaTeX source, where ^p is a blank line.',
+  break: 'A paragraph break (^p) cannot go there: a heading, a cell or a caption holds one paragraph, and a group or a formula would be cut.'
 };
 
 // a replacement's groups and Word's codes (src/find.js expand), on the hit's match

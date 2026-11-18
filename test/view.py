@@ -18,7 +18,7 @@ $RIKUY_SHOTS (default /tmp/B12-shots).
 RIKUY_DIST names another dist/."""
 import os, sys, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import open_page, check, results, src, load_doc, click_text, select_text
+from browser import open_page, check, results, src, load_doc, click_text, select_text, roundtrip
 from playwright.sync_api import sync_playwright
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -274,6 +274,16 @@ def phones(p):
         page.screenshot(path=os.path.join(SHOTS, 'phone-%d%s-latex.png' % (w, '-dark' if dark else '')))
         page.tap('#sv-page'); page.wait_for_timeout(700)
         check('Page by a tap' + tag, 'view-latex' not in ev(page, 'document.body.className'))
+        # V3 Web Layout by a tap on View's button: the text as wide as the screen; V8 the ruler is
+        # for a mouse: its button off, saying why, and no ruler drawn
+        ev(page, "window.rikuy.selectTab('view')"); page.wait_for_timeout(300)
+        page.locator('#rw-web').tap(); page.wait_for_timeout(700)
+        g = ev(page, "(() => { const pb = document.querySelector('.page .pb').getBoundingClientRect(); return [document.body.classList.contains('pg-web'), Math.round(pb.left), Math.round(pb.right), document.documentElement.scrollWidth]; })()")
+        check('V3: Web Layout by a tap, the text inside the screen' + tag, g[0] and g[1] >= 0 and g[2] <= w and g[3] <= w, g)
+        page.screenshot(path=os.path.join(SHOTS, 'phone-%d%s-web.png' % (w, '-dark' if dark else '')))
+        page.locator('#rw-print').tap(); page.wait_for_timeout(500)
+        rb = page.locator('#rw-ruler')
+        check('V8: the Ruler button is off on a touch screen, its title says why; no ruler drawn' + tag, rb.is_disabled() and not ev(page, "!!document.getElementById('ruler') && !document.getElementById('ruler').hidden && !!document.getElementById('ruler').offsetParent"), rb.get_attribute('title'))
         if w == 390 and not dark:
             # Show LaTeX without a right click: the View tab's button, by a tap
             el = page.locator('.it.p').nth(1)
@@ -338,10 +348,171 @@ def review(page):
     page.keyboard.press('Escape')
 
 
+CMP = 72.27 / 2.54
+RDOC = WRAP('Alpha beta gamma delta.\n\nSecond paragraph here.')
+CP = RDOC.replace('\\begin{document}', '\\usepackage{changepage}\n\\begin{document}')
+
+
+def marker(page, k):
+    return ev(page, "(k) => { const e = document.querySelector('#ruler .ru-mk.ru-' + k) || document.querySelector('#vruler .ru-mk.ru-' + k); if (!e) return null; const r = e.getBoundingClientRect(); return { x: k === 'ml' ? r.left + 3 : k === 'mr' ? r.right - 3 : r.left + r.width / 2, y: k === 'mt' ? r.top + 2 : k === 'mb' ? r.bottom - 2 : r.top + r.height / 2, v: e.getAttribute('aria-valuetext'), off: e.classList.contains('off'), title: e.title }; }", k)
+
+
+def ruler_drag(k, dcm, vert=False):
+    def go(page):
+        m = marker(page, k)
+        d = dcm * CMP * ev(page, 'window.rikuy.layout.px')
+        page.mouse.move(m['x'], m['y']); page.mouse.down()
+        for f in (0.3, 0.7, 1):
+            page.mouse.move(m['x'] + (0 if vert else d * f), m['y'] + (d * f if vert else 0))
+        page.mouse.up(); page.wait_for_timeout(300)
+    go.__name__ = 'drag ' + k
+    return go
+
+
+def web(page):
+    """V3 Web Layout: the text set as wide as the window, one sheet, no headers or footers, the lines
+    the browser's; Print Layout, Draft, One page take it back; kept as the page reopens."""
+    load_doc(page, WRAP(' '.join(['Word number %d of a long paragraph.' % i for i in range(60)]) + '\n\n\\newpage\nAfter the break.'))
+    lines0 = ev(page, "document.querySelector('#pages .it.p').getClientRects().length")
+    ev(page, "window.rikuy.runCommand('web-layout')"); page.wait_for_timeout(500)
+    g = ev(page, "(() => { const d = document.getElementById('desk').clientWidth, pb = document.querySelector('.page .pb').getBoundingClientRect(); return { on: document.body.classList.contains('pg-web'), d, pb: Math.round(pb.width), pages: window.rikuy.layout.pages.length, hd: getComputedStyle(document.querySelector('.page .folio')).display }; })()")
+    check('Web Layout: the text as wide as the window, no folio; a page break alone starts another sheet', g['on'] and g['pb'] > g['d'] - 140 and g['pages'] == 2 and g['hd'] == 'none', g)
+    check('Web Layout pressed in View, Print Layout not', ev(page, "(() => { const c = window.rikuy.cmds; return [c.command('web-layout').on(window.rikuy), c.command('print-layout').on(window.rikuy)]; })()") == [True, False])
+    page.set_viewport_size({'width': 900, 'height': 800}); page.wait_for_timeout(700)
+    w2 = ev(page, "Math.round(document.querySelector('.page .pb').getBoundingClientRect().width)")
+    check('the window narrower, the lines reflow to it', w2 < g['pb'] - 300 and w2 > 600, (w2, g['pb']))
+    page.set_viewport_size({'width': 1366, 'height': 800}); page.wait_for_timeout(500)
+    page.screenshot(path=os.path.join(SHOTS, 'web-layout-1366.png'))
+    ev(page, "window.rikuy.runCommand('draft')"); page.wait_for_timeout(400)
+    check('Draft takes Web Layout off: pages again, as TeX cuts them', not ev(page, "document.body.classList.contains('pg-web')") and ev(page, "document.body.classList.contains('pg-draft')"))
+    ev(page, "window.rikuy.runCommand('web-layout')"); page.wait_for_timeout(300)
+    ev(page, "window.rikuy.runCommand('one-page')"); page.wait_for_timeout(400)
+    check('One page takes it off too', not ev(page, "document.body.classList.contains('pg-web')"))
+    ev(page, "window.rikuy.runCommand('web-layout')"); page.wait_for_timeout(300)
+    check('kept with the preferences', ev(page, "JSON.parse(localStorage.getItem('galley.prefs.v1')).web") is True)
+    ev(page, "window.rikuy.runCommand('print-layout')"); page.wait_for_timeout(400)
+    check('Print Layout: the pages as TeX sets them again, the lines as before', not ev(page, "document.body.classList.contains('pg-web')") and ev(page, "document.querySelector('#pages .it.p').getClientRects().length") == lines0 and ev(page, 'window.rikuy.layout.g.web') is None)
+    ev(page, "window.rikuy.runCommand('zoom-fit')")
+
+
+def ruler(page):
+    """V8 the rulers: the margins and the caret's paragraph (its indents, first line, the stop of a
+    leader), each marker dragged and written through B2's and B6's edits by the round trip rule;
+    the arrow keys; hand written forms read back; hidden where it cannot work."""
+    ev(page, "window.rikuy.prefs.ruler = false")
+    load_doc(page, RDOC); click_text(page, 'Second', 2)
+    page.get_by_role('tab', name='View', exact=True).click(); page.wait_for_timeout(200)
+    page.get_by_role('button', name='Ruler', exact=True).click(); page.wait_for_timeout(400)
+    names = ev(page, "[...document.querySelectorAll('#ruler [role=slider], #vruler [role=slider]')].map((e) => e.getAttribute('aria-label'))")
+    check('View › Ruler shows the rulers, its markers sliders by name', not ev(page, "document.getElementById('ruler').hidden") and names == ['First Line Indent', 'Hanging Indent', 'Left Indent', 'Right Indent', 'Left margin', 'Right margin', 'Top margin', 'Bottom margin'], names)
+    check('the paragraph\'s first line at LaTeX\'s \\parindent, its indents at 0', marker(page, 'first')['v'] == '0.53 cm' and marker(page, 'left')['v'] == '0 cm' and marker(page, 'right')['v'] == '0 cm', [marker(page, k)['v'] for k in ('first', 'left', 'right')])
+    sel = ('Second', 2)
+    roundtrip(page, RDOC, sel, ruler_drag('left', 1), CP.replace('\nSecond paragraph here.', '\n\\begin{adjustwidth}{1cm}{}\nSecond paragraph here.\n\\end{adjustwidth}'), off=CP,
+              forms=(CP.replace('\nSecond paragraph here.', '\n\\begin{adjustwidth}{1cm}{0pt}\nSecond paragraph here.\n\\end{adjustwidth}'),), off_command=ruler_drag('left', -1), label='Ruler: Left Indent dragged 1 cm')
+    load_doc(page, CP.replace('\nSecond paragraph here.', '\n\\begin{adjustwidth}{2cm}{1.5cm}\nSecond paragraph here.\n\\end{adjustwidth}')); click_text(page, 'Second', 2); page.wait_for_timeout(300)
+    check('a hand written adjustwidth read back: Left Indent 2 cm, Right Indent 1.5 cm', marker(page, 'left')['v'] == '2 cm' and marker(page, 'right')['v'] == '1.5 cm', (marker(page, 'left'), marker(page, 'right')))
+    roundtrip(page, RDOC, sel, ruler_drag('right', -2), CP.replace('\nSecond paragraph here.', '\n\\begin{adjustwidth}{}{2cm}\nSecond paragraph here.\n\\end{adjustwidth}'), off=CP, off_command=ruler_drag('right', 2), label='Ruler: Right Indent dragged 2 cm')
+    roundtrip(page, RDOC, sel, ruler_drag('first', -1), CP.replace('\nSecond paragraph here.', '\n\\begin{adjustwidth}{-0.5cm}{}\n\\noindent\\hangindent=0.5cm Second paragraph here.\n\\end{adjustwidth}'), off=CP, off_command=ruler_drag('first', 1), label='Ruler: First Line Indent left of the others: a hanging indent')
+    roundtrip(page, RDOC, sel, ruler_drag('first', -0.5), RDOC.replace('\nSecond paragraph here.', '\n\\noindent Second paragraph here.'), off_command=ruler_drag('first', 0.5), label='Ruler: First Line Indent to the left indent: \\noindent')
+    # the margins, by B6's edits (geometry), each one step and one undo
+    for k, d, want in (('ml', -1, 'left=3.75cm'), ('mr', 1, 'right=3.25cm'), ('mt', 1, 'top=5.5cm'), ('mb', -1, 'bottom=7cm')):
+        load_doc(page, RDOC); click_text(page, 'Second', 2); page.wait_for_timeout(200)
+        if k == 'mb': ev(page, "(() => { const d = document.getElementById('desk'), m = document.querySelector('#vruler .ru-mk.ru-mb').getBoundingClientRect(), D = d.getBoundingClientRect(); d.scrollTop += m.top - D.top - D.height / 2; })()"); page.wait_for_timeout(300)
+        ruler_drag(k, d, k in ('mt', 'mb'))(page)
+        s1 = src(page)
+        ev(page, 'window.rikuy.undo()'); page.wait_for_timeout(150)
+        check('Ruler: the %s dragged writes geometry\'s %s, one step, one undo back' % (k, want), '{geometry}' in s1 and want in s1 and src(page) == RDOC, s1[:160])
+    load_doc(page, RDOC.replace('\\begin{document}', '\\usepackage[margin=3cm]{geometry}\n\\begin{document}')); click_text(page, 'Second', 2); page.wait_for_timeout(300)
+    check('hand written geometry read back: every margin 3 cm', [marker(page, k)['v'] for k in ('ml', 'mr', 'mt', 'mb')] == ['3 cm'] * 4, [marker(page, k)['v'] for k in ('ml', 'mr', 'mt', 'mb')])
+    ruler_drag('ml', 1)(page)
+    check('dragged there, the margins are written into that line', '\\usepackage[top=3cm,bottom=3cm,left=4cm,right=3cm]{geometry}' in src(page) or ('left=4cm' in src(page) and src(page).count('geometry') == 1), src(page)[:140])
+    # the keys: a slider moved by the arrows, one step each
+    load_doc(page, RDOC); click_text(page, 'Second', 2); page.wait_for_timeout(300)
+    ev(page, "document.querySelector('#ruler .ru-mk.ru-left').focus()"); page.keyboard.press('ArrowRight'); page.wait_for_timeout(300)
+    check('Left Indent focused, the right arrow moves it a quarter centimetre: one step', '\\begin{adjustwidth}{0.25cm}{}' in src(page) and ev(page, 'window.rikuy.hist.length') == 1, src(page)[-120:])
+    # a leader's stop; a heading's markers off, saying why
+    load_doc(page, WRAP('\\section{Head}\nName \\dotfill{} 12.'))
+    click_text(page, 'Name', 1); page.wait_for_timeout(300)
+    check('a paragraph with a leader shows its stop at the right indent, saying it is LaTeX\'s fill', ev(page, "!document.querySelector('#ruler .ru-tab').hidden && document.querySelector('#ruler .ru-tab').title.includes('dotfill')"))
+    click_text(page, 'Head', 1); page.wait_for_timeout(300)
+    m = marker(page, 'left')
+    check('in a heading the indent markers are off, their title says why (a heading\'s style)', m['off'] and 'style' in m['title'], m)
+    load_doc(page, RDOC); click_text(page, 'Second', 2); page.wait_for_timeout(300)
+    page.screenshot(path=os.path.join(SHOTS, 'ruler-1366.png'))
+    ev(page, "window.rikuy.setDarkPage(true)"); page.wait_for_timeout(200)
+    ev(page, "document.documentElement.dataset.theme = 'dark'"); page.wait_for_timeout(200)
+    page.screenshot(path=os.path.join(SHOTS, 'ruler-1366-dark.png'))
+    ev(page, "delete document.documentElement.dataset.theme; window.rikuy.setDarkPage(false)")
+    # hidden where it cannot work: Web Layout, the LaTeX view, Focus
+    ev(page, "window.rikuy.runCommand('web-layout')"); page.wait_for_timeout(300)
+    check('hidden in Web Layout', ev(page, "document.getElementById('ruler').hidden"))
+    ev(page, "window.rikuy.runCommand('print-layout')"); page.wait_for_timeout(300)
+    check('back in Print Layout, shown again', not ev(page, "document.getElementById('ruler').hidden"))
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        load_doc(page, RDOC); click_text(page, 'Second', 2); page.wait_for_timeout(200)
+        ruler_drag('left', 1)(page); ruler_drag('ml', -1)(page)
+        page.set_default_timeout(600000)
+        r = ev(page, 'window.rikuy.api.compile()')
+        page.set_default_timeout(30000)
+        errs = [x for x in r['problems'] if x.get('severity') == 'error']
+        check('what the rulers wrote (adjustwidth, geometry) compiles in the page', r['ok'] and not errs, errs[:2])
+    ev(page, "window.rikuy.setRuler(false)")
+
+
+def press(page, k, key, n=1):
+    for _ in range(n):
+        ev(page, "(k) => document.querySelector('#ruler .ru-mk.ru-' + k).focus()", k) if _ == 0 else None
+        page.keyboard.press(key); page.wait_for_timeout(350)
+
+
+def r5_ruler(page):
+    """The review of R5's rulers: an even page of a two sided document moves the outer margin (M1);
+    a slider keeps the focus, two presses two steps (M2); First Line goes from one of LaTeX's states
+    to the next a press, and Hanging never moves the first line (M3)."""
+    ev(page, "window.rikuy.setRuler(true)")
+    two = '\\documentclass[twoside]{article}\n\\usepackage[left=3cm,right=2cm]{geometry}\n\\begin{document}\nPage one.\n\\newpage\nPage two words.\n\\end{document}\n'
+    load_doc(page, two); click_text(page, 'two words', 1); page.wait_for_timeout(400)
+    check('M1: on an even page of a two sided document the left margin shown is the outer one', marker(page, 'ml')['v'] == '2 cm', marker(page, 'ml'))
+    press(page, 'ml', 'ArrowRight')
+    check('M1: moving it writes the outer margin (right=), the inner one stays', 'left=3cm' in src(page) and 'right=2.25cm' in src(page), src(page)[:120])
+    if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        page.set_default_timeout(600000)
+        r = ev(page, 'window.rikuy.api.compile()')
+        page.set_default_timeout(30000)
+        check('M1: it compiles in the page', r['ok'] and not [x for x in r['problems'] if x.get('severity') == 'error'])
+    load_doc(page, RDOC); click_text(page, 'Second', 2); page.wait_for_timeout(300)
+    press(page, 'left', 'ArrowRight', 2)
+    check('M2: two presses on Left Indent, two steps, 0.5 cm, the focus kept on it', '\\begin{adjustwidth}{0.5cm}{}' in src(page) and ev(page, 'window.rikuy.hist.length') == 2 and ev(page, "document.activeElement.getAttribute('aria-label')") == 'Left Indent', (src(page)[-120:], ev(page, 'window.rikuy.hist.length')))
+    load_doc(page, RDOC); click_text(page, 'Second', 2); page.wait_for_timeout(300)
+    press(page, 'first', 'ArrowLeft')
+    check('M3: First Line from \\parindent, one press left: \\noindent', '\\noindent Second' in src(page) and ev(page, 'window.rikuy.hist.length') == 1, src(page)[-100:])
+    page.keyboard.press('ArrowLeft'); page.wait_for_timeout(350)
+    check('M3: again: a hanging indent of a quarter centimetre', '\\begin{adjustwidth}{-0.25cm}{}' in src(page) and '\\hangindent=0.25cm' in src(page) and ev(page, 'window.rikuy.hist.length') == 2, src(page)[-140:])
+    page.keyboard.press('ArrowRight'); page.wait_for_timeout(350); page.keyboard.press('ArrowRight'); page.wait_for_timeout(350)
+    check('M3: two presses right: \\parindent again, the source as it was', src(page) == RDOC.replace('\\begin{document}', '\\usepackage{changepage}\n\\begin{document}'), src(page)[-140:])
+    load_doc(page, RDOC); click_text(page, 'Second', 2); page.wait_for_timeout(300)
+    f0 = marker(page, 'first')['v']
+    ruler_drag('hang', 0.25)(page)
+    check('M3: Hanging dragged right of the others but short of the first line writes nothing (the first line would move)', src(page) == RDOC and marker(page, 'first')['v'] == f0)
+    press(page, 'hang', 'ArrowRight')
+    check('M3: Hanging moved right by a press goes to the first line: the first line stays at \\parindent', '\\noindent' in src(page) and marker(page, 'first')['v'] == f0, (src(page)[-140:], marker(page, 'first')['v']))
+    # (Grok Bot's check: R1's landscape pages) the ruler measures the turned page; its margins are
+    # the portrait pages' and stay off there; an indent goes inside the landscape environment
+    LAND = WRAP('Portrait words here.\n\\begin{landscape}\nLandscape words here, a paragraph on its own page.\n\\end{landscape}\nAfter.').replace('\\begin{document}', '\\usepackage{pdflscape}\n\\usepackage[left=3cm,right=2cm,top=2.5cm,bottom=4cm]{geometry}\n\\begin{document}')
+    load_doc(page, LAND); page.wait_for_timeout(400); click_text(page, 'Landscape words', 1); page.wait_for_timeout(400)
+    g = ev(page, "(() => { const pg = document.querySelector('#pages .page.land'), t = pg.querySelector('.it.p').getBoundingClientRect(), l = document.querySelector('#ruler .ru-mk.ru-left').getBoundingClientRect(), r = document.querySelector('#ruler .ru-mk.ru-right').getBoundingClientRect(); return { t: [t.left, t.right], l: l.left + l.width / 2, r: r.left + r.width / 2 }; })()")
+    check('landscape: the indent markers stand at the turned page\'s text edges', abs(g['l'] - g['t'][0]) < 8 and abs(g['r'] - g['t'][1]) < 8, g)
+    m = marker(page, 'ml')
+    check('landscape: the margin markers are off, saying the margins are the portrait pages\'', m['off'] and 'portrait' in m['title'], m)
+    press(page, 'left', 'ArrowRight')
+    check('landscape: Left Indent writes adjustwidth inside the landscape environment', '\\begin{landscape}\n\\begin{adjustwidth}{0.25cm}{}\nLandscape words' in src(page), src(page)[-220:])
+    ev(page, "window.rikuy.setRuler(false)")
+
+
 with sync_playwright() as p:
     want = sys.argv[1:]
     browser, page, errors = open_page(p, 1366, 800)
-    for name, fn in (('views', views), ('show_latex', show_latex), ('view_tab', view_tab), ('repeat_undo', repeat_undo), ('help_tab', help_tab), ('review', review)):
+    for name, fn in (('views', views), ('show_latex', show_latex), ('view_tab', view_tab), ('repeat_undo', repeat_undo), ('help_tab', help_tab), ('review', review), ('web', web), ('ruler', ruler), ('r5_ruler', r5_ruler)):
         if want and name not in want:
             continue
         try: fn(page)

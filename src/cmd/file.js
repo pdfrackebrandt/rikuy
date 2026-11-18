@@ -73,7 +73,7 @@ register(
   // ---- File ▸ Open
   { id: 'browse', name: 'Browse', order: 10, title: 'Open .tex, .bib, images, an Overleaf .zip or a Word .docx from your computer (Ctrl+O)', synonyms: ['Open file', 'Open from computer'],
     tab: 'file', group: 'open', el: 'rf-browse', label: 'Browse', icon: I.browse, when: always, run: () => $('#fileinput').click() },
-  { id: 'recent', name: 'Recent documents', order: 20, title: 'The documents kept in this browser: open one, or take it off the list', synonyms: ['Recent', 'Recent files', 'Open recent', 'My documents'],
+  { id: 'recent', name: 'Recent documents', order: 20, title: 'The documents kept in this browser: open one, rename one, or take it off the list', synonyms: ['Recent', 'Recent files', 'Open recent', 'My documents', 'Rename document'],
     tab: 'file', group: 'open', el: 'rf-recent', label: 'Recent', icon: I.recent, kind: 'menu', when: always, run: (app, args) => app.openRecent(args) },
   // ---- File ▸ Info
   { id: 'properties', name: 'Properties', order: 10, title: 'Title, author, subject and keywords: \\title, \\author and the PDF\'s own (\\hypersetup)', synonyms: ['Document properties', 'Info', 'Metadata', 'Keywords', 'Subject'],
@@ -286,12 +286,79 @@ export const methods = {
     const list = [...seen.values()].slice(0, 15);
     if (args && typeof args === 'object' && args.open) { const v = seen.get(args.open); if (!v) return false; const files = await this.versionFiles(v); if (!files) return false; await this.openVersion(v, files); return true; }
     if (args && typeof args === 'object' && args.remove) return this.removeRecent(args.remove, all);
+    // (Rename: { rename, to } renames at once, as an agent or a test asks; { rename } alone asks for the name)
+    if (args && typeof args === 'object' && args.rename) return args.to != null ? this.renameRecent(args.rename, args.to) : this.renameAsk(args.rename);
     const when = (t) => new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
     const items = list.length ? list.flatMap((v) => [
       { name: v.name, title: 'Open it, as it was ' + when(v.t), run: () => this.runCommand('recent', { open: v.name }) }
     ]) : [{ name: 'No other documents yet', disabled: true }];
-    if (list.length) items.push(null, { name: 'Remove a document…', title: 'Take a document and all of its versions out of this browser', run: () => this.fileMenu('rf-recent', 'Remove a document', list.map((v) => ({ name: 'Remove ' + v.name, run: () => this.runCommand('recent', { remove: v.name }) }))) });
+    items.push(null, { name: 'Rename a document…', title: 'Give a document kept here another name: all of its versions, its pictures and its settings go with it', run: () => this.fileMenu('rf-recent', 'Rename a document', [this.name, ...list.map((v) => v.name)].map((n, i) => ({ name: 'Rename ' + n + (i ? '' : ' (open)'), run: () => this.runCommand('recent', { rename: n }) }))) });
+    if (list.length) items.push({ name: 'Remove a document…', title: 'Take a document and all of its versions out of this browser', run: () => this.fileMenu('rf-recent', 'Remove a document', list.map((v) => ({ name: 'Remove ' + v.name, run: () => this.runCommand('recent', { remove: v.name }) }))) });
     return this.fileMenu('rf-recent', 'Recent documents', items);
+  },
+  // Rename a document: asked in a small dialog, its field holding the name now
+  renameAsk(from) {
+    const p = guide(this, 'Rename a document', 'rf-recent', 360, 'pop-rename pop-guide-fit');
+    const l = mk('label', 'props-row');
+    const i = mk('input');
+    i.type = 'text'; i.value = from; i.maxLength = 120; i.autocomplete = 'off'; i.spellcheck = false;
+    i.setAttribute('aria-label', 'New name');
+    l.append(mk('span', '', 'New name'), i);
+    const why = mk('p', 'hint', 'Its versions, its pictures and what this browser keeps for it go with it.');
+    const row = mk('div', 'pop-row');
+    const ok = mk('button', 'btn sm', 'Rename'), no = mk('button', 'btn ghost sm', 'Cancel');
+    ok.type = no.type = 'button';
+    ok.setAttribute('aria-label', 'Rename'); no.setAttribute('aria-label', 'Cancel');
+    row.append(mk('span', 'grow'), no, ok);
+    p.append(l, why, row);
+    const go = async () => { const to = i.value; this.closePop(true); await this.renameRecent(from, to); };
+    ok.addEventListener('click', go);
+    no.addEventListener('click', () => this.closePop(true));
+    i.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+    this.positionPop && this.positionPop();
+    setTimeout(() => { i.focus(); i.select(); }, 0);
+    return true;
+  },
+  // Every version of the document and what this browser keeps beside it under its name (its
+  // pictures, where it came from, its live figures' permission, its collapsed headings) take the
+  // new name; the open document's too. A name another document has is refused.
+  async renameRecent(from, to) {
+    // (no | either: this browser keeps a document's records under name|main file)
+    to = String(to == null ? '' : to).replace(/[\u0000-\u001F\u007F|]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+    if (!to) { this.toast('A document needs a name.'); return false; }
+    if (to === from) return false;
+    const all = await this.allSnaps();
+    const names = new Set(all.map((v) => v.name).concat(this.name));
+    if (!names.has(from)) return false;
+    if (names.has(to)) { this.toast('A document called ' + to + ' is kept here already: choose another name.'); return false; }
+    const mains = new Set(all.filter((v) => v.name === from).map((v) => v.main));
+    if (from === this.name) mains.add(this.main);
+    if (!this.noIdb) {
+      // (all or nothing: the versions and every record beside them in one transaction, the new
+      // name checked free inside it)
+      const { projectRename } = await import('../store.js');
+      try { await projectRename(from, to, [...mains], ['bin:', 'link:', 'share:', 'scripts:']); } catch (e) {
+        this.snapList = null;
+        this.toast(e && e.message === 'taken' ? 'A document called ' + to + ' is kept here already: choose another name.' : 'This browser\'s storage refused the change: nothing was renamed.');
+        return false;
+      }
+    }
+    for (const m of this.memSnaps || []) if (m.name === from) m.name = to;
+    this.snapList = null;
+    // (the collapsed headings, kept in localStorage under the same name: src/cmd/find.js)
+    const folds = load('rikuy.fold.v1');
+    if (folds && typeof folds === 'object') { let moved = false; for (const m of mains) { const k = from + '|' + m; if (k in folds) { folds[to + '|' + m] = folds[k]; delete folds[k]; moved = true; } } if (moved) store('rikuy.fold.v1', folds); }
+    if (from === this.name) {
+      this.name = to;
+      if (this.linkCache) for (const m of mains) { const k = from + '|' + m; if (this.linkCache.has(k)) { this.linkCache.set(to + '|' + m, this.linkCache.get(k)); this.linkCache.delete(k); } }
+      if (this.scriptSeen) for (const m of mains) { const k = from + '|' + m; if (this.scriptSeen.has(k)) { this.scriptSeen.set(to + '|' + m, this.scriptSeen.get(k)); this.scriptSeen.delete(k); } }
+      if (this.fold) this.fold.key = to + '|' + this.main;
+      this.persist();
+      const n = $('#docname');
+      if (n) n.textContent = to;
+    }
+    this.toast('Renamed ' + from + ' to ' + to + '.');
+    return true;
   },
   async removeRecent(name, all) {
     if (name === this.name) return false;
@@ -302,6 +369,9 @@ export const methods = {
       for (const v of vs) { try { await snapDel(v.id); } catch (e) { /* gone */ } }
       // (and its pictures, kept apart from its text: one record for each of its main files)
       for (const m of new Set(vs.map((v) => v.main))) { try { await kvDel('bin:' + name + '|' + m); } catch (e) { /* none */ } }
+      // (and its collapsed headings, which a later document of that name must not take on)
+      const folds = load('rikuy.fold.v1');
+      if (folds && typeof folds === 'object') { for (const m of new Set(vs.map((v) => v.main))) delete folds[name + '|' + m]; store('rikuy.fold.v1', folds); }
       this.memSnaps = (this.memSnaps || []).filter((m) => m.name !== name);
       this.snapList = null;
       this.toast('Removed ' + name + '.');

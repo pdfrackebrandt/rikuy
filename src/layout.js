@@ -806,7 +806,8 @@ export class Layout {
   // what \vspace*{\fill} gets on a page: what the page has left, shared among its fills
   fillOf(pg) {
     const n = pg.entries.filter((e) => e.it.fill).length;
-    if (!n) return 0;
+    // (Web Layout's one long sheet has no foot for a fill to reach: src/cmd/view.js)
+    if (!n || this.g.web) return 0;
     return Math.max(0, ((pg.land ? this.g.tw : this.g.th) * this.px - pg.used - pg.fnH) / n);
   }
   // (R1) A page of pdflscape's landscape as a reader sees it (pdflscape turns it a quarter to the

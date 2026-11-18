@@ -151,3 +151,53 @@ export function newHeading(name, where, p, nl = '\n') {
   if (where === 'before') return { t: cmd + nl + nl, s: p, caret: p + cmd.length - 1 };
   return { t: nl + nl + cmd, s: p, caret: p + 2 * nl.length + cmd.length - 1 };
 }
+
+// ---- a heading collapsed on the page (Word's triangle): the page's view alone ------------------
+// The items of the page a collapsed heading hides: every one after it up to the next heading of
+// its level or above, as Word hides a collapsed heading's text; the bibliography's and the index's
+// heading (top, \section* or \chapter* as the class sets it) end it too, and a page's style or
+// numbering (no height of its own) stays. items: the page's items in order, { kind, level, block:
+// { f, s, e } }; heads: the model's headings in order, { f, s, level }; shut: a Set of indexes of
+// heads. Returns { hidden: Set of items, by: Map of item to the head index hiding it, at: Map of
+// a heading item to its head index }.
+export function foldItems(items, heads, shut, top = 1) {
+  const hidden = new Set(), by = new Map(), at = new Map();
+  let k = 0, hiding = -1, lv = 0;
+  const inside = (h, B) => h.f === B.f && h.s >= B.s && h.s <= B.e;
+  for (const it of items) {
+    let h = -1, level = null;
+    if (it.kind === 'h' && typeof it.level === 'number' && it.block) {
+      // (the model's next heading inside this item's block; headings the page does not draw are passed)
+      let j = k;
+      while (j < heads.length && j < k + 64 && !inside(heads[j], it.block)) j++;
+      if (j < heads.length && inside(heads[j], it.block)) { h = j; k = j + 1; at.set(it, j); level = heads[j].level; }
+    } else if (it.kind === 'refs' || it.kind === 'idx') level = top;
+    if (hiding >= 0 && level != null && level <= lv) hiding = -1;
+    if (hiding >= 0 && it.kind !== 'mark') { hidden.add(it); by.set(it, hiding); continue; }
+    if (h >= 0 && shut.has(h)) { hiding = h; lv = heads[h].level; }
+  }
+  return { hidden, by, at };
+}
+
+// A collapsed heading as the browser keeps it: its file, place, level and words, the place moved
+// by the edits made since (mapPlace) and the words finding it again when the place is lost
+export function foldEntry(h) { return { f: h.f, s: h.s, lv: h.level, t: String(h.text || '').slice(0, 200) }; }
+export function matchFold(entries, heads) {
+  const out = new Set(), by = new Map();
+  heads.forEach((h, j) => by.set(h.f + '\u0000' + h.s, j));
+  const words = (h) => String(h.text || '').slice(0, 200);
+  const lost = [];
+  // (the place and the words first; then the same words nearest, as a section moved past another
+  // leaves its place to that one; then the place alone, as a heading typed in keeps its place)
+  for (const x of entries) {
+    const k = by.get(x.f + '\u0000' + x.s);
+    if (k != null && heads[k].level === x.lv && words(heads[k]) === x.t && !out.has(k)) out.add(k); else lost.push(x);
+  }
+  for (const x of lost.slice(0, 200)) {
+    let best = -1, d = Infinity;
+    heads.forEach((h, j) => { if (!out.has(j) && h.f === x.f && h.level === x.lv && Math.abs(h.s - x.s) < d && words(h) === x.t) { best = j; d = Math.abs(h.s - x.s); } });
+    if (best < 0) { const k = by.get(x.f + '\u0000' + x.s); if (k != null && heads[k].level === x.lv && !out.has(k)) best = k; }
+    if (best >= 0) out.add(best);
+  }
+  return out;
+}

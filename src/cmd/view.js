@@ -10,6 +10,7 @@ import { openMenu } from '../ui/kit.js';
 import { buildModel } from '../model.js';
 import { hunks } from '../diff.js';
 import { groupOf } from '../ribbon/order.js';
+import { rulerInstall, rulerSync, rulerNarrow } from '../ui/ruler.js';
 
 const always = () => true;
 const cls = () => document.body.classList;
@@ -19,6 +20,8 @@ const ICON = {
   print: '<path d="M5.5 2.5h9v15h-9zM8 6h4M8 9h4M8 12h3"/>',
   latex: '<path d="m7 6-4 4 4 4m6-8 4 4-4 4"/>',
   draft: '<path d="M4 4h12M4 7.5h12M4 11h12M4 14.5h7"/><path d="M2 9.25h16" stroke-dasharray="1.5 1.5"/>',
+  web: '<circle cx="10" cy="10" r="7"/><path d="M3 10h14M10 3c-2.5 2-2.5 12 0 14M10 3c2.5 2 2.5 12 0 14"/>',
+  ruler: '<path d="M2.5 7h15v6h-15zM5.5 7v2.5M8.5 7v1.5M11.5 7v2.5M14.5 7v1.5"/>',
   showtex: '<path d="M3 4.5h6v11H3zM11 4.5h6v11h-6zM4.5 8h3M4.5 11h3M13 8l1.5 1.5L13 11"/>',
   one: '<path d="M6.5 3h7v14h-7z"/>',
   many: '<path d="M2.5 4h6.5v12H2.5zM11 4h6.5v12H11z"/>',
@@ -53,10 +56,12 @@ register(
   { id: 'read-mode', name: 'Read Mode', order: 10, title: 'Read Mode: TeX\'s PDF across the window, to read (the status bar\'s PDF)', synonyms: ['Reading view', 'PDF view', 'Full screen reading'],
     tab: 'view', group: 'views', el: 'rw-read', label: 'Read Mode', kind: 'toggle', icon: ICON.read, when: always, on: viewIs('pdf'), run: (app) => app.setView(app.view === 'pdf' ? 'page' : 'pdf') },
   { id: 'print-layout', name: 'Print Layout', order: 20, title: 'Print Layout: the typeset page you type on (the status bar\'s Page)', synonyms: ['Page view', 'Normal view'],
-    tab: 'view', group: 'views', el: 'rw-print', label: 'Print Layout', kind: 'toggle', icon: ICON.print, when: always, on: (app) => viewIs('page')(app) && !app.draftOn(), run: (app) => { app.setDraft(false); app.setView('page'); } },
+    tab: 'view', group: 'views', el: 'rw-print', label: 'Print Layout', kind: 'toggle', icon: ICON.print, when: always, on: (app) => viewIs('page')(app) && !app.draftOn() && !app.webOn(), run: (app) => { app.setDraft(false); app.setWeb(false); app.setView('page'); } },
+  { id: 'web-layout', name: 'Web Layout', order: 22, title: 'Web Layout: the text as wide as the window, no pages; its lines break where the window does, not where TeX does (the PDF is TeX\'s)', synonyms: ['Web view', 'Reflow', 'No pages', 'Wrap to window'],
+    tab: 'view', group: 'views', el: 'rw-web', label: 'Web Layout', kind: 'toggle', icon: ICON.web, when: always, on: (app) => viewIs('page')(app) && app.webOn(), run: (app) => { const on = !(viewIs('page')(app) && app.webOn()); app.setView('page'); app.setWeb(on); } },
   { id: 'latex-mode', name: 'LaTeX Mode', order: 25, title: 'LaTeX Mode: the source across the window, the caret at the same place (the status bar\'s LaTeX)', synonyms: ['LaTeX view', 'Source view', 'Code'],
     tab: 'view', group: 'views', el: 'rw-latex', label: 'LaTeX Mode', kind: 'toggle', icon: ICON.latex, when: always, on: viewIs('latex'), run: (app) => app.setView(app.view === 'latex' ? 'page' : 'latex') },
-  { id: 'draft', name: 'Draft', order: 30, title: 'Draft: the pages run on, one under the other, a dotted line where TeX turns the page', synonyms: ['Web Layout', 'Continuous', 'Draft view', 'No page breaks'],
+  { id: 'draft', name: 'Draft', order: 30, title: 'Draft: the pages run on, one under the other, a dotted line where TeX turns the page', synonyms: ['Continuous', 'Draft view', 'No page breaks'],
     tab: 'view', group: 'views', el: 'rw-draft', label: 'Draft', kind: 'toggle', icon: ICON.draft, when: always, on: (app) => app.draftOn(), run: (app) => { app.setView('page'); app.setDraft(!app.draftOn()); } },
 
   // ---- Show LaTeX: a block of the page as its source, where it stands (Word's equation Linear)
@@ -69,6 +74,12 @@ register(
     when: (app, at) => app.showLatexBlocks(at).length > 0, whyNot: () => 'Put the caret in a paragraph or an equation of the page first.',
     on: (app, at) => { const bs = app.showLatexBlocks(at); return bs.length > 0 && bs.every((B) => B.tex && B.tex.view); },
     run: (app, args, at) => app.showLatex(at) },
+
+  // ---- View ▸ Show ▸ Ruler (src/ui/ruler.js): the margins and the caret's paragraph, dragged
+  { id: 'ruler', name: 'Ruler', order: 1, title: 'The rulers: the margins and the paragraph\'s indents, first line and tab, dragged to change them', synonyms: ['Show ruler', 'Rulers', 'Indent markers', 'Tab stops', 'Margins ruler'],
+    tab: 'view', group: 'show', el: 'rw-ruler', label: 'Ruler', kind: 'toggle', icon: ICON.ruler,
+    when: () => !rulerNarrow(), whyNot: () => 'The ruler is for a mouse on a wider window: on a touch screen, Layout\'s Indent and Spacing fields and Margins set the same.',
+    on: (app) => !!app.prefs.ruler, run: (app) => app.setRuler(!app.prefs.ruler) },
 
   // ---- View ▸ Zoom
   { id: 'zoom-100', name: '100%', order: 10, title: 'The page at its actual size (Ctrl+0)', synonyms: ['Actual size', 'Zoom 100'], tab: 'view', group: 'zoom', el: 'rw-100', label: '100%', keysElsewhere: ['Ctrl+0'],
@@ -104,7 +115,7 @@ const kindName = (k) => KIND[k] || (k ? String(k).replace(/[-_]+/g, ' ').replace
 // commands that only show or move, never write: Repeat skips them
 // nor those that take something away (a row, a table, formatting, a sort): Repeat must never
 // destroy what the caret happens to be in after a Ctrl+Y meant as Redo
-const NOT_REPEATED = /(delete|remove|clear|sort|merge|split|cut|reject|accept|restore|paste|undo|redo)|^(view-|zoom|read-mode|print-layout|latex-mode|draft|show-|one-page|multiple-pages|page-width|side-to-side|dark-page|focus|repeat|undo|preview|source|find|replace|go-to|select|navigation|outline|help|open|share|download|print|new-|load-sample|recent|properties|export|check-|set-default)/;
+const NOT_REPEATED = /(delete|remove|clear|sort|merge|split|cut|reject|accept|restore|paste|undo|redo)|^(view-|zoom|read-mode|print-layout|latex-mode|draft|web-layout|ruler|heading-collapse|heading-expand|headings-|show-|one-page|multiple-pages|page-width|side-to-side|dark-page|focus|repeat|undo|preview|source|find|replace|go-to|select|navigation|outline|help|open|share|download|print|new-|load-sample|recent|properties|export|check-|set-default)/;
 
 export const methods = {
   // the whole sheet as wide as the window, every press the same (the bar's Fit cycles on a phone)
@@ -187,6 +198,7 @@ export const methods = {
     const v = this.view || 'page';
     for (const k of VIEWS) { const b = $('#sv-' + k); if (b) b.setAttribute('aria-pressed', k === v ? 'true' : 'false'); }
     this.zoomShow();
+    this.rulerSoon();
   },
 
   // Where the reader is in a view: { f, p } (a source position) or { f, line }
@@ -425,11 +437,39 @@ export const methods = {
   // ---- Draft, marks, pages across, dark page, focus -----------------------------------------
   draftOn() { return cls().contains('pg-draft'); },
   setDraft(on) {
-    if (on) this.setPagesAcross(0);
+    if (on) { this.setPagesAcross(0); this.setWeb(false); }
     cls().toggle('pg-draft', !!on);
     this.prefs.draft = !!on; this.savePrefs();
     this.ribbonSync();
   },
+  // ---- Web Layout: the text set as wide as the window, one long sheet, no headers or footers;
+  // the lines are the browser's, so this is the one view that does not show TeX's line breaks
+  webOn() { return cls().contains('pg-web'); },
+  setWeb(on) {
+    on = !!on;
+    if (on) { cls().remove('pg-draft', 'pg-side', 'pg-grid'); this.prefs.draft = false; this.prefs.pages = 0; }
+    const was = this.webOn();
+    cls().toggle('pg-web', on);
+    this.prefs.web = on; this.savePrefs();
+    if (was !== on && this.model) { const c = this.caretNow(); this.computePx(); this.relayout(true); if (c && !c.ghost && document.activeElement !== this.root) this.restoreCaret(c.collapsed ? { f: c.f, p: c.a, bias: 1 } : { f: c.f, selA: c.a, selB: c.b }); }
+    this.rulerSoon();
+    this.ribbonSync();
+  },
+  // The page's geometry for the view (App.layoutPass): in Web Layout a sheet as wide as the window
+  // at this zoom, a quarter inch of margin, one column, no page ends; else as TeX sets it
+  viewGeometry(g) {
+    if (!this.webOn() || !this.desk || !this.px) return g;
+    const avail = Math.max(240, this.desk.clientWidth - (window.innerWidth < 640 ? 16 : 56));
+    const pw = Math.max(144, avail / this.px), m = Math.min(18, pw / 16);
+    return { ...g, pw, ml: m, mlE: m, tw: pw - 2 * m, mt: m, ph: 1e6, th: 1e6 - 2 * m, cols: 1, twoside: false, web: true };
+  },
+  // ---- the rulers (src/ui/ruler.js)
+  setRuler(on) {
+    this.prefs.ruler = !!on; this.savePrefs();
+    rulerSync(this);
+    this.ribbonSync();
+  },
+  rulerSoon() { if (!this.ru) return; cancelAnimationFrame(this.ruT); this.ruT = requestAnimationFrame(() => rulerSync(this)); },
   setDarkPage(on) {
     cls().toggle('dark-page', !!on);
     this.prefs.darkPage = !!on; this.savePrefs();
@@ -437,6 +477,8 @@ export const methods = {
   },
   // 0: one under the other; 'side': in a row, turned side to side; 'grid': as many across as fit
   setPagesAcross(how) {
+    // (pages across are pages: Web Layout has none)
+    if (how && this.webOn()) this.setWeb(false);
     cls().toggle('pg-side', how === 'side');
     cls().toggle('pg-grid', how === 'grid');
     if (how) cls().remove('pg-draft');
@@ -445,6 +487,7 @@ export const methods = {
   },
   // One page: a whole sheet in the window's height; Multiple pages: two (or more) across
   zoomPages(n) {
+    if (this.webOn()) this.setWeb(false);
     const g = this.layout && this.layout.g;
     if (!g) return false;
     const D = this.desk, padY = window.innerWidth <= 520 ? 50 : 88, padX = 56;
@@ -460,6 +503,7 @@ export const methods = {
   },
   setFocus(on) {
     cls().toggle('focus', !!on);
+    this.rulerSoon();
     const x = $('#focus-x');
     if (x) x.hidden = !on;
     if (this.computePx()) this.relayout(true);
@@ -499,12 +543,21 @@ export const methods = {
 function restorePrefs(app) {
   const P = app.prefs || {};
   if (P.draft) cls().add('pg-draft');
+  if (P.web && !P.draft) cls().add('pg-web');
   if (P.darkPage) cls().add('dark-page');
   if (P.pages === 'side' || P.pages === 'grid') cls().add(P.pages === 'side' ? 'pg-side' : 'pg-grid');
 }
 
 onInstall((app) => {
   restorePrefs(app);
+  // the rulers follow the caret, the scrolling, the window and every pass of the layout
+  rulerInstall(app);
+  const lp = app.layoutPass;
+  app.layoutPass = function (force) { const r = lp.call(this, force); this.rulerSoon(); return r; };
+  let rt = 0;
+  document.addEventListener('selectionchange', () => { if (!app.prefs.ruler) return; clearTimeout(rt); rt = setTimeout(() => app.rulerSoon(), 90); });
+  app.desk.addEventListener('scroll', () => { if (app.prefs.ruler) app.rulerSoon(); }, { passive: true });
+  addEventListener('resize', () => { if (app.prefs.ruler) app.rulerSoon(); });
   for (const k of VIEWS) {
     const b = $('#sv-' + k);
     if (!b) continue;

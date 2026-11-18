@@ -658,13 +658,25 @@ Ctrl is Cmd on a Mac.
   Control+H (Cmd+H hides the app), Cmd+Option+G. What is found is the text the page shows: 50%
   finds \\%, a straight quote finds \`\` and ''; commands, labels and math are found only with In
   LaTeX source, where the replacement is written as it is; elsewhere it is escaped as typing is.
-  Replace All is one undo. The status bar's "Page x of y" opens Go To.
+  Replace All is one undo. The status bar's "Page x of y" opens Go To. ^p (Special › Paragraph
+  mark) finds a paragraph's end on the page too: between two paragraphs whose source has a blank
+  line, Replace takes the blank line away or (^p in Replace with) writes one; where braces or a
+  heading's command stand around the end it is found, not replaced. Format also finds by LaTeX's
+  kinds: Any heading, List item, Table cell, Theorem or proof, Quotation, and Equation (alone:
+  each formula, or words in its LaTeX, replaced as LaTeX).
 - Alt+Shift+Left and Right (Mac: Control+Shift): promote or demote the heading at the caret and
   every heading under it (\\subsection to \\section; an article's \\section is the top);
   Alt+Shift+Up and Down: move the paragraph, the list item, or the heading's whole section past
   the one beside it. Ctrl+Alt+O: the Outline view (the side panel's headings with the paragraphs
   under them; its toolbar "Outlining" has Promote, Demote, Move up, Move down, Expand all,
   Collapse all and the combobox "Show levels"; a heading dragged onto another moves its section)
+- Alt+Shift+- and Alt+Shift++ (Mac: Control+Shift): Collapse heading and Expand heading on the
+  page (the text under it hidden on the page alone; the source and the PDF keep it; kept for the
+  document in this browser); a heading's right click menu also has Expand all headings and
+  Collapse all headings. Its triangle beside the heading is a button "Collapse: <words>" or
+  "Expand: <words>" (shown on hover, at the caret on a touch screen, always when collapsed). Go To
+  and any place the caret is sent to open the heading that hides it; a selection across a
+  collapsed heading takes its hidden text too when deleted, as Word's does (one Undo back)
 - Ctrl+L, Ctrl+E, Ctrl+R, Ctrl+J, on the page only: Align Left (flushleft), Center (center),
   Align Right (flushright), Justify (LaTeX's own: the environment comes off); pressed again an
   alignment goes back to justified. On selected paragraphs one environment goes around them all; a
@@ -713,12 +725,17 @@ a click in the PDF view picks the place to go back to). A PDF that is current sh
 TeX makes it while the old one shows. Preview and Source in the bar still show the PDF or the
 source beside the page (pressed in another view they go back to the page first). The slider
 "Zoom" and the button "Zoom level" (actual size) sit beside them on a wide window. The View tab:
-Read Mode (the PDF view), Print Layout (the page), LaTeX Mode (the LaTeX view), Draft (the pages
-run on), Outline; Show LaTeX, Formatting marks, Navigation pane; 100%, One page, Multiple pages, Page
+Read Mode (the PDF view), Print Layout (the page), Web Layout (the text as wide as the window, no
+pages; the lines are the browser's, not TeX's), LaTeX Mode (the LaTeX view), Draft (the pages
+run on), Outline; Ruler (sliders "Left Indent", "Right Indent", "First Line Indent", "Hanging
+Indent", "Left margin", "Right margin", "Top margin", "Bottom margin": dragged or moved with the
+arrows, a quarter centimetre a press; not on a touch screen), Show LaTeX, Formatting marks,
+Navigation pane; 100%, One page, Multiple pages, Page
 width; Side to Side, Dark page (the screen only), Focus (every bar hidden; Escape or "Leave
 Focus"). The File tab: Blank document (from the preamble kept by Set as default), New from
 template (article, report, book or thesis, letter, KOMA-Script, slides, exam, CV), Browse,
-Recent documents, Properties (dialog: Title, Author, Subject, Keywords; only the fields changed are
+Recent documents (open one; "Rename a document…" asks in the dialog "Rename a document", field
+"New name"; runCommand('recent', { rename, to }) does it at once), Properties (dialog: Title, Author, Subject, Keywords; only the fields changed are
 written, and only what was typed is escaped; \\title, \\author, and pdfsubject and pdfkeywords in
 \\hypersetup, a bare \\usepackage{hyperref} added before cleveref where nothing loads it), Check accessibility (pictures without alt text, skipped
 heading levels, tables without a header row, no title or language, an untagged PDF; Tag the
