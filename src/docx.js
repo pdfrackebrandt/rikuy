@@ -30,6 +30,10 @@ export function unzip(bytes, lim = LIMITS) {
   if (!(bytes instanceof Uint8Array)) bytes = new Uint8Array(bytes);
   if (bytes.length > lim.file) throw new Error('The file is larger than ' + Math.round(lim.file / 1e6) + ' MB.');
   if (bytes.length < 22 || bytes[0] !== 0x50 || bytes[1] !== 0x4b) throw new Error(notDocx(bytes));
+  // (security review) an entry that marks a size or an offset as ZIP64's (0xFFFFFFFF) but has no
+  // ZIP64 field to hold it is refused before fflate reads it: fflate 0.8.2 looped forever on one
+  // (GHSA-px8p-9vwx-vf98). A well formed ZIP64 file still opens.
+  if (badZip64(bytes)) throw new Error('The file is damaged or not a Word file (a ZIP64 size with no ZIP64 field).');
   let total = 0, n = 0;
   let out;
   try {
@@ -64,6 +68,32 @@ export function unzip(bytes, lim = LIMITS) {
     if (/<!(DOCTYPE|ENTITY)/i.test(text(b))) throw new Error('The file declares a DTD (in ' + n + '), which a Word file never needs; it is refused.');
   }
   return m;
+}
+
+// Whether an entry of the zip's central directory marks a size or offset as ZIP64's (0xFFFFFFFF)
+// without the ZIP64 extra field (tag 1) that must then hold it. Reads only what the directory
+// says, bounded by the file's length; a directory it cannot read is left to fflate, which refuses
+// it.
+export function badZip64(b) {
+  const u16 = (i) => b[i] | (b[i + 1] << 8), u32 = (i) => (b[i] | (b[i + 1] << 8) | (b[i + 2] << 16) | (b[i + 3] << 24)) >>> 0;
+  const FF = 0xffffffff;
+  let e = -1;
+  for (let i = b.length - 22, lo = Math.max(0, b.length - 22 - 65535); i >= lo; i--) if (b[i] === 0x50 && b[i + 1] === 0x4b && b[i + 2] === 5 && b[i + 3] === 6) { e = i; break; }
+  if (e < 0) return false;
+  const count = u16(e + 10), off = u32(e + 16);
+  if (off === FF || count === 0xffff) return false;
+  let p = off;
+  for (let k = 0; k < count && p + 46 <= b.length; k++) {
+    if (u32(p) !== 0x02014b50) return false;
+    const nl = u16(p + 28), xl = u16(p + 30), cl = u16(p + 32);
+    if (u32(p + 20) === FF || u32(p + 24) === FF || u32(p + 42) === FF) {
+      let has = false;
+      for (let q = p + 46 + nl, z = Math.min(b.length, q + xl); q + 4 <= z; q += 4 + u16(q + 2)) if (u16(q) === 1) { has = true; break; }
+      if (!has) return true;
+    }
+    p += 46 + nl + xl + cl;
+  }
+  return false;
 }
 
 // What a file that is not a .docx is, where its first bytes or its parts say: a person who
