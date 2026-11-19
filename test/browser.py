@@ -577,9 +577,10 @@ def first_words(page):
     # a title alone: the page had nowhere to start the text
     load_doc(page, '\\documentclass{article}\n\\title{Only a title}\n\\begin{document}\n\\maketitle\n\\end{document}\n')
     page.wait_for_timeout(200)
-    # the sheet is taller than the window: the click stays on the page, in view, under the title
-    r = page.evaluate('(() => { const r = document.querySelector(".page").getBoundingClientRect(); const y = Math.min(Math.max(r.top + 220, r.top + 80), innerHeight - 40); return [r.left + r.width / 2, y]; })()')
-    page.mouse.click(*r); page.keyboard.type('Below')
+    # the blank paragraph under the title, not the title itself and not a point below the window
+    page.locator('.ghostp').scroll_into_view_if_needed()
+    page.locator('.ghostp').click()
+    page.keyboard.type('Below')
     wait_src(page, 'Below')
     check('under a title alone, a click on the page and typing start the first paragraph', '\\title{Only a title}' in src(page) and '\\maketitle\n\nBelow' in src(page), src(page))
     for _ in range(5): page.keyboard.press('Backspace')

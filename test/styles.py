@@ -274,9 +274,9 @@ def gallery_keys(page):
     load_doc(page, DOC); click_text(page, 'Third paragraph', 3); state(page)
     page.focus('#rb-st-p')
     seen = []
-    for key in ('ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight'):
+    for key in ('ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight', 'ArrowRight'):
         page.keyboard.press(key); seen.append(page.evaluate('document.activeElement.id'))
-    check('the arrow keys go along the tiles, past the strip\'s disabled arrows to More, and on to the folded Insert', seen == ['rb-st-section', 'rb-st-subsection', 'rb-st-subsubsection', 'rb-st-latex', 'rb-st-quote', 'rb-st-more', 'rg-home-insert'], seen)
+    check('the arrow keys go along the tiles, past the strip\'s disabled arrows to More, the Styles dialog arrow, and on to the folded Insert', seen == ['rb-st-section', 'rb-st-subsection', 'rb-st-subsubsection', 'rb-st-latex', 'rb-st-quote', 'rb-st-more', 'rl-home-styles', 'rg-home-insert'], seen)
     page.focus('#rb-st-latex'); page.keyboard.press('Enter'); page.wait_for_timeout(200)
     check('Enter on LaTeX makes the caret\'s paragraph a LaTeX paragraph', body(page).count('% rikuy: latex\nThird paragraph here.') == 1 and boxes(page) == ['Third paragraph here.'], body(page))
     page.focus('#rb-st-quote'); page.keyboard.press(' '); page.wait_for_timeout(200)

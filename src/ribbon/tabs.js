@@ -203,16 +203,7 @@ export const tabs = {
     $('#rb-tabsel').value = id;
     if (was !== id) $('#ribbon').scrollLeft = 0;
     if (focus) $('#rt-' + id).focus();
-    const rib = $('#ribbon');
-    if (id === 'file') {
-      // the top edge before it is taken out of the flow, so the sheet starts under the tabs
-      const top = rib.getBoundingClientRect().top - rib.parentElement.getBoundingClientRect().top;
-      document.body.classList.add('file-open');
-      rib.style.top = top + 'px';
-    } else if (was === 'file') {
-      document.body.classList.remove('file-open');
-      rib.style.top = '';
-    }
+    document.body.classList.toggle('file-open', id === 'file');
     if (was !== id) { this.ribbonSync(); this.ribbonFit(); }
   },
 
