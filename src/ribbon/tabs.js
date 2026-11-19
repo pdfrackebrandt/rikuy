@@ -74,6 +74,9 @@ export const tabs = {
       const tab = mk('button', 'rb-tab' + (T.ctx ? ' ctx' : ''), T.name);
       tab.type = 'button'; tab.id = 'rt-' + T.id; tab.dataset.tab = T.id;
       tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', 'false'); tab.setAttribute('aria-controls', 'rp-' + T.id); tab.tabIndex = -1;
+      // the name stays the tab's own: the KeyTip letter is drawn inside the button, and on a
+      // phone the tab row is hidden, where a letter in the button would rename the panel "Home H"
+      tab.setAttribute('aria-label', T.name);
       if (KEYTIPS[T.id]) { const tip = mk('span', 'rb-ktip', KEYTIPS[T.id]); tip.setAttribute('aria-hidden', 'true'); tab.append(tip); }
       list.append(tab);
       const opt = new Option(T.name, T.id);
