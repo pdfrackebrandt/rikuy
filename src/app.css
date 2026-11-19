@@ -186,6 +186,7 @@ body.has-ai .ai-only { display: inline-flex !important; }
 .rb-tab[data-tab="file"].on::after { display: none; }
 .rb-ktip { display: none; }
 body.keytips .rb-ktip { display: inline-block; margin-left: 4px; padding: 0 3px; border-radius: 2px; background: #fff; color: var(--title); border: 1px solid var(--title); font: 700 10px/14px var(--font-ui); vertical-align: 1px; }
+body.keytips .rb-ktip::before { content: attr(data-k); }
 .rb-tab.ctx { color: var(--ctx); }
 .rb-tab.ctx.on::after { background: var(--ctx); }
 .rb-tab:not(.ctx) + .rb-tab.ctx { margin-left: 10px; }
