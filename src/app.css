@@ -255,6 +255,8 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
 .rb-cap { font: 11px/1 var(--font-ui); color: var(--mute); letter-spacing: .01em; }
 /* group names under the controls, on a wide window. A phone's row stays one line of buttons. */
 .rb-glab { display: none; }
+/* the corner arrow is for a mouse on a wide window; a phone reaches the same dialog from its own button */
+.rb-launch { display: none; }
 @media (min-width: 900px) {
   .rb { min-height: 78px; align-items: stretch; }
   .rb-tb { align-items: stretch; }

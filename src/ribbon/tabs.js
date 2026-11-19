@@ -93,23 +93,27 @@ export const tabs = {
         gb.insertAdjacentHTML('beforeend', SVG(CARET));
         gb.addEventListener('click', () => this.openGroupMenu(T.id, g, gb));
         box.append(gb);
+        // the corner arrow. On the Styles gallery it follows the tiles, so ArrowLeft from the
+        // first tile still leaves the group. On the others it leads, so ArrowLeft into the
+        // group still lands on the group's last command.
+        const launch = LAUNCH[T.id + '/' + g.id];
+        const launchBtn = () => {
+          if (!launch) return null;
+          const cmd = command(launch[0]);
+          if (!cmd || !cmd.run) return null;
+          const b = mk('button', 'rb-launch');
+          b.type = 'button'; b.id = 'rl-' + T.id + '-' + g.id; b.dataset.cmd = cmd.id;
+          b.setAttribute('aria-label', launch[1]); b.title = cmd.title || launch[1];
+          b.insertAdjacentHTML('beforeend', '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.2 7.8 7.8 2.2M4.2 2.2h3.6V5.8"/></svg>');
+          b.addEventListener('click', () => this.runCommand(cmd.id));
+          return b;
+        };
+        if (g.id !== 'styles') { const b = launchBtn(); if (b) box.append(b); }
         for (const { c, p } of items) { const e = c.kind === 'custom' ? made.get(c.id) : this.makeControl(c, p); if (e) box.append(e); }
+        if (g.id === 'styles') { const b = launchBtn(); if (b) box.append(b); }
         // the group's name under its controls, as Word's ribbon labels them (the Styles gallery
         // already has its own caption). Hidden from the accessibility tree: the group has the name.
         if (g.id !== 'styles') { const lab = mk('span', 'rb-glab', g.name); lab.setAttribute('aria-hidden', 'true'); box.append(lab); }
-        // the corner arrow Word puts on a group that has a dialog. It runs that dialog; it is not a second copy of a button already in the group.
-        const launch = LAUNCH[T.id + '/' + g.id];
-        if (launch) {
-          const cmd = command(launch[0]);
-          if (cmd && cmd.run) {
-            const b = mk('button', 'rb-launch');
-            b.type = 'button'; b.dataset.cmd = cmd.id;
-            b.setAttribute('aria-label', launch[1]); b.title = cmd.title || launch[1];
-            b.insertAdjacentHTML('beforeend', '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.2 7.8 7.8 2.2M4.2 2.2h3.6V5.8"/></svg>');
-            b.addEventListener('click', () => this.runCommand(cmd.id));
-            box.append(b);
-          }
-        }
         tb.append(box);
       });
       tb.append(mk('span', 'grow'));
