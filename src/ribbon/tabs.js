@@ -42,7 +42,6 @@ import { $, mk, store, PREFS } from '../ui/dom.js';
 import { openMenu, splitButton, CARET } from '../ui/kit.js';
 import { measureTiles, installGallery } from '../ui/gallery.js';
 import { styOfEl } from '../editor.js';
-import { chordText } from '../keys.js';
 import { enclosing } from '../wrap.js';
 
 const SVG = (paths) => '<svg viewBox="0 0 20 20" aria-hidden="true">' + paths + '</svg>';
