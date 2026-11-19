@@ -420,7 +420,7 @@ class App {
     const persistSoon = debounce(() => this.persist(), 700);
     // unsaved: an edit waits for persistSoon. Leaving the page writes only then: a tab that changed
     // nothing must not write its older copy over what another tab saved since.
-    this.saveSoon = Object.assign(() => { this.zipDirty = true; this.unsaved = true; document.body.classList.add('zip-dirty'); persistSoon(); this.noteEdit(); }, { flush: () => persistSoon.flush(), cancel: () => persistSoon.cancel() });
+    this.saveSoon = Object.assign(() => { this.zipDirty = true; this.unsaved = true; document.body.classList.add('zip-dirty'); persistSoon(); this.noteEdit(); this.noteSaveState(); }, { flush: () => persistSoon.flush(), cancel: () => persistSoon.cancel() });
     this.memSnaps = []; // versions kept in memory when this browser cannot store them
     this.marksSoon = debounce(() => this.paintChanges(), 180);
     this.commentsSoon = debounce(() => this.paintComments(), 200);
@@ -776,6 +776,14 @@ class App {
     // (a document whose main language runs right to left starts at the right)
     if (this.model.opts.rtl) g.dir = 'rtl';
     g.appendChild(mk('span', 't gh', '\u200B'));
+    // not part of the document: contenteditable false, and the print rule hides it. The words
+    // sit under the caret's own "Type here", so a blank page says what a dropped file does.
+    const hint = mk('div', 'empty-hint');
+    hint.id = 'empty-hint';
+    hint.contentEditable = 'false';
+    hint.setAttribute('role', 'note');
+    hint.append(mk('p', '', 'Or drop a .tex file, a .zip, or a Word document on the page.'), mk('p', 'empty-keys', 'Alt+Q searches every command.'));
+    g.appendChild(hint);
     flow.appendChild(g);
     this.ghost = { el: g, f, pos, sticky: true };
   }
@@ -834,9 +842,18 @@ class App {
     this.problemsSoon();
     this.scriptsSoon();
     $('#docname').textContent = this.name;
+    this.noteSaveState();
     this.lastMs = ms;
     this.updateFileTabs();
     this.ribbonSoon();
+  }
+
+  // the words beside the document's name: Saved once this browser has the edit, Not saved while it waits
+  noteSaveState(kept) {
+    const el = $('#savestate');
+    if (!el) return;
+    el.hidden = false;
+    el.textContent = kept === false || this.unsaved ? 'Not saved' : 'Saved';
   }
 
   // ---- Chinese, Arabic and India's scripts ---------------------------------------
@@ -1142,13 +1159,17 @@ class App {
     D.addEventListener('dragover', (e) => { if (e.dataTransfer && [...(e.dataTransfer.types || [])].includes('Files')) { e.preventDefault(); document.body.classList.add('dropping'); } });
     D.addEventListener('dragleave', (e) => { if (e.target === D) document.body.classList.remove('dropping'); });
     D.addEventListener('drop', (e) => { if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) { e.preventDefault(); document.body.classList.remove('dropping'); this.caretAtPoint(e.clientX, e.clientY); this.openFiles([...e.dataTransfer.files]); } });
-    D.addEventListener('scroll', () => { if (this.pop) this.positionPop(); this.hideBubble(); }, { passive: true });
+    D.addEventListener('scroll', () => { if (this.pop) this.positionPop(); if (!this._bubbleHold) this.hideBubble(); }, { passive: true });
 
     $('#b-open').addEventListener('click', () => $('#fileinput').click());
     $('#fileinput').addEventListener('change', (e) => { const fs = [...e.target.files]; e.target.value = ''; if (fs.length) this.openFiles(fs); });
     // (b-save is the ribbon's LaTeX download: src/ribbon.js answers its click)
     $('#b-copy').addEventListener('click', () => this.copySource());
     $('#b-share').addEventListener('click', () => this.openSharePanel());
+    const qatSave = $('#qat-save');
+    if (qatSave) qatSave.addEventListener('click', () => this.runCommand('download-latex'));
+    const comments = $('#b-comments');
+    if (comments) comments.addEventListener('click', () => this.toggleNav(true, 'changes'));
     $('#guest-send').addEventListener('click', () => this.openSharePanel());
     $('#guest-x').addEventListener('click', () => { $('#guest').hidden = true; document.body.classList.remove('guest'); if (this.shareCtx) { this.shareCtx.dismissed = true; kvPut('share:' + this.name + '|' + this.main, this.shareCtx).catch(() => {}); } this.scriptsSoon(); });
     $('#script-go').addEventListener('click', () => this.scriptSetUp());
@@ -1180,6 +1201,16 @@ class App {
     $('#b-sample').addEventListener('click', () => this.resetToSample());
     $('#b-new').addEventListener('click', () => this.newDocument());
     $('#st-warn').addEventListener('click', () => this.toggleNav(true, 'problems'));
+    // the status line scrolls when it is wider than the window; the fades follow the cut edges
+    const stBar = $('#status');
+    if (stBar) {
+      const edges = () => this.statusEdges();
+      stBar.addEventListener('scroll', edges, { passive: true });
+      window.addEventListener('resize', edges);
+      if (window.ResizeObserver) new ResizeObserver(edges).observe(stBar);
+      if (window.MutationObserver) new MutationObserver(edges).observe(stBar, { childList: true, subtree: true, characterData: true });
+      edges();
+    }
     $('#b-nav').addEventListener('click', () => this.toggleNav());
     $('#nav-close').addEventListener('click', () => this.toggleNav(false));
     // Where the bar shows icons alone (a phone hides Help and the zoom steps too), the menu
@@ -1243,6 +1274,14 @@ class App {
     this.plainPaste = !!(mod && e.shiftKey && e.key.toLowerCase() === 'v');
     if (mod && !e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); this.save(); }
     if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); $('#fileinput').click(); }
+    // Ctrl+N is a new browser tab in some browsers; where the page hears it, it is a new document
+    if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'n' && !e.defaultPrevented) { e.preventDefault(); this.runCommand('new-document'); }
+    // Ctrl+W closes the source or the PDF when one is open. Otherwise the browser closes the tab:
+    // that key is the browser's, and a page cannot always keep it.
+    if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'w') {
+      if (document.body.classList.contains('src-on')) { e.preventDefault(); this.toggleSource(false); }
+      else if (document.body.classList.contains('pdf-on')) { e.preventDefault(); this.togglePdf(false); }
+    }
     // (Ctrl+P is Print, src/cmd/page.js: from a field or the source too)
     if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'p' && !e.defaultPrevented) { e.preventDefault(); this.runCommand('print'); }
     if (mod && e.key === '\\') { e.preventDefault(); this.toggleSource(); }
@@ -1285,6 +1324,8 @@ class App {
       if (el && el.closest('td')) { e.preventDefault(); this.tabCell(e.shiftKey); return; }
     }
     if (e.key === 'Escape') { this.disarm(); }
+    // Word's Shift+Enter: a line break inside the paragraph (\\), not a new paragraph
+    if (e.key === 'Enter' && e.shiftKey && !mod && !e.altKey && !this.armed) { e.preventDefault(); this.enter(true); return; }
     // Enter on an equation, citation or block that Backspace selected opens it, as a click does:
     // the keyboard's way in (Enter used to replace it with a paragraph break)
     if (e.key === 'Enter' && !e.shiftKey && this.armed && this.armed.el && this.armed.el.isConnected) {
@@ -2210,15 +2251,37 @@ class App {
   showBubble() {
     const sel = getSelection();
     if (!sel.rangeCount) return;
-    const r = sel.getRangeAt(0).getBoundingClientRect();
+    let r = sel.getRangeAt(0).getBoundingClientRect();
     if (!r.width && !r.height) return;
+    // the ribbon is taller than the old bar: a bubble that only cleared 56px sat under it,
+    // and a selection below the fold put the bubble where a click could not reach it
+    const rib = $('#ribbon');
+    const chrome = rib && rib.offsetParent ? rib.getBoundingClientRect().bottom + 4 : 56;
+    const off = r.bottom < chrome || r.top > window.innerHeight - 8;
+    if (off && !this._bubblePlace) {
+      const node = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
+      if (node && node.scrollIntoView) {
+        // scrolling the page hides the bubble; hold that off until the words are in view
+        this._bubbleHold = true;
+        node.scrollIntoView({ block: 'center', inline: 'nearest' });
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          this._bubbleHold = false;
+          this._bubblePlace = true;
+          const s = getSelection();
+          if (s.rangeCount && !s.isCollapsed && this.root.contains(s.anchorNode)) this.showBubble();
+          this._bubblePlace = false;
+        }));
+        return;
+      }
+    }
     const b = $('#bubble');
     b.hidden = false;
     const bw = b.offsetWidth, bh = b.offsetHeight;
     let x = r.left + r.width / 2 - bw / 2;
     x = Math.max(8, Math.min(window.innerWidth - bw - 8, x));
     let y = r.top - bh - 8;
-    if (y < 56) y = r.bottom + 8;
+    if (y < chrome) y = r.bottom + 8;
+    if (y + bh > window.innerHeight - 8) y = Math.max(chrome, window.innerHeight - bh - 8);
     b.style.left = x + 'px';
     b.style.top = y + 'px';
   }
@@ -4359,6 +4422,7 @@ class App {
       document.body.classList.toggle('zip-dirty', !!this.zipDirty);
       const what = this.singleFile() ? this.main.split('/').pop() : 'the project as .zip';
       this.saveTitle();
+      this.noteSaveState(ok && !partial);
     };
     this.unsaved = false;
     const fallback = () => show(store(STORE, meta), this.assetBlobs.size > 0 || this.extra.size > 0);
@@ -4583,7 +4647,9 @@ class App {
       this.pdfSay(s.status === 'engine' ? 'Downloading TeX Live, once\u2026' : st.textContent);
       bar.hidden = false;
       bar.classList.toggle('busy', frac == null);
+      if (frac == null) bar.removeAttribute('aria-valuenow'); else bar.setAttribute('aria-valuenow', String(Math.round(frac * 100)));
       bar.firstChild.style.width = frac == null ? '' : Math.round(frac * 100) + '%';
+      this.pdfWait(st.textContent);
     };
     if (s.status === 'index') say('Starting TeX…');
     else if (s.status === 'engine') say('Downloading TeX Live, once: ' + fmtMB(s.got) + ' of ' + fmtMB(s.total), s.got / s.total);
@@ -4706,6 +4772,8 @@ class App {
       if (this.texQuiet) { this.texQuiet = false; if (!engine.info && this.texLast) this.texStatus(this.texLast); }
       if (__RIKUY_APP__ && !this.prefs.texUsed) { this.prefs.texUsed = true; this.savePrefs(); }
       if (!engine.info) bar.hidden = false;
+      $('#pdfpane').setAttribute('aria-busy', 'true');
+      this.pdfWait('TeX is getting ready. The first time, it downloads the engine, which takes a moment.');
       // a document that came in a link compiles restricted, and the worker keeps nothing of it
       const li = await this.linkInfo();
       const untrusted = !!(li && !li.allowed);
@@ -4778,20 +4846,28 @@ class App {
         return;
       }
       st.textContent = 'TeX could not run here';
-      $('#pdf-host').innerHTML = '';
+      $('#pdf-host').replaceChildren();
       const d = document.createElement('div'); d.className = 'pdf-empty';
       // offline, a file TeX has not kept fails to load; say what to do rather than "Failed to fetch"
       const need = e && e.unkept ? ' (' + e.unkept.slice(0, 5).join(', ') + (e.unkept.length > 5 ? ' and more' : '') + ')' : '';
       const off = __RIKUY_APP__ && APP.on && navigator.onLine === false ? 'You are offline, and this document needs TeX files this browser has not kept yet' + need + '. Compile it once with a network and they stay; Make available offline in the status bar keeps those of a typical paper and of the open document. ' : '';
-      d.textContent = e && e.scripts ? e.message + ' The page preview can still be printed.' : off + this.texFailText(e, !!off, !!need) + 'The page preview can still be printed.';
-      said = st.textContent + '. ' + d.textContent;
-      const b = document.createElement('button'); b.className = 'btn sm'; b.type = 'button'; b.textContent = 'Print the preview'; b.style.marginTop = '10px';
+      const line = document.createElement('p');
+      line.textContent = e && e.scripts ? e.message + ' The page preview can still be printed.' : off + this.texFailText(e, !!off, !!need) + 'The page preview can still be printed.';
+      said = st.textContent + '. ' + line.textContent;
+      // the same words the pane says: a script reading the problem must not see "Failed to fetch"
+      this.lastCompile.failed = line.textContent;
+      const acts = document.createElement('div'); acts.className = 'pdf-acts';
+      const again = document.createElement('button'); again.className = 'btn sm'; again.type = 'button'; again.textContent = 'Try again';
+      again.addEventListener('click', () => this.compilePdf({ clean: true }));
+      const b = document.createElement('button'); b.className = 'btn sm ghost'; b.type = 'button'; b.textContent = 'Print the preview';
       b.addEventListener('click', () => this.printPDF());
-      d.append(document.createElement('br'), b);
+      acts.append(again, b);
+      d.append(line, acts);
       $('#pdf-host').appendChild(d);
     } finally {
       clearInterval(this.compileTick);
       $('#pdf-re').textContent = 'Recompile';
+      $('#pdfpane').setAttribute('aria-busy', 'false');
       bar.hidden = true;
       if (said) this.pdfSay(said);
       this.compiling = false;
@@ -5119,8 +5195,41 @@ class App {
   // error) read the same build instructions: they get what to do instead.
   texFailText(e, off, need) {
     const m = (e && e.message) || '';
-    if (/^The TeX tree is not next to this page/.test(m) && !/\(HTTP 4\d\d\)/.test(m)) return off ? '' : 'The TeX engine could not be downloaded. Check your connection, then press Recompile. ';
+    // a 404 is a page built without its TeX tree: the worker's words name the build step.
+    // "Failed to fetch", a dropped connection, or that same sentence with no HTTP status is
+    // what a visitor's browser says. They get plain words and the button that tries again.
+    const httpMissing = /\(HTTP 4\d\d\)/.test(m);
+    const fetchFailed = /Failed to fetch|NetworkError|Load failed/i.test(m);
+    if (!httpMissing && (fetchFailed || /^The TeX tree is not next to this page/.test(m))) return off ? '' : 'The TeX engine could not be downloaded. Check your connection, then press Try again. ';
     return m && !(off && need) ? m + '. ' : '';
+  }
+
+  // the PDF pane while TeX has not made a page yet: the same sentence the status line shows,
+  // in the pane, so a long download is not an empty grey panel
+  pdfWait(line) {
+    if (this.lastPdf) return;
+    const host = $('#pdf-host');
+    if (!host) return;
+    let d = host.querySelector('.pdf-wait');
+    if (!d) {
+      host.replaceChildren();
+      d = document.createElement('div'); d.className = 'pdf-empty pdf-wait';
+      const b = document.createElement('b'); b.textContent = 'Making the PDF.';
+      const s = document.createElement('span');
+      d.append(b, document.createTextNode(' '), s);
+      host.appendChild(d);
+    }
+    const s = d.querySelector('span');
+    if (s) s.textContent = line || 'TeX is getting ready.';
+  }
+
+  // fades on the status line where its contents run past the window
+  statusEdges() {
+    const st = $('#status');
+    if (!st) return;
+    const cut = st.scrollWidth - st.clientWidth > 2;
+    st.classList.toggle('st-fade-l', cut && st.scrollLeft > 2);
+    st.classList.toggle('st-fade-r', cut && st.scrollLeft + st.clientWidth < st.scrollWidth - 2);
   }
 
   toast(msg, ms = 3200, action) {

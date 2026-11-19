@@ -104,6 +104,9 @@ register(
   { id: 'underline', name: 'Underline', order: 30, title: 'Underline (Ctrl+U): \\uline, which breaks across lines; the arrow for double, wave, dashed, dotted and a colour', tab: 'home', group: 'font', el: 'rb-u', kind: 'split', glyph: '<u aria-hidden="true">U</u>', keys: ['Ctrl+U'], keysQuiet: ['Ctrl+Shift+U'],
     synonyms: ['underline', 'uline', 'Double underline', 'Wave underline', 'Underline color'], when: can, on: on('underline'), run: (app, args) => (args && args.cmd ? app.fmtSet('underline', { cmd: args.cmd }) : app.fmtToggle('underline')),
     menuItems: (app, at) => app.underlineMenu(at) },
+  { id: 'double-underline', name: 'Double Underline', keys: ['Ctrl+Shift+D'],
+    title: 'Double underline (Ctrl+Shift+D): \\uuline, ulem\'s double line', synonyms: ['uuline', 'Double'],
+    when: can, whyNot: () => WHY, run: (app) => app.doubleUnderline() },
   { id: 'strikethrough', name: 'Strikethrough', order: 40, title: 'Strikethrough (Ctrl+Shift+X): \\sout', tab: 'home', group: 'font', kind: 'toggle', glyph: ICON.strike, keys: ['Ctrl+Shift+X'],
     synonyms: ['Strike', 'Cross out', 'sout'], when: can, on: on('strike'), run: (app) => app.fmtToggle('strike') },
   { id: 'subscript', name: 'Subscript', order: 50, title: 'Subscript (Ctrl+,): \\textsubscript', tab: 'home', group: 'font', kind: 'toggle', glyph: ICON.sub, keys: ['Ctrl+,'],
@@ -137,7 +140,7 @@ register(
     when: (app, at) => can(app, at) && !at.c.collapsed, whyNot: () => 'Select the characters the reading goes over.', run: (app) => openRubyDialog(app) },
 
   { id: 'format-painter', name: 'Format Painter', order: 40, tab: 'home', group: 'clipboard', kind: 'toggle', icon: '<path d="M4.5 3.5h9v3.4h-9z"/><path d="M13.5 5.2h2v3.6H9.6v2.7"/><path d="M8.6 11.5h2v5h-2z"/>',
-    title: 'Format Painter: copies the formatting where the caret is to the next text you select (double click: to all until Escape)', synonyms: ['Copy formatting', 'Paste formatting', 'Paint format'],
+    title: 'Format Painter (Ctrl+Shift+C): copies the formatting where the caret is to the next text you select (double click: to all until Escape)', synonyms: ['Copy formatting', 'Paste formatting', 'Paint format'], keys: ['Ctrl+Shift+C'],
     when: (app, at) => !!app.fpaint || can(app, at), on: (app) => !!app.fpaint, resync: true, run: (app) => app.formatPainter() },
 
   { id: 'typewriter', name: 'Typewriter', title: 'Typewriter text: \\texttt', synonyms: ['Monospace', 'Code', 'texttt'], when: can, on: on('mono'), run: (app) => app.fmtToggle('mono'),
@@ -446,17 +449,18 @@ export const methods = {
     if (!inp || (document.activeElement === inp && !force)) return;
     const st = this.fontState(at), ok = !!st && can(this, at);
     inp.disabled = !ok;
-    inp.closest('.fbx').classList.toggle('off', !ok);
-    if (!st) { inp.value = ''; return; }
+    inp.closest('.fbx').classList.toggle('off', !!st && !ok);
+    // with no caret yet, still show the document's own font and size, as Word's boxes do
+    const show = st || { docFont: F.docFont(this.src(this.main), this.engineChoice ? this.engineChoice() : 'auto'), size: this.baseSize(), family: null, fontSel: false, familyW: null, sizeW: null };
     if (kind === 'font') {
-      const id = st.fontSel && st.family ? st.family : st.docFont.id;
-      const name = (F.GENERIC.find((g) => g.id === id) || F.FONTS.find((f) => f.id === id) || st.docFont).name;
+      const id = show.fontSel && show.family ? show.family : show.docFont.id;
+      const name = (F.GENERIC.find((g) => g.id === id) || F.FONTS.find((f) => f.id === id) || show.docFont).name;
       inp.value = inp.dataset.shown = name;
-      inp.title = 'Font: ' + name + (st.familyW ? '' : ' (the document\'s)') + ' (Ctrl+Shift+F)';
+      inp.title = 'Font: ' + name + (show.familyW ? '' : ' (the document\'s)') + ' (Ctrl+Shift+F)';
     } else {
-      const v = Math.round(st.size * 100) / 100;
+      const v = Math.round(show.size * 100) / 100;
       inp.value = inp.dataset.shown = Number.isFinite(v) ? String(v) : '';
-      inp.title = 'Font Size: ' + v + 'pt' + (st.sizeW && st.sizeW.cmd !== 'fontsize' ? ' (\\' + st.sizeW.cmd + ')' : st.sizeW ? '' : ' (the document\'s)');
+      inp.title = 'Font Size: ' + v + 'pt' + (show.sizeW && show.sizeW.cmd !== 'fontsize' ? ' (\\' + show.sizeW.cmd + ')' : show.sizeW ? '' : ' (the document\'s)');
     }
   },
   // back to the page from a box: the selection it had (a box's text took the document's selection)
@@ -698,6 +702,13 @@ export const methods = {
   },
 
   // ---- Underline's menu ---------------------------------------------------------------------
+  // Word's Ctrl+Shift+D: a double line, or off again when that is what is there
+  doubleUnderline() {
+    const at = this.ribbonAt();
+    const W = at && at.c && !at.c.ghost ? F.around(this.src(at.c.f), at.c.a, at.c.b, 'underline') : null;
+    if (W && W.cmd === 'uuline') return this.fmtToggle('underline');
+    return this.fmtSet('underline', { cmd: 'uuline' });
+  },
   underlineMenu(at) {
     const W = at && at.c && !at.c.ghost ? F.around(this.src(at.c.f), at.c.a, at.c.b, 'underline') : null;
     const items = Object.entries(F.UNDERLINES).map(([cmd, name]) => ({ name: name === 'Single' ? 'Underline' : name + ' underline', checked: !!W && (W.cmd === cmd || (cmd === 'uline' && (W.cmd === 'underline' || W.cmd === 'culine'))), radio: true,

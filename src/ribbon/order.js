@@ -28,6 +28,9 @@ export const TABS = [
   { id: 'headfoot', name: 'Header & Footer', ctx: 'headfoot', groups: [['headfoot', 'Header & Footer', 3], ['insert', 'Insert', 2], ['options', 'Options', 1], ['close', 'Close', 4]] }
 ].map((t) => ({ ...t, groups: t.groups.map(([id, name, rank = 1, more = {}]) => ({ id, name, rank, spare: !!more.spare })) }));
 
+// Word's KeyTips for the tabs (Alt, or F10, then the letter). Help is Y then 2, as in Microsoft 365.
+export const KEYTIPS = { file: 'F', home: 'H', insert: 'N', design: 'G', layout: 'P', references: 'S', review: 'R', view: 'W', help: 'Y2' };
+
 export const tabById = (id) => TABS.find((t) => t.id === id) || null;
 export const groupOf = (tab, group) => { const t = tabById(tab); return t ? t.groups.find((g) => g.id === group) || null : null; };
 

@@ -78,7 +78,7 @@ register(
     render: () => $('#rb-gw'), sync: (app, at) => app.styleSync(at) },
   { id: 'style-list', name: 'Style of this paragraph', el: 'rb-style', role: 'combobox', kind: 'custom', tab: 'home', group: 'styles', only: 'narrow', searchable: false, title: 'Style of the paragraph the caret is in',
     render: () => $('#rb-style') },
-  style('style-normal', 'p', 'Normal', SLOT_EL.p, { keys: ['Ctrl+Alt+0'], title: 'Normal: a paragraph of text (Ctrl+Alt+0)', synonyms: ['Normal text', 'Paragraph', 'Body text'] }),
+  style('style-normal', 'p', 'Normal', SLOT_EL.p, { keys: ['Ctrl+Alt+0', 'Ctrl+Shift+N'], title: 'Normal: a paragraph of text (Ctrl+Shift+N, or Ctrl+Alt+0)', synonyms: ['Normal text', 'Paragraph', 'Body text'] }),
   style('style-title', 'title', 'Title', SLOT_EL.title, { title: 'Title: the document\'s title, from \\title' }),
   heading(1, 'Ctrl+Alt+1'), heading(2, 'Ctrl+Alt+2'), heading(3, 'Ctrl+Alt+3'), heading(4, 'Ctrl+Alt+4'), heading(5), heading(6),
   style('style-latex', 'latex', 'LaTeX source', SLOT_EL.latex, { title: 'LaTeX source: shows the paragraph as LaTeX that you type directly', synonyms: ['LaTeX paragraph', 'Raw LaTeX', 'Source'] }),

@@ -347,6 +347,9 @@ export const collab = {
     this.shareCtx = null;
     this.guestMode(false);
     this.refreshNav();
+    // a document opened from the backstage is shown on the page, as Word leaves File once the file is open
+    if (this.rbTab === 'file' && this.selectTab) this.selectTab('home');
+    if (this.noteSaveState) this.noteSaveState();
   },
 
   async loadShareCtx() {

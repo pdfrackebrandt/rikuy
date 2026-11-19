@@ -537,6 +537,8 @@ def first_words(page):
     slow = dict(delay=40)   # the math field takes keys as a person types them, not all at once
     page.click('#b-new')
     page.wait_for_function('window.rikuy.name.startsWith("Untitled") && window.rikuy.ghost', timeout=5000)
+    hint = page.inner_text('#empty-hint')
+    check('a blank document says to type, or to drop a .tex, a .zip or a Word file', '.tex' in hint and '.zip' in hint and 'Word' in hint and 'Alt+Q' in hint, hint)
     name = page.evaluate('window.rikuy.name')
     page.keyboard.type('First words')
     wait_src(page, 'First words')
@@ -575,8 +577,10 @@ def first_words(page):
     # a title alone: the page had nowhere to start the text
     load_doc(page, '\\documentclass{article}\n\\title{Only a title}\n\\begin{document}\n\\maketitle\n\\end{document}\n')
     page.wait_for_timeout(200)
-    r = page.evaluate('(() => { const r = document.querySelector(".page").getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })()')
-    page.mouse.click(*r); page.keyboard.type('Below')
+    # the blank paragraph under the title, not the title itself and not a point below the window
+    page.locator('.ghostp').scroll_into_view_if_needed()
+    page.locator('.ghostp').click()
+    page.keyboard.type('Below')
     wait_src(page, 'Below')
     check('under a title alone, a click on the page and typing start the first paragraph', '\\title{Only a title}' in src(page) and '\\maketitle\n\nBelow' in src(page), src(page))
     for _ in range(5): page.keyboard.press('Backspace')
@@ -593,7 +597,7 @@ def first_words(page):
 def phone_layout(page):
     """The bar, the status line, Help and the PDF bar on screens as wide as phones are."""
     BAR = """() => { const W = document.documentElement.clientWidth; const box = (e) => e.getBoundingClientRect(); const vis = (e) => box(e).width > 0;
-      const kids = [...document.querySelectorAll('#b-nav, #bar .brand .mark, #bar .tools > button, #bar .tools .zoom > *')].filter(vis);
+      const kids = [...document.querySelectorAll('#b-nav, #bar .brand .mark, #bar .qat > button, #b-share, #b-comments, #bar .tools > button, #bar .tools .zoom > *')].filter(vis);
       const off = kids.filter((e) => box(e).right > W + 0.5 || box(e).left < -0.5).map((e) => e.id || e.className);
       const over = [];
       for (let i = 0; i < kids.length; i++) for (let j = i + 1; j < kids.length; j++) { const a = box(kids[i]), b = box(kids[j]); if (a.left < b.right - 1 && b.left < a.right - 1) over.push((kids[i].id || kids[i].className) + '~' + (kids[j].id || kids[j].className)); }
@@ -606,6 +610,10 @@ def phone_layout(page):
         m = page.evaluate(BAR)
         check('at %dpx no button of the bar lies over another or the name, or off the screen' % w, not m['off'] and not m['over'] and m['page'] <= 0 and m['nav'] >= 28, m)
         if w <= 430: check('at %dpx the status line is one line' % w, m['status'] <= 30, m['status'])
+        fade = page.evaluate('''() => { const st = document.getElementById('status'); const cs = getComputedStyle(st);
+          return { ox: cs.overflowX, sw: st.scrollWidth, cw: st.clientWidth, cls: st.className }; }''')
+        if fade['sw'] > fade['cw'] + 2:
+            check('at %dpx the status bar scrolls, and fades where it is cut off' % w, fade['ox'] in ('auto', 'scroll') and 'st-fade-r' in fade['cls'], fade)
     page.set_viewport_size({'width': 360, 'height': 800})
     page.wait_for_timeout(250)
     page.evaluate('window.rikuy.togglePdf(true)')
@@ -617,7 +625,7 @@ def phone_layout(page):
     page.click('#b-nav')
     page.wait_for_timeout(200)
     acts = page.evaluate('[...document.querySelectorAll("#nav-acts .nav-act")].map((a) => [a.dataset.for, a.textContent.trim(), a.disabled, a.getBoundingClientRect().height])')
-    bar = page.evaluate('[...document.querySelectorAll("#bar .tools button:not(.ai-only), .rb-dl button:not(#rb-dl-menu), #b-copy")].map((b) => b.id)')
+    bar = page.evaluate('[...document.querySelectorAll("#bar .tools button:not(.ai-only), #b-undo, #b-undo-x, #b-redo, #b-share, .rb-dl button:not(#rb-dl-menu), #b-copy")].map((b) => b.id)')
     check('the menu panel lists every action of the bar, the downloads and Copy source by name, each large enough to tap', sorted(a[0] for a in acts) == sorted(bar) and all(a[1] and a[3] >= 36 for a in acts), (acts, bar))
     check('Undo and Redo are greyed there when there is nothing to undo, and the zoom shows its value', all(a[2] for a in acts if a[0] in ('b-undo', 'b-redo')) and re.match(r'Zoom: (Fit|\d+%)$', [a[1] for a in acts if a[0] == 'zoomv'][0]), acts)
     page.click('#nav-acts [data-for=b-help]')
@@ -1250,9 +1258,9 @@ def run():
         # to do for a visitor whose download of it failed
         m = page.evaluate('''() => { const g = window.rikuy; const built = 'The TeX tree is not next to this page (tex/tree.wasm: Could not load https://x/tex/tree.wasm (HTTP 404)). A copy built from source needs tex/build_tree.py first; README.md, Running it';
           const net = built.replace(/Could not load.*\\(HTTP 404\\)/, 'Failed to fetch');
-          return [g.texFailText(new Error(net)), g.texFailText(new Error(built)), g.texFailText(new Error(built.replace('404', '503'))), g.texFailText(new Error('TeX ran out of memory')), g.texFailText(new Error(net), true)]; }''')
-        plain = 'The TeX engine could not be downloaded. Check your connection, then press Recompile. '
-        check('a failed download of the TeX engine is said in plain words, with what to do', m[0] == plain and m[2] == plain and 'build_tree' not in m[0], m)
+          return [g.texFailText(new Error(net)), g.texFailText(new Error(built)), g.texFailText(new Error(built.replace('404', '503'))), g.texFailText(new Error('TeX ran out of memory')), g.texFailText(new Error(net), true), g.texFailText(new Error('Failed to fetch')), g.texFailText(new Error('Load failed'))]; }''')
+        plain = 'The TeX engine could not be downloaded. Check your connection, then press Try again. '
+        check('a failed download of the TeX engine is said in plain words, with what to do', m[0] == plain and m[2] == plain and m[5] == plain and m[6] == plain and 'build_tree' not in m[0] and 'Failed to fetch' not in m[5], m)
         check('a page built without its TeX tree still names the build step; other errors pass as they are; offline has its own message', 'tex/build_tree.py' in m[1] and m[3] == 'TeX ran out of memory. ' and m[4] == '', m)
         check('no console errors (pdf.js)', not errors, errors[:5])
         browser.close()

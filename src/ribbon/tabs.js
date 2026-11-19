@@ -17,13 +17,31 @@
 // The toolbar has one tab stop, the control the arrows last reached; the tabs have one more (the
 // open tab), and the arrows move between them. Ctrl+F1 folds the ribbon to its tabs and back.
 
-import { TABS, tabById, CONTEXTS } from './order.js';
+import { TABS, tabById, CONTEXTS, KEYTIPS } from './order.js';
+import { chordText } from '../keys.js';
+
+// the shortcut in the tooltip, when the command's own title does not already say it
+function tipTitle(c, p) {
+  const t = c.title || p.name;
+  const k = (c.keys && c.keys[0]) || (c.keysElsewhere && c.keysElsewhere[0]);
+  if (!k) return t;
+  const shown = chordText(k);
+  if (t.includes(shown) || t.includes(k)) return t;
+  return t + ' (' + shown + ')';
+}
+
+// Groups whose corner arrow opens a dialog that already exists. The label is not the button's name.
+const LAUNCH = {
+  'home/font': ['font-dialog', 'Font…'],
+  'home/paragraph': ['paragraph-settings', 'Paragraph…'],
+  'home/styles': ['styles-pane', 'Styles pane'],
+  'layout/setup': ['page-setup', 'Page setup…']
+};
 import { commands, command, inGroup, enabled, pressed, installers } from '../commands.js';
 import { $, mk, store, PREFS } from '../ui/dom.js';
 import { openMenu, splitButton, CARET } from '../ui/kit.js';
 import { measureTiles, installGallery } from '../ui/gallery.js';
 import { styOfEl } from '../editor.js';
-import { chordText } from '../keys.js';
 import { enclosing } from '../wrap.js';
 
 const SVG = (paths) => '<svg viewBox="0 0 20 20" aria-hidden="true">' + paths + '</svg>';
@@ -56,6 +74,10 @@ export const tabs = {
       const tab = mk('button', 'rb-tab' + (T.ctx ? ' ctx' : ''), T.name);
       tab.type = 'button'; tab.id = 'rt-' + T.id; tab.dataset.tab = T.id;
       tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', 'false'); tab.setAttribute('aria-controls', 'rp-' + T.id); tab.tabIndex = -1;
+      // the name stays the tab's own. The KeyTip letter is not text in the button: tests and the
+      // accessible name read that text, and on a phone the hidden tab row would rename the panel.
+      tab.setAttribute('aria-label', T.name);
+      if (KEYTIPS[T.id]) { const tip = mk('span', 'rb-ktip'); tip.dataset.k = KEYTIPS[T.id]; tip.setAttribute('aria-hidden', 'true'); tab.append(tip); }
       list.append(tab);
       const opt = new Option(T.name, T.id);
       sel.add(opt);
@@ -85,7 +107,27 @@ export const tabs = {
         gb.insertAdjacentHTML('beforeend', SVG(CARET));
         gb.addEventListener('click', () => this.openGroupMenu(T.id, g, gb));
         box.append(gb);
+        // the corner arrow. On the Styles gallery it follows the tiles, so ArrowLeft from the
+        // first tile still leaves the group. On the others it leads, so ArrowLeft into the
+        // group still lands on the group's last command.
+        const launch = LAUNCH[T.id + '/' + g.id];
+        const launchBtn = () => {
+          if (!launch) return null;
+          const cmd = command(launch[0]);
+          if (!cmd || !cmd.run) return null;
+          const b = mk('button', 'rb-launch');
+          b.type = 'button'; b.id = 'rl-' + T.id + '-' + g.id; b.dataset.cmd = cmd.id;
+          b.setAttribute('aria-label', launch[1]); b.title = cmd.title || launch[1];
+          b.insertAdjacentHTML('beforeend', '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.2 7.8 7.8 2.2M4.2 2.2h3.6V5.8"/></svg>');
+          b.addEventListener('click', () => this.runCommand(cmd.id));
+          return b;
+        };
+        if (g.id !== 'styles') { const b = launchBtn(); if (b) box.append(b); }
         for (const { c, p } of items) { const e = c.kind === 'custom' ? made.get(c.id) : this.makeControl(c, p); if (e) box.append(e); }
+        if (g.id === 'styles') { const b = launchBtn(); if (b) box.append(b); }
+        // the group's name under its controls, as Word's ribbon labels them (the Styles gallery
+        // already has its own caption). Hidden from the accessibility tree: the group has the name.
+        if (g.id !== 'styles') { const lab = mk('span', 'rb-glab', g.name); lab.setAttribute('aria-hidden', 'true'); box.append(lab); }
         tb.append(box);
       });
       tb.append(mk('span', 'grow'));
@@ -107,7 +149,7 @@ export const tabs = {
     const b = mk('button', 'btn ghost' + (label ? '' : ' icon'));
     b.type = 'button'; b.id = p.el; b.dataset.cmd = c.id;
     b.setAttribute('aria-label', p.name);
-    b.title = c.title || p.name;
+    b.title = tipTitle(c, p);
     if (c.kind === 'toggle') b.setAttribute('aria-pressed', 'false');
     if (c.icon) b.insertAdjacentHTML('beforeend', SVG(c.icon));
     else if (c.glyph) b.insertAdjacentHTML('beforeend', c.glyph);
@@ -175,6 +217,7 @@ export const tabs = {
     $('#rb-tabsel').value = id;
     if (was !== id) $('#ribbon').scrollLeft = 0;
     if (focus) $('#rt-' + id).focus();
+    document.body.classList.toggle('file-open', id === 'file');
     if (was !== id) { this.ribbonSync(); this.ribbonFit(); }
   },
 
@@ -404,4 +447,38 @@ export function installRibbon(app) {
   if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', () => { cancelAnimationFrame(fit); fit = requestAnimationFrame(() => { app.rbW = null; app.ribbonFit(); }); });
   app.ribbonSync();
   app.ribbonFit();
+  installKeyTips(app);
+}
+
+// Alt alone, or F10, shows Word's KeyTips on the tabs. A letter opens that tab; Help is Y then 2.
+function installKeyTips(app) {
+  const list = $('#rb-tabs');
+  if (!list) return;
+  let altDown = false, altUsed = false, yWait = false;
+  const field = (e) => e.target && e.target.closest && e.target.closest('input, textarea, select, math-field, [contenteditable="true"]:not(#pages), .CodeMirror');
+  const show = (on) => { yWait = false; document.body.classList.toggle('keytips', on); };
+  const open = (id) => { if (app.rbTabs && app.rbTabs.includes(id)) { app.selectTab(id); app.peekRibbon(true); } show(false); };
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Alt' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.shiftKey) { altDown = true; altUsed = false; return; }
+    if (altDown && e.key !== 'Alt') altUsed = true;
+    if (e.key === 'F10' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !field(e)) {
+      e.preventDefault();
+      show(!document.body.classList.contains('keytips'));
+      return;
+    }
+    if (!document.body.classList.contains('keytips') || field(e)) return;
+    if (e.key === 'Escape') { show(false); e.preventDefault(); return; }
+    const k = e.key.length === 1 ? e.key.toUpperCase() : '';
+    if (!k || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (yWait) { yWait = false; if (k === '2' || k === 'Y') open('help'); e.preventDefault(); return; }
+    if (k === 'Y') { yWait = true; e.preventDefault(); return; }
+    const id = Object.keys(KEYTIPS).find((t) => KEYTIPS[t] === k);
+    if (id) { open(id); e.preventDefault(); }
+  }, true);
+  document.addEventListener('keyup', (e) => {
+    if (e.key !== 'Alt') return;
+    const alone = altDown && !altUsed && !e.ctrlKey && !e.metaKey && !e.shiftKey && !field(e);
+    altDown = false;
+    if (alone) { e.preventDefault(); show(!document.body.classList.contains('keytips')); }
+  }, true);
 }

@@ -261,7 +261,7 @@ def run():
         click_text(page, 'third paragraph', 0)
         page.evaluate("window.rikuy.runCommand('comment-edit')"); page.wait_for_timeout(250)
         page.fill('.pop-comment textarea', 'Much shorter, please.')
-        page.get_by_role('button', name='Save').click(); page.wait_for_timeout(250)
+        page.locator('.pop-comment').get_by_role('button', name='Save', exact=True).click(); page.wait_for_timeout(250)
         check('Edit Comment rewrites its words only', src(page) == DOC.replace('% comment (Bo): Shorter?', '% comment (Bo): Much shorter, please.'), src(page)[-120:])
         page.evaluate("window.rikuy.undo()"); page.wait_for_timeout(200)
         click_text(page, 'third paragraph', 0)
