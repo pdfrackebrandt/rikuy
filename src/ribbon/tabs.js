@@ -18,6 +18,14 @@
 // open tab), and the arrows move between them. Ctrl+F1 folds the ribbon to its tabs and back.
 
 import { TABS, tabById, CONTEXTS } from './order.js';
+
+// Groups whose corner arrow opens a dialog that already exists. The label is not the button's name.
+const LAUNCH = {
+  'home/font': ['font-dialog', 'Font…'],
+  'home/paragraph': ['paragraph-settings', 'Paragraph…'],
+  'home/styles': ['styles-pane', 'Styles pane'],
+  'layout/setup': ['page-setup', 'Page setup…']
+};
 import { commands, command, inGroup, enabled, pressed, installers } from '../commands.js';
 import { $, mk, store, PREFS } from '../ui/dom.js';
 import { openMenu, splitButton, CARET } from '../ui/kit.js';
@@ -89,6 +97,19 @@ export const tabs = {
         // the group's name under its controls, as Word's ribbon labels them (the Styles gallery
         // already has its own caption). Hidden from the accessibility tree: the group has the name.
         if (g.id !== 'styles') { const lab = mk('span', 'rb-glab', g.name); lab.setAttribute('aria-hidden', 'true'); box.append(lab); }
+        // the corner arrow Word puts on a group that has a dialog. It runs that dialog; it is not a second copy of a button already in the group.
+        const launch = LAUNCH[T.id + '/' + g.id];
+        if (launch) {
+          const cmd = command(launch[0]);
+          if (cmd && cmd.run) {
+            const b = mk('button', 'rb-launch');
+            b.type = 'button'; b.dataset.cmd = cmd.id;
+            b.setAttribute('aria-label', launch[1]); b.title = cmd.title || launch[1];
+            b.insertAdjacentHTML('beforeend', '<svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.2 7.8 7.8 2.2M4.2 2.2h3.6V5.8"/></svg>');
+            b.addEventListener('click', () => this.runCommand(cmd.id));
+            box.append(b);
+          }
+        }
         tb.append(box);
       });
       tb.append(mk('span', 'grow'));
@@ -178,6 +199,16 @@ export const tabs = {
     $('#rb-tabsel').value = id;
     if (was !== id) $('#ribbon').scrollLeft = 0;
     if (focus) $('#rt-' + id).focus();
+    const rib = $('#ribbon');
+    if (id === 'file') {
+      // the top edge before it is taken out of the flow, so the sheet starts under the tabs
+      const top = rib.getBoundingClientRect().top - rib.parentElement.getBoundingClientRect().top;
+      document.body.classList.add('file-open');
+      rib.style.top = top + 'px';
+    } else if (was === 'file') {
+      document.body.classList.remove('file-open');
+      rib.style.top = '';
+    }
     if (was !== id) { this.ribbonSync(); this.ribbonFit(); }
   },
 

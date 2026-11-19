@@ -420,7 +420,7 @@ class App {
     const persistSoon = debounce(() => this.persist(), 700);
     // unsaved: an edit waits for persistSoon. Leaving the page writes only then: a tab that changed
     // nothing must not write its older copy over what another tab saved since.
-    this.saveSoon = Object.assign(() => { this.zipDirty = true; this.unsaved = true; document.body.classList.add('zip-dirty'); persistSoon(); this.noteEdit(); }, { flush: () => persistSoon.flush(), cancel: () => persistSoon.cancel() });
+    this.saveSoon = Object.assign(() => { this.zipDirty = true; this.unsaved = true; document.body.classList.add('zip-dirty'); persistSoon(); this.noteEdit(); this.noteSaveState(); }, { flush: () => persistSoon.flush(), cancel: () => persistSoon.cancel() });
     this.memSnaps = []; // versions kept in memory when this browser cannot store them
     this.marksSoon = debounce(() => this.paintChanges(), 180);
     this.commentsSoon = debounce(() => this.paintComments(), 200);
@@ -842,9 +842,18 @@ class App {
     this.problemsSoon();
     this.scriptsSoon();
     $('#docname').textContent = this.name;
+    this.noteSaveState();
     this.lastMs = ms;
     this.updateFileTabs();
     this.ribbonSoon();
+  }
+
+  // the words beside the document's name: Saved once this browser has the edit, Not saved while it waits
+  noteSaveState(kept) {
+    const el = $('#savestate');
+    if (!el) return;
+    el.hidden = false;
+    el.textContent = kept === false || this.unsaved ? 'Not saved' : 'Saved';
   }
 
   // ---- Chinese, Arabic and India's scripts ---------------------------------------
@@ -4403,6 +4412,7 @@ class App {
       document.body.classList.toggle('zip-dirty', !!this.zipDirty);
       const what = this.singleFile() ? this.main.split('/').pop() : 'the project as .zip';
       this.saveTitle();
+      this.noteSaveState(ok && !partial);
     };
     this.unsaved = false;
     const fallback = () => show(store(STORE, meta), this.assetBlobs.size > 0 || this.extra.size > 0);

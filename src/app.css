@@ -12,6 +12,10 @@
   --blue: #2B74B0;
   --blue-wash: #D7E8F5;
   --blue-ink: #1D5C91;
+  /* the title band: Rikuy's own blue, in the tone of a word processor's title bar */
+  --title: #1A5C99;
+  --ribbon: #FFFFFF;
+  --tabrow: #F2F4F7;
   --warn: #B3412C;
   --ins-ui: #17713F;
   --del-ui: #B3312A;
@@ -84,6 +88,7 @@
   :root:not([data-theme="light"]) {
     --desk: #151A20; --desk-2: #0F1318; --chrome: #1B222A; --panel: #1F2730; --line: #2E3843;
     --ink-ui: #E2E7ED; --mute: #8D9AA8; --blue: #6AAEE3; --blue-wash: #1B3650; --blue-ink: #9CCBF0;
+    --title: #143E66; --ribbon: #1F2730; --tabrow: #1B222A;
     --warn: #E8806B; --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .45);
     --ins-ui: #6FD39C; --del-ui: #F28B7D;
     color-scheme: dark;
@@ -92,6 +97,7 @@
 :root[data-theme="dark"] {
   --desk: #151A20; --desk-2: #0F1318; --chrome: #1B222A; --panel: #1F2730; --line: #2E3843;
   --ink-ui: #E2E7ED; --mute: #8D9AA8; --blue: #6AAEE3; --blue-wash: #1B3650; --blue-ink: #9CCBF0;
+  --title: #143E66; --ribbon: #1F2730; --tabrow: #1B222A;
   --warn: #E8806B; --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .45);
   --ins-ui: #6FD39C; --del-ui: #F28B7D;
   color-scheme: dark;
@@ -105,15 +111,24 @@ button { font: inherit; color: inherit; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 [hidden] { display: none !important; }
 
-/* ---- bar: a title row, the document's name in the middle, Quick Access at the left ---- */
-#bar { display: flex; align-items: center; gap: 8px; padding: 0 8px; min-height: 40px; background: var(--panel); border-bottom: 1px solid var(--line); flex: none; position: relative; }
+/* ---- bar: a coloured title band. Quick Access at the left, the name and the search in the middle ---- */
+#bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 10px; padding: 4px 10px; min-height: 56px; background: var(--title); color: #fff; border-bottom: 0; flex: none; position: relative; }
 .bar-left, .title-end { display: flex; align-items: center; gap: 2px; min-width: 0; flex: none; }
+.title-mid { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; }
+.title-name { display: flex; align-items: baseline; justify-content: center; gap: 8px; max-width: 100%; min-width: 0; }
 .qat { display: flex; align-items: center; gap: 0; }
 .qat .btn.icon { width: 28px; height: 28px; }
 .brand { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: none; padding: 0 6px; }
-.mark { font-family: var(--font-doc); font-style: italic; font-size: 18px; letter-spacing: .01em; color: var(--ink-ui); }
-/* in the free space between Quick Access and the buttons, centred there */
-.docname { flex: 1 1 auto; display: block; min-width: 0; padding: 0 8px; color: var(--ink-ui); font-size: 13px; font-weight: 600; line-height: 40px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.mark { font-family: var(--font-doc); font-style: italic; font-size: 18px; letter-spacing: .01em; color: #fff; }
+/* the document's name, centred, with whether this browser has the latest edit */
+.docname { display: block; min-width: 0; max-width: 100%; color: #fff; font-size: 13px; font-weight: 600; line-height: 1.2; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.savestate { flex: none; color: rgba(255, 255, 255, .82); font-size: 12px; font-weight: 400; white-space: nowrap; }
+.savestate::before { content: "\2014\00a0"; }
+#bar .btn.ghost { color: #fff; }
+#bar .btn.ghost:hover { background: rgba(255, 255, 255, .16); }
+#bar .btn.ghost[aria-pressed="true"] { background: rgba(255, 255, 255, .22); color: #fff; }
+#bar .btn:focus-visible { outline-color: #fff; }
+#bar .sep { background: rgba(255, 255, 255, .35); }
 .tools { display: flex; align-items: center; gap: 2px; flex: none; }
 .sep { width: 1px; height: 20px; background: var(--line); margin: 0 6px; }
 .btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid transparent; background: var(--blue); color: #fff; cursor: pointer; font-weight: 500; font-size: 13px; white-space: nowrap; }
@@ -135,11 +150,11 @@ body.has-ai .ai-only { display: inline-flex !important; }
 
 /* ---- the search box in the bar (Alt+Q): any command by its name ---- */
 #bar { position: relative; }
-.srch { position: relative; flex: 0 1 220px; min-width: 140px; display: flex; align-items: center; container-type: inline-size; }
-.srch > svg { position: absolute; left: 9px; top: 50%; width: 15px; height: 15px; margin-top: -7.5px; fill: none; stroke: var(--mute); stroke-width: 1.6; stroke-linecap: round; pointer-events: none; }
-.srch input { width: 100%; height: 30px; box-sizing: border-box; padding: 0 62px 0 30px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--ink-ui); font: 13px var(--font-ui); }
+.srch { position: relative; width: min(420px, 100%); min-width: 0; display: flex; align-items: center; container-type: inline-size; }
+.srch > svg { position: absolute; left: 9px; top: 50%; width: 15px; height: 15px; margin-top: -7.5px; fill: none; stroke: #5C6B7A; stroke-width: 1.6; stroke-linecap: round; pointer-events: none; }
+.srch input { width: 100%; height: 28px; box-sizing: border-box; padding: 0 62px 0 30px; border: 0; border-radius: 14px; background: #fff; color: #18212A; font: 13px var(--font-ui); }
 /* the chord, so the box reads as command search and not as Find in the document */
-.srch-key { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); margin: 0; padding: 1px 5px; border: 1px solid var(--line); border-radius: 4px; background: var(--chrome); color: var(--mute); font: 11px/1.4 var(--font-ui); pointer-events: none; }
+.srch-key { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); margin: 0; padding: 1px 5px; border: 0; border-radius: 4px; background: #EEF2F6; color: #5C6B7A; font: 11px/1.4 var(--font-ui); pointer-events: none; }
 .srch:focus-within .srch-key, .srch:has(input:not(:placeholder-shown)) .srch-key { visibility: hidden; }
 @container (max-width: 210px) { .srch-key { display: none; } .srch input { padding-right: 10px; } }
 .srch input::placeholder { color: var(--mute); }
@@ -154,7 +169,7 @@ body.has-ai .ai-only { display: inline-flex !important; }
 
 /* ---- the ribbon: Word's tabs, and under them the open tab's row of groups ---- */
 /* the tabs' row; contextual tabs (a table's, an equation's) in their own colour, after Help */
-.rb-top { display: flex; align-items: flex-end; gap: 2px; height: 28px; padding: 0 6px 0 10px; background: var(--panel); flex: none; }
+.rb-top { display: flex; align-items: flex-end; gap: 2px; height: 28px; padding: 0 6px 0 8px; background: var(--tabrow); flex: none; }
 .rb-tab.on { font-weight: 600; }
 :root { --ctx: #7A3FA8; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ctx: #C59BE8; } }
@@ -162,8 +177,13 @@ body.has-ai .ai-only { display: inline-flex !important; }
 .rb-tabs { display: flex; align-items: flex-end; gap: 1px; min-width: 0; }
 .rb-tab { position: relative; flex: none; height: 26px; padding: 0 11px; border: 0; border-radius: 6px 6px 0 0; background: transparent; color: var(--mute); font: 500 13px var(--font-ui); cursor: pointer; white-space: nowrap; }
 .rb-tab:hover { color: var(--ink-ui); background: color-mix(in srgb, var(--blue-wash) 50%, transparent); }
-.rb-tab.on { color: var(--blue-ink); }
-.rb-tab.on::after { content: ""; position: absolute; left: 9px; right: 9px; bottom: 0; height: 3px; border-radius: 2px 2px 0 0; background: var(--blue); }
+.rb-tab.on { color: var(--title); background: var(--ribbon); }
+.rb-tab.on::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: 0; height: 3px; border-radius: 2px 2px 0 0; background: var(--title); }
+/* File is the accent tab, and it opens the backstage rather than another ribbon row */
+.rb-tab[data-tab="file"] { color: #fff; background: var(--title); border-radius: 4px 4px 0 0; margin-right: 4px; }
+.rb-tab[data-tab="file"]:hover { color: #fff; background: color-mix(in srgb, var(--title) 86%, #000); }
+.rb-tab[data-tab="file"].on { color: #fff; background: var(--title); }
+.rb-tab[data-tab="file"].on::after { display: none; }
 .rb-tab.ctx { color: var(--ctx); }
 .rb-tab.ctx.on::after { background: var(--ctx); }
 .rb-tab:not(.ctx) + .rb-tab.ctx { margin-left: 10px; }
@@ -197,7 +217,7 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
 .rb-split > .btn:hover:not(:disabled) { background: var(--blue-wash); }
 /* (positioned, so the hidden names of the icon buttons, .sr, stay inside the row that scrolls: placed
    from the page instead, those past a phone's right edge made the whole page scroll sideways) */
-.rb { position: relative; display: flex; align-items: center; gap: 2px; padding: 0 0 0 8px; min-height: 40px; background: var(--panel); border-bottom: 1px solid var(--line); flex: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; white-space: nowrap; }
+.rb { position: relative; display: flex; align-items: center; gap: 2px; padding: 0 0 0 8px; min-height: 40px; background: var(--ribbon); border-bottom: 1px solid var(--line); flex: none; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; white-space: nowrap; }
 .rb::-webkit-scrollbar { display: none; }
 .rb > * { flex: none; }
 .rb > .rb-panel { flex: 1 0 auto; }
@@ -259,7 +279,26 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
   .rb-grp[data-group="editing"]:not(.folded) { flex-direction: column; align-items: stretch; flex-wrap: nowrap; justify-content: center; gap: 0; padding: 2px 0 18px; }
   .rb-grp[data-group="editing"] > .btn, .rb-grp[data-group="editing"] > .rb-split > .btn { height: 22px; }
   .rb-grp[data-group="editing"] > .rb-split { height: 22px; }
+  /* a group's dialog, the small arrow at the label's corner. Out of the row's width, so folding stays as it was. */
+  .rb-grp:not(.folded) > .rb-launch { display: flex; position: absolute; right: 0; bottom: 1px; width: 16px; height: 14px; padding: 0; align-items: center; justify-content: center; border: 0; border-radius: 2px; background: transparent; color: var(--mute); cursor: pointer; }
+  .rb-grp:not(.folded) > .rb-launch:hover { background: var(--blue-wash); color: var(--ink-ui); }
+  .rb-grp:not(.folded) > .rb-launch svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
 }
+/* File opens a backstage of the same commands: sections down the page, not another ribbon row */
+body.file-open #app { position: relative; }
+/* covers the page without taking it out of the document, so a caret on the page keeps the focus */
+body.file-open #ribbon { position: absolute; left: 0; right: 0; bottom: 0; z-index: 8; min-height: 0; overflow: auto; align-items: stretch; white-space: normal; background: var(--ribbon); }
+body.file-open #rp-file { display: flex; flex: 1 1 auto; }
+body.file-open #rp-file .rb-tb { flex-direction: column; align-items: stretch; flex-wrap: nowrap; width: 100%; max-width: 880px; padding: 16px 28px 40px; box-sizing: border-box; gap: 4px; }
+body.file-open #rp-file .sep { display: none; }
+body.file-open #rp-file .rb-grp { flex-wrap: wrap; align-items: center; align-content: flex-start; width: auto; max-width: 100%; overflow: visible; padding: 8px 4px 12px; border-bottom: 1px solid var(--line); }
+body.file-open #rp-file .rb-glab { display: block; position: static; order: -1; flex: 1 0 100%; width: 100%; margin: 0 0 6px; text-align: left; font: 600 12px var(--font-ui); color: var(--mute); pointer-events: none; }
+body.file-open #rp-file .rb-grp.folded > .rb-gbtn { display: none !important; }
+body.file-open #rp-file .rb-grp.folded > .btn, body.file-open #rp-file .rb-grp.folded > .rb-split { display: inline-flex !important; }
+body.file-open #rp-file .rb.rb-fold .rb-grp > .btn:not(.icon) span:not(.sr), body.file-open .rb.rb-fold #rp-file .btn span:not(.sr) { display: inline; }
+body.file-open .rb.rb-fold #rp-file .btn:not(.icon):not(.rb-gbtn) { width: auto; padding: 0 10px; }
+body.file-open #rp-file .rb-dl { position: static; background: transparent; padding-left: 0; }
+body.file-open #rp-file .rb-dl::before { display: none; }
 @media (max-width: 860px) { #b-comments { display: none; } #qat-save { display: none; } }
 @media (max-width: 400px) { .mark { display: none; } }
 /* each style's look: the page's body, title and heading faces (the headings in the accent colour,
@@ -302,8 +341,8 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
 .rb .btn:disabled { pointer-events: none; }
 /* The downloads stay in sight at the row's right end when the row is longer than the screen: the
    other buttons scroll under them, behind a soft edge that shows there is more. */
-.rb-dl { display: flex; align-items: center; gap: 2px; position: sticky; right: 0; z-index: 1; align-self: stretch; padding: 0 12px 0 6px; background: var(--panel); }
-.rb-dl::before { content: ""; position: absolute; top: 0; bottom: 0; right: 100%; width: 18px; background: linear-gradient(to right, transparent, var(--panel)); pointer-events: none; }
+.rb-dl { display: flex; align-items: center; gap: 2px; position: sticky; right: 0; z-index: 1; align-self: stretch; padding: 0 12px 0 6px; background: var(--ribbon); }
+.rb-dl::before { content: ""; position: absolute; top: 0; bottom: 0; right: 100%; width: 18px; background: linear-gradient(to right, transparent, var(--ribbon)); pointer-events: none; }
 /* on a phone the three are one button that opens them (see the 520px rule) */
 #rb-dl-menu { display: none; }
 /* and so below 861 px where the row has no room for the three (rb-dl1, src/ribbon/tabs.js) */
@@ -805,6 +844,7 @@ body.dropping .dropzone { display: grid; }
   body.has-ai #bar .btn:not(.icon):not(.sm):not(.zv) { width: 32px; padding: 0; justify-content: center; }
 }
 @media (max-width: 860px) {
+  #bar { min-height: 44px; padding-top: 0; padding-bottom: 0; }
   .rb .rb-gw { display: none; }
   #ribbon .rb-style { display: inline-block; }
   .rb-top { display: none; }
@@ -821,7 +861,7 @@ body.dropping .dropzone { display: grid; }
   .btn:not(.icon):not(.sm) { width: 32px; padding: 0; justify-content: center; }
   .zv { width: auto !important; padding: 0 4px !important; }
   .zv { display: inline-flex; }
-  .docname { display: none; }
+  .title-name, .docname { display: none; }
   body.src-on #srcpane { position: absolute; inset: 0 0 0 auto; width: min(100%, 520px) !important; z-index: 20; box-shadow: -10px 0 30px rgba(0, 0, 0, .2); }
   body.src-on #gutter { display: none; }
   body.pdf-on #pdfpane { position: absolute; inset: 0 0 0 auto; width: 100% !important; z-index: 22; box-shadow: -10px 0 30px rgba(0, 0, 0, .2); }
