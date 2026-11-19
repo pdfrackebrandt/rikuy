@@ -1274,6 +1274,14 @@ class App {
     this.plainPaste = !!(mod && e.shiftKey && e.key.toLowerCase() === 'v');
     if (mod && !e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); this.save(); }
     if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); $('#fileinput').click(); }
+    // Ctrl+N is a new browser tab in some browsers; where the page hears it, it is a new document
+    if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'n' && !e.defaultPrevented) { e.preventDefault(); this.runCommand('new-document'); }
+    // Ctrl+W closes the source or the PDF when one is open. Otherwise the browser closes the tab:
+    // that key is the browser's, and a page cannot always keep it.
+    if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'w') {
+      if (document.body.classList.contains('src-on')) { e.preventDefault(); this.toggleSource(false); }
+      else if (document.body.classList.contains('pdf-on')) { e.preventDefault(); this.togglePdf(false); }
+    }
     // (Ctrl+P is Print, src/cmd/page.js: from a field or the source too)
     if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'p' && !e.defaultPrevented) { e.preventDefault(); this.runCommand('print'); }
     if (mod && e.key === '\\') { e.preventDefault(); this.toggleSource(); }
@@ -1316,6 +1324,8 @@ class App {
       if (el && el.closest('td')) { e.preventDefault(); this.tabCell(e.shiftKey); return; }
     }
     if (e.key === 'Escape') { this.disarm(); }
+    // Word's Shift+Enter: a line break inside the paragraph (\\), not a new paragraph
+    if (e.key === 'Enter' && e.shiftKey && !mod && !e.altKey && !this.armed) { e.preventDefault(); this.enter(true); return; }
     // Enter on an equation, citation or block that Backspace selected opens it, as a click does:
     // the keyboard's way in (Enter used to replace it with a paragraph break)
     if (e.key === 'Enter' && !e.shiftKey && this.armed && this.armed.el && this.armed.el.isConnected) {

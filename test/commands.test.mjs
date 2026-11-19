@@ -6,7 +6,7 @@
 import assert from 'node:assert/strict';
 import { commands, command, places, paletteItems, search, describe, menuItems, register, unregister, run, enabled, joinMethods } from '../src/commands.js';
 import '../src/cmd/index.js';
-import { TABS, groupOf } from '../src/ribbon/order.js';
+import { TABS, groupOf, KEYTIPS } from '../src/ribbon/order.js';
 import { parseChord, chordFor } from '../src/keys.js';
 import { controls } from '../build/app.mjs';
 
@@ -56,7 +56,10 @@ ok('every chord reads; two commands on one chord differ in rank, or one says whe
       seen.set(key, c);
     }
   }
-  assert.ok(command('style-heading1').keys.includes('Ctrl+Alt+1') && command('style-normal').keys.includes('Ctrl+Alt+0') && command('bullets').keys.includes('Ctrl+Shift+L'));
+  assert.ok(command('style-heading1').keys.includes('Ctrl+Alt+1') && command('style-normal').keys.includes('Ctrl+Alt+0') && command('style-normal').keys.includes('Ctrl+Shift+N') && command('bullets').keys.includes('Ctrl+Shift+L'));
+  assert.ok(command('double-underline').keys.includes('Ctrl+Shift+D') && command('clear-paragraph-formatting').keys.includes('Ctrl+Q'));
+  assert.ok(command('format-painter').keys.includes('Ctrl+Shift+C') && command('paste-special').keys.includes('Ctrl+Alt+V'));
+  assert.deepEqual(KEYTIPS, { file: 'F', home: 'H', insert: 'N', design: 'G', layout: 'P', references: 'S', review: 'R', view: 'W', help: 'Y2' });
   assert.ok(command('search').keys.includes('Alt+Q') && command('ribbon-collapse').keys.includes('Ctrl+F1') && command('context-menu').keys.includes('Shift+F10'));
 });
 

@@ -17,7 +17,18 @@
 // The toolbar has one tab stop, the control the arrows last reached; the tabs have one more (the
 // open tab), and the arrows move between them. Ctrl+F1 folds the ribbon to its tabs and back.
 
-import { TABS, tabById, CONTEXTS } from './order.js';
+import { TABS, tabById, CONTEXTS, KEYTIPS } from './order.js';
+import { chordText } from '../keys.js';
+
+// the shortcut in the tooltip, when the command's own title does not already say it
+function tipTitle(c, p) {
+  const t = c.title || p.name;
+  const k = (c.keys && c.keys[0]) || (c.keysElsewhere && c.keysElsewhere[0]);
+  if (!k) return t;
+  const shown = chordText(k);
+  if (t.includes(shown) || t.includes(k)) return t;
+  return t + ' (' + shown + ')';
+}
 
 // Groups whose corner arrow opens a dialog that already exists. The label is not the button's name.
 const LAUNCH = {
@@ -64,6 +75,7 @@ export const tabs = {
       const tab = mk('button', 'rb-tab' + (T.ctx ? ' ctx' : ''), T.name);
       tab.type = 'button'; tab.id = 'rt-' + T.id; tab.dataset.tab = T.id;
       tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', 'false'); tab.setAttribute('aria-controls', 'rp-' + T.id); tab.tabIndex = -1;
+      if (KEYTIPS[T.id]) { const tip = mk('span', 'rb-ktip', KEYTIPS[T.id]); tip.setAttribute('aria-hidden', 'true'); tab.append(tip); }
       list.append(tab);
       const opt = new Option(T.name, T.id);
       sel.add(opt);
@@ -135,7 +147,7 @@ export const tabs = {
     const b = mk('button', 'btn ghost' + (label ? '' : ' icon'));
     b.type = 'button'; b.id = p.el; b.dataset.cmd = c.id;
     b.setAttribute('aria-label', p.name);
-    b.title = c.title || p.name;
+    b.title = tipTitle(c, p);
     if (c.kind === 'toggle') b.setAttribute('aria-pressed', 'false');
     if (c.icon) b.insertAdjacentHTML('beforeend', SVG(c.icon));
     else if (c.glyph) b.insertAdjacentHTML('beforeend', c.glyph);
@@ -433,4 +445,38 @@ export function installRibbon(app) {
   if (document.fonts && document.fonts.addEventListener) document.fonts.addEventListener('loadingdone', () => { cancelAnimationFrame(fit); fit = requestAnimationFrame(() => { app.rbW = null; app.ribbonFit(); }); });
   app.ribbonSync();
   app.ribbonFit();
+  installKeyTips(app);
+}
+
+// Alt alone, or F10, shows Word's KeyTips on the tabs. A letter opens that tab; Help is Y then 2.
+function installKeyTips(app) {
+  const list = $('#rb-tabs');
+  if (!list) return;
+  let altDown = false, altUsed = false, yWait = false;
+  const field = (e) => e.target && e.target.closest && e.target.closest('input, textarea, select, math-field, [contenteditable="true"]:not(#pages), .CodeMirror');
+  const show = (on) => { yWait = false; document.body.classList.toggle('keytips', on); };
+  const open = (id) => { if (app.rbTabs && app.rbTabs.includes(id)) { app.selectTab(id); app.peekRibbon(true); } show(false); };
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Alt' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.shiftKey) { altDown = true; altUsed = false; return; }
+    if (altDown && e.key !== 'Alt') altUsed = true;
+    if (e.key === 'F10' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !field(e)) {
+      e.preventDefault();
+      show(!document.body.classList.contains('keytips'));
+      return;
+    }
+    if (!document.body.classList.contains('keytips') || field(e)) return;
+    if (e.key === 'Escape') { show(false); e.preventDefault(); return; }
+    const k = e.key.length === 1 ? e.key.toUpperCase() : '';
+    if (!k || e.ctrlKey || e.metaKey || e.altKey) return;
+    if (yWait) { yWait = false; if (k === '2' || k === 'Y') open('help'); e.preventDefault(); return; }
+    if (k === 'Y') { yWait = true; e.preventDefault(); return; }
+    const id = Object.keys(KEYTIPS).find((t) => KEYTIPS[t] === k);
+    if (id) { open(id); e.preventDefault(); }
+  }, true);
+  document.addEventListener('keyup', (e) => {
+    if (e.key !== 'Alt') return;
+    const alone = altDown && !altUsed && !e.ctrlKey && !e.metaKey && !e.shiftKey && !field(e);
+    altDown = false;
+    if (alone) { e.preventDefault(); show(!document.body.classList.contains('keytips')); }
+  }, true);
 }
