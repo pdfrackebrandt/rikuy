@@ -731,7 +731,10 @@ def review_arrange(page):
     compiles('N3: the table', src(page), 'Table 1: Data')
     # N2, N3: in columns and in a tcolorbox, Position's float and wrap items are greyed with their reason; nothing is written
     for name, doc in (('multicols', WRAP('\\begin{multicols}{2}\nBefore.\n\n' + SHAPE + '\nAfter it, ' + words + '\n\\end{multicols}', PRE + '\\usepackage{multicol}\n')),
-                      ('tcolorbox', WRAP('Before.\n\n\\begin{tcolorbox}\n' + SHAPE + '\\end{tcolorbox}\n\nAfter.', PRE + '\\usepackage{tcolorbox}\n'))):
+                      ('tcolorbox', WRAP('Before.\n\n\\begin{tcolorbox}\n' + SHAPE + '\\end{tcolorbox}\n\nAfter.', PRE + '\\usepackage{tcolorbox}\n')),
+                      # (review U1: environments the document defines itself, a box inside)
+                      ('notebox', WRAP('Before.\n\n\\begin{notebox}\n' + SHAPE + '\\end{notebox}\n\nAfter.', PRE + '\\usepackage{tcolorbox}\n\\newtcolorbox{notebox}{colback=red!5}\n')),
+                      ('mybox', WRAP('Before.\n\n\\begin{mybox}\n' + SHAPE + '\\end{mybox}\n\nAfter.', PRE + '\\newenvironment{mybox}{\\begin{minipage}{6cm}}{\\end{minipage}}\n'))):
         load_doc(page, doc); page.wait_for_timeout(300); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
         page.evaluate('window.rikuy.objPositionMenu()'); page.wait_for_timeout(200)
         items = page.evaluate("""() => [...document.querySelectorAll('.pop [role=menuitemradio]')].map((a) => [a.getAttribute('aria-label'), a.getAttribute('aria-disabled') === 'true', a.title])""")
@@ -741,6 +744,35 @@ def review_arrange(page):
               len(items) >= 8 and len(off) == len(items) - 1 and all(name in t for n, d, t in items if d) and not items[0][1], items)
         run_cmd(page, 'object-position', {'mode': 'float', 'place': 't'})
         check('N2, N3: Top of Page there writes nothing', src(page) == doc, src(page)[-300:])
+    # review U3: in columns the greyed places are in the arrows' reach, each describing its reason; the note line says it, a tap too
+    load_doc(page, WRAP('\\begin{multicols}{2}\nBefore.\n\n' + SHAPE + '\nAfter it, ' + words + '\n\\end{multicols}', PRE + '\\usepackage{multicol}\n')); page.wait_for_timeout(300)
+    page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
+    s0 = src(page)
+    page.evaluate('window.rikuy.objPositionMenu()'); page.wait_for_timeout(200)
+    f0 = page.evaluate('document.activeElement.getAttribute("aria-label")')
+    page.keyboard.press('ArrowDown'); page.wait_for_timeout(100)
+    u3 = page.evaluate("""() => { const a = document.activeElement, d = a.getAttribute('aria-describedby'), n = document.querySelector('.pop .mi-why');
+      return { name: a.getAttribute('aria-label'), off: a.getAttribute('aria-disabled'), desc: d ? (document.getElementById(d) || {}).textContent : '', note: n && !n.hidden ? n.textContent : '' }; }""")
+    check('U3: ArrowDown from %s lands on the greyed Best Place, its reason its description and the note line (%s)' % (f0, u3['desc'][:60]), f0 == 'In Line with Text' and u3['name'] == 'Best Place' and u3['off'] == 'true' and 'multicols' in u3['desc'] and u3['note'] == u3['desc'], u3)
+    page.keyboard.press('ArrowDown'); page.keyboard.press('ArrowDown'); page.wait_for_timeout(100)
+    check('U3: the arrows go on through the greyed ones', page.evaluate('document.activeElement.getAttribute("aria-label")') == 'Bottom of Page')
+    page.keyboard.press('Enter'); page.wait_for_timeout(200)
+    check('U3: Enter on a greyed one writes nothing, the menu stays', src(page) == s0 and page.evaluate("!!document.querySelector('.pop [role=menuitemradio]')"))
+    # (Playwright waits for an aria-disabled item to be enabled: a press at its place, as a finger does)
+    bb = page.get_by_role('menuitemradio', name='Right with Text Wrapping').bounding_box()
+    page.mouse.click(bb['x'] + bb['width'] / 2, bb['y'] + bb['height'] / 2); page.wait_for_timeout(150)
+    tap = page.evaluate("(() => { const n = document.querySelector('.pop .mi-why'); return n && !n.hidden ? n.textContent : ''; })()")
+    check('U3: a press (a tap) on a greyed one shows its reason under the menu: ' + tap[:70], 'multicols' in tap and src(page) == s0, tap)
+    page.keyboard.press('Escape')
+    # review U2: Wrap inside polyglossia's \begin{french}, compiled with XeLaTeX and LuaLaTeX
+    G = WRAP('Before.\n\n\\begin{french}\n' + SHAPE + 'Des mots autour du dessin, ' + words + '\n\\end{french}\n\nAfter.', PRE + '\\usepackage{polyglossia}\n\\setdefaultlanguage{english}\n\\setotherlanguage{french}\n')
+    load_doc(page, G); page.wait_for_timeout(300); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
+    run_cmd(page, 'object-position', {'mode': 'wrap', 'side': 'r'})
+    check('U2: Wrap inside \\begin{french}: a wrapfigure there', '\\begin{french}\n\\begin{wrapfigure}{r}{0pt}' in src(page), src(page)[-500:])
+    if TEX:
+        for eng in ('xelatex', 'lualatex'):
+            r = compile_pdf(page, '% !TEX program = ' + eng + '\n' + src(page))
+            check('U2: it compiles with %s' % eng, r['ok'] and not r['problems'] and 'Des mots' in pdf_text(r), r['problems'])
     # N9: Align's look at the caret with a drawing selected in a long document (page.py's): the tree is kept
     pre = ''.join('\\newcommand{\\m%s}{x} %% %s\n' % (chr(97 + k % 26) * (1 + k // 26), 'y' * 60) for k in range(1500))
     body = '\n\n'.join('\\subsection{Head %d}\nWords of paragraph %d here.' % (k, k) for k in range(1500))

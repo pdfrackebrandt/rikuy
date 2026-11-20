@@ -325,6 +325,53 @@ ok('review N8: Edit Data: a series\' name keeps & % _ $ # (escaped, read back as
   assert.deepEqual(D.readAxis(l).series.map((x) => x.name), names);
 });
 
+ok('review U1, U2, U4: a float only where LaTeX can float it (the document\'s own environments read), language environments wrap, one \\centering', () => {
+  const at = (d) => [d.indexOf('\\begin{tikzpicture}'), d.indexOf('\\end{tikzpicture}') + 17];
+  const C = '\\begin{center}\n' + rect + '\n\\end{center}\n';
+  const doc = (pre, a, z) => '\\documentclass{article}\n' + pre + '\\begin{document}\nA\n\n' + a + '\n' + C + 'Words to wrap round it, words to wrap round it.\n' + z + '\n\nB\n\\end{document}\n';
+  const T = { mode: 'float', place: 't' }, W = { mode: 'wrap', side: 'r' };
+  // U1: environments of the document's own that are boxes, and ones Rikuy cannot read: refused, said why
+  for (const [pre, env] of [['\\newenvironment{mybox}{\\begin{minipage}{6cm}}{\\end{minipage}}\n', 'mybox'], ['\\usepackage{tcolorbox}\n\\newtcolorbox{notebox}{colback=red!5}\n', 'notebox'],
+    ['\\NewDocumentEnvironment{framedbox}{}{\\begin{tcolorbox}}{\\end{tcolorbox}}\n', 'framedbox'], ['', 'unknownthing']]) {
+    const d = doc(pre, '\\begin{' + env + '}', '\\end{' + env + '}');
+    const [s, e] = at(d);
+    for (const to of [T, W]) assert.match(O.positionEdits(d, s, e, to).error, new RegExp(env), env + ' ' + to.mode);
+    if (pre) assert.match(O.positionEdits(d, s, e, T).error, /of this document's own/, env);
+    assert.ok(O.positionEdits(d, s, e, { mode: 'inline' }).edits, env);
+  }
+  // ones made only of safe environments and declarations, theorems, a proof: a float may stand there
+  for (const [pre, env] of [['\\newenvironment{note}{\\begin{quote}\\small\\itshape}{\\end{quote}}\n', 'note'], ['\\usepackage{amsthm}\n\\newtheorem{thm}{Theorem}\n', 'thm'], ['\\usepackage{amsthm}\n', 'proof']]) {
+    const d = doc(pre, '\\begin{' + env + '}', '\\end{' + env + '}');
+    const [s, e] = at(d);
+    assert.ok((O.positionEdits(d, s, e, T).edits || []).length, env);
+    assert.match(O.positionEdits(d, s, e, W).error, /wrapfig cannot wrap/, env);
+  }
+  // the preamble from the main file where the object is in another
+  const part = 'A\n\n\\begin{mybox}\n' + C + '\\end{mybox}\n';
+  const [ps, pe] = at(part);
+  assert.match(O.positionEdits(part, ps, pe, T, undefined, '\\newenvironment{mybox}{\\begin{minipage}{6cm}}{\\end{minipage}}\n\\begin{document}\\input{part}\\end{document}').error, /of this document's own/);
+  // a float already there keeps its choice of place
+  const fl = doc('\\newtcolorbox{notebox}{}\n', '\\begin{notebox}\n\\begin{figure}[h]', '\\end{figure}\n\\end{notebox}');
+  const [fs, fe] = at(fl);
+  assert.ok(O.positionEdits(fl, fs, fe, T).edits.length);
+  // U2: polyglossia's language environments, babel's: wrap and float both
+  const pg = doc('\\usepackage{polyglossia}\n\\setdefaultlanguage{english}\n\\setotherlanguages{french,arabic}\n', '\\begin{french}', '\\end{french}');
+  const [gs, ge] = at(pg);
+  assert.ok(O.positionEdits(pg, gs, ge, W).edits.length);
+  assert.ok(O.positionEdits(pg, gs, ge, T).edits.length);
+  const ar = pg.replace(/\{french\}/g, '{Arabic}');
+  const [as, ae] = at(ar);
+  assert.ok(O.positionEdits(ar, as, ae, W).edits.length);
+  const ol = doc('\\usepackage[french,english]{babel}\n', '\\begin{otherlanguage}{french}', '\\end{otherlanguage}');
+  const [os, oe] = at(ol);
+  assert.ok(O.positionEdits(ol, os, oe, W).edits.length);
+  // U4: a figure with \\centering and a center: Wrap keeps one \\centering
+  const both = 'A\n\\begin{figure}[h]\n\\centering\n\\begin{center}\n' + rect + '\n\\end{center}\n\\caption{Box}\n\\end{figure}\nWords.';
+  const [bs, be] = at(both);
+  const w = ap(both, O.positionEdits(both, bs, be, W).edits);
+  assert.equal(w, 'A\n\\begin{wrapfigure}{r}{0pt}\n\\centering\n' + rect + '\n\\caption{Box}\n\\end{wrapfigure}\nWords.');
+});
+
 ok('review N1: Wrap on a float holding a center writes \\centering (no center in a wrapfigure), a table stays a table', () => {
   const at = (d) => [d.indexOf('\\begin{tikzpicture}'), d.indexOf('\\end{tikzpicture}') + 17];
   const fr = 'A\n\\begin{figure}[h]\n  \\begin{flushright}\n' + rect + '\n  \\end{flushright}\n\\caption{Box}\n\\end{figure}\n\nWords.';
