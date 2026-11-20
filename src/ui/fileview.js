@@ -17,6 +17,52 @@ const BACK = '<svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="10" cy="10
 const UNDER = ['#main', '#status', '#fr'];
 const under = (on) => { for (const s of UNDER) { const e = $(s); if (e) e.inert = on; } };
 
+// The view's Home, as Word's backstage opens: beside the column of File's commands, a new
+// document a press away (blank, or each template, drawn as a page) and the documents this browser
+// keeps, newest first, each a press away, not behind the Templates and Recent menus. Drawn again
+// each time the view opens (the list changes as documents are made).
+const PAGE = '<span class="rf-sheet" aria-hidden="true"><i></i><i></i><i></i><i></i></span>';
+function fillHome(app) {
+  const panel = $('#rp-file');
+  if (!panel) return;
+  let home = $('#rf-home');
+  if (!home) { home = mk('div', 'rf-home'); home.id = 'rf-home'; panel.append(home); }
+  home.replaceChildren();
+  const tile = (label, name, title, run, cls) => {
+    const b = mk('button', 'rf-tile' + (cls ? ' ' + cls : ''));
+    b.type = 'button'; b.setAttribute('aria-label', name); b.title = title || name;
+    b.innerHTML = PAGE;
+    b.append(mk('span', 'rf-tile-n', label));
+    b.addEventListener('click', run);
+    return b;
+  };
+  home.append(mk('h2', 'rf-h', 'New'));
+  const tiles = mk('div', 'rf-tiles');
+  const blank = command('new-blank'), tpl = command('new-template');
+  if (blank) tiles.append(tile('Blank document', 'New blank document', blank.title, () => app.runCommand('new-blank'), 'blank'));
+  for (const it of (tpl && tpl.menuItems ? tpl.menuItems(app) : [])) tiles.append(tile(it.name, it.name + ' template', it.title, it.run));
+  home.append(tiles);
+  home.append(mk('h2', 'rf-h', 'Recent'));
+  const list = mk('div', 'rf-recent-list');
+  list.setAttribute('role', 'list');
+  home.append(list);
+  // (the documents kept in this browser, the open one left out, as the Recent menu lists them)
+  Promise.resolve(app.allSnaps ? app.allSnaps() : []).then((all) => {
+    const seen = new Map();
+    for (const v of all || []) if (v.name && v.name !== app.name && !seen.has(v.name)) seen.set(v.name, v);
+    const when = (t) => new Date(t).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
+    if (!seen.size) { list.append(mk('p', 'rf-none', 'No other documents yet. The ones you make or open here are kept in this browser and listed here.')); return; }
+    for (const v of [...seen.values()].slice(0, 15)) {
+      const row = mk('div', 'rf-row'); row.setAttribute('role', 'listitem');
+      const b = mk('button', 'rf-doc');
+      b.type = 'button'; b.setAttribute('aria-label', 'Open ' + v.name); b.title = 'Open it, as it was ' + when(v.t);
+      b.append(mk('span', 'rf-doc-n', v.name), mk('span', 'rf-doc-t', when(v.t)));
+      b.addEventListener('click', () => app.runCommand('recent', { open: v.name }));
+      row.append(b); list.append(row);
+    }
+  }).catch(() => {});
+}
+
 export function installFileView(app) {
   // (src/ribbon/tabs.js's selectTab calls this as File opens or closes)
   app.fileViewChanged = (on, was) => {
@@ -35,6 +81,7 @@ export function installFileView(app) {
       b.addEventListener('click', () => app.closeFileView(true));
       tb.prepend(b);
     }
+    fillHome(app);
     // the keys in the view, not in the page under it (a letter typed, or Word's Alt, F, N, wrote
     // into the hidden document): the page and the status bar inert, the focus on Back
     under(true);
