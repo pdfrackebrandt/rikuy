@@ -850,7 +850,7 @@ def rest_phones(p):
             page.evaluate("window.rikuy.runCommand('signature-line')"); page.wait_for_timeout(300)
             page.get_by_role('textbox', name='Suggested signer', exact=True).fill('Ada')
             page.get_by_role('button', name='OK', exact=True).tap(); page.wait_for_timeout(300)
-            check('Signature Line by a tap on OK' + tag, '\\noindent\\rule{6cm}{0.4pt}\\\\\nAda\\\\' in src(page), src(page)[-160:])
+            check('Signature Line by a tap on OK' + tag, '\\noindent\\rule{6cm}{0.4pt}\\\\*\nAda\\\\*' in src(page), src(page)[-160:])
         except Exception as ex:
             check('rest_phones runs to its end' + tag, False, repr(ex)[:300])
         br.close()
