@@ -2361,8 +2361,16 @@ class App {
       h.append(t, x);
       p.appendChild(h);
     }
+    // Where the caret or the selection was as it opened, when the page had it (a press on the
+    // ribbon keeps the page's focus): closed with Escape, Cancel or Close, the document gets them
+    // back, as Word gives the document back when a dialog closes. Without this the focus fell to
+    // the page's body and the next keys typed nothing. (On a touch screen only when the page had
+    // the focus: focusing it there brings up the on-screen keyboard.)
+    const at = this.caretNow(), had = document.activeElement;
+    const pageHad = had === this.root || (!matchMedia('(pointer: coarse)').matches && (!had || had === document.body || !!had.closest('#ribbon, #rb-top')));
+    const back = at && !at.ghost && !at.crossFile && pageHad ? { c: at.collapsed ? { f: at.f, p: at.p } : { f: at.f, selA: at.a, selB: at.b }, text: this.files.get(at.f) } : null;
     document.body.appendChild(p);
-    this.pop = { el: p, anchor, anchorPos: null, onClose: null, session: 'pop' + Date.now() };
+    this.pop = { el: p, anchor, anchorPos: null, onClose: null, session: 'pop' + Date.now(), back };
     p.addEventListener('mousedown', (e) => e.stopPropagation());
     setTimeout(() => {
       this.popOutside = (e) => {
@@ -2371,6 +2379,8 @@ class App {
         if (this.pop.inside && this.pop.inside(e.target)) return;
         const path = e.composedPath ? e.composedPath() : [];
         if (path.some((n) => n && n.classList && [...n.classList].some((c) => c.startsWith('ML__') || c.startsWith('MLK__') || c.startsWith('ui-menu') || c === 'wm-chip')) || path.some((n) => n && n.tagName && /^MATH-VIRTUAL-KEYBOARD|^UI-MENU/i.test(n.tagName))) return;
+        // (the press puts the caret where it lands: the old one is not put back under it)
+        this.pop.back = null;
         this.closePop();
       };
       document.addEventListener('mousedown', this.popOutside, true);
@@ -2435,6 +2445,10 @@ class App {
     // holds only what the popover made (a first formula) and has no text to put the caret in:
     // the caret goes to the blank paragraph, so typing goes on
     if (!silent && this.ghost && this.root.contains(this.ghost.el) && !this.caretNow()) this.caretToGhost();
+    // the caret or selection it opened on, unless a step since changed that file (the step then
+    // put the caret where it belongs) or the focus already went somewhere
+    const B = P.back, lost = !document.activeElement || document.activeElement === document.body;
+    if (!silent && !P.returnCaret && B && lost && this.files.get(B.c.f) === B.text) this.restoreCaret(B.c, true);
     // Share, Save and Help open from a button of the bar: closed from the keyboard, the focus
     // goes back to it (it fell to the page's start, and Tab began again from the menu button)
     if (P.anchor instanceof HTMLButtonElement && P.anchor.offsetParent && (!document.activeElement || document.activeElement === document.body)) P.anchor.focus({ preventScroll: true });
