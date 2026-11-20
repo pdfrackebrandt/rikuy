@@ -457,14 +457,16 @@ export const methods = {
   webOn() { return cls().contains('pg-web'); },
   // (a choice made on a window under 700 px is a phone's, prefs.narrowWeb: a phone opens in Mobile
   // View until Print Layout is chosen there; a wide window keeps its own, prefs.web)
-  setWeb(on) {
+  // remember false: not kept as this device's choice (a window that crossed 700 px going back to
+  // the view of its width)
+  setWeb(on, remember = true) {
     on = !!on;
     // (the caret and the reader's place read before the view's class changes the page's geometry)
     const c0 = this.model ? this.caretNow() : null, sp = this.model && this.readerSpot ? this.readerSpot() : null;
     if (on) { cls().remove('pg-draft', 'pg-side', 'pg-grid'); this.prefs.draft = false; this.prefs.pages = 0; }
     const was = this.webOn();
     cls().toggle('pg-web', on);
-    if (narrowNow()) this.prefs.narrowWeb = on; else this.prefs.web = on;
+    if (remember) { if (narrowNow()) this.prefs.narrowWeb = on; else this.prefs.web = on; }
     this.savePrefs();
     this.viewSync && this.viewSync();
     // (the caret, and the reader's place on the screen, by their source positions: the lines all
@@ -577,6 +579,15 @@ function restorePrefs(app) {
 
 onInstall((app) => {
   restorePrefs(app);
+  // a window that opened under 700 px (Mobile View) and widens past it takes a wide window's view,
+  // where the Mobile View toggle is not; narrowed again, a phone's (N5 of the verification)
+  const wide = matchMedia('(min-width: 700px)');
+  wide.addEventListener('change', () => {
+    const P = app.prefs || {};
+    if (app.view && app.view !== 'page') return;
+    const want = (wide.matches ? !!P.web : P.narrowWeb !== false) && !cls().contains('pg-draft');
+    if (want !== app.webOn()) app.setWeb(want, false);
+  });
   // the rulers follow the caret, the scrolling, the window and every pass of the layout
   rulerInstall(app);
   const lp = app.layoutPass;

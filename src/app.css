@@ -430,7 +430,8 @@ body.file-open #fr { display: none; }
    kept here) (src/ui/fileview.js) */
 .rf-home { display: none; }
 @media (min-width: 1000px) {
-  body.file-open #rp-file { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: stretch; }
+  body.file-open #rp-file { display: grid; grid-template-columns: 320px minmax(0, 1fr); align-items: stretch; }
+  body.file-open #rp-file .rb-dl { flex-wrap: wrap; row-gap: 4px; }
   body.file-open #rp-file > .rb-tb { width: auto; max-width: none; background: var(--chrome); border-right: 1px solid var(--line); min-height: 100%; }
   body.file-open #rp-file > .rf-home { display: block; padding: 22px 36px 40px; overflow: visible; }
   .rf-h { margin: 0 0 12px; font: 600 15px var(--font-ui); color: var(--ink-ui); }
@@ -1766,6 +1767,11 @@ body.fpainting #pages { cursor: copy; }
 @media (min-width: 1000px) {
   #main > .stp, #main > .sp-pane { position: relative; inset: auto; z-index: 3; order: 10; flex: none; align-self: stretch; width: 320px; max-height: none; margin: 0; border: 0; border-left: 1px solid var(--line); border-radius: 0; box-shadow: none; }
   #main > .sp-pane { overflow-y: auto; padding-top: 0; }
+}
+/* Help on a window narrower than 1000 px (narrowed with the pane open): a sheet at the window's
+   corner, as the other panes are there, not a column that squeezes the page */
+@media (max-width: 999px) {
+  #main > .help-pane.help-pane { position: fixed; top: auto; right: 8px; bottom: 8px; left: auto; width: min(380px, calc(100vw - 16px)); max-height: 70vh; z-index: 30; border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 12px 40px rgba(10, 20, 30, .22); }
 }
 /* a task pane where the page would keep less than 560 px beside it (src/ui/dock.js): over the
    page's right side, the page keeping its width, as Word lays a pane over a narrow window */
