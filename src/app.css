@@ -171,14 +171,17 @@ body.has-ai .ai-only { display: inline-flex !important; }
 /* the tabs' row; contextual tabs (a table's, an equation's) in their own colour, after Help */
 .rb-top { display: flex; align-items: flex-end; gap: 2px; height: 28px; padding: 0 6px 0 8px; background: var(--tabrow); flex: none; }
 .rb-tab.on { font-weight: 600; }
-:root { --ctx: #7A3FA8; }
+:root { --ctx: #7A3FA8; --tab-on: var(--title); }
+/* (the open tab's name in the title band's blue is lost on a dark ribbon: there in the light blue) */
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --tab-on: var(--blue-ink); } }
+:root[data-theme="dark"] { --tab-on: var(--blue-ink); }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --ctx: #C59BE8; } }
 :root[data-theme="dark"] { --ctx: #C59BE8; }
 .rb-tabs { display: flex; align-items: flex-end; gap: 1px; min-width: 0; }
 .rb-tab { position: relative; flex: none; height: 26px; padding: 0 11px; border: 0; border-radius: 6px 6px 0 0; background: transparent; color: var(--mute); font: 500 13px var(--font-ui); cursor: pointer; white-space: nowrap; }
 .rb-tab:hover { color: var(--ink-ui); background: color-mix(in srgb, var(--blue-wash) 50%, transparent); }
-.rb-tab.on { color: var(--title); background: var(--ribbon); }
-.rb-tab.on::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: 0; height: 3px; border-radius: 2px 2px 0 0; background: var(--title); }
+.rb-tab.on { color: var(--tab-on); background: var(--ribbon); }
+.rb-tab.on::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: 0; height: 3px; border-radius: 2px 2px 0 0; background: var(--tab-on); }
 /* File is the accent tab, and it opens the backstage rather than another ribbon row */
 .rb-tab[data-tab="file"] { color: #fff; background: var(--title); border-radius: 4px 4px 0 0; margin-right: 4px; }
 .rb-tab[data-tab="file"]:hover { color: #fff; background: color-mix(in srgb, var(--title) 86%, #000); }
@@ -345,8 +348,9 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
   .rb-grp.lay-check:not(.nm) > .btn[aria-pressed="true"][data-size="S"]::after { content: ""; position: absolute; left: 8px; top: 7px; width: 6px; height: 3px; border: solid var(--ribbon); border-width: 0 0 2px 2px; transform: rotate(-45deg); }
   /* Where the row is short a group gives way as Word's do, one step at a time (ribbonFit): sm, its
      large buttons small, three to a column with their names; then nm, the names gone, every
-     control a small icon, the group's name clipped under them as Home's are (it no longer sets the
-     group's width). nm holds whatever sm does, so the two never mix into large icons alone. */
+     control a small icon (the group's own name stays whole under them: three icons to a column
+     are still far narrower than a narrow window's row of icons, test/tabs.py fold_sweep). nm holds
+     whatever sm does, so the two never mix into large icons alone. */
   .rb-grp.lay:is(.sm, .nm):not(.folded) { grid-template-columns: repeat(var(--cf), auto); }
   .rb-grp.lay:is(.sm, .nm) > [data-size] { grid-row-end: auto; align-self: center; justify-self: start; }
   .rb-grp.lay:is(.sm, .nm) > .btn[data-size="L"], .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .btn:first-child,
@@ -358,8 +362,6 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
   .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] { flex-direction: row; height: 22px; }
   .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .btn:first-child { border-radius: 4px 0 0 4px; }
   .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .rb-x { width: 14px; height: 22px; border-radius: 0 4px 4px 0; }
-  .rb-grp.lay.nm:not(.folded) { grid-template-rows: repeat(3, 22px); grid-template-columns: none; padding-bottom: 16px; }
-  .rb-grp.lay.nm:not(.folded) > .rb-glab { position: absolute; left: 0; right: 0; bottom: 3px; padding: 0 2px; overflow: hidden; text-overflow: ellipsis; }
   .rb-grp.lay.nm > [data-size] .rb-bl, .rb-grp.lay.nm > .rb-split > .btn .rb-bl { display: none; }
   .rb-grp.lay.nm > .btn[data-size], .rb-grp.lay.nm > .rb-split > .btn:first-child { width: 26px; padding: 0; gap: 0; justify-content: center; }
   .rb-grp.lay.nm > .pf .pf-l, .rb-grp.lay.nm > .pf .pf-u, .rb-grp.lay.nm > .pf-field .pf-lab { display: none; }
