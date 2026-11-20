@@ -285,6 +285,8 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
   .rb-grp:not(.folded) > .rb-launch:hover { background: var(--blue-wash); color: var(--ink-ui); }
   .rb-grp:not(.folded) > .rb-launch svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
 }
+/* (and from 861 to 899 px, where Home's Font group is two rows of buttons and the others one) */
+@media (min-width: 861px) and (max-width: 899px) and (pointer: fine) { body:not(.file-open) .rb { height: 67px; } }
 /* With a mouse (a touch screen keeps the row of 44 px targets its own rules give it, which a grid
    of 22 px rows would overlap and cut off: test/tabs.py tablet) */
 @media (min-width: 900px) and (pointer: fine) {
