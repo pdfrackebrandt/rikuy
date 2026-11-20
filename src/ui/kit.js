@@ -80,6 +80,8 @@ export function openMenu(app, at, items, o = {}) {
     a.setAttribute('role', it.checked === undefined ? 'menuitem' : it.radio ? 'menuitemradio' : 'menuitemcheckbox');
     if (it.checked !== undefined) a.setAttribute('aria-checked', it.checked ? 'true' : 'false');
     a.setAttribute('aria-label', it.name);
+    // (an item that opens a menu of its own says so, and shows ›, as Word's do)
+    if (it.submenu) a.setAttribute('aria-haspopup', 'menu');
     // (keys named in a menu as this computer has them: ⌘X on a Mac)
     if (it.title) a.title = keysInText(it.title, macUA());
     if (it.id) a.id = it.id;
@@ -89,6 +91,7 @@ export function openMenu(app, at, items, o = {}) {
     else if (it.swatch) { const g = el('i', 'mi-sw'); g.setAttribute('aria-hidden', 'true'); if (/^[0-9A-Fa-f]{6}$/.test(it.swatch)) g.style.background = '#' + it.swatch; a.append(g); }
     if ((it.label ?? it.name) !== '') a.append(el('span', 'mi-n', it.label ?? it.name));
     if (it.keys) { const k = el('span', 'mi-k', keysInText(it.keys, macUA())); k.setAttribute('aria-hidden', 'true'); a.append(k); }
+    if (it.submenu) { const k = el('span', 'mi-k mi-sub', '›'); k.setAttribute('aria-hidden', 'true'); a.append(k); }
     if (it.disabled) a.setAttribute('aria-disabled', 'true');
     // (a press keeps the caret on the page; the keyboard's Enter comes as a click)
     a.addEventListener('mousedown', (e) => e.preventDefault());
@@ -97,7 +100,9 @@ export function openMenu(app, at, items, o = {}) {
   }
   if (p.lastChild && p.lastChild.getAttribute('role') === 'separator') p.lastChild.remove();
   app.positionPop();
-  if (o.focus !== false) { const first = p.querySelector('[role^=menuitem]:not([aria-disabled])'); if (first) first.focus(); }
+  // (o.ring false: opened by a press, its first item has the focus without the keys' ring, as
+  // Word highlights nothing until a key moves in it)
+  if (o.focus !== false) { const first = p.querySelector('[role^=menuitem]:not([aria-disabled])'); if (first) first.focus({ focusVisible: o.ring !== false }); }
   return p;
 }
 

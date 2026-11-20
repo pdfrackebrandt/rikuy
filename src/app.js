@@ -2555,7 +2555,7 @@ class App {
     // left the keys typing into the page under them); its first control, not Close, and under a
     // finger never a text field (the on-screen keyboard would cover the dialog). Tab and Shift+Tab
     // go round inside it: past Close they had walked out into the bar and the page.
-    if (/(^| )pop-(dlg|share)( |$)/.test(p.className)) {
+    if (/(^| )pop-(dlg|share|comment)( |$)/.test(p.className)) {
       p.addEventListener('keydown', (e) => {
         if (e.key !== 'Tab' || e.altKey || e.ctrlKey || e.metaKey) return;
         const all = popFocusables(p);
@@ -2564,11 +2564,15 @@ class App {
         if (e.shiftKey ? i <= 0 : i === all.length - 1 || i < 0) { e.preventDefault(); all[e.shiftKey ? all.length - 1 : 0].focus(); }
       });
       requestAnimationFrame(() => requestAnimationFrame(() => {
-        if (!this.pop || this.pop.el !== p || !p.isConnected || p.contains(document.activeElement)) return;
-        // (only from the page or the chrome: a field that took it on purpose keeps it)
-        const a = document.activeElement;
-        if (a && a !== document.body && a !== this.root && !(a.closest && a.closest('#ribbon, #rb-top, #bar, #status, #nav'))) return;
+        if (!this.pop || this.pop.el !== p || !p.isConnected) return;
         const coarse = matchMedia('(pointer: coarse)').matches, text = (x) => x.matches('input:not([type]), input[type="text"], input[type="search"], input[type="number"], textarea, [contenteditable]');
+        const a = document.activeElement;
+        if (p.contains(a)) {
+          // (under a finger a dialog never opens into a text field, even one it focuses itself:
+          // Android's keyboard came up over it; a tap on the field brings it)
+          if (!coarse || !text(a)) return;
+        } else if (a && a !== document.body && a !== this.root && !(a.closest && a.closest('#ribbon, #rb-top, #bar, #status, #nav'))) return;
+        // (only from the page or the chrome: a field that took it on purpose keeps it)
         const all = popFocusables(p).filter((x) => !(coarse && text(x)));
         const pick = all.find((x) => !x.classList.contains('pop-x')) || all[0];
         if (pick) pick.focus({ preventScroll: true });
