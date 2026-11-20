@@ -867,21 +867,11 @@ export function cleanApp(OUT) {
 // (src/widget.js), and the rule for that file below takes this one away from it.
 // style-src keeps 'unsafe-inline': the page sets styles from script everywhere, and a style
 // cannot run code.
-// connect-src: the page's own files and blob:, and the CORS proxy the Git panel uses by default
-// (GIT_PROXY in src/app.js, read from there): push, pull and clone reach GitHub, GitLab and any
-// other host through it, as a browser cannot reach their git directly (they send no CORS headers).
-// No other host: a remote typed without a proxy, or another proxy, is refused, and the Git panel
-// says which address works. The proxy forwards to whatever host a request names, so the page can
-// reach any git host through it, as it must; the workers share this policy (they start from a
-// blob:), and nothing a document runs there can make a request (LuaTeX, gnuplot, asy, dvips and
-// xindy have no network; Pyodide runs latexminted, which loads no code of the document's:
-// test/engines.py). The proxy sees the git traffic, the token included: a user who would rather
-// not send it there pushes from a clone (Download LaTeX).
-export function gitProxy() {
-  const m = /const GIT_PROXY = '(https:\/\/[a-z0-9.-]+)';/.exec(fs.readFileSync(R('src/app.js'), 'utf8'));
-  if (!m) throw new Error('src/app.js: no GIT_PROXY');
-  return m[1];
-}
+// connect-src: the page's own files and blob:, no other host. Git's push, pull and clone go
+// through Rikuy's own proxy on this same site (/git: functions/git/[[path]].js, src/gitproxy.js),
+// which passes git's smart HTTP alone to public https hosts. The workers share this policy (they
+// start from a blob:); nothing a document runs there can make a request, and the proxy would
+// take nothing but git's requests from it.
 export function policy(hashes) {
   if (!hashes.length || hashes.some((h) => !/^[A-Za-z0-9+/]{43}=$/.test(h))) throw new Error('policy: the page\'s inline scripts need their SHA-256 hashes in base64');
   return [
@@ -891,7 +881,7 @@ export function policy(hashes) {
     "img-src 'self' data: blob:",
     "font-src 'self' data: blob:",
     "media-src 'self' data: blob:",
-    "connect-src 'self' blob: " + gitProxy(),
+    "connect-src 'self' blob:",
     "worker-src 'self' blob:",
     "manifest-src 'self'",
     "form-action 'self'",
