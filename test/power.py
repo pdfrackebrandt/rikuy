@@ -15,7 +15,9 @@ Mode with the caret on the page. keytips: F10 (or Alt), a tab's letter, then a c
 (H 1 is Bold, N T Insert's Table, H T Home's own Table); a letter that matches nothing is taken by
 the KeyTips and never typed into the document (5). palette: Alt+Q finds by letters in order and
 initials ("tbl", "hed 2", "heading2", "eqn", "toc"), lists the commands run last when empty, and
-puts them first among matches as good (9).
+puts them first among matches as good (9). insertlist: the \\ insert list writes valid LaTeX: a math
+command opens a formula holding it, \\begin{name} the environment, figure, align and cases their
+own; a theorem brings its \\newtheorem; Enter twice leaves a theorem (10).
 Each part is a function; `python3 power.py
 footnote` runs one."""
 import os, sys
@@ -246,7 +248,41 @@ def palette(page):
     key(page, 'Escape'); key(page, 'Escape')
 
 
-PARTS = [footnote, dollars, latex, tab, pickers, follow, linear, modes, keytips, palette]
+PLAIN = '\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n\nAlpha beta gamma.\n\nLast one.\n\n\\end{document}\n'
+
+
+def insert_list(page, q, wait=500):
+    typed(page, '\\', 300); page.fill('#pop-cmd', q); page.wait_for_timeout(150); key(page, 'Enter', wait)
+
+
+def insertlist(page):
+    load_doc(page, PLAIN)
+    click_text(page, 'gamma.', 6); typed(page, ' so '); insert_list(page, 'alpha'); typed(page, '+1'); key(page, 'Enter', 400)
+    check('insertlist: \\alpha in the text opens a formula holding it', 'gamma. So $\\alpha +1$' in src(page) or 'gamma. So $\\alpha+1$' in src(page), src(page)[60:110])
+    load_doc(page, PLAIN)
+    click_text(page, 'gamma.', 6); key(page, 'Enter'); insert_list(page, 'figure'); typed(page, 'Output')
+    check('insertlist: figure writes a figure with its caption and label, the caret in the caption', '\\begin{figure}[htbp]' in src(page) and '\\caption{Output}\n  \\label{fig:1}' in src(page), src(page)[60:260])
+    load_doc(page, PLAIN)
+    click_text(page, 'gamma.', 6); key(page, 'Enter'); insert_list(page, 'align', 700)
+    check('insertlist: align opens aligned rows in the equation field', '\\begin{align}' in src(page) and page.evaluate("!!document.getElementById('pop-field') || !!document.getElementById('pop-tex')"), src(page)[60:160])
+    key(page, 'Escape', 300); page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
+    load_doc(page, PLAIN)
+    click_text(page, 'gamma.', 6); key(page, 'Enter'); insert_list(page, 'begin{quote}')
+    typed(page, 'Q')
+    check('insertlist: begin{quote} writes the environment', '\\begin{quote}\nQ\n\\end{quote}' in src(page), src(page)[60:160])
+    load_doc(page, PLAIN)
+    click_text(page, 'gamma.', 6); key(page, 'Enter'); insert_list(page, 'theorem'); typed(page, 'Stmt.')
+    s = src(page)
+    check('insertlist: a theorem brings its \\newtheorem where the preamble has none', '\\newtheorem{theorem}{Theorem}' in s and s.index('\\newtheorem') < s.index('\\begin{document}') and '\\begin{theorem}\nStmt.\n\\end{theorem}' in s, s[:260])
+    key(page, 'Enter'); key(page, 'Enter'); typed(page, 'After it.')
+    s = src(page)
+    check('insertlist: Enter twice leaves the theorem', '\\begin{theorem}\nStmt.\n\\end{theorem}\n\nAfter it.' in s, s[s.find('\\begin{theorem}'):][:80])
+    load_doc(page, PLAIN)
+    click_text(page, 'gamma.', 6); key(page, 'Enter'); insert_list(page, 'proof'); typed(page, 'Easy.')
+    check('insertlist: a proof brings amsthm', '\\usepackage{amsmath,amsthm}' in src(page) or '\\usepackage{amsthm}' in src(page), src(page)[:120])
+
+
+PARTS = [footnote, dollars, latex, tab, pickers, follow, linear, modes, keytips, palette, insertlist]
 
 
 def run():

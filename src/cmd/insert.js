@@ -19,7 +19,9 @@ import { escapeAlt } from '../picture.js';
 import { escapeTeX } from '../editor.js';
 
 const piece = (open, close) => ({ open, close });
-const env = (k, d, order) => ({ id: 'insert-' + k, name: d, synonyms: [k], run: (app) => app.insertFromPalette(k), palette: { k, d, order, t: piece('\n\n\\begin{' + k + '}\n', '\n\\end{' + k + '}\n\n'), block: true } });
+// (with its \newtheorem, or amsthm for proof, where the preamble has none: TeX stopped with
+// "Environment theorem undefined" on one put in a document without it)
+const env = (k, d, order) => ({ id: 'insert-' + k, name: d, synonyms: [k], run: (app) => app.insertFromPalette(k), palette: { k, d, order, t: piece('\n\n\\begin{' + k + '}\n', '\n\\end{' + k + '}\n\n'), block: true, needs: (app) => app.styleNeeds(k) } });
 const sel = (app, at) => !!at && !at.c.ghost && !at.c.collapsed;
 
 // ---- interactive graphs ---------------------------------------------------------------------
@@ -135,6 +137,18 @@ const textWidthPx = (app) => Math.round(((app.layout && app.layout.g && app.layo
 
 register(
   { id: 'insert-list', name: 'Insert list', title: 'The list of things to insert: footnote, citation, section, environments and more (\\; Ctrl+K is Link)', synonyms: ['Insert a command', 'Command'], run: (app) => app.openPalette() },
+  // the insert list's figure and displays, as LaTeX writes them (POWER-USER.md 10): a figure with
+  // a framed box where the picture goes (it compiles with no file), its caption and a label; an
+  // align or a gather opened in the equation field; cases inside a numbered equation
+  { id: 'insert-figure-float', name: 'Figure', title: 'A figure: a box where the picture goes, a caption and a label (\\begin{figure})', synonyms: ['figure', 'Figure placeholder', 'Float'],
+    run: (app) => app.insertFromPalette('figure'),
+    palette: { k: 'figure', d: 'Figure with a caption', order: 85, block: true, t: (app) => { const n = [...app.labelPlaces().keys()].filter((x) => /^fig:/.test(x)).length + 1; return piece('\n\n\\begin{figure}[htbp]\n  \\centering\n  \\fbox{\\rule{0pt}{4cm}\\rule{0.6\\linewidth}{0pt}}\n  \\caption{', '}\n  \\label{fig:' + n + '}\n\\end{figure}\n\n'); } } },
+  { id: 'insert-align', name: 'Aligned equations', title: 'Numbered equations aligned at their & (\\begin{align}), in the equation field: & aligns, Ctrl+Enter a new row', synonyms: ['align', 'Aligned', 'Derivation'],
+    run: (app) => app.insertFromPalette('align'), palette: { k: 'align', d: 'Aligned, numbered rows', order: 81, act: 'equation', env: 'align' } },
+  { id: 'insert-align-star', name: 'Aligned equations, no numbers', synonyms: ['align*'], run: (app) => app.insertFromPalette('align*'), palette: { k: 'align*', d: 'Aligned, no numbers', order: 82, act: 'equation', env: 'align*' } },
+  { id: 'insert-gather', name: 'Gathered equations', synonyms: ['gather'], run: (app) => app.insertFromPalette('gather'), palette: { k: 'gather', d: 'Gathered, numbered rows', order: 83, act: 'equation', env: 'gather' } },
+  { id: 'insert-cases', name: 'Cases', title: 'A numbered equation holding cases, one per row (\\begin{cases})', synonyms: ['cases', 'Piecewise'],
+    run: (app) => app.insertFromPalette('cases'), palette: { k: 'cases', d: 'Cases in an equation', order: 84, act: 'equation', tex: '\\begin{cases}#?&#?\\\\#?&#?\\end{cases}' } },
   env('proposition', 'Proposition', 140), env('lemma', 'Lemma', 150), env('theorem', 'Theorem', 160), env('definition', 'Definition', 170), env('assumption', 'Assumption', 180), env('proof', 'Proof', 190),
   { id: 'insert-ldots', name: 'Ellipsis', synonyms: ['Dots', 'ldots'], keys: ['Ctrl+Alt+.'], run: (app) => app.insertFromPalette('ldots'), palette: { k: 'ldots', d: 'Ellipsis …', order: 220, t: piece('\\ldots{}', '') } },
   { id: 'insert-newline', name: 'Line break', title: 'Line break (Shift+Enter): a new line in the same paragraph, \\\\', keysElsewhere: ['Shift+Enter'], synonyms: ['New line', 'Manual line break'], run: (app) => app.insertFromPalette('newline'), palette: { k: 'newline', d: 'Line break', order: 230, t: piece('\\\\\n', '') } },

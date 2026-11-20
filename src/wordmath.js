@@ -276,6 +276,13 @@ export function resolveCommand(name, macros, dialect) {
   return '\\' + name;
 }
 
+// Whether \name means something only in a formula (\alpha, \frac, \sum, \mathbb, \sin): typed in
+// the text it opens one (the insert list, src/app.js runPalette), as LaTeX takes it nowhere else
+export function mathOnly(name) {
+  if (!name || name === 'ldots' || /^text/.test(name) || name === 'mbox') return false;
+  return SAME.includes(name) || FUNCS.includes(name) || (Object.prototype.hasOwnProperty.call(WORD, name) && WORD[name] !== '') || /^math[a-z]+$/.test(name);
+}
+
 // Every name the typing rules know, with what it inserts (for the help list and tests).
 export function wordTable(dialect) {
   const out = [];
