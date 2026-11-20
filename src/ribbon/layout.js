@@ -122,7 +122,7 @@ const HOME = {
   'align-left': 'AL', 'align-center': 'AC', 'align-right': 'AR', justify: 'AJ', 'line-spacing': 'K', shading: 'H', borders: 'B',
   'styles-more': 'L', find: 'FD', replace: 'R', select: 'SL',
   // (Rikuy's own Insert group on Home, which Word has not: free letters, Insert's where they are)
-  table: 'T', picture: 'P', footnote: 'O', citation: 'G', link: 'W', formula: 'D', equation: 'Q'
+  table: 'T', picture: 'PI', footnote: 'O', citation: 'G', link: 'W', formula: 'D', equation: 'Q'
 };
 
 // Groups whose corner arrow opens a dialog that already exists: [command, its name, KeyTip]. The
