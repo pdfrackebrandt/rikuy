@@ -2576,6 +2576,11 @@ class App {
   textEnd(extend) {
     const spans = this.root.querySelectorAll('.flow span.t');
     const last = spans[spans.length - 1];
+    // (a display formula or a table at the end: after it, on a blank paragraph, as Word's end
+    // after both; it stopped before the formula or in the last cell, review L1)
+    const its = [...this.root.querySelectorAll('.flow .it')].filter((x) => !x.parentElement.closest('.it')), end = its[its.length - 1];
+    const B = !extend && end && end.dataset.b != null && (!last || !end.contains(last) || last.closest('td')) && this.renderer.blocks.find((x) => String(x.id) === end.dataset.b);
+    if (B) { this.root.focus({ preventScroll: true }); this.showGhost(end, B.f, B.e); return true; }
     if (!last || !last.firstChild) return false;
     const sel = getSelection(), n = last.firstChild, o = n.data.length;
     this.root.focus({ preventScroll: true });

@@ -69,6 +69,12 @@ def footnote(page):
     key(page, 'Control+Alt+f'); typed(page, 'Note.', 300)
     key(page, 'ArrowLeft'); key(page, 'ArrowLeft'); key(page, 'ArrowRight'); typed(page, 'Q')
     check('footnote: Right inside its text stays in it', '\\footnote{NoteQ.}' in src(page), src(page)[40:100])
+    # (review L1) Ctrl+End after a display formula or a table that ends the text, as Word's
+    for end, name in (('Last text.\n\\begin{equation}\n  x = 1\n\\end{equation}', 'equation'), ('Last text.\n\n\\begin{tabular}{ll}\n  a & b \\\\\n  c & d\n\\end{tabular}', 'tabular')):
+        load_doc(page, FN.replace('Next paragraph.', end))
+        click_text(page, 'Alpha', 0); key(page, 'Control+End'); typed(page, 'ZZ')
+        s = src(page)
+        check('footnote: Ctrl+End goes after a closing ' + name, 'ZZ' in s and s.index('ZZ') > s.index('\\end{' + name + '}') and s.index('ZZ') < s.index('\\end{document}') and 'd\nZZ' not in s, s[40:160])
 
 
 MATH = '\\documentclass{article}\n\\usepackage{amsmath,amssymb}\n\\begin{document}\n\nAlpha beta gamma.\n\nNext paragraph.\n\n\\end{document}\n'
