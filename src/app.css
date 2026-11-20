@@ -401,6 +401,8 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
   .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .rb-x { width: 24px; height: 24px; padding: 0; border-radius: 0 4px 4px 0; }
   .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .rb-x > svg:not(.rb-car) { display: inline; }
   .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .rb-x > .rb-xname { display: none; }
+  /* (a large split button with its name taken, an icon alone as every other: 24 px) */
+  .rb-grp.lay.nm > .rb-split[data-size="L"] > .btn:first-child { width: 24px; padding: 0; justify-content: center; }
   .rb-grp.lay.nm > [data-size] .rb-bl, .rb-grp.lay.nm > .rb-split > .btn .rb-bl { display: none; }
   /* (rb-fold's 32 px for a button whose name went must not widen a group already without names:
      every step of ribbonFit takes room) */

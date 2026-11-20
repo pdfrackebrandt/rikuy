@@ -438,16 +438,18 @@ export const tabs = {
     const lay = wideLay() ? groups.filter((g) => g.classList.contains('lay')).sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
     // (a group's large buttons made small only where that is narrower: one large button with a
     // name over two lines is narrower than the same as a small one, and every step must take room)
-    const small = (g) => ({ chain: 'small', do: () => { const w = g.offsetWidth; g.classList.add('sm'); if (g.offsetWidth >= w) g.classList.remove('sm'); }, undo: () => g.classList.remove('sm') });
+    // (one chain with the names: a group's large buttons come back only once every name taken after
+    // them has, so no group is smaller at a wider width, test/consistency.py collapse)
+    const small = (g) => ({ chain: 'names', do: () => { const w = g.offsetWidth; g.classList.add('sm'); if (g.offsetWidth >= w) g.classList.remove('sm'); }, undo: () => g.classList.remove('sm') });
     const bare = (g) => ({ chain: 'names', do: () => g.classList.add('nm'), undo: () => g.classList.remove('nm') });
     // (and a group of one large button keeps its name: it would save next to nothing, and Word
     // keeps such a group large until it folds)
     const named = lay.filter((g) => g.querySelectorAll(':scope > [data-size]').length > 1);
     steps.push(...lay.map(small));
-    // Two chains, each given back from its last step only (ribbonFit's pass back): a step comes
-    // back only once every later step of its chain has, so a group of higher rank is never smaller
-    // than one of lower rank and a wider window never shows fewer names. The large buttons made
-    // small are one chain. The names are the other: the less needed groups' names (below rank 4),
+    // One chain, given back from its last step only (ribbonFit's pass back): a step comes back
+    // only once every later step of the chain has, so a group of higher rank is never smaller than
+    // one of lower rank, no group is smaller at a wider width and a wider window never shows fewer
+    // names. First the large buttons made small; then the names: the less needed groups' names (below rank 4),
     // then the gallery's tiles one at a time down to three (Home), then the three downloads as one
     // Download button (Word spends no room on them), then the names of the groups that matter
     // most, then every button's name (rb-fold).
