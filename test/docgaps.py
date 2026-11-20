@@ -466,6 +466,7 @@ def headfoot(page):
 # before) and the text where it was.
 HF_FORMS = {
     'a hand set \\headsep': '\\documentclass{article}\n\\setlength{\\headsep}{40pt}\n\\pagestyle{myheadings}\\markright{HEADMARK}\n\\begin{document}\nText.\n\\end{document}\n',
+    'an \\addtolength{\\headsep}': '\\documentclass{article}\n\\addtolength{\\headsep}{15pt}\n\\pagestyle{myheadings}\\markright{HEADMARK}\n\\begin{document}\nText.\n\\end{document}\n',
     'geometry with includehead': '\\documentclass{article}\n\\usepackage[margin=2cm,headsep=10pt,includehead]{geometry}\n\\pagestyle{myheadings}\\markright{HEADMARK}\n\\begin{document}\nText.\n\\end{document}\n',
 }
 
