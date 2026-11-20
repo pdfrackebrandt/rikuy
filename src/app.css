@@ -2278,6 +2278,20 @@ html.pic-moving, html.pic-moving * { cursor: grabbing !important; }
 #pages .raw.drawn.sel:has(> svg.tz) { outline: none; }
 #pages .raw.drawn.sel > svg.tz { outline: 1px solid #2B74B0; outline-offset: 3px; }
 #pages .a-smart { cursor: pointer; }
+/* the Selection Pane (src/ui/selpane.js): a row per object, its name, its label, its eye */
+.sel-list { display: flex; flex-direction: column; gap: 2px; max-height: min(60vh, 520px); overflow: auto; }
+.sel-row { display: grid; grid-template-columns: 1fr 9em 32px; align-items: center; gap: 6px; }
+.sel-row.sel-in .sel-go { padding-left: 20px; }
+.sel-go { display: flex; gap: 6px; align-items: baseline; text-align: left; border: 0; background: transparent; color: var(--ink-ui); font: 13px/1.3 var(--font-ui); padding: 6px; border-radius: 6px; cursor: pointer; min-width: 0; }
+.sel-go:hover, .sel-go:focus-visible { background: var(--chrome); }
+.sel-k { color: var(--mute); font-size: 11.5px; flex: none; }
+.sel-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fr .sel-lab { padding: 4px 6px; font-size: 12px; }
+.sel-eye { border: 0; background: transparent; color: var(--ink-ui); width: 32px; height: 32px; border-radius: 6px; cursor: pointer; display: grid; place-items: center; }
+.sel-eye svg { width: 18px; height: 18px; }
+.sel-eye[aria-pressed="false"] { color: var(--mute); }
+#pages .sel-hidden { visibility: hidden; }
+@media (pointer: coarse) { .sel-go, .sel-eye { min-height: 44px; } .sel-eye { width: 44px; } .sel-row { grid-template-columns: 1fr 7em 44px; } }
 #pages svg.tz .sub { filter: drop-shadow(0 0 1.2px #2B74B0) drop-shadow(0 0 1.2px #2B74B0); }
 #pages .raw.drawn svg.tz, #pages .raw.drawn svg.pgf { cursor: pointer; }
 @media (pointer: coarse) { .shape-layer .shape-h { width: 14px; height: 14px; } .shape-layer .shape-h::before { content: ''; position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; translate: -50% -50%; } }

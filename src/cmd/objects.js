@@ -17,6 +17,7 @@ import { openMenu, openGallery } from '../ui/kit.js';
 import { menuItems, enabled } from '../commands.js';
 import { editChart } from '../ui/shapes.js';
 import { smartDialog, wordsDialog, axisTitlesDialog } from '../ui/picturedialogs.js';
+import { methods as selMethods, installSelPane } from '../ui/selpane.js';
 
 const sel = (app, kind) => { const o = app.objHere ? app.objHere() : null; return o && (!kind || o.kind === kind) ? o : null; };
 const isK = (kind) => (app) => !!sel(app, kind);
@@ -131,6 +132,13 @@ register(
     synonyms: ['Border color', 'Outline colour'], run: (app, args) => (args && 'color' in args ? app.objApply(O.smartBorder(sel(app, 'smart').text, args.color || null, app.objEol())) : app.objColorMenu('smart-outline')) }),
   SM('smart-source', 'Show SmartArt Source', { title: 'The diagram\'s smartdiagram, to edit as LaTeX', menu: { smart: 90 }, synonyms: ['Edit smartdiagram'], run: (app) => app.objSource() })
 );
+// Word's Selection Pane, on Layout's Arrange and every object's (src/ui/selpane.js)
+const SELPANE = '<path d="M3.5 4h13v12h-13z"/><path d="M6 7h5M6 10h5M6 13h5"/><path d="M13.5 7h.01M13.5 10h.01M13.5 13h.01" stroke-width="2"/>';
+register({ id: 'selection-pane', name: 'Selection Pane', title: 'Selection Pane: every figure, table, picture, drawing, chart, SmartArt and equation, to go to, rename (its \\label and every reference to it) or hide on the page', tab: 'layout', group: 'arrange', order: 50, icon: SELPANE, label: 'Selection Pane',
+  synonyms: ['Objects list', 'Show objects', 'Hide objects', 'Rename figure', 'Object names'], when: (app) => !!app.files, run: (app) => app.selPaneOpen(),
+  also: [{ tab: 'picture-format', group: 'arrange', el: 'rc-selection-pane-pic', order: 50 }, { tab: 'shape-format', group: 'arrange', el: 'rc-selection-pane-shape', order: 50 },
+    { tab: 'chart-format', group: 'arrange', el: 'rc-selection-pane-chart', order: 50 }, { tab: 'smart-format', group: 'arrange', el: 'rc-selection-pane-smart', order: 50 }] });
+
 // the object goes (Delete or Backspace on it, or this): its center too where it held nothing else
 register({ id: 'object-delete', name: 'Delete Object', title: 'Delete Object: the drawing, chart or SmartArt selected, and the center it stood in when nothing else is in it (Delete)', when: (app) => !!sel(app), whyNot: () => 'Select a drawing, chart or SmartArt first.',
   menu: { shape: 95, chart: 95, smart: 95 }, synonyms: ['Remove drawing', 'Remove chart', 'Remove SmartArt'], keysElsewhere: ['Delete'], run: (app) => app.objDelete() });
@@ -143,6 +151,7 @@ export const STYLES = [['blue', 'Blue'], ['orange', 'Orange'], ['gray', 'Gray'],
   { id: c + '-outline', name: 'Colored Outline, ' + n, outline: c + '!75!black', fill: 'white' }]);
 
 onInstall((app) => {
+  installSelPane(app);
   // the object's own right click menu, and a long press on a touch screen (a phone has no right click)
   let lp = null;
   const held = () => !!app.objHeld;
@@ -173,6 +182,7 @@ onInstall((app) => {
 
 const kindName = { shape: 'drawing', chart: 'chart', smart: 'SmartArt' };
 export const methods = {
+  ...selMethods,
   // ---- the object selected on the page --------------------------------------------------------------
   // { kind: 'shape' | 'chart' | 'smart', f, s, e, text, el, k (a shape of a drawing, or null) }
   objHere() {
