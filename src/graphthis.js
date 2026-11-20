@@ -53,7 +53,9 @@ function slider(name, values, econ) {
 // each, a number standing alone after the sign)
 export function paramValues(src) {
   const out = {};
-  const re = new RegExp('(' + NAME_TEX + ')\\s*=\\s*(-?\\d*\\.?\\d+)(?=\\s*(?:[,;.$)]|\\\\[,;!) ]|\\\\right|\\\\\\)|\\s|$))', 'g');
+  // (the number's digits bounded: a run of a hundred thousand of them made the old \d*\.?\d+
+  // try every way of splitting it, and Graph this on such a document hung the page)
+  const re = new RegExp('(' + NAME_TEX + ')\\s*=\\s*(-?(?:\\d{1,15}(?:\\.\\d{1,15})?|\\.\\d{1,15}))(?=\\s*(?:[,;.$)]|\\\\[,;!) ]|\\\\right|\\\\\\)|\\s|$))', 'g');
   const t = String(src).slice(0, 2e6);
   let m, n = 0;
   while ((m = re.exec(t)) && n++ < 5000) {

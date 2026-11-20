@@ -678,7 +678,8 @@ export function graphKit() {
       out.push({ kind: 'line', pts, label: s.curve.mode === 'polar' ? 'r = ' + s.curve.r.trim() : '(' + s.curve.x.trim() + ', ' + s.curve.y.trim() + ')',
         tex: s.curve.mode === 'polar' ? 'r = ' + (texOf(s.curve.r, declared) || '') : '\\left(' + (texOf(s.curve.x, declared) || '') + ',\\ ' + (texOf(s.curve.y, declared) || '') + '\\right)', slot: 0, curve: true });
     } else if (s.kind === 'implicit') {
-      fns.forEach((f, k) => out.push({ kind: 'segs', lines: contour((x, y) => at2(f.fn, x, y), s, cells), label: f.text.trim(), tex: eqTexOf(f.text, declared), slot: k }));
+      // (20000 pieces for the whole graph: a stranger's noisy equations stay a bounded drawing)
+      fns.forEach((f, k) => out.push({ kind: 'segs', lines: contour((x, y) => at2(f.fn, x, y), s, cells, Math.floor(20000 / fns.length)), label: f.text.trim(), tex: eqTexOf(f.text, declared), slot: k }));
     } else if (s.kind === 'phase') {
       const [fx, fy] = fns.map((f) => f.fn);
       const dx = (x, y) => at2(fx, x, y), dy = (x, y) => at2(fy, x, y);
@@ -767,7 +768,7 @@ export function graphKit() {
   // page, 120 across at most), each crossing of a cell's edge at the linear guess between its
   // corners, the ambiguous saddle cells settled by the value at their middle; the pieces joined
   // into polylines. Bounded: 120 by 120 cells, 20000 pieces.
-  function contour(F, s, nx = 120) {
+  function contour(F, s, nx = 120, cap = 10000) {
     const ny = Math.max(10, Math.min(nx, Math.round(nx * s.aspect)));
     const x0 = s.x.min, y0 = s.y.min, hx = (s.x.max - s.x.min) / nx, hy = (s.y.max - s.y.min) / ny, W1 = nx + 1;
     const V = new Float64Array(W1 * (ny + 1));
@@ -779,7 +780,7 @@ export function graphKit() {
       return up ? [x0 + i * hx, y0 + (j + t) * hy] : [x0 + (i + t) * hx, y0 + j * hy];
     };
     const segA = [], segB = [];
-    for (let j = 0; j < ny && segA.length < 20000; j++) for (let i = 0; i < nx; i++) {
+    for (let j = 0; j < ny && segA.length < cap; j++) for (let i = 0; i < nx && segA.length < cap; i++) {
       const q = j * W1 + i, a = V[q], b = V[q + 1], c = V[q + W1 + 1], d = V[q + W1];
       if (!(Number.isFinite(a) && Number.isFinite(b) && Number.isFinite(c) && Number.isFinite(d))) continue;
       const k = (a > 0 ? 1 : 0) | (b > 0 ? 2 : 0) | (c > 0 ? 4 : 0) | (d > 0 ? 8 : 0);
@@ -1506,6 +1507,7 @@ export function graphCanvas(spec, W, scale = 3) {
 // which rikuy.sty sets from the command's width option (\linewidth when none): the picture takes
 // the width TeX gives it, its type stays at the document's size.
 const PGF_HEAD = '% rikuy-graph: ';
+const PGF_MAX = 800000;
 const F4 = (v) => { const t = (Math.round(v * 1e4) / 1e4).toFixed(4).replace(/0+$/, '').replace(/\.$/, ''); return t === '-0' ? '0' : t.replace(/^(-?)0\./, '$1.'); };
 function cssColor(c) {
   const t = String(c || '#000').trim();
@@ -1519,8 +1521,10 @@ class PGFContext {
   constructor(W, H) {
     this.W = W; this.H = H; this.out = []; this.path = []; this.colors = new Map();
     this.st = { stroke: '#000', fill: '#000', lw: 1, dash: [], alpha: 1, font: '12px serif', align: 'start', base: 'alphabetic', tx: 0, ty: 0, rot: 0 };
-    this.stack = []; this.rkTex = null;
+    this.stack = []; this.rkTex = null; this.size = 0;
   }
+  // (a picture of 800 kB at most: past it, what is left is left out and the file says so)
+  push(t) { if (this.size > PGF_MAX) { this.cut = true; return; } this.size += t.length; this.out.push(t); }
   // canvas state, as paint() sets it
   set strokeStyle(v) { this.st.stroke = v; } get strokeStyle() { return this.st.stroke; }
   set fillStyle(v) { this.st.fill = v; } get fillStyle() { return this.st.fill; }
@@ -1633,7 +1637,7 @@ class PGFContext {
       if (c.a < 1) lines.push('\\pgfsetfillopacity{' + F4(c.a) + '}');
     }
     lines.push(body, '\\pgfusepath{' + what + '}', '\\end{pgfscope}');
-    this.out.push(lines.join('\n'));
+    this.push(lines.join('\n'));
   }
   stroke() { this.use('stroke'); }
   fill() { this.use('fill'); }
@@ -1654,8 +1658,8 @@ class PGFContext {
     const at = '\\pgfqpoint{' + F4((x + st.tx) / this.W) + '\\rikuywidth}{' + F4((this.H - y - st.ty) / this.W) + '\\rikuywidth}';
     const body = '{\\color{' + c.name + '}' + size + (it ? '\\itshape ' : ' ') + '\\strut ' + tex + '}';
     // (turned about its anchor: the y label reads upwards)
-    if (rot) this.out.push('\\begin{pgfscope}\\pgftransformshift{' + at + '}\\pgftransformrotate{' + rot + '}\\pgftext' + (opts ? '[' + opts + ']' : '') + body + '\\end{pgfscope}');
-    else this.out.push('\\pgftext[' + (opts ? opts + ',' : '') + 'at={' + at + '}]' + body);
+    if (rot) this.push('\\begin{pgfscope}\\pgftransformshift{' + at + '}\\pgftransformrotate{' + rot + '}\\pgftext' + (opts ? '[' + opts + ']' : '') + body + '\\end{pgfscope}');
+    else this.push('\\pgftext[' + (opts ? opts + ',' : '') + 'at={' + at + '}]' + body);
   }
   text(mark, spec) {
     const cols = [...this.colors.entries()].map(([k, n]) => '\\definecolor{' + n + '}{rgb}{' + k + '}');
@@ -1671,7 +1675,7 @@ class PGFContext {
       cols.map((c) => c + '%\n').join('') +
       '\\begin{pgfpicture}%\n\\pgfsetroundjoin\\pgfsetroundcap%\n' +
       '\\pgfpathrectangle{\\pgfpointorigin}{\\pgfqpoint{\\rikuywidth}{' + F4(this.H / this.W) + '\\rikuywidth}}\\pgfusepath{use as bounding box}%\n' +
-      this.out.join('\n') + '\n\\end{pgfpicture}%\n\\endgroup%\n';
+      this.out.join('\n') + (this.cut ? '\n% (the rest of the picture was left out: it was past ' + PGF_MAX + ' bytes)' : '') + '\n\\end{pgfpicture}%\n\\endgroup%\n';
   }
 }
 

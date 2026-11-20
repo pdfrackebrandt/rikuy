@@ -127,8 +127,12 @@ ok('Graph this: values the document gives its letters start their sliders', () =
   // a value outside the letter's usual range widens the range round it
   const r2 = gt('y = a x', { a: 40 });
   assert.deepEqual([r2.spec.sliders[0].min, r2.spec.sliders[0].max, r2.spec.sliders[0].value], [0, 100, 40]);
-  // bounded on a long document
+  // bounded on a long document, and on a run of digits (the security audit: the old pattern tried
+  // every split of them, and Graph this on such a document hung the page)
   assert.ok(Object.keys(paramValues('a = 1 '.repeat(100000))).length === 1);
+  const t0 = performance.now();
+  paramValues('a = ' + '1'.repeat(200000) + 'x b = .' + '2'.repeat(100000) + 'y');
+  assert.ok(performance.now() - t0 < 300, 'digits read in ' + (performance.now() - t0) + ' ms');
 });
 
 ok('implicit curves: the contour lies on the curve, joined into lines, capped', () => {
@@ -217,6 +221,11 @@ ok('the PDF\'s picture as PGF: ASCII TeX, balanced, inside TeX\'s lengths, marke
     for (const x of body.matchAll(/\\rk[ml] (-?[\d.]+) (-?[\d.]+) /g)) assert.ok(Math.abs(+x[1]) <= 3 && Math.abs(+x[2]) <= 3, t.id + ' ' + x[0]);
     assert.ok(/\\definecolor\{rkc[a-z]+\d*\}\{rgb\}/.test(body) && body.includes('\\begin{pgfpicture}') && body.endsWith('\\endgroup%\n'), t.id);
   }
+  // a stranger's noisy equations: a bounded drawing (20000 pieces) and a bounded file (the audit)
+  const noisy = K.normalize({ kind: 'implicit', eq: Array(4).fill('sin(40x) sin(40y) + sin(37x y) - 0.01'), aspect: 1.2 });
+  assert.ok(K.compute(noisy, {}).series.reduce((n, S) => n + S.lines.reduce((m, l) => m + l.length - 1, 0), 0) <= 20000);
+  const big = graphPGF(noisy, 1200, 'graphs/n.html');
+  assert.ok(big.length < 900000 && big.endsWith('\\endgroup%\n'), big.length);
   // a curve running off to infinity is cut where it leaves, not drawn past TeX's largest length
   const tan = graphPGF(K.normalize({ kind: 'function', f: ['tan(x)', '1/x'], x: { min: -5, max: 5 }, y: { min: -3, max: 3 } }), 460);
   for (const x of tan.matchAll(/\\rk[ml] (-?[\d.]+) (-?[\d.]+) /g)) assert.ok(Math.abs(+x[1]) <= 3 && Math.abs(+x[2]) <= 3, x[0]);
