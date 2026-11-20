@@ -280,3 +280,20 @@ Option lists edited in place still move user comments (`v2.mjs`):
 - `npm test`: every suite passed.
 - The worker loads as `core/rikuy-pic-worker-<hash>.js` through a `blob:` worker. The policy allows that: `worker-src 'self' blob:`, and `importScripts` of a file of the site.
 - The wasm in dist/ has the same SHA-256 as `tex/vendor/pic/rikuy-pic.wasm`. Rebuilding it from source (`vendor.yml`) is left to CI: building here would write into the worktree.
+
+## Fixes for the verification
+
+Each finding with its commit and the test that failed before it.
+
+- **N1** (c1c53e2): Wrap on a float holding a `center`, `flushleft` or `flushright` writes `\centering`, `\raggedright` or `\raggedleft` in the wrapfigure; a `table` becomes a `wraptable`, and back a `table`, its caption still "Table 1". Tests: `objfmt.test.mjs` (N1 group, and the H2 group's wrap now expecting `\centering`); `objects.py review_arrange` (the wrapfigure and the wraptable compiled with pdfLaTeX, XeLaTeX and LuaLaTeX, "Figure 1: Box" and "Table 1: Data" in each PDF).
+- **N2** (c1c53e2): in `multicols`, every float and wrap place is refused and greyed in the Position menu, its reason in the tooltip; In Line with Text brings back a figure multicol dropped; a `figure*` there keeps its place's choice. Tests: `objfmt.test.mjs` (N2, N3 group), `objects.py review_arrange` (the menu greyed, nothing written).
+- **N3** (c1c53e2): floats and boxes are one list, `picture.js`'s `FLOATS` and `BOXES`, exported and extended (`tcolorbox`, `mdframed`, `framed`, `adjustbox`, `tblr`, `NiceTabular` and their like); any command's argument round the block is a box; a `wraptable` round the object is the float Position changes; `sidewaysfigure`, `SCfigure` and `marginfigure` set their own place and are refused. Tests: as N2; `objects.py review_arrange` (Top of Page in a wraptable: `table[t]`, compiled on three engines; the tcolorbox menu greyed).
+- **N4** (c1c53e2): Wrap is refused inside any environment wrapfig cannot wrap in (`picture.js`'s `WRAP_OK`, the rule pictures use): a list item, a quote, a theorem. Test: `objfmt.test.mjs` (N4 group).
+- **N5** (bb01ef1): an entry alone on its line goes with its line; the last one also takes the comma before it, and the comment after that comma stays. An entry sharing a line goes with its comma. A new key after a line that ends in a comment puts its comma before the comment and itself on its own line. Test: `objfmt.test.mjs` (N5 group; the H1 group's expectations follow).
+- **N6** (51b2387): raw environments other than verbatim are read (`tikzpicture` nodes), every text file the project inputs (`plot.tikz`), the document's own reference commands (`\newcommand`, an optional first argument, `\def`); a listing's `label=` is a name. What still names the old key is counted and the pane says "N more places still name fig:a (file)". Tests: `objlist.test.mjs` (N6 group, renamed and back byte for byte), `objects.py selpane` (the pane's message with a `\ref` left in verbatim).
+- **N7** (51b2387): a step that changes a hidden object moves its mark to the object's new key (Shape Fill on it, its label renamed), kept in the browser. Test: `objects.py selpane` (both, and after a reload).
+- **N8** (cecdf43): a series' name is written escaped in `\addlegendentry` and read back as typed; a category still cannot hold `& % $ # _ ^ ~ \ { } , ( ) [ ]` (pgfplots keeps it as a symbol), and the grid says so as it is typed ("R&D" is written "R D"). Tests: `objfmt.test.mjs` (N8 group), `objects.py charts` (the note, the legend, compiled on three engines).
+- **N9** (c1c53e2): Align's `when` reads the app's kept tree (`picTree`) and the look's memo. Test: `objects.py review_arrange` (0.10 ms a look on page.py's long document with a drawing selected; 5.01 ms before).
+- The verification of ff46de0 is placed after the first fixes' section, as the file's history runs.
+
+Checks at cecdf43, with `dist/tex`: `npm test` green (`objfmt` 22 groups, `objlist` 5); `objects.py` 274 passed, 0 failed; `picture.py` 228.

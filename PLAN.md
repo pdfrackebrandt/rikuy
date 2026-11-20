@@ -3423,9 +3423,15 @@ Tests:
     in its "Fixes for the review": option lists edited in place with their comments and lines,
     no float in a float, a picture's note its own, names in braces, Compress at the printed size
     graphicx gives, the work in a worker, one edited file a picture, labels renamed on the
-    parser's tree, hiding kept by label, typed characters escaped, 44 px on phones.
-    Evidence: `npm test` green (`objfmt` 17 groups, `picfx` 12, `objlist` 4, `drawing`,
-    `objects`, `commands` 14); `test/objects.py` 247 (with `dist/tex`: everything compiled with
+    parser's tree, hiding kept by label, typed characters escaped, 44 px on phones. Its
+    verification of ff46de0 (N1 to N9) is answered too: Position reads picture.js's one list of
+    floats and boxes (no float in multicols, a tcolorbox or a wraptable; the Position menu greys
+    what cannot apply), Wrap writes `\centering` and keeps a table a table, no wrap in a list, a
+    removed key keeps its neighbour's comment, a rename follows tikzpicture, any `\input` file and
+    the document's own `\figref`, hiding survives the hidden object's own edits, a legend keeps
+    `& % _`, Align's look parses nothing.
+    Evidence: `npm test` green (`objfmt` 22 groups, `picfx` 12, `objlist` 5, `drawing`,
+    `objects`, `commands` 15); `test/objects.py` 274 (with `dist/tex`: everything compiled with
     pdfLaTeX, XeLaTeX and LuaLaTeX, the shapes' words, chart titles and SmartArt items found in each
     PDF; edited pictures, one seen through, on the three engines; phones at 390 and 360 px with
     touch); `tabs.py` 127 (the fold sweep on all 19 tabs, the five new ones among them), `agent.py` 143, `picture.py` 228, `ribbon.py` 195, `test:browser` 199, the corpus model run 716 of 716; screenshots
