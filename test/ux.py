@@ -638,7 +638,40 @@ def place_kept(page, w):
         run_cmd(page, 'web-layout')
 
 
-PARTS = {'place_kept': (place_kept, [(1366, False), (390, False)]),
+def verify_lows(page, w):
+    """The verification's lows: the top bar's zoom says the status bar's percentage (Word shows the
+    percentage; Fit width is what a press does); Help narrowed below 1000 px becomes a sheet; a
+    window that opened under 700 px and widens leaves Mobile View, and goes back to it narrowed
+    again; File's Download row stays in its column."""
+    g = page.evaluate("[document.getElementById('zoomv').textContent, document.getElementById('st-zoomv').textContent]")
+    check(f'the top bar\'s zoom and the status bar\'s say the same percentage ({w})', g[0] == g[1] and g[0].endswith('%'), g)
+    page.locator('#b-help').click(); page.wait_for_timeout(400)
+    page.set_viewport_size({'width': 900, 'height': 800}); page.wait_for_timeout(600)
+    h = page.evaluate("(() => { const p = document.getElementById('helppane'), r = p.getBoundingClientRect(), d = document.getElementById('desk'); return [getComputedStyle(p).position, Math.round(r.left), Math.round(r.right), innerWidth, d.clientWidth]; })()")
+    check(f'Help narrowed below 1000 px is a sheet at the corner, the page not squeezed ({w})', h[0] == 'fixed' and h[1] >= 0 and h[2] <= h[3] and h[4] > 700, h)
+    page.evaluate('window.rikuy.closeHelpPane()')
+    page.set_viewport_size({'width': 1366, 'height': 800}); page.wait_for_timeout(500)
+    open_tab(page, 'File'); page.wait_for_timeout(300)
+    d = page.evaluate("(() => { const c = document.querySelector('#rp-file > .rb-tb').getBoundingClientRect(), b = [...document.querySelectorAll('#rp-file .rb-dl button')].filter((x) => x.offsetParent); return [Math.round(c.right), Math.max(...b.map((x) => Math.round(x.getBoundingClientRect().right)))]; })()")
+    check(f'File\'s Download row stays inside its column ({w})', d[1] <= d[0], d)
+    page.keyboard.press('Escape')
+
+
+def widen(p):
+    """A desktop window that opened under 700 px (so in Mobile View) and widens takes a wide
+    window's Print Layout, where no Mobile View toggle is; narrowed again, Mobile View."""
+    browser, page, errors = open_page(p, width=600, height=800, layout='mobile')
+    web = lambda: page.evaluate("[document.body.classList.contains('pg-web'), document.getElementById('sv-mobile').checkVisibility()]")
+    a = web()
+    page.set_viewport_size({'width': 1366, 'height': 800}); page.wait_for_timeout(500); b = web()
+    page.set_viewport_size({'width': 600, 'height': 800}); page.wait_for_timeout(500); c = web()
+    check('a window opened at 600 px is in Mobile View, its toggle shown; widened to 1366 px, Print Layout and no toggle; narrowed, Mobile View again', a == [True, True] and b == [False, False] and c == [True, True], (a, b, c))
+    check('no console errors (widen)', not errors, errors[:3])
+    browser.close()
+
+
+PARTS = {'verify_lows': (verify_lows, [(1366, False), (1920, True)]), 'widen': (widen, None),
+         'place_kept': (place_kept, [(1366, False), (390, False)]),
          'lows': (lows, [(390, False), (768, False), (1024, True)]),
          'pane_room': (pane_room, [(1024, False), (1920, True)]),
          'caret_back': (caret_back, [(1366, False), (1100, True)]),
