@@ -165,7 +165,7 @@ export const tabs = {
         // the button the group folds into: its name, and a menu of its commands
         const gb = mk('button', 'btn ghost rb-gbtn');
         gb.type = 'button'; gb.id = 'rg-' + T.id + '-' + g.id;
-        gb.setAttribute('aria-label', g.name); gb.title = g.name; gb.setAttribute('aria-haspopup', 'menu'); gb.setAttribute('aria-expanded', 'false');
+        gb.setAttribute('aria-label', g.name); gb.title = g.name + ': show the group\'s commands in a menu'; gb.setAttribute('aria-haspopup', 'menu'); gb.setAttribute('aria-expanded', 'false');
         // (its first command's icon, which it shows folded: see ribbonFit)
         const first = items.find(({ c }) => c.icon);
         if (first) gb.insertAdjacentHTML('beforeend', SVG(first.c.icon).replace('<svg ', '<svg class="rb-gico" '));
