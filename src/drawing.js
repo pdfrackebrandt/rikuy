@@ -33,39 +33,74 @@ export function colorOf(t) {
   return 'rgb(' + c.map((v) => Math.round(v)).join(',') + ')';
 }
 
-// ---- TikZ: \draw, \fill and \filldraw of plain paths ---------------------------------------------
-// The commands of a tikzpicture's body, or null where anything else is in it: [{ draw, fill, opts:
-// { arrow, width, dash, round, color, fillColor }, segs: [{ op: 'M'|'L'|'Z'|'rect'|'circle'|'ellipse', ... }] }]
-export function readTikz(text) {
+// ---- TikZ: \draw, \fill and \filldraw of plain paths, \node text ---------------------------------
+// The commands of a tikzpicture with where each is in its text (the one reading every other use
+// builds on): { po: the picture's [options] { s, e } or null, end: where \end{tikzpicture} starts,
+// cmds: [{ name, s, e (after its ;), os, oe (its [options], -1 for none), rest: [s, e) of its path } ] },
+// or null where anything but those commands is in the body
+export function tikzCmds(text) {
   if (typeof text !== 'string' || text.length > MAX_TEXT) return null;
-  const m = /^\\begin\{tikzpicture\}(\[[^\]\n]{0,200}\])?([\s\S]*)\\end\{tikzpicture\}\s*$/.exec(text.trim());
-  if (!m) return null;
-  const pic = m[1] ? opts(m[1].slice(1, -1)) : {};
-  if (!pic) return null;
-  const body = m[2].replace(/%[^\n]*/g, '');
+  const b = /^\s*\\begin\{tikzpicture\}/.exec(text);
+  if (!b) return null;
+  let i = b[0].length, po = null;
+  if (text[i] === '[') { const z = text.indexOf(']', i); if (z < 0 || z - i > 200 || text.slice(i, z).includes('\n')) return null; po = { s: i, e: z + 1 }; i = z + 1; }
+  const end = text.lastIndexOf('\\end{tikzpicture}');
+  if (end < i || text.slice(end + 17).trim()) return null;
   const cmds = [];
-  let i = 0, pts = 0;
-  while (i < body.length) {
-    while (i < body.length && /\s/.test(body[i])) i++;
-    if (i >= body.length) break;
-    const c = /^\\(draw|fill|filldraw|path)\b/.exec(body.slice(i, i + 12));
+  while (i < end) {
+    const ch = text[i];
+    if (/\s/.test(ch)) { i++; continue; }
+    if (ch === '%') { const nl = text.indexOf('\n', i); i = nl < 0 || nl > end ? end : nl + 1; continue; }
+    const c = /^\\(draw|fill|filldraw|path|node)(?![a-zA-Z])/.exec(text.slice(i, i + 12));
     if (!c || cmds.length >= MAX_CMDS) return null;
+    const s = i;
     i += c[0].length;
-    const end = body.indexOf(';', i);
-    if (end < 0) return null;
-    let s = body.slice(i, end).trim();
-    i = end + 1;
-    let o = {};
-    if (s[0] === '[') { const z = s.indexOf(']'); if (z < 0) return null; o = opts(s.slice(1, z)); if (!o) return null; s = s.slice(z + 1); }
-    const segs = path(s);
+    while (text[i] === ' ' || text[i] === '\t') i++;
+    let os = -1, oe = -1;
+    if (text[i] === '[') { const z = text.indexOf(']', i); if (z < 0 || z > end || z - i > 300) return null; os = i; oe = z + 1; i = z + 1; }
+    // (the ; that ends it, a comment's skipped)
+    let j = i;
+    while (j < end && text[j] !== ';') { if (text[j] === '%') { const nl = text.indexOf('\n', j); j = nl < 0 || nl > end ? end : nl; } else j++; }
+    if (j >= end) return null;
+    cmds.push({ name: c[1], s, e: j + 1, os, oe, rest: [i, j] });
+    i = j + 1;
+  }
+  return { po, end, cmds };
+}
+// The commands of a tikzpicture's body, or null where anything else is in it: { scale, xs, ys, cmds:
+// [{ draw, fill, opts: { arrow, width, dash, round, color, fillColor }, segs: [{ op: 'M'|'L'|'Z'|'rect'|
+// 'circle'|'ellipse', ... }] } or { node: true, at: [x, y], text, opts }] }
+export function readTikz(text) {
+  const T = tikzCmds(text);
+  if (!T) return null;
+  const pic = T.po ? opts(text.slice(T.po.s + 1, T.po.e - 1)) : {};
+  if (!pic) return null;
+  const cmds = [];
+  let pts = 0;
+  for (const c of T.cmds) {
+    const o = c.os >= 0 ? opts(text.slice(c.os + 1, c.oe - 1)) : {};
+    if (!o) return null;
+    const rest = text.slice(c.rest[0], c.rest[1]).replace(/%[^\n]*/g, '');
+    if (c.name === 'node') {
+      // \node[options] at (x,y) {text}; its text plain words, \\ breaking its lines
+      const m = /^\s*at\s*\(([^()]{1,60})\)\s*\{([^{}\\]{0,400}(?:\\\\[^{}\\]{0,400}){0,20})\}\s*$/.exec(rest);
+      const at = m && xy(m[1]);
+      if (!at) return null;
+      cmds.push({ node: true, at, text: m[2], opts: o });
+      continue;
+    }
+    const segs = path(rest);
     if (!segs) return null;
     pts += segs.length;
     if (pts > MAX_PTS) return null;
-    cmds.push({ draw: c[1] !== 'fill', fill: c[1] === 'fill' || c[1] === 'filldraw' || !!o.fillColor, opts: o, segs });
+    const fill = c.name === 'fill' || c.name === 'filldraw' || !!o.fillColor;
+    cmds.push({ draw: c.name !== 'fill' && !o.noDraw, fill: fill && !o.noFill, opts: o, segs });
   }
-  return cmds.length ? { scale: pic.scale || 1, cmds } : null;
+  const k = pic.scale || 1;
+  return cmds.length ? { scale: k, xs: k * (pic.xscale || 1), ys: k * (pic.yscale || 1), cmds } : null;
 }
 // TikZ options this drawing knows; null for any other
+const FONTS = { '\\tiny': 0.5, '\\scriptsize': 0.7, '\\footnotesize': 0.8, '\\small': 0.9, '\\normalsize': 1, '\\large': 1.2, '\\Large': 1.44, '\\LARGE': 1.73, '\\huge': 2.07, '\\Huge': 2.49 };
 function opts(t) {
   const o = {};
   for (const raw of t.split(',')) {
@@ -74,22 +109,28 @@ function opts(t) {
     const kv = /^([a-z ]+?)\s*=\s*(.+)$/.exec(x);
     if (/^(->|<-|<->|-stealth|stealth-|stealth-stealth|-latex|latex-|latex-latex|>-<|-)$/.test(x)) { o.arrow = x; continue; }
     if (/^(ultra thin|very thin|thin|semithick|thick|very thick|ultra thick)$/.test(x)) { o.width = { 'ultra thin': 0.1, 'very thin': 0.2, thin: 0.4, semithick: 0.6, thick: 0.8, 'very thick': 1.2, 'ultra thick': 1.6 }[x]; continue; }
-    if (/^(dashed|dotted|densely dashed|densely dotted|loosely dashed|loosely dotted|solid)$/.test(x)) { o.dash = x; continue; }
+    if (/^(dashed|dotted|densely dashed|densely dotted|loosely dashed|loosely dotted|dash dot|densely dash dot|loosely dash dot|solid)$/.test(x)) { o.dash = x; continue; }
     if (x === 'rounded corners') { o.round = 4; continue; }
     if (colorOf(x)) { o.color = colorOf(x); continue; }
     if (kv) {
       const k = kv[1], v = kv[2].trim();
       if (k === 'line width') { const n = num(v); if (!Number.isFinite(n)) return null; o.width = n / (2.54 / 72.27); continue; }
       if (k === 'rounded corners') { const n = num(v); if (!Number.isFinite(n)) return null; o.round = n / (2.54 / 72.27); continue; }
+      if (k === 'fill' && v === 'none') { o.noFill = true; continue; }
+      if (k === 'draw' && v === 'none') { o.noDraw = true; continue; }
       if (k === 'fill') { const c = colorOf(v); if (!c) return null; o.fillColor = c; continue; }
       if (k === 'draw' || k === 'color') { const c = colorOf(v); if (!c) return null; o.color = c; continue; }
-      if (k === 'scale') { const n = parseFloat(v); if (!Number.isFinite(n) || n <= 0 || n > 50) return null; o.scale = n; continue; }
+      if (k === 'text') { const c = colorOf(v); if (!c) return null; o.textColor = c; continue; }
+      if (k === 'scale' || k === 'xscale' || k === 'yscale') { const n = parseFloat(v); if (!/^[\d.]+$/.test(v) || !Number.isFinite(n) || n <= 0 || n > 50) return null; o[k] = n; continue; }
       if (k === 'fill opacity' || k === 'opacity') { const n = parseFloat(v); if (!Number.isFinite(n)) return null; o.opacity = Math.max(0, Math.min(1, n)); continue; }
+      if (k === 'align' && /^(center|left|right)$/.test(v)) { o.align = v; continue; }
+      if (k === 'font') { const f = v.split(/(?=\\)/).map((z) => z.trim()).filter(Boolean); if (!f.every((z) => z in FONTS || z === '\\bfseries' || z === '\\itshape' || z === '\\sffamily')) return null; o.font = f.reduce((a, z) => a * (FONTS[z] || 1), 1); o.bold = f.includes('\\bfseries'); o.italic = f.includes('\\itshape'); continue; }
     }
     return null;
   }
   return o;
 }
+const xy = (t) => { if (t == null) return null; const c = t.split(','); if (c.length !== 2) return null; const x = num(c[0]), y = num(c[1]); return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null; };
 // a path: points joined by -- , rectangle to a point, circle and ellipse about one, cycle
 function path(s) {
   const segs = [];
@@ -103,7 +144,6 @@ function path(s) {
     i = z + 1;
     return inner;
   };
-  const xy = (t) => { if (t == null) return null; const c = t.split(','); if (c.length !== 2) return null; const x = num(c[0]), y = num(c[1]); return Number.isFinite(x) && Number.isFinite(y) ? [x, y] : null; };
   while (i < s.length && n++ < MAX_PTS) {
     while (/\s/.test(s[i] || '')) i++;
     if (i >= s.length) break;
@@ -127,33 +167,35 @@ function path(s) {
 // between the parentheses in text), kind: 'pt' | 'r' | 'ab', x, y (cm, the handle's place), c (the
 // centre, for a radius) }]. null where readTikz would not draw the picture.
 export function tikzPoints(text) {
-  if (!readTikz(text)) return null;
+  const T = tikzCmds(text);
+  if (!T || !readTikz(text)) return null;
   const out = [];
-  const b = text.indexOf('\\begin{tikzpicture}'), z = text.lastIndexOf('\\end{tikzpicture}');
-  let i = b + '\\begin{tikzpicture}'.length;
-  let cur = null, after = '';
-  for (let n = 0; i < z && n < MAX_PTS * 2; n++) {
-    const ch = text[i];
-    if (ch === '%') { const nl = text.indexOf('\n', i); i = nl < 0 ? z : nl + 1; continue; }
-    // (a command's options are no coordinates: \draw[...] skipped whole)
-    if (ch === '[') { const q = text.indexOf(']', i); i = q < 0 ? z : q + 1; continue; }
-    if (ch === ';') { cur = null; after = ''; i++; continue; }
-    if (ch !== '(') { if (/[a-z]/.test(ch)) { const m = /^(circle|ellipse|rectangle|cycle)/.exec(text.slice(i, i + 10)); if (m) { after = m[1]; i += m[1].length; continue; } } i++; continue; }
-    const q = text.indexOf(')', i);
-    if (q < 0 || q - i > 60) return out;
-    const inner = text.slice(i + 1, q);
-    if (after === 'circle' && cur) { const r = num(inner); if (Number.isFinite(r)) out.push({ s: i + 1, e: q, kind: 'r', x: cur[0] + r, y: cur[1], c: cur }); }
-    else if (after === 'ellipse' && cur) { const m = /^(.+?)\s+and\s+(.+)$/.exec(inner); if (m) { const a = num(m[1]), bb = num(m[2]); if (Number.isFinite(a) && Number.isFinite(bb)) out.push({ s: i + 1, e: q, kind: 'ab', x: cur[0] + a, y: cur[1] + bb, c: cur, a, b: bb }); } }
-    else {
-      const c = inner.split(',');
-      const x = c.length === 2 ? num(c[0]) : NaN, y = c.length === 2 ? num(c[1]) : NaN;
-      if (Number.isFinite(x) && Number.isFinite(y)) { out.push({ s: i + 1, e: q, kind: 'pt', x, y }); cur = [x, y]; }
+  T.cmds.forEach((c, k) => {
+    let i = c.rest[0], cur = null, after = '';
+    const z = c.rest[1];
+    while (i < z) {
+      const ch = text[i];
+      if (ch === '%') { const nl = text.indexOf('\n', i); i = nl < 0 || nl > z ? z : nl + 1; continue; }
+      // (a node's text holds no coordinates)
+      if (ch === '{') { const q = text.indexOf('}', i); i = q < 0 || q > z ? z : q + 1; continue; }
+      if (ch !== '(') { if (/[a-z]/.test(ch)) { const m = /^(circle|ellipse|rectangle|cycle)/.exec(text.slice(i, i + 10)); if (m) { after = m[1]; i += m[1].length; continue; } } i++; continue; }
+      const q = text.indexOf(')', i);
+      if (q < 0 || q > z || q - i > 60) return;
+      const inner = text.slice(i + 1, q);
+      if (after === 'circle' && cur) { const r = num(inner); if (Number.isFinite(r)) out.push({ s: i + 1, e: q, kind: 'r', x: cur[0] + r, y: cur[1], c: cur, k }); }
+      else if (after === 'ellipse' && cur) { const m = /^(.+?)\s+and\s+(.+)$/.exec(inner); if (m) { const a = num(m[1]), bb = num(m[2]); if (Number.isFinite(a) && Number.isFinite(bb)) out.push({ s: i + 1, e: q, kind: 'ab', x: cur[0] + a, y: cur[1] + bb, c: cur, a, b: bb, k }); } }
+      else {
+        const p = xy(inner);
+        if (p) { out.push({ s: i + 1, e: q, kind: 'pt', x: p[0], y: p[1], k }); cur = p; }
+      }
+      after = '';
+      i = q + 1;
     }
-    after = '';
-    i = q + 1;
-  }
+  });
   return out;
 }
+// the picture's scale in x and y, as readTikz reads it (a handle's place is its point times these)
+export function tikzScale(text) { const T = readTikz(text); return T ? [T.xs, T.ys] : [1, 1]; }
 // The text of a point moved to (x, y) cm, as its handle writes it: two decimals, no unit (TikZ's cm)
 const r2 = (v) => String(Math.round(v * 100) / 100);
 export function pointText(P, x, y) {
@@ -166,7 +208,29 @@ export function pointText(P, x, y) {
 // { kind: 'ybar' | 'xbar' | 'line', cats: [..] | null, series: [{ name, pts: [[x, y]] }], width, height }
 // Only Rikuy's own charts (chartTex's options, nothing else): a hand written axis (a log scale,
 // labels, stacked bars, a smooth line) is drawn by TeX alone, and the page keeps its source box
-const AXIS_KEYS = [/^(x|y)bar$/, /^width=[\d.]*\\linewidth$/, /^height=[\d.]+cm$/, /^(x|y)min=0$/, /^symbolic (x|y) coords=\{[^{}]*\}$/, /^(x|y)tick=data$/, /^legend pos=north west$/];
+// Chart Design's and Format's keys (src/objfmt.js) besides: a title, axis titles, gridlines, data
+// labels, the legend's corner, the colours (a cycle list of xcolor's names), the size
+const AXIS_KEYS = [/^(x|y)bar$/, /^width=[\d.]*\\linewidth$/, /^height=[\d.]+cm$/, /^(x|y)min=0$/, /^symbolic (x|y) coords=\{[^{}]*\}$/, /^(x|y)tick=data$/,
+  /^legend pos=(north west|north east|south west|south east|outer north east)$/, /^title=\{[^{}\\]*\}$/, /^(x|y)label=\{[^{}\\]*\}$/, /^(x|y)majorgrids$/, /^nodes near coords$/];
+// a cycle list's entries, each [draw, fill] as xcolor names (or null where it is no list of colours)
+export function cycleColors(t) {
+  const m = /^cycle list=\{((?:\{[^{}]*\},?\s*){1,12})\}$/.exec(t);
+  if (!m) return null;
+  const out = [];
+  for (const e of m[1].match(/\{[^{}]*\}/g)) {
+    let d = null, f = null;
+    for (const x of e.slice(1, -1).split(',').map((z) => z.trim()).filter(Boolean)) {
+      if (/^mark=(none|\*)$/.test(x)) continue;
+      const kv = /^(draw|fill)=(.+)$/.exec(x);
+      if (kv) { if (!colorOf(kv[2])) return null; if (kv[1] === 'draw') d = kv[2]; else f = kv[2]; continue; }
+      if (!colorOf(x)) return null;
+      d = x;
+    }
+    if (!d && !f) return null;
+    out.push([d || f, f]);
+  }
+  return out;
+}
 function axisOpts(t) {
   const out = [];
   let d = 0, cur = '';
@@ -184,7 +248,7 @@ export function readAxis(text) {
   const m = /^\\begin\{tikzpicture\}\s*\\begin\{axis\}\[([^\]]{0,2000})\]([\s\S]*)\\end\{axis\}\s*\\end\{tikzpicture\}\s*$/.exec(text.trim().replace(/%[^\n]*/g, ''));
   if (!m) return null;
   const opts = axisOpts(m[1]);
-  if (!opts.every((o) => AXIS_KEYS.some((r) => r.test(o)))) return null;
+  if (!opts.every((o) => AXIS_KEYS.some((r) => r.test(o)) || cycleColors(o))) return null;
   const kind = opts.includes('xbar') ? 'xbar' : opts.includes('ybar') ? 'ybar' : 'line';
   const sym = opts.find((o) => /^symbolic (x|y) coords=/.test(o));
   if (!sym) return null;
@@ -203,10 +267,12 @@ export function readAxis(text) {
   if (!series.length) return null;
   const rest = m[2].replace(re, '').replace(/\s+/g, '');
   if (rest) return null;
-  return { kind, cats, series };
+  return { kind, cats, series, opts };
 }
 // the LaTeX of a chart from a grid: cats, series [{ name, values }]
-export function chartTex(kind, cats, series, eol = '\n') {
+// extra: the axis's other keys as they are written (a title, gridlines, colours…), after its own;
+// a bar chart's gridlines are x's, a column or line chart's y's
+export function chartTex(kind, cats, series, eol = '\n', extra = []) {
   const safe = (t) => String(t).replace(/[\\{}%#$&_^~,()[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40) || '?';
   const C = cats.map(safe);
   // (each category once: pgfplots' symbolic coordinates are names)
@@ -215,7 +281,11 @@ export function chartTex(kind, cats, series, eol = '\n') {
   const axisOpts = kind === 'bar'
     ? ['xbar', 'width=0.8\\linewidth', 'height=6cm', 'xmin=0', 'symbolic y coords={' + C.join(',') + '}', 'ytick=data']
     : [kind === 'line' ? null : 'ybar', 'width=0.8\\linewidth', 'height=6cm', kind === 'line' ? null : 'ymin=0', 'symbolic x coords={' + C.join(',') + '}', 'xtick=data'].filter(Boolean);
-  if (series.length > 1) axisOpts.push('legend pos=north west');
+  const ex = extra.filter((x) => !/^legend pos=/.test(x) || series.length > 1).map((x) => (/^(x|y)majorgrids$/.test(x) ? (kind === 'bar' ? 'xmajorgrids' : 'ymajorgrids') : x));
+  // (a size of its own in the place of the default's)
+  for (const k of ['width', 'height']) { const j = ex.findIndex((x) => x.startsWith(k + '=')); if (j >= 0) { axisOpts[axisOpts.findIndex((x) => x.startsWith(k + '='))] = ex[j]; ex.splice(j, 1); } }
+  if (series.length > 1 && !ex.some((x) => /^legend pos=/.test(x))) axisOpts.push('legend pos=north west');
+  axisOpts.push(...ex.filter((x, i) => ex.indexOf(x) === i));
   const lines = ['\\begin{tikzpicture}', '\\begin{axis}[' + axisOpts.join(', ') + ']'];
   for (const s of series) {
     const pts = C.map((c, i) => (kind === 'bar' ? '(' + v(s.values[i]) + ',' + c + ')' : '(' + c + ',' + v(s.values[i]) + ')')).join(' ');
@@ -314,51 +384,73 @@ let mk = 0;
 export function drawTikz(text, doc = document) {
   const T = readTikz(text);
   if (!T) return null;
-  // the box of every point, circle and ellipse, in cm, y up
+  // (scale, xscale and yscale move the points, as TikZ's do: lines keep their width, a node its size)
+  const X = (p) => [p[0] * T.xs, p[1] * T.ys];
+  // the box of every point, circle, ellipse and node, in cm, y up
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   const add = (x, y) => { x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y); };
   let lw = 0;
+  const lines = (c) => c.text.split('\\\\').map((z) => z.trim());
+  const fs = (c) => 10 * (c.opts.font || 1) / PT;
   for (const c of T.cmds) {
+    if (c.node) {
+      const L = lines(c), [x, y] = X(c.at), w = Math.max(...L.map((z) => z.length)) * fs(c) * 0.5 / 2 + 0.1, h = L.length * fs(c) * 0.6 + 0.1;
+      add(x - w, y - h); add(x + w, y + h);
+      continue;
+    }
     lw = Math.max(lw, (c.opts.width ?? 0.4) / PT);
     for (const s of c.segs) {
-      if (s.p) add(...s.p);
-      if (s.op === 'rect') { add(...s.a); add(...s.b); }
-      if (s.op === 'circle') { add(s.c[0] - s.r, s.c[1] - s.r); add(s.c[0] + s.r, s.c[1] + s.r); }
-      if (s.op === 'ellipse') { add(s.c[0] - s.a, s.c[1] - s.b); add(s.c[0] + s.a, s.c[1] + s.b); }
+      if (s.p) add(...X(s.p));
+      if (s.op === 'rect') { add(...X(s.a)); add(...X(s.b)); }
+      if (s.op === 'circle') { add(s.c[0] * T.xs - s.r * T.xs, s.c[1] * T.ys - s.r * T.ys); add(s.c[0] * T.xs + s.r * T.xs, s.c[1] * T.ys + s.r * T.ys); }
+      if (s.op === 'ellipse') { add((s.c[0] - s.a) * T.xs, (s.c[1] - s.b) * T.ys); add((s.c[0] + s.a) * T.xs, (s.c[1] + s.b) * T.ys); }
     }
   }
   if (!Number.isFinite(x0)) return null;
   const pad = lw / 2 + 0.05;
   x0 -= pad; y0 -= pad; x1 += pad; y1 += pad;
-  const W = Math.max(0.05, x1 - x0), H = Math.max(0.05, y1 - y0), k = T.scale;
+  const W = Math.max(0.05, x1 - x0), H = Math.max(0.05, y1 - y0);
   const svg = sv(doc, 'svg', { viewBox: [x0, -y1, W, H].map((v) => Math.round(v * 1000) / 1000).join(' '), class: 'tz', role: 'img', 'aria-label': 'Drawing' });
-  svg.style.width = ptCss(W * k * PT); svg.style.height = ptCss(H * k * PT);
+  svg.style.width = ptCss(W * PT); svg.style.height = ptCss(H * PT);
   const defs = sv(doc, 'defs');
   svg.append(defs);
-  for (const c of T.cmds) {
+  T.cmds.forEach((c, k) => {
+    if (c.node) {
+      // a node's words, centred on its point, at the text's size (10 pt) or its font's
+      const L = lines(c), [x, y] = X(c.at), f = fs(c);
+      const e = sv(doc, 'text', { x, y: -y - (L.length - 1) * f * 0.6 + f * 0.35, 'font-size': f, 'text-anchor': c.opts.align === 'left' ? 'end' : c.opts.align === 'right' ? 'start' : 'middle', fill: c.opts.textColor || c.opts.color || 'rgb(0,0,0)', 'data-k': k });
+      if (c.opts.bold) e.setAttribute('font-weight', 'bold');
+      if (c.opts.italic) e.setAttribute('font-style', 'italic');
+      e.setAttribute('font-family', 'var(--serif, serif)');
+      L.forEach((z, n) => { const t = sv(doc, 'tspan', { x, dy: n ? f * 1.2 : 0 }); t.textContent = z.slice(0, 200); e.append(t); });
+      svg.append(e);
+      return;
+    }
     let d = '';
-    const P = (p) => p[0] + ' ' + (-p[1]);
+    const P = (p) => { const q = X(p); return q[0] + ' ' + (-q[1]); };
     const shapes = [];
     for (const s of c.segs) {
       if (s.op === 'M') d += 'M' + P(s.p);
       else if (s.op === 'L') d += 'L' + P(s.p);
       else if (s.op === 'Z') d += 'Z';
       else if (s.op === 'rect') {
-        const x = Math.min(s.a[0], s.b[0]), y = Math.max(s.a[1], s.b[1]), w = Math.abs(s.b[0] - s.a[0]), h = Math.abs(s.b[1] - s.a[1]);
+        const a = X(s.a), b = X(s.b);
+        const x = Math.min(a[0], b[0]), y = Math.max(a[1], b[1]), w = Math.abs(b[0] - a[0]), h = Math.abs(b[1] - a[1]);
         const r = c.opts.round ? Math.min(c.opts.round / PT, w / 2, h / 2) : 0;
         shapes.push(sv(doc, 'rect', { x, y: -y, width: w, height: h, rx: r, ry: r }));
-      } else if (s.op === 'circle') shapes.push(sv(doc, 'circle', { cx: s.c[0], cy: -s.c[1], r: Math.abs(s.r) }));
-      else if (s.op === 'ellipse') shapes.push(sv(doc, 'ellipse', { cx: s.c[0], cy: -s.c[1], rx: Math.abs(s.a), ry: Math.abs(s.b) }));
+      } else if (s.op === 'circle') shapes.push(T.xs === T.ys ? sv(doc, 'circle', { cx: s.c[0] * T.xs, cy: -s.c[1] * T.ys, r: Math.abs(s.r) * T.xs }) : sv(doc, 'ellipse', { cx: s.c[0] * T.xs, cy: -s.c[1] * T.ys, rx: Math.abs(s.r) * T.xs, ry: Math.abs(s.r) * T.ys }));
+      else if (s.op === 'ellipse') shapes.push(sv(doc, 'ellipse', { cx: s.c[0] * T.xs, cy: -s.c[1] * T.ys, rx: Math.abs(s.a) * T.xs, ry: Math.abs(s.b) * T.ys }));
     }
     if (d && /L/.test(d)) shapes.unshift(sv(doc, 'path', { d }));
     const col = c.opts.color || 'rgb(0,0,0)';
     for (const e of shapes) {
+      e.setAttribute('data-k', String(k));
       e.setAttribute('fill', c.fill ? (c.opts.fillColor || col) : 'none');
       e.setAttribute('stroke', c.draw ? col : 'none');
       e.setAttribute('stroke-width', String((c.opts.width ?? 0.4) / PT));
       e.setAttribute('stroke-linejoin', c.opts.round ? 'round' : 'miter');
       if (c.opts.opacity != null) e.setAttribute('fill-opacity', String(c.opts.opacity));
-      if (c.opts.dash && c.opts.dash !== 'solid') { const w = 1 / PT; e.setAttribute('stroke-dasharray', /dot/.test(c.opts.dash) ? [w * 0.4, w * 2].join(' ') : [w * 3, w * 3].join(' ')); }
+      if (c.opts.dash && c.opts.dash !== 'solid') { const w = 1 / PT; e.setAttribute('stroke-dasharray', /dash dot/.test(c.opts.dash) ? [w * 3, w * 2, w * 0.4, w * 2].join(' ') : /dot/.test(c.opts.dash) ? [w * 0.4, w * 2].join(' ') : [w * 3, w * 3].join(' ')); }
       // arrow tips: TikZ's at the path's ends
       if (c.opts.arrow && e.tagName === 'path') {
         const id = 'tza' + (++mk);
@@ -371,7 +463,7 @@ export function drawTikz(text, doc = document) {
       }
       svg.append(e);
     }
-  }
+  });
   return svg;
 }
 
@@ -385,9 +477,14 @@ export function drawAxis(text, doc = document) {
   const wm = /(?:^|,)\s*width\s*=\s*([\d.]*)\\(linewidth|textwidth|columnwidth)/.exec(o), hm = /(?:^|,)\s*height\s*=\s*([\d.]+)\s*cm/.exec(o);
   const share = wm ? (wm[1] === '' ? 1 : parseFloat(wm[1])) : null;
   const VW = 400, VH = hm && share ? Math.round(VW * parseFloat(hm[1]) / (share * 12.2)) : 280;
-  const svg = sv(doc, 'svg', { viewBox: '0 0 ' + VW + ' ' + VH, class: 'pgf', role: 'img', 'aria-label': 'Chart' });
-  svg.style.width = share ? Math.min(100, share * 100) + '%' : ptCss(240 * 0.75 * 1.33);
-  const L = 40, R = VW - 10, Tp = 10, B = VH - 30;
+  const key = (re) => { const x = A.opts.find((z) => re.test(z)); return x ? re.exec(x) : null; };
+  const title = key(/^title=\{(.*)\}$/), xl = key(/^xlabel=\{(.*)\}$/), yl = key(/^ylabel=\{(.*)\}$/), grid = key(/^(x|y)majorgrids$/), labels = A.opts.includes('nodes near coords');
+  const lpos = key(/^legend pos=(.+)$/), cyc = A.opts.map(cycleColors).find(Boolean);
+  // (pgfplots puts the title above the axis and the axis titles outside its ticks; the box grows)
+  const tH = title ? 18 : 0, xH = xl ? 15 : 0, yW = yl ? 15 : 0, legOut = lpos && lpos[1] === 'outer north east' && A.series.length > 1 ? 90 : 0;
+  const svg = sv(doc, 'svg', { viewBox: '0 0 ' + (VW + legOut) + ' ' + (VH + tH + xH), class: 'pgf', role: 'img', 'aria-label': 'Chart' + (title ? ': ' + title[1].slice(0, 80) : '') });
+  svg.style.width = share ? Math.min(100, share * 100 * (VW + legOut) / VW) + '%' : ptCss(240 * 0.75 * 1.33);
+  const L = 40 + yW, R = VW - 10, Tp = 10 + tH, B = VH - 30 + tH;
   const cats = A.cats || [...new Set(A.series.flatMap((s) => s.pts.map((p) => (A.kind === 'xbar' ? p[1] : p[0]))))].slice(0, 50);
   const vals = A.series.map((s) => s.pts.map((p) => parseFloat(A.kind === 'xbar' ? p[0] : p[1])).filter(Number.isFinite));
   const all = vals.flat();
@@ -398,11 +495,16 @@ export function drawAxis(text, doc = document) {
   hi = Math.ceil(hi / step) * step; lo = Math.floor(lo / step) * step;
   const frame = sv(doc, 'rect', { x: L, y: Tp, width: R - L, height: B - Tp, fill: 'none', stroke: 'currentColor', 'stroke-width': 0.8 });
   svg.append(frame);
-  const text_ = (x, y, t, anchor) => { const e = sv(doc, 'text', { x, y, 'font-size': 10, 'text-anchor': anchor || 'middle', fill: 'currentColor' }); e.textContent = String(t).slice(0, 40); svg.append(e); };
+  const text_ = (x, y, t, anchor, size, rot) => { const e = sv(doc, 'text', { x, y, 'font-size': size || 10, 'text-anchor': anchor || 'middle', fill: 'currentColor' }); if (rot) e.setAttribute('transform', 'rotate(-90 ' + x + ' ' + y + ')'); e.textContent = String(t).slice(0, 80); svg.append(e); return e; };
+  if (title) text_((L + R) / 2, 14, title[1], 'middle', 11);
+  if (xl) text_((L + R) / 2, B + 27, xl[1]);
+  if (yl) text_(12, (Tp + B) / 2, yl[1], 'middle', 10, true);
   const horiz = A.kind === 'xbar';
   const vPos = (v) => (horiz ? L + (v - lo) / (hi - lo) * (R - L) : B - (v - lo) / (hi - lo) * (B - Tp));
   for (let v = lo, n = 0; v <= hi + step / 2 && n < 30; v += step, n++) {
     const p = vPos(v);
+    // (gridlines: pgfplots' major grid, light gray across the axis at each tick)
+    if (grid) svg.append(horiz ? sv(doc, 'line', { x1: p, y1: Tp, x2: p, y2: B, stroke: 'rgb(191,191,191)', 'stroke-width': 0.5 }) : sv(doc, 'line', { x1: L, y1: p, x2: R, y2: p, stroke: 'rgb(191,191,191)', 'stroke-width': 0.5 }));
     if (horiz) { svg.append(sv(doc, 'line', { x1: p, y1: B, x2: p, y2: B - 4, stroke: 'currentColor', 'stroke-width': 0.6 })); text_(p, B + 12, fmtTick(v)); }
     else { svg.append(sv(doc, 'line', { x1: L, y1: p, x2: L + 4, y2: p, stroke: 'currentColor', 'stroke-width': 0.6 })); text_(L - 4, p + 3, fmtTick(v), 'end'); }
   }
@@ -410,23 +512,32 @@ export function drawAxis(text, doc = document) {
   const cPos = (i) => (horiz ? Tp + band * (i + 0.5) : L + band * (i + 0.5));
   cats.forEach((c, i) => { if (horiz) text_(L - 4, cPos(i) + 3, c, 'end'); else text_(cPos(i), B + 12, c); });
   const ns = A.series.length;
+  const look = (si) => { if (!cyc) return CYCLE[si % CYCLE.length]; const c = cyc[si % cyc.length]; return [colorOf(c[0]), colorOf(c[1] || c[0])]; };
   A.series.forEach((s, si) => {
-    const [stroke, fill] = CYCLE[si % CYCLE.length];
+    const [stroke, fill] = look(si);
     const pts = s.pts.map((p) => { const cat = horiz ? p[1] : p[0], v = parseFloat(horiz ? p[0] : p[1]); const i = cats.indexOf(cat); return { i: i >= 0 ? i : parseFloat(cat), v }; }).filter((q) => Number.isFinite(q.v) && Number.isFinite(q.i));
     if (A.kind === 'line') {
       const d = pts.map((q, k) => (k ? 'L' : 'M') + cPos(q.i) + ' ' + vPos(q.v)).join('');
       svg.append(sv(doc, 'path', { d, fill: 'none', stroke, 'stroke-width': 1.2 }));
-      for (const q of pts) svg.append(sv(doc, 'circle', { cx: cPos(q.i), cy: vPos(q.v), r: 2.5, fill: stroke }));
+      for (const q of pts) { svg.append(sv(doc, 'circle', { cx: cPos(q.i), cy: vPos(q.v), r: 2.5, fill: stroke })); if (labels) text_(cPos(q.i), vPos(q.v) - 6, fmtTick(q.v), 'middle', 9); }
     } else {
       const bw = Math.min(28, band * 0.7 / ns);
       for (const q of pts) {
         const c = cPos(q.i) - bw * ns / 2 + bw * si, a = vPos(Math.max(lo, Math.min(0, hi))), b = vPos(q.v);
         svg.append(horiz ? sv(doc, 'rect', { x: Math.min(a, b), y: c, width: Math.abs(b - a), height: bw * 0.9, fill, stroke, 'stroke-width': 0.6 })
           : sv(doc, 'rect', { x: c, y: Math.min(a, b), width: bw * 0.9, height: Math.abs(b - a), fill, stroke, 'stroke-width': 0.6 }));
+        // (data labels: the value at the bar's end, nodes near coords)
+        if (labels) { if (horiz) text_(Math.max(a, b) + 3, c + bw * 0.45 + 3, fmtTick(q.v), 'start', 9); else text_(c + bw * 0.45, Math.min(a, b) - 3, fmtTick(q.v), 'middle', 9); }
       }
     }
   });
-  if (ns > 1) A.series.forEach((s, si) => { svg.append(sv(doc, 'rect', { x: L + 8, y: Tp + 6 + si * 13, width: 10, height: 8, fill: CYCLE[si % CYCLE.length][1], stroke: CYCLE[si % CYCLE.length][0], 'stroke-width': 0.6 })); text_(L + 22, Tp + 13 + si * 13, s.name || '', 'start'); });
+  if (ns > 1) {
+    // the legend in its corner (pgfplots' legend pos), its box as wide as its longest name
+    const where = lpos ? lpos[1] : 'north west', lw = 30 + Math.max(...A.series.map((x) => (x.name || '').length)) * 5.5, lh = ns * 13 + 6;
+    const lx = where === 'outer north east' ? R + 8 : /east/.test(where) ? R - 6 - lw : L + 6, ly = /south/.test(where) ? B - 6 - lh : Tp + 6;
+    svg.append(sv(doc, 'rect', { x: lx, y: ly, width: lw, height: lh, fill: 'var(--page-bg, white)', stroke: 'currentColor', 'stroke-width': 0.5 }));
+    A.series.forEach((s, si) => { const [st, fi] = look(si); svg.append(sv(doc, 'rect', { x: lx + 4, y: ly + 4 + si * 13, width: 10, height: 8, fill: fi, stroke: st, 'stroke-width': 0.6 })); text_(lx + 18, ly + 11 + si * 13, s.name || '', 'start'); });
+  }
   return svg;
 }
 function niceStep(x) { const p = 10 ** Math.floor(Math.log10(x || 1)), f = x / p; return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p; }
@@ -436,12 +547,24 @@ export function drawRaw(text, doc = document) { return drawAxis(text, doc) || dr
 
 // smartdiagram's boxes and arrows, in its colours
 const SMART_COLORS = ['rgb(255,128,128)', 'rgb(128,255,255)', 'rgb(128,128,255)', 'rgb(128,255,128)', 'rgb(255,191,128)', 'rgb(255,255,128)', 'rgb(255,128,255)'];
-export function drawSmart(kind, items, doc = document) {
+// smartdiagram's keys a \smartdiagramset holds (SmartArt Design and Format, src/objfmt.js): its
+// colours, from set color list or uniform color list, and its border's colour
+export function smartLook(set) {
+  const kv = smartItems(String(set || '').slice(0, 2000)).map((x) => /^([a-z ]+?)\s*=\s*([\s\S]*)$/.exec(x)).filter(Boolean);
+  const get = (k) => { const x = kv.filter((z) => z[1] === k).pop(); return x ? x[2].trim() : null; };
+  const list = get('set color list'), uni = get('uniform color list'), bc = get('border color');
+  let colors = null;
+  if (list != null) colors = smartItems(list.replace(/^\{|\}$/g, '')).map(colorOf);
+  if (uni != null) { const m = /^(.+?)\s+for\s+(\d+)\s+items$/.exec(uni); if (m && colorOf(m[1])) colors = Array(Math.min(20, +m[2])).fill(colorOf(m[1])); }
+  return { colors: colors && colors.length && colors.every(Boolean) ? colors : null, border: bc && colorOf(bc) ? colorOf(bc) : null };
+}
+export function drawSmart(kind, items, doc = document, set = '') {
   const it = items.slice(0, 12);
   const n = Math.max(1, it.length);
+  const look = smartLook(set), COL = look.colors || SMART_COLORS;
   const svg = sv(doc, 'svg', { class: 'smart', role: 'img', 'aria-label': 'Diagram: ' + it.join(', ').slice(0, 200) });
   const box = (x, y, w, h, t, k) => {
-    svg.append(sv(doc, 'rect', { x, y, width: w, height: h, rx: 6, fill: SMART_COLORS[k % SMART_COLORS.length], stroke: 'rgb(90,90,90)', 'stroke-width': 0.8 }));
+    svg.append(sv(doc, 'rect', { x, y, width: w, height: h, rx: 6, fill: COL[k % COL.length], stroke: look.border || 'rgb(90,90,90)', 'stroke-width': 0.8 }));
     const e = sv(doc, 'text', { x: x + w / 2, y: y + h / 2 + 4, 'font-size': 11, 'text-anchor': 'middle', fill: 'rgb(0,0,0)' });
     e.textContent = String(t).slice(0, 24);
     svg.append(e);
@@ -452,12 +575,12 @@ export function drawSmart(kind, items, doc = document) {
     W = 280; H = 280;
     const cx = 140, cy = 140, R = /bubble/.test(kind) ? 95 : 100;
     const ring = /bubble/.test(kind) ? it.slice(1) : it;
-    if (/bubble/.test(kind)) { svg.append(sv(doc, 'circle', { cx, cy, r: 46, fill: SMART_COLORS[0], 'fill-opacity': 0.8 })); const e = sv(doc, 'text', { x: cx, y: cy + 4, 'font-size': 11, 'text-anchor': 'middle' }); e.textContent = String(it[0] || '').slice(0, 20); svg.append(e); }
+    if (/bubble/.test(kind)) { svg.append(sv(doc, 'circle', { cx, cy, r: 46, fill: COL[0], 'fill-opacity': 0.8 })); const e = sv(doc, 'text', { x: cx, y: cy + 4, 'font-size': 11, 'text-anchor': 'middle' }); e.textContent = String(it[0] || '').slice(0, 20); svg.append(e); }
     ring.forEach((t, i) => {
-      const a = -Math.PI / 2 + i * 2 * Math.PI / Math.max(1, ring.length), x = cx + R * Math.cos(a), y = cy + R * Math.sin(a);
-      if (/bubble/.test(kind)) { svg.append(sv(doc, 'circle', { cx: x, cy: y, r: 34, fill: SMART_COLORS[(i + 1) % SMART_COLORS.length], 'fill-opacity': 0.8 })); const e = sv(doc, 'text', { x, y: y + 4, 'font-size': 10, 'text-anchor': 'middle' }); e.textContent = String(t).slice(0, 16); svg.append(e); }
+      const dir = /counterclockwise/.test(kind) ? -1 : 1, a = -Math.PI / 2 + dir * i * 2 * Math.PI / Math.max(1, ring.length), x = cx + R * Math.cos(a), y = cy + R * Math.sin(a);
+      if (/bubble/.test(kind)) { svg.append(sv(doc, 'circle', { cx: x, cy: y, r: 34, fill: COL[(i + 1) % COL.length], 'fill-opacity': 0.8 })); const e = sv(doc, 'text', { x, y: y + 4, 'font-size': 10, 'text-anchor': 'middle' }); e.textContent = String(t).slice(0, 16); svg.append(e); }
       else {
-        const b = -Math.PI / 2 + (i + 0.5) * 2 * Math.PI / Math.max(1, ring.length);
+        const b = -Math.PI / 2 + dir * (i + 0.5) * 2 * Math.PI / Math.max(1, ring.length);
         svg.append(sv(doc, 'path', { d: 'M' + (cx + R * Math.cos(b - 0.2)) + ' ' + (cy + R * Math.sin(b - 0.2)) + 'A' + R + ' ' + R + ' 0 0 1 ' + (cx + R * Math.cos(b + 0.2)) + ' ' + (cy + R * Math.sin(b + 0.2)), fill: 'none', stroke: 'rgb(150,150,150)', 'stroke-width': 4 }));
         box(x - 40, y - 15, 80, 30, t, i);
       }

@@ -27,7 +27,7 @@ ok('every shape Insert › Shapes writes is read back as the paths the page draw
 ok('hand written TikZ in the subset is drawn; anything else is left to the source box', () => {
   assert.ok(D.readTikz('\\begin{tikzpicture}[scale=2]\n\\draw (0,0) -- (1,1) -- (2,0) -- cycle; % a triangle\n\\fill[red!50] (3,0) circle (0.5);\n\\end{tikzpicture}'));
   assert.equal(D.readTikz('\\begin{tikzpicture}[scale=2]\n\\fill[red!50] (3,0) circle (0.5);\n\\end{tikzpicture}').scale, 2);
-  for (const t of ['\\begin{tikzpicture}\\node at (0,0) {A};\\end{tikzpicture}', '\\begin{tikzpicture}\\draw (0,0) to[bend left] (1,1);\\end{tikzpicture}',
+  for (const t of ['\\begin{tikzpicture}\\node[circle,draw] at (0,0) {$A$};\\end{tikzpicture}', '\\begin{tikzpicture}\\draw (0,0) to[bend left] (1,1);\\end{tikzpicture}',
     '\\begin{tikzpicture}\\draw[myStyle] (0,0) -- (1,1);\\end{tikzpicture}', '\\begin{tikzpicture}\\draw (0,0) -- (1,1)\\end{tikzpicture}', '\\begin{tikzpicture}\\foreach \\x in {1,2} \\draw (\\x,0) -- (1,1);\\end{tikzpicture}']) assert.equal(D.readTikz(t), null, t);
 });
 
