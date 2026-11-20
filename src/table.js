@@ -1282,7 +1282,10 @@ export function moveRow(src, T, r, dir, at) {
   if (!A || A.kind !== 'row') return { error: 'Put the caret in a row of the table.' };
   if (!B || B.kind !== 'row') return { error: dir < 0 ? 'This is the table\'s first row.' : 'This is the table\'s last row.' };
   for (const m of multirows(T)) if (m.bottom >= Math.min(r, k) && m.top <= Math.max(r, k)) return { error: 'Rows with cells merged down them cannot be moved.' };
-  const ae = rowEnd(src, A), be = rowEnd(src, B);
+  // (the whole of each row's cells, its empty last ones and their & too: rowEnd stops at the last
+  // words, and a swap of that much left a row's trailing & on the other row, a cell too many)
+  const span = (row) => { const c = row.cells[row.cells.length - 1]; return !c.empty ? c.ce : row.cells.length > 1 ? c.s : row.cs; };
+  const ae = span(A), be = span(B);
   const ta = src.slice(A.cs, ae), tb = src.slice(B.cs, be);
   const start = dir < 0 ? B.cs : B.cs + tb.length - ta.length;
   const off = at != null && at >= A.cs && at <= ae ? at - A.cs : 0;
