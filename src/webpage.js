@@ -72,7 +72,7 @@ export class HtmlWriter {
   // an id kept where a reference can point to it (Rk1... are the Word download's bookmarks)
   id(v) { if (!v || /^Rk\d+$/.test(v) || this.ids.has(v) || !/^[A-Za-z][\w:.-]{0,80}$/.test(v)) return ''; this.ids.add(v); return esc(v); }
   image(c) {
-    const src = c[2][0], alt = this.inl(c[1]).replace(/<[^>]*>/g, '');
+    const src = c[2][0], alt = plain(c[1]);
     const g = this.o.graphs.get(src);
     if (g) {
       // a live graph: its frame, sandboxed to scripts alone, as wide as the text
@@ -151,6 +151,11 @@ export class HtmlWriter {
     if (!this.notes.length) return '';
     return '<section class="notes"><hr><ol>' + this.notes.map((n, k) => '<li id="fn' + (k + 1) + '">' + n.replace(/<\/p>$/, ' <a href="#fnref' + (k + 1) + '" aria-label="Back to the text">↩</a></p>') + '</li>').join('') + '</ol></section>';
   }
+}
+
+// inlines as plain text (a picture's alt text)
+function plain(list) {
+  return (list || []).map((x) => (x.t === 'Str' ? x.c : x.t === 'Space' || x.t === 'SoftBreak' ? ' ' : x.t === 'Math' ? x.c[1] : Array.isArray(x.c) ? plain(x.c.find(Array.isArray) || []) : '')).join('');
 }
 
 async function sha256(text) {

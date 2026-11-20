@@ -69,10 +69,10 @@ export function graphKit() {
     // LaTeX as an equation of a paper writes it: sizes and spacing go, \dfrac is \frac, \frac12
     // is \frac{1}{2}, \mathrm{e} and \operatorname{sgn} are their letters (lengths kept where
     // they can be, so a mistake is said near where it is)
-    s = s.replace(/\\(?:left|right)\s*\./g, ' ').replace(/\\(?:left|right|[bB]igg?[lrm]?)(?![A-Za-z])/g, ' ').replace(/\\(?:displaystyle|textstyle|scriptstyle|limits|nolimits)(?![A-Za-z])/g, ' ')
+    s = s.replace(/\\left\s*(?:\||\\[lv]vert(?![A-Za-z]))|\\lvert(?![A-Za-z])/g, ' abs(').replace(/\\right\s*(?:\||\\[rv]vert(?![A-Za-z]))|\\rvert(?![A-Za-z])/g, ') ').replace(/\\(?:left|right)\s*\./g, ' ').replace(/\\(?:left|right|[bB]igg?[lrm]?)(?![A-Za-z])/g, ' ').replace(/\\(?:displaystyle|textstyle|scriptstyle|limits|nolimits)(?![A-Za-z])/g, ' ')
       .replace(/\\[dtc]frac(?![A-Za-z])/g, '\\frac').replace(/\\frac\s*(\d)\s*(\d)/g, '\\frac{$1}{$2}')
       .replace(/\\(?:mathrm|mathit|mathnormal|operatorname\*?|textrm|textit|text)\s*\{\s*([A-Za-z]{1,12})\s*\}/g, ' $1 ')
-      .replace(/\\(?:l|r)?[vV]ert(?![A-Za-z])/g, '|').replace(/\\[{}]/g, (m) => (m[1] === '{' ? '(' : ')'))
+      .replace(/\\[vV]ert(?![A-Za-z])/g, '|').replace(/\\[{}]/g, (m) => (m[1] === '{' ? '(' : ')'))
       .replace(/\\(?:cdot|times|ast)(?![A-Za-z])|[·×⋅∗]/g, '*').replace(/\\div(?![A-Za-z])/g, '/').replace(/\\(?:leq?|leqslant)(?![A-Za-z])/g, '<=').replace(/\\(?:geq?|geqslant)(?![A-Za-z])/g, '>=')
       .replace(/[−–]/g, '-').replace(/÷/g, '/').replace(/\*\*/g, '^')
       .replace(/²/g, '^2').replace(/³/g, '^3').replace(/\\[,;:! ]|[~&]/g, ' ');
@@ -553,7 +553,7 @@ export function graphKit() {
     if (op === '*') {
       // a product as written: 2x, s k^α, (n + δ) k; a number after anything gets its sign
       const L = P(a, 2), R = P(b, 3);
-      if (b[0] === 'n' || (b[0] === 'neg')) return L + (tex ? ' \\cdot ' : '·') + R;
+      if (b[0] === 'n' || b[0] === 'neg' || /^[\d.]/.test(R)) return L + (tex ? ' \\cdot ' : '·') + R;
       if (a[0] === 'n' && b[0] !== 'f') return L + (tex ? ' ' : '') + R;
       return L + ' ' + R;
     }
@@ -580,15 +580,18 @@ export function graphKit() {
     const fns = formulas(s).map((f) => ({ ...f, fn: compile(f.tree, slots) }));
     const at = (fn, v) => { env[0] = v; const y = fn(env); return Number.isFinite(y) ? y : NaN; };
     const at2 = (fn, x, y) => { env[0] = x; env[1] = y; const z = fn(env); return Number.isFinite(z) ? z : NaN; };
-    const vlab = (v) => (s.kind === 'function' ? s.y.label || 'y' : v);
     if (s.kind === 'function') {
       const curves = fns.filter((f) => !f.shade);
       const xs = [];
       for (let i = 0; i <= N; i++) xs.push(s.x.min + (s.x.max - s.x.min) * i / N);
+      // the legend's left side: the y label where it names the curve (p, k′, k̇, f(x)), else y
+      const yl = String(s.y.label || '').trim();
+      const m1 = /^([A-Za-zα-ωΑ-Ω])([\u0307′']?)(_[A-Za-z0-9]{1,8})?$/.exec(yl), m2 = /^([A-Za-zα-ωΑ-Ω]\w*)\(([A-Za-zα-ωΑ-Ω]\w*(?:_\w+)?)\)$/.exec(yl);
+      const lhs = m1 || m2 ? yl : 'y';
+      const lhsTex = m1 ? (m1[2] === '\u0307' ? '\\dot{' + nameTex(m1[1]) + '}' : nameTex(m1[1]) + (m1[2] ? "'" : '')) + (m1[3] ? '_{' + m1[3].slice(1) + '}' : '') : m2 ? nameTex(m2[1]) + '(' + nameTex(m2[2]) + ')' : 'y';
       curves.forEach((f, k) => {
         const pts = xs.map((x) => [x, at(f.fn, x)]);
-        const lhs = vlab();
-        out.push({ kind: 'line', pts, label: lhs + ' = ' + f.text.trim(), tex: (texOf(lhs, []) || nameTex('y')) + ' = ' + (texOf(f.text, declared) || ''), slot: k });
+        out.push({ kind: 'line', pts, label: lhs + ' = ' + f.text.trim(), tex: lhsTex + ' = ' + (texOf(f.text, declared) || ''), slot: k });
       });
       // where curves a and b cross, left to right: bisection from a change of sign on the samples
       // (not at the ends of the range, where a curve through the origin meets another at 0)
@@ -766,7 +769,8 @@ export function graphKit() {
       const k = (a > 0 ? 1 : 0) | (b > 0 ? 2 : 0) | (c > 0 ? 4 : 0) | (d > 0 ? 8 : 0);
       if (k === 0 || k === 15) continue;
       const S = () => edge(i, j, true), E = () => edge(i + 1, j, false), Nn = () => edge(i, j + 1, true), W = () => edge(i, j, false);
-      const add = (p, q) => segs.push([p, q]);
+      // (a piece of no length, where the curve passes through a corner, is none)
+      const add = (p, q) => { if (p[0] !== q[0] || p[1] !== q[1]) segs.push([p, q]); };
       switch (k) {
         case 1: case 14: add(W(), S()); break;
         case 2: case 13: add(S(), E()); break;
