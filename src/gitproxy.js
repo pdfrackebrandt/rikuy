@@ -18,16 +18,18 @@
 // application/octet-stream, as an attachment, sandboxed, with no script, readable by this site
 // alone, never sniffed or cached (DOWN_HEADERS), the refusals too: Pages applies no _headers to a
 // Function's answers, and a link to /git/<a host of anyone's>/... must not show that host's
-// HTML as Rikuy. Answers are capped in bytes (MAX_ANSWER) and time (TIMEOUT_MS). It passes
-// Authorization to that host alone and keeps no record of it; cookies go neither way, nor does a
-// host's question for a password (WWW-Authenticate would bring up the browser's own login box
-// under Rikuy's address; isomorphic-git asks for credentials on the 401 alone).
+// HTML as Rikuy. Answers are capped in time (TIMEOUT_MS) and, when the host gives their length,
+// in bytes (MAX_ANSWER). It passes Authorization to that host alone and keeps no record of it;
+// cookies go neither way, nor does a host's question for a password (WWW-Authenticate would
+// bring up the browser's own login box under Rikuy's address; isomorphic-git asks for
+// credentials on the 401 alone).
 // Pure: the fetch it forwards with is given (the function passes the platform's; the tests a
 // stand in), so test/gitproxy.test.mjs and test/git.py run this same code.
 
 export const MAX_BODY = 32 * 1024 * 1024;
 export const MAX_ANSWER = 256 * 1024 * 1024;
-export const TIMEOUT_MS = 120000;
+// (five minutes: a 50 MB clone over a phone's 1.5 Mbit/s line fits)
+export const TIMEOUT_MS = 300000;
 // the git hosts a browser reaches through this (dev.azure.com's git is under .../_git/...; Overleaf
 // is the Git panel's own case, src/git.js gitUrlOf)
 export const HOSTS = ['github.com', 'gitlab.com', 'bitbucket.org', 'codeberg.org', 'gitea.com', 'git.sr.ht', 'huggingface.co', 'dev.azure.com', 'git.overleaf.com'];
@@ -138,9 +140,17 @@ export async function handle(request, fetchUp, o = {}) {
   const want = ANSWER[request.method](t.service);
   const type = (res.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
   const out = new Headers({ ...DOWN_HEADERS, 'Content-Type': type === want ? want : 'application/octet-stream' });
-  // (at most MAX_ANSWER bytes: past them the answer is cut, which git takes as a failed fetch)
-  let n = 0;
+  // The ceiling in bytes, with no script on the stream: a body piped through a transform runs
+  // JavaScript per chunk, which is Worker CPU time (about 80 ms per 100 MiB, against the free
+  // plan's 10 ms a request), so the platform would cut a big clone off (review SECURITY-2, L6).
+  // A host that gives a length past MAX_ANSWER, or one that is not a number, is refused before a
+  // byte is sent on; one that streams without a length is bounded by TIMEOUT_MS, as the whole
+  // exchange is, and goes only to the hosts this proxy knows.
   const max = o.maxAnswer || MAX_ANSWER;
-  const cap = new TransformStream({ transform(chunk, c) { n += chunk.byteLength; if (n > max) c.error(new Error('answer too large')); else c.enqueue(chunk); } });
-  return new Response(res.body ? res.body.pipeThrough(cap) : null, { status: res.status, headers: out });
+  const len = res.headers.get('Content-Length');
+  if (len !== null && !(/^\d{1,15}$/.test(len.trim()) && Number(len) <= max)) {
+    if (res.body) res.body.cancel().catch(() => {});
+    return refuse(502, 'an answer larger than ' + max + ' bytes');
+  }
+  return new Response(res.body, { status: res.status, headers: out });
 }

@@ -3302,7 +3302,8 @@ Tests:
     header `X-Rikuy-Git`, which another site's page cannot send without a refused preflight; no
     navigation, nothing but a script's fetch, nothing from another site), only to known git
     hosts (nine, and `RIKUY_GIT_HOSTS`), every answer git's own type or bytes, sandboxed, an
-    attachment, readable by this site alone, capped at 256 MiB and 120 s, without the host's
+    attachment, readable by this site alone, capped at 5 minutes and, where the host gives a
+    length, 256 MiB (no script on the stream: review L6), without the host's
     `WWW-Authenticate`; the installed app's service worker refuses a navigation to `/git`;
     HOSTING.md step 9 has the rate limiting rule (`gitproxy.test.mjs` 12 groups, `git.py` 49,
     `offline.py` 62). `para.py`, `picture.py`, `refs.py` and

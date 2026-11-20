@@ -198,11 +198,22 @@ await ok('(review M3) git hosts this site knows, and those the variable names, a
 });
 
 await ok('(review M3) an answer has a ceiling in bytes and in time', async () => {
-  const big = upstream(() => new Response(new ReadableStream({ start(c) { for (let i = 0; i < 5; i++) c.enqueue(new Uint8Array(1000)); c.close(); } }), { headers: { 'Content-Type': 'application/x-git-upload-pack-advertisement' } }));
-  const r = await handle(req('/git/github.com/a/b.git/info/refs?service=git-upload-pack'), big, { maxAnswer: 3000 });
-  await assert.rejects(r.arrayBuffer(), 'cut past the ceiling');
-  const ok2 = await handle(req('/git/github.com/a/b.git/info/refs?service=git-upload-pack'), big, { maxAnswer: 5000 });
+  const body = () => new ReadableStream({ start(c) { for (let i = 0; i < 5; i++) c.enqueue(new Uint8Array(1000)); c.close(); } });
+  const sized = (len) => upstream(() => new Response(body(), { headers: { 'Content-Type': 'application/x-git-upload-pack-advertisement', ...(len === undefined ? {} : { 'Content-Length': len }) } }));
+  const refs = () => req('/git/github.com/a/b.git/info/refs?service=git-upload-pack');
+  // a length past the ceiling, or one that is not a number: refused before a byte, inert
+  for (const len of ['5000', 'abc', '-1', '1e9', '99999999999999999999']) {
+    const r = await handle(refs(), sized(len), { maxAnswer: 3000 });
+    assert.equal(r.status, 502, len);
+    assert.ok(inert(r), len);
+  }
+  // within it, or with no length (bounded by the time, as below): passed on whole, with no
+  // script on the stream (review SECURITY-2 L6: a transform is Worker CPU per chunk)
+  const ok2 = await handle(refs(), sized('5000'), { maxAnswer: 5000 });
+  assert.equal(ok2.status, 200);
   assert.equal((await ok2.arrayBuffer()).byteLength, 5000);
+  const ok3 = await handle(refs(), sized(undefined), { maxAnswer: 3000 });
+  assert.equal((await ok3.arrayBuffer()).byteLength, 5000);
   // a host that never answers: given up after the time, said as such
   const never = async (url, init) => new Promise((res, rej) => init.signal.addEventListener('abort', () => rej(init.signal.reason)));
   const t0 = Date.now();
