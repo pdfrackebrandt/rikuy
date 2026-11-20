@@ -72,7 +72,7 @@ if (bad) process.exitCode = 1;
 // entries, never the kept ones.
 {
   const fails = [];
-  const { modelText } = await import('../src/model.js');
+  const { modelText, bibKept } = await import('../src/model.js');
   const bib = sample('refs.bib');
   const a = modelText(buildModel({ files, main: 'main.tex' }));
   const b = modelText(buildModel({ files: new Map(files), main: 'main.tex' }));
@@ -86,6 +86,27 @@ if (bad) process.exitCode = 1;
   if ([...m3.bibEntries.values()].some((e) => /^Changed /.test(e.fields.title || ''))) fails.push('the text before the edit gives its own entries again');
   const other = buildModel({ files: new Map([['main.tex', '\\documentclass{article}\\begin{document}\\cite{zz}\\bibliography{refs}\\end{document}'], ['refs.bib', '@book{zz, title={Other}, author={O. Ther}, year={2001}}']]), main: 'main.tex' });
   if (!other.bibEntries.has('zz') || other.bibEntries.has(key)) fails.push('another project\'s refs.bib is its own');
+  // (B0's review F3) the kept entries are frozen: a writer throws, and the next build is unchanged
+  const one = [...buildModel({ files, main: 'main.tex' }).bibEntries.values()][0];
+  let threw = false;
+  try { one.fields.title = 'Written'; } catch (e) { threw = true; }
+  try { one.key = 'other'; } catch (e) { threw = threw && true; }
+  if (!threw || [...buildModel({ files, main: 'main.tex' }).bibEntries.values()].some((e) => e.fields.title === 'Written')) fails.push('a kept entry cannot be written');
+  // (F2) what is kept: past the budget the older files go, and the newest stays however large
+  const many = (k, n) => Array.from({ length: n }, (_, i) => '@book{k' + k + '_' + i + ', title={T' + i + '}, author={A. Author}, year={2000}}').join('\n');
+  const bigBib = many('big', 62000);
+  const mb = buildModel({ files: new Map([['main.tex', '\\documentclass{article}\\begin{document}\\cite{kbig_5}\\bibliography{big}\\end{document}'], ['big.bib', bigBib]]), main: 'main.tex' });
+  if (bigBib.length < 4e6 || !mb.bibEntries.has('kbig_5')) fails.push('a .bib past the budget is still read (' + bigBib.length + ')');
+  const again = buildModel({ files, main: 'main.tex' });
+  if (again.bibEntries.has('kbig_5') || a !== modelText(again)) fails.push('another project after it reads its own .bib');
+  if (JSON.stringify(bibKept()) !== '["refs.bib"]') fails.push('only what the last build asked for is kept: ' + JSON.stringify(bibKept()));
+  // a small .bib of a project closed since is let go too
+  buildModel({ files: new Map([['main.tex', '\\documentclass{article}\\begin{document}\\cite{kx_1}\\bibliography{x}\\end{document}'], ['x.bib', many('x', 3)]]), main: 'main.tex' });
+  buildModel({ files, main: 'main.tex' });
+  if (JSON.stringify(bibKept()) !== '["refs.bib"]') fails.push('a closed project\'s small .bib is let go: ' + JSON.stringify(bibKept()));
+  // two files asked together are both kept, past the budget too (the model holds their entries)
+  const two = buildModel({ files: new Map([['main.tex', '\\documentclass{article}\\begin{document}\\cite{kbig_5,ksmall_1}\\bibliography{big,small}\\end{document}'], ['big.bib', bigBib], ['small.bib', many('small', 5)]]), main: 'main.tex' });
+  if (!two.bibEntries.has('ksmall_1') || !two.bibEntries.has('kbig_5') || JSON.stringify(bibKept().sort()) !== '["big.bib","small.bib"]') fails.push('the files a build asks for stay, past the budget too: ' + JSON.stringify(bibKept()));
   console.log('bib cache', fails.length ? 'FAIL ' + fails.join('; ') : 'ok');
   if (fails.length) process.exitCode = 1;
 }
