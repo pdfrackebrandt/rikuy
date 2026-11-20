@@ -102,7 +102,7 @@ register(
   { id: 'hf-next', name: 'Next Header or Footer', label: 'Next', title: 'Next: the header or footer of the nearest page after this one that has its own (odd and even pages in a two sided document)', icon: I.next, tab: 'headfoot', group: 'navigation', order: 40,
     synonyms: ['Next section', 'Next header'], when: (app) => storyPage(app, 1) >= 0, whyNot: STORY_WHY, run: (app) => { const j = storyPage(app, 1); return j >= 0 && hfOpen(app, app.hf.where, { page: j }); } },
   // ---- Header & Footer › Insert: Pictures, Quick Parts ----
-  { id: 'hf-picture', name: 'Header Picture', label: 'Pictures', title: 'Pictures: a picture (a logo) where the caret is in the header or footer, a line high (\\includegraphics[height=\\baselineskip]{…}, graphicx)', icon: I.pic, tab: 'headfoot', group: 'insert', order: 30,
+  { id: 'hf-picture', name: 'Header Pictures', label: 'Pictures', title: 'Pictures: a picture (a logo) where the caret is in the header or footer, a line high (\\includegraphics[height=\\baselineskip]{…}, graphicx)', icon: I.pic, tab: 'headfoot', group: 'insert', order: 30,
     synonyms: ['Logo', 'Picture in header', 'Image in header', 'includegraphics'], when: hfOn, whyNot: () => OPEN_WHY,
     run: (app, args) => (args && args.file ? app.hfPicture(args.file, args.blob, args.height) : app.hfPictureChoose()) },
   { id: 'hf-quick-parts', name: 'Header Quick Parts', label: 'Quick Parts', kind: 'menu', title: 'Quick Parts: a field (the page, the pages\' count, the date, the file\'s name) or a Quick Part you saved, where the caret is in the header or footer', icon: I.parts, tab: 'headfoot', group: 'insert', order: 40,
