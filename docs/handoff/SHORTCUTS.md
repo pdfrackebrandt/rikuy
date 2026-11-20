@@ -26,8 +26,8 @@ How to read it:
 |---|---|---|---|---|
 | Ctrl+O, Ctrl+F12, Ctrl+Alt+F2 | Cmd+O | Open | `open` | Ctrl+O works; Ctrl+F12 and Ctrl+Alt+F2 added (Linux keeps Ctrl+Alt+F2 for its consoles) |
 | Ctrl+N | | New document | `new-document` (File › Blank document, New in the status bar) | browser: Chrome and Firefox open a window; Rikuy installed as an app hears it (app.js) |
-| Ctrl+S, Shift+F12, Alt+Shift+F2 | Cmd+S | Save | `download-latex` (Rikuy saves as you type; this downloads the source) | Ctrl+S works; Shift+F12, Alt+Shift+F2 added |
-| F12 | Cmd+Shift+S | Save As | Download LaTeX | browser: developer tools; Shift+F12 or Ctrl+S |
+| Ctrl+S, Shift+F12, Alt+Shift+F2 | Cmd+S | Save | `save` (the bar's Save): Rikuy keeps every edit in this browser as you type; Save writes it now and says "Saved in this browser" (in a git repository: where to commit and push). It downloads nothing | changed: Ctrl+S downloaded a file at every press; Shift+F12, Alt+Shift+F2 added |
+| F12 | Cmd+Shift+S | Save As | `save-as`: Download LaTeX (the .tex, or the project as .zip) | added with the caret on the page; anywhere else F12 stays the browser's developer tools (Ctrl+Shift+I opens them too). Cmd+Shift+S is Apply Styles here |
 | Ctrl+W, Ctrl+F4 | Cmd+W | Close | in Rikuy installed as an app, Ctrl+W closes the source or PDF pane when open | browser: a browser tab never gives Ctrl+W to the page; it closes the tab |
 | Alt+F4, Ctrl+F10, Alt+F5 | | Close Word, maximise, restore | | browser/system |
 | Ctrl+P, Ctrl+Shift+F12 | Cmd+P | Print | `print` (Print PDF) | Ctrl+P works; Ctrl+Shift+F12 added |

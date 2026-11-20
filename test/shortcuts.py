@@ -321,8 +321,17 @@ def files(page):
     page.wait_for_timeout(300)
     click_text(page, 'First paragraph', 3)
     with page.expect_download(timeout=8000) as dl:
-        page.keyboard.press('Shift+F12')
-    check('Shift+F12 (Word\'s Save) downloads the LaTeX', dl.value.suggested_filename.endswith(('.tex', '.zip')), dl.value.suggested_filename)
+        page.keyboard.press('F12')
+    check('F12 (Word\'s Save As) downloads the LaTeX', dl.value.suggested_filename.endswith(('.tex', '.zip')), dl.value.suggested_filename)
+    got = []
+    page.on('download', lambda d: got.append(d.suggested_filename))
+    toast = lambda: page.evaluate("document.getElementById('toast').hidden ? '' : document.getElementById('toast').textContent")
+    for k in ('Control+s', 'Shift+F12'):
+        click_text(page, 'First paragraph', 3)
+        page.keyboard.type('Z'); page.wait_for_timeout(100)
+        page.keyboard.press(k); page.wait_for_timeout(1200)
+        check(k + ' (Word\'s Save) downloads nothing: it says the document is saved in this browser, and it is', not got and toast().startswith('Saved in this browser') and page.evaluate('!window.rikuy.unsaved'), (got, toast()))
+    undo(page)
 
 
 def tips_and_help(page, mac=False, tag=''):
