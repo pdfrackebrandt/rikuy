@@ -32,6 +32,7 @@ import base64, json, os, re, sys, zlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from browser import ROOT, open_page, check, results, src, load_doc
 from playwright.sync_api import sync_playwright, expect
+from tabs import OBJ_TABS, obj_select
 
 DIST = os.path.abspath(os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist'))
 TREE = os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm'))
@@ -145,8 +146,12 @@ def api(p):
     page.evaluate('''() => window.rikuy.openFiles([new File([Uint8Array.from('%s'.match(/../g).map((h) => parseInt(h, 16)))], 'dot.png', { type: 'image/png' })])''' % PNG)
     page.wait_for_function('window.rikuy.assetBlobs.has("dot.png")', timeout=5000)
     files = page.evaluate('rikuy.api.getFiles()')
-    check('api.getFiles gives each text file with its text and a picture with its size', [sorted(f) for f in files] == [['name', 'text'], ['name', 'text'], ['bytes', 'name']]
-          and [f['name'] for f in files] == ['main.tex', 'refs.bib', 'dot.png'] and files[0]['text'] == src(page) and files[1]['text'] == src(page, 'refs.bib') and files[2]['bytes'] == len(PNG) // 2, [(f['name'], f.get('bytes')) for f in files])
+    # (the opening document's live graph brings its own text files, rikuy.sty and graphs/saving.html,
+    # and its picture once it is drawn: each in the shape its kind has)
+    by = {f['name']: f for f in files}
+    check('api.getFiles gives each text file with its text and a picture with its size', all(sorted(f) == (['bytes', 'name'] if re.search(r'\.(png|jpe?g|pdf|pgf)$', f['name']) else ['name', 'text']) for f in files)
+          and [f['name'] for f in files][:2] == ['main.tex', 'refs.bib'] and {'rikuy.sty', 'graphs/saving.html', 'dot.png'} <= set(by)
+          and by['main.tex']['text'] == src(page) and by['refs.bib']['text'] == src(page, 'refs.bib') and by['dot.png']['bytes'] == len(PNG) // 2, [(f['name'], f.get('bytes')) for f in files])
     before = [src(page), page.evaluate('rikuy.hist.length')]
     check('the sample needs no script set up: api.needs is [] and api.setUpScripts resolves to null, changing nothing',
           page.evaluate('rikuy.api.needs()') == [] and page.evaluate('rikuy.api.setUpScripts()') is None and [src(page), page.evaluate('rikuy.hist.length')] == before)
@@ -613,7 +618,10 @@ def open_tab(page, width, name):
     if width > 1000:
         page.get_by_role('tablist', name='Ribbon', exact=True).get_by_role('tab', name=name, exact=True).click()
     else:
-        page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label=name)
+        # (two contextual tabs are named Format, as Word's: the chart's and the SmartArt's; only the
+        # one whose object is selected can be chosen)
+        v = page.evaluate("(n) => { const o = [...document.getElementById('rb-tabsel').options].find((x) => x.label === n && !x.disabled); return o ? o.value : null; }", name)
+        page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(value=v) if v else page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label=name)
     page.wait_for_timeout(200)
 
 
@@ -629,8 +637,11 @@ def reach(page, width):
         by_tab.setdefault((x['tab'], x['tabName'], x['contextual']), []).append(x)
     bad, opened = [], []
     for (tab, name, ctx), xs in by_tab.items():
-        if ctx and not tab.startswith('table') and tab not in ('headfoot', 'equation', 'picture-format'):
+        if ctx and not tab.startswith('table') and tab not in ('headfoot', 'equation', 'picture-format') and tab not in OBJ_TABS:
             continue  # (no command lives there yet: test/tabs.py brings one in for each)
+        # (File covers the page as Word's view does: its Back button gives the page back)
+        if page.evaluate("document.body.classList.contains('file-open')"):
+            page.get_by_role('button', name='Back to the document', exact=True).click(); page.wait_for_timeout(150)
         if ctx and tab == 'headfoot':
             # (the header open on the page, as a double click in its margin opens it)
             load_doc(page, DOC); page.evaluate('rikuy.pageHFOpen("head")'); page.wait_for_timeout(250)
@@ -638,6 +649,9 @@ def reach(page, width):
             # (the Equation tab shows while an equation's field is open: the button Formula opens one)
             load_doc(page, DOC); click_text(page, 'First paragraph', 5)
             page.evaluate('window.rikuy.runCommand("formula")'); page.wait_for_selector('.pop-math'); page.wait_for_timeout(250)
+        elif ctx and tab in OBJ_TABS:
+            # (the drawing, chart or SmartArt selected by a press on it: its tab opens)
+            obj_select(page, tab)
         elif ctx and tab == 'picture-format':
             # (a press on the picture selects it and opens its tab, as for a person)
             load_doc(page, PICTURE); page.wait_for_timeout(300); page.locator('#pages .a-img').click(); page.wait_for_timeout(250)

@@ -10,7 +10,8 @@ hashes below are the same.
 
 dvips, Asymptote and xindy are built from TeX Live's own source tree; gnuplot and the libraries
 from Ubuntu's source packages; the editor's native core from this repository's own C++
-(`tex/native/core/`, `sh tex/build_tools.sh core`); Hunspell from Ubuntu's source package with
+(`tex/native/core/`, `sh tex/build_tools.sh core`) and its picture tools from `tex/native/pic/` with
+stb_image and stb_image_write (`sh tex/build_tools.sh pic`); Hunspell from Ubuntu's source package with
 Rikuy's `tex/native/spell/spell.cc`, MyThes with it, and the dictionaries and thesauri from Ubuntu
 26.10's packages (the seven `.deb` files' and MyThes's SHA-512 checked against that release's
 package index when they were pinned); Harper is not built here: its WebAssembly module is
@@ -27,6 +28,7 @@ tarball (SHA-256 `11fcbcb97b5c8da3990106fb4e2d364ba95ddf313d7c0e61ca8e8c7948600f
 | xindy | 2.5.1 | same commit, `utils/xindy` | GPL-2.0-or-later |
 | GLM | 1.0.1 | [g-truc/glm](https://github.com/g-truc/glm) at `0af55ccecd98d4e5a8d1fad7de25ba429d60e863` | MIT |
 | Rikuy's native core (`tex/vendor/core/rikuy-core.wasm`, inside the page) | this repository | `tex/native/core/`, with Emscripten 3.1.6's C library parts and its emmalloc allocator | AGPL-3.0-or-later (Emscripten's parts MIT or NCSA) |
+| Rikuy's picture tools (`tex/vendor/pic/rikuy-pic.wasm`, beside the page as `core/rikuy-pic-<hash>.wasm`) | this repository, with stb_image 2.34 and stb_image_write 1.19 | `tex/native/pic/pic.c` with `stb_image.h` (`dfc2aadda6295f67f677587773f25e5bf8c8ad427ed0db7c518525c91e72e020`) and `stb_image_write.h` (`5d89edc8bffd848f3e138b2a1dbec67aadbed591894bde16ade7c83dc233af9b`) from github.com/nothings/stb at `6b5799bae8a1fe3792691ef4b72ae26434c3e799`; `sh tex/build_tools.sh pic` | AGPL-3.0-or-later; stb: MIT or public domain (LICENSES/third-party/stb.txt) |
 | Hunspell (`tex/vendor/hunspell/`, the hosted Rikuy's `spell/`) | 1.7.6 | Ubuntu's source package (below), with Rikuy's `tex/native/spell/spell.cc`; `sh tex/build_tools.sh hunspell` | MPL-1.1, GPL-2.0-or-later or LGPL-2.1-or-later (taken as LGPL-2.1) |
 | its dictionaries (`tex/vendor/hunspell/dict/`, copied unchanged from the packages below) | en_US 2020.12.07, en_GB and es_ES 26.8.0.3, de_DE 20161207 | Ubuntu 26.10's `hunspell-en-us`, `hunspell-en-gb`, `hunspell-es`, `hunspell-de-de` | SCOWL's license, LGPL-3.0, GPL-3.0-or-later or LGPL-3.0-or-later or MPL-1.1, GPL-2.0-or-later |
 | MyThes, in the same module (`tex/native/spell/spell.cc` calls it) | 1.2.6 | Ubuntu's source package (below), unchanged; `sh tex/build_tools.sh hunspell` | BSD-style (its COPYING) |

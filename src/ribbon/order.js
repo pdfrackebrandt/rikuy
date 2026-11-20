@@ -18,16 +18,22 @@ export const TABS = [
   // name, which must not be the name of its own Table of Contents button, test/commands.test.mjs)
   { id: 'references', name: 'References', groups: [['toc', 'Table of contents', 3], ['footnotes', 'Footnotes', 6], ['citations', 'Citations & Bibliography', 5], ['captions', 'Captions', 4], ['index', 'Index', 2], ['authorities', 'Table of Authorities', 1]] },
   { id: 'review', name: 'Review', groups: [['proofing', 'Proofing', 5], ['speech', 'Speech', 1], ['accessibility', 'Accessibility', 1], ['language', 'Language', 2], ['comments', 'Comments', 6], ['tracking', 'Tracking', 4], ['changes', 'Changes', 4], ['compare', 'Compare', 2], ['versions', 'Versions', 3]] },
-  { id: 'view', name: 'View', groups: [['views', 'Views', 6], ['immersive', 'Immersive', 2], ['movement', 'Page Movement', 1], ['mode', 'Dark Mode', 1], ['show', 'Show', 4], ['zoom', 'Zoom', 3]] },
+  { id: 'view', name: 'View', groups: [['views', 'Views', 6], ['immersive', 'Immersive', 2], ['movement', 'Page Movement', 1], ['mode', 'Dark Mode', 1], ['show', 'Show', 4], ['zoom', 'Zoom', 3], ['window', 'Window', 1]] },
   { id: 'help', name: 'Help', groups: [['help', 'Help and support']] },
   // contextual tabs, after Help, while their object has the caret
   { id: 'table-design', name: 'Table Design', ctx: 'table', groups: [['options', 'Table Style Options', 2], ['styles', 'Table Styles', 3], ['borders', 'Borders', 1]] },
-  { id: 'table-layout', name: 'Table Layout', ctx: 'table', groups: [['table', 'Table', 3], ['rows', 'Rows & Columns', 6], ['merge', 'Merge', 5], ['size', 'Cell Size', 4], ['alignment', 'Alignment', 2], ['data', 'Data', 1]] },
+  { id: 'table-layout', name: 'Table Layout', ctx: 'table', groups: [['table', 'Table', 3], ['draw', 'Draw', 2], ['rows', 'Rows & Columns', 6], ['merge', 'Merge', 5], ['size', 'Cell Size', 4], ['alignment', 'Alignment', 2], ['data', 'Data', 1]] },
   // (Word's order: Adjust, Picture Styles, Accessibility, Arrange, Size. Size folds first: its two
   // fields are wide and its buttons few, so folding it last showed fewer controls in a wider window)
   { id: 'picture-format', name: 'Picture Format', ctx: 'picture', groups: [['adjust', 'Adjust', 2], ['styles', 'Picture Styles', 3], ['accessibility', 'Accessibility', 4], ['arrange', 'Arrange', 5], ['size', 'Size', 1]] },
   { id: 'equation', name: 'Equation', ctx: 'equation', groups: [['tools', 'Tools', 4], ['conversions', 'Conversions', 3], ['symbols', 'Symbols', 1], ['structures', 'Structures', 2]] },
-  { id: 'headfoot', name: 'Header & Footer', ctx: 'headfoot', groups: [['headfoot', 'Header & Footer', 3], ['insert', 'Insert', 2], ['options', 'Options', 1], ['close', 'Close', 4]] }
+  { id: 'headfoot', name: 'Header & Footer', ctx: 'headfoot', groups: [['headfoot', 'Header & Footer', 3], ['insert', 'Insert', 2], ['navigation', 'Navigation', 5], ['options', 'Options', 1], ['position', 'Position', 6], ['close', 'Close', 7]] },
+  // (a drawing, a chart or a SmartArt selected on the page: src/ui/shapes.js, src/cmd/objects.js)
+  { id: 'shape-format', name: 'Shape Format', ctx: 'shape', groups: [['insert', 'Insert Shapes', 2], ['styles', 'Shape Styles', 5], ['text', 'Text', 3], ['arrange', 'Arrange', 4], ['size', 'Size', 1]] },
+  { id: 'chart-design', name: 'Chart Design', ctx: 'chart', groups: [['layouts', 'Chart Layouts', 4], ['styles', 'Chart Styles', 3], ['data', 'Data', 2], ['type', 'Type', 1]] },
+  { id: 'chart-format', name: 'Format', ctx: 'chart', groups: [['arrange', 'Arrange', 2], ['size', 'Size', 1]] },
+  { id: 'smart-design', name: 'SmartArt Design', ctx: 'smart', groups: [['create', 'Create Graphic', 4], ['layouts', 'Layouts', 3], ['styles', 'SmartArt Styles', 2], ['reset', 'Reset', 1]] },
+  { id: 'smart-format', name: 'Format', ctx: 'smart', groups: [['styles', 'Shape Styles', 2], ['arrange', 'Arrange', 1]] }
 ].map((t) => ({ ...t, groups: t.groups.map(([id, name, rank = 1, more = {}]) => ({ id, name, rank, spare: !!more.spare })) }));
 
 // Word's KeyTips for the tabs (Alt, or F10, then the letter). Help is Y then 2, as in Microsoft 365;
@@ -48,5 +54,10 @@ export const CONTEXTS = {
   // the equation field is open
   equation: (app) => !!(app.pop && app.pop.el && app.pop.el.classList.contains('pop-math')),
   // the header or the footer is open on the page (src/ui/headerfooter.js)
-  headfoot: (app) => !!app.hf
+  headfoot: (app) => !!app.hf,
+  // a drawing, a chart, a SmartArt selected on the page
+  shape: (app) => objKind(app) === 'shape',
+  chart: (app) => objKind(app) === 'chart',
+  smart: (app) => objKind(app) === 'smart'
 };
+const objKind = (app) => { const S = app.shapeSel; return S && S.el && S.el.isConnected ? S.kind : null; };

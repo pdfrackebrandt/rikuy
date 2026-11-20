@@ -123,3 +123,168 @@ Fix: place the caret in the new document after a template loads.
 - Docked panes sit from under the ribbon to the status bar at 1024, 1366 and 1920, light and dark;
   the ribbon's fold is unchanged with a pane open; PDF and LaTeX views with a pane are fine.
 - A first comment asks for the name first and stays inside the screen on phones.
+
+# Verification of 933773d
+
+Built `dist/` in /home/claude/wt-ux-ver (`RIKUY_NO_WORD=1`, no TeX tree). Probes /tmp/ux-ver-out/probeA.py to
+probeG.py, logs A.log to G.log, screenshots /tmp/ux-ver-out/shots/. Every repro below uses a real mouse caret
+(or a tap) unless it says otherwise.
+
+## Verdict
+
+**Fix first, two small items.** Every finding of the review is fixed (L9 kept on purpose, as agreed); the
+suites are green. Two MEDIUM problems sit in the new work: Mobile View switched off on a long document
+throws the reader up to 30 sections away, and File's Home cannot be reached by Tab or by Up and Down. Both are
+small changes. Nothing is HIGH.
+
+## The review's findings
+
+| | verdict | evidence |
+|---|---|---|
+| H1 | fixed | click File or Alt, F: focus on Back; "xyz" and Alt, F, N change nothing (A.log). No KeyTips on File's commands (Word has N, O, I...): the keys are swallowed instead, which the review accepted |
+| H2 | fixed | F7 or Shift+F7, Esc or Close, at 1920, 1366, 1100 (px 1.66 to 1.212): X lands on the misspelling or at "Sec\|ond" (A.log). Styles pane on a 120 section document: caret y 516, 517, 516 at 1366 and 1100, first line Part 59 stays (B.log, B-h2-styles-long-*.png) |
+| M1 | fixed | Styles or Spelling docked, File, Esc: File closes, the key lands at the caret (A.log) |
+| M2 | fixed | `#main` and `#status` inert; Chromium's own accessibility tree exposes no document text under File (0 nodes; Playwright's aria_snapshot still shows it, it ignores inert); Tab from Back never enters `#main` or `#status` |
+| M3 | fixed | `#st-words` and `#st-pages` by mouse, Esc or Close, the key lands at the caret |
+| M4 | fixed | one pane at a time; Styles beside the PDF pane floats over it at 1024 touch, 1100, 1366 (page keeps 531, 571, 709 px; B-m4-styles-pdf-1024t.png); docks at 1920 (page 918 px); with the side panel and the Thesaurus nothing passes the window |
+| M5 | fixed | Ctrl+H, Ctrl+G, Ctrl+F, Shift+F7, Esc: the key lands at the caret at 1366, 1100, 1920 |
+| M6 | fixed | Article, Report, Book tiles and the Templates menu: caret in the new document, the first key lands |
+| L1 | fixed | `ux.py lows` (the zoom item has no svg) |
+| L2 | fixed | 700, 768, 820, 834 px touch: Page, LaTeX, PDF at 14 to 211 px, in sight |
+| L3 | fixed | `#st-zoomv` 44 px at 1024 touch |
+| L4 | fixed | browser Back closes File and stays in Rikuy; history length unchanged after three opens and Esc; after a reload with File open too |
+| L5 | fixed | status bar inert, Find and Replace hidden under File |
+| L6 | fixed in code | `#st-save` has `role=status`, shows while not quiet at 520 px and below, restores only its own words (not run: no TeX) |
+| L7 | fixed | name 44 px, comment box 75 px at 390 and 360 |
+| L8 | fixed | Check accessibility and AutoCorrect Options from File take the focus into the dialog |
+| L9 | kept on purpose | |
+| Unlike Word: File | fixed | at 1366 and 1920 File opens on a Home with nine template pages and Recent (C-file-home-recent-1366.png, C-file-1920d.png) |
+| Unlike Word: Fit vs 122 % | not fixed | top bar "Fit", status bar "125%" for one zoom, at every width (B.log) |
+| Unlike Word: dark tab name | not this PR | selected tab rgb(20,62,102) on rgb(31,39,48), about 1.3:1 (ribbon agent) |
+
+## New findings
+
+MEDIUM
+- **N1. Mobile View off loses the reader's place on a long document.** 390 px, 120 sections, caret in
+  paragraph 40: tap Mobile View, the screen shows Part 32 and the caret is at y 1092 under a desk ending at
+  775; reading with no caret, Part 81 becomes Part 51 (G.log, G-mv-off-long-390.png). Desktop's Web Layout from
+  the View tab does the same (Part 40 to paragraph 79, caret at y -3235). `setWeb` (src/cmd/view.js:464) puts the
+  caret back only when the page does not have the focus. Fix: keep the caret's source position (or the first
+  visible line's) across the relayout, as the ResizeObserver now does for docking.
+- **N2. File's Home is out of reach of Tab and of Up and Down.** The view is one tab stop (Back); Tab from Back
+  leaves the view; Up and Down do nothing in the vertical column; the tiles and Recent come only by
+  ArrowRight through every command: 14 presses to Article, 23 to a recent document (C.log). Word moves with
+  Up and Down in the column and Tab into the main area. Fix: Up and Down as Left and Right in `#rp-file`
+  while the view is open, and Home's tiles and rows their own tab stop (roving inside it).
+
+LOW
+- N3. A dialog opened from File (Properties, Check accessibility, AutoCorrect Options) closed with Esc leaves
+  the focus on BODY with File still open; Word gives it back to the command. A second Esc closes File correctly.
+- N4. Help docked, the window narrowed under 1000 px: the pane stays docked and the page keeps 519 px at 900
+  (C-help-900-1366.png); the 560 px room rule applies only from 1000.
+- N5. A desktop window reloaded under 700 px opens in Mobile View and keeps Web Layout when widened, with no
+  Mobile View button there (View, Print Layout gets out). A phone turned to 844 px landscape keeps Web Layout
+  at Fit the same way.
+- N6. File's Download row: "LaTeX" runs over the left column's border at 1366 and 1920.
+
+Before this branch, outside the review (not blocking it)
+- The top bar on phones: Outline, Undo, Redo, Share, Open, Preview, Source are 28 to 32 px with no 44 px hit
+  area at 390 and 360 (D.log). Popovers' Close is 20 px and the comment's Comment button 26 px tall on touch.
+- F7 leaves the focus on the page with the misspelling selected: F7 then Enter replaces it with a paragraph
+  break (E.log). Word's Editor pane takes the focus, where Enter is Change.
+- Find and Replace has no Alt+A (Replace All) or Alt+R as Word's has (shortcuts agent).
+
+## What held up
+
+- Suites on 933773d: `ux.py` 266/0, `browser.py` 202/0, `tabs.py` 115/0, `agent.py` 142/0, `file.py` 85/0,
+  `view.py` 154/0, `page.py long_document` 6/0 (regress-summary.txt).
+- File by keys: Alt, F focuses Back; Enter on a tile or a Recent row opens it with the caret in the document;
+  Download LaTeX reached by keys downloads and gives the caret back. Names: every button named ("Back to the
+  document", "Article template", "Open <name>"), headings New and Recent, Recent a list.
+- Help: one pane with the others (Help then F7 or Styles replaces it, and back); floats beside the PDF pane at
+  1366; F1 or a press keeps the caret and typing; File over Help and Esc keeps Help.
+- Long document (page.py long_document's 1500 commands and 3000 paragraphs): File opens in 35 ms and closes in
+  44 ms with the caret kept; Help docked keeps the caret; keystrokes 14 to 17 ms median with or without Help;
+  on phones in Mobile View 17 ms median, no line past the screen.
+- Phones at 390 and 360 (light and dark): Mobile View by default, 13.3 px text, no sideways scroll, its toggle
+  44 px and named "Mobile View" with aria-pressed; File's view, Templates menu and Help sheet inside the screen
+  with 44 px items; the phone's Back closes File; zoom 125 % and the view choice survive a reload.
+- Power user, keys only: Ctrl+O, the first key lands, Ctrl+End, Shift+Home, Ctrl+B, Ctrl+H, F7, Esc, Ctrl+S,
+  F12 downloads paper.tex, Alt, F, Download LaTeX, typing lands after.
+- Dark mode: File's Home, tiles and Help pane readable (12:1 text).
+
+# Verification of 0a6ef7b
+
+Built `dist/` in /home/claude/wt-ux-ver (`RIKUY_NO_WORD=1`). For telling a regression from an older problem,
+933773d was built in /home/claude/wt-ux-base and the same probes run on both. Probes
+/tmp/ux-ver-out/probeH.py to probeL.py; logs H.log, I.log, J-new.log, J-base.log, ux-consistency.log;
+screenshots /tmp/ux-ver-out/shots2/.
+
+## Verdict
+
+**Fix first, one line of CSS.** N1 to N6 and the zoom label are fixed, and the dialogs still work. But the
+consistency commit 3f3fc0e broke the phone's command search: when it is open, the box stays 44 px wide, so
+nobody can see what they are typing. Fix that, then merge. Everything else below is LOW or was already there
+before this branch.
+
+## N1 to N6
+
+| | verdict | evidence |
+|---|---|---|
+| N1 | fixed | 390 and 360 px, 120 sections, caret in paragraph 40: caret y 409 with Mobile View on, off and on again, and X lands there; reading with no caret, paragraph 80 stays in view; 1366 Web Layout on and off: caret y 508 each time (H.log, N1-mv-off-390.png) |
+| N2 | fixed | Alt, F, then Down, Down, Down, Up, End, Home walk the column; Tab goes into Home; the arrows move along a row and Down to the next row (Report to CV); Tab and Shift+Tab move between Back and Home; Enter on a tile opens it |
+| N3 | fixed | Properties, Check accessibility, AutoCorrect Options from File, then Esc: the focus is back on the command, File stays open; Esc again, then typing lands at the caret |
+| N4 | fixed | Help docked, window narrowed to 900: a fixed sheet in the corner (510 to 892 px), the page 900 px wide, typing lands; at 1366 again it docks |
+| N5 | fixed | Narrowed to 600 px: Mobile View; widened to 1366: Print Layout; a choice made at either width is kept at that width, also after a reload; a phone turned to 844 px: Print Layout, turned back: Mobile View |
+| N6 | fixed | File's column 328 px, Download row ends at 244 px, nothing cut, at 1000, 1366 and 1920 |
+| zoom | fixed | the top bar says "125%" (its name "Fit width"), as the status bar does, at 1366, 1920 and 1000 |
+
+## The consistency pass against UI-PRINCIPLES.md
+
+Holds:
+- **Sizes (C1):** Font, Paragraph, Page setup, Insert Table, Find and Replace, Share, Properties, Word Count,
+  Go To, AutoCorrect Options, Check accessibility, comment, Bookmark and Symbols use 32 px buttons and 32 px
+  fields at 1366 px, light and dark.
+- **Corners (C9):** 8 px on dialogs, 4 px on buttons and fields.
+- **Titles (C5):** every title is 14 px semibold on a 20 px line.
+- **Focus (C13):** Tab gives a 2 px solid outline. Close is 28 px.
+- **Touch:** buttons, fields and Close are 44 px on phones.
+- **Status bar:** all its text is 12 px, with no text under 4.5:1 in light or dark.
+- **Author's checks:** `ux.py consistency` passes 32 of 32.
+- **Esc gives the caret back:** true for every dialog above when opened from the page (1366).
+- **Dialogs still work at 390 px by touch and at 1366 by mouse, the same as on 933773d:** Insert Table OK
+  inserts a table, Replace All replaces both words, Paragraph alignment with OK centres the paragraph,
+  Properties Apply writes the title, and Page setup OK closes.
+- **Phones:** the top bar is 44 by 44 px at 520, 390 and 360 px. Of the two buttons it dropped, Open opens a
+  file chooser from the menu panel and Source shows the source pane. Save, Comments and Ask Claude were hidden
+  on 933773d already.
+
+Regressions caused by 3f3fc0e:
+- **R1, MEDIUM (blocks): the phone's search box does not open wide.** At 520, 390, 360 and 320 px with touch,
+  a tap and "bold" leave the box 44 px wide: only "d" shows, over the menu button. On 933773d it was 378 px
+  wide at 390 and 348 px at 360 (J-new.log, J-base.log, I-search-390t.png). The cause is
+  `#bar .srch { width: 44px; min-width: 44px; }` under `(max-width: 520px) and (pointer: coarse)`, which
+  applies even while the box has the focus. Fix: `#bar .srch:not(:focus-within)`.
+- **R2, LOW:** AutoCorrect Options' Add button is 44 by 64 px at 360 px with touch. The 12 px padding inside a
+  44 px width wraps "Add". It was 44 by 44.
+- **R3, LOW:** at 320 px with touch, the bar's Search (144 to 188 px) overlaps Share (178 to 222 px) by 10 px.
+  At 360 the gap is 10 px.
+
+Not fixed by the pass, the same on 933773d (not blocking):
+- **Under a finger (T1):**
+  - Insert Table's Cancel and OK are 32 px wide, and "Cancel" spills out of its border (J-table-new-390.png).
+  - The tabs inside Paragraph and inside Find and Replace are 29 px tall.
+  - The rows of checkboxes and radio buttons are 19 px tall, and the boxes 13 px.
+- **Contrast (D1):**
+  - In dark mode, a primary button (OK, Apply, Comment, Find Next, Copy link) is white on rgb(106,174,227),
+    2.4:1.
+  - On a phone in light mode, the selected search result's name is white on rgb(215,232,245), 1.3:1.
+- **Focus (N7):**
+  - Check accessibility and AutoCorrect Options opened from the ribbon leave the focus on the page, and Tab
+    goes to the status bar.
+  - Tab from Word Count's Close leaves the dialog.
+  - A cell of the Symbols grid has no outline when focused.
+- **C1, C9 nits:**
+  - Fields are 36 px with 6 px corners in Properties, the comment, Share's name, AutoCorrect and the Symbols
+    search, against 32 px and 4 px elsewhere.
+  - The Mobile View button's corners are 6 px against the views' 4.

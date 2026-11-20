@@ -100,6 +100,8 @@ jobs:
         run: cd test && python3 page.py
       - name: Rikuy as an agent meets it (the scripting surface, every control by its name)
         run: cd test && python3 agent.py
+      - name: What a newcomer meets outside the ribbon (dialogs, the File view, the status bar, panes, phones)
+        run: cd test && python3 ux.py
       # their PDF checks need dist/tex and run in tex.yml; here they say they skip that part
       - name: Find, Replace and Go To (the Navigation pane's search, the Find and Replace dialog, Select)
         run: cd test && python3 find.py
@@ -108,6 +110,8 @@ jobs:
       # its compile in the page needs dist/tex and runs in tex.yml; here it says it skips that part
       - name: Tables (the grid of sizes, Table Design and Table Layout, round trips, the page's drawing)
         run: cd test && python3 table.py
+      - name: Word's gaps, the document's (tables, the header, View, References, Equation, Insert)
+        run: cd test && python3 docgaps.py
   # The editor's second half, beside the first so neither passes the 30 minute limit (one job
   # with every suite took longer); the newer batches' suites run here.
   editor-more:
@@ -148,6 +152,9 @@ jobs:
       - name: Pictures and objects (selecting, Picture Format as round trips, handles, crop, the page's drawing, Insert's objects, phones)
         run: cd test && python3 picture.py
       # its compile on three engines needs dist/tex and runs in tex.yml; here it says it skips that part
+      - name: Objects formatted after they are in (Shape Format, Chart Design and Format, SmartArt Design and Format, picture tools, Arrange, Selection Pane, phones)
+        run: cd test && python3 objects.py shapes charts smart menus pictures arrange selpane phones pictures_unloaded pictures_phone
+      # its compiles on three engines need dist/tex and run in tex.yml
       - name: Insert, interactive graphs, the clipboard, symbols and AutoCorrect
         run: cd test && python3 insert.py
       # (the live paper, task 70; its compiles and TeX's picture against the live one run in tex.yml)
