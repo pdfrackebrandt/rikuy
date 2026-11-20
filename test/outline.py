@@ -333,8 +333,9 @@ def collapse(page):
     # the heading's right click menu
     click_text(page, 'Beta', 1)
     page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); window.rikuy.openContextMenu(r.left, r.bottom); })()"); page.wait_for_timeout(200)
+    # (the menu writes a command's words capitalised, as Word's menus: "Collapse Heading")
     names = page.get_by_role('menuitem').all_inner_texts()
-    check('a heading\'s right click menu has Collapse heading, Expand heading, Expand all and Collapse all headings', all(any(i.startswith(n) for i in names) for n in ('Collapse heading', 'Expand heading', 'Expand all headings', 'Collapse all headings')), names)
+    check('a heading\'s right click menu has Collapse heading, Expand heading, Expand all and Collapse all headings', all(any(i.lower().startswith(n.lower()) for i in names) for n in ('Collapse heading', 'Expand heading', 'Expand all headings', 'Collapse all headings')), names)
     page.keyboard.press('Escape')
     # TeX's PDF keeps the text (the source is untouched; with dist/tex, compiled)
     if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
@@ -402,7 +403,7 @@ def collapse_phones(p):
             load_doc(page, DOC)
             click_text(page, 'Gamma', 1)
             items = page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(); window.rikuy.openContextMenu(r.left, r.bottom); return [...document.querySelectorAll('.pop [role=menuitem]')].map((x) => x.textContent); })()")
-            check('%d px: a long press\'s menu (the right click menu) has Collapse heading' % w, any(i.startswith('Collapse heading') for i in items), items)
+            check('%d px: a long press\'s menu (the right click menu) has Collapse heading' % w, any(i.lower().startswith('collapse heading') for i in items), items)
             check('%d px: no sideways scroll' % w, page.evaluate('document.documentElement.scrollWidth') <= w)
             check('%d px: no errors' % w, not errors, errors[:3])
             browser.close()

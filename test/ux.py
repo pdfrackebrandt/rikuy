@@ -1007,9 +1007,34 @@ def menus(page, w):
     check(f'the shortcuts in one column at the right, after the names ({w})', all(m['keys'] and max(x[0] for x in m['keys']) - min(x[0] for x in m['keys']) <= 1 and all(x[2] >= x[1] + 8 for x in m['keys']) for m in seen.values()), {k: m['keys'] for k, m in seen.items()})
 
 
+
+def empty_panes(page, w):
+    """An empty pane or list says in one sentence what belongs there and offers the one command
+    that puts it there (UI-PRINCIPLES.md N5): the Navigation pane's headings, Apply Heading 1, which
+    makes the caret's paragraph a heading; File's Recent list, Open."""
+    load_doc(page, '\\documentclass{article}\n\\begin{document}\nJust one paragraph of plain words.\n\\end{document}\n')
+    click_text(page, 'one paragraph', 2)
+    run_cmd(page, 'navigation-pane'); page.wait_for_timeout(400)
+    e = page.evaluate("(() => { const e = [...document.querySelectorAll('#nav .nav-empty')].find((x) => x.offsetParent); if (!e) return null; const t = e.innerText.trim().split('\\n').filter(Boolean); return { lines: t, buttons: [...e.querySelectorAll('button')].map((b) => b.textContent.trim()) }; })()")
+    one = lambda t: t and len([x for x in t[0].split('. ') if x]) == 1 and '\\' not in t[0]
+    check(f'the empty Navigation pane: one sentence, no LaTeX in it, one button ({w})', e and one(e['lines']) and e['buttons'] == ['Apply Heading 1'], e)
+    if e and e['buttons']:
+        page.locator('#nav .nav-empty button').click(); page.wait_for_timeout(500)
+        check(f'which makes the caret\'s paragraph a heading, listed there ({w})', '\\section{Just one paragraph' in src(page) and page.evaluate("[...document.querySelectorAll('#nav .nv-row, #nav [role=treeitem]')].some((r) => r.offsetParent && r.textContent.includes('Just one'))"), src(page)[-120:])
+    open_tab(page, 'File', page.evaluate("matchMedia('(pointer: coarse)').matches")); page.wait_for_timeout(500)
+    r = page.evaluate("(() => { const p = document.querySelector('.rf-none'); return p && p.offsetParent ? [p.textContent, [...p.parentElement.querySelectorAll('button')].filter((b) => b.offsetParent).map((b) => b.textContent.trim())] : null; })()")
+    check(f'File\'s empty Recent list: one sentence and Open ({w})', r and one([r[0]]) and r[1] == ['Open'], r)
+    if r:
+        with page.expect_file_chooser(timeout=3000) as fc:
+            page.click('#rf-none-open')
+        check(f'Open there asks for a file ({w})', fc.value is not None)
+    page.keyboard.press('Escape')
+
+
 PARTS = {'consistency': (consistency, [(1366, False), (1920, True), (390, False), (360, True)]),
          'bar_room': (bar_room, None),
          'motion': (motion, [(1366, False)]),
+         'empty_panes': (empty_panes, [(1366, False), (1920, True)]),
          'menus': (menus, [(1366, False), (1920, True)]),
          'tap_alternatives': (tap_alternatives, [(1366, False), (1920, True)]),
          'focus_rules': (focus_rules, [(1366, False), (1920, True), (390, False)]),

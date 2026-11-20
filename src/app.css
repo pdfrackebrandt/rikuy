@@ -2689,3 +2689,5 @@ body.file-open #rp-file .rb-tb .btn { height: 32px; min-height: 32px; border-rad
   .pdf-prog.busy span { animation: none; opacity: .6; }
   .nv-tog svg, .fold-tg svg { transition: none; }
 }
+/* an empty pane's sentence and its one button (UI-PRINCIPLES.md N5) */
+.nav-empty p { margin: 0 0 8px; }
