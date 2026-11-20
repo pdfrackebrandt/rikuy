@@ -802,29 +802,46 @@ class App {
     getSelection().collapse(this.ghost.el.firstChild.firstChild, 1);
   }
 
-  // The page's width changed (the window, a pane docked or closed): laid out again at the new fit,
-  // with what the reader looked at where it was on the screen: the caret when it is in view, else
-  // the line a third of the way down (a docked pane sent a caret at y 387 to y -2520)
-  refit() {
-    const desk = this.desk, D = desk.getBoundingClientRect();
-    let y = D.top + desk.clientHeight / 3;
-    const s = getSelection();
+  // The reader's place by its source position: the caret when it is in view, else the text at the
+  // window's top, with its distance from the top. A layout at another width or in another view
+  // (a pane docked, Mobile View or Web Layout on and off) moves every line; kept as a place in the
+  // source, it is found again where the text now is (a page fraction lost it: Part 81 to 51)
+  readerSpot() {
+    const D = this.desk.getBoundingClientRect(), s = getSelection();
     if (s.rangeCount && this.root.contains(s.anchorNode)) {
-      const q = s.getRangeAt(0).getBoundingClientRect();
-      if (q.height && q.top >= D.top && q.bottom <= D.bottom) y = q.top;
+      const q = s.getRangeAt(0).getBoundingClientRect(), c = this.caretNow();
+      if (q.height && q.top >= D.top && q.bottom <= D.bottom && c && !c.ghost && !c.crossFile) return { f: c.f, p: c.a, dy: q.top - D.top };
     }
-    const pages = [...this.root.querySelectorAll('.page')];
-    let k = -1, fy = 0;
-    for (let i = 0; i < pages.length; i++) {
-      const q = pages[i].getBoundingClientRect();
-      if (y < q.bottom || i === pages.length - 1) { k = i; fy = q.height ? (y - q.top) / q.height : 0; break; }
+    if (!document.caretRangeFromPoint) return null;
+    for (const fy of [16, 48, 96, 160]) {
+      for (const fx of [0.5, 0.3, 0.7]) {
+        const r = document.caretRangeFromPoint(D.left + D.width * fx, D.top + fy);
+        if (!r || !this.root.contains(r.startContainer)) continue;
+        const A = posFromDom(r.startContainer, r.startOffset, this.root);
+        if (A && !A.ghost && A.f != null) return { f: A.f, p: A.p, dy: r.getBoundingClientRect().top - D.top || fy };
+      }
     }
+    return null;
+  }
+  toReaderSpot(sp) {
+    if (!sp) return;
+    const x = this.index.find(sp.f, sp.p, 1);
+    if (!x || !x.node) return;
+    const r = document.createRange();
+    try { r.setStart(x.node, x.offset); r.collapse(true); } catch (e) { return; }
+    let q = r.getBoundingClientRect();
+    if (!q.height) { const e = x.node.nodeType === 1 ? x.node : x.node.parentElement; if (!e) return; q = e.getBoundingClientRect(); }
+    this.desk.scrollTop += q.top - this.desk.getBoundingClientRect().top - sp.dy;
+  }
+
+  // The page's width changed (the window, a pane docked or closed): laid out again at the new fit,
+  // with what the reader looked at where it was on the screen (a docked pane sent a caret at y 387
+  // to y -2520)
+  refit() {
+    const sp = this.readerSpot();
     if (!this.computePx()) return;
     this.relayout(true);
-    const pg = k >= 0 && this.root.querySelectorAll('.page')[k];
-    if (!pg) return;
-    const q = pg.getBoundingClientRect();
-    desk.scrollTop += q.top + fy * q.height - y;
+    this.toReaderSpot(sp);
   }
 
   relayout(force) {

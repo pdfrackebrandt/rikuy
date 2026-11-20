@@ -596,7 +596,36 @@ def lows(page, w):
             check(f'its zoom number is 44 px wide under a finger ({w})', g['zoom'] >= 44, g)
 
 
-PARTS = {'lows': (lows, [(390, False), (768, False), (1024, True)]),
+TOP = """(() => { const D = document.getElementById('desk').getBoundingClientRect();
+  for (const fy of [16, 48, 96]) { const r = document.caretRangeFromPoint(D.left + D.width / 2, D.top + fy); if (r && r.startContainer.textContent) { const m = /part (\\d+)|Part (\\d+)/.exec(r.startContainer.textContent); if (m) return +(m[1] || m[2]); } }
+  return null; })()"""
+
+
+def place_kept(page, w):
+    """Mobile View off and on (a phone) and View › Web Layout on and off (a desktop) lay every line
+    out again: the reader's place stays on the screen (the text at the top, or the caret)."""
+    touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
+    load_doc(page, LONG); page.wait_for_timeout(500)
+    page.evaluate("(() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('Words of part 37')); document.getElementById('desk').scrollTop += s.getBoundingClientRect().top - document.getElementById('desk').getBoundingClientRect().top - 30; })()")
+    page.wait_for_timeout(300)
+    t0 = page.evaluate(TOP)
+    flip = (lambda: page.locator('#sv-mobile').tap()) if touch else (lambda: run_cmd(page, 'web-layout'))
+    seen = []
+    for _ in range(2):
+        flip(); page.wait_for_timeout(700); seen.append(page.evaluate(TOP))
+    check(f'{"Mobile View off and on" if touch else "Web Layout on and off"}: the text at the window\'s top stays the same part ({w})', t0 == 37 and all(x is not None and abs(x - 37) <= 1 for x in seen), (t0, seen))
+    # with the caret in view: it stays in view, near where it was
+    if not touch:
+        click_text(page, 'Words of part 40', 4)
+        y0 = page.evaluate("getSelection().getRangeAt(0).getBoundingClientRect().top")
+        run_cmd(page, 'web-layout'); page.wait_for_timeout(700)
+        y1 = page.evaluate("(() => { const r = getSelection().getRangeAt(0).getBoundingClientRect(), d = document.getElementById('desk').getBoundingClientRect(); return [Math.round(r.top), Math.round(d.top), Math.round(d.bottom)]; })()")
+        check(f'Web Layout with the caret in view: the caret stays in view, near where it was ({w})', y1[1] <= y1[0] <= y1[2] and abs(y1[0] - y0) < 60, (y0, y1))
+        run_cmd(page, 'web-layout')
+
+
+PARTS = {'place_kept': (place_kept, [(1366, False), (390, False)]),
+         'lows': (lows, [(390, False), (768, False), (1024, True)]),
          'pane_room': (pane_room, [(1024, False), (1920, True)]),
          'caret_back': (caret_back, [(1366, False), (1100, True)]),
          'help_pane': (help_pane, [(1366, False), (1920, True), (390, False)]),
@@ -615,7 +644,7 @@ PARTS = {'lows': (lows, [(390, False), (768, False), (1024, True)]),
 
 
 # the parts that meet a phone's own default, Mobile View (the others open in Print Layout, as the suites written for it do)
-MOBILE = {'mobile_view', 'first_visit', 'doc_name', 'sample_spelling'}
+MOBILE = {'mobile_view', 'first_visit', 'doc_name', 'sample_spelling', 'place_kept'}
 # the parts on tablets: a touch screen at any width
 TOUCH = {'lows'}
 
