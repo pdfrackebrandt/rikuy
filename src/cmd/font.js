@@ -11,6 +11,7 @@
 // commit for each action, the preamble's lines (ulem, xcolor, the highlighter's definition) in it.
 
 import { register, command, onInstall, onInsertText } from '../commands.js';
+import { firstKey, macUA } from '../keys.js';
 import { groupNames, mapPos } from '../wrap.js';
 import * as F from '../charfmt.js';
 import { openMenu, colorPicker, BASE_COLORS, CARET } from '../ui/kit.js';
@@ -456,11 +457,11 @@ export const methods = {
       const id = show.fontSel && show.family ? show.family : show.docFont.id;
       const name = (F.GENERIC.find((g) => g.id === id) || F.FONTS.find((f) => f.id === id) || show.docFont).name;
       inp.value = inp.dataset.shown = name;
-      inp.title = 'Font: ' + name + (show.familyW ? '' : ' (the document\'s)') + ' (Ctrl+Shift+F)';
+      inp.title = 'Font: ' + name + (show.familyW ? '' : ' (the document\'s)') + ' (' + firstKey(command('font-name'), macUA()) + ')';
     } else {
       const v = Math.round(show.size * 100) / 100;
       inp.value = inp.dataset.shown = Number.isFinite(v) ? String(v) : '';
-      inp.title = 'Font Size: ' + v + 'pt' + (show.sizeW && show.sizeW.cmd !== 'fontsize' ? ' (\\' + show.sizeW.cmd + ')' : show.sizeW ? '' : ' (the document\'s)');
+      inp.title = 'Font Size: ' + v + 'pt' + (show.sizeW && show.sizeW.cmd !== 'fontsize' ? ' (\\' + show.sizeW.cmd + ')' : show.sizeW ? '' : ' (the document\'s)') + ' (' + firstKey(command('font-size'), macUA()) + ')';
     }
   },
   // back to the page from a box: the selection it had (a box's text took the document's selection)
@@ -502,6 +503,8 @@ export const methods = {
     if (!st) return false;
     const inp = $(kind === 'font' ? '#rb-font' : '#rb-size');
     const visible = inp && inp.offsetParent;
+    // (a key pressed before the ribbon has followed the caret finds the box still off: on it is)
+    if (!fromBox && visible && inp.disabled) this.fontBoxSync(kind, at, true);
     if (!fromBox && visible) { const s = getSelection(); if (s.rangeCount && this.root.contains(s.anchorNode)) { this.rbRange = s.getRangeAt(0).cloneRange(); this.fbxAt = at; } inp.focus(); return true; }
     const back = (fn) => () => { this.fbxAt = null; if (fromBox) this.fbxBack(); else this.ribbonBack(); fn(); this.ribbonSync(); };
     let items;
