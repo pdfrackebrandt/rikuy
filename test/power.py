@@ -400,6 +400,21 @@ def burst(page):
       document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true })); }''')
     page.wait_for_timeout(100)
     check('burst: a key that is no letter writes the letters waiting first', 'xyz' in src(page) and src(page).count('xyz') == 1, None)
+    # (review M1) input with no key, Undo from a menu or a gesture, a paste from the Edit menu,
+    # comes after the letters waiting: they go in first
+    QUEUE = '''(more) => { const g = window.rikuy; g.keyLate = 50; const ev = (ch) => ({ inputType: 'insertText', data: ch, isComposing: false, preventDefault() {}, getTargetRanges: () => [] });
+      for (const ch of 'QRS') g.onBeforeInput(ev(ch)); const waiting = g.typeQ; more(g); return waiting; }'''
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    base = src(page)
+    waiting = page.evaluate(QUEUE.replace('(more) =>', '() =>').replace('more(g);', "g.onBeforeInput({ inputType: 'historyUndo', preventDefault() {}, getTargetRanges: () => [] });"))
+    page.wait_for_timeout(200)
+    check('burst: Undo with letters waiting takes back the typing whole, nothing else', bool(waiting) and src(page) == base, (waiting, src(page) == base))
+    page.evaluate('window.rikuy.redo()'); page.wait_for_timeout(200)
+    check('burst: and Redo gives the typing back once', src(page).count('QRS') == 1, None)
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    page.evaluate(QUEUE.replace('(more) =>', '() =>').replace('more(g);', "const dt = new DataTransfer(); dt.setData('text/plain', 'P'); g.root.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));"))
+    page.wait_for_timeout(200)
+    check('burst: a paste with letters waiting lands after them', 'QRSP' in src(page), None)
     cdp.send('Emulation.setCPUThrottlingRate', {'rate': 1})
 
 

@@ -1130,6 +1130,8 @@ class App {
   closeGroup() { const top = this.hist[this.hist.length - 1]; if (top) { top.open = false; top.before = null; top.win = null; top.after = null; } }
 
   undo() {
+    // (letters waiting to go in go first: Undo from the Edit menu or a gesture comes with no key)
+    this.typeFlush();
     // (nothing stays selected across a change of the text: its offsets would be stale)
     this.disarm();
     // typing in the source pane joins the history only after a pause: take it in first, so
@@ -1155,6 +1157,7 @@ class App {
     this.updateUndoUI();
   }
   redo() {
+    this.typeFlush();
     this.disarm();
     if (this.srcRebuild.pending()) this.srcRebuild.flush();
     this.closePop(true);
@@ -1202,7 +1205,7 @@ class App {
     R.addEventListener('dragstart', (e) => { if (!this.dragMoveStart(e)) e.preventDefault(); });
     R.addEventListener('dragover', (e) => this.dragMoveOver(e));
     R.addEventListener('dragend', () => this.dragMoveEnd());
-    R.addEventListener('drop', (e) => { if (!this.dragMoveDrop(e) && !(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length)) e.preventDefault(); });
+    R.addEventListener('drop', (e) => { this.typeFlush(); if (!this.dragMoveDrop(e) && !(e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length)) e.preventDefault(); });
     R.addEventListener('mousedown', (e) => this.onMouseDown(e), true);
     R.addEventListener('click', (e) => this.onClick(e));
     document.addEventListener('selectionchange', () => this.onSelChange());
@@ -1454,6 +1457,9 @@ class App {
     // (R3) words dragged out of the page are copied there: a move within the page is the page's
     // own drop (src/cmd/move.js), so a deletion by drag only ever follows a drop elsewhere
     if (t === 'deleteByDrag' || t === 'insertFromDrop') return;
+    // (every input but a letter that may wait writes the letters waiting first, before its target
+    // ranges are read: Undo from a menu, a system's autocorrect, a gesture come with no key)
+    if (!(t === 'insertText' && this.typeQ != null && this.typeQueueable(e.data))) this.typeFlush();
     switch (t) {
       case 'insertText': case 'insertReplacementText': {
         let data = e.data;
@@ -1495,10 +1501,9 @@ class App {
   // pause goes in at once, as before. Any other key, a press, the page losing the focus or an input
   // method first write what waits (bindUI).
   typeQueueable(data) {
-    // (a space between words too, where AutoCorrect would do nothing with it: it acts on the space
-    // that ends a word, and with what waits written first it would not see that word)
-    const word = /^[\p{L}\p{N}]$/u.test(data || '');
-    if (!word && !(data === ' ' && this.typeQ && this.typeAt && !this.acLast && /[\p{L}\p{N}]$/u.test(this.typeQ) && !this.acActs(this.typeAt.f, this.typeAt.a, this.typeQ, ' '))) return false;
+    // (a space ends the run: the word goes in first, so AutoCorrect and a system's own autocorrect,
+    // which reads the page's text at the space, see it; review M1)
+    if (!/^[\p{L}\p{N}]$/u.test(data || '')) return false;
     if (this.typeQ) return true;
     // (only a key that waited for the page, pressed while the key before was still being built:
     // a key in time goes in at once, as keys always have)
@@ -1509,7 +1514,7 @@ class App {
     return !!E && !!c && !c.ghost && c.collapsed && c.f === E.f && c.a === E.a && n === E.n && this.hist[n - 1] === E.top;
   }
   typeQueue(data) {
-    if (this.typeQ == null) { const c = this.caretNow(); this.typeAt = c && !c.ghost ? { f: c.f, a: c.a } : null; this.typeQ = ''; setTimeout(() => this.typeFlush(), 0); }
+    if (this.typeQ == null) { this.typeQ = ''; setTimeout(() => this.typeFlush(), 0); }
     this.typeQ += data;
   }
   typeFlush() {
@@ -2249,6 +2254,8 @@ class App {
     }
   }
   onPaste(e) {
+    // (a paste from the Edit menu comes with no key: the letters waiting go in before it)
+    this.typeFlush();
     e.preventDefault();
     const dt = e.clipboardData;
     if (!dt) return;
