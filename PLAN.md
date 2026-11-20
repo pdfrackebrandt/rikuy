@@ -3259,7 +3259,18 @@ Tests:
     decimals), 283 aligned blocks 0.15em shorter above their first row and below their last
     (rows as far apart as before), 189 negated relations with an empty span keeping them on one
     line, and 207 others: letters set one by one with their own italic correction,
-    `\underbrace` and `\overbrace` spaced as inner atoms, `\not` drawn another way.
+    `\underbrace` and `\overbrace` spaced as inner atoms, `\not` drawn another way. *S5:* a
+    comment line a comments only copy brings in is written `% comment32 <name> <words> <text>`
+    (`% reply32 <name> <text>`), each part in base32, whatever form it came in (`commentsOf`
+    matches lines by what they say); the reader's page writes that form already, the page shows
+    it as typed, lines in the first form stay and are read as before. After its % such a line
+    holds letters, digits and spaces alone, so it runs nothing where a document made % ordinary
+    by a `\csname` built `\catcode`, `\scantokens` or Lua, which the static filter cannot see:
+    `share.py catcodes` compiles each in the page, the reader's line as written prints its
+    marker and the same line through the link does not (10 checks; `share.py` 83 in all, its
+    Open in Overleaf check now reads the form the page makes, which the hosted policy's
+    `form-action 'self'` refuses to post, as `pdf.py` says to the user); `review.test.mjs` and
+    `share.test.mjs` (base32 against RFC 4648's vectors, the forms read and refused).
 
 ## Open tasks
 

@@ -618,7 +618,15 @@ prototype).
 - **Comments** are lines `% comment (Name) on "words": text` and `% reply (Name): text` under the
   line they are about (`commentEdit`, `findComments`). On a line of its own a comment changes
   nothing TeX typesets (the line above ended in a space, the comment takes its own line end), and
-  `commentEdit` refuses verbatim environments and the preamble. `paintComments()` highlights the
+  `commentEdit` refuses verbatim environments and the preamble. A comment from a reader of a
+  comments only link is written instead as `% comment32 <name> <words> <text>` (and `% reply32
+  <name> <text>`), each part in base32 (RFC 4648's A to Z and 2 to 7, `0` for an empty part):
+  letters, digits and spaces after the %, so it runs nothing even where a document has made % an
+  ordinary character by means no reading of the source finds (`\csname`, `\scantokens`, Lua).
+  The reader's page writes it so, and `commentsOf` writes every comment line a comments only copy
+  brings in that form whatever form it came in, matching lines by what they say;
+  `parseCommentLine` reads both forms, so the page shows such a comment as typed.
+  `paintComments()` highlights the
   quoted words (`CSS.highlights`) and puts a mark in the page margin; the Comments tab lists the
   threads with Reply and Resolve.
 - **Leaving.** Save writes a one file project as its `.tex` and anything larger as a `.zip`

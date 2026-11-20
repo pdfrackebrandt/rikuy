@@ -1,6 +1,6 @@
 // Share links, comments in the source and the three way merge (src/share.js).
 import assert from 'node:assert/strict';
-import { packShare, unpackShare, shareParam, texParam, unpackTex, findComments, commentEdit, stripComments, merge3, mergeProjects, commentOnly } from '../src/share.js';
+import { packShare, unpackShare, shareParam, texParam, unpackTex, findComments, commentEdit, stripComments, merge3, mergeProjects, commentOnly, base32, unbase32, parseCommentLine } from '../src/share.js';
 import { changes } from '../src/diff.js';
 import { TeXEngine } from '../src/tex.js';
 
@@ -214,6 +214,25 @@ await ok('a comment goes on its own line under the line it is about', () => {
   assert.equal(c3[1].body, 'And this?');
   assert.equal(t3.slice(c3[1].as, c3[1].ae), 'The source map is exact.');
   assert.equal(stripComments(t3), DOC);
+});
+
+await ok('a comments only reader\'s comment is written in base32: letters, digits and spaces after its %, shown as typed', () => {
+  // RFC 4648's own vectors, without padding; 0 for an empty part
+  for (const [a, b] of [['', '0'], ['f', 'MY'], ['fo', 'MZXQ'], ['foo', 'MZXW6'], ['foob', 'MZXW6YQ'], ['fooba', 'MZXW6YTB'], ['foobar', 'MZXW6YTBOI']]) { assert.equal(base32(a), b); assert.equal(unbase32(b), a); }
+  for (const s of ['\\input{/etc/passwd} }{$&#^_~%', 'Ana Pérez', '日本語のコメント', 'emoji \u{1F600} and \u0000 nul', 'x'.repeat(500)]) assert.equal(unbase32(base32(s)), s, s.slice(0, 20));
+  const p = DOC.indexOf('source map');
+  const t = apply(DOC, commentEdit(DOC, p, { who: 'Ana (supervisor)', quote: 'source  map', body: 'Is this \\textbf{right}?', safe: true }));
+  const line = t.split('\n').find((l) => l.startsWith('% comment32'));
+  assert.ok(/^% comment32 [A-Z2-7]+ [A-Z2-7]+ [A-Z2-7]+$/.test(line), line);
+  const t2 = apply(t, commentEdit(t, findComments(t, 'main.tex')[0].e - 1, { who: 'Pedro', body: '50% sure', reply: true, safe: true }));
+  const c = findComments(t2, 'main.tex');
+  assert.deepEqual(c.map((x) => [x.who, x.quote, x.body, x.replies]), [['Ana supervisor', 'source map', 'Is this \\textbf{right}?', [{ who: 'Pedro', body: '50% sure' }]]]);
+  assert.equal(t2.slice(c[0].as, c[0].ae), 'The source map is exact.');
+  assert.equal(stripComments(t2), DOC);
+  assert.ok(commentOnly({ a: '', b: line }), 'Review counts it as a comment');
+  // the parts must be three for a comment, two for a reply, each base32 or 0
+  for (const l of ['% comment32 IFXGC', '% comment32 IFXGC 0 0 0', '% reply32 IFXGC 0 0', '% comment32 IFXGC 0 N1', '% comment32 IFXGC 0 x\\y']) assert.equal(parseCommentLine(l), null, l);
+  assert.deepEqual(parseCommentLine('  %comment32 IFXGC 0 0\r'), { kind: 'comment', who: 'Ana', quote: '', body: '', safe: true });
 });
 
 await ok('no comment where TeX would print it or before the document', () => {
