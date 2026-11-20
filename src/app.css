@@ -141,6 +141,10 @@ button { font: inherit; color: inherit; }
 #bar .btn.ghost { color: var(--bar-ink); }
 #bar .btn.ghost:hover { background: var(--bar-hover); }
 #bar .btn.ghost[aria-pressed="true"] { background: var(--bar-press); color: var(--bar-ink); }
+/* (pressed: a line under it as well as the wash, a shape and not a tint alone, D5; a border, so
+   forced colours keep it) */
+#bar .btn { position: relative; }
+#bar .btn.ghost[aria-pressed="true"]::after { content: ""; position: absolute; left: 6px; right: 6px; bottom: 1px; height: 0; border-bottom: 2px solid currentColor; }
 #bar .btn:focus-visible { outline-color: var(--bar-ink); }
 #bar .sep { height: 20px; background: color-mix(in srgb, var(--bar-ink) 30%, transparent); }
 .tools { display: flex; align-items: center; gap: 2px; flex: none; }
@@ -165,7 +169,7 @@ body.has-ai .ai-only { display: inline-flex !important; }
 /* ---- the search box in the bar (Alt+Q): any command by its name ---- */
 #bar { position: relative; }
 .srch { position: relative; width: min(420px, 100%); min-width: 0; display: flex; align-items: center; container-type: inline-size; }
-.srch > svg { position: absolute; left: 9px; top: 50%; width: 16px; height: 16px; margin-top: -8px; fill: none; stroke: var(--bar-mute); stroke-width: 1.6; stroke-linecap: round; pointer-events: none; }
+.srch > svg { position: absolute; left: 9px; top: 50%; width: 16px; height: 16px; margin-top: -8px; fill: none; stroke: var(--bar-mute); stroke-width: 1px; stroke-linecap: round; pointer-events: none; }
 .srch input { width: 100%; height: 28px; box-sizing: border-box; padding: 0 48px 0 32px; border: 1px solid var(--bar-line); border-radius: 4px; background: var(--bar-field); color: var(--ink-ui); font: 12px var(--font-ui); }
 /* the chord, so the box reads as command search and not as Find in the document */
 .srch-key { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); margin: 0; padding: 2px 6px; border: 0; border-radius: 4px; background: color-mix(in srgb, var(--bar-line) 14%, var(--bar-field)); color: var(--bar-mute); font: 11px/1.4 var(--font-ui); pointer-events: none; }
@@ -215,7 +219,7 @@ body.keytips .rb-ktip::before { content: attr(data-k); }
 .rb-tab:focus-visible, .rb-coll:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 .rb-coll { flex: none; width: 24px; height: 24px; margin-bottom: 2px; padding: 0; display: flex; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: var(--mute); cursor: pointer; }
 .rb-coll:hover { background: var(--blue-wash); color: var(--ink-ui); }
-.rb-coll svg { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.rb-coll svg { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1px; stroke-linecap: round; stroke-linejoin: round; }
 body.rb-collapsed .rb-coll svg { transform: rotate(180deg); }
 body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
 @media (min-width: 861px) { body.rb-collapsed:not(.rb-peek) #ribbon { display: none; } }
@@ -273,7 +277,7 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
 .rb-more { border-left: 1px solid var(--line); border-radius: 0 4px 4px 0; }
 .rb-sb:hover { background: var(--blue-wash); }
 .rb-sb:disabled { color: var(--mute); opacity: .4; cursor: default; pointer-events: none; }
-.rb-sb svg { width: 9px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.rb-sb svg { width: 9px; height: 11px; fill: none; stroke: currentColor; stroke-width: 1px; stroke-linecap: round; stroke-linejoin: round; }
 .rb-more svg { height: 8px; }
 @media (pointer: coarse) { .rb-sb { width: 32px; } }
 .rb-cap { font: 12px/16px var(--font-ui); color: var(--mute); }
@@ -298,7 +302,7 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
   /* a group's dialog, the small arrow at the label's corner. Out of the row's width, so folding stays as it was. */
   .rb-grp:not(.folded) > .rb-launch { display: flex; position: absolute; right: 0; bottom: 1px; width: 16px; height: 14px; padding: 0; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: var(--mute); cursor: pointer; }
   .rb-grp:not(.folded) > .rb-launch:hover { background: var(--blue-wash); color: var(--ink-ui); }
-  .rb-grp:not(.folded) > .rb-launch svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+  .rb-grp:not(.folded) > .rb-launch svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1px; stroke-linecap: round; stroke-linejoin: round; }
 }
 /* (and from 861 to 899 px, where Home's Font group is two rows of buttons and the others one) */
 @media (min-width: 861px) and (max-width: 899px) and (pointer: fine) { body:not(.file-open) .rb { height: 67px; } }
@@ -332,7 +336,7 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
   #ribbon .rb-grp.lay:not(.folded) > .rb-launch-c { position: absolute; right: 0; bottom: 1px; width: 16px; min-width: 0; height: 14px; padding: 0; gap: 0; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: var(--ink-ui); }
   .rb-grp.lay:not(.folded) > .rb-launch-c:hover { background: var(--blue-wash); color: var(--ink-ui); }
   .rb-grp.lay:not(.folded) > .rb-launch-c > :not(.rb-larrow):not(.sr) { display: none; }
-  .rb-grp.lay:not(.folded) > .rb-launch-c > .rb-larrow { display: block; width: 10px; height: 10px; stroke-width: 1.3; }
+  .rb-grp.lay:not(.folded) > .rb-launch-c > .rb-larrow { display: block; width: 10px; height: 10px; stroke-width: 1px; }
   .rb-grp.lay > [data-brk] { grid-row-start: 1; }
   .rb-grp.lay > .btn, .rb-grp.lay > .rb-split > .btn { height: 24px; border-radius: 4px; font-size: 12px; font-weight: 400; }
   .rb-grp.lay > .btn svg, .rb-grp.lay > .rb-split > .btn svg { width: 16px; height: 16px; }
@@ -370,7 +374,7 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
   .rb-grp.lay > .btn[data-size="T"][aria-pressed="true"] { border-color: var(--blue); position: relative; z-index: 1; }
   /* the spin fields: a row each */
   .rb-grp.lay > .pf, .rb-grp.lay > .pf-field { height: 24px; padding: 0 2px; }
-  .rb-grp.lay > .pf .pf-v, .rb-grp.lay > .pf-field .pf-v { height: 22px; }
+  .rb-grp.lay > .pf .pf-v, .rb-grp.lay > .pf-field .pf-v { height: 24px; }
   .rb-grp.lay > .pf:has(#rl-spacing-before), .rb-grp.lay > .pf:has(#rl-spacing-after) { margin-left: 8px; }
   /* Word's check boxes (Table Style Options, View's Show, the header's Options): a box ticked when on */
   .rb-grp.lay-check:not(.nm) > .btn[aria-pressed][data-size="S"] { position: relative; padding-left: 4px; }
@@ -908,7 +912,7 @@ body.dropping .dropzone { display: grid; }
 .bubble .mono { font-family: var(--font-mono); font-size: 12px; }
 /* border-box: the max height set from the window then holds the padding too, so a tall popover
    (the help) ends inside the window instead of 22px below it */
-.pop { box-sizing: border-box; position: fixed; z-index: 40; width: min(440px, calc(100vw - 16px)); background: var(--panel); color: var(--ink-ui); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 12px 40px rgba(10, 20, 30, .22); padding: 10px; display: flex; flex-direction: column; gap: 8px; max-height: calc(100vh - 70px); overflow: auto; }
+.pop { box-sizing: border-box; position: fixed; z-index: 40; width: min(440px, calc(100vw - 16px)); background: var(--panel); color: var(--ink-ui); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 12px 40px rgba(10, 20, 30, .22); padding: 10px; display: flex; flex-direction: column; gap: 8px; max-height: calc(100vh - 70px); overflow: auto; }
 .pop.pop-math { width: min(660px, calc(100vw - 16px)); }
 .pop.sheet-mode { left: 8px !important; right: 8px; bottom: calc(8px + var(--kb-h, 0px) + env(safe-area-inset-bottom, 0px)); top: auto !important; width: auto; max-height: 60vh; }
 .pop-h { display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 12px; letter-spacing: .02em; color: var(--mute); }
@@ -1526,7 +1530,7 @@ body.nav-on.nav-outline #nav { width: 460px; }
 .sheet[data-font="mono"] { --font-doc: var(--font-doc-tt); }
 
 /* the font and size boxes: Word's editable boxes with their arrow */
-.fbx { display: inline-flex; align-items: center; height: 28px; border: 1px solid var(--field-line); border-radius: 4px; background: var(--panel); margin: 0; }
+.fbx { box-sizing: border-box; display: inline-flex; align-items: center; height: 28px; border: 1px solid var(--field-line); border-radius: 4px; background: var(--panel); margin: 0; }
 .fbx:focus-within { outline: 2px solid var(--blue); outline-offset: 1px; }
 .fbx.off { opacity: .55; }
 /* no caret yet: the box still shows the document's font, in the normal colour */
@@ -1537,7 +1541,7 @@ body.nav-on.nav-outline #nav { width: 460px; }
 .fbx-size .fbx-v { width: 26px; text-align: right; padding-left: 4px; }
 .fbx-x { width: 16px; height: 100%; display: inline-flex; align-items: center; justify-content: center; color: var(--mute); cursor: pointer; border-radius: 0 6px 6px 0; }
 .fbx-x:hover { background: var(--blue-wash); color: var(--ink-ui); }
-.fbx-x svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.fbx-x svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1px; }
 .pop-fbx .fbx-mi .mi-n { font-size: 15px; }
 .pop.pop-fbx-size { min-width: 150px; }
 /* The Font group in Word's two rows of small buttons (the boxes, sizes, case and Clear above;
@@ -2572,7 +2576,7 @@ body.focus #ruler, body.focus #vruler, body.view-latex #ruler, body.view-pdf #ru
   /* a corner arrow that is a group's own button, in any group (Home's Paragraph settings too) */
   #ribbon .rb-grp:not(.folded) > .rb-launch-c { position: absolute; right: 0; bottom: 1px; width: 16px; min-width: 0; height: 14px; padding: 0; gap: 0; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: var(--ink-ui); }
   #ribbon .rb-grp:not(.folded) > .rb-launch-c > :not(.rb-larrow):not(.sr) { display: none; }
-  #ribbon .rb-grp:not(.folded) > .rb-launch-c > .rb-larrow { display: block; width: 10px; height: 10px; stroke-width: 1.3; }
+  #ribbon .rb-grp:not(.folded) > .rb-launch-c > .rb-larrow { display: block; width: 10px; height: 10px; stroke-width: 1px; }
   #ribbon .rb-grp:not(.folded) > .rb-launch-c:hover { background: var(--blue-wash); }
   /* the Styles gallery's name centred under it, as every group's */
   #rp-home .rb-grp[data-group="styles"] .rb-cap { text-align: center; }
@@ -2583,7 +2587,10 @@ body.focus #ruler, body.focus #vruler, body.view-latex #ruler, body.view-pdf #ru
 .pop-frontier p { margin: 4px 0 8px; font-size: 13px; line-height: 1.45; color: var(--ink-ui); }
 .pop-frontier .fr-soon { font-weight: 600; }
 .pop-frontier .pop-row { display: flex; justify-content: flex-end; }
-@media (pointer: coarse) { .pop-frontier .btn { min-height: 44px; min-width: 64px; } }
+/* a dialog's buttons 32 px (C1), its Close in the corner too; 44 with touch */
+.pop-frontier .btn { height: 32px; padding: 0 16px; }
+.pop-frontier .pop-x { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0; }
+@media (pointer: coarse) { .pop-frontier .btn { min-height: 44px; min-width: 64px; } .pop-frontier .pop-x { width: 44px; height: 44px; } }
 
 /* every small icon of the ribbon 16 px (the larger rules above outweigh this one) */
 :where(#ribbon) .btn svg { width: 16px; height: 16px; }
@@ -2638,3 +2645,15 @@ body.focus #ruler, body.focus #vruler, body.view-latex #ruler, body.view-pdf #ru
   #bar { grid-template-columns: auto auto minmax(0, 1fr); }
   .title-end { min-width: 0; flex: 1 1 auto; justify-content: flex-end; }
 }
+
+/* ---- forced colours (D4): what shows a state is drawn in the system's colours ----
+   The selected tab's mark a border (a background turns Canvas there); the bar's and the status
+   bar's pressed toggles in Highlight, as the ribbon's (Preview, Outline, Page, LaTeX, PDF). */
+@media (forced-colors: active) {
+  .rb-tab.on::after { height: 0; background: none; border-bottom: 3px solid CanvasText; }
+  #bar .btn[aria-pressed="true"], .st-views button[aria-pressed="true"] { forced-color-adjust: none; background: Highlight; color: HighlightText; }
+  #bar .btn[aria-pressed="true"]::after { border-bottom-color: HighlightText; }
+}
+/* ---- the focus ring only for the keyboard (C13): after a press with the mouse or a finger no
+   control keeps one, though a popover gave it the focus back (a field shows where typing goes) ---- */
+html[data-input="pointer"] :is(button, [role=tab], [role=menuitem], [role=menuitemradio], [role=menuitemcheckbox], a):focus-visible { outline: none; }

@@ -734,7 +734,7 @@ Read Mode (the PDF view), Print Layout (the page), Web Layout (the text as wide 
 pages; the lines are the browser's, not TeX's), LaTeX Mode (the LaTeX view), Draft (the pages
 run on), Outline; Ruler (sliders "Left Indent", "Right Indent", "First Line Indent", "Hanging
 Indent", "Left margin", "Right margin", "Top margin", "Bottom margin": dragged or moved with the
-arrows, a quarter centimetre a press; not on a touch screen), Show LaTeX, Formatting marks,
+arrows, a quarter centimetre a press; not on a touch screen), Show LaTeX, Show marks,
 Navigation pane; 100%, One page, Multiple pages, Page
 width; Side to Side, Dark page (the screen only), Focus (every bar hidden; Escape or "Leave
 Focus"). The File tab: Blank document (from the preamble kept by Set as default), New from

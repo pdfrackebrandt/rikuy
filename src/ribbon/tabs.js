@@ -28,10 +28,17 @@ import { commands, command, inGroup, places, enabled, pressed, installers } from
 import { $, mk, store, PREFS } from '../ui/dom.js';
 import { openMenu, splitButton, CARET } from '../ui/kit.js';
 import { measureTiles, installGallery } from '../ui/gallery.js';
+import { gridIcons } from '../ui/icongrid.js';
 import { styOfEl } from '../editor.js';
 import { enclosing } from '../wrap.js';
 
 const SVG = (paths) => '<svg viewBox="0 0 20 20" aria-hidden="true">' + paths + '</svg>';
+// A name as the ribbon shows it, in Word's title case (C11: one capitalisation for every button's
+// and group's name): each word's first letter capital but the small words after the first; a
+// word written with a capital already, LaTeX or AI, as it is. The accessible name stays the
+// command's own (the same words: WCAG's label in name reads them without their case).
+const SMALL = new Set(['a', 'an', 'and', 'as', 'at', 'but', 'by', 'for', 'from', 'in', 'into', 'of', 'on', 'or', 'per', 'the', 'to', 'vs', 'with']);
+export const titleCase = (s) => String(s).split(' ').map((w, i) => (i > 0 && SMALL.has(w.toLowerCase())) || !/^[a-z]/.test(w) ? w : w[0].toUpperCase() + w.slice(1)).join(' ');
 
 // What kind of control each one of the ribbon, the title bar and the status bar is (data-kind):
 // one height, type, spacing and corner per kind, which test/consistency.py measures in one pass.
@@ -169,7 +176,7 @@ export const tabs = {
         // (its first command's icon, which it shows folded: see ribbonFit)
         const first = items.find(({ c }) => c.icon);
         if (first) gb.insertAdjacentHTML('beforeend', SVG(first.c.icon).replace('<svg ', '<svg class="rb-gico" '));
-        gb.append(mk('span', '', g.name));
+        gb.append(mk('span', '', titleCase(g.name)));
         gb.insertAdjacentHTML('beforeend', SVG(CARET));
         gb.addEventListener('click', () => this.openGroupMenu(T.id, g, gb));
         box.append(gb);
@@ -224,7 +231,7 @@ export const tabs = {
         // the group's name under its controls, as Word's ribbon labels them (the Styles gallery has
         // its own caption: this one names the group where the style list stands in its place).
         // Hidden from the accessibility tree: the group has the name.
-        { const lab = mk('span', 'rb-glab', g.name); lab.setAttribute('aria-hidden', 'true'); box.append(lab); }
+        { const lab = mk('span', 'rb-glab', titleCase(g.name)); lab.setAttribute('aria-hidden', 'true'); box.append(lab); }
         tb.append(box);
       });
       tb.append(mk('span', 'grow'));
@@ -235,6 +242,9 @@ export const tabs = {
     // the downloads wait in the first panel until a tab is chosen
     rb.querySelector('.rb-tb').append(dl);
     tagKinds(rb, 'ribbon'); tagKinds($('#rb-top'), 'ribbon'); tagKinds($('#bar'), 'bar'); tagKinds($('#status'), 'status');
+    // (every icon of the bar, the tab row and the status bar on the grid of its pixels; the
+    // ribbon's as each tab is shown and fitted, ribbonFit)
+    gridIcons($('#bar')); gridIcons($('#rb-top')); gridIcons($('#status'));
     this.rbBuilt = true;
     const want = this.rbTabs.includes(this.rbTab) ? this.rbTab : 'home';
     this.rbTab = null;
@@ -254,7 +264,8 @@ export const tabs = {
     if (c.kind === 'toggle') b.setAttribute('aria-pressed', 'false');
     if (c.icon) b.insertAdjacentHTML('beforeend', SVG(c.icon));
     else if (c.glyph) b.insertAdjacentHTML('beforeend', c.glyph);
-    const shown = l && l.size !== 'I' && l.size !== 'T' ? l.shown || label || p.name : label;
+    const shown0 = l && l.size !== 'I' && l.size !== 'T' ? l.shown || label || p.name : label;
+    const shown = shown0 && titleCase(shown0);
     if (!shown) b.append(mk('span', 'sr', p.name));
     else if (!l) b.append(mk('span', '', shown));
     else {
@@ -268,6 +279,8 @@ export const tabs = {
       b.append(bl);
     }
     if (c.kind === 'menu') { b.setAttribute('aria-haspopup', 'menu'); b.setAttribute('aria-expanded', 'false'); }
+    // (a button that opens a dialog of its own says so, and whether it is open)
+    if (c.popup) { b.setAttribute('aria-haspopup', c.popup); b.setAttribute('aria-expanded', 'false'); }
     if (c.kind === 'split') {
       const box = splitButton(this, b, p.name, () => this.commandMenu(c));
       // A large split button as Word's: its icon above runs it, its name and arrow below open the
@@ -493,6 +506,9 @@ export const tabs = {
       if (!fits()) { st.do(); if (st.chain) held.add(st.chain); }
     }
     this.rbFitting = false;
+    // (the icons on the grid of the size each is now drawn at: a group made small draws its large
+    // icons at 16 px, src/ui/icongrid.js)
+    gridIcons(panel); gridIcons(rb.querySelector('.rb-dl')); gridIcons($('#bar'));
     this.ribbonRove();
   },
 
@@ -656,6 +672,11 @@ export function installRibbon(app) {
   app.root.addEventListener('focusin', () => app.peekRibbon(false));
   for (const f of installers) f(app);
   document.addEventListener('selectionchange', app.ribbonSoon);
+  // (the last input, the mouse's or a finger's or the keyboard's: the focus ring shows for the
+  // keyboard alone, though a popover gives the focus back to its button after a press, src/app.css)
+  const input = (k) => () => { if (document.documentElement.dataset.input !== k) document.documentElement.dataset.input = k; };
+  document.addEventListener('pointerdown', input('pointer'), true);
+  document.addEventListener('keydown', input('key'), true);
   document.addEventListener('focusin', app.ribbonSoon);
   // the gallery's room is measured again when the window's width changes and once the fonts the
   // tiles and the buttons' names are drawn in have come
