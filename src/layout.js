@@ -140,7 +140,10 @@ export function geometry(opts) {
   // the footer move; the text too, unless \topmargin moved the other way (src/pagesrc.js
   // headFootEdits writes it so)
   const HL = (!opts.geometry || opts.geoPass) && pg.lengths;
-  if (HL && HL.headsep) { if (!HL.headsep.keep) mt += HL.headsep.pt - hs; hs = HL.headsep.pt; }
+  if (HL && HL.headsep) {
+    // (each in order: one by hand moves the text, \addtolength{\topmargin}{\headsep} round one keeps it)
+    for (const x of HL.headsep.steps || [HL.headsep]) { if (!x.keep) mt += x.pt - hs; hs = x.pt; }
+  }
   if (HL && HL.footskip) fs = HL.footskip.pt;
   const colsep = pg.colsep != null ? pg.colsep : len(geo.columnsep) != null ? len(geo.columnsep) : pt === 10 ? 10 : 10;
   // (hyphenation rides along: a change of it measures the lines again, src/app.js layoutPass)

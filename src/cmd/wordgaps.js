@@ -20,7 +20,14 @@ const always = () => true;
 const body = () => document.body.classList;
 const OPEN_WHY = 'Open the header or footer first (double click the top or bottom margin)';
 const hfOn = (app) => !!app.hf;
-const sheet = (app) => !!(app.model && !app.stale && app.files && app.files.has(app.main) && preambleEnd(app.src(app.main)) >= 0 && !(app.model.opts && app.model.opts.cls === 'beamer'));
+// (a look at the caret asks this of two boxes: the preamble's end found once per text of the main file)
+let sheetMemo = { text: null, ok: false };
+const sheet = (app) => {
+  if (!(app.model && !app.stale && app.files && app.files.has(app.main)) || (app.model.opts && app.model.opts.cls === 'beamer')) return false;
+  const t = app.src(app.main);
+  if (sheetMemo.text !== t) sheetMemo = { text: t, ok: preambleEnd(t) >= 0 };
+  return sheetMemo.ok;
+};
 
 const I = {
   toHead: '<path d="M3.5 3.5h13v13h-13zM3.5 7.5h13"/><path d="M10 15V9.5M7.5 12L10 9.5l2.5 2.5"/>',
@@ -69,7 +76,14 @@ function hfDistEdits(app, which, pt) {
   const g = app.layout.g;
   const v = which === 'top' ? g.mt - (g.headheight ?? 12) - pt : (g.paperH || g.ph) - g.mt - g.th - pt;
   if (!(v >= 0)) return { error: which === 'top' ? 'The header would run into the text: at most ' + fmt(g.mt - (g.headheight ?? 12)) + ' from the top.' : 'The footer would run into the text: at most ' + fmt((g.paperH || g.ph) - g.mt - g.th) + ' from the bottom.' };
-  return { edits: PS.headFootEdits(app.src(app.main), which === 'top' ? { headsep: v } : { footskip: v }, { others: app.preambleOthers() }) };
+  const src = app.src(app.main), others = app.preambleOthers();
+  // (geometry's includehead and includefoot: the margin is the header's or the footer's place, so
+  // it moves to pt and the length takes up the rest; the text stays where it is)
+  const M = PS.pageMode(src, { others }), K = M.byGeometry ? M.keys : {};
+  const inc = which === 'top' ? K.includehead || K.includeheadfoot || K.includeall : K.includefoot || K.includeheadfoot || K.includeall;
+  const hf = which === 'top' ? { headsep: v } : { footskip: v };
+  if (inc && K[which === 'top' ? 'nohead' : 'nofoot'] == null) hf[which === 'top' ? 'top' : 'bottom'] = pt;
+  return { edits: PS.headFootEdits(src, hf, { others }) };
 }
 const fmt = (pt) => (Math.round(pt / CM * 100) / 100) + ' cm';
 
