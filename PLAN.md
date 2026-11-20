@@ -3268,7 +3268,9 @@ Tests:
     service worker's install would refuse; `pages.py` now does as Pages does, `offline.py` 61),
     and a shell that never loads leaves the figure's picture and a note (`widgets.py` 66); L3,
     `no-transform` on the page and `dev/live_check.py` after each deployment; L2, where a browser
-    refuses WebAssembly (Safari 15) the PDF pane says so plainly (`csp.py` 22). `para.py`, `picture.py`, `refs.py` and
+    refuses WebAssembly (Safari 15) the PDF pane says so plainly (`csp.py` 22); and `frame-src
+    'self'` (the hosted page frames only its widget document), control and direction marks taken
+    out of comment names and texts, and a line that only looks like a comment counted as text. `para.py`, `picture.py`, `refs.py` and
     `styles.py` serve the policy too.
     Under the new policy: `browser.py` 199, `agent.py` 143, `offline.py` 60, `launch.py` 18,
     `engines.py` 44, `word.py` 111, `spell.py` 124, `widgets.py` 62, `insert.py` 224,

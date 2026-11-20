@@ -233,6 +233,12 @@ await ok('a comments only reader\'s comment is written in base32: letters, digit
   // the parts must be three for a comment, two for a reply, each base32 or 0
   for (const l of ['% comment32 IFXGC', '% comment32 IFXGC 0 0 0', '% reply32 IFXGC 0 0', '% comment32 IFXGC 0 N1', '% comment32 IFXGC 0 x\\y']) assert.equal(parseCommentLine(l), null, l);
   assert.deepEqual(parseCommentLine('  %comment32 IFXGC 0 0\r'), { kind: 'comment', who: 'Ana', quote: '', body: '', safe: true });
+  // (review, Info) control characters and the marks that turn text's direction are taken out of
+  // what a line decodes to: no NUL, no right to left override reversing a name
+  const odd = parseCommentLine('% comment32 ' + base32('Eve\u202Egnp.exe\u0000') + ' 0 ' + base32('a\u2066b\u0007c'));
+  assert.deepEqual([odd.who, odd.body], ['Eve gnp.exe', 'a b c']);
+  // a line that only looks like a comment is text: a change that adds it is a change to the text
+  assert.ok(!commentOnly({ a: '', b: '% comment32 AB \\input{x} CD' }) && commentOnly({ a: '', b: '% comment32 IFXGC 0 MZXW6' }));
 });
 
 await ok('no comment where TeX would print it or before the document', () => {
