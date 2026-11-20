@@ -1596,9 +1596,9 @@ body.nav-on.nav-outline #nav { width: 460px; }
 .split-view .split-pages { display: flex; flex-direction: column; align-items: flex-start; gap: 22px; cursor: text; }
 .split-view:focus-visible { box-shadow: inset 0 0 0 2px var(--blue); }
 /* (G2) Update Table and Update Index: the list flashes where it stands, rebuilt */
-@keyframes rk-updated { from { background-color: rgba(43, 116, 176, .22); } to { background-color: transparent; } }
-#pages .rk-updated { animation: rk-updated 1.3s ease-out; }
-@media (prefers-reduced-motion: reduce) { #pages .rk-updated { animation: none; outline: 2px solid rgba(43, 116, 176, .5); } }
+/* (a still mark for as long as the class stays, 1.4 s, as .flash: only opacity and transform are
+   animated, UI-PRINCIPLES.md M3) */
+#pages .rk-updated { background-color: rgba(43, 116, 176, .22); }
 /* (G2) the equation in Word's linear format, a text to type in */
 .pop textarea.pop-lin { font: 15px/1.5 var(--font-doc, serif); }
 .pop .pop-lin-note { font-size: 12px; color: var(--mute); margin: 2px 0 4px; }
