@@ -44,6 +44,24 @@ ok('Alt+X: never a command\'s name, a brace or a control character', () => {
   assert.equal(altX('x 1|'), 'x 0031');
 });
 
+ok('Alt+X after a letter LaTeX writes with an accent: the code of the character it makes, as Word gives for é', () => {
+  assert.equal(altX("caf\\'e|"), 'caf00E9');
+  assert.equal(altX("caf\\'{e}|"), 'caf00E9');
+  assert.equal(altX("caf{\\'e}|"), 'caf00E9');
+  assert.equal(altX('x \\"o|'), 'x 00F6');
+  assert.equal(altX('\\c{c}|a'), '00E7a');
+  assert.equal(altX('\\v s|'), '0161');
+  assert.equal(altX("na\\'\\i|ve"), 'na00EDve');
+  assert.equal(altX('Stra\\ss{}|e'), 'Stra00DFe');
+  assert.equal(altX('{\\o}|'), '00F8');
+  // a brace of something else's is no part of it: \textbf{caf\'e} after its }
+  assert.equal(altX("\\textbf{caf\\'e}|"), null);
+  // a line break (\\\\) then o is no \\o
+  assert.equal(altX('a\\\\o|'), 'a\\\\006F');
+  // and the code goes back to the character
+  assert.equal(altX('caf00E9|'), 'caf\u00e9');
+});
+
 ok('Alt+X over a selection: a code becomes its character, a character its code', () => {
   assert.equal(altX('a [00e9] b'), 'a é b');
   assert.equal(altX('a [é] b'), 'a 00E9 b');

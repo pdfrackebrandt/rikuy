@@ -39,21 +39,61 @@ export function unicodeToggle(src, a, b) {
     for (let n = digits.length; n >= 1; n--) {
       const s = p - n, code = parseInt(digits.slice(-n), 16);
       // (not the end of a command's name: \bf, \ae)
-      if (/\\[A-Za-z]*$/.test(src.slice(Math.max(0, s - 40), s))) continue;
+      if (inName(src, s)) continue;
       if (!okCode(code)) continue;
       const u = /[Uu]\+$/.test(src.slice(Math.max(0, s - 2), s)) ? 2 : 0;
       return { s: s - u, e: p, ch: String.fromCodePoint(code) };
     }
   }
+  // (a letter written as LaTeX's accent, caf\'e or {\"o} or \c{c} or \ss: the character it makes)
+  const acc = accentMacro(src, p);
+  if (acc) return acc;
   const esc = ESCAPED.exec(src.slice(Math.max(0, p - 2), p));
   if (esc) return { s: p - 2, e: p, code: hex(esc[1].codePointAt(0)) };
   if (src[p - 1] === '~') return { s: p - 1, e: p, code: '00A0' };
   const before = src.slice(Math.max(0, p - 2), p);
   const ch = [...before].pop();
-  if (!ch || MARKUP.test(ch) || /\s/.test(ch) || /\\[A-Za-z]*$/.test(src.slice(Math.max(0, p - 40), p))) return null;
+  if (!ch || MARKUP.test(ch) || /\s/.test(ch) || inName(src, p)) return null;
   return { s: p - ch.length, e: p, code: hex(ch.codePointAt(0)) };
 }
+// whether p ends a command's name (\bf, \ae: an odd run of backslashes, then letters; \\ is a line break)
+const inName = (src, p) => { const m = /(\\+)[A-Za-z]*$/.exec(src.slice(Math.max(0, p - 40), p)); return !!m && m[1].length % 2 === 1; };
 const hex = (n) => n.toString(16).toUpperCase().padStart(4, '0');
+
+// LaTeX's accents and the letters it writes by name, as the character each makes
+const MARKS = { '`': '\u0300', '\'': '\u0301', '^': '\u0302', '~': '\u0303', '"': '\u0308', '=': '\u0304', '.': '\u0307',
+  u: '\u0306', v: '\u030c', H: '\u030b', c: '\u0327', k: '\u0328', r: '\u030a', d: '\u0323', b: '\u0331' };
+const NAMED = { ss: '\u00df', ae: '\u00e6', AE: '\u00c6', oe: '\u0153', OE: '\u0152', o: '\u00f8', O: '\u00d8', aa: '\u00e5', AA: '\u00c5', l: '\u0142', L: '\u0141', i: '\u0131', j: '\u0237' };
+const LETTER = '(\\\\[ij](?![A-Za-z])|[A-Za-z])';
+const ACC_SIGN = new RegExp('(\\{)?\\\\([`\'^~"=.])[ \\t]*(?:\\{' + LETTER + '\\}|' + LETTER + ')(\\})?$');
+const ACC_WORD = new RegExp('(\\{)?\\\\([uvHckrdb])(?:[ \\t]*\\{' + LETTER + '\\}|[ \\t]+' + LETTER + ')(\\})?$');
+const BY_NAME = /(\{)?\\(ss|ae|AE|oe|OE|aa|AA|o|O|l|L|i|j)(?:\{\})?(\})?$/;
+// { s, e, code } for a LaTeX accent or letter ending at p, its braces round it included; or null
+export function accentMacro(src, p) {
+  const t = src.slice(Math.max(0, p - 16), p), at = p - t.length;
+  // (a { before it with no } after, or a } after with no { before, is someone else's)
+  // (and the backslash a command's: not the second of \\, a line break)
+  const whole = (m, open, close) => {
+    if (!!open !== !!close) return null;
+    let k = at + m.index + (open ? 1 : 0), n = 0;
+    while (k > 0 && src[k - 1] === '\\') { k--; n++; }
+    return n % 2 ? null : { s: at + m.index, e: p };
+  };
+  for (const re of [ACC_SIGN, ACC_WORD]) {
+    const m = re.exec(t);
+    if (!m) continue;
+    const r = whole(m, m[1], m[5]);
+    const base = (m[3] || m[4] || '').replace(/^\\/, '');
+    const ch = (base + MARKS[m[2]]).normalize('NFC');
+    if (r && [...ch].length === 1) return { ...r, code: hex(ch.codePointAt(0)) };
+  }
+  const m = BY_NAME.exec(t);
+  if (m) {
+    const r = whole(m, m[1], m[3]);
+    if (r) return { ...r, code: hex(NAMED[m[2]].codePointAt(0)) };
+  }
+  return null;
+}
 
 // how many { are open at p, from the start of its paragraph (escaped braces and comments aside)
 export function openBraces(src, p) {
