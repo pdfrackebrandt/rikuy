@@ -74,15 +74,34 @@ move over by themselves.
 - **What Pages serves**: `_headers` (written by `build/app.mjs`): the page's Content-Security-
   Policy (the one the browser tests run under: scripts only from the site and the page's one
   inline script by its SHA-256, which the build computes from `index.html`; WebAssembly but no
-  eval; no outside source but `connect-src` to the Git panel's CORS proxy,
-  `https://cors.isomorphic-git.org`, through which push, pull and clone reach any git host;
-  `frame-ancestors 'none'`), and for `widget-<hash>.html`, the document
+  eval; no outside source, git included (it goes through `/git`, below); `frame-ancestors
+  'none'`), and for `widget-<hash>.html`, the document
   live figures run in, the widgets' own policy in its place (`frame-ancestors 'self'`, no
   `X-Frame-Options`), `Strict-Transport-Security: max-age=31536000` (HTTPS only for a year, for this host
   alone: no `includeSubDomains`, no preload), `nosniff`, `Referrer-Policy: no-referrer`, a Permissions-Policy turning off cameras,
   microphones, location and the like; TeX packs, engine chunks, programs and fonts (named by their
   hash) cached for a year as immutable; the page, `sw.js` and the manifest revalidated on every
   request. `404.html` keeps Pages from answering a missing file with the page.
+- **The git proxy, `/git`**: a Pages Function, `functions/git/[[path]].js` (the code is
+  `src/gitproxy.js`), which `wrangler pages deploy` finds beside `dist/` and deploys with it. A
+  browser cannot speak git to GitHub or GitLab itself (they send no CORS headers), so the Git
+  panel's push, pull and clone go to `/git/<host>/<path>` on Rikuy's own site, and the page's
+  policy keeps `connect-src 'self'`: no third party sees a token. It forwards git's smart HTTP
+  and nothing else: `GET …/info/refs?service=git-upload-pack` or `git-receive-pack`, and `POST
+  …/git-upload-pack` or `…/git-receive-pack` with git's own content type and at most 32 MiB, to
+  `https://<host>` named by a public host name (no IP address in any form, no port, no
+  `localhost`, `.local`, `.internal` or other private name), following a redirect only to the
+  same host. It refuses every other method, path or query, a request sent by another site's page
+  (its `Origin`), and answers with no CORS header, so no other site's page can read it. The
+  `Authorization` header goes to that host alone and is never logged; cookies go neither way;
+  nothing is cached. wrangler writes a `_routes.json` that sends only `/git/*` to the function,
+  so every other file stays a static file. **Cost:** a git request is one Functions request; a
+  push or pull is two or three. The free plan allows 100,000 a day (Workers and Pages Functions
+  together, from midnight UTC), 10 ms of CPU each (the proxy waits on the network, which does not
+  count), 128 MB of memory and 50 outgoing requests per request; past the daily allowance
+  `/git` answers with Cloudflare's error 1027 until midnight UTC, and the static site is not
+  affected. Static requests stay free and unlimited. Locally `test/gitproxy_server.mjs` runs the
+  same code (`test/git.py`), and `test/gitproxy.test.mjs` checks what it lets through.
 - **For crawlers and AI agents**: `robots.txt` (everyone allowed, the AI services' crawlers by
   name too), `sitemap.xml`, `llms.txt` (what Rikuy is, what a person can do with it, how an agent
   builds a link that opens a document in it, the page's controls by name and `rikuy.api`) and

@@ -89,10 +89,17 @@ const ZOOM_MIN = 0.25, ZOOM_MAX = 4;
 // One of the build's own files (git.js, tex/...): in the installed app, the copy of this page's
 // version (src/pwa.js); elsewhere simply the file next to the page.
 const asset = (p) => (__RIKUY_APP__ ? appAsset(p) : new URL(p, location.href).href);
-// The CORS proxy git's push, pull and clone go through by default (GitHub and GitLab send no CORS
-// headers for git, so a browser cannot reach them directly). The hosted copy's policy lets the page
-// reach this address and no other host (build/app.mjs policy reads it from here).
-const GIT_PROXY = 'https://cors.isomorphic-git.org';
+// The proxy git's push, pull and clone go through by default: GitHub and GitLab send no CORS
+// headers for git, so a browser cannot reach them directly. It is Rikuy's own, on the page's own
+// site (/git, functions/git/[[path]].js on Cloudflare Pages, src/gitproxy.js), so the hosted
+// policy keeps connect-src 'self' and no third party sees a token. The third party's address
+// earlier versions filled in, and kept once used, counts as no choice; a proxy the user typed
+// elsewhere is theirs (a copy of Rikuy served without the hosted policy can use it).
+const gitProxyHere = () => new URL('git', location.href).href;
+const OLD_GIT_PROXY = 'https://cors.isomorphic-git.org';
+const gitProxyOf = (prefs) => (prefs.gitProxy == null || prefs.gitProxy === OLD_GIT_PROXY ? gitProxyHere() : prefs.gitProxy);
+// what the CORS proxy field keeps: nothing when it holds this site's own (the page may move)
+const keepGitProxy = (prefs, v) => { prefs.gitProxy = v === gitProxyHere() ? null : v; return v; };
 // the full Rikuy's address, which the copy on claude.ai names for what it has no room for
 const SCRIPT_HOST = typeof __RIKUY_WORD_HOST__ === 'undefined' ? '' : __RIKUY_WORD_HOST__;
 function loadScript(src) {
@@ -3700,7 +3707,7 @@ class App {
     rem.append(sum);
     const url = mk('input'); url.type = 'url'; url.placeholder = 'https://github.com/you/paper.git'; url.value = remote || ''; url.setAttribute('aria-label', 'Remote URL');
     const tok = mk('input'); tok.type = 'password'; tok.placeholder = 'Access token (kept in this browser for this host)'; tok.setAttribute('aria-label', 'Access token');
-    const prox = mk('input'); prox.type = 'url'; prox.placeholder = 'CORS proxy, e.g. ' + GIT_PROXY; prox.value = this.prefs.gitProxy ?? GIT_PROXY; prox.setAttribute('aria-label', 'CORS proxy');
+    const prox = mk('input'); prox.type = 'url'; prox.placeholder = 'CORS proxy, e.g. ' + gitProxyHere(); prox.value = gitProxyOf(this.prefs); prox.setAttribute('aria-label', 'CORS proxy');
     // the token kept for the remote's host, not filled in for a remote that came with an opened
     // project; a URL typed here is the user's own, and the field follows it until a token is typed
     const from = await this.gitRemoteFrom(dir, remote);
@@ -3719,8 +3726,8 @@ class App {
     const opts = () => {
       const t = tok.value.trim();
       dropReplaced(this.prefs, t, shown);
-      this.prefs.gitProxy = prox.value.trim(); store(PREFS, this.prefs);
-      const o = { token: t, remote: url.value.trim(), corsProxy: this.prefs.gitProxy, accepted: legacy.chosen() };
+      const proxy = keepGitProxy(this.prefs, prox.value.trim()); store(PREFS, this.prefs);
+      const o = { token: t, remote: url.value.trim(), corsProxy: proxy, accepted: legacy.chosen() };
       o.onAccepted = () => { o.accepted = true; };
       return o;
     };
@@ -3772,7 +3779,7 @@ class App {
     const host = remoteHost(remote);
     if (from === 'theirs') rem.append(mk('div', 'git-note git-foreign', 'This remote came in the .git folder of the project you opened, so no token is filled in for it. Give one only if ' + host + ' is yours.'));
     else if (from === 'unknown' && tok.value) rem.append(mk('div', 'git-note git-unknown', 'This repository is older than Rikuy\'s record of where remotes come from, so your token is filled in as before. Check that ' + host + ' is yours before you pull or push.'));
-    rem.append(url, tok, legacy.el, prox, rrow, mk('div', 'git-note', 'GitHub and GitLab need a token with write access and, from a browser, a CORS proxy. Inside claude.ai the page can only reach its own server, so pushing works from Rikuy on its own site; here, Download LaTeX gives a clone to push from your computer.'));
+    rem.append(url, tok, legacy.el, prox, rrow, mk('div', 'git-note', 'GitHub and GitLab need a token with write access. A browser cannot speak git to them itself, so Rikuy passes git\'s requests through its own proxy on this site (CORS proxy), which keeps nothing of them. Inside claude.ai the page can only reach its own server, so pushing works from Rikuy on its own site; here, Download LaTeX gives a clone to push from your computer.'));
     out.append(rem);
 
     // history
@@ -3820,7 +3827,7 @@ class App {
     det.append(mk('summary', '', 'Clone from a URL'));
     const url = mk('input'); url.type = 'url'; url.placeholder = 'https://github.com/you/paper.git, or an Overleaf project'; url.setAttribute('aria-label', 'Repository URL, or the address of an Overleaf project');
     const tok = mk('input'); tok.type = 'password'; tok.placeholder = 'Access token (private repositories; for Overleaf, its Git token)'; tok.setAttribute('aria-label', 'Access token');
-    const prox = mk('input'); prox.type = 'url'; prox.placeholder = 'CORS proxy'; prox.value = this.prefs.gitProxy ?? GIT_PROXY;
+    const prox = mk('input'); prox.type = 'url'; prox.placeholder = 'CORS proxy'; prox.value = gitProxyOf(this.prefs);
     // the token kept for the host of the address typed, until a token is typed
     let shown = '', typed = false;
     const legacy = this.gitLegacyButton({ get value() { return G.gitUrlOf(url.value); } }, tok, () => { typed = true; shown = tok.value; });
@@ -3832,8 +3839,8 @@ class App {
       if (!u) { if (url.value.trim()) this.toast(G.BAD_REMOTE, 7000); url.focus(); return; }
       const t = tok.value.trim();
       dropReplaced(this.prefs, t, shown);
-      this.prefs.gitProxy = prox.value.trim(); store(PREFS, this.prefs);
-      const o = { token: t, remote: u, corsProxy: this.prefs.gitProxy, depth: 200, accepted: legacy.chosen() };
+      const proxy = keepGitProxy(this.prefs, prox.value.trim()); store(PREFS, this.prefs);
+      const o = { token: t, remote: u, corsProxy: proxy, depth: 200, accepted: legacy.chosen() };
       o.onAccepted = () => { o.accepted = true; };
       const name = /git\.overleaf\.com/.test(u) ? 'overleaf-' + u.split('/').pop().slice(0, 6) : u.replace(/\.git$/, '').split('/').pop() || 'paper';
       b.disabled = true; b.textContent = 'Cloning…';
@@ -3877,8 +3884,8 @@ class App {
   gitError(e) {
     const m = String((e && (e.message || e.code)) || e);
     if (/Failed to fetch|NetworkError|Load failed|Content Security Policy|CORS/i.test(m)) {
-      // (the hosted copy reaches git hosts through GIT_PROXY alone: its policy refuses any other address)
-      if (__RIKUY_APP__) return 'Could not reach the remote. Rikuy reaches git hosts only through the CORS proxy ' + GIT_PROXY + ': put that address in CORS proxy, or Download LaTeX and push from your computer. (' + m + ')';
+      // (the hosted copy reaches git hosts through its own proxy alone: its policy refuses any other address)
+      if (__RIKUY_APP__) return 'Could not reach the remote. Rikuy reaches git hosts only through its own proxy, ' + gitProxyHere() + ': put that address in CORS proxy, or Download LaTeX and push from your computer. (' + m + ')';
       return 'Could not reach the remote. From inside claude.ai the page may only talk to its own server; run Rikuy on its own site, or Download LaTeX and push from your computer. (' + m + ')';
     }
     if (/401|403|auth/i.test(m)) return 'The remote refused the credentials. Check the token and that it can write to this repository. (' + m + ')';
