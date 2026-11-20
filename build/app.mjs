@@ -617,16 +617,32 @@ Ctrl is Cmd on a Mac.
 - Ctrl+Shift+V: paste as plain text. The right click menu: Cut, Copy, Paste (the browser asks
   once to let the page read the clipboard); the search box finds them and Keep Text Only, Paste
   as LaTeX source and Paste Special
-- Insert, Interactive graph (command insert-interactive-graph; Help can call it): the dialog
-  "Interactive graph" with the radiogroup "Graph type" (Function, Data and fit, Curve,
-  Distribution), fields "Formulas" (one a line, in x; any other letter gets a slider), "Data",
+- Interactive graphs, Rikuy's live paper: one .tex typed like Word, printed by real TeX, whose
+  figures are live on the page while the PDF carries the same figure as vector graphics in the
+  document's fonts. Insert, Interactive graph (command insert-interactive-graph, args
+  { template }: function, data, curve, implicit, phase, dist, or a named one: supply-demand,
+  is-lm, solow, ramsey, budget, normal, t, clt): the dialog "Interactive graph" with the radiogroup
+  "Graph type" (Function, Data and fit, Curve, Implicit, Phase, Distribution), the combobox
+  "Template", fields "Formulas" (one a line; "Variable" names the one drawn against, any other
+  letter gets a slider), "Equations" (implicit: F(x, y) = c, one a line; "Across" and "Up" name
+  the two variables), "dx/dt =" and "dy/dt =" with "Path from" (phase), "Mark where they cross",
+  "Faint start curves", "Add shaded area" (Shade n under, down to, from, to, name), "Data",
   "Fit", "r(θ) =", "x(t) =", "Distribution", "Show", "Slider n name/from/to/step/start", axes,
-  "Description", "Caption", a live preview, and Insert. It writes graphs/<kind>-<n>.html (the graph
-  as JSON and its script), graphs/<kind>-<n>.png (the picture the PDF prints, the graph at its
-  sliders' starting values), \\rikuywidget[width=\\linewidth]{…}{…}, rikuy.sty and
-  \\usepackage{rikuy}: one undo. On the page the graph runs live; its button "Edit graph" (or
-  command edit-graph with {file}) reopens the dialog, whose Update rewrites the file and picture
-  only
+  "Description", "Caption", a live preview, "Undo graph change" and "Redo graph change" (Ctrl+Z,
+  Ctrl+Y in the dialog), and Insert. A formula's mistake is said in words and underlined. It writes
+  graphs/<kind>-<4 letters>.html (the graph as JSON, one key a line, and Rikuy's script that
+  draws it), graphs/<kind>-<4 letters>.pgf (the picture TeX prints: PGF drawn from the same
+  drawing, the graph at its sliders' starting values), \rikuywidget[width=\linewidth]{…}{…},
+  rikuy.sty (v1.1, which inputs a .pgf) and \usepackage{rikuy}: one undo. On the page the graph
+  runs live; its button "Edit graph" (or command edit-graph with {file}) reopens the dialog,
+  whose Update rewrites the file and picture only. Graph this (command graph-this; the right
+  click menu of an equation, the Equation tab, the search box): the equation at the caret, or the
+  one open or right clicked, drawn as a live graph below it in one undo (y = f(x), f(x), x = g(t)
+  with y = h(t), F(x, y) = c, \dot k = …, k_{t+1} = …, a pair of time derivatives); it says in
+  words what it drew or why it cannot (a \max, a sum, a function defined by itself).
+  File, Export as, "Web page with live graphs (.html)" (command export-web-page): one self
+  contained page that reads like the paper, its graphs live in sandboxed frames, Rikuy's scripts
+  alone allowed by a Content Security Policy, and an "Open in Rikuy" link with the source
 - Round 3's objects, each one commit and one undo, each command also with its fields as
   arguments: Insert's Cover Page (cover-page {design: plain | sideline | motion}; a titlepage
   first in the text; Remove Current Cover Page), Quick Parts (quick-part-save {name},
