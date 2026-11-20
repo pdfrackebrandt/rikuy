@@ -1479,6 +1479,12 @@ body.nav-on.nav-outline #nav { width: 460px; }
 /* (a finger's 44 px to take hold of it, the bar itself 6 px) */
 .split-bar::before { content: ''; position: absolute; left: 0; right: 0; top: -19px; bottom: -19px; }
 .split-bar:focus-visible, .split-bar.dragging { background: var(--blue); outline: none; }
+/* (a finger's 44 px with touch: the band itself, its line in the middle) */
+@media (pointer: coarse) {
+  .split-bar { height: 44px; background: linear-gradient(var(--chrome), var(--chrome)) top / 100% 19px no-repeat, linear-gradient(var(--chrome), var(--chrome)) bottom / 100% 19px no-repeat, var(--line); border-top: 0; }
+  .split-bar::before { top: 0; bottom: 0; }
+  .split-bar:focus-visible, .split-bar.dragging { background: linear-gradient(var(--chrome), var(--chrome)) top / 100% 19px no-repeat, linear-gradient(var(--chrome), var(--chrome)) bottom / 100% 19px no-repeat, var(--blue); }
+}
 .split-note { position: sticky; top: 0; z-index: 1; font: 12px var(--font-ui); color: var(--mute); background: var(--chrome); border-bottom: 1px solid var(--line); padding: 3px 10px; }
 .split-view { flex: 1 1 50%; min-height: 0; overflow: auto; position: relative; background: inherit; outline: none; }
 .split-view .split-pages { display: flex; flex-direction: column; align-items: flex-start; gap: 22px; cursor: text; }

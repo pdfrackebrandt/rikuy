@@ -926,6 +926,13 @@ def rest_phones(p):
             page.evaluate("window.rikuy.runCommand('split-view')"); page.wait_for_timeout(500)
             sv = page.evaluate("(() => { const v = document.getElementById('split-view'); return !!v && v.getBoundingClientRect().height > 100 && document.documentElement.scrollWidth <= innerWidth + 1; })()")
             check('Split on a phone: the second view under the first, nothing wider than the screen' + tag, sv)
+            # (the verification of 3d3bfc4: a tap there must take the caret to the top view, and the
+            # bar is a finger's 44 px)
+            bar = page.evaluate("Math.round(document.querySelector('.split-bar').getBoundingClientRect().height)")
+            sp = page.evaluate("""() => { const v = document.getElementById('split-view'), r = v.getBoundingClientRect(); const s = [...v.querySelectorAll('span.t')].find((x) => { const b = x.getBoundingClientRect(); return b.top > r.top + 26 && b.bottom < r.bottom - 4 && b.width > 6 && x.textContent.trim().length > 1; }); if (!s) return null; const b = s.getBoundingClientRect(); return { x: b.left + Math.min(5, b.width / 2), y: b.top + b.height / 2 }; }""")
+            if sp: page.touchscreen.tap(sp['x'], sp['y']); page.wait_for_timeout(400)
+            s0 = src(page); page.keyboard.type('QQ'); page.wait_for_timeout(400)
+            check('Split on a phone: the bar 44 px high, and a tap in the second view then typing writes in the top view' + tag, bar >= 44 and sp and 'QQ' in src(page) and page.evaluate("document.activeElement.id") == 'pages', (bar, sp))
             os.makedirs(SHOTS, exist_ok=True)
             page.screenshot(path=os.path.join(SHOTS, 'split-%d.png' % w))
             page.evaluate("window.rikuy.runCommand('split-view')")
