@@ -142,7 +142,14 @@ const ARR = '<path d="M3.5 3.5h13v13h-13z"/><path d="M6 6h4v4H6z" style="fill:cu
 const ALIGN = '<path d="M3 3v14M6 5.5h8v3H6zM6 11.5h11v3H6z"/>';
 // what Align and Position act on: the object selected, or the picture
 const target = (app) => { const o = app.objHere ? app.objHere() : null; if (o) return { f: o.f, s: o.s, e: o.e, obj: true }; const h = app.picHere ? app.picHere() : null; return h ? { f: h.f, s: h.P.s, e: h.P.e, h } : null; };
-const alignNow = (app) => { const t = target(app); return t ? O.alignOf(app.src(t.f), t.s, t.e) : null; };
+// (the parser's tree of the file, kept while its text is the same: a look at the caret parses nothing)
+const treeOf = (app, f, src) => (app.picTree ? app.picTree(f, src) : undefined);
+const alignNow = (app, at) => {
+  const go = () => { const t = target(app); if (!t) return null; const src = app.src(t.f); return O.alignOf(src, t.s, t.e, treeOf(app, t.f, src)); };
+  if (!at) return go();
+  const m = at.memo || (at.memo = {});
+  return 'objAlign' in m ? m.objAlign : (m.objAlign = go());
+};
 register(
   { id: 'object-position', name: 'Position', title: 'Position: in line with the text (a center), a figure placed at the top or bottom of a page or here, or at a side with the text wrapping round it (wrapfig)', tab: 'shape-format', group: 'arrange', order: 10, kind: 'menu', icon: ARR, label: 'Position',
     also: [{ tab: 'chart-format', group: 'arrange', el: 'rc-object-position-chart', order: 10 }, { tab: 'smart-format', group: 'arrange', el: 'rc-object-position-smart', order: 10 }],
@@ -150,7 +157,7 @@ register(
     run: (app, args) => (args && args.mode ? app.objPosition(args) : app.objPositionMenu()) },
   { id: 'object-align', name: 'Align', title: 'Align: the object or picture at the left, the middle or the right of the line (flushleft, center, flushright; in a figure \\raggedright, \\centering, \\raggedleft)', tab: 'layout', group: 'arrange', order: 40, kind: 'menu', icon: ALIGN, label: 'Align',
     also: [{ tab: 'picture-format', group: 'arrange', el: 'rc-object-align-pic', order: 40 }, { tab: 'shape-format', group: 'arrange', el: 'rc-object-align-shape', order: 20 }, { tab: 'chart-format', group: 'arrange', el: 'rc-object-align-chart', order: 20 }, { tab: 'smart-format', group: 'arrange', el: 'rc-object-align-smart', order: 20 }],
-    synonyms: ['Align objects', 'Align left', 'Align center', 'Align right', 'flushleft', 'flushright'], menu: { shape: 71, chart: 71, smart: 71, picture: 95 }, when: (app) => !!alignNow(app),
+    synonyms: ['Align objects', 'Align left', 'Align center', 'Align right', 'flushleft', 'flushright'], menu: { shape: 71, chart: 71, smart: 71, picture: 95 }, when: (app, at) => !!alignNow(app, at),
     whyNot: (app) => (target(app) ? 'It stands in a paragraph of words: put it in a paragraph of its own first.' : 'Select a picture, drawing, chart or SmartArt first.'),
     run: (app, args) => (args && args.align ? app.objAlign(args.align) : app.objAlignMenu()) }
 );
@@ -480,21 +487,24 @@ export const methods = {
   objPosition(to) {
     const t = target(this);
     if (!t) return false;
-    const r = O.positionEdits(this.src(t.f), t.s, t.e, to);
+    const src = this.src(t.f);
+    const r = O.positionEdits(src, t.s, t.e, to, treeOf(this, t.f, src));
     return r.error ? (this.toast(r.error, 6000), false) : this.objArrange(r.edits, r.packages);
   },
   objPositionMenu() {
     const t = target(this);
     if (!t) return false;
-    const P = O.positionOf(this.src(t.f), t.s, t.e);
+    const src = this.src(t.f), P = O.positionOf(src, t.s, t.e, treeOf(this, t.f, src));
     const on = (to) => to.mode === P.mode && (to.mode === 'inline' || (to.mode === 'float' ? (P.place || 'tbp').replace(/!/g, '') === to.place : P.side === to.side));
-    openMenu(this, this.objAnchor('object-position'), PLACES.map(([n, to, title]) => ({ name: n, title, radio: true, checked: on(to), run: () => this.objPosition(to) })), { label: 'Position' });
+    // (what cannot apply where it stands is greyed, its reason in its tooltip, as Word greys it)
+    openMenu(this, this.objAnchor('object-position'), PLACES.map(([n, to, title]) => { const why = on(to) ? null : O.positionWhyNot(P, to); return { name: n, title: why || title, radio: true, checked: on(to), disabled: !!why, run: () => this.objPosition(to) }; }), { label: 'Position' });
     return true;
   },
   objAlign(how) {
     const t = target(this);
     if (!t) return false;
-    return this.objArrange(O.alignEdits(this.src(t.f), t.s, t.e, how), []);
+    const src = this.src(t.f);
+    return this.objArrange(O.alignEdits(src, t.s, t.e, how, treeOf(this, t.f, src)), []);
   },
   objAlignMenu() {
     const A = alignNow(this);

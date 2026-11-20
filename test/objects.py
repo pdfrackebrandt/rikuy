@@ -679,6 +679,59 @@ def arrange(page):
     check('Position and Align in the drawing\'s right click menu', True)
 
 
+def review_arrange(page):
+    """The verification of ff46de0 (docs/reviews/WORD-GAPS-OBJECTS.md N1 to N4, N9): Wrap on a float
+    holding a center, a table kept a table, a wraptable round it, columns, and Align's look at the caret
+    on a long document; the float cases compiled on three engines."""
+    TEX = os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm'))
+    words = 'Words that wrap round the drawing as TeX wraps them. ' * 10
+    def body_of(env, cap):
+        return WRAP('Before.\n\n\\begin{' + env + '}[htbp]\n\\begin{center}\n\\begin{tikzpicture}\n' + RECT + '\n\\end{tikzpicture}\n\\end{center}\n\\caption{' + cap + '}\n\\end{' + env + '}\n' + words + '\n\nAfter.')
+    def compiles(label, doc, want):
+        if not TEX:
+            return
+        for eng in ('pdflatex', 'xelatex', 'lualatex'):
+            r = compile_pdf(page, ('% !TEX program = ' + eng + '\n' if eng != 'pdflatex' else '') + doc)
+            t = pdf_text(r)
+            check('%s compiles with %s, %s in the PDF' % (label, eng, want), r['ok'] and not r['problems'] and want in t, (r['problems'], t[:200]))
+    # N1: Wrap on figure > center: \centering in a wrapfigure (a center there stops pdfLaTeX: "Not allowed in LR mode")
+    for env, cap, want in (('figure', 'Box', 'Figure 1: Box'), ('table', 'Data', 'Table 1: Data')):
+        N = body_of(env, cap)
+        load_doc(page, N); page.wait_for_timeout(300); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
+        run_cmd(page, 'object-position', {'mode': 'wrap', 'side': 'r'})
+        w = 'wrap' + env
+        exp = N.replace('\\begin{' + env + '}[htbp]\n\\begin{center}', '\\begin{' + w + '}{r}{0pt}\n\\centering').replace('\\end{tikzpicture}\n\\end{center}', '\\end{tikzpicture}').replace('\\end{' + env + '}', '\\end{' + w + '}').replace('\\usepackage{smartdiagram}\n', '\\usepackage{smartdiagram}\n\\usepackage{wrapfig}\n')
+        check('N1: Wrap on %s > center: a %s with \\centering, no center inside it' % (env, w), src(page) == exp, src(page)[-420:])
+        compiles('N1: the %s' % w, src(page), want)
+    # N3: a wraptable round the drawing: Top of Page makes it a table [t], nothing nested
+    T = WRAP('Before.\n\n\\begin{wraptable}{r}{5cm}\n\\centering\n\\begin{tikzpicture}\n' + RECT + '\n\\end{tikzpicture}\n\\caption{Data}\n\\end{wraptable}\n' + words + '\n\nAfter.', PRE + '\\usepackage{wrapfig}\n')
+    load_doc(page, T); page.wait_for_timeout(300); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
+    run_cmd(page, 'object-position', {'mode': 'float', 'place': 't'})
+    check('N3: Top of Page in a wraptable: that wraptable becomes table[t], no figure in it', src(page) == T.replace('\\begin{wraptable}{r}{5cm}', '\\begin{table}[t]').replace('\\end{wraptable}', '\\end{table}'), src(page)[-400:])
+    compiles('N3: the table', src(page), 'Table 1: Data')
+    # N2, N3: in columns and in a tcolorbox, Position's float and wrap items are greyed with their reason; nothing is written
+    for name, doc in (('multicols', WRAP('\\begin{multicols}{2}\nBefore.\n\n' + SHAPE + '\nAfter it, ' + words + '\n\\end{multicols}', PRE + '\\usepackage{multicol}\n')),
+                      ('tcolorbox', WRAP('Before.\n\n\\begin{tcolorbox}\n' + SHAPE + '\\end{tcolorbox}\n\nAfter.', PRE + '\\usepackage{tcolorbox}\n'))):
+        load_doc(page, doc); page.wait_for_timeout(300); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
+        page.evaluate('window.rikuy.objPositionMenu()'); page.wait_for_timeout(200)
+        items = page.evaluate("""() => [...document.querySelectorAll('.pop [role=menuitemradio]')].map((a) => [a.getAttribute('aria-label'), a.getAttribute('aria-disabled') === 'true', a.title])""")
+        page.keyboard.press('Escape')
+        off = [n for n, d, t in items if d]
+        check('N2, N3: in %s every float and wrap place is greyed, its tooltip says why (%s); In Line with Text is not' % (name, items[1][2][:90] if len(items) > 1 else items),
+              len(items) >= 8 and len(off) == len(items) - 1 and all(name in t for n, d, t in items if d) and not items[0][1], items)
+        run_cmd(page, 'object-position', {'mode': 'float', 'place': 't'})
+        check('N2, N3: Top of Page there writes nothing', src(page) == doc, src(page)[-300:])
+    # N9: Align's look at the caret with a drawing selected in a long document (page.py's): the tree is kept
+    pre = ''.join('\\newcommand{\\m%s}{x} %% %s\n' % (chr(97 + k % 26) * (1 + k // 26), 'y' * 60) for k in range(1500))
+    body = '\n\n'.join('\\subsection{Head %d}\nWords of paragraph %d here.' % (k, k) for k in range(1500))
+    load_doc(page, WRAP(SHAPE + '\n' + body, PRE + pre)); page.wait_for_timeout(600); page.evaluate('window.rikuy.shapeSel.clear()'); press(page)
+    t = page.evaluate("""() => { const g = window.rikuy, C = g.cmds, at = g.ribbonAt(), cs = C.commands(), c = cs.find((x) => x.id === 'object-align'), out = {};
+      at.memo = {}; out.on = C.enabled(g, c, at);
+      let t0 = performance.now(); for (let k = 0; k < 20; k++) { at.memo = {}; C.enabled(g, c, at); } out.align = (performance.now() - t0) / 20;
+      t0 = performance.now(); for (let k = 0; k < 5; k++) { at.memo = {}; for (const x of cs) { C.enabled(g, x, at); if (x.on) x.on(g, at); } } out.all = (performance.now() - t0) / 5; return out; }""")
+    check('N9: with a drawing selected in a long document, Align\'s when takes %.2f ms a look (under 5), every command\'s %.0f ms (under 40)' % (t['align'], t['all']), t['on'] and t['align'] < 5 and t['all'] < 40, t)
+
+
 def selpane(page):
     D = WRAP('See Figure~\\ref{fig:a} and \\eqref{eq:1}.\n\n\\begin{figure}[h]\n\\centering\n' + SHAPE.replace('\\begin{center}\n', '').replace('\\end{center}\n', '') + '\\caption{A box}\\label{fig:a}\n\\end{figure}\n\n'
              + '\\begin{equation}a=b\\label{eq:1}\\end{equation}\n\\begin{equation}c=d\\end{equation}\n' + CHART + SMART + 'End words.')
@@ -728,7 +781,7 @@ def run():
     names = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (shapes, charts, smart, menus, compiled, pictures, review_pictures, pictures_compiled, arrange, selpane):
+        for f in (shapes, charts, smart, menus, compiled, pictures, review_pictures, pictures_compiled, arrange, review_arrange, selpane):
             if names and f.__name__ not in names:
                 continue
             try: f(page)
