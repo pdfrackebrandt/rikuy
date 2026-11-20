@@ -202,21 +202,29 @@ def downloads(page):
         check('Download Word on a copy without Word says where Word files are made', 'Word import and export live on the hosted copy' in page.inner_text('#toast'), page.inner_text('#toast'))
     # the PDF
     if os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        w0 = page.evaluate('document.getElementById("rb-pdf").getBoundingClientRect().width')
         with page.expect_download(timeout=600000) as d:
             page.click('#rb-pdf')
             page.wait_for_timeout(300)
-            busy = page.evaluate('(() => { const b = document.getElementById("rb-pdf"); return [b.disabled, b.textContent.trim()]; })()')
+            busy = page.evaluate('(() => { const b = document.getElementById("rb-pdf"); return [b.disabled, b.getAttribute("aria-busy"), b.title, b.getBoundingClientRect().width]; })()')
         head = open(d.value.path(), 'rb').read(5)
-        check('Download PDF compiles and gives the PDF in one click, busy meanwhile', d.value.suggested_filename == 'paper.pdf' and head == b'%PDF-' and busy[0] and busy[1] != 'PDF', (d.value.suggested_filename, head, busy))
+        # (busy as wide as before: the downloads stay over the row's end, a longer name ran over Editing)
+        check('Download PDF compiles and gives the PDF in one click, busy meanwhile (its tooltip says so, its width the same)', d.value.suggested_filename == 'paper.pdf' and head == b'%PDF-' and busy[0] and busy[1] == 'true' and busy[2] == 'Making the PDF…' and abs(busy[3] - w0) < 0.5, (d.value.suggested_filename, head, busy, w0))
         with page.expect_download(timeout=30000) as d:
             page.click('#rb-pdf')
         check('and again at once when the text has not changed', d.value.suggested_filename == 'paper.pdf' and not page.evaluate('document.getElementById("rb-pdf").disabled'))
     else:
         print('SKIP Download PDF: no TeX tree in %s (tex/tree.wasm); it runs where dist/tex is built (CI\'s TeX job)' % DIST)
-        busy = page.evaluate('(() => { const b = document.getElementById("rb-pdf"); b.click(); const was = [b.disabled, b.textContent.trim()]; b.click(); return was; })()')
+        # (busy keeps its name and width, src/cmd/file.js: disabled, aria-busy, its tooltip; a second
+        # press starts no second run)
+        busy = page.evaluate('''(() => { const app = window.rikuy, f = app.compilePdf; let n = 0;
+          app.compilePdf = function () { n++; return f.apply(this, arguments); };
+          const b = document.getElementById("rb-pdf"), w = b.getBoundingClientRect().width; b.click();
+          const was = [b.disabled, b.getAttribute("aria-busy"), b.title, Math.abs(b.getBoundingClientRect().width - w) < 0.5, b.textContent.trim()];
+          b.click(); app.runCommand("download-pdf"); was.push(n); app.compilePdf = f; return was; })()''')
         page.wait_for_function('!document.getElementById("rb-pdf").disabled', timeout=60000)
         page.wait_for_timeout(300)
-        check('Download PDF is busy while TeX starts and cannot be pressed twice', busy[0] and busy[1] != 'PDF', busy)
+        check('Download PDF is busy while TeX starts (disabled, aria-busy, its tooltip saying so, as wide as before) and a second press starts nothing', busy[:4] == [True, 'true', 'Making the PDF…', True] and busy[5] == 1, busy)
         check('a run that fails opens the preview with its error, and the button is itself again', page.evaluate('document.body.classList.contains("pdf-on")') and 'TeX' in page.inner_text('#pdf-status') + page.inner_text('#pdf-host') and page.inner_text('#rb-pdf').strip() == 'PDF', page.inner_text('#pdf-host')[:80])
         page.evaluate('window.rikuy.togglePdf(false)')
 
