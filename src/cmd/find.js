@@ -54,7 +54,7 @@ register(
     keys: ['Shift+F4', 'Ctrl+Alt+Y'], keysMac: ['Ctrl+Shift+F4', 'Ctrl+G'], when: () => true, run: (app) => app.findNext() },
   // Word's Shift+F5 (and Ctrl+Alt+Z): back to where the last edits were, the four last in turn
   { id: 'go-back', name: 'Go Back', title: 'The caret back to where you last edited; again, the edit before, among the last four (Shift+F5)', synonyms: ['Last edit', 'Previous edit', 'Last change', 'Where was I'],
-    keys: ['Shift+F5', 'Ctrl+Alt+Z'], when: (app) => !!(app.hist && app.hist.length), whyNot: () => 'Nothing has been edited yet.', run: (app) => app.goBack() },
+    keys: ['Shift+F5', 'Ctrl+Alt+Z'], when: (app) => !!(app.hist && app.hist.length) || !!app.followBack || !!app.footnoteHere(), whyNot: () => 'Nothing has been edited yet.', run: (app) => app.goBack() },
   // Word's F8: each press selects more where the caret is: the word, the sentence, the paragraph,
   // the document; Shift+F8 one step back
   { id: 'extend-selection', name: 'Extend Selection', title: 'Select more: the word, then the sentence, the paragraph, the whole document, one step a press (F8)', synonyms: ['Grow selection', 'Expand selection', 'Select word'],
@@ -757,6 +757,11 @@ export const methods = {
   goBack() {
     // in a footnote typed at the page's foot, Word's Shift+F5 is the way back to its mark first
     if (this.leaveFootnote()) return true;
+    // after a reference was followed to its label (F12), back to the reference, as VS Code's
+    // Alt+Left; once anything is edited, the places of the edits again
+    const F = this.followBack;
+    this.followBack = null;
+    if (F && F.n === this.hist.length) { this.ribbonBack(); this.restoreCaret(F.back); this.scrollToCaret(); return true; }
     const spots = editSpots(this.hist, 4);
     if (!spots.length) return false;
     const G = this.goBackAt, top = this.hist[this.hist.length - 1];

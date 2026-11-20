@@ -278,8 +278,10 @@ register(
     when: (app) => { const T = app.eqTarget(); return !!T && !!T.info; }, whyNot: why(() => ''), run: (app) => { const T = app.eqTarget(); return app.copyEquation(T.inner, T.display); } },
   { id: 'eq-save', name: 'Save as new equation', title: 'Keeps this equation (or the part selected in it) in the Equation gallery of this browser', synonyms: ['Save to equation gallery', 'Save selection to equation gallery'], menu: { equation: 32 },
     when: hasTarget, whyNot: () => NOT_HERE, run: (app) => app.eqSave() },
-  { id: 'eq-edit', name: 'Edit equation', title: 'Opens the equation in its field', synonyms: ['Open equation'], menu: { equation: 1 },
-    when: (app) => { const T = app.eqTarget(); return !!T && !!T.info && !T.pop && !T.ro; }, whyNot: why((app, T) => (T.pop ? 'It is open' : 'It comes from a macro: edit its definition')), run: (app) => { const T = app.eqTarget(); app.eqCtx = null; app.openAtom(T.el, T.info); } }
+  // (F2 or Enter with the formula selected, Shift and an arrow over it: F2 is Move Text otherwise)
+  { id: 'eq-edit', name: 'Edit equation', title: 'Opens the equation in its field (F2 or Enter with it selected)', synonyms: ['Open equation'], menu: { equation: 1 }, keys: ['F2'], keyRank: 1,
+    when: (app) => { const T = app.eqTarget() || app.eqSelected(); return !!T && !!T.info && !T.pop && !T.ro; }, whyNot: why((app, T) => (T.pop ? 'It is open' : 'It comes from a macro: edit its definition')),
+    run: (app) => { const T = app.eqTarget() || app.eqSelected(); app.eqCtx = null; app.openAtom(T.el, T.info); } }
 );
 
 // ---- the methods ------------------------------------------------------------------------------------
@@ -302,6 +304,11 @@ export const methods = {
     const T = el ? this.eqInfo(el) : null;
     if (T) { T.pop = P; return T; }
     return P ? { pop: P, display: !!P.display } : null;
+  },
+  // the formula the selection holds alone (Shift and an arrow over it), as a target
+  eqSelected() {
+    const S = this.atomSelected();
+    return S && S.info.a.kind === 'math' ? this.eqInfo(S.el) : null;
   },
   // an equation's element of the page as a target
   eqInfo(el) {
