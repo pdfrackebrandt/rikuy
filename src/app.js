@@ -1375,7 +1375,12 @@ class App {
       if (el && el.closest('td')) { e.preventDefault(); this.tabCell(e.shiftKey); return; }
       // Tab keeps the keyboard on the page, as Word's: it went to the status bar or the PDF's
       // engine list, where the next letters picked an engine (POWER-USER.md 6)
-      if (!mod && !e.altKey && !tabOut && !e.defaultPrevented) { e.preventDefault(); this.tabOnPage(e.shiftKey); return; }
+      if (!mod && !e.altKey && !tabOut && !e.defaultPrevented) {
+        // (in a list's item where its own Tab could do nothing, which says why, the key goes on as
+        // the list's rule has it (src/cmd/lists.js), and the page takes the keyboard back at once)
+        if (el && el.closest('[data-li]')) { this.keepFocusPastTab(); return; }
+        e.preventDefault(); this.tabOnPage(e.shiftKey); return;
+      }
     }
     if (e.key === 'Escape') { this.disarm(); this.tabOut = true; }
     // Word's Shift+Enter: a line break inside the paragraph (\\), not a new paragraph
@@ -2436,6 +2441,15 @@ class App {
     this.restoreCaret({ f: F.f, p: F.e, bias: 1 });
     this.scrollToCaret();
     return true;
+  }
+  // the caret where it is, back on the page after a Tab that went on to the next control
+  keepFocusPastTab() {
+    const s = getSelection(), r = s.rangeCount ? s.getRangeAt(0).cloneRange() : null;
+    setTimeout(() => {
+      if (document.activeElement === this.root || !r || !r.startContainer.isConnected) return;
+      this.root.focus({ preventScroll: true });
+      const t = getSelection(); t.removeAllRanges(); t.addRange(r);
+    }, 0);
   }
   // Tab on the page outside a table, a list or tab stops (those have their own): at a paragraph's
   // start Word's first line indent (Shift+Tab: none, \noindent), elsewhere a gap as a tab
