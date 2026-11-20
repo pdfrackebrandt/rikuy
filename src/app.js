@@ -5,7 +5,7 @@ import { Renderer, BLOCKS, esc, widgetCss } from './render.js';
 import { Layout, geometry } from './layout.js';
 import {
   posFromDom, CaretIndex, segOfSpan, atomOfEl, styOfEl, visibleRanges, escapeTeX, textToTeX,
-  endsWithControlWord, isBalanced, diff, boundary, clusterEdge, sourceEdge, backspaceUnits
+  endsWithControlWord, isBalanced, diff, stepStart, stepJoin, boundary, clusterEdge, sourceEdge, backspaceUnits
 } from './editor.js';
 import { SAMPLE } from './sample.js';
 import { splitRows, parseJS, scanUserSigs, setNativeParse } from './parser.js';
@@ -64,7 +64,7 @@ const CDN = {
   cmTex: 'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/stex/stex.js',
   zip: 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
   ml: 'https://cdn.jsdelivr.net/npm/mathlive@0.110.0/mathlive.min.js',
-  chem: 'https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/contrib/mhchem.min.js'
+  chem: 'https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/contrib/mhchem.min.js'
 };
 // The hash of each file as published on npm, which jsDelivr serves unchanged: a CDN that
 // served anything else would get no script run in this page. (CodeMirror's .min.js names
@@ -75,7 +75,7 @@ const SRI = {
   [CDN.cmTex]: 'sha384-tab09zZeKEC2HRX/8GcAyeUuP7KBvb9DKKK4wegfZ/qW7tMcwh14TRJ0o6woQ9M0',
   [CDN.zip]: 'sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG',
   [CDN.ml]: 'sha384-5IN6K0kiaz8MufrTGBvPCP3oDeMjmwe+DDTvuyQLNv6gc634FpKbQfllonjHJPmy',
-  [CDN.chem]: 'sha384-F2ptQFZqNJuqfGGl28mIXyQ5kXH48spn7rcoS0Y9psqIKAcZPLd1NzwFlm/bl1mH'
+  [CDN.chem]: 'sha384-fB8BH//9nBzROkMUsu/Dr35jWHIbnKesUo9rW0hfEgw8mZGnkAyBAjKX9F98OVuo'
 };
 // what an opened .zip may unpack to; past it the tab would run out of memory
 const MAX_ZIP = 1.5e9;
@@ -89,6 +89,17 @@ const ZOOM_MIN = 0.25, ZOOM_MAX = 4;
 // One of the build's own files (git.js, tex/...): in the installed app, the copy of this page's
 // version (src/pwa.js); elsewhere simply the file next to the page.
 const asset = (p) => (__RIKUY_APP__ ? appAsset(p) : new URL(p, location.href).href);
+// The proxy git's push, pull and clone go through by default: GitHub and GitLab send no CORS
+// headers for git, so a browser cannot reach them directly. It is Rikuy's own, on the page's own
+// site (/git, functions/git/[[path]].js on Cloudflare Pages, src/gitproxy.js), so the hosted
+// policy keeps connect-src 'self' and no third party sees a token. The third party's address
+// earlier versions filled in, and kept once used, counts as no choice; a proxy the user typed
+// elsewhere is theirs (a copy of Rikuy served without the hosted policy can use it).
+const gitProxyHere = () => new URL('git', location.href).href;
+const OLD_GIT_PROXY = 'https://cors.isomorphic-git.org';
+const gitProxyOf = (prefs) => (prefs.gitProxy == null || prefs.gitProxy === OLD_GIT_PROXY ? gitProxyHere() : prefs.gitProxy);
+// what the CORS proxy field keeps: nothing when it holds this site's own (the page may move)
+const keepGitProxy = (prefs, v) => { prefs.gitProxy = v === gitProxyHere() ? null : v; return v; };
 // the full Rikuy's address, which the copy on claude.ai names for what it has no room for
 const SCRIPT_HOST = typeof __RIKUY_WORD_HOST__ === 'undefined' ? '' : __RIKUY_WORD_HOST__;
 function loadScript(src) {
@@ -101,6 +112,11 @@ function loadScript(src) {
     s.onload = () => res(); s.onerror = () => rej(new Error('Could not load ' + src));
     document.head.appendChild(s);
   });
+}
+// Whether this page may not compile WebAssembly (an empty module): Safari 15 refuses it under the
+// hosted policy, which allows it by 'wasm-unsafe-eval' alone (build/app.mjs policy)
+function wasmRefused() {
+  try { new WebAssembly.Module(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])); return false; } catch (e) { return true; }
 }
 // A link in a document opens only as a web or mail address: the document may be a
 // stranger's, and a javascript: or data: address would run as, or pretend to be, this page.
@@ -390,7 +406,13 @@ class App {
       allow: () => this.allowWidgets(),
       // an interactive graph's Edit graph button and its menu (src/cmd/insert.js)
       decorate: (F) => this.graphDecorate && this.graphDecorate(F),
-      menu: (F, x, y) => this.graphMenu && this.graphMenu(F, x, y)
+      menu: (F, x, y) => this.graphMenu && this.graphMenu(F, x, y),
+      // (once a session: a live figure's frame did not load)
+      stalled: () => {
+        if (this.widgetStallNoted) return;
+        this.widgetStallNoted = true;
+        this.toast('A live figure could not start: its frame did not load (offline, and this browser no longer has the copy it kept). It shows its picture instead; with a connection it runs again.', 10000);
+      }
     });
     this.relayoutSoon = debounce(() => this.relayout(), 40);
     // a figure, or a live figure's fallback, measured before its picture loaded: measured again
@@ -1033,17 +1055,23 @@ class App {
     for (const ed of edits) { if (!byFile.has(ed.f)) byFile.set(ed.f, []); byFile.get(ed.f).push(ed); }
     // (a file the step makes, as Table from Data File's .csv: undone, it goes again)
     const made = [...byFile.keys()].filter((f) => !this.files.has(f));
+    // (what of each file the edits left alone, before the first and after the last, for the undo
+    // record's comparison; edits that overlap say nothing)
+    const win = new Map();
     for (const [f, list] of byFile) {
       let text = this.files.get(f) ?? '';
       before.set(f, text);
       list.sort((x, y) => y.s - x.s || y.e - x.e);
+      let apart = true;
+      for (let k = 1; k < list.length; k++) if (list[k].e > list[k - 1].s) apart = false;
+      if (apart) win.set(f, { pre: list[list.length - 1].s, suf: text.length - list[0].e });
       for (const ed of list) text = text.slice(0, ed.s) + ed.t + text.slice(ed.e);
       this.files.set(f, text);
     }
     // (the blocks shown as LaTeX move with these edits, src/cmd/view.js; typing ends Repeat's turn)
     this.viewMap(byFile, before);
     if (!this.cmdDepth) this.lastAct = null;
-    this.record(before, kind, cb && cb.f != null ? { f: cb.f, p: cb.p } : caret, caret, swaps);
+    this.record(before, kind, cb && cb.f != null ? { f: cb.f, p: cb.p } : caret, caret, swaps, win);
     if (made.length) { const top = this.hist[this.hist.length - 1]; if (top) for (const d of top.files) if (made.includes(d.f)) d.made = true; }
     this.zipDirty = true;
     this.rebuild(caret);
@@ -1051,12 +1079,14 @@ class App {
     this.saveSoon();
   }
 
-  record(before, kind, cb, ca, swaps) {
+  // win: for each file, how much at its start (pre) and its end (suf) the edits left alone (commit)
+  record(before, kind, cb, ca, swaps, win) {
     const files = [];
-    for (const [f, b] of before) { const d = diff(b, this.files.get(f)); if (d) files.push({ f, ...d }); }
+    const at = (w, f) => (w && w.get(f)) || { pre: 0, suf: 0 };
+    for (const [f, b] of before) { const w = at(win, f); const d = diff(b, this.files.get(f), w.pre, w.suf); if (d) files.push({ f, ...d }); }
     if (swaps && swaps.length) {
       // (a step with pictures is a step of its own, never joined to the one before)
-      if (this.hist.length) { const t = this.hist[this.hist.length - 1]; t.open = false; t.before = null; }
+      if (this.hist.length) { const t = this.hist[this.hist.length - 1]; t.open = false; t.before = null; t.win = null; t.after = null; }
       this.hist.push(this.rvStep = { kind, files, blobs: swaps, caretBefore: cb, caretAfter: ca, time: Date.now(), open: false, before: null, abs: this.rvAbsorbs(kind) });
       if (this.hist.length > 400 && !this.histHold) this.hist.shift();
       this.redoStack = [];
@@ -1068,22 +1098,25 @@ class App {
     const top = this.hist[this.hist.length - 1];
     const contiguous = top && top.caretAfter && cb && top.caretAfter.f === cb.f && Math.abs(top.caretAfter.p - cb.p) <= 2;
     if (top && top.open && kind && top.kind === kind && now - top.time < 2000 && (kind !== 'type' && kind !== 'del' || contiguous)) {
-      for (const [f, b] of before) if (!top.before.has(f)) top.before.set(f, b);
+      // (what every edit of the step left alone is the least of what each left alone, for the files
+      // nothing changed between its commits: src/editor.js stepJoin)
+      stepJoin(top, before, (f) => this.files.get(f), win);
       top.files = [];
-      for (const [f, b] of top.before) { const d = diff(b, this.files.get(f)); if (d) top.files.push({ f, ...d }); }
+      for (const [f, b] of top.before) { const w = at(top.win, f); const d = diff(b, this.files.get(f), w.pre, w.suf); if (d) top.files.push({ f, ...d }); }
       top.caretAfter = ca; top.time = now;
       // (Track Changes: the step's edits go into the review base or not as when it was made)
       this.rvStep = top;
       return;
     }
-    if (top) { top.open = false; top.before = null; }
-    this.hist.push(this.rvStep = { kind, files, caretBefore: cb, caretAfter: ca, time: now, open: true, before, abs: this.rvAbsorbs(kind) });
+    if (top) { top.open = false; top.before = null; top.win = null; top.after = null; }
+    const s0 = stepStart(before, (f) => this.files.get(f), win);
+    this.hist.push(this.rvStep = { kind, files, caretBefore: cb, caretAfter: ca, time: now, open: true, before, win: s0.win, after: s0.after, abs: this.rvAbsorbs(kind) });
     if (this.hist.length > 400 && !this.histHold) this.hist.shift();
     this.redoStack = [];
     this.updateUndoUI();
   }
 
-  closeGroup() { const top = this.hist[this.hist.length - 1]; if (top) { top.open = false; top.before = null; } }
+  closeGroup() { const top = this.hist[this.hist.length - 1]; if (top) { top.open = false; top.before = null; top.win = null; top.after = null; } }
 
   undo() {
     // (nothing stays selected across a change of the text: its offsets would be stale)
@@ -1094,7 +1127,7 @@ class App {
     this.closePop(true);
     const h = this.hist.pop();
     if (!h) { this.toast('Nothing to undo'); return; }
-    h.open = false; h.before = null;
+    h.open = false; h.before = null; h.win = null; h.after = null;
     const was = new Map(h.files.map((d) => [d.f, this.files.get(d.f) ?? '']));
     for (const d of h.files) { const t = this.files.get(d.f) ?? ''; this.files.set(d.f, t.slice(0, d.s) + d.del + t.slice(d.s + d.ins.length)); if (d.made && !this.files.get(d.f)) this.files.delete(d.f); }
     for (const b of h.blobs || []) this.setAsset(b.name, b.before);
@@ -1167,7 +1200,7 @@ class App {
     $('#b-copy').addEventListener('click', () => this.copySource());
     $('#b-share').addEventListener('click', () => this.openSharePanel());
     const qatSave = $('#qat-save');
-    if (qatSave) qatSave.addEventListener('click', () => this.runCommand('download-latex'));
+    if (qatSave) qatSave.addEventListener('click', () => this.runCommand('save'));
     const comments = $('#b-comments');
     if (comments) comments.addEventListener('click', () => this.toggleNav(true, 'changes'));
     $('#guest-send').addEventListener('click', () => this.openSharePanel());
@@ -1272,7 +1305,8 @@ class App {
   onGlobalKey(e) {
     const mod = isMac ? e.metaKey : e.ctrlKey;
     this.plainPaste = !!(mod && e.shiftKey && e.key.toLowerCase() === 'v');
-    if (mod && !e.altKey && e.key.toLowerCase() === 's') { e.preventDefault(); this.save(); }
+    // (Ctrl+S is Save as Word's: kept in this browser, said; Save As, F12, downloads: src/cmd/file.js)
+    if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 's') { e.preventDefault(); this.runCommand('save'); }
     if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); $('#fileinput').click(); }
     // Ctrl+N is a new browser tab in some browsers; where the page hears it, it is a new document
     if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'n' && !e.defaultPrevented) { e.preventDefault(); this.runCommand('new-document'); }
@@ -3696,7 +3730,7 @@ class App {
     rem.append(sum);
     const url = mk('input'); url.type = 'url'; url.placeholder = 'https://github.com/you/paper.git'; url.value = remote || ''; url.setAttribute('aria-label', 'Remote URL');
     const tok = mk('input'); tok.type = 'password'; tok.placeholder = 'Access token (kept in this browser for this host)'; tok.setAttribute('aria-label', 'Access token');
-    const prox = mk('input'); prox.type = 'url'; prox.placeholder = 'CORS proxy, e.g. https://cors.isomorphic-git.org'; prox.value = this.prefs.gitProxy ?? 'https://cors.isomorphic-git.org'; prox.setAttribute('aria-label', 'CORS proxy');
+    const prox = mk('input'); prox.type = 'url'; prox.placeholder = 'CORS proxy, e.g. ' + gitProxyHere(); prox.value = gitProxyOf(this.prefs); prox.setAttribute('aria-label', 'CORS proxy');
     // the token kept for the remote's host, not filled in for a remote that came with an opened
     // project; a URL typed here is the user's own, and the field follows it until a token is typed
     const from = await this.gitRemoteFrom(dir, remote);
@@ -3715,8 +3749,8 @@ class App {
     const opts = () => {
       const t = tok.value.trim();
       dropReplaced(this.prefs, t, shown);
-      this.prefs.gitProxy = prox.value.trim(); store(PREFS, this.prefs);
-      const o = { token: t, remote: url.value.trim(), corsProxy: this.prefs.gitProxy, accepted: legacy.chosen() };
+      const proxy = keepGitProxy(this.prefs, prox.value.trim()); store(PREFS, this.prefs);
+      const o = { token: t, remote: url.value.trim(), corsProxy: proxy, accepted: legacy.chosen() };
       o.onAccepted = () => { o.accepted = true; };
       return o;
     };
@@ -3768,7 +3802,7 @@ class App {
     const host = remoteHost(remote);
     if (from === 'theirs') rem.append(mk('div', 'git-note git-foreign', 'This remote came in the .git folder of the project you opened, so no token is filled in for it. Give one only if ' + host + ' is yours.'));
     else if (from === 'unknown' && tok.value) rem.append(mk('div', 'git-note git-unknown', 'This repository is older than Rikuy\'s record of where remotes come from, so your token is filled in as before. Check that ' + host + ' is yours before you pull or push.'));
-    rem.append(url, tok, legacy.el, prox, rrow, mk('div', 'git-note', 'GitHub and GitLab need a token with write access and, from a browser, a CORS proxy. Inside claude.ai the page can only reach its own server, so pushing works from Rikuy on its own site; here, Download LaTeX gives a clone to push from your computer.'));
+    rem.append(url, tok, legacy.el, prox, rrow, mk('div', 'git-note', 'GitHub and GitLab need a token with write access. A browser cannot speak git to them itself, so Rikuy passes git\'s requests through its own proxy on this site (CORS proxy), which keeps nothing of them. Inside claude.ai the page can only reach its own server, so pushing works from Rikuy on its own site; here, Download LaTeX gives a clone to push from your computer.'));
     out.append(rem);
 
     // history
@@ -3816,7 +3850,7 @@ class App {
     det.append(mk('summary', '', 'Clone from a URL'));
     const url = mk('input'); url.type = 'url'; url.placeholder = 'https://github.com/you/paper.git, or an Overleaf project'; url.setAttribute('aria-label', 'Repository URL, or the address of an Overleaf project');
     const tok = mk('input'); tok.type = 'password'; tok.placeholder = 'Access token (private repositories; for Overleaf, its Git token)'; tok.setAttribute('aria-label', 'Access token');
-    const prox = mk('input'); prox.type = 'url'; prox.placeholder = 'CORS proxy'; prox.value = this.prefs.gitProxy ?? 'https://cors.isomorphic-git.org';
+    const prox = mk('input'); prox.type = 'url'; prox.placeholder = 'CORS proxy'; prox.value = gitProxyOf(this.prefs);
     // the token kept for the host of the address typed, until a token is typed
     let shown = '', typed = false;
     const legacy = this.gitLegacyButton({ get value() { return G.gitUrlOf(url.value); } }, tok, () => { typed = true; shown = tok.value; });
@@ -3828,8 +3862,8 @@ class App {
       if (!u) { if (url.value.trim()) this.toast(G.BAD_REMOTE, 7000); url.focus(); return; }
       const t = tok.value.trim();
       dropReplaced(this.prefs, t, shown);
-      this.prefs.gitProxy = prox.value.trim(); store(PREFS, this.prefs);
-      const o = { token: t, remote: u, corsProxy: this.prefs.gitProxy, depth: 200, accepted: legacy.chosen() };
+      const proxy = keepGitProxy(this.prefs, prox.value.trim()); store(PREFS, this.prefs);
+      const o = { token: t, remote: u, corsProxy: proxy, depth: 200, accepted: legacy.chosen() };
       o.onAccepted = () => { o.accepted = true; };
       const name = /git\.overleaf\.com/.test(u) ? 'overleaf-' + u.split('/').pop().slice(0, 6) : u.replace(/\.git$/, '').split('/').pop() || 'paper';
       b.disabled = true; b.textContent = 'Cloning…';
@@ -3872,7 +3906,11 @@ class App {
 
   gitError(e) {
     const m = String((e && (e.message || e.code)) || e);
-    if (/Failed to fetch|NetworkError|Load failed|Content Security Policy|CORS/i.test(m)) return 'Could not reach the remote. From inside claude.ai the page may only talk to its own server; run Rikuy on its own site, or Download LaTeX and push from your computer. (' + m + ')';
+    if (/Failed to fetch|NetworkError|Load failed|Content Security Policy|CORS/i.test(m)) {
+      // (the hosted copy reaches git hosts through its own proxy alone: its policy refuses any other address)
+      if (__RIKUY_APP__) return 'Could not reach the remote. Rikuy reaches git hosts only through its own proxy, ' + gitProxyHere() + ': put that address in CORS proxy, or Download LaTeX and push from your computer. (' + m + ')';
+      return 'Could not reach the remote. From inside claude.ai the page may only talk to its own server; run Rikuy on its own site, or Download LaTeX and push from your computer. (' + m + ')';
+    }
     if (/401|403|auth/i.test(m)) return 'The remote refused the credentials. Check the token and that it can write to this repository. (' + m + ')';
     if (/MergeConflict|conflict/i.test(m)) return 'Pull found conflicting edits to the same lines. Commit, then merge on your computer, or restore one side. (' + m + ')';
     return m;
@@ -4253,6 +4291,8 @@ class App {
         this.markFromLink('', this.name, this.main, from || 'zip');
         if (!from) markNote = was && was.allowed ? ' Shell escape, allowed for this project before, is restricted again: new files from an archive arrived. Allow it in the PDF pane if you trust them.' : ' They came in an archive, so shell escape is restricted for this project until you allow it in the PDF pane.';
       }
+      // (a file opened over another is a step of its own: typing before it and after it are two undos)
+      this.closeGroup();
       for (const [n, t] of texts) this.files.set(n, t);
       for (const [n, o] of orig) this.orig.set(n, o);
       for (const [n, b] of blobs) this.addAsset(n, b);
@@ -5195,6 +5235,10 @@ class App {
   // error) read the same build instructions: they get what to do instead.
   texFailText(e, off, need) {
     const m = (e && e.message) || '';
+    // TeX is WebAssembly, which the hosted page's policy lets run through 'wasm-unsafe-eval':
+    // Safari 15 and older do not know it and refuse every module. Asked of the page only when TeX
+    // failed, so no other browser meets the refusal it would report.
+    if (wasmRefused()) return 'This browser does not let the page run WebAssembly, which TeX is made of: Safari 15 and older lack the permission the page gives it. The editor works here; Safari 16 or later, Chrome, Edge or Firefox make the PDF. ';
     // a 404 is a page built without its TeX tree: the worker's words name the build step.
     // "Failed to fetch", a dropped connection, or that same sentence with no HTTP status is
     // what a visitor's browser says. They get plain words and the button that tries again.

@@ -10,6 +10,7 @@
 
 // (the line helpers and the blank lines a paragraph needs live with the environments in
 // src/blockenv.js, which Quote's edits come from too)
+import { commentsBlanked, preambleEnd } from './scan.js';
 import { lineStart, startsLine, eolAt, blankPads, HEADING_LINE, envOpen, envClose } from './blockenv.js';
 export { lineStart, startsLine, eolAt, blankPads, HEADING_LINE };
 
@@ -208,21 +209,9 @@ export function numberingEdits(src, off, chapters, memoir) {
   }
   return put(memoir ? '\\setsecnumdepth{subsection}\\maxsecnumdepth{subsection}' : '\\setcounter{secnumdepth}{' + (chapters ? 2 : 3) + '}');
 }
-function preambleEndOf(src) {
-  const m = /\\begin\s*\{document\}/.exec(stripCommentsOf(src.slice(0, 200000)));
-  return m ? m.index : -1;
-}
-// comments made spaces, offsets kept (as src/preamble.js's stripComments)
-function stripCommentsOf(t) {
-  let out = '', i = 0;
-  while (i < t.length) {
-    const c = t[i];
-    if (c === '\\') { out += t.slice(i, i + 2); i += 2; continue; }
-    if (c === '%') { const j = t.indexOf('\n', i), e = j < 0 ? t.length : j; out += ' '.repeat(e - i); i = e; continue; }
-    out += c; i++;
-  }
-  return out;
-}
+const preambleEndOf = preambleEnd;
+// comments made spaces, offsets kept, all of t (src/scan.js: once per text)
+const stripCommentsOf = (t) => commentsBlanked(t, t.length);
 
 // ---- the document's own styles --------------------------------------------------------------------
 // Formatting a style may hold: the inline commands around its words (\textbf{#1}) and the

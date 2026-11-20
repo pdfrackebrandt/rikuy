@@ -21,7 +21,7 @@ Word support is and fetches nothing of it."""
 import os, sys, io, re, json, base64, zipfile, tempfile, traceback, time, subprocess, shutil, difflib
 sys.path.insert(0, os.path.dirname(__file__))
 import serve
-from browser import ROUTES, check, results, click_text, load_doc, undo_all
+from browser import ROUTES, check, results, click_text, load_doc, undo_all, download
 from playwright.sync_api import sync_playwright
 import word_fixture
 
@@ -600,8 +600,8 @@ try:
     try:
         with sync_playwright() as p:
             browser, page, errors, reqs = open_app(p, 'http://127.0.0.1:%d/' % port2)
-            check('without Word: Download still offers Word', page.inner_text('#rb-word').strip() == 'Word' and not page.evaluate('document.getElementById("rb-word").disabled'))
-            page.click('#rb-word')
+            check('without Word: Download still offers Word', page.evaluate('document.getElementById("rb-word").textContent').strip() == 'Word' and not page.evaluate('document.getElementById("rb-word").disabled'))
+            download(page, 'rb-word')
             page.wait_for_timeout(300)
             check('without Word: Word says it lives on the hosted copy', 'hosted copy' in page.inner_text('#toast'), page.inner_text('#toast'))
             page.set_input_files('#fileinput', fx)
