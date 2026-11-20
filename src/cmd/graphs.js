@@ -16,8 +16,8 @@ register(
   { id: 'graph-this', name: 'Graph this', label: 'Graph this', tab: 'equation', group: 'tools', order: 40, menu: { equation: 2 }, icon: ICON,
     title: 'Graph this: the equation drawn as a live graph below it, every other letter a slider (y = f(x), f(x), x = g(t) and y = h(t), F(x, y) = c, a pair of time derivatives). One undo takes it out',
     synonyms: ['Plot this', 'Plot equation', 'Graph equation', 'Draw this equation', 'Live graph of this equation', 'Interactive graph of this equation', 'Desmos'],
-    when: (app) => !!app.graphThisTarget(), whyNot: () => NONE,
-    run: (app) => app.graphThisRun() },
+    when: (app, at) => !!app.graphThisTarget(at), whyNot: () => NONE,
+    run: (app, args, at) => app.graphThisRun(at) },
   // (also in File's Export as list, src/cmd/file.js)
   { id: 'export-web-page', name: 'Web page with live graphs', title: 'Export as one .html file that reads like the paper, its math set, its interactive graphs live, with a link that opens the source in Rikuy: for a website',
     synonyms: ['Export as web page', 'Export HTML', 'Publish', 'Website', 'Interactive web page', 'Live web page', 'HTML with graphs'],
@@ -28,11 +28,12 @@ export const methods = {
   // The equation Graph this draws: the one open in its field or right clicked (the Equation tab's
   // and the menu's), else the one the caret is in, else the block's first display equation, else
   // its first in the line. { f, s, e, inner, display } or null
-  graphThisTarget() {
+  // (at: where the caret was, as the search box keeps it while it has the focus)
+  graphThisTarget(at) {
     if (!this.model || this.stale) return null;
     const T = this.eqTarget && this.eqTarget();
     if (T && T.info && T.inner) return { f: T.f, s: T.s, e: T.e, inner: T.inner, display: T.display };
-    const at = this.ribbonAt && this.ribbonAt();
+    at = at || (this.ribbonAt && this.ribbonAt());
     if (!at || !at.B || !at.B.atoms) return null;
     const mine = at.el && at.el.closest && at.el.closest('[data-a],[data-m]');
     const id = mine && (mine.dataset.a || mine.dataset.m);
@@ -45,8 +46,8 @@ export const methods = {
 
   // Graph this: the description from the equation, inserted after the equation's block as Insert's
   // graph is (its file, its picture, the command; one undo), and what was drawn said in words
-  async graphThisRun() {
-    const T = this.graphThisTarget();
+  async graphThisRun(at) {
+    const T = this.graphThisTarget(at);
     if (!T) { this.toast(NONE); return false; }
     let values = {};
     for (const [f, t] of this.files) if (/\.(tex|ltx)$/i.test(f) && t.length < 2e6) values = { ...paramValues(t), ...values };
