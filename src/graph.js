@@ -16,7 +16,8 @@ export function graphKit() {
   const MAXF = 300, MAXDEPTH = 40, MAXNODES = 600;
 
   // ---- the formula language: what people type in Word, Desmos or LaTeX ---------------------
-  const GREEK = { alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ε', zeta: 'ζ', eta: 'η', theta: 'θ', iota: 'ι', kappa: 'κ', lambda: 'λ', mu: 'μ', nu: 'ν', xi: 'ξ', rho: 'ρ', sigma: 'σ', tau: 'τ', upsilon: 'υ', phi: 'φ', chi: 'χ', psi: 'ψ', omega: 'ω', varphi: 'φ', vartheta: 'θ', varepsilon: 'ε' };
+  const GREEK = { alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ε', zeta: 'ζ', eta: 'η', theta: 'θ', iota: 'ι', kappa: 'κ', lambda: 'λ', mu: 'μ', nu: 'ν', xi: 'ξ', rho: 'ρ', sigma: 'σ', tau: 'τ', upsilon: 'υ', phi: 'φ', chi: 'χ', psi: 'ψ', omega: 'ω', varphi: 'φ', vartheta: 'θ', varepsilon: 'ε', varrho: 'ρ',
+    Gamma: 'Γ', Delta: 'Δ', Theta: 'Θ', Lambda: 'Λ', Xi: 'Ξ', Pi: 'Π', Sigma: 'Σ', Upsilon: 'Υ', Phi: 'Φ', Psi: 'Ψ', Omega: 'Ω' };
   const CONST = { pi: Math.PI, 'π': Math.PI, e: Math.E };
   const lg = (x) => {
     // log Γ(x), Lanczos (g = 7, n = 9): 15 digits, enough for every density here
@@ -50,10 +51,12 @@ export function graphKit() {
     gamma: gammaFn, lgamma: lg, factorial: fact, binom: (n, k) => Math.round(Math.exp(lg(n + 1) - lg(k + 1) - lg(n - k + 1))), erf,
     normpdf: (x, m, s) => { m = m ?? 0; s = s ?? 1; const z = (x - m) / s; return Math.exp(-z * z / 2) / (s * Math.sqrt(2 * Math.PI)); },
     normcdf: (x, m, s) => 0.5 * (1 + erf((x - (m ?? 0)) / ((s ?? 1) * Math.SQRT2))),
-    frac: (a, b) => a / b
+    frac: (a, b) => a / b,
+    // \sqrt[n]{x}: a negative number's odd root is real
+    root: (x, n) => (x < 0 && Math.abs(n % 2) === 1 ? -Math.pow(-x, 1 / n) : Math.pow(x, 1 / n))
   };
   // the functions that take more than one argument, and how many at most
-  const ARGS = { log: 2, min: 8, max: 8, mod: 2, atan2: 2, binom: 2, normpdf: 3, normcdf: 3, frac: 2, if: 3 };
+  const ARGS = { log: 2, min: 8, max: 8, mod: 2, atan2: 2, binom: 2, normpdf: 3, normcdf: 3, frac: 2, if: 3, root: 2 };
   const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
   const KNOWN = Object.keys(FN).concat(['if'], Object.keys(GREEK), Object.keys(CONST));
 
@@ -63,8 +66,16 @@ export function graphKit() {
   function tokens(text, names) {
     let s = String(text);
     if (s.length > MAXF) throw err('The formula is longer than ' + MAXF + ' characters', MAXF);
-    s = s.replace(/\\(left|right|big|Big|bigg|Bigg)\b/g, ' ').replace(/\\(cdot|times)\b|[·×⋅∗]/g, '*').replace(/[−–]/g, '-').replace(/÷/g, '/').replace(/\*\*/g, '^')
-      .replace(/²/g, '^2').replace(/³/g, '^3').replace(/\\[,;:! ]/g, ' ');
+    // LaTeX as an equation of a paper writes it: sizes and spacing go, \dfrac is \frac, \frac12
+    // is \frac{1}{2}, \mathrm{e} and \operatorname{sgn} are their letters (lengths kept where
+    // they can be, so a mistake is said near where it is)
+    s = s.replace(/\\(?:left|right)\s*\./g, ' ').replace(/\\(?:left|right|[bB]igg?[lrm]?)(?![A-Za-z])/g, ' ').replace(/\\(?:displaystyle|textstyle|scriptstyle|limits|nolimits)(?![A-Za-z])/g, ' ')
+      .replace(/\\[dtc]frac(?![A-Za-z])/g, '\\frac').replace(/\\frac\s*(\d)\s*(\d)/g, '\\frac{$1}{$2}')
+      .replace(/\\(?:mathrm|mathit|mathnormal|operatorname\*?|textrm|textit|text)\s*\{\s*([A-Za-z]{1,12})\s*\}/g, ' $1 ')
+      .replace(/\\(?:l|r)?[vV]ert(?![A-Za-z])/g, '|').replace(/\\[{}]/g, (m) => (m[1] === '{' ? '(' : ')'))
+      .replace(/\\(?:cdot|times|ast)(?![A-Za-z])|[·×⋅∗]/g, '*').replace(/\\div(?![A-Za-z])/g, '/').replace(/\\(?:leq?|leqslant)(?![A-Za-z])/g, '<=').replace(/\\(?:geq?|geqslant)(?![A-Za-z])/g, '>=')
+      .replace(/[−–]/g, '-').replace(/÷/g, '/').replace(/\*\*/g, '^')
+      .replace(/²/g, '^2').replace(/³/g, '^3').replace(/\\[,;:! ]|[~&]/g, ' ');
     const known = KNOWN.concat(names || []).sort((a, b) => b.length - a.length);
     const out = [];
     let i = 0;
@@ -113,7 +124,7 @@ export function graphKit() {
         i += two ? 2 : 1;
         continue;
       }
-      if ('+-*/^(),!|{}[]'.includes(ch)) { out.push({ t: 'op', v: ch === '{' || ch === '[' ? '(' : ch === '}' || ch === ']' ? ')' : ch, at: i }); i++; continue; }
+      if ('+-*/^(),!|{}[]'.includes(ch)) { out.push({ t: 'op', v: ch === '{' || ch === '[' ? '(' : ch === '}' || ch === ']' ? ')' : ch, at: i, br: ch }); i++; continue; }
       throw err('"' + ch + '" is not part of a formula', i);
     }
     // Greek letters by name; gamma before a bracket is the function
@@ -186,6 +197,19 @@ export function graphKit() {
       let power = null;
       if (isOp('^')) { i++; power = deeper(post); }
       let args;
+      // \sqrt[3]{x}: the root's index in square brackets, then the group
+      if (name === 'sqrt' && t.bs && isOp('(') && T[i].br === '[' && !power) {
+        i++;
+        const k = cmp();
+        if (!isOp(')')) throw err('A bracket is not closed', at());
+        i++;
+        if (!isOp('(')) throw err('\\sqrt[n] needs {…} after it', at());
+        i++;
+        const x = cmp();
+        if (!isOp(')')) throw err('A bracket is not closed', at());
+        i++;
+        return node(['f', 'root', [x, k]]);
+      }
       if (isOp('(')) {
         i++;
         args = [cmp()];
@@ -201,7 +225,7 @@ export function graphKit() {
         while (peek() && (peek().t === 'n' || (peek().t === 'name' && !isFn(peek())))) a = node(['*', a, pow()]);
         args = [a];
       }
-      const max = ARGS[name] || 1, min = name === 'if' ? 3 : name === 'frac' || name === 'mod' || name === 'atan2' || name === 'binom' ? 2 : 1;
+      const max = ARGS[name] || 1, min = name === 'if' ? 3 : name === 'frac' || name === 'mod' || name === 'atan2' || name === 'binom' || name === 'root' ? 2 : 1;
       if (args.length < min || args.length > max) throw err(name + ' takes ' + (min === max ? min : min + ' to ' + max) + ' argument' + (max > 1 ? 's' : ''), t.at);
       let n = node(['f', name, args]);
       if (power) n = node(['^', n, power]);
@@ -307,7 +331,9 @@ export function graphKit() {
   }
 
   // ---- the description: everything a graph is, checked and capped -------------------------
-  const KINDS = ['function', 'data', 'curve', 'dist'];
+  const KINDS = ['function', 'data', 'curve', 'implicit', 'phase', 'dist'];
+  // a variable's or a slider's name: letters, Greek, a subscript
+  const NAME = /^[A-Za-zα-ωΑ-Ω][A-Za-z0-9α-ωΑ-Ω]*(_[A-Za-z0-9]{1,8})?$/;
   const FITS = ['none', 'linear', 'quadratic', 'cubic', 'exp', 'log', 'power'];
   const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(-1e9, Math.min(1e9, v)) : d);
   const opt = (v) => (typeof v === 'number' && Number.isFinite(v) ? Math.max(-1e9, Math.min(1e9, v)) : null);
@@ -322,11 +348,41 @@ export function graphKit() {
       return { min: min ?? lo, max: max ?? hi, label: str(a.label, 60, label) };
     };
     const s = { rikuy: 'graph', v: 1, kind, title: str(r.title, 200), aspect: Math.max(0.25, Math.min(1.2, num(r.aspect, 0.5))) };
+    // the variables a kind draws against (a function of k, an indifference curve in x_1 and x_2)
+    const vname = (v, d) => { const t = str(v, 16).trim(); return NAME.test(t) && !own(CONST, t) && !own(FN, t) ? t : d; };
+    const two = (v, a, b) => { const V = Array.isArray(v) ? v : []; const x = vname(V[0], a); let y = vname(V[1], b); if (y === x) y = x === b ? a : b; return [x, y]; };
     if (kind === 'function') {
-      s.f = (Array.isArray(r.f) ? r.f : ['sin(x)']).slice(0, 4).map((f) => str(f, MAXF)).filter((f) => f.trim());
-      if (!s.f.length) s.f = ['sin(x)'];
-      s.x = ax(r.x, -5, 5, 'x');
+      s.vars = [vname(Array.isArray(r.vars) ? r.vars[0] : null, 'x')];
+      s.f = (Array.isArray(r.f) ? r.f : ['sin(x)']).slice(0, 6).map((f) => str(f, MAXF)).filter((f) => f.trim());
+      if (!s.f.length) s.f = ['sin(' + s.vars[0] + ')'];
+      s.x = ax(r.x, -5, 5, s.vars[0]);
       s.y = ax(r.y, null, null, 'y');
+      // where two curves cross: true (every pair) or the pairs [[i, j]]
+      s.cross = r.cross === true ? true : (Array.isArray(r.cross) ? r.cross : []).slice(0, 8).filter((q) => Array.isArray(q) && q.length === 2 && q.every((k) => Number.isInteger(k) && k >= 0 && k < s.f.length) && q[0] !== q[1]).map((q) => [q[0], q[1]]);
+      if (Array.isArray(s.cross) && !s.cross.length) s.cross = false;
+      // shaded areas: under curve a down to b (another curve, 'axis', or 'cross', the level where
+      // a meets curve w), from and to a formula of the sliders or 'cross' (where a meets w)
+      const end = (v, d) => { const t = str(v, 80, d).trim(); return t || d; };
+      s.shade = (Array.isArray(r.shade) ? r.shade : []).slice(0, 4).filter((q) => q && typeof q === 'object' && Number.isInteger(q.a) && q.a >= 0 && q.a < s.f.length).map((q) => {
+        const b = q.b === 'axis' || q.b === 'cross' ? q.b : Number.isInteger(q.b) && q.b >= 0 && q.b < s.f.length && q.b !== q.a ? q.b : 'axis';
+        const w = Number.isInteger(q.w) && q.w >= 0 && q.w < s.f.length && q.w !== q.a ? q.w : Number.isInteger(b) ? b : (q.a === 0 ? 1 : 0);
+        return { a: q.a, b, w: w < s.f.length ? w : null, from: end(q.from, 'min'), to: end(q.to, 'max'), label: str(q.label, 60) };
+      });
+    } else if (kind === 'implicit') {
+      s.vars = two(r.vars, 'x', 'y');
+      s.eq = (Array.isArray(r.eq) ? r.eq : ['x^2 + y^2 = 4']).slice(0, 4).map((f) => str(f, MAXF)).filter((f) => f.trim());
+      if (!s.eq.length) s.eq = [s.vars[0] + '^2 + ' + s.vars[1] + '^2 = 4'];
+      s.x = ax(r.x, -5, 5, s.vars[0]);
+      s.y = ax(r.y, -5, 5, s.vars[1]);
+    } else if (kind === 'phase') {
+      s.vars = two(r.vars, 'x', 'y');
+      const P = r.phase && typeof r.phase === 'object' ? r.phase : {};
+      s.phase = { dx: str(P.dx, MAXF, 'y') || 'y', dy: str(P.dy, MAXF, '-x') || '-x', field: P.field !== false, nullclines: P.nullclines !== false, start: null };
+      s.x = ax(r.x, -5, 5, s.vars[0]);
+      s.y = ax(r.y, -5, 5, s.vars[1]);
+      // the trajectory's starting point, which the reader drags (none: no trajectory)
+      if (Array.isArray(P.start) && Number.isFinite(P.start[0]) && Number.isFinite(P.start[1])) s.phase.start = [num(P.start[0], 0), num(P.start[1], 0)];
+      else if (P.start !== null && P.start !== false) s.phase.start = [s.x.min + (s.x.max - s.x.min) * 0.3, s.y.min + (s.y.max - s.y.min) * 0.6];
     } else if (kind === 'curve') {
       const c = r.curve && typeof r.curve === 'object' ? r.curve : {};
       const polar = c.mode === 'polar';
@@ -357,7 +413,7 @@ export function graphKit() {
     for (const q of (Array.isArray(r.sliders) ? r.sliders : []).slice(0, 8)) {
       if (!q || typeof q !== 'object') continue;
       const name = str(q.name, 16).trim();
-      if (!/^[A-Za-zα-ωΑ-Ω][A-Za-z0-9α-ωΑ-Ω]*(_[A-Za-z0-9]{1,8})?$/.test(name) || seen.has(name) || own(CONST, name) || own(FN, name)) continue;
+      if (!NAME.test(name) || seen.has(name) || own(CONST, name) || own(FN, name) || (s.vars && s.vars.includes(name))) continue;
       seen.add(name);
       let min = num(q.min, 0), max = num(q.max, 10);
       if (!(max > min)) max = min + 1;
@@ -366,6 +422,8 @@ export function graphKit() {
       const value = Math.max(min, Math.min(max, num(q.value, min)));
       s.sliders.push({ name, min, max, step, value });
     }
+    // while a slider moves, the curves at the starting values stay, faint: what changed is seen
+    if (kind !== 'data' && kind !== 'dist') s.ghost = r.ghost !== false;
     if (kind === 'dist') {
       // a distribution's sliders are its parameters (and n), whatever else the file says
       const F = FAM[s.dist.family];
@@ -392,50 +450,207 @@ export function graphKit() {
 
   // The formulas of a graph, read: [{ text, tree }] and the names they use. Throws the first
   // mistake with where it is ({ field, at }).
+  // An equation F = G, read as the tree of F − G (no sign: F = 0). Its sides' mistakes are said
+  // where they are in the whole line.
+  function parseEq(text, declared) {
+    const t = String(text);
+    let d = 0, k = -1;
+    for (let i = 0; i < t.length; i++) {
+      const c = t[i];
+      if (c === '(' || c === '{' || c === '[') d++;
+      else if (c === ')' || c === '}' || c === ']') d--;
+      else if (c === '=' && d === 0 && !'<>!'.includes(t[i - 1] || '') && t[i + 1] !== '=') { if (k >= 0) throw err('An equation has one = sign', i); k = i; }
+    }
+    if (k < 0) return parse(t, declared);
+    const side = (a, b) => { try { return parse(t.slice(a, b), declared); } catch (e) { e.at = (e.at || 0) + a; throw e; } };
+    if (!t.slice(0, k).trim()) throw err('Nothing before the = sign', 0);
+    if (!t.slice(k + 1).trim()) throw err('Nothing after the = sign', k + 1);
+    return ['-', side(0, k), side(k + 1, t.length)];
+  }
+  // What each kind's formulas are read in, and against which variables:
+  // [{ text, field, vars, eq, shade }]
+  function sources(s) {
+    const out = [];
+    if (s.kind === 'function') s.f.forEach((f, k) => out.push({ text: f, field: 'f' + k, vars: s.vars }));
+    if (s.kind === 'curve') {
+      if (s.curve.mode === 'polar') out.push({ text: s.curve.r, field: 'r', vars: ['θ', 't'] });
+      else { out.push({ text: s.curve.x, field: 'cx', vars: ['t'] }); out.push({ text: s.curve.y, field: 'cy', vars: ['t'] }); }
+    }
+    if (s.kind === 'implicit') s.eq.forEach((f, k) => out.push({ text: f, field: 'e' + k, vars: s.vars, eq: true }));
+    if (s.kind === 'phase') { out.push({ text: s.phase.dx, field: 'dx', vars: s.vars }); out.push({ text: s.phase.dy, field: 'dy', vars: s.vars }); }
+    if (s.kind === 'data' && s.data.model.trim()) out.push({ text: s.data.model, field: 'model', vars: ['x'] });
+    if (s.kind === 'function') s.shade.forEach((q, k) => { for (const e of ['from', 'to']) if (!/^(min|max|cross)$/.test(q[e])) out.push({ text: q[e], field: 'shade' + k + e, vars: [], shade: true }); });
+    return out;
+  }
   function formulas(s) {
     const declared = s.sliders.map((q) => q.name);
     const list = [];
-    const read = (text, field, vars) => {
+    for (const F of sources(s)) {
       let tree;
-      try { tree = parse(text, declared); } catch (e) { e.field = field; throw e; }
-      for (const n of names(tree)) if (!vars.includes(n) && !declared.includes(n)) { const e = err('No slider is called ' + n + ': add one, or use ' + vars.join(' or '), 0); e.field = field; e.name = n; throw e; }
-      list.push({ text, field, tree });
-    };
-    if (s.kind === 'function') s.f.forEach((f, k) => read(f, 'f' + k, ['x']));
-    if (s.kind === 'curve') {
-      if (s.curve.mode === 'polar') read(s.curve.r, 'r', ['θ', 't']);
-      else { read(s.curve.x, 'cx', ['t']); read(s.curve.y, 'cy', ['t']); }
+      try { tree = F.eq ? parseEq(F.text, declared) : parse(F.text, declared); } catch (e) { e.field = F.field; throw e; }
+      for (const n of names(tree)) if (!F.vars.includes(n) && !declared.includes(n)) { const e = err('No slider is called ' + n + (F.vars.length ? ': add one, or use ' + F.vars.join(' or ') : ''), 0); e.field = F.field; e.name = n; throw e; }
+      list.push({ text: F.text, field: F.field, tree, shade: !!F.shade });
     }
-    if (s.kind === 'data' && s.data.model.trim()) read(s.data.model, 'model', ['x']);
     return list;
   }
   // The names the formulas use that no slider has: the sliders to offer
   function unknownNames(s) {
     const declared = new Set(s.sliders.map((q) => q.name)), out = [];
-    const take = (text, vars) => { try { for (const n of names(parse(text, [...declared]))) if (!vars.includes(n) && !declared.has(n) && !out.includes(n)) out.push(n); } catch (e) { /* said elsewhere */ } };
-    if (s.kind === 'function') for (const f of s.f) take(f, ['x']);
-    if (s.kind === 'curve') { if (s.curve.mode === 'polar') take(s.curve.r, ['θ', 't']); else { take(s.curve.x, ['t']); take(s.curve.y, ['t']); } }
-    if (s.kind === 'data' && s.data.model.trim()) take(s.data.model, ['x']);
+    for (const F of sources(s)) {
+      try { for (const n of names(F.eq ? parseEq(F.text, [...declared]) : parse(F.text, [...declared]))) if (!F.vars.includes(n) && !declared.has(n) && !out.includes(n)) out.push(n); } catch (e) { /* said elsewhere */ }
+    }
     return out;
   }
   const defaults = (s) => Object.fromEntries(s.sliders.map((q) => [q.name, q.value]));
 
+  // ---- a formula written out again: as a reader types it, or as LaTeX ---------------------------
+  // show(tree, tex): the text parse reads back to the same tree's values (test/graphs.test.mjs),
+  // with the brackets it needs and no more; tex: LaTeX for the PDF's legend and the web page
+  const GREEK_TEX = Object.fromEntries(Object.entries(GREEK).filter(([k]) => !/^var/.test(k)).map(([k, v]) => [v, '\\' + k]));
+  const TEXFN = { sin: 1, cos: 1, tan: 1, sec: 1, csc: 1, cot: 1, arcsin: 1, arccos: 1, arctan: 1, sinh: 1, cosh: 1, tanh: 1, exp: 1, ln: 1, log: 1, lg: 1, min: 1, max: 1 };
+  function nameTex(n) {
+    const m = /^([^_]+)(?:_(.+))?$/.exec(n);
+    const base = [...m[1]].length === 1 ? (GREEK_TEX[m[1]] || m[1]) : '\\mathit{' + m[1].replace(/[α-ωΑ-Ω]/g, (c) => GREEK_TEX[c] || c) + '}';
+    return m[2] ? base + '_{' + m[2] + '}' : base;
+  }
+  function numText(v, tex) {
+    let t = String(v);
+    if (/e/.test(t)) { const [a, b] = t.split('e'); t = tex ? (a === '1' ? '' : a + '\\cdot ') + '10^{' + (+b) + '}' : a + 'e' + (+b); }
+    return t;
+  }
+  const PREC = { '<': 0, '>': 0, '<=': 0, '>=': 0, '+': 1, '-': 1, '*': 2, '/': 2, neg: 3, '^': 4 };
+  const prec = (t) => (t[0] in PREC ? PREC[t[0]] : 5);
+  function show(t, tex) {
+    const P = (x, min) => (prec(x) < min ? (tex ? '\\left(' + show(x, tex) + '\\right)' : '(' + show(x, tex) + ')') : show(x, tex));
+    switch (t[0]) {
+      case 'n': return numText(t[1], tex);
+      case 'v': return tex ? nameTex(t[1]) : t[1];
+      case 'neg': return '-' + P(t[1], 3);
+      case 'f': {
+        const [, n, a] = t;
+        if (tex) {
+          if (n === 'sqrt') return '\\sqrt{' + show(a[0], 1) + '}';
+          if (n === 'root') return '\\sqrt[' + show(a[1], 1) + ']{' + show(a[0], 1) + '}';
+          if (n === 'abs') return '\\lvert ' + show(a[0], 1) + '\\rvert';
+          if (n === 'frac') return '\\frac{' + show(a[0], 1) + '}{' + show(a[1], 1) + '}';
+          if (n === 'factorial') return P(a[0], 5) + '!';
+          return (TEXFN[n] ? '\\' + n : '\\operatorname{' + n + '}') + '\\left(' + a.map((x) => show(x, 1)).join(', ') + '\\right)';
+        }
+        if (n === 'factorial') return P(a[0], 5) + '!';
+        if (n === 'frac') return show(['/', a[0], a[1]], false);
+        return n + '(' + a.map((x) => show(x, false)).join(', ') + ')';
+      }
+    }
+    const [op, a, b] = t;
+    if (op === '+') return P(a, 1) + ' + ' + P(b, 2);
+    if (op === '-') return P(a, 1) + ' - ' + P(b, 2);
+    if (op === '/') return tex ? '\\frac{' + show(a, 1) + '}{' + show(b, 1) + '}' : P(a, 2) + '/' + P(b, 4);
+    if (op === '^') {
+      const base = a[0] === 'f' && !tex ? '(' + show(a, false) + ')' : P(a, 5);
+      if (tex) return base + '^{' + show(b, 1) + '}';
+      return base + '^' + (prec(b) >= 5 && b[0] !== 'f' ? show(b, false) : '(' + show(b, false) + ')');
+    }
+    if (op === '*') {
+      // a product as written: 2x, s k^α, (n + δ) k; a number after anything gets its sign
+      const L = P(a, 2), R = P(b, 3);
+      if (b[0] === 'n' || (b[0] === 'neg')) return L + (tex ? ' \\cdot ' : '·') + R;
+      if (a[0] === 'n' && b[0] !== 'f') return L + (tex ? ' ' : '') + R;
+      return L + ' ' + R;
+    }
+    return P(a, 1) + ' ' + (tex ? { '<': '<', '>': '>', '<=': '\\le', '>=': '\\ge' }[op] : op) + ' ' + P(b, 1);
+  }
+  // a formula's text as LaTeX (the text itself where it does not read)
+  const texOf = (text, declared) => { try { return show(parse(text, declared), true); } catch (e) { return null; } };
+  const eqTexOf = (text, declared) => { try { const t = parseEq(text, declared); return t[0] === '-' && /=/.test(text) ? show(t[1], true) + ' = ' + show(t[2], true) : show(t, true) + ' = 0'; } catch (e) { return null; } };
+
   // ---- what is drawn --------------------------------------------------------------------------
-  // series: [{ kind: 'line' | 'points' | 'bars' | 'area', pts: [[x, y]...] (null breaks a line),
-  // label, slot }], at the slider values vals
+  // series: [{ kind: 'line' | 'points' | 'bars' | 'area' | 'segs' | 'fill' | 'mark' | 'arrows' |
+  // 'start', pts: [[x, y]...] (null breaks a line), lines (segs: polylines), label, tex, slot }],
+  // at the slider values vals
+  const memo = new WeakMap();
   function compute(s, vals, N = 600) {
-    const slots = { x: 0, t: 0, θ: 0 };
-    s.sliders.forEach((q, k) => { slots[q.name] = k + 1; });
-    const env = [0, ...s.sliders.map((q) => (q.name in vals ? vals[q.name] : q.value))];
+    const vars = s.kind === 'curve' ? ['t', 'θ'] : s.vars || ['x'];
+    const slots = {};
+    vars.forEach((v, k) => { slots[v] = s.kind === 'curve' ? 0 : k; });
+    const nv = s.kind === 'curve' ? 1 : vars.length;
+    s.sliders.forEach((q, k) => { slots[q.name] = k + nv; });
+    const env = [...new Array(nv).fill(0), ...s.sliders.map((q) => (q.name in vals ? vals[q.name] : q.value))];
     const out = [];
+    const declared = s.sliders.map((q) => q.name);
     const fns = formulas(s).map((f) => ({ ...f, fn: compile(f.tree, slots) }));
     const at = (fn, v) => { env[0] = v; const y = fn(env); return Number.isFinite(y) ? y : NaN; };
+    const at2 = (fn, x, y) => { env[0] = x; env[1] = y; const z = fn(env); return Number.isFinite(z) ? z : NaN; };
+    const vlab = (v) => (s.kind === 'function' ? s.y.label || 'y' : v);
     if (s.kind === 'function') {
-      fns.forEach((f, k) => {
-        const pts = [];
-        for (let i = 0; i <= N; i++) { const x = s.x.min + (s.x.max - s.x.min) * i / N; pts.push([x, at(f.fn, x)]); }
-        out.push({ kind: 'line', pts, label: 'y = ' + f.text.trim(), slot: k });
+      const curves = fns.filter((f) => !f.shade);
+      const xs = [];
+      for (let i = 0; i <= N; i++) xs.push(s.x.min + (s.x.max - s.x.min) * i / N);
+      curves.forEach((f, k) => {
+        const pts = xs.map((x) => [x, at(f.fn, x)]);
+        const lhs = vlab();
+        out.push({ kind: 'line', pts, label: lhs + ' = ' + f.text.trim(), tex: (texOf(lhs, []) || nameTex('y')) + ' = ' + (texOf(f.text, declared) || ''), slot: k });
       });
+      // where curves a and b cross, left to right: bisection from a change of sign on the samples
+      // (not at the ends of the range, where a curve through the origin meets another at 0)
+      const crossings = (a, b) => {
+        const fa = curves[a].fn, fb = curves[b].fn, h = (x) => at(fa, x) - at(fb, x), roots = [];
+        let px = xs[0], ph = h(px);
+        for (let i = 1; i <= N && roots.length < 8; i++) {
+          const x = xs[i], v = h(x);
+          if (Number.isFinite(ph) && Number.isFinite(v) && i > 1 && (ph === 0 ? false : v === 0 ? i < N : (ph < 0) !== (v < 0))) {
+            let lo = px, hi = x, hl = ph;
+            for (let k = 0; k < 50; k++) { const m = (lo + hi) / 2, hm = h(m); if (!Number.isFinite(hm)) break; if ((hm < 0) === (hl < 0) && hm !== 0) { lo = m; hl = hm; } else hi = m; }
+            const r = (lo + hi) / 2, y = at(fa, r);
+            // (a sign that changes through a pole is no crossing: tan x against 0)
+            if (Number.isFinite(y) && Math.abs(h(r)) < 1e-6 * (1 + Math.abs(y))) roots.push([r, y]);
+          }
+          px = x; ph = v;
+        }
+        return roots;
+      };
+      for (const [k, q] of s.shade.entries()) {
+        const fa = curves[q.a] && curves[q.a].fn;
+        if (!fa) continue;
+        const cr = q.w != null && curves[q.w] ? crossings(q.a, q.w)[0] : null;
+        const end = (e, d) => {
+          if (e === 'min') return s.x.min;
+          if (e === 'max') return s.x.max;
+          if (e === 'cross') return cr ? cr[0] : NaN;
+          const f = fns.find((g) => g.field === 'shade' + k + d);
+          return f ? at(f.fn, 0) : NaN;
+        };
+        let a = end(q.from, 'from'), b = end(q.to, 'to');
+        if (!Number.isFinite(a) || !Number.isFinite(b) || a === b) continue;
+        if (a > b) [a, b] = [b, a];
+        a = Math.max(a, s.x.min); b = Math.min(b, s.x.max);
+        if (!(b > a)) continue;
+        const lower = q.b === 'axis' ? () => 0 : q.b === 'cross' ? (cr ? () => cr[1] : null) : (x) => at(curves[q.b].fn, x);
+        if (!lower) continue;
+        const top = [], bot = [];
+        let area = 0, prev = null;
+        for (let i = 0; i <= 200; i++) {
+          const x = a + (b - a) * i / 200, u = at(fa, x), l = lower(x);
+          if (!Number.isFinite(u) || !Number.isFinite(l)) continue;
+          top.push([x, u]); bot.push([x, l]);
+          if (prev) area += (x - prev[0]) * ((u - l) + prev[1]) / 2;
+          prev = [x, u - l];
+        }
+        if (top.length < 2) continue;
+        const name = q.label || 'area';
+        out.push({ kind: 'fill', pts: top.concat(bot.reverse()), label: name + ' = ' + fmt(Math.abs(area), 3), slot: q.a, area: Math.abs(area), shadeOf: k });
+      }
+      if (s.cross && curves.length > 1) {
+        const pairs = s.cross === true ? curves.flatMap((_, i) => curves.map((__, j) => [i, j]).filter(([a, b]) => a < b)) : s.cross;
+        const seen = [];
+        for (const [a, b] of pairs) {
+          if (!curves[a] || !curves[b]) continue;
+          for (const p of crossings(a, b)) {
+            if (seen.length >= 8 || seen.some((q) => Math.abs(q[0] - p[0]) < 1e-9 * (1 + Math.abs(p[0])) && Math.abs(q[1] - p[1]) < 1e-9 * (1 + Math.abs(p[1])))) continue;
+            seen.push(p);
+            out.push({ kind: 'mark', pts: [p], label: '(' + fmt(p[0], 3) + ', ' + fmt(p[1], 3) + ')', slot: 0 });
+          }
+        }
+      }
     } else if (s.kind === 'curve') {
       const [t0, t1] = s.curve.t, pts = [], M = N * 2;
       for (let i = 0; i <= M; i++) {
@@ -443,7 +658,42 @@ export function graphKit() {
         if (s.curve.mode === 'polar') { const r = at(fns[0].fn, t); pts.push([r * Math.cos(t), r * Math.sin(t)]); }
         else pts.push([at(fns[0].fn, t), at(fns[1].fn, t)]);
       }
-      out.push({ kind: 'line', pts, label: s.curve.mode === 'polar' ? 'r = ' + s.curve.r.trim() : '(' + s.curve.x.trim() + ', ' + s.curve.y.trim() + ')', slot: 0, curve: true });
+      out.push({ kind: 'line', pts, label: s.curve.mode === 'polar' ? 'r = ' + s.curve.r.trim() : '(' + s.curve.x.trim() + ', ' + s.curve.y.trim() + ')',
+        tex: s.curve.mode === 'polar' ? 'r = ' + (texOf(s.curve.r, declared) || '') : '\\left(' + (texOf(s.curve.x, declared) || '') + ',\\ ' + (texOf(s.curve.y, declared) || '') + '\\right)', slot: 0, curve: true });
+    } else if (s.kind === 'implicit') {
+      fns.forEach((f, k) => out.push({ kind: 'segs', lines: contour((x, y) => at2(f.fn, x, y), s), label: f.text.trim(), tex: eqTexOf(f.text, declared), slot: k }));
+    } else if (s.kind === 'phase') {
+      const [fx, fy] = fns.map((f) => f.fn);
+      const dx = (x, y) => at2(fx, x, y), dy = (x, y) => at2(fy, x, y);
+      // the field and the nullclines move with the sliders only: a dragged start point redraws the
+      // path alone
+      const key = env.slice(2).join(',');
+      let m = memo.get(s);
+      if (!m || m.key !== key) {
+        m = { key, parts: [] };
+        if (s.phase.field) {
+          const nx = 19, ny = Math.max(6, Math.round(nx * s.aspect)), pts = [];
+          for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+            const x = s.x.min + (s.x.max - s.x.min) * (i + 0.5) / nx, y = s.y.min + (s.y.max - s.y.min) * (j + 0.5) / ny;
+            const u = dx(x, y), v = dy(x, y);
+            if (Number.isFinite(u) && Number.isFinite(v)) pts.push([x, y, u, v]);
+          }
+          m.parts.push({ kind: 'arrows', pts, slot: 0 });
+        }
+        if (s.phase.nullclines) {
+          const [a, b] = s.vars;
+          m.parts.push({ kind: 'segs', lines: contour(dx, s), label: dotName(a) + ' = 0', tex: '\\dot{' + nameTex(a) + '} = 0', slot: 0 });
+          m.parts.push({ kind: 'segs', lines: contour(dy, s), label: dotName(b) + ' = 0', tex: '\\dot{' + nameTex(b) + '} = 0', slot: 1 });
+        }
+        memo.set(s, m);
+      }
+      out.push(...m.parts);
+      const st = vals.__start || s.phase.start;
+      if (st) {
+        const pts = trajectory(dx, dy, st, s);
+        out.push({ kind: 'line', pts, label: 'path from (' + fmt(st[0], 3) + ', ' + fmt(st[1], 3) + ')', slot: 2, curve: true, traj: true });
+        out.push({ kind: 'start', pts: [st], slot: 2 });
+      }
     } else if (s.kind === 'data') {
       const P = s.data.points;
       out.push({ kind: 'points', pts: P, label: 'data', slot: 0 });
@@ -459,7 +709,7 @@ export function graphKit() {
         const [a, b] = P.length ? extent(P.map((p) => p[0])) : [0, 1];
         const pts = [];
         for (let i = 0; i <= N; i++) { const x = a + (b - a) * i / N; pts.push([x, at(fns[0].fn, x)]); }
-        out.push({ kind: 'line', pts, label: 'y = ' + fns[0].text.trim(), slot: 2, dash: true });
+        out.push({ kind: 'line', pts, label: 'y = ' + fns[0].text.trim(), tex: 'y = ' + (texOf(fns[0].text, declared) || ''), slot: 2, dash: true });
       }
     } else {
       const F = FAM[s.dist.family], P = {};
@@ -489,6 +739,92 @@ export function graphKit() {
       }
     }
     return { series: out };
+  }
+
+  // a variable with a dot over it, as a time derivative is written: k̇
+  const dotName = (v) => { const m = /^([^_]+)(_.*)?$/.exec(v); return m[1] + '̇' + (m[2] || ''); };
+
+  // Where F(x, y) = 0 on the plot: marching squares on a grid (its cells about square on the
+  // page, 120 across at most), each crossing of a cell's edge at the linear guess between its
+  // corners, the ambiguous saddle cells settled by the value at their middle; the pieces joined
+  // into polylines. Bounded: 120 by 120 cells, 20000 pieces.
+  function contour(F, s) {
+    const nx = 120, ny = Math.max(10, Math.min(120, Math.round(nx * s.aspect)));
+    const x0 = s.x.min, y0 = s.y.min, hx = (s.x.max - s.x.min) / nx, hy = (s.y.max - s.y.min) / ny;
+    const V = new Float64Array((nx + 1) * (ny + 1));
+    for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) V[j * (nx + 1) + i] = F(x0 + i * hx, y0 + j * hy);
+    const v = (i, j) => V[j * (nx + 1) + i];
+    // an edge's point, the same from either cell it borders (the lower corner first): the pieces meet
+    const edge = (i, j, horiz) => {
+      const a = v(i, j), b = horiz ? v(i + 1, j) : v(i, j + 1), t = a / (a - b);
+      return horiz ? [x0 + (i + t) * hx, y0 + j * hy] : [x0 + i * hx, y0 + (j + t) * hy];
+    };
+    const segs = [];
+    for (let j = 0; j < ny && segs.length < 20000; j++) for (let i = 0; i < nx; i++) {
+      const a = v(i, j), b = v(i + 1, j), c = v(i + 1, j + 1), d = v(i, j + 1);
+      if (!(Number.isFinite(a) && Number.isFinite(b) && Number.isFinite(c) && Number.isFinite(d))) continue;
+      const k = (a > 0 ? 1 : 0) | (b > 0 ? 2 : 0) | (c > 0 ? 4 : 0) | (d > 0 ? 8 : 0);
+      if (k === 0 || k === 15) continue;
+      const S = () => edge(i, j, true), E = () => edge(i + 1, j, false), Nn = () => edge(i, j + 1, true), W = () => edge(i, j, false);
+      const add = (p, q) => segs.push([p, q]);
+      switch (k) {
+        case 1: case 14: add(W(), S()); break;
+        case 2: case 13: add(S(), E()); break;
+        case 3: case 12: add(W(), E()); break;
+        case 4: case 11: add(E(), Nn()); break;
+        case 6: case 9: add(S(), Nn()); break;
+        case 7: case 8: add(W(), Nn()); break;
+        case 5: case 10: {
+          const mid = (a + b + c + d) / 4 > 0;
+          if ((k === 5) === mid) { add(W(), Nn()); add(S(), E()); } else { add(W(), S()); add(E(), Nn()); }
+          break;
+        }
+      }
+    }
+    // joined end to end where they meet
+    const key = (p) => p[0] + ',' + p[1], ends = new Map();
+    segs.forEach((sg, n) => { for (const p of sg) { const k = key(p); if (!ends.has(k)) ends.set(k, []); ends.get(k).push(n); } });
+    const used = new Uint8Array(segs.length), lines = [];
+    const next = (p, from) => { const l = ends.get(key(p)) || []; return l.find((n) => n !== from && !used[n]); };
+    for (let n = 0; n < segs.length; n++) {
+      if (used[n]) continue;
+      used[n] = 1;
+      const line = [segs[n][0], segs[n][1]];
+      for (const back of [false, true]) {
+        let m = n;
+        for (;;) {
+          const p = back ? line[0] : line[line.length - 1], q = next(p, m);
+          if (q === undefined) break;
+          used[q] = 1; m = q;
+          const o = key(segs[q][0]) === key(p) ? segs[q][1] : segs[q][0];
+          if (back) line.unshift(o); else line.push(o);
+        }
+      }
+      lines.push(line);
+    }
+    return lines;
+  }
+
+  // A path of dx/dt, dy/dt from a point: classical Runge–Kutta, each step about 0.4 % of the plot
+  // (the time step from the speed there), until it leaves the plot by a plot's width, stops at a
+  // rest point, or has taken 3000 steps
+  function trajectory(dx, dy, st, s) {
+    const W = s.x.max - s.x.min, H = s.y.max - s.y.min, pts = [[st[0], st[1]]];
+    let x = st[0], y = st[1];
+    const f = (x, y) => [dx(x, y), dy(x, y)];
+    for (let n = 0; n < 3000; n++) {
+      const [u, v] = f(x, y);
+      const sp = Math.hypot(u / W, v / H);
+      if (!Number.isFinite(sp) || sp < 1e-9) break;
+      const h = 0.004 / sp;
+      const k1 = [u, v], k2 = f(x + h / 2 * k1[0], y + h / 2 * k1[1]), k3 = f(x + h / 2 * k2[0], y + h / 2 * k2[1]), k4 = f(x + h * k3[0], y + h * k3[1]);
+      const nx = x + h / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]), ny = y + h / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]);
+      if (!Number.isFinite(nx) || !Number.isFinite(ny)) break;
+      x = nx; y = ny;
+      pts.push([x, y]);
+      if (x < s.x.min - W || x > s.x.max + W || y < s.y.min - H || y > s.y.max + H) break;
+    }
+    return pts;
   }
 
   function extent(a) {
@@ -573,9 +909,11 @@ export function graphKit() {
   // The axes: their ranges, from the description where it gives them, else from what is drawn
   // at the sliders' starting values (kept while they move, so a slider's effect is seen)
   function ranges(s) {
+    // (an implicit curve's and a phase portrait's plot is the region their axes give)
+    if (s.kind === 'implicit' || s.kind === 'phase') return { X: [s.x.min, s.x.max], Y: [s.y.min, s.y.max], equal: false };
     const { series } = compute(s, defaults(s));
     const xs = [], ys = [];
-    for (const S of series) for (const p of S.pts) if (p && Number.isFinite(p[0]) && Number.isFinite(p[1])) { xs.push(p[0]); ys.push(p[1]); }
+    for (const S of series) if (S.pts && S.kind !== 'fill') for (const p of S.pts) if (p && Number.isFinite(p[0]) && Number.isFinite(p[1])) { xs.push(p[0]); ys.push(p[1]); }
     const pad = (lo, hi, f = 0.06) => { if (!(hi > lo)) { const c = Number.isFinite(lo) ? lo : 0; return [c - 1, c + 1]; } const d = (hi - lo) * f; return [lo - d, hi + d]; };
     // most of the values, where a few run off to infinity (tan x near its poles)
     const robust = (a) => {
@@ -615,19 +953,24 @@ export function graphKit() {
   // ---- drawing ----------------------------------------------------------------------------------
   // The reference palette's categorical slots in their fixed order (on white paper), ink and
   // recessive grid: the page is paper in dark mode too, so one set
-  const SLOT = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100'];
+  const SLOT = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#8a5cc7', '#d23f6e'];
   const INK = '#0b0b0b', INK2 = '#52514e', GRID = '#e8e7e3', ZERO = '#b9b8b3';
   const FONT = 'Georgia, "Times New Roman", Times, serif';
 
-  // paint(g, s, data, R, vals, W, H, hover): one picture on a 2D context of W by H CSS pixels.
-  // data from compute, R from ranges; hover { x, y } in pixels for the live figure's readout
-  function paint(g, s, data, R, vals, W, H, hover) {
+  // paint(g, s, data, R, vals, W, H, hover, ghost): one picture on a 2D context of W by H CSS
+  // pixels. data from compute, R from ranges; hover { x, y } in pixels for the live figure's
+  // readout; ghost, the series at the starting values, drawn faint under the rest while a slider
+  // is away from its start (comparative statics). Every length of the layout comes from tw, not
+  // from the font: the PDF's picture (src/graph.js, pgfContext) is laid out by this same code with
+  // TeX's fonts, and its lines fall where the live figure's do. g.rkTex, set before a text, is its
+  // LaTeX for the PDF; a canvas ignores it.
+  function paint(g, s, data, R, vals, W, H, hover, ghost) {
     g.clearRect(0, 0, W, H);
     g.font = '12px ' + FONT;
     let [x0, x1] = R.X, [y0, y1] = R.Y;
     const yt0 = ticks(y0, y1, Math.max(3, Math.round(H / 55)));
     let L = 14;
-    for (const v of yt0.out) L = Math.max(L, g.measureText(tickText(v, yt0.step)).width + 12);
+    for (const v of yt0.out) L = Math.max(L, tw(tickText(v, yt0.step), 12) + 12);
     if (s.y.label) L += 16;
     const Rm = 14, T = 12, B = 28 + (s.x.label ? 16 : 0);
     const pw = Math.max(10, W - L - Rm), ph = Math.max(10, H - T - B);
@@ -661,7 +1004,7 @@ export function graphKit() {
     g.textAlign = 'center'; g.textBaseline = 'top';
     let last = -Infinity;
     for (const v of xt.out) {
-      const p = X(v), t = tickText(v, xt.step), w = g.measureText(t).width;
+      const p = X(v), t = tickText(v, xt.step), w = tw(t, 12);
       if (p - w / 2 < last + 6) continue;
       g.beginPath(); g.moveTo(Math.round(p) + 0.5, T + ph); g.lineTo(Math.round(p) + 0.5, T + ph + 4); g.stroke();
       g.fillText(t, p, T + ph + 6);
@@ -671,14 +1014,47 @@ export function graphKit() {
     for (const v of yt.out) { const p = Y(v); g.beginPath(); g.moveTo(L - 4, Math.round(p) + 0.5); g.lineTo(L, Math.round(p) + 0.5); g.stroke(); g.fillText(tickText(v, yt.step), L - 6, p); }
     g.font = 'italic 13px ' + FONT;
     g.fillStyle = INK;
-    if (s.x.label) { g.textAlign = 'center'; g.textBaseline = 'bottom'; g.fillText(s.x.label, L + pw / 2, H - 2); }
-    if (s.y.label) { g.save(); g.translate(12, T + ph / 2); g.rotate(-Math.PI / 2); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(s.y.label, 0, 0); g.restore(); }
+    if (s.x.label) { g.textAlign = 'center'; g.textBaseline = 'bottom'; g.rkTex = labelTex(s.x.label); g.fillText(s.x.label, L + pw / 2, H - 2); }
+    if (s.y.label) { g.save(); g.translate(12, T + ph / 2); g.rotate(-Math.PI / 2); g.textAlign = 'center'; g.textBaseline = 'middle'; g.rkTex = labelTex(s.y.label); g.fillText(s.y.label, 0, 0); g.restore(); }
+    g.rkTex = null;
     // the data, clipped to the plot
     g.save();
     g.beginPath(); g.rect(L, T - 1, pw + 1, ph + 2); g.clip();
     const yspan = y1 - y0;
+    const line = (pts, curve) => {
+      // a line, cut where it is undefined or jumps across the plot (tan x at its poles)
+      g.beginPath();
+      let pen = false, prev = null;
+      for (const p of pts) {
+        if (!p || !Number.isFinite(p[0]) || !Number.isFinite(p[1])) { pen = false; prev = null; continue; }
+        const jump = !curve && prev && Math.abs(p[1] - prev[1]) > 3 * yspan && Math.sign(p[1] - (y0 + y1) / 2) !== Math.sign(prev[1] - (y0 + y1) / 2);
+        const px = clampPx(X(p[0])), py = clampPx(Y(p[1]));
+        if (pen && !jump) g.lineTo(px, py); else g.moveTo(px, py);
+        pen = true; prev = p;
+      }
+    };
+    const polylines = (lines) => { g.beginPath(); for (const l of lines) l.forEach((p, k) => (k ? g.lineTo(X(p[0]), Y(p[1])) : g.moveTo(X(p[0]), Y(p[1])))); };
+    // the starting values' curves, faint and thin, under everything
+    if (ghost) for (const S of ghost.series) {
+      if (S.kind !== 'line' && S.kind !== 'segs' && S.kind !== 'area' && S.kind !== 'mark') continue;
+      if (S.traj) continue;
+      g.globalAlpha = 0.32;
+      g.strokeStyle = SLOT[S.slot % SLOT.length]; g.lineWidth = 1.5; g.setLineDash([]);
+      if (S.kind === 'mark') { const [x, y] = S.pts[0]; g.beginPath(); g.arc(X(x), Y(y), 3.5, 0, 2 * Math.PI); g.fillStyle = INK2; g.fill(); }
+      else { if (S.kind === 'segs') polylines(S.lines); else line(S.pts, S.curve); g.stroke(); }
+      g.globalAlpha = 1;
+    }
+    // shaded areas first, under the curves that bound them
+    for (const S of data.series) {
+      if (S.kind !== 'fill') continue;
+      g.beginPath();
+      S.pts.forEach((p, k) => (k ? g.lineTo(X(p[0]), clampPx(Y(p[1]))) : g.moveTo(X(p[0]), clampPx(Y(p[1])))));
+      g.closePath();
+      g.fillStyle = SLOT[S.slot % SLOT.length]; g.globalAlpha = 0.2; g.fill(); g.globalAlpha = 1;
+    }
     for (const S of data.series) {
       const col = SLOT[S.slot % SLOT.length];
+      if (S.kind === 'fill') continue;
       if (S.kind === 'bars') {
         const base = Y(Math.max(0, y0));
         for (const [x, y] of S.pts) {
@@ -698,37 +1074,72 @@ export function graphKit() {
         }
         continue;
       }
-      // a line, cut where it is undefined or jumps across the plot (tan x at its poles)
-      g.beginPath();
-      let pen = false, prev = null;
-      for (const p of S.pts) {
-        if (!p || !Number.isFinite(p[0]) || !Number.isFinite(p[1])) { pen = false; prev = null; continue; }
-        const jump = !S.curve && prev && Math.abs(p[1] - prev[1]) > 3 * yspan && Math.sign(p[1] - (y0 + y1) / 2) !== Math.sign(prev[1] - (y0 + y1) / 2);
-        const px = clampPx(X(p[0])), py = clampPx(Y(p[1]));
-        if (pen && !jump) g.lineTo(px, py); else g.moveTo(px, py);
-        pen = true; prev = p;
+      if (S.kind === 'arrows') {
+        // the field's direction at each point of a grid, in the plot's own scale, all one length
+        const len = Math.min(pw, ph) / 26;
+        g.strokeStyle = '#9b9a95'; g.fillStyle = '#9b9a95'; g.lineWidth = 1; g.setLineDash([]);
+        for (const [x, y, u, v] of S.pts) {
+          const a = u / (x1 - x0) * pw, b = -v / (y1 - y0) * ph, n = Math.hypot(a, b);
+          if (!(n > 0)) continue;
+          const ux = a / n * len, uy = b / n * len, cx = X(x), cy = Y(y);
+          g.beginPath(); g.moveTo(cx - ux / 2, cy - uy / 2); g.lineTo(cx + ux / 2, cy + uy / 2); g.stroke();
+          g.beginPath(); g.moveTo(cx + ux / 2, cy + uy / 2); g.lineTo(cx + ux / 2 - ux * 0.38 - uy * 0.22, cy + uy / 2 - uy * 0.38 + ux * 0.22); g.lineTo(cx + ux / 2 - ux * 0.38 + uy * 0.22, cy + uy / 2 - uy * 0.38 - ux * 0.22); g.closePath(); g.fill();
+        }
+        continue;
       }
+      if (S.kind === 'mark') {
+        // an equilibrium: dashed to both axes, a dot, its coordinates beside it
+        const [x, y] = S.pts[0], px = X(x), py = Y(y);
+        g.strokeStyle = INK2; g.lineWidth = 1; g.setLineDash([4, 3]);
+        g.beginPath(); g.moveTo(px, py); g.lineTo(px, T + ph); g.moveTo(px, py); g.lineTo(L, py); g.stroke();
+        g.setLineDash([]);
+        g.beginPath(); g.arc(px, py, 4, 0, 2 * Math.PI); g.fillStyle = INK; g.fill();
+        g.font = '12px ' + FONT; g.textAlign = px > L + pw - 90 ? 'right' : 'left'; g.textBaseline = 'bottom';
+        g.fillStyle = INK; g.rkTex = labelTex(S.label);
+        g.fillText(S.label, px + (g.textAlign === 'right' ? -7 : 7), py - 5);
+        g.rkTex = null;
+        continue;
+      }
+      if (S.kind === 'start') {
+        // where the path starts: a ring the reader drags
+        const [x, y] = S.pts[0];
+        g.beginPath(); g.arc(X(x), Y(y), 6, 0, 2 * Math.PI);
+        g.fillStyle = '#ffffff'; g.fill(); g.strokeStyle = col; g.lineWidth = 2.5; g.setLineDash([]); g.stroke();
+        continue;
+      }
+      if (S.kind === 'segs') polylines(S.lines);
+      else line(S.pts, S.curve);
       if (S.kind === 'area') {
         // the density's area, faint, under its line
         g.save();
         g.lineTo(X(S.pts[S.pts.length - 1][0]), Y(0)); g.lineTo(X(S.pts[0][0]), Y(0)); g.closePath();
         g.fillStyle = 'rgba(42,120,214,0.14)'; g.fill();
         g.restore();
-        g.beginPath(); pen = false;
+        g.beginPath(); let pen = false;
         for (const p of S.pts) { if (!Number.isFinite(p[1])) { pen = false; continue; } const px = X(p[0]), py = clampPx(Y(p[1])); if (pen) g.lineTo(px, py); else g.moveTo(px, py); pen = true; }
       }
       g.setLineDash(S.dash ? [6, 4] : []);
       g.strokeStyle = col; g.lineWidth = 2; g.lineJoin = 'round'; g.lineCap = 'round';
       g.stroke();
       g.setLineDash([]);
+      if (S.traj && S.pts.length > 8) {
+        // which way time runs: an arrowhead a third of the way along
+        const k = Math.floor(S.pts.length / 3), a = S.pts[k], b = S.pts[Math.min(S.pts.length - 1, k + 3)];
+        const ax = X(a[0]), ay = Y(a[1]), dx = X(b[0]) - ax, dy = Y(b[1]) - ay, n = Math.hypot(dx, dy);
+        if (n > 0) {
+          const ux = dx / n * 9, uy = dy / n * 9;
+          g.beginPath(); g.moveTo(ax + ux, ay + uy); g.lineTo(ax - uy * 0.55, ay + ux * 0.55); g.lineTo(ax + uy * 0.55, ay - ux * 0.55); g.closePath();
+          g.fillStyle = col; g.fill();
+        }
+      }
     }
     g.restore();
     // the legend, top left inside the plot: each series' swatch and its formula, in ink
     g.font = '12px ' + FONT;
     g.textAlign = 'left'; g.textBaseline = 'middle';
-    const items = data.series.filter((S) => S.label && !(s.kind === 'data' && S.kind === 'points' && data.series.length === 1));
+    const items = data.series.filter((S) => S.label && !/^(mark|start|arrows)$/.test(S.kind) && !(s.kind === 'data' && S.kind === 'points' && data.series.length === 1));
     let ly = T + 12;
-    const lw = Math.min(pw - 24, Math.max(0, ...items.map((S) => g.measureText(S.label).width)) + 30);
+    const lw = Math.min(pw - 24, Math.max(0, ...items.map((S) => tw(S.label, 12))) + 30);
     if (items.length) {
       g.fillStyle = 'rgba(255,255,255,0.86)';
       g.fillRect(L + 6, T + 3, lw, items.length * 17 + 4);
@@ -738,27 +1149,57 @@ export function graphKit() {
       g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 2;
       if (S.kind === 'points') { g.beginPath(); g.arc(L + 19, ly, 3.5, 0, 2 * Math.PI); g.fill(); }
       else if (S.kind === 'bars') g.fillRect(L + 12, ly - 4, 14, 8);
+      else if (S.kind === 'fill') { g.globalAlpha = 0.35; g.fillRect(L + 12, ly - 5, 14, 10); g.globalAlpha = 1; }
       else { g.setLineDash(S.dash ? [4, 3] : []); g.beginPath(); g.moveTo(L + 11, ly); g.lineTo(L + 27, ly); g.stroke(); g.setLineDash([]); }
       g.fillStyle = INK;
-      g.fillText(clip(g, S.label, lw - 26), L + 32, ly);
+      const t = clip(S.label, lw - 26);
+      g.rkTex = t === S.label ? (S.tex ? '$' + S.tex + '$' : labelTex(S.label)) : null;
+      g.fillText(t, L + 32, ly);
+      g.rkTex = null;
       ly += 17;
     }
     // the sliders' values, top right: the picture says what it shows, in the PDF too
     if (s.sliders.length) {
-      const t = s.sliders.map((q) => q.name + ' = ' + fmtStep(q.name in vals ? vals[q.name] : q.value, q.step)).join(',  ');
-      g.textAlign = 'right'; g.fillStyle = INK2; g.font = 'italic 12px ' + FONT;
-      const w = g.measureText(t).width;
+      const parts = s.sliders.map((q) => [q.name, fmtStep(q.name in vals ? vals[q.name] : q.value, q.step)]);
+      const t = parts.map(([n, v]) => n + ' = ' + v).join(',  ');
+      g.textAlign = 'right'; g.font = 'italic 12px ' + FONT;
+      const w = tw(t, 12);
       g.fillStyle = 'rgba(255,255,255,0.86)'; g.fillRect(L + pw - w - 10, T + 3, w + 8, 17);
       g.fillStyle = INK2;
+      g.rkTex = parts.map(([n, v]) => '$' + nameTex(n) + ' = ' + v.replace('−', '-') + '$').join(',\\enspace ');
       g.fillText(t, L + pw - 6, T + 12);
+      g.rkTex = null;
     }
     // the live figure's readout under the pointer
-    if (hover && hover.x >= L && hover.x <= L + pw && hover.y >= T && hover.y <= T + ph) readout(g, s, data, { X, Y, x0, x1, L, T, pw, ph }, hover);
-    return { L, T, pw, ph };
+    if (hover && hover.x >= L && hover.x <= L + pw && hover.y >= T && hover.y <= T + ph) readout(g, s, data, { X, Y, x0, x1, y0, y1, L, T, pw, ph }, hover);
+    return { L, T, pw, ph, x0, x1, y0, y1 };
   }
-  function clip(g, t, w) {
-    if (g.measureText(t).width <= w) return t;
-    while (t.length > 1 && g.measureText(t + '…').width > w) t = t.slice(0, -1);
+  // A text's width in CSS pixels at px, as a serif face sets it (Georgia on the screen and
+  // Computer Modern in the PDF are within a few per cent of this): the layout's one measure
+  const CW = { '′': 0.25, ' ': 0.27, '.': 0.27, ',': 0.27, ':': 0.27, ';': 0.27, '(': 0.36, ')': 0.36, '-': 0.36, '−': 0.65, '=': 0.65, '+': 0.65, '<': 0.65, '>': 0.65, 'i': 0.3, 'l': 0.3, 'j': 0.3, 'f': 0.33, 't': 0.38, 'r': 0.4, 'm': 0.82, 'w': 0.75, 'M': 0.9, 'W': 1, '²': 0.35, '³': 0.35 };
+  function tw(t, px) {
+    let w = 0;
+    for (const c of String(t)) w += CW[c] !== undefined ? CW[c] : /[0-9]/.test(c) ? 0.55 : /[A-Z]/.test(c) ? 0.7 : /[̀-ͯ]/.test(c) ? 0 : 0.52;
+    return w * px;
+  }
+  // a label's LaTeX: a variable's name in math, Greek as Greek, a minus as a minus; words as words
+  function labelTex(t) {
+    const out = [];
+    const re = /([A-Za-zα-ωΑ-Ω])(\u0307?)(_[A-Za-z0-9]{1,8})?(?![A-Za-zα-ωΑ-Ω])|(−?\d+(?:\.\d+)?)|([A-Za-z]{2,})|([\s\S])/g;
+    const SYM = { '\\': '\\textbackslash{}', '{': '\\{', '}': '\\}', '$': '\\$', '&': '\\&', '#': '\\#', '%': '\\%', '_': '\\_', '^': '\\^{}', '~': '\\~{}', '−': '$-$', '²': '\\textsuperscript{2}', '³': '\\textsuperscript{3}', '·': '$\\cdot$', '…': '\\dots{}', '≤': '$\\le$', '≥': '$\\ge$', '×': '$\\times$', '′': "$'$" };
+    let m;
+    while ((m = re.exec(String(t)))) {
+      if (m[1]) { const n = nameTex(m[1] + (m[3] || '')), sub = /_\{.*$/.exec(n); out.push('$' + (m[2] ? '\\dot{' + n.replace(/_\{.*$/, '') + '}' + (sub ? sub[0] : '') : n) + '$'); }
+      else if (m[4]) out.push('$' + m[4].replace('−', '-') + '$');
+      else if (m[5]) out.push(m[5]);
+      else { const c = m[6]; out.push(SYM[c] || (GREEK_TEX[c] ? '$' + GREEK_TEX[c] + '$' : /[\x20-\x7e\u00a0-\u00ff]/.test(c) ? c : '?')); }
+    }
+    return out.join('').replace(/\$\$/g, '');
+  }
+
+  function clip(t, w) {
+    if (tw(t, 12) <= w) return t;
+    while (t.length > 1 && tw(t + '…', 12) > w) t = t.slice(0, -1);
     return t + '…';
   }
   function readout(g, s, data, A, hover) {
@@ -773,7 +1214,7 @@ export function graphKit() {
         for (let i = 1; i < S.pts.length; i++) if (Math.abs(S.pts[i][0] - xv) < Math.abs(S.pts[k][0] - xv)) k = i;
         const p = S.pts[k];
         if (p && Number.isFinite(p[1])) marks.push({ p, S });
-      } else {
+      } else if (S.kind === 'points' || S.kind === 'bars' || S.kind === 'mark') {
         for (const p of S.pts) {
           if (!p || !Number.isFinite(p[0]) || !Number.isFinite(p[1])) continue;
           const d = Math.hypot(X(p[0]) - hover.x, (S.kind === 'bars' ? hover.y : Y(p[1])) - hover.y);
@@ -787,6 +1228,8 @@ export function graphKit() {
     g.strokeStyle = 'rgba(82,81,78,0.5)'; g.lineWidth = 1;
     g.beginPath(); g.moveTo(Math.round(hover.x) + 0.5, T); g.lineTo(Math.round(hover.x) + 0.5, T + ph); g.stroke();
     const lines = [];
+    // (an implicit curve or a phase portrait: where the pointer is)
+    if (s.kind === 'implicit' || s.kind === 'phase') lines.push('(' + fmt(xv, 4) + ', ' + fmt(A.y0 + (T + ph - hover.y) / ph * (A.y1 - A.y0), 4) + ')');
     for (const m of marks.slice(0, 4)) {
       const col = SLOT[m.S.slot % SLOT.length];
       if (m.S.kind !== 'bars') { g.beginPath(); g.arc(X(m.p[0]), Y(m.p[1]), 4.5, 0, 2 * Math.PI); g.fillStyle = col; g.fill(); g.strokeStyle = '#ffffff'; g.lineWidth = 2; g.stroke(); }
@@ -831,10 +1274,14 @@ export function graphKit() {
     if (s.sliders.length) {
       // back to the values the PDF's picture shows
       const b = D.createElement('button'); b.type = 'button'; b.id = 'rk-reset'; b.textContent = 'Reset'; b.title = 'Back to the values the PDF shows';
-      b.addEventListener('click', () => { for (const [inp, out, q] of outs) { inp.value = String(q.value); out.textContent = fmtStep(q.value, q.step); vals[q.name] = q.value; } redraw(true); });
+      b.addEventListener('click', () => { for (const [inp, out, q] of outs) { inp.value = String(q.value); out.textContent = fmtStep(q.value, q.step); vals[q.name] = q.value; } delete vals.__start; redraw(true); });
       row.append(b);
     }
     cv.setAttribute('aria-label', s.title || 'Interactive graph');
+    // the curves at the starting values, once: drawn faint while a slider is away from its start
+    let base = null;
+    const away = () => s.ghost && s.sliders.some((q) => vals[q.name] !== q.value);
+    const ghostOf = () => { if (!away()) return null; if (!base) { try { base = compute(s, defaults(s)); } catch (e) { base = { series: [] }; } } return base; };
     let W = 0, H = 0, queued = 0;
     // (a slider's input events come faster than frames: one compute a frame)
     const soon = () => { if (!queued) queued = requestAnimationFrame(() => { queued = 0; redraw(true); }); };
@@ -843,19 +1290,53 @@ export function graphKit() {
       H = Math.round(W * s.aspect);
       const dpr = window.devicePixelRatio || 1;
       if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); cv.style.height = H + 'px'; }
+      const t0 = performance.now();
       if (again || !data) { try { data = compute(s, vals); say(''); } catch (e) { say(e.message); data = { series: [] }; } }
       const g = cv.getContext('2d');
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
-      paint(g, s, data, R, vals, W, H, hover);
+      geo = paint(g, s, data, R, vals, W, H, hover, ghostOf());
+      // (the time each frame took, for test/graphs.py's budget: 16 ms on a phone)
+      const T = self.rkTimes || (self.rkTimes = []);
+      if (T.length < 400) T.push(performance.now() - t0);
       post();
     }
+    let geo = null;
     function post() {
       // the page sizes this frame to what the graph needs
       try { parent.postMessage({ rikuy: 'height', px: Math.ceil(box.getBoundingClientRect().height) }, '*'); } catch (e) { /* no parent */ }
     }
     const point = (e) => { const r = cv.getBoundingClientRect(); return { x: (e.clientX - r.left) * W / r.width, y: (e.clientY - r.top) * H / r.height }; };
-    cv.addEventListener('pointermove', (e) => { if (e.pointerType === 'touch' && !e.buttons) return; hover = point(e); redraw(false); });
-    cv.addEventListener('pointerdown', (e) => { hover = point(e); redraw(false); });
+    // A phase portrait's path starts where the reader presses and drags (or moves it with the
+    // arrow keys, Shift for longer steps): the PDF prints it from the start the graph gives
+    const phase = s.kind === 'phase' && s.phase.start;
+    let drag = false;
+    const toData = (p) => (geo ? [geo.x0 + (p.x - geo.L) / geo.pw * (geo.x1 - geo.x0), geo.y0 + (geo.T + geo.ph - p.y) / geo.ph * (geo.y1 - geo.y0)] : null);
+    const inPlot = (p) => geo && p.x >= geo.L && p.x <= geo.L + geo.pw && p.y >= geo.T && p.y <= geo.T + geo.ph;
+    const startAt = (p) => { const d = toData(p); if (d) { vals.__start = d; soon(); } };
+    if (phase) {
+      cv.style.touchAction = 'none';
+      cv.tabIndex = 0;
+      cv.setAttribute('aria-label', (s.title || 'Phase portrait') + '. The arrow keys move where the path starts.');
+      cv.addEventListener('keydown', (e) => {
+        const k = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1] }[e.key];
+        if (!k) return;
+        e.preventDefault();
+        const st = vals.__start || s.phase.start, f = e.shiftKey ? 0.1 : 0.02;
+        vals.__start = [st[0] + k[0] * f * (s.x.max - s.x.min), st[1] + k[1] * f * (s.y.max - s.y.min)];
+        soon();
+      });
+    }
+    cv.addEventListener('pointermove', (e) => {
+      if (drag) { startAt(point(e)); return; }
+      if (e.pointerType === 'touch' && !e.buttons) return;
+      hover = point(e); redraw(false);
+    });
+    cv.addEventListener('pointerdown', (e) => {
+      const p = point(e);
+      if (phase && e.button === 0 && inPlot(p)) { drag = true; hover = null; try { cv.setPointerCapture(e.pointerId); } catch (x) { /* gone */ } startAt(p); return; }
+      hover = p; redraw(false);
+    });
+    for (const n of ['pointerup', 'pointercancel']) cv.addEventListener(n, () => { drag = false; });
     cv.addEventListener('pointerleave', () => { hover = null; redraw(false); });
     // Rikuy's own menu for this graph (Edit graph): a right click, or a long press on a touch
     // screen, says where to the page, which opens it; the frame keeps everything else
@@ -868,7 +1349,7 @@ export function graphKit() {
     redraw(true);
   }
 
-  return { parse, names, compile, normalize, formulas, unknownNames, defaults, compute, ranges, paint, mount, fmt, fmtStep, FAM, FITS, KINDS, sizeName, niceStep };
+  return { parse, parseEq, names, compile, normalize, formulas, unknownNames, defaults, compute, ranges, paint, mount, fmt, fmtStep, FAM, FITS, KINDS, NAME, sizeName, niceStep, show, texOf, nameTex, labelTex, tw, GREEK, GREEK_VALUES: new Set(Object.values(GREEK)), own };
 }
 
 // ---- the editor's side: the widget's file, read back, and the PDF's picture -------------------
@@ -940,9 +1421,33 @@ export const TEMPLATES = [
   { id: 'function', name: 'Function', title: 'A function of x with sliders for its parameters', spec: { kind: 'function', f: ['a sin(b x)'], x: { min: -6.2832, max: 6.2832, label: 'x' }, y: { label: 'y' }, sliders: [{ name: 'a', min: 0, max: 3, step: 0.1, value: 1 }, { name: 'b', min: 0.2, max: 4, step: 0.1, value: 1 }] } },
   { id: 'data', name: 'Data and fit', title: 'Points pasted from a table, with a least squares fit', spec: { kind: 'data', data: { points: [[0, 1.1], [1, 2.9], [2, 5.2], [3, 6.8], [4, 9.1], [5, 11.2], [6, 12.8], [7, 15.1]], fit: 'linear', model: '' }, x: { label: 'x' }, y: { label: 'y' }, sliders: [] } },
   { id: 'curve', name: 'Curve', title: 'A parametric curve (x(t), y(t)) or a polar curve r(θ)', spec: { kind: 'curve', curve: { mode: 'polar', r: '1 + a cos(k θ)', t: [0, 6.2832] }, x: { label: 'x' }, y: { label: 'y' }, sliders: [{ name: 'a', min: 0, max: 2, step: 0.05, value: 0.5 }, { name: 'k', min: 1, max: 8, step: 1, value: 3 }] } },
+  { id: 'implicit', name: 'Implicit', title: 'Curves F(x, y) = c: indifference curves, isoquants, a circle', spec: { kind: 'implicit', vars: ['x', 'y'], eq: ['x^2 + y^2 = r^2', 'x y = c'], x: { min: -4, max: 4 }, y: { min: -3, max: 3 }, aspect: 0.6, sliders: [{ name: 'r', min: 0.5, max: 3.5, step: 0.05, value: 2 }, { name: 'c', min: -3, max: 3, step: 0.1, value: 1 }] } },
+  { id: 'phase', name: 'Phase', title: 'A phase portrait of dx/dt and dy/dt: the field, the nullclines and a path from a point you drag', spec: { kind: 'phase', vars: ['x', 'y'], phase: { dx: 'a x - b x y', dy: 'd x y - c y', start: [1, 1.5] }, x: { min: 0, max: 4 }, y: { min: 0, max: 4 }, aspect: 0.6, title: 'Predator and prey (Lotka and Volterra)', sliders: [{ name: 'a', min: 0.1, max: 2, step: 0.05, value: 1 }, { name: 'b', min: 0.1, max: 2, step: 0.05, value: 0.8 }, { name: 'c', min: 0.1, max: 2, step: 0.05, value: 1 }, { name: 'd', min: 0.1, max: 2, step: 0.05, value: 0.6 }] } },
   { id: 'dist', name: 'Distribution', title: 'A distribution with sliders for its parameters, or the mean of n draws (the central limit theorem)', spec: { kind: 'dist', dist: { family: 'exponential', mode: 'mean' }, sliders: [] } }
 ];
-export const template = (id) => K.normalize((TEMPLATES.find((t) => t.id === id) || TEMPLATES[0]).spec);
+// Named graphs of economics and statistics, ready to change: the dialog's Template list and
+// Insert's Interactive graph menu
+export const GALLERY = [
+  { id: 'supply-demand', name: 'Supply and demand', title: 'Linear supply and demand, the equilibrium marked, consumer and producer surplus shaded',
+    spec: { kind: 'function', vars: ['q'], f: ['a - b q', 'c + d q'], cross: true, shade: [{ a: 0, b: 'cross', w: 1, from: '0', to: 'cross', label: 'consumer surplus' }, { a: 1, b: 'cross', w: 0, from: '0', to: 'cross', label: 'producer surplus' }], x: { min: 0, max: 10, label: 'q' }, y: { min: 0, max: 12, label: 'p' }, title: 'Supply and demand',
+      sliders: [{ name: 'a', min: 4, max: 12, step: 0.1, value: 10 }, { name: 'b', min: 0.2, max: 3, step: 0.05, value: 1 }, { name: 'c', min: 0, max: 6, step: 0.1, value: 2 }, { name: 'd', min: 0.2, max: 3, step: 0.05, value: 1 }] } },
+  { id: 'is-lm', name: 'IS–LM', title: 'The IS and LM curves in output Y and the interest rate r, their equilibrium marked',
+    spec: { kind: 'function', vars: ['Y'], f: ['(A - (1 - c) Y)/b', '(k Y - m)/h'], cross: true, x: { min: 0, max: 20, label: 'Y' }, y: { min: 0, max: 10, label: 'r' }, title: 'IS and LM',
+      sliders: [{ name: 'A', min: 5, max: 15, step: 0.1, value: 10 }, { name: 'c', min: 0.2, max: 0.9, step: 0.01, value: 0.6 }, { name: 'b', min: 0.5, max: 3, step: 0.05, value: 1 }, { name: 'k', min: 0.2, max: 1, step: 0.01, value: 0.5 }, { name: 'm', min: 0, max: 6, step: 0.1, value: 2 }, { name: 'h', min: 0.5, max: 3, step: 0.05, value: 1 }] } },
+  { id: 'solow', name: 'Solow', title: 'The Solow diagram: output, saving and break even investment, the steady state marked',
+    spec: { kind: 'function', vars: ['k'], f: ['k^α', 's k^α', '(n + δ) k'], cross: [[1, 2]], x: { min: 0, max: 12, label: 'k' }, y: { min: 0, max: 2.5, label: 'per worker' }, title: 'The Solow model',
+      sliders: [{ name: 's', min: 0.05, max: 0.6, step: 0.01, value: 0.3 }, { name: 'α', min: 0.1, max: 0.9, step: 0.01, value: 0.33 }, { name: 'n', min: 0, max: 0.06, step: 0.001, value: 0.02 }, { name: 'δ', min: 0, max: 0.15, step: 0.005, value: 0.08 }] } },
+  { id: 'ramsey', name: 'Ramsey', title: 'The Ramsey model\'s phase diagram in capital k and consumption c: nullclines, the field, a path from a point you drag',
+    spec: { kind: 'phase', vars: ['k', 'c'], phase: { dx: 'k^α - δ k - c', dy: 'c (α k^(α - 1) - δ - ρ)/θ', start: [3, 1.2] }, x: { min: 0, max: 25, label: 'k' }, y: { min: 0, max: 2.5, label: 'c' }, aspect: 0.6, title: 'The Ramsey model',
+      sliders: [{ name: 'α', min: 0.1, max: 0.6, step: 0.01, value: 0.33 }, { name: 'δ', min: 0.01, max: 0.15, step: 0.005, value: 0.05 }, { name: 'ρ', min: 0.005, max: 0.1, step: 0.005, value: 0.03 }, { name: 'θ', min: 0.2, max: 5, step: 0.1, value: 1 }] } },
+  { id: 'budget', name: 'Budget and indifference', title: 'A budget line and a Cobb–Douglas indifference curve in x_1 and x_2',
+    spec: { kind: 'implicit', vars: ['x_1', 'x_2'], eq: ['p_1 x_1 + p_2 x_2 = m', 'x_1^α x_2^(1 - α) = u'], x: { min: 0, max: 12, label: 'x_1' }, y: { min: 0, max: 12, label: 'x_2' }, aspect: 0.7, title: 'Budget line and indifference curve',
+      sliders: [{ name: 'p_1', min: 0.5, max: 4, step: 0.05, value: 1 }, { name: 'p_2', min: 0.5, max: 4, step: 0.05, value: 1 }, { name: 'm', min: 2, max: 20, step: 0.1, value: 10 }, { name: 'α', min: 0.05, max: 0.95, step: 0.01, value: 0.5 }, { name: 'u', min: 0.5, max: 10, step: 0.05, value: 5 }] } },
+  { id: 'normal', name: 'Normal density', title: 'The normal density, its mean and standard deviation on sliders', spec: { kind: 'dist', dist: { family: 'normal', mode: 'density' }, sliders: [] } },
+  { id: 't', name: 'Student\'s t density', title: 'Student\'s t density, its degrees of freedom on a slider', spec: { kind: 'dist', dist: { family: 't', mode: 'density' }, sliders: [] } },
+  { id: 'clt', name: 'Central limit theorem', title: 'The mean of n draws from a skewed distribution, standardised, against the normal density', spec: { kind: 'dist', dist: { family: 'exponential', mode: 'mean' }, sliders: [] } }
+];
+export const template = (id) => K.normalize((TEMPLATES.find((t) => t.id === id) || GALLERY.find((t) => t.id === id) || TEMPLATES[0]).spec);
 
 // The PDF's picture: the graph at its sliders' starting values, drawn by the same code the live
 // figure runs, W CSS pixels wide (the text's width), at scale times the pixels for print
@@ -958,6 +1463,217 @@ export function graphCanvas(spec, W, scale = 3) {
   K.paint(g, s, K.compute(s, vals), K.ranges(s), vals, W, H, null);
   return c;
 }
+// ---- the PDF's picture as vector graphics: PGF commands TeX draws -----------------------------
+// The figure TeX prints is written by the same paint() the live figure runs, on a context that
+// records instead of drawing: each path becomes PGF's path commands, each text a \pgftext set in
+// the document's own fonts (its LaTeX given by paint as g.rkTex). So the PDF's figure is the live
+// figure at its starting values by construction, as lines and type at any zoom (test/graphs.py
+// compares the two in pixels). Coordinates are fractions of \rikuywidth, the figure's width,
+// which rikuy.sty sets from the command's width option (\linewidth when none): the picture takes
+// the width TeX gives it, its type stays at the document's size.
+const PGF_HEAD = '% rikuy-graph: ';
+const F4 = (v) => { const t = (Math.round(v * 1e4) / 1e4).toFixed(4).replace(/0+$/, '').replace(/\.$/, ''); return t === '-0' ? '0' : t.replace(/^(-?)0\./, '$1.'); };
+function cssColor(c) {
+  const t = String(c || '#000').trim();
+  let m = /^#([0-9a-f]{6})$/i.exec(t);
+  if (m) { const n = parseInt(m[1], 16); return { r: (n >> 16) / 255, g: ((n >> 8) & 255) / 255, b: (n & 255) / 255, a: 1 }; }
+  m = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/i.exec(t);
+  if (m) return { r: +m[1] / 255, g: +m[2] / 255, b: +m[3] / 255, a: m[4] === undefined ? 1 : +m[4] };
+  return { r: 0, g: 0, b: 0, a: 1 };
+}
+class PGFContext {
+  constructor(W, H) {
+    this.W = W; this.H = H; this.out = []; this.path = []; this.colors = new Map();
+    this.st = { stroke: '#000', fill: '#000', lw: 1, dash: [], alpha: 1, font: '12px serif', align: 'start', base: 'alphabetic', tx: 0, ty: 0, rot: 0 };
+    this.stack = []; this.rkTex = null;
+  }
+  // canvas state, as paint() sets it
+  set strokeStyle(v) { this.st.stroke = v; } get strokeStyle() { return this.st.stroke; }
+  set fillStyle(v) { this.st.fill = v; } get fillStyle() { return this.st.fill; }
+  set lineWidth(v) { this.st.lw = v; } get lineWidth() { return this.st.lw; }
+  set globalAlpha(v) { this.st.alpha = v; } get globalAlpha() { return this.st.alpha; }
+  set font(v) { this.st.font = v; } get font() { return this.st.font; }
+  set textAlign(v) { this.st.align = v; } get textAlign() { return this.st.align; }
+  set textBaseline(v) { this.st.base = v; } get textBaseline() { return this.st.base; }
+  set lineJoin(v) { /* round, as PGF's is set once */ } set lineCap(v) { /* likewise */ }
+  setLineDash(d) { this.st.dash = d || []; }
+  setTransform() { /* the picture is drawn at its own size */ }
+  measureText(t) { return { width: K.tw(t, parseFloat(this.st.font.replace(/^\D*/, '')) || 12) }; }
+  save() { this.stack.push({ ...this.st, dash: this.st.dash.slice() }); this.out.push('\\begin{pgfscope}'); }
+  restore() { if (!this.stack.length) return; this.st = this.stack.pop(); this.out.push('\\end{pgfscope}'); }
+  translate(x, y) { this.st.tx += x; this.st.ty += y; }
+  rotate(a) { this.st.rot += a; }
+  // a point, in the figure's own scale: x from the left, y from the bottom, as fractions of W
+  P(x, y) { return F4((x + this.st.tx) / this.W) + ' ' + F4((this.H - (y + this.st.ty)) / this.W) + ' '; }
+  beginPath() { this.path = []; }
+  moveTo(x, y) { this.path.push(['M', x, y]); }
+  lineTo(x, y) { if (!this.path.length) this.path.push(['M', x, y]); else this.path.push(['L', x, y]); }
+  closePath() { this.path.push(['Z']); }
+  rect(x, y, w, h) { this.path.push(['M', x, y], ['L', x + w, y], ['L', x + w, y + h], ['L', x, y + h], ['Z']); }
+  arc(x, y, r) { this.path.push(['C', x, y, r]); }
+  color(c, what) {
+    const k = cssColor(c), key = [k.r, k.g, k.b].map((v) => v.toFixed(3)).join(',');
+    let name = this.colors.get(key);
+    if (!name) { name = 'rkc' + String.fromCharCode(97 + this.colors.size % 26) + (this.colors.size >= 26 ? Math.floor(this.colors.size / 26) : ''); this.colors.set(key, name); }
+    return { name, a: k.a * this.st.alpha, set: '\\pgfset' + what + 'color{' + name + '}' };
+  }
+  // The path as PGF's commands, with every segment clipped to a box a plot's size round the
+  // picture (a curve that runs off to infinity would be past TeX's largest length; the part
+  // inside is drawn exactly), and the points a straight run passes through left out
+  emitPath() {
+    const W = this.W, H = this.H, lo = [-W, -H], hi = [2 * W, 2 * H], o = [];
+    let pen = null, open = false, first = null;
+    const inside = (p) => p[0] >= lo[0] && p[0] <= hi[0] && p[1] >= lo[1] && p[1] <= hi[1];
+    const clipSeg = (a, b) => {
+      // Liang and Barsky: the part of a to b inside the box, or null
+      let t0 = 0, t1 = 1;
+      const d = [b[0] - a[0], b[1] - a[1]];
+      for (let k = 0; k < 2; k++) {
+        for (const [p, q] of [[-d[k], a[k] - lo[k]], [d[k], hi[k] - a[k]]]) {
+          if (p === 0) { if (q < 0) return null; continue; }
+          const r = q / p;
+          if (p < 0) { if (r > t1) return null; if (r > t0) t0 = r; } else { if (r < t0) return null; if (r < t1) t1 = r; }
+        }
+      }
+      return [[a[0] + t0 * d[0], a[1] + t0 * d[1]], [a[0] + t1 * d[0], a[1] + t1 * d[1]]];
+    };
+    let run = [];
+    const flush = () => {
+      // (a point within 0.05 px of the chord from the last kept point to the next is left out)
+      if (!run.length) return;
+      let A = run[0];
+      o.push('\\rkm ' + this.P(A[0], A[1]));
+      for (let i = 1; i < run.length; i++) {
+        const B = run[i], C = run[i + 1];
+        if (C) {
+          const dx = C[0] - A[0], dy = C[1] - A[1], n = Math.hypot(dx, dy);
+          if (n > 0 && Math.abs((B[0] - A[0]) * dy - (B[1] - A[1]) * dx) / n < 0.05 && (B[0] - A[0]) * dx + (B[1] - A[1]) * dy > 0 && (C[0] - B[0]) * dx + (C[1] - B[1]) * dy > 0) continue;
+        }
+        o.push('\\rkl ' + this.P(B[0], B[1]));
+        A = B;
+      }
+      run = [];
+    };
+    for (const s of this.path) {
+      if (s[0] === 'M') { flush(); pen = [s[1], s[2]]; first = pen; open = false; continue; }
+      if (s[0] === 'C') {
+        flush();
+        const [, x, y, r] = s;
+        o.push('\\pgfpathcircle{\\pgfqpoint{' + F4((x + this.st.tx) / W) + '\\rikuywidth}{' + F4((H - y - this.st.ty) / W) + '\\rikuywidth}}{' + F4(r / W) + '\\rikuywidth}');
+        pen = null;
+        continue;
+      }
+      if (s[0] === 'Z') {
+        if (pen && first && run.length && inside(first) && inside(pen)) { run.push(first); flush(); o.push('\\pgfpathclose'); }
+        else flush();
+        pen = first;
+        continue;
+      }
+      if (!pen) { pen = [s[1], s[2]]; first = pen; continue; }
+      const b = [s[1], s[2]], c = clipSeg(pen, b);
+      if (c) {
+        const last = run[run.length - 1];
+        if (!run.length || last[0] !== c[0][0] || last[1] !== c[0][1]) { flush(); run.push(c[0]); }
+        run.push(c[1]);
+        if (c[1][0] !== b[0] || c[1][1] !== b[1]) flush();
+      } else flush();
+      open = true;
+      pen = b;
+    }
+    flush();
+    void open;
+    return o.join('\n');
+  }
+  use(what) {
+    const body = this.emitPath();
+    if (!body) return;
+    const lines = ['\\begin{pgfscope}'];
+    if (what === 'stroke') {
+      const c = this.color(this.st.stroke, 'stroke');
+      lines.push(c.set, '\\pgfsetlinewidth{' + F4(this.st.lw / this.W) + '\\rikuywidth}');
+      if (c.a < 1) lines.push('\\pgfsetstrokeopacity{' + F4(c.a) + '}');
+      if (this.st.dash.length) lines.push('\\pgfsetdash{' + this.st.dash.map((d) => '{' + F4(d / this.W) + '\\rikuywidth}').join('') + '}{0pt}');
+    } else {
+      const c = this.color(this.st.fill, 'fill');
+      lines.push(c.set);
+      if (c.a < 1) lines.push('\\pgfsetfillopacity{' + F4(c.a) + '}');
+    }
+    lines.push(body, '\\pgfusepath{' + what + '}', '\\end{pgfscope}');
+    this.out.push(lines.join('\n'));
+  }
+  stroke() { this.use('stroke'); }
+  fill() { this.use('fill'); }
+  clip() { const body = this.emitPath(); if (body) this.out.push(body + '\n\\pgfusepath{clip}'); }
+  fillRect(x, y, w, h) { const p = this.path; this.path = []; this.rect(x, y, w, h); this.fill(); this.path = p; }
+  strokeRect(x, y, w, h) { const p = this.path; this.path = []; this.rect(x, y, w, h); this.stroke(); this.path = p; }
+  clearRect() { /* paper */ }
+  fillText(t, x, y) {
+    const st = this.st, px = parseFloat(st.font.replace(/^\D*/, '')) || 12, it = /italic/.test(st.font);
+    const tex = this.rkTex || K.labelTex(String(t));
+    const h = st.align === 'right' || st.align === 'end' ? 'right' : st.align === 'left' || st.align === 'start' ? 'left' : '';
+    const v = st.base === 'top' || st.base === 'hanging' ? 'top' : st.base === 'bottom' || st.base === 'ideographic' ? 'bottom' : st.base === 'middle' ? '' : 'base';
+    const c = this.color(st.fill, 'fill');
+    // (the turn, about the anchor: the y label reads upwards)
+    const rot = Math.round(-st.rot * 180 / Math.PI);
+    const opts = [h, v].filter(Boolean).join(',');
+    const size = px >= 13 ? '\\small' : '\\footnotesize';
+    const at = '\\pgfqpoint{' + F4((x + st.tx) / this.W) + '\\rikuywidth}{' + F4((this.H - y - st.ty) / this.W) + '\\rikuywidth}';
+    const body = '{\\color{' + c.name + '}' + size + (it ? '\\itshape ' : ' ') + '\\strut ' + tex + '}';
+    // (turned about its anchor: the y label reads upwards)
+    if (rot) this.out.push('\\begin{pgfscope}\\pgftransformshift{' + at + '}\\pgftransformrotate{' + rot + '}\\pgftext' + (opts ? '[' + opts + ']' : '') + body + '\\end{pgfscope}');
+    else this.out.push('\\pgftext[' + (opts ? opts + ',' : '') + 'at={' + at + '}]' + body);
+  }
+  text(mark, spec) {
+    const cols = [...this.colors.entries()].map(([k, n]) => '\\definecolor{' + n + '}{rgb}{' + k + '}');
+    return PGF_HEAD + mark + '\n' +
+      '% The picture TeX prints for an interactive graph (Insert, Interactive graph in Rikuy): drawn by\n' +
+      '% Rikuy from the graph\'s description, the live figure at its starting values. Rikuy writes it\n' +
+      '% again when the graph changes; edit the graph, not this file. ' + spec + '\n' +
+      '% rikuy.sty inputs it (\\rikuywidth is the width); it needs \\usepackage{pgf}, which rikuy.sty loads.\n' +
+      '\\begingroup\n\\ifx\\rikuywidth\\undefined\\csname newdimen\\endcsname\\rikuywidth\\rikuywidth=\\linewidth\\fi\n' +
+      '\\def\\rkm#1 #2 {\\pgfpathmoveto{\\pgfqpoint{#1\\rikuywidth}{#2\\rikuywidth}}}\n' +
+      '\\def\\rkl#1 #2 {\\pgfpathlineto{\\pgfqpoint{#1\\rikuywidth}{#2\\rikuywidth}}}\n' +
+      cols.join('\n') + '\n' +
+      '\\begin{pgfpicture}\n\\pgfsetroundjoin\\pgfsetroundcap\n' +
+      '\\pgfpathrectangle{\\pgfpointorigin}{\\pgfqpoint{\\rikuywidth}{' + F4(this.H / this.W) + '\\rikuywidth}}\\pgfusepath{use as bounding box}\n' +
+      this.out.join('\n') + '\n\\end{pgfpicture}%\n\\endgroup%\n';
+  }
+}
+
+// The PDF's picture of a graph as PGF, W CSS pixels wide (the text's width, which only places the
+// type: the lines scale to the width TeX gives). mark: the graph's file, and the description's
+// hash, so a picture Rikuy drew is known and drawn again when its graph changes.
+export function graphPGF(spec, W, mark = '') {
+  const s = K.normalize(spec);
+  W = Math.max(200, Math.min(1200, Math.round(W)));
+  const H = Math.round(W * s.aspect);
+  const g = new PGFContext(W, H);
+  const vals = K.defaults(s);
+  K.paint(g, s, K.compute(s, vals), K.ranges(s), vals, W, H, null, null);
+  return g.text(String(mark).replace(/[^\x20-\x7e]/g, '_').slice(0, 300) + ' ' + specHash(s) + ' ' + W, summary(s));
+}
+// what a picture of ours says on its first line: { path, hash, W }, or null for any other file
+export function pgfMark(text) {
+  if (typeof text !== 'string' || !text.startsWith(PGF_HEAD)) return null;
+  const m = /^% rikuy-graph: (\S+) ([0-9a-f]{8}) (\d+)\n/.exec(text.slice(0, 400));
+  return m ? { path: m[1], hash: m[2], W: +m[3] } : null;
+}
+// A description's hash (FNV-1a over its JSON): a picture drawn for another one is drawn again
+export function specHash(spec) {
+  const t = JSON.stringify(K.normalize(spec));
+  let h = 0x811c9dc5;
+  for (let i = 0; i < t.length; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; }
+  return h.toString(16).padStart(8, '0');
+}
+// the graph in a line of words, for the picture's comment: what it draws and over which range
+export function summary(s) {
+  const f = s.kind === 'function' ? s.f.map((x) => 'y = ' + x).join('; ') + ' for ' + s.vars[0] + ' from ' + K.fmt(s.x.min, 4) + ' to ' + K.fmt(s.x.max, 4)
+    : s.kind === 'implicit' ? s.eq.join('; ') : s.kind === 'phase' ? 'd' + s.vars[0] + '/dt = ' + s.phase.dx + '; d' + s.vars[1] + '/dt = ' + s.phase.dy
+      : s.kind === 'curve' ? (s.curve.mode === 'polar' ? 'r = ' + s.curve.r : '(' + s.curve.x + ', ' + s.curve.y + ')') : s.kind === 'data' ? s.data.points.length + ' points' : K.FAM[s.dist.family].name;
+  const q = s.sliders.map((x) => x.name + ' = ' + K.fmt(x.value, 4) + ' (' + K.fmt(x.min, 4) + ' to ' + K.fmt(x.max, 4) + ')').join(', ');
+  return (f + (q ? '; ' + q : '')).replace(/−/g, '-').replace(/[\r\n%\\]/g, ' ').slice(0, 600);
+}
+
 // mark: the graph's file the picture is drawn for (a tEXt chunk "rikuy-graph"): only a picture so
 // marked, or none, is ever drawn again (one's own picture under that name is one's own)
 export function graphPNG(spec, W, scale = 3, mark = '') {
@@ -1039,20 +1755,45 @@ export const dataText = (pts) => pts.map((p) => p[0] + '\t' + p[1]).join('\n');
 // rikuy.sty, as sample/widget has it: written beside the main file when the project has none
 export const RIKUY_STY = `% rikuy.sty: a live figure on Rikuy's typeset page, the same figure as a picture in every TeX.
 %
-%   \\rikuywidget[<\\includegraphics options>]{<widget .html>}{<fallback image>}
+%   \\rikuywidget[<\\includegraphics options>]{<widget .html>}{<fallback picture>}
 %
-% TeX (Rikuy's PDF pane, Overleaf, a desktop TeX Live) prints the fallback image with
-% \\includegraphics and never opens the widget file. Rikuy's typeset page runs the widget: a self
-% contained HTML file of the project (inline script and style, nothing from the network) in a
-% sandboxed frame as wide as the text. The widget sets the frame's height by sending
+% TeX (Rikuy's PDF pane, Overleaf, arXiv, a desktop TeX Live) prints the fallback and never opens
+% the widget file. The fallback is a picture \\includegraphics takes (PDF, PNG, JPEG), or a .pgf
+% file of PGF's drawing commands, as Rikuy writes for its interactive graphs: TeX draws it as
+% lines in the document's own fonts, as wide as the width option says (\\linewidth when none).
+% Rikuy's typeset page runs the widget: a self contained HTML file of the project (inline script
+% and style, nothing from the network) in a sandboxed frame as wide as the text. The widget sets
+% the frame's height by sending
 %   parent.postMessage({rikuy: "height", px: <integer>}, "*")
 % Both paths are relative to the main .tex file; keep this file beside it.
 %
 % This file is in the public domain: copy it into any document.
 \\NeedsTeXFormat{LaTeX2e}
-\\ProvidesPackage{rikuy}[2026/10/30 v1.0 Live figures in Rikuy, pictures in print]
+\\ProvidesPackage{rikuy}[2026/11/20 v1.1 Live figures in Rikuy, pictures in print]
 \\RequirePackage{graphicx}
+% PGF draws the .pgf pictures; loaded as the preamble ends, so a later \\usepackage[...]{xcolor}
+% keeps its options (PGF loads xcolor)
+\\ifdefined\\AddToHook
+  \\AddToHook{begindocument/before}{\\RequirePackage{pgf}}
+\\else
+  \\RequirePackage{pgf}
+\\fi
+\\newdimen\\rikuywidth
+\\def\\rikuy@pgf{pgf}
 % robust, so that it survives a moving argument as \\includegraphics does
-\\DeclareRobustCommand\\rikuywidget[3][]{\\includegraphics[#1]{#3}}
+\\DeclareRobustCommand\\rikuywidget[3][]{%
+  \\filename@parse{#3}%
+  \\ifx\\filename@ext\\rikuy@pgf\\rikuy@figure{#1}{#3}\\else\\includegraphics[#1]{#3}\\fi}
+% the width option read as \\includegraphics reads it; the other options are for pictures
+\\def\\rikuy@figure#1#2{\\begingroup
+  \\let\\Gin@ewidth\\Gin@exclamation
+  \\setkeys{Gin}{#1}%
+  \\ifx\\Gin@ewidth\\Gin@exclamation\\rikuywidth=\\linewidth\\else\\rikuywidth=\\Gin@ewidth\\relax\\fi
+  \\leavevmode\\input{#2}\\endgroup}
 \\endinput
 `;
+// rikuy.sty as Rikuy wrote it before .pgf pictures (v1.0): a project with it gets the new one,
+// one with a rikuy.sty of its own keeps it and its graphs' pictures stay PNG
+export const RIKUY_STY_V10 = /\\ProvidesPackage\{rikuy\}\[2026\/10\/30 v1\.0 Live figures in Rikuy, pictures in print\]\s*\\RequirePackage\{graphicx\}\s*(?:%[^\n]*\n\s*)*\\DeclareRobustCommand\\rikuywidget\[3\]\[\]\{\\includegraphics\[#1\]\{#3\}\}\s*\\endinput\s*$/;
+// whether a project's rikuy.sty prints .pgf pictures
+export const styDrawsPgf = (t) => typeof t === 'string' && /\\rikuy@figure/.test(t);

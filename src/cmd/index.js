@@ -23,7 +23,8 @@ import * as equation from './equation.js';  // B13 equations
 import * as parts from './parts.js';        // R3 cover pages, Quick Parts and fields, form fields
 import * as move from './move.js';          // R3 drag to move
 import * as typing from './typing.js';      // Word's keys that type or move text (Alt+X, accents, Spike, F2)
+import * as graphs from './graphs.js';      // task 70 interactive graphs: Graph this, the web page
 
 
 // (a method name two modules both add throws here: test/commands.test.mjs imports this file)
-export const methods = joinMethods({}, Object.fromEntries(Object.entries({ frame, font, para, lists, styles, find, page, table, picture, refs, review, proofing, insert, file, view, help, equation, parts, move, typing }).map(([k, m]) => ['src/cmd/' + k + '.js', m.methods || {}])));
+export const methods = joinMethods({}, Object.fromEntries(Object.entries({ frame, font, para, lists, styles, find, page, table, picture, refs, review, proofing, insert, file, view, help, equation, parts, move, typing, graphs }).map(([k, m]) => ['src/cmd/' + k + '.js', m.methods || {}])));

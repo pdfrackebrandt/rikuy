@@ -2009,7 +2009,24 @@ body.view-pdf #pdf-host { width: 100%; max-width: 1040px; margin: 0 auto; }
 
 /* ---- B11: Insert › Interactive graph (src/ui/graphdialog.js) and a graph on the page ---- */
 .pop.pop-graph { width: min(860px, calc(100vw - 16px)); gap: 10px; }
-.gd-kinds { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.gd-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.gd-top > select { width: auto; max-width: 220px; min-height: 40px; }
+.gd-kinds { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+/* a formula field's mistakes: its text mirrored behind it, the stretch in error underlined */
+.gd-ed { position: relative; display: grid; min-width: 0; }
+.gd-ed > * { grid-area: 1 / 1; }
+.gd-mirror { pointer-events: none; color: transparent; white-space: pre-wrap; overflow-wrap: anywhere; overflow: hidden; border-color: transparent !important; background: transparent !important; }
+.gd-ed > .gd-in:not(.gd-mirror) { background: transparent; position: relative; }
+.gd-ed { background: var(--chrome); border-radius: 6px; }
+textarea.gd-mirror { resize: none; }
+.gd-wave { text-decoration: underline wavy #C42B1C; text-decoration-skip-ink: none; text-underline-offset: 3px; }
+.gd-ck { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--ink-ui); min-height: 28px; cursor: pointer; }
+.gd-ck input { margin: 0; accent-color: var(--blue); width: 15px; height: 15px; }
+.gd-row > .gd-ck { align-self: end; padding-bottom: 4px; }
+.gd-shade { align-items: end; }
+.gd-shade > .gd-x { height: 30px; width: 30px; justify-content: center; padding: 0; font-size: 18px; }
+.gd-undo { width: 34px; height: 32px; justify-content: center; padding: 0; }
+.gd-undo:disabled { opacity: .4; cursor: default; }
 .gd-kind { display: flex; align-items: center; justify-content: center; gap: 7px; min-height: 40px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--chrome); color: var(--ink-ui); font: 500 13px var(--font-ui); cursor: pointer; }
 .gd-kind:hover { border-color: var(--blue); }
 .gd-kind[aria-checked="true"] { border-color: var(--blue); background: var(--blue-wash); box-shadow: inset 0 0 0 1px var(--blue); }
@@ -2046,8 +2063,14 @@ textarea.gd-in { resize: vertical; line-height: 1.4; }
   .gd-pv { position: static; order: 0; }
   .gd-frame { height: 220px; }
 }
+@media (max-width: 760px) {
+  .gd-top { grid-template-columns: minmax(0, 1fr); }
+  .gd-top > select { max-width: none; width: 100%; }
+  .gd-kinds { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
 @media (max-width: 520px) {
-  .gd-kinds { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .gd-kinds { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .gd-kind { flex-direction: column; gap: 2px; font-size: 12px; }
   .gd-sl { grid-template-columns: repeat(3, minmax(0, 1fr)) 44px; }
   .gd-sl > .gd-n { grid-column: 1 / 4; }
   .gd-sl > .gd-x { grid-column: 4; grid-row: 1; align-self: end; }
@@ -2055,8 +2078,12 @@ textarea.gd-in { resize: vertical; line-height: 1.4; }
 @media (pointer: coarse) {
   .gd-kind, .pop-graph .gd-in, .pop-graph .btn, .pop-graph .pop-x { min-height: 44px; }
   .pop-graph .btn, .pop-graph .pop-x, .gd-sl .gd-x { min-width: 44px; }
-  .gd-sl .gd-x { height: 44px; }
+  .gd-sl .gd-x, .gd-shade > .gd-x { height: 44px; width: 44px; }
   .pop-graph .gd-in { font-size: 16px; }
+  .gd-ck { min-height: 44px; min-width: 44px; }
+  .gd-ck input { width: 22px; height: 22px; }
+  .gd-undo { width: 44px; height: 44px; }
+  .gd-top > select { min-height: 44px; }
 }
 /* a graph on the page: Edit graph beside the LaTeX tab, shown as the LaTeX tab is (on a touch
    screen always), at its own size whatever the page's zoom (--ws: the box's scale) */

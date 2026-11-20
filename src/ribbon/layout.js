@@ -24,7 +24,7 @@ export const LAYOUT = {
     pages: ['cover-page S V', 'blank-page S NP', 'page-break S B'],
     // (Insert Table, Convert Text to Table and Table from Data File are in Table's menu, as Word's)
     tables: ['insert-table L T'],
-    illustrations: ['picture L P', 'insert-shapes L SH', 'insert-icons L Y', 'insert-interactive-graph L G', 'insert-smartart S M', 'insert-chart S C', 'insert-screenshot S SC'],
+    illustrations: ['picture L P', 'insert-interactive-graph L G', 'insert-shapes L SH', 'insert-icons L Y', 'insert-smartart S M', 'insert-chart S C', 'insert-screenshot S SC'],
     links: ['link L I', 'bookmark L K', 'cross-reference L RF'],
     comments: ['comment-new L L'],
     headfoot: ['header L H', 'footer L O', 'page-number L NU'],
@@ -95,7 +95,7 @@ export const LAYOUT = {
     size: ['picture-crop L C', 'picture-height S H', 'picture-width S W', '|', 'picture-lock I L', 'picture-size I -']
   },
   equation: {
-    tools: ['eq-gallery L E', 'eq-numbered S N', 'eq-display S D'],
+    tools: ['eq-gallery L E', 'eq-numbered S N', 'eq-display S D', 'graph-this L H'],
     conversions: ['show-latex L L'],
     symbols: ['eq-sym-basic S S1 Basic math', 'eq-sym-greek S S2 Greek letters', 'eq-sym-ops S S3 Operators', 'eq-sym-arrows S S4 Arrows', 'eq-sym-relations S S5 Relations',
       'eq-sym-sets S S6 Sets and logic', 'eq-sym-geometry S S7 Geometry'],
