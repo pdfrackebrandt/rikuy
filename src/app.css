@@ -2274,6 +2274,9 @@ html.pic-moving, html.pic-moving * { cursor: grabbing !important; }
 /* a chart or a SmartArt selected (Chart Design, SmartArt Design): Word's frame round it; one shape of
    a drawing selected alone: a glow round that shape */
 #pages .raw.drawn.sel:has(> svg.pgf), #pages .a-smart.sel { outline: 2px solid #2B74B0; outline-offset: 3px; }
+/* a drawing's frame round the drawing, not round its line */
+#pages .raw.drawn.sel:has(> svg.tz) { outline: none; }
+#pages .raw.drawn.sel > svg.tz { outline: 1px solid #2B74B0; outline-offset: 3px; }
 #pages .a-smart { cursor: pointer; }
 #pages svg.tz .sub { filter: drop-shadow(0 0 1.2px #2B74B0) drop-shadow(0 0 1.2px #2B74B0); }
 #pages .raw.drawn svg.tz, #pages .raw.drawn svg.pgf { cursor: pointer; }

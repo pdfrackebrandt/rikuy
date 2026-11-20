@@ -15,7 +15,8 @@ XeLaTeX and LuaLaTeX. Phones at 390 and 360 px with touch: a tap selects, the ta
 long press opens the object's menu with 44 px items. Screenshots in $RIKUY_SHOTS (default
 /tmp/g1-shots).
 
-Run: python3 objects.py [section ...] (sections: shapes, charts, smart, menus, compiled, phones, shots)."""
+Run: python3 objects.py [section ...] (sections: shapes, charts, smart, menus, compiled, pictures,
+pictures_compiled, phones, shots, pictures_unloaded, pictures_phone)."""
 import os, sys, re, base64
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from browser import open_page, check, results, src, load_doc, roundtrip, pressed
@@ -369,19 +370,167 @@ def shots(p):
             br.close()
 
 
+# ---- Picture Format's Corrections, Color, Transparency, Compress Pictures (src/cmd/picfx.js) --------
+def pic_doc(opts='width=0.5\\linewidth', name='a.png'):
+    return '\\documentclass{article}\n\\usepackage{graphicx}\n\\begin{document}\nBefore it.\n\n\\begin{center}\n\\includegraphics[' + opts + ']{' + name + '}\n\\end{center}\n\nAfter it.\n\\end{document}\n'
+
+
+def put_png(page, name, w, h, dpi=None, color=(200, 60, 40)):
+    from picture import png
+    data = png(w, h, dpi=dpi, color=color)
+    page.evaluate('([n, b]) => { const u = Uint8Array.from(atob(b), (c) => c.charCodeAt(0)); window.rikuy.addAsset(n, new Blob([u], { type: "image/png" })); }', [name, base64.b64encode(data).decode()])
+    return len(data)
+
+
+def sel_pic(page):
+    page.evaluate("() => { const g = window.rikuy, t = g.files.get('main.tex'); g.picSelect({ f: 'main.tex', s: t.indexOf('\\\\includegraphics') }, { tab: true }); }")
+    page.wait_for_timeout(100)
+
+
+def run_async(page, cid, args=None, wait=900):
+    page.evaluate('([id, a]) => { window.__r = window.rikuy.runCommand(id, a); }', [cid, args])
+    page.wait_for_timeout(wait)
+
+
+# the page's picture, its pixel at (fx, fy) of its size, read through a canvas
+PIXEL = """async ([fx, fy]) => { const i = document.querySelector('#pages .a-img img'); if (!i) return null; await i.decode().catch(() => {}); const c = document.createElement('canvas'); c.width = i.naturalWidth; c.height = i.naturalHeight;
+  const g = c.getContext('2d'); g.drawImage(i, 0, 0); return [...g.getImageData(Math.floor(c.width * fx), Math.floor(c.height * fy), 1, 1).data].concat([i.naturalWidth, i.naturalHeight]); }"""
+
+
+def pictures(page):
+    D = pic_doc()
+    load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150); page.wait_for_timeout(300)
+    sel_pic(page)
+    check('Picture Format shows Corrections, Color, Transparency and Compress Pictures, enabled on a PNG', page.evaluate("['picture-corrections', 'picture-color', 'picture-transparency', 'picture-compress'].every((id) => { const b = document.getElementById('rc-' + id); return b && !b.disabled; })"))
+    h0 = page.evaluate('window.rikuy.hist.length')
+    run_async(page, 'picture-corrections', {'brightness': 0.2})
+    s = src(page)
+    m = re.search(r'\{(a-edited-[0-9a-f]{8}\.png)\} % rikuy: from a\.png, brightness 0\.2\n', s)
+    check('Corrections › Brightness +20%: a new file a-edited-….png beside a.png, the picture pointed at it, the comment at its line\'s end, one step', bool(m) and page.evaluate('window.rikuy.hist.length') == h0 + 1 and s.replace(m.group(1), 'a.png').replace(' % rikuy: from a.png, brightness 0.2', '') == D, s[s.find('\\begin{center}'):][:160])
+    if m:
+        check('the new file is in the project, the first one kept', page.evaluate('(n) => window.rikuy.assetBlobs.has(n) && window.rikuy.assetBlobs.has("a.png")', m.group(1)))
+        px = page.evaluate(PIXEL, [0.1, 0.5])
+        check('the page draws the new pixels: (200,60,40) made (251,111,91), the size kept (300 by 200)', px and px[:3] == [251, 111, 91] and px[4:] == [300, 200], px)
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(300)
+    check('one undo gives the bytes back, the picture drawn as before', src(page) == D and page.evaluate(PIXEL, [0.1, 0.5])[:3] == [200, 60, 40])
+    # the round trip rule: each against Reset Picture
+    sel = lambda p: (p.evaluate('window.rikuy.disarm && window.rikuy.disarm()'), sel_pic(p))
+    def fx(args):
+        f = lambda p: run_async(p, 'picture-fx-options' if args.get('_all') else 'picture-color', {k: v for k, v in args.items() if k != '_all'})
+        f.__name__ = 'Color ' + str(args)
+        return f
+    reset = lambda p: run_async(p, 'picture-reset', None, 400)
+    want = lambda key: (lambda t: bool(re.search(r'\{a-edited-[0-9a-f]{8}\.png\} % rikuy: from a\.png, ' + re.escape(key) + r'\n', t)))
+    roundtrip(page, D, sel, fx({'recolor': 'gray'}), want('recolor gray'), off_command=reset, label='Color › Grayscale, Reset Picture back')
+    roundtrip(page, D, sel, fx({'saturation': 2}), want('saturation 2'), off_command=reset, label='Color › Saturation 200%')
+    roundtrip(page, D, sel, lambda p: run_async(p, 'picture-transparency', {'transparency': 0.5}), want('transparency 0.5'), off_command=reset, label='Transparency 50%')
+    load_doc(page, D); sel_pic(page); run_async(page, 'picture-transparency', {'transparency': 0.5})
+    px = page.evaluate(PIXEL, [0.1, 0.5])
+    check('Transparency 50%: the page draws the picture seen through (alpha 128)', px and px[3] == 128, px)
+    run_async(page, 'picture-color', {'recolor': 'gray'})
+    s = src(page)
+    check('Color › Grayscale on it: one comment with both, from the first file again', bool(re.search(r'% rikuy: from a\.png, transparency 0\.5, recolor gray\n', s)) and s.count('rikuy:') == 1, s[s.find('\\begin{center}'):][:160])
+    px = page.evaluate(PIXEL, [0.1, 0.5])
+    check('and the page draws it gray and seen through', px and px[0] == px[1] == px[2] and px[3] == 128, px)
+    run_async(page, 'picture-reset', None, 400)
+    check('Reset Picture: a.png again, the comment gone', src(page) == D, src(page)[-200:])
+    # the menus and the dialog
+    load_doc(page, D); sel_pic(page)
+    page.click('#rt-picture-format') if page.evaluate("!!document.getElementById('rt-picture-format').offsetParent") else None
+    page.click('#rc-picture-corrections'); page.wait_for_timeout(250)
+    n = page.evaluate("document.querySelectorAll('.pop [role^=menuitem]').length")
+    page.get_by_role('menuitemradio', name='Brightness: +20% Contrast: -20%').click(); page.wait_for_timeout(900)
+    check('the Corrections menu: sharpen and soften, 25 of brightness and contrast, Options (%d items); a pick writes it' % n, n == 31 and '% rikuy: from a.png, brightness 0.2, contrast -0.2\n' in src(page), src(page)[-200:])
+    sel_pic(page); run_async(page, 'picture-fx-options', None, 300)
+    page.get_by_role('textbox', name='Sharpness (%)').fill('25'); page.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(900)
+    check('Format Picture: Sharpness 25 typed, OK keeps the others and adds it', '% rikuy: from a.png, sharpen 0.25, brightness 0.2, contrast -0.2\n' in src(page), src(page)[-200:])
+    # Compress Pictures: a large picture shown small, at 96 ppi; a picture of no width of its own keeps its size
+    big = pic_doc('width=0.3\\linewidth', 'big.png').replace('\\end{center}\n', '\\end{center}\n\n\\begin{center}\n\\includegraphics{small.png}\n\\end{center}\n')
+    load_doc(page, big); b0 = put_png(page, 'big.png', 2400, 1600, dpi=300); put_png(page, 'small.png', 900, 300, dpi=300, color=(40, 160, 90)); page.wait_for_timeout(400)
+    w_small = page.evaluate("document.querySelectorAll('#pages .a-img')[1].getBoundingClientRect().width")
+    h0 = page.evaluate('window.rikuy.hist.length')
+    run_async(page, 'picture-compress', {'ppi': 96, 'all': True}, 2500)
+    s = src(page)
+    names = re.findall(r'\{((?:big|small)-edited-[0-9a-f]{8}\.png)\} % rikuy: from (?:big|small)\.png, compress 96\n', s)
+    nb = page.evaluate('(n) => { const b = window.rikuy.assetBlobs.get(n); return b ? b.size : 0; }', names[0]) if names else 0
+    dims = page.evaluate(PIXEL, [0.5, 0.5])
+    toast = page.evaluate("(document.querySelector('#toast span') || {}).textContent || ''")
+    check('Compress Pictures at 96 ppi, every picture: both written smaller in one step (%d bytes to %d)' % (b0, nb), len(names) == 2 and 0 < nb < b0 and page.evaluate('window.rikuy.hist.length') == h0 + 1, s[s.find('\\begin{document}'):][:400])
+    check('the big one now 0.3 of the line at 96 ppi: about %d px wide' % (dims[4] if dims else 0), dims and 140 <= dims[4] <= 160, dims)
+    check('the bytes saved are said: ' + toast[:120], 'saved' in toast and 'Compressed 2 pictures' in toast)
+    w_small2 = page.evaluate("document.querySelectorAll('#pages .a-img')[1].getBoundingClientRect().width")
+    check('a picture of no width of its own prints the same size from its smaller file (its pixels per inch scaled): %.1f px and %.1f px' % (w_small, w_small2), abs(w_small - w_small2) < 1.5)
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(300)
+    check('one undo puts both back', src(page) == big)
+    # a PDF picture: the tools say why not
+    load_doc(page, pic_doc(name='fig.pdf')); page.wait_for_timeout(200)
+    sel_pic(page)
+    check('on a PDF picture they are disabled, and say why', page.evaluate("document.getElementById('rc-picture-corrections').disabled") and 'PDF' in page.evaluate("window.rikuy.cmds.command('picture-corrections').whyNot(window.rikuy)"))
+
+
+def pictures_unloaded(p):
+    """The module missing (a host that serves no core/rikuy-pic-*.wasm): the picture as it was, and a plain word why."""
+    br, page, errs = open_page(p)
+    try:
+        page.route('**/core/rikuy-pic-*', lambda r: r.fulfill(status=404, body=''))
+        D = pic_doc()
+        load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150); page.wait_for_timeout(300)
+        sel_pic(page); run_async(page, 'picture-corrections', {'brightness': 0.2}, 1200)
+        toast = page.evaluate("(document.querySelector('#toast span') || {}).textContent || ''")
+        check('without the picture module: nothing written, and the toast says so plainly: ' + toast[:90], src(page) == D and 'did not load' in toast)
+    finally:
+        br.close()
+
+
+def pictures_compiled(page):
+    if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        print('SKIP pictures compiled in the page: no TeX tree in %s' % DIST)
+        return
+    D = pic_doc().replace('\\end{center}\n', '\\end{center}\n\n\\begin{center}\n\\includegraphics[width=0.3\\linewidth]{b.png}\n\\end{center}\n')
+    load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150); put_png(page, 'b.png', 1200, 800, dpi=300, color=(30, 90, 200)); page.wait_for_timeout(300)
+    sel_pic(page); run_async(page, 'picture-transparency', {'transparency': 0.4}); run_async(page, 'picture-color', {'recolor': 'sepia'})
+    page.evaluate("() => { const g = window.rikuy, t = g.files.get('main.tex'); g.picSelect({ f: 'main.tex', s: t.lastIndexOf('\\\\includegraphics') }, { tab: true }); }")
+    run_async(page, 'picture-compress', {'ppi': 150, 'all': False}, 1500)
+    doc = src(page)
+    check('two pictures edited for the compile: one sepia and seen through, one compressed', doc.count('% rikuy: from') == 2, doc[doc.find('\\begin{document}'):][:400])
+    for eng in ('pdflatex', 'xelatex', 'lualatex'):
+        r = compile_pdf(page, ('% !TEX program = ' + eng + '\n' if eng != 'pdflatex' else '') + doc)
+        check('the edited pictures compile with %s (a PNG with an alpha channel, a smaller PNG): two pictures in the PDF' % eng, r['ok'] and not r['problems'] and r['pdf'] and base64.b64decode(r['pdf']).count(b'/Subtype /Image') + base64.b64decode(r['pdf']).count(b'/Subtype/Image') >= 2, r['problems'])
+
+
+def pictures_phone(p):
+    for w, h in ((390, 844), (360, 740)):
+        br, page, errs = open_page(p, w, h, touch=True)
+        tag = ' (%d px, touch)' % w
+        try:
+            D = pic_doc()
+            load_doc(page, D); put_png(page, 'a.png', 300, 200, dpi=150); page.wait_for_timeout(400)
+            b = page.locator('#pages .a-img').bounding_box()
+            page.touchscreen.tap(b['x'] + b['width'] / 2, b['y'] + b['height'] / 2); page.wait_for_timeout(400)
+            page.locator('#rc-picture-color').tap(); page.wait_for_timeout(300)
+            g = page.evaluate("""() => { const m = document.querySelector('.pop-menu'); if (!m) return null; const r = m.getBoundingClientRect(); const it = [...m.querySelectorAll('[role^=menuitem]')].filter((a) => a.getClientRects().length).map((a) => a.getBoundingClientRect());
+              return { l: r.left, r: r.right, w: innerWidth, small: it.filter((t) => t.height < 44).length, n: it.length }; }""")
+            check('a tap on Color opens its menu in the screen, 44 px items' + tag, g and g['l'] >= 0 and g['r'] <= g['w'] + 1 and g['small'] == 0, g)
+            page.get_by_role('menuitemradio', name='Grayscale').tap(); page.wait_for_timeout(1200)
+            check('a tap on Grayscale writes it' + tag, '% rikuy: from a.png, recolor gray\n' in src(page), src(page)[-160:])
+            if w == 390: page.screenshot(path=os.path.join(SHOTS, 'picture-color-390.png'))
+        finally:
+            br.close()
+
+
 def run():
     os.makedirs(SHOTS, exist_ok=True)
     names = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (shapes, charts, smart, menus, compiled):
+        for f in (shapes, charts, smart, menus, compiled, pictures, pictures_compiled):
             if names and f.__name__ not in names:
                 continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
         browser.close()
-        for f in (phones, shots):
+        for f in (phones, shots, pictures_unloaded, pictures_phone):
             if names and f.__name__ not in names:
                 continue
             try: f(p)

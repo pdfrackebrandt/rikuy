@@ -84,7 +84,7 @@ export const LAYOUT = {
     data: ['table-sort L SO', 'repeat-header S G Repeat Header Rows', 'table-to-text S V Convert to Text']
   },
   'picture-format': {
-    adjust: ['picture-change S G', 'picture-reset S Q Reset Picture'],
+    adjust: ['picture-corrections L R', 'picture-color L I', 'picture-transparency L TR', 'picture-compress S M', 'picture-change S G', 'picture-reset S Q Reset Picture'],
     styles: ['picture-border S SO', 'picture-caption S N'],
     accessibility: ['picture-alt L AT'],
     arrange: ['picture-position L PO', 'picture-wrap L TW', 'picture-rotate S AY'],

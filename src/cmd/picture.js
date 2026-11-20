@@ -27,6 +27,7 @@ import * as D from '../drawing.js';
 import { openGallery } from '../ui/kit.js';
 import { BLOCKS } from '../render.js';
 import { chartRewrite, diff, applyEdits } from '../objfmt.js';
+import { lineOf, fxEdits } from '../picfx.js';
 
 const WHY = 'Select a picture first: click it on the page.';
 // the picture selected on the page, read once for each look at the ribbon (every button asks)
@@ -36,6 +37,15 @@ const pic = (app, at) => {
   return m.pic;
 };
 const has = (app, at) => !!pic(app, at);
+// a picture Corrections, Color, Transparency or Compress made (src/picfx.js): its comment names the
+// first file, which Reset Picture puts back, the comment going with it
+const noted = (app, at) => { const h = pic(app, at); return !!h && !!lineOf(h.src, h.P.e).note; };
+function withFirstFile(src, Q, r) {
+  const L = lineOf(src, Q.e);
+  if (!L.note || !r || r.error) return r;
+  const more = fxEdits(src, Q, Q.file.name, L.note.orig, {}, null);
+  return { ...r, edits: [...(r.edits || []), ...more].sort((a, b) => a.s - b.s || a.e - b.e) };
+}
 const keyed = (app, at) => { const h = pic(app, at); return !!h && h.P.keyval; };
 // (a picture turned by a macro's angle: Rotate cannot add to it)
 const turnable = (app, at) => { const h = pic(app, at); return !!h && h.P.keyval && X.angleKnown(h.src, h.P); };
@@ -87,8 +97,8 @@ register(
   P('picture-change', 'Change Picture', { title: 'Change Picture: another file in its place, its size, crop, turn and alt text kept', tab: 'picture-format', group: 'adjust', order: 10, icon: ICON.change, label: 'Change Picture',
     synonyms: ['Replace picture', 'Replace image', 'Swap picture'], menu: { picture: 10 }, run: (app, args) => (args && args.file ? app.picChange(args.file, args.blob) : app.picChoose()) }),
   P('picture-reset', 'Reset Picture', { title: 'Reset Picture: its crop, turn, flips and border go (size and alt text stay); the arrow for Reset Picture & Size', tab: 'picture-format', group: 'adjust', order: 20, icon: ICON.reset, kind: 'split',
-    synonyms: ['Discard formatting'], when: keyed, run: (app) => app.picOp((src, Q) => X.reset(src, Q, false)), menuItems: () => [{ name: 'Reset Picture', command: 'picture-reset' }, { name: 'Reset Picture & Size', command: 'picture-reset-size' }] }),
-  P('picture-reset-size', 'Reset Picture & Size', { title: 'Reset Picture & Size: the picture as its file is, at its natural size', when: keyed, run: (app) => app.picOp((src, Q) => X.reset(src, Q, true)) }),
+    synonyms: ['Discard formatting'], when: (app, at) => keyed(app, at) || noted(app, at), run: (app) => app.picOp((src, Q) => withFirstFile(src, Q, X.reset(src, Q, false))), menuItems: () => [{ name: 'Reset Picture', command: 'picture-reset' }, { name: 'Reset Picture & Size', command: 'picture-reset-size' }] }),
+  P('picture-reset-size', 'Reset Picture & Size', { title: 'Reset Picture & Size: the picture as its file is, at its natural size', when: (app, at) => keyed(app, at) || noted(app, at), run: (app) => app.picOp((src, Q) => withFirstFile(src, Q, X.reset(src, Q, true))) }),
 
   // ---- Picture Styles ---------------------------------------------------------------------------
   P('picture-border', 'Picture Border', { title: 'Picture Border: a frame tight round the picture ({\\setlength{\\fboxsep}{0pt}\\fbox{…}}); again takes it off; Border Weight and Border Color in the right click menu', tab: 'picture-format', group: 'styles', order: 10, kind: 'toggle', icon: ICON.border, label: 'Picture Border',
@@ -693,7 +703,10 @@ export const methods = {
     let nm = base + ext;
     for (let k = 2; taken(nm); k++) nm = base + '-' + k + ext;
     if (blob && !this.assetBlobs.has(nm)) { this.addAsset(nm, blob); this.binaryDirty = true; this.zipDirty = true; this.forceRender = true; }
-    return this.picApply(h, X.changeFile(h.src, h.P, nm));
+    // (a new picture is no edited copy of the old one: the comment that said so goes)
+    const L = lineOf(h.src, h.P.e), ch = X.changeFile(h.src, h.P, nm);
+    if (L.note) ch.edits.push({ s: L.note.s, e: L.note.e, t: '' });
+    return this.picApply(h, ch);
   }
 };
 
