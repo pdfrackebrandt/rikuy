@@ -3429,9 +3429,12 @@ Tests:
     what cannot apply), Wrap writes `\centering` and keeps a table a table, no wrap in a list, a
     removed key keeps its neighbour's comment, a rename follows tikzpicture, any `\input` file and
     the document's own `\figref`, hiding survives the hidden object's own edits, a legend keeps
-    `& % _`, Align's look parses nothing.
-    Evidence: `npm test` green (`objfmt` 22 groups, `picfx` 12, `objlist` 5, `drawing`,
-    `objects`, `commands` 15); `test/objects.py` 274 (with `dist/tex`: everything compiled with
+    `& % _`, Align's look parses nothing. And its second (U1 to U4): a new float only where every
+    environment round it is known safe (the preamble's own environments read: a `\newtcolorbox`
+    refused, a `\newenvironment` of a quote allowed), language environments wrap, greyed places
+    reached by the arrows with their reason, one `\centering`.
+    Evidence: `npm test` green (`objfmt` 23 groups, `picfx` 12, `objlist` 5, `drawing`,
+    `objects`, `commands` 15); `test/objects.py` 285 (with `dist/tex`: everything compiled with
     pdfLaTeX, XeLaTeX and LuaLaTeX, the shapes' words, chart titles and SmartArt items found in each
     PDF; edited pictures, one seen through, on the three engines; phones at 390 and 360 px with
     touch); `tabs.py` 127 (the fold sweep on all 19 tabs, the five new ones among them), `agent.py` 143, `picture.py` 228, `ribbon.py` 195, `test:browser` 199, the corpus model run 716 of 716; screenshots

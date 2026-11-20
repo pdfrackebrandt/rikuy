@@ -297,3 +297,60 @@ Each finding with its commit and the test that failed before it.
 - The verification of ff46de0 is placed after the first fixes' section, as the file's history runs.
 
 Checks at cecdf43, with `dist/tex`: `npm test` green (`objfmt` 22 groups, `objlist` 5); `objects.py` 274 passed, 0 failed; `picture.py` 228.
+
+---
+
+# Verification of 7d163a0
+
+**Verdict: fix first.** One item blocks: an environment the document defines itself (U1 below). Everything else holds.
+
+I tested on dist/ built at 18:42, which no source file is newer than; 7d163a0 itself changes docs only. Repro scripts are `v1` to `v9`, `w1.py` and `w2b.py` in `/tmp/review-g1-out/`.
+
+## N1 to N9
+
+| # | Status | Evidence |
+|---|---|---|
+| N1 | fixed | Wrap on figure > center + caption writes `wrapfigure{r}{0pt}\n\centering`, and it compiles. A `table` float becomes `wraptable` and keeps "Table 1" (`v3.py`, `v3b.py`). |
+| N2 | fixed | In multicols, Top of Page is refused and greyed. `v9.py`: the drawing stays in the PDF. |
+| N3 | fixed for the listed environments | tcolorbox: refused. sidewaysfigure: refused with "sets its own place". wraptable: Top of Page writes `table[t]`, compiles, "Table 1". **But see U1.** |
+| N4 | fixed | Wrap inside an itemize item is refused; float there is still allowed and compiles. |
+| N5 | fixed | `v2.mjs`: taking off the last key keeps the previous key's comment ("% grid lines help", "% its colour"), and a key added after a comment puts its comma before it. |
+| N6 | fixed | `v4.mjs`: the rename reaches `\ref` in a tikzpicture node, `plot.tikz`, and `\figref{…}`, and leaves lstlisting alone. A listing's `label=` now counts as taken. |
+| N7 | fixed | `v6.py`: a hidden drawing stays hidden after Shape Fill, and a hidden figure stays hidden after its label is renamed. |
+| N8 | fixed as far as pgfplots allows | Legend entries are written as `\addlegendentry{Sales \& Co}` and `100\%`. Categories still lose `& % _ , …`, which pgfplots' symbolic coordinates cannot hold; the grid now says so. |
+| N9 | fixed | With an object selected on page.py's long document, when/on together take 7 ms (drawing) and 10 ms (picture); no single command is over 5 ms. |
+
+The earlier H and M repros were not rerun this round. Suites: `objects.py` 274 passed, 0 failed; `picture.py` 228 passed, 0 failed, so B8's pictures lose nothing under the new shared lists.
+
+## New findings
+
+**U1 (High, the one blocker). An environment the document defines itself still gets a float written inside it.**
+- Floats are refused from a deny list (`BOXES`), while wrap uses an allow list (`WRAP_OK`). An environment on neither list passes the float check.
+- Repro (`w1.py`): `\newenvironment{mybox}{\begin{minipage}{6cm}}{\end{minipage}}`, or `\newtcolorbox{notebox}{…}`, around a center holding a drawing.
+- Top of Page writes `\begin{figure}[t]` inside, and TeX stops with "Not in outer par mode". The drawing is missing from the PDF.
+- Wrap in the same places is refused correctly, because the allow list catches them.
+- `\newtcolorbox` environments are common in current documents.
+- Fix: refuse a float from any environment that is not known to be safe, the same way `WRAP_OK` works for wrap. Known safe: document, lists, quote, quotation, verse, center and flush, theorem-like environments from `\newtheorem`, language, spacing and landscape. Alternatively, read the preamble's `\newenvironment`, `\NewDocumentEnvironment`, `\newtcolorbox` and `\newmdenv` definitions and treat each one as a box.
+
+**U2 (Low). Wrap is now refused inside polyglossia's language environments.**
+`\begin{french}…\end{french}` refuses Wrap, while `otherlanguage` is allowed; at ff46de0 this was written and worked. Add `\setotherlanguage`'s environments (or any environment polyglossia declares) to `WRAP_OK`.
+
+**U3 (Low). Greyed Position items cannot be reached from the keyboard.**
+- `w2b.py`, in multicols: ArrowDown never leaves "In Line with Text". The eight greyed items carry `aria-disabled` and their reason only in `title`.
+- So keyboard and screen reader users never hear what is unavailable or why, and on touch there is no tooltip at all. Enter on a greyed item does nothing, which is correct.
+- Word lets the arrows land on greyed items. WAI-ARIA's menu pattern recommends that disabled items stay focusable.
+- Fix: keep greyed items in the arrow order, and give the reason through `aria-describedby` plus one visible note line under the menu.
+
+**U4 (Low). Two `\centering` lines.**
+On a figure that has both `\centering` and a `center`, Wrap writes `\centering\n\centering`. It is harmless; drop the second when one is already there.
+
+**Note.** A tikzpicture inside multicols inside a figure is not drawn on the page, so Position cannot reach it there. I could not attack that case through the interface.
+
+## Fixes for the second verification
+
+- **U1** (7a9537d): a new float is written only where every environment round it is on an allow list (the body, lists, quotes, center and flush, a proof, theorems and the document's `\newtheorem`'s, languages, spacing, landscape, sizes), as wrap's `WRAP_OK` works. The main file's preamble is read: `\newtcolorbox`, `\newmdenv` and their like are boxes; a `\newenvironment` or `\NewDocumentEnvironment` counts as safe only where its begin part holds safe environments and plain declarations. Anything else is refused, the reason naming it ("an environment of this document's own"). Tests: `objfmt.test.mjs` (U group: mybox, notebox, a `\NewDocumentEnvironment` round a tcolorbox and an unknown environment refused; `\newenvironment{note}` of a quote, a theorem and a proof allowed; the preamble read from the main file; failing before), `objects.py review_arrange` (notebox and mybox greyed, nothing written).
+- **U2** (7a9537d): polyglossia's language environments (`\setotherlanguage{french}`, `Arabic` for arabic) and babel's `otherlanguage` and `hyphenrules` allow Wrap and floats. Tests: `objfmt.test.mjs` (U group), `objects.py review_arrange` (Wrap in `\begin{french}`, compiled with XeLaTeX and LuaLaTeX).
+- **U3** (7a9537d): a greyed menu item given its reason (`openMenu`'s `why`) stays in the arrows' reach, carries the reason as its `aria-describedby`, and shows it in a note line under the menu as it is reached, pointed at or pressed (a tap); Enter or a press on it writes nothing. Test: `objects.py review_arrange` (in multicols: ArrowDown lands on Best Place, its description and the note say why, the arrows go on, Enter writes nothing, a press shows the reason; failing before).
+- **U4** (7a9537d): Wrap on a figure with both `\centering` and a `center` drops the center's line. Test: `objfmt.test.mjs` (U group).
+
+Checks at 7a9537d, with `dist/tex`: `npm test` green (`objfmt` 23 groups); `objects.py` 285 passed, 0 failed; `picture.py` 228.
