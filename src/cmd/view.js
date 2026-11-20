@@ -459,13 +459,22 @@ export const methods = {
   // View until Print Layout is chosen there; a wide window keeps its own, prefs.web)
   setWeb(on) {
     on = !!on;
+    // (the caret and the reader's place read before the view's class changes the page's geometry)
+    const c0 = this.model ? this.caretNow() : null, sp = this.model && this.readerSpot ? this.readerSpot() : null;
     if (on) { cls().remove('pg-draft', 'pg-side', 'pg-grid'); this.prefs.draft = false; this.prefs.pages = 0; }
     const was = this.webOn();
     cls().toggle('pg-web', on);
     if (narrowNow()) this.prefs.narrowWeb = on; else this.prefs.web = on;
     this.savePrefs();
     this.viewSync && this.viewSync();
-    if (was !== on && this.model) { const c = this.caretNow(); this.computePx(); this.relayout(true); if (c && !c.ghost && document.activeElement !== this.root) this.restoreCaret(c.collapsed ? { f: c.f, p: c.a, bias: 1 } : { f: c.f, selA: c.a, selB: c.b }); }
+    // (the caret, and the reader's place on the screen, by their source positions: the lines all
+    // move, and Mobile View off and on again showed Part 32 for paragraph 37)
+    if (was !== on && this.model) {
+      const c = c0;
+      this.computePx(); this.relayout(true);
+      if (c && !c.ghost && document.activeElement !== this.root) this.restoreCaret(c.collapsed ? { f: c.f, p: c.a, bias: 1 } : { f: c.f, selA: c.a, selB: c.b }, true);
+      this.toReaderSpot(sp);
+    }
     this.rulerSoon();
     this.ribbonSync();
   },
