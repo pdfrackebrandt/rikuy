@@ -110,6 +110,12 @@ ok('formula lines follow rows and columns inserted, deleted, sorted, merged and 
   assert.deepEqual(sorted.lines, ['B2 =SUM(ABOVE)', 'C5 =B5*2+SUM(B3:B5)']);
   // (Sort moves a row ending in an empty cell with its &: three cells a row still)
   assert.ok(sorted.out.includes('Total & 10 & \\\\\nplums & 5 & \\\\\npears & 3 & \\\\\napples & 2 & 4 \\\\'), sorted.out);
+  // (the verification of 3d3bfc4: Split Table dropped the lines of the rows of the new table)
+  const sp = X.splitTable(FX_TAB, T, rows[3]);
+  const fa = X.formulasAfter(FX_TAB, T, sp.edits, sp.moved), outS = X.apply(FX_TAB, [...sp.edits, ...fa.edits]);
+  assert.ok(outS.includes('\\end{tabular}\n\n% formula B2 [10]: =SUM(ABOVE)\n\\begin{tabular}{lrr}\nplums & 5 & \\\\\nTotal & 10 & \\\\'), outS);
+  assert.ok(outS.includes('% formula C2 [4]: =B2*2+SUM(B2:B3)\n\\begin{tabular}{lrr}\nItem'), outS);
+  assert.deepEqual(fa.dropped.filter((n) => !sp.carried.includes(n)), []);
   // (the verification of 3d3bfc4: Move Row Up and Down took the lines of the rows they moved)
   const up = follow(X.moveRow(FX_TAB, T, rows[2], -1));
   assert.deepEqual([up.lines, up.dropped], [['B5 =SUM(ABOVE)', 'C3 =B3*2+SUM(B2:B4)'], []]);

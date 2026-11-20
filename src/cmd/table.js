@@ -311,6 +311,8 @@ export const methods = {
     const f = h.f;
     // (the formula lines follow their cells: renamed where a cell moved, taken off where it went)
     const fx = r.edits && r.edits.length ? X.formulasAfter(h.src, h.T, r.edits, r.moved) : { edits: [], dropped: [] };
+    // (lines the operation wrote again elsewhere, Split Table's for its new table, are not lost)
+    if (r.carried) fx.dropped = fx.dropped.filter((n) => !r.carried.includes(n));
     const edits = [...(r.edits || []), ...fx.edits].map((x) => ({ f, s: x.s, e: x.e, t: x.t }));
     if (fx.dropped.length) setTimeout(() => this.toast(fx.dropped.length === 1 ? 'The formula of ' + fx.dropped[0] + ' went with its cell.' : 'The formulas of ' + fx.dropped.join(', ') + ' went with their cells.', 6000), 0);
     else if (r.note) setTimeout(() => this.toast(r.note, 7000), 0);

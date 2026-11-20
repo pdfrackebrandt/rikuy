@@ -1157,8 +1157,14 @@ export function splitTable(src, T, r) {
   const head = lead0.length ? nl + lead0.map((x) => src.slice(x.s, x.e)).join(nl) : '';
   // (the rules before row r stay above the cut, as the old table's last)
   const at = row.leadE;
-  const t = top + nl + '\\end{' + T.name + '}' + nl + nl + begin + head;
-  return { edits: [{ s: at, e: at, t }], p: at + t.length };
+  // (the formula lines of the rows that go to the new table go with them, before it, renamed to its
+  // rows; a reference to a row left above is #REF!, as each table's cells are its own. formulasAfter
+  // takes them off the first table's lines: carried says they were not lost)
+  const cut = dataRows(T).indexOf(r), carried = [];
+  const rowTo = dataRows(T).map((k, i) => (i >= cut ? i - cut : -1)), colTo = Array.from({ length: T.ncols }, (x, c) => c);
+  const lines = cut < 0 ? [] : formulasOf(src, T).filter((F) => F.r >= cut).map((F) => { carried.push(F.name); return formulaLine('', colName(F.c) + (F.r - cut + 1), F.value, renameRefs(F.text, rowTo, colTo)) + nl; });
+  const t = top + nl + '\\end{' + T.name + '}' + nl + nl + lines.join('') + begin + head;
+  return { edits: [{ s: at, e: at, t }], p: at + t.length, carried };
 }
 
 // ---- alignment ----------------------------------------------------------------------------------
