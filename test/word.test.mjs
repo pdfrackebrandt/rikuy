@@ -570,6 +570,23 @@ await ok('to Word (R3): a cell\'s shading (\\cellcolor, \\rowcolor, \\rowcolors)
   assert.equal(importInto(E.docx, files).files.size, 0);
 });
 
+// (the review of PR 84, M6: a "% formula" line was a dead number in Word and gone when opened again)
+await ok('to Word: a table\'s formula line as Word\'s own field round the value; a stranger\'s .docx with one gives the line back; nothing changed comes back changed', async () => {
+  const src = doc('Before.\n\n% formula B4 [3.00]: =SUM(ABOVE) \\# "0.00"\n\\begin{tabular}{lr}\nItem & Price \\\\\na & 1 \\\\\nb & 2 \\\\\nTotal & 3.00 \\\\\n\\end{tabular}\n\nAfter.\n', '');
+  const files = new Map([['main.tex', src]]);
+  const E = exportFiles(files);
+  const d = text(unzip(E.docx).get('word/document.xml'));
+  assert.match(d, /<w:fldSimple w:instr=" =SUM\(ABOVE\) \\# &quot;0\.00&quot; "><w:r>(?:(?!<\/w:fldSimple>)[\s\S])*>3\.00<\/w:t><\/w:r><\/w:fldSimple>/);
+  assert.equal(importInto(E.docx, files).files.size, 0);
+  const t = open(E.docx).tex;
+  assert.ok(/% formula B4 \[3\.00\]: =SUM\(ABOVE\) \\# "0\.00"\n\\begin\{tabular\}/.test(t), t);
+  // (a cell that does not hold the value Word showed gets no line: the table is not the one meant)
+  const odd = unzip(E.docx);
+  odd.set('word/document.xml', new TextEncoder().encode(d.replace('>3.00<', '>4.00<')));
+  const t2 = open(zip(odd)).tex;
+  assert.ok(t2.includes('Total & 4.00') && !t2.includes('% formula'), t2);
+});
+
 await ok('to Word (R3): \\thepage, \\pageref{LastPage}, \\thetitle and \\theauthor as Word\'s fields; hyperref\'s form fields as content controls; nothing changed comes back changed', async () => {
   const src = doc('\\begin{Form}\nPage \\thepage{} of \\pageref{LastPage} in \\thetitle{} by \\theauthor{}.\n\nName \\TextField[name=t, width=4cm]{Who} on \\TextField[name=d, format={AFDate_FormatEx("dd/mm/yyyy");}]{} picks \\ChoiceMenu[name=l]{}{One,Two} or \\ChoiceMenu[combo,name=c]{}{A & B,C} and \\CheckBox[name=k,checked]{Agree}.\n\\end{Form}', '\\usepackage{titling,lastpage,hyperref}\n\\title{Fields}\n\\author{Ann}\n');
   const files = new Map([['main.tex', src]]);
