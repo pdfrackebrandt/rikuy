@@ -17,7 +17,7 @@ import { rtlDocument } from './scripts.js';
 import { bidiDoc, dirSpan, hasRtl, scanDir } from './wordbidi.js';
 import { parseKV } from './preamble.js';
 import { unescapeAlt } from './picture.js';
-import { tableAlt } from './table.js';
+import { tableAlt, formulasOf } from './table.js';
 import { sectionRuns, sectionType } from './pageword.js';
 
 export const API = [1, 23, 1, 2];
@@ -437,6 +437,10 @@ class Walker {
     // (\rowcolors' bands, counted as the page counts them: the rows that are not rules alone)
     const bandOf = (n) => (t.band && n >= t.band.start ? (n % 2 ? t.band.odd : t.band.even) : null);
     let rowNo = 0;
+    // (the table's formula lines, by the cell they name; src/table.js formulasOf)
+    const fsrc = t.f != null && this.files && this.files.get ? this.files.get(t.f) : null;
+    const fxOf = new Map(typeof fsrc === 'string' && t.s != null ? formulasOf(fsrc, { s: t.s }).map((F) => [F.name, F.text]) : []);
+    const colName = (c) => { let n = ''; c += 1; while (c > 0) { const m = (c - 1) % 26; n = String.fromCharCode(65 + m) + n; c = Math.floor((c - 1) / 26); } return n; };
     const row = (r) => {
       const out = [];
       let col = 0;
@@ -456,6 +460,9 @@ class Walker {
         const shd = wordColor(c.bg || rowBg || bandOf(rowNo)), kvs = [];
         if (shd) kvs.push(['rk-shd', shd]);
         if (c.rot === 90 || c.rot === 270) kvs.push(['rk-rot', String(c.rot)]);
+        // (a "% formula" line names this cell: Word's own field, src/wordtable.js)
+        const fx = fxOf.get(colName(col) + rowNo);
+        if (fx) kvs.push(['rk-fx', fx]);
         out.push([attr('', [], kvs), { t: AL[c.palign || c.align] || 'AlignDefault' }, c.rows > 1 ? c.rows : 1, c.span || 1,
           [{ t: 'Plain', c: this.wrap('cell', t.f, null, null, () => this.inl(c.inl, u ? u.fns : []), { after: u ? u.e : null, dir: c.dir || t.dir || (u && u.dir) }) }]]);
         col += c.span || 1;

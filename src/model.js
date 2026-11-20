@@ -91,7 +91,7 @@ const INVIS = new Set([
   'address', 'shorttitle', 'subtitle', 'keywords_', 'hfil', 'endfirsthead', 'endhead', 'endfoot', 'endlastfoot',
   'tabularnewline_', 'newblock', 'hbox_', 'nobreak', 'printindex', 'makeindex', 'urlstyle', 'listfiles',
   'nonumber', 'notag', 'restoregeometry', 'newgeometry', 'linenumbers', 'nolinenumbers', 'doublespace',
-  'lstset', 'tikzset', 'pgfplotsset', 'setlist', 'crefname', 'Crefname', 'newlength', 'AtBeginDocument',
+  'lstset', 'tikzset', 'pgfplotsset', 'smartdiagramset', 'setlist', 'crefname', 'Crefname', 'newlength', 'AtBeginDocument',
   'AtEndDocument', 'setmainfont', 'setsansfont', 'setmonofont', 'newfontfamily', 'renewbibmacro',
   'DeclareFieldFormat', 'DeclareNameAlias', 'newacronym', 'usetikzlibrary', 'pgfplotstableread', 'tcbuselibrary',
   'SetKwInOut', 'algnewcommand', 'floatname', 'restylefloat', 'newfloat', 'DeclareCaptionFormat', 'setuptoc',
@@ -288,6 +288,13 @@ function csvRows(text, sep) {
   bySep.set(text, rows);
   return rows;
 }
+
+// The end of a SmartArt with the line after it that puts smartdiagram's own colours back (SmartArt
+// Design's Change Colors writes it, src/objfmt.js SMART_RESET): the object a selection takes in
+const SMART_RESET_RE = /\s*\\smartdiagramset\s*\{\s*set color list=\{red!40,cyan!40,blue!40,green!40,orange!40,yellow!40,magenta!40,brown!40,violet!40,teal!40\}\s*\}/y;
+// (or any list put back, marked by its comment: the document's own colours of before)
+const SMART_BACK_RE = /\s*\\smartdiagramset\s*\{(?:[^{}]|\{[^{}]*\})*\}% rikuy: colours back/y;
+function smartEnd(src, e) { SMART_BACK_RE.lastIndex = e; if (SMART_BACK_RE.test(src)) return SMART_BACK_RE.lastIndex; SMART_RESET_RE.lastIndex = e; return SMART_RESET_RE.test(src) ? SMART_RESET_RE.lastIndex : e; }
 
 export function buildModel(project, hint) {
   if (hint && hint.labels) {
@@ -2724,6 +2731,9 @@ class Builder {
         if (n.t === 'cmd' && n.name === 'label') { this.label(this.argText(ctx, n.args[0]), ctx); continue; }
         if (n.t === 'env' && n.math) { flushP(); parts.push(this.displayMath(n, ctx, n.name)); continue; }
         if (n.t === 'math' && n.display) { flushP(); parts.push(this.displayMath(n, ctx, null)); continue; }
+        // a TikZ picture in a figure (Shape Format's and Chart Format's Position): drawn as in the
+        // text (src/render.js floatPart), its source box where the page cannot draw it
+        if (n.t === 'env' && n.name === 'tikzpicture' && !ctx.pm) { flushP(); parts.push({ type: 'raw', f: ctx.f, s: n.s, e: n.e, is: n.be, ie: n.es, name: 'tikzpicture', align: align || dflt }); continue; }
         para.push(n);
       }
     };
@@ -2800,6 +2810,8 @@ class Builder {
     });
     // the columns stay in their order; the words in the cells run the way the text around runs
     const t = { type: 'tabular', cols, rows: outRows, f: ctx.f, s: nd.s, e: nd.e, fns, dir: this.dirOf() };
+    // (G2) a tabularx's width, which its X columns fill: a share of the line or a length
+    if ((nd.name === 'tabularx' || nd.name === 'tabular*') && nd.args[0] && nd.args[0] !== specArg) t.width = this.argText(ctx, nd.args[0]).trim().slice(0, 60);
     if (set) Object.assign(t, set);
     return t;
   }
@@ -3407,7 +3419,10 @@ class Builder {
     if (name === 'smartdiagram' && nd.args.some((x) => x && !x.o)) {
       acc.flush();
       const o = nd.args.find((x) => x && x.o), m = nd.args.filter((x) => x && !x.o).pop();
-      out.push(this.atom(ctx, { k: 'smart', s: nd.s, e: nd.e, kind: o ? this.argText(ctx, o).trim().slice(0, 60) : 'flow diagram', items: ctx.src.slice(m.is, m.ie).slice(0, 4000) }));
+      // (its \smartdiagramset just before it, SmartArt Design's colours: the page draws them; ss is
+      // where it starts, so the object a selection takes in is both)
+      const k0 = ctx.pm ? -1 : ctx.src.lastIndexOf('\\smartdiagramset', nd.s), sm = k0 >= 0 && nd.s - k0 < 2000 ? /\\smartdiagramset\s*\{((?:[^{}]|\{[^{}]*\})*)\}\s*$/y.exec(ctx.src.slice(k0, nd.s)) : null;
+      out.push(this.atom(ctx, { k: 'smart', s: nd.s, e: nd.e, kind: o ? this.argText(ctx, o).trim().slice(0, 60) : 'flow diagram', items: ctx.src.slice(m.is, m.ie).slice(0, 4000), set: sm ? sm[1] : '', ss: sm ? k0 : nd.s, se: ctx.pm ? nd.e : smartEnd(ctx.src, nd.e) }));
       return false;
     }
     // lettrine's \lettrine[options]{T}{his} (Insert › Drop Cap): the letter dropped over its lines,

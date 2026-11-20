@@ -19,7 +19,8 @@ import { BLOCKS } from '../render.js';
 import { segOfSpan, boundary } from '../editor.js';
 import { packageOptions, packages as pkgLines, docClass, preambleEnd, stripComments } from '../preamble.js';
 import { openMenu, colorPicker, colorArg, colorNeeds } from '../ui/kit.js';
-import { openTablePicker, insertTableDialog, textToTableDialog, tableToTextDialog, sortDialog, propertiesDialog, marginsDialog, deleteCellsDialog, dataFileDialog } from '../ui/tablepicker.js';
+import { openTablePicker, insertTableDialog, textToTableDialog, tableToTextDialog, sortDialog, propertiesDialog, marginsDialog, deleteCellsDialog, dataFileDialog, bordersDialog, formulaDialog } from '../ui/tablepicker.js';
+import * as FX from '../formula.js';
 
 const WHY = 'Put the caret in a table cell first.';
 // the table's first row of cells (after a caption row of a longtable)
@@ -59,7 +60,16 @@ const ICON = {
   penW: '<path d="M3.5 5h13" stroke-width=".8"/><path d="M3.5 10h13" stroke-width="1.6"/><path d="M3.5 15.5h13" stroke-width="2.8"/>',
   fromText: '<path d="M3 5h6M3 8h5M3 11h6M3 14h4"/><path d="M11.5 4.5h6v11h-6zM11.5 8.5h6M11.5 12h6M14.5 4.5v11"/>',
   data: '<path d="M4 3.5h8l4 4v9H4z"/><path d="M12 3.5v4h4M7 11h6M7 14h6M10 9.5v6"/>',
-  dialog: '<path d="M3.5 4.5h13v11h-13zM3.5 8.5h13M10 4.5v11"/><path d="M13 14.5h4M15 12.5v4"/>'
+  dialog: '<path d="M3.5 4.5h13v11h-13zM3.5 8.5h13M10 4.5v11"/><path d="M13 14.5h4M15 12.5v4"/>',
+  gridlines: '<path d="M3.5 3.5h13v13h-13zM3.5 7.8h13M3.5 12.2h13M7.8 3.5v13M12.2 3.5v13" stroke-dasharray="1.6 1.4"/>',
+  drawTable: '<path d="M3.5 5.5h9v10h-9zM3.5 10.5h9M8 5.5v10" stroke-dasharray="1.6 1.4"/><path d="M11 13l1-3 5-5 2 2-5 5zM16 6l2 2"/>',
+  eraser: '<path d="M3.5 13.5l7-7 5 5-4 4H6.5z"/><path d="M7 10l5 5M3.5 17.5h13"/>',
+  formula: '<path d="M3.5 3.5h13v13h-13zM3.5 8h13M10 3.5v13"/><path d="M12 11.5h3M12 14h3M5 11l2.5 2.5L5 16" />',
+  update: '<path d="M15.5 8A6 6 0 0 0 4.6 7M4.5 12a6 6 0 0 0 10.9 1"/><path d="M4.5 3.5V7H8M15.5 16.5V13H12"/>',
+  borderStyles: '<path d="M3 5h14" stroke-width=".8"/><path d="M3 9h14" stroke-width="2"/><path d="M3 13h14M3 15h14" stroke-width=".8"/><path d="M3 18h3M8 18h3M13 18h3"/>',
+  penStyle: '<path d="M3 6h14M3 8.5h14" stroke-width=".9"/><path d="M3 12.5h3M8 12.5h3M14 12.5h3"/><path d="M3 16.5h1M6 16.5h1M9 16.5h1M12 16.5h1M15 16.5h1"/>',
+  painter: '<path d="M4 4.5h9v4H4zM13 6.5h2v4.5H9.5v2"/><path d="M8.5 13h2v5h-2z"/>',
+  bordersDlg: '<path d="M3.5 3.5h13v13h-13zM3.5 10h13M10 3.5v13"/><path d="M12.5 12.5h4v4h-4z" style="fill:currentColor;stroke:none" opacity=".45"/>'
 };
 // a small drawing of each look, for the gallery's buttons
 const LOOK_ICON = {
@@ -91,6 +101,9 @@ const BORDERS = [
   ['border-inside-v', 'Inside Vertical Border', { insideV: 1 }, '<path d="M4 4h12v12H4zM4 10h12" stroke-dasharray="1.5 1.5"/><path d="M10 4v12" stroke-width="1.8"/>']
 ];
 const WEIGHTS = [['0.4pt', '½ pt (LaTeX\'s own)'], ['0.8pt', '¾ pt'], ['1pt', '1 pt'], ['1.5pt', '1½ pt'], ['2.25pt', '2¼ pt']];
+// Border Styles' presets, as Word's gallery names them: [id, name, style, weight]
+const BORDER_STYLES = [['single-half', 'Single solid line, ½ pt', 'single', '0.4pt'], ['single-one', 'Single solid line, 1 pt', 'single', '1pt'], ['single-heavy', 'Single solid line, 1½ pt', 'single', '1.5pt'],
+  ['double-half', 'Double solid lines, ½ pt', 'double', '0.4pt'], ['double-one', 'Double solid lines, ¾ pt', 'double', '0.8pt']];
 
 const T = (id, name, o) => ({ id, name, when: inTable, whyNot: () => WHY, ...o });
 register(
@@ -221,12 +234,45 @@ register(
   // ---- Table Design: borders, pen ------------------------------------------------------------------------------------
   T('table-borders', 'Table Borders', { title: 'Borders: the border picked last (Bottom Border to begin with) on the selected cells, or the whole table with the caret alone; the arrow for every border', tab: 'table-design', group: 'borders', order: 10, kind: 'split', icon: ICON.borders,
     synonyms: ['Borders', 'Border', 'Lines', 'Rules', 'hline', 'cline'], run: (app, args) => app.tableBorder(args && args.id ? args.id : app.lastBorder || 'border-bottom'), menuItems: (app, at) => app.borderItems(at) }),
-  ...BORDERS.map(([id, name, parts, icon]) => T(id, name, { title: name + ': ' + (parts.left != null || parts.right != null || parts.insideV != null ? 'bars in the specification, the whole height of the table' : 'rules: \\hline over all the columns, \\cline over some'), icon, synonyms: ['Border'], kind: 'toggle',
+  ...BORDERS.map(([id, name, parts, icon]) => T(id, name, { title: name + ': ' + (parts.left != null || parts.right != null || parts.insideV != null ? 'bars in the specification, the whole height of the table (none on a booktabs table: its rules leave a gap where a bar meets them)' : 'rules: \\hline over all the columns, \\cline over some'), icon, synonyms: ['Border'], kind: 'toggle',
+    ...(Object.keys(parts).every((k) => /^(left|right|insideV)$/.test(k)) ? { when: (app, at) => { const h = here(app, at); return !!h && X.lookOf(h.src, h.T) !== 'booktabs'; }, whyNot: (app, at) => (here(app, at) ? 'A booktabs table (\\toprule, \\midrule) has no vertical lines: its rules leave a gap where they meet one. The Grid Table style draws them.' : WHY) } : {}),
     on: (app, at) => { const h = here(app, at); return !!h && app.borderOn(h, parts); }, run: (app) => app.tableBorder(id) })),
   T('pen-weight', 'Pen Weight', { title: 'Pen Weight: how thick the table\'s rules are (\\arrayrulewidth)', tab: 'table-design', group: 'borders', order: 20, kind: 'menu', icon: ICON.penW, synonyms: ['Line weight', 'Border width', 'arrayrulewidth'],
     run: (app, args) => (args && 'w' in args ? app.tableSetting('arrayrulewidth', args.w) : app.tableMenu('pen-weight')) }),
   T('pen-color', 'Pen Color', { title: 'Pen Color: the colour of the table\'s rules (\\arrayrulecolor, colortbl)', tab: 'table-design', group: 'borders', order: 30, kind: 'menu', icon: ICON.pen, synonyms: ['Border color', 'arrayrulecolor'],
-    run: (app, args) => (args && 'pick' in args ? app.tablePenColor(args.pick) : app.penColorPicker()) })
+    run: (app, args) => (args && 'pick' in args ? app.tablePenColor(args.pick) : app.penColorPicker()) }),
+
+  // ---- (G2) Word's buttons Rikuy lacked (PLAN task 67) --------------------------------------------------
+  // Table Design › Borders: the pen (its style, Border Styles' presets), Border Painter and the
+  // Borders and Shading dialog. LaTeX's rule weight and colour are the table's (\arrayrulewidth,
+  // \arrayrulecolor), so a preset's weight applies to every rule of it; its style, single or
+  // double, to the borders drawn from then on.
+  T('border-styles', 'Border Styles', { title: 'Border Styles: a pen of a style and weight (single or double rules; the weight is the table\'s, \\arrayrulewidth), then Border Painter to draw with it',
+    tab: 'table-design', group: 'borders', order: 5, kind: 'menu', icon: ICON.borderStyles, label: 'Border Styles', synonyms: ['Border style', 'Double border', 'Line style'],
+    run: (app, args) => (args && args.style ? app.tableBorderStyle(args.style) : app.tableMenu('border-styles')) }),
+  T('pen-style', 'Pen Style', { title: 'Pen Style: the borders drawn from now on single (| and \\hline) or double (|| and \\hline\\hline)', tab: 'table-design', group: 'borders', order: 15, kind: 'menu', icon: ICON.penStyle,
+    synonyms: ['Line style', 'Double line', 'Border style'], run: (app, args) => (args && args.style ? app.tablePenStyle(args.style) : app.tableMenu('pen-style')) }),
+  T('border-painter', 'Border Painter', { title: 'Border Painter: press the edges of cells on the page to draw the pen\'s border there (a rule or a bar); press one that has it to take it off; Escape stops',
+    tab: 'table-design', group: 'borders', order: 40, kind: 'toggle', icon: ICON.painter, label: 'Border Painter', synonyms: ['Draw border', 'Paint borders'],
+    when: (app, at) => !!app.tableDraw || inTable(app, at), on: (app) => app.tableDraw === 'paint', run: (app) => app.tableDrawMode('paint') }),
+  T('borders-shading', 'Borders and Shading', { title: 'Borders and Shading…: the borders of the selected cells or the table (a setting, the style, colour and width, each edge on its own) and their shading',
+    synonyms: ['Borders and Shading dialog', 'Border options', 'Table borders dialog'], run: (app, args) => (args ? app.tableBordersShading(args) : bordersDialog(app)) }),
+
+  // Table Layout: View Gridlines (the page only), Draw Table and Eraser (cells split, merged, and
+  // their borders drawn or taken off where pressed), Formula and Update Formulas
+  { id: 'view-gridlines', name: 'View Gridlines', title: 'View Gridlines: the edges of every cell drawn dashed on the page where the table has no rule; the PDF is not changed', tab: 'table-layout', group: 'table', order: 15,
+    kind: 'toggle', icon: ICON.gridlines, label: 'View Gridlines', synonyms: ['Gridlines', 'Show gridlines', 'Table gridlines', 'Cell edges'], when: () => true,
+    on: (app) => !!app.tableGrid, run: (app) => app.tableGridlines() },
+  T('draw-table', 'Draw Table', { title: 'Draw Table: press inside a merged cell to split it, on a cell\'s edge to draw a rule or a bar there; Escape stops', tab: 'table-layout', group: 'draw', order: 10,
+    kind: 'toggle', icon: ICON.drawTable, label: 'Draw Table', synonyms: ['Pencil', 'Draw lines', 'Split by drawing'], when: (app, at) => !!app.tableDraw || inTable(app, at), on: (app) => app.tableDraw === 'pen', run: (app) => app.tableDrawMode('pen') }),
+  T('table-eraser', 'Eraser', { title: 'Eraser: press a cell\'s edge to take its rule or bar off, or, where it has none, to merge the two cells it parts; Escape stops', tab: 'table-layout', group: 'draw', order: 20,
+    kind: 'toggle', icon: ICON.eraser, label: 'Eraser', synonyms: ['Erase lines', 'Merge by erasing', 'Remove border'], when: (app, at) => !!app.tableDraw || inTable(app, at), on: (app) => app.tableDraw === 'eraser', run: (app) => app.tableDrawMode('eraser') }),
+  T('table-formula', 'Formula', { title: 'Formula…: Word\'s =SUM(ABOVE), AVERAGE, COUNT, MIN, MAX, PRODUCT, cells such as B2, computed by Rikuy now and written as the value; the formula kept on a "% formula" line before the table for Update Formulas',
+    tab: 'table-layout', group: 'data', order: 40, icon: ICON.formula, label: 'Formula', synonyms: ['Sum', 'SUM(ABOVE)', 'Total', 'Average', 'Calculate', 'fx'],
+    run: (app, args) => (args && (args.text || args.remove) ? app.tableFormula(args) : formulaDialog(app)) }),
+  T('update-formulas', 'Update Formulas', { title: 'Update Formulas: every formula of the table computed again from its cells now (Word\'s Update Field)', tab: 'table-layout', group: 'data', order: 50, icon: ICON.update,
+    synonyms: ['Update field', 'Recalculate', 'Recompute', 'F9'], when: (app, at) => { const h = here(app, at); return !!h && X.formulasOf(h.src, h.T).length > 0; },
+    whyNot: () => 'This table has no formula: Table Layout › Formula writes one.', run: (app) => app.tableUpdateFormulas() })
 );
 
 // how a picked colour is written as an argument: {name} or [HTML]{C00000}
@@ -264,7 +310,13 @@ export const methods = {
   },
   tableApply(h, r) {
     const f = h.f;
-    const edits = (r.edits || []).map((x) => ({ f, s: x.s, e: x.e, t: x.t }));
+    // (the formula lines follow their cells: renamed where a cell moved, taken off where it went)
+    const fx = r.edits && r.edits.length ? X.formulasAfter(h.src, h.T, r.edits, r.moved) : { edits: [], dropped: [] };
+    // (lines the operation wrote again elsewhere, Split Table's for its new table, are not lost)
+    if (r.carried) fx.dropped = fx.dropped.filter((n) => !r.carried.includes(n));
+    const edits = [...(r.edits || []), ...fx.edits].map((x) => ({ f, s: x.s, e: x.e, t: x.t }));
+    if (fx.dropped.length) setTimeout(() => this.toast(fx.dropped.length === 1 ? 'The formula of ' + fx.dropped[0] + ' went with its cell.' : 'The formulas of ' + fx.dropped.join(', ') + ' went with their cells.', 6000), 0);
+    else if (r.note) setTimeout(() => this.toast(r.note, 7000), 0);
     const pk = this.tablePackages(r.packages || []);
     if (!edits.length && !pk.length) return false;
     const mine = [...edits, ...pk.filter((x) => x.f === f)];
@@ -475,7 +527,9 @@ export const methods = {
     const at = this.ribbonAt(), h = at && this.tableHere(at);
     if (!h) return false;
     const F = X.floatOf(h.src, h.T);
-    const s = F && F.only ? F.s : h.T.s, e = F && F.only ? F.e : h.T.e;
+    // (its formula and alt lines with it: another table put there later would take them)
+    const lines = [...X.formulasOf(h.src, h.T).map((x) => x.s), ...[X.tableAlt(h.src, h.T)].filter(Boolean).map((x) => x.s)];
+    const s = F && F.only ? F.s : Math.min(h.T.s, ...lines), e = F && F.only ? F.e : h.T.e;
     // (the blank line it stood in goes with it)
     let a = s, z = e;
     while (a > 0 && /[ \t]/.test(h.src[a - 1])) a--;
@@ -755,16 +809,187 @@ export const methods = {
     const v = w == null || w === '' ? null : String(w).replace(/[^0-9.a-z\\]/gi, '').slice(0, 30);
     return this.tableOp((src, T, h) => (T.spec.cols[h.cell.col] ? X.setColWidth(src, T, h.cell.col, v) : { error: 'This column has no letter of its own to set.' }));
   },
-  // Table Properties' OK: o { full, align, stretch, fixed, width, v, alt } as one commit
+  // Table Properties' OK: o { full, width (the table's preferred width: a length, null to fit
+  // its contents), align, wrap ({ around, side, width }), stretch, repeat, fixed, colWidth (the
+  // column's), v, sep, top (cell margins), alt } as one commit; what cannot be done is said
   tableProperties(o) {
-    return this.tableOp((src, T, h) => composeOps(src, T, [
-      (s, t) => (o.alt != null && (X.tableAlt(s, t) || { text: '' }).text !== String(o.alt).trim() ? X.setTableAlt(s, t, o.alt) : null),
-      (s, t) => (o.full != null && (o.full !== (X.fitOf(s, t) === 'window')) ? X.autofit(s, t, o.full ? 'window' : 'contents') : null),
-      (s, t) => (o.align ? X.floatAlign(s, t, o.align) : null),
-      (s, t) => (o.stretch != null ? X.setSetting(s, t, 'arraystretch', Math.abs(o.stretch - 1) < 1e-6 ? null : String(Math.round(o.stretch * 100) / 100)) : null),
-      (s, t) => (o.fixed != null && t.spec.cols[h.cell.col] ? X.setColWidth(s, t, h.cell.col, o.fixed ? o.width || '3cm' : null) : null),
-      (s, t) => (o.v && t.spec.cols[h.cell.col] && 'pmb'.includes(t.spec.cols[h.cell.col].letter) ? X.alignCols(s, t, h.cell.col, h.cell.col, null, o.v) : null)
-    ]));
+    let errs = [];
+    const ok = this.tableOp((src, T, h) => {
+      const r = composeOps(src, T, [
+        (s, t) => (o.wrap ? X.setWrap(s, t, o.wrap) : null),
+        (s, t) => (o.alt != null && (X.tableAlt(s, t) || { text: '' }).text !== String(o.alt).trim() ? X.setTableAlt(s, t, o.alt) : null),
+        (s, t) => (o.full != null && (o.full !== (X.fitOf(s, t) === 'window')) ? X.autofit(s, t, o.full ? 'window' : 'contents') : null),
+        (s, t) => (o.width !== undefined && (o.width || null) !== X.tableWidthOf(s, t) ? X.setTableWidth(s, t, o.width || null) : null),
+        (s, t) => (o.align ? X.floatAlign(s, t, o.align) : null),
+        (s, t) => (o.stretch != null ? X.setSetting(s, t, 'arraystretch', Math.abs(o.stretch - 1) < 1e-6 ? null : String(Math.round(o.stretch * 100) / 100)) : null),
+        (s, t) => (o.sep !== undefined ? X.setSetting(s, t, 'tabcolsep', o.sep) : null),
+        (s, t) => (o.top !== undefined ? { ...X.setSetting(s, t, 'extrarowheight', o.top), packages: o.top ? ['array'] : [] } : null),
+        (s, t) => (o.fixed != null && t.spec.cols[h.cell.col] ? X.setColWidth(s, t, h.cell.col, o.fixed ? o.colWidth || o.width || '3cm' : null) : null),
+        (s, t) => (o.v && t.spec.cols[h.cell.col] && 'pmb'.includes(t.spec.cols[h.cell.col].letter) ? X.alignCols(s, t, h.cell.col, h.cell.col, null, o.v) : null),
+        (s, t) => {
+          if (o.repeat == null || o.repeat === X.repeats(t)) return null;
+          if (o.repeat && h.rect.r0 > firstRow(t)) return { error: 'Only the table\'s first rows repeat: put the caret in its first row, or select its first rows.' };
+          return X.repeatHeader(s, t, Math.max(0, h.rect.r1), o.repeat, { twocolumn: this.twoColumns(h) });
+        }
+      ]);
+      errs = r.errors;
+      return r;
+    });
+    if (errs.length) this.toast(errs[0], 7000);
+    return ok;
+  },
+  // ---- (G2) Borders and Shading, Border Styles, Pen Style, Draw Table, Eraser, View Gridlines -----------
+  // the whole table's cells, for borders the dialog puts on the table
+  tableRect(T) {
+    const data = X.dataRows(T);
+    return { r0: data[0], r1: data[data.length - 1], c0: 0, c1: T.ncols - 1 };
+  },
+  // The dialog's OK: o { scope: 'cells' | 'table', parts: { top, bottom, left, right, insideH,
+  // insideV } (true, false; left out: as it is), double, width ('0.8pt'; '' LaTeX's own),
+  // color (a pick, null: black), shade (a pick, null: none; left out: as it is) } as one step
+  tableBordersShading(o) {
+    let errs = [];
+    const ok = this.tableOp((src, T, h) => {
+      const rect = o.scope === 'table' ? this.tableRect(T) : this.borderRect(h);
+      const r = composeOps(src, T, [
+        (s, t) => (o.parts ? X.setBorders(s, t, rect, o.parts, { double: o.double === undefined ? undefined : !!o.double }) : null),
+        (s, t) => (o.width !== undefined ? X.setSetting(s, t, 'arrayrulewidth', o.width && o.width !== '0.4pt' ? o.width : null) : null),
+        (s, t) => (o.color !== undefined ? { ...X.setSetting(s, t, 'arrayrulecolor', o.color ? colorText(o.color) : null), packages: o.color ? ['xcolor-table'] : [] } : null),
+        (s, t) => {
+          if (o.shade === undefined) return null;
+          const rr = X.shade(s, t, o.scope === 'table' ? this.tableRect(t) : X.grow(t, h.rect), o.shade ? colorArg(o.shade) : null);
+          return { ...rr, packages: [...(rr.packages || []), ...(o.shade && o.shade.name && colorNeeds(o.shade.name) ? ['xcolor-dvips'] : [])] };
+        }
+      ]);
+      errs = r.errors;
+      return r;
+    });
+    if (errs.length) this.toast(errs[0], 7000);
+    return ok;
+  },
+  // Border Styles: the pen's style, and its weight written as the table's (\arrayrulewidth); then
+  // Border Painter, as Word arms it
+  tableBorderStyle(id) {
+    const B = BORDER_STYLES.find((x) => x[0] === id);
+    if (!B) return false;
+    this.penStyle = B[2];
+    const at = this.ribbonAt(), h = at && this.tableHere(at);
+    if (h) this.tableSetting('arrayrulewidth', B[3] === '0.4pt' ? null : B[3]);
+    if (this.tableDraw !== 'paint') this.tableDrawMode('paint');
+    this.ribbonSync();
+    return true;
+  },
+  tablePenStyle(style) {
+    this.penStyle = style === 'double' ? 'double' : 'single';
+    this.toast('Pen Style: ' + (this.penStyle === 'double' ? 'double rules (|| and \\hline\\hline)' : 'single rules') + ' for the borders drawn from now on.', 4000);
+    this.ribbonSync();
+    return true;
+  },
+  // View Gridlines: every cell's edge dashed on the page (never in the PDF); kept for the next visit
+  tableGridlines(on) {
+    this.tableGrid = on == null ? !this.tableGrid : !!on;
+    this.root.classList.toggle('tb-grid', this.tableGrid);
+    try { localStorage.setItem('rikuy.gridlines', this.tableGrid ? '1' : '0'); } catch { /* private mode */ }
+    this.ribbonSync();
+    return true;
+  },
+  // Draw Table, Eraser and Border Painter: a mode the page's presses act in until it is pressed
+  // again, another is chosen, or Escape
+  tableDrawMode(mode) {
+    this.tableDraw = this.tableDraw === mode ? null : mode;
+    for (const m of ['pen', 'eraser', 'paint']) this.root.classList.toggle('tb-draw-' + m, this.tableDraw === m);
+    if (this.tableDraw) this.toast({ pen: 'Draw Table: press a cell\'s edge to draw a rule there, or inside a merged cell to split it. Escape stops.', eraser: 'Eraser: press a cell\'s edge to take its rule off, or to merge the two cells it parts. Escape stops.', paint: 'Border Painter: press a cell\'s edge to draw the pen\'s border there. Escape stops.' }[this.tableDraw], 5000);
+    this.ribbonSync();
+    return true;
+  },
+  // A press at (x, y) on a cell of the page in one of those modes: which edge it is near (within
+  // a quarter of the cell, at most 10 px; 16 px for a finger), and what the mode does there
+  tableDrawAt(td, x, y, touch) {
+    const R = td.getBoundingClientRect();
+    const tol = Math.min(touch ? 16 : 10, Math.max(4, Math.min(R.width, R.height) / 4));
+    const d = { left: x - R.left, right: R.right - x, top: y - R.top, bottom: R.bottom - y };
+    const near = Object.entries(d).filter(([, v]) => v <= tol).sort((a, b) => a[1] - b[1])[0];
+    const edge = near ? near[0] : null;
+    const sp = td.querySelector('span.t[data-g], [data-g]'), info = sp && segOfSpan(sp);
+    if (!info) { this.toast('Rikuy cannot find this cell in the source.'); return false; }
+    this.caretToCell(info.B.f, boundary(info.B, info.seg, info.o));
+    const mode = this.tableDraw;
+    return this.tableOp((src, T, h) => {
+      const cell = h.cell;
+      const rect = X.grow(T, { r0: h.r, r1: cell.mr ? Math.min(T.rows.length - 1, h.r + Math.max(1, cell.mr.n || 1) - 1) : h.r, c0: cell.col, c1: cell.col + cell.span - 1 });
+      if (!edge) {
+        if (mode === 'pen' && (cell.mr || (cell.mc && cell.mc.n > 1))) return X.splitCell(src, T, h.r, h.k);
+        return { error: mode === 'pen' ? 'Press on a cell\'s edge to draw a rule there; inside a merged cell to split it.' : 'Press on a cell\'s edge.' };
+      }
+      const now = X.bordersOf(src, T, rect)[edge];
+      if (mode === 'eraser' && !now) {
+        // no rule there: the two cells the edge parts become one
+        const rows = X.dataRows(T);
+        const k = rows.indexOf(rect.r0), k1 = rows.indexOf(rect.r1);
+        const other = edge === 'right' ? { ...rect, c1: rect.c1 + 1 } : edge === 'left' ? { ...rect, c0: rect.c0 - 1 } : edge === 'bottom' ? { ...rect, r1: rows[k1 + 1] } : { ...rect, r0: rows[k - 1] };
+        if (other.c0 < 0 || other.c1 >= T.ncols || other.r0 == null || other.r1 == null) return { error: 'This edge is the table\'s own: nothing to merge with.' };
+        return X.mergeCells(src, T, X.grow(T, other));
+      }
+      const on = mode === 'eraser' ? false : !now;
+      return X.setBorders(src, T, rect, { [edge]: on }, { double: this.penStyle === 'double' ? true : this.penStyle === 'single' ? false : undefined });
+    });
+  },
+  // ---- (G2) Formula: computed from the cells, written as the value, kept as "% formula" -------------------
+  // the value a formula gives in the table's cell (r, c of A1), formatted, or { error }
+  tableCompute(src, T, r, c, stored) {
+    const { formula, format } = splitFormula(stored);
+    const grid = X.cellGrid(src, T).map((row) => row.map((x) => (x == null ? x : { v: FX.cellNumber(x.tex) })));
+    try { return { value: FX.formatNumber(FX.evaluate(formula, grid, { r, c }), format) }; } catch (e) { return { error: FX.cellName(r, c) + ': ' + e.message }; }
+  },
+  tableFormula(o) {
+    let errs = [];
+    const ok = this.tableOp((src, T, h) => {
+      const rows = X.dataRows(T), r = rows.indexOf(h.r), c = h.cell.col;
+      if (r < 0) return { error: 'Put the caret in a cell of the table\'s rows.' };
+      // (remove: the formula's line and the value it wrote, the cell empty again)
+      if (o.remove) {
+        const out = composeOps(src, T, [(s, t) => { const cell = cellAtRC(t, r, c); return cell ? X.setCellValue(s, cell, '') : null; }, (s, t) => X.setFormula(s, t, FX.cellName(r, c), null)]);
+        errs = out.errors;
+        return out;
+      }
+      const stored = joinFormula(o.text, o.format);
+      if (stored.length > X.FORMULA_MAX) return { error: 'A formula of at most ' + X.FORMULA_MAX + ' characters: this one has ' + stored.length + '.' };
+      const v = this.tableCompute(src, T, r, c, stored);
+      if (v.error) return v;
+      const name = FX.cellName(r, c);
+      const out = composeOps(src, T, [
+        (s, t) => { const cell = cellAtRC(t, r, c); return cell ? X.setCellValue(s, cell, v.value) : null; },
+        (s, t) => X.setFormula(s, t, name, stored, v.value)
+      ]);
+      errs = out.errors;
+      return out;
+    });
+    if (errs.length) this.toast(errs[0], 7000);
+    return ok;
+  },
+  // Update Formulas: each formula again, in the order written, each seeing the values written before it
+  tableUpdateFormulas() {
+    const errs = [];
+    const ok = this.tableOp((src, T) => {
+      const Fs = X.formulasOf(src, T);
+      if (!Fs.length) return { error: 'This table has no formula: Table Layout › Formula writes one.' };
+      // (a cell that holds something else than the value its formula wrote last is left as it is:
+      // its row was moved by hand, or a number typed over it; Word's field would be overwritten)
+      const same = (a, b) => { const x = FX.cellNumber(a), y = FX.cellNumber(b); return a.trim() === b.trim() || (x != null && y != null && Math.abs(x - y) <= 1e-9 * Math.max(1, Math.abs(x))); };
+      return composeOps(src, T, Fs.flatMap((F) => [(s, t) => {
+        const cell = cellAtRC(t, F.r, F.c);
+        if (!cell) { errs.push(F.name + ': the table has no such cell now.'); return null; }
+        const now = X.cellText(s, cell);
+        if (F.value != null && now.trim() && !same(now, F.value)) { errs.push(F.name + ' holds ' + now.trim().slice(0, 30) + ', not ' + F.value + ', the value its formula wrote last: Update Formulas left it. Formula in that cell writes the formula there again.'); return null; }
+        const v = this.tableCompute(s, t, F.r, F.c, F.text);
+        if (v.error) { errs.push(v.error); return null; }
+        F.next = v.value;
+        return X.setCellValue(s, cell, v.value);
+      }, (s, t) => (F.next != null && F.next !== F.value ? X.setFormula(s, t, F.name, F.text, F.next) : null)]));
+    });
+    if (errs.length) this.toast(errs[0], 7000);
+    else if (ok === false) { /* nothing changed: every value was right */ }
+    return ok;
   },
   tableRepeatHeader() {
     return this.tableOp((src, T, h) => {
@@ -894,7 +1119,9 @@ export const methods = {
   },
   borderOn(h, parts) {
     const now = X.bordersOf(h.src, h.T, this.borderRect(h));
-    const keys = Object.keys(parts);
+    // (a booktabs table has no bars: All Borders there is on with its rules)
+    const book = X.lookOf(h.src, h.T) === 'booktabs';
+    const keys = Object.keys(parts).filter((k) => !(book && /^(left|right|insideV)$/.test(k) && Object.keys(parts).some((j) => !/^(left|right|insideV)$/.test(j))));
     if (keys.every((k) => parts[k] === 0)) return keys.every((k) => !now[k]);
     return keys.filter((k) => parts[k]).every((k) => now[k] !== false);
   },
@@ -911,12 +1138,15 @@ export const methods = {
       const rect = this.borderRect(h);
       const now = X.bordersOf(src, T, rect);
       for (const k of Object.keys(set)) if (now[k] === null) delete set[k];
-      return X.setBorders(src, T, rect, set);
+      return X.setBorders(src, T, rect, set, { double: this.penStyle === 'double' ? true : this.penStyle === 'single' ? false : undefined });
     });
   },
   borderItems(at) {
     const h = at && here(this, at);
-    return BORDERS.map(([id, name, parts, icon], k) => [k === 4 ? null : undefined, { name, icon, checked: h ? this.borderOn(h, parts) : false, run: () => this.runCommand('table-borders', { id }) }]).flat().filter((x) => x !== undefined);
+    const book = !!h && X.lookOf(h.src, h.T) === 'booktabs';
+    const bars = (parts) => Object.keys(parts).every((k) => /^(left|right|insideV)$/.test(k));
+    return BORDERS.map(([id, name, parts, icon], k) => [k === 4 ? null : undefined, { name, icon, checked: h ? this.borderOn(h, parts) : false, run: () => this.runCommand('table-borders', { id }),
+      ...(book && bars(parts) ? { disabled: true, title: 'A booktabs table (\\toprule, \\midrule) has no vertical lines: its rules leave a gap where they meet one. The Grid Table style draws them.' } : {}) }]).flat().filter((x) => x !== undefined);
   },
   // the table's settings: \arrayrulewidth (Pen Weight), \tabcolsep, \extrarowheight, \arraystretch
   tableSetting(key, value, packages) {
@@ -939,7 +1169,13 @@ export const methods = {
   tableMenu(id) {
     const at = this.ribbonAt(), h = at && here(this, at);
     let items = [];
-    if (id === 'pen-weight') {
+    if (id === 'border-styles') {
+      const cur = h ? (X.settingsOf(h.src, h.T).arrayrulewidth || {}).value || '0.4pt' : '0.4pt';
+      items = BORDER_STYLES.map(([sid, name, st, w]) => ({ name, checked: (this.penStyle || 'single') === st && cur === w, radio: true, run: () => { this.ribbonBack(); this.runCommand('border-styles', { style: sid }); } }));
+      items.push(null, { name: 'Borders and Shading…', run: () => { this.ribbonBack(); this.runCommand('borders-shading'); } });
+    } else if (id === 'pen-style') {
+      items = [['single', 'Single line'], ['double', 'Double line']].map(([st, name]) => ({ name, checked: (this.penStyle || 'single') === st, radio: true, run: () => { this.ribbonBack(); this.runCommand('pen-style', { style: st }); } }));
+    } else if (id === 'pen-weight') {
       const cur = h ? (X.settingsOf(h.src, h.T).arrayrulewidth || {}).value || '0.4pt' : '0.4pt';
       items = WEIGHTS.map(([w, name]) => ({ name, checked: cur === w, radio: true, run: () => { this.ribbonBack(); this.tableSetting('arrayrulewidth', w === '0.4pt' ? null : w); this.ribbonSync(); } }));
     } else {
@@ -954,7 +1190,7 @@ export const methods = {
     // (from the right click menu or the search box: at the caret)
     const sel = getSelection(), cr = sel.rangeCount && this.root.contains(sel.anchorNode) ? sel.getRangeAt(0).getBoundingClientRect() : null;
     const where = b && b.offsetParent ? b : gb && gb.offsetParent ? gb : cr && (cr.width || cr.height) ? new DOMRect(cr.left, cr.bottom, 0, 0) : this.root;
-    openMenu(this, where, items, { label: { 'pen-weight': 'Pen Weight', 'table-select': 'Select', 'table-delete': 'Delete', autofit: 'AutoFit' }[id] || id });
+    openMenu(this, where, items, { label: { 'border-styles': 'Border Styles', 'pen-style': 'Pen Style', 'pen-weight': 'Pen Weight', 'table-select': 'Select', 'table-delete': 'Delete', autofit: 'AutoFit' }[id] || id });
     return true;
   }
 };
@@ -963,18 +1199,35 @@ export const methods = {
 // it moved to), the whole as one edit of the part that differs
 function composeOps(src0, T0, steps) {
   let src = src0, s = T0.s;
-  const pk = new Set();
+  const pk = new Set(), errors = [], notes = [];
   for (const step of steps) {
     const T = X.parseTable(src, s);
     if (!T) break;
     const r = step(src, T);
+    if (r && r.error) errors.push(r.error);
+    if (r && r.note) notes.push(r.note);
     if (!r || r.error || !r.edits) continue;
     src = X.apply(src, r.edits);
     s = mapPos(r.edits, s, 1);
     for (const x of r.packages || []) pk.add(x);
   }
   const d = diffOne(src0, src);
-  return { edits: d ? [d] : [], packages: [...pk] };
+  return { edits: d ? [d] : [], packages: [...pk], errors, note: notes[0] || null };
+}
+// The cell of a table's row of cells r (A1's row, from 0) that starts at column c
+function cellAtRC(T, r, c) {
+  const k = X.dataRows(T)[r], row = k == null ? null : T.rows[k];
+  return row ? row.cells.find((x) => x.col === c) || null : null;
+}
+// Word's field code: the formula, then its number format as \# "0.00"
+function splitFormula(t) {
+  const m = /^([\s\S]*?)\s*\\#\s*"([^"]*)"\s*$/.exec(String(t || ''));
+  return m ? { formula: m[1].trim(), format: m[2] } : { formula: String(t || '').trim(), format: '' };
+}
+function joinFormula(text, format) {
+  const f = splitFormula(text);
+  const fm = format != null ? format : f.format;
+  return (f.formula.startsWith('=') ? f.formula : '=' + f.formula) + (fm ? ' \\# "' + fm.replace(/"/g, '') + '"' : '');
 }
 // one edit from a text to another (the part that differs)
 function diffOne(a, b) {
@@ -989,6 +1242,18 @@ function diffOne(a, b) {
 // The menus of the menu commands (Select, Delete, AutoFit) are their commands by name; the Table
 // button's arrow opens the grid of sizes; a selection over several cells is shown as a block.
 onInstall((app) => {
+  // (G2) View Gridlines as it was left
+  try { if (localStorage.getItem('rikuy.gridlines') === '1') app.tableGridlines(true); } catch { /* private mode */ }
+  // Draw Table, Eraser, Border Painter: a press on a cell of the page acts there, and keeps the
+  // caret out of the way; Escape stops
+  app.root.addEventListener('pointerdown', (e) => {
+    if (!app.tableDraw || e.button > 0) return;
+    const td = e.target.closest && e.target.closest('.tab td');
+    if (!td || td.classList.contains('rule-cell')) return;
+    e.preventDefault(); e.stopPropagation();
+    app.tableDrawAt(td, e.clientX, e.clientY, e.pointerType === 'touch');
+  }, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && app.tableDraw) { e.preventDefault(); app.tableDrawMode(app.tableDraw); } }, true);
   // the Table button's arrow: the grid of sizes, then Insert Table…, Convert Text to Table… and
   // Table from Data File… (by the keyboard too: the down arrow presses it)
   document.addEventListener('click', (e) => {
