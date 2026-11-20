@@ -118,7 +118,8 @@ MEASURE = r"""(arg) => {
   const all = [...root.querySelectorAll('button, input, select, [role=combobox]')].concat(dl ? [...dl.querySelectorAll('button')] : []).filter((e, i, a) => a.indexOf(e) === i);
   for (const e of all) {
     if (!vis(e) || e.closest('[role=menu], .pop, .srch-list')) continue;
-    const b = R(e); if (b.w < 1 || b.h < 1) continue;
+    // (a field's target is its box, the font box's line round its words and its arrow)
+    const b = R(e.closest('.fbx') || e); if (b.w < 1 || b.h < 1) continue;
     if (!e.dataset.kind) out.untagged.push(name(e));
     // (a glyph drawn for an icon, Bold's B or Symbol's Ω, is no name; a caret is no icon)
     const label = [...e.querySelectorAll(':scope > span:not(.sr):not(.fg):not(.sym-g):not(.fbx-v):not(.rb-ktip), :scope > .rb-bl, :scope > .rb-xname')].find((x) => vis(x) && x.textContent.trim()) || (e.matches('.linkish, .rb-tab') && e.textContent.trim() ? e : null);
@@ -692,7 +693,8 @@ def forced_rule(S, page, where):
     page.mouse.move(2, 880)
     two('#rt-home', "rikuy.selectTab('home')", "rikuy.selectTab('insert')", 'selected tab')
     page.evaluate("rikuy.selectTab('home')")
-    two('#rp-home [data-cmd=show-marks]', "(!rikuy.marksOn) && rikuy.toggleMarks()", "rikuy.marksOn && rikuy.toggleMarks()", "Home's Show marks pressed")
+    pr = "document.querySelector('#rp-home [data-cmd=show-marks]').getAttribute('aria-pressed') === 'true'"
+    two('#rp-home [data-cmd=show-marks]', "(%s) || rikuy.runCommand('show-marks')" % pr, "!(%s) || rikuy.runCommand('show-marks')" % pr, "Home's Show marks pressed")
     two('#b-nav', 'rikuy.toggleNav(true)', 'rikuy.toggleNav(false)', 'the bar\'s Outline pressed')
     page.evaluate('rikuy.toggleNav(false)')
     two('#sv-page', "rikuy.setView('page')", "rikuy.setView('latex')", "the status bar's Page pressed")
@@ -721,7 +723,10 @@ def surface_rule(S, page, where, touch):
     for tab, sel in (('home', '#rp-home .rb-split:has([data-cmd=bullets]) > .rb-x'), ('insert', '#rp-insert .rb-split:has([data-cmd=insert-table]) > .rb-x'), ('references', '#rc-frontier')):
         page.evaluate('(t) => rikuy.selectTab(t)', tab); page.wait_for_timeout(150)
         loc = page.locator(sel).first
-        if not loc.count() or not loc.is_visible() or not loc.is_enabled():
+        # (folded away at this width: its group's menu has it)
+        if not loc.count() or not loc.is_visible():
+            continue
+        if not loc.is_enabled():
             S.bad('surface', where, sel, 'not there to open'); continue
         loc.click(); page.wait_for_timeout(300)
         r = page.evaluate("""() => { const p = [...document.querySelectorAll('body > .pop, [role=menu]')].find((e) => e.getClientRects().length); if (!p) return null;
