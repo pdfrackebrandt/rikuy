@@ -1324,8 +1324,8 @@ class App {
       if (document.body.classList.contains('src-on')) { e.preventDefault(); this.toggleSource(false); }
       else if (document.body.classList.contains('pdf-on')) { e.preventDefault(); this.togglePdf(false); }
     }
-    // (Ctrl+P is Print, src/cmd/page.js: from a field or the source too)
-    if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'p' && !e.defaultPrevented) { e.preventDefault(); this.runCommand('print'); }
+    // (Ctrl+P is Go to File, src/cmd/find.js, whose first line is Print: from a field or the source too)
+    if (mod && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'p' && !e.defaultPrevented) { e.preventDefault(); this.runCommand('go-to-file'); }
     if (mod && e.key === '\\') { e.preventDefault(); this.toggleSource(); }
     if (mod && e.shiftKey && e.key.toLowerCase() === 'o') { e.preventDefault(); this.toggleNav(); }
     if (e.key === 'Escape') { if (this.pop) { this.closePop(); e.preventDefault(); } this.disarm(); }
