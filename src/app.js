@@ -389,6 +389,29 @@ if (typeof document !== 'undefined') {
   document.addEventListener('keydown', (e) => { if (!['Shift', 'Control', 'Meta'].includes(e.key)) lastKeys = true; }, true);
   document.addEventListener('pointerdown', () => { lastKeys = false; }, true);
 }
+// A field of a dialog, a pane or File kept in sight when the window shrinks under it, as the
+// on-screen keyboard makes it (UI-PRINCIPLES.md T6, WCAG 2.4.11): the field the keys type into was
+// left under the keyboard, below the sheet's scrolled part (Page setup's last margins, Properties'
+// Keywords). The page itself is the browser's to scroll.
+if (typeof window !== 'undefined') {
+  let kt = 0;
+  const inSight = () => {
+    cancelAnimationFrame(kt);
+    kt = requestAnimationFrame(() => {
+      const a = document.activeElement;
+      if (!a || !a.matches || !a.matches('input, textarea, select') || !a.closest('.pop, #fr, .stp, .help-pane, .sp-pane, #rp-file')) return;
+      const vv = window.visualViewport, r = a.getBoundingClientRect(), bottom = vv ? vv.offsetTop + vv.height : innerHeight;
+      let top = vv ? vv.offsetTop : 0, low = bottom;
+      for (let e = a.parentElement; e && e !== document.body; e = e.parentElement) {
+        if (/auto|scroll/.test(getComputedStyle(e).overflowY)) { const q = e.getBoundingClientRect(); top = Math.max(top, q.top); low = Math.min(low, q.bottom); }
+      }
+      if (r.top < top || r.bottom > low) a.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    });
+  };
+  window.addEventListener('resize', inSight);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', inSight);
+  document.addEventListener('focusin', inSight);
+}
 // the controls a dialog's Tab goes round, in order: shown, enabled, reachable by Tab
 function popFocusables(p) {
   return [...p.querySelectorAll('button, [href], input, select, textarea, [tabindex]')].filter((x) => x.tabIndex >= 0 && !x.disabled && !x.closest('[inert], [hidden]') && x.getClientRects().length && getComputedStyle(x).visibility !== 'hidden');

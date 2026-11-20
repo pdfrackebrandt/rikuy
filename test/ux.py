@@ -1032,9 +1032,32 @@ def empty_panes(page, w):
     page.keyboard.press('Escape')
 
 
+
+SIGHT = """(() => { const a = document.activeElement, r = a.getBoundingClientRect(), vv = window.visualViewport; let top = vv.offsetTop, bottom = vv.offsetTop + vv.height;
+  for (let e = a.parentElement; e && e !== document.body; e = e.parentElement) { if (/auto|scroll|hidden/.test(getComputedStyle(e).overflowY)) { const q = e.getBoundingClientRect(); top = Math.max(top, q.top); bottom = Math.min(bottom, q.bottom); } }
+  return [a.getAttribute('aria-label') || a.tagName, Math.round(r.top), Math.round(r.bottom), Math.round(top), Math.round(bottom)]; })()"""
+
+
+def keyboard_room(page, w):
+    """The on-screen keyboard never hides the field it types into (UI-PRINCIPLES.md T6, WCAG
+    2.4.11): a dialog's lowest field focused, then the window shrunk by a keyboard's height (430 of
+    800 px left): the field is still inside the window and inside every box that scrolls round it."""
+    width = page.viewport_size['width']
+    for cmd in ('page-setup', 'properties', 'share'):
+        page.set_viewport_size({'width': width, 'height': 800}); page.wait_for_timeout(200)
+        load_doc(page, DOC); run_cmd(page, cmd); page.wait_for_timeout(400)
+        page.locator('body > .pop input:not([type=checkbox]):not([type=radio])').last.focus(); page.wait_for_timeout(250)
+        page.set_viewport_size({'width': width, 'height': 430}); page.wait_for_timeout(500)
+        r = page.evaluate(SIGHT)
+        check(f'{cmd}: its last field, focused, stays in sight above a keyboard ({w})', r[1] >= r[3] - 1 and r[2] <= r[4] + 1, r)
+        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    page.set_viewport_size({'width': width, 'height': 820})
+
+
 PARTS = {'consistency': (consistency, [(1366, False), (1920, True), (390, False), (360, True)]),
          'bar_room': (bar_room, None),
          'motion': (motion, [(1366, False)]),
+         'keyboard_room': (keyboard_room, [(390, False), (360, True)]),
          'empty_panes': (empty_panes, [(1366, False), (1920, True)]),
          'menus': (menus, [(1366, False), (1920, True)]),
          'tap_alternatives': (tap_alternatives, [(1366, False), (1920, True)]),
