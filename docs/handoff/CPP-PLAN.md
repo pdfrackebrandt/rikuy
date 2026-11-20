@@ -43,7 +43,7 @@ benchmark would otherwise compare C++ against waste.
   small. Proposed instead, written into section 17 by B1: a port is kept when it is identical
   everywhere (the oracle below), never slower in the situation it serves with every crossing
   counted (medians, both orders, at a desktop's speed and at `--cpu 6`), and within its size
-  budget (section 5). Pedro decides (section 8).
+  budget (section 5). Decided 2026-11-20 (section 8).
 - **The oracle**, for every batch: identical results to the JavaScript on (1) every document of
   the repository (`sample/`, `dev/bench/`, `test/fixtures/`), (2) the 716 documents of the
   LaTeX-examples corpus where `CORPUS_DIR` names a clone (every file, and every document's model
@@ -490,15 +490,18 @@ before deciding.
   are already C through Emscripten's file system, which is JavaScript.
 - **The JavaScript of every ported function**, as the fallback and the reference.
 
-## 8. Decisions for Pedro
+## 8. Decisions (2026-11-20)
 
-1. The bar: "identical everywhere, never slower with every crossing counted, within its size"
-   in place of "at least twice as fast" (section 1).
-2. B0 is JavaScript and goes first. It is the largest gain in this plan and fixes a slowdown
-   since task 52 (a full build three times slower than measured then).
-3. B9 (the edits on strings) and B10 (the Builder): do them at all? Both are possible; neither
-   gains anything a person notices, B9 does not fit the artifact, and B10 doubles every future
-   change of model.js.
-4. B11 (TeX's line breaking on the page) is a feature with the largest gain left; it needs its
-   own decision and a prototype.
-5. The artifact's last 300 KB: the core (B1 to B8, about 125 KB) or other uses.
+Decided by the coordinator from Pedro's standing wish ("everything possible in C or C++, even
+where the gain is small"):
+
+1. **The bar** for keeping a port is section 1's: identical results everywhere (the oracle),
+   never slower once every crossing is counted, within its size budget. ARCHITECTURE section 17's
+   "at least twice as fast" goes when B1 lands.
+2. **B0 goes first, in JavaScript**: the comment scans read once per text, the parsed .bib cached,
+   the undo record from the edits.
+3. **B9 yes, hosted only**: the claude.ai copy leaves those modules out and runs the JavaScript.
+   **B10 after B3**, and only if its oracle is identical. **B11** starts as a separate prototype
+   on plain paragraphs before anything is decided about it.
+4. **The claude.ai copy's last 300 KB** go first to what runs per keystroke: B1, B2, B3. Later
+   batches take what is left, else that copy runs their JavaScript.
