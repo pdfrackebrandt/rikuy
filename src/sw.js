@@ -144,6 +144,8 @@ self.addEventListener('fetch', (e) => {
   if (req.method !== 'GET') return;
   if (req.mode === 'navigate') {
     if (rel === '' || rel === 'index.html') hold(e, rel, page(req));
+    // a link to the git proxy is never a page: it is not even asked for (src/gitproxy.js)
+    else if (rel === 'git' || rel.startsWith('git/')) e.respondWith(new Response('The git proxy answers Rikuy\'s git client only.\n', { status: 403, headers: { 'Content-Type': 'text/plain; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; sandbox", 'X-Content-Type-Options': 'nosniff' } }));
     return;
   }
   let ver = VERSION, pinned = false;

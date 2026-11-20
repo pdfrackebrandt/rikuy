@@ -163,7 +163,38 @@ docs.forEach(([name, files, main], i) => {
   const big = name.includes('long') || name.includes('sample') || name.includes('styles') || name.includes('pictures') || name.includes('references');
   stream(name + ' ' + main, files, main, i >= repoDocs ? 16 : FULL ? (big ? 800 : 400) : name.includes('dev/bench/long') ? 25 : 80);
 });
-check('every edit of every stream: the incremental model is the full build\'s (' + steps + ' edits, ' + fast + ' on the fast path, ' + docs.length + ' documents)', fail === failsBefore && shareFast > shareSteps / 20, [steps, fast, shareSteps, shareFast]);
+// (the streams must meet the fast path often enough to test it: at least 1 edit in 40. The
+// share is the luck of the streams, which go where the last model's paragraphs are: on
+// 2026-11-20 the long run took it 334 times in 7600 edits, and 356 times with the sources of
+// f5bb84d, where the floor of 1 in 20 was set over fewer documents; the documents added since
+// (B9, R1, R2, the LaTeX paragraph) are mostly what the fast path leaves to the full build. Where
+// it must be taken is checked exactly below.)
+check('every edit of every stream: the incremental model is the full build\'s (' + steps + ' edits, ' + fast + ' on the fast path, ' + docs.length + ' documents)', fail === failsBefore && shareFast > shareSteps / 40, [steps, fast, shareSteps, shareFast]);
+// The fast path taken where it should be, whatever the streams pick: a keystroke in the middle of
+// each paragraph of each repository document, against the count of 2026-11-20 (the same as with
+// the sources of f5bb84d, task 53's, for every document both read alike; R1's two were full builds
+// then). A change that sends such keystrokes to the full build fails here.
+{
+  const FLOOR = { 'dev/bench/long': [99, 191], 'dev/bench/sample': [1, 13], 'dev/bench/lua': [4, 5], 'dev/bench/heavy': [0, 3], sample: [1, 13], 'styles (B4)': [49, 85], 'pictures (B8)': [3, 6],
+    'references (B9)': [6, 18], 'paragraph settings (B2)': [4, 8], 'font, lists and styles (R2)': [1, 4], 'page and paragraph leftovers (R1)': [2, 7], 'a LaTeX paragraph (its groups)': [2, 2] };
+  const got = {};
+  for (const [name, files, main] of docs.slice(0, repoDocs)) {
+    if (!FLOOR[name]) continue;
+    const src = files.get(main), m = buildModel({ files, main });
+    let n = 0, f = 0;
+    for (const u of m.blocks) {
+      if (u.f !== main || !u.items[0] || u.items[0].type !== 'p') continue;
+      const at = (u.s + u.e) >> 1, next = new Map(files);
+      next.set(main, src.slice(0, at) + 'x' + src.slice(at));
+      const r0 = INCR.reused;
+      buildModel({ files: next, main }, m);
+      n++; if (INCR.reused > r0) f++;
+    }
+    got[name] = [f, n];
+  }
+  const short = Object.keys(FLOOR).filter((k) => !got[k] || got[k][0] < FLOOR[k][0]);
+  check('a keystroke in the middle of each paragraph takes the fast path at least as often as on 2026-11-20 (' + Object.values(got).reduce((x, [f]) => x + f, 0) + ' of ' + Object.values(got).reduce((x, [, n]) => x + n, 0) + ')', !short.length, JSON.stringify(short.map((k) => [k, got[k], FLOOR[k]])));
+}
 console.log('edits ' + steps + ', on the fast path ' + fast + ', documents ' + docs.length);
 
 // every numeric field of a model that moves with the text before it is a name OFFSET_KEYS holds: a

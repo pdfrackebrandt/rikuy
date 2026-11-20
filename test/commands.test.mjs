@@ -8,7 +8,7 @@ import { commands, command, places, paletteItems, search, describe, menuItems, r
 import '../src/cmd/index.js';
 import { TABS, groupOf, KEYTIPS } from '../src/ribbon/order.js';
 import { LAYOUT, TIPS, LAUNCH, CHECKS, readLine } from '../src/ribbon/layout.js';
-import { parseChord, chordFor } from '../src/keys.js';
+import { parseChord, chordFor, bindings } from '../src/keys.js';
 import { controls } from '../build/app.mjs';
 
 let n = 0;
@@ -48,9 +48,10 @@ ok('no name twice in one tab\'s panel (the downloads and the bar are in view wit
 
 ok('every chord reads; two commands on one chord differ in rank, or one says where it applies', () => {
   const seen = new Map();
-  for (const c of commands()) for (const k of [...(c.keys || []), ...(c.keysQuiet || [])]) {
+  for (const c of commands()) for (const k of [...(c.keys || []), ...(c.keysQuiet || []), ...(c.keysMac || []).map((x) => ({ mac: x }))]) {
     for (const mac of [false, true]) {
-      const on = chordFor(k, mac, c.mac);
+      // (a Mac's own keys are bound there alone)
+      const on = typeof k === 'object' ? (mac ? k.mac : null) : chordFor(k, mac, c.mac);
       if (!on) continue;
       const p = parseChord(on), key = mac + JSON.stringify(p);
       if (seen.has(key)) { const o = seen.get(key); assert.ok((o.keyRank || 0) !== (c.keyRank || 0) || o.when || c.when, k + ': ' + o.id + ' and ' + c.id); }
@@ -60,8 +61,59 @@ ok('every chord reads; two commands on one chord differ in rank, or one says whe
   assert.ok(command('style-heading1').keys.includes('Ctrl+Alt+1') && command('style-normal').keys.includes('Ctrl+Alt+0') && command('style-normal').keys.includes('Ctrl+Shift+N') && command('bullets').keys.includes('Ctrl+Shift+L'));
   assert.ok(command('double-underline').keys.includes('Ctrl+Shift+D') && command('clear-paragraph-formatting').keys.includes('Ctrl+Q'));
   assert.ok(command('format-painter').keys.includes('Ctrl+Shift+C') && command('paste-special').keys.includes('Ctrl+Alt+V'));
-  assert.deepEqual(KEYTIPS, { file: 'F', home: 'H', insert: 'N', design: 'G', layout: 'P', references: 'S', review: 'R', view: 'W', help: 'Y2' });
+  assert.deepEqual(KEYTIPS, { file: 'F', home: 'H', insert: 'N', design: 'G', layout: 'P', references: 'S', review: 'R', view: 'W', help: 'Y2',
+    'table-design': 'JT', 'table-layout': 'JL', 'picture-format': 'JP', equation: 'JE', headfoot: 'JH' });
+  // (no tab's letters the start of another's: Word waits for the second letter only after J and Y)
+  for (const a of Object.values(KEYTIPS)) for (const b of Object.values(KEYTIPS)) assert.ok(a === b || !b.startsWith(a), a + ' starts ' + b);
   assert.ok(command('search').keys.includes('Alt+Q') && command('ribbon-collapse').keys.includes('Ctrl+F1') && command('context-menu').keys.includes('Shift+F10'));
+});
+
+// Word's keys (docs/handoff/SHORTCUTS.md, the rows that work): the chord on Windows and Linux, the
+// command it runs, and the chord on a Mac where Word for Mac's differs
+const WORD = [
+  ['Ctrl+B', 'bold'], ['Ctrl+I', 'italic'], ['Ctrl+U', 'underline'], ['Ctrl+Shift+D', 'double-underline'], ['Ctrl+Shift+A', 'all-caps'], ['Ctrl+Shift+K', 'small-caps'],
+  ['Ctrl+Shift+X', 'strikethrough'], ['Ctrl+D', 'font-dialog'], ['Ctrl+Shift+F', 'font-name'], ['Ctrl+Shift+P', 'font-size'], ['Ctrl+Shift+>', 'grow-font'], ['Ctrl+Shift+<', 'shrink-font'],
+  ['Ctrl+]', 'grow-font', null], ['Ctrl+[', 'shrink-font', null], ['Shift+F3', 'change-case-cycle'], ['Ctrl+Space', 'clear-char-formatting', 'Control+Space'], ['Ctrl+Shift+C', 'format-painter'],
+  ['Ctrl+E', 'align-center'], ['Ctrl+L', 'align-left'], ['Ctrl+R', 'align-right'], ['Ctrl+J', 'justify'], ['Ctrl+Q', 'clear-paragraph-formatting'],
+  ['Ctrl+1', 'line-spacing-1'], ['Ctrl+2', 'line-spacing-2'], ['Ctrl+5', 'line-spacing-15'], ['Ctrl+Shift+8', 'show-marks'], ['Ctrl+Shift+L', 'bullets'],
+  ['Ctrl+Shift+N', 'style-normal'], ['Ctrl+Alt+1', 'style-heading1'], ['Ctrl+Alt+2', 'style-heading2'], ['Ctrl+Alt+3', 'style-heading3'], ['Ctrl+Shift+S', 'apply-styles'], ['Ctrl+Alt+Shift+S', 'styles-pane'],
+  ['Ctrl+F', 'find'], ['Ctrl+H', 'replace', 'Control+H'], ['Ctrl+G', 'go-to', 'Ctrl+Alt+G'], ['F5', 'go-to'], ['Shift+F4', 'find-next'], ['Ctrl+Alt+Y', 'find-next'], ['Shift+F5', 'go-back'], ['Ctrl+Alt+Z', 'go-back'],
+  ['F8', 'extend-selection'], ['Shift+F8', 'shrink-selection'],
+  ['Alt+Shift+ArrowLeft', 'promote', 'Control+Shift+ArrowLeft'], ['Alt+Shift+ArrowRight', 'demote', 'Control+Shift+ArrowRight'], ['Alt+Shift+ArrowUp', 'move-up', 'Control+Shift+ArrowUp'],
+  ['Alt+Shift+A', 'headings-collapse-all', 'Control+Shift+A'], ['Alt+Shift+1', 'show-level-1', 'Control+Shift+1'], ['Alt+Shift+9', 'show-level-9', 'Control+Shift+9'],
+  ['Ctrl+Enter', 'page-break'], ['Ctrl+Shift+Enter', 'column-break'], ['Ctrl+Shift+Space', 'insert-nbsp'], ['Ctrl+Shift+_', 'insert-nb-hyphen'], ['Ctrl+Alt+NumpadSubtract', 'insert-em-dash'], ['Ctrl+NumpadSubtract', 'insert-en-dash'],
+  ['Ctrl+Alt+C', 'insert-copyright', null], ['Ctrl+Alt+R', 'insert-registered', null], ['Ctrl+Alt+T', 'insert-trademark', null], ['Ctrl+Alt+.', 'insert-ldots'], ['Alt+X', 'unicode-toggle', 'Control+Alt+X'],
+  ['Ctrl+\'', 'accent-acute', null], ['Ctrl+`', 'accent-grave', null], ['Ctrl+Shift+^', 'accent-circumflex', null], ['Ctrl+Shift+~', 'accent-tilde', null], ['Ctrl+Shift+:', 'accent-umlaut', null],
+  ['Ctrl+Shift+@', 'accent-ring', null], ['Ctrl+Shift+&', 'accent-ligature', null], ['Ctrl+/', 'accent-slash', null], ['Ctrl+Alt+Shift+?', 'insert-iquest', null], ['Ctrl+Alt+Shift+!', 'insert-iexcl', null],
+  ['Ctrl+Alt+V', 'paste-special', 'Ctrl+Control+V'], ['Ctrl+F3', 'spike'], ['Ctrl+Shift+F3', 'spike-insert'], ['F2', 'move-text'], ['Shift+F2', 'copy-text'], ['Alt+F3', 'quick-part-save'],
+  ['Alt+Shift+D', 'insert-date', 'Control+Shift+D'], ['Alt+Shift+T', 'insert-time', 'Control+Shift+T'], ['Alt+Shift+P', 'insert-page-field', 'Control+Shift+P'], ['Ctrl+F9', 'insert-field'],
+  ['Ctrl+K', 'link'], ['Ctrl+Alt+F', 'footnote'], ['Ctrl+Alt+D', 'endnote', 'Ctrl+Alt+E'], ['Alt+Shift+>', 'next-footnote', 'Control+Shift+>'], ['Alt+Shift+<', 'previous-footnote', 'Control+Shift+<'],
+  ['Alt+Shift+O', 'toc-add-text', 'Control+Shift+O'], ['Alt+Shift+X', 'mark-entry', 'Control+Shift+X'], ['Alt+Shift+I', 'mark-citation', 'Control+Shift+I'], ['Ctrl+Shift+F5', 'bookmark'],
+  ['Ctrl+Shift+E', 'track-changes'], ['F7', 'spelling'], ['Alt+F7', 'spelling-next'], ['Shift+F7', 'thesaurus'], ['Ctrl+Shift+G', 'word-count'],
+  ['Ctrl+Alt+P', 'print-layout'], ['Ctrl+Alt+O', 'outline-view'], ['Ctrl+Alt+N', 'draft'], ['Alt+F9', 'latex-mode'], ['Shift+F9', 'show-latex'], ['Ctrl+F2', 'preview'],
+  ['Ctrl+P', 'print'], ['Ctrl+Shift+F12', 'print'], ['Ctrl+F12', 'open'], ['Shift+F12', 'save'], ['Alt+Shift+F2', 'save'], ['F12', 'save-as'],
+  ['F1', 'help-how'], ['Shift+F1', 'show-in-source'], ['Ctrl+F1', 'ribbon-collapse', 'Ctrl+Alt+R'], ['Shift+F10', 'context-menu'], ['Alt+Q', 'search', 'Control+Alt+Q'], ['F4', 'repeat'],
+  ['Ctrl+F6', 'next-pane'], ['Ctrl+Shift+F6', 'previous-pane'], ['Alt+=', 'insert-equation', 'Control+='],
+  ['Alt+Home', 'cell-row-first', 'Control+Home'], ['Alt+End', 'cell-row-last', 'Control+End'], ['Alt+PageUp', 'cell-col-first', 'Control+PageUp'], ['Alt+PageDown', 'cell-col-last', 'Control+PageDown'],
+  ['Alt+Shift+ArrowDown', 'table-row-down', 'Control+Shift+ArrowDown'], ['Alt+Clear', 'select-table', null]
+];
+ok('Word\'s keys: each bound to its command, on Windows and Linux and on a Mac (Word for Mac\'s chord where it has its own)', () => {
+  for (const mac of [false, true]) {
+    const B = bindings(mac);
+    for (const [k, id, onMac] of WORD) {
+      const want = mac ? (onMac === undefined ? k : onMac) : k;
+      assert.ok(command(id), id);
+      if (want === null) { assert.ok(!B.some((b) => b.id === id && b.chord === k), 'not on a Mac: ' + k + ' ' + id); continue; }
+      assert.ok(B.some((b) => b.id === id && b.chord === want), (mac ? 'Mac ' : '') + want + ' runs ' + id);
+    }
+  }
+  // Word for Mac's own: Cmd+Option+L spelling, Cmd+Option+A a comment, Control+Shift+M indents, Cmd+G finds again
+  const M = bindings(true);
+  for (const [k, id] of [['Ctrl+Alt+L', 'spelling'], ['Ctrl+Alt+A', 'comment-new'], ['Control+Shift+M', 'paragraph-indent'], ['Ctrl+G', 'find-next'], ['Ctrl+8', 'show-marks']]) assert.ok(M.some((b) => b.id === id && b.chord === k), k);
+  // Save (Ctrl+S) says the document is kept; Save As (F12) and Download LaTeX download
+  assert.ok(command('save').keysElsewhere.includes('Ctrl+S') && !command('download-latex').keysElsewhere && command('save-as').keys.includes('F12'));
+  // Word's keys a browser keeps are bound to nothing here
+  for (const k of ['Ctrl+N', 'Ctrl+W', 'Ctrl+T', 'Ctrl+Tab', 'F6', 'F11', 'Ctrl+F4']) assert.ok(!bindings(false).some((b) => b.chord === k), k);
 });
 
 ok('the insert list keeps its items and their order', () => {
@@ -157,6 +209,10 @@ ok('Word\'s layout of the tabs (src/ribbon/layout.js): every line a command plac
       const c = command(l.id);
       assert.ok(c && places(c).some((p) => p.tab === tab && p.group === group), l.id + ' is placed in ' + tab + '/' + group);
       assert.ok(['L', 'S', 'I', 'T'].includes(l.size), l.id + ': size ' + l.size);
+      // the name a button shows is in its accessible name (WCAG 2.5.3: one says what one sees)
+      const p = places(c).find((x) => x.tab === tab && x.group === group);
+      const shown = l.shown || (c.label ? (p.main ? c.label : p.name) : p.name);
+      assert.ok(p.name.toLowerCase().includes(shown.toLowerCase()), tab + ': ' + l.id + ' shows ' + shown + ', named ' + p.name);
     }
   }
   for (const k of CHECKS) assert.ok(groupOf(...k.split('/')), k);

@@ -21,6 +21,7 @@ import zlib from 'zlib';
 import crypto from 'crypto';
 import { build } from 'esbuild';
 import { appPage, appFiles, finishApp, cleanApp, controlsJson } from './build/app.mjs';
+import { WIDGET_SHELL } from './src/widget.js';
 
 const root = path.dirname(new URL(import.meta.url).pathname);
 const R = (p) => path.join(root, p);
@@ -105,7 +106,16 @@ if (SPELL_ON) {
   const grammarJs = Buffer.from('/* Rikuy\'s grammar worker: Harper (Apache-2.0, Automattic), its glue unchanged. Licenses: LICENSES.txt beside the page. */\n' + ctl(gb.outputFiles[0].text));
   SPELL = { worker: named('spell', 'js', workerJs).name, wasm: named('hunspell', 'wasm', wasm), dicts, thes, grammar: { worker: named('grammar', 'js', grammarJs).name, wasm: named('harper', 'wasm', hw) } };
 }
-const out = await build({ entryPoints: [R('src/app.js')], bundle: true, format: 'iife', minify: process.argv.includes('--dev') ? false : true, write: false, target: ['chrome100', 'firefox100', 'safari15'], legalComments: 'none', charset: 'utf8', define: { __RIKUY_MIRROR__: JSON.stringify(process.env.RIKUY_MIRROR || ''), __RIKUY_SHARE__: JSON.stringify(process.env.RIKUY_SHARE || ''), __RIKUY_APP__: JSON.stringify(APP), __RIKUY_WORD__: JSON.stringify(WORD), __RIKUY_WORD_HOST__: JSON.stringify(process.env.RIKUY_WORD_HOST || ''), __RIKUY_CORE__: JSON.stringify(CORE), __RIKUY_PIC__: JSON.stringify(PIC), __RIKUY_SPELL__: JSON.stringify(SPELL), __RIKUY_TEXNAMES__: JSON.stringify(TEXNAMES), __RIKUY_DEV__: JSON.stringify(process.argv.includes("--dev")) } });
+// Live figures on the hosted page run in a document of their own (src/widget.js WIDGET_SHELL), beside
+// the page as widget-<the first 16 hex digits of its SHA-256>.html, served with the widgets' policy
+// (build/app.mjs headers) and cached for good; the artifact's copy runs them in srcdoc frames,
+// which its host's policy allows
+const WIDGET_FILE = APP ? 'widget-' + crypto.createHash('sha256').update(WIDGET_SHELL).digest('hex').slice(0, 16) + '.html' : '';
+// its address without .html: Cloudflare Pages answers a .html file's name with a redirect to the
+// name without it (and serves the file there), and the frame, the service worker's install and
+// the HTTP cache must all name the one address that answers 200
+const WIDGET_URL = WIDGET_FILE.replace(/\.html$/, '');
+const out = await build({ entryPoints: [R('src/app.js')], bundle: true, format: 'iife', minify: process.argv.includes('--dev') ? false : true, write: false, target: ['chrome100', 'firefox100', 'safari15'], legalComments: 'none', charset: 'utf8', define: { __RIKUY_MIRROR__: JSON.stringify(process.env.RIKUY_MIRROR || ''), __RIKUY_SHARE__: JSON.stringify(process.env.RIKUY_SHARE || ''), __RIKUY_APP__: JSON.stringify(APP), __RIKUY_WORD__: JSON.stringify(WORD), __RIKUY_WORD_HOST__: JSON.stringify(process.env.RIKUY_WORD_HOST || ''), __RIKUY_CORE__: JSON.stringify(CORE), __RIKUY_PIC__: JSON.stringify(PIC), __RIKUY_SPELL__: JSON.stringify(SPELL), __RIKUY_TEXNAMES__: JSON.stringify(TEXNAMES), __RIKUY_WIDGET_SHELL__: JSON.stringify(WIDGET_URL), __RIKUY_DEV__: JSON.stringify(process.argv.includes("--dev")) } });
 let js = out.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
 
 // 2b. git, loaded by the page the first time the Git panel opens; the packages it bundles keep
@@ -227,6 +237,8 @@ if (SPELL) { fs.mkdirSync(O('spell'), { recursive: true }); for (const [n, b] of
 // (in every build, the artifact's too; a list an earlier build left in dist/ goes)
 for (const f of fs.readdirSync(OUT)) if (/^texnames-[0-9a-f]{16}\.txt$/.test(f) && f !== TEXNAMES) fs.rmSync(O(f));
 fs.writeFileSync(O(TEXNAMES), texNames);
+for (const f of fs.readdirSync(OUT)) if (/^widget-[0-9a-f]{16}\.html$/.test(f) && f !== WIDGET_FILE) fs.rmSync(O(f));
+if (WIDGET_FILE) fs.writeFileSync(O(WIDGET_FILE), WIDGET_SHELL);
 // every control of the page, from the command registry (agents and test/agent.py read it)
 fs.writeFileSync(O('controls.json'), controlsJson());
 console.log(O('rikuy.html'), (html.length / 1024).toFixed(0) + ' KB', 'js', (js.length / 1024).toFixed(0) + ' KB');

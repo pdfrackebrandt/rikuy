@@ -10,10 +10,12 @@ It runs at <https://rikuy.rackebrandt.pe/> (since 2026-11-13; step 7), in the op
 repository is public with it, which is how the source of the GPL and AGPL programs it ships is
 offered. `rackebrandt.pe/rikuy/` forwards there (a page of the maintainer's site). The project's
 own address, <https://rikuy-3dl.pages.dev/> (the name `rikuy` was taken on pages.dev), where it
-ran from 2026-11-10, serves the same deployment and is not redirected: browsers keep documents by
-address, so what someone kept there is still there, in that browser, and a redirect would hide it
-from them. Every page names the new address as its canonical one, so search engines and agents
-move over by themselves.
+ran from 2026-11-10, answers since 2026-11-20 with a permanent redirect to
+<https://rikuy.rackebrandt.pe/> (a Bulk Redirect in Cloudflare's dashboard). It stays the
+target of the custom domain's CNAME (step 7). Browsers keep documents by address, so documents
+someone kept in a browser at the old address are no longer reachable there; a copy installed
+from the old address keeps working offline, with its documents. Every page names the new address
+as its canonical one.
 
 ## Once, by hand
 
@@ -58,6 +60,20 @@ move over by themselves.
    the CNAME before the domain is set up in Cloudflare gives errors until it is.)
 8. **Leave Cloudflare Web Analytics off** for this project: it adds a script to the page that the
    page's policy refuses anyway, so it would count nothing.
+9. **The git proxy's two settings** (`/git`, below). They protect the account's daily allowance
+   of Functions requests, which `/git` shares with every Worker of the account.
+   - **A rate limiting rule** (the free plan has one). In the dashboard, the zone
+     `rackebrandt.pe`, **Security rules**, **Create rule**, **Rate limiting rules**. Rule name:
+     `Rikuy git proxy`. When incoming requests match: Field **URI Path**, Operator **starts
+     with**, Value `/git/`. With the same characteristics: **IP**. When rate exceeds: **10**
+     requests per **10 seconds** (a push or a pull is two or three). Then take action: **Block**,
+     Duration **10 seconds** (the free plan's only period and timeout). **Deploy**. One address
+     can then make at most 86,400 `/git` requests a day, and a person never meets the limit.
+   - **More git hosts, if wanted.** Workers & Pages, the project, **Settings**, **Variables and
+     Secrets**, Production, **Add**: Type **Text**, Variable name `RIKUY_GIT_HOSTS`, Value the
+     host names by commas or spaces (`git.uni.edu, gitlab.example.org`), **Save**; the next
+     deployment uses them. Hosts that are not public names by DNS (an address, a port, `.local`)
+     are ignored.
 
 ## What the workflows do
 
@@ -69,14 +85,53 @@ move over by themselves.
 - **`deploy.yml` (Deploy)**, when a TeX run on `main` has passed: downloads that run's `dist/`,
   builds the page again from the same commit, checks the manifest and Pages' limits
   (`dev/pages_check.py`: 20,000 files, 25 MiB per file, 100 header rules), and uploads with the
-  `wrangler` pinned in `package.json` (`wrangler pages deploy dist --branch main`). Deploys run
-  one at a time, in order.
+  `wrangler` pinned in `package.json` (`wrangler pages deploy dist --branch main`), then checks
+  the live site (`dev/live_check.py`): the page is this build, its policy names the hash of the
+  script it serves, `no-transform` and HSTS are there, the widget document answers at its address
+  without `.html` with its own policy, and `/git` passes git's request and refuses an IP address.
+  Deploys run one at a time, in order.
 - **What Pages serves**: `_headers` (written by `build/app.mjs`): the page's Content-Security-
-  Policy (the one the browser tests run under, without outside sources, and `frame-ancestors
-  'none'`), `nosniff`, `Referrer-Policy: no-referrer`, a Permissions-Policy turning off cameras,
+  Policy (the one the browser tests run under: scripts only from the site and the page's one
+  inline script by its SHA-256, which the build computes from `index.html`; WebAssembly but no
+  eval; no outside source, git included (it goes through `/git`, below); `frame-ancestors
+  'none'`), and for `widget-<hash>.html`, the document
+  live figures run in, the widgets' own policy in its place (`frame-ancestors 'self'`, no
+  `X-Frame-Options`), `Strict-Transport-Security: max-age=31536000` (HTTPS only for a year, for this host
+  alone: no `includeSubDomains`, no preload), `nosniff`, `Referrer-Policy: no-referrer`, a Permissions-Policy turning off cameras,
   microphones, location and the like; TeX packs, engine chunks, programs and fonts (named by their
   hash) cached for a year as immutable; the page, `sw.js` and the manifest revalidated on every
-  request. `404.html` keeps Pages from answering a missing file with the page.
+  request, the page with `no-transform` (it runs only if its inline script is byte for byte the
+  one whose hash its policy names, so nothing on the way, Email Address Obfuscation included,
+  may rewrite it). `404.html` keeps Pages from answering a missing file with the page.
+- **The git proxy, `/git`**: a Pages Function, `functions/git/[[path]].js` (the code is
+  `src/gitproxy.js`), which `wrangler pages deploy` finds beside `dist/` and deploys with it. A
+  browser cannot speak git to GitHub or GitLab itself (they send no CORS headers), so the Git
+  panel's push, pull and clone go to `/git/<host>/<path>` on Rikuy's own site, and the page's
+  policy keeps `connect-src 'self'`: no third party sees a token. It forwards git's smart HTTP
+  and nothing else: `GET …/info/refs?service=git-upload-pack` or `git-receive-pack`, and `POST
+  …/git-upload-pack` or `…/git-receive-pack` with git's own content type and at most 32 MiB,
+  over https to the git hosts it knows: github.com, gitlab.com, bitbucket.org, codeberg.org,
+  gitea.com, git.sr.ht, huggingface.co, dev.azure.com and git.overleaf.com, and those named in
+  the project's variable `RIKUY_GIT_HOSTS` (below), each a public host by name (no IP address in
+  any form, no port, no private name); a redirect only to the same host. It answers Rikuy's git
+  client alone: a request must carry the header `X-Rikuy-Git: 1`, which the page sends and
+  another site's page cannot send without a preflight (refused), and a navigation, anything but
+  a script's fetch, or another site's request (`Sec-Fetch-*`, `Origin`) is refused, so a link to
+  `/git/...` shows nothing. Every answer, refusals too, is git's own content type or
+  `application/octet-stream`, with `Content-Security-Policy: default-src 'none'; sandbox`,
+  `Content-Disposition: attachment`, `Cross-Origin-Resource-Policy: same-origin`, `nosniff` and
+  `no-store` (Pages applies no `_headers` to a Function's answers; the service worker of an
+  installed copy refuses a navigation to `/git` itself). An answer stops at 256 MiB or 120 s.
+  `Authorization` goes to that host alone and is never logged; cookies and a host's question for
+  a password (`WWW-Authenticate`) go neither way; nothing is cached. wrangler writes a `_routes.json` that sends only `/git/*` to the function,
+  so every other file stays a static file. **Cost:** a git request is one Functions request; a
+  push or pull is two or three. The free plan allows 100,000 a day (Workers and Pages Functions
+  together, from midnight UTC), 10 ms of CPU each (the proxy waits on the network, which does not
+  count), 128 MB of memory and 50 outgoing requests per request; past the daily allowance
+  `/git` answers with Cloudflare's error 1027 until midnight UTC, and the static site is not
+  affected. Static requests stay free and unlimited. Locally `test/gitproxy_server.mjs` runs the
+  same code (`test/git.py`), and `test/gitproxy.test.mjs` checks what it lets through. Two
+  settings in Cloudflare's dashboard, which no file can make (step 9).
 - **For crawlers and AI agents**: `robots.txt` (everyone allowed, the AI services' crawlers by
   name too), `sitemap.xml`, `llms.txt` (what Rikuy is, what a person can do with it, how an agent
   builds a link that opens a document in it, the page's controls by name and `rikuy.api`) and

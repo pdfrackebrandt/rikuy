@@ -600,8 +600,8 @@ def phones(p):
                 path = url[len('https://rikuy.test/'):].split('?')[0]
                 f = os.path.join(DIST, path)
                 if path and os.path.isfile(f):
-                    return route.fulfill(status=200, content_type='text/javascript' if path.endswith(('.js', '.mjs')) else 'application/octet-stream', body=open(f, 'rb').read())
-                return route.fulfill(status=200, content_type='text/html; charset=utf-8', body=doc)
+                    return route.fulfill(status=200, content_type='text/javascript' if path.endswith(('.js', '.mjs')) else 'text/html; charset=utf-8' if path.endswith('.html') else 'application/octet-stream', headers=B.policy(DIST, '/' + path), body=open(f, 'rb').read())
+                return route.fulfill(status=200, content_type='text/html; charset=utf-8', headers=B.policy(DIST, '/'), body=doc)
             if url in B.ROUTES:
                 return route.fulfill(status=200, content_type='application/javascript', headers={'Access-Control-Allow-Origin': '*'}, body=open(B.ROUTES[url], 'rb').read())
             return route.abort()

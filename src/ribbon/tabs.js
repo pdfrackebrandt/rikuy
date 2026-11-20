@@ -18,17 +18,10 @@
 // open tab), and the arrows move between them. Ctrl+F1 folds the ribbon to its tabs and back.
 
 import { TABS, tabById, CONTEXTS, KEYTIPS } from './order.js';
-import { chordText } from '../keys.js';
+import { keyTitle, firstKey, macUA } from '../keys.js';
 
-// the shortcut in the tooltip, when the command's own title does not already say it
-function tipTitle(c, p) {
-  const t = c.title || p.name;
-  const k = (c.keys && c.keys[0]) || (c.keysElsewhere && c.keysElsewhere[0]);
-  if (!k) return t;
-  const shown = chordText(k);
-  if (t.includes(shown) || t.includes(k)) return t;
-  return t + ' (' + shown + ')';
-}
+// the shortcut in the tooltip, as this computer has it (src/keys.js keyTitle)
+const tipTitle = (c, p) => keyTitle(c, p.name, macUA());
 
 import { LAUNCH, CHECKS, TIPS, groupLayout } from './layout.js';
 import { commands, command, inGroup, places, enabled, pressed, installers } from '../commands.js';
@@ -56,17 +49,27 @@ function laidOut(tab, group) {
   return out;
 }
 // The columns a laid out group's controls take: a large one (or a tile) a column of its own, small
-// ones three to a column, '|' a new column; folded (the names gone), every one small.
-function columns(items, folded) {
+// ones three to a column, '|' a new column. Small (sm and nm, the large ones small too), a run of
+// Word's small ones stays together, Previous over Next: where it would not fit in what is left of
+// a column it starts the next (smallBreak marks it, for the style sheet).
+const isBig = (l) => l.size === 'L' || l.size === 'T';
+function packed(items, small) {
   let n = 0, row = 3;
-  for (const { l } of items) {
+  const brk = new Set();
+  items.forEach(({ l }, i) => {
     if (l.brk) row = 3;
-    if (!folded && (l.size === 'L' || l.size === 'T')) { n++; row = 3; continue; }
+    if (!small && isBig(l)) { n++; row = 3; return; }
+    if (small && !isBig(l) && (i === 0 || isBig(items[i - 1].l) || l.brk) && row < 3) {
+      let len = 0;
+      for (let j = i; j < items.length && !isBig(items[j].l) && (j === i || !items[j].l.brk); j++) len++;
+      if (row + Math.min(len, 3) > 3) { brk.add(i); row = 3; }
+    }
     if (row >= 3) { n++; row = 0; }
     row++;
-  }
-  return Math.max(n, 1);
+  });
+  return { n: Math.max(n, 1), brk };
 }
+const columns = (items, small) => packed(items, small).n;
 // A large button's name over two lines, as Word breaks them: at the space that leaves the longer
 // line shortest ("Table of" over "Contents")
 function twoLines(t) {
@@ -82,8 +85,9 @@ function twoLines(t) {
 // a control the toolbar's arrows skip: disabled, or a tile that cannot apply here
 const isOff = (x) => x.disabled || x.getAttribute('aria-disabled') === 'true';
 const wideScreen = () => !window.matchMedia || window.matchMedia('(min-width: 861px)').matches;
-// where a laid out group has Word's layout (src/app.css)
-const wideLay = () => !window.matchMedia || window.matchMedia('(min-width: 900px)').matches;
+// where a laid out group has Word's layout (src/app.css): a wide window with a mouse (a touch
+// screen keeps its row of 44 px targets)
+const wideLay = () => !window.matchMedia || window.matchMedia('(min-width: 900px) and (pointer: fine)').matches;
 // where groups fold to fit the row (on a phone's width the row scrolls instead)
 const foldsGroups = () => !window.matchMedia || window.matchMedia('(min-width: 521px)').matches;
 
@@ -159,20 +163,35 @@ export const tabs = {
           return b;
         };
         const gallery = T.id === 'home' && g.id === 'styles';
-        if (!gallery) { const b = launchBtn(); if (b) box.append(b); }
         // (a laid out group, Word's: each control's size, and the columns it takes with its names
         // and without them, so the group's name below spans them all; see src/ribbon/layout.js)
         const lay = items.some((x) => x.l);
+        // Where the corner arrow's command is a button of the group too (Page setup, Footnote and
+        // Endnote, Size and Position), that button is the arrow, with a mouse from 900 px: one
+        // control, not an arrow and an icon beside it that do the same. Elsewhere it is the button.
+        // (it keeps its place among them, for the narrower row)
+        const own = lay && launch ? items.find((x) => x.c.id === launch[0] && x.p.main) : null;
+        if (!own && !gallery) { const b = launchBtn(); if (b) box.append(b); }
+        const flow = own ? items.filter((x) => x !== own) : items;
         if (lay) {
           box.classList.add('lay');
           if (CHECKS.has(T.id + '/' + g.id)) box.classList.add('lay-check');
-          box.style.setProperty('--c', columns(items, false));
-          box.style.setProperty('--cf', columns(items, true));
+          box.style.setProperty('--c', columns(flow, false));
+          box.style.setProperty('--cf', columns(flow, true));
         }
-        for (const { c, p, l } of items) {
+        const smallBreak = lay ? packed(flow, true).brk : new Set();
+        for (const x of items) {
+          const { c, p, l } = x;
+          if (x === own) {
+            const e = this.makeControl(c, p, null);
+            e.classList.add('rb-launch-c');
+            e.insertAdjacentHTML('beforeend', '<svg class="rb-larrow" viewBox="0 0 10 10" aria-hidden="true"><path d="M2.2 7.8 7.8 2.2M4.2 2.2h3.6V5.8"/></svg>');
+            box.append(e);
+            continue;
+          }
           const e = c.kind === 'custom' ? made.get(c.id) : this.makeControl(c, p, l);
           if (!e) continue;
-          if (l) { e.dataset.size = l.size; if (l.brk) e.dataset.brk = '1'; }
+          if (l) { e.dataset.size = l.size; if (l.brk) e.dataset.brk = '1'; if (smallBreak.has(flow.indexOf(x))) e.dataset.sbrk = '1'; }
           box.append(e);
         }
         if (gallery) { const b = launchBtn(); if (b) box.append(b); }
@@ -221,7 +240,20 @@ export const tabs = {
       b.append(bl);
     }
     if (c.kind === 'menu') { b.setAttribute('aria-haspopup', 'menu'); b.setAttribute('aria-expanded', 'false'); }
-    if (c.kind === 'split') return splitButton(this, b, p.name, () => this.commandMenu(c));
+    if (c.kind === 'split') {
+      const box = splitButton(this, b, p.name, () => this.commandMenu(c));
+      // A large split button as Word's: its icon above runs it, its name and arrow below open the
+      // menu. The name below is drawn in the arrow's part, which is named "<name> options", so
+      // what it shows is in its name; the button keeps its own (hidden there) for a smaller row.
+      if (l && l.size === 'L' && shown) {
+        const x = box.lastChild, bl = mk('span', 'rb-bl rb-xname'), lines = twoLines(shown);
+        lines.forEach((t, k) => { if (k) bl.append(' '); bl.append(mk('span', 'rb-ln', t)); });
+        (lines.length > 1 ? bl.lastChild : bl).insertAdjacentHTML('beforeend', SVG(CARET).replace('<svg ', '<svg class="rb-car" '));
+        bl.setAttribute('aria-hidden', 'true');
+        x.append(bl);
+      }
+      return box;
+    }
     return b;
   },
 
@@ -238,7 +270,7 @@ export const tabs = {
     const items = [];
     for (const { c, p } of laidOut(tab, g.id).filter(({ c }) => c.run && c.searchable !== false)) {
       const on = pressed(this, c, at);
-      items.push({ name: p.name, title: c.title, keys: chordText((c.keys || [])[0]), checked: on === null ? undefined : on, radio: !!c.static, disabled: !enabled(this, c, at), run: () => { this.ribbonBack(); this.runCommand(c.id); } });
+      items.push({ name: p.name, title: c.title, keys: firstKey(c, macUA()), checked: on === null ? undefined : on, radio: !!c.static, disabled: !enabled(this, c, at), run: () => { this.ribbonBack(); this.runCommand(c.id); } });
       // (a split button's other choices too, as Word's folded group lists them: Find's Advanced
       // Find and Go To)
       if (c.kind === 'split') for (const it of this.commandMenu(c)) if (it && it.name !== p.name && it.command !== c.id) items.push({ ...it, run: () => { this.ribbonBack(); if (it.run) it.run(); } });
@@ -331,9 +363,10 @@ export const tabs = {
 
   // The open tab's room (see the top of this file), one rule for every tab and width: everything
   // open first, then while the row is longer than the window one step at a time, the cheapest loss
-  // first, counted in controls: what takes none (the Download caption, the buttons' names, which
-  // stay their accessible names); then a tile of the Styles gallery at a time, down to three; the
-  // three downloads as one Download button; the style list in the gallery's place; then the
+  // first, counted in controls: what takes none (the Download caption; a laid out group's large
+  // buttons made small, then its names, see below), then a tile of the Styles gallery at a time,
+  // down to three; the three downloads as one Download button; the buttons' names, which stay
+  // their accessible names; the style list in the gallery's place; then the
   // groups, the least needed (rank 1, Editing on Home) and then the lowest rank first, of equal
   // ranks the rightmost. A folded group is one button, its first command's icon (or its name where
   // none has one), named after the group, that opens a menu of its commands. Below 861 px the
@@ -366,33 +399,51 @@ export const tabs = {
     const fold = (g) => ({ do: () => g.classList.add('folded', ...(g.querySelector('.rb-gico') ? ['ico'] : [])), undo: () => g.classList.remove('folded', 'ico') });
     const spare = foldsGroups() ? groups.filter((g) => g.dataset.spare).sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
     const steps = [...spare.map(fold), flag('rb-nolab')];
-    // (a laid out group, from 900 px, gives way as Word's do: its large buttons small, the least
-    // needed group first, every group; then its names, the same way. Neither takes a control, so
-    // all of it goes before any group folds. src/ribbon/layout.js)
+    // (a laid out group, from 900 px with a mouse, gives way as Word's do: its large buttons small,
+    // the least needed group first; then its names, the same way. Neither takes a control, so all
+    // of it goes before any group folds. src/ribbon/layout.js)
     const lay = wideLay() ? groups.filter((g) => g.classList.contains('lay')).sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
     // (a group's large buttons made small only where that is narrower: one large button with a
     // name over two lines is narrower than the same as a small one, and every step must take room)
-    const small = (g) => ({ do: () => { const w = g.offsetWidth; g.classList.add('sm'); if (g.offsetWidth >= w) g.classList.remove('sm'); }, undo: () => g.classList.remove('sm') });
-    const bare = (g) => ({ do: () => g.classList.add('nm'), undo: () => g.classList.remove('nm') });
+    const small = (g) => ({ chain: 'small', do: () => { const w = g.offsetWidth; g.classList.add('sm'); if (g.offsetWidth >= w) g.classList.remove('sm'); }, undo: () => g.classList.remove('sm') });
+    const bare = (g) => ({ chain: 'names', do: () => g.classList.add('nm'), undo: () => g.classList.remove('nm') });
     // (and a group of one large button keeps its name: it would save next to nothing, and Word
     // keeps such a group large until it folds)
-    steps.push(...lay.map(small), ...lay.filter((g) => g.querySelectorAll(':scope > [data-size]').length > 1).map(bare));
-    // (the tiles one at a time: each undone only after the one after it, chain; down to three
-    // before the buttons' names go, so a desktop keeps them; and the names in the chain too: a
-    // tile given back for names lost showed more controls than a wider window)
-    if (gal && wide) for (const n of [5, 4, 3]) steps.push({ do: () => tiles(n), undo: () => tiles(n + 1), chain: true });
-    steps.push({ ...flag('rb-fold'), chain: true }, flag('rb-dl1'));
-    if (gal && wide) steps.push(flag('rb-narrow'));
+    const named = lay.filter((g) => g.querySelectorAll(':scope > [data-size]').length > 1);
+    steps.push(...lay.map(small));
+    // Two chains, each given back from its last step only (ribbonFit's pass back): a step comes
+    // back only once every later step of its chain has, so a group of higher rank is never smaller
+    // than one of lower rank and a wider window never shows fewer names. The large buttons made
+    // small are one chain. The names are the other: the less needed groups' names (below rank 4),
+    // then the gallery's tiles one at a time down to three (Home), then the three downloads as one
+    // Download button (Word spends no room on them), then the names of the groups that matter
+    // most, then every button's name (rb-fold).
+    // (Home with its gallery, all in the chain: the tiles down to three, its names, the style list in
+    // the gallery's place, then its downloads, so a download in one press stays the longest and a
+    // wider window never shows fewer names or controls: given back on their own, after the chain,
+    // the list and the downloads came back where the names then could not. Where no group is laid
+    // out and there is no gallery, a narrower row, the downloads go after the names on their own:
+    // below 861 px the style sheet takes the names for nothing, and a row a little wider that gave
+    // two downloads for the names would show fewer controls.)
+    const home = !lay.length && gal && wide;
+    steps.push(...named.filter((g) => g.dataset.rank < 4).map(bare));
+    if (gal && wide) for (const n of [5, 4, 3]) steps.push({ do: () => tiles(n), undo: () => tiles(n + 1), chain: 'names' });
+    if (lay.length) steps.push({ ...flag('rb-dl1'), chain: 'names' });
+    steps.push(...named.filter((g) => g.dataset.rank >= 4).map(bare));
+    steps.push({ ...flag('rb-fold'), chain: 'names' });
+    if (gal && wide) steps.push({ ...flag('rb-narrow'), chain: 'names' });
+    if (home) steps.push({ ...flag('rb-dl1'), chain: 'names' });
+    else if (!lay.length) steps.push(flag('rb-dl1'));
     const order = foldsGroups() ? [...groups].filter((g) => !g.dataset.spare).sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
     for (const g of order) steps.push(fold(g));
     let k = 0;
     while (k < steps.length && !fits()) steps[k++].do();
-    let chain = true;
+    const held = new Set();
     for (let i = k - 1; i >= 0; i--) {
       const st = steps[i];
-      if (st.chain && !chain) continue;
+      if (st.chain && held.has(st.chain)) continue;
       st.undo();
-      if (!fits()) { st.do(); if (st.chain) chain = false; }
+      if (!fits()) { st.do(); if (st.chain) held.add(st.chain); }
     }
     this.rbFitting = false;
     this.ribbonRove();
@@ -461,14 +512,58 @@ export function installRibbon(app) {
     if (e.key === 'Escape' && e.target.closest('button')) { e.preventDefault(); app.ribbonBack(); return; }
     // a menu button opens its menu with the down arrow too
     if (e.key === 'ArrowDown' && e.target.matches('.rb-gbtn, [data-cmd][aria-haspopup]')) { e.preventDefault(); e.target.click(); return; }
-    if (!/^(ArrowLeft|ArrowRight|Home|End)$/.test(e.key) || e.altKey || e.ctrlKey || e.metaKey) return;
+    // (a split button's arrow opened its menu on the down arrow already)
+    if (!/^(ArrowLeft|ArrowRight|ArrowUp|ArrowDown|Home|End)$/.test(e.key) || e.altKey || e.ctrlKey || e.metaKey || e.defaultPrevented) return;
     // in a box the keys move in its text; past its first or last character they go on to the controls beside it
     const t = e.target;
-    if (t.matches && t.matches('input') && (/^(Home|End)$/.test(e.key) || t.selectionStart !== t.selectionEnd || (e.key === 'ArrowLeft' ? t.selectionStart > 0 : t.selectionEnd < t.value.length))) return;
+    if (t.matches && t.matches('input') && (/^(Home|End|ArrowUp|ArrowDown)$/.test(e.key) || t.selectionStart !== t.selectionEnd || (e.key === 'ArrowLeft' ? t.selectionStart > 0 : t.selectionEnd < t.value.length))) return;
     const all = app.ribbonRove().filter((x) => !isOff(x)), i = all.indexOf(document.activeElement);
     if (i < 0) return;
+    // In Word's grid (a laid out group, a mouse, 900 px and wider) the arrows move as the eye does:
+    // up and down a column, left and right to the control beside it in its row; past the group's
+    // edge, to the next group's first control or the last group's last
+    const grp = t.closest && t.closest('.rb-grp.lay:not(.folded)');
+    const grid = grp && wideLay() && /^Arrow/.test(e.key);
+    if (/^(ArrowUp|ArrowDown)$/.test(e.key) && !grid) return;
     e.preventDefault();
-    const to = all[e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + all.length) % all.length];
+    let to = null;
+    if (grid) {
+      const mine = all.filter((x) => grp.contains(x)), r = t.getBoundingClientRect(), cy = (r.top + r.bottom) / 2;
+      const over = (a, b, lo, hi) => Math.min(a[hi], b[hi]) - Math.max(a[lo], b[lo]) > 2;
+      if (/^(ArrowUp|ArrowDown)$/.test(e.key)) {
+        const down = e.key === 'ArrowDown';
+        let best = Infinity;
+        for (const x of mine) {
+          const q = x.getBoundingClientRect(), gap = down ? q.top - r.bottom : r.top - q.bottom;
+          if (x !== t && gap > -3 && over(q, r, 'left', 'right') && gap < best) { best = gap; to = x; }
+        }
+        if (!to) return;
+      } else {
+        const right = e.key === 'ArrowRight';
+        // (one beside it in its row first, the nearest; then the nearest at all. Columns line up on
+        // their left edges: a column's buttons are as wide as their names)
+        const near = (xs) => {
+          let best = null, pick = null;
+          for (const x of xs) {
+            const q = x.getBoundingClientRect(), gap = right ? q.left - r.left : r.left - q.left;
+            if (x === t || gap < 3) continue;
+            const row = over(q, r, 'top', 'bottom');
+            const score = [row ? 0 : 1, gap + (row ? 0 : Math.abs((q.top + q.bottom) / 2 - cy)), q.top];
+            if (!best || score[0] < best[0] || (score[0] === best[0] && (score[1] < best[1] - 0.5 || (Math.abs(score[1] - best[1]) <= 0.5 && score[2] < best[2])))) { best = score; pick = x; }
+          }
+          return pick;
+        };
+        to = near(mine);
+        if (!to) {
+          // the next group's control beside it (its first or last where that group is no grid)
+          const first = all.indexOf(mine[0]), last = all.indexOf(mine[mine.length - 1]);
+          to = right ? all[(last + 1) % all.length] : all[(first - 1 + all.length) % all.length];
+          const g2 = to.closest('.rb-grp.lay:not(.folded)');
+          if (g2 && g2 !== grp) to = near(all.filter((x) => g2.contains(x))) || to;
+        }
+      }
+    }
+    if (!to) to = all[e.key === 'Home' ? 0 : e.key === 'End' ? all.length - 1 : (i + (e.key === 'ArrowRight' ? 1 : -1) + all.length) % all.length];
     app.ribbonRove(to);
     to.focus();
   });
@@ -527,19 +622,26 @@ export function installRibbon(app) {
   installKeyTips(app);
 }
 
-// Alt alone, or F10, shows Word's KeyTips on the tabs. A letter opens that tab (Help is Y then 2)
-// and shows the letters of its controls, as Word's do (src/ribbon/layout.js): typing one runs that
-// control, a group folded into a button has Z and a letter, Escape goes back to the tabs' letters
-// and then away. The letters are drawn over the ribbon, not in the buttons: their names stay theirs.
+// Alt alone, or F10, shows Word's KeyTips on the tabs. A letter opens that tab (Help is Y then 2,
+// a contextual tab J then its letter while it shows) and shows the letters of its controls, as
+// Word's do (src/ribbon/layout.js): typing one runs that control, a group folded into a button has
+// Z and a letter, Escape goes back to the tabs' letters and then away. The letters are drawn over
+// the ribbon, not in the buttons: their names stay theirs. A key the letters take goes nowhere
+// else (Escape would also let go of a selected picture). On a Mac, F10 alone: Option is how a Mac
+// types é and ©, and Word for Mac has no KeyTips.
 function installKeyTips(app) {
   const list = $('#rb-tabs');
   if (!list) return;
-  let altDown = false, altUsed = false, yWait = false, level = 0, typed = '', tips = [];
+  const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+  let altDown = false, altUsed = false, level = 0, typed = '', tips = [];
   const layer = mk('div', 'rb-kt-layer');
   layer.setAttribute('aria-hidden', 'true');
   document.body.append(layer);
   const field = (e) => e.target && e.target.closest && e.target.closest('input, textarea, select, math-field, [contenteditable="true"]:not(#pages), .CodeMirror');
   const shown = (el) => el && el.offsetParent !== null && el.getClientRects().length > 0;
+  // the tabs' letters there are now (a contextual tab's while it shows)
+  const tabTips = () => Object.entries(KEYTIPS).filter(([id]) => { const t = $('#rt-' + id); return t && !t.hidden; });
+  const tabBadges = () => { for (const b of list.querySelectorAll('.rb-ktip')) b.hidden = !b.dataset.k.startsWith(typed); };
   // the open tab's controls that have letters, where they are now
   const collect = () => {
     const tab = app.rbTab, panel = $('#rp-' + tab), map = TIPS[tab] || {}, out = [], used = new Set();
@@ -549,7 +651,7 @@ function installKeyTips(app) {
       const el = document.getElementById(p.el);
       if (shown(el) && panel.contains(el)) { out.push({ k: map[c.id], el }); used.add(map[c.id]); }
     }
-    for (const b of panel.querySelectorAll('.rb-launch')) {
+    for (const b of panel.querySelectorAll('.rb-launch, .rb-launch-c')) {
       const L = LAUNCH[tab + '/' + b.closest('.rb-grp').dataset.group];
       if (L && L[2] && shown(b)) { out.push({ k: L[2], el: b }); used.add(L[2]); }
     }
@@ -575,9 +677,10 @@ function installKeyTips(app) {
     }
   };
   const show = (on) => {
-    yWait = false; typed = '';
+    typed = '';
     level = on ? 1 : 0;
     document.body.classList.toggle('keytips', on);
+    tabBadges();
     tips = []; layer.replaceChildren();
   };
   const commandsOf = () => {
@@ -601,41 +704,46 @@ function installKeyTips(app) {
     if (el.disabled) return;
     el.click();
   };
+  // (a key the letters take: the page, the picture's and the app's own keys never see it)
+  const take = (e) => { e.preventDefault(); e.stopImmediatePropagation(); };
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Alt' && !e.repeat && !e.ctrlKey && !e.metaKey && !e.shiftKey) { altDown = true; altUsed = false; return; }
     if (altDown && e.key !== 'Alt') altUsed = true;
     if (e.key === 'F10' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !field(e)) {
-      e.preventDefault();
+      take(e);
       show(!level);
       return;
     }
     if (!level || field(e)) return;
     if (e.key === 'Escape') {
-      e.preventDefault();
-      if (level === 2 && typed) { typed = ''; draw(); } else if (level === 2) show(true); else show(false);
+      take(e);
+      if (typed) { typed = ''; if (level === 2) draw(); else tabBadges(); } else if (level === 2) show(true); else show(false);
       return;
     }
     const k = e.key.length === 1 ? e.key.toUpperCase() : '';
     if (!k || e.ctrlKey || e.metaKey || e.altKey) return;
-    e.preventDefault();
+    take(e);
+    const want = typed + k;
     if (level === 2) {
-      const want = typed + k, hits = tips.filter((t) => t.k.startsWith(want));
+      const hits = tips.filter((t) => t.k.startsWith(want));
       if (!hits.length) return;
       const exact = hits.find((t) => t.k === want);
       if (exact) return press(exact);
       typed = want; draw();
       return;
     }
-    if (yWait) { yWait = false; if (k === '2' || k === 'Y') open('help'); return; }
-    if (k === 'Y') { yWait = true; return; }
-    const id = Object.keys(KEYTIPS).find((t) => KEYTIPS[t] === k);
-    if (id) open(id);
+    // (Y then Y opens Help too, as it always has here)
+    const hits = tabTips().filter(([, t]) => t.startsWith(want) || (want === 'YY' && t === 'Y2'));
+    if (!hits.length) return;
+    const exact = hits.find(([, t]) => t === want || (want === 'YY' && t === 'Y2'));
+    if (exact) return open(exact[0]);
+    typed = want; tabBadges();
   }, true);
   document.addEventListener('keyup', (e) => {
     if (e.key !== 'Alt') return;
     const alone = altDown && !altUsed && !e.ctrlKey && !e.metaKey && !e.shiftKey && !field(e);
     altDown = false;
-    if (alone) { e.preventDefault(); show(!level); }
+    if (alone && !mac) { e.preventDefault(); show(!level); }
   }, true);
   // (anything else puts them away: a press, the window resized or scrolled, the focus gone)
   const away = () => { if (level) show(false); };
