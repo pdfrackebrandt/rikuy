@@ -48,7 +48,7 @@ Usage: python3 agent.py [api controls links equations webmcp structure]
 Needs a page built without RIKUY_SHARE (npm run build); RIKUY_DIST names another dist/."""
 import base64, json, os, re, sys, zlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from browser import ROOT, open_page, check, results, src, load_doc
+from browser import ROOT, open_page, check, results, src, load_doc, click_text
 from playwright.sync_api import sync_playwright, expect
 from tabs import OBJ_TABS, obj_select
 
@@ -853,18 +853,21 @@ def equations(p):
 
 # ---- the agent tools through WebMCP -------------------------------------------------------
 STUB = "document.modelContext = { tools: [], opts: [], registerTool(t, o) { this.tools.push(t); this.opts.push(o); return Promise.resolve(); } };"
+# (an error is thrown on document.modelContext, so the browser sees the call fail: here it comes
+# back as { error, thrown }, refused where the person said no)
+CAUGHT = "(e) => ({ error: e.message, thrown: true, refused: /did not allow|did not keep|Cancelled/.test(e.message) || undefined })"
 CALL = """async ([n, x]) => { const t = document.modelContext.tools.find((t) => t.name === n); const c = new AbortController(); window.__abort = c;
-  return JSON.parse(await t.execute(x, { signal: c.signal })); }"""
+  try { return JSON.parse(await t.execute(x, { signal: c.signal })); } catch (e) { return (%s)(e); } }""" % CAUGHT
 
 
 def mcp(page, name, x):
     return page.evaluate(CALL, [name, x])
 
 
-def asking(page, name, x):
+def asking(page, name, x, question='Allow the AI agent?'):
     """starts a tool that asks, and waits for the question"""
-    page.evaluate("([n, x]) => { const t = document.modelContext.tools.find((t) => t.name === n); const c = new AbortController(); window.__abort = c; window.__asked = t.execute(x, { signal: c.signal }).then((r) => JSON.parse(r)); }", [name, x])
-    page.get_by_role('dialog', name='Allow the AI agent?', exact=True).wait_for(timeout=5000)
+    page.evaluate("([n, x]) => { const t = document.modelContext.tools.find((t) => t.name === n); const c = new AbortController(); window.__abort = c; window.__asked = t.execute(x, { signal: c.signal }).then((r) => JSON.parse(r), %s); }" % CAUGHT, [name, x])
+    page.get_by_role('dialog', name=question, exact=True).wait_for(timeout=5000)
 
 
 def answered(page):
@@ -873,7 +876,8 @@ def answered(page):
 
 AB_TABLE = '\\documentclass{article}\n\\begin{document}\nBefore.\n\n\\begin{tabular}{ll}\nalpha & beta\\\\\ngamma & delta\n\\end{tabular}\n\nAfter.\n\\end{document}\n'
 REG = """() => { const m = document.modelContext; return { names: m.tools.map((t) => t.name), ok: m.tools.every((t) => typeof t.execute === 'function' && t.inputSchema && t.inputSchema.type === 'object' && t.title && t.description && t.annotations && typeof t.annotations.readOnlyHint === 'boolean' && typeof t.annotations.untrustedContentHint === 'boolean'),
-  signal: m.opts.every((o) => o && o.signal instanceof AbortSignal && !o.exposedTo), ids: m.tools.find((t) => t.name === 'run_command').inputSchema.properties.id.enum.length, cmds: window.rikuy.api.commands().length,
+  signal: m.opts.every((o) => o && o.signal instanceof AbortSignal && !o.exposedTo), enum: 'enum' in m.tools.find((t) => t.name === 'run_command').inputSchema.properties.id, cmds: window.rikuy.api.commands().length,
+  bytes: JSON.stringify(m.tools.map((t) => ({ name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema, annotations: t.annotations }))).length,
   api: window.rikuy.api.tools.map((t) => t.name), reads: m.tools.filter((t) => t.annotations.readOnlyHint).map((t) => t.name) }; }"""
 TOOL_NAMES = ['get_document', 'get_source', 'select', 'list_commands', 'run_command', 'edit_source', 'set_source', 'insert_graph', 'compile', 'undo']
 
@@ -889,10 +893,13 @@ def webmcp(p):
     hints = page.evaluate("Object.fromEntries(document.modelContext.tools.map((t) => [t.name, t.annotations.untrustedContentHint]))")
     check('every tool whose result holds the document\'s text says it is untrusted content (all but list_commands)', all(v is (k != 'list_commands') for k, v in hints.items()), hints)
     check('WebMCP: the ten tools registered on document.modelContext, each with a title, a description, an object schema and its hints, for this origin alone', reg['names'] == TOOL_NAMES and reg['ok'] and reg['signal'], reg)
-    check("run_command names every command an agent may run (an enum of the registry's ids); rikuy.api.tools are the same tools", reg['ids'] == reg['cmds'] > 400 and reg['api'] == reg['names'] and reg['reads'] == ['get_document', 'get_source', 'list_commands', 'compile'], reg)
+    check("the ten tools cost an agent under 12 KB a turn: no list of the 600 command ids in run_command's schema (list_commands finds one); rikuy.api.tools are the same tools (review M9)",
+          reg['enum'] is False and reg['cmds'] > 400 and reg['bytes'] < 12000 and reg['api'] == reg['names'] and reg['reads'] == ['get_document', 'get_source', 'list_commands', 'compile'], reg)
     load_doc(page, DOC)
     d = mcp(page, 'get_document', {})
-    check('get_document: the document as data, its sections, formulas and places', [x['title'] for x in d['sections']] == ['Opening', 'Details'] and d['files'][0]['name'] == 'main.tex' and d['guest'] is False and 'pdf' in d and 'problems' in d, d)
+    d2 = mcp(page, 'get_document', {'include': ['files', 'pdf', 'problems', 'selection']})
+    check('get_document: the outline and the counts left alone; files, the PDF, problems and the selection when asked', [x['title'] for x in d['sections']] == ['Opening', 'Details'] and d['counts']['files'] == 1 and d['guest'] is False and 'pdf' not in d and 'equations' not in d
+          and d2['files'][0]['name'] == 'main.tex' and 'pdf' in d2 and 'problems' in d2 and 'selection' in d2 and 'sections' not in d2, (d, d2))
     i = src(page).index('Second paragraph')
     sel = mcp(page, 'select', {'start': i, 'end': i + 6})
     b = mcp(page, 'run_command', {'id': 'bold'})
@@ -1002,6 +1009,151 @@ def webmcp(p):
     browser.close()
 
 
+
+# ---- what the hostile review of PR 92 found (docs/reviews/AGENTS-MOTION.md), each fixed --------
+def keep_question(page):
+    page.get_by_role('dialog', name="Keep the AI agent's change?", exact=True).wait_for(timeout=5000)
+
+
+def review(p):
+    browser, page, errors = open_page(p, init=STUB)
+    page.wait_for_function('document.modelContext.tools.length === 10', timeout=10000)
+    load_doc(page, DOC)
+    # H1: what leaves the page is the person's: never done by a tool, said with where they press it
+    downloads, popups = [], []
+    page.on('download', lambda d: downloads.append(d.suggested_filename))
+    page.context.on('page', lambda q: popups.append(q.url))
+    out = {i: mcp(page, 'run_command', {'id': i}) for i in ('download-latex', 'save-as', 'download-pdf', 'export-as', 'help-report', 'ask-grok', 'new-document', 'load-sample')}
+    page.wait_for_timeout(1500)
+    check('H1, L1: a download, Save As, Export, a report or question on another site, another document: never run by a tool, no question, the person told where to press it (personOnly)',
+          all(r.get('personOnly') is True and r.get('ran') is False and 'Only the person does this' in r.get('why', '') and r.get('undoSteps') == 0 for r in out.values())
+          and 'F12' in out['save-as']['why'] and 'Download menu' in out['download-pdf']['why'] and not downloads and not popups and page.locator('dialog.rk-agent-ask').count() == 0 and src(page) == DOC,
+          (out, downloads, popups))
+    sh = mcp(page, 'run_command', {'id': 'share'})
+    panel = page.locator('.pop-share').count()
+    page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    check('H1: Share is prepared, not done: the Share panel opens and the person presses Copy link there; no link made',
+          sh.get('personOnly') and sh.get('prepared') is True and 'Copy link' in sh['why'] and panel == 1 and page.locator('.share-link').count() in (0, 1) and not page.evaluate("!!(document.querySelector('.share-link') && document.querySelector('.share-link').value)"), sh)
+    lk = page.evaluate("() => { const g = window.rikuy; g.agentDepth = 1; try { return g.openLink('https://example.org/'); } finally { g.agentDepth = 0; } }")
+    page.wait_for_timeout(300)
+    check('H1: while a tool runs the page opens no link (App.openLink), whatever command asked', lk is False and not popups, (lk, popups))
+    # H1: the question says it is the person's and an agent must not answer it
+    asking(page, 'set_source', {'text': DOC + '\n'})
+    q = page.get_by_role('dialog', name='Allow the AI agent?').inner_text()
+    focus = page.evaluate('document.activeElement.textContent')
+    # M1: a person typing when the question comes answers nothing: Tab, a letter, Space, Enter
+    page.wait_for_timeout(600)
+    page.keyboard.press('Tab'); on = page.evaluate('document.activeElement.textContent')
+    page.keyboard.type('b'); page.keyboard.press(' '); page.keyboard.press('Enter')
+    page.wait_for_timeout(200)
+    open1 = page.get_by_role('dialog', name='Allow the AI agent?', exact=True).count()
+    page.wait_for_timeout(300); page.keyboard.press(' '); page.wait_for_timeout(700); page.keyboard.press(' ')
+    page.wait_for_timeout(200)
+    open2 = page.get_by_role('dialog', name='Allow the AI agent?', exact=True).count()
+    page.keyboard.press('Escape'); r = answered(page)
+    check('H1: the question says it is for the person and an agent must not answer it', 'This question is for you: an AI agent must not answer it.' in q, q)
+    check("M1: Allow never has the focus first; Tab to it, a letter, Space and Enter as a person types answer nothing; Space never answers",
+          focus == "Don't allow" and on == 'Allow' and open1 == 1 and open2 == 1 and r.get('refused') and src(page) == DOC, (focus, on, open1, open2, r))
+    asking(page, 'set_source', {'text': DOC + '\n'})
+    page.wait_for_timeout(600); page.keyboard.press('Tab'); page.wait_for_timeout(700); page.keyboard.press('Enter')
+    r = answered(page)
+    check('M1: Enter on Allow once it has held the focus half a second answers yes', r.get('undoSteps') == 1 and src(page) == DOC + '\n', r)
+    mcp(page, 'undo', {})
+    # M2: deletions add up over two minutes
+    para = 'Alpha ' * 120
+    LONG = DOC.replace('Third paragraph here.', para)
+    load_doc(page, LONG)
+    s0 = LONG.index('Alpha')
+    a = mcp(page, 'edit_source', {'start': s0, 'end': s0 + 90, 'text': ''})
+    b = mcp(page, 'edit_source', {'start': s0, 'end': s0 + 90, 'text': ''})
+    asking(page, 'edit_source', {'start': s0, 'end': s0 + 90, 'text': ''})
+    q = page.get_by_role('dialog', name='Allow the AI agent?').inner_text()
+    page.keyboard.press('Escape'); c = answered(page)
+    check('M2: deletions of 90, 90 and 90 characters: the third asks, saying what went before; refused, the two stay and the third does not happen',
+          a.get('undoSteps') == 1 and b.get('undoSteps') == 1 and 'take out 90 characters of main.tex (after 180 taken out by its edits in the last two minutes)' in q and c.get('refused') and src(page) == LONG[:s0] + LONG[s0 + 180:], (a, b, q, c))
+    mcp(page, 'undo', {'steps': 2})
+    # (a command that took out that much without asking first asks after, its edit on the page)
+    load_doc(page, LONG)
+    mcp(page, 'select', {'start': s0, 'end': s0 + 300})
+    page.evaluate("([n, x]) => { const t = document.modelContext.tools.find((t) => t.name === n); window.__asked = t.execute(x, {}).then((r) => JSON.parse(r), %s); }" % CAUGHT, ['run_command', {'id': 'spike'}])
+    keep_question(page)
+    q = page.get_by_role('dialog', name="Keep the AI agent's change?").inner_text()
+    shown = src(page)
+    page.get_by_role('button', name='Undo it', exact=True).click()
+    r = answered(page)
+    check("M2: a command that takes out 300 characters (Spike) asks after, with the change on the page; Undo it takes it back",
+          'has just taken out 300 characters of the document (running "Spike")' in q and shown == LONG[:s0] + LONG[s0 + 300:] and r.get('refused') and src(page) == LONG, (q, r))
+    # M3: the clipboard reaches the document, and the agent, only when the person says so
+    page.context.grant_permissions(['clipboard-read', 'clipboard-write'], origin='https://rikuy.test')
+    page.evaluate("navigator.clipboard.writeText('SECRET-password-123')")
+    load_doc(page, DOC)
+    mcp(page, 'select', {'start': DOC.index('Second')})
+    pq = {}
+    for i in ('paste', 'paste-text', 'paste-latex'):
+        asking(page, 'run_command', {'id': i})
+        pq[i] = page.get_by_role('dialog', name='Allow the AI agent?').inner_text()
+        page.keyboard.press('Escape'); answered(page)
+    check('M3: Paste, Keep Text Only and Paste as LaTeX ask first, saying the clipboard; refused, nothing of it in the source', all('paste what is on your clipboard into the document' in q for q in pq.values()) and 'SECRET' not in src(page), pq)
+    # M4: undo takes back the agent's own edit, never the person's typing after it
+    load_doc(page, DOC)
+    i = DOC.index('First')
+    e = mcp(page, 'edit_source', {'start': i, 'end': i + 5, 'text': 'AGENT'})
+    click_text(page, 'Second paragraph', 6); page.keyboard.type(' typed'); page.wait_for_timeout(700)
+    typed = src(page)
+    u1 = mcp(page, 'undo', {})
+    u2 = mcp(page, 'undo', {'step': e.get('step')})
+    check("M4: after the person typed, undo (by steps or by the edit's step) refuses in words and takes back nothing", 'The document changed after your edit' in u1.get('error', '') and 'The document changed after your edit' in u2.get('error', '') and src(page) == typed and ' typed' in typed and 'AGENT' in typed, (u1, u2))
+    e2 = mcp(page, 'edit_source', {'start': 0, 'end': 0, 'text': '% agent\n'})
+    u3 = mcp(page, 'undo', {'step': e2['step']})
+    # (the person's Ctrl+Z twice: their typing, then the agent's edit)
+    page.keyboard.press('Control+z'); page.wait_for_timeout(200); page.keyboard.press('Control+z'); page.wait_for_timeout(300)
+    gone = mcp(page, 'undo', {'step': e.get('step')})
+    check("M4: undo {step} takes back that edit; one the person undid is not in the history any more", u3.get('undone') == 1 and src(page) == DOC and 'not in the history any more' in gone.get('error', ''), (u3, gone))
+    # M8: select in a file the page does not show refuses
+    load_doc(page, {'main.tex': '\\documentclass{article}\n\\begin{document}\n\\input{chap}\n\\end{document}\n', 'chap.tex': 'Chapter text here.\n', 'notes.tex': 'Notes not input anywhere.\n'})
+    sn = mcp(page, 'select', {'file': 'notes.tex', 'start': 0})
+    sc = mcp(page, 'select', {'file': 'chap.tex', 'start': 0})
+    check('M8: select in a file the page does not show refuses, in words; in an \\input file it lands there', 'not on the page' in sn.get('error', '') and sc['selection']['file'] == 'chap.tex', (sn, sc))
+    # M9: what a call costs: list_commands compact and paged, get_document's outline by default, paged and capped
+    lc = mcp(page, 'list_commands', {})
+    lq = mcp(page, 'list_commands', {'query': 'table'})
+    lp = mcp(page, 'list_commands', {'from': 100})
+    check('M9: list_commands without a query: id and name, 100 at a time, under 8 KB, with the total; with a query the full entries',
+          len(json.dumps(lc)) < 8000 and lc['total'] > 400 and len(lc['commands']) == 100 and set(lc['commands'][0]) == {'id', 'name'} and lc['page']['next'] == 100
+          and lp['commands'][0]['id'] != lc['commands'][0]['id'] and 'description' in lq['commands'][0] and any(c['id'] == 'table' for c in lq['commands']), (len(json.dumps(lc)), lc['page'], lq['total']))
+    files = {f: open(os.path.join(ROOT, 'dev/bench/long', f), encoding='utf8').read() for f in ('main.tex', 'refs.bib')}
+    load_doc(page, files); page.wait_for_timeout(1500)
+    g0 = mcp(page, 'get_document', {})
+    g1 = mcp(page, 'get_document', {'include': ['equations', 'citations'], 'limit': 5})
+    g2 = mcp(page, 'get_document', {'include': ['equations', 'citations'], 'limit': 5, 'from': 5})
+    g3 = mcp(page, 'get_document', {'include': PARTS_ALL, 'limit': 2000})
+    # (a document whose formulas alone come to 600,000 characters: the page made smaller to fit)
+    big = '\\documentclass{article}\n\\begin{document}\n' + ''.join('$%s$\n\n' % ('x_{%d} + ' % k * 120) for k in range(500)) + '\\end{document}\n'
+    load_doc(page, big); page.wait_for_timeout(500)
+    g5 = mcp(page, 'get_document', {'include': ['equations'], 'limit': 2000})
+    g4 = mcp(page, 'get_document', {'include': ['problems', 'pdf']})
+    check('M9: get_document left alone gives the outline and counts (small); include with limit and from pages each list; everything at once stays under 100,000 characters',
+          'sections' in g0 and 'equations' not in g0 and g0['counts']['equations'] > 10 and len(json.dumps(g0)) < 20000 and len(g1['equations']) == 5 and g1['page'] == {'from': 0, 'limit': 5, 'next': 5}
+          and g2['equations'][0]['start'] > g1['equations'][-1]['start'] and len(json.dumps(g3)) <= 100000 and len(json.dumps(g5)) <= 100000 and g5['counts']['equations'] == 500 and g5['page']['limit'] < 500 and g5['page']['next'] == g5['page']['limit'],
+          (len(json.dumps(g0)), g1.get('page'), len(json.dumps(g3)), len(json.dumps(g5)), g5.get('page')))
+    check('M7: include asking only for page parts gives those and no document parts', sorted(k for k in g4 if k not in ('main', 'words', 'counts', 'guest')) == ['pdf', 'problems'], sorted(g4))
+    # L2: a command's arguments checked against its schema
+    load_doc(page, DOC)
+    mcp(page, 'select', {'start': DOC.index('Second')})
+    t1 = mcp(page, 'run_command', {'id': 'table', 'args': {'rows': 'many', 'cols': -4}})
+    t2 = mcp(page, 'run_command', {'id': 'table', 'args': {'rows': 2000, 'cols': 300}})
+    t3 = mcp(page, 'get_source', {'start': -1})
+    check("L2: arguments and inputs out of their schema refused in words, nothing changed (rows 'many', 2000 rows; a negative start)",
+          t1.get('error', '').startswith('args.rows must be a whole number.') and t2.get('error', '').startswith('args.rows must be at most 60.') and t3.get('error') == 'input.start must be at least 0.' and src(page) == DOC, (t1, t2, t3))
+    # L8: an error is thrown on document.modelContext, so the browser sees a failed call
+    th = mcp(page, 'run_command', {'id': 'no-such-command'})
+    check('L8: an error comes back as a thrown Error on document.modelContext (the browser reports the call as failed)', th.get('thrown') is True and 'list_commands' in th['error'], th)
+    check('no page errors (review)', not [e for e in errors if 'clipboard' not in e.lower()], errors[:3])
+    browser.close()
+
+
+PARTS_ALL = ['title', 'sections', 'equations', 'figures', 'graphs', 'citations', 'references', 'labels', 'crossReferences', 'footnotes', 'warnings']
+
 # ---- the page as the accessibility tree has it ---------------------------------------------------
 def structure(p):
     browser, page, errors = open_page(p)
@@ -1036,7 +1188,7 @@ def structure(p):
 if __name__ == '__main__':
     want = sys.argv[1:]
     with sync_playwright() as p:
-        for name, fn in (('api', api), ('controls', controls), ('links', links), ('equations', equations), ('webmcp', webmcp), ('structure', structure)):
+        for name, fn in (('api', api), ('controls', controls), ('links', links), ('equations', equations), ('webmcp', webmcp), ('review', review), ('structure', structure)):
             if not want or name in want:
                 fn(p)
     bad = [r for r in results if not r[1]]
