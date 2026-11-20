@@ -101,10 +101,17 @@ export const ribbon = {
   // The focus back on the page after a list or a menu took it: the place as it is now if the
   // page still has it; the kept one only when it is still a place in a text of the page (a range
   // whose text was drawn again has collapsed to the page's start)
+  // (whether the page still has its place is asked before it takes the focus: focusing it put a
+  // caret at its start when a field had held the focus, and that read as the page's own; then
+  // the kept range, then the place by its source position, which survives the page being drawn
+  // again: Find and Replace, Go To, the Navigation pane and the panes closed with Esc put the caret
+  // at the start)
   ribbonBack() {
     const r = this.rbRange, s = getSelection();
+    const had = s.rangeCount && this.root.contains(s.anchorNode) && document.activeElement !== document.body && !/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || '');
     this.root.focus({ preventScroll: true });
-    if (s.rangeCount && this.root.contains(s.anchorNode)) return;
-    if (r && r.startContainer.nodeType === 3 && this.root.contains(r.startContainer)) { s.removeAllRanges(); s.addRange(r); }
+    if (had && s.rangeCount && this.root.contains(s.anchorNode)) return;
+    if (r && r.startContainer.nodeType === 3 && this.root.contains(r.startContainer) && r.startContainer.isConnected) { s.removeAllRanges(); s.addRange(r); return; }
+    if (this.lastPagePos && this.lastPagePos.f != null && this.files.has(this.lastPagePos.f)) this.restoreCaret(this.lastPagePos, true);
   }
 };
