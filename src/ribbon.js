@@ -64,8 +64,15 @@ export const ribbon = {
     if (!at) return null;
     const A = posFromDom(at.node, at.offset, this.root);
     if (!A || A.ghost) return null;
-    // (every command reads the place as it reads a caret put there by a press: the selection)
+    // (every command reads the place as it reads a caret put there by a press: the selection. The
+    // browser gives the page the focus with a selection put in it: the focus stays where it was, a
+    // button of the bar that a popover gave it back to, or nowhere)
+    const f = document.activeElement;
     sel.collapse(at.node, at.offset);
+    if (document.activeElement !== f) {
+      if (f && f !== document.body && f.focus) f.focus({ preventScroll: true });
+      else if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    }
     const c = this.caretNow();
     return c ? this.atOf(c, at.node.nodeType === 1 ? at.node : at.node.parentElement, sel.getRangeAt(0)) : null;
   },

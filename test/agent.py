@@ -254,8 +254,10 @@ def api(p):
     page.evaluate('rikuy.ribbonBack()')
     bad = page.evaluate("""async () => { const out = []; for (const id of ['no-such-command', 7]) try { await window.rikuy.api.run(id); out.push('took ' + id); } catch (e) { out.push(e.name); } return out; }""")
     check('api.run refuses an id that is no command with a TypeError', bad == ['TypeError', 'TypeError'], bad)
+    # (with no caret on the page a command acts where the caret last was, as Word's: a paragraph
+    # here, where a table's row cannot be added)
     page.evaluate("document.getElementById('pages').blur(); getSelection().removeAllRanges()")
-    check('api.run resolves to false where the command cannot run (no caret on the page)', page.evaluate("rikuy.api.run('bold')") is False and src(page) == DOC)
+    check('api.run resolves to false where the command cannot run (no caret on the page: the last place, a paragraph, has no table row to add after)', page.evaluate("rikuy.api.run('table-row-below')") is False and src(page) == DOC)
     check('no page errors (the API)', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e and 'fetch' not in e], errors[:4])
 
     # a guest's view: the document someone shared, opened from their link
