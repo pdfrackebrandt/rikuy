@@ -241,3 +241,155 @@ before its fix, or in `test/graphs.py` for what needs the page (H5, H6):
 - Lows: typeset legends (fd9bb57); the title as plain text (`plainOf`); plain words for `\ddot`
   and an undefined function of several letters; the spelling marks (0bb9b60); the PGF label
   sizes, arXiv's extraneous files and the link's length are said in `docs/handoff/GRAPHS.md`.
+
+## Verification of 8d00a2e
+
+Own worktree at 8d00a2e, built, with `dist/tex` for the compiles. I reran every repro from the
+first round, the 50 equations (`gt.mjs`) and 31 trickier forms (`tricky.mjs`), plus three new
+scripts: `strip.mjs`, `a10.py` and `a11.py`. Screenshots are in `/tmp/review-graph-out/v2/`.
+
+**Verdict: fix first.** Two small fixes. First, the comment stripper that the export runs by
+default produces a source that does not compile. Second, equal axes widen the plot but not the
+region the curves are worked out on, so curves stop in the middle of the plot, and that is
+printed in the PDF. Everything else from the first round is fixed or acceptable.
+
+### Fixed, each checked with my repro
+
+- **H1 supply and demand.** `Q_d = a - bP, Q_s = c + dP` and `Q^D … Q^S` now draw two curves with
+  P up. The meeting point is marked at (5.5, 4.5), which is exact. `L^d, L^s` works too.
+- **H2 rounding.** The steady state reads `(4.79, 0)` live and in the PDF; tan's roots read
+  (0, 0) and (±3.14, 0).
+- **H3 `$` in labels.** `$k$` and `$k_t$` are set as math. `\input` and `\write18` inside `$…$`
+  are reduced to plain letters.
+- **H4 log.** `\log x` is ln (0.693 at 2), `\log_{10}` is lg.
+- **H5 placement.** The graph now goes after the equation's paragraph, and after the table for
+  a table cell's equation.
+- **H6 export.** The dialog says what the link carries. A `notes-private.txt` stays out, and
+  "leave the link out" leaves it out.
+- **M7 poles.** No false segments for tan, 1/x or 1/(x−.3)+1/(y−.3)=1.
+- **M8 areas.** Areas are now |u − l|: sin over [0, 2π] gives 4, x over [−1, 1] gives 1, ln over
+  (0, 1] gives 1, and 1/x across 0 says "no area, a pole".
+- **M9 starting values.** Linear supply and demand pairs start with their crossing inside the
+  plot.
+- **M10 notation.** `\Phi`, `\Gamma`, `\max(x,0)`, `u^*`, `\bar u` and CRRA work. A role is
+  moved off 0/0 (σ starts at 2.25).
+- **M11 variables, ranges, values.** Cournot is drawn against q_2; ½mv² against v; Laffer on
+  [0, 1]; Lotka–Volterra round its rest point. "n = 500 observations" is ignored, because values
+  are now read from math only.
+- **M12 the sample.** It reads `c ∈ [0, f(k)]` and states full depreciation, the 45° line is at
+  45°, and there are no spelling marks.
+- **M13 phones.** Edit graph no longer covers the plot. The exported page's plot is 260 px tall
+  at 390 and 360 px.
+- **M15 broken hand edits.** A graph whose description breaks is skipped and the others are
+  still drawn; the problems list has an entry (`src/problems.js:142`).
+- **Still good.** One undo is byte for byte on all six Graph this cases, and all of them compile
+  on pdfLaTeX, XeLaTeX and LuaLaTeX.
+
+### New or remaining
+
+1. **High (new): the default "comments removed" breaks the source behind "Open in Rikuy".**
+   `stripComments` (`src/webpage.js:289`) treats every unescaped `%` as a comment, and the
+   export runs it on `.tex` and `.bib` files by default. In the exported sample's link:
+   - `See \url{https://example.org/a%20b}` comes out as `See \url{https://example.org/a%`.
+   - The `.bib` entry `title = {A 5% rise}` comes out as `title = {A 5%`.
+   - `\verb|x % 2|`, verbatim and listings code, and `\href{…%2C…}` are cut the same way
+     (`strip.mjs`).
+
+   The opened project then has unbalanced braces and does not compile. URLs with `%20` in
+   `\url` and in `.bib` fields are common.
+
+   Fix: never strip `.bib` files, where `%` is not a comment inside an entry. In `.tex`, remove
+   only whole-line comments outside verbatim-like environments, and leave the rest of each line
+   alone. Add those cases to `graphs-review.test.mjs`.
+
+2. **Medium (new): equal axes widen the plot but not the region the curves are worked out on.**
+   `paint` widens `x1`/`y1` (`src/graph.js:1216-1221`) after `compute` has run on
+   `s.x`/`s.y`. Graph this on `x_1^\alpha x_2^{1-\alpha} = \bar u` draws axes to 27, while the
+   indifference curve stops at x_1 = 10, live and in the pdfLaTeX PDF
+   (`v2/gt-all.png`, `v2/pdf2.png`). A phase field and a `k_{t+1}` map with equal axes are cut
+   the same way. Fix: widen the ranges before `compute`, through the same frame arithmetic, so
+   the computed region always fills the plot.
+
+3. **Medium (remaining): no equilibrium is marked when the pair has different left sides.** The
+   usual IS–LM forms (`Y = A − br, r = cY − d`, and the textbook one with M/P) and the pair of
+   Cournot best responses become implicit curves. Nothing is marked where they cross, and IS–LM
+   gets Y, r ∈ [−5, 5]. Fix: when both curves can be solved for the same letter (each is linear
+   in it), mark their crossing. At least mark crossings between the curves of an implicit graph
+   (marching squares already finds both), and take a [0, …] range when Y is one of the pair.
+
+4. **Low to medium: the notation reader on tricky forms.**
+   - `\pi^e_t` fails ("A subscript needs a name before it"), while `\pi_t^e` works.
+   - AR(1) written `y_t = \rho y_{t-1} + \varepsilon_t` fails ("A subscript needs letters or
+     digits after _"); `k_{t+1} = g(k_t)` works, and this is the same map.
+   - `\max\{x − K, 0\}` is still refused as "an operator over a set".
+   - `\mathbb E_t` refuses with a cryptic subscript message.
+   - `\hat`, `\tilde` are refused.
+   - In a single equation, `y = x^d` and `y = x^{d}` are now read as a variable named x^d, a
+     straight line, not a power. Read d/s/e/* as labels only where a pair or a left side needs
+     it.
+   - The Phillips curve is drawn against π^e rather than u. The Taylor rule is drawn against r^*
+     rather than π_t.
+   - `\phi(x)` is drawn as φ·x.
+
+5. **Low (remaining): the shared source can miss files, and other small leftovers.**
+   - `sourceFiles` misses `\input chap1` written without braces, `\import{parts/}{intro}` (it
+     looks for `intro` without the folder), and `\lstinputlisting`. A link from such a project
+     opens without those files.
+   - The exported page still scrolls sideways at 360 px, now by 20 px. The cause is KaTeX's
+     hidden MathML of the display equation, which is absolutely placed and escapes `.eq`'s
+     `overflow`. Fix: `.eq{position:relative}`.
+   - `\%` in a label prints a backslash.
+   - The live legend shows `Q_d` with a raw underscore, while the rest is typeset.
+   - Graph this's supply and demand starts with `a` at its slider's maximum (10 of [0, 10]).
+
+### Verdict
+
+Fix items 1 and 2, with tests: each is a few lines. Item 3 is worth doing before this is called
+the edge, because the IS–LM equilibrium is in the brief. Items 4 and 5 can follow as an open
+task in PLAN.md.
+
+## Response to the verification
+
+Each item has a check that failed before its fix: `test/graphs-review.test.mjs` groups V1 to
+V5 (18 groups in all), and `graphs.py`'s web page at 360 px in a desktop browser.
+
+1. **V1 (High).** `stripComments(text, name)` (`src/webpage.js`) removes whole comment lines
+   only, never inside verbatim, Verbatim, lstlisting, minted, alltt, comment or filecontents,
+   keeps Rikuy's `% rikuy:` lines, and leaves a `.bib` as it is. A `%` after text stays, so
+   `\url{…a%20b}`, `\href{…%2C…}`, `\verb|x % 2|` and `50\%` are untouched; the export no
+   longer passes `.bib` files to it at all.
+2. **V2.** `region(s, geo)` in the kit: where one scale on both axes widened the plot, the
+   curves are worked out again on the wider region, live (`mount`), in the PDF's picture
+   (`graphPGF`) and in the PNG (`graphCanvas`). The indifference curve of
+   `x_1^\alpha x_2^{1-\alpha} = \bar u` now runs to the plot's edge.
+3. **V3.** An implicit graph of two equations marks where they meet (`meets()`: the grid's cells
+   where both change sign, refined by Newton's method; 200 cells tried, 8 marks at most). Graph
+   this sets it for every pair it draws as implicit curves (IS and LM as `Y = …, r = …`, two best
+   responses), takes Y and r from 0, and tries the sliders' usual values until the crossing is
+   inside the plot.
+4. **V4.**
+   - `\pi^e_t` reads (the mark before or after the index).
+   - An AR(1) `y_t = \rho y_{t-1} + \varepsilon_t` is the map y_{t+1} = ρ y_t + ε_t, against the
+     45 degree line at one scale. A Greek name now takes a subscript (`\varepsilon_t`).
+   - `\max\{x - K, 0\}` reads (`\{` counts as a bracket when equations are split).
+   - A letter mark (d, s, e) names only where it must: the name is a left side, its letter
+     stands alone elsewhere (π and π^e), or it carries another mark (q^d and q^s). `y = x^d` is
+     a power again. `*` and the bar always name.
+   - A marked name is never the variable where another will do: the Phillips curve is drawn
+     against u, the Taylor rule against π_t.
+   - `\phi(x)` of one letter is the normal density; `\phi(\pi - \pi^*)` stays a coefficient.
+5. **V5.**
+   - `sourceFiles` reads `\input chap1` without braces, `\import{parts/}{intro}` with its folder,
+     and `\lstinputlisting`, `\verbatiminput` and `\inputminted`.
+   - The exported page no longer scrolls sideways at 360 px. The cause was a display equation
+     inside a paragraph, outside any scrolling box (not the MathML). `.katex-display` now
+     scrolls in its own box.
+   - `\%` in a label prints %.
+   - The live legend sets Q_d's d as a subscript.
+   - Supply and demand's slider no longer starts at its end: the usual values try 5 before 10,
+     and a value at its slider's end widens the slider.
+
+Left in PLAN.md task 70: `\hat` and `\tilde`, indices with a sign beyond an AR(1)'s y_{t-1}
+(`\mathbb E_t[\pi_{t+1}]`), the rest point of a phase portrait marked, PGF label sizes against
+the width printed, an arXiv download without the widgets' `.html` files, and the link's length
+in Firefox and Safari.

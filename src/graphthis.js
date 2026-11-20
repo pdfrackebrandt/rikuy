@@ -32,12 +32,22 @@ function marks(tex) {
     found.add(name);
     return ' ' + name + ' ';
   });
-  t = t.replace(/(\\[A-Za-z]+|[A-Za-z])(?:_\{?([A-Za-z0-9]{1,8})\}?)?\^\s*(?:\{\s*(d|s|e|D|S|\*|\\ast)\s*\}|(d|s|e|D|S|\*)(?![A-Za-z0-9]))/g, (m, b, sub, m1, m2) => {
-    const n = base(b);
+  // (a letter after ^, d, s or e, names only where it must: the name is a left side, its letter
+  // stands alone elsewhere, π and π^e, or carries another mark, q^d and q^s; y = x^d is a power.
+  // * always names: u^*, r^*)
+  const RE = /(\\[A-Za-z]+|[A-Za-z])(?:_\{?([A-Za-z0-9]{1,8})\}?)?\^\s*(?:\{\s*(d|s|e|D|S|\*|\\ast)\s*\}|(d|s|e|D|S|\*)(?![A-Za-z0-9]))(?:_\{?([A-Za-z0-9]{1,8})\}?)?/g;
+  const seen = [];
+  let m0;
+  while ((m0 = RE.exec(t)) && seen.length < 200) seen.push({ b: m0[1], mark: (m0[3] || m0[4]) === '\\ast' ? '*' : m0[3] || m0[4], at: m0.index, end: m0.index + m0[0].length });
+  const names = (b, mark) => seen.filter((x) => x.b === b && x.mark !== mark).length > 0;
+  const alone = (b) => new RegExp((b[0] === '\\' ? '\\' + b : b) + '(?![A-Za-z])(?!\\s*(?:_\\{?[A-Za-z0-9]{1,8}\\}?)?\\s*\\^)').test(t.replace(RE, ' '));
+  const lhs = (x) => /^\s*(?:\\dot\s*\{?\s*)?$/.test(t.slice(Math.max(0, t.lastIndexOf(',', x.at), t.lastIndexOf(';', x.at), t.lastIndexOf('&', x.at), t.lastIndexOf('quad', x.at) + 3, 0), x.at).replace(/^[,;&]/, '')) && /^\s*\}?\s*=/.test(t.slice(x.end));
+  t = t.replace(RE, (m, b, sub, m1, m2, sub2, at) => {
+    const n = base(b), mark = (m1 || m2) === '\\ast' ? '*' : m1 || m2;
     // (e^x is the exponential; a power of a function, \sin^d, is no name)
     if (!n || n === 'e' || (b[0] === '\\' && !base(b))) return m;
-    const mark = (m1 || m2) === '\\ast' ? '*' : m1 || m2;
-    const name = n + (sub ? '_' + sub : '') + '^' + mark;
+    if (mark !== '*' && !names(b, mark) && !alone(b) && !lhs(seen.find((x) => x.at === at) || { at, end: at + m.length })) return m;
+    const name = n + ((sub || sub2) ? '_' + (sub || sub2) : '') + '^' + mark;
     found.add(name);
     return ' ' + name + ' ';
   });
@@ -58,7 +68,7 @@ const ROLE = {
   P: [1, 0.1, 5], p: [1, 0.1, 10], w: [1, 0.1, 10], u: [2, 0.5, 10], U: [2, 0.5, 10]
 };
 // the letters that read as the variable of a function, in order
-const VAR_RANK = ['x', 't', 'k', 'q', 'c', 'n', 'h', 'l', 'z', 'v', 'K', 'L', 'N', 'Q', 'Y', 'C', 'X', 'T', 'w', 'p', 'P', 'r', 'y'];
+const VAR_RANK = ['x', 't', 'k', 'q', 'c', 'n', 'h', 'l', 'z', 'v', 'u', 'K', 'L', 'N', 'Q', 'Y', 'C', 'X', 'T', 'w', 'p', 'P', 'π', 'r', 'y'];
 // the variables that are prices: a pair of quantities of one (Q_d, Q_s) is drawn with it up
 const PRICE = new Set(['p', 'P', 'w', 'W']);
 // the pairs that read as an implicit curve's two variables
@@ -154,7 +164,8 @@ function equations(tex) {
   const cut = (i, len) => { parts.push(t.slice(from, i)); from = i + len; };
   for (let i = 0; i < t.length; i++) {
     const c = t[i];
-    if (c === '\\' && /[{}]/.test(t[i + 1] || '')) { i++; continue; }
+    // (\{ and \} are brackets too: \max\{x − K, 0\} is one equation)
+    if (c === '\\' && /[{}]/.test(t[i + 1] || '')) { d += t[i + 1] === '{' ? 1 : -1; i++; continue; }
     if (c === '(' || c === '{' || c === '[') d++;
     else if (c === ')' || c === '}' || c === ']') d--;
     else if (d === 0 && t.startsWith(';;', i)) { cut(i, 2); i++; }
@@ -210,11 +221,24 @@ function rename(t, from, to) {
   return [t[0], ...t.slice(1).map((a) => rename(a, from, to))];
 }
 const text = (tree) => K.show(tree, false);
-const pick = (names, rank) => rank.find((v) => names.includes(v)) || names.find((v) => /^[a-z]/.test(v) && !K.GREEK_VALUES.has(v[0])) || names[0];
+// the variable among names: the first of rank there (or with a subscript, π_t for π), else a
+// Latin letter; a name with a mark is an expectation or a target (π^e, u^*), never the variable
+// where another will do
+const pick = (names, rank) => {
+  const un = names.filter((n) => !n.includes('^')), all = un.length ? un : names;
+  for (const r of rank) { const n = all.find((v) => v === r) || all.find((v) => v.split('_')[0] === r && /_/.test(v)); if (n) return n; }
+  return all.find((v) => /^[a-z]/.test(v) && !K.GREEK_VALUES.has(v[0])) || all[0];
+};
 
 // graphThis(tex, { values }) -> { spec, what } or { error }: what says in words what was drawn
 export function graphThis(tex, opts = {}) {
   const values = opts.values || {};
+  // (an AR(1) as papers write it, y_t = ρ y_{t-1} + ε_t, is the map k_{t+1} = g(k_t) is)
+  const ar = /^\s*(\\[A-Za-z]+|[A-Za-z])_\{?t\}?\s*=/.exec(tex);
+  if (ar && new RegExp('(?:\\' + ar[1] + '|' + ar[1].replace(/\\/g, '\\\\') + ')_\\{\\s*t\\s*-\\s*1\\s*\\}').test(tex)) {
+    const b = ar[1].replace(/\\/g, '\\\\');
+    tex = tex.replace(new RegExp('^\\s*' + b + '_\\{?t\\}?'), ar[1] + '_{t+1}').replace(new RegExp(b + '_\\{\\s*t\\s*-\\s*1\\s*\\}', 'g'), ar[1] + '_t');
+  }
   const mk = marks(tex);
   MARKED = mk.names;
   tex = mk.tex;
@@ -222,7 +246,7 @@ export function graphThis(tex, opts = {}) {
   try { eqs = equations(clean(tex)); } catch (e) { eqs = []; }
   if (!eqs.length) return { error: 'There is no formula here to draw' };
   // (\max(x, 0) is a function of two numbers; \max_{c} over a set is not)
-  const op = /\\(max|min|sum|prod|int|iint|oint|lim|sup|inf|argmax|argmin|operatorname\*?\{arg)(?![A-Za-z])(?!\s*(?:\\left\s*)?[({])/.exec(tex);
+  const op = /\\(max|min|sum|prod|int|iint|oint|lim|sup|inf|argmax|argmin|operatorname\*?\{arg)(?![A-Za-z])(?!\s*(?:\\left\s*)?(?:[({]|\\\{))/.exec(tex);
   if (op) return { error: 'It has \\' + op[1] + ': a formula of one variable draws, an operator over a set or a sum does not' };
   if (eqs.length > 2) return { error: 'Graph this draws one equation or a pair of them; this has ' + eqs.length };
   // (said plainly, not as the parser's complaint about a bracket or a name)
@@ -332,7 +356,7 @@ export function graphThis(tex, opts = {}) {
         if (lk && lk.fn && r.names.includes(lk.fn)) return { error: lk.fn + ' is on both sides: this equation defines it by itself, and cannot be drawn as it stands' };
         const y = lk ? lk.fn || lk.name : 'y';
         const names = r.names.filter((n) => n !== y);
-        const rival = lk && lk.name && /_/.test(lk.name) && names.find((n) => n !== lk.name && /_/.test(n) && stem(n) === stem(lk.name));
+        const rival = lk && lk.name && /_/.test(lk.name) && names.find((n) => n !== lk.name && /_/.test(n) && !n.includes('^') && stem(n) === stem(lk.name));
         const v = (lk && lk.arg) || rival || pick(names, VAR_RANK) || 'x';
         const [lo, hi] = range(v, r.tree, names);
         const spec = { kind: 'function', vars: [v], f: [text(r.tree)], x: { min: lo, max: hi, label: v }, y: { label: lk && lk.fn ? lk.fn + '(' + v + ')' : y }, sliders: sliders(names, [v]), title: 'Graph of ' + (lk ? (lk.fn ? lk.fn + '(' + v + ')' : y) : 'y') + ' = ' + text(r.tree) };
@@ -346,10 +370,13 @@ export function graphThis(tex, opts = {}) {
     if (!pair) return { error: 'This formula has one variable and no = sign to draw a curve from' };
     const pos = pair.every((v) => NONNEG.has(v)) || trees.every((t) => nanLeft(t, pair, all, values));
     const lim = pos ? [0, 10] : [-5, 5];
+    // (a quantity across and a rate up, Y and r of IS and LM: both from 0)
+    const limY = pos || (NONNEG.has(pair[0]) && ['r', 'i', 'R'].includes(pair[1])) ? [0, 10] : lim;
+    const limX = NONNEG.has(pair[0]) ? [0, 10] : lim;
     const eqText = sides.map((x) => (x.lhs != null ? text(read(x.lhs).tree) + ' = ' + text(read(x.rhs).tree) : text(read(x.rhs).tree) + ' = 0'));
     const one = SAME.some(([a, b]) => pair[0] === a && pair[1] === b);
-    const spec = { kind: 'implicit', vars: pair, eq: eqText, equal: one, x: { min: lim[0], max: lim[1], label: pair[0] }, y: { min: lim[0], max: lim[1], label: pair[1] }, sliders: sliders(all, pair), title: 'The curve' + (eqText.length > 1 ? 's ' : ' ') + eqText.join(' and ') };
-    return done(spec, 'the curve' + (eqText.length > 1 ? 's' : '') + ' where ' + eqText.join(' and ') + ', in ' + pair.join(' and '));
+    const spec = { kind: 'implicit', vars: pair, eq: eqText, equal: one, cross: eqText.length > 1, x: { min: limX[0], max: limX[1], label: pair[0] }, y: { min: limY[0], max: limY[1], label: pair[1] }, sliders: sliders(all, pair), title: 'The curve' + (eqText.length > 1 ? 's ' : ' ') + eqText.join(' and ') };
+    return done(eqText.length > 1 ? crossInside(spec) : spec, 'the curve' + (eqText.length > 1 ? 's' : '') + ' where ' + eqText.join(' and ') + ', in ' + pair.join(' and ') + (eqText.length > 1 ? ', where they meet marked' : ''));
   } catch (e) {
         return { error: 'This formula cannot be drawn: ' + (e.message || e) };
   }
@@ -417,16 +444,18 @@ function done(spec, what) {
 function crossInside(spec) {
   let s;
   try { s = K.normalize(spec); K.formulas(s); } catch (e) { return spec; }
-  const lo = s.x.min, hi = s.x.max, m = 0.05 * (hi - lo);
-  const ok = (vals) => { try { return K.compute(s, vals, 120).series.some((S) => S.kind === 'mark' && ((v) => v > lo + m && v < hi - m)(s.flip ? S.pts[0][1] : S.pts[0][0])); } catch (e) { return false; } };
+  const inX = (v) => v > s.x.min + 0.05 * (s.x.max - s.x.min) && v < s.x.max - 0.05 * (s.x.max - s.x.min);
+  const inY = (v) => s.kind !== 'implicit' || (v > s.y.min + 0.05 * (s.y.max - s.y.min) && v < s.y.max - 0.05 * (s.y.max - s.y.min));
+  const ok = (vals) => { try { return K.compute(s, vals, 120).series.some((S) => S.kind === 'mark' && (s.flip ? inX(S.pts[0][1]) : inX(S.pts[0][0]) && inY(S.pts[0][1]))); } catch (e) { return false; } };
   const base = K.defaults(s);
   if (ok(base)) return spec;
-  const qs = s.sliders.slice(0, 4), C = [null, 10, 5, 2, 0.5];
+  const qs = s.sliders.slice(0, 4), C = [null, 5, 2, 10, 0.5];
   for (let n = 1; n < Math.pow(C.length, qs.length); n++) {
     const vals = { ...base };
     let k = n;
     for (const q of qs) { const c = C[k % C.length]; k = Math.floor(k / C.length); if (c != null) vals[q.name] = Math.max(q.min, Math.min(q.max, c)); }
-    if (ok(vals)) return { ...spec, sliders: spec.sliders.map((q) => (q.name in vals ? { ...q, value: vals[q.name] } : q)) };
+    // (a slider that starts at its end gets room above: twice its value)
+    if (ok(vals)) return { ...spec, sliders: spec.sliders.map((q) => (q.name in vals ? { ...q, value: vals[q.name], max: vals[q.name] >= q.max ? nice(2 * vals[q.name]) : q.max } : q)) };
   }
   return spec;
 }

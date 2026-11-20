@@ -74,7 +74,9 @@ export function graphKit() {
       // (\log in a paper is the natural log, its base written when it has another; log typed
       // alone keeps Desmos's base 10. \Phi( is the normal cdf, \Gamma( the gamma function)
       .replace(/\\log\s*_\s*(?:\{\s*10\s*\}|10)/g, ' lg ').replace(/\\log\s*_\s*(?:\{\s*2\s*\}|2)/g, ' lb ').replace(/\\log(?![A-Za-z])/g, '\\ln')
-      .replace(/\\Phi(?=\s*(?:\\left)?\s*[({])/g, ' normcdf').replace(/\\Gamma(?=\s*(?:\\left)?\s*[({])/g, ' gamma')
+      .replace(/\\Phi(?=\s*(?:\\left)?\s*[({])/g, ' normcdf')
+      // (\phi(x) of one letter is the normal density; \phi(\pi - \pi^*) a Taylor rule's coefficient)
+      .replace(/\\phi(?=\s*(?:\\left)?\s*[({]\s*[A-Za-z](?:_\{?[A-Za-z0-9]{1,8}\}?)?\s*(?:\\right)?\s*[)}])/g, ' normpdf').replace(/\\Gamma(?=\s*(?:\\left)?\s*[({])/g, ' gamma')
       .replace(/\\(?:mathrm|mathit|mathnormal|operatorname\*?|textrm|textit|text)\s*\{\s*([A-Za-z]{1,12})\s*\}/g, ' $1 ')
       .replace(/\\[vV]ert(?![A-Za-z])/g, '|').replace(/\\[{}]/g, (m) => (m[1] === '{' ? '(' : ')'))
       .replace(/\\(?:cdot|times|ast)(?![A-Za-z])|[·×⋅∗]/g, '*').replace(/\\div(?![A-Za-z])/g, '/').replace(/\\(?:leq?|leqslant)(?![A-Za-z])/g, '<=').replace(/\\(?:geq?|geqslant)(?![A-Za-z])/g, '>=')
@@ -97,8 +99,12 @@ export function graphKit() {
         const m = /^\\([A-Za-z]+)/.exec(s.slice(i, i + 30));
         if (!m) throw err('A backslash with no name after it', i);
         const n = m[1];
-        out.push({ t: 'name', v: n === 'operatorname' ? '' : n, at: i, bs: true });
+        const tok = { t: 'name', v: n === 'operatorname' ? '' : n, at: i, bs: true };
+        out.push(tok);
         i += m[0].length;
+        // (\varepsilon_t, \pi_{t}: a Greek name's subscript, as a letter's)
+        const sub = s[i] === '_' && own(GREEK, n) && /^_(\{[A-Za-z0-9]{1,8}\}|[A-Za-z0-9]{1,8})/.exec(s.slice(i, i + 12));
+        if (sub) { tok.v = GREEK[n] + '_' + sub[1].replace(/[{}]/g, ''); tok.bs = false; i += sub[0].length; }
         continue;
       }
       if (/[A-Za-zα-ωΑ-Ωϑϕ_]/.test(ch)) {
@@ -361,7 +367,8 @@ export function graphKit() {
   const str = (v, n, d = '') => (typeof v === 'string' ? v.replace(/[\u0000-\u0008\u000B-\u001F\u007F]/g, '').slice(0, n) : d);
   // A label as one who knows LaTeX types it: $k_t$ is the name k_t, $\alpha$ is α; a $ alone (a
   // price in $) stays a dollar sign
-  const unmath = (t) => t.replace(/\$([^$\s](?:[^$]{0,40}[^$\s])?)\$/g, (m, x) => x.replace(/\\([A-Za-z]+)\s*/g, (q, n) => (own(GREEK, n) ? GREEK[n] : n)).replace(/[{}]/g, ''));
+  // (and \% \$ \& \# are their characters: a 5\% rise prints 5%)
+  const unmath = (t) => t.replace(/\\([%$&#])/g, (m, c) => (c === '$' ? '\u0000' : c)).replace(/\$([^$\s](?:[^$]{0,40}[^$\s])?)\$/g, (m, x) => x.replace(/\\([A-Za-z]+)\s*/g, (q, n) => (own(GREEK, n) ? GREEK[n] : n)).replace(/[{}]/g, '')).replace(/\u0000/g, '$');
   function normalize(raw) {
     const r = raw && typeof raw === 'object' ? raw : {};
     const kind = KINDS.includes(r.kind) ? r.kind : 'function';
@@ -402,6 +409,8 @@ export function graphKit() {
       if (!s.eq.length) s.eq = [s.vars[0] + '^2 + ' + s.vars[1] + '^2 = 4'];
       s.x = ax(r.x, -5, 5, s.vars[0]);
       s.y = ax(r.y, -5, 5, s.vars[1]);
+      // where the first two curves meet, marked (IS and LM, two best responses)
+      if (r.cross === true && s.eq.length > 1) s.cross = true;
     } else if (kind === 'phase') {
       s.vars = two(r.vars, 'x', 'y');
       const P = r.phase && typeof r.phase === 'object' ? r.phase : {};
@@ -680,6 +689,7 @@ export function graphKit() {
     } else if (s.kind === 'implicit') {
       // (20000 pieces for the whole graph: a stranger's noisy equations stay a bounded drawing)
       fns.forEach((f, k) => out.push({ kind: 'segs', lines: contour((x, y) => at2(f.fn, x, y), s, cells, Math.floor(20000 / fns.length)), label: f.text.trim(), tx: ['eq', f.text], slot: k }));
+      if (s.cross && fns.length > 1) for (const p of meets((x, y) => at2(fns[0].fn, x, y), (x, y) => at2(fns[1].fn, x, y), s, fast ? 40 : 80)) out.push({ kind: 'mark', pts: [p], label: '(' + fmt(p[0], 3, s.x.max - s.x.min) + ', ' + fmt(p[1], 3, s.y.max - s.y.min) + ')', slot: 0 });
     } else if (s.kind === 'phase') {
       const [fx, fy] = fns.map((f) => f.fn);
       const dx = (x, y) => at2(fx, x, y), dy = (x, y) => at2(fy, x, y);
@@ -850,6 +860,40 @@ export function graphKit() {
   // A path of dx/dt, dy/dt from a point: classical Runge–Kutta, each step about 0.4 % of the plot
   // (the time step from the speed there), until it leaves the plot by a plot's width, stops at a
   // rest point, or has taken 3000 steps
+  // Where F = 0 and G = 0 meet in the plot: the cells of a grid where both change sign, each
+  // refined by Newton's method from its middle and kept where it converges in or beside the cell
+  // to a point both are 0 at (a pole's sign change converges nowhere). Eight at most.
+  function meets(F, G, s, nx) {
+    const ny = Math.max(10, Math.min(nx, Math.round(nx * s.aspect)));
+    const x0 = s.x.min, y0 = s.y.min, hx = (s.x.max - s.x.min) / nx, hy = (s.y.max - s.y.min) / ny, W1 = nx + 1;
+    const A = new Float64Array(W1 * (ny + 1)), B = new Float64Array(W1 * (ny + 1));
+    for (let j = 0; j <= ny; j++) for (let i = 0; i <= nx; i++) { A[j * W1 + i] = F(x0 + i * hx, y0 + j * hy); B[j * W1 + i] = G(x0 + i * hx, y0 + j * hy); }
+    const changes = (V, q) => { const v = [V[q], V[q + 1], V[q + W1], V[q + W1 + 1]]; return v.every(Number.isFinite) && v.some((a) => a > 0) && v.some((a) => a <= 0); };
+    const out = [];
+    // (200 cells tried at most: a stranger's two noisy equations cross everywhere)
+    let tries = 0;
+    for (let j = 0; j < ny && out.length < 8 && tries < 200; j++) for (let i = 0; i < nx && out.length < 8 && tries < 200; i++) {
+      const q = j * W1 + i;
+      if (!changes(A, q) || !changes(B, q)) continue;
+      tries++;
+      let x = x0 + (i + 0.5) * hx, y = y0 + (j + 0.5) * hy, ok = false;
+      for (let n = 0; n < 30; n++) {
+        const f = F(x, y), g = G(x, y), dx = hx * 1e-4, dy = hy * 1e-4;
+        const fx = (F(x + dx, y) - f) / dx, fy = (F(x, y + dy) - f) / dy, gx = (G(x + dx, y) - g) / dx, gy = (G(x, y + dy) - g) / dy, det = fx * gy - fy * gx;
+        if (!Number.isFinite(det) || det === 0) break;
+        const sx = (f * gy - g * fy) / det, sy = (g * fx - f * gx) / det;
+        x -= sx; y -= sy;
+        if (Math.abs(sx) < hx * 1e-10 && Math.abs(sy) < hy * 1e-10) { ok = true; break; }
+      }
+      const fin = F(x, y), gin = G(x, y);
+      if (!ok && !(Math.abs(fin) < 1e-9 && Math.abs(gin) < 1e-9)) continue;
+      if (Math.abs(x - (x0 + (i + 0.5) * hx)) > 1.5 * hx || Math.abs(y - (y0 + (j + 0.5) * hy)) > 1.5 * hy) continue;
+      if (Math.abs(x) < 1e-9 * (s.x.max - s.x.min)) x = 0;
+      if (Math.abs(y) < 1e-9 * (s.y.max - s.y.min)) y = 0;
+      if (!out.some((p) => Math.abs(p[0] - x) < hx && Math.abs(p[1] - y) < hy)) out.push([x, y]);
+    }
+    return out;
+  }
   function trajectory(dx, dy, st, s, step = 0.004) {
     const W = s.x.max - s.x.min, H = s.y.max - s.y.min, pts = [[st[0], st[1]]];
     let x = st[0], y = st[1];
@@ -1100,7 +1144,9 @@ export function graphKit() {
   function lhsRuns(yl, o) {
     const m1 = /^([A-Za-zα-ωΑ-Ω])([̇′']?)(_[A-Za-z0-9]{1,8})?(\^[A-Za-z*-])?$/.exec(yl), m2 = /^([A-Za-zα-ωΑ-Ω]\w*)\(([A-Za-zα-ωΑ-Ω]\w*(?:_\w+)?)\)$/.exec(yl);
     if (m1 && m1[4]) nameRuns(m1[1] + (m1[3] || '') + m1[4], 1, 0, o);
-    else if (m1) { nameRuns(m1[1], 1, 0, o, m1[2] === '̇' ? 'd' : 0); if (m1[2] && m1[2] !== '̇') o.push(['′', 'r', 0.7, -0.36]); if (m1[3]) nameRuns('_' + m1[3].slice(1), 1, 0, o); }
+    // (a subscript is the name's own, k_t; with a prime, the prime above and the index below)
+    else if (m1 && (!m1[2] || m1[2] === '̇')) nameRuns(m1[1] + (m1[3] || ''), 1, 0, o, m1[2] ? 'd' : 0);
+    else if (m1) { nameRuns(m1[1], 1, 0, o); o.push(['′', 'r', 0.7, -0.36]); if (m1[3]) for (const c of m1[3].slice(1)) o.push([c, /[^A-Za-zα-ω]/.test(c) ? 'r' : 'i', 0.7, 0.2]); }
     else if (m2) { nameRuns(m2[1], 1, 0, o); o.push(['(', 'r', 1, 0]); nameRuns(m2[2], 1, 0, o); o.push([')', 'r', 1, 0]); }
     else nameRuns('y', 1, 0, o);
     return o;
@@ -1543,6 +1589,18 @@ export function graphKit() {
     g.restore();
   }
 
+  // The region a drawing's curves are worked out on: the description's, or, where one scale on
+  // both axes widened the plot (paint's geo), that wider one, so the curves fill it (the review's
+  // V2: an indifference curve stopped at x₁ = 10 on axes to 27). s itself when nothing widened.
+  function region(s, geo) {
+    if (!geo || !s.equal || !(s.kind === 'function' || s.kind === 'implicit' || s.kind === 'phase')) return s;
+    const out = (lo, hi, a, b) => a < lo - 1e-9 * (hi - lo) || b > hi + 1e-9 * (hi - lo);
+    const [vx0, vx1] = s.flip ? [geo.y0, geo.y1] : [geo.x0, geo.x1];
+    const wx = out(s.x.min, s.x.max, vx0, vx1), wy = s.kind !== 'function' && out(s.y.min, s.y.max, geo.y0, geo.y1);
+    if (!wx && !wy) return s;
+    return { ...s, x: wx ? { ...s.x, min: Math.min(s.x.min, vx0), max: Math.max(s.x.max, vx1) } : s.x, y: wy ? { ...s.y, min: Math.min(s.y.min, geo.y0), max: Math.max(s.y.max, geo.y1) } : s.y };
+  }
+
   // ---- the widget: its sliders and its canvas, in the graph's own frame -------------------------
   function mount() {
     const D = document, box = D.getElementById('rk'), cv = D.getElementById('rk-c'), row = D.getElementById('rk-s'), msg = D.getElementById('rk-e');
@@ -1580,7 +1638,9 @@ export function graphKit() {
     // the curves at the starting values, once: drawn faint while a slider is away from its start
     let base = null;
     const away = () => s.ghost && s.sliders.some((q) => vals[q.name] !== q.value);
-    const ghostOf = () => { if (!away()) return null; if (!base) { try { base = compute(s, defaults(s)); } catch (e) { base = { series: [] }; } } return base; };
+    const ghostOf = () => { if (!away()) return null; if (!base) { try { base = compute(S2, defaults(s)); } catch (e) { base = { series: [] }; } } return base; };
+    // (the region the curves are worked out on: region(), wider than s's where equal axes widen)
+    let S2 = s;
     let W = 0, H = 0, queued = 0, disp = 1;
     // (a slider's input events come faster than frames: one compute a frame, a fast one while it
     // moves, and the full one when it has rested for 150 ms)
@@ -1604,10 +1664,18 @@ export function graphKit() {
       const dpr = window.devicePixelRatio || 1;
       if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); cv.style.height = H + 'px'; }
       const t0 = performance.now();
-      if (again || !data) { try { data = compute(s, vals, 600, fast); say(''); } catch (e) { say(e.message); data = { series: [] }; } }
+      if (again || !data) { try { data = compute(S2, vals, 600, fast); say(''); } catch (e) { say(e.message); data = { series: [] }; } }
       const g = cv.getContext('2d');
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       geo = paint(g, s, data, R, vals, W, H, hover, ghostOf());
+      const r2 = region(s, geo);
+      if (r2.x !== S2.x || r2.y !== S2.y) {
+        if (!(r2.x.min === S2.x.min && r2.x.max === S2.x.max && r2.y.min === S2.y.min && r2.y.max === S2.y.max)) {
+          S2 = r2; base = null;
+          try { data = compute(S2, vals, 600, fast); } catch (e) { data = { series: [] }; }
+          geo = paint(g, s, data, R, vals, W, H, hover, ghostOf());
+        }
+      }
       // the sliders under the plot, from its left edge to its right
       const m = '2px ' + Math.round(W - geo.L - geo.pw) + 'px 0 ' + Math.round(geo.L) + 'px';
       if (row.style.margin !== m) row.style.margin = m;
@@ -1684,7 +1752,7 @@ export function graphKit() {
     redraw(true);
   }
 
-  return { parse, parseEq, names, compile, normalize, formulas, unknownNames, defaults, compute, ranges, paint, mount, fmt, fmtStep, FAM, FITS, KINDS, NAME, sizeName, niceStep, tw, GREEK, GREEK_VALUES: new Set(Object.values(GREEK)), own, seriesRuns, labelRuns };
+  return { parse, parseEq, names, compile, normalize, formulas, unknownNames, defaults, compute, ranges, paint, mount, region, fmt, fmtStep, FAM, FITS, KINDS, NAME, sizeName, niceStep, tw, GREEK, GREEK_VALUES: new Set(Object.values(GREEK)), own, seriesRuns, labelRuns };
 }
 
 // ---- the editor's side: the widget's file, read back, and the PDF's picture -------------------
@@ -1916,8 +1984,9 @@ export function graphCanvas(spec, W, scale = 3) {
   c.width = Math.round(W * scale); c.height = Math.round(H * scale);
   const g = c.getContext('2d');
   g.setTransform(scale, 0, 0, scale, 0, 0);
-  const vals = K.defaults(s);
-  K.paint(g, s, K.compute(s, vals), K.ranges(s), vals, W, H, null);
+  const vals = K.defaults(s), R = K.ranges(s);
+  const r = K.region(s, K.paint(g, s, K.compute(s, vals), R, vals, W, H, null));
+  if (r !== s) K.paint(g, s, K.compute(r, vals), R, vals, W, H, null);
   return c;
 }
 // ---- the PDF's picture as vector graphics: PGF commands TeX draws -----------------------------
@@ -2106,9 +2175,11 @@ export function graphPGF(spec, W, mark = '') {
   const s = K.normalize(spec);
   W = Math.max(200, Math.min(1200, Math.round(W)));
   const H = Math.round(W * s.aspect);
-  const g = new PGFContext(W, H);
-  const vals = K.defaults(s);
-  K.paint(g, s, K.compute(s, vals), K.ranges(s), vals, W, H, null, null);
+  let g = new PGFContext(W, H);
+  const vals = K.defaults(s), R = K.ranges(s);
+  // (equal axes: the first drawing says the region the plot shows, the curves worked out on it)
+  const r = K.region(s, K.paint(g, s, K.compute(s, vals), R, vals, W, H, null, null));
+  if (r !== s) { g = new PGFContext(W, H); K.paint(g, s, K.compute(r, vals), R, vals, W, H, null, null); }
   return g.text(String(mark).replace(/[^\x20-\x7e]/g, '_').slice(0, 300) + ' ' + specHash(s) + ' ' + W, summary(s));
 }
 // what a picture of ours says on its first line: { path, hash, W }, or null for any other file
