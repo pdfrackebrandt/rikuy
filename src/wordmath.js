@@ -44,6 +44,11 @@ const SAME = ('alpha beta gamma delta epsilon varepsilon zeta eta theta vartheta
 
 // Word names that LaTeX spells differently, or that need empty slots (#?). '' means Word's
 // entry is layout glue with no LaTeX counterpart, so it inserts nothing.
+// commands whose argument is letters, not a formula: typed as LaTeX they are written whole at
+// their } (installWordTyping); the field's own box for them lost the font
+const TEXT_ARG = new Set(['text', 'textrm', 'textbf', 'textit', 'textsf', 'texttt', 'textup', 'mbox', 'mathrm', 'mathbf', 'mathbb', 'mathcal',
+  'mathfrak', 'mathit', 'mathsf', 'mathtt', 'mathscr', 'operatorname', 'boldsymbol', 'bm']);
+
 const WORD = {
   // structures
   sqrt: '\\sqrt{#?}', cbrt: '\\sqrt[3]{#?}', qdrt: '\\sqrt[4]{#?}', root: '\\sqrt[#?]{#?}',
@@ -357,6 +362,12 @@ export function fieldValue(mf) {
 export function installWordTyping(mf, opts) {
   let buf = null; // the command being typed, without the backslash
   let pick = 0;
+  // LaTeX typed as in Overleaf (docs/handoff/POWER-USER.md, 3): a command whose argument is
+  // letters (\mathbb{R}, \text{if }) collects them here and is written whole at its }; the
+  // field's own boxes lost the font, so \mathbb{R} came out as R
+  let arg = null; // { name, text, depth }
+  // the boxes a command's { opened (\frac{a}{b}): } goes to its next box, or out of it
+  let boxes = [];
   const chip = document.createElement('div');
   chip.className = 'wm-chip';
   chip.hidden = true;
@@ -385,6 +396,20 @@ export function installWordTyping(mf, opts) {
     chip.style.top = y + 'px';
   };
   const draw = () => {
+    if (buf == null && arg) {
+      chip.hidden = false;
+      chip.replaceChildren();
+      const head = document.createElement('div');
+      head.className = 'wm-typed';
+      head.textContent = '\\' + arg.name + '{' + arg.text;
+      const hint = document.createElement('div');
+      hint.className = 'wm-hint';
+      hint.textContent = '} ends it';
+      chip.append(head, hint);
+      chip._list = [];
+      place();
+      return;
+    }
     if (buf == null) { chip.hidden = true; return; }
     chip.hidden = false;
     chip.replaceChildren();
@@ -514,7 +539,7 @@ export function installWordTyping(mf, opts) {
   //   a/b+c      the same for the denominator of a fraction typed with /
   //   (a+b)/c    parentheses around a typed numerator disappear
   const linear = new WeakSet();
-  let groups = []; // open invisible groups, by how many scripts deep they started
+  let groups = []; // open invisible groups: how many scripts deep each started, and whether { opened it
   const LIMIT_PARENT = new Set(['extensible-symbol', 'operator', 'mop']);
   const ENDS_SCRIPT = /^[+\-=<>,;:!)\]}|*]$/;
   const slot = () => {
@@ -531,18 +556,21 @@ export function installWordTyping(mf, opts) {
       if (!script && !denom) return null;
       let depth = 0;
       for (let x = a; x; x = x.parent) if (x.parentBranch === 'superscript' || x.parentBranch === 'subscript' || (x.parentBranch === 'below' && x.parent && x.parent.type === 'genfrac')) depth++;
-      const group = groups.length > 0 && groups[groups.length - 1] === depth;
-      return { p, br, empty, depth, limit: script && LIMIT_PARENT.has(p.type), group, model };
+      const top = groups[groups.length - 1];
+      const group = !!top && top.d === depth;
+      return { p, br, empty, depth, limit: script && LIMIT_PARENT.has(p.type), group, brace: group && top.brace, model };
     } catch (e) { return null; }
   };
   const buildUp = (k) => {
     const s = slot();
     if (!s) return false;
-    if (k === '(' && s.empty) {
-      groups.push(s.depth);
+    // (x_{i=1} as LaTeX writes it: { right after _ or ^ groups as ( does in Word, } closes it,
+    // and a ( inside it is a bracket that shows)
+    if ((k === '(' && s.empty && !s.brace) || (k === '{' && s.empty)) {
+      groups.push({ d: s.depth, brace: k === '{' });
       return true; // swallow the paren: it only groups
     }
-    if (k === ')' && s.group) {
+    if ((k === ')' && s.group && !s.brace) || (k === '}' && s.brace)) {
       groups.pop();
       mf.executeCommand('moveAfterParent');
       return true;
@@ -653,6 +681,41 @@ export function installWordTyping(mf, opts) {
     return false;
   };
 
+  const argDone = () => {
+    const t = arg;
+    arg = null; draw();
+    put('\\' + t.name + '{' + t.text + '}', { selectionMode: 'after' });
+    // (after \text{…} what follows is math again, not more of the text)
+    try { if (mf.mode !== 'math') mf.executeCommand(['switchMode', 'math']); } catch (e) { /* ignore */ }
+  };
+  // the empty box of a command the caret is in (\frac's numerator, \sqrt's radicand): its owner
+  const emptyBox = () => {
+    try {
+      const a = model().at(mf.position), p = a && a.parent;
+      if (!p || p.type === 'root' || typeof a.parentBranch !== 'string') return null;
+      const atoms = typeof p.branch === 'function' ? p.branch(a.parentBranch) || [] : [];
+      return atoms.every((x) => x.type === 'first' || x.type === 'placeholder') ? { owner: p } : null;
+    } catch (e) { return null; }
+  };
+  const nextBox = (B) => {
+    const M = model(), from = mf.position;
+    try { mf.executeCommand('moveToNextPlaceholder'); } catch (e) { /* none left */ }
+    const b = mf.position !== from ? emptyBox() : null;
+    if (b && b.owner === B.owner) { B.open = false; return; }
+    boxes.pop();
+    // out of the command, however deep in it the caret is (a script in its last box)
+    mf.position = from;
+    try {
+      for (let i = 0; i < 8; i++) {
+        let x = M.at(mf.position);
+        x = x && x.parent;
+        while (x && x !== B.owner) x = x.parent;
+        if (!x) break;
+        mf.executeCommand('moveAfterParent');
+      }
+    } catch (e) { /* stays where it is */ }
+  };
+
   const onKey = (e) => {
     if (e.isComposing) return;
     afterSlash(); // the fraction from the previous / exists by now
@@ -662,6 +725,24 @@ export function installWordTyping(mf, opts) {
     // AltGr (Windows: Ctrl+Alt) and Option (Mac) type characters such as { [ | \ on many layouts
     const altGr = !!(e.getModifierState && e.getModifierState('AltGraph'));
     const shortcut = e.metaKey || (e.ctrlKey && !altGr) || (e.altKey && !altGr && /^[A-Za-z0-9]$/.test(k));
+    if (arg) {
+      if (shortcut) return;
+      if ((k === '}' && !arg.depth) || k === 'Enter' || k === 'Tab') { stop(); argDone(); return; }
+      if (k === 'Escape') { stop(); arg = null; draw(); return; }
+      if (k === 'Backspace') {
+        stop();
+        if (!arg.text) { arg = null; draw(); return; }
+        const ch = arg.text.slice(-1);
+        arg.depth += ch === '}' ? 1 : ch === '{' ? -1 : 0;
+        arg.text = arg.text.slice(0, -1);
+        draw();
+        return;
+      }
+      if (k.length === 1) { stop(); arg.depth += k === '{' ? 1 : k === '}' ? -1 : 0; arg.text += k; draw(); }
+      return;
+    }
+    // $x^2$ typed as in Overleaf: the closing $ ends a formula in the line (\$ is a dollar sign)
+    if (k === '$' && opts.onDollar && !e.defaultPrevented && !shortcut && buf !== '') { stop(); if (buf) commit(); opts.onDollar(); return; }
     if (buf != null) {
       if (/^[A-Za-z]$/.test(k) && !shortcut) { stop(); buf += k; pick = 0; draw(); return; }
       if (k === 'Backspace') { stop(); if (buf.length) { buf = buf.slice(0, -1); draw(); } else cancel(); return; }
@@ -670,6 +751,25 @@ export function installWordTyping(mf, opts) {
       if (k === 'ArrowUp') { stop(); pick = Math.max(0, pick - 1); draw(); return; }
       if (k === 'Tab') { stop(); const l = chip._list || []; if (l[pick]) buf = l[pick]; commit(); return; }
       if (k === ' ' || k === 'Enter') { stop(); if (!buf) { cancel(); return; } commit(); return; }
+      // \left( and \right) as LaTeX writes them: one bracket each (\left\{, \left\langle too)
+      if ((buf === 'left' || buf === 'right') && (k === '\\' || k === '.' || k === '|' || OPEN_KEY[k] || CLOSE_KEY[k])) {
+        stop(); buf = k === '\\' ? '' : null; pick = 0; draw();
+        if (k !== '\\' && k !== '.') bracketKey(k);
+        return;
+      }
+      if (k === '{' && buf) {
+        stop();
+        const name = buf, tex = resolveCommand(name, macros(), dialect());
+        buf = null; pick = 0;
+        if (TEXT_ARG.has(name)) { arg = { name, text: '', depth: 0 }; draw(); return; }
+        draw();
+        // what the field cannot hold (\begin{aligned}, a command it does not know) goes on as LaTeX
+        if (!tex || !tex.includes('#?') || tex.includes('\\begin')) { if (opts.toLatex) opts.toLatex('\\' + name + '{'); return; }
+        put(tex);
+        const b = emptyBox();
+        if (b) boxes.push({ owner: b.owner, open: true });
+        return;
+      }
       if (!buf && k.length === 1 && /[,;:!{}|&%$#_\\/]/.test(k)) {
         stop(); buf = null; draw();
         if (k === '/') put('/'); // \/ is a plain slash, not a fraction
@@ -681,7 +781,7 @@ export function installWordTyping(mf, opts) {
       if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(k)) { commit(); return; }
       return;
     }
-    if (/^(Arrow|Home|End|Page|Tab|Escape|Enter)/.test(k)) groups = [];
+    if (/^(Arrow|Home|End|Page|Tab|Escape|Enter)/.test(k)) { groups = []; boxes = []; }
     if (mode === 'latex') return; // MathLive's own command mode keeps its keys
     // Ctrl+Enter, or Shift+Enter as in Word's equations, starts a new row
     if (k === 'Enter' && !e.altKey && ((e.ctrlKey || e.metaKey) !== e.shiftKey)) {
@@ -725,6 +825,10 @@ export function installWordTyping(mf, opts) {
     const converted = trigger && recognize();
     if (k === '\\') { stop(); buf = ''; pick = 0; draw(); return; }
     if (k.length === 1 && buildUp(k)) { stop(); changed(); return; }
+    // a command's boxes as LaTeX fills them: } goes to the next box ({b} of \frac{a}{b}) or out
+    const B = boxes[boxes.length - 1];
+    if (k === '}' && B && B.open) { stop(); nextBox(B); changed(); return; }
+    if (k === '{' && B && !B.open) { const b = emptyBox(); if (b && b.owner === B.owner) { stop(); B.open = true; return; } }
     if (k.length === 1 && /^[()[\]{}|]$/.test(k) && bracketKey(k)) { stop(); return; }
     if (altGr && k.length === 1) { stop(); mf.executeCommand(['typedText', k]); changed(); return; }
     if (k === '/') { slashPending = true; setTimeout(afterSlash, 0); }
@@ -739,6 +843,6 @@ export function installWordTyping(mf, opts) {
   };
   mf.addEventListener('keydown', onKey, true);
   mf.addEventListener('pointerdown', () => { groups = []; }, true);
-  mf.addEventListener('blur', () => { if (buf != null) cancel(); });
-  return { active: () => buf != null, newRow, reposition: () => { if (buf != null) place(); }, destroy: () => { chip.remove(); } };
+  mf.addEventListener('blur', () => { if (buf != null) cancel(); if (arg) argDone(); });
+  return { active: () => buf != null || arg != null, newRow, reposition: () => { if (buf != null) place(); }, destroy: () => { chip.remove(); } };
 }
