@@ -745,7 +745,7 @@ KINDS = """(sel) => { const P = document.querySelector(sel); if (!P) return null
   const R = (e) => e.getBoundingClientRect(), nm = (e) => (e.getAttribute('aria-label') || e.textContent || e.className).trim().slice(0, 16);
   return { btns: [...P.querySelectorAll('.btn')].filter(vis).map((e) => [nm(e), Math.round(R(e).width), Math.round(R(e).height), e.scrollWidth > e.clientWidth + 1]),
     fields: [...P.querySelectorAll('input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]), select, textarea, .nf')].filter(vis).filter((e) => !e.parentElement.closest('.nf') && (e.tagName !== 'TEXTAREA' || e.rows === 1)).map((e) => [e.tagName + ' ' + nm(e), Math.round(R(e).height), getComputedStyle(e).borderTopLeftRadius]),
-    cropped: [...P.querySelectorAll('.nf input, .nf select')].filter(vis).filter((e) => R(e).height > R(e.closest('.nf')).height).map(nm),
+    cropped: [...P.querySelectorAll('.nf input, .nf select')].filter(vis).filter((e) => Math.abs(R(e).height - R(e.closest('.nf')).height) > 1).map((e) => nm(e) + ' ' + Math.round(R(e).height) + ' in ' + Math.round(R(e.closest('.nf')).height)),
     tabs: [...P.querySelectorAll('[role=tab]')].filter(vis).map((e) => [nm(e), Math.round(R(e).height)]),
     rows: [...P.querySelectorAll('label')].filter(vis).filter((l) => l.querySelector('input[type=checkbox], input[type=radio]') && !l.querySelector('input[type=text], select, textarea')).map((e) => [nm(e), Math.round(R(e).height)]) }; }"""
 
@@ -759,8 +759,13 @@ def dialog_kinds(page, w):
     H = 44 if touch else 32
     load_doc(page, DOC)
     seen = {}
-    for cmd in ('font-dialog', 'paragraph-settings', 'page-setup', 'insert-table-dialog', 'share', 'properties', 'autocorrect-options', 'more-symbols', 'word-count', 'check-accessibility', 'find-replace'):
-        click_text(page, 'Second paragraph', 3)
+    LIST = '\\documentclass{article}\n\\usepackage{enumitem}\n\\begin{document}\n\\begin{enumerate}\n\\item One\n\\item Two\n\\end{enumerate}\n\\end{document}\n'
+    for cmd in ('font-dialog', 'paragraph-settings', 'page-setup', 'insert-table-dialog', 'share', 'properties', 'autocorrect-options', 'more-symbols', 'word-count', 'check-accessibility', 'find-replace',
+                'list-indents', 'list-value', 'number-define', 'bullet-define', 'multilevel-define'):
+        # (the list dialogs in a list: their number fields are the kinds the others lack)
+        if cmd == 'list-indents':
+            load_doc(page, LIST)
+        click_text(page, 'Two' if cmd.startswith(('list-', 'number-', 'bullet-', 'multilevel-')) else 'Second paragraph', 1 if cmd.startswith(('list-', 'number-', 'bullet-', 'multilevel-')) else 3)
         if cmd == 'find-replace':
             page.keyboard.press('Control+h'); page.wait_for_timeout(300)
             seen[cmd] = page.evaluate(KINDS, '#fr')
@@ -776,13 +781,13 @@ def dialog_kinds(page, w):
             check(f'a cell of the Symbols grid reached by Tab has its ring, an outline ({w})', ring[0] == 'sym-b' and ring[1] != 'none' and float(ring[2][:-2]) >= 2, ring)
         page.keyboard.press('Escape'); page.wait_for_timeout(150)
     missing = [k for k, v in seen.items() if not v]
-    check(f'the eleven dialogs open ({w})', not missing, missing)
+    check(f'the sixteen dialogs open ({w})', not missing and len(seen) == 16, missing)
     bad = {k: [b for b in v['btns'] if abs(b[2] - H) > 1 or b[3] or (touch and b[1] < 44)] for k, v in seen.items() if v}
     bad = {k: v for k, v in bad.items() if v}
     check(f'every dialog button whole, {H} px tall{" and at least 44 wide" if touch else ""} ({w})', not bad, bad)
     badf = {k: [f for f in v['fields'] if abs(f[1] - H) > 1 or f[2] != '4px'] + v['cropped'] for k, v in seen.items() if v}
     badf = {k: v for k, v in badf.items() if v}
-    check(f'every single line field {H} px tall with 4 px corners, a number field\'s input inside its box ({w})', not badf, badf)
+    check(f'every single line field {H} px tall with 4 px corners, a number field\'s input and unit as tall as its box ({w})', not badf, badf)
     badt = {k: [t for t in v['tabs'] if abs(t[1] - H) > 1] for k, v in seen.items() if v}
     badt = {k: v for k, v in badt.items() if v}
     check(f'a dialog\'s tabs as tall as its buttons, {H} px ({w})', not badt and any(v and v['tabs'] for v in seen.values()), badt)
