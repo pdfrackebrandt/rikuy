@@ -70,6 +70,11 @@ register(
     also: [{ tab: 'references', group: 'captions', el: 'rr-xref', order: 30 }], when: (app, at) => textAt(app, at) && at.ctx !== 'ttl', whyNot: () => NOT_HERE,
     run: (app, args, at) => (args && args.target ? app.crossRefWrite(at, args) : openCrossRefDialog(app, at)), palette: { k: 'ref', d: 'Cross reference', order: 30, act: 'ref' } },
   { id: 'equation-reference', name: 'Equation reference', synonyms: ['eqref'], run: (app) => app.insertFromPalette('eqref'), palette: { k: 'eqref', d: 'Equation reference', order: 40, act: 'eqref' } },
+  // F12 on a cross reference, as VS Code's Go to Definition (F12 elsewhere on the page is Save As);
+  // Ctrl+click on it too, as Word follows a cross reference's link; Shift+F5 comes back
+  { id: 'go-to-label', name: 'Go to Label', title: 'Go to the label the cross reference at the caret points to (F12, or Ctrl+click it); Shift+F5 comes back',
+    synonyms: ['Go to definition', 'Follow reference', 'Follow cross-reference', 'Jump to label', 'Where is this label'], keys: ['F12'], keyRank: 1,
+    when: (app) => !!app.refHere(), whyNot: () => 'Put the caret on a cross reference first (\\ref, \\eqref, \\cref).', run: (app) => app.followRef() },
   { id: 'label', name: 'Label', title: 'A label to refer to', synonyms: ['Bookmark'], run: (app) => app.insertFromPalette('label'), palette: { k: 'label', d: 'Label', order: 200, t: piece('\\label{', '}') } },
 
   // the link at the caret (its right click menu, and C7)

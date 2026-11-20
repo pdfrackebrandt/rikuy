@@ -8,6 +8,8 @@ LaTeX typed into the equation field as it is typed in the source, braces and all
 field cannot hold carried on in its LaTeX box (3). tab: Tab keeps the keyboard on the page, a
 first line indent at a paragraph's start, a gap elsewhere; Esc then Tab leaves (6). pickers: the
 reference and citation pickers by the keys, Enter closing them, with what each label names (7).
+follow: F12 or Ctrl+click on a cross reference goes to its label, Shift+F5 back; Enter or F2 on a
+formula selected alone opens it (8).
 Each part is a function; `python3 power.py
 footnote` runs one."""
 import os, sys
@@ -151,7 +153,32 @@ def pickers(page):
     check('pickers: Enter cites the second and closes, the words after it', 'Cf. \\citep{barro2004, ramsey1928} QQ' in src(page) and active(page) == 'pages', src(page)[src(page).find('Cf.'):][:50])
 
 
-PARTS = [footnote, dollars, latex, tab, pickers]
+FOLLOW = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n\n\\section{Intro}\\label{sec:intro}\n\nAlpha beta $x+y$ gamma, see Section~\\ref{sec:model} now.\n\n'
+          '\\section{Model}\\label{sec:model}\n\nModel text here.\n\n\\end{document}\n')
+
+
+def follow(page):
+    load_doc(page, FOLLOW)
+    there = FOLLOW.index('\\section{Model}')
+    for how in ('F12', 'Ctrl+click'):
+        click_text(page, ' now', 0)
+        start = caret(page)
+        if how == 'F12': key(page, 'F12', 400)
+        else: page.click('#pages .atom >> nth=1', modifiers=['Control']); page.wait_for_timeout(400)
+        c = caret(page)
+        check('follow: ' + how + ' on a reference goes to its label', c and there <= c[1] <= there + 60 and src(page) == FOLLOW, (c, start))
+        key(page, 'Shift+F5', 300)
+        check('follow: Shift+F5 comes back to the reference (' + how + ')', caret(page) == start, (caret(page), start))
+    for k in ('Enter', 'F2'):
+        page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
+        load_doc(page, FOLLOW)
+        click_text(page, ' gamma', 0); key(page, 'Shift+ArrowLeft'); key(page, k, 500)
+        opened = page.evaluate("!!(document.getElementById('pop-field') || document.getElementById('pop-tex'))")
+        check('follow: ' + k + ' on a formula selected alone opens it, the source as it was', opened and src(page) == FOLLOW, (opened, src(page)[60:120]))
+        key(page, 'Escape', 300)
+
+
+PARTS = [footnote, dollars, latex, tab, pickers, follow]
 
 
 def run():

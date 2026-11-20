@@ -1358,6 +1358,12 @@ class App {
     if (e.key === 'Escape') { this.disarm(); this.tabOut = true; }
     // Word's Shift+Enter: a line break inside the paragraph (\\), not a new paragraph
     if (e.key === 'Enter' && e.shiftKey && !mod && !e.altKey && !this.armed) { e.preventDefault(); this.enter(true); return; }
+    // Enter on a formula, a citation or a reference selected alone (Shift and an arrow over it)
+    // opens it, as a click does; it replaced it with a paragraph break (POWER-USER.md 8)
+    if (e.key === 'Enter' && !e.shiftKey && !mod && !e.altKey && !this.armed) {
+      const S = this.atomSelected();
+      if (S && /^(math|cite|ref)$/.test(S.info.a.kind)) { e.preventDefault(); this.openAtom(S.el, S.info); return; }
+    }
     // Enter on an equation, citation or block that Backspace selected opens it, as a click does:
     // the keyboard's way in (Enter used to replace it with a paragraph break)
     if (e.key === 'Enter' && !e.shiftKey && this.armed && this.armed.el && this.armed.el.isConnected) {
@@ -2232,6 +2238,8 @@ class App {
     e.preventDefault();
     this.disarm();
     if ((e.metaKey || e.ctrlKey) && (info.a.kind === 'url' || atomEl.closest('.y-link'))) { const u = info.a.url || atomEl.closest('.y-link').dataset.url; if (u) openLink(u); return; }
+    // Ctrl+click on a cross reference goes to its label, as in Word (Shift+F5 comes back)
+    if ((e.metaKey || e.ctrlKey) && info.a.kind === 'ref') { this.followRef(info); return; }
     this.openAtom(atomEl, info);
   }
 
@@ -2401,6 +2409,50 @@ class App {
     if (back) return false;
     const t = '\\quad' + (/[A-Za-z]/.test(this.src(c.f)[c.a] || '') ? ' ' : '');
     this.commit([{ f: c.f, s: c.a, e: c.a, t }], { f: c.f, p: c.a + t.length, bias: 1 }, 'type');
+    return true;
+  }
+
+  // The one formula, citation or reference the selection holds, with nothing else of the text:
+  // { el, info }, or null
+  atomSelected() {
+    const sel = getSelection();
+    if (!sel.rangeCount || sel.isCollapsed) return null;
+    const r = sel.getRangeAt(0);
+    if (!this.root.contains(r.commonAncestorContainer)) return null;
+    const box = r.commonAncestorContainer.nodeType === 1 ? r.commonAncestorContainer : r.commonAncestorContainer.parentElement;
+    const atoms = [...(box.closest('.atom') ? [box.closest('.atom')] : box.querySelectorAll('.atom'))].filter((a) => r.intersectsNode(a));
+    if (atoms.length !== 1) return null;
+    const el = atoms[0], info = atomOfEl(el);
+    if (!info || info.s == null || info.a.ro) return null;
+    const rest = r.toString().replace(el.textContent, '').replace(/[\u200B\s]/g, '');
+    return rest ? null : { el, info };
+  }
+  // The cross reference at the caret (selected, or touching it): its atom's info, or null
+  refHere() {
+    const S = this.atomSelected();
+    if (S) return S.info.a.kind === 'ref' ? S.info : null;
+    const c = this.caretNow(), sel = getSelection();
+    if (!c || c.ghost || !c.collapsed || !sel.rangeCount) return null;
+    const n = sel.anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement), it = el && el.closest('.it');
+    if (!it) return null;
+    for (const a of it.querySelectorAll('.atom')) {
+      const info = atomOfEl(a);
+      if (info && info.a.kind === 'ref' && info.f === c.f && info.s <= c.a && c.a <= info.e) return info;
+    }
+    return null;
+  }
+  // Go to the label a cross reference points to (F12 on it, or Ctrl+click), as Go To does for a
+  // label; Shift+F5 comes back here while nothing has been edited since (src/cmd/find.js goBack)
+  followRef(info = this.refHere()) {
+    if (!info) return false;
+    const m = /\{([^}]*)\}\s*$/.exec(this.src(info.f).slice(info.s, info.e));
+    const key = m ? m[1].split(',')[0].trim() : '';
+    if (!key || !this.labelPlaces().has(key)) { this.toast(key ? 'No \\label{' + key + '} in this project.' : 'This reference names no label.'); return false; }
+    const c = this.caretNow();
+    const back = c && !c.ghost ? { f: c.f, p: c.a } : { f: info.f, p: info.e, bias: 1 };
+    const r = this.goToTarget('label', key);
+    if (!r.ok) { this.toast(r.msg); return false; }
+    this.followBack = { back, n: this.hist.length };
     return true;
   }
 
