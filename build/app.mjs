@@ -419,6 +419,9 @@ and name, not by position.
   (such as "Paragraph"), which opens a menu with the same names. The tabs and their controls:
 ${ribbonList()}
   Every control, with its role, name, tab, group and keys, is in ${SITE}controls.json.
+- The tab "File" covers the window below the tabs, as Word's File does: the page is out of sight
+  while it is open. Its button "Back to the document", Escape, or a command run from it give the
+  page back (a dialog one of its commands opens stands over it, and File stays behind that).
 - A search box, the combobox "Search" in the bar (Alt+Q), finds any command by its name and
   runs it where the caret is. A right click on the page, Shift+F10 or the menu key opens a menu
   named "Context menu" of what applies there.
@@ -464,7 +467,8 @@ ${ribbonList()}
   "Display math" (from Equation), whose field, a textbox named "Equation editor", has the focus
   when the dialog opens (type LaTeX or plain keys; Enter finishes); "Citation", "Share",
   "Insert", "How Rikuy works". Each has a "Close" button, and Escape closes it. None is modal:
-  a press on the page behind one closes it.
+  a press on the page behind one closes it, but for "How Rikuy works" on a wide window, which is
+  a pane at the right that stays (Close, Escape in it, or "Help" again close it).
 - What TeX is doing, and how a compile ended, is the text of the status region named "PDF
   status". Short notices appear in a status region without a name.
 - The source pane draws only the lines in view. Read the source with rikuy.api.getSource() or
@@ -657,7 +661,19 @@ Ctrl is Cmd on a Mac.
   (form-text, form-check, form-combo, form-list, form-date with {label, items}: hyperref's fields
   in one Form round the text); Picture Format's Border Weight {weight} and Border Color {color};
   a picture's round handle turns it by any angle; a press on a drawing gives each of its points a
-  handle; a press on a chart reopens its grid (chart-edit-data {kind, cats, series}); Table Layout's
+  handle and shows Shape Format (shape-fill {color}, shape-outline {color}, shape-weight {pt},
+  shape-dashes {dash}, shape-arrows {arrow}, shape-styles {style}, shape-text {text},
+  shape-width {cm}, shape-height {cm}, shape-insert {shape}, shape-forward, shape-backward); a
+  press on a chart shows Chart Design and Format (chart-title {text}, chart-axis-titles {x, y},
+  chart-legend {pos}, chart-gridlines, chart-data-labels, chart-colors {palette}, chart-type
+  {kind}, chart-switch, chart-height {cm}, chart-width {share}) and a double click its grid
+  (chart-edit-data {kind, cats, series}); a press on a SmartArt shows SmartArt Design and Format
+  (smart-text-pane {items}, smart-add, smart-layout {kind}, smart-rtl, smart-colors {palette},
+  smart-fill {color}, smart-outline {color}, smart-reset); object-position {mode, place, side}
+  and object-align {align}; Picture Format's picture-corrections, picture-color and
+  picture-transparency {sharpen, brightness, contrast, saturation, tone, recolor, tint,
+  transparency} and picture-compress {ppi, all}, worked in a copy of the file; selection-pane;
+  Table Layout's
   Height {height} and Width {width} boxes and Table Alt Text {text} (a "% alt:" line before the
   table). Selected words dragged on the page move (Ctrl copies); a selected picture is dragged by
   a press; a move never crosses files
@@ -747,7 +763,9 @@ each opened at the place of the last (the caret's source position, SyncTeX into 
 a click in the PDF view picks the place to go back to). A PDF that is current shows at once; else
 TeX makes it while the old one shows. Preview and Source in the bar still show the PDF or the
 source beside the page (pressed in another view they go back to the page first). The slider
-"Zoom" and the button "Zoom level" (actual size) sit beside them on a wide window. The View tab:
+"Zoom" and the button "Zoom level" (actual size) sit beside them on a wide window. A window under
+700 px opens in Mobile View, Web Layout's text at its actual size; the status bar's toggle button
+"Mobile View" turns it off for Print Layout and on again, kept on that device. The View tab:
 Read Mode (the PDF view), Print Layout (the page), Web Layout (the text as wide as the window, no
 pages; the lines are the browser's, not TeX's), LaTeX Mode (the LaTeX view), Draft (the pages
 run on), Outline; Ruler (sliders "Left Indent", "Right Indent", "First Line Indent", "Hanging
@@ -755,7 +773,8 @@ Indent", "Left margin", "Right margin", "Top margin", "Bottom margin": dragged o
 arrows, a quarter centimetre a press; not on a touch screen), Show LaTeX, Formatting marks,
 Navigation pane; 100%, One page, Multiple pages, Page
 width; Side to Side, Dark page (the screen only), Focus (every bar hidden; Escape or "Leave
-Focus"). The File tab: Blank document (from the preamble kept by Set as default), New from
+Focus"). The File tab covers the window below the tabs; "Back to the document" or Escape give
+the page back. On it: Blank document (from the preamble kept by Set as default), New from
 template (article, report, book or thesis, letter, KOMA-Script, slides, exam, CV), Browse,
 Recent documents (open one; "Rename a document…" asks in the dialog "Rename a document", field
 "New name"; runCommand('recent', { rename, to }) does it at once), Properties (dialog: Title, Author, Subject, Keywords; only the fields changed are

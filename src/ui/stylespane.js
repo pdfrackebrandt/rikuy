@@ -163,7 +163,8 @@ export const methods = {
     const sel = getSelection();
     if (sel.rangeCount && this.root.contains(sel.anchorNode)) this.rbRange = sel.getRangeAt(0).cloneRange();
     list.addEventListener('focusin', () => { const s = getSelection(); if (s.rangeCount && this.root.contains(s.anchorNode)) this.rbRange = s.getRangeAt(0).cloneRange(); });
-    document.body.append(P);
+    // (in #main: on a desktop window it docks at the right as Word's panes do, app.css)
+    (document.getElementById('main') || document.body).append(P);
     this.paneFill();
     this.ribbonSync();
     const cur = list.querySelector('[aria-selected="true"]') || list.querySelector('[role=option]');
@@ -313,7 +314,10 @@ export const methods = {
   openApplyStyles() {
     const s = getSelection();
     if (s.rangeCount && this.root.contains(s.anchorNode)) this.rbRange = s.getRangeAt(0).cloneRange();
-    const K = this.styleCatalog(), st = this.rbStyle || { v: 'p' };
+    // (the caret's style read now: the ribbon's copy, rbStyle, follows a moved caret a moment later,
+    // and a key pressed at once found the style of where the caret was before)
+    const at = this.ribbonAt();
+    const K = this.styleCatalog(), st = at ? this.blockStyle(at) : this.rbStyle || { v: 'p' };
     // (the box takes the focus: the place on the page is kept for Enter)
     const c0 = this.caretNow();
     const p = dialog(this, { title: 'Apply Styles', rect: new DOMRect(Math.max(8, window.innerWidth - 340), 120, 0, 0), cls: 'pop-apply' });
