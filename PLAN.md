@@ -3263,7 +3263,7 @@ Tests:
     `styles.py` 426, `view.py` 163; screenshots of every tab at 1920 and 1366 px, light and dark,
     and 390 px.
 
-68. **Objects formatted after they are in, as Word does** (branch `word-gaps-objects`). A drawing,
+69. **Objects formatted after they are in, as Word does** (branch `word-gaps-objects`). A drawing,
     a chart or a SmartArt pressed on the page is selected (a frame; a drawing's points keep their
     handles) and its contextual tabs show and open: **Shape Format** (Insert Shape into the same
     drawing, Theme Styles, Shape Fill and Shape Outline from Word's colour grid as xcolor's names
@@ -3312,8 +3312,8 @@ Tests:
     Models, Online Videos, Get Add-ins, WordArt, Signature Line, Object, and Date & Time (the
     command `insert-date` exists, without an icon or a place on the ribbon). Draw: the whole tab.
     Design: Effects, Set as Default (File has `set-default`). Layout › Arrange: Bring Forward and
-    Send Backward of a picture (no meaning: a picture is in the text, not over it; task 68 has them
-    for the shapes of a drawing), Group (task 68: Insert Shape puts a shape in the drawing).
+    Send Backward of a picture (no meaning: a picture is in the text, not over it; task 69 has them
+    for the shapes of a drawing), Group (task 69: Insert Shape puts a shape in the drawing).
     References: Update Table (contents, figures,
     authorities), Update Index, Research (Search, Researcher). Mailings: the whole tab. Review:
     Translate, Protect (Block Authors, Restrict Editing), Hide Ink, the Tracking group's corner
@@ -3322,11 +3322,11 @@ Tests:
     Border Painter, the Borders corner arrow (Borders and Shading). Table Layout: View Gridlines,
     Draw Table, Eraser, Formula, the Rows & Columns corner arrow. Picture Format: Remove Background,
     Artistic Effects, Picture Effects, Picture Layout, the Picture Styles gallery and its corner
-    arrow (Corrections, Color, Transparency, Compress Pictures, Selection Pane and Align: task 68).
+    arrow (Corrections, Color, Transparency, Compress Pictures, Selection Pane and Align: task 69).
     Equation: Ink Equation, Unicode or LaTeX and Convert, Normal Text, the
     Tools corner arrow (Equation Options). Header & Footer: Quick Parts and Pictures in its Insert
     group, the Navigation group, Show Document Text, Header from Top and Footer from Bottom as
-    fields. (Shape Format, Chart Design and Format, SmartArt Design and Format: task 68.)
+    fields. (Shape Format, Chart Design and Format, SmartArt Design and Format: task 69.)
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000
     papers, every failure classified as in task 2. Needs arxiv.org (see task 3). The owner runs
