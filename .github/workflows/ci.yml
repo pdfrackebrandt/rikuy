@@ -152,6 +152,9 @@ jobs:
       - name: Pictures and objects (selecting, Picture Format as round trips, handles, crop, the page's drawing, Insert's objects, phones)
         run: cd test && python3 picture.py
       # its compile on three engines needs dist/tex and runs in tex.yml; here it says it skips that part
+      - name: Objects formatted after they are in (Shape Format, Chart Design and Format, SmartArt Design and Format, picture tools, Arrange, Selection Pane, phones)
+        run: cd test && python3 objects.py shapes charts smart menus pictures arrange selpane phones pictures_unloaded pictures_phone
+      # its compiles on three engines need dist/tex and run in tex.yml
       - name: Insert, interactive graphs, the clipboard, symbols and AutoCorrect
         run: cd test && python3 insert.py
       # their PDF parts (the PDF view by SyncTeX, Learn Rikuy and the templates compiled) need

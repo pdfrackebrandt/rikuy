@@ -641,7 +641,19 @@ Ctrl is Cmd on a Mac.
   (form-text, form-check, form-combo, form-list, form-date with {label, items}: hyperref's fields
   in one Form round the text); Picture Format's Border Weight {weight} and Border Color {color};
   a picture's round handle turns it by any angle; a press on a drawing gives each of its points a
-  handle; a press on a chart reopens its grid (chart-edit-data {kind, cats, series}); Table Layout's
+  handle and shows Shape Format (shape-fill {color}, shape-outline {color}, shape-weight {pt},
+  shape-dashes {dash}, shape-arrows {arrow}, shape-styles {style}, shape-text {text},
+  shape-width {cm}, shape-height {cm}, shape-insert {shape}, shape-forward, shape-backward); a
+  press on a chart shows Chart Design and Format (chart-title {text}, chart-axis-titles {x, y},
+  chart-legend {pos}, chart-gridlines, chart-data-labels, chart-colors {palette}, chart-type
+  {kind}, chart-switch, chart-height {cm}, chart-width {share}) and a double click its grid
+  (chart-edit-data {kind, cats, series}); a press on a SmartArt shows SmartArt Design and Format
+  (smart-text-pane {items}, smart-add, smart-layout {kind}, smart-rtl, smart-colors {palette},
+  smart-fill {color}, smart-outline {color}, smart-reset); object-position {mode, place, side}
+  and object-align {align}; Picture Format's picture-corrections, picture-color and
+  picture-transparency {sharpen, brightness, contrast, saturation, tone, recolor, tint,
+  transparency} and picture-compress {ppi, all}, worked in a copy of the file; selection-pane;
+  Table Layout's
   Height {height} and Width {width} boxes and Table Alt Text {text} (a "% alt:" line before the
   table). Selected words dragged on the page move (Ctrl copies); a selected picture is dragged by
   a press; a move never crosses files
