@@ -861,6 +861,22 @@ export function installWordTyping(mf, opts) {
     }
   };
   mf.addEventListener('keydown', onKey, true);
+  // An input method, a dead key, dictation or the emoji panel type into the field without the keys
+  // onKey reads: the letters of a command's argument waiting (\text{caf) move to the LaTeX box with
+  // what comes, and the input method goes on in a plain text box; it went into the formula outside
+  // the \text, or before it (review H2)
+  const toBox = (more) => {
+    const t = arg;
+    arg = null; draw();
+    if (opts.toLatex) opts.toLatex('\\' + t.name + '{' + t.text + (more || ''));
+    else put('\\' + t.name + '{' + t.text + (more || '') + '}', { selectionMode: 'after' });
+  };
+  mf.addEventListener('compositionstart', () => { if (arg) toBox(''); }, true);
+  mf.addEventListener('beforeinput', (e) => {
+    if (!arg || e.isComposing || !/^insert/.test(e.inputType || '')) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    toBox(e.data || '');
+  }, true);
   mf.addEventListener('pointerdown', () => { groups = []; }, true);
   mf.addEventListener('blur', () => { if (buf != null) cancel(); if (arg) argDone(); });
   return { active: () => buf != null || arg != null, newRow, reposition: () => { if (buf != null) place(); }, destroy: () => { chip.remove(); } };

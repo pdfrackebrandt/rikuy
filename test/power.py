@@ -8,7 +8,8 @@ LaTeX typed into the equation field as it is typed in the source, braces and all
 field cannot hold carried on in its LaTeX box (3). tab: Tab keeps the keyboard on the page, a
 first line indent at a paragraph's start, a gap elsewhere; Esc then Tab leaves (6). pickers: the
 reference and citation pickers by the keys, Enter closing them, with what each label names (7).
-follow: F12 or Ctrl+click on a cross reference goes to its label, Shift+F5 back; Enter or F2 on a
+follow: F12 on a cross reference selected, or Ctrl+click on it, goes to its label, Shift+F5 back
+(F12 beside one is Save As); Enter or F2 on a
 formula selected alone opens it (8). linear: Ctrl+Shift+= in a new equation shows that equation
 as its LaTeX on the page, never the paragraph before it (13). modes: Esc leaves Focus and Read
 Mode with the caret on the page. keytips: F10 (or Alt), a tab's letter, then a command's letters run it
@@ -113,6 +114,21 @@ def latex(page):
                        ('x^(n+1)', [r'x^{n+1}'])):
         got = field(page, keys)
         check('latex: ' + keys + ' typed into the equation field', got in [''.join(w.split()) for w in want], got)
+    # an input method, dictation or the emoji panel in \\text{…}: on in the LaTeX box (review H2)
+    cdp = page.context.new_cdp_session(page)
+    for how, text in (('dictation', 'if '), ('an input method', '日本')):
+        page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
+        load_doc(page, MATH)
+        click_text(page, 'gamma.', 6)
+        key(page, 'Enter'); key(page, 'Alt+Equal', 600)
+        page.keyboard.type('x=1\\text{', delay=15); page.wait_for_timeout(200)
+        if how == 'dictation': cdp.send('Input.insertText', {'text': text})
+        else: cdp.send('Input.imeSetComposition', {'text': 'ひ', 'selectionStart': 1, 'selectionEnd': 1}); page.wait_for_timeout(150); cdp.send('Input.insertText', {'text': text})
+        page.wait_for_timeout(250)
+        page.keyboard.type('}+y', delay=15); page.wait_for_timeout(500)
+        s = src(page); body = ''.join(s[s.find('\\begin{equation}'):s.find('\\end{equation}')].split())
+        check('latex: ' + how + ' in \\text{…} keeps it in the \\text', ('\\text{' + text.strip() + '}+y') in body, body)
+        key(page, 'Escape', 300)
     # what the field cannot hold goes on in its LaTeX box, typed on there
     load_doc(page, MATH)
     click_text(page, 'gamma.', 6)
@@ -174,10 +190,18 @@ FOLLOW = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n\
 def follow(page):
     load_doc(page, FOLLOW)
     there = FOLLOW.index('\\section{Model}')
+    # F12 with the caret beside a reference, nothing selected, is Save As, as Word's (review H1)
+    click_text(page, ' now', 0)
+    start = caret(page)
+    try:
+        with page.expect_download(timeout=5000) as d: key(page, 'F12', 400)
+        got = d.value.suggested_filename
+    except Exception: got = None
+    check('follow: F12 beside a reference, nothing selected, downloads (Save As) and stays', got and caret(page) == start, (got, caret(page), start))
     for how in ('F12', 'Ctrl+click'):
         click_text(page, ' now', 0)
         start = caret(page)
-        if how == 'F12': key(page, 'F12', 400)
+        if how == 'F12': key(page, 'Shift+ArrowLeft'); key(page, 'F12', 400)
         else: page.click('#pages .atom >> nth=1', modifiers=['Control']); page.wait_for_timeout(400)
         c = caret(page)
         check('follow: ' + how + ' on a reference goes to its label', c and there <= c[1] <= there + 60 and src(page) == FOLLOW, (c, start))

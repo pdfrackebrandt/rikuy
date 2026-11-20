@@ -192,15 +192,6 @@ register(
 );
 
 export const methods = {
-  // Whether AutoCorrect would act on ch typed after text at p of f: the typing queue (src/app.js
-  // typeQueueable) takes a space into a run of letters only where it would not
-  acActs(f, p, text, ch) {
-    const o = acOn(this);
-    if (o.off) return false;
-    // (the text as it is, not read through files, which would write the letters waiting)
-    const s = this.filesNow.get(f) || '';
-    return !!correct(s.slice(0, p) + text + s.slice(p), p + text.length, ch, o, (this.prefs.acList || []).filter((x) => Array.isArray(x) && x.length === 2), this.prefs.acExcept || []);
-  },
   // whether the caret means an interactive graph (the right click menu's 'graph' items)
   graphHere(at) { return !!graphAt(this, at); },
 
