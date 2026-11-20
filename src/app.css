@@ -584,6 +584,9 @@ body.file-open #rp-file .rf-back span { display: inline !important; }
 .pop-menu .nav-act svg { margin-left: -18px; }
 .pop-menu .nav-act:focus-visible { outline: none; background: var(--blue-wash); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--blue) 45%, transparent); }
 .pop-menu .nav-act[aria-disabled="true"] { opacity: .45; cursor: default; }
+/* a greyed item's reason (Position's): its description, and this line under the menu as it is reached, pointed at or tapped */
+.pop-menu .nav-act[data-reach]:focus { opacity: .7; }
+.pop-menu .mi-why { max-width: 320px; padding: 6px 10px 4px; border-top: 1px solid var(--line); font-size: 12px; line-height: 1.35; color: var(--mute); white-space: normal; }
 .pop-menu .nav-act[aria-disabled="true"]:hover { background: transparent; }
 .pop-menu .nav-act[aria-checked="true"]::before { content: ""; position: absolute; left: 10px; top: 50%; width: 7px; height: 4px; margin-top: -4px; border: solid var(--blue); border-width: 0 0 2px 2px; transform: rotate(-45deg); }
 .pop-menu .mi-k { margin-left: auto; padding-left: 18px; color: var(--mute); font: 11.5px var(--font-mono); }
@@ -2455,6 +2458,13 @@ html.pic-drag, html.pic-drag body { touch-action: none; overscroll-behavior: non
   #rp-picture-format .rb-grp > .btn, #rp-picture-format .rb-split > .btn, #rp-picture-format .rb-x,
   #rc-insert-shapes, #rc-insert-icons, #rc-insert-smartart, #rc-insert-chart, #rc-insert-screenshot, #rc-insert-textbox, #rc-insert-dropcap,
   #rc-picture-position-layout, #rc-picture-wrap-layout, #rc-picture-rotate-layout { min-height: 44px; min-width: 44px; }
+  /* (every object's contextual tab, and Layout's Align and Selection Pane, as the picture's: review H6) */
+  :is(#rp-shape-format, #rp-chart-design, #rp-chart-format, #rp-smart-design, #rp-smart-format) :is(.rb-grp > .btn, .rb-split > .btn, .rb-x, .rb-gbtn),
+  #rc-object-align, #rc-selection-pane { min-height: 44px; min-width: 44px; }
+  :is(#rp-shape-format, #rp-chart-format) .pf-v { min-height: 44px; font-size: 16px; }
+  .sel-pane .pop-x { min-width: 44px; min-height: 44px; }
+  .sel-pane .fr-btns .btn { min-height: 44px; }
+  .fr .sel-lab { min-height: 44px; font-size: 16px; }
 }
 /* a button's name for screen readers (.sr, absolutely placed) sat where the button is: in a
    phone's scrolling row a button past the screen's edge widened the page under it (the Picture
@@ -2585,6 +2595,30 @@ html.pic-moving, html.pic-moving * { cursor: grabbing !important; }
 .shape-layer .shape-h { position: fixed; width: 9px; height: 9px; translate: -50% -50%; cursor: move; background: #fff; border: 1.5px solid #2B74B0; border-radius: 50%; pointer-events: auto; touch-action: none; box-sizing: border-box; }
 .shape-layer .shape-h.radius { background: #F5C242; border-color: #8a6100; }
 #pages .raw.drawn.sel { outline: 1px solid #2B74B0; outline-offset: 2px; }
+/* a chart or a SmartArt selected (Chart Design, SmartArt Design): Word's frame round it; one shape of
+   a drawing selected alone: a glow round that shape */
+#pages .raw.drawn.sel:has(> svg.pgf), #pages .a-smart.sel { outline: 2px solid #2B74B0; outline-offset: 3px; }
+/* a drawing's frame round the drawing, not round its line */
+#pages .raw.drawn.sel:has(> svg.tz) { outline: none; }
+#pages .raw.drawn.sel > svg.tz { outline: 1px solid #2B74B0; outline-offset: 3px; }
+#pages .a-smart { cursor: pointer; }
+/* the Selection Pane (src/ui/selpane.js): a row per object, its name, its label, its eye */
+.sel-pane .fr-btns { display: flex; gap: 6px; }
+.sel-pane .fr-btns .btn { flex: 0 0 auto; padding: 4px 12px; border: 1px solid var(--line); white-space: nowrap; }
+.sel-list { display: flex; flex-direction: column; gap: 2px; max-height: min(60vh, 520px); overflow: auto; }
+.sel-row { display: grid; grid-template-columns: 1fr 9em 32px; align-items: center; gap: 6px; }
+.sel-row.sel-in .sel-go { padding-left: 20px; }
+.sel-go { display: flex; gap: 6px; align-items: baseline; text-align: left; border: 0; background: transparent; color: var(--ink-ui); font: 13px/1.3 var(--font-ui); padding: 6px; border-radius: 6px; cursor: pointer; min-width: 0; }
+.sel-go:hover, .sel-go:focus-visible { background: var(--chrome); }
+.sel-k { color: var(--mute); font-size: 11.5px; flex: none; }
+.sel-n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fr .sel-lab { padding: 4px 6px; font-size: 12px; }
+.sel-eye { border: 0; background: transparent; color: var(--ink-ui); width: 32px; height: 32px; border-radius: 6px; cursor: pointer; display: grid; place-items: center; }
+.sel-eye svg { width: 18px; height: 18px; }
+.sel-eye[aria-pressed="false"] { color: var(--mute); }
+#pages .sel-hidden { visibility: hidden; }
+@media (pointer: coarse) { .sel-go, .sel-eye { min-height: 44px; } .sel-eye { width: 44px; } .sel-row { grid-template-columns: 1fr 7em 44px; } }
+#pages svg.tz .sub { filter: drop-shadow(0 0 1.2px #2B74B0) drop-shadow(0 0 1.2px #2B74B0); }
 #pages .raw.drawn svg.tz, #pages .raw.drawn svg.pgf { cursor: pointer; }
 @media (pointer: coarse) { .shape-layer .shape-h { width: 14px; height: 14px; } .shape-layer .shape-h::before { content: ''; position: absolute; left: 50%; top: 50%; width: 44px; height: 44px; translate: -50% -50%; } }
 .it.p.has-wrap { display: flow-root; }
