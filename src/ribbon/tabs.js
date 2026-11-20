@@ -418,20 +418,22 @@ export const tabs = {
     // then the gallery's tiles one at a time down to three (Home), then the three downloads as one
     // Download button (Word spends no room on them), then the names of the groups that matter
     // most, then every button's name (rb-fold).
-    // (Home with its gallery keeps the same order, the downloads in the chain before the names:
-    // given back on their own they came back where the names then could not, and a wider window
-    // showed the three downloads without names where a narrower one had the names. Where no group
-    // is laid out and there is no gallery, a narrower row, the downloads go after the names on their
-    // own: below 861 px the style sheet takes the names for nothing, and a row a little wider that
-    // gave two downloads for the names would show fewer controls.)
-    const dlChain = lay.length > 0 || (gal && wide);
+    // (Home with its gallery, all in the chain: the tiles down to three, its names, the style list in
+    // the gallery's place, then its downloads, so a download in one press stays the longest and a
+    // wider window never shows fewer names or controls: given back on their own, after the chain,
+    // the list and the downloads came back where the names then could not. Where no group is laid
+    // out and there is no gallery, a narrower row, the downloads go after the names on their own:
+    // below 861 px the style sheet takes the names for nothing, and a row a little wider that gave
+    // two downloads for the names would show fewer controls.)
+    const home = !lay.length && gal && wide;
     steps.push(...named.filter((g) => g.dataset.rank < 4).map(bare));
     if (gal && wide) for (const n of [5, 4, 3]) steps.push({ do: () => tiles(n), undo: () => tiles(n + 1), chain: 'names' });
-    if (dlChain) steps.push({ ...flag('rb-dl1'), chain: 'names' });
+    if (lay.length) steps.push({ ...flag('rb-dl1'), chain: 'names' });
     steps.push(...named.filter((g) => g.dataset.rank >= 4).map(bare));
     steps.push({ ...flag('rb-fold'), chain: 'names' });
-    if (!dlChain) steps.push(flag('rb-dl1'));
-    if (gal && wide) steps.push(flag('rb-narrow'));
+    if (gal && wide) steps.push({ ...flag('rb-narrow'), chain: 'names' });
+    if (home) steps.push({ ...flag('rb-dl1'), chain: 'names' });
+    else if (!lay.length) steps.push(flag('rb-dl1'));
     const order = foldsGroups() ? [...groups].filter((g) => !g.dataset.spare).sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
     for (const g of order) steps.push(fold(g));
     let k = 0;
