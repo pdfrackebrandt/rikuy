@@ -187,6 +187,31 @@ menu opened by mouse and closed with Esc gives the focus to its button, as a men
 the top bar's "Fit" beside the status bar's percentage stays (one names the mode, the other the
 size), open for the owner.
 
+### 12. The verification of 933773d (N1 to N6), the zoom, one size per kind
+
+N1 in "Keep the reader's place by its source position…"; N2 and N3 in "File's view by the keys; a
+dialog's opener gets the focus back"; N4, N5, N6 and the zoom in "The zoom said as a percentage…":
+the top bar's zoom button now shows the percentage the status bar shows (Word shows the
+percentage; its name stays Fit width, what a press does). The consistency pass applies
+`UI-PRINCIPLES.md` outside the ribbon:
+
+| kind | before | now |
+|---|---|---|
+| a dialog's buttons (Font, Paragraph, Page setup, Insert Table, Share, Properties), Find and Replace's, the Styles pane's | 26 px, 6 px corners | 32 px, 4 px; 44 px under a finger |
+| a dialog's fields | 28 to 36 px | at least 32 px; 44 under a finger |
+| a dialog's, a pane's and Find and Replace's name | 12 to 12.5 px, three line heights | 14 px semibold, 20 px line |
+| a dialog's, Find and Replace's corners | 10 px | 8 px |
+| a dialog's Close on a phone | 20 px | 44 px |
+| the comment's Comment button on a phone | 26 px | 44 px |
+| a phone's top bar (390, 360 px) | 28 to 34 px; the search a white pill | 44 px each; the search drawn as the bar's other icons until it opens; Open and Source by name in the menu panel |
+| the status bar's words | 12 and 12.5 px | 12 px; its views 22 px with 4 px corners, Mobile View as tall as the views' frame |
+| File's column, its tiles, its recent rows | 30 px with 6 px corners; tiles of two heights; 8 px corners | 32 px, 4 px; one height; 4 px, rows 32 px; a ring for the keyboard on tiles and rows |
+| spacing in the File Home, the Help pane, the views | 22, 14, 10, 9, 6, 5 px | 4 px steps |
+
+Tooltips added where there was none or a stale one: New document, Load the sample, the zoom.
+`ux.py consistency` measures all of it at 1366 and 1920 px (light and dark) and at 390 and 360 px
+with touch, and fails on the old sizes (20 of its checks did before this pass).
+
 ## Findings for other agents
 
 ### Ribbon tabs (`src/ribbon/`, the ribbon's CSS)

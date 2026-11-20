@@ -3276,7 +3276,16 @@ Tests:
     size) with Print Layout one tap away, kept on the device; Help is a pane at the right on a wide
     window; llms.txt says File covers the page. The hostile review (`/tmp/review-ux.md`) is
     answered in the commits named after it (File's keys, Esc with a pane docked, Back, a
-    template's caret, ...). Open, in the audit: findings for the ribbon tabs agent.
+    template's caret, ...). The verification of 933773d (N1 to N6) is answered too: the reader's
+    place kept when Mobile View turns on or off, File's Home by the keys, Esc from a dialog opened
+    from File giving its command the focus, Help a sheet below 1000 px, a widened window taking a
+    wide window's view, File's column holding its Download row; the top bar's zoom says the same
+    percentage as the status bar. Outside the ribbon, one size and shape per kind
+    (`docs/handoff/UI-PRINCIPLES.md`): dialogs', Find and Replace's and the panes' buttons and
+    fields 32 px with 4 px corners (44 under a finger), dialogs and sheets 8 px, one title style
+    (14 px semibold), a close button 44 px under a finger, the status bar's words one size and
+    its views one height, File's column 32 px, a phone's top bar 44 px (`ux.py consistency`).
+    Open, in the audit: findings for the ribbon tabs agent.
 
 66a. **The ribbon's other tabs laid out as Word's.** Done in the code (branch `ribbon-tabs-word`).
     Home was done in PR 75; `src/ribbon/layout.js` now says, for Insert, Design, Layout,
