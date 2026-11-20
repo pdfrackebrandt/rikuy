@@ -272,7 +272,9 @@ export const methods = {
         this.setAsset(name, await pictureBlob(spec, W, u.path, !png));
         n++;
       }
-      if (n) this.saveSoon();
+      // (no save of its own: a picture drawn again is derived, and a save here wrote this tab's text
+      // over what another tab of the same project had typed meanwhile; the next edit's save keeps
+      // it, and a picture missing after a reload is drawn again)
       return n;
     };
     this.grBusy = run();

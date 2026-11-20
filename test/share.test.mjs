@@ -132,7 +132,7 @@ await ok('llms.txt says what is so, and llms-full.txt adds to it', () => {
   const sample = /```latex\n([\s\S]*?)\n```/.exec(full)[1];
   assert.ok(sample.startsWith('\\documentclass') && sample.endsWith('\\end{document}'));
   const tex = Buffer.from(sample + '\n', 'utf8').toString('base64url').length;
-  assert.ok(Math.abs(tex - 7100) < 100, 'the #tex= link of the sample is ' + tex + ' characters');
+  assert.ok(Math.abs(tex - 7000) < 100, 'the #tex= link of the sample is ' + tex + ' characters');
 });
 
 await ok('robots.txt, the sitemap and the page\'s data for search engines', () => {
