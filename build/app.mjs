@@ -349,8 +349,9 @@ of window.rikuy is the app itself and changes without notice.
 - commands(): every command of the interface, as the ribbon, the keys and the search box have
   them: [{id, name, tab, group, keys, enabled}], enabled where the caret is now.
 - run(id): a Promise. Runs one command by its id where the caret is, as its button does (for
-  "bold", the selection on the page becomes bold, one Undo takes it back); resolves to true when
-  it ran, false when it cannot run there.
+  "bold", the selection on the page becomes bold, one Undo takes it back); with no caret on the
+  page, where the caret last was or at the document's end, as Word always has one; resolves to
+  true when it ran, false when it cannot run there.
 
 Tables: put the caret in a cell (click it) and run the commands of the tabs Table Layout and
 Table Design by id: "table-row-below", "table-row-above", "table-col-left", "table-col-right",

@@ -1,6 +1,7 @@
 """One look for every control: the ribbon, the tab row, the title bar and the status bar measured as
 a person sees them, on every tab (the contextual ones with their object), at 1920, 1366, 1280,
-1024 and 900 px with a mouse and 1180 px with touch, in light, dark and forced colours. The rules
+1024 and 900 px with a mouse and 1180 and 390 px with touch (a tablet, a phone), in light, dark and
+forced colours. The rules
 are docs/handoff/UI-PRINCIPLES.md's that hold for these four (its number after each); each
 violation is printed with its place (tab, width, scheme), element and numbers.
 
@@ -53,7 +54,7 @@ WRAP = lambda body, pre='': '\\documentclass{article}\n\\usepackage{graphicx}\n'
 DOC = WRAP('\\section{Opening}\nA paragraph of the text.\n\n\\begin{center}\n\\includegraphics[width=0.4\\linewidth]{figure.png}\n\\end{center}\n\n'
            '\\begin{tabular}{ll}\ncell & other \\\\\nmore & last \\\\\n\\end{tabular}\n\nThe last paragraph.')
 MOUSE = [1920, 1366, 1280, 1024, 900]
-TOUCH = [1180]
+TOUCH = [1180, 390]  # a tablet and a phone
 SCALE = [0, 2, 4, 6, 8, 10, 12, 16, 20, 24, 28, 32, 36, 40, 48]
 GAPS = [0, 1, 2, 4, 6, 8, 12, 16, 24]  # between groups and separators (a separator's 1 px among them)
 # where Word itself names one command two ways, by its tab: Insert's Comment, Review's New Comment
