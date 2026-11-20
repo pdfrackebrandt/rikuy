@@ -10,12 +10,19 @@
 #             arxiv-results; the sources are never committed
 # With from_run set to an earlier run of this workflow, only collect runs, on that run's shard
 # files: a fix to the merge does not cost the 20 runner hours again (artifacts last 90 days).
+# With sources_from_run set, the same papers as that run's are compiled again: its sample
+# instead of a new one (arXiv's listing refused run 44728716263 with a 429), its sources from
+# the Actions cache where they are still there, and from arXiv where they are not.
 name: arXiv corpus
 on:
   workflow_dispatch:
     inputs:
       from_run:
         description: 'Merge the shard files of this earlier run instead of compiling (its id)'
+        required: false
+        default: ''
+      sources_from_run:
+        description: 'Compile the sample of this earlier run, its papers from its cache where it is still kept (its id)'
         required: false
         default: ''
 # Read only, except the job that commits: the shards compile papers from arXiv with a desktop
@@ -34,11 +41,39 @@ jobs:
   sources:
     if: inputs.from_run == ''
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read  # an earlier run's sample (sources_from_run)
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           persist-credentials: false
+      # an earlier run's sample only if it was this workflow on main, as collect checks
+      - name: Check the run whose sample is compiled again
+        if: inputs.sources_from_run != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN: ${{ inputs.sources_from_run }}
+        run: |
+          case "$RUN" in *[!0-9]*) echo "sources_from_run must be a run id" >&2; exit 1;; esac
+          got=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN" --jq '.path + " " + .head_branch')
+          [ "$got" = ".github/workflows/arxiv.yml main" ] || { echo "run $RUN is $got, not arXiv corpus on main" >&2; exit 1; }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        if: inputs.sources_from_run != ''
+        with:
+          name: arxiv-ids
+          path: ${{ runner.temp }}/ids
+          run-id: ${{ inputs.sources_from_run }}
+          github-token: ${{ github.token }}
+      - uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        if: inputs.sources_from_run != ''
+        with:
+          path: ~/arxiv
+          key: arxiv-src-${{ inputs.sources_from_run }}
+      - name: The earlier run's sample
+        if: inputs.sources_from_run != ''
+        run: cp "$RUNNER_TEMP/ids/arxiv-ids.txt" dev/arxiv-ids.txt
       - name: Sample and fetch
         run: |
           [ -f dev/arxiv-ids.txt ] || python3 dev/arxiv_corpus.py sample dev/arxiv-ids.txt

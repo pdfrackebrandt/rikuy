@@ -3233,7 +3233,34 @@ Tests:
     `outline.py` 105 and `view.py` 160 with `dist/tex`, `file.py` 100 with `dist/tex` and
     `dist/word`, `tabs.py` 115.
 
-66. **The ribbon's other tabs laid out as Word's.** Done in the code (branch `ribbon-tabs-word`).
+66. **Word's keyboard shortcuts** (branch word-shortcuts, draft PR 80). Every shortcut on
+    Microsoft's Keyboard shortcuts in Word page, Windows and macOS, and the equation keys,
+    against Rikuy's registry: `docs/handoff/SHORTCUTS.md`, one table, each row works, added,
+    kept by the browser (with what to press instead) or without an equivalent in a LaTeX document
+    and why. Added: Ctrl+1, 2, 5 (line spacing), Alt+Shift+> and < (footnotes), F5 (Go To),
+    Shift+F4 and Ctrl+Alt+Y (Find Next), Shift+F5 and Ctrl+Alt+Z (Go Back), F8 and Shift+F8
+    (Extend and Shrink Selection), Alt+Shift+A and Alt+Shift+1 to 9 (outline levels),
+    Ctrl+Alt+P, Ctrl+Alt+N, Alt+F9, Ctrl+F2, Shift+F1, F1, Ctrl+F6 and Ctrl+Shift+F6 (panes),
+    Alt+X, the accent keys (Ctrl+' then e is é, and the rest), ¿ and ¡, Ctrl+F3 and
+    Ctrl+Shift+F3 (the Spike), F2 and Shift+F2 (move and copy, then Enter), Alt+F3, Ctrl+F9,
+    Alt+Shift+P, Ctrl+Shift+P, Alt+Shift+O, Ctrl+Shift+F5, Alt+F7, the number pad's dashes,
+    Alt+Home, End, Page Up, Page Down and Alt+Shift+Up and Down in a table, Alt and the pad's 5,
+    Shift+F12, Alt+Shift+F2, Ctrl+F12, Ctrl+Alt+F2, Ctrl+Shift+F12; Hanging Indent as a command
+    (Word's Ctrl+T is the browser's). Word for Mac's own chords (Cmd+Option+L, R, A, E,
+    Cmd+Control+V, Control+Space, Control+Shift+M, Cmd+8, Cmd+G). Tooltips, menus, the search
+    box and Help write a Mac's chords with ⌘ ⌥ ⌃ ⇧; Help ends with Word's keys the browser keeps.
+    Function keys reach their commands from fields and the source, Ctrl+Alt chords from the
+    source. Save, as Word's keys mean it: Ctrl+S (and Shift+F12, Alt+Shift+F2, the bar's Save)
+    writes the project to this browser now and says "Saved in this browser", downloading nothing
+    (it downloaded a file at every press); Save As (F12 on the page) and Download LaTeX download.
+    The hostile review (`/tmp/review-keys.md`, changes requested) is answered in the commits named
+    after it: Move Row keeps each row's cells (H1), F2's wait ends at a click, a key or an edit
+    (H2), the Spike keeps a heading whole (M1), no Option and character key is taken on a Mac
+    (M2), a French keyboard's Ctrl+1 is Ctrl+1 (M3), Hanging Indent round trips (M4), Alt+X reads
+    LaTeX's accents (M5), and the lows. Evidence: `npm test` green (`keys` 19 groups, `typing` 6, `commands` 13 with the
+    `WORD` table on both systems, `table` 47), `test/shortcuts.py` 82 checks (screenshots in `/tmp/keys-shots`).
+
+66a. **The ribbon's other tabs laid out as Word's.** Done in the code (branch `ribbon-tabs-word`).
     Home was done in PR 75; `src/ribbon/layout.js` now says, for Insert, Design, Layout,
     References, Review, View, Help and the contextual tabs (Table Design, Table Layout, Picture
     Format, Equation, Header & Footer), each group's commands in Word's order with Word's size:
@@ -3262,6 +3289,28 @@ Tests:
     `font.py` 309, `para.py` 254, `lists.py` 218, `picture.py` 228, `insert.py` 224,
     `styles.py` 426, `view.py` 163; screenshots of every tab at 1920 and 1366 px, light and dark,
     and 390 px.
+    The hostile review (fix first) and what changed for it: Word's grid is for a mouse alone,
+    `(min-width: 900px) and (pointer: fine)` in the style sheet and `wideLay()`, so a tablet in
+    landscape keeps its row of 44 px targets (H1; `tabs.py tablet`). The steps that shrink a group
+    are two chains given back from their ends, so ranks hold and a wider window never shows fewer
+    names; on a laid out tab the three downloads become one Download button before the names of
+    rank 4 and up go (M1; the sweep checks names too). A run of Word's small buttons stays in one
+    column when a group shrinks, Previous over Next (M2). The contextual tabs' KeyTips JT, JL, JP,
+    JE, JH (M3). Insert Table, Convert Text to Table and Table from Data File are items of Table's
+    menu, no buttons beside it; Page setup dialog, Footnote and Endnote and Size and Position are
+    their groups' corner arrows with a mouse from 900 px, the buttons they were elsewhere (M4).
+    Large split buttons as Word's, icon above, name and arrow below (L1); every shown name in its
+    accessible name (L2); keys the KeyTips take stop there (L4); on a Mac F10 alone (L5); arrows
+    move across the grid (L6); 67 px for every tab from 861 to 899 px (L7); a pressed toggle in the
+    highlight with forced colours (L8). Download PDF keeps its name and width while busy (the UX
+    audit). Names agents see that changed (L3): the group names in Title Case as Word's (Page
+    Setup, Document Formatting, Page Background, Document Setup, Citations & Bibliography, Table of
+    Authorities, Table Style Options, Table Styles, Rows & Columns, Cell Size), which a folded
+    group's button and `controls.json`'s groupName carry; View's group "Page" is gone, its Side to
+    Side, Dark page and Focus now in Page Movement, Dark Mode and Immersive; the three table
+    commands above are no ribbon controls in `controls.json` any more. No command's own name or
+    role changed. Evidence: `npm test` green, `tabs.py` 137 (word_layout 17, tablet 3,
+    mac_keytips 1), `agent.py` 143, `ribbon.py` 194 and its downloads 8.
 
 69. **Objects formatted after they are in, as Word does** (branch `word-gaps-objects`). A drawing,
     a chart or a SmartArt pressed on the page is selected (a frame; a drawing's points keep their
@@ -3316,9 +3365,10 @@ Tests:
 67. **Word's ribbon buttons Rikuy has no command for** (task 66 left them out). Insert: 3D
     Models, Online Videos, Get Add-ins, WordArt, Signature Line, Object, and Date & Time (the
     command `insert-date` exists, without an icon or a place on the ribbon). Draw: the whole tab.
-    Design: Effects, Set as Default (File has `set-default`). Layout › Arrange: Bring Forward and
-    Send Backward of a picture (no meaning: a picture is in the text, not over it; task 69 has them
-    for the shapes of a drawing), Group (task 69: Insert Shape puts a shape in the drawing).
+    Design: Effects, Set as Default (File has `set-default`). Insert › Tables: Draw Table, Excel
+    Spreadsheet, Quick Tables in Table's menu. Layout › Arrange: Bring Forward and Send Backward
+    of a picture (no meaning: a picture is in the text, not over it; task 69 has them for the
+    shapes of a drawing), Group (task 69: Insert Shape puts a shape in the drawing).
     References: Update Table (contents, figures,
     authorities), Update Index, Research (Search, Researcher). Mailings: the whole tab. Review:
     Translate, Protect (Block Authors, Restrict Editing), Hide Ink, the Tracking group's corner
@@ -3371,6 +3421,76 @@ Tests:
     - 4 ran past the 240 s limit; corpus_full.py now records the worker's last steps for such a
       row, and pdfcompare.py the fonts on one side only for a mismatch (the run keeps no PDFs).
 
+    Second run, 44077385415 (2026-11-17, main cb4d5a8: the .bbl rule above and the packages):
+    998 papers, Rikuy compiled 960 (96.2 %), the desktop 962; of the desktop's 962 Rikuy compiled
+    960 (99.8 %); 872 of the 960 both compiled matched (90.8 %). Median compile 2.3 s, 90th
+    percentile 8.0 s. What is left, classified:
+    - 2 fail in Rikuy alone: `sourcesanspro.sty` and `foekfont.sty`, not in the tree yet (the
+      fbb and brushscr papers load them too).
+    - 31 fail on both, as in the first run (classes arXiv supplies beyond TeX Live, files missing
+      from the source, errors under TeX Live 2026); 5 ran past 240 s, their trails showing TeX run
+      again and again through shell escape (figures made by TeX) or a long biber run.
+    - About 43 of the 88 mismatches are the bibliography's: 31 papers ship a .bib lacking entries
+      their .bbl has, so Rikuy's bibtex run printed [?] where latexmk, which keeps a .bbl it finds
+      on a first run, printed numbers; 6 more print accents as combining characters pdfLaTeX
+      cannot set (bibtex rebuilt the .bbl from such a .bib), and several superscript or author
+      year citations print ? the same way. Fixed now: of the project's own .bbl and the one bibtex
+      or biber makes, the worker keeps the one that resolves more of the citations, the own one
+      on a tie in a project's first run (biber's only when its format version is the own one's);
+      and once bibtex's .bbl is taken, later runs no longer write the project's file over it (a
+      citation added after bibtex ran had gone back to [?] on the next run).
+    - 9 are the desktop's: it printed an older biblatex's .bbl as text ("author2hash=...") or
+      [?] where Rikuy, with biber's .bbl, printed the references.
+    - About 15 break lines at other places (pixels within 1 to 9 %; "cano-nique" against
+      "canon-ique", "Arbit-rum" against "Arbi-trum"); 4 differ in pixels only (text equal);
+      1502.01027 prints the hook name "begindocument/b..." on its first page; 2202.05036 lacks
+      cbfonts' `grmn` (the archaic koppa); the rest follow from a float or a page placed
+      elsewhere. Not classified further without the PDFs (the workflow keeps none).
+
+    Third run, 44728716263 (2026-11-20, main 4063ad1, to measure the .bbl fix): stopped in its
+    first minutes, arXiv's listing answering 429 while the sample was drawn; nothing compiled.
+    Now `get` waits as arXiv asks and tries again, and `sources_from_run` compiles an earlier
+    run's sample again (its sources from that run's cache, or fetched again where gone), so a
+    third run measures the fix on the second run's 998 papers.
+66. **Everything that computes, in C or C++ for WebAssembly.** Planned, not started: asked for by
+    the owner on 2026-11-20 ("even where the gain is small", after the UI and UX work).
+    `docs/handoff/CPP-PLAN.md` has the inventory of `src/` and `tex/` by module, the batches B0 to
+    B11 in order (each with its files, C++ layout, oracle, benchmark, size and risks), the size
+    budget (the artifact has about 300 KB left) and what stays JavaScript. Measured while planning
+    (node, one core of a busy machine): a full model build of `dev/bench/long` is 47 to 67 ms,
+    three times task 52's 16 ms, because B4 and round 3 added preamble readers that each strip
+    the comments of the whole file again (more than half of a full build; 2/3 of a keystroke in
+    its `\title`, 97 ms); memoizing them in a scratch copy made it 19 ms and 30 ms. Every full build
+    also parses every .bib again (46 ms for a 2 MB one). B0, in JavaScript, fixes both first.
+    *B0 done* (branch `cpp-plan`): `src/scan.js` reads a text's comments and the preamble's end
+    once per text for preamble.js, looks.js and styles.js (each keeps its cap, so every answer is
+    the one before); the model keeps each .bib's entries with the text they came from; the undo
+    record compares from where the edits were. `dev/bench_native.mjs -n 9` (one core of the busy
+    machine, two runs each, with the core): the paper's keystroke model 44.1 and 26.1 ms before,
+    14.7 and 15.2 ms after; its first load 40.0 and 41.0 ms before, 35.5 and 29.7 after; a
+    keystroke in its `\title` 82 to 95 ms before, 29 to 30 after; with a 2 MB .bib 83 and 87 ms
+    before, 36 and 25 after; the undo record's diff 0.5 to 0.05 ms. Evidence: `test/scan.test.mjs`
+    (new, 5), `model.test.mjs`'s .bib check and `edge.test.mjs`'s undo check (7677 of 7677 steps),
+    each failing on a planted bug; `npm test` green (view.test.mjs V4's 50 ms timing failed once on
+    the busy machine and passed alone); `INCR_FULL=1 incremental.test.mjs` every one of 8000
+    edits equal, its fast path share check failing on main (4063ad1) the same way (334 of 7600,
+    the floor 380); `page.py long_document` 6 of 6 (11 ms for every command at a look at the
+    caret); `browser.py` 199 of 199. No LaTeX-examples clone on this machine: the corpus runs not
+    run. *B0's hostile review* (no go until F1): F1, an open undo step kept the untouched region of
+    a file that was opened over it between two keystrokes, and Ctrl+Z wrote a text that never was:
+    openFiles closes the step, and the step checks itself (`stepStart`, `stepJoin` in
+    src/editor.js: a file found changed between its commits is compared from the ends); F2, the
+    .bib cache let a closed project's entries go never (38 MB for 8 projects): it keeps what the
+    last build asked for (6 MB); F3, the kept entries are frozen; and preamble.js's
+    `stripComments` no longer says a stretch twice past 400,000 characters (a bug from before
+    B0). The long incremental run's fast path share check, failing on main too, was the streams'
+    luck, not a regression (every paragraph of every repository document takes the fast path as
+    often as with f5bb84d's sources): its floor is now 1 in 40, and an exact check per paragraph
+    guards the fast path. Evidence: the reviewer's repro "consistent" (with and without the
+    step's closing); edge.test.mjs 10691 of 10691 with 1145 outside changes (524 differ without
+    the check); model.test.mjs's .bib checks; scan.test.mjs 8; incremental 35 of 35 and with
+    `INCR_FULL=1` 35 of 35; `npm test` green but V4 (flaky, 2 of 3 alone); `history.py` 40 of 40,
+    `browser.py` 199 of 199, `page.py long_document` 6 of 6.
 ## Rules
 
 - No status commits ("Note ...", "Record ...") and no log in this file. One commit per

@@ -56,6 +56,33 @@ const tabbingOf = (app, at) => {
 const hasPre = once((src) => preambleEnd(src) >= 0);
 const widowsOn = once((src) => P.widowControl(src).on);
 const docOK = (app) => !!app.model && hasPre(app.src(app.main));
+// Hanging Indent's reading of a paragraph's start (U, src/parasrc.js unitOf): where its words
+// start, from its lead (\noindent, \hangindent on the words' line) or from its line, whichever
+// the model began the paragraph at
+const HANG = /^(\\noindent(?![A-Za-z])([ \t]*))?((?:\\hang(?:indent|after)[ \t]*(?:=[ \t]*)?[+-]?(?:\d+(?:\.\d*)?|\.\d+)[ \t]*(?:pt|bp|mm|cm|in|pc|em|ex)?[ \t]*)+)/;
+const starts = (src, U) => {
+  const out = [U.lead ? U.lead.s : U.s, U.s];
+  let ls = U.s; while (ls > 0 && src[ls - 1] !== '\n') ls--;
+  out.push(ls);
+  return [...new Set(out)].map((a) => { while (src[a] === ' ' || src[a] === '\t') a++; return a; });
+};
+function hangAt(src, U) {
+  for (const a of starts(src, U)) {
+    const m = HANG.exec(src.slice(a, a + 200));
+    if (!m || a + m[0].length > U.e) continue;
+    const hs = a + (m[1] ? m[1].length : 0);
+    return { ns: a, hs, he: a + m[0].length, ours: !!m[1] && m[2] === '' };
+  }
+  return null;
+}
+// just after a \noindent of the paragraph's own (and the spaces after it), or null
+function noindentAt(src, U) {
+  for (const a of starts(src, U)) {
+    const m = /^\\noindent(?![A-Za-z])[ \t]*/.exec(src.slice(a, a + 40));
+    if (m && a + m[0].length <= U.e) return a + m[0].length;
+  }
+  return null;
+}
 
 const ICON = {
   tabnext: '<path d="M3 10h11M10.5 6.5L14 10l-3.5 3.5M16.5 5v10"/>',
@@ -88,8 +115,11 @@ register(
     when: (app, at) => app.paraIndentCan(at, -1), whyNot: (app, at) => app.paraIndentWhy(at, -1), run: (app, args, at) => app.paraIndentStep(-1, at) },
   { id: 'paragraph-indent', name: 'Increase paragraph indent', title: 'Increase paragraph indent: the left indent to the next step of 1.27 cm (changepage\'s adjustwidth); Home\'s Increase Indent runs it outside a list',
     synonyms: ['Indent paragraph', 'Indent more', 'adjustwidth'],
+    // (Word for Mac's Control+Shift+M; elsewhere Ctrl+M is the formula's)
+    keysMac: ['Control+Shift+M'],
     when: (app, at) => app.paraIndentCan(at, 1), whyNot: (app, at) => app.paraIndentWhy(at, 1), run: (app, args, at) => app.paraIndentStep(1, at) },
-  { id: 'show-marks', name: 'Show marks', order: 70, tab: 'home', group: 'paragraph', kind: 'toggle', icon: ICON.marks, keys: ['Ctrl+Shift+8'],
+  // (Word for Mac's Cmd+8 too)
+  { id: 'show-marks', name: 'Show marks', order: 70, tab: 'home', group: 'paragraph', kind: 'toggle', icon: ICON.marks, keys: ['Ctrl+Shift+8'], keysMac: ['Ctrl+8'],
     also: [{ tab: 'view', group: 'show', name: 'Formatting marks', order: 30 }],
     title: 'Show marks (Ctrl+Shift+8): ¶ at the end of each paragraph, ↵ at each line break (\\\\), → at each \\hfill, and the space of \\vspace; nothing is written',
     synonyms: ['Show/Hide', 'Show/Hide ¶', 'Formatting marks', 'Pilcrow', 'Paragraph marks', 'Hidden marks'],
@@ -102,6 +132,18 @@ register(
     title: 'Line and Paragraph Spacing: 1.0, 1.15, 1.5 or 2.0 for the paragraph (setspace\'s environments) or the whole document, and space before or after it',
     synonyms: ['Line spacing', 'Spacing', 'Double spacing', 'One and a half spacing', 'setspace', 'onehalfspacing', 'doublespacing', 'Space before', 'Space after'],
     when: (app, at) => can(app, at) || docOK(app), whyNot: why, run: (app, args, at) => (args != null ? app.paraSpacing(args, at) : app.paraSpacingMenu(at)) },
+  // Word's keys for the three spacings it has keys for (Ctrl+1, Ctrl+5, Ctrl+2): a browser's own
+  // Ctrl and a digit picks a tab, and stays so everywhere but with the caret on the page
+  ...[['1.0', 'line-spacing-1', 'Single line spacing', 'Ctrl+1', 'one line apart', ['Single spacing', 'Line spacing 1']],
+    ['1.5', 'line-spacing-15', '1.5 line spacing', 'Ctrl+5', 'one and a half lines apart (setspace)', ['One and a half spacing', 'onehalfspacing', 'Line spacing 1.5']],
+    ['2.0', 'line-spacing-2', 'Double line spacing', 'Ctrl+2', 'two lines apart (setspace)', ['Double spacing', 'doublespacing', 'Line spacing 2']]].map(([v, id, name, key, what, synonyms]) => ({
+    id, name, keys: [key], title: name + ' (' + key + '): the paragraph\'s lines ' + what, synonyms,
+    when: can, whyNot: why, run: (app, args, at) => app.paraSpacing(v, at) })),
+  // Word's Ctrl+T, which a browser keeps for a new tab: the first line at the margin, the others
+  // 1 cm in (\hangindent), and off again as it came
+  { id: 'hanging-indent', name: 'Hanging Indent', title: 'Hanging Indent: the paragraph\'s first line at the margin, the others 1 cm in (\\hangindent); again takes it off (Paragraph… sets the width)',
+    synonyms: ['Hanging', 'Hang indent', 'hangindent', 'Outdent first line'], kind: 'toggle',
+    when: can, whyNot: why, on: (app, at) => app.paraHanging(at), run: (app, args, at) => app.paraHangingToggle(at) },
   { id: 'shading', name: 'Shading', order: 130, tab: 'home', group: 'paragraph', kind: 'split', icon: ICON.shading,
     title: 'Shading: the paragraph on a colour (tcolorbox), the colour picked last; the arrow for every colour and No Color',
     synonyms: ['Paragraph shading', 'Background colour', 'Shade', 'tcolorbox'],
@@ -473,6 +515,26 @@ export const methods = {
     if (!r.edits.length) return false;
     const pkg = r.needs && !hasPackage(src, r.needs, undefined, this.preambleOthers()) ? usePackages(src, [r.needs], { others: this.preambleOthers() }) : [];
     return this.paraApply(this.main, [...r.edits, ...pkg]);
+  },
+  // whether the paragraph hangs (Hanging Indent's state), and Hanging Indent itself
+  paraHanging(at) {
+    const p = paraOf(this, at);
+    if (!p || p.why || p.float) return null;
+    return !!hangAt(this.src(p.f), p.units[0].U);
+  },
+  // On: \noindent\hangindent=1cm before the words, or \hangindent=1cm after a \noindent of the
+  // paragraph's own. Off: the \hangindent (and \hangafter) taken out, and the \noindent only
+  // where On wrote it with them (\noindent\hangindent, no space between): so On then Off gives
+  // the bytes back, and a hanging indent written by hand is read as on, and taken off whole.
+  paraHangingToggle(at) {
+    const p = paraOf(this, at);
+    if (!p || p.why || p.float) { if (p && p.why) this.toast(p.why); return false; }
+    return this.paraRun(p, [(text, V) => {
+      const h = hangAt(text, V);
+      if (h) return [{ s: h.ours ? h.ns : h.hs, e: h.he, t: '' }];
+      const n = noindentAt(text, V);
+      return n ? [{ s: n, e: n, t: '\\hangindent=1cm ' }] : [{ s: V.s, e: V.s, t: '\\noindent\\hangindent=1cm ' }];
+    }]);
   },
   paraSpacingMenu(at) {
     const p = paraOf(this, at), ok = !!p && !p.why && !p.float;

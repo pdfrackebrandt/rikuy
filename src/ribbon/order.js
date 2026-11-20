@@ -36,8 +36,11 @@ export const TABS = [
   { id: 'smart-format', name: 'Format', ctx: 'smart', groups: [['styles', 'Shape Styles', 2], ['arrange', 'Arrange', 1]] }
 ].map((t) => ({ ...t, groups: t.groups.map(([id, name, rank = 1, more = {}]) => ({ id, name, rank, spare: !!more.spare })) }));
 
-// Word's KeyTips for the tabs (Alt, or F10, then the letter). Help is Y then 2, as in Microsoft 365.
-export const KEYTIPS = { file: 'F', home: 'H', insert: 'N', design: 'G', layout: 'P', references: 'S', review: 'R', view: 'W', help: 'Y2' };
+// Word's KeyTips for the tabs (Alt, or F10, then the letter). Help is Y then 2, as in Microsoft 365;
+// the contextual tabs J then a letter, while they show: Table Design JT, Table Layout JL, Picture
+// Format JP, Equation JE, Header & Footer JH.
+export const KEYTIPS = { file: 'F', home: 'H', insert: 'N', design: 'G', layout: 'P', references: 'S', review: 'R', view: 'W', help: 'Y2',
+  'table-design': 'JT', 'table-layout': 'JL', 'picture-format': 'JP', equation: 'JE', headfoot: 'JH' };
 
 export const tabById = (id) => TABS.find((t) => t.id === id) || null;
 export const groupOf = (tab, group) => { const t = tabById(tab); return t ? t.groups.find((g) => g.id === group) || null : null; };

@@ -563,7 +563,8 @@ Ctrl is Cmd on a Mac.
   Insert Table of Figures, Cross-reference, Mark Entry, Insert Index; each takes its arguments
   with its arguments through rikuy.api.run too (rikuy.api.run('add-source', { type, fields }))
 - Ctrl+Z, Ctrl+Shift+Z: undo, redo
-- Ctrl+O: open files; Ctrl+S: download the LaTeX source
+- Ctrl+O: open files; Ctrl+S: Save, which says the document is kept in this browser (it is
+  kept as you type) and downloads nothing; F12 (Save As) or Download LaTeX: the LaTeX source
 - Ctrl+P: Print, the PDF as TeX makes it (the Preview button shows it beside the page);
   Ctrl+\\: the source pane; Ctrl+Shift+O: outline, problems, changes
 - Ctrl+= and Ctrl+-, Ctrl+0: zoom the document in and out, actual size (on the page; a pinch
