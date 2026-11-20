@@ -8,7 +8,11 @@ import assert from 'assert';
 globalThis.window = globalThis;
 globalThis.document = { addEventListener() {}, querySelector() { return null; }, body: { classList: { contains() { return false; } } } };
 const { review, absorbText, absorbFresh, authorEdit, editSpans, byAuthor } = await import('../src/review.js');
-const { commentsOf, onlyComments, linkRole, commentsBack, bodyAt, findComments, listedFiles } = await import('../src/share.js');
+const { commentsOf, onlyComments, linkRole, commentsBack, bodyAt, findComments, listedFiles, safeCommentLine, parseCommentLine } = await import('../src/share.js');
+// a reader's comment as the author's copy takes it in (src/share.js: the base32 form), and whether
+// some words reached a text at all, as TeX source or inside a comment line's parts
+const L = (who, quote, body) => safeCommentLine({ kind: 'comment', who, quote, body });
+const reached = (text, w) => text.includes(w) || findComments(text, '').some((c) => [c.who, c.quote, c.body, ...c.replies.map((r) => r.body)].join(' ').includes(w));
 const { buildModel } = await import('../src/model.js');
 const { changes } = await import('../src/diff.js');
 const { setLanguageEdits } = await import('../src/ui/wordcount.js');
@@ -229,7 +233,7 @@ group('R4: a comments only link lets in comment lines alone, whatever its copy s
   const base = 'A line.\nB line.\nC line.';
   const theirs = 'A line.\n% comment (Ana) on "A": Why?\nB changed.\nC line.\n% comment (Ana): ok\n';
   const r = commentsOf(base, theirs);
-  assert.strictEqual(r.text, 'A line.\n% comment (Ana) on "A": Why?\nB line.\nC line.\n% comment (Ana): ok\n');
+  assert.strictEqual(r.text, 'A line.\n' + L('Ana', 'A', 'Why?') + '\nB line.\nC line.\n' + L('Ana', '', 'ok') + '\n');
   assert.strictEqual(r.dropped, 1);
   assert.ok(onlyComments(base, r.text), 'what comes in differs from the base in comment lines alone');
   assert.ok(!onlyComments('a\n', 'b\n') && onlyComments('a\n', 'a\n% reply (X): y\n'));
@@ -237,7 +241,7 @@ group('R4: a comments only link lets in comment lines alone, whatever its copy s
   const vb = 'X\n\\begin{document}\nA.\n\\begin{filecontents*}{run.sh}\necho hi\n\\end{filecontents*}\nB.\n\\end{document}\n';
   const vt = vb.replace('echo hi\n', 'echo hi\n% comment (Eve): $(touch /tmp/x)\n').replace('A.\n', 'A.\n% comment (Eve): fine\n').replace('X\n', 'X\n% comment (Eve): pre\n');
   const rv = commentsOf(vb, vt);
-  assert.ok(rv.text.includes('% comment (Eve): fine') && !rv.text.includes('touch') && !rv.text.includes('pre\n') && rv.dropped === 2, JSON.stringify(rv));
+  assert.ok(rv.text.includes(L('Eve', '', 'fine')) && !reached(rv.text, 'touch') && !reached(rv.text, 'pre') && rv.dropped === 2, JSON.stringify(rv));
   const snaps = [{ sig: 's', share: { rid: 'edit-link-1', role: 'coauthor' } }, { sig: 's', share: { rid: 'cmnt-link-1', role: 'comments' } }, { sig: 't', share: { rid: 'other', role: 'coauthor' } }];
   assert.strictEqual(linkRole(snaps, 's', 'edit-link-1'), 'coauthor');
   assert.strictEqual(linkRole(snaps, 's', 'cmnt-link-1'), 'comments');
@@ -257,7 +261,7 @@ group('R4 review: a comments only copy brings comment lines into body text alone
   for (const ch of ['\u2028', '\u2029', '\u0085']) assert.strictEqual(commentsOf(doc0, doc0.replace('Hello.\n', 'Hello.\n% comment (Eve): x' + ch + '\\textbf{LSINJECTED}\n')).text, doc0, 'nor one with ' + escape(ch));
   // (a file with CRLF line ends keeps its comment lines)
   const crlf = doc0.replace(/\n/g, '\r\n'), crlf2 = crlf.replace('Hello.\r\n', 'Hello.\r\n% comment (Ana): ok\r\n');
-  assert.strictEqual(commentsOf(crlf, crlf2).text, crlf2);
+  assert.strictEqual(commentsOf(crlf, crlf2).text, crlf.replace('Hello.\r\n', 'Hello.\r\n' + L('Ana', '', 'ok') + '\r\n'));
   // H2: comment lines only in .tex and .ltx files the document reads, in body text; every other file as it was
   const base = '\\documentclass{article}\n\\usepackage{tcolorbox}\\tcbuselibrary{listings}\n\\begin{document}\n\\section{Intro}\nHello.\n\\begin{itemize}\n\\item One\n\\end{itemize}\n'
     + '\\begin{tcblisting}{}\nx = 1\n\\end{tcblisting}\n\\begin{foo}\nF.\n\\end{foo}\n\\begin{luacode*}\ntex.print("a")\n\\end{luacode*}\nSee \\url{http://a.b/\nc}.\n\\begin{tikzpicture}\n\\draw (0,0)--(1,1);\n\\end{tikzpicture}\nEnd.\n\\end{document}\n';
@@ -270,8 +274,8 @@ group('R4 review: a comments only copy brings comment lines into body text alone
   const blocks = buildModel({ files, main: 'main.tex' }).blocks;
   const r = commentsBack(files, theirs, (f) => bodyAt(blocks, f, files.get(f)));
   const m = r.files.get('main.tex');
-  for (const w of ['OK1', 'OK2', 'OK3', 'OK4']) assert.ok(m.includes('% comment (Eve): ' + w + '\n'), w);
-  for (const w of ['BAD1', 'BAD2', 'BAD3', 'BAD4', 'BAD5']) assert.ok(!m.includes(w), w);
+  for (const w of ['OK1', 'OK2', 'OK3', 'OK4']) assert.ok(m.includes(L('Eve', '', w) + '\n'), w);
+  for (const w of ['BAD1', 'BAD2', 'BAD3', 'BAD4', 'BAD5']) assert.ok(!reached(m, w), w);
   for (const f of ['refs.bib', 'my.sty', 'unread.tex', 'data.csv']) assert.strictEqual(r.files.get(f), files.get(f), f + ' byte for byte as the base had it');
   assert.ok(!r.files.has('new.tex') && r.dropped === 10, 'a file they added is not taken; each line left out counted: ' + r.dropped);
   // M2: where a file of the project changes what % is, no comment line comes in at all
@@ -281,31 +285,71 @@ group('R4 review: a comments only copy brings comment lines into body text alone
   const rc = commentsBack(cf, new Map([['main.tex', catT]]), (f) => bodyAt(cb, f, cf.get(f)));
   assert.ok(rc.files.get('main.tex') === cat && rc.dropped >= 1, 'a catcode of % changed: none at all');
   for (const c of ['\\catcode`\\^^25=12', '\\ExplSyntaxOn\\char_set_catcode:nn {37} {12}\\ExplSyntaxOff', '\\ExplSyntaxOn\\char_set_catcode_other:n {37}\\ExplSyntaxOff', '\\catcode\\numexpr36+1\\relax=12', '\\catcode\'45=12', '\\char_set_catcode_other:N \\%', '\\catcode37=12', '\\catcode `\\% = 12', '\\makeother\\%', '\\@makeother\\%', '\\let\\do\\@makeother\\dospecials', '\\catcode"25=11'])
-    assert.ok(commentsBack(new Map([['main.tex', cat.replace('\\catcode`\\%=12', c)]]), new Map([['main.tex', catT.replace('\\catcode`\\%=12', c)]]), () => () => true).files.get('main.tex').indexOf('CATINJECTED') < 0, c);
+    assert.ok(commentsBack(new Map([['main.tex', cat.replace('\\catcode`\\%=12', c)]]), new Map([['main.tex', catT.replace('\\catcode`\\%=12', c)]]), () => () => true).files.get('main.tex').indexOf('CATINJECTED') < 0 && !reached(commentsBack(new Map([['main.tex', cat.replace('\\catcode`\\%=12', c)]]), new Map([['main.tex', catT.replace('\\catcode`\\%=12', c)]]), () => () => true).files.get('main.tex'), 'CATINJECTED'), c);
   // (V3, V4) \verb|}| keeps the count; a line inside a multi-line \url is out; a % in \href's address is a letter;
   // a file the document lists as it stands takes none
   const back1 = (files, edit) => { const th = new Map(files); edit(th); const bl = buildModel({ files, main: 'main.tex' }).blocks; return commentsBack(files, th, (f) => bodyAt(bl, f, files.get(f))); };
   const vd = '\\documentclass{article}\n\\usepackage{url,hyperref,listings}\n\\begin{document}\nSee \\verb|}| and \\url{http://a.b/\nc} then.\nA \\href{http://x.org/a%20b}{the page}.\nSame paragraph.\n\n\\input{code}\n\\lstinputlisting{code.tex}\n\\end{document}\n';
   const vf = new Map([['main.tex', vd], ['code.tex', 'Code line.\n']]);
   const rv3 = back1(vf, (th) => { th.set('main.tex', vd.replace('http://a.b/\n', 'http://a.b/\n% comment (Eve): URLV3\n').replace('{the page}.\n', '{the page}.\n% comment (Eve): HREFOK\n')); th.set('code.tex', 'Code line.\n% comment (Eve): LISTED\n'); });
-  assert.ok(!rv3.files.get('main.tex').includes('URLV3') && rv3.files.get('main.tex').includes('% comment (Eve): HREFOK\n') && rv3.files.get('code.tex') === 'Code line.\n', JSON.stringify([...rv3.files]));
+  assert.ok(!reached(rv3.files.get('main.tex'), 'URLV3') && rv3.files.get('main.tex').includes(L('Eve', '', 'HREFOK') + '\n') && rv3.files.get('code.tex') === 'Code line.\n', JSON.stringify([...rv3.files]));
   // (Grok Bot's check of V1 to V4) a catcode in an \input file of any extension; \url|...| with a %
   // before a multi-line \url{...}; a listed name with dir/.. or quotes
   const pre4 = (x) => '\\documentclass{article}\n\\usepackage{url}\n' + x + '\\begin{document}\nFirst line.\n\nSecond line.\n\\end{document}\n';
   for (const [n, t] of [['setup.txt', '\\catcode`\\%=12\n'], ['fig.tikz', '\\catcode37=12\n']]) {
     const d = pre4('\\input{' + n + '}\n');
     const r = back1(new Map([['main.tex', d], [n, t]]), (th) => th.set('main.tex', d.replace('First line.\n', 'First line.\n% comment (Eve): \\textbf{EXEC}\n')));
-    assert.ok(!r.files.get('main.tex').includes('EXEC'), n);
+    assert.ok(!reached(r.files.get('main.tex'), 'EXEC'), n);
   }
   const vu = '\\documentclass{article}\n\\usepackage{url}\n\\begin{document}\nSee \\url|http://x/%| and \\url{http://a.b/\nc} then.\n\\end{document}\n';
   const ru = back1(new Map([['main.tex', vu]]), (th) => th.set('main.tex', vu.replace('http://a.b/\n', 'http://a.b/\n% comment (Eve): URLD\n')));
-  assert.ok(!ru.files.get('main.tex').includes('URLD'), ru.files.get('main.tex'));
+  assert.ok(!reached(ru.files.get('main.tex'), 'URLD'), ru.files.get('main.tex'));
   for (const l of ['\\lstinputlisting[firstline=2]{sub/../code.tex}', '\\VerbatimInput{"code.tex"}'])
     assert.ok(listedFiles(new Map([['main.tex', l]])).has('code.tex'), l);
   for (const l of ['\\lstinputlisting[language=TeX]{./code}', '\\verbatiminput{code.tex}', '\\inputminted{latex}{code.tex}', '\\tcbinputlisting{listing file=code.tex}', '\\VerbatimInput[frame=single]{code}'])
     assert.ok(listedFiles(new Map([['main.tex', l]])).has('code.tex'), l);
   const sty2 = new Map([['main.tex', doc0], ['p.sty', '\\catcode`\\%=12\n']]);
   assert.strictEqual(commentsBack(sty2, new Map([['main.tex', doc0.replace('Hello.\n', 'Hello.\n% comment (Eve): x\n')], ['p.sty', '\\catcode`\\%=12\n']]), () => () => true).files.get('main.tex'), doc0, 'a package of the project changing it: none either');
+});
+
+group('S5: a comment from a comments only copy runs nothing, even where % stopped being a comment', () => {
+  // three documents that make % an ordinary character without naming a catcode in any form the
+  // source can be searched for: a \csname built name, \scantokens over a name made of strings, Lua
+  const docs = [
+    '\\documentclass{article}\n\\begin{document}\n\\csname c\\string atcode\\endcsname 37=12\nFirst line.\n\nSecond line.\n\\end{document}\n',
+    '\\documentclass{article}\n\\edef\\rkcc{\\string\\c atcode}\n\\begin{document}\n\\scantokens\\expandafter{\\rkcc 37=12\\relax}\nFirst line.\n\nSecond line.\n\\end{document}\n',
+    '\\documentclass{article}\n\\usepackage{luacode}\n\\begin{document}\n\\begin{luacode}\ntex["set" .. "cat" .. "code"]("global", 37, 12)\n\\end{luacode}\nFirst line.\n\nSecond line.\n\\end{document}\n'
+  ];
+  const payload = '\\uppercase{rkinjected} \\immediate\\write18{echo x} } $ & # ^^5c _ ~ % \u00e9 \u65e5';
+  for (const d of docs) {
+    const files = new Map([['main.tex', d]]);
+    const blocks = buildModel({ files, main: 'main.tex' }).blocks;
+    const theirs = d.replace('First line.\n', 'First line.\n% comment (Eve) on "First {line}": ' + payload + '\n').replace('Second line.\n', 'Second line.\n% comment (E\\ve$): fine\n% reply (Mallory): \\def\\x{X}\\x\n');
+    const r = commentsBack(files, new Map([['main.tex', theirs]]), (f) => bodyAt(blocks, f, files.get(f)));
+    const m = r.files.get('main.tex');
+    const added = m.split('\n').filter((l) => !d.split('\n').includes(l));
+    assert.strictEqual(added.length, 3, d + '\n' + m);
+    // every line that came in: % and then letters, digits and spaces alone, whatever % has become
+    for (const l of added) assert.ok(/^% (comment|reply)32( [A-Z2-7]+| 0)+$/.test(l), l);
+    assert.ok(!/\\(uppercase|write18|def|immediate)/.test(m), 'no command of theirs in the source');
+    const c = findComments(m, 'main.tex');
+    assert.deepStrictEqual(c.map((x) => [x.who, x.quote, x.body, x.replies.map((y) => [y.who, y.body])]),
+      [['Eve', 'First {line}', payload, []], ['E\\ve$', '', 'fine', [['Mallory', '\\def\\x{X}\\x']]]], 'shown as typed');
+    // and again: the same copy brings nothing new, and keeps them
+    assert.strictEqual(commentsBack(r.files, new Map([['main.tex', theirs]]), (f) => bodyAt(buildModel({ files: r.files, main: 'main.tex' }).blocks, f, r.files.get(f))).files.get('main.tex'), m, 'the same comments in their first form are the same lines');
+  }
+  // a comment line of the base in the first form, which their copy keeps: kept as it was, not
+  // written again; one they took out goes, in either form
+  const b = 'A line.\n% comment (Ana): mine\nB line.\n' + L('Eve', '', 'old') + '\nC line.\n';
+  assert.strictEqual(commentsOf(b, b).text, b);
+  const t2 = b.replace(L('Eve', '', 'old') + '\n', '% comment (Eve): old\n');
+  assert.strictEqual(commentsOf(b, t2).text, b, 'the same comment in the other form is the same line');
+  assert.strictEqual(commentsOf(b, b.replace('% comment (Ana): mine\n', '')).text, b.replace('% comment (Ana): mine\n', ''));
+  // a line that only looks like the base32 form is no comment and does not come in
+  assert.strictEqual(parseCommentLine('% comment32 AB \\input{x} CD'), null);
+  assert.strictEqual(commentsOf('A.\nB.\n', 'A.\n% comment32 AB \\input{x} CD\nB.\n').text, 'A.\nB.\n');
+  // what a reader of such a link writes is already in that form, and Review sees it as a comment
+  assert.ok(onlyComments(b, b.replace('C line.\n', 'C line.\n' + L('Bo', 'C', 'x') + '\n')));
 });
 
 group('R4 review: two people\'s edits that touch keep each one\'s author, and Reject by one undoes theirs alone (M4)', () => {

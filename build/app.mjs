@@ -20,6 +20,7 @@ import zlib from 'zlib';
 import { describe } from '../src/commands.js';
 import '../src/cmd/index.js';
 import { TABS } from '../src/ribbon/order.js';
+import { WIDGET_POLICY } from '../src/widget.js';
 
 const root = path.join(path.dirname(new URL(import.meta.url).pathname), '..');
 const R = (p) => path.join(root, p);
@@ -196,7 +197,8 @@ export function appFiles(OUT) {
   fs.mkdirSync(O('icons'), { recursive: true });
   for (const f of fs.readdirSync(R('build/icons')).filter((n) => n.endsWith('.png'))) fs.copyFileSync(R('build/icons/' + f), O('icons/' + f));
   fs.writeFileSync(O('manifest.webmanifest'), JSON.stringify(manifest(), null, 1) + '\n');
-  fs.writeFileSync(O('_headers'), headers());
+  // (index.html is written by now, with the script whose hash the policy names)
+  fs.writeFileSync(O('_headers'), headers(pageHashes(fs.readFileSync(O('index.html'), 'utf8'))));
   fs.writeFileSync(O('404.html'), NOT_FOUND);
   fs.writeFileSync(O('robots.txt'), robots());
   fs.writeFileSync(O('sitemap.xml'), sitemap());
@@ -835,26 +837,80 @@ export function cleanApp(OUT) {
   for (const p of ['lib', 'icons', 'fonts', 'manifest.webmanifest', 'sw.js', '_headers', '404.html', 'robots.txt', 'sitemap.xml', 'llms.txt', 'llms-full.txt', 'og.png']) fs.rmSync(path.join(OUT, p), { recursive: true, force: true });
 }
 
-// The hosted page's Content-Security-Policy: test/serve.py's (the artifact host's, under which
-// every browser test runs) without the outside sources the hosted build never uses (it ships its
-// libraries and fonts; Pyodide comes in the packs), plus frame-ancestors 'none' (no site may frame
-// it) and manifest-src. test/deploy_check.py holds the two policies to exactly that difference.
-export const CSP = [
-  "default-src 'self'",
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data: blob:",
-  "media-src 'self' data: blob:",
-  "connect-src 'self' blob:",
-  "worker-src 'self' blob:",
-  "manifest-src 'self'",
-  "form-action 'self'",
-  "frame-src 'self' blob: data:",
-  "frame-ancestors 'none'",
-  "object-src 'none'",
-  "base-uri 'self'"
-].join('; ');
+// The hosted page's Content-Security-Policy. test/serve.py and test/browser.py's open_page serve
+// the page under this same policy, read back from dist/_headers (with jsDelivr added, where
+// rikuy.html takes the libraries index.html ships in lib/), so whatever those tests run, the
+// hosted copy can. test/deploy_check.py pins every directive. The workers start from a blob:
+// bootstrap (src/tex.js, src/word.js, src/spell/client.js), so they run under it too.
+//
+// script-src runs no text that is not a file of this site, and no eval:
+//   'self'                the page's files: lib/, the workers (tex/engine.js, spell/, word/), git.js
+//   'sha256-...'          the page's one inline script, the app's bundle, by its hash (pageHashes,
+//                         computed from the built index.html: a change of one byte needs a build);
+//                         index.html's other script element is schema.org data, which runs nothing
+//   'wasm-unsafe-eval'    compiling WebAssembly, and nothing else: TeX and its programs, Pyodide,
+//                         pdf.js, pandoc, Hunspell, Harper and the editor's native core are all
+//                         WebAssembly. Safari has it from 16; Safari 15 refuses WebAssembly here
+//                         (the editor runs, TeX does not), Chromium and Firefox have it since 2022
+//   blob:                 Pyodide's runtime (pyodide.asm.mjs), which reaches the TeX worker inside a
+//                         pack and is imported from a blob: address (tex/tools.js makePython): the
+//                         worker, started from a blob:, has this policy; only this site's own
+//                         scripts can make a blob: address
+// Nothing in the page or its workers asks for eval or Function. The code that could, checked on
+// 20 November 2026: pdf.js compiles PostScript functions with Function only when isEvalSupported
+// is set, and src/pdfview.js and tex/engine.js set it false; WebPerl's js() (biber.js) evals what
+// Perl asks, and biber asks nothing; Pyodide evals EM_ASM and EM_JS code of extension modules and
+// emscripten_run_script, which latexminted's wheels never reach; JSZip's setImmediate makes a
+// Function only from a string, which it is never given; git.js's Function.prototype.bind
+// stand-in is used only where the browser has no bind. A browser test that met one of them
+// would fail: test/csp.py runs a whole session under this policy and counts every refusal.
+// Live figures run author's scripts, so they cannot run in a document under this policy: on the
+// hosted page each runs in its own sandboxed document, widget-<hash>.html, with WIDGET_POLICY
+// (src/widget.js), and the rule for that file below takes this one away from it.
+// style-src keeps 'unsafe-inline': the page sets styles from script everywhere, and a style
+// cannot run code. frame-src 'self': the hosted page frames only its widget document.
+// connect-src: the page's own files and blob:, no other host. Git's push, pull and clone go
+// through Rikuy's own proxy on this same site (/git: functions/git/[[path]].js, src/gitproxy.js),
+// which passes git's smart HTTP alone to public https hosts. The workers share this policy (they
+// start from a blob:); nothing a document runs there can make a request, and the proxy would
+// take nothing but git's requests from it.
+export function policy(hashes) {
+  if (!hashes.length || hashes.some((h) => !/^[A-Za-z0-9+/]{43}=$/.test(h))) throw new Error('policy: the page\'s inline scripts need their SHA-256 hashes in base64');
+  return [
+    "default-src 'self'",
+    "script-src 'self' " + hashes.map((h) => "'sha256-" + h + "'").join(' ') + " 'wasm-unsafe-eval' blob:",
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data: blob:",
+    "media-src 'self' data: blob:",
+    "connect-src 'self' blob:",
+    "worker-src 'self' blob:",
+    "manifest-src 'self'",
+    "form-action 'self'",
+    "frame-src 'self'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    "base-uri 'self'"
+  ].join('; ');
+}
+
+// The SHA-256 (base64) of every inline script element of a page that runs: a classic or a module
+// script, not data such as schema.org's application/ld+json, nor one loaded by src. The hash is
+// of the text the browser reads, and an HTML parser turns CR and CR LF into LF and NUL into
+// U+FFFD before a script sees its text: a page with those in a script is refused here rather than
+// given a hash the browser would not compute.
+export function pageHashes(html) {
+  const out = [];
+  for (const m of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script\s*>/gi)) {
+    const attrs = m[1];
+    if (/\ssrc\s*=/i.test(attrs)) continue;
+    const type = /\stype\s*=\s*["']?([^"'\s>]+)/i.exec(attrs);
+    if (type && !/^(text\/javascript|application\/javascript|module)$/i.test(type[1])) continue;
+    if (/[\r\0]/.test(m[2])) throw new Error('pageHashes: an inline script holds a CR or NUL, which the HTML parser changes');
+    out.push(crypto.createHash('sha256').update(Buffer.from(m[2], 'utf8')).digest('base64'));
+  }
+  return [...new Set(out)];
+}
 
 // Cloudflare Pages' headers (_headers: at most 100 rules; every rule matching a path applies, and
 // a header two rules set gets both values joined), so Cache-Control is set by exactly one rule per
@@ -863,21 +919,36 @@ export const CSP = [
 // immutable; the page, the service worker and the manifest are revalidated on every request,
 // so an update is seen at once; everything else keeps Pages' default (max-age=0,
 // must-revalidate). The service worker checks every file it keeps by hash anyway.
-export function headers() {
+//
+// Strict-Transport-Security: a browser that has seen the site once over HTTPS never asks for it
+// over plain HTTP again for a year (Cloudflare's redirect alone leaves the first request of each
+// visit open to a downgrade). This host only: includeSubDomains and preload would bind every name
+// under rackebrandt.pe, the personal site and whatever comes later among them, for that year.
+export const HSTS = 'max-age=31536000';
+// The live figures' document (src/widget.js, WIDGET_SHELL): the page's policy taken away and the
+// widgets' own put in its place (Pages applies the rules in order, and a detached header set
+// again in the same rule keeps the new value), and it may be framed by the page alone.
+export function headers(hashes) {
   const NO_CACHE = 'no-cache';
   const FOREVER = 'public, max-age=31536000, immutable';
   const rule = (p, ...h) => p + '\n' + h.map((x) => '  ' + x).join('\n') + '\n';
   return '# Written by build/app.mjs for Cloudflare Pages; see docs/HOSTING.md\n'
-    + rule('/*', 'Content-Security-Policy: ' + CSP, 'X-Content-Type-Options: nosniff', 'X-Frame-Options: DENY', 'Referrer-Policy: no-referrer',
+    + rule('/*', 'Strict-Transport-Security: ' + HSTS, 'Content-Security-Policy: ' + policy(hashes), 'X-Content-Type-Options: nosniff', 'X-Frame-Options: DENY', 'Referrer-Policy: no-referrer',
       'Permissions-Policy: accelerometer=(), browsing-topics=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), hid=(), magnetometer=(), microphone=(), midi=(), payment=(), serial=(), usb=(), xr-spatial-tracking=()')
-    + ['/', '/index.html', '/sw.js', '/manifest.webmanifest'].map((p) => rule(p, 'Cache-Control: ' + NO_CACHE)).join('')
+    + rule('/widget-*', '! Content-Security-Policy', '! X-Frame-Options', 'Content-Security-Policy: ' + WIDGET_POLICY)
+    // (the page runs only if its inline script is byte for byte the one whose hash the policy
+    // names: no-transform asks Cloudflare's edge, and anything between, to change none of it,
+    // e.g. Email Address Obfuscation, which a zone has on by default; deploy.yml checks the live
+    // page against its policy after each deployment, dev/live_check.py)
+    + ['/', '/index.html'].map((p) => rule(p, 'Cache-Control: ' + NO_CACHE + ', no-transform')).join('')
+    + ['/sw.js', '/manifest.webmanifest'].map((p) => rule(p, 'Cache-Control: ' + NO_CACHE)).join('')
     // What agents and crawlers fetch, and only that: readable from a script on any site (they
     // hold nothing private), and as UTF-8 text (the guides have characters beyond ASCII's reach
     // in the sample; a default type without a charset reads them as Latin-1).
     // (text/plain, which a browser shows; it would save a text/markdown file instead of showing it)
     + [['/llms.txt', 'text/plain'], ['/llms-full.txt', 'text/plain'], ['/robots.txt', 'text/plain'], ['/sitemap.xml', 'application/xml']]
       .map(([p, t]) => rule(p, 'Access-Control-Allow-Origin: *', 'Content-Type: ' + t + '; charset=utf-8')).join('')
-    + ['/tex/p-*', '/tex/t-*', '/tex/b-*', '/tex/w-*', '/tex/m-*', '/fonts/*', '/word/pandoc-*', '/core/*', '/spell/*', '/texnames-*'].map((p) => rule(p, 'Cache-Control: ' + FOREVER)).join('');
+    + ['/tex/p-*', '/tex/t-*', '/tex/b-*', '/tex/w-*', '/tex/m-*', '/fonts/*', '/word/pandoc-*', '/core/*', '/spell/*', '/texnames-*', '/widget-*'].map((p) => rule(p, 'Cache-Control: ' + FOREVER)).join('');
 }
 
 // Without a 404.html, Pages answers a missing file with index.html and 200 (it takes the site for
@@ -934,8 +1005,11 @@ export function finishApp(OUT) {
     // a name whose digits are not the start of the file's own SHA-256 (a hash of something else,
     // such as what the file wraps) is treated as bound to the version: never kept as immutable
     const ca = ADDRESSED.exec(path.basename(rel));
-    files[rel] = [h, buf.length, WORD_PART.test(rel) ? 'n' : ca && h.startsWith(ca[1]) ? 'i' : buf.length <= PRECACHE_MAX ? 'p' : 'l'];
-    if (LATER.test(rel) && files[rel][2] === 'i') files[rel].push(1);
+    // (a page file is listed by the address Pages answers it at, without .html: Pages redirects
+    // x.html to x, and the worker's install would refuse the redirect)
+    const url = /\.html$/.test(rel) ? rel.slice(0, -5) : rel;
+    files[url] = [h, buf.length, WORD_PART.test(rel) ? 'n' : ca && h.startsWith(ca[1]) ? 'i' : buf.length <= PRECACHE_MAX ? 'p' : 'l'];
+    if (LATER.test(rel) && files[url][2] === 'i') files[url].push(1);
   }
   const v = sha(lines.join('\n')).slice(0, 16);
   const stamped = normal.replace(META, '$1' + v + '$3');
