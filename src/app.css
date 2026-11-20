@@ -337,10 +337,14 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
   /* (a glyph for an icon, Symbol's Ω, in the icon's box, so its name lines up with the others') */
   .rb-grp.lay > .btn[data-size="L"] > .sym-g { display: block; height: 24px; font-size: 21px; line-height: 24px; }
   .rb-grp.lay .btn[data-size="L"] .rb-bl > .rb-car { margin: 1px 0 0; }
-  /* a large split button: its own part above, its menu's arrow a strip under it */
+  /* a large split button as Word's: its icon alone above (as high as a large button's), its name
+     and arrow below, in the part that opens the menu, where a large button has its name */
   .rb-grp.lay > .rb-split[data-size="L"] { flex-direction: column; height: 66px; }
-  .rb-grp.lay > .rb-split[data-size="L"] > .btn:first-child { height: 52px; padding: 2px 5px 0; gap: 1px; border-radius: 4px 4px 0 0; }
-  .rb-grp.lay > .rb-split[data-size="L"] > .rb-x { width: 100%; height: 14px; border-radius: 0 0 4px 4px; }
+  .rb-grp.lay > .rb-split[data-size="L"] > .btn:first-child { height: 30px; width: 100%; padding: 4px 5px 2px; gap: 0; border-radius: 4px 4px 0 0; }
+  .rb-grp.lay > .rb-split[data-size="L"] > .btn:first-child > .rb-bl { display: none; }
+  .rb-grp.lay > .rb-split[data-size="L"] > .rb-x { display: flex; flex-direction: column; justify-content: flex-start; align-items: center; width: 100%; height: 36px; padding: 1px 5px 0; border-radius: 0 0 4px 4px; font-size: 12px; line-height: 14px; }
+  .rb-grp.lay > .rb-split[data-size="L"] > .rb-x > svg:not(.rb-car) { display: none; }
+  .rb-grp.lay > .rb-split[data-size="L"] > .rb-x > .rb-xname { display: flex; flex-direction: column; align-items: center; text-align: center; }
   /* a gallery's tiles, side by side in one box */
   .rb-grp.lay > .btn[data-size="T"] { grid-row-end: span 3; align-self: center; width: 40px; height: 48px; padding: 0; justify-content: center; border: 1px solid var(--line); border-radius: 0; margin-left: -2px; background: var(--panel); }
   .rb-grp.lay > :not([data-size="T"]) + .btn[data-size="T"] { border-radius: 4px 0 0 4px; margin-left: 0; }
@@ -375,8 +379,11 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
   .rb-grp.lay:is(.sm, .nm) > .btn[data-size="T"] { width: 26px; padding: 0; justify-content: center; border-radius: 4px; }
   .rb-grp.lay:is(.sm, .nm) > .btn[data-size="T"][aria-pressed="true"] { background: var(--blue-wash); }
   .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] { flex-direction: row; height: 22px; }
-  .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .btn:first-child { border-radius: 4px 0 0 4px; }
-  .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .rb-x { width: 14px; height: 22px; border-radius: 0 4px 4px 0; }
+  .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .btn:first-child { width: auto; height: 22px; padding: 0 6px 0 3px; gap: 4px; border-radius: 4px 0 0 4px; }
+  .rb-grp.lay.sm:not(.nm) > .rb-split[data-size="L"] > .btn:first-child > .rb-bl { display: flex; }
+  .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .rb-x { width: 14px; height: 22px; padding: 0; border-radius: 0 4px 4px 0; }
+  .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .rb-x > svg:not(.rb-car) { display: inline; }
+  .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .rb-x > .rb-xname { display: none; }
   .rb-grp.lay.nm > [data-size] .rb-bl, .rb-grp.lay.nm > .rb-split > .btn .rb-bl { display: none; }
   /* (rb-fold's 32 px for a button whose name went must not widen a group already without names:
      every step of ribbonFit takes room) */
@@ -388,7 +395,7 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
 }
 /* a name a laid out group gives a button that had none, and a menu's arrow after a name: from
    900 px, where the group has Word's layout */
-.rb-xl, .rb-car, .rb-larrow { display: none; }
+.rb-xl, .rb-car, .rb-larrow, .rb-xname { display: none; }
 @media (min-width: 900px) and (pointer: fine) { .rb-grp.lay:not(.folded):not(.nm) .rb-xl { display: flex; } }
 /* File opens a backstage of the same commands: sections down the page, not another ribbon row */
 /* the File sheet is the ribbon, in the flow: it does not cover the page, so a click on the page still lands */

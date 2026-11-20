@@ -9,7 +9,8 @@
 // keytip: the letters that run it once its tab's KeyTip was pressed (Alt, then the tab's letter,
 // then these), '-' for none. The shown name, where given, is the name Word shows when it is shorter
 // than the control's own (Word's "Delete" for Delete Comment); the accessible name stays the
-// command's (agents find controls by it). '|' starts a new column. A command not listed (a batch's
+// command's (agents find controls by it), and holds the shown name (one speaks what one sees:
+// test/commands.test.mjs). '|' starts a new column. A command not listed (a batch's
 // new one) comes after the listed ones, small. A command that a group's corner arrow runs (LAUNCH)
 // and that the group has as a button too is that arrow, with a mouse from 900 px (its line keeps
 // its place for a narrower row). Home has its own rules in src/app.css; its KeyTips are TIPS.home
@@ -39,12 +40,12 @@ export const LAYOUT = {
     // (Word's Indent and Spacing: Left over Right, then Before over After)
     paragraph: ['indent-left S IL', 'indent-right S IR', '|', 'spacing-before S SB', 'spacing-after S SA', '|', 'tab-next L TN'],
     arrange: ['picture-position L PO', 'picture-wrap L TW', 'picture-rotate S AY'],
-    document: ['doc-class S DC', 'base-size S DS', 'two-sided S DT']
+    document: ['doc-class S DC', 'base-size S DS Base font size', 'two-sided S DT']
   },
   references: {
     toc: ['table-of-contents L T', 'toc-add-text S A'],
-    footnotes: ['footnote L F Insert Footnote', 'endnote S E', 'next-footnote S O', 'show-notes S H', 'footnote-options I -'],
-    citations: ['citation L C Insert Citation', 'manage-sources S M', 'citation-style S L', 'bibliography S B', 'add-source S W'],
+    footnotes: ['footnote L F', 'endnote S E', 'next-footnote S O', 'show-notes S H', 'footnote-options I -'],
+    citations: ['citation L C', 'manage-sources S M', 'citation-style S L', 'bibliography S B', 'add-source S W'],
     captions: ['insert-caption L P', 'table-of-figures S G', 'cross-reference S RF'],
     index: ['mark-entry L N', 'insert-index S X'],
     authorities: ['mark-citation L I', 'insert-toa S S']
@@ -55,7 +56,7 @@ export const LAYOUT = {
     accessibility: ['check-accessibility L A1'],
     language: ['language L U Language'],
     comments: ['comment-new L C', 'comment-delete L D Delete', 'comment-prev S V Previous', 'comment-next S N Next', 'comments-show L P Show Comments'],
-    tracking: ['track-changes L G', 'display-for-review S TD', 'show-markup S TM Show Markup', 'reviewing-pane S TP Reviewing Pane'],
+    tracking: ['track-changes L G', 'display-for-review S TD Display for Review', 'show-markup S TM Show Markup', 'reviewing-pane S TP Reviewing Pane'],
     changes: ['change-accept L A2', 'change-reject L J', 'change-prev S F Previous', 'change-next S H Next'],
     compare: ['compare L M Compare'],
     versions: ['version-save S K Save Version', 'versions S Y Version History']

@@ -160,6 +160,10 @@ ok('Word\'s layout of the tabs (src/ribbon/layout.js): every line a command plac
       const c = command(l.id);
       assert.ok(c && places(c).some((p) => p.tab === tab && p.group === group), l.id + ' is placed in ' + tab + '/' + group);
       assert.ok(['L', 'S', 'I', 'T'].includes(l.size), l.id + ': size ' + l.size);
+      // the name a button shows is in its accessible name (WCAG 2.5.3: one says what one sees)
+      const p = places(c).find((x) => x.tab === tab && x.group === group);
+      const shown = l.shown || (c.label ? (p.main ? c.label : p.name) : p.name);
+      assert.ok(p.name.toLowerCase().includes(shown.toLowerCase()), tab + ': ' + l.id + ' shows ' + shown + ', named ' + p.name);
     }
   }
   for (const k of CHECKS) assert.ok(groupOf(...k.split('/')), k);

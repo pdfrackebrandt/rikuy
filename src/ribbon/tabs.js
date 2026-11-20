@@ -247,7 +247,20 @@ export const tabs = {
       b.append(bl);
     }
     if (c.kind === 'menu') { b.setAttribute('aria-haspopup', 'menu'); b.setAttribute('aria-expanded', 'false'); }
-    if (c.kind === 'split') return splitButton(this, b, p.name, () => this.commandMenu(c));
+    if (c.kind === 'split') {
+      const box = splitButton(this, b, p.name, () => this.commandMenu(c));
+      // A large split button as Word's: its icon above runs it, its name and arrow below open the
+      // menu. The name below is drawn in the arrow's part, which is named "<name> options", so
+      // what it shows is in its name; the button keeps its own (hidden there) for a smaller row.
+      if (l && l.size === 'L' && shown) {
+        const x = box.lastChild, bl = mk('span', 'rb-bl rb-xname'), lines = twoLines(shown);
+        lines.forEach((t, k) => { if (k) bl.append(' '); bl.append(mk('span', 'rb-ln', t)); });
+        (lines.length > 1 ? bl.lastChild : bl).insertAdjacentHTML('beforeend', SVG(CARET).replace('<svg ', '<svg class="rb-car" '));
+        bl.setAttribute('aria-hidden', 'true');
+        x.append(bl);
+      }
+      return box;
+    }
     return b;
   },
 
