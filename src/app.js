@@ -1618,7 +1618,11 @@ class App {
     }
     // in a blank paragraph too (a new document, the line after Enter): there they were typed
     // as the characters, though that is where an equation or a heading most often starts
-    if (data === '$' && !range && !raw && (c.collapsed || c.ghost)) { this.newMath(); return; }
+    if (data === '$' && !range && !raw && (c.collapsed || c.ghost)) {
+      // (the second $ of a display's closing $$: the first one closed it)
+      if (this.swallowDollar && performance.now() - this.swallowDollar < 1500) { this.swallowDollar = 0; return; }
+      this.newMath(); return;
+    }
     if (data === '\\' && !range && !raw && (c.collapsed || c.ghost)) { this.openPalette(); return; }
     if (c.ghost) { this.ghostInsert(raw ? data : escapeTeX(data, ' ')); return; }
     const f = range ? range.f : c.f;
@@ -2906,6 +2910,8 @@ class App {
       decimalComma,
       baseDepth: () => (st.multi ? 1 : 0),
       onDollar: opts.onDollar,
+      closer: () => this.pop && this.pop.closer,
+      onCloser: () => opts.onEnter(),
       // what the field cannot hold, typed as LaTeX (\begin{aligned}): it goes on in the LaTeX
       // box above, at the caret's place, the field showing what it makes
       toLatex: (more) => {
@@ -3041,7 +3047,12 @@ class App {
       if (e.key === 'Enter' && (!display || e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
       // (the closing $ of a formula in the line, as typed in the source; \$ stays a dollar sign)
-      if (e.key === '$' && !display && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
+      if (e.key === '$' && (!display || (this.pop && this.pop.dollarClose)) && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); if (display) this.swallowDollar = performance.now(); this.closePop(); }
+      // \) or \] typed in the box ends a formula opened by \( or \[
+      if (this.pop && this.pop.closer && e.key === this.pop.closer && /(^|[^\\])\\$/.test(ta.value.slice(0, ta.selectionStart))) {
+        e.preventDefault(); ta.setRangeText('', ta.selectionStart - 1, ta.selectionStart, 'end'); ta.dispatchEvent(new Event('input'));
+        if (stay()) return; push.flush(); this.closePop();
+      }
     });
     // However the box closes, what was typed is kept: text held back is written made whole
     // (mathMadeWhole), in the box's undo step.
@@ -3088,8 +3099,16 @@ class App {
         P.wordTyping.newRow();
       } : null,
       onEnter: () => { if (stay()) return; push.flush(); this.closePop(); },
-      // ($ closes a formula in the line as it does in the source: $x^2$ typed as in Overleaf)
-      onDollar: display ? null : () => { if (stay()) return; push.flush(); this.closePop(); },
+      // ($ closes a formula in the line as it does in the source, $x^2$ typed as in Overleaf, and a
+      // display opened by $$ at its closing $$, the second $ taken on the page: insertText)
+      onDollar: (check) => {
+        const ok = !display || !!(this.pop && this.pop.dollarClose);
+        if (check || !ok) return ok;
+        if (stay()) return;
+        push.flush();
+        if (display) this.swallowDollar = performance.now();
+        this.closePop();
+      },
       onEscape: () => { push.flush(); this.closePop(); }
     });
   }
@@ -3128,7 +3147,10 @@ class App {
     this.positionPop();
   }
 
-  newMath() {
+  // o.open, o.close: the delimiters (\( and \) typed as such; $ by default); o.closer: the key
+  // that after a backslash ends it
+  newMath(o = {}) {
+    const open = o.open || '$', close = o.close || '$';
     const c = this.caretNow();
     if (!c) return;
     const sel = getSelection();
@@ -3136,6 +3158,7 @@ class App {
     // (where a display could stand instead, for the Equation tab's Display)
     const canDisplay = this.eqCanDisplayHere(this.ribbonAt());
     const p = this.makePop(null, 'pop-math', 'New inline math');
+    this.pop.closer = o.closer || null;
     this.pop.display = false;
     this.pop.eqWhere = { display: canDisplay };
     this.pop.rect = rect && (rect.width || rect.height) ? rect : (sel.anchorNode && sel.anchorNode.parentElement ? sel.anchorNode.parentElement.getBoundingClientRect() : null);
@@ -3145,7 +3168,7 @@ class App {
     const prev = document.createElement('div'); prev.className = 'pv';
     const err = document.createElement('div'); err.className = 'pv-err'; err.hidden = true;
     const row = document.createElement('div'); row.className = 'pop-row';
-    const hint = document.createElement('span'); hint.className = 'hint'; hint.textContent = 'Enter or $ to insert; $ at once for a dollar sign.';
+    const hint = document.createElement('span'); hint.className = 'hint'; hint.textContent = o.closer ? 'Enter or \\) to insert.' : 'Enter or $ to insert; $ at once for a display, a space for a dollar sign.';
     row.appendChild(hint);
     if (this.caps.sample) {
       const ai = document.createElement('button');
@@ -3166,7 +3189,7 @@ class App {
       if (held(v)) return;
       if (!ins) {
         if (!v) return;
-        const t = '$' + v + '$';
+        const t = open + v + close;
         if (ghost) {
           this.ghost = ghost;
           const src = this.src(ghost.f);
@@ -3187,7 +3210,7 @@ class App {
         this.pop.returnCaret = { f: ins.f, p: ins.e, bias: 1 };
         return;
       }
-      const t = '$' + v + '$';
+      const t = open + v + close;
       if (!v) { this.commit([{ f: ins.f, s: ins.s, e: ins.e, t: '' }], null, this.pop.session); ins = null; return; }
       this.commit([{ f: ins.f, s: ins.s, e: ins.e, t }], null, this.pop.session);
       ins.e = ins.s + t.length;
@@ -3195,19 +3218,36 @@ class App {
     };
     const push = debounce(() => this.pop && insert(ta.value), 160);
     const preview = () => { const r = this.renderer.katex(this.mathPreviewTex(ta.value, false), false); prev.innerHTML = ta.value ? r.html : ''; err.textContent = r.err ? plainMathError(r.err, ta.value) : ''; err.title = r.err || ''; err.hidden = !r.err || !ta.value; };
-    ta.addEventListener('beforeinput', (e) => {
-      if (e.data === '$' && !ta.value && !ins) {
-        e.preventDefault();
-        this.closePop(true);
-        if (ghost) { this.ghost = ghost; this.ghostInsert('\\$'); }
-        else this.commit([{ f: base.f, s: base.a, e: base.b, t: '\\$' }], { f: base.f, p: base.a + 2 }, 'type');
+    // An empty formula: $ at once is a display, as $$ in the source (Overleaf's); a space a dollar
+    // sign and the space, as a $ alone in prose is (review M6, L6); \$ is a dollar sign too
+    let keys = 0;
+    const emptyKey = (k) => {
+      if (ta.value || ins || (k !== '$' && k !== ' ') || o.closer) return false;
+      if (k === '$' && keys) return false;
+      this.closePop(true);
+      if (k === '$') {
+        if (ghost) { this.ghost = ghost; if (ghost.el.isConnected) this.caretToGhost(); } else this.restoreCaret({ f: base.f, p: base.a });
+        this.newDisplayMath('\\[');
+        if (this.pop) this.pop.dollarClose = true;
+        return true;
       }
+      if (ghost) { this.ghost = ghost; this.ghostInsert('\\$ '); }
+      else this.commit([{ f: base.f, s: base.a, e: base.b, t: '\\$ ' }], { f: base.f, p: base.a + 3 }, 'type');
+      return true;
+    };
+    ta.addEventListener('beforeinput', (e) => {
+      if (emptyKey(e.data)) { e.preventDefault(); return; }
+      keys++;
     });
     ta.addEventListener('input', () => { preview(); push(); });
     ta.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
-      if (e.key === '$' && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
+      if (e.key === '$' && !o.closer && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
+      if (o.closer && e.key === o.closer && /(^|[^\\])\\$/.test(ta.value.slice(0, ta.selectionStart))) {
+        e.preventDefault(); ta.setRangeText('', ta.selectionStart - 1, ta.selectionStart, 'end'); ta.dispatchEvent(new Event('input'));
+        if (stay()) return; push.flush(); this.closePop();
+      }
     });
     const whole = () => mathMadeWhole(ta.value, kerr(ta.value));
     this.pop.onClose = () => { push.cancel(); if (!this.pop) return; const v = held(ta.value) ? whole() : ta.value; insert(v); this.eqClosed(this.pop, v); };
@@ -3235,15 +3275,12 @@ class App {
       onEnter: () => { if (stay()) return; push.flush(); this.closePop(); },
       // the closing $ of $x^2$ typed as in Overleaf ends the formula; in an empty one it stays a
       // dollar sign (onKey, below)
-      onDollar: () => { if (!ta.value && !ins) return; if (stay()) return; push.flush(); this.closePop(); },
+      onDollar: (check, typing) => { const ok = !!(ta.value || ins || typing); if (check || !ok) return ok; if (stay()) return; push.flush(); this.closePop(); },
       onEscape: () => { push.flush(); this.closePop(); },
       onKey: (e) => {
-        if (e.key === '$' && !ta.value && !ins) {
-          e.preventDefault(); e.stopPropagation();
-          this.closePop(true);
-          if (ghost) { this.ghost = ghost; this.ghostInsert('\\$'); }
-          else this.commit([{ f: base.f, s: base.a, e: base.b, t: '\\$' }], { f: base.f, p: base.a + 2 }, 'type');
-        }
+        if (e.ctrlKey || e.metaKey || e.altKey) return;
+        if (emptyKey(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+        if (e.key.length === 1) keys++;
       }
     });
   }
@@ -3655,12 +3692,26 @@ class App {
       });
     };
     const run = (x) => { this.closePop(true); this.runPalette(x, base, ghost); };
-    inp.addEventListener('input', () => { hi = 0; draw(); });
+    const back = () => { if (base) this.restoreCaret({ f: base.f, p: base.a }); else if (ghost && this.ghost === ghost && ghost.el.isConnected) this.caretToGhost(); };
+    inp.addEventListener('input', () => {
+      // a sign right after the backslash, as typed in the source (review M6): \( and \[ open a
+      // formula ended by \) and \]; \$ \% \& \# \_ \{ \} are the sign itself
+      const v = inp.value;
+      if (v.length === 1 && /[([$%&#_{}]/.test(v)) {
+        this.closePop(true);
+        if (v === '(') { back(); this.newMath({ open: '\\(', close: '\\)', closer: ')' }); return; }
+        if (v === '[') { back(); this.newDisplayMath('\\['); if (this.pop) this.pop.closer = ']'; return; }
+        this.insertPiece(base, ghost, '\\' + v, '');
+        return;
+      }
+      hi = 0; draw();
+    });
     inp.addEventListener('keydown', (e) => {
       if (e.key === 'ArrowDown') { e.preventDefault(); hi = Math.min(shown.length - 1, hi + 1); draw(); }
       if (e.key === 'ArrowUp') { e.preventDefault(); hi = Math.max(0, hi - 1); draw(); }
       if (e.key === 'Enter') { e.preventDefault(); if (shown[hi]) run(shown[hi]); }
-      if (e.key === 'Escape') { e.preventDefault(); this.closePop(); }
+      // (Esc keeps what was typed, written as typed: it went, and the keys after it with it)
+      if (e.key === 'Escape') { e.preventDefault(); const v = inp.value; this.closePop(true); if (v) this.insertPiece(base, ghost, '\\' + v, ''); else back(); }
       if (e.key === 'Backspace' && !inp.value) { e.preventDefault(); this.closePop(); }
     });
     draw();

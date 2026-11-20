@@ -3,7 +3,7 @@ somewhere wrong without a word, pressed as a person presses them, the source che
 byte and the caret where the next key lands.
 
 footnote: Esc, Shift+F5, Right at its end and Ctrl+End leave a footnote typed at the page's foot
-(finding 1). dollars: $x^2$ typed as in Overleaf ends the formula at its closing $ (2). latex:
+(finding 1). dollars: $x^2$, \\(x\\), $$x^2$$ and \\$ typed as in Overleaf (2; review M6, L6). latex:
 LaTeX typed into the equation field as it is typed in the source, braces and all, and what the
 field cannot hold carried on in its LaTeX box (3). tab: Tab keeps the keyboard on the page, a
 first line indent at a paragraph's start, a gap elsewhere; Esc then Tab leaves (6). pickers: the
@@ -76,7 +76,9 @@ MATH = '\\documentclass{article}\n\\usepackage{amsmath,amssymb}\n\\begin{documen
 
 def dollars(page):
     for typed_, want, label in ((' so $x^2$ is fine', ' So $x^2$ is fine', 'x^2'), (' and $\\alpha$ more', ' And $\\alpha$ more', 'a command before it'),
-                                (' it costs $$5', ' It costs \\$5', 'two at once stay a dollar sign')):
+                                (' it costs \\$5', ' It costs \\$5', '\\$ a dollar sign at once (review M6)'),
+                                (' so \\(x\\) y', ' So \\(x\\) y', '\\( and \\) (review M6)'),
+                                (' a $ $ b', ' A \\$ \\$ b', 'a lone $ and a space (review L6)')):
         load_doc(page, MATH)
         click_text(page, 'gamma.', 6)
         for ch in typed_:
@@ -85,6 +87,18 @@ def dollars(page):
         s = src(page)
         check('dollars: ' + label + ' typed as in the source', 'gamma.' + want + '\n' in s, s[60:140])
         check('dollars: ' + label + ': the caret back on the page', active(page) == 'pages', active(page))
+    # $$ … $$ on a line of its own: a display, the second $ of each pair taken (review M6)
+    load_doc(page, MATH)
+    click_text(page, 'gamma.', 6); key(page, 'Enter')
+    for ch in '$$x^2$$ end':
+        page.keyboard.type(ch); page.wait_for_timeout(300 if ch == '$' else 30)
+    page.wait_for_timeout(300)
+    s = src(page); i = s.find('gamma.')
+    check('dollars: $$x^2$$ is a display, the text after it', '\\[' in s[i:] and 'x^2' in s[i:] and '\\]' in s[i:] and 'end' in s[s.find('\\]'):] and '\\$' not in s, s[i:i + 60])
+    # Esc in the insert list keeps what was typed (review M6)
+    load_doc(page, MATH)
+    click_text(page, 'gamma.', 6); typed(page, ' '); typed(page, '\\', 300); typed(page, 'LaTeX'); key(page, 'Escape', 300)
+    check('dollars: Esc in the insert list writes what was typed', 'gamma. \\LaTeX' in src(page), src(page)[60:100])
 
 
 def field(page, keys):

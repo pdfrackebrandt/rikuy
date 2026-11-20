@@ -761,7 +761,11 @@ export function installWordTyping(mf, opts) {
       return;
     }
     // $x^2$ typed as in Overleaf: the closing $ ends a formula in the line (\$ is a dollar sign)
-    if (k === '$' && opts.onDollar && !e.defaultPrevented && !shortcut && buf !== '') { stop(); if (buf) commit(); opts.onDollar(); return; }
+    // (onDollar(true) asks whether a $ ends this formula: one in the line, a display opened by $$)
+    // (a command's name being typed, \alpha$, is something in the formula already)
+    if (k === '$' && opts.onDollar && !e.defaultPrevented && !shortcut && buf !== '' && opts.onDollar(true, !!buf)) { stop(); if (buf) commit(); opts.onDollar(false); return; }
+    // \) or \] ends a formula opened by \( or \[, as in the source
+    if (buf === '' && opts.closer && k === opts.closer() && !shortcut) { stop(); buf = null; pick = 0; draw(); opts.onCloser(); return; }
     if (buf != null) {
       if (/^[A-Za-z]$/.test(k) && !shortcut) { stop(); buf += k; pick = 0; draw(); return; }
       if (k === 'Backspace') { stop(); if (buf.length) { buf = buf.slice(0, -1); draw(); } else cancel(); return; }
