@@ -3325,6 +3325,12 @@ Tests:
       1502.01027 prints the hook name "begindocument/b..." on its first page; 2202.05036 lacks
       cbfonts' `grmn` (the archaic koppa); the rest follow from a float or a page placed
       elsewhere. Not classified further without the PDFs (the workflow keeps none).
+
+    Third run, 44728716263 (2026-11-20, main 4063ad1, to measure the .bbl fix): stopped in its
+    first minutes, arXiv's listing answering 429 while the sample was drawn; nothing compiled.
+    Now `get` waits as arXiv asks and tries again, and `sources_from_run` compiles an earlier
+    run's sample again (its sources from that run's cache, or fetched again where gone), so a
+    third run measures the fix on the second run's 998 papers.
 ## Rules
 
 - No status commits ("Note ...", "Record ...") and no log in this file. One commit per
