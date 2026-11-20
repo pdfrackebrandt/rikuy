@@ -935,8 +935,38 @@ def tap_alternatives(page, w):
     check(f'a picture\'s handles have Height and Width as number fields, Crop a button ({w})', have == {'picture-height': 'spinbutton', 'picture-width': 'spinbutton', 'picture-crop': 'button'}, (have, crop))
 
 
+
+MOTION = """(() => { const out = { kf: {}, tr: [] }; const walk = (rules, media) => { for (const r of rules) {
+  if (r instanceof CSSKeyframesRule) { const props = new Set(); for (const f of r.cssRules) for (let i = 0; i < f.style.length; i++) props.add(f.style[i]); out.kf[r.name] = [...props]; }
+  else if (r instanceof CSSMediaRule) walk(r.cssRules, r.conditionText);
+  else if (r.style && r.style.transitionProperty && !['unset', 'none', 'initial'].includes(r.style.transitionProperty)) out.tr.push([r.selectorText, r.style.transitionProperty, r.style.transitionDuration, media || '']); } };
+  for (const s of document.styleSheets) { try { walk(s.cssRules, ''); } catch (e) {} } return out; })()"""
+
+
+def motion(page, w):
+    """Motion as UI-PRINCIPLES.md M1 to M3 ask: animations and transitions move only opacity and
+    transform (the jump's mark is a still one now, the PDF's progress no longer animates its
+    width), transitions last 50 to 300 ms in steps of 50 (three ran 120 ms); with reduced motion
+    asked for, the PDF's busy bar stands still, the outline's triangles turn at once and the PDF
+    pane does not glide. (CodeMirror's own blink is the source editor's caret.)"""
+    m = page.evaluate(MOTION)
+    kf = {k: v for k, v in m['kf'].items() if k != 'blink' and not set(v) <= {'opacity', 'transform'}}
+    check(f'every animation moves opacity or transform only ({w})', not kf and m['kf'], kf or m['kf'])
+    ok = lambda d: all(x.strip().endswith('ms') and int(float(x.strip()[:-2])) % 50 == 0 and 50 <= float(x.strip()[:-2]) <= 300 or x.strip().endswith('s') and not x.strip().endswith('ms') and round(float(x.strip()[:-1]) * 1000) % 50 == 0 and 0.05 <= float(x.strip()[:-1]) <= 0.3 for x in d.split(','))
+    bad = [t for t in m['tr'] if not set(x.strip() for x in t[1].split(',')) <= {'opacity', 'transform'} or not ok(t[2])]
+    check(f'every transition moves opacity or transform, in 50 to 300 ms by steps of 50 ({w})', not bad, bad)
+    page.emulate_media(reduced_motion='reduce')
+    load_doc(page, DOC)
+    r = page.evaluate("""(() => { const p = document.createElement('div'); p.className = 'pdf-prog busy'; const s = document.createElement('span'); p.append(s); document.body.append(p);
+      const t = document.createElement('button'); t.className = 'nv-tog'; t.innerHTML = '<svg></svg>'; document.body.append(t);
+      const out = [getComputedStyle(s).animationName, getComputedStyle(t.querySelector('svg')).transitionDuration]; p.remove(); t.remove(); return out; })()""")
+    check(f'with reduced motion the PDF\'s busy bar stands still and the outline\'s triangles turn at once ({w})', r == ['none', '0s'], r)
+    page.emulate_media(reduced_motion='no-preference')
+
+
 PARTS = {'consistency': (consistency, [(1366, False), (1920, True), (390, False), (360, True)]),
          'bar_room': (bar_room, None),
+         'motion': (motion, [(1366, False)]),
          'tap_alternatives': (tap_alternatives, [(1366, False), (1920, True)]),
          'focus_rules': (focus_rules, [(1366, False), (1920, True), (390, False)]),
          'contrast': (contrast, [(1366, False), (1366, True), (390, False), (390, True)]),
