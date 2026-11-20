@@ -5,7 +5,7 @@ import { Renderer, BLOCKS, esc, widgetCss } from './render.js';
 import { Layout, geometry } from './layout.js';
 import {
   posFromDom, CaretIndex, segOfSpan, atomOfEl, styOfEl, visibleRanges, escapeTeX, textToTeX,
-  endsWithControlWord, isBalanced, diff, boundary, clusterEdge, sourceEdge, backspaceUnits
+  endsWithControlWord, isBalanced, diff, stepStart, stepJoin, boundary, clusterEdge, sourceEdge, backspaceUnits
 } from './editor.js';
 import { SAMPLE } from './sample.js';
 import { splitRows, parseJS, scanUserSigs, setNativeParse } from './parser.js';
@@ -1075,17 +1075,23 @@ class App {
     for (const ed of edits) { if (!byFile.has(ed.f)) byFile.set(ed.f, []); byFile.get(ed.f).push(ed); }
     // (a file the step makes, as Table from Data File's .csv: undone, it goes again)
     const made = [...byFile.keys()].filter((f) => !this.files.has(f));
+    // (what of each file the edits left alone, before the first and after the last, for the undo
+    // record's comparison; edits that overlap say nothing)
+    const win = new Map();
     for (const [f, list] of byFile) {
       let text = this.files.get(f) ?? '';
       before.set(f, text);
       list.sort((x, y) => y.s - x.s || y.e - x.e);
+      let apart = true;
+      for (let k = 1; k < list.length; k++) if (list[k].e > list[k - 1].s) apart = false;
+      if (apart) win.set(f, { pre: list[list.length - 1].s, suf: text.length - list[0].e });
       for (const ed of list) text = text.slice(0, ed.s) + ed.t + text.slice(ed.e);
       this.files.set(f, text);
     }
     // (the blocks shown as LaTeX move with these edits, src/cmd/view.js; typing ends Repeat's turn)
     this.viewMap(byFile, before);
     if (!this.cmdDepth) this.lastAct = null;
-    this.record(before, kind, cb && cb.f != null ? { f: cb.f, p: cb.p } : caret, caret, swaps);
+    this.record(before, kind, cb && cb.f != null ? { f: cb.f, p: cb.p } : caret, caret, swaps, win);
     if (made.length) { const top = this.hist[this.hist.length - 1]; if (top) for (const d of top.files) if (made.includes(d.f)) d.made = true; }
     this.zipDirty = true;
     this.rebuild(caret);
@@ -1093,12 +1099,14 @@ class App {
     this.saveSoon();
   }
 
-  record(before, kind, cb, ca, swaps) {
+  // win: for each file, how much at its start (pre) and its end (suf) the edits left alone (commit)
+  record(before, kind, cb, ca, swaps, win) {
     const files = [];
-    for (const [f, b] of before) { const d = diff(b, this.files.get(f)); if (d) files.push({ f, ...d }); }
+    const at = (w, f) => (w && w.get(f)) || { pre: 0, suf: 0 };
+    for (const [f, b] of before) { const w = at(win, f); const d = diff(b, this.files.get(f), w.pre, w.suf); if (d) files.push({ f, ...d }); }
     if (swaps && swaps.length) {
       // (a step with pictures is a step of its own, never joined to the one before)
-      if (this.hist.length) { const t = this.hist[this.hist.length - 1]; t.open = false; t.before = null; }
+      if (this.hist.length) { const t = this.hist[this.hist.length - 1]; t.open = false; t.before = null; t.win = null; t.after = null; }
       this.hist.push(this.rvStep = { kind, files, blobs: swaps, caretBefore: cb, caretAfter: ca, time: Date.now(), open: false, before: null, abs: this.rvAbsorbs(kind) });
       if (this.hist.length > 400 && !this.histHold) this.hist.shift();
       this.redoStack = [];
@@ -1110,22 +1118,25 @@ class App {
     const top = this.hist[this.hist.length - 1];
     const contiguous = top && top.caretAfter && cb && top.caretAfter.f === cb.f && Math.abs(top.caretAfter.p - cb.p) <= 2;
     if (top && top.open && kind && top.kind === kind && now - top.time < 2000 && (kind !== 'type' && kind !== 'del' || contiguous)) {
-      for (const [f, b] of before) if (!top.before.has(f)) top.before.set(f, b);
+      // (what every edit of the step left alone is the least of what each left alone, for the files
+      // nothing changed between its commits: src/editor.js stepJoin)
+      stepJoin(top, before, (f) => this.files.get(f), win);
       top.files = [];
-      for (const [f, b] of top.before) { const d = diff(b, this.files.get(f)); if (d) top.files.push({ f, ...d }); }
+      for (const [f, b] of top.before) { const w = at(top.win, f); const d = diff(b, this.files.get(f), w.pre, w.suf); if (d) top.files.push({ f, ...d }); }
       top.caretAfter = ca; top.time = now;
       // (Track Changes: the step's edits go into the review base or not as when it was made)
       this.rvStep = top;
       return;
     }
-    if (top) { top.open = false; top.before = null; }
-    this.hist.push(this.rvStep = { kind, files, caretBefore: cb, caretAfter: ca, time: now, open: true, before, abs: this.rvAbsorbs(kind) });
+    if (top) { top.open = false; top.before = null; top.win = null; top.after = null; }
+    const s0 = stepStart(before, (f) => this.files.get(f), win);
+    this.hist.push(this.rvStep = { kind, files, caretBefore: cb, caretAfter: ca, time: now, open: true, before, win: s0.win, after: s0.after, abs: this.rvAbsorbs(kind) });
     if (this.hist.length > 400 && !this.histHold) this.hist.shift();
     this.redoStack = [];
     this.updateUndoUI();
   }
 
-  closeGroup() { const top = this.hist[this.hist.length - 1]; if (top) { top.open = false; top.before = null; } }
+  closeGroup() { const top = this.hist[this.hist.length - 1]; if (top) { top.open = false; top.before = null; top.win = null; top.after = null; } }
 
   undo() {
     // (nothing stays selected across a change of the text: its offsets would be stale)
@@ -1136,7 +1147,7 @@ class App {
     this.closePop(true);
     const h = this.hist.pop();
     if (!h) { this.toast('Nothing to undo'); return; }
-    h.open = false; h.before = null;
+    h.open = false; h.before = null; h.win = null; h.after = null;
     const was = new Map(h.files.map((d) => [d.f, this.files.get(d.f) ?? '']));
     for (const d of h.files) { const t = this.files.get(d.f) ?? ''; this.files.set(d.f, t.slice(0, d.s) + d.del + t.slice(d.s + d.ins.length)); if (d.made && !this.files.get(d.f)) this.files.delete(d.f); }
     for (const b of h.blobs || []) this.setAsset(b.name, b.before);
@@ -4338,6 +4349,8 @@ class App {
         this.markFromLink('', this.name, this.main, from || 'zip');
         if (!from) markNote = was && was.allowed ? ' Shell escape, allowed for this project before, is restricted again: new files from an archive arrived. Allow it in the PDF pane if you trust them.' : ' They came in an archive, so shell escape is restricted for this project until you allow it in the PDF pane.';
       }
+      // (a file opened over another is a step of its own: typing before it and after it are two undos)
+      this.closeGroup();
       for (const [n, t] of texts) this.files.set(n, t);
       for (const [n, o] of orig) this.orig.set(n, o);
       for (const [n, b] of blobs) this.addAsset(n, b);
