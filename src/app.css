@@ -309,6 +309,32 @@ body.file-open #rp-file .rb-dl::before { display: none; }
    (src/ui/fileview.js). */
 body.file-open #main { flex: 0 0 0; height: 0; min-height: 0; overflow: hidden; }
 body.file-open #fr { display: none; }
+/* the view on a wide window, as Word's backstage: File's commands in a column at the left, the
+   view's Home beside them (a new document from a page drawn for each template, the documents
+   kept here) (src/ui/fileview.js) */
+.rf-home { display: none; }
+@media (min-width: 1000px) {
+  body.file-open #rp-file { display: grid; grid-template-columns: 300px minmax(0, 1fr); align-items: stretch; }
+  body.file-open #rp-file > .rb-tb { width: auto; max-width: none; background: var(--chrome); border-right: 1px solid var(--line); min-height: 100%; }
+  body.file-open #rp-file > .rf-home { display: block; padding: 22px 36px 40px; overflow: visible; }
+  .rf-h { margin: 0 0 12px; font: 600 15px var(--font-ui); color: var(--ink-ui); }
+  .rf-h + .rf-tiles { margin-bottom: 28px; }
+  .rf-tiles { display: flex; flex-wrap: wrap; gap: 14px; }
+  .rf-tile { display: flex; flex-direction: column; align-items: center; gap: 8px; width: 132px; padding: 10px 8px 8px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--ink-ui); font: 500 12.5px var(--font-ui); cursor: pointer; }
+  .rf-tile:hover, .rf-tile:focus-visible { background: var(--blue-wash); border-color: color-mix(in srgb, var(--blue) 30%, var(--line)); outline: none; }
+  .rf-sheet { display: flex; flex-direction: column; gap: 7px; width: 96px; height: 124px; padding: 18px 14px; box-sizing: border-box; background: #fff; border: 1px solid var(--line); box-shadow: 0 1px 3px rgba(20, 32, 44, .14); }
+  .rf-sheet i { display: block; height: 3px; border-radius: 2px; background: #C9D1DA; }
+  .rf-sheet i:first-child { width: 60%; height: 5px; margin: 0 auto 6px; background: #8996A4; }
+  .rf-tile.blank .rf-sheet i { visibility: hidden; }
+  .rf-tile-n { text-align: center; line-height: 1.25; }
+  .rf-recent-list { display: flex; flex-direction: column; max-width: 760px; border-top: 1px solid var(--line); }
+  .rf-doc { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; width: 100%; padding: 9px 10px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink-ui); font: 13px var(--font-ui); text-align: left; cursor: pointer; }
+  .rf-doc:hover, .rf-doc:focus-visible { background: var(--blue-wash); outline: none; }
+  .rf-doc-n { font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rf-doc-t { flex: none; color: var(--mute); font-size: 12px; }
+  .rf-none { margin: 10px 0; color: var(--mute); font: 13px var(--font-ui); }
+}
+@media (min-width: 1000px) and (pointer: coarse) { .rf-doc { min-height: 44px; } }
 body.file-open #ribbon { flex: 1 1 auto; min-height: 0; overflow-x: hidden; overflow-y: auto; align-items: flex-start; border-bottom: 0; }
 .rf-back { display: none; }
 body.file-open #rp-file .rf-back { display: inline-flex; align-self: flex-start; width: auto; gap: 8px; margin: 0 0 8px; padding: 0 12px 0 8px; font-weight: 500; }

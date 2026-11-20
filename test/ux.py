@@ -196,6 +196,16 @@ def file_view(page, w):
     page.locator('body > .pop[role=menu] [role^=menuitem]').first.click(); page.wait_for_timeout(1200)
     k = src(page); page.keyboard.type('Q'); page.wait_for_timeout(300)
     check(f'a template chosen from File opens with the caret in it: the first key lands ({w})', not page.evaluate(FILE_GEOM)['open'] and src(page) != k, page.evaluate('document.activeElement.id'))
+    # the view's Home, as Word's backstage: a page for each template beside the commands, and the documents kept here
+    open_tab(page, 'File'); page.wait_for_timeout(400)
+    h = page.evaluate("""(() => { const h = document.getElementById('rf-home'), r = h && h.checkVisibility() ? h.getBoundingClientRect() : null, c = document.querySelector('#rp-file > .rb-tb').getBoundingClientRect();
+      return { home: r && [Math.round(r.left), Math.round(r.width)], rail: Math.round(c.right), tiles: [...document.querySelectorAll('#rf-home .rf-tile')].map((t) => t.getAttribute('aria-label')),
+               recent: [...document.querySelectorAll('#rf-home .rf-doc')].map((t) => t.getAttribute('aria-label')) }; })()""")
+    shot(page, f'file-home-{tag}')
+    check(f'File\'s Home beside the commands: a blank page and every template as a page to press ({w})', h['home'] and h['home'][0] >= h['rail'] - 1 and h['tiles'][:2] == ['New blank document', 'Article template'] and len(h['tiles']) >= 8, h)
+    check(f'and the documents kept here, each a press away: the one open before the template is there ({w})', 'Open Untitled' in h['recent'] or any(x.startswith('Open ') for x in h['recent']), h['recent'])
+    page.get_by_role('button', name='Report template', exact=True).click(); page.wait_for_timeout(1200)
+    check(f'a press on a template\'s page makes the document and closes File ({w})', not page.evaluate(FILE_GEOM)['open'] and '\\documentclass' in src(page) and 'report' in src(page)[:200], src(page)[:120])
 
 
 def status_bar(p):
