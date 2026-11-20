@@ -5,7 +5,7 @@ Formulas; View Gridlines; Draw Table and Eraser), each drawn on the page as TeX 
 dist/tex holds a TeX tree, what they write compiled in the page with pdfLaTeX, XeLaTeX and LuaLaTeX;
 phones at 390 and 360 px with touch; screenshots in $RIKUY_SHOTS (default /tmp/g2-shots).
 
-python3 docgaps.py [section ...]: tables, tables_compiled, tables_phones, shots, headfoot, headfoot_forms, headfoot_compiled,
+python3 docgaps.py [section ...]: tables, tables_compiled, tables_phones, shots, headfoot, headfoot_forms, footer_sheet, headfoot_compiled,
 headfoot_phones, headfoot_shots, view, split_long, refs_update, equation, equation_linear, insert_text, rest_compiled, rest_phones,
 rest_shots."""
 import os, sys, base64, io, re as _re
@@ -414,7 +414,7 @@ def headfoot(page):
     check('one undo: the bytes of before', src(page) == HF_DOC)
     page.evaluate("window.rikuy.runCommand('hf-footer-bottom', { cm: 1.2 })"); page.wait_for_timeout(300)
     s = src(page)
-    g = page.evaluate('(() => { const g = window.rikuy.layout.g; return { ph: g.paperH || g.ph, mt: g.mt, th: g.th, fs: g.footskip }; })()')
+    g = page.evaluate('(() => { const g = window.rikuy.layout.g; return { ph: g.ph, mt: g.mt, th: g.th, fs: g.footskip }; })()')
     check('Footer from Bottom 1.2 cm: geometry\'s footskip set so the footer stands 1.2 cm above the sheet\'s foot', 'footskip=' in s and abs(g['ph'] - g['mt'] - g['th'] - g['fs'] - 1.2 * 72.27 / 2.54) < 0.05, (s[:200], g))
     page.evaluate("window.rikuy.runCommand('hf-header-top', { cm: 3 })"); page.wait_for_timeout(300)
     toast = page.evaluate("() => (document.querySelector('.toast') || {}).textContent || ''")
@@ -512,8 +512,46 @@ def headfoot_forms(page):
     run_cmd(page, 'hf-footer-bottom', {'cm': 1.0}); page.wait_for_timeout(400)
     s1 = src(page)
     load_doc(page, s1); page.wait_for_timeout(400)
-    g = page.evaluate('(() => { const g = window.rikuy.layout.g; return [Math.round(((g.paperH || g.ph) - g.mt - g.th - g.footskip) / (72.27 / 2.54) * 100) / 100, g.th]; })()')
+    g = page.evaluate('(() => { const g = window.rikuy.layout.g; return [Math.round(((g.ph) - g.mt - g.th - g.footskip) / (72.27 / 2.54) * 100) / 100, g.th]; })()')
     check('Footer from Bottom 1 cm under includefoot: bottom=28.45pt and footskip, read back 1 cm, the text block as tall', bool(_re.search(r'bottom=28\.4[0-9]pt', s1)) and g[0] == 1.0 and abs(g[1] - th0) < 0.05, (s1.split('\\begin{document}')[0], g, th0))
+
+
+# (the verification of 3d3bfc4, blocker 2: Footer from Bottom measured to \paperheight, letter's,
+# where the sheet is A4; now to the sheet, the PDF's page, on A4 and on letter)
+FOOT_FORMS = {
+    'A4 sheet, letter \\paperheight (a plain article)': '\\documentclass{article}\n\\usepackage{fancyhdr}\n\\pagestyle{fancy}\n\\fancyhf{}\n\\cfoot{FOOTMARK}\n\\begin{document}\nText.\n\\end{document}\n',
+    'letter sheet (geometry)': '\\documentclass{article}\n\\usepackage[letterpaper]{geometry}\n\\usepackage{fancyhdr}\n\\pagestyle{fancy}\n\\fancyhf{}\n\\cfoot{FOOTMARK}\n\\begin{document}\nText.\n\\end{document}\n',
+}
+
+
+def pdf_foot(r, word='FOOTMARK'):
+    # the word's box's foot to the page's foot, in cm (pdftotext's box takes the font's descent, about
+    # 0.07 cm under the baseline: the checks allow 0.1 cm and want the same offset before and after)
+    import subprocess, tempfile
+    d = tempfile.mkdtemp()
+    open(os.path.join(d, 'a.pdf'), 'wb').write(base64.b64decode(r['pdf']))
+    subprocess.run(['pdftotext', '-bbox', os.path.join(d, 'a.pdf'), os.path.join(d, 'a.html')], check=True)
+    h = open(os.path.join(d, 'a.html')).read()
+    ph = float(_re.search(r'<page width="[\d.]+" height="([\d.]+)"', h).group(1))
+    m = _re.search(r'yMax="([\d.]+)">' + word + '<', h)
+    return (ph - float(m.group(1))) * 2.54 / 72 if m else None
+
+
+def footer_sheet(page):
+    for name, doc in FOOT_FORMS.items():
+        load_doc(page, doc); page.wait_for_timeout(400); at_src(page, 'Text.'); page.wait_for_timeout(200)
+        v0 = page.evaluate("(() => { const g = window.rikuy.layout.g; return Math.round((g.ph - g.mt - g.th - g.footskip) / (72.27 / 2.54) * 100) / 100; })()")
+        run_cmd(page, 'hf-footer-bottom', {'cm': 1.5}); page.wait_for_timeout(400)
+        s1 = src(page)
+        load_doc(page, s1); page.wait_for_timeout(400)
+        v1 = page.evaluate("(() => { const g = window.rikuy.layout.g; return Math.round((g.ph - g.mt - g.th - g.footskip) / (72.27 / 2.54) * 100) / 100; })()")
+        check('Footer from Bottom 1.5 cm (%s): read back 1.5 cm' % name, v1 == 1.5, (v1, s1.split('\\begin{document}')[0]))
+        if not HAS_TEX:
+            continue
+        a, b = pdf_of(page, doc), pdf_of(page, s1)
+        fa, fb = pdf_foot(a), pdf_foot(b)
+        check('in TeX\'s PDF (%s): the footer %.2f cm above the sheet\'s foot before, as the box read, and 1.5 cm after' % (name, v0),
+              a['ok'] and b['ok'] and fa is not None and fb is not None and abs(fa - v0) < 0.1 and abs(fb - 1.5) < 0.1 and abs((fa - v0) - (fb - 1.5)) < 0.02, (fa, fb, v0))
 
 
 def headfoot_compiled(page):
@@ -889,7 +927,7 @@ def run():
     names = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (tables, tables_compiled, headfoot, headfoot_forms, headfoot_compiled, view, split_long, refs_update, equation, equation_linear, insert_text, rest_compiled):
+        for f in (tables, tables_compiled, headfoot, headfoot_forms, footer_sheet, headfoot_compiled, view, split_long, refs_update, equation, equation_linear, insert_text, rest_compiled):
             if names and f.__name__ not in names:
                 continue
             try: f(page)

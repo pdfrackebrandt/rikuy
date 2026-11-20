@@ -65,17 +65,18 @@ const STORY_WHY = (app) => (!app.hf ? OPEN_WHY : !app.layout.g.twoside ? 'Every 
 
 // Header from Top and Footer from Bottom as Word measures them: the sheet's top edge to the
 // header's top (the top margin less headsep and headheight), the footer's foot to the sheet's
-// bottom edge (the paper less the top margin, the text and footskip); written as geometry's
+// bottom edge (the sheet, the PDF's page, less the top margin, the text and footskip: not
+// \paperheight, which is letter's where nothing sets the sheet, A4); written as geometry's
 // headsep and footskip, which leave the text where it is
 function hfDist(app, which) {
   if (!app.model || !app.layout) return null;
   const g = app.layout.g;
-  return which === 'top' ? g.mt - (g.headsep ?? 25) - (g.headheight ?? 12) : (g.paperH || g.ph) - g.mt - g.th - (g.footskip ?? 30);
+  return which === 'top' ? g.mt - (g.headsep ?? 25) - (g.headheight ?? 12) : g.ph - g.mt - g.th - (g.footskip ?? 30);
 }
 function hfDistEdits(app, which, pt) {
   const g = app.layout.g;
-  const v = which === 'top' ? g.mt - (g.headheight ?? 12) - pt : (g.paperH || g.ph) - g.mt - g.th - pt;
-  if (!(v >= 0)) return { error: which === 'top' ? 'The header would run into the text: at most ' + fmt(g.mt - (g.headheight ?? 12)) + ' from the top.' : 'The footer would run into the text: at most ' + fmt((g.paperH || g.ph) - g.mt - g.th) + ' from the bottom.' };
+  const v = which === 'top' ? g.mt - (g.headheight ?? 12) - pt : g.ph - g.mt - g.th - pt;
+  if (!(v >= 0)) return { error: which === 'top' ? 'The header would run into the text: at most ' + fmt(g.mt - (g.headheight ?? 12)) + ' from the top.' : 'The footer would run into the text: at most ' + fmt(g.ph - g.mt - g.th) + ' from the bottom.' };
   const src = app.src(app.main), others = app.preambleOthers();
   // (geometry's includehead and includefoot: the margin is the header's or the footer's place, so
   // it moves to pt and the length takes up the rest; the text stays where it is)
