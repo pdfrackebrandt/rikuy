@@ -9,7 +9,7 @@ import {
 } from './editor.js';
 import { SAMPLE } from './sample.js';
 import { splitRows, parseJS, scanUserSigs, setNativeParse } from './parser.js';
-import { installWordTyping, wordShortcuts, makeDialect, classifyMacros, resolveCommand, PACKAGES, WORD_GROUPS, FIELD_MACROS, fieldValue, modelValue } from './wordmath.js';
+import { installWordTyping, wordShortcuts, makeDialect, classifyMacros, resolveCommand, PACKAGES, WORD_GROUPS, FIELD_MACROS, fieldValue, modelValue, mathOnly } from './wordmath.js';
 import { isTallDef, fitBrackets, tallTest } from './fences.js';
 import { loadCore, coreReady, coreCanRun, coreStats, nativeParse } from './native.js';
 import { minimalRow, makeSame } from './minimal.js';
@@ -1724,7 +1724,7 @@ class App {
   enter(soft) {
     const c = this.caretNow();
     if (!c) return;
-    if (c.ghost) { if (this.ghost.tex) this.texGhostEnter(); return; }
+    if (c.ghost) { if (this.ghost.tex) this.texGhostEnter(); else this.ghostLeaveEnv(); return; }
     const T = this.texHere();
     if (T && c.f === T.f) { this.texEnter(T, c); return; }
     const sel = getSelection();
@@ -1844,6 +1844,19 @@ class App {
     this.ourSel = true;
     sel.collapse(s.firstChild, 1);
     this.scrollToCaret();
+  }
+  // Enter on the blank paragraph at the end of a theorem, a proof, a quote: it goes after the
+  // \end, as Enter on a list's empty last item leaves the list (Word: the style's next paragraph
+  // is Normal). Enter twice wrote blank lines inside it, and what was typed next went in too.
+  ghostLeaveEnv() {
+    const g = this.ghost;
+    if (!g || g.before || g.style) return false;
+    const m = /^\s*\\end\s*\{([^}]+)\}/.exec(this.src(g.f).slice(g.pos));
+    if (!m || /^(document|itemize|enumerate|description)$/.test(m[1].trim())) return false;
+    const after = g.el.previousElementSibling;
+    if (!after) return false;
+    this.showGhost(after, g.f, g.pos + m[0].length);
+    return true;
   }
   removeGhost() { if (this.ghost) { const g = this.ghost; this.ghost = null; g.el.remove(); if (g.restore) g.restore(); } }
   // what is typed in the blank paragraph or line is LaTeX source, written as it is
@@ -3431,10 +3444,53 @@ class App {
     const inner = base.a !== base.b && isBalanced(src, base.a, base.b) ? src.slice(base.a, base.b) : '';
     this.commit([{ f: base.f, s: base.a, e: inner ? base.b : base.a, t: open + inner + close }], { f: base.f, p: base.a + open.length + inner.length, bias: 1 }, 'insert');
   }
+  // What was typed in the insert list as a command of its own (POWER-USER.md 10): it was written
+  // as typed, \alpha and \frac into the text, where TeX stops (Missing $ inserted). A math
+  // command opens a formula holding it; \begin{name} writes the environment; others as typed.
+  runPaletteRaw(k, base, ghost) {
+    const insertAt = (open, close) => this.insertPiece(base, ghost, open, close);
+    const env = /^begin\s*\{?\s*([A-Za-z]+\*?)?\s*\}?$/.exec(k);
+    const back = () => { if (base) this.restoreCaret({ f: base.f, p: base.a }); else if (ghost && this.ghost === ghost && ghost.el.isConnected) this.caretToGhost(); };
+    if (env && !env[1]) { back(); this.runCommand('insert-env-other'); return; }
+    if (env) {
+      const name = env[1];
+      if (/^(equation|align|gather|multline|flalign)\*?$/.test(name)) { back(); this.newDisplayMath(name); return; }
+      insertAt('\n\n\\begin{' + name + '}\n', '\n\\end{' + name + '}\n\n');
+      return;
+    }
+    if (mathOnly(k)) {
+      back();
+      this.newMath();
+      const ta = this.pop && this.pop.el.querySelector('#pop-newtex');
+      if (ta) { ta.value = '\\' + k + ' '; ta.dispatchEvent(new Event('input')); ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+      return;
+    }
+    insertAt('\\' + k + (/[A-Za-z]$/.test(k) ? ' ' : ''), '');
+  }
+  // insertPiece with edits of the preamble in the same step (a \newtheorem); the caret's place
+  // moved by them
+  insertPieceWith(base, ghost, open, close, needs) {
+    const f = ghost ? ghost.f : base.f, at = ghost ? ghost.pos : base.a;
+    const grow = needs.filter((x) => x.f === f && x.e <= at).reduce((n, x) => n + x.t.length - (x.e - x.s), 0);
+    if (ghost) {
+      this.ghost = ghost;
+      const src = this.src(ghost.f);
+      let nlB = 0; for (let k = ghost.pos - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
+      const pre = '\n'.repeat(Math.max(0, 2 - nlB)), o = open.replace(/^\n+/, '');
+      this.removeGhost();
+      this.commit([...needs, { f, s: at, e: at, t: pre + o + close }], { f, p: at + grow + pre.length + o.length, bias: 1 }, 'insert');
+      return;
+    }
+    const src = this.src(f);
+    const inner = base.a !== base.b && isBalanced(src, base.a, base.b) ? src.slice(base.a, base.b) : '';
+    this.commit([...needs, { f, s: base.a, e: inner ? base.b : base.a, t: open + inner + close }], { f, p: base.a + grow + open.length + inner.length, bias: 1 }, 'insert');
+  }
   runPalette(x, base, ghost) {
     const insertAt = (open, close) => this.insertPiece(base, ghost, open, close);
-    if (x.act === 'math') { if (base) this.restoreCaret({ f: base.f, p: base.a }); this.newMath(); return; }
-    if (x.act === 'equation') { if (base) this.restoreCaret({ f: base.f, p: base.a }); this.newDisplayMath(); return; }
+    // (the caret back where the list was opened: in the blank paragraph, or at its place in the text)
+    const back = () => { if (base) this.restoreCaret({ f: base.f, p: base.a }); else if (ghost && this.ghost === ghost && ghost.el.isConnected) this.caretToGhost(); };
+    if (x.act === 'math') { back(); this.newMath(); return; }
+    if (x.act === 'equation') { back(); this.newDisplayMath(x.env || 'equation'); if (x.tex) this.eqInsert(x.tex); return; }
     if (x.act === 'cite' || x.act === 'ref' || x.act === 'eqref') {
       const cmd = x.act === 'cite' ? this.citeChoices()[0][0] : x.act;
       const t = '\\' + cmd + '{}';
@@ -3446,8 +3502,12 @@ class App {
     }
     // an item that is a command of the registry run as its button runs it (Interactive graph)
     if (x.act === 'cmd') { if (base) this.restoreCaret({ f: base.f, p: base.a }); this.runCommand(x.id); return; }
-    if (x.raw) { insertAt('\\' + x.k + (/[A-Za-z]$/.test(x.k) ? ' ' : ''), ''); return; }
-    insertAt(x.t.open, x.t.close);
+    if (x.raw) return this.runPaletteRaw(x.k, base, ghost);
+    const t = typeof x.t === 'function' ? x.t(this) : x.t;
+    // (a theorem like environment brings its \newtheorem, proof amsthm, where the preamble has none)
+    const needs = x.needs ? x.needs(this) : [];
+    if (needs.length) return this.insertPieceWith(base, ghost, t.open, t.close, needs);
+    insertAt(t.open, t.close);
   }
 
   openPalette() {
