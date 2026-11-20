@@ -4,7 +4,7 @@
 // reported, the guide for AI agents.
 
 import { register, commands, command } from '../commands.js';
-import { chordText } from '../keys.js';
+import { chordsOf, keyLabel, keysInText, macUA, KEPT } from '../keys.js';
 import { dialog } from '../ui/kit.js';
 import { mk } from '../ui/dom.js';
 import { TABS } from '../ribbon/order.js';
@@ -35,7 +35,7 @@ export function guide(app, title, el, w, cls) {
 const always = () => true;
 register(
   { id: 'help', name: 'Help', el: 'b-help', static: true, place: 'bar', only: 'wide', title: 'How it works', when: always, run: (app) => app.openHelp() },
-  { id: 'help-how', name: 'How it works', order: 10, title: 'What Rikuy is and how to work in it', synonyms: ['Help', 'Guide', 'Manual'], tab: 'help', group: 'help', el: 'rh-how', label: 'How it works',
+  { id: 'help-how', name: 'How it works', order: 10, title: 'What Rikuy is and how to work in it (F1)', synonyms: ['Help', 'Guide', 'Manual'], tab: 'help', group: 'help', el: 'rh-how', label: 'How it works', keys: ['F1'], keyScope: 'app',
     icon: '<circle cx="10" cy="10" r="7"/><path d="M8 8a2 2 0 1 1 2.8 1.8c-.5.3-.8.7-.8 1.2v.5M10 14v.2"/>', when: always, run: (app) => app.openHelp() },
   { id: 'help-tour', name: 'Learn Rikuy', order: 20, title: 'A short document to try things in: typing on the page, Page, LaTeX and PDF, an equation, a live graph', synonyms: ['Tour', 'Tutorial', 'Getting started', 'Show me', 'Training'],
     tab: 'help', group: 'help', el: 'rh-tour', label: 'Learn Rikuy', icon: '<path d="M3 6.5 10 3l7 3.5-7 3.5z"/><path d="M6 8v4c2.5 2 5.5 2 8 0V8M17 6.5V11"/>', when: always, run: (app) => app.openTour() },
@@ -127,23 +127,23 @@ export const methods = {
     return true;
   },
 
-  // Every key the registry binds, by the tab its command sits on, as this computer has them
+  // Every key the registry binds, by the tab its command sits on, as this computer has them; then
+  // Word's keys the browser keeps, with what to use instead
   openShortcuts() {
     const p = guide(this, 'Keyboard shortcuts', 'rh-keys', 560, 'pop-help pop-guide');
-    const mac = /Mac|iPhone|iPad/.test(navigator.platform || '');
-    p.append(para(mac ? 'Ctrl means Cmd on a Mac. The keys act with the caret on the page unless said.' : 'The keys act with the caret on the page unless said.'));
-    p.append(para('Alt alone, or F10, shows the letters on the tabs (H Home, N Insert, G Design, P Layout, S References, R Review, W View, F File, Y then 2 Help); a tab\'s letter shows its buttons\' letters (Alt, N, T is Table). Esc goes back a step.'));
-    p.append(para('A few of Word\'s keys stay with the browser, or already mean something else here. Ctrl+N starts a new document when the browser lets the page hear it; Ctrl+T is always a new browser tab. Ctrl+W closes the source or the PDF when one is open, and otherwise the browser closes the tab. Ctrl+= and Ctrl+- zoom the page, so subscript and superscript stay Ctrl+, and Ctrl+.. Ctrl+M inserts math; indent is Tab, or Increase Indent. Ctrl+Shift+V pastes the words alone; copying the formatting is Ctrl+Shift+C, the Format Painter. There is no mail merge and no split window.'));
+    const mac = macUA(), T = (t) => keysInText(t, mac);
+    p.append(para(mac ? 'The keys as a Mac has them: \u2318 is Command, \u2325 Option, \u2303 Control, \u21e7 Shift. They act with the caret on the page unless said.' : 'The keys act with the caret on the page unless said.'));
+    p.append(para((mac ? 'F10' : 'Alt alone, or F10,') + ' shows the letters on the tabs (H Home, N Insert, G Design, P Layout, S References, R Review, W View, F File, Y then 2 Help); a tab\'s letter shows its buttons\' letters (' + (mac ? 'F10' : 'Alt') + ', N, T is Table). Esc goes back a step.'));
     const byTab = new Map();
     for (const c of commands()) {
-      const keys = [...(c.keys || []), ...(c.keysElsewhere || [])].filter((k) => !(mac && c.mac && c.mac[k] === false)).map((k) => (mac && c.mac && c.mac[k]) || k);
+      const keys = chordsOf(c, mac);
       if (!keys.length || c.searchable === false) continue;
       const t = c.tab && TABS.find((x) => x.id === c.tab);
-      const tab = t ? t.name : 'Everywhere';
+      const tab = t ? t.name : 'More keys';
       if (!byTab.has(tab)) byTab.set(tab, []);
-      byTab.get(tab).push({ name: c.name, keys: keys.map(chordText).join(', ') });
+      byTab.get(tab).push({ name: c.name, keys: keys.map((k) => keyLabel(k, mac)).join(', ') });
     }
-    const order = ['Everywhere', ...TABS.map((t) => t.name)];
+    const order = [...TABS.map((t) => t.name), 'More keys'];
     for (const tab of order) {
       const list = byTab.get(tab);
       if (!list) continue;
@@ -152,6 +152,11 @@ export const methods = {
       for (const x of list) dl.append(mk('dt', null, x.keys), mk('dd', null, x.name));
       p.append(dl);
     }
+    p.append(mk('h3', null, 'Word\'s keys the browser keeps'));
+    p.append(para('A browser keeps a few of Word\'s keys for itself, and a few mean something else here. What to press instead:'));
+    const dl = mk('dl', 'keys kept');
+    for (const k of KEPT) if (!k.only || k.only === (mac ? 'mac' : 'win')) dl.append(mk('dt', null, keyLabel(k.keys, mac)), mk('dd', null, k.word + ': ' + T(k.here)));
+    p.append(dl);
     this.positionPop();
     return true;
   },
