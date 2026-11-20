@@ -2,7 +2,7 @@
 included file, undo there, and save a zip whose files come back byte for byte."""
 import os, sys, time, json, zipfile, io, struct, zlib, base64, tempfile, traceback
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import open_page, check, results, SHOTS, src, wait_src, click_text, select_text, load_doc
+from browser import open_page, check, results, SHOTS, src, wait_src, click_text, select_text, load_doc, download
 from playwright.sync_api import sync_playwright
 
 TMP = tempfile.mkdtemp(prefix='rikuy-features-')
@@ -68,8 +68,9 @@ try:
         page.keyboard.press('Control+z')
         check('undo in included file', src(page, 'sections/body.tex') == BODY)
         page.screenshot(path=SHOTS + '/20-zip.png')
-        # --- save zip through mocked downloads
-        page.click('#b-save')
+        # --- save zip through mocked downloads (at 1300 px Home keeps the three downloads: one press)
+        check('at 1300 px a download is one press away: Download LaTeX is a button in sight', page.locator('#b-save').is_visible())
+        download(page)
         page.wait_for_function('window.__saved', timeout=8000)
         saved = page.evaluate('window.__saved')
         data = base64.b64decode(saved['b64'])

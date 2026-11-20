@@ -618,7 +618,15 @@ prototype).
 - **Comments** are lines `% comment (Name) on "words": text` and `% reply (Name): text` under the
   line they are about (`commentEdit`, `findComments`). On a line of its own a comment changes
   nothing TeX typesets (the line above ended in a space, the comment takes its own line end), and
-  `commentEdit` refuses verbatim environments and the preamble. `paintComments()` highlights the
+  `commentEdit` refuses verbatim environments and the preamble. A comment from a reader of a
+  comments only link is written instead as `% comment32 <name> <words> <text>` (and `% reply32
+  <name> <text>`), each part in base32 (RFC 4648's A to Z and 2 to 7, `0` for an empty part):
+  letters, digits and spaces after the %, so it runs nothing even where a document has made % an
+  ordinary character by means no reading of the source finds (`\csname`, `\scantokens`, Lua).
+  The reader's page writes it so, and `commentsOf` writes every comment line a comments only copy
+  brings in that form whatever form it came in, matching lines by what they say;
+  `parseCommentLine` reads both forms, so the page shows such a comment as typed.
+  `paintComments()` highlights the
   quoted words (`CSS.highlights`) and puts a mark in the page margin; the Comments tab lists the
   threads with Reply and Resolve.
 - **Leaving.** Save writes a one file project as its `.tex` and anything larger as a `.zip`
@@ -700,22 +708,33 @@ fallback from the widget's own generator.
   rewrites the item's pages, since measuring takes an item out of its page.
 - **Isolation.** `sandbox="allow-scripts"`, without `allow-same-origin`: an opaque origin, so no
   storage, no cookies, no access to the page, the project or other frames, and no popups, forms,
-  top navigation or dialogs. The widget arrives as `srcdoc`, behind a head that starts with its
-  own policy (`WIDGET_CSP`: `default-src 'none'`; inline script and style; pictures, media and
-  fonts as `data:` or `blob:`; no connection, frame, form or `<base>`), turns DNS prefetching
-  off and runs `widgetGuard` (below) before any of the widget. The page adds `frame-src 'self'`
-  to its host's policy (`framesOnlySrcdoc`, a `<meta>` in the head, which can only narrow it): no
-  frame-src refuses a srcdoc frame, and a frame may go nowhere but the page's own site, so a
-  widget cannot take its frame to a `data:` or `blob:` document of its own making.
-- **Why `srcdoc`.** A `srcdoc` or `blob:` frame inherits the embedding page's Content Security
-  Policy, and a policy the widget's document adds can only restrict further. Rikuy's policy, as
-  `test/serve.py` serves it (the artifact host's), has `script-src 'self' 'unsafe-inline'
-  'unsafe-eval' …`, so inline widget scripts run under it. They always will where Rikuy runs:
-  the page's own code is one inline script, so a policy that refused inline scripts would stop
-  Rikuy first. `blob:` frames would work as well (with `frame-src blob:`) but add object URLs to
-  revoke and nothing else; `data:` frames depend on `frame-src data:` and on URL length; a widget
-  served as a file of the page's own site would have to be on the server, and projects live in
-  the browser. The page's policy gained only `frame-src 'self'`, which refuses no srcdoc frame.
+  top navigation or dialogs. The widget's document (`widgetDoc`) starts with its own policy
+  (`WIDGET_CSP`: `default-src 'none'`; inline script and style; pictures, media and fonts as
+  `data:` or `blob:`; no connection, frame, form or `<base>`), turns DNS prefetching off and runs
+  `widgetGuard` (below) before any of the widget. The page adds `frame-src 'self'` to its host's
+  policy (`framesOnlySrcdoc`, a `<meta>` in the head, which can only narrow it): a frame may go
+  nowhere but the page's own site, so a widget cannot take its frame to a `data:` or `blob:`
+  document of its own making.
+- **Where the document comes from (`runWidget`).** A `srcdoc` or `blob:` frame inherits the
+  embedding page's Content Security Policy, and a policy the widget's document adds can only
+  restrict further. The hosted page's policy (`build/app.mjs` `policy`) runs the page's one
+  inline script by its hash and nothing else inline, and no eval: a widget there could not run in
+  a srcdoc frame. So on the hosted page the frame loads `widget-<hash>.html` (`WIDGET_SHELL`,
+  written by `build.mjs`), a file of the page's site whose own header gives it `WIDGET_POLICY`
+  (`WIDGET_CSP` and `frame-ancestors 'self'`; the `/widget-*` rule of `headers()` takes the page's
+  policy and `X-Frame-Options` away from it). It asks the page (`{rikuy: "shell"}`), the page
+  answers only a frame of its own that it gave a widget, with that widget's document, and the shell
+  writes it over itself, only for a parent of its own origin and only in the sandbox (a site
+  framing a copy served without these headers, or a frame of it with no sandbox, gets nothing) (`document.open()` drops the shell's listener with everything else). A
+  widget that reloads its frame gets the shell again, which asks again. The file is named by its
+  hash and cached for a year, and asked for at its address without `.html` (Cloudflare Pages
+  redirects `x.html` to `x`, a redirect the worker's install would refuse); a sandboxed frame's
+  request never reaches the service worker, so offline it comes from the HTTP cache, where the
+  worker's install fetched it (`test/offline.py`). A shell that has not asked within
+  `SHELL_WAIT` (offline, the cached copy gone) leaves the figure's picture showing, and the page
+  says why once.
+  The copy on claude.ai (`RIKUY_SHARE`) keeps `srcdoc`: its host's policy allows inline scripts,
+  and nothing beside that page is known to be served as a document.
 - **What no policy stops.** Chromium ignores CSP's `webrtc` directive (version 141 calls it
   unrecognized), so a widget can open WebRTC connections: a STUN request to its author's server
   tells them who opened the document, and when, though nothing of the document or the browser.
@@ -766,8 +785,8 @@ picture through `commit`'s `blobs` (a binary file in the history: undo takes it 
 old one back). On the page `WidgetLayer`'s host gives a graph's frame an Edit graph button
 (`--ws` keeps it 44 px on a phone's zoomed page) and the first time hint; the frame's own script
 asks for Rikuy's menu on a right click or long press (`{rikuy: "menu"}`), which the page grants
-only to a graph's frame, once a second. The dialog's preview is a sandboxed srcdoc frame like the
-page's.
+only to a graph's frame, once a second. The dialog's preview is a sandboxed frame like the
+page's (`runWidget`).
 
 ## 6. The installed app (hosted build)
 
@@ -1336,7 +1355,7 @@ there. So far one function is ported: `parse()`.
   `loadCore`: a first visit waits for none of its bytes and the first build is JavaScript's. The
   hosted headers cache `/core/*` for good; the service worker keeps it as content addressed (kind
   `i`, precached at install); `tex/publish_batches.py` uploads it to the artifact. WebAssembly
-  compiles under both policies' `'unsafe-eval'`.
+  compiles under the hosted policy's `'wasm-unsafe-eval'` and the artifact host's `'unsafe-eval'`.
 - **The parse port.** `loadCore` sends parser.js's tables once (`PARSE_TABLES`: parse.cc keeps no
   copy of them) and installs `nativeParse` with `setNativeParse`. `parse()` then asks
   `nativeParse(src, userSigs)` first: below `PARSE_MIN` (600 code units: macro bodies, .bib
