@@ -3301,10 +3301,11 @@ Tests:
       line, the linear format).
     - Insert: Signature Line (room, a rule, name, title, e-mail, `\today`), and Date & Time and
       Object placed in the Text group as Word's.
-    Evidence: `test/docgaps.test.mjs` 13 groups (in `npm test`); `test/docgaps.py` tables 41,
-    headfoot 22, view, refs_update and insert_text 22, equation 11, compiled on the three
-    engines 12, phones at 390 and 360 px 18; `tabs.py` 127, `agent.py` 143, `table.py` the_rest
-    and r3_tables 31 (the right click menu kept in Word's order). Screenshots in `/tmp/g2-shots`.
+    Evidence: `test/docgaps.test.mjs` 13 groups (in `npm test`); `test/docgaps.py` 126 checks
+    with `dist/tex` (tables 41, headfoot 22, view, refs_update and insert_text 22, equation 11,
+    compiled on the three engines 12, phones at 390 and 360 px 18); `tabs.py` 127, `agent.py`
+    143, `table.py` 169, `eqtab.py` 159, `view.py` 163, `page.py` 177 (the right click menu in a
+    cell kept in Word's order). Screenshots in `/tmp/g2-shots`.
     Left: the ribbon's buttons are 32 by 30 px on a phone on every tab (the ribbon's own rule);
     Link to Previous; Formula's cell names do not follow rows added above.
 
