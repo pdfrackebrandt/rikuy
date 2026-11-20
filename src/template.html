@@ -8,10 +8,10 @@
     <div class="bar-left">
       <button id="b-nav" class="btn ghost icon" type="button" aria-pressed="false" title="Outline, problems and changes (Ctrl+Shift+O)" aria-label="Outline and problems"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3.5 5.5h13M6.5 10h10M6.5 14.5h10"/></svg><span class="sr">Outline and problems</span><span id="nav-dot" class="nav-dot" aria-hidden="true" hidden></span></button>
       <div class="qat" role="toolbar" aria-label="Quick Access">
-        <button id="qat-save" class="btn ghost icon" type="button" title="Save (Ctrl+S)" aria-label="Save"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3.5h9l3 3V16.5H4z"/><path d="M7 3.5v4h6v-4M7 16.5v-4h6v4"/></svg><span class="sr">Save</span></button>
-        <button id="b-undo" class="btn ghost icon" type="button" title="Undo (Ctrl+Z)" disabled aria-label="Undo"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5 3.5 8.5 7 12M4 8.5h8a4 4 0 0 1 0 8H9"/></svg><span class="sr">Undo</span></button>
+        <button id="qat-save" class="btn ghost icon" type="button" title="Save (Ctrl+S): every edit is kept in this browser as you make it" aria-label="Save"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 3.5h9l3 3V16.5H4z"/><path d="M7 3.5v4h6v-4M7 16.5v-4h6v4"/></svg><span class="sr">Save</span></button>
+        <button id="b-undo" class="btn ghost icon" type="button" title="Undo (Ctrl+Z): take back the last edit" disabled aria-label="Undo"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 5 3.5 8.5 7 12M4 8.5h8a4 4 0 0 1 0 8H9"/></svg><span class="sr">Undo</span></button>
         <button id="b-undo-x" class="btn ghost icon undo-x" type="button" title="The last steps: undo several at once" aria-label="Undo options" disabled><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M7 8.5l3 3 3-3"/></svg><span class="sr">Undo options</span></button>
-        <button id="b-redo" class="btn ghost icon" type="button" title="Redo (Ctrl+Shift+Z)" disabled aria-label="Redo"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m13 5 3.5 3.5L13 12m3-3.5H8a4 4 0 0 0 0 8h3"/></svg><span class="sr">Redo</span></button>
+        <button id="b-redo" class="btn ghost icon" type="button" title="Redo (Ctrl+Shift+Z): make again the edit just undone" disabled aria-label="Redo"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m13 5 3.5 3.5L13 12m3-3.5H8a4 4 0 0 0 0 8h3"/></svg><span class="sr">Redo</span></button>
       </div>
       <div class="brand"><span class="mark">Rikuy</span></div>
     </div>
@@ -20,16 +20,16 @@
       <div id="srch" class="srch"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5"/><path d="M12.2 12.2 16.5 16.5"/></svg><input id="rk-search" type="text" role="combobox" aria-label="Search" aria-autocomplete="list" aria-expanded="false" aria-controls="rk-search-list" autocomplete="off" spellcheck="false" placeholder="Search commands" title="Search for a command by its name (Alt+Q)"><kbd class="srch-key" aria-hidden="true">Alt+Q</kbd><div id="rk-search-list" class="srch-list" role="listbox" aria-label="Commands" hidden></div></div>
     </div>
     <div class="title-end">
-    <button id="b-comments" class="btn ghost" type="button" title="Comments" aria-label="Comments"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4.5h12v8H9.5L6 15.5v-3H4z"/></svg><span>Comments</span></button>
+    <button id="b-comments" class="btn ghost" type="button" title="Comments: show the comments and changes in the side panel" aria-label="Comments"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 4.5h12v8H9.5L6 15.5v-3H4z"/></svg><span>Comments</span></button>
     <button id="b-share" class="btn ghost" type="button" title="A link anyone can open and type in, or a copy for Overleaf" aria-label="Share"><svg viewBox="0 0 20 20" aria-hidden="true"><circle cx="5" cy="10" r="2.2"/><circle cx="15" cy="5" r="2.2"/><circle cx="15" cy="15" r="2.2"/><path d="M7 9l6-3M7 11l6 3"/></svg><span>Share</span></button>
     <div class="tools">
       <button id="b-open" class="btn ghost" type="button" title="Open .tex, .bib, images, an Overleaf .zip or a Word .docx (Ctrl+O)" aria-label="Open"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 5.5h5l1.5 1.5H17v8.5H3z"/></svg><span>Open</span></button>
-      <button id="b-pdf" class="btn ghost" type="button" aria-pressed="false" title="Show the PDF as TeX makes it, beside the page" aria-label="Preview"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5h7l3.5 3.5v11.5H5zM12 2.5V6h3.5M7.5 10h5M7.5 13h5"/></svg><span>Preview</span></button>
+      <button id="b-pdf" class="btn ghost" type="button" aria-pressed="false" title="Preview (Ctrl+F2): show the PDF as TeX makes it, beside the page" aria-label="Preview"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 2.5h7l3.5 3.5v11.5H5zM12 2.5V6h3.5M7.5 10h5M7.5 13h5"/></svg><span>Preview</span></button>
       <span class="sep"></span>
       <div class="zoom" role="group" aria-label="Zoom">
-        <button id="b-zout" class="btn ghost icon" type="button" title="Zoom out" aria-label="Zoom out"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10h10"/></svg><span class="sr">Zoom out</span></button>
-        <button id="zoomv" class="btn ghost zv" type="button" title="Fit width" aria-label="Fit width">Fit</button>
-        <button id="b-zin" class="btn ghost icon" type="button" title="Zoom in" aria-label="Zoom in"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10h10M10 5v10"/></svg><span class="sr">Zoom in</span></button>
+        <button id="b-zout" class="btn ghost icon" type="button" title="Zoom out (Ctrl+-): show the page smaller" aria-label="Zoom out"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10h10"/></svg><span class="sr">Zoom out</span></button>
+        <button id="zoomv" class="btn ghost zv" type="button" title="Fit width: show the page as wide as the window" aria-label="Fit width">Fit</button>
+        <button id="b-zin" class="btn ghost icon" type="button" title="Zoom in (Ctrl+=): show the page larger" aria-label="Zoom in"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5 10h10M10 5v10"/></svg><span class="sr">Zoom in</span></button>
       </div>
       <span class="sep"></span>
       <button id="b-ai" class="btn ghost ai-only" type="button" title="Ask Claude to rewrite the selection" aria-label="Ask Claude"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.5v4M10 13.5v4M2.5 10h4M13.5 10h4M5 5l2.2 2.2M12.8 12.8 15 15M15 5l-2.2 2.2M7.2 12.8 5 15"/></svg><span>Ask Claude</span></button>
@@ -125,12 +125,12 @@
     </aside>
   </main>
   <footer id="status" aria-label="Status">
-    <button id="st-pages" class="linkish" type="button" title="Go To a page, a heading, a footnote, an equation or a label (Ctrl+G)"></button><span id="st-words"></span><button id="st-warn" class="linkish" type="button" hidden></button>
+    <button id="st-pages" class="linkish" type="button" title="Go To a page, a heading, a footnote, an equation or a label (Ctrl+G)"></button><span id="st-words"></span><button id="st-warn" class="linkish" type="button" title="Problems: show what TeX found, in the side panel" hidden></button>
     <span class="grow"></span>
     <!--APPSTATUS-->
     <span id="st-save">Kept in this browser</span>
-    <button id="b-new" class="linkish" type="button" aria-label="New document">New document</button>
-    <button id="b-sample" class="linkish" type="button" aria-label="Load the sample">Load the sample</button>
+    <button id="b-new" class="linkish" type="button" title="New document: start a blank document" aria-label="New document">New document</button>
+    <button id="b-sample" class="linkish" type="button" title="Load the sample: open the document Rikuy starts with" aria-label="Load the sample">Load the sample</button>
     <div id="st-views" class="st-views" role="group" aria-label="Views">
       <button id="sv-page" type="button" aria-pressed="true" aria-label="Page view" title="Page: the typeset page you type on"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5.5 2.5h9v15h-9zM8 6h4M8 9h4M8 12h3"/></svg><span>Page</span></button>
       <button id="sv-latex" type="button" aria-pressed="false" aria-label="LaTeX view" title="LaTeX: the source across the window, at the same place"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m7 6-4 4 4 4m6-8 4 4-4 4"/></svg><span>LaTeX</span></button>

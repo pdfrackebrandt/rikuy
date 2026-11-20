@@ -586,7 +586,7 @@ def word_layout(page):
     seen = {t: page.evaluate(LAID, t) for t in tabs if t not in ('home', 'file')}
     bad = {t: [(g['id'], g['cls']) for g in v['groups'] if 'folded' in g['cls'] or ' sm' in g['cls'] or ' nm' in g['cls']] for t, v in seen.items()}
     check('at 1920 px every laid out group of the %d other tabs is open, its buttons as Word draws them on a wide window' % len(seen), not any(bad.values()) and all(v['groups'] for v in seen.values()), bad)
-    big = [(t, g['id'], i) for t, v in seen.items() for g in v['groups'] for i in g['items'] if i[0] == 'L' and not (60 <= i[1] <= 66 and i[2] <= 6)]
+    big = [(t, g['id'], i) for t, v in seen.items() for g in v['groups'] for i in g['items'] if i[0] == 'L' and not (70 <= i[1] <= 72 and i[2] <= 6)]
     small = [(t, g['id'], i) for t, v in seen.items() for g in v['groups'] for i in g['items'] if i[0] in 'SI' and not (20 <= i[1] <= 24)]
     check('large buttons are the height of three small ones, from the group\'s top; small ones and icons 20 to 24 px, three to a column', not big and not small, (big[:4], small[:4]))
     cut = [(t, g['id']) for t, v in seen.items() for g in v['groups'] if not g['whole']]
@@ -706,8 +706,8 @@ def downloads_group(p):
             page.evaluate('(t) => rikuy.selectTab(t)', t); page.wait_for_timeout(150)
             d = page.evaluate(DL)
             b = d['b']
-            ok = len(b) == 3 and len({x[0] for x in b}) == 1 and [x[1] - d['top'] for x in b] == [4, 26, 48] and all(x[3] == 22 for x in b) \
-                and d['lab'] and d['lab'][1] == 'Download' and d['lab'][0][1] > b[2][1] + 22 and len(set(d['icons'])) == 3
+            ok = len(b) == 3 and len({x[0] for x in b}) == 1 and [x[1] - d['top'] for x in b] == [4, 28, 52] and all(x[3] == 24 for x in b) \
+                and d['lab'] and d['lab'][1] == 'Download' and d['lab'][0][1] >= b[2][1] + 24 and len(set(d['icons'])) == 3
             if not ok: bad[(w, t)] = d
     check('from 900 px with a mouse, on Home and the laid out tabs at 1920 and 1366 px: PDF, Word and LaTeX one under another in the grid\'s three rows, each its own icon, the group\'s name Download under them', not bad, str(bad)[:400])
     # one weight and size for every button's name, as Word's: Find, Replace and Select as PDF, Word
@@ -893,21 +893,27 @@ def fold_sweep(page):
         check('%s: no group is folded where it would fit open' % tag, not wasted, wasted[:6])
         if extra == []:
             home = {w: seen[w]['home'] for w in widths}
-            check('Home from 1920 to 1024 px folds nothing but its spare Insert; at 900 px Clipboard and Editing may fold with it', all(set(home[w]['folded']) <= {'insert'} for w in widths if w >= 1024) and set(home[900]['folded']) <= {'insert', 'editing', 'clipboard'}, {w: home[w]['folded'] for w in (900, 1030, 1360)})
+            # (at 900 px Paragraph: every split button's arrow a 24 px target, WCAG 2.5.8, made Font
+            # and Paragraph wider than Clipboard and Editing can make room for)
+            check('Home from 1920 to 1024 px folds nothing but its spare Insert; at 900 px one group of rank 4 or less may fold with it', all(set(home[w]['folded']) <= {'insert'} for w in widths if w >= 1024) and len(set(home[900]['folded']) - {'insert'}) <= 1 and set(home[900]['folded']) <= {'insert', 'editing', 'clipboard', 'paragraph'}, {w: home[w]['folded'] for w in (900, 1030, 1360)})
     page.evaluate("""() => { for (const c of window.rikuy.cmds.commands()) if (/^t-sw/.test(c.id)) window.rikuy.cmds.unregister(c.id); window.rikuy.ribbonBuild(); window.rikuy.ribbonFit = window.__rf; }""")
     page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(300)
     open_tab(page, 'Home')
 
 
 def run():
+    # (python3 tabs.py widths fold_sweep: those parts alone)
+    only = set(sys.argv[1:])
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
         for f in (mouse_and_keys, contextual, widths, collapse, every_command, keys, search_box, context_menu, kit, round_trips, kept_braces, review_fixes, word_layout, fold_sweep):
+            if only and f.__name__ not in only: continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
         browser.close()
         for f in (tablet, mac_keytips, downloads_group, frontier):
+            if only and f.__name__ not in only: continue
             try: f(p)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
     bad = [r for r in results if not r[1]]
