@@ -245,7 +245,7 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
 .rb::-webkit-scrollbar { display: none; }
 .rb > * { flex: none; }
 .rb > .rb-panel { flex: 1 0 auto; }
-.rb-style { font: 13px var(--font-ui); color: var(--ink-ui); background: var(--panel); border: 1px solid var(--field-line); border-radius: 4px; height: 28px; padding: 0 4px; width: 128px; }
+.rb-style { font: 13px var(--font-ui); color: var(--ink-ui); background: var(--panel); border: 1px solid var(--field-line); border-radius: 4px; height: 28px; padding: 0 4px; width: 100px; }
 .rb-style:disabled { opacity: .55; }
 .rb-style:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 /* The Styles gallery, as Word's: one bordered box of tiles, each the style's name drawn in that
@@ -511,8 +511,10 @@ body.file-open #rp-file .rb-dl::before { display: none; }
   body:not(.file-open) .rb-dl > .btn svg { width: 16px; height: 16px; }
   body:not(.file-open) .rb-dl > .rb-lab, body:not(.file-open) .rb.rb-nolab .rb-dl > .rb-lab { display: block; grid-row: 4; grid-column: 1; align-self: end; justify-self: center; margin: 0; font: 12px/16px var(--font-ui); color: var(--mute); }
   body:not(.file-open) .rb.rb-dl1 .rb-dl > .rb-lab { display: none; }
-  body:not(.file-open) .rb.rb-dl1 .rb-dl > #rb-dl-menu { grid-row: 1 / span 3; align-self: center; width: 26px; padding: 0; justify-content: center; }
-  body:not(.file-open) .rb.rb-dl1 .rb-dl > #rb-dl-menu > span:not(.sr) { display: none; }
+  /* (one Download button: a large one with its name, as a folded group is drawn) */
+  body:not(.file-open) .rb.rb-dl1 .rb-dl { padding: 4px; }
+  body:not(.file-open) .rb.rb-dl1 .rb-dl > #rb-dl-menu { grid-row: 1 / span 3; align-self: start; flex-direction: column; justify-content: flex-start; align-items: center; width: auto; min-width: 42px; height: 72px; padding: 4px 4px 2px; gap: 2px; line-height: 16px; }
+  body:not(.file-open) .rb.rb-dl1 .rb-dl > #rb-dl-menu > svg { width: 32px; height: 32px; }
   /* (the source kept live: its green mark before the icon, as in the row) */
   body:not(.file-open) .rb-dl > #b-save.live { padding-left: 12px; }
 }
@@ -2557,6 +2559,10 @@ body.focus #ruler, body.focus #vruler, body.view-latex #ruler, body.view-pdf #ru
   .rb .rb-grp.folded > .rb-gbtn > span, .rb .rb-grp.ico > .rb-gbtn > span { display: block; white-space: nowrap; }
   .rb .rb-grp.folded > .rb-gbtn > svg:not(.rb-gico), .rb .rb-grp.ico > .rb-gbtn > svg:not(.rb-gico) { display: block; }
   .rb-tb > .sep:has(+ .rb-grp.ico) { display: block; }
+  /* (a separator 2 px from the groups each side, as Word's: their own padding spaces them; the row
+     no gap of its own) */
+  .rb-tb > .sep { margin-left: 2px; margin-right: 2px; }
+  body:not(.file-open) .rb-tb { gap: 0; }
   .rb-tb > .rb-grp.ico { margin-left: 0; }
   /* a corner arrow that is a group's own button, in any group (Home's Paragraph settings too) */
   #ribbon .rb-grp:not(.folded) > .rb-launch-c { position: absolute; right: 0; bottom: 1px; width: 16px; min-width: 0; height: 14px; padding: 0; gap: 0; align-items: center; justify-content: center; border: 0; border-radius: 4px; background: transparent; color: var(--ink-ui); }
@@ -2573,3 +2579,43 @@ body.focus #ruler, body.focus #vruler, body.view-latex #ruler, body.view-pdf #ru
 .pop-frontier .fr-soon { font-weight: 600; }
 .pop-frontier .pop-row { display: flex; justify-content: flex-end; }
 @media (pointer: coarse) { .pop-frontier .btn { min-height: 44px; min-width: 64px; } }
+
+/* every small icon of the ribbon 16 px (the larger rules above outweigh this one) */
+:where(#ribbon) .btn svg { width: 16px; height: 16px; }
+/* ---- a finger's targets (test/consistency.py, T1: 44 px with a coarse pointer) ----
+   Every control of the ribbon, the tab row and the title bar at least 44 px each way on a touch
+   screen, as Word's touch mode spaces its ribbon; the corner arrows in the row as buttons of their
+   own; the Styles gallery its list, a 44 px field (the gallery's 27 px tiles are a mouse's). */
+@media (pointer: coarse) {
+  .rb .rb-grp > .btn, .rb .rb-grp > .rb-split > .btn, .rb .rb-dl > .btn, .rb .rb-gbtn { min-width: 44px; min-height: 44px; }
+  .rb .rb-grp > .rb-split { min-height: 44px; }
+  .rb .rb-grp .fbx, .rb .rb-grp .pf-v, .rb-style, .rb-tabsel { min-height: 44px; }
+  .rb .rb-grp:not(.folded) > .rb-launch, #ribbon .rb-grp:not(.folded) > .rb-launch-c { position: static; width: 44px; height: 44px; min-width: 44px; align-self: center; }
+  .rb .rb-gw { display: none; }
+  .rb.rb-narrow .rb-style, .rb .rb-style { display: inline-block; }
+}
+/* the Styles group's own name only where its list stands in the gallery's place (the gallery has
+   its caption) */
+@media (min-width: 900px) { .rb:not(.rb-narrow) #rp-home .rb-grp[data-group="styles"] > .rb-glab { display: none; } }
+/* A tablet (a touch screen from 861 px): one row of 44 px controls, every group's name under it in
+   a row of its own (the group as wide as its name), a folded group's button its icon and name, the
+   downloads a group as the others */
+@media (pointer: coarse) and (min-width: 861px) {
+  .rb .rb-grp:not(.folded), body:not(.file-open) .rb .rb-dl { display: grid; grid-auto-flow: column; grid-template-rows: 44px 20px; grid-template-columns: none; grid-auto-columns: auto;
+    align-items: center; justify-items: center; align-content: start; gap: 0; padding: 4px 2px; width: auto; height: auto; overflow: visible; }
+  .rb .rb-grp:not(.folded) > *, body:not(.file-open) .rb .rb-dl > * { grid-row: 1; }
+  .rb .rb-grp:not(.folded) > .rb-glab, body:not(.file-open) .rb .rb-dl > .rb-lab { grid-row: 2; grid-column: 1 / span 30; position: static; display: block; justify-self: stretch; align-self: end;
+    margin: 0; padding: 0 4px; text-align: center; white-space: nowrap; font: 12px/16px var(--font-ui); color: var(--mute); }
+  .rb.rb-dl1 .rb-dl > .rb-lab { display: none !important; }
+  .rb .rb-grp.folded > .rb-gbtn { display: inline-flex; flex-direction: row; align-items: center; gap: 4px; width: auto; padding: 0 8px; font-size: 12px; }
+  .rb .rb-grp.folded > .rb-gbtn > .rb-gico { display: inline; width: 16px; height: 16px; }
+  .rb .rb-grp.folded > .rb-gbtn > span, .rb .rb-grp.folded > .rb-gbtn > svg:not(.rb-gico) { display: inline; }
+  .rb .rb-grp.folded > .rb-gbtn > svg:not(.rb-gico) { width: 12px; height: 12px; }
+  #ribbon .rb-dl > #rb-dl-menu > span:not(.sr) { display: inline; }
+  .rb-tb > .sep { align-self: stretch; height: auto; margin: 8px 2px 24px; }
+  #rp-home .rb-grp[data-group="styles"] > .rb-glab { display: block; }
+  .rb-tab, .rb-coll { min-height: 44px; }
+  .rb-coll { width: 44px; }
+  #bar .btn, #bar .btn.icon, #bar .btn.undo-x { min-width: 44px; min-height: 44px; }
+  .srch input { height: 44px; }
+}
