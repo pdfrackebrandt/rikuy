@@ -58,7 +58,7 @@ register(
     when: always, on: (app) => viewIs('page')(app) && app.webOn(), run: (app) => { const on = !(viewIs('page')(app) && app.webOn()); app.setView('page'); app.setWeb(on); } },
   { id: 'zoom-slider', name: 'Zoom', el: 'st-zoom', role: 'slider', static: true, place: 'status', only: 'wide', title: 'Zoom: drag, or Ctrl and + or -', synonyms: ['Zoom slider', 'Magnification'],
     when: always, run: (app, args) => app.zoomTo((+args || 100) / 100, null) },
-  { id: 'zoom-level', name: 'Zoom level', el: 'st-zoomv', static: true, place: 'status', only: 'wide', title: 'The zoom; a press shows the page at its actual size (Ctrl+0)', when: always, run: (app) => app.zoomTo(1, null) },
+  { id: 'zoom-level', name: 'Zoom level', el: 'st-zoomv', static: true, place: 'status', only: 'wide', title: 'Show the page at its actual size; the button says the zoom (Ctrl+0)', when: always, run: (app) => app.zoomTo(1, null) },
 
   // ---- View ▸ Views
   { id: 'read-mode', name: 'Read Mode', order: 10, title: 'Read Mode: TeX\'s PDF across the window, to read (the status bar\'s PDF)', synonyms: ['Reading view', 'PDF view', 'Full screen reading'],
@@ -582,9 +582,16 @@ function restorePrefs(app) {
 // name, its keys, then what it does ("Preview (Ctrl+F2): show the PDF as TeX makes it, beside the
 // page"); the template's own titles had the description alone, some without the keys
 export function barTip(c, mac) {
-  const t = keyTitle(c, c.name, mac);
-  if (t.toLowerCase().startsWith(c.name.toLowerCase())) return t;
-  return c.name + ': ' + (/^[A-Z][a-z]/.test(t) ? t[0].toLowerCase() + t.slice(1) : t);
+  const t = keyTitle(c, c.name, mac), n = c.name, esc = n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let d = t, keys = '';
+  // (its keys right after its name, wherever the title had them: Word's "Open (Ctrl+O): …")
+  const lead = t.match(new RegExp('^' + esc + '(?: \\(([^()]*)\\))?: '));
+  if (lead) { keys = lead[1] || ''; d = t.slice(lead[0].length); }
+  const m = d.match(/\s*\(([^()]*)\)\s*$/);
+  if (m && /Ctrl|Alt|Shift|⌘|⌥|⇧|\bF\d/.test(m[1])) { keys = keys || m[1]; d = d.slice(0, m.index); }
+  const head = n + (keys ? ' (' + keys + ')' : '');
+  if (!d.trim() || d.trim() === n) return head;
+  return head + ': ' + (/^[A-Z][a-z]*[\s,.:;]/.test(d) ? d[0].toLowerCase() + d.slice(1) : d);
 }
 onInstall((app) => {
   for (const c of commands()) {
