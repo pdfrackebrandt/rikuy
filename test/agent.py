@@ -1,6 +1,6 @@
 """Rikuy as an AI agent meets it (what build/app.mjs's llms.txt tells one), in Chromium.
 
-window.rikuy.api, every member: it is frozen and has exactly ten names; version is the
+window.rikuy.api, every member: it is frozen and has exactly eighteen names; version is the
 package's; whenReady resolves once the document is on the page; getSource and getFiles give the
 project (a picture by its size); setSource is one edit that one Undo takes back byte for byte,
 refuses a text the page cannot read and anything but a string; compile gives {ok, engine, pages,
@@ -27,6 +27,24 @@ Links: #tex= with plain LaTeX in base64url opens as one's own document, marked a
 stays text; a broken or oversized one says why and leaves the open document; a #share= link
 built by llms.txt's Python recipe opens as a guest's with "by" and as one's own without.
 
+The agent tools (src/agent.js) through WebMCP (webmcp): with no model context nothing is
+registered; with a stand in for document.modelContext the ten tools are registered with their
+schemas and hints and an AbortSignal; get_document gives the document as data; select and
+run_command make a word bold and say what changed and that one Undo takes it back; undo does;
+edit_source inserts, refuses an expected text that is not there and a place out of the file in
+plain words; a deletion of over 200 characters asks the person in a modal dialog whose Allow a
+script cannot press, Escape and Don't allow refuse and change nothing, a real press allows, and
+the agent cancelling closes the question; set_source and a command that deletes ask too;
+insert_graph makes a graph get_document then lists with its formulas and the page names; a
+guest's view refuses edits; rikuy.api.tools and callTool are the same tools; the earlier drafts'
+navigator.modelContext (registerTool with unregister, a client's requestUserInteraction, MCP's
+content results; provideContext) work too. The page's structure as the accessibility tree has it
+(structure): headings named with their numbers, every formula math named by its LaTeX ("Equation
+(1): ..."), the table a figure named by its caption, citations links described with their keys,
+cross references links to their labels, footnote marks "Footnote 1", the bibliography's heading,
+the title's authors; in Chromium's own tree as in Playwright's.
+
+Usage: python3 agent.py [api controls links equations webmcp structure]
 Needs a page built without RIKUY_SHARE (npm run build); RIKUY_DIST names another dist/."""
 import base64, json, os, re, sys, zlib
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -136,8 +154,8 @@ def api(p):
     shape = page.evaluate('''() => { const a = window.rikuy.api, before = Object.keys(a).sort().join(' ');
       let threw = 0; for (const f of [() => { 'use strict'; a.extra = 1; }, () => { 'use strict'; a.getSource = () => 'x'; }, () => { 'use strict'; delete a.compile; }, () => { 'use strict'; window.rikuy.api = {}; }]) try { f(); } catch (e) { threw++; }
       return { keys: before, after: Object.keys(window.rikuy.api).sort().join(' '), frozen: Object.isFrozen(a), threw, same: window.rikuy.api === a, types: Object.fromEntries(Object.keys(a).map((k) => [k, typeof a[k]])) }; }''')
-    check('api is frozen and has exactly its ten members', shape['keys'] == 'commands compile getFiles getSource needs run setSource setUpScripts version whenReady' and shape['after'] == shape['keys']
-          and shape['frozen'] and shape['threw'] == 4 and shape['same'] and all(t == ('string' if k == 'version' else 'function') for k, t in shape['types'].items()), shape)
+    check("api is frozen and has exactly its eighteen members (the ten before, and the agent tools' eight)", shape['keys'] == 'callTool commands compile editSource getDocument getFiles getSource insertGraph needs run runCommand select setSource setUpScripts tools undo version whenReady' and shape['after'] == shape['keys']
+          and shape['frozen'] and shape['threw'] == 4 and shape['same'] and all(t == ('string' if k == 'version' else 'object' if k == 'tools' else 'function') for k, t in shape['types'].items()), shape)
     check('api.version is the package\'s version (the installed app adds its own: test/offline.py)', page.evaluate('rikuy.api.version') == VERSION, page.evaluate('rikuy.api.version'))
 
     # reading
@@ -240,7 +258,7 @@ def api(p):
     load_doc(page, DOC)
     cm = page.evaluate('rikuy.api.commands()')
     byid = {c['id']: c for c in cm}
-    check('api.commands lists the commands: id, name, tab, group, keys, enabled', len(cm) > 40 and all(sorted(c) == ['enabled', 'group', 'id', 'keys', 'name', 'tab'] for c in cm)
+    check('api.commands lists the commands: id, name, description, tab, group, keys, enabled (and args, asksFirst where they apply)', len(cm) > 40 and all({'description', 'enabled', 'group', 'id', 'keys', 'name', 'tab'} <= set(c) <= {'description', 'enabled', 'group', 'id', 'keys', 'name', 'tab', 'args', 'asksFirst'} for c in cm)
           and byid['bold']['name'] == 'Bold' and byid['bold']['tab'] == 'home' and 'Ctrl+B' in byid['bold']['keys'] and byid['download-latex']['enabled'] is True, [c['id'] for c in cm][:12])
     page.get_by_role('textbox', name='Document', exact=True).get_by_role('paragraph').nth(1).click()
     page.keyboard.press('Home'); page.keyboard.press('Control+Shift+ArrowRight')
@@ -823,12 +841,194 @@ def equations(p):
     browser.close()
 
 
+# ---- the agent tools through WebMCP -------------------------------------------------------
+STUB = "document.modelContext = { tools: [], opts: [], registerTool(t, o) { this.tools.push(t); this.opts.push(o); return Promise.resolve(); } };"
+CALL = """async ([n, x]) => { const t = document.modelContext.tools.find((t) => t.name === n); const c = new AbortController(); window.__abort = c;
+  return JSON.parse(await t.execute(x, { signal: c.signal })); }"""
+
+
+def mcp(page, name, x):
+    return page.evaluate(CALL, [name, x])
+
+
+def asking(page, name, x):
+    """starts a tool that asks, and waits for the question"""
+    page.evaluate("([n, x]) => { const t = document.modelContext.tools.find((t) => t.name === n); const c = new AbortController(); window.__abort = c; window.__asked = t.execute(x, { signal: c.signal }).then((r) => JSON.parse(r)); }", [name, x])
+    page.get_by_role('dialog', name='Allow the AI agent?', exact=True).wait_for(timeout=5000)
+
+
+def answered(page):
+    return page.evaluate('window.__asked')
+
+
+AB_TABLE = '\\documentclass{article}\n\\begin{document}\nBefore.\n\n\\begin{tabular}{ll}\nalpha & beta\\\\\ngamma & delta\n\\end{tabular}\n\nAfter.\n\\end{document}\n'
+REG = """() => { const m = document.modelContext; return { names: m.tools.map((t) => t.name), ok: m.tools.every((t) => typeof t.execute === 'function' && t.inputSchema && t.inputSchema.type === 'object' && t.title && t.description && t.annotations && typeof t.annotations.readOnlyHint === 'boolean' && typeof t.annotations.untrustedContentHint === 'boolean'),
+  signal: m.opts.every((o) => o && o.signal instanceof AbortSignal && !o.exposedTo), ids: m.tools.find((t) => t.name === 'run_command').inputSchema.properties.id.enum.length, cmds: window.rikuy.api.commands().length,
+  api: window.rikuy.api.tools.map((t) => t.name), reads: m.tools.filter((t) => t.annotations.readOnlyHint).map((t) => t.name) }; }"""
+TOOL_NAMES = ['get_document', 'get_source', 'select', 'list_commands', 'run_command', 'edit_source', 'set_source', 'insert_graph', 'compile', 'undo']
+
+
+def webmcp(p):
+    browser, page, errors = open_page(p)
+    check('no model context in the browser: nothing registered, nothing built', page.evaluate('!document.modelContext && !navigator.modelContext && !window.rikuy.webmcp'))
+    browser.close()
+
+    browser, page, errors = open_page(p, init=STUB)
+    page.wait_for_function('document.modelContext.tools.length === 10', timeout=10000)
+    reg = page.evaluate(REG)
+    hints = page.evaluate("Object.fromEntries(document.modelContext.tools.map((t) => [t.name, t.annotations.untrustedContentHint]))")
+    check('every tool whose result holds the document\'s text says it is untrusted content (all but list_commands)', all(v is (k != 'list_commands') for k, v in hints.items()), hints)
+    check('WebMCP: the ten tools registered on document.modelContext, each with a title, a description, an object schema and its hints, for this origin alone', reg['names'] == TOOL_NAMES and reg['ok'] and reg['signal'], reg)
+    check("run_command names every command an agent may run (an enum of the registry's ids); rikuy.api.tools are the same tools", reg['ids'] == reg['cmds'] > 400 and reg['api'] == reg['names'] and reg['reads'] == ['get_document', 'get_source', 'list_commands', 'compile'], reg)
+    load_doc(page, DOC)
+    d = mcp(page, 'get_document', {})
+    check('get_document: the document as data, its sections, formulas and places', [x['title'] for x in d['sections']] == ['Opening', 'Details'] and d['files'][0]['name'] == 'main.tex' and d['guest'] is False and 'pdf' in d and 'problems' in d, d)
+    i = src(page).index('Second paragraph')
+    sel = mcp(page, 'select', {'start': i, 'end': i + 6})
+    b = mcp(page, 'run_command', {'id': 'bold'})
+    check('select, then run_command "bold": what changed (the range, the text out and in), one Undo step, the selection after', sel['selection']['text'] == 'Second' and b['ran'] is True and b['undoSteps'] == 1
+          and b['changed'] == [{'file': 'main.tex', 'start': i, 'end': i + 6, 'removed': 'Second', 'inserted': '\\textbf{Second}'}] and '\\textbf{Second} paragraph' in src(page), (sel, b))
+    u = mcp(page, 'undo', {})
+    check('undo takes it back byte for byte and says so', u['undone'] == 1 and src(page) == DOC and u['changed'][0]['inserted'] == 'Second', u)
+    e = mcp(page, 'edit_source', {'start': i, 'end': i, 'text': 'A new '})
+    check('edit_source inserts as one edit, one Undo step', e['undoSteps'] == 1 and src(page) == DOC[:i] + 'A new ' + DOC[i:] and e['changed'][0]['inserted'] == 'A new ', e)
+    mcp(page, 'undo', {})
+    w = mcp(page, 'edit_source', {'start': i, 'end': i + 6, 'text': 'x', 'expected': 'Third'})
+    far = mcp(page, 'edit_source', {'start': 10 ** 6, 'text': 'x'})
+    unknown = mcp(page, 'run_command', {'id': 'no-such-command'})
+    check('errors in plain words, saying what to do: an expected text not there, a place past the end, an unknown command; nothing changed',
+          'read it again with get_source' in w['error'] and 'start must be a whole number from 0 to ' + str(len(DOC)) in far['error'] and 'list_commands' in unknown['error'] and src(page) == DOC, (w, far, unknown))
+    # a deletion of over 200 characters asks the person
+    LONG = DOC.replace('Third paragraph here.', 'Third paragraph here, ' + 'and on ' * 40 + 'to its end.')
+    load_doc(page, LONG)
+    s0 = LONG.index('Third paragraph')
+    big = {'start': s0, 'end': s0 + 250, 'text': ''}
+    asking(page, 'edit_source', big)
+    modal = page.evaluate("(() => { const d = document.querySelector('dialog.rk-agent-ask'); return !!d && d.open && d.matches(':modal'); })()")
+    page.evaluate("[...document.querySelectorAll('dialog.rk-agent-ask button')].find((b) => b.textContent === 'Allow').click()")
+    page.wait_for_timeout(200)
+    still = page.get_by_role('dialog', name='Allow the AI agent?', exact=True).count()
+    page.keyboard.press('Escape')
+    r = answered(page)
+    check("taking out over 200 characters asks first, in a modal dialog; a script's press of Allow counts for nothing; Escape refuses and nothing changes", modal and still == 1 and r.get('refused') and src(page) == LONG, (modal, still, r))
+    asking(page, 'edit_source', big)
+    q = page.get_by_role('dialog', name='Allow the AI agent?').inner_text()
+    allow = page.get_by_role('dialog', name='Allow the AI agent?').get_by_role('button', name='Allow', exact=True)
+    allow.click()
+    page.wait_for_timeout(100)
+    early = page.get_by_role('dialog', name='Allow the AI agent?', exact=True).count()
+    page.wait_for_timeout(500)
+    allow.click()
+    r = answered(page)
+    check('the question says what goes (the file, how much, the words it starts with); a press in its first half second counts for nothing (a click meant for what was there before)',
+          'take out 250 characters of main.tex' in q and '"Third paragraph here, and on' in q and early == 1, (q, early))
+    check('a real press of Allow lets it through, and it says what it took out', r.get('undoSteps') == 1 and src(page) == LONG[:s0] + LONG[s0 + 250:] and len(r['changed'][0]['removed']) == 250, r)
+    mcp(page, 'undo', {})
+    load_doc(page, DOC)
+    asking(page, 'set_source', {'text': DOC + '\n'})
+    page.get_by_role('button', name="Don't allow", exact=True).click()
+    r = answered(page)
+    asking(page, 'set_source', {'text': DOC + '\n'})
+    page.evaluate('window.__abort.abort()')
+    r2 = answered(page)
+    check("set_source asks; Don't allow refuses; the agent cancelling closes the question; nothing changed", r.get('refused') and r2.get('refused') and src(page) == DOC and page.get_by_role('dialog').count() == 0, (r, r2))
+    # a command that deletes asks too
+    load_doc(page, AB_TABLE)
+    j = src(page).index('alpha')
+    mcp(page, 'select', {'start': j + 1})
+    asking(page, 'run_command', {'id': 'delete-table'})
+    # (another call meanwhile waits for the question: it cannot move the caret to another table)
+    page.evaluate("() => { window.__moved = document.modelContext.tools.find((t) => t.name === 'select').execute({ start: 0 }, { signal: new AbortController().signal }).then((r) => { window.__movedAt = performance.now(); return r; }); }")
+    page.wait_for_timeout(300)
+    waited = page.evaluate('!window.__movedAt')
+    q = page.get_by_role('dialog', name='Allow the AI agent?').inner_text()
+    page.keyboard.press('Escape'); answered(page)
+    page.evaluate('window.__moved')
+    check('run_command "delete-table" asks first, naming the command and where the caret is; another call waits for the answer', 'run "Delete' in q and 'where the caret is: "\\begin{tabular}{ll} alpha & beta' in q and waited and src(page) == AB_TABLE, (q, waited))
+    # a data file's name from arguments stays inside the project (a zip of it would carry a climbing name)
+    mcp(page, 'select', {'start': j + 1})
+    zs = mcp(page, 'run_command', {'id': 'table-from-data', 'args': {'file': '../../escape.csv', 'text': 'a,b\n1,2'}})
+    check('Table from Data File refuses a file name that climbs out of the project, in words, and makes no file', 'path inside the project' in zs.get('error', '') and page.evaluate("![...rikuy.files.keys()].some((n) => n.includes('..'))"), zs)
+    # an interactive graph
+    load_doc(page, DOC)
+    k = src(page).index('Second paragraph here.') + len('Second paragraph here.')
+    mcp(page, 'select', {'start': k})
+    g = mcp(page, 'insert_graph', {'spec': {'kind': 'function', 'title': 'A wave', 'f': ['a sin(b x)'], 'sliders': [{'name': 'a', 'min': 0, 'max': 3, 'step': 0.1, 'value': 1}, {'name': 'b', 'min': 1, 'max': 4, 'step': 1, 'value': 2}]}})
+    page.wait_for_timeout(800)
+    gd = mcp(page, 'get_document', {'include': ['graphs']})
+    named = page.get_by_role('figure', name=re.compile(r'^Interactive graph: A wave\. y = a sin\(b x\)\. Sliders: a from 0 to 3')).count()
+    check('insert_graph: one Undo step, its files made; get_document lists it with its formulas and sliders; the page names it so', g.get('undoSteps') == 1 and any(c.get('made') and c['file'].endswith('.html') for c in g['changed'])
+          and gd['graphs'] and gd['graphs'][0]['graph']['formulas'] == ['a sin(b x)'] and [q['name'] for q in gd['graphs'][0]['graph']['sliders']] == ['a', 'b'] and named == 1, (g.get('undoSteps'), gd, named))
+    # a guest's view
+    page.evaluate("document.body.classList.add('guest')")
+    gr = mcp(page, 'edit_source', {'start': 0, 'text': 'x'})
+    rd = mcp(page, 'get_source', {'start': 0, 'end': 14})
+    page.evaluate("document.body.classList.remove('guest')")
+    check("in a guest's view the tools read and do not edit", 'guest view' in gr.get('error', '') and rd['text'] == '\\documentclass', (gr, rd))
+    cl = page.evaluate("rikuy.api.callTool('get_source', { start: 0, end: 14 })")
+    lc = page.evaluate("rikuy.api.commands().find((c) => c.id === 'table')")
+    check("rikuy.api.callTool is the same tool; api.commands() gives each command's description and its arguments' schema", cl['text'] == '\\documentclass' and lc['description'] and lc['args']['required'] == ['rows', 'cols'], (cl, lc))
+    check('no page errors (WebMCP)', not errors, errors[:3])
+    browser.close()
+
+    # the earlier drafts: navigator.modelContext, registerTool with unregister, a client
+    OLD = "Object.defineProperty(navigator, 'modelContext', { value: { tools: [], gone: 0, registerTool(t) { this.tools.push(t); return { unregister: () => { this.gone++; } }; } } });"
+    browser, page, errors = open_page(p, init=OLD)
+    page.wait_for_function('navigator.modelContext.tools.length === 10', timeout=10000)
+    load_doc(page, DOC)
+    r = page.evaluate("async () => { const t = navigator.modelContext.tools.find((t) => t.name === 'get_source'); return await t.execute({ start: 0, end: 14 }, {}); }")
+    page.evaluate("""() => { const t = navigator.modelContext.tools.find((t) => t.name === 'set_source'); window.__used = 0;
+      window.__asked = t.execute({ text: 'x' }, { requestUserInteraction: (cb) => { window.__used++; return cb(); } }); }""")
+    page.get_by_role('dialog', name='Allow the AI agent?', exact=True).wait_for(timeout=5000)
+    page.keyboard.press('Escape')
+    r2 = page.evaluate('window.__asked')
+    check("navigator.modelContext (earlier drafts): MCP's content results, a client's requestUserInteraction asks the person, a refusal isError",
+          r['content'][0]['type'] == 'text' and json.loads(r['content'][0]['text'])['text'] == '\\documentclass' and page.evaluate('window.__used') == 1 and r2.get('isError') is True and src(page) == DOC, (r, r2))
+    browser.close()
+    PROV = "Object.defineProperty(navigator, 'modelContext', { value: { got: null, provideContext(c) { this.got = c; } } });"
+    browser, page, errors = open_page(p, init=PROV)
+    page.wait_for_function('navigator.modelContext.got && navigator.modelContext.got.tools.length === 10', timeout=10000)
+    check("and the first draft's provideContext({ tools }) gets the same ten", page.evaluate("navigator.modelContext.got.tools.map((t) => t.name).join()") == ','.join(TOOL_NAMES))
+    browser.close()
+
+
+# ---- the page as the accessibility tree has it ---------------------------------------------------
+def structure(p):
+    browser, page, errors = open_page(p)
+    doc = page.get_by_role('textbox', name='Document', exact=True)
+    check("headings named with their numbers (\"2 The round trip\"), the bibliography's too", doc.get_by_role('heading', name='2 The round trip', exact=True, level=2).count() == 1
+          and doc.get_by_role('heading', name='References', exact=True, level=2).count() == 1)
+    eq = doc.get_by_role('math', name=re.compile(r'^Equation \(1\): V\(k\) = \\max_'))
+    al = doc.get_by_role('math', name=re.compile(r'^Equations \(2\) and \(3\): \\begin\{align'))
+    il = doc.get_by_role('math', name='\\alpha + \\beta = \\gamma', exact=True)
+    check('every formula is math named by its LaTeX: the numbered one "Equation (1): ...", the alignment "Equations (2) and (3)", the inline one', eq.count() == 1 and al.count() == 1 and il.count() == 1)
+    fig = doc.get_by_role('figure', name='Table 1: Shortcuts. On a Mac, use Cmd for Ctrl.', exact=True)
+    check('the table float is a figure named by its caption, with its table inside', fig.count() == 1 and fig.get_by_role('table').count() == 1)
+    cite = doc.get_by_role('link', name='Knuth (1984)', exact=True)
+    ref = doc.get_by_role('link', name='(1)', exact=True)
+    check('a citation is a link said to be a citation, described by its keys; a cross reference a link to its label', cite.get_attribute('aria-roledescription') == 'citation' and cite.get_attribute('aria-description') == 'cites knuth1984'
+          and ref.get_attribute('aria-roledescription') == 'cross reference' and ref.get_attribute('aria-description') == 'to eq:bellman')
+    check("a footnote mark is a link \"Footnote 1\"; the title's author and date are paragraphs", doc.get_by_role('link', name='Footnote 1', exact=True).count() == 1 and doc.get_by_role('paragraph').filter(has_text='Rikuy').count() >= 1)
+    # the same in Chromium's own tree, which agents that read the page by it see
+    cdp = ax(page)
+    nodes = cdp.send('Accessibility.getFullAXTree')['nodes']
+    val = lambda n, k: ((n.get(k) or {}).get('value') or '')
+    props = lambda n: {x['name']: (x.get('value') or {}).get('value') for x in n.get('properties', [])}
+    math = [val(n, 'name') for n in nodes if val(n, 'role') == 'math' and not n.get('ignored')]
+    figs = [val(n, 'name') for n in nodes if val(n, 'role') == 'figure' and not n.get('ignored')]
+    cites = [(val(n, 'name'), val(n, 'description'), props(n).get('roledescription')) for n in nodes if val(n, 'role') == 'link' and val(n, 'name') == 'Knuth (1984)']
+    check("Chromium's own accessibility tree says the same: the formulas math with their LaTeX, the figure, the citation with its keys",
+          any(m.startswith('Equation (1): V(k)') for m in math) and '\\alpha + \\beta = \\gamma' in math and 'Table 1: Shortcuts. On a Mac, use Cmd for Ctrl.' in figs and cites and cites[0][1] == 'cites knuth1984', (math[:4], figs, cites))
+    check('no page errors (structure)', not errors, errors[:3])
+    browser.close()
+
+
 if __name__ == '__main__':
+    want = sys.argv[1:]
     with sync_playwright() as p:
-        api(p)
-        controls(p)
-        links(p)
-        equations(p)
+        for name, fn in (('api', api), ('controls', controls), ('links', links), ('equations', equations), ('webmcp', webmcp), ('structure', structure)):
+            if not want or name in want:
+                fn(p)
     bad = [r for r in results if not r[1]]
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     sys.exit(1 if bad else 0)
