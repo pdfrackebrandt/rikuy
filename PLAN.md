@@ -3258,7 +3258,7 @@ Tests:
     (H2), the Spike keeps a heading whole (M1), no Option and character key is taken on a Mac
     (M2), a French keyboard's Ctrl+1 is Ctrl+1 (M3), Hanging Indent round trips (M4), Alt+X reads
     LaTeX's accents (M5), and the lows. Evidence: `npm test` green (`keys` 19 groups, `typing` 6, `commands` 13 with the
-    `WORD` table on both systems, `table` 47), `test/shortcuts.py` 71 checks (screenshots in `/tmp/keys-shots`).
+    `WORD` table on both systems, `table` 47), `test/shortcuts.py` 82 checks (screenshots in `/tmp/keys-shots`).
 
 ## Open tasks
 
