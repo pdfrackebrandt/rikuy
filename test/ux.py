@@ -865,6 +865,19 @@ def focus_rules(page, w):
         page.keyboard.press('Escape'); page.wait_for_timeout(200)
         back = page.evaluate("document.activeElement.id")
         check(f'a dialog opened by the keys from a ribbon button gives that button the focus back ({w})', back == 'rr-a11y', back)
+        # a dialog opened from another by the keys (Paragraph's Tabs…) gives back what that one would:
+        # the caret, and the next key lands there (it went to the ribbon's launcher, the key lost)
+        load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
+        page.keyboard.press('Shift+F10'); page.wait_for_timeout(300)
+        page.get_by_role('menuitem', name='Paragraph Settings', exact=True).focus(); page.keyboard.press('Enter'); page.wait_for_timeout(400)
+        for _ in range(30):
+            if page.evaluate("document.activeElement.textContent.trim() === 'Tabs…'"):
+                break
+            page.keyboard.press('Tab'); page.wait_for_timeout(30)
+        page.keyboard.press('Enter'); page.wait_for_timeout(400)
+        nested = page.evaluate("(document.querySelector('body > .pop #pop-title') || {}).textContent || ''")
+        page.keyboard.press('Escape'); page.wait_for_timeout(300); page.keyboard.type('Z'); page.wait_for_timeout(300)
+        check(f'Paragraph, then Tabs… by the keys, then Esc: the next key lands at the caret ({w})', nested == 'Tabs' and 'SecZond paragraph' in src(page), (nested, src(page)[-60:]))
         # one dialog at a time (N8)
         click_text(page, 'Second paragraph', 3); run_cmd(page, 'font-dialog'); run_cmd(page, 'paragraph-settings'); page.wait_for_timeout(300)
         n = page.evaluate("[...document.querySelectorAll('[role=dialog], [aria-modal=true]')].filter((d) => d.checkVisibility() && !d.closest('[hidden]') && d.getBoundingClientRect().width > 0).map((d) => d.id || d.className.slice(0, 30))")

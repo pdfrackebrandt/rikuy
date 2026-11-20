@@ -2506,8 +2506,15 @@ class App {
   }
 
   makePop(anchor, cls, title) {
-    this.closePop();
+    // A dialog opened from inside another (Paragraph's Tabs…, by a press or by the keys) takes
+    // over where that one would have given the focus back, the page's caret or its opener: looked
+    // for again, it found neither (the focus was in the dialog going away) and fell to the ribbon's
+    // launcher, and the next key was lost
+    const prev = this.pop, inPrev = !!(prev && prev.el.getAttribute('role') === 'dialog' && prev.el.contains(document.activeElement));
+    this.closePop(inPrev);
     if (this.pop) this.closePop(false, true);
+    const hand = inPrev ? { back: prev.back, opener: prev.opener } : this.popHandoff;
+    this.popHandoff = null;
     const p = document.createElement('div');
     p.className = 'pop ' + (cls || '');
     // named by its title, so a screen reader and an agent can tell the dialogs apart. Not
@@ -2536,11 +2543,11 @@ class App {
     // focus back, as UI-PRINCIPLES.md N7 asks; one a press focused keeps the page's place)
     const keysOnRibbon = !!(had && had.closest && had.closest('#ribbon, #rb-top')) && keysLast();
     const pageHad = had === this.root || (!matchMedia('(pointer: coarse)').matches && !keysOnRibbon && (!had || had === document.body || !!had.closest('#ribbon, #rb-top')));
-    const back = at && !at.ghost && !at.crossFile && pageHad ? { c: at.collapsed ? { f: at.f, p: at.p } : { f: at.f, selA: at.a, selB: at.b }, text: this.files.get(at.f) } : null;
+    const back = hand ? hand.back : at && !at.ghost && !at.crossFile && pageHad ? { c: at.collapsed ? { f: at.f, p: at.p } : { f: at.f, selA: at.a, selB: at.b }, text: this.files.get(at.f) } : null;
     document.body.appendChild(p);
     // (the control it was opened from, by the keys: the focus goes back to it when the page does
     // not take it, as a dialog's opener does; File's commands under File's view)
-    const opener = had && had !== this.root && had !== document.body && had.closest && !had.closest('#pages') ? had : null;
+    const opener = hand ? hand.opener : had && had !== this.root && had !== document.body && had.closest && !had.closest('#pages') ? had : null;
     this.pop = { el: p, anchor, anchorPos: null, onClose: null, session: 'pop' + Date.now(), back, opener };
     p.addEventListener('mousedown', (e) => e.stopPropagation());
     // A dialog takes the focus as it opens, as Word's do, by the keys or by a press on the ribbon
@@ -2633,6 +2640,12 @@ class App {
     try { if (window.mathVirtualKeyboard && window.mathVirtualKeyboard.visible) window.mathVirtualKeyboard.hide(); } catch (e) { /* ignore */ }
     this.pop = null;
     if (this.popOutside) document.removeEventListener('mousedown', this.popOutside, true);
+    // (closed quietly with the focus in it, as a button that opens the next dialog does: that one
+    // inherits this one's way back, in the same task only)
+    if (silent && P.el.getAttribute('role') === 'dialog' && P.el.contains(document.activeElement)) {
+      this.popHandoff = { back: P.back, opener: P.opener };
+      queueMicrotask(() => { this.popHandoff = null; });
+    }
     P.el.remove();
     this.closeGroup();
     if (!silent && P.returnCaret) this.restoreCaret(P.returnCaret);
