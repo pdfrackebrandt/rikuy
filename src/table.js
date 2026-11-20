@@ -639,6 +639,14 @@ export function insertRow(src, T, r, below, o = {}) {
   const t = W + lead + (grid || '');
   return { edits: [{ s: at, e: at, t }, ...span], p: at + W.length };
 }
+// the end of a row's cells for Sort: its last cell's, empty or not, its trailing spaces left (rowEnd
+// stops at the last cell with words, so a row ending in an empty cell lost its & when moved)
+function sortEnd(src, row) {
+  const c = row.cells[row.cells.length - 1];
+  let e = c.empty ? c.s : c.ce;
+  if (c.empty) { e = Math.max(e, c.e); while (e > c.s && /\s/.test(src[e - 1])) e--; }
+  return e;
+}
 // the end of a row's words (its last non space character, comments aside)
 function rowEnd(src, row) {
   const c = row.cells[row.cells.length - 1];
@@ -1149,8 +1157,14 @@ export function splitTable(src, T, r) {
   const head = lead0.length ? nl + lead0.map((x) => src.slice(x.s, x.e)).join(nl) : '';
   // (the rules before row r stay above the cut, as the old table's last)
   const at = row.leadE;
-  const t = top + nl + '\\end{' + T.name + '}' + nl + nl + begin + head;
-  return { edits: [{ s: at, e: at, t }], p: at + t.length };
+  // (the formula lines of the rows that go to the new table go with them, before it, renamed to its
+  // rows; a reference to a row left above is #REF!, as each table's cells are its own. formulasAfter
+  // takes them off the first table's lines: carried says they were not lost)
+  const cut = dataRows(T).indexOf(r), carried = [];
+  const rowTo = dataRows(T).map((k, i) => (i >= cut ? i - cut : -1)), colTo = Array.from({ length: T.ncols }, (x, c) => c);
+  const lines = cut < 0 ? [] : formulasOf(src, T).filter((F) => F.r >= cut).map((F) => { carried.push(F.name); return formulaLine('', colName(F.c) + (F.r - cut + 1), F.value, renameRefs(F.text, rowTo, colTo)) + nl; });
+  const t = top + nl + '\\end{' + T.name + '}' + nl + nl + lines.join('') + begin + head;
+  return { edits: [{ s: at, e: at, t }], p: at + t.length, carried };
 }
 
 // ---- alignment ----------------------------------------------------------------------------------
@@ -1264,14 +1278,16 @@ export function sortRows(src, T, r0, r1, col, o = {}) {
   const items = rows.map((r) => {
     const row = T.rows[r], hit = cellOfCol(row, col);
     const key = hit ? cellText(src, hit.cell) : '';
-    return { r, key, text: src.slice(row.cs, rowEnd(src, row)) };
+    return { r, key, text: src.slice(row.cs, sortEnd(src, row)) };
   });
   const num = o.type === 'number' || (o.type == null && items.filter((x) => sortKey(x.key)).every((x) => !isNaN(asNumber(x.key))));
   const cmp = num ? (a, b) => (isNaN(asNumber(a.key)) ? Infinity : asNumber(a.key)) - (isNaN(asNumber(b.key)) ? Infinity : asNumber(b.key)) : (a, b) => sortKey(a.key).localeCompare(sortKey(b.key), undefined, { numeric: true, sensitivity: 'base' });
   const sorted = [...items].sort((a, b) => (o.desc ? -cmp(a, b) : cmp(a, b)) || a.r - b.r);
   const edits = [];
-  items.forEach((x, i) => { const y = sorted[i]; if (y.text !== x.text) edits.push({ s: T.rows[x.r].cs, e: rowEnd(src, T.rows[x.r]), t: y.text }); });
-  return { edits };
+  items.forEach((x, i) => { const y = sorted[i]; if (y.text !== x.text) edits.push({ s: T.rows[x.r].cs, e: sortEnd(src, T.rows[x.r]), t: y.text }); });
+  // (where each row's words went, for the formula lines: formulasAfter)
+  const to = new Map(sorted.map((y, i) => [y.r, items[i].r]));
+  return { edits, moved: (k, col) => (to.has(k) ? { k: to.get(k), col } : undefined) };
 }
 
 // Row r moved one up (dir -1) or down (+1), its cells' text swapped with its neighbour's, the rules
@@ -1289,7 +1305,8 @@ export function moveRow(src, T, r, dir, at) {
   const ta = src.slice(A.cs, ae), tb = src.slice(B.cs, be);
   const start = dir < 0 ? B.cs : B.cs + tb.length - ta.length;
   const off = at != null && at >= A.cs && at <= ae ? at - A.cs : 0;
-  return { edits: [{ s: A.cs, e: ae, t: tb }, { s: B.cs, e: be, t: ta }], p: start + off };
+  // (the two rows' words change places: the formula lines follow them, formulasAfter)
+  return { edits: [{ s: A.cs, e: ae, t: tb }, { s: B.cs, e: be, t: ta }], p: start + off, moved: (q, col) => (q === r ? { k, col } : q === k ? { k: r, col } : undefined) };
 }
 
 // ---- converting -----------------------------------------------------------------------------------
@@ -1410,6 +1427,9 @@ export function setGapRules(src, T, g, names) {
     // the rules there: replaced in place (their run, from the first to the last)
     if (!want.length) {
       const out = [];
+      // (rules that fill a line together, \hline\hline, go with their line)
+      { const a = rules[0], z = rules[rules.length - 1], ls = src.lastIndexOf('\n', a.s - 1) + 1, le = src.indexOf('\n', z.e);
+        if (rules.length > 1 && /^[ \t]*$/.test(src.slice(ls, a.s)) && le >= 0 && /^[ \t\r]*$/.test(src.slice(z.e, le)) && /^[\s]*$/.test(rules.slice(1).map((x, k) => src.slice(rules[k].e, x.s)).join(''))) return [{ s: ls, e: le + 1, t: '' }]; }
       for (const x of rules) {
         // (a rule alone on its line goes with its line)
         const ls = src.lastIndexOf('\n', x.s - 1) + 1, le = src.indexOf('\n', x.e);
@@ -1419,16 +1439,18 @@ export function setGapRules(src, T, g, names) {
       return out;
     }
     const between = src.slice(rules[0].e, rules.length > 1 ? rules[1].s : rules[0].e);
-    return [{ s: rules[0].s, e: rules[rules.length - 1].e, t: want.map((n) => '\\' + n).join(/\n/.test(between) ? nl : between || ' ') }];
+    return [{ s: rules[0].s, e: rules[rules.length - 1].e, t: joinRules(want, /\n/.test(between) ? nl : between || ' ') }];
   }
   if (!want.length) return [];
-  const text = want.map((n) => '\\' + n).join(own ? nl : ' ');
+  const text = joinRules(want, own ? nl : ' ');
   if (g === 0) return [{ s: T.bodyS, e: T.bodyS, t: nl + text }];
   const prev = T.rows[g - 1];
   if (g === T.rows.length && prev.sepS == null) return [{ s: rowEnd(src, prev), e: rowEnd(src, prev), t: ' \\\\' + nl + text }];
   const at = prev.e;
   return [{ s: at, e: at, t: (own ? nl : ' ') + text }];
 }
+// rules written one after another; the same rule twice touches, \hline\hline, as a double rule is written
+const joinRules = (names, sep) => names.map((n, k) => (k && names[k - 1] === n ? '' : k ? sep : '') + '\\' + n).join('');
 // The bars of the specification set: want[k] for each of the n + 1 places
 export function setBars(src, T, want) {
   const cols = T.spec.cols;
@@ -1438,10 +1460,13 @@ export function setBars(src, T, want) {
   const n = cols.length;
   for (let k = 0; k <= n; k++) {
     const i = 2 * k;
-    const had = pieces[i].includes('|');
-    if (had === !!want[k]) continue;
-    if (want[k]) pieces[i] = k === 0 ? '|' + pieces[i] : k === n ? pieces[i] + '|' : '|' + pieces[i];
-    else pieces[i] = pieces[i].replace(/\|/g, '');
+    // (want: true keeps the bars there, one or two; a number asks for that many: 2 is a double
+    // bar, ||, Pen Style's Double)
+    const had = (pieces[i].match(/\|/g) || []).length;
+    const w = want[k] === true ? Math.max(1, had) : Math.max(0, Math.min(2, +want[k] || 0));
+    if (had === w) continue;
+    const bare = pieces[i].replace(/\|/g, ''), bars = '|'.repeat(w);
+    pieces[i] = !w ? bare : k === n ? bare + bars : bars + bare;
   }
   return specEdit(src, T, pieces);
 }
@@ -1475,6 +1500,27 @@ export function applyLook(src, T, look) {
 // ---- borders -----------------------------------------------------------------------------------------
 // Which borders a selection has: { top, bottom, left, right, insideH, insideV } as true, false or
 // null (no such border: one row has no inside horizontal one)
+// the columns an \hhline rules: its - and = (one rule and two) each a column, ~ a column without
+// one, | : # t b the crossings between; *{n}{…} written out
+function hhlineCols(src, x) {
+  const arg = x.args.filter(Boolean).find((y) => y.kind === 'm');
+  let t = arg ? src.slice(arg.is, arg.ie) : '';
+  for (let k = 0; k < 5 && /\*\{\d+\}/.test(t); k++) t = t.replace(/\*\{(\d+)\}\{([^{}]*)\}/g, (m, n, b) => b.repeat(Math.min(+n, 200)));
+  const out = [];
+  let col = 0;
+  for (const ch of t) { if (ch === '-' || ch === '=') out.push(col++); else if (ch === '~') col++; }
+  return out;
+}
+// whether an \hhline draws = (a double rule) over every column c0..c1
+function hhlineDoubles(src, x, c0, c1) {
+  const arg = x.args.filter(Boolean).find((y) => y.kind === 'm');
+  let t = arg ? src.slice(arg.is, arg.ie) : '';
+  for (let k = 0; k < 5 && /\*\{\d+\}/.test(t); k++) t = t.replace(/\*\{(\d+)\}\{([^{}]*)\}/g, (m, n, b) => b.repeat(Math.min(+n, 200)));
+  const kinds = [];
+  for (const ch of t) if (ch === '-' || ch === '=' || ch === '~') kinds.push(ch);
+  for (let c = c0; c <= c1; c++) if (kinds[c] !== '=') return false;
+  return true;
+}
 function gapCovers(src, T, g, c0, c1) {
   const lead = gapLead(T, g), have = new Set();
   for (const x of lead) {
@@ -1483,7 +1529,8 @@ function gapCovers(src, T, g, c0, c1) {
       const arg = x.args.filter(Boolean).find((y) => y.kind === 'm');
       const m = arg && /(\d+)\s*-\s*(\d+)/.exec(src.slice(arg.is, arg.ie));
       if (m) for (let q = +m[1]; q <= +m[2]; q++) have.add(q - 1);
-    } else if (x.name !== 'hhline') for (let q = 0; q < T.ncols; q++) have.add(q);
+    } else if (x.name === 'hhline') for (const q of hhlineCols(src, x)) have.add(q);
+    else for (let q = 0; q < T.ncols; q++) have.add(q);
   }
   for (let q = c0; q <= c1; q++) if (!have.has(q)) return false;
   return true;
@@ -1501,12 +1548,29 @@ export function bordersOf(src, T, rect) {
 // rules: \hline (booktabs' \toprule, \midrule, \bottomrule) across the whole table, \cline{a-b}
 // (\cmidrule) across some columns; vertical ones are bars in the specification, which run the
 // whole height of the table, as LaTeX draws them. { edits, packages }
-export function setBorders(src, T, rect, parts) {
+export function setBorders(src, T, rect, parts, o = {}) {
   const { r0, r1, c0, c1 } = rect, n = T.rows.length;
+  // (Pen Style's Double: a whole rule twice, \hline\hline, and bars twice, ||; a rule over some
+  // columns stays single, \cline has no double)
+  const twice = (w) => (o.double ? [w, w] : [w]);
   const full = c0 === 0 && c1 >= T.ncols - 1;
   const look = lookOf(src, T), book = look === 'booktabs';
   const edits = [];
+  // (booktabs' rules leave a gap where a bar meets them, and booktabs has no double rule: on a
+  // booktabs table the bars are not written and the rules stay single, and the note says why)
+  let note = null;
+  if (book && (parts.left || parts.right || parts.insideV || o.double)) {
+    note = 'A booktabs table (\\toprule, \\midrule) has no vertical lines or double rules: its rules leave a gap where they meet one. The Grid Table style draws them.';
+    parts = { ...parts };
+    for (const k of ['left', 'right', 'insideV']) if (parts[k]) delete parts[k];
+    o = { ...o, double: undefined };
+  }
   const gapWant = (g, on) => {
+    // (on where it is on already, with no pen style asked: nothing to write, an \hhline kept as written)
+    if (on && o.double == null && gapCovers(src, T, g, c0, c1)) return;
+    // (Pen Style Double where an \hhline draws = over these columns already: it is double there, its
+    // crossings kept)
+    if (on && o.double && gapLead(T, g).some((x) => x.name === 'hhline' && hhlineDoubles(src, x, c0, c1))) return;
     const lead = gapLead(T, g);
     const cur = lead.filter((x) => RULES.has(x.name)).map((x) => src.slice(x.s, x.e));
     // the rules of this gap over the columns of the selection go; the others stay
@@ -1519,7 +1583,7 @@ export function setBorders(src, T, rect, parts) {
     let want;
     if (on) {
       const whole = book ? (g === 0 ? '\\toprule' : g === n ? '\\bottomrule' : '\\midrule') : '\\hline';
-      if (full) want = [whole];
+      if (full) want = twice(whole);
       else if (partialOthers === null) want = cur; // a whole rule there covers the columns already
       else want = [...keep, (book ? '\\cmidrule{' : '\\cline{') + (c0 + 1) + '-' + (c1 + 1) + '}'];
     } else {
@@ -1541,13 +1605,14 @@ export function setBorders(src, T, rect, parts) {
   if (cols && (parts.left != null || parts.right != null || parts.insideV != null)) {
     const bars = barsOf(src, T).places.slice();
     if (bars.length) {
-      if (parts.left != null) bars[c0] = parts.left;
-      if (parts.right != null) bars[Math.min(c1 + 1, cols)] = parts.right;
-      if (parts.insideV != null) for (let k = c0 + 1; k <= Math.min(c1, cols - 1); k++) bars[k] = parts.insideV;
+      const v = (on) => (on && o.double ? 2 : on && o.double === false ? 1 : on);
+      if (parts.left != null) bars[c0] = v(parts.left);
+      if (parts.right != null) bars[Math.min(c1 + 1, cols)] = v(parts.right);
+      if (parts.insideV != null) for (let k = c0 + 1; k <= Math.min(c1, cols - 1); k++) bars[k] = v(parts.insideV);
       edits.push(...setBars(src, T, bars));
     }
   }
-  return { edits: dedupe(edits), packages: book ? ['booktabs'] : [] };
+  return { edits: dedupe(edits), packages: book ? ['booktabs'] : [], note };
 }
 
 // ---- shading -------------------------------------------------------------------------------------------
@@ -2152,7 +2217,9 @@ export function deleteCells(src, T, rect, how) {
       const next = [...words.slice(0, c0), ...words.slice(c0 + n), ...Array(n).fill('')];
       row.cells.forEach((c, k) => { if (next[k] !== words[k]) edits.push({ s: c.ks, e: c.empty ? c.ks : c.ce, t: next[k] }); });
     }
-    return { edits };
+    // (a cell's words moved left n columns; the cells deleted have none)
+    const gap = Math.min(c1, T.ncols - 1) - c0 + 1;
+    return { edits, moved: (k, col) => (k < r0 || k > r1 || col < c0 ? undefined : col < c0 + gap ? null : { k, col: col - gap }) };
   }
   const rows = data.filter((k) => k >= r0);
   const h = data.filter((k) => k >= r0 && k <= r1).length;
@@ -2162,7 +2229,9 @@ export function deleteCells(src, T, rect, how) {
     const next = [...words.slice(h), ...Array(Math.min(h, words.length)).fill('')];
     cells.forEach((c, k) => { if (c && next[k] !== words[k]) edits.push({ s: c.ks, e: c.empty ? c.ks : c.ce, t: next[k] }); });
   }
-  return { edits: edits.sort((a, b) => a.s - b.s) };
+  // (a cell's words moved up h rows; the cells deleted have none)
+  const up = (k, col) => { if (col < c0 || col > c1 || k < r0) return undefined; const i = rows.indexOf(k); return i < 0 ? undefined : i < h ? null : { k: rows[i - h], col }; };
+  return { edits: edits.sort((a, b) => a.s - b.s), moved: up };
 }
 
 // ---- alt text (R3) --------------------------------------------------------------------------------
@@ -2190,4 +2259,287 @@ export function setTableAlt(src, T, text) {
   const ls = src.lastIndexOf('\n', T.s - 1) + 1;
   const indent = /^[ \t]*/.exec(src.slice(ls, T.s))[0];
   return { edits: [{ s: ls, e: ls, t: indent + '% alt: ' + t + T.eol }] };
+}
+
+// ---- (G2) Table Properties: the table's width, text wrapping ---------------------------------------
+// One edit from a text to another: the part that differs
+function diffEdit(a, b) {
+  if (a === b) return [];
+  let s = 0;
+  while (s < a.length && s < b.length && a[s] === b[s]) s++;
+  let z = 0;
+  while (z < a.length - s && z < b.length - s && a[a.length - 1 - z] === b[b.length - 1 - z]) z++;
+  return [{ s, e: a.length - z, t: b.slice(s, b.length - z) }];
+}
+// The table's preferred width as written (the width of a tabularx, tabular* or xltabular:
+// 0.8\linewidth, 12cm), or null where it fits its contents
+export const tableWidthOf = (src, T) => (T.width ? T.width.text.trim() : null);
+// Word's Preferred width: w a length (a tabularx that wide, its columns X) or null (the columns
+// fit their contents again). { edits, packages } or { error }
+// (the review of PR 84, M4: AutoFit Window's way turned p{3cm} and siunitx's S into X, losing
+// their widths and decimal alignment, and Off gave l and c back. Now only l, c and r columns
+// stretch, each to an X that says the same alignment, and Off turns exactly those back.)
+const WIDTH_DECL = { c: '\\centering\\arraybackslash', r: '\\raggedleft\\arraybackslash' };
+export function setTableWidth(src, T, w) {
+  if (w == null) {
+    if (T.name !== 'tabularx') return fitOf(src, T) === 'window' ? autofit(src, T, 'contents') : { edits: [] };
+    // X back to l, and an X whose >{} begins with \centering\arraybackslash or \raggedleft\arraybackslash
+    // back to c or r with the rest of its >{}; every other column as it is
+    const pieces = specPieces(src, T);
+    if (!pieces) return { edits: [] };
+    T.spec.cols.forEach((col, c) => {
+      if (col.letter !== 'X') return;
+      const pre = preDecl(src, col), post = col.post ? src.slice(col.post.s, col.post.e) : '';
+      let h = 'l', rest = pre;
+      for (const [k, d] of Object.entries(WIDTH_DECL)) if (pre.startsWith(d)) { h = k; rest = pre.slice(d.length); }
+      pieces[2 * c + 1] = (rest ? '>{' + rest + '}' : '') + h + post;
+    });
+    return { edits: dedupe([...specEdit(src, T, pieces), ...renameEnv(src, T, 'tabular', null)]), packages: [] };
+  }
+  w = String(w).replace(/[^0-9.a-z\\]/gi, '').slice(0, 40);
+  if (!w) return { error: 'A width is a length, such as 12cm or 0.8\\linewidth.' };
+  if (T.width) return { edits: T.width.text === w ? [] : [{ s: T.width.s, e: T.width.e, t: w }], packages: [] };
+  if (T.name === 'longtable') return { error: 'A table that repeats its header rows breaks across pages as longtable; it fits its contents. Turn Repeat Header Rows off first.' };
+  if (T.name === 'array') return { error: 'A table in a formula (array) fits its contents.' };
+  if (T.name !== 'tabular') return autofitWidth(src, T, w);
+  const pieces = specPieces(src, T);
+  if (!pieces) return { edits: [], packages: [] };
+  let n = 0;
+  T.spec.cols.forEach((col, c) => {
+    if (!/^[lcr]$/.test(col.letter)) return;
+    const pre = preDecl(src, col), post = col.post ? src.slice(col.post.s, col.post.e) : '';
+    const d = (WIDTH_DECL[col.letter] || '') + pre;
+    pieces[2 * c + 1] = (d ? '>{' + d + '}' : '') + 'X' + post;
+    n++;
+  });
+  if (!n) return { error: 'Its columns have widths of their own (p{…}, S): none can stretch to a width. Set the columns\' widths instead.' };
+  return { edits: dedupe([...specEdit(src, T, pieces), ...renameEnv(src, T, 'tabularx', w)]), packages: ['tabularx'] };
+}
+// tabular* and tabulary: AutoFit Window's way, then the width
+function autofitWidth(src, T, w) {
+  const r = autofit(src, T, 'window');
+  if (r.error) return r;
+  const s2 = apply(src, r.edits), T2 = parseTable(s2, T.s);
+  if (!T2 || !T2.width) return r;
+  const s3 = s2.slice(0, T2.width.s) + w + s2.slice(T2.width.e);
+  return { edits: diffEdit(src, s3), packages: r.packages };
+}
+// Text wrapping: { around: false } for a table float, or { around: true, side: 'r' | 'l', width }
+// for wrapfig's wraptable; null where the table stands in no float
+export function wrapOf(src, T) {
+  const F = floatOf(src, T);
+  if (!F) return null;
+  if (F.name !== 'wraptable') return { around: false, F };
+  const a = argsAt(src, F.s + '\\begin{wraptable}'.length, 'omom', T.s);
+  const side = a && a.args[1] ? src.slice(a.args[1].is, a.args[1].ie).trim().toLowerCase() : 'r';
+  return { around: true, side: /^[li]/.test(side) ? 'l' : 'r', width: a && a.args[3] ? src.slice(a.args[3].is, a.args[3].ie).trim() : null, F, a };
+}
+// Text wrapping None (a table float, [htbp]) or Around (a wraptable on side, width wide: the
+// table's share of the line, as the page measures it). wrapfig wraps the paragraph after the table:
+// a list, a heading or the document's end there is refused, as TeX would lose the table.
+export function setWrap(src, T, o) {
+  const W = wrapOf(src, T);
+  if (!W) return { error: 'Text wraps around a table in a float: Insert Caption puts it in one first.' };
+  const F = W.F;
+  if (!o || !o.around) {
+    if (!W.around) return { edits: [] };
+    return { edits: [{ s: F.s, e: F.headE, t: '\\begin{table}[htbp]' }, { s: F.endS, e: F.e, t: '\\end{table}' }], packages: [] };
+  }
+  if (F.name === 'table*') return { error: 'A table across the page\'s columns (table*) cannot have text around it.' };
+  const side = o.side === 'l' ? 'l' : 'r';
+  const width = String(o.width || W.width || '0.5\\linewidth').replace(/[^0-9.a-z\\]/gi, '').slice(0, 40) || '0.5\\linewidth';
+  if (W.around) {
+    const ed = [];
+    if (W.a.args[1] && W.side !== side) ed.push({ s: W.a.args[1].is, e: W.a.args[1].ie, t: side });
+    if (W.a.args[3] && W.width !== width && o.width) ed.push({ s: W.a.args[3].is, e: W.a.args[3].ie, t: width });
+    return { edits: ed, packages: [] };
+  }
+  // (what follows the float: wrapfig needs a paragraph of words)
+  const after = src.slice(F.e, F.e + 400).replace(/^\s*(%[^\n]*\n\s*)*/, '');
+  if (!after || /^\\(end\b|begin\s*\{(itemize|enumerate|description|table|figure|equation|align|center|tabular)|section|subsection|subsubsection|chapter|paragraph|item\b)/.test(after)) {
+    return { error: 'Text wraps around a table only where a paragraph of words follows it (wrapfig wraps the next paragraph): write one after the table first.' };
+  }
+  // (and what holds the float: wrapfig stops in a list)
+  const before = src.slice(Math.max(0, F.s - 200000), F.s);
+  const opened = (n) => (before.match(new RegExp('\\\\begin\\s*\\{' + n + '\\}', 'g')) || []).length - (before.match(new RegExp('\\\\end\\s*\\{' + n + '\\}', 'g')) || []).length;
+  if (['itemize', 'enumerate', 'description', 'multicols'].some((n) => opened(n) > 0)) return { error: 'wrapfig cannot wrap text inside a list or columns: move the table out of it first.' };
+  return { edits: [{ s: F.s, e: F.headE, t: '\\begin{wraptable}{' + side + '}{' + width + '}' }, { s: F.endS, e: F.e, t: '\\end{wraptable}' }], packages: ['wrapfig'] };
+}
+
+// ---- (G2) Formulas: Word's =SUM(ABOVE) in a cell, its value written, the formula kept --------------
+// The table's formulas: comment lines right before it, "% formula D4 [10]: =SUM(ABOVE)" (above its
+// "% alt:" line, which stays next to the table), the value in brackets the one it wrote last
+// (Update Formulas leaves a cell that holds another: a row moved by hand, a number typed over it).
+// [{ name, r, c, text, value, s, e }] (r and c count the table's rows of cells and its columns from
+// 0, as A1 names them; value null on a line without one)
+const FORMULA_LINE = /^[ \t]*%[ \t]*formula[ \t]+([A-Za-z]{1,3})(\d{1,5})(?:[ \t]*\[([^\]\r\n]*)\])?[ \t]*:[ \t]*(\S.*?)[ \t]*\r?$/;
+// the longest formula a line keeps, and Rikuy reads (Word's own field codes stop at 255)
+export const FORMULA_MAX = 500;
+export function formulasOf(src, T) {
+  const out = [];
+  let ls = src.lastIndexOf('\n', T.s - 1) + 1;
+  for (let guard = 0; ls > 0 && guard < 500; guard++) {
+    const ps = src.lastIndexOf('\n', ls - 2) + 1;
+    const line = src.slice(ps, ls - 1);
+    const m = FORMULA_LINE.exec(line);
+    if (m) {
+      let c = 0;
+      for (const ch of m[1].toUpperCase()) c = c * 26 + ch.charCodeAt(0) - 64;
+      out.unshift({ name: m[1].toUpperCase() + m[2], r: +m[2] - 1, c: c - 1, text: m[4], value: m[3] == null ? null : m[3].trim(), s: ps, e: ls });
+    } else if (!ALT_LINE.exec(line.replace(/\r$/, ''))) break;
+    ls = ps;
+  }
+  return out;
+}
+// The table's rows of cells (its \\ rows, captions left out), for A1's numbers
+export const dataRows = (T) => T.rows.map((x, k) => k).filter((k) => T.rows[k].kind === 'row');
+// A cell's words as a range of the source (inside \multicolumn's and \multirow's text)
+export function cellRange(c) {
+  const s = c.mc ? (c.mr ? c.mr.textS : c.mc.textS) : c.mr ? c.mr.textS : c.ks;
+  const e = c.mc ? (c.mr ? c.mr.textE : c.mc.textE) : c.mr ? c.mr.textE : c.ce;
+  return c.empty ? { s: c.ks, e: c.ks } : { s, e };
+}
+// The grid Word's formulas read: per row of cells, per column, { tex, cell } (a merged cell's in
+// its first column, null in the others)
+export function cellGrid(src, T) {
+  return dataRows(T).map((k) => {
+    const row = T.rows[k], out = Array(T.ncols).fill(null);
+    for (const c of row.cells) if (c.col < T.ncols) out[c.col] = { tex: cellText(src, c), cell: c };
+    return out;
+  });
+}
+// The cell's words set to text, a wrapper they stand in kept (\textbf{17} gives \textbf{18})
+export function setCellValue(src, c, text) {
+  const R = cellRange(c), old = src.slice(R.s, R.e);
+  // (emptied: its words go, and the space typed after them before the row's \\)
+  if (!text && !c.empty) return { edits: [{ s: R.s, e: src[R.e] === ' ' && /^ ?\\\\/.test(src.slice(R.e, R.e + 3)) ? R.e + 1 : R.e, t: '' }] };
+  // (an empty cell before the row's \\: a space between them, as a person types it)
+  if (c.empty) return { edits: text ? [{ s: R.s, e: R.e, t: text + (src[R.s] === '\\' || src[R.s] === '&' ? ' ' : '') }] : [] };
+  const m = /^((?:\\[A-Za-z]+\s*\{\s*)+)([^{}]*?)(\s*\}+)$/.exec(old);
+  if (m && (m[1].match(/\{/g) || []).length === m[3].replace(/\s/g, '').length) {
+    const s = R.s + m[1].length;
+    return { edits: m[2] === text ? [] : [{ s, e: s + m[2].length, t: text }] };
+  }
+  return { edits: old === text ? [] : [{ s: R.s, e: R.e, t: text }] };
+}
+// a formula line: its indent, the cell's name, the value written last, the formula
+const formulaLine = (indent, name, value, text) => indent + '% formula ' + name + (value != null && value !== '' ? ' [' + String(value).replace(/[\]\r\n]/g, '') + ']' : '') + ': ' + text;
+// The formula line of cell name set (text, with the value it wrote) or taken off (null). { edits }
+// or { error } for a formula longer than a line keeps
+export function setFormula(src, T, name, text, value = null) {
+  const have = formulasOf(src, T).find((x) => x.name === name.toUpperCase());
+  const t = text == null ? null : String(text).replace(/[\r\n]+/g, ' ').trim();
+  if (t && t.length > FORMULA_MAX) return { error: 'A formula of at most ' + FORMULA_MAX + ' characters: this one has ' + t.length + '.' };
+  const nl = T.eol;
+  if (have) {
+    if (!t) return { edits: [{ s: have.s, e: have.e, t: '' }] };
+    const line = src.slice(have.s, have.e), end = /[ \t]*\r?\n?$/.exec(line)[0];
+    return { edits: [{ s: have.s, e: have.e, t: formulaLine(/^[ \t]*/.exec(line)[0], name.toUpperCase(), value, t) + end }] };
+  }
+  if (!t) return { edits: [] };
+  // (above the alt line, which stays next to the table; indented as the table's line)
+  let ls = src.lastIndexOf('\n', T.s - 1) + 1;
+  const indent = /^[ \t]*/.exec(src.slice(ls, T.s))[0];
+  const A = tableAlt(src, T);
+  if (A) ls = A.s;
+  return { edits: [{ s: ls, e: ls, t: formulaLine(indent, name.toUpperCase(), value, t) + nl }] };
+}
+
+// ---- formulas follow the table (the review of PR 84, H2) ----------------------------------------------
+// After an operation on the table (rows or columns inserted or deleted, Sort, Merge, Split, Delete
+// Cells) each formula line names its cell where the cell went, and the cells its formula reads
+// where they went (A1 and ranges, as a spreadsheet does; Word's fields move with their cells); a
+// line whose cell went is taken off, and a reference to a cell that went is #REF!, which Update
+// Formulas reports. edits: the operation's on src; moved(k, col): where the words of row k's cell
+// at col went, { k, col } (an operation that moves words between cells: Sort, Delete Cells), null
+// when they went, undefined to find it by position. { edits on src, dropped: [names] }
+export function formulasAfter(src, T, edits, moved) {
+  const Fs = formulasOf(src, T);
+  if (!Fs.length || !edits || !edits.length) return { edits: [], dropped: [] };
+  // (lines before the table, not the operation's: edits there are another kind of change)
+  if (edits.some((x) => x.s < Fs[Fs.length - 1].e)) return { edits: [], dropped: [] };
+  const out = apply(src, edits);
+  const T2 = parseTable(out, posAfter(edits, T.s, -1));
+  if (!T2) return { edits: [], dropped: [] };
+  const rows = dataRows(T), rows2 = dataRows(T2);
+  const gone = (p) => edits.some((x) => (x.s < p && p < x.e) || (x.s === p && x.e > p && !x.t));
+  const where = (k, cell) => {
+    const m = moved ? moved(k, cell.col) : undefined;
+    if (m === null) return null;
+    if (m) { const r = rows2.indexOf(m.k); return r < 0 ? null : { r, c: m.col }; }
+    // (by its words' start, else its own: deleting the column before a cell takes the space it starts with)
+    const p = [cell.empty ? null : cell.ks, cell.s].find((x) => x != null && !gone(x));
+    if (p == null) return null;
+    const q = posAfter(edits, p, 1), hit = cellAt(T2, q);
+    if (!hit || hit.cell.s > q || q > hit.cell.e) return null;
+    const r = rows2.indexOf(hit.r);
+    return r < 0 ? null : { r, c: hit.cell.col };
+  };
+  // each cell where it went; each row and column where most of its cells went
+  const at = new Map(), rowTo = [], colTo = [];
+  rows.forEach((k, r) => {
+    for (const cell of T.rows[k].cells) {
+      const w = where(k, cell);
+      at.set(r + ',' + cell.col, w);
+      if (w && rowTo[r] == null) rowTo[r] = w.r;
+      if (w && colTo[cell.col] == null) colTo[cell.col] = w.c;
+    }
+    if (rowTo[r] == null) rowTo[r] = -1;
+  });
+  for (let c = 0; c < T.ncols; c++) if (colTo[c] == null) colTo[c] = -1;
+  const res = [], dropped = [], taken = new Set();
+  for (const F of Fs) {
+    if (!at.has(F.r + ',' + F.c)) continue;
+    const w = at.get(F.r + ',' + F.c);
+    const name = w ? colName(w.c) + (w.r + 1) : null;
+    if (!w || taken.has(name)) { res.push({ s: F.s, e: F.e, t: '' }); dropped.push(F.name); continue; }
+    taken.add(name);
+    const text = renameRefs(F.text, rowTo, colTo, (r, c) => (at.has(r + ',' + c) ? at.get(r + ',' + c) : undefined));
+    if (name === F.name && text === F.text) continue;
+    const line = src.slice(F.s, F.e), end = /[ \t]*\r?\n?$/.exec(line)[0];
+    res.push({ s: F.s, e: F.e, t: formulaLine(/^[ \t]*/.exec(line)[0], name, F.value, text) + end });
+  }
+  return { edits: res, dropped };
+}
+// a position in src, in the text after edits (bias > 0: after what is inserted right there)
+function posAfter(edits, p, bias) {
+  let q = p;
+  for (const x of edits) {
+    if (x.e < p || (x.e === p && (x.s < p || bias > 0))) q += x.t.length - (x.e - x.s);
+    else if (x.s < p && x.e > p) q += x.s + x.t.length - p;
+  }
+  return q;
+}
+const colName = (c) => { let s = ''; c += 1; while (c > 0) { const m = (c - 1) % 26; s = String.fromCharCode(65 + m) + s; c = Math.floor((c - 1) / 26); } return s; };
+const colOf = (t) => { let c = 0; for (const ch of t.toUpperCase()) c = c * 26 + ch.charCodeAt(0) - 64; return c - 1; };
+// A formula's cell names after rows and columns moved (rowTo, colTo: old index to new, -1 gone); a
+// range keeps the cells of it that stay; the number format after \# untouched
+export function renameRefs(text, rowTo, colTo, cellTo = () => undefined) {
+  const cut = text.search(/\\#/), f = cut < 0 ? text : text.slice(0, cut), rest = cut < 0 ? '' : text.slice(cut);
+  // (a range's part past the table's last row or column moves as much as the table grew)
+  const span = (a, b, to) => {
+    const lo = Math.min(a, b), hi = Math.max(a, b);
+    if (lo >= to.length) return [lo, hi];
+    const grew = to.reduce((m, x) => Math.max(m, x), -1) + 1 - to.length;
+    let first = null, last = null;
+    for (let i = lo; i <= Math.min(hi, to.length - 1); i++) if (to[i] >= 0) { first = first == null ? to[i] : Math.min(first, to[i]); last = last == null ? to[i] : Math.max(last, to[i]); }
+    if (hi >= to.length) { last = hi + grew; if (first == null) first = to.length + grew; }
+    return first == null ? null : [first, last];
+  };
+  const g = f.replace(/(^|[^A-Za-z0-9#])([A-Za-z]{1,3})(\d{1,5})(?:(\s*:\s*)([A-Za-z]{1,3})(\d{1,5}))?(?![A-Za-z0-9(])/g, (m, pre, c1, r1, colon, c2, r2) => {
+    const a = { r: +r1 - 1, c: colOf(c1) };
+    if (!colon) {
+      if (a.r >= rowTo.length || a.c >= colTo.length) return m;
+      // (a cell of its own where it went, else its row's and column's)
+      const w = cellTo(a.r, a.c);
+      if (w === null) return pre + '#REF!';
+      const r = w ? w.r : rowTo[a.r], c = w ? w.c : colTo[a.c];
+      return pre + (r < 0 || c < 0 ? '#REF!' : colName(c) + (r + 1));
+    }
+    const b = { r: +r2 - 1, c: colOf(c2) };
+    const R = span(a.r, b.r, rowTo), C = span(a.c, b.c, colTo);
+    if (!R || !C) return pre + '#REF!';
+    return pre + colName(C[0]) + (R[0] + 1) + colon + colName(C[1]) + (R[1] + 1);
+  });
+  return g + rest;
 }

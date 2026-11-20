@@ -89,7 +89,9 @@ def mouse_and_keys(page):
             caret: document.activeElement.id }; }''', name)
         seen.append((name, st['sel'] == 'true' and st['tb'] == name and st['dl'] and st['shown'] == 1 and panels.count() == 1 and page.get_by_role('tabpanel', name=name, exact=True).count() == 1, st['caret']))
     check('a click opens each tab: its panel alone in the accessibility tree, a toolbar named after the tab, the downloads at its end', all(x[1] for x in seen), seen)
-    check('and the caret stays on the page', all(x[2] == 'pages' for x in seen), seen)
+    # (File is a view over the page, which is inert under it: the keys go to its Back button there,
+    # docs/handoff/UX-AUDIT.md; the next tab gives the page its caret back)
+    check('and the caret stays on the page (in File, on its Back button)', all(x[2] == ('rf-back' if x[0] == 'File' else 'pages') for x in seen), seen)
     dup = {}
     for name in tabs:
         open_tab(page, name)
@@ -828,7 +830,9 @@ def frontier(p):
     page.focus('#rc-frontier'); page.keyboard.press('Enter'); page.wait_for_timeout(200)
     k1 = page.get_by_role('dialog', name='Frontier').count() == 1 and page.evaluate('document.activeElement.textContent') == 'Close'
     page.keyboard.press('Escape'); page.wait_for_timeout(200)
-    check('Frontier by keys: Enter opens it with the focus on Close, Esc closes it and the focus goes back to Frontier', k1 and page.get_by_role('dialog', name='Frontier').count() == 0 and page.evaluate('document.activeElement.id') == 'rc-frontier', page.evaluate('document.activeElement.id'))
+    # (Word: a dialog closed with Esc gives the document back, the caret where it was, src/app.js
+    # closePop; ux.py dialogs_give_the_caret_back)
+    check('Frontier by keys: Enter opens it with the focus on Close, Esc closes it and the caret is back on the page', k1 and page.get_by_role('dialog', name='Frontier').count() == 0 and page.evaluate('document.activeElement.id') == 'pages', page.evaluate('document.activeElement.id'))
     check('Frontier asks nothing of the network', not [u for u in reqs if not u.startswith('https://rikuy.test/')], reqs[:4])
     box = page.get_by_role('combobox', name='Search', exact=True)
     box.click(); box.fill('Researcher'); page.wait_for_timeout(200)
@@ -851,7 +855,7 @@ def frontier(p):
     d.locator('.pop-row .btn').click(); page.wait_for_timeout(250)
     back = page.evaluate("(() => { const a = document.activeElement, s = getComputedStyle(a); return [a.id, s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0]; })()")
     check('Frontier says it opens a dialog and whether it is open; the dialog is described by what it does and Coming soon.', a0 == ['dialog', 'false'] and a1 == 'true' and fb.get_attribute('aria-expanded') == 'false' and 'Coming soon.' in desc and 'ideas connect' in desc, (a0, a1, desc))
-    check('opened and closed with the mouse no ring shows, on Close or on Frontier after (the keyboard\'s ring for the keyboard)', ring == ['Close', False] and back == ['rc-frontier', False], (ring, back))
+    check('opened and closed with the mouse no ring shows, on Close or where the focus goes after (the keyboard\'s ring for the keyboard)', ring == ['Close', False] and back[1] is False, (ring, back))
     check('Tab goes round its two buttons while it is open; its corners 8 px, its buttons 32 px tall', t1 == 'Close' and t2 == 'Close' and look == [8, 32, 32], (t1, t2, look))
     browser.close()
     browser, page, errors = open_page(p, width=390, height=800, touch=True)
