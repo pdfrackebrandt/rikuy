@@ -6,27 +6,67 @@
 
 import { BLOCKS } from './render.js';
 import { NOT_PLAIN, quoteWords } from './styles.js';
+import { posFromDom } from './editor.js';
+
+// the node before n in document order, within root (the last of a previous sibling's subtree)
+function prevNode(n, root) {
+  if (n.previousSibling) { n = n.previousSibling; while (n.lastChild) n = n.lastChild; return n; }
+  return n.parentNode === root ? null : n.parentNode;
+}
 
 export const ribbon = {
   // (set by installRibbon; the page's first builds come before it)
   ribbonSoon() {},
   // Where the caret is, for the ribbon: its element, its item on the page and its block. None
   // while the source pane has the focus or the pages are stale: the buttons are then disabled.
+  // With no caret on the page at all (none yet, or the focus in the PDF or the side panel) the
+  // ribbon is as Word's, which always has one: as at the last place the caret was, or else the
+  // document's end (fallback: true); a command run there puts the caret there first (runCommand).
+  // Not while a field, a dialog or the equation field has the focus: they have their own place.
   ribbonAt() {
     if (this.stale || !this.model) return null;
     const a = document.activeElement;
     if (a && a.closest && a.closest('#srcpane')) return null;
     const c = this.caretNow();
-    if (!c) return null;
+    if (!c) return this.ribbonAtRest(a);
     const n = getSelection().anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement);
+    const r = getSelection().getRangeAt(0);
+    if (!c.ghost) this.rbLast = { f: c.f, p: c.b };
+    return this.atOf(c, el, r);
+  },
+  atOf(c, el, r) {
     const it = c.ghost ? null : el && el.closest('.it');
     // What the caret is inside, nearest first: a footnote's text and a caption are not items of
     // the page, a cell and bold or italic words lie within one. An equation or a footnote
     // written there would land inside the cell, the braces or the other footnote.
     const near = c.ghost || !el ? null : el.closest('[data-ctx]');
-    const r = getSelection().getRangeAt(0), end = r.endContainer.nodeType === 1 ? r.endContainer : r.endContainer.parentElement;
+    const end = r.endContainer.nodeType === 1 ? r.endContainer : r.endContainer.parentElement;
     return { c, el, it, B: it ? BLOCKS.get(+it.dataset.b) : null, ctx: near ? near.dataset.ctx : '', cell: !!(el && el.closest('td')), sty: !!(el && el.closest('[data-y]')),
       multi: !c.ghost && !r.collapsed && !!it && (end && end.closest('.it')) !== it };
+  },
+  // the place the ribbon stands for when the page has no caret (see ribbonAt)
+  ribbonAtRest(a) {
+    if (a && a !== document.body && a.closest && a.closest('input, textarea, select, math-field, [contenteditable="true"], .pop, [role=dialog], .CodeMirror')) return null;
+    let at = null;
+    const L = this.rbLast;
+    const x = L && this.files.has(L.f) && this.index ? this.index.find(L.f, L.p, -1) : null;
+    if (x && x.node && this.root.contains(x.node)) at = { node: x.node, offset: x.offset };
+    if (!at) {
+      // the document's end: the last words of the last paragraph on the page
+      let n = this.root;
+      while (n.lastChild) n = n.lastChild;
+      for (; n && n !== this.root; n = prevNode(n, this.root)) {
+        if (n.nodeType === 3 && n.nodeValue.trim() && n.parentElement && n.parentElement.closest('.it.p')) { at = { node: n, offset: n.nodeValue.length }; break; }
+      }
+    }
+    if (!at) return null;
+    const A = posFromDom(at.node, at.offset, this.root);
+    if (!A || A.ghost) return null;
+    const r = document.createRange();
+    r.setStart(at.node, at.offset); r.collapse(true);
+    const res = this.atOf({ f: A.f, p: A.p, a: A.p, b: A.p, collapsed: true }, at.node.nodeType === 1 ? at.node : at.node.parentElement, r);
+    res.fallback = true;
+    return res;
   },
 
   // a block that is one plain paragraph of the text: [s, e) of its words, or null

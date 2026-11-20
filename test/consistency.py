@@ -265,6 +265,15 @@ def insert_rule(S, page, where):
     off = page.evaluate("[...document.querySelectorAll('#rp-insert .rb-grp:not(.folded) button[data-cmd]')].filter((b) => b.offsetParent && b.disabled).map((b) => b.dataset.cmd)")
     if off:
         S.bad('insert', where, 'Insert with no caret', 'disabled: %s' % off)
+        return
+    # and a press inserts at the last place the caret was (in the last paragraph, after "The ")
+    before = page.evaluate("rikuy.files.get('main.tex')")
+    page.click('#rp-insert [data-cmd=page-break]'); page.wait_for_timeout(250)
+    after = page.evaluate("rikuy.files.get('main.tex')")
+    page.evaluate('rikuy.undo()'); page.wait_for_timeout(150)
+    i = next((k for k in range(min(len(before), len(after))) if before[k] != after[k]), None)
+    if after == before or i is None or not before[:i].rstrip().endswith('The'):
+        S.bad('insert', where, 'Page break with no caret', 'not at the last place: %r' % after[max(0, (i or 0) - 30):(i or 0) + 50])
 
 
 def run():

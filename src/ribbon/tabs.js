@@ -287,6 +287,13 @@ export const tabs = {
     const c = command(id);
     if (!c || !c.run) return false;
     if (at === undefined) at = this.ribbonAt();
+    // (no caret on the page: the ribbon stood for the last place, or the document's end; the caret
+    // goes there now, as Word's always is somewhere, and the command runs there)
+    if (at && at.fallback) {
+      this.restoreCaret({ f: at.c.f, p: at.c.p, bias: -1 }, true);
+      const now = this.ribbonAt();
+      if (now && !now.fallback) at = now;
+    }
     if (at) at.memo = {};
     if (!enabled(this, c, at)) return false;
     const r = c.run(this, args, at);
@@ -575,7 +582,9 @@ export function installRibbon(app) {
     const t = e.target.closest('[role=tab]');
     if (!t) return;
     app.peekRibbon(true);
-    app.selectTab(t.dataset.tab, document.activeElement === t || document.activeElement === document.body);
+    // (a press with the mouse gives the tab no focus: its ring would stay drawn round it, the
+    // keyboard's sign, after a click; the keys reach the tabs by Tab, F10 or Alt)
+    app.selectTab(t.dataset.tab, document.activeElement === t);
   });
   list.addEventListener('keydown', (e) => {
     const shown = [...list.children].filter((t) => !t.hidden), i = shown.indexOf(document.activeElement);
