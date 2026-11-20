@@ -644,13 +644,14 @@ def phone_layout(page):
     page.evaluate('window.rikuy.toggleNav(true)')
     check('a wide screen, where the buttons carry their names, has no such list', page.is_visible('#b-help') and not page.is_visible('#nav-acts'))
     page.evaluate('window.rikuy.toggleNav(false)')
-    # keyboard alone: a popover opened from a button of the bar gives the focus back to it
+    # keyboard alone: a popover (Share) or a pane (Help, on a wide window) opened from a button of
+    # the bar gives the focus back to it
     back = []
     for b in ('#b-share', '#b-help'):
         page.focus(b); page.keyboard.press('Enter'); page.wait_for_timeout(250)
-        opened = page.evaluate('document.querySelectorAll("body > .pop").length')
+        opened = page.evaluate('document.querySelectorAll("body > .pop, #helppane").length')
         page.keyboard.press('Escape'); page.wait_for_timeout(150)
-        back.append((b, opened, page.evaluate('document.querySelectorAll("body > .pop").length'), page.evaluate('"#" + document.activeElement.id')))
+        back.append((b, opened, page.evaluate('document.querySelectorAll("body > .pop, #helppane").length'), page.evaluate('"#" + document.activeElement.id')))
     check('Escape closes Share and Help and the focus returns to their buttons', all(o == 1 and c == 0 and a == b for b, o, c, a in back), back)
 
 

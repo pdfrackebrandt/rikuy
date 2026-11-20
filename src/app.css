@@ -1610,6 +1610,12 @@ body.fpainting #pages { cursor: copy; }
   #main > .stp, #main > .sp-pane { position: relative; inset: auto; z-index: 3; order: 10; flex: none; align-self: stretch; width: 320px; max-height: none; margin: 0; border: 0; border-left: 1px solid var(--line); border-radius: 0; box-shadow: none; }
   #main > .sp-pane { overflow-y: auto; padding-top: 0; }
 }
+/* Help, Word's pane at the right (src/ui/helppane.js): the popover's content in #main's last column */
+#main > .help-pane { position: relative; z-index: 3; order: 11; flex: none; align-self: stretch; width: 380px; display: flex; flex-direction: column; min-height: 0; background: var(--panel); color: var(--ink-ui); border-left: 1px solid var(--line); }
+.help-pane-h { flex: none; padding: 8px 8px 6px 14px; border-bottom: 1px solid var(--line); }
+.help-pane-b { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 10px 14px 18px; display: flex; flex-direction: column; gap: 8px; }
+.help-pane-b p { margin: 0; font-size: 13px; }
+.help-pane .keys { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); }
 /* Apply Styles, Modify Style, Create a Style */
 .pop.pop-apply { width: min(300px, calc(100vw - 16px)); }
 .pop.pop-modstyle { width: min(430px, calc(100vw - 16px)); }

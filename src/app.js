@@ -43,6 +43,7 @@ import { methods as galleryMethods } from './ui/gallery.js';
 import { methods as searchMethods, installSearch } from './ui/search.js';
 import { methods as menuMethods, installMenu } from './ui/menu.js';
 import { installFileView } from './ui/fileview.js';
+import { methods as helpPaneMethods } from './ui/helppane.js';
 import { installKeys } from './keys.js';
 import * as kit from './ui/kit.js';
 import { usePackages, hasPackage, usePackage, preambleEnd, stripComments, packages, docClass } from './preamble.js';
@@ -5115,6 +5116,8 @@ class App {
   }
 
   openHelp() {
+    // (a wide window: Help is a pane at the right, src/ui/helppane.js; pressed again, it closes)
+    if (this.helpPaneOpen() && window.innerWidth >= 1000) { this.closeHelpPane(); return; }
     const p = this.makePop($('#b-help'), 'pop-help', 'How Rikuy works');
     const mod = isMac ? 'Cmd' : 'Ctrl';
     p.insertAdjacentHTML('beforeend', `
@@ -5184,6 +5187,7 @@ class App {
     const det = p.querySelector('.wm-all');
     det.addEventListener('toggle', () => { if (det.open && !det.dataset.filled) this.fillShortcutList(det); this.positionPop(); });
     this.positionPop();
+    if (window.innerWidth >= 1000) this.dockHelp();
   }
 
   // Every equation shortcut, grouped and rendered, with a filter.
@@ -5369,7 +5373,7 @@ function agentApi(app) {
 
 // (joined so that no module takes a name another or the app has: joinMethods throws, naming both)
 joinMethods(App.prototype, { 'src/collab.js': collab, 'src/word.js': word, 'src/ribbon.js': ribbon, 'src/nav.js': nav, 'src/review.js': review, 'src/ribbon/tabs.js': tabs,
-  'src/ui/gallery.js': galleryMethods, 'src/ui/search.js': searchMethods, 'src/ui/menu.js': menuMethods, 'src/cmd/*.js': cmdMethods });
+  'src/ui/gallery.js': galleryMethods, 'src/ui/search.js': searchMethods, 'src/ui/menu.js': menuMethods, 'src/ui/helppane.js': helpPaneMethods, 'src/cmd/*.js': cmdMethods });
 // one item of the insert list, where the caret is: what the ribbon's Insert buttons press
 App.prototype.insertFromPalette = function (k) {
   const c = this.caretNow(), x = paletteItems().find((y) => y.k === k);
