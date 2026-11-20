@@ -1,12 +1,13 @@
 // What pandoc's Word writer leaves out of a table, put into the .docx it wrote: a cell's shading
-// (\cellcolor, \rowcolor, \rowcolors), its text turned (\rotatebox{90} or {270}) and the table's
-// alt text (a "% alt:" line, src/table.js). src/wordast.js keeps them in the attributes of the
+// (\cellcolor, \rowcolor, \rowcolors), its text turned (\rotatebox{90} or {270}), a cell's formula
+// (a "% formula" line, src/table.js: Word's own field, = SUM(ABOVE) \# "0.00", round the value)
+// and the table's alt text (a "% alt:" line, src/table.js). src/wordast.js keeps them in the attributes of the
 // AST's tables and cells (pandoc reads and drops them); after pandoc, tableExtras reads them back
 // from the same AST and applyTableExtras writes them into word/document.xml, the n-th table of
 // the AST being the n-th <w:tbl> there (pandoc writes the body's tables in order, a table in a
 // cell after the one it is in). Pure, bounded, on strings.
 
-const SHD = 'rk-shd', ROT = 'rk-rot', ALT = 'rk-alt';
+const SHD = 'rk-shd', ROT = 'rk-rot', ALT = 'rk-alt', FX = 'rk-fx';
 const kv = (attr, k) => { const x = attr && attr[2] ? attr[2].find((p) => p[0] === k) : null; return x ? x[1] : null; };
 const xmlAttr = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '');
 
@@ -15,7 +16,7 @@ const xmlAttr = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<':
 export function tableExtras(doc) {
   const out = [];
   let any = false, n = 0;
-  const cellsOf = (rows) => rows.map((r) => r[1].map((c) => { const shd = kv(c[0], SHD), rot = kv(c[0], ROT); if (shd || rot) any = true; return { shd, rot }; }));
+  const cellsOf = (rows) => rows.map((r) => r[1].map((c) => { const shd = kv(c[0], SHD), rot = kv(c[0], ROT), fx = kv(c[0], FX); if (shd || rot || fx) any = true; return { shd, rot, fx }; }));
   const walk = (x, depth) => {
     if (!x || depth > 60 || n++ > 200000) return;
     if (Array.isArray(x)) { for (const y of x) walk(y, depth + 1); return; }
@@ -75,6 +76,61 @@ function withProp(tc, name, el) {
   return tc.slice(0, pr.index) + '<w:tcPr>' + inner.slice(0, at) + el + inner.slice(at) + '</w:tcPr>' + tc.slice(pr.index + pr[0].length);
 }
 
+// a cell's first paragraph's runs inside Word's field for its formula (its result, the value Rikuy
+// wrote, shown until Word updates it on F9)
+function withField(tc, formula) {
+  const p = /<w:p(?:\s[^>]*)?>/.exec(tc);
+  if (!p) return tc;
+  const ps = p.index + p[0].length, pe = tc.indexOf('</w:p>', ps);
+  if (pe < 0) return tc;
+  let a = ps;
+  const pr = /^<w:pPr>[\s\S]*?<\/w:pPr>|^<w:pPr\s*\/>/.exec(tc.slice(ps, pe));
+  if (pr) a += pr[0].length;
+  const runs = tc.slice(a, pe);
+  if (/<w:fldSimple\b|<w:fldChar\b/.test(runs)) return tc;
+  // (from its first run to its last: Rikuy's bookmarks round them stay outside the field)
+  const r0 = runs.search(/<w:r[\s>]/), r1 = runs.lastIndexOf('</w:r>');
+  if (r0 < 0 || r1 < r0) return tc;
+  const s0 = a + r0, s1 = a + r1 + 6;
+  return tc.slice(0, s0) + '<w:fldSimple w:instr=" ' + xmlAttr(String(formula).slice(0, 500)) + ' ">' + tc.slice(s0, s1) + '</w:fldSimple>' + tc.slice(s1);
+}
+
+// The formulas of a .docx's tables, for the "% formula" lines (Word's = fields in cells, simple or
+// complex): [{ table (k-th table that no table holds), r, c (A1's, from 0), formula, value }]; tables
+// that hold a table are left out
+export function docxFormulas(xml) {
+  const out = [];
+  if (!xml || xml.length > 50e6) return out;
+  const re = /<w:tbl>/g;
+  let m, k = -1, guard = 0, end = -1;
+  while ((m = re.exec(xml)) && guard++ < 5000) {
+    if (m.index < end) continue;
+    const e = endOf(xml, m.index, 'w:tbl');
+    if (e < 0) break;
+    k++; end = e;
+    const t = xml.slice(m.index, e);
+    if (t.indexOf('<w:tbl>', 6) >= 0) continue;
+    children(t, 5, t.length, 'w:tr').forEach(([a, z], r) => {
+      const tr = t.slice(a, z);
+      let c = 0;
+      for (const [x, y] of children(tr, 4, tr.length, 'w:tc')) {
+        const tc = tr.slice(x, y);
+        const span = +((/<w:gridSpan w:val="(\d+)"/.exec(tc) || [])[1] || 1);
+        const simple = /<w:fldSimple\b[^>]*w:instr="([^"]*)"/.exec(tc);
+        const instr = (simple ? simple[1] : [...tc.matchAll(/<w:instrText\b[^>]*>([^<]*)<\/w:instrText>/g)].map((q) => q[1]).join('')).replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').trim();
+        if (/^=/.test(instr)) {
+          // (the value shown: the field's result, after its separate mark in a complex field)
+          const after = simple ? tc : tc.slice(Math.max(0, tc.search(/<w:fldChar\b[^>]*w:fldCharType="separate"/)));
+          const value = [...after.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map((q) => q[1]).join('').replace(/&amp;/g, '&').trim();
+          out.push({ table: k, r, c, formula: instr.replace(/\s+/g, ' ').slice(0, 500), value });
+        }
+        c += span;
+      }
+    });
+  }
+  return out;
+}
+
 // document.xml with each table's extras written in
 export function applyTableExtras(xml, extras) {
   if (!extras || !extras.length) return xml;
@@ -99,10 +155,11 @@ export function applyTableExtras(xml, extras) {
       let row = tr;
       for (let i = Math.min(tcs.length, want.length) - 1; i >= 0; i--) {
         const W = want[i];
-        if (!W || (!W.shd && !W.rot)) continue;
+        if (!W || (!W.shd && !W.rot && !W.fx)) continue;
         let tc = row.slice(tcs[i][0], tcs[i][1]);
         if (W.shd && /^[0-9A-F]{6}$/.test(W.shd)) tc = withProp(tc, 'w:shd', '<w:shd w:val="clear" w:color="auto" w:fill="' + W.shd + '" />');
         if (W.rot === '90' || W.rot === '270') tc = withProp(tc, 'w:textDirection', '<w:textDirection w:val="' + (W.rot === '90' ? 'btLr' : 'tbRl') + '" />');
+        if (W.fx) tc = withField(tc, W.fx);
         row = row.slice(0, tcs[i][0]) + tc + row.slice(tcs[i][1]);
       }
       t = t.slice(0, rows[r][0]) + row + t.slice(rows[r][1]);

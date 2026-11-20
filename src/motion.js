@@ -184,14 +184,16 @@ const isPane = (el) => el.matches && el.matches('.stp, .sp-pane, .th-pane, .help
 function children(recs) {
   for (const r of recs) {
     for (const n of r.addedNodes) {
-      if (n.nodeType !== 1 || n.classList.contains('rk-ghost') || n.classList.contains('rk-ghosts')) continue;
+      // (one put in and taken out again in the same moment: Help's popover, docked as a pane)
+      if (n.nodeType !== 1 || !n.isConnected || n.classList.contains('rk-ghost') || n.classList.contains('rk-ghosts')) continue;
       if (n.classList.contains('pop') && !n.hidden) popEnter(n);
       else if (isPane(n) && !n.hidden) enter(n, 'pane', fromEdge('right'), T.normal);
       else if (n.classList.contains('fr') && !n.hidden) enter(n, 'dialog', [{ opacity: 0, scale: String(T.scaleDialog) }, { opacity: 1, scale: '1' }], T.normal);
     }
     for (const n of r.removedNodes) {
       if (n.nodeType !== 1 || n.isConnected || n.classList.contains('rk-ghost')) continue;
-      if (n.classList.contains('pop') && !n.hidden) popLeave(n);
+      // (Help's popover whose content became the Help pane leaves nothing to fade: the pane enters)
+      if (n.classList.contains('pop') && !n.hidden && !(n.classList.contains('pop-help') && document.getElementById('helppane'))) popLeave(n);
       else if (isPane(n) && !n.hidden) leave(n, 'pane', toEdge('right'));
     }
   }
