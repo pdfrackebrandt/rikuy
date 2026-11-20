@@ -209,13 +209,14 @@ export function installKeys(app, mac, runCmd) {
 // system alone.
 export const KEPT = [
   { keys: 'Ctrl+N', word: 'New document', here: 'The browser opens a window: File › Blank document, or New in the status bar. Rikuy installed as an app hears Ctrl+N itself.' },
-  { keys: 'Ctrl+W', word: 'Close', here: 'The browser closes the tab. With the source or the PDF open, Ctrl+W closes that pane.' },
+  { keys: 'Ctrl+W', word: 'Close', here: 'The browser closes the tab. Rikuy installed as an app hears it: there Ctrl+W closes the source or the PDF pane when one is open.' },
   { keys: 'Ctrl+T', word: 'Hanging indent', here: 'A new browser tab: Hanging Indent in the search box, or Paragraph… › Special.' },
   { keys: 'Ctrl+Shift+N', word: 'Normal style', here: 'A private window in Chrome: Ctrl+Alt+0 is Normal.' },
   { keys: 'Ctrl+Shift+W', word: 'Underline words only', here: 'The browser closes the window; LaTeX has no such underline: Underline (Ctrl+U).' },
   { keys: 'Ctrl+Tab', word: 'A tab in a table cell', here: 'The browser\'s next tab; a LaTeX cell holds no tab character.', only: 'win' },
   { keys: 'Ctrl+PageDown', word: 'Next page', here: 'The browser\'s next tab: Go To (F5) a page, or the Navigation pane\'s Pages.', only: 'win' },
   { keys: 'Ctrl+F4', word: 'Close the document', here: 'The browser closes the tab.', only: 'win' },
+  { keys: 'F5', word: 'Go To (Shift+F5 Go Back)', here: 'With the caret on the page, Go To and Go Back as in Word; anywhere else the browser reloads. Ctrl+R reloads from the page too, and Rikuy keeps the document either way.' },
   { keys: 'F6', word: 'Next pane', here: 'The browser\'s address bar: Ctrl+F6, as in Word for the web.' },
   { keys: 'F11', word: 'Next field', here: 'Full screen. The page keeps every field up to date: nothing to step through.' },
   { keys: 'F12', word: 'Save As', here: 'The browser\'s developer tools: Shift+F12 or Ctrl+S downloads the LaTeX.' },

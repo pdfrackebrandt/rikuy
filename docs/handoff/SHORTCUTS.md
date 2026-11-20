@@ -12,6 +12,9 @@ How to read it:
 - **Status**: *works* (it did before this pass), *added* (in this pass, branch word-shortcuts),
   *browser* (a browser or the system keeps the key: what Rikuy offers instead), *other* (the key
   means something else in Rikuy, said why), *none* (no equivalent in a LaTeX document, said why).
+- Keys are read by the key's place where a layout types a sign on a digit key (Ctrl and the 1 key is
+  Ctrl+1 on a French keyboard), and never as Option and a character key on a Mac, where that types
+  a character (Option+Shift+O is Ø): `test/keys.test.mjs` checks both.
 - Keys act with the caret on the page unless the command's `keyScope` is `app` (anywhere but a
   field; function keys and Ctrl+Alt chords also from the source pane).
 - `test/commands.test.mjs` (`WORD`) checks every *works* and *added* row's binding on Windows and
@@ -25,10 +28,10 @@ How to read it:
 | Ctrl+N | | New document | `new-document` (File › Blank document, New in the status bar) | browser: Chrome and Firefox open a window; Rikuy installed as an app hears it (app.js) |
 | Ctrl+S, Shift+F12, Alt+Shift+F2 | Cmd+S | Save | `download-latex` (Rikuy saves as you type; this downloads the source) | Ctrl+S works; Shift+F12, Alt+Shift+F2 added |
 | F12 | Cmd+Shift+S | Save As | Download LaTeX | browser: developer tools; Shift+F12 or Ctrl+S |
-| Ctrl+W, Ctrl+F4 | Cmd+W | Close | Ctrl+W closes the source or PDF pane when open | browser: closes the tab |
+| Ctrl+W, Ctrl+F4 | Cmd+W | Close | in Rikuy installed as an app, Ctrl+W closes the source or PDF pane when open | browser: a browser tab never gives Ctrl+W to the page; it closes the tab |
 | Alt+F4, Ctrl+F10, Alt+F5 | | Close Word, maximise, restore | | browser/system |
 | Ctrl+P, Ctrl+Shift+F12 | Cmd+P | Print | `print` (Print PDF) | Ctrl+P works; Ctrl+Shift+F12 added |
-| Ctrl+F2 | | Print Preview | `preview` (the PDF beside the page) | added |
+| Ctrl+F2, Ctrl+Alt+I | | Print Preview | `preview` (the PDF beside the page) | added |
 | Ctrl+X, Ctrl+C, Ctrl+V | | Cut, Copy, Paste | `cut`, `copy`, `paste` | works |
 | Ctrl+Shift+V | | Paste text only | `paste-text` | works |
 | Ctrl+Alt+V | Cmd+Control+V | Paste Special (older Word; Word 365's page: paste formatting) | `paste-special` | works; Mac's chord added |
@@ -66,12 +69,12 @@ How to read it:
 | Shift with each of those | | Select | the browser's | works |
 | Ctrl+PgUp, Ctrl+PgDn | Cmd+PgUp/PgDn | Previous, next page | Go To (F5) a page; the Navigation pane's Pages | browser: switches tabs |
 | Ctrl+Alt+PgUp/PgDn | | Top, bottom of the window | | none worth a key: PgUp and PgDn |
-| Shift+F5, Ctrl+Alt+Z | | Go Back: the last four places edited | `go-back` | added |
+| Shift+F5, Ctrl+Alt+Z | | Go Back: the last four places edited | `go-back` (each edit its own place; a word typed on is one) | added |
 | Ctrl+F | Cmd+F | Find (Navigation pane) | `find` | works |
 | Ctrl+H | Control+H | Replace | `replace` | works |
-| Ctrl+G, F5 | Cmd+Option+G, F5 | Go To | `go-to` | Ctrl+G works; F5 added (the page is never reloaded by it) |
-| Shift+F4, Ctrl+Alt+Y | Cmd+G | Repeat Find | `find-next` (selects what it finds) | added |
-| F8, Shift+F8 | | Extend, shrink the selection | `extend-selection`, `shrink-selection`: word, sentence, paragraph, document | added; no extend mode for the arrows: each press grows at once |
+| Ctrl+G, F5 | Cmd+Option+G, F5 | Go To | `go-to` | Ctrl+G works; F5 added with the caret on the page (it no longer reloads from there: Ctrl+R does; anywhere else F5 reloads, and Help says so) |
+| Shift+F4, Ctrl+Alt+Y (an older Word key, not on today's page) | Shift+F4, Cmd+Shift+F4 | Repeat Find | `find-next` (selects what it finds); Cmd+G too on a Mac, as everywhere there | added |
+| F8, Shift+F8 | | Extend mode, then the word, sentence, paragraph, document; one step back | `extend-selection`, `shrink-selection` | added: the first F8 turns extend mode on (the arrow keys extend the selection; Escape or a click ends it), as Word's |
 | Ctrl+Shift+F8 | | Column selection | | none: prose has no columns of letters |
 | Ctrl+Alt+5, Tab | | Floating shapes in turn | | none: floats are placed by TeX |
 
@@ -80,9 +83,9 @@ How to read it:
 | Word | Mac | What it does | Rikuy | Status |
 |---|---|---|---|---|
 | Ctrl+Backspace, Ctrl+Delete | Option+Delete | Delete a word | the browser's, as one edit of the source | works |
-| F2, then Enter | | Move the selection | `move-text` | added (drag also moves) |
+| F2, then Enter | | Move the selection | `move-text` (Escape, a click, an edit or any key but the caret's own ends the wait) | added (drag also moves) |
 | Shift+F2, then Enter | | Copy the selection | `copy-text` | added |
-| Ctrl+F3, Ctrl+Shift+F3 | Cmd+F3, Cmd+Shift+F3 | Spike: cut to it, put it all in | `spike`, `spike-insert` | added |
+| Ctrl+F3, Ctrl+Shift+F3 | Cmd+F3, Cmd+Shift+F3 | Spike: cut to it, put it all in | `spike`, `spike-insert` (in a heading or a cell its pieces join with spaces) | added |
 | Alt+F3 | Option+F3 | New building block | `quick-part-save` | added |
 | F3 (after a name) | | Insert a building block | Insert › Quick Parts | none: Chromium's F3 is Find again |
 | Ctrl+Shift+C | Cmd+Shift+C | Copy formatting | `format-painter` | works |
@@ -102,14 +105,14 @@ How to read it:
 | Ctrl+= / Ctrl+Shift+= (Word's key table; the page now says Ctrl+Shift+Minus and Ctrl+Shift+Plus) | Cmd+=, Cmd+Shift+= | Subscript, superscript | `subscript` Ctrl+, , `superscript` Ctrl+. | other: Ctrl+= and Ctrl+Plus zoom the page, as on every web page |
 | Ctrl+Shift+H | | Hidden text | | none: TeX prints every word; hidden text is a LaTeX comment |
 | Ctrl+D, Ctrl+Shift+F | Cmd+D, Cmd+Shift+F | Font dialog; the font box | `font-dialog`, `font-name` | works |
-| Ctrl+Shift+P | Cmd+Shift+P | The font size box | `font-size` | added (Firefox keeps it for a private window) |
+| Ctrl+Shift+P (an older Word key, not on today's page) | Cmd+Shift+P | The font size box | `font-size` | added (Firefox keeps it for a private window) |
 | Ctrl+Shift+>, Ctrl+Shift+< | | Font size up, down | `grow-font`, `shrink-font` | works |
 | Ctrl+], Ctrl+[ | | Font size by a point | `grow-font`, `shrink-font` (LaTeX's next size) | works; not on a Mac (Cmd+[ and ] are back and forward) |
 | Shift+F3 | | Change case | `change-case-cycle` | works |
 | Ctrl+Space | Control+Space | Clear character formatting | `clear-char-formatting` | works; Mac's chord added (Cmd+Space is Spotlight) |
 | Ctrl+Q | | Clear paragraph formatting | `clear-paragraph-formatting` | works (Firefox on Linux keeps it to quit) |
 | Ctrl+Shift+Q | | Symbol font | Insert › Symbol | none: a Windows font |
-| Alt+X | | A character's code and back | `unicode-toggle` (Mac: Control+Option+X) | added |
+| Alt+X | | A character's code and back | `unicode-toggle` (Mac: Control+Option+X); after a LaTeX accent, caf\'e, the code of é | added |
 | Alt and a number on the pad | | A character by its ANSI code | the system types it | works |
 
 ## Special characters
@@ -138,7 +141,7 @@ How to read it:
 | Ctrl+1, Ctrl+2, Ctrl+5 | Cmd+1, 2, 5 | Line spacing 1, 2, 1.5 | `line-spacing-1`, `line-spacing-2`, `line-spacing-15` (setspace) | added (on the page only: elsewhere Ctrl and a digit stays the browser's tab) |
 | Ctrl+0 | Cmd+0 | Space before the paragraph (Mac; Windows' page: zoom 100%) | `space-before` | other: Ctrl+0 is zoom 100% |
 | Ctrl+M, Ctrl+Shift+M | Control+Shift+M, Cmd+Shift+M | Indent, remove the indent | `paragraph-indent`, `paragraph-outdent`; Tab in a list | other: Ctrl+M is a formula here; Mac's Control+Shift+M added |
-| Ctrl+T, Ctrl+Shift+T | Cmd+T | Hanging indent, remove it | `hanging-indent` (search box), Paragraph… › Special | browser: new tab, reopen tab |
+| Ctrl+T, Ctrl+Shift+T | Cmd+T | Hanging indent, remove it | `hanging-indent` (search box; on then off gives the bytes back), Paragraph… › Special | browser: new tab, reopen tab |
 | Ctrl+Q | | Clear paragraph formatting | `clear-paragraph-formatting` | works |
 | Ctrl+Alt+K | Cmd+Option+K | AutoFormat now | `autoformat-headings` is AutoFormat as you type | none as a key |
 | Ctrl+Shift+N | Cmd+Shift+N | Normal | `style-normal`, also Ctrl+Alt+0 | works where the browser lets it (Chrome keeps it for a private window) |

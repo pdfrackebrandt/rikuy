@@ -79,6 +79,17 @@ def paragraphs(page):
     t = src(page)
     page.evaluate("window.rikuy.runCommand('hanging-indent')"); page.wait_for_timeout(200)
     check('Hanging Indent: \\noindent\\hangindent=1cm before the paragraph, and off again byte for byte', '\\noindent\\hangindent=1cm Third paragraph' in t and src(page) == DOC, t[150:260])
+    for form, label in ((DOC.replace('Third paragraph', '\\noindent Third paragraph'), 'after a \\noindent of its own'), (DOC.replace('Third paragraph', '\\hangindent=2em\\hangafter=1 Third paragraph'), 'written by hand')):
+        load_doc(page, form); click_text(page, 'Third paragraph', 3)
+        on = page.evaluate("window.rikuy.cmds.command('hanging-indent').on(window.rikuy, window.rikuy.ribbonAt())")
+        page.evaluate("window.rikuy.runCommand('hanging-indent')"); page.wait_for_timeout(200)
+        t = src(page)
+        click_text(page, 'Third paragraph', 3)
+        page.evaluate("window.rikuy.runCommand('hanging-indent')"); page.wait_for_timeout(200)
+        if 'hand' in label:
+            check('Hanging Indent ' + label + ': shown as on, the first press takes it off, the second puts Rikuy\'s on', on is True and 'hangindent' not in t and t.count('Third paragraph') == 1 and src(page).count('\\hangindent') == 1, (on, t[150:260], src(page)[150:260]))
+        else:
+            check('Hanging Indent ' + label + ': on then off, the bytes of before (the \\noindent kept)', on is False and '\\noindent \\hangindent=1cm Third' in t and src(page) == form, (t[150:260], src(page)[150:260]))
 
 
 def references(page):
@@ -124,14 +135,23 @@ def finding(page):
     at = caret(page)
     want = src(page).index('FourthX') + len('FourthX')
     check('Shift+F5 takes the caret back to where the last edit was', at and abs(at[1] - want) <= 1, (at, want))
-    # Extend Selection: the word, the sentence, the paragraph; Shift+F8 one step back
+    # Extend Selection: extend mode, then the word, the sentence, the paragraph; Shift+F8 one step back
     load_doc(page, DOC); click_text(page, 'It has two', 4)
+    key(page, 'F8')
+    mode = selected(page) == '' and page.evaluate('!!(window.rikuy.extSel && window.rikuy.extSel.mode)')
     steps = []
     for _ in range(3):
         key(page, 'F8'); steps.append(selected(page))
     key(page, 'Shift+F8')
     back = selected(page)
-    check('F8 selects the word, then the sentence, then the paragraph; Shift+F8 one step back', steps[0] == 'has' and steps[1] == 'It has two sentences.' and steps[2] == 'First paragraph here. It has two sentences.' and back == steps[1], (steps, back))
+    check('the first F8 turns extend mode on (nothing selected yet), then the word, the sentence, the paragraph; Shift+F8 one step back', mode and steps[0] == 'has' and steps[1] == 'It has two sentences.' and steps[2] == 'First paragraph here. It has two sentences.' and back == steps[1], (mode, steps, back))
+    key(page, 'Escape')
+    click_text(page, 'It has two', 3)
+    key(page, 'F8'); key(page, 'ArrowRight', 60); key(page, 'ArrowRight', 60); key(page, 'ArrowRight', 60)
+    ext = selected(page)
+    key(page, 'Escape'); key(page, 'ArrowRight', 100)
+    check('in extend mode the arrows extend the selection; Escape ends the mode (an arrow moves again)', ext == 'has' and selected(page) == '' and not page.evaluate('!!(window.rikuy.extSel && window.rikuy.extSel.mode)'), (ext, selected(page)))
+    check('and the source is untouched', src(page) == DOC)
 
 
 def views(page):
@@ -182,6 +202,10 @@ def typing(page):
     check('Ctrl+Alt+Shift+? types ¿', '\u00df\u00bf paragraph' in src(page), src(page)[140:200])
     page.keyboard.press('Control+Quote'); page.wait_for_timeout(60); page.keyboard.press('ArrowRight'); page.keyboard.type('e'); page.wait_for_timeout(150)
     check('an accent key then an arrow: the next letter is typed as it is', '\u00bf eparagraph' in src(page), src(page)[140:200])
+    page.keyboard.press('Control+Quote'); page.wait_for_timeout(60)
+    box = page.evaluate("(() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('Fourth')); const r = document.createRange(); r.setStart(s.firstChild, 2); r.setEnd(s.firstChild, 3); const b = r.getBoundingClientRect(); return [b.left + 1, b.top + b.height / 2]; })()")
+    page.mouse.click(*box); page.wait_for_timeout(150); page.keyboard.type('e'); page.wait_for_timeout(150)
+    check('an accent key then a click: the next letter is typed as it is', 'Foeurth' in src(page) or 'Feourth' in src(page), src(page)[200:300])
     # the number pad's dashes
     written(page, 'Control+NumpadSubtract', DOC, DOC.replace('Second paragraph', 'Sec--ond paragraph'), 'En dash')
     written(page, 'Control+Alt+NumpadSubtract', DOC, DOC.replace('Second paragraph', 'Sec---ond paragraph'), 'Em dash')
@@ -195,7 +219,18 @@ def typing(page):
     t = src(page)
     check('Ctrl+F3 cuts to the Spike (twice), Ctrl+Shift+F3 puts both in, in order', 'First' not in mid and 'Fourth' not in mid and t.index('First', t.index('Closing')) < t.index('Fourth'), t[t.index('Closing'):t.index('Closing') + 80])
     page.evaluate("window.rikuy.closePop && window.rikuy.closePop(true)")
+    check('the Spike\'s cut left no double space', 'One  ' not in mid and '  paragraph' not in mid and 'Fourth' not in mid, mid[60:330])
     check('and the Spike is empty again: Insert Spike cannot run', page.evaluate("!window.rikuy.cmds.enabled(window.rikuy, 'spike-insert', window.rikuy.ribbonAt())"))
+    # (review M1) a cut across two paragraphs put into a heading: one line, the heading whole
+    load_doc(page, DOC)
+    page.evaluate('''() => { const sp = [...document.querySelectorAll('#pages span.t')]; const s = sp.find((x) => x.textContent.includes('two sentences')), e = sp.find((x) => x.textContent.includes('Second paragraph'));
+      const r = document.createRange(); r.setStart(s.firstChild, s.textContent.indexOf('two sentences')); r.setEnd(e.firstChild, e.textContent.indexOf('Second') + 6);
+      document.getElementById('pages').focus(); getSelection().removeAllRanges(); getSelection().addRange(r); }''')
+    page.wait_for_timeout(120); key(page, 'Control+F3')
+    click_text(page, 'Closing', 3); key(page, 'Control+Shift+F3', 300)
+    t = src(page)
+    head = t[t.index('\\section{Clo'):t.index('}', t.index('\\section{Clo')) + 1]
+    check('the Spike into a heading: the pieces\' paragraphs join with a space, the heading stays one line', '\n' not in head and 'two sentences.' in head and 'Second' in head, head)
     # F2: the selection moved where the caret is put, with Enter
     load_doc(page, DOC); select_text(page, 'Fourth')
     key(page, 'F2')
@@ -208,6 +243,18 @@ def typing(page):
     load_doc(page, DOC); select_text(page, 'Fourth')
     key(page, 'Shift+F2'); click_text(page, 'Third paragraph', 0); key(page, 'Escape'); key(page, 'Enter', 200)
     check('Shift+F2 then Escape: nothing copied (Enter is a new paragraph again)', src(page).count('Fourth') == 1, src(page)[140:330])
+    # (review H2) the wait ends at a click, and at typing: Enter is Enter after them
+    load_doc(page, DOC); select_text(page, 'Fourth')
+    key(page, 'F2')
+    box = page.evaluate("(() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('Third')); const r = document.createRange(); r.setStart(s.firstChild, 5); r.collapse(true); const b = r.getBoundingClientRect(); return [b.left, b.top + b.height / 2]; })()")
+    page.mouse.click(*box); page.wait_for_timeout(150)
+    armed = page.evaluate('!!window.rikuy.moveText')
+    page.keyboard.type('X'); key(page, 'Enter', 250)
+    t = src(page)
+    check('F2 then a click: the wait is over; typing and Enter type and break the paragraph, nothing moves', not armed and 'ThirdX\n\n' in t.replace('ThirdX\n\n paragraph', 'ThirdX\n\nparagraph') and t.count('Fourth') == 1 and t.index('Fourth') > t.index('ThirdX'), t[140:330])
+    load_doc(page, DOC); select_text(page, 'Fourth')
+    key(page, 'F2'); click_text(page, 'Third paragraph', 0); page.keyboard.type('Y'); page.wait_for_timeout(150)
+    check('F2 then a letter typed: the wait is over, and the message gone', not page.evaluate('!!window.rikuy.moveText') and page.evaluate("document.getElementById('toast').hidden || !document.getElementById('toast').textContent.startsWith('Move to where')"))
 
 
 def fields(page):
@@ -266,14 +313,16 @@ def tables(page):
 
 
 def files(page):
+    # (Open first: a file chooser wants the key's own activation, which a download just before may take)
     load_doc(page, DOC); click_text(page, 'First paragraph', 3)
-    with page.expect_download(timeout=5000) as dl:
-        page.keyboard.press('Shift+F12')
-    check('Shift+F12 (Word\'s Save) downloads the LaTeX', dl.value.suggested_filename.endswith(('.tex', '.zip')), dl.value.suggested_filename)
-    click_text(page, 'First paragraph', 3)
-    with page.expect_file_chooser(timeout=5000) as fc:
+    with page.expect_file_chooser(timeout=8000) as fc:
         page.keyboard.press('Control+F12')
     check('Ctrl+F12 (Word\'s Open) opens the file chooser', fc.value is not None)
+    page.wait_for_timeout(300)
+    click_text(page, 'First paragraph', 3)
+    with page.expect_download(timeout=8000) as dl:
+        page.keyboard.press('Shift+F12')
+    check('Shift+F12 (Word\'s Save) downloads the LaTeX', dl.value.suggested_filename.endswith(('.tex', '.zip')), dl.value.suggested_filename)
 
 
 def tips_and_help(page, mac=False, tag=''):

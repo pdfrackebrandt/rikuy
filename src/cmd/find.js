@@ -51,7 +51,7 @@ register(
     keys: ['Ctrl+G', 'F5'], mac: { 'Ctrl+G': 'Ctrl+Alt+G' }, when: () => true, run: (app) => openFindDialog(app, 'goto') },
   // Word's Shift+F4 finds the last words again, without the pane (Cmd+G on a Mac, as everywhere there)
   { id: 'find-next', name: 'Find Next', title: 'Find the words of the last Find again, the next place after the caret (Shift+F4)', synonyms: ['Repeat Find', 'Find again', 'Next result'],
-    keys: ['Shift+F4', 'Ctrl+Alt+Y'], keysMac: ['Ctrl+G'], when: () => true, run: (app) => app.findNext() },
+    keys: ['Shift+F4', 'Ctrl+Alt+Y'], keysMac: ['Ctrl+Shift+F4', 'Ctrl+G'], when: () => true, run: (app) => app.findNext() },
   // Word's Shift+F5 (and Ctrl+Alt+Z): back to where the last edits were, the four last in turn
   { id: 'go-back', name: 'Go Back', title: 'The caret back to where you last edited; again, the edit before, among the last four (Shift+F5)', synonyms: ['Last edit', 'Previous edit', 'Last change', 'Where was I'],
     keys: ['Shift+F5', 'Ctrl+Alt+Z'], when: (app) => !!(app.hist && app.hist.length), whyNot: () => 'Nothing has been edited yet.', run: (app) => app.goBack() },
@@ -109,6 +109,21 @@ register(
 // the status bar follows the caret and the scrolling: the page it is on, the words selected; a
 // click on the page's number opens Go To, as in Word
 onInstall((app) => {
+  // extend mode (F8): the arrows extend; Escape, a click, an edit or a key that types ends it
+  app.root.addEventListener('keydown', (e) => {
+    if (!app.extSel || !app.extSel.mode || e.isComposing || /^(Shift|Control|Alt|Meta|AltGraph|CapsLock)$/.test(e.key) || /^F\d+$/.test(e.key)) return;
+    const k = EXTEND_KEYS[e.key];
+    if (k && !e.altKey && !e.metaKey) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      getSelection().modify('extend', k[0], e.ctrlKey ? k[2] : k[1]);
+      return;
+    }
+    if (!/^Page(Up|Down)$/.test(e.key)) app.extendEnd();
+  }, true);
+  document.addEventListener('pointerdown', (e) => { if (app.extSel && app.extSel.mode && !(e.target.closest && e.target.closest('#toast'))) app.extendEnd(); }, true);
+  const commit = app.commit;
+  app.commit = function (...a) { if (this.extSel && this.extSel.mode) this.extendEnd(); return commit.apply(this, a); };
   let t = 0, w = 0;
   app.desk.addEventListener('scroll', () => { cancelAnimationFrame(t); t = requestAnimationFrame(() => app.pageStatus()); }, { passive: true });
   document.addEventListener('selectionchange', () => { clearTimeout(w); w = setTimeout(() => { app.pageStatus(); app.wordStatus(); }, 120); });
@@ -758,38 +773,46 @@ export const methods = {
     this.restoreCaret({ f: x.f, p: x.p });
     return true;
   },
-  // Extend Selection: the next of word, sentence, paragraph, document that selects more than
-  // there is now; Shrink Selection gives back the one before. The steps last while the selection
-  // is still the one the last step made.
+  // Extend Selection, as Word's F8: the first press turns extend mode on (the arrow keys then
+  // extend the selection, Escape, a click or an edit end it); each press after selects the next
+  // of word, sentence, paragraph, document that holds more than is selected now. Shrink
+  // Selection (Shift+F8) gives back the step before, and from the first one ends the mode.
   extendSel(at) {
     const c = this.caretNow();
     if (!c || c.ghost) return false;
-    const same = (x) => !!x && x.f === c.f && x.a === c.a && x.b === c.b;
     let E = this.extSel;
-    if (!E || !same(E.last)) E = this.extSel = { stack: [], level: -1, last: null };
+    if (!E || !E.mode) {
+      this.extSel = { stack: [], level: -1, mode: true };
+      this.toast(EXTEND_SAY, 3600000, { label: 'End', fn: () => this.extendEnd() });
+      return true;
+    }
     const was = { f: c.f, a: c.a, b: c.b, collapsed: c.collapsed };
     for (let lv = E.level + 1; lv < 4; lv++) {
       if (lv === 3) this.selectAllText();
-      else this.selectUnit(at, ['word', 'sentence', 'para'][lv]);
+      else this.selectUnit(this.ribbonAt() || at, ['word', 'sentence', 'para'][lv]);
       const n = this.caretNow();
       const grew = lv === 3 || (n && !n.ghost && n.f === c.f && n.a <= c.a && n.b >= c.b && (n.a < c.a || n.b > c.b));
       if (!grew) { this.restoreCaret(was.collapsed ? { f: was.f, p: was.a } : { f: was.f, selA: was.a, selB: was.b }); continue; }
       E.stack.push(was);
       E.level = lv;
-      E.last = n && !n.ghost ? { f: n.f, a: n.a, b: n.b } : null;
       return true;
     }
     return false;
   },
   shrinkSel() {
-    const c = this.caretNow(), E = this.extSel;
-    if (!c || !E || !E.stack.length || !(E.last ? E.last.f === c.f && E.last.a === c.a && E.last.b === c.b : this.allSel)) return false;
+    const E = this.extSel;
+    if (!E || !E.mode) return false;
+    if (!E.stack.length) { this.extendEnd(); return true; }
     const x = E.stack.pop();
     E.level--;
     this.restoreCaret(x.collapsed ? { f: x.f, p: x.a } : { f: x.f, selA: x.a, selB: x.b });
-    const n = this.caretNow();
-    E.last = n && !n.ghost ? { f: n.f, a: n.a, b: n.b } : null;
     return true;
+  },
+  extendEnd() {
+    if (!this.extSel || !this.extSel.mode) return;
+    this.extSel = null;
+    const t = document.getElementById('toast');
+    if (t && t.textContent.startsWith(EXTEND_SAY)) t.hidden = true;
   },
   // the word, the sentence or the paragraph the caret is in, selected (the paragraph's words
   // read as the page shows them, cut as the language cuts them)
@@ -826,7 +849,7 @@ export const methods = {
       const text = P.T.text.slice(P.a, P.b), x = P.x - P.a;
       let seg = null;
       try { seg = new Intl.Segmenter(this.model.opts.lang || 'en', { granularity: 'sentence' }); } catch (e) { seg = null; }
-      if (seg) { const s = seg.segment(text).containing(Math.min(x, text.length - 1)); if (s) { a = P.a + s.index; b = a + s.segment.length; } }
+      if (seg) { const r = sentenceAt(text, Math.min(x, text.length - 1), seg); if (r) { a = P.a + r[0]; b = P.a + r[1]; } }
       else {
         let i = x; while (i > 0 && !/[.!?]\s/.test(text.slice(i - 2, i))) i--;
         let j = x; while (j < text.length && !/[.!?]/.test(text[j])) j++;
@@ -1247,11 +1270,28 @@ export const methods = {
 // the collapsed headings of every document, in the browser (localStorage)
 const FOLD_KEY = 'rikuy.fold.v1';
 const FOLD_MAX = 2000;
+const EXTEND_SAY = 'Extend mode: the arrow keys extend the selection, F8 selects more. Escape ends it.';
+// extend mode's keys: an arrow, Home or End moves the selection's end as Shift with it would
+const EXTEND_KEYS = { ArrowLeft: ['backward', 'character', 'word'], ArrowRight: ['forward', 'character', 'word'], ArrowUp: ['backward', 'line', 'paragraphboundary'],
+  ArrowDown: ['forward', 'line', 'paragraphboundary'], Home: ['backward', 'lineboundary', 'documentboundary'], End: ['forward', 'lineboundary', 'documentboundary'] };
+
+// The sentence of text at x as the language's segmenter cuts it, but never after an abbreviation
+// or an initial ("Dr. Smith", "e.g. one", "J. Smith"), which it takes for a sentence's end: [a, b]
+const ABBR = /(?:^|[\s(])(?:Dr|Mr|Mrs|Ms|Prof|Sr|Jr|St|vs|cf|al|Fig|Figs|Eq|Eqs|No|Nos|Vol|Ch|Sec|pp?|ca|approx|resp|e\.g|i\.e|[A-Z])\.\s*$/;
+export function sentenceAt(text, x, seg) {
+  const out = [];
+  for (const s of seg.segment(text)) {
+    const e = s.index + s.segment.length, L = out[out.length - 1];
+    if (L && ABBR.test(text.slice(L[0], L[1]))) L[1] = e; else out.push([s.index, e]);
+  }
+  return out.find(([a, b]) => a <= x && x < b) || out[out.length - 1] || null;
+}
 
 // Go Back's places: where the last n edits of the history (App.hist, each step's files a diff
 // { f, s, del, ins }) left the caret, newest first, each moved through the edits made after it.
-// Places closer than SPOT_NEAR characters to a newer one are the same place.
-const SPOT_NEAR = 40;
+// A place within SPOT_NEAR characters of a newer one is that place (one word typed on is one
+// place; two short paragraphs edited are two).
+const SPOT_NEAR = 2;
 export function editSpots(hist, n = 4) {
   const out = [];
   for (let i = (hist || []).length - 1; i >= 0 && out.length < n; i--) {

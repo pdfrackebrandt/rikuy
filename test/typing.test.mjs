@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import '../src/cmd/index.js';
 import { unicodeToggle, accented, openBraces, cutSpace } from '../src/cmd/typing.js';
-import { editSpots } from '../src/cmd/find.js';
+import { editSpots, sentenceAt } from '../src/cmd/find.js';
 
 let n = 0;
 const ok = (name, f) => { try { f(); n++; } catch (e) { console.error('FAIL', name); throw e; } };
@@ -97,8 +97,10 @@ ok('Go Back: the last four places edited, newest first, moved through the edits 
     step('main.tex', 100, 'zzzzz', '') // 100: 5 characters out before 201, not before 13
   ];
   assert.deepEqual(editSpots(hist, 4), [{ f: 'main.tex', p: 100 }, { f: 'ch.tex', p: 7 }, { f: 'main.tex', p: 196 }, { f: 'main.tex', p: 13 }]);
-  // places closer than 40 characters are one place; n of them at most
-  assert.deepEqual(editSpots([step('a', 0, '', 'a'), step('a', 1, '', 'b'), step('a', 2, '', 'c')], 4), [{ f: 'a', p: 3 }]);
+  // a place a character on from a newer one is that place; n of them at most
+  assert.deepEqual(editSpots([step('a', 0, '', 'a'), step('a', 1, '', 'b')], 4), [{ f: 'a', p: 2 }]);
+  // edits in two short paragraphs close together are two places (review L1)
+  assert.deepEqual(editSpots([step('a', 10, '', 'Y'), step('a', 30, '', 'X')], 4), [{ f: 'a', p: 31 }, { f: 'a', p: 11 }]);
   assert.equal(editSpots(hist, 2).length, 2);
   // an edit over the place: the place to the end of what replaced it
   assert.deepEqual(editSpots([step('a', 50, '', 'q'), step('a', 40, 'x'.repeat(20), 'yy')], 4), [{ f: 'a', p: 42 }]);
@@ -119,6 +121,15 @@ ok('the Spike\'s cut takes one space along, as Word\'s smart cut: no double spac
   assert.equal(cutSpace('Let $x$ and y', 7, 11), false);
   assert.equal(cutSpace('Let $x$ and y.', 8, 13), true);
   assert.equal(cutSpace('(two) x', 1, 4), false);
+});
+
+ok('a sentence (F8, Select sentence) runs on past an abbreviation or an initial', () => {
+  const seg = new Intl.Segmenter('en', { granularity: 'sentence' });
+  const t = 'He met Dr. Smith at noon. Then x=1.5 held. J. Smith left, e.g. at one.';
+  const at = (w) => { const r = sentenceAt(t, t.indexOf(w), seg); return t.slice(r[0], r[1]).trim(); };
+  assert.equal(at('Smith at'), 'He met Dr. Smith at noon.');
+  assert.equal(at('held'), 'Then x=1.5 held.');
+  assert.equal(at('left'), 'J. Smith left, e.g. at one.');
 });
 
 console.log('typing: ' + n + ' groups of checks passed');
