@@ -639,6 +639,14 @@ export function insertRow(src, T, r, below, o = {}) {
   const t = W + lead + (grid || '');
   return { edits: [{ s: at, e: at, t }, ...span], p: at + W.length };
 }
+// the end of a row's cells for Sort: its last cell's, empty or not, its trailing spaces left (rowEnd
+// stops at the last cell with words, so a row ending in an empty cell lost its & when moved)
+function sortEnd(src, row) {
+  const c = row.cells[row.cells.length - 1];
+  let e = c.empty ? c.s : c.ce;
+  if (c.empty) { e = Math.max(e, c.e); while (e > c.s && /\s/.test(src[e - 1])) e--; }
+  return e;
+}
 // the end of a row's words (its last non space character, comments aside)
 function rowEnd(src, row) {
   const c = row.cells[row.cells.length - 1];
@@ -1264,14 +1272,16 @@ export function sortRows(src, T, r0, r1, col, o = {}) {
   const items = rows.map((r) => {
     const row = T.rows[r], hit = cellOfCol(row, col);
     const key = hit ? cellText(src, hit.cell) : '';
-    return { r, key, text: src.slice(row.cs, rowEnd(src, row)) };
+    return { r, key, text: src.slice(row.cs, sortEnd(src, row)) };
   });
   const num = o.type === 'number' || (o.type == null && items.filter((x) => sortKey(x.key)).every((x) => !isNaN(asNumber(x.key))));
   const cmp = num ? (a, b) => (isNaN(asNumber(a.key)) ? Infinity : asNumber(a.key)) - (isNaN(asNumber(b.key)) ? Infinity : asNumber(b.key)) : (a, b) => sortKey(a.key).localeCompare(sortKey(b.key), undefined, { numeric: true, sensitivity: 'base' });
   const sorted = [...items].sort((a, b) => (o.desc ? -cmp(a, b) : cmp(a, b)) || a.r - b.r);
   const edits = [];
-  items.forEach((x, i) => { const y = sorted[i]; if (y.text !== x.text) edits.push({ s: T.rows[x.r].cs, e: rowEnd(src, T.rows[x.r]), t: y.text }); });
-  return { edits };
+  items.forEach((x, i) => { const y = sorted[i]; if (y.text !== x.text) edits.push({ s: T.rows[x.r].cs, e: sortEnd(src, T.rows[x.r]), t: y.text }); });
+  // (where each row's words went, for the formula lines: formulasAfter)
+  const to = new Map(sorted.map((y, i) => [y.r, items[i].r]));
+  return { edits, moved: (k, col) => (to.has(k) ? { k: to.get(k), col } : undefined) };
 }
 
 // ---- converting -----------------------------------------------------------------------------------
@@ -2146,7 +2156,9 @@ export function deleteCells(src, T, rect, how) {
       const next = [...words.slice(0, c0), ...words.slice(c0 + n), ...Array(n).fill('')];
       row.cells.forEach((c, k) => { if (next[k] !== words[k]) edits.push({ s: c.ks, e: c.empty ? c.ks : c.ce, t: next[k] }); });
     }
-    return { edits };
+    // (a cell's words moved left n columns; the cells deleted have none)
+    const gap = Math.min(c1, T.ncols - 1) - c0 + 1;
+    return { edits, moved: (k, col) => (k < r0 || k > r1 || col < c0 ? undefined : col < c0 + gap ? null : { k, col: col - gap }) };
   }
   const rows = data.filter((k) => k >= r0);
   const h = data.filter((k) => k >= r0 && k <= r1).length;
@@ -2156,7 +2168,9 @@ export function deleteCells(src, T, rect, how) {
     const next = [...words.slice(h), ...Array(Math.min(h, words.length)).fill('')];
     cells.forEach((c, k) => { if (c && next[k] !== words[k]) edits.push({ s: c.ks, e: c.empty ? c.ks : c.ce, t: next[k] }); });
   }
-  return { edits: edits.sort((a, b) => a.s - b.s) };
+  // (a cell's words moved up h rows; the cells deleted have none)
+  const up = (k, col) => { if (col < c0 || col > c1 || k < r0) return undefined; const i = rows.indexOf(k); return i < 0 ? undefined : i < h ? null : { k: rows[i - h], col }; };
+  return { edits: edits.sort((a, b) => a.s - b.s), moved: up };
 }
 
 // ---- alt text (R3) --------------------------------------------------------------------------------
@@ -2256,10 +2270,14 @@ export function setWrap(src, T, o) {
 }
 
 // ---- (G2) Formulas: Word's =SUM(ABOVE) in a cell, its value written, the formula kept --------------
-// The table's formulas: comment lines right before it, "% formula D4: =SUM(ABOVE)" (above its
-// "% alt:" line, which stays next to the table). [{ name, r, c, text, s, e }] (r and c count the
-// table's rows of cells and its columns from 0, as A1 names them)
-const FORMULA_LINE = /^[ \t]*%[ \t]*formula[ \t]+([A-Za-z]{1,3})(\d{1,5})[ \t]*:[ \t]*(\S.*?)[ \t]*\r?$/;
+// The table's formulas: comment lines right before it, "% formula D4 [10]: =SUM(ABOVE)" (above its
+// "% alt:" line, which stays next to the table), the value in brackets the one it wrote last
+// (Update Formulas leaves a cell that holds another: a row moved by hand, a number typed over it).
+// [{ name, r, c, text, value, s, e }] (r and c count the table's rows of cells and its columns from
+// 0, as A1 names them; value null on a line without one)
+const FORMULA_LINE = /^[ \t]*%[ \t]*formula[ \t]+([A-Za-z]{1,3})(\d{1,5})(?:[ \t]*\[([^\]\r\n]*)\])?[ \t]*:[ \t]*(\S.*?)[ \t]*\r?$/;
+// the longest formula a line keeps, and Rikuy reads (Word's own field codes stop at 255)
+export const FORMULA_MAX = 500;
 export function formulasOf(src, T) {
   const out = [];
   let ls = src.lastIndexOf('\n', T.s - 1) + 1;
@@ -2270,7 +2288,7 @@ export function formulasOf(src, T) {
     if (m) {
       let c = 0;
       for (const ch of m[1].toUpperCase()) c = c * 26 + ch.charCodeAt(0) - 64;
-      out.unshift({ name: m[1].toUpperCase() + m[2], r: +m[2] - 1, c: c - 1, text: m[3], s: ps, e: ls });
+      out.unshift({ name: m[1].toUpperCase() + m[2], r: +m[2] - 1, c: c - 1, text: m[4], value: m[3] == null ? null : m[3].trim(), s: ps, e: ls });
     } else if (!ALT_LINE.exec(line.replace(/\r$/, ''))) break;
     ls = ps;
   }
@@ -2307,17 +2325,124 @@ export function setCellValue(src, c, text) {
   }
   return { edits: old === text ? [] : [{ s: R.s, e: R.e, t: text }] };
 }
-// The formula line of cell name set (text) or taken off (null). { edits }
-export function setFormula(src, T, name, text) {
+// a formula line: its indent, the cell's name, the value written last, the formula
+const formulaLine = (indent, name, value, text) => indent + '% formula ' + name + (value != null && value !== '' ? ' [' + String(value).replace(/[\]\r\n]/g, '') + ']' : '') + ': ' + text;
+// The formula line of cell name set (text, with the value it wrote) or taken off (null). { edits }
+// or { error } for a formula longer than a line keeps
+export function setFormula(src, T, name, text, value = null) {
   const have = formulasOf(src, T).find((x) => x.name === name.toUpperCase());
-  const t = text == null ? null : String(text).replace(/[\r\n]+/g, ' ').trim().slice(0, 500);
+  const t = text == null ? null : String(text).replace(/[\r\n]+/g, ' ').trim();
+  if (t && t.length > FORMULA_MAX) return { error: 'A formula of at most ' + FORMULA_MAX + ' characters: this one has ' + t.length + '.' };
   const nl = T.eol;
-  if (have) return { edits: t ? [{ s: have.s, e: have.e, t: src.slice(have.s, have.e).replace(/:[ \t]*\S.*?([ \t]*\r?\n?)$/, ': ' + t + '$1') }] : [{ s: have.s, e: have.e, t: '' }] };
+  if (have) {
+    if (!t) return { edits: [{ s: have.s, e: have.e, t: '' }] };
+    const line = src.slice(have.s, have.e), end = /[ \t]*\r?\n?$/.exec(line)[0];
+    return { edits: [{ s: have.s, e: have.e, t: formulaLine(/^[ \t]*/.exec(line)[0], name.toUpperCase(), value, t) + end }] };
+  }
   if (!t) return { edits: [] };
   // (above the alt line, which stays next to the table; indented as the table's line)
   let ls = src.lastIndexOf('\n', T.s - 1) + 1;
   const indent = /^[ \t]*/.exec(src.slice(ls, T.s))[0];
   const A = tableAlt(src, T);
   if (A) ls = A.s;
-  return { edits: [{ s: ls, e: ls, t: indent + '% formula ' + name.toUpperCase() + ': ' + t + nl }] };
+  return { edits: [{ s: ls, e: ls, t: formulaLine(indent, name.toUpperCase(), value, t) + nl }] };
+}
+
+// ---- formulas follow the table (the review of PR 84, H2) ----------------------------------------------
+// After an operation on the table (rows or columns inserted or deleted, Sort, Merge, Split, Delete
+// Cells) each formula line names its cell where the cell went, and the cells its formula reads
+// where they went (A1 and ranges, as a spreadsheet does; Word's fields move with their cells); a
+// line whose cell went is taken off, and a reference to a cell that went is #REF!, which Update
+// Formulas reports. edits: the operation's on src; moved(k, col): where the words of row k's cell
+// at col went, { k, col } (an operation that moves words between cells: Sort, Delete Cells), null
+// when they went, undefined to find it by position. { edits on src, dropped: [names] }
+export function formulasAfter(src, T, edits, moved) {
+  const Fs = formulasOf(src, T);
+  if (!Fs.length || !edits || !edits.length) return { edits: [], dropped: [] };
+  // (lines before the table, not the operation's: edits there are another kind of change)
+  if (edits.some((x) => x.s < Fs[Fs.length - 1].e)) return { edits: [], dropped: [] };
+  const out = apply(src, edits);
+  const T2 = parseTable(out, posAfter(edits, T.s, -1));
+  if (!T2) return { edits: [], dropped: [] };
+  const rows = dataRows(T), rows2 = dataRows(T2);
+  const gone = (p) => edits.some((x) => (x.s < p && p < x.e) || (x.s === p && x.e > p && !x.t));
+  const where = (k, cell) => {
+    const m = moved ? moved(k, cell.col) : undefined;
+    if (m === null) return null;
+    if (m) { const r = rows2.indexOf(m.k); return r < 0 ? null : { r, c: m.col }; }
+    // (by its words' start, else its own: deleting the column before a cell takes the space it starts with)
+    const p = [cell.empty ? null : cell.ks, cell.s].find((x) => x != null && !gone(x));
+    if (p == null) return null;
+    const q = posAfter(edits, p, 1), hit = cellAt(T2, q);
+    if (!hit || hit.cell.s > q || q > hit.cell.e) return null;
+    const r = rows2.indexOf(hit.r);
+    return r < 0 ? null : { r, c: hit.cell.col };
+  };
+  // each cell where it went; each row and column where most of its cells went
+  const at = new Map(), rowTo = [], colTo = [];
+  rows.forEach((k, r) => {
+    for (const cell of T.rows[k].cells) {
+      const w = where(k, cell);
+      at.set(r + ',' + cell.col, w);
+      if (w && rowTo[r] == null) rowTo[r] = w.r;
+      if (w && colTo[cell.col] == null) colTo[cell.col] = w.c;
+    }
+    if (rowTo[r] == null) rowTo[r] = -1;
+  });
+  for (let c = 0; c < T.ncols; c++) if (colTo[c] == null) colTo[c] = -1;
+  const res = [], dropped = [], taken = new Set();
+  for (const F of Fs) {
+    if (!at.has(F.r + ',' + F.c)) continue;
+    const w = at.get(F.r + ',' + F.c);
+    const name = w ? colName(w.c) + (w.r + 1) : null;
+    if (!w || taken.has(name)) { res.push({ s: F.s, e: F.e, t: '' }); dropped.push(F.name); continue; }
+    taken.add(name);
+    const text = renameRefs(F.text, rowTo, colTo, (r, c) => (at.has(r + ',' + c) ? at.get(r + ',' + c) : undefined));
+    if (name === F.name && text === F.text) continue;
+    const line = src.slice(F.s, F.e), end = /[ \t]*\r?\n?$/.exec(line)[0];
+    res.push({ s: F.s, e: F.e, t: formulaLine(/^[ \t]*/.exec(line)[0], name, F.value, text) + end });
+  }
+  return { edits: res, dropped };
+}
+// a position in src, in the text after edits (bias > 0: after what is inserted right there)
+function posAfter(edits, p, bias) {
+  let q = p;
+  for (const x of edits) {
+    if (x.e < p || (x.e === p && (x.s < p || bias > 0))) q += x.t.length - (x.e - x.s);
+    else if (x.s < p && x.e > p) q += x.s + x.t.length - p;
+  }
+  return q;
+}
+const colName = (c) => { let s = ''; c += 1; while (c > 0) { const m = (c - 1) % 26; s = String.fromCharCode(65 + m) + s; c = Math.floor((c - 1) / 26); } return s; };
+const colOf = (t) => { let c = 0; for (const ch of t.toUpperCase()) c = c * 26 + ch.charCodeAt(0) - 64; return c - 1; };
+// A formula's cell names after rows and columns moved (rowTo, colTo: old index to new, -1 gone); a
+// range keeps the cells of it that stay; the number format after \# untouched
+export function renameRefs(text, rowTo, colTo, cellTo = () => undefined) {
+  const cut = text.search(/\\#/), f = cut < 0 ? text : text.slice(0, cut), rest = cut < 0 ? '' : text.slice(cut);
+  // (a range's part past the table's last row or column moves as much as the table grew)
+  const span = (a, b, to) => {
+    const lo = Math.min(a, b), hi = Math.max(a, b);
+    if (lo >= to.length) return [lo, hi];
+    const grew = to.reduce((m, x) => Math.max(m, x), -1) + 1 - to.length;
+    let first = null, last = null;
+    for (let i = lo; i <= Math.min(hi, to.length - 1); i++) if (to[i] >= 0) { first = first == null ? to[i] : Math.min(first, to[i]); last = last == null ? to[i] : Math.max(last, to[i]); }
+    if (hi >= to.length) { last = hi + grew; if (first == null) first = to.length + grew; }
+    return first == null ? null : [first, last];
+  };
+  const g = f.replace(/(^|[^A-Za-z0-9#])([A-Za-z]{1,3})(\d{1,5})(?:(\s*:\s*)([A-Za-z]{1,3})(\d{1,5}))?(?![A-Za-z0-9(])/g, (m, pre, c1, r1, colon, c2, r2) => {
+    const a = { r: +r1 - 1, c: colOf(c1) };
+    if (!colon) {
+      if (a.r >= rowTo.length || a.c >= colTo.length) return m;
+      // (a cell of its own where it went, else its row's and column's)
+      const w = cellTo(a.r, a.c);
+      if (w === null) return pre + '#REF!';
+      const r = w ? w.r : rowTo[a.r], c = w ? w.c : colTo[a.c];
+      return pre + (r < 0 || c < 0 ? '#REF!' : colName(c) + (r + 1));
+    }
+    const b = { r: +r2 - 1, c: colOf(c2) };
+    const R = span(a.r, b.r, rowTo), C = span(a.c, b.c, colTo);
+    if (!R || !C) return pre + '#REF!';
+    return pre + colName(C[0]) + (R[0] + 1) + colon + colName(C[1]) + (R[1] + 1);
+  });
+  return g + rest;
 }
