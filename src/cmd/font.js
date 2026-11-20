@@ -818,6 +818,8 @@ export const methods = {
     const sel = getSelection();
     // (where it was armed: the selection there is no place to paint, see the touch screen's rest below)
     this.fpaint = { fmts, sticky: !!sticky, from: sel.rangeCount ? sel.getRangeAt(0).cloneRange() : null, style: this.fpStyleAt(at) };
+    // (kept for Ctrl+Shift+V, Word's Paste Formatting, until text is copied: pasteFormat)
+    this.fmtCopy = { fmts, style: this.fpaint.style };
     document.body.classList.add('fpainting');
     if (!fmts.length && !this.fpaint.style) this.toast('The caret is in plain text: the next selection is made plain.', 2400);
     return true;
@@ -869,6 +871,16 @@ export const methods = {
     if (!P0.sticky) { this.fpaint = null; document.body.classList.remove('fpainting'); }
     this.ribbonSync();
     return ok;
+  },
+  // Word's Ctrl+Shift+V: the formatting Ctrl+Shift+C (or the Format Painter) copied, on the
+  // selection or the caret's word, as the painter's one press; the copy stays for the next
+  // Ctrl+Shift+V, and a painter left armed by Ctrl+Shift+C is used up by it
+  pasteFormat() {
+    const K = this.fmtCopy, at = this.ribbonAt();
+    if (!K || !at || !at.c || at.c.ghost) return false;
+    this.fpaint = { fmts: K.fmts, style: K.style, sticky: false, from: null };
+    this.paintFormat();
+    return true;
   },
   // the words selected before a style was given to their paragraph, selected again where the
   // step moved them: the style writes around the words and not in them, so they are found in what
