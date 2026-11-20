@@ -33,6 +33,32 @@ import { enclosing } from '../wrap.js';
 
 const SVG = (paths) => '<svg viewBox="0 0 20 20" aria-hidden="true">' + paths + '</svg>';
 
+// What kind of control each one of the ribbon, the title bar and the status bar is (data-kind):
+// one height, type, spacing and corner per kind, which test/consistency.py measures in one pass.
+// The kind is what the layout asks for (a large button stays "large" in a group drawn small).
+function kindOf(e, scope) {
+  if (e.matches('.sep')) return 'separator';
+  if (e.matches('.rb-glab, .rb-cap')) return 'group-label';
+  if (e.matches('.rb-tab')) return 'tab';
+  if (e.matches('input, select') || e.closest('.fbx, .pf, .pf-field, .nf')) return 'field';
+  if (e.closest('.rb-gal') || e.matches('.rb-tile, .rb-sb')) return 'gallery';
+  if (scope === 'bar') return e.matches('.undo-x') ? 'split-arrow' : e.matches('.icon') ? 'title-icon' : 'title-button';
+  if (scope === 'status') return 'status';
+  if (e.matches('.rb-gbtn')) return 'group';
+  if (e.matches('.rb-launch')) return 'launcher';
+  if (e.matches('.rb-x')) return 'split-arrow';
+  const s = (e.closest('.rb-split') || e).dataset.size;
+  if (s === 'L' || e.dataset.cmd === 'paste') return 'large';
+  if (s === 'T') return 'tile';
+  if (s === 'I') return 'icon';
+  if (s === 'S') return 'small';
+  return e.querySelector(':scope > span:not(.sr), :scope > .rb-bl') ? 'small' : 'icon';
+}
+export function tagKinds(root, scope) {
+  if (!root) return;
+  for (const e of root.querySelectorAll('button, input, select, .sep, .rb-glab, .rb-cap')) if (!e.dataset.kind) e.dataset.kind = kindOf(e, scope);
+}
+
 // A group's commands in Word's order where src/ribbon/layout.js lays the group out (those it does
 // not list after them, small), each with its line l; else in the registry's order
 function laidOut(tab, group) {
@@ -207,6 +233,7 @@ export const tabs = {
     }
     // the downloads wait in the first panel until a tab is chosen
     rb.querySelector('.rb-tb').append(dl);
+    tagKinds(rb, 'ribbon'); tagKinds($('#rb-top'), 'ribbon'); tagKinds($('#bar'), 'bar'); tagKinds($('#status'), 'status');
     this.rbBuilt = true;
     const want = this.rbTabs.includes(this.rbTab) ? this.rbTab : 'home';
     this.rbTab = null;
@@ -382,6 +409,8 @@ export const tabs = {
     const rb = $('#ribbon');
     if (!rb || !this.rbBuilt) return;
     this.rbFitting = true;
+    // (controls the app adds later, an update's button in the bar, take their kind here)
+    tagKinds($('#bar'), 'bar'); tagKinds($('#status'), 'status');
     const panel = $('#rp-' + this.rbTab), gw = $('#rb-gw'), gal = !!panel && panel.contains(gw);
     const groups = panel ? [...panel.querySelectorAll('.rb-grp')] : [];
     const fits = () => rb.scrollWidth <= rb.clientWidth + 1;

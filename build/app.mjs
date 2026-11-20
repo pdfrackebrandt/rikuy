@@ -25,8 +25,9 @@ const root = path.join(path.dirname(new URL(import.meta.url).pathname), '..');
 const R = (p) => path.join(root, p);
 const sha = (b, alg = 'sha256') => crypto.createHash(alg).update(b).digest('hex');
 
-// the colours of the interface (src/app.css): the bar, the desk behind the pages, the ink
-const THEME = { light: '#F5F7F9', dark: '#1B222A', background: '#DCE1E7' };
+// the colours of the interface (src/app.css): the title bar's (--bar, light and dark), which the
+// installed app's window takes, and the desk behind the pages
+const THEME = { light: '#DCEAF7', dark: '#1C2A3A', background: '#DCE1E7' };
 const DESCRIPTION = 'A LaTeX editor where you type on the typeset page. TeX Live 2026 runs in the browser; nothing is uploaded.';
 // where the hosted copy answers (docs/HOSTING.md): for the page's canonical address, the picture
 // a pasted link shows, robots.txt, sitemap.xml and llms.txt. Another site sets RIKUY_SITE.
