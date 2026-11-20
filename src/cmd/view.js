@@ -35,7 +35,8 @@ const VIEWS = ['page', 'latex', 'pdf'];
 const viewIs = (v) => (app) => (app.view || 'page') === v;
 
 register(
-  { id: 'preview', name: 'Preview', el: 'b-pdf', static: true, place: 'bar', title: 'Show the PDF as TeX makes it, beside the page', synonyms: ['PDF', 'Compile'], when: always, run: (app) => app.togglePdf() },
+  // (Word's Ctrl+F2 is Print Preview: here the PDF as TeX makes it)
+  { id: 'preview', name: 'Preview', el: 'b-pdf', static: true, place: 'bar', title: 'Show the PDF as TeX makes it, beside the page (Ctrl+F2)', keys: ['Ctrl+F2', 'Ctrl+Alt+I'], keyScope: 'app', synonyms: ['PDF', 'Compile', 'Print Preview'], when: always, run: (app) => app.togglePdf() },
   { id: 'source', name: 'Source', el: 'b-src', static: true, place: 'bar', title: 'Show the source beside the page (Ctrl+\\)', keysElsewhere: ['Ctrl+\\'], synonyms: ['LaTeX source', 'Code'], when: always, run: (app) => app.toggleSource() },
   { id: 'zoom-out', name: 'Zoom out', el: 'b-zout', static: true, place: 'bar', only: 'wide', keysElsewhere: ['Ctrl+-'], when: always, run: (app) => app.setZoom(-1) },
   { id: 'zoom-fit', name: 'Fit width', el: 'zoomv', static: true, place: 'bar', synonyms: ['Zoom'], when: always, run: (app) => app.setZoom(0) },
@@ -61,13 +62,14 @@ register(
   // ---- View ▸ Views
   { id: 'read-mode', name: 'Read Mode', order: 10, title: 'Read Mode: TeX\'s PDF across the window, to read (the status bar\'s PDF)', synonyms: ['Reading view', 'PDF view', 'Full screen reading'],
     tab: 'view', group: 'views', el: 'rw-read', label: 'Read Mode', kind: 'toggle', icon: ICON.read, when: always, on: viewIs('pdf'), run: (app) => app.setView(app.view === 'pdf' ? 'page' : 'pdf') },
-  { id: 'print-layout', name: 'Print Layout', order: 20, title: 'Print Layout: the typeset page you type on (the status bar\'s Page)', synonyms: ['Page view', 'Normal view'],
+  { id: 'print-layout', name: 'Print Layout', order: 20, title: 'Print Layout (Ctrl+Alt+P): the typeset page you type on (the status bar\'s Page)', synonyms: ['Page view', 'Normal view'], keys: ['Ctrl+Alt+P'], keyScope: 'app',
     tab: 'view', group: 'views', el: 'rw-print', label: 'Print Layout', kind: 'toggle', icon: ICON.print, when: always, on: (app) => viewIs('page')(app) && !app.draftOn() && !app.webOn(), run: (app) => { app.setDraft(false); app.setWeb(false); app.setView('page'); } },
   { id: 'web-layout', name: 'Web Layout', order: 22, title: 'Web Layout: the text as wide as the window, no pages; its lines break where the window does, not where TeX does (the PDF is TeX\'s)', synonyms: ['Web view', 'Reflow', 'No pages', 'Wrap to window'],
     tab: 'view', group: 'views', el: 'rw-web', label: 'Web Layout', kind: 'toggle', icon: ICON.web, when: always, on: (app) => viewIs('page')(app) && app.webOn(), run: (app) => { const on = !(viewIs('page')(app) && app.webOn()); app.setView('page'); app.setWeb(on); } },
-  { id: 'latex-mode', name: 'LaTeX Mode', order: 25, title: 'LaTeX Mode: the source across the window, the caret at the same place (the status bar\'s LaTeX)', synonyms: ['LaTeX view', 'Source view', 'Code'],
+  // (Word's Alt+F9 shows every field's code: here the whole document as its LaTeX)
+  { id: 'latex-mode', name: 'LaTeX Mode', order: 25, title: 'LaTeX Mode (Alt+F9): the source across the window, the caret at the same place (the status bar\'s LaTeX)', synonyms: ['LaTeX view', 'Source view', 'Code', 'Toggle all field codes'], keys: ['Alt+F9'], keyScope: 'app',
     tab: 'view', group: 'views', el: 'rw-latex', label: 'LaTeX Mode', kind: 'toggle', icon: ICON.latex, when: always, on: viewIs('latex'), run: (app) => app.setView(app.view === 'latex' ? 'page' : 'latex') },
-  { id: 'draft', name: 'Draft', order: 30, title: 'Draft: the pages run on, one under the other, a dotted line where TeX turns the page', synonyms: ['Continuous', 'Draft view', 'No page breaks'],
+  { id: 'draft', name: 'Draft', order: 30, title: 'Draft (Ctrl+Alt+N): the pages run on, one under the other, a dotted line where TeX turns the page', synonyms: ['Continuous', 'Draft view', 'No page breaks'], keys: ['Ctrl+Alt+N'], keyScope: 'app',
     tab: 'view', group: 'views', el: 'rw-draft', label: 'Draft', kind: 'toggle', icon: ICON.draft, when: always, on: (app) => app.draftOn(), run: (app) => { app.setView('page'); app.setDraft(!app.draftOn()); } },
 
   // ---- Show LaTeX: a block of the page as its source, where it stands (Word's equation Linear)
