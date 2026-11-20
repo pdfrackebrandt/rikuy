@@ -1054,9 +1054,42 @@ def keyboard_room(page, w):
     page.set_viewport_size({'width': width, 'height': 820})
 
 
+
+SPACING = "*:not(#pages *):not(#pages) { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; } p:not(#pages *) { margin-bottom: 2em !important; }"
+CUT = """(sel) => { const out = []; for (const root of document.querySelectorAll(sel)) for (const e of [root, ...root.querySelectorAll('*')]) {
+  if (!e.checkVisibility || !e.checkVisibility() || !e.textContent.trim() || e.matches('.sr, .sr *')) continue; const c = getComputedStyle(e);
+  const y = /hidden|clip/.test(c.overflowY) && e.scrollHeight > e.clientHeight + 1, x = /hidden|clip/.test(c.overflowX) && e.scrollWidth > e.clientWidth + 1 && c.textOverflow !== 'ellipsis';
+  if (y || x) out.push([(e.id || e.className || e.tagName).toString().slice(0, 24), e.textContent.trim().slice(0, 24), e.scrollWidth + 'x' + e.scrollHeight, e.clientWidth + 'x' + e.clientHeight]); }
+  return out.slice(0, 12); }"""
+
+
+def text_spacing(page, w):
+    """WCAG 1.4.12 (UI-PRINCIPLES.md L8): with lines 1.5 apart, paragraphs 2 em apart, letters
+    0.12 em and words 0.16 em, no text of the bar, the status bar, the dialogs, File or the Styles
+    pane is cut off (a word the status bar shortens with "…" where it is short of room is its
+    design at any spacing, and screen reader text is hidden on purpose)."""
+    touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
+    load_doc(page, DOC)
+    page.add_style_tag(content=SPACING); page.wait_for_timeout(300)
+    cut = {'bar and status bar': page.evaluate(CUT, '#bar, #status')}
+    for cmd in ('font-dialog', 'paragraph-settings', 'page-setup', 'insert-table-dialog', 'share', 'properties', 'word-count', 'autocorrect-options'):
+        click_text(page, 'Second paragraph', 3); run_cmd(page, cmd); page.wait_for_timeout(300)
+        cut[cmd] = page.evaluate(CUT, 'body > .pop')
+        page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    open_tab(page, 'File', touch); page.wait_for_timeout(400)
+    cut['File'] = page.evaluate(CUT, '#rp-file')
+    page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    if not touch:
+        run_cmd(page, 'styles-pane'); page.wait_for_timeout(300)
+        cut['Styles pane'] = page.evaluate(CUT, '#stylespane')
+    cut = {k: v for k, v in cut.items() if v}
+    check(f'with WCAG\'s text spacing nothing of the bar, the status bar, eight dialogs, File or the Styles pane is cut off ({w})', not cut, cut)
+
+
 PARTS = {'consistency': (consistency, [(1366, False), (1920, True), (390, False), (360, True)]),
          'bar_room': (bar_room, None),
          'motion': (motion, [(1366, False)]),
+         'text_spacing': (text_spacing, [(1366, False), (900, True), (390, False)]),
          'keyboard_room': (keyboard_room, [(390, False), (360, True)]),
          'empty_panes': (empty_panes, [(1366, False), (1920, True)]),
          'menus': (menus, [(1366, False), (1920, True)]),
