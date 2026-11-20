@@ -917,7 +917,7 @@ body.dropping .dropzone { display: grid; }
 .pop-x:hover { color: var(--ink-ui); background: var(--blue-wash); }
 .pop-x:focus-visible, .ftab:focus-visible, .nav-tab:focus-visible, .pdf-engine:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .pdf-shell:focus-within { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 4px; }
-.pop textarea, .pop input[type="text"], .pop input[type="search"], .pop select, .ask textarea, .ask input { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 6px; background: var(--chrome); color: var(--ink-ui); padding: 7px 9px; font: 13px/1.5 var(--font-ui); }
+.pop textarea, .pop input[type="text"], .pop input[type="search"], .pop select, .ask textarea, .ask input { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 4px; background: var(--chrome); color: var(--ink-ui); padding: 5px 8px; font: 13px/1.5 var(--font-ui); }
 .pop select { width: auto; padding: 4px 6px; }
 .code { font-family: var(--font-mono) !important; font-size: 12.5px !important; }
 .pop textarea { resize: vertical; }
@@ -1323,7 +1323,7 @@ body.guest #b-new, body.guest #b-sample { display: none; }
 .fr[hidden] { display: none; }
 .fr-head { display: flex; align-items: center; justify-content: space-between; margin: 0 -12px; padding: 7px 8px 5px 14px; cursor: move; font-weight: 600; font-size: 12.5px; color: var(--ink-ui); user-select: none; touch-action: none; }
 .fr-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: -6px -12px 2px; padding: 0 10px; }
-.fr-tab { position: relative; border: 0; background: transparent; padding: 6px 10px 7px; font: 500 12.5px var(--font-ui); color: var(--mute); cursor: pointer; border-radius: 6px 6px 0 0; }
+.fr-tab { position: relative; border: 0; background: transparent; padding: 6px 10px 7px; font: 500 12.5px var(--font-ui); color: var(--mute); cursor: pointer; border-radius: 4px 4px 0 0; }
 .fr-tab:hover { color: var(--ink-ui); }
 .fr-tab.on { color: var(--blue-ink); }
 .fr-tab.on::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--blue); }
@@ -1971,7 +1971,7 @@ body.marks-on #pages .it.vs { outline: 1px dashed rgba(62, 123, 196, .55); outli
 /* the Paragraph dialog */
 .pop.pop-pd { width: min(480px, calc(100vw - 16px)); }
 .pd-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: -2px -10px 2px; padding: 0 8px; }
-.pd-tab { position: relative; border: 0; background: transparent; padding: 6px 10px 7px; font: 500 12.5px var(--font-ui); color: var(--mute); cursor: pointer; border-radius: 6px 6px 0 0; }
+.pd-tab { position: relative; border: 0; background: transparent; padding: 6px 10px 7px; font: 500 12.5px var(--font-ui); color: var(--mute); cursor: pointer; border-radius: 4px 4px 0 0; }
 .pd-tab:hover { color: var(--ink-ui); }
 .pd-tab[aria-selected="true"] { color: var(--blue-ink); }
 .pd-tab[aria-selected="true"]::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; border-radius: 2px; background: var(--blue); }
@@ -2040,7 +2040,7 @@ body.marks-on #pages .it.vs { outline: 1px dashed rgba(62, 123, 196, .55); outli
 .st-views button:focus-visible, .st-zoom input:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 .st-zoom { display: inline-flex; align-items: center; gap: 6px; flex: none; }
 /* Mobile View's toggle: in the status bar of a window under 700 px, beside the views */
-.sv-mobile { display: none; align-items: center; gap: 4px; flex: none; height: 26px; padding: 0 8px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--mute); font: 500 12px var(--font-ui); cursor: pointer; }
+.sv-mobile { display: none; align-items: center; gap: 4px; flex: none; height: 26px; padding: 0 8px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--mute); font: 500 12px var(--font-ui); cursor: pointer; }
 .sv-mobile svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .sv-mobile[aria-pressed="true"] { background: var(--blue-wash); color: var(--blue-ink); border-color: color-mix(in srgb, var(--blue) 35%, var(--line)); }
 .sv-mobile:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
@@ -2166,7 +2166,7 @@ body.view-pdf #pdf-host { width: 100%; max-width: 1040px; margin: 0 auto; }
 .gd-note, .gd-hint { margin: 0; font-size: 12px; line-height: 1.45; color: var(--mute); }
 .gd-f { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--mute); min-width: 0; flex: 1 1 0; }
 .gd-f .gd-l { font-weight: 500; }
-.gd-in { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 6px; background: var(--chrome); color: var(--ink-ui); font: 13px var(--font-ui); padding: 5px 7px; }
+.gd-in { box-sizing: border-box; width: 100%; min-width: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--chrome); color: var(--ink-ui); font: 13px var(--font-ui); padding: 5px 7px; }
 .gd-in:focus { outline: 2px solid color-mix(in srgb, var(--blue) 55%, transparent); outline-offset: 0; border-color: var(--blue); }
 .gd-in:disabled { opacity: .55; }
 textarea.gd-in { resize: vertical; line-height: 1.4; }
@@ -2220,8 +2220,9 @@ textarea.gd-in { resize: vertical; line-height: 1.4; }
 .sym-g { font: 17px var(--font-doc); line-height: 1; }
 .pop.pop-sym { width: min(460px, calc(100vw - 16px)); }
 .sym-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); gap: 4px; max-height: 300px; overflow: auto; }
-.sym-b { height: 40px; border: 1px solid var(--line); border-radius: 6px; background: var(--chrome); color: var(--ink-ui); font: 18px var(--font-doc); cursor: pointer; }
-.sym-b:hover, .sym-b:focus-visible { border-color: var(--blue); outline: none; background: var(--blue-wash); }
+.sym-b { height: 40px; border: 1px solid var(--line); border-radius: 4px; background: var(--chrome); color: var(--ink-ui); font: 18px var(--font-doc); cursor: pointer; }
+.sym-b:hover, .sym-b:focus-visible { border-color: var(--blue); background: var(--blue-wash); }
+.sym-b:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 .sym-special { gap: 0; }
 .sym-row { display: flex; justify-content: space-between; width: 100%; }
 .pop.pop-pastesp, .pop.pop-env { width: min(400px, calc(100vw - 16px)); }
@@ -2628,7 +2629,9 @@ body.focus #ruler, body.focus #vruler, body.view-latex #ruler, body.view-pdf #ru
 .pop-x:focus:not(:focus-visible) { outline: none; }
 @media (pointer: coarse) {
   :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .stp-f, .help-pane, .pop-help) .btn,
-  :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) :is(input[type="text"], input[type="search"], input[type="number"], input:not([type]), select) { height: auto; min-height: 44px; }
+  :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) :is(input[type="text"], input[type="search"], input[type="number"], input:not([type]), select) { height: 44px; min-height: 44px; }
+  /* (a one line text area, Properties' Title and Author, as tall as a field) */
+  :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) textarea[rows="1"] { min-height: 44px; }
   .pop-x { min-width: 44px; min-height: 44px; }
 }
 /* a phone's top bar: every button 44 px under a finger; Open and Source go to the menu panel
@@ -2651,3 +2654,19 @@ body.focus #ruler, body.focus #vruler, body.view-latex #ruler, body.view-pdf #ru
 /* File's column: its commands one height, with the corners of every other control */
 body.file-open #rp-file .rb-tb .btn { height: 32px; min-height: 32px; border-radius: 4px; box-sizing: border-box; }
 @media (pointer: coarse) { body.file-open #rp-file .rb-tb .btn { height: auto; min-height: 44px; } }
+/* Inside dialogs, one height per kind again (the verification of 0a6ef7b): a dialog's tabs as its
+   buttons, 32 px (44 under a finger); a check box's or a radio button's row at least 24 px, the
+   size WCAG asks of any target (44 under a finger); single line fields 32 px exactly; and a phone's
+   rule for the bar's buttons (icons alone, 32 px wide) kept out of dialogs, where it squeezed
+   Cancel out of its border and folded AutoCorrect's Add over two lines */
+:is(.pd-tab, .fr-tab, .fd-tab) { min-height: 32px; box-sizing: border-box; display: inline-flex; align-items: center; }
+:is(.pop, .fr, .stp, .help-pane) label:has(input[type="checkbox"], input[type="radio"]):not(:has(input[type="text"], select, textarea)) { min-height: 24px; box-sizing: border-box; }
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) :is(input[type="text"], input[type="search"], input[type="number"], input:not([type]), select) { height: 32px; }
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .stp-f, .help-pane, .pop-help) .btn:not(.icon) { width: auto; white-space: nowrap; }
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .stp-f, .help-pane, .pop-help) .btn:not(.icon) span:not(.sr) { display: inline; }
+@media (pointer: coarse) {
+  :is(.pd-tab, .fr-tab, .fd-tab) { min-height: 44px; }
+  :is(.pop, .fr, .stp, .help-pane) label:has(input[type="checkbox"], input[type="radio"]):not(:has(input[type="text"], select, textarea)) { min-height: 44px; }
+  :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) :is(input[type="text"], input[type="search"], input[type="number"], input:not([type]), select) { height: 44px; }
+  :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .stp-f, .help-pane, .pop-help) .btn:not(.icon) { min-width: 44px; padding: 0 12px; }
+}
