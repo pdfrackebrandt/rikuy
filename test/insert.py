@@ -441,7 +441,9 @@ def review(page):
     insert_graph(page)
     check('review H7: rikuy.sty is written beside the main file though old/rikuy.sty exists', 'rikuy.sty' in files(page)[0], files(page)[0])
     size = len(src(page, newest(page, 'function') + '.html').encode())
-    check('review L7: a graph\'s file in the built page holds graphKit minified, under 36 KB (%d bytes)' % size, size < 36000, size)
+    # (36 KB for the four kinds of B11; task 70's implicit curves, phase portraits, shading and
+    # crossings brought it to 49 KB: the budget moved with them, the LaTeX writer kept out of it)
+    check('review L7: a graph\'s file in the built page holds graphKit minified, under 52 KB (%d bytes)' % size, size < 52000, size)
     # M3: a hand written graph's own shape and exact range: Update with nothing touched writes nothing
     html = src(page, newest(page, 'function') + '.html').replace('"aspect": 0.5', '"aspect": 0.6')
     hand = '\\documentclass{article}\n\\usepackage{rikuy}\n\\begin{document}\nText.\n\n\\rikuywidget{plot.html}{plot.png}\n\\end{document}\n'
