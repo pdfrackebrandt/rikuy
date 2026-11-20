@@ -36,6 +36,7 @@ import { review } from './review.js';
 import { $, mk, mkBtn, store, load, PREFS, textSig, when } from './ui/dom.js';
 // the command registry and everything drawn from it: the ribbon's tabs, the keys, the search box,
 // the right click menu, the insert list (src/commands.js, src/cmd/*.js)
+import { labelsIn, labelPreview } from './find.js';
 import { paletteItems, insertTextHooks, command, commands, describe, enabled, register, unregister, run as runCmd, joinMethods } from './commands.js';
 import { methods as cmdMethods } from './cmd/index.js';
 import { tabs, installRibbon } from './ribbon/tabs.js';
@@ -3262,7 +3263,8 @@ class App {
       }
     };
     search.addEventListener('input', draw);
-    search.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const b = list.querySelector('.pitem'); if (b) b.click(); } if (e.key === 'Escape') this.closePop(); });
+    // (Enter cites the highlighted work and closes; Ctrl+Enter cites it and stays for another)
+    this.pickerKeys(search, list, true);
     draw();
     this.positionPop();
     search.focus();
@@ -3277,6 +3279,40 @@ class App {
     if (O.biblatex && !O.biblatexNatbib && !O.natbib) return ay ? [['parencite', '(Author, Year)'], ['textcite', 'Author (Year)'], ['cite', 'Author Year'], ['citeauthor', 'Author'], ['citeyear', 'Year']] : [['cite', '[1]'], ['textcite', 'Author [1]'], ['citeauthor', 'Author']];
     if (O.natbib || O.biblatex) return ay ? [['citep', '(Author, Year)'], ['citet', 'Author (Year)'], ['citealt', 'Author Year'], ['citealp', 'Author, Year'], ['citeauthor', 'Author'], ['citeyear', 'Year'], ['cite', '\\cite']] : [['cite', '[1]'], ['citep', '[1] (natbib)'], ['citet', 'Author [1]'], ['citeauthor', 'Author']];
     return [['cite', '[1]']];
+  }
+
+  // A picker's list by the keys, as a completion list is (POWER-USER.md 7): Up and Down move the
+  // highlight, Enter takes it and closes the picker with the caret after what it wrote (Ctrl+Enter,
+  // where more can be taken, takes it and stays), Esc closes. It went on taking the first item
+  // and staying open, so the next words went into its search box.
+  pickerKeys(input, list, more) {
+    const items = () => [...list.querySelectorAll('.pitem')];
+    const mark = (i) => {
+      const all = items();
+      all.forEach((b, k) => { b.classList.toggle('on', k === i); b.id = 'pk-' + k; b.setAttribute('aria-selected', k === i ? 'true' : 'false'); });
+      if (all[i]) { all[i].scrollIntoView({ block: 'nearest' }); input.setAttribute('aria-activedescendant', all[i].id); }
+    };
+    input.addEventListener('input', () => mark(0));
+    input.addEventListener('keydown', (e) => {
+      const all = items(), i = all.findIndex((b) => b.classList.contains('on'));
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (all.length) mark(e.key === 'ArrowDown' ? (i + 1) % all.length : (i <= 0 ? all.length - 1 : i - 1));
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const b = all[Math.max(0, i)];
+        if (b) b.click();
+        if (more && (e.ctrlKey || e.metaKey)) { input.focus(); mark(0); } else this.closePop();
+      } else if (e.key === 'Escape') { e.preventDefault(); this.closePop(); }
+    });
+    // (the place the list starts with: the label the reference points to now, or the first)
+    requestAnimationFrame(() => { const all = items(); const i = all.findIndex((b) => b.classList.contains('on')); mark(Math.max(0, i)); });
+  }
+  // where each \label is: key -> { f, p } (the first of a key, as LaTeX takes it)
+  labelPlaces() {
+    const out = new Map();
+    for (const [f, t] of this.files) if (/\.tex$/i.test(f)) for (const x of labelsIn(t)) if (!out.has(x.key)) out.set(x.key, { f, p: x.p });
+    return out;
   }
 
   openRef(el, info) {
@@ -3300,20 +3336,25 @@ class App {
     const search = document.createElement('input'); search.type = 'search'; search.placeholder = 'Filter labels'; search.id = 'pop-refsearch'; search.setAttribute('aria-label', 'Filter labels');
     const list = document.createElement('div'); list.className = 'plist';
     p.append(top, search, list);
-    const labels = [...this.model.labels.entries()].map(([k, v]) => ({ key: k, num: v.num, kind: v.kind }));
+    const at = this.labelPlaces();
+    const labels = [...this.model.labels.entries()].map(([k, v]) => ({ key: k, num: v.num, kind: v.kind, pv: at.has(k) ? labelPreview(this.src(at.get(k).f), at.get(k).p, v.kind) : { text: '' } }));
     const draw = () => {
       const q = search.value.trim().toLowerCase();
       list.replaceChildren();
-      for (const L of labels.filter((x) => !q || (x.key + ' ' + x.kind + ' ' + x.num).toLowerCase().includes(q))) {
+      for (const L of labels.filter((x) => !q || (x.key + ' ' + x.kind + ' ' + x.num + ' ' + (x.pv.text || x.pv.math || '')).toLowerCase().includes(q))) {
         const b = document.createElement('button'); b.type = 'button'; b.className = 'pitem' + (L.key === key ? ' on' : '');
         b.innerHTML = '<b>' + esc(L.kind.charAt(0).toUpperCase() + L.kind.slice(1)) + ' ' + esc(L.num || '') + '</b><span>' + esc(L.key) + '</span>';
+        // what it names: the heading's words, the equation drawn, the caption (Word's list shows them)
+        const pv = document.createElement('span'); pv.className = 'pv-l';
+        if (L.pv.math) { const r = this.renderer.katex(L.pv.math, false); if (r.err) pv.textContent = L.pv.math; else pv.innerHTML = r.html; } else pv.textContent = L.pv.text;
+        if (pv.textContent) b.appendChild(pv);
         b.addEventListener('click', () => { key = L.key; if (L.kind === 'equation' && cmd === 'ref') cmd = 'eqref'; cs.value = cmd; write(); });
         list.appendChild(b);
       }
       if (!labels.length) { const n = document.createElement('div'); n.className = 'empty'; n.textContent = 'No labels yet. Add \\label{...} after a section, equation or figure.'; list.appendChild(n); }
     };
     search.addEventListener('input', draw);
-    search.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const b = list.querySelector('.pitem'); if (b) b.click(); } });
+    this.pickerKeys(search, list, false);
     draw();
     this.positionPop();
     search.focus();

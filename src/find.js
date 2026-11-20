@@ -9,6 +9,8 @@
 // The pure parts (the query as a pattern, Word's ^ codes and wildcards, the replacement's
 // groups, a search over one text) are tested in test/find.test.mjs; pageText reads the page.
 
+import { texToPlain } from './bib.js';
+
 // what stands in the text for an atom, and for the end of a paragraph, a cell or an item
 export const SEP = '￼';
 export const PARA = '\n';
@@ -286,6 +288,63 @@ export function labelsIn(t, max = 20000) {
     out.push({ key: t.slice(k + 7, k + 7 + e).trim(), p: k });
   }
   return out;
+}
+
+// The words of what a \label at p names, for the reference picker (POWER-USER.md 7): a heading's
+// title, an equation's LaTeX ({ math }), a figure's or a table's caption, the first words of a
+// theorem; { text: '' } when nothing is found near it. Pure: test/find.test.mjs.
+const HEADING = /\\(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)\*?\s*(?:\[[^\]]*\]\s*)?\{/g;
+const MATHS = /^(equation|align|gather|multline|flalign|alignat|eqnarray|math|displaymath)\*?$/;
+// the group that opens at o ({ at t[o]): its inside, or null
+function groupAt(t, o) {
+  if (t[o] !== '{') return null;
+  let d = 0;
+  for (let k = o; k < t.length && k < o + 4000; k++) {
+    const c = t[k];
+    if (c === '\\') { k++; continue; }
+    if (c === '{') d++;
+    else if (c === '}' && --d === 0) return t.slice(o + 1, k);
+  }
+  return null;
+}
+// the environment the place p is in: { name, s (after \begin{name}), e (at \end{name}) }
+function envAround(t, p) {
+  const re = /\\(begin|end)\s*\{([^}]+)\}/g;
+  const open = [];
+  for (let m; (m = re.exec(t)) && m.index < p;) {
+    if (m[1] === 'begin') open.push({ name: m[2], s: m.index + m[0].length });
+    else { const i = open.map((x) => x.name).lastIndexOf(m[2]); if (i >= 0) open.length = i; }
+  }
+  const x = open[open.length - 1];
+  if (!x) return null;
+  const end = t.indexOf('\\end{' + x.name + '}', p);
+  return end < 0 ? null : { name: x.name, s: x.s, e: end };
+}
+const squash = (s, n) => { const x = s.replace(/\s+/g, ' ').trim(); return x.length > n ? x.slice(0, n - 1) + '…' : x; };
+export function labelPreview(t, p, kind) {
+  if (!t || p == null || p < 0) return { text: '' };
+  const env = envAround(t, p);
+  const disp = t.lastIndexOf('\\[', p), dispEnd = disp >= 0 ? t.indexOf('\\]', disp) : -1;
+  if (kind === 'equation' || (env && MATHS.test(env.name))) {
+    let inner = env && MATHS.test(env.name) ? t.slice(env.s, env.e) : disp >= 0 && dispEnd > p ? t.slice(disp + 2, dispEnd) : '';
+    inner = inner.replace(/\\label\s*\{[^}]*\}|\\(nonumber|notag)\b/g, '');
+    if (inner.trim()) return { math: squash(inner, 160) };
+  }
+  if (env && /^(figure|table|wrapfigure|wraptable|sidewaysfigure|sidewaystable)\*?$/.test(env.name)) {
+    const body = t.slice(env.s, env.e), c = /\\caption\s*(?:\[[^\]]*\]\s*)?\{/.exec(body);
+    const g = c ? groupAt(body, c.index + c[0].length - 1) : null;
+    if (g != null) return { text: squash(texToPlain(g), 90) };
+  }
+  // a heading: the last one before the label, with nothing but other labels between them
+  let h = null;
+  HEADING.lastIndex = Math.max(0, p - 600);
+  for (let m; (m = HEADING.exec(t)) && m.index < p;) h = m;
+  if (h) {
+    const o = h.index + h[0].length - 1, g = groupAt(t, o);
+    if (g != null && /^\s*(\\label\s*\{[^}]*\}\s*)*$/.test(t.slice(o + g.length + 2, p))) return { text: squash(texToPlain(g), 90) };
+  }
+  if (env) return { text: squash(texToPlain(t.slice(env.s, Math.min(env.e, env.s + 300)).replace(/\\label\s*\{[^}]*\}/g, '').replace(/^\s*\[[^\]]*\]/, '')), 90) };
+  return { text: '' };
 }
 
 // Character ranges of the source next to each other joined: [[s, e], ...] sorted
