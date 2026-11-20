@@ -1,6 +1,7 @@
 // File as Word's view (its "backstage"): File's commands over the window below the tabs, with a
-// Back button. Esc, Back, or any command run from it give the document back, as Word does; the
-// tab that was open before comes back. The sheet itself is the ribbon's File panel
+// Back button. Esc, Back, or a command run from it give the document back, as Word does (a dialog
+// a command opens stands over the view, which stays behind it); the tab that was open before
+// comes back. The sheet itself is the ribbon's File panel
 // (src/ribbon/tabs.js builds it; app.css's "File as a view" lays it over the page). `app` is the
 // editor (src/app.js).
 
@@ -42,14 +43,17 @@ export function installFileView(app) {
     if (giveBack && B && lost && !app.pop && app.files.get(B.c.f) === B.text) app.restoreCaret(B.c, true);
   };
 
-  // a command run while the view is open closes it, as Word's do; a menu of the view opening
-  // (Templates, Recent, Export as) keeps it until one of its items is chosen
+  // a command run while the view is open closes it, as Word's do (Blank document, a template, a
+  // recent document, Print); one that opens a dialog keeps it behind the dialog, as Word's Info
+  // keeps the backstage behind Properties; a menu of the view opening (Templates, Recent,
+  // Export as) keeps it until one of its items is chosen
   const run = app.runCommand;
   app.runCommand = function (id, args, at, from) {
     const was = isOpen();
     const r = run.call(this, id, args, at, from);
     const c = was && isOpen() ? command(id) : null;
-    if (c && !/^ribbon-/.test(id) && !(c.kind === 'menu' && args == null)) app.closeFileView(false);
+    const dialog = app.pop && app.pop.el.getAttribute('role') === 'dialog';
+    if (c && !/^ribbon-/.test(id) && !(c.kind === 'menu' && args == null) && !dialog) app.closeFileView(false);
     return r;
   };
 
