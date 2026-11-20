@@ -116,7 +116,8 @@ MEASURE = r"""(arg) => {
     const svg = [...e.querySelectorAll(':scope > svg:not(.rb-car):not(.rb-larrow), :scope > .rb-gico')].find(vis);
     const caret = [...e.querySelectorAll('svg.rb-car, :scope.rb-x > svg, :scope > svg.rb-larrow')].find(vis);
     const split = e.closest('.rb-split'), field = e.matches('input, select') || e.closest('.fbx, .pf, .pf-field, .nf');
-    const big = b.h > 40 || (split && split.getBoundingClientRect().height > 40);
+    // (large: an icon over its name, 72 px; a finger's 44 px button is a small one)
+    const big = b.h > 50 || (split && split.getBoundingClientRect().height > 50);
     // the kind it is drawn as (data-kind is the kind its layout asks for)
     const kind = scope !== 'ribbon' ? (field ? 'field' : (e.dataset.kind || 'untagged'))
       : e.classList.contains('rb-launch') || (e.classList.contains('rb-launch-c') && b.h < 20) ? 'launcher'
