@@ -3300,10 +3300,10 @@ Tests:
     colour or size, Quick Layout, 3-D charts, Remove Background, Artistic Effects, Ungroup (a
     TikZ picture's shapes keep no place of their own outside it), Rotate of a drawing.
     Evidence: `npm test` green (`objfmt` 12 groups, `picfx` 8, `objlist` 3, `drawing`,
-    `objects`, `commands` 14); `test/objects.py` 229 (with `dist/tex`: everything compiled with
+    `objects`, `commands` 14); `test/objects.py` 210 (with `dist/tex`: everything compiled with
     pdfLaTeX, XeLaTeX and LuaLaTeX, the shapes' words, chart titles and SmartArt items found in each
     PDF; edited pictures, one seen through, on the three engines; phones at 390 and 360 px with
-    touch); `tabs.py` 127 (the fold sweep on all 19 tabs, the five new ones among them), `agent.py`, `picture.py`; screenshots
+    touch); `tabs.py` 127 (the fold sweep on all 19 tabs, the five new ones among them), `agent.py` 143, `picture.py` 228, `ribbon.py` 195, `test:browser` 199, the corpus model run 716 of 716; screenshots
     in `/tmp/g1-shots`.
 
 ## Open tasks

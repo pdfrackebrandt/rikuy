@@ -2279,6 +2279,8 @@ html.pic-moving, html.pic-moving * { cursor: grabbing !important; }
 #pages .raw.drawn.sel > svg.tz { outline: 1px solid #2B74B0; outline-offset: 3px; }
 #pages .a-smart { cursor: pointer; }
 /* the Selection Pane (src/ui/selpane.js): a row per object, its name, its label, its eye */
+.sel-pane .fr-btns { display: flex; gap: 6px; }
+.sel-pane .fr-btns .btn { flex: 0 0 auto; padding: 4px 12px; border: 1px solid var(--line); white-space: nowrap; }
 .sel-list { display: flex; flex-direction: column; gap: 2px; max-height: min(60vh, 520px); overflow: auto; }
 .sel-row { display: grid; grid-template-columns: 1fr 9em 32px; align-items: center; gap: 6px; }
 .sel-row.sel-in .sel-go { padding-left: 20px; }

@@ -150,7 +150,7 @@ register(
     run: (app, args) => (args && args.mode ? app.objPosition(args) : app.objPositionMenu()) },
   { id: 'object-align', name: 'Align', title: 'Align: the object or picture at the left, the middle or the right of the line (flushleft, center, flushright; in a figure \\raggedright, \\centering, \\raggedleft)', tab: 'layout', group: 'arrange', order: 40, kind: 'menu', icon: ALIGN, label: 'Align',
     also: [{ tab: 'picture-format', group: 'arrange', el: 'rc-object-align-pic', order: 40 }, { tab: 'shape-format', group: 'arrange', el: 'rc-object-align-shape', order: 20 }, { tab: 'chart-format', group: 'arrange', el: 'rc-object-align-chart', order: 20 }, { tab: 'smart-format', group: 'arrange', el: 'rc-object-align-smart', order: 20 }],
-    synonyms: ['Align objects', 'Align left', 'Align center', 'Align right', 'flushleft', 'flushright'], menu: { shape: 71, chart: 71, smart: 71, picture: 45 }, when: (app) => !!alignNow(app),
+    synonyms: ['Align objects', 'Align left', 'Align center', 'Align right', 'flushleft', 'flushright'], menu: { shape: 71, chart: 71, smart: 71, picture: 95 }, when: (app) => !!alignNow(app),
     whyNot: (app) => (target(app) ? 'It stands in a paragraph of words: put it in a paragraph of its own first.' : 'Select a picture, drawing, chart or SmartArt first.'),
     run: (app, args) => (args && args.align ? app.objAlign(args.align) : app.objAlignMenu()) }
 );
