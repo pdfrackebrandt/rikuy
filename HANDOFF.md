@@ -6,51 +6,38 @@ from the repository alone. This file is how. Read AGENTS.md first, then this, th
 requests. When this file and a pull request's own Handoff section disagree, the pull request is
 newer.
 
-## Start here (state on 2026-11-17, 12:10 UTC, when Claude stopped)
+## Start here (2026-11-20, 11:50 UTC: Claude carrying on after Grok Bot)
 
-Everything is pushed: no work exists only on Claude's machine. Do these in order; each step
-says how to know it is done.
+Pedro's order of work, given 2026-11-20: **UI and UX first** (Word look-alike, clean room, as
+WordCraft; phones; plain words), maximum speed and quality; **then** move everything possible to
+C or C++ compiled to WebAssembly, even where the speed gain is small. Grok Bot's list of
+2026-11-20 (below, under "Grok Bot's list") is being worked on as follows.
 
-1. **Merge the pull request that brought this file** ("Handoff: state at stop"), once its checks
-   are green. It changes only this file and `docs/reviews/`.
-2. **PR 62, R2 (styles, lists, Clear All, title parts, Code, Rename Style, link colours).**
-   Reviewed three times, every finding fixed, main merged in. Merge when its checks are green.
-3. **PR 63, R3 (drag to move, cover pages, Quick Parts, fields, form fields, wrapped figures).**
-   Verified "merge", main merged in. Merge when green. Then one small fix in a new branch, M7 of
-   `docs/reviews/R3.md` ("Check of the merge 7f3f269"): in `fillLines`, `src/layout.js` around
-   line 1184, test the line's height against the wrapped figure's margin box, not its border box
-   (a line starting just under a right hand figure is split in two; TeX sets it as one). Add the
-   case to `test/picture.py`'s `r3_review`.
-4. **PR 66, R4 (thesaurus, grammar, comments only share links, Original, changes by author,
-   References).** The review's findings are fixed (`docs/reviews/R4.md`, with its verification
-   of 1df9c63). The last four (V1 to V4: catcode words, links with no sender, `\verb` and listed
-   files in `bodyAt`, `%20` in `\href`) were fixed after that verification (commits a3925f7,
-   19ac237, cfb9711). Check those four against their repro text in `docs/reviews/R4.md` (each is
-   now a test in `test/review.test.mjs` and `test/share.py`'s `attacks`), merge main into the
-   branch (it is two commits behind), wait for green, merge.
-5. **PR 68, R5 (collapse headings, ^p, find by environment, the ruler, Web Layout, rename a
-   document).** Its review (`docs/reviews/R5.md`) found three Highs and five Mediums; all are fixed
-   in 66a4c81 to 0f62250 (PLAN.md task 65 lists each), main merged in. Still needed: a fresh
-   hostile verification of those fixes, appended to `docs/reviews/R5.md` (rerun each finding's
-   case; compile the Replace results in the page), plus one unchecked point the author raised:
-   the ruler on R1's landscape pages (`pg.land`). Then merge main, green, merge.
-6. **After each merge, the next branch merges main** (`git merge origin/main`, never rebase or
-   force push). Conflicts so far were only in PLAN.md and AGENTS.md (keep both sides) and in
-   `src/app.css` (keep both sections).
-7. **R6, the arXiv corpus (PLAN.md task 16).** Run 44077385415 of Actions › arXiv corpus started
-   at 11:49 UTC on main cb4d5a8 (with the `.bbl` fix and the 22 packages); about two hours. When
-   it is done, its results are on the branch `arxiv-results` (`dev/arxiv-results.jsonl`,
-   `dev/arxiv-pdfcompare.jsonl`). If the collect job dropped rows, rerun only the merge with
-   Run workflow and `from_run` set to that run's id. Then:
-   - count: Rikuy compiles, desktop compiles, both, matches (the first run: 932 and 964 of 998,
-     623 of 932 matching; PLAN.md task 16 has its causes);
-   - classify every failure and every mismatch as task 2 did for the first corpus
-     (`dev/pdfcompare_report.py`, `dev/pdfcompare-classes.json`): the rows now carry
-     `fonts_only` (fonts on one side only) for mismatches and `trail` (the worker's last steps)
-     for compiles that ran out of time, because the workflow keeps no PDFs;
-   - fix what is Rikuy's and cheap, as PR 67 (a paper's own `.bbl`) and PR 70 (packages) did;
-   - write the compile and match rates into PLAN.md's table, README.md and tex/README.md (their
-     numbers must agree, AGENTS.md says).
+| work | branch (worktree on Claude's machine) | state | next step |
+|---|---|---|---|
+| Ribbon tabs besides Home laid out like Word's (Grok Bot's item 3) | `ribbon-tabs-word` | an agent is on it; brief: `docs/handoff/BRIEF-1120.md` plus its task in the pull request when opened | finish, hostile review, merge |
+| UX audit and fixes outside the ribbon (first visit, page, panes, dialogs, PDF pane, phones) | `ux-pass-2` | an agent is on it; it writes `docs/handoff/UX-AUDIT.md` as it goes | finish, review, merge |
+| Word's shortcuts, audited and finished (item 2) | `word-shortcuts` | an agent is on it; it writes `docs/handoff/SHORTCUTS.md` | finish, review, merge |
+| Security S2 to S5 (item 1): HSTS for the host only, a script policy without unsafe-inline/unsafe-eval, KaTeX 0.19, comment text that cannot run code | `sec-followups` | an agent is on it (S4 done) | finish, a fresh hostile review, merge |
+| R6, the arXiv corpus (item 4) | `arxiv-bbl-shipped` (pull request) | classified in PLAN.md task 16 (second run: 960 of 962, 872 of 960 equal); the bibliography fix it found is this pull request | merge when green; rerun Actions › arXiv corpus on main; put the rates in PLAN.md's table, README.md, tex/README.md; add `sourcesanspro`, `foekfont` and cbfonts' `grmn` to the tree; look at 1502.01027 printing "begindocument/b..." |
+
+If a branch above is not on GitHub yet, its agent's work is in `wip/<branch>` (dev/wip.sh) or
+not started. After the UI and UX work: the C and C++ move, planned in a file of its own when it
+starts.
+
+### Grok Bot's list of 2026-11-20 (for the record)
+
+1. Security follow-ups from `docs/reviews/SECURITY.md` (S2 KaTeX, S3 the script policy, S4 HSTS,
+   S5 the comments only filter).
+2. Word shortcuts, an audit end to end, Help's list of the keys the browser keeps.
+3. The other ribbon tabs laid out as closely to Word as Home.
+4. R6: classify the arXiv run, write the rates into PLAN.md, README.md and tex/README.md.
+
+Merged before that, by Grok Bot: PRs 72, 62, 63, 73, 66, 68, 74 (security review, fflate 0.8.3),
+75 (Word-style title band, File backstage, labelled groups, dialog launchers, KeyTips, shortcuts,
+Ask Grok in Help). Pedro's taste: Word look-alike (WordCraft the reference, clean room), Ask Grok
+stays subtle (Help tab and search only; its tooltip says Rikuy is not part of xAI), plain words,
+merge only when every check is green.
 
 ## The rule
 
