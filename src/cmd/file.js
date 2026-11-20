@@ -181,11 +181,13 @@ export const methods = {
   // fails opens the preview pane, which holds its error.
   async downloadPdfNow() {
     if (this.pdfBusy) return;
-    const b = $('#rb-pdf'), lab = b.querySelector('span');
+    const b = $('#rb-pdf'), title = b.title;
     const fresh = () => !!this.lastPdf && this.lastPdfSig === this.textSigNow();
     if (!fresh() || this.compiling) {
       this.pdfBusy = true;
-      b.disabled = true; b.setAttribute('aria-busy', 'true'); lab.textContent = 'Making the PDF…';
+      // (busy without a longer name: the downloads stay at the row's end over the other groups,
+      // and "Making the PDF…" ran over Home's Editing; the PDF pane, open meanwhile, says it)
+      b.disabled = true; b.setAttribute('aria-busy', 'true'); b.title = 'Making the PDF…';
       try {
         this.pdfPane();
         if (!this.compiling) await this.compilePdf();
@@ -193,7 +195,7 @@ export const methods = {
         while (this.compiling) await new Promise((r) => setTimeout(r, 150));
       } finally {
         this.pdfBusy = false;
-        b.disabled = false; b.removeAttribute('aria-busy'); lab.textContent = 'PDF';
+        b.disabled = false; b.removeAttribute('aria-busy'); b.title = title;
       }
     }
     if (fresh()) { await this.downloadPdf(); this.liveNote(); } else if (!document.body.classList.contains('pdf-on')) this.togglePdf(true, true);
