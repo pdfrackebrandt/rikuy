@@ -1437,7 +1437,11 @@ body.nav-on.nav-outline #nav { width: 460px; }
 /* (G2) View › Split: the first view over a second one, each scrolled on its own */
 .desk-col { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .desk-col > #desk { flex: 1 1 50%; min-height: 0; }
-.split-bar { flex: none; height: 6px; background: var(--line); border-top: 1px solid var(--chrome); }
+.split-bar { flex: none; height: 6px; background: var(--line); border-top: 1px solid var(--chrome); position: relative; cursor: row-resize; touch-action: none; z-index: 2; }
+/* (a finger's 44 px to take hold of it, the bar itself 6 px) */
+.split-bar::before { content: ''; position: absolute; left: 0; right: 0; top: -19px; bottom: -19px; }
+.split-bar:focus-visible, .split-bar.dragging { background: var(--blue); outline: none; }
+.split-note { position: sticky; top: 0; z-index: 1; font: 12px var(--font-ui); color: var(--mute); background: var(--chrome); border-bottom: 1px solid var(--line); padding: 3px 10px; }
 .split-view { flex: 1 1 50%; min-height: 0; overflow: auto; position: relative; background: inherit; outline: none; }
 .split-view .split-pages { display: flex; flex-direction: column; align-items: flex-start; gap: 22px; cursor: text; }
 .split-view:focus-visible { box-shadow: inset 0 0 0 2px var(--blue); }
