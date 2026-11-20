@@ -72,8 +72,11 @@ move over by themselves.
   `wrangler` pinned in `package.json` (`wrangler pages deploy dist --branch main`). Deploys run
   one at a time, in order.
 - **What Pages serves**: `_headers` (written by `build/app.mjs`): the page's Content-Security-
-  Policy (the one the browser tests run under, without outside sources, and `frame-ancestors
-  'none'`), `Strict-Transport-Security: max-age=31536000` (HTTPS only for a year, for this host
+  Policy (the one the browser tests run under: scripts only from the site and the page's one
+  inline script by its SHA-256, which the build computes from `index.html`; WebAssembly but no
+  eval; no outside source; `frame-ancestors 'none'`), and for `widget-<hash>.html`, the document
+  live figures run in, the widgets' own policy in its place (`frame-ancestors 'self'`, no
+  `X-Frame-Options`), `Strict-Transport-Security: max-age=31536000` (HTTPS only for a year, for this host
   alone: no `includeSubDomains`, no preload), `nosniff`, `Referrer-Policy: no-referrer`, a Permissions-Policy turning off cameras,
   microphones, location and the like; TeX packs, engine chunks, programs and fonts (named by their
   hash) cached for a year as immutable; the page, `sw.js` and the manifest revalidated on every

@@ -6,15 +6,62 @@
 
 // What a widget may use: its own inline script and style, and pictures, fonts and workers it
 // carries as data. No connection, frame, form or file from anywhere: a widget arrives inside
-// documents from anyone, and a request out would tell its author who reads them, and when. The
-// page's own policy applies as well (a srcdoc frame inherits it: on the artifact host, and in
-// test/serve.py, it allows inline scripts); this one is added inside the frame, before any of
-// the widget's markup is read, and policies only ever add restrictions to each other. WebRTC is
-// the one way out no policy closes in Chromium (it ignores CSP's webrtc directive), which is why
-// widgets from someone else wait for a click (App.widgetsAllowed); widgetGuard below only makes
-// the plain ways to it fail.
+// documents from anyone, and a request out would tell its author who reads them, and when. It is
+// added inside the frame, before any of the widget's markup is read, and policies only ever add
+// restrictions to each other. WebRTC is the one way out no policy closes in Chromium (it ignores
+// CSP's webrtc directive), which is why widgets from someone else wait for a click
+// (App.widgetsAllowed); widgetGuard below only makes the plain ways to it fail.
 export const WIDGET_CSP = "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; " +
   "img-src data: blob:; font-src data:; media-src data: blob:; worker-src blob:; base-uri 'none'; form-action 'none'";
+
+// Where a widget's document comes from. A srcdoc frame inherits the page's policy, so it can run
+// the widget's inline scripts only where the page's policy allows inline scripts: the claude.ai
+// artifact's host does (the copy built with RIKUY_SHARE, which keeps srcdoc). The hosted page's
+// does not (build/app.mjs policy: the page's one script by its hash, no eval), so there a widget
+// runs in a document of its own, WIDGET_SHELL, served as widget-<hash>.html with WIDGET_POLICY in
+// its own header (build/app.mjs headers): the frame loads it, it asks the page for the widget,
+// and writes it over itself; document.open() takes its listener away with everything else, so
+// the widget cannot ask it for anything. build.mjs writes the file and names it here
+// (__RIKUY_WIDGET_SHELL__); named by its hash, the HTTP cache keeps it for good, which is where
+// an offline page finds it (a service worker does not see a sandboxed frame's requests).
+// WIDGET_POLICY is WIDGET_CSP plus who may frame it: the page alone.
+export const WIDGET_POLICY = WIDGET_CSP + "; frame-ancestors 'self'";
+const SHELL = typeof __RIKUY_WIDGET_SHELL__ === 'undefined' ? '' : __RIKUY_WIDGET_SHELL__;
+function widgetShell() {
+  'use strict';
+  addEventListener('message', function (e) {
+    var d = e.data;
+    if (e.source !== parent || !d || d.rikuy !== 'widget' || typeof d.html !== 'string') return;
+    document.open();
+    document.write(d.html);
+    document.close();
+  });
+  parent.postMessage({ rikuy: 'shell' }, '*');
+}
+export const WIDGET_SHELL = '<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="x-dns-prefetch-control" content="off"><title>Live figure</title>' +
+  '<script>(' + widgetShell + ')()</script></head><body></body></html>\n';
+
+// The frames that run a widget from WIDGET_SHELL, and the document each is to write: answered when
+// its shell asks, again after a reload (the widget's own, or the frame given a new document).
+// Only a frame of this page that was given a widget is answered, with its own widget; the frame's
+// origin is opaque, hence '*'.
+const shells = new WeakMap();
+let shellsHeard = false;
+function answerShell(e) {
+  if (!e.data || e.data.rikuy !== 'shell' || !e.source) return;
+  for (const fr of document.querySelectorAll('iframe')) {
+    if (fr.contentWindow === e.source && shells.has(fr)) { e.source.postMessage({ rikuy: 'widget', html: shells.get(fr) }, '*'); return; }
+  }
+}
+// Run a widget's HTML in a sandboxed frame (allow-scripts alone), or run new HTML in it.
+export function runWidget(frame, html) {
+  const doc = widgetDoc(html);
+  if (!SHELL) { frame.srcdoc = doc; return; }
+  if (!shellsHeard) { shellsHeard = true; window.addEventListener('message', answerShell); }
+  shells.set(frame, doc);
+  // (setting src navigates the frame again even when it names the same file)
+  frame.src = new URL(SHELL, location.href).href;
+}
 
 // The first script of every widget's document, run before any of the widget's markup is parsed.
 // A widget can open an RTCPeerConnection and send a STUN request to its author's server, which
@@ -87,13 +134,16 @@ function widgetGuard() {
   hold(W.Document && W.Document.prototype, 'execCommand');
 }
 
-// The page's only frames are the widgets' srcdoc frames, which no frame-src refuses. A frame's
-// navigations answer to its parent's frame-src, so a policy of frame-src 'self' added to the page
-// keeps a widget from taking its frame to a data: or blob: document of its own making (see
-// widgetGuard); the page's own site holds only the page's files. 'self' and not 'none', so a
-// frame the host itself might add from its own site still loads. The host sends the page's
-// policy; a second one in a <meta> can only narrow it, and one added to the head by script
-// applies from then on (to every frame made after it: this runs before any).
+// The page's only frames are the widgets' frames: srcdoc ones, which no frame-src refuses, or on
+// the hosted page WIDGET_SHELL, a file of the page's own site. A frame's navigations answer to
+// its parent's frame-src, so a policy of frame-src 'self' added to the page keeps a widget from
+// taking its frame to a data: or blob: document of its own making (see widgetGuard); the page's
+// own site holds only the page's files, and every one of them but WIDGET_SHELL refuses to be
+// framed (frame-ancestors 'none'); WIDGET_SHELL only asks the page for the widget again. 'self'
+// and not 'none', so the shell and a frame the host itself might add from its own site still
+// load. The host sends the page's policy; a second one in a <meta> can only narrow it, and one
+// added to the head by script applies from then on (to every frame made after it: this runs
+// before any).
 function framesOnlySrcdoc() {
   if (document.querySelector('meta[data-rikuy-frames]')) return;
   const m = document.createElement('meta');
@@ -240,7 +290,7 @@ export class WidgetLayer {
     fr.setAttribute('sandbox', 'allow-scripts');
     fr.setAttribute('referrerpolicy', 'no-referrer');
     fr.title = 'Live figure ' + path;
-    fr.srcdoc = widgetDoc(html);
+    runWidget(fr, html);
     const tab = document.createElement('button');
     tab.type = 'button';
     tab.className = 'w-src';
