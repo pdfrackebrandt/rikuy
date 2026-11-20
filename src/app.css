@@ -2543,3 +2543,10 @@ body.focus #ruler, body.focus #vruler, body.view-latex #ruler, body.view-pdf #ru
   /* the Styles gallery's name centred under it, as every group's */
   #rp-home .rb-grp[data-group="styles"] .rb-cap { text-align: center; }
 }
+
+/* Frontier's popover (References › Research): what it will do, that it is coming, Close */
+.pop.pop-frontier { width: min(340px, calc(100vw - 16px)); }
+.pop-frontier p { margin: 4px 0 8px; font-size: 13px; line-height: 1.45; color: var(--ink-ui); }
+.pop-frontier .fr-soon { font-weight: 600; }
+.pop-frontier .pop-row { display: flex; justify-content: flex-end; }
+@media (pointer: coarse) { .pop-frontier .btn { min-height: 44px; min-width: 64px; } }

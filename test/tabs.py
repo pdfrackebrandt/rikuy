@@ -723,6 +723,42 @@ def downloads_group(p):
     browser.close()
 
 
+def frontier(p):
+    """References › Research › Frontier, where Word has Researcher: a press opens a small popover
+    (its title, one line, Coming soon., Close) by mouse, keys and tap; Esc and Close close it, the
+    focus goes back to the button; no request leaves the page."""
+    browser, page, errors = open_page(p, width=1366, height=900)
+    load_doc(page, DOC); click_text(page, 'Second paragraph', 3)
+    reqs = []
+    page.on('request', lambda r: reqs.append(r.url))
+    open_tab(page, 'References')
+    page.get_by_role('button', name='Frontier', exact=True).click(); page.wait_for_timeout(200)
+    d = page.get_by_role('dialog', name='Frontier', exact=True)
+    shown = d.count() == 1 and 'Coming soon.' in d.inner_text() and 'shows how its ideas connect' in d.inner_text()
+    d.get_by_role('button', name='Close', exact=True).last.click(); page.wait_for_timeout(200)
+    check('Frontier by mouse: its popover opens (Frontier, what it does, Coming soon.) and Close closes it', shown and page.get_by_role('dialog', name='Frontier').count() == 0)
+    page.focus('#rc-frontier'); page.keyboard.press('Enter'); page.wait_for_timeout(200)
+    k1 = page.get_by_role('dialog', name='Frontier').count() == 1 and page.evaluate('document.activeElement.textContent') == 'Close'
+    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    check('Frontier by keys: Enter opens it with the focus on Close, Esc closes it and the focus goes back to Frontier', k1 and page.get_by_role('dialog', name='Frontier').count() == 0 and page.evaluate('document.activeElement.id') == 'rc-frontier', page.evaluate('document.activeElement.id'))
+    check('Frontier asks nothing of the network', not [u for u in reqs if not u.startswith('https://rikuy.test/')], reqs[:4])
+    box = page.get_by_role('combobox', name='Search', exact=True)
+    box.click(); box.fill('Researcher'); page.wait_for_timeout(200)
+    found = page.get_by_role('listbox', name='Commands', exact=True).get_by_role('option').all_inner_texts()
+    page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    check('the search box finds Frontier by Researcher', found and found[0].startswith('Frontier'), found[:3])
+    browser.close()
+    browser, page, errors = open_page(p, width=390, height=800, touch=True)
+    load_doc(page, DOC)
+    page.get_by_role('combobox', name='Ribbon tab', exact=True).select_option(label='References'); page.wait_for_timeout(200)
+    page.locator('#rc-frontier').tap(); page.wait_for_timeout(250)
+    d = page.get_by_role('dialog', name='Frontier', exact=True)
+    t1 = d.count() == 1 and d.locator('.btn').bounding_box()['height'] >= 44
+    d.get_by_role('button', name='Close', exact=True).last.tap(); page.wait_for_timeout(250)
+    check('Frontier by tap on a phone (390 px): the popover opens, its Close 44 px tall, a tap closes it', t1 and page.get_by_role('dialog', name='Frontier').count() == 0)
+    browser.close()
+
+
 def mac_keytips(p):
     """On a Mac, Option alone types nothing and shows no letters (it is how a Mac types é and ©, and
     Word for Mac has no KeyTips); F10 shows them."""
@@ -871,7 +907,7 @@ def run():
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
         browser.close()
-        for f in (tablet, mac_keytips, downloads_group):
+        for f in (tablet, mac_keytips, downloads_group, frontier):
             try: f(p)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
     bad = [r for r in results if not r[1]]

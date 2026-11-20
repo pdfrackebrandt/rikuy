@@ -16,7 +16,7 @@ export const TABS = [
   { id: 'layout', name: 'Layout', groups: [['setup', 'Page Setup', 4], ['paragraph', 'Paragraph', 3], ['arrange', 'Arrange', 1], ['document', 'Document Setup', 2]] },
   // (Word's names; but Table of contents in small letters: a group folded is a button of its
   // name, which must not be the name of its own Table of Contents button, test/commands.test.mjs)
-  { id: 'references', name: 'References', groups: [['toc', 'Table of contents', 3], ['footnotes', 'Footnotes', 6], ['citations', 'Citations & Bibliography', 5], ['captions', 'Captions', 4], ['index', 'Index', 2], ['authorities', 'Table of Authorities', 1]] },
+  { id: 'references', name: 'References', groups: [['toc', 'Table of contents', 3], ['footnotes', 'Footnotes', 6], ['research', 'Research', 1], ['citations', 'Citations & Bibliography', 5], ['captions', 'Captions', 4], ['index', 'Index', 2], ['authorities', 'Table of Authorities', 1]] },
   { id: 'review', name: 'Review', groups: [['proofing', 'Proofing', 5], ['speech', 'Speech', 1], ['accessibility', 'Accessibility', 1], ['language', 'Language', 2], ['comments', 'Comments', 6], ['tracking', 'Tracking', 4], ['changes', 'Changes', 4], ['compare', 'Compare', 2], ['versions', 'Versions', 3]] },
   { id: 'view', name: 'View', groups: [['views', 'Views', 6], ['immersive', 'Immersive', 2], ['movement', 'Page Movement', 1], ['mode', 'Dark Mode', 1], ['show', 'Show', 4], ['zoom', 'Zoom', 3]] },
   { id: 'help', name: 'Help', groups: [['help', 'Help and support']] },

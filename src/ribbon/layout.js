@@ -45,6 +45,7 @@ export const LAYOUT = {
   references: {
     toc: ['table-of-contents L T', 'toc-add-text S A'],
     footnotes: ['footnote L F', 'endnote S E', 'next-footnote S O', 'show-notes S H', 'footnote-options I -'],
+    research: ['frontier L RS'],
     citations: ['citation L C', 'manage-sources S M', 'citation-style S L', 'bibliography S B', 'add-source S W'],
     captions: ['insert-caption L P', 'table-of-figures S G', 'cross-reference S RF'],
     index: ['mark-entry L N', 'insert-index S X'],
