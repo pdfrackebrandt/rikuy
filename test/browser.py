@@ -20,12 +20,12 @@ SKELETON_HEAD = ('<!doctype html><html><head><meta charset=utf8><meta name=viewp
                  'body{margin:0;font:14px system-ui,sans-serif;background:#fafafa}img{max-width:100%}[hidden]{display:none!important}</style></head><body>')
 
 ROUTES = {
-    'https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js': os.path.join(NM, 'katex/dist/katex.min.js'),
+    'https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/katex.min.js': os.path.join(NM, 'katex/dist/katex.min.js'),
     'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.js': os.path.join(NM, 'codemirror/lib/codemirror.js'),
     'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/stex/stex.js': os.path.join(NM, 'codemirror/mode/stex/stex.js'),
     'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js': os.path.join(NM, 'jszip/dist/jszip.min.js'),
     'https://cdn.jsdelivr.net/npm/mathlive@0.110.0/mathlive.min.js': os.path.join(NM, 'mathlive/mathlive.min.js'),
-    'https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/contrib/mhchem.min.js': os.path.join(NM, 'katex/dist/contrib/mhchem.min.js'),
+    'https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/contrib/mhchem.min.js': os.path.join(NM, 'katex/dist/contrib/mhchem.min.js'),
 }
 
 # The page runs without 'unsafe-eval' (build/app.mjs policy), and Playwright checks a

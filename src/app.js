@@ -64,7 +64,7 @@ const CDN = {
   cmTex: 'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/stex/stex.js',
   zip: 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js',
   ml: 'https://cdn.jsdelivr.net/npm/mathlive@0.110.0/mathlive.min.js',
-  chem: 'https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/contrib/mhchem.min.js'
+  chem: 'https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/contrib/mhchem.min.js'
 };
 // The hash of each file as published on npm, which jsDelivr serves unchanged: a CDN that
 // served anything else would get no script run in this page. (CodeMirror's .min.js names
@@ -75,7 +75,7 @@ const SRI = {
   [CDN.cmTex]: 'sha384-tab09zZeKEC2HRX/8GcAyeUuP7KBvb9DKKK4wegfZ/qW7tMcwh14TRJ0o6woQ9M0',
   [CDN.zip]: 'sha384-+mbV2IY1Zk/X1p/nWllGySJSUN8uMs+gUAN10Or95UBH0fpj6GfKgPmgC5EXieXG',
   [CDN.ml]: 'sha384-5IN6K0kiaz8MufrTGBvPCP3oDeMjmwe+DDTvuyQLNv6gc634FpKbQfllonjHJPmy',
-  [CDN.chem]: 'sha384-F2ptQFZqNJuqfGGl28mIXyQ5kXH48spn7rcoS0Y9psqIKAcZPLd1NzwFlm/bl1mH'
+  [CDN.chem]: 'sha384-fB8BH//9nBzROkMUsu/Dr35jWHIbnKesUo9rW0hfEgw8mZGnkAyBAjKX9F98OVuo'
 };
 // what an opened .zip may unpack to; past it the tab would run out of memory
 const MAX_ZIP = 1.5e9;

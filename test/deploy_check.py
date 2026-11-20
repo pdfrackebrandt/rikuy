@@ -112,14 +112,14 @@ ok('the body opens with what Rikuy is, then says what a browser without JavaScri
 # by the hash its tag checks it with, and the fonts the build names, each without credentials
 JS2 = ("import { appPage } from './build/app.mjs';"
        "const sk = '<!doctype html><html><head><meta charset=utf8><meta name=viewport content=x><style>s</style></head><body>';"
-       "const k = '<script src=\"https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js\" integrity=\"sha384-cMkvdD8LoxVzGF/RPUKAcvmm49FQ0oxwDF3BGKtDXcEc+T1b2N+teh/OJfpU0jr6\" crossorigin=\"anonymous\"></script>';"
+       "const k = '<script src=\"https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/katex.min.js\" integrity=\"sha384-a1WQdjRj162i159OYq041X6I4K8NenkrI09LlPmiHg0YOb7CR+wJOraXwK9abpnE\" crossorigin=\"anonymous\"></script>';"
        "process.stdout.write(JSON.stringify(appPage('/nowhere', '<title>Rikuy</title>\\n<style>f</style><div id=\"app\"></div>' + k, sk, ['fonts/a-0123456789abcdef.woff2', 'fonts/b-0123456789abcdef.woff2'])))")
 ahead = json.loads(subprocess.run(['node', '--input-type=module', '-e', JS2], cwd=ROOT, capture_output=True, text=True, check=True).stdout)
 links = re.findall(r'<link rel="preload"[^>]*>', ahead)
 ok('KaTeX\'s script and the first fonts are asked for ahead, after the lines for programs and before the app',
-   links == ['<link rel="preload" as="script" href="lib/katex.min.js" integrity="sha384-cMkvdD8LoxVzGF/RPUKAcvmm49FQ0oxwDF3BGKtDXcEc+T1b2N+teh/OJfpU0jr6" crossorigin="anonymous">',
+   links == ['<link rel="preload" as="script" href="lib/katex.min.js" integrity="sha384-a1WQdjRj162i159OYq041X6I4K8NenkrI09LlPmiHg0YOb7CR+wJOraXwK9abpnE" crossorigin="anonymous">',
              '<link rel="preload" as="font" type="font/woff2" href="fonts/a-0123456789abcdef.woff2" crossorigin>', '<link rel="preload" as="font" type="font/woff2" href="fonts/b-0123456789abcdef.woff2" crossorigin>']
-   and ahead.index('</noscript>') < ahead.index(links[0]) < ahead.index(links[-1]) < ahead.index('<div id="app">') and '<script src="lib/katex.min.js" integrity="sha384-cMkv' in ahead
+   and ahead.index('</noscript>') < ahead.index(links[0]) < ahead.index(links[-1]) < ahead.index('<div id="app">') and '<script src="lib/katex.min.js" integrity="sha384-a1WQ' in ahead
    and ahead.index('<h1>Rikuy</h1>') < 4096, links)
 m = re.search(r'<script type="application/ld\+json">(.*?)</script>', html, re.S)
 data = json.loads(m.group(1))
