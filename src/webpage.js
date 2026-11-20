@@ -254,6 +254,66 @@ footer a{color:#1a4f8b}
 
 // The page: o = { model, files, main, name, assets (Map name -> Blob), graphs (fallback name ->
 // widget path), katex, openUrl, pdfPicture(bytes) } -> its HTML
+// The files the main document reads, the main first: what \input, \include and \subfile name,
+// its bibliography, its live figures and their pictures, the classes and packages the project
+// holds itself, pictures that are text (PGF). What else a project holds (notes, drafts, a
+// reviewer's letter) stays out of the web page's "Open in Rikuy" link. Pure (test/graphs-review).
+export function sourceFiles(files, main) {
+  const has = (n) => typeof files.get(n) === 'string';
+  const dir = main.includes('/') ? main.slice(0, main.lastIndexOf('/') + 1) : '';
+  const out = [], seen = new Set();
+  const add = (n, exts) => {
+    n = String(n).trim().replace(/^\.\//, '');
+    if (!n || n.includes('..') || n.length > 300) return null;
+    for (const c of [dir + n, n]) for (const e of ['', ...exts]) if (has(c + e) && !seen.has(c + e)) { seen.add(c + e); out.push(c + e); return c + e; }
+    return null;
+  };
+  const queue = [main];
+  seen.add(main); out.push(main);
+  while (queue.length && out.length < 300) {
+    const f = queue.shift(), t = String(files.get(f) || '').slice(0, 4e6).replace(/(^|[^\\])%.*$/gm, '$1');
+    const each = (re, fn) => { let m; re.lastIndex = 0; while ((m = re.exec(t))) fn(m); };
+    each(/\\(?:input|include|subfile|InputIfFileExists|subimport\{[^}]*\}|import\{[^}]*\})\s*\{([^{}]+)\}/g, (m) => { const n = add(m[1], ['.tex']); if (n && /\.(tex|ltx)$/i.test(n)) queue.push(n); });
+    each(/\\(?:bibliography|addbibresource(?:\[[^\]]*\])?)\s*\{([^{}]+)\}/g, (m) => m[1].split(',').forEach((b) => add(b, ['.bib'])));
+    each(/\\rikuywidget(?:\[[^\]]*\])?\s*\{([^{}]+)\}\s*\{([^{}]+)\}/g, (m) => { add(m[1], []); add(m[2], []); });
+    each(/\\(?:usepackage|RequirePackage)(?:\[[^\]]*\])?\s*\{([^{}]+)\}/g, (m) => m[1].split(',').forEach((x) => add(x, ['.sty'])));
+    each(/\\documentclass(?:\[[^\]]*\])?\s*\{([^{}]+)\}/g, (m) => add(m[1], ['.cls']));
+    each(/\\(?:includegraphics(?:\[[^\]]*\])?|input)\s*\{([^{}]+\.(?:pgf|tikz))\}/g, (m) => add(m[1], []));
+    each(/\\bibliographystyle\s*\{([^{}]+)\}/g, (m) => add(m[1], ['.bst']));
+  }
+  return out;
+}
+// A TeX file without its % comments (a comment may be a note to oneself): a line that was only a
+// comment goes, a comment after text leaves its % (no space comes where the line ended); Rikuy's
+// own lines (% rikuy: words …) stay
+export function stripComments(t) {
+  return String(t).split('\n').flatMap((l) => {
+    const m = /(^|[^\\](?:\\\\)*)%/.exec(l);
+    if (!m) return [l];
+    const at = m.index + m[1].length;
+    if (/^%\s*rikuy:/.test(l.slice(at))) return [l];
+    const before = l.slice(0, at);
+    return before.trim() ? [before + '%'] : [];
+  }).join('\n');
+}
+
+// A run of pandoc's inlines as plain text: words, spaces, a formula's letters (\alpha as α)
+const GREEK = { alpha: 'α', beta: 'β', gamma: 'γ', delta: 'δ', epsilon: 'ε', theta: 'θ', lambda: 'λ', mu: 'μ', pi: 'π', rho: 'ρ', sigma: 'σ', tau: 'τ', phi: 'φ', omega: 'ω', Delta: 'Δ', Sigma: 'Σ', Omega: 'Ω' };
+export function plainOf(xs, depth = 0) {
+  if (!Array.isArray(xs) || depth > 20) return '';
+  return xs.map((x) => {
+    if (!x || typeof x !== 'object') return '';
+    switch (x.t) {
+      case 'Str': return String(x.c);
+      case 'Space': case 'SoftBreak': case 'LineBreak': return ' ';
+      case 'Math': return String(x.c[1]).replace(/\\([A-Za-z]+)\s*/g, (m, n) => GREEK[n] || '').replace(/[{}^_$\\]/g, '');
+      case 'Emph': case 'Strong': case 'Underline': case 'Strikeout': case 'SmallCaps': case 'Superscript': case 'Subscript': return plainOf(x.c, depth + 1);
+      case 'Span': case 'Link': case 'Quoted': case 'Cite': return plainOf(x.c[1], depth + 1);
+      default: return '';
+    }
+  }).join('');
+}
+
 export async function webPage(o) {
   const graphs = new Map();
   for (const [fb, path] of o.graphs) { const spec = readGraph(o.files.get(path)); if (spec) graphs.set(fb, { path, spec: K.normalize(spec) }); }
@@ -295,7 +355,9 @@ export async function webPage(o) {
   for (const g of graphs.values()) for (const m of widgetDoc(graphHtml(g.spec)).matchAll(/<script>([\s\S]*?)<\/script>/g)) frameScripts.add(m[1]);
   const hashes = [await sha256(SIZER), ...await Promise.all([...frameScripts].map(sha256))];
   const csp = "default-src 'none'; script-src " + hashes.map((h) => "'" + h + "'").join(' ') + "; style-src 'unsafe-inline'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; object-src 'none'";
-  const title = (W.doc.meta && W.doc.meta.title ? w.inl(W.doc.meta.title.c).replace(/<[^>]*>/g, '') : '') || o.name || 'Paper';
+  // (the title as plain text from its tree, escaped once: from the HTML, & came out as &amp;amp;
+  // and a formula as KaTeX's annotation too, review Low)
+  const title = (W.doc.meta && W.doc.meta.title ? plainOf(W.doc.meta.title.c) : '') || o.name || 'Paper';
   const open = o.openUrl ? '<a href="' + esc(o.openUrl) + '" rel="noopener">Open in Rikuy</a>: the LaTeX source, to edit or compile. ' : '';
   return '<!doctype html>\n<html lang="' + esc(o.lang || 'en') + '">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">\n' +
     '<meta http-equiv="Content-Security-Policy" content="' + csp + '">\n<meta name="referrer" content="no-referrer">\n<meta name="generator" content="Rikuy">\n' +

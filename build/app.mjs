@@ -642,9 +642,12 @@ Ctrl is Cmd on a Mac.
   one open or right clicked, drawn as a live graph below it in one undo (y = f(x), f(x), x = g(t)
   with y = h(t), F(x, y) = c, \\dot k = …, k_{t+1} = …, a pair of time derivatives); it says in
   words what it drew or why it cannot (a \\max, a sum, a function defined by itself).
-  File, Export as, "Web page with live graphs (.html)" (command export-web-page): one self
-  contained page that reads like the paper, its graphs live in sandboxed frames, Rikuy's scripts
-  alone allowed by a Content Security Policy, and an "Open in Rikuy" link with the source
+  File, Export as, "Web page with live graphs (.html)" (command export-web-page {link, comments}):
+  one self contained page that reads like the paper, its graphs live in sandboxed frames, Rikuy's
+  scripts alone allowed by a Content Security Policy, and an "Open in Rikuy" link carrying the
+  main file and the files it reads (no other file of the project; its % comments left out unless
+  comments is true; link false leaves the link out); with no arguments a dialog says what the
+  link carries
 - Round 3's objects, each one commit and one undo, each command also with its fields as
   arguments: Insert's Cover Page (cover-page {design: plain | sideline | motion}; a titlepage
   first in the text; Remove Current Cover Page), Quick Parts (quick-part-save {name},

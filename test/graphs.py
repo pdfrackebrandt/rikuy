@@ -167,6 +167,20 @@ def graph_this(page):
     el.as_element().click(button='right'); page.get_by_role('menuitem', name='Graph this').wait_for(timeout=4000)
     page.get_by_role('menuitem', name='Graph this').click(); page.wait_for_timeout(600)
     check('Graph this: the Bellman equation (a max over c) is not drawn, and why is said', src(page) == EQ_DOC and '\\max' in page.inner_text('#toast'), page.inner_text('#toast'))
+    # review H5: the graph goes after the paragraph that holds the equation, worked out from the
+    # source: never above the equation, never splitting its paragraph, after a table's end
+    doc = ('\\documentclass{article}\n\\begin{document}\nHi.\n\\begin{equation} y = a x \\end{equation}\nand more.\n\nNext.\n\n'
+           '\\begin{tabular}{ll}\n$q = b p$ & x \\\\\nz & w\n\\end{tabular}\n\nLast.\n\\end{document}\n')
+    for text, disp, after, before in (('y = a x', True, 'and more.', 'Next.'), ('q = b p', False, '\\end{tabular}', 'Last.')):
+        load_doc(page, doc); page.wait_for_timeout(300)
+        h0 = page.evaluate('window.rikuy.hist.length')
+        el = math_el(page, text, disp).as_element()
+        el.click(button='right'); page.get_by_role('menuitem', name='Graph this').wait_for(timeout=4000)
+        page.get_by_role('menuitem', name='Graph this').click()
+        page.wait_for_function('window.rikuy.hist.length > %d' % h0, timeout=15000); page.wait_for_timeout(300)
+        s2 = src(page)
+        i = s2.find('\\rikuywidget')
+        check('Graph this (review H5): %s goes after %s and before %s, the paragraph whole' % (text, after, before), i > s2.index(after) and i < s2.index(before) and 'Hi.\n\\begin{equation} y = a x \\end{equation}\nand more.' in s2, s2[s2.index('Hi.'):][:260])
 
 
 def open_dialog(page, template=None):
@@ -378,11 +392,17 @@ def webpage(p):
     page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=15000)
     # a hand written widget beside the graph: its script never reaches the web page
     page.evaluate('''() => { const g = window.rikuy; g.files.set('widgets/mine.html', '<!doctype html><script>parent.postMessage({rikuy:"height",px:99},"*"); window.EVIL_WIDGET = 1</script><p>mine</p>');
-      g.files.set(g.main, g.files.get(g.main).replace('\\\\section{How to use it}', '\\\\rikuywidget{widgets/mine.html}{figs/none.png}\\n\\n\\\\section{How to use it}')); g.forceRender = true; g.rebuild(); }''')
+      g.files.set(g.main, g.files.get(g.main).replace('\\\\section{How to use it}', '% a note to self: SECRET draft remark\\n\\\\rikuywidget{widgets/mine.html}{figs/none.png}\\n\\n\\\\section{How to use it}'));
+      g.files.set('notes-private.txt', 'SECRET reviewer notes'); g.forceRender = true; g.rebuild(); }''')
     page.wait_for_timeout(800)
     menu = page.evaluate('''() => { const c = window.rikuy.cmds.command('export-as'); return c.menuItems(window.rikuy).map((x) => x && x.name); }''')
     check('web page: File, Export as lists Web page with live graphs first', menu[0] == 'Web page with live graphs (.html)', menu)
     page.evaluate('window.rikuy.runCommand("export-as", "live")')
+    # (review H6: a dialog says what the link carries, only what the main file reads)
+    page.wait_for_selector('.pop-web'); page.wait_for_timeout(200)
+    note = page.inner_text('.pop-web')
+    check('web page (review H6): the dialog says the link carries the main file and what it reads, not the project\'s other files', 'main.tex' in note and 'graphs/saving.html' in note and 'notes-private' not in note and page.locator('.pop-web input[type=checkbox]').count() == 2, note)
+    page.get_by_role('button', name='Export', exact=True).click()
     page.wait_for_function('window.rikuy.lastExport && /\\.html$/.test(window.rikuy.lastExport.name)', timeout=60000)
     html = page.evaluate('window.rikuy.lastExport.blob.text()')
     out = os.path.join(SHOTS, 'web-page.html')
@@ -420,6 +440,7 @@ def webpage(p):
     from browser import ROOT as _r  # noqa
     page.goto(link.group(1)); page.wait_for_timeout(3000)
     check('web page: Open in Rikuy opens its source, the graph live', SAMPLE_FIRST in page.evaluate('window.rikuy.src(window.rikuy.main)') and page.evaluate('[...window.rikuy.files.keys()].includes("graphs/saving.html")'), page.evaluate('[...window.rikuy.files.keys()]'))
+    check('web page (review H6): the link carries neither the notes file nor the source\'s comments', not page.evaluate('[...window.rikuy.files.keys()].includes("notes-private.txt")') and 'SECRET' not in page.evaluate('window.rikuy.src(window.rikuy.main)') and '% rikuy: words' in page.evaluate('window.rikuy.src(window.rikuy.main)'), page.evaluate('[...window.rikuy.files.keys()]'))
     browser.close()
 
 

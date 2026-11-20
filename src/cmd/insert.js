@@ -223,8 +223,12 @@ export const methods = {
     GK.formulas(s);
     const dir = dirOf(this.main), rel = freshName(this, s.kind), kind = pictureKind(this), ext = kind.pgf ? '.pgf' : '.png';
     const blob = await pictureBlob(s, textWidthPx(this), dir + rel + '.html', kind.pgf);
-    if (spot) this.restoreCaret(spot);
-    const { f, p, pre, post } = this.afterBlockPos();
+    // (Graph this says where in the source: after the block that holds the equation, worked out
+    // from the source and never before it; the caret, put back from a source place, can land in
+    // the block before a display equation and split its paragraph)
+    let f, p, pre, post;
+    if (spot && spot.after != null) ({ f, p, pre, post } = this.afterSourcePos(spot.f, spot.after));
+    else { if (spot) this.restoreCaret(spot); ({ f, p, pre, post } = this.afterBlockPos()); }
     // (its description is the picture's alt text: tagged PDF and Word read it)
     const alt = s.title.trim() ? ',alt={' + escapeAlt(s.title.trim()) + '}' : '';
     const cmd = '\\rikuywidget[width=\\linewidth' + alt + ']{' + rel + '.html}{' + rel + ext + '}';
@@ -261,6 +265,9 @@ export const methods = {
         if (!(png || /\.pgf$/i.test(fb)) || /[{}\\]|\.\./.test(fb)) continue;
         const spec = readGraph(this.files.get(u.path));
         if (!spec) continue;
+        // (a graph that no longer draws, a hand edit gone wrong, is skipped, and the problems
+        // list says so: the others are still drawn, review M15)
+        try { GK.formulas(spec); } catch (e) { continue; }
         const box = [...this.root.querySelectorAll('.w-live')].find((b) => b.dataset.wf === u.path);
         const name = dir + fb, old = this.assetBlobs.get(name), mark = await pictureMark(old, png);
         // only a picture Rikuy drew for this graph, or none at all: any other is someone's own
@@ -269,8 +276,7 @@ export const methods = {
         const W = Math.round((box && box.getBoundingClientRect().width / k) || (mark && mark.W) || textWidthPx(this));
         // drawn again for another width, or for a description changed by hand (its hash)
         if (old && Math.abs(mark.W - W) < 2 && (!mark.hash || mark.hash === specHash(spec))) continue;
-        this.setAsset(name, await pictureBlob(spec, W, u.path, !png));
-        n++;
+        try { this.setAsset(name, await pictureBlob(spec, W, u.path, !png)); n++; } catch (e) { /* this one stays as it was; the next is drawn */ }
       }
       // (no save of its own: a picture drawn again is derived, and a save here wrote this tab's text
       // over what another tab of the same project had typed meanwhile; the next edit's save keeps
@@ -356,6 +362,29 @@ export const methods = {
     this.commit(edits, null, undefined, blobs);
     setTimeout(() => this.graphRefresh(), 400);
     return true;
+  },
+
+  // Where a graph goes after source place at of file f: the end of the paragraph that holds it in
+  // TeX's sense (the next blank line outside any brace group opened after it, or \end{document}),
+  // and past every block of the page that holds it (a table that holds a cell's equation). A
+  // display equation inside a paragraph keeps the paragraph whole. Never before at.
+  // { f, p, pre, post } as afterBlockPos gives.
+  afterSourcePos(f, at) {
+    const src = this.src(f);
+    let p = src.length, d = 0;
+    for (let k = at; k < src.length; k++) {
+      const c = src[k];
+      if (c === '\\') { if (src.startsWith('\\end{document}', k)) { p = k; break; } k++; continue; }
+      if (c === '%') { while (k < src.length && src[k] !== '\n') k++; continue; }
+      if (c === '{') d++;
+      else if (c === '}') d--;
+      else if (c === '\n' && d <= 0 && /^\n[ \t]*\n/.test(src.slice(k, k + 40))) { p = k; break; }
+    }
+    if (this.model && !this.stale) for (const mb of this.model.blocks) if (mb.f === f && mb.s < at && mb.e >= at && mb.e > p) p = mb.e;
+    p = Math.max(p, at);
+    let nlB = 0; for (let k = p - 1; k >= 0 && /\s/.test(src[k]); k--) if (src[k] === '\n') nlB++;
+    let nlA = 0; for (let k = p; k < src.length && /\s/.test(src[k]); k++) if (src[k] === '\n') nlA++;
+    return { f, p, pre: '\n'.repeat(Math.max(0, 2 - nlB)), post: '\n'.repeat(Math.max(0, 2 - nlA)) };
   },
 
   // ---- on the page: the Edit graph button over a graph, its menu, and the first time hint ----
