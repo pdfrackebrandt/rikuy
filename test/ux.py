@@ -200,6 +200,18 @@ def status_bar(p):
                 page.keyboard.press('Escape')
             check(f'no page errors ({w})', not errors, errors[:3])
             ctx.close()
+        # a phone: no room in its status line for Make available offline; the menu panel has it
+        for width in (390, 360):
+            ctx = browser.new_context(viewport={'width': width, 'height': 800}, has_touch=True, is_mobile=True)
+            page = ctx.new_page()
+            page.goto('http://127.0.0.1:%d/' % port)
+            page.wait_for_function('window.rikuy && document.querySelector(".page .it") && document.getElementById("boot").hidden', timeout=60000)
+            page.wait_for_timeout(800)
+            page.locator('#b-nav').tap(); page.wait_for_timeout(300)
+            item = page.get_by_role('menuitem', name='Make available offline', exact=True)
+            check(f'on a phone the menu panel has Make available offline ({width} px)', item.count() == 1 and item.is_visible() and item.bounding_box()['height'] >= 36)
+            shot(page, 'menu-offline-%dpx' % width)
+            ctx.close()
         browser.close()
     finally:
         srv.shutdown()
@@ -237,7 +249,27 @@ def panes(page, w):
     check(f'no sideways scroll ({w})', page.evaluate('document.documentElement.scrollWidth') <= page.viewport_size['width'])
 
 
-PARTS = {'panes': (panes, [(1366, False), (1920, True), (390, False)]),
+def doc_name(page, w):
+    """Word names the open document at the top, on a phone too. Where the bar's middle has room
+    (from about 520 px) the name is there; on a phone the menu panel (the bar's first button)
+    starts with it and whether it is saved."""
+    width = page.viewport_size['width']
+    tag = w.replace(' ', '').replace(',', '-')
+    name = page.evaluate("document.getElementById('docname')").get('textContent') if False else page.evaluate("document.getElementById('docname').textContent")
+    shown = page.evaluate("(() => { const d = document.getElementById('docname'); const r = d.getBoundingClientRect(); return d.checkVisibility() ? Math.round(r.width) : 0; })()")
+    if width >= 520:
+        check(f'the bar shows the document\'s name, a few words of it at least ({w})', shown >= 80, shown)
+    page.locator('#b-nav').click(); page.wait_for_timeout(300)
+    shot(page, f'menu-panel-{tag}')
+    head = page.evaluate("(() => { const d = document.getElementById('nav-doc'); return d.checkVisibility() ? d.innerText : ''; })()")
+    if width <= 980:
+        check(f'the menu panel starts with the document\'s name and Saved ({w})', head.startswith(name) and 'Saved' in head, (name, head))
+    page.locator('#nav-close').click(); page.wait_for_timeout(200)
+    check(f'no sideways scroll ({w})', page.evaluate('document.documentElement.scrollWidth') <= width)
+
+
+PARTS = {'doc_name': (doc_name, [(390, False), (360, True), (700, False), (1366, True)]),
+         'panes': (panes, [(1366, False), (1920, True), (390, False)]),
          'status_bar': (status_bar, None),
          'file_view': (file_view, [(1366, False), (1920, True), (390, False), (360, True)]),
          'first_visit': (first_visit, [(1366, False), (1920, True), (390, False), (360, True)]),
