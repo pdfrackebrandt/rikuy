@@ -309,7 +309,8 @@ def pixels(page, a_b64, b_b64):
     by a pixel; the mean channel difference, and how much of the first's curve colours the second
     has where the first has them (blue, orange: the curves)."""
     return page.evaluate('''async ([a64, b64]) => {
-      const bm = async (s) => createImageBitmap(await (await fetch('data:image/png;base64,' + s)).blob());
+      // (from base64 without fetch: the page's policy lets it fetch its own files alone)
+      const bm = async (s) => createImageBitmap(new Blob([Uint8Array.from(atob(s), (c) => c.charCodeAt(0))], { type: 'image/png' }));
       const a = await bm(a64), b = await bm(b64);
       const draw = (x, blur) => { const c = new OffscreenCanvas(a.width, a.height), g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, a.width, a.height); if (blur) g.filter = 'blur(1px)'; g.drawImage(x, 0, 0, a.width, a.height); return g.getImageData(0, 0, a.width, a.height).data; };
       const x = draw(a, true), y = draw(b, true); let sum = 0;
