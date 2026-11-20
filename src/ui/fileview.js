@@ -63,7 +63,11 @@ function fillHome(app) {
   }).catch(() => {});
 }
 
+// whether the last thing the person did was a key (File opened by Alt, F or Enter) or a press
+let byKeys = false;
 export function installFileView(app) {
+  document.addEventListener('keydown', () => { byKeys = true; }, true);
+  document.addEventListener('pointerdown', () => { byKeys = false; }, true);
   // (src/ribbon/tabs.js's selectTab calls this as File opens or closes)
   app.fileViewChanged = (on, was) => {
     if (!on) {
@@ -94,7 +98,8 @@ export function installFileView(app) {
     under(true);
     // (a tab of the row keeps it: the arrow keys go along the tabs, as Word's do)
     const back = $('#rf-back'), a = document.activeElement;
-    if (back && !(a && a.closest && a.closest('#rp-file, #rb-top'))) back.focus({ preventScroll: true });
+    // (its ring only when the keys opened the view: a press on File showed it, unasked)
+    if (back && !(a && a.closest && a.closest('#rp-file, #rb-top'))) back.focus({ preventScroll: true, focusVisible: byKeys });
     // the browser's or the phone's Back closes the view, as Word's phone app's does (a page in a
     // frame has its parent's history: none there)
     if (window.top === window && !(history.state && history.state.rikuyFile)) { try { history.pushState({ ...(history.state || {}), rikuyFile: 1 }, ''); } catch (e) { /* refused */ } }
