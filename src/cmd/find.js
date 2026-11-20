@@ -755,6 +755,8 @@ export const methods = {
   // Go Back: the places of the last edits, newest first; a press the next one of them, again and
   // again while nothing else is edited
   goBack() {
+    // in a footnote typed at the page's foot, Word's Shift+F5 is the way back to its mark first
+    if (this.leaveFootnote()) return true;
     const spots = editSpots(this.hist, 4);
     if (!spots.length) return false;
     const G = this.goBackAt, top = this.hist[this.hist.length - 1];

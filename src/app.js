@@ -1329,6 +1329,12 @@ class App {
       // the browser's own select-all ends on a page number, which cannot be selected, and
       // collapses to the top of the page: Ctrl+A then Ctrl+C copied nothing and Delete did nothing
       if (k === 'a' && !e.shiftKey) { e.preventDefault(); this.selectAllText(); return; }
+      if (e.key === 'End' && this.textEnd(e.shiftKey)) { e.preventDefault(); return; }
+    }
+    // out of a footnote at the page's foot: Esc, or Right at its end (Shift+F5 too: goBack)
+    if ((e.key === 'Escape' && !this.pop) || (e.key === 'ArrowRight' && !e.shiftKey && !mod && !e.altKey)) {
+      const F = this.footnoteHere(), c = F && this.caretNow();
+      if (F && (e.key === 'Escape' || (c && c.collapsed && c.a >= (F.ie != null ? F.ie : F.e - 1)))) { e.preventDefault(); this.leaveFootnote(F); return; }
     }
     if (e.key === 'Tab') {
       const n = getSelection().anchorNode;
@@ -2337,6 +2343,44 @@ class App {
         return;
       }
     }
+  }
+
+  // The footnote the caret types in at the page's foot: its mark's place in the text ({ f, s, e,
+  // ie }), or null. The foot comes after the page's last line, so the browser's own keys (Right,
+  // Down, Ctrl+End) found no way out of it, and all typed next went into the footnote.
+  footnoteHere() {
+    const sel = getSelection();
+    if (!sel.rangeCount) return null;
+    const n = sel.anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement);
+    const box = el && el.closest && el.closest('.fn');
+    if (!box || !this.root.contains(box)) return null;
+    const c = this.caretNow();
+    if (!c || c.ghost) return null;
+    let best = null;
+    for (const m of this.root.querySelectorAll('.fnm[data-a]')) {
+      const info = atomOfEl(m);
+      if (!info || info.f !== c.f || info.s == null || !(info.s < c.a && c.a <= info.e)) continue;
+      if (!best || info.e - info.s < best.e - best.s) best = info;
+    }
+    return best;
+  }
+  // Word's way back from a footnote (Shift+F5, Esc, or Right at its end): the caret after its mark
+  leaveFootnote(F = this.footnoteHere()) {
+    if (!F) return false;
+    this.restoreCaret({ f: F.f, p: F.e, bias: 1 });
+    this.scrollToCaret();
+    return true;
+  }
+  // Ctrl+End, as Word's: the end of the text, never the footnotes under the last page's lines
+  textEnd(extend) {
+    const spans = this.root.querySelectorAll('.flow span.t');
+    const last = spans[spans.length - 1];
+    if (!last || !last.firstChild) return false;
+    const sel = getSelection(), n = last.firstChild, o = n.data.length;
+    this.root.focus({ preventScroll: true });
+    if (extend && sel.rangeCount) sel.extend(n, o); else sel.collapse(n, o);
+    this.scrollToCaret();
+    return true;
   }
 
   // a menu's keys: the arrows step through its items and wrap, Home and End go to the ends
