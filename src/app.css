@@ -88,6 +88,7 @@
   :root:not([data-theme="light"]) {
     --desk: #151A20; --desk-2: #0F1318; --chrome: #1B222A; --panel: #1F2730; --line: #2E3843;
     --ink-ui: #E2E7ED; --mute: #8D9AA8; --blue: #6AAEE3; --blue-wash: #1B3650; --blue-ink: #9CCBF0;
+    --on-blue: #0B1621;
     --title: #143E66; --ribbon: #1F2730; --tabrow: #1B222A;
     --warn: #E8806B; --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .45);
     --ins-ui: #6FD39C; --del-ui: #F28B7D;
@@ -97,6 +98,7 @@
 :root[data-theme="dark"] {
   --desk: #151A20; --desk-2: #0F1318; --chrome: #1B222A; --panel: #1F2730; --line: #2E3843;
   --ink-ui: #E2E7ED; --mute: #8D9AA8; --blue: #6AAEE3; --blue-wash: #1B3650; --blue-ink: #9CCBF0;
+  --on-blue: #0B1621;
   --title: #143E66; --ribbon: #1F2730; --tabrow: #1B222A;
   --warn: #E8806B; --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .45);
   --ins-ui: #6FD39C; --del-ui: #F28B7D;
@@ -131,7 +133,7 @@ button { font: inherit; color: inherit; }
 #bar .sep { background: rgba(255, 255, 255, .35); }
 .tools { display: flex; align-items: center; gap: 2px; flex: none; }
 .sep { width: 1px; height: 20px; background: var(--line); margin: 0 6px; }
-.btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid transparent; background: var(--blue); color: #fff; cursor: pointer; font-weight: 500; font-size: 13px; white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid transparent; background: var(--blue); color: var(--on-blue, #fff); cursor: pointer; font-weight: 500; font-size: 13px; white-space: nowrap; }
 .btn:hover { filter: brightness(1.06); }
 .btn:focus-visible, .linkish:focus-visible, .pitem:focus-visible, .bubble button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .btn.ghost { background: transparent; color: var(--ink-ui); }
@@ -2670,3 +2672,9 @@ body.file-open #rp-file .rb-tb .btn { height: 32px; min-height: 32px; border-rad
   :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) :is(input[type="text"], input[type="search"], input[type="number"], input:not([type]), select) { height: 44px; }
   :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .stp-f, .help-pane, .pop-help) .btn:not(.icon) { min-width: 44px; padding: 0 12px; }
 }
+/* Text on the accent blue: white on the light theme's blue, near black on the dark theme's lighter
+   blue (white there was 2.4:1; WCAG 1.4.3 asks 4.5:1), as Word's dark mode writes its primary
+   buttons. The search box's list in the colours of the window, not the bar's white (the selected
+   result on a phone was white on pale blue, 1.3:1) */
+.toast .btn { color: var(--on-blue, #fff); }
+.srch-list { color: var(--ink-ui); }
