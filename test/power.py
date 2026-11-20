@@ -69,6 +69,12 @@ def footnote(page):
     key(page, 'Control+Alt+f'); typed(page, 'Note.', 300)
     key(page, 'ArrowLeft'); key(page, 'ArrowLeft'); key(page, 'ArrowRight'); typed(page, 'Q')
     check('footnote: Right inside its text stays in it', '\\footnote{NoteQ.}' in src(page), src(page)[40:100])
+    # (review L1) Ctrl+End after a display formula or a table that ends the text, as Word's
+    for end, name in (('Last text.\n\\begin{equation}\n  x = 1\n\\end{equation}', 'equation'), ('Last text.\n\n\\begin{tabular}{ll}\n  a & b \\\\\n  c & d\n\\end{tabular}', 'tabular')):
+        load_doc(page, FN.replace('Next paragraph.', end))
+        click_text(page, 'Alpha', 0); key(page, 'Control+End'); typed(page, 'ZZ')
+        s = src(page)
+        check('footnote: Ctrl+End goes after a closing ' + name, 'ZZ' in s and s.index('ZZ') > s.index('\\end{' + name + '}') and s.index('ZZ') < s.index('\\end{document}') and 'd\nZZ' not in s, s[40:160])
 
 
 MATH = '\\documentclass{article}\n\\usepackage{amsmath,amssymb}\n\\begin{document}\n\nAlpha beta gamma.\n\nNext paragraph.\n\n\\end{document}\n'
@@ -172,6 +178,20 @@ def tab(page):
     click_text(page, 'beta', 4); key(page, 'Escape'); key(page, 'Tab')
     check('tab: Esc, then Tab, leaves the page and writes nothing', active(page) != 'pages' and src(page) == TAB, active(page))
     check('tab: the page says how to leave it (review M4)', 'Escape, then Tab, leaves' in page.evaluate("document.getElementById('pages-how').textContent"), None)
+    # (review L4) over a selection as Word's: inside the text the gap takes its place; from a
+    # paragraph's start the paragraph's left indent a step in, Shift+Tab out again; a heading's gap
+    load_doc(page, TAB)
+    select_text(page, 'beta'); key(page, 'Tab')
+    check('tab: Tab over words inside the text puts the gap in their place', 'Alpha \\quad gamma.' in src(page) and active(page) == 'pages', src(page)[40:80])
+    load_doc(page, TAB)
+    select_text(page, 'Third one'); key(page, 'Tab', 400)
+    s = src(page)
+    check('tab: Tab over words from a paragraph\'s start indents the paragraph', 'adjustwidth' in s and 'Third one here.' in s, s[60:220])
+    select_text(page, 'Third one'); key(page, 'Shift+Tab', 400)
+    check('tab: Shift+Tab takes it out again, the bytes as before', src(page) == TAB, src(page)[60:220])
+    load_doc(page, TAB.replace('Alpha beta', '\\section{Intro words}\n\nAlpha beta'))
+    click_text(page, 'Intro words', 5); key(page, 'Tab')
+    check('tab: Tab in a heading leaves its gap', '\\section{Intro\\quad words}' in src(page), src(page)[40:90])
 
 
 REFS = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\usepackage{natbib}\n\\begin{document}\n\n\\section{Intro}\\label{sec:intro}\n\nAlpha beta gamma.\n\n'
@@ -354,6 +374,13 @@ def insertlist(page):
         load_doc(page, PLAIN)
         click_text(page, 'gamma.', 6); key(page, 'Enter'); insert_list(page, 'begin{' + env + '}'); typed(page, 'X')
         check('insertlist: begin{' + env + '} writes a ' + env + ' TeX takes', want in src(page), src(page)[60:200])
+    # (review L5) \o, \O and \quad are text, written as typed with their case; \Gamma a formula
+    for q, want in (('o', 'gamma.\\o'), ('O', 'gamma.\\O'), ('quad', 'gamma.\\quad'), ('Gamma', 'gamma.$\\Gamma')):
+        load_doc(page, PLAIN)
+        click_text(page, 'gamma.', 6); insert_list(page, q)
+        if q == 'Gamma': key(page, 'Enter', 400)
+        s = src(page)
+        check('insertlist: \\' + q + ' Enter writes ' + want[6:], want in s and (q == 'Gamma' or '$' not in s) and '\\footnote' not in s, s[60:120])
 
 
 def repeat(page):
