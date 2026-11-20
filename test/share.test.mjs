@@ -118,7 +118,7 @@ await ok('a link that names no sender opens as the reader\'s own document', asyn
 
 // what the guide says must be what the page does: the limits and names it gives are checked
 // where they are made (test/agent.py does the clicking)
-await ok('llms.txt says what is so, and llms-full.txt adds to it', () => {
+await ok('llms.txt says what is so, and llms-full.txt adds to it', async () => {
   const guide = llms(), full = llmsFull();
   assert.ok(!/no fonts yet/.test(guide), 'the old limit is gone');
   assert.ok(/no fonts for scripts beyond those named above: none for Khmer, Lao, Tibetan, Georgian,\s+Armenian or Ethiopic/.test(guide));
@@ -131,8 +131,15 @@ await ok('llms.txt says what is so, and llms-full.txt adds to it', () => {
   for (const h of ['## Keyboard', '## Engines and programs', '## The sample document']) assert.ok(full.includes('\n' + h + '\n'), h);
   const sample = /```latex\n([\s\S]*?)\n```/.exec(full)[1];
   assert.ok(sample.startsWith('\\documentclass') && sample.endsWith('\\end{document}'));
+  // (what the guide says the sample's links measure is so, within 3 %: the sample grew with its
+  // live graph, 7,000 to 7,100 for #tex=, and the guide must follow it)
   const tex = Buffer.from(sample + '\n', 'utf8').toString('base64url').length;
-  assert.ok(Math.abs(tex - 7000) < 100, 'the #tex= link of the sample is ' + tex + ' characters');
+  const said = (re) => +re.exec(guide.replace(/\s+/g, ' '))[1].replace(/,/g, '');
+  const saidTex = said(/makes a #tex= link of ([\d,]+)/), saidShare = said(/makes a #share= link of ([\d,]+) characters/);
+  assert.ok(Math.abs(tex - saidTex) < 0.03 * saidTex, 'the #tex= link of the sample is ' + tex + ' characters, the guide says ' + saidTex);
+  const { SAMPLE } = await import('../src/sample.js');
+  const share = (await packShare({ v: 1, name: 'main.tex', main: 'main.tex', files: Object.entries(SAMPLE).filter(([, t]) => typeof t === 'string') })).length;
+  assert.ok(Math.abs(share - saidShare) < 0.03 * saidShare, 'the #share= link of the sample is ' + share + ' characters, the guide says ' + saidShare);
 });
 
 await ok('robots.txt, the sitemap and the page\'s data for search engines', () => {
