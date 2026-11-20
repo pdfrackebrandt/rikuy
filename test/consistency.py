@@ -60,7 +60,14 @@ from playwright.sync_api import sync_playwright
 
 WRAP = lambda body, pre='': '\\documentclass{article}\n\\usepackage{graphicx}\n' + pre + '\\begin{document}\n' + body + '\n\\end{document}\n'
 DOC = WRAP('\\section{Opening}\nA paragraph of the text.\n\n\\begin{center}\n\\includegraphics[width=0.4\\linewidth]{figure.png}\n\\end{center}\n\n'
-           '\\begin{tabular}{ll}\ncell & other \\\\\nmore & last \\\\\n\\end{tabular}\n\nThe last paragraph.')
+           '\\begin{tabular}{ll}\ncell & other \\\\\nmore & last \\\\\n\\end{tabular}\n\nThe last paragraph.\n\n'
+           # (a drawing, a chart and a SmartArt, for their contextual tabs: src/cmd/objects.js)
+           '\\begin{center}\n\\begin{tikzpicture}\n\\draw[thick, draw=blue!60!black, fill=blue!20] (0,0) rectangle (3,2);\n\\draw[thick, draw=red, fill=red!20] (2,1) circle (1);\n\\end{tikzpicture}\n\\end{center}\n\n'
+           '\\begin{center}\n\\begin{tikzpicture}\n\\begin{axis}[ybar, width=0.6\\linewidth, height=5cm, ymin=0, symbolic x coords={A,B}, xtick=data]\n\\addplot coordinates {(A,1) (B,2)};\n\\end{axis}\n\\end{tikzpicture}\n\\end{center}\n\n'
+           '\\begin{center}\n\\smartdiagram[circular diagram:clockwise]{One, Two, Three}\n\\end{center}',
+           '\\usepackage{tikz}\n\\usepackage{pgfplots}\n\\pgfplotsset{compat=1.18}\n\\usepackage{smartdiagram}\n')
+# a contextual tab's object, pressed on as a person does
+OBJ = {'shape-format': 'svg.tz', 'chart-design': 'svg.pgf', 'chart-format': 'svg.pgf', 'smart-design': 'svg.smart', 'smart-format': 'svg.smart'}
 MOUSE = [1920, 1366, 1280, 1024, 900]
 TOUCH = [1180, 390]  # a tablet and a phone
 SCALE = [0, 2, 4, 6, 8, 10, 12, 16, 20, 24, 28, 32, 36, 40, 48]
@@ -363,6 +370,8 @@ def tab_states(page, tabs):
         page.wait_for_timeout(80)
         if t == 'picture-format':
             page.locator('#pages .a-img').first.click(); page.wait_for_timeout(200)
+        elif t in OBJ:
+            page.locator('#pages ' + OBJ[t]).first.click(); page.wait_for_timeout(250)
         elif t.startswith('table'):
             click_text(page, 'cell', 2); page.wait_for_timeout(200)
         elif t == 'headfoot':

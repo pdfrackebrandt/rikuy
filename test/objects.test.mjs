@@ -152,7 +152,9 @@ ok('a drawing\'s points: each coordinate with where its text is, written back mo
   assert.equal(D.pointText(o[1], 0, 3), '1.5 and 2');
   // options and comments are no coordinates; a picture the page does not draw has none
   assert.deepEqual(D.tikzPoints('\\begin{tikzpicture}[scale=2]\n% (9,9)\n\\draw[->] (0,0) -- (1,2);\n\\end{tikzpicture}').map((p) => [p.x, p.y]), [[0, 0], [1, 2]]);
-  assert.equal(D.tikzPoints('\\begin{tikzpicture}\\node at (0,0) {x};\\end{tikzpicture}'), null);
+  assert.equal(D.tikzPoints('\\begin{tikzpicture}\\node[circle] at (0,0) {x};\\end{tikzpicture}'), null);
+  // (a node's point is a handle too: its words move with it)
+  assert.deepEqual(D.tikzPoints('\\begin{tikzpicture}\\node at (1,2) {(9,9)};\\end{tikzpicture}').map((p) => [p.x, p.y]), [[1, 2]]);
 });
 
 ok('a table\'s alt text: a "% alt:" line before it, read back, changed, taken off to the bytes of before', () => {

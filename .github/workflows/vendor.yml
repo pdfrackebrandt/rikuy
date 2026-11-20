@@ -1,5 +1,6 @@
 # The programs committed in tex/vendor/ are build outputs of tex/build_tools.sh (AGENTS.md), and so
-# is the editor's native core (tex/vendor/core/rikuy-core.wasm, from tex/native/core/) and its
+# is the editor's native core (tex/vendor/core/rikuy-core.wasm, from tex/native/core/), its picture
+# tools (tex/vendor/pic/rikuy-pic.wasm, from tex/native/pic/ with stb) and its
 # spelling (tex/vendor/hunspell/: Hunspell and MyThes with tex/native/spell/, the dictionaries and
 # thesauri), and Harper's own WebAssembly build for grammar (tex/vendor/harper/, downloaded and
 # copied unchanged: the job checks that the pinned package still gives these bytes). This
@@ -38,7 +39,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        program: [dvips, gnuplot, xindy, asy, core, hunspell, harper]
+        program: [dvips, gnuplot, xindy, asy, core, pic, hunspell, harper]
     env:
       # Azure's copy of Ubuntu's archive, next to the runner; same paths, so the same hashes
       UBUNTU_POOL: http://azure.archive.ubuntu.com/ubuntu/pool
