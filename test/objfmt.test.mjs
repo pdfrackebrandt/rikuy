@@ -310,6 +310,21 @@ ok('review N5: a key taken off takes its own line or its comma, never a neighbou
   assert.equal(O.listSet('a,\n  b, % B\n  c % C\n', (x) => x !== 'a'), 'a\n');
 });
 
+ok('review N8: Edit Data: a series\' name keeps & % _ $ # (escaped, read back as typed); a category is cleaned by the rule the grid says', () => {
+  const names = ['Sales & Co', '100%', 'a_b $5 #1', 'x \\ {y} ^ ~'];
+  const c = D.chartTex('column', ['R&D', 'Q1 50%', 'a_b', 'x,y'], names.map((n, i) => ({ name: n, values: [1, 2, 3, i] })));
+  assert.ok(c.includes('\\addlegendentry{Sales \\& Co}') && c.includes('\\addlegendentry{100\\%}') && c.includes('\\addlegendentry{a\\_b \\$5 \\#1}'), c);
+  const A = D.readAxis(c);
+  assert.deepEqual(A.series.map((x) => x.name), names);
+  assert.deepEqual(A.cats, ['R D', 'Q1 50', 'a b', 'x y']);
+  assert.deepEqual(A.cats, ['R&D', 'Q1 50%', 'a_b', 'x,y'].map(D.catClean));
+  assert.ok(D.CAT_OUT.test('R&D') && !D.CAT_OUT.test('Q1 sales'));
+  // Change Chart Type keeps the names as they were
+  const I = O.chartInfo(c);
+  const l = ap(c, O.chartRewrite(c, 'line', I.cats, I.series));
+  assert.deepEqual(D.readAxis(l).series.map((x) => x.name), names);
+});
+
 ok('review N1: Wrap on a float holding a center writes \\centering (no center in a wrapfigure), a table stays a table', () => {
   const at = (d) => [d.indexOf('\\begin{tikzpicture}'), d.indexOf('\\end{tikzpicture}') + 17];
   const fr = 'A\n\\begin{figure}[h]\n  \\begin{flushright}\n' + rect + '\n  \\end{flushright}\n\\caption{Box}\n\\end{figure}\n\nWords.';

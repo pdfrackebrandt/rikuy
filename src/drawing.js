@@ -281,7 +281,8 @@ export function readAxis(text) {
   if (!sym) return null;
   const cats = sym.slice(sym.indexOf('{') + 1, -1).split(',').map((x) => x.trim()).slice(0, 50);
   const series = [];
-  const re = /\\addplot(\+\[mark=\*\])?\s*coordinates\s*\{([^{}]{0,4000})\}\s*;\s*(\\addlegendentry\s*\{([^{}]{0,200})\})?/g;
+  // (a legend's name escaped as Rikuy writes it: \textbackslash{} and its like, empty groups)
+  const re = /\\addplot(\+\[mark=\*\])?\s*coordinates\s*\{([^{}]{0,4000})\}\s*;\s*(\\addlegendentry\s*\{((?:[^{}]|\{[^{}]{0,20}\}){0,300})\})?/g;
   let x, k = 0;
   while ((x = re.exec(m[2])) && k++ < 8) {
     if (!!x[1] !== (kind === 'line')) return null;
@@ -289,7 +290,7 @@ export function readAxis(text) {
     const pr = /\(\s*([^,()]{1,60}),\s*([^,()]{1,60})\)/g;
     let p, j = 0;
     while ((p = pr.exec(x[2])) && j++ < 200) pts.push([p[1].trim(), p[2].trim()]);
-    series.push({ name: x[4] ? x[4].trim() : '', pts });
+    series.push({ name: x[4] ? unTeX(x[4].trim()) : '', pts });
   }
   if (!series.length) return null;
   const rest = m[2].replace(re, '').replace(/\s+/g, '');
@@ -299,8 +300,13 @@ export function readAxis(text) {
 // the LaTeX of a chart from a grid: cats, series [{ name, values }]
 // extra: the axis's other keys as they are written (a title, gridlines, colours…), after its own;
 // a bar chart's gridlines are x's, a column or line chart's y's
+// A category is a name pgfplots keeps as a symbol, read in the coordinates and printed as a tick:
+// these characters cannot stand in one and are left out (the grid says so); a series' name is only
+// printed, in the legend, and keeps them escaped
+export const CAT_OUT = /[\\{}%#$&_^~,()[\]]/;
+export const catClean = (t) => String(t).replace(new RegExp(CAT_OUT.source, 'g'), ' ').replace(/\s+/g, ' ').trim().slice(0, 40) || '?';
 export function chartTex(kind, cats, series, eol = '\n', extra = []) {
-  const safe = (t) => String(t).replace(/[\\{}%#$&_^~,()[\]]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 40) || '?';
+  const safe = catClean;
   const C = cats.map(safe);
   // (each category once: pgfplots' symbolic coordinates are names)
   for (let i = 0; i < C.length; i++) { let n = C[i], k = 2; while (C.slice(0, i).includes(n)) n = C[i] + ' ' + k++; C[i] = n; }
@@ -317,7 +323,7 @@ export function chartTex(kind, cats, series, eol = '\n', extra = []) {
   for (const s of series) {
     const pts = C.map((c, i) => (kind === 'bar' ? '(' + v(s.values[i]) + ',' + c + ')' : '(' + c + ',' + v(s.values[i]) + ')')).join(' ');
     lines.push('\\addplot' + (kind === 'line' ? '+[mark=*]' : '') + ' coordinates {' + pts + '};');
-    if (series.length > 1) lines.push('\\addlegendentry{' + safe(s.name) + '}');
+    if (series.length > 1) lines.push('\\addlegendentry{' + (escTeX(String(s.name).replace(/\s+/g, ' ').trim().slice(0, 60)) || '?') + '}');
   }
   lines.push('\\end{axis}', '\\end{tikzpicture}');
   return lines.join(eol);

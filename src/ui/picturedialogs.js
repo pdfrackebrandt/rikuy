@@ -6,7 +6,7 @@
 import { dialog } from './kit.js';
 import { mk } from './dom.js';
 import * as X from '../picture.js';
-import { SMART, smartMax } from '../drawing.js';
+import { SMART, smartMax, CAT_OUT, catClean } from '../drawing.js';
 
 const row = (cls, ...kids) => { const d = mk('div', cls); d.append(...kids); return d; };
 function field(name, ctl) {
@@ -299,6 +299,16 @@ export function chartDialog(app, edit) {
     }
     grid.append(tr);
   }
+  // (what a category cannot hold, said as it is typed: pgfplots keeps a category as a symbol's name)
+  const warn = mk('p', 'tb-note pd-catnote');
+  warn.setAttribute('role', 'status'); warn.setAttribute('aria-live', 'polite');
+  const catNote = () => {
+    const bad = cells.slice(1).map((r) => r[0].value.trim()).find((v) => CAT_OUT.test(v));
+    warn.textContent = bad ? 'A category is a name pgfplots keeps: & % $ # _ ^ ~ \\ { } , ( ) [ ] cannot stand in one and are left out ("' + bad.slice(0, 30) + '" is written "' + catClean(bad) + '"). A series\' name keeps them.' : '';
+    warn.hidden = !bad;
+  };
+  grid.addEventListener('input', catNote);
+  catNote();
   const ok = () => {
     const rows = [];
     for (let r = 1; r <= ROWS; r++) if (cells[r][0].value.trim()) rows.push(r);
@@ -314,7 +324,7 @@ export function chartDialog(app, edit) {
     backCaret(app);
     app.runCommand('insert-chart', { kind: k, cats, series });
   };
-  p.append(row('tb-sec', kind), row('tb-sec', mk('div', 'tb-gl', 'Data'), grid, mk('p', 'tb-note', 'Written as a pgfplots axis with its coordinates in the source; click the chart on the page to edit them here again.')), buttons(app, ok, () => backCaret(app)));
+  p.append(row('tb-sec', kind), row('tb-sec', mk('div', 'tb-gl', 'Data'), grid, warn, mk('p', 'tb-note', 'Written as a pgfplots axis with its coordinates in the source; click the chart on the page to edit them here again.')), buttons(app, ok, () => backCaret(app)));
   p.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('input')) { e.preventDefault(); ok(); } });
   place(app, p);
   cells[1][0].focus(); cells[1][0].select();
