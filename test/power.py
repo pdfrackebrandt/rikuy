@@ -340,6 +340,20 @@ def insertlist(page):
     load_doc(page, PLAIN)
     click_text(page, 'gamma.', 6); key(page, 'Enter'); insert_list(page, 'proof'); typed(page, 'Easy.')
     check('insertlist: a proof brings amsthm', '\\usepackage{amsmath,amsthm}' in src(page) or '\\usepackage{amsthm}' in src(page), src(page)[:120])
+    # (review M2) a block typed in a heading goes after the heading and its label; in a caption it is
+    # refused; a list comes with its first \item, a tabular with columns
+    D = PLAIN.replace('Alpha beta', '\\section{Intro words}\\label{s:i}\n\nAlpha beta').replace('Last one.', '\\begin{figure}\n  \\centering\n  \\caption{Results here}\n\\end{figure}\n\nLast one.')
+    load_doc(page, D)
+    click_text(page, 'Intro words', 5); insert_list(page, 'figure'); typed(page, 'Cap')
+    s = src(page)
+    check('insertlist: a figure typed in a heading goes after the heading and its label', '\\section{Intro words}\\label{s:i}' in s and s.index('\\begin{figure}[htbp]') > s.index('\\label{s:i}') and '\\caption{Cap}' in s, s[60:260])
+    load_doc(page, D)
+    click_text(page, 'Results here', 7); before = src(page); insert_list(page, 'theorem')
+    check('insertlist: a theorem typed in a caption is refused, the source unchanged', src(page) == before and 'caption' in page.evaluate("(document.getElementById('toast') || {}).textContent || ''"), src(page)[60:300])
+    for env, want in (('itemize', '\\begin{itemize}\n  \\item X\n\\end{itemize}'), ('enumerate', '\\begin{enumerate}\n  \\item X\n\\end{enumerate}'), ('tabular', '\\begin{tabular}{ll}\n  X & \\\\\n\\end{tabular}')):
+        load_doc(page, PLAIN)
+        click_text(page, 'gamma.', 6); key(page, 'Enter'); insert_list(page, 'begin{' + env + '}'); typed(page, 'X')
+        check('insertlist: begin{' + env + '} writes a ' + env + ' TeX takes', want in src(page), src(page)[60:200])
 
 
 def repeat(page):

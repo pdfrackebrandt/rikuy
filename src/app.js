@@ -3593,18 +3593,50 @@ class App {
     const inner = base.a !== base.b && isBalanced(src, base.a, base.b) ? src.slice(base.a, base.b) : '';
     this.commit([{ f: base.f, s: base.a, e: inner ? base.b : base.a, t: open + inner + close }], { f: base.f, p: base.a + open.length + inner.length, bias: 1 }, 'insert');
   }
+  // Where a block (a figure, an environment, a list) typed from the insert list goes (review M2):
+  // base as it is; after the heading it was typed in, and the heading's \label; inside another
+  // command's argument (a caption, the title, a footnote), where it broke the command, nowhere
+  // (false), said why. A bare group, {\bf ...}, takes it as the paragraph would.
+  blockBase(base) {
+    if (!base) return base;
+    const src = this.src(base.f), B = this.renderer && this.renderer.blocks.find((x) => x.f === base.f && x.s <= base.a && base.a <= x.e);
+    if (!B) return base;
+    // the braces open at the caret, from the block's start
+    const opens = [];
+    for (let k = B.s; k < base.a; k++) {
+      const ch = src[k];
+      if (ch === '\\') { k++; continue; }
+      if (ch === '{') opens.push(k); else if (ch === '}') opens.pop();
+    }
+    if (!opens.length) return base;
+    const open = opens[0];
+    const m = /\\([A-Za-z]+)\*?\s*(?:\[[^\]]*\]\s*)?$/.exec(src.slice(Math.max(B.s, open - 60), open));
+    const name = m ? m[1] : '';
+    if (!name) return base;
+    if (/^(part|chapter|section|subsection|subsubsection|paragraph|subparagraph)$/.test(name)) {
+      const lab = /^\s*\\label\s*\{[^}]*\}/.exec(src.slice(B.e));
+      const p = B.e + (lab ? lab[0].length : 0);
+      return { f: base.f, a: p, b: p };
+    }
+    this.toast('Not inside \\' + name + '{…}: put the caret after it, then the block.', 5000);
+    return false;
+  }
   // What was typed in the insert list as a command of its own (POWER-USER.md 10): it was written
   // as typed, \alpha and \frac into the text, where TeX stops (Missing $ inserted). A math
   // command opens a formula holding it; \begin{name} writes the environment; others as typed.
   runPaletteRaw(k, base, ghost) {
-    const insertAt = (open, close) => this.insertPiece(base, ghost, open, close);
     const env = /^begin\s*\{?\s*([A-Za-z]+\*?)?\s*\}?$/.exec(k);
+    if (env && env[1]) { base = this.blockBase(base); if (base === false) return; }
+    const insertAt = (open, close) => this.insertPiece(base, ghost, open, close);
     const back = () => { if (base) this.restoreCaret({ f: base.f, p: base.a }); else if (ghost && this.ghost === ghost && ghost.el.isConnected) this.caretToGhost(); };
     if (env && !env[1]) { back(); this.runCommand('insert-env-other'); return; }
     if (env) {
       const name = env[1];
       if (/^(equation|align|gather|multline|flalign)\*?$/.test(name)) { back(); this.newDisplayMath(name); return; }
-      insertAt('\n\n\\begin{' + name + '}\n', '\n\\end{' + name + '}\n\n');
+      // (a list with its first item, a table with a column for each & of its first row: empty they
+      // stopped TeX, missing \item, a tabular with no columns)
+      const inner = /^(itemize|enumerate)$/.test(name) ? ['  \\item ', ''] : name === 'description' ? ['  \\item[', '] '] : /^(tabular|array)$/.test(name) ? ['{ll}\n  ', ' & \\\\'] : ['', ''];
+      insertAt('\n\n\\begin{' + name + '}' + (inner[0][0] === '{' ? '' : '\n') + inner[0], inner[1] + '\n\\end{' + name + '}\n\n');
       return;
     }
     if (mathOnly(k)) {
@@ -3635,6 +3667,7 @@ class App {
     this.commit([...needs, { f, s: base.a, e: inner ? base.b : base.a, t: open + inner + close }], { f, p: base.a + grow + open.length + inner.length, bias: 1 }, 'insert');
   }
   runPalette(x, base, ghost) {
+    if (x.block && !x.raw) { base = this.blockBase(base); if (base === false) return; }
     const insertAt = (open, close) => this.insertPiece(base, ghost, open, close);
     // (the caret back where the list was opened: in the blank paragraph, or at its place in the text)
     const back = () => { if (base) this.restoreCaret({ f: base.f, p: base.a }); else if (ghost && this.ghost === ghost && ghost.el.isConnected) this.caretToGhost(); };
