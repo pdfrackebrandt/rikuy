@@ -342,15 +342,21 @@ def repeat(page):
 
 def quickopen(page):
     main = '\\documentclass{article}\n\\begin{document}\n\n\\section{Intro}\n\nAlpha beta gamma.\n\n\\input{model}\n\n\\end{document}\n'
-    load_doc(page, {'main.tex': main, 'model.tex': '\\section{Model}\n\nZebra text in the second file.\n', 'refs.bib': '@book{a,\n  title = {A},\n  year = {2000}\n}\n'})
+    load_doc(page, {'main.tex': main, 'model.tex': '\\section{Model}\n\nZebra text in the second file.\n', 'refs.bib': '@book{a,\n  title = {A},\n  year = {2000}\n}\n', 'proofs.tex': '\\section{Proofs}\n'})
     click_text(page, 'Alpha', 0)
     key(page, 'Control+p', 400)
     rows = page.evaluate("[...document.querySelectorAll('.pop-qo .pitem b')].map((b) => b.textContent)")
-    check('quickopen: Ctrl+P lists Print first, then the project\'s files', rows[:1] == ['Print PDF'] and set(rows[1:]) == {'main.tex', 'model.tex', 'refs.bib'}, rows)
+    check('quickopen: Ctrl+P lists Print first, then the project\'s files', rows[:1] == ['Print PDF'] and set(rows[1:]) == {'main.tex', 'model.tex', 'refs.bib', 'proofs.tex'}, rows)
+    # (review M3) once a letter is typed the files alone: "pr" Enter opens proofs.tex, never prints
+    typed(page, 'pr')
+    rows = page.evaluate("[...document.querySelectorAll('.pop-qo .pitem b')].map((b) => b.textContent)")
+    check('quickopen: a letter typed lists the files alone, Print gone', rows[:1] == ['proofs.tex'] and 'Print PDF' not in rows, rows)
+    key(page, 'Escape', 200); click_text(page, 'Alpha', 0)
+    key(page, 'Control+p', 400)
     typed(page, 'mod'); key(page, 'Enter', 400)
     c = caret(page)
     check('quickopen: a few letters and Enter put the caret in that file on the page', c and c[0] == 'model.tex' and active(page) == 'pages', (c, active(page)))
-    key(page, 'Control+p', 400); typed(page, 'rfs'); key(page, 'Enter', 1200)
+    key(page, 'Control+p', 400); typed(page, 'refs'); key(page, 'Enter', 1200)
     check('quickopen: a file the page does not draw opens in the source pane', page.evaluate('window.rikuy.srcFile') == 'refs.bib' and page.evaluate("document.body.classList.contains('src-on')"), page.evaluate('window.rikuy.srcFile'))
     page.evaluate('window.rikuy.toggleSource(false)'); page.wait_for_timeout(300)
     click_text(page, 'Alpha', 0)

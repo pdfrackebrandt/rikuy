@@ -47,7 +47,7 @@ export function openQuickOpen(app) {
     const q = inp.value.trim();
     const files = [...app.files.keys()].filter((f) => TEXT.test(f)).map((f) => ({ f, s: fileScore(q, f) })).filter((x) => x.s > 0)
       .sort((a, b) => b.s - a.s || (a.f === app.main ? -1 : b.f === app.main ? 1 : a.f.localeCompare(b.f)));
-    rows = [...(!q || 'print'.startsWith(q.toLowerCase()) ? [{ print: true }] : []), ...files];
+    rows = [...(!q ? [{ print: true }] : []), ...files];
     hi = Math.min(hi, Math.max(0, rows.length - 1));
     list.replaceChildren();
     rows.forEach((r, i) => {
