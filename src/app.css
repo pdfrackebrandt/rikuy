@@ -2012,6 +2012,10 @@ body.view-pdf #pdf-host { width: 100%; max-width: 1040px; margin: 0 auto; }
 
 /* ---- B11: Insert › Interactive graph (src/ui/graphdialog.js) and a graph on the page ---- */
 .pop.pop-graph { width: min(860px, calc(100vw - 16px)); gap: 10px; }
+/* Export as, Web page with live graphs: what its link carries, and the choice to leave it out */
+.pop.pop-web { width: min(460px, calc(100vw - 16px)); gap: 8px; }
+.pop-web .gd-ck { display: flex; }
+@media (pointer: coarse) { .pop-web .btn { min-height: 44px; min-width: 64px; } }
 .gd-top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
 .gd-top > select { width: auto; max-width: 220px; min-height: 40px; }
 .gd-kinds { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }

@@ -1,5 +1,5 @@
 \documentclass[11pt]{article}
-\usepackage[margin=1.1in,top=0.8in]{geometry}
+\usepackage[margin=1.1in,top=0.5in]{geometry}
 \usepackage{amsmath,amssymb,amsthm}
 \usepackage{natbib}
 \usepackage{booktabs}
@@ -24,10 +24,12 @@
 \begin{document}
 \maketitle
 
-\begin{abstract}
-\noindent\rikuywidget[width=\linewidth,alt={The saving rule and the 45 degree line; their crossing is the steady state}]{graphs/saving.html}{graphs/saving.pgf}
+\begin{center}
+\rikuywidget[width=0.48\linewidth,alt={The saving rule and the 45 degree line; their crossing is the steady state}]{graphs/saving.html}{graphs/saving.pgf}
+\end{center}
 
-The graph above is live: drag a slider and the saving rule that solves the Bellman equation~\eqref{eq:bellman}, for log utility and Cobb--Douglas output, moves with its steady state. The PDF prints the same figure.
+\begin{abstract}
+The graph above is live: drag a slider and the saving rule that solves the Bellman equation~\eqref{eq:bellman}, for log utility, output $f(k) = k^{\alpha}$ and full depreciation, moves with its steady state. The PDF prints the same figure.
 
 You are reading a \LaTeX{} document that you can edit where it stands. Click into any sentence and type. Each keystroke becomes a minimal patch to the source, so the \texttt{.tex} file stays yours: no import, no export, no lock in.
 \end{abstract}
@@ -37,7 +39,7 @@ Click anywhere in this paragraph and start typing. Select a phrase and press \ke
 
 Math is an object on the page. Click $\alpha + \beta = \gamma$ to edit its source with a live preview, or type a dollar sign to insert new math. Display equations work the same way, numbers and all:
 \begin{equation}
-  V(k) = \max_{c \in [0,k]} \bigl\{ u(c) + \beta\, V\bigl(f(k) - c\bigr) \bigr\}. \label{eq:bellman}
+  V(k) = \max_{c \in [0, f(k)]} \bigl\{ u(c) + \beta\, V\bigl(f(k) - c\bigr) \bigr\}. \label{eq:bellman}
 \end{equation}
 References follow their targets: equation~\eqref{eq:bellman} renumbers itself if you add an equation above it.
 
