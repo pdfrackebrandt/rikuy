@@ -101,6 +101,34 @@ def dollars(page):
     page.wait_for_timeout(300)
     s = src(page); i = s.find('gamma.')
     check('dollars: $$x^2$$ is a display, the text after it', '\\[' in s[i:] and 'x^2' in s[i:] and '\\]' in s[i:] and 'end' in s[s.find('\\]'):] and '\\$' not in s, s[i:i + 60])
+    # $$ alone is a dollar sign at once, as before (features.py); a digit, a space, a sign or Esc
+    # after it keeps it (a price); a letter or a backslash makes it the display
+    for typed_, want, label in ((' costs $$5 now', ' Costs \\$5 now', 'a digit'), (' a $$ b', ' A \\$ b', 'a space'), (' ($$)', ' (\\$)', 'a sign')):
+        load_doc(page, MATH)
+        click_text(page, 'gamma.', 6)
+        for ch in typed_:
+            page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 25)
+        page.wait_for_timeout(300)
+        s = src(page)
+        check('dollars: $$ then ' + label + ' is a dollar sign', 'gamma.' + want + '\n' in s and active(page) == 'pages', (s[60:140], active(page)))
+    load_doc(page, MATH)
+    click_text(page, 'gamma.', 6)
+    for ch in ' x$$': page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 25)
+    check('dollars: $$ writes the dollar sign at once', 'gamma. x\\$\n' in src(page), src(page)[60:120])
+    key(page, 'Escape', 200); typed(page, 'y')
+    check('dollars: Esc after $$ keeps it', 'gamma. x\\$y\n' in src(page), src(page)[60:120])
+    load_doc(page, MATH)
+    click_text(page, 'gamma.', 6); key(page, 'Enter')
+    for ch in '$$\\alpha+1$$ end':
+        page.keyboard.type(ch); page.wait_for_timeout(300 if ch == '$' else 30)
+    page.wait_for_timeout(300)
+    s = src(page); i = s.find('gamma.')
+    check('dollars: $$\\alpha+1$$ is a display holding \\alpha', '\\[' in s[i:] and '\\alpha+1' in s[i:] and 'end' in s[s.find('\\]'):] and '\\$' not in s, s[i:i + 60])
+    seen = []
+    for _ in range(5):
+        if src(page) == MATH: break
+        key(page, 'Control+z', 300); seen.append(src(page))
+    check('dollars: undo goes back to the start, the dollar sign $$ wrote never among its steps', src(page) == MATH and not any('\\$' in x for x in seen), [x[60:120] for x in seen])
     # Esc in the insert list keeps what was typed (review M6)
     load_doc(page, MATH)
     click_text(page, 'gamma.', 6); typed(page, ' '); typed(page, '\\', 300); typed(page, 'LaTeX'); key(page, 'Escape', 300)
