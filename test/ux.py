@@ -268,7 +268,19 @@ def doc_name(page, w):
     check(f'no sideways scroll ({w})', page.evaluate('document.documentElement.scrollWidth') <= width)
 
 
-PARTS = {'doc_name': (doc_name, [(390, False), (360, True), (700, False), (1366, True)]),
+def sample_spelling(page, w):
+    """The document a newcomer opens first has no red marks: its words of the trade are its own
+    list (% rikuy: words, what Add to Dictionary writes) and it is spelled as its language."""
+    try:
+        page.wait_for_function("document.getElementById('st-lang') && document.getElementById('st-lang').dataset.st === 'ok'", timeout=15000)
+    except Exception:
+        pass
+    st = page.evaluate("[document.getElementById('st-lang').textContent, document.getElementById('st-lang').dataset.st, (window.rikuy.sp && window.rikuy.sp.bad || []).length]")
+    check(f'the sample opens with no spelling errors ({w})', st[1] == 'ok' and st[2] == 0 and 'spelling error' not in st[0], st)
+
+
+PARTS = {'sample_spelling': (sample_spelling, [(1366, False), (390, True)]),
+         'doc_name': (doc_name, [(390, False), (360, True), (700, False), (1366, True)]),
          'panes': (panes, [(1366, False), (1920, True), (390, False)]),
          'status_bar': (status_bar, None),
          'file_view': (file_view, [(1366, False), (1920, True), (390, False), (360, True)]),

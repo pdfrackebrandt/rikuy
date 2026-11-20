@@ -109,14 +109,15 @@ second) is the one number a Word user would call slow; it is the model's and the
   390 px phone), and the menu panel (the bar's first button) starts with the name and Saved on
   every window up to 980 px. `test/ux.py doc_name`.
 
-### 7. The sample opens with 16 spelling errors (MEDIUM, small)
+### 7. The sample opens with 16 spelling errors (MEDIUM, small) — fixed
 
 - **Where:** the built in sample (`sample/main.tex`).
 - **Rikuy did:** the first page a newcomer sees has red marks under Rikuy (its own name), Ctrl,
   Cmd, TikZ, WebAssembly, recompiles, pdf and the British "emphasise" in a US English document,
   and the status bar's red dot says "16 spelling errors".
-- **Fix:** the sample's own word list (`% rikuy: words`, what Add to Dictionary writes) and
-  "emphasize".
+- **Status:** fixed ("Open the sample without red marks"): `sample/main.tex` has its own word list
+  (`% rikuy: words Rikuy Ctrl Cmd TikZ WebAssembly recompiles pdf`, what Add to Dictionary writes,
+  so it also shows the feature) and "emphasize". `test/ux.py sample_spelling`.
 
 ### 8. Phones cannot reach Make available offline (MEDIUM, small) — fixed
 
