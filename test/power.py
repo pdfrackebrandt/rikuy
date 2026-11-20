@@ -8,7 +8,8 @@ LaTeX typed into the equation field as it is typed in the source, braces and all
 field cannot hold carried on in its LaTeX box (3). tab: Tab keeps the keyboard on the page, a
 first line indent at a paragraph's start, a gap elsewhere; Esc then Tab leaves (6). pickers: the
 reference and citation pickers by the keys, Enter closing them, with what each label names (7).
-follow: F12 or Ctrl+click on a cross reference goes to its label, Shift+F5 back; Enter or F2 on a
+follow: F12 on a cross reference selected, or Ctrl+click on it, goes to its label, Shift+F5 back
+(F12 beside one is Save As); Enter or F2 on a
 formula selected alone opens it (8). linear: Ctrl+Shift+= in a new equation shows that equation
 as its LaTeX on the page, never the paragraph before it (13). modes: Esc leaves Focus and Read
 Mode with the caret on the page. keytips: F10 (or Alt), a tab's letter, then a command's letters run it
@@ -174,8 +175,17 @@ FOLLOW = ('\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n\
 def follow(page):
     load_doc(page, FOLLOW)
     there = FOLLOW.index('\\section{Model}')
+    # F12 with the caret beside a reference, nothing selected, is Save As, as Word's (review H1)
+    click_text(page, ' now', 0)
+    start = caret(page)
+    try:
+        with page.expect_download(timeout=5000) as d: key(page, 'F12', 400)
+        got = d.value.suggested_filename
+    except Exception: got = None
+    check('follow: F12 beside a reference, nothing selected, downloads (Save As) and stays', got and caret(page) == start, (got, caret(page), start))
     for how in ('F12', 'Ctrl+click'):
         click_text(page, ' now', 0)
+        if how == 'F12': key(page, 'Shift+ArrowLeft')
         start = caret(page)
         if how == 'F12': key(page, 'F12', 400)
         else: page.click('#pages .atom >> nth=1', modifiers=['Control']); page.wait_for_timeout(400)

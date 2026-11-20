@@ -2535,19 +2535,12 @@ class App {
     const rest = r.toString().replace(el.textContent, '').replace(/[\u200B\s]/g, '');
     return rest ? null : { el, info };
   }
-  // The cross reference at the caret (selected, or touching it): its atom's info, or null
+  // The cross reference selected alone (Shift and an arrow over it): its atom's info, or null. Not
+  // one the caret only touches: a caret is always at a reference's edge after it is put in, the
+  // moment a Word user presses F12 to save (review H1)
   refHere() {
     const S = this.atomSelected();
-    if (S) return S.info.a.kind === 'ref' ? S.info : null;
-    const c = this.caretNow(), sel = getSelection();
-    if (!c || c.ghost || !c.collapsed || !sel.rangeCount) return null;
-    const n = sel.anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement), it = el && el.closest('.it');
-    if (!it) return null;
-    for (const a of it.querySelectorAll('.atom')) {
-      const info = atomOfEl(a);
-      if (info && info.a.kind === 'ref' && info.f === c.f && info.s <= c.a && c.a <= info.e) return info;
-    }
-    return null;
+    return S && S.info.a.kind === 'ref' ? S.info : null;
   }
   // Go to the label a cross reference points to (F12 on it, or Ctrl+click), as Go To does for a
   // label; Shift+F5 comes back here while nothing has been edited since (src/cmd/find.js goBack)
@@ -2557,7 +2550,8 @@ class App {
     const key = m ? m[1].split(',')[0].trim() : '';
     if (!key || !this.labelPlaces().has(key)) { this.toast(key ? 'No \\label{' + key + '} in this project.' : 'This reference names no label.'); return false; }
     const c = this.caretNow();
-    const back = c && !c.ghost ? { f: c.f, p: c.a } : { f: info.f, p: info.e, bias: 1 };
+    // (back to the reference as it was selected, or the caret where it was)
+    const back = c && !c.ghost ? (c.collapsed ? { f: c.f, p: c.a } : { f: c.f, p: c.a, selA: c.a, selB: c.b }) : { f: info.f, p: info.e, bias: 1 };
     const r = this.goToTarget('label', key);
     if (!r.ok) { this.toast(r.msg); return false; }
     this.followBack = { back, n: this.hist.length };
