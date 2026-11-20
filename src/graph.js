@@ -912,11 +912,179 @@ export function graphKit() {
   const tickText = (v, step) => fmtStep(v, step);
 
   // ---- drawing ----------------------------------------------------------------------------------
-  // The reference palette's categorical slots in their fixed order (on white paper), ink and
-  // recessive grid: the page is paper in dark mode too, so one set
+  // The reference palette's categorical slots in their fixed order, ink and recessive grid on
+  // white paper; View, Dark page gives the frame the dark paper's (theme). The PDF's are always
+  // the white paper's: the editor's kit is never given another.
   const SLOT = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#8a5cc7', '#d23f6e'];
-  const INK = '#0b0b0b', INK2 = '#52514e', GRID = '#e8e7e3', ZERO = '#b9b8b3';
-  const FONT = 'Georgia, "Times New Roman", Times, serif';
+  let INK, INK2, GRID, ZERO, PAPER;
+  function theme(dark) {
+    [INK, INK2, GRID, ZERO, PAPER] = dark ? ['#e4e7eb', '#a9b2bc', '#2c333b', '#4d5762', '#1e2227'] : ['#0b0b0b', '#52514e', '#e8e7e3', '#b9b8b3', '#ffffff'];
+  }
+  theme(false);
+  // The paper's faces: KaTeX's Computer Modern, which the page sets its math in and TeX the PDF's
+  // labels, once the page has sent them to the frame (mount); the nearest serif until then
+  const RM = '"KaTeX_Main", "Paper Modern Serif", "Latin Modern Roman", "CMU Serif", "Times New Roman", serif';
+  const MI = '"KaTeX_Math", ' + RM;
+  const FONT = RM;
+
+  // ---- a label set as TeX sets it -----------------------------------------------------------------
+  // A run: [text, face, size, raise, accent, space before, under a radical]: face 'i' math italic,
+  // 'r' roman; size and raise in the label's size (a superscript 0.7 and up 0.36, a subscript
+  // down 0.2); accent 'd' a dot above; the space in ems, TeX's (a binary operator's 4/18 each
+  // side, a relation's 5/18, in text size only). The PDF gets the same label as LaTeX (TEXER).
+  const PR = { '<': 0, '>': 0, '<=': 0, '>=': 0, '+': 1, '-': 1, '*': 2, '/': 2, neg: 3, '^': 4 };
+  const pr = (t) => (t[0] in PR ? PR[t[0]] : 5);
+  function nameRuns(n, z, y, o, acc) {
+    const m = /^([^_]+)(?:_(.+))?$/.exec(n) || [n, n];
+    for (const c of m[1]) o.push([c, /[Α-Ω0-9]/.test(c) ? 'r' : 'i', z, y, acc && m[1].length === 1 ? acc : 0]);
+    if (m[2]) for (const c of m[2]) o.push([c, /[^A-Za-zα-ω]/.test(c) ? 'r' : 'i', z * 0.7, y + 0.2 * z]);
+  }
+  function mathRuns(t, z, y, o) {
+    const put = (s) => o.push([s, 'r', z, y]);
+    const op = (s, em) => { o.push([s, 'r', z, y, 0, z === 1 ? em : 0]); o.push(['', 'r', z, y, 0, z === 1 ? em : 0]); };
+    const P = (x, min) => { if (pr(x) < min) { put('('); mathRuns(x, z, y, o); put(')'); } else mathRuns(x, z, y, o); };
+    const sup = (x) => mathRuns(x, z * 0.7, y - 0.36 * z, o);
+    switch (t[0]) {
+      case 'n': {
+        const m = /^(.*)e([-+]?\d+)$/.exec(String(t[1]));
+        if (!m) { put(String(t[1])); return; }
+        if (m[1] !== '1') { put(m[1]); op('·', 0.22); }
+        put('10'); o.push([String(+m[2]).replace('-', '−'), 'r', z * 0.7, y - 0.36 * z]);
+        return;
+      }
+      case 'v': nameRuns(t[1], z, y, o); return;
+      case 'neg': put('−'); P(t[1], 3); return;
+      case 'f': {
+        const [, n, a] = t;
+        if (n === 'sqrt' || n === 'root') {
+          if (n === 'root') mathRuns(a[1], z * 0.5, y - 0.45 * z, o);
+          put('√');
+          const k = o.length;
+          mathRuns(a[0], z, y, o);
+          for (let i = k; i < o.length; i++) o[i][6] = 1;
+          return;
+        }
+        if (n === 'abs') { put('|'); mathRuns(a[0], z, y, o); put('|'); return; }
+        if (n === 'frac') { P(a[0], 2); put('/'); P(a[1], 4); return; }
+        if (n === 'factorial') { P(a[0], 5); put('!'); return; }
+        put(n); put('(');
+        a.forEach((x, k) => { if (k) { put(','); o.push(['', 'r', z, y, 0, 0.17]); } mathRuns(x, z, y, o); });
+        put(')');
+        return;
+      }
+    }
+    const [k, a, b] = t;
+    if (k === '^') {
+      // (after an italic letter, its italic correction; on a letter with a subscript, the
+      // superscript over the subscript, as TeX stacks them)
+      P(a, 5);
+      const last = o[o.length - 1], under = last && last[3] > y;
+      if (last && last[1] === 'i' && !under) o.push(['', 'r', z, y, 0, 0.06]);
+      const n = o.length;
+      sup(b);
+      if (under && o[n]) o[n][7] = 's';
+      return;
+    }
+    if (k === '/') { P(a, 2); put('/'); P(b, 4); return; }
+    if (k === '*') {
+      // a product as written: 2x, sk^α; a number after anything gets its dot
+      P(a, 2);
+      if (b[0] === 'n' || b[0] === 'neg') op('·', 0.22);
+      P(b, 3);
+      return;
+    }
+    P(a, 1);
+    if (k === '+' || k === '-') { op(k === '+' ? '+' : '−', 0.22); P(b, 2); return; }
+    op({ '<': '<', '>': '>', '<=': '≤', '>=': '≥' }[k] || k, 0.28);
+    P(b, 1);
+  }
+  const rel = (o, s) => { o.push([s, 'r', 1, 0, 0, 0.28]); o.push(['', 'r', 1, 0, 0, 0.28]); return o; };
+  // a legend's left side: p, k′, k̇, x₁, f(x)
+  function lhsRuns(yl, o) {
+    const m1 = /^([A-Za-zα-ωΑ-Ω])([̇′']?)(_[A-Za-z0-9]{1,8})?$/.exec(yl), m2 = /^([A-Za-zα-ωΑ-Ω]\w*)\(([A-Za-zα-ωΑ-Ω]\w*(?:_\w+)?)\)$/.exec(yl);
+    if (m1) { nameRuns(m1[1], 1, 0, o, m1[2] === '̇' ? 'd' : 0); if (m1[2] && m1[2] !== '̇') o.push(['′', 'r', 0.7, -0.36]); if (m1[3]) nameRuns('_' + m1[3].slice(1), 1, 0, o); }
+    else if (m2) { nameRuns(m2[1], 1, 0, o); o.push(['(', 'r', 1, 0]); nameRuns(m2[2], 1, 0, o); o.push([')', 'r', 1, 0]); }
+    else nameRuns('y', 1, 0, o);
+    return o;
+  }
+  // a label's words: a letter alone is a variable, Greek as Greek, words and numbers upright
+  function labelRuns(t) {
+    const o = [], re = /([A-Za-zα-ωΑ-Ω])(̇?)(_[A-Za-z0-9]{1,8})?(?![A-Za-zα-ωΑ-Ω])|(−?\d+(?:\.\d+)?)|([A-Za-z]{2,})|([\s\S])/g;
+    let m;
+    while ((m = re.exec(String(t))) && o.length < 200) {
+      if (m[1]) nameRuns(m[1] + (m[3] || ''), 1, 0, o, m[2] ? 'd' : 0);
+      else if (m[4] || m[5]) o.push([m[4] || m[5], 'r', 1, 0]);
+      else if (m[6] === '′' || m[6] === '²' || m[6] === '³') o.push([m[6] === '′' ? '′' : m[6] === '²' ? '2' : '3', 'r', 0.7, -0.36]);
+      else o.push([m[6], /[α-ω]/.test(m[6]) ? 'i' : 'r', 1, 0]);
+    }
+    return o;
+  }
+  const RUNS = new Map();
+  function seriesRuns(S, s) {
+    const d = S.tx;
+    if (!d) return labelRuns(S.label);
+    const key = d.join('\u0001') + '\u0001' + s.y.label;
+    if (RUNS.has(key)) return RUNS.get(key);
+    const dec = s.sliders.map((q) => q.name);
+    let o = [];
+    try {
+      if (d[0] === 'fn') mathRuns(parse(d[2], dec), 1, 0, rel(lhsRuns(d[1], o), '='));
+      else if (d[0] === 'param') { o.push(['(', 'r', 1, 0]); mathRuns(parse(d[1], dec), 1, 0, o); o.push([',', 'r', 1, 0], ['', 'r', 1, 0, 0, 0.5]); mathRuns(parse(d[2], dec), 1, 0, o); o.push([')', 'r', 1, 0]); }
+      else if (d[0] === 'eq') { const t = parseEq(d[1], dec); if (t[0] === '-' && /=/.test(d[1])) { mathRuns(t[1], 1, 0, o); mathRuns(t[2], 1, 0, rel(o, '=')); } else { mathRuns(t, 1, 0, o); rel(o, '=').push(['0', 'r', 1, 0]); } }
+      else if (d[0] === 'dot') { nameRuns(d[1], 1, 0, o, 'd'); rel(o, '=').push(['0', 'r', 1, 0]); }
+      else o = labelRuns(S.label);
+    } catch (e) { o = labelRuns(S.label); }
+    if (RUNS.size > 60) RUNS.clear();
+    RUNS.set(key, o);
+    return o;
+  }
+  const sliderRuns = (parts) => {
+    const o = [];
+    parts.forEach(([n, v], k) => { if (k) o.push([',', 'r', 1, 0], ['', 'r', 1, 0, 0, 0.5]); nameRuns(n, 1, 0, o); rel(o, '=').push([v, 'r', 1, 0]); });
+    return o;
+  };
+  const face = (r, px) => (r[1] === 'i' ? 'italic ' : '') + (px * r[2]).toFixed(2) + 'px ' + (r[1] === 'i' ? MI : RM);
+  // Where each run of a label starts, and the label's width: est, from tw (the layout's measure,
+  // the same for the PDF), else from the font. A run marked 's' starts back where the subscript
+  // before it did; what follows starts past the longer of the two.
+  function place(g, R, px, est) {
+    const xs = [];
+    let x = 0, sub = null, end = 0, stack = false;
+    for (const r of R) {
+      if (stack && r[3] >= 0 && r[0]) { x = Math.max(x, end); stack = false; }
+      if (r[5]) x += r[5] * px;
+      if (r[7] === 's' && sub !== null) { end = x; x = sub; stack = true; }
+      if (r[0]) { if (r[3] > 0) { if (sub === null) sub = x; } else if (!stack) sub = null; }
+      xs.push(x);
+      if (!r[0]) continue;
+      if (est) x += tw(r[0], px * r[2]) * (r[1] === 'i' ? 1.08 : 1);
+      else { g.font = face(r, px); x += g.measureText(r[0]).width; }
+    }
+    return [xs, stack ? Math.max(x, end) : x];
+  }
+  const runsW = (g, R, px, est) => place(g, R, px, est)[1];
+  // (where a baseline falls below the point textBaseline names, in ems)
+  const DROP = { top: 0.75, hanging: 0.75, middle: 0.27, alphabetic: 0, bottom: -0.24, ideographic: -0.24 };
+  // Draw a label at x, y as g.textAlign and g.textBaseline say: run by run on a canvas; in one
+  // piece on the PDF's context, given its LaTeX (tex())
+  function put(g, R, tex, x, y, px) {
+    if (g.tex) { g.font = px + 'px ' + RM; g.rkTex = tex(); g.fillText(R.map((r) => r[0]).join(''), x, y); g.rkTex = null; return; }
+    const a = g.textAlign, b = g.textBaseline, [xs, w] = place(g, R, px);
+    const x0 = a === 'center' ? x - w / 2 : a === 'right' || a === 'end' ? x - w : x, by = y + (DROP[b] || 0) * px;
+    let over = null;
+    g.textAlign = 'left'; g.textBaseline = 'alphabetic';
+    R.forEach((r, k) => {
+      if (!r[0]) return;
+      const cx = x0 + xs[k];
+      g.font = face(r, px);
+      const ry = by + r[3] * px, rw = g.measureText(r[0]).width;
+      g.fillText(r[0], cx, ry);
+      if (r[4] === 'd') { g.beginPath(); g.arc(cx + rw * 0.62, ry - 0.8 * px * r[2], 0.06 * px * r[2] + 0.5, 0, 2 * Math.PI); g.fill(); }
+      if (r[6]) over = over ? [over[0], cx + rw, Math.min(over[2], ry - 0.8 * px * r[2])] : [cx, cx + rw, ry - 0.8 * px * r[2]];
+    });
+    if (over) { g.lineWidth = Math.max(0.6, px / 20); g.strokeStyle = g.fillStyle; g.beginPath(); g.moveTo(over[0], over[2]); g.lineTo(over[1], over[2]); g.stroke(); }
+    g.textAlign = a; g.textBaseline = b;
+  }
 
   // paint(g, s, data, R, vals, W, H, hover, ghost): one picture on a 2D context of W by H CSS
   // pixels. data from compute, R from ranges; hover { x, y } in pixels for the live figure's
@@ -930,18 +1098,100 @@ export function graphKit() {
     g.font = '12px ' + FONT;
     let [x0, x1] = R.X, [y0, y1] = R.Y;
     const yt0 = ticks(y0, y1, Math.max(3, Math.round(H / 55)));
+    // A short y label (k′, p, x₂) stands upright over its axis, in a line above the plot that
+    // also holds the sliders' values; a longer one reads upwards beside the axis
+    const yl = s.y.label, ylR = yl ? labelRuns(yl) : null, ylW = yl ? runsW(g, ylR, 13, true) : 0;
+    const yShort = yl && !/\s/.test(yl) && ylW <= 40, head = s.sliders.length > 0 || yShort;
     let L = 14;
     for (const v of yt0.out) L = Math.max(L, tw(tickText(v, yt0.step), 12) + 12);
-    if (s.y.label) L += 16;
-    const Rm = 14, T = 12, B = 28 + (s.x.label ? 16 : 0);
-    const pw = Math.max(10, W - L - Rm), ph = Math.max(10, H - T - B);
-    if (R.equal) {
-      // a circle drawn as a circle: the larger of the two scales for both
-      const sx = (x1 - x0) / pw, sy = (y1 - y0) / ph, k = Math.max(sx, sy);
-      const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
-      x0 = cx - k * pw / 2; x1 = cx + k * pw / 2; y0 = cy - k * ph / 2; y1 = cy + k * ph / 2;
+    if (yl && !yShort) L += 16;
+    if (yShort) L = Math.max(L, ylW / 2 + 4);
+    const Rm = 14, B = 28 + (s.x.label ? 16 : 0), HB = 20, pw = Math.max(10, W - L - Rm);
+    // The plot below the lines over it (rows: how many the legend takes there, where it goes)
+    let T, ph, X, Y;
+    const frame = (rows) => {
+      T = head || rows ? 30 + 16 * Math.max(0, rows - 1) : 12;
+      ph = Math.max(10, H - T - B);
+      [x0, x1] = R.X; [y0, y1] = R.Y;
+      if (R.equal) {
+        // a circle drawn as a circle: the larger of the two scales for both
+        const sx = (x1 - x0) / pw, sy = (y1 - y0) / ph, k = Math.max(sx, sy);
+        const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+        x0 = cx - k * pw / 2; x1 = cx + k * pw / 2; y0 = cy - k * ph / 2; y1 = cy + k * ph / 2;
+      }
+      X = (x) => L + (x - x0) / (x1 - x0) * pw; Y = (y) => T + ph - (y - y0) / (y1 - y0) * ph;
+    };
+    frame(0);
+    // Where the ink is, for the labels to keep off it: every curve's points, 4 px apart at most,
+    // the bars, the dots, an equilibrium's guides, a field's arrows. No label has a box behind it:
+    // each goes where none of these points is (lengths from tw, so the PDF's labels go where
+    // these do), the legend over the plot only in a corner no curve crosses
+    let ink;
+    const inkOf = () => {
+      ink = [];
+      const X0 = L - 20, X1 = L + pw + 20, Y0 = T - 20, Y1 = T + ph + 20;
+      const dot = (a, b) => { if (a >= X0 && a <= X1 && b >= Y0 && b <= Y1) ink.push(a, b); };
+      const seg = (a, b, c, d) => { const n = Math.min(120, Math.ceil(Math.hypot(c - a, d - b) / 4)); for (let i = 0; i <= n; i++) dot(a + (c - a) * i / n, b + (d - b) * i / n); };
+      const trace = (pts) => {
+        let p = null;
+        for (const q of pts) {
+          if (!q || !Number.isFinite(q[0]) || !Number.isFinite(q[1])) { p = null; continue; }
+          const c = [X(q[0]), Y(q[1])];
+          if (p && Math.max(Math.abs(c[1] - p[1]), Math.abs(c[0] - p[0])) < 2 * (pw + ph)) seg(p[0], p[1], c[0], c[1]); else dot(c[0], c[1]);
+          p = c;
+        }
+      };
+      // (the starting values' faint curves too: a label on them is on a curve)
+      for (const S of ghost ? data.series.concat(ghost.series.filter((S) => !S.traj && S.kind !== 'mark')) : data.series) {
+        if (S.kind === 'line' || S.kind === 'area') trace(S.pts);
+        else if (S.kind === 'segs') for (const l of S.lines) trace(l);
+        else if (S.kind === 'points' || S.kind === 'start' || S.kind === 'arrows') for (const q of S.pts) dot(X(q[0]), Y(q[1]));
+        else if (S.kind === 'mark') { const px = X(S.pts[0][0]), py = Y(S.pts[0][1]); seg(px, py, px, T + ph); seg(px, py, L, py); }
+        else if (S.kind === 'bars') for (const [x, y] of S.pts) { if (!(y > 0)) continue; const a = X(x - S.w / 2), b = X(x + S.w / 2), top = Math.max(T, Y(y)); for (let v = top; v <= T + ph; v += 6) seg(a, v, b, v); }
+      }
+    };
+    inkOf();
+    const hits = (x, y, w, h) => {
+      let n = 0;
+      for (let i = 0; i < ink.length; i += 2) if (ink[i] >= x - 4 && ink[i] <= x + w + 4 && ink[i + 1] >= y - 4 && ink[i + 1] <= y + h + 4) n++;
+      return n;
+    };
+    // the sliders' values, in the line over the plot, right: the picture says what it shows, in
+    // the PDF too
+    const parts = s.sliders.map((q) => [q.name, fmtStep(q.name in vals ? vals[q.name] : q.value, q.step)]), sr = sliderRuns(parts);
+    const srW = parts.length ? runsW(g, sr, 12, true) + 18 : 0;
+    // The legend: each series' swatch and its formula, in a corner of the plot no curve passes;
+    // else in rows over the plot (three at most: the first beside the y label and the sliders'
+    // values); else in the corner fewest cross
+    const items = data.series.filter((S) => S.label && !/^(mark|start|arrows)$/.test(S.kind) && !(s.kind === 'data' && S.kind === 'points' && data.series.length === 1)).map((S) => {
+      let r = seriesRuns(S, s), w = runsW(g, r, 12, true), whole = true;
+      if (w > pw - 50) { const t = clip(S.label, pw - 50); r = labelRuns(t); w = runsW(g, r, 12, true); whole = t === S.label; }
+      return { S, r, w, whole };
+    });
+    let box = null, rows = null;
+    if (items.length) {
+      const lw = Math.max(...items.map((it) => it.w)) + 27, lh = items.length * 17 + 2;
+      const corner = () => [[L + 8, T + 4], [L + pw - 6 - lw, T + 4], [L + 8, T + ph - 6 - lh], [L + pw - 6 - lw, T + ph - 6 - lh]].map(([x, y]) => [x, y, hits(x, y, lw, lh)]).reduce((a, b) => (b[2] < a[2] ? b : a));
+      box = corner();
+      if (box[2]) {
+        const R0 = [], hx0 = yShort ? L + ylW / 2 + 14 : L;
+        let x = hx0, end = L + pw - srW;
+        for (const it of items) {
+          const w = it.w + 21;
+          if (x > (R0.length > 1 ? L : hx0) && x + w > end) { if (R0.length === 3) break; x = L; end = L + pw; R0.push([]); }
+          if (!R0.length) R0.push([]);
+          R0[R0.length - 1].push([it, x]);
+          x += w + 16;
+        }
+        if (R0.flat().length === items.length && R0.length <= 3) {
+          rows = R0;
+          frame(rows.length);
+          inkOf();
+          box = null;
+        } else box = corner();
+      }
+      if (box) box = [box[0], box[1], lw, lh];
     }
-    const X = (x) => L + (x - x0) / (x1 - x0) * pw, Y = (y) => T + ph - (y - y0) / (y1 - y0) * ph;
     const clampPx = (v) => Math.max(-1e5, Math.min(1e5, v));
     const xt = ticks(x0, x1, Math.max(3, Math.round(pw / 80))), yt = R.equal ? ticks(y0, y1, Math.max(3, Math.round(ph / 55))) : yt0;
     // grid, then the zero lines, then the frame's two sides
@@ -973,11 +1223,11 @@ export function graphKit() {
     }
     g.textAlign = 'right'; g.textBaseline = 'middle';
     for (const v of yt.out) { const p = Y(v); g.beginPath(); g.moveTo(L - 4, Math.round(p) + 0.5); g.lineTo(L, Math.round(p) + 0.5); g.stroke(); g.fillText(tickText(v, yt.step), L - 6, p); }
-    g.font = 'italic 13px ' + FONT;
+    // the axes' titles, as typeset labels
     g.fillStyle = INK;
-    if (s.x.label) { g.textAlign = 'center'; g.textBaseline = 'bottom'; if (g.tex) g.rkTex = g.tex.label(s.x.label); g.fillText(s.x.label, L + pw / 2, H - 2); }
-    if (s.y.label) { g.save(); g.translate(12, T + ph / 2); g.rotate(-Math.PI / 2); g.textAlign = 'center'; g.textBaseline = 'middle'; if (g.tex) g.rkTex = g.tex.label(s.y.label); g.fillText(s.y.label, 0, 0); g.restore(); }
-    g.rkTex = null;
+    if (s.x.label) { g.textAlign = 'center'; g.textBaseline = 'bottom'; put(g, labelRuns(s.x.label), () => g.tex.label(s.x.label), L + pw / 2, H - 2, 13); }
+    if (yShort) { g.textAlign = 'center'; g.textBaseline = 'alphabetic'; put(g, ylR, () => g.tex.label(yl), L, HB, 13); }
+    else if (yl) { g.save(); g.translate(12, T + ph / 2); g.rotate(-Math.PI / 2); g.textAlign = 'center'; g.textBaseline = 'middle'; put(g, ylR, () => g.tex.label(yl), 0, 0, 13); g.restore(); }
     // the data, clipped to the plot
     g.save();
     g.beginPath(); g.rect(L, T - 1, pw + 1, ph + 2); g.clip();
@@ -1031,7 +1281,7 @@ export function graphKit() {
         for (const [x, y] of S.pts) {
           g.beginPath(); g.arc(X(x), Y(y), 4, 0, 2 * Math.PI);
           g.fillStyle = col; g.fill();
-          g.lineWidth = 1.5; g.strokeStyle = '#ffffff'; g.stroke();
+          g.lineWidth = 1.5; g.strokeStyle = PAPER; g.stroke();
         }
         continue;
       }
@@ -1049,23 +1299,19 @@ export function graphKit() {
         continue;
       }
       if (S.kind === 'mark') {
-        // an equilibrium: dashed to both axes, a dot, its coordinates beside it
+        // an equilibrium: dashed to both axes and a dot (its coordinates below, where no curve is)
         const [x, y] = S.pts[0], px = X(x), py = Y(y);
         g.strokeStyle = INK2; g.lineWidth = 1; g.setLineDash([4, 3]);
         g.beginPath(); g.moveTo(px, py); g.lineTo(px, T + ph); g.moveTo(px, py); g.lineTo(L, py); g.stroke();
         g.setLineDash([]);
         g.beginPath(); g.arc(px, py, 4, 0, 2 * Math.PI); g.fillStyle = INK; g.fill();
-        g.font = '12px ' + FONT; g.textAlign = px > L + pw - 90 ? 'right' : 'left'; g.textBaseline = 'bottom';
-        g.fillStyle = INK; if (g.tex) g.rkTex = g.tex.label(S.label);
-        g.fillText(S.label, px + (g.textAlign === 'right' ? -7 : 7), py - 5);
-        g.rkTex = null;
         continue;
       }
       if (S.kind === 'start') {
         // where the path starts: a ring the reader drags
         const [x, y] = S.pts[0];
         g.beginPath(); g.arc(X(x), Y(y), 6, 0, 2 * Math.PI);
-        g.fillStyle = '#ffffff'; g.fill(); g.strokeStyle = col; g.lineWidth = 2.5; g.setLineDash([]); g.stroke();
+        g.fillStyle = PAPER; g.fill(); g.strokeStyle = col; g.lineWidth = 2.5; g.setLineDash([]); g.stroke();
         continue;
       }
       if (S.kind === 'segs') polylines(S.lines);
@@ -1095,41 +1341,39 @@ export function graphKit() {
       }
     }
     g.restore();
-    // the legend, top left inside the plot: each series' swatch and its formula, in ink
-    g.font = '12px ' + FONT;
-    g.textAlign = 'left'; g.textBaseline = 'middle';
-    const items = data.series.filter((S) => S.label && !/^(mark|start|arrows)$/.test(S.kind) && !(s.kind === 'data' && S.kind === 'points' && data.series.length === 1));
-    let ly = T + 12;
-    const lw = Math.min(pw - 24, Math.max(0, ...items.map((S) => tw(S.label, 12))) + 30);
-    if (items.length) {
-      g.fillStyle = 'rgba(255,255,255,0.86)';
-      g.fillRect(L + 6, T + 3, lw, items.length * 17 + 4);
-    }
-    for (const S of items) {
+    // the lines over the plot: the y label, the legend's rows, the sliders' values
+    if (parts.length) { g.textAlign = 'right'; g.textBaseline = 'alphabetic'; g.fillStyle = INK2; put(g, sr, () => g.tex.sliders(parts), L + pw, HB, 12); }
+    const swatch = (S, x, y) => {
       const col = SLOT[S.slot % SLOT.length];
       g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 2;
-      if (S.kind === 'points') { g.beginPath(); g.arc(L + 19, ly, 3.5, 0, 2 * Math.PI); g.fill(); }
-      else if (S.kind === 'bars') g.fillRect(L + 12, ly - 4, 14, 8);
-      else if (S.kind === 'fill') { g.globalAlpha = 0.35; g.fillRect(L + 12, ly - 5, 14, 10); g.globalAlpha = 1; }
-      else { g.setLineDash(S.dash ? [4, 3] : []); g.beginPath(); g.moveTo(L + 11, ly); g.lineTo(L + 27, ly); g.stroke(); g.setLineDash([]); }
-      g.fillStyle = INK;
-      const t = clip(S.label, lw - 26);
-      if (g.tex) g.rkTex = t === S.label ? g.tex.series(S, s) : null;
-      g.fillText(t, L + 32, ly);
-      g.rkTex = null;
-      ly += 17;
-    }
-    // the sliders' values, top right: the picture says what it shows, in the PDF too
-    if (s.sliders.length) {
-      const parts = s.sliders.map((q) => [q.name, fmtStep(q.name in vals ? vals[q.name] : q.value, q.step)]);
-      const t = parts.map(([n, v]) => n + ' = ' + v).join(',  ');
-      g.textAlign = 'right'; g.font = 'italic 12px ' + FONT;
-      const w = tw(t, 12);
-      g.fillStyle = 'rgba(255,255,255,0.86)'; g.fillRect(L + pw - w - 10, T + 3, w + 8, 17);
-      g.fillStyle = INK2;
-      if (g.tex) g.rkTex = g.tex.sliders(parts);
-      g.fillText(t, L + pw - 6, T + 12);
-      g.rkTex = null;
+      if (S.kind === 'points') { g.beginPath(); g.arc(x + 8, y, 3.5, 0, 2 * Math.PI); g.fill(); }
+      else if (S.kind === 'bars') g.fillRect(x + 1, y - 4, 14, 8);
+      else if (S.kind === 'fill') { g.globalAlpha = 0.35; g.fillRect(x + 1, y - 5, 14, 10); g.globalAlpha = 1; }
+      else { g.setLineDash(S.dash ? [4, 3] : []); g.beginPath(); g.moveTo(x, y); g.lineTo(x + 16, y); g.stroke(); g.setLineDash([]); }
+    };
+    const entry = (it, x, y) => {
+      swatch(it.S, x, y);
+      g.fillStyle = INK; g.textAlign = 'left'; g.textBaseline = 'middle';
+      put(g, it.r, () => (it.whole ? g.tex.series(it.S, s) : null), x + 21, y, 12);
+    };
+    if (rows) rows.forEach((row, k) => { for (const [it, x] of row) entry(it, x, HB - 4 + 16 * k); });
+    else if (box) items.forEach((it, k) => entry(it, box[0], box[1] + 9 + k * 17));
+    const taken = box ? [box] : [];
+    const meets = (x, y, w, h) => taken.some((r) => x < r[0] + r[2] + 4 && r[0] < x + w + 4 && y < r[1] + r[3] + 2 && r[1] < y + h + 2);
+    // each equilibrium's coordinates, beside its dot where no curve, guide or label is
+    for (const S of data.series) {
+      if (S.kind !== 'mark') continue;
+      const px = X(S.pts[0][0]), py = Y(S.pts[0][1]), r = labelRuns(S.label), w = runsW(g, r, 12, true), h = 13;
+      let best = null;
+      [[-8 - w, -6 - h], [8, 6], [8, -6 - h], [-8 - w, 6], [10, -h / 2], [-10 - w, -h / 2], [-w / 2, -10 - h], [-w / 2, 10]].forEach(([dx, dy], k) => {
+        const x = px + dx, y = py + dy;
+        const out = x < L + 2 || x + w > L + pw || y < T || y + h > T + ph - 2;
+        const score = hits(x, y, w, h) * 10 + (out ? 1000 : 0) + (meets(x, y, w, h) ? 500 : 0) + k;
+        if (!best || score < best[2]) best = [x, y, score];
+      });
+      taken.push([best[0], best[1], w, h]);
+      g.fillStyle = INK; g.textAlign = 'left'; g.textBaseline = 'top';
+      put(g, r, () => g.tex.label(S.label), best[0], best[1], 12);
     }
     // the live figure's readout under the pointer
     if (hover && hover.x >= L && hover.x <= L + pw && hover.y >= T && hover.y <= T + ph) readout(g, s, data, { X, Y, x0, x1, y0, y1, L, T, pw, ph }, hover);
@@ -1180,7 +1424,7 @@ export function graphKit() {
     if (s.kind === 'implicit' || s.kind === 'phase') lines.push('(' + fmt(xv, 4) + ', ' + fmt(A.y0 + (T + ph - hover.y) / ph * (A.y1 - A.y0), 4) + ')');
     for (const m of marks.slice(0, 4)) {
       const col = SLOT[m.S.slot % SLOT.length];
-      if (m.S.kind !== 'bars') { g.beginPath(); g.arc(X(m.p[0]), Y(m.p[1]), 4.5, 0, 2 * Math.PI); g.fillStyle = col; g.fill(); g.strokeStyle = '#ffffff'; g.lineWidth = 2; g.stroke(); }
+      if (m.S.kind !== 'bars') { g.beginPath(); g.arc(X(m.p[0]), Y(m.p[1]), 4.5, 0, 2 * Math.PI); g.fillStyle = col; g.fill(); g.strokeStyle = PAPER; g.lineWidth = 2; g.stroke(); }
       lines.push(m.S.kind === 'bars' && m.S.hist ? 'density ' + fmt(m.p[1], 3) : '(' + fmt(m.p[0], 4) + ', ' + fmt(m.p[1], 4) + ')');
     }
     if (lines.length) {
@@ -1189,8 +1433,8 @@ export function graphKit() {
       let bx = hover.x + 10, by = hover.y - h - 8;
       if (bx + w > L + pw) bx = hover.x - w - 10;
       if (by < T) by = hover.y + 12;
-      g.fillStyle = 'rgba(255,255,255,0.95)'; g.strokeStyle = '#c3c2b7'; g.lineWidth = 1;
-      g.fillRect(bx, by, w, h); g.strokeRect(bx + 0.5, by + 0.5, w - 1, h - 1);
+      g.fillStyle = PAPER; g.strokeStyle = ZERO; g.lineWidth = 1; g.globalAlpha = 0.95;
+      g.fillRect(bx, by, w, h); g.globalAlpha = 1; g.strokeRect(bx + 0.5, by + 0.5, w - 1, h - 1);
       g.fillStyle = INK;
       lines.forEach((t, k) => g.fillText(t, bx + 6, by + 11 + k * 16));
     }
@@ -1210,7 +1454,11 @@ export function graphKit() {
     row.append(list);
     s.sliders.forEach((q, k) => {
       const r = D.createElement('div'); r.className = 'rk-r';
-      const lab = D.createElement('label'); lab.htmlFor = 'rk-' + k; lab.textContent = q.name;
+      // (the name as the page sets it: x₁ with its 1 below)
+      const lab = D.createElement('label'); lab.htmlFor = 'rk-' + k;
+      const nm = /^([^_]+)(?:_(.+))?$/.exec(q.name) || [q.name, q.name];
+      lab.append(nm[1]);
+      if (nm[2]) { const sub = D.createElement('sub'); sub.textContent = nm[2]; lab.append(sub); }
       const inp = D.createElement('input'); inp.type = 'range'; inp.id = 'rk-' + k;
       inp.min = String(q.min); inp.max = String(q.max); inp.step = String(q.step); inp.value = String(q.value);
       const out = D.createElement('output'); out.htmlFor = inp.id; out.textContent = fmtStep(q.value, q.step);
@@ -1250,6 +1498,9 @@ export function graphKit() {
       const g = cv.getContext('2d');
       g.setTransform(dpr, 0, 0, dpr, 0, 0);
       geo = paint(g, s, data, R, vals, W, H, hover, ghostOf());
+      // the sliders under the plot, from its left edge to its right
+      const m = '6px ' + Math.round(W - geo.L - geo.pw) + 'px 0 ' + Math.round(geo.L) + 'px';
+      if (row.style.margin !== m) row.style.margin = m;
       // (the time each frame took, for test/graphs.py's budget: 16 ms on a phone while a slider
       // moves; the full drawing once it rests)
       const T = self.rkTimes || (self.rkTimes = []), Tf = self.rkFast || (self.rkFast = []);
@@ -1303,10 +1554,26 @@ export function graphKit() {
     cv.addEventListener('touchstart', (e) => { const t = e.touches[0]; if (!t || e.touches.length > 1) return; const x = t.clientX, y = t.clientY; clearTimeout(hold); hold = setTimeout(() => { hold = null; menu(x, y); }, 600); }, { passive: true });
     for (const n of ['touchend', 'touchcancel', 'touchmove']) cv.addEventListener(n, () => { clearTimeout(hold); hold = null; }, { passive: true });
     window.addEventListener('resize', () => redraw(false));
+    // The page's faces and paper: a frame has none of the page's fonts, so the page sends KaTeX's
+    // Computer Modern (the math's and the PDF's labels' faces), and says when View, Dark page is
+    // on. Taken from the parent window alone: those two families, four faces of 300 kB at most.
+    let dark = false, got = false;
+    addEventListener('message', (e) => {
+      const d = e.data;
+      if (e.source !== parent || parent === self || !d || typeof d !== 'object' || (d.rikuy !== 'fonts' && d.rikuy !== 'theme')) return;
+      if (typeof d.dark === 'boolean' && d.dark !== dark) { dark = d.dark; theme(dark); D.documentElement.classList.toggle('rk-dk', dark); redraw(false); }
+      if (d.rikuy !== 'fonts' || got || !Array.isArray(d.faces) || typeof FontFace !== 'function') return;
+      got = true;
+      const ok = d.faces.slice(0, 4).filter((f) => f && (f.family === 'KaTeX_Main' || f.family === 'KaTeX_Math') && f.data instanceof ArrayBuffer && f.data.byteLength < 3e5);
+      Promise.all(ok.map((f) => new FontFace(f.family, f.data, { style: f.style === 'italic' ? 'italic' : 'normal', weight: '400' }).load().then((x) => { D.fonts.add(x); }, () => 0))).then(() => redraw(false));
+    });
+    // a tap on a touch screen: the page shows its buttons for this graph a while, above it
+    D.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') try { parent.postMessage({ rikuy: 'touch' }, '*'); } catch (x) { /* no parent */ } }, true);
+    try { if (parent !== self) parent.postMessage({ rikuy: 'fonts' }, '*'); } catch (e) { /* no parent */ }
     redraw(true);
   }
 
-  return { parse, parseEq, names, compile, normalize, formulas, unknownNames, defaults, compute, ranges, paint, mount, fmt, fmtStep, FAM, FITS, KINDS, NAME, sizeName, niceStep, tw, GREEK, GREEK_VALUES: new Set(Object.values(GREEK)), own };
+  return { parse, parseEq, names, compile, normalize, formulas, unknownNames, defaults, compute, ranges, paint, mount, fmt, fmtStep, FAM, FITS, KINDS, NAME, sizeName, niceStep, tw, GREEK, GREEK_VALUES: new Set(Object.values(GREEK)), own, seriesRuns, labelRuns };
 }
 
 // ---- the editor's side: the widget's file, read back, and the PDF's picture -------------------
@@ -1340,12 +1607,12 @@ export const kit = K;
       case 'f': {
         const [, n, a] = t;
         if (tex) {
-          if (n === 'sqrt') return '\\sqrt{' + show(a[0], 1) + '}';
-          if (n === 'root') return '\\sqrt[' + show(a[1], 1) + ']{' + show(a[0], 1) + '}';
-          if (n === 'abs') return '\\lvert ' + show(a[0], 1) + '\\rvert';
-          if (n === 'frac') return '\\frac{' + show(a[0], 1) + '}{' + show(a[1], 1) + '}';
+          if (n === 'sqrt') return '\\sqrt{' + show(a[0], tex) + '}';
+          if (n === 'root') return '\\sqrt[' + show(a[1], tex) + ']{' + show(a[0], tex) + '}';
+          if (n === 'abs') return '\\lvert ' + show(a[0], tex) + '\\rvert';
+          if (n === 'frac') return tex === 2 ? P(a[0], 2) + '/' + P(a[1], 4) : '\\frac{' + show(a[0], tex) + '}{' + show(a[1], tex) + '}';
           if (n === 'factorial') return P(a[0], 5) + '!';
-          return (TEXFN[n] ? '\\' + n : '\\operatorname{' + n + '}') + '\\left(' + a.map((x) => show(x, 1)).join(', ') + '\\right)';
+          return (TEXFN[n] ? '\\' + n : '\\operatorname{' + n + '}') + '\\left(' + a.map((x) => show(x, tex)).join(', ') + '\\right)';
         }
         if (n === 'factorial') return P(a[0], 5) + '!';
         if (n === 'frac') return show(['/', a[0], a[1]], false);
@@ -1355,10 +1622,10 @@ export const kit = K;
     const [op, a, b] = t;
     if (op === '+') return P(a, 1) + ' + ' + P(b, 2);
     if (op === '-') return P(a, 1) + ' - ' + P(b, 2);
-    if (op === '/') return tex ? '\\frac{' + show(a, 1) + '}{' + show(b, 1) + '}' : P(a, 2) + '/' + P(b, 4);
+    if (op === '/') return tex && tex !== 2 ? '\\frac{' + show(a, tex) + '}{' + show(b, tex) + '}' : P(a, 2) + '/' + P(b, 4);
     if (op === '^') {
       const base = a[0] === 'f' && !tex ? '(' + show(a, false) + ')' : P(a, 5);
-      if (tex) return base + '^{' + show(b, 1) + '}';
+      if (tex) return base + '^{' + show(b, tex) + '}';
       return base + '^' + (prec(b) >= 5 && b[0] !== 'f' ? show(b, false) : '(' + show(b, false) + ')');
     }
     if (op === '*') {
@@ -1370,9 +1637,10 @@ export const kit = K;
     }
     return P(a, 1) + ' ' + (tex ? { '<': '<', '>': '>', '<=': '\\le', '>=': '\\ge' }[op] : op) + ' ' + P(b, 1);
   }
-  // a formula's text as LaTeX (the text itself where it does not read)
-  const texOf = (text, declared) => { try { return show(K.parse(text, declared), true); } catch (e) { return null; } };
-  const eqTexOf = (text, declared) => { try { const t = K.parseEq(text, declared); return t[0] === '-' && /=/.test(text) ? show(t[1], true) + ' = ' + show(t[2], true) : show(t, true) + ' = 0'; } catch (e) { return null; } };
+  // a formula's text as LaTeX (null where it does not read); mode 2, a picture's label: a
+  // division on one line, a/b, as the live figure sets it
+  const texOf = (text, declared, mode = 1) => { try { return show(K.parse(text, declared), mode); } catch (e) { return null; } };
+  const eqTexOf = (text, declared, mode = 1) => { try { const t = K.parseEq(text, declared); return t[0] === '-' && /=/.test(text) ? show(t[1], mode) + ' = ' + show(t[2], mode) : show(t, mode) + ' = 0'; } catch (e) { return null; } };
 
 // a label's LaTeX: a variable's name in math, Greek as Greek, a minus as a minus; words as words
 function labelTex(t) {
@@ -1397,9 +1665,9 @@ const TEXER = {
     const d = S.tx, dec = s.sliders.map((q) => q.name);
     if (!d) return labelTex(S.label);
     let t = null;
-    if (d[0] === 'fn') t = lhsTex(d[1]) + ' = ' + (texOf(d[2], dec) || '');
-    else if (d[0] === 'param') t = '\\left(' + (texOf(d[1], dec) || '') + ',\\ ' + (texOf(d[2], dec) || '') + '\\right)';
-    else if (d[0] === 'eq') t = eqTexOf(d[1], dec);
+    if (d[0] === 'fn') t = lhsTex(d[1]) + ' = ' + (texOf(d[2], dec, 2) || '');
+    else if (d[0] === 'param') t = '\\left(' + (texOf(d[1], dec, 2) || '') + ',\\ ' + (texOf(d[2], dec, 2) || '') + '\\right)';
+    else if (d[0] === 'eq') t = eqTexOf(d[1], dec, 2);
     else if (d[0] === 'dot') t = '\\dot{' + nameTex(d[1]) + '} = 0';
     return t ? '$' + t + '$' : labelTex(S.label);
   },
@@ -1439,19 +1707,27 @@ const kitText = () => KIT_TEXT || (KIT_TEXT = graphKit.toString().split('\n').fi
 
 const STYLE = [
   'html, body { margin: 0; background: transparent; }',
-  'body { color: #0b0b0b; font: 13px/1.35 Georgia, "Times New Roman", Times, serif; }',
+  // (the paper's faces, KaTeX's Computer Modern, once the page has sent them: src/graph.js mount)
+  'body { color: #0b0b0b; font: 14px/1.35 "KaTeX_Main", "Paper Modern Serif", "Latin Modern Roman", "CMU Serif", "Times New Roman", serif; }',
   '#rk { padding: 2px 0 4px; }',
   'canvas { display: block; width: 100%; touch-action: pan-y; }',
-  '#rk-s { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; align-items: center; margin: 4px 8px 0 40px; }',
+  '#rk-s { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 14px; align-items: center; margin: 6px 14px 0 40px; }',
   '#rk-s:empty { display: none; }',
-  '.rk-l { display: flex; flex-wrap: wrap; gap: 2px 22px; min-width: 0; }',
-  '.rk-r { display: flex; align-items: center; gap: 8px; flex: 1 1 230px; min-width: 0; }',
-  '.rk-r label { font-style: italic; min-width: 1.4em; text-align: right; }',
+  '.rk-l { display: flex; flex-wrap: wrap; gap: 0 24px; min-width: 0; }',
+  '.rk-r { display: flex; align-items: center; gap: 10px; flex: 1 1 230px; min-width: 0; min-height: 26px; }',
+  '.rk-r label { font: italic 15px "KaTeX_Math", "Latin Modern Math", "CMU Serif", "Times New Roman", serif; min-width: 1.2em; text-align: right; }',
+  '.rk-r label sub { font: 10.5px "KaTeX_Main", "CMU Serif", serif; }',
   'input[type=range] { flex: 1; min-width: 60px; margin: 0; accent-color: #2a78d6; }',
-  'output { min-width: 3.5em; font-variant-numeric: tabular-nums; color: #52514e; }',
-  'button { font: 12px system-ui, sans-serif; color: #0b0b0b; background: #fff; border: 1px solid #c3c2b7; border-radius: 6px; padding: 3px 10px; cursor: pointer; }',
-  'button:hover { border-color: #2a78d6; }',
+  'output { min-width: 3em; font-variant-numeric: tabular-nums; color: #52514e; }',
+  // (Reset, quiet: a word in the paper's blue, a line under it where the pointer is)
+  'button { font: inherit; font-size: 13px; color: #1f5fae; background: none; border: 0; border-radius: 3px; padding: 2px 4px; cursor: pointer; }',
+  'button:hover { text-decoration: underline; }',
+  'button:focus-visible { outline: 2px solid #2a78d6; outline-offset: 1px; }',
   '#rk-e { margin: 4px 40px; color: #b3261e; font: 12px system-ui, sans-serif; }',
+  '.rk-dk { color-scheme: dark; }',
+  '.rk-dk body { color: #e4e7eb; }',
+  '.rk-dk output { color: #a9b2bc; }',
+  '.rk-dk button { color: #8cc4f2; }',
   // (the page shows a widget at its zoom, about 0.75 on a phone: 58 px here are 44 on the screen)
   '@media (pointer: coarse) { .rk-r { min-height: 58px; } input[type=range] { height: 58px; } button { min-height: 58px; min-width: 58px; font-size: 15px; } }',
   ''
