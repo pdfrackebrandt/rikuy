@@ -82,8 +82,9 @@ function twoLines(t) {
 // a control the toolbar's arrows skip: disabled, or a tile that cannot apply here
 const isOff = (x) => x.disabled || x.getAttribute('aria-disabled') === 'true';
 const wideScreen = () => !window.matchMedia || window.matchMedia('(min-width: 861px)').matches;
-// where a laid out group has Word's layout (src/app.css)
-const wideLay = () => !window.matchMedia || window.matchMedia('(min-width: 900px)').matches;
+// where a laid out group has Word's layout (src/app.css): a wide window with a mouse (a touch
+// screen keeps its row of 44 px targets)
+const wideLay = () => !window.matchMedia || window.matchMedia('(min-width: 900px) and (pointer: fine)').matches;
 // where groups fold to fit the row (on a phone's width the row scrolls instead)
 const foldsGroups = () => !window.matchMedia || window.matchMedia('(min-width: 521px)').matches;
 

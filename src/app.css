@@ -276,19 +276,6 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
   .rb-tb > .sep { align-self: stretch; height: auto; margin-top: 8px; margin-bottom: 18px; }
   .rb-gw { position: relative; padding-bottom: 14px; align-self: stretch; justify-content: center; }
   .rb-cap { position: absolute; left: 0; right: 0; bottom: 2px; }
-  /* Clipboard: a large Paste, and Cut, Copy, Format Painter in a column beside it */
-  .rb-grp[data-group="clipboard"]:not(.folded) { display: grid; grid-template-columns: 54px auto; grid-template-rows: repeat(3, 20px); column-gap: 2px; align-content: center; justify-content: center; padding: 4px 0 18px; }
-  .rb-grp[data-group="clipboard"] > [data-cmd="paste"] { grid-column: 1; grid-row: 1 / span 3; flex-direction: column; height: 60px; width: 52px; gap: 1px; justify-content: center; padding: 2px 2px; font-size: 12px; border-radius: 4px; }
-  .rb-grp[data-group="clipboard"] > [data-cmd="paste"] svg { width: 22px; height: 22px; }
-  .rb.rb-fold .rb-grp[data-group="clipboard"] > [data-cmd="paste"] { width: 52px; height: 60px; flex-direction: column; padding: 2px; }
-  .rb.rb-fold .rb-grp[data-group="clipboard"] > [data-cmd="paste"] span:not(.sr) { display: inline; }
-  .rb-grp[data-group="clipboard"] > [data-cmd="cut"],
-  .rb-grp[data-group="clipboard"] > [data-cmd="copy"],
-  .rb-grp[data-group="clipboard"] > [data-cmd="format-painter"] { grid-column: 2; height: 20px; width: 26px; padding: 0; }
-  /* the gallery's name on the same line as the other groups' names */
-  #rp-home .rb-grp[data-group="styles"]:not(.folded) { padding-bottom: 0; align-items: stretch; }
-  #rp-home .rb-grp[data-group="styles"] > .rb-gw { padding-bottom: 16px; }
-  #rp-home .rb-grp[data-group="styles"] .rb-cap { bottom: 3px; }
   /* Editing: Find, Replace and Select one under another */
   .rb-grp[data-group="editing"]:not(.folded) { flex-direction: column; align-items: stretch; flex-wrap: nowrap; justify-content: center; gap: 0; padding: 2px 0 18px; }
   .rb-grp[data-group="editing"] > .btn, .rb-grp[data-group="editing"] > .rb-split > .btn { height: 22px; }
@@ -297,8 +284,26 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
   .rb-grp:not(.folded) > .rb-launch { display: flex; position: absolute; right: 0; bottom: 1px; width: 16px; height: 14px; padding: 0; align-items: center; justify-content: center; border: 0; border-radius: 2px; background: transparent; color: var(--mute); cursor: pointer; }
   .rb-grp:not(.folded) > .rb-launch:hover { background: var(--blue-wash); color: var(--ink-ui); }
   .rb-grp:not(.folded) > .rb-launch svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+}
+/* With a mouse (a touch screen keeps the row of 44 px targets its own rules give it, which a grid
+   of 22 px rows would overlap and cut off: test/tabs.py tablet) */
+@media (min-width: 900px) and (pointer: fine) {
   /* every tab as tall as Home, so the page does not jump when another tab opens */
   body:not(.file-open) .rb { height: 92px; }
+  /* Clipboard: a large Paste, and Cut, Copy, Format Painter in a column beside it (a touch screen's
+     44 px buttons keep a row), its name on the line of the other groups' names */
+  .rb-grp[data-group="clipboard"]:not(.folded) { display: grid; grid-template-columns: 54px auto; grid-template-rows: repeat(3, 20px); column-gap: 2px; align-content: center; justify-content: center; padding: 4px 0 18px; }
+  .rb-grp[data-group="clipboard"] > [data-cmd="paste"] { grid-column: 1; grid-row: 1 / span 3; flex-direction: column; height: 60px; width: 52px; gap: 1px; justify-content: center; padding: 2px 2px; font-size: 12px; border-radius: 4px; }
+  .rb-grp[data-group="clipboard"] > [data-cmd="paste"] svg { width: 22px; height: 22px; }
+  .rb.rb-fold .rb-grp[data-group="clipboard"] > [data-cmd="paste"] { width: 52px; height: 60px; flex-direction: column; padding: 2px; }
+  .rb.rb-fold .rb-grp[data-group="clipboard"] > [data-cmd="paste"] span:not(.sr) { display: inline; }
+  .rb-grp[data-group="clipboard"] > [data-cmd="cut"],
+  .rb-grp[data-group="clipboard"] > [data-cmd="copy"],
+  .rb-grp[data-group="clipboard"] > [data-cmd="format-painter"] { grid-column: 2; height: 20px; width: 26px; padding: 0; }
+  /* Home's Styles name on the same line as its other groups' names */
+  #rp-home .rb-grp[data-group="styles"]:not(.folded) { padding-bottom: 0; align-items: stretch; }
+  #rp-home .rb-grp[data-group="styles"] > .rb-gw { padding-bottom: 16px; }
+  #rp-home .rb-grp[data-group="styles"] .rb-cap { bottom: 3px; }
   /* Word's layout of the other tabs (src/ribbon/layout.js): large buttons, the icon over the name;
      small ones three to a column; the group's name on a row of its own under them, as wide as the
      group (so the group is at least as wide as its name). --c: the columns it takes. */
@@ -373,7 +378,7 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
 /* a name a laid out group gives a button that had none, and a menu's arrow after a name: from
    900 px, where the group has Word's layout */
 .rb-xl, .rb-car { display: none; }
-@media (min-width: 900px) { .rb-grp.lay:not(.folded):not(.nm) .rb-xl { display: flex; } }
+@media (min-width: 900px) and (pointer: fine) { .rb-grp.lay:not(.folded):not(.nm) .rb-xl { display: flex; } }
 /* File opens a backstage of the same commands: sections down the page, not another ribbon row */
 /* the File sheet is the ribbon, in the flow: it does not cover the page, so a click on the page still lands */
 body.file-open #ribbon { align-items: stretch; white-space: normal; overflow: visible; background: var(--ribbon); }

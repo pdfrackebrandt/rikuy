@@ -639,6 +639,43 @@ def word_layout(page):
     open_tab(page, 'Home')
 
 
+
+# Controls that overlap one another or are cut off by the ribbon, on one tab as the fit leaves it
+OVERLAP = """(tab) => { const app = window.rikuy, rb = document.getElementById('ribbon');
+  app.rbTab = tab;
+  for (const p of rb.querySelectorAll('.rb-panel')) p.hidden = p.dataset.tab !== tab;
+  const P = document.getElementById('rp-' + tab);
+  P.querySelector('.rb-tb').append(document.querySelector('.rb-dl'));
+  app.ribbonFit(); rb.scrollLeft = 0;
+  const R = rb.getBoundingClientRect(), vis = (e) => e.offsetParent !== null && e.getClientRects().length > 0;
+  const cs = [...P.querySelectorAll('button, input, select')].filter(vis), rs = cs.map((e) => e.getBoundingClientRect()), ov = [], cut = [];
+  for (let i = 0; i < cs.length; i++) {
+    if (rs[i].top < R.top - 0.5 || rs[i].bottom > R.bottom + 0.5) cut.push(cs[i].getAttribute('aria-label') || cs[i].id);
+    for (let j = i + 1; j < cs.length; j++) {
+      if (cs[i].contains(cs[j]) || cs[j].contains(cs[i])) continue;
+      const w = Math.min(rs[i].right, rs[j].right) - Math.max(rs[i].left, rs[j].left), h = Math.min(rs[i].bottom, rs[j].bottom) - Math.max(rs[i].top, rs[j].top);
+      if (w > 1.5 && h > 1.5) ov.push([cs[i].getAttribute('aria-label') || cs[i].id, cs[j].getAttribute('aria-label') || cs[j].id]);
+    }
+  }
+  const grid = [...P.querySelectorAll('.rb-grp.lay')].filter((g) => getComputedStyle(g).display === 'grid').length;
+  app.rbTab = null; app.selectTab('home');
+  return { ov, cut, grid }; }"""
+
+
+def tablet(p):
+    """A touch screen 900 px and wider (a tablet in landscape) keeps the row of 44 px targets its
+    own rules give it: Word's grid of 22 px rows is for a mouse; no control overlaps another or is
+    cut off by the ribbon."""
+    for w in (1024, 1180, 1366):
+        browser, page, errors = open_page(p, width=w, height=800, touch=True)
+        bad = {}
+        for t in ('home', 'insert', 'review', 'view', 'references', 'table-layout', 'picture-format', 'equation'):
+            r = page.evaluate(OVERLAP, t)
+            if r['ov'] or r['cut'] or r['grid']: bad[t] = r
+        check('a touch screen at %d px: no laid out group is a grid, no control overlaps another or is cut off, on 8 tabs' % w, not bad, str(bad)[:400])
+        browser.close()
+
+
 SWEEP = """() => { const app = window.rikuy, rb = document.getElementById('ribbon'), gal = document.getElementById('rb-gallery'), out = {};
   const fits = () => rb.scrollWidth <= rb.clientWidth + 1;
   for (const id of app.rbTabs) {
@@ -726,6 +763,8 @@ def run():
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
         browser.close()
+        try: tablet(p)
+        except Exception as e: check('tablet runs to its end', False, str(e)[:300])
     bad = [r for r in results if not r[1]]
     print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
     sys.exit(1 if bad else 0)
