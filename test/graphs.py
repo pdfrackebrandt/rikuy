@@ -441,11 +441,13 @@ def speed(p):
         # first: the drag is measured alone)
         page.evaluate('window.rikuy.graphRefresh()'); page.wait_for_timeout(2500)
         fr = frame_of(page)
+        # (long tasks of the graph's own frame, 'self': the page round it, saving or checking the
+        # spelling, is not the graph's)
         # (the best of three drags: this machine is shared, and another job's burst on its two
         # cores lengthens a frame the graph did not make longer; each drag is measured whole)
         best = None
         for attempt in range(3):
-            fr.evaluate('''() => { self.rkTimes = []; self.rkFast = []; self.rkLong = []; if (!self.rkObs) { self.rkObs = 1; try { new PerformanceObserver((l) => { for (const e of l.getEntries()) self.rkLong.push(e.duration); }).observe({ type: 'longtask' }); } catch (e) {} } }''')
+            fr.evaluate('''() => { self.rkTimes = []; self.rkFast = []; self.rkLong = []; if (!self.rkObs) { self.rkObs = 1; try { new PerformanceObserver((l) => { for (const e of l.getEntries()) if (e.name === 'self') self.rkLong.push(e.duration); }).observe({ type: 'longtask' }); } catch (e) {} } }''')
             cdp.send('Emulation.setCPUThrottlingRate', {'rate': 4})
             # a drag along the first slider, as a finger does: input events faster than frames
             fr.evaluate('''async () => { const s = document.getElementById('rk-0'), lo = +s.min, hi = +s.max;

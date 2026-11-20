@@ -3383,6 +3383,50 @@ Tests:
     `form-action 'self'` refuses to post, as `pdf.py` says to the user); `review.test.mjs` and
     `share.test.mjs` (base32 against RFC 4648's vectors, the forms read and refused).
 
+70. **Interactive graphs as Rikuy's edge: the live paper** (branch graphs-edge;
+    `docs/handoff/GRAPHS.md`). One `.tex` typed like Word, printed by real TeX, whose figures
+    are live on the page while the PDF carries the same figure. The opening document leads with
+    a live graph in its abstract (the saving rule k′ = αβk^α that solves its Bellman equation,
+    the 45 degree line, the steady state marked; α and β on sliders), whole in the first screen
+    at 1366 by 768; its TikZ sentence says what the page draws. **Graph this** (`src/graphthis.js`,
+    `src/cmd/graphs.js`; the equation's right click menu, the Equation tab, the search box) reads
+    an equation's LaTeX and inserts a live graph below it in one undo: y = f(x), f(x), a
+    parametric pair, F(x, y) = c, k̇ = f(k) with its rest points, k_{t+1} = g(k_t) against the
+    45 degree line, a pair of time derivatives as a phase portrait round its rest point, two
+    curves of one left side (IS and LM); every other letter a slider, its range from its role and
+    from a value the document gives it; a `\max` or a sum is said, not drawn. New kinds
+    (`src/graph.js`): implicit curves (marching squares), phase portraits (field, nullclines, a
+    Runge–Kutta path from a dragged point), shaded areas with their value (surpluses, integrals),
+    crossings marked with dashed lines and coordinates, the start curves faint while a slider
+    moves; templates for supply and demand, IS–LM, Solow, Ramsey, a budget line with an
+    indifference curve, the normal and t densities, the central limit theorem. **The PDF's
+    figure is vector**: `paint()` runs on a recording context that writes PGF (`.pgf` beside
+    the graph, its labels set in the document's fonts, input by `rikuy.sty` v1.1; no shell
+    escape); an older project's PNG and rikuy.sty v1.0 are renewed on Update in the same undo.
+    **Export as, Web page with live graphs** (`src/webpage.js`): one file, the page's model as
+    HTML (the Word download's tree), KaTeX with its fonts inside, graphs live in sandboxed frames
+    from their descriptions, a policy allowing Rikuy's three scripts by hash, an Open in Rikuy
+    link. The dialog: six kinds and a Template list, formulas' mistakes underlined, its own undo
+    (Ctrl+Z, Ctrl+Y). Every slider by keyboard; a phase portrait's start by the arrow keys; while a
+    slider moves the drawing uses half the samples and grids (full 150 ms after it rests).
+    Interactive graph is the second large button of Illustrations; Help, Learn Rikuy, llms.txt
+    and README lead with it. The security audit's quick profile (notes outside the repository)
+    found two availability problems from a stranger's document, fixed with tests: the values
+    pattern's backtracking on a run of digits, and an implicit graph's unbounded PGF.
+    Evidence: `npm test` green (`test/graphs.test.mjs` 11 groups: the formula language both ways
+    on 2,000 random trees, Graph this on 18 equations, the kinds against known answers, PGF ASCII
+    and balanced and inside TeX's lengths, the web writer's escaping); `test/graphs.py` GRAPHS_N
+    checks: TeX's PGF picture on pdfLaTeX, XeLaTeX and LuaLaTeX against the live drawing in
+    pixels (mean difference 2.9 to 4.1 of 255, 96 to 100 % of the curves' pixels within 2 px;
+    four templates), a slider frame at a phone's speed (CPU 4 times slower, 390 px; best of
+    three drags): SPEED; `test/csp.py` 25 under the hosted policy (a graph, Graph this and the
+    web page with no refusal); `insert.py` INSERT_N, `browser.py` BROWSER_N, `tabs.py` TABS_N,
+    `agent.py` AGENT_N, `ribbon.py` RIBBON_N, `file.py` FILE_N, `eqtab.py` EQTAB_N, `view.py`
+    VIEW_N, `widgets.py` WIDGETS_N. Screenshots in /tmp/graph-shots. Left: the description in the
+    `.tex` itself (a `rikuygraph` environment), Graph this on systems of more than two equations
+    and on inequalities, the Ramsey saddle path, the web page's dark mode and font subsets, the
+    Edit graph button over a graph on a phone (it covers the plot's top).
+
 ## Open tasks
 
 67. **Word's ribbon buttons Rikuy has no command for** (task 66 left them out). Insert: 3D
