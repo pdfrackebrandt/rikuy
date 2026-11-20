@@ -161,6 +161,8 @@ jobs:
         run: cd test && python3 picture.py compiled
       - name: An interactive graph compiles on pdfLaTeX, XeLaTeX and LuaLaTeX with its picture
         run: cd test && python3 insert.py graph_compiles
+      - name: The graphs' PGF pictures on pdfLaTeX, XeLaTeX and LuaLaTeX, TeX's picture against the live figure in pixels
+        run: cd test && python3 graphs.py compiles
       - name: The PDF view by SyncTeX both ways, and Learn Rikuy compiled in the page
         run: cd test && python3 view.py views help_tab
       - name: Every template of File, New compiles in the page, and a tagged PDF

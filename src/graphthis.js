@@ -248,8 +248,7 @@ export function graphThis(tex, opts = {}) {
 // rates, each over its typical size, on a grid, then on finer grids round the best
 function restPoint(spec) {
   try {
-    const s = K.normalize(spec), d = K.compute(s, K.defaults(s), 50);
-    void d;
+    const s = K.normalize(spec);
     const slots = { [s.vars[0]]: 0, [s.vars[1]]: 1 };
     s.sliders.forEach((q, k) => { slots[q.name] = k + 2; });
     const [fx, fy] = K.formulas(s).map((f) => K.compile(f.tree, slots));

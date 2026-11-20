@@ -1560,7 +1560,7 @@ class PGFContext {
   // inside is drawn exactly), and the points a straight run passes through left out
   emitPath() {
     const W = this.W, H = this.H, lo = [-W, -H], hi = [2 * W, 2 * H], o = [];
-    let pen = null, open = false, first = null;
+    let pen = null, first = null;
     const inside = (p) => p[0] >= lo[0] && p[0] <= hi[0] && p[1] >= lo[1] && p[1] <= hi[1];
     const clipSeg = (a, b) => {
       // Liang and Barsky: the part of a to b inside the box, or null
@@ -1593,7 +1593,7 @@ class PGFContext {
       run = [];
     };
     for (const s of this.path) {
-      if (s[0] === 'M') { flush(); pen = [s[1], s[2]]; first = pen; open = false; continue; }
+      if (s[0] === 'M') { flush(); pen = [s[1], s[2]]; first = pen; continue; }
       if (s[0] === 'C') {
         flush();
         const [, x, y, r] = s;
@@ -1615,11 +1615,9 @@ class PGFContext {
         run.push(c[1]);
         if (c[1][0] !== b[0] || c[1][1] !== b[1]) flush();
       } else flush();
-      open = true;
       pen = b;
     }
     flush();
-    void open;
     return o.join('\n');
   }
   use(what) {
