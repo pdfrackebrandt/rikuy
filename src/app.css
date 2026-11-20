@@ -474,7 +474,7 @@ body.file-open #rp-file .rb-dl::before { display: none; }
 /* every ribbon button's name in one regular weight, as Word draws them (Home's Find, Replace and
    Select read bolder than the downloads beside them); a glyph keeps its own (Bold's B). With a
    mouse from 900 px, one size too: Home's groups' names as the laid out groups' and the downloads' */
-#ribbon .btn { font-weight: 400; line-height: 16px; }
+#ribbon .btn { font-size: 12px; font-weight: 400; line-height: 16px; }
 /* the keyboard's ring inside a ribbon control: a group's edge would cut one drawn outside it */
 #ribbon .btn:focus-visible, #ribbon .rb-launch:focus-visible, #rb-top .rb-coll:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 @media (min-width: 900px) and (pointer: fine) { #ribbon .rb-grp > .btn, #ribbon .rb-grp > .rb-split > .btn { font-size: 12px; } }
@@ -2593,7 +2593,10 @@ body.focus #ruler, body.focus #vruler, body.view-latex #ruler, body.view-pdf #ru
   .rb .rb-grp > .btn, .rb .rb-grp > .rb-split > .btn, .rb .rb-dl > .btn, .rb .rb-gbtn { min-width: 44px; min-height: 44px; }
   .rb .rb-grp > .rb-split { min-height: 44px; }
   .rb .rb-grp .fbx, .rb .rb-grp .pf-v, .rb-style, .rb-tabsel { min-height: 44px; }
-  .rb .rb-grp:not(.folded) > .rb-launch, #ribbon .rb-grp:not(.folded) > .rb-launch-c { position: static; width: 44px; height: 44px; min-width: 44px; align-self: center; }
+  .rb .rb-grp:not(.folded) > .rb-launch, #ribbon .rb-grp:not(.folded) > .rb-launch-c { position: static; width: 44px; height: 44px; min-width: 44px; align-self: center; color: var(--ink-ui); }
+  .rb .rb-split > .rb-x svg { width: 12px; height: 12px; }
+  .st-zoom input { height: 44px; }
+  #st-zoomv { min-width: 44px; justify-content: center; }
   .rb .rb-gw { display: none; }
   .rb.rb-narrow .rb-style, .rb .rb-style { display: inline-block; }
 }

@@ -796,22 +796,23 @@ OVERLAP = """(tab) => { const app = window.rikuy, rb = document.getElementById('
       if (w > 1.5 && h > 1.5) ov.push([cs[i].getAttribute('aria-label') || cs[i].id, cs[j].getAttribute('aria-label') || cs[j].id]);
     }
   }
-  const grid = [...P.querySelectorAll('.rb-grp.lay')].filter((g) => getComputedStyle(g).display === 'grid').length;
+  // (the mouse's grid, three rows of small buttons; a finger's row is one row of 44 px and the name)
+  const grid = [...P.querySelectorAll('.rb-grp.lay')].filter((g) => getComputedStyle(g).display === 'grid' && getComputedStyle(g).gridTemplateRows.split(' ').length > 2).length;
   app.rbTab = null; app.selectTab('home');
   return { ov, cut, grid }; }"""
 
 
 def tablet(p):
-    """A touch screen 900 px and wider (a tablet in landscape) keeps the row of 44 px targets its
-    own rules give it: Word's grid of 22 px rows is for a mouse; no control overlaps another or is
-    cut off by the ribbon."""
+    """A touch screen 900 px and wider (a tablet in landscape) keeps its row of 44 px targets, each
+    group's name under it: Word's grid of three rows of small buttons is for a mouse; no control
+    overlaps another or is cut off by the ribbon."""
     for w in (1024, 1180, 1366):
         browser, page, errors = open_page(p, width=w, height=800, touch=True)
         bad = {}
         for t in ('home', 'insert', 'review', 'view', 'references', 'table-layout', 'picture-format', 'equation'):
             r = page.evaluate(OVERLAP, t)
             if r['ov'] or r['cut'] or r['grid']: bad[t] = r
-        check('a touch screen at %d px: no laid out group is a grid, no control overlaps another or is cut off, on 8 tabs' % w, not bad, str(bad)[:400])
+        check('a touch screen at %d px: no laid out group is the mouse\'s grid of three rows, no control overlaps another or is cut off, on 8 tabs' % w, not bad, str(bad)[:400])
         browser.close()
 
 

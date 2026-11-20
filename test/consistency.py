@@ -428,7 +428,8 @@ def across(S, where, ms, chrome):
                 continue
             k = c['kind'] if t not in chrome else t + ':' + c['kind']
             kinds[k][rounded(c['h'], 1)] += 1; note(('h', k, rounded(c['h'], 1)), t, c)
-            if c['kind'] in ('icon', 'icon-split', 'split-arrow', 'launcher', 'folded', 'title-icon'):
+            # (a folded group's button with its name, a finger's, is as wide as its name)
+            if c['kind'] in ('icon', 'icon-split', 'split-arrow', 'launcher', 'folded', 'title-icon') and not (c['kind'] == 'folded' and c['text']):
                 widths[k][rounded(c['w'], 1)] += 1; note(('w', k, rounded(c['w'], 1)), t, c)
                 if c['kind'] in ('icon', 'title-icon') and abs(c['w'] - c['h']) > 0.5:
                     S.bad('box', where, t + ':' + c['n'], 'an icon alone not square: %.0fx%.0f' % (c['w'], c['h']))
