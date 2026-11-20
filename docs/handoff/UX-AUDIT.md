@@ -154,8 +154,11 @@ second) is the one number a Word user would call slow; it is the model's and the
   focused, which reads as nothing happening; it could say why.
 - **Help is a narrow popover** (LOW, medium; open): How Rikuy works opens over the ribbon's end
   with a two column table of keys wrapped word by word. Word's Help is a pane at the right.
-- **Download LaTeX gives a .zip** for a project of more than one file (the sample has its .bib):
-  the button and its tooltip say "LaTeX source"; the tooltip could say ".zip of the project".
+- **The page on a phone is drawn at 58 to 62 %** (MEDIUM, a decision for Pedro): the text block
+  fills the screen's width, so a line of text is about 7 px high. Word's phone app opens a
+  document in a reflowed view; Rikuy's Web Layout is that (the text at its actual size, lines as
+  wide as the screen), and could be a phone's first view. Its lines break where the browser
+  breaks them, not where TeX does, which is why it is not the default now.
 
 ## Findings for other agents
 

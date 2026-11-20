@@ -3233,6 +3233,23 @@ Tests:
     `outline.py` 105 and `view.py` 160 with `dist/tex`, `file.py` 100 with `dist/tex` and
     `dist/word`, `tabs.py` 115.
 
+66. **UX pass 2: what a newcomer meets outside the ribbon.** Done in the code (branch
+    `ux-pass-2`, draft PR 79). `docs/handoff/UX-AUDIT.md` is the audit at 1920, 1366, 390 and 360
+    px, light and dark, ranked by how much each finding hurts, with the first visit's and a
+    keystroke's times (cable, cold: document 1.27 s, a key lands 1.42 s, first PDF 19.6 s; a
+    keystroke on the long document 70 ms, 500 ms at a phone's speed). Fixed, each a commit with
+    its part of `test/ux.py` (new, in CI's editor job): a dialog closed with Esc, Cancel or Close
+    gives the caret back (`makePop`, `closePop`); the first visit opens with the caret at the first
+    paragraph on a desktop (`placeInitialCaret` had always been empty); File is a view over the
+    window with Back, Esc and any command run from it closing it (`src/ui/fileview.js`); the
+    status bar keeps its views and zoom in sight and its word count opens Word Count; the Styles,
+    Spelling and Thesaurus panes dock at the right; the document's name on narrow windows and in
+    the phone's menu panel, with Make available offline there; the sample without red marks; the
+    PDF bar in two rows on a phone, 44 px; Download PDF's progress in the status bar; Apply Styles
+    reads the caret's style when it opens. Open, in the audit: comments at the left with
+    versions, Help as a popover, the page at 58 to 62 % on a phone (Word's phone app opens in a
+    reflowed view), and findings for the ribbon tabs and shortcuts agents.
+
 ## Open tasks
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000
