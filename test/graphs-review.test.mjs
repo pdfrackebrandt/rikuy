@@ -172,7 +172,8 @@ ok('H6: the web page\'s link carries the main file and what it reads, not the pr
   const got = sourceFiles(files, 'paper/main.tex');
   assert.deepEqual(got.slice().sort(), ['paper/appendix.tex', 'paper/graphs/g.html', 'paper/graphs/g.pgf', 'paper/main.tex', 'paper/mine.sty', 'paper/refs.bib', 'paper/rikuy.sty', 'paper/sec/deeper.tex', 'paper/sec/intro.tex'].sort());
   assert.equal(got[0], 'paper/main.tex');
-  assert.equal(stripComments('a % note to self\n% a whole line\n50\\% off\n% rikuy: words Rikuy\nb'), 'a %\n50\\% off\n% rikuy: words Rikuy\nb');
+  // (a comment after text stays, the review's V1: it may be a URL's %20)
+  assert.equal(stripComments('a % note to self\n% a whole line\n50\\% off\n% rikuy: words Rikuy\nb'), 'a % note to self\n50\\% off\n% rikuy: words Rikuy\nb');
 });
 
 ok('M15: a graph whose hand edited description no longer draws is a problem in its place', () => {
@@ -189,6 +190,85 @@ ok('Lows: the web page\'s title as plain text; plain words for \\ddot and an und
   assert.match(graphThis('\\ddot x = -\\omega^2 x').error, /second derivative/);
   assert.match(graphThis('M/P = L(Y, i)').error, /L\(…\) is a function/);
   assert.ok(graphThis('y = \\max(x, 0)').spec);
+});
+
+ok('V1 (High): removing comments keeps the source compiling: whole comment lines only, never in verbatim, never a .bib', () => {
+  const tex = [
+    '% a note to self',
+    '  % indented note',
+    'See \\url{https://example.org/a%20b} and \\href{https://x.org/?q=a%2Cb}{x}.',
+    'Rate \\verb|x % 2| and 50\\% off. % trailing note stays',
+    '\\begin{verbatim}',
+    '% kept: verbatim',
+    'a % b',
+    '\\end{verbatim}',
+    '\\begin{lstlisting}',
+    '% code comment',
+    '\\end{lstlisting}',
+    '% rikuy: words Rikuy',
+    'end'
+  ].join('\n');
+  assert.equal(stripComments(tex, 'main.tex'), [
+    'See \\url{https://example.org/a%20b} and \\href{https://x.org/?q=a%2Cb}{x}.',
+    'Rate \\verb|x % 2| and 50\\% off. % trailing note stays',
+    '\\begin{verbatim}',
+    '% kept: verbatim',
+    'a % b',
+    '\\end{verbatim}',
+    '\\begin{lstlisting}',
+    '% code comment',
+    '\\end{lstlisting}',
+    '% rikuy: words Rikuy',
+    'end'
+  ].join('\n'));
+  const bib = '@article{a,\n  title = {A 5% rise},\n  url = {https://x.org/a%20b}\n}\n% a note\n';
+  assert.equal(stripComments(bib, 'refs.bib'), bib);
+});
+
+ok('V2: equal axes widen the region the curves are worked out on, not the plot alone', () => {
+  const s = K.normalize(graphThis('x_1^\\alpha x_2^{1-\\alpha} = \\bar u').spec);
+  assert.equal(s.equal, true);
+  const R = K.ranges(s);
+  const W = 640, H = Math.round(W * s.aspect);
+  const g = new Proxy({}, { get(o, k) { if (k === 'measureText') return (t) => ({ width: K.tw(t, 12) }); if (k === 'tex') return undefined; if (k in o) return o[k]; return () => {}; }, set(o, k, v) { o[k] = v; return true; } });
+  const geo = K.paint(g, s, K.compute(s, K.defaults(s)), R, K.defaults(s), W, H, null, null);
+  const r = K.region(s, geo);
+  assert.ok(r.x.max >= geo.x1 - 1e-9 && r.y.max >= geo.y1 - 1e-9 && geo.x1 > s.x.max + 1, JSON.stringify([geo.x1, geo.y1, r.x, r.y]));
+  const segs = K.compute(r, K.defaults(r)).series.find((S) => S.kind === 'segs');
+  const far = Math.max(...segs.lines.flat().map((p) => p[0]));
+  assert.ok(far > s.x.max + 1, 'the curve reaches ' + far + ', the plot ' + geo.x1);
+});
+
+ok('V3: a pair with different left sides (IS and LM, two best responses) has its crossing marked, on a range that holds it', () => {
+  for (const [tex, at] of [['Y = A - b r, \\quad r = c Y - d', null], ['q_1 = \\frac{a - c - q_2}{2}, \\quad q_2 = \\frac{a - c - q_1}{2}', null]]) {
+    const r = graphThis(tex);
+    assert.ok(r.spec, tex + ': ' + r.error);
+    const s = K.normalize(r.spec), m = K.compute(s, K.defaults(s)).series.filter((S) => S.kind === 'mark');
+    assert.equal(m.length, 1, tex + ': ' + m.length + ' marks');
+    const [x, y] = m[0].pts[0];
+    assert.ok(x > s.x.min && x < s.x.max && y > s.y.min && y < s.y.max && s.x.min >= 0, tex + ' ' + JSON.stringify([x, y, s.x, s.y]));
+    // on both curves
+    for (const F of K.formulas(s)) { const slots = { [s.vars[0]]: 0, [s.vars[1]]: 1 }; s.sliders.forEach((q, k) => { slots[q.name] = k + 2; }); const v = K.compile(F.tree, slots)([x, y, ...s.sliders.map((q) => q.value)]); assert.ok(Math.abs(v) < 1e-6, tex + ' ' + v); }
+  }
+});
+
+ok('V4 and V5: the cheaper leftovers', () => {
+  assert.ok(graphThis('\\pi_t = \\pi^e_t - \\beta (u_t - u^*)').spec, graphThis('\\pi_t = \\pi^e_t - \\beta (u_t - u^*)').error);
+  const ar = graphThis('y_t = \\rho y_{t-1} + \\varepsilon_t');
+  assert.ok(ar.spec && ar.spec.equal && ar.spec.f[1] === 'y_t', ar.error || JSON.stringify(ar.spec.f));
+  assert.ok(graphThis('y = \\max\\{x - K, 0\\}').spec, graphThis('y = \\max\\{x - K, 0\\}').error);
+  const pw = graphThis('y = x^d');
+  assert.ok(pw.spec && pw.spec.sliders.some((q) => q.name === 'd') && pw.spec.vars[0] === 'x', JSON.stringify(pw.spec || pw.error));
+  assert.equal(graphThis('\\pi = \\pi^e - \\beta (u - u^*)').spec.vars[0], 'u');
+  assert.equal(graphThis('i_t = r^* + \\pi_t + 0.5 (\\pi_t - \\pi^*) + 0.5 y_t').spec.vars[0], 'π_t');
+  assert.ok(/normpdf/.test(graphThis('y = \\phi(x)').spec.f[0]));
+  const files = new Map([['main.tex', '\\input chap1\n\\import{parts/}{intro}\n\\lstinputlisting{code/run.py}\n'], ['chap1.tex', 'x'], ['parts/intro.tex', 'y'], ['code/run.py', 'print(1)']]);
+  assert.deepEqual(sourceFiles(files, 'main.tex').sort(), ['chap1.tex', 'code/run.py', 'main.tex', 'parts/intro.tex']);
+  assert.equal(K.normalize({ kind: 'function', f: ['x'], y: { label: 'a 5\\% rise' } }).y.label, 'a 5% rise');
+  const sd = graphThis('q = a - bp, \\quad q = c + dp').spec;
+  assert.ok(sd.sliders.every((q) => q.value < q.max), JSON.stringify(sd.sliders));
+  const qd = K.seriesRuns({ tx: ['fn', 'Q_d', 'a - b P'], label: '' }, K.normalize({ kind: 'function', vars: ['P'], f: ['a - b P'], sliders: [{ name: 'a' }, { name: 'b' }] }));
+  assert.ok(!qd.some((r) => r[0] === '_'), JSON.stringify(qd.slice(0, 3)));
 });
 
 ok('M12: the opening document\'s Bellman equation is the one its saving rule solves, its 45 degree line at 45 degrees', () => {

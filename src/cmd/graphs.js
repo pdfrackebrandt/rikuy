@@ -88,7 +88,7 @@ export const methods = {
       if (args.link) {
         try {
           const files = sourceFiles(this.files, this.main).map((n) => [n, this.files.get(n)]).filter(([, t]) => t.length < 2e6)
-            .map(([n, t]) => [n, !args.comments && /\.(tex|ltx|sty|cls|bib)$/i.test(n) ? stripComments(t) : t]);
+            .map(([n, t]) => [n, !args.comments && /\.(tex|ltx|sty|cls)$/i.test(n) ? stripComments(t, n) : t]);
           const u = this.shareBase() + '#share=' + await packShare({ v: 1, name: this.name || this.main, main: this.main, files });
           // (an address past about 2 MB is one no browser opens)
           if (u.length < 1.9e6) openUrl = u;

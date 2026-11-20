@@ -235,8 +235,8 @@ h1.title{font-size:1.75em;font-weight:500;text-align:center;margin:0 0 .4em;line
 .author{font-size:1.1em}.date{margin-bottom:1.6em}
 .abstract{margin:1.6em 2.2em}.abstract h2{font-size:.95em;text-align:center;margin:0 0 .4em}.abstract p{font-size:.92em}
 h2{font-size:1.3em;margin:1.6em 0 .6em}h3{font-size:1.12em;margin:1.4em 0 .5em}h4,h5,h6,h7{font-size:1em;margin:1.2em 0 .4em}
-.eq{margin:1em 0;overflow-x:auto;overflow-y:hidden}
-.katex{font-size:1.08em}.katex-display{margin:0}
+.eq{margin:1em 0;overflow-x:auto;overflow-y:hidden;position:relative}
+.katex{font-size:1.08em}.katex-display{margin:0;overflow-x:auto;overflow-y:hidden;max-width:100%;position:relative}
 figure{margin:1.4em 0;text-align:center}figure img{max-width:100%}
 .caption{text-align:center;font-size:.92em;margin:-.6em 0 1.4em}
 iframe.rk-graph{display:block;width:100%;min-height:200px;border:0;background:#fff;color-scheme:light}
@@ -273,7 +273,12 @@ export function sourceFiles(files, main) {
   while (queue.length && out.length < 300) {
     const f = queue.shift(), t = String(files.get(f) || '').slice(0, 4e6).replace(/(^|[^\\])%.*$/gm, '$1');
     const each = (re, fn) => { let m; re.lastIndex = 0; while ((m = re.exec(t))) fn(m); };
-    each(/\\(?:input|include|subfile|InputIfFileExists|subimport\{[^}]*\}|import\{[^}]*\})\s*\{([^{}]+)\}/g, (m) => { const n = add(m[1], ['.tex']); if (n && /\.(tex|ltx)$/i.test(n)) queue.push(n); });
+    const tex = (n) => { if (n && /\.(tex|ltx)$/i.test(n)) queue.push(n); };
+    each(/\\(?:input|include|subfile|InputIfFileExists)\s*\{([^{}]+)\}/g, (m) => tex(add(m[1], ['.tex'])));
+    // (\input chap1 with no braces, TeX's own form; \import{dir/}{file} names its folder)
+    each(/\\input\s+([A-Za-z0-9_./-]+)/g, (m) => tex(add(m[1], ['.tex'])));
+    each(/\\(?:sub)?(?:import|includefrom|inputfrom)\s*\{([^{}]*)\}\s*\{([^{}]+)\}/g, (m) => tex(add(m[1].replace(/\/?$/, '/') + m[2], ['.tex'])));
+    each(/\\(?:lstinputlisting|verbatiminput|VerbatimInput)(?:\[[^\]]*\])?\s*\{([^{}]+)\}|\\inputminted(?:\[[^\]]*\])?\s*\{[^{}]*\}\s*\{([^{}]+)\}/g, (m) => add(m[1] || m[2], []));
     each(/\\(?:bibliography|addbibresource(?:\[[^\]]*\])?)\s*\{([^{}]+)\}/g, (m) => m[1].split(',').forEach((b) => add(b, ['.bib'])));
     each(/\\rikuywidget(?:\[[^\]]*\])?\s*\{([^{}]+)\}\s*\{([^{}]+)\}/g, (m) => { add(m[1], []); add(m[2], []); });
     each(/\\(?:usepackage|RequirePackage)(?:\[[^\]]*\])?\s*\{([^{}]+)\}/g, (m) => m[1].split(',').forEach((x) => add(x, ['.sty'])));
@@ -283,17 +288,20 @@ export function sourceFiles(files, main) {
   }
   return out;
 }
-// A TeX file without its % comments (a comment may be a note to oneself): a line that was only a
-// comment goes, a comment after text leaves its % (no space comes where the line ended); Rikuy's
-// own lines (% rikuy: words …) stay
-export function stripComments(t) {
-  return String(t).split('\n').flatMap((l) => {
-    const m = /(^|[^\\](?:\\\\)*)%/.exec(l);
-    if (!m) return [l];
-    const at = m.index + m[1].length;
-    if (/^%\s*rikuy:/.test(l.slice(at))) return [l];
-    const before = l.slice(0, at);
-    return before.trim() ? [before + '%'] : [];
+// A TeX file without its comment lines (a comment may be a note to oneself). Only whole lines
+// that are a comment go: a % after text may be a URL's (\url{a%20b}, \href), a \verb's or
+// a listing's, and cutting it there broke the source behind the link (the review's V1). Lines
+// inside verbatim, listings and the like stay as they are, Rikuy's own (% rikuy: words …) too,
+// and a .bib, where % is no comment inside an entry, is never touched.
+const VERB_ENV = /\\begin\s*\{(verbatim|Verbatim|BVerbatim|lstlisting|minted|alltt|comment|filecontents|lstinline)\*?\}/;
+export function stripComments(t, name = '') {
+  if (/\.bib$/i.test(name)) return String(t);
+  let inside = null;
+  return String(t).split('\n').filter((l) => {
+    if (inside) { if (l.includes('\\end{' + inside)) inside = null; return true; }
+    const m = VERB_ENV.exec(l);
+    if (m) { if (!l.slice(m.index).includes('\\end{' + m[1])) inside = m[1]; return true; }
+    return !/^\s*%/.test(l) || /^\s*%\s*rikuy:/.test(l);
   }).join('\n');
 }
 
