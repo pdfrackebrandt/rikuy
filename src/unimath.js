@@ -161,6 +161,13 @@ function parseTex(s, i = 0, stop = null, depth = 0) {
       verbatim(start);
       continue;
     }
+    if (c === '%') {
+      // (a comment, as written, with the line's end that closes it: Enter must not make it words)
+      const j = s.indexOf('\n', i);
+      out.push({ t: 'text', v: s.slice(i, j < 0 ? s.length : j) + '\n', cmd: true });
+      i = j < 0 ? s.length : j + 1;
+      continue;
+    }
     if (/\s/.test(c)) { i++; continue; }
     // (a slash written in LaTeX is a slash: Word's linear fraction ∕, which reads back as one)
     out.push({ t: 'text', v: c === '/' ? '∕' : c });
@@ -228,7 +235,11 @@ function finish(t) {
 }
 // The linear text of an equation, or null where it cannot be shown (brackets too deep)
 export function toLinear(latex) {
-  try { return finish(lin(parseTex(String(latex || '').slice(0, 20000)).list)).trim(); } catch { return null; }
+  try {
+    const t = finish(lin(parseTex(String(latex || '').slice(0, 20000)).list)).replace(/^\s+/, '');
+    // (a comment at the end keeps the line's end that closes it)
+    return /%[^\n]*\n$/.test(t) ? t : t.trimEnd();
+  } catch { return null; }
 }
 
 // ---- linear to LaTeX ----------------------------------------------------------------------------------
@@ -241,6 +252,7 @@ function tokensOf(t) {
     const c = t[i];
     if (c === ' ' || c === '▒' || c === '\u2061' || c === '\u2009' || c === '\u00a0') { out.push({ k: 'sp' }); i++; continue; }
     if (c === '\u2062' || c === '\u200b') { i++; continue; }
+    if (c === '%' && t.indexOf('\n', i) > 0) { const z = t.indexOf('\n', i); out.push({ k: 'cmd', v: t.slice(i, z + 1) }); i = z + 1; continue; }
     if (c === '"') { const z = t.indexOf('"', i + 1); const v = z < 0 ? t.slice(i + 1) : t.slice(i + 1, z); out.push({ k: 'text', v }); i = z < 0 ? t.length : z + 1; continue; }
     if (c === '\\') {
       const m = /^\\([A-Za-z]+|.?)/.exec(t.slice(i));
@@ -296,7 +308,8 @@ function texOfSym(c) {
 const SPACING = /^\\(quad|qquad|displaystyle|textstyle|scriptstyle|scriptscriptstyle|hfill|hspace|vspace|label|tag|notag|nonumber|newline|limits|nolimits)(?![A-Za-z])/;
 const runs = (x) => x && (x.k === 'id' || x.k === 'num' || (x.k === 'cmd' && /^\\[A-Za-z]/.test(x.v) && !SPACING.test(x.v)) || x.k === 'lopen' || (x.k === 'op' && (x.v === '(' || x.v === '〖' || (ALNUM.test(x.v) && !BIG.has(x.v)))));
 const argOf = (o) => (o.a != null ? o.a : o.w);
-const join = (a, b) => (/\\[A-Za-z]+$/.test(a) && /^[A-Za-z]/.test(b) ? a + ' ' + b : a + b);
+// (a command's name before a letter needs a space; a comment on a's last line, a line's end)
+const join = (a, b) => (/\\[A-Za-z]+$/.test(a) && /^[A-Za-z]/.test(b) ? a + ' ' + b : b && !/^\s*\n/.test(b) && /(^|[^\\])(\\\\)*%[^\n]*$/.test(a.slice(a.lastIndexOf('\n') + 1)) ? a + '\n' + b : a + b);
 // a \frac or \sqrt and its groups, nothing else: a script on it needs no braces round it
 const oneAtom = (t) => { const m = /^\\(frac|sqrt)/.exec(t); if (!m) return false; let j = m[0].length; while (t[j] === '{' || t[j] === '[') { const z = groupEnd(t, j); if (z < 0) return false; j = z; } return j === t.length; };
 export function fromLinear(text) {
@@ -470,6 +483,13 @@ function texTokens(s) {
       const m = /^\\([A-Za-z]+|[\s\S]?)/.exec(s.slice(i));
       i += m[0].length;
       out.push({ k: canon(m[0]), s: st, e: i });
+      continue;
+    }
+    if (c === '%') {
+      // (a comment is one token, its line's end the space that closes it)
+      const j = s.indexOf('\n', i);
+      i = j < 0 ? s.length : j;
+      out.push({ k: s.slice(st, i), s: st, e: i });
       continue;
     }
     if (c === '^' || c === '_') {

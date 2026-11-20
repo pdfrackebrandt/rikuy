@@ -282,6 +282,12 @@ ok('typing in the Linear box changes only what was typed; the rest of the source
   assert.equal(E('\\hat{x} = \\frac{a}{b}^2 \\leftarrow \\mathbf{v}', (L) => L + '+1').tex, '\\hat{x} = \\frac{a}{b}^2 \\leftarrow \\mathbf{v}+1');
   // (typed back to what it was: the first bytes again)
   assert.equal(E('x^{2}  +  y', (L) => L).tex, 'x^{2}  +  y');
+  // (the verification of 3d3bfc4: a comment in the equation stays a comment, its line's end with it)
+  const cm = E('x % note\n+ y', (L) => L + '+1');
+  assert.deepEqual([cm.tex, cm.live], ['x % note\n+ y+1', true]);
+  const cm2 = E('x + y % note', (L) => L + '+1');
+  assert.ok(cm2.live && /% note\n\+1$/.test(cm2.tex), JSON.stringify(cm2));
+  assert.equal(U.fromLinear('x%+1'), 'x\\%+1');
   // a source the linear format would change (\frac{1}m is read back with braces) waits for Enter
   const r = E('\\frac{1}m + x', (L) => L + 'y');
   assert.ok(!r.live && r.why === 'source', JSON.stringify(r));
