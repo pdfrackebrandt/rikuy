@@ -368,6 +368,8 @@ export const tabs = {
     if (was !== id) $('#ribbon').scrollLeft = 0;
     if (focus) $('#rt-' + id).focus();
     document.body.classList.toggle('file-open', id === 'file');
+    // (File as a view: where it came from, the caret it leaves, its Back button: src/ui/fileview.js)
+    if ((id === 'file') !== (was === 'file') && this.fileViewChanged) this.fileViewChanged(id === 'file', was);
     if (was !== id) { this.ribbonSync(); this.ribbonFit(); }
   },
 
@@ -672,6 +674,30 @@ export function installRibbon(app) {
   app.root.addEventListener('focusin', () => app.peekRibbon(false));
   for (const f of installers) f(app);
   document.addEventListener('selectionchange', app.ribbonSoon);
+  // The status bar from 700 px: what has no room goes whole, the least needed first (its words are
+  // never cut short, UI-PRINCIPLES L3; a phone's line scrolls instead). Again as the window or the
+  // line's words change.
+  const status = $('#status');
+  if (status) {
+    const ORDER = ['b-sample', 'b-new', 'st-lang', 'st-track', 'st-save', 'st-words'];
+    let soon = 0;
+    const statusFit = () => {
+      soon = 0;
+      for (const id of ORDER) { const e = document.getElementById(id); if (e) e.classList.remove('st-gone'); }
+      if (innerWidth < 700) return;
+      for (const id of ORDER) {
+        if (status.scrollWidth <= status.clientWidth + 1) break;
+        const e = document.getElementById(id);
+        if (e && e.offsetParent) e.classList.add('st-gone');
+      }
+    };
+    const later = () => { if (!soon) soon = requestAnimationFrame(statusFit); };
+    addEventListener('resize', later);
+    // (its words and what shows: not the classes this fit sets)
+    new MutationObserver(later).observe(status, { subtree: true, childList: true, characterData: true, attributeFilter: ['hidden'] });
+    later();
+    app.statusFit = statusFit;
+  }
   // (the last input, the mouse's or a finger's or the keyboard's: the focus ring shows for the
   // keyboard alone, though a popover gives the focus back to its button after a press, src/app.css)
   const input = (k) => () => { if (document.documentElement.dataset.input !== k) document.documentElement.dataset.input = k; };

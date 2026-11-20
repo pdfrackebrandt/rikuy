@@ -28,7 +28,7 @@ export const LAYOUT = {
     links: ['link L I', 'bookmark L K', 'cross-reference L RF'],
     comments: ['comment-new L L'],
     headfoot: ['header L H', 'footer L O', 'page-number L NU'],
-    text: ['insert-textbox L X', 'quick-parts S Q', 'insert-dropcap S RC', 'form-fields S FF'],
+    text: ['insert-textbox L X', 'quick-parts S Q', 'insert-dropcap S RC', 'form-fields S FF', '|', 'signature-line S W', 'date-time S D', 'object S J'],
     symbols: ['equation-insert L E', 'symbol L U']
   },
   design: {
@@ -43,13 +43,13 @@ export const LAYOUT = {
     document: ['doc-class S DC', 'base-size S DS Base font size', 'two-sided S DT']
   },
   references: {
-    toc: ['table-of-contents L T', 'toc-add-text S A'],
+    toc: ['table-of-contents L T', 'toc-add-text S A', 'update-toc S U'],
     footnotes: ['footnote L F', 'endnote S E', 'next-footnote S O', 'show-notes S H', 'footnote-options I -'],
     research: ['frontier L RS'],
     citations: ['citation L C', 'manage-sources S M', 'citation-style S L', 'bibliography S B', 'add-source S W'],
-    captions: ['insert-caption L P', 'table-of-figures S G', 'cross-reference S RF'],
-    index: ['mark-entry L N', 'insert-index S X'],
-    authorities: ['mark-citation L I', 'insert-toa S S']
+    captions: ['insert-caption L P', 'table-of-figures S G', 'update-tof S V Update Table', 'cross-reference S RF'],
+    index: ['mark-entry L N', 'insert-index S X', 'update-index S D'],
+    authorities: ['mark-citation L I', 'insert-toa S S', 'update-toa S Y Update Table']
   },
   review: {
     proofing: ['spelling L S', 'thesaurus S E', 'word-count S W Word Count'],
@@ -65,10 +65,11 @@ export const LAYOUT = {
   view: {
     views: ['read-mode L F', 'print-layout L P', 'web-layout L L', 'latex-mode L X', 'outline-view S U', 'draft S E'],
     immersive: ['focus L O'],
-    movement: ['side-to-side L 7'],
+    movement: ['page-vertical L V', 'side-to-side L 7'],
     mode: ['dark-page L D'],
-    show: ['ruler S R', 'navigation-pane S K', 'show-latex S SL', 'show-marks S SM'],
-    zoom: ['zoom-100 L J', 'one-page S 1', 'multiple-pages S M', 'page-width S I']
+    show: ['ruler S R', 'view-gridlines-page S G', 'navigation-pane S K', 'show-latex S SL', 'show-marks S SM'],
+    zoom: ['zoom-dialog L Q Zoom', 'zoom-100 L J', 'one-page S 1', 'multiple-pages S M', 'page-width S I'],
+    window: ['split-view L B']
   },
   help: {
     help: ['help-how L H', 'help-report L C', 'help-tour L T', 'help-new L W', 'help-keys L K', 'help-graphs L G', 'help-agents L A', 'ask-grok L Q']
@@ -76,17 +77,18 @@ export const LAYOUT = {
   'table-design': {
     options: ['header-row S A', 'total-row S T', 'banded-rows S R', 'first-column S C', 'last-column S L', 'banded-columns S O'],
     styles: ['table-look-plain T S1', 'table-look-grid T S2', 'table-look-booktabs T S3', 'table-look-rows T S4', 'table-look-frame T S5', 'table-shading L H Shading'],
-    borders: ['pen-weight S W Pen Weight', 'pen-color S PC Pen Color', 'table-borders L B Borders']
+    borders: ['border-styles L Y Border Styles', 'pen-style S PS Pen Style', 'pen-weight S W Pen Weight', 'pen-color S PC Pen Color', 'table-borders L B Borders', 'border-painter L N Border Painter']
   },
   'table-layout': {
-    table: ['table-select S K', 'table-properties S O Properties', 'table-caption S CA Insert Caption'],
+    table: ['table-select S K', 'view-gridlines S TG View Gridlines', 'table-properties S O Properties', 'table-caption S CA Insert Caption'],
+    draw: ['draw-table L J Draw Table', 'table-eraser L E Eraser'],
     rows: ['table-delete L D', 'table-row-above L A', 'table-row-below S BE', 'table-col-left S L', 'table-col-right S R'],
     merge: ['merge-cells S M', 'split-cells S P', 'split-table S Q Split Table'],
     size: ['autofit L F', 'table-row-height S H', 'table-col-width S W', '|', 'distribute-rows S Y Distribute Rows', 'distribute-columns S U Distribute Columns'],
     // (a column at a time, so the nine stand as Word's three by three: top, centre, bottom rows)
     alignment: ['align-top-left I TL', 'align-center-left I CL', 'align-bottom-left I BL', 'align-top-center I TC', 'align-center-center I CC', 'align-bottom-center I BC',
       'align-top-right I TR', 'align-center-right I CR', 'align-bottom-right I BR', 'text-direction L X Text Direction', 'cell-margins L N Cell Margins'],
-    data: ['table-sort L SO', 'repeat-header S G Repeat Header Rows', 'table-to-text S V Convert to Text']
+    data: ['table-sort L SO', 'repeat-header S G Repeat Header Rows', 'table-to-text S V Convert to Text', 'table-formula L SF Formula', 'update-formulas S SU Update Formulas']
   },
   'picture-format': {
     adjust: ['picture-change S G', 'picture-reset S Q Reset Picture'],
@@ -97,7 +99,7 @@ export const LAYOUT = {
   },
   equation: {
     tools: ['eq-gallery L E', 'eq-numbered S N', 'eq-display S D'],
-    conversions: ['show-latex L L'],
+    conversions: ['eq-convert L CV', 'eq-unicode S K', 'eq-latex-format S X LaTeX', 'eq-normal-text S T', 'show-latex L L'],
     symbols: ['eq-sym-basic S S1 Basic math', 'eq-sym-greek S S2 Greek letters', 'eq-sym-ops S S3 Operators', 'eq-sym-arrows S S4 Arrows', 'eq-sym-relations S S5 Relations',
       'eq-sym-sets S S6 Sets and logic', 'eq-sym-geometry S S7 Geometry'],
     structures: ['eq-fraction L F Fraction', 'eq-script L SC Script', 'eq-radical L R Radical', 'eq-integral L I Integral', 'eq-largeop L O Large Operator', 'eq-bracket L B Bracket',
@@ -105,8 +107,10 @@ export const LAYOUT = {
   },
   headfoot: {
     headfoot: ['header L H', 'footer L O', 'page-number L NU'],
-    insert: ['hf-date L D', 'hf-docinfo L I', 'hf-pagenum L NH'],
-    options: ['hf-first S A', 'hf-oddeven S V', 'hf-position S P'],
+    insert: ['hf-date L D', 'hf-docinfo L I', 'hf-quick-parts L Q Quick Parts', 'hf-picture L L Pictures', 'hf-pagenum L NH'],
+    navigation: ['hf-goto-header L GH Go to Header', 'hf-goto-footer L GF Go to Footer', 'hf-prev S R Previous', 'hf-next S X Next'],
+    options: ['hf-first S A', 'hf-oddeven S V', 'hf-show-text S T Show Document Text', 'hf-position S P'],
+    position: ['hf-header-top S W', 'hf-footer-bottom S FB'],
     close: ['hf-close L C Close Header and Footer']
   }
 };
@@ -134,6 +138,8 @@ export const LAUNCH = {
   'layout/paragraph': ['paragraph-settings', 'Paragraph…', 'PG'],
   'references/footnotes': ['footnote-options', 'Footnote and Endnote…', 'Q'],
   'table-layout/size': ['table-properties', 'Table Properties…', 'I'],
+  'table-design/borders': ['borders-shading', 'Borders and Shading…', 'D'],
+  'equation/tools': ['eq-options', 'Equation Options…', 'Q'],
   'picture-format/size': ['picture-size', 'Size and Position…', 'SL']
 };
 
