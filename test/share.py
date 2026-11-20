@@ -7,7 +7,9 @@ takes comments and refuses any other edit (typing, a command, a script's), and t
 back brings its comment lines alone, as the author's browser kept the link it made, never as the
 copy says of itself. Opening one's own link keeps the project and its
 figures; a link naming files outside the project, or inflating past any document, is refused; a link in
-a stranger's document opens only as a web or mail address."""
+a stranger's document opens only as a web or mail address. A comment from a comments only copy
+comes in written in base32 and runs nothing where a document stopped % being a comment by means no
+reading of the source finds (\\csname, \\scantokens, Lua), compiled in the page (S5)."""
 import base64, io, json, os, sys, zipfile, zlib
 sys.path.insert(0, os.path.dirname(__file__))
 from browser import open_page, check, results, src, wait_src, click_text, select_text
@@ -23,6 +25,14 @@ STUB_COMPILE = '''async () => {
   return job;
 }'''
 PAGE_TEXT = '() => [...document.querySelectorAll("#pages .flow")].map(f => f.innerText).join("\\n")'
+# the comment threads of the open project as the page reads them, [who, quote, body, [replies]]:
+# a reader's comment comes in written in base32 (src/share.js), shown as typed
+COMMENTS = '() => window.rikuy.allComments().map((c) => [c.who, c.quote, c.body, c.replies.map((r) => [r.who, r.body])])'
+
+
+def said(page, w):
+    """Whether these words reached the open project, as source or inside a comment line."""
+    return page.evaluate('(w) => [...window.rikuy.files.values()].some((t) => typeof t === "string" && t.includes(w)) || window.rikuy.allComments().some((c) => [c.who, c.quote, c.body, ...c.replies.map((r) => r.who + " " + r.body)].join(" ").includes(w))', w)
 
 
 def share_link(page, name, button):
@@ -139,16 +149,15 @@ def run():
             page.click('#b-save')
         check('and without the comments when asked', '% comment' not in open(d.value.path(), encoding='utf8').read())
         page.evaluate('() => { window.rikuy.prefs.stripComments = false; }')
-        posted = {}
-        def overleaf(route):
-            posted['body'] = route.request.post_data or ''
-            route.fulfill(status=200, content_type='text/html', body='<p>overleaf</p>')
-        page.context.route('https://www.overleaf.com/**', overleaf)
-        with page.expect_popup() as pop:
-            page.evaluate('() => window.rikuy.openInOverleaf()')
-        pop.value.wait_for_load_state()
-        from urllib.parse import parse_qs
-        form = parse_qs(posted.get('body', ''))
+        # (the form as Rikuy hands it to the browser: the page's policy, form-action 'self' on the
+        # hosted copy and the artifact host alike, refuses the post itself, which pdf.py checks is
+        # said to the user)
+        got = page.evaluate('''() => new Promise((res) => { const s = HTMLFormElement.prototype.submit;
+          HTMLFormElement.prototype.submit = function () { HTMLFormElement.prototype.submit = s; res({ action: this.action, fields: [...this.elements].map((e) => [e.name, e.value]) }); };
+          window.rikuy.openInOverleaf(); })''')
+        form = {}
+        for k, v in got['fields']: form.setdefault(k, []).append(v)
+        check('Open in Overleaf makes a form that posts to Overleaf', got['action'] == 'https://www.overleaf.com/docs', got['action'])
         uri = (form.get('snip_uri') or [''])[0]
         ok = uri.startswith('data:application/zip;base64,')
         names = zipfile.ZipFile(io.BytesIO(base64.b64decode(uri.split(',', 1)[1]))).namelist() if ok else []
@@ -254,8 +263,9 @@ def comments_only():
             page2.fill('.pop-comment .share-name', 'Ana')
         page2.fill('.pop-comment textarea', 'Clearer?')
         page2.click('.pop-comment button.btn:not(.ghost)')
-        wait_src(page2, '% comment (')
-        check('comments only: a comment goes in', 'on "Second line": Clearer?' in src(page2), src(page2))
+        wait_src(page2, '% comment32 ')
+        check('comments only: a comment goes in, written in base32 and shown as typed', ['Ana', 'Second line', 'Clearer?', []] in page2.evaluate(COMMENTS)
+              and any(l.startswith('% comment32 ') for l in src(page2).split('\n')), (page2.evaluate(COMMENTS), src(page2)))
         # the reader's page could be changed by hand: its copy then carries a text edit anyway
         page2.evaluate("() => { const g = window.rikuy; g.files.set('main.tex', g.files.get('main.tex').replace('First line', 'FIRST LINE')); }")
         page2.click('#b-share'); page2.wait_for_selector('.pop-share')
@@ -263,10 +273,10 @@ def comments_only():
         page2.wait_for_function('() => (document.querySelector(".pop-share .share-link") || {}).value', timeout=8000)
         back = page2.eval_on_selector('.pop-share .share-link', 'e => e.value')
         page.goto(back)
-        page.wait_for_function('() => window.rikuy.files.get("main.tex").includes("Clearer?")', timeout=20000)
+        page.wait_for_function('() => window.rikuy.allComments().some((c) => c.body === "Clearer?")', timeout=20000)
         page.wait_for_timeout(400)
         s = src(page)
-        check('comments only: the copy back brings the comment and not the text edit', 'Clearer?' in s and 'First line of text.' in s and 'FIRST LINE' not in s, s)
+        check('comments only: the copy back brings the comment and not the text edit', ['Ana', 'Second line', 'Clearer?', []] in page.evaluate(COMMENTS) and 'First line of text.' in s and 'FIRST LINE' not in s, s)
         check('comments only: the author is told an edit was left out', 'comment only' in page.evaluate('() => [...document.querySelectorAll(".toast")].map((t) => t.textContent).join(" ")'))
         # (security review) a copy back that names another version than the one shared: not opened over the document
         s_before = src(page)
@@ -329,11 +339,11 @@ def comments_attacks():
           g.files.set('extra.sty', '\\textbf{NEWFILEINJECTED}'); }""")
         back = share(page2, 'back')
         page.goto(back)
-        page.wait_for_function('() => window.rikuy.files.get("main.tex").includes("OKCOMMENT")', timeout=20000)
+        page.wait_for_function('() => window.rikuy.allComments().some((c) => c.body === "OKCOMMENT")', timeout=20000)
         page.wait_for_timeout(500)
         m, b = src(page), src(page, 'refs.bib')
-        check('attacks: a comment on the body text comes in', '% comment (Eve): OKCOMMENT\n' in m, m[:300])
-        check('attacks: none in an argument read as it stands, nor in verbatim', 'URLINJECTED' not in m and 'VERBINJECTED' not in m, m)
+        check('attacks: a comment on the body text comes in, in base32', ['Eve', '', 'OKCOMMENT', []] in page.evaluate(COMMENTS) and '% comment32 IV3GK 0 J5FUGT2NJVCU4VA\n' in m, m[:300])
+        check('attacks: none in an argument read as it stands, nor in verbatim', not said(page, 'URLINJECTED') and not said(page, 'VERBINJECTED'), m)
         check('attacks: the .bib byte for byte as it was, no file added', b == ATTACK_BIB and page.evaluate('() => !window.rikuy.files.has("extra.sty")'), repr(b))
         check('attacks: the author is told what was left out', 'comment only' in page.evaluate(TOASTS))
         # H1: a lone carriage return in a comment line: nothing of that copy comes in
@@ -342,7 +352,7 @@ def comments_attacks():
         page.goto(share(page2, 'back'))
         page.wait_for_timeout(2500)
         m = src(page)
-        check('attacks: a comment line with a lone carriage return brings nothing, not even the comments beside it', 'CRINJECTED' not in m and 'ALSO' not in m and '\r' not in m, repr(m[-300:]))
+        check('attacks: a comment line with a lone carriage return brings nothing, not even the comments beside it', not said(page, 'CRINJECTED') and not said(page, 'ALSO') and '\r' not in m, repr(m[-300:]))
         if TEX:
             t = pdf_text(page)
             check('attacks: compiled in the page, the PDF has the text and the reference, no injected word', 'First line of text' in t and 'TeXbook' in t and not any(w in t for w in ('INJECTED', 'ALSO', 'OKCOMMENT')), t[:400])
@@ -395,6 +405,60 @@ def comments_attacks():
         A.close(); B.close()
 
 
+# S5 (security review of 17 November): documents that make % an ordinary character without naming
+# a catcode in any form the source can be searched for, which PERCENT_CATCODE lets comments into:
+# a \csname built name, \scantokens over a name made of strings, and Lua
+EVASIVE = [
+    ('csname', '\\documentclass{article}\n\\begin{document}\n\\csname c\\string atcode\\endcsname 37=12\nFirst line.\n\nSecond line.\n\\end{document}\n'),
+    ('scantokens', '\\documentclass{article}\n\\edef\\rkcc{\\string\\c atcode}\n\\begin{document}\n\\scantokens\\expandafter{\\rkcc 37=12\\relax}\nFirst line.\n\nSecond line.\n\\end{document}\n'),
+    ('luacode', '% !TeX program = lualatex\n\\documentclass{article}\n\\usepackage{luacode}\n\\begin{document}\n\\begin{luacode}\ntex["set" .. "cat" .. "code"]("global", 37, 12)\n\\end{luacode}\nFirst line.\n\nSecond line.\n\\end{document}\n'),
+]
+INJECT = '% comment (Eve): \\uppercase{rkinjected}\n'
+
+
+def comments_catcodes():
+    """S5: a comment from a comments only copy runs nothing even where % stopped being a comment.
+    For each document, first the attack as the author's copy took it before (the reader's line as
+    it was written): compiled in the page, its PDF has the marker its TeX makes (RKINJECTED, from
+    \\uppercase), which shows % really stopped being a comment. Then the same line through a
+    comments only link: it comes in written in base32, the page shows it as typed, and the PDF
+    has the line's letters (comment32) and not the marker."""
+    if not TEX:
+        print('SKIP comments_catcodes: no TeX tree in %s' % DIST)
+        return
+    with sync_playwright() as p:
+        A, page, errs = open_page(p)
+        share = lambda pg, role: pg.evaluate('async (r) => (await window.rikuy.makeShareLink(r)).url', role)
+        page.evaluate('() => { window.rikuy.prefs.who = "Pedro"; }')
+        B, page2, errs2 = open_page(p, clear=False)
+        for name, doc in EVASIVE:
+            # the attack as it was: the line as the reader wrote it, in the author's source
+            page.evaluate('(t) => window.rikuy.loadProject(new Map([["main.tex", t]]), "main.tex", "cat-before", "Opened")', doc.replace('First line.\n', 'First line.\n' + INJECT))
+            page.wait_for_timeout(300)
+            t0 = pdf_text(page)
+            check('S5 %s: the reader\'s line as it was written runs in the author\'s PDF (RKINJECTED): %% is no comment there' % name, 'RKINJECTED' in t0 and 'First line' in t0, t0[:200])
+            # through a comments only link
+            page.evaluate('(t) => window.rikuy.loadProject(new Map([["main.tex", t]]), "main.tex", "cat-" + t.length, "Opened")', doc)
+            page.wait_for_timeout(300)
+            link = share(page, 'comments')
+            page2.goto('about:blank'); page2.goto(link)
+            page2.wait_for_function('window.rikuy && document.body.classList.contains("guest") && window.rikuy.shareCtx && window.rikuy.shareCtx.role === "comments"', timeout=20000)
+            page2.wait_for_timeout(300)
+            page2.evaluate('(l) => { const g = window.rikuy; g.files.set("main.tex", g.files.get("main.tex").replace("First line.\\n", "First line.\\n" + l)); }', INJECT)
+            page.goto(share(page2, 'back'))
+            page.wait_for_function('() => window.rikuy.allComments().some((c) => c.body === "\\\\uppercase{rkinjected}")', timeout=20000)
+            page.wait_for_timeout(300)
+            m = src(page)
+            line = [l for l in m.split('\n') if l.startswith('% comment')]
+            check('S5 %s: the comment comes in, written in base32 (letters, digits, spaces), shown as typed' % name,
+                  len(line) == 1 and __import__('re').match(r'^% comment32( [A-Z2-7]+| 0){3}$', line[0]) and '\\uppercase' not in m and ['Eve', '', '\\uppercase{rkinjected}', []] in page.evaluate(COMMENTS), (line, page.evaluate(COMMENTS)))
+            t1 = pdf_text(page)
+            check('S5 %s: compiled in the page, the PDF has the line\'s letters (%% is no comment) and not the marker' % name, 'RKINJECTED' not in t1.upper() and 'comment32' in t1 and 'First line' in t1 and 'Second line' in t1, t1[:300])
+        bad = [e for e in errs + errs2 if 'clipboard' not in e.lower()]
+        check('S5: no page errors', not bad, bad[:3])
+        A.close(); B.close()
+
+
 if __name__ == '__main__':
     try:
         if len(sys.argv) < 2 or 'run' in sys.argv[1:]:
@@ -403,6 +467,8 @@ if __name__ == '__main__':
             comments_only()
         if len(sys.argv) < 2 or 'attacks' in sys.argv[1:]:
             comments_attacks()
+        if len(sys.argv) < 2 or 'catcodes' in sys.argv[1:]:
+            comments_catcodes()
     except Exception:
         import traceback
         traceback.print_exc()

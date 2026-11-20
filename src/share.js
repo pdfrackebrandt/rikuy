@@ -147,14 +147,61 @@ export function shareParam(text) {
 // A comment refers to the nearest line above it that is not a comment line. On its own line, a
 // comment changes nothing TeX typesets: TeX drops it with its line end, and the line above
 // already ended in a space.
+//
+// A comment from someone a link allowed to comment only is written instead with each of its parts
+// (name, words quoted, text) in base32 (RFC 4648's letters A to Z and digits 2 to 7, no padding;
+// 0 for a part left empty):
+//   % comment32 IFXGC ORUGKIDTN52XEY3FEBWWC4A JFZSA5DINFZSA5DIMUQHE2LHNB2CA5DFOJWT6
+//   % reply32 KBSWI4TP LFSXGLBAMFZSA2LOEB2GQZJANRUXIZLSMF2HK4TFFY
+// The page shows and edits it as typed (parseCommentLine decodes it). Such a line holds letters,
+// digits and spaces after its %, so it runs no TeX of the commenter's even where the document
+// has made % something other than a comment, which no reading of the source can rule out
+// (\csname, \scantokens and Lua can all change it without saying "catcode"): there TeX prints
+// the line's letters, and nothing more. The comment lines of a copy a comments only link brings
+// back are written so whatever form they came in (commentsOf); lines in the first form stay as
+// they are, and Rikuy reads both.
 
 // (a line is TeX's: it ends at a line feed or a carriage return, so neither is in a comment line;
 // a CRLF file's lines keep their \r at the end: review H1)
 const LINE = /^[ \t]*%[ \t]*(comment|reply)[ \t]*\(([^)\n\r\u0085\u2028\u2029]*)\)(?:[ \t]+on[ \t]+"([^"\n\r\u0085\u2028\u2029]*)")?[ \t]*:[ \t]?([^\n\r\u0085\u2028\u2029]*)\r?$/i;
 
+const LINE32 = /^[ \t]*%[ \t]*(comment|reply)32((?:[ \t]+(?:[A-Z2-7]+|0)){2,3})[ \t]*\r?$/i;
+const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+export function base32(s) {
+  const b = new TextEncoder().encode(String(s));
+  let out = '', acc = 0, n = 0;
+  for (const x of b) { acc = (acc << 8) | x; n += 8; while (n >= 5) { out += B32[(acc >>> (n - 5)) & 31]; n -= 5; } acc &= (1 << n) - 1; }
+  if (n) out += B32[(acc << (5 - n)) & 31];
+  return out || '0';
+}
+export function unbase32(s) {
+  if (s === '0') return '';
+  const b = [];
+  let acc = 0, n = 0;
+  for (const ch of String(s).toUpperCase()) {
+    const v = B32.indexOf(ch);
+    if (v < 0) return '';
+    acc = (acc << 5) | v; n += 5;
+    if (n >= 8) { b.push((acc >>> (n - 8)) & 255); n -= 8; acc &= (1 << n) - 1; }
+  }
+  return new TextDecoder().decode(new Uint8Array(b));
+}
+
 export function parseCommentLine(line) {
   const m = LINE.exec(line);
-  return m ? { kind: m[1].toLowerCase(), who: m[2].trim(), quote: m[3] || '', body: m[4].trim() } : null;
+  if (m) return { kind: m[1].toLowerCase(), who: m[2].trim(), quote: m[3] || '', body: m[4].trim() };
+  // (the base32 form: three parts for a comment, two for a reply)
+  const e = LINE32.exec(line);
+  if (!e) return null;
+  const kind = e[1].toLowerCase(), parts = e[2].trim().split(/[ \t]+/).map(unbase32);
+  if (parts.length !== (kind === 'comment' ? 3 : 2)) return null;
+  const [who, quote, body] = kind === 'comment' ? parts : [parts[0], '', parts[1]];
+  return { kind, who: whoOf(who), quote: quote ? quoteOf(quote) : '', body: clean(body), safe: true };
+}
+// a comment as a line in the base32 form, without its line end
+export function safeCommentLine(c) {
+  const who = base32(whoOf(c.who)), body = base32(clean(c.body));
+  return c.kind === 'reply' ? '% reply32 ' + who + ' ' + body : '% comment32 ' + who + ' ' + base32(c.quote && clean(c.quote) ? quoteOf(c.quote) : '') + ' ' + body;
 }
 
 // every comment thread of a file: { f, s, e, who, quote, body, replies: [{who, body}], as, ae }
@@ -200,8 +247,9 @@ function inVerbatim(text, p) {
 }
 
 // the edit {s, e, t} that adds a comment (or a reply) under the line holding offset p, after
-// the comments already there; null where a comment would change the document
-export function commentEdit(text, p, { who, quote, body, reply }) {
+// the comments already there; null where a comment would change the document. safe: in the
+// base32 form (a reader of a comments only link writes so, as the author's copy will take it in)
+export function commentEdit(text, p, { who, quote, body, reply, safe }) {
   body = clean(body);
   if (!body) return null;
   const begin = text.search(/\\begin\s*\{document\}/);
@@ -218,6 +266,7 @@ export function commentEdit(text, p, { who, quote, body, reply }) {
     at = Math.min(text.length, end + 1);
     if (end === text.length) { pre = '\n'; break; }
   }
+  if (safe) return { s: at, e: at, t: pre + safeCommentLine({ kind: reply ? 'reply' : 'comment', who, quote, body }) + '\n' };
   const head = reply ? '% reply (' + whoOf(who) + ')' : '% comment (' + whoOf(who) + ')' + (quote && clean(quote) ? ' on "' + quoteOf(quote) + '"' : '');
   return { s: at, e: at, t: pre + head + ': ' + body + '\n' };
 }
@@ -273,15 +322,17 @@ export function mergeProjects(base, mine, theirs) {
 
 // a tracked change that only adds or removes comment lines: the Review tab shows those as
 // comments, not as changes to the text
-const COMMENT_LINES = /(^|\n)[ \t]*%[ \t]*(?:comment|reply)[ \t]*\([^)\n\r]*\)[^\n\r]*/gi;
+const COMMENT_LINES = /(^|\n)[ \t]*%[ \t]*(?:comment|reply)(?:[ \t]*\([^)\n\r]*\)|32[ \t])[^\n\r]*/gi;
 const bare = (t) => String(t).replace(COMMENT_LINES, '$1').replace(/\s+/g, ' ').trim();
-const HAS = /%[ \t]*(?:comment|reply)[ \t]*\(/i;
+const HAS = /%[ \t]*(?:comment|reply)(?:[ \t]*\(|32[ \t])/i;
 export const commentOnly = (c) => (HAS.test(c.a) || HAS.test(c.b)) && bare(c.a) === bare(c.b);
 
 // whether after differs from before only in its comment lines (added, removed, changed): what a
 // comments only link lets through (src/collab.js); bounded, one pass over each text
-const WHOLE = /^[ \t]*%[ \t]*(?:comment|reply)[ \t]*\([^)\n\r]*\)[^\n\r]*(?:\r?\n|$)/gim;
+const WHOLE = /^[ \t]*%[ \t]*(?:comment|reply)(?:[ \t]*\([^)\n\r]*\)|32[ \t])[^\n\r]*(?:\r?\n|$)/gim;
 const isComment = (line) => !!parseCommentLine(line.replace(/\r?\n$/, ''));
+// a comment line as what it says (its base32 form), so the same comment in either form is one line
+const said = (line) => { const c = parseCommentLine(line.replace(/\r?\n$/, '')); return c ? safeCommentLine(c) : null; };
 export function onlyComments(before, after) {
   // (a line end added at the very end, as a comment under the last line brings, is no change)
   const strip = (t) => String(t).replace(WHOLE, '').replace(/\n$/, '');
@@ -289,7 +340,9 @@ export function onlyComments(before, after) {
 }
 
 // What of theirs a comments only link lets in: base with their comment lines, and without the
-// comment lines they took out, and nothing else. Line by line in each hunk: a comment line of
+// comment lines they took out, and nothing else. Their comment lines come in in the base32 form
+// whatever form they had (a comment line runs nothing even where % stopped being a comment);
+// a line of the base is the same comment as one of theirs when the two say the same. Line by line in each hunk: a comment line of
 // theirs goes after the line of the base it stands under in their copy (that line's own comments
 // first); one under a line they changed, under the line before that; at the hunk's start if none. { text, dropped: hunks whose
 // text they changed, left out }
@@ -334,9 +387,11 @@ export function commentsOf(base, theirs, o = {}) {
     let q = h.as;
     for (const l of A) { pos.push([q, q + l.length]); q += l.length; }
     let lost = false;
+    const saidA = new Set(A.map(said).filter(Boolean)), saidB = new Set(B.map(said).filter(Boolean));
+    const inB = (l) => saidB.has(said(l));
     // their comment lines taken out: only where a comment line may stand
     const keepIdx = [];
-    A.forEach((l, i) => { if (!isComment(l) || B.includes(l) || !ok(pos[i][0])) { keepIdx.push(i); if (isComment(l) && !B.includes(l)) lost = true; } });
+    A.forEach((l, i) => { if (!isComment(l) || inB(l) || !ok(pos[i][0])) { keepIdx.push(i); if (isComment(l) && !inB(l)) lost = true; } });
     const keep = keepIdx.map((i) => A[i]);
     const res = keep.map((l) => [l]);
     let anchor = -1;
@@ -344,10 +399,10 @@ export function commentsOf(base, theirs, o = {}) {
     for (const l of B) {
       // (a line they changed keeps the anchor before it: its comments go under the line above)
       if (!isComment(l)) { const k = keep.findIndex((x) => x.replace(/\r?\n$/, '') === l.replace(/\r?\n$/, '')); if (k >= 0) anchor = k; else lost = true; continue; }
-      if (A.includes(l)) continue;
+      if (saidA.has(said(l))) continue;
       const at = anchor < 0 ? h.as : pos[keepIdx[anchor]][1];
       if (!ok(at)) { lost = true; continue; }
-      const line = l.endsWith('\n') ? l : l + '\n';
+      const line = said(l) + (l.endsWith('\r\n') ? '\r\n' : '\n');
       if (anchor < 0) { head.push(line); continue; }
       // (under a last line with no line end: the line ends first, which TeX reads as it did)
       const g = res[anchor];
