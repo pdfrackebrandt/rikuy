@@ -132,6 +132,15 @@ def file_view(page, w):
     g = page.evaluate(FILE_GEOM)
     shot(page, f'file-view-{tag}')
     check(f'File covers the window from the tabs to the status bar; the page is out of sight ({w})', g['open'] and abs(g['bottom'] - g['status']) <= 1 and g['desk'] == 0, g)
+    # H1, M2 of the review: the keys, Tab and a screen reader stay in the view, not in the page under it
+    before = src(page)
+    u = page.evaluate("[document.activeElement.id, document.getElementById('main').inert, document.getElementById('status').inert]")
+    page.keyboard.type('xyz'); page.wait_for_timeout(200)
+    # (on a phone File opens from the tab list, which keeps the focus: it is in the view's row too)
+    check(f'File takes the keys: the focus on Back (or a phone\'s tab list), the page and the status bar inert, typing writes nothing ({w})', u[0] in (('rf-back', 'rb-tabsel') if touch else ('rf-back',)) and u[1:] == [True, True] and src(page) == before, (u, src(page)[-60:]))
+    if not touch:
+        for _ in range(4): page.keyboard.press('Tab')
+        check(f'Tab from Back stays in the view, never in the page under it ({w})', page.evaluate("!!document.activeElement.closest('#rp-file, #rb-top, #bar')"), page.evaluate("document.activeElement.id"))
     check(f'File has a Back button "Back to the document"{", 44 px under a finger" if touch else ""} ({w})', g['back'] and g['back'][0] == 'Back to the document' and (not touch or g['back'][1] >= 44), g['back'])
     if not touch:
         page.keyboard.press('Escape'); page.wait_for_timeout(250)
@@ -164,6 +173,29 @@ def file_view(page, w):
     g = page.evaluate(FILE_GEOM)
     check(f'Blank document makes the new document and shows it ({w})', not g['open'] and g['desk'] > 100 and '\\begin{document}' in src(page) and 'Second paragraph' not in src(page), g)
     check(f'no sideways scroll ({w})', page.evaluate('document.documentElement.scrollWidth') <= page.viewport_size['width'])
+    if touch:
+        return
+    # Alt, F, a letter (Word's way to File's New): the letter writes nothing into the document
+    load_doc(page, DOC); click_text(page, 'Second paragraph', 3); before = src(page)
+    page.keyboard.press('Alt'); page.wait_for_timeout(150); page.keyboard.press('f'); page.wait_for_timeout(300)
+    opened = page.evaluate(FILE_GEOM)['open']
+    page.keyboard.press('n'); page.wait_for_timeout(250)
+    check(f'Alt, F opens File, and a letter typed then writes nothing into the document ({w})', opened and src(page) == before, (opened, src(page)[-60:]))
+    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    if page.evaluate(FILE_GEOM)['open']: page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    # M1: Esc closes File with the Styles pane docked under it
+    run_cmd(page, 'styles-pane'); click_text(page, 'Second paragraph', 3)
+    open_tab(page, 'File'); page.keyboard.press('Escape'); page.wait_for_timeout(250)
+    check(f'Esc closes File while the Styles pane is docked under it ({w})', not page.evaluate(FILE_GEOM)['open'])
+    run_cmd(page, 'styles-pane')
+    # L4: the browser's Back closes it (a phone's Back button too)
+    open_tab(page, 'File'); page.go_back(); page.wait_for_timeout(400)
+    check(f'the browser\'s Back closes File and leaves Rikuy open ({w})', not page.evaluate(FILE_GEOM)['open'] and page.evaluate('!!window.rikuy && !!document.querySelector(".page")'))
+    # M6: a template from File opens with the caret in it
+    open_tab(page, 'File'); page.locator('#rf-template').click(); page.wait_for_timeout(250)
+    page.locator('body > .pop[role=menu] [role^=menuitem]').first.click(); page.wait_for_timeout(1200)
+    k = src(page); page.keyboard.type('Q'); page.wait_for_timeout(300)
+    check(f'a template chosen from File opens with the caret in it: the first key lands ({w})', not page.evaluate(FILE_GEOM)['open'] and src(page) != k, page.evaluate('document.activeElement.id'))
 
 
 def status_bar(p):
