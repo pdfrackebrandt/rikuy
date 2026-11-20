@@ -13,7 +13,7 @@ import { readParts, partIsBlock } from '../quickparts.js';
 import { dialog, numberField } from '../ui/kit.js';
 import { mk } from '../ui/dom.js';
 import { segOfSpan, boundary } from '../editor.js';
-import { toLinear, fromLinear } from '../unimath.js';
+import { toLinear, linearEdit } from '../unimath.js';
 
 const CM = 72.27 / 2.54, PX_PER_PT = 96 / 72.27;
 const always = () => true;
@@ -483,17 +483,46 @@ Object.assign(methods, {
         lin = mk('textarea', 'code pop-lin');
         lin.id = 'pop-lin'; lin.spellcheck = false; lin.rows = 2;
         lin.setAttribute('aria-label', 'The equation, in Word\'s linear format');
-        lin.addEventListener('input', () => { const tex = fromLinear(lin.value); if (tex !== ta.value) { ta.value = tex; ta.dispatchEvent(new Event('input')); } });
-        lin.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) { e.preventDefault(); this.eqConvert('professional'); } });
+        const note = mk('div', 'pop-lin-note');
+        note.id = 'pop-lin-note'; note.setAttribute('role', 'status'); note.hidden = true;
+        lin.setAttribute('aria-describedby', note.id);
+        const say = (t) => { note.textContent = t || ''; note.hidden = !t; };
+        // What is typed is written into the source only where it reads back as it was typed
+        // (src/unimath.js linearEdit: the equation into the box and out again unchanged, only the
+        // typed part replaced); otherwise on Enter, as Word builds an equation up then
+        const write = (enter) => {
+          // (typed back to what it showed first: the first bytes again; otherwise from what was last
+          // written, so each change is merged on its own and the rest keeps its bytes)
+          const back = lin.value === lin.firstText;
+          const r = back ? { tex: lin.origTex, live: true } : linearEdit(lin.lastTex, lin.value, lin.lastText);
+          if (r.error) { say(r.error); return false; }
+          // (a command's name still being typed, \alp, waits for its end)
+          const typing = /\\[A-Za-z]*$/.test(lin.value.slice(0, lin.selectionStart));
+          if (!enter && (!r.live || typing)) { say(r.live ? '' : 'Enter writes this into the equation: ' + (r.why === 'source' ? 'the equation has LaTeX the linear format would change.' : 'what you typed is not read back the same yet.')); return false; }
+          say('');
+          lin.lastTex = r.tex; lin.lastText = lin.value;
+          if (r.tex !== ta.value) { ta.value = r.tex; ta.dispatchEvent(new Event('input')); }
+          return true;
+        };
+        lin.addEventListener('input', () => write(false));
+        lin.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey) { e.preventDefault(); if (write(true)) this.eqConvert('professional'); } });
         (mf || ta).before(lin);
+        lin.after(note);
       }
-      lin.value = toLinear(ta.value);
+      const L = toLinear(ta.value);
+      lin.origTex = lin.lastTex = ta.value;
+      lin.value = lin.firstText = lin.lastText = L == null ? ta.value : L;
+      lin.readOnly = L == null;
+      const note = P.el.querySelector('#pop-lin-note');
+      if (note) { note.textContent = L == null ? 'Too many brackets inside one another for the linear format: edit it as LaTeX.' : ''; note.hidden = L != null; }
       lin.hidden = false;
       if (mf) mf.hidden = true;
       P.el.classList.remove('eq-linear-latex');
       lin.focus();
     } else {
       if (lin) lin.hidden = true;
+      const note = P.el.querySelector('#pop-lin-note');
+      if (note) note.hidden = true;
       P.el.classList.remove('eq-linear-latex');
       if (mf) { mf.hidden = false; mf.focus(); }
     }

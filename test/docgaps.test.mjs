@@ -153,7 +153,7 @@ ok('Pen Style Double: \\hline\\hline and ||, single again gives the bytes of a s
 ok('LaTeX to Word\'s linear format and back: fractions, scripts, roots, big operators, Greek, functions, matrices, text', () => {
   const cases = [['\\frac{a+b}{c}', '(a+b)/c'], ['x^{2}+y^{2}=z^{2}', 'x^2+y^2=z^2'], ['\\sqrt{x+1}', '√(x+1)'], ['\\sqrt[3]{x}', '√(3&x)'], ['\\sum_{i=1}^{n} i^{2}', '∑_(i=1)^n i^2'],
     ['\\alpha \\le \\beta', 'α≤β'], ['\\int_{0}^{\\infty} e^{-x}dx', '∫_0^∞ e^(-x)dx'], ['\\sin x + \\cos^{2} y', 'sin x+cos^2y'], ['\\begin{pmatrix} a & b \\\\ c & d \\end{pmatrix}', '(■(a&b@c&d))'],
-    ['\\text{if } x > 0', '"if "x>0'], ['\\frac{1}{2}', '1/2'], ['\\lim_{x \\to 0} \\frac{\\sin x}{x}', 'lim_(x→0)(sin x)/x']];
+    ['\\text{if } x > 0', '"if "x>0'], ['\\frac{1}{2}', '1/2'], ['\\lim_{x \\to 0} \\frac{\\sin x}{x}', 'lim_(x→0) (sin x)/x']];
   const norm = (t) => t.replace(/\s+/g, '');
   for (const [tex, linear] of cases) {
     assert.equal(U.toLinear(tex), linear, tex);
@@ -164,6 +164,47 @@ ok('LaTeX to Word\'s linear format and back: fractions, scripts, roots, big oper
   assert.equal(U.fromLinear('e^(iπ)+1=0'), 'e^{i\\pi}+1=0');
   assert.equal(U.fromLinear('[■(1&0@0&1)]'), '\\begin{bmatrix}1 & 0 \\\\ 0 & 1\\end{bmatrix}');
   assert.equal(U.fromLinear('x_1, …, x_n'), 'x_{1},\\ldots,x_{n}');
+});
+// (the review of PR 84, H1 and M1: typing in the Linear box rewrote the equation through a lossy
+// converter; Word's operand rules were not followed)
+ok('LaTeX the linear format has no form for is kept as written, and a round trip changes nothing', () => {
+  const kept = ['\\hat{x} = \\frac{a}{b}^2 \\leftarrow \\mathbf{v}', 'x \\leftarrow y', 'a \\leftrightarrow b', 'A \\rightleftharpoons B', '\\binom{n}{k}', '\\overline{AB}',
+    'f(x)=\\begin{cases}1&x>0\\\\0&\\text{else}\\end{cases}', '\\operatorname{tr} A', '\\mathrm{d}x', '\\left(\\frac{1}{2}\\right)', '\\left\\{ x \\right.', '\\sqrt{x}^2', '{a+b}^2', '3{,}14',
+    '\\dfrac{a}{b}', 'x^{(2)}', '(a+b)/c', 'x_{max}', 'a\\frac{b}{c}d', '\\underbrace {\\frac{1}{2}}_{x}', '\\hat{\\beta} = (X^\\top X)^{-1} X^\\top y', 'a\\,b', 'x\\%', '\\frac{1}{2} (e^x + e^{-x})', 'n\\in\\mathbb{R}'];
+  for (const tex of kept) {
+    const L = U.toLinear(tex);
+    // (a space typed at the end: the same LaTeX, byte for byte)
+    const r = U.linearEdit(tex, L + ' ');
+    assert.ok(r.live, tex + ' -> ' + L);
+    assert.equal(r.tex, tex, L);
+  }
+  assert.equal(U.toLinear('\\hat{x} = \\frac{a}{b}^2 \\leftarrow \\mathbf{v}'), '\\hat{x}=〖a/b〗^2←\\mathbf{v}');
+  assert.equal(U.toLinear('\\binom{n}{k}'), '\\binom{n}{k}');
+  // only whole \left and \right are brackets' sizes: \leftarrow is an arrow
+  assert.equal(U.fromLinear('x \\leftarrow y \\rightarrow z \\leftrightarrow w'), 'x\\leftarrow y\\rightarrow z\\leftrightarrow w');
+});
+ok('typing in the Linear box changes only what was typed; the rest of the source keeps its bytes', () => {
+  const E = (tex, f) => U.linearEdit(tex, f(U.toLinear(tex)));
+  assert.equal(E('a \\leq b + c', (L) => L.replace('c', 'd')).tex, 'a \\leq b + d');
+  assert.equal(E('\\alpha+b', (L) => L.replace('α', 'αx')).tex, '\\alpha x+b');
+  assert.equal(E('x^{2} + y^2', (L) => L.replace('y^2', 'y^3')).tex, 'x^{2} + y^{3}');
+  assert.equal(E('\\hat{x} = \\frac{a}{b}^2 \\leftarrow \\mathbf{v}', (L) => L + '+1').tex, '\\hat{x} = \\frac{a}{b}^2 \\leftarrow \\mathbf{v}+1');
+  // (typed back to what it was: the first bytes again)
+  assert.equal(E('x^{2}  +  y', (L) => L).tex, 'x^{2}  +  y');
+  // a source the linear format would change (\frac{1}m is read back with braces) waits for Enter
+  const r = E('\\frac{1}m + x', (L) => L + 'y');
+  assert.ok(!r.live && r.why === 'source', JSON.stringify(r));
+  // too deep: a plain message, no throw
+  assert.equal(U.linearEdit('x', '('.repeat(19000)).error, U.DEEP);
+  assert.equal(U.toLinear('{'.repeat(19000)), null);
+});
+ok('UnicodeMath read as Word reads it: runs, left to right, right associative scripts, ▒ and 〖〗', () => {
+  const cases = { 'ab/cd': '\\frac{ab}{cd}', '2x/3y': '\\frac{2x}{3y}', 'n!/k!': '\\frac{n!}{k!}', '∂f/∂x': '\\frac{\\partial f}{\\partial x}', '1/2/3': '\\frac{\\frac{1}{2}}{3}',
+    'x^2^3': 'x^{2^{3}}', 'a^-1': 'a^{-1}', 'x_1/x_2': '\\frac{x_{1}}{x_{2}}', 'a/b^2': '\\frac{a}{b^{2}}', '∑_(i=1)^n▒i': '\\sum_{i=1}^{n}i', '〖a/b〗^2': '\\frac{a}{b}^{2}',
+    'f(x)=〖x+1〗^2': 'f(x)={x+1}^{2}', 'x∈ℝ': 'x\\in\\mathbb{R}', 'sin(x)/x': '\\frac{\\sin(x)}{x}', 'lim_(x→0)(sin x)/x': '\\lim_{x\\to0}\\frac{\\sin x}{x}', '1/2+3/4': '\\frac{1}{2}+\\frac{3}{4}',
+    'x%': 'x\\%', '(0,1]': '(0,1]', 'a∕b': 'a/b', 'x^+': 'x^{+}' };
+  for (const [u, tex] of Object.entries(cases)) assert.equal(U.fromLinear(u), tex, u);
+  assert.throws(() => U.fromLinear('('.repeat(19000)), /too deep/);
 });
 
 console.log('docgaps: ' + n + ' passed');

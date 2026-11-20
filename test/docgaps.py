@@ -6,7 +6,7 @@ dist/tex holds a TeX tree, what they write compiled in the page with pdfLaTeX, X
 phones at 390 and 360 px with touch; screenshots in $RIKUY_SHOTS (default /tmp/g2-shots).
 
 python3 docgaps.py [section ...]: tables, tables_compiled, tables_phones, shots, headfoot, headfoot_compiled,
-headfoot_phones, headfoot_shots, view, refs_update, equation, insert_text, rest_compiled, rest_phones,
+headfoot_phones, headfoot_shots, view, refs_update, equation, equation_linear, insert_text, rest_compiled, rest_phones,
 rest_shots."""
 import os, sys, base64, io
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -552,7 +552,7 @@ def equation(page):
     box = page.get_by_role('textbox', name='The equation, in Word\'s linear format', exact=True)
     box.fill('(a+b)/c=√(x+1)'); page.wait_for_timeout(400)
     s = src(page)
-    check('typed in linear: the source reads \\frac{a+b}{c}=\\sqrt{x+1}', '\\frac{a+b}{c}=\\sqrt{x+1}' in s, s[s.find('equation'):][:100])
+    check('typed in linear: x^{2} becomes \\sqrt{x+1}, the rest of the line\'s bytes kept', '  \\frac{a+b}{c} = \\sqrt{x+1}\n' in s, s[s.find('equation'):][:100])
     page.evaluate("window.rikuy.runCommand('eq-convert', { to: 'professional' })"); page.wait_for_timeout(300)
     check('Convert › Professional: the field again, built up', page.evaluate("!document.querySelector('.pop-math math-field').hidden && document.querySelector('#pop-lin').hidden"))
     page.evaluate("window.rikuy.runCommand('eq-latex-format')"); page.wait_for_timeout(100)
@@ -577,6 +577,49 @@ def equation(page):
     check('its dialog reads them back', dlg.get_by_role('radio', name='Unnumbered (equation*)', exact=True).is_checked())
     dlg.get_by_role('radio', name='Numbered (equation)', exact=True).check(); dlg.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(200)
     check('and OK sets them again', page.evaluate('window.rikuy.prefs.eqNewEnv') == 'equation')
+
+
+# The review of PR 84, H1: a space typed in the Linear box rewrote \hat{x}, \frac{a}{b}^2, \leftarrow
+# and \mathbf{v} into LaTeX that did not compile. Now nothing but what is typed moves.
+LIN_EQ = '\\hat{x} = \\frac{a}{b}^2 \\leftarrow \\mathbf{v}'
+
+
+def equation_linear(page):
+    doc = WRAP('Text.\n\\begin{equation}\n' + LIN_EQ + '\n\\end{equation}\nMore.\n\n\\begin{equation}\n\\frac{1}m + x\n\\end{equation}\nEnd.', '\\usepackage{amsmath}\n')
+    load_doc(page, doc); page.wait_for_timeout(300)
+    open_eq(page)
+    run_cmd(page, 'eq-unicode'); run_cmd(page, 'eq-convert', {'to': 'linear'}); page.wait_for_timeout(300)
+    box = page.get_by_role('textbox', name='The equation, in Word\'s linear format', exact=True)
+    v = box.input_value()
+    check('Linear shows commands it has no form for as written, a fraction with a script in Word\'s 〖 〗', v == '\\hat{x}=〖a/b〗^2←\\mathbf{v}', v)
+    box.press('End'); page.keyboard.type(' '); page.wait_for_timeout(500)
+    check('a space typed at the end: the source byte for byte as it was', src(page) == doc, body(src(page))[:160])
+    h0 = hist(page)
+    page.keyboard.type('+1'); page.wait_for_timeout(500)
+    s1 = src(page)
+    check('+1 typed: only +1 added, the rest of the equation\'s bytes kept', s1 == doc.replace(LIN_EQ, LIN_EQ + '+1'), body(s1)[:160])
+    page.keyboard.press('Home'); page.keyboard.type('y=')
+    page.wait_for_timeout(500)
+    s2 = src(page)
+    check('y= typed at the start: written before \\hat, nothing else moved', s2 == doc.replace(LIN_EQ, 'y=' + LIN_EQ + '+1'), body(s2)[:160])
+    page.keyboard.press('Escape'); page.wait_for_timeout(400)
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(300)
+    check('one undo: the bytes of before', src(page) == doc, (hist(page), h0))
+    # an equation the linear format would change (\frac{1}m reads back as \frac{1}{m}) waits for Enter
+    page.click('#pages .dm >> nth=1')
+    page.wait_for_function('document.activeElement && document.activeElement.id === "pop-field"', timeout=15000)
+    page.wait_for_timeout(200)
+    run_cmd(page, 'eq-convert', {'to': 'linear'}); page.wait_for_timeout(300)
+    box = page.get_by_role('textbox', name='The equation, in Word\'s linear format', exact=True)
+    box.press('End'); page.keyboard.type('y'); page.wait_for_timeout(500)
+    note = page.evaluate("(() => { const n = document.getElementById('pop-lin-note'); return n && !n.hidden ? n.textContent : ''; })()")
+    check('typing there writes nothing yet, and says Enter will', src(page) == doc and 'Enter writes' in note, note)
+    page.keyboard.press('Enter'); page.wait_for_timeout(500)
+    s3 = src(page)
+    check('Enter writes it, as Word builds an equation up on Enter', '\\frac{1}{m}+xy' in s3, body(s3)[-120:])
+    page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(300)
+    check('and one undo takes it back', src(page) == doc)
 
 
 # ---- Insert: Signature Line, Date & Time and Object on the ribbon --------------------------------------------
@@ -606,7 +649,8 @@ def rest_compiled(page):
         print('SKIP the rest compiled: no TeX tree in %s' % DIST)
         return
     body_ = ('Yours sincerely,\n\n\\par\\bigskip\\bigskip\n\\noindent\\rule{6cm}{0.4pt}\\\\\nAda Lovelace\\\\\nAnalyst \\& Co\\\\\n\\today\\par\n\n'
-             '\\begin{equation*}\n  \\frac{a+b}{c}=\\sqrt{x+1}\\text{ if }x>0\n\\end{equation*}\n')
+             '\\begin{equation*}\n  \\frac{a+b}{c}=\\sqrt{x+1}\\text{ if }x>0\n\\end{equation*}\n'
+             '\\begin{equation}\ny=' + LIN_EQ + '+1\n\\end{equation}\n')
     for eng, magic in (('pdflatex', ''), ('xelatex', '% !TEX program = xelatex\n'), ('lualatex', '% !TEX program = lualatex\n')):
         r = pdf_of(page, magic + WRAP(body_, '\\usepackage{amsmath}\n'))
         miss = [w for w in ('Ada Lovelace', 'Analyst & Co', 'sincerely', 'if') if w not in r['text']]
@@ -675,7 +719,7 @@ def run():
     names = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (tables, tables_compiled, headfoot, headfoot_compiled, view, refs_update, equation, insert_text, rest_compiled):
+        for f in (tables, tables_compiled, headfoot, headfoot_compiled, view, refs_update, equation, equation_linear, insert_text, rest_compiled):
             if names and f.__name__ not in names:
                 continue
             try: f(page)

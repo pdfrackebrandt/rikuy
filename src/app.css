@@ -1446,6 +1446,7 @@ body.nav-on.nav-outline #nav { width: 460px; }
 @media (prefers-reduced-motion: reduce) { #pages .rk-updated { animation: none; outline: 2px solid rgba(43, 116, 176, .5); } }
 /* (G2) the equation in Word's linear format, a text to type in */
 .pop textarea.pop-lin { font: 15px/1.5 var(--font-doc, serif); }
+.pop .pop-lin-note { font-size: 12px; color: var(--mute); margin: 2px 0 4px; }
 .hd .hf-pic, .ft .hf-pic { display: inline-block; vertical-align: baseline; width: auto; max-width: 100%; }
 .page.hf-head .hd, .page.hf-foot .ft { visibility: hidden; }
 .hfedit { position: fixed; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; z-index: 30; }
