@@ -368,7 +368,9 @@ export const methods = {
     b.addEventListener('mousedown', (e) => e.preventDefault());
     b.addEventListener('click', () => this.runCommand('edit-graph', { file: F.path }));
     F.box.append(b);
-    if (!(this.prefs && this.prefs.graphHint) && !this.graphHinted) {
+    // (the opening document's own graph says in its text what it is: the hint waits for one's own)
+    const sampleGraph = F.path === 'graphs/saving.html' && this.main === 'main.tex' && /^The graph above is live:/m.test(this.files.get('main.tex') || '');
+    if (!(this.prefs && this.prefs.graphHint) && !this.graphHinted && !sampleGraph) {
       this.graphHinted = true;
       const h = mk('div', 'w-hint');
       h.setAttribute('role', 'note');

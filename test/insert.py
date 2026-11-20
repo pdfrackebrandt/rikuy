@@ -1,6 +1,6 @@
 """Insert (batch B11). Interactive graphs, Rikuy's live figures made as Word makes charts: the
 dialog writes the widget's file, the \\rikuywidget line, rikuy.sty and \\usepackage{rikuy} where
-missing and the PDF's picture as one step, which one undo takes back byte for byte (files and
+missing and the PDF's picture (PGF, task 70) as one step, which one undo takes back byte for byte (files and
 picture gone) and redo brings again; Edit graph changes the file and the picture only, writes
 nothing when nothing changed, and points a hand written command's non-PNG fallback at the new
 picture; each of the four kinds runs on the page, and its picture is the live figure at its
@@ -23,7 +23,7 @@ SHOTS = os.environ.get('RIKUY_SHOTS', '/tmp/B11-shots')
 os.makedirs(SHOTS, exist_ok=True)
 DOC = '\\documentclass{article}\n\\begin{document}\nHello world.\n\nSecond para.\n\\end{document}\n'
 WANT = ('\\documentclass{article}\n\\usepackage{rikuy}\n\\begin{document}\nHello world.\n\n\\begin{center}\n'
-        '\\rikuywidget[width=\\linewidth]{graphs/function-1.html}{graphs/function-1.png}\n\\end{center}\n\nSecond para.\n\\end{document}\n')
+        '\\rikuywidget[width=\\linewidth]{graphs/function-1.html}{graphs/function-1.pgf}\n\\end{center}\n\nSecond para.\n\\end{document}\n')
 GD = '[role=dialog][aria-labelledby=pop-title]'
 
 
@@ -61,24 +61,23 @@ def graph_insert(page):
     G = newest(page, 'function'); want = WANT.replace('graphs/function-1', G)
     check('graph: its name is its own (graphs/function- and four letters: two coauthors\' first graphs never meet in a merge)', bool(G), G)
     check('graph: Insert writes the \\rikuywidget block after the paragraph and \\usepackage{rikuy}', src(page) == want, src(page))
-    check('graph: and its file, rikuy.sty and the picture, as one step', files(page) == [[G + '.html', 'main.tex', 'rikuy.sty'], [G + '.png']] and page.evaluate('window.rikuy.hist.length') == h0 + 1, files(page))
+    check('graph: and its file, rikuy.sty and the picture, as one step', files(page) == [[G + '.html', 'main.tex', 'rikuy.sty'], [G + '.pgf']] and page.evaluate('window.rikuy.hist.length') == h0 + 1, files(page))
     html = src(page, G + '.html')
     check('graph: its file is a graph Rikuy reads back, with no request out', html.startswith('<!doctype html>') and 'id="rikuy-graph"' in html and not re.search(r'\b(src|href)\s*=', html.split('</script>', 1)[1]), html[:200])
-    png = base64.b64decode(blob_b64(page, G + '.png') or '')
-    check('graph: the picture is a PNG three times the text\'s width', png[:8] == b'\x89PNG\r\n\x1a\n' and int.from_bytes(png[16:20], 'big') > 1200, len(png))
-    k = png.find(b'pHYs', 33, 200)
-    check('graph: with its resolution written (pHYs, 288 dpi) and its mark (tEXt rikuy-graph): TeX takes its natural size as the page draws it (review H4, V2)', k > 0 and int.from_bytes(png[k + 4:k + 8], 'big') == 11339 and b'rikuy-graph\x00' + G.encode() + b'.html' in png[:400], png[33:120])
+    pgf = base64.b64decode(blob_b64(page, G + '.pgf') or '').decode()
+    check('graph: the picture is PGF TeX draws (task 70), marked with its graph, its description\'s hash and its width', pgf.startswith('% rikuy-graph: ' + G + '.html ') and '\\begin{pgfpicture}' in pgf and re.match(r'% rikuy-graph: \S+ [0-9a-f]{8} \d+\n', pgf), pgf[:120])
+    check('graph: rikuy.sty v1.1, which inputs a .pgf picture', '\\rikuy@figure' in src(page, 'rikuy.sty'))
     page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000)
     check('graph: it runs on the page in a frame sandboxed to scripts alone', page.evaluate('document.querySelector("#wlayer iframe.rk-widget").getAttribute("sandbox")') == 'allow-scripts')
     page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(300)
     check('graph: one undo gives the source back byte for byte, the files and the picture gone', src(page) == DOC and files(page) == [['main.tex'], []], files(page))
     page.evaluate('window.rikuy.redo()'); page.wait_for_timeout(300)
-    check('graph: redo brings them all again', src(page) == want and files(page)[1] == [G + '.png'] and src(page, G + '.html') == html)
+    check('graph: redo brings them all again', src(page) == want and files(page)[1] == [G + '.pgf'] and src(page, G + '.html') == html)
     # a second graph takes the next names; rikuy.sty and the package are not written twice
     insert_graph(page, 'data', at=('Second', 1), caption='Data & more')
     s = src(page)
     D = newest(page, 'data')
-    check('graph: a second one, a figure with its caption escaped and a \\label Cross-reference offers (review L6); no second package line', s.count('\\usepackage{rikuy}') == 1 and '\\begin{figure}[htbp]\n\\centering\n\\rikuywidget[width=\\linewidth]{%s.html}{%s.png}\n\\caption{Data \\& more}\n\\label{fig:%s}\n\\end{figure}' % (D, D, D[7:]) in s and files(page)[0].count('rikuy.sty') == 1, s)
+    check('graph: a second one, a figure with its caption escaped and a \\label Cross-reference offers (review L6); no second package line', s.count('\\usepackage{rikuy}') == 1 and '\\begin{figure}[htbp]\n\\centering\n\\rikuywidget[width=\\linewidth]{%s.html}{%s.pgf}\n\\caption{Data \\& more}\n\\label{fig:%s}\n\\end{figure}' % (D, D, D[7:]) in s and files(page)[0].count('rikuy.sty') == 1, s)
     # from the insert list
     load_doc(page, DOC); click_text(page, 'Hello', 2)
     names = page.evaluate('window.rikuy.cmds.commands().filter((c) => c.palette).map((c) => c.palette.d)')
@@ -90,7 +89,7 @@ def graph_edit(page):
     insert_graph(page)
     G = newest(page, 'function'); want = WANT.replace('graphs/function-1', G)
     page.evaluate('window.rikuy.graphRefresh()'); page.wait_for_timeout(300)
-    before, png0 = src(page, G + '.html'), blob_b64(page, G + '.png')
+    before, png0 = src(page, G + '.html'), blob_b64(page, G + '.pgf')
     h0 = page.evaluate('window.rikuy.hist.length')
     page.evaluate('window.rikuy.runCommand("edit-graph")')
     page.wait_for_selector('#gd-ok')
@@ -105,9 +104,9 @@ def graph_edit(page):
     page.get_by_role('textbox', name='Slider 3 start').fill('0.5')
     page.click('#gd-ok'); page.wait_for_timeout(1200)
     after = src(page, G + '.html')
-    check('graph: Update writes the file and the picture, the text untouched, one step', after != before and '"a sin(b x) + c"' in after and src(page) == want and blob_b64(page, G + '.png') != png0 and page.evaluate('window.rikuy.hist.length') == h0 + 1)
+    check('graph: Update writes the file and the picture, the text untouched, one step', after != before and '"a sin(b x) + c"' in after and src(page) == want and blob_b64(page, G + '.pgf') != png0 and page.evaluate('window.rikuy.hist.length') == h0 + 1)
     page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(300)
-    check('graph: one undo gives the file and the picture back byte for byte', src(page, G + '.html') == before and blob_b64(page, G + '.png') == png0)
+    check('graph: one undo gives the file and the picture back byte for byte', src(page, G + '.html') == before and blob_b64(page, G + '.pgf') == png0)
     # a mistake is said where it is, and Update waits
     page.evaluate('window.rikuy.runCommand("edit-graph")'); page.wait_for_selector('#gd-ok')
     page.get_by_role('textbox', name='Formulas').fill('y = sin(x')
@@ -133,21 +132,24 @@ def graph_kinds(page):
         insert_graph(page, kind)
         page.wait_for_function('document.querySelectorAll("#wlayer iframe.rk-widget").length === 1', timeout=8000)
         page.wait_for_timeout(900)
-        name = [n for n in files(page)[1] if ('distribution' if kind == 'dist' else kind) + '-' in n][-1]
+        name = [n for n in files(page)[0] if ('distribution' if kind == 'dist' else kind) + '-' in n and n.endswith('.html')][-1]
         fr = page.frame_locator('#wlayer iframe.rk-widget')
         box = fr.locator('#rk-c').bounding_box()
         shot = base64.b64encode(page.screenshot(clip=box)).decode()
+        # (the drawing the PDF's picture is recorded from, task 70: test/graphs.py holds TeX's PDF against it)
+        cw = page.frame_locator('#wlayer iframe.rk-widget').locator('#rk-c').evaluate('e => e.clientWidth')
+        drawn = page.evaluate('([g, w]) => window.rikuy.graphDrawn(g, w, 3)', [name, cw])
         # compared in the page (CI has no Pillow): both drawn on white at the screenshot's size,
         # softened by a pixel (a 1 px bar edge rasterised at another scale is no difference a
         # reader sees), the mean of the channels' differences
         diff = page.evaluate('''async ([shot, name]) => {
           const img = async (blob) => createImageBitmap(blob);
-          const a = await img(await (await fetch('data:image/png;base64,' + shot)).blob()), b = await img(window.rikuy.assetBlobs.get(name));
+          const a = await img(await (await fetch('data:image/png;base64,' + shot)).blob()), b = await img(await (await fetch(name)).blob());
           const draw = (bm) => { const c = new OffscreenCanvas(a.width, a.height), g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, a.width, a.height); g.filter = 'blur(1px)'; g.drawImage(bm, 0, 0, a.width, a.height); return g.getImageData(0, 0, a.width, a.height).data; };
           const x = draw(a), y = draw(b); let sum = 0;
           for (let i = 0; i < x.length; i += 4) sum += (Math.abs(x[i] - y[i]) + Math.abs(x[i + 1] - y[i + 1]) + Math.abs(x[i + 2] - y[i + 2])) / 3;
-          return sum / (x.length / 4); }''', [shot, name])
-        check('graph %s: the PDF\'s picture is the live figure at its starting values (mean pixel difference %.2f)' % (kind, diff), diff < 6, diff)
+          return sum / (x.length / 4); }''', [shot, drawn])
+        check('graph %s: the picture drawn from its description is the live figure at its starting values (mean pixel difference %.2f)' % (kind, diff), diff < 6, diff)
         ok = fr.locator('#rk-e').is_hidden()
         check('graph %s: runs on the page without a message' % kind, ok)
 
@@ -219,7 +221,8 @@ def graph_phones(p):
             if dark:
                 browser.close(); continue
             fit = page.evaluate('''() => { const d = document.querySelector('.pop-graph'), r = d.getBoundingClientRect(), f = document.querySelector('.gd-frame').getBoundingClientRect();
-              const small = [...d.querySelectorAll('button, input, select, textarea')].filter((x) => x.offsetParent).map((x) => x.getBoundingClientRect()).filter((b) => b.height < 43.5 || b.width < 43.5).length;
+              // (a checkbox's target is its label, 44 px, which a tap anywhere on toggles it)
+              const small = [...d.querySelectorAll('button, input, select, textarea, label.gd-ck')].filter((x) => x.offsetParent && !(x.type === 'checkbox' && x.closest('label.gd-ck'))).map((x) => x.getBoundingClientRect()).filter((b) => b.height < 43.5 || b.width < 43.5).length;
               return { side: document.scrollingElement.scrollWidth > innerWidth, inside: r.left >= 0 && r.right <= innerWidth && f.right <= r.right, over: d.scrollWidth > d.clientWidth + 1, small }; }''')
             check('phone %d: the dialog fits, no sideways scroll, the preview inside it' % w, not fit['side'] and fit['inside'] and not fit['over'], fit)
             check('phone %d: every control of the dialog is 44 px each way' % w, fit['small'] == 0, fit)
@@ -249,8 +252,8 @@ def graph_compiles(page):
     for eng in ('pdflatex', 'xelatex', 'lualatex'):
         r = page.evaluate("""async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile();
           let s = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) s += String.fromCharCode(...r.pdf.subarray(i, i + 8192));
-          return { ok: r.ok, pages: r.pages, image: /\\/Subtype\\s*\\/Image/.test(s), w: (/\\/Width (\\d+)/.exec(s) || [])[1] }; }""", '% !TeX program = ' + eng + '\n' + t)
-        check('graph: compiles on %s with its picture in the PDF' % eng, r['ok'] and r['pages'] == 1 and r['image'], r)
+          return { ok: r.ok, pages: r.pages, image: /\\/Subtype\\s*\\/Image/.test(s), size: s.length }; }""", '% !TeX program = ' + eng + '\n' + t)
+        check('graph: compiles on %s with its picture in the PDF, as vector lines (no image)' % eng, r['ok'] and r['pages'] == 1 and not r['image'] and r['size'] > 8000, r)
     page.set_default_timeout(30000)
 
 
