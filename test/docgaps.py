@@ -722,6 +722,26 @@ def split_long(page):
     check('the window resized: the second view\'s pages as wide as the first\'s again', abs(wd[0] - wd[1]) <= 2, wd)
     page.set_viewport_size({'width': 1400, 'height': 1000}); page.wait_for_timeout(600)
     page.evaluate("window.rikuy.runCommand('split-view')"); page.wait_for_timeout(300)
+    # (the verification of 3d3bfc4: on a 125 page document typing with Split on cost 2.2 s of long
+    # tasks; the copy now waits for a pause and an idle time. The document costs about 60 ms a
+    # keystroke without Split (its contents' page numbers), so Split is measured against that)
+    pre = ''.join('\\newcommand{\\m%s}{x} %% %s\n' % (chr(97 + k % 26) * (1 + k // 26), 'y' * 60) for k in range(1500))
+    body_ = '\\tableofcontents\n\n' + '\n\n'.join('\\subsection{Head %d}\nWords of paragraph %d here.' % (k, k) for k in range(1500))
+    load_doc(page, '\\documentclass{article}\n' + pre + '\\begin{document}\n' + body_ + '\n\\end{document}\n'); page.wait_for_timeout(1500)
+    page.evaluate("window.__lt = []; new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__lt.push(e.duration); }).observe({ type: 'longtask', buffered: false })")
+    res = {}
+    for on in (False, True):
+        if on:
+            page.evaluate("window.rikuy.runCommand('split-view')"); page.wait_for_timeout(2500)
+        click_text(page, 'Words of paragraph %d ' % (3 if on else 4), 2); page.wait_for_timeout(500)
+        n0 = len(src(page))
+        page.evaluate("window.__lt = []"); page.keyboard.type('abcdefghij', delay=80); page.wait_for_timeout(300)
+        res[on] = (page.evaluate('window.__lt'), len(src(page)) - n0)
+        page.wait_for_timeout(2000)
+    off, on = res[False][0], res[True][0]
+    check('typing ten letters with Split on a 125 page document: the long tasks no longer than without Split, but for 40 ms (%d ms in all, %d without)' % (sum(on), sum(off)),
+          res[False][1] == 10 and res[True][1] == 10 and (max(on) if on else 0) <= (max(off) if off else 0) + 40 and sum(on) <= 1.5 * sum(off) + 150, ([round(x) for x in on], [round(x) for x in off]))
+    page.evaluate("window.rikuy.runCommand('split-view')"); page.wait_for_timeout(300)
 
 
 # ---- References: Update Table, Update Index -----------------------------------------------------------------
