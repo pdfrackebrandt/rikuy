@@ -565,7 +565,9 @@ class App {
     px = Math.round(px * 1000) / 1000;
     const changed = px !== this.px;
     this.px = px;
-    $('#zoomv').textContent = this.textFit ? Math.round(px / PX_PER_PT * 100) + '%' : z === 'fit' ? 'Fit' : Math.round(z * 100) + '%';
+    // (the zoom as a percentage, the one the status bar shows, as Word's does; fitting the width is
+    // what a press does, its name)
+    $('#zoomv').textContent = Math.round(px / PX_PER_PT * 100) + '%';
     // (its name stays "Fit width", what a press does; the zoom it shows is its description)
     $('#zoomv').setAttribute('aria-description', 'Zoom: ' + $('#zoomv').textContent);
     // with the text block as wide as the screen, the view starts at the text, not at the margin
