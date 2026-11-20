@@ -917,6 +917,9 @@ body.dropping .dropzone { display: grid; }
 .pitem b.mono { font-family: var(--font-mono); font-weight: 500; color: var(--blue-ink); }
 .pitem span { color: var(--mute); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .pitem:hover, .pitem.on { background: var(--blue-wash); }
+/* what a label names, at the row's end (the reference picker): the heading's words, the equation */
+.pitem .pv-l { margin-left: auto; flex: 0 1 55%; text-align: right; color: var(--ink); }
+.pitem .pv-l .katex { font-size: 1em; }
 .empty { padding: 10px; font-size: 12.5px; color: var(--mute); }
 .notes { flex-wrap: nowrap; }
 .notes input { flex: 1 1 0; min-width: 0; }

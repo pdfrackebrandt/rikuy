@@ -90,7 +90,7 @@ def levels(page):
     check('Tab joins the list that ends the item before', src(page) == WRAP('\\begin{itemize}\n  \\item One\n    \\begin{itemize}\n      \\item Two\n      \\item Three\n    \\end{itemize}\n\\end{itemize}'), src(page)[40:])
     load_doc(page, L3); click_text(page, 'One', 1); key(page, 'Tab')
     focused = page.evaluate("document.activeElement && document.activeElement.id")
-    check('Tab on the first item writes nothing, says why, and goes on as Tab does (off the page)', src(page) == L3 and focused != 'pages' and 'first item' in page.evaluate("document.getElementById('toast').textContent"), (focused, page.evaluate("document.getElementById('toast').textContent")))
+    check('Tab on the first item writes nothing, says why, and keeps the keyboard on the page (POWER-USER.md 6)', src(page) == L3 and focused == 'pages' and 'first item' in page.evaluate("document.getElementById('toast').textContent"), (focused, page.evaluate("document.getElementById('toast').textContent")))
     st = state(page, 'indent-increase')
     check('Increase Indent is disabled there and says why', st[0] is False and 'first item' in st[2], st)
     load_doc(page, L3); click_text(page, 'Two', 1); key(page, 'Shift+Tab')

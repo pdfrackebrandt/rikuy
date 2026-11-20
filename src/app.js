@@ -36,6 +36,7 @@ import { review } from './review.js';
 import { $, mk, mkBtn, store, load, PREFS, textSig, when } from './ui/dom.js';
 // the command registry and everything drawn from it: the ribbon's tabs, the keys, the search box,
 // the right click menu, the insert list (src/commands.js, src/cmd/*.js)
+import { labelsIn, labelPreview } from './find.js';
 import { paletteItems, insertTextHooks, command, commands, describe, enabled, register, unregister, run as runCmd, joinMethods } from './commands.js';
 import { methods as cmdMethods } from './cmd/index.js';
 import { tabs, installRibbon } from './ribbon/tabs.js';
@@ -360,6 +361,13 @@ function fromField(v, st) {
     return '  ' + withSfx(t, k >= 0 ? R[k] : null);
   });
   return lines.join(' \\\\\n');
+}
+
+// A $ typed in a formula's LaTeX box ends the formula, as the closing $ does in the source; not
+// in an empty box (a dollar sign: newMath's own rule) nor after a backslash (\$, a dollar)
+function dollarEnds(ta) {
+  const before = ta.value.slice(0, ta.selectionStart);
+  return !!ta.value.trim() && ta.selectionStart === ta.selectionEnd && !/(^|[^\\])(\\\\)*\\$/.test(before);
 }
 
 class App {
@@ -1336,12 +1344,18 @@ class App {
       const F = this.footnoteHere(), c = F && this.caretNow();
       if (F && (e.key === 'Escape' || (c && c.collapsed && c.a >= (F.ie != null ? F.ie : F.e - 1)))) { e.preventDefault(); this.leaveFootnote(F); return; }
     }
+    // (Esc, then Tab, leaves the page, as it leaves the source pane: the keyboard's way out)
+    const tabOut = this.tabOut;
+    if (e.key !== 'Shift') this.tabOut = false;
     if (e.key === 'Tab') {
       const n = getSelection().anchorNode;
       const el = n && (n.nodeType === 1 ? n : n.parentElement);
       if (el && el.closest('td')) { e.preventDefault(); this.tabCell(e.shiftKey); return; }
+      // Tab keeps the keyboard on the page, as Word's: it went to the status bar or the PDF's
+      // engine list, where the next letters picked an engine (POWER-USER.md 6)
+      if (!mod && !e.altKey && !tabOut && !e.defaultPrevented) { e.preventDefault(); this.tabOnPage(e.shiftKey); return; }
     }
-    if (e.key === 'Escape') { this.disarm(); }
+    if (e.key === 'Escape') { this.disarm(); this.tabOut = true; }
     // Word's Shift+Enter: a line break inside the paragraph (\\), not a new paragraph
     if (e.key === 'Enter' && e.shiftKey && !mod && !e.altKey && !this.armed) { e.preventDefault(); this.enter(true); return; }
     // Enter on an equation, citation or block that Backspace selected opens it, as a click does:
@@ -2371,6 +2385,25 @@ class App {
     this.scrollToCaret();
     return true;
   }
+  // Tab on the page outside a table, a list or tab stops (those have their own): at a paragraph's
+  // start Word's first line indent (Shift+Tab: none, \noindent), elsewhere a gap as a tab
+  // leaves one (\quad); nothing in a heading, a caption, the title or a LaTeX paragraph
+  tabOnPage(back) {
+    const at = this.ribbonAt(), c = at && at.c;
+    if (!c || c.ghost || !c.collapsed || at.cell || (at.it && at.it.dataset.li) || /^(h|cap|ttl|tex|li)$/.test(at.ctx || '') || this.texAt(c.f, c.a)) return false;
+    const sel = getSelection();
+    let start = false;
+    if (at.it && sel.rangeCount) {
+      const r = document.createRange();
+      try { r.setStart(at.it, 0); r.setEnd(sel.anchorNode, sel.anchorOffset); start = !r.toString().replace(/[\u200B\s]/g, ''); } catch (e) { start = false; }
+    }
+    if (start) return this.paraFirstLineKey(back, at);
+    if (back) return false;
+    const t = '\\quad' + (/[A-Za-z]/.test(this.src(c.f)[c.a] || '') ? ' ' : '');
+    this.commit([{ f: c.f, s: c.a, e: c.a, t }], { f: c.f, p: c.a + t.length, bias: 1 }, 'type');
+    return true;
+  }
+
   // Ctrl+End, as Word's: the end of the text, never the footnotes under the last page's lines
   textEnd(extend) {
     const spans = this.root.querySelectorAll('.flow span.t');
@@ -2707,7 +2740,17 @@ class App {
       onNewRowOutside: opts.onNewRowOutside,
       renderTex: (t) => this.renderer.katex(t, false).html,
       decimalComma,
-      baseDepth: () => (st.multi ? 1 : 0)
+      baseDepth: () => (st.multi ? 1 : 0),
+      onDollar: opts.onDollar,
+      // what the field cannot hold, typed as LaTeX (\begin{aligned}): it goes on in the LaTeX
+      // box above, at the caret's place, the field showing what it makes
+      toLatex: (more) => {
+        let at = ta.value.length;
+        try { const pre = fromField(mf.getValue(0, mf.position, 'latex'), st); if (ta.value.startsWith(pre)) at = pre.length; } catch (e) { /* at the end */ }
+        ta.focus();
+        ta.setRangeText(more, at, at, 'end');
+        ta.dispatchEvent(new Event('input'));
+      }
     });
     mf.addEventListener('keydown', (e) => {
       if (wt.active() || mf.mode === 'latex') return;
@@ -2772,7 +2815,7 @@ class App {
     }
     const hint = document.createElement('span');
     hint.className = 'hint';
-    hint.textContent = display ? '\\name + Space, x^(n+1), a/b, Space steps out, Ctrl+Enter new row, Enter done' : '\\name + Space, x^(n+1), a/b, Space steps out, Enter done';
+    hint.textContent = display ? '\\name + Space or \\frac{a}{b}, x^(n+1), a/b, Space steps out, Ctrl+Enter new row, Enter done' : '\\name + Space or \\frac{a}{b}, x^(n+1), a/b, Space steps out, Enter or $ done';
     row.appendChild(hint);
     if (this.caps.sample) {
       const ai = document.createElement('button');
@@ -2833,6 +2876,8 @@ class App {
     ta.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && (!display || e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
+      // (the closing $ of a formula in the line, as typed in the source; \$ stays a dollar sign)
+      if (e.key === '$' && !display && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
     });
     // However the box closes, what was typed is kept: text held back is written made whole
     // (mathMadeWhole), in the box's undo step.
@@ -2879,6 +2924,8 @@ class App {
         P.wordTyping.newRow();
       } : null,
       onEnter: () => { if (stay()) return; push.flush(); this.closePop(); },
+      // ($ closes a formula in the line as it does in the source: $x^2$ typed as in Overleaf)
+      onDollar: display ? null : () => { if (stay()) return; push.flush(); this.closePop(); },
       onEscape: () => { push.flush(); this.closePop(); }
     });
   }
@@ -2934,7 +2981,7 @@ class App {
     const prev = document.createElement('div'); prev.className = 'pv';
     const err = document.createElement('div'); err.className = 'pv-err'; err.hidden = true;
     const row = document.createElement('div'); row.className = 'pop-row';
-    const hint = document.createElement('span'); hint.className = 'hint'; hint.textContent = 'Enter to insert. Type $ again for a dollar sign.';
+    const hint = document.createElement('span'); hint.className = 'hint'; hint.textContent = 'Enter or $ to insert; $ at once for a dollar sign.';
     row.appendChild(hint);
     if (this.caps.sample) {
       const ai = document.createElement('button');
@@ -2996,6 +3043,7 @@ class App {
     ta.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
       if (e.key === 'Escape') { e.preventDefault(); push.flush(); this.closePop(); }
+      if (e.key === '$' && dollarEnds(ta)) { e.preventDefault(); if (stay()) return; push.flush(); this.closePop(); }
     });
     const whole = () => mathMadeWhole(ta.value, kerr(ta.value));
     this.pop.onClose = () => { push.cancel(); if (!this.pop) return; const v = held(ta.value) ? whole() : ta.value; insert(v); this.eqClosed(this.pop, v); };
@@ -3021,6 +3069,9 @@ class App {
       display: false, initial: '', keepFocus: true,
       env: () => '$',
       onEnter: () => { if (stay()) return; push.flush(); this.closePop(); },
+      // the closing $ of $x^2$ typed as in Overleaf ends the formula; in an empty one it stays a
+      // dollar sign (onKey, below)
+      onDollar: () => { if (!ta.value && !ins) return; if (stay()) return; push.flush(); this.closePop(); },
       onEscape: () => { push.flush(); this.closePop(); },
       onKey: (e) => {
         if (e.key === '$' && !ta.value && !ins) {
@@ -3212,7 +3263,8 @@ class App {
       }
     };
     search.addEventListener('input', draw);
-    search.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const b = list.querySelector('.pitem'); if (b) b.click(); } if (e.key === 'Escape') this.closePop(); });
+    // (Enter cites the highlighted work and closes; Ctrl+Enter cites it and stays for another)
+    this.pickerKeys(search, list, true);
     draw();
     this.positionPop();
     search.focus();
@@ -3227,6 +3279,40 @@ class App {
     if (O.biblatex && !O.biblatexNatbib && !O.natbib) return ay ? [['parencite', '(Author, Year)'], ['textcite', 'Author (Year)'], ['cite', 'Author Year'], ['citeauthor', 'Author'], ['citeyear', 'Year']] : [['cite', '[1]'], ['textcite', 'Author [1]'], ['citeauthor', 'Author']];
     if (O.natbib || O.biblatex) return ay ? [['citep', '(Author, Year)'], ['citet', 'Author (Year)'], ['citealt', 'Author Year'], ['citealp', 'Author, Year'], ['citeauthor', 'Author'], ['citeyear', 'Year'], ['cite', '\\cite']] : [['cite', '[1]'], ['citep', '[1] (natbib)'], ['citet', 'Author [1]'], ['citeauthor', 'Author']];
     return [['cite', '[1]']];
+  }
+
+  // A picker's list by the keys, as a completion list is (POWER-USER.md 7): Up and Down move the
+  // highlight, Enter takes it and closes the picker with the caret after what it wrote (Ctrl+Enter,
+  // where more can be taken, takes it and stays), Esc closes. It went on taking the first item
+  // and staying open, so the next words went into its search box.
+  pickerKeys(input, list, more) {
+    const items = () => [...list.querySelectorAll('.pitem')];
+    const mark = (i) => {
+      const all = items();
+      all.forEach((b, k) => { b.classList.toggle('on', k === i); b.id = 'pk-' + k; b.setAttribute('aria-selected', k === i ? 'true' : 'false'); });
+      if (all[i]) { all[i].scrollIntoView({ block: 'nearest' }); input.setAttribute('aria-activedescendant', all[i].id); }
+    };
+    input.addEventListener('input', () => mark(0));
+    input.addEventListener('keydown', (e) => {
+      const all = items(), i = all.findIndex((b) => b.classList.contains('on'));
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (all.length) mark(e.key === 'ArrowDown' ? (i + 1) % all.length : (i <= 0 ? all.length - 1 : i - 1));
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        const b = all[Math.max(0, i)];
+        if (b) b.click();
+        if (more && (e.ctrlKey || e.metaKey)) { input.focus(); mark(0); } else this.closePop();
+      } else if (e.key === 'Escape') { e.preventDefault(); this.closePop(); }
+    });
+    // (the place the list starts with: the label the reference points to now, or the first)
+    requestAnimationFrame(() => { const all = items(); const i = all.findIndex((b) => b.classList.contains('on')); mark(Math.max(0, i)); });
+  }
+  // where each \label is: key -> { f, p } (the first of a key, as LaTeX takes it)
+  labelPlaces() {
+    const out = new Map();
+    for (const [f, t] of this.files) if (/\.tex$/i.test(f)) for (const x of labelsIn(t)) if (!out.has(x.key)) out.set(x.key, { f, p: x.p });
+    return out;
   }
 
   openRef(el, info) {
@@ -3250,20 +3336,25 @@ class App {
     const search = document.createElement('input'); search.type = 'search'; search.placeholder = 'Filter labels'; search.id = 'pop-refsearch'; search.setAttribute('aria-label', 'Filter labels');
     const list = document.createElement('div'); list.className = 'plist';
     p.append(top, search, list);
-    const labels = [...this.model.labels.entries()].map(([k, v]) => ({ key: k, num: v.num, kind: v.kind }));
+    const at = this.labelPlaces();
+    const labels = [...this.model.labels.entries()].map(([k, v]) => ({ key: k, num: v.num, kind: v.kind, pv: at.has(k) ? labelPreview(this.src(at.get(k).f), at.get(k).p, v.kind) : { text: '' } }));
     const draw = () => {
       const q = search.value.trim().toLowerCase();
       list.replaceChildren();
-      for (const L of labels.filter((x) => !q || (x.key + ' ' + x.kind + ' ' + x.num).toLowerCase().includes(q))) {
+      for (const L of labels.filter((x) => !q || (x.key + ' ' + x.kind + ' ' + x.num + ' ' + (x.pv.text || x.pv.math || '')).toLowerCase().includes(q))) {
         const b = document.createElement('button'); b.type = 'button'; b.className = 'pitem' + (L.key === key ? ' on' : '');
         b.innerHTML = '<b>' + esc(L.kind.charAt(0).toUpperCase() + L.kind.slice(1)) + ' ' + esc(L.num || '') + '</b><span>' + esc(L.key) + '</span>';
+        // what it names: the heading's words, the equation drawn, the caption (Word's list shows them)
+        const pv = document.createElement('span'); pv.className = 'pv-l';
+        if (L.pv.math) { const r = this.renderer.katex(L.pv.math, false); if (r.err) pv.textContent = L.pv.math; else pv.innerHTML = r.html; } else pv.textContent = L.pv.text;
+        if (pv.textContent) b.appendChild(pv);
         b.addEventListener('click', () => { key = L.key; if (L.kind === 'equation' && cmd === 'ref') cmd = 'eqref'; cs.value = cmd; write(); });
         list.appendChild(b);
       }
       if (!labels.length) { const n = document.createElement('div'); n.className = 'empty'; n.textContent = 'No labels yet. Add \\label{...} after a section, equation or figure.'; list.appendChild(n); }
     };
     search.addEventListener('input', draw);
-    search.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); const b = list.querySelector('.pitem'); if (b) b.click(); } });
+    this.pickerKeys(search, list, false);
     draw();
     this.positionPop();
     search.focus();

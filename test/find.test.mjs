@@ -7,7 +7,7 @@
 // across files), two sections or paragraphs swapped and moved with the space between them kept,
 // a new heading's edit; and a person's own pattern bounded in time.
 import assert from 'node:assert/strict';
-import { compile, expand, hitsIn, runsWith, context, hitsInSource, joinRanges, labelsIn, gapKind, hasParaMark, SEP, PARA, PMARK, FMT } from '../src/find.js';
+import { compile, expand, hitsIn, runsWith, context, hitsInSource, joinRanges, labelsIn, labelPreview, gapKind, hasParaMark, SEP, PARA, PMARK, FMT } from '../src/find.js';
 import { headingAt, sectionRange, under, promoteEdits, swapEdit, moveEdits, newHeading, eolOf, foldItems, matchFold, foldEntry } from '../src/outline.js';
 import { applyEdits } from '../src/styles.js';
 
@@ -365,6 +365,32 @@ ok('a collapsed heading hides the items up to its next heading of its level or a
   assert.deepEqual([...matchFold([{ f: 'm', s: 0, lv: 1, t: 'B' }], heads)], [2]);
   // a heading typed in: its place, its words changed
   assert.deepEqual([...matchFold([{ f: 'm', s: 40, lv: 1, t: 'Bx' }], heads)], [2]);
+});
+
+// the reference picker's words for a label (POWER-USER.md 7): a heading's title, an equation's
+// LaTeX, a caption, a theorem's first words; nothing for a label in the middle of text
+ok('labelPreview', () => {
+  const t = String.raw`\section{Growth \emph{and} trade}\label{sec:g}
+Text.
+\begin{equation}\label{eq:e}
+u'(c_t) = \beta R u'(c_{t+1})
+\end{equation}
+\begin{figure}[h]\centering\includegraphics{x}\caption{Output per worker}\label{fig:y}\end{figure}
+\begin{theorem}[Ramsey]\label{thm:r} Consumption grows at rate $g$.\end{theorem}
+\subsection{Two}
+\label{sec:two}
+Para \label{lone}
+\[ x = 1 \label{eq:d} \]
+`;
+  const P = Object.fromEntries(labelsIn(t).map((x) => [x.key, labelPreview(t, x.p, x.key.startsWith('eq') ? 'equation' : 'section')]));
+  assert.deepEqual(P['sec:g'], { text: 'Growth and trade' });
+  assert.deepEqual(P['eq:e'], { math: "u'(c_t) = \\beta R u'(c_{t+1})" });
+  assert.deepEqual(P['fig:y'], { text: 'Output per worker' });
+  assert.deepEqual(P['thm:r'], { text: 'Consumption grows at rate g.' });
+  assert.deepEqual(P['sec:two'], { text: 'Two' });
+  assert.deepEqual(P.lone, { text: '' });
+  assert.deepEqual(P['eq:d'], { math: 'x = 1' });
+  assert.deepEqual(labelPreview('', 0, 'section'), { text: '' });
 });
 
 console.log('find: ' + n + ' groups of checks passed');

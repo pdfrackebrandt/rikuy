@@ -516,6 +516,13 @@ export const methods = {
     const pkg = r.needs && !hasPackage(src, r.needs, undefined, this.preambleOthers()) ? usePackages(src, [r.needs], { others: this.preambleOthers() }) : [];
     return this.paraApply(this.main, [...r.edits, ...pkg]);
   },
+  // Tab and Shift+Tab at a paragraph's start (App.tabOnPage), as Word's AutoFormat sets the first
+  // line's indent with them: LaTeX's indent, or none (\noindent)
+  paraFirstLineKey(back, at) {
+    const p = paraOf(this, at);
+    if (!p || p.why || p.float) return false;
+    return this.paraRun(p, [(text, V, u) => P.firstLineEdits(text, V, back ? 'none' : 'first', null, { indented: !!(u && u.it && u.it.indent) })]);
+  },
   // whether the paragraph hangs (Hanging Indent's state), and Hanging Indent itself
   paraHanging(at) {
     const p = paraOf(this, at);
