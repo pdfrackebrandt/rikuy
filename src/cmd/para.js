@@ -88,6 +88,8 @@ register(
     when: (app, at) => app.paraIndentCan(at, -1), whyNot: (app, at) => app.paraIndentWhy(at, -1), run: (app, args, at) => app.paraIndentStep(-1, at) },
   { id: 'paragraph-indent', name: 'Increase paragraph indent', title: 'Increase paragraph indent: the left indent to the next step of 1.27 cm (changepage\'s adjustwidth); Home\'s Increase Indent runs it outside a list',
     synonyms: ['Indent paragraph', 'Indent more', 'adjustwidth'],
+    // (Word for Mac's Control+Shift+M; elsewhere Ctrl+M is the formula's)
+    keysMac: ['Control+Shift+M'],
     when: (app, at) => app.paraIndentCan(at, 1), whyNot: (app, at) => app.paraIndentWhy(at, 1), run: (app, args, at) => app.paraIndentStep(1, at) },
   { id: 'show-marks', name: 'Show marks', order: 70, tab: 'home', group: 'paragraph', kind: 'toggle', icon: ICON.marks, keys: ['Ctrl+Shift+8'],
     also: [{ tab: 'view', group: 'show', name: 'Formatting marks', order: 30 }],
@@ -102,6 +104,18 @@ register(
     title: 'Line and Paragraph Spacing: 1.0, 1.15, 1.5 or 2.0 for the paragraph (setspace\'s environments) or the whole document, and space before or after it',
     synonyms: ['Line spacing', 'Spacing', 'Double spacing', 'One and a half spacing', 'setspace', 'onehalfspacing', 'doublespacing', 'Space before', 'Space after'],
     when: (app, at) => can(app, at) || docOK(app), whyNot: why, run: (app, args, at) => (args != null ? app.paraSpacing(args, at) : app.paraSpacingMenu(at)) },
+  // Word's keys for the three spacings it has keys for (Ctrl+1, Ctrl+5, Ctrl+2): a browser's own
+  // Ctrl and a digit picks a tab, and stays so everywhere but with the caret on the page
+  ...[['1.0', 'line-spacing-1', 'Single line spacing', 'Ctrl+1', 'one line apart', ['Single spacing', 'Line spacing 1']],
+    ['1.5', 'line-spacing-15', '1.5 line spacing', 'Ctrl+5', 'one and a half lines apart (setspace)', ['One and a half spacing', 'onehalfspacing', 'Line spacing 1.5']],
+    ['2.0', 'line-spacing-2', 'Double line spacing', 'Ctrl+2', 'two lines apart (setspace)', ['Double spacing', 'doublespacing', 'Line spacing 2']]].map(([v, id, name, key, what, synonyms]) => ({
+    id, name, keys: [key], title: name + ' (' + key + '): the paragraph\'s lines ' + what, synonyms,
+    when: can, whyNot: why, run: (app, args, at) => app.paraSpacing(v, at) })),
+  // Word's Ctrl+T, which a browser keeps for a new tab: the first line at the margin, the others
+  // 1 cm in (\hangindent), and off again as it came
+  { id: 'hanging-indent', name: 'Hanging Indent', title: 'Hanging Indent: the paragraph\'s first line at the margin, the others 1 cm in (\\hangindent); again takes it off (Paragraph… sets the width)',
+    synonyms: ['Hanging', 'Hang indent', 'hangindent', 'Outdent first line'], kind: 'toggle',
+    when: can, whyNot: why, on: (app, at) => app.paraHanging(at), run: (app, args, at) => app.paraHangingToggle(at) },
   { id: 'shading', name: 'Shading', order: 130, tab: 'home', group: 'paragraph', kind: 'split', icon: ICON.shading,
     title: 'Shading: the paragraph on a colour (tcolorbox), the colour picked last; the arrow for every colour and No Color',
     synonyms: ['Paragraph shading', 'Background colour', 'Shade', 'tcolorbox'],
@@ -473,6 +487,19 @@ export const methods = {
     if (!r.edits.length) return false;
     const pkg = r.needs && !hasPackage(src, r.needs, undefined, this.preambleOthers()) ? usePackages(src, [r.needs], { others: this.preambleOthers() }) : [];
     return this.paraApply(this.main, [...r.edits, ...pkg]);
+  },
+  // whether the paragraph hangs (Hanging Indent's state), and Hanging Indent itself
+  paraHanging(at) {
+    const p = paraOf(this, at);
+    if (!p || p.why || p.float) return null;
+    const u = p.units[0];
+    return P.firstLineOf(u.U, !!u.it.indent).special === 'hanging';
+  },
+  paraHangingToggle(at) {
+    const p = paraOf(this, at);
+    if (!p || p.why || p.float) { if (p && p.why) this.toast(p.why); return false; }
+    const on = !this.paraHanging(at);
+    return this.paraRun(p, [(text, V, u) => P.firstLineEdits(text, V, on ? 'hanging' : 'first', '1cm', { indented: !!u.it.indent })]);
   },
   paraSpacingMenu(at) {
     const p = paraOf(this, at), ok = !!p && !p.why && !p.float;

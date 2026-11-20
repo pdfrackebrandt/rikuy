@@ -12,7 +12,7 @@
 // and replaces the files' own text, commands, labels and math included, the replacement as it is.
 
 import { register, command, enabled, onInstall } from '../commands.js';
-import { chordText } from '../keys.js';
+import { firstKey } from '../keys.js';
 import { compile, expand, hitsIn, hitsInSource, runsWith, blockText, charSrc, hitSource, joinRanges, labelsIn, hasParaMark, pageParaText, paraHitSource, controlWords, inControlWord, PARA, PMARK, FMT, FORMATS, MAX_HITS } from '../find.js';
 import { headingAt, sectionRange, promoteEdits, swapEdit, moveEdits, newHeading, eolOf, foldItems, foldEntry, matchFold, NAME } from '../outline.js';
 import { absAtom, posFromDom, diff, endsWithControlWord } from '../editor.js';
@@ -43,12 +43,24 @@ register(
   // (fit: on Home they show as the row has room; else the group "Editing" holds them, as Word's)
   { id: 'find', name: 'Find', order: 10, fit: true, title: 'Find text in the document, in the Navigation pane (Ctrl+F)', synonyms: ['Search document', 'Search the text', 'Look for'], tab: 'home', group: 'editing', el: 'rb-find', label: 'Find', kind: 'split',
     icon: MAG, keys: ['Ctrl+F'], when: () => true, run: (app) => app.findInPane(),
-    menuItems: () => [{ name: 'Find', keys: 'Ctrl+F', command: 'find' }, { name: 'Advanced Find', command: 'advanced-find' }, { name: 'Go To', keys: isMacUA ? 'Ctrl+Alt+G' : 'Ctrl+G', command: 'go-to' }] },
+    menuItems: () => [{ name: 'Find', keys: 'Ctrl+F', command: 'find' }, { name: 'Advanced Find', command: 'advanced-find' }, { name: 'Go To', keys: firstKey(command('go-to'), isMacUA), command: 'go-to' }] },
   { id: 'advanced-find', name: 'Advanced Find', title: 'The Find and Replace dialog: match case, whole words, wildcards, formatting, in the LaTeX source', synonyms: ['Find and Replace', 'Find dialog'], when: () => true, run: (app) => openFindDialog(app, 'find') },
   { id: 'replace', name: 'Replace', order: 20, fit: true, title: 'Replace text in the document (Ctrl+H)', synonyms: ['Find and Replace', 'Substitute', 'Replace all'], tab: 'home', group: 'editing', el: 'rb-replace', label: 'Replace',
     icon: '<path d="M4 7.5h9l-2.5-2.5M16 12.5H7l2.5 2.5"/>', keys: ['Ctrl+H'], mac: { 'Ctrl+H': 'Control+H' }, when: () => true, run: (app) => openFindDialog(app, 'replace') },
-  { id: 'go-to', name: 'Go To', title: 'Go to a page, a heading, a footnote, an equation, a figure, a table, a comment or a label (Ctrl+G)', synonyms: ['Go to page', 'Jump to', 'Go to section', 'Go to label'],
-    keys: ['Ctrl+G'], mac: { 'Ctrl+G': 'Ctrl+Alt+G' }, when: () => true, run: (app) => openFindDialog(app, 'goto') },
+  { id: 'go-to', name: 'Go To', title: 'Go to a page, a heading, a footnote, an equation, a figure, a table, a comment or a label (Ctrl+G, or F5)', synonyms: ['Go to page', 'Jump to', 'Go to section', 'Go to label'],
+    keys: ['Ctrl+G', 'F5'], mac: { 'Ctrl+G': 'Ctrl+Alt+G' }, when: () => true, run: (app) => openFindDialog(app, 'goto') },
+  // Word's Shift+F4 finds the last words again, without the pane (Cmd+G on a Mac, as everywhere there)
+  { id: 'find-next', name: 'Find Next', title: 'Find the words of the last Find again, the next place after the caret (Shift+F4)', synonyms: ['Repeat Find', 'Find again', 'Next result'],
+    keys: ['Shift+F4'], keysMac: ['Ctrl+G'], when: () => true, run: (app) => app.findNext() },
+  // Word's Shift+F5 (and Ctrl+Alt+Z): back to where the last edits were, the four last in turn
+  { id: 'go-back', name: 'Go Back', title: 'The caret back to where you last edited; again, the edit before, among the last four (Shift+F5)', synonyms: ['Last edit', 'Previous edit', 'Last change', 'Where was I'],
+    keys: ['Shift+F5', 'Ctrl+Alt+Z'], when: (app) => !!(app.hist && app.hist.length), whyNot: () => 'Nothing has been edited yet.', run: (app) => app.goBack() },
+  // Word's F8: each press selects more where the caret is: the word, the sentence, the paragraph,
+  // the document; Shift+F8 one step back
+  { id: 'extend-selection', name: 'Extend Selection', title: 'Select more: the word, then the sentence, the paragraph, the whole document, one step a press (F8)', synonyms: ['Grow selection', 'Expand selection', 'Select word'],
+    keys: ['F8'], when: (app, at) => !!at && !at.c.ghost, whyNot: () => 'Put the caret in the text first.', run: (app, args, at) => app.extendSel(at) },
+  { id: 'shrink-selection', name: 'Shrink Selection', title: 'Select less: one step of Extend Selection back (Shift+F8)', synonyms: ['Reduce selection'],
+    keys: ['Shift+F8'], when: (app, at) => !!at && !at.c.ghost, whyNot: () => 'Put the caret in the text first.', run: (app) => app.shrinkSel() },
   { id: 'select', name: 'Select', order: 30, fit: true, title: 'Select all, a paragraph, a sentence, or text with similar formatting', tab: 'home', group: 'editing', el: 'rb-select', label: 'Select', kind: 'menu',
     icon: '<path d="M5 4.5v11M3.5 4.5h3M3.5 15.5h3M9 6.5h7.5M9 10h7.5M9 13.5h5"/>', when: () => true,
     run: (app) => app.openSelectMenu(), menuItems: (app) => regItems(app, SELECT) },
@@ -81,10 +93,17 @@ register(
   { id: 'heading-expand', name: 'Expand heading', title: 'Show the text under this heading again (Alt+Shift++)', synonyms: ['Expand', 'Unfold heading', 'Show section text'],
     keys: ['Alt+Shift++'], mac: { 'Alt+Shift++': 'Control+Shift++' }, menu: { heading: 71 },
     when: (app, at) => { const k = headAt(app, at); return k >= 0 && app.foldIs(k); }, whyNot: (app, at) => headAt(app, at) < 0 ? 'Put the caret in a heading first.' : 'Its text shows already.', run: (app, args, at) => app.foldSet(headAt(app, at), false) },
-  { id: 'headings-expand-all', name: 'Expand all headings', title: 'Show the text under every collapsed heading', synonyms: ['Expand all', 'Show all text'], menu: { heading: 72 },
+  // (Word's Alt+Shift+A, expand or collapse all: Expand where a heading is collapsed, else Collapse)
+  { id: 'headings-expand-all', name: 'Expand all headings', title: 'Show the text under every collapsed heading (Alt+Shift+A)', synonyms: ['Expand all', 'Show all text', 'All levels'], menu: { heading: 72 },
+    keys: ['Alt+Shift+A'], keyRank: 1, mac: { 'Alt+Shift+A': 'Control+Shift+A' },
     when: (app) => app.foldCount() > 0, whyNot: () => 'No heading is collapsed.', run: (app) => app.foldAll(false) },
-  { id: 'headings-collapse-all', name: 'Collapse all headings', title: 'Collapse every heading: the page shows the headings of the top level alone', synonyms: ['Collapse all', 'Headings only'], menu: { heading: 73 },
-    when: (app) => !!(app.model && app.model.headings && app.model.headings.length), whyNot: () => 'This document has no headings.', run: (app) => app.foldAll(true) }
+  { id: 'headings-collapse-all', name: 'Collapse all headings', title: 'Collapse every heading: the page shows the headings of the top level alone (Alt+Shift+A)', synonyms: ['Collapse all', 'Headings only'], menu: { heading: 73 },
+    keys: ['Alt+Shift+A'], mac: { 'Alt+Shift+A': 'Control+Shift+A' },
+    when: (app) => !!(app.model && app.model.headings && app.model.headings.length), whyNot: () => 'This document has no headings.', run: (app) => app.foldAll(true) },
+  // Word's Alt+Shift+1 to 9: the headings down to that level, the text under them collapsed
+  ...[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => ({ id: 'show-level-' + n, name: 'Show Level ' + n, title: 'The headings down to level ' + n + ' alone, the text under them collapsed (Alt+Shift+' + n + ')',
+    synonyms: ['Headings to level ' + n, 'Outline level ' + n], keys: ['Alt+Shift+' + n], mac: { ['Alt+Shift+' + n]: 'Control+Shift+' + n },
+    when: (app) => !!(app.model && app.model.headings && app.model.headings.length), whyNot: () => 'This document has no headings.', run: (app) => app.foldLevel(n) }))
 );
 
 // the status bar follows the caret and the scrolling: the page it is on, the words selected; a
@@ -700,6 +719,95 @@ export const methods = {
   },
   // Select paragraph, or the sentence the caret is in (Intl's sentences where the browser has
   // them, else up to the next ., ! or ? and a space)
+  // Find Next: the last Find's words again, from the caret; none yet, the Navigation pane's box
+  findNext() {
+    const fs = this.findState();
+    if (!fs.q) return this.findInPane();
+    const hit = this.findGo(1);
+    if (!hit) this.toast('"' + fs.q + '" is not in the document.');
+    return true;
+  },
+  // Go Back: the places of the last edits, newest first; a press the next one of them, again and
+  // again while nothing else is edited
+  goBack() {
+    const spots = editSpots(this.hist, 4);
+    if (!spots.length) return false;
+    const G = this.goBackAt, top = this.hist[this.hist.length - 1];
+    let i;
+    if (G && G.top === top && G.n === this.hist.length) i = (G.i + 1) % spots.length;
+    else {
+      // (the first press passes over the place the caret is at already)
+      const c = this.caretNow();
+      i = spots.findIndex((x) => !(c && !c.ghost && c.f === x.f && Math.abs(c.a - x.p) < SPOT_NEAR));
+      if (i < 0) i = 0;
+    }
+    this.goBackAt = { top, n: this.hist.length, i };
+    const x = spots[i];
+    this.ribbonBack();
+    this.goTo(x.f, x.p);
+    this.restoreCaret({ f: x.f, p: x.p });
+    return true;
+  },
+  // Extend Selection: the next of word, sentence, paragraph, document that selects more than
+  // there is now; Shrink Selection gives back the one before. The steps last while the selection
+  // is still the one the last step made.
+  extendSel(at) {
+    const c = this.caretNow();
+    if (!c || c.ghost) return false;
+    const same = (x) => !!x && x.f === c.f && x.a === c.a && x.b === c.b;
+    let E = this.extSel;
+    if (!E || !same(E.last)) E = this.extSel = { stack: [], level: -1, last: null };
+    const was = { f: c.f, a: c.a, b: c.b, collapsed: c.collapsed };
+    for (let lv = E.level + 1; lv < 4; lv++) {
+      if (lv === 3) this.selectAllText();
+      else this.selectUnit(at, ['word', 'sentence', 'para'][lv]);
+      const n = this.caretNow();
+      const grew = lv === 3 || (n && !n.ghost && n.f === c.f && n.a <= c.a && n.b >= c.b && (n.a < c.a || n.b > c.b));
+      if (!grew) { this.restoreCaret(was.collapsed ? { f: was.f, p: was.a } : { f: was.f, selA: was.a, selB: was.b }); continue; }
+      E.stack.push(was);
+      E.level = lv;
+      E.last = n && !n.ghost ? { f: n.f, a: n.a, b: n.b } : null;
+      return true;
+    }
+    return false;
+  },
+  shrinkSel() {
+    const c = this.caretNow(), E = this.extSel;
+    if (!c || !E || !E.stack.length || !(E.last ? E.last.f === c.f && E.last.a === c.a && E.last.b === c.b : this.allSel)) return false;
+    const x = E.stack.pop();
+    E.level--;
+    this.restoreCaret(x.collapsed ? { f: x.f, p: x.a } : { f: x.f, selA: x.a, selB: x.b });
+    const n = this.caretNow();
+    E.last = n && !n.ghost ? { f: n.f, a: n.a, b: n.b } : null;
+    return true;
+  },
+  // the word, the sentence or the paragraph the caret is in, selected (the paragraph's words
+  // read as the page shows them, cut as the language cuts them)
+  selectUnit(at, unit) {
+    if (unit !== 'word') return this.selectPara(at, unit === 'sentence');
+    const P = this.paraAt(at);
+    if (!P) return;
+    const text = P.T.text.slice(P.a, P.b), x = Math.min(P.x - P.a, text.length);
+    let a = -1, b = -1;
+    let seg = null;
+    try { seg = new Intl.Segmenter(this.model.opts.lang || 'en', { granularity: 'word' }); } catch (e) { seg = null; }
+    if (seg) {
+      // (the word at the caret, or the one just before it: a caret after a word's last letter)
+      for (const k of [x, x - 1]) {
+        if (k < 0 || k >= text.length) continue;
+        const s = seg.segment(text).containing(k);
+        if (s && s.isWordLike) { a = P.a + s.index; b = a + s.segment.length; break; }
+      }
+    } else {
+      let i = x, j = x;
+      while (i > 0 && /[\p{L}\p{N}]/u.test(text[i - 1])) i--;
+      while (j < text.length && /[\p{L}\p{N}]/u.test(text[j])) j++;
+      if (j > i) { a = P.a + i; b = P.a + j; }
+    }
+    if (a < 0) return;
+    const s = hitSource(P.B, P.T, a, b);
+    if (s) this.restoreCaret({ f: s.f, selA: s.s, selB: s.e });
+  },
   selectPara(at, sentence) {
     const P = this.paraAt(at);
     if (!P) return;
@@ -991,6 +1099,30 @@ export const methods = {
     this.foldShow(null);
     return true;
   },
+  // Show Level n: every heading of the n-th level from the top collapsed, and those under it
+  // (deeper ones are hidden inside them); more levels than the document has shows everything
+  foldLevel(n) {
+    const heads = (this.model && this.model.headings) || [];
+    const levels = [...new Set(heads.map((h) => h.level))].sort((a, b) => a - b);
+    if (n > levels.length) return this.foldAll(false);
+    const rank = levels[n - 1], F = this.foldState();
+    F.list = heads.filter((h) => h.level >= rank).slice(0, FOLD_MAX).map(foldEntry);
+    // (the caret, where its text is now hidden, to the heading that shows in its place: the
+    // outermost collapsed heading it lies under)
+    const c = this.caretNow();
+    if (c && !c.ghost) {
+      const chain = [];
+      for (const h of heads) {
+        if (h.f !== c.f || h.s > c.a) continue;
+        while (chain.length && chain[chain.length - 1].level >= h.level) chain.pop();
+        chain.push(h);
+      }
+      const top = chain.find((h) => h.level >= rank);
+      if (top && c.a > top.e) this.restoreCaret({ f: top.f, p: Math.max(top.s, top.e - 1), bias: -1 });
+    }
+    this.foldShow(null);
+    return true;
+  },
   // the page laid out again without (or with) the text, the state kept, the controls told
   foldShow(k) {
     clearTimeout(this.foldT);
@@ -1105,6 +1237,29 @@ export const methods = {
 // the collapsed headings of every document, in the browser (localStorage)
 const FOLD_KEY = 'rikuy.fold.v1';
 const FOLD_MAX = 2000;
+
+// Go Back's places: where the last n edits of the history (App.hist, each step's files a diff
+// { f, s, del, ins }) left the caret, newest first, each moved through the edits made after it.
+// Places closer than SPOT_NEAR characters to a newer one are the same place.
+const SPOT_NEAR = 40;
+export function editSpots(hist, n = 4) {
+  const out = [];
+  for (let i = (hist || []).length - 1; i >= 0 && out.length < n; i--) {
+    const d = hist[i].files && hist[i].files[0];
+    if (!d) continue;
+    const f = d.f;
+    let p = d.s + d.ins.length;
+    for (let j = i + 1; j < hist.length; j++) {
+      for (const x of hist[j].files || []) {
+        if (x.f !== f) continue;
+        if (p >= x.s + x.del.length) p += x.ins.length - x.del.length;
+        else if (p > x.s) p = x.s + x.ins.length;
+      }
+    }
+    if (!out.some((o) => o.f === f && Math.abs(o.p - p) < SPOT_NEAR)) out.push({ f, p });
+  }
+  return out;
+}
 const okEntry = (x) => !!x && typeof x === 'object' && typeof x.f === 'string' && Number.isInteger(x.s) && x.s >= 0 && Number.isInteger(x.lv) && typeof x.t === 'string';
 
 // the triangles follow the pointer over the page's headings (with a mouse) and the caret (on a
@@ -1148,7 +1303,7 @@ function regItems(app, ids) {
   if (at) at.memo = {};
   return ids.map((id) => {
     const c = command(id);
-    return c && { name: c.name, title: c.title, keys: chordText((c.keys || c.keysElsewhere || [])[0]), disabled: !enabled(app, c, at), run: () => { app.ribbonBack(); app.runCommand(id); } };
+    return c && { name: c.name, title: c.title, keys: firstKey(c, isMacUA), disabled: !enabled(app, c, at), run: () => { app.ribbonBack(); app.runCommand(id); } };
   });
 }
 const SELECT = ['select-all', 'select-paragraph', 'select-sentence', 'select-similar'];

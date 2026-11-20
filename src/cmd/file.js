@@ -57,8 +57,10 @@ register(
     // (the note only once a file was made: on a copy without Word the notice about that stays)
     run: async (app) => { const had = app.lastDocx; await app.saveDocx(); if (app.lastDocx !== had) app.liveNote(); app.ribbonSync(); } },
   { id: 'download-latex', name: 'Download LaTeX', el: 'b-save', static: true, place: 'download', only: 'wide', title: 'Download the LaTeX source (Ctrl+S)', keysElsewhere: ['Ctrl+S'], synonyms: ['Save', 'Save a copy', '.tex', '.zip'], when: always,
+    // (Word's other Save keys; its F12, Save As, is the browser's developer tools)
+    keys: ['Shift+F12', 'Alt+Shift+F2'], keyScope: 'app',
     run: async (app) => { await app.save(); app.ribbonSync(); } },
-  { id: 'open', name: 'Open', el: 'b-open', static: true, place: 'bar', title: 'Open .tex, .bib, images, an Overleaf .zip or a Word .docx (Ctrl+O)', keysElsewhere: ['Ctrl+O'], synonyms: ['Open a file', 'Import'], when: always, run: () => $('#fileinput').click() },
+  { id: 'open', name: 'Open', el: 'b-open', static: true, place: 'bar', title: 'Open .tex, .bib, images, an Overleaf .zip or a Word .docx (Ctrl+O)', keysElsewhere: ['Ctrl+O'], keys: ['Ctrl+F12', 'Ctrl+Alt+F2'], keyScope: 'app', synonyms: ['Open a file', 'Import'], when: always, run: () => $('#fileinput').click() },
   { id: 'share', name: 'Share', el: 'b-share', static: true, place: 'bar', title: 'A link anyone can open and type in, or a copy for Overleaf', synonyms: ['Share link', 'Overleaf'], when: always, run: (app) => app.openSharePanel() },
   { id: 'new-document', name: 'New document', el: 'b-new', static: true, place: 'status', synonyms: ['New', 'Blank document'], when: always, run: (app) => app.newDocument() },
   { id: 'load-sample', name: 'Load the sample', el: 'b-sample', static: true, place: 'status', synonyms: ['Sample document', 'Example'], when: always, run: (app) => app.resetToSample() },

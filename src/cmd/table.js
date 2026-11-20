@@ -115,7 +115,18 @@ register(
   T('select-cell', 'Select Cell', { title: 'Select Cell: its words', run: (app) => app.tableSelect('cell') }),
   T('select-column', 'Select Column', { title: 'Select Column: every cell of the caret\'s column', run: (app) => app.tableSelect('column') }),
   T('select-row', 'Select Row', { title: 'Select Row: every cell of the caret\'s row', run: (app) => app.tableSelect('row') }),
-  T('select-table', 'Select Table', { title: 'Select Table: every cell', run: (app) => app.tableSelect('table') }),
+  // (Word's Alt and the number pad's 5, Num Lock off: the pad's 5 is then the Clear key)
+  T('select-table', 'Select Table', { title: 'Select Table: every cell (Alt+Num 5)', keys: ['Alt+Clear'], mac: { 'Alt+Clear': false }, run: (app) => app.tableSelect('table') }),
+  // Word's keys in a table: the first or last cell of the row (Alt+Home, Alt+End) or of the column
+  // (Alt+Page Up, Alt+Page Down), Control with them on a Mac; a row up or down (Alt+Shift+Up and
+  // Down, which move a paragraph outside a table)
+  ...[['cell-row-first', 'First Cell in Row', 'Home', 'the first cell of the row'], ['cell-row-last', 'Last Cell in Row', 'End', 'the last cell of the row'],
+    ['cell-col-first', 'First Cell in Column', 'PageUp', 'the top cell of the column'], ['cell-col-last', 'Last Cell in Column', 'PageDown', 'the bottom cell of the column']].map(([id, name, key, what]) =>
+    T(id, name, { title: name + ': the caret to ' + what + ' (Alt+' + key + ')', keys: ['Alt+' + key], mac: { ['Alt+' + key]: 'Control+' + key }, run: (app) => app.cellJump(id) })),
+  T('table-row-up', 'Move Row Up', { title: 'Move Row Up: the caret\'s row above the one before it (Alt+Shift+\u2191)', keys: ['Alt+Shift+ArrowUp'], keyRank: 1, mac: { 'Alt+Shift+ArrowUp': 'Control+Shift+ArrowUp' },
+    synonyms: ['Move row', 'Row up'], run: (app) => app.tableOp((src, TT, h) => X.moveRow(src, TT, h.r, -1, h.c.a)) }),
+  T('table-row-down', 'Move Row Down', { title: 'Move Row Down: the caret\'s row below the one after it (Alt+Shift+\u2193)', keys: ['Alt+Shift+ArrowDown'], keyRank: 1, mac: { 'Alt+Shift+ArrowDown': 'Control+Shift+ArrowDown' },
+    synonyms: ['Move row', 'Row down'], run: (app) => app.tableOp((src, TT, h) => X.moveRow(src, TT, h.r, 1, h.c.a)) }),
   T('table-properties', 'Properties', { title: 'Table Properties…: the table\'s width and alignment, its rows\' height, the column\'s width, the cell\'s vertical alignment', tab: 'table-layout', group: 'table', order: 20, icon: ICON.props, 
     synonyms: ['Table Properties', 'Table width', 'Column width', 'Row height', 'arraystretch'], menu: { table: 60 }, run: (app, args) => (args ? app.tableProperties(args) : propertiesDialog(app)) }),
   T('table-caption', 'Insert Caption', { title: 'Insert Caption: the table\'s caption (\\caption, numbered "Table 1"), made where there is none, the table put in a float', tab: 'table-layout', group: 'table', order: 30, icon: ICON.caption,
@@ -315,6 +326,21 @@ export const methods = {
     return { edits: [{ f, s: at, e: at, t: line }], plain: xi < 0 && !beamer };
   },
 
+  // First or Last Cell in Row or Column: the caret into that cell
+  cellJump(which) {
+    const at = this.ribbonAt(), h = at && this.tableHere(at);
+    if (!h) return false;
+    const T = h.T, rows = T.rows.filter((x) => x.kind === 'row');
+    let cell = null;
+    if (which === 'cell-row-first') cell = T.rows[h.r].cells[0];
+    else if (which === 'cell-row-last') cell = T.rows[h.r].cells[T.rows[h.r].cells.length - 1];
+    else {
+      for (const row of which === 'cell-col-first' ? rows : [...rows].reverse()) { const hit = X.cellOfCol(row, h.cell.col); if (hit) { cell = hit.cell; break; } }
+    }
+    if (!cell) return false;
+    this.caretToCell(h.f, cell.s);
+    return true;
+  },
   // The caret in the cell that holds p (its first words, or its empty place)
   caretToCell(f, p) {
     const src = this.src(f), T = X.tableAt(src, p, Math.max(0, p - 400000), p + 1);

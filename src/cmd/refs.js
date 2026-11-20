@@ -63,6 +63,7 @@ register(
     when: (app, at) => textAt(app, at) && at.ctx !== 'ttl', whyNot: () => NOT_HERE, run: (app, args, at) => (args && (args.url != null || args.kind) ? app.linkWrite(at, args) : openLinkDialog(app, at)),
     palette: { k: 'url', d: 'URL', order: 210, t: piece('\\url{', '}') } },
   { id: 'bookmark', name: 'Bookmark', order: 20, tab: 'insert', group: 'links', label: 'Bookmark', icon: ICON.bookmark, title: 'Bookmark: a label (\\label) here, to refer to or link to; the dialog lists, goes to and deletes them',
+    keys: ['Ctrl+Shift+F5'],
     synonyms: ['Label', 'Anchor', 'phantomsection'], when: (app, at) => textAt(app, at), whyNot: () => NOT_HERE, run: (app, args, at) => (args && args.add ? app.bookmarkAdd(at, args.add) : openBookmarkDialog(app, at)) },
   { id: 'cross-reference', name: 'Cross-reference', order: 30, title: 'A reference to a heading, figure, table, equation or bookmark: its number, its page, or its name where cleveref or hyperref is loaded; a label is added where it has none',
     synonyms: ['Reference', 'Cross reference', 'ref', 'cref', 'pageref', 'autoref'], tab: 'insert', group: 'links', el: 'ri-xref', label: 'Cross-reference', icon: '<path d="M6 4.5h8v11l-4-3-4 3zM8.5 8h3"/>',
@@ -88,18 +89,22 @@ register(
   { id: 'toc-remove', name: 'Remove Table of Contents', title: 'Remove Table of Contents: \\tableofcontents taken out', synonyms: ['Delete table of contents'], when: (app) => app.tocSpots().length > 0, whyNot: () => 'The document has no table of contents', run: (app) => app.tocRemove() },
   { id: 'toc-add-text', name: 'Add Text', kind: 'menu', tab: 'references', group: 'toc', order: 20, label: 'Add Text', icon: ICON.addText,
     title: 'Add Text: the heading\'s level in the table of contents, or none (\\section*), or a short title for it (\\section[Short]{…})', synonyms: ['Do not show in table of contents', 'Heading level', 'Outline level', 'Short title'],
+    // (Word's Alt+Shift+O marks a contents entry: here the heading's place in the contents)
+    keys: ['Alt+Shift+O'],
     when: (app, at) => !!app.headingAt(at), whyNot: () => 'Put the caret in a heading first', run: (app, args, at) => app.addTextMenu(at) },
 
   // ---- References › Footnotes
-  { id: 'endnote', name: 'Insert Endnote', tab: 'references', group: 'footnotes', order: 20, label: 'Insert Endnote', icon: ICON.endnote, keys: ['Ctrl+Alt+D'], mac: { 'Ctrl+Alt+D': false },
+  { id: 'endnote', name: 'Insert Endnote', tab: 'references', group: 'footnotes', order: 20, label: 'Insert Endnote', icon: ICON.endnote, keys: ['Ctrl+Alt+D'], mac: { 'Ctrl+Alt+D': 'Ctrl+Alt+E' },
     title: 'Insert Endnote (Ctrl+Alt+D): \\endnote{…} here, its words at the document\'s end (enotez, and \\printendnotes once)', synonyms: ['Endnote', 'Note at the end', 'enotez'],
     when: (app, at) => !!at && !tight(at) && !at.c.ghost, whyNot: () => 'Click in a paragraph\'s words first', run: (app, args, at) => app.insertEndnote(at, args) },
-  { id: 'next-footnote', name: 'Next Footnote', kind: 'split', tab: 'references', group: 'footnotes', order: 30, label: 'Next Footnote', icon: ICON.next, title: 'Next Footnote: the caret to the next footnote\'s mark; the arrow: previous, and the endnotes',
+  { id: 'next-footnote', name: 'Next Footnote', kind: 'split', tab: 'references', group: 'footnotes', order: 30, label: 'Next Footnote', icon: ICON.next, title: 'Next Footnote (Alt+Shift+>): the caret to the next footnote\'s mark; the arrow: previous, and the endnotes',
+    // (on a Mac Option and Shift with the full stop type a character of their own)
+    keys: ['Alt+Shift+>'], mac: { 'Alt+Shift+>': 'Control+Shift+>' },
     synonyms: ['Go to footnote', 'Previous footnote', 'Next endnote', 'Previous endnote'], when: (app) => app.noteMarks('fn').length > 0, whyNot: () => 'The document has no footnotes',
     run: (app) => app.noteJump('fn', 1), menuItems: (app) => [
       { name: 'Next Footnote', command: 'next-footnote' }, { name: 'Previous Footnote', command: 'previous-footnote', disabled: !app.noteMarks('fn').length },
       { name: 'Next Endnote', command: 'next-endnote', disabled: !app.noteMarks('en').length }, { name: 'Previous Endnote', command: 'previous-endnote', disabled: !app.noteMarks('en').length }] },
-  { id: 'previous-footnote', name: 'Previous Footnote', title: 'The caret to the footnote before', when: (app) => app.noteMarks('fn').length > 0, run: (app) => app.noteJump('fn', -1) },
+  { id: 'previous-footnote', name: 'Previous Footnote', title: 'The caret to the footnote before (Alt+Shift+<)', keys: ['Alt+Shift+<'], mac: { 'Alt+Shift+<': 'Control+Shift+<' }, when: (app) => app.noteMarks('fn').length > 0, run: (app) => app.noteJump('fn', -1) },
   { id: 'next-endnote', name: 'Next Endnote', title: 'The caret to the next endnote\'s mark', when: (app) => app.noteMarks('en').length > 0, run: (app) => app.noteJump('en', 1) },
   { id: 'previous-endnote', name: 'Previous Endnote', title: 'The caret to the endnote before', when: (app) => app.noteMarks('en').length > 0, run: (app) => app.noteJump('en', -1) },
   { id: 'show-notes', name: 'Show Notes', tab: 'references', group: 'footnotes', order: 40, label: 'Show Notes', icon: ICON.show, title: 'Show Notes: from a footnote\'s mark to its text and back; with endnotes, to the notes at the end',

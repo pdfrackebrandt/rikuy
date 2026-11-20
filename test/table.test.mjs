@@ -86,6 +86,27 @@ ok('insert a row above and below every row, and delete it again: the bytes back'
   }
 });
 
+ok('a row moved up or down (Word\'s Alt+Shift+Up and Down): its cells swapped with the neighbour\'s, the rules kept, and back byte for byte', () => {
+  for (const [k, src] of Object.entries(ALL)) {
+    const T = at(src);
+    const rows = T.rows.map((x, i) => (x.kind === 'row' ? i : -1)).filter((i) => i >= 0);
+    for (const r of rows) for (const dir of [-1, 1]) {
+      const res = X.moveRow(src, T, r, dir);
+      const nb = T.rows[r + dir];
+      if (!nb || nb.kind !== 'row' || X.multirows(T).some((m) => m.bottom >= Math.min(r, r + dir) && m.top <= Math.max(r, r + dir))) { assert.ok(res.error, k + r + dir); continue; }
+      const out = run(src, res);
+      const T2 = at(out);
+      assert.equal(T2.rows.length, T.rows.length, k);
+      // (the moved row starts where p says, and moving it back gives the bytes of before)
+      assert.equal(T2.rows[r + dir].cs, res.p, k + ' row ' + r + ' ' + dir);
+      assert.equal(run(out, X.moveRow(out, T2, r + dir, -dir)), src, k + ' row ' + r + ' ' + dir);
+    }
+  }
+  const out = run(BOOK, X.moveRow(BOOK, at(BOOK), at(BOOK).rows.findIndex((x) => x.kind === 'row' && BOOK.slice(x.cs).startsWith('1 &')), 1));
+  assert.ok(out.includes('\\midrule\n3 & 4 \\\\\n1 & 2 \\\\\n\\bottomrule'), out);
+  assert.ok(X.moveRow(MR, at(MR), 1, 1).error && X.moveRow(BOOK, at(BOOK), 0, -1).error);
+});
+
 ok('what a new row is: booktabs keeps its groups, a grid gives the row its rule, CRLF lines', () => {
   const T = at(BOOK);
   assert.ok(run(BOOK, X.insertRow(BOOK, T, 0, true)).includes('A & B \\\\\n &  \\\\\n\\midrule'));
