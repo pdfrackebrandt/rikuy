@@ -37,7 +37,7 @@ const viewIs = (v) => (app) => (app.view || 'page') === v;
 register(
   // (Word's Ctrl+F2 is Print Preview: here the PDF as TeX makes it)
   { id: 'preview', name: 'Preview', el: 'b-pdf', static: true, place: 'bar', title: 'Show the PDF as TeX makes it, beside the page (Ctrl+F2)', keys: ['Ctrl+F2', 'Ctrl+Alt+I'], keyScope: 'app', synonyms: ['PDF', 'Compile', 'Print Preview'], when: always, run: (app) => app.togglePdf() },
-  { id: 'source', name: 'Source', el: 'b-src', static: true, place: 'bar', title: 'Show the source beside the page (Ctrl+\\)', keysElsewhere: ['Ctrl+\\'], synonyms: ['LaTeX source', 'Code'], when: always, run: (app) => app.toggleSource() },
+  { id: 'source', name: 'Source', el: 'b-src', static: true, place: 'bar', only: 'wide', title: 'Show the source beside the page (Ctrl+\\)', keysElsewhere: ['Ctrl+\\'], synonyms: ['LaTeX source', 'Code'], when: always, run: (app) => app.toggleSource() },
   { id: 'zoom-out', name: 'Zoom out', el: 'b-zout', static: true, place: 'bar', only: 'wide', keysElsewhere: ['Ctrl+-'], when: always, run: (app) => app.setZoom(-1) },
   { id: 'zoom-fit', name: 'Fit width', el: 'zoomv', static: true, place: 'bar', title: 'Zoom: the page at this percentage of its size; a press fits it to the window\'s width', synonyms: ['Zoom'], when: always, run: (app) => app.setZoom(0) },
   { id: 'zoom-in', name: 'Zoom in', el: 'b-zin', static: true, place: 'bar', only: 'wide', keysElsewhere: ['Ctrl+='], when: always, run: (app) => app.setZoom(+1) },
