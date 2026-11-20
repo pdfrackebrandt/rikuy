@@ -3263,26 +3263,65 @@ Tests:
     `styles.py` 426, `view.py` 163; screenshots of every tab at 1920 and 1366 px, light and dark,
     and 390 px.
 
+68. **Word's buttons Rikuy lacked, the document's side (task 67's part).** Done in the code (branch
+    `word-gaps-doc`). Each writes the smallest edit, compiles with pdfLaTeX, XeLaTeX and LuaLaTeX
+    and is drawn on the page as TeX prints it.
+    - Tables: Table Properties in Word's tabs (Table, Row, Column, Cell, Alt Text): the table's
+      Preferred width (a tabularx at that share of the line, which the page now draws that wide),
+      Text wrapping Around (wrapfig's `wraptable` at the side Alignment names, as wide as the page
+      measures the table; refused where a list, a heading or nothing follows), default cell
+      margins, Repeat as header row, all one step. Borders and Shading (Table Design's corner
+      arrow): None, Box, All, Grid, Custom, a preview whose six edges are buttons, the style,
+      colour and width, the Shading tab's fill, applied to the cells or the table. Pen Style
+      (single, double: `||` and `\hline\hline`, drawn double on the page), Border Styles' presets
+      (style and weight, then Border Painter), Border Painter. Formula: Word's =SUM(ABOVE),
+      AVERAGE, COUNT, MIN, MAX, PRODUCT, ROUND, IF, cells and ranges, its number formats
+      (`src/formula.js`), computed by Rikuy and written as the value, the formula kept on a
+      `% formula B5: =SUM(ABOVE) \# "0.00"` line before the table; Update Formulas computes them
+      again (Word updates a field on F9 or printing; Rikuy's lines name a cell, so a row added
+      above moves no formula). View Gridlines (the page only). Draw Table and Eraser: a press on a
+      cell's edge draws or takes off its rule or bar; the Eraser on an edge with none merges the
+      two cells; Draw Table inside a merged cell splits it.
+    - Header & Footer: Go to Header, Go to Footer, Previous and Next (odd and even pages of a two
+      sided document), Header from Top and Footer from Bottom as Word measures them (written as
+      geometry's `headsep` and `footskip`), Pictures (a logo a line high, drawn in the page's
+      header), Quick Parts (Page, NumPages, Date, FileName, saved parts), Show Document Text.
+      Link to Previous is not built: a LaTeX document's pages take one header until `\pagestyle`
+      changes it, and Rikuy edits that one.
+    - View: Gridlines (the text's baselines and every centimetre across, the screen only), the
+      Zoom dialog (200, 100, 75 %, Page width, Text width, Whole page, Many pages, a percent),
+      Split (a second view under the first, kept current, scrolled on its own, a press in it puts
+      the caret there), Vertical beside Side to Side. New Window is not built: a browser tab is a
+      window, and two on one project would save over each other; Split is the second view.
+    - References: Update Table (contents, figures and tables, authorities) and Update Index: the
+      page's list rebuilt and flashed now, the PDF's at its next compile (at once where it is open).
+    - Equation: Convert (Professional, Linear), Unicode or LaTeX (Linear as Word's UnicodeMath,
+      `src/unimath.js`, typed back into LaTeX as you type, or as the LaTeX), Normal Text
+      (`\text{}`), Equation Options (the Tools group's corner arrow: what Alt+= makes on an empty
+      line, the linear format).
+    - Insert: Signature Line (room, a rule, name, title, e-mail, `\today`), and Date & Time and
+      Object placed in the Text group as Word's.
+    Evidence: `test/docgaps.test.mjs` 13 groups (in `npm test`); `test/docgaps.py` tables 41,
+    headfoot 22, view, refs_update and insert_text 22, equation 11, compiled on the three
+    engines 12, phones at 390 and 360 px 18; `tabs.py` 127, `agent.py` 143, `table.py` the_rest
+    and r3_tables 31 (the right click menu kept in Word's order). Screenshots in `/tmp/g2-shots`.
+    Left: the ribbon's buttons are 32 by 30 px on a phone on every tab (the ribbon's own rule);
+    Link to Previous; Formula's cell names do not follow rows added above.
+
 ## Open tasks
 
-67. **Word's ribbon buttons Rikuy has no command for** (task 66 left them out). Insert: 3D
-    Models, Online Videos, Get Add-ins, WordArt, Signature Line, Object, and Date & Time (the
-    command `insert-date` exists, without an icon or a place on the ribbon). Draw: the whole tab.
+67. **Word's ribbon buttons Rikuy has no command for** (task 66 left them out; task 68 built the
+    document's side: what it names is not repeated here). Insert: 3D
+    Models, Online Videos, Get Add-ins, WordArt. Draw: the whole tab.
     Design: Effects, Set as Default (File has `set-default`). Layout › Arrange: Bring Forward, Send
-    Backward, Selection Pane, Align, Group. References: Update Table (contents, figures,
-    authorities), Update Index, Research (Search, Researcher). Mailings: the whole tab. Review:
+    Backward, Selection Pane, Align, Group. References: Research (Search, Researcher). Mailings: the whole tab. Review:
     Translate, Protect (Block Authors, Restrict Editing), Hide Ink, the Tracking group's corner
-    arrow (Track Changes Options). View: Immersive Reader, Vertical (Side to Side's other half),
-    Gridlines, the Zoom dialog, the Window group, Macros. Table Design: Border Styles, Pen Style,
-    Border Painter, the Borders corner arrow (Borders and Shading). Table Layout: View Gridlines,
-    Draw Table, Eraser, Formula, the Rows & Columns corner arrow. Picture Format: Remove Background,
+    arrow (Track Changes Options). View: Immersive Reader, New Window, Macros. Table Layout: the
+    Rows & Columns corner arrow. Picture Format: Remove Background,
     Corrections, Color, Artistic Effects, Transparency, Compress Pictures, Picture Effects, Picture
     Layout, the Picture Styles gallery and its corner arrow, Bring Forward, Send Backward, Selection
-    Pane, Align, Group. Equation: Ink Equation, Unicode or LaTeX and Convert, Normal Text, the
-    Tools corner arrow (Equation Options). Header & Footer: Quick Parts and Pictures in its Insert
-    group, the Navigation group, Show Document Text, Header from Top and Footer from Bottom as
-    fields. Contextual tabs Word has and Rikuy has not: Shape Format, Chart Design and Format,
-    SmartArt Design and Format.
+    Pane, Align, Group. Equation: Ink Equation. Header & Footer: Link to Previous. Contextual tabs
+    Word has and Rikuy has not: Shape Format, Chart Design and Format, SmartArt Design and Format.
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000
     papers, every failure classified as in task 2. Needs arxiv.org (see task 3). The owner runs

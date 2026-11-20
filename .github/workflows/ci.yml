@@ -100,6 +100,8 @@ jobs:
       # its compile in the page needs dist/tex and runs in tex.yml; here it says it skips that part
       - name: Tables (the grid of sizes, Table Design and Table Layout, round trips, the page's drawing)
         run: cd test && python3 table.py
+      - name: Word's gaps, the document's (tables, the header, View, References, Equation, Insert)
+        run: cd test && python3 docgaps.py
   # The editor's second half, beside the first so neither passes the 30 minute limit (one job
   # with every suite took longer); the newer batches' suites run here.
   editor-more:
