@@ -3251,7 +3251,7 @@ Tests:
     box and Help write a Mac's chords with ⌘ ⌥ ⌃ ⇧; Help ends with Word's keys the browser keeps.
     Function keys reach their commands from fields and the source, Ctrl+Alt chords from the
     source. Evidence: `npm test` green (`keys` 19 groups, `typing` 6, `commands` 13 with the
-    `WORD` table on both systems, `table` 47), `test/shortcuts.py` (see the commit).
+    `WORD` table on both systems, `table` 47), `test/shortcuts.py` 71 checks (screenshots in `/tmp/keys-shots`).
 
 ## Open tasks
 
