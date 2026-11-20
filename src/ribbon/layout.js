@@ -71,17 +71,18 @@ export const LAYOUT = {
   'table-design': {
     options: ['header-row S A', 'total-row S T', 'banded-rows S R', 'first-column S C', 'last-column S L', 'banded-columns S O'],
     styles: ['table-look-plain T S1', 'table-look-grid T S2', 'table-look-booktabs T S3', 'table-look-rows T S4', 'table-look-frame T S5', 'table-shading L H Shading'],
-    borders: ['pen-weight S W Pen Weight', 'pen-color S PC Pen Color', 'table-borders L B Borders']
+    borders: ['border-styles L Y Border Styles', 'pen-style S PS Pen Style', 'pen-weight S W Pen Weight', 'pen-color S PC Pen Color', 'table-borders L B Borders', 'border-painter L N Border Painter']
   },
   'table-layout': {
-    table: ['table-select S K', 'table-properties S O Properties', 'table-caption S CA Insert Caption'],
+    table: ['table-select S K', 'view-gridlines S TG View Gridlines', 'table-properties S O Properties', 'table-caption S CA Insert Caption'],
+    draw: ['draw-table L J Draw Table', 'table-eraser L E Eraser'],
     rows: ['table-delete L D', 'table-row-above L A', 'table-row-below S BE', 'table-col-left S L', 'table-col-right S R'],
     merge: ['merge-cells S M', 'split-cells S P', 'split-table S Q Split Table'],
     size: ['autofit L F', 'table-row-height S H', 'table-col-width S W', '|', 'distribute-rows S Y Distribute Rows', 'distribute-columns S U Distribute Columns'],
     // (a column at a time, so the nine stand as Word's three by three: top, centre, bottom rows)
     alignment: ['align-top-left I TL', 'align-center-left I CL', 'align-bottom-left I BL', 'align-top-center I TC', 'align-center-center I CC', 'align-bottom-center I BC',
       'align-top-right I TR', 'align-center-right I CR', 'align-bottom-right I BR', 'text-direction L X Text Direction', 'cell-margins L N Cell Margins'],
-    data: ['table-sort L SO', 'repeat-header S G Repeat Header Rows', 'table-to-text S V Convert to Text']
+    data: ['table-sort L SO', 'repeat-header S G Repeat Header Rows', 'table-to-text S V Convert to Text', 'table-formula L SF Formula', 'update-formulas S SU Update Formulas']
   },
   'picture-format': {
     adjust: ['picture-change S G', 'picture-reset S Q Reset Picture'],
@@ -129,6 +130,7 @@ export const LAUNCH = {
   'layout/paragraph': ['paragraph-settings', 'Paragraph…', 'PG'],
   'references/footnotes': ['footnote-options', 'Footnote and Endnote…', 'Q'],
   'table-layout/size': ['table-properties', 'Table Properties…', 'I'],
+  'table-design/borders': ['borders-shading', 'Borders and Shading…', 'D'],
   'picture-format/size': ['picture-size', 'Size and Position…', 'SL']
 };
 

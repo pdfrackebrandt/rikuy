@@ -22,7 +22,7 @@ export const TABS = [
   { id: 'help', name: 'Help', groups: [['help', 'Help and support']] },
   // contextual tabs, after Help, while their object has the caret
   { id: 'table-design', name: 'Table Design', ctx: 'table', groups: [['options', 'Table Style Options', 2], ['styles', 'Table Styles', 3], ['borders', 'Borders', 1]] },
-  { id: 'table-layout', name: 'Table Layout', ctx: 'table', groups: [['table', 'Table', 3], ['rows', 'Rows & Columns', 6], ['merge', 'Merge', 5], ['size', 'Cell Size', 4], ['alignment', 'Alignment', 2], ['data', 'Data', 1]] },
+  { id: 'table-layout', name: 'Table Layout', ctx: 'table', groups: [['table', 'Table', 3], ['draw', 'Draw', 2], ['rows', 'Rows & Columns', 6], ['merge', 'Merge', 5], ['size', 'Cell Size', 4], ['alignment', 'Alignment', 2], ['data', 'Data', 1]] },
   // (Word's order: Adjust, Picture Styles, Accessibility, Arrange, Size. Size folds first: its two
   // fields are wide and its buttons few, so folding it last showed fewer controls in a wider window)
   { id: 'picture-format', name: 'Picture Format', ctx: 'picture', groups: [['adjust', 'Adjust', 2], ['styles', 'Picture Styles', 3], ['accessibility', 'Accessibility', 4], ['arrange', 'Arrange', 5], ['size', 'Size', 1]] },

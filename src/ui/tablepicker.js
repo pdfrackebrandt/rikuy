@@ -8,6 +8,7 @@
 import { dialog, numberField, parseLength, formatLength } from './kit.js';
 import { mk } from './dom.js';
 import * as X from '../table.js';
+import * as FX from '../formula.js';
 
 const COLS = 10, ROWS = 8;
 
@@ -247,37 +248,234 @@ export function propertiesDialog(app, focus) {
   const at = keep(app), h = at && app.tableHere(at);
   if (!h) return;
   const p = open(app, 'Table Properties', 'rc-table-properties', 'tb-props');
-  const fit = X.fitOf(h.src, h.T), F = X.floatOf(h.src, h.T), S = X.settingsOf(h.src, h.T);
+  const F = X.floatOf(h.src, h.T), S = X.settingsOf(h.src, h.T), Wr = X.wrapOf(h.src, h.T);
   const col = h.T.spec.cols[h.cell.col];
-  const full = check('Full width (tabularx)', fit === 'window');
-  const align = radios('Alignment', [['l', 'Left'], ['c', 'Center'], ['r', 'Right']], F && F.centering ? 'c' : F ? 'l' : 'l');
+  // ---- Word's tabs: Table, Row, Column, Cell, Alt Text
+  const { tabs, tab, pick } = tabbed('Table Properties', 'tp');
+  const P1 = tab('Table', 'table'), P2 = tab('Row', 'row'), P3 = tab('Column', 'col'), P4 = tab('Cell', 'cell'), P5 = tab('Alt Text', 'alt');
+  // Table: its preferred width (a tabularx that wide), alignment, text wrapping, cell margins
+  const tw = X.tableWidthOf(h.src, h.T);
+  const twShare = tw && /^(0?\.\d+|1(\.0*)?)?\\(linewidth|textwidth|columnwidth)$/.exec(tw);
+  const prefer = check('Preferred width', !!tw);
+  const width = numberField({ id: 'tb-twidth', name: 'Table width', value: tw ? (twShare ? { value: Math.round((twShare[1] ? parseFloat(twShare[1]) : 1) * 100), unit: '%' } : parseLength(tw) || { value: 100, unit: '%' }) : { value: 100, unit: '%' }, units: ['%', 'cm', 'mm', 'in', 'pt'], step: 5, min: 1, max: 400 });
+  const align = radios('Alignment', [['l', 'Left'], ['c', 'Center'], ['r', 'Right']], F && F.centering ? (/raggedleft/.test(h.src.slice(F.centering.s, F.centering.e)) ? 'r' : 'c') : 'l');
   if (!F) for (const i of align.querySelectorAll('input')) i.disabled = true;
+  const wrap = radios('Text wrapping', [['none', 'None'], ['around', 'Around']], Wr && Wr.around ? 'around' : 'none');
+  if (!Wr) for (const i of wrap.querySelectorAll('input')) i.disabled = true;
+  const sep = numberField({ id: 'tb-sep2', name: 'Left and right margins', value: (S.tabcolsep && parseLength(S.tabcolsep.value, 'pt')) || { value: 6, unit: 'pt' }, units: ['pt', 'mm', 'cm'], step: 1, min: 0, max: 72 });
+  const top = numberField({ id: 'tb-top2', name: 'Top margin', value: (S.extrarowheight && parseLength(S.extrarowheight.value, 'pt')) || { value: 0, unit: 'pt' }, units: ['pt', 'mm', 'cm'], step: 1, min: 0, max: 72 });
+  const bs = mk('button', 'btn ghost', 'Borders and Shading…');
+  bs.type = 'button';
+  bs.addEventListener('click', () => { back(app); app.runCommand('borders-shading'); });
+  P1.append(row('tb-sec', mk('div', 'tb-gl', 'Size'), prefer, field('Table width', width)),
+    row('tb-sec', align, mk('p', 'tb-note', F ? 'The float\'s \\centering or \\raggedleft.' : 'A table outside a float follows its paragraph: Insert Caption puts it in one.')),
+    row('tb-sec', wrap, mk('p', 'tb-note', 'Around: wrapfig\'s wraptable, the paragraph after the table beside it.')),
+    row('tb-sec', mk('div', 'tb-gl', 'Default cell margins'), field('Left and right (\\tabcolsep)', sep), field('Top (\\extrarowheight)', top)), bs);
+  // Row: its height, the header rows repeated on every page
   const stretch = numberField({ id: 'tb-stretch', name: 'Row height', value: { value: S.arraystretch ? parseFloat(S.arraystretch.value) || 1 : 1, unit: '×' }, units: ['×'], step: 0.1, min: 0.5, max: 4 });
+  const rep = check('Repeat as header row at the top of each page', X.repeats(h.T));
+  P2.append(row('tb-sec', mk('div', 'tb-gl', 'Rows'), field('Row height (\\arraystretch)', stretch)), row('tb-sec', mk('div', 'tb-gl', 'Options'), rep, mk('p', 'tb-note', 'The table\'s first rows, down to the caret\'s, again on every page it runs over (a longtable with \\endhead).')));
+  // Column: the caret's column's width
   const w = col && col.w ? parseLength(col.w) : null;
   const fixed = check('Preferred width', !!w);
-  const width = numberField({ id: 'tb-width', name: 'Column width', value: w || { value: 3, unit: 'cm' }, units: ['cm', 'mm', 'in', 'pt'], step: 0.5, min: 0.2, max: 40 });
+  const cw = numberField({ id: 'tb-width', name: 'Column width', value: w || { value: 3, unit: 'cm' }, units: ['cm', 'mm', 'in', 'pt'], step: 0.5, min: 0.2, max: 40 });
+  P3.append(row('tb-sec', mk('div', 'tb-gl', 'Column ' + (h.cell.col + 1)), fixed, field('Column width', cw)));
+  // Cell: its words' vertical place
   const vert = radios('Vertical alignment', [['t', 'Top'], ['m', 'Center'], ['b', 'Bottom']], X.colV(col));
+  P4.append(row('tb-sec', vert, mk('p', 'tb-note', 'Center and bottom need a column of a set width (Column › Preferred width).')));
   // (R3) the table's alt text: a "% alt:" line before it (LaTeX's tagging has no field for one)
   const altNow = X.tableAlt(h.src, h.T);
   const alt = mk('textarea', 'tb-alt');
   alt.rows = 2; alt.maxLength = 2000; alt.value = altNow ? altNow.text : ''; alt.setAttribute('aria-label', 'Description');
-  const ok = () => {
-    const want = { full: full.input.checked, align: F ? align.value() : null, stretch: stretch.get().value, fixed: fixed.input.checked, width: formatLength(width.get()), v: para || fixed.input.checked ? vert.value() : null, alt: alt.value };
-    back(app);
-    app.runCommand('table-properties', want);
-  };
+  P5.append(row('tb-sec', field('Description', alt), mk('p', 'tb-note', 'Kept as a "% alt:" line before the table: LaTeX\'s tagged PDF takes a table\'s caption, and has no field for more. Word gets it as the table\'s description.')));
   // (a column's words have a top, a middle and a foot only when it is of a set width)
   const para = col && 'pmb'.includes(col.letter);
   const vOn = () => { const on = para || fixed.input.checked; for (const x of vert.querySelectorAll('input')) x.disabled = !on; vert.classList.toggle('off', !on); };
   fixed.input.addEventListener('change', vOn);
-  p.append(row('tb-sec', mk('div', 'tb-gl', 'Table'), full, align),
-    row('tb-sec', mk('div', 'tb-gl', 'Row'), field('Row height (\\arraystretch)', stretch)),
-    row('tb-sec', mk('div', 'tb-gl', 'Column ' + (h.cell.col + 1)), fixed, field('Column width', width)),
-    row('tb-sec', mk('div', 'tb-gl', 'Cell'), vert),
-    row('tb-sec', mk('div', 'tb-gl', 'Alt Text'), field('Description', alt), mk('p', 'tb-note', 'Kept as a "% alt:" line before the table: LaTeX\'s tagged PDF takes a table\'s caption, and has no field for more. Word gets it as the table\'s description.')), buttons(app, ok));
+  const ok = () => {
+    // (only what changed is sent: a field left as it was writes nothing)
+    const tw2 = prefer.input.checked ? (width.get().unit === '%' ? shareText(width.get().value) : formatLength(width.get())) : null;
+    const want = {
+      width: tw2 === (tw || null) || (twShare && tw2 && shareText(Math.round((twShare[1] ? parseFloat(twShare[1]) : 1) * 100)) === tw2) ? undefined : tw2,
+      align: F ? align.value() : null,
+      wrap: Wr && (wrap.value() === 'around') !== !!Wr.around ? { around: wrap.value() === 'around', side: align.value() === 'l' ? 'l' : 'r', width: wrapShare(app, h) } : undefined,
+      stretch: stretch.get().value,
+      sep: lenChange(S.tabcolsep, sep.get(), 6), top: lenChange(S.extrarowheight, top.get(), 0),
+      repeat: rep.input.checked !== X.repeats(h.T) ? rep.input.checked : undefined,
+      fixed: fixed.input.checked, colWidth: formatLength(cw.get()), v: para || fixed.input.checked ? vert.value() : null, alt: alt.value
+    };
+    back(app);
+    app.runCommand('table-properties', want);
+  };
   vOn();
+  p.append(tabs, P1, P2, P3, P4, P5, buttons(app, ok));
+  pick(focus === 'alt' ? 'alt' : 'table');
   finish(app, p, ok);
   if (focus === 'alt') alt.focus();
+}
+// a share of the line as written: 100 % is \linewidth, 80 % 0.8\linewidth
+const shareText = (pct) => (Math.abs(pct - 100) < 1e-9 ? '\\linewidth' : String(Math.round(pct) / 100).replace(/^0(?=\.)/, '0') + '\\linewidth');
+// a length field's value where it changed from what the source has (def: LaTeX's own, in pt): the
+// text to write, null to take it off, undefined for no change
+function lenChange(cur, got, def) {
+  const now = cur ? parseLength(cur.value, 'pt') : null;
+  const same = now ? now.value === got.value && now.unit === got.unit : got.value === def && got.unit === 'pt';
+  if (same) return undefined;
+  return got.value === def && got.unit === 'pt' ? null : formatLength(got);
+}
+// the wraptable's width: the table's share of the line as the page draws it, rounded up a little
+function wrapShare(app, h) {
+  try {
+    const td = [...app.root.querySelectorAll('.tab td')].find((x) => x.contains(getSelection().anchorNode)) || null;
+    const t = td && td.closest('table'), pb = t && t.closest('.pb');
+    if (t && pb) { const share = Math.min(0.95, Math.max(0.2, Math.ceil((t.getBoundingClientRect().width / pb.getBoundingClientRect().width) * 20 + 0.5) / 20)); return share + '\\linewidth'; }
+  } catch { /* measured as half the line */ }
+  return '0.5\\linewidth';
+}
+
+// Word's tabs in a dialog: a tablist whose arrows move between them (the Font dialog's look)
+function tabbed(label, key) {
+  const tabs = mk('div', 'fd-tabs');
+  tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', label);
+  const panels = [];
+  const tab = (name, k) => {
+    const t = mk('button', 'fd-tab', name);
+    t.type = 'button'; t.id = key + '-tab-' + k; t.setAttribute('role', 'tab'); t.setAttribute('aria-controls', key + '-panel-' + k);
+    const panel = mk('div', 'fd-panel');
+    panel.id = key + '-panel-' + k; panel.setAttribute('role', 'tabpanel'); panel.setAttribute('aria-labelledby', t.id);
+    t.addEventListener('click', () => pick(k));
+    tabs.append(t); panels.push([t, panel, k]);
+    return panel;
+  };
+  const pick = (k) => { for (const [t, pn, kk] of panels) { const on = kk === k; t.setAttribute('aria-selected', on ? 'true' : 'false'); t.tabIndex = on ? 0 : -1; pn.hidden = !on; } };
+  tabs.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const i = panels.findIndex(([t]) => t.getAttribute('aria-selected') === 'true'), n = panels[(i + (e.key === 'ArrowRight' ? 1 : panels.length - 1)) % panels.length][0];
+    n.click(); n.focus();
+  });
+  return { tabs, tab, pick };
+}
+function select(name, items, value) {
+  const sel = mk('select', 'tb-sel');
+  for (const [v, label] of items) sel.add(new Option(label, v));
+  sel.value = items.some(([v]) => v === value) ? value : items[0][0];
+  sel.setAttribute('aria-label', name);
+  return sel;
+}
+const RULE_COLORS = [['', 'Automatic (black)'], ['gray', 'Gray'], ['darkgray', 'Dark gray'], ['BrickRed', 'Dark red'], ['red', 'Red'], ['Orange', 'Orange'], ['ForestGreen', 'Green'], ['RoyalBlue', 'Blue'], ['MidnightBlue', 'Dark blue'], ['Plum', 'Purple']];
+const FILLS = [['', 'No Color'], ['gray!10', 'Gray, lighter 90%'], ['gray!25', 'Gray, lighter 75%'], ['yellow!20', 'Yellow, lighter 80%'], ['cyan!15', 'Light blue'], ['green!15', 'Light green'], ['red!15', 'Light red'], ['Orange!25', 'Light orange'], ['yellow', 'Yellow'], ['gray', 'Gray']];
+
+// ---- Borders and Shading (Table Design › Borders' corner arrow) ---------------------------------
+// Word's dialog: a setting (None, Box, All, Grid, Custom), the pen's style, colour and width, the
+// preview whose edges turn each border on and off, what it applies to; Shading's fill
+export function bordersDialog(app) {
+  const at = keep(app), h = at && app.tableHere(at);
+  if (!h) return;
+  const p = open(app, 'Borders and Shading', 'rc-table-borders', 'tb-bs');
+  const S = X.settingsOf(h.src, h.T);
+  const { tabs, tab, pick } = tabbed('Borders and Shading', 'bs');
+  const P1 = tab('Borders', 'borders'), P2 = tab('Shading', 'shading');
+  const scope = select('Apply to', h.multi ? [['cells', 'Cells'], ['table', 'Table']] : [['table', 'Table'], ['cells', 'Cell']], h.multi ? 'cells' : 'table');
+  const rectOf = () => (scope.value === 'table' ? app.tableRect(h.T) : X.grow(h.T, h.rect));
+  const now = () => X.bordersOf(h.src, h.T, rectOf());
+  let parts = {};
+  const EDGES = [['top', 'Top border'], ['bottom', 'Bottom border'], ['left', 'Left border'], ['right', 'Right border'], ['insideH', 'Inside horizontal border'], ['insideV', 'Inside vertical border']];
+  const read = () => { const n = now(); parts = Object.fromEntries(EDGES.map(([k]) => [k, n[k] === null ? null : !!n[k]])); };
+  read();
+  const setting = radios('Setting', [['none', 'None'], ['box', 'Box'], ['all', 'All'], ['grid', 'Grid'], ['custom', 'Custom']], 'custom');
+  const SETS = { none: { top: false, bottom: false, left: false, right: false, insideH: false, insideV: false }, box: { top: true, bottom: true, left: true, right: true, insideH: false, insideV: false },
+    all: { top: true, bottom: true, left: true, right: true, insideH: true, insideV: true }, grid: { top: true, bottom: true, left: true, right: true, insideH: true, insideV: true } };
+  const curW = (S.arrayrulewidth || {}).value || '0.4pt';
+  const style = select('Style', [['single', 'Single line'], ['double', 'Double line']], app.penStyle || 'single');
+  const color = select('Color', RULE_COLORS, '');
+  const widthSel = select('Width', [['0.4pt', '½ pt (LaTeX\'s own)'], ['0.8pt', '¾ pt'], ['1pt', '1 pt'], ['1.5pt', '1½ pt'], ['2.25pt', '2¼ pt']], curW);
+  // the preview: a drawing of the cells whose edges are buttons, pressed where the border is
+  const pv = mk('div', 'bs-preview');
+  pv.setAttribute('role', 'group'); pv.setAttribute('aria-label', 'Preview');
+  const btns = EDGES.map(([k, name]) => {
+    const b = mk('button', 'bs-edge bs-' + k);
+    b.type = 'button'; b.setAttribute('aria-label', name); b.title = name;
+    b.addEventListener('click', () => { if (parts[k] === null) return; parts[k] = !parts[k]; setting.querySelector('input[value=custom]').checked = true; draw(); });
+    pv.append(b);
+    return [k, b];
+  });
+  const draw = () => {
+    for (const [k, b] of btns) { b.setAttribute('aria-pressed', parts[k] ? 'true' : 'false'); b.disabled = parts[k] === null; }
+    pv.classList.toggle('dbl', style.value === 'double');
+  };
+  setting.addEventListener('change', () => { const v = setting.value(); if (SETS[v]) { for (const [k] of EDGES) if (parts[k] !== null) parts[k] = SETS[v][k]; } draw(); });
+  scope.addEventListener('change', () => { read(); draw(); });
+  style.addEventListener('change', draw);
+  draw();
+  const pageBorder = mk('button', 'btn ghost', 'Page Border…');
+  pageBorder.type = 'button';
+  pageBorder.addEventListener('click', () => { back(app); app.runCommand('page-borders'); });
+  P1.append(row('tb-sec bs-cols', setting, pv),
+    row('tb-sec', field('Style', style), field('Color', color), field('Width', widthSel), mk('p', 'tb-note', 'A rule\'s colour and width are the whole table\'s in LaTeX (\\arrayrulecolor, \\arrayrulewidth); a bar runs the table\'s height.')),
+    row('tb-sec', field('Apply to', scope)), pageBorder);
+  const fill = select('Fill', FILLS, '__');
+  fill.add(new Option('As it is', '__'), 0); fill.value = '__';
+  const scope2 = mk('p', 'tb-note', 'The fill goes on the cells the Borders tab applies to (\\cellcolor, whole rows \\rowcolor).');
+  P2.append(row('tb-sec', field('Fill', fill), scope2));
+  const ok = () => {
+    const n = now(), changed = {};
+    for (const [k] of EDGES) if (parts[k] !== null && parts[k] !== !!n[k]) changed[k] = parts[k];
+    const dbl = style.value === 'double';
+    // (the style set on the edges asked, and kept as the pen for the borders drawn after)
+    const restyle = dbl !== ((app.penStyle || 'single') === 'double');
+    if (restyle) for (const [k] of EDGES) if (parts[k]) changed[k] = true;
+    app.penStyle = style.value;
+    const want = { scope: scope.value, parts: Object.keys(changed).length ? changed : null, double: dbl,
+      width: widthSel.value === curW ? undefined : widthSel.value,
+      color: color.value ? { name: color.value } : S.arrayrulecolor ? null : undefined };
+    if (fill.value !== '__') want.shade = fill.value ? { name: fill.value } : null;
+    back(app);
+    app.runCommand('borders-shading', want);
+  };
+  p.append(tabs, P1, P2, buttons(app, ok));
+  pick('borders');
+  finish(app, p, ok);
+}
+
+// ---- Formula (Table Layout › Data) ------------------------------------------------------------------
+// Word's dialog: the formula (=SUM(ABOVE) where numbers stand above, =SUM(LEFT) where they stand
+// left), a number format and a function to paste; OK computes it and writes the value
+export function formulaDialog(app) {
+  const at = keep(app), h = at && app.tableHere(at);
+  if (!h) return;
+  const p = open(app, 'Formula', 'rc-table-formula', 'tb-formula');
+  const rows = X.dataRows(h.T), r = rows.indexOf(h.r), c = h.cell.col;
+  const name = FX.cellName(Math.max(0, r), c);
+  const have = X.formulasOf(h.src, h.T).find((x) => x.name === name);
+  const grid = X.cellGrid(h.src, h.T);
+  const numAbove = r > 0 && grid[r - 1] && grid[r - 1][c] && FX.cellNumber(grid[r - 1][c].tex) != null;
+  const m = have ? /^([\s\S]*?)\s*\\#\s*"([^"]*)"\s*$/.exec(have.text) : null;
+  const text = mk('input', 'tb-ftext');
+  text.type = 'text'; text.spellcheck = false; text.autocomplete = 'off';
+  text.value = have ? (m ? m[1] : have.text) : numAbove || c === 0 ? '=SUM(ABOVE)' : '=SUM(LEFT)';
+  const fmt = select('Number format', [['', 'As the value is'], ...FX.FORMATS.map((f) => [f, f])], m ? m[2] : '');
+  const fn = select('Paste function', [['', 'Paste function'], ...FX.FUNCTIONS.map((f) => [f, f])], '');
+  fn.addEventListener('change', () => {
+    if (!fn.value) return;
+    const a = text.selectionStart ?? text.value.length, b = text.selectionEnd ?? a, ins = fn.value + '()';
+    text.value = text.value.slice(0, a) + ins + text.value.slice(b);
+    text.focus(); text.setSelectionRange(a + ins.length - 1, a + ins.length - 1);
+    fn.value = '';
+  });
+  const out = mk('p', 'tb-note tb-fout');
+  out.setAttribute('aria-live', 'polite');
+  const preview = () => {
+    const g = grid.map((row) => row.map((x) => (x == null ? x : { v: FX.cellNumber(x.tex) })));
+    try { out.textContent = name + ' will read ' + FX.formatNumber(FX.evaluate(text.value, g, { r, c }), fmt.value).replace(/\\([$%])/g, '$1').replace(/\$-\$/g, '−'); out.classList.remove('bad'); } catch (e) { out.textContent = e.message; out.classList.add('bad'); }
+  };
+  text.addEventListener('input', preview); fmt.addEventListener('change', preview);
+  preview();
+  const ok = () => { const t = text.value, f = fmt.value; back(app); app.runCommand('table-formula', { text: t, format: f }); };
+  p.append(row('tb-sec', field('Formula', text), out, field('Number format', fmt), field('Paste function', fn)),
+    mk('p', 'tb-note', 'Rikuy computes it now and writes the value in ' + name + ', so the table compiles anywhere; the formula stays on a "% formula" line before the table, and Update Formulas computes it again (Word updates its field when you press F9 or print).'), buttons(app, ok));
+  finish(app, p, ok);
+  text.focus(); text.select();
 }
 
 // ---- Cell Margins ---------------------------------------------------------------------------------------------

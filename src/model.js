@@ -2797,7 +2797,9 @@ class Builder {
     const out = rows.map((r, k) => ({ rules: k === 0 ? [rule(book ? 'heavy' : 'light')] : k === 1 ? [rule('light')] : [], empty: false, cells: Array.from({ length: n }, (_, j) => cell(r[j] || '')) }));
     out.push({ rules: [rule(book ? 'heavy' : 'light')], empty: true, cells: [] });
     this.use('csv' + name + text.length);
-    return { type: 'tabular', cols, rows: out, f: ctx.f, s: nd.s, e: nd.e, fns: [], dir: this.dirOf() };
+    // (G2) a tabularx's width, which its X columns fill (a share of the line or a length)
+    const width = (nd.name === 'tabularx' || nd.name === 'tabular*') && nd.args[0] && nd.args[0] !== specArg ? this.argText(ctx, nd.args[0]).trim().slice(0, 60) : null;
+    return { type: 'tabular', cols, rows: out, f: ctx.f, s: nd.s, e: nd.e, fns: [], dir: this.dirOf(), ...(width ? { width } : {}) };
   }
   // A setting written before a table (B7): { key, value } or null
   tableSetting(n, ctx) {
