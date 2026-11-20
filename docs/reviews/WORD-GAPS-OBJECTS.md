@@ -141,3 +141,33 @@ Files: `src/objfmt.js:142,282`, and `smartItemsSet` and `smartTex`.
 
 - Renumber this branch's task 68 to 69. Here, "task 68" appears only in PLAN.md and six GAP.md rows (P4, P5, P9 to P12). PR 84 cites it in `test/docgaps.py`, `AGENTS.md` and 13 places in its src, test and docs, so it is the more expensive one to change.
 - Note for the coordinator: origin/main already has two tasks numbered 66 (keyboard shortcuts, and C/C++). Both branches' base, `ribbon-tabs-word` (fa49608), adds another 66 and a 67. Those need renumbering at merge as well.
+
+## Fixes for the review
+
+Each finding with the commit that fixes it and the test that failed before it.
+
+- **H1** (cfdb875): `listSet` edits a list in place: an entry replaced where it stands, one taken off with one separator, a new one after the last entry's own characters (before a space or a comment) with the separator the list already uses. `entries()`, the axis's `]` and a `\draw`'s `]` are read past comments. Test: `objfmt.test.mjs`, a comment after the axis's last key (`title={Q1}` landed inside the comment before).
+- **H2** (11769f9, browser check d7e2032): `blockOf` takes the outermost figure, table or wrapfigure as the float and the innermost center or flush as the alignment; Position changes that float and never writes one inside it; in a minipage, a cell, a `\parbox` or a footnote a float or a wrap is refused with a plain reason. Tests: `objfmt.test.mjs` (Top of Page on figure > center > tikzpicture), `objects.py arrange` (the same on the page, compiled with pdfLaTeX, XeLaTeX and LuaLaTeX).
+- **H3** (9be2f29): a note belongs to the last `\includegraphics` on its line; a picture with another after it on the line reads no note and the tools refuse it with a plain reason, so Reset no longer takes the neighbour's file. Test: `picfx.test.mjs`.
+- **H4** (9be2f29): the first file's name is written in braces, `from {my photo, 2.png}`, and read back so (the unbraced form of the first commits still read). Test: `picfx.test.mjs`.
+- **H5** (9be2f29): Compress reads each picture's ppi as printed, from the part trim or viewport keeps over the width graphicx gives it (`graphicBox`, a quarter turn swapping the axes), and scales by target over effective, rounding up; at or below the target, under a free angle or sized by a macro, it is left alone and the toast says which and why. Tests: `picfx.test.mjs` (`compressPlan` on the review's two cases), `objects.py review_pictures`.
+- **H6** (06d036a): the touch rule in `app.css` names all five new tabs, Layout's Align and Selection Pane, the size fields, and the Selection Pane's Close, Show All, Hide All and name fields. Test: `objects.py phones` sweeps every visible control of each tab at 390 and 360 px (32 by 30 px before). The ribbon's Download button (`.rb-dl`, 30 px on every tab, Home's too) is the ribbon branch's and is left out of the sweep.
+- **M1** (11769f9, browser check d7e2032): `{0pt}` is drawn at the drawing's own width (max-content) at its side, the text wrapped round it; Wrap is refused where a list, a display, a heading or another block comes right after the object. Tests: `objfmt.test.mjs` (wrap before an itemize), `objects.py arrange` (the drawing at the right margin, the next words beside it).
+- **M2** (cfdb875): as H1; a list one key a line stays so, a new key put on its own line. Test: `objfmt.test.mjs`.
+- **M3** (9be2f29): the edited file's name holds a hash of the first file's bytes, so a replaced original makes a new file. Test: `picfx.test.mjs`.
+- **M4** (9be2f29): the pixels are worked on in a worker (`src/picworker.js`); a run that leaves the module above 64 MB lets it go; a run longer than half a second shows "Working on <file>…". Tests: `objects.py review_pictures` (the work done in the worker), `picfx.test.mjs` (the module grown past 16 MB by one run, then let go).
+- **M5** (9be2f29): one edited file a picture: the step that writes a new one takes the last out in the same history step (undo brings it back), Reset Picture takes it out; Compress's toast says the PDF carries the new files and the project keeps its first ones. Test: `objects.py review_pictures`.
+- **M6** (2a4a40d): labels and references are read on the parser's tree: comments, verbatim, listings and minted skipped, math environments' raw text scanned on its own, both arguments of the `*range` commands, `\hyperref`'s optional one, `\subref`, `\fref` and `\Fref`; a `\label` in a comment no longer counts as taken. Test: `objlist.test.mjs`.
+- **M7** (06d036a): hiding is keyed by the object's `\label`, or by its file, kind and a hash of its source with how many before share that text; kept in this browser per project and read again after a reload; the pane says plainly that hiding is the page's view only. Test: `objects.py selpane` (hide Drawing 2, delete Drawing 1, reload).
+- **M8** (06d036a, test 3a9472f): `& % $ # _` are written with a backslash and `\ { } ^ ~` as `\textbackslash{}` and its like in a shape's words, chart titles and SmartArt items, and read back for the page and the dialogs. Tests: `objfmt.test.mjs`, `drawing.test.mjs`, `objects.py compiled` ("Q1 sales & R&D: 50% of $5_000 #1" in the PDF on three engines; pdfLaTeX's OT1 `\_` is a drawn rule, so there it is compared without spaces and underscores).
+- **L1** (cfdb875): `shapeOrder` moves whole lines with their comments and refuses where a command shares its line with another.
+- **L2** (9be2f29): `\includegraphics{a}` finds `a.png` as TeX does, and the reasons say what is missing.
+- **L3** (9be2f29): `pic.c` reads a PNG's size from its header first: 100000 by 100000 is "too large", 20000 by 2 is read; the message no longer calls CMYK JPEGs unreadable.
+- **L4**: not changed. TeX ignores EXIF orientation, so the edited file prints as the first one already printed; after a correction the page and the PDF agree. Turning the picture upright is a change to what TeX prints and belongs with Rotate.
+- **L5** (9be2f29): the width in pixels is rounded up from the printed size, not measured on screen.
+- **L6** (06d036a): Shape Fill and Shape Outline are tiles in rows (`pop-gal`), 44 px each on a phone.
+- **L7** (430df57): the line after a SmartArt with colours of its own puts back the list in effect before it (the preamble's `set color list`, or the package's), marked `% rikuy: colours back`.
+- **L8**: not this branch (B8's `picture-place-*` commands).
+- Numbering (0ab00f0): this branch's task is 69 in `PLAN.md`, and GAP.md's rows P4, P5, P9 to P12 with it.
+
+Checks at 3a9472f, with `dist/tex`: `npm test` green (`objfmt` 17 groups, `picfx` 12, `objlist` 4); `objects.py` 247 passed, 0 failed; `picture.py` 228; `tabs.py` 127; `agent.py` 143.

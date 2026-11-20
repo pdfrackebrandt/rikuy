@@ -3299,8 +3299,13 @@ Tests:
     Left out, with no meaning in LaTeX: shape effects, WordArt styles, a SmartArt shape's own
     colour or size, Quick Layout, 3-D charts, Remove Background, Artistic Effects, Ungroup (a
     TikZ picture's shapes keep no place of their own outside it), Rotate of a drawing.
-    Evidence: `npm test` green (`objfmt` 12 groups, `picfx` 8, `objlist` 3, `drawing`,
-    `objects`, `commands` 14); `test/objects.py` 210 (with `dist/tex`: everything compiled with
+    The hostile review (`docs/reviews/WORD-GAPS-OBJECTS.md`, six High, eight Medium) is answered
+    in its "Fixes for the review": option lists edited in place with their comments and lines,
+    no float in a float, a picture's note its own, names in braces, Compress at the printed size
+    graphicx gives, the work in a worker, one edited file a picture, labels renamed on the
+    parser's tree, hiding kept by label, typed characters escaped, 44 px on phones.
+    Evidence: `npm test` green (`objfmt` 17 groups, `picfx` 12, `objlist` 4, `drawing`,
+    `objects`, `commands` 14); `test/objects.py` 247 (with `dist/tex`: everything compiled with
     pdfLaTeX, XeLaTeX and LuaLaTeX, the shapes' words, chart titles and SmartArt items found in each
     PDF; edited pictures, one seen through, on the three engines; phones at 390 and 360 px with
     touch); `tabs.py` 127 (the fold sweep on all 19 tabs, the five new ones among them), `agent.py` 143, `picture.py` 228, `ribbon.py` 195, `test:browser` 199, the corpus model run 716 of 716; screenshots
