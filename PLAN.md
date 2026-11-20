@@ -3278,7 +3278,79 @@ Tests:
     answered in the commits named after it (File's keys, Esc with a pane docked, Back, a
     template's caret, ...). Open, in the audit: findings for the ribbon tabs agent.
 
+66a. **The ribbon's other tabs laid out as Word's.** Done in the code (branch `ribbon-tabs-word`).
+    Home was done in PR 75; `src/ribbon/layout.js` now says, for Insert, Design, Layout,
+    References, Review, View, Help and the contextual tabs (Table Design, Table Layout, Picture
+    Format, Equation, Header & Footer), each group's commands in Word's order with Word's size:
+    large (the icon over the name, broken over two lines as Word breaks it, a menu's arrow after
+    it), small with the name (three to a column), the icon alone, or a gallery's tile (Table
+    Design's five looks). From 900 px a laid out group is a grid of three rows with its name on a
+    row of its own under it, so the group is never narrower than its name; narrower, the row is as
+    it was. Word's check boxes for Table Style Options, View's Show and the header's Options (the
+    controls stay toggle buttons with their state). Every tab is as tall as Home (92 px), so the
+    page no longer jumps when another tab opens; Home's Clipboard and Styles names now sit on the
+    same line as its other groups'. Where the row is short a group gives way as Word's do, one
+    step at a time, the least needed group first and none of it costing a control: its large
+    buttons small (only where that is narrower), then its names; only then does any group fold
+    (`ribbonFit`). Group names as Word's (Page Setup, Citations & Bibliography, Rows & Columns,
+    Cell Size, Table Style Options...; Table of contents stays in small letters, its folded
+    button must not share its button's name); View's groups as Word's (Views, Immersive, Page
+    Movement, then Rikuy's Dark Mode, Show, Zoom). Corner arrows on Layout's Paragraph,
+    References' Footnotes, Table Layout's Cell Size and Picture Format's Size. KeyTips for every
+    control of every tab, Home's included: Alt, the tab's letter, then the control's (Word's
+    letters where Word has them: Alt, N, T is Table, Alt, R, C New Comment), drawn over the
+    ribbon, never in a button's name; a folded group is Z and a letter; Escape goes back a level.
+    Layout's Paragraph group no longer took Home's Paragraph rules (its fields were cut off at
+    224 px), and the open tab's name reads on a dark ribbon. No command, name or role changed.
+    Evidence: `npm test` green (commands: 14 groups, the layout's ids and the KeyTips unique and
+    prefix free per tab), `tabs.py` 115 and `word_layout` 12, `agent.py` 143, `ribbon.py` 195,
+    `font.py` 309, `para.py` 254, `lists.py` 218, `picture.py` 228, `insert.py` 224,
+    `styles.py` 426, `view.py` 163; screenshots of every tab at 1920 and 1366 px, light and dark,
+    and 390 px.
+    The hostile review (fix first) and what changed for it: Word's grid is for a mouse alone,
+    `(min-width: 900px) and (pointer: fine)` in the style sheet and `wideLay()`, so a tablet in
+    landscape keeps its row of 44 px targets (H1; `tabs.py tablet`). The steps that shrink a group
+    are two chains given back from their ends, so ranks hold and a wider window never shows fewer
+    names; on a laid out tab the three downloads become one Download button before the names of
+    rank 4 and up go (M1; the sweep checks names too). A run of Word's small buttons stays in one
+    column when a group shrinks, Previous over Next (M2). The contextual tabs' KeyTips JT, JL, JP,
+    JE, JH (M3). Insert Table, Convert Text to Table and Table from Data File are items of Table's
+    menu, no buttons beside it; Page setup dialog, Footnote and Endnote and Size and Position are
+    their groups' corner arrows with a mouse from 900 px, the buttons they were elsewhere (M4).
+    Large split buttons as Word's, icon above, name and arrow below (L1); every shown name in its
+    accessible name (L2); keys the KeyTips take stop there (L4); on a Mac F10 alone (L5); arrows
+    move across the grid (L6); 67 px for every tab from 861 to 899 px (L7); a pressed toggle in the
+    highlight with forced colours (L8). Download PDF keeps its name and width while busy (the UX
+    audit). Names agents see that changed (L3): the group names in Title Case as Word's (Page
+    Setup, Document Formatting, Page Background, Document Setup, Citations & Bibliography, Table of
+    Authorities, Table Style Options, Table Styles, Rows & Columns, Cell Size), which a folded
+    group's button and `controls.json`'s groupName carry; View's group "Page" is gone, its Side to
+    Side, Dark page and Focus now in Page Movement, Dark Mode and Immersive; the three table
+    commands above are no ribbon controls in `controls.json` any more. No command's own name or
+    role changed. Evidence: `npm test` green, `tabs.py` 137 (word_layout 17, tablet 3,
+    mac_keytips 1), `agent.py` 143, `ribbon.py` 194 and its downloads 8.
+
 ## Open tasks
+
+67. **Word's ribbon buttons Rikuy has no command for** (task 66 left them out). Insert: 3D
+    Models, Online Videos, Get Add-ins, WordArt, Signature Line, Object, and Date & Time (the
+    command `insert-date` exists, without an icon or a place on the ribbon). Draw: the whole tab.
+    Design: Effects, Set as Default (File has `set-default`). Insert › Tables: Draw Table, Excel
+    Spreadsheet, Quick Tables in Table's menu. Layout › Arrange: Bring Forward, Send
+    Backward, Selection Pane, Align, Group. References: Update Table (contents, figures,
+    authorities), Update Index, Research (Search, Researcher). Mailings: the whole tab. Review:
+    Translate, Protect (Block Authors, Restrict Editing), Hide Ink, the Tracking group's corner
+    arrow (Track Changes Options). View: Immersive Reader, Vertical (Side to Side's other half),
+    Gridlines, the Zoom dialog, the Window group, Macros. Table Design: Border Styles, Pen Style,
+    Border Painter, the Borders corner arrow (Borders and Shading). Table Layout: View Gridlines,
+    Draw Table, Eraser, Formula, the Rows & Columns corner arrow. Picture Format: Remove Background,
+    Corrections, Color, Artistic Effects, Transparency, Compress Pictures, Picture Effects, Picture
+    Layout, the Picture Styles gallery and its corner arrow, Bring Forward, Send Backward, Selection
+    Pane, Align, Group. Equation: Ink Equation, Unicode or LaTeX and Convert, Normal Text, the
+    Tools corner arrow (Equation Options). Header & Footer: Quick Parts and Pictures in its Insert
+    group, the Navigation group, Show Document Text, Header from Top and Footer from Bottom as
+    fields. Contextual tabs Word has and Rikuy has not: Shape Format, Chart Design and Format,
+    SmartArt Design and Format.
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000
     papers, every failure classified as in task 2. Needs arxiv.org (see task 3). The owner runs

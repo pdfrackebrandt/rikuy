@@ -133,7 +133,7 @@ export const methods = {
     const p = guide(this, 'Keyboard shortcuts', 'rh-keys', 560, 'pop-help pop-guide');
     const mac = macUA(), T = (t) => keysInText(t, mac);
     p.append(para(mac ? 'The keys as a Mac has them: \u2318 is Command, \u2325 Option, \u2303 Control, \u21e7 Shift. They act with the caret on the page unless said.' : 'The keys act with the caret on the page unless said.'));
-    p.append(para('Alt alone, or F10, shows the letters on the tabs (H Home, N Insert, G Design, P Layout, S References, R Review, W View, F File, Y then 2 Help). Esc puts them away.'));
+    p.append(para((mac ? 'F10' : 'Alt alone, or F10,') + ' shows the letters on the tabs (H Home, N Insert, G Design, P Layout, S References, R Review, W View, F File, Y then 2 Help); a tab\'s letter shows its buttons\' letters (' + (mac ? 'F10' : 'Alt') + ', N, T is Table). Esc goes back a step.'));
     const byTab = new Map();
     for (const c of commands()) {
       const keys = chordsOf(c, mac);

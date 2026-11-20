@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 # the test page (https://rikuy.test) talks to a git server on 127.0.0.1, which Chrome's local
 # network checks would otherwise hold for a permission prompt
 os.environ['CHROME_ARGS'] = '--disable-features=LocalNetworkAccessChecks,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults,BlockInsecurePrivateNetworkRequests'
-from browser import open_page, check, results, src, SHOTS
+from browser import open_page, check, results, src, SHOTS, download
 import git_server
 from playwright.sync_api import sync_playwright
 
@@ -226,7 +226,7 @@ try:
 
         # .zip out with .git, then back in on a clean browser
         with page.expect_download(timeout=30000) as dl:
-            page.click('#b-save')
+            download(page)
         zbytes = open(dl.value.path(), 'rb').read()
         zf = zipfile.ZipFile(io.BytesIO(zbytes))
         names = zf.namelist()
