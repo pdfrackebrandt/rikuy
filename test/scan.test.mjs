@@ -68,5 +68,16 @@ check('past the kept count, the same answers again', many.every((t) => preambleE
 const big = ('\\section{A} text % note\n').repeat(130000) + '\\begin{document}';
 check('a 3 MB text: the same', commentsBlanked(big, big.length) === oldBlank(big, big.length) && preambleEnd(big) === oldEnd(big));
 
+// (B0's review) past preamble.js's cap of 400,000 the rest of the text follows on from where the
+// blanking stopped: a backslash at 399,999 or a comment across the cap no longer says a stretch
+// twice, every offset is kept, and below the cap nothing changed (the checks above)
+{
+  const t1 = 'a'.repeat(399999) + '\\%after % c\nend';
+  check('a backslash at 399,999: the text as it is, said once', preambleStrip(t1) === t1, preambleStrip(t1).length - t1.length);
+  const t2 = 'a'.repeat(399990) + '% a comment past the cap\nend', e = t2.indexOf('\n', 399990);
+  check('a comment across the cap: made spaces to its line\'s end, then the rest once', preambleStrip(t2) === t2.slice(0, 399990) + ' '.repeat(e - 399990) + t2.slice(e), preambleStrip(t2).length - t2.length);
+  const t3 = 'b'.repeat(400010);
+  check('a plain text past the cap: as it is', preambleStrip(t3) === t3);
+}
 console.log(pass + ' passed, ' + fail + ' failed');
 if (fail) process.exit(1);

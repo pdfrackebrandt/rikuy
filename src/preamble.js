@@ -16,8 +16,11 @@ const GROUP = 4000; // the most of one argument read
 // The text with each comment's characters (from an unescaped % to the line's end) made spaces,
 // so offsets stay those of the text (src/scan.js: made once per text)
 export function stripComments(t) {
-  const n = Math.min(t.length, MAX * 2);
-  return commentsBlanked(t, n) + t.slice(n);
+  // (the rest goes on from where the blanking stopped, which a backslash at n - 1 or a comment
+  // across n puts past n: from n, as before, it said that stretch twice and moved every offset
+  // after it)
+  const out = commentsBlanked(t, Math.min(t.length, MAX * 2));
+  return out + t.slice(out.length);
 }
 
 // the line end a text is written with: CRLF where its first line ends so, else LF

@@ -32,7 +32,8 @@ function memo(kind, t, make) {
 // t's first n characters with each comment (from a % no backslash escapes to its line's end) made
 // spaces, so offsets stay those of the text. As the readers always made it: a comment that runs
 // past n is made spaces to its line's end, and a backslash at n - 1 takes the character after it
-// along (callers that add the rest of the text, t.slice(n), rely on that being kept).
+// along, so the answer may be longer than n (a caller that adds the rest of the text adds it from
+// the answer's length: src/preamble.js stripComments).
 export function commentsBlanked(t, n) {
   return memo(n, t, () => blank(t, n));
 }
