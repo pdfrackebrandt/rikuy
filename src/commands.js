@@ -50,6 +50,8 @@
 //   searchable  false: the search box leaves it out (a paging arrow)
 //   only      'wide', 'narrow' or 'claude': a control shown at one width only, or only in the
 //             copy inside Claude (agents, test/agent.py)
+//   args      the JSON schema of the arguments run takes in place of its dialog's fields (an
+//             agent's run_command, rikuy.api.run; src/agent.js keeps those written before as ARGS)
 //
 // A module of src/cmd/ is loaded by the build too, under node (build/app.mjs writes llms.txt and
 // controls.json from the registry): nothing in it may touch the page (document, window, navigator)

@@ -3383,6 +3383,39 @@ Tests:
     `form-action 'self'` refuses to post, as `pdf.py` says to the user); `review.test.mjs` and
     `share.test.mjs` (base32 against RFC 4648's vectors, the forms read and refused).
 
+71. **Agents first, then motion: WebMCP, the page in the accessibility tree, motion as Fluent 2's,
+    and ready for what comes.** Done in the code (branch `motion-future`, PR 92). *Agents:* one
+    table of ten tools (`src/agent.js`: get_document, get_source, select, list_commands,
+    run_command, edit_source, set_source, insert_graph, compile, undo) serves WebMCP
+    (`src/webmcp.js`: `document.modelContext`, and `navigator.modelContext`'s earlier drafts;
+    nothing where neither exists), `window.rikuy.api` (`tools`, `callTool` and eight named methods
+    beside the ten before) and llms.txt (generated; llms-full.txt lists every command with its one
+    description, the registry's). get_document gives the document as data (sections, formulas
+    with LaTeX, numbers and labels, figures, graphs with formulas and sliders, citations, the
+    bibliography, labels, cross references, footnotes, problems, the PDF, the selection, each
+    with file and offsets; 2.7 ms on `dev/bench/long`). Edits say what changed and their Undo
+    steps; deletions, the whole text replaced, sharing, downloads and links ask the person in a
+    modal dialog only a real press allows (armed after 500 ms), calls that edit run one at a time.
+    The page in the accessibility tree (`src/a11y.js`): formulas math named by their LaTeX, floats
+    figures named by their captions, citations and cross references described links, headings
+    with their numbers. Security audit, quick profile: a data file's name climbing out of the
+    project through Table from Data File's arguments, fixed with `cleanPath`; the approval's
+    binding, early clicks and the content hints, fixed. `test/agent.test.mjs` 11 groups (in `npm
+    test`), `test/agent.py` 170 checks (webmcp and structure new). *Motion:* `src/tokens.css`
+    (colour, spacing, radii, type, elevation, motion), `src/motion.css`, `src/motion.js`: ribbon
+    tabs, contextual tabs, File's backstage, menus, flyouts, galleries, the right click menu,
+    dialogs, panes, toasts, the save state, the PDF pane's cross fade (no white flash), the views
+    through View Transitions; transform and opacity only; reduced motion fades 100 ms, File ›
+    Options › Animations off nothing; a press or a key finishes any animation. Word's animated
+    caret (`src/caret.js`, File › Options › Animated caret) glides 100 ms, blinks by a timer, and
+    jumps where keys take over 40 ms to show. `test/motion.py` 59 checks; motion's callbacks at
+    most 3.7 ms; typing on `dev/bench/long`, keydown to next paint, 240 keys alternating
+    (`dev/bench_typing.py`): this build 55.6 ms median and 110 p95, caret off 53.9 and 109, main
+    56.2 and 122 (a loaded two core machine). The feature suites run with motion off
+    (`open_page`'s default; `RIKUY_MOTION=1` runs one with it). *Ready:* `docs/handoff/FUTURE.md`
+    (where app.css switches to the tokens after PRs 79, 86 and 90, what to adopt next and when,
+    and a local MCP server for Claude Code and Desktop over Rikuy's model, with a first sketch).
+
 ## Open tasks
 
 67. **Word's ribbon buttons Rikuy has no command for** (task 66 left them out). Insert: 3D
