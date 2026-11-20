@@ -89,7 +89,9 @@ def mouse_and_keys(page):
             caret: document.activeElement.id }; }''', name)
         seen.append((name, st['sel'] == 'true' and st['tb'] == name and st['dl'] and st['shown'] == 1 and panels.count() == 1 and page.get_by_role('tabpanel', name=name, exact=True).count() == 1, st['caret']))
     check('a click opens each tab: its panel alone in the accessibility tree, a toolbar named after the tab, the downloads at its end', all(x[1] for x in seen), seen)
-    check('and the caret stays on the page', all(x[2] == 'pages' for x in seen), seen)
+    # (File is a view over the page, which is inert under it: the keys go to its Back button there,
+    # docs/handoff/UX-AUDIT.md; the next tab gives the page its caret back)
+    check('and the caret stays on the page (in File, on its Back button)', all(x[2] == ('rf-back' if x[0] == 'File' else 'pages') for x in seen), seen)
     dup = {}
     for name in tabs:
         open_tab(page, name)

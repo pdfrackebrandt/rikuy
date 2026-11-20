@@ -3263,6 +3263,33 @@ Tests:
     (M2), a French keyboard's Ctrl+1 is Ctrl+1 (M3), Hanging Indent round trips (M4), Alt+X reads
     LaTeX's accents (M5), and the lows. Evidence: `npm test` green (`keys` 19 groups, `typing` 6, `commands` 13 with the
     `WORD` table on both systems, `table` 47), `test/shortcuts.py` 82 checks (screenshots in `/tmp/keys-shots`).
+67. **UX pass 2: what a newcomer meets outside the ribbon.** Done in the code (branch
+    `ux-pass-2`, draft PR 79). `docs/handoff/UX-AUDIT.md` is the audit at 1920, 1366, 390 and 360
+    px, light and dark, ranked by how much each finding hurts, with the first visit's and a
+    keystroke's times (cable, cold: document 1.27 s, a key lands 1.42 s, first PDF 19.6 s; a
+    keystroke on the long document 70 ms, 500 ms at a phone's speed). Fixed, each a commit with
+    its part of `test/ux.py` (new, in CI's editor job): a dialog closed with Esc, Cancel or Close
+    gives the caret back (`makePop`, `closePop`); the first visit opens with the caret at the first
+    paragraph on a desktop (`placeInitialCaret` had always been empty); File is a view over the
+    window with Back, Esc and any command run from it closing it (`src/ui/fileview.js`); the
+    status bar keeps its views and zoom in sight and its word count opens Word Count; the Styles,
+    Spelling and Thesaurus panes dock at the right; the document's name on narrow windows and in
+    the phone's menu panel, with Make available offline there; the sample without red marks; the
+    PDF bar in two rows on a phone, 44 px; Download PDF's progress in the status bar; Apply Styles
+    reads the caret's style when it opens; a phone opens in Mobile View (Web Layout at its actual
+    size) with Print Layout one tap away, kept on the device; Help is a pane at the right on a wide
+    window; llms.txt says File covers the page. The hostile review (`/tmp/review-ux.md`) is
+    answered in the commits named after it (File's keys, Esc with a pane docked, Back, a
+    template's caret, ...). The verification of 933773d (N1 to N6) is answered too: the reader's
+    place kept when Mobile View turns on or off, File's Home by the keys, Esc from a dialog opened
+    from File giving its command the focus, Help a sheet below 1000 px, a widened window taking a
+    wide window's view, File's column holding its Download row; the top bar's zoom says the same
+    percentage as the status bar. Outside the ribbon, one size and shape per kind
+    (`docs/handoff/UI-PRINCIPLES.md`): dialogs', Find and Replace's and the panes' buttons and
+    fields 32 px with 4 px corners (44 under a finger), dialogs and sheets 8 px, one title style
+    (14 px semibold), a close button 44 px under a finger, the status bar's words one size and
+    its views one height, File's column 32 px, a phone's top bar 44 px (`ux.py consistency`).
+    Open, in the audit: findings for the ribbon tabs agent.
 
 66a. **The ribbon's other tabs laid out as Word's.** Done in the code (branch `ribbon-tabs-word`).
     Home was done in PR 75; `src/ribbon/layout.js` now says, for Insert, Design, Layout,
@@ -3383,27 +3410,108 @@ Tests:
     `form-action 'self'` refuses to post, as `pdf.py` says to the user); `review.test.mjs` and
     `share.test.mjs` (base32 against RFC 4648's vectors, the forms read and refused).
 
+68. **Word's buttons Rikuy lacked, the document's side (open task 67's part).** Done in the code (branch
+    `word-gaps-doc`). Each writes the smallest edit, compiles with pdfLaTeX, XeLaTeX and LuaLaTeX
+    and is drawn on the page as TeX prints it.
+    - Tables: Table Properties in Word's tabs (Table, Row, Column, Cell, Alt Text): the table's
+      Preferred width (a tabularx at that share of the line, which the page now draws that wide),
+      Text wrapping Around (wrapfig's `wraptable` at the side Alignment names, as wide as the page
+      measures the table; refused where a list, a heading or nothing follows), default cell
+      margins, Repeat as header row, all one step. Borders and Shading (Table Design's corner
+      arrow): None, Box, All, Grid, Custom, a preview whose six edges are buttons, the style,
+      colour and width, the Shading tab's fill, applied to the cells or the table. Pen Style
+      (single, double: `||` and `\hline\hline`, drawn double on the page), Border Styles' presets
+      (style and weight, then Border Painter), Border Painter. Formula: Word's =SUM(ABOVE),
+      AVERAGE, COUNT, MIN, MAX, PRODUCT, ROUND, IF, cells and ranges, its number formats
+      (`src/formula.js`), computed by Rikuy and written as the value, the formula kept on a
+      `% formula B5 [10]: =SUM(ABOVE) \# "0.00"` line before the table; Update Formulas computes
+      them again (Word updates a field on F9 or printing). View Gridlines (the page only). Draw Table and Eraser: a press on a
+      cell's edge draws or takes off its rule or bar; the Eraser on an edge with none merges the
+      two cells; Draw Table inside a merged cell splits it.
+    - Header & Footer: Go to Header, Go to Footer, Previous and Next (odd and even pages of a two
+      sided document), Header from Top and Footer from Bottom as Word measures them (written as
+      geometry's `headsep` and `footskip`), Pictures (a logo a line high, drawn in the page's
+      header), Quick Parts (Page, NumPages, Date, FileName, saved parts), Show Document Text.
+      Link to Previous is not built: a LaTeX document's pages take one header until `\pagestyle`
+      changes it, and Rikuy edits that one.
+    - View: Gridlines (the text's baselines and every centimetre across, the screen only), the
+      Zoom dialog (200, 100, 75 %, Page width, Text width, Whole page, Many pages, a percent),
+      Split (a second view under the first, kept current, scrolled on its own, a press in it puts
+      the caret there), Vertical beside Side to Side. New Window is not built: a browser tab is a
+      window, and two on one project would save over each other; Split is the second view.
+    - References: Update Table (contents, figures and tables, authorities) and Update Index: the
+      page's list rebuilt and flashed now, the PDF's at its next compile (at once where it is open).
+    - Equation: Convert (Professional, Linear), Unicode or LaTeX (Linear as Word's UnicodeMath,
+      `src/unimath.js`, typed back into LaTeX as you type, or as the LaTeX), Normal Text
+      (`\text{}`), Equation Options (the Tools group's corner arrow: what Alt+= makes on an empty
+      line, the linear format).
+    - Insert: Signature Line (room, a rule, name, title, e-mail, `\today`), and Date & Time and
+      Object placed in the Text group as Word's.
+    Evidence: `test/docgaps.test.mjs` 13 groups (in `npm test`); `test/docgaps.py` 126 checks
+    with `dist/tex` (tables 41, headfoot 22, view, refs_update and insert_text 22, equation 11,
+    compiled on the three engines 12, phones at 390 and 360 px 18); `tabs.py` 127, `agent.py`
+    143, `table.py` 169, `eqtab.py` 159, `view.py` 163, `page.py` 177 (the right click menu in a
+    cell kept in Word's order). Screenshots in `/tmp/g2-shots`.
+    Fixes for the hostile review (`docs/reviews/WORD-GAPS-DOC.md`): the Linear box writes only
+    where the equation reads into it and back unchanged, and then only the tokens typed (commands
+    it has no form for kept as written, `\left` and `\right` only whole, a fraction under a script
+    in 〖 〗), else on Enter; UnicodeMath read as Word reads it (ab/cd, 1/2/3, x^2^3, a^-1, ▒ 〖〗 ┬
+    ┴, ℝ), brackets deeper than 100 refused in words. Formula lines follow their cells through
+    Insert and Delete of rows and columns, Sort, Merge, Split and Delete Cells (references too,
+    #REF! for a deleted cell), go with Delete Table, keep the value they wrote last, and Update
+    Formulas leaves a cell holding something else and says so; a range is clamped to the grid
+    (13 s to under 1 ms), a formula over 500 characters refused, ROUND and the formats round as
+    Word (-2.5 to -3, 2.675 to 2.68, no exponent); the Number format box takes a format of your
+    own; Word export writes the formula as Word's field round its value and import brings the
+    line back. Header from Top and Footer from Bottom right under includehead and includefoot
+    and with a hand set `\headsep` (the PDF's header 1 cm down, the text where it was). Preferred
+    width stretches only l, c and r columns and Off gives the bytes back. Split copies only the
+    pages near its window at idle time (3 of 19 pages, not 19), is read only and says so, follows
+    a resize, and its bar drags by mouse, finger and keys. `\hhline` is read as a border; a
+    booktabs table gets no bars or double rules (its Left, Right and Inside Vertical off, saying
+    why); Signature Line's lines joined by `\\*`; the dialogs say Left and right, Top, Row
+    height, times the usual, Display, no number; Table Properties' tabs 44 px wide.
+    Evidence for the fixes: `test/docgaps.test.mjs` 20 groups; `test/docgaps.py` 166 checks with
+    `dist/tex`; `table.py` 175, `view.py` 163, `page.py` (header_footer, long_document, compile_pdf)
+    44, `word.py` 111, `word.test.mjs` 78 groups (the formula field), `eqtab.py` 159, `tabs.py`
+    137 (merged with main's tab layouts), `agent.py` 143, `browser.py` 199, `csp.py` 22, `npm test`
+    passed; of 17169 equations
+    of the corpus, sample and dev/bench all but 334 (text between dollars, babel's quotes,
+    `\frac{1}m`) live in the Linear box and byte for byte after a space typed.
+    Fixes for the verification of 3d3bfc4 (`docs/reviews/WORD-GAPS-DOC.md`): Header from Top and
+    Footer from Bottom greyed, saying why, where KOMA-Script, typearea or memoir lay the page out
+    (the page model reads article's layout and geometry's); Footer from Bottom measured to the
+    sheet, not to `\paperheight` (letter's where the sheet is A4); Move Row Up and Down and Split
+    Table keep their rows' formula lines; every formula of a Word table back, in order; Split's
+    copy waits for a pause and an idle time (ten letters on a 125 page document: 0.8 s of long
+    tasks, 0.6 s without Split, 3.0 s before), its bar 44 px with touch; a comment stays a comment
+    through the Linear box; a value with no number format to two places; `\addtolength` of
+    `\headsep` and `\footskip` read; Pen Style Double keeps a double `\hhline`; References'
+    Update buttons 44 px with touch. Evidence: `test/docgaps.test.mjs` 20 groups;
+    `test/docgaps.py` headfoot_forms 12, footer_sheet 5, headfoot_refused 8, split_long 6,
+    rest_phones 11; `word.test.mjs` 78 groups; `refs.py phone` 30.
+    Left: the ribbon's buttons are 32 by 30 px on a phone on every tab (the ribbon's own rule);
+    Link to Previous; the second view of Split does not take typing (a press there puts the caret
+    in the top view); a formula line in a table that holds a table does not come back from Word;
+    Header from Top and Footer from Bottom on KOMA-Script, typearea and memoir (the page model
+    reads their layout first); a `\setlength{\footskip}` after `\geometry{…}` is not read (the
+    model takes geometry's); Preferred width Off gives `*{3}{c}` back as `ccc`.
+
 ## Open tasks
 
-67. **Word's ribbon buttons Rikuy has no command for** (task 66 left them out). Insert: 3D
-    Models, Online Videos, Get Add-ins, WordArt, Signature Line, Object, and Date & Time (the
-    command `insert-date` exists, without an icon or a place on the ribbon). Draw: the whole tab.
+67. **Word's ribbon buttons Rikuy has no command for** (task 66 left them out; task 68 built the
+    document's side: what it names is not repeated here). Insert: 3D
+    Models, Online Videos, Get Add-ins, WordArt. Draw: the whole tab.
     Design: Effects, Set as Default (File has `set-default`). Insert › Tables: Draw Table, Excel
     Spreadsheet, Quick Tables in Table's menu. Layout › Arrange: Bring Forward, Send
-    Backward, Selection Pane, Align, Group. References: Update Table (contents, figures,
-    authorities), Update Index, Research (Search, Researcher). Mailings: the whole tab. Review:
+    Backward, Selection Pane, Align, Group. References: Research (Search, Researcher). Mailings: the whole tab. Review:
     Translate, Protect (Block Authors, Restrict Editing), Hide Ink, the Tracking group's corner
-    arrow (Track Changes Options). View: Immersive Reader, Vertical (Side to Side's other half),
-    Gridlines, the Zoom dialog, the Window group, Macros. Table Design: Border Styles, Pen Style,
-    Border Painter, the Borders corner arrow (Borders and Shading). Table Layout: View Gridlines,
-    Draw Table, Eraser, Formula, the Rows & Columns corner arrow. Picture Format: Remove Background,
+    arrow (Track Changes Options). View: Immersive Reader, New Window, Macros. Table Layout: the
+    Rows & Columns corner arrow. Picture Format: Remove Background,
     Corrections, Color, Artistic Effects, Transparency, Compress Pictures, Picture Effects, Picture
     Layout, the Picture Styles gallery and its corner arrow, Bring Forward, Send Backward, Selection
-    Pane, Align, Group. Equation: Ink Equation, Unicode or LaTeX and Convert, Normal Text, the
-    Tools corner arrow (Equation Options). Header & Footer: Quick Parts and Pictures in its Insert
-    group, the Navigation group, Show Document Text, Header from Top and Footer from Bottom as
-    fields. Contextual tabs Word has and Rikuy has not: Shape Format, Chart Design and Format,
-    SmartArt Design and Format.
+    Pane, Align, Group. Equation: Ink Equation. Header & Footer: Link to Previous. Contextual tabs
+    Word has and Rikuy has not: Shape Format, Chart Design and Format, SmartArt Design and Format.
 
 16. **The arXiv corpus** (task 3's finish line): compile rate and match rate on the 1,000
     papers, every failure classified as in task 2. Needs arxiv.org (see task 3). The owner runs
