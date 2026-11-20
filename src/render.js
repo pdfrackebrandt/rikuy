@@ -898,8 +898,10 @@ export class Renderer {
         break;
       }
       case 'smart': {
-        s.appendChild(drawSmart(x.kind, smartItems(x.items || '')));
-        s.title = 'smartdiagram: click to edit its items';
+        s.appendChild(drawSmart(x.kind, smartItems(x.items || ''), document, x.set || ''));
+        s.title = 'SmartArt (smartdiagram): click to select it, double click to edit its items';
+        // (its \smartdiagramset just before it is part of the object: SmartArt Design's colours)
+        rec.ss = this.rel(x.ss != null ? x.ss : x.s); rec.se = this.rel(x.se != null ? x.se : x.e);
         break;
       }
       case 'widget': {

@@ -26,6 +26,7 @@ import { altDialog, sizeDialog, smartDialog, chartDialog, dropCapDialog } from '
 import * as D from '../drawing.js';
 import { openGallery } from '../ui/kit.js';
 import { BLOCKS } from '../render.js';
+import { chartRewrite, diff, applyEdits } from '../objfmt.js';
 
 const WHY = 'Select a picture first: click it on the page.';
 // the picture selected on the page, read once for each look at the ribbon (every button asks)
@@ -166,9 +167,10 @@ register(
   { id: 'insert-chart', name: 'Chart', title: 'Chart: columns, bars or a line from a small table of numbers (pgfplots), drawn on the page from its coordinates', tab: 'insert', group: 'illustrations', order: 50, icon: IC.chart, label: 'Chart',
     synonyms: ['Graph', 'Plot', 'Bar chart', 'Column chart', 'Line chart', 'pgfplots'], when: atAny, run: (app, args) => (args && args.cats ? app.insertChart(args.kind, args.cats, args.series) : chartDialog(app)) },
   // (R3) a chart opened again in its grid: a click on it, or this with the chart's new data
-  { id: 'chart-edit-data', name: 'Edit Data', title: 'Edit Data: the chart\'s grid again (click a chart Rikuy made); OK writes it in its place', synonyms: ['Edit chart', 'Chart data', 'Change chart'],
-    when: (app) => app.chartLive(), whyNot: () => 'Click a chart on the page first (Insert › Chart makes one).',
-    run: (app, args) => (args && args.cats ? app.chartReplace(args.kind || 'column', args.cats, args.series || []) : app.chartReopen()) },
+  { id: 'chart-edit-data', name: 'Edit Data', title: 'Edit Data: the chart\'s grid again (a chart Rikuy made, selected on the page, or a double click on it); OK writes it in its place', synonyms: ['Edit chart', 'Chart data', 'Change chart', 'Select Data'],
+    tab: 'chart-design', group: 'data', order: 20, icon: '<path d="M3.5 4.5h13v11h-13zM3.5 8.5h13M3.5 12h13M8 4.5v11M12 4.5v11"/>', label: 'Edit Data', menu: { chart: 10 },
+    when: (app) => app.chartLive() || !!app.chartSelected(), whyNot: () => 'Click a chart on the page first (Insert › Chart makes one).',
+    run: (app, args) => { const o = app.chartSelected(); if (o && !(args && args.cats)) return editChart(app, o.el); if (o && args && args.cats) { editChart(app, o.el, true); } return args && args.cats ? app.chartReplace(args.kind || 'column', args.cats, args.series || []) : app.chartReopen(); } },
   { id: 'insert-screenshot', name: 'Screenshot', title: 'Screenshot: a window or the screen, captured as you choose, placed as a picture (PNG)', tab: 'insert', group: 'illustrations', order: 60, icon: IC.shot, label: 'Screenshot',
     synonyms: ['Screen capture', 'Screen clipping', 'Capture'], when: (app, at) => !!at && typeof navigator !== 'undefined' && !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia),
     whyNot: () => 'This browser lets no page capture the screen.', run: (app) => app.insertScreenshot() },
@@ -762,6 +764,8 @@ Object.assign(methods, {
     if (list.length > D.smartMax(kind)) { this.toast('SmartArt (smartdiagram) holds at most ' + D.smartMax(kind) + ' items here: its colours stop there and TeX stops on more. Split the list into two diagrams.', 8000); return false; }
     return this.insertObject(D.smartTex(kind, list), ['smartdiagram']);
   },
+  // a chart selected on the page (src/ui/shapes.js), Chart Design's
+  chartSelected() { const o = this.objHere ? this.objHere() : null; return o && o.kind === 'chart' && D.readAxis(o.text) ? o : null; },
   // the chart opened last (editChart), while its text is as it was
   chartLive() { const C = this.chartAt; return !!C && this.files.has(C.f) && this.src(C.f).slice(C.s, C.e) === C.t; },
   chartReopen() {
@@ -777,10 +781,12 @@ Object.assign(methods, {
     const C2 = cats.slice(0, 50).map((x) => String(x)), S = series.slice(0, 8).map((x) => ({ name: String(x.name || ''), values: (x.values || []).slice(0, 50) }));
     if (!C2.length || !S.length) { this.toast('A chart needs at least one category and one series of numbers.'); return false; }
     const eol = /\r\n/.test(C.t) ? '\r\n' : '\n';
-    const t = D.chartTex(k, C2, S, eol);
+    // (Chart Design's settings kept: its title, gridlines, colours, size; one edit over what differs)
+    const ed = chartRewrite(C.t, k, C2, S) || diff(C.t, D.chartTex(k, C2, S, eol));
+    const t = applyEdits(C.t, ed);
     if (t === C.t) return false;
     this.closeGroup();
-    this.commit([{ f: C.f, s: C.s, e: C.e, t }], { f: C.f, p: C.s, bias: 1 }, 'insert');
+    this.commit(ed.map((x) => ({ f: C.f, s: C.s + x.s, e: C.s + x.e, t: x.t })), { f: C.f, p: C.s, bias: 1 }, 'insert');
     this.closeGroup();
     this.chartAt = { f: C.f, s: C.s, e: C.s + t.length, t };
     return true;

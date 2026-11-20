@@ -98,6 +98,31 @@ export const LAYOUT = {
     structures: ['eq-fraction L F Fraction', 'eq-script L SC Script', 'eq-radical L R Radical', 'eq-integral L I Integral', 'eq-largeop L O Large Operator', 'eq-bracket L B Bracket',
       'eq-function L U Function', 'eq-accent L A Accent', 'eq-limit L G Limit and Log', 'eq-operator L P Operator', 'eq-matrix L M Matrix']
   },
+  'shape-format': {
+    insert: ['shape-insert L SI'],
+    styles: ['shape-styles L SS', 'shape-fill S SF', 'shape-outline S SO'],
+    text: ['shape-text L X'],
+    arrange: ['shape-forward S AF', 'shape-backward S AE'],
+    size: ['shape-height S H', 'shape-width S W']
+  },
+  'chart-design': {
+    layouts: ['chart-element L A'],
+    styles: ['chart-colors L C'],
+    data: ['chart-switch L W', 'chart-edit-data L D'],
+    type: ['chart-type L Y']
+  },
+  'chart-format': {
+    size: ['chart-height S H', 'chart-width S W']
+  },
+  'smart-design': {
+    create: ['smart-add S A', 'smart-text-pane S T', 'smart-rtl S R'],
+    layouts: ['smart-layout L L'],
+    styles: ['smart-colors L C'],
+    reset: ['smart-reset L G']
+  },
+  'smart-format': {
+    styles: ['smart-fill S F', 'smart-outline S O']
+  },
   headfoot: {
     headfoot: ['header L H', 'footer L O', 'page-number L NU'],
     insert: ['hf-date L D', 'hf-docinfo L I', 'hf-pagenum L NH'],

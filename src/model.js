@@ -91,7 +91,7 @@ const INVIS = new Set([
   'address', 'shorttitle', 'subtitle', 'keywords_', 'hfil', 'endfirsthead', 'endhead', 'endfoot', 'endlastfoot',
   'tabularnewline_', 'newblock', 'hbox_', 'nobreak', 'printindex', 'makeindex', 'urlstyle', 'listfiles',
   'nonumber', 'notag', 'restoregeometry', 'newgeometry', 'linenumbers', 'nolinenumbers', 'doublespace',
-  'lstset', 'tikzset', 'pgfplotsset', 'setlist', 'crefname', 'Crefname', 'newlength', 'AtBeginDocument',
+  'lstset', 'tikzset', 'pgfplotsset', 'smartdiagramset', 'setlist', 'crefname', 'Crefname', 'newlength', 'AtBeginDocument',
   'AtEndDocument', 'setmainfont', 'setsansfont', 'setmonofont', 'newfontfamily', 'renewbibmacro',
   'DeclareFieldFormat', 'DeclareNameAlias', 'newacronym', 'usetikzlibrary', 'pgfplotstableread', 'tcbuselibrary',
   'SetKwInOut', 'algnewcommand', 'floatname', 'restylefloat', 'newfloat', 'DeclareCaptionFormat', 'setuptoc',
@@ -288,6 +288,11 @@ function csvRows(text, sep) {
   bySep.set(text, rows);
   return rows;
 }
+
+// The end of a SmartArt with the line after it that puts smartdiagram's own colours back (SmartArt
+// Design's Change Colors writes it, src/objfmt.js SMART_RESET): the object a selection takes in
+const SMART_RESET_RE = /\s*\\smartdiagramset\s*\{\s*set color list=\{red!40,cyan!40,blue!40,green!40,orange!40,yellow!40,magenta!40,brown!40,violet!40,teal!40\}\s*\}/y;
+function smartEnd(src, e) { SMART_RESET_RE.lastIndex = e; return SMART_RESET_RE.test(src) ? SMART_RESET_RE.lastIndex : e; }
 
 export function buildModel(project, hint) {
   if (hint && hint.labels) {
@@ -3377,7 +3382,10 @@ class Builder {
     if (name === 'smartdiagram' && nd.args.some((x) => x && !x.o)) {
       acc.flush();
       const o = nd.args.find((x) => x && x.o), m = nd.args.filter((x) => x && !x.o).pop();
-      out.push(this.atom(ctx, { k: 'smart', s: nd.s, e: nd.e, kind: o ? this.argText(ctx, o).trim().slice(0, 60) : 'flow diagram', items: ctx.src.slice(m.is, m.ie).slice(0, 4000) }));
+      // (its \smartdiagramset just before it, SmartArt Design's colours: the page draws them; ss is
+      // where it starts, so the object a selection takes in is both)
+      const k0 = ctx.pm ? -1 : ctx.src.lastIndexOf('\\smartdiagramset', nd.s), sm = k0 >= 0 && nd.s - k0 < 2000 ? /\\smartdiagramset\s*\{((?:[^{}]|\{[^{}]*\})*)\}\s*$/y.exec(ctx.src.slice(k0, nd.s)) : null;
+      out.push(this.atom(ctx, { k: 'smart', s: nd.s, e: nd.e, kind: o ? this.argText(ctx, o).trim().slice(0, 60) : 'flow diagram', items: ctx.src.slice(m.is, m.ie).slice(0, 4000), set: sm ? sm[1] : '', ss: sm ? k0 : nd.s, se: ctx.pm ? nd.e : smartEnd(ctx.src, nd.e) }));
       return false;
     }
     // lettrine's \lettrine[options]{T}{his} (Insert › Drop Cap): the letter dropped over its lines,
