@@ -257,4 +257,36 @@ ok('review H1, M2: a comment in an option list and a list one key a line: the ed
   assert.deepEqual(O.entries('a, % b, c\n d').map((x) => x.x), ['a', 'd']);
 });
 
+ok('review H2: an object in a center in a figure is in the figure; Position changes the figure, never nests one; a box refuses', () => {
+  const nest = 'A\n\\begin{figure}[htbp]\n\\begin{center}\n' + rect + '\n\\end{center}\n\\caption{Box}\n\\end{figure}\n\nWords.';
+  const s = nest.indexOf('\\begin{tikzpicture}'), e = nest.indexOf('\\end{tikzpicture}') + 17;
+  assert.equal(O.positionOf(nest, s, e).mode, 'float');
+  assert.equal(O.alignOf(nest, s, e).align, 'center');
+  const t = ap(nest, O.positionEdits(nest, s, e, { mode: 'float', place: 't' }).edits);
+  assert.equal(t, nest.replace('[htbp]', '[t]'));
+  assert.equal((t.match(/\\begin\{figure\}/g) || []).length, 1);
+  const w = ap(nest, O.positionEdits(nest, s, e, { mode: 'wrap', side: 'r' }).edits);
+  assert.equal(w, nest.replace('\\begin{figure}[htbp]', '\\begin{wrapfigure}{r}{0pt}').replace('\\end{figure}', '\\end{wrapfigure}'));
+  assert.match(O.positionEdits(nest, s, e, { mode: 'inline' }).error, /caption/);
+  // Align in it: its center becomes a flushright
+  assert.equal(ap(nest, O.alignEdits(nest, s, e, 'right')), nest.replace(/\{center\}/g, '{flushright}'));
+  // without a caption, In Line with Text takes the figure's lines off and keeps the center
+  const nc = nest.replace('\\caption{Box}\n', '');
+  const s2 = nc.indexOf('\\begin{tikzpicture}'), e2 = nc.indexOf('\\end{tikzpicture}') + 17;
+  assert.equal(ap(nc, O.positionEdits(nc, s2, e2, { mode: 'inline' }).edits), 'A\n\\begin{center}\n' + rect + '\n\\end{center}\n\nWords.');
+  // a minipage, a table's cell, a footnote: no float from there
+  for (const [a, z, word] of [['\\begin{minipage}{5cm}', '\\end{minipage}', 'minipage'], ['\\begin{tabular}{c}', '\\end{tabular}', 'cell'], ['\\footnote{', '}', 'footnote']]) {
+    const d = 'A ' + a + '\\begin{center}' + rect + '\\end{center}' + z + ' B';
+    const ss = d.indexOf('\\begin{tikzpicture}'), ee = d.indexOf('\\end{tikzpicture}') + 17;
+    assert.match(O.positionEdits(d, ss, ee, { mode: 'float' }).error, new RegExp(word), word);
+  }
+});
+
+ok('review M1: no wrap before a list, a display or a heading (wrapfig would float it to the end)', () => {
+  const base = 'A\n\n\\begin{center}\n' + rect + '\n\\end{center}\n';
+  const s = base.indexOf('\\begin{tikzpicture}'), e = base.indexOf('\\end{tikzpicture}') + 17;
+  for (const after of ['\\begin{itemize}\n\\item x\n\\end{itemize}', '\\[ x \\]', '\\section{B}', '% note\n\\begin{enumerate}\\item x\\end{enumerate}']) assert.match(O.positionEdits(base + after, s, e, { mode: 'wrap', side: 'r' }).error, /floats? it to the end|float it to the end/, after);
+  assert.ok(O.positionEdits(base + '\nWords to wrap round it.', s, e, { mode: 'wrap', side: 'r' }).edits.length);
+});
+
 console.log('objfmt: ' + n + ' groups passed');

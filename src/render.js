@@ -346,10 +346,12 @@ export class Renderer {
         if (it.depth) { el.classList.add('deep'); el.style.setProperty('--depth', it.depth); }
         // a wrapfigure: its parts as wide as it is (its pictures' \linewidth), until the page wraps
         // text round it (B6); a share of the line, or a length in points
-        const ww = it.wrapW ? cssLength(it.wrapW) : null;
+        // (a width of 0pt is wrapfig's "as wide as what is in it": max-content, measured as drawn)
+        const natural = it.wrapW != null && /^0+(\.0*)?\s*(pt|cm|mm|in|bp|em)?$/.test(String(it.wrapW).trim());
+        const ww = natural ? 'max-content' : it.wrapW ? cssLength(it.wrapW) : null;
         if (ww) { el.classList.add('flt-wrap'); el.style.setProperty('--wrapw', ww); item.wrapSide = it.side || 'r'; }
         const lwWas = this.lineW;
-        if (ww) this.lineW = it.wrapW;
+        if (ww && !natural) this.lineW = it.wrapW;
         for (const p of it.parts) el.appendChild(this.floatPart(p));
         this.lineW = lwWas;
         item.isFloat = it.kind !== 'inline';

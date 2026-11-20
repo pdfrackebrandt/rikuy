@@ -487,49 +487,57 @@ export const SMART_LAYOUTS = SMART.concat([['circular diagram:counterclockwise',
 
 // ---- Arrange: where an object stands, and its alignment --------------------------------------------
 // (a drawing, a chart, a SmartArt or a picture: the block it is in, read with the parser's tree)
-const BLOCK_ENVS = new Set(['center', 'flushleft', 'flushright', 'figure', 'figure*', 'table', 'table*', 'wrapfigure']);
-// The innermost of those environments round [s, e): { name, node: the parser's env, opt: its [..]
-// (s, e of the text inside) or null } or null
+const FLOAT_ENVS = new Set(['figure', 'figure*', 'table', 'table*', 'wrapfigure']);
+const ALIGN_ENVS = new Set(['center', 'flushleft', 'flushright']);
+// (where LaTeX cannot float anything from: a box, a table's cell, a footnote)
+const BOXES = new Set(['minipage', 'tabular', 'tabular*', 'tabularx', 'tabulary', 'longtable', 'array', 'parbox', 'footnote', 'fbox', 'framebox', 'makebox', 'mbox', 'marginpar']);
+const headOf = (src, n) => {
+  // (a wrapfigure's head takes its side and width too)
+  const m = n.name === 'wrapfigure' ? /^\\begin\{wrapfigure\}(\[[^\]]{0,20}\])?\{[^{}]{0,8}\}\{[^{}]{0,60}\}/.exec(src.slice(n.s, n.s + 120)) : /^\\begin\{[a-z*]+\}(\s*\[([^\]]{0,40})\])?/.exec(src.slice(n.s, n.s + 80));
+  return { name: n.name, node: n, opt: n.name !== 'wrapfigure' && m && m[1] ? { s: n.s + m[0].indexOf('[') + 1, e: n.s + m[0].length - 1, t: m[2] } : null, headEnd: n.s + (m ? m[0].length : 8 + n.name.length) };
+};
+// What stands round [s, e): { float: the outermost figure, table or wrapfigure (a float holds no
+// float: Position works on it), align: the innermost center, flushleft or flushright, box: the name of
+// a box, cell or footnote it is in (no float can come from there) }, each read with its head
 export function blockOf(src, s, e) {
-  let list = parse(src), best = null;
+  let list = parse(src), F = null, A = null, box = null;
   for (let depth = 0; depth < 60 && list; depth++) {
     const n = list.find((x) => x.s <= s && x.e >= e && (x.t === 'env' || x.t === 'group' || (x.t === 'cmd' && x.args && x.args.some((a) => a && a.nodes && a.is <= s && a.ie >= e))));
     if (!n) break;
-    if (n.t === 'env' && BLOCK_ENVS.has(n.name)) best = n;
+    if (n.t === 'env' && FLOAT_ENVS.has(n.name) && !F) F = n;
+    if (n.t === 'env' && ALIGN_ENVS.has(n.name)) A = n;
+    if ((n.t === 'env' || n.t === 'cmd') && BOXES.has(n.name) && !box && !F) box = n.name;
     list = n.t === 'cmd' ? (n.args.find((a) => a && a.nodes && a.is <= s && a.ie >= e) || {}).nodes : n.nodes;
   }
-  if (!best) return null;
-  // (a wrapfigure's head takes its side and width too)
-  const head = best.name === 'wrapfigure' ? /^\\begin\{wrapfigure\}(\[[^\]]{0,20}\])?\{[^{}]{0,8}\}\{[^{}]{0,60}\}/.exec(src.slice(best.s, best.s + 120)) : /^\\begin\{[a-z*]+\}(\s*\[([^\]]{0,40})\])?/.exec(src.slice(best.s, best.s + 80));
-  if (best.name === 'wrapfigure') return { name: best.name, node: best, opt: null, headEnd: best.s + (head ? head[0].length : 18) };
-  return { name: best.name, node: best, opt: head && head[1] ? { s: best.s + head[0].indexOf('[') + 1, e: best.s + head[0].length - 1, t: head[2] } : null, headEnd: best.s + (head ? head[0].length : 0) };
+  return { float: F ? headOf(src, F) : null, align: A ? headOf(src, A) : null, box };
 }
 const DECL = /\\(centering|raggedleft|raggedright)\b[ \t]*(\r?\n)?/;
-// Left, center or right: center, flushleft or flushright; in a float its \centering, \raggedright or
-// \raggedleft. Returns { align: 'left'|'center'|'right', block } or null where the object stands in a
+const DECL_OF = { center: 'centering', right: 'raggedleft', left: 'raggedright' };
+// Left, center or right: a center, flushleft or flushright round it (in a float or not); else a
+// float's \centering, \raggedright or \raggedleft. { align, block } or null where it stands in a
 // paragraph of its own words
 export function alignOf(src, s, e) {
   const B = blockOf(src, s, e);
-  if (!B) return null;
-  if (B.name === 'center' || B.name === 'flushleft' || B.name === 'flushright') return { align: { center: 'center', flushleft: 'left', flushright: 'right' }[B.name], block: B };
-  const body = src.slice(B.headEnd, s);
+  if (B.align && (!B.float || B.align.node.s > B.float.node.s)) return { align: { center: 'center', flushleft: 'left', flushright: 'right' }[B.align.name], block: B.align, env: true };
+  if (!B.float) return null;
+  const F = B.float, body = src.slice(F.headEnd, s);
   const m = /\\(centering|raggedleft|raggedright)\b/g;
   let x, last = null;
   while ((x = m.exec(body))) last = x[1];
-  return { align: last === 'centering' ? 'center' : last === 'raggedleft' ? 'right' : last === 'raggedright' ? 'left' : 'left', block: B };
+  return { align: last === 'centering' ? 'center' : last === 'raggedleft' ? 'right' : 'left', block: F, env: false };
 }
 export function alignEdits(src, s, e, how) {
   const A = alignOf(src, s, e);
   if (!A || !['left', 'center', 'right'].includes(how)) return null;
   if (A.align === how) return [];
   const B = A.block;
-  if (/^(center|flushleft|flushright)$/.test(B.name)) {
+  if (A.env) {
     const name = { left: 'flushleft', center: 'center', right: 'flushright' }[how];
     const z = src.lastIndexOf('\\end{' + B.name + '}', B.node.e);
     return [{ s: B.node.s + 7, e: B.node.s + 7 + B.name.length, t: name }, { s: z + 5, e: z + 5 + B.name.length, t: name }];
   }
   // a float: its declaration in place, or one after its \begin line; left is a float's own
-  const word = { left: 'raggedright', center: 'centering', right: 'raggedleft' }[how];
+  const word = DECL_OF[how];
   const body = src.slice(B.headEnd, s);
   const m = DECL.exec(body);
   if (m) {
@@ -544,46 +552,60 @@ export function alignEdits(src, s, e, how) {
 // Position: in line with the text (a center), a figure placed by LaTeX ([htbp], [t], [b], [p], [h],
 // [H]), or at a side with the text wrapping round it (wrapfig's wrapfigure, {l} or {r}, at its
 // natural width: {0pt}). to: { mode: 'inline' | 'float' | 'wrap', place, side }. Returns { edits,
-// packages } or { error }.
+// packages } or { error }. A float is never put inside a float: the one round it is changed.
 export function positionOf(src, s, e) {
   const B = blockOf(src, s, e);
-  if (!B) return { mode: 'other' };
-  if (B.name === 'wrapfigure') { const m = /^\\begin\{wrapfigure\}(\[[^\]]*\])?\{([lrioLRIO])\}/.exec(src.slice(B.node.s, B.node.s + 60)); return { mode: 'wrap', side: m ? m[2].toLowerCase() : 'r', block: B }; }
-  if (/^figure\*?$|^table\*?$/.test(B.name)) return { mode: 'float', place: B.opt ? B.opt.t : '', block: B };
-  return { mode: 'inline', block: B };
+  const F = B.float;
+  if (F && F.name === 'wrapfigure') { const m = /^\\begin\{wrapfigure\}(\[[^\]]*\])?\{([lrioLRIO])\}/.exec(src.slice(F.node.s, F.node.s + 60)); return { mode: 'wrap', side: m ? m[2].toLowerCase() : 'r', block: F, B }; }
+  if (F) return { mode: 'float', place: F.opt ? F.opt.t : '', block: F, B };
+  if (B.align) return { mode: 'inline', block: B.align, B };
+  return { mode: 'other', B };
 }
+// (what follows the object's block, for wrapfig: a list or a display just after it is no text to
+// wrap round, and wrapfig floats the figure to the end then)
+const LISTISH = /^\s*(\\begin\{(itemize|enumerate|description|equation\*?|align\*?|gather\*?|multline\*?|center|figure|table|tabular)\}|\\\[|\$\$|\\(section|subsection|chapter|paragraph)\b|\\end\{document\})/;
 export function positionEdits(src, s, e, to) {
   const P = positionOf(src, s, e);
   if (P.mode === 'other') return { error: 'The object stands in a paragraph of words: put it in a paragraph of its own first.' };
+  if (P.B.box && to.mode !== 'inline') return { error: 'It stands inside a ' + ({ tabular: 'table\'s cell', 'tabular*': 'table\'s cell', tabularx: 'table\'s cell', tabulary: 'table\'s cell', longtable: 'table\'s cell', array: 'table\'s cell', footnote: 'footnote', parbox: 'box (\\parbox)', minipage: 'minipage' }[P.B.box] || 'box (\\' + P.B.box + ')') + ': LaTeX cannot float it from there.' };
   const B = P.block, nl = /\r\n/.test(src.slice(B.node.s, B.node.e)) ? '\r\n' : '\n';
-  const inner = src.slice(B.headEnd, src.lastIndexOf('\\end{' + B.name + '}', B.node.e));
+  const z = src.lastIndexOf('\\end{' + B.name + '}', B.node.e), ze = z + 6 + B.name.length;
+  const inner = src.slice(B.headEnd, z);
   const hasCap = /\\caption\b/.test(inner);
   const A = alignOf(src, s, e);
-  const decl = A && A.align !== 'left' ? '\\' + (A.align === 'center' ? 'centering' : 'raggedleft') + nl : '';
-  const z = src.lastIndexOf('\\end{' + B.name + '}', B.node.e), ze = z + 6 + B.name.length;
-  const whole = (head, tail, body) => [{ s: B.node.s, e: B.headEnd, t: head }, { s: z, e: ze, t: tail }, ...(body || [])];
-  // the body without its \centering or \raggedleft (a float's), when it becomes a center again
-  const dropDecl = () => { const m = DECL.exec(inner); return m ? [{ s: B.headEnd + m.index, e: B.headEnd + m.index + m[0].length, t: '' }] : []; };
-  const lead = (t) => (/^\r?\n/.test(inner) ? t : t + nl);
+  const whole = (head, tail, more) => [{ s: B.node.s, e: B.headEnd, t: head }, { s: z, e: ze, t: tail }, ...(more || [])];
+  if (to.mode === 'wrap') {
+    const after = src.slice(ze, ze + 400);
+    if (LISTISH.test(after.replace(/^[ \t]*(\r?\n[ \t]*)*(%[^\n]*\n\s*)*/, ''))) return { error: 'A list, a display, a heading or another block comes right after it: wrapfig would float it to the end of the text there (as TeX says, "Stationary wrapfigure forced to float"). Put a paragraph of words after it first.' };
+  }
   if (to.mode === 'float') {
     const place = String(to.place || 'htbp').replace(/[^htbpH!]/g, '') || 'htbp';
-    if (P.mode === 'float') return P.place === place ? { edits: [] } : { edits: B.opt ? [{ s: B.opt.s, e: B.opt.e, t: place }] : [{ s: B.headEnd, e: B.headEnd, t: '[' + place + ']' }], packages: place.includes('H') ? ['float'] : [] };
-    const head = '\\begin{figure}[' + place + ']' + (P.mode === 'inline' ? lead(nl + decl).replace(/\r?\n$/, '') : '');
-    const edits = P.mode === 'inline' ? whole(head.replace(/(\r?\n)$/, ''), '\\end{figure}') : whole('\\begin{figure}[' + place + ']', '\\end{figure}');
-    if (P.mode === 'inline' && decl) edits[0].t = '\\begin{figure}[' + place + ']' + nl + decl.replace(/\r?\n$/, '');
-    return { edits, packages: place.includes('H') ? ['float'] : [] };
+    const pk = place.includes('H') ? ['float'] : [];
+    if (P.mode === 'float') return P.place === place ? { edits: [] } : { edits: B.opt ? [{ s: B.opt.s, e: B.opt.e, t: place }] : [{ s: B.headEnd, e: B.headEnd, t: '[' + place + ']' }], packages: pk };
+    if (P.mode === 'wrap') return { edits: whole('\\begin{figure}[' + place + ']', '\\end{figure}'), packages: pk };
+    // in line: its center (or flushleft, flushright) becomes the figure, its alignment a declaration
+    const decl = A && A.align !== 'left' ? nl + '\\' + DECL_OF[A.align] : '';
+    return { edits: whole('\\begin{figure}[' + place + ']' + decl, '\\end{figure}'), packages: pk };
   }
   if (to.mode === 'wrap') {
     const side = to.side === 'l' ? 'l' : 'r';
     if (P.mode === 'wrap') return P.side === side ? { edits: [] } : { edits: sideEdit(src, B, side), packages: ['wrapfig'] };
-    const head = '\\begin{wrapfigure}{' + side + '}{0pt}' + (P.mode === 'inline' ? nl + '\\centering' : '');
-    return { edits: whole(head, '\\end{wrapfigure}'), packages: ['wrapfig'] };
+    if (P.mode === 'float') return { edits: whole('\\begin{wrapfigure}{' + side + '}{0pt}', '\\end{wrapfigure}'), packages: ['wrapfig'] };
+    return { edits: whole('\\begin{wrapfigure}{' + side + '}{0pt}' + nl + '\\centering', '\\end{wrapfigure}'), packages: ['wrapfig'] };
   }
   // in line with the text
   if (P.mode === 'inline') return { edits: [] };
   if (hasCap) return { error: 'Its caption needs a figure: take the caption off first, or keep it a figure.' };
+  // (a center inside the float: the float's lines go, the center stays)
+  const inAlign = P.B.align && P.B.align.node.s > B.node.s ? P.B.align : null;
+  if (inAlign) {
+    const lineAfter = (p) => (src[p] === '\r' ? p + 2 : src[p] === '\n' ? p + 1 : p);
+    const lineBefore = (p) => { let q = p; while (q > 0 && (src[q - 1] === ' ' || src[q - 1] === '\t')) q--; return src[q - 1] === '\n' ? q - (src[q - 2] === '\r' ? 2 : 1) : p; };
+    return { edits: [{ s: B.node.s, e: lineAfter(B.headEnd), t: '' }, { s: lineBefore(z), e: ze, t: '' }] };
+  }
   const name = { left: 'flushleft', center: 'center', right: 'flushright' }[A ? A.align : 'center'] || 'center';
-  return { edits: whole('\\begin{' + name + '}', '\\end{' + name + '}', dropDecl()) };
+  const dm = DECL.exec(inner);
+  return { edits: whole('\\begin{' + name + '}', '\\end{' + name + '}', dm ? [{ s: B.headEnd + dm.index, e: B.headEnd + dm.index + dm[0].length, t: '' }] : []) };
 }
 function sideEdit(src, B, side) {
   const m = /^\\begin\{wrapfigure\}(\[[^\]]*\])?\{([lrioLRIO])\}/.exec(src.slice(B.node.s, B.node.s + 60));
