@@ -6,47 +6,38 @@ from the repository alone. This file is how. Read AGENTS.md first, then this, th
 requests. When this file and a pull request's own Handoff section disagree, the pull request is
 newer.
 
-## Start here (state on 2026-11-20, 10:35 UK, when Grok Bot (Rikuy) stopped at Pedro's request)
+## Start here (2026-11-20, 11:50 UTC: Claude carrying on after Grok Bot)
 
-Everything is pushed and merged. No pull request is open, no branch holds unmerged work, and no
-agent is running. `main` is at 395faad (merge of PR 75), and its deploy succeeded.
+Pedro's order of work, given 2026-11-20: **UI and UX first** (Word look-alike, clean room, as
+WordCraft; phones; plain words), maximum speed and quality; **then** move everything possible to
+C or C++ compiled to WebAssembly, even where the speed gain is small. Grok Bot's list of
+2026-11-20 (below, under "Grok Bot's list") is being worked on as follows.
 
-Done since the 2026-11-17 list (all merged with a merge commit, checks green):
+| work | branch (worktree on Claude's machine) | state | next step |
+|---|---|---|---|
+| Ribbon tabs besides Home laid out like Word's (Grok Bot's item 3) | `ribbon-tabs-word` | an agent is on it; brief: `docs/handoff/BRIEF-1120.md` plus its task in the pull request when opened | finish, hostile review, merge |
+| UX audit and fixes outside the ribbon (first visit, page, panes, dialogs, PDF pane, phones) | `ux-pass-2` | an agent is on it; it writes `docs/handoff/UX-AUDIT.md` as it goes | finish, review, merge |
+| Word's shortcuts, audited and finished (item 2) | `word-shortcuts` | an agent is on it; it writes `docs/handoff/SHORTCUTS.md` | finish, review, merge |
+| Security S2 to S5 (item 1): HSTS for the host only, a script policy without unsafe-inline/unsafe-eval, KaTeX 0.19, comment text that cannot run code | `sec-followups` | an agent is on it (S4 done) | finish, a fresh hostile review, merge |
+| R6, the arXiv corpus (item 4) | `arxiv-bbl-shipped` (pull request) | classified in PLAN.md task 16 (second run: 960 of 962, 872 of 960 equal); the bibliography fix it found is this pull request | merge when green; rerun Actions › arXiv corpus on main; put the rates in PLAN.md's table, README.md, tex/README.md; add `sourcesanspro`, `foekfont` and cbfonts' `grmn` to the tree; look at 1502.01027 printing "begindocument/b..." |
 
-| PR | What | Merge |
-|---|---|---|
-| 72 | Handoff docs | 9882f24 |
-| 62 | R2 styles and lists | 2adb064 |
-| 63 | R3 objects (form fields excluded from the 5% fast-edit share only, d3e9a89) | 1feca3f |
-| 73 | M7: wrapped figure margin box in `fillLines` | b2bfccd |
-| 66 | R4 | a0b42ab |
-| 68 | R5 | 279232d |
-| 74 | Security review, `docs/reviews/SECURITY.md`; fflate 0.8.3 + ZIP64 guard (S1) | ddcdc2d |
-| 75 | UI/UX pass: Word-style title band, File backstage, labelled ribbon groups, dialog launchers, KeyTips (Alt/F10), Word shortcuts, Ask Grok in Help | 395faad |
+If a branch above is not on GitHub yet, its agent's work is in `wip/<branch>` (dev/wip.sh) or
+not started. After the UI and UX work: the C and C++ move, planned in a file of its own when it
+starts.
 
-What is left, in order. None is started; each needs Pedro's go-ahead except where noted.
+### Grok Bot's list of 2026-11-20 (for the record)
 
-1. **Security follow-ups from `docs/reviews/SECURITY.md`** (all Low, Pedro has not decided yet):
-   - S4 HSTS: either Pedro turns it on in Cloudflare, or a small PR adds the header.
-   - S3 CSP: replace `'unsafe-inline'` / `'unsafe-eval'` for scripts with hashes; touches the build.
-   - S2 KaTeX: the advisory needs the 0.19 major bump; the affected features are off in Rikuy.
-   - S5: the comments-only share filter can be bypassed with TeX tricks; documented, not fixed.
-2. **Word shortcuts, finishing** (PR 75 commit 0efad53 added the ones that map to an existing
-   command; Ctrl+B/I/U, alignment, lists, headings etc. were already there). Not yet verified
-   end to end: a full audit of Word's Home/Insert/Review shortcuts against `src/` (keys test:
-   `test/keys.test.mjs`, `test/commands.test.mjs`), and the Help list of keys the browser keeps
-   (Ctrl+N, Ctrl+W, Ctrl+T). Add any that are missing and still map to a real command.
-3. **UI polish leftovers**: the other ribbon tabs (Insert, Design, Layout, References, Review, View)
-   hold the real commands but are not yet laid out as closely to Word as Home is (large buttons,
-   dialog launchers). Phone keeps one toolbar row by design.
-   No Microsoft icons, fonts or assets (clean-room, like WordCraft).
-4. **R6, the arXiv corpus (PLAN.md task 16)**, optional, not done: classify run 44077385415's results
-   on branch `arxiv-results` as described in the previous version of this file (git log -p HANDOFF.md),
-   then write the compile and match rates into PLAN.md, README.md and tex/README.md.
+1. Security follow-ups from `docs/reviews/SECURITY.md` (S2 KaTeX, S3 the script policy, S4 HSTS,
+   S5 the comments only filter).
+2. Word shortcuts, an audit end to end, Help's list of the keys the browser keeps.
+3. The other ribbon tabs laid out as closely to Word as Home.
+4. R6: classify the arXiv run, write the rates into PLAN.md, README.md and tex/README.md.
 
-Pedro's taste for this repo: Word look-alike (WordCraft is the reference, clean-room), Ask Grok
-stays subtle (Help tab and search only, tooltip says Rikuy is not part of xAI), plain-words
-messages, merge only when all five checks (test, editor, workflows, editor-more, tex) are green.
+Merged before that, by Grok Bot: PRs 72, 62, 63, 73, 66, 68, 74 (security review, fflate 0.8.3),
+75 (Word-style title band, File backstage, labelled groups, dialog launchers, KeyTips, shortcuts,
+Ask Grok in Help). Pedro's taste: Word look-alike (WordCraft the reference, clean room), Ask Grok
+stays subtle (Help tab and search only; its tooltip says Rikuy is not part of xAI), plain words,
+merge only when every check is green.
 
 ## The rule
 
