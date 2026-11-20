@@ -586,6 +586,13 @@ await ok('to Word: a table\'s formula line as Word\'s own field round the value;
   odd.set('word/document.xml', new TextEncoder().encode(d.replace('>3.00<', '>4.00<')));
   const t2 = open(zip(odd)).tex;
   assert.ok(t2.includes('Total & 4.00') && t2.includes('% formula B4 [4.00]: =SUM(ABOVE)'), t2);
+  // (the verification of 3d3bfc4: two fields in one table, both lines back; the second was parsed at
+  // the table's old place, inside the first line, and lost)
+  const k = d.indexOf('>2</w:t>'), run2 = d.slice(d.lastIndexOf('<w:r>', k), d.indexOf('</w:r>', k) + 6);
+  const two = unzip(E.docx);
+  two.set('word/document.xml', new TextEncoder().encode(d.replace(run2, '<w:fldSimple w:instr=" =B2*2 ">' + run2 + '</w:fldSimple>')));
+  const t3 = open(zip(two)).tex;
+  assert.ok(/% formula B3 \[2\]: =B2\*2\n% formula B4 \[3\.00\]: =SUM\(ABOVE\) \\# "0\.00"\n\\begin\{tabular\}/.test(t3), t3);
 });
 
 await ok('to Word (R3): \\thepage, \\pageref{LastPage}, \\thetitle and \\theauthor as Word\'s fields; hyperref\'s form fields as content controls; nothing changed comes back changed', async () => {

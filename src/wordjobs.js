@@ -1110,7 +1110,7 @@ function formulaLines(tex, fx, N) {
   while ((m = re.exec(tex)) && tops.length < 5000) { if (m[1] === 'begin') { if (d === 0) tops.push(m.index); d++; } else d = Math.max(0, d - 1); }
   for (let k = tops.length - 1; k >= 0; k--) {
     const mine = fx.filter((x) => x.table === k);
-    for (const F of mine.reverse()) {
+    for (const F of mine) {
       const T = parseTable(tex, tops[k]);
       if (!T) continue;
       const g = cellGrid(tex, T), cell = g[F.r] && g[F.r][F.c];
@@ -1118,7 +1118,11 @@ function formulaLines(tex, fx, N) {
       let c = F.c + 1, name = '';
       while (c > 0) { const q = (c - 1) % 26; name = String.fromCharCode(65 + q) + name; c = Math.floor((c - 1) / 26); }
       const r = setFormula(tex, T, name + (F.r + 1), F.formula, cell.tex.trim());
-      if (r.edits) { tex = applyEdits(tex, r.edits); N.formulas = (N.formulas || 0) + 1; }
+      if (!r.edits) continue;
+      tex = applyEdits(tex, r.edits);
+      // (the line went in before the table: its start moves by as much, for the table's next field)
+      for (const x of r.edits) if (x.s <= tops[k]) tops[k] += x.t.length - (x.e - x.s);
+      N.formulas = (N.formulas || 0) + 1;
     }
   }
   return tex;

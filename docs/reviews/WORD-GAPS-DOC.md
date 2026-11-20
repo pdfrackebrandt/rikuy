@@ -127,6 +127,52 @@ Scratch and repros: `/tmp/review-g2-out/` (`rv.py` browser repros: sections `eql
 - page.py `long_document` passes: 30 ms in total, no command over 5 ms.
 - Header from Top with `\usepackage[…]{geometry}` options and with a `\geometry{…}` line: one edit each, read back exact.
 
+# Verification of 3d3bfc4
+
+Every repro in `/tmp/review-g2-out/` was rerun on the worktree's build of 3d3bfc4: `fx.mjs`, `um.mjs`, `um2.mjs`, `tb.mjs`, `tb2.mjs`, `wx.mjs`, and the `rv.py` sections `eqlin`, `fxrows`, `fxhang`, `hfpos`, `split2`, `speed` and `phones_all`. New attacks are in `um3.mjs`, `tb3.mjs`, `wx2.mjs`, `wx3.mjs` and the `rv.py` sections `fxops`, `eqfast`, `hfpdf2`, `hfdims` and `split_phone`. The only uncommitted change in the worktree was `src/app.css` (the author's phone fix); nothing here depends on it.
+
+## Verdict: fix first
+
+Four defects block the merge. Each is small to fix, and each is either new from the fixes or was missed in round one.
+
+1. **Header from Top pushes the header off the sheet in KOMA documents.** Repro: `scrartcl` with `scrlayer-scrpage` and `\ihead{HEADMARK}`, Header from Top set to 1 cm. The field reads back 1 cm, but TeX's PDF has no header on page 1 at all (`shots/koma-ba.png`, before and after). Cause: the page model does not know typearea. It has top 126.27pt, headsep 25, headheight 12 and footskip 30; TeX has 84.5pt, 20.4, 17 and 47.6 (`rv.py hfdims`). `\headsep` is therefore set to 85.82pt and the header lands above the sheet. The Header & Footer fields on KOMA classes are also wrong before any edit: they read 3.14 cm, while the header's text sits at about 1.8 cm in TeX. Fix: refuse on KOMA classes, `typearea` and `memoir` until the model reads their layout, or read the numbers from the compile.
+2. **Footer from Bottom is 1.77 cm off on a default `article`.** This holds whenever no package sets the PDF's sheet (`src/cmd/wordgaps.js:73,77`, `(g.paperH || g.ph)`). `\paperheight` is letter (794.97pt), but the sheet the page and the PDF use is A4: `ph` 845.05pt, MediaBox 841.89bp.
+   - The field reads 3.15 cm when TeX's footer is about 4.75 cm from the edge.
+   - Set to 1.5 cm, TeX's footer sits at about 3.1 cm (`rv.py hfpdf2`, case `fancy`).
+   - Measure to the sheet (`g.ph`), as Word does.
+3. **Move Row Up and Move Row Down delete the formulas of the rows they move.** Repro (`fxops`): `table-row-up` on beta or `table-row-down` on alpha. The toast says "The formulas of D2, D3, E2 went with its cell". Those lines are removed although the cells only moved; the values stay, now dead. Cause: those operations pass no `moved` map, so `formulasAfter` treats the swapped cells as gone. Fix: give `moved` for row moves, as Sort does. The toast's "went with its cell" is also wrong for a plural.
+4. **Opening a Word file keeps only the last formula of each table.** Repro (`wx3.mjs`): a table with `=B2*2` in B3 and `=SUM(ABOVE)` in B4 gives back only B4's line. In a three-field table only the last came back. Cause: `formulaLines` (`src/wordjobs.js` at 3d3bfc4, about line 1112) inserts a line before the table, then parses the next field at the old offset `tops[k]`, which now points inside the inserted comment, so `parseTable` fails and the field is skipped. Fix: move `tops[k]` by the length inserted, or collect every field's edit and apply them once.
+
+## Each first-round finding, rerun
+
+| Finding | State | Evidence |
+|---|---|---|
+| H1 Linear box rewrote the equation | **fixed** | The `eqlin` space leaves the source byte for byte (no history entry). `eqfast`: `\alpha_1/(c+d)`, `ab/cd` and `y^2^3` typed at full speed after `\hat{x}…\leftarrow\mathbf{v}`, `\binom` and `cases` change only the end: one step, one undo exact. `um3.mjs`: 60 odd forms, 53 live; the other 7 wait for Enter. |
+| H2 Update overwrote data after an inserted row | **fixed** | `fxrows`: the formula renamed to B6, plums kept at 5; Delete Rows renamed it to B4. `fxops`: insert above, below, left and right, delete row and column, and Sort rename the lines and their references and ranges. Every operation's undo and redo were byte for byte. Guard: 99 typed over D4 is left alone, with the toast "D4 holds 99, not 10…"; `\textbf{12}` is kept. |
+| M1 UnicodeMath operands | **fixed** | `ab/cd`, `2x/3y`, `n!/k!`, `∂f/∂x`, `1/2/3`, `x^2^3`, `a^-1`, `▒`, `〖〗`, `ℝ`, `\leftarrow` and `\leftrightarrow` are all right. Depth over 100 gives a plain error and the box goes read only. |
+| M2 Formula time bound | **fixed** | `A1:ZZZ99999` went from 13 s to 0 ms; formulas over 500 characters are refused. |
+| M3 Header from Top on includehead and a hand-set `\headsep` | **fixed for those forms** | Both read back 1 cm; TeX puts the header at about 1.0 cm with the text unmoved (`hfpdf2` cases `geominc` and `fancy`). Blockers 1 and 2 are new forms. |
+| M4 Preferred width wiped specs | **fixed** | `p{}`, `S`, `D{}{}{}`, `@{}…@{}`, `!{\vrule}`, `<{\%}` and `>{\raggedright}p` all keep their bytes and Off restores them (`tb2.mjs`, `tb3.mjs`). Only `*{3}{c}` comes back as `ccc`. |
+| M5 Split cloned per edit | **partly** | `page.py`'s long document (125 pages, 1 copied and 130 stand-ins): typing 10 letters with Split on gives 15 long tasks of 55 to 387 ms, about 2.2 s in all. With Split off there are none. Bar drag, the read-only note, the resize copy and Web Layout in both views all work. |
+| M6 Formulas through Word | **fixed for one formula per table** | Download Word writes `<w:fldSimple w:instr=" =SUM(ABOVE) \# &quot;0.00&quot; ">`. A field reads back from `fldSimple`, from a complex field, from a complex field split over runs, and from lowercase code. A newline or `\input` inside `instrText` stays inside one comment line. Several fields per table: see blocker 4. |
+| L1 Number format | **fixed** | Box with a list; a hand-written format is kept. |
+| L2 Numbers | **fixed** | `ROUND(-2.5)` gives -3, 2.675 gives 2.68, 1.005 gives 1.01, and 1e21 is written out in full. |
+| L3 `\hhline` | **mostly** | Read as a border now. Pen Style Double on a top that is already `\hhline{|=|=|}` still replaces it with `\hline\hline` and loses its crossings. |
+| L4 booktabs bars | **fixed** | No bars and no double rules; booktabs rules are kept. |
+| L6 Header box cost | **fixed** | All commands' `when` and `on` take 26 ms per caret look on the long document, none over 1 ms except `synonyms`. |
+| L7 Jargon and Cell tab | **fixed** | (not rechecked on a phone: the author is changing that CSS now) |
+
+Merge of main: `tabs.py` 137 passed, `agent.py` 143 passed, `csp.py` 22 passed, 0 failed.
+
+## New findings, not blocking (record in PLAN or fix)
+
+- **MEDIUM, phone: tapping the second view leaves nothing focused.** At 390 px with touch, a tap on a word in the second view moves focus to `body`, not the top view. Text typed next goes nowhere (`QQ` never reached the source); the same holds in Web Layout. The split bar is 7 px tall on a phone; a finger drag works, but the target is under 44 px. In landscape at 844×390 the top view, where you type, is 73 px tall after a drag.
+- **MEDIUM: Split Table drops the formulas of the rows that move to the new table** ("The formulas of D3, B4, C4, D4 went with its cell"), and E2 becomes `=D2/#REF!*100`. Word keeps a field in its cell.
+- **LOW-MEDIUM: Enter in the Linear box turns a LaTeX comment into printed text.** The equation `x % note⏎+ y`, with " + 1" typed and Enter, becomes `x\%note+y+1`. The note warns first, but Enter is also how Word users leave the linear form, so an author's private note gets typeset. Keep `%…` comments as raw LaTeX in the linear text.
+- **LOW: computed values are written with up to 10 decimals**: `33.3333333333`, `3.0303030303`. That is what a reader sees in the PDF.
+- **LOW: Footer from Bottom ignores a later hand-written `\setlength{\footskip}{1cm}` after `\geometry{…}`.** The field reads 1.5 cm, but TeX's footer did not move (2.57 cm both before and after).
+- **LOW: `\addtolength{\headsep}{5pt}` is not read before an edit.** The field shows 3.1 cm, TeX 2.92 cm; once set, it is right.
+
 ## Fixes for the review
 
 Each finding, what was done and the commit (branch `word-gaps-doc`, on a286911). Test counts with `dist/tex`.
