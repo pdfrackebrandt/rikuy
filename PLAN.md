@@ -3298,6 +3298,17 @@ Tests:
       1502.01027 prints the hook name "begindocument/b..." on its first page; 2202.05036 lacks
       cbfonts' `grmn` (the archaic koppa); the rest follow from a float or a page placed
       elsewhere. Not classified further without the PDFs (the workflow keeps none).
+
+66. **Everything that computes, in C or C++ for WebAssembly.** Planned, not started: asked for by
+    the owner on 2026-11-20 ("even where the gain is small", after the UI and UX work).
+    `docs/handoff/CPP-PLAN.md` has the inventory of `src/` and `tex/` by module, the batches B0 to
+    B11 in order (each with its files, C++ layout, oracle, benchmark, size and risks), the size
+    budget (the artifact has about 300 KB left) and what stays JavaScript. Measured while planning
+    (node, one core of a busy machine): a full model build of `dev/bench/long` is 47 to 67 ms,
+    three times task 52's 16 ms, because B4 and round 3 added preamble readers that each strip
+    the comments of the whole file again (more than half of a full build; 2/3 of a keystroke in
+    its `\title`, 97 ms); memoizing them in a scratch copy made it 19 ms and 30 ms. Every full build
+    also parses every .bib again (46 ms for a 2 MB one). B0, in JavaScript, fixes both first.
 ## Rules
 
 - No status commits ("Note ...", "Record ...") and no log in this file. One commit per
