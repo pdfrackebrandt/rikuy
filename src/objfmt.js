@@ -48,37 +48,78 @@ export function entries(t, base = 0) {
 }
 // A list's text with the entries match() finds taken out and put (when given) in the place of the
 // first of them, or after the last entry. Edited in place: every other character stays where it is,
-// comments and a list written one key a line included (an entry goes with one separator; a new one
-// comes after the last entry's own characters, before any space or comment after it, with the
-// separator the list already uses).
+// comments and a list written one key a line included. An entry on a line of its own goes with its
+// line (its own comment with it); else with one separator, and the comment after that separator
+// stays where it is (the last entry takes the comma before it, not the comment after that comma). A
+// new entry comes after the last entry's own characters with the separator the list already uses;
+// where a comment ends the last entry's line, the comma goes before the comment and the new entry on
+// a line of its own after it.
 export function listSet(t, match, put) {
   const E = entries(t);
   const hits = E.filter((x) => match(x.x));
   const cuts = [];
+  const lineStart = (p) => t.lastIndexOf('\n', p - 1) + 1;
+  const lineEnd = (p) => t.indexOf('\n', p);
+  // (the separator's comma between two entries, past any comment)
+  const commaIn = (from, to) => {
+    for (let i = from; i < to; i++) {
+      if (t[i] === '%' && t[i - 1] !== '\\') { const nl = t.indexOf('\n', i); if (nl < 0 || nl >= to) return -1; i = nl; continue; }
+      if (t[i] === ',') return i;
+    }
+    return -1;
+  };
+  // (alone: nothing but spaces before it on its line, and nothing but a comma, spaces and a comment after)
+  const alone = (h) => /^[ \t]*$/.test(t.slice(lineStart(h.s), h.s)) && lineEnd(h.e) >= 0 && /^[ \t]*,?[ \t]*(%.*)?\r?$/.test(t.slice(h.e, lineEnd(h.e)));
+  const removed = new Set(hits.slice(put != null ? 1 : 0));
   if (hits.length && put != null) cuts.push({ s: hits[0].s, e: hits[0].e, t: put });
-  for (const h of hits.slice(put != null ? 1 : 0)) {
+  for (const h of removed) {
     const k = E.indexOf(h);
-    // (with the separator after it, or, the last one, the separator before it)
-    if (k + 1 < E.length) cuts.push({ s: h.s, e: E[k + 1].s, t: '' });
-    else if (k > 0 && !hits.includes(E[k - 1])) cuts.push({ s: E[k - 1].e, e: h.e, t: '' });
-    else if (k > 0) cuts.push({ s: E[k - 1].e, e: h.e, t: '' });
-    else cuts.push({ s: h.s, e: h.e, t: '' });
+    const kept = E.slice(k + 1).some((x) => !removed.has(x));
+    if (alone(h)) {
+      cuts.push({ s: lineStart(h.s), e: lineEnd(h.e) + 1, t: '' });
+      // (the last one left: the comma before it goes, the comment after that comma stays)
+      if (!kept) { let j = k - 1; while (j >= 0 && removed.has(E[j])) j--; if (j >= 0) { const c = commaIn(E[j].e, E[j + 1].s); if (c >= 0) cuts.push({ s: c, e: c + 1, t: '' }); } }
+    } else if (kept) {
+      // (with its comma and the spaces after it; a comment after them stays)
+      const c = commaIn(h.e, E[k + 1].s);
+      let z = c < 0 ? E[k + 1].s : c + 1;
+      while (c >= 0 && (t[z] === ' ' || t[z] === '\t')) z++;
+      cuts.push({ s: h.s, e: z, t: '' });
+    } else {
+      let j = k - 1;
+      while (j >= 0 && removed.has(E[j])) j--;
+      // (from the comma after the last entry kept; where none is kept, from the entry before, gone too)
+      const c = j >= 0 ? commaIn(E[j].e, E[j + 1].s) : -1;
+      cuts.push({ s: c >= 0 ? c : k > 0 ? E[k - 1].e : h.s, e: h.e, t: '' });
+    }
   }
   if (!hits.length && put != null) {
     if (!E.length) { const lead = /^\s*/.exec(t)[0].length; cuts.push({ s: lead, e: lead, t: put }); }
     else {
-      const L = E[E.length - 1];
-      // (the separator the list uses between its last two entries: ", ", "," or a comma and a new line)
-      let sep = ', ';
-      if (E.length > 1) { const between = t.slice(E[E.length - 2].e, L.s).replace(/%[^\n]*/g, ''); sep = /\n/.test(between) ? ',' + between.slice(between.lastIndexOf('\n')) : /,\s/.test(between) ? ', ' : ','; }
-      cuts.push({ s: L.e, e: L.e, t: sep + put });
+      const L = E[E.length - 1], le = lineEnd(L.e);
+      if (le >= 0 && /^[ \t]*%/.test(t.slice(L.e, le))) {
+        // (a comment ends the last entry's line: it stays that entry's)
+        const indent = /^[ \t]*/.exec(t.slice(lineStart(L.s)))[0];
+        cuts.push({ s: L.e, e: L.e, t: ',' }, { s: le + 1, e: le + 1, t: indent + put + (t[le - 1] === '\r' ? '\r\n' : '\n') });
+      } else {
+        // (the separator the list uses between its last two entries: ", ", "," or a comma and a new line)
+        let sep = ', ';
+        if (E.length > 1) { const between = t.slice(E[E.length - 2].e, L.s).replace(/%[^\n]*/g, ''); sep = /\n/.test(between) ? ',' + between.slice(between.lastIndexOf('\n')) : /,\s/.test(between) ? ', ' : ','; }
+        cuts.push({ s: L.e, e: L.e, t: sep + put });
+      }
     }
   }
-  // (overlapping cuts of two neighbours: the later from the end of the earlier)
-  cuts.sort((x, y) => x.s - y.s);
-  for (let i = 1; i < cuts.length; i++) if (cuts[i].s < cuts[i - 1].e) cuts[i].s = cuts[i - 1].e;
+  // (cuts of neighbours that overlap: one cut over both)
+  cuts.sort((x, y) => x.s - y.s || x.e - y.e);
+  const merged = [];
+  for (const c of cuts) {
+    const p = merged[merged.length - 1];
+    if (p && c.s < p.e && !c.t && !p.t) p.e = Math.max(p.e, c.e);
+    else if (p && c.s < p.e) merged.push({ ...c, s: p.e, e: Math.max(p.e, c.e) });
+    else merged.push({ ...c });
+  }
   let out = t;
-  for (const c of cuts.slice().reverse()) out = out.slice(0, c.s) + c.t + out.slice(Math.max(c.s, c.e));
+  for (const c of merged.slice().reverse()) out = out.slice(0, c.s) + c.t + out.slice(Math.max(c.s, c.e));
   return out;
 }
 const apply = (src, edits) => { for (const x of [...edits].sort((a, b) => b.s - a.s)) src = src.slice(0, x.s) + x.t + src.slice(x.e); return src; };
