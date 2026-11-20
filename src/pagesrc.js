@@ -322,7 +322,10 @@ export function headFootLengths(src) {
   if (last) {
     const id = idioms.find((x) => x.s <= last.s && last.e <= x.e);
     const pt = lenPt(pre.slice(last.v[0], last.v[1]));
-    if (pt != null) out.headsep = { pt, keep: !!id, at: id ? [id.vAt, id.vAt + id.v.length] : last.v };
+    // (and each setting in order: a \setlength{\headsep} by hand moves the text, the lines above
+    // do not, so the page needs them all as TeX reads them, src/layout.js geometry)
+    const steps = hs.map((x) => ({ pt: lenPt(pre.slice(x.v[0], x.v[1])), keep: idioms.some((y) => y.s <= x.s && x.e <= y.e) })).filter((x) => x.pt != null);
+    if (pt != null) out.headsep = { pt, keep: !!id, at: id ? [id.vAt, id.vAt + id.v.length] : last.v, steps };
   }
   const fs = setLengths(pre, 'footskip'), lf = fs[fs.length - 1];
   if (lf) { const pt = lenPt(pre.slice(lf.v[0], lf.v[1])); if (pt != null) out.footskip = { pt, at: lf.v }; }
@@ -335,6 +338,11 @@ export function headFootEdits(src, hf, o = {}) {
     const ch = {};
     if (hf.headsep != null) ch.headsep = PT(hf.headsep);
     if (hf.footskip != null) ch.footskip = PT(hf.footskip);
+    // (geometry told to include the head or the foot in the body measures the top or bottom
+    // margin to the header or the footer: that margin moves, and the length with it, so the text
+    // stays where it is; hf.top and hf.bottom, in points, say where)
+    if (hf.top != null) ch.top = PT(hf.top);
+    if (hf.bottom != null) ch.bottom = PT(hf.bottom);
     return Object.keys(ch).length ? geometryEdits(src, ch, null, { end: M.end, others: o.others }) : [];
   }
   const L = headFootLengths(src), out = [];

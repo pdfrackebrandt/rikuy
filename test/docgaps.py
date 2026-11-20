@@ -5,10 +5,10 @@ Formulas; View Gridlines; Draw Table and Eraser), each drawn on the page as TeX 
 dist/tex holds a TeX tree, what they write compiled in the page with pdfLaTeX, XeLaTeX and LuaLaTeX;
 phones at 390 and 360 px with touch; screenshots in $RIKUY_SHOTS (default /tmp/g2-shots).
 
-python3 docgaps.py [section ...]: tables, tables_compiled, tables_phones, shots, headfoot, headfoot_compiled,
+python3 docgaps.py [section ...]: tables, tables_compiled, tables_phones, shots, headfoot, headfoot_forms, headfoot_compiled,
 headfoot_phones, headfoot_shots, view, refs_update, equation, equation_linear, insert_text, rest_compiled, rest_phones,
 rest_shots."""
-import os, sys, base64, io
+import os, sys, base64, io, re as _re
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from browser import open_page, check, results, src, load_doc, roundtrip, pressed
 from playwright.sync_api import sync_playwright
@@ -446,6 +446,62 @@ def headfoot(page):
     page.keyboard.press('Escape')
 
 
+# The review of PR 84, M3: Header from Top under geometry's includehead moved the text and left the
+# header; with \setlength{\headsep} by hand the page read the header 0.5 cm off. Each form: the field
+# set to 1 cm, read back 1 cm, and in TeX's PDF the header 1 cm down (its words as far below that as
+# before) and the text where it was.
+HF_FORMS = {
+    'a hand set \\headsep': '\\documentclass{article}\n\\setlength{\\headsep}{40pt}\n\\pagestyle{myheadings}\\markright{HEADMARK}\n\\begin{document}\nText.\n\\end{document}\n',
+    'geometry with includehead': '\\documentclass{article}\n\\usepackage[margin=2cm,headsep=10pt,includehead]{geometry}\n\\pagestyle{myheadings}\\markright{HEADMARK}\n\\begin{document}\nText.\n\\end{document}\n',
+}
+
+
+def pdf_tops(r, words):
+    import subprocess, tempfile, re as re_
+    d = tempfile.mkdtemp()
+    open(os.path.join(d, 'a.pdf'), 'wb').write(base64.b64decode(r['pdf']))
+    subprocess.run(['pdftotext', '-bbox', os.path.join(d, 'a.pdf'), os.path.join(d, 'a.html')], check=True)
+    h = open(os.path.join(d, 'a.html')).read()
+    out = {}
+    for m in re_.finditer(r'yMin="([\d.]+)" xMax="[\d.]+" yMax="[\d.]+">([^<]+)<', h):
+        if m.group(2) in words and m.group(2) not in out:
+            out[m.group(2)] = float(m.group(1)) * 2.54 / 72
+    return out
+
+
+def headfoot_forms(page):
+    for name, doc in HF_FORMS.items():
+        load_doc(page, doc); page.wait_for_timeout(400); at_src(page, 'Text.'); page.wait_for_timeout(200)
+        v0 = page.evaluate("window.rikuy.runCommand && (() => { const d = window.rikuy.layout.g; return Math.round((d.mt - d.headsep - d.headheight) / (72.27 / 2.54) * 100) / 100; })()")
+        h0 = hist(page)
+        run_cmd(page, 'hf-header-top', {'cm': 1.0}); page.wait_for_timeout(400)
+        s1 = src(page)
+        check('Header from Top 1 cm (%s): one step' % name, hist(page) == h0 + 1 and s1 != doc, s1.split('\\begin{document}')[0])
+        if 'includehead' in doc:
+            check('under includehead the top margin moves to 1 cm and headsep takes up the rest', bool(_re.search(r'top=28\.4[0-9]pt', s1)) and 'headsep=' in s1, s1.split('\\begin{document}')[0])
+        load_doc(page, s1); page.wait_for_timeout(400); at_src(page, 'Text.'); page.wait_for_timeout(200)
+        sp = page.get_by_role('spinbutton', name='Header from Top', exact=True)
+        v = page.evaluate("(() => { const d = window.rikuy.layout.g; return Math.round((d.mt - d.headsep - d.headheight) / (72.27 / 2.54) * 100) / 100; })()")
+        check('the page reads it back as TeX sets it: 1 cm (%s)' % name, v == 1.0, v)
+        page.evaluate('window.rikuy.undo()')
+        if not HAS_TEX:
+            continue
+        a, b = pdf_of(page, doc), pdf_of(page, s1)
+        ta, tb = pdf_tops(a, ('HEADMARK', 'Text.')), pdf_tops(b, ('HEADMARK', 'Text.'))
+        ok = a['ok'] and b['ok'] and len(ta) == 2 and len(tb) == 2
+        check('in TeX\'s PDF (%s): the header 1 cm down from the top as it was %.2f cm, the text where it was' % (name, v0),
+              ok and abs((tb['HEADMARK'] - 1.0) - (ta['HEADMARK'] - v0)) < 0.03 and abs(tb['Text.'] - ta['Text.']) < 0.03, (ta, tb, v0))
+    # (and the footer under includefoot: the bottom margin moves, footskip with it)
+    doc = HF_FORMS['geometry with includehead'].replace('includehead', 'includefoot')
+    load_doc(page, doc); page.wait_for_timeout(400); at_src(page, 'Text.'); page.wait_for_timeout(200)
+    th0 = page.evaluate('window.rikuy.layout.g.th')
+    run_cmd(page, 'hf-footer-bottom', {'cm': 1.0}); page.wait_for_timeout(400)
+    s1 = src(page)
+    load_doc(page, s1); page.wait_for_timeout(400)
+    g = page.evaluate('(() => { const g = window.rikuy.layout.g; return [Math.round(((g.paperH || g.ph) - g.mt - g.th - g.footskip) / (72.27 / 2.54) * 100) / 100, g.th]; })()')
+    check('Footer from Bottom 1 cm under includefoot: bottom=28.45pt and footskip, read back 1 cm, the text block as tall', bool(_re.search(r'bottom=28\.4[0-9]pt', s1)) and g[0] == 1.0 and abs(g[1] - th0) < 0.05, (s1.split('\\begin{document}')[0], g, th0))
+
+
 def headfoot_compiled(page):
     if not HAS_TEX:
         print('SKIP the header and footer compiled: no TeX tree in %s' % DIST)
@@ -755,7 +811,7 @@ def run():
     names = sys.argv[1:]
     with sync_playwright() as p:
         browser, page, errors = open_page(p)
-        for f in (tables, tables_compiled, headfoot, headfoot_compiled, view, refs_update, equation, equation_linear, insert_text, rest_compiled):
+        for f in (tables, tables_compiled, headfoot, headfoot_forms, headfoot_compiled, view, refs_update, equation, equation_linear, insert_text, rest_compiled):
             if names and f.__name__ not in names:
                 continue
             try: f(page)
