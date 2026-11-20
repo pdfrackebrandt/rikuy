@@ -47,8 +47,9 @@ no room for pandoc and no service worker, so there it changes the page and `engi
 is version 29's but for `engine.js`, and the TeX rows are CI's TeX job on the pull request
 (`test/engines.py` 23/23, `test/pdf.py` 20/20, `test/offline.py` 34/34 with a compile offline).
 
-Version 31 (2026-11-10) is the public launch: the hosted build runs at
-<https://rikuy-3dl.pages.dev/> (deployed from main by `deploy.yml`), with task 28's fixes for a
+Version 31 (2026-11-10) is the public launch: the hosted build ran at
+<https://rikuy-3dl.pages.dev/> (deployed from main by `deploy.yml`; since 2026-11-13 at
+<https://rikuy.rackebrandt.pe/>, to which the old address redirects since 2026-11-20), with task 28's fixes for a
 newcomer's first minutes and for Word files. The claude.ai copy changes its page only, and now
 names the hosted copy as the place for Word. Checked by hand on the hosted site in Chrome: the
 update notice brings the new version in, a new document takes typing at once and compiles (1
@@ -821,8 +822,11 @@ Tests:
     CNAME at Punto.pe (`rikuy` to `rikuy-3dl.pages.dev`) and the Pages project's custom domain;
     `build/app.mjs`'s `SITE` (the canonical address, the preview tags, `robots.txt`,
     `sitemap.xml`, `llms.txt`) and the README, `SECURITY.md` and `docs/HOSTING.md` name it. The
-    old address keeps serving the same deployment and is not redirected, because browsers keep
-    documents by address: what anyone kept at `rikuy-3dl.pages.dev` stays reachable there.
+    old address served the same deployment, not redirected, until 2026-11-20, when Pedro added a
+    Bulk Redirect in Cloudflare: `rikuy-3dl.pages.dev` now answers with a permanent redirect to
+    `rikuy.rackebrandt.pe`. Browsers keep documents by address, so documents kept in a browser at
+    the old address are no longer reachable there; a copy installed from the old address keeps
+    working offline, with its documents.
     Evidence: `deploy_check.py` 43/43, `agent.py` as before; the live check is in the pull request.
 
 37. **Styles as in Word, with LaTeX among them.** Done in the code (pull request 13), asked for by

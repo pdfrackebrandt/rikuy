@@ -10,10 +10,12 @@ It runs at <https://rikuy.rackebrandt.pe/> (since 2026-11-13; step 7), in the op
 repository is public with it, which is how the source of the GPL and AGPL programs it ships is
 offered. `rackebrandt.pe/rikuy/` forwards there (a page of the maintainer's site). The project's
 own address, <https://rikuy-3dl.pages.dev/> (the name `rikuy` was taken on pages.dev), where it
-ran from 2026-11-10, serves the same deployment and is not redirected: browsers keep documents by
-address, so what someone kept there is still there, in that browser, and a redirect would hide it
-from them. Every page names the new address as its canonical one, so search engines and agents
-move over by themselves.
+ran from 2026-11-10, answers since 2026-11-20 with a permanent redirect to
+<https://rikuy.rackebrandt.pe/> (a Bulk Redirect in Cloudflare's dashboard). It stays the
+target of the custom domain's CNAME (step 7). Browsers keep documents by address, so documents
+someone kept in a browser at the old address are no longer reachable there; a copy installed
+from the old address keeps working offline, with its documents. Every page names the new address
+as its canonical one.
 
 ## Once, by hand
 
