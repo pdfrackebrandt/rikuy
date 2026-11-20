@@ -132,7 +132,19 @@ def dollars(page):
     # Esc in the insert list keeps what was typed (review M6)
     load_doc(page, MATH)
     click_text(page, 'gamma.', 6); typed(page, ' '); typed(page, '\\', 300); typed(page, 'LaTeX'); key(page, 'Escape', 300)
-    check('dollars: Esc in the insert list writes what was typed', 'gamma. \\LaTeX' in src(page), src(page)[60:100])
+    check('dollars: Esc in the insert list writes what was typed, as text, never a command', 'gamma. \\textbackslash{}LaTeX' in src(page), src(page)[60:100])
+    load_doc(page, MATH)
+    click_text(page, 'gamma.', 6); typed(page, ' z '); typed(page, '\\', 300); typed(page, 'sec'); key(page, 'Escape', 300); typed(page, ' w')
+    check('dollars: \\sec then Esc in prose is the text \\sec, not the formula command', 'gamma. Z \\textbackslash{}sec w' in src(page), src(page)[60:110])
+    # a price as Word users type it: $ a number and a space is a dollar sign (verification of 2308408)
+    for typed_, want in ((' costs $5 each', ' Costs \\$5 each'), (' pay $12.50 now', ' Pay \\$12.50 now'), (' so $5x$ ok', ' So $5x$ ok')):
+        load_doc(page, MATH)
+        click_text(page, 'gamma.', 6)
+        for ch in typed_:
+            page.keyboard.type(ch); page.wait_for_timeout(250 if ch == '$' else 40)
+        page.wait_for_timeout(300)
+        s = src(page)
+        check('dollars: ' + typed_.strip() + ' gives' + want, 'gamma.' + want + '\n' in s and active(page) == 'pages', (s[60:130], active(page)))
 
 
 def field(page, keys):
@@ -159,7 +171,8 @@ def latex(page):
                        (r'x^{(a)}', [r'x^{(a)}', r'x^{\left(a\right)}']),
                        (r'\left( x \right)', [r'\left(x\right)', '(x)']),
                        ('a/b ', [r'\frac{a}{b}']),
-                       ('x^(n+1)', [r'x^{n+1}'])):
+                       ('x^(n+1)', [r'x^{n+1}']),
+                       (r'x\in\mathbb{R}', [r'x\in\mathbb{R}'])):
         got = field(page, keys)
         check('latex: ' + keys + ' typed into the equation field', got in [''.join(w.split()) for w in want], got)
     # an input method, dictation or the emoji panel in \\text{…}: on in the LaTeX box (review H2)
@@ -184,8 +197,38 @@ def latex(page):
     page.keyboard.type(r'\begin{', delay=15); page.wait_for_timeout(200)
     check('latex: \\begin{ moves on to the LaTeX box', active(page) == 'pop-tex', active(page))
     page.keyboard.type(r'aligned}a&=b\\c&=d\end{aligned}', delay=10); page.wait_for_timeout(300)
-    key(page, 'Escape', 400)
-    check('latex: an aligned block typed through the LaTeX box', '\\begin{aligned}a&=b\\\\c&=d\\end{aligned}' in src(page), src(page)[60:200])
+    # (review N2) a box the field handed over to keeps the field's keys: Enter is done
+    key(page, 'Enter', 400); typed(page, ' Next words.')
+    s = src(page)
+    check('latex: an aligned block typed through the LaTeX box', '\\begin{aligned}a&=b\\\\c&=d\\end{aligned}' in s, s[60:200])
+    check('latex: Enter in the box the field handed over to finishes, the words after the equation', '\\end{equation}' in s and s.find('Next words.') > s.find('\\end{equation}') and active(page) == 'pages', (s[60:220], active(page)))
+    for how in ('Enter', 'Control+Enter'):
+        page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
+        load_doc(page, MATH)
+        click_text(page, 'gamma.', 6)
+        key(page, 'Enter'); key(page, 'Alt+Equal', 600)
+        page.keyboard.type('x=1\\text{', delay=15); page.wait_for_timeout(200)
+        cdp.send('Input.imeSetComposition', {'text': 'ひ', 'selectionStart': 1, 'selectionEnd': 1}); page.wait_for_timeout(150); cdp.send('Input.insertText', {'text': '日本'})
+        page.wait_for_timeout(250); page.keyboard.type('}+y', delay=15); page.wait_for_timeout(300)
+        key(page, how, 400)
+        if how == 'Enter':
+            typed(page, ' Next words.'); s = src(page)
+            check('latex: after an input method in \\text{, Enter finishes the display', '\\text{日本}+y' in s and s.find('Next words.') > s.find('\\end{equation}') > 0 and active(page) == 'pages', (s[60:220], active(page)))
+        else:
+            page.keyboard.type('z=2', delay=15); page.wait_for_timeout(300); key(page, 'Enter', 400); s = src(page)
+            check('latex: and Ctrl+Enter there a new row, the display made one of rows', '\\begin{align}' in s and '+y \\\\' in s and 'z=2' in s and active(page) == 'pages', (s[60:240], active(page)))
+    # (review N1) a chord with \text{ or \mathbb{ open ends the argument first; the field's own
+    # insertion is never taken for typing
+    for keys, want in (('x=1\\text{if', '\\text{if}'), ('x\\in\\mathbb{R', '\\mathbb{R}')):
+        page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
+        load_doc(page, MATH)
+        click_text(page, 'gamma.', 6)
+        key(page, 'Enter'); key(page, 'Alt+Equal', 600)
+        page.keyboard.type(keys, delay=15); page.wait_for_timeout(200)
+        key(page, 'Control+Enter', 400); page.wait_for_timeout(300)
+        s = src(page)
+        check('latex: Ctrl+Enter in ' + want[:-2] + '…} ends it, nothing else written', want in s and 'insertText' not in s, s[60:220])
+        key(page, 'Escape', 300)
 
 
 TAB = '\\documentclass{article}\n\\begin{document}\n\nAlpha beta gamma.\n\n\\noindent Second one here.\n\nThird one here.\n\n\\end{document}\n'
@@ -455,6 +498,9 @@ def quickopen(page):
     page.evaluate('window.__printed = 0; window.rikuy.pagePrint = () => { window.__printed = 1; }')
     key(page, 'Control+p', 400); key(page, 'Enter', 300)
     check('quickopen: Ctrl+P, Enter prints, as Word\'s', page.evaluate('window.__printed') == 1)
+    page.evaluate('window.__printed = 0'); click_text(page, 'Alpha', 0)
+    key(page, 'Control+p', 400); typed(page, 'print'); key(page, 'Enter', 300)
+    check('quickopen: Print found by its name, "print" then Enter prints', page.evaluate('window.__printed') == 1)
 
 
 # keys fed to the page's own handler faster than it builds the page, every key already due handed

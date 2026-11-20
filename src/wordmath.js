@@ -747,7 +747,9 @@ export function installWordTyping(mf, opts) {
     const altGr = !!(e.getModifierState && e.getModifierState('AltGraph'));
     const shortcut = e.metaKey || (e.ctrlKey && !altGr) || (e.altKey && !altGr && /^[A-Za-z0-9]$/.test(k));
     if (arg) {
-      if (shortcut) return;
+      // (a chord ends the argument first, as Enter does, then does what it does: Ctrl+Enter's new
+      // row came in as an insertion the input listener below took for the person's, review N1)
+      if (shortcut || (e.altKey && !altGr)) { argDone(); return; }
       if ((k === '}' && !arg.depth) || k === 'Enter' || k === 'Tab') { stop(); argDone(); return; }
       if (k === 'Escape') { stop(); arg = null; draw(); return; }
       if (k === 'Backspace') {
@@ -802,6 +804,9 @@ export function installWordTyping(mf, opts) {
         else put(k === '\\' ? '\\backslash' : '\\' + k);
         return;
       }
+      // (a name ended by the next command's backslash, \in\mathbb{R} as in the source: that
+      // backslash went to the field, which took the rest for LaTeX of its own and dropped it)
+      if (k === '\\' && buf && !shortcut) { stop(); commit(); buf = ''; pick = 0; draw(); return; }
       if (k.length === 1) { commit(); return; } // the symbol itself goes through to the field
       if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(k)) { commit(); return; }
       return;
@@ -878,8 +883,9 @@ export function installWordTyping(mf, opts) {
     else put('\\' + t.name + '{' + t.text + (more || '') + '}', { selectionMode: 'after' });
   };
   mf.addEventListener('compositionstart', () => { if (arg) toBox(''); }, true);
+  // (the person's input only: the field's own, Ctrl+Enter's row, comes untrusted; review N1)
   mf.addEventListener('beforeinput', (e) => {
-    if (!arg || e.isComposing || !/^insert/.test(e.inputType || '')) return;
+    if (!arg || !e.isTrusted || e.isComposing || !/^insert/.test(e.inputType || '')) return;
     e.preventDefault(); e.stopImmediatePropagation();
     toBox(e.data || '');
   }, true);
