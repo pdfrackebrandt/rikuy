@@ -273,7 +273,7 @@ export const methods = {
     for (const c of ['white', 'black']) items.push({ name: c, label: '', title: c, swatch: SWATCH(c), checked: cur === c, radio: true, cls: 'gal-tile sw', run: () => pick(c) });
     if (what === 'outline') items.push(null, { name: 'Weight', title: 'How thick the line is', run: () => setTimeout(() => this.shapeLineMenu('weight'), 0) }, { name: 'Dashes', title: 'Solid, dashed, dotted', run: () => setTimeout(() => this.shapeLineMenu('dash'), 0) },
       ...(O.shapeInfo(o.text) || {}).lines ? [{ name: 'Arrows', title: 'Tips at the line\'s ends', run: () => setTimeout(() => this.shapeLineMenu('arrow'), 0) }] : []);
-    const p = openMenu(this, this.objAnchor(id), items, { label: { fill: 'Shape Fill', outline: 'Shape Outline', 'smart-fill': 'Shape Fill', 'smart-outline': 'Shape Outline' }[what], cls: 'pop-colors' });
+    const p = openMenu(this, this.objAnchor(id), items, { label: { fill: 'Shape Fill', outline: 'Shape Outline', 'smart-fill': 'Shape Fill', 'smart-outline': 'Shape Outline' }[what], cls: 'pop-gal pop-colors' });
     p.style.setProperty('--cols', 10);
     return true;
   },

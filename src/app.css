@@ -2141,6 +2141,13 @@ html.pic-drag, html.pic-drag body { touch-action: none; overscroll-behavior: non
   #rp-picture-format .rb-grp > .btn, #rp-picture-format .rb-split > .btn, #rp-picture-format .rb-x,
   #rc-insert-shapes, #rc-insert-icons, #rc-insert-smartart, #rc-insert-chart, #rc-insert-screenshot, #rc-insert-textbox, #rc-insert-dropcap,
   #rc-picture-position-layout, #rc-picture-wrap-layout, #rc-picture-rotate-layout { min-height: 44px; min-width: 44px; }
+  /* (every object's contextual tab, and Layout's Align and Selection Pane, as the picture's: review H6) */
+  :is(#rp-shape-format, #rp-chart-design, #rp-chart-format, #rp-smart-design, #rp-smart-format) :is(.rb-grp > .btn, .rb-split > .btn, .rb-x, .rb-gbtn),
+  #rc-object-align, #rc-selection-pane { min-height: 44px; min-width: 44px; }
+  :is(#rp-shape-format, #rp-chart-format) .pf-v { min-height: 44px; font-size: 16px; }
+  .sel-pane .pop-x { min-width: 44px; min-height: 44px; }
+  .sel-pane .fr-btns .btn { min-height: 44px; }
+  .fr .sel-lab { min-height: 44px; font-size: 16px; }
 }
 /* a button's name for screen readers (.sr, absolutely placed) sat where the button is: in a
    phone's scrolling row a button past the screen's edge widened the page under it (the Picture

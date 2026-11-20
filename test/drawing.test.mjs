@@ -54,7 +54,8 @@ ok('a chart from a grid: its coordinates read back as written; names made safe f
 });
 
 ok('SmartArt: the items as written, commas kept in braces, specials taken out', () => {
-  assert.equal(D.smartTex('flow diagram:horizontal', ['Plan', 'Write, edit', 'Sub%mit', '']), '\\smartdiagram[flow diagram:horizontal]{Plan, {Write, edit}, Sub mit}');
+  // (review M8: TeX's special characters escaped, not dropped)
+  assert.equal(D.smartTex('flow diagram:horizontal', ['Plan', 'Write, edit', 'Sub%mit', '']), '\\smartdiagram[flow diagram:horizontal]{Plan, {Write, edit}, Sub\\%mit}');
   assert.deepEqual(D.smartItems('Plan, {Write, edit}, Submit'), ['Plan', 'Write, edit', 'Submit']);
   assert.equal(D.SMART.length, 5);
   assert.ok(D.ICONS.length >= 30 && D.ICONS.every(([id, name, svg]) => /^[a-z-]+$/.test(id) && name && !/[<>]script|on\w+=/i.test(svg)));

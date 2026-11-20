@@ -5,14 +5,33 @@
 // press on a row goes to the object and selects it; Show All and Hide All; a name changed is one
 // commit with every reference to it. The pane is no dialog: it stays open as the document changes.
 
-import { mk } from './dom.js';
+import { mk, store, load } from './dom.js';
 import { objectList, renameLabel, labelPlace, KIND_NAMES } from '../objlist.js';
 import { atomOfEl } from '../editor.js';
 import { BLOCKS } from '../render.js';
 
 const EYE = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z" fill="none" stroke="currentColor" stroke-width="1.4"/><circle cx="10" cy="10" r="2.4" fill="currentColor"/></svg>';
 const SHUT = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M2 10s3-5.5 8-5.5S18 10 18 10s-3 5.5-8 5.5S2 10 2 10z" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".5"/><path d="M3.5 16.5l13-13" stroke="currentColor" stroke-width="1.6"/></svg>';
-const key = (x) => x.f + ':' + x.kind + ':' + x.n;
+// An object's key for hiding: its \label where it has one, else its file, kind and a hash of its
+// source with how many before it have the same text, so it keeps its mark when another object
+// before it goes or comes (src/objlist.js gives each its text's range)
+const hash = (t) => { let h = 0x811c9dc5; for (let i = 0; i < t.length && i < 20000; i++) { h ^= t.charCodeAt(i); h = Math.imul(h, 0x01000193) >>> 0; } return h.toString(36); };
+function keysOf(app, items) {
+  const seen = new Map();
+  return items.map((x) => {
+    if (x.label) return 'label:' + x.f + ':' + x.label.key;
+    const h = x.f + ':' + x.kind + ':' + hash(app.src(x.f).slice(x.s, x.e));
+    const k = (seen.get(h) || 0) + 1;
+    seen.set(h, k);
+    return 'src:' + h + ':' + k;
+  });
+}
+// (the hidden ones kept in this browser for this project: the page's view, as Word's hidden
+// objects stay hidden when the file opens again; the source and the PDF keep them)
+const HIDDEN = 'galley.selhidden.v1';
+const projKey = (app) => (app.name || '') + '|' + (app.main || '');
+function saveHidden(app) { const all = load(HIDDEN) || {}; if (app.selHidden.size) all[projKey(app)] = [...app.selHidden].slice(0, 500); else delete all[projKey(app)]; store(HIDDEN, all); }
+function loadHidden(app) { const all = load(HIDDEN) || {}; app.selHidden = new Set(Array.isArray(all[projKey(app)]) ? all[projKey(app)].filter((x) => typeof x === 'string').slice(0, 500) : []); app.selHiddenFor = projKey(app); }
 
 function build(app) {
   const d = mk('div', 'fr sel-pane');
@@ -30,14 +49,15 @@ function build(app) {
   // (sm: a narrow window's rule makes a plain .btn an icon of 32 px)
   const all = mk('button', 'btn ghost sm', 'Show All'), none = mk('button', 'btn ghost sm', 'Hide All');
   all.type = none.type = 'button';
-  all.addEventListener('click', () => { app.selHidden.clear(); app.selApplyHidden(); render(app); });
-  none.addEventListener('click', () => { for (const it of app.selItems()) app.selHidden.add(key(it)); app.selApplyHidden(); render(app); });
+  all.addEventListener('click', () => { app.selHidden.clear(); saveHidden(app); app.selApplyHidden(); render(app); });
+  none.addEventListener('click', () => { for (const k of keysOf(app, app.selItems())) app.selHidden.add(k); saveHidden(app); app.selApplyHidden(); render(app); });
   bar.append(all, none);
   const list = mk('div', 'sel-list');
   list.setAttribute('role', 'list'); list.setAttribute('aria-label', 'Objects of the document');
   const st = mk('div', 'fr-st');
   st.setAttribute('role', 'status'); st.setAttribute('aria-live', 'polite');
-  d.append(head, bar, list, st);
+  const note = mk('p', 'tb-note sel-note', 'Hiding is this page\'s view only, kept in this browser: the source, the PDF and the Word file keep every object.');
+  d.append(head, bar, list, note, st);
   document.body.append(d);
   d.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); d.hidden = true; app.ribbonBack(); } });
   return (app.selPane = { d, list, st });
@@ -49,7 +69,9 @@ function render(app) {
   const items = app.selItems();
   P.list.textContent = '';
   if (!items.length) { P.list.append(mk('div', 'sp-none', 'No figures, tables, pictures, drawings, charts, SmartArt or equations in this document.')); return; }
-  for (const it of items) {
+  const K = keysOf(app, items);
+  items.forEach((it, i) => {
+    const kk = K[i];
     const row = mk('div', 'sel-row' + (it.inside ? ' sel-in' : ''));
     row.setAttribute('role', 'listitem');
     const go = mk('button', 'sel-go');
@@ -67,15 +89,15 @@ function render(app) {
     lab.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); app.selRename(it, lab.value); } });
     const eye = mk('button', 'sel-eye');
     eye.type = 'button';
-    const hidden = app.selHidden.has(key(it));
+    const hidden = app.selHidden.has(kk);
     eye.innerHTML = hidden ? SHUT : EYE;
     eye.setAttribute('aria-pressed', hidden ? 'false' : 'true');
     eye.setAttribute('aria-label', 'Show ' + it.name);
     eye.title = hidden ? 'Hidden on the page (the source and the PDF keep it): show it' : 'Hide it on the page alone';
-    eye.addEventListener('click', () => { if (app.selHidden.has(key(it))) app.selHidden.delete(key(it)); else app.selHidden.add(key(it)); app.selApplyHidden(); render(app); });
+    eye.addEventListener('click', () => { if (app.selHidden.has(kk)) app.selHidden.delete(kk); else app.selHidden.add(kk); saveHidden(app); app.selApplyHidden(); render(app); });
     row.append(go, lab, eye);
     P.list.append(row);
-  }
+  });
 }
 
 export const methods = {
@@ -84,7 +106,7 @@ export const methods = {
     return objectList(this.files, order);
   },
   selPaneOpen() {
-    if (!this.selHidden) this.selHidden = new Set();
+    if (!this.selHidden || this.selHiddenFor !== projKey(this)) loadHidden(this);
     const P = this.selPane || build(this);
     P.d.hidden = false;
     render(this);
@@ -109,9 +131,11 @@ export const methods = {
   },
   // hidden ones as the page is drawn again
   selApplyHidden() {
+    if (this.selHiddenFor !== projKey(this)) loadHidden(this);
     for (const el of document.querySelectorAll('#pages .sel-hidden')) el.classList.remove('sel-hidden');
     if (!this.selHidden || !this.selHidden.size) return;
-    for (const it of this.selItems()) if (this.selHidden.has(key(it))) for (const el of this.selElements(it)) el.classList.add('sel-hidden');
+    const items = this.selItems(), K = keysOf(this, items);
+    items.forEach((it, i) => { if (this.selHidden.has(K[i])) for (const el of this.selElements(it)) el.classList.add('sel-hidden'); });
   },
   selGo(it) {
     const els = this.selElements(it);
@@ -150,11 +174,13 @@ export const methods = {
 
 export function installSelPane(app) {
   app.selHidden = new Set();
+  app.selHiddenFor = null;
   // (a page drawn again: hidden ones hidden again, the list read again)
   const sync = app.layoutPass;
   app.layoutPass = function (...a) {
     const r = sync.apply(this, a);
-    if (this.selHidden && this.selHidden.size) this.selApplyHidden();
+    // (the hidden ones of this project, read again when another project opens)
+    if ((this.selHidden && this.selHidden.size) || this.selHiddenFor !== projKey(this)) this.selApplyHidden();
     clearTimeout(this.selT);
     this.selT = setTimeout(() => this.selPaneRefresh(), 120);
     return r;

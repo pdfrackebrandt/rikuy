@@ -18,7 +18,7 @@
 // it), or null where the object is not one it reads; pure, bounded and tested on strings
 // (test/objfmt.test.mjs).
 
-import { tikzCmds, readTikz, readAxis, chartTex, cycleColors, smartItems, colorOf, SMART } from './drawing.js';
+import { tikzCmds, readTikz, readAxis, chartTex, cycleColors, smartItems, colorOf, SMART, escTeX, unTeX } from './drawing.js';
 import { parse } from './parser.js';
 
 // ---- option lists ----------------------------------------------------------------------------------
@@ -118,7 +118,7 @@ export function shapeInfo(text) {
       weight: lw, dash: o.find(isDash) || 'solid', arrow: o.find(isArrow) || '-' };
   };
   const node = cmds.find((c) => c.node);
-  const nodeText = node ? R.cmds[node.k].text.split('\\\\').map((x) => x.trim()).join('\n') : '';
+  const nodeText = node ? R.cmds[node.k].text.split('\\\\').map((x) => unTeX(x.trim())).join('\n') : '';
   return { cmds, look: look(shape), lookOf: (k) => look(cmds[k]), text: nodeText, lines: !cmds.some((c) => c.closed), closed: cmds.some((c) => c.closed) };
 }
 
@@ -176,7 +176,8 @@ export function shapeSet(text, prop, value, ks = null) {
 export function shapeTextSet(text, words, eol = '\n') {
   const T = tikzCmds(text), R = readTikz(text);
   if (!T || !R) return null;
-  const clean = String(words || '').split(/\r?\n/).map((x) => x.replace(/[\\{}%#$&_^~;]/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean).slice(0, 20).join(' \\\\ ');
+  // (TeX's special characters escaped, as escTeX writes them; a ; in the braces ends nothing)
+  const clean = String(words || '').split(/\r?\n/).map((x) => escTeX(x.replace(/\s+/g, ' ').trim())).filter(Boolean).slice(0, 20).join(' \\\\ ');
   const k = R.cmds.findIndex((c) => c.node);
   if (k >= 0) {
     const c = T.cmds[k];
@@ -310,7 +311,8 @@ export function chartInfo(text) {
   const cyc = A.opts.find((x) => /^cycle list=/.test(x));
   const pal = cyc ? (PALETTES.find((p) => cycleText(p[0], kind) === cyc) || [null])[0] || 'custom' : 'colorful';
   const w = get(/^width=([\d.]*)\\linewidth$/), h = get(/^height=([\d.]+)cm$/);
-  return { kind, cats: A.cats, series, opts: A.opts, title: (get(/^title=\{(.*)\}$/) || [])[1] ?? null, xlabel: (get(/^xlabel=\{(.*)\}$/) || [])[1] ?? null, ylabel: (get(/^ylabel=\{(.*)\}$/) || [])[1] ?? null,
+  const words = (re) => { const x = get(re); return x ? unTeX(x[1]) : null; };
+  return { kind, cats: A.cats, series, opts: A.opts, title: words(/^title=\{(.*)\}$/), xlabel: words(/^xlabel=\{(.*)\}$/), ylabel: words(/^ylabel=\{(.*)\}$/),
     grid: !!get(/^(x|y)majorgrids$/), labels: A.opts.includes('nodes near coords'), legend: (get(/^legend pos=(.+)$/) || [])[1] || null, palette: pal,
     width: w ? (w[1] === '' ? 1 : parseFloat(w[1])) : null, height: h ? parseFloat(h[1]) : null, extra: A.opts.filter((x) => !CORE.some((r) => r.test(x))) };
 }
@@ -327,7 +329,7 @@ function axisRange(text) {
   }
   return null;
 }
-const clean = (t) => String(t || '').replace(/[\\{}%#$&_^~]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+const clean = (t) => escTeX(String(t || '').replace(/\s+/g, ' ').trim().slice(0, 120));
 // One of Chart Design's or Format's settings, as one edit of the axis's options: title, xlabel,
 // ylabel (words; '' takes it off), grid (on or off), labels (data labels), legend (a corner of
 // LEGEND_POS), palette (an id of PALETTES), width (a share of the line), height (cm)
@@ -416,7 +418,7 @@ export function smartInfo(text) {
   const get = (k2) => { const x = kv.filter(keyIs(k2)).pop(); return x ? x.slice(x.indexOf('=') + 1).trim() : null; };
   const list = get('set color list');
   const pal = list == null ? 'colorful' : (SMART_PALETTES.find((p) => p[2] && 'set color list={' + p[2].join(',') + '}' === kv.filter(keyIs('set color list')).pop()) || [null])[0] || 'custom';
-  return { kind, items: smartItems(text.slice(is, ie)), set, setText, reset, ds, de, ks: m[1] ? ds + m[0].indexOf('[') : -1, ke: m[1] ? ds + m[0].indexOf(']') + 1 : -1, is, ie, palette: pal, border: get('border color') };
+  return { kind, items: smartItems(text.slice(is, ie)).map(unTeX), set, setText, reset, ds, de, ks: m[1] ? ds + m[0].indexOf('[') : -1, ke: m[1] ? ds + m[0].indexOf(']') + 1 : -1, is, ie, palette: pal, border: get('border color') };
 }
 // Change Layout: the diagram's kind, the one edit of its [option]
 export function smartLayout(text, kind) {
@@ -431,7 +433,7 @@ export function smartLayout(text, kind) {
 export function smartItemsSet(text, items) {
   const I = smartInfo(text);
   if (!I) return null;
-  const it = items.map((x) => String(x).replace(/[\\{}%#$&_^~]/g, ' ').replace(/\s+/g, ' ').trim()).filter(Boolean).map((x) => (/,/.test(x) ? '{' + x + '}' : x));
+  const it = items.map((x) => escTeX(String(x).replace(/\s+/g, ' ').trim())).filter(Boolean).map((x) => (/,/.test(x) ? '{' + x + '}' : x));
   if (!it.length) return null;
   const t = it.join(', ');
   return t === text.slice(I.is, I.ie) ? [] : [{ s: I.is, e: I.ie, t }];
