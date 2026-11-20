@@ -12,7 +12,11 @@ Reset Graphic, Shape Fill and Shape Outline: one step each, one undo back, the p
 again, toggles read back from the source and from hand written forms. The right click menu of
 each, Delete, Enter. Where dist/tex holds a TeX tree, all of it compiled in the page with pdfLaTeX,
 XeLaTeX and LuaLaTeX. Phones at 390 and 360 px with touch: a tap selects, the tabs work by taps, a
-long press opens the object's menu with 44 px items. Screenshots in $RIKUY_SHOTS (default
+long press opens the object's menu with 44 px items. Picture Format's Corrections, Color,
+Transparency and Compress Pictures (the C module): a new file beside the picture, the comment,
+Reset Picture back, the page's pixels read through a canvas, the printed size kept; without the
+module a plain message; compiled on three engines. Arrange's Position and Align; the Selection Pane
+(rename with references, a name given, hide, go to). Screenshots in $RIKUY_SHOTS (default
 /tmp/g1-shots).
 
 Run: python3 objects.py [section ...] (sections: shapes, charts, smart, menus, compiled, pictures,
@@ -366,6 +370,19 @@ def shots(p):
                 page.wait_for_timeout(250)
                 page.wait_for_timeout(300)
                 page.screenshot(path=os.path.join(SHOTS, '%s-%d%s.png' % (name, w, '-dark' if dark else '')))
+            # Picture Format with Corrections, Color, Transparency and Compress, a picture made sepia
+            load_doc(page, pic_doc()); put_png(page, 'a.png', 300, 200, dpi=150); page.wait_for_timeout(300)
+            sel_pic(page); run_async(page, 'picture-color', {'recolor': 'sepia'}, 1200)
+            sel_pic(page)
+            if not touch:
+                page.click('#rc-picture-corrections'); page.wait_for_timeout(300)
+            page.screenshot(path=os.path.join(SHOTS, 'picture-%d%s.png' % (w, '-dark' if dark else '')))
+            page.keyboard.press('Escape')
+            # the Selection Pane over the objects
+            load_doc(page, D); page.wait_for_timeout(300)
+            run_cmd(page, 'selection-pane'); page.wait_for_timeout(300)
+            page.screenshot(path=os.path.join(SHOTS, 'selection-pane-%d%s.png' % (w, '-dark' if dark else '')))
+            page.keyboard.press('Escape')
         finally:
             br.close()
 
