@@ -3,7 +3,7 @@
 // missing files, math KaTeX cannot read, commands Rikuy shows as source.
 
 import { widgetPath } from './widget.js';
-import { isGraph } from './graph.js';
+import { isGraph, readGraph, kit as K } from './graph.js';
 
 // Comments blanked out (same length, so positions stay true) and verbatim bodies hidden.
 function scrub(src) {
@@ -28,6 +28,14 @@ function* figureRefs(s) {
 // graph's file: not missing while that file is there (src/cmd/insert.js graphRefresh)
 const drawn = (o, r) => !!r.html && /\.(pgf|png)$/i.test(r.n) && isGraph(o.files.get(widgetPath(o.files, o.main, r.html)));
 const WIDGET = /\\rikuywidget\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}\s*\{([^}]*)\}/;
+
+// What is wrong with a graph's file Rikuy made, in words, or '' (it reads and its formulas parse)
+function graphFault(html) {
+  const s = readGraph(html);
+  if (!s) return 'its description is not JSON Rikuy can read';
+  try { K.formulas(s); } catch (e) { return String(e.message || e).slice(0, 160); }
+  return '';
+}
 
 // the figures the .tex files ask for that the project does not have, by the name as written
 export function missingFigures(o) {
@@ -127,7 +135,13 @@ export function findProblems(o) {
     if (o.figuresWith) continue;
     for (const r of figureRefs(s)) {
       const { n, p } = r;
-      if (drawn(o, r)) continue;
+      if (drawn(o, r)) {
+        // a graph whose description no longer draws (a hand edit gone wrong): the PDF keeps the
+        // last picture drawn from it, which the reader should know (review M15)
+        const path = widgetPath(o.files, o.main, r.html), why = graphFault(o.files.get(path));
+        if (why) add('error', f, p, 'The graph ' + path + ' cannot be drawn: ' + why + '. The PDF keeps its last picture; Edit graph, or mend its file.', 'graph:' + path);
+        continue;
+      }
       const dirs = ['', ...(o.graphicsPath || [])];
       if (!dirs.some((d) => has(d + n, FIG_EXTS))) add('warn', f, p, 'Image “' + n + '” is not in the project.');
     }

@@ -81,7 +81,8 @@ try:
               "'sha256-" in pol and "'wasm-unsafe-eval'" in pol and "'unsafe-inline'" not in pol.split('script-src')[1].split(';')[0] and "'unsafe-eval'" not in pol, pol)
 
         # typing on the page, the source pane, the math field, the Git panel
-        page.click('.page .it >> nth=1')
+        # (a paragraph of words: the opening document's second block is its graph's, a frame)
+        page.click('.page .it.p:has-text("Click anywhere in this paragraph")')
         page.keyboard.type('Typed under the policy. ')
         page.wait_for_timeout(800)
         check('typing on the page reaches the source', 'Typed under the policy.' in page.evaluate("() => window.rikuy.files.get('main.tex')"))
@@ -181,7 +182,7 @@ try:
         eq.as_element().click(button='right')
         page.get_by_role('menuitem', name='Graph this').click(); page.wait_for_timeout(2500)
         check('Graph this under the policy', page.evaluate("() => window.rikuy.files.get('main.tex').split('\\\\rikuywidget').length - 1") == 2, page.evaluate("() => window.rikuy.files.get('main.tex')"))
-        page.evaluate('() => window.rikuy.runCommand("export-web-page")')
+        page.evaluate('() => window.rikuy.runCommand("export-web-page", { link: true })')
         page.wait_for_function('() => window.rikuy.lastExport && /\\.html$/.test(window.rikuy.lastExport.name)', timeout=60000)
         web = page.evaluate('() => window.rikuy.lastExport.blob.text()')
         check('the web page with live graphs is made under the policy: its frames, KaTeX, the fonts inside', web.count('<iframe class="rk-graph"') == 2 and 'class="katex"' in web and 'Paper Modern Serif' in web and 'url(data:font/woff2' in web, len(web))

@@ -204,3 +204,40 @@ as the edge.
   runs in `paramValues`, stiff phase systems and dense implicit equations each finish in under
   70 ms. Sizes are capped.
 - **Frames fit their sliders.** Ramsey with 4 sliders and a graph with 8, at 1400 and 360 px.
+
+## Response (graphs-edge, after fd9bb57)
+
+Each High and Medium has a check in `test/graphs-review.test.mjs` (in `npm test`) that failed
+before its fix, or in `test/graphs.py` for what needs the page (H5, H6):
+
+- H1 `flip`, `lhs` and the pair of one stem (`src/graphthis.js`, `src/graph.js` compute and
+  ranges); a parametric curve only for t, θ, τ, s or a coordinate pair.
+- H2 `fmt` with the plot's span, every minus a minus sign; a crossing with a constant curve at its
+  value exactly.
+- H3 `unmath` in normalize (`$k_t$` is k_t); `labelTex` built from pieces of text and math.
+- H4 `\log` natural, `\log_{10}` and `\log_2` (`lg`, `lb`), the PDF writes Desmos's typed log as
+  `\log_{10}`.
+- H5 `afterSourcePos` (`src/cmd/insert.js`): after the TeX paragraph that holds the equation, past
+  the table that holds a cell's, never before it.
+- H6 `sourceFiles` and `stripComments` (`src/webpage.js`), the export's dialog
+  (`webPageDialog`, `src/cmd/graphs.js`; `export-web-page {link, comments}` for agents).
+- M7 poles in `contour`: an edge halved twelve times towards its sign change, and its guessed
+  point, must come near 0.
+- M8 the area of |u − l|, finer steps at a domain's edge, none across a pole.
+- M9 `crossInside`: the sliders' usual values tried until a crossing is inside.
+- M10 names with a mark (`marks()` in `src/graphthis.js`, the kit's `NAME`, `nameTex`,
+  `nameRuns`), π as a name where a graph declares it, `\mathbb E`, `\Phi(`, `\Gamma(`, `\max(`,
+  a parameter moved off 0/0, 12 sliders.
+- M11 a rival subscript, `v`, a Greek variable's role range, Lotka–Volterra's rest point in larger
+  boxes, `paramValues` from math only, the values named in the toast.
+- M12 the sample: `c ∈ [0, f(k)]`, full depreciation, the graph above the abstract at half the
+  text width, `equal`, the 45 degree line at 45 degrees, in the first screen at 1366 by 768.
+- M13 Edit graph and LaTeX above the graph on a touch screen (fd9bb57); the plot about 180 px of
+  a phone's screen (the page sends the frame its scale); the legend in rows over the plot.
+- M14 `equal` for a coordinate pair's implicit curves and for k_{t+1}; the plot widened from its
+  corner where both axes start at 0.
+- M15 `graphFault` in `src/problems.js`; `graphRefresh` skips a graph that no longer draws and
+  goes on with the others.
+- Lows: typeset legends (fd9bb57); the title as plain text (`plainOf`); plain words for `\ddot`
+  and an undefined function of several letters; the spelling marks (0bb9b60); the PGF label
+  sizes, arXiv's extraneous files and the link's length are said in `docs/handoff/GRAPHS.md`.

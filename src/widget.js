@@ -243,8 +243,8 @@ export function paperFaces() {
   return FACES;
 }
 const darkPage = () => document.body.classList.contains('dark-page');
-export function sendFaces(win, dark) {
-  paperFaces().then((faces) => { try { win.postMessage({ rikuy: 'fonts', faces, dark: !!dark }, '*'); } catch (e) { /* gone */ } });
+export function sendFaces(win, dark, scale) {
+  paperFaces().then((faces) => { try { win.postMessage({ rikuy: 'fonts', faces, dark: !!dark, scale: scale || 1 }, '*'); } catch (e) { /* gone */ } });
 }
 
 // The frames, over the boxes the text keeps for them. A frame taken out of the document and put
@@ -333,8 +333,10 @@ export class WidgetLayer {
       B.width = (r.width / s) + 'px';
       B.height = (r.height / s) + 'px';
       B.transform = Math.abs(s - 1) < 1e-4 ? '' : 'scale(' + s + ')';
-      // the box's scale, so its buttons keep their size on the screen (44 px on a phone's page)
+      // the box's scale, so its buttons keep their size on the screen (44 px on a phone's page);
+      // the frame told it, so a graph keeps its plot readable on a phone's page
       B.setProperty('--ws', String(s));
+      if (F.frame && F.ws !== s) { F.ws = s; try { F.frame.contentWindow.postMessage({ rikuy: 'theme', dark: darkPage(), scale: s }, '*'); } catch (e) { /* not loaded yet: its fonts request is answered with it */ } }
     }
     for (const [id, F] of this.frames) if (!keep.has(id)) { F.box.remove(); this.frames.delete(id); }
   }
@@ -401,7 +403,7 @@ export class WidgetLayer {
     let F = null;
     for (const x of this.frames.values()) if (x.frame && x.frame.contentWindow === e.source) { F = x; break; }
     if (!F) return;
-    if (d.rikuy === 'fonts') { F.fonts = (F.fonts || 0) + 1; if (F.fonts <= 4) sendFaces(e.source, darkPage()); return; }
+    if (d.rikuy === 'fonts') { F.fonts = (F.fonts || 0) + 1; if (F.fonts <= 4) sendFaces(e.source, darkPage(), this.host.scale()); return; }
     if (d.rikuy === 'touch') {
       F.box.classList.add('wtouch');
       clearTimeout(F.touched);

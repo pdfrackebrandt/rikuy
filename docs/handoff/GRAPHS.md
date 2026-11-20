@@ -95,6 +95,30 @@ figure by construction.
    a tap in the graph and stand above it; View, Dark page gives the frame the dark paper's ink.
    The opening document has no spelling marks.
 
+9. **The hostile review's findings** (`docs/reviews/GRAPHS.md`, each with a check that failed
+   before: `test/graphs-review.test.mjs`, and `graphs.py`'s H5 and H6 checks): a pair of one stem
+   (Q_d and Q_s, q^d and q^s) is two curves of the price, P up as economists draw it (`flip`),
+   each named by its own left side (`lhs`), the crossing marked and inside the plot (starting
+   values tried until it is); a parametric curve only for t, θ, τ, s or a point's coordinates;
+   crossings without floating point noise (a curve that is a number gives its value exactly,
+   every minus a minus sign); `$k_t$` in a label is the name, a lone `$` a dollar sign, the PDF's
+   label LaTeX built from pieces of text and math; `\log` the natural log (`\log_{10}`, `\log_2`
+   their bases; log typed alone keeps Desmos's base 10 and the PDF says so); implicit curves
+   broken at poles (an edge whose sign changes through infinity is left out); an area the integral
+   of |u − l|, finer steps towards where a curve stops (ln x at 0), none across a pole; names with
+   a mark (q^d, π^e, u^*, ū), π as inflation where it has a mark or is a left side, `\mathbb E`,
+   `\Phi(` the normal cdf, `\max(x, 0)`, a parameter moved off the value where the formula is
+   0/0 (CRRA's σ = 1), twelve sliders; the variable a rival's (q_2 for q_1), a share's range for τ,
+   Lotka and Volterra's rest point found in a larger box; values from the document's math only,
+   named in the toast; equal axes for a circle and the 45 degree line (the plot widened from its
+   corner where both start at 0); Graph this placing the graph after the TeX paragraph that holds
+   the equation, from the source; the web page's link carrying the main file and what it reads,
+   comments left out, a dialog saying so with the choice to leave it out; a graph that no longer
+   draws a problem in its place, the others still drawn; on a phone the plot keeps about 180 px of
+   the screen (the page tells the frame its scale). The opening document's Bellman equation is
+   the one its saving rule solves (c ∈ [0, f(k)], full depreciation), its graph above the abstract
+   at one scale, the 45 degree line at 45 degrees, still in the first screen at 1366 by 768.
+
 ## Security
 
 The formula language never evaluates JavaScript: text is read by Rikuy's own parser into
@@ -106,6 +130,17 @@ Rikuy's code, never the file's script. The PGF picture escapes every label for T
 script but Rikuy's by hash, no connection, no form, no plugin.
 
 ## What is left
+
+- A PGF picture's labels are set at \footnotesize and \small whatever width it is printed at,
+  while its lines scale with `\rikuywidth`: a much narrower width than the text's (a hand set
+  `width=0.4\linewidth`) can bring a label onto the plot. Insert's graphs are as wide as the
+  text, or as the opening document's, half of it.
+- An arXiv upload needs the `.pgf` pictures and `rikuy.sty`, not the `graphs/*.html` files (about
+  60 KB each, which TeX never reads): leave them out of what goes to arXiv. Download LaTeX keeps
+  them, since they are the live figures.
+- The web page's "Open in Rikuy" link is capped at 1.9 MB, which Chromium opens; Firefox and
+  Safari were not tried at that length.
+- A phase portrait does not mark its rest point (restPoint in `src/graphthis.js` finds it).
 
 - The description in the `.tex` itself (a `rikuygraph` environment holding the formulas, with the
   HTML file derived): today the `.tex` names the graph's files and the `.pgf` comment summarises
