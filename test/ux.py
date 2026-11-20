@@ -824,7 +824,59 @@ def contrast(page, w):
     page.keyboard.press('Escape')
 
 
+
+def focus_rules(page, w):
+    """UI-PRINCIPLES.md N7, N8 and C13 with the verification of 0a6ef7b: a dialog opened by a press
+    on the ribbon or from the search box takes the focus (its first control; under a finger never a
+    text field); Tab goes round inside it; opened by the keys from a control, Esc gives that
+    control the focus back; one dialog at a time; File's Back shows its ring only when the keys
+    opened File."""
+    touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
+    load_doc(page, DOC)
+    where = "(() => { const a = document.activeElement; return [!!(a && a.closest('body > .pop')), a.tagName, (a.getAttribute('aria-label') || a.textContent || '').trim().slice(0, 20)]; })()"
+    click_text(page, 'Second paragraph', 3)
+    open_tab(page, 'Review', touch)
+    (page.tap if touch else page.click)('#rr-a11y'); page.wait_for_timeout(400)
+    a = page.evaluate(where)
+    check(f'Check accessibility from the ribbon takes the focus into its dialog ({w})', a[0] and (not touch or a[1] != 'INPUT'), a)
+    page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    if not touch:
+        page.click('#bar .srch input'); page.keyboard.type('AutoCorrect Options'); page.wait_for_timeout(300); page.keyboard.press('Enter'); page.wait_for_timeout(400)
+        a = page.evaluate(where)
+        check(f'AutoCorrect Options from the search box takes the focus into its dialog ({w})', a[0], a)
+        page.keyboard.press('Escape'); page.wait_for_timeout(200)
+        click_text(page, 'Second paragraph', 3); run_cmd(page, 'word-count'); page.wait_for_timeout(300)
+        walk = []
+        for _ in range(7):
+            page.keyboard.press('Tab'); page.wait_for_timeout(40)
+            walk.append(page.evaluate(where))
+        check(f'Tab goes round inside Word Count, never out of it ({w})', all(x[0] for x in walk), walk)
+        page.keyboard.press('Shift+Tab'); page.wait_for_timeout(40)
+        check(f'and Shift+Tab too ({w})', page.evaluate(where)[0])
+        page.keyboard.press('Escape'); page.wait_for_timeout(200)
+        # opened by the keys from a control of the ribbon: Esc gives it the focus back (N7)
+        page.focus('#rr-a11y'); page.keyboard.press('Enter'); page.wait_for_timeout(400)
+        page.keyboard.press('Escape'); page.wait_for_timeout(200)
+        back = page.evaluate("document.activeElement.id")
+        check(f'a dialog opened by the keys from a ribbon button gives that button the focus back ({w})', back == 'rr-a11y', back)
+        # one dialog at a time (N8)
+        click_text(page, 'Second paragraph', 3); run_cmd(page, 'font-dialog'); run_cmd(page, 'paragraph-settings'); page.wait_for_timeout(300)
+        n = page.evaluate("[...document.querySelectorAll('[role=dialog], [aria-modal=true]')].filter((d) => d.checkVisibility() && !d.closest('[hidden]') && d.getBoundingClientRect().width > 0).map((d) => d.id || d.className.slice(0, 30))")
+        check(f'one dialog at a time: a second replaces the first ({w})', len(n) == 1, n)
+        page.keyboard.press('Escape'); page.wait_for_timeout(200)
+        # Back's ring: none after a press on File, shown after Alt, F
+        page.get_by_role('tab', name='File').click(); page.wait_for_timeout(400)
+        r1 = page.evaluate("[document.activeElement.id, document.activeElement.matches(':focus-visible')]")
+        page.keyboard.press('Escape'); page.wait_for_timeout(300)
+        click_text(page, 'Second paragraph', 3)
+        page.keyboard.press('Alt'); page.wait_for_timeout(150); page.keyboard.press('f'); page.wait_for_timeout(400)
+        r2 = page.evaluate("[document.activeElement.id, document.activeElement.matches(':focus-visible')]")
+        check(f'File\'s Back: no ring after a press on File, a ring after Alt, F ({w})', r1 == ['rf-back', False] and r2 == ['rf-back', True], (r1, r2))
+        page.keyboard.press('Escape')
+
+
 PARTS = {'consistency': (consistency, [(1366, False), (1920, True), (390, False), (360, True)]),
+         'focus_rules': (focus_rules, [(1366, False), (1920, True), (390, False)]),
          'contrast': (contrast, [(1366, False), (1366, True), (390, False), (390, True)]),
          'dialog_kinds': (dialog_kinds, [(1366, False), (1920, True), (390, False), (360, True)]),
          'verify_lows': (verify_lows, [(1366, False), (1920, True)]), 'widen': (widen, None),

@@ -381,6 +381,19 @@ function fromField(v, st) {
   return lines.join(' \\\\\n');
 }
 
+// whether the last thing the person did was a key or a press (a dialog's opener reached by the
+// keys gets the focus back; one pressed gives it to the page)
+let lastKeys = false;
+const keysLast = () => lastKeys;
+if (typeof document !== 'undefined') {
+  document.addEventListener('keydown', (e) => { if (!['Shift', 'Control', 'Alt', 'Meta'].includes(e.key) || e.key === 'Alt') lastKeys = true; }, true);
+  document.addEventListener('pointerdown', () => { lastKeys = false; }, true);
+}
+// the controls a dialog's Tab goes round, in order: shown, enabled, reachable by Tab
+function popFocusables(p) {
+  return [...p.querySelectorAll('button, [href], input, select, textarea, [tabindex]')].filter((x) => x.tabIndex >= 0 && !x.disabled && !x.closest('[inert], [hidden]') && x.getClientRects().length && getComputedStyle(x).visibility !== 'hidden');
+}
+
 class App {
   constructor() {
     this.files = new Map();
@@ -2496,7 +2509,10 @@ class App {
     // the page's body and the next keys typed nothing. (On a touch screen only when the page had
     // the focus: focusing it there brings up the on-screen keyboard.)
     const at = this.caretNow(), had = document.activeElement;
-    const pageHad = had === this.root || (!matchMedia('(pointer: coarse)').matches && (!had || had === document.body || !!had.closest('#ribbon, #rb-top')));
+    // (a ribbon control the keys reached, Tab or the arrows, is the dialog's opener and gets the
+    // focus back, as UI-PRINCIPLES.md N7 asks; one a press focused keeps the page's place)
+    const keysOnRibbon = !!(had && had.closest && had.closest('#ribbon, #rb-top')) && keysLast();
+    const pageHad = had === this.root || (!matchMedia('(pointer: coarse)').matches && !keysOnRibbon && (!had || had === document.body || !!had.closest('#ribbon, #rb-top')));
     const back = at && !at.ghost && !at.crossFile && pageHad ? { c: at.collapsed ? { f: at.f, p: at.p } : { f: at.f, selA: at.a, selB: at.b }, text: this.files.get(at.f) } : null;
     document.body.appendChild(p);
     // (the control it was opened from, by the keys: the focus goes back to it when the page does
@@ -2504,6 +2520,30 @@ class App {
     const opener = had && had !== this.root && had !== document.body && had.closest && !had.closest('#pages') ? had : null;
     this.pop = { el: p, anchor, anchorPos: null, onClose: null, session: 'pop' + Date.now(), back, opener };
     p.addEventListener('mousedown', (e) => e.stopPropagation());
+    // A dialog takes the focus as it opens, as Word's do, by the keys or by a press on the ribbon
+    // (a press there keeps the page's focus, and Check accessibility or AutoCorrect Options then
+    // left the keys typing into the page under them); its first control, not Close, and under a
+    // finger never a text field (the on-screen keyboard would cover the dialog). Tab and Shift+Tab
+    // go round inside it: past Close they had walked out into the bar and the page.
+    if (/(^| )pop-(dlg|share)( |$)/.test(p.className)) {
+      p.addEventListener('keydown', (e) => {
+        if (e.key !== 'Tab' || e.altKey || e.ctrlKey || e.metaKey) return;
+        const all = popFocusables(p);
+        if (!all.length) return;
+        const i = all.indexOf(document.activeElement);
+        if (e.shiftKey ? i <= 0 : i === all.length - 1 || i < 0) { e.preventDefault(); all[e.shiftKey ? all.length - 1 : 0].focus(); }
+      });
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        if (!this.pop || this.pop.el !== p || !p.isConnected || p.contains(document.activeElement)) return;
+        // (only from the page or the chrome: a field that took it on purpose keeps it)
+        const a = document.activeElement;
+        if (a && a !== document.body && a !== this.root && !(a.closest && a.closest('#ribbon, #rb-top, #bar, #status, #nav'))) return;
+        const coarse = matchMedia('(pointer: coarse)').matches, text = (x) => x.matches('input:not([type]), input[type="text"], input[type="search"], input[type="number"], textarea, [contenteditable]');
+        const all = popFocusables(p).filter((x) => !(coarse && text(x)));
+        const pick = all.find((x) => !x.classList.contains('pop-x')) || all[0];
+        if (pick) pick.focus({ preventScroll: true });
+      }));
+    }
     setTimeout(() => {
       this.popOutside = (e) => {
         if (!this.pop || this.pop.el.contains(e.target) || (e.target.closest && e.target.closest('.atom'))) return;
