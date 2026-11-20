@@ -237,6 +237,27 @@ def collapse(page):
     check('and the button shows it again for good', page.evaluate('[document.body.classList.contains("rb-collapsed"), !!document.getElementById("ribbon").offsetParent]') == [False, True])
 
 
+# (a drawing, a chart and a SmartArt: their contextual tabs, src/cmd/objects.js)
+OBJDOC = ('\\documentclass{article}\n\\usepackage{tikz}\n\\usepackage{pgfplots}\n\\pgfplotsset{compat=1.18}\n\\usepackage{smartdiagram}\n\\begin{document}\nA paragraph.\n\n'
+          '\\begin{center}\n\\begin{tikzpicture}\n\\draw[thick, draw=blue!60!black, fill=blue!20] (0,0) rectangle (3,2);\n\\draw[thick, draw=red, fill=red!20] (2,1) circle (1);\n\\end{tikzpicture}\n\\end{center}\n\n'
+          '\\begin{center}\n\\begin{tikzpicture}\n\\begin{axis}[ybar, width=0.8\\linewidth, height=6cm, ymin=0, symbolic x coords={A,B}, xtick=data, legend pos=north west]\n\\addplot coordinates {(A,1) (B,2)};\n\\addlegendentry{S}\n\\addplot coordinates {(A,2) (B,1)};\n\\addlegendentry{T}\n\\end{axis}\n\\end{tikzpicture}\n\\end{center}\n\n'
+          '\\begin{center}\n\\smartdiagram[circular diagram:clockwise]{One, Two, Three}\n\\end{center}\n\\end{document}\n')
+OBJ_TABS = {'shape-format': ('shape', 'svg.tz'), 'chart-design': ('chart', 'svg.pgf'), 'chart-format': ('chart', 'svg.pgf'), 'smart-design': ('smart', 'svg.smart'), 'smart-format': ('smart', 'svg.smart')}
+
+
+def obj_select(page, tab):
+    """The object of a contextual tab selected by a press on it, as a person does (one shape of a
+    drawing too, so Bring Forward and Send Backward can run)."""
+    kind, sel = OBJ_TABS[tab]
+    if page.evaluate('(k) => { const o = rikuy.objHere(); return !!o && o.kind === k; }', kind):
+        return
+    if page.evaluate('!!rikuy.hf'): page.evaluate('rikuy.pageHFClose()')
+    if page.evaluate('!!document.querySelector(".pop-math")'): page.evaluate('rikuy.closePop(true)'); page.wait_for_timeout(100)
+    load_doc(page, OBJDOC); page.wait_for_timeout(250)
+    page.locator('#pages ' + sel).first.click(); page.wait_for_timeout(250)
+    if kind == 'shape': page.evaluate('() => { rikuy.shapeSel.k = 0; rikuy.ribbonSync(); }')
+
+
 PICDOC = '\\documentclass{article}\n\\usepackage{graphicx}\n\\begin{document}\nA paragraph.\n\n\\begin{center}\n\\includegraphics[width=0.5\\linewidth]{figure.png}\n\\end{center}\n\\end{document}\n'
 
 
@@ -246,7 +267,9 @@ def every_command(page):
     reg = page.evaluate('rikuy.cmds.describe().filter((x) => x.place === "ribbon" && x.tab && !x.fit && x.role !== "group" && x.only !== "narrow")')
     tabs = page.evaluate('Object.fromEntries([...document.querySelectorAll("#rb-tabs [role=tab]")].map((t) => [t.dataset.tab, t.textContent]))')
     for x in reg:
-        if x['tab'] == 'picture-format':
+        if x['tab'] in OBJ_TABS:
+            obj_select(page, x['tab'])
+        elif x['tab'] == 'picture-format':
             # (a picture selected by a press on it, B8)
             if page.evaluate('!!rikuy.hf'): page.evaluate('rikuy.pageHFClose()')
             if page.evaluate('!!document.querySelector(".pop-math")'): page.evaluate('rikuy.closePop(true)'); page.wait_for_timeout(100)
@@ -254,7 +277,7 @@ def every_command(page):
         elif x['tab'].startswith('table'):
             if page.evaluate('!!rikuy.hf'): page.evaluate('rikuy.pageHFClose()')
             if page.evaluate('!!document.querySelector(".pop-math")'): page.evaluate('rikuy.closePop(true)'); page.wait_for_timeout(100)
-            if '\\includegraphics' in src(page): load_doc(page, TABLE)
+            if '\\includegraphics' in src(page) or 'smartdiagram' in src(page): load_doc(page, TABLE)
             click_text(page, 'cell', 2); page.wait_for_timeout(200)
         elif x['tab'] == 'headfoot':
             # (the Header & Footer tab is there while the header is open on the page)
@@ -267,7 +290,8 @@ def every_command(page):
         else:
             if page.evaluate('!!rikuy.hf'): page.evaluate('rikuy.pageHFClose()')
             if page.evaluate('!!document.querySelector(".pop-math")'): page.evaluate('rikuy.closePop(true)'); page.wait_for_timeout(100)
-            if '\\includegraphics' in src(page): load_doc(page, TABLE)
+            if '\\includegraphics' in src(page) or 'smartdiagram' in src(page): load_doc(page, TABLE)
+            if page.evaluate('!!rikuy.objHere()'): page.evaluate('rikuy.shapeSel.clear()')
             click_text(page, 'A paragraph', 2); page.wait_for_timeout(120)
         open_tab(page, tabs[x['tab']])
         loc = page.get_by_role(x['role'], name=x['name'], exact=True)
