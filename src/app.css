@@ -2772,8 +2772,14 @@ body.file-open #rp-file .rb-tb .btn { height: 32px; min-height: 32px; border-rad
 /* a number field with its unit (kit.js numberField: Page setup's margins, Insert Table's width) is
    one field: its box 32 px (44 under a finger) with 4 px corners, its input and unit filling it
    (the rule for fields above made the input 44 px inside a 30 px box, cropping it) */
-:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) .nf { height: 32px; min-height: 32px; box-sizing: border-box; border-radius: 4px; }
-:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) .nf :is(input[type="text"], input[type="number"], input:not([type]), select) { height: 100%; min-height: 0; border-radius: 0; }
+/* (its edge an inset outline, not a border: the input and the unit then fill the whole 32 or
+   44 px, as a field of their own would; forced colours keep an outline) */
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) .nf { height: 32px; min-height: 32px; box-sizing: border-box; border-radius: 4px; border: 0; outline: 1px solid var(--line); outline-offset: -1px; }
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) .nf:focus-within { outline: 2px solid var(--blue); outline-offset: 1px; }
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) .nf :is(input[type="text"], input[type="number"], input:not([type])) { height: 100%; min-height: 0; border: 0; border-radius: 0; background: transparent; }
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) .nf select { height: 100%; min-height: 0; border-radius: 0; border-top: 0; border-right: 0; border-bottom: 0; }
+/* (the box's ring shows the focus, not the input's own) */
+:is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) .nf :is(input, select):focus { outline: none; }
 @media (pointer: coarse) { :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) .nf { height: 44px; min-height: 44px; } }
 /* 8 px between two targets under a finger (UI-PRINCIPLES.md T3): the status bar's views, a
    dialog's tabs, the Paragraph dialog's rows of fields, were 2 px apart */
