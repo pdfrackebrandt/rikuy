@@ -3438,7 +3438,12 @@ Tests:
     subsets; PGF labels that keep their size whatever width the picture is printed at (a much
     narrower width than the text's can bring a label onto the plot); an arXiv download without
     the `graphs/*.html` files TeX never reads; the Open in Rikuy link's length (1.9 MB) tried in
-    Firefox and Safari.
+    Firefox and Safari; from the review's last verification (merge at 549fdb0): Graph this on the textbook IS–LM pair
+    (`Y = C_0 + c(Y − T) + I_0 − br + G, M/P = kY − hr`) starts with c = 1, degenerate, the
+    crossing out of view, while its toast says "marked": say "marked" only when a mark is drawn,
+    and move starting values (c to 0.6, M down) until the crossing is in view, as the linear pairs
+    do (Medium); `\mathbb E_t \pi_{t+1}` refused with the parser's subscript message, where a
+    plain one would do (Low).
 
 ## Open tasks
 

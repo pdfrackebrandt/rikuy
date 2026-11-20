@@ -393,3 +393,41 @@ Left in PLAN.md task 70: `\hat` and `\tilde`, indices with a sign beyond an AR(1
 (`\mathbb E_t[\pi_{t+1}]`), the rest point of a phase portrait marked, PGF label sizes against
 the width printed, an arXiv download without the widgets' `.html` files, and the link's length
 in Firefox and Safari.
+
+## Verification of 549fdb0
+
+Own worktree at 549fdb0; I reran `strip.mjs`, `tricky.mjs`, `islm.mjs`, `gt.mjs`, `num.mjs`,
+`impl.mjs` and `pgf3.mjs`, plus a new page script, `a12.py`, with screenshots in
+`/tmp/review-graph-out/v3/`.
+
+**Fixed:**
+- **Comment removal.** Only whole comment lines are removed. `\url{…%20…}`, `\href`, `\verb`,
+  verbatim and `.bib` fields come through byte for byte.
+- **Shared files.** The link's files now include `\input chap1` written without braces,
+  `\import{parts/}{intro}` and `\lstinputlisting`.
+- **Equal axes.** The indifference curve fills the widened plot to x_1 = 27, live and in the PDF
+  picture (`v3/all.png`).
+- **Different left sides.** IS–LM written `Y = A − br, r = cY − d` is marked at (3, 2); the pair
+  of Cournot best responses at (1.33, 1.33), which is exact.
+- **Notation.** `\pi^e_t` works, and the Phillips curve is drawn against u_t. The Taylor rule is
+  drawn against π_t. AR(1) becomes its map, with the fixed point 0.515, which is exact.
+  `\max\{x−K,0\}` works, `y = x^d` is a power again, and `\phi(x)` is the normal density.
+- **Small items.** `\%` in a label prints as % and `.eq` is `position:relative` (the 360 px
+  fix). Supply and demand starts at a = 5 of [0, 10].
+- **Earlier fixes still hold.** Areas, poles, rounding, the templates' numbers.
+
+**Left:**
+- **Medium:** Graph this on the textbook IS–LM pair,
+  `Y = C_0 + c(Y − T) + I_0 − br + G, \; M/P = kY − hr`, starts with c = 1. A marginal
+  propensity to consume of 1 is degenerate: IS is a flat line at r = 2 with a small gap near
+  Y = 0.3. LM lies outside [0, 10]², and the equilibrium is at Y = 12, outside the plot. The
+  toast still says "where they meet marked", and no mark is drawn.
+
+  Fix: say "marked" only when a mark is drawn. Also try moving starting values (c to 0.6, M down)
+  until the crossing is in view, as the linear pairs already do.
+- **Low:** `\mathbb E_t \pi_{t+1}` still refuses with "A subscript needs letters or digits
+  after _"; a plain message would be better.
+
+**Verdict: merge.** The textbook IS–LM start and its false toast go to PLAN.md as an open task.
+They are a one-function fix and not a regression: that form was refused before, and the
+template IS–LM and the simple form are right.
