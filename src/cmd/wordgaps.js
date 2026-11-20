@@ -342,9 +342,21 @@ Object.assign(methods, {
         return c;
       };
       const stub = (pg) => { const d = pg.cloneNode(false); strip(d); d.classList.add('split-stub'); d.style.width = pg.offsetWidth + 'px'; d.style.height = pg.offsetHeight + 'px'; return d; };
-      const refresh = () => {
+      // (the frame's class and style follow the first view's: Web Layout, the zoom, Dark page)
+      const attrs = () => {
+        S.box.className = this.root.className + ' split-pages';
+        const st = this.root.getAttribute('style'), sh = this.root.parentNode.getAttribute('style');
+        if (st != null) S.box.setAttribute('style', st); else S.box.removeAttribute('style');
+        if (sh != null) S.sheet.setAttribute('style', sh); else S.sheet.removeAttribute('style');
+        S.sheet.className = this.root.parentNode.className;
+      };
+      // One turn of work at idle time, as long as the browser gives (deadline): the frame where it is
+      // new, the stand ins where the pages changed, then the pages near the window copied one at a
+      // time; what is left waits for the next idle time, so typing never waits on the second view
+      const refresh = (deadline) => {
         S.timer = 0;
         if (!this.split) return;
+        const room = () => (deadline && deadline.timeRemaining ? deadline.timeRemaining() > 6 : true);
         const top = view.scrollTop, left = view.scrollLeft;
         if (S.whole) {
           // (the sheet, whose style holds the page's sizes, and the pages' box, empty)
@@ -352,11 +364,11 @@ Object.assign(methods, {
           sh.removeAttribute('id');
           const c = strip(this.root.cloneNode(false));
           c.setAttribute('aria-label', 'Document (second view, read only)');
-          c.className = this.root.className + ' split-pages';
           sh.append(c);
           view.replaceChildren(note, sh);
-          S.box = c; S.pages = []; S.nodes = []; S.whole = false;
+          S.box = c; S.sheet = sh; S.pages = []; S.nodes = []; S.whole = false; S.attrs = true;
         }
+        if (S.attrs) { attrs(); S.attrs = false; }
         const P = pagesNow();
         if (P.length !== S.pages.length || P.some((x, k) => x !== S.pages[k])) {
           const was = new Map(S.pages.map((x, k) => [x, S.nodes[k]]));
@@ -364,31 +376,36 @@ Object.assign(methods, {
           S.pages = P;
           S.box.replaceChildren(...S.nodes);
         }
-        // the pages the view's window meets, and one either side: copied where a stand in or changed
-        const vr = view.getBoundingClientRect();
-        let n = 0;
+        // the pages the view's window meets, and one either side, read in one pass
+        const vr = view.getBoundingClientRect(), want = [];
         for (let k = 0; k < P.length; k++) {
           const r = S.nodes[k].getBoundingClientRect();
           if (r.bottom < vr.top - vr.height || r.top > vr.bottom + vr.height) continue;
-          if (!S.nodes[k].classList.contains('split-stub') && !S.dirty.has(P[k])) continue;
+          if (S.nodes[k].classList.contains('split-stub') || S.dirty.has(P[k])) want.push(k);
+        }
+        let n = 0;
+        for (const k of want) {
+          if (n && !room()) { idle(); break; }
           const c = strip(P[k].cloneNode(true));
           S.nodes[k].replaceWith(c); S.nodes[k] = c; S.dirty.delete(P[k]);
-          // (a few pages a turn: more wait for the next idle time)
-          if (++n >= 4) { soon(); break; }
+          n++;
         }
         view.scrollTop = top; view.scrollLeft = left;
       };
-      const soon = () => {
+      const idle = () => {
         if (S.timer) return;
-        S.timer = typeof requestIdleCallback === 'function' ? requestIdleCallback(refresh, { timeout: 400 }) : setTimeout(refresh, 150);
+        S.timer = typeof requestIdleCallback === 'function' ? requestIdleCallback(refresh, { timeout: 3000 }) : setTimeout(refresh, 150);
       };
-      S.cancel = () => { if (S.timer) (typeof cancelIdleCallback === 'function' ? cancelIdleCallback : clearTimeout)(S.timer); S.timer = 0; };
+      // (after a change, a quiet moment first: keystrokes come in bursts, and the copy waits for its end)
+      const soon = () => { clearTimeout(S.quiet); S.quiet = setTimeout(idle, 400); };
+      S.cancel = () => { clearTimeout(S.quiet); if (S.timer) (typeof cancelIdleCallback === 'function' ? cancelIdleCallback : clearTimeout)(S.timer); S.timer = 0; };
       const mo = new MutationObserver((recs) => {
         for (const r of recs) {
           const t = r.target.nodeType === 1 ? r.target : r.target.parentElement;
-          if (t === this.root || t === this.root.parentNode) { if (r.type === 'attributes') S.whole = true; continue; }
-          const pg = t && t.closest && t.closest('.page');
-          if (pg && pg.parentNode === this.root) S.dirty.add(pg);
+          if (t === this.root || t === this.root.parentNode) { if (r.type === 'attributes') S.attrs = true; continue; }
+          let pg = t;
+          while (pg && pg.parentNode !== this.root) pg = pg.parentNode;
+          if (pg && pg.classList && pg.classList.contains('page')) S.dirty.add(pg);
         }
         soon();
       });
@@ -396,7 +413,7 @@ Object.assign(methods, {
       mo.observe(this.root.parentNode, { attributes: true, attributeFilter: ['class', 'style'] });
       S.onResize = () => { S.whole = true; soon(); };
       addEventListener('resize', S.onResize);
-      view.addEventListener('scroll', soon, { passive: true });
+      view.addEventListener('scroll', idle, { passive: true });
       view.addEventListener('click', (e) => {
         const sp = e.target.closest && e.target.closest('[data-g]'), info = sp && segOfSpan(sp);
         if (!info) return;
