@@ -386,7 +386,13 @@ def first_comment(page, w):
     touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
     load_doc(page, DOC)
     select_text(page, 'bold word')
-    run_cmd(page, 'comment-new')
+    run_cmd(page, 'comment-new'); page.wait_for_timeout(300)
+    TEXT = "document.activeElement.matches('input[type=text], input:not([type]), textarea')"
+    if touch:
+        # (under a finger the box opens with no field focused, so the phone's keyboard does not
+        # cover it; a tap on the name brings it)
+        check(f'on a phone the comment opens with no text field focused ({w})', not page.evaluate(TEXT))
+        page.locator('.pop-comment .share-name').tap(); page.wait_for_timeout(150)
     first = page.evaluate("document.activeElement.getAttribute('aria-label')")
     check(f'the first comment\'s box starts at the name ({w})', first == 'Your name, shown with your comments and changes', first)
     page.locator('.pop-comment textarea').fill('Is this the right word?')
@@ -398,7 +404,10 @@ def first_comment(page, w):
     check(f'Enter in the name box goes on to the comment ({w})', page.evaluate("document.activeElement.tagName") == 'TEXTAREA' and not page.evaluate("document.querySelector('.cm-hint').checkVisibility()"))
     page.keyboard.press('Control+Enter'); page.wait_for_timeout(300)
     check(f'Ctrl+Enter sends it into the source ({w})', 'Ana' in src(page) and 'Is this the right word?' in src(page), src(page)[-200:])
-    run_cmd(page, 'comment-new')
+    run_cmd(page, 'comment-new'); page.wait_for_timeout(300)
+    if touch:
+        check(f'on a phone the next one too opens with no text field focused ({w})', not page.evaluate(TEXT))
+        page.locator('.pop-comment textarea').tap(); page.wait_for_timeout(150)
     check(f'the next comment starts at the comment, the name known ({w})', page.evaluate("document.activeElement.tagName") == 'TEXTAREA' and page.locator('.pop-comment .share-name').count() == 0)
     page.keyboard.press('Escape')
 
@@ -846,6 +855,21 @@ def focus_rules(page, w):
     a = page.evaluate(where)
     check(f'Check accessibility from the ribbon takes the focus into its dialog ({w})', a[0] and (not touch or a[1] != 'INPUT'), a)
     page.keyboard.press('Escape'); page.wait_for_timeout(200)
+    if touch:
+        # (under a finger no dialog opens into a text field, not even one it focuses itself: the
+        # phone's keyboard came up over it; the review of PR 90 found seven)
+        typing = {}
+        for cmd in ('page-setup', 'insert-table-dialog', 'properties', 'share', 'bookmark', 'replace', 'comment-new'):
+            if cmd == 'comment-new':
+                select_text(page, 'bold word')
+            else:
+                click_text(page, 'Second paragraph', 3)
+            run_cmd(page, cmd); page.wait_for_timeout(500)
+            f = page.evaluate("(() => { const a = document.activeElement; return [!!a.closest('.pop, #fr'), a.matches('input:not([type]), input[type=text], input[type=search], input[type=number], textarea, [contenteditable]'), a.getAttribute('aria-label') || a.textContent.trim().slice(0, 20)]; })()")
+            if not f[0] or f[1]:
+                typing[cmd] = f
+            page.keyboard.press('Escape'); page.wait_for_timeout(150)
+        check(f'seven dialogs open on a phone with the focus in them, never in a text field ({w})', not typing, typing)
     if not touch:
         page.click('#bar .srch input'); page.keyboard.type('AutoCorrect Options'); page.wait_for_timeout(300); page.keyboard.press('Enter'); page.wait_for_timeout(400)
         a = page.evaluate(where)
@@ -945,6 +969,15 @@ def tap_alternatives(page, w):
         page.keyboard.press('Escape'); page.wait_for_timeout(200)
         click_text(page, 'Second paragraph', 3)
     ok = got.get('left') and got['left'][0] == 'Paragraph' and got.get('first') and got['first'][0] == 'Paragraph' and got.get('ml') and got['ml'][0].startswith('Page') and 'double click' in got['left'][1] and 'Page setup' in got['ml'][1]
+    # (the margin's grey part, 40 px out of the text, and 5 px out beside the indent markers: Page
+    # setup, as Word's ruler; it did nothing there, and Paragraph beside the markers)
+    for dx in (40, 5):
+        xy = page.evaluate("(dx) => { const R = window.rikuy.ru, S = R.S, t = R.track.getBoundingClientRect(), h = R.hr.getBoundingClientRect(); return [t.left + S.ml * S.px - dx, h.top + h.height / 2]; }", dx)
+        page.mouse.dblclick(xy[0], xy[1]); page.wait_for_timeout(400)
+        got['margin %d px' % dx] = page.evaluate("(document.querySelector('body > .pop #pop-title') || {}).textContent || ''")
+        page.keyboard.press('Escape'); page.wait_for_timeout(200)
+        click_text(page, 'Second paragraph', 3)
+    ok = ok and all(got['margin %d px' % dx].startswith('Page') for dx in (40, 5))
     check(f'a ruler marker double clicked opens its dialog: an indent the Paragraph dialog, a margin Page setup, as its tooltip says ({w})', ok, got)
     # (Picture Format's Height and Width are number fields, as Word's; Crop's arrow has Crop by Numbers)
     import json
@@ -990,39 +1023,64 @@ SMALL = {'a', 'an', 'and', 'as', 'at', 'by', 'for', 'in', 'of', 'on', 'or', 'the
 
 
 def menus(page, w):
-    """The right click menu as UI-PRINCIPLES.md C9, C11, C13 and P2 ask: 8 px corners, items with
-    4 px; every item's words capitalised (but the small ones inside), four at most, "…" on exactly
-    the items that open a dialog (each pressed to see); the shortcuts in one column at the right;
-    the keys' ring an outline."""
+    """The right click menu as UI-PRINCIPLES.md C9, C11, C13 and P2 and the review of PR 90 ask: 8 px
+    corners, items with 4 px; every item's words capitalised (but the small ones inside), four at
+    most, the start of its accessible name, "…" on exactly the items that open a dialog and › on
+    those that open a menu (each pressed to see); Show LaTeX, Show in Source and Next Tab Stop at the
+    end under one line, a heading's expand and collapse in one Expand/Collapse; the shortcuts in one
+    column at the right; the keys' ring an outline, none on a menu a press opened."""
     seen = {}
     for ctx, word in (('text', 'Second paragraph'), ('heading', 'Opening')):
         load_doc(page, MENU_DOC); click_text(page, word, 2)
         page.keyboard.press('Shift+F10'); page.wait_for_timeout(300)
         m = page.evaluate("""(() => { const m = document.querySelector('.pop-ctx'); if (!m) return null; const R = (e) => e.getBoundingClientRect(); const a = document.activeElement;
           return { radius: getComputedStyle(m).borderTopLeftRadius, ring: [a.matches('.pop-ctx [role^=menuitem]'), getComputedStyle(a).outlineStyle],
-            items: [...m.querySelectorAll('[role^=menuitem]:not(.mi-hint)')].map((i) => [i.getAttribute('aria-label'), (i.querySelector('.mi-n') || {}).textContent || '', i.getAttribute('aria-disabled') === 'true', getComputedStyle(i).borderTopLeftRadius]),
+            items: [...m.querySelectorAll('[role^=menuitem]:not(.mi-hint)')].map((i) => [i.getAttribute('aria-label'), (i.querySelector('.mi-n') || {}).textContent || '', i.getAttribute('aria-disabled') === 'true', getComputedStyle(i).borderTopLeftRadius, i.getAttribute('aria-haspopup') === 'menu' && !!i.querySelector('.mi-sub')]),
+            groups: [...m.children].reduce((g, e) => { if (e.getAttribute('role') === 'separator') g.push([]); else if (!e.classList.contains('mi-hint')) g[g.length - 1].push(e.getAttribute('aria-label')); return g; }, [[]]).filter((x) => x.length),
             keys: [...m.querySelectorAll('.mi-k')].map((k) => { const n = k.parentElement.querySelector('.mi-n'), r = document.createRange(); r.selectNodeContents(n); return [Math.round(R(k).right), Math.round(r.getBoundingClientRect().right), Math.round(R(k).left)]; }) }; })()""")
         page.keyboard.press('Escape'); page.wait_for_timeout(100)
         seen[ctx] = m
         dlg = {}
-        for name, label, off, _ in (m or {}).get('items', []):
-            if off or name in ('Paste', 'Cut', 'Copy', 'Synonyms', 'Ask Claude'):
+        sub = {}
+        for name, label, off, _, popup in (m or {}).get('items', []):
+            if off or name in ('Paste', 'Cut', 'Copy', 'Ask Claude'):
                 continue
             load_doc(page, MENU_DOC); click_text(page, word, 2)
             page.keyboard.press('Shift+F10'); page.wait_for_timeout(250)
             page.locator('.pop-ctx [role^=menuitem]').and_(page.get_by_label(name, exact=True)).first.click(timeout=3000); page.wait_for_timeout(300)
             dlg[label] = page.evaluate("!!document.querySelector('body > .pop.pop-dlg') || !!(document.getElementById('fr') && document.getElementById('fr').offsetParent)")
+            sub[label] = [popup, page.evaluate("!!document.querySelector('body > .pop[role=menu]')")]
             page.keyboard.press('Escape'); page.wait_for_timeout(100)
         wrong = {k: v for k, v in dlg.items() if k.endswith('…') != v}
         check(f'"…" on exactly the items that open a dialog, in the {ctx} menu ({w})', dlg and not wrong, wrong or dlg)
+        wrong = {k: v for k, v in sub.items() if v[0] != v[1]}
+        check(f'› and aria-haspopup on exactly the items that open a menu, in the {ctx} menu ({w})', not wrong and any(v[1] for v in sub.values()), wrong or sub)
+        # (the menu ends with where the LaTeX is and Next Tab Stop, under one line; a heading's
+        # expand and collapse in one item, Expand/Collapse, as Word's)
+        tail = m['groups'][-1] if m and m['groups'] else []
+        names = [x[0] for x in m['items']] if m else []
+        check(f'the {ctx} menu ends with Show LaTeX, Show in Source and Next Tab Stop under one line{", Expand/Collapse one item" if ctx == "heading" else ""} ({w})',
+              tail and set(tail) <= {'Show LaTeX', 'Show in source', 'Next tab stop'} and 'Show LaTeX' in tail and (ctx != 'heading' or ('Expand/Collapse' in names and not any(n in names for n in ('Collapse heading', 'Expand heading', 'Expand all headings', 'Collapse all headings')))), m and m['groups'])
     bad = []
     for ctx, m in seen.items():
-        for name, label, off, rad in (m or {}).get('items', []):
+        for name, label, off, rad, _ in (m or {}).get('items', []):
             words = label.rstrip('…').split()
-            if len(words) > 4 or any(not (x[0].isupper() or not x[0].isalpha() or (i and x in SMALL)) for i, x in enumerate(words)) or rad != '4px':
-                bad.append((ctx, label, rad))
-    check(f'every item\'s words capitalised, four at most, 4 px corners ({w})', seen and all(seen.values()) and not bad, bad)
+            # (four words at most, but for a command whose own name is longer: its name is its
+            # accessible name, and the words shown must be in it, WCAG 2.5.3)
+            inname = name.lower().startswith(label.rstrip('…').lower())
+            if (len(words) > 4 and label.lower() != name.lower()) or not inname or any(not (x[0].isupper() or not x[0].isalpha() or (i and x in SMALL)) for i, x in enumerate(words)) or rad != '4px':
+                bad.append((ctx, label, name, rad))
+    check(f'every item\'s words capitalised, four at most, the start of its accessible name, 4 px corners ({w})', seen and all(seen.values()) and not bad, bad)
     check(f'the menus have 8 px corners and the keys\' ring is an outline ({w})', all(m['radius'] == '8px' and m['ring'][0] and m['ring'][1] != 'none' for m in seen.values()), {k: (m['radius'], m['ring']) for k, m in seen.items()})
+    # (a menu opened by a press: no ring until a key moves in it)
+    load_doc(page, MENU_DOC); click_text(page, 'Second paragraph', 3)
+    r = page.evaluate("(() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('Second')); const b = s.getBoundingClientRect(); return [b.left + 10, b.top + b.height / 2]; })()")
+    page.mouse.click(r[0], r[1], button='right'); page.wait_for_timeout(300)
+    mr = page.evaluate("(() => { const a = document.activeElement; return [a.matches('.pop-ctx [role^=menuitem]'), a.matches(':focus-visible'), getComputedStyle(a).outlineStyle]; })()")
+    page.keyboard.press('ArrowDown'); page.wait_for_timeout(100)
+    kr = page.evaluate("document.activeElement.matches(':focus-visible')")
+    page.keyboard.press('Escape')
+    check(f'a menu opened by a right click shows no ring on its first item; a key brings it ({w})', mr[0] and not mr[1] and mr[2] == 'none' and kr, (mr, kr))
     check(f'the shortcuts in one column at the right, after the names ({w})', all(m['keys'] and max(x[0] for x in m['keys']) - min(x[0] for x in m['keys']) <= 1 and all(x[2] >= x[1] + 8 for x in m['keys']) for m in seen.values()), {k: m['keys'] for k, m in seen.items()})
 
 
@@ -1116,16 +1174,21 @@ TARGETS = 'button, input:not([type=hidden]):not(.nf *), select:not(.nf *), .nf, 
 
 def target_gaps(page, w):
     """8 px between any two targets under a finger (UI-PRINCIPLES.md T3, Google's rule): the status
-    bar, and the Paragraph, Insert Table, Share and Word Count dialogs (the views, a dialog's tabs
-    and the Paragraph dialog's fields were 2 px apart)."""
+    bar, and the Paragraph, Insert Table, Share, Word Count, Page setup, Font, AutoCorrect Options,
+    Symbols, Find and Replace and Bookmark dialogs (the views, a dialog's tabs and the Paragraph
+    dialog's fields were 2 px apart; the review of PR 90 found 3 to 6 px in the last five)."""
     load_doc(page, DOC)
     bad = {'status bar': page.evaluate(TARGET_GAPS, '#status :is(%s)' % TARGETS)}
-    for cmd in ('paragraph-settings', 'insert-table-dialog', 'share', 'word-count', 'page-setup'):
+    for cmd in ('paragraph-settings', 'insert-table-dialog', 'share', 'word-count', 'page-setup', 'font-dialog', 'autocorrect-options', 'more-symbols', 'replace', 'bookmark'):
+        click_text(page, 'Second paragraph', 3)
         run_cmd(page, cmd); page.wait_for_timeout(300)
-        bad[cmd] = page.evaluate(TARGET_GAPS, 'body > .pop :is(%s)' % TARGETS)
+        root = '#fr' if cmd == 'replace' else 'body > .pop'
+        bad[cmd] = page.evaluate(TARGET_GAPS, root + ' :is(%s)' % TARGETS)
+        if not page.evaluate("(r) => !!document.querySelector(r) && document.querySelector(r).checkVisibility()", root):
+            bad[cmd] = 'did not open'
         page.keyboard.press('Escape'); page.wait_for_timeout(100)
     bad = {k: v for k, v in bad.items() if v}
-    check(f'every two targets 8 px apart in the status bar and five dialogs ({w})', not bad, bad)
+    check(f'every two targets 8 px apart in the status bar and ten dialogs ({w})', not bad and len(bad) == 0, bad)
 
 
 
@@ -1139,7 +1202,8 @@ def tooltips(page, w):
     tips = page.evaluate("""(() => { const reg = window.rikuy.cmds.commands(), byEl = new Map(reg.filter((c) => c.static && c.el).map((c) => [c.el, c]));
       return [...document.querySelectorAll('#bar button, #bar input, #status button, #status input, #rf-home button')].filter((e) => e.checkVisibility() && !['st-lang', 'st-track', 'st-words'].includes(e.id)).map((e) => { const c = byEl.get(e.id);
         return [e.id || e.className, c ? c.name : e.getAttribute('aria-label'), e.title, c ? !!((c.keys || []).length + (c.keysElsewhere || []).length) : false]; }); })()""")
-    bad = [t for t in tips if not t[2].lower().startswith((t[1] or '').lower()) or len(t[2]) <= len(t[1] or '') + 3 or (t[3] and '(' not in t[2])]
+    # (its keys right after the name, then a colon and the sentence: "Open (Ctrl+O): open …")
+    bad = [t for t in tips if not t[2].lower().startswith((t[1] or '').lower()) or len(t[2]) <= len(t[1] or '') + 3 or (t[3] and not t[2].startswith(t[1] + ' (')) or ': ' not in t[2]]
     check(f'every tooltip of the bar, the status bar and File\'s Home: its name, its keys, what it does ({w})', tips and not bad and not page.evaluate("!!document.querySelector('[role=tooltip]')"), bad)
     page.keyboard.press('Escape')
 
