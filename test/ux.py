@@ -638,7 +638,105 @@ def place_kept(page, w):
         run_cmd(page, 'web-layout')
 
 
-PARTS = {'place_kept': (place_kept, [(1366, False), (390, False)]),
+def verify_lows(page, w):
+    """The verification's lows: the top bar's zoom says the status bar's percentage (Word shows the
+    percentage; Fit width is what a press does); Help narrowed below 1000 px becomes a sheet; a
+    window that opened under 700 px and widens leaves Mobile View, and goes back to it narrowed
+    again; File's Download row stays in its column."""
+    g = page.evaluate("[document.getElementById('zoomv').textContent, document.getElementById('st-zoomv').textContent]")
+    check(f'the top bar\'s zoom and the status bar\'s say the same percentage ({w})', g[0] == g[1] and g[0].endswith('%'), g)
+    page.locator('#b-help').click(); page.wait_for_timeout(400)
+    page.set_viewport_size({'width': 900, 'height': 800}); page.wait_for_timeout(600)
+    h = page.evaluate("(() => { const p = document.getElementById('helppane'), r = p.getBoundingClientRect(), d = document.getElementById('desk'); return [getComputedStyle(p).position, Math.round(r.left), Math.round(r.right), innerWidth, d.clientWidth]; })()")
+    check(f'Help narrowed below 1000 px is a sheet at the corner, the page not squeezed ({w})', h[0] == 'fixed' and h[1] >= 0 and h[2] <= h[3] and h[4] > 700, h)
+    page.evaluate('window.rikuy.closeHelpPane()')
+    page.set_viewport_size({'width': 1366, 'height': 800}); page.wait_for_timeout(500)
+    open_tab(page, 'File'); page.wait_for_timeout(300)
+    d = page.evaluate("(() => { const c = document.querySelector('#rp-file > .rb-tb').getBoundingClientRect(), b = [...document.querySelectorAll('#rp-file .rb-dl button')].filter((x) => x.offsetParent); return [Math.round(c.right), Math.max(...b.map((x) => Math.round(x.getBoundingClientRect().right)))]; })()")
+    check(f'File\'s Download row stays inside its column ({w})', d[1] <= d[0], d)
+    page.keyboard.press('Escape')
+
+
+def widen(p):
+    """A desktop window that opened under 700 px (so in Mobile View) and widens takes a wide
+    window's Print Layout, where no Mobile View toggle is; narrowed again, Mobile View."""
+    browser, page, errors = open_page(p, width=600, height=800, layout='mobile')
+    web = lambda: page.evaluate("[document.body.classList.contains('pg-web'), document.getElementById('sv-mobile').checkVisibility()]")
+    a = web()
+    page.set_viewport_size({'width': 1366, 'height': 800}); page.wait_for_timeout(500); b = web()
+    page.set_viewport_size({'width': 600, 'height': 800}); page.wait_for_timeout(500); c = web()
+    check('a window opened at 600 px is in Mobile View, its toggle shown; widened to 1366 px, Print Layout and no toggle; narrowed, Mobile View again', a == [True, True] and b == [False, False] and c == [True, True], (a, b, c))
+    check('no console errors (widen)', not errors, errors[:3])
+    browser.close()
+
+
+KIND = """(sel) => { const P = document.querySelector(sel); if (!P) return null; const vis = (e) => e.checkVisibility() && e.getBoundingClientRect().height > 0;
+  const h = (q) => [...new Set([...P.querySelectorAll(q)].filter(vis).map((e) => Math.round(e.getBoundingClientRect().height)))].sort();
+  const t = P.querySelector('.pop-h, .stp-h, .fr-head, .help-pane-h'), x = P.querySelector('.pop-x'), cs = t ? getComputedStyle(t) : null;
+  return { btn: h('.btn'), field: h('input[type=text], input[type=number], input:not([type]), select'), radius: getComputedStyle(P).borderTopLeftRadius,
+           title: cs ? [cs.fontSize, cs.fontWeight, cs.lineHeight] : null, close: x && vis(x) ? [Math.round(x.getBoundingClientRect().width), Math.round(x.getBoundingClientRect().height)] : null }; }"""
+
+
+def consistency(page, w):
+    """One size and shape per kind in the dialogs, panes and popovers (docs/handoff/UI-PRINCIPLES.md
+    C1, C5, C9, C13, T1): buttons and fields 32 px tall (44 under a finger), surfaces with 8 px
+    corners, one title style, the close button 44 px under a finger, a ring on keyboard focus; a
+    phone's top bar 44 px."""
+    touch = page.evaluate("matchMedia('(pointer: coarse)').matches")
+    H = 44 if touch else 32
+    load_doc(page, DOC)
+    st = page.evaluate("""(() => { const v = [...document.querySelectorAll('#status button, #status input, #status select')].filter((e) => e.offsetParent);
+      const r = (e) => Math.round(e.getBoundingClientRect().height);
+      return { words: [...new Set(v.filter((e) => e.matches('.linkish')).map((e) => getComputedStyle(e).fontSize))],
+               views: [...new Set(v.filter((e) => e.closest('.st-views')).map((e) => r(e) + ' ' + getComputedStyle(e).borderTopLeftRadius))],
+               small: v.filter((e) => r(e) < 44 || e.getBoundingClientRect().width < 44).map((e) => e.id) }; })()""")
+    check(f'the status bar\'s words one size, its views one height with 4 px corners ({w})', st['words'] == ['12px'] and len(st['views']) == 1 and st['views'][0].endswith(' 4px') and (not touch or not st['small']), st)
+    if not touch:
+        page.get_by_role('tab', name='File').click(); page.wait_for_timeout(400)
+        fv = page.evaluate("""(() => { const v = (q) => [...document.querySelectorAll(q)].filter((e) => e.offsetParent);
+          return { col: [...new Set(v('#rp-file .rb-tb .btn').map((e) => Math.round(e.getBoundingClientRect().height) + ' ' + getComputedStyle(e).borderTopLeftRadius))],
+                   tiles: [...new Set(v('.rf-tile').map((e) => Math.round(e.getBoundingClientRect().height) + ' ' + getComputedStyle(e).borderTopLeftRadius))] }; })()""")
+        check(f'File: its column\'s commands 32 px with 4 px corners, its tiles one height ({w})', fv['col'] == ['32 4px'] and len(fv['tiles']) == 1 and fv['tiles'][0].endswith(' 4px'), fv)
+        page.keyboard.press('Escape'); page.wait_for_timeout(300)
+    seen = {}
+    for cmd in ('font-dialog', 'paragraph-settings', 'page-setup', 'insert-table-dialog', 'share', 'properties'):
+        click_text(page, 'Second paragraph', 3)
+        run_cmd(page, cmd); page.wait_for_timeout(300)
+        seen[cmd] = page.evaluate(KIND, 'body > .pop')
+        if cmd == 'font-dialog' and not touch:
+            page.keyboard.press('Tab'); page.wait_for_timeout(80)
+            ring = page.evaluate("(() => { const a = document.activeElement, c = getComputedStyle(a); return [a.tagName, c.outlineStyle, c.outlineWidth]; })()")
+            check(f'a control reached by Tab in a dialog has its ring as an outline, 2 px ({w})', ring[1] != 'none' and float(ring[2][:-2]) >= 2, ring)
+        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    bad = {k: v for k, v in seen.items() if not v or not v['btn'] or any(abs(x - H) > 1 for x in v['btn']) or v['radius'] != '8px'}
+    check(f'every dialog\'s buttons {H} px tall, its corners 8 px ({w})', not bad and len(seen) == 6, bad or seen)
+    badf = {k: v['field'] for k, v in seen.items() if v and v['field'] and min(v['field']) < H - 1}
+    check(f'and its fields at least {H} px ({w})', not badf, badf)
+    titles = {tuple(v['title']) for v in seen.values() if v and v['title']}
+    check(f'one title style for every dialog: 14 px, semibold ({w})', titles == {('14px', '600', '20px')}, titles)
+    if touch:
+        closes = {k: v['close'] for k, v in seen.items() if v and v['close'] and min(v['close']) < 44}
+        check(f'each dialog\'s Close 44 px under a finger ({w})', not closes, closes)
+        bar = page.evaluate("[...document.querySelectorAll('#bar button, #bar input')].filter((e) => e.offsetParent).map((e) => [e.id, Math.round(e.getBoundingClientRect().width), Math.round(e.getBoundingClientRect().height)])")
+        check(f'the top bar\'s buttons 44 px under a finger, all on the screen ({w})', all(x[1] >= 44 and x[2] >= 44 for x in bar) and page.evaluate('document.documentElement.scrollWidth') <= page.viewport_size['width'], bar)
+        load_doc(page, DOC); select_text(page, 'bold word'); run_cmd(page, 'comment-new')
+        cb = page.evaluate("Math.round(document.querySelector('.pop-comment .btn:not(.ghost)').getBoundingClientRect().height)")
+        check(f'the comment\'s button 44 px under a finger ({w})', cb >= 44, cb)
+        page.keyboard.press('Escape')
+    else:
+        click_text(page, 'Second paragraph', 3)
+        run_cmd(page, 'styles-pane'); page.wait_for_timeout(300)
+        sp = page.evaluate(KIND, '#stylespane')
+        run_cmd(page, 'styles-pane')
+        page.keyboard.press('Control+h'); page.wait_for_timeout(300)
+        fr = page.evaluate(KIND, '#fr')
+        page.keyboard.press('Escape')
+        check(f'the Styles pane and Find and Replace: buttons 32 px, the same title style ({w})', sp['btn'] and fr['btn'] and all(abs(x - 32) <= 1 for x in sp['btn'] + fr['btn']) and tuple(sp['title']) == tuple(fr['title']) == ('14px', '600', '20px') and fr['radius'] == '8px', (sp, fr))
+
+
+PARTS = {'consistency': (consistency, [(1366, False), (1920, True), (390, False), (360, True)]),
+         'verify_lows': (verify_lows, [(1366, False), (1920, True)]), 'widen': (widen, None),
+         'place_kept': (place_kept, [(1366, False), (390, False)]),
          'lows': (lows, [(390, False), (768, False), (1024, True)]),
          'pane_room': (pane_room, [(1024, False), (1920, True)]),
          'caret_back': (caret_back, [(1366, False), (1100, True)]),
