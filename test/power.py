@@ -381,7 +381,7 @@ def run():
             if only and f.__name__ not in only: continue
             try: f(page)
             except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:300])
-            page.keyboard.press('Escape'); page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
+            page.evaluate('window.rikuy.closePop && window.rikuy.closePop(true)')
         check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
         browser.close()
     bad = [r for r in results if not r[1]]

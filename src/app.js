@@ -1188,6 +1188,7 @@ class App {
     const first = (e) => { if (this.typeQ != null && !(e.type === 'keydown' && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && this.typeQueueable(e.key))) this.typeFlush(); };
     document.addEventListener('keydown', first, true);
     document.addEventListener('pointerdown', first, true);
+    R.addEventListener('pointerdown', () => { this.tabOut = 0; }, true);
     R.addEventListener('blur', first);
     R.addEventListener('compositionstart', first, true);
     R.addEventListener('beforeinput', (e) => this.onBeforeInput(e));
@@ -1378,8 +1379,9 @@ class App {
       if (F && (e.key === 'Escape' || (c && c.collapsed && c.a >= (F.ie != null ? F.ie : F.e - 1)))) { e.preventDefault(); this.leaveFootnote(F); return; }
     }
     // (Esc, then Tab, leaves the page, as it leaves the source pane: the keyboard's way out)
-    const tabOut = this.tabOut;
-    if (e.key !== 'Shift') this.tabOut = false;
+    // (Esc then Tab as one gesture: an Esc long before, a press since, and Tab stays on the page)
+    const tabOut = !!this.tabOut && performance.now() - this.tabOut < 2000;
+    if (e.key !== 'Shift') this.tabOut = 0;
     if (e.key === 'Tab') {
       const n = getSelection().anchorNode;
       const el = n && (n.nodeType === 1 ? n : n.parentElement);
@@ -1393,7 +1395,7 @@ class App {
         e.preventDefault(); this.tabOnPage(e.shiftKey); return;
       }
     }
-    if (e.key === 'Escape') { this.disarm(); this.tabOut = true; }
+    if (e.key === 'Escape') { this.disarm(); this.tabOut = performance.now(); }
     // Word's Shift+Enter: a line break inside the paragraph (\\), not a new paragraph
     if (e.key === 'Enter' && e.shiftKey && !mod && !e.altKey && !this.armed) { e.preventDefault(); this.enter(true); return; }
     // Enter on a formula, a citation or a reference selected alone (Shift and an arrow over it)
