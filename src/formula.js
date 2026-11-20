@@ -235,9 +235,10 @@ export function formatNumber(v, fmt) {
   if (pct) x *= 100;
   let body;
   if (!pat) {
-    // (Word: as many places as the value has, up to 15 significant digits; no separators, no exponent)
-    const r = roundTo(x, 10);
-    body = r >= 1e15 ? r.toLocaleString('en-US', { useGrouping: false, maximumSignificantDigits: 15 }) : plain(r, 10).replace(/\.?0+$/, '') || '0';
+    // (Word with no number format: the value to two places at most, its trailing zeros dropped, so
+    // 10/3 is 3.33 and 2.5 is 2.5, not 3.3333333333; no separators, no exponent)
+    const r = roundTo(x, 2);
+    body = r >= 1e15 ? r.toLocaleString('en-US', { useGrouping: false, maximumSignificantDigits: 15 }) : plain(r, 2).replace(/\.?0+$/, '') || '0';
   } else {
     const dm = /0\.(0+)/.exec(pat);
     const places = dm ? dm[1].length : 0;

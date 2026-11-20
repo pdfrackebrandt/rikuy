@@ -62,7 +62,9 @@ ok('Word\'s number formats, written as LaTeX', () => {
   assert.equal(F.formatNumber(12, '$#,##0.00;($#,##0.00)'), '\\$12.00');
   assert.equal(F.formatNumber(-3, '0'), '$-$3');
   assert.equal(F.formatNumber(-0.001, '0.00'), '0.00');
-  assert.equal(F.formatNumber(10 / 3, ''), '3.3333333333');
+  assert.equal(F.formatNumber(10 / 3, ''), '3.33');
+  assert.equal(F.formatNumber(100 / 3, ''), '33.33');
+  assert.equal(F.formatNumber(2.5, ''), '2.5');
 });
 
 // ---- the table's formula lines, a cell's value ----------------------------------------------------------
@@ -143,7 +145,7 @@ ok('a formula reads its range clamped to the table, any length it stores, and ro
   assert.equal(F.formatNumber(2.675, '#,##0.00'), '2.68');
   assert.equal(F.formatNumber(1.005, '0.00'), '1.01');
   assert.equal(F.formatNumber(1e21, ''), '1000000000000000000000');
-  assert.equal(F.formatNumber(5e-8, ''), '0.00000005');
+  assert.equal(F.formatNumber(5e-8, ''), '0');
   assert.equal(F.formatNumber(1e21, '#,##0'), '1,000,000,000,000,000,000,000');
 });
 
