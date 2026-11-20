@@ -1,7 +1,7 @@
 """Rikuy browser tests: load the built page in Chromium, type on the
 typeset pages, and check the .tex source changes exactly as intended."""
 import json, os, sys, time, re, tempfile
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, Page as _Page, Frame as _Frame
 
 # The build machine keeps Chromium in /opt/pw-browsers. Anywhere else Playwright's own default
 # must stay, or it would miss a browser installed the usual way (`playwright install`). Every
@@ -9,6 +9,8 @@ from playwright.sync_api import sync_playwright
 if os.path.isdir('/opt/pw-browsers'): os.environ.setdefault('PLAYWRIGHT_BROWSERS_PATH', '/opt/pw-browsers')
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import serve
 NM = os.path.join(ROOT, 'node_modules')
 SHOTS = os.environ.get('SHOTS', os.path.join(tempfile.gettempdir(), 'rikuy-shots'))
 os.makedirs(SHOTS, exist_ok=True)
@@ -18,13 +20,40 @@ SKELETON_HEAD = ('<!doctype html><html><head><meta charset=utf8><meta name=viewp
                  'body{margin:0;font:14px system-ui,sans-serif;background:#fafafa}img{max-width:100%}[hidden]{display:none!important}</style></head><body>')
 
 ROUTES = {
-    'https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js': os.path.join(NM, 'katex/dist/katex.min.js'),
+    'https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/katex.min.js': os.path.join(NM, 'katex/dist/katex.min.js'),
     'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.js': os.path.join(NM, 'codemirror/lib/codemirror.js'),
     'https://cdn.jsdelivr.net/npm/codemirror@5.65.16/mode/stex/stex.js': os.path.join(NM, 'codemirror/mode/stex/stex.js'),
     'https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js': os.path.join(NM, 'jszip/dist/jszip.min.js'),
     'https://cdn.jsdelivr.net/npm/mathlive@0.110.0/mathlive.min.js': os.path.join(NM, 'mathlive/mathlive.min.js'),
-    'https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/contrib/mhchem.min.js': os.path.join(NM, 'katex/dist/contrib/mhchem.min.js'),
+    'https://cdn.jsdelivr.net/npm/katex@0.19.1/dist/contrib/mhchem.min.js': os.path.join(NM, 'katex/dist/contrib/mhchem.min.js'),
 }
+
+# The page runs without 'unsafe-eval' (build/app.mjs policy), and Playwright checks a
+# wait_for_function given as an expression by eval() inside the page each time it polls, which
+# that policy refuses. Given as a function, it is compiled once from outside the page and polled
+# without eval: every test that imports this module has its expressions handed over as one.
+_FUNCTION = re.compile(r'^\s*(async\s+)?(function\b|\([^()]*\)\s*=>|[A-Za-z_$][\w$]*\s*=>)')
+for _C in (_Page, _Frame):
+    def _wait(self, expression, *a, _orig=_C.wait_for_function, **k):
+        if isinstance(expression, str) and not _FUNCTION.match(expression):
+            expression = '() => (\n' + expression + '\n)'
+        return _orig(self, expression, *a, **k)
+    _C.wait_for_function = _wait
+
+
+def policy(dist, path, connect=()):
+    """The headers a file of the page gets here: the hosted copy's policy for that path, as
+    dist/_headers gives it, with jsDelivr for rikuy.html's libraries (serve.headers_for). Every
+    test that opens the page runs it, its workers and its live figures under that policy.
+    connect: addresses added to connect-src, for a test's own servers standing in for hosts the
+    hosted copy reaches through its git proxy (test/git.py)."""
+    h = dict(serve.headers_for(dist, path))
+    if connect:
+        k = next((k for k in h if k.lower() == 'content-security-policy'), None)
+        if k and "connect-src " in h[k]:
+            h[k] = re.sub(r"(connect-src [^;]*)", lambda m: m.group(1) + ' ' + ' '.join(connect), h[k], count=1)
+    return h
+
 
 results = []
 def check(name, cond, detail=''):
@@ -33,7 +62,7 @@ def check(name, cond, detail=''):
     return bool(cond)
 
 
-def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, touch=False):
+def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, touch=False, connect=()):
     # touch: a phone's page (a touch screen, a mobile viewport: pointer coarse, no hover; tap())
     browser = p.chromium.launch(args=[a for a in os.environ.get('CHROME_ARGS', '').split() if a])
     ctx = browser.new_context(viewport={'width': width, 'height': height}, color_scheme='dark' if dark else 'light', device_scale_factor=1, has_touch=touch, is_mobile=touch)
@@ -50,10 +79,12 @@ def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, tou
         if url.startswith('https://rikuy.test/'):
             path = url[len('https://rikuy.test/'):].split('?')[0]
             f = os.path.join(dist, path)
+            # (a page file at its address without .html, as Pages serves it: the widget document)
+            if path and not os.path.isfile(f) and os.path.isfile(f + '.html'): f, path = f + '.html', path + '.html'
             if path and os.path.isfile(f):
-                ct = 'text/javascript' if path.endswith(('.js', '.mjs')) else 'application/wasm' if path.endswith('.wasm') else 'application/octet-stream'
-                return route.fulfill(status=200, content_type=ct, body=open(f, 'rb').read())
-            return route.fulfill(status=200, content_type='text/html; charset=utf-8', body=doc)
+                ct = 'text/javascript' if path.endswith(('.js', '.mjs')) else 'application/wasm' if path.endswith('.wasm') else 'text/html; charset=utf-8' if path.endswith('.html') else 'application/octet-stream'
+                return route.fulfill(status=200, content_type=ct, headers=policy(dist, '/' + path, connect), body=open(f, 'rb').read())
+            return route.fulfill(status=200, content_type='text/html; charset=utf-8', headers=policy(dist, '/', connect), body=doc)
         if url.startswith('http://127.0.0.1:'):
             return route.continue_()
         if url in ROUTES:
@@ -680,9 +711,11 @@ def first_visit(p):
         def serve(route):
             url = route.request.url
             if url in ROUTES: return route.fulfill(status=200, content_type='application/javascript', headers={'Access-Control-Allow-Origin': '*'}, body=open(ROUTES[url], 'rb').read())
-            if url == 'https://rikuy.test/': return route.fulfill(status=200, content_type='text/html; charset=utf-8', body=doc)
-            f = os.path.join(dist, url[len('https://rikuy.test/'):].split('?')[0]) if url.startswith('https://rikuy.test/') else ''
-            return route.fulfill(status=200, content_type='text/javascript', body=open(f, 'rb').read()) if f and os.path.isfile(f) else route.abort()
+            if url == 'https://rikuy.test/': return route.fulfill(status=200, content_type='text/html; charset=utf-8', headers=policy(dist, '/'), body=doc)
+            rel = url[len('https://rikuy.test/'):].split('?')[0] if url.startswith('https://rikuy.test/') else ''
+            if rel and not os.path.isfile(os.path.join(dist, rel)) and os.path.isfile(os.path.join(dist, rel + '.html')): rel += '.html'
+            f = os.path.join(dist, rel) if rel else ''
+            return route.fulfill(status=200, content_type='text/html; charset=utf-8' if rel.endswith('.html') else 'text/javascript', headers=policy(dist, '/' + rel), body=open(f, 'rb').read()) if f and os.path.isfile(f) else route.abort()
         on = 'document.body.classList.contains("src-on")'
         ctx = browser.new_context(viewport={'width': 1400, 'height': 900}); ctx.route('**/*', serve)
         page = visit(ctx)

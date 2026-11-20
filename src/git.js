@@ -171,7 +171,10 @@ export async function setRemote(dir, url) {
 // panel shows) and the proxy ('' for none), and the token answers only for o.remote's host: a
 // call that does not say which remote its token is for sends none. o.onAccepted hears when the
 // remote asked for the token and took it.
-const net = (o) => ({ fs, http, corsProxy: o.corsProxy || '', onAuth: o.token ? (url) => authFor(url, o) : undefined, onAuthSuccess: o.onAccepted ? () => { o.onAccepted(); } : undefined });
+// (to the site's own proxy, /git, the mark it asks of the page's git client, src/gitproxy.js; to
+// any other address none: a header of ours would make another host's CORS refuse the request)
+const ownProxy = (p) => { try { return !!p && new URL(p, location.href).origin === location.origin; } catch (e) { return false; } };
+const net = (o) => ({ fs, http, corsProxy: o.corsProxy || '', headers: ownProxy(o.corsProxy) ? { 'X-Rikuy-Git': '1' } : undefined, onAuth: o.token ? (url) => authFor(url, o) : undefined, onAuthSuccess: o.onAccepted ? () => { o.onAccepted(); } : undefined });
 // The address a call uses, in the form the browser will request (canonicalRemote, src/gitauth.js):
 // the token is matched against that form, so it must be the one requested.
 async function target(dir, o) {
