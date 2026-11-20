@@ -24,7 +24,7 @@ export const LAYOUT = {
     links: ['link L I', 'bookmark L K', 'cross-reference L RF'],
     comments: ['comment-new L L'],
     headfoot: ['header L H', 'footer L O', 'page-number L NU'],
-    text: ['insert-textbox L X', 'quick-parts S Q', 'insert-dropcap S RC', 'form-fields S FF', '|', 'signature-line S SG', 'date-time S D', 'object S J'],
+    text: ['insert-textbox L X', 'quick-parts S Q', 'insert-dropcap S RC', 'form-fields S FF', '|', 'signature-line S W', 'date-time S D', 'object S J'],
     symbols: ['equation-insert L E', 'symbol L U']
   },
   design: {
