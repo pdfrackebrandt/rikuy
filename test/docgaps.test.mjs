@@ -137,6 +137,21 @@ ok('a formula reads its range clamped to the table, any length it stores, and ro
 });
 
 // ---- width, wrapping ----------------------------------------------------------------------------------------
+// (the review of PR 84, M4: p{3cm} and siunitx's S became X, and Off gave l and c back)
+ok('Preferred width stretches only l, c and r columns; p, m, b and S keep theirs; Off gives the bytes back', () => {
+  const W = (spec) => 'x\n\\begin{tabular}{' + spec + '}\na & b & c \\\\\n\\end{tabular}\ny';
+  const cases = [['|>{\\bfseries}c p{3cm}@{}r|', '|>{\\centering\\arraybackslash\\bfseries}X p{3cm}@{}>{\\raggedleft\\arraybackslash}X|'], ['p{3cm}lm{2cm}', 'p{3cm}Xm{2cm}'], ['lS[table-format=2.1]b{1cm}', 'XS[table-format=2.1]b{1cm}']];
+  for (const [spec, want] of cases) {
+    const src = W(spec), r = X.setTableWidth(src, at(src), '0.8\\linewidth'), on = run(src, r);
+    assert.ok(on.includes('\\begin{tabularx}{0.8\\linewidth}{' + want + '}'), on);
+    assert.deepEqual(r.packages, ['tabularx']);
+    assert.equal(run(on, X.setTableWidth(on, at(on), null)), src, spec);
+  }
+  assert.match(X.setTableWidth(W('p{2cm}S'), at(W('p{2cm}S')), '10cm').error, /widths of their own/);
+  // (a tabularx written by hand: Off makes it a tabular of l columns)
+  const hand = 'x\n\\begin{tabularx}{\\linewidth}{lX}\na & b \\\\\n\\end{tabularx}\ny';
+  assert.equal(run(hand, X.setTableWidth(hand, at(hand), null)), 'x\n\\begin{tabular}{ll}\na & b \\\\\n\\end{tabular}\ny');
+});
 ok('Preferred width: a tabular becomes a tabularx that wide, the width changed in place, and back', () => {
   const T = at(PRICES);
   assert.equal(X.tableWidthOf(PRICES, T), null);

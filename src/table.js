@@ -2215,11 +2215,47 @@ function diffEdit(a, b) {
 export const tableWidthOf = (src, T) => (T.width ? T.width.text.trim() : null);
 // Word's Preferred width: w a length (a tabularx that wide, its columns X) or null (the columns
 // fit their contents again). { edits, packages } or { error }
+// (the review of PR 84, M4: AutoFit Window's way turned p{3cm} and siunitx's S into X, losing
+// their widths and decimal alignment, and Off gave l and c back. Now only l, c and r columns
+// stretch, each to an X that says the same alignment, and Off turns exactly those back.)
+const WIDTH_DECL = { c: '\\centering\\arraybackslash', r: '\\raggedleft\\arraybackslash' };
 export function setTableWidth(src, T, w) {
-  if (w == null) return fitOf(src, T) === 'window' ? autofit(src, T, 'contents') : { edits: [] };
+  if (w == null) {
+    if (T.name !== 'tabularx') return fitOf(src, T) === 'window' ? autofit(src, T, 'contents') : { edits: [] };
+    // X back to l, and an X whose >{} begins with \centering\arraybackslash or \raggedleft\arraybackslash
+    // back to c or r with the rest of its >{}; every other column as it is
+    const pieces = specPieces(src, T);
+    if (!pieces) return { edits: [] };
+    T.spec.cols.forEach((col, c) => {
+      if (col.letter !== 'X') return;
+      const pre = preDecl(src, col), post = col.post ? src.slice(col.post.s, col.post.e) : '';
+      let h = 'l', rest = pre;
+      for (const [k, d] of Object.entries(WIDTH_DECL)) if (pre.startsWith(d)) { h = k; rest = pre.slice(d.length); }
+      pieces[2 * c + 1] = (rest ? '>{' + rest + '}' : '') + h + post;
+    });
+    return { edits: dedupe([...specEdit(src, T, pieces), ...renameEnv(src, T, 'tabular', null)]), packages: [] };
+  }
   w = String(w).replace(/[^0-9.a-z\\]/gi, '').slice(0, 40);
   if (!w) return { error: 'A width is a length, such as 12cm or 0.8\\linewidth.' };
   if (T.width) return { edits: T.width.text === w ? [] : [{ s: T.width.s, e: T.width.e, t: w }], packages: [] };
+  if (T.name === 'longtable') return { error: 'A table that repeats its header rows breaks across pages as longtable; it fits its contents. Turn Repeat Header Rows off first.' };
+  if (T.name === 'array') return { error: 'A table in a formula (array) fits its contents.' };
+  if (T.name !== 'tabular') return autofitWidth(src, T, w);
+  const pieces = specPieces(src, T);
+  if (!pieces) return { edits: [], packages: [] };
+  let n = 0;
+  T.spec.cols.forEach((col, c) => {
+    if (!/^[lcr]$/.test(col.letter)) return;
+    const pre = preDecl(src, col), post = col.post ? src.slice(col.post.s, col.post.e) : '';
+    const d = (WIDTH_DECL[col.letter] || '') + pre;
+    pieces[2 * c + 1] = (d ? '>{' + d + '}' : '') + 'X' + post;
+    n++;
+  });
+  if (!n) return { error: 'Its columns have widths of their own (p{…}, S): none can stretch to a width. Set the columns\' widths instead.' };
+  return { edits: dedupe([...specEdit(src, T, pieces), ...renameEnv(src, T, 'tabularx', w)]), packages: ['tabularx'] };
+}
+// tabular* and tabulary: AutoFit Window's way, then the width
+function autofitWidth(src, T, w) {
   const r = autofit(src, T, 'window');
   if (r.error) return r;
   const s2 = apply(src, r.edits), T2 = parseTable(s2, T.s);

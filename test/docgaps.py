@@ -64,7 +64,12 @@ def tables(page):
     # Table Properties: the table's preferred width (a tabularx at a share of the line), and back
     w80 = DOC.replace('\\begin{tabular}{lr}', '\\begin{tabularx}{0.8\\linewidth}{X>{\\raggedleft\\arraybackslash}X}').replace('\\end{tabular}', '\\end{tabularx}').replace(PRE, PRE + '\\usepackage{tabularx}\n')
     roundtrip(page, DOC, sel('apples'), cmd_fn('table-properties', {'width': '0.8\\linewidth'}), lambda s: body(s) == body(w80) and '\\usepackage{tabularx}' in s,
-              off=DOC.replace(PRE, PRE + '\\usepackage{array}\n\\usepackage{tabularx}\n'), label='Table Properties: Preferred width 80 %', off_command=cmd_fn('table-properties', {'width': None}))
+              off=DOC.replace(PRE, PRE + '\\usepackage{tabularx}\n'), label='Table Properties: Preferred width 80 %', off_command=cmd_fn('table-properties', {'width': None}))
+    # (the review of PR 84, M4: a p{3cm} and siunitx's S column keep their kind; Off gives them back)
+    pdoc = WRAP('Before.\n\n\\begin{tabular}{p{3cm}lS[table-format=1.1]}\nName & Kind & Value \\\\\nalpha & a & 1.5 \\\\\n\\end{tabular}\n\nAfter.', '\\usepackage{siunitx}\n')
+    pon = pdoc.replace('\\begin{tabular}{p{3cm}lS[table-format=1.1]}', '\\begin{tabularx}{0.8\\linewidth}{p{3cm}XS[table-format=1.1]}').replace('\\end{tabular}', '\\end{tabularx}').replace('\\usepackage{siunitx}\n', '\\usepackage{siunitx}\n\\usepackage{tabularx}\n')
+    roundtrip(page, pdoc, sel('alpha'), cmd_fn('table-properties', {'width': '0.8\\linewidth'}), pon,
+              off=pdoc.replace('\\usepackage{siunitx}\n', '\\usepackage{siunitx}\n\\usepackage{tabularx}\n'), label='Preferred width keeps p{3cm} and S', off_command=cmd_fn('table-properties', {'width': None}))
     load_doc(page, w80); at_src(page, 'apples')
     drawn = page.evaluate("() => { const t = document.querySelector('#pages table.tab'), pb = t && t.closest('.pb'); return t && pb ? t.getBoundingClientRect().width / pb.getBoundingClientRect().width : null; }")
     check('the page draws the tabularx at 80 % of the line', drawn is not None and abs(drawn - 0.8) < 0.04, drawn)
