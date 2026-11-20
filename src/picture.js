@@ -15,10 +15,12 @@
 import { parseKV, kvEdits } from './preamble.js';
 
 const WRAPS = new Set(['reflectbox', 'scalebox', 'rotatebox', 'fbox', 'resizebox']);
-const FLOATS = /^(figure|table|wrapfigure|wraptable|SCfigure|SCtable|sidewaysfigure|sidewaystable|marginfigure)\*?$/;
-const BOXES = /^(minipage|subfigure|subtable|tabular|tabularx|tabular\*|tabulary|longtable|array|adjustbox|tcolorbox|mdframed|parbox|tikzpicture|columns|column)$/;
+// (one list of the floats and of the boxes no float can come out of, for pictures here and for
+// drawings, charts and SmartArt in objfmt.js: a float in a box stops TeX, "Not in outer par mode")
+export const FLOATS = /^(figure|table|wrapfigure|wraptable|SCfigure|SCtable|sidewaysfigure|sidewaystable|marginfigure|margintable)\*?$/;
+export const BOXES = /^(minipage|subfigure|subtable|tabular|tabularx|tabular\*|tabulary|longtable|xltabular|tabu|array|tblr|longtblr|talltblr|NiceTabular\*?|NiceArray|threeparttable|adjustbox|tcolorbox|mdframed|framed|shaded\*?|snugshade\*?|leftbar|boxedminipage|fminipage|lrbox|parbox|tikzpicture|columns|column)$/;
 // environments wrapfig works in (no list underneath): a language's, line spacing's, landscape, sizes
-const WRAP_OK = /^(document|otherlanguage\*?|hyphenrules|spacing|singlespace|onehalfspace|doublespace|landscape|sloppypar|tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge|RTL|LTR)$/;
+export const WRAP_OK = /^(document|otherlanguage\*?|hyphenrules|spacing|singlespace|onehalfspace|doublespace|landscape|sloppypar|tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge|RTL|LTR)$/;
 const LISTS = /^(itemize|enumerate|description|list|compactitem|compactenum)$/;
 // what may stand beside the picture in a figure or a center and still leave it the picture's own
 const FLOAT_OK = new Set(['centering', 'caption', 'captionof', 'label', 'vspace', 'par', 'small', 'footnotesize', 'noindent', 'medskip', 'smallskip', 'bigskip', 'raggedright', 'raggedleft']);

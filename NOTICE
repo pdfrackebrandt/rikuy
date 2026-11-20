@@ -73,6 +73,9 @@ Built for Rikuy from source (tex/build_tools.sh, tex/native/)
     page; tex/vendor/core/)           Emscripten's libc parts and emmalloc
                                       (MIT or NCSA, LICENSES/third-party/
                                       emscripten.txt)
+  Rikuy's picture tools (C, beside    AGPL-3.0-or-later, Rikuy's own; stb    tex/native/pic/
+    the page; tex/vendor/pic/)        (MIT or public domain, LICENSES/third-  github.com/nothings/stb
+                                      party/stb.txt); Emscripten's parts
       Modified by Rikuy: tex/native/patch_gnuplot.py changes one line of src/complexfun.c (the
       underflow check after cexp()) and gives the build its own version label (patchlevel
       2-rikuy, in src/version.c); tex/build_tools.sh compiles it for WebAssembly. Questions

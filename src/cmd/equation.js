@@ -643,7 +643,8 @@ export const methods = {
   // Alt+=: numbered on an empty line, in the line in text (Word's)
   eqAltEquals(at) {
     if (!at) return false;
-    if (at.c.ghost && !this.ghostRaw() && !tight(at) && !at.sty && at.ctx !== 'tex') this.newDisplayMath();
+    // (on an empty line: the kind Equation Options chose, a numbered equation by default)
+    if (at.c.ghost && !this.ghostRaw() && !tight(at) && !at.sty && at.ctx !== 'tex') this.newDisplayMath((this.prefs && this.prefs.eqNewEnv) || 'equation');
     else this.newMath();
     return true;
   },
