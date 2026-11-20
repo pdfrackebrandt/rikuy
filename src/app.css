@@ -360,6 +360,8 @@ body.rb-collapsed .rb-top { border-bottom: 1px solid var(--line); }
      whatever sm does, so the two never mix into large icons alone. */
   .rb-grp.lay:is(.sm, .nm):not(.folded) { grid-template-columns: repeat(var(--cf), auto); }
   .rb-grp.lay:is(.sm, .nm) > [data-size] { grid-row-end: auto; align-self: center; justify-self: start; }
+  /* (a run of small ones, Previous over Next, starts a column where it would not fit in this one) */
+  .rb-grp.lay:is(.sm, .nm) > [data-sbrk] { grid-row-start: 1; }
   .rb-grp.lay:is(.sm, .nm) > .btn[data-size="L"], .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .btn:first-child,
   .rb-grp.lay:is(.sm, .nm) > .btn[data-size="T"] { flex-direction: row; height: 22px; min-width: 0; padding: 0 6px 0 3px; gap: 4px; border: 1px solid transparent; margin: 0; background: transparent; line-height: normal; }
   .rb-grp.lay:is(.sm, .nm) > .btn[data-size="L"] svg:not(.rb-car), .rb-grp.lay:is(.sm, .nm) > .rb-split[data-size="L"] > .btn:first-child svg, .rb-grp.lay:is(.sm, .nm) > .btn[data-size="T"] svg { width: 16px; height: 16px; }

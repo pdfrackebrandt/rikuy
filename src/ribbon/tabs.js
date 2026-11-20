@@ -56,17 +56,27 @@ function laidOut(tab, group) {
   return out;
 }
 // The columns a laid out group's controls take: a large one (or a tile) a column of its own, small
-// ones three to a column, '|' a new column; folded (the names gone), every one small.
-function columns(items, folded) {
+// ones three to a column, '|' a new column. Small (sm and nm, the large ones small too), a run of
+// Word's small ones stays together, Previous over Next: where it would not fit in what is left of
+// a column it starts the next (smallBreak marks it, for the style sheet).
+const isBig = (l) => l.size === 'L' || l.size === 'T';
+function packed(items, small) {
   let n = 0, row = 3;
-  for (const { l } of items) {
+  const brk = new Set();
+  items.forEach(({ l }, i) => {
     if (l.brk) row = 3;
-    if (!folded && (l.size === 'L' || l.size === 'T')) { n++; row = 3; continue; }
+    if (!small && isBig(l)) { n++; row = 3; return; }
+    if (small && !isBig(l) && (i === 0 || isBig(items[i - 1].l) || l.brk) && row < 3) {
+      let len = 0;
+      for (let j = i; j < items.length && !isBig(items[j].l) && (j === i || !items[j].l.brk); j++) len++;
+      if (row + Math.min(len, 3) > 3) { brk.add(i); row = 3; }
+    }
     if (row >= 3) { n++; row = 0; }
     row++;
-  }
-  return Math.max(n, 1);
+  });
+  return { n: Math.max(n, 1), brk };
 }
+const columns = (items, small) => packed(items, small).n;
 // A large button's name over two lines, as Word breaks them: at the space that leaves the longer
 // line shortest ("Table of" over "Contents")
 function twoLines(t) {
@@ -170,12 +180,13 @@ export const tabs = {
           box.style.setProperty('--c', columns(items, false));
           box.style.setProperty('--cf', columns(items, true));
         }
-        for (const { c, p, l } of items) {
+        const smallBreak = lay ? packed(items, true).brk : new Set();
+        items.forEach(({ c, p, l }, i) => {
           const e = c.kind === 'custom' ? made.get(c.id) : this.makeControl(c, p, l);
-          if (!e) continue;
-          if (l) { e.dataset.size = l.size; if (l.brk) e.dataset.brk = '1'; }
+          if (!e) return;
+          if (l) { e.dataset.size = l.size; if (l.brk) e.dataset.brk = '1'; if (smallBreak.has(i)) e.dataset.sbrk = '1'; }
           box.append(e);
-        }
+        });
         if (gallery) { const b = launchBtn(); if (b) box.append(b); }
         // the group's name under its controls, as Word's ribbon labels them (the Styles gallery
         // already has its own caption). Hidden from the accessibility tree: the group has the name.
