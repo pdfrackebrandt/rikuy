@@ -67,7 +67,7 @@ register(
   { id: 'save-as', name: 'Save As', title: 'Save As (F12): the LaTeX on your computer, the .tex or the project as .zip (Download LaTeX)', keys: ['F12'],
     synonyms: ['Save a copy', 'Download', 'Export LaTeX'], when: always, run: (app) => app.runCommand('download-latex') },
   { id: 'open', name: 'Open', el: 'b-open', static: true, place: 'bar', title: 'Open .tex, .bib, images, an Overleaf .zip or a Word .docx (Ctrl+O)', keysElsewhere: ['Ctrl+O'], keys: ['Ctrl+F12', 'Ctrl+Alt+F2'], keyScope: 'app', synonyms: ['Open a file', 'Import'], when: always, run: () => $('#fileinput').click() },
-  { id: 'share', name: 'Share', el: 'b-share', static: true, place: 'bar', title: 'A link anyone can open and type in, or a copy for Overleaf', synonyms: ['Share link', 'Overleaf'], when: always, run: (app) => app.openSharePanel() },
+  { id: 'share', name: 'Share', el: 'b-share', static: true, place: 'bar', title: 'Share a link anyone can open and type in, or send a copy to Overleaf', synonyms: ['Share link', 'Overleaf'], when: always, run: (app) => app.openSharePanel() },
   { id: 'new-document', name: 'New document', el: 'b-new', static: true, place: 'status', title: 'New document: a blank article; this one stays under Review, Versions', synonyms: ['New', 'Blank document'], when: always, run: (app) => app.newDocument() },
   { id: 'load-sample', name: 'Load the sample', el: 'b-sample', static: true, place: 'status', title: 'Load the sample: the document Rikuy opens with, in place of this one (it asks first)', synonyms: ['Sample document', 'Example'], when: always, run: (app) => app.resetToSample() },
 

@@ -126,7 +126,7 @@ register(
     // (with { v } it names the style itself, wherever the caret is: the pane's menu and agents)
     when: (app) => !!app.model, whyNot: () => 'Put the caret in a style of this document\'s own (one it defines), or use Rename… in the Styles pane.',
     run: (app, args, at) => { const v = args && args.v ? args.v : (styleOf(app, at) || {}).v; return args && args.name ? app.renameStyle(v, args.name) : app.openRenameStyle(v); } },
-  { id: 'update-style', name: 'Update Style to Match Selection', menuName: 'Update to Match Selection', title: 'Update to Match Selection: the formatting on the caret\'s heading (\\textsf{…}, \\textcolor{…}{…}) becomes its level\'s look, and comes off the heading',
+  { id: 'update-style', name: 'Update Style to Match Selection', title: 'Update to Match Selection: the formatting on the caret\'s heading (\\textsf{…}, \\textcolor{…}{…}) becomes its level\'s look, and comes off the heading',
     synonyms: ['Update to Match', 'Match Selection'], menu: { heading: 73 }, when: (app, at) => { const st = styleOf(app, at); return !!st && app.canUpdateStyle(st.v); },
     whyNot: () => 'Put the caret in a heading whose words all have the formatting to take (\\textsf{…}, \\textcolor{…}{…}).', run: (app, args, at) => app.updateStyle(args && args.v ? args.v : (styleOf(app, at) || {}).v) },
   // the Design tab: the document's formatting as a whole
