@@ -85,13 +85,18 @@ second) is the one number a Word user would call slow; it is the model's and the
   is cut short with an ellipsis; the word count is a button that opens Word Count. Checked on the
   hosted app at 1920, 1366, 1280, 1100 and 900 px: `test/ux.py status_bar`.
 
-### 5. Task panes float over the ribbon and the page (MEDIUM, medium)
+### 5. Task panes float over the ribbon and the page (MEDIUM, medium) — fixed
 
 - **Where:** the Styles pane (`#stylespane`, at x 1100, y 128 on 1366 px), the Spelling pane
   (`#sp-pane`) and Find and Replace (`#fr`, both at x 896, y 112).
 - **Word:** task panes dock at the right below the ribbon; the page moves over and stays whole.
 - **Rikuy did:** they sat over the right end of the ribbon (covering Find, Replace and the
   downloads) and over the page's text.
+- **Status:** fixed ("Dock the Styles, Spelling and Thesaurus panes at the right, as Word's"): from
+  1000 px they are #main's last column, from under the ribbon to the status bar, and the page
+  moves over; narrower they stay sheets. Find and Replace stays a floating dialog, as Word's is.
+  `test/ux.py panes`. Finding 1's caret is given back by dialogs only: a menu closed with Esc
+  gives the focus to its button (`styles.py`'s More check).
 
 ### 6. Phones: the title bar shows no document name and no Saved (MEDIUM, small)
 

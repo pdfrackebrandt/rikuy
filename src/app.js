@@ -2470,7 +2470,8 @@ class App {
     // put the caret where it belongs) or the focus already went somewhere; not while File's view
     // covers the page (a menu of File's closed: the keys stay in the view, src/ui/fileview.js)
     const B = P.back, lost = !document.activeElement || document.activeElement === document.body;
-    if (!silent && !P.returnCaret && B && lost && !document.body.classList.contains('file-open') && this.files.get(B.c.f) === B.text) this.restoreCaret(B.c, true);
+    // (dialogs only: a menu closed with Esc gives the focus back to its button, as a menu button does)
+    if (!silent && !P.returnCaret && B && lost && P.el.getAttribute('role') === 'dialog' && !document.body.classList.contains('file-open') && this.files.get(B.c.f) === B.text) this.restoreCaret(B.c, true);
     // Share, Save and Help open from a button of the bar: closed from the keyboard, the focus
     // goes back to it (it fell to the page's start, and Tab began again from the menu button)
     if (P.anchor instanceof HTMLButtonElement && P.anchor.offsetParent && (!document.activeElement || document.activeElement === document.body)) P.anchor.focus({ preventScroll: true });
