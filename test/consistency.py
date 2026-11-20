@@ -116,7 +116,8 @@ MEASURE = r"""(arg) => {
     const svg = [...e.querySelectorAll(':scope > svg:not(.rb-car):not(.rb-larrow), :scope > .rb-gico')].find(vis);
     const caret = [...e.querySelectorAll('svg.rb-car, :scope.rb-x > svg, :scope > svg.rb-larrow')].find(vis);
     const split = e.closest('.rb-split'), field = e.matches('input, select') || e.closest('.fbx, .pf, .pf-field, .nf');
-    const big = b.h > 40 || (split && split.getBoundingClientRect().height > 40);
+    // (large: an icon over its name, 72 px; a finger's 44 px button is a small one)
+    const big = b.h > 50 || (split && split.getBoundingClientRect().height > 50);
     // the kind it is drawn as (data-kind is the kind its layout asks for)
     const kind = scope !== 'ribbon' ? (field ? 'field' : (e.dataset.kind || 'untagged'))
       : e.classList.contains('rb-launch') || (e.classList.contains('rb-launch-c') && b.h < 20) ? 'launcher'
@@ -179,7 +180,7 @@ MEASURE = r"""(arg) => {
     for (const g of groups) {
       const gb = R(g), folded = g.classList.contains('folded');
       const lab = folded ? null : [...g.querySelectorAll(':scope > .rb-glab, :scope > .rb-lab, :scope .rb-cap')].find(vis);
-      const gbtn = folded ? g.querySelector(':scope > .rb-gbtn') : null;
+      const gbtn = folded ? g.querySelector(':scope > .rb-gbtn') : g.classList.contains('rb-dl') ? [g.querySelector('#rb-dl-menu')].find(vis) : null;
       const shown = gbtn ? [...gbtn.querySelectorAll('span')].filter(vis).map((s) => s.textContent).join(' ').trim() : '';
       const ls = lab ? getComputedStyle(lab) : null, lr = lab ? R(lab) : null;
       // (the name's text, not its box: a box as wide as the group says nothing of where the words are)
@@ -380,6 +381,9 @@ def judge(S, where, m, touch, scope, scheme):
                 S.bad('group', where, g['g'], 'folded into a button that does not show its name (shows %r)' % g['shown'])
             continue
         if not g['lab']:
+            # (the downloads as one Download button, its name on it, as a folded group's)
+            if g['g'] == 'download' and g['shown'] == 'Download':
+                continue
             S.bad('group', where, g['g'], 'no name under it')
             continue
         if scheme != 'forced' and g['lab']['cr'] < 4.5:

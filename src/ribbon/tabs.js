@@ -221,9 +221,10 @@ export const tabs = {
           box.append(e);
         }
         if (gallery) { const b = launchBtn(); if (b) box.append(b); }
-        // the group's name under its controls, as Word's ribbon labels them (the Styles gallery
-        // already has its own caption). Hidden from the accessibility tree: the group has the name.
-        if (!gallery) { const lab = mk('span', 'rb-glab', g.name); lab.setAttribute('aria-hidden', 'true'); box.append(lab); }
+        // the group's name under its controls, as Word's ribbon labels them (the Styles gallery has
+        // its own caption: this one names the group where the style list stands in its place).
+        // Hidden from the accessibility tree: the group has the name.
+        { const lab = mk('span', 'rb-glab', g.name); lab.setAttribute('aria-hidden', 'true'); box.append(lab); }
         tb.append(box);
       });
       tb.append(mk('span', 'grow'));
@@ -426,11 +427,11 @@ export const tabs = {
     if (gal) { tiles(6); this.paintGallery(); }
     // (a spare group first, as one step each: its commands have a tab of their own)
     const fold = (g) => ({ do: () => g.classList.add('folded', ...(g.querySelector('.rb-gico') ? ['ico'] : [])), undo: () => g.classList.remove('folded', 'ico') });
+    // (Home's spare Insert comes back only with the Styles gallery: opened beside the style list, it
+    // showed more controls than a row a little wider, with the gallery and Insert folded)
+    const spareFold = (g) => ({ ...fold(g), spare: true });
     const spare = foldsGroups() ? groups.filter((g) => g.dataset.spare).sort((x, y) => x.dataset.rank - y.dataset.rank || groups.indexOf(y) - groups.indexOf(x)) : [];
-    // (on Home the spare is the names chain's first step: given back only once the tiles and the
-    // gallery have come back, or a row a little narrower, with the style list for the gallery, would
-    // open Insert and show more controls than a wider one with the gallery and Insert folded)
-    const steps = [...spare.map((g) => ({ ...fold(g), chain: gal ? 'names' : undefined })), flag('rb-nolab')];
+    const steps = [...spare.map(spareFold), flag('rb-nolab')];
     // (a laid out group, from 900 px with a mouse, gives way as Word's do: its large buttons small,
     // the least needed group first; then its names, the same way. Neither takes a control, so all
     // of it goes before any group folds. src/ribbon/layout.js)
@@ -474,6 +475,7 @@ export const tabs = {
     for (let i = k - 1; i >= 0; i--) {
       const st = steps[i];
       if (st.chain && held.has(st.chain)) continue;
+      if (st.spare && gal && rb.classList.contains('rb-narrow')) continue;
       st.undo();
       if (!fits()) { st.do(); if (st.chain) held.add(st.chain); }
     }

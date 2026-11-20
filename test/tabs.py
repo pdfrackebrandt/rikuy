@@ -831,7 +831,8 @@ SWEEP = """() => { const app = window.rikuy, rb = document.getElementById('ribbo
     let names = 0;
     for (const x of P.querySelectorAll('.rb-grp .btn:not(.rb-gbtn) > span:not(.sr), .rb-grp .btn > .rb-bl')) if (x.offsetParent && x.getClientRects().length && x.getBoundingClientRect().right <= innerWidth + 1) names++;
     const folded = [...P.querySelectorAll('.rb-grp.folded')], wasted = [];
-    for (const g of folded) { const c = [...g.classList]; g.classList.remove('folded', 'ico'); if (fits()) wasted.push(g.dataset.group); g.className = c.join(' '); }
+    // (Home's spare Insert waits for the Styles gallery: beside the style list it stays folded)
+    for (const g of folded) { if (g.dataset.spare && rb.classList.contains('rb-narrow')) continue; const c = [...g.classList]; g.classList.remove('folded', 'ico'); if (fits()) wasted.push(g.dataset.group); g.className = c.join(' '); }
     out[id] = { n, names, over: !fits(), folded: folded.map((g) => g.dataset.group), wasted, small: [...P.querySelectorAll('.rb-grp.sm, .rb-grp.nm')].map((g) => g.dataset.group) };
   }
   app.rbTab = null; app.selectTab('home');
