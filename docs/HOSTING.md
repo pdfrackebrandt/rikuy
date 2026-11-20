@@ -74,7 +74,9 @@ move over by themselves.
 - **What Pages serves**: `_headers` (written by `build/app.mjs`): the page's Content-Security-
   Policy (the one the browser tests run under: scripts only from the site and the page's one
   inline script by its SHA-256, which the build computes from `index.html`; WebAssembly but no
-  eval; no outside source; `frame-ancestors 'none'`), and for `widget-<hash>.html`, the document
+  eval; no outside source but `connect-src` to the Git panel's CORS proxy,
+  `https://cors.isomorphic-git.org`, through which push, pull and clone reach any git host;
+  `frame-ancestors 'none'`), and for `widget-<hash>.html`, the document
   live figures run in, the widgets' own policy in its place (`frame-ancestors 'self'`, no
   `X-Frame-Options`), `Strict-Transport-Security: max-age=31536000` (HTTPS only for a year, for this host
   alone: no `includeSubDomains`, no preload), `nosniff`, `Referrer-Policy: no-referrer`, a Permissions-Policy turning off cameras,

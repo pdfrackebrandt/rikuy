@@ -3248,6 +3248,13 @@ Tests:
     Playwright's polled expressions over as functions, which it would otherwise eval in the page).
     New `test/csp.py`: a whole session with every refusal reported to the server, none (21
     checks, in `tex.yml`). Safari 15 cannot compile on the hosted copy (no `'wasm-unsafe-eval'`).
+    Running the tests under the real policy showed that `connect-src 'self' blob:` had refused
+    every git push, pull and clone on the hosted copy: `connect-src` now also names the Git
+    panel's CORS proxy (`GIT_PROXY`, `https://cors.isomorphic-git.org`) and no other host, and
+    the panel's message names it when a remote is refused (`git.py` 46: its servers stand in for
+    the hosts the proxy reaches, and under the policy as it ships a clone through the proxy's
+    address works and one straight to a host is refused). `para.py`, `picture.py`, `refs.py` and
+    `styles.py` serve the policy too.
     Under the new policy: `browser.py` 199, `agent.py` 143, `offline.py` 60, `launch.py` 18,
     `engines.py` 44, `word.py` 111, `spell.py` 124, `widgets.py` 62, `insert.py` 224,
     `mathfield.py` 19, `pdf.py` 23, `deploy_check.py` 61. *S2:* KaTeX 0.16.22 to 0.19.1 (its

@@ -41,11 +41,18 @@ for _C in (_Page, _Frame):
     _C.wait_for_function = _wait
 
 
-def policy(dist, path):
+def policy(dist, path, connect=()):
     """The headers a file of the page gets here: the hosted copy's policy for that path, as
     dist/_headers gives it, with jsDelivr for rikuy.html's libraries (serve.headers_for). Every
-    test that opens the page runs it, its workers and its live figures under that policy."""
-    return dict(serve.headers_for(dist, path))
+    test that opens the page runs it, its workers and its live figures under that policy.
+    connect: addresses added to connect-src, for a test's own servers standing in for hosts the
+    hosted copy reaches through its git proxy (test/git.py)."""
+    h = dict(serve.headers_for(dist, path))
+    if connect:
+        k = next((k for k in h if k.lower() == 'content-security-policy'), None)
+        if k and "connect-src " in h[k]:
+            h[k] = re.sub(r"(connect-src [^;]*)", lambda m: m.group(1) + ' ' + ' '.join(connect), h[k], count=1)
+    return h
 
 
 results = []
@@ -55,7 +62,7 @@ def check(name, cond, detail=''):
     return bool(cond)
 
 
-def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, touch=False):
+def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, touch=False, connect=()):
     # touch: a phone's page (a touch screen, a mobile viewport: pointer coarse, no hover; tap())
     browser = p.chromium.launch(args=[a for a in os.environ.get('CHROME_ARGS', '').split() if a])
     ctx = browser.new_context(viewport={'width': width, 'height': height}, color_scheme='dark' if dark else 'light', device_scale_factor=1, has_touch=touch, is_mobile=touch)
@@ -74,8 +81,8 @@ def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, tou
             f = os.path.join(dist, path)
             if path and os.path.isfile(f):
                 ct = 'text/javascript' if path.endswith(('.js', '.mjs')) else 'application/wasm' if path.endswith('.wasm') else 'text/html; charset=utf-8' if path.endswith('.html') else 'application/octet-stream'
-                return route.fulfill(status=200, content_type=ct, headers=policy(dist, '/' + path), body=open(f, 'rb').read())
-            return route.fulfill(status=200, content_type='text/html; charset=utf-8', headers=policy(dist, '/'), body=doc)
+                return route.fulfill(status=200, content_type=ct, headers=policy(dist, '/' + path, connect), body=open(f, 'rb').read())
+            return route.fulfill(status=200, content_type='text/html; charset=utf-8', headers=policy(dist, '/', connect), body=doc)
         if url.startswith('http://127.0.0.1:'):
             return route.continue_()
         if url in ROUTES:

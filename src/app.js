@@ -89,6 +89,10 @@ const ZOOM_MIN = 0.25, ZOOM_MAX = 4;
 // One of the build's own files (git.js, tex/...): in the installed app, the copy of this page's
 // version (src/pwa.js); elsewhere simply the file next to the page.
 const asset = (p) => (__RIKUY_APP__ ? appAsset(p) : new URL(p, location.href).href);
+// The CORS proxy git's push, pull and clone go through by default (GitHub and GitLab send no CORS
+// headers for git, so a browser cannot reach them directly). The hosted copy's policy lets the page
+// reach this address and no other host (build/app.mjs policy reads it from here).
+const GIT_PROXY = 'https://cors.isomorphic-git.org';
 // the full Rikuy's address, which the copy on claude.ai names for what it has no room for
 const SCRIPT_HOST = typeof __RIKUY_WORD_HOST__ === 'undefined' ? '' : __RIKUY_WORD_HOST__;
 function loadScript(src) {
@@ -3696,7 +3700,7 @@ class App {
     rem.append(sum);
     const url = mk('input'); url.type = 'url'; url.placeholder = 'https://github.com/you/paper.git'; url.value = remote || ''; url.setAttribute('aria-label', 'Remote URL');
     const tok = mk('input'); tok.type = 'password'; tok.placeholder = 'Access token (kept in this browser for this host)'; tok.setAttribute('aria-label', 'Access token');
-    const prox = mk('input'); prox.type = 'url'; prox.placeholder = 'CORS proxy, e.g. https://cors.isomorphic-git.org'; prox.value = this.prefs.gitProxy ?? 'https://cors.isomorphic-git.org'; prox.setAttribute('aria-label', 'CORS proxy');
+    const prox = mk('input'); prox.type = 'url'; prox.placeholder = 'CORS proxy, e.g. ' + GIT_PROXY; prox.value = this.prefs.gitProxy ?? GIT_PROXY; prox.setAttribute('aria-label', 'CORS proxy');
     // the token kept for the remote's host, not filled in for a remote that came with an opened
     // project; a URL typed here is the user's own, and the field follows it until a token is typed
     const from = await this.gitRemoteFrom(dir, remote);
@@ -3816,7 +3820,7 @@ class App {
     det.append(mk('summary', '', 'Clone from a URL'));
     const url = mk('input'); url.type = 'url'; url.placeholder = 'https://github.com/you/paper.git, or an Overleaf project'; url.setAttribute('aria-label', 'Repository URL, or the address of an Overleaf project');
     const tok = mk('input'); tok.type = 'password'; tok.placeholder = 'Access token (private repositories; for Overleaf, its Git token)'; tok.setAttribute('aria-label', 'Access token');
-    const prox = mk('input'); prox.type = 'url'; prox.placeholder = 'CORS proxy'; prox.value = this.prefs.gitProxy ?? 'https://cors.isomorphic-git.org';
+    const prox = mk('input'); prox.type = 'url'; prox.placeholder = 'CORS proxy'; prox.value = this.prefs.gitProxy ?? GIT_PROXY;
     // the token kept for the host of the address typed, until a token is typed
     let shown = '', typed = false;
     const legacy = this.gitLegacyButton({ get value() { return G.gitUrlOf(url.value); } }, tok, () => { typed = true; shown = tok.value; });
@@ -3872,7 +3876,11 @@ class App {
 
   gitError(e) {
     const m = String((e && (e.message || e.code)) || e);
-    if (/Failed to fetch|NetworkError|Load failed|Content Security Policy|CORS/i.test(m)) return 'Could not reach the remote. From inside claude.ai the page may only talk to its own server; run Rikuy on its own site, or Download LaTeX and push from your computer. (' + m + ')';
+    if (/Failed to fetch|NetworkError|Load failed|Content Security Policy|CORS/i.test(m)) {
+      // (the hosted copy reaches git hosts through GIT_PROXY alone: its policy refuses any other address)
+      if (__RIKUY_APP__) return 'Could not reach the remote. Rikuy reaches git hosts only through the CORS proxy ' + GIT_PROXY + ': put that address in CORS proxy, or Download LaTeX and push from your computer. (' + m + ')';
+      return 'Could not reach the remote. From inside claude.ai the page may only talk to its own server; run Rikuy on its own site, or Download LaTeX and push from your computer. (' + m + ')';
+    }
     if (/401|403|auth/i.test(m)) return 'The remote refused the credentials. Check the token and that it can write to this repository. (' + m + ')';
     if (/MergeConflict|conflict/i.test(m)) return 'Pull found conflicting edits to the same lines. Commit, then merge on your computer, or restore one side. (' + m + ')';
     return m;

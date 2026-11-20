@@ -2,7 +2,8 @@
 that fits passes; one file over 25 MiB, more than 20,000 files, a _headers file of more than 100
 rules or a line over 2,000 characters, or a build without the app's files fails. And the hosted
 build's own _headers (build/app.mjs): its policy, every directive pinned (the page's one inline
-script by its hash, WebAssembly, no eval; the browser tests run under it, test/serve.py); and the caching, HSTS (this host only), nosniff, Referrer-Policy and Permissions-Policy
+script by its hash, WebAssembly, no eval, connections to the site and the Git panel's CORS proxy;
+the browser tests run under it, test/serve.py); and the caching, HSTS (this host only), nosniff, Referrer-Policy and Permissions-Policy
 rules are there; the widget document's own policy; the build's hashes of the page's inline scripts
 against this file's count, and against a built dist/ where there is one;
 llms.txt, llms-full.txt, robots.txt and sitemap.xml, and no other file, are open to every site as
@@ -60,11 +61,12 @@ hosted = pol(H('/')['content-security-policy'])
 # every directive pinned: a change to the policy is a change to this list, made on purpose
 ok('the hosted policy: scripts are the site\'s files, the page\'s one inline script by its hash, WebAssembly and blob: (Pyodide), nothing else',
    hosted == {'default-src': ["'self'"], 'script-src': ["'self'", "'sha256-" + HASH + "'", "'wasm-unsafe-eval'", 'blob:'], 'style-src': ["'self'", "'unsafe-inline'"],
-              'img-src': ["'self'", 'data:', 'blob:'], 'font-src': ["'self'", 'data:', 'blob:'], 'media-src': ["'self'", 'data:', 'blob:'], 'connect-src': ["'self'", 'blob:'],
+              'img-src': ["'self'", 'data:', 'blob:'], 'font-src': ["'self'", 'data:', 'blob:'], 'media-src': ["'self'", 'data:', 'blob:'], 'connect-src': ["'self'", 'blob:', 'https://cors.isomorphic-git.org'],
               'worker-src': ["'self'", 'blob:'], 'manifest-src': ["'self'"], 'form-action': ["'self'"], 'frame-src': ["'self'", 'blob:', 'data:'],
               'frame-ancestors': ["'none'"], 'object-src': ["'none'"], 'base-uri': ["'self'"]}, hosted)
 ok('no inline script but the hashed one, no eval: neither \'unsafe-inline\' nor \'unsafe-eval\' nor \'unsafe-hashes\'', not ({"'unsafe-inline'", "'unsafe-eval'", "'unsafe-hashes'"} & set(hosted['script-src'])), hosted['script-src'])
-ok('it allows no outside source at all', not any(v.startswith(('http', '*')) for vs in hosted.values() for v in vs), hosted)
+ok('it allows no outside source but the Git panel\'s CORS proxy, for connections alone', [(k, v) for k, vs in hosted.items() for v in vs if v.startswith(('http', '*'))] == [('connect-src', 'https://cors.isomorphic-git.org')], hosted)
+ok('the proxy it names is the one the Git panel uses (src/app.js GIT_PROXY)', "const GIT_PROXY = 'https://cors.isomorphic-git.org';" in open(os.path.join(ROOT, 'src', 'app.js'), encoding='utf8').read())
 ok('a page with no hash is refused, not given a policy that runs nothing', subprocess.run(['node', '--input-type=module', '-e', "import { headers } from './build/app.mjs'; headers([])"], cwd=ROOT, capture_output=True).returncode != 0)
 # the live figures' document: the page's policy and its framing rule taken away, the widgets' own
 # in their place (one value, not joined to the page's), cached for good, HSTS and nosniff kept
