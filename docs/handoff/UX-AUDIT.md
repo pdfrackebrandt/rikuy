@@ -11,6 +11,16 @@ loses their typing first, then something that looks broken, then what is only un
 **Status** says what is fixed and by which commit message; whoever carries on takes the first
 open one. Findings in another agent's files are at the end, under that agent.
 
+## Where it stands (branch `ux-pass-2`, draft PR 79)
+
+Fixed: findings 1 to 8, the PDF bar on a phone (9), Download PDF's progress and a first comment's
+name (10); each a commit with its part of `test/ux.py` (168 checks). Open, in rank order: the page
+at 58 to 62 % on a phone (a decision: Web Layout as a phone's first view), Help as a popover
+(Word's is a pane at the right: it would dock as finding 5's panes do, but as a popover it closes
+at a press on the page, so it needs its own pane), the rest of 9, and the other agents' findings
+at the end. Comments opening at the left stays: Word's Reviewing pane, which lists comments and
+changes together as Rikuy's Review tab does, docks at the left too.
+
 ## Perceived speed (measured, not ranked)
 
 | what | number | how |
@@ -146,9 +156,10 @@ second) is the one number a Word user would call slow; it is the model's and the
   bar while Download PDF compiles"): the ribbon's button said "Making the PDF…" for the whole run
   (9 s on this machine) and nothing else did; the status bar now says TeX's stage ("Making the
   PDF: Fetching packages…"), as Word shows a PDF being published there. `test/ux.py download_pdf`.
-- **Comments open on the left** (MEDIUM, medium; open): Comments opens the side panel's Review
-  tab, at the left, with Changes and Versions in the same list. Word's Comments pane is at the
-  right with the comment cards alone; the docking of finding 5 is where it could go.
+- **Comments open on the left** (LOW; kept): Comments opens the side panel's Review tab, at the
+  left, with Changes and Versions in the same list. Word's Comments pane is at the right, but its
+  Reviewing pane, the one that lists comments and changes together as this tab does, docks at
+  the left.
 - **A first comment asks for a name** (LOW, small) — fixed ("Ask a first comment's name first,
   and say why when it is missing"): Word takes the account's name; a browser has none, so asking
   once is right, but the box opened at the comment and Comment with no name only changed a
