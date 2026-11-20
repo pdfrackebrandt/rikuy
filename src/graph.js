@@ -513,66 +513,6 @@ export function graphKit() {
   }
   const defaults = (s) => Object.fromEntries(s.sliders.map((q) => [q.name, q.value]));
 
-  // ---- a formula written out again: as a reader types it, or as LaTeX ---------------------------
-  // show(tree, tex): the text parse reads back to the same tree's values (test/graphs.test.mjs),
-  // with the brackets it needs and no more; tex: LaTeX for the PDF's legend and the web page
-  const GREEK_TEX = Object.fromEntries(Object.entries(GREEK).filter(([k]) => !/^var/.test(k)).map(([k, v]) => [v, '\\' + k]));
-  const TEXFN = { sin: 1, cos: 1, tan: 1, sec: 1, csc: 1, cot: 1, arcsin: 1, arccos: 1, arctan: 1, sinh: 1, cosh: 1, tanh: 1, exp: 1, ln: 1, log: 1, lg: 1, min: 1, max: 1 };
-  function nameTex(n) {
-    const m = /^([^_]+)(?:_(.+))?$/.exec(n);
-    const base = [...m[1]].length === 1 ? (GREEK_TEX[m[1]] || m[1]) : '\\mathit{' + m[1].replace(/[α-ωΑ-Ω]/g, (c) => GREEK_TEX[c] || c) + '}';
-    return m[2] ? base + '_{' + m[2] + '}' : base;
-  }
-  function numText(v, tex) {
-    let t = String(v);
-    if (/e/.test(t)) { const [a, b] = t.split('e'); t = tex ? (a === '1' ? '' : a + '\\cdot ') + '10^{' + (+b) + '}' : a + 'e' + (+b); }
-    return t;
-  }
-  const PREC = { '<': 0, '>': 0, '<=': 0, '>=': 0, '+': 1, '-': 1, '*': 2, '/': 2, neg: 3, '^': 4 };
-  const prec = (t) => (t[0] in PREC ? PREC[t[0]] : 5);
-  function show(t, tex) {
-    const P = (x, min) => (prec(x) < min ? (tex ? '\\left(' + show(x, tex) + '\\right)' : '(' + show(x, tex) + ')') : show(x, tex));
-    switch (t[0]) {
-      case 'n': return numText(t[1], tex);
-      case 'v': return tex ? nameTex(t[1]) : t[1];
-      case 'neg': return '-' + P(t[1], 3);
-      case 'f': {
-        const [, n, a] = t;
-        if (tex) {
-          if (n === 'sqrt') return '\\sqrt{' + show(a[0], 1) + '}';
-          if (n === 'root') return '\\sqrt[' + show(a[1], 1) + ']{' + show(a[0], 1) + '}';
-          if (n === 'abs') return '\\lvert ' + show(a[0], 1) + '\\rvert';
-          if (n === 'frac') return '\\frac{' + show(a[0], 1) + '}{' + show(a[1], 1) + '}';
-          if (n === 'factorial') return P(a[0], 5) + '!';
-          return (TEXFN[n] ? '\\' + n : '\\operatorname{' + n + '}') + '\\left(' + a.map((x) => show(x, 1)).join(', ') + '\\right)';
-        }
-        if (n === 'factorial') return P(a[0], 5) + '!';
-        if (n === 'frac') return show(['/', a[0], a[1]], false);
-        return n + '(' + a.map((x) => show(x, false)).join(', ') + ')';
-      }
-    }
-    const [op, a, b] = t;
-    if (op === '+') return P(a, 1) + ' + ' + P(b, 2);
-    if (op === '-') return P(a, 1) + ' - ' + P(b, 2);
-    if (op === '/') return tex ? '\\frac{' + show(a, 1) + '}{' + show(b, 1) + '}' : P(a, 2) + '/' + P(b, 4);
-    if (op === '^') {
-      const base = a[0] === 'f' && !tex ? '(' + show(a, false) + ')' : P(a, 5);
-      if (tex) return base + '^{' + show(b, 1) + '}';
-      return base + '^' + (prec(b) >= 5 && b[0] !== 'f' ? show(b, false) : '(' + show(b, false) + ')');
-    }
-    if (op === '*') {
-      // a product as written: 2x, s k^α, (n + δ) k; a number after anything gets its sign
-      const L = P(a, 2), R = P(b, 3);
-      if (b[0] === 'n' || b[0] === 'neg' || /^[\d.]/.test(R)) return L + (tex ? ' \\cdot ' : '·') + R;
-      if (a[0] === 'n' && b[0] !== 'f') return L + (tex ? ' ' : '') + R;
-      return L + ' ' + R;
-    }
-    return P(a, 1) + ' ' + (tex ? { '<': '<', '>': '>', '<=': '\\le', '>=': '\\ge' }[op] : op) + ' ' + P(b, 1);
-  }
-  // a formula's text as LaTeX (the text itself where it does not read)
-  const texOf = (text, declared) => { try { return show(parse(text, declared), true); } catch (e) { return null; } };
-  const eqTexOf = (text, declared) => { try { const t = parseEq(text, declared); return t[0] === '-' && /=/.test(text) ? show(t[1], true) + ' = ' + show(t[2], true) : show(t, true) + ' = 0'; } catch (e) { return null; } };
-
   // ---- what is drawn --------------------------------------------------------------------------
   // series: [{ kind: 'line' | 'points' | 'bars' | 'area' | 'segs' | 'fill' | 'mark' | 'arrows' |
   // 'start', pts: [[x, y]...] (null breaks a line), lines (segs: polylines), label, tex, slot }],
@@ -599,13 +539,12 @@ export function graphKit() {
       const xs = [];
       for (let i = 0; i <= N; i++) xs.push(s.x.min + (s.x.max - s.x.min) * i / N);
       // the legend's left side: the y label where it names the curve (p, k′, k̇, f(x)), else y
+      // (tx: what the PDF's picture writes as LaTeX, src/graph.js seriesTex)
       const yl = String(s.y.label || '').trim();
-      const m1 = /^([A-Za-zα-ωΑ-Ω])([\u0307′']?)(_[A-Za-z0-9]{1,8})?$/.exec(yl), m2 = /^([A-Za-zα-ωΑ-Ω]\w*)\(([A-Za-zα-ωΑ-Ω]\w*(?:_\w+)?)\)$/.exec(yl);
-      const lhs = m1 || m2 ? yl : 'y';
-      const lhsTex = m1 ? (m1[2] === '\u0307' ? '\\dot{' + nameTex(m1[1]) + '}' : nameTex(m1[1]) + (m1[2] ? "'" : '')) + (m1[3] ? '_{' + m1[3].slice(1) + '}' : '') : m2 ? nameTex(m2[1]) + '(' + nameTex(m2[2]) + ')' : 'y';
+      const lhs = /^[A-Za-zα-ωΑ-Ω][\u0307′']?(_[A-Za-z0-9]{1,8})?$/.test(yl) || /^[A-Za-zα-ωΑ-Ω]\w*\([A-Za-zα-ωΑ-Ω]\w*(?:_\w+)?\)$/.test(yl) ? yl : 'y';
       curves.forEach((f, k) => {
         const pts = xs.map((x) => [x, at(f.fn, x)]);
-        out.push({ kind: 'line', pts, label: lhs + ' = ' + f.text.trim(), tex: lhsTex + ' = ' + (texOf(f.text, declared) || ''), slot: k });
+        out.push({ kind: 'line', pts, label: lhs + ' = ' + f.text.trim(), tx: ['fn', lhs, f.text], slot: k });
       });
       // where curves a and b cross, left to right: bisection from a change of sign on the samples
       // (not at the ends of the range, where a curve through the origin meets another at 0)
@@ -676,10 +615,10 @@ export function graphKit() {
         else pts.push([at(fns[0].fn, t), at(fns[1].fn, t)]);
       }
       out.push({ kind: 'line', pts, label: s.curve.mode === 'polar' ? 'r = ' + s.curve.r.trim() : '(' + s.curve.x.trim() + ', ' + s.curve.y.trim() + ')',
-        tex: s.curve.mode === 'polar' ? 'r = ' + (texOf(s.curve.r, declared) || '') : '\\left(' + (texOf(s.curve.x, declared) || '') + ',\\ ' + (texOf(s.curve.y, declared) || '') + '\\right)', slot: 0, curve: true });
+        tx: s.curve.mode === 'polar' ? ['fn', 'r', s.curve.r] : ['param', s.curve.x, s.curve.y], slot: 0, curve: true });
     } else if (s.kind === 'implicit') {
       // (20000 pieces for the whole graph: a stranger's noisy equations stay a bounded drawing)
-      fns.forEach((f, k) => out.push({ kind: 'segs', lines: contour((x, y) => at2(f.fn, x, y), s, cells, Math.floor(20000 / fns.length)), label: f.text.trim(), tex: eqTexOf(f.text, declared), slot: k }));
+      fns.forEach((f, k) => out.push({ kind: 'segs', lines: contour((x, y) => at2(f.fn, x, y), s, cells, Math.floor(20000 / fns.length)), label: f.text.trim(), tx: ['eq', f.text], slot: k }));
     } else if (s.kind === 'phase') {
       const [fx, fy] = fns.map((f) => f.fn);
       const dx = (x, y) => at2(fx, x, y), dy = (x, y) => at2(fy, x, y);
@@ -702,8 +641,8 @@ export function graphKit() {
           const [a, b] = s.vars;
           // (nullclines are smooth: 90 cells across draw them as finely as the eye sees)
           const nc = fast ? 40 : 90;
-          m.parts.push({ kind: 'segs', lines: contour(dx, s, nc), label: dotName(a) + ' = 0', tex: '\\dot{' + nameTex(a) + '} = 0', slot: 0 });
-          m.parts.push({ kind: 'segs', lines: contour(dy, s, nc), label: dotName(b) + ' = 0', tex: '\\dot{' + nameTex(b) + '} = 0', slot: 1 });
+          m.parts.push({ kind: 'segs', lines: contour(dx, s, nc), label: dotName(a) + ' = 0', tx: ['dot', a], slot: 0 });
+          m.parts.push({ kind: 'segs', lines: contour(dy, s, nc), label: dotName(b) + ' = 0', tx: ['dot', b], slot: 1 });
         }
         memo.set(s, m);
       }
@@ -729,7 +668,7 @@ export function graphKit() {
         const [a, b] = P.length ? extent(P.map((p) => p[0])) : [0, 1];
         const pts = [];
         for (let i = 0; i <= N; i++) { const x = a + (b - a) * i / N; pts.push([x, at(fns[0].fn, x)]); }
-        out.push({ kind: 'line', pts, label: 'y = ' + fns[0].text.trim(), tex: 'y = ' + (texOf(fns[0].text, declared) || ''), slot: 2, dash: true });
+        out.push({ kind: 'line', pts, label: 'y = ' + fns[0].text.trim(), tx: ['fn', 'y', fns[0].text], slot: 2, dash: true });
       }
     } else {
       const F = FAM[s.dist.family], P = {};
@@ -984,8 +923,8 @@ export function graphKit() {
   // readout; ghost, the series at the starting values, drawn faint under the rest while a slider
   // is away from its start (comparative statics). Every length of the layout comes from tw, not
   // from the font: the PDF's picture (src/graph.js, pgfContext) is laid out by this same code with
-  // TeX's fonts, and its lines fall where the live figure's do. g.rkTex, set before a text, is its
-  // LaTeX for the PDF; a canvas ignores it.
+  // TeX's fonts, and its lines fall where the live figure's do. A context with g.tex (the PDF's,
+  // TEXER below) is given each text's LaTeX as g.rkTex before it; the kit itself writes no LaTeX.
   function paint(g, s, data, R, vals, W, H, hover, ghost) {
     g.clearRect(0, 0, W, H);
     g.font = '12px ' + FONT;
@@ -1036,8 +975,8 @@ export function graphKit() {
     for (const v of yt.out) { const p = Y(v); g.beginPath(); g.moveTo(L - 4, Math.round(p) + 0.5); g.lineTo(L, Math.round(p) + 0.5); g.stroke(); g.fillText(tickText(v, yt.step), L - 6, p); }
     g.font = 'italic 13px ' + FONT;
     g.fillStyle = INK;
-    if (s.x.label) { g.textAlign = 'center'; g.textBaseline = 'bottom'; g.rkTex = labelTex(s.x.label); g.fillText(s.x.label, L + pw / 2, H - 2); }
-    if (s.y.label) { g.save(); g.translate(12, T + ph / 2); g.rotate(-Math.PI / 2); g.textAlign = 'center'; g.textBaseline = 'middle'; g.rkTex = labelTex(s.y.label); g.fillText(s.y.label, 0, 0); g.restore(); }
+    if (s.x.label) { g.textAlign = 'center'; g.textBaseline = 'bottom'; if (g.tex) g.rkTex = g.tex.label(s.x.label); g.fillText(s.x.label, L + pw / 2, H - 2); }
+    if (s.y.label) { g.save(); g.translate(12, T + ph / 2); g.rotate(-Math.PI / 2); g.textAlign = 'center'; g.textBaseline = 'middle'; if (g.tex) g.rkTex = g.tex.label(s.y.label); g.fillText(s.y.label, 0, 0); g.restore(); }
     g.rkTex = null;
     // the data, clipped to the plot
     g.save();
@@ -1117,7 +1056,7 @@ export function graphKit() {
         g.setLineDash([]);
         g.beginPath(); g.arc(px, py, 4, 0, 2 * Math.PI); g.fillStyle = INK; g.fill();
         g.font = '12px ' + FONT; g.textAlign = px > L + pw - 90 ? 'right' : 'left'; g.textBaseline = 'bottom';
-        g.fillStyle = INK; g.rkTex = labelTex(S.label);
+        g.fillStyle = INK; if (g.tex) g.rkTex = g.tex.label(S.label);
         g.fillText(S.label, px + (g.textAlign === 'right' ? -7 : 7), py - 5);
         g.rkTex = null;
         continue;
@@ -1175,7 +1114,7 @@ export function graphKit() {
       else { g.setLineDash(S.dash ? [4, 3] : []); g.beginPath(); g.moveTo(L + 11, ly); g.lineTo(L + 27, ly); g.stroke(); g.setLineDash([]); }
       g.fillStyle = INK;
       const t = clip(S.label, lw - 26);
-      g.rkTex = t === S.label ? (S.tex ? '$' + S.tex + '$' : labelTex(S.label)) : null;
+      if (g.tex) g.rkTex = t === S.label ? g.tex.series(S, s) : null;
       g.fillText(t, L + 32, ly);
       g.rkTex = null;
       ly += 17;
@@ -1188,7 +1127,7 @@ export function graphKit() {
       const w = tw(t, 12);
       g.fillStyle = 'rgba(255,255,255,0.86)'; g.fillRect(L + pw - w - 10, T + 3, w + 8, 17);
       g.fillStyle = INK2;
-      g.rkTex = parts.map(([n, v]) => '$' + nameTex(n) + ' = ' + v.replace('−', '-') + '$').join(',\\enspace ');
+      if (g.tex) g.rkTex = g.tex.sliders(parts);
       g.fillText(t, L + pw - 6, T + 12);
       g.rkTex = null;
     }
@@ -1204,20 +1143,7 @@ export function graphKit() {
     for (const c of String(t)) w += CW[c] !== undefined ? CW[c] : /[0-9]/.test(c) ? 0.55 : /[A-Z]/.test(c) ? 0.7 : /[̀-ͯ]/.test(c) ? 0 : 0.52;
     return w * px;
   }
-  // a label's LaTeX: a variable's name in math, Greek as Greek, a minus as a minus; words as words
-  function labelTex(t) {
-    const out = [];
-    const re = /([A-Za-zα-ωΑ-Ω])(\u0307?)(_[A-Za-z0-9]{1,8})?(?![A-Za-zα-ωΑ-Ω])|(−?\d+(?:\.\d+)?)|([A-Za-z]{2,})|([\s\S])/g;
-    const SYM = { '\\': '\\textbackslash{}', '{': '\\{', '}': '\\}', '$': '\\$', '&': '\\&', '#': '\\#', '%': '\\%', '_': '\\_', '^': '\\^{}', '~': '\\~{}', '−': '$-$', '²': '\\textsuperscript{2}', '³': '\\textsuperscript{3}', '·': '$\\cdot$', '…': '\\dots{}', '≤': '$\\le$', '≥': '$\\ge$', '×': '$\\times$', '′': "$'$" };
-    let m;
-    while ((m = re.exec(String(t)))) {
-      if (m[1]) { const n = nameTex(m[1] + (m[3] || '')), sub = /_\{.*$/.exec(n); out.push('$' + (m[2] ? '\\dot{' + n.replace(/_\{.*$/, '') + '}' + (sub ? sub[0] : '') : n) + '$'); }
-      else if (m[4]) out.push('$' + m[4].replace('−', '-') + '$');
-      else if (m[5]) out.push(m[5]);
-      else { const c = m[6]; out.push(SYM[c] || (GREEK_TEX[c] ? '$' + GREEK_TEX[c] + '$' : /[\x20-\x7e\u00a0-\u00ff]/.test(c) ? c : '?')); }
-    }
-    return out.join('').replace(/\$\$/g, '');
-  }
+
 
   function clip(t, w) {
     if (tw(t, 12) <= w) return t;
@@ -1380,13 +1306,112 @@ export function graphKit() {
     redraw(true);
   }
 
-  return { parse, parseEq, names, compile, normalize, formulas, unknownNames, defaults, compute, ranges, paint, mount, fmt, fmtStep, FAM, FITS, KINDS, NAME, sizeName, niceStep, show, texOf, nameTex, labelTex, tw, GREEK, GREEK_VALUES: new Set(Object.values(GREEK)), own };
+  return { parse, parseEq, names, compile, normalize, formulas, unknownNames, defaults, compute, ranges, paint, mount, fmt, fmtStep, FAM, FITS, KINDS, NAME, sizeName, niceStep, tw, GREEK, GREEK_VALUES: new Set(Object.values(GREEK)), own };
 }
 
 // ---- the editor's side: the widget's file, read back, and the PDF's picture -------------------
 
 const K = graphKit();
 export const kit = K;
+
+// ---- a formula written out again: as a reader types it, or as LaTeX -----------------------------
+  // show(tree, tex): the text parse reads back to the same tree's values (test/graphs.test.mjs),
+  // with the brackets it needs and no more; tex: LaTeX for the PDF's legend and the web page
+  const GREEK_TEX = Object.fromEntries(Object.entries(K.GREEK).filter(([k]) => !/^var/.test(k)).map(([k, v]) => [v, '\\' + k]));
+  const TEXFN = { sin: 1, cos: 1, tan: 1, sec: 1, csc: 1, cot: 1, arcsin: 1, arccos: 1, arctan: 1, sinh: 1, cosh: 1, tanh: 1, exp: 1, ln: 1, log: 1, lg: 1, min: 1, max: 1 };
+  function nameTex(n) {
+    const m = /^([^_]+)(?:_(.+))?$/.exec(n);
+    const base = [...m[1]].length === 1 ? (GREEK_TEX[m[1]] || m[1]) : '\\mathit{' + m[1].replace(/[α-ωΑ-Ω]/g, (c) => GREEK_TEX[c] || c) + '}';
+    return m[2] ? base + '_{' + m[2] + '}' : base;
+  }
+  function numText(v, tex) {
+    let t = String(v);
+    if (/e/.test(t)) { const [a, b] = t.split('e'); t = tex ? (a === '1' ? '' : a + '\\cdot ') + '10^{' + (+b) + '}' : a + 'e' + (+b); }
+    return t;
+  }
+  const PREC = { '<': 0, '>': 0, '<=': 0, '>=': 0, '+': 1, '-': 1, '*': 2, '/': 2, neg: 3, '^': 4 };
+  const prec = (t) => (t[0] in PREC ? PREC[t[0]] : 5);
+  function show(t, tex) {
+    const P = (x, min) => (prec(x) < min ? (tex ? '\\left(' + show(x, tex) + '\\right)' : '(' + show(x, tex) + ')') : show(x, tex));
+    switch (t[0]) {
+      case 'n': return numText(t[1], tex);
+      case 'v': return tex ? nameTex(t[1]) : t[1];
+      case 'neg': return '-' + P(t[1], 3);
+      case 'f': {
+        const [, n, a] = t;
+        if (tex) {
+          if (n === 'sqrt') return '\\sqrt{' + show(a[0], 1) + '}';
+          if (n === 'root') return '\\sqrt[' + show(a[1], 1) + ']{' + show(a[0], 1) + '}';
+          if (n === 'abs') return '\\lvert ' + show(a[0], 1) + '\\rvert';
+          if (n === 'frac') return '\\frac{' + show(a[0], 1) + '}{' + show(a[1], 1) + '}';
+          if (n === 'factorial') return P(a[0], 5) + '!';
+          return (TEXFN[n] ? '\\' + n : '\\operatorname{' + n + '}') + '\\left(' + a.map((x) => show(x, 1)).join(', ') + '\\right)';
+        }
+        if (n === 'factorial') return P(a[0], 5) + '!';
+        if (n === 'frac') return show(['/', a[0], a[1]], false);
+        return n + '(' + a.map((x) => show(x, false)).join(', ') + ')';
+      }
+    }
+    const [op, a, b] = t;
+    if (op === '+') return P(a, 1) + ' + ' + P(b, 2);
+    if (op === '-') return P(a, 1) + ' - ' + P(b, 2);
+    if (op === '/') return tex ? '\\frac{' + show(a, 1) + '}{' + show(b, 1) + '}' : P(a, 2) + '/' + P(b, 4);
+    if (op === '^') {
+      const base = a[0] === 'f' && !tex ? '(' + show(a, false) + ')' : P(a, 5);
+      if (tex) return base + '^{' + show(b, 1) + '}';
+      return base + '^' + (prec(b) >= 5 && b[0] !== 'f' ? show(b, false) : '(' + show(b, false) + ')');
+    }
+    if (op === '*') {
+      // a product as written: 2x, s k^α, (n + δ) k; a number after anything gets its sign
+      const L = P(a, 2), R = P(b, 3);
+      if (b[0] === 'n' || b[0] === 'neg' || /^[\d.]/.test(R)) return L + (tex ? ' \\cdot ' : '·') + R;
+      if (a[0] === 'n' && b[0] !== 'f') return L + (tex ? ' ' : '') + R;
+      return L + ' ' + R;
+    }
+    return P(a, 1) + ' ' + (tex ? { '<': '<', '>': '>', '<=': '\\le', '>=': '\\ge' }[op] : op) + ' ' + P(b, 1);
+  }
+  // a formula's text as LaTeX (the text itself where it does not read)
+  const texOf = (text, declared) => { try { return show(K.parse(text, declared), true); } catch (e) { return null; } };
+  const eqTexOf = (text, declared) => { try { const t = K.parseEq(text, declared); return t[0] === '-' && /=/.test(text) ? show(t[1], true) + ' = ' + show(t[2], true) : show(t, true) + ' = 0'; } catch (e) { return null; } };
+
+// a label's LaTeX: a variable's name in math, Greek as Greek, a minus as a minus; words as words
+function labelTex(t) {
+  const out = [];
+  const re = /([A-Za-zα-ωΑ-Ω])(\u0307?)(_[A-Za-z0-9]{1,8})?(?![A-Za-zα-ωΑ-Ω])|(−?\d+(?:\.\d+)?)|([A-Za-z]{2,})|([\s\S])/g;
+  const SYM = { '\\': '\\textbackslash{}', '{': '\\{', '}': '\\}', '$': '\\$', '&': '\\&', '#': '\\#', '%': '\\%', '_': '\\_', '^': '\\^{}', '~': '\\~{}', '−': '$-$', '²': '\\textsuperscript{2}', '³': '\\textsuperscript{3}', '·': '$\\cdot$', '…': '\\dots{}', '≤': '$\\le$', '≥': '$\\ge$', '×': '$\\times$', '′': "$'$" };
+  let m;
+  while ((m = re.exec(String(t)))) {
+    if (m[1]) { const n = nameTex(m[1] + (m[3] || '')), sub = /_\{.*$/.exec(n); out.push('$' + (m[2] ? '\\dot{' + n.replace(/_\{.*$/, '') + '}' + (sub ? sub[0] : '') : n) + '$'); }
+    else if (m[4]) out.push('$' + m[4].replace('−', '-') + '$');
+    else if (m[5]) out.push(m[5]);
+    else { const c = m[6]; out.push(SYM[c] || (GREEK_TEX[c] ? '$' + GREEK_TEX[c] + '$' : /[\x20-\x7e\u00a0-\u00ff]/.test(c) ? c : '?')); }
+  }
+  return out.join('').replace(/\$\$/g, '');
+}
+
+// The LaTeX of a picture's texts, for the PDF's (PGFContext gives paint this as g.tex): a label's
+// words, a series' formula from its descriptor (tx), the sliders' values
+const TEXER = {
+  label: (t) => labelTex(t),
+  series(S, s) {
+    const d = S.tx, dec = s.sliders.map((q) => q.name);
+    if (!d) return labelTex(S.label);
+    let t = null;
+    if (d[0] === 'fn') t = lhsTex(d[1]) + ' = ' + (texOf(d[2], dec) || '');
+    else if (d[0] === 'param') t = '\\left(' + (texOf(d[1], dec) || '') + ',\\ ' + (texOf(d[2], dec) || '') + '\\right)';
+    else if (d[0] === 'eq') t = eqTexOf(d[1], dec);
+    else if (d[0] === 'dot') t = '\\dot{' + nameTex(d[1]) + '} = 0';
+    return t ? '$' + t + '$' : labelTex(S.label);
+  },
+  sliders: (parts) => parts.map(([n, v]) => '$' + nameTex(n) + ' = ' + v.replace('−', '-') + '$').join(',\\enspace ')
+};
+// a legend's left side as LaTeX: p, k′, k̇, x_1, f(x)
+function lhsTex(yl) {
+  const m1 = /^([A-Za-zα-ωΑ-Ω])([\u0307′']?)(_[A-Za-z0-9]{1,8})?$/.exec(yl), m2 = /^([A-Za-zα-ωΑ-Ω]\w*)\(([A-Za-zα-ωΑ-Ω]\w*(?:_\w+)?)\)$/.exec(yl);
+  if (m1) return (m1[2] === '\u0307' ? '\\dot{' + nameTex(m1[1]) + '}' : nameTex(m1[1]) + (m1[2] ? "'" : '')) + (m1[3] ? '_{' + m1[3].slice(1) + '}' : '');
+  return m2 ? nameTex(m2[1]) + '(' + nameTex(m2[2]) + ')' : 'y';
+}
+Object.assign(K, { show, texOf, nameTex, labelTex });
 
 const MARK = '<script type="application/json" id="rikuy-graph">';
 const MAX_FILE = 2e6;
@@ -1521,7 +1546,7 @@ class PGFContext {
   constructor(W, H) {
     this.W = W; this.H = H; this.out = []; this.path = []; this.colors = new Map();
     this.st = { stroke: '#000', fill: '#000', lw: 1, dash: [], alpha: 1, font: '12px serif', align: 'start', base: 'alphabetic', tx: 0, ty: 0, rot: 0 };
-    this.stack = []; this.rkTex = null; this.size = 0;
+    this.stack = []; this.rkTex = null; this.size = 0; this.tex = TEXER;
   }
   // (a picture of 800 kB at most: past it, what is left is left out and the file says so)
   push(t) { if (this.size > PGF_MAX) { this.cut = true; return; } this.size += t.length; this.out.push(t); }
@@ -1645,7 +1670,7 @@ class PGFContext {
   clearRect() { /* paper */ }
   fillText(t, x, y) {
     const st = this.st, px = parseFloat(st.font.replace(/^\D*/, '')) || 12, it = /italic/.test(st.font);
-    const tex = this.rkTex || K.labelTex(String(t));
+    const tex = this.rkTex || labelTex(String(t));
     const h = st.align === 'right' || st.align === 'end' ? 'right' : st.align === 'left' || st.align === 'start' ? 'left' : '';
     const v = st.base === 'top' || st.base === 'hanging' ? 'top' : st.base === 'bottom' || st.base === 'ideographic' ? 'bottom' : st.base === 'middle' ? '' : 'base';
     const c = this.color(st.fill, 'fill');
