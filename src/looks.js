@@ -9,6 +9,7 @@
 export const SIZES = ['tiny', 'scriptsize', 'footnotesize', 'small', 'normalsize', 'large', 'Large', 'LARGE', 'huge', 'Huge'];
 export const LOOK_CMDS = ['chapter', 'section', 'subsection', 'subsubsection', 'paragraph', 'subparagraph'];
 import { parseKV, kvEdits } from './preamble.js';
+import { commentsBlanked, preambleEnd } from './scan.js';
 
 const MAX = 200000, ARG = 2000;
 
@@ -46,22 +47,9 @@ function group(t, i) {
   return -1;
 }
 const skipSp = (t, i) => { for (let n = 0; n < 200 && i < t.length && /\s/.test(t[i]); n++) i++; return i; };
-// comments made spaces, offsets kept
-export function stripComments(t) {
-  let out = '', i = 0;
-  const n = Math.min(t.length, MAX);
-  while (i < n) {
-    const c = t[i];
-    if (c === '\\') { out += t.slice(i, i + 2); i += 2; continue; }
-    if (c === '%') { const j = t.indexOf('\n', i), e = j < 0 ? n : j; out += ' '.repeat(e - i); i = e; continue; }
-    out += c; i++;
-  }
-  return out;
-}
-export function preambleEnd(src) {
-  const m = /\\begin\s*\{document\}/.exec(stripComments(src.slice(0, MAX)));
-  return m ? m.index : -1;
-}
+// comments made spaces, offsets kept, of the first MAX characters (src/scan.js: once per text)
+export function stripComments(t) { return commentsBlanked(t, Math.min(t.length, MAX)); }
+export { preambleEnd };
 
 // A format's tokens into the look's fields; what is no font, size, colour or alignment is kept
 // as it is (extra), so Modify Style writes it back

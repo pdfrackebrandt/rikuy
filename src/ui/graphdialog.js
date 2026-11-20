@@ -2,7 +2,7 @@
 // in a row at the top (a function, data with a fit, a curve, an implicit curve, a phase portrait,
 // a distribution) and a list of named ones (supply and demand, IS–LM, Solow...), the fields of the
 // one chosen (its formulas or its data, its sliders and their ranges, its axes), and the graph
-// itself live beside them, sandboxed as the page's widgets are (src/widget.js: a srcdoc frame
+// itself live beside them, sandboxed as the page's widgets are (src/widget.js runWidget: a frame
 // with scripts alone, its own policy, no request out). Insert writes the widget's file, the
 // \rikuywidget line, rikuy.sty where the project has none and the PDF's picture, as one step;
 // opened on a graph of the document it edits that graph (src/cmd/insert.js).
@@ -15,7 +15,7 @@
 import { dialog } from './kit.js';
 import { mk } from './dom.js';
 import { kit as K, graphHtml, TEMPLATES, GALLERY, template, parseData, dataText } from '../graph.js';
-import { widgetDoc } from '../widget.js';
+import { runWidget } from '../widget.js';
 
 const ICONS = {
   function: '<path d="M2.5 13c2-7 4-7 5.5-1.5S12 17 13.5 9 16 4 17.5 5"/>',
@@ -459,7 +459,7 @@ export function openGraphDialog(app, opts = {}) {
     clearTimeout(timer);
     timer = setTimeout(show, 180);
   }
-  function show() { if (!msg()) frame.srcdoc = widgetDoc(graphHtml(spec)); }
+  function show() { if (!msg()) runWidget(frame, graphHtml(spec)); }
   const msg = () => err.textContent;
 
   // ---- the dialog's own history ----

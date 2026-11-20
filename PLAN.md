@@ -47,8 +47,9 @@ no room for pandoc and no service worker, so there it changes the page and `engi
 is version 29's but for `engine.js`, and the TeX rows are CI's TeX job on the pull request
 (`test/engines.py` 23/23, `test/pdf.py` 20/20, `test/offline.py` 34/34 with a compile offline).
 
-Version 31 (2026-11-10) is the public launch: the hosted build runs at
-<https://rikuy-3dl.pages.dev/> (deployed from main by `deploy.yml`), with task 28's fixes for a
+Version 31 (2026-11-10) is the public launch: the hosted build ran at
+<https://rikuy-3dl.pages.dev/> (deployed from main by `deploy.yml`; since 2026-11-13 at
+<https://rikuy.rackebrandt.pe/>, to which the old address redirects since 2026-11-20), with task 28's fixes for a
 newcomer's first minutes and for Word files. The claude.ai copy changes its page only, and now
 names the hosted copy as the place for Word. Checked by hand on the hosted site in Chrome: the
 update notice brings the new version in, a new document takes typing at once and compiles (1
@@ -821,8 +822,11 @@ Tests:
     CNAME at Punto.pe (`rikuy` to `rikuy-3dl.pages.dev`) and the Pages project's custom domain;
     `build/app.mjs`'s `SITE` (the canonical address, the preview tags, `robots.txt`,
     `sitemap.xml`, `llms.txt`) and the README, `SECURITY.md` and `docs/HOSTING.md` name it. The
-    old address keeps serving the same deployment and is not redirected, because browsers keep
-    documents by address: what anyone kept at `rikuy-3dl.pages.dev` stays reachable there.
+    old address served the same deployment, not redirected, until 2026-11-20, when Pedro added a
+    Bulk Redirect in Cloudflare: `rikuy-3dl.pages.dev` now answers with a permanent redirect to
+    `rikuy.rackebrandt.pe`. Browsers keep documents by address, so documents kept in a browser at
+    the old address are no longer reachable there; a copy installed from the old address keeps
+    working offline, with its documents.
     Evidence: `deploy_check.py` 43/43, `agent.py` as before; the live check is in the pull request.
 
 37. **Styles as in Word, with LaTeX among them.** Done in the code (pull request 13), asked for by
@@ -3311,6 +3315,73 @@ Tests:
     commands above are no ribbon controls in `controls.json` any more. No command's own name or
     role changed. Evidence: `npm test` green, `tabs.py` 137 (word_layout 17, tablet 3,
     mac_keytips 1), `agent.py` 143, `ribbon.py` 194 and its downloads 8.
+67. **The security review's open items (S2 to S5 of `docs/reviews/SECURITY.md`).** Done in the
+    code (branch `sec-followups`), one commit each. *S4:* the hosted copy sends
+    `Strict-Transport-Security: max-age=31536000` on every file, for its own host only (no
+    `includeSubDomains`, no preload: those would bind rackebrandt.pe's other names for a year);
+    `test/deploy_check.py` checks it (53 checks). *S3:* the hosted page's `script-src` is `'self'`,
+    the SHA-256 of its one inline script (the app's bundle; the build takes it from `index.html`),
+    `'wasm-unsafe-eval'` and `blob:` (Pyodide's runtime): no `'unsafe-inline'`, no `'unsafe-eval'`.
+    Nothing in the page or its workers needs eval (`build/app.mjs` `policy` lists what was
+    checked). Live figures run in a document of their own, `widget-<hash>.html`, with the
+    widgets' policy (a srcdoc frame takes the page's), from the HTTP cache when offline; the
+    claude.ai copy keeps srcdoc. The browser tests that open the page through `serve.py` or
+    `open_page` now run under the hosted policy, read from `dist/_headers` (`browser.py` hands
+    Playwright's polled expressions over as functions, which it would otherwise eval in the page).
+    New `test/csp.py`: a whole session with every refusal reported to the server, none (21
+    checks, in `tex.yml`). Safari 15 cannot compile on the hosted copy (no `'wasm-unsafe-eval'`).
+    Running the tests under the real policy showed that `connect-src 'self' blob:` had refused
+    every git push, pull and clone on the hosted copy (the Git panel went through a third party's
+    CORS proxy). Git now goes through Rikuy's own proxy on the same site, `/git`, a Cloudflare
+    Pages Function (`functions/git/[[path]].js`, `src/gitproxy.js`): git's smart HTTP alone, to
+    public https hosts by name, the token to that host alone, 32 MiB at most; `connect-src`
+    stays `'self' blob:` (docs/HOSTING.md: what it lets through, what it costs).
+    `test/gitproxy.test.mjs` (9 groups) checks what it lets through; `git.py` runs it locally
+    (`test/gitproxy_server.mjs`): under the policy as it ships, a clone through `/git` works, one
+    straight to a host is refused with a message naming `/git`, and `/git` refuses an IP address.
+    *After the hostile review (`/tmp/review-sec.md`):* M1, the widget shell writes only for a
+    parent of its own origin and only in the sandbox, and `runWidget` sets the sandbox itself
+    (`widgets.py`); M2, Edit Comment writes a base32 comment line again whole (`review.py` 108);
+    L1, the shell is asked for at its address without `.html` (Pages redirects `x.html`, which the
+    service worker's install would refuse; `pages.py` now does as Pages does, `offline.py` 61),
+    and a shell that never loads leaves the figure's picture and a note (`widgets.py` 66); L3,
+    `no-transform` on the page and `dev/live_check.py` after each deployment; L2, where a browser
+    refuses WebAssembly (Safari 15) the PDF pane says so plainly (`csp.py` 22); and `frame-src
+    'self'` (the hosted page frames only its widget document), control and direction marks taken
+    out of comment names and texts, and a line that only looks like a comment counted as text.
+    *After the verification of 8212363:* the git proxy answers Rikuy's git client alone (the
+    header `X-Rikuy-Git`, which another site's page cannot send without a refused preflight; no
+    navigation, nothing but a script's fetch, nothing from another site), only to known git
+    hosts (nine, and `RIKUY_GIT_HOSTS`), every answer git's own type or bytes, sandboxed, an
+    attachment, readable by this site alone, capped at 5 minutes and, where the host gives a
+    length, 256 MiB (no script on the stream: review L6), without the host's
+    `WWW-Authenticate`; the installed app's service worker refuses a navigation to `/git`;
+    HOSTING.md step 9 has the rate limiting rule (`gitproxy.test.mjs` 12 groups, `git.py` 49,
+    `offline.py` 62). `para.py`, `picture.py`, `refs.py` and
+    `styles.py` serve the policy too.
+    Under the new policy: `browser.py` 199, `agent.py` 143, `offline.py` 60, `launch.py` 18,
+    `engines.py` 44, `word.py` 111, `spell.py` 124, `widgets.py` 62, `insert.py` 224,
+    `mathfield.py` 19, `pdf.py` 23, `deploy_check.py` 61. *S2:* KaTeX 0.16.22 to 0.19.1 (its
+    page script, mhchem, style sheet and fonts; the pinned hashes, `package-lock.json`). New
+    `dev/katex_compare.mjs` draws every formula of the model of the documents given with two
+    KaTeX builds and sorts the differences: on the sample and the 716 corpus documents (16,193
+    formulas) no new error (one fewer, `\mapsfrom`), 11,785 drawn the same (0.18 prefixed its
+    inner classes with `katex-`, which Rikuy's styles never name, and writes lengths to four
+    decimals), 283 aligned blocks 0.15em shorter above their first row and below their last
+    (rows as far apart as before), 189 negated relations with an empty span keeping them on one
+    line, and 207 others: letters set one by one with their own italic correction,
+    `\underbrace` and `\overbrace` spaced as inner atoms, `\not` drawn another way. *S5:* a
+    comment line a comments only copy brings in is written `% comment32 <name> <words> <text>`
+    (`% reply32 <name> <text>`), each part in base32, whatever form it came in (`commentsOf`
+    matches lines by what they say); the reader's page writes that form already, the page shows
+    it as typed, lines in the first form stay and are read as before. After its % such a line
+    holds letters, digits and spaces alone, so it runs nothing where a document made % ordinary
+    by a `\csname` built `\catcode`, `\scantokens` or Lua, which the static filter cannot see:
+    `share.py catcodes` compiles each in the page, the reader's line as written prints its
+    marker and the same line through the link does not (10 checks; `share.py` 83 in all, its
+    Open in Overleaf check now reads the form the page makes, which the hosted policy's
+    `form-action 'self'` refuses to post, as `pdf.py` says to the user); `review.test.mjs` and
+    `share.test.mjs` (base32 against RFC 4648's vectors, the forms read and refused).
 
 ## Open tasks
 
@@ -3397,6 +3468,51 @@ Tests:
       1502.01027 prints the hook name "begindocument/b..." on its first page; 2202.05036 lacks
       cbfonts' `grmn` (the archaic koppa); the rest follow from a float or a page placed
       elsewhere. Not classified further without the PDFs (the workflow keeps none).
+
+    Third run, 44728716263 (2026-11-20, main 4063ad1, to measure the .bbl fix): stopped in its
+    first minutes, arXiv's listing answering 429 while the sample was drawn; nothing compiled.
+    Now `get` waits as arXiv asks and tries again, and `sources_from_run` compiles an earlier
+    run's sample again (its sources from that run's cache, or fetched again where gone), so a
+    third run measures the fix on the second run's 998 papers.
+66. **Everything that computes, in C or C++ for WebAssembly.** Planned, not started: asked for by
+    the owner on 2026-11-20 ("even where the gain is small", after the UI and UX work).
+    `docs/handoff/CPP-PLAN.md` has the inventory of `src/` and `tex/` by module, the batches B0 to
+    B11 in order (each with its files, C++ layout, oracle, benchmark, size and risks), the size
+    budget (the artifact has about 300 KB left) and what stays JavaScript. Measured while planning
+    (node, one core of a busy machine): a full model build of `dev/bench/long` is 47 to 67 ms,
+    three times task 52's 16 ms, because B4 and round 3 added preamble readers that each strip
+    the comments of the whole file again (more than half of a full build; 2/3 of a keystroke in
+    its `\title`, 97 ms); memoizing them in a scratch copy made it 19 ms and 30 ms. Every full build
+    also parses every .bib again (46 ms for a 2 MB one). B0, in JavaScript, fixes both first.
+    *B0 done* (branch `cpp-plan`): `src/scan.js` reads a text's comments and the preamble's end
+    once per text for preamble.js, looks.js and styles.js (each keeps its cap, so every answer is
+    the one before); the model keeps each .bib's entries with the text they came from; the undo
+    record compares from where the edits were. `dev/bench_native.mjs -n 9` (one core of the busy
+    machine, two runs each, with the core): the paper's keystroke model 44.1 and 26.1 ms before,
+    14.7 and 15.2 ms after; its first load 40.0 and 41.0 ms before, 35.5 and 29.7 after; a
+    keystroke in its `\title` 82 to 95 ms before, 29 to 30 after; with a 2 MB .bib 83 and 87 ms
+    before, 36 and 25 after; the undo record's diff 0.5 to 0.05 ms. Evidence: `test/scan.test.mjs`
+    (new, 5), `model.test.mjs`'s .bib check and `edge.test.mjs`'s undo check (7677 of 7677 steps),
+    each failing on a planted bug; `npm test` green (view.test.mjs V4's 50 ms timing failed once on
+    the busy machine and passed alone); `INCR_FULL=1 incremental.test.mjs` every one of 8000
+    edits equal, its fast path share check failing on main (4063ad1) the same way (334 of 7600,
+    the floor 380); `page.py long_document` 6 of 6 (11 ms for every command at a look at the
+    caret); `browser.py` 199 of 199. No LaTeX-examples clone on this machine: the corpus runs not
+    run. *B0's hostile review* (no go until F1): F1, an open undo step kept the untouched region of
+    a file that was opened over it between two keystrokes, and Ctrl+Z wrote a text that never was:
+    openFiles closes the step, and the step checks itself (`stepStart`, `stepJoin` in
+    src/editor.js: a file found changed between its commits is compared from the ends); F2, the
+    .bib cache let a closed project's entries go never (38 MB for 8 projects): it keeps what the
+    last build asked for (6 MB); F3, the kept entries are frozen; and preamble.js's
+    `stripComments` no longer says a stretch twice past 400,000 characters (a bug from before
+    B0). The long incremental run's fast path share check, failing on main too, was the streams'
+    luck, not a regression (every paragraph of every repository document takes the fast path as
+    often as with f5bb84d's sources): its floor is now 1 in 40, and an exact check per paragraph
+    guards the fast path. Evidence: the reviewer's repro "consistent" (with and without the
+    step's closing); edge.test.mjs 10691 of 10691 with 1145 outside changes (524 differ without
+    the check); model.test.mjs's .bib checks; scan.test.mjs 8; incremental 35 of 35 and with
+    `INCR_FULL=1` 35 of 35; `npm test` green but V4 (flaky, 2 of 3 alone); `history.py` 40 of 40,
+    `browser.py` 199 of 199, `page.py long_document` 6 of 6.
 ## Rules
 
 - No status commits ("Note ...", "Record ...") and no log in this file. One commit per

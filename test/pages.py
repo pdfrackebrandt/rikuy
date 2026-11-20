@@ -1,12 +1,12 @@
 """Serve a built dist/ the way Cloudflare Pages serves the hosted Rikuy: dist/index.html as the page
 at /, every other file as it is, a missing file as 404 (with 404.html when the build has one), and
-the headers of dist/_headers applied as Pages applies them (every matching rule; a header set by
-two rules gets both values, joined by a comma). Without a _headers file each response gets
-serve.py's policy and no-cache. The served folder can change while running (`server.root`), as a
+the headers of dist/_headers applied as Pages applies them (every matching rule, in the file's order; a
+header set by two rules gets both values, joined by a comma; "! Name" takes away what the rules
+before set). Without a _headers file each response gets the artifact host's policy and no-cache. The served folder can change while running (`server.root`), as a
 new deployment does. Used by offline.py and launch.py; `npm run serve:app` runs it on port 8791.
 
-What it leaves out of Pages: redirects (_redirects), pretty URLs other than /index.html -> /, and
-compression."""
+What it leaves out of Pages: redirects (_redirects) and compression; of the pretty URLs it has
+/index.html -> / and a page file x.html served at x, with x.html redirected there."""
 import http.server, os, re, socketserver, sys, threading, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import serve
@@ -40,18 +40,22 @@ def parse_headers(text):
 def headers_for(root, path):
     f = os.path.join(root, '_headers')
     if not os.path.isfile(f):
-        return [('Content-Security-Policy', serve.CSP), ('Cache-Control', 'no-cache')]
-    got, order, removed = {}, [], set()
+        return [('Content-Security-Policy', serve.ARTIFACT_CSP), ('Cache-Control', 'no-cache')]
+    # in the file's order, as Pages applies them: a rule's "! Name" takes away what earlier rules
+    # set, and the same rule may set it again (how one file gets its own value of a header)
+    got, order = {}, []
     for rx, hs, rm in parse_headers(open(f, encoding='utf8').read()):
         if not rx.match(path):
             continue
-        removed.update(rm)
+        for k in rm:
+            got.pop(k, None)
         for k, v in hs:
             if k.lower() in got:
                 got[k.lower()] = (got[k.lower()][0], got[k.lower()][1] + ', ' + v)
             else:
-                got[k.lower()] = (k, v); order.append(k.lower())
-    return [got[k] for k in order if k not in removed]
+                got[k.lower()] = (k, v)
+                if k.lower() not in order: order.append(k.lower())
+    return [got[k] for k in order if k in got]
 
 
 class H(http.server.BaseHTTPRequestHandler):
@@ -82,6 +86,11 @@ class H(http.server.BaseHTTPRequestHandler):
             return self.send(308, b'', 'text/plain', path, [('Location', '/')])
         rel = 'index.html' if path == '/' else path.lstrip('/')
         f = os.path.normpath(os.path.join(root, rel))
+        # Pages answers a page file x.html at x and redirects x.html there
+        if path.endswith('.html') and os.path.isfile(f) and os.path.commonpath([root, f]) == root:
+            return self.send(308, b'', 'text/plain', path, [('Location', path[:-5])])
+        if not os.path.isfile(f) and os.path.isfile(f + '.html'):
+            f += '.html'
         if os.path.commonpath([root, f]) != root or not os.path.isfile(f):
             nf = os.path.join(root, '404.html')
             body = open(nf, 'rb').read() if os.path.isfile(nf) else b'Not found'
