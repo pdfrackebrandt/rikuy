@@ -1568,6 +1568,13 @@ body.fpainting #pages { cursor: copy; }
 .stp-prev { display: flex; align-items: center; gap: 4px; margin-right: auto; color: var(--mute); }
 .stp-f .btn[aria-pressed="true"] { background: var(--blue-wash); }
 @media (max-width: 700px) { .stp { left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; max-height: 52vh; } }
+/* Word's task panes dock at the window's right under the ribbon, and the page moves over to make
+   room: on a desktop window the Styles, Spelling and Thesaurus panes are #main's last column, not
+   cards over the ribbon's end and the page's text (narrower, they stay sheets) */
+@media (min-width: 1000px) {
+  #main > .stp, #main > .sp-pane { position: relative; inset: auto; z-index: 3; order: 10; flex: none; align-self: stretch; width: 320px; max-height: none; margin: 0; border: 0; border-left: 1px solid var(--line); border-radius: 0; box-shadow: none; }
+  #main > .sp-pane { overflow-y: auto; padding-top: 0; }
+}
 /* Apply Styles, Modify Style, Create a Style */
 .pop.pop-apply { width: min(300px, calc(100vw - 16px)); }
 .pop.pop-modstyle { width: min(430px, calc(100vw - 16px)); }
