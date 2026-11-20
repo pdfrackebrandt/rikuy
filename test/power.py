@@ -10,7 +10,8 @@ first line indent at a paragraph's start, a gap elsewhere; Esc then Tab leaves (
 reference and citation pickers by the keys, Enter closing them, with what each label names (7).
 follow: F12 or Ctrl+click on a cross reference goes to its label, Shift+F5 back; Enter or F2 on a
 formula selected alone opens it (8). linear: Ctrl+Shift+= in a new equation shows that equation
-as its LaTeX on the page, never the paragraph before it (13).
+as its LaTeX on the page, never the paragraph before it (13). modes: Esc leaves Focus and Read
+Mode with the caret on the page.
 Each part is a function; `python3 power.py
 footnote` runs one."""
 import os, sys
@@ -189,7 +190,21 @@ def linear(page):
     page.evaluate('window.rikuy.hideLatexViews()')
 
 
-PARTS = [footnote, dollars, latex, tab, pickers, follow, linear]
+def modes(page):
+    load_doc(page, MATH)
+    for name in ('Focus', 'Read Mode'):
+        click_text(page, 'Next', 2)
+        page.evaluate("window.rikuy.runCommand(%r)" % ('focus' if name == 'Focus' else 'read-mode')); page.wait_for_timeout(700)
+        on = page.evaluate("document.body.classList.contains('focus') || window.rikuy.view === 'pdf'")
+        key(page, 'Escape', 800)
+        off = page.evaluate("!document.body.classList.contains('focus') && window.rikuy.view !== 'pdf'")
+        check('modes: Esc leaves ' + name + ' with the keyboard on the page', on and off and active(page) == 'pages', (on, off, active(page)))
+        typed(page, 'Q')
+        check('modes: and the next key types there (' + name + ')', 'Q' in src(page), src(page)[60:110])
+        load_doc(page, MATH)
+
+
+PARTS = [footnote, dollars, latex, tab, pickers, follow, linear, modes]
 
 
 def run():

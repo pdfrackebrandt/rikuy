@@ -586,6 +586,12 @@ onInstall((app) => {
   if (fx) fx.addEventListener('click', () => app.runCommand('focus'));
   // Esc: out of a block shown as LaTeX (the caret's), else out of Focus
   document.addEventListener('keydown', (e) => {
+    // and out of Read Mode, as Word's: the page again at the place read, the caret on it
+    if (e.key === 'Escape' && !e.defaultPrevented && !app.pop && !e.isComposing && app.view === 'pdf' && !(e.target && e.target.closest && e.target.closest('input, textarea, select, [role=dialog], [role=menu], [role=listbox]'))) {
+      e.preventDefault();
+      Promise.resolve(app.setView('page')).then(() => { if (document.activeElement !== app.root) { app.root.focus({ preventScroll: true }); if (!app.caretNow()) app.goToPage(app.currentPage() - 1); } });
+      return;
+    }
     // (only with the caret on the page: Esc in a dialog or a field is theirs)
     if (e.key === 'Escape' && !e.defaultPrevented && !app.pop && !e.isComposing && e.keyCode !== 229 && (document.activeElement === app.root || cls().contains('focus'))) {
       const T = app.texHere && app.texHere();
