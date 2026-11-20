@@ -15,11 +15,14 @@ day; check again before adopting anything below.
 | Motion | `src/motion.js`, `src/motion.css`, `src/caret.js` | Fluent 2's durations and curves from the tokens, transform and opacity only, three modes (full, reduced, off). |
 | View Transitions | `src/motion.js` `crossFade` | The Page, LaTeX and PDF views cross fade where `document.startViewTransition` exists (Chrome 111, Safari 18, Firefox 144: Baseline newly available since 14 October 2025); a plain switch elsewhere. |
 
-## Where app.css switches to the tokens (after PRs 79, 86 and 90 merge)
+## Where app.css switches to the tokens
 
-Do it in one commit with no visual change: each line below is a find and replace whose result
-is the same pixels, checked by `test/tabs.py`, `test/ux.py` (PR 90) and a screenshot diff of
-every tab in light, dark and forced colours.
+Items 1 and 6 (but `.flash`) are done (commit 322527b, over PRs 79, 83 and 84): every element's
+computed colours, shadow, caret colour and transitions were the same before and after, in light,
+dark, both forced themes and Dark page. What PR 86 and PR 90 bring follows the same way once they
+merge; items 2 to 5 change pixels and want the UX review's eye (the interface rules' C5 and C9,
+which PR 90 brings as `docs/handoff/UI-PRINCIPLES.md`), checked by `test/tabs.py`, `test/ux.py`
+and a screenshot diff of every tab in light, dark and forced colours.
 
 1. The root's short names become aliases of the tokens, in app.css's `:root` and in both dark
    blocks: `--desk: var(--rk-color-desk)`, `--desk-2: var(--rk-color-desk-2)`, `--chrome`,
