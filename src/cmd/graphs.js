@@ -7,6 +7,7 @@ import { graphThis, paramValues } from '../graphthis.js';
 import { absAtom } from '../editor.js';
 import { webPage } from '../webpage.js';
 import { packShare } from '../share.js';
+import { readGraph, graphCanvas } from '../graph.js';
 
 const ICON = '<path d="M3 16.5h14M3.5 16V3.5"/><path d="M5 14c2.5-1 4-4 5.5-7.5S14 4 16 4"/><path d="M12.5 13.5l2.2-2.2m0 0 2.2-2.2m-2.2 2.2-2.2-2.2m2.2 2.2 2.2 2.2" stroke-width="1.3"/>';
 const NONE = 'Right click an equation, or put the caret in a paragraph with one';
@@ -56,6 +57,14 @@ export const methods = {
     await this.graphInsert(r.spec, '', { f: T.f, p: T.e });
     this.toast('Graph this: ' + r.what + '. Drag a slider; Edit graph changes the rest.', 6000);
     return true;
+  },
+
+  // A graph's drawing at its starting values, W CSS pixels wide at scale times the pixels, as a
+  // PNG's data: what the page shows where it cannot run the graph, and what test/graphs.py holds
+  // TeX's picture against
+  graphDrawn(path, W, scale = 2) {
+    const spec = readGraph(this.files.get(path));
+    return spec ? graphCanvas(spec, W, scale).toDataURL('image/png') : null;
   },
 
   // File › Export as › Web page with live graphs: one .html file (src/webpage.js), downloaded.

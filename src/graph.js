@@ -1378,8 +1378,12 @@ export function graphHtml(spec) {
     MARK + '\n' + json + '\n</script>\n' +
     '<style>\n' + STYLE + '</style>\n</head>\n<body>\n' +
     '<div id="rk"><canvas id="rk-c" role="img"></canvas><div id="rk-s"></div><p id="rk-e" role="status" hidden></p></div>\n' +
-    '<script>\n(' + graphKit.toString() + ')().mount();\n</script>\n</body>\n</html>\n';
+    '<script>\n(' + kitText() + ')().mount();\n</script>\n</body>\n</html>\n';
 }
+// graphKit's text as each graph's file carries it: its lines without their indent and without the
+// lines that are comments alone (a fifth smaller; every graph of a document carries a copy)
+let KIT_TEXT = null;
+const kitText = () => KIT_TEXT || (KIT_TEXT = graphKit.toString().split('\n').filter((l) => !/^\s*\/\//.test(l)).map((l) => l.trimStart()).join('\n'));
 
 const STYLE = [
   'html, body { margin: 0; background: transparent; }',

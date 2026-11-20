@@ -317,8 +317,9 @@ What either link does when opened:
 - A link that is cut short or is not a document opens nothing: the page says "Could not open
   the link" with the reason, and the document that was open stays.
 - Size: a #share= link is about two thirds as long as the LaTeX in it, a #tex= link a third
-  longer than it. Rikuy's sample document (5,800 characters in two files) makes a #share= link
-  of 3,700 characters; its .tex alone (4,700 characters) makes a #tex= link of 6,300. Chrome
+  longer than it. Rikuy's sample document (76,000 characters in four files, most of them its live
+  graph's file, which carries its own drawing code) makes a #share= link of 35,600 characters;
+  its .tex alone (5,300 characters) makes a #tex= link of 7,100. Chrome
   takes addresses up to 2 MB and Firefox up to 1 MB, but chat and mail programs cut long links:
   under 2,000 characters is safe everywhere (about 3,000 characters of LaTeX as #share=, 1,400
   as #tex=). For more than a few pages, hand over the file.
