@@ -488,16 +488,19 @@ export const methods = {
     const t = target(this);
     if (!t) return false;
     const src = this.src(t.f);
-    const r = O.positionEdits(src, t.s, t.e, to, treeOf(this, t.f, src));
+    const r = O.positionEdits(src, t.s, t.e, to, treeOf(this, t.f, src), this.src(this.main));
     return r.error ? (this.toast(r.error, 6000), false) : this.objArrange(r.edits, r.packages);
   },
   objPositionMenu() {
     const t = target(this);
     if (!t) return false;
-    const src = this.src(t.f), P = O.positionOf(src, t.s, t.e, treeOf(this, t.f, src));
+    // (the main file's preamble defines the document's environments)
+    const src = this.src(t.f), P = O.positionOf(src, t.s, t.e, treeOf(this, t.f, src), this.src(this.main));
     const on = (to) => to.mode === P.mode && (to.mode === 'inline' || (to.mode === 'float' ? (P.place || 'tbp').replace(/!/g, '') === to.place : P.side === to.side));
     // (what cannot apply where it stands is greyed, its reason in its tooltip, as Word greys it)
-    openMenu(this, this.objAnchor('object-position'), PLACES.map(([n, to, title]) => { const why = on(to) ? null : O.positionWhyNot(P, to); return { name: n, title: why || title, radio: true, checked: on(to), disabled: !!why, run: () => this.objPosition(to) }; }), { label: 'Position' });
+    // (what cannot apply where it stands is greyed, as Word greys it; the arrows still reach it, and
+    // its reason is its description and the menu's note line, for a screen reader and a tap alike)
+    openMenu(this, this.objAnchor('object-position'), PLACES.map(([n, to, title]) => { const why = on(to) ? null : O.positionWhyNot(P, to); return { name: n, title: why || title, radio: true, checked: on(to), disabled: !!why, why, run: () => this.objPosition(to) }; }), { label: 'Position' });
     return true;
   },
   objAlign(how) {

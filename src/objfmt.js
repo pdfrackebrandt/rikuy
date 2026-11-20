@@ -618,8 +618,10 @@ export function alignEdits(src, s, e, how, nodes) {
 // natural width: {0pt}). to: { mode: 'inline' | 'float' | 'wrap', place, side }. Returns { edits,
 // packages } or { error }. A float is never put inside a float: the one round it is changed; a
 // table stays a table (table, wraptable).
-export function positionOf(src, s, e, nodes) {
+// pre: the text whose preamble defines the document's environments (the main file's), src where omitted
+export function positionOf(src, s, e, nodes, pre) {
   const B = blockOf(src, s, e, nodes);
+  B.D = docEnvs(pre == null ? src : pre);
   const F = B.float;
   if (F && !MOVABLE.test(F.name)) return { mode: 'fixed', block: F, B };
   if (F && WRAPS.test(F.name)) { const m = /^\\begin\{wrap(?:figure|table)\}(\[[^\]]*\])?\{([lrioLRIO])\}/.exec(src.slice(F.node.s, F.node.s + 60)); return { mode: 'wrap', side: m ? m[2].toLowerCase() : 'r', block: F, B, kind: /table/.test(F.name) ? 'table' : 'figure' }; }
@@ -635,24 +637,80 @@ const CELLS = /^(tabular\*?|tabularx|tabulary|longtable|xltabular|tabu|array|tbl
 const boxSays = (b) => (b.cmd ? (b.name === 'footnote' ? 'a footnote' : b.name === 'marginpar' ? 'a margin note' : 'a box (\\' + b.name + ')') : CELLS.test(b.name) ? 'a table\'s cell' : b.name === 'minipage' ? 'a minipage' : 'a box (' + b.name + ')');
 // Why the object cannot go to `to` from where it stands, or null (the Position menu greys it, as Word
 // greys what cannot apply)
+// Where a float may be written (it floats out of these) and where wrapfig wraps: an allow list, as
+// LaTeX allows a float only in outer paragraph mode. The body, lists, quotes, center and flush, a
+// proof and a theorem, a language's, line spacing's, landscape, a size; beside them the document's
+// own: its \newtheorem's, polyglossia's languages (\setotherlanguage{french}: \begin{french}), and an
+// environment it defines of these alone (\newenvironment{note}{\begin{quote}\small}{\end{quote}}).
+// Anything else, a box among them (\newtcolorbox, a minipage inside a \newenvironment), is refused.
+const LANG_ENVS = /^(otherlanguage\*?|hyphenrules|RTL|LTR)$/;
+const FLOAT_SAFE = /^(document|itemize|enumerate|description|list|trivlist|compactitem|compactenum|compactdesc|asparaenum|inparaenum|quote|quotation|verse|center|flushleft|flushright|proof|theorem|lemma|corollary|proposition|definition|example|remark|note|claim|conjecture|exercise|problem|solution|otherlanguage\*?|hyphenrules|spacing|singlespace|onehalfspace|doublespace|landscape|sloppypar|tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge|RTL|LTR)$/;
+const DECLS = /^\\(tiny|scriptsize|footnotesize|small|normalsize|large|Large|LARGE|huge|Huge|itshape|bfseries|slshape|scshape|upshape|mdseries|rmfamily|sffamily|ttfamily|normalfont|em|it|bf|sl|sc|rm|sf|tt|centering|raggedright|raggedleft|noindent|par|medskip|smallskip|bigskip|ignorespaces|unskip|relax)\b\s*|^\\vspace\*?\s*\{[^{}]{0,40}\}\s*/;
+let envMemo = { t: null, D: null };
+export function docEnvs(text) {
+  if (envMemo.t === text) return envMemo.D;
+  const t = String(text || '').replace(/(^|[^\\])%[^\n]*/g, '$1'), end = t.indexOf('\\begin{document}'), pre = end < 0 ? t : t.slice(0, end);
+  const D = { theorems: new Set(), languages: new Set(), boxes: new Set(), defs: new Map() };
+  let m;
+  for (const re of [/\\newtheorem\*?\s*\{([A-Za-z@*]+)\}/g, /\\declaretheorem\s*(?:\[[^\]]{0,200}\])?\s*\{([A-Za-z@*,\s]+)\}/g]) while ((m = re.exec(pre))) for (const n of m[1].split(',')) if (n.trim()) D.theorems.add(n.trim());
+  const L = /\\set(?:other|main|default)languages?\s*(?:\[[^\]]{0,200}\])?\s*\{([A-Za-z,\s]+)\}/g;
+  while ((m = L.exec(pre))) for (const n of m[1].split(',')) { const x = n.trim(); if (x) { D.languages.add(x); D.languages.add(x[0].toUpperCase() + x.slice(1)); } }
+  const BX = /\\(?:newtcolorbox|renewtcolorbox|DeclareTColorBox|NewTColorBox|newtcbtheorem|tcolorboxenvironment|newmdenv|newmdtheoremenv|surroundwithmdframed|newframedtheorem|newshadedtheorem)\s*(?:\[[^\]]{0,200}\])?\s*\{([A-Za-z@*]+)\}/g;
+  while ((m = BX.exec(pre))) D.boxes.add(m[1]);
+  // (\newenvironment{name}[n][default]{begin}{end}, \NewDocumentEnvironment{name}{args}{begin}{end}: the begin part)
+  const NE = /\\(?:(?:re)?newenvironment\*?\s*\{([A-Za-z@*]+)\}\s*(?:\[\d\])?\s*(?:\[[^\]]{0,80}\])?|(?:New|Renew|Provide|Declare)DocumentEnvironment\s*\{([A-Za-z@*]+)\}\s*\{[^{}]{0,80}\})\s*\{/g;
+  while ((m = NE.exec(pre))) {
+    let d = 1, i = m.index + m[0].length;
+    const b0 = i;
+    while (i < pre.length && d && i - b0 < 2000) { if (pre[i] === '\\') { i += 2; continue; } if (pre[i] === '{') d++; else if (pre[i] === '}') d--; i++; }
+    D.defs.set(m[1] || m[2], pre.slice(b0, i - 1));
+  }
+  envMemo = { t: text, D };
+  return D;
+}
+// whether a float (base FLOAT_SAFE) or a wrap (WRAP_OK) may stand in environment n
+function envSafe(n, base, D, depth = 0) {
+  if (D.boxes.has(n)) return false;
+  if (D.defs.has(n)) {
+    // (a definition of its own: safe where its begin part holds safe environments and plain declarations only)
+    if (depth > 4) return false;
+    let code = D.defs.get(n).trim();
+    for (let k = 0; k < 40 && code; k++) {
+      const b = /^\\begin\s*\{([A-Za-z@*]+)\}(\s*\[[^\]]{0,80}\])?(\s*\{[^{}]{0,80}\})?\s*/.exec(code);
+      if (b) { if (!envSafe(b[1], base, D, depth + 1)) return false; code = code.slice(b[0].length); continue; }
+      const c = DECLS.exec(code);
+      if (c) { code = code.slice(c[0].length); continue; }
+      return false;
+    }
+    return !code;
+  }
+  if (D.languages.has(n) || LANG_ENVS.test(n)) return true;
+  if (base === FLOAT_SAFE && D.theorems.has(n)) return true;
+  return base.test(n);
+}
 export function positionWhyNot(P, to) {
   if (P.mode === 'other') return 'The object stands in a paragraph of words: put it in a paragraph of its own first.';
   if (P.mode === 'fixed') return 'It stands in a ' + P.block.name + ', which sets its own place: edit its source to move it.';
   if (P.B.box && to.mode !== 'inline') return 'It stands inside ' + boxSays(P.B.box) + ': LaTeX cannot float it from there.';
   if (P.star && to.mode !== 'float') return 'A figure across the page\'s columns (' + P.block.name + ') has no in-line or wrapped form: it stays a ' + P.block.name + '.';
   if (P.B.multicols && to.mode !== 'inline' && !P.star) return 'It stands in columns (multicols): LaTeX drops a figure there ("Floats and marginpars not allowed inside multicols"), and wrapfig cannot wrap in a column; it stays in line with the text.';
+  const own = (n) => (P.B.D.defs.has(n) || P.B.D.boxes.has(n) ? ', an environment of this document\'s own' : '');
+  if (to.mode === 'float' && P.mode !== 'float') {
+    const bad = P.B.outside.filter((n) => !envSafe(n, FLOAT_SAFE, P.B.D));
+    if (bad.length) { const n = bad[bad.length - 1]; return 'Rikuy writes a figure only where LaTeX can float it, and it stands in ' + n + own(n) + ' (a figure in a box stops TeX: "Not in outer par mode"). Move it out of ' + n + ' first.'; }
+  }
   if (to.mode === 'wrap' && P.mode !== 'wrap') {
-    const bad = P.B.outside.filter((n) => !WRAP_OK.test(n));
+    const bad = P.B.outside.filter((n) => !envSafe(n, WRAP_OK, P.B.D));
     if (bad.length) {
       const n = bad[bad.length - 1];
       return LIST_ENVS.test(n) ? 'wrapfig cannot wrap text in a list (' + n + '): it would float the figure away ("wrapfigure used inside a conflicting environment"). Move it out of the list first.'
-        : 'wrapfig cannot wrap text inside ' + n + ' ("wrapfigure used inside a conflicting environment"): move it out first.';
+        : 'wrapfig cannot wrap text inside ' + n + own(n) + ' ("wrapfigure used inside a conflicting environment"): move it out first.';
     }
   }
   return null;
 }
-export function positionEdits(src, s, e, to, nodes) {
-  const P = positionOf(src, s, e, nodes);
+export function positionEdits(src, s, e, to, nodes, pre) {
+  const P = positionOf(src, s, e, nodes, pre);
   const why = positionWhyNot(P, to);
   if (why) return { error: why };
   const B = P.block, nl = /\r\n/.test(src.slice(B.node.s, B.node.e)) ? '\r\n' : '\n';
@@ -685,7 +743,12 @@ export function positionEdits(src, s, e, to, nodes) {
     if (P.mode === 'float') {
       // (a {0pt} wrapfigure sets its body in one line's mode, where a center, a list, cannot stand:
       // "Not allowed in LR mode"; it becomes the declaration \centering, \raggedright, \raggedleft)
-      const un = inAlign ? (() => { const az = src.lastIndexOf('\\end{' + inAlign.name + '}', inAlign.node.e); return [{ s: inAlign.node.s, e: inAlign.headEnd, t: '\\' + ENV_DECL[inAlign.name] }, { s: lineBefore(az), e: az + 6 + inAlign.name.length, t: '' }]; })() : [];
+      const un = inAlign ? (() => {
+        const az = src.lastIndexOf('\\end{' + inAlign.name + '}', inAlign.node.e), d = ENV_DECL[inAlign.name];
+        // (the float says it already: the center's line goes, no second \centering)
+        const has = new RegExp('\\\\' + d + '\\b').test(src.slice(B.headEnd, inAlign.node.s).replace(/(^|[^\\\\])%[^\n]*/g, '$1'));
+        return [has ? { s: lineBefore(inAlign.node.s), e: inAlign.headEnd, t: '' } : { s: inAlign.node.s, e: inAlign.headEnd, t: '\\' + d }, { s: lineBefore(az), e: az + 6 + inAlign.name.length, t: '' }];
+      })() : [];
       return { edits: whole('\\begin{' + env + '}{' + side + '}{0pt}', '\\end{' + env + '}', un), packages: ['wrapfig'] };
     }
     return { edits: whole('\\begin{' + env + '}{' + side + '}{0pt}' + nl + '\\centering', '\\end{' + env + '}'), packages: ['wrapfig'] };
