@@ -14,6 +14,10 @@
   --blue-ink: #1D5C91;
   /* the title band: Rikuy's own blue, in the tone of a word processor's title bar */
   --title: #1A5C99;
+  /* the title bar: a light blue with dark ink, the search box white with a line round it (its
+     line 3:1 against the bar and the box, its text 4.5:1; consistency.py measures them) */
+  --bar: #DCEAF7; --bar-ink: #13314F; --bar-mute: #3E5470; --bar-field: #FFFFFF; --bar-line: #62778D;
+  --bar-hover: rgba(19, 49, 79, .09); --bar-press: rgba(19, 49, 79, .16); --file: #2B74B0;
   --ribbon: #FFFFFF;
   --tabrow: #F2F4F7;
   --warn: #B3412C;
@@ -89,6 +93,8 @@
     --desk: #151A20; --desk-2: #0F1318; --chrome: #1B222A; --panel: #1F2730; --line: #2E3843;
     --ink-ui: #E2E7ED; --mute: #8D9AA8; --blue: #6AAEE3; --blue-wash: #1B3650; --blue-ink: #9CCBF0;
     --title: #143E66; --ribbon: #1F2730; --tabrow: #1B222A;
+    --bar: #1C2A3A; --bar-ink: #E2E7ED; --bar-mute: #B4C2D0; --bar-field: #151C24; --bar-line: #7A90A8;
+    --bar-hover: rgba(255, 255, 255, .09); --bar-press: rgba(255, 255, 255, .16); --file: #1F64A3;
     --warn: #E8806B; --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .45);
     --ins-ui: #6FD39C; --del-ui: #F28B7D;
     color-scheme: dark;
@@ -98,6 +104,8 @@
   --desk: #151A20; --desk-2: #0F1318; --chrome: #1B222A; --panel: #1F2730; --line: #2E3843;
   --ink-ui: #E2E7ED; --mute: #8D9AA8; --blue: #6AAEE3; --blue-wash: #1B3650; --blue-ink: #9CCBF0;
   --title: #143E66; --ribbon: #1F2730; --tabrow: #1B222A;
+  --bar: #1C2A3A; --bar-ink: #E2E7ED; --bar-mute: #B4C2D0; --bar-field: #151C24; --bar-line: #7A90A8;
+  --bar-hover: rgba(255, 255, 255, .09); --bar-press: rgba(255, 255, 255, .16); --file: #1F64A3;
   --warn: #E8806B; --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 10px 30px rgba(0, 0, 0, .45);
   --ins-ui: #6FD39C; --del-ui: #F28B7D;
   color-scheme: dark;
@@ -111,24 +119,27 @@ button { font: inherit; color: inherit; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 [hidden] { display: none !important; }
 
-/* ---- bar: a coloured title band. Quick Access at the left, the name and the search in the middle ---- */
-#bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 10px; padding: 4px 10px; min-height: 56px; background: var(--title); color: #fff; border-bottom: 0; flex: none; position: relative; }
+/* ---- bar: a light blue title band. Quick Access at the left, the name and the search in the middle ---- */
+#bar { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 10px; padding: 4px 10px; min-height: 56px; background: var(--bar); color: var(--bar-ink); border-bottom: 0; flex: none; position: relative; }
 .bar-left, .title-end { display: flex; align-items: center; gap: 2px; min-width: 0; flex: none; }
 .title-mid { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; }
 .title-name { display: flex; align-items: baseline; justify-content: center; gap: 8px; max-width: 100%; min-width: 0; }
 .qat { display: flex; align-items: center; gap: 0; }
-.qat .btn.icon { width: 28px; height: 28px; }
 .brand { display: flex; align-items: baseline; gap: 8px; min-width: 0; flex: none; padding: 0 6px; }
-.mark { font-family: var(--font-doc); font-style: italic; font-size: 18px; letter-spacing: .01em; color: #fff; }
+.mark { font-family: var(--font-doc); font-style: italic; font-size: 18px; letter-spacing: .01em; color: var(--bar-ink); }
 /* the document's name, centred, with whether this browser has the latest edit */
-.docname { display: block; min-width: 0; max-width: 100%; color: #fff; font-size: 13px; font-weight: 600; line-height: 1.2; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
-.savestate { flex: none; color: rgba(255, 255, 255, .82); font-size: 12px; font-weight: 400; white-space: nowrap; }
+.docname { display: block; min-width: 0; max-width: 100%; color: var(--bar-ink); font-size: 13px; font-weight: 600; line-height: 1.2; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.savestate { flex: none; color: var(--bar-mute); font-size: 12px; font-weight: 400; white-space: nowrap; }
 .savestate::before { content: "\2014\00a0"; }
-#bar .btn.ghost { color: #fff; }
-#bar .btn.ghost:hover { background: rgba(255, 255, 255, .16); }
-#bar .btn.ghost[aria-pressed="true"] { background: rgba(255, 255, 255, .22); color: #fff; }
-#bar .btn:focus-visible { outline-color: #fff; }
-#bar .sep { background: rgba(255, 255, 255, .35); }
+/* the bar's buttons: one size, the ribbon's names (12 px, regular) and its 16 px icons */
+#bar .btn { height: 28px; padding: 0 8px; gap: 6px; border-radius: 4px; font-size: 12px; font-weight: 400; }
+#bar .btn.icon { width: 28px; padding: 0; }
+#bar .btn svg { width: 16px; height: 16px; }
+#bar .btn.ghost { color: var(--bar-ink); }
+#bar .btn.ghost:hover { background: var(--bar-hover); }
+#bar .btn.ghost[aria-pressed="true"] { background: var(--bar-press); color: var(--bar-ink); }
+#bar .btn:focus-visible { outline-color: var(--bar-ink); }
+#bar .sep { height: 20px; background: color-mix(in srgb, var(--bar-ink) 30%, transparent); }
 .tools { display: flex; align-items: center; gap: 2px; flex: none; }
 .sep { width: 1px; height: 20px; background: var(--line); margin: 0 6px; }
 .btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; border-radius: 6px; border: 1px solid transparent; background: var(--blue); color: #fff; cursor: pointer; font-weight: 500; font-size: 13px; white-space: nowrap; }
@@ -151,14 +162,14 @@ body.has-ai .ai-only { display: inline-flex !important; }
 /* ---- the search box in the bar (Alt+Q): any command by its name ---- */
 #bar { position: relative; }
 .srch { position: relative; width: min(420px, 100%); min-width: 0; display: flex; align-items: center; container-type: inline-size; }
-.srch > svg { position: absolute; left: 9px; top: 50%; width: 15px; height: 15px; margin-top: -7.5px; fill: none; stroke: #5C6B7A; stroke-width: 1.6; stroke-linecap: round; pointer-events: none; }
-.srch input { width: 100%; height: 28px; box-sizing: border-box; padding: 0 62px 0 30px; border: 0; border-radius: 14px; background: #fff; color: #18212A; font: 13px var(--font-ui); }
+.srch > svg { position: absolute; left: 9px; top: 50%; width: 16px; height: 16px; margin-top: -8px; fill: none; stroke: var(--bar-mute); stroke-width: 1.6; stroke-linecap: round; pointer-events: none; }
+.srch input { width: 100%; height: 28px; box-sizing: border-box; padding: 0 62px 0 30px; border: 1px solid var(--bar-line); border-radius: 4px; background: var(--bar-field); color: var(--ink-ui); font: 12px var(--font-ui); }
 /* the chord, so the box reads as command search and not as Find in the document */
-.srch-key { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); margin: 0; padding: 1px 5px; border: 0; border-radius: 4px; background: #EEF2F6; color: #5C6B7A; font: 11px/1.4 var(--font-ui); pointer-events: none; }
+.srch-key { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); margin: 0; padding: 1px 5px; border: 0; border-radius: 4px; background: color-mix(in srgb, var(--bar-line) 14%, var(--bar-field)); color: var(--bar-mute); font: 11px/1.4 var(--font-ui); pointer-events: none; }
 .srch:focus-within .srch-key, .srch:has(input:not(:placeholder-shown)) .srch-key { visibility: hidden; }
 @container (max-width: 210px) { .srch-key { display: none; } .srch input { padding-right: 10px; } }
-.srch input::placeholder { color: var(--mute); }
-.srch input:focus { outline: 2px solid var(--blue); outline-offset: -1px; border-color: transparent; }
+.srch input::placeholder { color: var(--bar-mute); opacity: 1; }
+.srch input:focus { outline: 2px solid var(--blue); outline-offset: -2px; border-color: var(--blue); }
 .srch-list { position: absolute; top: calc(100% + 4px); left: 0; z-index: 45; min-width: 100%; width: max-content; max-width: min(440px, calc(100vw - 16px)); max-height: 60vh; overflow: auto; box-sizing: border-box; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 12px 40px rgba(10, 20, 30, .22); }
 .srch-opt { display: flex; align-items: baseline; gap: 10px; padding: 6px 10px; border-radius: 5px; cursor: pointer; white-space: nowrap; }
 .srch-opt.on { background: var(--blue-wash); }
@@ -183,9 +194,10 @@ body.has-ai .ai-only { display: inline-flex !important; }
 .rb-tab.on { color: var(--tab-on); background: var(--ribbon); }
 .rb-tab.on::after { content: ""; position: absolute; left: 8px; right: 8px; bottom: 0; height: 3px; border-radius: 2px 2px 0 0; background: var(--tab-on); }
 /* File is the accent tab, and it opens the backstage rather than another ribbon row */
-.rb-tab[data-tab="file"] { color: #fff; background: var(--title); border-radius: 4px 4px 0 0; margin-right: 4px; }
-.rb-tab[data-tab="file"]:hover { color: #fff; background: color-mix(in srgb, var(--title) 86%, #000); }
-.rb-tab[data-tab="file"].on { color: #fff; background: var(--title); }
+/* File in the accent blue, a step deeper than the bar above it, white on it (5:1 and more) */
+.rb-tab[data-tab="file"] { color: #fff; background: var(--file); border-radius: 4px 4px 0 0; margin-right: 4px; }
+.rb-tab[data-tab="file"]:hover { color: #fff; background: color-mix(in srgb, var(--file) 86%, #000); }
+.rb-tab[data-tab="file"].on { color: #fff; background: var(--file); }
 .rb-tab[data-tab="file"].on::after { display: none; }
 .rb-ktip { display: none; }
 body.keytips .rb-ktip { display: inline-block; margin-left: 4px; padding: 0 3px; border-radius: 2px; background: #fff; color: var(--title); border: 1px solid var(--title); font: 700 10px/14px var(--font-ui); vertical-align: 1px; }
@@ -986,11 +998,11 @@ body.dropping .dropzone { display: grid; }
    buttons show their icons alone instead of running over the name */
 @media (max-width: 1200px) {
   #bar .btn span:not(.sr) { display: none; }
-  #bar .btn:not(.icon):not(.sm):not(.zv) { width: 32px; padding: 0; justify-content: center; }
+  #bar .btn:not(.icon):not(.sm):not(.zv) { width: 28px; padding: 0; justify-content: center; }
 }
 @media (max-width: 1100px) {
   body.has-ai #bar .btn span:not(.sr) { display: none; }
-  body.has-ai #bar .btn:not(.icon):not(.sm):not(.zv) { width: 32px; padding: 0; justify-content: center; }
+  body.has-ai #bar .btn:not(.icon):not(.sm):not(.zv) { width: 28px; padding: 0; justify-content: center; }
 }
 @media (max-width: 860px) {
   #bar { min-height: 44px; padding-top: 0; padding-bottom: 0; }
