@@ -1389,6 +1389,8 @@ body.nav-on.nav-outline #nav { width: 460px; }
 .tb-fout { color: var(--ink-ui); }
 .tb-fout.bad { color: #B3261E; }
 @media (pointer: coarse) {
+  .pop-zoom .tb-r, .pop-zoom .tb-sel, .pop-zoom .btn, .pop-zoom .pop-x, .pop-zoom .nf, .pop-eqopt .tb-r, .pop-eqopt .btn, .pop-eqopt .pop-x, .pop-sign .tb-ftext, .pop-sign .tb-ck, .pop-sign .btn, .pop-sign .pop-x { min-height: 44px; }
+  .pop-zoom .btn, .pop-eqopt .btn, .pop-sign .btn, .pop-zoom .pop-x, .pop-eqopt .pop-x, .pop-sign .pop-x { min-width: 44px; }
   .pop-tb .fd-tab, .pop-tb .tb-sel, .pop-tb .tb-ftext, .pop-tb .btn, .pop-tb .pop-x, .pop-tb .tb-r, .pop-tb .tb-ck, .pop-tb .nf { min-height: 44px; }
   .pop-tb .btn, .pop-tb .pop-x { min-width: 44px; }
   .bs-preview { width: 176px; height: 152px; }
