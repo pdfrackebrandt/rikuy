@@ -2635,7 +2635,8 @@ body.focus #ruler, body.focus #vruler, body.view-latex #ruler, body.view-pdf #ru
    (its first button), where they are by name, so the rest fit a 360 px screen */
 @media (max-width: 520px) and (pointer: coarse) {
   #bar .btn, #bar .qat .btn.icon { min-width: 44px; min-height: 44px; height: 44px; }
-  #bar .srch { width: 44px; min-width: 44px; }
+  /* (only while closed: open, it takes the bar's width again, as the rules above give it) */
+  #bar .srch:not(:focus-within) { width: 44px; min-width: 44px; }
   #bar .srch input { height: 44px; }
   /* (closed, the search box is one of the bar's icons, drawn as they are: a white pill twice the
      size of its neighbours stood out; open, it is the white box across the bar again) */

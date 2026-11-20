@@ -719,6 +719,13 @@ def consistency(page, w):
         check(f'each dialog\'s Close 44 px under a finger ({w})', not closes, closes)
         bar = page.evaluate("[...document.querySelectorAll('#bar button, #bar input')].filter((e) => e.offsetParent).map((e) => [e.id, Math.round(e.getBoundingClientRect().width), Math.round(e.getBoundingClientRect().height)])")
         check(f'the top bar\'s buttons 44 px under a finger, all on the screen ({w})', all(x[1] >= 44 and x[2] >= 44 for x in bar) and page.evaluate('document.documentElement.scrollWidth') <= page.viewport_size['width'], bar)
+        # (the closed search box is one 44 px icon; opened, it must take the bar's width again:
+        # the rule that made it an icon once kept it 44 px while typing, "bold" showing as "d")
+        page.click('#bar .srch input')
+        page.keyboard.type('bold')
+        sw = page.evaluate("(() => { const r = document.querySelector('#bar .srch').getBoundingClientRect(); return [Math.round(r.width), Math.round(r.left), Math.round(r.right)]; })()")
+        check(f'the search box opened on a phone takes the bar\'s width, inside the screen ({w})', sw[0] >= page.viewport_size['width'] * 0.7 and sw[1] >= 0 and sw[2] <= page.viewport_size['width'], sw)
+        page.keyboard.press('Escape')
         load_doc(page, DOC); select_text(page, 'bold word'); run_cmd(page, 'comment-new')
         cb = page.evaluate("Math.round(document.querySelector('.pop-comment .btn:not(.ghost)').getBoundingClientRect().height)")
         check(f'the comment\'s button 44 px under a finger ({w})', cb >= 44, cb)
