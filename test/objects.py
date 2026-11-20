@@ -1,0 +1,395 @@
+"""Formatting an object after it is in the document, as Word does (src/cmd/objects.js, src/objfmt.js,
+src/ui/shapes.js, src/drawing.js), in Chromium.
+
+A press on a drawing, a chart or a SmartArt selects it and shows its contextual tabs (Shape Format;
+Chart Design and Format; SmartArt Design and Format); a press elsewhere on the page lets it go, the
+ribbon keeps it. The round trip rule (test/browser.py's roundtrip) on each control: Shape Fill,
+Shape Outline, Weight, Dashes, Arrows, Theme Styles, Edit Text, Height and Width, Insert Shape,
+Bring Forward and Send Backward of one shape of a drawing; Add Chart Element (title, axis titles,
+legend, gridlines, data labels), Change Colors, Switch Row/Column, Change Chart Type, Edit Data,
+Height and Width; SmartArt's Add Shape, Text Pane, Right to Left, Change Layout, Change Colors,
+Reset Graphic, Shape Fill and Shape Outline: one step each, one undo back, the page drawing it
+again, toggles read back from the source and from hand written forms. The right click menu of
+each, Delete, Enter. Where dist/tex holds a TeX tree, all of it compiled in the page with pdfLaTeX,
+XeLaTeX and LuaLaTeX. Phones at 390 and 360 px with touch: a tap selects, the tabs work by taps, a
+long press opens the object's menu with 44 px items. Screenshots in $RIKUY_SHOTS (default
+/tmp/g1-shots).
+
+Run: python3 objects.py [section ...] (sections: shapes, charts, smart, menus, compiled, phones, shots)."""
+import os, sys, re, base64
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from browser import open_page, check, results, src, load_doc, roundtrip, pressed
+from playwright.sync_api import sync_playwright
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DIST = os.environ.get('RIKUY_DIST') or os.path.join(ROOT, 'dist')
+SHOTS = os.environ.get('RIKUY_SHOTS', '/tmp/g1-shots')
+PRE = '\\usepackage{tikz}\n\\usepackage{pgfplots}\n\\pgfplotsset{compat=1.18}\n\\usepackage{smartdiagram}\n'
+WRAP = lambda body, pre=PRE: '\\documentclass{article}\n' + pre + '\\begin{document}\n' + body + '\n\\end{document}\n'
+RECT = '\\draw[thick, draw=blue!60!black, fill=blue!20] (0,0) rectangle (3,2);'
+SHAPE = '\\begin{center}\n\\begin{tikzpicture}\n' + RECT + '\n\\end{tikzpicture}\n\\end{center}\n'
+LINE = SHAPE.replace(RECT, '\\draw[thick, draw=blue!60!black, ->] (0,0) -- (3,0);')
+TWO = SHAPE.replace(RECT, RECT + '\n\\draw[thick, draw=red, fill=red!20] (2,1) circle (1);')
+AXIS = '\\begin{axis}[ybar, width=0.8\\linewidth, height=6cm, ymin=0, symbolic x coords={A,B,C}, xtick=data, legend pos=north west]'
+CHART = ('\\begin{center}\n\\begin{tikzpicture}\n' + AXIS + '\n\\addplot coordinates {(A,4.3) (B,2.5) (C,3.5)};\n\\addlegendentry{Sales}\n'
+         '\\addplot coordinates {(A,2) (B,3) (C,1)};\n\\addlegendentry{Costs}\n\\end{axis}\n\\end{tikzpicture}\n\\end{center}\n')
+SMART = '\\begin{center}\n\\smartdiagram[flow diagram:horizontal]{Plan, Write, Submit}\n\\end{center}\n'
+RESET = 'set color list={red!40,cyan!40,blue!40,green!40,orange!40,yellow!40,magenta!40,brown!40,violet!40,teal!40}'
+DOC = lambda obj: WRAP('Before it.\n\n' + obj + '\nAfter it.')
+
+
+def run_cmd(page, cid, args=None):
+    r = page.evaluate('([id, a]) => window.rikuy.runCommand(id, a)', [cid, args])
+    page.wait_for_timeout(200)
+    return r
+
+
+def obj_box(page, sel='svg.tz', n=0):
+    return page.evaluate('''([s, n]) => { const e = document.querySelectorAll('#pages ' + s)[n]; if (!e) return null; e.scrollIntoView({ block: 'center' }); const r = e.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; }''', [sel, n])
+
+
+def press(page, sel='svg.tz', n=0, at=(0.5, 0.5)):
+    b = obj_box(page, sel, n)
+    page.mouse.click(b[0] + b[2] * at[0], b[1] + b[3] * at[1]); page.wait_for_timeout(200)
+
+
+def selector(sel='svg.tz', n=0, sub=None):
+    """roundtrip()'s select: the object pressed on the page (and one of its shapes, a second press)."""
+    def f(page):
+        page.evaluate('window.rikuy.shapeSel.clear()')
+        press(page, sel, n)
+        if sub is not None:
+            page.evaluate('''([s, k]) => { const g = window.rikuy, e = document.querySelectorAll('#pages ' + s)[0]; g.shapeSel.k = k; g.ribbonSync(); }''', [sel, sub])
+        page.wait_for_timeout(80)
+    return f
+
+
+def cmd(cid, args=None):
+    f = lambda page: run_cmd(page, cid, args)
+    f.__name__ = cid + ('' if args is None else ' ' + str(args))
+    return f
+
+
+def tab_shown(page, tab):
+    return page.evaluate('(t) => { const b = document.getElementById("rt-" + t); return !!b && !b.hidden; }', tab)
+
+
+def fill_of(page, sel='svg.tz [data-k]', n=0):
+    return page.evaluate('([s, n]) => { const e = document.querySelectorAll("#pages " + s)[n]; return e ? e.getAttribute("fill") : null; }', [sel, n])
+
+
+def body(page):
+    s = src(page)
+    return s[s.find('\\begin{document}') + 16:s.find('\\end{document}')]
+
+
+def shapes(page):
+    D = DOC(SHAPE)
+    load_doc(page, D); page.wait_for_timeout(300)
+    check('before a press no Shape Format tab', not tab_shown(page, 'shape-format'))
+    press(page)
+    check('a press on a drawing selects it: Shape Format shows and opens, its points have handles', tab_shown(page, 'shape-format') and page.evaluate('window.rikuy.rbTab') == 'shape-format' and page.evaluate("[...document.querySelectorAll('.shape-layer .shape-h')].filter((h) => !h.hidden).length") == 2)
+    page.click('#rt-shape-format'); page.wait_for_timeout(200)
+    check('a press on the ribbon keeps it selected, its buttons enabled', page.evaluate("!!window.rikuy.objHere() && !document.getElementById('rc-shape-fill').disabled"))
+    # Shape Fill and Outline, by the menus as a person picks them
+    page.click('#rc-shape-fill'); page.wait_for_timeout(200)
+    page.get_by_role('menuitemradio', name='red!40', exact=True).click(); page.wait_for_timeout(300)
+    check('Shape Fill › red!40 from the colour grid writes fill=red!40 in place of fill=blue!20, one step', src(page) == D.replace('fill=blue!20', 'fill=red!40'), body(page))
+    check('and the page draws it red!40 (255,153,153)', fill_of(page) == 'rgb(255,153,153)', fill_of(page))
+    check('the drawing stays selected after the edit', page.evaluate("!!window.rikuy.objHere() && document.querySelector('#pages .raw.drawn').classList.contains('sel')"))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('one undo gives the bytes back', src(page) == D)
+    sel = selector()
+    roundtrip(page, D, sel, cmd('shape-fill', {'color': None}), D.replace(', fill=blue!20', ''), off_command=cmd('shape-fill', {'color': 'blue!20'}), label='Shape Fill › No Fill')
+    roundtrip(page, D, sel, cmd('shape-outline', {'color': 'teal'}), D.replace('draw=blue!60!black', 'draw=teal'), off_command=cmd('shape-outline', {'color': 'blue!60!black'}), label='Shape Outline › teal')
+    roundtrip(page, D, sel, cmd('shape-outline', {'color': None}), D.replace('draw=blue!60!black', 'draw=none'), off_command=cmd('shape-outline', {'color': 'blue!60!black'}), label='Shape Outline › No Outline')
+    roundtrip(page, D, sel, cmd('shape-weight', {'pt': 3}), D.replace('thick', 'line width=3pt'), off=D.replace('thick', 'line width=0.8pt'), off_command=cmd('shape-weight', {'pt': 0.8}), label='Weight 3 pt')
+    roundtrip(page, D, sel, cmd('shape-dashes', {'dash': 'dashed'}), D.replace('draw=blue!60!black,', 'draw=blue!60!black, dashed,').replace('dashed, fill=blue!20', 'fill=blue!20, dashed'), off_command=cmd('shape-dashes', {'dash': 'solid'}), label='Dashes › Dashed')
+    L = DOC(LINE)
+    roundtrip(page, L, selector(), cmd('shape-arrows', {'arrow': '<->'}), L.replace('->]', '<->]'), off_command=cmd('shape-arrows', {'arrow': '->'}), label='Arrows › both ends')
+    roundtrip(page, D, sel, cmd('shape-styles', {'style': 'orange-moderate'}), D.replace('draw=blue!60!black', 'draw=orange!75!black').replace('fill=blue!20', 'fill=orange!50'), off_command=cmd('shape-styles', {'style': 'blue-subtle'}), label='Theme Styles › Moderate Effect, Orange')
+    load_doc(page, D); sel(page); run_cmd(page, 'shape-styles', {'style': 'orange-moderate'})
+    check('and the drawing is drawn in the style\'s colours', fill_of(page) == 'rgb(255,192,128)', fill_of(page))
+    T = D.replace(RECT, RECT + '\n\\node[align=center] at (1.5,1) {Start};')
+    roundtrip(page, D, sel, cmd('shape-text', {'text': 'Start'}), T, off_command=cmd('shape-text', {'text': ''}), label='Edit Text › Start')
+    load_doc(page, T); page.wait_for_timeout(300)
+    check('the words drawn in the shape, at its middle', page.evaluate("(() => { const t = document.querySelector('#pages svg.tz text'), r = document.querySelector('#pages svg.tz rect'); if (!t || !r) return false; const a = t.getBoundingClientRect(), b = r.getBoundingClientRect(); return t.textContent === 'Start' && Math.abs((a.left + a.right) / 2 - (b.left + b.right) / 2) < 3 && Math.abs((a.top + a.bottom) / 2 - (b.top + b.bottom) / 2) < 6; })()"))
+    # Edit Text by its dialog
+    load_doc(page, D); sel(page)
+    run_cmd(page, 'shape-text')
+    page.get_by_role('textbox', name='Words in the shape, a line each').fill('Two\nlines'); page.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(300)
+    check('Edit Text\'s dialog writes its lines with \\\\ between', '\\node[align=center] at (1.5,1) {Two \\\\ lines};' in src(page), body(page))
+    roundtrip(page, D, sel, cmd('shape-width', {'cm': 6}), D.replace('\\begin{tikzpicture}', '\\begin{tikzpicture}[scale=2]'), off_command=cmd('shape-width', {'cm': 3}), label='Shape Width 6 cm (its shape kept)')
+    load_doc(page, D); sel(page)
+    w0 = obj_box(page)[2]
+    page.click('#rt-shape-format'); page.wait_for_timeout(150)
+    page.fill('#rc-shape-height', '3'); page.press('#rc-shape-height', 'Enter'); page.wait_for_timeout(400)
+    w1 = obj_box(page)[2]
+    check('the Height field: 3 typed, Enter writes scale=1.5 and the page draws it half as wide again (%.0f to %.0f px)' % (w0, w1), '\\begin{tikzpicture}[scale=1.5]' in src(page) and abs(w1 / w0 - 1.5) < 0.08, body(page))
+    check('and the fields read the new size', page.evaluate("[document.getElementById('rc-shape-width').value, document.getElementById('rc-shape-height').value]") == ['4.5 cm', '3 cm'])
+    # Insert Shape: a second shape in the same drawing, beside the first; then the order of two shapes
+    load_doc(page, D); sel(page); h0 = page.evaluate('window.rikuy.hist.length')
+    run_cmd(page, 'shape-insert', {'shape': 'circle'})
+    check('Insert Shape › Circle: a second \\draw in the same picture, at the right of the first, one step', src(page) == D.replace(RECT, RECT + '\n\\draw[thick, draw=blue!60!black, fill=blue!20] (4.5,1) circle (1);') and page.evaluate('window.rikuy.hist.length') == h0 + 1, body(page))
+    check('the new shape is the one selected: Bring Forward has nothing over it, Send Backward can', page.evaluate("window.rikuy.shapeSel.k") == 1 and page.evaluate("document.getElementById('rc-shape-forward').disabled") and not page.evaluate("document.getElementById('rc-shape-backward').disabled"))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('one undo takes it off', src(page) == D)
+    W = DOC(TWO)
+    CIRC = '\\draw[thick, draw=red, fill=red!20] (2,1) circle (1);'
+    roundtrip(page, W, selector(sub=0), cmd('shape-forward'), W.replace(RECT + '\n' + CIRC, CIRC + '\n' + RECT), off_command=lambda p: (p.evaluate('window.rikuy.shapeSel.k = 1'), run_cmd(p, 'shape-backward')), label='Bring Forward of the rectangle')
+    # a second press on one shape of a selected drawing selects it alone; Fill then changes it alone
+    load_doc(page, W); page.wait_for_timeout(300)
+    page.evaluate('window.rikuy.shapeSel.clear()'); press(page); b = page.evaluate("(() => { const c = document.querySelector('#pages svg.tz circle'); const r = c.getBoundingClientRect(); return [r.x + r.width * 0.8, r.y + r.height / 2]; })()")
+    page.mouse.click(b[0], b[1]); page.wait_for_timeout(250)
+    check('a second press on the circle selects it alone (a glow, its own handles)', page.evaluate("window.rikuy.shapeSel.k") == 1 and page.evaluate("document.querySelector('#pages svg.tz circle').classList.contains('sub')"))
+    run_cmd(page, 'shape-fill', {'color': 'green!40'})
+    check('Shape Fill then changes the circle alone', src(page) == W.replace('fill=red!20', 'fill=green!40'), body(page))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    # Delete and the press elsewhere
+    load_doc(page, D); page.wait_for_timeout(200); press(page)
+    page.keyboard.press('Delete'); page.wait_for_timeout(300)
+    check('Delete takes the drawing off with the center it stood in, one step', src(page) == WRAP('Before it.\n\n\nAfter it.'), body(page))
+    page.evaluate('window.rikuy.undo()'); page.wait_for_timeout(200)
+    check('and one undo gives it back', src(page) == D)
+    press(page)
+    b = page.evaluate("(() => { const s = [...document.querySelectorAll('#pages span.t')].find((x) => x.textContent.includes('After it')); const r = s.getBoundingClientRect(); return [r.x + 5, r.y + r.height / 2]; })()")
+    page.mouse.click(b[0], b[1]); page.wait_for_timeout(200)
+    check('a press on the text lets it go: Shape Format hides', not tab_shown(page, 'shape-format') and not page.evaluate('!!window.rikuy.objHere()'))
+
+
+def charts(page):
+    D = DOC(CHART)
+    load_doc(page, D); page.wait_for_timeout(300)
+    press(page, 'svg.pgf')
+    check('a press on a chart selects it (a frame): Chart Design and Format show, no grid opens', tab_shown(page, 'chart-design') and tab_shown(page, 'chart-format') and not page.evaluate("!!document.querySelector('.pop input.pd-cell')"))
+    sel = selector('svg.pgf')
+    ax = lambda add: D.replace(AXIS, AXIS[:-1] + ', ' + add + ']')
+    roundtrip(page, D, sel, cmd('chart-title', {'text': 'Q1 sales'}), ax('title={Q1 sales}'), off_command=cmd('chart-title', {'text': ''}), label='Chart Title')
+    load_doc(page, ax('title={Q1 sales}')); page.wait_for_timeout(300)
+    check('the page draws the title above the chart', page.evaluate("[...document.querySelectorAll('#pages svg.pgf text')].some((t) => t.textContent === 'Q1 sales')"))
+    roundtrip(page, D, sel, cmd('chart-axis-titles', {'x': 'Region', 'y': 'Units'}), ax('xlabel={Region}, ylabel={Units}'), off_command=cmd('chart-axis-titles', {'x': '', 'y': ''}), label='Axis Titles')
+    roundtrip(page, D, sel, 'chart-gridlines', ax('ymajorgrids'), forms=[D.replace('ybar,', 'ybar, ymajorgrids,')], label='Gridlines')
+    roundtrip(page, D, sel, 'chart-data-labels', ax('nodes near coords'), forms=[D.replace('ybar,', 'ybar, nodes near coords,')], label='Data Labels')
+    roundtrip(page, D, sel, cmd('chart-legend', {'pos': 'south east'}), D.replace('legend pos=north west', 'legend pos=south east'), off_command=cmd('chart-legend', {'pos': 'north west'}), label='Legend › Bottom Right')
+    cyc = 'cycle list={{draw=blue!70!black,fill=blue!70!white,mark=none},{draw=blue!70!black,fill=blue!45!white,mark=none},{draw=blue!70!black,fill=blue!25!white,mark=none},{draw=blue!70!black,fill=blue!10!white,mark=none}}'
+    roundtrip(page, D, sel, cmd('chart-colors', {'palette': 'blue'}), ax(cyc), off_command=cmd('chart-colors', {'palette': 'colorful'}), label='Change Colors › Monochromatic Blue')
+    load_doc(page, ax(cyc)); page.wait_for_timeout(300)
+    check('the page draws the bars in the palette\'s fills', page.evaluate("[...document.querySelectorAll('#pages svg.pgf rect')].some((r) => r.getAttribute('fill') === 'rgb(77,77,255)')"))
+    # Change Chart Type keeps the settings; Switch Row/Column twice gives the bytes back
+    T = ax('title={T}')
+    load_doc(page, T); sel(page); h0 = page.evaluate('window.rikuy.hist.length')
+    run_cmd(page, 'chart-type', {'kind': 'bar'})
+    s1 = src(page)
+    check('Change Chart Type › Bar: xbar, the coordinates turned, the title kept, one step', 'xbar' in s1 and '(4.3,A)' in s1 and 'title={T}' in s1 and page.evaluate('window.rikuy.hist.length') == h0 + 1, body(page))
+    check('the chart stays selected, Chart Design open to change it again', page.evaluate("!!window.rikuy.objHere() && window.rikuy.objHere().kind === 'chart'"))
+    run_cmd(page, 'chart-type', {'kind': 'column'})
+    check('and Column again gives the bytes of before', src(page) == T, body(page))
+    roundtrip(page, D, sel, 'chart-switch', lambda s: 'symbolic x coords={Sales,Costs}' in s and '\\addlegendentry{A}' in s, label='Switch Row/Column')
+    load_doc(page, D); sel(page); run_cmd(page, 'chart-switch'); run_cmd(page, 'chart-switch')
+    check('Switch Row/Column twice: the bytes of before', src(page) == D, body(page))
+    # Edit Data on the ribbon, and a double click: the grid with the chart's data
+    load_doc(page, T); sel(page)
+    run_cmd(page, 'chart-edit-data')
+    vals = page.evaluate("[...document.querySelectorAll('.pop input.pd-cell')].slice(0, 8).map((i) => i.value)")
+    check('Edit Data opens the grid with the chart\'s data', vals[:3] == ['', 'Sales', 'Costs'] and vals[4:6] == ['A', '4.3'], vals)
+    page.get_by_role('textbox', name='Row 2, series 1', exact=True).fill('7'); page.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(300)
+    check('OK writes (B,7) and keeps the title', src(page) == T.replace('(B,2.5)', '(B,7)'), body(page))
+    load_doc(page, D); page.wait_for_timeout(300)
+    b = obj_box(page, 'svg.pgf')
+    page.mouse.dblclick(b[0] + b[2] / 2, b[1] + b[3] / 2); page.wait_for_timeout(300)
+    check('a double click on a chart opens its grid', page.evaluate("!!document.querySelector('.pop input.pd-cell')"))
+    page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    roundtrip(page, D, sel, cmd('chart-height', {'cm': 4.5}), D.replace('height=6cm', 'height=4.5cm'), off_command=cmd('chart-height', {'cm': 6}), label='Chart Height 4.5 cm')
+    load_doc(page, D); sel(page); w0 = obj_box(page, 'svg.pgf')[2]
+    page.click('#rt-chart-format'); page.wait_for_timeout(150)
+    page.fill('#rc-chart-width', '50%'); page.press('#rc-chart-width', 'Enter'); page.wait_for_timeout(400)
+    w1 = obj_box(page, 'svg.pgf')[2]
+    check('Chart Width 50%%: width=0.5\\linewidth, drawn %.0f px from %.0f' % (w1, w0), 'width=0.5\\linewidth' in src(page) and abs(w1 / w0 - 0.5 / 0.8) < 0.05, body(page))
+
+
+def smart(page):
+    D = DOC(SMART)
+    load_doc(page, D); page.wait_for_timeout(300)
+    press(page, 'svg.smart')
+    check('a press on a SmartArt selects it: SmartArt Design and Format show', tab_shown(page, 'smart-design') and tab_shown(page, 'smart-format') and page.evaluate("document.querySelector('#pages .a-smart').classList.contains('sel')"))
+    sel = selector('svg.smart')
+    SD = '\\smartdiagram[flow diagram:horizontal]{Plan, Write, Submit}'
+    roundtrip(page, D, sel, 'smart-add', D.replace('Submit}', 'Submit, Item 4}'), off_command=cmd('smart-text-pane', {'items': ['Plan', 'Write', 'Submit']}), label='Add Shape')
+    roundtrip(page, D, sel, cmd('smart-text-pane', {'items': ['Plan', 'Draft, then write', 'Submit']}), D.replace('Write', '{Draft, then write}'), off_command=cmd('smart-text-pane', {'items': ['Plan', 'Write', 'Submit']}), label='Text Pane')
+    roundtrip(page, D, sel, cmd('smart-layout', {'kind': 'circular diagram:clockwise'}), D.replace('flow diagram:horizontal', 'circular diagram:clockwise'), off_command=cmd('smart-layout', {'kind': 'flow diagram:horizontal'}), label='Change Layout › Basic Cycle')
+    C = D.replace('flow diagram:horizontal', 'circular diagram:clockwise')
+    roundtrip(page, C, sel, 'smart-rtl', C.replace(':clockwise', ':counterclockwise'), forms=[C.replace(':clockwise', ':counterclockwise').replace('circular', ' circular').replace('[ circular', '[circular')], label='Right to Left')
+    teal = '\\smartdiagramset{set color list={teal!60,teal!52,teal!44,teal!37,teal!30,teal!24,teal!19,teal!14,teal!10,teal!7}}\n' + SD + '\n\\smartdiagramset{' + RESET + '}'
+    roundtrip(page, D, sel, cmd('smart-colors', {'palette': 'teal'}), D.replace(SD, teal), off_command=cmd('smart-colors', {'palette': 'colorful'}), label='Change Colors › Teal (and the package\'s colours back after it)')
+    load_doc(page, D.replace(SD, teal)); page.wait_for_timeout(300)
+    check('the page draws the teal boxes, and no set\'s words as text', page.evaluate("document.querySelector('#pages svg.smart rect').getAttribute('fill')") == 'rgb(102,179,179)' and 'set color list' not in page.evaluate("document.getElementById('pages').innerText"))
+    press(page, 'svg.smart')
+    check('a press on it takes in its set and the line after it (Reset Graphic can run)', not page.evaluate("document.getElementById('rc-smart-reset').disabled"))
+    run_cmd(page, 'smart-reset')
+    check('Reset Graphic takes both lines off: the bytes of before', src(page) == D, body(page))
+    roundtrip(page, D, sel, cmd('smart-fill', {'color': 'orange!50'}), D.replace(SD, '\\smartdiagramset{uniform color list=orange!50 for 10 items}\n' + SD + '\n\\smartdiagramset{' + RESET + '}'), off_command=cmd('smart-fill', {'color': None}), label='SmartArt Shape Fill')
+    roundtrip(page, D, sel, cmd('smart-outline', {'color': 'black'}), D.replace(SD, '\\smartdiagramset{border color=black}\n' + SD), off_command=cmd('smart-outline', {'color': None}), label='SmartArt Shape Outline')
+    # the Text Pane by its dialog, from a double click
+    load_doc(page, D); page.wait_for_timeout(300)
+    b = obj_box(page, 'svg.smart'); page.mouse.dblclick(b[0] + b[2] / 2, b[1] + b[3] / 2); page.wait_for_timeout(300)
+    ta = page.get_by_role('textbox', name='Items, one per line')
+    check('a double click opens the Text Pane with its items', ta.count() == 1 and ta.input_value() == 'Plan\nWrite\nSubmit')
+    if ta.count():
+        ta.fill('Plan\nWrite\nCheck\nSubmit'); page.get_by_role('button', name='OK', exact=True).click(); page.wait_for_timeout(300)
+        check('OK writes the items in place, one step', src(page) == D.replace('Write, Submit', 'Write, Check, Submit'), body(page))
+
+
+def menus(page):
+    for obj, sel, names in ((SHAPE, 'svg.tz', ['Edit Text', 'Theme Styles', 'Shape Fill', 'Shape Outline', 'Bring Forward', 'Show Drawing Source', 'Delete Object']),
+                            (CHART, 'svg.pgf', ['Edit Data', 'Chart Title', 'Axis Titles', 'Change Colors', 'Change Chart Type', 'Show Chart Source', 'Delete Object']),
+                            (SMART, 'svg.smart', ['Text Pane', 'Add Shape', 'Change Layout', 'Change Colors', 'Show SmartArt Source', 'Delete Object'])):
+        load_doc(page, DOC(obj)); page.wait_for_timeout(300)
+        b = obj_box(page, sel)
+        page.mouse.click(b[0] + b[2] / 2, b[1] + b[3] / 2, button='right'); page.wait_for_timeout(300)
+        got = page.evaluate("[...document.querySelectorAll('.pop-ctx [role^=menuitem]')].map((a) => a.getAttribute('aria-label'))")
+        check('a right click on the %s: its own menu (%s)' % (sel, ', '.join(got)), all(n in got for n in names), got)
+        page.keyboard.press('Escape'); page.wait_for_timeout(150)
+    load_doc(page, DOC(CHART)); page.wait_for_timeout(300)
+    b = obj_box(page, 'svg.pgf'); page.mouse.click(b[0] + b[2] / 2, b[1] + b[3] / 2, button='right'); page.wait_for_timeout(300)
+    page.get_by_role('menuitem', name='Change Chart Type').click(); page.wait_for_timeout(250)
+    page.get_by_role('menuitemradio', name='Line').click(); page.wait_for_timeout(300)
+    check('the menu\'s Change Chart Type › Line writes a line chart', '\\addplot+[mark=*]' in src(page) and 'ybar' not in src(page), body(page))
+    # Enter on a selected drawing edits its source, as before
+    load_doc(page, DOC(SHAPE)); page.wait_for_timeout(300); press(page)
+    page.keyboard.press('Enter'); page.wait_for_timeout(300)
+    check('Enter on a selected drawing opens its source', page.evaluate("!!(window.rikuy.pop && window.rikuy.pop.el.querySelector('textarea, .cm-editor, [contenteditable]'))"))
+    page.keyboard.press('Escape')
+
+
+def compile_pdf(page, doc):
+    page.set_default_timeout(600000)
+    r = page.evaluate("""async (t) => { await window.rikuy.api.setSource(t); const r = await window.rikuy.api.compile();
+      let b = ''; if (r.pdf) for (let i = 0; i < r.pdf.length; i += 8192) b += String.fromCharCode(...r.pdf.subarray(i, i + 8192));
+      return { ok: r.ok, pages: r.pages, pdf: btoa(b), problems: (r.problems || []).filter((x) => x.severity === 'error').map((x) => x.message).slice(0, 4) }; }""", doc)
+    page.set_default_timeout(30000)
+    return r
+
+
+def pdf_text(r):
+    import io
+    from pypdf import PdfReader
+    return ' '.join(p.extract_text() or '' for p in PdfReader(io.BytesIO(base64.b64decode(r['pdf']))).pages) if r['pdf'] else ''
+
+
+def compiled(page):
+    """Everything the tabs write, in one document, on pdfLaTeX, XeLaTeX and LuaLaTeX."""
+    if not os.path.isfile(os.path.join(DIST, 'tex', 'tree.wasm')):
+        print('SKIP objects compiled in the page: no TeX tree in %s' % DIST)
+        return
+    # made by the commands themselves, on the page
+    D = DOC(SHAPE + '\n' + LINE + '\n' + TWO + '\n' + CHART + '\n' + SMART + '\n' + SMART.replace('Plan', 'Again'))
+    load_doc(page, D); page.wait_for_timeout(300)
+    steps = [('svg.tz', 0, 'shape-styles', {'style': 'teal-intense'}), ('svg.tz', 0, 'shape-text', {'text': 'Start here'}), ('svg.tz', 0, 'shape-width', {'cm': 4.5}),
+             ('svg.tz', 0, 'shape-weight', {'pt': 1.5}), ('svg.tz', 0, 'shape-dashes', {'dash': 'dash dot'}), ('svg.tz', 1, 'shape-arrows', {'arrow': '<->'}), ('svg.tz', 1, 'shape-outline', {'color': 'red!75!black'}),
+             ('svg.tz', 2, 'shape-insert', {'shape': 'star'}), ('svg.tz', 2, 'shape-back', None), ('svg.tz', 2, 'shape-fill', {'color': None}),
+             ('svg.pgf', 0, 'chart-title', {'text': 'Q1 sales'}), ('svg.pgf', 0, 'chart-axis-titles', {'x': 'Region', 'y': 'Units'}), ('svg.pgf', 0, 'chart-gridlines', None), ('svg.pgf', 0, 'chart-data-labels', None),
+             ('svg.pgf', 0, 'chart-legend', {'pos': 'outer north east'}), ('svg.pgf', 0, 'chart-colors', {'palette': 'colorful-2'}), ('svg.pgf', 0, 'chart-height', {'cm': 5}), ('svg.pgf', 0, 'chart-width', {'share': 0.6}),
+             ('svg.smart', 0, 'smart-colors', {'palette': 'blue'}), ('svg.smart', 0, 'smart-outline', {'color': 'blue!50!black'}), ('svg.smart', 0, 'smart-add', None), ('svg.smart', 1, 'smart-layout', {'kind': 'circular diagram:counterclockwise'})]
+    for s, n, c, a in steps:
+        press(page, s, n)
+        if c == 'shape-back':
+            page.evaluate('window.rikuy.shapeSel.k = 1')
+        run_cmd(page, c, a)
+        page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    doc = src(page)
+    check('the steps wrote each its part (%d characters)' % len(doc), all(x in doc for x in ('fill=teal!80!black', 'Start here', 'scale=1.5', 'line width=1.5pt', 'dash dot', '<->', 'title={Q1 sales}', 'cycle list=', 'set color list={blue!50', 'border color=blue!50!black', 'counterclockwise', 'Item 4')), doc[doc.find('\\begin{document}'):][:1500])
+    open(os.path.join(SHOTS, 'objects-compiled.tex'), 'w').write(doc)
+    for eng in ('pdflatex', 'xelatex', 'lualatex'):
+        r = compile_pdf(page, ('% !TEX program = ' + eng + '\n' if eng != 'pdflatex' else '') + doc)
+        t = pdf_text(r)
+        check('all of it compiles with %s: the shape\'s words, the chart\'s title and axis titles, the SmartArt\'s items in the PDF' % eng,
+              r['ok'] and not r['problems'] and all(w in t for w in ('Start here', 'Q1 sales', 'Region', 'Units', 'Item 4', 'Again')), (r['problems'], t[:300]))
+        if eng == 'pdflatex' and r['pdf']:
+            open(os.path.join(SHOTS, 'objects-compiled.pdf'), 'wb').write(base64.b64decode(r['pdf']))
+
+
+def phones(p):
+    for w, h in ((390, 844), (360, 740)):
+        br, page, errs = open_page(p, w, h, touch=True)
+        tag = ' (%d px, touch)' % w
+        try:
+            D = DOC(SHAPE)
+            load_doc(page, D); page.wait_for_timeout(400)
+            b = obj_box(page)
+            page.touchscreen.tap(b[0] + b[2] / 2, b[1] + b[3] / 2); page.wait_for_timeout(300)
+            check('a tap selects the drawing: Shape Format shows' + tag, tab_shown(page, 'shape-format') and page.evaluate('!!window.rikuy.objHere()'))
+            hs = page.evaluate("[...document.querySelectorAll('.shape-layer .shape-h')].filter((h) => !h.hidden).map((h) => parseFloat(getComputedStyle(h, '::before').width))")
+            check('its handles are 44 px targets' + tag, hs and all(x >= 44 for x in hs), hs)
+            check('the tap opened Shape Format (the "Ribbon tab" list says so)' + tag, page.evaluate("[window.rikuy.rbTab, document.getElementById('rb-tabsel').value]") == ['shape-format', 'shape-format'])
+            page.locator('#rc-shape-fill').tap(); page.wait_for_timeout(250)
+            page.get_by_role('menuitemradio', name='green!40', exact=True).tap(); page.wait_for_timeout(350)
+            check('taps on Shape Fill and a colour write it' + tag, src(page) == D.replace('fill=blue!20', 'fill=green!40'), body(page))
+            check('the page never scrolls sideways' + tag, page.evaluate('document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1'))
+            # a long press: the object's menu, 44 px items in the screen
+            for obj, sel_, name in ((CHART, 'svg.pgf', 'Chart Title'), (SMART, 'svg.smart', 'Text Pane'), (SHAPE, 'svg.tz', 'Edit Text')):
+                load_doc(page, DOC(obj)); page.wait_for_timeout(400)
+                b = obj_box(page, sel_)
+                cdp = page.context.new_cdp_session(page)
+                x, y = b[0] + b[2] / 2, b[1] + b[3] / 2
+                cdp.send('Input.dispatchTouchEvent', {'type': 'touchStart', 'touchPoints': [{'x': x, 'y': y}]}); page.wait_for_timeout(750)
+                cdp.send('Input.dispatchTouchEvent', {'type': 'touchEnd', 'touchPoints': []}); cdp.detach(); page.wait_for_timeout(300)
+                g = page.evaluate("""() => { const m = document.querySelector('.pop-ctx'); if (!m) return null; const r = m.getBoundingClientRect();
+                  const it = [...m.querySelectorAll('[role^=menuitem]')].filter((a) => a.getClientRects().length).map((a) => a.getBoundingClientRect());
+                  return { names: [...m.querySelectorAll('[role^=menuitem]')].map((a) => a.getAttribute('aria-label')), l: r.left, r: r.right, b: r.bottom, w: innerWidth, h: innerHeight, small: it.filter((t) => t.height < 44).length }; }""")
+                check('a long press on the %s opens its menu, in the screen, 44 px items%s' % (sel_, tag), g and name in g['names'] and g['l'] >= 0 and g['r'] <= g['w'] + 1 and g['small'] == 0, g)
+                if g:
+                    page.get_by_role('menuitem', name=name).tap(); page.wait_for_timeout(300)
+                    check('and a tap on %s opens its dialog' % name + tag, page.evaluate("!!document.querySelector('.pop-dlg')"))
+                    page.keyboard.press('Escape'); page.wait_for_timeout(150)
+            if w == 390:
+                load_doc(page, DOC(CHART)); page.wait_for_timeout(300); b = obj_box(page, 'svg.pgf')
+                page.touchscreen.tap(b[0] + b[2] / 2, b[1] + b[3] / 2); page.wait_for_timeout(300)
+                page.screenshot(path=os.path.join(SHOTS, 'chart-design-390.png'))
+            check('no page errors' + tag, not [e for e in errs if 'tree.wasm' not in e], errs[:3])
+        finally:
+            br.close()
+
+
+def shots(p):
+    os.makedirs(SHOTS, exist_ok=True)
+    D = DOC('Intro words before the objects.\n\n' + SHAPE.replace(RECT, RECT.replace('blue!20', 'teal!40').replace('blue!60!black', 'teal!75!black') + '\n\\node[align=center] at (1.5,1) {Start};') + '\n' + CHART.replace('legend pos=north west', 'legend pos=north west, title={Q1 sales}, ymajorgrids, nodes near coords') + '\n'
+            + SMART.replace('\\smartdiagram', '\\smartdiagramset{set color list={teal!60,teal!52,teal!44,teal!37,teal!30,teal!24,teal!19,teal!14,teal!10,teal!7}}\n\\smartdiagram').replace('Submit}', 'Submit}\n\\smartdiagramset{' + RESET + '}'))
+    for w, hh, dark, touch in ((1920, 1080, False, False), (1366, 768, False, False), (1366, 768, True, False), (390, 844, False, True)):
+        br, page, errs = open_page(p, w, hh, dark=dark, touch=touch)
+        try:
+            load_doc(page, D); page.wait_for_timeout(500)
+            for sel_, tab, name in (('svg.tz', 'shape-format', 'shape'), ('svg.pgf', 'chart-design', 'chart'), ('svg.smart', 'smart-design', 'smart')):
+                b = obj_box(page, sel_)
+                if touch: page.touchscreen.tap(b[0] + b[2] / 2, b[1] + b[3] / 2)
+                else: page.mouse.click(b[0] + b[2] / 2, b[1] + b[3] / 2)
+                page.wait_for_timeout(250)
+                page.wait_for_timeout(300)
+                page.screenshot(path=os.path.join(SHOTS, '%s-%d%s.png' % (name, w, '-dark' if dark else '')))
+        finally:
+            br.close()
+
+
+def run():
+    os.makedirs(SHOTS, exist_ok=True)
+    names = sys.argv[1:]
+    with sync_playwright() as p:
+        browser, page, errors = open_page(p)
+        for f in (shapes, charts, smart, menus, compiled):
+            if names and f.__name__ not in names:
+                continue
+            try: f(page)
+            except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
+        check('no page errors', not [e for e in errors if 'tree.wasm' not in e and 'TeX' not in e], errors[:4])
+        browser.close()
+        for f in (phones, shots):
+            if names and f.__name__ not in names:
+                continue
+            try: f(p)
+            except Exception as e: check(f.__name__ + ' runs to its end', False, str(e)[:400])
+    bad = [r for r in results if not r[1]]
+    print('\n%d passed, %d failed' % (len(results) - len(bad), len(bad)))
+    sys.exit(1 if bad else 0)
+
+
+if __name__ == '__main__':
+    run()

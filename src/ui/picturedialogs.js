@@ -186,20 +186,49 @@ function radios(name, items, value) {
   return g;
 }
 
-export function smartDialog(app) {
-  const p = openAt(app, 'SmartArt', 'rc-insert-smartart', 'pd-smart');
-  const kind = radios('Kind', SMART, SMART[0][0]);
+// edit: a SmartArt selected on the page (SmartArt Design's Text Pane), { kind, items, done(kind, items) }
+export function smartDialog(app, edit) {
+  const p = edit ? dialog(app, { title: 'Text Pane', anchor: objAnchor(app, 'rc-smart-text-pane'), rect: app.root.getBoundingClientRect(), cls: 'pop-tb pop-pic pd-smart' }) : openAt(app, 'SmartArt', 'rc-insert-smartart', 'pd-smart');
+  if (edit) { p.style.left = '8px'; p.style.top = '52px'; }
+  const kinds = edit && !SMART.some((x) => x[0] === edit.kind) ? SMART.concat([[edit.kind, edit.kind, '']]) : SMART;
+  const kind = radios('Kind', kinds, edit ? edit.kind : SMART[0][0]);
   const ta = mk('textarea', 'pd-alt-t');
-  ta.rows = 5; ta.value = 'Plan\nWrite\nSubmit'; ta.setAttribute('aria-label', 'Items, one per line');
+  ta.rows = 5; ta.value = edit ? edit.items.join('\n') : 'Plan\nWrite\nSubmit'; ta.setAttribute('aria-label', 'Items, one per line');
   const ok = () => {
     const k = kind.value(), items = ta.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean);
     if (items.length > smartMax(k)) { app.toast('At most ' + smartMax(k) + ' items: smartdiagram\'s colours stop there and TeX stops on more.'); return; }
+    if (edit) { app.closePop(true); edit.done(k, items); return; }
     backCaret(app); app.runCommand('insert-smartart', { kind: k, items });
   };
-  p.append(row('tb-sec', kind), row('tb-sec', mk('div', 'tb-gl', 'Items, one per line'), ta, mk('p', 'tb-note', 'Written as \\smartdiagram[kind]{items} (smartdiagram), ten items at most (eleven for Bubbles); click it on the page to edit them.')), buttons(app, ok, () => backCaret(app)));
+  p.append(row('tb-sec', kind), row('tb-sec', mk('div', 'tb-gl', 'Items, one per line'), ta, mk('p', 'tb-note', 'Written as \\smartdiagram[kind]{items} (smartdiagram), ten items at most (eleven for Bubbles); click it on the page to edit them.')), buttons(app, ok, () => (edit ? app.closePop(true) : backCaret(app))));
   place(app, p);
   ta.focus(); ta.select();
   ta.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); ok(); } });
+}
+
+// The ribbon's button a dialog of a selected object opens under, or the object
+function objAnchor(app, id) { const b = document.getElementById(id); const o = app.objHere && app.objHere(); return b && b.offsetParent ? b : o ? o.el : null; }
+// Words for a selected object (Shape Format's Edit Text, Chart Title): o { title, anchor, label,
+// value, line (one line), note, done(text) }; the object stays selected
+export function wordsDialog(app, o) {
+  const p = dialog(app, { title: o.title, anchor: objAnchor(app, o.anchor), rect: app.root.getBoundingClientRect(), cls: 'pop-tb pop-pic pd-words' });
+  p.style.left = '8px'; p.style.top = '52px';
+  const t = o.line ? text(o.value || '', 'tb-num pd-wide') : mk('textarea', 'pd-alt-t');
+  if (!o.line) { t.rows = 3; t.value = o.value || ''; }
+  t.setAttribute('aria-label', o.label);
+  const ok = () => { app.closePop(true); o.done(t.value); };
+  p.append(row('tb-sec', mk('div', 'tb-gl', o.label), t, mk('p', 'tb-note', o.note || '')), buttons(app, ok, () => app.closePop(true)));
+  if (!o.line) t.addEventListener('keydown', (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); ok(); } });
+  finish(app, p, ok);
+}
+// Chart Design's Axis Titles: the horizontal and the vertical axis's words, empty for none
+export function axisTitlesDialog(app, o) {
+  const p = dialog(app, { title: 'Axis Titles', anchor: objAnchor(app, 'rc-chart-element'), rect: app.root.getBoundingClientRect(), cls: 'pop-tb pop-pic pd-words' });
+  p.style.left = '8px'; p.style.top = '52px';
+  const x = text(o.x, 'tb-num pd-wide'), y = text(o.y, 'tb-num pd-wide');
+  const ok = () => { app.closePop(true); o.done(x.value, y.value); };
+  p.append(row('tb-sec', field('Horizontal axis title', x), field('Vertical axis title', y), mk('p', 'tb-note', 'Written as xlabel={…} and ylabel={…} on the axis; empty takes one off.')), buttons(app, ok, () => app.closePop(true)));
+  finish(app, p, ok);
 }
 
 // Chart: its kind and a small grid of numbers, Word's own sample data to start with
