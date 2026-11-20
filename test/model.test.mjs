@@ -66,3 +66,26 @@ if (bad) process.exitCode = 1;
   console.log('widget model', fails.length ? 'FAIL ' + fails.join('; ') : 'ok');
   if (fails.length) process.exitCode = 1;
 }
+
+// A .bib is read once per text (Builder.ensureBib, parsedBib): a build after it gives the same
+// model; another text of the same file, or another project's file of the same name, its own
+// entries, never the kept ones.
+{
+  const fails = [];
+  const { modelText } = await import('../src/model.js');
+  const bib = sample('refs.bib');
+  const a = modelText(buildModel({ files, main: 'main.tex' }));
+  const b = modelText(buildModel({ files: new Map(files), main: 'main.tex' }));
+  if (a !== b) fails.push('the same files give the same model with the kept entries');
+  const key = (/@\w+\s*\{\s*([^,\s]+)/.exec(bib) || [])[1];
+  const changed = bib.replace(/title\s*=\s*\{/i, 'title = {Changed ');
+  const m2 = buildModel({ files: new Map([...files, ['refs.bib', changed]]), main: 'main.tex' });
+  const e2 = [...m2.bibEntries.values()].find((e) => /^Changed /.test(e.fields.title || ''));
+  if (!e2) fails.push('an edited .bib is read again');
+  const m3 = buildModel({ files, main: 'main.tex' });
+  if ([...m3.bibEntries.values()].some((e) => /^Changed /.test(e.fields.title || ''))) fails.push('the text before the edit gives its own entries again');
+  const other = buildModel({ files: new Map([['main.tex', '\\documentclass{article}\\begin{document}\\cite{zz}\\bibliography{refs}\\end{document}'], ['refs.bib', '@book{zz, title={Other}, author={O. Ther}, year={2001}}']]), main: 'main.tex' });
+  if (!other.bibEntries.has('zz') || other.bibEntries.has(key)) fails.push('another project\'s refs.bib is its own');
+  console.log('bib cache', fails.length ? 'FAIL ' + fails.join('; ') : 'ok');
+  if (fails.length) process.exitCode = 1;
+}

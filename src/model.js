@@ -608,6 +608,22 @@ function sameRefs(a, b) {
   return true;
 }
 
+// A .bib read once per text: every full build asked for every entry again (a 2 MB .bib took
+// 46 ms on each keystroke in a paragraph with a citation). The entries are read, never written,
+// so builds share them; a file is read again when its text is another.
+const BIB_CACHE = new Map();
+function parsedBib(name, text) {
+  let c = BIB_CACHE.get(name);
+  if (!c || c.text !== text) {
+    c = { text, ents: parseBib(text, name) };
+    BIB_CACHE.delete(name);
+    BIB_CACHE.set(name, c);
+    // (the files of the last few projects)
+    while (BIB_CACHE.size > 32) BIB_CACHE.delete(BIB_CACHE.keys().next().value);
+  }
+  return c.ents;
+}
+
 const PARSE_CACHE = new Map();
 // (B2) the parse the model made of a file's text, for the paragraph commands (src/parasrc.js
 // unitOf): read again at every move of the caret, a long text would be parsed each time
@@ -2033,7 +2049,7 @@ class Builder {
     for (const b of names) {
       const f = this.resolveBib(b);
       if (!f) continue;
-      const ents = parseBib(this.files.get(f), f);
+      const ents = parsedBib(f, this.files.get(f));
       for (const [k, v] of ents) if (!this.bibEntries.has(k)) this.bibEntries.set(k, v);
     }
   }
