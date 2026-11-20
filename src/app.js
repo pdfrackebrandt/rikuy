@@ -2495,6 +2495,9 @@ class App {
   // a menu's keys: the arrows step through its items and wrap, Home and End go to the ends
   menuKeys(el) {
     el.addEventListener('keydown', (e) => {
+      // (→ on an item that opens a menu opens it, as Word's and every menu bar's)
+      const f = document.activeElement;
+      if (e.key === 'ArrowRight' && f && el.contains(f) && f.getAttribute('aria-haspopup') === 'menu' && f.getAttribute('aria-disabled') !== 'true') { e.preventDefault(); e.stopPropagation(); f.click(); return; }
       if (!/^(ArrowDown|ArrowUp|Home|End)$/.test(e.key)) return;
       const all = [...el.querySelectorAll('[role=menuitem], [role=menuitemradio]')].filter((a) => !a.disabled && a.getAttribute('aria-disabled') !== 'true' && a.offsetParent);
       if (!all.length) return;

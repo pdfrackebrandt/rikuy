@@ -66,7 +66,13 @@ export const methods = {
     const items = list.map(item);
     if (folds.length) {
       const fold = { name: 'Expand/Collapse', label: 'Expand/Collapse', title: 'Expand or collapse this heading, or all of them (Alt+Shift++ and Alt+Shift+-)', submenu: true, disabled: folds.every((c) => !enabled(this, c, at)),
-        run: () => { this.ribbonBack(); openMenu(this, this.ctxXY ? new DOMRect(this.ctxXY[0], this.ctxXY[1], 0, 0) : this.root.getBoundingClientRect(), folds.map(item), { label: 'Expand/Collapse' }); } };
+        run: () => {
+          this.ribbonBack();
+          // (where the menu was: at the press, or under the caret for Shift+F10)
+          const s = getSelection(), r = s.rangeCount ? s.getRangeAt(0).getBoundingClientRect() : null;
+          const at = this.ctxXY ? new DOMRect(this.ctxXY[0], this.ctxXY[1], 0, 0) : r && (r.width || r.height) ? new DOMRect(r.left, r.bottom, 0, 0) : this.root.getBoundingClientRect();
+          openMenu(this, at, folds.map(item), { label: 'Expand/Collapse' });
+        } };
       // (after the heading's other items)
       let k = -1;
       list.forEach((c, i) => { if (c && c.menu && c.menu.heading != null) k = i; });
