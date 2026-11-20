@@ -3423,10 +3423,22 @@ Tests:
     10 ms, no long task of the graph's own over 50 ms; `test/csp.py` 25 under the hosted policy (a graph, Graph this and the
     web page with no refusal); `insert.py` 225 (its pictures PGF now; a graph's file 49 KB in the
     built page, under its budget of 52); `browser.py` 199; the other suites by CI on the pull
-    request (PR 88). Screenshots in /tmp/graph-shots. Left: the description in the
-    `.tex` itself (a `rikuygraph` environment), Graph this on systems of more than two equations
-    and on inequalities, the Ramsey saddle path, the web page's dark mode and font subsets, the
-    Edit graph button over a graph on a phone (it covers the plot's top).
+    request (PR 88). Screenshots in /tmp/graph-shots. Then the polish and the hostile review
+    (`docs/reviews/GRAPHS.md`, two rounds): typeset labels in the paper's faces placed off the
+    curves, equal axes for circles and the 45 degree line (the opening graph above its abstract,
+    the Bellman equation the one its rule solves), supply and demand with P up, crossings of
+    pairs with different left sides marked, poles and areas, economists' notation, the web
+    page's link carrying only what the main file reads (comment lines alone removed; a .bib
+    never); `test/graphs-review.test.mjs` 18 groups, each failing before its fix.
+    Left (task 70's open part): the description in the `.tex` itself (a `rikuygraph`
+    environment); Graph this on systems of more than two equations, on inequalities, on
+    `\hat x` and `\tilde x` (refused), on `\mathbb E_t[\pi_{t+1}]` and other indices with a sign
+    in them beyond y_{t-1} in an AR(1) (refused with the parser's subscript message); the Ramsey
+    saddle path and a phase portrait's rest point marked; the web page's dark mode and font
+    subsets; PGF labels that keep their size whatever width the picture is printed at (a much
+    narrower width than the text's can bring a label onto the plot); an arXiv download without
+    the `graphs/*.html` files TeX never reads; the Open in Rikuy link's length (1.9 MB) tried in
+    Firefox and Safari.
 
 ## Open tasks
 

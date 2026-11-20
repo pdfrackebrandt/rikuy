@@ -414,7 +414,9 @@ def webpage(p):
     check('web page: its math set by KaTeX, the paper\'s fonts inside', 'class="katex"' in html and '@font-face{font-family:"KaTeX_Main"' in html and 'Paper Modern Serif' in html)
     link = re.search(r'<a href="([^"]+)" rel="noopener">Open in Rikuy</a>', html)
     check('web page: an Open in Rikuy link with the source', link is not None and '#share=' in link.group(1))
-    for w, h, mob in ((1366, 900, False), (390, 844, True), (360, 740, True)):
+    # (and 360 px wide on a desktop browser: KaTeX's hidden MathML, placed absolutely, escaped
+    # its equation's scrolling box, 20 px sideways; the review's V5)
+    for w, h, mob in ((1366, 900, False), (390, 844, True), (360, 740, True), (360, 740, False)):
         ctx = browser.new_context(viewport={'width': w, 'height': h}, device_scale_factor=2 if mob else 1, is_mobile=mob, has_touch=mob)
         pg = ctx.new_page()
         cons = []
@@ -425,7 +427,7 @@ def webpage(p):
         check('web page %d: the graph runs live in its frame, sandboxed, sized to it' % w, bool(live) and pg.evaluate('document.querySelector("iframe.rk-graph").getAttribute("sandbox")') == 'allow-scripts' and pg.evaluate('parseFloat(document.querySelector("iframe.rk-graph").style.height) > 150'))
         check('web page %d: the policy refuses nothing Rikuy put in it' % w, not [c for c in cons if 'Content Security Policy' in c or 'Refused' in c], cons[:3])
         check('web page %d: no script of the document ran' % w, pg.evaluate('typeof window.EVIL_WIDGET') == 'undefined' and all(f.evaluate('typeof window.EVIL_WIDGET') == 'undefined' for f in frames))
-        check('web page %d: no sideways scroll' % w, not pg.evaluate('document.scrollingElement.scrollWidth > innerWidth'))
+        check('web page %d%s: no sideways scroll' % (w, '' if mob or w > 1000 else ' (desktop)'), not pg.evaluate('document.scrollingElement.scrollWidth > innerWidth'), pg.evaluate('[document.scrollingElement.scrollWidth, innerWidth]'))
         if mob:
             fb = frames[0]
             v0 = fb.eval_on_selector('#rk-0', 'e => e.value')
