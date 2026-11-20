@@ -14,8 +14,16 @@ import { asset as appAsset } from '../pwa.js';
 import { picFxDialog, compressDialog } from '../ui/picturedialogs.js';
 
 const WHY = 'Select a picture first: click it on the page.';
-const raster = (app) => { const h = app.picHere(); return !!h && /\.(png|jpe?g)$/i.test(app.picFxState(h).orig); };
-const whyNot = (app) => { const h = app.picHere(); if (!h) return WHY; return 'Corrections work on PNG and JPEG pictures: TeX places a PDF picture as it is.'; };
+// (the project's file the picture names, \includegraphics{a} finding a.png as TeX does)
+const fileOf = (app, h) => { const st = app.picFxState(h); return app.picAssetName(st.orig) || st.orig; };
+const raster = (app) => { const h = app.picHere(); return !!h && /\.(png|jpe?g)$/i.test(fileOf(app, h)); };
+const whyNot = (app) => {
+  const h = app.picHere();
+  if (!h) return WHY;
+  const f = fileOf(app, h);
+  if (!app.picAssetName(app.picFxState(h).orig)) return 'The picture\'s file, ' + app.picFxState(h).orig + ', is not in the project: load it first.';
+  return /\.(pdf|eps)$/i.test(f) ? 'Corrections work on PNG and JPEG pictures: TeX places a PDF or EPS picture as it is.' : 'Corrections work on PNG and JPEG pictures.';
+};
 const P = (id, name, o) => ({ id, name, when: raster, whyNot, ...o });
 const ICON = {
   corrections: '<circle cx="10" cy="10" r="6.5"/><path d="M10 3.5v13" /><path d="M10 3.5a6.5 6.5 0 0 1 0 13z" style="fill:currentColor" opacity=".45"/>',
@@ -40,34 +48,75 @@ register(
 );
 
 let loading = null;
+// Compress Pictures for one picture: { widthPx: the new width of the whole file, kept part and all }
+// or { why } where it is left as it is. Its pixels per inch printed: the part of its width kept by
+// trim or viewport, over that part's printed width as graphicx sizes it (graphicBox: before an angle
+// turns it, or after it as graphicx's order says). A picture that a macro sizes (\\resizebox,
+// \\scalebox) or turns by an angle not a quarter turn is left as it is, with that said.
+export function compressPlan(P, nat, lw, ppi) {
+  if (!nat || !nat.px) return { why: 'its size could not be read' };
+  if ((P.wraps || []).some((w) => w.kind === 'resize' || w.kind === 'scale')) return { why: 'a macro sizes it' };
+  const B = X.graphicBox(P.kv || [], nat, lw);
+  if (!B || !(B.iw > 0)) return { why: 'its printed size could not be read' };
+  if (B.angle && Math.abs(B.angle % 90) > 1e-6) return { why: 'it is turned by ' + B.angle + '°' };
+  const keep = 1 - B.crop.l - B.crop.r;
+  if (!(keep > 0)) return { why: 'its crop keeps nothing' };
+  const eff = nat.px[0] * keep / (B.iw / 72.27);
+  if (eff <= ppi * 1.02) return { why: 'already ' + Math.round(eff) + ' ppi as printed' };
+  return { widthPx: Math.max(1, Math.ceil(nat.px[0] * ppi / eff)), eff };
+}
 export const methods = {
   // ---- the module ----------------------------------------------------------------------------------
-  // fetched once, checked against the hash the build wrote (build.mjs PIC); false where it cannot run
+  // fetched once, checked against the hash the build wrote (build.mjs PIC); its worker started from
+  // beside the page (src/picworker.js); false where it cannot run
   picFxLoad() {
-    if (F.picFxReady()) return Promise.resolve(true);
+    if (this.picFxW || this.picFxMain) return Promise.resolve(true);
     if (loading) return loading;
     loading = (async () => {
       try {
         if (!(window.crypto && crypto.subtle) || typeof WebAssembly !== 'object') return false;
         const C = __RIKUY_PIC__;
-        const url = __RIKUY_APP__ ? appAsset(C.file) : new URL(C.file, location.href).href;
-        const r = await fetch(url, { credentials: 'same-origin' });
+        const at = (f) => (__RIKUY_APP__ ? appAsset(f) : new URL(f, location.href).href);
+        const r = await fetch(at(C.file), { credentials: 'same-origin' });
         if (!r.ok) return false;
         const bytes = new Uint8Array(await r.arrayBuffer());
         const h = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((b) => b.toString(16).padStart(2, '0')).join('');
         if (h !== C.sha256) return false;
-        return await F.loadPicFx(bytes);
+        this.picFxWasm = bytes;
+        // (the pixels in a worker; where none starts, on the page, the module let go after each run)
+        try {
+          const w = new Worker(URL.createObjectURL(new Blob(['importScripts(' + JSON.stringify(at(C.worker)) + ');'], { type: 'text/javascript' })));
+          const jobs = new Map();
+          w.onmessage = ({ data }) => { const j = jobs.get(data && data.id); if (!j) return; jobs.delete(data.id); if (data.error) j.reject(new Error(data.error)); else j.resolve(data.result); };
+          w.onerror = (e) => { if (e.preventDefault) e.preventDefault(); for (const j of jobs.values()) j.reject(new Error('the picture worker stopped')); jobs.clear(); this.picFxW = null; };
+          let seq = 0;
+          const ask = (msg, transfer) => new Promise((resolve, reject) => { const id = ++seq; jobs.set(id, { resolve, reject }); w.postMessage({ id, ...msg }, transfer || []); });
+          this.picFxW = { ask, w };
+          await ask({ op: 'init', wasm: bytes.slice() });
+        } catch (e) { this.picFxW = null; this.picFxMain = true; }
+        return true;
       } catch (e) { return false; }
     })();
     const p = loading;
     p.then((ok) => { if (!ok) loading = null; });
     return p;
   },
+  // the pixels worked on: in the worker, or on the page where there is none
+  async picFxRun(bytes, settings, o) {
+    if (this.picFxW) {
+      try { this.picFxStats = { worker: true }; return await this.picFxW.ask({ op: 'render', bytes, settings, o }, [bytes.buffer]); } catch (e) { return { error: 'The picture tools stopped on this file: ' + e.message + '.' }; }
+    }
+    if (!F.picFxReady() && !(await F.loadPicFx(this.picFxWasm))) return { error: 'The picture tools did not load.' };
+    const r = F.render(bytes, settings, o);
+    if (F.picFxMemory() > 64 * 1024 * 1024) F.dropPicFx();
+    this.picFxStats = { worker: false };
+    return r;
+  },
   // the selected picture's first file and the settings its comment holds
   picFxState(h) {
     const cur = h.P.file.name, L = F.lineOf(h.src, h.P.e);
-    if (L.note) return { orig: L.note.orig, settings: L.note.settings, current: cur, note: true };
-    return { orig: cur, settings: {}, current: cur, note: false };
+    if (L.note) return { orig: L.note.orig, settings: L.note.settings, current: cur, note: true, other: L.other };
+    return { orig: cur, settings: {}, current: cur, note: false, other: L.other };
   },
   // A change of the settings (keys of src/picfx.js KEYS, recolor, tint; null puts one back),
   // worked into a new file from the first; all: the settings given are all of them
@@ -80,31 +129,50 @@ export const methods = {
     if (change && change.recolor === null) delete settings.tint;
     return this.picFxWrite(h, st, F.clean(settings));
   },
+  // The edited file of a picture written, the picture pointed at it, and its last edited file (one no
+  // other picture names) taken out in the same step: one edited file a picture, undo bringing the
+  // last one back. o: { widthPx, ppi, quality, collect (Compress: the edits and files, not committed) }
   async picFxWrite(h, st, settings, o = {}) {
-    if (/\.pdf$/i.test(st.orig) || !/\.(png|jpe?g)$/i.test(st.orig)) { this.toast('Corrections work on PNG and JPEG pictures: TeX places a PDF picture as it is.', 6000); return false; }
+    if (st.other) { this.toast('Another picture follows this one on its line: put this picture on a line of its own first (the comment that says where an edited picture came from would be read as that one\'s).', 8000); return false; }
     const key = this.picAssetName(st.orig);
-    const blob = key && this.assetBlobs.get(key);
-    if (!blob) { this.toast('The picture\'s first file, ' + st.orig + ', is not in the project: load it, or Reset Picture.', 7000); return false; }
-    if (F.isPlain(settings) && !o.widthPx) return this.picApply(h, { edits: F.fxEdits(h.src, h.P, st.current, st.orig, {}, null) });
+    if (!key || !/\.(png|jpe?g)$/i.test(key)) { this.toast(key ? 'Corrections work on PNG and JPEG pictures: TeX places a PDF or EPS picture as it is.' : 'The picture\'s first file, ' + st.orig + ', is not in the project: load it, or Reset Picture.', 7000); return false; }
+    const blob = this.assetBlobs.get(key);
+    const drop = (name) => {
+      // (the last edited file, where no other picture of the project names it)
+      if (!name || name === key || !F.isEdited(name) || !this.assetBlobs.has(name)) return [];
+      const used = [...this.files.values()].reduce((n, t) => n + (typeof t === 'string' ? t.split(name).length - 1 : 0), 0);
+      return used <= 1 ? [{ name, blob: null }] : [];
+    };
+    if (F.isPlain(settings) && !o.widthPx) {
+      const E = F.fxEdits(h.src, h.P, st.current, st.orig, {}, null);
+      return E.error ? (this.toast(E.error, 8000), false) : this.picApply(h, { edits: E, blobs: drop(st.current) });
+    }
     if (!(await this.picFxLoad())) { this.toast('The picture tools (WebAssembly) did not load in this browser, so the picture is as it was. Nothing else is affected.', 8000); return false; }
     const bytes = new Uint8Array(await blob.arrayBuffer());
-    const jpeg = /\.jpe?g$/i.test(st.orig);
-    const nat = X.naturalSize(bytes.subarray(0, 1 << 19), st.orig);
+    const origHash = F.bytesHash(bytes);
+    const jpeg = /\.jpe?g$/i.test(key);
+    const nat = X.naturalSize(bytes.subarray(0, 1 << 19), key);
     const dpi = nat && nat.px && nat.w > 0 ? [nat.px[0] * 72 / nat.w, nat.px[1] * 72 / nat.h] : null;
-    const r = F.render(bytes, settings, { jpeg, quality: o.quality || 92, widthPx: o.widthPx, dpi });
+    // (a run of more than half a second says so: a 12 megapixel photo takes seconds)
+    const said = setTimeout(() => this.toast('Working on ' + key + '…', 30000), 500);
+    const before = blob.size;
+    const r = await this.picFxRun(bytes, settings, { jpeg, quality: o.quality || 92, widthPx: o.widthPx, dpi });
+    clearTimeout(said);
     if (r.error) { this.toast(r.error, 7000); return false; }
     const s = { ...settings };
     if (o.widthPx && r.w < r.w0) s.compress = o.ppi;
-    // (named after the project's file, not the document's words for it: src/picfx.js editedName)
-    const name = F.editedName(key, s, r.ext);
+    const name = F.editedName(key, s, r.ext, origHash);
     // (the picture may have moved while the pixels were worked on: read it again)
-    const h2 = this.picHere();
-    if (!h2 || h2.f !== h.f || h2.src !== h.src) { this.toast('The picture changed meanwhile: try again.'); return false; }
-    if (!this.assetBlobs.has(name)) { this.addAsset(name, new Blob([r.bytes], { type: r.ext === 'png' ? 'image/png' : 'image/jpeg' })); this.binaryDirty = true; this.zipDirty = true; this.forceRender = true; }
-    const edits = F.fxEdits(h2.src, h2.P, st.current, st.orig, s, name);
-    // (Compress Pictures gathers every picture's edits into one commit)
-    if (o.collect) return { edits: edits.map((x) => ({ f: h2.f, ...x })), before: blob.size, after: r.bytes.length };
-    return edits.length ? this.picApply(h2, { edits }) : false;
+    const h2 = o.collect ? h : this.picHere();
+    if (!h2 || h2.f !== h.f || h2.src !== this.src(h.f)) { this.toast('The picture changed meanwhile: try again.'); return false; }
+    const E = F.fxEdits(h2.src, h2.P, st.current, st.orig, s, name);
+    if (E.error) { this.toast(E.error, 8000); return false; }
+    const blobs = [...(this.assetBlobs.has(name) ? [] : [{ name, blob: new Blob([r.bytes], { type: r.ext === 'png' ? 'image/png' : 'image/jpeg' }) }]), ...(st.current !== name ? drop(st.current) : [])];
+    if (o.collect) return { edits: E.map((x) => ({ f: h2.f, ...x })), blobs, before, after: r.bytes.length };
+    // (the "Working on" toast goes with the run)
+    const tt = document.querySelector('#toast span');
+    if (tt && /^Working on/.test(tt.textContent)) this.toast('Done.', 800);
+    return E.length || blobs.length ? this.picApply(h2, { edits: E, blobs }) : false;
   },
   picFxMenu(which) {
     const h = this.picHere();
@@ -140,39 +208,44 @@ export const methods = {
     const ppi = Math.max(50, Math.min(600, parseInt(o.ppi, 10) || 150));
     const sel = this.picHere();
     const els = o.all || !sel ? [...document.querySelectorAll('#pages .a-img')] : [sel.el];
-    let before = 0, after = 0, n = 0, skipped = 0;
-    const seen = new Set(), all = [];
+    let before = 0, after = 0, n = 0;
+    const seen = new Set(), all = [], blobs = [], why = [];
     for (const el of els) {
       const info = atomOfEl(el);
       if (!info || info.a.kind !== 'img' || info.a.ro) continue;
       const src = this.src(info.f);
       const Pq = X.findPicture(src, parse(src), info.s);
-      if (!Pq) continue;
+      if (!Pq || seen.has(info.f + ':' + info.s)) continue;
+      seen.add(info.f + ':' + info.s);
       const h = { f: info.f, s: info.s, src, P: Pq, el };
       const st = this.picFxState(h);
-      if (!/\.(png|jpe?g)$/i.test(st.orig) || seen.has(info.f + ':' + info.s)) { skipped++; continue; }
-      seen.add(info.f + ':' + info.s);
-      const d = this.picDrawn(h);
-      const widthPx = Math.ceil(d.w / 72.27 * ppi);
-      // (this picture made the selected one while its pixels are worked on: picFxWrite reads it)
-      this.picSelect({ f: info.f, s: info.s });
-      const h1 = this.picHere();
+      const key = this.picAssetName(st.orig);
+      if (!key || !/\.(png|jpe?g)$/i.test(key)) { why.push(st.orig + ': ' + (key ? 'TeX places a PDF or EPS picture as it is' : 'not in the project')); continue; }
+      const blob = this.assetBlobs.get(key);
+      const nat = X.naturalSize(new Uint8Array(await blob.slice(0, 1 << 19).arrayBuffer()), key);
+      // its pixels per inch as printed: the part kept by trim or viewport over its own width as
+      // graphicx sizes it (before an angle turns it, or after: graphicx's order), not the box it takes
+      const pr = compressPlan(Pq, nat, this.picLine(h), ppi);
+      if (pr.why) { why.push(st.orig + ': ' + pr.why); continue; }
+      const h1 = (this.picSelect({ f: info.f, s: info.s }), this.picHere());
       if (!h1) continue;
-      const blob = this.assetBlobs.get(this.picAssetName(st.orig) || '');
-      const nat = blob ? X.naturalSize(new Uint8Array(await blob.slice(0, 1 << 19).arrayBuffer()), st.orig) : null;
-      if (nat && nat.px && nat.px[0] <= widthPx) { skipped++; continue; }
-      const r = await this.picFxWrite(h1, this.picFxState(h1), this.picFxState(h1).settings, { widthPx, ppi, quality: 85, collect: true });
-      if (r && r.edits && r.edits.length && r.after < r.before) { n++; before += r.before; after += r.after; all.push(...r.edits); } else skipped++;
+      const r = await this.picFxWrite(h1, this.picFxState(h1), this.picFxState(h1).settings, { widthPx: pr.widthPx, ppi, quality: 85, collect: true });
+      if (r && r.edits && r.edits.length && r.after < r.before) { n++; before += r.before; after += r.after; all.push(...r.edits); blobs.push(...r.blobs); } else if (r && r.edits) why.push(st.orig + ': written smaller it was no smaller');
     }
     if (all.length) {
       this.closeGroup();
-      this.commit(all, sel ? { f: sel.f, p: sel.s, bias: 1 } : null, 'picture');
+      this.commit(all, sel ? { f: sel.f, p: sel.s, bias: 1 } : null, 'picture', blobs);
       this.closeGroup();
     }
     if (sel) this.picSelect({ f: sel.f, s: mapPos(all.filter((x) => x.f === sel.f), sel.s, 1) }); else if (this.disarm) this.disarm();
     const kb = (b) => (b >= 1048576 ? (b / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(b / 1024)) + ' KB');
-    this.lastCompress = { n, before, after, skipped };
-    this.toast(n ? 'Compressed ' + n + ' picture' + (n > 1 ? 's' : '') + ' to ' + ppi + ' ppi: ' + kb(before) + ' to ' + kb(after) + ', ' + kb(Math.max(0, before - after)) + ' saved. The first files stay in the project; Reset Picture goes back.' : 'Nothing to compress: every picture is already no larger than its place needs at ' + ppi + ' ppi.', 9000);
+    // (honest about the project: its first files stay for Reset Picture, so the project grows by
+    // the new files; the PDF carries the smaller ones)
+    const added = blobs.reduce((t, b) => t + (b.blob ? b.blob.size : 0), 0);
+    this.lastCompress = { n, before, after, skipped: why.length, why, added };
+    const left = why.length ? ' Left as they are: ' + why.slice(0, 3).join('; ') + (why.length > 3 ? '; and ' + (why.length - 3) + ' more' : '') + '.' : '';
+    this.toast(n ? 'Compressed ' + n + ' picture' + (n > 1 ? 's' : '') + ' to ' + ppi + ' ppi: the PDF carries ' + kb(after) + ' of pictures in place of ' + kb(before) + '. The project keeps the first files for Reset Picture, so it holds ' + kb(added) + ' more.' + left : 'Nothing to compress at ' + ppi + ' ppi.' + left, 12000);
     return n > 0;
   }
+
 };

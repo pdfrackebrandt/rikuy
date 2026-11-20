@@ -343,7 +343,7 @@ export const methods = {
     // (keys need graphicx: graphics alone reads a bounding box there)
     const keys = edits.some((x) => x.s >= h.P.s && x.e <= h.P.e) && h.P.keyval;
     const pk = this.picPackages([...(r.packages || []), ...(keys ? ['graphicx'] : [])]);
-    if (!edits.length) return false;
+    if (!edits.length && !(r.blobs && r.blobs.length)) return false;
     const mine = [...edits, ...pk.filter((x) => x.f === f)];
     const ns = mapPos(mine, h.P.s, 1);
     let caret;
@@ -351,7 +351,8 @@ export const methods = {
     else caret = { f, p: ns, bias: 1 };
     this.closeGroup();
     this.removeGhost();
-    this.commit([...edits, ...pk], caret, 'picture');
+    // (blobs: picture files the same step puts in or takes out, src/cmd/picfx.js)
+    this.commit([...edits, ...pk], caret, 'picture', r.blobs);
     this.closeGroup();
     if (r.p == null) this.picSelect({ f, s: ns });
     else this.ribbonSync();
