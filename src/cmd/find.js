@@ -724,7 +724,17 @@ export const methods = {
     const fs = this.findState();
     if (!fs.q) return this.findInPane();
     const hit = this.findGo(1);
-    if (!hit) this.toast('"' + fs.q + '" is not in the document.');
+    if (!hit) { this.toast('"' + fs.q + '" is not in the document.'); return true; }
+    // (selected, as Word's Find Next leaves what it found: typing replaces it)
+    const rs = hit.eq ? [] : this.index.domRanges(hit.f, joinRanges(hit.parts));
+    if (rs.length) {
+      const r = document.createRange();
+      r.setStart(rs[0].startContainer, rs[0].startOffset);
+      r.setEnd(rs[rs.length - 1].endContainer, rs[rs.length - 1].endOffset);
+      this.root.focus({ preventScroll: true });
+      const sel = getSelection();
+      sel.removeAllRanges(); sel.addRange(r);
+    }
     return true;
   },
   // Go Back: the places of the last edits, newest first; a press the next one of them, again and

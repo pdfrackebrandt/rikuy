@@ -188,8 +188,11 @@ export function installKeys(app, mac, runCmd) {
   app.root.addEventListener('keydown', (e) => go(e, 'page'), true);
   document.addEventListener('keydown', (e) => {
     if (e.target === app.root || (app.root.contains && app.root.contains(e.target))) return;
-    // (a field types nothing on Ctrl and a function key: Ctrl+F1 folds the ribbon from it too)
-    if (e.target && e.target.closest && e.target.closest(OWN) && !((e.ctrlKey || e.metaKey) && /^F\d+$/.test(e.key))) return;
+    // (a field types nothing with a function key: Ctrl+F1 folds the ribbon from it too, Alt+F9
+    // leaves LaTeX Mode from the source; and the source types nothing with Ctrl+Alt but AltGr's
+    // characters, which matches() leaves to it: Ctrl+Alt+P is Print Layout from it)
+    const own = e.target && e.target.closest && e.target.closest(OWN);
+    if (own && !/^F\d+$/.test(e.key) && !(own.matches('.CodeMirror, .CodeMirror *') && (e.ctrlKey || e.metaKey) && e.altKey)) return;
     go(e, 'app');
   }, true);
 }
