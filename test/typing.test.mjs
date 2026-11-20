@@ -3,7 +3,7 @@
 // through the edits made after them.
 import assert from 'node:assert/strict';
 import '../src/cmd/index.js';
-import { unicodeToggle, accented, openBraces } from '../src/cmd/typing.js';
+import { unicodeToggle, accented, openBraces, cutSpace } from '../src/cmd/typing.js';
 import { editSpots } from '../src/cmd/find.js';
 
 let n = 0;
@@ -111,6 +111,14 @@ ok('the Spike\'s pieces join as paragraphs, but with a space inside a command\'s
   const src = s.replace(/\|/g, '');
   assert.equal(openBraces(src, at(1)), 1);
   assert.equal(openBraces(src, at(2)), 0);
+});
+
+ok('the Spike\'s cut takes one space along, as Word\'s smart cut: no double space is left', () => {
+  const t = 'One two three six.', a = t.indexOf('two'), b = t.indexOf(' six');
+  assert.equal(cutSpace(t, a, b), true);
+  assert.equal(cutSpace('Let $x$ and y', 7, 11), false);
+  assert.equal(cutSpace('Let $x$ and y.', 8, 13), true);
+  assert.equal(cutSpace('(two) x', 1, 4), false);
 });
 
 console.log('typing: ' + n + ' groups of checks passed');

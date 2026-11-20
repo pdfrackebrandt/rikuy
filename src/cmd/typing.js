@@ -95,6 +95,13 @@ export function accentMacro(src, p) {
   return null;
 }
 
+// whether cutting [a, b) of src takes the space before it too: words between a space and a space
+// or a sign (the same rule as a drag's move, src/cmd/move.js)
+export function cutSpace(src, a, b) {
+  const W = /[\p{L}\p{N}$]/u;
+  return src[a - 1] === ' ' && /^[ .,;:!?)]/.test(src[b] || '') && W.test(src[a] || '') && W.test(src[b - 1] || '');
+}
+
 // how many { are open at p, from the start of its paragraph (escaped braces and comments aside)
 export function openBraces(src, p) {
   const s0 = src.lastIndexOf('\n\n', p - 1);
@@ -184,6 +191,17 @@ export const methods = {
   },
 
   spikeCut() {
+    const c = this.caretNow();
+    if (!c || c.collapsed || c.ghost) return false;
+    const src = this.src(c.f);
+    // (Word's smart cut: words taken from between spaces take one of them along, so no double
+    // space is left; inside a LaTeX paragraph and over the whole page, the page's own cut)
+    if (!this.wholeDoc() && !this.texHere() && cutSpace(src, c.a, c.b)) {
+      const latex = this.selectionLatex(c), plain = getSelection().toString().replace(/\u200B/g, '');
+      (this.spikeItems || (this.spikeItems = [])).push({ latex, plain });
+      this.commit(this.deletionEdits(c.f, c.a - 1, c.b), { f: c.f, p: c.a - 1 }, 'cut');
+      return true;
+    }
     const kept = this.lastCopy;
     this.lastCopy = null;
     // (the page's own cut: the LaTeX of the selection, then the same deletion as Ctrl+X)
@@ -193,11 +211,23 @@ export const methods = {
   spikeInsert() {
     const items = this.spikeItems || [];
     if (!items.length) return false;
-    this.spikeItems = [];
     // (each piece a paragraph, as Word's; inside a command's argument, a heading's or a cell's, a
-    // paragraph break would end it: there the pieces join with a space)
-    const c = this.caretNow(), inArg = !!c && !c.ghost && openBraces(this.src(c.f), c.a) > 0;
-    this.pasteData({ plain: items.map((x) => x.plain).join(inArg ? ' ' : '\n'), latex: items.map((x) => x.latex).join(inArg ? ' ' : '\n\n'), html: '' }, 'keep');
+    // paragraph break would end it, and TeX with it: there the pieces and their paragraphs join
+    // with spaces, and a piece with an environment is refused)
+    const c = this.caretNow();
+    const src = c && !c.ghost ? this.src(c.f) : '', inArg = !!c && !c.ghost && openBraces(src, c.a) > 0;
+    if (inArg && items.some((x) => /\\begin\s*\{/.test(x.latex))) { this.toast('The Spike holds a list, a table or another block: put the caret in a paragraph of the text.'); return false; }
+    const flat = (t) => (inArg ? t.replace(/[ \t]*(?:\r?\n[ \t]*){2,}/g, ' ').replace(/\\par(?![A-Za-z])/g, ' ') : t);
+    let latex = items.map((x) => flat(x.latex)).join(inArg ? ' ' : '\n\n');
+    let plain = items.map((x) => x.plain).join(inArg ? ' ' : '\n');
+    // (a space each side it needs, between words: "hold" and "more" stay two words)
+    if (c && !c.ghost) {
+      const W = /[\p{L}\p{N}$]/u, a = c.collapsed ? c.a : c.a, b = c.collapsed ? c.a : c.b;
+      if (W.test(src[a - 1] || '') && W.test(latex[0] || '')) { latex = ' ' + latex; plain = ' ' + plain; }
+      if (W.test(src[b] || '') && W.test(latex[latex.length - 1] || '')) { latex += ' '; plain += ' '; }
+    }
+    this.spikeItems = [];
+    this.pasteData({ plain, latex, html: '' }, 'keep');
     return true;
   },
 
