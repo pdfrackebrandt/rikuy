@@ -307,8 +307,13 @@ def compiled(page):
     for eng in ('pdflatex', 'xelatex', 'lualatex'):
         r = compile_pdf(page, ('% !TEX program = ' + eng + '\n' if eng != 'pdflatex' else '') + doc)
         t = pdf_text(r)
+        # pdfLaTeX's OT1 \_ is a drawn rule, not a character, and pdftotext loses the space before
+        # its \$ from another font: the title is compared there without spaces and underscores
+        flat = lambda x: re.sub(r'[\s_]', '', x)
+        title = 'Q1 sales & R&D: 50% of $5_000 #1'
         check('all of it compiles with %s: the shape\'s words, the chart\'s title and axis titles, the SmartArt\'s items in the PDF' % eng,
-              r['ok'] and not r['problems'] and all(w in t for w in ('Start here', 'Q1 sales & R&D: 50% of $5_000 #1', 'Region', 'Units', 'Item 4', 'Again')), (r['problems'], t[:300]))
+              r['ok'] and not r['problems'] and all(w in t for w in ('Start here', 'Region', 'Units', 'Item 4', 'Again'))
+              and (title in t if eng != 'pdflatex' else flat(title) in flat(t)), (r['problems'], t[:300]))
         if eng == 'pdflatex' and r['pdf']:
             open(os.path.join(SHOTS, 'objects-compiled.pdf'), 'wb').write(base64.b64decode(r['pdf']))
 
