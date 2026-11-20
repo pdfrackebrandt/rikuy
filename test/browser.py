@@ -74,6 +74,16 @@ def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, tou
     return browser, page, errors
 
 
+def download(page, el='b-save'):
+    """Press a download as a person would at this width: its button (#b-save LaTeX, #rb-pdf, #rb-word)
+    where the row shows it, else the one Download button and its item of the same name."""
+    if page.locator('#' + el).is_visible():
+        return page.click('#' + el)
+    name = page.get_attribute('#' + el, 'aria-label')
+    page.click('#rb-dl-menu'); page.wait_for_timeout(150)
+    page.get_by_role('menuitem', name=name, exact=True).click()
+
+
 def src(page, f='main.tex'):
     return page.evaluate('(f) => window.rikuy.files.get(f)', f)
 
