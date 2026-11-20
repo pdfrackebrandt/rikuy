@@ -460,7 +460,9 @@ def speed(p):
             rest = fr.evaluate('self.rkTimes[self.rkTimes.length - 1]')
             q = lambda f: T[int(f * (len(T) - 1))] if T else 0
             run = (tid, len(T), q(0.5), q(0.9), q(0.95), rest, max(L) if L else 0)
-            if best is None or (run[3], run[6]) < (best[3], best[6]):
+            # (the run that meets both budgets, else the nearest)
+            key = lambda r: (r[6] > 50, r[3] >= 16, r[6], r[3])
+            if best is None or key(run) < key(best):
                 best = run
             if run[3] < 16 and run[6] <= 50:
                 break
