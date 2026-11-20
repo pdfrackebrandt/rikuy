@@ -6,6 +6,8 @@
 // Menus and dialogs are App's popovers (makePop), so a press outside or Escape closes them and the
 // caret goes back where it was. The pure parts (lengths, colours) are tested in test/kit.test.mjs.
 
+import { keysInText, macUA } from '../keys.js';
+
 const SVG = (paths) => '<svg viewBox="0 0 20 20" aria-hidden="true">' + paths + '</svg>';
 const isOff = (x) => x.disabled || x.getAttribute('aria-disabled') === 'true';
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
@@ -78,14 +80,15 @@ export function openMenu(app, at, items, o = {}) {
     a.setAttribute('role', it.checked === undefined ? 'menuitem' : it.radio ? 'menuitemradio' : 'menuitemcheckbox');
     if (it.checked !== undefined) a.setAttribute('aria-checked', it.checked ? 'true' : 'false');
     a.setAttribute('aria-label', it.name);
-    if (it.title) a.title = it.title;
+    // (keys named in a menu as this computer has them: ⌘X on a Mac)
+    if (it.title) a.title = keysInText(it.title, macUA());
     if (it.id) a.id = it.id;
     if (it.icon) a.insertAdjacentHTML('beforeend', SVG(it.icon));
     // (html is the code's own markup, never a document's; a swatch's colour is set as a style)
     else if (it.html) { const g = el('span', 'mi-g'); g.setAttribute('aria-hidden', 'true'); g.innerHTML = it.html; a.append(g); }
     else if (it.swatch) { const g = el('i', 'mi-sw'); g.setAttribute('aria-hidden', 'true'); if (/^[0-9A-Fa-f]{6}$/.test(it.swatch)) g.style.background = '#' + it.swatch; a.append(g); }
     if ((it.label ?? it.name) !== '') a.append(el('span', 'mi-n', it.label ?? it.name));
-    if (it.keys) { const k = el('span', 'mi-k', it.keys); k.setAttribute('aria-hidden', 'true'); a.append(k); }
+    if (it.keys) { const k = el('span', 'mi-k', keysInText(it.keys, macUA())); k.setAttribute('aria-hidden', 'true'); a.append(k); }
     if (it.disabled) a.setAttribute('aria-disabled', 'true');
     // (a press keeps the caret on the page; the keyboard's Enter comes as a click)
     a.addEventListener('mousedown', (e) => e.preventDefault());
