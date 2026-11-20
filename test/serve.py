@@ -44,7 +44,7 @@ def headers_for(root, path):
         return [('Content-Security-Policy', ARTIFACT_CSP)]
     import pages
     hs = [(k, v) for k, v in pages.headers_for(root, path) if k.lower() in ('content-security-policy', 'x-frame-options')]
-    if re.match(r'^/widget-[0-9a-f]{16}\.html$', path):
+    if re.match(r'^/widget-[0-9a-f]{16}(\.html)?$', path):
         return hs
     return [(k, re.sub(r"(^|;\s*)(script-src [^;]*)", lambda m: m.group(1) + m.group(2) + ' ' + CDN, v) if k.lower() == 'content-security-policy' else v) for k, v in hs]
 
@@ -87,6 +87,8 @@ class H(http.server.BaseHTTPRequestHandler):
             # inside ROOT itself: a plain prefix test let /../dist-old/x reach a sibling folder
             root = os.path.abspath(ROOT)
             f = os.path.normpath(os.path.join(root, path.lstrip('/')))
+            # (a page file at its address without .html, as Pages serves it: the widget document)
+            if not os.path.isfile(f) and os.path.isfile(f + '.html'): f += '.html'
             if os.path.commonpath([root, f]) != root or not os.path.isfile(f):
                 self.send_response(404)
                 for k, v in self.policy(path): self.send_header(k, v)

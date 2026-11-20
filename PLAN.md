@@ -3260,7 +3260,14 @@ Tests:
     stays `'self' blob:` (docs/HOSTING.md: what it lets through, what it costs).
     `test/gitproxy.test.mjs` (9 groups) checks what it lets through; `git.py` runs it locally
     (`test/gitproxy_server.mjs`): under the policy as it ships, a clone through `/git` works, one
-    straight to a host is refused with a message naming `/git`, and `/git` refuses an IP address. `para.py`, `picture.py`, `refs.py` and
+    straight to a host is refused with a message naming `/git`, and `/git` refuses an IP address.
+    *After the hostile review (`/tmp/review-sec.md`):* M1, the widget shell writes only for a
+    parent of its own origin and only in the sandbox, and `runWidget` sets the sandbox itself
+    (`widgets.py`); M2, Edit Comment writes a base32 comment line again whole (`review.py` 108);
+    L1, the shell is asked for at its address without `.html` (Pages redirects `x.html`, which the
+    service worker's install would refuse; `pages.py` now does as Pages does, `offline.py` 61),
+    and a shell that never loads leaves the figure's picture and a note (`widgets.py` 66); L3,
+    `no-transform` on the page and `dev/live_check.py` after each deployment. `para.py`, `picture.py`, `refs.py` and
     `styles.py` serve the policy too.
     Under the new policy: `browser.py` 199, `agent.py` 143, `offline.py` 60, `launch.py` 18,
     `engines.py` 44, `word.py` 111, `spell.py` 124, `widgets.py` 62, `insert.py` 224,

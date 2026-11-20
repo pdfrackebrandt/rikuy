@@ -5,8 +5,8 @@ header set by two rules gets both values, joined by a comma; "! Name" takes away
 before set). Without a _headers file each response gets the artifact host's policy and no-cache. The served folder can change while running (`server.root`), as a
 new deployment does. Used by offline.py and launch.py; `npm run serve:app` runs it on port 8791.
 
-What it leaves out of Pages: redirects (_redirects), pretty URLs other than /index.html -> /, and
-compression."""
+What it leaves out of Pages: redirects (_redirects) and compression; of the pretty URLs it has
+/index.html -> / and a page file x.html served at x, with x.html redirected there."""
 import http.server, os, re, socketserver, sys, threading, time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import serve
@@ -86,6 +86,11 @@ class H(http.server.BaseHTTPRequestHandler):
             return self.send(308, b'', 'text/plain', path, [('Location', '/')])
         rel = 'index.html' if path == '/' else path.lstrip('/')
         f = os.path.normpath(os.path.join(root, rel))
+        # Pages answers a page file x.html at x and redirects x.html there
+        if path.endswith('.html') and os.path.isfile(f) and os.path.commonpath([root, f]) == root:
+            return self.send(308, b'', 'text/plain', path, [('Location', path[:-5])])
+        if not os.path.isfile(f) and os.path.isfile(f + '.html'):
+            f += '.html'
         if os.path.commonpath([root, f]) != root or not os.path.isfile(f):
             nf = os.path.join(root, '404.html')
             body = open(nf, 'rb').read() if os.path.isfile(nf) else b'Not found'

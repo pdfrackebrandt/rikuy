@@ -101,7 +101,11 @@ if (SPELL_ON) {
 // (build/app.mjs headers) and cached for good; the artifact's copy runs them in srcdoc frames,
 // which its host's policy allows
 const WIDGET_FILE = APP ? 'widget-' + crypto.createHash('sha256').update(WIDGET_SHELL).digest('hex').slice(0, 16) + '.html' : '';
-const out = await build({ entryPoints: [R('src/app.js')], bundle: true, format: 'iife', minify: process.argv.includes('--dev') ? false : true, write: false, target: ['chrome100', 'firefox100', 'safari15'], legalComments: 'none', charset: 'utf8', define: { __RIKUY_MIRROR__: JSON.stringify(process.env.RIKUY_MIRROR || ''), __RIKUY_SHARE__: JSON.stringify(process.env.RIKUY_SHARE || ''), __RIKUY_APP__: JSON.stringify(APP), __RIKUY_WORD__: JSON.stringify(WORD), __RIKUY_WORD_HOST__: JSON.stringify(process.env.RIKUY_WORD_HOST || ''), __RIKUY_CORE__: JSON.stringify(CORE), __RIKUY_SPELL__: JSON.stringify(SPELL), __RIKUY_TEXNAMES__: JSON.stringify(TEXNAMES), __RIKUY_WIDGET_SHELL__: JSON.stringify(WIDGET_FILE), __RIKUY_DEV__: JSON.stringify(process.argv.includes("--dev")) } });
+// its address without .html: Cloudflare Pages answers a .html file's name with a redirect to the
+// name without it (and serves the file there), and the frame, the service worker's install and
+// the HTTP cache must all name the one address that answers 200
+const WIDGET_URL = WIDGET_FILE.replace(/\.html$/, '');
+const out = await build({ entryPoints: [R('src/app.js')], bundle: true, format: 'iife', minify: process.argv.includes('--dev') ? false : true, write: false, target: ['chrome100', 'firefox100', 'safari15'], legalComments: 'none', charset: 'utf8', define: { __RIKUY_MIRROR__: JSON.stringify(process.env.RIKUY_MIRROR || ''), __RIKUY_SHARE__: JSON.stringify(process.env.RIKUY_SHARE || ''), __RIKUY_APP__: JSON.stringify(APP), __RIKUY_WORD__: JSON.stringify(WORD), __RIKUY_WORD_HOST__: JSON.stringify(process.env.RIKUY_WORD_HOST || ''), __RIKUY_CORE__: JSON.stringify(CORE), __RIKUY_SPELL__: JSON.stringify(SPELL), __RIKUY_TEXNAMES__: JSON.stringify(TEXNAMES), __RIKUY_WIDGET_SHELL__: JSON.stringify(WIDGET_URL), __RIKUY_DEV__: JSON.stringify(process.argv.includes("--dev")) } });
 let js = out.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
 
 // 2b. git, loaded by the page the first time the Git panel opens; the packages it bundles keep

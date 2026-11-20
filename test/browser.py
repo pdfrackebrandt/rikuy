@@ -79,6 +79,8 @@ def open_page(p, width=1400, height=1000, dark=False, clear=True, init=None, tou
         if url.startswith('https://rikuy.test/'):
             path = url[len('https://rikuy.test/'):].split('?')[0]
             f = os.path.join(dist, path)
+            # (a page file at its address without .html, as Pages serves it: the widget document)
+            if path and not os.path.isfile(f) and os.path.isfile(f + '.html'): f, path = f + '.html', path + '.html'
             if path and os.path.isfile(f):
                 ct = 'text/javascript' if path.endswith(('.js', '.mjs')) else 'application/wasm' if path.endswith('.wasm') else 'text/html; charset=utf-8' if path.endswith('.html') else 'application/octet-stream'
                 return route.fulfill(status=200, content_type=ct, headers=policy(dist, '/' + path, connect), body=open(f, 'rb').read())
@@ -701,6 +703,7 @@ def first_visit(p):
             if url in ROUTES: return route.fulfill(status=200, content_type='application/javascript', headers={'Access-Control-Allow-Origin': '*'}, body=open(ROUTES[url], 'rb').read())
             if url == 'https://rikuy.test/': return route.fulfill(status=200, content_type='text/html; charset=utf-8', headers=policy(dist, '/'), body=doc)
             rel = url[len('https://rikuy.test/'):].split('?')[0] if url.startswith('https://rikuy.test/') else ''
+            if rel and not os.path.isfile(os.path.join(dist, rel)) and os.path.isfile(os.path.join(dist, rel + '.html')): rel += '.html'
             f = os.path.join(dist, rel) if rel else ''
             return route.fulfill(status=200, content_type='text/html; charset=utf-8' if rel.endswith('.html') else 'text/javascript', headers=policy(dist, '/' + rel), body=open(f, 'rb').read()) if f and os.path.isfile(f) else route.abort()
         on = 'document.body.classList.contains("src-on")'

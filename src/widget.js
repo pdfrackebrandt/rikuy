@@ -52,11 +52,19 @@ export const WIDGET_SHELL = '<!doctype html><html><head><meta charset="utf-8"><m
 // Only a frame of this page that was given a widget is answered, with its own widget; the frame's
 // origin is opaque, hence '*'.
 const shells = new WeakMap();
+// the frames whose shell has asked: one that never does (offline, with the browser's cached copy
+// of the shell gone) is told to the page (WidgetLayer: the figure's picture and a note instead)
+const asked = new WeakSet();
+export const SHELL_WAIT = 8000;
 let shellsHeard = false;
 function answerShell(e) {
   if (!e.data || e.data.rikuy !== 'shell' || !e.source) return;
   for (const fr of document.querySelectorAll('iframe')) {
-    if (fr.contentWindow === e.source && shells.has(fr)) { e.source.postMessage({ rikuy: 'widget', html: shells.get(fr) }, '*'); return; }
+    if (fr.contentWindow === e.source && shells.has(fr)) {
+      e.source.postMessage({ rikuy: 'widget', html: shells.get(fr) }, '*');
+      if (!asked.has(fr)) { asked.add(fr); fr.dispatchEvent(new Event('rikuy-shell')); }
+      return;
+    }
   }
 }
 // Run a widget's HTML in a sandboxed frame (allow-scripts alone), or run new HTML in it.
@@ -268,6 +276,8 @@ export class WidgetLayer {
       }
       keep.add(id);
       F.ph = ph;
+      // (a box drawn again keeps showing the picture of a figure whose frame did not load)
+      if (F.box.classList.contains('w-stalled') !== ph.classList.contains('w-stalled')) ph.classList.toggle('w-stalled', F.box.classList.contains('w-stalled'));
       F.box.classList.toggle('sel', ph.classList.contains('sel'));
       const r = ph.getBoundingClientRect();
       if (!r.width || !r.height) { F.box.hidden = true; continue; }
@@ -312,6 +322,13 @@ export class WidgetLayer {
     this.layer.append(box);
     // (an interactive graph adds its Edit graph button: src/cmd/insert.js)
     if (this.host.decorate) this.host.decorate(F);
+    // a shell that never asks for its widget: the figure's picture shows instead, and the page
+    // says why (and runs it after all if the shell comes late)
+    if (SHELL) {
+      const stall = (on) => { F.box.classList.toggle('w-stalled', on); if (F.ph) F.ph.classList.toggle('w-stalled', on); };
+      fr.addEventListener('rikuy-shell', () => stall(false));
+      setTimeout(() => { if (fr.isConnected && !asked.has(fr)) { stall(true); if (this.host.stalled) this.host.stalled(F); } }, SHELL_WAIT);
+    }
     return F;
   }
 

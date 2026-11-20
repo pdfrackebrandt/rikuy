@@ -401,7 +401,13 @@ class App {
       allow: () => this.allowWidgets(),
       // an interactive graph's Edit graph button and its menu (src/cmd/insert.js)
       decorate: (F) => this.graphDecorate && this.graphDecorate(F),
-      menu: (F, x, y) => this.graphMenu && this.graphMenu(F, x, y)
+      menu: (F, x, y) => this.graphMenu && this.graphMenu(F, x, y),
+      // (once a session: a live figure's frame did not load)
+      stalled: () => {
+        if (this.widgetStallNoted) return;
+        this.widgetStallNoted = true;
+        this.toast('A live figure could not start: its frame did not load (offline, and this browser no longer has the copy it kept). It shows its picture instead; with a connection it runs again.', 10000);
+      }
     });
     this.relayoutSoon = debounce(() => this.relayout(), 40);
     // a figure, or a live figure's fallback, measured before its picture loaded: measured again

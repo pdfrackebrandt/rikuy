@@ -227,6 +227,20 @@ def main():
               return out; }''')
             check('the service worker does not keep pandoc\'s parts a second time (the Word worker keeps pandoc)', kept == [], kept)
 
+        # (review L1) Pages answers widget-<hash>.html with a redirect to widget-<hash>, which the
+        # service worker's install would refuse: the page and the worker name the address without
+        # .html, which answers 200 (pages.py does as Pages does)
+        import urllib.request, urllib.error
+        class _NoRedirect(urllib.request.HTTPRedirectHandler):
+            def redirect_request(self, *a, **k): return None
+        op = urllib.request.build_opener(_NoRedirect, urllib.request.ProxyHandler({}))
+        shell = [f for f in os.listdir(DIST) if re.match(r'^widget-[0-9a-f]{16}\.html$', f)][0]
+        try: op.open(URL + shell, timeout=10); st = 'no redirect'
+        except urllib.error.HTTPError as e: st = (e.code, e.headers.get('Location'))
+        sw_text = open(os.path.join(DIST, 'sw.js'), encoding='utf8').read()
+        check('the widget document is listed and asked for at its address without .html, which Pages redirects to',
+              st == (308, '/' + shell[:-5]) and op.open(URL + shell[:-5], timeout=10).status == 200 and '"' + shell[:-5] + '":[' in sw_text and '"' + shell + '"' not in sw_text, st)
+
         # ---- no network at all --------------------------------------------------------
         ctx.set_offline(True)
         srv.shutdown(); srv.server_close()
@@ -271,7 +285,7 @@ def main():
             ran = True
         except Exception:
             ran = False
-        check('offline, a live figure runs, its document from the HTTP cache', ran and page.evaluate("() => /\\/widget-[0-9a-f]{16}\\.html$/.test(document.querySelector('#wlayer iframe').src)"),
+        check('offline, a live figure runs, its document from the HTTP cache', ran and page.evaluate("() => /\\/widget-[0-9a-f]{16}$/.test(document.querySelector('#wlayer iframe').src)"),
               page.evaluate("() => [...document.querySelectorAll('#wlayer iframe')].map((f) => f.src)"))
         page.evaluate('([fs, main]) => { const g = window.rikuy; g.files = new Map(fs); g.main = main; g.rebuild(); }', keep)
         page.wait_for_timeout(300)

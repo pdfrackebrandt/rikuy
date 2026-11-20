@@ -80,7 +80,9 @@ ok('and no other file loses the page\'s policy or its framing rule', all(H(p).ge
    for p in ('/', '/index.html', '/rikuy.html', '/404.html', '/widget.html', '/x/widget-0123456789abcdef.html', '/tex/engine.js', '/spell/spell-0123456789abcdef.js')), [(p, H(p)) for p in ('/rikuy.html', '/widget.html')])
 for p in ('/tex/p-0123456789abcdef.wasm', '/tex/w-0123456789abcdef.wasm', '/tex/t-0123456789abcdef.wasm', '/tex/b-0123456789abcdef.wasm', '/fonts/ibm-plex-sans-latin-ext-400-0123456789abcdef.woff2', '/core/rikuy-core-0123456789abcdef.wasm', '/texnames-0123456789abcdef.txt'):
     ok('content addressed files are cached for a year as immutable, by one rule: ' + p, H(p).get('cache-control') == 'public, max-age=31536000, immutable', H(p))
-for p in ('/', '/index.html', '/sw.js', '/manifest.webmanifest'):
+for p in ('/', '/index.html'):
+    ok('the page is revalidated on every request, and no one between may change it (its script runs by its hash): ' + p, H(p).get('cache-control') == 'no-cache, no-transform', H(p))
+for p in ('/sw.js', '/manifest.webmanifest'):
     ok('revalidated on every request: ' + p, H(p).get('cache-control') == 'no-cache', H(p))
 ok('scripts bound to the version keep Pages\' default caching', 'cache-control' not in H('/tex/engine.js') and 'cache-control' not in H('/tex/tree.wasm'), H('/tex/engine.js'))
 for p in ('/', '/index.html', '/sw.js', '/git.js', '/tex/engine.js', '/tex/p-0123456789abcdef.wasm', '/llms.txt', '/x/y'):

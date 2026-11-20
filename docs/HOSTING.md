@@ -71,8 +71,11 @@ as its canonical one.
 - **`deploy.yml` (Deploy)**, when a TeX run on `main` has passed: downloads that run's `dist/`,
   builds the page again from the same commit, checks the manifest and Pages' limits
   (`dev/pages_check.py`: 20,000 files, 25 MiB per file, 100 header rules), and uploads with the
-  `wrangler` pinned in `package.json` (`wrangler pages deploy dist --branch main`). Deploys run
-  one at a time, in order.
+  `wrangler` pinned in `package.json` (`wrangler pages deploy dist --branch main`), then checks
+  the live site (`dev/live_check.py`): the page is this build, its policy names the hash of the
+  script it serves, `no-transform` and HSTS are there, the widget document answers at its address
+  without `.html` with its own policy, and `/git` passes git's request and refuses an IP address.
+  Deploys run one at a time, in order.
 - **What Pages serves**: `_headers` (written by `build/app.mjs`): the page's Content-Security-
   Policy (the one the browser tests run under: scripts only from the site and the page's one
   inline script by its SHA-256, which the build computes from `index.html`; WebAssembly but no
@@ -83,7 +86,9 @@ as its canonical one.
   alone: no `includeSubDomains`, no preload), `nosniff`, `Referrer-Policy: no-referrer`, a Permissions-Policy turning off cameras,
   microphones, location and the like; TeX packs, engine chunks, programs and fonts (named by their
   hash) cached for a year as immutable; the page, `sw.js` and the manifest revalidated on every
-  request. `404.html` keeps Pages from answering a missing file with the page.
+  request, the page with `no-transform` (it runs only if its inline script is byte for byte the
+  one whose hash its policy names, so nothing on the way, Email Address Obfuscation included,
+  may rewrite it). `404.html` keeps Pages from answering a missing file with the page.
 - **The git proxy, `/git`**: a Pages Function, `functions/git/[[path]].js` (the code is
   `src/gitproxy.js`), which `wrangler pages deploy` finds beside `dist/` and deploys with it. A
   browser cannot speak git to GitHub or GitLab itself (they send no CORS headers), so the Git

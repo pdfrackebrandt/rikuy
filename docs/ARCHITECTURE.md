@@ -727,8 +727,12 @@ fallback from the widget's own generator.
   writes it over itself, only for a parent of its own origin and only in the sandbox (a site
   framing a copy served without these headers, or a frame of it with no sandbox, gets nothing) (`document.open()` drops the shell's listener with everything else). A
   widget that reloads its frame gets the shell again, which asks again. The file is named by its
-  hash and cached for a year; a sandboxed frame's request never reaches the service worker, so
-  offline it comes from the HTTP cache, where the worker's install fetched it (`test/offline.py`).
+  hash and cached for a year, and asked for at its address without `.html` (Cloudflare Pages
+  redirects `x.html` to `x`, a redirect the worker's install would refuse); a sandboxed frame's
+  request never reaches the service worker, so offline it comes from the HTTP cache, where the
+  worker's install fetched it (`test/offline.py`). A shell that has not asked within
+  `SHELL_WAIT` (offline, the cached copy gone) leaves the figure's picture showing, and the page
+  says why once.
   The copy on claude.ai (`RIKUY_SHARE`) keeps `srcdoc`: its host's policy allows inline scripts,
   and nothing beside that page is known to be served as a document.
 - **What no policy stops.** Chromium ignores CSP's `webrtc` directive (version 141 calls it

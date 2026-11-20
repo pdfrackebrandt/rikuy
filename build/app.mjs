@@ -934,7 +934,12 @@ export function headers(hashes) {
     + rule('/*', 'Strict-Transport-Security: ' + HSTS, 'Content-Security-Policy: ' + policy(hashes), 'X-Content-Type-Options: nosniff', 'X-Frame-Options: DENY', 'Referrer-Policy: no-referrer',
       'Permissions-Policy: accelerometer=(), browsing-topics=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), hid=(), magnetometer=(), microphone=(), midi=(), payment=(), serial=(), usb=(), xr-spatial-tracking=()')
     + rule('/widget-*', '! Content-Security-Policy', '! X-Frame-Options', 'Content-Security-Policy: ' + WIDGET_POLICY)
-    + ['/', '/index.html', '/sw.js', '/manifest.webmanifest'].map((p) => rule(p, 'Cache-Control: ' + NO_CACHE)).join('')
+    // (the page runs only if its inline script is byte for byte the one whose hash the policy
+    // names: no-transform asks Cloudflare's edge, and anything between, to change none of it,
+    // e.g. Email Address Obfuscation, which a zone has on by default; deploy.yml checks the live
+    // page against its policy after each deployment, dev/live_check.py)
+    + ['/', '/index.html'].map((p) => rule(p, 'Cache-Control: ' + NO_CACHE + ', no-transform')).join('')
+    + ['/sw.js', '/manifest.webmanifest'].map((p) => rule(p, 'Cache-Control: ' + NO_CACHE)).join('')
     // What agents and crawlers fetch, and only that: readable from a script on any site (they
     // hold nothing private), and as UTF-8 text (the guides have characters beyond ASCII's reach
     // in the sample; a default type without a charset reads them as Latin-1).
@@ -998,8 +1003,11 @@ export function finishApp(OUT) {
     // a name whose digits are not the start of the file's own SHA-256 (a hash of something else,
     // such as what the file wraps) is treated as bound to the version: never kept as immutable
     const ca = ADDRESSED.exec(path.basename(rel));
-    files[rel] = [h, buf.length, WORD_PART.test(rel) ? 'n' : ca && h.startsWith(ca[1]) ? 'i' : buf.length <= PRECACHE_MAX ? 'p' : 'l'];
-    if (LATER.test(rel) && files[rel][2] === 'i') files[rel].push(1);
+    // (a page file is listed by the address Pages answers it at, without .html: Pages redirects
+    // x.html to x, and the worker's install would refuse the redirect)
+    const url = /\.html$/.test(rel) ? rel.slice(0, -5) : rel;
+    files[url] = [h, buf.length, WORD_PART.test(rel) ? 'n' : ca && h.startsWith(ca[1]) ? 'i' : buf.length <= PRECACHE_MAX ? 'p' : 'l'];
+    if (LATER.test(rel) && files[url][2] === 'i') files[url].push(1);
   }
   const v = sha(lines.join('\n')).slice(0, 16);
   const stamped = normal.replace(META, '$1' + v + '$3');

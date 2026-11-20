@@ -234,7 +234,7 @@ try:
         ran = run_widgets(page, 1)
         check('one click runs it, and it posts its height', ran, page.evaluate("[...window.rikuy.widgets.heights]"))
         info = page.evaluate("""async () => { const f = document.querySelector('#wlayer iframe'); if (!f) return null;
-          const shell = /\\/widget-[0-9a-f]{16}\\.html$/.test(f.src);
+          const shell = /\\/widget-[0-9a-f]{16}$/.test(f.src);
           return { sandbox: f.getAttribute('sandbox'), inPages: !!f.closest('#pages'), srcdoc: f.hasAttribute('srcdoc'), src: f.src, shell,
             policy: shell ? (await fetch(f.src)).headers.get('content-security-policy') : null,
             h: window.rikuy.widgets.heights.get(document.querySelector('.w-live').dataset.w) }; }""")
@@ -242,7 +242,7 @@ try:
         check('the frame lives outside the editable pages', info and not info['inPages'], info)
         # the page's policy runs no inline script a widget brings (build/app.mjs policy), so on the
         # hosted page the widget runs in a document of its own, with its own policy
-        check('the widget runs in the page\'s widget document (widget-<hash>.html), not srcdoc, which would take the page\'s policy', info and info['shell'] and not info['srcdoc'], info)
+        check('the widget runs in the page\'s widget document (widget-<hash>, at its address without .html as Pages serves it), not srcdoc, which would take the page\'s policy', info and info['shell'] and not info['srcdoc'], info)
         check('that document comes with the widgets\' policy alone, framed by the page only',
               info and info['policy'] == "default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:; media-src data: blob:; worker-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'self'", info)
         doc = frame(page).evaluate('() => document.documentElement.outerHTML')
@@ -468,6 +468,21 @@ try:
         got = [ev.evaluate(TRY, ['https://copy.test/' + SHELL, PWN, sb]) for sb in (False, True)]
         check('M1: another site framing a copy served without the page\'s headers gets nothing written, sandboxed or not', got == ['nothing written', 'nothing written'], got)
         b.close()
+
+        # (review L1) a widget document that never loads (offline, the browser's copy of it gone):
+        # the figure shows its picture, and the page says why
+        browser, page, errors = open_app(p)
+        page.route('**/widget-*', lambda r: r.abort())
+        page.evaluate("""([m, s, c, png]) => { const g = window.rikuy; g.files = new Map([['main.tex', m], ['rikuy.sty', s], ['widgets/clt.html', c]]);
+          const b = new Blob([Uint8Array.from(atob(png), (ch) => ch.charCodeAt(0))], { type: 'image/png' }); g.assetBlobs.set('figures/clt.png', b); g.assets.set('figures/clt.png', URL.createObjectURL(b));
+          g.main = 'main.tex'; g.forceRender = true; g.rebuild(); }""",
+                      [MAIN, STY, CLT, base64.b64encode(PNG).decode()])
+        page.wait_for_timeout(9500)
+        st = page.evaluate("""() => { const ph = document.querySelector('.w-live'), fb = ph && ph.querySelector('.wfb');
+          return { stalled: !!(ph && ph.classList.contains('w-stalled')), picture: fb ? getComputedStyle(fb).visibility : null,
+            frame: getComputedStyle(document.querySelector('#wlayer iframe')).visibility, toast: [...document.querySelectorAll('.toast, #toast')].map((e) => e.textContent).join(' ') }; }""")
+        check('L1: a live figure whose frame never loads shows its picture, and the page says why', st['stalled'] and st['picture'] == 'visible' and st['frame'] == 'hidden' and 'could not start' in st['toast'], st)
+        browser.close()
 except Exception as e:
     # a run that stops part way has failed, whatever the checks before it said
     traceback.print_exc()
