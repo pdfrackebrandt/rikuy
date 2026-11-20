@@ -108,7 +108,9 @@ export const ribbon = {
   // at the start)
   ribbonBack() {
     const r = this.rbRange, s = getSelection();
-    const had = s.rangeCount && this.root.contains(s.anchorNode) && document.activeElement !== document.body && !/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || '');
+    // (a field's focus leaves no place of the page's; the body's or a button's keeps the page's
+    // own, a selected picture's too, which a range around an element and not a text keeps)
+    const had = s.rangeCount && this.root.contains(s.anchorNode) && !/^(INPUT|TEXTAREA|SELECT)$/.test((document.activeElement || {}).tagName || '');
     this.root.focus({ preventScroll: true });
     if (had && s.rangeCount && this.root.contains(s.anchorNode)) return;
     if (r && r.startContainer.nodeType === 3 && this.root.contains(r.startContainer) && r.startContainer.isConnected) { s.removeAllRanges(); s.addRange(r); return; }

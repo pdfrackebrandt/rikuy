@@ -217,7 +217,7 @@ def status_bar(p):
     srv = pages.start(port, os.environ.get('RIKUY_DIST') or os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'dist'))
     try:
         browser = p.chromium.launch()
-        for width, dark in ((1920, False), (1366, False), (1366, True), (1280, False), (1100, True), (900, False)):
+        for width, dark in ((1920, False), (1366, False), (1366, True), (1280, False), (1100, True), (900, False), (800, True), (700, False)):
             w = '%d px%s' % (width, ', dark' if dark else '')
             ctx = browser.new_context(viewport={'width': width, 'height': 800}, color_scheme='dark' if dark else 'light')
             page = ctx.new_page()
