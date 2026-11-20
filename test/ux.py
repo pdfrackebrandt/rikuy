@@ -673,7 +673,7 @@ def widen(p):
 KIND = """(sel) => { const P = document.querySelector(sel); if (!P) return null; const vis = (e) => e.checkVisibility() && e.getBoundingClientRect().height > 0;
   const h = (q) => [...new Set([...P.querySelectorAll(q)].filter(vis).map((e) => Math.round(e.getBoundingClientRect().height)))].sort();
   const t = P.querySelector('.pop-h, .stp-h, .fr-head, .help-pane-h'), x = P.querySelector('.pop-x'), cs = t ? getComputedStyle(t) : null;
-  return { btn: h('.btn'), field: h('input[type=text], input[type=number], input:not([type]), select'), radius: getComputedStyle(P).borderTopLeftRadius,
+  return { btn: h('.btn'), field: h(':is(input[type=text], input[type=number], input:not([type]), select):not(.nf *), .nf'), radius: getComputedStyle(P).borderTopLeftRadius,
            title: cs ? [cs.fontSize, cs.fontWeight, cs.lineHeight] : null, close: x && vis(x) ? [Math.round(x.getBoundingClientRect().width), Math.round(x.getBoundingClientRect().height)] : null }; }"""
 
 
@@ -1086,9 +1086,34 @@ def text_spacing(page, w):
     check(f'with WCAG\'s text spacing nothing of the bar, the status bar, eight dialogs, File or the Styles pane is cut off ({w})', not cut, cut)
 
 
+
+TARGET_GAPS = """(sel) => { const T = [...document.querySelectorAll(sel)].filter((e) => e.checkVisibility() && e.getBoundingClientRect().width > 0 && !e.closest('[inert]'));
+  const R = T.map((e) => [e, e.getBoundingClientRect()]); const bad = [];
+  for (let i = 0; i < R.length; i++) for (let j = i + 1; j < R.length; j++) { const [a, p] = R[i], [b, q] = R[j]; if (a.contains(b) || b.contains(a)) continue;
+    const dx = Math.max(0, Math.max(p.left, q.left) - Math.min(p.right, q.right)), dy = Math.max(0, Math.max(p.top, q.top) - Math.min(p.bottom, q.bottom));
+    if (Math.max(dx, dy) < 8) bad.push([(a.id || a.getAttribute('aria-label') || a.textContent.trim()).slice(0, 16), (b.id || b.getAttribute('aria-label') || b.textContent.trim()).slice(0, 16), Math.round(Math.max(dx, dy))]); }
+  return bad.slice(0, 14); }"""
+TARGETS = 'button, input:not([type=hidden]):not(.nf *), select:not(.nf *), .nf, textarea, a[href], [role=tab], label:has(input[type=checkbox]), label:has(input[type=radio])'
+
+
+def target_gaps(page, w):
+    """8 px between any two targets under a finger (UI-PRINCIPLES.md T3, Google's rule): the status
+    bar, and the Paragraph, Insert Table, Share and Word Count dialogs (the views, a dialog's tabs
+    and the Paragraph dialog's fields were 2 px apart)."""
+    load_doc(page, DOC)
+    bad = {'status bar': page.evaluate(TARGET_GAPS, '#status :is(%s)' % TARGETS)}
+    for cmd in ('paragraph-settings', 'insert-table-dialog', 'share', 'word-count', 'page-setup'):
+        run_cmd(page, cmd); page.wait_for_timeout(300)
+        bad[cmd] = page.evaluate(TARGET_GAPS, 'body > .pop :is(%s)' % TARGETS)
+        page.keyboard.press('Escape'); page.wait_for_timeout(100)
+    bad = {k: v for k, v in bad.items() if v}
+    check(f'every two targets 8 px apart in the status bar and five dialogs ({w})', not bad, bad)
+
+
 PARTS = {'consistency': (consistency, [(1366, False), (1920, True), (390, False), (360, True)]),
          'bar_room': (bar_room, None),
          'motion': (motion, [(1366, False)]),
+         'target_gaps': (target_gaps, [(390, False), (360, True)]),
          'text_spacing': (text_spacing, [(1366, False), (900, True), (390, False)]),
          'keyboard_room': (keyboard_room, [(390, False), (360, True)]),
          'empty_panes': (empty_panes, [(1366, False), (1920, True)]),

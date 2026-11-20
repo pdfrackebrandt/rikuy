@@ -2697,3 +2697,10 @@ body.file-open #rp-file .rb-tb .btn { height: 32px; min-height: 32px; border-rad
 :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) .nf { height: 32px; min-height: 32px; box-sizing: border-box; border-radius: 4px; }
 :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) .nf :is(input[type="text"], input[type="number"], input:not([type]), select) { height: 100%; min-height: 0; border-radius: 0; }
 @media (pointer: coarse) { :is(.pop-dlg, .pop-guide, .pop-share, .pop-comment, .fr, .pop-help) .nf { height: 44px; min-height: 44px; } }
+/* 8 px between two targets under a finger (UI-PRINCIPLES.md T3): the status bar's views, a
+   dialog's tabs, the Paragraph dialog's rows of fields, were 2 px apart */
+@media (pointer: coarse) {
+  .st-views, .pd-tabs, .fr-tabs, .fd-tabs { gap: 8px; }
+  .pd-grid, .ps-grid, .ps-sec { row-gap: 8px; }
+  .pd-tabs { margin-top: 4px; }
+}
