@@ -2517,20 +2517,25 @@ class App {
   }
   // Tab on the page outside a table, a list or tab stops (those have their own): at a paragraph's
   // start Word's first line indent (Shift+Tab: none, \noindent), elsewhere a gap as a tab
-  // leaves one (\quad); nothing in a heading, a caption, the title or a LaTeX paragraph
+  // leaves one (\quad), in a heading, a caption or the title too; nothing in a LaTeX paragraph.
+  // Over a selection, as Word's (review L4, where it did nothing and said nothing): from a
+  // paragraph's start the selected paragraphs' left indent a step in (Shift+Tab: out), from
+  // inside the text the gap in the selection's place
   tabOnPage(back) {
     const at = this.ribbonAt(), c = at && at.c;
-    if (!c || c.ghost || !c.collapsed || at.cell || (at.it && at.it.dataset.li) || /^(h|cap|ttl|tex|li)$/.test(at.ctx || '') || this.texAt(c.f, c.a)) return false;
+    if (!c || c.ghost || at.cell || (at.it && at.it.dataset.li) || /^(tex|li)$/.test(at.ctx || '') || this.texAt(c.f, c.a)) return false;
     const sel = getSelection();
     let start = false;
     if (at.it && sel.rangeCount) {
-      const r = document.createRange();
-      try { r.setStart(at.it, 0); r.setEnd(sel.anchorNode, sel.anchorOffset); start = !r.toString().replace(/[\u200B\s]/g, ''); } catch (e) { start = false; }
+      const S = sel.getRangeAt(0), r = document.createRange();
+      try { r.setStart(at.it, 0); r.setEnd(S.startContainer, S.startOffset); start = !r.toString().replace(/[\u200B\s]/g, ''); } catch (e) { start = false; }
     }
-    if (start) return this.paraFirstLineKey(back, at);
+    const plain = !/^(h|cap|ttl)$/.test(at.ctx || '');
+    if (!c.collapsed && start && plain) return this.runCommand(back ? 'paragraph-outdent' : 'paragraph-indent', null, at) !== false;
+    if (c.collapsed && start && plain) return this.paraFirstLineKey(back, at);
     if (back) return false;
-    const t = '\\quad' + (/[A-Za-z]/.test(this.src(c.f)[c.a] || '') ? ' ' : '');
-    this.commit([{ f: c.f, s: c.a, e: c.a, t }], { f: c.f, p: c.a + t.length, bias: 1 }, 'type');
+    const t = '\\quad' + (/[A-Za-z]/.test(this.src(c.f)[c.b] || '') ? ' ' : '');
+    this.commit([...this.deletionEdits(c.f, c.a, c.b), { f: c.f, s: c.a, e: c.a, t }], { f: c.f, p: c.a + t.length, bias: 1 }, 'type');
     return true;
   }
 
@@ -3712,9 +3717,11 @@ class App {
     let hi = 0;
     let shown = items;
     const draw = () => {
-      const q = inp.value.replace(/^\\/, '').trim().toLowerCase();
-      shown = items.filter((x) => !q || x.k.startsWith(q) || x.d.toLowerCase().includes(q));
-      if (q && !shown.some((x) => x.k === q)) shown = [...shown, { k: q, d: 'Insert \\' + q + ' as typed', raw: true }];
+      // (a raw command keeps its case, \O and \Gamma; one letter matches names only, as \o Enter
+      // wrote \footnote{} where "Footnote" holds an o; review L5)
+      const typed = inp.value.replace(/^\\/, '').trim(), q = typed.toLowerCase();
+      shown = items.filter((x) => !q || x.k.startsWith(q) || (q.length > 1 && x.d.toLowerCase().includes(q)));
+      if (q && !shown.some((x) => x.k === typed)) shown = [...shown, { k: typed, d: 'Insert \\' + typed + ' as typed', raw: true }];
       hi = Math.min(hi, shown.length - 1);
       list.replaceChildren();
       shown.slice(0, 12).forEach((x, i) => {
