@@ -199,7 +199,9 @@ def widths(page):
         page.set_viewport_size({'width': w, 'height': 900}); page.wait_for_timeout(300)
         click_text(page, 'Second paragraph', 3); page.wait_for_timeout(150)
         f[w] = page.evaluate('''() => ({ folded: [...document.querySelectorAll('#rp-home .rb-grp.folded')].map((g) => g.dataset.group), over: document.getElementById('ribbon').scrollWidth > document.getElementById('ribbon').clientWidth + 1 })''')
-    check('with more than fits, groups fold, the spare Insert first and then the lowest ranks: Insert alone at 1024 px, Editing and Clipboard with it at 900 px, and the row fits', sorted(f[1024]['folded']) == ['insert'] and sorted(f[900]['folded']) == ['clipboard', 'editing', 'insert'] and not f[900]['over'] and not f[1024]['over'], f)
+    # (Clipboard folds at 900 px too where the downloads stand side by side; one under another they
+    # leave it room)
+    check('with more than fits, groups fold, the spare Insert first and then the lowest ranks: Insert alone at 1024 px, Editing with it at 900 px (and Clipboard, rank 2, only after it), and the row fits', sorted(f[1024]['folded']) == ['insert'] and {'editing', 'insert'} <= set(f[900]['folded']) <= {'clipboard', 'editing', 'insert'} and not f[900]['over'] and not f[1024]['over'], f)
     page.set_viewport_size({'width': 900, 'height': 900}); page.wait_for_timeout(300)
     gb = page.get_by_role('button', name='Editing', exact=True)
     check('a folded group is one button named after it; its own buttons are out of the accessibility tree', gb.count() == 1 and page.get_by_role('button', name='Editing test 0', exact=True).count() == 0 and not twice(page), twice(page))
