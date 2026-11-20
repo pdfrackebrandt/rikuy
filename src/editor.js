@@ -382,13 +382,15 @@ export function endsWithControlWord(src, p) {
 
 export { isBalanced };
 
-// Minimal diff between two strings (common prefix/suffix).
-export function diff(a, b) {
+// Minimal diff between two strings (common prefix/suffix). pre and suf: how many code units at
+// the start and at the end the caller knows to be the same in both (App.commit knows where its
+// edits were), so the comparison starts there and not at the whole file; the answer is the same.
+export function diff(a, b, pre = 0, suf = 0) {
   if (a === b) return null;
-  let s = 0;
   const n = Math.min(a.length, b.length);
+  let s = Math.min(pre, n);
   while (s < n && a.charCodeAt(s) === b.charCodeAt(s)) s++;
-  let e = 0;
+  let e = Math.min(suf, n - s);
   while (e < n - s && a.charCodeAt(a.length - 1 - e) === b.charCodeAt(b.length - 1 - e)) e++;
   return { s, del: a.slice(s, a.length - e), ins: b.slice(s, b.length - e) };
 }
