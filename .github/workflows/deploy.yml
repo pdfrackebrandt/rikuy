@@ -112,3 +112,10 @@ jobs:
             npx --no-install wrangler pages project create "$PROJECT" --production-branch main
           fi
           npx --no-install wrangler pages deploy dist --project-name "$PROJECT" --branch main --commit-hash "$SHA" --commit-dirty=false
+      # the live site as it answers: this build's page, its policy naming the hash of the script
+      # it serves (an edge that rewrote the page would stop the app), no-transform and HSTS; the
+      # widget document with its own policy; /git passing git's request and refusing an IP
+      - name: The live site serves what was built
+        env:
+          SITE: ${{ vars.RIKUY_SITE || 'https://rikuy.rackebrandt.pe/' }}
+        run: python3 dev/live_check.py "$SITE" dist

@@ -152,11 +152,30 @@ try:
         st = wait_pdf(page)
         fonts, text = pdf_fonts_text(page)
         check('a paper with its .bbl and no .bib keeps its references', 'page' in st and '[1]' in text and 'Lamport' in text and '[?]' not in text, [st, text[:200]])
-        # with the .bib there, bibtex runs and its .bbl replaces the paper's, as latexmk's does
-        open_doc(page, [['paper.tex', paper], ['paper.bbl', bbl], ['refs.bib', '@book{knuth, author={Donald Knuth}, title={Computers and Typesetting}, year={1984}, publisher={AW}}\n@book{lamport, author={Leslie Lamport}, title={LaTeX}, year={1994}, publisher={AW}}\n']])
+        # with the .bib there too, a first run keeps the paper's own .bbl, as latexmk does (and arXiv,
+        # which never runs bibtex): bibtex runs, and its .bbl resolves no more citations than the paper's
+        bib3 = '@book{knuth, author={Donald Knuth}, title={Computers and Typesetting}, year={1984}, publisher={AW}}\n@book{lamport, author={Leslie Lamport}, title={LaTeX}, year={1994}, publisher={AW}}\n@book{goossens, author={Michel Goossens}, title={The LaTeX Companion}, year={1994}, publisher={AW}}\n'
+        open_doc(page, [['first.tex', paper], ['first.bbl', bbl], ['refs.bib', bib3]])  # a project of its own: the worker keeps each project's last run
         st = wait_pdf(page)
         fonts, text = pdf_fonts_text(page)
-        check('with the .bib there, bibtex makes the references', 'page' in st and 'Computers and Typesetting' in text and 'Preparation' not in text, [st, text[:200]])
+        check('a first run with the .bib there keeps the paper\'s own .bbl, as latexmk does', 'page' in st and 'Preparation' in text and '[?]' not in text, [st, text[:200]])
+        # a citation the paper's .bbl lacks: bibtex's .bbl resolves all three, so it is taken
+        edit = "async (s) => { const t = await window.rikuy.api.getSource(); await window.rikuy.api.setSource(t.replace(s[0], s[1])); await window.rikuy.api.compile(); }"
+        page.evaluate(edit, ['\\cite{lamport}.', '\\cite{lamport} and \\cite{goossens}.'])
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('a citation the paper\'s .bbl lacks: bibtex\'s references, all three', 'Computers and Typesetting' in text and 'Companion' in text and 'Preparation' not in text and '[?]' not in text, [st, text[:200]])
+        # the next run keeps bibtex's .bbl: the project's own file is not written over it again
+        page.evaluate(edit, ['\\end{document}', '% again\n\\end{document}'])
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('a later run keeps bibtex\'s references, not the project\'s old .bbl', 'Computers and Typesetting' in text and 'Companion' in text and 'Preparation' not in text, [st, text[:200]])
+        # arXiv's sources often ship a .bib that lacks entries the .bbl has (31 papers of run
+        # 44077385415): the .bbl that resolves more of the citations is the one kept
+        open_doc(page, [['lack.tex', paper], ['lack.bbl', bbl], ['refs.bib', '@book{knuth, author={Donald Knuth}, title={Computers and Typesetting}, year={1984}, publisher={AW}}\n']])
+        st = wait_pdf(page)
+        fonts, text = pdf_fonts_text(page)
+        check('a .bib lacking an entry the paper\'s .bbl has: the paper\'s .bbl is kept', 'page' in st and 'Lamport' in text and 'Preparation' in text and '[?]' not in text, [st, text[:200]])
         # biblatex: a .bbl from another biblatex version stops TeX at 100 errors; it is dropped
         # after that pass and biber writes it again, as latexmk -f goes on to biber
         old = '% $ biblatex auxiliary file $\n% $ biblatex bbl format version 3.3 $\n% Do not modify the above lines!\n\\begingroup\n\\makeatletter\n\\refsection{0}\n' + '\\blx@oldmacro{x}\n' * 120 + '\\endrefsection\n\\endgroup\n'

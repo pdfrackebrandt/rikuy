@@ -56,9 +56,17 @@ register(
   { id: 'download-word', name: 'Download Word', el: 'rb-word', static: true, place: 'download', only: 'wide', title: 'Download a Word file (.docx)', synonyms: ['Save as Word', 'Export to Word', 'docx'], when: always,
     // (the note only once a file was made: on a copy without Word the notice about that stays)
     run: async (app) => { const had = app.lastDocx; await app.saveDocx(); if (app.lastDocx !== had) app.liveNote(); app.ribbonSync(); } },
-  { id: 'download-latex', name: 'Download LaTeX', el: 'b-save', static: true, place: 'download', only: 'wide', title: 'Download the LaTeX source (Ctrl+S)', keysElsewhere: ['Ctrl+S'], synonyms: ['Save', 'Save a copy', '.tex', '.zip'], when: always,
+  { id: 'download-latex', name: 'Download LaTeX', el: 'b-save', static: true, place: 'download', only: 'wide', title: 'Download the LaTeX source (F12)', synonyms: ['Save As', 'Save a copy', 'Export', '.tex', '.zip'], when: always,
     run: async (app) => { await app.save(); app.ribbonSync(); } },
-  { id: 'open', name: 'Open', el: 'b-open', static: true, place: 'bar', title: 'Open .tex, .bib, images, an Overleaf .zip or a Word .docx (Ctrl+O)', keysElsewhere: ['Ctrl+O'], synonyms: ['Open a file', 'Import'], when: always, run: () => $('#fileinput').click() },
+  // Save, as Word's keys mean it: Rikuy keeps every edit in this browser as it is made, so Ctrl+S
+  // (and Word's other Save keys) says so and downloads nothing: a key pressed from habit after
+  // every sentence gave a file each time. A copy to keep is Save As: F12, or Download LaTeX.
+  { id: 'save', name: 'Save', el: 'qat-save', static: true, place: 'bar', only: 'wide', title: 'Save (Ctrl+S): every edit is kept in this browser as you make it; a copy on your computer is Save As (F12), Download LaTeX',
+    keysElsewhere: ['Ctrl+S'], keys: ['Shift+F12', 'Alt+Shift+F2'], keyScope: 'app', synonyms: ['Save document', 'Keep'], when: always, run: (app) => app.saveHere() },
+  // Word's F12; a browser's developer tools anywhere but on the page (Ctrl+Shift+I opens them too)
+  { id: 'save-as', name: 'Save As', title: 'Save As (F12): the LaTeX on your computer, the .tex or the project as .zip (Download LaTeX)', keys: ['F12'],
+    synonyms: ['Save a copy', 'Download', 'Export LaTeX'], when: always, run: (app) => app.runCommand('download-latex') },
+  { id: 'open', name: 'Open', el: 'b-open', static: true, place: 'bar', title: 'Open .tex, .bib, images, an Overleaf .zip or a Word .docx (Ctrl+O)', keysElsewhere: ['Ctrl+O'], keys: ['Ctrl+F12', 'Ctrl+Alt+F2'], keyScope: 'app', synonyms: ['Open a file', 'Import'], when: always, run: () => $('#fileinput').click() },
   { id: 'share', name: 'Share', el: 'b-share', static: true, place: 'bar', title: 'A link anyone can open and type in, or a copy for Overleaf', synonyms: ['Share link', 'Overleaf'], when: always, run: (app) => app.openSharePanel() },
   { id: 'new-document', name: 'New document', el: 'b-new', static: true, place: 'status', synonyms: ['New', 'Blank document'], when: always, run: (app) => app.newDocument() },
   { id: 'load-sample', name: 'Load the sample', el: 'b-sample', static: true, place: 'status', synonyms: ['Sample document', 'Example'], when: always, run: (app) => app.resetToSample() },
@@ -166,6 +174,19 @@ export const methods = {
     const said = $('#toast').hidden ? '' : $('#toast').firstChild.textContent;
     this.toast((said ? said + ' ' : '') + LIVE_NOTE, 14000);
   },
+  // Save (Ctrl+S): the project written to this browser's storage now, and said; a git repository
+  // is pushed from its panel (a commit needs its words), so the message says where
+  async saveHere() {
+    if (this.saveSoon && this.saveSoon.cancel) this.saveSoon.cancel();
+    this.persist();
+    // (where this browser keeps nothing, persist has said so in the status bar: that, not "Saved")
+    const st = $('#st-save');
+    if (this.noIdb && st && !/^Saved in this browser/.test(st.textContent)) { this.toast(st.textContent, 8000); return true; }
+    const git = !!this.gitP && !!(await this.hasGitRepo().catch(() => false));
+    this.toast('Saved in this browser.' + (git ? ' To push it, commit in Git, in the side panel.' : ' A copy on your computer: Save As (F12).'), 4000,
+      git ? { label: 'Git', fn: () => this.toggleNav(true, 'git') } : { label: 'Save As', fn: () => this.runCommand('download-latex') });
+    return true;
+  },
   // the LaTeX download's title: what it gives, whether there are changes since, and that it
   // alone keeps live graphs live (the button then carries a mark)
   saveTitle() {
@@ -173,7 +194,7 @@ export const methods = {
     if (!b) return;
     const live = this.hasLive(), what = this.singleFile() ? this.main.split('/').pop() : 'the project as .zip';
     b.classList.toggle('live', live);
-    b.title = (this.zipDirty ? 'Changes since you last saved. ' : '') + 'Download the LaTeX source, ' + what + (live ? ': keeps the live graphs' : '') + ' (Ctrl+S)';
+    b.title = (this.zipDirty ? 'Changes since you last downloaded it. ' : '') + 'Download the LaTeX source, ' + what + (live ? ': keeps the live graphs' : '') + ' (F12)';
   },
 
   // The PDF in one click: the one TeX last made when the text has not changed since, else a
@@ -181,11 +202,13 @@ export const methods = {
   // fails opens the preview pane, which holds its error.
   async downloadPdfNow() {
     if (this.pdfBusy) return;
-    const b = $('#rb-pdf'), lab = b.querySelector('span');
+    const b = $('#rb-pdf'), title = b.title;
     const fresh = () => !!this.lastPdf && this.lastPdfSig === this.textSigNow();
     if (!fresh() || this.compiling) {
       this.pdfBusy = true;
-      b.disabled = true; b.setAttribute('aria-busy', 'true'); lab.textContent = 'Making the PDF…';
+      // (busy without a longer name: the downloads stay at the row's end over the other groups,
+      // and "Making the PDF…" ran over Home's Editing; the PDF pane, open meanwhile, says it)
+      b.disabled = true; b.setAttribute('aria-busy', 'true'); b.title = 'Making the PDF…';
       try {
         this.pdfPane();
         if (!this.compiling) await this.compilePdf();
@@ -193,7 +216,7 @@ export const methods = {
         while (this.compiling) await new Promise((r) => setTimeout(r, 150));
       } finally {
         this.pdfBusy = false;
-        b.disabled = false; b.removeAttribute('aria-busy'); lab.textContent = 'PDF';
+        b.disabled = false; b.removeAttribute('aria-busy'); b.title = title;
       }
     }
     if (fresh()) { await this.downloadPdf(); this.liveNote(); } else if (!document.body.classList.contains('pdf-on')) this.togglePdf(true, true);

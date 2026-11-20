@@ -138,6 +138,8 @@ jobs:
         run: cd test && python3 pdf.py
       - name: The installed app, Make available offline, then a compile with no network
         run: cd test && python3 offline.py
+      - name: A whole session under the hosted policy (three engines, asy, minted, biber, Word, spelling, grammar, a live figure), nothing refused
+        run: cd test && python3 csp.py
       - name: The ribbon, with Download PDF compiling and saving the file
         run: cd test && python3 ribbon.py
       - name: Rikuy as an agent meets it, with rikuy.api.compile making a real PDF

@@ -5,7 +5,7 @@ Names in a zip that would leave the project are left out; a file that cannot be 
 page still opens and says the work is not kept."""
 import os, sys, io, zipfile, tempfile, traceback
 sys.path.insert(0, os.path.dirname(__file__))
-from browser import open_page, check, results, src, click_text
+from browser import open_page, check, results, src, click_text, download
 from playwright.sync_api import sync_playwright
 
 TMP = os.environ.get('TMPDIR_RIKUY', os.path.join(tempfile.gettempdir(), 'rikuy-files'))
@@ -31,7 +31,7 @@ with zipfile.ZipFile(zpath, 'w') as z:
 
 def saved(page):
     with page.expect_download() as d:
-        page.click('#b-save')
+        download(page)
     path = os.path.join(TMP, 'out.zip')
     d.value.save_as(path)
     with zipfile.ZipFile(path) as z:

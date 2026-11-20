@@ -32,7 +32,7 @@ import { SpellClient } from '../spell/client.js';
 import { openSpellPane, spellPaneRefresh } from '../ui/spellpane.js';
 import { openWordCount, setLanguageEdits } from '../ui/wordcount.js';
 import { coreCanRun } from '../native.js';
-import { findComments, commentOnly } from '../share.js';
+import { findComments, commentOnly, safeCommentLine } from '../share.js';
 import { spacingOnly } from '../diff.js';
 import { kvGet, kvPut } from '../store.js';
 
@@ -65,13 +65,17 @@ const LANGS = ['en_US', 'en_GB', 'de_DE', 'es_ES'];
 
 register(
   // Proofing
-  { id: 'spelling', name: 'Spelling', label: 'Spelling', kind: 'split', tab: 'review', group: 'proofing', el: 'rv-spell', order: 10, icon: ICON.spell, keys: ['F7'], keyScope: 'app',
+  // (Word for Mac's Cmd+Option+L as well as F7, which a Mac's keyboard gives only with fn)
+  { id: 'spelling', name: 'Spelling', label: 'Spelling', kind: 'split', tab: 'review', group: 'proofing', el: 'rv-spell', order: 10, icon: ICON.spell, keys: ['F7'], keysMac: ['Ctrl+Alt+L'], keyScope: 'app',
     title: 'Spelling (F7): each word the dictionary does not know, with suggestions, Ignore, Ignore All and Add to Dictionary',
     synonyms: ['Spelling and Grammar', 'Spell check', 'Spellcheck', 'Editor', 'Proofing', 'Check spelling', 'Typos'], when: () => true,
     run: (app) => app.openSpelling(),
     menuItems: (app) => [{ name: 'Spelling', keys: 'F7', command: 'spelling' }, { name: 'Check Spelling as You Type', checked: app.prefs.spell !== false, command: 'spell-as-you-type' },
       ...(app.grammarAvailable() ? [{ name: 'Check Grammar as You Type', checked: app.grammarOn(), command: 'grammar-as-you-type' }] : []), { name: 'Recheck Document', command: 'spell-recheck' },
       ...(app.thesAvailable() ? [null, { name: 'Thesaurus', keys: 'Shift+F7', command: 'thesaurus' }] : [])] },
+  // Word's Alt+F7: the next word the dictionary does not know, selected, with its suggestions
+  { id: 'spelling-next', name: 'Next Misspelling', title: 'Next Misspelling (Alt+F7): the next word the dictionary does not know, selected, with its suggestions', synonyms: ['Next spelling error', 'Next typo', 'Find next misspelling'],
+    keys: ['Alt+F7'], when: (app) => app.spellOn(), whyNot: (app) => app.spellWhyNot(), run: (app) => app.spellNext() },
   { id: 'spell-as-you-type', name: 'Check Spelling as You Type', kind: 'toggle', title: 'Mark the words the dictionary does not know as you type (a red wavy line); off, no line at all',
     synonyms: ['Hide spelling errors', 'Spelling underline', 'Red squiggles', 'Autocorrect spelling'], when: () => true, on: (app) => app.prefs.spell !== false,
     run: (app) => app.spellToggle() },
@@ -154,6 +158,8 @@ register(
   // (B0's, kept)
   { id: 'comment-new', name: 'New comment', title: 'A comment on the selected words (Ctrl+Alt+M)', synonyms: ['Comment', 'Add a comment', 'Insert comment'], tab: 'review', group: 'comments', el: 'rv-comment', label: 'New comment', order: 10,
     icon: '<path d="M4 4.5h12v8H9.5L6 15.5v-3H4z"/>', also: [{ tab: 'insert', group: 'comments', el: 'ri-comment', name: 'Comment' }], keysElsewhere: ['Ctrl+Alt+M'], menu: { selection: 60 },
+    // (Word for Mac's Cmd+Option+A: Cmd+Option+M is the Mac's own, it minimizes every window)
+    keysMac: ['Ctrl+Alt+A'],
     run: (app) => app.commentOnSelection() },
   { id: 'reviewing-pane', name: 'Reviewing pane', title: 'Comments, changes since a version, and versions, in the side panel', synonyms: ['Review panel', 'Changes', 'Versions'],
     tab: 'review', group: 'tracking', el: 'rv-pane', kind: 'toggle', order: 40, icon: '<path d="M3.5 4.5h13v11h-13zM8.5 4.5v11M11 8h3M11 11h3"/>', when: () => true,
@@ -200,6 +206,19 @@ export const methods = {
     if (!this.spellAvailable()) return 'This browser cannot run the spell checker here';
     if (this.sp && this.sp.dead) return 'The spell checker stopped: ' + this.sp.dead;
     return this.prefs.spell === false ? 'Check Spelling as You Type is off' : '';
+  },
+  // Next Misspelling: from the caret on (then from the top), the word selected and its menu open
+  spellNext() {
+    const rank = (f) => (f === this.main ? '' : f);
+    const g = this.gr && this.grammarOn && this.grammarOn() ? this.gr.bad : [];
+    const list = [...this.spellState().bad, ...g].sort((a, b) => (rank(a.f) < rank(b.f) ? -1 : rank(a.f) > rank(b.f) ? 1 : a.s - b.s));
+    if (!list.length) { this.toast('No misspelled words.'); return false; }
+    const c = this.caretNow(), from = c && !c.ghost ? { f: c.f, p: c.collapsed ? c.a : c.b } : null;
+    const x = (from && list.find((y) => (y.f === from.f && y.s >= from.p) || rank(y.f) > rank(from.f))) || list[0];
+    this.goTo(x.f, x.s);
+    this.restoreCaret({ f: x.f, p: x.e, selA: x.s, selB: x.e });
+    this.openContextMenu();
+    return true;
   },
   spellState() {
     if (!this.sp) this.sp = { known: new Map(), ignore: new Set(), ignoreKey: null, once: new Set(), sugg: new Map(), bad: [], plan: null, client: null, failed: new Map(), seq: 0 };
@@ -506,8 +525,18 @@ export const methods = {
       const now = findComments(this.src(t.f), t.f).find((x) => x.who === t.who && x.body === t.body && x.quote === t.quote);
       const body = ta.value.replace(/\s+/g, ' ').trim();
       if (!now || !body) { this.closePop(true); return; }
-      // the comment line's own words after its colon, nothing else of it
-      const line = this.src(t.f).slice(now.s, this.src(t.f).indexOf('\n', now.s) < 0 ? now.e : this.src(t.f).indexOf('\n', now.s));
+      // the comment line's own words after its colon, nothing else of it (a CRLF file's \r stays)
+      let line = this.src(t.f).slice(now.s, this.src(t.f).indexOf('\n', now.s) < 0 ? now.e : this.src(t.f).indexOf('\n', now.s));
+      if (line.endsWith('\r')) line = line.slice(0, -1);
+      // a comment in base32 (a reader's of a comments only link, src/share.js) is written again
+      // whole, in that form: its words are not the line's
+      if (now.safe) {
+        this.closePop(true);
+        this.commit([{ f: t.f, s: now.s, e: now.s + line.length, t: safeCommentLine({ kind: 'comment', who: now.who, quote: now.quote, body }) }], null, 'comment');
+        this.closeGroup();
+        this.refreshNav();
+        return;
+      }
       const k = line.indexOf(':', line.indexOf(')'));
       if (k < 0) { this.closePop(true); return; }
       const s = now.s + k + 1 + (line[k + 1] === ' ' ? 1 : 0);
