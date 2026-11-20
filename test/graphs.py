@@ -364,7 +364,7 @@ def compiles(page):
                 shutil.copy(os.path.join(d, 'g.png'), os.path.join(SHOTS, 'pdf-%s.png' % tid))
             live = page.evaluate('([g, w]) => window.rikuy.graphDrawn(g, w, 2).split(",")[1]', [G, W])
             m = pixels(page, live, tex_png)
-            check('compiled %s on %s: TeX\'s picture is the live figure at its starting values (mean difference %.1f, curves %.0f %%)' % (tid, eng, m['mean'], 100 * m['curve']), m['mean'] < 9 and m['curve'] > 0.9, m)
+            check('compiled %s on %s: TeX\'s picture is the live figure at its starting values (mean difference %.1f, curves %.0f %%)' % (tid, eng, m['mean'], 100 * m['curve']), m['mean'] < 6 and m['curve'] > 0.94, m)
             shutil.rmtree(d, ignore_errors=True)
         # and the frame on the page, the live figure itself, against the same drawing
         fr = page.locator('#wlayer iframe.rk-widget')

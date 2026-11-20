@@ -1638,12 +1638,13 @@ class PGFContext {
       '% Rikuy from the graph\'s description, the live figure at its starting values. Rikuy writes it\n' +
       '% again when the graph changes; edit the graph, not this file. ' + spec + '\n' +
       '% rikuy.sty inputs it (\\rikuywidth is the width); it needs \\usepackage{pgf}, which rikuy.sty loads.\n' +
-      '\\begingroup\n\\ifx\\rikuywidth\\undefined\\csname newdimen\\endcsname\\rikuywidth\\rikuywidth=\\linewidth\\fi\n' +
-      '\\def\\rkm#1 #2 {\\pgfpathmoveto{\\pgfqpoint{#1\\rikuywidth}{#2\\rikuywidth}}}\n' +
-      '\\def\\rkl#1 #2 {\\pgfpathlineto{\\pgfqpoint{#1\\rikuywidth}{#2\\rikuywidth}}}\n' +
-      cols.join('\n') + '\n' +
-      '\\begin{pgfpicture}\n\\pgfsetroundjoin\\pgfsetroundcap\n' +
-      '\\pgfpathrectangle{\\pgfpointorigin}{\\pgfqpoint{\\rikuywidth}{' + F4(this.H / this.W) + '\\rikuywidth}}\\pgfusepath{use as bounding box}\n' +
+      // (every line ends in % where its end would be a space: the picture sits in a line of text)
+      '\\begingroup%\n\\ifx\\rikuywidth\\undefined\\csname newdimen\\endcsname\\rikuywidth\\rikuywidth=\\linewidth\\fi%\n' +
+      '\\def\\rkm#1 #2 {\\pgfpathmoveto{\\pgfqpoint{#1\\rikuywidth}{#2\\rikuywidth}}}%\n' +
+      '\\def\\rkl#1 #2 {\\pgfpathlineto{\\pgfqpoint{#1\\rikuywidth}{#2\\rikuywidth}}}%\n' +
+      cols.map((c) => c + '%\n').join('') +
+      '\\begin{pgfpicture}%\n\\pgfsetroundjoin\\pgfsetroundcap%\n' +
+      '\\pgfpathrectangle{\\pgfpointorigin}{\\pgfqpoint{\\rikuywidth}{' + F4(this.H / this.W) + '\\rikuywidth}}\\pgfusepath{use as bounding box}%\n' +
       this.out.join('\n') + '\n\\end{pgfpicture}%\n\\endgroup%\n';
   }
 }
