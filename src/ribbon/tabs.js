@@ -170,7 +170,7 @@ export const tabs = {
         // Endnote, Size and Position), that button is the arrow, with a mouse from 900 px: one
         // control, not an arrow and an icon beside it that do the same. Elsewhere it is the button.
         // (it keeps its place among them, for the narrower row)
-        const own = lay && launch ? items.find((x) => x.c.id === launch[0] && x.p.main) : null;
+        const own = launch ? items.find((x) => x.c.id === launch[0] && x.p.main) : null;
         if (!own && !gallery) { const b = launchBtn(); if (b) box.append(b); }
         const flow = own ? items.filter((x) => x !== own) : items;
         if (lay) {
